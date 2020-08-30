@@ -1,0 +1,102 @@
+parser: '@typescript-eslint/parser'
+
+parserOptions:
+  ecmaFeatures:
+    jsx: true
+  ecmaVersion: 2020
+  sourceType: module
+
+env:
+  browser: true
+  es6: true
+  node: true
+  jest: true
+
+plugins:
+  - import
+  - sonarjs
+
+extends:
+  - eslint:recommended
+  - plugin:sonarjs/recommended
+  - plugin:prettier/recommended
+
+rules:
+  # 0 = off, 1 = warn, 2 = error
+  'space-before-function-paren': 0
+  'no-useless-constructor': 0
+  'no-undef': 2
+  'no-console': [2, { allow: ['error', 'warn', 'info', 'assert'] }]
+  'comma-dangle': ['error', 'only-multiline']
+  'no-unused-vars': 0
+  'no-var': 2
+  'one-var-declaration-per-line': 2
+  'prefer-const': 2
+  'no-const-assign': 2
+  'no-duplicate-imports': 2
+  'no-use-before-define': [2, { 'functions': false, 'classes': false }]
+  'eqeqeq': [2, 'always', { 'null': 'ignore' }]
+  'no-case-declarations': 0
+  'no-restricted-syntax':
+    [
+      2,
+      {
+        'selector': 'BinaryExpression[operator=/(==|===|!=|!==)/][left.raw=true], BinaryExpression[operator=/(==|===|!=|!==)/][right.raw=true]',
+        'message': Don't compare for equality against boolean literals,
+      },
+    ]
+
+  'import/first': 2
+  'import/newline-after-import': 2
+
+  'sonarjs/cognitive-complexity': 0
+  'sonarjs/no-duplicate-string': 0
+  'sonarjs/no-big-function': 0
+  'sonarjs/no-identical-functions': 0
+  'sonarjs/no-small-switch': 0
+
+overrides:
+  - files:
+      - ./**/*.{ts,tsx}
+    rules:
+      'no-unused-vars': [2, { varsIgnorePattern: '^_', argsIgnorePattern: '^_', ignoreRestSiblings: true }]
+
+  - files:
+      - ./**/*{.ts,.tsx}
+    plugins:
+      - '@typescript-eslint'
+    parserOptions:
+      project: ./tsconfig.json
+    rules:
+      # eslint will treat TS type as undefined stuff
+      'no-undef': 0
+
+      # conflict function override
+      'no-dupe-class-members': 0
+
+      '@typescript-eslint/no-unused-vars':
+        [2, { varsIgnorePattern: '^_', argsIgnorePattern: '^_', ignoreRestSiblings: true }]
+      '@typescript-eslint/member-ordering':
+        [
+          2,
+          {
+            default:
+              [
+                'public-static-field',
+                'protected-static-field',
+                'private-static-field',
+                'public-static-method',
+                'protected-static-method',
+                'private-static-method',
+                'public-instance-field',
+                'protected-instance-field',
+                'private-instance-field',
+                'public-constructor',
+                'protected-constructor',
+                'private-constructor',
+                'public-instance-method',
+                'protected-instance-method',
+                'private-instance-method',
+              ],
+          },
+        ]

@@ -1,0 +1,16 @@
+{
+  "name": "@napi-rs/package-template-win32",
+  "version": "0.0.6",
+  "description": "Template project for writing node package with napi-rs",
+  "repository": "git@github.com:napi-rs/package-template.git",
+  "license": "MIT",
+  "keywords": ["napi-rs", "NAPI", "N-API", "Rust", "node-addon", "node-addon-api"],
+  "main": "index.win32.node",
+  "files": ["index.win32.node"],
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  },
+  "os": ["win32"],
+  "cpu": ["x64"]
+}
