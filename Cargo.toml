@@ -10,7 +10,7 @@ edition = "2018"
 crate-type = ["cdylib"]
 
 [dependencies]
-napi = { version = "0.4" }
+napi = { version = "0.5" }
 napi-derive = { version = "0.4" }
 
 [target.'cfg(all(unix, not(target_env = "musl")))'.dependencies]
