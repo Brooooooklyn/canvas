@@ -213,38 +213,38 @@
   resolved "https://registry.npmjs.org/@sindresorhus/is/-/is-0.14.0.tgz#9fb3a3cf3132328151f353de4632e01e52102bea"
   integrity sha512-9NET910DNaIPngYnLLPeg+Ogzqsi9uM4mSboU5y6p8S5DzMTVEsJZrawi+BoDNUVBa2DhJqQYUFvMDfgU062LQ==
 
-"@swc-node/core-darwin@^0.7.1":
-  version "0.7.1"
-  resolved "https://registry.yarnpkg.com/@swc-node/core-darwin/-/core-darwin-0.7.1.tgz#dce35b225c8dcd3aa59bb48f0a8f25be3d016d9e"
-  integrity sha512-sN1pidlkI3RCaq1cy18TRADOr9aipo+njOqBs4pisD9dZekxBtbi557ztjlPb/YLGzxbKjTpceA1v4SlGk82lw==
+"@swc-node/core-darwin@^0.7.2":
+  version "0.7.2"
+  resolved "https://registry.yarnpkg.com/@swc-node/core-darwin/-/core-darwin-0.7.2.tgz#7475605b8f7fd02dae8973c85ac25bc27caf1c0a"
+  integrity sha512-WyeviZGhP/glgEsH1QHjrwmLyaXTUl8Tzn+LiDdglKLwkVd2fWhhLA0PADHfwEaQmXnxEX+PlEl2Ybysn6ibSg==
 
-"@swc-node/core-linux@^0.7.1":
-  version "0.7.1"
-  resolved "https://registry.yarnpkg.com/@swc-node/core-linux/-/core-linux-0.7.1.tgz#91fd335747682fe4a7e5e5c562a2d2a898aaa7a2"
-  integrity sha512-RHePjw86+9wmgHMs1C9enRe7dAchg+Xm9IKjprqfcp0OcqxlXvSEmIuWgjO1MLAehzuRJiUjDE2CtMLa8d62iQ==
+"@swc-node/core-linux@^0.7.2":
+  version "0.7.2"
+  resolved "https://registry.yarnpkg.com/@swc-node/core-linux/-/core-linux-0.7.2.tgz#ac05546b4154269c4884595798dce78fdd839185"
+  integrity sha512-LbOO+D7iZSeEz7jcWOTH/7wHcvnqjhaF5Ma/3Mt68ZxFHZFFYhaq6gwsPVQ5YgI3o3lS+FrKsSP3oWjhWhCceA==
 
-"@swc-node/core-win32@^0.7.1":
-  version "0.7.1"
-  resolved "https://registry.yarnpkg.com/@swc-node/core-win32/-/core-win32-0.7.1.tgz#68af3021b20a3fbce5c9846e1d10d01d62ae356b"
-  integrity sha512-8n2fT1ZIOBi4NQhYwljtAGUAm+5jh/GMJbqKJiQPaapEvhS5Chf6aFj/fwItLpngNh5EUZZqJW3hJWoFBN/Tng==
+"@swc-node/core-win32@^0.7.2":
+  version "0.7.2"
+  resolved "https://registry.yarnpkg.com/@swc-node/core-win32/-/core-win32-0.7.2.tgz#4a3b1f6332888075edf2f43b75b4ad610ce18306"
+  integrity sha512-4ZSMJ5ndFw339wgFvTT/tUYaNiLBrjFxf2hXKAZ4mR1BQ8BCwHPP8wZLZTErA3MSk9Ezg+uekEfY+QEd+FPaDQ==
 
-"@swc-node/core@^0.7.1":
-  version "0.7.1"
-  resolved "https://registry.yarnpkg.com/@swc-node/core/-/core-0.7.1.tgz#4480961cfd2124673745a2fb2b4d3b99c84d581b"
-  integrity sha512-3OnbNynqulqktt11AW761d8AK03td1mDIHevOdFLdWeZRzhmj6B8iFSn5uDl4dZt1w1zgFTCK8FJepMdtcE/xg==
+"@swc-node/core@^0.7.2":
+  version "0.7.2"
+  resolved "https://registry.yarnpkg.com/@swc-node/core/-/core-0.7.2.tgz#e7054cfa8c6181558d31b75a9738e6db6575d17e"
+  integrity sha512-g9kZl0kRmTTHHbH3K09nXjx6CaowOzcNfNKdEjLbxKUewNv196EAyJxZwXisOdB5Gx+y1g7sqcBKNG/OPu1hlw==
   dependencies:
     "@node-rs/helper" "^0.4.0"
   optionalDependencies:
-    "@swc-node/core-darwin" "^0.7.1"
-    "@swc-node/core-linux" "^0.7.1"
-    "@swc-node/core-win32" "^0.7.1"
+    "@swc-node/core-darwin" "^0.7.2"
+    "@swc-node/core-linux" "^0.7.2"
+    "@swc-node/core-win32" "^0.7.2"
 
-"@swc-node/register@^0.4.7":
-  version "0.4.7"
-  resolved "https://registry.yarnpkg.com/@swc-node/register/-/register-0.4.7.tgz#9cedec7f424166a9ae9d8986457b147ff64cd6ee"
-  integrity sha512-TLBgtMT4k9irlobxVmH9+w25HuEXQaYcGAhXX41YvbW54PaUhFWdS/ZsHcYqfsAcRBeziauy+KhgHPGfX1UTnA==
+"@swc-node/register@^0.4.8":
+  version "0.4.8"
+  resolved "https://registry.yarnpkg.com/@swc-node/register/-/register-0.4.8.tgz#bc9fe1b5a27af93083e4e59934154ae665bf5a00"
+  integrity sha512-tMQkL2Wb2n9VaulILIZsT2z4cEdW07hho2u2jmr5i/E0N6KFRDYNowMkSnNsQyQnrxB7k4Vo/B/V6VOrLRvjNA==
   dependencies:
-    "@swc-node/core" "^0.7.1"
+    "@swc-node/core" "^0.7.2"
     "@swc-node/sourcemap-support" "^0.1.8"
     debug "^4.1.1"
     pirates "^4.0.1"
