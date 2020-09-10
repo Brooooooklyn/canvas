@@ -184,7 +184,7 @@
     "@octokit/plugin-request-log" "^1.0.0"
     "@octokit/plugin-rest-endpoint-methods" "3.17.0"
 
-"@octokit/rest@^18.0.5":
+"@octokit/rest@^18.0.4", "@octokit/rest@^18.0.5":
   version "18.0.5"
   resolved "https://registry.yarnpkg.com/@octokit/rest/-/rest-18.0.5.tgz#1f1498dcdc2d85d0f86b8168e4ff5779842b2742"
   integrity sha512-SPKI24tQXrr1XsnaIjv2x0rl4M5eF1+hj8+vMe3d/exZ7NnL5sTe1BuFyCyJyrc+j1HkXankvgGN9zT0rwBwtg==
@@ -217,6 +217,11 @@
   version "0.7.3"
   resolved "https://registry.yarnpkg.com/@swc-node/core-darwin/-/core-darwin-0.7.3.tgz#910c61074f1842cb56c2b82cf7d96aac23aa5ff7"
   integrity sha512-ldWayLTWD8UnvfYJ1m/k2EIikfQgWU6zFMkL4+WK6pSxl1174QQxCSy6HF5y/3UHgWriIZHOnYD9MKI2YRsgHQ==
+
+"@swc-node/core-linux-musl@^0.6.1":
+  version "0.6.1"
+  resolved "https://registry.yarnpkg.com/@swc-node/core-linux-musl/-/core-linux-musl-0.6.1.tgz#45e2e0b695f594df944f892e9f82a2ce77266bf1"
+  integrity sha512-VcQ1kdeRw1D8/uMk90wHSMJmT41Tex8iytuGKBl/bVOZ5wPD9wA3Sz5ieMgt4CNiUtVITTlpyTJuQgO526W7Ug==
 
 "@swc-node/core-linux@^0.7.3":
   version "0.7.3"
@@ -825,10 +830,10 @@ cli-width@^3.0.0:
   resolved "https://registry.npmjs.org/cli-width/-/cli-width-3.0.0.tgz#a2f48437a2caa9a22436e794bf071ec9e61cedf6"
   integrity sha512-FxqpkPPwu1HjuN93Omfm4h8uIanXofW0RxVEW3k5RKx+mJJYSthzNhp32Kzxxy3YAEZ/Dc/EWN1vZRY0+kOhbw==
 
-clipanion@^2.4.4:
-  version "2.4.4"
-  resolved "https://registry.npmjs.org/clipanion/-/clipanion-2.4.4.tgz#d70244c6f60feb3f4cbd509d2fcbe829fc619061"
-  integrity sha512-KjyCBz8xplftHjIK/nOqq/9b3hPlXbAAo/AxoITrO4yySpQ6a9QSJDAfOx9PfcRUHteeqbdNxZKSPfeFqQ7plg==
+clipanion@^2.5.0:
+  version "2.5.0"
+  resolved "https://registry.yarnpkg.com/clipanion/-/clipanion-2.5.0.tgz#eb9c85a6b52a46979b7eb1e79534b23c44a52971"
+  integrity sha512-VYOMl0h/mZXQC2BWq7oBto1zY1SkPWUaJjt+cuIred1HrmrcX1I2N+LNyNoRy8Iwu9r6vUxJwS/tWLwhQW4tPw==
 
 cliui@^6.0.0:
   version "6.0.0"
@@ -1482,6 +1487,11 @@ fastq@^1.6.0:
   integrity sha512-SMIZoZdLh/fgofivvIkmknUXyPnvxRE3DhtZ5Me3Mrsk5gyPL42F0xr51TdRXskBxHfMp+07bcYzfsYEsSQA9Q==
   dependencies:
     reusify "^1.0.4"
+
+fdir@^4.1.0:
+  version "4.1.0"
+  resolved "https://registry.yarnpkg.com/fdir/-/fdir-4.1.0.tgz#f739ec79f61f69779a6430a622e5f54c57caf921"
+  integrity sha512-oOkohnPg4nUIkd6w22iGbFD7c7UvVnXB3a7/GHcPSsXDUGm6Jxp12bGI5O0gr0YuhDh5l/vDExdHOnrW/j9EqQ==
 
 figures@^3.0.0, figures@^3.2.0:
   version "3.2.0"
@@ -2345,16 +2355,23 @@ mute-stream@0.0.8:
   resolved "https://registry.npmjs.org/mute-stream/-/mute-stream-0.0.8.tgz#1630c42b2251ff81e2a283de96a5497ea92e5e0d"
   integrity sha512-nnbWWOkoWyUsTjKrhgD0dcz22mdkSnpYqbEjIm2nhwhuxlSkpywJmBo8h0ZqJdkp73mb90SssHkN4rsRaBAfAA==
 
-napi-rs@^0.2.6:
-  version "0.2.6"
-  resolved "https://registry.npmjs.org/napi-rs/-/napi-rs-0.2.6.tgz#f4f5dadeb3e310de390e35780b5a8f5e050fca52"
-  integrity sha512-+hjna/WShqAr7pr9+8x/16ipcs8jH4YkJ9AzHRQc0GjFETeNSZz13Rm8fSTzTxrgMDsZYl8LMQ040lLQoT8/cA==
+napi-rs@^0.3.7:
+  version "0.3.7"
+  resolved "https://registry.yarnpkg.com/napi-rs/-/napi-rs-0.3.7.tgz#f8b30c04e609ec814db73820f3780ec3f183a44c"
+  integrity sha512-wYBDkMq/Uw9re0gHdIkMHDYwnV2G82j5wixO5wXVw+aL5WkxvXoGHRxlg+TFUWfe6YckHeFfcHOzUpAiSEGfZg==
   dependencies:
-    clipanion "^2.4.4"
+    "@octokit/rest" "^18.0.4"
+    chalk "^4.1.0"
+    clipanion "^2.5.0"
+    debug "^4.1.1"
+    fdir "^4.1.0"
     inquirer "^7.3.3"
+    lodash "^4.17.20"
+    putasset "^5.0.3"
     toml "^3.0.0"
-  optionalDependencies:
     tslib "^2.0.1"
+  optionalDependencies:
+    "@swc-node/core-linux-musl" "^0.6.1"
 
 natural-compare@^1.4.0:
   version "1.4.0"
