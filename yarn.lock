@@ -820,10 +820,10 @@ cli-width@^3.0.0:
   resolved "https://registry.npmjs.org/cli-width/-/cli-width-3.0.0.tgz#a2f48437a2caa9a22436e794bf071ec9e61cedf6"
   integrity sha512-FxqpkPPwu1HjuN93Omfm4h8uIanXofW0RxVEW3k5RKx+mJJYSthzNhp32Kzxxy3YAEZ/Dc/EWN1vZRY0+kOhbw==
 
-clipanion@^2.4.4:
-  version "2.4.4"
-  resolved "https://registry.npmjs.org/clipanion/-/clipanion-2.4.4.tgz#d70244c6f60feb3f4cbd509d2fcbe829fc619061"
-  integrity sha512-KjyCBz8xplftHjIK/nOqq/9b3hPlXbAAo/AxoITrO4yySpQ6a9QSJDAfOx9PfcRUHteeqbdNxZKSPfeFqQ7plg==
+clipanion@^2.6.2:
+  version "2.6.2"
+  resolved "https://registry.yarnpkg.com/clipanion/-/clipanion-2.6.2.tgz#820e7440812052442455b248f927b187ed732f71"
+  integrity sha512-0tOHJNMF9+4R3qcbBL+4IxLErpaYSYvzs10aXuECDbZdJOuJHdagJMAqvLdeaUQTI/o2uSCDRpet6ywDiKOAYw==
 
 cliui@^7.0.0:
   version "7.0.1"
@@ -1482,6 +1482,11 @@ fastq@^1.6.0:
   integrity sha512-SMIZoZdLh/fgofivvIkmknUXyPnvxRE3DhtZ5Me3Mrsk5gyPL42F0xr51TdRXskBxHfMp+07bcYzfsYEsSQA9Q==
   dependencies:
     reusify "^1.0.4"
+
+fdir@^4.1.0:
+  version "4.1.0"
+  resolved "https://registry.yarnpkg.com/fdir/-/fdir-4.1.0.tgz#f739ec79f61f69779a6430a622e5f54c57caf921"
+  integrity sha512-oOkohnPg4nUIkd6w22iGbFD7c7UvVnXB3a7/GHcPSsXDUGm6Jxp12bGI5O0gr0YuhDh5l/vDExdHOnrW/j9EqQ==
 
 figures@^3.0.0, figures@^3.2.0:
   version "3.2.0"
@@ -2336,15 +2341,20 @@ mute-stream@0.0.8:
   resolved "https://registry.npmjs.org/mute-stream/-/mute-stream-0.0.8.tgz#1630c42b2251ff81e2a283de96a5497ea92e5e0d"
   integrity sha512-nnbWWOkoWyUsTjKrhgD0dcz22mdkSnpYqbEjIm2nhwhuxlSkpywJmBo8h0ZqJdkp73mb90SssHkN4rsRaBAfAA==
 
-napi-rs@^0.2.6:
-  version "0.2.6"
-  resolved "https://registry.npmjs.org/napi-rs/-/napi-rs-0.2.6.tgz#f4f5dadeb3e310de390e35780b5a8f5e050fca52"
-  integrity sha512-+hjna/WShqAr7pr9+8x/16ipcs8jH4YkJ9AzHRQc0GjFETeNSZz13Rm8fSTzTxrgMDsZYl8LMQ040lLQoT8/cA==
+napi-rs@^0.3.9:
+  version "0.3.9"
+  resolved "https://registry.yarnpkg.com/napi-rs/-/napi-rs-0.3.9.tgz#65a2c69ceb569363780d59ff125ba1950b9a2999"
+  integrity sha512-wdJ0W+ciOLEcAzSE8y0BeBiKmHPcyexYorXzk1tn7zxTozncRUSNAmCRmNbUCM1F+GQaYdm5R+MaDx3qUn8sLw==
   dependencies:
-    clipanion "^2.4.4"
+    "@octokit/rest" "^18.0.6"
+    chalk "^4.1.0"
+    clipanion "^2.6.2"
+    debug "^4.2.0"
+    fdir "^4.1.0"
     inquirer "^7.3.3"
+    lodash "^4.17.20"
+    putasset "^5.0.3"
     toml "^3.0.0"
-  optionalDependencies:
     tslib "^2.0.1"
 
 natural-compare@^1.4.0:
