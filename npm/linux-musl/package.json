@@ -1,9 +1,9 @@
 {
-  "name": "@napi-rs/skia-linux",
+  "name": "@napi-rs/skia-linux-musl",
   "version": "0.0.1",
   "os": ["linux"],
-  "main": "skia.linux.node",
-  "files": ["skia.linux.node"],
+  "main": "skia.linux-musl.node",
+  "files": ["skia.linux-musl.node"],
   "description": "Template project for writing node package with napi-rs",
   "keywords": ["napi-rs", "NAPI", "N-API", "Rust", "node-addon", "node-addon-api"],
   "license": "MIT",

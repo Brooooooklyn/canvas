@@ -1,14 +1,18 @@
 {
-  "name": "@napi-rs/package-template",
-  "version": "0.0.6",
+  "name": "@napi-rs/skia",
+  "version": "0.0.1",
   "description": "Template project for writing node package with napi-rs",
   "main": "index.js",
-  "repository": "git@github.com:napi-rs/package-template.git",
+  "repository": "https://github.com/Brooooooklyn/skia-rs.git",
   "license": "MIT",
   "keywords": ["napi-rs", "NAPI", "N-API", "Rust", "node-addon", "node-addon-api"],
   "files": ["index.d.ts", "index.js"],
   "os": ["darwin", "linux", "win32"],
   "cpu": ["x64"],
+  "napi": {
+    "name": "skia",
+    "musl": ["linux"]
+  },
   "engines": {
     "node": ">= 8.9"
   },
@@ -17,8 +21,10 @@
     "access": "public"
   },
   "scripts": {
-    "build": "cargo build --release && napi build --platform --release ./index",
-    "build:debug": "cargo build && napi --platform ./index",
+    "artifacts": "napi artifacts",
+    "bench": "node -r @swc-node/register benchmark/bench.ts",
+    "build": "cargo build --release && napi build --platform --release",
+    "build:debug": "cargo build && napi build --platform",
     "format": "run-p format:md format:json format:yaml format:source format:rs",
     "format:md": "prettier --parser markdown --write './**/*.md'",
     "format:json": "prettier --parser json --write './**/*.json'",
@@ -26,30 +32,29 @@
     "format:source": "prettier --config ./package.json --write './**/*.{js,ts}'",
     "format:yaml": "prettier --parser yaml --write './**/*.{yml,yaml}'",
     "lint": "eslint . -c ./.eslintrc.yml './**/*.{ts,tsx,js}'",
-    "prepublishOnly": "node ./scripts/publish.js",
+    "prepublishOnly": "napi prepublish -t npm",
     "test": "ava",
-    "version": "node ./scripts/version.js"
+    "version": "napi version"
   },
   "devDependencies": {
-    "@octokit/rest": "^18.0.6",
-    "@swc-node/register": "^0.4.11",
-    "@typescript-eslint/eslint-plugin": "^4.0.0",
-    "@typescript-eslint/parser": "^3.10.1",
+    "@swc-node/register": "^1.0.0",
+    "@typescript-eslint/eslint-plugin": "^4.3.0",
+    "@typescript-eslint/parser": "^4.3.0",
     "ava": "^3.13.0",
+    "benny": "^3.6.14",
     "chalk": "^4.1.0",
     "eslint": "^7.10.0",
     "eslint-config-prettier": "^6.12.0",
     "eslint-plugin-import": "^2.22.1",
     "eslint-plugin-prettier": "^3.1.4",
-    "eslint-plugin-react": "^7.21.2",
+    "eslint-plugin-react": "^7.21.3",
     "eslint-plugin-react-hooks": "^4.1.2",
     "eslint-plugin-sonarjs": "^0.5.0",
     "husky": "^4.3.0",
     "lint-staged": "^10.4.0",
-    "napi-rs": "^0.2.6",
+    "napi-rs": "^0.3.9",
     "npm-run-all": "^4.1.5",
     "prettier": "^2.1.2",
-    "putasset": "^5.0.3",
     "typescript": "^4.0.3"
   },
   "dependencies": {
@@ -63,7 +68,10 @@
   },
   "ava": {
     "require": ["@swc-node/register"],
-    "extensions": ["ts"]
+    "extensions": ["ts"],
+    "environmentVariables": {
+      "SWC_NODE_PROJECT": "./tsconfig.json"
+    }
   },
   "prettier": {
     "printWidth": 120,

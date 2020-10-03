@@ -1,3 +1,3 @@
-# `@napi-rs/package-template-linux`
+# `@napi-rs/skia-linux`
 
-This is the Linux 64-bit binary for `@napi-rs/package-template`.
+This is the **linux** 64-bit binary for `@napi-rs/skia`

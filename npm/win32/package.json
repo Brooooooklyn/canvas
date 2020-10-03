@@ -1,16 +1,19 @@
 {
-  "name": "@napi-rs/package-template-win32",
-  "version": "0.0.6",
+  "name": "@napi-rs/skia-win32",
+  "version": "0.0.1",
+  "os": ["win32"],
+  "main": "skia.win32.node",
+  "files": ["skia.win32.node"],
   "description": "Template project for writing node package with napi-rs",
-  "repository": "git@github.com:napi-rs/package-template.git",
-  "license": "MIT",
   "keywords": ["napi-rs", "NAPI", "N-API", "Rust", "node-addon", "node-addon-api"],
-  "main": "index.win32.node",
-  "files": ["index.win32.node"],
+  "license": "MIT",
+  "cpu": ["x64"],
+  "engines": {
+    "node": ">= 8.9"
+  },
   "publishConfig": {
     "registry": "https://registry.npmjs.org/",
     "access": "public"
   },
-  "os": ["win32"],
-  "cpu": ["x64"]
+  "repository": "https://github.com/Brooooooklyn/skia-rs.git"
 }

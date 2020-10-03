@@ -1,16 +1,11 @@
-const { platform } = require('os')
-
 const { loadBinding } = require('@node-rs/helper')
 
-try {
-  // __dirname means load native addon from current dir
-  // 'index' means native addon name is `index`
-  // the value of this two arguments was decided by `build` script in `package.json`
-  module.exports = loadBinding(__dirname, 'index')
-} catch (e) {
-  try {
-    module.exports = require(`@napi-rs/package-template-${platform()}`)
-  } catch (e) {
-    throw new TypeError('Not compatible with your platform. Error message: ' + e.message)
-  }
-}
+/**
+ * __dirname means load native addon from current dir
+ * 'skia' means native addon name is `skia`
+ * the first arguments was decided by `napi.name` field in `package.json`
+ * the second arguments was decided by `name` field in `package.json`
+ * loadBinding helper will load `skia.[PLATFORM].node` from `__dirname` first
+ * If failed to load addon, it will fallback to load from `@napi-rs/skia-[PLATFORM]`
+ */
+module.exports = loadBinding(__dirname, 'skia', '@napi-rs/skia')

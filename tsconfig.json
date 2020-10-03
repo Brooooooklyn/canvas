@@ -8,5 +8,7 @@
     "noUnusedParameters": true,
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true
-  }
+  },
+  "include": ["."],
+  "exclude": ["node_modules"]
 }

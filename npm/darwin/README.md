@@ -1,3 +1,3 @@
-# `@napi-rs/package-template-darwin`
+# `@napi-rs/skia-darwin`
 
-This is the macOS 64-bit binary for `@napi-rs/package-template`.
+This is the **darwin** 64-bit binary for `@napi-rs/skia`

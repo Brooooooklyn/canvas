@@ -1,3 +1,3 @@
-# `@napi-rs/package-template-win32`
+# `@napi-rs/skia-win32`
 
-This is the Windows 64-bit binary for `@napi-rs/package-template`.
+This is the **win32** 64-bit binary for `@napi-rs/skia`
