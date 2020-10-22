@@ -247,19 +247,19 @@
   resolved "https://registry.npmjs.org/@sindresorhus/is/-/is-0.14.0.tgz#9fb3a3cf3132328151f353de4632e01e52102bea"
   integrity sha512-9NET910DNaIPngYnLLPeg+Ogzqsi9uM4mSboU5y6p8S5DzMTVEsJZrawi+BoDNUVBa2DhJqQYUFvMDfgU062LQ==
 
-"@swc-node/core@^1.0.0":
-  version "1.0.0"
-  resolved "https://registry.npmjs.org/@swc-node/core/-/core-1.0.0.tgz#d719abe9d5aa49bb169153d1f3b8ef5364f6f30d"
-  integrity sha512-U0ebtvZVAVjvIjIw2NW07siJFszoOniE5DX1XB08RRvrV1hSI/yuTT81z1onoI66Fhc1l+AJbZLq4U19VEBCOA==
+"@swc-node/core@^1.1.0":
+  version "1.1.0"
+  resolved "https://registry.yarnpkg.com/@swc-node/core/-/core-1.1.0.tgz#4d99597e62aefe2b2a2dc0bd928282c00b519d52"
+  integrity sha512-K90gevVF5UIttPeEK7rfFrdnVLpE4UIc3M5qz2MLrMhWBrfDolSTAm6USM/GITVzbSzECr3Nm/JDkpchzlAEXg==
   dependencies:
-    "@swc/core" "^1.2.34"
+    "@swc/core" "^1.2.36"
 
-"@swc-node/register@^1.0.0":
-  version "1.0.0"
-  resolved "https://registry.npmjs.org/@swc-node/register/-/register-1.0.0.tgz#c7bee0feea44b08c765b6745f928e7ed2f670511"
-  integrity sha512-pUz5KvJjg+cNlwTeqW4FOQ1nwWsqbFMifysKPEseBCiW/QKd/NhufYPdqkAa8uvMBEcxEtFsH7mnFT/es5AbCg==
+"@swc-node/register@^1.0.1":
+  version "1.0.1"
+  resolved "https://registry.yarnpkg.com/@swc-node/register/-/register-1.0.1.tgz#3f5d5e0baac67f62b2a47791f31d3292875a812f"
+  integrity sha512-qcwMXXTtjGkvH7vni3wG1rQXoahLCuQB8w8Hr9i8zO8OPfyrkXSk9gWVkBzIAzB35o+zXiutEo3FHIHi52H2iw==
   dependencies:
-    "@swc-node/core" "^1.0.0"
+    "@swc-node/core" "^1.1.0"
     "@swc-node/sourcemap-support" "^0.1.8"
     chalk "^4.1.0"
     debug "^4.2.0"
@@ -272,31 +272,31 @@
   dependencies:
     source-map-support "^0.5.19"
 
-"@swc/core-darwin@^1.2.34":
-  version "1.2.34"
-  resolved "https://registry.npmjs.org/@swc/core-darwin/-/core-darwin-1.2.34.tgz#dd69b1a12b7a2cb9e43a5e8a78a8d2d7ff392f53"
-  integrity sha512-OKOHOcqBgvBQiGC7doCa4CXKVDpO1QMIQogCFelqs82YbcQa6YEWvB6+ujiw1oUWaXP2fed1TFHDpHFJWorxIQ==
+"@swc/core-darwin@^1.2.36":
+  version "1.2.36"
+  resolved "https://registry.yarnpkg.com/@swc/core-darwin/-/core-darwin-1.2.36.tgz#8715c7ca6ec352424ae1fc3ad1bff19f1f03a97e"
+  integrity sha512-2BvqKmdkPwS41QTZ0bkj2emdY8xsscMaUY3CtllQJOhY0oIw6kycNNfreAumVUU93eAXdympBj7yBTNkRil0gQ==
 
-"@swc/core-linux@^1.2.34":
-  version "1.2.34"
-  resolved "https://registry.npmjs.org/@swc/core-linux/-/core-linux-1.2.34.tgz#927fbdbfed1e842bbda4dc96d1407c5a0e67234d"
-  integrity sha512-85ryQe9M4xPY9R4mRfbU/Gk/z45GVPG1LiJhf99jA+7RmNiffwJXLRuD8SwkE5rKHO8My1mVCha8uBQnZIDhEg==
+"@swc/core-linux@^1.2.36":
+  version "1.2.36"
+  resolved "https://registry.yarnpkg.com/@swc/core-linux/-/core-linux-1.2.36.tgz#cac9db6ab811be9e5deca0fb55bc2125dbc14842"
+  integrity sha512-xUnn1rj7QYypaol5pjGgiGBHi/YsV55OpGLQDDM5FMxjwY6QLw9zJAHFprZpMbjOIKplKOujUyOwbpkhPzUdzA==
 
-"@swc/core-win32@^1.2.34":
-  version "1.2.34"
-  resolved "https://registry.npmjs.org/@swc/core-win32/-/core-win32-1.2.34.tgz#2eeba70a72bb71acf4efcfab099d4cb96826b587"
-  integrity sha512-DxxKEo9Q/jOGTXizPJXdKkfSjGU3cU4df9ZY7nslWVp0c7r+hnHcplh2A1CklOdLinUTBUP+3DHtLTyhLElPBg==
+"@swc/core-win32@^1.2.36":
+  version "1.2.36"
+  resolved "https://registry.yarnpkg.com/@swc/core-win32/-/core-win32-1.2.36.tgz#13fb85ae579a3d0d73defe11239cb566110315c9"
+  integrity sha512-O3HJ+Gd1RRsjdTPsvrjLw/ZTRo5N/V4u9+UFNgU9A5jUnhmAuyoUGSa+AHOOGQfSmLkrE6WF3+iz4apAYmnIOw==
 
-"@swc/core@^1.2.34":
-  version "1.2.34"
-  resolved "https://registry.npmjs.org/@swc/core/-/core-1.2.34.tgz#bd1d64d219cf116667517aadd7eb804045743d7c"
-  integrity sha512-V0qMusSNpKUwkjN42zfeEEILldnAx+XFVH7q96ofrM/MRYDWjYZJU9eaCwAGNb/bLS7+UWq8e/nxxpOvKLnjdQ==
+"@swc/core@^1.2.36":
+  version "1.2.36"
+  resolved "https://registry.yarnpkg.com/@swc/core/-/core-1.2.36.tgz#ce32c6553438e1980113d66f7d7a7b52b2a810b6"
+  integrity sha512-hi/LRHkTS3ICjhm1sl2/AM3hv8OClqdp9jFZt/sKAxVgj61xS9kD9uYiDE0MKZiwMlcTNE5bH8kY1XhqCL25rg==
   dependencies:
     "@node-rs/helper" "^0.4.0"
   optionalDependencies:
-    "@swc/core-darwin" "^1.2.34"
-    "@swc/core-linux" "^1.2.34"
-    "@swc/core-win32" "^1.2.34"
+    "@swc/core-darwin" "^1.2.36"
+    "@swc/core-linux" "^1.2.36"
+    "@swc/core-win32" "^1.2.36"
 
 "@szmarczak/http-timer@^1.1.2":
   version "1.1.2"
