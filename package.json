@@ -37,7 +37,7 @@
     "version": "napi version"
   },
   "devDependencies": {
-    "@swc-node/register": "^1.0.0",
+    "@swc-node/register": "^1.0.1",
     "@typescript-eslint/eslint-plugin": "^4.5.0",
     "@typescript-eslint/parser": "^4.5.0",
     "ava": "^3.13.0",
