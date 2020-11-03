@@ -39,7 +39,7 @@
   "devDependencies": {
     "@swc-node/register": "^1.0.1",
     "@typescript-eslint/eslint-plugin": "^4.6.1",
-    "@typescript-eslint/parser": "^4.6.0",
+    "@typescript-eslint/parser": "^4.6.1",
     "ava": "^3.13.0",
     "benny": "^3.6.14",
     "chalk": "^4.1.0",
