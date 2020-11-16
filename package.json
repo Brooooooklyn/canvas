@@ -41,7 +41,7 @@
     "@typescript-eslint/eslint-plugin": "^4.7.0",
     "@typescript-eslint/parser": "^4.7.0",
     "ava": "^3.13.0",
-    "benny": "^3.6.14",
+    "benny": "^3.6.15",
     "chalk": "^4.1.0",
     "eslint": "^7.13.0",
     "eslint-config-prettier": "^6.15.0",
