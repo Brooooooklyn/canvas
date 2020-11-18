@@ -10,17 +10,18 @@ version = "0.1.0"
 crate-type = ["cdylib"]
 
 [dependencies]
-napi = {version = "0.5"}
-napi-derive = {version = "0.5"}
+anyhow = "1"
+cssparser = "0.27"
+napi = {git = "https://github.com/napi-rs/napi-rs"}
+napi-derive = {git = "https://github.com/napi-rs/napi-rs"}
+thiserror = "1"
 
 [target.'cfg(all(unix, not(target_env = "musl")))'.dependencies]
 jemallocator = {version = "0.3", features = ["disable_initial_exec_tls"]}
 
-[target.'cfg(windows)'.dependencies]
-mimalloc = {version = "0.1"}
-
 [build-dependencies]
-napi-build = "0.2"
+cc = "1"
+napi-build = {git = "https://github.com/napi-rs/napi-rs"}
 
 [profile.release]
 lto = true

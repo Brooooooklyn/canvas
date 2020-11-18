@@ -1,57 +1,56 @@
 #[macro_use]
-extern crate napi;
-#[macro_use]
 extern crate napi_derive;
 
-use std::convert::TryInto;
+use napi::*;
 
-use napi::{CallContext, Env, JsNumber, JsObject, Module, Result, Task};
+mod ctx;
+mod gradient;
+mod image;
+mod sk;
 
 #[cfg(all(unix, not(target_env = "musl")))]
 #[global_allocator]
 static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
-#[cfg(windows)]
-#[global_allocator]
-static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
-
 register_module!(skia, init);
 
-struct AsyncTask(u32);
-
-impl Task for AsyncTask {
-  type Output = u32;
-  type JsValue = JsNumber;
-
-  fn compute(&mut self) -> Result<Self::Output> {
-    use std::thread::sleep;
-    use std::time::Duration;
-    sleep(Duration::from_millis(self.0 as u64));
-    Ok(self.0 * 2)
-  }
-
-  fn resolve(&self, env: &mut Env, output: Self::Output) -> Result<Self::JsValue> {
-    env.create_uint32(output)
-  }
-}
-
 fn init(module: &mut Module) -> Result<()> {
-  module.create_named_method("sync", sync_fn)?;
+  let canvas_element = module.env.define_class(
+    "CanvasElement",
+    canvas_element_constructor,
+    &[Property::new(&module.env, "getContext")?.with_method(get_context)],
+  )?;
 
-  module.create_named_method("sleep", sleep)?;
+  let canvas_rendering_context2d = ctx::Context::create_js_class(&module.env)?;
+  module
+    .exports
+    .set_named_property("CanvasRenderingContext2D", canvas_rendering_context2d)?;
+
+  module
+    .exports
+    .set_named_property("CanvasElement", canvas_element)?;
   Ok(())
 }
 
-#[js_function(1)]
-fn sync_fn(ctx: CallContext) -> Result<JsNumber> {
-  let argument: u32 = ctx.get::<JsNumber>(0)?.try_into()?;
-
-  ctx.env.create_uint32(argument + 100)
+#[js_function(2)]
+fn canvas_element_constructor(ctx: CallContext) -> Result<JsUndefined> {
+  let width = ctx.get::<JsNumber>(0)?;
+  let height = ctx.get::<JsNumber>(1)?;
+  let mut this = ctx.this_unchecked::<JsObject>();
+  this.set_named_property("width", width)?;
+  this.set_named_property("height", height)?;
+  ctx.env.get_undefined()
 }
 
 #[js_function(1)]
-fn sleep(ctx: CallContext) -> Result<JsObject> {
-  let argument: u32 = ctx.get::<JsNumber>(0)?.try_into()?;
-  let task = AsyncTask(argument);
-  ctx.env.spawn(task)
+fn get_context(ctx: CallContext) -> Result<JsObject> {
+  let context_type = ctx.get::<JsString>(0)?.into_utf8()?;
+  if context_type.as_str()? != "2d" {
+    return Err(Error::new(
+      Status::InvalidArg,
+      "Only supports 2d context".to_owned(),
+    ));
+  }
+  let this = ctx.this_unchecked::<JsObject>();
+  this.get_named_property("ctx")
 }

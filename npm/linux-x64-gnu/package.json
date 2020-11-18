@@ -1,15 +1,15 @@
 {
-  "name": "@napi-rs/skia-linux",
+  "name": "@napi-rs/skia-linux-x64-gnu",
   "version": "0.0.1",
   "os": ["linux"],
-  "main": "skia.linux.node",
-  "files": ["skia.linux.node"],
+  "cpu": ["x64"],
+  "main": "skia.linux-x64-gnu.node",
+  "files": ["skia.linux-x64-gnu.node"],
   "description": "Template project for writing node package with napi-rs",
   "keywords": ["napi-rs", "NAPI", "N-API", "Rust", "node-addon", "node-addon-api"],
   "license": "MIT",
-  "cpu": ["x64"],
   "engines": {
-    "node": ">= 8.9"
+    "node": ">= 10"
   },
   "publishConfig": {
     "registry": "https://registry.npmjs.org/",
