@@ -20,32 +20,41 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
 
-    name: stable - ${{ matrix.os }} - node@12
+    name: stable - ${{ matrix.os }} - node@14
     runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v2
+        with:
+          submodules: true
 
       - name: Setup node
-        uses: actions/setup-node@v1
+        uses: actions/setup-node@v2-beta
         with:
-          node-version: 12
+          node-version: 14
+          check-latest: true
 
-      - name: Set platform name
+      - name: Set env
         run: |
-          export NODE_PLATFORM_NAME=$(node -e "console.log(require('os').platform())")
-          echo "::set-env name=PLATFORM_NAME::$NODE_PLATFORM_NAME"
+          echo "${PWD}/depot_tools" >> $GITHUB_PATH
+          echo "C:\\Program Files\\LLVM\\bin" >> $GITHUB_PATH
         shell: bash
 
-      - name: Install llvm
-        if: matrix.os == 'windows-latest'
-        run: choco install -y llvm
+      - name: Install tools on macOS
+        run: brew install ninja
+        if: matrix.os == 'macos-latest'
 
-      - name: Set llvm path
+      - name: Install tools on Windows
+        run: |
+          choco install ninja llvm -y
+          choco upgrade python -y
+          pip install certifi
         if: matrix.os == 'windows-latest'
-        uses: allenevans/set-env@v1.0.0
-        with:
-          LIBCLANG_PATH: 'C:\\Program Files\\LLVM\\bin'
+
+      - name: Install tools on Linux
+        run: |
+          sudo apt-get install -y ninja-build
+        if: matrix.os == 'ubuntu-latest'
 
       - name: Install
         uses: actions-rs/toolchain@v1
@@ -63,21 +72,41 @@ jobs:
         uses: actions/cache@v1
         with:
           path: ~/.cargo/registry
-          key: stable-${{ matrix.os }}-node@12-cargo-registry-trimmed-${{ hashFiles('**/Cargo.lock') }}
+          key: stable-${{ matrix.os }}-node@14-cargo-registry-trimmed-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Cache cargo index
         uses: actions/cache@v1
         with:
           path: ~/.cargo/git
-          key: stable-${{ matrix.os }}gnu-node@12-cargo-index-trimmed-${{ hashFiles('**/Cargo.lock') }}
+          key: stable-${{ matrix.os }}-node@14-cargo-index-trimmed-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Cache skia tools
+        uses: actions/cache@v1
+        with:
+          path: skia/third_party/externals
+          key: stable-${{ matrix.os }}-node@14-tools
+
+      - name: Compile skia
+        if: matrix.os != 'windows-latest'
+        env:
+          PYTHONHTTPSVERIFY: 0
+        run: node ./scripts/build-skia.js
+
+      - name: Compile skia
+        shell: powershell
+        if: matrix.os == 'windows-latest'
+        env:
+          PYTHONHTTPSVERIFY: 0
+        run: node ./scripts/build-skia.js
 
       - name: Cache NPM dependencies
         uses: actions/cache@v1
         with:
           path: node_modules
-          key: npm-cache-${{ matrix.os }}-node@12-${{ hashFiles('yarn.lock') }}
+          key: npm-cache-${{ matrix.os }}-node@14-${{ hashFiles('yarn.lock') }}
           restore-keys: |
             npm-cache-
+
       - name: 'Install dependencies'
         run: yarn install --frozen-lockfile --registry https://registry.npmjs.org
 
@@ -94,45 +123,13 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v2
         with:
-          name: bindings-${{ env.PLATFORM_NAME }}
-          path: ${{ env.APP_NAME }}.${{ env.PLATFORM_NAME }}.node
+          name: bindings-${{ matrix.os }}
+          path: ${{ env.APP_NAME }}.*.node
 
       - name: Clear the cargo caches
         run: |
           cargo install cargo-cache --no-default-features --features ci-autoclean
           cargo-cache
-
-  build_musl:
-    if: "!contains(github.event.head_commit.message, 'skip ci')"
-    name: stable - linux-musl - node@12
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v2
-
-      - name: Login to registry
-        run: |
-          docker login -u $DOCKER_USERNAME -p $DOCKER_PASSWORD $DOCKER_REGISTRY_URL
-        env:
-          DOCKER_REGISTRY_URL: docker.pkg.github.com
-          DOCKER_USERNAME: ${{ github.actor }}
-          DOCKER_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Pull docker image
-        run: |
-          docker pull docker.pkg.github.com/napi-rs/napi-rs/rust-nodejs-alpine:lts
-          docker tag docker.pkg.github.com/napi-rs/napi-rs/rust-nodejs-alpine:lts builder
-      - name: 'Install dependencies'
-        run: yarn install --frozen-lockfile --registry https://registry.npmjs.org
-
-      - name: 'Build'
-        run: |
-          docker run --rm -v $(pwd)/.cargo:/root/.cargo -v $(pwd):/build -w /build builder sh -c "yarn build --musl"
-      - name: Upload artifact
-        uses: actions/upload-artifact@v2
-        with:
-          name: bindings-linux-musl
-          path: ${{ env.APP_NAME }}.linux-musl.node
 
   test_binding:
     name: Test bindings on ${{ matrix.os }} - node@${{ matrix.node }}
@@ -142,31 +139,39 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        node: ['10', '12', '14']
+        node: ['10', '12', '14', '15']
     runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v2
 
       - name: Setup node
-        uses: actions/setup-node@v1
+        uses: actions/setup-node@v2-beta
         with:
           node-version: ${{ matrix.node }}
+          check-latest: true
 
       - name: Set platform name
         run: |
           export NODE_PLATFORM_NAME=$(node -e "console.log(require('os').platform())")
-          echo "::set-env name=PLATFORM_NAME::$NODE_PLATFORM_NAME"
+          echo "PLATFORM_NAME=${NODE_PLATFORM_NAME}" >> $GITHUB_ENV
         shell: bash
 
-      # Do not cache node_modules, or yarn workspace links broken
+      - name: Cache NPM dependencies
+        uses: actions/cache@v1
+        with:
+          path: node_modules
+          key: npm-cache-${{ matrix.os }}-${{ matrix.node }}-${{ hashFiles('yarn.lock') }}
+          restore-keys: |
+            npm-cache-
+
       - name: 'Install dependencies'
         run: yarn install --frozen-lockfile --registry https://registry.npmjs.org
 
       - name: Download artifacts
         uses: actions/download-artifact@v2
         with:
-          name: bindings-${{ env.PLATFORM_NAME }}
+          name: bindings-${{ matrix.os }}
           path: .
 
       - name: List packages
@@ -176,39 +181,10 @@ jobs:
       - name: Test bindings
         run: yarn test
 
-  test_musl_binding:
-    name: Test bindings on alpine - node@${{ matrix.node }}
-    needs:
-      - build_musl
-    strategy:
-      fail-fast: false
-      matrix:
-        node: ['12', '14']
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v2
-
-      - name: 'Install dependencies'
-        run: yarn install --frozen-lockfile --ignore-scripts --registry https://registry.npmjs.org
-
-      - name: Download artifacts
-        uses: actions/download-artifact@v2
-        with:
-          name: bindings-linux-musl
-          path: .
-
-      - name: List files
-        run: ls -R .
-        shell: bash
-
-      - name: Run simple tests
-        run: docker run --rm -v $(pwd)/.cargo:/root/.cargo -v $(pwd):/build -w /build node:${{ matrix.node }}-alpine sh -c "node ./simple-test.js"
-
   dependabot:
     needs:
       - test_binding
-      - test_musl_binding
+
     runs-on: ubuntu-latest
     steps:
       - name: auto-merge
@@ -222,15 +198,15 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - test_binding
-      - test_musl_binding
 
     steps:
       - uses: actions/checkout@v2
 
       - name: Setup node
-        uses: actions/setup-node@v1
+        uses: actions/setup-node@v2-beta
         with:
-          node-version: 12
+          node-version: 14
+          check-latest: true
 
       - name: Cache NPM dependencies
         uses: actions/cache@v1
