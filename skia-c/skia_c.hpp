@@ -7,6 +7,7 @@
 #include <include/core/SkGraphics.h>
 #include <include/core/SkPaint.h>
 #include <include/core/SkSurface.h>
+#include <include/core/SkMaskFilter.h>
 #include <include/effects/SkDashPathEffect.h>
 #include <include/effects/SkGradientShader.h>
 
@@ -19,6 +20,7 @@ typedef struct skiac_path skiac_path;
 typedef struct skiac_shader skiac_shader;
 typedef struct skiac_path_effect skiac_path_effect;
 typedef struct skiac_matrix skiac_matrix;
+typedef struct skiac_mask_filter skiac_mask_filter;
 
 struct skiac_transform
 {
@@ -39,7 +41,7 @@ struct skiac_point
 struct skiac_surface_data
 {
   uint8_t *ptr;
-  uint32_t size;
+  size_t size;
 };
 
 extern "C"
@@ -59,6 +61,7 @@ extern "C"
   int skiac_surface_get_width(skiac_surface *c_surface);
   int skiac_surface_get_height(skiac_surface *c_surface);
   void skiac_surface_read_pixels(skiac_surface *c_surface, skiac_surface_data *data);
+  void skiac_surface_png_data(skiac_surface *c_surface, skiac_surface_data *data);
   int skiac_surface_get_alpha_type(skiac_surface *c_surface);
   bool skiac_surface_save(skiac_surface *c_surface, const char *path);
 
@@ -70,6 +73,7 @@ extern "C"
   void skiac_canvas_scale(skiac_canvas *c_canvas, float sx, float sy);
   void skiac_canvas_translate(skiac_canvas *c_canvas, float dx, float dy);
   skiac_transform skiac_canvas_get_total_transform(skiac_canvas *c_canvas);
+  skiac_matrix *skiac_canvas_get_total_transform_matrix(skiac_canvas *c_canvas);
   void skiac_canvas_draw_color(skiac_canvas *c_canvas, float r, float g, float b, float a);
   void skiac_canvas_draw_path(skiac_canvas *c_canvas, skiac_path *c_path, skiac_paint *c_paint);
   void skiac_canvas_draw_rect(
@@ -97,6 +101,7 @@ extern "C"
 
   // Paint
   skiac_paint *skiac_paint_create();
+  skiac_paint *skiac_paint_clone(skiac_paint *c_paint);
   void skiac_paint_destroy(skiac_paint *c_paint);
   void skiac_paint_set_style(skiac_paint *c_paint, int style);
   void skiac_paint_set_color(skiac_paint *c_paint, uint8_t r, uint8_t g, uint8_t b, uint8_t a);
@@ -107,11 +112,13 @@ extern "C"
   int skiac_paint_get_blend_mode(skiac_paint *c_paint);
   void skiac_paint_set_shader(skiac_paint *c_paint, skiac_shader *c_shader);
   void skiac_paint_set_stroke_width(skiac_paint *c_paint, float width);
+  float skiac_paint_get_stroke_width(skiac_paint *c_paint);
   void skiac_paint_set_stroke_cap(skiac_paint *c_paint, int cap);
   void skiac_paint_set_stroke_join(skiac_paint *c_paint, int join);
   void skiac_paint_set_stroke_miter(skiac_paint *c_paint, float miter);
   float skiac_paint_get_stroke_miter(skiac_paint *c_paint);
   void skiac_paint_set_path_effect(skiac_paint *c_paint, skiac_path_effect *c_path_effect);
+  void skiac_paint_set_mask_filter(skiac_paint *c_paint, skiac_mask_filter *c_mask_filter);
 
   // Path
   skiac_path *skiac_path_create();
@@ -126,6 +133,7 @@ extern "C"
   void skiac_path_cubic_to(
       skiac_path *c_path,
       float x1, float y1, float x2, float y2, float x3, float y3);
+  void skiac_path_quad_to(skiac_path *c_path, float cpx, float cpy, float x, float y);
   void skiac_path_close(skiac_path *c_path);
   void skiac_path_add_rect(skiac_path *c_path, float l, float t, float r, float b);
   void skiac_path_add_circle(skiac_path *c_path, float x, float y, float r);
@@ -166,13 +174,26 @@ extern "C"
 
   void skiac_shader_destroy(skiac_shader *c_shader);
 
+  // Matrix
   skiac_matrix *skiac_matrix_create();
+
+  skiac_matrix *skiac_matrix_clone(skiac_matrix *c_matrix);
 
   void skiac_matrix_pre_translate(skiac_matrix *c_matrix, float dx, float dy);
 
   void skiac_matrix_pre_rotate(skiac_matrix *c_matrix, float degrees);
 
   bool skiac_matrix_invert(skiac_matrix *c_matrix, skiac_matrix *inverse);
+
+  skiac_transform skiac_matrix_to_transform(skiac_matrix *c_matrix);
+
+  void skiac_matrix_destroy(skiac_matrix *c_matrix);
+
+  // MaskFilter
+
+  skiac_mask_filter *skiac_mask_filter_make_blur(float radius);
+
+  void skiac_mask_filter_destroy(skiac_mask_filter *c_mask_filter);
 }
 
 #endif // SKIA_CAPI_H

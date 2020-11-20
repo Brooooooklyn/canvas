@@ -1,12 +1,14 @@
 use std::convert::TryInto;
+use std::result;
 
 use cssparser::{Color as CSSColor, Parser, ParserInput};
 use napi::{
   CallContext, Env, Error, JsNumber, JsObject, JsString, JsUndefined, Property, Result, Status,
 };
 
-use super::sk::*;
+use crate::{error::SkError, sk::*};
 
+#[derive(Debug, Clone)]
 pub enum CanvasGradient {
   Linear(LinearGradient),
   Radial(TwoPointConicalGradient),
@@ -75,16 +77,60 @@ impl CanvasGradient {
   }
 
   #[inline(always)]
-  pub(crate) fn shader(self) -> Result<Shader> {
+  pub(crate) fn get_shader(
+    &self,
+    current_transform: &Transform,
+  ) -> result::Result<Shader, SkError> {
     match self {
-      Self::Linear(linear_gradient) => Ok(Shader::new_linear_gradient(&linear_gradient).ok_or(
-        Error::from_reason("Create linear gradient failed".to_owned()),
-      )?),
-      Self::Radial(radial_gradient) => Ok(
-        Shader::new_two_point_conical_gradient(&radial_gradient).ok_or(Error::from_reason(
-          "Create radial gradient failed".to_owned(),
-        ))?,
-      ),
+      Self::Linear(ref linear_gradient) => {
+        let (x1, y1) = linear_gradient.start_point;
+        let (x2, y2) = linear_gradient.end_point;
+        let pt_arr: [f32; 4] = [x1, y1, x2, y2];
+        let pts = current_transform.map_points(&pt_arr);
+        let sx1 = pts[0];
+        let sy1 = pts[1];
+        let sx2 = pts[2];
+        let sy2 = pts[3];
+        Ok(
+          Shader::new_linear_gradient(&LinearGradient {
+            start_point: (sx1, sy1),
+            end_point: (sx2, sy2),
+            base: linear_gradient.base.clone(),
+          })
+          .ok_or(SkError::Generic("Create linear gradient failed".to_owned()))?,
+        )
+      }
+      Self::Radial(ref radial_gradient) => {
+        let (x1, y1) = radial_gradient.start;
+        let (x2, y2) = radial_gradient.end;
+        let (r1, r2) = radial_gradient.start;
+        let pt_arr: [f32; 4] = [x1, y1, x2, y2];
+        let pts = current_transform.map_points(&pt_arr);
+        let sx1 = pts[0];
+        let sy1 = pts[1];
+        let sx2 = pts[2];
+        let sy2 = pts[3];
+
+        let sx = current_transform.a;
+        let sy = current_transform.e;
+        let scale_factor = (f32::abs(sx) + f32::abs(sy)) / 2f32;
+
+        let sr1 = r1 * scale_factor;
+        let sr2 = r2 * scale_factor;
+
+        let new_radial_gradient = TwoPointConicalGradient {
+          start: (sx1, sy1),
+          end: (sx2, sy2),
+          start_radius: sr1,
+          end_radius: sr2,
+          base: radial_gradient.base.clone(),
+        };
+
+        Ok(
+          Shader::new_two_point_conical_gradient(&new_radial_gradient)
+            .ok_or(SkError::Generic("Create radial gradient failed".to_owned()))?,
+        )
+      }
     }
   }
 }
