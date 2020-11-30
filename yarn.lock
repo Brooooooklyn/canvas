@@ -80,15 +80,15 @@
     minimatch "^3.0.4"
     strip-json-comments "^3.1.1"
 
-"@napi-rs/cli@^1.0.0-alpha.4":
-  version "1.0.0-alpha.4"
-  resolved "https://registry.npmjs.org/@napi-rs/cli/-/cli-1.0.0-alpha.4.tgz#89abab2cdef64e382dc02affecd7cf13a2dfa0e4"
-  integrity sha512-WGgzjhf3cIaW96zKQvY66TQqSkJF9Z0HTkvroUc+79gNtoIktXn1yXFvKK3xbsoiLNPDM8gqEb9bFW/Lv7TpLg==
+"@napi-rs/cli@^1.0.0-alpha.5":
+  version "1.0.0-alpha.5"
+  resolved "https://registry.yarnpkg.com/@napi-rs/cli/-/cli-1.0.0-alpha.5.tgz#01312a171c10373bcbc007698d9000903b7445b8"
+  integrity sha512-CY5nNzFDyu0zqfquk2IYVKVV1iASKLVP62/xT334tEwk0VWzy2t5Qm31rn2bLL3HtrowlabwMJa3J11YWKXj+A==
   dependencies:
     "@octokit/rest" "^18.0.9"
     chalk "^4.1.0"
     clipanion "^2.6.2"
-    debug "^4.2.0"
+    debug "^4.3.1"
     fdir "^4.1.0"
     inquirer "^7.3.3"
     lodash "^4.17.20"
@@ -1040,10 +1040,10 @@ debug@^2.6.9:
   dependencies:
     ms "2.0.0"
 
-debug@^4.0.1, debug@^4.1.1, debug@^4.2.0:
-  version "4.2.0"
-  resolved "https://registry.npmjs.org/debug/-/debug-4.2.0.tgz#7f150f93920e94c58f5574c2fd01a3110effe7f1"
-  integrity sha512-IX2ncY78vDTjZMFUdmsvIRFY2Cf4FnD0wRs+nQwJU8Lu99/tPFdb0VybiiMTPe3I6rQmwsqQqRBvxU+bZ/I8sg==
+debug@^4.0.1, debug@^4.1.1, debug@^4.2.0, debug@^4.3.1:
+  version "4.3.1"
+  resolved "https://registry.yarnpkg.com/debug/-/debug-4.3.1.tgz#f0d229c505e0c6d8c49ac553d1b13dc183f6b2ee"
+  integrity sha512-doEwdvm4PCeK4K3RQN2ZC2BYUBaxwLARCqZmMjtF8a51J2Rb0xpVloFRnCODwqjpwnAoao4pelN8l3RJdv3gRQ==
   dependencies:
     ms "2.1.2"
 
