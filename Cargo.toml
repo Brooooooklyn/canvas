@@ -16,9 +16,6 @@ napi = {git = "https://github.com/napi-rs/napi-rs"}
 napi-derive = {git = "https://github.com/napi-rs/napi-rs"}
 thiserror = "1"
 
-[target.'cfg(all(unix, not(target_env = "musl")))'.dependencies]
-jemallocator = {version = "0.3", features = ["disable_initial_exec_tls"]}
-
 [build-dependencies]
 cc = "1"
 napi-build = {git = "https://github.com/napi-rs/napi-rs"}

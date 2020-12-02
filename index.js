@@ -13,6 +13,22 @@ const { CanvasRenderingContext2D, CanvasElement } = loadBinding(__dirname, 'skia
 function createCanvas(width, height) {
   const canvasElement = new CanvasElement(width, height)
   const ctx = new CanvasRenderingContext2D(width, height)
+
+  // napi can not define writable: true but enumerable: false property
+  Object.defineProperty(ctx, '_fillStyle', {
+    value: '#000',
+    configurable: false,
+    enumerable: false,
+    writable: true,
+  })
+
+  Object.defineProperty(ctx, '_strokeStyle', {
+    value: '#000',
+    configurable: false,
+    enumerable: false,
+    writable: true,
+  })
+
   Object.defineProperty(canvasElement, 'ctx', {
     value: ctx,
     enumerable: false,

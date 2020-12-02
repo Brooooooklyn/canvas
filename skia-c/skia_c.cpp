@@ -19,6 +19,7 @@
 #define PAINT_CAST reinterpret_cast<SkPaint *>(c_paint)
 #define PATH_CAST reinterpret_cast<SkPath *>(c_path)
 #define MATRIX_CAST reinterpret_cast<SkMatrix *>(c_matrix)
+#define MASK_FILTER_CAST reinterpret_cast<SkMaskFilter *>(c_mask_filter)
 
 extern "C"
 {
@@ -92,6 +93,19 @@ extern "C"
     return false;
   }
 
+  void skiac_surface_png_data(skiac_surface *c_surface, skiac_surface_data *data)
+  {
+    auto image = SURFACE_CAST->makeImageSnapshot();
+    auto png_data = image->encodeToData();
+    data->ptr = nullptr;
+    data->size = 0;
+    if (png_data)
+    {
+      data->ptr = const_cast<uint8_t *>(png_data->bytes());
+      data->size = png_data->size();
+    }
+  }
+
   void skiac_surface_destroy(skiac_surface *c_surface)
   {
     // SkSurface is ref counted.
@@ -143,7 +157,7 @@ extern "C"
     if (SURFACE_CAST->peekPixels(&pixmap))
     {
       data->ptr = static_cast<uint8_t *>(pixmap.writable_addr());
-      data->size = static_cast<uint32_t>(pixmap.computeByteSize());
+      data->size = pixmap.computeByteSize();
     }
   }
 
@@ -182,6 +196,12 @@ extern "C"
   void skiac_canvas_translate(skiac_canvas *c_canvas, float dx, float dy)
   {
     CANVAS_CAST->translate(dx, dy);
+  }
+
+  skiac_matrix *skiac_canvas_get_total_transform_matrix(skiac_canvas *c_canvas)
+  {
+    auto martix = CANVAS_CAST->getTotalMatrix();
+    return reinterpret_cast<skiac_matrix *>(new SkMatrix(martix));
   }
 
   skiac_transform skiac_canvas_get_total_transform(skiac_canvas *c_canvas)
@@ -272,6 +292,12 @@ extern "C"
     return reinterpret_cast<skiac_paint *>(new SkPaint());
   }
 
+  skiac_paint *skiac_paint_clone(skiac_paint *c_paint)
+  {
+    auto cloned_paint = new SkPaint(*PAINT_CAST);
+    return reinterpret_cast<skiac_paint *>(cloned_paint);
+  }
+
   void skiac_paint_destroy(skiac_paint *c_paint)
   {
     // Will unref() Shader and PathEffect.
@@ -332,6 +358,14 @@ extern "C"
     PAINT_CAST->setPathEffect(pathEffect);
   }
 
+  void skiac_paint_set_mask_filter(skiac_paint *c_paint, skiac_mask_filter *c_mask_filter)
+  {
+    sk_sp<SkMaskFilter> maskFilter(reinterpret_cast<SkMaskFilter *>(c_mask_filter));
+    maskFilter->ref();
+
+    PAINT_CAST->setMaskFilter(maskFilter);
+  }
+
   void skiac_paint_set_style(skiac_paint *c_paint, int style)
   {
     PAINT_CAST->setStyle((SkPaint::Style)style);
@@ -340,6 +374,11 @@ extern "C"
   void skiac_paint_set_stroke_width(skiac_paint *c_paint, float width)
   {
     PAINT_CAST->setStrokeWidth(width);
+  }
+
+  float skiac_paint_get_stroke_width(skiac_paint *c_paint)
+  {
+    return PAINT_CAST->getStrokeWidth();
   }
 
   void skiac_paint_set_stroke_cap(skiac_paint *c_paint, int cap)
@@ -417,6 +456,11 @@ extern "C"
       float x1, float y1, float x2, float y2, float x3, float y3)
   {
     PATH_CAST->cubicTo(x1, y1, x2, y2, x3, y3);
+  }
+
+  void skiac_path_quad_to(skiac_path *c_path, float cpx, float cpy, float x, float y)
+  {
+    PATH_CAST->quadTo(cpx, cpy, x, y);
   }
 
   void skiac_path_close(skiac_path *c_path)
@@ -583,6 +627,11 @@ extern "C"
     return reinterpret_cast<skiac_matrix *>(new SkMatrix());
   }
 
+  skiac_matrix *skiac_matrix_clone(skiac_matrix *c_matrix)
+  {
+    return reinterpret_cast<skiac_matrix *>(new SkMatrix(*MATRIX_CAST));
+  }
+
   void skiac_matrix_pre_translate(skiac_matrix *c_matrix, float dx, float dy)
   {
     MATRIX_CAST->preTranslate(dx, dy);
@@ -596,5 +645,34 @@ extern "C"
   bool skiac_matrix_invert(skiac_matrix *c_matrix, skiac_matrix *inverse)
   {
     return MATRIX_CAST->invert(reinterpret_cast<SkMatrix *>(inverse));
+  }
+
+  skiac_transform skiac_matrix_to_transform(skiac_matrix *c_matrix)
+  {
+    return conv_to_transform(*MATRIX_CAST);
+  }
+
+  void skiac_matrix_destroy(skiac_matrix *c_matrix)
+  {
+    delete MATRIX_CAST;
+  }
+
+  skiac_mask_filter *skiac_mask_filter_make_blur(float radius)
+  {
+    auto mask_filter = SkMaskFilter::MakeBlur(SkBlurStyle::kNormal_SkBlurStyle, radius, false).release();
+    if (mask_filter)
+    {
+      return reinterpret_cast<skiac_mask_filter *>(mask_filter);
+    }
+    else
+    {
+      return nullptr;
+    }
+  }
+
+  void skiac_mask_filter_destroy(skiac_mask_filter *c_mask_filter)
+  {
+    auto mask_filter = MASK_FILTER_CAST;
+    SkSafeUnref(mask_filter);
   }
 }
