@@ -97,7 +97,7 @@ impl CanvasGradient {
             end_point: (sx2, sy2),
             base: linear_gradient.base.clone(),
           })
-          .ok_or(SkError::Generic("Create linear gradient failed".to_owned()))?,
+          .ok_or_else(|| SkError::Generic("Create linear gradient failed".to_owned()))?,
         )
       }
       Self::Radial(ref radial_gradient) => {
@@ -128,7 +128,7 @@ impl CanvasGradient {
 
         Ok(
           Shader::new_two_point_conical_gradient(&new_radial_gradient)
-            .ok_or(SkError::Generic("Create radial gradient failed".to_owned()))?,
+            .ok_or_else(|| SkError::Generic("Create radial gradient failed".to_owned()))?,
         )
       }
     }

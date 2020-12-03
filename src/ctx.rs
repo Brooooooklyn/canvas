@@ -52,6 +52,9 @@ impl Context {
         Property::new(&env, "fillStyle")?
           .with_setter(set_fill_style)
           .with_getter(get_fill_style),
+        Property::new(&env, "strokeStyle")?
+          .with_setter(set_stroke_style)
+          .with_getter(get_stroke_style),
         // methods
         Property::new(&env, "arc")?.with_method(arc),
         Property::new(&env, "arcTo")?.with_method(arc_to),
@@ -84,7 +87,7 @@ impl Context {
   #[inline(always)]
   pub fn new(width: u32, height: u32) -> Result<Self> {
     let surface = Surface::new_rgba(width, height)
-      .ok_or(Error::from_reason("Create skia surface failed".to_owned()))?;
+      .ok_or_else(|| Error::from_reason("Create skia surface failed".to_owned()))?;
     let mut states = Vec::new();
     states.push(Context2dRenderingState::default());
     Ok(Context {
@@ -443,22 +446,14 @@ impl Context {
   #[inline(always)]
   pub fn set_fill_style(&mut self, pattern: Pattern) -> result::Result<(), SkError> {
     let last_state = self.states.last_mut().unwrap();
-    match &pattern {
-      Pattern::Color(color, _) => {
-        self
-          .paint
-          .set_color(color.red, color.green, color.blue, color.alpha);
-      }
-      Pattern::Gradient(gradient) => {
-        let current_transform = self.surface.canvas.get_transform();
-        self
-          .paint
-          .set_shader(&gradient.get_shader(&current_transform)?);
-      }
-      // TODO, image pattern
-      Pattern::ImagePattern(image) => {}
-    };
     last_state.fill_style = pattern;
+    Ok(())
+  }
+
+  #[inline(always)]
+  pub fn set_stroke_style(&mut self, pattern: Pattern) -> result::Result<(), SkError> {
+    let last_state = self.states.last_mut().unwrap();
+    last_state.stroke_style = pattern;
     Ok(())
   }
 
@@ -488,9 +483,7 @@ impl Context {
         last_state.line_dash_list.as_slice(),
         last_state.line_dash_offset,
       )
-      .ok_or(SkError::Generic(format!(
-        "Make line dash path effect failed"
-      )))?;
+      .ok_or_else(|| SkError::Generic(format!("Make line dash path effect failed")))?;
       paint.set_path_effect(&path_effect);
     }
     Ok(paint)
@@ -501,30 +494,28 @@ impl Context {
     let mut paint = self.paint.clone();
     paint.set_style(PaintStyle::Stroke);
     let last_state = self.states.last().unwrap();
+    let global_alpha = self.paint.get_alpha();
     match &last_state.stroke_style {
       Pattern::Color(c, _) => {
         let mut color = c.clone();
-        color.alpha =
-          ((color.alpha as f32) * (self.paint.get_alpha() as f32 / 255.0)).round() as u8;
+        color.alpha = ((color.alpha as f32) * (global_alpha as f32 / 255.0)).round() as u8;
         paint.set_color(color.red, color.green, color.blue, color.alpha);
       }
       Pattern::Gradient(g) => {
         let current_transform = self.surface.canvas.get_transform();
         let shader = g.get_shader(&current_transform)?;
-        paint.set_color(0, 0, 0, self.paint.get_alpha());
+        paint.set_color(0, 0, 0, global_alpha);
         paint.set_shader(&shader);
       }
       // TODO, image pattern
       Pattern::ImagePattern(p) => {}
     };
-    if last_state.line_dash_list.len() != 0 {
+    if !last_state.line_dash_list.is_empty() {
       let path_effect = PathEffect::new_dash_path(
         last_state.line_dash_list.as_slice(),
         last_state.line_dash_offset,
       )
-      .ok_or(SkError::Generic(format!(
-        "Make line dash path effect failed"
-      )))?;
+      .ok_or_else(|| SkError::Generic(format!("Make line dash path effect failed")))?;
       paint.set_path_effect(&path_effect);
     }
     Ok(paint)
@@ -561,7 +552,7 @@ impl Context {
     let current_transform = surface.canvas.get_transform_matrix();
     let invert = current_transform
       .invert()
-      .ok_or(SkError::Generic("Invert matrix failed".to_owned()))?;
+      .ok_or_else(|| SkError::Generic("Invert matrix failed".to_owned()))?;
     surface.canvas.concat(invert.into_transform());
     let mut shadow_offset = current_transform.clone();
     shadow_offset.pre_translate(shadow_offset_x, shadow_offset_y);
@@ -1084,4 +1075,38 @@ fn set_fill_style(ctx: CallContext) -> Result<JsUndefined> {
 fn get_fill_style(ctx: CallContext) -> Result<JsUnknown> {
   let this = ctx.this_unchecked::<JsObject>();
   this.get_named_property("_fillStyle")
+}
+
+#[js_function(1)]
+fn set_stroke_style(ctx: CallContext) -> Result<JsUndefined> {
+  let mut this = ctx.this_unchecked::<JsObject>();
+  let context_2d = ctx.env.unwrap::<Context>(&this)?;
+
+  let js_stroke_style = ctx.get::<JsUnknown>(0)?;
+
+  match js_stroke_style.get_type()? {
+    ValueType::String => {
+      let js_color = unsafe { JsString::from_raw_unchecked(ctx.env.raw(), js_stroke_style.raw()) }
+        .into_utf8()?;
+      context_2d.set_stroke_style(Pattern::from_color(js_color.as_str()?)?)?;
+    }
+    // TODO, image and gradient
+    ValueType::External => {}
+    _ => {
+      return Err(Error::new(
+        Status::InvalidArg,
+        format!("Invalid strokeStyle"),
+      ))
+    }
+  }
+
+  this.set_named_property("_strokeStyle", js_stroke_style)?;
+
+  ctx.env.get_undefined()
+}
+
+#[js_function]
+fn get_stroke_style(ctx: CallContext) -> Result<JsUnknown> {
+  let this = ctx.this_unchecked::<JsObject>();
+  this.get_named_property("_strokeStyle")
 }
