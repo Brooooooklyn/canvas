@@ -11,7 +11,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 anyhow = "1"
-cssparser = "0.27"
+cssparser = "0.28"
 napi = {git = "https://github.com/napi-rs/napi-rs"}
 napi-derive = {git = "https://github.com/napi-rs/napi-rs"}
 thiserror = "1"
