@@ -96,10 +96,10 @@
     toml "^3.0.0"
     tslib "^2.0.3"
 
-"@napi-rs/triples@^1.0.1":
-  version "1.0.1"
-  resolved "https://registry.npmjs.org/@napi-rs/triples/-/triples-1.0.1.tgz#0c6429b1bdfb49ccf3d3028981e8f24648fc5c6b"
-  integrity sha512-oXuxnVeP157s7yLch+dKisshX/fHRn7YQC/IR3UG+u4BbmbeJOA+df7F+7IU2DMkcdWTHM75ZcFVVAmhh5rxrQ==
+"@napi-rs/triples@^1.0.2":
+  version "1.0.2"
+  resolved "https://registry.yarnpkg.com/@napi-rs/triples/-/triples-1.0.2.tgz#2ce4c6a78568358772008f564ee5009093d20a19"
+  integrity sha512-EL3SiX43m9poFSnhDx4d4fn9SSaqyO2rHsCNhETi9bWPmjXK3uPJ0QpPFtx39FEdHcz1vJmsiW41kqc0AgvtzQ==
 
 "@node-rs/helper@^0.4.0":
   version "0.4.0"
@@ -108,13 +108,13 @@
   dependencies:
     tslib "^2.0.1"
 
-"@node-rs/helper@^1.0.0-alpha.1":
-  version "1.0.0-alpha.1"
-  resolved "https://registry.npmjs.org/@node-rs/helper/-/helper-1.0.0-alpha.1.tgz#bd58d3dc8dcc6085c109f719d6072979466904c2"
-  integrity sha512-N78eCbp0tc+QZCnyjzUgYMAo2o5zcWyrU5CfQNoMgeILruzULYsCArc7wQrnz/dSqFldJQE//CSPxZi8PWrTcg==
+"@node-rs/helper@^1.0.0-alpha.3":
+  version "1.0.0-alpha.3"
+  resolved "https://registry.yarnpkg.com/@node-rs/helper/-/helper-1.0.0-alpha.3.tgz#7aac50cfba509da9e113a282f4bce1e850dd90fb"
+  integrity sha512-t5PYZSVIclx0+RwRFU3OUMMSG3e0SkPrZi7dfthS+8FN83hzx9xYAi3MzHMUNMvw933K6l09pT5BQhIO7/fdCw==
   dependencies:
-    "@napi-rs/triples" "^1.0.1"
-    tslib "^2.0.1"
+    "@napi-rs/triples" "^1.0.2"
+    tslib "^2.0.3"
 
 "@nodelib/fs.scandir@2.1.3":
   version "2.1.3"
