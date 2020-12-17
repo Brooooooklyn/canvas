@@ -4,21 +4,19 @@ edition = "2018"
 name = "skia-rs"
 version = "0.1.0"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [lib]
 crate-type = ["cdylib"]
 
 [dependencies]
 anyhow = "1"
 cssparser = "0.28"
-napi = {git = "https://github.com/napi-rs/napi-rs"}
-napi-derive = {git = "https://github.com/napi-rs/napi-rs"}
+napi = "1.0.0-alpha.1"
+napi-derive = "1.0.0-alpha.0"
 thiserror = "1"
 
 [build-dependencies]
 cc = "1"
-napi-build = {git = "https://github.com/napi-rs/napi-rs"}
+napi-build = "1.0.0-alpha.0"
 
 [profile.release]
 lto = true

@@ -109,7 +109,7 @@ jobs:
             npm-cache-
 
       - name: 'Install dependencies'
-        run: yarn install --frozen-lockfile --registry https://registry.npmjs.org
+        run: yarn install --frozen-lockfile --registry https://registry.npmjs.org --network-timeout 300000
 
       - name: 'Build'
         if: matrix.os != 'macos-latest'
@@ -167,7 +167,7 @@ jobs:
             npm-cache-
 
       - name: 'Install dependencies'
-        run: yarn install --frozen-lockfile --registry https://registry.npmjs.org
+        run: yarn install --frozen-lockfile --registry https://registry.npmjs.org --network-timeout 300000
 
       - name: Download artifacts
         uses: actions/download-artifact@v2
@@ -217,7 +217,7 @@ jobs:
           restore-keys: |
             npm-cache-
       - name: 'Install dependencies'
-        run: yarn install --frozen-lockfile --registry https://registry.npmjs.org
+        run: yarn install --frozen-lockfile --registry https://registry.npmjs.org --network-timeout 300000
 
       - name: Download all artifacts
         uses: actions/download-artifact@v2
