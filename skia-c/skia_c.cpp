@@ -78,8 +78,8 @@ extern "C"
 
   bool skiac_surface_save(skiac_surface *c_surface, const char *path)
   {
-    sk_sp<SkImage> image = SURFACE_CAST->makeImageSnapshot();
-    sk_sp<SkData> data = image->encodeToData(SkEncodedImageFormat::kPNG, 0);
+    auto image = SURFACE_CAST->makeImageSnapshot();
+    auto data = image->encodeToData(SkEncodedImageFormat::kPNG, 0);
     if (data)
     {
       SkFILEWStream stream(path);
@@ -91,19 +91,6 @@ extern "C"
     }
 
     return false;
-  }
-
-  void skiac_surface_png_data(skiac_surface *c_surface, skiac_surface_data *data)
-  {
-    auto image = SURFACE_CAST->makeImageSnapshot();
-    auto png_data = image->encodeToData();
-    data->ptr = nullptr;
-    data->size = 0;
-    if (png_data)
-    {
-      data->ptr = const_cast<uint8_t *>(png_data->bytes());
-      data->size = png_data->size();
-    }
   }
 
   void skiac_surface_destroy(skiac_surface *c_surface)
@@ -158,6 +145,18 @@ extern "C"
     {
       data->ptr = static_cast<uint8_t *>(pixmap.writable_addr());
       data->size = pixmap.computeByteSize();
+    }
+  }
+
+  void skiac_surface_png_data(skiac_surface *c_surface, skiac_sk_data *data)
+  {
+    auto image = SURFACE_CAST->makeImageSnapshot();
+    auto png_data = image->encodeToData().release();
+    if (png_data)
+    {
+      data->ptr = const_cast<uint8_t *>(png_data->bytes());
+      data->size = png_data->size();
+      data->data = reinterpret_cast<skiac_data *>(png_data);
     }
   }
 
@@ -674,5 +673,12 @@ extern "C"
   {
     auto mask_filter = MASK_FILTER_CAST;
     SkSafeUnref(mask_filter);
+  }
+
+  // SkData
+  void skiac_sk_data_destroy(skiac_data *c_data)
+  {
+    auto sk_data = reinterpret_cast<SkData *>(c_data);
+    SkSafeUnref(sk_data);
   }
 }

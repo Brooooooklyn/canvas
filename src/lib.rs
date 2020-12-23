@@ -3,7 +3,8 @@ extern crate napi_derive;
 
 use napi::*;
 
-use ctx::Context;
+use ctx::{Context, ContextData};
+use sk::SurfaceDataRef;
 
 mod ctx;
 mod error;
@@ -20,6 +21,7 @@ fn init(mut exports: JsObject, env: Env) -> Result<()> {
     canvas_element_constructor,
     &[
       Property::new(&env, "getContext")?.with_method(get_context),
+      Property::new(&env, "png")?.with_method(png),
       Property::new(&env, "toBuffer")?.with_method(to_buffer),
       Property::new(&env, "savePNG")?.with_method(save_png),
     ],
@@ -57,15 +59,44 @@ fn get_context(ctx: CallContext) -> Result<JsObject> {
 }
 
 #[js_function]
-fn to_buffer(ctx: CallContext) -> Result<JsBuffer> {
+fn png(ctx: CallContext) -> Result<JsObject> {
   let this = ctx.this_unchecked::<JsObject>();
   let ctx_js = this.get_named_property::<JsObject>("ctx")?;
   let ctx2d = ctx.env.unwrap::<Context>(&ctx_js)?;
 
   ctx
     .env
-    .create_buffer_with_data(ctx2d.surface.png_data().to_vec())
-    .map(|b| b.into_raw())
+    .spawn(ContextData::PNG(ctx2d.surface_ref()))
+    .map(|p| p.promise_object())
+}
+
+#[js_function]
+fn to_buffer(ctx: CallContext) -> Result<JsBuffer> {
+  let this = ctx.this_unchecked::<JsObject>();
+  let ctx_js = this.get_named_property::<JsObject>("ctx")?;
+  let ctx2d = ctx.env.unwrap::<Context>(&ctx_js)?;
+
+  let surface_ref = ctx2d.surface_ref();
+
+  let data_ref = surface_ref.png_data().ok_or_else(|| {
+    Error::new(
+      Status::GenericFailure,
+      format!("Get png data from surface failed"),
+    )
+  })?;
+  unsafe {
+    ctx
+      .env
+      .create_buffer_with_borrowed_data(
+        data_ref.0.ptr,
+        data_ref.0.size,
+        data_ref,
+        Some(|data: SurfaceDataRef, _| {
+          data.unref();
+        }),
+      )
+      .map(|value| value.into_raw())
+  }
 }
 
 #[js_function(1)]

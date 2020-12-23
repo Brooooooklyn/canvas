@@ -56,6 +56,12 @@ mod ffi {
 
   #[repr(C)]
   #[derive(Copy, Clone, Debug)]
+  pub struct skiac_data {
+    _unused: [u8; 0],
+  }
+
+  #[repr(C)]
+  #[derive(Copy, Clone, Debug)]
   pub struct skiac_transform {
     pub a: f32,
     pub b: f32,
@@ -77,6 +83,14 @@ mod ffi {
   pub struct skiac_surface_data {
     pub ptr: *mut u8,
     pub size: usize,
+  }
+
+  #[repr(C)]
+  #[derive(Copy, Clone, Debug)]
+  pub struct skiac_sk_data {
+    pub ptr: *mut u8,
+    pub size: usize,
+    pub data: *mut skiac_data,
   }
 
   extern "C" {
@@ -108,10 +122,7 @@ mod ffi {
 
     pub fn skiac_surface_read_pixels(surface: *mut skiac_surface, data: *mut skiac_surface_data);
 
-    pub fn skiac_surface_png_data(
-      surface: *mut skiac_surface,
-      data: *mut skiac_surface_data,
-    ) -> *const u8;
+    pub fn skiac_surface_png_data(surface: *mut skiac_surface, data: *mut skiac_sk_data);
 
     pub fn skiac_surface_get_alpha_type(surface: *mut skiac_surface) -> i32;
 
@@ -333,6 +344,8 @@ mod ffi {
     pub fn skiac_mask_filter_make_blur(radius: f32) -> *mut skiac_mask_filter;
 
     pub fn skiac_mask_filter_destroy(mask_filter: *mut skiac_mask_filter);
+
+    pub fn skiac_sk_data_destroy(c_data: *mut skiac_data);
   }
 }
 
@@ -781,40 +794,7 @@ impl Surface {
   }
 
   #[inline]
-  pub fn data_u8(&self) -> &[u8] {
-    unsafe {
-      let mut data = ffi::skiac_surface_data {
-        ptr: std::ptr::null_mut(),
-        size: 0,
-      };
-      ffi::skiac_surface_read_pixels(self.ptr, &mut data);
-
-      slice::from_raw_parts(data.ptr, data.size as usize)
-    }
-  }
-
-  #[inline]
-  pub fn png_data(&self) -> &[u8] {
-    unsafe {
-      let mut data = ffi::skiac_surface_data {
-        ptr: ptr::null_mut(),
-        size: 0,
-      };
-      ffi::skiac_surface_png_data(self.ptr, &mut data);
-
-      slice::from_raw_parts(data.ptr, data.size)
-    }
-  }
-
-  #[inline]
-  pub fn data(&self) -> SurfaceData {
-    SurfaceData {
-      slice: self.data_u8(),
-    }
-  }
-
-  #[inline]
-  pub fn data_mut(&mut self) -> SurfaceDataMut {
+  pub fn data(&self) -> Option<SurfaceData> {
     unsafe {
       let mut data = ffi::skiac_surface_data {
         ptr: ptr::null_mut(),
@@ -822,10 +802,37 @@ impl Surface {
       };
       ffi::skiac_surface_read_pixels(self.ptr, &mut data);
 
-      SurfaceDataMut {
-        slice: slice::from_raw_parts_mut(data.ptr, data.size as usize),
+      if data.ptr.is_null() {
+        None
+      } else {
+        Some(SurfaceData {
+          slice: slice::from_raw_parts(data.ptr, data.size as usize),
+        })
       }
     }
+  }
+
+  #[inline]
+  pub fn data_mut(&mut self) -> Option<SurfaceDataMut> {
+    unsafe {
+      let mut data = ffi::skiac_surface_data {
+        ptr: ptr::null_mut(),
+        size: 0,
+      };
+      ffi::skiac_surface_read_pixels(self.ptr, &mut data);
+      if data.ptr.is_null() {
+        None
+      } else {
+        Some(SurfaceDataMut {
+          slice: slice::from_raw_parts_mut(data.ptr, data.size as usize),
+        })
+      }
+    }
+  }
+
+  #[inline]
+  pub(crate) fn reference(&self) -> SurfaceRef {
+    SurfaceRef(self.ptr)
   }
 }
 
@@ -854,6 +861,32 @@ impl Drop for Surface {
   }
 }
 
+#[repr(transparent)]
+pub struct SurfaceRef(*mut ffi::skiac_surface);
+
+impl SurfaceRef {
+  #[inline]
+  pub fn png_data(&self) -> Option<SurfaceDataRef> {
+    unsafe {
+      let mut data = ffi::skiac_sk_data {
+        ptr: ptr::null_mut(),
+        size: 0,
+        data: ptr::null_mut(),
+      };
+      ffi::skiac_surface_png_data(self.0, &mut data);
+
+      if data.ptr.is_null() {
+        None
+      } else {
+        Some(SurfaceDataRef(data))
+      }
+    }
+  }
+}
+
+unsafe impl Send for SurfaceRef {}
+unsafe impl Sync for SurfaceRef {}
+
 pub struct SurfaceData<'a> {
   slice: &'a [u8],
 }
@@ -879,6 +912,22 @@ impl<'a> Deref for SurfaceDataMut<'a> {
     self.slice
   }
 }
+
+#[repr(transparent)]
+pub struct SurfaceDataRef(pub(crate) ffi::skiac_sk_data);
+
+impl SurfaceDataRef {
+  pub fn slice(&self) -> &'static [u8] {
+    unsafe { slice::from_raw_parts(self.0.ptr, self.0.size) }
+  }
+
+  pub fn unref(self) {
+    unsafe { ffi::skiac_sk_data_destroy(self.0.data) }
+  }
+}
+
+unsafe impl Send for SurfaceDataRef {}
+unsafe impl Sync for SurfaceDataRef {}
 
 impl<'a> DerefMut for SurfaceDataMut<'a> {
   #[inline]

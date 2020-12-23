@@ -25,9 +25,6 @@ pub struct Context {
   pub(crate) states: Vec<Context2dRenderingState>,
 }
 
-unsafe impl Send for Context {}
-unsafe impl Sync for Context {}
-
 impl Context {
   #[inline(always)]
   pub fn create_js_class(env: &Env) -> Result<JsFunction> {
@@ -455,6 +452,11 @@ impl Context {
     let last_state = self.states.last_mut().unwrap();
     last_state.stroke_style = pattern;
     Ok(())
+  }
+
+  #[inline(always)]
+  pub fn surface_ref(&self) -> SurfaceRef {
+    self.surface.reference()
   }
 
   #[inline(always)]
@@ -1062,7 +1064,9 @@ fn set_fill_style(ctx: CallContext) -> Result<JsUndefined> {
       context_2d.set_fill_style(Pattern::from_color(js_color.as_str()?)?)?;
     }
     // TODO, image and gradient
-    ValueType::External => {}
+    ValueType::External => {
+      todo!();
+    }
     _ => return Err(Error::new(Status::InvalidArg, format!("Invalid fillStyle"))),
   }
 
@@ -1109,4 +1113,46 @@ fn set_stroke_style(ctx: CallContext) -> Result<JsUndefined> {
 fn get_stroke_style(ctx: CallContext) -> Result<JsUnknown> {
   let this = ctx.this_unchecked::<JsObject>();
   this.get_named_property("_strokeStyle")
+}
+
+pub enum ContextData {
+  PNG(SurfaceRef),
+  JPEG(SurfaceRef, u8),
+}
+
+unsafe impl Send for ContextData {}
+unsafe impl Sync for ContextData {}
+
+impl Task for ContextData {
+  type Output = SurfaceDataRef;
+  type JsValue = JsBuffer;
+
+  fn compute(&mut self) -> Result<Self::Output> {
+    match self {
+      ContextData::PNG(surface) => surface.png_data().ok_or_else(|| {
+        Error::new(
+          Status::GenericFailure,
+          format!("Get png data from surface failed"),
+        )
+      }),
+      _ => {
+        todo!();
+      }
+    }
+  }
+
+  fn resolve(self, env: Env, output: Self::Output) -> Result<Self::JsValue> {
+    unsafe {
+      env
+        .create_buffer_with_borrowed_data(
+          output.0.ptr,
+          output.0.size,
+          output,
+          Some(|data_ref: Self::Output, _| {
+            data_ref.unref();
+          }),
+        )
+        .map(|value| value.into_raw())
+    }
+  }
 }
