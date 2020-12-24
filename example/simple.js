@@ -1,4 +1,4 @@
-const { writeFileSync } = require('fs')
+const { promises } = require('fs')
 const { join } = require('path')
 
 const { createCanvas } = require('../index')
@@ -25,4 +25,17 @@ ctx.lineTo(250, 140)
 ctx.closePath()
 ctx.stroke()
 
-writeFileSync(join(__dirname, 'simple.png'), canvas.toBuffer())
+console.info(process.memoryUsage())
+
+async function main() {
+  for (const _ of Array.from({ length: 10000 }).fill(0)) {
+    await canvas
+      .png()
+      .then((data) => promises.writeFile(join(__dirname, 'simple.png'), data))
+      .then(() => {
+        console.info(process.memoryUsage())
+      })
+  }
+}
+
+main()

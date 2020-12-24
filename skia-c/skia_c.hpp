@@ -21,6 +21,7 @@ typedef struct skiac_shader skiac_shader;
 typedef struct skiac_path_effect skiac_path_effect;
 typedef struct skiac_matrix skiac_matrix;
 typedef struct skiac_mask_filter skiac_mask_filter;
+typedef struct skiac_data skiac_data;
 
 struct skiac_transform
 {
@@ -44,6 +45,13 @@ struct skiac_surface_data
   size_t size;
 };
 
+struct skiac_sk_data
+{
+  uint8_t *ptr;
+  size_t size;
+  skiac_data *data;
+};
+
 extern "C"
 {
 
@@ -61,7 +69,7 @@ extern "C"
   int skiac_surface_get_width(skiac_surface *c_surface);
   int skiac_surface_get_height(skiac_surface *c_surface);
   void skiac_surface_read_pixels(skiac_surface *c_surface, skiac_surface_data *data);
-  void skiac_surface_png_data(skiac_surface *c_surface, skiac_surface_data *data);
+  void skiac_surface_png_data(skiac_surface *c_surface, skiac_sk_data *data);
   int skiac_surface_get_alpha_type(skiac_surface *c_surface);
   bool skiac_surface_save(skiac_surface *c_surface, const char *path);
 
@@ -194,6 +202,9 @@ extern "C"
   skiac_mask_filter *skiac_mask_filter_make_blur(float radius);
 
   void skiac_mask_filter_destroy(skiac_mask_filter *c_mask_filter);
+
+  // SkData
+  void skiac_sk_data_destroy(skiac_data *c_data);
 }
 
 #endif // SKIA_CAPI_H

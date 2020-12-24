@@ -7,7 +7,7 @@ updates:
   - package-ecosystem: 'npm'
     directory: '/'
     schedule:
-      interval: 'daily'
+      interval: 'weekly'
     # Specify labels for npm pull requests
     labels:
       - 'npm'
@@ -18,7 +18,7 @@ updates:
   - package-ecosystem: 'cargo'
     directory: '/'
     schedule:
-      interval: 'daily'
+      interval: 'weekly'
     labels:
       - 'rust'
       - 'dependencies'

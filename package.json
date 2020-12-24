@@ -52,6 +52,7 @@
     "@typescript-eslint/parser": "^4.11.0",
     "ava": "^3.14.0",
     "benny": "^3.6.15",
+    "canvas": "^2.6.1",
     "chalk": "^4.1.0",
     "eslint": "^7.16.0",
     "eslint-config-prettier": "^7.1.0",
