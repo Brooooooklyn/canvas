@@ -4,6 +4,8 @@
 
 Google Skia binding to NodeJS via `N-API`.
 
+> ⚠️ This project is in very early stage.
+
 # Support matrix
 
 |             | node 10 | node12 | node14 | node15 |
