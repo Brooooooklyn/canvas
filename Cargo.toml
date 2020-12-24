@@ -10,9 +10,15 @@ crate-type = ["cdylib"]
 [dependencies]
 anyhow = "1"
 cssparser = "0.28"
-napi = "1.0.0-alpha.6"
+napi = "1.0.0-alpha.7"
 napi-derive = "1.0.0-alpha.0"
 thiserror = "1"
+
+[target.'cfg(all(unix, not(target_env = "musl"), not(target_arch = "aarch64")))'.dependencies]
+jemallocator = {version = "0.3", features = ["disable_initial_exec_tls"]}
+
+[target.'cfg(windows)'.dependencies]
+mimalloc = {version = "0.1"}
 
 [build-dependencies]
 cc = "1"

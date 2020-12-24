@@ -6,6 +6,14 @@ use napi::*;
 use ctx::{Context, ContextData};
 use sk::SurfaceDataRef;
 
+#[cfg(all(unix, not(target_env = "musl"), not(target_arch = "aarch64")))]
+#[global_allocator]
+static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
+
+#[cfg(windows)]
+#[global_allocator]
+static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 mod ctx;
 mod error;
 mod gradient;
@@ -91,9 +99,7 @@ fn to_buffer(ctx: CallContext) -> Result<JsBuffer> {
         data_ref.0.ptr,
         data_ref.0.size,
         data_ref,
-        Some(|data: SurfaceDataRef, _| {
-          data.unref();
-        }),
+        |data: SurfaceDataRef, _| data.unref(),
       )
       .map(|value| value.into_raw())
   }

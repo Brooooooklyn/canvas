@@ -1148,9 +1148,7 @@ impl Task for ContextData {
           output.0.ptr,
           output.0.size,
           output,
-          Some(|data_ref: Self::Output, _| {
-            data_ref.unref();
-          }),
+          |data_ref: Self::Output, _| data_ref.unref(),
         )
         .map(|value| value.into_raw())
     }
