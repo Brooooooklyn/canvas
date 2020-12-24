@@ -1,6 +1,6 @@
 {
   "name": "@napi-rs/skia-win32-x64-msvc",
-  "version": "0.0.1-alpha.0",
+  "version": "0.0.1-alpha.1",
   "os": ["win32"],
   "cpu": ["x64"],
   "main": "skia.win32-x64-msvc.node",
