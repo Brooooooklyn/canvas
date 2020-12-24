@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1608795929799,
+  "lastUpdate": 1608797862485,
   "repoUrl": "https://github.com/Brooooooklyn/skia-rs",
   "entries": {
     "Benchmark": [
@@ -36,6 +36,44 @@ window.BENCHMARK_DATA = {
             "name": "Draw house#node-canvas",
             "value": 26,
             "range": "±0.5%",
+            "unit": "ops/sec",
+            "extra": "46 samples"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "lynweklm@gmail.com",
+            "name": "LongYinan",
+            "username": "Brooooooklyn"
+          },
+          "committer": {
+            "email": "lynweklm@gmail.com",
+            "name": "LongYinan",
+            "username": "Brooooooklyn"
+          },
+          "distinct": true,
+          "id": "f862bd6812c43c534773dde9cfddfa56b99067c6",
+          "message": "chore: napi alpha.7",
+          "timestamp": "2020-12-24T16:07:29+08:00",
+          "tree_id": "2a5de942eab427e3b2a090a61afb9b489db170da",
+          "url": "https://github.com/Brooooooklyn/skia-rs/commit/f862bd6812c43c534773dde9cfddfa56b99067c6"
+        },
+        "date": 1608797784448,
+        "tool": "benchmarkjs",
+        "benches": [
+          {
+            "name": "Draw house#@napi-rs/skia",
+            "value": 28,
+            "range": "±0.18%",
+            "unit": "ops/sec",
+            "extra": "49 samples"
+          },
+          {
+            "name": "Draw house#node-canvas",
+            "value": 26,
+            "range": "±0.45%",
             "unit": "ops/sec",
             "extra": "46 samples"
           }
