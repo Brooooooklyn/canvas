@@ -10,7 +10,7 @@ crate-type = ["cdylib"]
 [dependencies]
 anyhow = "1"
 cssparser = "0.28"
-napi = "1.0.0-alpha.7"
+napi = "1.0.0-alpha.9"
 napi-derive = "1.0.0-alpha.0"
 thiserror = "1"
 
