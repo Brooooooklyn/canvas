@@ -1597,8 +1597,8 @@ impl Transform {
       let x_trans = self.a * x + self.b * y + self.c;
       // Dx+Ey+F
       let y_trans = self.d * x + self.e * y + self.e;
-      result_arr[i] = x_trans / denom;
-      result_arr[i + 1] = y_trans / denom;
+      result_arr.push(x_trans / denom);
+      result_arr.push(y_trans / denom);
       i += 2;
     }
     result_arr

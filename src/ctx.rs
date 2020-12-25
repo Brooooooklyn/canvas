@@ -1060,13 +1060,15 @@ fn set_fill_style(ctx: CallContext) -> Result<JsUndefined> {
   match js_fill_style.get_type()? {
     ValueType::String => {
       let js_color =
-        unsafe { JsString::from_raw_unchecked(ctx.env.raw(), js_fill_style.raw()) }.into_utf8()?;
+        unsafe { js_fill_style.cast::<JsString>() }.into_utf8()?;
       context_2d.set_fill_style(Pattern::from_color(js_color.as_str()?)?)?;
     }
-    // TODO, image and gradient
-    ValueType::External => {
-      todo!();
+    ValueType::Object => {
+      let fill_object = unsafe { js_fill_style.cast::<JsObject>() };
+      let gradient = ctx.env.unwrap::<CanvasGradient>(&fill_object)?;
+      context_2d.set_fill_style(Pattern::Gradient(gradient.clone()));
     }
+    // todo ImagePattern
     _ => return Err(Error::new(Status::InvalidArg, format!("Invalid fillStyle"))),
   }
 
@@ -1094,7 +1096,12 @@ fn set_stroke_style(ctx: CallContext) -> Result<JsUndefined> {
         .into_utf8()?;
       context_2d.set_stroke_style(Pattern::from_color(js_color.as_str()?)?)?;
     }
-    // TODO, image and gradient
+    ValueType::Object => {
+      let stroke_object = unsafe { js_stroke_style.cast::<JsObject>() };
+      let gradient = ctx.env.unwrap::<CanvasGradient>(&stroke_object)?;
+      context_2d.set_stroke_style(Pattern::Gradient(gradient.clone()));
+    }
+    // todo ImagePattern
     ValueType::External => {}
     _ => {
       return Err(Error::new(
