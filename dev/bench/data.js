@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1608826468100,
+  "lastUpdate": 1608872085101,
   "repoUrl": "https://github.com/Brooooooklyn/skia-rs",
   "entries": {
     "Benchmark": [
@@ -152,6 +152,58 @@ window.BENCHMARK_DATA = {
             "range": "±1.73%",
             "unit": "ops/sec",
             "extra": "35 samples"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "lynweklm@gmail.com",
+            "name": "LongYinan",
+            "username": "Brooooooklyn"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "a253a02181d7c279daa09724bf3b5959a97832f9",
+          "message": "Merge pull request #111 from Brooooooklyn/fill-stroke-gradient\n\nfeat: support gradient in fill/stroke style",
+          "timestamp": "2020-12-25T12:43:05+08:00",
+          "tree_id": "d6cf78e12ffdd6c8ef8e5836ce1b58c88db0b3a8",
+          "url": "https://github.com/Brooooooklyn/skia-rs/commit/a253a02181d7c279daa09724bf3b5959a97832f9"
+        },
+        "date": 1608872001336,
+        "tool": "benchmarkjs",
+        "benches": [
+          {
+            "name": "Draw house#@napi-rs/skia",
+            "value": 23,
+            "range": "±0.31%",
+            "unit": "ops/sec",
+            "extra": "42 samples"
+          },
+          {
+            "name": "Draw house#node-canvas",
+            "value": 22,
+            "range": "±0.47%",
+            "unit": "ops/sec",
+            "extra": "41 samples"
+          },
+          {
+            "name": "Draw gradient#@napi-rs/skia",
+            "value": 22,
+            "range": "±1.08%",
+            "unit": "ops/sec",
+            "extra": "40 samples"
+          },
+          {
+            "name": "Draw gradient#node-canvas",
+            "value": 21,
+            "range": "±1.21%",
+            "unit": "ops/sec",
+            "extra": "39 samples"
           }
         ]
       }
