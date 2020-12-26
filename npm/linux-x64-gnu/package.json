@@ -1,6 +1,6 @@
 {
   "name": "@napi-rs/skia-linux-x64-gnu",
-  "version": "0.0.1-alpha.1",
+  "version": "0.0.1-alpha.2",
   "os": ["linux"],
   "cpu": ["x64"],
   "main": "skia.linux-x64-gnu.node",
