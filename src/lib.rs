@@ -6,7 +6,12 @@ use napi::*;
 use ctx::{Context, ContextData};
 use sk::SurfaceDataRef;
 
-#[cfg(all(unix, not(target_env = "musl"), not(target_arch = "aarch64")))]
+#[cfg(all(
+  unix,
+  not(target_env = "musl"),
+  not(target_arch = "aarch64"),
+  not(debug_assertions)
+))]
 #[global_allocator]
 static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
@@ -14,6 +19,7 @@ mod ctx;
 mod error;
 mod gradient;
 mod image;
+mod path;
 mod pattern;
 mod sk;
 mod state;
@@ -33,9 +39,13 @@ fn init(mut exports: JsObject, env: Env) -> Result<()> {
 
   let canvas_rendering_context2d = ctx::Context::create_js_class(&env)?;
 
+  let path_class = sk::Path::create_js_class(&env)?;
+
   exports.set_named_property("CanvasRenderingContext2D", canvas_rendering_context2d)?;
 
   exports.set_named_property("CanvasElement", canvas_element)?;
+
+  exports.set_named_property("Path2D", path_class)?;
   Ok(())
 }
 
@@ -70,7 +80,7 @@ fn png(ctx: CallContext) -> Result<JsObject> {
 
   ctx
     .env
-    .spawn(ContextData::PNG(ctx2d.surface_ref()))
+    .spawn(ContextData::PNG(ctx2d.surface.reference()))
     .map(|p| p.promise_object())
 }
 
@@ -80,7 +90,7 @@ fn to_buffer(ctx: CallContext) -> Result<JsBuffer> {
   let ctx_js = this.get_named_property::<JsObject>("ctx")?;
   let ctx2d = ctx.env.unwrap::<Context>(&ctx_js)?;
 
-  let surface_ref = ctx2d.surface_ref();
+  let surface_ref = ctx2d.surface.reference();
 
   let data_ref = surface_ref.png_data().ok_or_else(|| {
     Error::new(

@@ -9,6 +9,7 @@
 #include <include/effects/SkDashPathEffect.h>
 #include <include/effects/SkGradientShader.h>
 #include <include/pathops/SkPathOps.h>
+#include <include/utils/SkParsePath.h>
 
 #include <math.h>
 
@@ -407,10 +408,23 @@ extern "C"
     return reinterpret_cast<skiac_path *>(new SkPath());
   }
 
+  skiac_path *skiac_path_from_svg(char *svg_path)
+  {
+    auto path = new SkPath();
+    SkParsePath::FromSVGString(svg_path, path);
+    return reinterpret_cast<skiac_path *>(path);
+  }
+
   skiac_path *skiac_path_clone(skiac_path *c_path)
   {
     auto new_path = new SkPath(*PATH_CAST);
     return reinterpret_cast<skiac_path *>(new_path);
+  }
+
+  void skiac_add_path(skiac_path *c_path, skiac_path *other_path, skiac_transform c_transform)
+  {
+    auto path = PATH_CAST;
+    path->addPath(*reinterpret_cast<SkPath *>(other_path), conv_from_transform(c_transform), SkPath::AddPathMode::kExtend_AddPathMode);
   }
 
   bool skiac_path_op(skiac_path *c_path_one, skiac_path *c_path_two, int op)

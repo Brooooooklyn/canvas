@@ -112,11 +112,6 @@ jobs:
         run: yarn install --frozen-lockfile --registry https://registry.npmjs.org --network-timeout 300000
 
       - name: 'Build'
-        if: matrix.os != 'macos-latest'
-        run: yarn build
-
-      - name: 'Build'
-        if: matrix.os == 'macos-latest'
         run: yarn build
         env:
           MACOSX_DEPLOYMENT_TARGET: '10.13'

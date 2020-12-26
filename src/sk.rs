@@ -1,3 +1,4 @@
+use std::ffi::CString;
 use std::ops::{Deref, DerefMut};
 use std::ptr;
 use std::slice;
@@ -231,7 +232,15 @@ mod ffi {
 
     pub fn skiac_path_create() -> *mut skiac_path;
 
+    pub fn skiac_path_from_svg(svg_path: *mut std::os::raw::c_char) -> *mut skiac_path;
+
     pub fn skiac_path_clone(path: *mut skiac_path) -> *mut skiac_path;
+
+    pub fn skiac_add_path(
+      c_path: *mut skiac_path,
+      other_path: *mut skiac_path,
+      c_matrix: skiac_transform,
+    );
 
     pub fn skiac_path_op(c_path_one: *mut skiac_path, c_path_two: *mut skiac_path, op: i32)
       -> bool;
@@ -1263,6 +1272,22 @@ impl Path {
   #[inline]
   pub fn new() -> Path {
     unsafe { Path(ffi::skiac_path_create()) }
+  }
+
+  #[inline]
+  pub fn from_svg_path(path: &str) -> Option<Path> {
+    let path_str = CString::new(path).ok()?;
+    let p = unsafe { ffi::skiac_path_from_svg(path_str.into_raw()) };
+    if p.is_null() {
+      None
+    } else {
+      Some(Path(p))
+    }
+  }
+
+  #[inline]
+  pub fn add_path(&mut self, sub_path: &Path, transform: Transform) {
+    unsafe { ffi::skiac_add_path(self.0, sub_path.0, transform.into()) };
   }
 
   #[inline]

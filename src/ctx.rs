@@ -1,5 +1,4 @@
 use std::convert::TryInto;
-use std::f32::consts::PI;
 use std::mem;
 use std::result;
 use std::str::FromStr;
@@ -96,42 +95,6 @@ impl Context {
   }
 
   #[inline(always)]
-  pub fn arc(
-    &mut self,
-    center_x: f32,
-    center_y: f32,
-    radius: f32,
-    start_angle: f32,
-    end_angle: f32,
-    from_end: bool,
-  ) {
-    self.ellipse(
-      (center_x, center_y),
-      (radius, radius),
-      0.0,
-      start_angle,
-      end_angle,
-      from_end,
-    )
-  }
-
-  #[inline(always)]
-  pub fn arc_to(&mut self, ctrl_x: f32, ctrl_y: f32, to_x: f32, to_y: f32, radius: f32) {
-    self.path.arc_to_tangent(ctrl_x, ctrl_y, to_x, to_y, radius);
-  }
-
-  #[inline(always)]
-  pub fn begin_path(&mut self) {
-    let new_sub_path = Path::new();
-    mem::drop(mem::replace(&mut self.path, new_sub_path));
-  }
-
-  #[inline(always)]
-  pub fn bezier_curve_to(&mut self, cp1x: f32, cp1y: f32, cp2x: f32, cp2y: f32, x: f32, y: f32) {
-    self.path.cubic_to(cp1x, cp1y, cp2x, cp2y, x, y);
-  }
-
-  #[inline(always)]
   pub fn clip(&mut self, path: Option<&mut Path>, fill_rule: FillType) {
     let clip = match path {
       Some(path) => path,
@@ -139,16 +102,6 @@ impl Context {
     };
     clip.set_fill_type(fill_rule);
     self.surface.canvas.set_clip_path(clip);
-  }
-
-  #[inline(always)]
-  pub fn close_path(&mut self) {
-    self.path.close();
-  }
-
-  #[inline(always)]
-  pub fn rect(&mut self, x: f32, y: f32, width: f32, height: f32) {
-    self.path.add_rect(x, y, width, height);
   }
 
   #[inline(always)]
@@ -165,135 +118,6 @@ impl Context {
         mem::drop(state);
       };
     }
-  }
-
-  #[inline(always)]
-  pub fn clear_rect(&mut self, x: f32, y: f32, width: f32, height: f32) {
-    let mut paint = Paint::new();
-    paint.set_style(PaintStyle::Fill);
-    paint.set_color(0, 0, 0, 0);
-    paint.set_stroke_miter(10.0);
-    paint.set_blend_mode(BlendMode::SourceOver);
-    self.surface.draw_rect(x, y, width, height, &paint);
-  }
-
-  #[inline(always)]
-  pub fn create_linear_gradient(&self, x0: f32, y0: f32, x1: f32, y1: f32) -> CanvasGradient {
-    CanvasGradient::create_linear_gradient(x0, y0, x1, y1)
-  }
-
-  #[inline(always)]
-  pub fn create_radial_gradient(
-    &self,
-    x0: f32,
-    y0: f32,
-    r0: f32,
-    x1: f32,
-    y1: f32,
-    r1: f32,
-  ) -> CanvasGradient {
-    CanvasGradient::create_radial_gradient(x0, y0, r0, x1, y1, r1)
-  }
-
-  #[inline(always)]
-  pub fn ellipse(
-    &mut self,
-    origin: (f32, f32),
-    radii: (f32, f32),
-    rotation: f32,
-    start_angle: f32,
-    end_angle: f32,
-    ccw: bool,
-  ) {
-    let (x, y) = origin;
-    let (x_radius, y_radius) = radii;
-
-    // based off of CanonicalizeAngle in Chrome
-    let tau = 2.0 * PI;
-    let mut new_start_angle = start_angle % tau;
-    if new_start_angle < 0.0 {
-      new_start_angle += tau;
-    }
-    let delta = new_start_angle - start_angle;
-    let start_angle = new_start_angle;
-    let mut end_angle = end_angle + delta;
-
-    // Based off of AdjustEndAngle in Chrome.
-    if !ccw && (end_angle - start_angle) >= tau {
-      end_angle = start_angle + tau; // Draw complete ellipse
-    } else if ccw && (start_angle - end_angle) >= tau {
-      end_angle = start_angle - tau; // Draw complete ellipse
-    } else if !ccw && start_angle > end_angle {
-      end_angle = start_angle + (tau - (start_angle - end_angle) % tau);
-    } else if ccw && start_angle < end_angle {
-      end_angle = start_angle - (tau - (end_angle - start_angle) % tau);
-    }
-
-    // Based off of Chrome's implementation in
-    // https://cs.chromium.org/chromium/src/third_party/blink/renderer/platform/graphics/path.cc
-    // of note, can't use addArc or addOval because they close the arc, which
-    // the spec says not to do (unless the user explicitly calls closePath).
-    // This throws off points being in/out of the arc.
-    let left = x - x_radius;
-    let top = y - y_radius;
-    let right = x + x_radius;
-    let bottom = y + y_radius;
-    let mut rotated = Matrix::identity();
-    rotated.pre_translate(x, y);
-    rotated.pre_rotate(radians_to_degrees(rotation));
-    rotated.pre_translate(-x, -y);
-    let unrotated = rotated.invert().unwrap();
-
-    self.path.transform_matrix(&unrotated);
-
-    // draw in 2 180 degree segments because trying to draw all 360 degrees at once
-    // draws nothing.
-    let sweep_deg = radians_to_degrees(end_angle - start_angle);
-    let start_deg = radians_to_degrees(start_angle);
-    if almost_equal(sweep_deg.abs(), 360.0) {
-      let half_sweep = sweep_deg / 2.0;
-      self
-        .path
-        .arc_to(left, top, right, bottom, start_deg, half_sweep, false);
-      self.path.arc_to(
-        x - x_radius,
-        y - y_radius,
-        x + x_radius,
-        y + y_radius,
-        start_deg + half_sweep,
-        half_sweep,
-        false,
-      );
-    } else {
-      self
-        .path
-        .arc_to(left, top, right, bottom, start_deg, sweep_deg, false);
-    }
-
-    self.path.transform_matrix(&rotated);
-  }
-
-  #[inline(always)]
-  pub fn line_to(&mut self, x: f32, y: f32) {
-    self.path.line_to(x, y);
-  }
-
-  #[inline(always)]
-  pub fn move_to(&mut self, x: f32, y: f32) {
-    self.path.move_to(x, y);
-  }
-
-  #[inline(always)]
-  pub fn quadratic_curve_to(&mut self, cpx: f32, cpy: f32, x: f32, y: f32) {
-    self.path.quad_to(cpx, cpy, x, y);
-  }
-
-  #[inline(always)]
-  pub fn translate(&mut self, x: f32, y: f32) {
-    let mut inverted = Matrix::identity();
-    inverted.pre_translate(-x, -y);
-    self.path.transform_matrix(&inverted);
-    self.surface.canvas.translate(x, y);
   }
 
   #[inline(always)]
@@ -336,46 +160,6 @@ impl Context {
     self.surface.draw_rect(x, y, w, h, &fill_paint);
 
     Ok(())
-  }
-
-  #[inline(always)]
-  pub fn set_miter_limit(&mut self, miter: f32) {
-    self.paint.set_stroke_miter(miter);
-  }
-
-  #[inline(always)]
-  pub fn get_miter_limit(&self) -> f32 {
-    self.paint.get_stroke_miter()
-  }
-
-  #[inline(always)]
-  pub fn get_global_alpha(&self) -> f32 {
-    (self.paint.get_alpha() as f32) / 255.0
-  }
-
-  #[inline(always)]
-  pub fn set_global_alpha(&mut self, alpha: u8) {
-    self.paint.set_alpha(alpha);
-  }
-
-  #[inline(always)]
-  pub fn get_global_composite_operation(&self) -> BlendMode {
-    self.paint.get_blend_mode()
-  }
-
-  #[inline(always)]
-  pub fn set_global_composite_operation(&mut self, blend: BlendMode) {
-    self.paint.set_blend_mode(blend);
-  }
-
-  #[inline(always)]
-  pub fn set_transform(&mut self, transform: Transform) {
-    self.surface.canvas.set_transform(transform);
-  }
-
-  #[inline(always)]
-  pub fn scale(&mut self, x: f32, y: f32) {
-    self.surface.canvas.scale(x, y);
   }
 
   #[inline(always)]
@@ -431,32 +215,15 @@ impl Context {
   }
 
   #[inline(always)]
-  pub fn set_line_width(&mut self, width: f32) {
-    self.paint.set_stroke_width(width);
-  }
-
-  #[inline(always)]
-  pub fn get_line_width(&mut self) -> f32 {
-    self.paint.get_stroke_width()
-  }
-
-  #[inline(always)]
-  pub fn set_fill_style(&mut self, pattern: Pattern) -> result::Result<(), SkError> {
+  pub fn set_fill_style(&mut self, pattern: Pattern) {
     let last_state = self.states.last_mut().unwrap();
     last_state.fill_style = pattern;
-    Ok(())
   }
 
   #[inline(always)]
-  pub fn set_stroke_style(&mut self, pattern: Pattern) -> result::Result<(), SkError> {
+  pub fn set_stroke_style(&mut self, pattern: Pattern) {
     let last_state = self.states.last_mut().unwrap();
     last_state.stroke_style = pattern;
-    Ok(())
-  }
-
-  #[inline(always)]
-  pub fn surface_ref(&self) -> SurfaceRef {
-    self.surface.reference()
   }
 
   #[inline(always)]
@@ -564,16 +331,6 @@ impl Context {
   }
 }
 
-#[inline(always)]
-fn radians_to_degrees(rad: f32) -> f32 {
-  (rad / PI) * 180.0
-}
-
-#[inline]
-fn almost_equal(floata: f32, floatb: f32) -> bool {
-  (floata - floatb).abs() < 0.00001
-}
-
 #[js_function(2)]
 fn context_2d_constructor(ctx: CallContext) -> Result<JsUndefined> {
   let width: u32 = ctx.get::<JsNumber>(0)?.try_into()?;
@@ -598,7 +355,7 @@ fn arc(ctx: CallContext) -> Result<JsUndefined> {
   } else {
     false
   };
-  context_2d.arc(
+  context_2d.path.arc(
     center_x as f32,
     center_y as f32,
     radius as f32,
@@ -620,7 +377,7 @@ fn arc_to(ctx: CallContext) -> Result<JsUndefined> {
   let to_y: f64 = ctx.get::<JsNumber>(3)?.try_into()?;
   let radius: f64 = ctx.get::<JsNumber>(4)?.try_into()?;
 
-  context_2d.arc_to(
+  context_2d.path.arc_to_tangent(
     ctrl_x as f32,
     ctrl_y as f32,
     to_x as f32,
@@ -635,7 +392,9 @@ fn begin_path(ctx: CallContext) -> Result<JsUndefined> {
   let this = ctx.this_unchecked::<JsObject>();
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
 
-  context_2d.begin_path();
+  let new_sub_path = Path::new();
+  mem::drop(mem::replace(&mut context_2d.path, new_sub_path));
+
   ctx.env.get_undefined()
 }
 
@@ -651,7 +410,7 @@ fn bezier_curve_to(ctx: CallContext) -> Result<JsUndefined> {
   let x: f64 = ctx.get::<JsNumber>(4)?.try_into()?;
   let y: f64 = ctx.get::<JsNumber>(5)?.try_into()?;
 
-  context_2d.bezier_curve_to(
+  context_2d.path.cubic_to(
     cp1x as f32,
     cp1y as f32,
     cp2x as f32,
@@ -673,7 +432,9 @@ fn quadratic_curve_to(ctx: CallContext) -> Result<JsUndefined> {
   let x: f64 = ctx.get::<JsNumber>(2)?.try_into()?;
   let y: f64 = ctx.get::<JsNumber>(3)?.try_into()?;
 
-  context_2d.quadratic_curve_to(cpx as f32, cpy as f32, x as f32, y as f32);
+  context_2d
+    .path
+    .quad_to(cpx as f32, cpy as f32, x as f32, y as f32);
 
   ctx.env.get_undefined()
 }
@@ -710,7 +471,9 @@ fn rect(ctx: CallContext) -> Result<JsUndefined> {
   let width: f64 = ctx.get::<JsNumber>(2)?.try_into()?;
   let height: f64 = ctx.get::<JsNumber>(3)?.try_into()?;
 
-  context_2d.rect(x as f32, y as f32, width as f32, height as f32);
+  context_2d
+    .path
+    .add_rect(x as f32, y as f32, width as f32, height as f32);
   ctx.env.get_undefined()
 }
 
@@ -722,8 +485,24 @@ fn fill(ctx: CallContext) -> Result<JsUndefined> {
   if ctx.length == 0 {
     context_2d.fill(None, FillType::Winding)?;
   } else if ctx.length == 1 {
-    let fill_rule_js = ctx.get::<JsString>(0)?.into_utf8()?;
-    context_2d.fill(None, FillType::from_str(fill_rule_js.as_str()?)?)?;
+    let input = ctx.get::<JsUnknown>(0)?;
+    match input.get_type()? {
+      ValueType::String => {
+        let fill_rule_js = unsafe { input.cast::<JsString>() }.into_utf8()?;
+        context_2d.fill(None, FillType::from_str(fill_rule_js.as_str()?)?)?;
+      }
+      ValueType::Object => {
+        let path_js = ctx.get::<JsObject>(0)?;
+        let path = ctx.env.unwrap::<Path>(&path_js)?;
+        context_2d.fill(Some(path), FillType::Winding)?;
+      }
+      _ => {
+        return Err(Error::new(
+          Status::InvalidArg,
+          format!("Invalid fill argument"),
+        ))
+      }
+    }
   } else {
     let path_js = ctx.get::<JsObject>(0)?;
     let fill_rule_js = ctx.get::<JsString>(1)?.into_utf8()?;
@@ -758,34 +537,38 @@ fn clear_rect(ctx: CallContext) -> Result<JsUndefined> {
   let y: f64 = ctx.get::<JsNumber>(1)?.try_into()?;
   let width: f64 = ctx.get::<JsNumber>(2)?.try_into()?;
   let height: f64 = ctx.get::<JsNumber>(3)?.try_into()?;
-  context_2d.clear_rect(x as f32, y as f32, width as f32, height as f32);
+
+  let mut paint = Paint::new();
+  paint.set_style(PaintStyle::Fill);
+  paint.set_color(0, 0, 0, 0);
+  paint.set_stroke_miter(10.0);
+  paint.set_blend_mode(BlendMode::SourceOver);
+  context_2d
+    .surface
+    .draw_rect(x as f32, y as f32, width as f32, height as f32, &paint);
   ctx.env.get_undefined()
 }
 
 #[js_function(4)]
 fn create_linear_gradient(ctx: CallContext) -> Result<JsObject> {
-  let this = ctx.this::<JsObject>()?;
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
   let x0: f64 = ctx.get::<JsNumber>(0)?.try_into()?;
   let y0: f64 = ctx.get::<JsNumber>(1)?.try_into()?;
   let x1: f64 = ctx.get::<JsNumber>(2)?.try_into()?;
   let y1: f64 = ctx.get::<JsNumber>(3)?.try_into()?;
   let linear_gradient =
-    context_2d.create_linear_gradient(x0 as f32, y0 as f32, x1 as f32, y1 as f32);
+    CanvasGradient::create_linear_gradient(x0 as f32, y0 as f32, x1 as f32, y1 as f32);
   linear_gradient.into_js_instance(ctx.env)
 }
 
 #[js_function(6)]
 fn create_radial_gradient(ctx: CallContext) -> Result<JsObject> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
   let x0: f64 = ctx.get::<JsNumber>(0)?.try_into()?;
   let y0: f64 = ctx.get::<JsNumber>(1)?.try_into()?;
   let r0: f64 = ctx.get::<JsNumber>(2)?.try_into()?;
   let x1: f64 = ctx.get::<JsNumber>(3)?.try_into()?;
   let y1: f64 = ctx.get::<JsNumber>(4)?.try_into()?;
   let r1: f64 = ctx.get::<JsNumber>(5)?.try_into()?;
-  let radial_gradient = context_2d.create_radial_gradient(
+  let radial_gradient = CanvasGradient::create_radial_gradient(
     x0 as f32, y0 as f32, r0 as f32, x1 as f32, y1 as f32, r1 as f32,
   );
   radial_gradient.into_js_instance(ctx.env)
@@ -796,7 +579,7 @@ fn close_path(ctx: CallContext) -> Result<JsUndefined> {
   let this = ctx.this_unchecked::<JsObject>();
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
 
-  context_2d.close_path();
+  context_2d.path.close();
   ctx.env.get_undefined()
 }
 
@@ -808,7 +591,7 @@ fn line_to(ctx: CallContext) -> Result<JsUndefined> {
   let x: f64 = ctx.get::<JsNumber>(0)?.try_into()?;
   let y: f64 = ctx.get::<JsNumber>(1)?.try_into()?;
 
-  context_2d.line_to(x as f32, y as f32);
+  context_2d.path.line_to(x as f32, y as f32);
 
   ctx.env.get_undefined()
 }
@@ -821,7 +604,7 @@ fn move_to(ctx: CallContext) -> Result<JsUndefined> {
   let x: f64 = ctx.get::<JsNumber>(0)?.try_into()?;
   let y: f64 = ctx.get::<JsNumber>(1)?.try_into()?;
 
-  context_2d.move_to(x as f32, y as f32);
+  context_2d.path.move_to(x as f32, y as f32);
 
   ctx.env.get_undefined()
 }
@@ -831,7 +614,7 @@ fn set_miter_limit(ctx: CallContext) -> Result<JsUndefined> {
   let this = ctx.this_unchecked::<JsObject>();
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
   let miter: f64 = ctx.get::<JsNumber>(0)?.try_into()?;
-  context_2d.set_miter_limit(miter as f32);
+  context_2d.paint.set_stroke_miter(miter as f32);
   ctx.env.get_undefined()
 }
 
@@ -840,7 +623,9 @@ fn get_miter_limit(ctx: CallContext) -> Result<JsNumber> {
   let this = ctx.this_unchecked::<JsObject>();
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
 
-  ctx.env.create_double(context_2d.get_miter_limit() as f64)
+  ctx
+    .env
+    .create_double(context_2d.paint.get_stroke_miter() as f64)
 }
 
 #[js_function(4)]
@@ -889,7 +674,7 @@ fn set_global_alpha(ctx: CallContext) -> Result<JsUndefined> {
     ));
   }
 
-  context_2d.set_global_alpha((alpha * 100.0) as u8);
+  context_2d.paint.set_alpha((alpha * 100.0) as u8);
   ctx.env.get_undefined()
 }
 
@@ -898,7 +683,9 @@ fn get_global_alpha(ctx: CallContext) -> Result<JsNumber> {
   let this = ctx.this_unchecked::<JsObject>();
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
 
-  ctx.env.create_double(context_2d.get_global_alpha() as _)
+  ctx
+    .env
+    .create_double((context_2d.paint.get_alpha() as f64) / 255.0)
 }
 
 #[js_function(1)]
@@ -907,9 +694,9 @@ fn set_global_composite_operation(ctx: CallContext) -> Result<JsUndefined> {
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
   let blend_string = ctx.get::<JsString>(0)?.into_utf8()?;
 
-  context_2d.set_global_composite_operation(
-    BlendMode::from_str(blend_string.as_str()?).map_err(Error::from)?,
-  );
+  context_2d
+    .paint
+    .set_blend_mode(BlendMode::from_str(blend_string.as_str()?).map_err(Error::from)?);
 
   ctx.env.get_undefined()
 }
@@ -921,7 +708,7 @@ fn get_global_composite_operation(ctx: CallContext) -> Result<JsString> {
 
   ctx
     .env
-    .create_string(context_2d.get_global_composite_operation().as_str())
+    .create_string(context_2d.paint.get_blend_mode().as_str())
 }
 
 #[js_function]
@@ -982,7 +769,7 @@ fn set_current_transform(ctx: CallContext) -> Result<JsUndefined> {
     ));
   };
 
-  context_2d.set_transform(transform);
+  context_2d.surface.canvas.set_transform(transform);
 
   ctx.env.get_undefined()
 }
@@ -995,7 +782,7 @@ fn scale(ctx: CallContext) -> Result<JsUndefined> {
   let this = ctx.this_unchecked::<JsObject>();
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
 
-  context_2d.scale(x as f32, y as f32);
+  context_2d.surface.canvas.scale(x as f32, y as f32);
 
   ctx.env.get_undefined()
 }
@@ -1026,7 +813,10 @@ fn translate(ctx: CallContext) -> Result<JsUndefined> {
   let this = ctx.this_unchecked::<JsObject>();
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
 
-  context_2d.translate(x as f32, y as f32);
+  let mut inverted = Matrix::identity();
+  inverted.pre_translate(-x as f32, -y as f32);
+  context_2d.path.transform_matrix(&inverted);
+  context_2d.surface.canvas.translate(x as f32, y as f32);
 
   ctx.env.get_undefined()
 }
@@ -1038,7 +828,7 @@ fn set_line_width(ctx: CallContext) -> Result<JsUndefined> {
   let this = ctx.this_unchecked::<JsObject>();
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
 
-  context_2d.set_line_width(width as f32);
+  context_2d.paint.set_stroke_width(width as f32);
 
   ctx.env.get_undefined()
 }
@@ -1047,7 +837,9 @@ fn set_line_width(ctx: CallContext) -> Result<JsUndefined> {
 fn get_line_width(ctx: CallContext) -> Result<JsNumber> {
   let this = ctx.this_unchecked::<JsObject>();
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
-  ctx.env.create_double(context_2d.get_line_width() as f64)
+  ctx
+    .env
+    .create_double(context_2d.paint.get_stroke_width() as f64)
 }
 
 #[js_function(1)]
@@ -1059,9 +851,8 @@ fn set_fill_style(ctx: CallContext) -> Result<JsUndefined> {
 
   match js_fill_style.get_type()? {
     ValueType::String => {
-      let js_color =
-        unsafe { js_fill_style.cast::<JsString>() }.into_utf8()?;
-      context_2d.set_fill_style(Pattern::from_color(js_color.as_str()?)?)?;
+      let js_color = unsafe { js_fill_style.cast::<JsString>() }.into_utf8()?;
+      context_2d.set_fill_style(Pattern::from_color(js_color.as_str()?)?);
     }
     ValueType::Object => {
       let fill_object = unsafe { js_fill_style.cast::<JsObject>() };
@@ -1094,7 +885,7 @@ fn set_stroke_style(ctx: CallContext) -> Result<JsUndefined> {
     ValueType::String => {
       let js_color = unsafe { JsString::from_raw_unchecked(ctx.env.raw(), js_stroke_style.raw()) }
         .into_utf8()?;
-      context_2d.set_stroke_style(Pattern::from_color(js_color.as_str()?)?)?;
+      context_2d.set_stroke_style(Pattern::from_color(js_color.as_str()?)?);
     }
     ValueType::Object => {
       let stroke_object = unsafe { js_stroke_style.cast::<JsObject>() };
