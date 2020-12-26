@@ -4,7 +4,8 @@
 
 Google Skia binding to NodeJS via `N-API`.
 
-> ⚠️ This project is in very early stage.
+> ⚠️ This project is in very early stage.<br/>
+> For details on planned features and future direction please refer to the [Roadmap](https://github.com/Brooooooklyn/skia-rs/issues/113).
 
 # Support matrix
 
