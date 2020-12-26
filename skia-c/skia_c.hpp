@@ -130,7 +130,9 @@ extern "C"
 
   // Path
   skiac_path *skiac_path_create();
+  skiac_path *skiac_path_from_svg(char *svg_path);
   skiac_path *skiac_path_clone(skiac_path *c_path);
+  void skiac_add_path(skiac_path *c_path, skiac_path *other_path, skiac_transform c_transform);
   bool skiac_path_op(skiac_path *c_path_one, skiac_path *c_path_two, int op);
   void skiac_path_destroy(skiac_path *c_path);
   void skiac_path_set_fill_type(skiac_path *c_path, int type);

@@ -25,17 +25,9 @@ ctx.lineTo(250, 140)
 ctx.closePath()
 ctx.stroke()
 
-console.info(process.memoryUsage())
-
 async function main() {
-  for (const _ of Array.from({ length: 10000 }).fill(0)) {
-    await canvas
-      .png()
-      .then((data) => promises.writeFile(join(__dirname, 'simple.png'), data))
-      .then(() => {
-        console.info(process.memoryUsage())
-      })
-  }
+  const data = await canvas.png()
+  await promises.writeFile(join(__dirname, 'simple.png'), data)
 }
 
 main()
