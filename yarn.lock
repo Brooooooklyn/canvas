@@ -80,10 +80,10 @@
     minimatch "^3.0.4"
     strip-json-comments "^3.1.1"
 
-"@napi-rs/cli@^1.0.0-alpha.12":
-  version "1.0.0-alpha.12"
-  resolved "https://registry.npmjs.org/@napi-rs/cli/-/cli-1.0.0-alpha.12.tgz#1960d4545882eac207b9b4447760d713f9cb4b48"
-  integrity sha512-S3hVqSaqr/tFgUcgrGR1bC1fgZinw5Ztswx4XM2MiRJF3zUkXfsi0jrWNN9Ym7LZ0qpUK8g3alfmLRc/gpGznQ==
+"@napi-rs/cli@^1.0.0-alpha.13":
+  version "1.0.0-alpha.13"
+  resolved "https://registry.yarnpkg.com/@napi-rs/cli/-/cli-1.0.0-alpha.13.tgz#112d4ffa6f84692d3fcb4313fa85000db728d83b"
+  integrity sha512-UUsSZ7/Wkb+4vDc4MOVydm27h+rrwVibWdWr4OpnjvFmVY3Duiu2ztlixOstnYiZNCd0HoQWs0grub8ULqqvFw==
   dependencies:
     "@octokit/rest" "^18.0.12"
     chalk "^4.1.0"
