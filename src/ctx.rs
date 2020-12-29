@@ -3,6 +3,7 @@ use std::mem;
 use std::result;
 use std::str::FromStr;
 
+use cssparser::{Color as CSSColor, Parser, ParserInput};
 use napi::*;
 
 use crate::error::SkError;
@@ -42,6 +43,12 @@ impl Context {
         Property::new(&env, "globalCompositeOperation")?
           .with_getter(get_global_composite_operation)
           .with_setter(set_global_composite_operation),
+        Property::new(&env, "lineCap")?
+          .with_setter(set_line_cap)
+          .with_getter(get_line_cap),
+        Property::new(&env, "lineDashOffset")?
+          .with_setter(set_line_dash_offset)
+          .with_getter(get_line_dash_offset),
         Property::new(&env, "lineWidth")?
           .with_setter(set_line_width)
           .with_getter(get_line_width),
@@ -51,6 +58,18 @@ impl Context {
         Property::new(&env, "strokeStyle")?
           .with_setter(set_stroke_style)
           .with_getter(get_stroke_style),
+        Property::new(&env, "shadowBlur")?
+          .with_setter(set_shadow_blur)
+          .with_getter(get_shadow_blur),
+        Property::new(&env, "shadowColor")?
+          .with_setter(set_shadow_color)
+          .with_getter(get_shadow_color),
+        Property::new(&env, "shadowOffsetX")?
+          .with_setter(set_shadow_offset_x)
+          .with_getter(get_shadow_offset_x),
+        Property::new(&env, "shadowOffsetY")?
+          .with_setter(set_shadow_offset_y)
+          .with_getter(get_shadow_offset_y),
         // methods
         Property::new(&env, "arc")?.with_method(arc),
         Property::new(&env, "arcTo")?.with_method(arc_to),
@@ -215,18 +234,6 @@ impl Context {
   }
 
   #[inline(always)]
-  pub fn set_fill_style(&mut self, pattern: Pattern) {
-    let last_state = self.states.last_mut().unwrap();
-    last_state.fill_style = pattern;
-  }
-
-  #[inline(always)]
-  pub fn set_stroke_style(&mut self, pattern: Pattern) {
-    let last_state = self.states.last_mut().unwrap();
-    last_state.stroke_style = pattern;
-  }
-
-  #[inline(always)]
   fn fill_paint(&self) -> result::Result<Paint, SkError> {
     let mut paint = self.paint.clone();
     paint.set_style(PaintStyle::Fill);
@@ -235,7 +242,7 @@ impl Context {
       Pattern::Color(c, _) => {
         let mut color = c.clone();
         color.alpha =
-          ((color.alpha as f32) * (self.paint.get_alpha() as f32 / 255.0)).round() as u8;
+          ((color.alpha as f32 / 255.0) * (self.paint.get_alpha() as f32 / 255.0)).round() as u8;
         paint.set_color(color.red, color.green, color.blue, color.alpha);
       }
       Pattern::Gradient(g) => {
@@ -267,7 +274,7 @@ impl Context {
     match &last_state.stroke_style {
       Pattern::Color(c, _) => {
         let mut color = c.clone();
-        color.alpha = ((color.alpha as f32) * (global_alpha as f32 / 255.0)).round() as u8;
+        color.alpha = ((color.alpha as f32 / 255.0) * (global_alpha as f32 / 255.0)).round() as u8;
         paint.set_color(color.red, color.green, color.blue, color.alpha);
       }
       Pattern::Gradient(g) => {
@@ -674,7 +681,7 @@ fn set_global_alpha(ctx: CallContext) -> Result<JsUndefined> {
     ));
   }
 
-  context_2d.paint.set_alpha((alpha * 100.0) as u8);
+  context_2d.paint.set_alpha((alpha * 255.0) as u8);
   ctx.env.get_undefined()
 }
 
@@ -821,6 +828,89 @@ fn translate(ctx: CallContext) -> Result<JsUndefined> {
   ctx.env.get_undefined()
 }
 
+#[js_function]
+fn get_line_cap(ctx: CallContext) -> Result<JsString> {
+  let this = ctx.this_unchecked::<JsObject>();
+  let context_2d = ctx.env.unwrap::<Context>(&this)?;
+
+  ctx
+    .env
+    .create_string(context_2d.paint.get_stroke_cap().as_str())
+}
+
+#[js_function(1)]
+fn set_line_cap(ctx: CallContext) -> Result<JsUndefined> {
+  let line_cap_string = ctx.get::<JsString>(0)?;
+  let line_cap = line_cap_string.into_utf8()?;
+
+  let this = ctx.this_unchecked::<JsObject>();
+  let context_2d = ctx.env.unwrap::<Context>(&this)?;
+
+  context_2d
+    .paint
+    .set_stroke_cap(StrokeCap::from_str(line_cap.as_str()?)?);
+
+  ctx.env.get_undefined()
+}
+
+#[js_function]
+fn get_line_dash_offset(ctx: CallContext) -> Result<JsNumber> {
+  let this = ctx.this_unchecked::<JsObject>();
+  let context_2d = ctx.env.unwrap::<Context>(&this)?;
+
+  ctx
+    .env
+    .create_double(context_2d.states.last_mut().unwrap().line_dash_offset as f64)
+}
+
+#[js_function(1)]
+fn set_line_dash_offset(ctx: CallContext) -> Result<JsUndefined> {
+  let line_offset_number = ctx.get::<JsNumber>(0)?;
+  let offset: f64 = line_offset_number.get_double()?;
+
+  let this = ctx.this_unchecked::<JsObject>();
+  let context_2d = ctx.env.unwrap::<Context>(&this)?;
+
+  context_2d.states.last_mut().unwrap().line_dash_offset = offset as f32;
+
+  ctx.env.get_undefined()
+}
+
+#[js_function]
+fn get_line_join(ctx: CallContext) -> Result<JsString> {
+  let this = ctx.this_unchecked::<JsObject>();
+  let context_2d = ctx.env.unwrap::<Context>(&this)?;
+
+  ctx
+    .env
+    .create_string(context_2d.paint.get_stroke_join().as_str())
+}
+
+#[js_function(1)]
+fn set_line_join(ctx: CallContext) -> Result<JsUndefined> {
+  let line_join_string = ctx.get::<JsString>(0)?;
+  let line_join = line_join_string.into_utf8()?;
+
+  let this = ctx.this_unchecked::<JsObject>();
+  let context_2d = ctx.env.unwrap::<Context>(&this)?;
+
+  context_2d
+    .paint
+    .set_stroke_join(StrokeJoin::from_str(line_join.as_str()?)?);
+
+  ctx.env.get_undefined()
+}
+
+#[js_function]
+fn get_line_width(ctx: CallContext) -> Result<JsNumber> {
+  let this = ctx.this_unchecked::<JsObject>();
+  let context_2d = ctx.env.unwrap::<Context>(&this)?;
+
+  ctx
+    .env
+    .create_double(context_2d.paint.get_stroke_width() as f64)
+}
+
 #[js_function(1)]
 fn set_line_width(ctx: CallContext) -> Result<JsUndefined> {
   let width: f64 = ctx.get::<JsNumber>(0)?.try_into()?;
@@ -833,15 +923,6 @@ fn set_line_width(ctx: CallContext) -> Result<JsUndefined> {
   ctx.env.get_undefined()
 }
 
-#[js_function]
-fn get_line_width(ctx: CallContext) -> Result<JsNumber> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-  ctx
-    .env
-    .create_double(context_2d.paint.get_stroke_width() as f64)
-}
-
 #[js_function(1)]
 fn set_fill_style(ctx: CallContext) -> Result<JsUndefined> {
   let mut this = ctx.this_unchecked::<JsObject>();
@@ -849,15 +930,17 @@ fn set_fill_style(ctx: CallContext) -> Result<JsUndefined> {
 
   let js_fill_style = ctx.get::<JsUnknown>(0)?;
 
+  let last_state = context_2d.states.last_mut().unwrap();
+
   match js_fill_style.get_type()? {
     ValueType::String => {
       let js_color = unsafe { js_fill_style.cast::<JsString>() }.into_utf8()?;
-      context_2d.set_fill_style(Pattern::from_color(js_color.as_str()?)?);
+      last_state.fill_style = Pattern::from_color(js_color.as_str()?)?;
     }
     ValueType::Object => {
       let fill_object = unsafe { js_fill_style.cast::<JsObject>() };
       let gradient = ctx.env.unwrap::<CanvasGradient>(&fill_object)?;
-      context_2d.set_fill_style(Pattern::Gradient(gradient.clone()));
+      last_state.fill_style = Pattern::Gradient(gradient.clone());
     }
     // todo ImagePattern
     _ => return Err(Error::new(Status::InvalidArg, format!("Invalid fillStyle"))),
@@ -880,17 +963,18 @@ fn set_stroke_style(ctx: CallContext) -> Result<JsUndefined> {
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
 
   let js_stroke_style = ctx.get::<JsUnknown>(0)?;
+  let last_state = context_2d.states.last_mut().unwrap();
 
   match js_stroke_style.get_type()? {
     ValueType::String => {
       let js_color = unsafe { JsString::from_raw_unchecked(ctx.env.raw(), js_stroke_style.raw()) }
         .into_utf8()?;
-      context_2d.set_stroke_style(Pattern::from_color(js_color.as_str()?)?);
+      last_state.stroke_style = Pattern::from_color(js_color.as_str()?)?;
     }
     ValueType::Object => {
       let stroke_object = unsafe { js_stroke_style.cast::<JsObject>() };
       let gradient = ctx.env.unwrap::<CanvasGradient>(&stroke_object)?;
-      context_2d.set_stroke_style(Pattern::Gradient(gradient.clone()));
+      last_state.stroke_style = Pattern::Gradient(gradient.clone());
     }
     // todo ImagePattern
     ValueType::External => {}
@@ -911,6 +995,119 @@ fn set_stroke_style(ctx: CallContext) -> Result<JsUndefined> {
 fn get_stroke_style(ctx: CallContext) -> Result<JsUnknown> {
   let this = ctx.this_unchecked::<JsObject>();
   this.get_named_property("_strokeStyle")
+}
+
+#[js_function]
+fn get_shadow_blur(ctx: CallContext) -> Result<JsNumber> {
+  let this = ctx.this_unchecked::<JsObject>();
+  let context_2d = ctx.env.unwrap::<Context>(&this)?;
+  let last_state = context_2d.states.last_mut().unwrap();
+
+  ctx.env.create_double(last_state.shadow_blur as f64)
+}
+
+#[js_function(1)]
+fn set_shadow_blur(ctx: CallContext) -> Result<JsUndefined> {
+  let blur: f64 = ctx.get::<JsNumber>(0)?.try_into()?;
+
+  let this = ctx.this_unchecked::<JsObject>();
+  let context_2d = ctx.env.unwrap::<Context>(&this)?;
+  let last_state = context_2d.states.last_mut().unwrap();
+
+  last_state.shadow_blur = blur as f32;
+
+  ctx.env.get_undefined()
+}
+
+#[js_function]
+fn get_shadow_color(ctx: CallContext) -> Result<JsString> {
+  let this = ctx.this_unchecked::<JsObject>();
+  let context_2d = ctx.env.unwrap::<Context>(&this)?;
+
+  ctx.env.create_string(
+    context_2d
+      .states
+      .last()
+      .unwrap()
+      .shadow_color_string
+      .as_str(),
+  )
+}
+
+#[js_function(1)]
+fn set_shadow_color(ctx: CallContext) -> Result<JsUndefined> {
+  let shadow_color_string = ctx.get::<JsString>(0)?;
+  let shadow_color = shadow_color_string.into_utf8()?;
+
+  let this = ctx.this_unchecked::<JsObject>();
+  let context_2d = ctx.env.unwrap::<Context>(&this)?;
+
+  let last_state = context_2d.states.last_mut().unwrap();
+  let shadow_color_str = shadow_color.as_str()?;
+  last_state.shadow_color_string = shadow_color_str.to_owned();
+
+  let mut parser_input = ParserInput::new(shadow_color_str);
+  let mut parser = Parser::new(&mut parser_input);
+  let color =
+    CSSColor::parse(&mut parser).map_err(|e| SkError::Generic(format!("Invalid color {:?}", e)))?;
+
+  match color {
+    CSSColor::CurrentColor => {
+      return Err(Error::new(
+        Status::InvalidArg,
+        "Color should not be `currentcolor` keyword".to_owned(),
+      ))
+    }
+    CSSColor::RGBA(rgba) => {
+      last_state.shadow_color = rgba;
+    }
+  }
+
+  ctx.env.get_undefined()
+}
+
+#[js_function]
+fn get_shadow_offset_x(ctx: CallContext) -> Result<JsNumber> {
+  let this = ctx.this_unchecked::<JsObject>();
+  let context_2d = ctx.env.unwrap::<Context>(&this)?;
+  let last_state = context_2d.states.last_mut().unwrap();
+
+  ctx.env.create_double(last_state.shadow_offset_x as f64)
+}
+
+#[js_function(1)]
+fn set_shadow_offset_x(ctx: CallContext) -> Result<JsUndefined> {
+  let offset: f64 = ctx.get::<JsNumber>(0)?.try_into()?;
+
+  let this = ctx.this_unchecked::<JsObject>();
+  let context_2d = ctx.env.unwrap::<Context>(&this)?;
+  let last_state = context_2d.states.last_mut().unwrap();
+
+  last_state.shadow_offset_x = offset as f32;
+
+  ctx.env.get_undefined()
+}
+
+#[js_function]
+fn get_shadow_offset_y(ctx: CallContext) -> Result<JsNumber> {
+  let this = ctx.this_unchecked::<JsObject>();
+  let context_2d = ctx.env.unwrap::<Context>(&this)?;
+  let last_state = context_2d.states.last_mut().unwrap();
+
+  ctx.env.create_double(last_state.shadow_offset_y as f64)
+}
+
+#[js_function(1)]
+fn set_shadow_offset_y(ctx: CallContext) -> Result<JsUndefined> {
+  let offset: f64 = ctx.get::<JsNumber>(0)?.try_into()?;
+
+  let this = ctx.this_unchecked::<JsObject>();
+  let context_2d = ctx.env.unwrap::<Context>(&this)?;
+  let last_state = context_2d.states.last_mut().unwrap();
+
+  last_state.shadow_offset_y = offset as f32;
+
+  ctx.env.get_undefined()
 }
 
 pub enum ContextData {

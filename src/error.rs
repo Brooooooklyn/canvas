@@ -12,6 +12,10 @@ pub enum SkError {
   StringToTextBaselineError(String),
   #[error("[`{0}`] is not valid FilterQuality value")]
   StringToFilterQualityError(String),
+  #[error("[`{0}`] is not valid LineCap value")]
+  StringToStrokeCapError(String),
+  #[error("[`{0}`] is not valid LineJoin value")]
+  StringToStrokeJoinError(String),
   #[error("[`{0}`]")]
   Generic(String),
 }

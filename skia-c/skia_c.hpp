@@ -122,7 +122,9 @@ extern "C"
   void skiac_paint_set_stroke_width(skiac_paint *c_paint, float width);
   float skiac_paint_get_stroke_width(skiac_paint *c_paint);
   void skiac_paint_set_stroke_cap(skiac_paint *c_paint, int cap);
+  int skiac_paint_get_stroke_cap(skiac_paint *c_paint);
   void skiac_paint_set_stroke_join(skiac_paint *c_paint, int join);
+  int skiac_paint_get_stroke_join(skiac_paint *c_paint);
   void skiac_paint_set_stroke_miter(skiac_paint *c_paint, float miter);
   float skiac_paint_get_stroke_miter(skiac_paint *c_paint);
   void skiac_paint_set_path_effect(skiac_paint *c_paint, skiac_path_effect *c_path_effect);

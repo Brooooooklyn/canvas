@@ -210,12 +210,13 @@ mod ffi {
     pub fn skiac_paint_set_shader(paint: *mut skiac_paint, shader: *mut skiac_shader);
 
     pub fn skiac_paint_set_stroke_width(paint: *mut skiac_paint, width: f32);
-
     pub fn skiac_paint_get_stroke_width(paint: *mut skiac_paint) -> f32;
 
     pub fn skiac_paint_set_stroke_cap(paint: *mut skiac_paint, cap: i32);
+    pub fn skiac_paint_get_stroke_cap(paint: *mut skiac_paint) -> i32;
 
     pub fn skiac_paint_set_stroke_join(paint: *mut skiac_paint, join: i32);
+    pub fn skiac_paint_get_stroke_join(paint: *mut skiac_paint) -> i32;
 
     pub fn skiac_paint_set_stroke_miter(paint: *mut skiac_paint, miter: f32);
     pub fn skiac_paint_get_stroke_miter(paint: *mut skiac_paint) -> f32;
@@ -389,11 +390,75 @@ pub enum StrokeCap {
   Square = 2,
 }
 
+impl StrokeCap {
+  pub fn from_raw(cap: i32) -> Self {
+    match cap {
+      0 => Self::Butt,
+      1 => Self::Round,
+      2 => Self::Square,
+      _ => unreachable!(),
+    }
+  }
+
+  pub fn as_str(&self) -> &str {
+    match self {
+      Self::Butt => "butt",
+      Self::Round => "round",
+      Self::Square => "square",
+    }
+  }
+}
+
+impl FromStr for StrokeCap {
+  type Err = SkError;
+
+  fn from_str(value: &str) -> Result<StrokeCap, Self::Err> {
+    match value {
+      "butt" => Ok(Self::Butt),
+      "round" => Ok(Self::Round),
+      "square" => Ok(Self::Square),
+      _ => Err(SkError::StringToStrokeCapError(value.to_owned())),
+    }
+  }
+}
+
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub enum StrokeJoin {
   Miter = 0,
   Round = 1,
   Bevel = 2,
+}
+
+impl StrokeJoin {
+  pub fn from_raw(join: i32) -> Self {
+    match join {
+      0 => Self::Miter,
+      1 => Self::Round,
+      2 => Self::Bevel,
+      _ => unreachable!(),
+    }
+  }
+
+  pub fn as_str(&self) -> &str {
+    match self {
+      Self::Miter => "miter",
+      Self::Round => "round",
+      Self::Bevel => "bevel",
+    }
+  }
+}
+
+impl FromStr for StrokeJoin {
+  type Err = SkError;
+
+  fn from_str(value: &str) -> Result<StrokeJoin, Self::Err> {
+    match value {
+      "bevel" => Ok(Self::Bevel),
+      "round" => Ok(Self::Round),
+      "miter" => Ok(Self::Miter),
+      _ => Err(SkError::StringToStrokeJoinError(value.to_owned())),
+    }
+  }
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
@@ -467,7 +532,7 @@ pub enum BlendMode {
 }
 
 impl BlendMode {
-  pub fn as_str(&self) -> &'static str {
+  pub fn as_str(&self) -> &str {
     match self {
       BlendMode::Clear => "clear",
       BlendMode::Color => "color",
@@ -651,7 +716,7 @@ pub enum TextAlign {
 }
 
 impl TextAlign {
-  pub fn as_str(&self) -> &'static str {
+  pub fn as_str(&self) -> &str {
     match self {
       Self::Start => "start",
       Self::Center => "center",
@@ -1204,10 +1269,20 @@ impl Paint {
   }
 
   #[inline]
+  pub fn get_stroke_cap(&self) -> StrokeCap {
+    StrokeCap::from_raw(unsafe { ffi::skiac_paint_get_stroke_cap(self.0) })
+  }
+
+  #[inline]
   pub fn set_stroke_join(&mut self, join: StrokeJoin) {
     unsafe {
       ffi::skiac_paint_set_stroke_join(self.0, join as i32);
     }
+  }
+
+  #[inline]
+  pub fn get_stroke_join(&self) -> StrokeJoin {
+    StrokeJoin::from_raw(unsafe { ffi::skiac_paint_get_stroke_join(self.0) })
   }
 
   #[inline]
