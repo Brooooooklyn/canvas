@@ -9,11 +9,11 @@ Google Skia binding to NodeJS via `N-API`.
 
 # Support matrix
 
-|             | node 10 | node12 | node14 | node15 |
-| ----------- | ------- | ------ | ------ | ------ |
-| Windows x64 | ✅      | ✅     | ✅     | ✅     |
-| macOS x64   | ✅      | ✅     | ✅     | ✅     |
-| Linux x64   | ✅      | ✅     | ✅     | ✅     |
+|             | node10 | node12 | node14 | node15 |
+| ----------- | ------ | ------ | ------ | ------ |
+| Windows x64 | ✅     | ✅     | ✅     | ✅     |
+| macOS x64   | ✅     | ✅     | ✅     | ✅     |
+| Linux x64   | ✅     | ✅     | ✅     | ✅     |
 
 # Usage
 
