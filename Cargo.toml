@@ -10,8 +10,8 @@ crate-type = ["cdylib"]
 [dependencies]
 anyhow = "1"
 cssparser = "0.28"
-napi = "1.0.0-alpha.9"
-napi-derive = "1.0.0-alpha.0"
+napi = "1.0.0"
+napi-derive = "1.0.0"
 thiserror = "1"
 
 [target.'cfg(all(unix, not(target_env = "musl"), not(target_arch = "aarch64")))'.dependencies]
@@ -19,7 +19,7 @@ jemallocator = {version = "0.3", features = ["disable_initial_exec_tls"]}
 
 [build-dependencies]
 cc = "1"
-napi-build = "1.0.0-alpha.0"
+napi-build = "1"
 
 [profile.release]
 codegen-units = 1
