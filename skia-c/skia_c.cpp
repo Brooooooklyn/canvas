@@ -386,9 +386,19 @@ extern "C"
     PAINT_CAST->setStrokeCap((SkPaint::Cap)cap);
   }
 
+  int skiac_paint_get_stroke_cap(skiac_paint *c_paint)
+  {
+    return PAINT_CAST->getStrokeCap();
+  }
+
   void skiac_paint_set_stroke_join(skiac_paint *c_paint, int join)
   {
     PAINT_CAST->setStrokeJoin((SkPaint::Join)join);
+  }
+
+  int skiac_paint_get_stroke_join(skiac_paint *c_paint)
+  {
+    return PAINT_CAST->getStrokeJoin();
   }
 
   void skiac_paint_set_stroke_miter(skiac_paint *c_paint, float miter)

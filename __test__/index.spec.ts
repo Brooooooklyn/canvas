@@ -1,9 +1,16 @@
-import test from 'ava'
+import ava, { TestInterface } from 'ava'
 
 import { createCanvas, Path2D } from '../index'
 
-test('should be able to createCanvas', (t) => {
-  t.notThrows(() => createCanvas(1920, 1080))
+const test = ava as TestInterface<{
+  canvas: HTMLCanvasElement
+  ctx: CanvasRenderingContext2D
+}>
+
+test.beforeEach((t) => {
+  const canvas = createCanvas(1024, 768)
+  t.context.canvas = canvas
+  t.context.ctx = canvas.getContext('2d')!
 })
 
 test('should be able to create Path2D', (t) => {
@@ -15,4 +22,88 @@ test('should be able to create Path2D', (t) => {
       ),
   )
   t.notThrows(() => new Path2D(new Path2D()))
+})
+
+test('miterLimit state should be ok', (t) => {
+  const { ctx } = t.context
+  t.is(ctx.miterLimit, 10)
+  ctx.miterLimit = 20
+  t.is(ctx.miterLimit, 20)
+})
+
+test('globalAlpha state should be ok', (t) => {
+  const { ctx } = t.context
+  t.is(ctx.globalAlpha, 1)
+  ctx.globalAlpha = 0.2
+  t.is(ctx.globalAlpha, 0.2)
+})
+
+test('globalCompositeOperation state should be ok', (t) => {
+  const { ctx } = t.context
+  t.is(ctx.globalCompositeOperation, 'source-over')
+  ctx.globalCompositeOperation = 'xor'
+  t.is(ctx.globalCompositeOperation, 'xor')
+})
+
+test('lineCap state should be ok', (t) => {
+  const { ctx } = t.context
+  t.is(ctx.lineCap, 'butt')
+  ctx.lineCap = 'round'
+  t.is(ctx.lineCap, 'round')
+})
+
+test('lineDashOffset state should be ok', (t) => {
+  const { ctx } = t.context
+  t.is(ctx.lineDashOffset, 0)
+  ctx.lineDashOffset = 10
+  t.is(ctx.lineDashOffset, 10)
+})
+
+test('lineWidth state should be ok', (t) => {
+  const { ctx } = t.context
+  t.is(ctx.lineWidth, 1)
+  ctx.lineWidth = 10
+  t.is(ctx.lineWidth, 10)
+})
+
+test('fillStyle state should be ok', (t) => {
+  const { ctx } = t.context
+  t.is(ctx.fillStyle, '#000')
+  ctx.fillStyle = 'hotpink'
+  t.is(ctx.fillStyle, 'hotpink')
+})
+
+test('strokeStyle state should be ok', (t) => {
+  const { ctx } = t.context
+  t.is(ctx.strokeStyle, '#000')
+  ctx.strokeStyle = 'hotpink'
+  t.is(ctx.strokeStyle, 'hotpink')
+})
+
+test('shadowBlur state should be ok', (t) => {
+  const { ctx } = t.context
+  t.is(ctx.shadowBlur, 0)
+  ctx.shadowBlur = 10
+  t.is(ctx.shadowBlur, 10)
+})
+
+test('shadowColor state should be ok', (t) => {
+  const { ctx } = t.context
+  t.is(ctx.shadowColor, '#000000')
+  ctx.shadowColor = 'hotpink'
+  t.is(ctx.shadowColor, 'hotpink')
+})
+
+test('shadowOffsetX state should be ok', (t) => {
+  const { ctx } = t.context
+  t.is(ctx.shadowOffsetX, 0)
+  ctx.shadowOffsetX = 10
+  t.is(ctx.shadowOffsetX, 10)
+})
+
+test('shadowOffsetY state should be ok', (t) => {
+  const { ctx } = t.context
+  t.is(ctx.shadowOffsetY, 0)
+  ctx.shadowOffsetY = 10
+  t.is(ctx.shadowOffsetY, 10)
 })

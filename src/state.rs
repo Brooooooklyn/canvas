@@ -12,6 +12,7 @@ pub struct Context2dRenderingState {
   pub shadow_offset_y: f32,
   pub shadow_blur: f32,
   pub shadow_color: RGBA,
+  pub shadow_color_string: String,
   pub global_alpha: f32,
   pub line_dash_offset: f32,
   pub global_composite_operation: BlendMode,
@@ -32,7 +33,8 @@ impl Default for Context2dRenderingState {
       shadow_offset_x: 0f32,
       shadow_offset_y: 0f32,
       shadow_blur: 0f32,
-      shadow_color: RGBA::new(0, 0, 0, 0),
+      shadow_color: RGBA::new(0, 0, 0, 255),
+      shadow_color_string: "#000000".to_owned(),
       /// 0.0 ~ 1.0
       global_alpha: 1.0,
       /// A float specifying the amount of the line dash offset. The default value is 0.0.
