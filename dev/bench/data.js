@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1609310405595,
+  "lastUpdate": 1609407406993,
   "repoUrl": "https://github.com/Brooooooklyn/skia-rs",
   "entries": {
     "Benchmark": [
@@ -360,6 +360,58 @@ window.BENCHMARK_DATA = {
             "range": "±0.43%",
             "unit": "ops/sec",
             "extra": "45 samples"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "lynweklm@gmail.com",
+            "name": "LongYinan",
+            "username": "Brooooooklyn"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "5cfe667a0ce2771c1936c9e1e17a04ae7c4913ab",
+          "message": "Merge pull request #115 from Brooooooklyn/ctx-properties\n\nfeat: properties in CanvasRenderContext2D",
+          "timestamp": "2020-12-31T17:23:40+08:00",
+          "tree_id": "57c19d9209ae8e2c3ef767d239d624de169fd926",
+          "url": "https://github.com/Brooooooklyn/skia-rs/commit/5cfe667a0ce2771c1936c9e1e17a04ae7c4913ab"
+        },
+        "date": 1609407320318,
+        "tool": "benchmarkjs",
+        "benches": [
+          {
+            "name": "Draw house#@napi-rs/skia",
+            "value": 21,
+            "range": "±1.14%",
+            "unit": "ops/sec",
+            "extra": "39 samples"
+          },
+          {
+            "name": "Draw house#node-canvas",
+            "value": 20,
+            "range": "±1.5%",
+            "unit": "ops/sec",
+            "extra": "38 samples"
+          },
+          {
+            "name": "Draw gradient#@napi-rs/skia",
+            "value": 20.1,
+            "range": "±1.38%",
+            "unit": "ops/sec",
+            "extra": "37 samples"
+          },
+          {
+            "name": "Draw gradient#node-canvas",
+            "value": 20,
+            "range": "±0.73%",
+            "unit": "ops/sec",
+            "extra": "37 samples"
           }
         ]
       }
