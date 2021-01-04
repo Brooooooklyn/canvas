@@ -59,6 +59,13 @@ test('lineDashOffset state should be ok', (t) => {
   t.is(ctx.lineDashOffset, 10)
 })
 
+test('lineJoin state should be ok', (t) => {
+  const { ctx } = t.context
+  t.is(ctx.lineJoin, 'miter')
+  ctx.lineJoin = 'round'
+  t.is(ctx.lineJoin, 'round')
+})
+
 test('lineWidth state should be ok', (t) => {
   const { ctx } = t.context
   t.is(ctx.lineWidth, 1)

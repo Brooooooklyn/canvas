@@ -8,7 +8,7 @@ const { loadBinding } = require('@node-rs/helper')
  * loadBinding helper will load `skia.[PLATFORM].node` from `__dirname` first
  * If failed to load addon, it will fallback to load from `@napi-rs/skia-[PLATFORM]`
  */
-const { CanvasRenderingContext2D, CanvasElement, Path2D } = loadBinding(__dirname, 'skia', '@napi-rs/skia')
+const { CanvasRenderingContext2D, CanvasElement, Path2D, ImageData } = loadBinding(__dirname, 'skia', '@napi-rs/skia')
 
 function createCanvas(width, height) {
   const canvasElement = new CanvasElement(width, height)
@@ -43,4 +43,5 @@ function createCanvas(width, height) {
 module.exports = {
   createCanvas,
   Path2D,
+  ImageData,
 }

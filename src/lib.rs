@@ -41,11 +41,15 @@ fn init(mut exports: JsObject, env: Env) -> Result<()> {
 
   let path_class = sk::Path::create_js_class(&env)?;
 
+  let image_data_class = image::ImageData::create_js_class(&env)?;
+
   exports.set_named_property("CanvasRenderingContext2D", canvas_rendering_context2d)?;
 
   exports.set_named_property("CanvasElement", canvas_element)?;
 
   exports.set_named_property("Path2D", path_class)?;
+
+  exports.set_named_property("ImageData", image_data_class)?;
   Ok(())
 }
 
