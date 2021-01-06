@@ -177,6 +177,13 @@ jobs:
       - name: Test bindings
         run: yarn test
 
+      - name: Test failed
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v2
+        with:
+          name: failure-images-${{ matrix.os }}-${{ matrix.node }}
+          path: __test__/failure/**
+
   dependabot:
     needs:
       - test_binding
