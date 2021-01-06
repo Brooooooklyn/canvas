@@ -180,7 +180,23 @@ test('closePath-arc', async (t) => {
   await snapshotImage(t)
 })
 
-test.todo('createImageData')
+test('createImageData', async (t) => {
+  const { ctx } = t.context
+  const imageData = ctx.createImageData(256, 256)
+
+  // Iterate through every pixel
+  for (let i = 0; i < imageData.data.length; i += 4) {
+    // Modify pixel data
+    imageData.data[i + 0] = 190 // R value
+    imageData.data[i + 1] = 0 // G value
+    imageData.data[i + 2] = 210 // B value
+    imageData.data[i + 3] = 255 // A value
+  }
+
+  // Draw image data to the canvas
+  ctx.putImageData(imageData, 20, 20)
+  await snapshotImage(t)
+})
 
 test('createLinearGradient', async (t) => {
   const { ctx } = t.context
@@ -253,5 +269,252 @@ test('fillRect', async (t) => {
   const { ctx } = t.context
   ctx.fillStyle = 'hotpink'
   ctx.fillRect(20, 10, 150, 100)
+  await snapshotImage(t)
+})
+
+test.todo('fillText')
+
+test.todo('getContextAttributes')
+
+test('getImageData', async (t) => {
+  const { ctx } = t.context
+  ctx.rect(10, 10, 100, 100)
+  ctx.fill()
+  const imageData = ctx.getImageData(60, 60, 200, 100)
+  ctx.putImageData(imageData, 150, 10)
+  await snapshotImage(t)
+})
+
+test.todo('isPointInPath')
+
+test.todo('isPointInStroke')
+
+test('lineTo', async (t) => {
+  const { ctx } = t.context
+  ctx.beginPath() // Start a new path
+  ctx.moveTo(30, 50) // Move the pen to (30, 50)
+  ctx.lineTo(150, 100) // Draw a line to (150, 100)
+  ctx.stroke() // Render the path
+  await snapshotImage(t)
+})
+
+test.todo('measureText')
+
+test('moveTo', async (t) => {
+  const { ctx } = t.context
+  ctx.beginPath()
+  ctx.moveTo(50, 50) // Begin first sub-path
+  ctx.lineTo(200, 50)
+  ctx.moveTo(50, 90) // Begin second sub-path
+  ctx.lineTo(280, 120)
+  ctx.stroke()
+  await snapshotImage(t)
+})
+
+test('putImageData', async (t) => {
+  const { ctx } = t.context
+  function putImageData(
+    imageData: ImageData,
+    dx: number,
+    dy: number,
+    dirtyX: number,
+    dirtyY: number,
+    dirtyWidth: number,
+    dirtyHeight: number,
+  ) {
+    const data = imageData.data
+    const height = imageData.height
+    const width = imageData.width
+    dirtyX = dirtyX || 0
+    dirtyY = dirtyY || 0
+    dirtyWidth = dirtyWidth !== undefined ? dirtyWidth : width
+    dirtyHeight = dirtyHeight !== undefined ? dirtyHeight : height
+    const limitBottom = dirtyY + dirtyHeight
+    const limitRight = dirtyX + dirtyWidth
+    for (let y = dirtyY; y < limitBottom; y++) {
+      for (let x = dirtyX; x < limitRight; x++) {
+        const pos = y * width + x
+        ctx.fillStyle =
+          'rgba(' +
+          data[pos * 4 + 0] +
+          ',' +
+          data[pos * 4 + 1] +
+          ',' +
+          data[pos * 4 + 2] +
+          ',' +
+          data[pos * 4 + 3] / 255 +
+          ')'
+        ctx.fillRect(x + dx, y + dy, 1, 1)
+      }
+    }
+  }
+
+  // Draw content onto the canvas
+  ctx.fillRect(0, 0, 100, 100)
+  // Create an ImageData object from it
+  const imagedata = ctx.getImageData(0, 0, 100, 100)
+  // use the putImageData function that illustrates how putImageData works
+  putImageData(imagedata, 150, 0, 50, 50, 25, 25)
+
+  await snapshotImage(t)
+})
+
+test('quadraticCurveTo', async (t) => {
+  const { ctx } = t.context
+  // Quadratic Bézier curve
+  ctx.beginPath()
+  ctx.moveTo(50, 20)
+  ctx.quadraticCurveTo(230, 30, 50, 100)
+  ctx.stroke()
+
+  // Start and end points
+  ctx.fillStyle = 'blue'
+  ctx.beginPath()
+  ctx.arc(50, 20, 5, 0, 2 * Math.PI) // Start point
+  ctx.arc(50, 100, 5, 0, 2 * Math.PI) // End point
+  ctx.fill()
+
+  // Control point
+  ctx.fillStyle = 'red'
+  ctx.beginPath()
+  ctx.arc(230, 30, 5, 0, 2 * Math.PI)
+  ctx.fill()
+  await snapshotImage(t)
+})
+
+test('rect', async (t) => {
+  const { ctx } = t.context
+  ctx.fillStyle = 'yellow'
+  ctx.rect(10, 20, 150, 100)
+  ctx.fill()
+  await snapshotImage(t)
+})
+
+test.todo('resetTransform')
+
+test('save-restore', async (t) => {
+  const { ctx } = t.context
+  // Save the default state
+  ctx.save()
+
+  ctx.fillStyle = 'green'
+  ctx.fillRect(10, 10, 100, 100)
+
+  // Restore the default state
+  ctx.restore()
+
+  ctx.fillRect(150, 40, 100, 100)
+
+  await snapshotImage(t)
+})
+
+test.todo('rotate')
+
+test.todo('scale')
+
+test('setLineDash', async (t) => {
+  const { ctx } = t.context
+  // Dashed line
+  ctx.beginPath()
+  ctx.setLineDash([5, 15])
+  ctx.moveTo(0, 50)
+  ctx.lineTo(300, 50)
+  ctx.stroke()
+
+  // Solid line
+  ctx.beginPath()
+  ctx.setLineDash([])
+  ctx.moveTo(0, 100)
+  ctx.lineTo(300, 100)
+  ctx.stroke()
+  await snapshotImage(t)
+})
+
+test('setTransform', async (t) => {
+  const { ctx } = t.context
+  ctx.setTransform(1, 0.2, 0.8, 1, 0, 0)
+  ctx.fillRect(0, 0, 100, 100)
+  await snapshotImage(t)
+})
+
+test('stroke', async (t) => {
+  const { ctx } = t.context
+  // First sub-path
+  ctx.lineWidth = 26
+  ctx.strokeStyle = 'orange'
+  ctx.moveTo(20, 20)
+  ctx.lineTo(160, 20)
+  ctx.stroke()
+
+  // Second sub-path
+  ctx.lineWidth = 14
+  ctx.strokeStyle = 'green'
+  ctx.moveTo(20, 80)
+  ctx.lineTo(220, 80)
+  ctx.stroke()
+
+  // Third sub-path
+  ctx.lineWidth = 4
+  ctx.strokeStyle = 'pink'
+  ctx.moveTo(20, 140)
+  ctx.lineTo(280, 140)
+  ctx.stroke()
+  await snapshotImage(t)
+})
+
+test('stroke-and-filling', async (t) => {
+  const { ctx } = t.context
+  ctx.lineWidth = 16
+  ctx.strokeStyle = 'red'
+
+  // Stroke on top of fill
+  ctx.beginPath()
+  ctx.rect(25, 25, 100, 100)
+  ctx.fill()
+  ctx.stroke()
+
+  // Fill on top of stroke
+  ctx.beginPath()
+  ctx.rect(175, 25, 100, 100)
+  ctx.stroke()
+  ctx.fill()
+  await snapshotImage(t)
+})
+
+test('strokeRect', async (t) => {
+  const { ctx } = t.context
+  ctx.shadowColor = '#d53'
+  ctx.shadowBlur = 20
+  ctx.lineJoin = 'bevel'
+  ctx.lineWidth = 15
+  ctx.strokeStyle = '#38f'
+  ctx.strokeRect(30, 30, 160, 90)
+  await snapshotImage(t)
+})
+
+test.todo('strokeText')
+
+test('transform', async (t) => {
+  const { ctx } = t.context
+  ctx.transform(1, 0.2, 0.8, 1, 0, 0)
+  ctx.fillRect(0, 0, 100, 100)
+  ctx.resetTransform()
+  ctx.fillRect(220, 0, 100, 100)
+  await snapshotImage(t)
+})
+
+test('translate', async (t) => {
+  const { ctx } = t.context
+  // Moved square
+  ctx.translate(110, 30)
+  ctx.fillStyle = 'red'
+  ctx.fillRect(0, 0, 80, 80)
+
+  // Reset current transformation matrix to the identity matrix
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
+
+  // Unmoved square
+  ctx.fillStyle = 'gray'
+  ctx.fillRect(0, 0, 80, 80)
   await snapshotImage(t)
 })

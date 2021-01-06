@@ -5,9 +5,9 @@ use napi::*;
 
 #[derive(Debug, Clone)]
 pub struct ImageData {
-  width: u32,
-  height: u32,
-  data: *mut u8,
+  pub(crate) width: u32,
+  pub(crate) height: u32,
+  pub(crate) data: *mut u8,
 }
 
 impl Drop for ImageData {

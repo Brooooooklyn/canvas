@@ -149,6 +149,13 @@ extern "C"
     }
   }
 
+  bool skiac_surface_read_pixels_rect(skiac_surface *c_surface, uint8_t *data, int x, int y, int w, int h)
+  {
+    auto image_info = SkImageInfo::Make(w, h, SkColorType::kRGBA_8888_SkColorType, SkAlphaType::kUnpremul_SkAlphaType, SkColorSpace::MakeSRGB());
+    auto result = SURFACE_CAST->readPixels(image_info, data, w * 4, x, y);
+    return result;
+  }
+
   void skiac_surface_png_data(skiac_surface *c_surface, skiac_sk_data *data)
   {
     auto image = SURFACE_CAST->makeImageSnapshot();
@@ -283,6 +290,22 @@ extern "C"
   void skiac_canvas_restore(skiac_canvas *c_canvas)
   {
     CANVAS_CAST->restore();
+  }
+
+  void skiac_canvas_write_pixels(skiac_canvas *c_canvas, int width, int height, uint8_t *pixels, size_t row_bytes, int x, int y)
+  {
+    auto info = SkImageInfo::Make(width, height, SkColorType::kRGBA_8888_SkColorType, SkAlphaType::kUnpremul_SkAlphaType);
+    CANVAS_CAST->writePixels(info, pixels, row_bytes, x, y);
+  }
+
+  void skiac_canvas_write_pixels_dirty(skiac_canvas *c_canvas, int width, int height, uint8_t *pixels, size_t row_bytes, size_t length, float x, float y, float dirty_x, float dirty_y, float dirty_width, float dirty_height)
+  {
+    auto info = SkImageInfo::Make(width, height, SkColorType::kRGBA_8888_SkColorType, SkAlphaType::kUnpremul_SkAlphaType);
+    auto data = SkData::MakeFromMalloc(pixels, length);
+    auto image = SkImage::MakeRasterData(info, data, row_bytes);
+    auto src_rect = SkRect::MakeXYWH(dirty_x, dirty_y, dirty_width, dirty_height);
+    auto dst_rect = SkRect::MakeXYWH(x + dirty_x, y + dirty_y, dirty_width, dirty_height);
+    CANVAS_CAST->drawImageRect(image, src_rect, dst_rect, nullptr);
   }
 
   // Paint

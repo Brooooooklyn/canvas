@@ -45,6 +45,20 @@ test('globalCompositeOperation state should be ok', (t) => {
   t.is(ctx.globalCompositeOperation, 'xor')
 })
 
+test('imageSmoothingEnabled state should be ok', (t) => {
+  const { ctx } = t.context
+  t.is(ctx.imageSmoothingEnabled, true)
+  ctx.imageSmoothingEnabled = false
+  t.is(ctx.imageSmoothingEnabled, false)
+})
+
+test('imageSmoothingQuality state should be ok', (t) => {
+  const { ctx } = t.context
+  t.is(ctx.imageSmoothingQuality, 'low')
+  ctx.imageSmoothingQuality = 'high'
+  t.is(ctx.imageSmoothingQuality, 'high')
+})
+
 test('lineCap state should be ok', (t) => {
   const { ctx } = t.context
   t.is(ctx.lineCap, 'butt')
@@ -114,3 +128,12 @@ test('shadowOffsetY state should be ok', (t) => {
   ctx.shadowOffsetY = 10
   t.is(ctx.shadowOffsetY, 10)
 })
+
+test('lineDash state should be ok', (t) => {
+  const { ctx } = t.context
+  const lineDash = [1, 2, 4.5, 7]
+  ctx.setLineDash(lineDash)
+  t.deepEqual(ctx.getLineDash(), lineDash)
+})
+
+test.todo('getTransform')

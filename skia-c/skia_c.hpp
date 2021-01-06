@@ -22,6 +22,7 @@ typedef struct skiac_path_effect skiac_path_effect;
 typedef struct skiac_matrix skiac_matrix;
 typedef struct skiac_mask_filter skiac_mask_filter;
 typedef struct skiac_data skiac_data;
+typedef struct skiac_image skiac_image;
 
 struct skiac_transform
 {
@@ -69,6 +70,7 @@ extern "C"
   int skiac_surface_get_width(skiac_surface *c_surface);
   int skiac_surface_get_height(skiac_surface *c_surface);
   void skiac_surface_read_pixels(skiac_surface *c_surface, skiac_surface_data *data);
+  bool skiac_surface_read_pixels_rect(skiac_surface *c_surface, uint8_t *data, int x, int y, int w, int h);
   void skiac_surface_png_data(skiac_surface *c_surface, skiac_sk_data *data);
   int skiac_surface_get_alpha_type(skiac_surface *c_surface);
   bool skiac_surface_save(skiac_surface *c_surface, const char *path);
@@ -106,6 +108,8 @@ extern "C"
   void skiac_canvas_clip_path(skiac_canvas *c_canvas, skiac_path *c_path);
   void skiac_canvas_save(skiac_canvas *c_canvas);
   void skiac_canvas_restore(skiac_canvas *c_canvas);
+  void skiac_canvas_write_pixels(skiac_canvas *c_canvas, int width, int height, uint8_t *pixels, size_t row_bytes, int x, int y);
+  void skiac_canvas_write_pixels_dirty(skiac_canvas *c_canvas, int width, int height, uint8_t *pixels, size_t row_bytes, size_t length, float x, float y, float dirty_x, float dirty_y, float dirty_width, float dirty_height);
 
   // Paint
   skiac_paint *skiac_paint_create();
