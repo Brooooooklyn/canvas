@@ -1,6 +1,6 @@
 {
   "name": "@napi-rs/skia-darwin-x64",
-  "version": "0.0.1-alpha.2",
+  "version": "0.0.1-alpha.3",
   "os": ["darwin"],
   "cpu": ["x64"],
   "main": "skia.darwin-x64.node",
