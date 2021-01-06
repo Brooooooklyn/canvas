@@ -10,8 +10,8 @@ crate-type = ["cdylib"]
 [dependencies]
 anyhow = "1"
 cssparser = "0.28"
-napi = "1.0.0"
-napi-derive = "1.0.0"
+napi = "1"
+napi-derive = "1"
 thiserror = "1"
 
 [target.'cfg(all(unix, not(target_env = "musl"), not(target_arch = "aarch64")))'.dependencies]

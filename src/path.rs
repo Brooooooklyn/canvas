@@ -1,5 +1,4 @@
 use std::convert::TryInto;
-use std::f32::consts::PI;
 
 use napi::*;
 
@@ -23,101 +22,6 @@ impl Path {
         Property::new(&env, "ellipse")?.with_method(ellipse),
         Property::new(&env, "rect")?.with_method(rect),
       ],
-    )
-  }
-
-  #[inline(always)]
-  pub fn ellipse(
-    &mut self,
-    x: f32,
-    y: f32,
-    radius_x: f32,
-    radius_y: f32,
-    rotation: f32,
-    start_angle: f32,
-    end_angle: f32,
-    ccw: bool,
-  ) {
-    // based off of CanonicalizeAngle in Chrome
-    let tau = 2.0 * PI;
-    let mut new_start_angle = start_angle % tau;
-    if new_start_angle < 0.0 {
-      new_start_angle += tau;
-    }
-    let delta = new_start_angle - start_angle;
-    let start_angle = new_start_angle;
-    let mut end_angle = end_angle + delta;
-
-    // Based off of AdjustEndAngle in Chrome.
-    if !ccw && (end_angle - start_angle) >= tau {
-      end_angle = start_angle + tau; // Draw complete ellipse
-    } else if ccw && (start_angle - end_angle) >= tau {
-      end_angle = start_angle - tau; // Draw complete ellipse
-    } else if !ccw && start_angle > end_angle {
-      end_angle = start_angle + (tau - (start_angle - end_angle) % tau);
-    } else if ccw && start_angle < end_angle {
-      end_angle = start_angle - (tau - (end_angle - start_angle) % tau);
-    }
-
-    // Based off of Chrome's implementation in
-    // https://cs.chromium.org/chromium/src/third_party/blink/renderer/platform/graphics/path.cc
-    // of note, can't use addArc or addOval because they close the arc, which
-    // the spec says not to do (unless the user explicitly calls closePath).
-    // This throws off points being in/out of the arc.
-    let left = x - radius_x;
-    let top = y - radius_y;
-    let right = x + radius_x;
-    let bottom = y + radius_y;
-    let mut rotated = Matrix::identity();
-    rotated.pre_translate(x, y);
-    rotated.pre_rotate(radians_to_degrees(rotation));
-    rotated.pre_translate(-x, -y);
-    let unrotated = rotated.invert().unwrap();
-
-    self.transform_matrix(&unrotated);
-
-    // draw in 2 180 degree segments because trying to draw all 360 degrees at once
-    // draws nothing.
-    let sweep_deg = radians_to_degrees(end_angle - start_angle);
-    let start_deg = radians_to_degrees(start_angle);
-    if almost_equal(sweep_deg.abs(), 360.0) {
-      let half_sweep = sweep_deg / 2.0;
-      self.arc_to(left, top, right, bottom, start_deg, half_sweep, false);
-      self.arc_to(
-        x - radius_x,
-        y - radius_y,
-        x + radius_x,
-        y + radius_y,
-        start_deg + half_sweep,
-        half_sweep,
-        false,
-      );
-    } else {
-      self.arc_to(left, top, right, bottom, start_deg, sweep_deg, false);
-    }
-
-    self.transform_matrix(&rotated);
-  }
-
-  #[inline(always)]
-  pub fn arc(
-    &mut self,
-    center_x: f32,
-    center_y: f32,
-    radius: f32,
-    start_angle: f32,
-    end_angle: f32,
-    from_end: bool,
-  ) {
-    self.ellipse(
-      center_x,
-      center_y,
-      radius,
-      radius,
-      0.0,
-      start_angle,
-      end_angle,
-      from_end,
     )
   }
 }
@@ -350,14 +254,4 @@ fn rect(ctx: CallContext) -> Result<JsUndefined> {
   path_2d.add_rect(x as f32, y as f32, width as f32, height as f32);
 
   ctx.env.get_undefined()
-}
-
-#[inline(always)]
-fn radians_to_degrees(rad: f32) -> f32 {
-  (rad / PI) * 180.0
-}
-
-#[inline(always)]
-fn almost_equal(floata: f32, floatb: f32) -> bool {
-  (floata - floatb).abs() < 0.00001
 }

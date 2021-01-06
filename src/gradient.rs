@@ -34,8 +34,8 @@ impl CanvasGradient {
       start_point: (x0, y0),
       end_point: (x1, y1),
       base: Gradient {
-        colors: vec![],
-        positions: vec![],
+        colors: Vec::with_capacity(0),
+        positions: Vec::with_capacity(0),
         tile_mode: TileMode::Clamp,
         transform: Transform::default(),
       },
@@ -51,8 +51,8 @@ impl CanvasGradient {
       end: (x1, y1),
       end_radius: r1,
       base: Gradient {
-        colors: vec![],
-        positions: vec![],
+        colors: Vec::with_capacity(0),
+        positions: Vec::with_capacity(0),
         tile_mode: TileMode::Clamp,
         transform: Transform::default(),
       },
@@ -61,7 +61,7 @@ impl CanvasGradient {
   }
 
   #[inline(always)]
-  pub fn add_color_stop(&mut self, index: f32, color: Color) {
+  pub fn add_color_stop(&mut self, offset: f32, color: Color) {
     let (stops, colors) = match self {
       Self::Linear(linear_gradient) => (
         &mut linear_gradient.base.positions,
@@ -72,11 +72,35 @@ impl CanvasGradient {
         &mut radial_gradient.base.colors,
       ),
     };
-    stops.push(index);
-    colors.push(color);
+    if let Ok(pos) = stops.binary_search_by(|o| o.partial_cmp(&offset).unwrap()) {
+      colors[pos] = color;
+    } else {
+      if stops.is_empty() {
+        stops.push(offset);
+        colors.push(color);
+      } else {
+        let mut index = 0usize;
+        // insert it in sorted order
+        for (idx, val) in stops.iter().enumerate() {
+          index = idx;
+          if val > &offset {
+            break;
+          }
+        }
+        stops.insert(index + 1, offset);
+        colors.insert(index + 1, color);
+      }
+    }
   }
 
   #[inline(always)]
+  /// Transform is [3 x 3] matrix, but stored in 2d array:
+  /// | A B C |
+  /// | D E F |
+  /// | 0 0 1 |
+  /// [0 -> A, 1 -> B, 2 -> C, 3 -> D, 4 -> E, 5 -> F, 6 -> 0, 7 -> 0, 8 -> 1 ]
+  /// [lineargradient.js](skia/modules/canvaskit/htmlcanvas/lineargradient.js)
+  /// [radialgradient.js](skia/modules/canvaskit/htmlcanvas/radialgradient.js)
   pub(crate) fn get_shader(
     &self,
     current_transform: &Transform,
@@ -85,34 +109,35 @@ impl CanvasGradient {
       Self::Linear(ref linear_gradient) => {
         let (x1, y1) = linear_gradient.start_point;
         let (x2, y2) = linear_gradient.end_point;
-        let pt_arr: [f32; 4] = [x1, y1, x2, y2];
-        let pts = current_transform.map_points(&pt_arr);
-        let sx1 = pts[0];
-        let sy1 = pts[1];
-        let sx2 = pts[2];
-        let sy2 = pts[3];
+        let mut pt_arr: [f32; 4] = [x1, y1, x2, y2];
+        current_transform.map_points(&mut pt_arr);
+        let sx1 = pt_arr[0];
+        let sy1 = pt_arr[1];
+        let sx2 = pt_arr[2];
+        let sy2 = pt_arr[3];
         Ok(
           Shader::new_linear_gradient(&LinearGradient {
             start_point: (sx1, sy1),
             end_point: (sx2, sy2),
             base: linear_gradient.base.clone(),
           })
-          .ok_or_else(|| SkError::Generic("Create linear gradient failed".to_owned()))?,
+          .ok_or_else(|| SkError::Generic("Get shader of linear gradient failed".to_owned()))?,
         )
       }
       Self::Radial(ref radial_gradient) => {
         let (x1, y1) = radial_gradient.start;
         let (x2, y2) = radial_gradient.end;
-        let (r1, r2) = radial_gradient.start;
-        let pt_arr: [f32; 4] = [x1, y1, x2, y2];
-        let pts = current_transform.map_points(&pt_arr);
-        let sx1 = pts[0];
-        let sy1 = pts[1];
-        let sx2 = pts[2];
-        let sy2 = pts[3];
+        let r1 = radial_gradient.start_radius;
+        let r2 = radial_gradient.end_radius;
+        let mut pt_arr: [f32; 4] = [x1, y1, x2, y2];
+        current_transform.map_points(&mut pt_arr);
+        let sx1 = pt_arr[0];
+        let sy1 = pt_arr[1];
+        let sx2 = pt_arr[2];
+        let sy2 = pt_arr[3];
 
         let sx = current_transform.a;
-        let sy = current_transform.e;
+        let sy = current_transform.d;
         let scale_factor = (f32::abs(sx) + f32::abs(sy)) / 2f32;
 
         let sr1 = r1 * scale_factor;
@@ -128,7 +153,7 @@ impl CanvasGradient {
 
         Ok(
           Shader::new_two_point_conical_gradient(&new_radial_gradient)
-            .ok_or_else(|| SkError::Generic("Create radial gradient failed".to_owned()))?,
+            .ok_or_else(|| SkError::Generic("Get shader of radial gradient failed".to_owned()))?,
         )
       }
     }

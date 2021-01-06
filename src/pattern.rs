@@ -2,13 +2,13 @@ use cssparser::{Color as CSSColor, Parser, ParserInput, RGBA};
 
 use crate::error::SkError;
 use crate::gradient::CanvasGradient;
-use crate::image::Image;
+use crate::image::ImageData;
 
 #[derive(Debug, Clone)]
 pub enum Pattern {
   Color(RGBA, String),
   Gradient(CanvasGradient),
-  ImagePattern(Image),
+  ImagePattern(ImageData),
 }
 
 impl Pattern {

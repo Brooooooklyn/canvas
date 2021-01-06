@@ -1,9 +1,8 @@
-export function createCanvas(
-  width: number,
-  height: number,
-): HTMLCanvasElement & {
+export type Canvas = HTMLCanvasElement & {
   png(): Promise<Buffer>
 }
+
+export function createCanvas(width: number, height: number): Canvas
 
 export interface DOMMatrix2DInit {
   a: number
@@ -12,6 +11,24 @@ export interface DOMMatrix2DInit {
   d: number
   e: number
   f: number
+}
+
+export class ImageData {
+  /**
+   * Returns the one-dimensional array containing the data in RGBA order, as integers in the range 0 to 255.
+   */
+  readonly data: Uint8ClampedArray
+  /**
+   * Returns the actual dimensions of the data in the ImageData object, in pixels.
+   */
+  readonly height: number
+  /**
+   * Returns the actual dimensions of the data in the ImageData object, in pixels.
+   */
+  readonly width: number
+
+  constructor(sw: number, sh: number)
+  constructor(data: Uint8ClampedArray, sw: number, sh?: number)
 }
 
 export class Path2D {

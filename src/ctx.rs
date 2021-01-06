@@ -49,6 +49,9 @@ impl Context {
         Property::new(&env, "lineDashOffset")?
           .with_setter(set_line_dash_offset)
           .with_getter(get_line_dash_offset),
+        Property::new(&env, "lineJoin")?
+          .with_setter(set_line_join)
+          .with_getter(get_line_join),
         Property::new(&env, "lineWidth")?
           .with_setter(set_line_width)
           .with_getter(get_line_width),
@@ -80,6 +83,7 @@ impl Context {
         Property::new(&env, "closePath")?.with_method(close_path),
         Property::new(&env, "createLinearGradient")?.with_method(create_linear_gradient),
         Property::new(&env, "createRadialGradient")?.with_method(create_radial_gradient),
+        Property::new(&env, "ellipse")?.with_method(ellipse),
         Property::new(&env, "lineTo")?.with_method(line_to),
         Property::new(&env, "moveTo")?.with_method(move_to),
         Property::new(&env, "fill")?.with_method(fill),
@@ -89,6 +93,7 @@ impl Context {
         Property::new(&env, "restore")?.with_method(restore),
         Property::new(&env, "save")?.with_method(save),
         Property::new(&env, "scale")?.with_method(scale),
+        Property::new(&env, "setLineDash")?.with_method(set_line_dash),
         Property::new(&env, "stroke")?.with_method(stroke),
         Property::new(&env, "strokeRect")?.with_method(stroke_rect),
         Property::new(&env, "translate")?.with_method(translate),
@@ -242,7 +247,7 @@ impl Context {
       Pattern::Color(c, _) => {
         let mut color = c.clone();
         color.alpha =
-          ((color.alpha as f32 / 255.0) * (self.paint.get_alpha() as f32 / 255.0)).round() as u8;
+          ((color.alpha as f32) * (self.paint.get_alpha() as f32 / 255.0)).round() as u8;
         paint.set_color(color.red, color.green, color.blue, color.alpha);
       }
       Pattern::Gradient(g) => {
@@ -274,7 +279,7 @@ impl Context {
     match &last_state.stroke_style {
       Pattern::Color(c, _) => {
         let mut color = c.clone();
-        color.alpha = ((color.alpha as f32 / 255.0) * (global_alpha as f32 / 255.0)).round() as u8;
+        color.alpha = ((color.alpha as f32) * (global_alpha as f32 / 255.0)).round() as u8;
         paint.set_color(color.red, color.green, color.blue, color.alpha);
       }
       Pattern::Gradient(g) => {
@@ -549,7 +554,7 @@ fn clear_rect(ctx: CallContext) -> Result<JsUndefined> {
   paint.set_style(PaintStyle::Fill);
   paint.set_color(0, 0, 0, 0);
   paint.set_stroke_miter(10.0);
-  paint.set_blend_mode(BlendMode::SourceOver);
+  paint.set_blend_mode(BlendMode::Clear);
   context_2d
     .surface
     .draw_rect(x as f32, y as f32, width as f32, height as f32, &paint);
@@ -587,6 +592,36 @@ fn close_path(ctx: CallContext) -> Result<JsUndefined> {
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
 
   context_2d.path.close();
+  ctx.env.get_undefined()
+}
+
+#[js_function(8)]
+fn ellipse(ctx: CallContext) -> Result<JsUndefined> {
+  let this = ctx.this_unchecked::<JsObject>();
+  let context_2d = ctx.env.unwrap::<Context>(&this)?;
+  let x: f64 = ctx.get::<JsNumber>(0)?.try_into()?;
+  let y: f64 = ctx.get::<JsNumber>(1)?.try_into()?;
+  let radius_x: f64 = ctx.get::<JsNumber>(2)?.try_into()?;
+  let radius_y: f64 = ctx.get::<JsNumber>(3)?.try_into()?;
+  let rotation: f64 = ctx.get::<JsNumber>(4)?.try_into()?;
+  let start_angle: f64 = ctx.get::<JsNumber>(5)?.try_into()?;
+  let end_angle: f64 = ctx.get::<JsNumber>(6)?.try_into()?;
+
+  let from_end = if ctx.length == 8 {
+    ctx.get::<JsBoolean>(7)?.get_value()?
+  } else {
+    false
+  };
+  context_2d.path.ellipse(
+    x as f32,
+    y as f32,
+    radius_x as f32,
+    radius_y as f32,
+    rotation as f32,
+    start_angle as f32,
+    end_angle as f32,
+    from_end,
+  );
   ctx.env.get_undefined()
 }
 
@@ -791,6 +826,30 @@ fn scale(ctx: CallContext) -> Result<JsUndefined> {
 
   context_2d.surface.canvas.scale(x as f32, y as f32);
 
+  ctx.env.get_undefined()
+}
+
+#[js_function(1)]
+fn set_line_dash(ctx: CallContext) -> Result<JsUndefined> {
+  let dash = ctx.get::<JsObject>(0)?;
+  let len = dash.get_array_length()? as usize;
+  let this = ctx.this_unchecked::<JsObject>();
+  let context_2d = ctx.env.unwrap::<Context>(&this)?;
+
+  let is_odd = len & 1 != 0;
+  let mut dash_list = if is_odd {
+    vec![0f32; len * 2]
+  } else {
+    vec![0f32; len]
+  };
+  for idx in 0..len {
+    let dash_value: f64 = dash.get_element::<JsNumber>(idx as u32)?.try_into()?;
+    dash_list[idx] = dash_value as f32;
+    if is_odd {
+      dash_list[idx + len] = dash_value as f32;
+    }
+  }
+  context_2d.states.last_mut().unwrap().line_dash_list = dash_list;
   ctx.env.get_undefined()
 }
 

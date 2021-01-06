@@ -27,7 +27,7 @@ pub struct Context2dRenderingState {
 impl Default for Context2dRenderingState {
   fn default() -> Context2dRenderingState {
     Context2dRenderingState {
-      line_dash_list: Vec::new(),
+      line_dash_list: vec![],
       stroke_style: Pattern::Color(RGBA::new(0, 0, 0, 255), "#000".to_owned()),
       fill_style: Pattern::Color(RGBA::new(0, 0, 0, 255), "#000".to_owned()),
       shadow_offset_x: 0f32,
