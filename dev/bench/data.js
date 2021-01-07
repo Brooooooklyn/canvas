@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1609929530385,
+  "lastUpdate": 1610035996411,
   "repoUrl": "https://github.com/Brooooooklyn/skia-rs",
   "entries": {
     "Benchmark": [
@@ -514,6 +514,58 @@ window.BENCHMARK_DATA = {
             "name": "Draw gradient#node-canvas",
             "value": 23,
             "range": "±0.17%",
+            "unit": "ops/sec",
+            "extra": "42 samples"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "lynweklm@gmail.com",
+            "name": "LongYinan",
+            "username": "Brooooooklyn"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "cd324ea4466b2c459cb29c24246bb3da62450061",
+          "message": "Merge pull request #121 from Brooooooklyn/put-image-data\n\nfeat: ImageData relates API and tests",
+          "timestamp": "2021-01-08T00:02:40+08:00",
+          "tree_id": "b6a00688a55cad75ffbc1849924acde7447d1cc1",
+          "url": "https://github.com/Brooooooklyn/skia-rs/commit/cd324ea4466b2c459cb29c24246bb3da62450061"
+        },
+        "date": 1610035922172,
+        "tool": "benchmarkjs",
+        "benches": [
+          {
+            "name": "Draw house#@napi-rs/skia",
+            "value": 28,
+            "range": "±0.11%",
+            "unit": "ops/sec",
+            "extra": "49 samples"
+          },
+          {
+            "name": "Draw house#node-canvas",
+            "value": 24,
+            "range": "±0.36%",
+            "unit": "ops/sec",
+            "extra": "43 samples"
+          },
+          {
+            "name": "Draw gradient#@napi-rs/skia",
+            "value": 27,
+            "range": "±0.05%",
+            "unit": "ops/sec",
+            "extra": "48 samples"
+          },
+          {
+            "name": "Draw gradient#node-canvas",
+            "value": 23,
+            "range": "±0.28%",
             "unit": "ops/sec",
             "extra": "42 samples"
           }
