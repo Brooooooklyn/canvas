@@ -6,6 +6,7 @@ use std::slice;
 use std::str::FromStr;
 
 use crate::error::SkError;
+use crate::image::ImageData;
 
 mod ffi {
   #[repr(C)]
@@ -124,6 +125,15 @@ mod ffi {
 
     pub fn skiac_surface_read_pixels(surface: *mut skiac_surface, data: *mut skiac_surface_data);
 
+    pub fn skiac_surface_read_pixels_rect(
+      surface: *mut skiac_surface,
+      data: *mut u8,
+      x: i32,
+      y: i32,
+      w: i32,
+      h: i32,
+    ) -> bool;
+
     pub fn skiac_surface_png_data(surface: *mut skiac_surface, data: *mut skiac_sk_data);
 
     pub fn skiac_surface_get_alpha_type(surface: *mut skiac_surface) -> i32;
@@ -189,6 +199,31 @@ mod ffi {
     pub fn skiac_canvas_save(canvas: *mut skiac_canvas);
 
     pub fn skiac_canvas_restore(canvas: *mut skiac_canvas);
+
+    pub fn skiac_canvas_write_pixels(
+      canvas: *mut skiac_canvas,
+      width: i32,
+      height: i32,
+      pixels: *const u8,
+      row_bytes: usize,
+      x: i32,
+      y: i32,
+    );
+
+    pub fn skiac_canvas_write_pixels_dirty(
+      canvas: *mut skiac_canvas,
+      width: i32,
+      height: i32,
+      pixels: *const u8,
+      row_bytes: usize,
+      length: usize,
+      x: f32,
+      y: f32,
+      dirty_x: f32,
+      dirty_y: f32,
+      dirty_width: f32,
+      dirty_height: f32,
+    );
 
     pub fn skiac_paint_create() -> *mut skiac_paint;
 
@@ -794,8 +829,6 @@ pub struct Surface {
 }
 
 impl Surface {
-  // TODO: use AlphaType
-
   #[inline]
   pub fn new_rgba(width: u32, height: u32) -> Option<Surface> {
     unsafe { Self::from_ptr(ffi::skiac_surface_create_rgba(width as i32, height as i32)) }
@@ -865,6 +898,26 @@ impl Surface {
       2 => AlphaType::Premultiplied,
       3 => AlphaType::Unpremultiplied,
       _ => unreachable!(),
+    }
+  }
+
+  #[inline]
+  pub fn read_pixels(&self, x: u32, y: u32, width: u32, height: u32) -> Option<Vec<u8>> {
+    let mut result = vec![0; (width * height * 4) as usize];
+    let status = unsafe {
+      ffi::skiac_surface_read_pixels_rect(
+        self.ptr,
+        result.as_mut_ptr(),
+        x as i32,
+        y as i32,
+        width as i32,
+        height as i32,
+      )
+    };
+    if status {
+      Some(result)
+    } else {
+      None
     }
   }
 
@@ -1181,6 +1234,50 @@ impl Canvas {
       ffi::skiac_canvas_restore(self.0);
     }
   }
+
+  #[inline]
+  pub fn write_pixels(&mut self, image: &ImageData, x: u32, y: u32) {
+    unsafe {
+      ffi::skiac_canvas_write_pixels(
+        self.0,
+        image.width as i32,
+        image.height as i32,
+        image.data,
+        (image.width * 4) as usize,
+        x as i32,
+        y as i32,
+      );
+    }
+  }
+
+  #[inline]
+  pub fn write_pixels_dirty(
+    &mut self,
+    image: &ImageData,
+    x: u32,
+    y: u32,
+    dirty_x: f64,
+    dirty_y: f64,
+    dirty_width: f64,
+    dirty_height: f64,
+  ) {
+    unsafe {
+      ffi::skiac_canvas_write_pixels_dirty(
+        self.0,
+        image.width as i32,
+        image.height as i32,
+        image.data,
+        (image.width * 4) as usize,
+        (image.width * image.height * 4) as usize,
+        x as f32,
+        y as f32,
+        dirty_x as f32,
+        dirty_y as f32,
+        dirty_width as f32,
+        dirty_height as f32,
+      )
+    }
+  }
 }
 
 #[derive(Debug)]
@@ -1258,7 +1355,7 @@ impl Paint {
   }
 
   #[inline]
-  pub fn get_stroke_width(&mut self) -> f32 {
+  pub fn get_stroke_width(&self) -> f32 {
     unsafe { ffi::skiac_paint_get_stroke_width(self.0) }
   }
 
@@ -1800,6 +1897,39 @@ impl Transform {
       pt_arr[i + 1] = y_trans / denom;
       i += 2;
     }
+  }
+
+  #[inline]
+  /// | A B C |
+  /// | D E F |
+  /// | 0 0 1 |
+  /// [interface.js](skia/modules/canvaskit/interface.js)
+  pub fn invert(&self) -> Option<Self> {
+    let m = [
+      self.a, self.b, self.c, self.d, self.e, self.f, 0f32, 0f32, 1f32,
+    ];
+    // Find the determinant by the sarrus rule. https://en.wikipedia.org/wiki/Rule_of_Sarrus
+    let det = m[0] * m[4] * m[8] + m[1] * m[5] * m[6] + m[2] * m[3] * m[7]
+      - m[2] * m[4] * m[6]
+      - m[1] * m[3] * m[8]
+      - m[0] * m[5] * m[7];
+    if det == 0f32 {
+      return None;
+    }
+    // Return the inverse by the formula adj(m)/det.
+    // adj (adjugate) of a 3x3 is the transpose of it's cofactor matrix.
+    // a cofactor matrix is a matrix where each term is +-det(N) where matrix N is the 2x2 formed
+    // by removing the row and column we're currently setting from the source.
+    // the sign alternates in a checkerboard pattern with a `+` at the top left.
+    // that's all been combined here into one expression.
+    Some(Transform {
+      a: (m[4] * m[8] - m[5] * m[7]) / det,
+      b: (m[2] * m[7] - m[1] * m[8]) / det,
+      c: (m[1] * m[5] - m[2] * m[4]) / det,
+      d: (m[5] * m[6] - m[3] * m[8]) / det,
+      e: (m[0] * m[8] - m[2] * m[6]) / det,
+      f: (m[2] * m[3] - m[0] * m[5]) / det,
+    })
   }
 }
 

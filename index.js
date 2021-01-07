@@ -10,6 +10,11 @@ const { loadBinding } = require('@node-rs/helper')
  */
 const { CanvasRenderingContext2D, CanvasElement, Path2D, ImageData } = loadBinding(__dirname, 'skia', '@napi-rs/skia')
 
+CanvasRenderingContext2D.prototype.getImageData = function getImageData(x, y, w, h) {
+  const data = this._getImageData(x, y, w, h)
+  return new ImageData(data, w, h)
+}
+
 function createCanvas(width, height) {
   const canvasElement = new CanvasElement(width, height)
   const ctx = new CanvasRenderingContext2D(width, height)
@@ -27,6 +32,18 @@ function createCanvas(width, height) {
     configurable: false,
     enumerable: false,
     writable: true,
+  })
+
+  Object.defineProperty(ctx, 'createImageData', {
+    value: function createImageData(widthOrImage, height) {
+      if (widthOrImage instanceof ImageData) {
+        return new ImageData(widthOrImage.width, widthOrImage.height)
+      }
+      return new ImageData(widthOrImage, height)
+    },
+    configurable: false,
+    enumerable: false,
+    writable: false,
   })
 
   Object.defineProperty(canvasElement, 'ctx', {
