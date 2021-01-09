@@ -1,4 +1,5 @@
 use std::convert::TryInto;
+use std::f32::consts::PI;
 use std::mem;
 use std::result;
 use std::str::FromStr;
@@ -101,6 +102,7 @@ impl Context {
         Property::new(&env, "rect")?.with_method(rect),
         Property::new(&env, "resetTransform")?.with_method(reset_transform),
         Property::new(&env, "restore")?.with_method(restore),
+        Property::new(&env, "rotate")?.with_method(rotate),
         Property::new(&env, "save")?.with_method(save),
         Property::new(&env, "scale")?.with_method(scale),
         Property::new(&env, "setLineDash")?.with_method(set_line_dash),
@@ -555,6 +557,17 @@ fn restore(ctx: CallContext) -> Result<JsUndefined> {
   let this = ctx.this_unchecked::<JsObject>();
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
   context_2d.restore();
+  ctx.env.get_undefined()
+}
+
+#[js_function(1)]
+fn rotate(ctx: CallContext) -> Result<JsUndefined> {
+  let this = ctx.this_unchecked::<JsObject>();
+  let context_2d = ctx.env.unwrap::<Context>(&this)?;
+
+  let angle: f64 = ctx.get::<JsNumber>(0)?.try_into()?;
+  context_2d.path.transform(&Transform::rotate(-angle as f32));
+  context_2d.surface.canvas.rotate(angle as f32 / PI * 180f32);
   ctx.env.get_undefined()
 }
 

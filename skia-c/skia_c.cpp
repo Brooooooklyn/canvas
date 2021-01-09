@@ -205,6 +205,11 @@ extern "C"
     CANVAS_CAST->translate(dx, dy);
   }
 
+  void skiac_canvas_rotate(skiac_canvas *c_canvas, float degrees)
+  {
+    CANVAS_CAST->rotate(degrees);
+  }
+
   skiac_matrix *skiac_canvas_get_total_transform_matrix(skiac_canvas *c_canvas)
   {
     auto martix = CANVAS_CAST->getTotalMatrix();
