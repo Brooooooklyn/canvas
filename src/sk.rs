@@ -150,6 +150,8 @@ mod ffi {
 
     pub fn skiac_canvas_translate(canvas: *mut skiac_canvas, dx: f32, dy: f32);
 
+    pub fn skiac_canvas_rotate(canvas: *mut skiac_canvas, degrees: f32);
+
     pub fn skiac_canvas_get_total_transform(canvas: *mut skiac_canvas) -> skiac_transform;
 
     pub fn skiac_canvas_get_total_transform_matrix(canvas: *mut skiac_canvas) -> *mut skiac_matrix;
@@ -1132,6 +1134,13 @@ impl Canvas {
   }
 
   #[inline]
+  pub fn rotate(&mut self, degrees: f32) {
+    unsafe {
+      ffi::skiac_canvas_rotate(self.0, degrees);
+    }
+  }
+
+  #[inline]
   pub fn get_transform(&self) -> Transform {
     unsafe { ffi::skiac_canvas_get_total_transform(self.0).into() }
   }
@@ -1873,8 +1882,24 @@ pub struct Transform {
 }
 
 impl Transform {
+  #[inline]
   pub fn new(a: f32, b: f32, c: f32, d: f32, e: f32, f: f32) -> Self {
     Transform { a, b, c, d, e, f }
+  }
+
+  #[inline]
+  pub fn rotate(radians: f32) -> Self {
+    let sin_v = radians.sin();
+    let cos_v = radians.cos();
+
+    Self {
+      a: cos_v,
+      b: -sin_v,
+      c: 0f32,
+      d: sin_v,
+      e: cos_v,
+      f: 0f32,
+    }
   }
 
   #[inline]

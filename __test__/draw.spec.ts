@@ -408,9 +408,44 @@ test('save-restore', async (t) => {
   await snapshotImage(t)
 })
 
-test.todo('rotate')
+test('rotate', async (t) => {
+  const { ctx } = t.context
+  // Point of transform origin
+  ctx.arc(0, 0, 5, 0, 2 * Math.PI)
+  ctx.fillStyle = 'blue'
+  ctx.fill()
 
-test.todo('scale')
+  // Non-rotated rectangle
+  ctx.fillStyle = 'gray'
+  ctx.fillRect(100, 0, 80, 20)
+
+  // Rotated rectangle
+  ctx.rotate((45 * Math.PI) / 180)
+  ctx.fillStyle = 'red'
+  ctx.fillRect(100, 0, 80, 20)
+  // Reset transformation matrix to the identity matrix
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
+
+  ctx.fillStyle = 'hotpink'
+  ctx.fillRect(100, 50, 80, 20)
+  await snapshotImage(t)
+})
+
+test('scale', async (t) => {
+  const { ctx } = t.context
+  // Scaled rectangle
+  ctx.scale(9, 3)
+  ctx.fillStyle = 'red'
+  ctx.fillRect(10, 10, 8, 20)
+
+  // Reset current transformation matrix to the identity matrix
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
+
+  // Non-scaled rectangle
+  ctx.fillStyle = 'gray'
+  ctx.fillRect(10, 10, 8, 20)
+  await snapshotImage(t)
+})
 
 test('setLineDash', async (t) => {
   const { ctx } = t.context
