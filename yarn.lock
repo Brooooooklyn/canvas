@@ -129,10 +129,10 @@
     "@babel/runtime" "^7.7.2"
     regenerator-runtime "^0.13.3"
 
-"@napi-rs/cli@^1.0.0":
-  version "1.0.0"
-  resolved "https://registry.npmjs.org/@napi-rs/cli/-/cli-1.0.0.tgz#b9139570016ec4c2087a9079b72c1cdc04b46581"
-  integrity sha512-hWOkP1swphh+tll7s8sY87gyyJSdYpLkkhBEUuzKlTQkGXHm0nUSPqzhnrxR5dMPLQ9T1dUQVP5Zxq0IVofDhQ==
+"@napi-rs/cli@^1.0.1":
+  version "1.0.1"
+  resolved "https://registry.yarnpkg.com/@napi-rs/cli/-/cli-1.0.1.tgz#e987c1335f90d64cd432d102612d6afedcca404e"
+  integrity sha512-gefm4Z3L8DwC+FuZqYgbS825yoa0TOzD561ncquLOgg1tRVjN7jAg9TmVCb6fVO9VEwiBRsQiVus/4wxKSZX2g==
   dependencies:
     "@octokit/rest" "^18.0.12"
     chalk "^4.1.0"
