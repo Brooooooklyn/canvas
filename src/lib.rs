@@ -21,6 +21,7 @@ mod gradient;
 mod image;
 mod path;
 mod pattern;
+#[allow(dead_code)]
 mod sk;
 mod state;
 
