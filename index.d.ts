@@ -31,6 +31,12 @@ export class ImageData {
   constructor(data: Uint8ClampedArray, sw: number, sh?: number)
 }
 
+export class Image {
+  readonly width: number
+  readonly height: number
+  src: Buffer
+}
+
 export class Path2D {
   constructor(path?: Path2D | string)
 
