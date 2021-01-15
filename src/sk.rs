@@ -391,6 +391,10 @@ mod ffi {
 
     pub fn skiac_mask_filter_destroy(mask_filter: *mut skiac_mask_filter);
 
+    pub fn skiac_data_create(ptr: *mut u8, size: usize) -> *mut skiac_data;
+
+    pub fn skiac_data_get_ptr(c_data: *mut skiac_data) -> *mut u8;
+
     pub fn skiac_sk_data_destroy(c_data: *mut skiac_data);
   }
 }
@@ -1045,6 +1049,20 @@ impl<'a> Deref for SurfaceDataMut<'a> {
 pub struct SurfaceDataRef(pub(crate) ffi::skiac_sk_data);
 
 impl SurfaceDataRef {
+  pub fn new(ptr: *mut u8, size: usize) -> SurfaceDataRef {
+    unsafe {
+      let mut data_ref = SurfaceDataRef(ffi::skiac_sk_data {
+        ptr: ptr,
+        size: size,
+        data: ffi::skiac_data_create(ptr, size),
+      });
+      // update ptr from copied SkData
+      data_ref.0.ptr = ffi::skiac_data_get_ptr(data_ref.0.data);
+
+      data_ref
+    }
+  }
+
   pub fn slice(&self) -> &'static [u8] {
     unsafe { slice::from_raw_parts(self.0.ptr, self.0.size) }
   }

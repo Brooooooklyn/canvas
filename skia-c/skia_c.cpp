@@ -722,6 +722,24 @@ extern "C"
     SkSafeUnref(mask_filter);
   }
 
+  skiac_data *skiac_data_create(uint8_t *addr, size_t size)
+  {
+    auto sk_data = SkData::MakeWithCopy(reinterpret_cast<const void *>(addr), size);
+    if (sk_data)
+    {
+      return reinterpret_cast<skiac_data *>(sk_data.get());
+    }
+    else
+    {
+      return nullptr;
+    }
+  }
+
+  uint8_t *skiac_data_get_ptr(skiac_data *c_data)
+  {
+    return (uint8_t *)reinterpret_cast<SkData *>(c_data)->data();
+  }
+
   // SkData
   void skiac_sk_data_destroy(skiac_data *c_data)
   {

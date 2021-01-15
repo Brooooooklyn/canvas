@@ -3,6 +3,8 @@ use std::slice;
 
 use napi::*;
 
+use crate::sk::*;
+
 #[derive(Debug, Clone)]
 pub struct ImageData {
   pub(crate) width: u32,
@@ -118,18 +120,10 @@ fn image_data_constructor(ctx: CallContext) -> Result<JsUndefined> {
   ctx.env.get_undefined()
 }
 
-#[derive(Debug, Clone)]
 pub struct Image {
   pub(crate) width: u32,
   pub(crate) height: u32,
-  bitmap: *mut u8,
-}
-
-impl Drop for Image {
-  fn drop(&mut self) {
-    let len = (self.width * self.height * 4) as usize;
-    unsafe { Vec::from_raw_parts(self.bitmap, len, len) };
-  }
+  data: Option<SurfaceDataRef>,
 }
 
 impl Image {
@@ -154,12 +148,10 @@ impl Image {
 
 #[js_function]
 fn image_constructor(ctx: CallContext) -> Result<JsUndefined> {
-  let mut initial_data = ManuallyDrop::new(vec![0u8; 0]);
-  let data_ptr = initial_data.as_mut_ptr();
   let image = Image {
     width: 0u32,
     height: 0u32,
-    bitmap: data_ptr,
+    data: None,
   };
   let mut this = ctx.this_unchecked::<JsObject>();
   ctx.env.wrap(&mut this, image)?;
@@ -195,19 +187,20 @@ fn get_src(ctx: CallContext) -> Result<JsUndefined> {
 #[js_function(1)]
 fn set_src(ctx: CallContext) -> Result<JsUndefined> {
   let this = ctx.this_unchecked::<JsObject>();
-  let mut image = ctx.env.unwrap::<Image>(&this)?;
+  let image = ctx.env.unwrap::<Image>(&this)?;
 
   let src_arg = ctx.get::<JsUnknown>(0)?;
   let src_data_ab = unsafe { src_arg.cast::<JsTypedArray>() }.into_value()?;
   if src_data_ab.typedarray_type != TypedArrayType::Uint8 {
     return Err(Error::new(
       Status::InvalidArg,
-      "Image src setter: Argument 1 does not implement interface Buffer."
-        .to_owned(),
+      "Image src setter: Argument 1 does not implement interface Buffer.".to_owned(),
     ));
   }
-  let arraybuffer_length = src_data_ab.len();
-  println!("buffer length {}", arraybuffer_length);
+  let length = src_data_ab.len();
+  println!("buffer length {}", length);
+
+  image.data.get_or_insert(SurfaceDataRef::new(src_data_ab.as_ptr() as *mut u8, length));
 
   ctx.env.get_undefined()
 }

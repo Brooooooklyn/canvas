@@ -1,6 +1,8 @@
 #ifndef SKIA_CAPI_H
 #define SKIA_CAPI_H
 
+#include <include/codec/SkCodec.h>
+#include <include/core/SkData.h>
 #include <include/core/SkPathEffect.h>
 #include <include/core/SkCanvas.h>
 #include <include/core/SkData.h>
@@ -212,6 +214,10 @@ extern "C"
   void skiac_mask_filter_destroy(skiac_mask_filter *c_mask_filter);
 
   // SkData
+  skiac_data *skiac_data_create(uint8_t *addr, size_t size);
+
+  uint8_t *skiac_data_get_ptr(skiac_data *c_data);
+
   void skiac_sk_data_destroy(skiac_data *c_data);
 }
 
