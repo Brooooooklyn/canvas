@@ -2,17 +2,19 @@
 #define SKIA_CAPI_H
 
 #include <include/codec/SkCodec.h>
-#include <include/core/SkData.h>
-#include <include/core/SkPathEffect.h>
+#include <include/core/SkBitmap.h>
 #include <include/core/SkCanvas.h>
 #include <include/core/SkData.h>
 #include <include/core/SkGraphics.h>
+#include <include/core/SkImage.h>
 #include <include/core/SkPaint.h>
+#include <include/core/SkPathEffect.h>
 #include <include/core/SkSurface.h>
 #include <include/core/SkMaskFilter.h>
 #include <include/effects/SkDashPathEffect.h>
 #include <include/effects/SkGradientShader.h>
 
+#include <cstdio>
 #include <stdint.h>
 
 typedef struct skiac_surface skiac_surface;
@@ -214,11 +216,13 @@ extern "C"
   void skiac_mask_filter_destroy(skiac_mask_filter *c_mask_filter);
 
   // SkData
-  skiac_data *skiac_data_create(uint8_t *addr, size_t size);
-
-  uint8_t *skiac_data_get_ptr(skiac_data *c_data);
 
   void skiac_sk_data_destroy(skiac_data *c_data);
+
+  // Image
+  skiac_image *skiac_image_make_from_buffer(uint8_t *ptr, size_t size);
+  uint32_t skiac_image_get_width(skiac_image *image);
+  uint32_t skiac_image_get_height(skiac_image *image);
 }
 
 #endif // SKIA_CAPI_H

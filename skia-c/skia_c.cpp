@@ -722,28 +722,27 @@ extern "C"
     SkSafeUnref(mask_filter);
   }
 
-  skiac_data *skiac_data_create(uint8_t *addr, size_t size)
-  {
-    auto sk_data = SkData::MakeWithCopy(reinterpret_cast<const void *>(addr), size);
-    if (sk_data)
-    {
-      return reinterpret_cast<skiac_data *>(sk_data.get());
-    }
-    else
-    {
-      return nullptr;
-    }
-  }
-
-  uint8_t *skiac_data_get_ptr(skiac_data *c_data)
-  {
-    return (uint8_t *)reinterpret_cast<SkData *>(c_data)->data();
-  }
-
   // SkData
+
   void skiac_sk_data_destroy(skiac_data *c_data)
   {
-    auto sk_data = reinterpret_cast<SkData *>(c_data);
-    SkSafeUnref(sk_data);
+    auto data = reinterpret_cast<SkData *>(c_data);
+    SkSafeUnref(data);
+  }
+
+  // Image
+
+  skiac_image *skiac_image_make_from_buffer(uint8_t *ptr, size_t size)
+  {
+    auto data = SkData::MakeWithCopy(reinterpret_cast<const void *>(ptr), size);
+    auto codec = SkCodec::MakeFromData(data);
+    auto info = codec->getInfo();
+    auto row_bytes = info.width() * info.bytesPerPixel();
+    auto bitmap = SkBitmap();
+    bitmap.installPixels(info, nullptr, row_bytes);
+    auto image = SkImage::MakeFromBitmap(bitmap);
+
+    printf("width: %d, height %d, row_bytes %d\n", info.width(), info.height(), row_bytes);
+    return reinterpret_cast<skiac_image *>(image.release());
   }
 }

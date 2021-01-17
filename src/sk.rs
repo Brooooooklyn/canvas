@@ -65,6 +65,12 @@ mod ffi {
 
   #[repr(C)]
   #[derive(Copy, Clone, Debug)]
+  pub struct skiac_image {
+    _unused: [u8; 0],
+  }
+
+  #[repr(C)]
+  #[derive(Copy, Clone, Debug)]
   pub struct skiac_transform {
     pub a: f32,
     pub b: f32,
@@ -391,11 +397,13 @@ mod ffi {
 
     pub fn skiac_mask_filter_destroy(mask_filter: *mut skiac_mask_filter);
 
-    pub fn skiac_data_create(ptr: *mut u8, size: usize) -> *mut skiac_data;
-
-    pub fn skiac_data_get_ptr(c_data: *mut skiac_data) -> *mut u8;
-
     pub fn skiac_sk_data_destroy(c_data: *mut skiac_data);
+
+    pub fn skiac_image_make_from_buffer(ptr: *mut u8, size: usize) -> *mut skiac_image;
+
+    // pub fn skiac_image_get_width(image: *mut skiac_image) -> u32;
+
+    // pub fn skiac_image_get_height(image: *mut skiac_image) -> u32;
   }
 }
 
@@ -1049,20 +1057,6 @@ impl<'a> Deref for SurfaceDataMut<'a> {
 pub struct SurfaceDataRef(pub(crate) ffi::skiac_sk_data);
 
 impl SurfaceDataRef {
-  pub fn new(ptr: *mut u8, size: usize) -> SurfaceDataRef {
-    unsafe {
-      let mut data_ref = SurfaceDataRef(ffi::skiac_sk_data {
-        ptr: ptr,
-        size: size,
-        data: ffi::skiac_data_create(ptr, size),
-      });
-      // update ptr from copied SkData
-      data_ref.0.ptr = ffi::skiac_data_get_ptr(data_ref.0.data);
-
-      data_ref
-    }
-  }
-
   pub fn slice(&self) -> &'static [u8] {
     unsafe { slice::from_raw_parts(self.0.ptr, self.0.size) }
   }
@@ -2026,6 +2020,28 @@ impl MaskFilter {
 impl Drop for MaskFilter {
   fn drop(&mut self) {
     unsafe { ffi::skiac_mask_filter_destroy(self.0) };
+  }
+}
+
+
+#[derive(Debug)]
+pub struct Image {
+  width: u32,
+  height: u32,
+  image: *mut ffi::skiac_image,
+}
+
+impl Image {
+  pub fn from_buffer(ptr: *mut u8, size: usize) -> Self {
+    unsafe {
+      let image = ffi::skiac_image_make_from_buffer(ptr, size);
+
+      Image {
+        width: 0,
+        height: 0,
+        image
+      }
+    }
   }
 }
 

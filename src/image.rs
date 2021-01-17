@@ -3,8 +3,6 @@ use std::slice;
 
 use napi::*;
 
-use crate::sk::*;
-
 #[derive(Debug, Clone)]
 pub struct ImageData {
   pub(crate) width: u32,
@@ -123,7 +121,7 @@ fn image_data_constructor(ctx: CallContext) -> Result<JsUndefined> {
 pub struct Image {
   pub(crate) width: u32,
   pub(crate) height: u32,
-  data: Option<SurfaceDataRef>,
+  image: Option<crate::sk::Image>,
 }
 
 impl Image {
@@ -148,13 +146,13 @@ impl Image {
 
 #[js_function]
 fn image_constructor(ctx: CallContext) -> Result<JsUndefined> {
-  let image = Image {
+  let js_image = Image {
     width: 0u32,
     height: 0u32,
-    data: None,
+    image: None,
   };
   let mut this = ctx.this_unchecked::<JsObject>();
-  ctx.env.wrap(&mut this, image)?;
+  ctx.env.wrap(&mut this, js_image)?;
   ctx.env.get_undefined()
 }
 
@@ -187,7 +185,7 @@ fn get_src(ctx: CallContext) -> Result<JsUndefined> {
 #[js_function(1)]
 fn set_src(ctx: CallContext) -> Result<JsUndefined> {
   let this = ctx.this_unchecked::<JsObject>();
-  let image = ctx.env.unwrap::<Image>(&this)?;
+  let js_image = ctx.env.unwrap::<Image>(&this)?;
 
   let src_arg = ctx.get::<JsUnknown>(0)?;
   let src_data_ab = unsafe { src_arg.cast::<JsTypedArray>() }.into_value()?;
@@ -200,7 +198,10 @@ fn set_src(ctx: CallContext) -> Result<JsUndefined> {
   let length = src_data_ab.len();
   println!("buffer length {}", length);
 
-  image.data.get_or_insert(SurfaceDataRef::new(src_data_ab.as_ptr() as *mut u8, length));
+  js_image.image.get_or_insert(crate::sk::Image::from_buffer(
+    src_data_ab.as_ptr() as *mut u8,
+    length,
+  ));
 
   ctx.env.get_undefined()
 }
