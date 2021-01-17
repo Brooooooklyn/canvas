@@ -18,6 +18,7 @@
 #define SURFACE_CAST reinterpret_cast<SkSurface *>(c_surface)
 #define CANVAS_CAST reinterpret_cast<SkCanvas *>(c_canvas)
 #define PAINT_CAST reinterpret_cast<SkPaint *>(c_paint)
+#define BITMAP_CAST reinterpret_cast<SkBitmap *>(c_bitmap)
 #define PATH_CAST reinterpret_cast<SkPath *>(c_path)
 #define MATRIX_CAST reinterpret_cast<SkMatrix *>(c_matrix)
 #define MASK_FILTER_CAST reinterpret_cast<SkMaskFilter *>(c_mask_filter)
@@ -219,6 +220,11 @@ extern "C"
   void skiac_canvas_draw_color(skiac_canvas *c_canvas, float r, float g, float b, float a)
   {
     CANVAS_CAST->drawColor(SkColor4f{r, g, b, a});
+  }
+
+  void skiac_canvas_draw_image(skiac_canvas *c_canvas, skiac_bitmap *c_bitmap, float dx, float dy)
+  {
+    CANVAS_CAST->drawBitmap(*BITMAP_CAST, dx, dy, nullptr);
   }
 
   void skiac_canvas_draw_path(skiac_canvas *c_canvas, skiac_path *c_path, skiac_paint *c_paint)
@@ -739,8 +745,8 @@ extern "C"
     auto info = codec->getInfo();
     auto row_bytes = info.width() * info.bytesPerPixel();
     auto bitmap = new SkBitmap();
-    bitmap->installPixels(info, nullptr, row_bytes);
-
+    bitmap->allocPixels(info);
+    codec->getPixels(info, bitmap->getPixels(), row_bytes);
     return reinterpret_cast<skiac_bitmap *>(bitmap);
   }
 

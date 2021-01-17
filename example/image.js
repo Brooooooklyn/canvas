@@ -11,8 +11,7 @@ async function main() {
   const file = await promises.readFile(join(__dirname, 'tiger.png'))
   const image = new Image()
   image.src = file
-  // console.log(image, image.width, image.height)
-  // ctx.drawImage(image, 0, 0)
+  ctx.drawImage(image, 0, 0)
 
   const output = await canvas.png()
   await promises.writeFile(join(__dirname, 'tiger-tmp.png'), output)

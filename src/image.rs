@@ -121,7 +121,7 @@ fn image_data_constructor(ctx: CallContext) -> Result<JsUndefined> {
 }
 
 pub struct Image {
-  bitmap: Option<Bitmap>,
+  pub bitmap: Option<Bitmap>,
 }
 
 impl Image {
@@ -196,7 +196,6 @@ fn set_src(ctx: CallContext) -> Result<JsUndefined> {
     ));
   }
   let length = src_data_ab.len();
-  println!("buffer length {}", length);
 
   image
     .bitmap

@@ -9,7 +9,7 @@ use napi::*;
 
 use crate::error::SkError;
 use crate::gradient::CanvasGradient;
-use crate::image::ImageData;
+use crate::image::*;
 use crate::pattern::Pattern;
 use crate::sk::*;
 use crate::state::Context2dRenderingState;
@@ -90,6 +90,7 @@ impl Context {
         Property::new(&env, "closePath")?.with_method(close_path),
         Property::new(&env, "createLinearGradient")?.with_method(create_linear_gradient),
         Property::new(&env, "createRadialGradient")?.with_method(create_radial_gradient),
+        Property::new(&env, "drawImage")?.with_method(draw_image),
         Property::new(&env, "ellipse")?.with_method(ellipse),
         Property::new(&env, "lineTo")?.with_method(line_to),
         Property::new(&env, "moveTo")?.with_method(move_to),
@@ -622,6 +623,22 @@ fn close_path(ctx: CallContext) -> Result<JsUndefined> {
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
 
   context_2d.path.close();
+  ctx.env.get_undefined()
+}
+
+#[js_function(3)]
+fn draw_image(ctx: CallContext) -> Result<JsUndefined> {
+  let this = ctx.this_unchecked::<JsObject>();
+  let context_2d = ctx.env.unwrap::<Context>(&this)?;
+  let image_js = ctx.get::<JsObject>(0)?;
+  let image = ctx.env.unwrap::<Image>(&image_js)?;
+  let dx: f64 = ctx.get::<JsNumber>(1)?.try_into()?;
+  let dy: f64 = ctx.get::<JsNumber>(2)?.try_into()?;
+
+  context_2d
+    .surface
+    .canvas
+    .draw_image(image.bitmap.as_mut().unwrap().bitmap, dx as f32, dy as f32);
   ctx.env.get_undefined()
 }
 

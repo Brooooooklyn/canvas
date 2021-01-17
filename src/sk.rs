@@ -168,6 +168,13 @@ mod ffi {
 
     pub fn skiac_canvas_draw_color(canvas: *mut skiac_canvas, r: f32, g: f32, b: f32, a: f32);
 
+    pub fn skiac_canvas_draw_image(
+      canvas: *mut skiac_canvas,
+      bitmap: *mut skiac_bitmap,
+      dx: f32,
+      dy: f32,
+    );
+
     pub fn skiac_canvas_draw_path(
       canvas: *mut skiac_canvas,
       path: *mut skiac_path,
@@ -1174,6 +1181,13 @@ impl Canvas {
   }
 
   #[inline]
+  pub fn draw_image(&mut self, image: *mut ffi::skiac_bitmap, dx: f32, dy: f32) {
+    unsafe {
+      ffi::skiac_canvas_draw_image(self.0, image, dx, dy);
+    }
+  }
+
+  #[inline]
   pub fn draw_path(&mut self, path: &Path, paint: &Paint) {
     unsafe {
       ffi::skiac_canvas_draw_path(self.0, path.0, paint.0);
@@ -2029,12 +2043,11 @@ impl Drop for MaskFilter {
   }
 }
 
-
 #[derive(Debug)]
 pub struct Bitmap {
   pub width: u32,
   pub height: u32,
-  bitmap: *mut ffi::skiac_bitmap,
+  pub bitmap: *mut ffi::skiac_bitmap,
 }
 
 impl Bitmap {
