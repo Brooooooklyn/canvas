@@ -107,3 +107,24 @@ export class Path2D {
 > The tiger.json was serialized from [gojs/samples/tiger](https://github.com/NorthwoodsSoftware/GoJS/blob/master/samples/tiger.html)
 
 ![](./example/tiger.png)
+
+# Building
+
+You can build this project from source, with no OS-specific package installing commands required:
+
+```sh
+# Clone the code:
+$ git clone --recurse-submodules https://github.com/Brooooooklyn/skia-rs.git
+$ cd skia-rs
+
+# Build Skia:
+$ node scripts/build-skia.js
+
+# Install NPM packages, build the Node.js addon:
+$ yarn install --ignore-scripts
+$ yarn run build
+
+# All done! Run test cases or examples now:
+$ yarn test
+$ node example/tiger.js
+```
