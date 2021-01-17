@@ -730,19 +730,29 @@ extern "C"
     SkSafeUnref(data);
   }
 
-  // Image
+  // Bitmap
 
-  skiac_image *skiac_image_make_from_buffer(uint8_t *ptr, size_t size)
+  skiac_bitmap *skiac_bitmap_make_from_buffer(uint8_t *ptr, size_t size)
   {
     auto data = SkData::MakeWithCopy(reinterpret_cast<const void *>(ptr), size);
     auto codec = SkCodec::MakeFromData(data);
     auto info = codec->getInfo();
     auto row_bytes = info.width() * info.bytesPerPixel();
-    auto bitmap = SkBitmap();
-    bitmap.installPixels(info, nullptr, row_bytes);
-    auto image = SkImage::MakeFromBitmap(bitmap);
+    auto bitmap = new SkBitmap();
+    bitmap->installPixels(info, nullptr, row_bytes);
 
-    printf("width: %d, height %d, row_bytes %d\n", info.width(), info.height(), row_bytes);
-    return reinterpret_cast<skiac_image *>(image.release());
+    return reinterpret_cast<skiac_bitmap *>(bitmap);
+  }
+
+  uint32_t skiac_bitmap_get_width(skiac_bitmap *c_bitmap)
+  {
+    auto bitmap = reinterpret_cast<SkBitmap *>(c_bitmap);
+    return bitmap->width();
+  }
+
+  uint32_t skiac_bitmap_get_height(skiac_bitmap *c_bitmap)
+  {
+    auto bitmap = reinterpret_cast<SkBitmap *>(c_bitmap);
+    return bitmap->height();
   }
 }

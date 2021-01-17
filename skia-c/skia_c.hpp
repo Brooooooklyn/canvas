@@ -6,7 +6,6 @@
 #include <include/core/SkCanvas.h>
 #include <include/core/SkData.h>
 #include <include/core/SkGraphics.h>
-#include <include/core/SkImage.h>
 #include <include/core/SkPaint.h>
 #include <include/core/SkPathEffect.h>
 #include <include/core/SkSurface.h>
@@ -27,6 +26,7 @@ typedef struct skiac_matrix skiac_matrix;
 typedef struct skiac_mask_filter skiac_mask_filter;
 typedef struct skiac_data skiac_data;
 typedef struct skiac_image skiac_image;
+typedef struct skiac_bitmap skiac_bitmap;
 
 struct skiac_transform
 {
@@ -219,10 +219,10 @@ extern "C"
 
   void skiac_sk_data_destroy(skiac_data *c_data);
 
-  // Image
-  skiac_image *skiac_image_make_from_buffer(uint8_t *ptr, size_t size);
-  uint32_t skiac_image_get_width(skiac_image *image);
-  uint32_t skiac_image_get_height(skiac_image *image);
+  // Bitmap
+  skiac_bitmap *skiac_bitmap_make_from_buffer(uint8_t *ptr, size_t size);
+  uint32_t skiac_bitmap_get_width(skiac_bitmap *c_bitmap);
+  uint32_t skiac_bitmap_get_height(skiac_bitmap *c_bitmap);
 }
 
 #endif // SKIA_CAPI_H

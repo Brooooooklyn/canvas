@@ -71,6 +71,12 @@ mod ffi {
 
   #[repr(C)]
   #[derive(Copy, Clone, Debug)]
+  pub struct skiac_bitmap {
+    _unused: [u8; 0],
+  }
+
+  #[repr(C)]
+  #[derive(Copy, Clone, Debug)]
   pub struct skiac_transform {
     pub a: f32,
     pub b: f32,
@@ -399,11 +405,11 @@ mod ffi {
 
     pub fn skiac_sk_data_destroy(c_data: *mut skiac_data);
 
-    pub fn skiac_image_make_from_buffer(ptr: *mut u8, size: usize) -> *mut skiac_image;
+    pub fn skiac_bitmap_make_from_buffer(ptr: *mut u8, size: usize) -> *mut skiac_bitmap;
 
-    // pub fn skiac_image_get_width(image: *mut skiac_image) -> u32;
+    pub fn skiac_bitmap_get_width(c_bitmap: *mut skiac_bitmap) -> u32;
 
-    // pub fn skiac_image_get_height(image: *mut skiac_image) -> u32;
+    pub fn skiac_bitmap_get_height(c_bitmap: *mut skiac_bitmap) -> u32;
   }
 }
 
@@ -2025,21 +2031,21 @@ impl Drop for MaskFilter {
 
 
 #[derive(Debug)]
-pub struct Image {
-  width: u32,
-  height: u32,
-  image: *mut ffi::skiac_image,
+pub struct Bitmap {
+  pub width: u32,
+  pub height: u32,
+  bitmap: *mut ffi::skiac_bitmap,
 }
 
-impl Image {
+impl Bitmap {
   pub fn from_buffer(ptr: *mut u8, size: usize) -> Self {
     unsafe {
-      let image = ffi::skiac_image_make_from_buffer(ptr, size);
+      let bitmap = ffi::skiac_bitmap_make_from_buffer(ptr, size);
 
-      Image {
-        width: 0,
-        height: 0,
-        image
+      Bitmap {
+        width: ffi::skiac_bitmap_get_width(bitmap),
+        height: ffi::skiac_bitmap_get_height(bitmap),
+        bitmap,
       }
     }
   }
