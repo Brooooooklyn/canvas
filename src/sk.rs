@@ -423,6 +423,8 @@ mod ffi {
     pub fn skiac_bitmap_get_width(c_bitmap: *mut skiac_bitmap) -> u32;
 
     pub fn skiac_bitmap_get_height(c_bitmap: *mut skiac_bitmap) -> u32;
+
+    pub fn skiac_bitmap_destroy(c_bitmap: *mut skiac_bitmap);
   }
 }
 
@@ -2079,6 +2081,14 @@ impl Bitmap {
         height: ffi::skiac_bitmap_get_height(bitmap),
         bitmap,
       }
+    }
+  }
+}
+
+impl Drop for Bitmap {
+  fn drop(&mut self) {
+    unsafe {
+      ffi::skiac_bitmap_destroy(self.bitmap);
     }
   }
 }

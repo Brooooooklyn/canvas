@@ -763,4 +763,9 @@ extern "C"
     auto bitmap = reinterpret_cast<SkBitmap *>(c_bitmap);
     return bitmap->height();
   }
+
+  void skiac_bitmap_destroy(skiac_bitmap *c_bitmap)
+  {
+    delete BITMAP_CAST;
+  }
 }

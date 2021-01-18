@@ -223,6 +223,7 @@ extern "C"
   skiac_bitmap *skiac_bitmap_make_from_buffer(uint8_t *ptr, size_t size);
   uint32_t skiac_bitmap_get_width(skiac_bitmap *c_bitmap);
   uint32_t skiac_bitmap_get_height(skiac_bitmap *c_bitmap);
+  void skiac_bitmap_destroy(skiac_bitmap *c_bitmap);
 }
 
 #endif // SKIA_CAPI_H
