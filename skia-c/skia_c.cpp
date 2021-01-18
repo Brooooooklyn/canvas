@@ -180,11 +180,6 @@ extern "C"
     CANVAS_CAST->clear(static_cast<SkColor>(color));
   }
 
-  void skiac_canvas_flush(skiac_canvas *c_canvas)
-  {
-    CANVAS_CAST->flush();
-  }
-
   void skiac_canvas_set_transform(skiac_canvas *c_canvas, skiac_transform c_ts)
   {
     CANVAS_CAST->setMatrix(conv_from_transform(c_ts));
