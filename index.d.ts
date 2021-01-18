@@ -1,9 +1,3 @@
-export type Canvas = HTMLCanvasElement & {
-  png(): Promise<Buffer>
-}
-
-export function createCanvas(width: number, height: number): Canvas
-
 export interface DOMMatrix2DInit {
   a: number
   b: number
@@ -64,3 +58,26 @@ export class Path2D {
   quadraticCurveTo(cpx: number, cpy: number, x: number, y: number): void
   rect(x: number, y: number, w: number, h: number): void
 }
+
+export interface SKRSContext2D extends Omit<CanvasRenderingContext2D, 'drawImage'> {
+  drawImage(image: Image, dx: number, dy: number): void
+  drawImage(image: Image, dx: number, dy: number, dw: number, dh: number): void
+  drawImage(
+    image: Image,
+    sx: number,
+    sy: number,
+    sw: number,
+    sh: number,
+    dx: number,
+    dy: number,
+    dw: number,
+    dh: number,
+  ): void
+}
+
+export interface Canvas extends Omit<HTMLCanvasElement, 'getContext'> {
+  getContext(contextId: '2d'): SKRSContext2D
+  png(): Promise<Buffer>
+}
+
+export function createCanvas(width: number, height: number): Canvas

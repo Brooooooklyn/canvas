@@ -1,11 +1,13 @@
+import { promises } from 'fs'
+import { join } from 'path'
 import ava, { TestInterface } from 'ava'
 
-import { createCanvas, Canvas, Path2D } from '../index'
+import { createCanvas, Canvas, Image, Path2D, SKRSContext2D } from '../index'
 import { snapshotImage } from './image-snapshot'
 
 const test = ava as TestInterface<{
   canvas: Canvas
-  ctx: CanvasRenderingContext2D
+  ctx: SKRSContext2D
 }>
 
 test.beforeEach((t) => {
@@ -230,7 +232,15 @@ test('createRadialGradient', async (t) => {
   await snapshotImage(t)
 })
 
-test.todo('drawImage')
+test('drawImage', async (t) => {
+  const { ctx } = t.context
+  const filePath = './snapshots/drawImage.png'
+  const file = await promises.readFile(join(__dirname, filePath))
+  const image = new Image()
+  image.src = file
+  ctx.drawImage(image, 0, 0)
+  await snapshotImage(t)
+})
 
 test('ellipse', async (t) => {
   const { ctx } = t.context
