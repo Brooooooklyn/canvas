@@ -140,8 +140,6 @@ mod ffi {
 
     pub fn skiac_canvas_clear(canvas: *mut skiac_canvas, color: u32);
 
-    pub fn skiac_canvas_flush(canvas: *mut skiac_canvas);
-
     pub fn skiac_canvas_set_transform(canvas: *mut skiac_canvas, ts: skiac_transform);
 
     pub fn skiac_canvas_concat(canvas: *mut skiac_canvas, ts: skiac_transform);
@@ -1095,13 +1093,6 @@ impl Canvas {
         self.0,
         (a as u32) << 24 | (r as u32) << 16 | (g as u32) << 8 | b as u32,
       );
-    }
-  }
-
-  #[inline]
-  pub fn flush(&mut self) {
-    unsafe {
-      ffi::skiac_canvas_flush(self.0);
     }
   }
 

@@ -77,7 +77,6 @@ extern "C"
 
   // Canvas
   void skiac_canvas_clear(skiac_canvas *c_canvas, uint32_t color);
-  void skiac_canvas_flush(skiac_canvas *c_canvas);
   void skiac_canvas_set_transform(skiac_canvas *c_canvas, skiac_transform c_ts);
   void skiac_canvas_concat(skiac_canvas *c_canvas, skiac_transform c_ts);
   void skiac_canvas_scale(skiac_canvas *c_canvas, float sx, float sy);
