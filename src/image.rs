@@ -122,6 +122,8 @@ fn image_data_constructor(ctx: CallContext) -> Result<JsUndefined> {
 
 pub struct Image {
   pub bitmap: Option<Bitmap>,
+  pub complete: bool,
+  pub alt: String,
 }
 
 impl Image {
@@ -136,9 +138,21 @@ impl Image {
         Property::new(&env, "height")?
           .with_setter(set_noop)
           .with_getter(get_height),
+        Property::new(&env, "naturalWidth")?
+          .with_setter(set_noop)
+          .with_getter(get_width),
+        Property::new(&env, "naturalHeight")?
+          .with_setter(set_noop)
+          .with_getter(get_height),
+        Property::new(&env, "complete")?
+          .with_setter(set_noop)
+          .with_getter(get_complete),
+        Property::new(&env, "alt")?
+          .with_setter(set_alt)
+          .with_getter(get_alt),
         Property::new(&env, "src")?
           .with_setter(set_src)
-          .with_getter(get_src),
+          .with_getter(set_noop),
       ],
     )
   }
@@ -146,9 +160,14 @@ impl Image {
 
 #[js_function]
 fn image_constructor(ctx: CallContext) -> Result<JsUndefined> {
-  let js_image = Image { bitmap: None };
+  let js_image = Image {
+    complete: false,
+    bitmap: None,
+    alt: "".to_string(),
+  };
   let mut this = ctx.this_unchecked::<JsObject>();
   ctx.env.wrap(&mut this, js_image)?;
+
   ctx.env.get_undefined()
 }
 
@@ -172,14 +191,35 @@ fn get_height(ctx: CallContext) -> Result<JsNumber> {
     .create_double(image.bitmap.as_ref().unwrap().height as f64)
 }
 
-#[js_function(1)]
-fn set_noop(ctx: CallContext) -> Result<JsUndefined> {
-  ctx.env.get_undefined()
+#[js_function]
+fn get_complete(ctx: CallContext) -> Result<JsBoolean> {
+  let this = ctx.this_unchecked::<JsObject>();
+  let image = ctx.env.unwrap::<Image>(&this)?;
+
+  ctx.env.get_boolean(image.complete)
 }
 
 #[js_function]
-fn get_src(ctx: CallContext) -> Result<JsUndefined> {
-  ctx.env.get_undefined() // TODO
+fn get_alt(ctx: CallContext) -> Result<JsString> {
+  let this = ctx.this_unchecked::<JsObject>();
+  let image = ctx.env.unwrap::<Image>(&this)?;
+
+  ctx.env.create_string(image.alt.as_str())
+}
+
+#[js_function(1)]
+fn set_alt(ctx: CallContext) -> Result<JsUndefined> {
+  let this = ctx.this_unchecked::<JsObject>();
+  let mut image = ctx.env.unwrap::<Image>(&this)?;
+  let arg = ctx.get::<JsString>(0)?.into_utf8()?;
+  image.alt = arg.as_str()?.to_string();
+
+  ctx.env.get_undefined()
+}
+
+#[js_function(1)]
+fn set_noop(ctx: CallContext) -> Result<JsUndefined> {
+  ctx.env.get_undefined()
 }
 
 #[js_function(1)]
@@ -197,6 +237,7 @@ fn set_src(ctx: CallContext) -> Result<JsUndefined> {
   }
   let length = src_data_ab.len();
 
+  image.complete = true;
   image
     .bitmap
     .get_or_insert(Bitmap::from_buffer(src_data_ab.as_ptr() as *mut u8, length));

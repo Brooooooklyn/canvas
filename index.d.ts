@@ -34,6 +34,10 @@ export class ImageData {
 export class Image {
   readonly width: number
   readonly height: number
+  readonly naturalWidth: number
+  readonly naturalHeight: number
+  readonly complete: boolean
+  alt: string
   src: Buffer
 }
 
