@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1610959654986,
+  "lastUpdate": 1610959667049,
   "repoUrl": "https://github.com/Brooooooklyn/skia-rs",
   "entries": {
     "Benchmark": [
@@ -722,6 +722,58 @@ window.BENCHMARK_DATA = {
             "name": "Draw gradient#node-canvas",
             "value": 23,
             "range": "±0.28%",
+            "unit": "ops/sec",
+            "extra": "42 samples"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "lynweklm@gmail.com",
+            "name": "LongYinan",
+            "username": "Brooooooklyn"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d5bc656bf0261e0ac5446a1c296b833e360cf54b",
+          "message": "Merge pull request #137 from doodlewind/docs\n\ndocs: update building guide",
+          "timestamp": "2021-01-18T16:36:57+08:00",
+          "tree_id": "e11e55d0fe5f93213ae7dd5b9c45665159cb2454",
+          "url": "https://github.com/Brooooooklyn/skia-rs/commit/d5bc656bf0261e0ac5446a1c296b833e360cf54b"
+        },
+        "date": 1610959593305,
+        "tool": "benchmarkjs",
+        "benches": [
+          {
+            "name": "Draw house#@napi-rs/skia",
+            "value": 27,
+            "range": "±0.11%",
+            "unit": "ops/sec",
+            "extra": "48 samples"
+          },
+          {
+            "name": "Draw house#node-canvas",
+            "value": 24,
+            "range": "±0.32%",
+            "unit": "ops/sec",
+            "extra": "43 samples"
+          },
+          {
+            "name": "Draw gradient#@napi-rs/skia",
+            "value": 26,
+            "range": "±0.12%",
+            "unit": "ops/sec",
+            "extra": "47 samples"
+          },
+          {
+            "name": "Draw gradient#node-canvas",
+            "value": 23,
+            "range": "±0.34%",
             "unit": "ops/sec",
             "extra": "42 samples"
           }
