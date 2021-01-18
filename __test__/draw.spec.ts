@@ -287,7 +287,28 @@ test('getImageData', async (t) => {
 
 test.todo('isPointInPath')
 
-test.todo('isPointInStroke')
+test('isPointInStroke', (t) => {
+  const { ctx } = t.context
+  ctx.rect(10, 10, 100, 100)
+  ctx.stroke()
+  t.is(ctx.isPointInStroke(50, 9), false) // Outside the rect
+  t.is(ctx.isPointInStroke(50, 10), true) // On the edge of the rect
+  t.is(ctx.isPointInStroke(50, 11), false) // Inside the rect
+
+  ctx.lineWidth = 3
+  ctx.stroke()
+  // All points on the edge now
+  t.is(ctx.isPointInStroke(50, 9), true)
+  t.is(ctx.isPointInStroke(50, 10), true)
+  t.is(ctx.isPointInStroke(50, 11), true)
+
+  ctx.lineWidth = 1
+  const path = new Path2D()
+  path.rect(10, 10, 100, 100)
+  t.is(ctx.isPointInStroke(path, 50, 9), false)
+  t.is(ctx.isPointInStroke(path, 50, 10), true)
+  t.is(ctx.isPointInStroke(path, 50, 11), false)
+})
 
 test('lineTo', async (t) => {
   const { ctx } = t.context
