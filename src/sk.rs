@@ -171,8 +171,14 @@ mod ffi {
     pub fn skiac_canvas_draw_image(
       canvas: *mut skiac_canvas,
       bitmap: *mut skiac_bitmap,
+      sx: f32,
+      sy: f32,
+      s_width: f32,
+      s_height: f32,
       dx: f32,
       dy: f32,
+      d_width: f32,
+      d_height: f32,
     );
 
     pub fn skiac_canvas_draw_path(
@@ -1181,9 +1187,22 @@ impl Canvas {
   }
 
   #[inline]
-  pub fn draw_image(&mut self, image: *mut ffi::skiac_bitmap, dx: f32, dy: f32) {
+  pub fn draw_image(
+    &mut self,
+    image: *mut ffi::skiac_bitmap,
+    sx: f32,
+    sy: f32,
+    s_width: f32,
+    s_height: f32,
+    dx: f32,
+    dy: f32,
+    d_width: f32,
+    d_height: f32,
+  ) {
     unsafe {
-      ffi::skiac_canvas_draw_image(self.0, image, dx, dy);
+      ffi::skiac_canvas_draw_image(
+        self.0, image, sx, sy, s_width, s_height, dx, dy, d_width, d_height,
+      );
     }
   }
 

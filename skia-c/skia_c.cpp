@@ -222,9 +222,11 @@ extern "C"
     CANVAS_CAST->drawColor(SkColor4f{r, g, b, a});
   }
 
-  void skiac_canvas_draw_image(skiac_canvas *c_canvas, skiac_bitmap *c_bitmap, float dx, float dy)
+  void skiac_canvas_draw_image(skiac_canvas *c_canvas, skiac_bitmap *c_bitmap, float sx, float sy, float s_width, float s_height, float dx, float dy, float d_width, float d_height)
   {
-    CANVAS_CAST->drawBitmap(*BITMAP_CAST, dx, dy, nullptr);
+    auto src_rect = SkRect::MakeXYWH(sx, sy, s_width, s_height);
+    auto dst_rect = SkRect::MakeXYWH(dx, dy, d_width, d_height);
+    CANVAS_CAST->drawBitmapRect(*BITMAP_CAST, src_rect, dst_rect, nullptr);
   }
 
   void skiac_canvas_draw_path(skiac_canvas *c_canvas, skiac_path *c_path, skiac_paint *c_paint)
