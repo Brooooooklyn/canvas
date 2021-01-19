@@ -133,26 +133,26 @@ impl Image {
       image_constructor,
       &vec![
         Property::new(&env, "width")?
-          .with_setter(set_noop)
-          .with_getter(get_width),
+          .with_getter(get_width)
+          .with_property_attributes(PropertyAttributes::Enumerable),
         Property::new(&env, "height")?
-          .with_setter(set_noop)
-          .with_getter(get_height),
+          .with_getter(get_height)
+          .with_property_attributes(PropertyAttributes::Enumerable),
         Property::new(&env, "naturalWidth")?
-          .with_setter(set_noop)
-          .with_getter(get_width),
+          .with_getter(get_width)
+          .with_property_attributes(PropertyAttributes::Enumerable),
         Property::new(&env, "naturalHeight")?
-          .with_setter(set_noop)
-          .with_getter(get_height),
+          .with_getter(get_height)
+          .with_property_attributes(PropertyAttributes::Enumerable),
         Property::new(&env, "complete")?
-          .with_setter(set_noop)
-          .with_getter(get_complete),
+          .with_getter(get_complete)
+          .with_property_attributes(PropertyAttributes::Enumerable),
         Property::new(&env, "alt")?
           .with_setter(set_alt)
           .with_getter(get_alt),
         Property::new(&env, "src")?
           .with_setter(set_src)
-          .with_getter(set_noop),
+          .with_getter(get_src),
       ],
     )
   }
@@ -217,8 +217,8 @@ fn set_alt(ctx: CallContext) -> Result<JsUndefined> {
   ctx.env.get_undefined()
 }
 
-#[js_function(1)]
-fn set_noop(ctx: CallContext) -> Result<JsUndefined> {
+#[js_function]
+fn get_src(ctx: CallContext) -> Result<JsUndefined> {
   ctx.env.get_undefined()
 }
 

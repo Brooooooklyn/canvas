@@ -44,3 +44,26 @@ test('alt state should be ok', (t) => {
   image.alt = 'hello'
   t.is(image.alt, 'hello')
 })
+
+test('properties should be readonly', (t) => {
+  const image = new Image()
+  const expectation = {
+    instanceOf: TypeError,
+    message: /Cannot set property (.)* of #<Image> which has only a getter/,
+  }
+
+  // @ts-expect-error
+  t.throws(() => (image.width = 114), expectation)
+
+  // @ts-expect-error
+  t.throws(() => (image.height = 514), expectation)
+
+  // @ts-expect-error
+  t.throws(() => (image.naturalWidth = 1919), expectation)
+
+  // @ts-expect-error
+  t.throws(() => (image.naturalHeight = 810), expectation)
+
+  // @ts-expect-error
+  t.throws(() => (image.complete = true), expectation)
+})

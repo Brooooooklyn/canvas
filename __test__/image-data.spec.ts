@@ -38,36 +38,17 @@ test('should throw if width * height * 4 not equal to arraybuffer length', (t) =
 test('properties should be readonly', (t) => {
   const imageData = new ImageData(1024, 768)
   const fakeData = new Uint8ClampedArray()
-  t.throws(
-    () => {
-      // @ts-expect-error
-      imageData.data = fakeData
-    },
-    {
-      instanceOf: TypeError,
-      message: /Cannot assign to read only property/,
-    },
-  )
+  const expectation = {
+    instanceOf: TypeError,
+    message: /Cannot assign to read only property/,
+  }
 
-  t.throws(
-    () => {
-      // @ts-expect-error
-      imageData.width = 1111
-    },
-    {
-      instanceOf: TypeError,
-      message: /Cannot assign to read only property/,
-    },
-  )
+  // @ts-expect-error
+  t.throws(() => (imageData.data = fakeData), expectation)
 
-  t.throws(
-    () => {
-      // @ts-expect-error
-      imageData.height = 2222
-    },
-    {
-      instanceOf: TypeError,
-      message: /Cannot assign to read only property/,
-    },
-  )
+  // @ts-expect-error
+  t.throws(() => (imageData.width = 114), expectation)
+
+  // @ts-expect-error
+  t.throws(() => (imageData.height = 514), expectation)
 })
