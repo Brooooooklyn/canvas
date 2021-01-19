@@ -136,4 +136,18 @@ test('lineDash state should be ok', (t) => {
   t.deepEqual(ctx.getLineDash(), lineDash)
 })
 
+test('textAlign state should be ok', (t) => {
+  const { ctx } = t.context
+  t.is(ctx.textAlign, 'start')
+  ctx.textAlign = 'center'
+  t.is(ctx.textAlign, 'center')
+})
+
+test('textBaseline state should be ok', (t) => {
+  const { ctx } = t.context
+  t.is(ctx.textBaseline, 'alphabetic')
+  ctx.textBaseline = 'hanging'
+  t.is(ctx.textBaseline, 'hanging')
+})
+
 test.todo('getTransform')
