@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1610959731956,
+  "lastUpdate": 1611031077703,
   "repoUrl": "https://github.com/Brooooooklyn/skia-rs",
   "entries": {
     "Benchmark": [
@@ -826,6 +826,58 @@ window.BENCHMARK_DATA = {
             "name": "Draw gradient#node-canvas",
             "value": 21,
             "range": "±1.45%",
+            "unit": "ops/sec",
+            "extra": "38 samples"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "lynweklm@gmail.com",
+            "name": "LongYinan",
+            "username": "Brooooooklyn"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "cb2561a2e58f0b7a59fcbb6b65740f71ec6e9e99",
+          "message": "Merge pull request #142 from doodlewind/path\n\nfeat: support isPointInStroke",
+          "timestamp": "2021-01-19T12:25:46+08:00",
+          "tree_id": "1bb9167fd1758aca8bfdc100704f18855932a039",
+          "url": "https://github.com/Brooooooklyn/skia-rs/commit/cb2561a2e58f0b7a59fcbb6b65740f71ec6e9e99"
+        },
+        "date": 1611030997074,
+        "tool": "benchmarkjs",
+        "benches": [
+          {
+            "name": "Draw house#@napi-rs/skia",
+            "value": 24,
+            "range": "±0.38%",
+            "unit": "ops/sec",
+            "extra": "43 samples"
+          },
+          {
+            "name": "Draw house#node-canvas",
+            "value": 20,
+            "range": "±0.49%",
+            "unit": "ops/sec",
+            "extra": "38 samples"
+          },
+          {
+            "name": "Draw gradient#@napi-rs/skia",
+            "value": 23,
+            "range": "±0.3%",
+            "unit": "ops/sec",
+            "extra": "41 samples"
+          },
+          {
+            "name": "Draw gradient#node-canvas",
+            "value": 19,
+            "range": "±0.53%",
             "unit": "ops/sec",
             "extra": "38 samples"
           }
