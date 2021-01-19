@@ -91,6 +91,7 @@ impl Context {
         Property::new(&env, "createLinearGradient")?.with_method(create_linear_gradient),
         Property::new(&env, "createRadialGradient")?.with_method(create_radial_gradient),
         Property::new(&env, "drawImage")?.with_method(draw_image),
+        Property::new(&env, "isPointInStroke")?.with_method(is_point_in_stroke),
         Property::new(&env, "ellipse")?.with_method(ellipse),
         Property::new(&env, "lineTo")?.with_method(line_to),
         Property::new(&env, "moveTo")?.with_method(move_to),
@@ -681,6 +682,31 @@ fn draw_image(ctx: CallContext) -> Result<JsUndefined> {
   }
 
   ctx.env.get_undefined()
+}
+
+#[js_function(3)]
+fn is_point_in_stroke(ctx: CallContext) -> Result<JsBoolean> {
+  let this = ctx.this_unchecked::<JsObject>();
+  let context_2d = ctx.env.unwrap::<Context>(&this)?;
+  let mut result = false;
+
+  if ctx.length == 2 {
+    let x: f64 = ctx.get::<JsNumber>(0)?.try_into()?;
+    let y: f64 = ctx.get::<JsNumber>(1)?.try_into()?;
+    let stroke_w = context_2d.states.last().unwrap().paint.get_stroke_width() as f32;
+    result = context_2d
+      .path
+      .stroke_hit_test(x as f32, y as f32, stroke_w);
+  } else if ctx.length == 3 {
+    let path_js = ctx.get::<JsObject>(0)?;
+    let path = ctx.env.unwrap::<Path>(&path_js)?;
+
+    let x: f64 = ctx.get::<JsNumber>(1)?.try_into()?;
+    let y: f64 = ctx.get::<JsNumber>(2)?.try_into()?;
+    let stroke_w = context_2d.states.last().unwrap().paint.get_stroke_width() as f32;
+    result = path.stroke_hit_test(x as f32, y as f32, stroke_w);
+  }
+  ctx.env.get_boolean(result)
 }
 
 #[js_function(8)]

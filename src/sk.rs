@@ -359,6 +359,9 @@ mod ffi {
 
     pub fn skiac_path_is_empty(path: *mut skiac_path) -> bool;
 
+    pub fn skiac_path_stroke_hit_test(path: *mut skiac_path, x: f32, y: f32, stroke_w: f32)
+      -> bool;
+
     pub fn skiac_path_effect_make_dash_path(
       intervals: *const f32,
       count: i32,
@@ -1715,6 +1718,11 @@ impl Path {
   #[inline]
   pub fn is_empty(&self) -> bool {
     unsafe { ffi::skiac_path_is_empty(self.0) }
+  }
+
+  #[inline]
+  pub fn stroke_hit_test(&self, x: f32, y: f32, stroke_w: f32) -> bool {
+    unsafe { ffi::skiac_path_stroke_hit_test(self.0, x, y, stroke_w) }
   }
 }
 

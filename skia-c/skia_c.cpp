@@ -550,6 +550,31 @@ extern "C"
     return PATH_CAST->isEmpty();
   }
 
+  bool skiac_path_stroke_hit_test(skiac_path *c_path, float x, float y, float stroke_w)
+  {
+    auto path = PATH_CAST;
+    auto prev_fill = path->getFillType();
+    path->setFillType(SkPathFillType::kWinding);
+    SkPaint paint;
+    paint.setStrokeWidth(stroke_w);
+    paint.setStyle(SkPaint::kStroke_Style);
+    SkPath traced_path;
+
+    bool result;
+    auto precision = 0.3; // Based on config in Chromium
+    if (paint.getFillPath(*path, &traced_path, nullptr, precision))
+    {
+      result = traced_path.contains(x, y);
+    }
+    else
+    {
+      result = path->contains(x, y);
+    }
+
+    path->setFillType(prev_fill);
+    return result;
+  }
+
   // PathEffect
 
   skiac_path_effect *skiac_path_effect_make_dash_path(const float *intervals, int count, float phase)
