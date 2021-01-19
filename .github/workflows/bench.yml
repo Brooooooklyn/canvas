@@ -90,6 +90,7 @@ jobs:
 
       - name: Store benchmark result
         uses: rhysd/github-action-benchmark@v1
+        continue-on-error: true
         if: github.ref != 'refs/heads/main'
         with:
           tool: 'benchmarkjs'
