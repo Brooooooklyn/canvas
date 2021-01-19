@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1611035979888,
+  "lastUpdate": 1611076388744,
   "repoUrl": "https://github.com/Brooooooklyn/skia-rs",
   "entries": {
     "Benchmark": [
@@ -932,6 +932,58 @@ window.BENCHMARK_DATA = {
             "range": "±1.02%",
             "unit": "ops/sec",
             "extra": "36 samples"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "lynweklm@gmail.com",
+            "name": "LongYinan",
+            "username": "Brooooooklyn"
+          },
+          "committer": {
+            "email": "lynweklm@gmail.com",
+            "name": "LongYinan",
+            "username": "Brooooooklyn"
+          },
+          "distinct": true,
+          "id": "25841f89001c34d81c9654f45f24c185e45b616b",
+          "message": "ci: allow store benchmark result failed",
+          "timestamp": "2021-01-20T00:28:44+08:00",
+          "tree_id": "f80a46ebee46bd884d103a5a227abd8b5a1ecf0c",
+          "url": "https://github.com/Brooooooklyn/skia-rs/commit/25841f89001c34d81c9654f45f24c185e45b616b"
+        },
+        "date": 1611076318204,
+        "tool": "benchmarkjs",
+        "benches": [
+          {
+            "name": "Draw house#@napi-rs/skia",
+            "value": 27,
+            "range": "±1.86%",
+            "unit": "ops/sec",
+            "extra": "47 samples"
+          },
+          {
+            "name": "Draw house#node-canvas",
+            "value": 25,
+            "range": "±2.77%",
+            "unit": "ops/sec",
+            "extra": "45 samples"
+          },
+          {
+            "name": "Draw gradient#@napi-rs/skia",
+            "value": 26,
+            "range": "±1.55%",
+            "unit": "ops/sec",
+            "extra": "46 samples"
+          },
+          {
+            "name": "Draw gradient#node-canvas",
+            "value": 24,
+            "range": "±2.06%",
+            "unit": "ops/sec",
+            "extra": "43 samples"
           }
         ]
       }
