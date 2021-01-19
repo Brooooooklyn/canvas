@@ -674,14 +674,15 @@ extern "C"
       skiac_transform c_ts,
       int filter_quality)
   {
-    const auto skia_tile_mode = SkTileMode::kRepeat;
+    auto skia_tile_mode = SkTileMode::kRepeat;
     const auto ts = conv_from_transform(c_ts);
+    const auto sampling_options = new SkSamplingOptions((SkFilterQuality)filter_quality);
     sk_sp<SkImage> image = SURFACE_CAST->makeImageSnapshot();
     auto shader = image->makeShader(
                            skia_tile_mode,
                            skia_tile_mode,
-                           &ts,
-                           (SkFilterQuality)filter_quality)
+                           *sampling_options,
+                           &ts)
                       .release();
 
     if (shader)

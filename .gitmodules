@@ -1,7 +1,7 @@
 [submodule "skia"]
 	path = skia
 	url = https://github.com/google/skia.git
-  branch = chrome/m87
+  branch = chrome/m89
 [submodule "depot_tools"]
 	path = depot_tools
 	url = https://github.com/rust-skia/depot_tools.git

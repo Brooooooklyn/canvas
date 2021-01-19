@@ -52,11 +52,6 @@ jobs:
           pip install certifi
         if: matrix.os == 'windows-latest'
 
-      - name: Install tools on Linux
-        run: |
-          sudo apt-get install -y ninja-build
-        if: matrix.os == 'ubuntu-latest'
-
       - name: Install
         uses: actions-rs/toolchain@v1
         with:
