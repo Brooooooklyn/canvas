@@ -1924,13 +1924,13 @@ impl Transform {
   }
 
   #[inline]
-  /// | A B C |
-  /// | D E F |
+  /// | A C E |
+  /// | B D F |
   /// | 0 0 1 |
   /// [interface.js](skia/modules/canvaskit/interface.js)
   pub fn invert(&self) -> Option<Self> {
     let m = [
-      self.a, self.b, self.c, self.d, self.e, self.f, 0f32, 0f32, 1f32,
+      self.a, self.c, self.e, self.b, self.d, self.f, 0f32, 0f32, 1f32,
     ];
     // Find the determinant by the sarrus rule. https://en.wikipedia.org/wiki/Rule_of_Sarrus
     let det = m[0] * m[4] * m[8] + m[1] * m[5] * m[6] + m[2] * m[3] * m[7]
