@@ -129,10 +129,10 @@
     "@babel/runtime" "^7.7.2"
     regenerator-runtime "^0.13.3"
 
-"@napi-rs/cli@^1.0.1":
-  version "1.0.1"
-  resolved "https://registry.yarnpkg.com/@napi-rs/cli/-/cli-1.0.1.tgz#e987c1335f90d64cd432d102612d6afedcca404e"
-  integrity sha512-gefm4Z3L8DwC+FuZqYgbS825yoa0TOzD561ncquLOgg1tRVjN7jAg9TmVCb6fVO9VEwiBRsQiVus/4wxKSZX2g==
+"@napi-rs/cli@^1.0.2":
+  version "1.0.2"
+  resolved "https://registry.yarnpkg.com/@napi-rs/cli/-/cli-1.0.2.tgz#0676bf42eec523eeb01460d024f350c51acacfa4"
+  integrity sha512-N81ChgSPBy24By+LvscztFWde5bOLrWCYqTmu5+73A6L7zJ9JmE0qZcrCBlspT2W7cdOsIcpAw9HhOkEJXEGVw==
   dependencies:
     "@octokit/rest" "^18.0.12"
     chalk "^4.1.0"
@@ -143,7 +143,7 @@
     lodash "^4.17.20"
     putasset "^5.0.3"
     toml "^3.0.0"
-    tslib "^2.0.3"
+    tslib "^2.1.0"
 
 "@napi-rs/triples@^1.0.2":
   version "1.0.2"
@@ -4008,10 +4008,10 @@ tslib@^1.8.1, tslib@^1.9.0:
   resolved "https://registry.npmjs.org/tslib/-/tslib-1.14.1.tgz#cf2d38bdc34a134bcaf1091c41f6619e2f672d00"
   integrity sha512-Xni35NKzjgMrwevysHTCArtLDpPvye8zV/0E4EyYn43P7/7qvQwPh9BGkHewbMulVntbigmcT7rdX3BNo9wRJg==
 
-tslib@^2.0.3:
-  version "2.0.3"
-  resolved "https://registry.npmjs.org/tslib/-/tslib-2.0.3.tgz#8e0741ac45fc0c226e58a17bfc3e64b9bc6ca61c"
-  integrity sha512-uZtkfKblCEQtZKBF6EBXVZeQNl82yqtDQdv+eck8u7tdPxjLu2/lp5/uPW+um2tpuxINHWy3GhiccY7QgEaVHQ==
+tslib@^2.0.3, tslib@^2.1.0:
+  version "2.1.0"
+  resolved "https://registry.yarnpkg.com/tslib/-/tslib-2.1.0.tgz#da60860f1c2ecaa5703ab7d39bc05b6bf988b97a"
+  integrity sha512-hcVC3wYEziELGGmEEXue7D75zbwIIVUMWAVbHItGPx0ziyXxrOMQx4rQEVEV45Ut/1IotuEvwqPopzIOkDMf0A==
 
 tsutils@^3.17.1:
   version "3.17.1"
