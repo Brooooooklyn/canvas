@@ -411,7 +411,21 @@ test('rect', async (t) => {
   await snapshotImage(t)
 })
 
-test.todo('resetTransform')
+test('resetTransform', async (t) => {
+  const { ctx } = t.context
+  // Skewed rects
+  ctx.transform(1, 0, 1.7, 1, 0, 0)
+  ctx.fillStyle = 'gray'
+  ctx.fillRect(40, 40, 50, 20)
+  ctx.fillRect(40, 90, 50, 20)
+
+  // Non-skewed rects
+  ctx.resetTransform()
+  ctx.fillStyle = 'red'
+  ctx.fillRect(40, 40, 50, 20)
+  ctx.fillRect(40, 90, 50, 20)
+  await snapshotImage(t)
+})
 
 test('save-restore', async (t) => {
   const { ctx } = t.context
