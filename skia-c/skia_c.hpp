@@ -1,11 +1,13 @@
 #ifndef SKIA_CAPI_H
 #define SKIA_CAPI_H
 
-#include <include/core/SkPathEffect.h>
+#include <include/codec/SkCodec.h>
+#include <include/core/SkBitmap.h>
 #include <include/core/SkCanvas.h>
 #include <include/core/SkData.h>
 #include <include/core/SkGraphics.h>
 #include <include/core/SkPaint.h>
+#include <include/core/SkPathEffect.h>
 #include <include/core/SkSurface.h>
 #include <include/core/SkMaskFilter.h>
 #include <include/effects/SkDashPathEffect.h>
@@ -23,6 +25,7 @@ typedef struct skiac_matrix skiac_matrix;
 typedef struct skiac_mask_filter skiac_mask_filter;
 typedef struct skiac_data skiac_data;
 typedef struct skiac_image skiac_image;
+typedef struct skiac_bitmap skiac_bitmap;
 
 struct skiac_transform
 {
@@ -85,6 +88,7 @@ extern "C"
   skiac_transform skiac_canvas_get_total_transform(skiac_canvas *c_canvas);
   skiac_matrix *skiac_canvas_get_total_transform_matrix(skiac_canvas *c_canvas);
   void skiac_canvas_draw_color(skiac_canvas *c_canvas, float r, float g, float b, float a);
+  void skiac_canvas_draw_image(skiac_canvas *c_canvas, skiac_bitmap *c_bitmap, float sx, float sy, float s_width, float s_height, float dx, float dy, float d_width, float d_height);
   void skiac_canvas_draw_path(skiac_canvas *c_canvas, skiac_path *c_path, skiac_paint *c_paint);
   void skiac_canvas_draw_rect(
       skiac_canvas *c_canvas,
@@ -213,7 +217,14 @@ extern "C"
   void skiac_mask_filter_destroy(skiac_mask_filter *c_mask_filter);
 
   // SkData
+
   void skiac_sk_data_destroy(skiac_data *c_data);
+
+  // Bitmap
+  skiac_bitmap *skiac_bitmap_make_from_buffer(uint8_t *ptr, size_t size);
+  uint32_t skiac_bitmap_get_width(skiac_bitmap *c_bitmap);
+  uint32_t skiac_bitmap_get_height(skiac_bitmap *c_bitmap);
+  void skiac_bitmap_destroy(skiac_bitmap *c_bitmap);
 }
 
 #endif // SKIA_CAPI_H

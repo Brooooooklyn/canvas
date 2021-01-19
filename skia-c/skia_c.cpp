@@ -18,6 +18,7 @@
 #define SURFACE_CAST reinterpret_cast<SkSurface *>(c_surface)
 #define CANVAS_CAST reinterpret_cast<SkCanvas *>(c_canvas)
 #define PAINT_CAST reinterpret_cast<SkPaint *>(c_paint)
+#define BITMAP_CAST reinterpret_cast<SkBitmap *>(c_bitmap)
 #define PATH_CAST reinterpret_cast<SkPath *>(c_path)
 #define MATRIX_CAST reinterpret_cast<SkMatrix *>(c_matrix)
 #define MASK_FILTER_CAST reinterpret_cast<SkMaskFilter *>(c_mask_filter)
@@ -219,6 +220,13 @@ extern "C"
   void skiac_canvas_draw_color(skiac_canvas *c_canvas, float r, float g, float b, float a)
   {
     CANVAS_CAST->drawColor(SkColor4f{r, g, b, a});
+  }
+
+  void skiac_canvas_draw_image(skiac_canvas *c_canvas, skiac_bitmap *c_bitmap, float sx, float sy, float s_width, float s_height, float dx, float dy, float d_width, float d_height)
+  {
+    auto src_rect = SkRect::MakeXYWH(sx, sy, s_width, s_height);
+    auto dst_rect = SkRect::MakeXYWH(dx, dy, d_width, d_height);
+    CANVAS_CAST->drawBitmapRect(*BITMAP_CAST, src_rect, dst_rect, nullptr);
   }
 
   void skiac_canvas_draw_path(skiac_canvas *c_canvas, skiac_path *c_path, skiac_paint *c_paint)
@@ -748,9 +756,41 @@ extern "C"
   }
 
   // SkData
+
   void skiac_sk_data_destroy(skiac_data *c_data)
   {
-    auto sk_data = reinterpret_cast<SkData *>(c_data);
-    SkSafeUnref(sk_data);
+    auto data = reinterpret_cast<SkData *>(c_data);
+    SkSafeUnref(data);
+  }
+
+  // Bitmap
+
+  skiac_bitmap *skiac_bitmap_make_from_buffer(uint8_t *ptr, size_t size)
+  {
+    auto data = SkData::MakeWithCopy(reinterpret_cast<const void *>(ptr), size);
+    auto codec = SkCodec::MakeFromData(data);
+    auto info = codec->getInfo();
+    auto row_bytes = info.width() * info.bytesPerPixel();
+    auto bitmap = new SkBitmap();
+    bitmap->allocPixels(info);
+    codec->getPixels(info, bitmap->getPixels(), row_bytes);
+    return reinterpret_cast<skiac_bitmap *>(bitmap);
+  }
+
+  uint32_t skiac_bitmap_get_width(skiac_bitmap *c_bitmap)
+  {
+    auto bitmap = reinterpret_cast<SkBitmap *>(c_bitmap);
+    return bitmap->width();
+  }
+
+  uint32_t skiac_bitmap_get_height(skiac_bitmap *c_bitmap)
+  {
+    auto bitmap = reinterpret_cast<SkBitmap *>(c_bitmap);
+    return bitmap->height();
+  }
+
+  void skiac_bitmap_destroy(skiac_bitmap *c_bitmap)
+  {
+    delete BITMAP_CAST;
   }
 }

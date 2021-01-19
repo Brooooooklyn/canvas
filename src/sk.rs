@@ -65,6 +65,18 @@ mod ffi {
 
   #[repr(C)]
   #[derive(Copy, Clone, Debug)]
+  pub struct skiac_image {
+    _unused: [u8; 0],
+  }
+
+  #[repr(C)]
+  #[derive(Copy, Clone, Debug)]
+  pub struct skiac_bitmap {
+    _unused: [u8; 0],
+  }
+
+  #[repr(C)]
+  #[derive(Copy, Clone, Debug)]
   pub struct skiac_transform {
     pub a: f32,
     pub b: f32,
@@ -155,6 +167,19 @@ mod ffi {
     pub fn skiac_canvas_get_total_transform_matrix(canvas: *mut skiac_canvas) -> *mut skiac_matrix;
 
     pub fn skiac_canvas_draw_color(canvas: *mut skiac_canvas, r: f32, g: f32, b: f32, a: f32);
+
+    pub fn skiac_canvas_draw_image(
+      canvas: *mut skiac_canvas,
+      bitmap: *mut skiac_bitmap,
+      sx: f32,
+      sy: f32,
+      s_width: f32,
+      s_height: f32,
+      dx: f32,
+      dy: f32,
+      d_width: f32,
+      d_height: f32,
+    );
 
     pub fn skiac_canvas_draw_path(
       canvas: *mut skiac_canvas,
@@ -395,6 +420,14 @@ mod ffi {
     pub fn skiac_mask_filter_destroy(mask_filter: *mut skiac_mask_filter);
 
     pub fn skiac_sk_data_destroy(c_data: *mut skiac_data);
+
+    pub fn skiac_bitmap_make_from_buffer(ptr: *mut u8, size: usize) -> *mut skiac_bitmap;
+
+    pub fn skiac_bitmap_get_width(c_bitmap: *mut skiac_bitmap) -> u32;
+
+    pub fn skiac_bitmap_get_height(c_bitmap: *mut skiac_bitmap) -> u32;
+
+    pub fn skiac_bitmap_destroy(c_bitmap: *mut skiac_bitmap);
   }
 }
 
@@ -1155,6 +1188,26 @@ impl Canvas {
   pub fn draw_color(&mut self, r: f32, g: f32, b: f32, a: f32) {
     unsafe {
       ffi::skiac_canvas_draw_color(self.0, r, g, b, a);
+    }
+  }
+
+  #[inline]
+  pub fn draw_image(
+    &mut self,
+    image: *mut ffi::skiac_bitmap,
+    sx: f32,
+    sy: f32,
+    s_width: f32,
+    s_height: f32,
+    dx: f32,
+    dy: f32,
+    d_width: f32,
+    d_height: f32,
+  ) {
+    unsafe {
+      ffi::skiac_canvas_draw_image(
+        self.0, image, sx, sy, s_width, s_height, dx, dy, d_width, d_height,
+      );
     }
   }
 
@@ -2016,6 +2069,35 @@ impl MaskFilter {
 impl Drop for MaskFilter {
   fn drop(&mut self) {
     unsafe { ffi::skiac_mask_filter_destroy(self.0) };
+  }
+}
+
+#[derive(Debug)]
+pub struct Bitmap {
+  pub width: u32,
+  pub height: u32,
+  pub bitmap: *mut ffi::skiac_bitmap,
+}
+
+impl Bitmap {
+  pub fn from_buffer(ptr: *mut u8, size: usize) -> Self {
+    unsafe {
+      let bitmap = ffi::skiac_bitmap_make_from_buffer(ptr, size);
+
+      Bitmap {
+        width: ffi::skiac_bitmap_get_width(bitmap),
+        height: ffi::skiac_bitmap_get_height(bitmap),
+        bitmap,
+      }
+    }
+  }
+}
+
+impl Drop for Bitmap {
+  fn drop(&mut self) {
+    unsafe {
+      ffi::skiac_bitmap_destroy(self.bitmap);
+    }
   }
 }
 

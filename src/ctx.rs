@@ -9,7 +9,7 @@ use napi::*;
 
 use crate::error::SkError;
 use crate::gradient::CanvasGradient;
-use crate::image::ImageData;
+use crate::image::*;
 use crate::pattern::Pattern;
 use crate::sk::*;
 use crate::state::Context2dRenderingState;
@@ -90,6 +90,7 @@ impl Context {
         Property::new(&env, "closePath")?.with_method(close_path),
         Property::new(&env, "createLinearGradient")?.with_method(create_linear_gradient),
         Property::new(&env, "createRadialGradient")?.with_method(create_radial_gradient),
+        Property::new(&env, "drawImage")?.with_method(draw_image),
         Property::new(&env, "isPointInStroke")?.with_method(is_point_in_stroke),
         Property::new(&env, "ellipse")?.with_method(ellipse),
         Property::new(&env, "lineTo")?.with_method(line_to),
@@ -623,6 +624,63 @@ fn close_path(ctx: CallContext) -> Result<JsUndefined> {
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
 
   context_2d.path.close();
+  ctx.env.get_undefined()
+}
+
+#[js_function(9)]
+fn draw_image(ctx: CallContext) -> Result<JsUndefined> {
+  let this = ctx.this_unchecked::<JsObject>();
+  let context_2d = ctx.env.unwrap::<Context>(&this)?;
+  let image_js = ctx.get::<JsObject>(0)?;
+  let image = ctx.env.unwrap::<Image>(&image_js)?;
+  let bitmap = image.bitmap.as_ref().unwrap().bitmap;
+  let image_w = image.bitmap.as_ref().unwrap().width as f32;
+  let image_h = image.bitmap.as_ref().unwrap().height as f32;
+
+  if ctx.length == 3 {
+    let dx: f64 = ctx.get::<JsNumber>(1)?.try_into()?;
+    let dy: f64 = ctx.get::<JsNumber>(2)?.try_into()?;
+    context_2d.surface.canvas.draw_image(
+      bitmap, 0f32, 0f32, image_w, image_h, dx as f32, dy as f32, image_w, image_h,
+    );
+  } else if ctx.length == 5 {
+    let dx: f64 = ctx.get::<JsNumber>(1)?.try_into()?;
+    let dy: f64 = ctx.get::<JsNumber>(2)?.try_into()?;
+    let d_width: f64 = ctx.get::<JsNumber>(3)?.try_into()?;
+    let d_height: f64 = ctx.get::<JsNumber>(4)?.try_into()?;
+    context_2d.surface.canvas.draw_image(
+      bitmap,
+      0f32,
+      0f32,
+      image_w,
+      image_h,
+      dx as f32,
+      dy as f32,
+      d_width as f32,
+      d_height as f32,
+    );
+  } else if ctx.length == 9 {
+    let sx: f64 = ctx.get::<JsNumber>(1)?.try_into()?;
+    let sy: f64 = ctx.get::<JsNumber>(2)?.try_into()?;
+    let s_width: f64 = ctx.get::<JsNumber>(3)?.try_into()?;
+    let s_height: f64 = ctx.get::<JsNumber>(4)?.try_into()?;
+    let dx: f64 = ctx.get::<JsNumber>(5)?.try_into()?;
+    let dy: f64 = ctx.get::<JsNumber>(6)?.try_into()?;
+    let d_width: f64 = ctx.get::<JsNumber>(7)?.try_into()?;
+    let d_height: f64 = ctx.get::<JsNumber>(8)?.try_into()?;
+    context_2d.surface.canvas.draw_image(
+      bitmap,
+      sx as f32,
+      sy as f32,
+      s_width as f32,
+      s_height as f32,
+      dx as f32,
+      dy as f32,
+      d_width as f32,
+      d_height as f32,
+    );
+  }
+
   ctx.env.get_undefined()
 }
 

@@ -44,6 +44,8 @@ fn init(mut exports: JsObject, env: Env) -> Result<()> {
 
   let image_data_class = image::ImageData::create_js_class(&env)?;
 
+  let image_class = image::Image::create_js_class(&env)?;
+
   exports.set_named_property("CanvasRenderingContext2D", canvas_rendering_context2d)?;
 
   exports.set_named_property("CanvasElement", canvas_element)?;
@@ -51,6 +53,8 @@ fn init(mut exports: JsObject, env: Env) -> Result<()> {
   exports.set_named_property("Path2D", path_class)?;
 
   exports.set_named_property("ImageData", image_data_class)?;
+
+  exports.set_named_property("Image", image_class)?;
   Ok(())
 }
 
