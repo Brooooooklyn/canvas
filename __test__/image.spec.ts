@@ -49,7 +49,8 @@ test('properties should be readonly', (t) => {
   const image = new Image()
   const expectation = {
     instanceOf: TypeError,
-    message: /Cannot set property (.)* of #<Image> which has only a getter/,
+    // compat with different Node.js versions
+    message: /(Cannot assign to read only property)|(Cannot set property)/,
   }
 
   // @ts-expect-error
