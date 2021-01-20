@@ -16,21 +16,21 @@ function exec(command) {
 
 exec('python ./tools/git-sync-deps')
 
-const CC = platformName === 'win32' ? '\\"clang-cl\\"' : '"clang"'
-const CXX = platformName === 'win32' ? '\\"clang-cl\\"' : '"clang++"'
+const CC = platformName === 'win32' ? '\\"clang-cl\\"' : platformName === 'linux' ? '"clang-9"' : '"clang"'
+const CXX = platformName === 'win32' ? '\\"clang-cl\\"' : platformName === 'linux' ? '"clang++-9"' : '"clang++"'
 let ExtraCflagsCC = ''
 let ExtraSkiaBuildFlag = ''
 switch (platformName) {
   case 'win32':
-    ExtraCflagsCC = `\\"/std:c++17\\", \\"/MT\\"`
+    ExtraCflagsCC = `\\"/std:c++17\\", \\"/MT\\", \\"-DSK_FORCE_RASTER_PIPELINE_BLITTER\\"`
     ExtraSkiaBuildFlag = 'clang_win=\\"C:\\\\Program Files\\\\LLVM\\"'
     break
   case 'linux':
-    ExtraCflagsCC = '"-stdlib=libstdc++", "-std=c++17", "-fno-rtti", "-fno-exceptions"'
-    ExtraSkiaBuildFlag = ['skia_use_system_freetype2=false', 'skia_use_fontconfig=false'].join('\n')
+    ExtraCflagsCC = '"-std=c++17", "-fno-rtti", "-fno-exceptions", "-DSK_FORCE_RASTER_PIPELINE_BLITTER"'
+    ExtraSkiaBuildFlag = ['skia_use_system_freetype2=false', 'skia_use_fontconfig=false'].join(' ')
     break
   case 'darwin':
-    ExtraCflagsCC = '"-std=c++17", "-fno-rtti", "-fno-exceptions"'
+    ExtraCflagsCC = '"-std=c++17", "-fno-rtti", "-fno-exceptions", "-DSK_FORCE_RASTER_PIPELINE_BLITTER"'
     break
   default:
     throw new TypeError(`Don't support ${platformName} for now`)
