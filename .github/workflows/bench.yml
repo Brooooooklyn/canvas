@@ -26,15 +26,6 @@ jobs:
           node-version: 14
           check-latest: true
 
-      - name: Set env
-        run: |
-          echo "${PWD}/depot_tools" >> $GITHUB_PATH
-        shell: bash
-
-      - name: Install tools on Linux
-        run: |
-          sudo apt-get install -y ninja-build
-
       - name: Install
         uses: actions-rs/toolchain@v1
         with:
@@ -68,10 +59,8 @@ jobs:
       - name: 'Install dependencies'
         run: yarn install --frozen-lockfile --registry https://registry.npmjs.org --network-timeout 300000
 
-      - name: Compile skia
-        env:
-          PYTHONHTTPSVERIFY: 0
-        run: node ./scripts/build-skia.js
+      - name: Download skia binary
+        run: node ./scripts/release-skia-binary.js --download
 
       - name: 'Build'
         run: yarn build
