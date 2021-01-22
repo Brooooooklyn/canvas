@@ -1,0 +1,76 @@
+name: Build skia
+
+on:
+  push:
+    branches:
+      - release
+    tags-ignore:
+      - '**'
+jobs:
+  build:
+    if: "!contains(github.event.head_commit.message, 'skip skia')"
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    name: stable - ${{ matrix.os }} - build skia
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: true
+
+      - name: Setup node
+        uses: actions/setup-node@v2
+        with:
+          node-version: 14
+          check-latest: true
+
+      - name: Set env
+        run: |
+          echo "${PWD}/depot_tools" >> $GITHUB_PATH
+          echo "C:\\msys64\\mingw64\\bin" >> $GITHUB_PATH
+        shell: bash
+
+      - name: Install tools on macOS
+        run: brew install ninja
+        if: matrix.os == 'macos-latest'
+
+      - name: Install tools on Windows
+        if: matrix.os == 'windows-latest'
+        run: |
+          choco install ninja -y
+          choco upgrade python -y
+          pip install certifi
+
+      - name: Compile skia
+        if: matrix.os != 'windows-latest'
+        env:
+          PYTHONHTTPSVERIFY: 0
+        run: node ./scripts/build-skia.js
+
+      - name: Compile skia
+        shell: powershell
+        if: matrix.os == 'windows-latest'
+        env:
+          PYTHONHTTPSVERIFY: 0
+        run: node ./scripts/build-skia.js
+
+      - name: Cache NPM dependencies
+        uses: actions/cache@v1
+        with:
+          path: node_modules
+          key: npm-cache-${{ matrix.os }}-node@14-${{ hashFiles('yarn.lock') }}
+          restore-keys: |
+            npm-cache-
+
+      - name: 'Install dependencies'
+        run: yarn install --frozen-lockfile --registry https://registry.npmjs.org --network-timeout 300000
+
+      - name: Upload release
+        run: node ./scripts/release-skia-binary.js --upload
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
