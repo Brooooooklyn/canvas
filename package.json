@@ -50,7 +50,7 @@
     "@jimp/custom": "^0.16.1",
     "@jimp/png": "^0.16.1",
     "@napi-rs/cli": "^1.0.2",
-    "@octokit/rest": "^18.0.12",
+    "@octokit/rest": "^18.0.14",
     "@swc-node/register": "^1.0.3",
     "@types/chalk": "^2.2.0",
     "@typescript-eslint/eslint-plugin": "^4.13.0",
