@@ -160,6 +160,7 @@ extern "C"
   void skiac_path_transform(skiac_path *c_path, skiac_transform c_transform);
   void skiac_path_transform_matrix(skiac_path *c_path, skiac_matrix *c_matrix);
   bool skiac_path_is_empty(skiac_path *c_path);
+  bool skiac_path_hit_test(skiac_path *c_path, float x, float y, int type);
   bool skiac_path_stroke_hit_test(skiac_path *c_path, float x, float y, float stroke_w);
 
   // PathEffect
