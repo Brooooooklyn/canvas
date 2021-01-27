@@ -550,6 +550,15 @@ extern "C"
     return PATH_CAST->isEmpty();
   }
 
+  bool skiac_path_hit_test(skiac_path *c_path, float x, float y, int type)
+  {
+    auto prev_fill = PATH_CAST->getFillType();
+    PATH_CAST->setFillType((SkPathFillType)type);
+    auto result = PATH_CAST->contains(x, y);
+    PATH_CAST->setFillType(prev_fill);
+    return result;
+  }
+
   bool skiac_path_stroke_hit_test(skiac_path *c_path, float x, float y, float stroke_w)
   {
     auto path = PATH_CAST;

@@ -295,7 +295,29 @@ test('getImageData', async (t) => {
   await snapshotImage(t)
 })
 
-test.todo('isPointInPath')
+test('isPointInPath', (t) => {
+  const { ctx } = t.context
+
+  ctx.rect(0, 0, 100, 100)
+  t.is(ctx.isPointInPath(50, -1), false) // Outside the rect
+  t.is(ctx.isPointInPath(50, 0), true) // On the edge of the rect
+  t.is(ctx.isPointInPath(50, 1), true) // Inside the rect
+
+  ctx.rect(40, 40, 20, 20) // Overlap the area center
+  t.is(ctx.isPointInPath(50, 50), true)
+  t.is(ctx.isPointInPath(50, 50, 'nonzero'), true)
+  t.is(ctx.isPointInPath(50, 50, 'evenodd'), false)
+
+  const path = new Path2D()
+  path.rect(0, 0, 100, 100)
+  t.is(ctx.isPointInPath(path, 50, -1), false)
+  t.is(ctx.isPointInPath(path, 50, 1), true)
+
+  path.rect(40, 40, 20, 20)
+  t.is(ctx.isPointInPath(50, 50), true)
+  t.is(ctx.isPointInPath(path, 50, 50, 'nonzero'), true)
+  t.is(ctx.isPointInPath(path, 50, 50, 'evenodd'), false)
+})
 
 test('isPointInStroke', (t) => {
   const { ctx } = t.context

@@ -91,6 +91,7 @@ impl Context {
         Property::new(&env, "createLinearGradient")?.with_method(create_linear_gradient),
         Property::new(&env, "createRadialGradient")?.with_method(create_radial_gradient),
         Property::new(&env, "drawImage")?.with_method(draw_image),
+        Property::new(&env, "isPointInPath")?.with_method(is_point_in_path),
         Property::new(&env, "isPointInStroke")?.with_method(is_point_in_stroke),
         Property::new(&env, "ellipse")?.with_method(ellipse),
         Property::new(&env, "lineTo")?.with_method(line_to),
@@ -682,6 +683,67 @@ fn draw_image(ctx: CallContext) -> Result<JsUndefined> {
   }
 
   ctx.env.get_undefined()
+}
+
+#[js_function(4)]
+fn is_point_in_path(ctx: CallContext) -> Result<JsBoolean> {
+  let this = ctx.this_unchecked::<JsObject>();
+  let context_2d = ctx.env.unwrap::<Context>(&this)?;
+  let result;
+
+  if ctx.length == 2 {
+    let x: f64 = ctx.get::<JsNumber>(0)?.try_into()?;
+    let y: f64 = ctx.get::<JsNumber>(1)?.try_into()?;
+    result = context_2d
+      .path
+      .hit_test(y as f32, x as f32, FillType::Winding);
+    return ctx.env.get_boolean(result);
+  } else if ctx.length == 3 {
+    let input = ctx.get::<JsUnknown>(0)?;
+    match input.get_type()? {
+      ValueType::Number => {
+        let x: f64 = ctx.get::<JsNumber>(0)?.try_into()?;
+        let y: f64 = ctx.get::<JsNumber>(1)?.try_into()?;
+        let fill_rule_js = ctx.get::<JsString>(2)?.into_utf8()?;
+        result = context_2d.path.hit_test(
+          y as f32,
+          x as f32,
+          FillType::from_str(fill_rule_js.as_str()?)?,
+        );
+      }
+      ValueType::Object => {
+        let x: f64 = ctx.get::<JsNumber>(1)?.try_into()?;
+        let y: f64 = ctx.get::<JsNumber>(2)?.try_into()?;
+        let path_js = ctx.get::<JsObject>(0)?;
+        let path = ctx.env.unwrap::<Path>(&path_js)?;
+        result = path.hit_test(x as f32, y as f32, FillType::Winding);
+      }
+      _ => {
+        return Err(Error::new(
+          Status::InvalidArg,
+          format!("Invalid isPointInPath argument"),
+        ))
+      }
+    }
+    return ctx.env.get_boolean(result);
+  } else if ctx.length == 4 {
+    let path_js = ctx.get::<JsObject>(0)?;
+    let path = ctx.env.unwrap::<Path>(&path_js)?;
+    let x: f64 = ctx.get::<JsNumber>(1)?.try_into()?;
+    let y: f64 = ctx.get::<JsNumber>(2)?.try_into()?;
+    let fill_rule_js = ctx.get::<JsString>(3)?.into_utf8()?;
+    result = path.hit_test(
+      y as f32,
+      x as f32,
+      FillType::from_str(fill_rule_js.as_str()?)?,
+    );
+    return ctx.env.get_boolean(result);
+  } else {
+    return Err(Error::new(
+      Status::InvalidArg,
+      format!("Invalid isPointInPath arguments length"),
+    ));
+  }
 }
 
 #[js_function(3)]
