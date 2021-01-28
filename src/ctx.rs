@@ -91,6 +91,7 @@ impl Context {
         Property::new(&env, "createLinearGradient")?.with_method(create_linear_gradient),
         Property::new(&env, "createRadialGradient")?.with_method(create_radial_gradient),
         Property::new(&env, "drawImage")?.with_method(draw_image),
+        Property::new(&env, "getContextAttributes")?.with_method(get_context_attributes),
         Property::new(&env, "isPointInPath")?.with_method(is_point_in_path),
         Property::new(&env, "isPointInStroke")?.with_method(is_point_in_stroke),
         Property::new(&env, "ellipse")?.with_method(ellipse),
@@ -683,6 +684,14 @@ fn draw_image(ctx: CallContext) -> Result<JsUndefined> {
   }
 
   ctx.env.get_undefined()
+}
+
+#[js_function]
+fn get_context_attributes(ctx: CallContext) -> Result<JsObject> {
+  let mut obj = ctx.env.create_object()?;
+  obj.set_named_property("alpha", ctx.env.get_boolean(true)?)?;
+  obj.set_named_property("desynchronized", ctx.env.get_boolean(false)?)?;
+  Ok(obj)
 }
 
 #[js_function(4)]

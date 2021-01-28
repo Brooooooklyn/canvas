@@ -284,7 +284,12 @@ test('fillRect', async (t) => {
 
 test.todo('fillText')
 
-test.todo('getContextAttributes')
+test('getContextAttributes', (t) => {
+  const { ctx } = t.context
+  const attributes = ctx.getContextAttributes()
+  t.is(attributes.alpha, true)
+  t.is(attributes.desynchronized, false)
+})
 
 test('getImageData', async (t) => {
   const { ctx } = t.context
@@ -314,7 +319,7 @@ test('isPointInPath', (t) => {
   t.is(ctx.isPointInPath(path, 50, 1), true)
 
   path.rect(40, 40, 20, 20)
-  t.is(ctx.isPointInPath(50, 50), true)
+  t.is(ctx.isPointInPath(path, 50, 50), true)
   t.is(ctx.isPointInPath(path, 50, 50, 'nonzero'), true)
   t.is(ctx.isPointInPath(path, 50, 50, 'evenodd'), false)
 })

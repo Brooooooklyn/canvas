@@ -73,6 +73,7 @@ export interface SKRSContext2D extends Omit<CanvasRenderingContext2D, 'drawImage
     dw: number,
     dh: number,
   ): void
+  getContextAttributes(): { alpha: boolean; desynchronized: boolean }
 }
 
 export interface Canvas extends Omit<HTMLCanvasElement, 'getContext'> {
