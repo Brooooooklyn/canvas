@@ -777,7 +777,7 @@ extern "C"
 
   skiac_bitmap *skiac_bitmap_make_from_buffer(uint8_t *ptr, size_t size)
   {
-    auto data = SkData::MakeWithCopy(reinterpret_cast<const void *>(ptr), size);
+    auto data = SkData::MakeWithoutCopy(reinterpret_cast<const void *>(ptr), size);
     auto codec = SkCodec::MakeFromData(data);
     auto info = codec->getInfo();
     auto row_bytes = info.width() * info.bytesPerPixel();
