@@ -1,7 +1,10 @@
 use cssparser::RGBA;
 
-use super::pattern::Pattern;
-use super::sk::{BlendMode, FilterQuality, Paint, TextAlign, TextBaseline};
+use super::{
+  font::Font,
+  pattern::Pattern,
+  sk::{BlendMode, FilterQuality, Paint, TextAlign, TextBaseline},
+};
 
 #[derive(Debug, Clone)]
 pub struct Context2dRenderingState {
@@ -20,6 +23,7 @@ pub struct Context2dRenderingState {
   pub image_smoothing_quality: FilterQuality,
   pub paint: Paint,
   pub font: String,
+  pub font_style: Font,
   pub text_align: TextAlign,
   pub text_baseline: TextBaseline,
 }
@@ -43,7 +47,8 @@ impl Default for Context2dRenderingState {
       image_smoothing_enabled: true,
       image_smoothing_quality: FilterQuality::Low,
       paint: Paint::default(),
-      font: "10px monospace".to_owned(),
+      font: "10px sans-serif".to_owned(),
+      font_style: Font::default(),
       text_align: TextAlign::Start,
       text_baseline: TextBaseline::Alphabetic,
     }

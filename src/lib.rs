@@ -4,12 +4,14 @@ extern crate napi_derive;
 use napi::*;
 
 use ctx::{Context, ContextData};
+use font::{init_font_regexp, FONT_REGEXP};
 use sk::SurfaceDataRef;
 
 #[cfg(all(
   unix,
   not(target_env = "musl"),
   not(target_arch = "aarch64"),
+  not(target_arch = "armv7"),
   not(debug_assertions)
 ))]
 #[global_allocator]
@@ -17,6 +19,7 @@ static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
 mod ctx;
 mod error;
+mod font;
 mod gradient;
 mod image;
 mod path;
@@ -55,6 +58,9 @@ fn init(mut exports: JsObject, env: Env) -> Result<()> {
   exports.set_named_property("ImageData", image_data_class)?;
 
   exports.set_named_property("Image", image_class)?;
+
+  // pre init font regexp
+  FONT_REGEXP.get_or_init(init_font_regexp);
   Ok(())
 }
 

@@ -8,6 +8,7 @@ use cssparser::{Color as CSSColor, Parser, ParserInput};
 use napi::*;
 
 use crate::error::SkError;
+use crate::font::Font;
 use crate::gradient::CanvasGradient;
 use crate::image::*;
 use crate::pattern::Pattern;
@@ -65,6 +66,9 @@ impl Context {
         Property::new(&env, "fillStyle")?
           .with_setter(set_fill_style)
           .with_getter(get_fill_style),
+        Property::new(&env, "font")?
+          .with_setter(set_font)
+          .with_getter(get_font),
         Property::new(&env, "strokeStyle")?
           .with_setter(set_stroke_style)
           .with_getter(get_stroke_style),
@@ -80,6 +84,12 @@ impl Context {
         Property::new(&env, "shadowOffsetY")?
           .with_setter(set_shadow_offset_y)
           .with_getter(get_shadow_offset_y),
+        Property::new(&env, "textAlign")?
+          .with_setter(set_text_align)
+          .with_getter(get_text_align),
+        Property::new(&env, "textBaseline")?
+          .with_setter(set_text_baseline)
+          .with_getter(get_text_baseline),
         // methods
         Property::new(&env, "arc")?.with_method(arc),
         Property::new(&env, "arcTo")?.with_method(arc_to),
@@ -1427,6 +1437,29 @@ fn get_fill_style(ctx: CallContext) -> Result<JsUnknown> {
   this.get_named_property("_fillStyle")
 }
 
+#[js_function]
+fn get_font(ctx: CallContext) -> Result<JsString> {
+  let this = ctx.this_unchecked::<JsObject>();
+  let context_2d = ctx.env.unwrap::<Context>(&this)?;
+
+  ctx
+    .env
+    .create_string(context_2d.states.last().unwrap().font.as_str())
+}
+
+#[js_function(1)]
+fn set_font(ctx: CallContext) -> Result<JsUndefined> {
+  let this = ctx.this_unchecked::<JsObject>();
+  let context_2d = ctx.env.unwrap::<Context>(&this)?;
+
+  let last_state = context_2d.states.last_mut().unwrap();
+  let font_style = ctx.get::<JsString>(0)?.into_utf8()?.into_owned()?;
+  last_state.font_style =
+    Font::new(font_style.as_str()).map_err(|e| Error::new(Status::InvalidArg, format!("{}", e)))?;
+  last_state.font = font_style;
+  ctx.env.get_undefined()
+}
+
 #[js_function(1)]
 fn set_stroke_style(ctx: CallContext) -> Result<JsUndefined> {
   let mut this = ctx.this_unchecked::<JsObject>();
@@ -1577,6 +1610,46 @@ fn set_shadow_offset_y(ctx: CallContext) -> Result<JsUndefined> {
   last_state.shadow_offset_y = offset as f32;
 
   ctx.env.get_undefined()
+}
+
+#[js_function(1)]
+fn set_text_align(ctx: CallContext) -> Result<JsUndefined> {
+  let this = ctx.this_unchecked::<JsObject>();
+  let context_2d = ctx.env.unwrap::<Context>(&this)?;
+
+  context_2d.states.last_mut().unwrap().text_align =
+    TextAlign::from_str(ctx.get::<JsString>(0)?.into_utf8()?.as_str()?)?;
+  ctx.env.get_undefined()
+}
+
+#[js_function]
+fn get_text_align(ctx: CallContext) -> Result<JsString> {
+  let this = ctx.this_unchecked::<JsObject>();
+  let context_2d = ctx.env.unwrap::<Context>(&this)?;
+
+  ctx
+    .env
+    .create_string(context_2d.states.last().unwrap().text_align.as_str())
+}
+
+#[js_function(1)]
+fn set_text_baseline(ctx: CallContext) -> Result<JsUndefined> {
+  let this = ctx.this_unchecked::<JsObject>();
+  let context_2d = ctx.env.unwrap::<Context>(&this)?;
+
+  context_2d.states.last_mut().unwrap().text_baseline =
+    TextBaseline::from_str(ctx.get::<JsString>(0)?.into_utf8()?.as_str()?)?;
+  ctx.env.get_undefined()
+}
+
+#[js_function]
+fn get_text_baseline(ctx: CallContext) -> Result<JsString> {
+  let this = ctx.this_unchecked::<JsObject>();
+  let context_2d = ctx.env.unwrap::<Context>(&this)?;
+
+  ctx
+    .env
+    .create_string(context_2d.states.last().unwrap().text_baseline.as_str())
 }
 
 pub enum ContextData {

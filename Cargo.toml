@@ -8,11 +8,13 @@ version = "0.1.0"
 crate-type = ["cdylib"]
 
 [dependencies]
-anyhow = "1"
+anyhow = "1.0"
 cssparser = "0.28"
 napi = "1"
 napi-derive = "1"
-thiserror = "1"
+once_cell = "1.5"
+regex = "1.4"
+thiserror = "1.0"
 
 [target.'cfg(all(unix, not(target_env = "musl"), not(target_arch = "aarch64")))'.dependencies]
 jemallocator = {version = "0.3", features = ["disable_initial_exec_tls"]}
