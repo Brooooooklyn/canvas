@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1612013750412,
+  "lastUpdate": 1612285633207,
   "repoUrl": "https://github.com/Brooooooklyn/skia-rs",
   "entries": {
     "Benchmark": [
@@ -1294,6 +1294,58 @@ window.BENCHMARK_DATA = {
             "name": "Draw gradient#node-canvas",
             "value": 23,
             "range": "±1.15%",
+            "unit": "ops/sec",
+            "extra": "41 samples"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "lynweklm@gmail.com",
+            "name": "LongYinan",
+            "username": "Brooooooklyn"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "7211e917b31e56842814fb8e03613e291ed7262e",
+          "message": "Merge pull request #125 from Brooooooklyn/text-states\n\nfeat: font api",
+          "timestamp": "2021-02-03T01:02:33+08:00",
+          "tree_id": "de0445e1d736a4676dd854db2a0109eea580bef9",
+          "url": "https://github.com/Brooooooklyn/skia-rs/commit/7211e917b31e56842814fb8e03613e291ed7262e"
+        },
+        "date": 1612285562657,
+        "tool": "benchmarkjs",
+        "benches": [
+          {
+            "name": "Draw house#@napi-rs/skia",
+            "value": 28,
+            "range": "±0.08%",
+            "unit": "ops/sec",
+            "extra": "49 samples"
+          },
+          {
+            "name": "Draw house#node-canvas",
+            "value": 24,
+            "range": "±0.27%",
+            "unit": "ops/sec",
+            "extra": "43 samples"
+          },
+          {
+            "name": "Draw gradient#@napi-rs/skia",
+            "value": 27,
+            "range": "±0.11%",
+            "unit": "ops/sec",
+            "extra": "48 samples"
+          },
+          {
+            "name": "Draw gradient#node-canvas",
+            "value": 23,
+            "range": "±0.2%",
             "unit": "ops/sec",
             "extra": "41 samples"
           }
