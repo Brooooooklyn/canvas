@@ -56,7 +56,7 @@ jobs:
             npm-cache-
 
       - name: 'Install dependencies'
-        run: yarn install --frozen-lockfile --registry https://registry.npmjs.org --network-timeout 300000
+        run: yarn install --ignore-scripts --frozen-lockfile --registry https://registry.npmjs.org --network-timeout 300000
 
       - name: Download skia binary
         run: node ./scripts/release-skia-binary.js --download
