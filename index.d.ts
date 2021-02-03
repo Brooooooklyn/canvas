@@ -77,7 +77,7 @@ export interface SKRSContext2D extends Omit<CanvasRenderingContext2D, 'drawImage
 }
 
 export interface Canvas extends Omit<HTMLCanvasElement, 'getContext'> {
-  getContext(contextId: '2d'): SKRSContext2D
+  getContext(contextType: '2d', contextAttributes?: { alpha: boolean }): SKRSContext2D
   png(): Promise<Buffer>
 }
 

@@ -16,6 +16,12 @@ test.beforeEach((t) => {
   t.context.ctx = canvas.getContext('2d')!
 })
 
+test('alpha-false', async (t) => {
+  const canvas = createCanvas(512, 512)
+  const ctx = canvas.getContext('2d', { alpha: false })
+  await snapshotImage(t, { canvas, ctx })
+})
+
 test('arc', async (t) => {
   const { ctx } = t.context
   ctx.beginPath()
@@ -285,10 +291,16 @@ test('fillRect', async (t) => {
 test.todo('fillText')
 
 test('getContextAttributes', (t) => {
-  const { ctx } = t.context
-  const attributes = ctx.getContextAttributes()
-  t.is(attributes.alpha, true)
-  t.is(attributes.desynchronized, false)
+  const defaultCtx = t.context.ctx
+  const defaultAttrs = defaultCtx.getContextAttributes()
+  t.is(defaultAttrs.alpha, true)
+  t.is(defaultAttrs.desynchronized, false)
+
+  const canvas = createCanvas(512, 512)
+  const ctx = canvas.getContext('2d', { alpha: false })
+  const customAttrs = ctx.getContextAttributes()
+  t.is(customAttrs.alpha, false)
+  t.is(customAttrs.desynchronized, false)
 })
 
 test('getImageData', async (t) => {

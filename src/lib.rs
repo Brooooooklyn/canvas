@@ -2,6 +2,7 @@
 extern crate napi_derive;
 
 use napi::*;
+use std::convert::TryInto;
 
 use ctx::{Context, ContextData};
 use sk::SurfaceDataRef;
@@ -68,7 +69,7 @@ fn canvas_element_constructor(ctx: CallContext) -> Result<JsUndefined> {
   ctx.env.get_undefined()
 }
 
-#[js_function(1)]
+#[js_function(2)]
 fn get_context(ctx: CallContext) -> Result<JsObject> {
   let context_type = ctx.get::<JsString>(0)?.into_utf8()?;
   if context_type.as_str()? != "2d" {
@@ -77,8 +78,29 @@ fn get_context(ctx: CallContext) -> Result<JsObject> {
       "Only supports 2d context".to_owned(),
     ));
   }
+
   let this = ctx.this_unchecked::<JsObject>();
-  this.get_named_property("ctx")
+  let ctx_js = this.get_named_property::<JsObject>("ctx")?;
+  let context_2d = ctx.env.unwrap::<Context>(&ctx_js)?;
+
+  if ctx.length == 2 {
+    let attrs = ctx.get::<JsObject>(1)?;
+    let alpha = attrs
+      .get_named_property::<JsBoolean>("alpha")?
+      .get_value()?;
+    if !alpha {
+      let mut fill_paint = context_2d.fill_paint()?;
+      fill_paint.set_color(255, 255, 255, 255);
+      let w: f64 = this.get_named_property::<JsNumber>("width")?.try_into()?;
+      let h: f64 = this.get_named_property::<JsNumber>("height")?.try_into()?;
+      context_2d.alpha = false;
+      context_2d
+        .surface
+        .draw_rect(0f32, 0f32, w as f32, h as f32, &fill_paint);
+    }
+  }
+
+  Ok(ctx_js)
 }
 
 #[js_function]

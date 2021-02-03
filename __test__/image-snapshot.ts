@@ -6,9 +6,9 @@ import { ExecutionContext } from 'ava'
 
 const png = PNG()
 
-export async function snapshotImage<C>(t: ExecutionContext<C>) {
+export async function snapshotImage<C>(t: ExecutionContext<C>, context = t.context) {
   // @ts-expect-error
-  const { canvas } = t.context
+  const { canvas } = context
   const image = await canvas.png()
   const p = join(__dirname, 'snapshots', `${t.title}.png`)
 
