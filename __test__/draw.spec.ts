@@ -16,6 +16,12 @@ test.beforeEach((t) => {
   t.context.ctx = canvas.getContext('2d')!
 })
 
+test('alpha-false', async (t) => {
+  const canvas = createCanvas(512, 512)
+  const ctx = canvas.getContext('2d', { alpha: false })
+  await snapshotImage(t, { canvas, ctx })
+})
+
 test('arc', async (t) => {
   const { ctx } = t.context
   ctx.beginPath()
@@ -284,7 +290,18 @@ test('fillRect', async (t) => {
 
 test.todo('fillText')
 
-test.todo('getContextAttributes')
+test('getContextAttributes', (t) => {
+  const defaultCtx = t.context.ctx
+  const defaultAttrs = defaultCtx.getContextAttributes()
+  t.is(defaultAttrs.alpha, true)
+  t.is(defaultAttrs.desynchronized, false)
+
+  const canvas = createCanvas(512, 512)
+  const ctx = canvas.getContext('2d', { alpha: false })
+  const customAttrs = ctx.getContextAttributes()
+  t.is(customAttrs.alpha, false)
+  t.is(customAttrs.desynchronized, false)
+})
 
 test('getImageData', async (t) => {
   const { ctx } = t.context
@@ -314,7 +331,7 @@ test('isPointInPath', (t) => {
   t.is(ctx.isPointInPath(path, 50, 1), true)
 
   path.rect(40, 40, 20, 20)
-  t.is(ctx.isPointInPath(50, 50), true)
+  t.is(ctx.isPointInPath(path, 50, 50), true)
   t.is(ctx.isPointInPath(path, 50, 50, 'nonzero'), true)
   t.is(ctx.isPointInPath(path, 50, 50, 'evenodd'), false)
 })

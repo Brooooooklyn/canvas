@@ -24,6 +24,7 @@ impl From<SkError> for Error {
 pub struct Context {
   pub(crate) surface: Surface,
   path: Path,
+  pub alpha: bool,
   pub(crate) states: Vec<Context2dRenderingState>,
 }
 
@@ -101,6 +102,7 @@ impl Context {
         Property::new(&env, "createLinearGradient")?.with_method(create_linear_gradient),
         Property::new(&env, "createRadialGradient")?.with_method(create_radial_gradient),
         Property::new(&env, "drawImage")?.with_method(draw_image),
+        Property::new(&env, "getContextAttributes")?.with_method(get_context_attributes),
         Property::new(&env, "isPointInPath")?.with_method(is_point_in_path),
         Property::new(&env, "isPointInStroke")?.with_method(is_point_in_stroke),
         Property::new(&env, "ellipse")?.with_method(ellipse),
@@ -138,6 +140,7 @@ impl Context {
     states.push(Context2dRenderingState::default());
     Ok(Context {
       surface,
+      alpha: true,
       path: Path::new(),
       states,
     })
@@ -262,7 +265,7 @@ impl Context {
   }
 
   #[inline(always)]
-  fn fill_paint(&self) -> result::Result<Paint, SkError> {
+  pub fn fill_paint(&self) -> result::Result<Paint, SkError> {
     let current_paint = &self.states.last().unwrap().paint;
     let mut paint = current_paint.clone();
     paint.set_style(PaintStyle::Fill);
@@ -693,6 +696,16 @@ fn draw_image(ctx: CallContext) -> Result<JsUndefined> {
   }
 
   ctx.env.get_undefined()
+}
+
+#[js_function]
+fn get_context_attributes(ctx: CallContext) -> Result<JsObject> {
+  let this = ctx.this_unchecked::<JsObject>();
+  let context_2d = ctx.env.unwrap::<Context>(&this)?;
+  let mut obj = ctx.env.create_object()?;
+  obj.set_named_property("alpha", ctx.env.get_boolean(context_2d.alpha)?)?;
+  obj.set_named_property("desynchronized", ctx.env.get_boolean(false)?)?;
+  Ok(obj)
 }
 
 #[js_function(4)]
