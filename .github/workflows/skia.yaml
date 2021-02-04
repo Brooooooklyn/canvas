@@ -30,9 +30,7 @@ jobs:
           check-latest: true
 
       - name: Set env
-        run: |
-          echo "${PWD}/depot_tools" >> $GITHUB_PATH
-          echo "C:\\msys64\\mingw64\\bin" >> $GITHUB_PATH
+        run: echo "${PWD}/depot_tools" >> $GITHUB_PATH
         shell: bash
 
       - name: Install tools on macOS
@@ -42,7 +40,7 @@ jobs:
       - name: Install tools on Windows
         if: matrix.os == 'windows-latest'
         run: |
-          choco install ninja -y
+          choco install llvm ninja -y
           choco upgrade python -y
           pip install certifi
 
