@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1612370530180,
+  "lastUpdate": 1612452123494,
   "repoUrl": "https://github.com/Brooooooklyn/skia-rs",
   "entries": {
     "Benchmark": [
@@ -1452,6 +1452,58 @@ window.BENCHMARK_DATA = {
             "range": "±1.2%",
             "unit": "ops/sec",
             "extra": "40 samples"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "lynweklm@gmail.com",
+            "name": "LongYinan",
+            "username": "Brooooooklyn"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "7b54c5d5bedfbf927abf5a11474c04c402bfcbd8",
+          "message": "Merge pull request #163 from Brooooooklyn/release\n\nm89 update",
+          "timestamp": "2021-02-04T23:17:54+08:00",
+          "tree_id": "ca151773b5e68c541e63096e8b8afd6dd0e8304c",
+          "url": "https://github.com/Brooooooklyn/skia-rs/commit/7b54c5d5bedfbf927abf5a11474c04c402bfcbd8"
+        },
+        "date": 1612452054968,
+        "tool": "benchmarkjs",
+        "benches": [
+          {
+            "name": "Draw house#@napi-rs/skia",
+            "value": 28,
+            "range": "±0.08%",
+            "unit": "ops/sec",
+            "extra": "49 samples"
+          },
+          {
+            "name": "Draw house#node-canvas",
+            "value": 24,
+            "range": "±0.59%",
+            "unit": "ops/sec",
+            "extra": "43 samples"
+          },
+          {
+            "name": "Draw gradient#@napi-rs/skia",
+            "value": 27,
+            "range": "±0.1%",
+            "unit": "ops/sec",
+            "extra": "48 samples"
+          },
+          {
+            "name": "Draw gradient#node-canvas",
+            "value": 23,
+            "range": "±0.18%",
+            "unit": "ops/sec",
+            "extra": "42 samples"
           }
         ]
       }
