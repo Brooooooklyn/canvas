@@ -1,14 +1,17 @@
 import { promises } from 'fs'
 import { join } from 'path'
 import ava, { TestInterface } from 'ava'
+import PNG from '@jimp/png'
 
-import { createCanvas, Canvas, Image, Path2D, SKRSContext2D } from '../index'
+import { createCanvas, Canvas, Image, ImageData, Path2D, SKRSContext2D, DOMMatrix } from '../index'
 import { snapshotImage } from './image-snapshot'
 
 const test = ava as TestInterface<{
   canvas: Canvas
   ctx: SKRSContext2D
 }>
+
+const png = PNG()
 
 test.beforeEach((t) => {
   const canvas = createCanvas(512, 512)
@@ -221,7 +224,40 @@ test('createLinearGradient', async (t) => {
   await snapshotImage(t)
 })
 
-test.todo('createPattern')
+test('createPattern-no-transform', async (t) => {
+  const { ctx } = t.context
+  const imageSrc = await promises.readFile(join(__dirname, 'canvas_createpattern.png'))
+  const image = new Image()
+  image.src = imageSrc
+  const pattern = ctx.createPattern(image, 'repeat')
+  ctx.fillStyle = pattern
+  ctx.fillRect(0, 0, 300, 300)
+  await snapshotImage(t)
+})
+
+test('createPattern-no-transform-imagedata', async (t) => {
+  const { ctx } = t.context
+  const imageSrc = await promises.readFile(join(__dirname, 'canvas_createpattern.png'))
+  const imageMeta = png.decoders['image/png'](imageSrc)
+  const imageData = new ImageData(new Uint8ClampedArray(imageMeta.data), imageMeta.width, imageMeta.height)
+  const pattern = ctx.createPattern(imageData, 'repeat')
+  ctx.fillStyle = pattern
+  ctx.fillRect(0, 0, 300, 300)
+  await snapshotImage(t)
+})
+
+test('createPattern-with-transform', async (t) => {
+  const { ctx } = t.context
+  const imageSrc = await promises.readFile(join(__dirname, 'canvas_createpattern.png'))
+  const image = new Image()
+  image.src = imageSrc
+  const pattern = ctx.createPattern(image, 'repeat')
+  const matrix = new DOMMatrix()
+  pattern.setTransform(matrix.rotate(-45).scale(1.5))
+  ctx.fillStyle = pattern
+  ctx.fillRect(0, 0, 300, 300)
+  await snapshotImage(t)
+})
 
 test('createRadialGradient', async (t) => {
   const { ctx } = t.context

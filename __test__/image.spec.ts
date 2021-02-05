@@ -12,7 +12,7 @@ test('should be able to create Image', (t) => {
   t.notThrows(() => new Image())
 })
 
-test('shoule be able to set src with buffer', async (t) => {
+test('should be able to set src with buffer', async (t) => {
   const file = await loadImageFile()
   t.notThrows(() => {
     const image = new Image()

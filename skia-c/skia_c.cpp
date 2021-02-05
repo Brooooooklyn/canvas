@@ -5,6 +5,8 @@
 #include <include/core/SkData.h>
 #include <include/core/SkGraphics.h>
 #include <include/core/SkPaint.h>
+#include <include/core/SkPicture.h>
+#include "include/core/SkSamplingOptions.h"
 #include <include/core/SkSurface.h>
 #include <include/effects/SkDashPathEffect.h>
 #include <include/effects/SkImageFilters.h>
@@ -708,10 +710,7 @@ extern "C"
     {
       return reinterpret_cast<skiac_shader *>(shader);
     }
-    else
-    {
-      return nullptr;
-    }
+    return nullptr;
   }
 
   void skiac_shader_destroy(skiac_shader *c_shader)
@@ -820,6 +819,14 @@ extern "C"
     return reinterpret_cast<skiac_bitmap *>(bitmap);
   }
 
+  skiac_bitmap *skiac_bitmap_make_from_image_data(uint8_t *ptr, size_t width, size_t height, size_t row_bytes, size_t size, int ct, int at)
+  {
+    auto bitmap = new SkBitmap();
+    const auto info = SkImageInfo::Make((int)width, (int)(height), (SkColorType)ct, (SkAlphaType)at);
+    bitmap->installPixels(info, ptr, row_bytes);
+    return reinterpret_cast<skiac_bitmap *>(bitmap);
+  }
+
   uint32_t skiac_bitmap_get_width(skiac_bitmap *c_bitmap)
   {
     auto bitmap = reinterpret_cast<SkBitmap *>(c_bitmap);
@@ -830,6 +837,24 @@ extern "C"
   {
     auto bitmap = reinterpret_cast<SkBitmap *>(c_bitmap);
     return bitmap->height();
+  }
+
+  skiac_shader *skiac_bitmap_get_shader(
+      skiac_bitmap *c_bitmap,
+      int repeat_x,
+      int repeat_y,
+      float B,
+      float C, // See SkSamplingOptions.h for docs.
+      skiac_transform c_ts)
+  {
+    const auto ts = conv_from_transform(c_ts);
+    auto bitmap = reinterpret_cast<SkBitmap *>(c_bitmap);
+    auto shader = bitmap->makeShader((SkTileMode)repeat_x, (SkTileMode)repeat_y, SkSamplingOptions({B, C}), &ts).release();
+    if (shader)
+    {
+      return reinterpret_cast<skiac_shader *>(shader);
+    }
+    return nullptr;
   }
 
   void skiac_bitmap_destroy(skiac_bitmap *c_bitmap)

@@ -8,11 +8,29 @@ const { loadBinding } = require('@node-rs/helper')
  * loadBinding helper will load `skia.[PLATFORM].node` from `__dirname` first
  * If failed to load addon, it will fallback to load from `@napi-rs/skia-[PLATFORM]`
  */
-const { CanvasRenderingContext2D, CanvasElement, Path2D, ImageData, Image } = loadBinding(
+const { CanvasRenderingContext2D, CanvasElement, Path2D, ImageData, Image, CanvasPattern } = loadBinding(
   __dirname,
   'skia',
   '@napi-rs/skia',
 )
+
+const Geometry = require('./geometry')
+
+CanvasRenderingContext2D.prototype.createPattern = function createPattern(image, repetition) {
+  if (image instanceof ImageData) {
+    const pattern = new CanvasPattern(image, repetition, 0)
+    Object.defineProperty(pattern, '_imageData', {
+      writable: true,
+      configurable: false,
+      enumerable: false,
+      value: null,
+    })
+    return pattern
+  } else if (image instanceof Image) {
+    return new CanvasPattern(image, repetition, 1)
+  }
+  throw TypeError('Image should be instance of ImageData or Image')
+}
 
 CanvasRenderingContext2D.prototype.getImageData = function getImageData(x, y, w, h) {
   const data = this._getImageData(x, y, w, h)
@@ -66,4 +84,5 @@ module.exports = {
   Path2D,
   ImageData,
   Image,
+  ...Geometry,
 }
