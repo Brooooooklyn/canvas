@@ -129,16 +129,16 @@
     "@babel/runtime" "^7.7.2"
     regenerator-runtime "^0.13.3"
 
-"@napi-rs/cli@^1.0.2":
-  version "1.0.2"
-  resolved "https://registry.yarnpkg.com/@napi-rs/cli/-/cli-1.0.2.tgz#0676bf42eec523eeb01460d024f350c51acacfa4"
-  integrity sha512-N81ChgSPBy24By+LvscztFWde5bOLrWCYqTmu5+73A6L7zJ9JmE0qZcrCBlspT2W7cdOsIcpAw9HhOkEJXEGVw==
+"@napi-rs/cli@^1.0.3":
+  version "1.0.3"
+  resolved "https://registry.yarnpkg.com/@napi-rs/cli/-/cli-1.0.3.tgz#7d1b51a57cd5f295667b3b351c56a08ecbe32926"
+  integrity sha512-6jETsA2HVewgcHTazAOtMgIVPfOUsIAN+/LVd/2cedxif4ucJpt/l+RJYZHVLU/cDn+fZyL9zRzA3vYFnEHsIQ==
   dependencies:
-    "@octokit/rest" "^18.0.12"
+    "@octokit/rest" "^18.0.15"
     chalk "^4.1.0"
     clipanion "^2.6.2"
     debug "^4.3.1"
-    fdir "^4.1.0"
+    fdir "^5.0.0"
     inquirer "^7.3.3"
     lodash "^4.17.20"
     putasset "^5.0.3"
@@ -299,7 +299,7 @@
     "@octokit/plugin-request-log" "^1.0.0"
     "@octokit/plugin-rest-endpoint-methods" "3.17.0"
 
-"@octokit/rest@^18.0.12", "@octokit/rest@^18.1.0":
+"@octokit/rest@^18.0.15", "@octokit/rest@^18.1.0":
   version "18.1.0"
   resolved "https://registry.yarnpkg.com/@octokit/rest/-/rest-18.1.0.tgz#9bf72604911a3433165bcc924263c9a706d32804"
   integrity sha512-YQfpTzWV3jdzDPyXQVO54f5I2t1zxk/S53Vbe+Aa5vQj6MdTx6sNEWzmUzUO8lSVowbGOnjcQHzW1A8ATr+/7g==
@@ -1705,10 +1705,10 @@ fastq@^1.6.0:
   dependencies:
     reusify "^1.0.4"
 
-fdir@^4.1.0:
-  version "4.1.0"
-  resolved "https://registry.npmjs.org/fdir/-/fdir-4.1.0.tgz#f739ec79f61f69779a6430a622e5f54c57caf921"
-  integrity sha512-oOkohnPg4nUIkd6w22iGbFD7c7UvVnXB3a7/GHcPSsXDUGm6Jxp12bGI5O0gr0YuhDh5l/vDExdHOnrW/j9EqQ==
+fdir@^5.0.0:
+  version "5.0.0"
+  resolved "https://registry.yarnpkg.com/fdir/-/fdir-5.0.0.tgz#a40b5d9adfb530daeca55558e8ad87ec14a44769"
+  integrity sha512-cteqwWMA43lEmgwOg5HSdvhVFD39vHjQDhZkRMlKmeoNPtSSgUw1nUypydiY2upMdGiBFBZvNBDbnoBh0yCzaQ==
 
 figures@^3.0.0, figures@^3.2.0:
   version "3.2.0"
