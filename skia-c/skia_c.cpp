@@ -10,10 +10,16 @@
 #include <include/effects/SkGradientShader.h>
 #include <include/pathops/SkPathOps.h>
 #include <include/utils/SkParsePath.h>
+#include <modules/skparagraph/include/FontCollection.h>
+#include <modules/skparagraph/include/Paragraph.h>
+#include <modules/skparagraph/include/ParagraphBuilder.h>
+#include <modules/skparagraph/include/TypefaceFontProvider.h>
 
 #include <math.h>
 
 #include "skia_c.hpp"
+
+using namespace skia::textlayout;
 
 #define SURFACE_CAST reinterpret_cast<SkSurface *>(c_surface)
 #define CANVAS_CAST reinterpret_cast<SkCanvas *>(c_canvas)
@@ -271,6 +277,34 @@ extern "C"
     auto src = SkRect::MakeXYWH(0, 0, image->width(), image->height());
     auto dst = SkRect::MakeXYWH(x, y, w, h);
     CANVAS_CAST->drawImageRect(image, src, dst, &paint);
+  }
+
+  void skiac_canvas_draw_text(skiac_canvas *c_canvas, float x, float y)
+  {
+    auto font_collection = sk_make_sp<FontCollection>();
+    auto font_mgr = SkFontMgr::RefDefault();
+    font_collection->setDefaultFontManager(font_mgr);
+    font_collection->enableFontFallback();
+
+    SkPaint paint;
+    TextStyle text_style;
+    text_style.setFontFamilies({ SkString("DejaVu Serif") });
+
+    text_style.setFontSize(50.0f);
+    text_style.setForegroundColor(paint);
+    text_style.setWordSpacing(0);
+    text_style.setHeight(1);
+    ParagraphStyle paragraph_style;
+    paragraph_style.turnHintingOff();
+    paragraph_style.setTextStyle(text_style);
+    paragraph_style.setTextAlign(TextAlign::kLeft);
+
+    auto builder = ParagraphBuilder::make(paragraph_style, font_collection);
+    builder->addText("Abcdefghijklmnop");
+
+    auto paragraph = builder->Build();
+    paragraph->layout(100000);
+    paragraph->paint(CANVAS_CAST, x, y);
   }
 
   void skiac_canvas_reset_transform(skiac_canvas *c_canvas)

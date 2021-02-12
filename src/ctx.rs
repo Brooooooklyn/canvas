@@ -110,6 +110,7 @@ impl Context {
         Property::new(&env, "moveTo")?.with_method(move_to),
         Property::new(&env, "fill")?.with_method(fill),
         Property::new(&env, "fillRect")?.with_method(fill_rect),
+        Property::new(&env, "fillText")?.with_method(fill_text),
         Property::new(&env, "_getImageData")?.with_method(get_image_data),
         Property::new(&env, "getLineDash")?.with_method(get_line_dash),
         Property::new(&env, "putImageData")?.with_method(put_image_data),
@@ -900,6 +901,18 @@ fn fill_rect(ctx: CallContext) -> Result<JsUndefined> {
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
 
   context_2d.fill_rect(x as f32, y as f32, w as f32, h as f32)?;
+
+  ctx.env.get_undefined()
+}
+
+#[js_function(4)]
+fn fill_text(ctx: CallContext) -> Result<JsUndefined> {
+  let x: f64 = ctx.get::<JsNumber>(1)?.try_into()?;
+  let y: f64 = ctx.get::<JsNumber>(2)?.try_into()?;
+
+  let this = ctx.this_unchecked::<JsObject>();
+  let context_2d = ctx.env.unwrap::<Context>(&this)?;
+  context_2d.surface.canvas.draw_text(x as f32, y as f32);
 
   ctx.env.get_undefined()
 }

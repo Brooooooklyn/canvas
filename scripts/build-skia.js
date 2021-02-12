@@ -26,11 +26,11 @@ switch (platformName) {
     ExtraSkiaBuildFlag = 'clang_win=\\"C:\\\\Program Files\\\\LLVM\\"'
     break
   case 'linux':
-    ExtraCflagsCC = '"-std=c++17", "-fno-rtti", "-fno-exceptions", "-DSK_FORCE_RASTER_PIPELINE_BLITTER"'
+    ExtraCflagsCC = '"-std=c++17", "-fno-exceptions", "-DSK_FORCE_RASTER_PIPELINE_BLITTER"'
     ExtraSkiaBuildFlag = ['skia_use_system_freetype2=false', 'skia_use_fontconfig=false'].join(' ')
     break
   case 'darwin':
-    ExtraCflagsCC = '"-std=c++17", "-fno-rtti", "-fno-exceptions", "-DSK_FORCE_RASTER_PIPELINE_BLITTER"'
+    ExtraCflagsCC = '"-std=c++17", "-fno-exceptions", "-DSK_FORCE_RASTER_PIPELINE_BLITTER"'
     break
   default:
     throw new TypeError(`Don't support ${platformName} for now`)
@@ -65,7 +65,7 @@ const GN_ARGS = [
   `skia_pdf_subset_harfbuzz=true`,
   `skia_use_sfntly=false`,
   `skia_enable_skparagraph=true`,
-  `skia_use_icu=false`,
+  `skia_use_icu=true`,
   `skia_use_libgifcodec=false`,
   `skia_use_libheif=false`,
   `skia_use_libjpeg_turbo_decode=false`,
