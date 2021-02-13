@@ -279,19 +279,22 @@ extern "C"
     CANVAS_CAST->drawImageRect(image, src, dst, &paint);
   }
 
-  void skiac_canvas_draw_text(skiac_canvas *c_canvas, const char *text, float x, float y)
+  void skiac_canvas_draw_text(
+      skiac_canvas *c_canvas,
+      const char *text,
+      float x, float y,
+      skiac_paint *c_paint)
   {
     auto font_collection = sk_make_sp<FontCollection>();
     auto font_mgr = SkFontMgr::RefDefault();
     font_collection->setDefaultFontManager(font_mgr);
     font_collection->enableFontFallback();
 
-    SkPaint paint;
     TextStyle text_style;
     text_style.setFontFamilies({ SkString("Source Han Sans SC") });
 
     text_style.setFontSize(50.0f);
-    text_style.setForegroundColor(paint);
+    text_style.setForegroundColor(*PAINT_CAST);
     text_style.setWordSpacing(0);
     text_style.setHeight(1);
     ParagraphStyle paragraph_style;
