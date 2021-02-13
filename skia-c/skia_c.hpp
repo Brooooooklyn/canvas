@@ -107,7 +107,11 @@ extern "C"
       skiac_surface *c_surface,
       float x, float y, float w, float h,
       int filter_quality);
-  void skiac_canvas_draw_text(skiac_canvas *c_canvas, const char *text, float x, float y);
+  void skiac_canvas_draw_text(
+      skiac_canvas *c_canvas,
+      const char *text,
+      float x, float y,
+      skiac_paint *c_paint);
   void skiac_canvas_reset_transform(skiac_canvas *c_canvas);
   void skiac_canvas_clip_rect(skiac_canvas *c_canvas, float x, float y, float w, float h);
   void skiac_canvas_clip_path(skiac_canvas *c_canvas, skiac_path *c_path);
