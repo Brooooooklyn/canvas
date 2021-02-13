@@ -196,7 +196,7 @@ impl Context {
   #[inline(always)]
   pub fn stroke_text(&mut self, text: &str, x: f32, y: f32) -> result::Result<(), SkError> {
     let stroke_paint = self.stroke_paint()?;
-    self.surface.canvas.draw_text(text, x, y, &stroke_paint);
+    self.draw_text(text, x, y, &stroke_paint)?;
     Ok(())
   }
 
@@ -224,7 +224,7 @@ impl Context {
   #[inline(always)]
   pub fn fill_text(&mut self, text: &str, x: f32, y: f32) -> result::Result<(), SkError> {
     let fill_paint = self.fill_paint()?;
-    self.surface.canvas.draw_text(text, x, y, &fill_paint);
+    self.draw_text(text, x, y, &fill_paint)?;
     Ok(())
   }
 
@@ -373,6 +373,27 @@ impl Context {
     let blur_effect = MaskFilter::make_blur(last_state.shadow_blur / 2f32)?;
     shadow_paint.set_mask_filter(&blur_effect);
     Some(shadow_paint)
+  }
+
+  #[inline(always)]
+  fn draw_text(
+    &mut self,
+    text: &str,
+    x: f32,
+    y: f32,
+    paint: &Paint,
+  ) -> result::Result<(), SkError> {
+    let align = self.states.last().unwrap().text_align;
+    let align_factor = match align {
+      TextAlign::Left | TextAlign::Start => 0f32,
+      TextAlign::Right | TextAlign::End => -1f32,
+      TextAlign::Center => -0.5f32,
+      TextAlign::Justify => 0f32 // unsupported
+    };
+
+    let x = x + 10_0000f32 * align_factor;
+    self.surface.canvas.draw_text(text, x, y, align as u8, &paint);
+    Ok(())
   }
 
   #[inline(always)]

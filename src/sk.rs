@@ -216,6 +216,15 @@ mod ffi {
       filter_quality: i32,
     );
 
+    pub fn skiac_canvas_draw_text(
+      canvas: *mut skiac_canvas,
+      text: *const ::std::os::raw::c_char,
+      x: f32,
+      y: f32,
+      align: u8,
+      paint: *mut skiac_paint,
+    );
+
     pub fn skiac_canvas_reset_transform(canvas: *mut skiac_canvas);
 
     pub fn skiac_canvas_clip_rect(canvas: *mut skiac_canvas, x: f32, y: f32, w: f32, h: f32);
@@ -248,14 +257,6 @@ mod ffi {
       dirty_y: f32,
       dirty_width: f32,
       dirty_height: f32,
-    );
-
-    pub fn skiac_canvas_draw_text(
-      canvas: *mut skiac_canvas,
-      text: *const ::std::os::raw::c_char,
-      x: f32,
-      y: f32,
-      paint: *mut skiac_paint,
     );
 
     pub fn skiac_paint_create() -> *mut skiac_paint;
@@ -788,13 +789,15 @@ pub enum PathOp {
   ReverseDifference, // subtract the first path from the op path
 }
 
-#[derive(Debug, Clone)]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
 pub enum TextAlign {
-  Left,
-  Right,
-  Center,
-  Start,
-  End,
+  Left = 0,
+  Right = 1,
+  Center = 2,
+  Justify = 3,
+  Start = 4,
+  End = 5,
 }
 
 impl TextAlign {
@@ -805,6 +808,7 @@ impl TextAlign {
       Self::End => "end",
       Self::Left => "left",
       Self::Right => "right",
+      Self::Justify => "justify",
     }
   }
 }
@@ -819,6 +823,7 @@ impl FromStr for TextAlign {
       "left" => Ok(TextAlign::Left),
       "right" => Ok(TextAlign::Right),
       "start" => Ok(TextAlign::Start),
+      "justify" => Ok(TextAlign::Justify),
       _ => Err(SkError::StringToTextAlignError(s.to_owned())),
     }
   }
@@ -1236,10 +1241,10 @@ impl Canvas {
   }
 
   #[inline]
-  pub fn draw_text(&mut self, text: &str, x: f32, y: f32, paint: &Paint) {
+  pub fn draw_text(&mut self, text: &str, x: f32, y: f32, align: u8, paint: &Paint) {
     let c_text = std::ffi::CString::new(text).unwrap();
     unsafe {
-      ffi::skiac_canvas_draw_text(self.0, c_text.as_ptr(), x, y, paint.0);
+      ffi::skiac_canvas_draw_text(self.0, c_text.as_ptr(), x, y, align, paint.0);
     }
   }
 
