@@ -907,12 +907,13 @@ fn fill_rect(ctx: CallContext) -> Result<JsUndefined> {
 
 #[js_function(4)]
 fn fill_text(ctx: CallContext) -> Result<JsUndefined> {
+  let text = ctx.get::<JsString>(0)?.into_utf8()?;
   let x: f64 = ctx.get::<JsNumber>(1)?.try_into()?;
   let y: f64 = ctx.get::<JsNumber>(2)?.try_into()?;
 
   let this = ctx.this_unchecked::<JsObject>();
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
-  context_2d.surface.canvas.draw_text(x as f32, y as f32);
+  context_2d.surface.canvas.draw_text(text.as_str()?, x as f32, y as f32);
 
   ctx.env.get_undefined()
 }
