@@ -279,7 +279,7 @@ extern "C"
     CANVAS_CAST->drawImageRect(image, src, dst, &paint);
   }
 
-  void skiac_canvas_draw_text(skiac_canvas *c_canvas, float x, float y)
+  void skiac_canvas_draw_text(skiac_canvas *c_canvas, const char *text, float x, float y)
   {
     auto font_collection = sk_make_sp<FontCollection>();
     auto font_mgr = SkFontMgr::RefDefault();
@@ -288,7 +288,7 @@ extern "C"
 
     SkPaint paint;
     TextStyle text_style;
-    text_style.setFontFamilies({ SkString("DejaVu Serif") });
+    text_style.setFontFamilies({ SkString("Source Han Sans SC") });
 
     text_style.setFontSize(50.0f);
     text_style.setForegroundColor(paint);
@@ -300,7 +300,7 @@ extern "C"
     paragraph_style.setTextAlign(TextAlign::kLeft);
 
     auto builder = ParagraphBuilder::make(paragraph_style, font_collection);
-    builder->addText("Abcdefghijklmnop");
+    builder->addText(text, strlen(text));
 
     auto paragraph = builder->Build();
     paragraph->layout(100000);
