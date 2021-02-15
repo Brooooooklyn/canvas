@@ -221,6 +221,7 @@ mod ffi {
       text: *const ::std::os::raw::c_char,
       x: f32,
       y: f32,
+      font_size: f32,
       align: u8,
       paint: *mut skiac_paint,
     );
@@ -1241,10 +1242,18 @@ impl Canvas {
   }
 
   #[inline]
-  pub fn draw_text(&mut self, text: &str, x: f32, y: f32, align: u8, paint: &Paint) {
+  pub fn draw_text(
+    &mut self,
+    text: &str,
+    x: f32,
+    y: f32,
+    font_size: f32,
+    align: u8,
+    paint: &Paint,
+  ) {
     let c_text = std::ffi::CString::new(text).unwrap();
     unsafe {
-      ffi::skiac_canvas_draw_text(self.0, c_text.as_ptr(), x, y, align, paint.0);
+      ffi::skiac_canvas_draw_text(self.0, c_text.as_ptr(), x, y, font_size, align, paint.0);
     }
   }
 

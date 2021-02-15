@@ -383,7 +383,9 @@ impl Context {
     y: f32,
     paint: &Paint,
   ) -> result::Result<(), SkError> {
-    let align = self.states.last().unwrap().text_align;
+    let state = self.states.last().unwrap();
+    let align = state.text_align;
+    let font_size = state.font_style.size;
     let align_factor = match align {
       TextAlign::Left | TextAlign::Start => 0f32,
       TextAlign::Right | TextAlign::End => -1f32,
@@ -392,7 +394,7 @@ impl Context {
     };
 
     let x = x + 10_0000f32 * align_factor;
-    self.surface.canvas.draw_text(text, x, y, align as u8, &paint);
+    self.surface.canvas.draw_text(text, x, y, font_size, align as u8, &paint);
     Ok(())
   }
 
