@@ -283,6 +283,7 @@ extern "C"
       skiac_canvas *c_canvas,
       const char *text,
       float x, float y,
+      float font_size,
       uint8_t align,
       skiac_paint *c_paint)
   {
@@ -293,7 +294,7 @@ extern "C"
 
     TextStyle text_style;
     text_style.setFontFamilies({ SkString("Source Han Sans SC") });
-    text_style.setFontSize(50.0f);
+    text_style.setFontSize(font_size);
     text_style.setForegroundColor(*PAINT_CAST);
     text_style.setWordSpacing(0);
     text_style.setHeight(1);
