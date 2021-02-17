@@ -65,6 +65,7 @@ async function upload() {
       repo: REPO,
       tag: TAG,
       filename: copy,
+      force: true,
     })
   }
 }
