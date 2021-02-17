@@ -28,6 +28,7 @@ test('width and height state should be ok', async (t) => {
   t.is(image.height, 768)
   t.is(image.naturalWidth, 1024)
   t.is(image.naturalHeight, 768)
+  t.is(image.src, file)
 })
 
 test('complete state should be ok', async (t) => {
