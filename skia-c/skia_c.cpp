@@ -7,6 +7,8 @@
 #include <include/core/SkPaint.h>
 #include <include/core/SkSurface.h>
 #include <include/effects/SkDashPathEffect.h>
+#include <include/effects/SkDropShadowImageFilter.h>
+#include <include/effects/SkImageFilters.h>
 #include <include/effects/SkGradientShader.h>
 #include <include/pathops/SkPathOps.h>
 #include <include/utils/SkParsePath.h>
@@ -22,6 +24,7 @@
 #define PATH_CAST reinterpret_cast<SkPath *>(c_path)
 #define MATRIX_CAST reinterpret_cast<SkMatrix *>(c_matrix)
 #define MASK_FILTER_CAST reinterpret_cast<SkMaskFilter *>(c_mask_filter)
+#define IMAGE_FILTER_CAST reinterpret_cast<SkImageFilter *>(c_image_filter)
 
 extern "C"
 {
@@ -222,11 +225,12 @@ extern "C"
     CANVAS_CAST->drawColor(SkColor4f{r, g, b, a});
   }
 
-  void skiac_canvas_draw_image(skiac_canvas *c_canvas, skiac_bitmap *c_bitmap, float sx, float sy, float s_width, float s_height, float dx, float dy, float d_width, float d_height)
+  void skiac_canvas_draw_image(skiac_canvas *c_canvas, skiac_bitmap *c_bitmap, float sx, float sy, float s_width, float s_height, float dx, float dy, float d_width, float d_height, skiac_paint *c_paint)
   {
     auto src_rect = SkRect::MakeXYWH(sx, sy, s_width, s_height);
     auto dst_rect = SkRect::MakeXYWH(dx, dy, d_width, d_height);
-    CANVAS_CAST->drawBitmapRect(*BITMAP_CAST, src_rect, dst_rect, nullptr);
+    // SkDebugf("%f\n", PAINT_CAST->getStyle());
+    CANVAS_CAST->drawBitmapRect(*BITMAP_CAST, src_rect, dst_rect, PAINT_CAST);
   }
 
   void skiac_canvas_draw_path(skiac_canvas *c_canvas, skiac_path *c_path, skiac_paint *c_paint)
@@ -395,6 +399,14 @@ extern "C"
     maskFilter->ref();
 
     PAINT_CAST->setMaskFilter(maskFilter);
+  }
+
+  void skiac_paint_set_image_filter(skiac_paint *c_paint, skiac_image_filter *c_image_filter)
+  {
+    sk_sp<SkImageFilter> imageFilter(reinterpret_cast<SkImageFilter *>(c_image_filter));
+    imageFilter->ref();
+
+    PAINT_CAST->setImageFilter(imageFilter);
   }
 
   void skiac_paint_set_style(skiac_paint *c_paint, int style)
@@ -746,9 +758,14 @@ extern "C"
     delete MATRIX_CAST;
   }
 
+  // SkMaskFilter
+
   skiac_mask_filter *skiac_mask_filter_make_blur(float radius)
   {
     auto mask_filter = SkMaskFilter::MakeBlur(SkBlurStyle::kNormal_SkBlurStyle, radius, false).release();
+
+    auto mode = SkDropShadowImageFilter::kDrawShadowOnly_ShadowMode;
+    auto image_filter = SkDropShadowImageFilter::Make(0, 0, 0, 0, 0, mode, nullptr);
     if (mask_filter)
     {
       return reinterpret_cast<skiac_mask_filter *>(mask_filter);
@@ -763,6 +780,27 @@ extern "C"
   {
     auto mask_filter = MASK_FILTER_CAST;
     SkSafeUnref(mask_filter);
+  }
+
+  // SkImageFilter
+
+  skiac_image_filter *skiac_image_filter_make_drop_shadow(float dx, float dy, float sigma_x, float sigma_y, uint32_t color)
+  {
+    auto filter = SkImageFilters::DropShadowOnly(dx, dy, sigma_x, sigma_y, color, nullptr).release();
+    if (filter)
+    {
+      return reinterpret_cast<skiac_image_filter *>(filter);
+    }
+    else
+    {
+      return nullptr;
+    }
+  }
+
+  void skiac_image_filter_destroy(skiac_image_filter *c_image_filter)
+  {
+    auto image_filter = IMAGE_FILTER_CAST;
+    SkSafeUnref(image_filter);
   }
 
   // SkData
