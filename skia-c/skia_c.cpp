@@ -7,7 +7,6 @@
 #include <include/core/SkPaint.h>
 #include <include/core/SkSurface.h>
 #include <include/effects/SkDashPathEffect.h>
-#include <include/effects/SkDropShadowImageFilter.h>
 #include <include/effects/SkImageFilters.h>
 #include <include/effects/SkGradientShader.h>
 #include <include/pathops/SkPathOps.h>
@@ -229,7 +228,6 @@ extern "C"
   {
     auto src_rect = SkRect::MakeXYWH(sx, sy, s_width, s_height);
     auto dst_rect = SkRect::MakeXYWH(dx, dy, d_width, d_height);
-    // SkDebugf("%f\n", PAINT_CAST->getStyle());
     CANVAS_CAST->drawBitmapRect(*BITMAP_CAST, src_rect, dst_rect, PAINT_CAST);
   }
 
@@ -762,13 +760,10 @@ extern "C"
 
   skiac_mask_filter *skiac_mask_filter_make_blur(float radius)
   {
-    auto mask_filter = SkMaskFilter::MakeBlur(SkBlurStyle::kNormal_SkBlurStyle, radius, false).release();
-
-    auto mode = SkDropShadowImageFilter::kDrawShadowOnly_ShadowMode;
-    auto image_filter = SkDropShadowImageFilter::Make(0, 0, 0, 0, 0, mode, nullptr);
-    if (mask_filter)
+    auto filter = SkMaskFilter::MakeBlur(SkBlurStyle::kNormal_SkBlurStyle, radius, false).release();
+    if (filter)
     {
-      return reinterpret_cast<skiac_mask_filter *>(mask_filter);
+      return reinterpret_cast<skiac_mask_filter *>(filter);
     }
     else
     {
