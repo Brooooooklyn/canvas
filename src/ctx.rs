@@ -173,7 +173,7 @@ impl Context {
   #[inline(always)]
   pub fn stroke_rect(&mut self, x: f32, y: f32, w: f32, h: f32) -> result::Result<(), SkError> {
     let stroke_paint = self.stroke_paint()?;
-    if let Some(shadow_paint) = self.shadow_paint(&stroke_paint) {
+    if let Some(shadow_paint) = self.shadow_blur_paint(&stroke_paint) {
       let surface = &mut self.surface;
       let last_state = self.states.last().unwrap();
       surface.save();
@@ -194,7 +194,7 @@ impl Context {
   #[inline(always)]
   pub fn fill_rect(&mut self, x: f32, y: f32, w: f32, h: f32) -> result::Result<(), SkError> {
     let fill_paint = self.fill_paint()?;
-    if let Some(shadow_paint) = self.shadow_paint(&fill_paint) {
+    if let Some(shadow_paint) = self.shadow_blur_paint(&fill_paint) {
       let surface = &mut self.surface;
       let last_state = self.states.last().unwrap();
       surface.save();
@@ -216,7 +216,7 @@ impl Context {
   pub fn stroke(&mut self, path: Option<&Path>) -> Result<()> {
     let p = path.unwrap_or(&self.path);
     let stroke_paint = self.stroke_paint()?;
-    if let Some(shadow_paint) = self.shadow_paint(&stroke_paint) {
+    if let Some(shadow_paint) = self.shadow_blur_paint(&stroke_paint) {
       let surface = &mut self.surface;
       let last_state = self.states.last().unwrap();
       surface.save();
@@ -247,7 +247,7 @@ impl Context {
       &self.path
     };
     let fill_paint = self.fill_paint()?;
-    if let Some(shadow_paint) = self.shadow_paint(&fill_paint) {
+    if let Some(shadow_paint) = self.shadow_blur_paint(&fill_paint) {
       let surface = &mut self.surface;
       let last_state = self.states.last().unwrap();
       surface.save();
@@ -331,7 +331,7 @@ impl Context {
   }
 
   #[inline(always)]
-  fn shadow_paint(&self, paint: &Paint) -> Option<Paint> {
+  fn drop_shadow_paint(&self, paint: &Paint) -> Option<Paint> {
     let alpha = paint.get_alpha();
     let last_state = self.states.last().unwrap();
     let shadow_color = &last_state.shadow_color;
@@ -346,17 +346,88 @@ impl Context {
     {
       return None;
     }
-    let mut shadow_paint = paint.clone();
-    shadow_paint.set_color(
+    let mut drop_shadow_paint = paint.clone();
+    let sigma = last_state.shadow_blur / 2f32;
+    let a = shadow_color.alpha;
+    let r = shadow_color.red;
+    let g = shadow_color.green;
+    let b = shadow_color.blue;
+    let shadow_effect = ImageFilter::make_drop_shadow(
+      last_state.shadow_offset_x,
+      last_state.shadow_offset_y,
+      sigma,
+      sigma,
+      (a as u32) << 24 | (r as u32) << 16 | (g as u32) << 8 | b as u32,
+    )?;
+    drop_shadow_paint.set_alpha(shadow_alpha);
+    drop_shadow_paint.set_image_filter(&shadow_effect);
+    Some(drop_shadow_paint)
+  }
+
+  #[inline(always)]
+  fn shadow_blur_paint(&self, paint: &Paint) -> Option<Paint> {
+    let alpha = paint.get_alpha();
+    let last_state = self.states.last().unwrap();
+    let shadow_color = &last_state.shadow_color;
+    let mut shadow_alpha = shadow_color.alpha;
+    shadow_alpha = ((shadow_alpha as f32) * (alpha as f32 / 255.0)) as u8;
+    if shadow_alpha == 0 {
+      return None;
+    }
+    if last_state.shadow_blur == 0f32
+      && last_state.shadow_offset_x == 0f32
+      && last_state.shadow_offset_y == 0f32
+    {
+      return None;
+    }
+    let mut drop_shadow_paint = paint.clone();
+    drop_shadow_paint.set_color(
       shadow_color.red,
       shadow_color.green,
       shadow_color.blue,
       shadow_color.alpha,
     );
-    shadow_paint.set_alpha(shadow_alpha);
+    drop_shadow_paint.set_alpha(shadow_alpha);
     let blur_effect = MaskFilter::make_blur(last_state.shadow_blur / 2f32)?;
-    shadow_paint.set_mask_filter(&blur_effect);
-    Some(shadow_paint)
+    drop_shadow_paint.set_mask_filter(&blur_effect);
+    Some(drop_shadow_paint)
+  }
+
+  #[inline(always)]
+  fn draw_image(
+    &mut self,
+    image: &Image,
+    sx: f32,
+    sy: f32,
+    s_width: f32,
+    s_height: f32,
+    dx: f32,
+    dy: f32,
+    d_width: f32,
+    d_height: f32,
+  ) -> Result<()> {
+    let bitmap = image.bitmap.as_ref().unwrap().bitmap;
+    let paint = self.fill_paint()?;
+    if let Some(drop_shadow_paint) = self.drop_shadow_paint(&paint) {
+      let surface = &mut self.surface;
+      surface.canvas.draw_image(
+        bitmap,
+        sx,
+        sy,
+        s_width,
+        s_height,
+        dx,
+        dy,
+        d_width,
+        d_height,
+        &drop_shadow_paint,
+      );
+    }
+    self.surface.canvas.draw_image(
+      bitmap, sx, sy, s_width, s_height, dx, dy, d_width, d_height, &paint,
+    );
+
+    Ok(())
   }
 
   #[inline(always)]
@@ -647,23 +718,22 @@ fn draw_image(ctx: CallContext) -> Result<JsUndefined> {
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
   let image_js = ctx.get::<JsObject>(0)?;
   let image = ctx.env.unwrap::<Image>(&image_js)?;
-  let bitmap = image.bitmap.as_ref().unwrap().bitmap;
   let image_w = image.bitmap.as_ref().unwrap().width as f32;
   let image_h = image.bitmap.as_ref().unwrap().height as f32;
 
   if ctx.length == 3 {
     let dx: f64 = ctx.get::<JsNumber>(1)?.try_into()?;
     let dy: f64 = ctx.get::<JsNumber>(2)?.try_into()?;
-    context_2d.surface.canvas.draw_image(
-      bitmap, 0f32, 0f32, image_w, image_h, dx as f32, dy as f32, image_w, image_h,
-    );
+    context_2d.draw_image(
+      image, 0f32, 0f32, image_w, image_h, dx as f32, dy as f32, image_w, image_h,
+    )?;
   } else if ctx.length == 5 {
     let dx: f64 = ctx.get::<JsNumber>(1)?.try_into()?;
     let dy: f64 = ctx.get::<JsNumber>(2)?.try_into()?;
     let d_width: f64 = ctx.get::<JsNumber>(3)?.try_into()?;
     let d_height: f64 = ctx.get::<JsNumber>(4)?.try_into()?;
-    context_2d.surface.canvas.draw_image(
-      bitmap,
+    context_2d.draw_image(
+      image,
       0f32,
       0f32,
       image_w,
@@ -672,7 +742,7 @@ fn draw_image(ctx: CallContext) -> Result<JsUndefined> {
       dy as f32,
       d_width as f32,
       d_height as f32,
-    );
+    )?;
   } else if ctx.length == 9 {
     let sx: f64 = ctx.get::<JsNumber>(1)?.try_into()?;
     let sy: f64 = ctx.get::<JsNumber>(2)?.try_into()?;
@@ -682,8 +752,8 @@ fn draw_image(ctx: CallContext) -> Result<JsUndefined> {
     let dy: f64 = ctx.get::<JsNumber>(6)?.try_into()?;
     let d_width: f64 = ctx.get::<JsNumber>(7)?.try_into()?;
     let d_height: f64 = ctx.get::<JsNumber>(8)?.try_into()?;
-    context_2d.surface.canvas.draw_image(
-      bitmap,
+    context_2d.draw_image(
+      image,
       sx as f32,
       sy as f32,
       s_width as f32,
@@ -692,7 +762,7 @@ fn draw_image(ctx: CallContext) -> Result<JsUndefined> {
       dy as f32,
       d_width as f32,
       d_height as f32,
-    );
+    )?;
   }
 
   ctx.env.get_undefined()

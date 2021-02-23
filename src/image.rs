@@ -166,8 +166,8 @@ fn image_constructor(ctx: CallContext) -> Result<JsUndefined> {
     alt: "".to_string(),
   };
   let mut this = ctx.this_unchecked::<JsObject>();
+  this.set_named_property("_src", ctx.env.get_undefined()?)?;
   ctx.env.wrap(&mut this, js_image)?;
-
   ctx.env.get_undefined()
 }
 
@@ -218,16 +218,17 @@ fn set_alt(ctx: CallContext) -> Result<JsUndefined> {
 }
 
 #[js_function]
-fn get_src(ctx: CallContext) -> Result<JsUndefined> {
-  ctx.env.get_undefined()
+fn get_src(ctx: CallContext) -> Result<JsUnknown> {
+  let this = ctx.this_unchecked::<JsObject>();
+  this.get_named_property("_src")
 }
 
 #[js_function(1)]
 fn set_src(ctx: CallContext) -> Result<JsUndefined> {
-  let this = ctx.this_unchecked::<JsObject>();
+  let mut this = ctx.this_unchecked::<JsObject>();
+  let src_arg = ctx.get::<JsUnknown>(0)?;
   let image = ctx.env.unwrap::<Image>(&this)?;
 
-  let src_arg = ctx.get::<JsUnknown>(0)?;
   let src_data_ab = unsafe { src_arg.cast::<JsTypedArray>() }.into_value()?;
   if src_data_ab.typedarray_type != TypedArrayType::Uint8 {
     return Err(Error::new(
@@ -236,11 +237,11 @@ fn set_src(ctx: CallContext) -> Result<JsUndefined> {
     ));
   }
   let length = src_data_ab.len();
-
   image.complete = true;
   image
     .bitmap
     .get_or_insert(Bitmap::from_buffer(src_data_ab.as_ptr() as *mut u8, length));
 
+  this.set_named_property("_src", src_arg)?;
   ctx.env.get_undefined()
 }

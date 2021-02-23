@@ -59,6 +59,12 @@ mod ffi {
 
   #[repr(C)]
   #[derive(Copy, Clone, Debug)]
+  pub struct skiac_image_filter {
+    _unused: [u8; 0],
+  }
+
+  #[repr(C)]
+  #[derive(Copy, Clone, Debug)]
   pub struct skiac_data {
     _unused: [u8; 0],
   }
@@ -179,6 +185,7 @@ mod ffi {
       dy: f32,
       d_width: f32,
       d_height: f32,
+      paint: *mut skiac_paint,
     );
 
     pub fn skiac_canvas_draw_path(
@@ -290,6 +297,11 @@ mod ffi {
     pub fn skiac_paint_set_mask_filter(
       paint: *mut skiac_paint,
       mask_filter: *mut skiac_mask_filter,
+    );
+
+    pub fn skiac_paint_set_image_filter(
+      paint: *mut skiac_paint,
+      image_filter: *mut skiac_image_filter,
     );
 
     pub fn skiac_path_create() -> *mut skiac_path;
@@ -420,6 +432,16 @@ mod ffi {
     pub fn skiac_mask_filter_make_blur(radius: f32) -> *mut skiac_mask_filter;
 
     pub fn skiac_mask_filter_destroy(mask_filter: *mut skiac_mask_filter);
+
+    pub fn skiac_image_filter_make_drop_shadow(
+      dx: f32,
+      dy: f32,
+      sigma_x: f32,
+      sigma_y: f32,
+      color: u32,
+    ) -> *mut skiac_image_filter;
+
+    pub fn skiac_image_filter_destroy(image_filter: *mut skiac_image_filter);
 
     pub fn skiac_sk_data_destroy(c_data: *mut skiac_data);
 
@@ -1205,10 +1227,11 @@ impl Canvas {
     dy: f32,
     d_width: f32,
     d_height: f32,
+    paint: &Paint,
   ) {
     unsafe {
       ffi::skiac_canvas_draw_image(
-        self.0, image, sx, sy, s_width, s_height, dx, dy, d_width, d_height,
+        self.0, image, sx, sy, s_width, s_height, dx, dy, d_width, d_height, paint.0,
       );
     }
   }
@@ -1464,6 +1487,13 @@ impl Paint {
   pub fn set_mask_filter(&mut self, mask_filter: &MaskFilter) {
     unsafe {
       ffi::skiac_paint_set_mask_filter(self.0, mask_filter.0);
+    }
+  }
+
+  #[inline]
+  pub fn set_image_filter(&mut self, image_filter: &ImageFilter) {
+    unsafe {
+      ffi::skiac_paint_set_image_filter(self.0, image_filter.0);
     }
   }
 }
@@ -2076,6 +2106,34 @@ impl MaskFilter {
 impl Drop for MaskFilter {
   fn drop(&mut self) {
     unsafe { ffi::skiac_mask_filter_destroy(self.0) };
+  }
+}
+
+#[repr(transparent)]
+#[derive(Debug)]
+pub struct ImageFilter(*mut ffi::skiac_image_filter);
+
+impl ImageFilter {
+  pub fn make_drop_shadow(
+    dx: f32,
+    dy: f32,
+    sigma_x: f32,
+    sigma_y: f32,
+    color: u32,
+  ) -> Option<Self> {
+    let raw_ptr =
+      unsafe { ffi::skiac_image_filter_make_drop_shadow(dx, dy, sigma_x, sigma_y, color) };
+    if raw_ptr.is_null() {
+      None
+    } else {
+      Some(ImageFilter(raw_ptr))
+    }
+  }
+}
+
+impl Drop for ImageFilter {
+  fn drop(&mut self) {
+    unsafe { ffi::skiac_image_filter_destroy(self.0) };
   }
 }
 
