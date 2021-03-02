@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1614068287538,
+  "lastUpdate": 1614654924757,
   "repoUrl": "https://github.com/Brooooooklyn/skia-rs",
   "entries": {
     "Benchmark": [
@@ -1556,6 +1556,58 @@ window.BENCHMARK_DATA = {
             "range": "±0.21%",
             "unit": "ops/sec",
             "extra": "44 samples"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "lynweklm@gmail.com",
+            "name": "LongYinan",
+            "username": "Brooooooklyn"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e93f63eecb782559f1b9e89f8d46b7939027b5fe",
+          "message": "Merge pull request #195 from Brooooooklyn/dependabot/npm_and_yarn/typescript-eslint/parser-4.15.2\n\nchore(deps-dev): bump @typescript-eslint/parser from 4.15.1 to 4.15.2",
+          "timestamp": "2021-03-02T11:10:48+08:00",
+          "tree_id": "cd314484e4649a0a2945278443c88105cfddb1c5",
+          "url": "https://github.com/Brooooooklyn/skia-rs/commit/e93f63eecb782559f1b9e89f8d46b7939027b5fe"
+        },
+        "date": 1614654857631,
+        "tool": "benchmarkjs",
+        "benches": [
+          {
+            "name": "Draw house#@napi-rs/skia",
+            "value": 28,
+            "range": "±0.19%",
+            "unit": "ops/sec",
+            "extra": "49 samples"
+          },
+          {
+            "name": "Draw house#node-canvas",
+            "value": 24,
+            "range": "±0.27%",
+            "unit": "ops/sec",
+            "extra": "43 samples"
+          },
+          {
+            "name": "Draw gradient#@napi-rs/skia",
+            "value": 27,
+            "range": "±0.11%",
+            "unit": "ops/sec",
+            "extra": "48 samples"
+          },
+          {
+            "name": "Draw gradient#node-canvas",
+            "value": 23,
+            "range": "±0.23%",
+            "unit": "ops/sec",
+            "extra": "41 samples"
           }
         ]
       }
