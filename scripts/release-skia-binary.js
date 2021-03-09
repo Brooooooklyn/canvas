@@ -7,7 +7,7 @@ const { Octokit } = require('@octokit/rest')
 const chalk = require('chalk')
 
 const OWNER = 'Brooooooklyn'
-const REPO = 'skia-rs'
+const REPO = 'canvas'
 
 const [FULL_HASH] = execSync(`git submodule status skia`).toString('utf8').trim().split(' ')
 

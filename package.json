@@ -1,9 +1,9 @@
 {
-  "name": "@napi-rs/skia",
+  "name": "@napi-rs/canvas",
   "version": "0.0.1-alpha.3",
-  "description": "Canvas for NodeJS with skia backend",
+  "description": "Canvas for Node.js with skia backend",
   "main": "index.js",
-  "repository": "https://github.com/Brooooooklyn/skia-rs.git",
+  "repository": "https://github.com/Brooooooklyn/canvas.git",
   "license": "MIT",
   "keywords": [
     "napi-rs",

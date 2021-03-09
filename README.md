@@ -1,11 +1,11 @@
-# `@napi-rs/skia`
+# `@napi-rs/canvas`
 
-![CI](https://github.com/Brooooooklyn/skia-rs/workflows/CI/badge.svg)
+![CI](https://github.com/Brooooooklyn/canvas/workflows/CI/badge.svg)
 
 Google Skia binding to NodeJS via `N-API`.
 
 > ⚠️ This project is in very early stage.<br/>
-> For details on planned features and future direction please refer to the [Roadmap](https://github.com/Brooooooklyn/skia-rs/issues/113).
+> For details on planned features and future direction please refer to the [Roadmap](https://github.com/Brooooooklyn/canvas/issues/113).
 
 # Support matrix
 
@@ -21,7 +21,7 @@ Google Skia binding to NodeJS via `N-API`.
 const { promises } = require('fs')
 const { join } = require('path')
 
-const { createCanvas } = require('@napi-rs/skia')
+const { createCanvas } = require('@napi-rs/canvas')
 
 const canvas = createCanvas(1024, 768)
 
@@ -114,8 +114,8 @@ You can build this project from source, with no OS-specific package installing c
 
 ```sh
 # Clone the code:
-$ git clone --recurse-submodules https://github.com/Brooooooklyn/skia-rs.git
-$ cd skia-rs
+$ git clone --recurse-submodules https://github.com/Brooooooklyn/canvas.git
+$ cd canvas
 
 # Build Skia:
 $ node scripts/build-skia.js
