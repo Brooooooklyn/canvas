@@ -1,6 +1,6 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1614654961365,
-  "repoUrl": "https://github.com/Brooooooklyn/skia-rs",
+  "lastUpdate": 1615267745804,
+  "repoUrl": "https://github.com/Brooooooklyn/canvas",
   "entries": {
     "Benchmark": [
       {
@@ -1660,6 +1660,58 @@ window.BENCHMARK_DATA = {
             "range": "±1.03%",
             "unit": "ops/sec",
             "extra": "45 samples"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "lynweklm@gmail.com",
+            "name": "LongYinan",
+            "username": "Brooooooklyn"
+          },
+          "committer": {
+            "email": "lynweklm@gmail.com",
+            "name": "LongYinan",
+            "username": "Brooooooklyn"
+          },
+          "distinct": true,
+          "id": "bf284d5ad0a3d37c67ada02b63e1109e50a79355",
+          "message": "chore: rename project",
+          "timestamp": "2021-03-09T13:24:06+08:00",
+          "tree_id": "75ecd11e6bae8a3306850cf39e609bcb28236873",
+          "url": "https://github.com/Brooooooklyn/canvas/commit/bf284d5ad0a3d37c67ada02b63e1109e50a79355"
+        },
+        "date": 1615267676050,
+        "tool": "benchmarkjs",
+        "benches": [
+          {
+            "name": "Draw house#@napi-rs/skia",
+            "value": 24.2,
+            "range": "±1.28%",
+            "unit": "ops/sec",
+            "extra": "44 samples"
+          },
+          {
+            "name": "Draw house#node-canvas",
+            "value": 24.3,
+            "range": "±0.98%",
+            "unit": "ops/sec",
+            "extra": "44 samples"
+          },
+          {
+            "name": "Draw gradient#@napi-rs/skia",
+            "value": 23.4,
+            "range": "±1.32%",
+            "unit": "ops/sec",
+            "extra": "43 samples"
+          },
+          {
+            "name": "Draw gradient#node-canvas",
+            "value": 22.9,
+            "range": "±1.12%",
+            "unit": "ops/sec",
+            "extra": "41 samples"
           }
         ]
       }
