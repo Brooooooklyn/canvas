@@ -13,7 +13,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-20.04, macos-latest, windows-latest]
 
     name: stable - ${{ matrix.os }} - build skia
     runs-on: ${{ matrix.os }}
@@ -29,6 +29,11 @@ jobs:
           node-version: 14
           check-latest: true
 
+      - uses: actions/setup-python@v2
+        with:
+          python-version: '2.x'
+          architecture: 'x64'
+
       - name: Set env
         run: echo "${PWD}/depot_tools" >> $GITHUB_PATH
         shell: bash
@@ -41,14 +46,27 @@ jobs:
         if: matrix.os == 'windows-latest'
         run: |
           choco install llvm ninja -y
-          choco upgrade python -y
           pip install certifi
 
       - name: Compile skia
-        if: matrix.os != 'windows-latest'
+        if: matrix.os == 'ubuntu-20.04'
+        run: |
+          docker login -u $DOCKER_USERNAME -p $DOCKER_PASSWORD $DOCKER_REGISTRY_URL
+          docker pull docker.pkg.github.com/brooooooklyn/canvas/debian-builder:stretch
+          docker tag docker.pkg.github.com/brooooooklyn/canvas/debian-builder:stretch builder
+          docker run --user "$(id -u):$(id -g)" --rm -v $(pwd):/canvas -w /canvas builder node ./scripts/build-skia.js
         env:
           PYTHONHTTPSVERIFY: 0
-        run: node ./scripts/build-skia.js
+          DOCKER_REGISTRY_URL: docker.pkg.github.com
+          DOCKER_USERNAME: ${{ github.actor }}
+          DOCKER_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compile skia
+        if: matrix.os == 'macos-latest'
+        env:
+          PYTHONHTTPSVERIFY: 0
+        run: |
+          node ./scripts/build-skia.js
 
       - name: Compile skia
         shell: powershell
@@ -70,5 +88,239 @@ jobs:
 
       - name: Upload release
         run: node ./scripts/release-skia-binary.js --upload
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-apple-silicon:
+    if: "!contains(github.event.head_commit.message, 'skip skia')"
+
+    name: stable - apple-silicon - build skia
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: true
+
+      - name: Setup node
+        uses: actions/setup-node@v2
+        with:
+          node-version: 14
+          check-latest: true
+
+      - uses: actions/setup-python@v2
+        with:
+          python-version: '2.x'
+          architecture: 'x64'
+
+      - name: Set env
+        run: echo "${PWD}/depot_tools" >> $GITHUB_PATH
+        shell: bash
+
+      - name: Install tools on macOS
+        run: brew install ninja
+
+      - name: Compile skia
+        run: node ./scripts/build-skia.js --target=aarch64-apple-darwin
+
+      - name: Cache NPM dependencies
+        uses: actions/cache@v1
+        with:
+          path: node_modules
+          key: npm-cache-apple-silicon-node@14-${{ hashFiles('yarn.lock') }}
+          restore-keys: |
+            npm-cache-
+
+      - name: 'Install dependencies'
+        run: yarn install --ignore-scripts --frozen-lockfile --registry https://registry.npmjs.org --network-timeout 300000
+
+      - name: Upload release
+        run: node ./scripts/release-skia-binary.js --upload --target=aarch64-apple-darwin
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-x64-linux-musl:
+    if: "!contains(github.event.head_commit.message, 'skip skia')"
+
+    name: stable - linux-x64-musl - build skia
+    runs-on: ubuntu-20.04
+
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: true
+
+      - name: Setup node
+        uses: actions/setup-node@v2
+        with:
+          node-version: 14
+          check-latest: true
+
+      - name: Compile skia
+        run: |
+          docker login -u $DOCKER_USERNAME -p $DOCKER_PASSWORD $DOCKER_REGISTRY_URL
+          docker pull docker.pkg.github.com/brooooooklyn/canvas/musl-builder:lts
+          docker tag docker.pkg.github.com/brooooooklyn/canvas/musl-builder:lts builder
+          docker run --user "$(id -u):$(id -g)" --rm -v $(pwd):/canvas -w /canvas builder node ./scripts/build-skia.js
+        env:
+          PYTHONHTTPSVERIFY: 0
+          DOCKER_REGISTRY_URL: docker.pkg.github.com
+          DOCKER_USERNAME: ${{ github.actor }}
+          DOCKER_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Cache NPM dependencies
+        uses: actions/cache@v1
+        with:
+          path: node_modules
+          key: npm-cache-linux-x64-musl-node@14-${{ hashFiles('yarn.lock') }}
+          restore-keys: |
+            npm-cache-
+
+      - name: 'Install dependencies'
+        run: yarn install --ignore-scripts --frozen-lockfile --registry https://registry.npmjs.org --network-timeout 300000
+
+      - name: Upload release
+        run: node ./scripts/release-skia-binary.js --upload --target=x86_64-unknown-linux-musl
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-aarch64-linux-gnu:
+    if: "!contains(github.event.head_commit.message, 'skip skia')"
+
+    name: stable - aarch64-linux - build skia
+    runs-on: ubuntu-20.04
+
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: true
+
+      - name: Setup node
+        uses: actions/setup-node@v2
+        with:
+          node-version: 14
+          check-latest: true
+
+      - uses: actions/setup-python@v2
+        with:
+          python-version: '2.x'
+          architecture: 'x64'
+
+      - name: Set env
+        run: echo "${PWD}/depot_tools" >> $GITHUB_PATH
+        shell: bash
+
+      - name: Install cross compile tools
+        run: sudo apt-get install g++-10-aarch64-linux-gnu gcc-10-aarch64-linux-gnu -y
+
+      - name: Compile skia
+        run: node ./scripts/build-skia.js --target=aarch64-unknown-linux-gnu
+
+      - name: Cache NPM dependencies
+        uses: actions/cache@v1
+        with:
+          path: node_modules
+          key: npm-cache-aarch64-linux-node@14-${{ hashFiles('yarn.lock') }}
+          restore-keys: |
+            npm-cache-
+
+      - name: 'Install dependencies'
+        run: yarn install --ignore-scripts --frozen-lockfile --registry https://registry.npmjs.org --network-timeout 300000
+
+      - name: Upload release
+        run: node ./scripts/release-skia-binary.js --upload --target=aarch64-unknown-linux-gnu
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-armv7-linux-gnu:
+    if: "!contains(github.event.head_commit.message, 'skip skia')"
+
+    name: stable - armv7-linux - build skia
+    runs-on: ubuntu-20.04
+
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: true
+
+      - name: Setup node
+        uses: actions/setup-node@v2
+        with:
+          node-version: 14
+          check-latest: true
+
+      - uses: actions/setup-python@v2
+        with:
+          python-version: '2.x'
+          architecture: 'x64'
+
+      - name: Set env
+        run: echo "${PWD}/depot_tools" >> $GITHUB_PATH
+        shell: bash
+
+      - name: Install cross compile tools
+        run: sudo apt-get install gcc-10-arm-linux-gnueabihf g++-10-arm-linux-gnueabihf -y
+
+      - name: Compile skia
+        run: node ./scripts/build-skia.js --target=armv7-unknown-linux-gnueabihf
+
+      - name: Cache NPM dependencies
+        uses: actions/cache@v1
+        with:
+          path: node_modules
+          key: npm-cache-armv7-linux-node@14-${{ hashFiles('yarn.lock') }}
+          restore-keys: |
+            npm-cache-
+
+      - name: 'Install dependencies'
+        run: yarn install --ignore-scripts --frozen-lockfile --registry https://registry.npmjs.org --network-timeout 300000
+
+      - name: Upload release
+        run: node ./scripts/release-skia-binary.js --upload --target=armv7-unknown-linux-gnueabihf
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-aarch64-linux-android:
+    if: "!contains(github.event.head_commit.message, 'skip skia')"
+
+    name: stable - aarch64-linux-android - build skia
+    runs-on: ubuntu-20.04
+
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: true
+
+      - name: Setup node
+        uses: actions/setup-node@v2
+        with:
+          node-version: 14
+          check-latest: true
+
+      - uses: actions/setup-python@v2
+        with:
+          python-version: '2.x'
+          architecture: 'x64'
+
+      - name: Set env
+        run: echo "${PWD}/depot_tools" >> $GITHUB_PATH
+        shell: bash
+
+      - name: Compile skia
+        run: node ./scripts/build-skia.js --target=aarch64-linux-android
+
+      - name: Cache NPM dependencies
+        uses: actions/cache@v1
+        with:
+          path: node_modules
+          key: npm-cache-armv7-linux-node@14-${{ hashFiles('yarn.lock') }}
+          restore-keys: |
+            npm-cache-
+
+      - name: 'Install dependencies'
+        run: yarn install --ignore-scripts --frozen-lockfile --registry https://registry.npmjs.org --network-timeout 300000
+
+      - name: Upload release
+        run: node ./scripts/release-skia-binary.js --upload --target=aarch64-linux-android
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
