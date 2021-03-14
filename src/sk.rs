@@ -8,7 +8,7 @@ use std::str::FromStr;
 use crate::error::SkError;
 use crate::image::ImageData;
 
-pub mod ffi {
+mod ffi {
   #[repr(C)]
   #[derive(Copy, Clone, Debug)]
   pub struct skiac_surface {
@@ -2282,6 +2282,28 @@ impl Drop for Bitmap {
     unsafe {
       ffi::skiac_bitmap_destroy(self.bitmap);
     }
+  }
+}
+
+#[derive(Debug, Clone)]
+pub struct ImagePattern {
+  pub(crate) bitmap: *mut ffi::skiac_bitmap,
+  pub(crate) repeat_x: TileMode,
+  pub(crate) repeat_y: TileMode,
+  pub(crate) transform: Transform,
+}
+
+impl ImagePattern {
+  #[inline(always)]
+  pub(crate) fn get_shader(&self) -> Option<Shader> {
+    Shader::from_bitmap(
+      self.bitmap,
+      self.repeat_x,
+      self.repeat_y,
+      1.0 / 3.0,
+      1.0 / 3.0,
+      self.transform,
+    )
   }
 }
 

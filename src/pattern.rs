@@ -2,7 +2,7 @@ use cssparser::{Color as CSSColor, Parser, ParserInput, RGBA};
 
 use crate::error::SkError;
 use crate::gradient::CanvasGradient;
-use crate::image_pattern::ImagePattern;
+use crate::sk::ImagePattern;
 
 #[derive(Debug, Clone)]
 pub enum Pattern {

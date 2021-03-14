@@ -4,28 +4,6 @@ use crate::image::{Image, ImageData};
 use crate::pattern::Pattern;
 use crate::sk::*;
 
-#[derive(Debug, Clone)]
-pub struct ImagePattern {
-  bitmap: *mut ffi::skiac_bitmap,
-  repeat_x: TileMode,
-  repeat_y: TileMode,
-  transform: Transform,
-}
-
-impl ImagePattern {
-  #[inline(always)]
-  pub(crate) fn get_shader(&self) -> Option<Shader> {
-    Shader::from_bitmap(
-      self.bitmap,
-      self.repeat_x,
-      self.repeat_y,
-      1.0 / 3.0,
-      1.0 / 3.0,
-      self.transform,
-    )
-  }
-}
-
 #[repr(u8)]
 enum ImageKind {
   ImageData,
