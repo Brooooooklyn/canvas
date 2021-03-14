@@ -1,19 +1,4 @@
 #include <assert.h>
-
-#include <include/core/SkPathEffect.h>
-#include <include/core/SkCanvas.h>
-#include <include/core/SkData.h>
-#include <include/core/SkGraphics.h>
-#include <include/core/SkPaint.h>
-#include <include/core/SkPicture.h>
-#include "include/core/SkSamplingOptions.h"
-#include <include/core/SkSurface.h>
-#include <include/effects/SkDashPathEffect.h>
-#include <include/effects/SkImageFilters.h>
-#include <include/effects/SkGradientShader.h>
-#include <include/pathops/SkPathOps.h>
-#include <include/utils/SkParsePath.h>
-
 #include <math.h>
 
 #include "skia_c.hpp"

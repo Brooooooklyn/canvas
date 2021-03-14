@@ -2,6 +2,11 @@
 #define SKIA_CAPI_H
 
 #include <include/codec/SkCodec.h>
+#include <include/core/SkPicture.h>
+#include <include/core/SkSamplingOptions.h>
+#include <include/effects/SkImageFilters.h>
+#include <include/pathops/SkPathOps.h>
+#include <include/utils/SkParsePath.h>
 #include <include/core/SkBitmap.h>
 #include <include/core/SkCanvas.h>
 #include <include/core/SkData.h>
