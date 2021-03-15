@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1615791839262,
+  "lastUpdate": 1615791878097,
   "repoUrl": "https://github.com/Brooooooklyn/canvas",
   "entries": {
     "Benchmark": [
@@ -1816,6 +1816,58 @@ window.BENCHMARK_DATA = {
             "range": "±1.48%",
             "unit": "ops/sec",
             "extra": "42 samples"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "lynweklm@gmail.com",
+            "name": "LongYinan",
+            "username": "Brooooooklyn"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "9bf77647a3a2cefead3dc30fe99bf9dcc8c98527",
+          "message": "Merge pull request #203 from Brooooooklyn/dependabot/npm_and_yarn/octokit/rest-18.3.5\n\nchore(deps-dev): bump @octokit/rest from 18.3.4 to 18.3.5",
+          "timestamp": "2021-03-15T14:59:15+08:00",
+          "tree_id": "e312cb8f64522cae3efa81f26b6f8e3a61bd83fa",
+          "url": "https://github.com/Brooooooklyn/canvas/commit/9bf77647a3a2cefead3dc30fe99bf9dcc8c98527"
+        },
+        "date": 1615791799422,
+        "tool": "benchmarkjs",
+        "benches": [
+          {
+            "name": "Draw house#@napi-rs/skia",
+            "value": 20.8,
+            "range": "±1.84%",
+            "unit": "ops/sec",
+            "extra": "38 samples"
+          },
+          {
+            "name": "Draw house#node-canvas",
+            "value": 20.6,
+            "range": "±1.13%",
+            "unit": "ops/sec",
+            "extra": "38 samples"
+          },
+          {
+            "name": "Draw gradient#@napi-rs/skia",
+            "value": 21,
+            "range": "±1.07%",
+            "unit": "ops/sec",
+            "extra": "38 samples"
+          },
+          {
+            "name": "Draw gradient#node-canvas",
+            "value": 20,
+            "range": "±1.46%",
+            "unit": "ops/sec",
+            "extra": "38 samples"
           }
         ]
       }
