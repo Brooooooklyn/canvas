@@ -6,6 +6,7 @@ use napi::{
   CallContext, Env, Error, JsNumber, JsObject, JsString, JsUndefined, Property, Result, Status,
 };
 
+use crate::pattern::Pattern;
 use crate::{error::SkError, sk::*};
 
 #[derive(Debug, Clone)]
@@ -24,7 +25,7 @@ impl CanvasGradient {
     )?;
     let arguments: Vec<JsUndefined> = vec![];
     let mut instance = gradient_class.new(&arguments)?;
-    env.wrap(&mut instance, self)?;
+    env.wrap(&mut instance, Pattern::Gradient(self))?;
     Ok(instance)
   }
 
@@ -168,7 +169,7 @@ fn gradient_constructor(ctx: CallContext) -> Result<JsUndefined> {
 #[js_function(2)]
 fn add_color_stop(ctx: CallContext) -> Result<JsUndefined> {
   let this = ctx.this_unchecked::<JsObject>();
-  let canvas_gradient = ctx.env.unwrap::<CanvasGradient>(&this)?;
+  let canvas_gradient = ctx.env.unwrap::<Pattern>(&this)?;
   let index: f64 = ctx.get::<JsNumber>(0)?.try_into()?;
   let color_str = ctx.get::<JsString>(1)?.into_utf8()?;
   let mut parser_input = ParserInput::new(color_str.as_str()?);
@@ -184,6 +185,8 @@ fn add_color_stop(ctx: CallContext) -> Result<JsUndefined> {
     }
     CSSColor::RGBA(rgba) => Color::from_rgba(rgba.red, rgba.green, rgba.blue, rgba.alpha),
   };
-  canvas_gradient.add_color_stop(index as f32, skia_color);
+  if let Pattern::Gradient(canvas_gradient) = canvas_gradient {
+    canvas_gradient.add_color_stop(index as f32, skia_color);
+  }
   ctx.env.get_undefined()
 }

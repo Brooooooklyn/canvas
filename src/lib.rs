@@ -23,6 +23,7 @@ mod error;
 mod font;
 mod gradient;
 mod image;
+mod image_pattern;
 mod path;
 mod pattern;
 #[allow(dead_code)]
@@ -50,6 +51,12 @@ fn init(mut exports: JsObject, env: Env) -> Result<()> {
 
   let image_class = image::Image::create_js_class(&env)?;
 
+  let canvas_pattern = env.define_class(
+    "CanvasPattern",
+    image_pattern::canvas_pattern_constructor,
+    &[Property::new(&env, "setTransform")?.with_method(image_pattern::set_transform)],
+  )?;
+
   exports.set_named_property("CanvasRenderingContext2D", canvas_rendering_context2d)?;
 
   exports.set_named_property("CanvasElement", canvas_element)?;
@@ -59,6 +66,8 @@ fn init(mut exports: JsObject, env: Env) -> Result<()> {
   exports.set_named_property("ImageData", image_data_class)?;
 
   exports.set_named_property("Image", image_class)?;
+
+  exports.set_named_property("CanvasPattern", canvas_pattern)?;
 
   // pre init font regexp
   FONT_REGEXP.get_or_init(init_font_regexp);

@@ -270,21 +270,25 @@ impl Context {
     let mut paint = current_paint.clone();
     paint.set_style(PaintStyle::Fill);
     let last_state = self.states.last().unwrap();
+    let alpha = current_paint.get_alpha();
     match &last_state.fill_style {
       Pattern::Color(c, _) => {
         let mut color = c.clone();
-        color.alpha =
-          ((color.alpha as f32) * (current_paint.get_alpha() as f32 / 255.0)).round() as u8;
+        color.alpha = ((color.alpha as f32) * (alpha as f32 / 255.0)).round() as u8;
         paint.set_color(color.red, color.green, color.blue, color.alpha);
       }
       Pattern::Gradient(g) => {
         let current_transform = self.surface.canvas.get_transform();
         let shader = g.get_shader(&current_transform)?;
-        paint.set_color(0, 0, 0, current_paint.get_alpha());
+        paint.set_color(0, 0, 0, alpha);
         paint.set_shader(&shader);
       }
-      // TODO, image pattern
-      Pattern::ImagePattern(p) => {}
+      Pattern::ImagePattern(p) => {
+        if let Some(shader) = p.get_shader() {
+          paint.set_color(0, 0, 0, alpha);
+          paint.set_shader(&shader);
+        }
+      }
     };
     if last_state.line_dash_list.len() != 0 {
       let path_effect = PathEffect::new_dash_path(
@@ -316,8 +320,12 @@ impl Context {
         paint.set_color(0, 0, 0, global_alpha);
         paint.set_shader(&shader);
       }
-      // TODO, image pattern
-      Pattern::ImagePattern(p) => {}
+      Pattern::ImagePattern(p) => {
+        if let Some(shader) = p.get_shader() {
+          paint.set_color(0, 0, 0, current_paint.get_alpha());
+          paint.set_shader(&shader);
+        }
+      }
     };
     if !last_state.line_dash_list.is_empty() {
       let path_effect = PathEffect::new_dash_path(
@@ -1502,10 +1510,9 @@ fn set_fill_style(ctx: CallContext) -> Result<JsUndefined> {
     }
     ValueType::Object => {
       let fill_object = unsafe { js_fill_style.cast::<JsObject>() };
-      let gradient = ctx.env.unwrap::<CanvasGradient>(&fill_object)?;
-      last_state.fill_style = Pattern::Gradient(gradient.clone());
+      let pattern = ctx.env.unwrap::<Pattern>(&fill_object)?;
+      last_state.fill_style = pattern.clone();
     }
-    // todo ImagePattern
     _ => return Err(Error::new(Status::InvalidArg, format!("Invalid fillStyle"))),
   }
 
@@ -1559,11 +1566,9 @@ fn set_stroke_style(ctx: CallContext) -> Result<JsUndefined> {
     }
     ValueType::Object => {
       let stroke_object = unsafe { js_stroke_style.cast::<JsObject>() };
-      let gradient = ctx.env.unwrap::<CanvasGradient>(&stroke_object)?;
-      last_state.stroke_style = Pattern::Gradient(gradient.clone());
+      let pattern = ctx.env.unwrap::<Pattern>(&stroke_object)?;
+      last_state.stroke_style = pattern.clone();
     }
-    // todo ImagePattern
-    ValueType::External => {}
     _ => {
       return Err(Error::new(
         Status::InvalidArg,

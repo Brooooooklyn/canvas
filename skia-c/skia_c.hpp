@@ -2,6 +2,11 @@
 #define SKIA_CAPI_H
 
 #include <include/codec/SkCodec.h>
+#include <include/core/SkPicture.h>
+#include <include/core/SkSamplingOptions.h>
+#include <include/effects/SkImageFilters.h>
+#include <include/pathops/SkPathOps.h>
+#include <include/utils/SkParsePath.h>
 #include <include/core/SkBitmap.h>
 #include <include/core/SkCanvas.h>
 #include <include/core/SkData.h>
@@ -193,6 +198,7 @@ extern "C"
       skiac_surface *c_surface,
       skiac_transform c_ts,
       int filter_quality);
+
   void skiac_shader_destroy(skiac_shader *c_shader);
 
   // Matrix
@@ -217,8 +223,16 @@ extern "C"
 
   // Bitmap
   skiac_bitmap *skiac_bitmap_make_from_buffer(uint8_t *ptr, size_t size);
+  skiac_bitmap *skiac_bitmap_make_from_image_data(uint8_t *ptr, size_t width, size_t height, size_t row_bytes, size_t size, int ct, int at);
   uint32_t skiac_bitmap_get_width(skiac_bitmap *c_bitmap);
   uint32_t skiac_bitmap_get_height(skiac_bitmap *c_bitmap);
+  skiac_shader *skiac_bitmap_get_shader(
+      skiac_bitmap *c_bitmap,
+      int repeat_x,
+      int repeat_y,
+      float B,
+      float C, // See SkSamplingOptions.h for docs.
+      skiac_transform c_ts);
   void skiac_bitmap_destroy(skiac_bitmap *c_bitmap);
 }
 
