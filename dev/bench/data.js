@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1615791880421,
+  "lastUpdate": 1615863123145,
   "repoUrl": "https://github.com/Brooooooklyn/canvas",
   "entries": {
     "Benchmark": [
@@ -1920,6 +1920,58 @@ window.BENCHMARK_DATA = {
             "range": "±1.11%",
             "unit": "ops/sec",
             "extra": "37 samples"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "lynweklm@gmail.com",
+            "name": "LongYinan",
+            "username": "Brooooooklyn"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "3ab6aa46caeb2b976eddc652f688d47b19e8919b",
+          "message": "Merge pull request #204 from Brooooooklyn/dependabot/npm_and_yarn/typescript-eslint/eslint-plugin-4.17.0\n\nchore(deps-dev): bump @typescript-eslint/eslint-plugin from 4.16.1 to 4.17.0",
+          "timestamp": "2021-03-15T17:27:27+08:00",
+          "tree_id": "7832d62487a8eb886da2e2f9fddd651ed1f05d1b",
+          "url": "https://github.com/Brooooooklyn/canvas/commit/3ab6aa46caeb2b976eddc652f688d47b19e8919b"
+        },
+        "date": 1615863059342,
+        "tool": "benchmarkjs",
+        "benches": [
+          {
+            "name": "Draw house#@napi-rs/skia",
+            "value": 28.1,
+            "range": "±1.16%",
+            "unit": "ops/sec",
+            "extra": "49 samples"
+          },
+          {
+            "name": "Draw house#node-canvas",
+            "value": 27.8,
+            "range": "±1.28%",
+            "unit": "ops/sec",
+            "extra": "49 samples"
+          },
+          {
+            "name": "Draw gradient#@napi-rs/skia",
+            "value": 27,
+            "range": "±1.17%",
+            "unit": "ops/sec",
+            "extra": "48 samples"
+          },
+          {
+            "name": "Draw gradient#node-canvas",
+            "value": 26,
+            "range": "±1.33%",
+            "unit": "ops/sec",
+            "extra": "47 samples"
           }
         ]
       }
