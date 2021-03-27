@@ -11,7 +11,7 @@ const { loadBinding } = require('@node-rs/helper')
 const { CanvasRenderingContext2D, CanvasElement, Path2D, ImageData, Image, CanvasPattern } = loadBinding(
   __dirname,
   'skia',
-  '@napi-rs/skia',
+  '@napi-rs/canvas',
 )
 
 const Geometry = require('./geometry')
