@@ -18,9 +18,19 @@
     "svg",
     "skia"
   ],
-  "files": ["index.d.ts", "index.js"],
+  "files": ["index.d.ts", "index.js", "geometry.js"],
   "napi": {
-    "name": "skia"
+    "name": "skia",
+    "triples": {
+      "defaults": true,
+      "additional": [
+        "armv7-unknown-linux-gnueabihf",
+        "x86_64-unknown-linux-musl",
+        "aarch64-unknown-linux-gnu",
+        "aarch64-apple-darwin",
+        "aarch64-linux-android"
+      ]
+    }
   },
   "engines": {
     "node": ">= 10"
@@ -87,7 +97,8 @@
     "require": ["@swc-node/register"],
     "extensions": ["ts"],
     "environmentVariables": {
-      "SWC_NODE_PROJECT": "./tsconfig.json"
+      "SWC_NODE_PROJECT": "./tsconfig.json",
+      "NODE_ENV": "ava"
     }
   },
   "prettier": {

@@ -1,10 +1,10 @@
 {
-  "name": "@napi-rs/canvas-win32-x64-msvc",
+  "name": "@napi-rs/canvas-linux-arm-gnueabihf",
   "version": "0.0.1-alpha.3",
-  "os": ["win32"],
-  "cpu": ["x64"],
-  "main": "skia.win32-x64-msvc.node",
-  "files": ["skia.win32-x64-msvc.node"],
+  "os": ["linux"],
+  "cpu": ["arm"],
+  "main": "skia.linux-arm-gnueabihf.node",
+  "files": ["skia.linux-arm-gnueabihf.node"],
   "description": "Canvas for Node.js with skia backend",
   "keywords": [
     "napi-rs",

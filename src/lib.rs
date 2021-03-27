@@ -12,7 +12,7 @@ use sk::SurfaceDataRef;
   unix,
   not(target_env = "musl"),
   not(target_arch = "aarch64"),
-  not(target_arch = "armv7"),
+  not(target_arch = "arm"),
   not(debug_assertions)
 ))]
 #[global_allocator]

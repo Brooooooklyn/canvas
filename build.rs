@@ -2,6 +2,7 @@ extern crate napi_build;
 
 use std::env;
 use std::path;
+use std::process;
 
 fn main() {
   println!("cargo:rerun-if-env-changed=SKIA_DIR");
@@ -9,6 +10,8 @@ fn main() {
 
   println!("cargo:rerun-if-changed=skia-c/skia_c.cpp");
   println!("cargo:rerun-if-changed=skia-c/skia_c.hpp");
+
+  let compile_target = env::var("TARGET").unwrap();
 
   #[cfg(target_os = "windows")]
   {
@@ -28,11 +31,95 @@ fn main() {
 
   let mut build = cc::Build::new();
 
-  build
-    .cpp(true)
-    .file("skia-c/skia_c.cpp")
-    .include("skia-c")
-    .include(skia_path);
+  build.cpp(true).file("skia-c/skia_c.cpp");
+
+  match compile_target.as_str() {
+    "aarch64-unknown-linux-gnu" => {
+      build
+        .flag("--sysroot=/usr/aarch64-linux-gnu")
+        .flag("--gcc-toolchain=aarch64-linux-gnu-gcc")
+        .include("/usr/aarch64-linux-gnu/include/c++/10")
+        .include("/usr/aarch64-linux-gnu/include/c++/10/aarch64-linux-gnu");
+    }
+    "armv7-unknown-linux-gnueabihf" => {
+      build
+        .flag("--sysroot=/usr/arm-linux-gnueabihf")
+        .flag("--gcc-toolchain=arm-linux-gnueabihf-gcc-10")
+        .include("/usr/arm-linux-gnueabihf/include/c++/10")
+        .include("/usr/arm-linux-gnueabihf/include/c++/10/arm-linux-gnueabihf");
+    }
+    "x86_64-unknown-linux-musl" => {
+      let gcc_version = String::from_utf8(
+        process::Command::new("ls")
+          .arg("/usr/include/c++")
+          .output()
+          .unwrap()
+          .stdout,
+      )
+      .unwrap();
+      let gcc_version_trim = gcc_version.trim();
+      build
+        .static_flag(true)
+        .include("/usr/include")
+        .include(format!("/usr/include/c++/{}", gcc_version_trim))
+        .include(format!(
+          "/usr/include/c++/{}/x86_64-alpine-linux-musl",
+          gcc_version_trim
+        ));
+    }
+    "aarch64-apple-darwin" => {
+      build.target("arm64-apple-darwin");
+    }
+    "aarch64-linux-android" => {
+      let nkd_home = env::var("ANDROID_NDK_HOME").unwrap();
+      env::set_var(
+        "CC",
+        format!(
+          "{}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang",
+          nkd_home
+        )
+        .as_str(),
+      );
+      env::set_var(
+        "CXX",
+        format!(
+          "{}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang++",
+          nkd_home
+        )
+        .as_str(),
+      );
+      build
+        .include(
+          format!(
+            "{}/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include",
+            nkd_home
+          )
+          .as_str(),
+        )
+        .include(
+          format!(
+            "{}/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/c++/v1",
+            nkd_home
+          )
+          .as_str(),
+        )
+        .include(
+          format!(
+            "{}/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/aarch64-linux-android",
+            nkd_home
+          )
+          .as_str(),
+        )
+        .archiver(
+          format!(
+            "{}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android-ar",
+            nkd_home
+          )
+          .as_str(),
+        );
+    }
+    _ => {}
+  }
 
   #[cfg(target_os = "windows")]
   {
@@ -46,6 +133,11 @@ fn main() {
   #[cfg(target_os = "linux")]
   {
     build.cpp_set_stdlib("stdc++");
+  }
+
+  #[cfg(target_os = "macos")]
+  {
+    build.cpp_set_stdlib("c++");
   }
 
   #[cfg(not(target_os = "windows"))]
@@ -70,12 +162,18 @@ fn main() {
     println!("cargo:rustc-link-lib=framework=ApplicationServices");
   }
 
+  let out_dir = env::var("OUT_DIR").unwrap();
+
   build
+    .include("./skia-c")
+    .include(skia_path)
     .cargo_metadata(true)
-    .out_dir(env::var("OUT_DIR").unwrap())
+    .out_dir(&out_dir)
     .compile("skiac");
 
   println!("cargo:rustc-link-search={}", skia_lib_dir);
+  println!("cargo:rustc-link-search={}", &out_dir);
+
   #[cfg(target_os = "linux")]
   {
     println!("cargo:rustc-link-lib=static=skia");

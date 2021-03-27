@@ -213,9 +213,12 @@ extern "C"
 
   void skiac_canvas_draw_image(skiac_canvas *c_canvas, skiac_bitmap *c_bitmap, float sx, float sy, float s_width, float s_height, float dx, float dy, float d_width, float d_height, skiac_paint *c_paint)
   {
-    auto src_rect = SkRect::MakeXYWH(sx, sy, s_width, s_height);
-    auto dst_rect = SkRect::MakeXYWH(dx, dy, d_width, d_height);
-    CANVAS_CAST->drawBitmapRect(*BITMAP_CAST, src_rect, dst_rect, PAINT_CAST);
+    const auto src_rect = SkRect::MakeXYWH(sx, sy, s_width, s_height);
+    const auto dst_rect = SkRect::MakeXYWH(dx, dy, d_width, d_height);
+    auto sk_image = SkImage::MakeFromBitmap(*BITMAP_CAST);
+    const auto sampling = SkSamplingOptions();
+    auto paint = reinterpret_cast<const SkPaint *>(c_paint);
+    CANVAS_CAST->drawImageRect(sk_image, src_rect, dst_rect, sampling, paint, SkCanvas::kFast_SrcRectConstraint);
   }
 
   void skiac_canvas_draw_path(skiac_canvas *c_canvas, skiac_path *c_path, skiac_paint *c_paint)
@@ -245,7 +248,8 @@ extern "C"
     paint.setFilterQuality((SkFilterQuality)filter_quality);
     paint.setAlpha(alpha);
     paint.setBlendMode((SkBlendMode)blend_mode);
-    CANVAS_CAST->drawImage(image, left, top, &paint);
+    const auto sampling = SkSamplingOptions();
+    CANVAS_CAST->drawImage(image, left, top, sampling, &paint);
   }
 
   void skiac_canvas_draw_surface_rect(
@@ -259,7 +263,8 @@ extern "C"
     paint.setFilterQuality((SkFilterQuality)filter_quality);
     auto src = SkRect::MakeXYWH(0, 0, image->width(), image->height());
     auto dst = SkRect::MakeXYWH(x, y, w, h);
-    CANVAS_CAST->drawImageRect(image, src, dst, &paint);
+    const auto sampling = SkSamplingOptions();
+    CANVAS_CAST->drawImageRect(image, src, dst, sampling, &paint, SkCanvas::kFast_SrcRectConstraint);
   }
 
   void skiac_canvas_reset_transform(skiac_canvas *c_canvas)
@@ -302,7 +307,8 @@ extern "C"
     auto image = SkImage::MakeRasterData(info, data, row_bytes);
     auto src_rect = SkRect::MakeXYWH(dirty_x, dirty_y, dirty_width, dirty_height);
     auto dst_rect = SkRect::MakeXYWH(x + dirty_x, y + dirty_y, dirty_width, dirty_height);
-    CANVAS_CAST->drawImageRect(image, src_rect, dst_rect, nullptr);
+    const auto sampling = SkSamplingOptions();
+    CANVAS_CAST->drawImageRect(image, src_rect, dst_rect, sampling, nullptr, SkCanvas::kFast_SrcRectConstraint);
   }
 
   // Paint

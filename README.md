@@ -2,18 +2,23 @@
 
 ![CI](https://github.com/Brooooooklyn/canvas/workflows/CI/badge.svg)
 
-Google Skia binding to NodeJS via `N-API`.
+Google Skia binding to Node.js via `N-API`.
 
 > ⚠️ This project is in very early stage.<br/>
 > For details on planned features and future direction please refer to the [Roadmap](https://github.com/Brooooooklyn/canvas/issues/113).
 
 # Support matrix
 
-|             | node10 | node12 | node14 | node15 |
-| ----------- | ------ | ------ | ------ | ------ |
-| Windows x64 | ✅     | ✅     | ✅     | ✅     |
-| macOS x64   | ✅     | ✅     | ✅     | ✅     |
-| Linux x64   | ✅     | ✅     | ✅     | ✅     |
+|                       | node10 | node12 | node14 | node15 |
+| --------------------- | ------ | ------ | ------ | ------ |
+| Windows x64           | ✓      | ✓      | ✓      | ✓      |
+| macOS x64             | ✓      | ✓      | ✓      | ✓      |
+| macOS aarch64         | ✓      | ✓      | ✓      | ✓      |
+| Linux x64 gnu         | ✓      | ✓      | ✓      | ✓      |
+| Linux x64 musl        | ✓      | ✓      | ✓      | ✓      |
+| Linux aarch64 gnu     | ✓      | ✓      | ✓      | ✓      |
+| Linux arm gnueabihf   | ✓      | ✓      | ✓      | ✓      |
+| Linux aarch64 android | ✓      | ✓      | ✓      | ✓      |
 
 # Usage
 
@@ -110,6 +115,8 @@ export class Path2D {
 
 # Building
 
+## Build skia from source
+
 You can build this project from source, with no OS-specific package installing commands required:
 
 ```sh
@@ -122,7 +129,29 @@ $ node scripts/build-skia.js
 
 # Install NPM packages, build the Node.js addon:
 $ yarn install --ignore-scripts
-$ yarn run build
+$ yarn build
+
+# All done! Run test cases or examples now:
+$ yarn test
+$ node example/tiger.js
+```
+
+## Pull pre-build skia binary from Github
+
+You can pull skia pre-build binaries if you just care the `Rust` part:
+
+```sh
+# Clone the code:
+$ git clone --recurse-submodules https://github.com/Brooooooklyn/canvas.git
+$ cd canvas
+
+# Download Skia binaries:
+# It will pull the binaries match the git hash in `./skia` submodule
+$ node scripts/release-skia-binary.js --download
+
+# Install NPM packages, build the Node.js addon:
+$ yarn install --ignore-scripts
+$ yarn build
 
 # All done! Run test cases or examples now:
 $ yarn test
