@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1615863123145,
+  "lastUpdate": 1616809908649,
   "repoUrl": "https://github.com/Brooooooklyn/canvas",
   "entries": {
     "Benchmark": [
@@ -1970,6 +1970,58 @@ window.BENCHMARK_DATA = {
             "name": "Draw gradient#node-canvas",
             "value": 26,
             "range": "±1.33%",
+            "unit": "ops/sec",
+            "extra": "47 samples"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "i@ewind.us",
+            "name": "Yifeng Wang",
+            "username": "doodlewind"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "f663565bbecdd17871cc7129076e63dca5eacf45",
+          "message": "Merge pull request #207 from Brooooooklyn/build\n\nBuild",
+          "timestamp": "2021-03-27T09:41:57+08:00",
+          "tree_id": "5a680c192ec53aa0ac0df4ee484d2260867aceef",
+          "url": "https://github.com/Brooooooklyn/canvas/commit/f663565bbecdd17871cc7129076e63dca5eacf45"
+        },
+        "date": 1616809574019,
+        "tool": "benchmarkjs",
+        "benches": [
+          {
+            "name": "Draw house#@napi-rs/skia",
+            "value": 22,
+            "range": "±0.46%",
+            "unit": "ops/sec",
+            "extra": "40 samples"
+          },
+          {
+            "name": "Draw house#node-canvas",
+            "value": 18,
+            "range": "±0.8%",
+            "unit": "ops/sec",
+            "extra": "49 samples"
+          },
+          {
+            "name": "Draw gradient#@napi-rs/skia",
+            "value": 21,
+            "range": "±0.54%",
+            "unit": "ops/sec",
+            "extra": "39 samples"
+          },
+          {
+            "name": "Draw gradient#node-canvas",
+            "value": 18,
+            "range": "±0.74%",
             "unit": "ops/sec",
             "extra": "47 samples"
           }
