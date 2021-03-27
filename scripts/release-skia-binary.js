@@ -1,53 +1,40 @@
 const { execSync } = require('child_process')
 const { promises: fs } = require('fs')
 const { platform } = require('os')
-const { join, parse } = require('path')
+const { parse } = require('path')
 
 const { Octokit } = require('@octokit/rest')
 const chalk = require('chalk')
 
-const OWNER = 'Brooooooklyn'
-const REPO = 'skia-rs'
-
-const [FULL_HASH] = execSync(`git submodule status skia`).toString('utf8').trim().split(' ')
-
-const SHORT_HASH = FULL_HASH.substr(0, 8)
-
-const TAG = `skia-${SHORT_HASH}`
+const { libPath, TAG, OWNER, REPO } = require('./utils')
 
 const PLATFORM_NAME = platform()
 
-const [, , ARG] = process.argv
+const [, , ARG, TARGET] = process.argv
+
+let TARGET_TRIPLE
+
+if (TARGET && TARGET.startsWith('--target=')) {
+  TARGET_TRIPLE = TARGET.replace('--target=', '')
+}
 
 const LIB = ['skia', 'skparagraph', 'skshaper']
-
-function libPath(lib) {
-  const binary = join(
-    __dirname,
-    '..',
-    'skia',
-    'out',
-    'Static',
-    PLATFORM_NAME === 'win32' ? `${lib}.lib` : `lib${lib}.a`,
-  )
-  const platformName = PLATFORM_NAME === 'win32' ? `${lib}-${PLATFORM_NAME}.lib` : `lib${lib}-${PLATFORM_NAME}.a`
-  const copy = join(__dirname, '..', platformName)
-  const downloadUrl = `https://github.com/${OWNER}/${REPO}/releases/download/${TAG}/${platformName}`
-  return { binary, copy, downloadUrl }
-}
 
 const CLIENT = new Octokit({
   auth: process.env.GITHUB_TOKEN,
 })
 
 async function upload() {
+  let assets = []
   try {
     console.info(chalk.green(`Fetching release by tag: [${TAG}]`))
-    await CLIENT.repos.getReleaseByTag({
-      repo: REPO,
-      owner: OWNER,
-      tag: TAG,
-    })
+    assets = (
+      await CLIENT.repos.getReleaseByTag({
+        repo: REPO,
+        owner: OWNER,
+        tag: TAG,
+      })
+    ).data.assets
   } catch (e) {
     if (e.status === 404) {
       console.info(chalk.green(`No release tag, creating release tag ${TAG}`))
@@ -63,26 +50,35 @@ async function upload() {
   }
   const putasset = require('putasset')
   for (const lib of LIB) {
-    const { copy, binary } = libPath(lib)
+    const { copy, binary } = libPath(lib, PLATFORM_NAME, TARGET_TRIPLE)
     console.info(chalk.green(`Copy [${binary}] to [${copy}]`))
     await fs.copyFile(binary, copy)
     console.info(chalk.green(`Uploading [${copy}] to github release: [${TAG}]`))
+
+    const asset = assets.find(({ name }) => name === parse(copy).base)
+    if (asset) {
+      console.info(chalk.green(`[${copy}] existed, delete it...`))
+      await CLIENT.repos.deleteReleaseAsset({
+        owner: OWNER,
+        repo: REPO,
+        asset_id: asset.id,
+      })
+    }
     await putasset(process.env.GITHUB_TOKEN, {
       owner: OWNER,
       repo: REPO,
       tag: TAG,
       filename: copy,
-      force: true,
     })
   }
 }
 
 async function download() {
-  await fs.mkdir(parse(libPath('skia').binary).dir, {
+  await fs.mkdir(parse(libPath('skia', PLATFORM_NAME, TARGET_TRIPLE).binary).dir, {
     recursive: true,
   })
   for (const lib of LIB) {
-    const { downloadUrl, binary } = libPath(lib)
+    const { downloadUrl, binary } = libPath(lib, PLATFORM_NAME, TARGET_TRIPLE)
     execSync(`curl -J -L -H "Accept: application/octet-stream" ${downloadUrl} -o ${binary}`, {
       stdio: 'inherit',
     })

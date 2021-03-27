@@ -59,6 +59,12 @@ mod ffi {
 
   #[repr(C)]
   #[derive(Copy, Clone, Debug)]
+  pub struct skiac_image_filter {
+    _unused: [u8; 0],
+  }
+
+  #[repr(C)]
+  #[derive(Copy, Clone, Debug)]
   pub struct skiac_data {
     _unused: [u8; 0],
   }
@@ -179,6 +185,7 @@ mod ffi {
       dy: f32,
       d_width: f32,
       d_height: f32,
+      paint: *mut skiac_paint,
     );
 
     pub fn skiac_canvas_draw_path(
@@ -300,6 +307,11 @@ mod ffi {
     pub fn skiac_paint_set_mask_filter(
       paint: *mut skiac_paint,
       mask_filter: *mut skiac_mask_filter,
+    );
+
+    pub fn skiac_paint_set_image_filter(
+      paint: *mut skiac_paint,
+      image_filter: *mut skiac_image_filter,
     );
 
     pub fn skiac_path_create() -> *mut skiac_path;
@@ -431,16 +443,97 @@ mod ffi {
 
     pub fn skiac_mask_filter_destroy(mask_filter: *mut skiac_mask_filter);
 
+    pub fn skiac_image_filter_make_drop_shadow(
+      dx: f32,
+      dy: f32,
+      sigma_x: f32,
+      sigma_y: f32,
+      color: u32,
+    ) -> *mut skiac_image_filter;
+
+    pub fn skiac_image_filter_destroy(image_filter: *mut skiac_image_filter);
+
     pub fn skiac_sk_data_destroy(c_data: *mut skiac_data);
 
     pub fn skiac_bitmap_make_from_buffer(ptr: *mut u8, size: usize) -> *mut skiac_bitmap;
+
+    pub fn skiac_bitmap_make_from_image_data(
+      ptr: *mut u8,
+      width: usize,
+      height: usize,
+      row_bytes: usize,
+      size: usize,
+      color_type: i32,
+      alpha_type: i32,
+    ) -> *mut skiac_bitmap;
 
     pub fn skiac_bitmap_get_width(c_bitmap: *mut skiac_bitmap) -> u32;
 
     pub fn skiac_bitmap_get_height(c_bitmap: *mut skiac_bitmap) -> u32;
 
+    pub fn skiac_bitmap_get_shader(
+      c_bitmap: *mut skiac_bitmap,
+      repeat_x: i32,
+      repeat_y: i32,
+      b: f32,
+      c: f32,
+      ts: skiac_transform,
+    ) -> *mut skiac_shader;
+
     pub fn skiac_bitmap_destroy(c_bitmap: *mut skiac_bitmap);
   }
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
+#[repr(i32)]
+pub enum ColorType {
+  Unknown,
+  /// uninitialized
+  Alpha8,
+  /// pixel with alpha in 8-bit byte
+  RGB565,
+  /// pixel with 5 bits red, 6 bits green, 5 bits blue, in 16-bit word
+  ARGB4444,
+  /// pixel with 4 bits for alpha, red, green, blue; in 16-bit word
+  RGBA8888,
+  /// pixel with 8 bits for red, green, blue, alpha; in 32-bit word
+  RGB888x,
+  /// pixel with 8 bits each for red, green, blue; in 32-bit word
+  BGRA8888,
+  /// pixel with 8 bits for blue, green, red, alpha; in 32-bit word
+  RGBA1010102,
+  /// 10 bits for red, green, blue; 2 bits for alpha; in 32-bit word
+  BGRA1010102,
+  /// 10 bits for blue, green, red; 2 bits for alpha; in 32-bit word
+  RGB101010x,
+  /// pixel with 10 bits each for red, green, blue; in 32-bit word
+  BGR101010x,
+  /// pixel with 10 bits each for blue, green, red; in 32-bit word
+  Gray8,
+  /// pixel with grayscale level in 8-bit byte
+  RGBAF16Norm,
+  /// pixel with half floats in [0,1] for red, green, blue, alpha;
+  //   in 64-bit word
+  RGBAF16,
+  /// pixel with half floats for red, green, blue, alpha;
+  //   in 64-bit word
+  RGBAF32,
+  /// pixel using C float for red, green, blue, alpha; in 128-bit word
+  /// The following 6 colortypes are just for reading from - not for rendering to
+
+  /// pixel with a uint8_t for red and green
+  R8G8Unorm,
+  // pixel with a half float for alpha
+  A16Float,
+  /// pixel with a half float for red and green
+  R16G16Float,
+
+  // pixel with a little endian uint16_t for alpha
+  A16Unorm,
+  // pixel with a little endian uint16_t for red and green
+  R16G16Unorm,
+  /// pixel with a little endian uint16_t for red, green, blue and alpha
+  R16G16B16A16Unorm,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
@@ -545,11 +638,13 @@ impl FromStr for StrokeJoin {
   }
 }
 
+#[repr(i32)]
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub enum TileMode {
   Clamp = 0,
   Repeat = 1,
   Mirror = 2,
+  Decal = 3,
 }
 
 #[repr(u8)]
@@ -1219,10 +1314,11 @@ impl Canvas {
     dy: f32,
     d_width: f32,
     d_height: f32,
+    paint: &Paint,
   ) {
     unsafe {
       ffi::skiac_canvas_draw_image(
-        self.0, image, sx, sy, s_width, s_height, dx, dy, d_width, d_height,
+        self.0, image, sx, sy, s_width, s_height, dx, dy, d_width, d_height, paint.0,
       );
     }
   }
@@ -1494,6 +1590,13 @@ impl Paint {
   pub fn set_mask_filter(&mut self, mask_filter: &MaskFilter) {
     unsafe {
       ffi::skiac_paint_set_mask_filter(self.0, mask_filter.0);
+    }
+  }
+
+  #[inline]
+  pub fn set_image_filter(&mut self, image_filter: &ImageFilter) {
+    unsafe {
+      ffi::skiac_paint_set_image_filter(self.0, image_filter.0);
     }
   }
 }
@@ -1796,6 +1899,7 @@ pub struct TwoPointConicalGradient {
   pub base: Gradient,
 }
 
+#[derive(Debug, Clone)]
 pub struct Shader(*mut ffi::skiac_shader);
 
 impl Shader {
@@ -1864,6 +1968,22 @@ impl Shader {
         ts.into(),
         q as i32,
       ))
+    }
+  }
+
+  #[inline]
+  pub fn from_bitmap(
+    bitmap: *mut ffi::skiac_bitmap,
+    repeat_x: TileMode,
+    repeat_y: TileMode,
+    b: f32,
+    c: f32,
+    ts: Transform,
+  ) -> Option<Shader> {
+    unsafe {
+      let shader_ptr =
+        ffi::skiac_bitmap_get_shader(bitmap, repeat_x as i32, repeat_y as i32, b, c, ts.into());
+      Shader::from_ptr(shader_ptr)
     }
   }
 
@@ -2109,23 +2229,80 @@ impl Drop for MaskFilter {
   }
 }
 
+#[repr(transparent)]
+#[derive(Debug)]
+pub struct ImageFilter(*mut ffi::skiac_image_filter);
+
+impl ImageFilter {
+  pub fn make_drop_shadow(
+    dx: f32,
+    dy: f32,
+    sigma_x: f32,
+    sigma_y: f32,
+    color: u32,
+  ) -> Option<Self> {
+    let raw_ptr =
+      unsafe { ffi::skiac_image_filter_make_drop_shadow(dx, dy, sigma_x, sigma_y, color) };
+    if raw_ptr.is_null() {
+      None
+    } else {
+      Some(ImageFilter(raw_ptr))
+    }
+  }
+}
+
+impl Drop for ImageFilter {
+  fn drop(&mut self) {
+    unsafe { ffi::skiac_image_filter_destroy(self.0) };
+  }
+}
+
 #[derive(Debug)]
 pub struct Bitmap {
-  pub width: u32,
-  pub height: u32,
+  pub width: usize,
+  pub height: usize,
   pub bitmap: *mut ffi::skiac_bitmap,
 }
 
 impl Bitmap {
+  #[inline]
   pub fn from_buffer(ptr: *mut u8, size: usize) -> Self {
     unsafe {
       let bitmap = ffi::skiac_bitmap_make_from_buffer(ptr, size);
 
       Bitmap {
-        width: ffi::skiac_bitmap_get_width(bitmap),
-        height: ffi::skiac_bitmap_get_height(bitmap),
+        width: ffi::skiac_bitmap_get_width(bitmap) as usize,
+        height: ffi::skiac_bitmap_get_height(bitmap) as usize,
         bitmap,
       }
+    }
+  }
+
+  #[inline]
+  pub fn from_image_data(
+    ptr: *mut u8,
+    width: usize,
+    height: usize,
+    row_bytes: usize,
+    size: usize,
+    color_type: ColorType,
+    alpha_type: AlphaType,
+  ) -> Self {
+    let bitmap = unsafe {
+      ffi::skiac_bitmap_make_from_image_data(
+        ptr,
+        width,
+        height,
+        row_bytes,
+        size,
+        color_type as i32,
+        alpha_type as i32,
+      )
+    };
+    Bitmap {
+      bitmap,
+      width: row_bytes,
+      height: size / row_bytes / 4usize,
     }
   }
 }
@@ -2135,6 +2312,28 @@ impl Drop for Bitmap {
     unsafe {
       ffi::skiac_bitmap_destroy(self.bitmap);
     }
+  }
+}
+
+#[derive(Debug, Clone)]
+pub struct ImagePattern {
+  pub(crate) bitmap: *mut ffi::skiac_bitmap,
+  pub(crate) repeat_x: TileMode,
+  pub(crate) repeat_y: TileMode,
+  pub(crate) transform: Transform,
+}
+
+impl ImagePattern {
+  #[inline(always)]
+  pub(crate) fn get_shader(&self) -> Option<Shader> {
+    Shader::from_bitmap(
+      self.bitmap,
+      self.repeat_x,
+      self.repeat_y,
+      1.0 / 3.0,
+      1.0 / 3.0,
+      self.transform,
+    )
   }
 }
 

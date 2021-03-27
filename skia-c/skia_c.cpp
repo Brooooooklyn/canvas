@@ -1,20 +1,4 @@
 #include <assert.h>
-
-#include <include/core/SkPathEffect.h>
-#include <include/core/SkCanvas.h>
-#include <include/core/SkData.h>
-#include <include/core/SkGraphics.h>
-#include <include/core/SkPaint.h>
-#include <include/core/SkSurface.h>
-#include <include/effects/SkDashPathEffect.h>
-#include <include/effects/SkGradientShader.h>
-#include <include/pathops/SkPathOps.h>
-#include <include/utils/SkParsePath.h>
-#include <modules/skparagraph/include/FontCollection.h>
-#include <modules/skparagraph/include/Paragraph.h>
-#include <modules/skparagraph/include/ParagraphBuilder.h>
-#include <modules/skparagraph/include/TypefaceFontProvider.h>
-
 #include <math.h>
 
 #include "skia_c.hpp"
@@ -28,6 +12,7 @@ using namespace skia::textlayout;
 #define PATH_CAST reinterpret_cast<SkPath *>(c_path)
 #define MATRIX_CAST reinterpret_cast<SkMatrix *>(c_matrix)
 #define MASK_FILTER_CAST reinterpret_cast<SkMaskFilter *>(c_mask_filter)
+#define IMAGE_FILTER_CAST reinterpret_cast<SkImageFilter *>(c_image_filter)
 
 extern "C"
 {
@@ -228,11 +213,14 @@ extern "C"
     CANVAS_CAST->drawColor(SkColor4f{r, g, b, a});
   }
 
-  void skiac_canvas_draw_image(skiac_canvas *c_canvas, skiac_bitmap *c_bitmap, float sx, float sy, float s_width, float s_height, float dx, float dy, float d_width, float d_height)
+  void skiac_canvas_draw_image(skiac_canvas *c_canvas, skiac_bitmap *c_bitmap, float sx, float sy, float s_width, float s_height, float dx, float dy, float d_width, float d_height, skiac_paint *c_paint)
   {
-    auto src_rect = SkRect::MakeXYWH(sx, sy, s_width, s_height);
-    auto dst_rect = SkRect::MakeXYWH(dx, dy, d_width, d_height);
-    CANVAS_CAST->drawBitmapRect(*BITMAP_CAST, src_rect, dst_rect, nullptr);
+    const auto src_rect = SkRect::MakeXYWH(sx, sy, s_width, s_height);
+    const auto dst_rect = SkRect::MakeXYWH(dx, dy, d_width, d_height);
+    auto sk_image = SkImage::MakeFromBitmap(*BITMAP_CAST);
+    const auto sampling = SkSamplingOptions();
+    auto paint = reinterpret_cast<const SkPaint *>(c_paint);
+    CANVAS_CAST->drawImageRect(sk_image, src_rect, dst_rect, sampling, paint, SkCanvas::kFast_SrcRectConstraint);
   }
 
   void skiac_canvas_draw_path(skiac_canvas *c_canvas, skiac_path *c_path, skiac_paint *c_paint)
@@ -262,7 +250,8 @@ extern "C"
     paint.setFilterQuality((SkFilterQuality)filter_quality);
     paint.setAlpha(alpha);
     paint.setBlendMode((SkBlendMode)blend_mode);
-    CANVAS_CAST->drawImage(image, left, top, &paint);
+    const auto sampling = SkSamplingOptions();
+    CANVAS_CAST->drawImage(image, left, top, sampling, &paint);
   }
 
   void skiac_canvas_draw_surface_rect(
@@ -276,7 +265,8 @@ extern "C"
     paint.setFilterQuality((SkFilterQuality)filter_quality);
     auto src = SkRect::MakeXYWH(0, 0, image->width(), image->height());
     auto dst = SkRect::MakeXYWH(x, y, w, h);
-    CANVAS_CAST->drawImageRect(image, src, dst, &paint);
+    const auto sampling = SkSamplingOptions();
+    CANVAS_CAST->drawImageRect(image, src, dst, sampling, &paint, SkCanvas::kFast_SrcRectConstraint);
   }
 
   void skiac_canvas_draw_text(
@@ -352,7 +342,8 @@ extern "C"
     auto image = SkImage::MakeRasterData(info, data, row_bytes);
     auto src_rect = SkRect::MakeXYWH(dirty_x, dirty_y, dirty_width, dirty_height);
     auto dst_rect = SkRect::MakeXYWH(x + dirty_x, y + dirty_y, dirty_width, dirty_height);
-    CANVAS_CAST->drawImageRect(image, src_rect, dst_rect, nullptr);
+    const auto sampling = SkSamplingOptions();
+    CANVAS_CAST->drawImageRect(image, src_rect, dst_rect, sampling, nullptr, SkCanvas::kFast_SrcRectConstraint);
   }
 
   // Paint
@@ -434,6 +425,14 @@ extern "C"
     maskFilter->ref();
 
     PAINT_CAST->setMaskFilter(maskFilter);
+  }
+
+  void skiac_paint_set_image_filter(skiac_paint *c_paint, skiac_image_filter *c_image_filter)
+  {
+    sk_sp<SkImageFilter> imageFilter(reinterpret_cast<SkImageFilter *>(c_image_filter));
+    imageFilter->ref();
+
+    PAINT_CAST->setImageFilter(imageFilter);
   }
 
   void skiac_paint_set_style(skiac_paint *c_paint, int style)
@@ -737,10 +736,7 @@ extern "C"
     {
       return reinterpret_cast<skiac_shader *>(shader);
     }
-    else
-    {
-      return nullptr;
-    }
+    return nullptr;
   }
 
   void skiac_shader_destroy(skiac_shader *c_shader)
@@ -785,12 +781,14 @@ extern "C"
     delete MATRIX_CAST;
   }
 
+  // SkMaskFilter
+
   skiac_mask_filter *skiac_mask_filter_make_blur(float radius)
   {
-    auto mask_filter = SkMaskFilter::MakeBlur(SkBlurStyle::kNormal_SkBlurStyle, radius, false).release();
-    if (mask_filter)
+    auto filter = SkMaskFilter::MakeBlur(SkBlurStyle::kNormal_SkBlurStyle, radius, false).release();
+    if (filter)
     {
-      return reinterpret_cast<skiac_mask_filter *>(mask_filter);
+      return reinterpret_cast<skiac_mask_filter *>(filter);
     }
     else
     {
@@ -802,6 +800,27 @@ extern "C"
   {
     auto mask_filter = MASK_FILTER_CAST;
     SkSafeUnref(mask_filter);
+  }
+
+  // SkImageFilter
+
+  skiac_image_filter *skiac_image_filter_make_drop_shadow(float dx, float dy, float sigma_x, float sigma_y, uint32_t color)
+  {
+    auto filter = SkImageFilters::DropShadowOnly(dx, dy, sigma_x, sigma_y, color, nullptr).release();
+    if (filter)
+    {
+      return reinterpret_cast<skiac_image_filter *>(filter);
+    }
+    else
+    {
+      return nullptr;
+    }
+  }
+
+  void skiac_image_filter_destroy(skiac_image_filter *c_image_filter)
+  {
+    auto image_filter = IMAGE_FILTER_CAST;
+    SkSafeUnref(image_filter);
   }
 
   // SkData
@@ -826,6 +845,14 @@ extern "C"
     return reinterpret_cast<skiac_bitmap *>(bitmap);
   }
 
+  skiac_bitmap *skiac_bitmap_make_from_image_data(uint8_t *ptr, size_t width, size_t height, size_t row_bytes, size_t size, int ct, int at)
+  {
+    auto bitmap = new SkBitmap();
+    const auto info = SkImageInfo::Make((int)width, (int)(height), (SkColorType)ct, (SkAlphaType)at);
+    bitmap->installPixels(info, ptr, row_bytes);
+    return reinterpret_cast<skiac_bitmap *>(bitmap);
+  }
+
   uint32_t skiac_bitmap_get_width(skiac_bitmap *c_bitmap)
   {
     auto bitmap = reinterpret_cast<SkBitmap *>(c_bitmap);
@@ -836,6 +863,24 @@ extern "C"
   {
     auto bitmap = reinterpret_cast<SkBitmap *>(c_bitmap);
     return bitmap->height();
+  }
+
+  skiac_shader *skiac_bitmap_get_shader(
+      skiac_bitmap *c_bitmap,
+      int repeat_x,
+      int repeat_y,
+      float B,
+      float C, // See SkSamplingOptions.h for docs.
+      skiac_transform c_ts)
+  {
+    const auto ts = conv_from_transform(c_ts);
+    auto bitmap = reinterpret_cast<SkBitmap *>(c_bitmap);
+    auto shader = bitmap->makeShader((SkTileMode)repeat_x, (SkTileMode)repeat_y, SkSamplingOptions({B, C}), &ts).release();
+    if (shader)
+    {
+      return reinterpret_cast<skiac_shader *>(shader);
+    }
+    return nullptr;
   }
 
   void skiac_bitmap_destroy(skiac_bitmap *c_bitmap)

@@ -29,7 +29,6 @@ jobs:
       - name: Install
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: stable
           profile: default
           override: true
 

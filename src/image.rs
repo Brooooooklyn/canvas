@@ -7,15 +7,15 @@ use crate::sk::Bitmap;
 
 #[derive(Debug, Clone)]
 pub struct ImageData {
-  pub(crate) width: u32,
-  pub(crate) height: u32,
-  pub(crate) data: *mut u8,
+  pub(crate) width: usize,
+  pub(crate) height: usize,
+  pub(crate) data: *const u8,
 }
 
 impl Drop for ImageData {
   fn drop(&mut self) {
     let len = (self.width * self.height * 4) as usize;
-    unsafe { Vec::from_raw_parts(self.data, len, len) };
+    unsafe { Vec::from_raw_parts(self.data as *mut u8, len, len) };
   }
 }
 
@@ -90,8 +90,8 @@ fn image_data_constructor(ctx: CallContext) -> Result<JsUndefined> {
     }?;
   let data_ptr = initial_data.as_mut_ptr();
   let image_data = ImageData {
-    width,
-    height,
+    width: width as usize,
+    height: height as usize,
     data: data_ptr,
   };
   let arraybuffer = unsafe {
@@ -166,8 +166,8 @@ fn image_constructor(ctx: CallContext) -> Result<JsUndefined> {
     alt: "".to_string(),
   };
   let mut this = ctx.this_unchecked::<JsObject>();
+  this.set_named_property("_src", ctx.env.get_undefined()?)?;
   ctx.env.wrap(&mut this, js_image)?;
-
   ctx.env.get_undefined()
 }
 
@@ -218,29 +218,24 @@ fn set_alt(ctx: CallContext) -> Result<JsUndefined> {
 }
 
 #[js_function]
-fn get_src(ctx: CallContext) -> Result<JsUndefined> {
-  ctx.env.get_undefined()
+fn get_src(ctx: CallContext) -> Result<JsUnknown> {
+  let this = ctx.this_unchecked::<JsObject>();
+  this.get_named_property("_src")
 }
 
 #[js_function(1)]
 fn set_src(ctx: CallContext) -> Result<JsUndefined> {
-  let this = ctx.this_unchecked::<JsObject>();
+  let mut this = ctx.this_unchecked::<JsObject>();
+  let src_arg = ctx.get::<JsBuffer>(0)?;
+  let src_data = src_arg.into_value()?;
   let image = ctx.env.unwrap::<Image>(&this)?;
 
-  let src_arg = ctx.get::<JsUnknown>(0)?;
-  let src_data_ab = unsafe { src_arg.cast::<JsTypedArray>() }.into_value()?;
-  if src_data_ab.typedarray_type != TypedArrayType::Uint8 {
-    return Err(Error::new(
-      Status::InvalidArg,
-      "Image src setter: Argument 1 does not implement interface Buffer.".to_owned(),
-    ));
-  }
-  let length = src_data_ab.len();
-
+  let length = (&src_data).len();
   image.complete = true;
   image
     .bitmap
-    .get_or_insert(Bitmap::from_buffer(src_data_ab.as_ptr() as *mut u8, length));
+    .get_or_insert(Bitmap::from_buffer(src_data.as_ptr() as *mut u8, length));
 
+  this.set_named_property("_src", src_data.into_raw())?;
   ctx.env.get_undefined()
 }

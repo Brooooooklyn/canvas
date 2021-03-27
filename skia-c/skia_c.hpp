@@ -2,6 +2,11 @@
 #define SKIA_CAPI_H
 
 #include <include/codec/SkCodec.h>
+#include <include/core/SkPicture.h>
+#include <include/core/SkSamplingOptions.h>
+#include <include/effects/SkImageFilters.h>
+#include <include/pathops/SkPathOps.h>
+#include <include/utils/SkParsePath.h>
 #include <include/core/SkBitmap.h>
 #include <include/core/SkCanvas.h>
 #include <include/core/SkData.h>
@@ -12,6 +17,10 @@
 #include <include/core/SkMaskFilter.h>
 #include <include/effects/SkDashPathEffect.h>
 #include <include/effects/SkGradientShader.h>
+#include <modules/skparagraph/include/FontCollection.h>
+#include <modules/skparagraph/include/Paragraph.h>
+#include <modules/skparagraph/include/ParagraphBuilder.h>
+#include <modules/skparagraph/include/TypefaceFontProvider.h>
 
 #include <stdint.h>
 
@@ -23,6 +32,7 @@ typedef struct skiac_shader skiac_shader;
 typedef struct skiac_path_effect skiac_path_effect;
 typedef struct skiac_matrix skiac_matrix;
 typedef struct skiac_mask_filter skiac_mask_filter;
+typedef struct skiac_image_filter skiac_image_filter;
 typedef struct skiac_data skiac_data;
 typedef struct skiac_image skiac_image;
 typedef struct skiac_bitmap skiac_bitmap;
@@ -88,7 +98,7 @@ extern "C"
   skiac_transform skiac_canvas_get_total_transform(skiac_canvas *c_canvas);
   skiac_matrix *skiac_canvas_get_total_transform_matrix(skiac_canvas *c_canvas);
   void skiac_canvas_draw_color(skiac_canvas *c_canvas, float r, float g, float b, float a);
-  void skiac_canvas_draw_image(skiac_canvas *c_canvas, skiac_bitmap *c_bitmap, float sx, float sy, float s_width, float s_height, float dx, float dy, float d_width, float d_height);
+  void skiac_canvas_draw_image(skiac_canvas *c_canvas, skiac_bitmap *c_bitmap, float sx, float sy, float s_width, float s_height, float dx, float dy, float d_width, float d_height, skiac_paint *c_paint);
   void skiac_canvas_draw_path(skiac_canvas *c_canvas, skiac_path *c_path, skiac_paint *c_paint);
   void skiac_canvas_draw_rect(
       skiac_canvas *c_canvas,
@@ -144,6 +154,7 @@ extern "C"
   float skiac_paint_get_stroke_miter(skiac_paint *c_paint);
   void skiac_paint_set_path_effect(skiac_paint *c_paint, skiac_path_effect *c_path_effect);
   void skiac_paint_set_mask_filter(skiac_paint *c_paint, skiac_mask_filter *c_mask_filter);
+  void skiac_paint_set_image_filter(skiac_paint *c_paint, skiac_image_filter *c_image_filter);
 
   // Path
   skiac_path *skiac_path_create();
@@ -183,7 +194,6 @@ extern "C"
       int tile_mode,
       uint32_t flags,
       skiac_transform c_ts);
-
   skiac_shader *skiac_shader_make_two_point_conical_gradient(
       skiac_point start_point,
       float start_radius,
@@ -195,7 +205,6 @@ extern "C"
       int tile_mode,
       uint32_t flags,
       skiac_transform c_ts);
-
   skiac_shader *skiac_shader_make_from_surface_image(
       skiac_surface *c_surface,
       skiac_transform c_ts,
@@ -205,33 +214,36 @@ extern "C"
 
   // Matrix
   skiac_matrix *skiac_matrix_create();
-
   skiac_matrix *skiac_matrix_clone(skiac_matrix *c_matrix);
-
   void skiac_matrix_pre_translate(skiac_matrix *c_matrix, float dx, float dy);
-
   void skiac_matrix_pre_rotate(skiac_matrix *c_matrix, float degrees);
-
   bool skiac_matrix_invert(skiac_matrix *c_matrix, skiac_matrix *inverse);
-
   skiac_transform skiac_matrix_to_transform(skiac_matrix *c_matrix);
-
   void skiac_matrix_destroy(skiac_matrix *c_matrix);
 
   // MaskFilter
-
   skiac_mask_filter *skiac_mask_filter_make_blur(float radius);
-
   void skiac_mask_filter_destroy(skiac_mask_filter *c_mask_filter);
 
-  // SkData
+  // ImageFilter
+  skiac_image_filter *skiac_image_filter_make_drop_shadow(float dx, float dy, float sigma_x, float sigma_y, uint32_t color);
+  void skiac_image_filter_destroy(skiac_image_filter *c_image_filter);
 
+  // SkData
   void skiac_sk_data_destroy(skiac_data *c_data);
 
   // Bitmap
   skiac_bitmap *skiac_bitmap_make_from_buffer(uint8_t *ptr, size_t size);
+  skiac_bitmap *skiac_bitmap_make_from_image_data(uint8_t *ptr, size_t width, size_t height, size_t row_bytes, size_t size, int ct, int at);
   uint32_t skiac_bitmap_get_width(skiac_bitmap *c_bitmap);
   uint32_t skiac_bitmap_get_height(skiac_bitmap *c_bitmap);
+  skiac_shader *skiac_bitmap_get_shader(
+      skiac_bitmap *c_bitmap,
+      int repeat_x,
+      int repeat_y,
+      float B,
+      float C, // See SkSamplingOptions.h for docs.
+      skiac_transform c_ts);
   void skiac_bitmap_destroy(skiac_bitmap *c_bitmap);
 }
 
