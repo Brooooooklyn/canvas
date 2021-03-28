@@ -6,6 +6,8 @@ use thiserror::Error;
 
 pub(crate) static FONT_REGEXP: OnceCell<Regex> = OnceCell::new();
 
+const DEFAULT_FONT: &'static str = "sans-serif";
+
 #[derive(Error, Clone, Debug)]
 pub enum ParseError {
   #[error("[`{0}`] is not valid font style")]
@@ -42,7 +44,7 @@ impl Default for Font {
     Font {
       size: 10.0,
       style: FontStyle::Normal,
-      family: "sans-serif".to_owned(),
+      family: DEFAULT_FONT.to_owned(),
       variant: FontVariant::Normal,
       stretch: 1.0,
       weight: 400,
@@ -65,11 +67,10 @@ impl Font {
       } else {
         size_str.parse::<f32>().ok()
       };
-      let family = cap.get(9);
-      // return if no valid size and family
-      if size.is_some() && family.is_some() {
+      let family = cap.get(9).map(|c| c.as_str()).unwrap_or(DEFAULT_FONT);
+      // return if no valid size
+      if size.is_some() {
         let size = size.unwrap();
-        let family = family.unwrap().as_str();
         let style = cap
           .get(2)
           .and_then(|m| FontStyle::from_str(m.as_str()).ok())
@@ -118,7 +119,7 @@ impl Font {
 // [ [ <'font-style'> || <font-variant-css21> || <'font-weight'> || <'font-stretch'> ]? <'font-size'> [ / <'line-height'> ]? <'font-family'> ] | caption | icon | menu | message-box | small-caption | status-barwhere <font-variant-css21> = [ normal | small-caps ]
 pub(crate) fn init_font_regexp() -> Regex {
   Regex::new(
-    r"(?x)
+    r#"(?x)
     (
       (italic|oblique|normal){0,1}\s+              |  # style
       (small-caps|normal){0,1}\s+                  |  # variant
@@ -130,8 +131,9 @@ pub(crate) fn init_font_regexp() -> Regex {
       (%|px|pt|pc|in|cm|mm|%|em|ex|ch|rem|q)?\s*      # unit
     )
     # line-height is ignored here, as per the spec
-    (.+,*)                                            # family
-  ",
+    # Borrowed from https://github.com/Automattic/node-canvas/blob/master/lib/parse-font.js#L21
+    ((?:'([^']+)'|"([^"]+)"|[\w\s-]+)(\s*,\s*(?:'([^']+)'|"([^"]+)"|[\w\s-]+))*)?                                            # family
+  "#,
   )
   .unwrap()
 }
@@ -447,6 +449,14 @@ fn test_font_new() {
         size: 20.0,
         weight: 300,
         family: "Arial".to_owned(),
+        ..Default::default()
+      },
+    ),
+    (
+      "50px",
+      Font {
+        size: 50.0,
+        family: "sans-serif".to_owned(),
         ..Default::default()
       },
     ),
