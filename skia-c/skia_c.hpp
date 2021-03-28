@@ -122,6 +122,7 @@ extern "C"
       const char *text,
       float x, float y,
       float font_size,
+      const char *font_family,
       uint8_t align,
       skiac_paint *c_paint);
   void skiac_canvas_reset_transform(skiac_canvas *c_canvas);

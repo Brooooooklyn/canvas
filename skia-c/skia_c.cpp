@@ -274,6 +274,7 @@ extern "C"
       const char *text,
       float x, float y,
       float font_size,
+      const char *font_family,
       uint8_t align,
       skiac_paint *c_paint)
   {
@@ -283,7 +284,7 @@ extern "C"
     font_collection->enableFontFallback();
 
     TextStyle text_style;
-    text_style.setFontFamilies({ SkString("Source Han Sans SC") });
+    text_style.setFontFamilies({ SkString(font_family) });
     text_style.setFontSize(font_size);
     text_style.setForegroundColor(*PAINT_CAST);
     text_style.setWordSpacing(0);
