@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1616856031528,
+  "lastUpdate": 1616904883852,
   "repoUrl": "https://github.com/Brooooooklyn/canvas",
   "entries": {
     "Benchmark": [
@@ -2126,6 +2126,58 @@ window.BENCHMARK_DATA = {
             "name": "Draw gradient#node-canvas",
             "value": 18,
             "range": "±1.22%",
+            "unit": "ops/sec",
+            "extra": "48 samples"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "lynweklm@gmail.com",
+            "name": "LongYinan",
+            "username": "Brooooooklyn"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "6dc3e846fa8cb44146f0ce79130492a219129011",
+          "message": "Merge pull request #215 from Brooooooklyn/font-parse\n\nFont parse",
+          "timestamp": "2021-03-28T12:09:25+08:00",
+          "tree_id": "aa8726da74841e215eba7a39ca33990f2526c9ef",
+          "url": "https://github.com/Brooooooklyn/canvas/commit/6dc3e846fa8cb44146f0ce79130492a219129011"
+        },
+        "date": 1616904802135,
+        "tool": "benchmarkjs",
+        "benches": [
+          {
+            "name": "Draw house#@napi-rs/skia",
+            "value": 22,
+            "range": "±0.8%",
+            "unit": "ops/sec",
+            "extra": "40 samples"
+          },
+          {
+            "name": "Draw house#node-canvas",
+            "value": 19,
+            "range": "±0.69%",
+            "unit": "ops/sec",
+            "extra": "39 samples"
+          },
+          {
+            "name": "Draw gradient#@napi-rs/skia",
+            "value": 21,
+            "range": "±0.68%",
+            "unit": "ops/sec",
+            "extra": "39 samples"
+          },
+          {
+            "name": "Draw gradient#node-canvas",
+            "value": 18,
+            "range": "±0.68%",
             "unit": "ops/sec",
             "extra": "48 samples"
           }
