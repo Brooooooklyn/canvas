@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1617008239023,
+  "lastUpdate": 1617008245804,
   "repoUrl": "https://github.com/Brooooooklyn/canvas",
   "entries": {
     "Benchmark": [
@@ -2230,6 +2230,58 @@ window.BENCHMARK_DATA = {
             "name": "Draw gradient#node-canvas",
             "value": 20,
             "range": "±0.2%",
+            "unit": "ops/sec",
+            "extra": "38 samples"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "lynweklm@gmail.com",
+            "name": "LongYinan",
+            "username": "Brooooooklyn"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "90b8199843085335a4fbe0047f0c16c7f30652a5",
+          "message": "Merge pull request #218 from Brooooooklyn/dependabot/npm_and_yarn/typescript-eslint/eslint-plugin-4.19.0\n\nchore(deps-dev): bump @typescript-eslint/eslint-plugin from 4.17.0 to 4.19.0",
+          "timestamp": "2021-03-29T16:33:55+08:00",
+          "tree_id": "d13b076f9484e1cad9cd8cdf9721520519fdc2de",
+          "url": "https://github.com/Brooooooklyn/canvas/commit/90b8199843085335a4fbe0047f0c16c7f30652a5"
+        },
+        "date": 1617008176943,
+        "tool": "benchmarkjs",
+        "benches": [
+          {
+            "name": "Draw house#@napi-rs/skia",
+            "value": 25,
+            "range": "±0.04%",
+            "unit": "ops/sec",
+            "extra": "46 samples"
+          },
+          {
+            "name": "Draw house#node-canvas",
+            "value": 21,
+            "range": "±0.45%",
+            "unit": "ops/sec",
+            "extra": "39 samples"
+          },
+          {
+            "name": "Draw gradient#@napi-rs/skia",
+            "value": 24,
+            "range": "±0.04%",
+            "unit": "ops/sec",
+            "extra": "44 samples"
+          },
+          {
+            "name": "Draw gradient#node-canvas",
+            "value": 20,
+            "range": "±0.23%",
             "unit": "ops/sec",
             "extra": "38 samples"
           }
