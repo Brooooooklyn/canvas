@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1617008245804,
+  "lastUpdate": 1617008290582,
   "repoUrl": "https://github.com/Brooooooklyn/canvas",
   "entries": {
     "Benchmark": [
@@ -2284,6 +2284,58 @@ window.BENCHMARK_DATA = {
             "range": "±0.23%",
             "unit": "ops/sec",
             "extra": "38 samples"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "lynweklm@gmail.com",
+            "name": "LongYinan",
+            "username": "Brooooooklyn"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "3493dad0c8d14df47c6b92d6999a6b2468257e15",
+          "message": "Merge pull request #216 from Brooooooklyn/dependabot/npm_and_yarn/eslint-7.23.0\n\nchore(deps-dev): bump eslint from 7.22.0 to 7.23.0",
+          "timestamp": "2021-03-29T16:33:31+08:00",
+          "tree_id": "d2f031962098df4163157d07ae0eb5ae5625f0ef",
+          "url": "https://github.com/Brooooooklyn/canvas/commit/3493dad0c8d14df47c6b92d6999a6b2468257e15"
+        },
+        "date": 1617008205838,
+        "tool": "benchmarkjs",
+        "benches": [
+          {
+            "name": "Draw house#@napi-rs/skia",
+            "value": 28,
+            "range": "±1.72%",
+            "unit": "ops/sec",
+            "extra": "49 samples"
+          },
+          {
+            "name": "Draw house#node-canvas",
+            "value": 27,
+            "range": "±1.33%",
+            "unit": "ops/sec",
+            "extra": "49 samples"
+          },
+          {
+            "name": "Draw gradient#@napi-rs/skia",
+            "value": 26.4,
+            "range": "±2.11%",
+            "unit": "ops/sec",
+            "extra": "47 samples"
+          },
+          {
+            "name": "Draw gradient#node-canvas",
+            "value": 26.5,
+            "range": "±1.07%",
+            "unit": "ops/sec",
+            "extra": "47 samples"
           }
         ]
       }
