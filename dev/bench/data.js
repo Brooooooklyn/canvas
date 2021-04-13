@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1617897928793,
+  "lastUpdate": 1618294653770,
   "repoUrl": "https://github.com/Brooooooklyn/canvas",
   "entries": {
     "Benchmark": [
@@ -2544,6 +2544,58 @@ window.BENCHMARK_DATA = {
             "range": "±3.09%",
             "unit": "ops/sec",
             "extra": "38 samples"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "lynweklm@gmail.com",
+            "name": "LongYinan",
+            "username": "Brooooooklyn"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "16b846d18e210b5ef375ea0dc922919c0bad5625",
+          "message": "Merge pull request #228 from Brooooooklyn/release\n\nfeat: skia chrome/m91, add back mimalloc",
+          "timestamp": "2021-04-13T14:12:38+08:00",
+          "tree_id": "b4b7080b2cbc5164eb4c1085959df5b5a1cb8663",
+          "url": "https://github.com/Brooooooklyn/canvas/commit/16b846d18e210b5ef375ea0dc922919c0bad5625"
+        },
+        "date": 1618294585401,
+        "tool": "benchmarkjs",
+        "benches": [
+          {
+            "name": "Draw house#@napi-rs/skia",
+            "value": 26,
+            "range": "±1.46%",
+            "unit": "ops/sec",
+            "extra": "46 samples"
+          },
+          {
+            "name": "Draw house#node-canvas",
+            "value": 25,
+            "range": "±1.54%",
+            "unit": "ops/sec",
+            "extra": "45 samples"
+          },
+          {
+            "name": "Draw gradient#@napi-rs/skia",
+            "value": 25,
+            "range": "±1.67%",
+            "unit": "ops/sec",
+            "extra": "45 samples"
+          },
+          {
+            "name": "Draw gradient#node-canvas",
+            "value": 24,
+            "range": "±2.29%",
+            "unit": "ops/sec",
+            "extra": "44 samples"
           }
         ]
       }
