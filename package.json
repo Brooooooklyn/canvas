@@ -18,11 +18,7 @@
     "svg",
     "skia"
   ],
-  "files": [
-    "index.d.ts",
-    "index.js",
-    "geometry.js"
-  ],
+  "files": ["index.d.ts", "index.js", "geometry.js"],
   "napi": {
     "name": "skia",
     "triples": {
@@ -92,27 +88,14 @@
     "@node-rs/helper": "^1.1.0"
   },
   "lint-staged": {
-    "*.@(js|ts|tsx)": [
-      "prettier --write",
-      "eslint -c .eslintrc.yml --fix"
-    ],
-    "*.@(yml|yaml)": [
-      "prettier --parser yaml --write"
-    ],
-    "*.md": [
-      "prettier --parser markdown --write"
-    ],
-    "*.json": [
-      "prettier --parser json --write"
-    ]
+    "*.@(js|ts|tsx)": ["prettier --write", "eslint -c .eslintrc.yml --fix"],
+    "*.@(yml|yaml)": ["prettier --parser yaml --write"],
+    "*.md": ["prettier --parser markdown --write"],
+    "*.json": ["prettier --parser json --write"]
   },
   "ava": {
-    "require": [
-      "@swc-node/register"
-    ],
-    "extensions": [
-      "ts"
-    ],
+    "require": ["@swc-node/register"],
+    "extensions": ["ts"],
     "environmentVariables": {
       "SWC_NODE_PROJECT": "./tsconfig.json",
       "NODE_ENV": "ava"

@@ -1,6 +1,7 @@
 use std::f32::consts::PI;
 use std::ffi::CString;
 use std::ops::{Deref, DerefMut};
+use std::os::raw::c_char;
 use std::ptr;
 use std::slice;
 use std::str::FromStr;
@@ -9,6 +10,8 @@ use crate::error::SkError;
 use crate::image::ImageData;
 
 mod ffi {
+  use super::SkiaString;
+
   #[repr(C)]
   #[derive(Copy, Clone, Debug)]
   pub struct skiac_surface {
@@ -79,6 +82,21 @@ mod ffi {
   #[derive(Copy, Clone, Debug)]
   pub struct skiac_bitmap {
     _unused: [u8; 0],
+  }
+
+  #[repr(C)]
+  #[derive(Copy, Clone, Debug)]
+  pub struct skiac_sk_string {
+    _unused: [u8; 0],
+  }
+
+  #[repr(C)]
+  #[derive(Copy, Clone, Debug)]
+  pub struct skiac_rect {
+    pub left: f32,
+    pub top: f32,
+    pub right: f32,
+    pub bottom: f32,
   }
 
   #[repr(C)]
@@ -226,6 +244,7 @@ mod ffi {
     pub fn skiac_canvas_reset_transform(canvas: *mut skiac_canvas);
 
     pub fn skiac_canvas_clip_rect(canvas: *mut skiac_canvas, x: f32, y: f32, w: f32, h: f32);
+
     pub fn skiac_canvas_clip_path(canvas: *mut skiac_canvas, path: *mut skiac_path);
 
     pub fn skiac_canvas_save(canvas: *mut skiac_canvas);
@@ -268,25 +287,31 @@ mod ffi {
     pub fn skiac_paint_set_color(paint: *mut skiac_paint, r: u8, g: u8, b: u8, a: u8);
 
     pub fn skiac_paint_set_alpha(paint: *mut skiac_paint, a: u8);
+
     pub fn skiac_paint_get_alpha(paint: *mut skiac_paint) -> u8;
 
     pub fn skiac_paint_set_anti_alias(paint: *mut skiac_paint, aa: bool);
 
     pub fn skiac_paint_set_blend_mode(paint: *mut skiac_paint, blend_mode: i32);
+
     pub fn skiac_paint_get_blend_mode(paint: *mut skiac_paint) -> i32;
 
     pub fn skiac_paint_set_shader(paint: *mut skiac_paint, shader: *mut skiac_shader);
 
     pub fn skiac_paint_set_stroke_width(paint: *mut skiac_paint, width: f32);
+
     pub fn skiac_paint_get_stroke_width(paint: *mut skiac_paint) -> f32;
 
     pub fn skiac_paint_set_stroke_cap(paint: *mut skiac_paint, cap: i32);
+
     pub fn skiac_paint_get_stroke_cap(paint: *mut skiac_paint) -> i32;
 
     pub fn skiac_paint_set_stroke_join(paint: *mut skiac_paint, join: i32);
+
     pub fn skiac_paint_get_stroke_join(paint: *mut skiac_paint) -> i32;
 
     pub fn skiac_paint_set_stroke_miter(paint: *mut skiac_paint, miter: f32);
+
     pub fn skiac_paint_get_stroke_miter(paint: *mut skiac_paint) -> f32;
 
     pub fn skiac_paint_set_path_effect(
@@ -319,9 +344,38 @@ mod ffi {
     pub fn skiac_path_op(c_path_one: *mut skiac_path, c_path_two: *mut skiac_path, op: i32)
       -> bool;
 
+    pub fn skiac_path_to_svg_string(c_path: *mut skiac_path, skia_string: *mut SkiaString);
+
+    pub fn skiac_path_simplify(c_path: *mut skiac_path) -> bool;
+
+    pub fn skiac_path_stroke(
+      c_path: *mut skiac_path,
+      cap: i32,
+      join: i32,
+      width: f32,
+      miter_limit: f32,
+    ) -> bool;
+
+    pub fn skiac_path_get_bounds(path: *mut skiac_path, c_rect: *mut skiac_rect);
+
+    pub fn skiac_path_compute_tight_bounds(path: *mut skiac_path, c_rect: *mut skiac_rect);
+
+    pub fn skiac_path_trim(
+      path: *mut skiac_path,
+      start_t: f32,
+      stop_t: f32,
+      is_complement: bool,
+    ) -> bool;
+
+    pub fn skiac_path_equals(path: *mut skiac_path, other: *mut skiac_path) -> bool;
+
     pub fn skiac_path_destroy(path: *mut skiac_path);
 
     pub fn skiac_path_set_fill_type(path: *mut skiac_path, kind: i32);
+
+    pub fn skiac_path_get_fill_type(path: *mut skiac_path) -> i32;
+
+    pub fn skiac_path_as_winding(path: *mut skiac_path) -> bool;
 
     pub fn skiac_path_arc_to(
       path: *mut skiac_path,
@@ -471,6 +525,9 @@ mod ffi {
     ) -> *mut skiac_shader;
 
     pub fn skiac_bitmap_destroy(c_bitmap: *mut skiac_bitmap);
+
+    // SkString
+    pub fn skiac_delete_sk_string(c_sk_string: *mut skiac_sk_string);
   }
 }
 
@@ -536,6 +593,20 @@ pub enum PaintStyle {
 pub enum FillType {
   Winding = 0,
   EvenOdd = 1,
+  InverseWinding = 2,
+  InverseEvenOdd = 3,
+}
+
+impl From<u32> for FillType {
+  fn from(value: u32) -> Self {
+    match value {
+      0 => Self::Winding,
+      1 => Self::EvenOdd,
+      2 => Self::InverseWinding,
+      3 => Self::InverseEvenOdd,
+      _ => unreachable!(),
+    }
+  }
 }
 
 impl FromStr for FillType {
@@ -558,12 +629,15 @@ pub enum StrokeCap {
 }
 
 impl StrokeCap {
-  pub fn from_raw(cap: i32) -> Self {
+  pub fn from_raw(cap: i32) -> Result<Self, SkError> {
     match cap {
-      0 => Self::Butt,
-      1 => Self::Round,
-      2 => Self::Square,
-      _ => unreachable!(),
+      0 => Ok(Self::Butt),
+      1 => Ok(Self::Round),
+      2 => Ok(Self::Square),
+      _ => Err(SkError::Generic(format!(
+        "{} is not valid StrokeCap value",
+        cap
+      ))),
     }
   }
 
@@ -597,12 +671,15 @@ pub enum StrokeJoin {
 }
 
 impl StrokeJoin {
-  pub fn from_raw(join: i32) -> Self {
+  pub fn from_raw(join: i32) -> Result<Self, SkError> {
     match join {
-      0 => Self::Miter,
-      1 => Self::Round,
-      2 => Self::Bevel,
-      _ => unreachable!(),
+      0 => Ok(Self::Miter),
+      1 => Ok(Self::Round),
+      2 => Ok(Self::Bevel),
+      _ => Err(SkError::Generic(format!(
+        "{} is not a valid StrokeJoin value",
+        join
+      ))),
     }
   }
 
@@ -866,6 +943,7 @@ pub enum AlphaType {
   Unpremultiplied,
 }
 
+#[repr(i32)]
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub enum PathOp {
   Difference,        // subtract the op path from the first path
@@ -873,6 +951,19 @@ pub enum PathOp {
   Union,             // union (inclusive-or) the two paths
   XOR,               // exclusive-or the two paths
   ReverseDifference, // subtract the first path from the op path
+}
+
+impl From<i32> for PathOp {
+  fn from(value: i32) -> Self {
+    match value {
+      0 => Self::Difference,
+      1 => Self::Intersect,
+      2 => Self::Union,
+      3 => Self::XOR,
+      4 => Self::ReverseDifference,
+      _ => panic!("[{}] is not valid path op", value),
+    }
+  }
 }
 
 #[derive(Debug, Clone)]
@@ -1522,7 +1613,7 @@ impl Paint {
 
   #[inline]
   pub fn get_stroke_cap(&self) -> StrokeCap {
-    StrokeCap::from_raw(unsafe { ffi::skiac_paint_get_stroke_cap(self.0) })
+    StrokeCap::from_raw(unsafe { ffi::skiac_paint_get_stroke_cap(self.0) }).unwrap()
   }
 
   #[inline]
@@ -1534,7 +1625,7 @@ impl Paint {
 
   #[inline]
   pub fn get_stroke_join(&self) -> StrokeJoin {
-    StrokeJoin::from_raw(unsafe { ffi::skiac_paint_get_stroke_join(self.0) })
+    StrokeJoin::from_raw(unsafe { ffi::skiac_paint_get_stroke_join(self.0) }).unwrap()
   }
 
   #[inline]
@@ -1594,6 +1685,7 @@ impl Drop for Paint {
 }
 
 #[repr(transparent)]
+#[derive(Debug)]
 pub struct Path(pub(crate) *mut ffi::skiac_path);
 
 impl Clone for Path {
@@ -1634,6 +1726,11 @@ impl Path {
     unsafe {
       ffi::skiac_path_set_fill_type(self.0, kind as i32);
     }
+  }
+
+  #[inline]
+  pub fn get_fill_type(&mut self) -> i32 {
+    unsafe { ffi::skiac_path_get_fill_type(self.0) }
   }
 
   #[inline(always)]
@@ -1833,6 +1930,71 @@ impl Path {
   #[inline]
   pub fn stroke_hit_test(&self, x: f32, y: f32, stroke_w: f32) -> bool {
     unsafe { ffi::skiac_path_stroke_hit_test(self.0, x, y, stroke_w) }
+  }
+
+  #[inline]
+  pub fn to_svg_string(&self) -> SkiaString {
+    let mut string = SkiaString {
+      ptr: ptr::null_mut(),
+      length: 0,
+      sk_string: ptr::null_mut(),
+    };
+    unsafe { ffi::skiac_path_to_svg_string(self.0, &mut string) };
+    string
+  }
+
+  #[inline]
+  pub fn simplify(&mut self) -> bool {
+    unsafe { ffi::skiac_path_simplify(self.0) }
+  }
+
+  #[inline]
+  pub fn as_winding(&mut self) -> bool {
+    unsafe { ffi::skiac_path_as_winding(self.0) }
+  }
+
+  #[inline]
+  pub fn stroke(&mut self, cap: StrokeCap, join: StrokeJoin, width: f32, miter_limit: f32) -> bool {
+    unsafe { ffi::skiac_path_stroke(self.0, cap as i32, join as i32, width, miter_limit) }
+  }
+
+  #[inline]
+  pub fn compute_tight_bounds(&self) -> (f32, f32, f32, f32) {
+    let mut rect = ffi::skiac_rect {
+      left: 0.0f32,
+      top: 0.0f32,
+      right: 0.0f32,
+      bottom: 0.0f32,
+    };
+    unsafe { ffi::skiac_path_compute_tight_bounds(self.0, &mut rect) };
+    (rect.left, rect.top, rect.right, rect.bottom)
+  }
+
+  #[inline]
+  pub fn get_bounds(&self) -> (f32, f32, f32, f32) {
+    let mut rect = ffi::skiac_rect {
+      left: 0.0f32,
+      top: 0.0f32,
+      right: 0.0f32,
+      bottom: 0.0f32,
+    };
+    unsafe { ffi::skiac_path_get_bounds(self.0, &mut rect) };
+    (rect.left, rect.top, rect.right, rect.bottom)
+  }
+
+  #[inline]
+  pub fn trim(&mut self, start: f32, end: f32, is_complement: bool) -> bool {
+    unsafe { ffi::skiac_path_trim(self.0, start, end, is_complement) }
+  }
+}
+
+impl PartialEq for Path {
+  fn eq(&self, other: &Path) -> bool {
+    unsafe { ffi::skiac_path_equals(self.0, other.0) }
+  }
+
+  fn ne(&self, other: &Path) -> bool {
+    !unsafe { ffi::skiac_path_equals(self.0, other.0) }
   }
 }
 
@@ -2304,6 +2466,20 @@ impl ImagePattern {
       1.0 / 3.0,
       self.transform,
     )
+  }
+}
+
+#[repr(C)]
+#[derive(Clone, Debug)]
+pub struct SkiaString {
+  pub ptr: *const c_char,
+  pub length: usize,
+  sk_string: *mut ffi::skiac_sk_string,
+}
+
+impl Drop for SkiaString {
+  fn drop(&mut self) {
+    unsafe { ffi::skiac_delete_sk_string(self.sk_string) }
   }
 }
 

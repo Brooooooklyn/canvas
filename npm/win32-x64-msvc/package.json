@@ -1,16 +1,10 @@
 {
   "name": "@napi-rs/canvas-win32-x64-msvc",
   "version": "0.0.3",
-  "os": [
-    "win32"
-  ],
-  "cpu": [
-    "x64"
-  ],
+  "os": ["win32"],
+  "cpu": ["x64"],
   "main": "skia.win32-x64-msvc.node",
-  "files": [
-    "skia.win32-x64-msvc.node"
-  ],
+  "files": ["skia.win32-x64-msvc.node"],
   "description": "Canvas for Node.js with skia backend",
   "keywords": [
     "napi-rs",

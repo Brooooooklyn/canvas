@@ -473,7 +473,78 @@ extern "C"
 
   bool skiac_path_op(skiac_path *c_path_one, skiac_path *c_path_two, int op)
   {
-    return Op(*reinterpret_cast<SkPath *>(c_path_one), *reinterpret_cast<SkPath *>(c_path_two), (SkPathOp)op, nullptr);
+    auto path_one = reinterpret_cast<SkPath *>(c_path_one);
+    return Op(*path_one, *reinterpret_cast<SkPath *>(c_path_two), (SkPathOp)op, path_one);
+  }
+
+  void skiac_path_to_svg_string(skiac_path *c_path, skiac_string *c_string)
+  {
+    auto string = new SkString();
+    SkParsePath::ToSVGString(*PATH_CAST, string);
+    c_string->length = string->size();
+    c_string->ptr = string->c_str();
+    c_string->sk_string = string;
+  }
+
+  bool skiac_path_simplify(skiac_path *c_path)
+  {
+    return Simplify(*PATH_CAST, PATH_CAST);
+  }
+
+  bool skiac_path_as_winding(skiac_path *c_path)
+  {
+    return AsWinding(*PATH_CAST, PATH_CAST);
+  }
+
+  bool skiac_path_stroke(skiac_path *c_path, int cap, int join, float width, float miter_limit)
+  {
+    SkPaint p;
+    p.setStyle(SkPaint::kStroke_Style);
+    p.setStrokeCap((SkPaint::Cap)cap);
+    p.setStrokeJoin((SkPaint::Join)join);
+    p.setStrokeWidth(width);
+    p.setStrokeMiter(miter_limit);
+
+    return p.getFillPath(*PATH_CAST, PATH_CAST);
+  }
+
+  void skiac_path_compute_tight_bounds(skiac_path *c_path, skiac_rect *c_rect)
+  {
+    auto rect = PATH_CAST->computeTightBounds();
+    c_rect->left = rect.fLeft;
+    c_rect->top = rect.fTop;
+    c_rect->right = rect.fRight;
+    c_rect->bottom = rect.fBottom;
+  }
+
+  void skiac_path_get_bounds(skiac_path *c_path, skiac_rect *c_rect)
+  {
+    auto rect = PATH_CAST->getBounds();
+    c_rect->left = rect.fLeft;
+    c_rect->top = rect.fTop;
+    c_rect->right = rect.fRight;
+    c_rect->bottom = rect.fBottom;
+  }
+
+  bool skiac_path_trim(skiac_path *c_path, float start_t, float stop_t, bool is_complement)
+  {
+    auto mode = is_complement ? SkTrimPathEffect::Mode::kInverted : SkTrimPathEffect::Mode::kNormal;
+    auto pe = SkTrimPathEffect::Make(start_t, stop_t, mode);
+    if (!pe)
+    {
+      return false;
+    }
+    SkStrokeRec rec(SkStrokeRec::InitStyle::kHairline_InitStyle);
+    if (pe->filterPath(PATH_CAST, *PATH_CAST, &rec, nullptr))
+    {
+      return true;
+    }
+    return false;
+  }
+
+  bool skiac_path_equals(skiac_path *c_path, skiac_path *other_path)
+  {
+    return *PATH_CAST == *reinterpret_cast<SkPath *>(other_path);
   }
 
   void skiac_path_destroy(skiac_path *c_path)
@@ -485,6 +556,11 @@ extern "C"
   void skiac_path_set_fill_type(skiac_path *c_path, int type)
   {
     PATH_CAST->setFillType((SkPathFillType)type);
+  }
+
+  int skiac_path_get_fill_type(skiac_path *c_path)
+  {
+    return (int)PATH_CAST->getFillType();
   }
 
   void skiac_path_arc_to_tangent(skiac_path *c_path, float x1, float y1, float x2, float y2, float radius)
@@ -851,5 +927,11 @@ extern "C"
   void skiac_bitmap_destroy(skiac_bitmap *c_bitmap)
   {
     delete BITMAP_CAST;
+  }
+
+  // SkString
+  void skiac_delete_sk_string(skiac_sk_string *c_sk_string)
+  {
+    delete reinterpret_cast<SkString *>(c_sk_string);
   }
 }

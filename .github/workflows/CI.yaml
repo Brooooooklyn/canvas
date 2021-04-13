@@ -291,7 +291,7 @@ jobs:
         if: ${{ failure() }}
         uses: actions/upload-artifact@v2
         with:
-          name: failure-images-x86_64-unknown-linux-gnu-${{ matrix.node }}
+          name: failure-images-x86_64-unknown-linux-musl-${{ matrix.node }}
           path: __test__/failure/**
 
   test-linux-aarch64-gnu-binding:
