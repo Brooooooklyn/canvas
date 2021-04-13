@@ -410,22 +410,6 @@ jobs:
           name: failure-images-armv7-unknown-linux-gnueabihf-${{ matrix.node }}
           path: __test__/failure/**
 
-  dependabot:
-    needs:
-      - test-linux-x64-gnu-binding
-      - test-linux-x64-musl-binding
-      - test-linux-aarch64-gnu-binding
-      - test-linux-arm-gnueabihf-binding
-      - test-macOS-windows-binding
-
-    runs-on: ubuntu-20.04
-    steps:
-      - name: auto-merge
-        uses: ridedott/dependabot-auto-merge-action@master
-        with:
-          GITHUB_LOGIN: dependabot[bot]
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
   publish:
     name: Publish
     runs-on: ubuntu-20.04
