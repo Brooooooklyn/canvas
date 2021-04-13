@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1618295554624,
+  "lastUpdate": 1618295966156,
   "repoUrl": "https://github.com/Brooooooklyn/canvas",
   "entries": {
     "Benchmark": [
@@ -2646,6 +2646,58 @@ window.BENCHMARK_DATA = {
             "name": "Draw gradient#node-canvas",
             "value": 18,
             "range": "±0.59%",
+            "unit": "ops/sec",
+            "extra": "47 samples"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "lynweklm@gmail.com",
+            "name": "LongYinan",
+            "username": "Brooooooklyn"
+          },
+          "committer": {
+            "email": "lynweklm@gmail.com",
+            "name": "LongYinan",
+            "username": "Brooooooklyn"
+          },
+          "distinct": true,
+          "id": "5c7aeaaab41fdf3a88835a1e36c82ef60534955c",
+          "message": "ci: switch cargo test to run on macOS machine\n\nBecause linux static links file was built on docker environment.\nThe cargo test step may fail due to lack of system component or compiler toolchain.",
+          "timestamp": "2021-04-13T14:33:04+08:00",
+          "tree_id": "0e631ba1703822467e41a23bc0f6b6f82f17425a",
+          "url": "https://github.com/Brooooooklyn/canvas/commit/5c7aeaaab41fdf3a88835a1e36c82ef60534955c"
+        },
+        "date": 1618295889408,
+        "tool": "benchmarkjs",
+        "benches": [
+          {
+            "name": "Draw house#@napi-rs/skia",
+            "value": 22,
+            "range": "±0.41%",
+            "unit": "ops/sec",
+            "extra": "39 samples"
+          },
+          {
+            "name": "Draw house#node-canvas",
+            "value": 18,
+            "range": "±0.55%",
+            "unit": "ops/sec",
+            "extra": "49 samples"
+          },
+          {
+            "name": "Draw gradient#@napi-rs/skia",
+            "value": 21,
+            "range": "±0.47%",
+            "unit": "ops/sec",
+            "extra": "38 samples"
+          },
+          {
+            "name": "Draw gradient#node-canvas",
+            "value": 17,
+            "range": "±0.46%",
             "unit": "ops/sec",
             "extra": "47 samples"
           }
