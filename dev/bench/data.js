@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1618294653770,
+  "lastUpdate": 1618295554624,
   "repoUrl": "https://github.com/Brooooooklyn/canvas",
   "entries": {
     "Benchmark": [
@@ -2596,6 +2596,58 @@ window.BENCHMARK_DATA = {
             "range": "±2.29%",
             "unit": "ops/sec",
             "extra": "44 samples"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "lynweklm@gmail.com",
+            "name": "LongYinan",
+            "username": "Brooooooklyn"
+          },
+          "committer": {
+            "email": "lynweklm@gmail.com",
+            "name": "LongYinan",
+            "username": "Brooooooklyn"
+          },
+          "distinct": true,
+          "id": "0a6e85061be50c0d9b45098177aa0106e90dff5a",
+          "message": "ci: fix auto merge job",
+          "timestamp": "2021-04-13T14:27:19+08:00",
+          "tree_id": "0338be698a5fcb662b6cc9992320d890fe6168f9",
+          "url": "https://github.com/Brooooooklyn/canvas/commit/0a6e85061be50c0d9b45098177aa0106e90dff5a"
+        },
+        "date": 1618295477180,
+        "tool": "benchmarkjs",
+        "benches": [
+          {
+            "name": "Draw house#@napi-rs/skia",
+            "value": 22,
+            "range": "±0.57%",
+            "unit": "ops/sec",
+            "extra": "40 samples"
+          },
+          {
+            "name": "Draw house#node-canvas",
+            "value": 19,
+            "range": "±0.66%",
+            "unit": "ops/sec",
+            "extra": "49 samples"
+          },
+          {
+            "name": "Draw gradient#@napi-rs/skia",
+            "value": 21,
+            "range": "±0.5%",
+            "unit": "ops/sec",
+            "extra": "39 samples"
+          },
+          {
+            "name": "Draw gradient#node-canvas",
+            "value": 18,
+            "range": "±0.59%",
+            "unit": "ops/sec",
+            "extra": "47 samples"
           }
         ]
       }
