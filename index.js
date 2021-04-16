@@ -16,6 +16,18 @@ const { CanvasRenderingContext2D, CanvasElement, Path2D, ImageData, Image, Canva
 
 const Geometry = require('./geometry')
 
+const StrokeJoin = {
+  Miter: 0,
+  Round: 1,
+  Bevel: 2,
+}
+
+const StrokeCap = {
+  Butt: 0,
+  Round: 1,
+  Square: 2,
+}
+
 CanvasRenderingContext2D.prototype.createPattern = function createPattern(image, repetition) {
   if (image instanceof ImageData) {
     const pattern = new CanvasPattern(image, repetition, 0)
@@ -35,6 +47,15 @@ CanvasRenderingContext2D.prototype.createPattern = function createPattern(image,
 CanvasRenderingContext2D.prototype.getImageData = function getImageData(x, y, w, h) {
   const data = this._getImageData(x, y, w, h)
   return new ImageData(data, w, h)
+}
+
+Path2D.prototype.stroke = function stroke(strokeOptions = {}) {
+  const width = typeof strokeOptions.width === 'undefined' ? 1 : strokeOptions.width
+  const miterLimit = typeof strokeOptions.miterLimit === 'undefined' ? 1 : strokeOptions.miterLimit
+  const join = typeof strokeOptions.join === 'undefined' ? StrokeJoin.Miter : strokeOptions.join
+  const cap = typeof strokeOptions.cap === 'undefined' ? StrokeCap.Butt : strokeOptions.cap
+
+  return this._stroke(width, miterLimit, join, cap)
 }
 
 function createCanvas(width, height) {
@@ -79,10 +100,29 @@ function createCanvas(width, height) {
   return canvasElement
 }
 
+const PathOp = {
+  Difference: 0, // subtract the op path from the first path
+  Intersect: 1, // intersect the two paths
+  Union: 2, // union (inclusive-or) the two paths
+  XOR: 3, // exclusive-or the two paths
+  ReverseDifference: 4, // subtract the first path from the op path
+}
+
+const FillType = {
+  Winding: 0,
+  EvenOdd: 1,
+  InverseWinding: 2,
+  InverseEvenOdd: 3,
+}
+
 module.exports = {
   createCanvas,
   Path2D,
   ImageData,
   Image,
+  PathOp,
+  FillType,
+  StrokeCap,
+  StrokeJoin,
   ...Geometry,
 }

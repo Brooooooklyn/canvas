@@ -104,6 +104,20 @@ export class Path2D {
   moveTo(x: number, y: number): void
   quadraticCurveTo(cpx: number, cpy: number, x: number, y: number): void
   rect(x: number, y: number, w: number, h: number): void
+
+  // PathKit methods
+  op(path: Path2D, operation: PathOp): Path2D
+  toSVGString(): string
+  getFillType(): FillType
+  setFillType(type: FillType): void
+  simplify(): Path2D
+  asWinding(): Path2D
+  stroke(stroke?: StrokeOptions): Path2D
+  transform(transform: DOMMatrix2DInit): Path2D
+  getBounds(): [left: number, top: number, right: number, bottom: number]
+  computeTightBounds(): [left: number, top: number, right: number, bottom: number]
+  trim(start: number, end: number, isComplement?: boolean): Path2D
+  equals(path: Path2D): boolean
 }
 ```
 

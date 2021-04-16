@@ -4,6 +4,7 @@
 #include <include/codec/SkCodec.h>
 #include <include/core/SkPicture.h>
 #include <include/core/SkSamplingOptions.h>
+#include <include/core/SkString.h>
 #include <include/effects/SkImageFilters.h>
 #include <include/pathops/SkPathOps.h>
 #include <include/utils/SkParsePath.h>
@@ -15,7 +16,9 @@
 #include <include/core/SkPathEffect.h>
 #include <include/core/SkSurface.h>
 #include <include/core/SkMaskFilter.h>
+#include <include/core/SkStrokeRec.h>
 #include <include/effects/SkDashPathEffect.h>
+#include <include/effects/SkTrimPathEffect.h>
 #include <include/effects/SkGradientShader.h>
 
 #include <stdint.h>
@@ -32,6 +35,15 @@ typedef struct skiac_image_filter skiac_image_filter;
 typedef struct skiac_data skiac_data;
 typedef struct skiac_image skiac_image;
 typedef struct skiac_bitmap skiac_bitmap;
+typedef struct skiac_sk_string skiac_sk_string;
+
+struct skiac_rect
+{
+  float left;
+  float top;
+  float right;
+  float bottom;
+};
 
 struct skiac_transform
 {
@@ -53,6 +65,13 @@ struct skiac_surface_data
 {
   uint8_t *ptr;
   size_t size;
+};
+
+struct skiac_string
+{
+  const char *ptr;
+  size_t length;
+  SkString *sk_string;
 };
 
 struct skiac_sk_data
@@ -151,8 +170,17 @@ extern "C"
   skiac_path *skiac_path_clone(skiac_path *c_path);
   void skiac_add_path(skiac_path *c_path, skiac_path *other_path, skiac_transform c_transform);
   bool skiac_path_op(skiac_path *c_path_one, skiac_path *c_path_two, int op);
+  void skiac_path_to_svg_string(skiac_path *c_path, skiac_string *c_string);
+  bool skiac_path_simplify(skiac_path *c_path);
+  bool skiac_path_stroke(skiac_path *c_path, int cap, int join, float width, float miter_limit);
+  void skiac_path_get_bounds(skiac_path *c_path, skiac_rect *c_rect);
+  void skiac_path_compute_tight_bounds(skiac_path *c_path, skiac_rect *c_rect);
+  bool skiac_path_trim(skiac_path *c_path, float start_t, float stop_t, bool is_complement);
+  bool skiac_path_equals(skiac_path *c_path, skiac_path *other_path);
   void skiac_path_destroy(skiac_path *c_path);
   void skiac_path_set_fill_type(skiac_path *c_path, int type);
+  int skiac_path_get_fill_type(skiac_path *c_path);
+  bool skiac_path_as_winding(skiac_path *c_path);
   void skiac_path_arc_to(skiac_path *c_path, float left, float top, float right, float bottom, float startAngle, float sweepAngle, bool forceMoveTo);
   void skiac_path_arc_to_tangent(skiac_path *c_path, float x1, float y1, float x2, float y2, float radius);
   void skiac_path_move_to(skiac_path *c_path, float x, float y);
@@ -234,6 +262,9 @@ extern "C"
       float C, // See SkSamplingOptions.h for docs.
       skiac_transform c_ts);
   void skiac_bitmap_destroy(skiac_bitmap *c_bitmap);
+
+  // SkString
+  void skiac_delete_sk_string(skiac_sk_string *c_sk_string);
 }
 
 #endif // SKIA_CAPI_H

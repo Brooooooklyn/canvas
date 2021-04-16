@@ -213,6 +213,27 @@ export class Path2D {
   moveTo(x: number, y: number): void
   quadraticCurveTo(cpx: number, cpy: number, x: number, y: number): void
   rect(x: number, y: number, w: number, h: number): void
+
+  // PathKit methods
+  op(path: Path2D, operation: PathOp): Path2D
+  toSVGString(): string
+  getFillType(): FillType
+  setFillType(type: FillType): void
+  simplify(): Path2D
+  asWinding(): Path2D
+  stroke(stroke?: StrokeOptions): Path2D
+  transform(transform: DOMMatrix2DInit): Path2D
+  getBounds(): [left: number, top: number, right: number, bottom: number]
+  computeTightBounds(): [left: number, top: number, right: number, bottom: number]
+  trim(start: number, end: number, isComplement?: boolean): Path2D
+  equals(path: Path2D): boolean
+}
+
+export interface StrokeOptions {
+  width?: number
+  miterLimit?: number
+  cap?: StrokeCap
+  join?: StrokeJoin
 }
 
 export interface SKRSContext2D extends Omit<CanvasRenderingContext2D, 'drawImage' | 'createPattern'> {
@@ -242,3 +263,30 @@ export interface Canvas extends Omit<HTMLCanvasElement, 'getContext'> {
 }
 
 export function createCanvas(width: number, height: number): Canvas
+
+export const enum PathOp {
+  Difference = 0, // subtract the op path from the first path
+  Intersect = 1, // intersect the two paths
+  Union = 2, // union (inclusive-or) the two paths
+  XOR = 3, // exclusive-or the two paths
+  ReverseDifference = 4, // subtract the first path from the op path
+}
+
+export const enum FillType {
+  Winding = 0,
+  EvenOdd = 1,
+  InverseWinding = 2,
+  InverseEvenOdd = 3,
+}
+
+export const enum StrokeJoin {
+  Miter = 0,
+  Round = 1,
+  Bevel = 2,
+}
+
+export const enum StrokeCap {
+  Butt = 0,
+  Round = 1,
+  Square = 2,
+}
