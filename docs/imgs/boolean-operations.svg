@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="390" viewBox="0 0 1200 390">
+  <g fill="none" fill-rule="evenodd">
+    <g stroke="#666" stroke-width="2" transform="translate(15 45)">
+      <rect width="100" height="100" y="50" fill="#84C7FF" rx="8"/>
+      <rect width="100" height="100" x="50" fill="#FDC5C5" rx="8"/>
+    </g>
+    <g transform="translate(432.25 97)">
+      <text fill="#000" font-family="PingFangSC-Regular, PingFang SC" font-size="28">
+        <tspan x="11" y="176">减去顶层</tspan> <tspan x=".024" y="216">Difference</tspan>
+      </text>
+      <path fill="#84C7FF" stroke="#666" stroke-width="2" d="M50,0 L50,42 C50,46.418278 53.581722,50 58,50 L58,50 L100,50 L100,92 C100,96.418278 96.418278,100 92,100 L8,100 C3.581722,100 5.41083001e-16,96.418278 0,92 L0,8 C-5.41083001e-16,3.581722 3.581722,8.11624501e-16 8,0 L50,0 Z" transform="translate(17)"/>
+    </g>
+    <g transform="translate(993 45)">
+      <text fill="#000" font-family="PingFangSC-Regular, PingFang SC" font-size="28">
+        <tspan x="47" y="228">差集</tspan> <tspan x="45.88" y="268">XOR</tspan>
+      </text>
+      <path fill="#84C7FF" stroke="#666" stroke-width="2" d="M142,0 C146.418278,-8.11624501e-16 150,3.581722 150,8 L150,92 C150,96.418278 146.418278,100 142,100 L100,100 L100,142 C100,146.418278 96.418278,150 92,150 L8,150 C3.581722,150 5.41083001e-16,146.418278 0,142 L0,58 C-5.41083001e-16,53.581722 3.581722,50 8,50 L50,50 L50,8 C50,3.581722 53.581722,8.11624501e-16 58,0 L142,0 Z M92,50 L50,50 L50,92 C50,96.3349143 53.4478378,99.8645429 57.7508207,99.9961932 L58,100 L100,100 L100,58 C100,53.6650857 96.5521622,50.1354571 92.2491793,50.0038068 L92,50 Z"/>
+    </g>
+    <g transform="translate(823.75 95)">
+      <text fill="#000" font-family="PingFangSC-Regular, PingFang SC" font-size="28">
+        <tspan x="28.5" y="178">交集</tspan> <tspan x=".038" y="218">Intersect</tspan>
+      </text>
+      <path fill="#84C7FF" stroke="#666" stroke-width="2" d="M42,0 C46.418278,-8.11624501e-16 50,3.581722 50,8 L50,50 L8,50 C3.581722,50 5.41083001e-16,46.418278 0,42 L0,0 L42,0 Z" transform="translate(32)"/>
+    </g>
+    <g transform="translate(225 45)">
+      <text fill="#000" font-family="PingFangSC-Regular, PingFang SC" font-size="28">
+        <tspan x="47.5" y="228">联集</tspan> <tspan x="38.064" y="268">Union</tspan>
+      </text>
+      <path fill="#84C7FF" stroke="#666" stroke-width="2" d="M142,0 C146.418278,-8.11624501e-16 150,3.581722 150,8 L150,92 C150,96.418278 146.418278,100 142,100 L100,100 L100,142 C100,146.418278 96.418278,150 92,150 L8,150 C3.581722,150 5.41083001e-16,146.418278 0,142 L0,58 C-5.41083001e-16,53.581722 3.581722,50 8,50 L50,50 L50,8 C50,3.581722 53.581722,8.11624501e-16 58,0 L142,0 Z"/>
+    </g>
+    <g transform="translate(628.5 46)">
+      <text fill="#000" font-family="PingFangSC-Regular, PingFang SC" font-size="28">
+        <tspan x="11" y="226">减去底层</tspan> <tspan x="15.298" y="266">Reverse</tspan> <tspan x=".024" y="306">Difference</tspan>
+      </text>
+      <path fill="#FDC5C5" stroke="#666" stroke-width="2" d="M92,0 C96.418278,-8.11624501e-16 100,3.581722 100,8 L100,92 C100,96.418278 96.418278,100 92,100 L50,100 L50,58 C50,53.6650857 46.5521622,50.1354571 42.2491793,50.0038068 L42,50 L0,50 L0,8 C-5.41083001e-16,3.581722 3.581722,8.11624501e-16 8,0 L92,0 Z" transform="translate(17)"/>
+    </g>
+    <text fill="#EEE" font-family="PingFangSC-Regular, PingFang SC" font-size="18">
+      <tspan x="30.451" y="342">Designed by 一丝</tspan>
+    </text>
+  </g>
+</svg>
