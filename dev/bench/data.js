@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1618815676313,
+  "lastUpdate": 1618815703004,
   "repoUrl": "https://github.com/Brooooooklyn/canvas",
   "entries": {
     "Benchmark": [
@@ -3116,6 +3116,58 @@ window.BENCHMARK_DATA = {
             "range": "±1.83%",
             "unit": "ops/sec",
             "extra": "41 samples"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "lynweklm@gmail.com",
+            "name": "LongYinan",
+            "username": "Brooooooklyn"
+          },
+          "distinct": true,
+          "id": "2ca03e6b708803b97b7a8afd2fa5d99426f2efa5",
+          "message": "chore(deps-dev): bump @napi-rs/cli from 1.0.3 to 1.0.4\n\nBumps [@napi-rs/cli](https://github.com/napi-rs/napi-rs) from 1.0.3 to 1.0.4.\n- [Release notes](https://github.com/napi-rs/napi-rs/releases)\n- [Commits](https://github.com/napi-rs/napi-rs/compare/@napi-rs/cli@1.0.3...@napi-rs/cli@1.0.4)\n\nSigned-off-by: dependabot[bot] <support@github.com>",
+          "timestamp": "2021-04-19T14:56:00+08:00",
+          "tree_id": "a02091c63542e9eda2b6bbf0c320286fe810719c",
+          "url": "https://github.com/Brooooooklyn/canvas/commit/2ca03e6b708803b97b7a8afd2fa5d99426f2efa5"
+        },
+        "date": 1618815628704,
+        "tool": "benchmarkjs",
+        "benches": [
+          {
+            "name": "Draw house#@napi-rs/skia",
+            "value": 23.2,
+            "range": "±0.78%",
+            "unit": "ops/sec",
+            "extra": "42 samples"
+          },
+          {
+            "name": "Draw house#node-canvas",
+            "value": 22.8,
+            "range": "±0.81%",
+            "unit": "ops/sec",
+            "extra": "41 samples"
+          },
+          {
+            "name": "Draw gradient#@napi-rs/skia",
+            "value": 22.2,
+            "range": "±0.75%",
+            "unit": "ops/sec",
+            "extra": "40 samples"
+          },
+          {
+            "name": "Draw gradient#node-canvas",
+            "value": 21.6,
+            "range": "±0.9%",
+            "unit": "ops/sec",
+            "extra": "39 samples"
           }
         ]
       }
