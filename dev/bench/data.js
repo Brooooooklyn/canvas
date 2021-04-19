@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1618815026725,
+  "lastUpdate": 1618815676313,
   "repoUrl": "https://github.com/Brooooooklyn/canvas",
   "entries": {
     "Benchmark": [
@@ -3064,6 +3064,58 @@ window.BENCHMARK_DATA = {
             "range": "±1.9%",
             "unit": "ops/sec",
             "extra": "37 samples"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "lynweklm@gmail.com",
+            "name": "LongYinan",
+            "username": "Brooooooklyn"
+          },
+          "distinct": true,
+          "id": "20a67bcf3789967e15d51c185819d9446fac9d7d",
+          "message": "chore(deps-dev): bump @typescript-eslint/parser from 4.21.0 to 4.22.0\n\nBumps [@typescript-eslint/parser](https://github.com/typescript-eslint/typescript-eslint/tree/HEAD/packages/parser) from 4.21.0 to 4.22.0.\n- [Release notes](https://github.com/typescript-eslint/typescript-eslint/releases)\n- [Changelog](https://github.com/typescript-eslint/typescript-eslint/blob/master/packages/parser/CHANGELOG.md)\n- [Commits](https://github.com/typescript-eslint/typescript-eslint/commits/v4.22.0/packages/parser)\n\nSigned-off-by: dependabot[bot] <support@github.com>",
+          "timestamp": "2021-04-19T14:55:44+08:00",
+          "tree_id": "7002782f04ab891182811cd9b03b14535bf7077c",
+          "url": "https://github.com/Brooooooklyn/canvas/commit/20a67bcf3789967e15d51c185819d9446fac9d7d"
+        },
+        "date": 1618815601571,
+        "tool": "benchmarkjs",
+        "benches": [
+          {
+            "name": "Draw house#@napi-rs/skia",
+            "value": 24.2,
+            "range": "±2.09%",
+            "unit": "ops/sec",
+            "extra": "43 samples"
+          },
+          {
+            "name": "Draw house#node-canvas",
+            "value": 24,
+            "range": "±1.9%",
+            "unit": "ops/sec",
+            "extra": "43 samples"
+          },
+          {
+            "name": "Draw gradient#@napi-rs/skia",
+            "value": 23.3,
+            "range": "±1.66%",
+            "unit": "ops/sec",
+            "extra": "42 samples"
+          },
+          {
+            "name": "Draw gradient#node-canvas",
+            "value": 22.5,
+            "range": "±1.83%",
+            "unit": "ops/sec",
+            "extra": "41 samples"
           }
         ]
       }
