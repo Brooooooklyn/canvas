@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1618827016642,
+  "lastUpdate": 1618843651108,
   "repoUrl": "https://github.com/Brooooooklyn/canvas",
   "entries": {
     "Benchmark": [
@@ -3220,6 +3220,58 @@ window.BENCHMARK_DATA = {
             "range": "±1.38%",
             "unit": "ops/sec",
             "extra": "43 samples"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "yisibl@users.noreply.github.com",
+            "name": "一丝",
+            "username": "yisibl"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b2c9793b4fcab7a2946e647dbf80b6d2c61a761f",
+          "message": "Add pathkit doc(zh-cn) (#235)\n\n* feat: add more boolean operations test cases\r\n\r\n* docs: add pathkit doc",
+          "timestamp": "2021-04-19T22:42:46+08:00",
+          "tree_id": "cfa262e855a9822c7c73a7c1d551c0ff8d94a108",
+          "url": "https://github.com/Brooooooklyn/canvas/commit/b2c9793b4fcab7a2946e647dbf80b6d2c61a761f"
+        },
+        "date": 1618843584907,
+        "tool": "benchmarkjs",
+        "benches": [
+          {
+            "name": "Draw house#@napi-rs/skia",
+            "value": 25,
+            "range": "±0.17%",
+            "unit": "ops/sec",
+            "extra": "45 samples"
+          },
+          {
+            "name": "Draw house#node-canvas",
+            "value": 21,
+            "range": "±0.47%",
+            "unit": "ops/sec",
+            "extra": "39 samples"
+          },
+          {
+            "name": "Draw gradient#@napi-rs/skia",
+            "value": 24,
+            "range": "±0.03%",
+            "unit": "ops/sec",
+            "extra": "44 samples"
+          },
+          {
+            "name": "Draw gradient#node-canvas",
+            "value": 20,
+            "range": "±0.39%",
+            "unit": "ops/sec",
+            "extra": "38 samples"
           }
         ]
       }
