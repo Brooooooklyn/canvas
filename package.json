@@ -60,7 +60,7 @@
     "@jimp/core": "^0.16.1",
     "@jimp/custom": "^0.16.1",
     "@jimp/png": "^0.16.1",
-    "@napi-rs/cli": "^1.0.3",
+    "@napi-rs/cli": "^1.0.4",
     "@octokit/rest": "^18.5.2",
     "@swc-node/register": "^1.0.5",
     "@types/chalk": "^2.2.0",
