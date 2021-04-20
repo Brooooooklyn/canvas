@@ -964,8 +964,6 @@ pub enum PathOp {
   ReverseDifference, // subtract the first path from the op path
 }
 
-#[repr(C)]
-#[derive(Debug, Copy, Clone)]
 impl From<i32> for PathOp {
   fn from(value: i32) -> Self {
     match value {
@@ -979,14 +977,15 @@ impl From<i32> for PathOp {
   }
 }
 
-#[derive(Debug, Clone)]
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
 pub enum TextAlign {
-  Left = 0,
-  Right = 1,
-  Center = 2,
-  Justify = 3,
-  Start = 4,
-  End = 5,
+  Left,
+  Right,
+  Center,
+  Justify,
+  Start,
+  End,
 }
 
 impl TextAlign {
@@ -1018,7 +1017,7 @@ impl FromStr for TextAlign {
   }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum TextBaseline {
   Top,
   Hanging,
