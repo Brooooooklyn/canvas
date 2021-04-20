@@ -11,6 +11,7 @@ impl Path {
       "Path2D",
       path_constructor,
       &vec![
+        // Standard Path2d methods
         Property::new(&env, "addPath")?.with_method(add_path),
         Property::new(&env, "closePath")?.with_method(close_path),
         Property::new(&env, "moveTo")?.with_method(move_to),
@@ -21,6 +22,19 @@ impl Path {
         Property::new(&env, "arcTo")?.with_method(arc_to),
         Property::new(&env, "ellipse")?.with_method(ellipse),
         Property::new(&env, "rect")?.with_method(rect),
+        // extra methods in PathKit
+        Property::new(&env, "op")?.with_method(op),
+        Property::new(&env, "simplify")?.with_method(simplify),
+        Property::new(&env, "setFillType")?.with_method(set_fill_type),
+        Property::new(&env, "getFillType")?.with_method(get_fill_type),
+        Property::new(&env, "asWinding")?.with_method(as_winding),
+        Property::new(&env, "toSVGString")?.with_method(to_svg_string),
+        Property::new(&env, "getBounds")?.with_method(get_bounds),
+        Property::new(&env, "computeTightBounds")?.with_method(compute_tight_bounds),
+        Property::new(&env, "transform")?.with_method(transform),
+        Property::new(&env, "trim")?.with_method(trim),
+        Property::new(&env, "equals")?.with_method(equals),
+        Property::new(&env, "_stroke")?.with_method(stroke),
       ],
     )
   }
@@ -254,4 +268,161 @@ fn rect(ctx: CallContext) -> Result<JsUndefined> {
   path_2d.add_rect(x as f32, y as f32, width as f32, height as f32);
 
   ctx.env.get_undefined()
+}
+
+#[js_function(2)]
+fn op(ctx: CallContext) -> Result<JsObject> {
+  let this: JsObject = ctx.this_unchecked();
+  let path_2d = ctx.env.unwrap::<Path>(&this)?;
+  let other = ctx.get::<JsObject>(0)?;
+  let other_path = ctx.env.unwrap::<Path>(&other)?;
+  let operation = ctx.get::<JsNumber>(1)?.get_int32()?;
+  path_2d.op(other_path, operation.into());
+  Ok(this)
+}
+
+#[js_function]
+fn to_svg_string(ctx: CallContext) -> Result<JsString> {
+  let this: JsObject = ctx.this_unchecked();
+  let path_2d = ctx.env.unwrap::<Path>(&this)?;
+  let sk_string = path_2d.to_svg_string();
+  unsafe {
+    ctx
+      .env
+      .create_string_from_c_char(sk_string.ptr, sk_string.length)
+  }
+}
+
+#[js_function]
+fn simplify(ctx: CallContext) -> Result<JsObject> {
+  let this: JsObject = ctx.this_unchecked();
+  let path_2d = ctx.env.unwrap::<Path>(&this)?;
+
+  path_2d.simplify();
+  Ok(this)
+}
+
+#[js_function(1)]
+fn set_fill_type(ctx: CallContext) -> Result<JsUndefined> {
+  let this: JsObject = ctx.this_unchecked();
+  let path_2d = ctx.env.unwrap::<Path>(&this)?;
+  let fill_type = ctx.get::<JsNumber>(0)?.get_uint32()?;
+
+  path_2d.set_fill_type(fill_type.into());
+
+  ctx.env.get_undefined()
+}
+
+#[js_function]
+fn get_fill_type(ctx: CallContext) -> Result<JsNumber> {
+  let this: JsObject = ctx.this_unchecked();
+  let path_2d = ctx.env.unwrap::<Path>(&this)?;
+
+  ctx.env.create_int32(path_2d.get_fill_type())
+}
+
+#[js_function]
+fn as_winding(ctx: CallContext) -> Result<JsObject> {
+  let this: JsObject = ctx.this_unchecked();
+  let path_2d = ctx.env.unwrap::<Path>(&this)?;
+  path_2d.as_winding();
+  Ok(this)
+}
+
+#[js_function(4)]
+fn stroke(ctx: CallContext) -> Result<JsObject> {
+  let this: JsObject = ctx.this_unchecked();
+  let path_2d = ctx.env.unwrap::<Path>(&this)?;
+  let stroke_width = ctx.get::<JsNumber>(0)?;
+  let miter_limit = ctx.get::<JsNumber>(1)?;
+  let join = ctx.get::<JsNumber>(2)?;
+  let cap = ctx.get::<JsNumber>(3)?;
+
+  path_2d.stroke(
+    StrokeCap::from_raw(cap.get_int32()?)?,
+    StrokeJoin::from_raw(join.get_int32()?)?,
+    stroke_width.get_double()? as f32,
+    miter_limit.get_double()? as f32,
+  );
+  Ok(this)
+}
+
+#[js_function]
+fn compute_tight_bounds(ctx: CallContext) -> Result<JsObject> {
+  let this: JsObject = ctx.this_unchecked();
+  let path_2d = ctx.env.unwrap::<Path>(&this)?;
+
+  let ltrb = path_2d.compute_tight_bounds();
+  let mut arr = ctx.env.create_array_with_length(4)?;
+  arr.set_element(0, ctx.env.create_double(ltrb.0 as f64)?)?;
+  arr.set_element(1, ctx.env.create_double(ltrb.1 as f64)?)?;
+  arr.set_element(2, ctx.env.create_double(ltrb.2 as f64)?)?;
+  arr.set_element(3, ctx.env.create_double(ltrb.3 as f64)?)?;
+  Ok(arr)
+}
+
+#[js_function]
+fn get_bounds(ctx: CallContext) -> Result<JsObject> {
+  let this: JsObject = ctx.this_unchecked();
+  let path_2d = ctx.env.unwrap::<Path>(&this)?;
+
+  let ltrb = path_2d.get_bounds();
+  let mut arr = ctx.env.create_array_with_length(4)?;
+  arr.set_element(0, ctx.env.create_double(ltrb.0 as f64)?)?;
+  arr.set_element(1, ctx.env.create_double(ltrb.1 as f64)?)?;
+  arr.set_element(2, ctx.env.create_double(ltrb.2 as f64)?)?;
+  arr.set_element(3, ctx.env.create_double(ltrb.3 as f64)?)?;
+  Ok(arr)
+}
+
+#[js_function(1)]
+fn transform(ctx: CallContext) -> Result<JsObject> {
+  let this: JsObject = ctx.this_unchecked();
+  let path_2d = ctx.env.unwrap::<Path>(&this)?;
+  let transform_object = ctx.get::<JsObject>(0)?;
+  let a: f64 = transform_object
+    .get_named_property::<JsNumber>("a")?
+    .get_double()?;
+  let b: f64 = transform_object
+    .get_named_property::<JsNumber>("b")?
+    .get_double()?;
+  let c: f64 = transform_object
+    .get_named_property::<JsNumber>("c")?
+    .get_double()?;
+  let d: f64 = transform_object
+    .get_named_property::<JsNumber>("d")?
+    .get_double()?;
+  let e: f64 = transform_object
+    .get_named_property::<JsNumber>("e")?
+    .get_double()?;
+  let f: f64 = transform_object
+    .get_named_property::<JsNumber>("f")?
+    .get_double()?;
+  let trans = Transform::new(a as f32, b as f32, c as f32, d as f32, e as f32, f as f32);
+
+  path_2d.transform(&trans);
+  Ok(this)
+}
+
+#[js_function(3)]
+fn trim(ctx: CallContext) -> Result<JsObject> {
+  let this: JsObject = ctx.this_unchecked();
+  let path_2d = ctx.env.unwrap::<Path>(&this)?;
+  let start = ctx.get::<JsNumber>(0)?.get_double()?;
+  let end = ctx.get::<JsNumber>(1)?.get_double()?;
+  let is_complement = ctx
+    .get::<JsBoolean>(2)
+    .and_then(|v| v.get_value())
+    .unwrap_or(false);
+  path_2d.trim(start as f32, end as f32, is_complement);
+  Ok(this)
+}
+
+#[js_function(1)]
+fn equals(ctx: CallContext) -> Result<JsBoolean> {
+  let this: JsObject = ctx.this_unchecked();
+  let path_2d = ctx.env.unwrap::<Path>(&this)?;
+  let other = ctx.get::<JsObject>(0)?;
+  let is_eq = path_2d == ctx.env.unwrap::<Path>(&other)?;
+  ctx.env.get_boolean(is_eq)
 }

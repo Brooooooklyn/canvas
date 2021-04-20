@@ -1,10 +1,10 @@
 import ava, { TestInterface } from 'ava'
 
-import { createCanvas, Path2D } from '../index'
+import { createCanvas, Path2D, Canvas, SKRSContext2D } from '../index'
 
 const test = ava as TestInterface<{
-  canvas: HTMLCanvasElement
-  ctx: CanvasRenderingContext2D
+  canvas: Canvas
+  ctx: SKRSContext2D
 }>
 
 test.beforeEach((t) => {

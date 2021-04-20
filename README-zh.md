@@ -2,16 +2,14 @@
 
 ![CI](https://github.com/Brooooooklyn/canvas/workflows/CI/badge.svg)
 
-> 🚀 Help me to become a full-time open-source developer by [sponsoring me on Github](https://github.com/sponsors/Brooooooklyn)
+> 🚀 帮助我成为全职开源开发者: [Sponsoring me on Github](https://github.com/sponsors/Brooooooklyn)
 
 Google Skia binding to Node.js via `N-API`.
 
-> ⚠️ This project is in very early stage.<br/>
-> For details on planned features and future direction please refer to the [Roadmap](https://github.com/Brooooooklyn/canvas/issues/113).
+> ⚠️ 这个项目还处于早期开发阶段.<br/>
+> 在这里可以找到此项目的具体开发计划和路线图 [Roadmap](https://github.com/Brooooooklyn/canvas/issues/113).
 
-[中文文档](./README-zh.md)
-
-# Support matrix
+# 支持的系统和 Node.js 版本
 
 |                       | node10 | node12 | node14 | node15 |
 | --------------------- | ------ | ------ | ------ | ------ |
@@ -24,7 +22,7 @@ Google Skia binding to Node.js via `N-API`.
 | Linux arm gnueabihf   | ✓      | ✓      | ✓      | ✓      |
 | Linux aarch64 android | ✓      | ✓      | ✓      | ✓      |
 
-# Usage
+# 用法
 
 ```js
 const { promises } = require('fs')
@@ -65,7 +63,7 @@ main()
 
 ![](./example/simple.png)
 
-# Features
+# 功能
 
 ## Path2D
 
@@ -128,10 +126,10 @@ export class Path2D {
 
 ## PathKit
 
-`PathKit` is a toolset for manipulating Path in `Skia`, supporting **_quadratic beziers_**, **_cubic beziers_** and **_conics_**.
-The main features are.
+PathKit 是 Skia 中用来操作 Path 的工具集，支持二次贝塞尔曲线（quadratic beziers）、三次贝塞尔曲线（cubic beziers）和圆锥形（conics）。
+主要的功能有：
 
-### Path Operation
+### 布尔运算
 
 `.op(path, PathOp)`
 
@@ -147,20 +145,20 @@ pathOne.op(pathTwo, PathOp.Intersect).toSVGString()
 // => "M100 100L58 100C53.5817 100 50 96.4183 50 92L50 50L92 50C96.4183 50 100 53.5817 100 58L100 100Z"
 ```
 
-- **Union**, subtract the op path from the first path
-- **Difference**, intersect the two paths
-- **ReverseDifference**, union (inclusive-or) the two paths
-- **Intersect**, exclusive-or the two paths
-- **XOR**, subtract the first path from the op path
+- **Union** 联集（并集）
+- **Difference** 减去顶层
+- **ReverseDifference** 减去底层
+- **Intersect** 交集
+- **XOR** 差集
 
 ![boolean-operations](./docs/imgs/boolean-operations.svg)
 
-### Covert `FillType` in **_Path_**
+### 转换 **_Path_** 的 `FillType`
 
 `.asWinding()`
 
-You can convert `fill-rule="evenodd"` to `fill-rule="nonzero"` in SVG.
-This is useful for **OpenType** font-related tools, as `fill-rule="nonzero"` is only supported in **OpenType** fonts.
+可以把 SVG 中的 `fill-rule="evenodd"` 转换为 `fill-rule="nonzero"`，
+这对 OpenType 字体相关工具非常有用，因为 OpenType 字体中只支持 `fill-rule="nonzero"`。
 
 ```js
 const pathCircle = new Path2D(
@@ -171,15 +169,15 @@ pathCircle.asWinding().toSVGString()
 // => "M50 87.5776C29.2464 87.5776 12.4224 70.7536 12.4224 50C12.4224 29.2464 29.2464 12.4224 50 12.4224C70.7536 12.4224 87.5776 29.2464 87.5776 50C87.5776 70.7536 70.7536 87.5776 50 87.5776ZM50 100C77.6142 100 100 77.6142 100 50C100 22.3858 77.6142 0 50 0C22.3858 0 0 22.3858 0 50C0 77.6142 22.3858 100 50 100Z"
 ```
 
-### Simplify **_Path_**
+### 简化 **_Path_**
 
 `.simplify()`
 
-Set the path to the same non-overlapping contour as the original path area, which means that it can also remove overlapping paths.
+将路径设置为与原路径区域相同的非重叠轮廓（non-overlapping），也就是说它还可以移除重叠路径。
 
 <img width="800" src="./docs/imgs/simplify.png" >
 
-[SVG with overlapping paths](./docs/imgs/overlapping-path.svg) (Left)
+[带有重叠路径的 SVG](./docs/imgs/overlapping-path.svg)（左侧）
 
 ```js
 const path =
@@ -195,11 +193,11 @@ path.simplify().toSVGString()
 
 ![](./example/tiger.png)
 
-# Building
+# 编译项目
 
-## Build skia from source
+## 从源码编译
 
-You can build this project from source, with no OS-specific package installing commands required:
+你可以从源码编译此项目，无需安装任何额外的系统依赖:
 
 ```sh
 # Clone the code:
@@ -218,9 +216,9 @@ $ yarn test
 $ node example/tiger.js
 ```
 
-## Pull pre-build skia binary from GitHub
+## 从 GitHub 上下载预编译的 `skia` 二进制
 
-You can pull skia pre-build binaries if you just care the `Rust` part:
+如果你只关心项目的 `Rust` 部分，可以下载预编译的 `skia` 二进制静态链接文件:
 
 ```sh
 # Clone the code:
