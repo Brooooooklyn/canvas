@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1618848242058,
+  "lastUpdate": 1618929383902,
   "repoUrl": "https://github.com/Brooooooklyn/canvas",
   "entries": {
     "Benchmark": [
@@ -3374,6 +3374,58 @@ window.BENCHMARK_DATA = {
             "name": "Draw gradient#node-canvas",
             "value": 20.41,
             "range": "±1.3%",
+            "unit": "ops/sec",
+            "extra": "38 samples"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "lynweklm@gmail.com",
+            "name": "LongYinan",
+            "username": "Brooooooklyn"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "ed24ec708c8c5307ad41ceb23900c1bd11dc710e",
+          "message": "Merge pull request #236 from Brooooooklyn/add-getFillTypeString\n\nfeat: add getFillTypeString() for PathKit",
+          "timestamp": "2021-04-20T22:30:44+08:00",
+          "tree_id": "b19ae43af58b437534614957de61508cbefab1ee",
+          "url": "https://github.com/Brooooooklyn/canvas/commit/ed24ec708c8c5307ad41ceb23900c1bd11dc710e"
+        },
+        "date": 1618929307310,
+        "tool": "benchmarkjs",
+        "benches": [
+          {
+            "name": "Draw house#@napi-rs/skia",
+            "value": 21,
+            "range": "±1.67%",
+            "unit": "ops/sec",
+            "extra": "39 samples"
+          },
+          {
+            "name": "Draw house#node-canvas",
+            "value": 22,
+            "range": "±1.64%",
+            "unit": "ops/sec",
+            "extra": "40 samples"
+          },
+          {
+            "name": "Draw gradient#@napi-rs/skia",
+            "value": 20.7,
+            "range": "±1.16%",
+            "unit": "ops/sec",
+            "extra": "38 samples"
+          },
+          {
+            "name": "Draw gradient#node-canvas",
+            "value": 20.6,
+            "range": "±1.74%",
             "unit": "ops/sec",
             "extra": "38 samples"
           }
