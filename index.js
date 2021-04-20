@@ -58,6 +58,18 @@ Path2D.prototype.stroke = function stroke(strokeOptions = {}) {
   return this._stroke(width, miterLimit, join, cap)
 }
 
+Path2D.prototype.getFillTypeString = function getFillTypeString() {
+  const fillType = this.getFillType()
+
+  if (fillType === FillType.Winding) {
+    return 'nonzero'
+  } else if (fillType === FillType.EvenOdd) {
+    return 'evenodd'
+  } else {
+    return 'nonzero' // default
+  }
+}
+
 function createCanvas(width, height) {
   const canvasElement = new CanvasElement(width, height)
   const ctx = new CanvasRenderingContext2D(width, height)
