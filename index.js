@@ -28,6 +28,21 @@ const StrokeCap = {
   Square: 2,
 }
 
+const PathOp = {
+  Difference: 0, // subtract the op path from the first path
+  Intersect: 1, // intersect the two paths
+  Union: 2, // union (inclusive-or) the two paths
+  XOR: 3, // exclusive-or the two paths
+  ReverseDifference: 4, // subtract the first path from the op path
+}
+
+const FillType = {
+  Winding: 0,
+  EvenOdd: 1,
+  InverseWinding: 2,
+  InverseEvenOdd: 3,
+}
+
 CanvasRenderingContext2D.prototype.createPattern = function createPattern(image, repetition) {
   if (image instanceof ImageData) {
     const pattern = new CanvasPattern(image, repetition, 0)
@@ -110,21 +125,6 @@ function createCanvas(width, height) {
   ctx.canvas = canvasElement
 
   return canvasElement
-}
-
-const PathOp = {
-  Difference: 0, // subtract the op path from the first path
-  Intersect: 1, // intersect the two paths
-  Union: 2, // union (inclusive-or) the two paths
-  XOR: 3, // exclusive-or the two paths
-  ReverseDifference: 4, // subtract the first path from the op path
-}
-
-const FillType = {
-  Winding: 0,
-  EvenOdd: 1,
-  InverseWinding: 2,
-  InverseEvenOdd: 3,
 }
 
 module.exports = {
