@@ -64,6 +64,19 @@ test('FillType must be Winding after conversion by AsWinding()', (t) => {
   t.is(path.asWinding().getFillType(), FillType.Winding)
 })
 
+test('getFillTypeString()', (t) => {
+  const path = new Path2D()
+  path.rect(1, 2, 3, 4)
+  t.is(path.getFillTypeString(), 'nonzero')
+})
+
+test('getFillTypeString() and setFillType()', (t) => {
+  const path = new Path2D()
+  path.rect(1, 2, 3, 4)
+  path.setFillType(FillType.EvenOdd)
+  t.is(path.getFillTypeString(), 'evenodd')
+})
+
 test('Path FillType must be converted from nonzero to evenodd', (t) => {
   const pathCircle = new Path2D(
     'M50 87.5776C70.7536 87.5776 87.5776 70.7536 87.5776 50C87.5776 29.2464 70.7536 12.4224 50 12.4224C29.2464 12.4224 12.4224 29.2464 12.4224 50C12.4224 70.7536 29.2464 87.5776 50 87.5776ZM50 100C77.6142 100 100 77.6142 100 50C100 22.3858 77.6142 0 50 0C22.3858 0 0 22.3858 0 50C0 77.6142 22.3858 100 50 100Z',

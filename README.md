@@ -113,6 +113,7 @@ export class Path2D {
   op(path: Path2D, operation: PathOp): Path2D
   toSVGString(): string
   getFillType(): FillType
+  getFillTypeString(): string
   setFillType(type: FillType): void
   simplify(): Path2D
   asWinding(): Path2D
