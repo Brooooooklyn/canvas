@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1618930015501,
+  "lastUpdate": 1618986452880,
   "repoUrl": "https://github.com/Brooooooklyn/canvas",
   "entries": {
     "Benchmark": [
@@ -3478,6 +3478,58 @@ window.BENCHMARK_DATA = {
             "name": "Draw gradient#node-canvas",
             "value": 17,
             "range": "±1.22%",
+            "unit": "ops/sec",
+            "extra": "44 samples"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "lynweklm@gmail.com",
+            "name": "LongYinan",
+            "username": "Brooooooklyn"
+          },
+          "committer": {
+            "email": "lynweklm@gmail.com",
+            "name": "LongYinan",
+            "username": "Brooooooklyn"
+          },
+          "distinct": true,
+          "id": "88d3f21efeed3fb55fc32f2d8e0ee7d8d1f8a88f",
+          "message": "chore: registry.yarnpkg.com => registry.npmjs.org in yarn.lock",
+          "timestamp": "2021-04-21T14:21:06+08:00",
+          "tree_id": "7a2f0651bb289526a08ac3813920ddbbb96c8e4c",
+          "url": "https://github.com/Brooooooklyn/canvas/commit/88d3f21efeed3fb55fc32f2d8e0ee7d8d1f8a88f"
+        },
+        "date": 1618986371145,
+        "tool": "benchmarkjs",
+        "benches": [
+          {
+            "name": "Draw house#@napi-rs/skia",
+            "value": 19,
+            "range": "±1.11%",
+            "unit": "ops/sec",
+            "extra": "51 samples"
+          },
+          {
+            "name": "Draw house#node-canvas",
+            "value": 17,
+            "range": "±0.95%",
+            "unit": "ops/sec",
+            "extra": "45 samples"
+          },
+          {
+            "name": "Draw gradient#@napi-rs/skia",
+            "value": 19,
+            "range": "±0.65%",
+            "unit": "ops/sec",
+            "extra": "51 samples"
+          },
+          {
+            "name": "Draw gradient#node-canvas",
+            "value": 16,
+            "range": "±0.18%",
             "unit": "ops/sec",
             "extra": "44 samples"
           }
