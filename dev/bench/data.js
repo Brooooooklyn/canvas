@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1619173719572,
+  "lastUpdate": 1619193098724,
   "repoUrl": "https://github.com/Brooooooklyn/canvas",
   "entries": {
     "Benchmark": [
@@ -3582,6 +3582,58 @@ window.BENCHMARK_DATA = {
             "name": "Draw gradient#node-canvas",
             "value": 21,
             "range": "±1.16%",
+            "unit": "ops/sec",
+            "extra": "38 samples"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "yisibl@users.noreply.github.com",
+            "name": "一丝",
+            "username": "yisibl"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c238113ef1feafd179d6c190e2a29e51326737d3",
+          "message": "feat: add PathKit.dash() (#238)\n\n* feat: add PathKit.dash()",
+          "timestamp": "2021-04-23T23:46:37+08:00",
+          "tree_id": "09b540dce38d2d9ce231d730a18eb28330ee4504",
+          "url": "https://github.com/Brooooooklyn/canvas/commit/c238113ef1feafd179d6c190e2a29e51326737d3"
+        },
+        "date": 1619193015997,
+        "tool": "benchmarkjs",
+        "benches": [
+          {
+            "name": "Draw house#@napi-rs/skia",
+            "value": 25,
+            "range": "±0.03%",
+            "unit": "ops/sec",
+            "extra": "45 samples"
+          },
+          {
+            "name": "Draw house#node-canvas",
+            "value": 21,
+            "range": "±0.35%",
+            "unit": "ops/sec",
+            "extra": "39 samples"
+          },
+          {
+            "name": "Draw gradient#@napi-rs/skia",
+            "value": 24,
+            "range": "±0.04%",
+            "unit": "ops/sec",
+            "extra": "44 samples"
+          },
+          {
+            "name": "Draw gradient#node-canvas",
+            "value": 20,
+            "range": "±0.36%",
             "unit": "ops/sec",
             "extra": "38 samples"
           }
