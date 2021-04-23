@@ -208,6 +208,13 @@ test('trim', (t) => {
   t.snapshot(box.toSVGString())
 })
 
+test('dash', (t) => {
+  const box = new Path2D()
+  box.rect(0, 0, 100, 100)
+  box.dash(20, 10, 3)
+  t.is(box.toSVGString(), '')
+})
+
 function drawSimplePath() {
   const path = new Path2D()
   path.moveTo(0, 0)

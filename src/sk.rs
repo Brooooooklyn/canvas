@@ -367,6 +367,13 @@ mod ffi {
       is_complement: bool,
     ) -> bool;
 
+    pub fn skiac_path_dash(
+      path: *mut skiac_path,
+      on: f32,
+      off: f32,
+      phase: f32,
+    ) -> bool;
+
     pub fn skiac_path_equals(path: *mut skiac_path, other: *mut skiac_path) -> bool;
 
     pub fn skiac_path_destroy(path: *mut skiac_path);
@@ -1985,6 +1992,11 @@ impl Path {
   #[inline]
   pub fn trim(&mut self, start: f32, end: f32, is_complement: bool) -> bool {
     unsafe { ffi::skiac_path_trim(self.0, start, end, is_complement) }
+  }
+
+  #[inline]
+  pub fn dash(&mut self, on: f32, off: f32, phase: f32) -> bool {
+    unsafe { ffi::skiac_path_dash(self.0, on, off, phase) }
   }
 }
 

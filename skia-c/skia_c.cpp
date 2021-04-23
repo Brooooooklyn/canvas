@@ -542,6 +542,21 @@ extern "C"
     return false;
   }
 
+  bool skiac_path_dash(skiac_path *c_path, float on, float off, float phase)
+  {
+    float intervals[] = {on, off};
+    auto pe = SkDashPathEffect::Make(intervals, 2, phase);
+    if (!pe) {
+        return false;
+    }
+    SkStrokeRec rec(SkStrokeRec::InitStyle::kHairline_InitStyle);
+    if (pe->filterPath(PATH_CAST, *PATH_CAST, &rec, nullptr))
+    {
+      return true;
+    }
+    return false;
+  }
+
   bool skiac_path_equals(skiac_path *c_path, skiac_path *other_path)
   {
     return *PATH_CAST == *reinterpret_cast<SkPath *>(other_path);

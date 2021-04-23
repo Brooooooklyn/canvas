@@ -176,6 +176,7 @@ extern "C"
   void skiac_path_get_bounds(skiac_path *c_path, skiac_rect *c_rect);
   void skiac_path_compute_tight_bounds(skiac_path *c_path, skiac_rect *c_rect);
   bool skiac_path_trim(skiac_path *c_path, float start_t, float stop_t, bool is_complement);
+  bool skiac_path_dash(skiac_path *c_path, float on, float off, float phase);
   bool skiac_path_equals(skiac_path *c_path, skiac_path *other_path);
   void skiac_path_destroy(skiac_path *c_path);
   void skiac_path_set_fill_type(skiac_path *c_path, int type);
