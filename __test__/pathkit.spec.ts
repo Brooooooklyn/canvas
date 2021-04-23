@@ -215,6 +215,13 @@ test('trim', (t) => {
   t.snapshot(svg)
 })
 
+test('dash', (t) => {
+  const box = new Path2D()
+  box.rect(0, 0, 100, 100)
+  box.dash(20, 10, 3)
+  t.is(box.toSVGString(), 'M20 0L40 0M50 0L70 0M80 0L100 0M100 10L100 30M100 40L100 60M100 70L100 90M100 100L100 100L80 100M70 100L50 100M40 100L20 100M10 100L0 100L0 90M0 80L0 60M0 50L0 30M0 20L0 0L10 0')
+})
+
 function drawSimplePath() {
   const path = new Path2D()
   path.moveTo(0, 0)
