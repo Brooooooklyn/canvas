@@ -204,8 +204,15 @@ test('Transform', (t) => {
 test('trim', (t) => {
   const box = new Path2D()
   box.rect(0, 0, 100, 100)
-  box.trim(0.25, 1.0)
-  t.snapshot(box.toSVGString())
+  // box is now the 3 segments that look like a U. 
+  // (the top segment has been removed).
+  box.trim(0.25, 1)
+    .stroke({ width: 10 })
+    .simplify()
+
+  const svg = `<svg width="100" height="100" viewBox="0 0 100 100"><path fill="blue" d="${box.toSVGString()}"></path></svg>`
+
+  t.snapshot(svg)
 })
 
 function drawSimplePath() {
