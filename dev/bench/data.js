@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1619416868359,
+  "lastUpdate": 1619432189438,
   "repoUrl": "https://github.com/Brooooooklyn/canvas",
   "entries": {
     "Benchmark": [
@@ -3792,6 +3792,58 @@ window.BENCHMARK_DATA = {
             "range": "±2.09%",
             "unit": "ops/sec",
             "extra": "43 samples"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b70190805161acc3c450d89a97a8749e66f331cb",
+          "message": "chore(deps-dev): bump eslint-config-prettier from 8.2.0 to 8.3.0",
+          "timestamp": "2021-04-26T18:10:52+08:00",
+          "tree_id": "e4a89a6f2c4d7403438d137de5bc19b8bd42ecc3",
+          "url": "https://github.com/Brooooooklyn/canvas/commit/b70190805161acc3c450d89a97a8749e66f331cb"
+        },
+        "date": 1619432113351,
+        "tool": "benchmarkjs",
+        "benches": [
+          {
+            "name": "Draw house#@napi-rs/skia",
+            "value": 21,
+            "range": "±0.17%",
+            "unit": "ops/sec",
+            "extra": "39 samples"
+          },
+          {
+            "name": "Draw house#node-canvas",
+            "value": 18,
+            "range": "±0.52%",
+            "unit": "ops/sec",
+            "extra": "48 samples"
+          },
+          {
+            "name": "Draw gradient#@napi-rs/skia",
+            "value": 20,
+            "range": "±0.6%",
+            "unit": "ops/sec",
+            "extra": "37 samples"
+          },
+          {
+            "name": "Draw gradient#node-canvas",
+            "value": 17,
+            "range": "±0.29%",
+            "unit": "ops/sec",
+            "extra": "46 samples"
           }
         ]
       }
