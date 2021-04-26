@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1619193098724,
+  "lastUpdate": 1619416748115,
   "repoUrl": "https://github.com/Brooooooklyn/canvas",
   "entries": {
     "Benchmark": [
@@ -3634,6 +3634,58 @@ window.BENCHMARK_DATA = {
             "name": "Draw gradient#node-canvas",
             "value": 20,
             "range": "±0.36%",
+            "unit": "ops/sec",
+            "extra": "38 samples"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "a4570a4440b22437ad8cc438fe99087a10f65b53",
+          "message": "chore(deps-dev): bump eslint-plugin-sonarjs from 0.6.0 to 0.7.0",
+          "timestamp": "2021-04-26T13:54:05+08:00",
+          "tree_id": "124e227a9f9013443bbbd82179225367d8548bd5",
+          "url": "https://github.com/Brooooooklyn/canvas/commit/a4570a4440b22437ad8cc438fe99087a10f65b53"
+        },
+        "date": 1619416679500,
+        "tool": "benchmarkjs",
+        "benches": [
+          {
+            "name": "Draw house#@napi-rs/skia",
+            "value": 25,
+            "range": "±1.27%",
+            "unit": "ops/sec",
+            "extra": "45 samples"
+          },
+          {
+            "name": "Draw house#node-canvas",
+            "value": 22,
+            "range": "±1.33%",
+            "unit": "ops/sec",
+            "extra": "40 samples"
+          },
+          {
+            "name": "Draw gradient#@napi-rs/skia",
+            "value": 24,
+            "range": "±1.08%",
+            "unit": "ops/sec",
+            "extra": "43 samples"
+          },
+          {
+            "name": "Draw gradient#node-canvas",
+            "value": 20,
+            "range": "±1.28%",
             "unit": "ops/sec",
             "extra": "38 samples"
           }
