@@ -425,12 +425,12 @@ extern "C"
     return PAINT_CAST->getStrokeCap();
   }
 
-  void skiac_paint_set_stroke_join(skiac_paint *c_paint, int join)
+  void skiac_paint_set_stroke_join(skiac_paint *c_paint, uint8_t join)
   {
     PAINT_CAST->setStrokeJoin((SkPaint::Join)join);
   }
 
-  int skiac_paint_get_stroke_join(skiac_paint *c_paint)
+  uint8_t skiac_paint_get_stroke_join(skiac_paint *c_paint)
   {
     return PAINT_CAST->getStrokeJoin();
   }
@@ -496,8 +496,9 @@ extern "C"
     return AsWinding(*PATH_CAST, PATH_CAST);
   }
 
-  bool skiac_path_stroke(skiac_path *c_path, int cap, int join, float width, float miter_limit)
+  bool skiac_path_stroke(skiac_path *c_path, int cap, uint8_t join, float width, float miter_limit)
   {
+    auto path = PATH_CAST;
     SkPaint p;
     p.setStyle(SkPaint::kStroke_Style);
     p.setStrokeCap((SkPaint::Cap)cap);
@@ -505,7 +506,7 @@ extern "C"
     p.setStrokeWidth(width);
     p.setStrokeMiter(miter_limit);
 
-    return p.getFillPath(*PATH_CAST, PATH_CAST);
+    return p.getFillPath(*path, path);
   }
 
   void skiac_path_compute_tight_bounds(skiac_path *c_path, skiac_rect *c_rect)

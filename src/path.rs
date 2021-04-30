@@ -341,7 +341,7 @@ fn stroke(ctx: CallContext) -> Result<JsObject> {
 
   path_2d.stroke(
     StrokeCap::from_raw(cap.get_int32()?)?,
-    StrokeJoin::from_raw(join.get_int32()?)?,
+    StrokeJoin::from_raw(join.get_uint32()? as u8)?,
     stroke_width.get_double()? as f32,
     miter_limit.get_double()? as f32,
   );
@@ -426,8 +426,8 @@ fn dash(ctx: CallContext) -> Result<JsObject> {
   let on = ctx.get::<JsNumber>(0)?.get_double()?;
   let off = ctx.get::<JsNumber>(1)?.get_double()?;
   let phase = ctx.get::<JsNumber>(1)?.get_double()?;
- 
-  path_2d.dash(on as f32, off as f32, phase as f32,);
+
+  path_2d.dash(on as f32, off as f32, phase as f32);
   Ok(this)
 }
 
