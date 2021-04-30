@@ -306,9 +306,9 @@ mod ffi {
 
     pub fn skiac_paint_get_stroke_cap(paint: *mut skiac_paint) -> i32;
 
-    pub fn skiac_paint_set_stroke_join(paint: *mut skiac_paint, join: i32);
+    pub fn skiac_paint_set_stroke_join(paint: *mut skiac_paint, join: u8);
 
-    pub fn skiac_paint_get_stroke_join(paint: *mut skiac_paint) -> i32;
+    pub fn skiac_paint_get_stroke_join(paint: *mut skiac_paint) -> u8;
 
     pub fn skiac_paint_set_stroke_miter(paint: *mut skiac_paint, miter: f32);
 
@@ -351,7 +351,7 @@ mod ffi {
     pub fn skiac_path_stroke(
       c_path: *mut skiac_path,
       cap: i32,
-      join: i32,
+      join: u8,
       width: f32,
       miter_limit: f32,
     ) -> bool;
@@ -367,12 +367,7 @@ mod ffi {
       is_complement: bool,
     ) -> bool;
 
-    pub fn skiac_path_dash(
-      path: *mut skiac_path,
-      on: f32,
-      off: f32,
-      phase: f32,
-    ) -> bool;
+    pub fn skiac_path_dash(path: *mut skiac_path, on: f32, off: f32, phase: f32) -> bool;
 
     pub fn skiac_path_equals(path: *mut skiac_path, other: *mut skiac_path) -> bool;
 
@@ -670,15 +665,16 @@ impl FromStr for StrokeCap {
   }
 }
 
+#[repr(u8)]
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub enum StrokeJoin {
-  Miter = 0,
-  Round = 1,
-  Bevel = 2,
+  Miter,
+  Round,
+  Bevel,
 }
 
 impl StrokeJoin {
-  pub fn from_raw(join: i32) -> Result<Self, SkError> {
+  pub fn from_raw(join: u8) -> Result<Self, SkError> {
     match join {
       0 => Ok(Self::Miter),
       1 => Ok(Self::Round),
@@ -1626,7 +1622,7 @@ impl Paint {
   #[inline]
   pub fn set_stroke_join(&mut self, join: StrokeJoin) {
     unsafe {
-      ffi::skiac_paint_set_stroke_join(self.0, join as i32);
+      ffi::skiac_paint_set_stroke_join(self.0, join as u8);
     }
   }
 
@@ -1962,7 +1958,7 @@ impl Path {
 
   #[inline]
   pub fn stroke(&mut self, cap: StrokeCap, join: StrokeJoin, width: f32, miter_limit: f32) -> bool {
-    unsafe { ffi::skiac_path_stroke(self.0, cap as i32, join as i32, width, miter_limit) }
+    unsafe { ffi::skiac_path_stroke(self.0, cap as i32, join as u8, width, miter_limit) }
   }
 
   #[inline]

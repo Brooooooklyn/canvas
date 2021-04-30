@@ -156,8 +156,8 @@ extern "C"
   float skiac_paint_get_stroke_width(skiac_paint *c_paint);
   void skiac_paint_set_stroke_cap(skiac_paint *c_paint, int cap);
   int skiac_paint_get_stroke_cap(skiac_paint *c_paint);
-  void skiac_paint_set_stroke_join(skiac_paint *c_paint, int join);
-  int skiac_paint_get_stroke_join(skiac_paint *c_paint);
+  void skiac_paint_set_stroke_join(skiac_paint *c_paint, uint8_t join);
+  uint8_t skiac_paint_get_stroke_join(skiac_paint *c_paint);
   void skiac_paint_set_stroke_miter(skiac_paint *c_paint, float miter);
   float skiac_paint_get_stroke_miter(skiac_paint *c_paint);
   void skiac_paint_set_path_effect(skiac_paint *c_paint, skiac_path_effect *c_path_effect);
@@ -172,7 +172,7 @@ extern "C"
   bool skiac_path_op(skiac_path *c_path_one, skiac_path *c_path_two, int op);
   void skiac_path_to_svg_string(skiac_path *c_path, skiac_string *c_string);
   bool skiac_path_simplify(skiac_path *c_path);
-  bool skiac_path_stroke(skiac_path *c_path, int cap, int join, float width, float miter_limit);
+  bool skiac_path_stroke(skiac_path *c_path, int cap, uint8_t join, float width, float miter_limit);
   void skiac_path_get_bounds(skiac_path *c_path, skiac_rect *c_rect);
   void skiac_path_compute_tight_bounds(skiac_path *c_path, skiac_rect *c_rect);
   bool skiac_path_trim(skiac_path *c_path, float start_t, float stop_t, bool is_complement);
