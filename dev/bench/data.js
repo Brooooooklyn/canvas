@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1619434886368,
+  "lastUpdate": 1619796607351,
   "repoUrl": "https://github.com/Brooooooklyn/canvas",
   "entries": {
     "Benchmark": [
@@ -3948,6 +3948,58 @@ window.BENCHMARK_DATA = {
             "range": "±0.31%",
             "unit": "ops/sec",
             "extra": "46 samples"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "lynweklm@gmail.com",
+            "name": "LongYinan",
+            "username": "Brooooooklyn"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "306367d9daa46e676b898f3859c9d988bf3cee41",
+          "message": "Merge pull request #239 from Brooooooklyn/add-StrokeCap-test\n\nfeat: add  PathKit.StrokeJoin test",
+          "timestamp": "2021-04-30T23:24:30+08:00",
+          "tree_id": "4de04f187d6692915932981954e39eb129f543d3",
+          "url": "https://github.com/Brooooooklyn/canvas/commit/306367d9daa46e676b898f3859c9d988bf3cee41"
+        },
+        "date": 1619796528916,
+        "tool": "benchmarkjs",
+        "benches": [
+          {
+            "name": "Draw house#@napi-rs/skia",
+            "value": 20,
+            "range": "±1.54%",
+            "unit": "ops/sec",
+            "extra": "36 samples"
+          },
+          {
+            "name": "Draw house#node-canvas",
+            "value": 21,
+            "range": "±1.63%",
+            "unit": "ops/sec",
+            "extra": "38 samples"
+          },
+          {
+            "name": "Draw gradient#@napi-rs/skia",
+            "value": 19,
+            "range": "±0.94%",
+            "unit": "ops/sec",
+            "extra": "36 samples"
+          },
+          {
+            "name": "Draw gradient#node-canvas",
+            "value": 20,
+            "range": "±1.34%",
+            "unit": "ops/sec",
+            "extra": "37 samples"
           }
         ]
       }
