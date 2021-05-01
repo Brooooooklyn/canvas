@@ -66,7 +66,7 @@ CanvasRenderingContext2D.prototype.getImageData = function getImageData(x, y, w,
 
 Path2D.prototype.stroke = function stroke(strokeOptions = {}) {
   const width = typeof strokeOptions.width === 'undefined' ? 1 : strokeOptions.width
-  const miterLimit = typeof strokeOptions.miterLimit === 'undefined' ? 1 : strokeOptions.miterLimit
+  const miterLimit = typeof strokeOptions.miterLimit === 'undefined' ? 4 : strokeOptions.miterLimit
   const join = typeof strokeOptions.join === 'undefined' ? StrokeJoin.Miter : strokeOptions.join
   const cap = typeof strokeOptions.cap === 'undefined' ? StrokeCap.Butt : strokeOptions.cap
 

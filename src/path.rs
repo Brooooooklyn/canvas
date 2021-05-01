@@ -33,6 +33,7 @@ impl Path {
         Property::new(&env, "computeTightBounds")?.with_method(compute_tight_bounds),
         Property::new(&env, "transform")?.with_method(transform),
         Property::new(&env, "trim")?.with_method(trim),
+        Property::new(&env, "dash")?.with_method(dash),
         Property::new(&env, "equals")?.with_method(equals),
         Property::new(&env, "_stroke")?.with_method(stroke),
       ],
@@ -340,7 +341,7 @@ fn stroke(ctx: CallContext) -> Result<JsObject> {
 
   path_2d.stroke(
     StrokeCap::from_raw(cap.get_int32()?)?,
-    StrokeJoin::from_raw(join.get_int32()?)?,
+    StrokeJoin::from_raw(join.get_uint32()? as u8)?,
     stroke_width.get_double()? as f32,
     miter_limit.get_double()? as f32,
   );
@@ -415,6 +416,18 @@ fn trim(ctx: CallContext) -> Result<JsObject> {
     .and_then(|v| v.get_value())
     .unwrap_or(false);
   path_2d.trim(start as f32, end as f32, is_complement);
+  Ok(this)
+}
+
+#[js_function(3)]
+fn dash(ctx: CallContext) -> Result<JsObject> {
+  let this: JsObject = ctx.this_unchecked();
+  let path_2d = ctx.env.unwrap::<Path>(&this)?;
+  let on = ctx.get::<JsNumber>(0)?.get_double()?;
+  let off = ctx.get::<JsNumber>(1)?.get_double()?;
+  let phase = ctx.get::<JsNumber>(1)?.get_double()?;
+
+  path_2d.dash(on as f32, off as f32, phase as f32);
   Ok(this)
 }
 
