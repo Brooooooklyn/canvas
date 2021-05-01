@@ -132,6 +132,27 @@ mod ffi {
     pub data: *mut skiac_data,
   }
 
+  #[repr(C)]
+  #[derive(Copy, Clone, Default, Debug)]
+  pub struct skiac_font_metrics {
+    pub flags: u32,
+    pub top: f32,
+    pub ascent: f32,
+    pub descent: f32,
+    pub bottom: f32,
+    pub leading: f32,
+    pub avg_char_width: f32,
+    pub max_char_width: f32,
+    pub x_min: f32,
+    pub x_max: f32,
+    pub x_height: f32,
+    pub cap_height: f32,
+    underline_thickness: f32,
+    underline_position: f32,
+    strikeout_thickness: f32,
+    strikeout_position: f32,
+  }
+
   extern "C" {
 
     pub fn skiac_surface_create_rgba_premultiplied(width: i32, height: i32) -> *mut skiac_surface;
@@ -539,6 +560,13 @@ mod ffi {
 
     // SkString
     pub fn skiac_delete_sk_string(c_sk_string: *mut skiac_sk_string);
+
+    pub fn skiac_font_metrics_create(
+      font_size: f32,
+      font_family: *const ::std::os::raw::c_char,
+    ) -> *mut skiac_font_metrics;
+
+    pub fn skiac_font_metrics_destroy(c_font_metrics: *mut skiac_font_metrics);
   }
 }
 
@@ -1442,7 +1470,11 @@ impl Canvas {
   ) {
     let c_text = std::ffi::CString::new(text).unwrap();
     let c_font_family = std::ffi::CString::new(font_family).unwrap();
+    let metrics = FontMetrics::new(font_size, font_family);
+
     unsafe {
+      let _metrics_ref =
+        std::mem::transmute::<*mut ffi::skiac_font_metrics, &ffi::skiac_font_metrics>(metrics.0);
       ffi::skiac_canvas_draw_text(
         self.0,
         c_text.as_ptr(),
@@ -2522,6 +2554,29 @@ pub struct SkiaString {
 impl Drop for SkiaString {
   fn drop(&mut self) {
     unsafe { ffi::skiac_delete_sk_string(self.sk_string) }
+  }
+}
+
+#[derive(Debug, Clone)]
+pub struct FontMetrics(pub *mut ffi::skiac_font_metrics);
+
+impl FontMetrics {
+  #[inline]
+  pub fn new(font_size: f32, font_family: &str) -> FontMetrics {
+    unsafe {
+      let c_font_family = std::ffi::CString::new(font_family).unwrap();
+      let c_font_metrics = ffi::skiac_font_metrics_create(font_size, c_font_family.as_ptr());
+      let metrics = FontMetrics(c_font_metrics);
+      // println!("top: {}", c_font_metrics.top);
+      metrics
+    }
+  }
+}
+
+impl Drop for FontMetrics {
+  #[inline]
+  fn drop(&mut self) {
+    unsafe { ffi::skiac_font_metrics_destroy(self.0) }
   }
 }
 

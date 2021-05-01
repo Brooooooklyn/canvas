@@ -13,6 +13,7 @@ using namespace skia::textlayout;
 #define MATRIX_CAST reinterpret_cast<SkMatrix *>(c_matrix)
 #define MASK_FILTER_CAST reinterpret_cast<SkMaskFilter *>(c_mask_filter)
 #define IMAGE_FILTER_CAST reinterpret_cast<SkImageFilter *>(c_image_filter)
+#define FONT_METRICS_CAST reinterpret_cast<SkFontMetrics *>(c_font_metrics)
 
 extern "C"
 {
@@ -969,5 +970,24 @@ extern "C"
   void skiac_delete_sk_string(skiac_sk_string *c_sk_string)
   {
     delete reinterpret_cast<SkString *>(c_sk_string);
+  }
+
+  // FontMetrics
+
+  skiac_font_metrics *skiac_font_metrics_create(const char *font_family, float font_size)
+  {
+    TextStyle text_style;
+    text_style.setFontFamilies({ SkString(font_family) });
+    text_style.setFontSize(font_size);
+    text_style.setWordSpacing(0);
+    text_style.setHeight(1);
+    auto metrics = new SkFontMetrics();
+    text_style.getFontMetrics(metrics);
+    return reinterpret_cast<skiac_font_metrics *>(metrics);
+  }
+
+  void skiac_font_metrics_destroy(skiac_font_metrics *c_font_metrics)
+  {
+    delete FONT_METRICS_CAST;
   }
 }

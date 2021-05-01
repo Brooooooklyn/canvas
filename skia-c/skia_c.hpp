@@ -40,7 +40,7 @@ typedef struct skiac_data skiac_data;
 typedef struct skiac_image skiac_image;
 typedef struct skiac_bitmap skiac_bitmap;
 typedef struct skiac_sk_string skiac_sk_string;
-
+typedef struct skiac_font_metrics skiac_font_metrics;
 struct skiac_rect
 {
   float left;
@@ -258,7 +258,7 @@ extern "C"
   skiac_image_filter *skiac_image_filter_make_drop_shadow(float dx, float dy, float sigma_x, float sigma_y, uint32_t color);
   void skiac_image_filter_destroy(skiac_image_filter *c_image_filter);
 
-  // SkData
+  // Data
   void skiac_sk_data_destroy(skiac_data *c_data);
 
   // Bitmap
@@ -277,6 +277,10 @@ extern "C"
 
   // SkString
   void skiac_delete_sk_string(skiac_sk_string *c_sk_string);
+
+  // FontMetrics
+  skiac_font_metrics *skiac_font_metrics_create(const char *font_family, float font_size);
+  void skiac_font_metrics_destroy(skiac_font_metrics *c_font_metrics);
 }
 
 #endif // SKIA_CAPI_H
