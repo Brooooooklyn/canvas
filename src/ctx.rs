@@ -464,21 +464,13 @@ impl Context {
   ) -> result::Result<(), SkError> {
     let state = self.states.last().unwrap();
     let align = state.text_align;
-    let align_factor = match align {
-      TextAlign::Left | TextAlign::Start => 0f32,
-      TextAlign::Right | TextAlign::End => -1f32,
-      TextAlign::Center => -0.5f32,
-      TextAlign::Justify => 0f32, // unsupported
-    };
-
-    let x = x + 10_0000f32 * align_factor;
     self.surface.canvas.draw_text(
       text,
       x,
       y,
       state.font_style.size,
       &state.font_style.family,
-      align as u8,
+      align,
       &paint,
     );
     Ok(())

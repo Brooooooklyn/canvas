@@ -1468,15 +1468,24 @@ impl Canvas {
     y: f32,
     font_size: f32,
     font_family: &str,
-    align: u8,
+    align: TextAlign,
     paint: &Paint,
   ) {
     let c_text = std::ffi::CString::new(text).unwrap();
     let c_font_family = std::ffi::CString::new(font_family).unwrap();
     let metrics = FontMetrics::new(font_size, font_family);
 
+    let align_factor = match align {
+      TextAlign::Left | TextAlign::Start => 0f32,
+      TextAlign::Right | TextAlign::End => -1f32,
+      TextAlign::Center => -0.5f32,
+      TextAlign::Justify => 0f32, // unsupported
+    };
+
+    let x = x + 10_0000f32 * align_factor;
+
     unsafe {
-      let _metrics_ref =
+      let metrics_ref =
         std::mem::transmute::<*mut ffi::skiac_font_metrics, &ffi::skiac_font_metrics>(metrics.0);
       ffi::skiac_canvas_draw_text(
         self.0,
@@ -1485,7 +1494,7 @@ impl Canvas {
         y,
         font_size,
         c_font_family.as_ptr(),
-        align,
+        align as u8,
         paint.0,
       );
     }
