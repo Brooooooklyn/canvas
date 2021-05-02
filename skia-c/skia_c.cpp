@@ -276,7 +276,9 @@ extern "C"
       float x, float y,
       float font_size,
       const char *font_family,
+      float baseline_offset,
       uint8_t align,
+      float align_factor,
       skiac_paint *c_paint)
   {
     auto font_collection = sk_make_sp<FontCollection>();
@@ -300,8 +302,13 @@ extern "C"
     builder->addText(text, strlen(text));
 
     auto paragraph = builder->Build();
-    paragraph->layout(100000);
-    paragraph->paint(CANVAS_CAST, x, y);
+    auto alphabetic_baseline = paragraph->getAlphabeticBaseline();
+
+    auto width = 100000;
+    auto paint_x = x + width * align_factor;
+    paragraph->layout(width);
+    auto paint_y = y + baseline_offset - paragraph->getHeight() - alphabetic_baseline;
+    paragraph->paint(CANVAS_CAST, paint_x, paint_y);
   }
 
   void skiac_canvas_reset_transform(skiac_canvas *c_canvas)

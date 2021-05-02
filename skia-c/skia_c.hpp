@@ -142,7 +142,9 @@ extern "C"
       float x, float y,
       float font_size,
       const char *font_family,
+      float baseline_offset,
       uint8_t align,
+      float align_factor,
       skiac_paint *c_paint);
   void skiac_canvas_reset_transform(skiac_canvas *c_canvas);
   void skiac_canvas_clip_rect(skiac_canvas *c_canvas, float x, float y, float w, float h);

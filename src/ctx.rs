@@ -463,14 +463,14 @@ impl Context {
     paint: &Paint,
   ) -> result::Result<(), SkError> {
     let state = self.states.last().unwrap();
-    let align = state.text_align;
     self.surface.canvas.draw_text(
       text,
       x,
       y,
       state.font_style.size,
       &state.font_style.family,
-      align,
+      state.text_baseline,
+      state.text_align,
       &paint,
     );
     Ok(())

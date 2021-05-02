@@ -269,7 +269,9 @@ mod ffi {
       y: f32,
       font_size: f32,
       font_family: *const ::std::os::raw::c_char,
+      baseline_offset: f32,
       align: u8,
+      align_factor: f32,
       paint: *mut skiac_paint,
     );
 
@@ -1468,6 +1470,7 @@ impl Canvas {
     y: f32,
     font_size: f32,
     font_family: &str,
+    baseline: TextBaseline,
     align: TextAlign,
     paint: &Paint,
   ) {
@@ -1481,12 +1484,9 @@ impl Canvas {
       TextAlign::Center => -0.5f32,
       TextAlign::Justify => 0f32, // unsupported
     };
-
-    let x = x + 10_0000f32 * align_factor;
+    let baseline_offset = metrics.get_baseline_offset(baseline) + metrics.get_descent();
 
     unsafe {
-      let metrics_ref =
-        std::mem::transmute::<*mut ffi::skiac_font_metrics, &ffi::skiac_font_metrics>(metrics.0);
       ffi::skiac_canvas_draw_text(
         self.0,
         c_text.as_ptr(),
@@ -1494,7 +1494,9 @@ impl Canvas {
         y,
         font_size,
         c_font_family.as_ptr(),
+        baseline_offset,
         align as u8,
+        align_factor,
         paint.0,
       );
     }
@@ -2584,8 +2586,32 @@ impl FontMetrics {
       let c_font_family = std::ffi::CString::new(font_family).unwrap();
       let c_font_metrics = ffi::skiac_font_metrics_create(font_size, c_font_family.as_ptr());
       let metrics = FontMetrics(c_font_metrics);
-      // println!("top: {}", c_font_metrics.top);
       metrics
+    }
+  }
+
+  #[inline]
+  pub fn get_baseline_offset(&self, baseline: TextBaseline) -> f32 {
+    unsafe {
+      let metrics_ref =
+        std::mem::transmute::<*mut ffi::skiac_font_metrics, &ffi::skiac_font_metrics>(self.0);
+      match baseline {
+        TextBaseline::Top => -metrics_ref.ascent,
+        TextBaseline::Hanging => metrics_ref.cap_height,
+        TextBaseline::Middle => metrics_ref.cap_height / 2.0,
+        TextBaseline::Alphabetic => 0.0,
+        TextBaseline::Ideographic => -metrics_ref.descent,
+        TextBaseline::Bottom => -metrics_ref.descent,
+      }
+    }
+  }
+
+  #[inline]
+  pub fn get_descent(&self) -> f32 {
+    unsafe {
+      let metrics_ref =
+        std::mem::transmute::<*mut ffi::skiac_font_metrics, &ffi::skiac_font_metrics>(self.0);
+      metrics_ref.descent
     }
   }
 }
