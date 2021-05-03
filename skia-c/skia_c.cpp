@@ -3,6 +3,8 @@
 
 #include "skia_c.hpp"
 
+using namespace skia::textlayout;
+
 #define SURFACE_CAST reinterpret_cast<SkSurface *>(c_surface)
 #define CANVAS_CAST reinterpret_cast<SkCanvas *>(c_canvas)
 #define PAINT_CAST reinterpret_cast<SkPaint *>(c_paint)
@@ -11,6 +13,7 @@
 #define MATRIX_CAST reinterpret_cast<SkMatrix *>(c_matrix)
 #define MASK_FILTER_CAST reinterpret_cast<SkMaskFilter *>(c_mask_filter)
 #define IMAGE_FILTER_CAST reinterpret_cast<SkImageFilter *>(c_image_filter)
+#define FONT_METRICS_CAST reinterpret_cast<SkFontMetrics *>(c_font_metrics)
 
 extern "C"
 {
@@ -265,6 +268,47 @@ extern "C"
     auto dst = SkRect::MakeXYWH(x, y, w, h);
     const auto sampling = SkSamplingOptions();
     CANVAS_CAST->drawImageRect(image, src, dst, sampling, &paint, SkCanvas::kFast_SrcRectConstraint);
+  }
+
+  void skiac_canvas_draw_text(
+      skiac_canvas *c_canvas,
+      const char *text,
+      float x, float y,
+      float font_size,
+      const char *font_family,
+      float baseline_offset,
+      uint8_t align,
+      float align_factor,
+      skiac_paint *c_paint)
+  {
+    auto font_collection = sk_make_sp<FontCollection>();
+    auto font_mgr = SkFontMgr::RefDefault();
+    font_collection->setDefaultFontManager(font_mgr);
+    font_collection->enableFontFallback();
+
+    TextStyle text_style;
+    text_style.setFontFamilies({ SkString(font_family) });
+    text_style.setFontSize(font_size);
+    text_style.setForegroundColor(*PAINT_CAST);
+    text_style.setWordSpacing(0);
+    text_style.setHeight(1);
+
+    ParagraphStyle paragraph_style;
+    paragraph_style.turnHintingOff();
+    paragraph_style.setTextStyle(text_style);
+    paragraph_style.setTextAlign((TextAlign)align);
+
+    auto builder = ParagraphBuilder::make(paragraph_style, font_collection);
+    builder->addText(text, strlen(text));
+
+    auto paragraph = builder->Build();
+    auto alphabetic_baseline = paragraph->getAlphabeticBaseline();
+
+    auto width = 100000;
+    auto paint_x = x + width * align_factor;
+    paragraph->layout(width);
+    auto paint_y = y + baseline_offset - paragraph->getHeight() - alphabetic_baseline;
+    paragraph->paint(CANVAS_CAST, paint_x, paint_y);
   }
 
   void skiac_canvas_reset_transform(skiac_canvas *c_canvas)
@@ -949,5 +993,24 @@ extern "C"
   void skiac_delete_sk_string(skiac_sk_string *c_sk_string)
   {
     delete reinterpret_cast<SkString *>(c_sk_string);
+  }
+
+  // FontMetrics
+
+  skiac_font_metrics *skiac_font_metrics_create(const char *font_family, float font_size)
+  {
+    TextStyle text_style;
+    text_style.setFontFamilies({ SkString(font_family) });
+    text_style.setFontSize(font_size);
+    text_style.setWordSpacing(0);
+    text_style.setHeight(1);
+    auto metrics = new SkFontMetrics();
+    text_style.getFontMetrics(metrics);
+    return reinterpret_cast<skiac_font_metrics *>(metrics);
+  }
+
+  void skiac_font_metrics_destroy(skiac_font_metrics *c_font_metrics)
+  {
+    delete FONT_METRICS_CAST;
   }
 }

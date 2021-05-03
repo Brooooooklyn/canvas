@@ -178,12 +178,16 @@ fn main() {
   {
     println!("cargo:rustc-link-lib=static=skia");
     println!("cargo:rustc-link-lib=static=skiac");
+    println!("cargo:rustc-link-lib=skparagraph");
+    println!("cargo:rustc-link-lib=skshaper");
   }
 
   #[cfg(not(target_os = "linux"))]
   {
     println!("cargo:rustc-link-lib=skia");
     println!("cargo:rustc-link-lib=skiac");
+    println!("cargo:rustc-link-lib=skparagraph");
+    println!("cargo:rustc-link-lib=skshaper");
   }
   napi_build::setup();
 }

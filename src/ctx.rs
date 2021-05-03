@@ -110,6 +110,7 @@ impl Context {
         Property::new(&env, "moveTo")?.with_method(move_to),
         Property::new(&env, "fill")?.with_method(fill),
         Property::new(&env, "fillRect")?.with_method(fill_rect),
+        Property::new(&env, "fillText")?.with_method(fill_text),
         Property::new(&env, "_getImageData")?.with_method(get_image_data),
         Property::new(&env, "getLineDash")?.with_method(get_line_dash),
         Property::new(&env, "putImageData")?.with_method(put_image_data),
@@ -123,6 +124,7 @@ impl Context {
         Property::new(&env, "setLineDash")?.with_method(set_line_dash),
         Property::new(&env, "stroke")?.with_method(stroke),
         Property::new(&env, "strokeRect")?.with_method(stroke_rect),
+        Property::new(&env, "strokeText")?.with_method(stroke_text),
         Property::new(&env, "translate")?.with_method(translate),
         Property::new(&env, "transform")?.with_method(transform),
         // getter setter method
@@ -192,6 +194,13 @@ impl Context {
   }
 
   #[inline(always)]
+  pub fn stroke_text(&mut self, text: &str, x: f32, y: f32) -> result::Result<(), SkError> {
+    let stroke_paint = self.stroke_paint()?;
+    self.draw_text(text, x, y, &stroke_paint)?;
+    Ok(())
+  }
+
+  #[inline(always)]
   pub fn fill_rect(&mut self, x: f32, y: f32, w: f32, h: f32) -> result::Result<(), SkError> {
     let fill_paint = self.fill_paint()?;
     if let Some(shadow_paint) = self.shadow_blur_paint(&fill_paint) {
@@ -209,6 +218,13 @@ impl Context {
 
     self.surface.draw_rect(x, y, w, h, &fill_paint);
 
+    Ok(())
+  }
+
+  #[inline(always)]
+  pub fn fill_text(&mut self, text: &str, x: f32, y: f32) -> result::Result<(), SkError> {
+    let fill_paint = self.fill_paint()?;
+    self.draw_text(text, x, y, &fill_paint)?;
     Ok(())
   }
 
@@ -435,6 +451,46 @@ impl Context {
       bitmap, sx, sy, s_width, s_height, dx, dy, d_width, d_height, &paint,
     );
 
+    Ok(())
+  }
+
+  #[inline(always)]
+  fn draw_text(
+    &mut self,
+    text: &str,
+    x: f32,
+    y: f32,
+    paint: &Paint,
+  ) -> result::Result<(), SkError> {
+    let state = self.states.last().unwrap();
+
+    if let Some(shadow_paint) = self.shadow_blur_paint(&paint) {
+      let surface = &mut self.surface;
+      surface.save();
+      Self::apply_shadow_offset_matrix(surface, state.shadow_offset_x, state.shadow_offset_y)?;
+      surface.canvas.draw_text(
+        text,
+        x,
+        y,
+        state.font_style.size,
+        &state.font_style.family,
+        state.text_baseline,
+        state.text_align,
+        &shadow_paint,
+      );
+      surface.restore();
+    }
+
+    self.surface.canvas.draw_text(
+      text,
+      x,
+      y,
+      state.font_style.size,
+      &state.font_style.family,
+      state.text_baseline,
+      state.text_align,
+      &paint,
+    );
     Ok(())
   }
 
@@ -968,6 +1024,19 @@ fn stroke_rect(ctx: CallContext) -> Result<JsUndefined> {
 }
 
 #[js_function(4)]
+fn stroke_text(ctx: CallContext) -> Result<JsUndefined> {
+  let text = ctx.get::<JsString>(0)?.into_utf8()?;
+  let x: f64 = ctx.get::<JsNumber>(1)?.try_into()?;
+  let y: f64 = ctx.get::<JsNumber>(2)?.try_into()?;
+
+  let this = ctx.this_unchecked::<JsObject>();
+  let context_2d = ctx.env.unwrap::<Context>(&this)?;
+  context_2d.stroke_text(text.as_str()?, x as f32, y as f32)?;
+
+  ctx.env.get_undefined()
+}
+
+#[js_function(4)]
 fn fill_rect(ctx: CallContext) -> Result<JsUndefined> {
   let x: f64 = ctx.get::<JsNumber>(0)?.try_into()?;
   let y: f64 = ctx.get::<JsNumber>(1)?.try_into()?;
@@ -978,6 +1047,19 @@ fn fill_rect(ctx: CallContext) -> Result<JsUndefined> {
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
 
   context_2d.fill_rect(x as f32, y as f32, w as f32, h as f32)?;
+
+  ctx.env.get_undefined()
+}
+
+#[js_function(4)]
+fn fill_text(ctx: CallContext) -> Result<JsUndefined> {
+  let text = ctx.get::<JsString>(0)?.into_utf8()?;
+  let x: f64 = ctx.get::<JsNumber>(1)?.try_into()?;
+  let y: f64 = ctx.get::<JsNumber>(2)?.try_into()?;
+
+  let this = ctx.this_unchecked::<JsObject>();
+  let context_2d = ctx.env.unwrap::<Context>(&this)?;
+  context_2d.fill_text(text.as_str()?, x as f32, y as f32)?;
 
   ctx.env.get_undefined()
 }
