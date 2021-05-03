@@ -463,6 +463,24 @@ impl Context {
     paint: &Paint,
   ) -> result::Result<(), SkError> {
     let state = self.states.last().unwrap();
+
+    if let Some(shadow_paint) = self.shadow_blur_paint(&paint) {
+      let surface = &mut self.surface;
+      surface.save();
+      Self::apply_shadow_offset_matrix(surface, state.shadow_offset_x, state.shadow_offset_y)?;
+      surface.canvas.draw_text(
+        text,
+        x,
+        y,
+        state.font_style.size,
+        &state.font_style.family,
+        state.text_baseline,
+        state.text_align,
+        &shadow_paint,
+      );
+      surface.restore();
+    }
+
     self.surface.canvas.draw_text(
       text,
       x,
