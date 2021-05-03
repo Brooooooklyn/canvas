@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1620021728709,
+  "lastUpdate": 1620053109450,
   "repoUrl": "https://github.com/Brooooooklyn/canvas",
   "entries": {
     "Benchmark": [
@@ -4052,6 +4052,58 @@ window.BENCHMARK_DATA = {
             "range": "±0.58%",
             "unit": "ops/sec",
             "extra": "47 samples"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "i@ewind.us",
+            "name": "Yifeng Wang",
+            "username": "doodlewind"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "caf41d8a01d26779625d0e7a9e305945e67849bd",
+          "message": "fillText and strokeText (#171)",
+          "timestamp": "2021-05-03T22:40:24+08:00",
+          "tree_id": "80ef31afb67949b7dea9fdcaec73cb66a47b3b7c",
+          "url": "https://github.com/Brooooooklyn/canvas/commit/caf41d8a01d26779625d0e7a9e305945e67849bd"
+        },
+        "date": 1620053042325,
+        "tool": "benchmarkjs",
+        "benches": [
+          {
+            "name": "Draw house#@napi-rs/skia",
+            "value": 25,
+            "range": "±0.06%",
+            "unit": "ops/sec",
+            "extra": "45 samples"
+          },
+          {
+            "name": "Draw house#node-canvas",
+            "value": 21,
+            "range": "±0.38%",
+            "unit": "ops/sec",
+            "extra": "39 samples"
+          },
+          {
+            "name": "Draw gradient#@napi-rs/skia",
+            "value": 24,
+            "range": "±0.07%",
+            "unit": "ops/sec",
+            "extra": "44 samples"
+          },
+          {
+            "name": "Draw gradient#node-canvas",
+            "value": 20,
+            "range": "±0.31%",
+            "unit": "ops/sec",
+            "extra": "37 samples"
           }
         ]
       }
