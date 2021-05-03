@@ -347,21 +347,21 @@
   resolved "https://registry.npmjs.org/@sindresorhus/is/-/is-0.14.0.tgz#9fb3a3cf3132328151f353de4632e01e52102bea"
   integrity sha512-9NET910DNaIPngYnLLPeg+Ogzqsi9uM4mSboU5y6p8S5DzMTVEsJZrawi+BoDNUVBa2DhJqQYUFvMDfgU062LQ==
 
-"@swc-node/core@^1.3.0":
-  version "1.3.0"
-  resolved "https://registry.npmjs.org/@swc-node/core/-/core-1.3.0.tgz#326098abce3f42bbca632c5703599cd1fefa5cdb"
-  integrity sha512-fJgi3mIHmIfdZSuWIC85nvkAfgOlAgN5ixOZjWXXjbo7swp2o7mM26VlfyGntDuKMBF5lX9nGaa1F6DPcyuaVQ==
+"@swc-node/core@^1.4.0":
+  version "1.4.0"
+  resolved "https://registry.yarnpkg.com/@swc-node/core/-/core-1.4.0.tgz#5ee1c069c6be436a526430eec95954ce49d3af12"
+  integrity sha512-KFCcbjAIEVUZ9QcRORSABq3vsRTkSHldbpBdOQZwCgjn9I0zeT280+kpdudO4H4cT80TqR+BQEmnIO3OalmYOw==
   dependencies:
-    "@swc/core" "^1.2.50"
+    "@swc/core" "^1.2.54"
 
-"@swc-node/register@^1.1.0":
-  version "1.1.0"
-  resolved "https://registry.yarnpkg.com/@swc-node/register/-/register-1.1.0.tgz#dae3836a8ad40eeb667048e4d6dabb5eb7705fca"
-  integrity sha512-QL4WxnieeTGswyahUdmnDaRHDnRK3pWEoo2pixSf5bvN4f5NdN3fbfTQshgEWHALGsabys0FqeqhSrzXx+PVxA==
+"@swc-node/register@^1.2.1":
+  version "1.2.1"
+  resolved "https://registry.yarnpkg.com/@swc-node/register/-/register-1.2.1.tgz#626ecd05ba845a3a08a40be248500e41db1023d2"
+  integrity sha512-gq0MzvA1xfyc2q7nBInpC08jeL/4/Jk0BGttHSGEYAayMPsW9CCpC/Ejaw2M351DlxxpkUZz23srYAv4oeXnAg==
   dependencies:
-    "@swc-node/core" "^1.3.0"
+    "@swc-node/core" "^1.4.0"
     "@swc-node/sourcemap-support" "^0.1.8"
-    chalk "^4.1.0"
+    chalk "^4.1.1"
     debug "^4.3.1"
     pirates "^4.0.1"
 
@@ -417,9 +417,9 @@
   resolved "https://registry.npmjs.org/@swc/core-win32-x64-msvc/-/core-win32-x64-msvc-1.2.54.tgz#50f8c7c2f163852c4b42f4288106477aaeff0ea0"
   integrity sha512-RBtB1dzbz1ytV5LLxD9wzdGRWxBZFUapFN/RgsH1nJKZFg4kvrvsvfPU2HymNtoOWnfpYuhgapQi+ySQpUL/gg==
 
-"@swc/core@^1.2.50":
+"@swc/core@^1.2.54":
   version "1.2.54"
-  resolved "https://registry.npmjs.org/@swc/core/-/core-1.2.54.tgz#edd25e94d57c9b3c596272ac3dc9e222aeff9905"
+  resolved "https://registry.yarnpkg.com/@swc/core/-/core-1.2.54.tgz#edd25e94d57c9b3c596272ac3dc9e222aeff9905"
   integrity sha512-FNBpdRqtkSUV7E0i8C4iDiq29yLmOaP76GS7wuUGOT3txhvstGbr+L7PXzLc+QWczl21aS5V86MYBRg/aX5biw==
   dependencies:
     "@node-rs/helper" "^1.0.0"
