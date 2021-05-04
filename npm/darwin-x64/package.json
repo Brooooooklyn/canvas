@@ -1,6 +1,6 @@
 {
   "name": "@napi-rs/canvas-darwin-x64",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "os": ["darwin"],
   "cpu": ["x64"],
   "main": "skia.darwin-x64.node",
