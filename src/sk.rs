@@ -153,6 +153,12 @@ mod ffi {
     strikeout_position: f32,
   }
 
+  #[repr(C)]
+  #[derive(Copy, Clone, Debug)]
+  pub struct skiac_font_collection {
+    _unused: [u8; 0],
+  }
+
   extern "C" {
 
     pub fn skiac_surface_create_rgba_premultiplied(width: i32, height: i32) -> *mut skiac_surface;
@@ -267,6 +273,7 @@ mod ffi {
       text: *const ::std::os::raw::c_char,
       x: f32,
       y: f32,
+      font_collection: *mut skiac_font_collection,
       font_size: f32,
       font_family: *const ::std::os::raw::c_char,
       baseline_offset: f32,
@@ -571,6 +578,14 @@ mod ffi {
     ) -> *mut skiac_font_metrics;
 
     pub fn skiac_font_metrics_destroy(c_font_metrics: *mut skiac_font_metrics);
+
+    pub fn skiac_font_collection_create() -> *mut skiac_font_collection;
+
+    pub fn skiac_font_collection_clone(
+      c_font_collection: *mut skiac_font_collection,
+    ) -> *mut skiac_font_collection;
+
+    pub fn skiac_font_collection_destroy(c_font_collection: *mut skiac_font_collection);
   }
 }
 
@@ -1468,6 +1483,7 @@ impl Canvas {
     text: &str,
     x: f32,
     y: f32,
+    font_collection: &FontCollection,
     font_size: f32,
     font_family: &str,
     baseline: TextBaseline,
@@ -1492,6 +1508,7 @@ impl Canvas {
         c_text.as_ptr(),
         x,
         y,
+        font_collection.0,
         font_size,
         c_font_family.as_ptr(),
         baseline_offset,
@@ -2620,6 +2637,42 @@ impl Drop for FontMetrics {
   #[inline]
   fn drop(&mut self) {
     unsafe { ffi::skiac_font_metrics_destroy(self.0) }
+  }
+}
+
+#[derive(Debug)]
+pub struct FontCollection(pub *mut ffi::skiac_font_collection);
+
+impl FontCollection {
+  #[inline]
+  pub fn new() -> FontCollection {
+    unsafe {
+      let c_font_collection = ffi::skiac_font_collection_create();
+      let collection = FontCollection(c_font_collection);
+      collection
+    }
+  }
+
+  #[inline]
+  pub fn get_families(&self) -> Vec<String> {
+    vec![]
+  }
+}
+
+impl Clone for FontCollection {
+  fn clone(&self) -> FontCollection {
+    unsafe {
+      let c_font_collection = ffi::skiac_font_collection_clone(self.0);
+      let collection = FontCollection(c_font_collection);
+      collection
+    }
+  }
+}
+
+impl Drop for FontCollection {
+  #[inline]
+  fn drop(&mut self) {
+    unsafe { ffi::skiac_font_collection_destroy(self.0) }
   }
 }
 

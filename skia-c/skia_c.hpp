@@ -27,6 +27,8 @@
 
 #include <stdint.h>
 
+using namespace skia::textlayout;
+
 typedef struct skiac_surface skiac_surface;
 typedef struct skiac_canvas skiac_canvas;
 typedef struct skiac_paint skiac_paint;
@@ -41,6 +43,22 @@ typedef struct skiac_image skiac_image;
 typedef struct skiac_bitmap skiac_bitmap;
 typedef struct skiac_sk_string skiac_sk_string;
 typedef struct skiac_font_metrics skiac_font_metrics;
+struct skiac_font_collection
+{
+  sk_sp<FontCollection> collection;
+  skiac_font_collection() {
+    auto font_mgr = SkFontMgr::RefDefault();
+    collection = sk_make_sp<FontCollection>();
+    collection->setDefaultFontManager(font_mgr);
+    collection->enableFontFallback();
+  }
+  skiac_font_collection(sk_sp<FontCollection> collection) {
+    auto font_mgr = SkFontMgr::RefDefault();
+    collection->setDefaultFontManager(font_mgr);
+    collection->enableFontFallback();
+    this->collection = collection;
+  }
+};
 struct skiac_rect
 {
   float left;
@@ -140,6 +158,7 @@ extern "C"
       skiac_canvas *c_canvas,
       const char *text,
       float x, float y,
+      skiac_font_collection *c_collection,
       float font_size,
       const char *font_family,
       float baseline_offset,
@@ -284,6 +303,11 @@ extern "C"
   // FontMetrics
   skiac_font_metrics *skiac_font_metrics_create(const char *font_family, float font_size);
   void skiac_font_metrics_destroy(skiac_font_metrics *c_font_metrics);
+
+  // FontCollection
+  skiac_font_collection *skiac_font_collection_create();
+  skiac_font_collection *skiac_font_collection_clone(skiac_font_collection *c_font_collection);
+  void skiac_font_collection_destroy(skiac_font_collection *c_font_collection);
 }
 
 #endif // SKIA_CAPI_H

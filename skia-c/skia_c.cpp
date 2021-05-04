@@ -3,8 +3,6 @@
 
 #include "skia_c.hpp"
 
-using namespace skia::textlayout;
-
 #define SURFACE_CAST reinterpret_cast<SkSurface *>(c_surface)
 #define CANVAS_CAST reinterpret_cast<SkCanvas *>(c_canvas)
 #define PAINT_CAST reinterpret_cast<SkPaint *>(c_paint)
@@ -274,6 +272,7 @@ extern "C"
       skiac_canvas *c_canvas,
       const char *text,
       float x, float y,
+      skiac_font_collection *c_collection,
       float font_size,
       const char *font_family,
       float baseline_offset,
@@ -281,10 +280,7 @@ extern "C"
       float align_factor,
       skiac_paint *c_paint)
   {
-    auto font_collection = sk_make_sp<FontCollection>();
-    auto font_mgr = SkFontMgr::RefDefault();
-    font_collection->setDefaultFontManager(font_mgr);
-    font_collection->enableFontFallback();
+    auto font_collection = c_collection->collection;
 
     TextStyle text_style;
     text_style.setFontFamilies({ SkString(font_family) });
@@ -995,8 +991,6 @@ extern "C"
     delete reinterpret_cast<SkString *>(c_sk_string);
   }
 
-  // FontMetrics
-
   skiac_font_metrics *skiac_font_metrics_create(const char *font_family, float font_size)
   {
     TextStyle text_style;
@@ -1012,5 +1006,20 @@ extern "C"
   void skiac_font_metrics_destroy(skiac_font_metrics *c_font_metrics)
   {
     delete FONT_METRICS_CAST;
+  }
+
+  skiac_font_collection *skiac_font_collection_create()
+  {
+    return new skiac_font_collection();
+  }
+
+  skiac_font_collection *skiac_font_collection_clone(skiac_font_collection *c_font_collection)
+  {
+    return new skiac_font_collection(c_font_collection->collection);
+  }
+
+  void skiac_font_collection_destroy(skiac_font_collection *c_font_collection)
+  {
+    delete c_font_collection;
   }
 }
