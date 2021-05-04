@@ -1,4 +1,5 @@
 use std::f32::consts::PI;
+use std::ffi::CStr;
 use std::ffi::CString;
 use std::ops::{Deref, DerefMut};
 use std::os::raw::c_char;
@@ -584,6 +585,16 @@ mod ffi {
     pub fn skiac_font_collection_clone(
       c_font_collection: *mut skiac_font_collection,
     ) -> *mut skiac_font_collection;
+
+    pub fn skiac_font_collection_get_families_size(
+      c_font_collection: *mut skiac_font_collection,
+    ) -> u32;
+
+    pub fn skiac_font_collection_get_family(
+      c_font_collection: *mut skiac_font_collection,
+      i: u32,
+      skia_string: *mut SkiaString,
+    );
 
     pub fn skiac_font_collection_destroy(c_font_collection: *mut skiac_font_collection);
   }
@@ -2655,7 +2666,21 @@ impl FontCollection {
 
   #[inline]
   pub fn get_families(&self) -> Vec<String> {
-    vec![]
+    let mut names = Vec::new();
+    unsafe {
+      let size = ffi::skiac_font_collection_get_families_size(self.0);
+      for i in 0..size {
+        let mut name = SkiaString {
+          ptr: ptr::null_mut(),
+          length: 0,
+          sk_string: ptr::null_mut(),
+        };
+        ffi::skiac_font_collection_get_family(self.0, i, &mut name);
+        let c_str: &CStr = CStr::from_ptr(name.ptr);
+        names.push(c_str.to_string_lossy().into_owned());
+      }
+    }
+    names
   }
 }
 

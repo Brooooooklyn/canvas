@@ -1018,6 +1018,20 @@ extern "C"
     return new skiac_font_collection(c_font_collection->collection);
   }
 
+  uint32_t skiac_font_collection_get_families_size(skiac_font_collection *c_font_collection)
+  {
+    return c_font_collection->font_mgr->countFamilies();
+  }
+
+  void skiac_font_collection_get_family(skiac_font_collection *c_font_collection, uint32_t i, skiac_string *c_string)
+  {
+    auto name = new SkString();
+    c_font_collection->font_mgr->getFamilyName(i, name);
+    c_string->length = name->size();
+    c_string->ptr = name->c_str();
+    c_string->sk_string = name;
+  }
+
   void skiac_font_collection_destroy(skiac_font_collection *c_font_collection)
   {
     delete c_font_collection;

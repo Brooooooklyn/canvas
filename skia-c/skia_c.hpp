@@ -46,14 +46,17 @@ typedef struct skiac_font_metrics skiac_font_metrics;
 struct skiac_font_collection
 {
   sk_sp<FontCollection> collection;
-  skiac_font_collection() {
-    auto font_mgr = SkFontMgr::RefDefault();
+  sk_sp<SkFontMgr> font_mgr;
+  skiac_font_collection()
+  {
+    font_mgr = SkFontMgr::RefDefault();
     collection = sk_make_sp<FontCollection>();
     collection->setDefaultFontManager(font_mgr);
     collection->enableFontFallback();
   }
-  skiac_font_collection(sk_sp<FontCollection> collection) {
-    auto font_mgr = SkFontMgr::RefDefault();
+  skiac_font_collection(sk_sp<FontCollection> collection)
+  {
+    font_mgr = SkFontMgr::RefDefault();
     collection->setDefaultFontManager(font_mgr);
     collection->enableFontFallback();
     this->collection = collection;
@@ -307,6 +310,8 @@ extern "C"
   // FontCollection
   skiac_font_collection *skiac_font_collection_create();
   skiac_font_collection *skiac_font_collection_clone(skiac_font_collection *c_font_collection);
+  uint32_t skiac_font_collection_get_families_size(skiac_font_collection *c_font_collection);
+  void skiac_font_collection_get_family(skiac_font_collection *c_font_collection, uint32_t i, skiac_string *c_string);
   void skiac_font_collection_destroy(skiac_font_collection *c_font_collection);
 }
 

@@ -44,6 +44,9 @@ const FillType = {
 }
 
 const GlobalFontsSingleton = new GlobalFonts()
+GlobalFontsSingleton.__defineGetter__('families', function() {
+  return Object.keys(GlobalFontsSingleton._families)
+})
 
 CanvasRenderingContext2D.prototype.createPattern = function createPattern(image, repetition) {
   if (image instanceof ImageData) {
