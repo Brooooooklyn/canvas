@@ -44,8 +44,29 @@ const FillType = {
 }
 
 const GlobalFontsSingleton = new GlobalFonts()
-GlobalFontsSingleton.__defineGetter__('families', function() {
+let FamilyNamesMap = {}
+
+Object.defineProperty(GlobalFontsSingleton, 'register', {
+  value: function register(path) {
+    GlobalFontsSingleton._register(path)
+    FamilyNamesMap = GlobalFontsSingleton._families
+  },
+  configurable: false,
+  enumerable: false,
+  writable: false,
+})
+
+GlobalFontsSingleton. __defineGetter__('families', function() {
   return Object.keys(GlobalFontsSingleton._families)
+})
+
+Object.defineProperty(GlobalFontsSingleton, 'has', {
+  value: function has(name) {
+    return !!FamilyNamesMap[name]
+  },
+  configurable: false,
+  enumerable: false,
+  writable: false,
 })
 
 CanvasRenderingContext2D.prototype.createPattern = function createPattern(image, repetition) {
