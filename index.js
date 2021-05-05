@@ -56,8 +56,10 @@ Object.defineProperty(GlobalFontsSingleton, 'register', {
   writable: false,
 })
 
-GlobalFontsSingleton. __defineGetter__('families', function() {
-  return Object.keys(GlobalFontsSingleton._families)
+Object.defineProperty(GlobalFontsSingleton, 'families', {
+  get: function() {
+    return Object.keys(GlobalFontsSingleton._families)
+  }
 })
 
 Object.defineProperty(GlobalFontsSingleton, 'has', {
