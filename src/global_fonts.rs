@@ -1,8 +1,12 @@
 use crate::sk::*;
 use napi::*;
 
-#[js_function]
+#[js_function(1)]
 fn register(ctx: CallContext) -> Result<JsUndefined> {
+  let this = ctx.this_unchecked::<JsObject>();
+  let font_collection = ctx.env.unwrap::<FontCollection>(&this)?;
+  let path = ctx.get::<JsString>(0)?.into_utf8()?;
+  font_collection.register(path.as_str()?);
   ctx.env.get_undefined()
 }
 
