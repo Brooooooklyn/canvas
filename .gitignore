@@ -159,3 +159,5 @@ Temporary Items
 
 # Temporary example image output
 example/*-tmp.*
+
+icudtl.dat

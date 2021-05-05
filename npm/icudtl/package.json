@@ -1,0 +1,32 @@
+{
+  "name": "@napi-rs/canvas-icudtl-win32-x64",
+  "version": "0.0.3",
+  "os": ["win32"],
+  "cpu": ["x64"],
+  "files": ["icudtl.dat", "postinstall.js"],
+  "description": "External icu dat for Windows x64",
+  "keywords": [
+    "napi-rs",
+    "NAPI",
+    "N-API",
+    "Rust",
+    "node-addon",
+    "node-addon-api",
+    "canvas",
+    "image",
+    "pdf",
+    "svg",
+    "skia",
+    "icu",
+    "unicode"
+  ],
+  "license": "MIT",
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  },
+  "repository": "https://github.com/Brooooooklyn/canvas.git",
+  "scripts": {
+    "postinstall": "node postinstall.js"
+  }
+}
