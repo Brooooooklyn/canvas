@@ -44,7 +44,7 @@ const FillType = {
 }
 
 const GlobalFontsSingleton = new GlobalFonts()
-let FamilyNamesMap = {}
+let FamilyNamesMap = GlobalFontsSingleton._families
 
 Object.defineProperty(GlobalFontsSingleton, 'register', {
   value: function register(path) {
