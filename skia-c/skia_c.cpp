@@ -1054,9 +1054,8 @@ extern "C"
   void skiac_font_collection_register(skiac_font_collection *c_font_collection, skiac_typeface *c_typeface)
   {
     auto typeface = c_typeface->typeface;
-    auto assets = sk_make_sp<TypefaceFontProvider>();
-    assets->registerTypeface(typeface);
-    c_font_collection->collection->setAssetFontManager(assets);
+    c_font_collection->assets->registerTypeface(typeface);
+    c_font_collection->collection->setAssetFontManager(c_font_collection->assets);
   }
 
   void skiac_font_collection_destroy(skiac_font_collection *c_font_collection)

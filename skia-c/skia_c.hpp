@@ -55,18 +55,23 @@ struct skiac_font_collection
 {
   sk_sp<FontCollection> collection;
   sk_sp<SkFontMgr> font_mgr;
+  sk_sp<TypefaceFontProvider> assets;
   skiac_font_collection()
   {
     font_mgr = SkFontMgr::RefDefault();
+    assets = sk_make_sp<TypefaceFontProvider>();
     collection = sk_make_sp<FontCollection>();
     collection->setDefaultFontManager(font_mgr);
+    collection->setAssetFontManager(assets);
     collection->enableFontFallback();
   }
   skiac_font_collection(sk_sp<FontCollection> collection)
   {
     font_mgr = SkFontMgr::RefDefault();
+    assets = sk_make_sp<TypefaceFontProvider>();
     collection->setDefaultFontManager(font_mgr);
     collection->enableFontFallback();
+    collection->setAssetFontManager(assets);
     this->collection = collection;
   }
 };
