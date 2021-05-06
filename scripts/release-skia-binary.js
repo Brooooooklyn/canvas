@@ -1,7 +1,7 @@
 const { execSync } = require('child_process')
 const { promises: fs } = require('fs')
 const { platform } = require('os')
-const { parse } = require('path')
+const { parse, join } = require('path')
 
 const { Octokit } = require('@octokit/rest')
 const chalk = require('chalk')
@@ -19,12 +19,14 @@ if (TARGET && TARGET.startsWith('--target=')) {
 }
 
 const LIB = ['skia', 'skparagraph', 'skshaper']
+const ICU_DAT = 'icudtl.dat'
 
 const CLIENT = new Octokit({
   auth: process.env.GITHUB_TOKEN,
 })
 
 async function upload() {
+  const putasset = require('putasset')
   let assets = []
   try {
     console.info(chalk.green(`Fetching release by tag: [${TAG}]`))
@@ -48,7 +50,6 @@ async function upload() {
       throw e
     }
   }
-  const putasset = require('putasset')
   for (const lib of LIB) {
     const { copy, binary } = libPath(lib, PLATFORM_NAME, TARGET_TRIPLE)
     console.info(chalk.green(`Copy [${binary}] to [${copy}]`))
@@ -71,6 +72,24 @@ async function upload() {
       filename: copy,
     })
   }
+  if (PLATFORM_NAME === 'win32') {
+    const icudtl = assets.find(({ name }) => name === ICU_DAT)
+    if (icudtl) {
+      console.info(chalk.green(`[${ICU_DAT}] existed, delete it...`))
+      await CLIENT.repos.deleteReleaseAsset({
+        owner: OWNER,
+        repo: REPO,
+        asset_id: icudtl.id,
+      })
+    }
+    console.info(chalk.green(`Uploading [${ICU_DAT}] to github release: [${TAG}]`))
+    await putasset(process.env.GITHUB_TOKEN, {
+      owner: OWNER,
+      repo: REPO,
+      tag: TAG,
+      filename: join(__dirname, '..', 'skia', 'out', 'Static', ICU_DAT),
+    })
+  }
 }
 
 async function download() {
@@ -82,6 +101,13 @@ async function download() {
     execSync(`curl -J -L -H "Accept: application/octet-stream" ${downloadUrl} -o ${binary}`, {
       stdio: 'inherit',
     })
+  }
+  if (PLATFORM_NAME === 'win32') {
+    const downloadUrl = `https://github.com/${OWNER}/${REPO}/releases/download/${TAG}/${ICU_DAT}`
+    execSync(`curl -J -L -H "Accept: application/octet-stream" ${downloadUrl} -o ${ICU_DAT}`, {
+      stdio: 'inherit',
+    })
+    await fs.copyFile(join(__dirname, '..', ICU_DAT), join(__dirname, '..', 'npm', 'icudtl', ICU_DAT))
   }
 }
 
