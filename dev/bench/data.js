@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1620271075530,
+  "lastUpdate": 1620281900431,
   "repoUrl": "https://github.com/Brooooooklyn/canvas",
   "entries": {
     "Benchmark": [
@@ -4364,6 +4364,58 @@ window.BENCHMARK_DATA = {
             "range": "±1.74%",
             "unit": "ops/sec",
             "extra": "35 samples"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "lynweklm@gmail.com",
+            "name": "LongYinan",
+            "username": "Brooooooklyn"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "0adeab2c42e3f6310833ff8c247ec2363e79f042",
+          "message": "ci: restrict auto-merge job trigger branches",
+          "timestamp": "2021-05-06T14:12:30+08:00",
+          "tree_id": "6f17d748d2036735f013c37789c97c271835d713",
+          "url": "https://github.com/Brooooooklyn/canvas/commit/0adeab2c42e3f6310833ff8c247ec2363e79f042"
+        },
+        "date": 1620281816228,
+        "tool": "benchmarkjs",
+        "benches": [
+          {
+            "name": "Draw house#@napi-rs/skia",
+            "value": 22,
+            "range": "±1.16%",
+            "unit": "ops/sec",
+            "extra": "40 samples"
+          },
+          {
+            "name": "Draw house#node-canvas",
+            "value": 23,
+            "range": "±1.53%",
+            "unit": "ops/sec",
+            "extra": "43 samples"
+          },
+          {
+            "name": "Draw gradient#@napi-rs/skia",
+            "value": 21,
+            "range": "±1.26%",
+            "unit": "ops/sec",
+            "extra": "39 samples"
+          },
+          {
+            "name": "Draw gradient#node-canvas",
+            "value": 23,
+            "range": "±0.8%",
+            "unit": "ops/sec",
+            "extra": "41 samples"
           }
         ]
       }
