@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1620262879181,
+  "lastUpdate": 1620268671199,
   "repoUrl": "https://github.com/Brooooooklyn/canvas",
   "entries": {
     "Benchmark": [
@@ -4260,6 +4260,58 @@ window.BENCHMARK_DATA = {
             "range": "±1.16%",
             "unit": "ops/sec",
             "extra": "39 samples"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "i@ewind.us",
+            "name": "Yifeng Wang",
+            "username": "doodlewind"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d47c2509e879cbb7b9262b6d2f05501394a23e9c",
+          "message": "Merge pull request #254 from Brooooooklyn/upload-icu-data-for-windows\n\nci: upload icudtl.dat for Windows",
+          "timestamp": "2021-05-06T10:32:18+08:00",
+          "tree_id": "817eacc70e00f7d55fa46868feaa9659e2a1d211",
+          "url": "https://github.com/Brooooooklyn/canvas/commit/d47c2509e879cbb7b9262b6d2f05501394a23e9c"
+        },
+        "date": 1620268598730,
+        "tool": "benchmarkjs",
+        "benches": [
+          {
+            "name": "Draw house#@napi-rs/skia",
+            "value": 24,
+            "range": "±1.2%",
+            "unit": "ops/sec",
+            "extra": "43 samples"
+          },
+          {
+            "name": "Draw house#node-canvas",
+            "value": 23,
+            "range": "±1.71%",
+            "unit": "ops/sec",
+            "extra": "41 samples"
+          },
+          {
+            "name": "Draw gradient#@napi-rs/skia",
+            "value": 23.3,
+            "range": "±1.82%",
+            "unit": "ops/sec",
+            "extra": "42 samples"
+          },
+          {
+            "name": "Draw gradient#node-canvas",
+            "value": 22.8,
+            "range": "±1.56%",
+            "unit": "ops/sec",
+            "extra": "41 samples"
           }
         ]
       }
