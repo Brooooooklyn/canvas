@@ -8,7 +8,7 @@ const { loadBinding } = require('@node-rs/helper')
  * loadBinding helper will load `skia.[PLATFORM].node` from `__dirname` first
  * If failed to load addon, it will fallback to load from `@napi-rs/skia-[PLATFORM]`
  */
-const { CanvasRenderingContext2D, CanvasElement, Path2D, ImageData, Image, CanvasPattern } = loadBinding(
+const { CanvasRenderingContext2D, CanvasElement, Path2D, ImageData, Image, CanvasPattern, GlobalFonts } = loadBinding(
   __dirname,
   'skia',
   '@napi-rs/canvas',
@@ -42,6 +42,34 @@ const FillType = {
   InverseWinding: 2,
   InverseEvenOdd: 3,
 }
+
+const GlobalFontsSingleton = new GlobalFonts()
+let FamilyNamesMap = GlobalFontsSingleton._families
+
+Object.defineProperty(GlobalFontsSingleton, 'register', {
+  value: function register(path) {
+    GlobalFontsSingleton._register(path)
+    FamilyNamesMap = GlobalFontsSingleton._families
+  },
+  configurable: false,
+  enumerable: false,
+  writable: false,
+})
+
+Object.defineProperty(GlobalFontsSingleton, 'families', {
+  get: function() {
+    return Object.keys(GlobalFontsSingleton._families)
+  }
+})
+
+Object.defineProperty(GlobalFontsSingleton, 'has', {
+  value: function has(name) {
+    return !!FamilyNamesMap[name]
+  },
+  configurable: false,
+  enumerable: false,
+  writable: false,
+})
 
 CanvasRenderingContext2D.prototype.createPattern = function createPattern(image, repetition) {
   if (image instanceof ImageData) {
@@ -87,7 +115,7 @@ Path2D.prototype.getFillTypeString = function getFillTypeString() {
 
 function createCanvas(width, height) {
   const canvasElement = new CanvasElement(width, height)
-  const ctx = new CanvasRenderingContext2D(width, height)
+  const ctx = new CanvasRenderingContext2D(width, height, GlobalFontsSingleton)
 
   // napi can not define writable: true but enumerable: false property
   Object.defineProperty(ctx, '_fillStyle', {
@@ -137,4 +165,5 @@ module.exports = {
   StrokeCap,
   StrokeJoin,
   ...Geometry,
+  GlobalFonts: GlobalFontsSingleton,
 }

@@ -1,4 +1,5 @@
 use std::f32::consts::PI;
+use std::ffi::CStr;
 use std::ffi::CString;
 use std::ops::{Deref, DerefMut};
 use std::os::raw::c_char;
@@ -133,6 +134,12 @@ mod ffi {
   }
 
   #[repr(C)]
+  #[derive(Copy, Clone, Debug)]
+  pub struct skiac_typeface {
+    _unused: [u8; 0],
+  }
+
+  #[repr(C)]
   #[derive(Copy, Clone, Default, Debug)]
   pub struct skiac_font_metrics {
     pub flags: u32,
@@ -151,6 +158,12 @@ mod ffi {
     underline_position: f32,
     strikeout_thickness: f32,
     strikeout_position: f32,
+  }
+
+  #[repr(C)]
+  #[derive(Copy, Clone, Debug)]
+  pub struct skiac_font_collection {
+    _unused: [u8; 0],
   }
 
   extern "C" {
@@ -267,6 +280,7 @@ mod ffi {
       text: *const ::std::os::raw::c_char,
       x: f32,
       y: f32,
+      font_collection: *mut skiac_font_collection,
       font_size: f32,
       font_family: *const ::std::os::raw::c_char,
       baseline_offset: f32,
@@ -565,12 +579,41 @@ mod ffi {
     // SkString
     pub fn skiac_delete_sk_string(c_sk_string: *mut skiac_sk_string);
 
+    pub fn skiac_typeface_create(path: *const ::std::os::raw::c_char) -> *mut skiac_typeface;
+
+    pub fn skiac_typeface_get_family(c_typeface: *mut skiac_typeface, skia_string: *mut SkiaString);
+
+    pub fn skiac_typeface_destroy(c_typeface: *mut skiac_typeface);
+
     pub fn skiac_font_metrics_create(
       font_size: f32,
       font_family: *const ::std::os::raw::c_char,
     ) -> *mut skiac_font_metrics;
 
     pub fn skiac_font_metrics_destroy(c_font_metrics: *mut skiac_font_metrics);
+
+    pub fn skiac_font_collection_create() -> *mut skiac_font_collection;
+
+    pub fn skiac_font_collection_clone(
+      c_font_collection: *mut skiac_font_collection,
+    ) -> *mut skiac_font_collection;
+
+    pub fn skiac_font_collection_get_default_fonts_count(
+      c_font_collection: *mut skiac_font_collection,
+    ) -> u32;
+
+    pub fn skiac_font_collection_get_family(
+      c_font_collection: *mut skiac_font_collection,
+      i: u32,
+      skia_string: *mut SkiaString,
+    );
+
+    pub fn skiac_font_collection_register(
+      c_font_collection: *mut skiac_font_collection,
+      c_typeface: *mut skiac_typeface,
+    );
+
+    pub fn skiac_font_collection_destroy(c_font_collection: *mut skiac_font_collection);
   }
 }
 
@@ -1468,6 +1511,7 @@ impl Canvas {
     text: &str,
     x: f32,
     y: f32,
+    font_collection: &FontCollection,
     font_size: f32,
     font_family: &str,
     baseline: TextBaseline,
@@ -1492,6 +1536,7 @@ impl Canvas {
         c_text.as_ptr(),
         x,
         y,
+        font_collection.0,
         font_size,
         c_font_family.as_ptr(),
         baseline_offset,
@@ -2576,6 +2621,41 @@ impl Drop for SkiaString {
   }
 }
 
+#[derive(Debug)]
+pub struct Typeface(pub *mut ffi::skiac_typeface);
+
+impl Typeface {
+  #[inline]
+  pub fn new(path: &str) -> Typeface {
+    let c_path = std::ffi::CString::new(path).unwrap();
+    unsafe {
+      let c_typeface = ffi::skiac_typeface_create(c_path.as_ptr());
+      let typeface = Typeface(c_typeface);
+      typeface
+    }
+  }
+
+  pub fn get_family(&self) -> String {
+    let mut name = SkiaString {
+      ptr: ptr::null_mut(),
+      length: 0,
+      sk_string: ptr::null_mut(),
+    };
+    unsafe {
+      ffi::skiac_typeface_get_family(self.0, &mut name);
+      let c_str: &CStr = CStr::from_ptr(name.ptr);
+      c_str.to_string_lossy().into_owned()
+    }
+  }
+}
+
+impl Drop for Typeface {
+  #[inline]
+  fn drop(&mut self) {
+    unsafe { ffi::skiac_typeface_destroy(self.0) }
+  }
+}
+
 #[derive(Debug, Clone)]
 pub struct FontMetrics(pub *mut ffi::skiac_font_metrics);
 
@@ -2620,6 +2700,75 @@ impl Drop for FontMetrics {
   #[inline]
   fn drop(&mut self) {
     unsafe { ffi::skiac_font_metrics_destroy(self.0) }
+  }
+}
+
+#[derive(Debug)]
+pub struct FontCollection(
+  pub *mut ffi::skiac_font_collection,
+  pub Vec<String>,
+);
+
+impl FontCollection {
+  #[inline]
+  pub fn new() -> FontCollection {
+    unsafe {
+      let c_font_collection = ffi::skiac_font_collection_create();
+      let collection = FontCollection(
+        c_font_collection,
+        Vec::new()
+      );
+      collection
+    }
+  }
+
+  #[inline]
+  pub fn get_families(&self) -> Vec<String> {
+    let mut names = Vec::new();
+    unsafe {
+      let size = ffi::skiac_font_collection_get_default_fonts_count(self.0);
+      for i in 0..size {
+        let mut name = SkiaString {
+          ptr: ptr::null_mut(),
+          length: 0,
+          sk_string: ptr::null_mut(),
+        };
+        ffi::skiac_font_collection_get_family(self.0, i, &mut name);
+        let c_str: &CStr = CStr::from_ptr(name.ptr);
+        names.push(c_str.to_string_lossy().into_owned());
+      }
+    }
+    for custom_family_name in self.1.iter() {
+      names.push(custom_family_name.clone());
+    }
+    names
+  }
+
+  #[inline]
+  pub fn register(&mut self, path: &str) {
+    let typeface = Typeface::new(path);
+    unsafe {
+      ffi::skiac_font_collection_register(self.0, typeface.0);
+      let name = typeface.get_family();
+      self.1.push(name);
+    }
+  }
+}
+
+impl Clone for FontCollection {
+  fn clone(&self) -> FontCollection {
+    unsafe {
+      let c_font_collection = ffi::skiac_font_collection_clone(self.0);
+      let collection = FontCollection(c_font_collection, self.1.clone());
+      collection
+    }
+  }
+}
+
+impl Drop for FontCollection {
+  #[inline]
+  fn drop(&mut self) {
+    unsafe { ffi::skiac_font_collection_destroy(self.0) }
   }
 }
 

@@ -266,6 +266,14 @@ export interface Canvas extends Omit<HTMLCanvasElement, 'getContext'> {
 
 export function createCanvas(width: number, height: number): Canvas
 
+interface IGlobalFonts {
+  readonly families: string[]
+  register(path: string): void
+  has(name: string): boolean
+}
+
+export const GlobalFonts: IGlobalFonts
+
 export const enum PathOp {
   Difference = 0, // subtract the op path from the first path
   Intersect = 1, // intersect the two paths

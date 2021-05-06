@@ -27,6 +27,8 @@
 
 #include <stdint.h>
 
+using namespace skia::textlayout;
+
 typedef struct skiac_surface skiac_surface;
 typedef struct skiac_canvas skiac_canvas;
 typedef struct skiac_paint skiac_paint;
@@ -41,6 +43,38 @@ typedef struct skiac_image skiac_image;
 typedef struct skiac_bitmap skiac_bitmap;
 typedef struct skiac_sk_string skiac_sk_string;
 typedef struct skiac_font_metrics skiac_font_metrics;
+struct skiac_typeface
+{
+  sk_sp<SkTypeface> typeface;
+  skiac_typeface(const char* path)
+  {
+    typeface = SkTypeface::MakeFromFile(path);
+  }
+};
+struct skiac_font_collection
+{
+  sk_sp<FontCollection> collection;
+  sk_sp<SkFontMgr> font_mgr;
+  sk_sp<TypefaceFontProvider> assets;
+  skiac_font_collection()
+  {
+    font_mgr = SkFontMgr::RefDefault();
+    assets = sk_make_sp<TypefaceFontProvider>();
+    collection = sk_make_sp<FontCollection>();
+    collection->setDefaultFontManager(font_mgr);
+    collection->setAssetFontManager(assets);
+    collection->enableFontFallback();
+  }
+  skiac_font_collection(sk_sp<FontCollection> collection)
+  {
+    font_mgr = SkFontMgr::RefDefault();
+    assets = sk_make_sp<TypefaceFontProvider>();
+    collection->setDefaultFontManager(font_mgr);
+    collection->enableFontFallback();
+    collection->setAssetFontManager(assets);
+    this->collection = collection;
+  }
+};
 struct skiac_rect
 {
   float left;
@@ -140,6 +174,7 @@ extern "C"
       skiac_canvas *c_canvas,
       const char *text,
       float x, float y,
+      skiac_font_collection *c_collection,
       float font_size,
       const char *font_family,
       float baseline_offset,
@@ -281,9 +316,22 @@ extern "C"
   // SkString
   void skiac_delete_sk_string(skiac_sk_string *c_sk_string);
 
+  // Typeface
+  skiac_typeface *skiac_typeface_create(const char *path);
+  void skiac_typeface_get_family(skiac_typeface *c_typeface, skiac_string *c_string);
+  void skiac_typeface_destroy(skiac_typeface *c_typeface);
+
   // FontMetrics
   skiac_font_metrics *skiac_font_metrics_create(const char *font_family, float font_size);
   void skiac_font_metrics_destroy(skiac_font_metrics *c_font_metrics);
+
+  // FontCollection
+  skiac_font_collection *skiac_font_collection_create();
+  skiac_font_collection *skiac_font_collection_clone(skiac_font_collection *c_font_collection);
+  uint32_t skiac_font_collection_get_default_fonts_count(skiac_font_collection *c_font_collection);
+  void skiac_font_collection_get_family(skiac_font_collection *c_font_collection, uint32_t i, skiac_string *c_string);
+  void skiac_font_collection_register(skiac_font_collection *c_font_collection, skiac_typeface *c_typeface);
+  void skiac_font_collection_destroy(skiac_font_collection *c_font_collection);
 }
 
 #endif // SKIA_CAPI_H
