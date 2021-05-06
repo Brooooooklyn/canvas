@@ -10,6 +10,7 @@
 #include <include/utils/SkParsePath.h>
 #include <include/core/SkBitmap.h>
 #include <include/core/SkCanvas.h>
+#include <include/core/SkColorFilter.h>
 #include <include/core/SkData.h>
 #include <include/core/SkDrawable.h>
 #include <include/core/SkGraphics.h>
@@ -21,7 +22,10 @@
 #include <include/core/SkStream.h>
 #include <include/core/SkPictureRecorder.h>
 #include <include/core/SkStrokeRec.h>
+#include <include/effects/SkColorMatrix.h>
 #include <include/effects/SkDashPathEffect.h>
+#include <include/effects/SkImageFilters.h>
+#include <include/effects/SkTableColorFilter.h>
 #include <include/effects/SkTrimPathEffect.h>
 #include <include/effects/SkGradientShader.h>
 #include <include/svg/SkSVGCanvas.h>
@@ -409,7 +413,11 @@ extern "C"
   void skiac_mask_filter_destroy(skiac_mask_filter *c_mask_filter);
 
   // ImageFilter
-  skiac_image_filter *skiac_image_filter_make_drop_shadow(float dx, float dy, float sigma_x, float sigma_y, uint32_t color);
+  skiac_image_filter *skiac_image_filter_make_drop_shadow_only(float dx, float dy, float sigma_x, float sigma_y, uint32_t color, skiac_image_filter *c_image_filter);
+  skiac_image_filter *skiac_image_filter_make_drop_shadow(float dx, float dy, float sigma_x, float sigma_y, uint32_t color, skiac_image_filter *c_image_filter);
+  skiac_image_filter *skiac_image_filter_make_blur(float sigma_x, float sigma_y, int tile_mode, skiac_image_filter *c_image_filter);
+  skiac_image_filter *skiac_image_filter_color_filter(float m00, float m01, float m02, float m10, float m11, float m12, float m20, float m21, float m22, float opacity, skiac_image_filter *c_image_filter);
+  skiac_image_filter *skiac_image_filter_from_argb(const uint8_t table_a[256], const uint8_t table_r[256], const uint8_t table_g[256], const uint8_t table_b[256], skiac_image_filter *c_image_filter);
   void skiac_image_filter_destroy(skiac_image_filter *c_image_filter);
 
   // Data

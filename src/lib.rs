@@ -25,6 +25,7 @@ static ALLOC: mimalloc_rust::GlobalMiMalloc = mimalloc_rust::GlobalMiMalloc;
 
 mod ctx;
 mod error;
+mod filter;
 mod font;
 mod global_fonts;
 mod gradient;
@@ -32,6 +33,7 @@ mod image;
 mod image_pattern;
 mod path;
 mod pattern;
+
 #[allow(dead_code)]
 mod sk;
 mod state;

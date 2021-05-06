@@ -580,7 +580,6 @@ extern "C"
   {
     sk_sp<SkMaskFilter> maskFilter(reinterpret_cast<SkMaskFilter *>(c_mask_filter));
     maskFilter->ref();
-
     PAINT_CAST->setMaskFilter(maskFilter);
   }
 
@@ -1175,9 +1174,93 @@ extern "C"
 
   // SkImageFilter
 
-  skiac_image_filter *skiac_image_filter_make_drop_shadow(float dx, float dy, float sigma_x, float sigma_y, uint32_t color)
+  skiac_image_filter *skiac_image_filter_make_drop_shadow_only(float dx, float dy, float sigma_x, float sigma_y, uint32_t color, skiac_image_filter *c_image_filter)
   {
-    auto filter = SkImageFilters::DropShadowOnly(dx, dy, sigma_x, sigma_y, color, nullptr).release();
+    auto chained_filter = sk_sp(IMAGE_FILTER_CAST);
+    if (c_image_filter)
+    {
+      chained_filter->ref();
+    }
+    auto filter = SkImageFilters::DropShadowOnly(dx, dy, sigma_x, sigma_y, color, chained_filter).release();
+    if (filter)
+    {
+      return reinterpret_cast<skiac_image_filter *>(filter);
+    }
+    else
+    {
+      return nullptr;
+    }
+  }
+
+  skiac_image_filter *skiac_image_filter_make_drop_shadow(float dx, float dy, float sigma_x, float sigma_y, uint32_t color, skiac_image_filter *c_image_filter)
+  {
+    auto chained_filter = sk_sp(IMAGE_FILTER_CAST);
+    if (c_image_filter)
+    {
+      chained_filter->ref();
+    }
+    auto filter = SkImageFilters::DropShadow(dx, dy, sigma_x, sigma_y, color, chained_filter).release();
+    if (filter)
+    {
+      return reinterpret_cast<skiac_image_filter *>(filter);
+    }
+    else
+    {
+      return nullptr;
+    }
+  }
+
+  skiac_image_filter *skiac_image_filter_make_blur(float sigma_x, float sigma_y, int tile_mode, skiac_image_filter *c_image_filter)
+  {
+    auto chained_filter = sk_sp(IMAGE_FILTER_CAST);
+    if (c_image_filter)
+    {
+      chained_filter->ref();
+    }
+    auto filter = SkImageFilters::Blur(sigma_x, sigma_y, (SkTileMode)tile_mode, chained_filter).release();
+    if (filter)
+    {
+      return reinterpret_cast<skiac_image_filter *>(filter);
+    }
+    else
+    {
+      return nullptr;
+    }
+  }
+
+  skiac_image_filter *skiac_image_filter_color_filter(float m00, float m01, float m02, float m10, float m11, float m12, float m20, float m21, float m22, float opacity, skiac_image_filter *c_image_filter)
+  {
+    auto chained_filter = sk_sp(IMAGE_FILTER_CAST);
+    if (c_image_filter)
+    {
+      chained_filter->ref();
+    }
+    const auto color_matrix = SkColorMatrix(
+        m00, m01, m02, 0.0, 0.0,
+        m10, m11, m12, 0.0, 0.0,
+        m20, m21, m22, 0.0, 0.0,
+        0.0, 0.0, 0.0, opacity, 0.0);
+    auto color_filter = SkColorFilters::Matrix(color_matrix);
+    auto filter = SkImageFilters::ColorFilter(color_filter, chained_filter).release();
+    if (filter)
+    {
+      return reinterpret_cast<skiac_image_filter *>(filter);
+    }
+    else
+    {
+      return nullptr;
+    }
+  }
+
+  skiac_image_filter *skiac_image_filter_from_argb(const uint8_t table_a[256], const uint8_t table_r[256], const uint8_t table_g[256], const uint8_t table_b[256], skiac_image_filter *c_image_filter)
+  {
+    auto cf = SkTableColorFilter::MakeARGB(table_a, table_r, table_g, table_b);
+    auto chained_filter = sk_sp(IMAGE_FILTER_CAST);
+    if (c_image_filter)
+    {
+      chained_filter->ref();
+    }
+    auto filter = SkImageFilters::ColorFilter(cf, chained_filter).release();
     if (filter)
     {
       return reinterpret_cast<skiac_image_filter *>(filter);
@@ -1199,7 +1282,7 @@ extern "C"
   void skiac_sk_data_destroy(skiac_data *c_data)
   {
     auto data = reinterpret_cast<SkData *>(c_data);
-    SkSafeUnref(data);
+    data->unref();
   }
 
   // Bitmap

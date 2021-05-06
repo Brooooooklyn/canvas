@@ -26,10 +26,8 @@
   </style>
   <canvas width="1024" height="768" id="canvas"></canvas>
   <canvas width="1024" height="768" id="canvas-text"></canvas>
-
-  <canvas width="256" height="256" id="regression"></canvas>
-  <img src="/__test__/failure/transform-with-radial-gradient.png" width="256" height="256" alt="">
-
+  <canvas width="512" height="512" id="regression"></canvas>
+  <img width="200" height="200" id="firefox" src="/__test__/fixtures/filter-combine-contrast-brightness.jpeg" />
   <script>
     setTimeout(() => {
       const canvas = document.getElementById('canvas')
@@ -78,28 +76,15 @@
         ctx.fillText('Abcdefghijklmnop (' + baseline + ')', 0, y)
       })
     }, 300);
-
-    (function () {
+  </script>
+  <script>
+    setTimeout(() => {
       const canvas = document.getElementById('regression')
       const ctx = canvas.getContext('2d')
-      ctx.translate(128.5, 128.5)
-      ctx.scale(1, 1)
-      ctx.clearRect(-128, -128, 256, 256)
-      ctx.beginPath()
-      ctx.save()
-      ctx.transform(1, 0, 0, 0.9090909090909091, 0, 0)
-      ctx.arc(0, 0, 110, 0, 6.283185307179586, false)
-      ctx.restore()
-      ctx.save()
-      const p = ctx.createRadialGradient(0.5, 0.5, 0, 0.2, 0.4, 0.5)
-      p.addColorStop(1, 'rgba(0, 0, 255, 1)')
-      p.addColorStop(0, 'rgba(200, 200, 200, 0)')
-      ctx.fillStyle = p
-      ctx.transform(220, 0, 0, 200, -110, -100)
-      ctx.transform(1, 0, 0, 1, 0, 0)
-      ctx.fill()
-      ctx.restore()
-    })()
+      ctx.filter = 'contrast(175%) brightness(103%)'
+      const image = document.querySelector('#firefox')
+      ctx.drawImage(image, 0, 0)
+    }, 1000)
   </script>
 </body>
 

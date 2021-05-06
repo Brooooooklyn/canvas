@@ -8,13 +8,11 @@ use std::str::FromStr;
 use cssparser::{Color as CSSColor, Parser, ParserInput};
 use napi::*;
 
-use crate::error::SkError;
-use crate::font::Font;
-use crate::gradient::CanvasGradient;
-use crate::image::*;
-use crate::pattern::Pattern;
-use crate::sk::*;
-use crate::state::Context2dRenderingState;
+use crate::filter::css_filters_to_image_filter;
+use crate::{
+  error::SkError, filter::css_filter, font::Font, gradient::CanvasGradient, image::*,
+  pattern::Pattern, sk::*, state::Context2dRenderingState,
+};
 
 impl From<SkError> for Error {
   fn from(err: SkError) -> Error {
@@ -48,6 +46,8 @@ pub struct Context {
   pub width: u32,
   pub height: u32,
   pub stream: Option<SkWMemoryStream>,
+  pub filter: Option<ImageFilter>,
+  filters_string: String,
 }
 
 impl Context {
@@ -87,6 +87,9 @@ impl Context {
         Property::new(env, "fillStyle")?
           .with_setter(set_fill_style)
           .with_getter(get_fill_style),
+        Property::new(env, "filter")?
+          .with_setter(set_filter)
+          .with_getter(get_filter),
         Property::new(env, "font")?
           .with_setter(set_font)
           .with_getter(get_font),
@@ -180,6 +183,8 @@ impl Context {
       width,
       height,
       stream: Some(stream),
+      filter: None,
+      filters_string: "none".to_owned(),
     })
   }
 
@@ -196,6 +201,8 @@ impl Context {
       width,
       height,
       stream: None,
+      filter: None,
+      filters_string: "none".to_owned(),
     })
   }
 
@@ -462,7 +469,23 @@ impl Context {
       .ok_or_else(|| SkError::Generic("Make line dash path effect failed".to_string()))?;
       paint.set_path_effect(&path_effect);
     }
+    if let Some(f) = &self.filter {
+      paint.set_image_filter(f);
+    }
     Ok(paint)
+  }
+
+  pub fn set_filter(&mut self, filter_str: &str) -> result::Result<(), SkError> {
+    if filter_str.trim() == "none" {
+      self.filters_string = "none".to_owned();
+      self.filter = None;
+    } else {
+      let (_, filters) =
+        css_filter(filter_str).map_err(|e| SkError::StringToFillRuleError(format!("{}", e)))?;
+      self.filter = css_filters_to_image_filter(filters);
+      self.filters_string = filter_str.to_owned();
+    }
+    Ok(())
   }
 
   fn stroke_paint(&self) -> result::Result<Paint, SkError> {
@@ -498,6 +521,9 @@ impl Context {
       .ok_or_else(|| SkError::Generic("Make line dash path effect failed".to_string()))?;
       paint.set_path_effect(&path_effect);
     }
+    if let Some(f) = &self.filter {
+      paint.set_image_filter(f);
+    }
     Ok(paint)
   }
 
@@ -522,12 +548,13 @@ impl Context {
     let r = shadow_color.red;
     let g = shadow_color.green;
     let b = shadow_color.blue;
-    let shadow_effect = ImageFilter::make_drop_shadow(
+    let shadow_effect = ImageFilter::make_drop_shadow_only(
       last_state.shadow_offset_x,
       last_state.shadow_offset_y,
       sigma,
       sigma,
       (a as u32) << 24 | (r as u32) << 16 | (g as u32) << 8 | b as u32,
+      None,
     )?;
     drop_shadow_paint.set_alpha(shadow_alpha);
     drop_shadow_paint.set_image_filter(&shadow_effect);
@@ -562,7 +589,7 @@ impl Context {
     Some(drop_shadow_paint)
   }
 
-  fn draw_image(
+  pub(crate) fn draw_image(
     &mut self,
     image: &Image,
     sx: f32,
@@ -1825,6 +1852,23 @@ fn set_fill_style(ctx: CallContext) -> Result<JsUndefined> {
 fn get_fill_style(ctx: CallContext) -> Result<JsUnknown> {
   let this = ctx.this_unchecked::<JsObject>();
   this.get_named_property("_fillStyle")
+}
+
+#[js_function(1)]
+fn set_filter(ctx: CallContext) -> Result<JsUndefined> {
+  let filter_str = ctx.get::<JsString>(0)?.into_utf8()?;
+  let this = ctx.this_unchecked::<JsObject>();
+  let context_2d = ctx.env.unwrap::<Context>(&this)?;
+  let filter_str = filter_str.as_str()?;
+  context_2d.set_filter(filter_str)?;
+  ctx.env.get_undefined()
+}
+
+#[js_function]
+fn get_filter(ctx: CallContext) -> Result<JsString> {
+  let this = ctx.this_unchecked::<JsObject>();
+  let context_2d = ctx.env.unwrap::<Context>(&this)?;
+  ctx.env.create_string(context_2d.filters_string.as_str())
 }
 
 #[js_function]
