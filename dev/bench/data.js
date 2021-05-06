@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1620227505053,
+  "lastUpdate": 1620262879181,
   "repoUrl": "https://github.com/Brooooooklyn/canvas",
   "entries": {
     "Benchmark": [
@@ -4208,6 +4208,58 @@ window.BENCHMARK_DATA = {
             "range": "±0.84%",
             "unit": "ops/sec",
             "extra": "48 samples"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "lynweklm@gmail.com",
+            "name": "LongYinan",
+            "username": "Brooooooklyn"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d885c9bcce63cba52d3a8ed464aa04ed9a6a47be",
+          "message": "Merge pull request #250 from doodlewind/text\n\nGlobalFonts API",
+          "timestamp": "2021-05-06T08:56:02+08:00",
+          "tree_id": "56ae4638b8fcccea0012cdc19bb944cbf7b09d1e",
+          "url": "https://github.com/Brooooooklyn/canvas/commit/d885c9bcce63cba52d3a8ed464aa04ed9a6a47be"
+        },
+        "date": 1620262804852,
+        "tool": "benchmarkjs",
+        "benches": [
+          {
+            "name": "Draw house#@napi-rs/skia",
+            "value": 23.1,
+            "range": "±1.29%",
+            "unit": "ops/sec",
+            "extra": "42 samples"
+          },
+          {
+            "name": "Draw house#node-canvas",
+            "value": 22.8,
+            "range": "±1.1%",
+            "unit": "ops/sec",
+            "extra": "41 samples"
+          },
+          {
+            "name": "Draw gradient#@napi-rs/skia",
+            "value": 22.4,
+            "range": "±0.93%",
+            "unit": "ops/sec",
+            "extra": "41 samples"
+          },
+          {
+            "name": "Draw gradient#node-canvas",
+            "value": 21.6,
+            "range": "±1.16%",
+            "unit": "ops/sec",
+            "extra": "39 samples"
           }
         ]
       }
