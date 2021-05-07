@@ -34,7 +34,7 @@ pub fn canvas_pattern_constructor(ctx: CallContext) -> Result<JsUndefined> {
       } else {
         return Err(Error::new(
           Status::GenericFailure,
-          format!("Image has not completed"),
+          "Image has not completed".to_string(),
         ));
       }
     }
@@ -77,7 +77,7 @@ pub fn canvas_pattern_constructor(ctx: CallContext) -> Result<JsUndefined> {
     _ => {
       return Err(Error::new(
         Status::InvalidArg,
-        format!("Invalid type of image repetition"),
+        "Invalid type of image repetition".to_string(),
       ))
     }
   };

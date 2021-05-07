@@ -139,8 +139,7 @@ impl Context {
   pub fn new(width: u32, height: u32, collection: &mut FontCollection) -> Result<Self> {
     let surface = Surface::new_rgba(width, height)
       .ok_or_else(|| Error::from_reason("Create skia surface failed".to_owned()))?;
-    let mut states = Vec::new();
-    states.push(Context2dRenderingState::default());
+    let states = vec![Context2dRenderingState::default()];
     Ok(Context {
       surface,
       alpha: true,
@@ -291,7 +290,7 @@ impl Context {
     let alpha = current_paint.get_alpha();
     match &last_state.fill_style {
       Pattern::Color(c, _) => {
-        let mut color = c.clone();
+        let mut color = *c;
         color.alpha = ((color.alpha as f32) * (alpha as f32 / 255.0)).round() as u8;
         paint.set_color(color.red, color.green, color.blue, color.alpha);
       }
@@ -308,12 +307,12 @@ impl Context {
         }
       }
     };
-    if last_state.line_dash_list.len() != 0 {
+    if !last_state.line_dash_list.is_empty() {
       let path_effect = PathEffect::new_dash_path(
         last_state.line_dash_list.as_slice(),
         last_state.line_dash_offset,
       )
-      .ok_or_else(|| SkError::Generic(format!("Make line dash path effect failed")))?;
+      .ok_or_else(|| SkError::Generic("Make line dash path effect failed".to_string()))?;
       paint.set_path_effect(&path_effect);
     }
     Ok(paint)
@@ -328,7 +327,7 @@ impl Context {
     let global_alpha = current_paint.get_alpha();
     match &last_state.stroke_style {
       Pattern::Color(c, _) => {
-        let mut color = c.clone();
+        let mut color = *c;
         color.alpha = ((color.alpha as f32) * (global_alpha as f32 / 255.0)).round() as u8;
         paint.set_color(color.red, color.green, color.blue, color.alpha);
       }
@@ -350,7 +349,7 @@ impl Context {
         last_state.line_dash_list.as_slice(),
         last_state.line_dash_offset,
       )
-      .ok_or_else(|| SkError::Generic(format!("Make line dash path effect failed")))?;
+      .ok_or_else(|| SkError::Generic("Make line dash path effect failed".to_string()))?;
       paint.set_path_effect(&path_effect);
     }
     Ok(paint)
@@ -688,7 +687,7 @@ fn fill(ctx: CallContext) -> Result<JsUndefined> {
       _ => {
         return Err(Error::new(
           Status::InvalidArg,
-          format!("Invalid fill argument"),
+          "Invalid fill argument".to_string(),
         ))
       }
     }
@@ -861,7 +860,7 @@ fn is_point_in_path(ctx: CallContext) -> Result<JsBoolean> {
     result = context_2d
       .path
       .hit_test(y as f32, x as f32, FillType::Winding);
-    return ctx.env.get_boolean(result);
+    ctx.env.get_boolean(result)
   } else if ctx.length == 3 {
     let input = ctx.get::<JsUnknown>(0)?;
     match input.get_type()? {
@@ -885,11 +884,11 @@ fn is_point_in_path(ctx: CallContext) -> Result<JsBoolean> {
       _ => {
         return Err(Error::new(
           Status::InvalidArg,
-          format!("Invalid isPointInPath argument"),
+          "Invalid isPointInPath argument".to_string(),
         ))
       }
     }
-    return ctx.env.get_boolean(result);
+    ctx.env.get_boolean(result)
   } else if ctx.length == 4 {
     let path_js = ctx.get::<JsObject>(0)?;
     let path = ctx.env.unwrap::<Path>(&path_js)?;
@@ -901,12 +900,12 @@ fn is_point_in_path(ctx: CallContext) -> Result<JsBoolean> {
       x as f32,
       FillType::from_str(fill_rule_js.as_str()?)?,
     );
-    return ctx.env.get_boolean(result);
+    ctx.env.get_boolean(result)
   } else {
-    return Err(Error::new(
+    Err(Error::new(
       Status::InvalidArg,
-      format!("Invalid isPointInPath arguments length"),
-    ));
+      "Invalid isPointInPath arguments length".to_string(),
+    ))
   }
 }
 
@@ -1085,7 +1084,7 @@ fn get_image_data(ctx: CallContext) -> Result<JsTypedArray> {
     .ok_or_else(|| {
       Error::new(
         Status::GenericFailure,
-        format!("Read pixels from canvas failed"),
+        "Read pixels from canvas failed".to_string(),
       )
     })?;
   let length = pixels.len();
@@ -1140,19 +1139,19 @@ fn put_image_data(ctx: CallContext) -> Result<JsUndefined> {
     };
     // as per https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-putimagedata
     if dirty_width < 0f64 {
-      dirty_x = dirty_x + dirty_width;
+      dirty_x += dirty_width;
       dirty_width = dirty_width.abs();
     }
     if dirty_height < 0f64 {
-      dirty_y = dirty_y + dirty_height;
+      dirty_y += dirty_height;
       dirty_height = dirty_height.abs();
     }
     if dirty_x < 0f64 {
-      dirty_width = dirty_width + dirty_x;
+      dirty_width += dirty_x;
       dirty_x = 0f64;
     }
     if dirty_y < 0f64 {
-      dirty_height = dirty_height + dirty_y;
+      dirty_height += dirty_y;
       dirty_y = 0f64;
     }
     if dirty_width <= 0f64 || dirty_height <= 0f64 {
@@ -1185,7 +1184,7 @@ fn set_global_alpha(ctx: CallContext) -> Result<JsUndefined> {
 
   let alpha: f64 = ctx.get::<JsNumber>(0)?.try_into()?;
 
-  if alpha < 0.0 || alpha > 1.0 {
+  if !(0.0..=1.0).contains(&alpha) {
     return Err(Error::new(
       Status::InvalidArg,
       format!(
@@ -1355,7 +1354,7 @@ fn set_current_transform(ctx: CallContext) -> Result<JsUndefined> {
   } else {
     return Err(Error::new(
       Status::InvalidArg,
-      format!("Invalid argument length in setTransform"),
+      "Invalid argument length in setTransform".to_string(),
     ));
   };
 
@@ -1602,7 +1601,12 @@ fn set_fill_style(ctx: CallContext) -> Result<JsUndefined> {
       let pattern = ctx.env.unwrap::<Pattern>(&fill_object)?;
       last_state.fill_style = pattern.clone();
     }
-    _ => return Err(Error::new(Status::InvalidArg, format!("Invalid fillStyle"))),
+    _ => {
+      return Err(Error::new(
+        Status::InvalidArg,
+        "Invalid fillStyle".to_string(),
+      ))
+    }
   }
 
   this.set_named_property("_fillStyle", js_fill_style)?;
@@ -1661,7 +1665,7 @@ fn set_stroke_style(ctx: CallContext) -> Result<JsUndefined> {
     _ => {
       return Err(Error::new(
         Status::InvalidArg,
-        format!("Invalid strokeStyle"),
+        "Invalid strokeStyle".to_string(),
       ))
     }
   }
@@ -1831,6 +1835,7 @@ fn get_text_baseline(ctx: CallContext) -> Result<JsString> {
 
 pub enum ContextData {
   PNG(SurfaceRef),
+  #[allow(dead_code)]
   JPEG(SurfaceRef, u8),
 }
 
@@ -1846,7 +1851,7 @@ impl Task for ContextData {
       ContextData::PNG(surface) => surface.png_data().ok_or_else(|| {
         Error::new(
           Status::GenericFailure,
-          format!("Get png data from surface failed"),
+          "Get png data from surface failed".to_string(),
         )
       }),
       _ => {

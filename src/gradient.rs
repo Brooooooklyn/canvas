@@ -21,7 +21,7 @@ impl CanvasGradient {
     let gradient_class = env.define_class(
       "Gradient",
       gradient_constructor,
-      &vec![Property::new(env, "addColorStop")?.with_method(add_color_stop)],
+      &[Property::new(env, "addColorStop")?.with_method(add_color_stop)],
     )?;
     let arguments: Vec<JsUndefined> = vec![];
     let mut instance = gradient_class.new(&arguments)?;
@@ -75,22 +75,20 @@ impl CanvasGradient {
     };
     if let Ok(pos) = stops.binary_search_by(|o| o.partial_cmp(&offset).unwrap()) {
       colors[pos] = color;
+    } else if stops.is_empty() {
+      stops.push(offset);
+      colors.push(color);
     } else {
-      if stops.is_empty() {
-        stops.push(offset);
-        colors.push(color);
-      } else {
-        let mut index = 0usize;
-        // insert it in sorted order
-        for (idx, val) in stops.iter().enumerate() {
-          index = idx;
-          if val > &offset {
-            break;
-          }
+      let mut index = 0usize;
+      // insert it in sorted order
+      for (idx, val) in stops.iter().enumerate() {
+        index = idx;
+        if val > &offset {
+          break;
         }
-        stops.insert(index + 1, offset);
-        colors.insert(index + 1, color);
       }
+      stops.insert(index + 1, offset);
+      colors.insert(index + 1, color);
     }
   }
 

@@ -19,11 +19,9 @@ impl Pattern {
     let color = CSSColor::parse(&mut parser)
       .map_err(|e| SkError::Generic(format!("Invalid color {:?}", e)))?;
     match color {
-      CSSColor::CurrentColor => {
-        return Err(SkError::Generic(
-          "Color should not be `currentcolor` keyword".to_owned(),
-        ))
-      }
+      CSSColor::CurrentColor => Err(SkError::Generic(
+        "Color should not be `currentcolor` keyword".to_owned(),
+      )),
       CSSColor::RGBA(rgba) => Ok(Pattern::Color(rgba, color_str.to_owned())),
     }
   }

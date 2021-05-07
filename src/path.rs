@@ -66,7 +66,7 @@ fn path_constructor(ctx: CallContext) -> Result<JsUndefined> {
       _ => {
         return Err(Error::new(
           Status::InvalidArg,
-          format!("Invalid Path2D constructor argument"),
+          "Invalid Path2D constructor argument".to_string(),
         ))
       }
     }

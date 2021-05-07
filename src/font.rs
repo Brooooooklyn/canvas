@@ -6,7 +6,7 @@ use thiserror::Error;
 
 pub(crate) static FONT_REGEXP: OnceCell<Regex> = OnceCell::new();
 
-const DEFAULT_FONT: &'static str = "sans-serif";
+const DEFAULT_FONT: &str = "sans-serif";
 
 #[derive(Error, Clone, Debug)]
 pub enum ParseError {
@@ -59,7 +59,7 @@ impl Font {
     let default_font = Font::default();
     if let Some(cap) = font_regexp.captures(font_rules) {
       let size_str = cap.get(7).or_else(|| cap.get(5)).unwrap().as_str();
-      let size = if size_str.ends_with("%") {
+      let size = if size_str.ends_with('%') {
         size_str
           .parse::<f32>()
           .map(|v| v / 100.0 * FONT_MEDIUM_PX)
@@ -69,8 +69,7 @@ impl Font {
       };
       let family = cap.get(9).map(|c| c.as_str()).unwrap_or(DEFAULT_FONT);
       // return if no valid size
-      if size.is_some() {
-        let size = size.unwrap();
+      if let Some(size) = size {
         let style = cap
           .get(2)
           .and_then(|m| FontStyle::from_str(m.as_str()).ok())
@@ -101,7 +100,7 @@ impl Font {
           size: size_px,
           stretch,
           family: family
-            .split(",")
+            .split(',')
             .map(|string| string.trim())
             .collect::<Vec<&str>>()
             .join(","),
@@ -188,7 +187,7 @@ fn parse_font_weight(weight: &str) -> Option<u32> {
     "600" => Some(600),
     "bold" | "bolder" | "700" => Some(700),
     _ => weight.parse::<f32>().ok().and_then(|w| {
-      if w >= MIN_FONT_WEIGHT && w <= MAX_FONT_WEIGHT {
+      if (MIN_FONT_WEIGHT..=MAX_FONT_WEIGHT).contains(&w) {
         Some(w as u32)
       } else {
         None
@@ -210,7 +209,7 @@ fn parse_font_stretch(stretch: &str) -> Option<f32> {
     "extra-expanded" | "150%" => Some(1.5),
     "ultra-expanded" | "200%" => Some(2.0),
     _ => {
-      if stretch.ends_with("%") {
+      if stretch.ends_with('%') {
         stretch.strip_suffix("%").and_then(|s| {
           s.parse::<f32>()
             .map(|value| {
@@ -303,10 +302,11 @@ fn test_parse_font_weight() {
   assert_eq!(parse_font_weight("whatever"), None);
 }
 
+#[allow(clippy::float_cmp)]
 #[test]
 fn test_parse_size_px() {
-  assert_eq!(parse_size_px(12.0, "px"), 12.0);
-  assert_eq!(parse_size_px(2.0, "em"), 32.0);
+  assert_eq!(parse_size_px(12.0, "px"), 12.0f32);
+  assert_eq!(parse_size_px(2.0, "em"), 32.0f32);
 }
 
 #[test]
@@ -355,7 +355,7 @@ fn test_font_new() {
     (
       "20pt Arial",
       Font {
-        size: 26.666666666666668,
+        size: 26.666_666,
         family: "Arial".to_owned(),
         ..Default::default()
       },
@@ -363,7 +363,7 @@ fn test_font_new() {
     (
       "20.5pt Arial",
       Font {
-        size: 27.333333333333332,
+        size: 27.333_334,
         family: "Arial".to_owned(),
         ..Default::default()
       },
@@ -388,7 +388,7 @@ fn test_font_new() {
     (
       "20mm Arial",
       Font {
-        size: 75.59055118110237,
+        size: 75.590_55,
         family: "Arial".to_owned(),
         ..Default::default()
       },
