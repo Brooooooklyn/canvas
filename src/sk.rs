@@ -2130,10 +2130,6 @@ impl PartialEq for Path {
   fn eq(&self, other: &Path) -> bool {
     unsafe { ffi::skiac_path_equals(self.0, other.0) }
   }
-
-  fn ne(&self, other: &Path) -> bool {
-    !unsafe { ffi::skiac_path_equals(self.0, other.0) }
-  }
 }
 
 impl Drop for Path {
@@ -2193,7 +2189,7 @@ impl Shader {
         grad.base.positions.as_ptr(),
         grad.base.colors.len() as i32,
         grad.base.tile_mode as i32,
-        0 as u32,
+        0_u32,
         grad.base.transform.into(),
       ))
     }
@@ -2220,7 +2216,7 @@ impl Shader {
         grad.base.positions.as_ptr(),
         grad.base.colors.len() as i32,
         grad.base.tile_mode as i32,
-        0 as u32,
+        0_u32,
         grad.base.transform.into(),
       ))
     }
@@ -2630,8 +2626,7 @@ impl Typeface {
     let c_path = std::ffi::CString::new(path).unwrap();
     unsafe {
       let c_typeface = ffi::skiac_typeface_create(c_path.as_ptr());
-      let typeface = Typeface(c_typeface);
-      typeface
+      Typeface(c_typeface)
     }
   }
 
@@ -2665,16 +2660,14 @@ impl FontMetrics {
     unsafe {
       let c_font_family = std::ffi::CString::new(font_family).unwrap();
       let c_font_metrics = ffi::skiac_font_metrics_create(font_size, c_font_family.as_ptr());
-      let metrics = FontMetrics(c_font_metrics);
-      metrics
+      FontMetrics(c_font_metrics)
     }
   }
 
   #[inline]
   pub fn get_baseline_offset(&self, baseline: TextBaseline) -> f32 {
     unsafe {
-      let metrics_ref =
-        std::mem::transmute::<*mut ffi::skiac_font_metrics, &ffi::skiac_font_metrics>(self.0);
+      let metrics_ref = &*self.0;
       match baseline {
         TextBaseline::Top => -metrics_ref.ascent,
         TextBaseline::Hanging => metrics_ref.cap_height,
@@ -2689,8 +2682,7 @@ impl FontMetrics {
   #[inline]
   pub fn get_descent(&self) -> f32 {
     unsafe {
-      let metrics_ref =
-        std::mem::transmute::<*mut ffi::skiac_font_metrics, &ffi::skiac_font_metrics>(self.0);
+      let metrics_ref = &*self.0;
       metrics_ref.descent
     }
   }
@@ -2704,21 +2696,14 @@ impl Drop for FontMetrics {
 }
 
 #[derive(Debug)]
-pub struct FontCollection(
-  pub *mut ffi::skiac_font_collection,
-  pub Vec<String>,
-);
+pub struct FontCollection(pub *mut ffi::skiac_font_collection, pub Vec<String>);
 
 impl FontCollection {
   #[inline]
   pub fn new() -> FontCollection {
     unsafe {
       let c_font_collection = ffi::skiac_font_collection_create();
-      let collection = FontCollection(
-        c_font_collection,
-        Vec::new()
-      );
-      collection
+      FontCollection(c_font_collection, Vec::new())
     }
   }
 
@@ -2759,8 +2744,7 @@ impl Clone for FontCollection {
   fn clone(&self) -> FontCollection {
     unsafe {
       let c_font_collection = ffi::skiac_font_collection_clone(self.0);
-      let collection = FontCollection(c_font_collection, self.1.clone());
-      collection
+      FontCollection(c_font_collection, self.1.clone())
     }
   }
 }

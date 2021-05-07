@@ -20,7 +20,7 @@ impl Pattern {
       .map_err(|e| SkError::Generic(format!("Invalid color {:?}", e)))?;
     match color {
       CSSColor::CurrentColor => {
-        return Err(SkError::Generic(
+        Err(SkError::Generic(
           "Color should not be `currentcolor` keyword".to_owned(),
         ))
       }

@@ -1,3 +1,7 @@
+#![deny(clippy::all)]
+#![allow(clippy::many_single_char_names)]
+#![allow(clippy::too_many_arguments)]
+
 #[macro_use]
 extern crate napi_derive;
 
@@ -25,12 +29,12 @@ static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
 mod ctx;
 mod error;
 mod font;
+mod global_fonts;
 mod gradient;
 mod image;
 mod image_pattern;
 mod path;
 mod pattern;
-mod global_fonts;
 #[allow(dead_code)]
 mod sk;
 mod state;
@@ -150,7 +154,7 @@ fn to_buffer(ctx: CallContext) -> Result<JsBuffer> {
   let data_ref = surface_ref.png_data().ok_or_else(|| {
     Error::new(
       Status::GenericFailure,
-      format!("Get png data from surface failed"),
+      "Get png data from surface failed".to_string(),
     )
   })?;
   unsafe {

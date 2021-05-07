@@ -25,9 +25,9 @@ fn main() {
     env::set_var("CXX", "clang++");
   }
 
-  let skia_dir = env::var("SKIA_DIR").unwrap_or("./skia".to_owned());
+  let skia_dir = env::var("SKIA_DIR").unwrap_or_else(|_| "./skia".to_owned());
   let skia_path = path::Path::new(&skia_dir);
-  let skia_lib_dir = env::var("SKIA_LIB_DIR").unwrap_or("./skia/out/Static".to_owned());
+  let skia_lib_dir = env::var("SKIA_LIB_DIR").unwrap_or_else(|_| "./skia/out/Static".to_owned());
 
   let mut build = cc::Build::new();
 
