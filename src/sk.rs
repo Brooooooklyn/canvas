@@ -206,6 +206,12 @@ mod ffi {
 
     pub fn skiac_surface_png_data(surface: *mut skiac_surface, data: *mut skiac_sk_data);
 
+    pub fn skiac_surface_jpeg_data(
+      surface: *mut skiac_surface,
+      data: *mut skiac_sk_data,
+      quality: i32,
+    );
+
     pub fn skiac_surface_get_alpha_type(surface: *mut skiac_surface) -> i32;
 
     pub fn skiac_canvas_clear(canvas: *mut skiac_canvas, color: u32);
@@ -1317,6 +1323,24 @@ impl SurfaceRef {
         data: ptr::null_mut(),
       };
       ffi::skiac_surface_png_data(self.0, &mut data);
+
+      if data.ptr.is_null() {
+        None
+      } else {
+        Some(SurfaceDataRef(data))
+      }
+    }
+  }
+
+  #[inline]
+  pub fn jpeg_data(&self, quality: u8) -> Option<SurfaceDataRef> {
+    unsafe {
+      let mut data = ffi::skiac_sk_data {
+        ptr: ptr::null_mut(),
+        size: 0,
+        data: ptr::null_mut(),
+      };
+      ffi::skiac_surface_jpeg_data(self.0, &mut data, quality as i32);
 
       if data.ptr.is_null() {
         None

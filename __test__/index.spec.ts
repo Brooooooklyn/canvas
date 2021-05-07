@@ -2,6 +2,8 @@ import ava, { TestInterface } from 'ava'
 
 import { createCanvas, Path2D, Canvas, SKRSContext2D } from '../index'
 
+import { snapshotImage } from './image-snapshot'
+
 const test = ava as TestInterface<{
   canvas: Canvas
   ctx: SKRSContext2D
@@ -150,4 +152,33 @@ test('textBaseline state should be ok', (t) => {
   t.is(ctx.textBaseline, 'hanging')
 })
 
-test.todo('getTransform')
+test('getTransform', (t) => {
+  const { ctx } = t.context
+  t.deepEqual(ctx.getTransform(), {
+    a: 1,
+    b: 0,
+    c: 0,
+    d: 1,
+    e: 0,
+    f: 0,
+  })
+})
+
+test('stroke-and-filling-jpeg', async (t) => {
+  const { ctx } = t.context
+  ctx.lineWidth = 16
+  ctx.strokeStyle = 'red'
+
+  // Stroke on top of fill
+  ctx.beginPath()
+  ctx.rect(25, 25, 100, 100)
+  ctx.fill()
+  ctx.stroke()
+
+  // Fill on top of stroke
+  ctx.beginPath()
+  ctx.rect(175, 25, 100, 100)
+  ctx.stroke()
+  ctx.fill()
+  await snapshotImage(t, t.context, 'jpeg')
+})
