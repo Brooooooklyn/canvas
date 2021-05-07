@@ -57,9 +57,9 @@ Object.defineProperty(GlobalFontsSingleton, 'register', {
 })
 
 Object.defineProperty(GlobalFontsSingleton, 'families', {
-  get: function() {
+  get: function () {
     return Object.keys(GlobalFontsSingleton._families)
-  }
+  },
 })
 
 Object.defineProperty(GlobalFontsSingleton, 'has', {
