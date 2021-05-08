@@ -46,7 +46,7 @@ typedef struct skiac_font_metrics skiac_font_metrics;
 struct skiac_typeface
 {
   sk_sp<SkTypeface> typeface;
-  skiac_typeface(const char* path)
+  skiac_typeface(const char *path)
   {
     typeface = SkTypeface::MakeFromFile(path);
   }
@@ -138,6 +138,7 @@ extern "C"
   void skiac_surface_read_pixels(skiac_surface *c_surface, skiac_surface_data *data);
   bool skiac_surface_read_pixels_rect(skiac_surface *c_surface, uint8_t *data, int x, int y, int w, int h);
   void skiac_surface_png_data(skiac_surface *c_surface, skiac_sk_data *data);
+  void skiac_surface_jpeg_data(skiac_surface *c_surface, skiac_sk_data *data, int quality);
   int skiac_surface_get_alpha_type(skiac_surface *c_surface);
   bool skiac_surface_save(skiac_surface *c_surface, const char *path);
 

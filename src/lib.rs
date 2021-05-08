@@ -22,7 +22,7 @@ use sk::SurfaceDataRef;
 #[global_allocator]
 static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
-#[cfg(windows)]
+#[cfg(all(windows, not(debug_assertions)))]
 #[global_allocator]
 static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
@@ -47,6 +47,7 @@ fn init(mut exports: JsObject, env: Env) -> Result<()> {
     &[
       Property::new(&env, "getContext")?.with_method(get_context),
       Property::new(&env, "png")?.with_method(png),
+      Property::new(&env, "jpeg")?.with_method(jpeg),
       Property::new(&env, "toBuffer")?.with_method(to_buffer),
       Property::new(&env, "savePNG")?.with_method(save_png),
     ],
@@ -140,6 +141,19 @@ fn png(ctx: CallContext) -> Result<JsObject> {
   ctx
     .env
     .spawn(ContextData::PNG(ctx2d.surface.reference()))
+    .map(|p| p.promise_object())
+}
+
+#[js_function(1)]
+fn jpeg(ctx: CallContext) -> Result<JsObject> {
+  let quality = ctx.get::<JsNumber>(0)?.get_uint32()? as u8;
+  let this = ctx.this_unchecked::<JsObject>();
+  let ctx_js = this.get_named_property::<JsObject>("ctx")?;
+  let ctx2d = ctx.env.unwrap::<Context>(&ctx_js)?;
+
+  ctx
+    .env
+    .spawn(ContextData::JPEG(ctx2d.surface.reference(), quality))
     .map(|p| p.promise_object())
 }
 

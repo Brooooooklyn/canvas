@@ -159,6 +159,18 @@ extern "C"
     }
   }
 
+  void skiac_surface_jpeg_data(skiac_surface *c_surface, skiac_sk_data *data, int quality)
+  {
+    auto image = SURFACE_CAST->makeImageSnapshot();
+    auto jpeg_data = image->encodeToData(SkEncodedImageFormat::kJPEG, quality).release();
+    if (jpeg_data)
+    {
+      data->ptr = const_cast<uint8_t *>(jpeg_data->bytes());
+      data->size = jpeg_data->size();
+      data->data = reinterpret_cast<skiac_data *>(jpeg_data);
+    }
+  }
+
   int skiac_surface_get_alpha_type(skiac_surface *c_surface)
   {
     return SURFACE_CAST->imageInfo().alphaType();
@@ -283,7 +295,7 @@ extern "C"
     auto font_collection = c_collection->collection;
 
     TextStyle text_style;
-    text_style.setFontFamilies({ SkString(font_family) });
+    text_style.setFontFamilies({SkString(font_family)});
     text_style.setFontSize(font_size);
     text_style.setForegroundColor(*PAINT_CAST);
     text_style.setWordSpacing(0);
@@ -587,8 +599,9 @@ extern "C"
   {
     float intervals[] = {on, off};
     auto pe = SkDashPathEffect::Make(intervals, 2, phase);
-    if (!pe) {
-        return false;
+    if (!pe)
+    {
+      return false;
     }
     SkStrokeRec rec(SkStrokeRec::InitStyle::kHairline_InitStyle);
     if (pe->filterPath(PATH_CAST, *PATH_CAST, &rec, nullptr))
@@ -1013,7 +1026,7 @@ extern "C"
   skiac_font_metrics *skiac_font_metrics_create(const char *font_family, float font_size)
   {
     TextStyle text_style;
-    text_style.setFontFamilies({ SkString(font_family) });
+    text_style.setFontFamilies({SkString(font_family)});
     text_style.setFontSize(font_size);
     text_style.setWordSpacing(0);
     text_style.setHeight(1);

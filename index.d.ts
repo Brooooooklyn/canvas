@@ -238,7 +238,7 @@ export interface StrokeOptions {
   join?: StrokeJoin
 }
 
-export interface SKRSContext2D extends Omit<CanvasRenderingContext2D, 'drawImage' | 'createPattern'> {
+export interface SKRSContext2D extends Omit<CanvasRenderingContext2D, 'drawImage' | 'createPattern' | 'getTransform'> {
   drawImage(image: Image, dx: number, dy: number): void
   drawImage(image: Image, dx: number, dy: number, dw: number, dh: number): void
   drawImage(
@@ -257,11 +257,20 @@ export interface SKRSContext2D extends Omit<CanvasRenderingContext2D, 'drawImage
     repeat: 'repeat' | 'repeat-x' | 'repeat-y' | 'no-repeat' | null,
   ): CanvasPattern
   getContextAttributes(): { alpha: boolean; desynchronized: boolean }
+  getTransform(): {
+    a: number
+    b: number
+    c: number
+    d: number
+    e: number
+    f: number
+  }
 }
 
 export interface Canvas extends Omit<HTMLCanvasElement, 'getContext'> {
   getContext(contextType: '2d', contextAttributes?: { alpha: boolean }): SKRSContext2D
   png(): Promise<Buffer>
+  jpeg(quality: number): Promise<Buffer>
 }
 
 export function createCanvas(width: number, height: number): Canvas

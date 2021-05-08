@@ -1835,7 +1835,6 @@ fn get_text_baseline(ctx: CallContext) -> Result<JsString> {
 
 pub enum ContextData {
   PNG(SurfaceRef),
-  #[allow(dead_code)]
   JPEG(SurfaceRef, u8),
 }
 
@@ -1854,9 +1853,12 @@ impl Task for ContextData {
           "Get png data from surface failed".to_string(),
         )
       }),
-      _ => {
-        todo!();
-      }
+      ContextData::JPEG(surface, quality) => surface.jpeg_data(*quality).ok_or_else(|| {
+        Error::new(
+          Status::GenericFailure,
+          "Get png data from surface failed".to_string(),
+        )
+      }),
     }
   }
 
