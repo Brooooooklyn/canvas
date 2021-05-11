@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1620491558222,
+  "lastUpdate": 1620748015621,
   "repoUrl": "https://github.com/Brooooooklyn/canvas",
   "entries": {
     "Benchmark": [
@@ -4572,6 +4572,58 @@ window.BENCHMARK_DATA = {
             "range": "±0.38%",
             "unit": "ops/sec",
             "extra": "47 samples"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "lynweklm@gmail.com",
+            "name": "LongYinan",
+            "username": "Brooooooklyn"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "a64f4bd81293a293d88d0348af0f5ea96deec3eb",
+          "message": "Merge pull request #261 from Brooooooklyn/dependabot/npm_and_yarn/prettier-2.3.0\n\nchore(deps-dev): bump prettier from 2.2.1 to 2.3.0",
+          "timestamp": "2021-05-11T23:41:07+08:00",
+          "tree_id": "cb1e476f49539786f44d73ee72a36f82bd514a33",
+          "url": "https://github.com/Brooooooklyn/canvas/commit/a64f4bd81293a293d88d0348af0f5ea96deec3eb"
+        },
+        "date": 1620747931735,
+        "tool": "benchmarkjs",
+        "benches": [
+          {
+            "name": "Draw house#@napi-rs/skia",
+            "value": 20,
+            "range": "±0.42%",
+            "unit": "ops/sec",
+            "extra": "37 samples"
+          },
+          {
+            "name": "Draw house#node-canvas",
+            "value": 21,
+            "range": "±1.05%",
+            "unit": "ops/sec",
+            "extra": "39 samples"
+          },
+          {
+            "name": "Draw gradient#@napi-rs/skia",
+            "value": 19,
+            "range": "±0.43%",
+            "unit": "ops/sec",
+            "extra": "51 samples"
+          },
+          {
+            "name": "Draw gradient#node-canvas",
+            "value": 20,
+            "range": "±2.11%",
+            "unit": "ops/sec",
+            "extra": "36 samples"
           }
         ]
       }
