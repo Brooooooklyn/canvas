@@ -1,6 +1,7 @@
 use std::convert::TryInto;
 use std::f32::consts::PI;
 use std::mem;
+use std::rc::Rc;
 use std::result;
 use std::str::FromStr;
 
@@ -28,7 +29,7 @@ pub struct Context {
   path: Path,
   pub alpha: bool,
   pub(crate) states: Vec<Context2dRenderingState>,
-  pub typeface_font_provider: TypefaceFontProvider,
+  pub font_collection: Rc<FontCollection>,
 }
 
 impl Context {
@@ -111,6 +112,7 @@ impl Context {
         Property::new(env, "isPointInStroke")?.with_method(is_point_in_stroke),
         Property::new(env, "ellipse")?.with_method(ellipse),
         Property::new(env, "lineTo")?.with_method(line_to),
+        Property::new(env, "measureText")?.with_method(measure_text),
         Property::new(env, "moveTo")?.with_method(move_to),
         Property::new(env, "fill")?.with_method(fill),
         Property::new(env, "fillRect")?.with_method(fill_rect),
@@ -139,11 +141,7 @@ impl Context {
   }
 
   #[inline(always)]
-  pub fn new(
-    width: u32,
-    height: u32,
-    typeface_font_provider: &mut TypefaceFontProvider,
-  ) -> Result<Self> {
+  pub fn new(width: u32, height: u32, font_collection: &mut Rc<FontCollection>) -> Result<Self> {
     let surface = Surface::new_rgba(width, height)
       .ok_or_else(|| Error::from_reason("Create skia surface failed".to_owned()))?;
     let states = vec![Context2dRenderingState::default()];
@@ -152,7 +150,7 @@ impl Context {
       alpha: true,
       path: Path::new(),
       states,
-      typeface_font_provider: typeface_font_provider.clone(),
+      font_collection: font_collection.clone(),
     })
   }
 
@@ -499,7 +497,7 @@ impl Context {
         weight,
         stretch as u32,
         slant,
-        &self.typeface_font_provider,
+        &self.font_collection,
         state.font_style.size,
         &state.font_style.family,
         state.text_baseline,
@@ -517,7 +515,7 @@ impl Context {
       weight,
       stretch as u32,
       slant,
-      &self.typeface_font_provider,
+      &self.font_collection,
       state.font_style.size,
       &state.font_style.family,
       state.text_baseline,
@@ -525,6 +523,22 @@ impl Context {
       paint,
     );
     Ok(())
+  }
+
+  #[inline(always)]
+  fn get_line_metrics(&mut self, text: &str) -> result::Result<LineMetrics, SkError> {
+    let state = self.states.last().unwrap();
+    let fill_paint = self.fill_paint()?;
+
+    let line_metrics = LineMetrics(self.surface.canvas.get_line_metrics(
+      text,
+      &self.font_collection,
+      state.font_style.size,
+      &state.font_style.family,
+      state.text_align,
+      &fill_paint,
+    ));
+    Ok(line_metrics)
   }
 
   #[inline(always)]
@@ -553,7 +567,7 @@ fn context_2d_constructor(ctx: CallContext) -> Result<JsUndefined> {
   let typeface_font_provider_js = ctx.get::<JsObject>(2)?;
   let typeface_font_provider = ctx
     .env
-    .unwrap::<TypefaceFontProvider>(&typeface_font_provider_js)?;
+    .unwrap::<Rc<FontCollection>>(&typeface_font_provider_js)?;
 
   let mut this = ctx.this_unchecked::<JsObject>();
   let context_2d = Context::new(width, height, typeface_font_provider)?;
@@ -1022,6 +1036,37 @@ fn line_to(ctx: CallContext) -> Result<JsUndefined> {
   context_2d.path.line_to(x as f32, y as f32);
 
   ctx.env.get_undefined()
+}
+
+#[js_function(1)]
+fn measure_text(ctx: CallContext) -> Result<JsObject> {
+  let text = ctx.get::<JsString>(0)?.into_utf8()?;
+  let this = ctx.this_unchecked::<JsObject>();
+  let context_2d = ctx.env.unwrap::<Context>(&this)?;
+
+  let m = context_2d.get_line_metrics(text.as_str()?)?.0;
+
+  let mut metrics = ctx.env.create_object()?;
+  metrics.set_named_property(
+    "actualBoundingBoxAscent",
+    ctx.env.create_double(m.descent as f64)?,
+  )?;
+  metrics.set_named_property(
+    "actualBoundingBoxDescent",
+    ctx.env.create_double(m.ascent as f64)?,
+  )?;
+  metrics.set_named_property(
+    "actualBoundingBoxLeft",
+    ctx.env.create_double(m.left as f64)?,
+  )?;
+  metrics.set_named_property(
+    "actualBoundingBoxRight",
+    ctx.env.create_double((m.left + m.width) as f64)?,
+  )?;
+  // metrics.set_named_property("fontBoundingBoxAscent", ctx.env.create_double(m.ascent)?)?;
+  // metrics.set_named_property("fontBoundingBoxDescent", ctx.env.create_double(mn.descent)?)?;
+  metrics.set_named_property("width", ctx.env.create_double(m.width as f64)?)?;
+  Ok(metrics)
 }
 
 #[js_function(2)]

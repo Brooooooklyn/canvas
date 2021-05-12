@@ -70,7 +70,7 @@ fn init(mut exports: JsObject, env: Env) -> Result<()> {
     &[Property::new(&env, "setTransform")?.with_method(image_pattern::set_transform)],
   )?;
 
-  let global_fonts = sk::TypefaceFontProvider::create_js_class(&env)?;
+  let global_fonts = sk::FontCollection::create_js_class(&env)?;
 
   exports.set_named_property("CanvasRenderingContext2D", canvas_rendering_context2d)?;
 

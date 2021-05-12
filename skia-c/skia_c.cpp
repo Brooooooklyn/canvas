@@ -293,8 +293,7 @@ extern "C"
       int weight,
       int width,
       int slant,
-      skiac_typeface_font_provider *c_typeface_font_provider,
-      skiac_font_mgr *c_font_mgr,
+      skiac_font_collection *font_collection,
       float font_size,
       const char *font_family,
       float baseline_offset,
@@ -302,12 +301,6 @@ extern "C"
       float align_factor,
       skiac_paint *c_paint)
   {
-    auto font_collection = sk_make_sp<FontCollection>();
-    auto font_provider = sp_from_const(reinterpret_cast<TypefaceFontProvider *>(c_typeface_font_provider));
-    auto default_font_mgr = sp_from_const(reinterpret_cast<SkFontMgr *>(c_font_mgr));
-    font_collection->setDefaultFontManager(default_font_mgr);
-    font_collection->setAssetFontManager(font_provider);
-    font_collection->enableFontFallback();
     TextStyle text_style;
     auto font_style = SkFontStyle(weight, width, (SkFontStyle::Slant)slant);
     const std::vector<SkString> families = {SkString(font_family)};
@@ -322,7 +315,7 @@ extern "C"
     paragraph_style.turnHintingOff();
     paragraph_style.setTextStyle(text_style);
     paragraph_style.setTextAlign((TextAlign)align);
-    auto builder = ParagraphBuilderImpl::make(paragraph_style, font_collection).release();
+    auto builder = ParagraphBuilderImpl::make(paragraph_style, font_collection->collection).release();
     builder->pushStyle(text_style);
     builder->addText(text, text_len);
 
@@ -341,6 +334,7 @@ extern "C"
       CANVAS_CAST->save();
       CANVAS_CAST->scale(max_width / line_width, 1.0);
     }
+
     auto paint_y = y + baseline_offset - paragraph->getHeight() - alphabetic_baseline;
     paragraph->paint(CANVAS_CAST, paint_x, paint_y);
     if (need_scale)
@@ -348,6 +342,52 @@ extern "C"
       CANVAS_CAST->restore();
     }
     delete paragraph;
+  }
+
+  skiac_line_metrics skiac_canvas_get_line_metrics(
+      const char *text,
+      skiac_font_collection *c_collection,
+      float font_size,
+      const char *font_family,
+      uint8_t align,
+      float align_factor,
+      skiac_paint *c_paint)
+  {
+    auto font_collection = c_collection->collection;
+
+    TextStyle text_style;
+    text_style.setFontFamilies({SkString(font_family)});
+    text_style.setFontSize(font_size);
+    text_style.setWordSpacing(0);
+    text_style.setHeight(1);
+
+    ParagraphStyle paragraph_style;
+    paragraph_style.turnHintingOff();
+    paragraph_style.setTextStyle(text_style);
+    paragraph_style.setTextAlign((TextAlign)align);
+
+    auto builder = ParagraphBuilder::make(paragraph_style, font_collection);
+    builder->addText(text, strlen(text));
+
+    auto paragraph = builder->Build();
+    paragraph->layout(MAX_LAYOUT_WIDTH);
+
+    auto metrics_vec = std::vector<LineMetrics>();
+    paragraph->getLineMetrics(metrics_vec);
+    auto line_metrics = metrics_vec[0];
+    SkDebugf("ascent %f\ndescent %f\nleft %f\nwidth %f\nbaseline %f\n",
+             line_metrics.fAscent,
+             line_metrics.fDescent,
+             line_metrics.fLeft,
+             line_metrics.fWidth,
+             line_metrics.fBaseline);
+    skiac_line_metrics result;
+    result.ascent = line_metrics.fAscent;
+    result.descent = line_metrics.fDescent;
+    result.left = line_metrics.fLeft;
+    result.width = line_metrics.fWidth;
+    result.baseline = line_metrics.fBaseline;
+    return result;
   }
 
   void skiac_canvas_reset_transform(skiac_canvas *c_canvas)
@@ -1106,55 +1146,45 @@ extern "C"
     delete FONT_METRICS_CAST;
   }
 
-  skiac_font_mgr *skiac_font_mgr_ref_default()
+  skiac_font_collection *skiac_font_collection_create()
   {
-    return reinterpret_cast<skiac_font_mgr *>(SkFontMgr_New_Custom_Empty().release());
+    return new skiac_font_collection();
   }
 
-  uint32_t skiac_font_mgr_get_default_fonts_count(skiac_font_mgr *c_font_mgr)
+  skiac_font_collection *skiac_font_collection_clone(skiac_font_collection *c_font_collection)
   {
-    return reinterpret_cast<SkFontMgr *>(c_font_mgr)->countFamilies();
+    return new skiac_font_collection(c_font_collection->collection);
   }
 
-  void skiac_font_mgr_get_family(skiac_font_mgr *c_font_mgr, uint32_t i, skiac_string *c_string)
+  uint32_t skiac_font_collection_get_default_fonts_count(skiac_font_collection *c_font_collection)
+  {
+    return c_font_collection->font_mgr->countFamilies();
+  }
+
+  void skiac_font_collection_get_family(skiac_font_collection *c_font_collection, uint32_t i, skiac_string *c_string)
   {
     auto name = new SkString();
-    reinterpret_cast<SkFontMgr *>(c_font_mgr)->getFamilyName(i, name);
+    c_font_collection->font_mgr->getFamilyName(i, name);
     c_string->length = name->size();
     c_string->ptr = name->c_str();
     c_string->sk_string = name;
   }
 
-  skiac_typeface_font_provider *skiac_typeface_font_provider_create()
+  size_t skiac_font_collection_register(skiac_font_collection *c_font_collection, const uint8_t *font, size_t length)
   {
-    auto fp = new TypefaceFontProvider();
-    return reinterpret_cast<skiac_typeface_font_provider *>(fp);
-  }
-
-  size_t skiac_typeface_font_provider_register(skiac_typeface_font_provider *c_typeface_font_provider, skiac_font_mgr *c_font_mgr, uint8_t *font, size_t length)
-  {
-    auto fp = reinterpret_cast<TypefaceFontProvider *>(c_typeface_font_provider);
-    auto font_mgr = reinterpret_cast<SkFontMgr *>(c_font_mgr);
     auto typeface_data = SkData::MakeWithCopy(font, length);
-    auto typeface = font_mgr->makeFromData(typeface_data);
-    return fp->registerTypeface(typeface);
+    auto typeface = c_font_collection->font_mgr->makeFromData(typeface_data);
+    return c_font_collection->assets->registerTypeface(typeface);
   }
 
-  size_t skiac_typeface_font_provider_register_from_file(skiac_typeface_font_provider *c_typeface_font_provider, skiac_font_mgr *c_font_mgr, const char *font_path)
+  size_t skiac_font_collection_register_from_path(skiac_font_collection *c_font_collection, const char *font_path)
   {
-    auto fp = reinterpret_cast<TypefaceFontProvider *>(c_typeface_font_provider);
-    auto font_mgr = reinterpret_cast<SkFontMgr *>(c_font_mgr);
-    auto typeface = font_mgr->makeFromFile(font_path);
-    return fp->registerTypeface(typeface);
+    auto typeface = c_font_collection->font_mgr->makeFromFile(font_path);
+    return c_font_collection->assets->registerTypeface(typeface);
   }
 
-  void skiac_typeface_font_provider_ref(skiac_typeface_font_provider *c_typeface_font_provider)
+  void skiac_font_collection_destroy(skiac_font_collection *c_font_collection)
   {
-    reinterpret_cast<TypefaceFontProvider *>(c_typeface_font_provider)->ref();
-  }
-
-  void skiac_typeface_font_provider_unref(skiac_typeface_font_provider *c_typeface_font_provider)
-  {
-    reinterpret_cast<TypefaceFontProvider *>(c_typeface_font_provider)->unref();
+    delete c_font_collection;
   }
 }

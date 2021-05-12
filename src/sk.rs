@@ -170,6 +170,16 @@ mod ffi {
   }
 
   #[repr(C)]
+  #[derive(Copy, Clone, Default, Debug)]
+  pub struct skiac_line_metrics {
+    pub ascent: f32,
+    pub descent: f32,
+    pub left: f32,
+    pub width: f32,
+    pub baseline: f32,
+  }
+
+  #[repr(C)]
   #[derive(Copy, Clone, Debug)]
   pub struct skiac_font_mgr {
     _unused: [u8; 0],
@@ -307,8 +317,7 @@ mod ffi {
       weight: i32,
       width: i32,
       slant: i32,
-      c_typeface_font_provider: *mut skiac_typeface_font_provider,
-      c_font_mgr: *mut skiac_font_mgr,
+      c_font_collection: *mut skiac_font_collection,
       font_size: f32,
       font_family: *const ::std::os::raw::c_char,
       baseline_offset: f32,
@@ -316,6 +325,16 @@ mod ffi {
       align_factor: f32,
       paint: *mut skiac_paint,
     );
+
+    pub fn skiac_canvas_get_line_metrics(
+      text: *const ::std::os::raw::c_char,
+      font_collection: *mut skiac_font_collection,
+      font_size: f32,
+      font_family: *const ::std::os::raw::c_char,
+      align: u8,
+      align_factor: f32,
+      paint: *mut skiac_paint,
+    ) -> skiac_line_metrics;
 
     pub fn skiac_canvas_reset_transform(canvas: *mut skiac_canvas);
 
@@ -621,38 +640,6 @@ mod ffi {
     // SkString
     pub fn skiac_delete_sk_string(c_sk_string: *mut skiac_sk_string);
 
-    // SkTypefaceFontProvider
-    pub fn skiac_typeface_font_provider_create() -> *mut skiac_typeface_font_provider;
-
-    pub fn skiac_typeface_font_provider_register(
-      c_typeface_font_provider: *mut skiac_typeface_font_provider,
-      c_font_mgr: *mut skiac_font_mgr,
-      font: *const u8,
-      length: usize,
-    ) -> usize;
-
-    pub fn skiac_typeface_font_provider_register_from_file(
-      c_typeface_font_provider: *mut skiac_typeface_font_provider,
-      c_font_mgr: *mut skiac_font_mgr,
-      font_path: *const c_char,
-    ) -> usize;
-
-    pub fn skiac_typeface_font_provider_ref(
-      c_typeface_font_provider: *mut skiac_typeface_font_provider,
-    );
-
-    pub fn skiac_typeface_font_provider_unref(
-      c_typeface_font_provider: *mut skiac_typeface_font_provider,
-    );
-
-    // SkTypeface
-
-    pub fn skiac_typeface_get_family(c_typeface: *mut skiac_typeface, skia_string: *mut SkiaString);
-
-    pub fn skiac_typeface_ref(c_typeface: *mut skiac_typeface);
-
-    pub fn skiac_typeface_unref(c_typeface: *mut skiac_typeface);
-
     pub fn skiac_font_metrics_create(
       font_family: *const ::std::os::raw::c_char,
       font_size: f32,
@@ -660,16 +647,34 @@ mod ffi {
 
     pub fn skiac_font_metrics_destroy(c_font_metrics: *mut skiac_font_metrics);
 
-    // FontMgr
-    pub fn skiac_font_mgr_ref_default() -> *mut skiac_font_mgr;
+    pub fn skiac_font_collection_create() -> *mut skiac_font_collection;
 
-    pub fn skiac_font_mgr_get_default_fonts_count(c_font_mgr: *mut skiac_font_mgr) -> u32;
+    pub fn skiac_font_collection_clone(
+      c_font_collection: *mut skiac_font_collection,
+    ) -> *mut skiac_font_collection;
 
-    pub fn skiac_font_mgr_get_family(
-      c_font_mgr: *mut skiac_font_mgr,
+    pub fn skiac_font_collection_get_default_fonts_count(
+      c_font_collection: *mut skiac_font_collection,
+    ) -> u32;
+
+    pub fn skiac_font_collection_get_family(
+      c_font_collection: *mut skiac_font_collection,
       i: u32,
       skia_string: *mut SkiaString,
     );
+
+    pub fn skiac_font_collection_register(
+      c_font_collection: *mut skiac_font_collection,
+      font: *const u8,
+      length: usize,
+    ) -> usize;
+
+    pub fn skiac_font_collection_register_from_path(
+      c_font_collection: *mut skiac_font_collection,
+      font_path: *const c_char,
+    ) -> usize;
+
+    pub fn skiac_font_collection_destroy(c_font_collection: *mut skiac_font_collection);
   }
 }
 
@@ -1624,7 +1629,7 @@ impl Canvas {
     weight: u32,
     width: u32,
     slant: FontStyle,
-    typeface_font_provider: &TypefaceFontProvider,
+    font_collection: &FontCollection,
     font_size: f32,
     font_family: &str,
     baseline: TextBaseline,
@@ -1654,8 +1659,7 @@ impl Canvas {
         weight as i32,
         width as i32,
         slant as i32,
-        typeface_font_provider.0,
-        typeface_font_provider.1,
+        font_collection.0,
         font_size,
         c_font_family.as_ptr(),
         baseline_offset,
@@ -1663,6 +1667,39 @@ impl Canvas {
         align_factor,
         paint.0,
       );
+    }
+  }
+
+  #[inline]
+  pub fn get_line_metrics(
+    &self,
+    text: &str,
+    font_collection: &FontCollection,
+    font_size: f32,
+    font_family: &str,
+    align: TextAlign,
+    paint: &Paint,
+  ) -> ffi::skiac_line_metrics {
+    let c_text = std::ffi::CString::new(text).unwrap();
+    let c_font_family = std::ffi::CString::new(font_family).unwrap();
+
+    let align_factor = match align {
+      TextAlign::Left | TextAlign::Start => 0f32,
+      TextAlign::Right | TextAlign::End => -1f32,
+      TextAlign::Center => -0.5f32,
+      TextAlign::Justify => 0f32, // unsupported
+    };
+
+    unsafe {
+      ffi::skiac_canvas_get_line_metrics(
+        c_text.as_ptr(),
+        font_collection.0,
+        font_size,
+        c_font_family.as_ptr(),
+        align as u8,
+        align_factor,
+        paint.0,
+      )
     }
   }
 
@@ -2776,74 +2813,6 @@ impl Drop for SkiaString {
   }
 }
 
-#[derive(Debug)]
-pub struct TypefaceFontProvider(
-  *mut ffi::skiac_typeface_font_provider,
-  *mut ffi::skiac_font_mgr,
-);
-
-impl TypefaceFontProvider {
-  #[inline]
-  pub fn new() -> Self {
-    let raw = unsafe { ffi::skiac_typeface_font_provider_create() };
-    unsafe { ffi::skiac_typeface_font_provider_ref(raw) };
-    let mgr = unsafe { ffi::skiac_font_mgr_ref_default() };
-    TypefaceFontProvider(raw, mgr)
-  }
-
-  #[inline]
-  pub fn register(&mut self, font: &[u8]) -> bool {
-    unsafe {
-      ffi::skiac_typeface_font_provider_register(self.0, self.1, font.as_ptr(), font.len()) > 0
-    }
-  }
-
-  #[inline]
-  pub fn register_from_path(&mut self, font_path: &str) -> bool {
-    if let Ok(fp) = CString::new(font_path) {
-      unsafe {
-        ffi::skiac_typeface_font_provider_register_from_file(self.0, self.1, fp.as_ptr()) > 0
-      }
-    } else {
-      false
-    }
-  }
-
-  #[inline]
-  pub fn get_families(&self) -> Vec<String> {
-    let mut names = Vec::new();
-    let raw_font_mgr = self.0;
-    unsafe {
-      let size =
-        ffi::skiac_font_mgr_get_default_fonts_count(raw_font_mgr as *mut ffi::skiac_font_mgr);
-      for i in 0..size {
-        let mut name = SkiaString {
-          ptr: ptr::null_mut(),
-          length: 0,
-          sk_string: ptr::null_mut(),
-        };
-        ffi::skiac_font_mgr_get_family(raw_font_mgr as *mut ffi::skiac_font_mgr, i, &mut name);
-        let c_str: &CStr = CStr::from_ptr(name.ptr);
-        names.push(c_str.to_string_lossy().into_owned());
-      }
-    }
-    names
-  }
-}
-
-impl Clone for TypefaceFontProvider {
-  fn clone(&self) -> Self {
-    unsafe { ffi::skiac_typeface_font_provider_ref(self.0) };
-    Self(self.0, self.1)
-  }
-}
-
-impl Drop for TypefaceFontProvider {
-  fn drop(&mut self) {
-    unsafe { ffi::skiac_typeface_font_provider_unref(self.0) }
-  }
-}
-
 #[derive(Debug, Clone)]
 pub struct FontMetrics(pub *mut ffi::skiac_font_metrics);
 
@@ -2885,6 +2854,71 @@ impl Drop for FontMetrics {
   #[inline]
   fn drop(&mut self) {
     unsafe { ffi::skiac_font_metrics_destroy(self.0) }
+  }
+}
+
+#[derive(Debug, Clone)]
+pub struct LineMetrics(pub ffi::skiac_line_metrics);
+
+#[derive(Debug)]
+pub struct FontCollection(pub *mut ffi::skiac_font_collection);
+
+impl FontCollection {
+  #[inline]
+  pub fn new() -> FontCollection {
+    unsafe {
+      let c_font_collection = ffi::skiac_font_collection_create();
+      FontCollection(c_font_collection)
+    }
+  }
+
+  #[inline]
+  pub fn get_families(&self) -> Vec<String> {
+    let mut names = Vec::new();
+    unsafe {
+      let size = ffi::skiac_font_collection_get_default_fonts_count(self.0);
+      for i in 0..size {
+        let mut name = SkiaString {
+          ptr: ptr::null_mut(),
+          length: 0,
+          sk_string: ptr::null_mut(),
+        };
+        ffi::skiac_font_collection_get_family(self.0, i, &mut name);
+        let c_str: &CStr = CStr::from_ptr(name.ptr);
+        names.push(c_str.to_string_lossy().into_owned());
+      }
+    }
+    names
+  }
+
+  #[inline]
+  pub fn register(&self, font: &[u8]) -> bool {
+    unsafe { ffi::skiac_font_collection_register(self.0, font.as_ptr(), font.len()) > 0 }
+  }
+
+  #[inline]
+  pub fn register_from_path(&self, font_path: &str) -> bool {
+    if let Ok(fp) = CString::new(font_path) {
+      unsafe { ffi::skiac_font_collection_register_from_path(self.0, fp.as_ptr()) > 0 }
+    } else {
+      false
+    }
+  }
+}
+
+impl Clone for FontCollection {
+  fn clone(&self) -> FontCollection {
+    unsafe {
+      let c_font_collection = ffi::skiac_font_collection_clone(self.0);
+      FontCollection(c_font_collection)
+    }
+  }
+}
+
+impl Drop for FontCollection {
+  #[inline]
+  fn drop(&mut self) {
+    unsafe { ffi::skiac_font_collection_destroy(self.0) }
   }
 }
 
