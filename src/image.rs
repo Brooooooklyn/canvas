@@ -53,7 +53,8 @@ fn image_data_constructor(ctx: CallContext) -> Result<JsUndefined> {
               .to_owned(),
           ));
         }
-        let arraybuffer_length = image_data_ab.len();
+        let arraybuffer: &[u8] = image_data_ab.as_ref();
+        let arraybuffer_length = arraybuffer.len();
         let js_width = ctx.get::<JsNumber>(1)?;
         let width = js_width.get_uint32()?;
         let (js_height, height) = if ctx.length == 3 {
@@ -75,8 +76,7 @@ fn image_data_constructor(ctx: CallContext) -> Result<JsUndefined> {
           (js_height, height),
           arraybuffer_length,
           ManuallyDrop::new(unsafe {
-            slice::from_raw_parts(image_data_ab.as_ptr() as *const u8, arraybuffer_length)
-              .to_owned()
+            slice::from_raw_parts(arraybuffer.as_ptr() as *const u8, arraybuffer_length).to_owned()
           }),
         ))
       }
