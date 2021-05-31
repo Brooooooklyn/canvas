@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1622003771829,
+  "lastUpdate": 1622448530894,
   "repoUrl": "https://github.com/Brooooooklyn/canvas",
   "entries": {
     "Benchmark": [
@@ -4986,6 +4986,58 @@ window.BENCHMARK_DATA = {
             "name": "Draw gradient#node-canvas",
             "value": 17,
             "range": "±0.25%",
+            "unit": "ops/sec",
+            "extra": "46 samples"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "lynweklm@gmail.com",
+            "name": "LongYinan",
+            "username": "Brooooooklyn"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "fc938ab8e5269921a9980876f9da0fb93b7766e0",
+          "message": "Merge pull request #279 from Brooooooklyn/dependabot/npm_and_yarn/eslint-plugin-import-2.23.4\n\nchore(deps-dev): bump eslint-plugin-import from 2.23.2 to 2.23.4",
+          "timestamp": "2021-05-31T16:03:20+08:00",
+          "tree_id": "fa36590fbe22e3159a383689ad16095d6dea8097",
+          "url": "https://github.com/Brooooooklyn/canvas/commit/fc938ab8e5269921a9980876f9da0fb93b7766e0"
+        },
+        "date": 1622448451241,
+        "tool": "benchmarkjs",
+        "benches": [
+          {
+            "name": "Draw house#@napi-rs/skia",
+            "value": 21,
+            "range": "±0.85%",
+            "unit": "ops/sec",
+            "extra": "39 samples"
+          },
+          {
+            "name": "Draw house#node-canvas",
+            "value": 18,
+            "range": "±0.43%",
+            "unit": "ops/sec",
+            "extra": "48 samples"
+          },
+          {
+            "name": "Draw gradient#@napi-rs/skia",
+            "value": 21,
+            "range": "±0.31%",
+            "unit": "ops/sec",
+            "extra": "38 samples"
+          },
+          {
+            "name": "Draw gradient#node-canvas",
+            "value": 17,
+            "range": "±0.37%",
             "unit": "ops/sec",
             "extra": "46 samples"
           }
