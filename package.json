@@ -83,7 +83,7 @@
     "png.js": "^0.2.1",
     "prettier": "^2.3.0",
     "putasset": "^5.0.3",
-    "typescript": "^4.2.4"
+    "typescript": "^4.3.2"
   },
   "dependencies": {
     "@node-rs/helper": "^1.1.0"
