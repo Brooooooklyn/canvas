@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1622975650027,
+  "lastUpdate": 1622975652632,
   "repoUrl": "https://github.com/Brooooooklyn/canvas",
   "entries": {
     "Benchmark": [
@@ -5196,6 +5196,58 @@ window.BENCHMARK_DATA = {
             "range": "±0.19%",
             "unit": "ops/sec",
             "extra": "46 samples"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "lynweklm@gmail.com",
+            "name": "LongYinan",
+            "username": "Brooooooklyn"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "bd5d9f4f271e467976b935fe0744f298acdd1285",
+          "message": "Merge pull request #278 from Brooooooklyn/dependabot/npm_and_yarn/typescript-4.3.2\n\nchore(deps-dev): bump typescript from 4.2.4 to 4.3.2",
+          "timestamp": "2021-06-06T18:28:53+08:00",
+          "tree_id": "a458a9d2228395ce7d0e313eb5da1bfa0cadd0a1",
+          "url": "https://github.com/Brooooooklyn/canvas/commit/bd5d9f4f271e467976b935fe0744f298acdd1285"
+        },
+        "date": 1622975572099,
+        "tool": "benchmarkjs",
+        "benches": [
+          {
+            "name": "Draw house#@napi-rs/skia",
+            "value": 20,
+            "range": "±1.21%",
+            "unit": "ops/sec",
+            "extra": "37 samples"
+          },
+          {
+            "name": "Draw house#node-canvas",
+            "value": 17,
+            "range": "±1%",
+            "unit": "ops/sec",
+            "extra": "46 samples"
+          },
+          {
+            "name": "Draw gradient#@napi-rs/skia",
+            "value": 19,
+            "range": "±1.02%",
+            "unit": "ops/sec",
+            "extra": "51 samples"
+          },
+          {
+            "name": "Draw gradient#node-canvas",
+            "value": 17,
+            "range": "±0.95%",
+            "unit": "ops/sec",
+            "extra": "45 samples"
           }
         ]
       }
