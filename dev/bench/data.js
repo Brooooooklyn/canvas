@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1622448530894,
+  "lastUpdate": 1622961112116,
   "repoUrl": "https://github.com/Brooooooklyn/canvas",
   "entries": {
     "Benchmark": [
@@ -5038,6 +5038,58 @@ window.BENCHMARK_DATA = {
             "name": "Draw gradient#node-canvas",
             "value": 17,
             "range": "±0.37%",
+            "unit": "ops/sec",
+            "extra": "46 samples"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "lynweklm@gmail.com",
+            "name": "LongYinan",
+            "username": "Brooooooklyn"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "9da59aec9bfbfd1e1239b9156c64555573c3e111",
+          "message": "Merge pull request #275 from Brooooooklyn/dependabot/npm_and_yarn/typescript-eslint/parser-4.25.0\n\nchore(deps-dev): bump @typescript-eslint/parser from 4.24.0 to 4.25.0",
+          "timestamp": "2021-06-06T14:26:36+08:00",
+          "tree_id": "7725e2032d20c8f180012a6889c1ab9554efe71f",
+          "url": "https://github.com/Brooooooklyn/canvas/commit/9da59aec9bfbfd1e1239b9156c64555573c3e111"
+        },
+        "date": 1622961024610,
+        "tool": "benchmarkjs",
+        "benches": [
+          {
+            "name": "Draw house#@napi-rs/skia",
+            "value": 21,
+            "range": "±0.31%",
+            "unit": "ops/sec",
+            "extra": "39 samples"
+          },
+          {
+            "name": "Draw house#node-canvas",
+            "value": 18,
+            "range": "±0.43%",
+            "unit": "ops/sec",
+            "extra": "48 samples"
+          },
+          {
+            "name": "Draw gradient#@napi-rs/skia",
+            "value": 20,
+            "range": "±0.41%",
+            "unit": "ops/sec",
+            "extra": "37 samples"
+          },
+          {
+            "name": "Draw gradient#node-canvas",
+            "value": 17,
+            "range": "±0.45%",
             "unit": "ops/sec",
             "extra": "46 samples"
           }
