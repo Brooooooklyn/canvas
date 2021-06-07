@@ -180,13 +180,13 @@
   resolved "https://registry.npmjs.org/@napi-rs/triples/-/triples-1.0.2.tgz#2ce4c6a78568358772008f564ee5009093d20a19"
   integrity sha512-EL3SiX43m9poFSnhDx4d4fn9SSaqyO2rHsCNhETi9bWPmjXK3uPJ0QpPFtx39FEdHcz1vJmsiW41kqc0AgvtzQ==
 
-"@node-rs/helper@^1.0.0", "@node-rs/helper@^1.1.0":
-  version "1.1.0"
-  resolved "https://registry.npmjs.org/@node-rs/helper/-/helper-1.1.0.tgz#4fcbbebae3b81932d1ff3e431c7cd3886b504742"
-  integrity sha512-r43YnnrY5JNzDuXJdW3sBJrKzvejvFmFWbiItUEoBJsaPzOIWFMhXB7i5j4c9EMXcFfxveF4l7hT+rLmwtjrVQ==
+"@node-rs/helper@^1.0.0", "@node-rs/helper@^1.1.1":
+  version "1.1.1"
+  resolved "https://registry.yarnpkg.com/@node-rs/helper/-/helper-1.1.1.tgz#1cbac64cd5bcaa038d9c23bc951c75667dc981c1"
+  integrity sha512-HnCdrCXKOm2jdzAdIGk4fey5xn8BuCK0+CiWwc3oMIxaQG1/0v24ZlDJV5DiSQo7vYy+1wKmOVRY3ErmZZm7+A==
   dependencies:
     "@napi-rs/triples" "^1.0.2"
-    tslib "^2.1.0"
+    tslib "^2.2.0"
 
 "@nodelib/fs.scandir@2.1.4":
   version "2.1.4"
@@ -4050,7 +4050,7 @@ tslib@^1.8.1, tslib@^1.9.0:
   resolved "https://registry.npmjs.org/tslib/-/tslib-1.14.1.tgz#cf2d38bdc34a134bcaf1091c41f6619e2f672d00"
   integrity sha512-Xni35NKzjgMrwevysHTCArtLDpPvye8zV/0E4EyYn43P7/7qvQwPh9BGkHewbMulVntbigmcT7rdX3BNo9wRJg==
 
-tslib@^2.1.0:
+tslib@^2.1.0, tslib@^2.2.0:
   version "2.2.0"
   resolved "https://registry.npmjs.org/tslib/-/tslib-2.2.0.tgz#fb2c475977e35e241311ede2693cee1ec6698f5c"
   integrity sha512-gS9GVHRU+RGn5KQM2rllAlR3dU6m7AcpJKdtH8gFvQiC4Otgk98XnmMU+nZenHt/+VhnBPWwgrJsyrdcw6i23w==
