@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1622975652632,
+  "lastUpdate": 1623140463995,
   "repoUrl": "https://github.com/Brooooooklyn/canvas",
   "entries": {
     "Benchmark": [
@@ -5248,6 +5248,58 @@ window.BENCHMARK_DATA = {
             "range": "±0.95%",
             "unit": "ops/sec",
             "extra": "45 samples"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "lynweklm@gmail.com",
+            "name": "LongYinan",
+            "username": "Brooooooklyn"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "7b2fb61f9ed1d63754bd228bd0a8dc7ad59c8942",
+          "message": "Merge pull request #283 from Brooooooklyn/dependabot/npm_and_yarn/node-rs/helper-1.1.1\n\nchore(deps): bump @node-rs/helper from 1.1.0 to 1.1.1",
+          "timestamp": "2021-06-08T16:16:18+08:00",
+          "tree_id": "629ff876b70974cbdb7084cc8fd2a5b3d78f4add",
+          "url": "https://github.com/Brooooooklyn/canvas/commit/7b2fb61f9ed1d63754bd228bd0a8dc7ad59c8942"
+        },
+        "date": 1623140395091,
+        "tool": "benchmarkjs",
+        "benches": [
+          {
+            "name": "Draw house#@napi-rs/skia",
+            "value": 25,
+            "range": "±0.08%",
+            "unit": "ops/sec",
+            "extra": "45 samples"
+          },
+          {
+            "name": "Draw house#node-canvas",
+            "value": 21,
+            "range": "±0.25%",
+            "unit": "ops/sec",
+            "extra": "39 samples"
+          },
+          {
+            "name": "Draw gradient#@napi-rs/skia",
+            "value": 24,
+            "range": "±0.06%",
+            "unit": "ops/sec",
+            "extra": "43 samples"
+          },
+          {
+            "name": "Draw gradient#node-canvas",
+            "value": 20,
+            "range": "±0.28%",
+            "unit": "ops/sec",
+            "extra": "38 samples"
           }
         ]
       }
