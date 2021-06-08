@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1623140540625,
+  "lastUpdate": 1623174082998,
   "repoUrl": "https://github.com/Brooooooklyn/canvas",
   "entries": {
     "Benchmark": [
@@ -5404,6 +5404,58 @@ window.BENCHMARK_DATA = {
             "range": "±1.2%",
             "unit": "ops/sec",
             "extra": "37 samples"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "lynweklm@gmail.com",
+            "name": "LongYinan",
+            "username": "Brooooooklyn"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "008a6f667c96252ed784a9e979fc312289403193",
+          "message": "Merge pull request #285 from Brooooooklyn/dependabot/npm_and_yarn/typescript-eslint/parser-4.26.0\n\nchore(deps-dev): bump @typescript-eslint/parser from 4.25.0 to 4.26.0",
+          "timestamp": "2021-06-09T01:36:18+08:00",
+          "tree_id": "5540512d27ece3022e6b4f38cd492063cf2bbc8a",
+          "url": "https://github.com/Brooooooklyn/canvas/commit/008a6f667c96252ed784a9e979fc312289403193"
+        },
+        "date": 1623174014668,
+        "tool": "benchmarkjs",
+        "benches": [
+          {
+            "name": "Draw house#@napi-rs/skia",
+            "value": 27,
+            "range": "±1.3%",
+            "unit": "ops/sec",
+            "extra": "47 samples"
+          },
+          {
+            "name": "Draw house#node-canvas",
+            "value": 26,
+            "range": "±1.77%",
+            "unit": "ops/sec",
+            "extra": "46 samples"
+          },
+          {
+            "name": "Draw gradient#@napi-rs/skia",
+            "value": 24,
+            "range": "±2.35%",
+            "unit": "ops/sec",
+            "extra": "43 samples"
+          },
+          {
+            "name": "Draw gradient#node-canvas",
+            "value": 25,
+            "range": "±1.62%",
+            "unit": "ops/sec",
+            "extra": "45 samples"
           }
         ]
       }
