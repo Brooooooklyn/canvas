@@ -319,7 +319,7 @@ jobs:
         run: ls -R .
         shell: bash
 
-      - uses: uraimo/run-on-arch-action@v2.0.9
+      - uses: uraimo/run-on-arch-action@v2.0.10
         name: Setup and run tests
         id: runcmd
         with:
@@ -377,7 +377,7 @@ jobs:
         run: ls -R .
         shell: bash
 
-      - uses: uraimo/run-on-arch-action@v2.0.9
+      - uses: uraimo/run-on-arch-action@v2.0.10
         name: Setup and run tests
         id: runcmd
         with:
