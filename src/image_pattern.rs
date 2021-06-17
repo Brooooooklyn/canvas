@@ -83,7 +83,7 @@ pub fn canvas_pattern_constructor(ctx: CallContext) -> Result<JsUndefined> {
   };
   ctx.env.wrap(
     &mut this,
-    Pattern::ImagePattern(ImagePattern {
+    Pattern::Image(ImagePattern {
       transform: Transform::default(),
       bitmap,
       repeat_x,
@@ -117,7 +117,7 @@ pub fn set_transform(ctx: CallContext) -> Result<JsUndefined> {
     .get_double()?;
   let transform = Transform::new(a as f32, b as f32, c as f32, d as f32, e as f32, f as f32);
   let pattern = ctx.env.unwrap::<Pattern>(&this)?;
-  if let Pattern::ImagePattern(pattern) = pattern {
+  if let Pattern::Image(pattern) = pattern {
     pattern.transform = transform;
   }
   ctx.env.get_undefined()

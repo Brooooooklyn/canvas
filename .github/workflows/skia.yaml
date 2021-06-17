@@ -13,7 +13,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-20.04, macos-latest, windows-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
 
     name: stable - ${{ matrix.os }} - build skia
     runs-on: ${{ matrix.os }}
@@ -48,18 +48,22 @@ jobs:
           choco install llvm ninja -y
           pip install certifi
 
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v1
+        if: matrix.os == 'ubuntu-latest'
+        with:
+          registry: ghcr.io
+          username: ${{ secrets.GH_CONTAINER_UNAME }}
+          password: ${{ secrets.GH_TOKEN }}
+
       - name: Compile skia
-        if: matrix.os == 'ubuntu-20.04'
+        if: matrix.os == 'ubuntu-latest'
         run: |
-          docker login -u $DOCKER_USERNAME -p $DOCKER_PASSWORD $DOCKER_REGISTRY_URL
-          docker pull docker.pkg.github.com/brooooooklyn/canvas/debian-builder:stretch
-          docker tag docker.pkg.github.com/brooooooklyn/canvas/debian-builder:stretch builder
+          docker pull ghcr.io/brooooooklyn/canvas/debian-builder:stretch
+          docker tag ghcr.io/brooooooklyn/canvas/debian-builder:stretch builder
           docker run --user "$(id -u):$(id -g)" --rm -v $(pwd):/canvas -w /canvas builder node ./scripts/build-skia.js
         env:
           PYTHONHTTPSVERIFY: 0
-          DOCKER_REGISTRY_URL: docker.pkg.github.com
-          DOCKER_USERNAME: ${{ github.actor }}
-          DOCKER_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Compile skia
         if: matrix.os == 'macos-latest'
@@ -143,7 +147,7 @@ jobs:
     if: "!contains(github.event.head_commit.message, 'skip skia')"
 
     name: stable - linux-x64-musl - build skia
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v2
@@ -156,17 +160,20 @@ jobs:
           node-version: 14
           check-latest: true
 
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v1
+        with:
+          registry: ghcr.io
+          username: ${{ secrets.GH_CONTAINER_UNAME }}
+          password: ${{ secrets.GH_TOKEN }}
+
       - name: Compile skia
         run: |
-          docker login -u $DOCKER_USERNAME -p $DOCKER_PASSWORD $DOCKER_REGISTRY_URL
-          docker pull docker.pkg.github.com/brooooooklyn/canvas/musl-builder:lts
-          docker tag docker.pkg.github.com/brooooooklyn/canvas/musl-builder:lts builder
+          docker pull ghcr.io/brooooooklyn/canvas/musl-builder:lts
+          docker tag ghcr.io/brooooooklyn/canvas/musl-builder:lts builder
           docker run --user "$(id -u):$(id -g)" --rm -v $(pwd):/canvas -w /canvas builder node ./scripts/build-skia.js
         env:
           PYTHONHTTPSVERIFY: 0
-          DOCKER_REGISTRY_URL: docker.pkg.github.com
-          DOCKER_USERNAME: ${{ github.actor }}
-          DOCKER_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Cache NPM dependencies
         uses: actions/cache@v1
@@ -188,7 +195,7 @@ jobs:
     if: "!contains(github.event.head_commit.message, 'skip skia')"
 
     name: stable - aarch64-linux - build skia
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v2
@@ -236,7 +243,7 @@ jobs:
     if: "!contains(github.event.head_commit.message, 'skip skia')"
 
     name: stable - armv7-linux - build skia
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v2
@@ -284,7 +291,7 @@ jobs:
     if: "!contains(github.event.head_commit.message, 'skip skia')"
 
     name: stable - aarch64-linux-android - build skia
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v2

@@ -210,7 +210,7 @@ fn parse_font_stretch(stretch: &str) -> Option<f32> {
     "ultra-expanded" | "200%" => Some(2.0),
     _ => {
       if stretch.ends_with('%') {
-        stretch.strip_suffix("%").and_then(|s| {
+        stretch.strip_suffix('%').and_then(|s| {
           s.parse::<f32>()
             .map(|value| {
               if value >= 0.0 {

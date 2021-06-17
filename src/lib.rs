@@ -13,16 +13,10 @@ use font::{init_font_regexp, FONT_REGEXP};
 use sk::SurfaceDataRef;
 
 #[cfg(all(
-  unix,
+  target_arch = "x86_64",
   not(target_env = "musl"),
-  not(target_arch = "aarch64"),
-  not(target_arch = "arm"),
   not(debug_assertions)
 ))]
-#[global_allocator]
-static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
-
-#[cfg(all(windows, not(debug_assertions)))]
 #[global_allocator]
 static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
@@ -140,7 +134,7 @@ fn png(ctx: CallContext) -> Result<JsObject> {
 
   ctx
     .env
-    .spawn(ContextData::PNG(ctx2d.surface.reference()))
+    .spawn(ContextData::Png(ctx2d.surface.reference()))
     .map(|p| p.promise_object())
 }
 
@@ -153,7 +147,7 @@ fn jpeg(ctx: CallContext) -> Result<JsObject> {
 
   ctx
     .env
-    .spawn(ContextData::JPEG(ctx2d.surface.reference(), quality))
+    .spawn(ContextData::Jpeg(ctx2d.surface.reference(), quality))
     .map(|p| p.promise_object())
 }
 

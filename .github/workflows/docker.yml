@@ -12,19 +12,19 @@ jobs:
     steps:
       - uses: actions/checkout@v2
 
-      - name: Login to registry
-        run: |
-          docker login -u $DOCKER_USERNAME -p $DOCKER_PASSWORD $DOCKER_REGISTRY_URL
-        env:
-          DOCKER_REGISTRY_URL: docker.pkg.github.com
-          DOCKER_USERNAME: ${{ github.actor }}
-          DOCKER_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v1
+        with:
+          registry: ghcr.io
+          username: ${{ secrets.GH_CONTAINER_UNAME }}
+          password: ${{ secrets.GH_TOKEN }}
 
       - name: Build docker image
         run: |
-          docker build . --pull -t docker.pkg.github.com/brooooooklyn/canvas/debian-builder:stretch
-          docker build . --pull --no-cache -f musl.Dockerfile -t docker.pkg.github.com/brooooooklyn/canvas/musl-builder:lts
+          docker build . --pull --no-cache -t ghcr.io/brooooooklyn/canvas/debian-builder:stretch
+          docker build . --pull --no-cache -f musl.Dockerfile -t ghcr.io/brooooooklyn/canvas/musl-builder:lts
+
       - name: Push docker image
         run: |
-          docker push docker.pkg.github.com/brooooooklyn/canvas/debian-builder:stretch
-          docker push docker.pkg.github.com/brooooooklyn/canvas/musl-builder:lts
+          docker push ghcr.io/brooooooklyn/canvas/debian-builder:stretch
+          docker push ghcr.io/brooooooklyn/canvas/musl-builder:lts

@@ -107,13 +107,13 @@ fn image_data_constructor(ctx: CallContext) -> Result<JsUndefined> {
   let mut this = ctx.this_unchecked::<JsObject>();
   ctx.env.wrap(&mut this, image_data)?;
   this.define_properties(&[
-    Property::new(&ctx.env, "data")?
+    Property::new(ctx.env, "data")?
       .with_value(typed_array)
       .with_property_attributes(PropertyAttributes::Enumerable),
-    Property::new(&ctx.env, "width")?
+    Property::new(ctx.env, "width")?
       .with_value(js_width)
       .with_property_attributes(PropertyAttributes::Enumerable),
-    Property::new(&ctx.env, "height")?
+    Property::new(ctx.env, "height")?
       .with_value(js_height)
       .with_property_attributes(PropertyAttributes::Enumerable),
   ])?;
@@ -132,25 +132,25 @@ impl Image {
       "Image",
       image_constructor,
       &vec![
-        Property::new(&env, "width")?
+        Property::new(env, "width")?
           .with_getter(get_width)
           .with_property_attributes(PropertyAttributes::Enumerable),
-        Property::new(&env, "height")?
+        Property::new(env, "height")?
           .with_getter(get_height)
           .with_property_attributes(PropertyAttributes::Enumerable),
-        Property::new(&env, "naturalWidth")?
+        Property::new(env, "naturalWidth")?
           .with_getter(get_width)
           .with_property_attributes(PropertyAttributes::Enumerable),
-        Property::new(&env, "naturalHeight")?
+        Property::new(env, "naturalHeight")?
           .with_getter(get_height)
           .with_property_attributes(PropertyAttributes::Enumerable),
-        Property::new(&env, "complete")?
+        Property::new(env, "complete")?
           .with_getter(get_complete)
           .with_property_attributes(PropertyAttributes::Enumerable),
-        Property::new(&env, "alt")?
+        Property::new(env, "alt")?
           .with_setter(set_alt)
           .with_getter(get_alt),
-        Property::new(&env, "src")?
+        Property::new(env, "src")?
           .with_setter(set_src)
           .with_getter(get_src),
       ],

@@ -36,101 +36,101 @@ impl Context {
       "CanvasRenderingContext2D",
       context_2d_constructor,
       &vec![
-        Property::new(&env, "canvas")?.with_value(env.get_null()?),
+        Property::new(env, "canvas")?.with_value(env.get_null()?),
         // properties
-        Property::new(&env, "miterLimit")?
+        Property::new(env, "miterLimit")?
           .with_getter(get_miter_limit)
           .with_setter(set_miter_limit),
-        Property::new(&env, "globalAlpha")?
+        Property::new(env, "globalAlpha")?
           .with_getter(get_global_alpha)
           .with_setter(set_global_alpha),
-        Property::new(&env, "globalCompositeOperation")?
+        Property::new(env, "globalCompositeOperation")?
           .with_getter(get_global_composite_operation)
           .with_setter(set_global_composite_operation),
-        Property::new(&env, "imageSmoothingEnabled")?
+        Property::new(env, "imageSmoothingEnabled")?
           .with_getter(get_image_smoothing_enabled)
           .with_setter(set_image_smoothing_enabled),
-        Property::new(&env, "imageSmoothingQuality")?
+        Property::new(env, "imageSmoothingQuality")?
           .with_getter(get_image_smoothing_quality)
           .with_setter(set_image_smoothing_quality),
-        Property::new(&env, "lineCap")?
+        Property::new(env, "lineCap")?
           .with_setter(set_line_cap)
           .with_getter(get_line_cap),
-        Property::new(&env, "lineDashOffset")?
+        Property::new(env, "lineDashOffset")?
           .with_setter(set_line_dash_offset)
           .with_getter(get_line_dash_offset),
-        Property::new(&env, "lineJoin")?
+        Property::new(env, "lineJoin")?
           .with_setter(set_line_join)
           .with_getter(get_line_join),
-        Property::new(&env, "lineWidth")?
+        Property::new(env, "lineWidth")?
           .with_setter(set_line_width)
           .with_getter(get_line_width),
-        Property::new(&env, "fillStyle")?
+        Property::new(env, "fillStyle")?
           .with_setter(set_fill_style)
           .with_getter(get_fill_style),
-        Property::new(&env, "font")?
+        Property::new(env, "font")?
           .with_setter(set_font)
           .with_getter(get_font),
-        Property::new(&env, "strokeStyle")?
+        Property::new(env, "strokeStyle")?
           .with_setter(set_stroke_style)
           .with_getter(get_stroke_style),
-        Property::new(&env, "shadowBlur")?
+        Property::new(env, "shadowBlur")?
           .with_setter(set_shadow_blur)
           .with_getter(get_shadow_blur),
-        Property::new(&env, "shadowColor")?
+        Property::new(env, "shadowColor")?
           .with_setter(set_shadow_color)
           .with_getter(get_shadow_color),
-        Property::new(&env, "shadowOffsetX")?
+        Property::new(env, "shadowOffsetX")?
           .with_setter(set_shadow_offset_x)
           .with_getter(get_shadow_offset_x),
-        Property::new(&env, "shadowOffsetY")?
+        Property::new(env, "shadowOffsetY")?
           .with_setter(set_shadow_offset_y)
           .with_getter(get_shadow_offset_y),
-        Property::new(&env, "textAlign")?
+        Property::new(env, "textAlign")?
           .with_setter(set_text_align)
           .with_getter(get_text_align),
-        Property::new(&env, "textBaseline")?
+        Property::new(env, "textBaseline")?
           .with_setter(set_text_baseline)
           .with_getter(get_text_baseline),
         // methods
-        Property::new(&env, "arc")?.with_method(arc),
-        Property::new(&env, "arcTo")?.with_method(arc_to),
-        Property::new(&env, "beginPath")?.with_method(begin_path),
-        Property::new(&env, "bezierCurveTo")?.with_method(bezier_curve_to),
-        Property::new(&env, "clearRect")?.with_method(clear_rect),
-        Property::new(&env, "clip")?.with_method(clip),
-        Property::new(&env, "closePath")?.with_method(close_path),
-        Property::new(&env, "createLinearGradient")?.with_method(create_linear_gradient),
-        Property::new(&env, "createRadialGradient")?.with_method(create_radial_gradient),
-        Property::new(&env, "drawImage")?.with_method(draw_image),
-        Property::new(&env, "getContextAttributes")?.with_method(get_context_attributes),
-        Property::new(&env, "isPointInPath")?.with_method(is_point_in_path),
-        Property::new(&env, "isPointInStroke")?.with_method(is_point_in_stroke),
-        Property::new(&env, "ellipse")?.with_method(ellipse),
-        Property::new(&env, "lineTo")?.with_method(line_to),
-        Property::new(&env, "moveTo")?.with_method(move_to),
-        Property::new(&env, "fill")?.with_method(fill),
-        Property::new(&env, "fillRect")?.with_method(fill_rect),
-        Property::new(&env, "fillText")?.with_method(fill_text),
-        Property::new(&env, "_getImageData")?.with_method(get_image_data),
-        Property::new(&env, "getLineDash")?.with_method(get_line_dash),
-        Property::new(&env, "putImageData")?.with_method(put_image_data),
-        Property::new(&env, "quadraticCurveTo")?.with_method(quadratic_curve_to),
-        Property::new(&env, "rect")?.with_method(rect),
-        Property::new(&env, "resetTransform")?.with_method(reset_transform),
-        Property::new(&env, "restore")?.with_method(restore),
-        Property::new(&env, "rotate")?.with_method(rotate),
-        Property::new(&env, "save")?.with_method(save),
-        Property::new(&env, "scale")?.with_method(scale),
-        Property::new(&env, "setLineDash")?.with_method(set_line_dash),
-        Property::new(&env, "stroke")?.with_method(stroke),
-        Property::new(&env, "strokeRect")?.with_method(stroke_rect),
-        Property::new(&env, "strokeText")?.with_method(stroke_text),
-        Property::new(&env, "translate")?.with_method(translate),
-        Property::new(&env, "transform")?.with_method(transform),
+        Property::new(env, "arc")?.with_method(arc),
+        Property::new(env, "arcTo")?.with_method(arc_to),
+        Property::new(env, "beginPath")?.with_method(begin_path),
+        Property::new(env, "bezierCurveTo")?.with_method(bezier_curve_to),
+        Property::new(env, "clearRect")?.with_method(clear_rect),
+        Property::new(env, "clip")?.with_method(clip),
+        Property::new(env, "closePath")?.with_method(close_path),
+        Property::new(env, "createLinearGradient")?.with_method(create_linear_gradient),
+        Property::new(env, "createRadialGradient")?.with_method(create_radial_gradient),
+        Property::new(env, "drawImage")?.with_method(draw_image),
+        Property::new(env, "getContextAttributes")?.with_method(get_context_attributes),
+        Property::new(env, "isPointInPath")?.with_method(is_point_in_path),
+        Property::new(env, "isPointInStroke")?.with_method(is_point_in_stroke),
+        Property::new(env, "ellipse")?.with_method(ellipse),
+        Property::new(env, "lineTo")?.with_method(line_to),
+        Property::new(env, "moveTo")?.with_method(move_to),
+        Property::new(env, "fill")?.with_method(fill),
+        Property::new(env, "fillRect")?.with_method(fill_rect),
+        Property::new(env, "fillText")?.with_method(fill_text),
+        Property::new(env, "_getImageData")?.with_method(get_image_data),
+        Property::new(env, "getLineDash")?.with_method(get_line_dash),
+        Property::new(env, "putImageData")?.with_method(put_image_data),
+        Property::new(env, "quadraticCurveTo")?.with_method(quadratic_curve_to),
+        Property::new(env, "rect")?.with_method(rect),
+        Property::new(env, "resetTransform")?.with_method(reset_transform),
+        Property::new(env, "restore")?.with_method(restore),
+        Property::new(env, "rotate")?.with_method(rotate),
+        Property::new(env, "save")?.with_method(save),
+        Property::new(env, "scale")?.with_method(scale),
+        Property::new(env, "setLineDash")?.with_method(set_line_dash),
+        Property::new(env, "stroke")?.with_method(stroke),
+        Property::new(env, "strokeRect")?.with_method(stroke_rect),
+        Property::new(env, "strokeText")?.with_method(stroke_text),
+        Property::new(env, "translate")?.with_method(translate),
+        Property::new(env, "transform")?.with_method(transform),
         // getter setter method
-        Property::new(&env, "getTransform")?.with_method(get_current_transform),
-        Property::new(&env, "setTransform")?.with_method(set_current_transform),
+        Property::new(env, "getTransform")?.with_method(get_current_transform),
+        Property::new(env, "setTransform")?.with_method(set_current_transform),
       ],
     )
   }
@@ -300,7 +300,7 @@ impl Context {
         paint.set_color(0, 0, 0, alpha);
         paint.set_shader(&shader);
       }
-      Pattern::ImagePattern(p) => {
+      Pattern::Image(p) => {
         if let Some(shader) = p.get_shader() {
           paint.set_color(0, 0, 0, alpha);
           paint.set_shader(&shader);
@@ -337,7 +337,7 @@ impl Context {
         paint.set_color(0, 0, 0, global_alpha);
         paint.set_shader(&shader);
       }
-      Pattern::ImagePattern(p) => {
+      Pattern::Image(p) => {
         if let Some(shader) = p.get_shader() {
           paint.set_color(0, 0, 0, current_paint.get_alpha());
           paint.set_shader(&shader);
@@ -465,7 +465,7 @@ impl Context {
   ) -> result::Result<(), SkError> {
     let state = self.states.last().unwrap();
 
-    if let Some(shadow_paint) = self.shadow_blur_paint(&paint) {
+    if let Some(shadow_paint) = self.shadow_blur_paint(paint) {
       let surface = &mut self.surface;
       surface.save();
       Self::apply_shadow_offset_matrix(surface, state.shadow_offset_x, state.shadow_offset_y)?;
@@ -492,7 +492,7 @@ impl Context {
       &state.font_style.family,
       state.text_baseline,
       state.text_align,
-      &paint,
+      paint,
     );
     Ok(())
   }
@@ -1834,8 +1834,8 @@ fn get_text_baseline(ctx: CallContext) -> Result<JsString> {
 }
 
 pub enum ContextData {
-  PNG(SurfaceRef),
-  JPEG(SurfaceRef, u8),
+  Png(SurfaceRef),
+  Jpeg(SurfaceRef, u8),
 }
 
 unsafe impl Send for ContextData {}
@@ -1847,13 +1847,13 @@ impl Task for ContextData {
 
   fn compute(&mut self) -> Result<Self::Output> {
     match self {
-      ContextData::PNG(surface) => surface.png_data().ok_or_else(|| {
+      ContextData::Png(surface) => surface.png_data().ok_or_else(|| {
         Error::new(
           Status::GenericFailure,
           "Get png data from surface failed".to_string(),
         )
       }),
-      ContextData::JPEG(surface, quality) => surface.jpeg_data(*quality).ok_or_else(|| {
+      ContextData::Jpeg(surface, quality) => surface.jpeg_data(*quality).ok_or_else(|| {
         Error::new(
           Status::GenericFailure,
           "Get png data from surface failed".to_string(),
