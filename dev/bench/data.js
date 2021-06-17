@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1623951157499,
+  "lastUpdate": 1623955545131,
   "repoUrl": "https://github.com/Brooooooklyn/canvas",
   "entries": {
     "Benchmark": [
@@ -5664,6 +5664,58 @@ window.BENCHMARK_DATA = {
             "range": "±0.23%",
             "unit": "ops/sec",
             "extra": "46 samples"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "bot@renovateapp.com",
+            "name": "Renovate Bot",
+            "username": "renovate-bot"
+          },
+          "committer": {
+            "email": "29139614+renovate[bot]@users.noreply.github.com",
+            "name": "renovate[bot]",
+            "username": "renovate[bot]"
+          },
+          "distinct": true,
+          "id": "1915c608fcb7318ce778f687c3ca08543203820f",
+          "message": "fix(deps): update rust crate regex to 1.5",
+          "timestamp": "2021-06-17T18:41:10Z",
+          "tree_id": "cfa61de9ab8fda2d64c66560ead72afec874b2f0",
+          "url": "https://github.com/Brooooooklyn/canvas/commit/1915c608fcb7318ce778f687c3ca08543203820f"
+        },
+        "date": 1623955468025,
+        "tool": "benchmarkjs",
+        "benches": [
+          {
+            "name": "Draw house#@napi-rs/skia",
+            "value": 22,
+            "range": "±2.15%",
+            "unit": "ops/sec",
+            "extra": "39 samples"
+          },
+          {
+            "name": "Draw house#node-canvas",
+            "value": 23,
+            "range": "±0.82%",
+            "unit": "ops/sec",
+            "extra": "42 samples"
+          },
+          {
+            "name": "Draw gradient#@napi-rs/skia",
+            "value": 21,
+            "range": "±1.23%",
+            "unit": "ops/sec",
+            "extra": "39 samples"
+          },
+          {
+            "name": "Draw gradient#node-canvas",
+            "value": 22,
+            "range": "±1.3%",
+            "unit": "ops/sec",
+            "extra": "39 samples"
           }
         ]
       }
