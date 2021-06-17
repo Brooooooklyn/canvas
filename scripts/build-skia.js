@@ -44,6 +44,7 @@ const GN_ARGS = [
   `skia_enable_skrive=false`,
   `skia_enable_skshaper=true`,
   `skia_enable_tools=false`,
+  `skia_enable_svg=true`,
   `skia_use_expat=false`,
   `skia_use_gl=false`,
   `skia_use_harfbuzz=true`,
@@ -57,21 +58,64 @@ const GN_ARGS = [
   `skia_use_libjpeg_turbo_encode=true`,
   `skia_use_libwebp_decode=true`,
   `skia_use_libwebp_encode=true`,
+  `skia_use_system_libjpeg_turbo=false`,
+  `skia_use_system_libpng=false`,
+  `skia_use_system_libwebp=false`,
+  `skia_use_system_zlib=false`,
   `skia_use_lua=false`,
   `skia_use_piex=false`,
 ]
 
 switch (PLATFORM_NAME) {
   case 'win32':
-    ExtraCflagsCC = `\\"/std:c++17\\", \\"/MT\\", \\"-DSK_FORCE_RASTER_PIPELINE_BLITTER\\"`
+    ExtraCflagsCC =
+      '\\"/std:c++17\\",' +
+      '\\"/MT\\",' +
+      '\\"-DSK_FORCE_RASTER_PIPELINE_BLITTER\\",' +
+      '\\"-DSK_ENABLE_SVG\\",' +
+      '\\"-DSK_RELEASE\\",' +
+      '\\"-DSK_DISABLE_TRACING\\",' +
+      '\\"-DSK_ENCODE_WEBP\\",' +
+      '\\"-DSK_CODEC_DECODES_WEBP\\",' +
+      '\\"-DSK_ENCODE_PNG\\",' +
+      '\\"-DSK_CODEC_DECODES_PNG\\",' +
+      '\\"-DSK_ENCODE_JPEG\\",' +
+      '\\"-DSK_CODEC_DECODES_JPEG\\",' +
+      '\\"-DSK_SHAPER_HARFBUZZ_AVAILABLE\\"'
     ExtraSkiaBuildFlag = 'clang_win=\\"C:\\\\Program Files\\\\LLVM\\"'
     break
   case 'linux':
-    ExtraCflagsCC = '"-std=c++17", "-fno-exceptions", "-DSK_FORCE_RASTER_PIPELINE_BLITTER"'
+    ExtraCflagsCC =
+      '"-std=c++17",' +
+      '"-fno-exceptions",' +
+      '"-DSK_FORCE_RASTER_PIPELINE_BLITTER",' +
+      '"-DSK_ENABLE_SVG",' +
+      '"-DSK_RELEASE",' +
+      '"-DSK_DISABLE_TRACING",' +
+      '"-DSK_ENCODE_WEBP",' +
+      '"-DSK_CODEC_DECODES_WEBP",' +
+      '"-DSK_ENCODE_PNG",' +
+      '"-DSK_CODEC_DECODES_PNG",' +
+      '"-DSK_ENCODE_JPEG",' +
+      '"-DSK_CODEC_DECODES_JPEG",' +
+      '"-DSK_SHAPER_HARFBUZZ_AVAILABLE"'
     ExtraSkiaBuildFlag = ['skia_use_system_freetype2=false', 'skia_use_fontconfig=false'].join(' ')
     break
   case 'darwin':
-    ExtraCflagsCC = '"-std=c++17", "-fno-exceptions", "-DSK_FORCE_RASTER_PIPELINE_BLITTER"'
+    ExtraCflagsCC =
+      '"-std=c++17",' +
+      '"-fno-exceptions",' +
+      '"-DSK_FORCE_RASTER_PIPELINE_BLITTER",' +
+      '"-DSK_ENABLE_SVG",' +
+      '"-DSK_RELEASE",' +
+      '"-DSK_DISABLE_TRACING",' +
+      '"-DSK_ENCODE_WEBP",' +
+      '"-DSK_CODEC_DECODES_WEBP",' +
+      '"-DSK_ENCODE_PNG",' +
+      '"-DSK_CODEC_DECODES_PNG",' +
+      '"-DSK_ENCODE_JPEG",' +
+      '"-DSK_CODEC_DECODES_JPEG",' +
+      '"-DSK_SHAPER_HARFBUZZ_AVAILABLE"'
     break
   default:
     throw new TypeError(`Don't support ${PLATFORM_NAME} for now`)

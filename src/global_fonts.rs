@@ -30,8 +30,8 @@ impl FontCollection {
       "GlobalFonts",
       global_fonts_constructor,
       &[
-        Property::new(&env, "_register")?.with_method(register),
-        Property::new(&env, "_families")?
+        Property::new(env, "_register")?.with_method(register),
+        Property::new(env, "_families")?
           .with_getter(get_families)
           .with_property_attributes(PropertyAttributes::Enumerable),
       ],

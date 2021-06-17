@@ -8,7 +8,7 @@ use crate::sk::ImagePattern;
 pub enum Pattern {
   Color(RGBA, String),
   Gradient(CanvasGradient),
-  ImagePattern(ImagePattern),
+  Image(ImagePattern),
 }
 
 impl Pattern {

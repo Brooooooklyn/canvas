@@ -1042,7 +1042,7 @@ pub enum PathOp {
   Difference,        // subtract the op path from the first path
   Intersect,         // intersect the two paths
   Union,             // union (inclusive-or) the two paths
-  XOR,               // exclusive-or the two paths
+  Xor,               // exclusive-or the two paths
   ReverseDifference, // subtract the first path from the op path
 }
 
@@ -1052,7 +1052,7 @@ impl From<i32> for PathOp {
       0 => Self::Difference,
       1 => Self::Intersect,
       2 => Self::Union,
-      3 => Self::XOR,
+      3 => Self::Xor,
       4 => Self::ReverseDifference,
       _ => panic!("[{}] is not valid path op", value),
     }
