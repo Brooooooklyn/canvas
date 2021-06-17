@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1623946095661,
+  "lastUpdate": 1623948113671,
   "repoUrl": "https://github.com/Brooooooklyn/canvas",
   "entries": {
     "Benchmark": [
@@ -5560,6 +5560,58 @@ window.BENCHMARK_DATA = {
             "range": "±0.21%",
             "unit": "ops/sec",
             "extra": "46 samples"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "bot@renovateapp.com",
+            "name": "Renovate Bot",
+            "username": "renovate-bot"
+          },
+          "committer": {
+            "email": "29139614+renovate[bot]@users.noreply.github.com",
+            "name": "renovate[bot]",
+            "username": "renovate[bot]"
+          },
+          "distinct": true,
+          "id": "8ef12f756f3b22b2e479ba05a2376831577faf07",
+          "message": "chore(deps): update uraimo/run-on-arch-action action to v2.0.10",
+          "timestamp": "2021-06-17T16:37:18Z",
+          "tree_id": "ee94db1feaf82a481878390485ac887c959f8594",
+          "url": "https://github.com/Brooooooklyn/canvas/commit/8ef12f756f3b22b2e479ba05a2376831577faf07"
+        },
+        "date": 1623948030139,
+        "tool": "benchmarkjs",
+        "benches": [
+          {
+            "name": "Draw house#@napi-rs/skia",
+            "value": 26.8,
+            "range": "±1.47%",
+            "unit": "ops/sec",
+            "extra": "48 samples"
+          },
+          {
+            "name": "Draw house#node-canvas",
+            "value": 27.1,
+            "range": "±0.99%",
+            "unit": "ops/sec",
+            "extra": "48 samples"
+          },
+          {
+            "name": "Draw gradient#@napi-rs/skia",
+            "value": 26,
+            "range": "±1.57%",
+            "unit": "ops/sec",
+            "extra": "46 samples"
+          },
+          {
+            "name": "Draw gradient#node-canvas",
+            "value": 25,
+            "range": "±1.75%",
+            "unit": "ops/sec",
+            "extra": "45 samples"
           }
         ]
       }
