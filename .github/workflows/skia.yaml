@@ -80,7 +80,7 @@ jobs:
         run: node ./scripts/build-skia.js
 
       - name: Cache NPM dependencies
-        uses: actions/cache@v1
+        uses: actions/cache@v2
         with:
           path: node_modules
           key: npm-cache-${{ matrix.os }}-node@14-${{ hashFiles('yarn.lock') }}
@@ -128,7 +128,7 @@ jobs:
         run: node ./scripts/build-skia.js --target=aarch64-apple-darwin
 
       - name: Cache NPM dependencies
-        uses: actions/cache@v1
+        uses: actions/cache@v2
         with:
           path: node_modules
           key: npm-cache-apple-silicon-node@14-${{ hashFiles('yarn.lock') }}
@@ -176,7 +176,7 @@ jobs:
           PYTHONHTTPSVERIFY: 0
 
       - name: Cache NPM dependencies
-        uses: actions/cache@v1
+        uses: actions/cache@v2
         with:
           path: node_modules
           key: npm-cache-linux-x64-musl-node@14-${{ hashFiles('yarn.lock') }}
@@ -224,7 +224,7 @@ jobs:
         run: node ./scripts/build-skia.js --target=aarch64-unknown-linux-gnu
 
       - name: Cache NPM dependencies
-        uses: actions/cache@v1
+        uses: actions/cache@v2
         with:
           path: node_modules
           key: npm-cache-aarch64-linux-node@14-${{ hashFiles('yarn.lock') }}
@@ -272,7 +272,7 @@ jobs:
         run: node ./scripts/build-skia.js --target=armv7-unknown-linux-gnueabihf
 
       - name: Cache NPM dependencies
-        uses: actions/cache@v1
+        uses: actions/cache@v2
         with:
           path: node_modules
           key: npm-cache-armv7-linux-node@14-${{ hashFiles('yarn.lock') }}
@@ -317,7 +317,7 @@ jobs:
         run: node ./scripts/build-skia.js --target=aarch64-linux-android
 
       - name: Cache NPM dependencies
-        uses: actions/cache@v1
+        uses: actions/cache@v2
         with:
           path: node_modules
           key: npm-cache-armv7-linux-node@14-${{ hashFiles('yarn.lock') }}
