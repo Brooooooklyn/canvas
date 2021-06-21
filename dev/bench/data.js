@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1624002699606,
+  "lastUpdate": 1624291264937,
   "repoUrl": "https://github.com/Brooooooklyn/canvas",
   "entries": {
     "Benchmark": [
@@ -5768,6 +5768,58 @@ window.BENCHMARK_DATA = {
             "range": "±0.34%",
             "unit": "ops/sec",
             "extra": "37 samples"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "lynweklm@gmail.com",
+            "name": "LongYinan",
+            "username": "Brooooooklyn"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "a402cb247f1d5a8a5269e68dc7e418fae8822023",
+          "message": "Merge pull request #298 from Brooooooklyn/release\n\nbuild: enable svg",
+          "timestamp": "2021-06-21T23:56:40+08:00",
+          "tree_id": "2f9c6290a24dba6d448bb93a3f748fc96a4ac5af",
+          "url": "https://github.com/Brooooooklyn/canvas/commit/a402cb247f1d5a8a5269e68dc7e418fae8822023"
+        },
+        "date": 1624291183341,
+        "tool": "benchmarkjs",
+        "benches": [
+          {
+            "name": "Draw house#@napi-rs/skia",
+            "value": 23.9,
+            "range": "±1.57%",
+            "unit": "ops/sec",
+            "extra": "43 samples"
+          },
+          {
+            "name": "Draw house#node-canvas",
+            "value": 23.6,
+            "range": "±1.73%",
+            "unit": "ops/sec",
+            "extra": "43 samples"
+          },
+          {
+            "name": "Draw gradient#@napi-rs/skia",
+            "value": 23.5,
+            "range": "±1.43%",
+            "unit": "ops/sec",
+            "extra": "43 samples"
+          },
+          {
+            "name": "Draw gradient#node-canvas",
+            "value": 23.1,
+            "range": "±1.74%",
+            "unit": "ops/sec",
+            "extra": "42 samples"
           }
         ]
       }
