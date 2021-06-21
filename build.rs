@@ -176,6 +176,7 @@ fn main() {
 
   #[cfg(target_os = "linux")]
   {
+    println!("cargo:rustc-link-lib=static=svg");
     println!("cargo:rustc-link-lib=static=skia");
     println!("cargo:rustc-link-lib=static=skiac");
     println!("cargo:rustc-link-lib=skparagraph");
@@ -184,6 +185,7 @@ fn main() {
 
   #[cfg(not(target_os = "linux"))]
   {
+    println!("cargo:rustc-link-lib=svg");
     println!("cargo:rustc-link-lib=skia");
     println!("cargo:rustc-link-lib=skiac");
     println!("cargo:rustc-link-lib=skparagraph");

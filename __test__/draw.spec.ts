@@ -284,6 +284,28 @@ test('drawImage', async (t) => {
   await snapshotImage(t)
 })
 
+test('drawImage-svg', async (t) => {
+  const { ctx } = t.context
+  const filePath = './mountain.svg'
+  const file = await promises.readFile(join(__dirname, filePath))
+  const image = new Image()
+  image.src = file
+  ctx.drawImage(image, 0, 0)
+  await snapshotImage(t)
+})
+
+test('drawImage-svg without width height should be empty image', async (t) => {
+  const { ctx, canvas } = t.context
+  const filePath = './mountain.svg'
+  const svgContent = (await promises.readFile(join(__dirname, filePath))).toString('utf-8')
+  const image = new Image()
+  image.src = Buffer.from(svgContent.replace('width="128"', '').replace('height="128"', ''))
+  ctx.drawImage(image, 0, 0)
+  const output = await canvas.png()
+  const outputData = png.decoders['image/png'](output)
+  t.deepEqual(outputData.data, Buffer.alloc(outputData.width * outputData.height * 4, 0))
+})
+
 test('ellipse', async (t) => {
   const { ctx } = t.context
   // Draw the ellipse
