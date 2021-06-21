@@ -788,6 +788,12 @@ fn draw_image(ctx: CallContext) -> Result<JsUndefined> {
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
   let image_js = ctx.get::<JsObject>(0)?;
   let image = ctx.env.unwrap::<Image>(&image_js)?;
+
+  // SVG with 0 width or 0 height
+  if image.bitmap.is_none() {
+    return ctx.env.get_undefined();
+  }
+
   let image_w = image.bitmap.as_ref().unwrap().width as f32;
   let image_h = image.bitmap.as_ref().unwrap().height as f32;
 

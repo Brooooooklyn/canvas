@@ -231,10 +231,30 @@ fn set_src(ctx: CallContext) -> Result<JsUndefined> {
   let image = ctx.env.unwrap::<Image>(&this)?;
 
   let length = (&src_data).len();
+  let data_ref: &[u8] = &src_data;
+  let mut is_svg = false;
+  for i in 3..length {
+    if '<' == data_ref[i - 3] as char {
+      match data_ref[i - 2] as char {
+        '?' | '!' => break,
+        's' => {
+          is_svg = 'v' == data_ref[i - 1] as char && 'g' == data_ref[i] as char;
+          break;
+        }
+        _ => {
+          is_svg = false;
+        }
+      }
+    }
+  }
   image.complete = true;
-  image
-    .bitmap
-    .get_or_insert(Bitmap::from_buffer(src_data.as_ptr() as *mut u8, length));
+  if is_svg {
+    image.bitmap = Bitmap::from_svg_data(src_data.as_ptr(), length);
+  } else {
+    image
+      .bitmap
+      .get_or_insert(Bitmap::from_buffer(src_data.as_ptr() as *mut u8, length));
+  }
 
   this.set_named_property("_src", src_data.into_raw())?;
   ctx.env.get_undefined()

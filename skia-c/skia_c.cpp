@@ -943,7 +943,7 @@ extern "C"
 
   // Bitmap
 
-  skiac_bitmap *skiac_bitmap_make_from_buffer(uint8_t *ptr, size_t size)
+  skiac_bitmap *skiac_bitmap_make_from_buffer(const uint8_t *ptr, size_t size)
   {
     auto data = SkData::MakeWithoutCopy(reinterpret_cast<const void *>(ptr), size);
     auto codec = SkCodec::MakeFromData(data);
@@ -952,6 +952,23 @@ extern "C"
     auto bitmap = new SkBitmap();
     bitmap->allocPixels(info);
     codec->getPixels(info, bitmap->getPixels(), row_bytes);
+    return reinterpret_cast<skiac_bitmap *>(bitmap);
+  }
+
+  skiac_bitmap *skiac_bitmap_make_from_svg(const uint8_t *data, size_t length)
+  {
+    auto svg_stream = new SkMemoryStream(data, length, false);
+    auto svg_dom = SkSVGDOM::MakeFromStream(*svg_stream);
+    auto svg_container_size = svg_dom->containerSize();
+    auto imageinfo = SkImageInfo::Make(svg_container_size.width(), svg_container_size.height(), kRGBA_8888_SkColorType, SkAlphaType::kOpaque_SkAlphaType);
+    auto bitmap = new SkBitmap();
+    if (imageinfo.width() == 0 || imageinfo.height() == 0)
+    {
+      return nullptr;
+    }
+    bitmap->allocPixels(imageinfo);
+    auto sk_svg_canvas = new SkCanvas(*bitmap);
+    svg_dom->render(sk_svg_canvas);
     return reinterpret_cast<skiac_bitmap *>(bitmap);
   }
 
