@@ -102,6 +102,7 @@ impl Context {
         Property::new(env, "closePath")?.with_method(close_path),
         Property::new(env, "createLinearGradient")?.with_method(create_linear_gradient),
         Property::new(env, "createRadialGradient")?.with_method(create_radial_gradient),
+        Property::new(env, "createConicGradient")?.with_method(create_conic_gradient),
         Property::new(env, "drawImage")?.with_method(draw_image),
         Property::new(env, "getContextAttributes")?.with_method(get_context_attributes),
         Property::new(env, "isPointInPath")?.with_method(is_point_in_path),
@@ -771,6 +772,15 @@ fn create_radial_gradient(ctx: CallContext) -> Result<JsObject> {
     x0 as f32, y0 as f32, r0 as f32, x1 as f32, y1 as f32, r1 as f32,
   );
   radial_gradient.into_js_instance(ctx.env)
+}
+
+#[js_function(3)]
+fn create_conic_gradient(ctx: CallContext) -> Result<JsObject> {
+  let r: f64 = ctx.get::<JsNumber>(0)?.try_into()?;
+  let x: f64 = ctx.get::<JsNumber>(1)?.try_into()?;
+  let y: f64 = ctx.get::<JsNumber>(2)?.try_into()?;
+  let conic_gradient = CanvasGradient::create_conic_gradient(x as f32, y as f32, r as f32);
+  conic_gradient.into_js_instance(ctx.env)
 }
 
 #[js_function]

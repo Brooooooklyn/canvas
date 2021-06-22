@@ -274,6 +274,23 @@ test('createRadialGradient', async (t) => {
   await snapshotImage(t)
 })
 
+test('createConicGradient', async (t) => {
+  const { ctx } = t.context
+  const gradient = ctx.createConicGradient(0, 100, 100)
+
+  // Add five color stops
+  gradient.addColorStop(0, 'red')
+  gradient.addColorStop(0.25, 'orange')
+  gradient.addColorStop(0.5, 'yellow')
+  gradient.addColorStop(0.75, 'green')
+  gradient.addColorStop(1, 'blue')
+
+  // Set the fill style and draw a rectangle
+  ctx.fillStyle = gradient
+  ctx.fillRect(20, 20, 200, 200)
+  await snapshotImage(t)
+})
+
 test('drawImage', async (t) => {
   const { ctx } = t.context
   const filePath = './snapshots/drawImage.png'

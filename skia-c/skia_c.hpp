@@ -265,11 +265,21 @@ extern "C"
       int tile_mode,
       uint32_t flags,
       skiac_transform c_ts);
-  skiac_shader *skiac_shader_make_two_point_conical_gradient(
+  skiac_shader *skiac_shader_make_radial_gradient(
       skiac_point start_point,
       float start_radius,
       skiac_point end_point,
       float end_radius,
+      const uint32_t *colors,
+      const float *positions,
+      int count,
+      int tile_mode,
+      uint32_t flags,
+      skiac_transform c_ts);
+  skiac_shader *skiac_shader_make_conic_gradient(
+      float cx,
+      float cy,
+      float radius,
       const uint32_t *colors,
       const float *positions,
       int count,

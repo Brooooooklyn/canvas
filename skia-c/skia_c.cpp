@@ -788,7 +788,7 @@ extern "C"
     }
   }
 
-  skiac_shader *skiac_shader_make_two_point_conical_gradient(
+  skiac_shader *skiac_shader_make_radial_gradient(
       skiac_point c_start_point,
       float start_radius,
       skiac_point c_end_point,
@@ -812,6 +812,43 @@ extern "C"
                       positions,
                       count,
                       (SkTileMode)tile_mode,
+                      flags,
+                      &ts)
+                      .release();
+
+    if (shader)
+    {
+      return reinterpret_cast<skiac_shader *>(shader);
+    }
+    else
+    {
+      return nullptr;
+    }
+  }
+
+  skiac_shader *skiac_shader_make_conic_gradient(
+      SkScalar cx,
+      SkScalar cy,
+      SkScalar radius,
+      const uint32_t *colors,
+      const float *positions,
+      int count,
+      int tile_mode,
+      uint32_t flags,
+      skiac_transform c_ts)
+  {
+    auto ts = conv_from_transform(c_ts);
+    // Skia's sweep gradient angles are relative to the x-axis, not the y-axis.
+    ts.preRotate(radius - 90.0, cx, cy);
+    auto shader = SkGradientShader::MakeSweep(
+                      cx,
+                      cy,
+                      colors,
+                      positions,
+                      count,
+                      (SkTileMode)tile_mode,
+                      radius,
+                      360.0,
                       flags,
                       &ts)
                       .release();

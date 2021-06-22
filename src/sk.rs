@@ -504,11 +504,23 @@ mod ffi {
       ts: skiac_transform,
     ) -> *mut skiac_shader;
 
-    pub fn skiac_shader_make_two_point_conical_gradient(
+    pub fn skiac_shader_make_radial_gradient(
       start_point: skiac_point,
       start_radius: f32,
       end_point: skiac_point,
       end_radius: f32,
+      colors: *const super::Color,
+      positions: *const f32,
+      count: i32,
+      tile_mode: i32,
+      flags: u32,
+      ts: skiac_transform,
+    ) -> *mut skiac_shader;
+
+    pub fn skiac_shader_make_conic_gradient(
+      cx: f32,
+      cy: f32,
+      radius: f32,
       colors: *const super::Color,
       positions: *const f32,
       count: i32,
@@ -2183,11 +2195,18 @@ pub struct LinearGradient {
 }
 
 #[derive(Debug, Clone)]
-pub struct TwoPointConicalGradient {
+pub struct RadialGradient {
   pub start: (f32, f32),
   pub start_radius: f32,
   pub end: (f32, f32),
   pub end_radius: f32,
+  pub base: Gradient,
+}
+
+#[derive(Debug, Clone)]
+pub struct ConicGradient {
+  pub center: (f32, f32),
+  pub radius: f32,
   pub base: Gradient,
 }
 
@@ -2222,7 +2241,7 @@ impl Shader {
   }
 
   #[inline]
-  pub fn new_two_point_conical_gradient(grad: &TwoPointConicalGradient) -> Option<Shader> {
+  pub fn new_radial_gradient(grad: &RadialGradient) -> Option<Shader> {
     let start_point = ffi::skiac_point {
       x: grad.start.0,
       y: grad.start.1,
@@ -2233,11 +2252,28 @@ impl Shader {
     };
 
     unsafe {
-      Self::from_ptr(ffi::skiac_shader_make_two_point_conical_gradient(
+      Self::from_ptr(ffi::skiac_shader_make_radial_gradient(
         start_point,
         grad.start_radius,
         end_point,
         grad.end_radius,
+        grad.base.colors.as_ptr(),
+        grad.base.positions.as_ptr(),
+        grad.base.colors.len() as i32,
+        grad.base.tile_mode as i32,
+        0_u32,
+        grad.base.transform.into(),
+      ))
+    }
+  }
+
+  #[inline]
+  pub fn new_conic_gradient(grad: &ConicGradient) -> Option<Shader> {
+    unsafe {
+      Self::from_ptr(ffi::skiac_shader_make_conic_gradient(
+        grad.center.0,
+        grad.center.1,
+        grad.radius,
         grad.base.colors.as_ptr(),
         grad.base.positions.as_ptr(),
         grad.base.colors.len() as i32,
