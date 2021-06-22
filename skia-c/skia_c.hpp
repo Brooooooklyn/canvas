@@ -141,7 +141,7 @@ extern "C"
   void skiac_surface_read_pixels(skiac_surface *c_surface, skiac_surface_data *data);
   bool skiac_surface_read_pixels_rect(skiac_surface *c_surface, uint8_t *data, int x, int y, int w, int h);
   void skiac_surface_png_data(skiac_surface *c_surface, skiac_sk_data *data);
-  void skiac_surface_jpeg_data(skiac_surface *c_surface, skiac_sk_data *data, int quality);
+  void skiac_surface_encode_data(skiac_surface *c_surface, skiac_sk_data *data, int format, int quality);
   int skiac_surface_get_alpha_type(skiac_surface *c_surface);
   bool skiac_surface_save(skiac_surface *c_surface, const char *path);
 

@@ -8,11 +8,15 @@ import { ExecutionContext } from 'ava'
 const png = PNG()
 const jpeg = JPEG()
 
-export async function snapshotImage<C>(t: ExecutionContext<C>, context = t.context, type: 'png' | 'jpeg' = 'png') {
+export async function snapshotImage<C>(
+  t: ExecutionContext<C>,
+  context = t.context,
+  type: 'png' | 'jpeg' | 'avif' | 'webp' | 'heif' = 'png',
+) {
   // @ts-expect-error
   const { canvas } = context
-  const image = await (type === 'png' ? canvas.png() : canvas.jpeg(100))
-  const ext = type === 'png' ? 'png' : 'jpg'
+  const image = await canvas.encode(type, 100)
+  const ext = type === 'jpeg' ? 'jpg' : type
   const p = join(__dirname, 'snapshots', `${t.title}.${ext}`)
 
   async function writeFailureImage() {
@@ -30,6 +34,10 @@ export async function snapshotImage<C>(t: ExecutionContext<C>, context = t.conte
     t.pass()
   } else {
     const existed = await fs.readFile(p)
+    if (type !== 'png' && type !== 'jpeg') {
+      t.pass()
+      return
+    }
     t.notThrowsAsync(async () => {
       const existedPixels =
         type === 'png' ? png.decoders['image/png'](existed).data : jpeg.decoders['image/jpeg'](existed).data

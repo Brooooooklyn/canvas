@@ -83,6 +83,7 @@ switch (PLATFORM_NAME) {
       '\\"-DSK_CODEC_DECODES_PNG\\",' +
       '\\"-DSK_ENCODE_JPEG\\",' +
       '\\"-DSK_CODEC_DECODES_JPEG\\",' +
+      '\\"-DSK_HAS_HEIF_LIBRARY\\",' +
       '\\"-DSK_SHAPER_HARFBUZZ_AVAILABLE\\"'
     ExtraSkiaBuildFlag = 'clang_win=\\"C:\\\\Program Files\\\\LLVM\\"'
     break
@@ -100,6 +101,7 @@ switch (PLATFORM_NAME) {
       '"-DSK_CODEC_DECODES_PNG",' +
       '"-DSK_ENCODE_JPEG",' +
       '"-DSK_CODEC_DECODES_JPEG",' +
+      '"-DSK_HAS_HEIF_LIBRARY",' +
       '"-DSK_SHAPER_HARFBUZZ_AVAILABLE"'
     ExtraSkiaBuildFlag = ['skia_use_system_freetype2=false', 'skia_use_fontconfig=false'].join(' ')
     break
@@ -117,6 +119,7 @@ switch (PLATFORM_NAME) {
       '"-DSK_CODEC_DECODES_PNG",' +
       '"-DSK_ENCODE_JPEG",' +
       '"-DSK_CODEC_DECODES_JPEG",' +
+      '"-DSK_HAS_HEIF_LIBRARY",' +
       '"-DSK_SHAPER_HARFBUZZ_AVAILABLE"'
     break
   default:

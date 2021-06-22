@@ -40,8 +40,7 @@ fn init(mut exports: JsObject, env: Env) -> Result<()> {
     canvas_element_constructor,
     &[
       Property::new(&env, "getContext")?.with_method(get_context),
-      Property::new(&env, "png")?.with_method(png),
-      Property::new(&env, "jpeg")?.with_method(jpeg),
+      Property::new(&env, "encode")?.with_method(encode),
       Property::new(&env, "toBuffer")?.with_method(to_buffer),
       Property::new(&env, "savePNG")?.with_method(save_png),
     ],
@@ -126,29 +125,32 @@ fn get_context(ctx: CallContext) -> Result<JsObject> {
   Ok(ctx_js)
 }
 
-#[js_function]
-fn png(ctx: CallContext) -> Result<JsObject> {
+#[js_function(2)]
+fn encode(ctx: CallContext) -> Result<JsObject> {
+  let format = ctx.get::<JsString>(0)?.into_utf8()?;
+  let quality = if ctx.length == 1 {
+    100
+  } else {
+    ctx.get::<JsNumber>(1)?.get_uint32()? as u8
+  };
   let this = ctx.this_unchecked::<JsObject>();
   let ctx_js = this.get_named_property::<JsObject>("ctx")?;
   let ctx2d = ctx.env.unwrap::<Context>(&ctx_js)?;
+  let surface_ref = ctx2d.surface.reference();
 
-  ctx
-    .env
-    .spawn(ContextData::Png(ctx2d.surface.reference()))
-    .map(|p| p.promise_object())
-}
+  let task = match format.as_str()? {
+    "webp" => ContextData::Webp(surface_ref, quality),
+    "jpeg" => ContextData::Jpeg(surface_ref, quality),
+    "png" => ContextData::Png(surface_ref),
+    _ => {
+      return Err(Error::new(
+        Status::InvalidArg,
+        format!("{} is not valid format", format.as_str()?),
+      ))
+    }
+  };
 
-#[js_function(1)]
-fn jpeg(ctx: CallContext) -> Result<JsObject> {
-  let quality = ctx.get::<JsNumber>(0)?.get_uint32()? as u8;
-  let this = ctx.this_unchecked::<JsObject>();
-  let ctx_js = this.get_named_property::<JsObject>("ctx")?;
-  let ctx2d = ctx.env.unwrap::<Context>(&ctx_js)?;
-
-  ctx
-    .env
-    .spawn(ContextData::Jpeg(ctx2d.surface.reference(), quality))
-    .map(|p| p.promise_object())
+  ctx.env.spawn(task).map(|p| p.promise_object())
 }
 
 #[js_function]

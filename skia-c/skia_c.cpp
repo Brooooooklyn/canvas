@@ -159,15 +159,15 @@ extern "C"
     }
   }
 
-  void skiac_surface_jpeg_data(skiac_surface *c_surface, skiac_sk_data *data, int quality)
+  void skiac_surface_encode_data(skiac_surface *c_surface, skiac_sk_data *data, int format, int quality)
   {
     auto image = SURFACE_CAST->makeImageSnapshot();
-    auto jpeg_data = image->encodeToData(SkEncodedImageFormat::kJPEG, quality).release();
-    if (jpeg_data)
+    auto encoded_data = image->encodeToData((SkEncodedImageFormat)format, quality).release();
+    if (encoded_data)
     {
-      data->ptr = const_cast<uint8_t *>(jpeg_data->bytes());
-      data->size = jpeg_data->size();
-      data->data = reinterpret_cast<skiac_data *>(jpeg_data);
+      data->ptr = const_cast<uint8_t *>(encoded_data->bytes());
+      data->size = encoded_data->size();
+      data->data = reinterpret_cast<skiac_data *>(encoded_data);
     }
   }
 

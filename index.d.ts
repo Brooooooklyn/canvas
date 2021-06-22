@@ -279,8 +279,8 @@ export interface Canvas
     'getContext' | 'transferControlToOffscreen' | 'addEventListener' | 'removeEventListener'
   > {
   getContext(contextType: '2d', contextAttributes?: { alpha: boolean }): SKRSContext2D
-  png(): Promise<Buffer>
-  jpeg(quality: number): Promise<Buffer>
+  encode(format: 'webp' | 'jpeg', quality: number): Promise<Buffer>
+  encode(format: 'png'): Promise<Buffer>
 }
 
 export function createCanvas(width: number, height: number): Canvas

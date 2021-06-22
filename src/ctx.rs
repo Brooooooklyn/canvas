@@ -1852,6 +1852,7 @@ fn get_text_baseline(ctx: CallContext) -> Result<JsString> {
 pub enum ContextData {
   Png(SurfaceRef),
   Jpeg(SurfaceRef, u8),
+  Webp(SurfaceRef, u8),
 }
 
 unsafe impl Send for ContextData {}
@@ -1869,12 +1870,22 @@ impl Task for ContextData {
           "Get png data from surface failed".to_string(),
         )
       }),
-      ContextData::Jpeg(surface, quality) => surface.jpeg_data(*quality).ok_or_else(|| {
-        Error::new(
-          Status::GenericFailure,
-          "Get png data from surface failed".to_string(),
-        )
-      }),
+      ContextData::Jpeg(surface, quality) => surface
+        .encode_data(SkEncodedImageFormat::Jpeg, *quality)
+        .ok_or_else(|| {
+          Error::new(
+            Status::GenericFailure,
+            "Get jpeg data from surface failed".to_string(),
+          )
+        }),
+      ContextData::Webp(surface, quality) => surface
+        .encode_data(SkEncodedImageFormat::Webp, *quality)
+        .ok_or_else(|| {
+          Error::new(
+            Status::GenericFailure,
+            "Get webp data from surface failed".to_string(),
+          )
+        }),
     }
   }
 
