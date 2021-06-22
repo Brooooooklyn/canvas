@@ -239,6 +239,12 @@ export interface StrokeOptions {
 }
 
 export interface SKRSContext2D extends Omit<CanvasRenderingContext2D, 'drawImage' | 'createPattern' | 'getTransform'> {
+  /**
+   * @param startAngle The angle at which to begin the gradient, in radians. Angle measurements start vertically above the centre and move around clockwise.
+   * @param x The x-axis coordinate of the centre of the gradient.
+   * @param y The y-axis coordinate of the centre of the gradient.
+   */
+  createConicGradient(startAngle: number, x: number, y: number): CanvasGradient
   drawImage(image: Image, dx: number, dy: number): void
   drawImage(image: Image, dx: number, dy: number, dw: number, dh: number): void
   drawImage(
@@ -267,7 +273,11 @@ export interface SKRSContext2D extends Omit<CanvasRenderingContext2D, 'drawImage
   }
 }
 
-export interface Canvas extends Omit<HTMLCanvasElement, 'getContext'> {
+export interface Canvas
+  extends Omit<
+    HTMLCanvasElement,
+    'getContext' | 'transferControlToOffscreen' | 'addEventListener' | 'removeEventListener'
+  > {
   getContext(contextType: '2d', contextAttributes?: { alpha: boolean }): SKRSContext2D
   png(): Promise<Buffer>
   jpeg(quality: number): Promise<Buffer>

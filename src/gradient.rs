@@ -12,7 +12,8 @@ use crate::{error::SkError, sk::*};
 #[derive(Debug, Clone)]
 pub enum CanvasGradient {
   Linear(LinearGradient),
-  Radial(TwoPointConicalGradient),
+  Radial(RadialGradient),
+  Conic(ConicGradient),
 }
 
 impl CanvasGradient {
@@ -35,8 +36,8 @@ impl CanvasGradient {
       start_point: (x0, y0),
       end_point: (x1, y1),
       base: Gradient {
-        colors: Vec::with_capacity(0),
-        positions: Vec::with_capacity(0),
+        colors: Vec::new(),
+        positions: Vec::new(),
         tile_mode: TileMode::Clamp,
         transform: Transform::default(),
       },
@@ -46,19 +47,33 @@ impl CanvasGradient {
 
   #[inline(always)]
   pub fn create_radial_gradient(x0: f32, y0: f32, r0: f32, x1: f32, y1: f32, r1: f32) -> Self {
-    let radial_gradient = TwoPointConicalGradient {
+    let radial_gradient = RadialGradient {
       start: (x0, y0),
       start_radius: r0,
       end: (x1, y1),
       end_radius: r1,
       base: Gradient {
-        colors: Vec::with_capacity(0),
-        positions: Vec::with_capacity(0),
+        colors: Vec::new(),
+        positions: Vec::new(),
         tile_mode: TileMode::Clamp,
         transform: Transform::default(),
       },
     };
     Self::Radial(radial_gradient)
+  }
+
+  #[inline(always)]
+  pub fn create_conic_gradient(x: f32, y: f32, r: f32) -> Self {
+    Self::Conic(ConicGradient {
+      center: (x, y),
+      radius: r,
+      base: Gradient {
+        colors: Vec::new(),
+        positions: Vec::new(),
+        tile_mode: TileMode::Clamp,
+        transform: Transform::default(),
+      },
+    })
   }
 
   #[inline(always)]
@@ -71,6 +86,10 @@ impl CanvasGradient {
       Self::Radial(radial_gradient) => (
         &mut radial_gradient.base.positions,
         &mut radial_gradient.base.colors,
+      ),
+      Self::Conic(conic_gradient) => (
+        &mut conic_gradient.base.positions,
+        &mut conic_gradient.base.colors,
       ),
     };
     if let Ok(pos) = stops.binary_search_by(|o| o.partial_cmp(&offset).unwrap()) {
@@ -142,7 +161,7 @@ impl CanvasGradient {
         let sr1 = r1 * scale_factor;
         let sr2 = r2 * scale_factor;
 
-        let new_radial_gradient = TwoPointConicalGradient {
+        let new_radial_gradient = RadialGradient {
           start: (sx1, sy1),
           end: (sx2, sy2),
           start_radius: sr1,
@@ -151,7 +170,26 @@ impl CanvasGradient {
         };
 
         Ok(
-          Shader::new_two_point_conical_gradient(&new_radial_gradient)
+          Shader::new_radial_gradient(&new_radial_gradient)
+            .ok_or_else(|| SkError::Generic("Get shader of radial gradient failed".to_owned()))?,
+        )
+      }
+      Self::Conic(ref conic_gradient) => {
+        let (x, y) = conic_gradient.center;
+        let r = conic_gradient.radius;
+
+        let sx = current_transform.a;
+        let sy = current_transform.d;
+        let scale_factor = (f32::abs(sx) + f32::abs(sy)) / 2f32;
+        let sr = r * scale_factor;
+        let new_conic_gradient = ConicGradient {
+          center: (x, y),
+          radius: sr,
+          base: conic_gradient.base.clone(),
+        };
+
+        Ok(
+          Shader::new_conic_gradient(&new_conic_gradient)
             .ok_or_else(|| SkError::Generic("Get shader of radial gradient failed".to_owned()))?,
         )
       }
