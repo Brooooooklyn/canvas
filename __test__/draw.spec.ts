@@ -318,7 +318,7 @@ test('drawImage-svg without width height should be empty image', async (t) => {
   const image = new Image()
   image.src = Buffer.from(svgContent.replace('width="128"', '').replace('height="128"', ''))
   ctx.drawImage(image, 0, 0)
-  const output = await canvas.png()
+  const output = await canvas.encode('png')
   const outputData = png.decoders['image/png'](output)
   t.deepEqual(outputData.data, Buffer.alloc(outputData.width * outputData.height * 4, 0))
 })
@@ -711,4 +711,20 @@ test('translate', async (t) => {
   ctx.fillStyle = 'gray'
   ctx.fillRect(0, 0, 80, 80)
   await snapshotImage(t)
+})
+
+test('webp-output', async (t) => {
+  const { ctx } = t.context
+  // Moved square
+  ctx.translate(110, 30)
+  ctx.fillStyle = 'red'
+  ctx.fillRect(0, 0, 80, 80)
+
+  // Reset current transformation matrix to the identity matrix
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
+
+  // Unmoved square
+  ctx.fillStyle = 'gray'
+  ctx.fillRect(0, 0, 80, 80)
+  await snapshotImage(t, t.context, 'webp')
 })

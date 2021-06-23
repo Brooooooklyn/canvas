@@ -206,9 +206,10 @@ mod ffi {
 
     pub fn skiac_surface_png_data(surface: *mut skiac_surface, data: *mut skiac_sk_data);
 
-    pub fn skiac_surface_jpeg_data(
+    pub fn skiac_surface_encode_data(
       surface: *mut skiac_surface,
       data: *mut skiac_sk_data,
+      format: i32,
       quality: i32,
     );
 
@@ -1158,6 +1159,24 @@ impl ToString for TextBaseline {
   }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(i32)]
+pub enum SkEncodedImageFormat {
+  Bmp,
+  Gif,
+  Ico,
+  Jpeg,
+  Png,
+  Wbmp,
+  Webp,
+  Pm,
+  Tx,
+  Astc,
+  Dng,
+  Heif,
+  Avif,
+}
+
 pub struct Surface {
   ptr: *mut ffi::skiac_surface,
   pub(crate) canvas: Canvas,
@@ -1347,14 +1366,14 @@ impl SurfaceRef {
   }
 
   #[inline]
-  pub fn jpeg_data(&self, quality: u8) -> Option<SurfaceDataRef> {
+  pub fn encode_data(&self, format: SkEncodedImageFormat, quality: u8) -> Option<SurfaceDataRef> {
     unsafe {
       let mut data = ffi::skiac_sk_data {
         ptr: ptr::null_mut(),
         size: 0,
         data: ptr::null_mut(),
       };
-      ffi::skiac_surface_jpeg_data(self.0, &mut data, quality as i32);
+      ffi::skiac_surface_encode_data(self.0, &mut data, format as i32, quality as i32);
 
       if data.ptr.is_null() {
         None
