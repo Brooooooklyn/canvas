@@ -4,10 +4,17 @@
 
 > 🚀 帮助我成为全职开源开发者: [Sponsoring me on Github](https://github.com/sponsors/Brooooooklyn)
 
-Google Skia binding to Node.js via `N-API`.
+Google Skia binding to Node.js via [Node-API](https://napi.rs).
 
 > ⚠️ 这个项目还处于早期开发阶段.<br/>
 > 在这里可以找到此项目的具体开发计划和路线图 [Roadmap](https://github.com/Brooooooklyn/canvas/issues/113).
+
+# 安装
+
+```bash
+yarn add @napi-rs/canvas
+npm install @napi-rs/canvas
+```
 
 # 支持的系统和 Node.js 版本
 

@@ -1,15 +1,22 @@
-# `@napi-rs/canvas`
+# `skr canvas`
 
 ![CI](https://github.com/Brooooooklyn/canvas/workflows/CI/badge.svg)
 
 > 🚀 Help me to become a full-time open-source developer by [sponsoring me on Github](https://github.com/sponsors/Brooooooklyn)
 
-Google Skia binding to Node.js via `N-API`.
+Google Skia binding to Node.js via [Node-API](https://napi.rs).
 
 > ⚠️ This project is in very early stage.<br/>
 > For details on planned features and future direction please refer to the [Roadmap](https://github.com/Brooooooklyn/canvas/issues/113).
 
 [中文文档](./README-zh.md)
+
+# Install
+
+```bash
+yarn add @napi-rs/canvas
+npm install @napi-rs/canvas
+```
 
 # Support matrix
 
