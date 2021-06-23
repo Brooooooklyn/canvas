@@ -54,7 +54,7 @@
     "prepublishOnly": "pinst --disable && napi prepublish -t npm",
     "postpublish": "pinst --enable",
     "test": "ava",
-    "version": "napi version"
+    "version": "napi version && conventional-changelog -p angular -i CHANGELOG.md -s && git add CHANGELOG.md"
   },
   "devDependencies": {
     "@jimp/core": "^0.16.1",
@@ -70,6 +70,7 @@
     "benny": "^3.6.15",
     "canvas": "^2.8.0",
     "chalk": "^4.1.1",
+    "conventional-changelog-cli": "^2.1.1",
     "eslint": "^7.29.0",
     "eslint-config-prettier": "^8.3.0",
     "eslint-plugin-import": "^2.23.4",
@@ -109,10 +110,5 @@
     "singleQuote": true,
     "arrowParens": "always",
     "parser": "typescript"
-  },
-  "husky": {
-    "hooks": {
-      "pre-commit": "lint-staged"
-    }
   }
 }

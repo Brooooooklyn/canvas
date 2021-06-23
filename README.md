@@ -13,7 +13,7 @@ Google Skia binding to Node.js via `N-API`.
 
 # Support matrix
 
-|                       | node10 | node12 | node14 | node15 |
+|                       | node10 | node12 | node14 | node16 |
 | --------------------- | ------ | ------ | ------ | ------ |
 | Windows x64           | ✓      | ✓      | ✓      | ✓      |
 | macOS x64             | ✓      | ✓      | ✓      | ✓      |
@@ -55,7 +55,7 @@ ctx.closePath()
 ctx.stroke()
 
 async function main() {
-  const pngData = await canvas.png()
+  const pngData = await canvas.encode('png') // jpeg and webp is also supported
   // encoding in libuv thread pool, non-blocking
   await promises.writeFile(join(__dirname, 'simple.png'), pngData)
 }

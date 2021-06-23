@@ -11,7 +11,7 @@ Google Skia binding to Node.js via `N-API`.
 
 # 支持的系统和 Node.js 版本
 
-|                       | node10 | node12 | node14 | node15 |
+|                       | node10 | node12 | node14 | node16 |
 | --------------------- | ------ | ------ | ------ | ------ |
 | Windows x64           | ✓      | ✓      | ✓      | ✓      |
 | macOS x64             | ✓      | ✓      | ✓      | ✓      |
@@ -53,7 +53,7 @@ ctx.closePath()
 ctx.stroke()
 
 async function main() {
-  const pngData = await canvas.png()
+  const pngData = await canvas.encode('png') // 也支持 jpeg 和 webp
   // encoding in libuv thread pool, non-blocking
   await promises.writeFile(join(__dirname, 'simple.png'), pngData)
 }
