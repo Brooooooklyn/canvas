@@ -1,3 +1,10 @@
+## [0.0.8](https://github.com/Brooooooklyn/canvas/compare/v0.0.7...v0.0.8) (2021-06-23)
+
+### Features
+
+- support conic gradient ([850b6ee](https://github.com/Brooooooklyn/canvas/commit/850b6ee4f7df8ce440574fc41c16e8559ef1f232))
+- support webp output ([4948c49](https://github.com/Brooooooklyn/canvas/commit/4948c49f89ea4e423dc14b240c82cb4d5e917248))
+
 ## [0.0.7](https://github.com/Brooooooklyn/canvas/compare/v0.0.6...v0.0.7) (2021-06-21)
 
 ### Bug Fixes
