@@ -34,19 +34,19 @@ fn main() {
   build.cpp(true).file("skia-c/skia_c.cpp");
 
   match compile_target.as_str() {
-    "aarch64-unknown-linux-gnu" => {
+    "aarch64-unknown-linux-gnu" | "aarch64-unknown-linux-musl" => {
       build
         .flag("--sysroot=/usr/aarch64-linux-gnu")
         .flag("--gcc-toolchain=aarch64-linux-gnu-gcc")
-        .include("/usr/aarch64-linux-gnu/include/c++/10")
-        .include("/usr/aarch64-linux-gnu/include/c++/10/aarch64-linux-gnu");
+        .include("/usr/aarch64-linux-gnu/include/c++/7")
+        .include("/usr/aarch64-linux-gnu/include/c++/7/aarch64-linux-gnu");
     }
     "armv7-unknown-linux-gnueabihf" => {
       build
         .flag("--sysroot=/usr/arm-linux-gnueabihf")
-        .flag("--gcc-toolchain=arm-linux-gnueabihf-gcc-10")
-        .include("/usr/arm-linux-gnueabihf/include/c++/10")
-        .include("/usr/arm-linux-gnueabihf/include/c++/10/arm-linux-gnueabihf");
+        .flag("--gcc-toolchain=arm-linux-gnueabihf-gcc")
+        .include("/usr/arm-linux-gnueabihf/include/c++/7")
+        .include("/usr/arm-linux-gnueabihf/include/c++/7/arm-linux-gnueabihf");
     }
     "x86_64-unknown-linux-musl" => {
       let gcc_version = String::from_utf8(
