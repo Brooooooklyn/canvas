@@ -46,20 +46,22 @@ jobs:
           path: ~/.cargo/git
           key: lint-cargo-index-trimmed-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: Cache NPM dependencies
+      - name: Cache pnpm store
         uses: actions/cache@v2
         with:
-          path: node_modules
-          key: lint-${{ hashFiles('yarn.lock') }}
+          path: ~/.pnpm-store
+          key: npm-cache-test-linux-x64-gnu-${{ matrix.node }}-${{ hashFiles('pnpm-lock.yaml') }}
 
-      - name: 'Install dependencies'
-        run: yarn install --frozen-lockfile --registry https://registry.npmjs.org --network-timeout 300000
+      - name: Setup pnpm
+        run: |
+          npm install -g pnpm
+          pnpm install --frozen-lockfile
 
       - name: Download skia binary
         run: node ./scripts/release-skia-binary.js --download
 
       - name: 'Lint JS/TS'
-        run: yarn lint
+        run: pnpm lint
 
       - name: Cargo fmt
         run: cargo fmt -- --check

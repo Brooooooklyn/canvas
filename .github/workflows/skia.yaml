@@ -79,16 +79,16 @@ jobs:
           PYTHONHTTPSVERIFY: 0
         run: node ./scripts/build-skia.js
 
-      - name: Cache NPM dependencies
+      - name: Cache pnpm store
         uses: actions/cache@v2
         with:
-          path: node_modules
-          key: npm-cache-${{ matrix.os }}-node@14-${{ hashFiles('yarn.lock') }}
-          restore-keys: |
-            npm-cache-
+          path: ~/.pnpm-store
+          key: npm-cache-test-linux-x64-gnu-${{ matrix.node }}-${{ hashFiles('pnpm-lock.yaml') }}
 
-      - name: 'Install dependencies'
-        run: yarn install --ignore-scripts --frozen-lockfile --registry https://registry.npmjs.org --network-timeout 300000
+      - name: Setup pnpm
+        run: |
+          npm install -g pnpm
+          pnpm install --frozen-lockfile
 
       - name: Upload release
         run: node ./scripts/release-skia-binary.js --upload
@@ -127,16 +127,16 @@ jobs:
       - name: Compile skia
         run: node ./scripts/build-skia.js --target=aarch64-apple-darwin
 
-      - name: Cache NPM dependencies
+      - name: Cache pnpm store
         uses: actions/cache@v2
         with:
-          path: node_modules
-          key: npm-cache-apple-silicon-node@14-${{ hashFiles('yarn.lock') }}
-          restore-keys: |
-            npm-cache-
+          path: ~/.pnpm-store
+          key: npm-cache-test-linux-x64-gnu-${{ matrix.node }}-${{ hashFiles('pnpm-lock.yaml') }}
 
-      - name: 'Install dependencies'
-        run: yarn install --ignore-scripts --frozen-lockfile --registry https://registry.npmjs.org --network-timeout 300000
+      - name: Setup pnpm
+        run: |
+          npm install -g pnpm
+          pnpm install --frozen-lockfile
 
       - name: Upload release
         run: node ./scripts/release-skia-binary.js --upload --target=aarch64-apple-darwin
@@ -175,16 +175,16 @@ jobs:
         env:
           PYTHONHTTPSVERIFY: 0
 
-      - name: Cache NPM dependencies
+      - name: Cache pnpm store
         uses: actions/cache@v2
         with:
-          path: node_modules
-          key: npm-cache-linux-x64-musl-node@14-${{ hashFiles('yarn.lock') }}
-          restore-keys: |
-            npm-cache-
+          path: ~/.pnpm-store
+          key: npm-cache-test-linux-x64-gnu-${{ matrix.node }}-${{ hashFiles('pnpm-lock.yaml') }}
 
-      - name: 'Install dependencies'
-        run: yarn install --ignore-scripts --frozen-lockfile --registry https://registry.npmjs.org --network-timeout 300000
+      - name: Setup pnpm
+        run: |
+          npm install -g pnpm
+          pnpm install --frozen-lockfile
 
       - name: Upload release
         run: node ./scripts/release-skia-binary.js --upload --target=x86_64-unknown-linux-musl
@@ -223,16 +223,16 @@ jobs:
       - name: Compile skia
         run: node ./scripts/build-skia.js --target=aarch64-unknown-linux-gnu
 
-      - name: Cache NPM dependencies
+      - name: Cache pnpm store
         uses: actions/cache@v2
         with:
-          path: node_modules
-          key: npm-cache-aarch64-linux-node@14-${{ hashFiles('yarn.lock') }}
-          restore-keys: |
-            npm-cache-
+          path: ~/.pnpm-store
+          key: npm-cache-test-linux-x64-gnu-${{ matrix.node }}-${{ hashFiles('pnpm-lock.yaml') }}
 
-      - name: 'Install dependencies'
-        run: yarn install --ignore-scripts --frozen-lockfile --registry https://registry.npmjs.org --network-timeout 300000
+      - name: Setup pnpm
+        run: |
+          npm install -g pnpm
+          pnpm install --frozen-lockfile
 
       - name: Upload release
         run: node ./scripts/release-skia-binary.js --upload --target=aarch64-unknown-linux-gnu
@@ -271,16 +271,16 @@ jobs:
       - name: Compile skia
         run: node ./scripts/build-skia.js --target=armv7-unknown-linux-gnueabihf
 
-      - name: Cache NPM dependencies
+      - name: Cache pnpm store
         uses: actions/cache@v2
         with:
-          path: node_modules
-          key: npm-cache-armv7-linux-node@14-${{ hashFiles('yarn.lock') }}
-          restore-keys: |
-            npm-cache-
+          path: ~/.pnpm-store
+          key: npm-cache-test-linux-x64-gnu-${{ matrix.node }}-${{ hashFiles('pnpm-lock.yaml') }}
 
-      - name: 'Install dependencies'
-        run: yarn install --ignore-scripts --frozen-lockfile --registry https://registry.npmjs.org --network-timeout 300000
+      - name: Setup pnpm
+        run: |
+          npm install -g pnpm
+          pnpm install --frozen-lockfile
 
       - name: Upload release
         run: node ./scripts/release-skia-binary.js --upload --target=armv7-unknown-linux-gnueabihf
@@ -316,16 +316,16 @@ jobs:
       - name: Compile skia
         run: node ./scripts/build-skia.js --target=aarch64-linux-android
 
-      - name: Cache NPM dependencies
+      - name: Cache pnpm store
         uses: actions/cache@v2
         with:
-          path: node_modules
-          key: npm-cache-armv7-linux-node@14-${{ hashFiles('yarn.lock') }}
-          restore-keys: |
-            npm-cache-
+          path: ~/.pnpm-store
+          key: npm-cache-test-linux-x64-gnu-${{ matrix.node }}-${{ hashFiles('pnpm-lock.yaml') }}
 
-      - name: 'Install dependencies'
-        run: yarn install --ignore-scripts --frozen-lockfile --registry https://registry.npmjs.org --network-timeout 300000
+      - name: Setup pnpm
+        run: |
+          npm install -g pnpm
+          pnpm install --frozen-lockfile
 
       - name: Upload release
         run: node ./scripts/release-skia-binary.js --upload --target=aarch64-linux-android

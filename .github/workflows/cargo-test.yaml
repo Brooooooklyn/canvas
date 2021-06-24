@@ -46,16 +46,16 @@ jobs:
           path: ~/.cargo/git
           key: macOS-latest-cargo-test-node@14-cargo-index-trimmed-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: Cache NPM dependencies
+      - name: Cache pnpm store
         uses: actions/cache@v2
         with:
-          path: node_modules
-          key: npm-cache-macOS-latest-cargo-test-node@14-${{ hashFiles('yarn.lock') }}
-          restore-keys: |
-            npm-cache-
+          path: ~/.pnpm-store
+          key: npm-cache-test-linux-x64-gnu-${{ matrix.node }}-${{ hashFiles('pnpm-lock.yaml') }}
 
-      - name: 'Install dependencies'
-        run: yarn install --ignore-scripts --frozen-lockfile --registry https://registry.npmjs.org --network-timeout 300000
+      - name: Setup pnpm
+        run: |
+          npm install -g pnpm
+          pnpm install --frozen-lockfile
 
       - name: Download skia binary
         run: node ./scripts/release-skia-binary.js --download

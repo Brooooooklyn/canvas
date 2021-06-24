@@ -49,23 +49,25 @@ jobs:
           path: ~/.cargo/git
           key: bench-cargo-index-trimmed-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: Cache NPM dependencies
+      - name: Cache pnpm store
         uses: actions/cache@v2
         with:
-          path: node_modules
-          key: bench-${{ hashFiles('yarn.lock') }}
+          path: ~/.pnpm-store
+          key: npm-cache-test-linux-x64-gnu-${{ matrix.node }}-${{ hashFiles('pnpm-lock.yaml') }}
 
-      - name: 'Install dependencies'
-        run: yarn install --frozen-lockfile --registry https://registry.npmjs.org --network-timeout 300000
+      - name: Setup pnpm
+        run: |
+          npm install -g pnpm
+          pnpm install --frozen-lockfile
 
       - name: Download skia binary
         run: node ./scripts/release-skia-binary.js --download
 
       - name: 'Build'
-        run: yarn build
+        run: pnpm build
 
       - name: 'Run benchmark'
-        run: yarn bench
+        run: pnpm bench
 
       - name: Store benchmark result
         uses: rhysd/github-action-benchmark@v1

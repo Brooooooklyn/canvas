@@ -217,11 +217,11 @@ $ cd canvas
 $ node scripts/build-skia.js
 
 # Install NPM packages, build the Node.js addon:
-$ yarn install --ignore-scripts
-$ yarn build
+$ pnpm install --ignore-scripts
+$ pnpm build
 
 # All done! Run test cases or examples now:
-$ yarn test
+$ pnpm test
 $ node example/tiger.js
 ```
 
@@ -239,10 +239,10 @@ $ cd canvas
 $ node scripts/release-skia-binary.js --download
 
 # Install NPM packages, build the Node.js addon:
-$ yarn install --ignore-scripts
-$ yarn build
+$ pnpm install --ignore-scripts
+$ pnpm build
 
 # All done! Run test cases or examples now:
-$ yarn test
+$ pnpm test
 $ node example/tiger.js
 ```
