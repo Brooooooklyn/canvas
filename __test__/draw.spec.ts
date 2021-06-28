@@ -1,9 +1,9 @@
-import { promises } from 'fs'
+import { promises, readFileSync } from 'fs'
 import { join } from 'path'
 import ava, { TestInterface } from 'ava'
 import PNG from '@jimp/png'
 
-import { createCanvas, Canvas, Image, ImageData, Path2D, SKRSContext2D, DOMMatrix } from '../index'
+import { GlobalFonts, createCanvas, Canvas, Image, ImageData, Path2D, SKRSContext2D, DOMMatrix } from '../index'
 import { snapshotImage } from './image-snapshot'
 
 const test = ava as TestInterface<{
@@ -12,6 +12,13 @@ const test = ava as TestInterface<{
 }>
 
 const png = PNG()
+
+const fontIosevka = readFileSync(join(__dirname, 'fonts', 'iosevka-slab-regular.ttf'))
+const fontSourceSerifPro = readFileSync(join(__dirname, 'fonts', 'SourceSerifPro-Regular.ttf'))
+const fontOSRS = readFileSync(join(__dirname, 'fonts', 'osrs-font-compact.otf'))
+
+console.assert(GlobalFonts.register(fontIosevka), 'Register Iosevka font failed')
+console.assert(GlobalFonts.register(fontSourceSerifPro), 'Register SourceSerifPro font failed')
 
 test.beforeEach((t) => {
   const canvas = createCanvas(512, 512)
@@ -363,7 +370,42 @@ test('fillRect', async (t) => {
   await snapshotImage(t)
 })
 
-test.todo('fillText')
+test('fillText', async (t) => {
+  const { ctx, canvas } = t.context
+  ctx.fillStyle = 'yellow'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  ctx.fillStyle = 'black'
+  ctx.font = '48px Iosevka Slab'
+  ctx.fillText('skr canvas', 50, 150)
+  const gradient = ctx.createConicGradient(0, 100, 100)
+
+  // Add five color stops
+  gradient.addColorStop(0, 'red')
+  gradient.addColorStop(0.15, 'orange')
+  gradient.addColorStop(0.25, 'yellow')
+  gradient.addColorStop(0.35, 'orange')
+  gradient.addColorStop(0.5, 'green')
+  gradient.addColorStop(0.75, 'cyan')
+  gradient.addColorStop(1, 'blue')
+
+  // Set the fill style and draw a rectangle
+  ctx.fillStyle = gradient
+  ctx.fillText('@napi-rs/canvas', 50, 250)
+  await snapshotImage(t, { canvas, ctx }, 'png', 3.2)
+})
+
+test('fillText-AA', async (t) => {
+  GlobalFonts.register(fontOSRS)
+  const { ctx, canvas } = t.context
+  ctx.imageSmoothingEnabled = false
+  ctx.font = '16px OSRSFontCompact'
+  ctx.fillStyle = 'white'
+  ctx.fillRect(0, 0, 100, 100)
+  ctx.fillStyle = 'black'
+  ctx.fillText('@napi-rs/canvas', 10, 10)
+  ctx.fillText('ABC abc 123', 10, 40)
+  await snapshotImage(t, { canvas, ctx }, 'png', 3.2)
+})
 
 test('getContextAttributes', (t) => {
   const defaultCtx = t.context.ctx
@@ -686,7 +728,30 @@ test('strokeRect', async (t) => {
   await snapshotImage(t)
 })
 
-test.todo('strokeText')
+test('strokeText', async (t) => {
+  const { ctx, canvas } = t.context
+  ctx.fillStyle = 'yellow'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  ctx.strokeStyle = 'black'
+  ctx.lineWidth = 3
+  ctx.font = '50px Iosevka Slab'
+  ctx.strokeText('skr canvas', 50, 150)
+  const gradient = ctx.createConicGradient(0, 100, 100)
+
+  // Add five color stops
+  gradient.addColorStop(0, 'red')
+  gradient.addColorStop(0.15, 'orange')
+  gradient.addColorStop(0.25, 'yellow')
+  gradient.addColorStop(0.35, 'orange')
+  gradient.addColorStop(0.5, 'green')
+  gradient.addColorStop(0.75, 'cyan')
+  gradient.addColorStop(1, 'blue')
+
+  // Set the fill style and draw a rectangle
+  ctx.strokeStyle = gradient
+  ctx.strokeText('@napi-rs/canvas', 50, 300)
+  await snapshotImage(t, { canvas, ctx }, 'png', 3.5)
+})
 
 test('transform', async (t) => {
   const { ctx } = t.context

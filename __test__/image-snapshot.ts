@@ -12,6 +12,7 @@ export async function snapshotImage<C>(
   t: ExecutionContext<C>,
   context = t.context,
   type: 'png' | 'jpeg' | 'avif' | 'webp' | 'heif' = 'png',
+  differentRatio = 0.01,
 ) {
   // @ts-expect-error
   const { canvas } = context
@@ -38,26 +39,26 @@ export async function snapshotImage<C>(
       t.pass()
       return
     }
-    t.notThrowsAsync(async () => {
-      const existedPixels =
-        type === 'png' ? png.decoders['image/png'](existed).data : jpeg.decoders['image/jpeg'](existed).data
-      const imagePixels =
-        type === 'png' ? png.decoders['image/png'](image).data : jpeg.decoders['image/jpeg'](image).data
-      if (existedPixels.length !== imagePixels.length) {
-        await writeFailureImage()
-        throw new Error('Image size is not equal')
-      }
-      let diffCount = 0
-      imagePixels.forEach((u8, index) => {
-        if (u8 !== existedPixels[index]) {
-          diffCount++
-        }
-      })
-      // diff ratio greater than 0.01%
-      if (diffCount / existedPixels.length > 0.01 / 100) {
-        await writeFailureImage()
-        throw new Error('Image bytes is not equal')
+    const existedPixels =
+      type === 'png' ? png.decoders['image/png'](existed).data : jpeg.decoders['image/jpeg'](existed).data
+    const imagePixels = type === 'png' ? png.decoders['image/png'](image).data : jpeg.decoders['image/jpeg'](image).data
+    if (existedPixels.length !== imagePixels.length) {
+      await writeFailureImage()
+      t.fail('Image size is not equal')
+      return
+    }
+    let diffCount = 0
+    imagePixels.forEach((u8, index) => {
+      if (u8 !== existedPixels[index]) {
+        diffCount++
       }
     })
+    // diff ratio greater than 0.01%
+    if (diffCount / existedPixels.length > differentRatio / 100) {
+      await writeFailureImage()
+      t.fail(`Image bytes is not equal, different ratio is ${((diffCount / existedPixels.length) * 100).toFixed(2)}%`)
+      return
+    }
+    t.pass('Image pixels is equal')
   }
 }

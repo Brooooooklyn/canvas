@@ -83,15 +83,16 @@ jobs:
         uses: actions/cache@v2
         with:
           path: ~/.pnpm-store
-          key: npm-cache-test-linux-x64-gnu-${{ matrix.node }}-${{ hashFiles('pnpm-lock.yaml') }}
+          key: npm-cache-build-skia-${{ matrix.os }}-${{ matrix.node }}-${{ hashFiles('pnpm-lock.yaml') }}
 
       - name: Setup pnpm
         run: |
           npm install -g pnpm
-          pnpm install --frozen-lockfile
+          pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Upload release
         run: node ./scripts/release-skia-binary.js --upload
+        shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -131,12 +132,12 @@ jobs:
         uses: actions/cache@v2
         with:
           path: ~/.pnpm-store
-          key: npm-cache-test-linux-x64-gnu-${{ matrix.node }}-${{ hashFiles('pnpm-lock.yaml') }}
+          key: npm-cache-build-skia-darwin-aarch64-${{ matrix.node }}-${{ hashFiles('pnpm-lock.yaml') }}
 
       - name: Setup pnpm
         run: |
           npm install -g pnpm
-          pnpm install --frozen-lockfile
+          pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Upload release
         run: node ./scripts/release-skia-binary.js --upload --target=aarch64-apple-darwin
@@ -179,12 +180,12 @@ jobs:
         uses: actions/cache@v2
         with:
           path: ~/.pnpm-store
-          key: npm-cache-test-linux-x64-gnu-${{ matrix.node }}-${{ hashFiles('pnpm-lock.yaml') }}
+          key: npm-cache-build-skia-linux-x64-musl-${{ matrix.node }}-${{ hashFiles('pnpm-lock.yaml') }}
 
       - name: Setup pnpm
         run: |
           npm install -g pnpm
-          pnpm install --frozen-lockfile
+          pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Upload release
         run: node ./scripts/release-skia-binary.js --upload --target=x86_64-unknown-linux-musl
@@ -218,7 +219,9 @@ jobs:
         shell: bash
 
       - name: Install cross compile tools
-        run: sudo apt-get install g++-10-aarch64-linux-gnu gcc-10-aarch64-linux-gnu -y
+        run: |
+          sudo apt-get update
+          sudo apt-get install g++-10-aarch64-linux-gnu gcc-10-aarch64-linux-gnu -y
 
       - name: Compile skia
         run: node ./scripts/build-skia.js --target=aarch64-unknown-linux-gnu
@@ -227,15 +230,63 @@ jobs:
         uses: actions/cache@v2
         with:
           path: ~/.pnpm-store
-          key: npm-cache-test-linux-x64-gnu-${{ matrix.node }}-${{ hashFiles('pnpm-lock.yaml') }}
+          key: npm-cache-build-skia-linux-aarch64-gnu-${{ matrix.node }}-${{ hashFiles('pnpm-lock.yaml') }}
 
       - name: Setup pnpm
         run: |
           npm install -g pnpm
-          pnpm install --frozen-lockfile
+          pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Upload release
         run: node ./scripts/release-skia-binary.js --upload --target=aarch64-unknown-linux-gnu
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-aarch64-linux-musl:
+    if: "!contains(github.event.head_commit.message, 'skip skia')"
+
+    name: stable - linux-x64-musl - build skia
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: true
+
+      - name: Setup node
+        uses: actions/setup-node@v2
+        with:
+          node-version: 14
+          check-latest: true
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v1
+        with:
+          registry: ghcr.io
+          username: ${{ secrets.GH_CONTAINER_UNAME }}
+          password: ${{ secrets.GH_TOKEN }}
+
+      - name: Compile skia
+        run: |
+          docker pull ghcr.io/brooooooklyn/canvas/musl-builder:lts
+          docker tag ghcr.io/brooooooklyn/canvas/musl-builder:lts builder
+          docker run --user "$(id -u):$(id -g)" --rm -v $(pwd):/canvas -w /canvas builder node ./scripts/build-skia.js --target=aarch64-unknown-linux-musl
+        env:
+          PYTHONHTTPSVERIFY: 0
+
+      - name: Cache pnpm store
+        uses: actions/cache@v2
+        with:
+          path: ~/.pnpm-store
+          key: npm-cache-build-skia-linux-aarch64-musl-${{ matrix.node }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Setup pnpm
+        run: |
+          npm install -g pnpm
+          pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Upload release
+        run: node ./scripts/release-skia-binary.js --upload --target=aarch64-unknown-linux-musl
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -266,7 +317,9 @@ jobs:
         shell: bash
 
       - name: Install cross compile tools
-        run: sudo apt-get install gcc-10-arm-linux-gnueabihf g++-10-arm-linux-gnueabihf -y
+        run: |
+          sudo apt-get update
+          sudo apt-get install gcc-10-arm-linux-gnueabihf g++-10-arm-linux-gnueabihf -y
 
       - name: Compile skia
         run: node ./scripts/build-skia.js --target=armv7-unknown-linux-gnueabihf
@@ -275,12 +328,12 @@ jobs:
         uses: actions/cache@v2
         with:
           path: ~/.pnpm-store
-          key: npm-cache-test-linux-x64-gnu-${{ matrix.node }}-${{ hashFiles('pnpm-lock.yaml') }}
+          key: npm-cache-build-skia-linux-armv7-gnu-${{ matrix.node }}-${{ hashFiles('pnpm-lock.yaml') }}
 
       - name: Setup pnpm
         run: |
           npm install -g pnpm
-          pnpm install --frozen-lockfile
+          pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Upload release
         run: node ./scripts/release-skia-binary.js --upload --target=armv7-unknown-linux-gnueabihf
@@ -320,12 +373,12 @@ jobs:
         uses: actions/cache@v2
         with:
           path: ~/.pnpm-store
-          key: npm-cache-test-linux-x64-gnu-${{ matrix.node }}-${{ hashFiles('pnpm-lock.yaml') }}
+          key: npm-cache-build-skia-android-aarch64-${{ matrix.node }}-${{ hashFiles('pnpm-lock.yaml') }}
 
       - name: Setup pnpm
         run: |
           npm install -g pnpm
-          pnpm install --frozen-lockfile
+          pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Upload release
         run: node ./scripts/release-skia-binary.js --upload --target=aarch64-linux-android

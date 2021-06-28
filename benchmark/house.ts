@@ -1,11 +1,16 @@
 import b from 'benny'
 
 import { createCanvas, Canvas } from 'canvas'
+// @ts-expect-error
+import { Canvas as SkiaCanvas } from 'skia-canvas'
 
 import { createCanvas as skiaCreateCanvas } from '../index'
 
 function drawHouse(factory: (width: number, height: number) => Canvas) {
   const canvas = factory(1024, 768)
+
+  // @ts-expect-error
+  canvas.async = false
 
   const ctx = canvas.getContext('2d')!
 
@@ -34,13 +39,17 @@ export function house() {
   return b.suite(
     'Draw house',
 
-    b.add('@napi-rs/skia', () => {
-      // @ts-expect-error
-      drawHouse(skiaCreateCanvas)
+    b.add('skia-canvas', () => {
+      drawHouse((w, h) => new SkiaCanvas(w, h))
     }),
 
     b.add('node-canvas', () => {
       drawHouse(createCanvas)
+    }),
+
+    b.add('@napi-rs/skia', () => {
+      // @ts-expect-error
+      drawHouse(skiaCreateCanvas)
     }),
 
     b.cycle(),

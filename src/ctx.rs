@@ -26,7 +26,7 @@ pub struct Context {
   path: Path,
   pub alpha: bool,
   pub(crate) states: Vec<Context2dRenderingState>,
-  pub collection: FontCollection,
+  pub typeface_font_provider: TypefaceFontProvider,
 }
 
 impl Context {
@@ -137,7 +137,11 @@ impl Context {
   }
 
   #[inline(always)]
-  pub fn new(width: u32, height: u32, collection: &mut FontCollection) -> Result<Self> {
+  pub fn new(
+    width: u32,
+    height: u32,
+    typeface_font_provider: &mut TypefaceFontProvider,
+  ) -> Result<Self> {
     let surface = Surface::new_rgba(width, height)
       .ok_or_else(|| Error::from_reason("Create skia surface failed".to_owned()))?;
     let states = vec![Context2dRenderingState::default()];
@@ -146,7 +150,7 @@ impl Context {
       alpha: true,
       path: Path::new(),
       states,
-      collection: collection.clone(),
+      typeface_font_provider: typeface_font_provider.clone(),
     })
   }
 
@@ -465,7 +469,9 @@ impl Context {
     paint: &Paint,
   ) -> result::Result<(), SkError> {
     let state = self.states.last().unwrap();
-
+    let weight = state.font_style.weight;
+    let stretch = state.font_style.stretch;
+    let slant = state.font_style.style;
     if let Some(shadow_paint) = self.shadow_blur_paint(paint) {
       let surface = &mut self.surface;
       surface.save();
@@ -474,7 +480,10 @@ impl Context {
         text,
         x,
         y,
-        &self.collection,
+        weight,
+        stretch as u32,
+        slant,
+        &self.typeface_font_provider,
         state.font_style.size,
         &state.font_style.family,
         state.text_baseline,
@@ -488,7 +497,10 @@ impl Context {
       text,
       x,
       y,
-      &self.collection,
+      weight,
+      stretch as u32,
+      slant,
+      &self.typeface_font_provider,
       state.font_style.size,
       &state.font_style.family,
       state.text_baseline,
@@ -521,11 +533,13 @@ impl Context {
 fn context_2d_constructor(ctx: CallContext) -> Result<JsUndefined> {
   let width: u32 = ctx.get::<JsNumber>(0)?.try_into()?;
   let height: u32 = ctx.get::<JsNumber>(1)?.try_into()?;
-  let collection_js = ctx.get::<JsObject>(2)?;
-  let collection = ctx.env.unwrap::<FontCollection>(&collection_js)?;
+  let typeface_font_provider_js = ctx.get::<JsObject>(2)?;
+  let typeface_font_provider = ctx
+    .env
+    .unwrap::<TypefaceFontProvider>(&typeface_font_provider_js)?;
 
   let mut this = ctx.this_unchecked::<JsObject>();
-  let context_2d = Context::new(width, height, collection)?;
+  let context_2d = Context::new(width, height, typeface_font_provider)?;
   ctx.env.wrap(&mut this, context_2d)?;
   ctx.env.get_undefined()
 }
@@ -1655,6 +1669,7 @@ fn set_font(ctx: CallContext) -> Result<JsUndefined> {
   let font_style = ctx.get::<JsString>(0)?.into_utf8()?.into_owned()?;
   last_state.font_style =
     Font::new(font_style.as_str()).map_err(|e| Error::new(Status::InvalidArg, format!("{}", e)))?;
+
   last_state.font = font_style;
   ctx.env.get_undefined()
 }

@@ -38,6 +38,9 @@ function libPath(lib, hostPlatform, triple, tag = TAG) {
       case 'aarch64-unknown-linux-gnu':
         platformName = `lib${lib}-linux-aarch64-gnu.a`
         break
+      case 'aarch64-unknown-linux-musl':
+        platformName = `lib${lib}-linux-aarch64-musl.a`
+        break
       case 'armv7-unknown-linux-gnueabihf':
         platformName = `lib${lib}-linux-armv7-gnueabihf.a`
         break

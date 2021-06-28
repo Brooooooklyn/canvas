@@ -28,6 +28,7 @@ npm install @napi-rs/canvas
 | Linux x64 gnu         | ✓      | ✓      | ✓      | ✓      |
 | Linux x64 musl        | ✓      | ✓      | ✓      | ✓      |
 | Linux aarch64 gnu     | ✓      | ✓      | ✓      | ✓      |
+| Linux aarch64 musl    | ✓      | ✓      | ✓      | ✓      |
 | Linux arm gnueabihf   | ✓      | ✓      | ✓      | ✓      |
 | Linux aarch64 android | ✓      | ✓      | ✓      | ✓      |
 

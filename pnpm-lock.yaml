@@ -28,6 +28,7 @@ specifiers:
   png.js: ^0.2.1
   prettier: ^2.3.1
   putasset: ^5.0.3
+  skia-canvas: ^0.9.22
   typescript: ^4.3.4
 
 dependencies:
@@ -60,6 +61,7 @@ devDependencies:
   png.js: 0.2.1
   prettier: 2.3.1
   putasset: 5.0.3
+  skia-canvas: 0.9.22
   typescript: 4.3.4
 
 packages:
@@ -1648,6 +1650,14 @@ packages:
     engines: {node: '>=8'}
     dependencies:
       mimic-response: 2.1.0
+    dev: true
+
+  /decompress-response/6.0.0:
+    resolution:
+      { integrity: sha512-aW35yZM6Bb/4oJlZncMH2LCoZtJXTRxES17vE3hoRiowU2kWHaJKFkSBDnDR+cm9J+9QhXmREyIfv0pji9ejCQ== }
+    engines: { node: '>=10' }
+    dependencies:
+      mimic-response: 3.1.0
     dev: true
 
   /dedent/0.7.0:
@@ -3258,6 +3268,12 @@ packages:
     engines: {node: '>=8'}
     dev: true
 
+  /mimic-response/3.1.0:
+    resolution:
+      { integrity: sha512-z0yWI+4FDrrweS8Zmt4Ej5HdJmky15+L2e6Wgn3+iK5fWzb6T3fhNFq2+MeTRb064c6Wr4N/wv0DzQTjNzHNGQ== }
+    engines: { node: '>=10' }
+    dev: true
+
   /min-document/2.19.0:
     resolution: {integrity: sha1-e9KC4/WELtKVu3SM3Z8f+iyCRoU=}
     dependencies:
@@ -3626,6 +3642,11 @@ packages:
     engines: {node: '>=6'}
     dependencies:
       callsites: 3.1.0
+    dev: true
+
+  /parenthesis/3.1.7:
+    resolution:
+      { integrity: sha512-iMtu+HCbLXVrpf6Ys/4YKhcFxbux3xK4ZVB9r+a2kMSqeeQWQoDNYlXIsOjwlT2ldYXZ3k5PVeBnYn7fbAo/Bg== }
     dev: true
 
   /parse-bmfont-ascii/1.0.6:
@@ -4288,6 +4309,28 @@ packages:
       simple-concat: 1.0.1
     dev: true
 
+  /simple-get/4.0.0:
+    resolution:
+      { integrity: sha512-ZalZGexYr3TA0SwySsr5HlgOOinS4Jsa8YB2GJ6lUNAazyAu4KG/VmzMTwAt2YVXzzVj8QmefmAonZIK2BSGcQ== }
+    dependencies:
+      decompress-response: 6.0.0
+      once: 1.4.0
+      simple-concat: 1.0.1
+    dev: true
+
+  /skia-canvas/0.9.22:
+    resolution:
+      { integrity: sha512-m5e+ur7K6KY+CkZwSF+cJAS6jMfMKIPj20TZnswcCxeVj8v7IknaLCyfWYI21yc/ccn2ZGFfEkvlx1Aw6Cy2iA== }
+    requiresBuild: true
+    dependencies:
+      '@mapbox/node-pre-gyp': 1.0.5
+      glob: 7.1.7
+      simple-get: 4.0.0
+      string-split-by: 1.0.0
+    transitivePeerDependencies:
+      - supports-color
+    dev: true
+
   /slash/3.0.0:
     resolution: {integrity: sha512-g9Q1haeby36OSStwb4ntCGGGaKsaVSjQ68fBxoQcutl5fS1vuY18H3wSt3jFyFtrkx+Kz0V1G85A4MyAdDMi2Q==}
     engines: {node: '>=8'}
@@ -4375,6 +4418,13 @@ packages:
   /string-argv/0.3.1:
     resolution: {integrity: sha512-a1uQGz7IyVy9YwhqjZIZu1c8JO8dNIe20xBmSS6qu9kv++k3JGzCVmprbNN5Kn+BgzD5E7YYwg1CcjuJMRNsvg==}
     engines: {node: '>=0.6.19'}
+    dev: true
+
+  /string-split-by/1.0.0:
+    resolution:
+      { integrity: sha512-KaJKY+hfpzNyet/emP81PJA9hTVSfxNLS9SFTWxdCnnW1/zOOwiV248+EfoX7IQFcBaOp4G5YE6xTJMF+pLg6A== }
+    dependencies:
+      parenthesis: 3.1.7
     dev: true
 
   /string-width/1.0.2:

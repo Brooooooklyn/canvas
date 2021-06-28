@@ -34,12 +34,22 @@ fn main() {
   build.cpp(true).file("skia-c/skia_c.cpp");
 
   match compile_target.as_str() {
-    "aarch64-unknown-linux-gnu" | "aarch64-unknown-linux-musl" => {
+    "aarch64-unknown-linux-gnu" => {
       build
         .flag("--sysroot=/usr/aarch64-linux-gnu")
         .flag("--gcc-toolchain=aarch64-linux-gnu-gcc")
         .include("/usr/aarch64-linux-gnu/include/c++/7")
         .include("/usr/aarch64-linux-gnu/include/c++/7/aarch64-linux-gnu");
+    }
+    "aarch64-unknown-linux-musl" => {
+      build
+        .flag("--sysroot=/aarch64-linux-musl-cross/aarch64-linux-musl")
+        .flag("--gcc-toolchain=aarch64-linux-musl-gcc")
+        .include("/aarch64-linux-musl-cross/aarch64-linux-musl/include")
+        .include("/aarch64-linux-musl-cross/aarch64-linux-musl/include/c++/10.2.1")
+        .include(
+          "/aarch64-linux-musl-cross/aarch64-linux-musl/include/c++/10.2.1/aarch64-linux-musl",
+        );
     }
     "armv7-unknown-linux-gnueabihf" => {
       build

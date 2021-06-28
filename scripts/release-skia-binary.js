@@ -70,6 +70,10 @@ async function upload() {
       repo: REPO,
       tag: TAG,
       filename: copy,
+    }).catch((e) => {
+      execSync(`ls -la ./skia/out/Static`, { stdio: 'inherit' })
+      execSync(`ls -la .`, { stdio: 'inherit' })
+      throw e
     })
   }
   if (PLATFORM_NAME === 'win32') {
@@ -103,12 +107,17 @@ async function download() {
     })
   }
   if (PLATFORM_NAME === 'win32') {
-    const downloadUrl = `https://github.com/${OWNER}/${REPO}/releases/download/${TAG}/${ICU_DAT}`
-    execSync(`curl -J -L -H "Accept: application/octet-stream" ${downloadUrl} -o ${ICU_DAT}`, {
-      stdio: 'inherit',
-    })
+    await downloadIcu()
     await fs.copyFile(join(__dirname, '..', ICU_DAT), join(__dirname, '..', 'npm', 'icudtl', ICU_DAT))
   }
+}
+
+function downloadIcu() {
+  const downloadUrl = `https://github.com/${OWNER}/${REPO}/releases/download/${TAG}/${ICU_DAT}`
+  execSync(`curl -J -L -H "Accept: application/octet-stream" ${downloadUrl} -o ${ICU_DAT}`, {
+    stdio: 'inherit',
+  })
+  return Promise.resolve(null)
 }
 
 let program = () => {
@@ -122,6 +131,8 @@ switch (ARG) {
   case '--upload':
     program = upload
     break
+  case '--download-icu':
+    program = downloadIcu
 }
 
 // eslint-disable-next-line sonarjs/no-use-of-empty-return-value

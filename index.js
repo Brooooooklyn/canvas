@@ -48,8 +48,20 @@ let FamilyNamesMap = GlobalFontsSingleton._families
 
 Object.defineProperty(GlobalFontsSingleton, 'register', {
   value: function register(path) {
-    GlobalFontsSingleton._register(path)
+    const result = GlobalFontsSingleton._register(path)
     FamilyNamesMap = GlobalFontsSingleton._families
+    return result
+  },
+  configurable: false,
+  enumerable: false,
+  writable: false,
+})
+
+Object.defineProperty(GlobalFontsSingleton, 'registerFromPath', {
+  value: function register(path) {
+    const result = GlobalFontsSingleton._registerFromPath(path)
+    FamilyNamesMap = GlobalFontsSingleton._families
+    return result
   },
   configurable: false,
   enumerable: false,
