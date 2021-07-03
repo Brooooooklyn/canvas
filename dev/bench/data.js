@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1624522833261,
+  "lastUpdate": 1625329835689,
   "repoUrl": "https://github.com/Brooooooklyn/canvas",
   "entries": {
     "Benchmark": [
@@ -6184,6 +6184,58 @@ window.BENCHMARK_DATA = {
             "range": "±0.19%",
             "unit": "ops/sec",
             "extra": "38 samples"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "lynweklm@gmail.com",
+            "name": "LongYinan",
+            "username": "Brooooooklyn"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "56ce0ba5cc59dde34cc4386e06b564050be91b8a",
+          "message": "Merge pull request #304 from Brooooooklyn/renovate/husky-7.x\n\nchore(deps): update dependency husky to v7",
+          "timestamp": "2021-07-04T00:26:04+08:00",
+          "tree_id": "c2e3a503d7bddc13073489a63cccaa38ba0f6552",
+          "url": "https://github.com/Brooooooklyn/canvas/commit/56ce0ba5cc59dde34cc4386e06b564050be91b8a"
+        },
+        "date": 1625329756630,
+        "tool": "benchmarkjs",
+        "benches": [
+          {
+            "name": "Draw house#@napi-rs/skia",
+            "value": 22,
+            "range": "±1.27%",
+            "unit": "ops/sec",
+            "extra": "39 samples"
+          },
+          {
+            "name": "Draw house#node-canvas",
+            "value": 21,
+            "range": "±1.4%",
+            "unit": "ops/sec",
+            "extra": "39 samples"
+          },
+          {
+            "name": "Draw gradient#@napi-rs/skia",
+            "value": 21,
+            "range": "±1.13%",
+            "unit": "ops/sec",
+            "extra": "38 samples"
+          },
+          {
+            "name": "Draw gradient#node-canvas",
+            "value": 20,
+            "range": "±1.1%",
+            "unit": "ops/sec",
+            "extra": "37 samples"
           }
         ]
       }
