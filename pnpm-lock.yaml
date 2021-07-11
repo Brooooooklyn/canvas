@@ -20,7 +20,7 @@ specifiers:
   eslint-config-prettier: ^8.3.0
   eslint-plugin-import: ^2.23.4
   eslint-plugin-prettier: ^3.4.0
-  eslint-plugin-sonarjs: ^0.7.0
+  eslint-plugin-sonarjs: ^0.9.0
   husky: ^7.0.0
   lint-staged: ^11.0.0
   npm-run-all: ^4.1.5
@@ -53,7 +53,7 @@ devDependencies:
   eslint-config-prettier: 8.3.0_eslint@7.29.0
   eslint-plugin-import: 2.23.4_eslint@7.29.0
   eslint-plugin-prettier: 3.4.0_de2986b0c29d2faa795004f5443c76d1
-  eslint-plugin-sonarjs: 0.7.0_eslint@7.29.0
+  eslint-plugin-sonarjs: 0.9.1_eslint@7.29.0
   husky: 7.0.0
   lint-staged: 11.0.0
   npm-run-all: 4.1.5
@@ -1653,9 +1653,8 @@ packages:
     dev: true
 
   /decompress-response/6.0.0:
-    resolution:
-      { integrity: sha512-aW35yZM6Bb/4oJlZncMH2LCoZtJXTRxES17vE3hoRiowU2kWHaJKFkSBDnDR+cm9J+9QhXmREyIfv0pji9ejCQ== }
-    engines: { node: '>=10' }
+    resolution: {integrity: sha512-aW35yZM6Bb/4oJlZncMH2LCoZtJXTRxES17vE3hoRiowU2kWHaJKFkSBDnDR+cm9J+9QhXmREyIfv0pji9ejCQ==}
+    engines: {node: '>=10'}
     dependencies:
       mimic-response: 3.1.0
     dev: true
@@ -1912,8 +1911,8 @@ packages:
       prettier-linter-helpers: 1.0.0
     dev: true
 
-  /eslint-plugin-sonarjs/0.7.0_eslint@7.29.0:
-    resolution: {integrity: sha512-vi6zGkd5Eznc32AQlleWUOMrMeDiUih9wR7nPPfrDCyVRmwYNHIBRPZGv1EgXwELwaPghCSvoAoHoR7uSbBF/Q==}
+  /eslint-plugin-sonarjs/0.9.1_eslint@7.29.0:
+    resolution: {integrity: sha512-KKFofk1LPjGHWeAZijYWv32c/C4mz+OAeBNVxhxHu1hknrTOhu415MWC8qKdAdsmOlBPShs9evM4mI1o7MNMhw==}
     engines: {node: '>=10'}
     peerDependencies:
       eslint: ^5.0.0 || ^6.0.0 || ^7.0.0
@@ -3269,9 +3268,8 @@ packages:
     dev: true
 
   /mimic-response/3.1.0:
-    resolution:
-      { integrity: sha512-z0yWI+4FDrrweS8Zmt4Ej5HdJmky15+L2e6Wgn3+iK5fWzb6T3fhNFq2+MeTRb064c6Wr4N/wv0DzQTjNzHNGQ== }
-    engines: { node: '>=10' }
+    resolution: {integrity: sha512-z0yWI+4FDrrweS8Zmt4Ej5HdJmky15+L2e6Wgn3+iK5fWzb6T3fhNFq2+MeTRb064c6Wr4N/wv0DzQTjNzHNGQ==}
+    engines: {node: '>=10'}
     dev: true
 
   /min-document/2.19.0:
@@ -3645,8 +3643,7 @@ packages:
     dev: true
 
   /parenthesis/3.1.7:
-    resolution:
-      { integrity: sha512-iMtu+HCbLXVrpf6Ys/4YKhcFxbux3xK4ZVB9r+a2kMSqeeQWQoDNYlXIsOjwlT2ldYXZ3k5PVeBnYn7fbAo/Bg== }
+    resolution: {integrity: sha512-iMtu+HCbLXVrpf6Ys/4YKhcFxbux3xK4ZVB9r+a2kMSqeeQWQoDNYlXIsOjwlT2ldYXZ3k5PVeBnYn7fbAo/Bg==}
     dev: true
 
   /parse-bmfont-ascii/1.0.6:
@@ -4310,8 +4307,7 @@ packages:
     dev: true
 
   /simple-get/4.0.0:
-    resolution:
-      { integrity: sha512-ZalZGexYr3TA0SwySsr5HlgOOinS4Jsa8YB2GJ6lUNAazyAu4KG/VmzMTwAt2YVXzzVj8QmefmAonZIK2BSGcQ== }
+    resolution: {integrity: sha512-ZalZGexYr3TA0SwySsr5HlgOOinS4Jsa8YB2GJ6lUNAazyAu4KG/VmzMTwAt2YVXzzVj8QmefmAonZIK2BSGcQ==}
     dependencies:
       decompress-response: 6.0.0
       once: 1.4.0
@@ -4319,8 +4315,7 @@ packages:
     dev: true
 
   /skia-canvas/0.9.22:
-    resolution:
-      { integrity: sha512-m5e+ur7K6KY+CkZwSF+cJAS6jMfMKIPj20TZnswcCxeVj8v7IknaLCyfWYI21yc/ccn2ZGFfEkvlx1Aw6Cy2iA== }
+    resolution: {integrity: sha512-m5e+ur7K6KY+CkZwSF+cJAS6jMfMKIPj20TZnswcCxeVj8v7IknaLCyfWYI21yc/ccn2ZGFfEkvlx1Aw6Cy2iA==}
     requiresBuild: true
     dependencies:
       '@mapbox/node-pre-gyp': 1.0.5
@@ -4421,8 +4416,7 @@ packages:
     dev: true
 
   /string-split-by/1.0.0:
-    resolution:
-      { integrity: sha512-KaJKY+hfpzNyet/emP81PJA9hTVSfxNLS9SFTWxdCnnW1/zOOwiV248+EfoX7IQFcBaOp4G5YE6xTJMF+pLg6A== }
+    resolution: {integrity: sha512-KaJKY+hfpzNyet/emP81PJA9hTVSfxNLS9SFTWxdCnnW1/zOOwiV248+EfoX7IQFcBaOp4G5YE6xTJMF+pLg6A==}
     dependencies:
       parenthesis: 3.1.7
     dev: true
