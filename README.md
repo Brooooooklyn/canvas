@@ -4,10 +4,10 @@
 
 > 🚀 Help me to become a full-time open-source developer by [sponsoring me on Github](https://github.com/sponsors/Brooooooklyn)
 
-Google Skia binding to Node.js via [Node-API](https://napi.rs).
+Google Skia binding to Node.js via [Node-API](https://napi.rs), **0 System dependencies!**
 
-> ⚠️ This project is in very early stage.<br/>
-> For details on planned features and future direction please refer to the [Roadmap](https://github.com/Brooooooklyn/canvas/issues/113).
+⚠️ This project is in very early stage.<br/>
+For details on planned features and future direction please refer to the [Roadmap](https://github.com/Brooooooklyn/canvas/issues/113).
 
 [中文文档](./README-zh.md)
 
@@ -72,6 +72,59 @@ main()
 ```
 
 ![](./example/simple.png)
+
+# Performance
+
+See [benchmark](./benchmark) for benchmark code.
+
+Hardware info:
+
+```
+OS: Windows 10 x86_64
+Host: Micro-Star International Co., Ltd. MS-7C35
+Kernel: 10.0.19043
+Terminal: Windows Terminal
+CPU: AMD Ryzen 9 5950X (32) @ 3.400GHz
+Memory: 32688MiB
+```
+
+```
+❯ pnpm bench
+
+> @napi-rs/canvas@0.0.9 bench D:\workspace\skia-rs
+> node -r @swc-node/register benchmark/bench.ts
+
+Running "Draw house" suite...
+Progress: 100%
+
+  skia-canvas:
+    26 ops/s, ±0.70%   | slowest, 29.73% slower
+
+  node-canvas:
+    30 ops/s, ±6.95%   | 18.92% slower
+
+  @napi-rs/skia:
+    37 ops/s, ±6.30%   | fastest
+
+Finished 3 cases!
+  Fastest: @napi-rs/skia
+  Slowest: skia-canvas
+Running "Draw gradient" suite...
+Progress: 100%
+
+  skia-canvas:
+    36 ops/s, ±6.12%   | 14.29% slower
+
+  node-canvas:
+    34 ops/s, ±5.60%   | slowest, 19.05% slower
+
+  @napi-rs/skia:
+    42 ops/s, ±0.53%   | fastest
+
+Finished 3 cases!
+  Fastest: @napi-rs/skia
+  Slowest: node-canvas
+```
 
 # Features
 
