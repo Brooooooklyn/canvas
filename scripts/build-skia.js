@@ -60,10 +60,15 @@ const GN_ARGS = [
   `skia_use_libjpeg_turbo_encode=true`,
   `skia_use_libwebp_decode=true`,
   `skia_use_libwebp_encode=true`,
+  `skia_use_freetype=true`,
+  `skia_use_fontconfig=false`,
+  `skia_use_system_freetype2=false`,
   `skia_use_system_libjpeg_turbo=false`,
   `skia_use_system_libpng=false`,
   `skia_use_system_libwebp=false`,
   `skia_use_system_zlib=false`,
+  `skia_use_system_icu=false`,
+  `skia_use_system_harfbuzz=false`,
   `skia_use_lua=false`,
   `skia_use_piex=false`,
 ]
@@ -88,23 +93,6 @@ switch (PLATFORM_NAME) {
     ExtraSkiaBuildFlag = 'clang_win=\\"C:\\\\Program Files\\\\LLVM\\"'
     break
   case 'linux':
-    ExtraCflagsCC =
-      '"-std=c++17",' +
-      '"-fno-exceptions",' +
-      '"-DSK_FORCE_RASTER_PIPELINE_BLITTER",' +
-      '"-DSK_ENABLE_SVG",' +
-      '"-DSK_RELEASE",' +
-      '"-DSK_DISABLE_TRACING",' +
-      '"-DSK_ENCODE_WEBP",' +
-      '"-DSK_CODEC_DECODES_WEBP",' +
-      '"-DSK_ENCODE_PNG",' +
-      '"-DSK_CODEC_DECODES_PNG",' +
-      '"-DSK_ENCODE_JPEG",' +
-      '"-DSK_CODEC_DECODES_JPEG",' +
-      '"-DSK_HAS_HEIF_LIBRARY",' +
-      '"-DSK_SHAPER_HARFBUZZ_AVAILABLE"'
-    ExtraSkiaBuildFlag = ['skia_use_system_freetype2=false', 'skia_use_fontconfig=false'].join(' ')
-    break
   case 'darwin':
     ExtraCflagsCC =
       '"-std=c++17",' +
@@ -144,6 +132,23 @@ switch (TARGET_TRIPLE) {
     GN_ARGS.push(
       `extra_ldflags=[${ExtraLdFlags}]`,
       `ar="aarch64-linux-gnu-gcc-ar-10"`,
+      `extra_asmflags=[${ExtraAsmFlags}]`,
+      `extra_cflags=[${ExtraCflags}]`,
+      `extra_cflags_c=[${ExtraCflags}]`,
+    )
+    break
+  case 'aarch64-unknown-linux-musl':
+    ExtraSkiaBuildFlag += ' target_cpu="arm64" target_os="linux"'
+    ExtraCflags =
+      '"--target=aarch64-unknown-linux-musl", "--sysroot=/aarch64-linux-musl-cross/aarch64-linux-musl", "--gcc-toolchain=aarch64-linux-musl-gcc", "-B/aarch64-linux-musl-cross/aarch64-linux-musl/bin", "-I/aarch64-linux-musl-cross/aarch64-linux-musl/include/c++/10.2.1", "-I/aarch64-linux-musl-cross/aarch64-linux-musl/include/c++/10.2.1/aarch64-linux-musl"'
+    ExtraCflagsCC +=
+      ', "--target=aarch64-unknown-linux-musl", "--sysroot=/aarch64-linux-musl-cross/aarch64-linux-musl", "--gcc-toolchain=aarch64-linux-musl-gcc", "-B/aarch64-linux-musl-cross/aarch64-linux-musl/bin", "-I/aarch64-linux-musl-cross/aarch64-linux-musl/include/c++/10.2.1", "-I/aarch64-linux-musl-cross/aarch64-linux-musl/include/c++/10.2.1/aarch64-linux-musl"'
+    ExtraLdFlags =
+      '"--target=aarch64-unknown-linux-musl", "--sysroot=/aarch64-linux-musl-cross/usr", "-B/aarch64-linux-musl-cross/usr/aarch64-linux-musl/bin", "-L/aarch64-linux-musl-cross/usr/aarch64-linux-musl/lib", "-L/aarch64-linux-musl-cross/usr/lib/gcc/aarch64-linux-musl/10.2.1"'
+    ExtraAsmFlags = '"--sysroot=/aarch64-linux-musl-cross/aarch64-linux-musl", "--target=aarch64-unknown-linux-musl"'
+    GN_ARGS.push(
+      `extra_ldflags=[${ExtraLdFlags}]`,
+      `ar="aarch64-linux-musl-ar"`,
       `extra_asmflags=[${ExtraAsmFlags}]`,
       `extra_cflags=[${ExtraCflags}]`,
       `extra_cflags_c=[${ExtraCflags}]`,

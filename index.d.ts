@@ -273,12 +273,11 @@ export interface SKRSContext2D extends Omit<CanvasRenderingContext2D, 'drawImage
   }
 }
 
-export interface Canvas
-  extends Omit<
-    HTMLCanvasElement,
-    'getContext' | 'transferControlToOffscreen' | 'addEventListener' | 'removeEventListener'
-  > {
+export interface Canvas {
+  width: number
+  height: number
   getContext(contextType: '2d', contextAttributes?: { alpha: boolean }): SKRSContext2D
+  toBuffer(): Buffer
   encode(format: 'webp' | 'jpeg', quality: number): Promise<Buffer>
   encode(format: 'png'): Promise<Buffer>
 }
@@ -287,7 +286,10 @@ export function createCanvas(width: number, height: number): Canvas
 
 interface IGlobalFonts {
   readonly families: string[]
-  register(path: string): void
+  // return true if succeeded
+  register(font: Buffer): boolean
+  // absolute path
+  registerFromPath(path: string): boolean
   has(name: string): boolean
 }
 

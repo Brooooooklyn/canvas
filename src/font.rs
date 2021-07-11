@@ -137,7 +137,7 @@ pub(crate) fn init_font_regexp() -> Regex {
   .unwrap()
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum FontStyle {
   Normal,
   Italic,

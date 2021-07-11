@@ -161,3 +161,4 @@ Temporary Items
 example/*-tmp.*
 
 icudtl.dat
+.pnpm-store

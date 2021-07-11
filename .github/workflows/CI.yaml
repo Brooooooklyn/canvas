@@ -57,13 +57,14 @@ jobs:
               sudo apt-get update
               sudo apt-get install gcc-aarch64-linux-gnu g++-aarch64-linux-gnu  -y
             build: pnpm build -- --target=aarch64-unknown-linux-gnu
-          - host: ubuntu-18.04
+          - host: ubuntu-latest
             target: 'aarch64-unknown-linux-musl'
-            downloadTarget: 'aarch64-unknown-linux-gnu'
-            setup: |
-              sudo apt-get update
-              sudo apt-get install gcc-aarch64-linux-gnu g++-aarch64-linux-gnu -y
-            build: yarn build --target aarch64-unknown-linux-musl
+            downloadTarget: 'aarch64-unknown-linux-musl'
+            docker: |
+              docker login -u $DOCKER_USERNAME -p $DOCKER_PASSWORD $DOCKER_REGISTRY_URL
+              docker pull ghcr.io/brooooooklyn/canvas/musl-builder:lts
+              docker tag ghcr.io/brooooooklyn/canvas/musl-builder:lts builder
+            build: docker run --rm -v ~/.cargo/git:/root/.cargo/git -v ~/.cargo/registry:/root/.cargo/registry -v $(pwd):/canvas -w /canvas builder sh -c "rustup toolchain install $(cat ./rust-toolchain) && rustup target add aarch64-unknown-linux-musl && pnpm build -- --target=aarch64-unknown-linux-musl"
           - host: ubuntu-18.04
             target: 'armv7-unknown-linux-gnueabihf'
             downloadTarget: 'armv7-unknown-linux-gnueabihf'
@@ -130,7 +131,7 @@ jobs:
       - name: Setup pnpm
         run: |
           npm install -g pnpm
-          pnpm install --frozen-lockfile
+          pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Pull latest image
         run: ${{ matrix.settings.docker }}
@@ -173,6 +174,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v2
+        with:
+          submodules: true
 
       - name: Setup node
         uses: actions/setup-node@v2
@@ -189,7 +192,7 @@ jobs:
       - name: Setup pnpm
         run: |
           npm install -g pnpm
-          pnpm install --frozen-lockfile
+          pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Download artifacts
         uses: actions/download-artifact@v2
@@ -197,9 +200,9 @@ jobs:
           name: bindings-${{ matrix.settings.target }}
           path: .
 
-      - name: List packages
-        run: ls -R .
-        shell: bash
+      - name: Download icudtl.dat
+        if: matrix.settings.host == 'windows-latest'
+        run: node ./scripts/release-skia-binary.js --download-icu
 
       - name: Test bindings
         run: pnpm test
@@ -239,7 +242,7 @@ jobs:
       - name: Setup pnpm
         run: |
           npm install -g pnpm
-          pnpm install --frozen-lockfile
+          pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Download artifacts
         uses: actions/download-artifact@v2
@@ -252,7 +255,7 @@ jobs:
         shell: bash
 
       - name: Test bindings
-        run: docker run --rm -v ~/.pnpm-store:/root/.pnpm-store -v $(pwd):/canvas -w /canvas node:${{ matrix.node }}-slim sh -c "npm install -g pnpm && pnpm install && pnpm test"
+        run: docker run --rm -v ~/.pnpm-store:/root/.pnpm-store -v $(pwd):/canvas -w /canvas node:${{ matrix.node }}-slim sh -c "npm install -g pnpm && pnpm install --ignore-scripts && pnpm test"
 
       - name: Test failed
         if: ${{ failure() }}
@@ -289,7 +292,7 @@ jobs:
       - name: Setup pnpm
         run: |
           npm install -g pnpm
-          pnpm install --frozen-lockfile
+          pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Download artifacts
         uses: actions/download-artifact@v2
@@ -474,7 +477,7 @@ jobs:
       - name: Setup pnpm
         run: |
           npm install -g pnpm
-          pnpm install --frozen-lockfile
+          pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Download all artifacts
         uses: actions/download-artifact@v2

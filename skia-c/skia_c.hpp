@@ -25,12 +25,20 @@
 #include <modules/skparagraph/include/FontCollection.h>
 #include <modules/skparagraph/include/Paragraph.h>
 #include <modules/skparagraph/include/ParagraphBuilder.h>
+#include <modules/skparagraph/src/ParagraphBuilderImpl.h>
 #include <modules/skparagraph/include/TypefaceFontProvider.h>
 #include <modules/svg/include/SkSVGDOM.h>
+#include <src/ports/SkFontMgr_custom.h>
 
 #include <stdint.h>
 
 using namespace skia::textlayout;
+
+template <typename T>
+inline sk_sp<T> sp_from_const(const T *pt)
+{
+  return sk_sp<T>(const_cast<T *>(pt));
+}
 
 typedef struct skiac_surface skiac_surface;
 typedef struct skiac_canvas skiac_canvas;
@@ -46,38 +54,13 @@ typedef struct skiac_image skiac_image;
 typedef struct skiac_bitmap skiac_bitmap;
 typedef struct skiac_sk_string skiac_sk_string;
 typedef struct skiac_font_metrics skiac_font_metrics;
-struct skiac_typeface
-{
-  sk_sp<SkTypeface> typeface;
-  skiac_typeface(const char *path)
-  {
-    typeface = SkTypeface::MakeFromFile(path);
-  }
-};
-struct skiac_font_collection
-{
-  sk_sp<FontCollection> collection;
-  sk_sp<SkFontMgr> font_mgr;
-  sk_sp<TypefaceFontProvider> assets;
-  skiac_font_collection()
-  {
-    font_mgr = SkFontMgr::RefDefault();
-    assets = sk_make_sp<TypefaceFontProvider>();
-    collection = sk_make_sp<FontCollection>();
-    collection->setDefaultFontManager(font_mgr);
-    collection->setAssetFontManager(assets);
-    collection->enableFontFallback();
-  }
-  skiac_font_collection(sk_sp<FontCollection> collection)
-  {
-    font_mgr = SkFontMgr::RefDefault();
-    assets = sk_make_sp<TypefaceFontProvider>();
-    collection->setDefaultFontManager(font_mgr);
-    collection->enableFontFallback();
-    collection->setAssetFontManager(assets);
-    this->collection = collection;
-  }
-};
+typedef struct skiac_typeface skiac_typeface;
+typedef struct skiac_font_mgr skiac_font_mgr;
+typedef struct skiac_typeface_font_provider skiac_typeface_font_provider;
+typedef struct skiac_font_collection skiac_font_collection;
+
+sk_sp<SkFontMgr> SkFontMgr_New_Custom_Empty();
+
 struct skiac_rect
 {
   float left;
@@ -177,8 +160,13 @@ extern "C"
   void skiac_canvas_draw_text(
       skiac_canvas *c_canvas,
       const char *text,
-      float x, float y,
-      skiac_font_collection *c_collection,
+      size_t text_len,
+      float x,
+      float y,
+      int weight,
+      int width,
+      int slant,
+      skiac_typeface_font_provider *c_typeface_font_provider,
       float font_size,
       const char *font_family,
       float baseline_offset,
@@ -331,22 +319,20 @@ extern "C"
   // SkString
   void skiac_delete_sk_string(skiac_sk_string *c_sk_string);
 
-  // Typeface
-  skiac_typeface *skiac_typeface_create(const char *path);
-  void skiac_typeface_get_family(skiac_typeface *c_typeface, skiac_string *c_string);
-  void skiac_typeface_destroy(skiac_typeface *c_typeface);
+  // TypefaceFontProvider
+  skiac_typeface_font_provider *skiac_typeface_font_provider_create();
+  size_t skiac_typeface_font_provider_register(skiac_typeface_font_provider *c_typeface_font_provider, skiac_font_mgr *c_font_mgr, uint8_t *font, size_t length);
+  void skiac_typeface_font_provider_ref(skiac_typeface_font_provider *c_typeface_font_provider);
+  void skiac_typeface_font_provider_unref(skiac_typeface_font_provider *c_typeface_font_provider);
 
   // FontMetrics
   skiac_font_metrics *skiac_font_metrics_create(const char *font_family, float font_size);
   void skiac_font_metrics_destroy(skiac_font_metrics *c_font_metrics);
 
-  // FontCollection
-  skiac_font_collection *skiac_font_collection_create();
-  skiac_font_collection *skiac_font_collection_clone(skiac_font_collection *c_font_collection);
-  uint32_t skiac_font_collection_get_default_fonts_count(skiac_font_collection *c_font_collection);
-  void skiac_font_collection_get_family(skiac_font_collection *c_font_collection, uint32_t i, skiac_string *c_string);
-  void skiac_font_collection_register(skiac_font_collection *c_font_collection, skiac_typeface *c_typeface);
-  void skiac_font_collection_destroy(skiac_font_collection *c_font_collection);
+  // FontMgr
+  skiac_font_mgr *skiac_font_mgr_ref_default();
+  uint32_t skiac_font_mgr_get_default_fonts_count(skiac_font_mgr *c_font_mgr);
+  void skiac_font_mgr_get_family(skiac_font_mgr *c_font_mgr, uint32_t i, skiac_string *c_string);
 }
 
 #endif // SKIA_CAPI_H

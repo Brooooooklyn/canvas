@@ -1,6 +1,6 @@
 FROM node:lts-alpine
 
-ENV PATH="/usr/local/cargo/bin/rustup:/root/.cargo/bin:$PATH" \
+ENV PATH="/aarch64-linux-musl-cross/bin:/usr/local/cargo/bin/rustup:/root/.cargo/bin:$PATH" \
   CC="clang" \
   CXX="clang++" \
   GN_EXE=gn
@@ -14,8 +14,15 @@ RUN apk add --update --no-cache musl-dev && \
   python2 \
   git \
   build-base \
+  wget \
   clang \
   llvm \
   gn \
-  ninja && \
-  rustup-init -y
+  tar \
+  ninja
+
+RUN rustup-init -y && \
+  yarn global add pnpm && \
+  wget https://musl.cc/aarch64-linux-musl-cross.tgz && \
+  tar -xvf aarch64-linux-musl-cross.tgz && \
+  rm aarch64-linux-musl-cross.tgz
