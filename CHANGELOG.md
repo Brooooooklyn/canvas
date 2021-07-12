@@ -1,3 +1,9 @@
+## [0.0.10](https://github.com/Brooooooklyn/canvas/compare/v0.0.9...v0.0.10) (2021-07-12)
+
+### Bug Fixes
+
+- missing registerFromPath implementation ([8bac515](https://github.com/Brooooooklyn/canvas/commit/8bac515eac3c8bf5db026f701a57ee839fedb42d))
+
 ## [0.0.9](https://github.com/Brooooooklyn/canvas/compare/v0.0.8...v0.0.9) (2021-07-11)
 
 ### Features
