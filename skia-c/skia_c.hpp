@@ -322,6 +322,7 @@ extern "C"
   // TypefaceFontProvider
   skiac_typeface_font_provider *skiac_typeface_font_provider_create();
   size_t skiac_typeface_font_provider_register(skiac_typeface_font_provider *c_typeface_font_provider, skiac_font_mgr *c_font_mgr, uint8_t *font, size_t length);
+  size_t skiac_typeface_font_provider_register_from_file(skiac_typeface_font_provider *c_typeface_font_provider, skiac_font_mgr *c_font_mgr, const char *font_path);
   void skiac_typeface_font_provider_ref(skiac_typeface_font_provider *c_typeface_font_provider);
   void skiac_typeface_font_provider_unref(skiac_typeface_font_provider *c_typeface_font_provider);
 

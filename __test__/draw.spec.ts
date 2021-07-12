@@ -15,7 +15,7 @@ const png = PNG()
 
 const fontIosevka = readFileSync(join(__dirname, 'fonts', 'iosevka-slab-regular.ttf'))
 const fontSourceSerifPro = readFileSync(join(__dirname, 'fonts', 'SourceSerifPro-Regular.ttf'))
-const fontOSRS = readFileSync(join(__dirname, 'fonts', 'osrs-font-compact.otf'))
+const fontOSRSPath = join(__dirname, 'fonts', 'osrs-font-compact.otf')
 
 console.assert(GlobalFonts.register(fontIosevka), 'Register Iosevka font failed')
 console.assert(GlobalFonts.register(fontSourceSerifPro), 'Register SourceSerifPro font failed')
@@ -395,7 +395,7 @@ test('fillText', async (t) => {
 })
 
 test('fillText-AA', async (t) => {
-  GlobalFonts.register(fontOSRS)
+  GlobalFonts.registerFromPath(fontOSRSPath)
   const { ctx, canvas } = t.context
   ctx.imageSmoothingEnabled = false
   ctx.font = '16px OSRSFontCompact'

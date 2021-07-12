@@ -12,6 +12,8 @@ use crate::font::FontStyle;
 use crate::image::ImageData;
 
 mod ffi {
+  use std::os::raw::c_char;
+
   use super::SkiaString;
 
   #[repr(C)]
@@ -625,6 +627,12 @@ mod ffi {
       c_font_mgr: *mut skiac_font_mgr,
       font: *const u8,
       length: usize,
+    ) -> usize;
+
+    pub fn skiac_typeface_font_provider_register_from_file(
+      c_typeface_font_provider: *mut skiac_typeface_font_provider,
+      c_font_mgr: *mut skiac_font_mgr,
+      font_path: *const c_char,
     ) -> usize;
 
     pub fn skiac_typeface_font_provider_ref(
@@ -2771,6 +2779,17 @@ impl TypefaceFontProvider {
   pub fn register(&mut self, font: &[u8]) -> bool {
     unsafe {
       ffi::skiac_typeface_font_provider_register(self.0, self.1, font.as_ptr(), font.len()) > 0
+    }
+  }
+
+  #[inline]
+  pub fn register_from_path(&mut self, font_path: &str) -> bool {
+    if let Ok(fp) = CString::new(font_path) {
+      unsafe {
+        ffi::skiac_typeface_font_provider_register_from_file(self.0, self.1, fp.as_ptr()) > 0
+      }
+    } else {
+      false
     }
   }
 

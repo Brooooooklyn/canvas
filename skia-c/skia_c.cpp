@@ -1131,6 +1131,14 @@ extern "C"
     return fp->registerTypeface(typeface);
   }
 
+  size_t skiac_typeface_font_provider_register_from_file(skiac_typeface_font_provider *c_typeface_font_provider, skiac_font_mgr *c_font_mgr, const char *font_path)
+  {
+    auto fp = reinterpret_cast<TypefaceFontProvider *>(c_typeface_font_provider);
+    auto font_mgr = reinterpret_cast<SkFontMgr *>(c_font_mgr);
+    auto typeface = font_mgr->makeFromFile(font_path);
+    return fp->registerTypeface(typeface);
+  }
+
   void skiac_typeface_font_provider_ref(skiac_typeface_font_provider *c_typeface_font_provider)
   {
     reinterpret_cast<TypefaceFontProvider *>(c_typeface_font_provider)->ref();

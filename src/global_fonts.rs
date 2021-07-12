@@ -10,6 +10,15 @@ fn register(ctx: CallContext) -> Result<JsBoolean> {
   ctx.env.get_boolean(register_result)
 }
 
+#[js_function(1)]
+fn register_from_path(ctx: CallContext) -> Result<JsBoolean> {
+  let this = ctx.this_unchecked::<JsObject>();
+  let typeface_font_provider = ctx.env.unwrap::<TypefaceFontProvider>(&this)?;
+  let font_path = ctx.get::<JsString>(0)?.into_utf8()?;
+  let register_result = typeface_font_provider.register_from_path(font_path.as_str()?);
+  ctx.env.get_boolean(register_result)
+}
+
 #[js_function]
 fn get_families(ctx: CallContext) -> Result<JsObject> {
   let this = ctx.this_unchecked::<JsObject>();
@@ -31,6 +40,7 @@ impl TypefaceFontProvider {
       global_fonts_constructor,
       &[
         Property::new(env, "_register")?.with_method(register),
+        Property::new(env, "_registerFromPath")?.with_method(register_from_path),
         Property::new(env, "_families")?
           .with_getter(get_families)
           .with_property_attributes(PropertyAttributes::Enumerable),
