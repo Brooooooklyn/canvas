@@ -350,7 +350,7 @@ jobs:
               apt-get install -y nodejs && \
               npm install -g pnpm && \
               pnpm install --ignore-scripts && \
-              pnpm test && \
+              npm test && \
               ls -la
             "
 
@@ -391,7 +391,7 @@ jobs:
               apk add nodejs npm && \
               npm install -g pnpm && \
               pnpm install --ignore-scripts && \
-              pnpm test
+              npm test
             "
 
       - name: Test failed
@@ -437,7 +437,7 @@ jobs:
               apt-get install -y nodejs && \
               npm install -g pnpm && \
               pnpm install --ignore-scripts && \
-              pnpm test && \
+              npm test && \
               ls -la
             "
 

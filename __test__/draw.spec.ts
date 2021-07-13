@@ -804,3 +804,23 @@ test('webp-output', async (t) => {
   ctx.fillRect(0, 0, 80, 80)
   await snapshotImage(t, t.context, 'webp')
 })
+
+test('raw output', async (t) => {
+  const { ctx, canvas } = t.context
+  // Moved square
+  ctx.translate(110, 30)
+  ctx.fillStyle = 'red'
+  ctx.fillRect(0, 0, 80, 80)
+
+  // Reset current transformation matrix to the identity matrix
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
+
+  // Unmoved square
+  ctx.fillStyle = 'gray'
+  ctx.fillRect(0, 0, 80, 80)
+
+  const output = canvas.data()
+  const pngFromCanvas = await canvas.encode('png')
+  const pngOutput = png.decoders['image/png'](pngFromCanvas)
+  t.deepEqual(output, pngOutput.data)
+})

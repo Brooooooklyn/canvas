@@ -277,7 +277,11 @@ export interface Canvas {
   width: number
   height: number
   getContext(contextType: '2d', contextAttributes?: { alpha: boolean }): SKRSContext2D
-  toBuffer(): Buffer
+  encodeSync(format: 'webp' | 'jpeg', quality: number): Buffer
+  encodeSync(format: 'png'): Buffer
+  toBuffer(mime: 'image/png' | 'image/jpeg' | 'image/webp'): Buffer
+  // raw pixels
+  data(): Buffer
   encode(format: 'webp' | 'jpeg', quality: number): Promise<Buffer>
   encode(format: 'png'): Promise<Buffer>
 }

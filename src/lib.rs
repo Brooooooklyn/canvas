@@ -5,8 +5,10 @@
 #[macro_use]
 extern crate napi_derive;
 
-use napi::*;
 use std::convert::TryInto;
+use std::mem;
+
+use napi::*;
 
 use ctx::{Context, ContextData};
 use font::{init_font_regexp, FONT_REGEXP};
@@ -41,8 +43,10 @@ fn init(mut exports: JsObject, env: Env) -> Result<()> {
     &[
       Property::new(&env, "getContext")?.with_method(get_context),
       Property::new(&env, "encode")?.with_method(encode),
+      Property::new(&env, "encodeSync")?.with_method(encode_sync),
       Property::new(&env, "toBuffer")?.with_method(to_buffer),
       Property::new(&env, "savePNG")?.with_method(save_png),
+      Property::new(&env, "data")?.with_method(data),
     ],
   )?;
 
@@ -153,15 +157,101 @@ fn encode(ctx: CallContext) -> Result<JsObject> {
   ctx.env.spawn(task).map(|p| p.promise_object())
 }
 
-#[js_function]
+#[js_function(2)]
+fn encode_sync(ctx: CallContext) -> Result<JsBuffer> {
+  let format = ctx.get::<JsString>(0)?.into_utf8()?;
+  let quality = if ctx.length == 1 {
+    100
+  } else {
+    ctx.get::<JsNumber>(1)?.get_uint32()? as u8
+  };
+  let this = ctx.this_unchecked::<JsObject>();
+  let ctx_js = this.get_named_property::<JsObject>("ctx")?;
+  let ctx2d = ctx.env.unwrap::<Context>(&ctx_js)?;
+  let surface_ref = ctx2d.surface.reference();
+
+  if let Some(data_ref) = match format.as_str()? {
+    "webp" => surface_ref.encode_data(sk::SkEncodedImageFormat::Webp, quality),
+    "jpeg" => surface_ref.encode_data(sk::SkEncodedImageFormat::Jpeg, quality),
+    "png" => surface_ref.png_data(),
+    _ => {
+      return Err(Error::new(
+        Status::InvalidArg,
+        format!("{} is not valid format", format.as_str()?),
+      ))
+    }
+  } {
+    unsafe {
+      ctx
+        .env
+        .create_buffer_with_borrowed_data(
+          data_ref.0.ptr,
+          data_ref.0.size,
+          data_ref,
+          |data: SurfaceDataRef, _| mem::drop(data),
+        )
+        .map(|b| b.into_raw())
+    }
+  } else {
+    Err(Error::new(
+      Status::InvalidArg,
+      format!("encode {} output failed", format.as_str()?),
+    ))
+  }
+}
+
+#[js_function(2)]
 fn to_buffer(ctx: CallContext) -> Result<JsBuffer> {
+  let mime = ctx.get::<JsString>(0)?.into_utf8()?;
+  let quality = if ctx.length == 1 {
+    100
+  } else {
+    ctx.get::<JsNumber>(1)?.get_uint32()? as u8
+  };
+  let this = ctx.this_unchecked::<JsObject>();
+  let ctx_js = this.get_named_property::<JsObject>("ctx")?;
+  let ctx2d = ctx.env.unwrap::<Context>(&ctx_js)?;
+  let surface_ref = ctx2d.surface.reference();
+
+  if let Some(data_ref) = match mime.as_str()? {
+    "image/webp" => surface_ref.encode_data(sk::SkEncodedImageFormat::Webp, quality),
+    "image/jpeg" => surface_ref.encode_data(sk::SkEncodedImageFormat::Jpeg, quality),
+    "image/png" => surface_ref.png_data(),
+    _ => {
+      return Err(Error::new(
+        Status::InvalidArg,
+        format!("{} is not valid mime", mime.as_str()?),
+      ))
+    }
+  } {
+    unsafe {
+      ctx
+        .env
+        .create_buffer_with_borrowed_data(
+          data_ref.0.ptr,
+          data_ref.0.size,
+          data_ref,
+          |data: SurfaceDataRef, _| mem::drop(data),
+        )
+        .map(|b| b.into_raw())
+    }
+  } else {
+    Err(Error::new(
+      Status::InvalidArg,
+      format!("encode {} output failed", mime.as_str()?),
+    ))
+  }
+}
+
+#[js_function]
+fn data(ctx: CallContext) -> Result<JsBuffer> {
   let this = ctx.this_unchecked::<JsObject>();
   let ctx_js = this.get_named_property::<JsObject>("ctx")?;
   let ctx2d = ctx.env.unwrap::<Context>(&ctx_js)?;
 
   let surface_ref = ctx2d.surface.reference();
 
-  let data_ref = surface_ref.png_data().ok_or_else(|| {
+  let (ptr, size) = surface_ref.data().ok_or_else(|| {
     Error::new(
       Status::GenericFailure,
       "Get png data from surface failed".to_string(),
@@ -170,12 +260,7 @@ fn to_buffer(ctx: CallContext) -> Result<JsBuffer> {
   unsafe {
     ctx
       .env
-      .create_buffer_with_borrowed_data(
-        data_ref.0.ptr,
-        data_ref.0.size,
-        data_ref,
-        |data: SurfaceDataRef, _| data.unref(),
-      )
+      .create_buffer_with_borrowed_data(ptr, size, 0, noop_finalize)
       .map(|value| value.into_raw())
   }
 }

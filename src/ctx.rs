@@ -1938,7 +1938,7 @@ impl Task for ContextData {
           output.0.ptr,
           output.0.size,
           output,
-          |data_ref: Self::Output, _| data_ref.unref(),
+          |data_ref: Self::Output, _| mem::drop(data_ref),
         )
         .map(|value| value.into_raw())
     }
