@@ -1,3 +1,9 @@
+## [0.0.11](https://github.com/Brooooooklyn/canvas/compare/v0.0.10...v0.0.11) (2021-07-13)
+
+### Features
+
+- support maxWidth in fillText and strokeText ([ccf33f3](https://github.com/Brooooooklyn/canvas/commit/ccf33f30b26aacab636791f3efb92a86ca7a6871))
+
 ## [0.0.10](https://github.com/Brooooooklyn/canvas/compare/v0.0.9...v0.0.10) (2021-07-12)
 
 ### Bug Fixes
