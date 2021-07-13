@@ -14,6 +14,8 @@
 #define FONT_METRICS_CAST reinterpret_cast<SkFontMetrics *>(c_font_metrics)
 #define TYPEFACE_CAST reinterpret_cast<SkTypeface *>(c_typeface)
 
+#define MAX_LAYOUT_WIDTH 100000
+
 extern "C"
 {
 
@@ -287,10 +289,12 @@ extern "C"
       size_t text_len,
       float x,
       float y,
+      float max_width,
       int weight,
       int width,
       int slant,
       skiac_typeface_font_provider *c_typeface_font_provider,
+      skiac_font_mgr *c_font_mgr,
       float font_size,
       const char *font_family,
       float baseline_offset,
@@ -300,44 +304,49 @@ extern "C"
   {
     auto font_collection = sk_make_sp<FontCollection>();
     auto font_provider = sp_from_const(reinterpret_cast<TypefaceFontProvider *>(c_typeface_font_provider));
-    auto default_font_mgr = SkFontMgr_New_Custom_Empty();
+    auto default_font_mgr = sp_from_const(reinterpret_cast<SkFontMgr *>(c_font_mgr));
     font_collection->setDefaultFontManager(default_font_mgr);
     font_collection->setAssetFontManager(font_provider);
     font_collection->enableFontFallback();
     TextStyle text_style;
     auto font_style = SkFontStyle(weight, width, (SkFontStyle::Slant)slant);
     const std::vector<SkString> families = {SkString(font_family)};
-    auto typefaces = font_collection->findTypefaces(families, font_style);
-    auto typeface = typefaces.front();
     text_style.setFontFamilies(families);
     text_style.setFontSize(font_size);
     text_style.setForegroundColor(*PAINT_CAST);
     text_style.setWordSpacing(0);
     text_style.setHeight(1);
     text_style.setFontStyle(font_style);
-    text_style.setTypeface(typeface);
 
-    auto struct_style = StrutStyle();
-    struct_style.setFontStyle(font_style);
-    struct_style.setFontSize(font_size);
-    struct_style.setFontFamilies(families);
-    auto paragraph_style = new ParagraphStyle();
-    paragraph_style->turnHintingOff();
-    paragraph_style->setTextStyle(text_style);
-    paragraph_style->setStrutStyle(struct_style);
-    paragraph_style->setTextAlign((TextAlign)align);
-    auto builder = ParagraphBuilderImpl::make(*paragraph_style, font_collection).release();
+    ParagraphStyle paragraph_style;
+    paragraph_style.turnHintingOff();
+    paragraph_style.setTextStyle(text_style);
+    paragraph_style.setTextAlign((TextAlign)align);
+    auto builder = ParagraphBuilderImpl::make(paragraph_style, font_collection).release();
     builder->pushStyle(text_style);
     builder->addText(text, text_len);
 
-    auto paragraph = builder->Build().release();
+    auto paragraph = reinterpret_cast<ParagraphImpl *>(builder->Build().release());
     auto alphabetic_baseline = paragraph->getAlphabeticBaseline();
 
-    auto paragraph_width = 100000;
-    auto paint_x = x + paragraph_width * align_factor;
-    paragraph->layout(paragraph_width);
+    auto paint_x = x + max_width * align_factor;
+    paragraph->layout(MAX_LAYOUT_WIDTH);
+    auto metrics = std::vector<LineMetrics>();
+    paragraph->getLineMetrics(metrics);
+    auto line_metric = metrics[0];
+    auto line_width = line_metric.fWidth;
+    auto need_scale = line_width > max_width;
+    if (need_scale)
+    {
+      CANVAS_CAST->save();
+      CANVAS_CAST->scale(max_width / line_width, 1.0);
+    }
     auto paint_y = y + baseline_offset - paragraph->getHeight() - alphabetic_baseline;
     paragraph->paint(CANVAS_CAST, paint_x, paint_y);
+    if (need_scale)
+    {
+      CANVAS_CAST->restore();
+    }
     delete paragraph;
   }
 

@@ -26,6 +26,7 @@
 #include <modules/skparagraph/include/Paragraph.h>
 #include <modules/skparagraph/include/ParagraphBuilder.h>
 #include <modules/skparagraph/src/ParagraphBuilderImpl.h>
+#include <modules/skparagraph/src/ParagraphImpl.h>
 #include <modules/skparagraph/include/TypefaceFontProvider.h>
 #include <modules/svg/include/SkSVGDOM.h>
 #include <src/ports/SkFontMgr_custom.h>
@@ -163,10 +164,12 @@ extern "C"
       size_t text_len,
       float x,
       float y,
+      float max_width,
       int weight,
       int width,
       int slant,
       skiac_typeface_font_provider *c_typeface_font_provider,
+      skiac_font_mgr *c_font_mgr,
       float font_size,
       const char *font_family,
       float baseline_offset,

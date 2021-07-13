@@ -21,6 +21,8 @@ impl From<SkError> for Error {
   }
 }
 
+const MAX_TEXT_WIDTH: f32 = 100_000.0;
+
 pub struct Context {
   pub(crate) surface: Surface,
   path: Path,
@@ -200,9 +202,15 @@ impl Context {
   }
 
   #[inline(always)]
-  pub fn stroke_text(&mut self, text: &str, x: f32, y: f32) -> result::Result<(), SkError> {
+  pub fn stroke_text(
+    &mut self,
+    text: &str,
+    x: f32,
+    y: f32,
+    max_width: f32,
+  ) -> result::Result<(), SkError> {
     let stroke_paint = self.stroke_paint()?;
-    self.draw_text(text, x, y, &stroke_paint)?;
+    self.draw_text(text, x, y, max_width, &stroke_paint)?;
     Ok(())
   }
 
@@ -228,9 +236,15 @@ impl Context {
   }
 
   #[inline(always)]
-  pub fn fill_text(&mut self, text: &str, x: f32, y: f32) -> result::Result<(), SkError> {
+  pub fn fill_text(
+    &mut self,
+    text: &str,
+    x: f32,
+    y: f32,
+    max_width: f32,
+  ) -> result::Result<(), SkError> {
     let fill_paint = self.fill_paint()?;
-    self.draw_text(text, x, y, &fill_paint)?;
+    self.draw_text(text, x, y, max_width, &fill_paint)?;
     Ok(())
   }
 
@@ -466,6 +480,7 @@ impl Context {
     text: &str,
     x: f32,
     y: f32,
+    max_width: f32,
     paint: &Paint,
   ) -> result::Result<(), SkError> {
     let state = self.states.last().unwrap();
@@ -480,6 +495,7 @@ impl Context {
         text,
         x,
         y,
+        max_width,
         weight,
         stretch as u32,
         slant,
@@ -497,6 +513,7 @@ impl Context {
       text,
       x,
       y,
+      max_width,
       weight,
       stretch as u32,
       slant,
@@ -1064,10 +1081,15 @@ fn stroke_text(ctx: CallContext) -> Result<JsUndefined> {
   let text = ctx.get::<JsString>(0)?.into_utf8()?;
   let x: f64 = ctx.get::<JsNumber>(1)?.try_into()?;
   let y: f64 = ctx.get::<JsNumber>(2)?.try_into()?;
+  let max_width = if ctx.length == 3 {
+    MAX_TEXT_WIDTH
+  } else {
+    ctx.get::<JsNumber>(3)?.get_double()? as f32
+  };
 
   let this = ctx.this_unchecked::<JsObject>();
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
-  context_2d.stroke_text(text.as_str()?, x as f32, y as f32)?;
+  context_2d.stroke_text(text.as_str()?, x as f32, y as f32, max_width)?;
 
   ctx.env.get_undefined()
 }
@@ -1092,10 +1114,15 @@ fn fill_text(ctx: CallContext) -> Result<JsUndefined> {
   let text = ctx.get::<JsString>(0)?.into_utf8()?;
   let x: f64 = ctx.get::<JsNumber>(1)?.try_into()?;
   let y: f64 = ctx.get::<JsNumber>(2)?.try_into()?;
+  let max_width = if ctx.length == 3 {
+    MAX_TEXT_WIDTH
+  } else {
+    ctx.get::<JsNumber>(3)?.get_double()? as f32
+  };
 
   let this = ctx.this_unchecked::<JsObject>();
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
-  context_2d.fill_text(text.as_str()?, x as f32, y as f32)?;
+  context_2d.fill_text(text.as_str()?, x as f32, y as f32, max_width)?;
 
   ctx.env.get_undefined()
 }
