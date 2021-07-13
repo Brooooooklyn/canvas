@@ -394,6 +394,17 @@ test('fillText', async (t) => {
   await snapshotImage(t, { canvas, ctx }, 'png', 3.2)
 })
 
+test('fillText-maxWidth', async (t) => {
+  const { ctx, canvas } = t.context
+  ctx.fillStyle = 'white'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  ctx.fillStyle = 'black'
+  ctx.font = '24px Iosevka Slab'
+  ctx.fillText('Hello world', 50, 90, 90)
+  ctx.fillText('Hello world', 160, 90)
+  await snapshotImage(t, { canvas, ctx }, 'png', 0.8)
+})
+
 test('fillText-AA', async (t) => {
   GlobalFonts.registerFromPath(fontOSRSPath)
   const { ctx, canvas } = t.context

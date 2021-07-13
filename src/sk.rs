@@ -303,10 +303,12 @@ mod ffi {
       text_len: usize,
       x: f32,
       y: f32,
+      max_width: f32,
       weight: i32,
       width: i32,
       slant: i32,
       c_typeface_font_provider: *mut skiac_typeface_font_provider,
+      c_font_mgr: *mut skiac_font_mgr,
       font_size: f32,
       font_family: *const ::std::os::raw::c_char,
       baseline_offset: f32,
@@ -660,12 +662,6 @@ mod ffi {
 
     // FontMgr
     pub fn skiac_font_mgr_ref_default() -> *mut skiac_font_mgr;
-
-    pub fn skiac_font_mgr_make_from_data(
-      data: *mut *mut u8,
-      len: *mut *mut usize,
-      number: i32,
-    ) -> *mut skiac_font_mgr;
 
     pub fn skiac_font_mgr_get_default_fonts_count(c_font_mgr: *mut skiac_font_mgr) -> u32;
 
@@ -1607,6 +1603,7 @@ impl Canvas {
     text: &str,
     x: f32,
     y: f32,
+    max_width: f32,
     weight: u32,
     width: u32,
     slant: FontStyle,
@@ -1636,10 +1633,12 @@ impl Canvas {
         text.len(),
         x,
         y,
+        max_width,
         weight as i32,
         width as i32,
         slant as i32,
         typeface_font_provider.0,
+        typeface_font_provider.1,
         font_size,
         c_font_family.as_ptr(),
         baseline_offset,
@@ -2869,16 +2868,6 @@ impl Drop for FontMetrics {
   #[inline]
   fn drop(&mut self) {
     unsafe { ffi::skiac_font_metrics_destroy(self.0) }
-  }
-}
-
-#[derive(Debug, Clone)]
-pub struct FontMgr(*mut ffi::skiac_font_mgr);
-
-impl FontMgr {
-  #[inline]
-  pub fn new() -> Self {
-    Self(unsafe { ffi::skiac_font_mgr_ref_default() })
   }
 }
 
