@@ -775,52 +775,71 @@ test('transform', async (t) => {
 
 test('translate', async (t) => {
   const { ctx } = t.context
-  // Moved square
-  ctx.translate(110, 30)
-  ctx.fillStyle = 'red'
-  ctx.fillRect(0, 0, 80, 80)
-
-  // Reset current transformation matrix to the identity matrix
-  ctx.setTransform(1, 0, 0, 1, 0, 0)
-
-  // Unmoved square
-  ctx.fillStyle = 'gray'
-  ctx.fillRect(0, 0, 80, 80)
+  drawHouse(ctx)
   await snapshotImage(t)
 })
 
 test('webp-output', async (t) => {
   const { ctx } = t.context
-  // Moved square
-  ctx.translate(110, 30)
-  ctx.fillStyle = 'red'
-  ctx.fillRect(0, 0, 80, 80)
-
-  // Reset current transformation matrix to the identity matrix
-  ctx.setTransform(1, 0, 0, 1, 0, 0)
-
-  // Unmoved square
-  ctx.fillStyle = 'gray'
-  ctx.fillRect(0, 0, 80, 80)
+  drawHouse(ctx)
   await snapshotImage(t, t.context, 'webp')
 })
 
 test('raw output', async (t) => {
   const { ctx, canvas } = t.context
-  // Moved square
-  ctx.translate(110, 30)
-  ctx.fillStyle = 'red'
-  ctx.fillRect(0, 0, 80, 80)
-
-  // Reset current transformation matrix to the identity matrix
-  ctx.setTransform(1, 0, 0, 1, 0, 0)
-
-  // Unmoved square
-  ctx.fillStyle = 'gray'
-  ctx.fillRect(0, 0, 80, 80)
+  drawHouse(ctx)
 
   const output = canvas.data()
   const pngFromCanvas = await canvas.encode('png')
   const pngOutput = png.decoders['image/png'](pngFromCanvas)
   t.deepEqual(output, pngOutput.data)
 })
+
+test('toDataURL', async (t) => {
+  const { ctx, canvas } = t.context
+  drawHouse(ctx)
+
+  const output = canvas.toDataURL()
+  const prefix = 'data:image/png;base64,'
+  t.true(output.startsWith(prefix))
+  const imageBase64 = output.substr(prefix.length)
+  const pngBuffer = Buffer.from(imageBase64, 'base64')
+  t.deepEqual(pngBuffer, await canvas.encode('png'))
+})
+
+test('toDataURL with quality', async (t) => {
+  const { ctx, canvas } = t.context
+  drawHouse(ctx)
+
+  const output = canvas.toDataURL('image/jpeg', 20)
+  const prefix = 'data:image/jpeg;base64,'
+  t.true(output.startsWith(prefix))
+  const imageBase64 = output.substr(prefix.length)
+  const pngBuffer = Buffer.from(imageBase64, 'base64')
+  t.deepEqual(pngBuffer, await canvas.encode('jpeg', 20))
+})
+
+test('toDataURLAsync', async (t) => {
+  const { ctx, canvas } = t.context
+  drawHouse(ctx)
+  const output = await canvas.toDataURLAsync()
+  const prefix = 'data:image/png;base64,'
+  t.true(output.startsWith(prefix))
+  const imageBase64 = output.substr(prefix.length)
+  const pngBuffer = Buffer.from(imageBase64, 'base64')
+  t.deepEqual(pngBuffer, await canvas.encode('png'))
+})
+
+function drawHouse(ctx: SKRSContext2D) {
+  // Moved square
+  ctx.translate(110, 30)
+  ctx.fillStyle = 'red'
+  ctx.fillRect(0, 0, 80, 80)
+
+  // Reset current transformation matrix to the identity matrix
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
+
+  // Unmoved square
+  ctx.fillStyle = 'gray'
+  ctx.fillRect(0, 0, 80, 80)
+}

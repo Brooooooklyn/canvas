@@ -11,6 +11,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 anyhow = "1.0"
+base64 = "0.13"
 cssparser = "0.28"
 napi = "1"
 napi-derive = "1"
