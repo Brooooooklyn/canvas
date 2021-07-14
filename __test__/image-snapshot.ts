@@ -11,7 +11,7 @@ const jpeg = JPEG()
 export async function snapshotImage<C>(
   t: ExecutionContext<C>,
   context = t.context,
-  type: 'png' | 'jpeg' | 'avif' | 'webp' | 'heif' = 'png',
+  type: 'png' | 'jpeg' | 'webp' = 'png',
   differentRatio = 0.01,
 ) {
   // @ts-expect-error

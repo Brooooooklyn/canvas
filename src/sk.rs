@@ -1263,6 +1263,7 @@ impl Surface {
     }
   }
 
+  #[inline]
   pub fn save_png(&self, path: &str) -> bool {
     let c_path = std::ffi::CString::new(path).unwrap();
     unsafe { ffi::skiac_surface_save(self.ptr, c_path.as_ptr()) }
@@ -1401,6 +1402,20 @@ impl SurfaceRef {
   }
 
   #[inline]
+  pub fn data(&self) -> Option<(*const u8, usize)> {
+    let mut data = ffi::skiac_surface_data {
+      ptr: ptr::null_mut(),
+      size: 0,
+    };
+    unsafe { ffi::skiac_surface_read_pixels(self.0, &mut data) };
+    if data.ptr.is_null() {
+      None
+    } else {
+      Some((data.ptr, data.size))
+    }
+  }
+
+  #[inline]
   pub fn encode_data(&self, format: SkEncodedImageFormat, quality: u8) -> Option<SurfaceDataRef> {
     unsafe {
       let mut data = ffi::skiac_sk_data {
@@ -1455,8 +1470,10 @@ impl SurfaceDataRef {
   pub fn slice(&self) -> &'static [u8] {
     unsafe { slice::from_raw_parts(self.0.ptr, self.0.size) }
   }
+}
 
-  pub fn unref(self) {
+impl Drop for SurfaceDataRef {
+  fn drop(&mut self) {
     unsafe { ffi::skiac_sk_data_destroy(self.0.data) }
   }
 }
