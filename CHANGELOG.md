@@ -1,3 +1,10 @@
+## [0.0.12](https://github.com/Brooooooklyn/canvas/compare/v0.0.11...v0.0.12) (2021-07-14)
+
+### Features
+
+- support raw pixels output ([f502548](https://github.com/Brooooooklyn/canvas/commit/f502548dc0c271710602a7363693540487056776))
+- support toDataURL and toDataURLAsync on canvas element ([1d8c790](https://github.com/Brooooooklyn/canvas/commit/1d8c790777656ec1104fa465b2c9dcb929ead451))
+
 ## [0.0.11](https://github.com/Brooooooklyn/canvas/compare/v0.0.10...v0.0.11) (2021-07-13)
 
 ### Features

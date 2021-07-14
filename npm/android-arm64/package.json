@@ -1,6 +1,6 @@
 {
   "name": "@napi-rs/canvas-android-arm64",
-  "version": "0.0.11",
+  "version": "0.0.12",
   "os": ["android"],
   "cpu": ["arm64"],
   "main": "skia.android-arm64.node",
