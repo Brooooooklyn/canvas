@@ -303,6 +303,7 @@ interface IGlobalFonts {
   // absolute path
   registerFromPath(path: string): boolean
   has(name: string): boolean
+  loadSystemFonts(): number
 }
 
 export const GlobalFonts: IGlobalFonts

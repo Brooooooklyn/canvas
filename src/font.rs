@@ -35,7 +35,7 @@ pub struct Font {
   pub style: FontStyle,
   pub family: String,
   pub variant: FontVariant,
-  pub stretch: f32,
+  pub stretch: FontStretch,
   pub weight: u32,
 }
 
@@ -46,7 +46,7 @@ impl Default for Font {
       style: FontStyle::Normal,
       family: DEFAULT_FONT.to_owned(),
       variant: FontVariant::Normal,
-      stretch: 1.0,
+      stretch: FontStretch::Normal,
       weight: 400,
     }
   }
@@ -175,6 +175,20 @@ impl FromStr for FontVariant {
   }
 }
 
+#[repr(i32)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum FontStretch {
+  UltraCondensed = 1,
+  ExtraCondensed = 2,
+  Condensed = 3,
+  SemiCondensed = 4,
+  Normal = 5,
+  SemiExpanded = 6,
+  Expanded = 7,
+  ExtraExpanded = 8,
+  UltraExpanded = 9,
+}
+
 #[inline]
 // https://drafts.csswg.org/css-fonts-4/#propdef-font-weight
 fn parse_font_weight(weight: &str) -> Option<u32> {
@@ -197,35 +211,18 @@ fn parse_font_weight(weight: &str) -> Option<u32> {
 }
 
 #[inline]
-fn parse_font_stretch(stretch: &str) -> Option<f32> {
+fn parse_font_stretch(stretch: &str) -> Option<FontStretch> {
   match stretch {
-    "ultra-condensed" | "50%" => Some(0.5),
-    "extra-condensed" | "62.5%" => Some(0.625),
-    "condensed" | "75%" => Some(0.75),
-    "semi-condensed" | "87.5%" => Some(0.875),
-    "normal" | "100%" => Some(1.0),
-    "semi-expanded" | "112.5%" => Some(1.125),
-    "expanded" | "125%" => Some(1.25),
-    "extra-expanded" | "150%" => Some(1.5),
-    "ultra-expanded" | "200%" => Some(2.0),
-    _ => {
-      if stretch.ends_with('%') {
-        stretch.strip_suffix('%').and_then(|s| {
-          s.parse::<f32>()
-            .map(|value| {
-              if value >= 0.0 {
-                Some(value / 100.0)
-              } else {
-                None
-              }
-            })
-            .ok()
-            .and_then(|v| v)
-        })
-      } else {
-        None
-      }
-    }
+    "ultra-condensed" | "50%" => Some(FontStretch::UltraCondensed),
+    "extra-condensed" | "62.5%" => Some(FontStretch::ExtraCondensed),
+    "condensed" | "75%" => Some(FontStretch::Condensed),
+    "semi-condensed" | "87.5%" => Some(FontStretch::SemiCondensed),
+    "normal" | "100%" => Some(FontStretch::Normal),
+    "semi-expanded" | "112.5%" => Some(FontStretch::SemiExpanded),
+    "expanded" | "125%" => Some(FontStretch::Expanded),
+    "extra-expanded" | "150%" => Some(FontStretch::ExtraExpanded),
+    "ultra-expanded" | "200%" => Some(FontStretch::UltraExpanded),
+    _ => None,
   }
 }
 
@@ -264,25 +261,55 @@ fn parse_size_px(size: f32, unit: &str) -> f32 {
 
 #[test]
 fn font_stretch() {
-  assert_eq!(parse_font_stretch("ultra-condensed"), Some(0.5));
-  assert_eq!(parse_font_stretch("50%"), Some(0.5));
-  assert_eq!(parse_font_stretch("extra-condensed"), Some(0.625));
-  assert_eq!(parse_font_stretch("62.5%"), Some(0.625));
-  assert_eq!(parse_font_stretch("condensed"), Some(0.75));
-  assert_eq!(parse_font_stretch("75%"), Some(0.75));
-  assert_eq!(parse_font_stretch("semi-condensed"), Some(0.875));
-  assert_eq!(parse_font_stretch("87.5%"), Some(0.875));
-  assert_eq!(parse_font_stretch("normal"), Some(1.0));
-  assert_eq!(parse_font_stretch("100%"), Some(1.0));
-  assert_eq!(parse_font_stretch("semi-expanded"), Some(1.125));
-  assert_eq!(parse_font_stretch("112.5%"), Some(1.125));
-  assert_eq!(parse_font_stretch("expanded"), Some(1.25));
-  assert_eq!(parse_font_stretch("125%"), Some(1.25));
-  assert_eq!(parse_font_stretch("extra-expanded"), Some(1.5));
-  assert_eq!(parse_font_stretch("150%"), Some(1.5));
-  assert_eq!(parse_font_stretch("ultra-expanded"), Some(2.0));
-  assert_eq!(parse_font_stretch("200%"), Some(2.0));
-  assert_eq!(parse_font_stretch("52%"), Some(0.52));
+  assert_eq!(
+    parse_font_stretch("ultra-condensed"),
+    Some(FontStretch::UltraCondensed)
+  );
+  assert_eq!(parse_font_stretch("50%"), Some(FontStretch::UltraCondensed));
+  assert_eq!(
+    parse_font_stretch("extra-condensed"),
+    Some(FontStretch::ExtraCondensed)
+  );
+  assert_eq!(
+    parse_font_stretch("62.5%"),
+    Some(FontStretch::ExtraCondensed)
+  );
+  assert_eq!(
+    parse_font_stretch("condensed"),
+    Some(FontStretch::Condensed)
+  );
+  assert_eq!(parse_font_stretch("75%"), Some(FontStretch::Condensed));
+  assert_eq!(
+    parse_font_stretch("semi-condensed"),
+    Some(FontStretch::SemiCondensed)
+  );
+  assert_eq!(
+    parse_font_stretch("87.5%"),
+    Some(FontStretch::SemiCondensed)
+  );
+  assert_eq!(parse_font_stretch("normal"), Some(FontStretch::Normal));
+  assert_eq!(parse_font_stretch("100%"), Some(FontStretch::Normal));
+  assert_eq!(
+    parse_font_stretch("semi-expanded"),
+    Some(FontStretch::SemiExpanded)
+  );
+  assert_eq!(
+    parse_font_stretch("112.5%"),
+    Some(FontStretch::SemiExpanded)
+  );
+  assert_eq!(parse_font_stretch("expanded"), Some(FontStretch::Expanded));
+  assert_eq!(parse_font_stretch("125%"), Some(FontStretch::Expanded));
+  assert_eq!(
+    parse_font_stretch("extra-expanded"),
+    Some(FontStretch::ExtraExpanded)
+  );
+  assert_eq!(parse_font_stretch("150%"), Some(FontStretch::ExtraExpanded));
+  assert_eq!(
+    parse_font_stretch("ultra-expanded"),
+    Some(FontStretch::UltraExpanded)
+  );
+  assert_eq!(parse_font_stretch("200%"), Some(FontStretch::UltraExpanded));
+  assert_eq!(parse_font_stretch("52%"), None);
   assert_eq!(parse_font_stretch("-50%"), None);
   assert_eq!(parse_font_stretch("50"), None);
   assert_eq!(parse_font_stretch("ultra"), None);
@@ -377,11 +404,11 @@ fn test_font_new() {
       },
     ),
     (
-      "20% 50% Arial",
+      "62.5% 50% Arial",
       Font {
         size: 8.0,
         family: "Arial".to_owned(),
-        stretch: 0.2,
+        stretch: FontStretch::ExtraCondensed,
         ..Default::default()
       },
     ),

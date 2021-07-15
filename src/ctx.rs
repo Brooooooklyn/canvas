@@ -74,6 +74,9 @@ impl Context {
         Property::new(env, "font")?
           .with_setter(set_font)
           .with_getter(get_font),
+        Property::new(env, "direction")?
+          .with_setter(set_text_direction)
+          .with_getter(get_text_direction),
         Property::new(env, "strokeStyle")?
           .with_setter(set_stroke_style)
           .with_getter(get_stroke_style),
@@ -495,13 +498,14 @@ impl Context {
         y,
         max_width,
         weight,
-        stretch as u32,
+        stretch as i32,
         slant,
         &self.font_collection,
         state.font_style.size,
         &state.font_style.family,
         state.text_baseline,
         state.text_align,
+        state.text_direction,
         &shadow_paint,
       );
       surface.restore();
@@ -513,13 +517,14 @@ impl Context {
       y,
       max_width,
       weight,
-      stretch as u32,
+      stretch as i32,
       slant,
       &self.font_collection,
       state.font_style.size,
       &state.font_style.family,
       state.text_baseline,
       state.text_align,
+      state.text_direction,
       paint,
     );
     Ok(())
@@ -529,13 +534,20 @@ impl Context {
   fn get_line_metrics(&mut self, text: &str) -> result::Result<LineMetrics, SkError> {
     let state = self.states.last().unwrap();
     let fill_paint = self.fill_paint()?;
-
+    let weight = state.font_style.weight;
+    let stretch = state.font_style.stretch;
+    let slant = state.font_style.style;
     let line_metrics = LineMetrics(self.surface.canvas.get_line_metrics(
       text,
       &self.font_collection,
       state.font_style.size,
+      weight,
+      stretch as i32,
+      slant,
       &state.font_style.family,
+      state.text_baseline,
       state.text_align,
+      state.text_direction,
       &fill_paint,
     ));
     Ok(line_metrics)
@@ -564,13 +576,11 @@ impl Context {
 fn context_2d_constructor(ctx: CallContext) -> Result<JsUndefined> {
   let width: u32 = ctx.get::<JsNumber>(0)?.try_into()?;
   let height: u32 = ctx.get::<JsNumber>(1)?.try_into()?;
-  let typeface_font_provider_js = ctx.get::<JsObject>(2)?;
-  let typeface_font_provider = ctx
-    .env
-    .unwrap::<Rc<FontCollection>>(&typeface_font_provider_js)?;
+  let font_collection_js = ctx.get::<JsObject>(2)?;
+  let font_collection = ctx.env.unwrap::<Rc<FontCollection>>(&font_collection_js)?;
 
   let mut this = ctx.this_unchecked::<JsObject>();
-  let context_2d = Context::new(width, height, typeface_font_provider)?;
+  let context_2d = Context::new(width, height, font_collection)?;
   ctx.env.wrap(&mut this, context_2d)?;
   ctx.env.get_undefined()
 }
@@ -1049,11 +1059,11 @@ fn measure_text(ctx: CallContext) -> Result<JsObject> {
   let mut metrics = ctx.env.create_object()?;
   metrics.set_named_property(
     "actualBoundingBoxAscent",
-    ctx.env.create_double(m.descent as f64)?,
+    ctx.env.create_double(m.ascent as f64)?,
   )?;
   metrics.set_named_property(
     "actualBoundingBoxDescent",
-    ctx.env.create_double(m.ascent as f64)?,
+    ctx.env.create_double(m.descent as f64)?,
   )?;
   metrics.set_named_property(
     "actualBoundingBoxLeft",
@@ -1061,10 +1071,16 @@ fn measure_text(ctx: CallContext) -> Result<JsObject> {
   )?;
   metrics.set_named_property(
     "actualBoundingBoxRight",
-    ctx.env.create_double((m.left + m.width) as f64)?,
+    ctx.env.create_double(m.right as f64)?,
   )?;
-  // metrics.set_named_property("fontBoundingBoxAscent", ctx.env.create_double(m.ascent)?)?;
-  // metrics.set_named_property("fontBoundingBoxDescent", ctx.env.create_double(mn.descent)?)?;
+  metrics.set_named_property(
+    "fontBoundingBoxAscent",
+    ctx.env.create_double(m.font_ascent as f64)?,
+  )?;
+  metrics.set_named_property(
+    "fontBoundingBoxDescent",
+    ctx.env.create_double(m.font_descent as f64)?,
+  )?;
   metrics.set_named_property("width", ctx.env.create_double(m.width as f64)?)?;
   Ok(metrics)
 }
@@ -1743,6 +1759,26 @@ fn set_font(ctx: CallContext) -> Result<JsUndefined> {
     Font::new(font_style.as_str()).map_err(|e| Error::new(Status::InvalidArg, format!("{}", e)))?;
 
   last_state.font = font_style;
+  ctx.env.get_undefined()
+}
+
+#[js_function]
+fn get_text_direction(ctx: CallContext) -> Result<JsString> {
+  let this = ctx.this_unchecked::<JsObject>();
+  let context_2d = ctx.env.unwrap::<Context>(&this)?;
+
+  let last_state = context_2d.states.last().unwrap();
+  ctx.env.create_string(last_state.text_direction.as_str())
+}
+
+#[js_function(1)]
+fn set_text_direction(ctx: CallContext) -> Result<JsUndefined> {
+  let this = ctx.this_unchecked::<JsObject>();
+  let context_2d = ctx.env.unwrap::<Context>(&this)?;
+  let direction = ctx.get::<JsString>(0)?.into_utf8()?;
+  let text_direction = TextDirection::from_str(direction.as_str()?)?;
+  let last_state = context_2d.states.last_mut().unwrap();
+  last_state.text_direction = text_direction;
   ctx.env.get_undefined()
 }
 

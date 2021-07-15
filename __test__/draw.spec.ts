@@ -496,7 +496,13 @@ test('lineTo', async (t) => {
   await snapshotImage(t)
 })
 
-test.todo('measureText')
+test('measureText', (t) => {
+  const { ctx } = t.context
+  ctx.font = '50px Iosevka Slab'
+  const metrics = ctx.measureText('@napi-rs/canvas')
+  t.is(metrics.actualBoundingBoxLeft, -3)
+  t.true(Math.abs(metrics.actualBoundingBoxRight - 372) < 0.001)
+})
 
 test('moveTo', async (t) => {
   const { ctx } = t.context

@@ -11,10 +11,10 @@
 #define MATRIX_CAST reinterpret_cast<SkMatrix *>(c_matrix)
 #define MASK_FILTER_CAST reinterpret_cast<SkMaskFilter *>(c_mask_filter)
 #define IMAGE_FILTER_CAST reinterpret_cast<SkImageFilter *>(c_image_filter)
-#define FONT_METRICS_CAST reinterpret_cast<SkFontMetrics *>(c_font_metrics)
 #define TYPEFACE_CAST reinterpret_cast<SkTypeface *>(c_typeface)
 
 #define MAX_LAYOUT_WIDTH 100000
+#define HANGING_AS_PERCENT_OF_ASCENT 80
 
 extern "C"
 {
@@ -42,7 +42,7 @@ extern "C"
 
   static SkSurface *skiac_surface_create(int width, int height, SkAlphaType alphaType)
   {
-    // Init() is indempotent, so can be called more than once with no adverse effect.
+    // Init() is idempotent, so can be called more than once with no adverse effect.
     SkGraphics::Init();
 
     auto info = SkImageInfo::Make(width, height, kRGBA_8888_SkColorType, alphaType);
@@ -283,111 +283,136 @@ extern "C"
     CANVAS_CAST->drawImageRect(image, src, dst, sampling, &paint, SkCanvas::kFast_SrcRectConstraint);
   }
 
-  void skiac_canvas_draw_text(
-      skiac_canvas *c_canvas,
+  void skiac_canvas_get_line_metrics_or_draw_text(
       const char *text,
       size_t text_len,
+      float max_width,
       float x,
       float y,
-      float max_width,
-      int weight,
-      int width,
-      int slant,
-      skiac_font_collection *font_collection,
+      skiac_font_collection *c_collection,
       float font_size,
+      int weight,
+      int stretch,
+      int slant,
       const char *font_family,
-      float baseline_offset,
-      uint8_t align,
-      float align_factor,
-      skiac_paint *c_paint)
+      int baseline,
+      int align,
+      int direction,
+      skiac_paint *c_paint,
+      skiac_canvas *c_canvas,
+      skiac_line_metrics *c_line_metrics)
   {
-    TextStyle text_style;
-    auto font_style = SkFontStyle(weight, width, (SkFontStyle::Slant)slant);
+    auto font_collection = c_collection->collection;
+    auto font_style = SkFontStyle(weight, stretch, (SkFontStyle::Slant)slant);
     const std::vector<SkString> families = {SkString(font_family)};
+    TextStyle text_style;
     text_style.setFontFamilies(families);
     text_style.setFontSize(font_size);
-    text_style.setForegroundColor(*PAINT_CAST);
     text_style.setWordSpacing(0);
     text_style.setHeight(1);
     text_style.setFontStyle(font_style);
+    text_style.setForegroundColor(*PAINT_CAST);
+    text_style.setTextBaseline(TextBaseline::kAlphabetic);
+
+    SkFontMetrics font_metrics;
+    text_style.getFontMetrics(&font_metrics);
 
     ParagraphStyle paragraph_style;
     paragraph_style.turnHintingOff();
     paragraph_style.setTextStyle(text_style);
     paragraph_style.setTextAlign((TextAlign)align);
-    auto builder = ParagraphBuilderImpl::make(paragraph_style, font_collection->collection).release();
-    builder->pushStyle(text_style);
+    paragraph_style.setTextDirection((TextDirection)direction);
+
+    auto builder = ParagraphBuilder::make(paragraph_style, font_collection);
     builder->addText(text, text_len);
 
     auto paragraph = reinterpret_cast<ParagraphImpl *>(builder->Build().release());
-    auto alphabetic_baseline = paragraph->getAlphabeticBaseline();
-
-    auto paint_x = x + max_width * align_factor;
-    paragraph->layout(MAX_LAYOUT_WIDTH);
-    auto metrics = std::vector<LineMetrics>();
-    paragraph->getLineMetrics(metrics);
-    auto line_metric = metrics[0];
-    auto line_width = line_metric.fWidth;
-    auto need_scale = line_width > max_width;
-    if (need_scale)
-    {
-      CANVAS_CAST->save();
-      CANVAS_CAST->scale(max_width / line_width, 1.0);
-    }
-
-    auto paint_y = y + baseline_offset - paragraph->getHeight() - alphabetic_baseline;
-    paragraph->paint(CANVAS_CAST, paint_x, paint_y);
-    if (need_scale)
-    {
-      CANVAS_CAST->restore();
-    }
-    delete paragraph;
-  }
-
-  skiac_line_metrics skiac_canvas_get_line_metrics(
-      const char *text,
-      skiac_font_collection *c_collection,
-      float font_size,
-      const char *font_family,
-      uint8_t align,
-      float align_factor,
-      skiac_paint *c_paint)
-  {
-    auto font_collection = c_collection->collection;
-
-    TextStyle text_style;
-    text_style.setFontFamilies({SkString(font_family)});
-    text_style.setFontSize(font_size);
-    text_style.setWordSpacing(0);
-    text_style.setHeight(1);
-
-    ParagraphStyle paragraph_style;
-    paragraph_style.turnHintingOff();
-    paragraph_style.setTextStyle(text_style);
-    paragraph_style.setTextAlign((TextAlign)align);
-
-    auto builder = ParagraphBuilder::make(paragraph_style, font_collection);
-    builder->addText(text, strlen(text));
-
-    auto paragraph = builder->Build();
     paragraph->layout(MAX_LAYOUT_WIDTH);
 
     auto metrics_vec = std::vector<LineMetrics>();
     paragraph->getLineMetrics(metrics_vec);
     auto line_metrics = metrics_vec[0];
-    SkDebugf("ascent %f\ndescent %f\nleft %f\nwidth %f\nbaseline %f\n",
-             line_metrics.fAscent,
-             line_metrics.fDescent,
-             line_metrics.fLeft,
-             line_metrics.fWidth,
-             line_metrics.fBaseline);
-    skiac_line_metrics result;
-    result.ascent = line_metrics.fAscent;
-    result.descent = line_metrics.fDescent;
-    result.left = line_metrics.fLeft;
-    result.width = line_metrics.fWidth;
-    result.baseline = line_metrics.fBaseline;
-    return result;
+    auto run = paragraph->run(0);
+    auto first_char_bounds = run.getBounds(0);
+    auto descent = first_char_bounds.fBottom;
+    auto ascent = first_char_bounds.fTop;
+    auto run_size = run.size();
+    auto last_char_bounds = run.getBounds(run_size - 1);
+    auto last_char_pos_x = run.positionX(run_size - 1);
+    for (size_t i = 1; i <= run_size - 1; ++i)
+    {
+      auto char_bounds = run.getBounds(i);
+      auto char_bottom = char_bounds.fBottom;
+      if (char_bottom > descent)
+      {
+        descent = char_bottom;
+      }
+      auto char_top = char_bounds.fTop;
+      if (char_top < ascent)
+      {
+        ascent = char_top;
+      }
+    }
+    auto line_width = line_metrics.fWidth;
+    auto alphabetic_baseline = paragraph->getAlphabeticBaseline();
+    auto css_baseline = (CssBaseline)baseline;
+    SkScalar baseline_offset = 0;
+    switch (css_baseline)
+    {
+    case CssBaseline::Top:
+      baseline_offset = font_metrics.fAscent - ascent;
+      break;
+    case CssBaseline::Hanging:
+      // https://github1s.com/chromium/chromium/blob/HEAD/third_party/blink/renderer/core/html/canvas/text_metrics.cc#L21-L24
+      // According to
+      // http://wiki.apache.org/xmlgraphics-fop/LineLayout/AlignmentHandling
+      // "FOP (Formatting Objects Processor) puts the hanging baseline at 80% of
+      // the ascender height"
+      baseline_offset = font_metrics.fAscent - (ascent - descent) * HANGING_AS_PERCENT_OF_ASCENT / 100.0;
+      break;
+    case CssBaseline::Middle:
+      baseline_offset = (font_metrics.fAscent - font_metrics.fDescent) / 2;
+      break;
+    case CssBaseline::Alphabetic:
+      baseline_offset = -alphabetic_baseline;
+      break;
+    case CssBaseline::Ideographic:
+      baseline_offset = -paragraph->getIdeographicBaseline();
+      break;
+    case CssBaseline::Bottom:
+      baseline_offset = -alphabetic_baseline - descent;
+      break;
+    };
+
+    if (c_canvas)
+    {
+      auto align_factor = 0;
+      auto paint_x = x + line_width * align_factor;
+      auto need_scale = line_width > max_width;
+      if (need_scale)
+      {
+        CANVAS_CAST->save();
+        CANVAS_CAST->scale(max_width / line_width, 1.0);
+      }
+      auto paint_y = y + baseline_offset;
+      paragraph->paint(CANVAS_CAST, paint_x, paint_y);
+      if (need_scale)
+      {
+        CANVAS_CAST->restore();
+      }
+    }
+    else
+    {
+      auto offset = -baseline_offset - alphabetic_baseline;
+      c_line_metrics->ascent = -ascent + offset;
+      c_line_metrics->descent = descent - offset;
+      c_line_metrics->left = line_metrics.fLeft - first_char_bounds.fLeft;
+      c_line_metrics->right = last_char_pos_x + last_char_bounds.fRight;
+      c_line_metrics->width = line_width;
+      c_line_metrics->font_ascent = line_metrics.fAscent + offset;
+      c_line_metrics->font_descent = line_metrics.fDescent - offset;
+    }
+    delete paragraph;
   }
 
   void skiac_canvas_reset_transform(skiac_canvas *c_canvas)
@@ -1129,42 +1154,20 @@ extern "C"
     delete reinterpret_cast<SkString *>(c_sk_string);
   }
 
-  skiac_font_metrics *skiac_font_metrics_create(const char *font_family, float font_size)
-  {
-    auto text_style = new TextStyle();
-    text_style->setFontFamilies({SkString(font_family)});
-    text_style->setFontSize(font_size);
-    text_style->setWordSpacing(0);
-    text_style->setHeight(1);
-    auto metrics = new SkFontMetrics();
-    text_style->getFontMetrics(metrics);
-    return reinterpret_cast<skiac_font_metrics *>(metrics);
-  }
-
-  void skiac_font_metrics_destroy(skiac_font_metrics *c_font_metrics)
-  {
-    delete FONT_METRICS_CAST;
-  }
-
   skiac_font_collection *skiac_font_collection_create()
   {
     return new skiac_font_collection();
   }
 
-  skiac_font_collection *skiac_font_collection_clone(skiac_font_collection *c_font_collection)
-  {
-    return new skiac_font_collection(c_font_collection->collection);
-  }
-
   uint32_t skiac_font_collection_get_default_fonts_count(skiac_font_collection *c_font_collection)
   {
-    return c_font_collection->font_mgr->countFamilies();
+    return c_font_collection->assets->countFamilies();
   }
 
   void skiac_font_collection_get_family(skiac_font_collection *c_font_collection, uint32_t i, skiac_string *c_string)
   {
     auto name = new SkString();
-    c_font_collection->font_mgr->getFamilyName(i, name);
+    c_font_collection->assets->getFamilyName(i, name);
     c_string->length = name->size();
     c_string->ptr = name->c_str();
     c_string->sk_string = name;

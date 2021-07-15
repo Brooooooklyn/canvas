@@ -208,14 +208,19 @@ fn encode_sync(ctx: CallContext) -> Result<JsBuffer> {
 
 #[js_function(2)]
 fn to_buffer(ctx: CallContext) -> Result<JsBuffer> {
-  let mime = ctx.get::<JsString>(0)?.into_utf8()?;
-  let quality = if ctx.length == 1 {
-    100
+  let mime = if ctx.length == 0 {
+    MIME_PNG.to_owned()
+  } else {
+    let mime_js = ctx.get::<JsString>(0)?.into_utf8()?;
+    mime_js.as_str()?.to_owned()
+  };
+  let quality = if ctx.length < 2 {
+    92
   } else {
     ctx.get::<JsNumber>(1)?.get_uint32()? as u8
   };
 
-  let data_ref = get_data_ref(&ctx, mime.as_str()?, quality)?;
+  let data_ref = get_data_ref(&ctx, mime.as_str(), quality)?;
   unsafe {
     ctx
       .env

@@ -1,7 +1,21 @@
+use std::fs::read_dir;
 use std::rc::Rc;
 
-use crate::sk::*;
 use napi::*;
+use once_cell::sync::OnceCell;
+
+use crate::sk::*;
+
+#[cfg(target_os = "windows")]
+const FONT_PATH: &str = "C:/Windows/Fonts";
+#[cfg(target_os = "macos")]
+const FONT_PATH: &str = "/System/Library/Fonts/";
+#[cfg(target_os = "linux")]
+const FONT_PATH: &str = "/usr/share/fonts/";
+#[cfg(target_os = "android")]
+const FONT_PATH: &str = "/system/fonts";
+
+static FONT_DIR: OnceCell<u32> = OnceCell::new();
 
 #[js_function(1)]
 fn register(ctx: CallContext) -> Result<JsBoolean> {
@@ -35,6 +49,34 @@ fn get_families(ctx: CallContext) -> Result<JsObject> {
   Ok(families)
 }
 
+#[js_function]
+fn load_system_fonts(ctx: CallContext) -> Result<JsNumber> {
+  let this = ctx.this_unchecked::<JsObject>();
+  let font_collection = ctx.env.unwrap::<Rc<FontCollection>>(&this)?;
+  let count = FONT_DIR.get_or_init(move || {
+    let mut count = 0u32;
+    if let Ok(dir) = read_dir(FONT_PATH) {
+      for f in dir.flatten() {
+        let p = f.path();
+        let ext = p.extension().and_then(|s| s.to_str());
+
+        match ext {
+          Some("ttf") | Some("ttc") | Some("otf") | Some("pfb") => {
+            if let Some(p) = p.into_os_string().to_str() {
+              if font_collection.register_from_path(p) {
+                count += 1;
+              }
+            }
+          }
+          _ => {}
+        }
+      }
+    }
+    count
+  });
+  ctx.env.create_uint32(*count)
+}
+
 impl FontCollection {
   pub fn create_js_class(env: &Env) -> Result<JsFunction> {
     env.define_class(
@@ -46,6 +88,7 @@ impl FontCollection {
         Property::new(env, "_families")?
           .with_getter(get_families)
           .with_property_attributes(PropertyAttributes::Enumerable),
+        Property::new(env, "loadSystemFonts")?.with_method(load_system_fonts),
       ],
     )
   }

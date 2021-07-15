@@ -10,6 +10,8 @@ pub enum SkError {
   StringToTextAlignError(String),
   #[error("[`{0}`] is not valid TextBaseline value")]
   StringToTextBaselineError(String),
+  #[error("[`{0}`] is not valid TextDirection value")]
+  StringToTextDirectionError(String),
   #[error("[`{0}`] is not valid FilterQuality value")]
   StringToFilterQualityError(String),
   #[error("[`{0}`] is not valid LineCap value")]
