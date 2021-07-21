@@ -24,10 +24,10 @@ test('width and height state should be ok', async (t) => {
   const file = await loadImageFile()
   const image = new Image()
   image.src = file
-  t.is(image.width, 1024)
-  t.is(image.height, 768)
-  t.is(image.naturalWidth, 1024)
-  t.is(image.naturalHeight, 768)
+  t.is(image.width, 300)
+  t.is(image.height, 320)
+  t.is(image.naturalWidth, 300)
+  t.is(image.naturalHeight, 320)
   t.is(image.src, file)
 })
 
