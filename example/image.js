@@ -25,7 +25,7 @@ async function main() {
   // fill the canvas with a quarter of the image
   // ctx.drawImage(image, 0, 0, w / 2, h / 2, 0, 0, w, h)
 
-  const output = await canvas.png()
+  const output = await canvas.encode('png')
   await promises.writeFile(join(__dirname, 'tiger-tmp.png'), output)
 }
 

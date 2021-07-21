@@ -1,10 +1,8 @@
 const { promises } = require('fs')
 const { join } = require('path')
-
 const { createCanvas } = require('../index')
 
-const canvas = createCanvas(1024, 768)
-
+const canvas = createCanvas(300, 320)
 const ctx = canvas.getContext('2d')
 
 ctx.lineWidth = 10
@@ -26,7 +24,7 @@ ctx.closePath()
 ctx.stroke()
 
 async function main() {
-  const data = await canvas.png()
+  const data = await canvas.encode('png')
   await promises.writeFile(join(__dirname, 'simple.png'), data)
 }
 

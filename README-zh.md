@@ -1,13 +1,15 @@
-# `@napi-rs/canvas`
+# `skr canvas`
 
 ![CI](https://github.com/Brooooooklyn/canvas/workflows/CI/badge.svg)
 
 > 🚀 帮助我成为全职开源开发者: [Sponsoring me on Github](https://github.com/sponsors/Brooooooklyn)
 
-Google Skia binding to Node.js via [Node-API](https://napi.rs). **零系统依赖**.
+通过 [Node-API](https://napi.rs) 将 Google Skia 绑定到 Node.js。 **零系统依赖**。
 
-> ⚠️ 这个项目还处于早期开发阶段.<br/>
-> 在这里可以找到此项目的具体开发计划和路线图 [Roadmap](https://github.com/Brooooooklyn/canvas/issues/113).
+> ⚠️ 这个项目还处于早期开发阶段。<br/>
+> 在这里可以找到此项目的具体开发计划和路线图 [Roadmap](https://github.com/Brooooooklyn/canvas/issues/113)。
+
+[中文文档](./README-zh.md)
 
 # 安装
 
@@ -35,24 +37,22 @@ npm install @napi-rs/canvas
 ```js
 const { promises } = require('fs')
 const { join } = require('path')
-
 const { createCanvas } = require('@napi-rs/canvas')
 
-const canvas = createCanvas(1024, 768)
-
+const canvas = createCanvas(300, 320)
 const ctx = canvas.getContext('2d')
 
 ctx.lineWidth = 10
 ctx.strokeStyle = '#03a9f4'
 ctx.fillStyle = '#03a9f4'
 
-// Wall
+// 墙
 ctx.strokeRect(75, 140, 150, 110)
 
-// Door
+// 门
 ctx.fillRect(130, 190, 40, 60)
 
-// Roof
+// 屋顶
 ctx.beginPath()
 ctx.moveTo(50, 140)
 ctx.lineTo(150, 60)
@@ -61,7 +61,7 @@ ctx.closePath()
 ctx.stroke()
 
 async function main() {
-  const pngData = await canvas.encode('png') // 也支持 jpeg 和 webp
+  const pngData = await canvas.encode('png') // 也支持 JPEG 和 WebP
   // encoding in libuv thread pool, non-blocking
   await promises.writeFile(join(__dirname, 'simple.png'), pngData)
 }

@@ -37,11 +37,9 @@ npm install @napi-rs/canvas
 ```js
 const { promises } = require('fs')
 const { join } = require('path')
-
 const { createCanvas } = require('@napi-rs/canvas')
 
-const canvas = createCanvas(1024, 768)
-
+const canvas = createCanvas(300, 320)
 const ctx = canvas.getContext('2d')
 
 ctx.lineWidth = 10
@@ -63,7 +61,7 @@ ctx.closePath()
 ctx.stroke()
 
 async function main() {
-  const pngData = await canvas.encode('png') // jpeg and webp is also supported
+  const pngData = await canvas.encode('png') // JPEG and WebP is also supported
   // encoding in libuv thread pool, non-blocking
   await promises.writeFile(join(__dirname, 'simple.png'), pngData)
 }
