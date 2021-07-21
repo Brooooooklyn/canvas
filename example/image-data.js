@@ -19,7 +19,7 @@ async function main() {
     const data = new ImageData(u8array, png.width, png.height)
     ctx.putImageData(data, 0, 0)
 
-    const output = await canvas.png()
+    const output = await canvas.encode('png')
     await promises.writeFile(join(__dirname, 'tiger-tmp.png'), output)
   })
 }
