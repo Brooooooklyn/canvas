@@ -61,6 +61,7 @@ const GN_ARGS = [
   `skia_use_libwebp_decode=true`,
   `skia_use_libwebp_encode=true`,
   `skia_use_freetype=true`,
+  `skia_use_freetype_woff2=true`,
   `skia_use_fontconfig=false`,
   `skia_use_system_freetype2=false`,
   `skia_use_system_libjpeg_turbo=false`,
