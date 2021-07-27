@@ -1,9 +1,9 @@
 const { readFileSync, writeFileSync } = require('fs')
 const { join } = require('path')
 
-const { createCanvas, GlobalFonts } = require('./index.js')
+const { createCanvas, GlobalFonts } = require('../index.js')
 
-const fontPath = join(__dirname, '__test__', 'fonts', 'iosevka-slab-regular.ttf')
+const fontPath = join(__dirname, '..', '__test__', 'fonts', 'iosevka-slab-regular.ttf')
 const fontData = readFileSync(fontPath)
 
 console.info(GlobalFonts.families)
@@ -12,7 +12,7 @@ GlobalFonts.register(fontData)
 
 console.info(GlobalFonts.families)
 
-const canvas = createCanvas(512, 512)
+const canvas = createCanvas(1024, 768)
 const ctx = canvas.getContext('2d')
 ctx.fillStyle = 'yellow'
 ctx.fillRect(0, 0, canvas.width, canvas.height)
@@ -35,6 +35,6 @@ gradient.addColorStop(1, 'blue')
 ctx.strokeStyle = gradient
 ctx.strokeText('@napi-rs/canvas', 50, 300)
 
-const b = canvas.toBuffer()
+const b = canvas.toBuffer('image/png')
 
-writeFileSync(join(__dirname, 'skr-canvas.png'), b)
+writeFileSync(join(__dirname, 'draw-text.png'), b)

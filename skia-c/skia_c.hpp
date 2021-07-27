@@ -35,12 +35,6 @@
 
 using namespace skia::textlayout;
 
-template <typename T>
-inline sk_sp<T> sp_from_const(const T *pt)
-{
-  return sk_sp<T>(const_cast<T *>(pt));
-}
-
 typedef struct skiac_surface skiac_surface;
 typedef struct skiac_canvas skiac_canvas;
 typedef struct skiac_paint skiac_paint;
@@ -58,9 +52,42 @@ typedef struct skiac_font_metrics skiac_font_metrics;
 typedef struct skiac_typeface skiac_typeface;
 typedef struct skiac_font_mgr skiac_font_mgr;
 typedef struct skiac_typeface_font_provider skiac_typeface_font_provider;
-typedef struct skiac_font_collection skiac_font_collection;
 
 sk_sp<SkFontMgr> SkFontMgr_New_Custom_Empty();
+
+enum class CssBaseline
+{
+  Top,
+  Hanging,
+  Middle,
+  Alphabetic,
+  Ideographic,
+  Bottom,
+};
+
+struct skiac_font_collection
+{
+  sk_sp<FontCollection> collection;
+  sk_sp<SkFontMgr> font_mgr;
+  sk_sp<TypefaceFontProvider> assets;
+  skiac_font_collection() : collection(sk_make_sp<FontCollection>()), font_mgr(SkFontMgr_New_Custom_Empty()), assets(sk_make_sp<TypefaceFontProvider>())
+  {
+    collection->setDefaultFontManager(font_mgr);
+    collection->setAssetFontManager(assets);
+    collection->enableFontFallback();
+  }
+};
+
+struct skiac_line_metrics
+{
+  float ascent;
+  float descent;
+  float left;
+  float right;
+  float width;
+  float font_ascent;
+  float font_descent;
+};
 
 struct skiac_rect
 {
@@ -158,24 +185,24 @@ extern "C"
       skiac_surface *c_surface,
       float x, float y, float w, float h,
       int filter_quality);
-  void skiac_canvas_draw_text(
-      skiac_canvas *c_canvas,
+  void skiac_canvas_get_line_metrics_or_draw_text(
       const char *text,
       size_t text_len,
+      float max_width,
       float x,
       float y,
-      float max_width,
-      int weight,
-      int width,
-      int slant,
-      skiac_typeface_font_provider *c_typeface_font_provider,
-      skiac_font_mgr *c_font_mgr,
+      skiac_font_collection *c_collection,
       float font_size,
+      int weight,
+      int stretch,
+      int slant,
       const char *font_family,
-      float baseline_offset,
-      uint8_t align,
-      float align_factor,
-      skiac_paint *c_paint);
+      int baseline,
+      int align,
+      int direction,
+      skiac_paint *c_paint,
+      skiac_canvas *c_canvas,
+      skiac_line_metrics *c_line_metrics);
   void skiac_canvas_reset_transform(skiac_canvas *c_canvas);
   void skiac_canvas_clip_rect(skiac_canvas *c_canvas, float x, float y, float w, float h);
   void skiac_canvas_clip_path(skiac_canvas *c_canvas, skiac_path *c_path);
@@ -329,14 +356,13 @@ extern "C"
   void skiac_typeface_font_provider_ref(skiac_typeface_font_provider *c_typeface_font_provider);
   void skiac_typeface_font_provider_unref(skiac_typeface_font_provider *c_typeface_font_provider);
 
-  // FontMetrics
-  skiac_font_metrics *skiac_font_metrics_create(const char *font_family, float font_size);
-  void skiac_font_metrics_destroy(skiac_font_metrics *c_font_metrics);
-
-  // FontMgr
-  skiac_font_mgr *skiac_font_mgr_ref_default();
-  uint32_t skiac_font_mgr_get_default_fonts_count(skiac_font_mgr *c_font_mgr);
-  void skiac_font_mgr_get_family(skiac_font_mgr *c_font_mgr, uint32_t i, skiac_string *c_string);
+  // FontCollection
+  skiac_font_collection *skiac_font_collection_create();
+  uint32_t skiac_font_collection_get_default_fonts_count(skiac_font_collection *c_font_collection);
+  void skiac_font_collection_get_family(skiac_font_collection *c_font_collection, uint32_t i, skiac_string *c_string);
+  size_t skiac_font_collection_register(skiac_font_collection *c_font_collection, const uint8_t *font, size_t length);
+  size_t skiac_font_collection_register_from_path(skiac_font_collection *c_font_collection, const char *font_path);
+  void skiac_font_collection_destroy(skiac_font_collection *c_font_collection);
 }
 
 #endif // SKIA_CAPI_H

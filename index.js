@@ -167,6 +167,10 @@ function createCanvas(width, height) {
   return canvasElement
 }
 
+if (!process.env.DISABLE_SYSTEM_FONTS_LOAD) {
+  GlobalFontsSingleton.loadSystemFonts()
+}
+
 module.exports = {
   createCanvas,
   Path2D,

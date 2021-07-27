@@ -11,6 +11,13 @@ pub enum Pattern {
   Image(ImagePattern),
 }
 
+impl Default for Pattern {
+  #[inline]
+  fn default() -> Self {
+    Self::Color(RGBA::new(0, 0, 0, 255), "#000".to_owned())
+  }
+}
+
 impl Pattern {
   #[inline(always)]
   pub fn from_color(color_str: &str) -> Result<Self, SkError> {
