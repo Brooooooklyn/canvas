@@ -46,10 +46,14 @@ const FillType = {
 const GlobalFontsSingleton = new GlobalFonts()
 let FamilyNamesMap = GlobalFontsSingleton._families
 
+// eslint-disable-next-line sonarjs/no-unused-collection
+const Fonts = []
+
 Object.defineProperty(GlobalFontsSingleton, 'register', {
-  value: function register(path) {
-    const result = GlobalFontsSingleton._register(path)
+  value: function register(fontData) {
+    const result = GlobalFontsSingleton._register(fontData)
     FamilyNamesMap = GlobalFontsSingleton._families
+    Fonts.push(fontData)
     return result
   },
   configurable: false,

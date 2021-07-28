@@ -106,11 +106,11 @@ extern "C"
     }
 
     SkPaint paint;
-    paint.setFilterQuality(SkFilterQuality::kLow_SkFilterQuality);
     paint.setAlpha(SK_AlphaOPAQUE);
 
+    const auto sampling = SkSamplingOptions(SkFilterQuality::kLow_SkFilterQuality);
     // The original surface draws itself to the copy's canvas.
-    SURFACE_CAST->draw(copy->getCanvas(), -(SkScalar)x, -(SkScalar)y, &paint);
+    SURFACE_CAST->draw(copy->getCanvas(), -(SkScalar)x, -(SkScalar)y, sampling, &paint);
 
     return reinterpret_cast<skiac_surface *>(copy);
   }
@@ -261,10 +261,9 @@ extern "C"
   {
     auto image = SURFACE_CAST->makeImageSnapshot();
     SkPaint paint;
-    paint.setFilterQuality((SkFilterQuality)filter_quality);
     paint.setAlpha(alpha);
     paint.setBlendMode((SkBlendMode)blend_mode);
-    const auto sampling = SkSamplingOptions();
+    const auto sampling = SkSamplingOptions((SkFilterQuality)filter_quality);
     CANVAS_CAST->drawImage(image, left, top, sampling, &paint);
   }
 
@@ -276,10 +275,9 @@ extern "C"
   {
     auto image = SURFACE_CAST->makeImageSnapshot();
     SkPaint paint;
-    paint.setFilterQuality((SkFilterQuality)filter_quality);
     auto src = SkRect::MakeXYWH(0, 0, image->width(), image->height());
     auto dst = SkRect::MakeXYWH(x, y, w, h);
-    const auto sampling = SkSamplingOptions();
+    const auto sampling = SkSamplingOptions((SkFilterQuality)filter_quality);
     CANVAS_CAST->drawImageRect(image, src, dst, sampling, &paint, SkCanvas::kFast_SrcRectConstraint);
   }
 
@@ -322,14 +320,12 @@ extern "C"
     paragraph_style.setTextStyle(text_style);
     paragraph_style.setTextAlign((TextAlign)align);
     paragraph_style.setTextDirection((TextDirection)direction);
-
-    auto builder = ParagraphBuilder::make(paragraph_style, font_collection);
-    builder->addText(text, text_len);
-
-    auto paragraph = reinterpret_cast<ParagraphImpl *>(builder->Build().release());
+    ParagraphBuilderImpl builder(paragraph_style, font_collection);
+    builder.addText(text, text_len);
+    auto paragraph = static_cast<ParagraphImpl *>(builder.Build().release());
     paragraph->layout(MAX_LAYOUT_WIDTH);
 
-    auto metrics_vec = std::vector<LineMetrics>();
+    std::vector<LineMetrics> metrics_vec;
     paragraph->getLineMetrics(metrics_vec);
     auto line_metrics = metrics_vec[0];
     auto run = paragraph->run(0);
@@ -360,7 +356,7 @@ extern "C"
     switch (css_baseline)
     {
     case CssBaseline::Top:
-      baseline_offset = font_metrics.fAscent - ascent;
+      baseline_offset = -alphabetic_baseline - font_metrics.fAscent;
       break;
     case CssBaseline::Hanging:
       // https://github1s.com/chromium/chromium/blob/HEAD/third_party/blink/renderer/core/html/canvas/text_metrics.cc#L21-L24
@@ -368,10 +364,10 @@ extern "C"
       // http://wiki.apache.org/xmlgraphics-fop/LineLayout/AlignmentHandling
       // "FOP (Formatting Objects Processor) puts the hanging baseline at 80% of
       // the ascender height"
-      baseline_offset = font_metrics.fAscent - (ascent - descent) * HANGING_AS_PERCENT_OF_ASCENT / 100.0;
+      baseline_offset = -alphabetic_baseline - (font_metrics.fAscent - font_metrics.fDescent) * HANGING_AS_PERCENT_OF_ASCENT / 100.0;
       break;
     case CssBaseline::Middle:
-      baseline_offset = (font_metrics.fAscent - font_metrics.fDescent) / 2;
+      baseline_offset = -paragraph->getHeight() / 2;
       break;
     case CssBaseline::Alphabetic:
       baseline_offset = -alphabetic_baseline;
@@ -412,7 +408,6 @@ extern "C"
       c_line_metrics->font_ascent = line_metrics.fAscent + offset;
       c_line_metrics->font_descent = line_metrics.fDescent - offset;
     }
-    delete paragraph;
   }
 
   void skiac_canvas_reset_transform(skiac_canvas *c_canvas)
@@ -507,7 +502,7 @@ extern "C"
 
   int skiac_paint_get_blend_mode(skiac_paint *c_paint)
   {
-    return (int)PAINT_CAST->getBlendMode();
+    return (int)PAINT_CAST->getBlendMode_or(SkBlendMode::kSrcOver);
   }
 
   void skiac_paint_set_shader(skiac_paint *c_paint, skiac_shader *c_shader)
@@ -1175,7 +1170,7 @@ extern "C"
 
   size_t skiac_font_collection_register(skiac_font_collection *c_font_collection, const uint8_t *font, size_t length)
   {
-    auto typeface_data = SkData::MakeWithCopy(font, length);
+    auto typeface_data = SkData::MakeWithoutCopy(font, length);
     auto typeface = c_font_collection->font_mgr->makeFromData(typeface_data);
     return c_font_collection->assets->registerTypeface(typeface);
   }
