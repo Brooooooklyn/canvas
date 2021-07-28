@@ -11,7 +11,7 @@ const WoffFontPath = join(__dirname, '..', '__test__', 'fonts', 'Virgil.woff2')
 console.info(GlobalFonts.families)
 
 GlobalFonts.register(fontData)
-GlobalFonts.registerFromPath(WoffFontPath)
+GlobalFonts.registerFromPath(WoffFontPath, 'Virgil')
 
 console.info(GlobalFonts.families)
 

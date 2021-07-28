@@ -297,13 +297,20 @@ export interface Canvas {
 export function createCanvas(width: number, height: number): Canvas
 
 interface IGlobalFonts {
-  readonly families: string[]
+  readonly families: {
+    family: string
+    styles: {
+      weight: number
+      width: string
+      style: string
+    }[]
+  }[]
   // return true if succeeded
-  register(font: Buffer): boolean
+  register(font: Buffer, nameAlias?: string): boolean
   // absolute path
-  registerFromPath(path: string): boolean
+  registerFromPath(path: string, nameAlias?: string): boolean
   has(name: string): boolean
-  loadSystemFonts(): number
+  loadFontsFromDir(path: string): number
 }
 
 export const GlobalFonts: IGlobalFonts

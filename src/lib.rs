@@ -4,6 +4,8 @@
 
 #[macro_use]
 extern crate napi_derive;
+#[macro_use]
+extern crate serde_derive;
 
 use std::convert::TryInto;
 use std::mem;

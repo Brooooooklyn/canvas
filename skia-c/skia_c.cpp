@@ -1159,26 +1159,50 @@ extern "C"
     return c_font_collection->assets->countFamilies();
   }
 
-  void skiac_font_collection_get_family(skiac_font_collection *c_font_collection, uint32_t i, skiac_string *c_string)
+  void skiac_font_collection_get_family(skiac_font_collection *c_font_collection, uint32_t i, skiac_string *c_string, void *on_get_style_rust, skiac_on_match_font_style on_match_font_style)
   {
     auto name = new SkString();
     c_font_collection->assets->getFamilyName(i, name);
+    auto font_style_set = c_font_collection->assets->matchFamily(name->c_str());
+    auto style_count = font_style_set->count();
+    for (auto i = 0; i < style_count; i++)
+    {
+      SkFontStyle style;
+      font_style_set->getStyle(i, &style, nullptr);
+      if (on_match_font_style)
+      {
+        on_match_font_style(style.width(), style.weight(), (int)style.slant(), on_get_style_rust);
+      }
+    }
+    font_style_set->unref();
     c_string->length = name->size();
     c_string->ptr = name->c_str();
     c_string->sk_string = name;
   }
 
-  size_t skiac_font_collection_register(skiac_font_collection *c_font_collection, const uint8_t *font, size_t length)
+  size_t skiac_font_collection_register(skiac_font_collection *c_font_collection, const uint8_t *font, size_t length, const char *name_alias)
   {
     auto typeface_data = SkData::MakeWithoutCopy(font, length);
     auto typeface = c_font_collection->font_mgr->makeFromData(typeface_data);
-    return c_font_collection->assets->registerTypeface(typeface);
+    auto result = c_font_collection->assets->registerTypeface(typeface);
+    if (name_alias)
+    {
+      auto alias = SkString(name_alias);
+      c_font_collection->assets->registerTypeface(typeface, alias);
+    };
+    return result;
   }
 
-  size_t skiac_font_collection_register_from_path(skiac_font_collection *c_font_collection, const char *font_path)
+  size_t skiac_font_collection_register_from_path(skiac_font_collection *c_font_collection, const char *font_path, const char *name_alias)
   {
     auto typeface = c_font_collection->font_mgr->makeFromFile(font_path);
-    return c_font_collection->assets->registerTypeface(typeface);
+    auto result = c_font_collection->assets->registerTypeface(typeface);
+    if (name_alias)
+    {
+      auto alias = SkString(name_alias);
+      c_font_collection->assets->registerTypeface(typeface, alias);
+    }
+    return result;
   }
 
   void skiac_font_collection_destroy(skiac_font_collection *c_font_collection)
