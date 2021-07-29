@@ -302,9 +302,15 @@ extern "C"
   {
     auto font_collection = c_collection->collection;
     auto font_style = SkFontStyle(weight, stretch, (SkFontStyle::Slant)slant);
-    const std::vector<SkString> families = {SkString(font_family)};
+    SkTArray<SkString> families;
+    SkStrSplit(font_family, ",", &families);
     TextStyle text_style;
-    text_style.setFontFamilies(families);
+    std::vector<SkString> families_vec;
+    for (auto family : families)
+    {
+      families_vec.emplace_back(family);
+    }
+    text_style.setFontFamilies(families_vec);
     text_style.setFontSize(font_size);
     text_style.setWordSpacing(0);
     text_style.setHeight(1);
