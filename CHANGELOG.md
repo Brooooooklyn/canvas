@@ -1,3 +1,20 @@
+# [0.1.0](https://github.com/Brooooooklyn/canvas/compare/v0.0.12...v0.1.0) (2021-07-30)
+
+### Bug Fixes
+
+- canvas.png() to canvas.encode('png') ([b2d5afe](https://github.com/Brooooooklyn/canvas/commit/b2d5afeee91245fe226212e418fe62e16a238f91))
+- multi font families ([2e934a5](https://github.com/Brooooooklyn/canvas/commit/2e934a5837f51b62b46172e608a6d34e4413d9f9))
+- sample image size update ([8b0b147](https://github.com/Brooooooklyn/canvas/commit/8b0b1475112dd409c9e2652a5cd0bbdac3d772be))
+
+### Features
+
+- add .asWinding() to convert the sample image of SVG filltype ([f9f0d2b](https://github.com/Brooooooklyn/canvas/commit/f9f0d2bdf452a54c2606d55e47387371f37697ab))
+- add basic measureText setup ([e1fc0bf](https://github.com/Brooooooklyn/canvas/commit/e1fc0bf2647c3e76cff8089d15078f4e9d200e97))
+- measureText with all textAlign and textBaseline ([1891d76](https://github.com/Brooooooklyn/canvas/commit/1891d76090ec093430d63a217fbe4515c758b2c7))
+- support register font with family name alias ([4860c80](https://github.com/Brooooooklyn/canvas/commit/4860c80aa6dac4ca073e20a5d2654ef6535e54c2))
+- support woff/woff2 fonts ([70b7aa2](https://github.com/Brooooooklyn/canvas/commit/70b7aa2430ed04251c0d5016658a8147a13c167b))
+- svg canvas backend ([f95f67a](https://github.com/Brooooooklyn/canvas/commit/f95f67afd5c051c1cf33e783e452d477a9430cad))
+
 ## [0.0.12](https://github.com/Brooooooklyn/canvas/compare/v0.0.11...v0.0.12) (2021-07-14)
 
 ### Features
