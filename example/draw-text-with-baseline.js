@@ -1,14 +1,13 @@
-const { readFileSync, writeFileSync } = require('fs')
+const { writeFileSync } = require('fs')
 const { join } = require('path')
 
 const { createCanvas, GlobalFonts } = require('../index.js')
 
 const fontPath = join(__dirname, '..', '__test__', 'fonts', 'iosevka-slab-regular.ttf')
-const fontData = readFileSync(fontPath)
 
 console.info(GlobalFonts.families)
 
-GlobalFonts.register(fontData)
+GlobalFonts.registerFromPath(fontPath)
 
 console.info(GlobalFonts.families)
 

@@ -34,3 +34,17 @@ test('multiple identical fonts should only exist within one font family', (t) =>
 test('return false if font path not existed', (t) => {
   t.false(GlobalFonts.register(Buffer.from('whatever')))
 })
+
+test('should be able to register font with name alias', (t) => {
+  const fontAliasName = 'Cascadia-skr-canvas-test'
+  t.true(GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'Cascadia.woff2'), fontAliasName))
+  const styleSet = GlobalFonts.families.find(({ family }) => family === fontAliasName)
+  t.deepEqual(styleSet, {
+    family: 'Cascadia-skr-canvas-test',
+    styles: [{ weight: 400, width: 'normal', style: 'normal' }],
+  })
+})
+
+test('should be able to register fonts from dir', (t) => {
+  t.is(GlobalFonts.loadFontsFromDir(join(__dirname, 'fonts-dir')), 3)
+})

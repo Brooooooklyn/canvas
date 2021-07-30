@@ -44,12 +44,16 @@ const FillType = {
 }
 
 const GlobalFontsSingleton = new GlobalFonts()
-let FamilyNamesMap = GlobalFontsSingleton._families
+let FamilyNamesSet = JSON.parse(GlobalFontsSingleton._families)
+
+// eslint-disable-next-line sonarjs/no-unused-collection
+const Fonts = []
 
 Object.defineProperty(GlobalFontsSingleton, 'register', {
-  value: function register(path) {
-    const result = GlobalFontsSingleton._register(path)
-    FamilyNamesMap = GlobalFontsSingleton._families
+  value: function register(fontData, nameAlias = '') {
+    const result = GlobalFontsSingleton._register(fontData, nameAlias)
+    FamilyNamesSet = JSON.parse(GlobalFontsSingleton._families)
+    Fonts.push(fontData)
     return result
   },
   configurable: false,
@@ -58,9 +62,20 @@ Object.defineProperty(GlobalFontsSingleton, 'register', {
 })
 
 Object.defineProperty(GlobalFontsSingleton, 'registerFromPath', {
-  value: function register(path) {
-    const result = GlobalFontsSingleton._registerFromPath(path)
-    FamilyNamesMap = GlobalFontsSingleton._families
+  value: function registerFromPath(path, nameAlias = '') {
+    const result = GlobalFontsSingleton._registerFromPath(path, nameAlias)
+    FamilyNamesSet = JSON.parse(GlobalFontsSingleton._families)
+    return result
+  },
+  configurable: false,
+  enumerable: false,
+  writable: false,
+})
+
+Object.defineProperty(GlobalFontsSingleton, 'loadFontsFromDir', {
+  value: function loadFontsFromDir(path) {
+    const result = GlobalFontsSingleton._loadFontsFromDir(path)
+    FamilyNamesSet = JSON.parse(GlobalFontsSingleton._families)
     return result
   },
   configurable: false,
@@ -70,13 +85,13 @@ Object.defineProperty(GlobalFontsSingleton, 'registerFromPath', {
 
 Object.defineProperty(GlobalFontsSingleton, 'families', {
   get: function () {
-    return Object.keys(GlobalFontsSingleton._families)
+    return FamilyNamesSet
   },
 })
 
 Object.defineProperty(GlobalFontsSingleton, 'has', {
   value: function has(name) {
-    return !!FamilyNamesMap[name]
+    return !!FamilyNamesSet.find(({ family }) => family === name)
   },
   configurable: false,
   enumerable: false,
@@ -169,6 +184,7 @@ function createCanvas(width, height) {
 
 if (!process.env.DISABLE_SYSTEM_FONTS_LOAD) {
   GlobalFontsSingleton.loadSystemFonts()
+  FamilyNamesSet = JSON.parse(GlobalFontsSingleton._families)
 }
 
 module.exports = {

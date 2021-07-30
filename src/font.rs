@@ -144,9 +144,21 @@ pub enum FontStyle {
   Oblique,
 }
 
+impl FontStyle {
+  #[inline]
+  pub fn as_str(&self) -> &str {
+    match *self {
+      Self::Italic => "italic",
+      Self::Normal => "normal",
+      Self::Oblique => "oblique",
+    }
+  }
+}
+
 impl FromStr for FontStyle {
   type Err = ParseError;
 
+  #[inline]
   fn from_str(s: &str) -> Result<FontStyle, ParseError> {
     match s {
       "normal" => Ok(Self::Normal),
@@ -166,6 +178,7 @@ pub enum FontVariant {
 impl FromStr for FontVariant {
   type Err = ParseError;
 
+  #[inline]
   fn from_str(s: &str) -> Result<FontVariant, ParseError> {
     match s {
       "normal" => Ok(Self::Normal),
@@ -187,6 +200,41 @@ pub enum FontStretch {
   Expanded = 7,
   ExtraExpanded = 8,
   UltraExpanded = 9,
+}
+
+impl From<i32> for FontStretch {
+  #[inline]
+  fn from(value: i32) -> Self {
+    match value {
+      1 => FontStretch::UltraCondensed,
+      2 => FontStretch::ExtraCondensed,
+      3 => FontStretch::Condensed,
+      4 => FontStretch::SemiCondensed,
+      5 => FontStretch::Normal,
+      6 => FontStretch::SemiExpanded,
+      7 => FontStretch::Expanded,
+      8 => FontStretch::ExtraExpanded,
+      9 => FontStretch::UltraExpanded,
+      _ => unreachable!(),
+    }
+  }
+}
+
+impl FontStretch {
+  #[inline]
+  pub fn as_str(&self) -> &str {
+    match *self {
+      FontStretch::UltraCondensed => "ultra-condensed",
+      FontStretch::ExtraCondensed => "extra-condensed",
+      FontStretch::Condensed => "condensed",
+      FontStretch::SemiCondensed => "semi-condensed",
+      FontStretch::Normal => "normal",
+      FontStretch::SemiExpanded => "semi-expanded",
+      FontStretch::Expanded => "expanded",
+      FontStretch::ExtraExpanded => "extra-expanded",
+      FontStretch::UltraExpanded => "ultra-expanded",
+    }
+  }
 }
 
 #[inline]

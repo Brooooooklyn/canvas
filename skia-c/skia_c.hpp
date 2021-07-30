@@ -30,6 +30,7 @@
 #include <modules/skparagraph/include/TypefaceFontProvider.h>
 #include <modules/svg/include/SkSVGDOM.h>
 #include <src/ports/SkFontMgr_custom.h>
+#include <src/core/SkFontDescriptor.h>
 
 #include <stdint.h>
 
@@ -125,6 +126,8 @@ struct skiac_string
   size_t length;
   SkString *sk_string;
 };
+
+typedef void (*skiac_on_match_font_style)(int width, int weight, int slant, void *skiac_on_match_font_style_rust);
 
 struct skiac_sk_data
 {
@@ -349,19 +352,12 @@ extern "C"
   // SkString
   void skiac_delete_sk_string(skiac_sk_string *c_sk_string);
 
-  // TypefaceFontProvider
-  skiac_typeface_font_provider *skiac_typeface_font_provider_create();
-  size_t skiac_typeface_font_provider_register(skiac_typeface_font_provider *c_typeface_font_provider, skiac_font_mgr *c_font_mgr, uint8_t *font, size_t length);
-  size_t skiac_typeface_font_provider_register_from_file(skiac_typeface_font_provider *c_typeface_font_provider, skiac_font_mgr *c_font_mgr, const char *font_path);
-  void skiac_typeface_font_provider_ref(skiac_typeface_font_provider *c_typeface_font_provider);
-  void skiac_typeface_font_provider_unref(skiac_typeface_font_provider *c_typeface_font_provider);
-
   // FontCollection
   skiac_font_collection *skiac_font_collection_create();
   uint32_t skiac_font_collection_get_default_fonts_count(skiac_font_collection *c_font_collection);
-  void skiac_font_collection_get_family(skiac_font_collection *c_font_collection, uint32_t i, skiac_string *c_string);
-  size_t skiac_font_collection_register(skiac_font_collection *c_font_collection, const uint8_t *font, size_t length);
-  size_t skiac_font_collection_register_from_path(skiac_font_collection *c_font_collection, const char *font_path);
+  void skiac_font_collection_get_family(skiac_font_collection *c_font_collection, uint32_t i, skiac_string *c_string, void *on_get_style_rust, skiac_on_match_font_style on_match_font_style);
+  size_t skiac_font_collection_register(skiac_font_collection *c_font_collection, const uint8_t *font, size_t length, const char *name_alias);
+  size_t skiac_font_collection_register_from_path(skiac_font_collection *c_font_collection, const char *font_path, const char *name_alias);
   void skiac_font_collection_destroy(skiac_font_collection *c_font_collection);
 }
 
