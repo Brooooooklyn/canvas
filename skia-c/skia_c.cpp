@@ -59,6 +59,25 @@ extern "C"
     }
   }
 
+  void skiac_surface_create_svg(skiac_svg_surface *c_surface, int w, int h, int alphaType, uint32_t flag)
+  {
+    auto w_stream = new SkDynamicMemoryWStream();
+
+    auto canvas = SkSVGCanvas::Make(SkRect::MakeWH(w, h), w_stream, flag);
+    if (!canvas.get())
+    {
+      return;
+    }
+    auto surface = skiac_surface_create(w, h, (SkAlphaType)alphaType);
+    if (!surface)
+    {
+      return;
+    }
+    c_surface->stream = reinterpret_cast<skiac_w_memory_stream *>(w_stream);
+    c_surface->surface = reinterpret_cast<skiac_surface *>(surface);
+    c_surface->canvas = reinterpret_cast<skiac_canvas *>(canvas.release());
+  }
+
   skiac_surface *skiac_surface_create_rgba_premultiplied(int width, int height)
   {
     return reinterpret_cast<skiac_surface *>(
@@ -156,7 +175,7 @@ extern "C"
     auto png_data = image->encodeToData().release();
     if (png_data)
     {
-      data->ptr = const_cast<uint8_t *>(png_data->bytes());
+      data->ptr = png_data->bytes();
       data->size = png_data->size();
       data->data = reinterpret_cast<skiac_data *>(png_data);
     }
@@ -1072,7 +1091,7 @@ extern "C"
   void skiac_sk_data_destroy(skiac_data *c_data)
   {
     auto data = reinterpret_cast<SkData *>(c_data);
-    data->unref();
+    SkSafeUnref(data);
   }
 
   // Bitmap
@@ -1214,5 +1233,28 @@ extern "C"
   void skiac_font_collection_destroy(skiac_font_collection *c_font_collection)
   {
     delete c_font_collection;
+  }
+
+  // SkWStream
+  void skiac_sk_w_stream_get(skiac_w_memory_stream *c_w_memory_stream, skiac_sk_data *sk_data, int width, int height)
+  {
+    auto stream = reinterpret_cast<SkDynamicMemoryWStream *>(c_w_memory_stream);
+    stream->write("</svg>", 6);
+    auto data = stream->detachAsData().release();
+
+    sk_data->data = reinterpret_cast<skiac_data *>(data);
+    sk_data->ptr = data->bytes();
+    sk_data->size = data->size();
+    auto string = new SkString("<?xml version=\"1.0\" encoding=\"utf-8\" ?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" width=\"");
+    string->appendS32(width);
+    string->append("\" height=\"");
+    string->appendS32(height);
+    string->append("\">\n");
+    stream->write(string->c_str(), string->size());
+  }
+
+  void skiac_sk_w_stream_destroy(skiac_w_memory_stream *c_w_memory_stream)
+  {
+    delete reinterpret_cast<SkDynamicMemoryWStream *>(c_w_memory_stream);
   }
 }

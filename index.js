@@ -8,11 +8,8 @@ const { loadBinding } = require('@node-rs/helper')
  * loadBinding helper will load `skia.[PLATFORM].node` from `__dirname` first
  * If failed to load addon, it will fallback to load from `@napi-rs/skia-[PLATFORM]`
  */
-const { CanvasRenderingContext2D, CanvasElement, Path2D, ImageData, Image, CanvasPattern, GlobalFonts } = loadBinding(
-  __dirname,
-  'skia',
-  '@napi-rs/canvas',
-)
+const { CanvasRenderingContext2D, CanvasElement, SVGCanvas, Path2D, ImageData, Image, CanvasPattern, GlobalFonts } =
+  loadBinding(__dirname, 'skia', '@napi-rs/canvas')
 
 const Geometry = require('./geometry')
 
@@ -41,6 +38,12 @@ const FillType = {
   EvenOdd: 1,
   InverseWinding: 2,
   InverseEvenOdd: 3,
+}
+
+const SvgExportFlag = {
+  ConvertTextToPaths: 0x01,
+  NoPrettyXML: 0x02,
+  RelativePathEncoding: 0x04,
 }
 
 const GlobalFontsSingleton = new GlobalFonts()
@@ -140,9 +143,12 @@ Path2D.prototype.getFillTypeString = function getFillTypeString() {
   }
 }
 
-function createCanvas(width, height) {
-  const canvasElement = new CanvasElement(width, height)
-  const ctx = new CanvasRenderingContext2D(width, height, GlobalFontsSingleton)
+function createCanvas(width, height, flag) {
+  const isSvgBackend = typeof flag !== 'undefined'
+  const canvasElement = isSvgBackend ? new SVGCanvas(width, height) : new CanvasElement(width, height)
+  const ctx = isSvgBackend
+    ? new CanvasRenderingContext2D(width, height, GlobalFontsSingleton, flag)
+    : new CanvasRenderingContext2D(width, height, GlobalFontsSingleton)
 
   // napi can not define writable: true but enumerable: false property
   Object.defineProperty(ctx, '_fillStyle', {
@@ -196,6 +202,7 @@ module.exports = {
   FillType,
   StrokeCap,
   StrokeJoin,
+  SvgExportFlag,
   ...Geometry,
   GlobalFonts: GlobalFontsSingleton,
 }

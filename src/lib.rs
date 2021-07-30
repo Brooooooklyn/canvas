@@ -58,6 +58,15 @@ fn init(mut exports: JsObject, env: Env) -> Result<()> {
     ],
   )?;
 
+  let svg_canvas_element = env.define_class(
+    "SVGCanvas",
+    canvas_element_constructor,
+    &[
+      Property::new(&env, "getContext")?.with_method(get_context),
+      Property::new(&env, "getContent")?.with_method(get_content),
+    ],
+  )?;
+
   let canvas_rendering_context2d = ctx::Context::create_js_class(&env)?;
 
   let path_class = sk::Path::create_js_class(&env)?;
@@ -77,6 +86,8 @@ fn init(mut exports: JsObject, env: Env) -> Result<()> {
   exports.set_named_property("CanvasRenderingContext2D", canvas_rendering_context2d)?;
 
   exports.set_named_property("CanvasElement", canvas_element)?;
+
+  exports.set_named_property("SVGCanvas", svg_canvas_element)?;
 
   exports.set_named_property("Path2D", path_class)?;
 
@@ -298,6 +309,24 @@ fn to_data_url_async(ctx: CallContext) -> Result<JsObject> {
     mime,
   };
   ctx.env.spawn(async_task).map(|p| p.promise_object())
+}
+
+#[js_function]
+fn get_content(ctx: CallContext) -> Result<JsBuffer> {
+  let this = ctx.this_unchecked::<JsObject>();
+  let ctx_js = this.get_named_property::<JsObject>("ctx")?;
+  let ctx2d = ctx.env.unwrap::<Context>(&ctx_js)?;
+
+  let svg_data_stream = ctx2d.stream.as_ref().unwrap();
+  let svg_data = svg_data_stream.data(ctx2d.width, ctx2d.height);
+  unsafe {
+    ctx
+      .env
+      .create_buffer_with_borrowed_data(svg_data.0.ptr, svg_data.0.size, svg_data, |d, _| {
+        mem::drop(d)
+      })
+      .map(|b| b.into_raw())
+  }
 }
 
 #[inline]
