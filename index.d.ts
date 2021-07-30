@@ -273,6 +273,14 @@ export interface SKRSContext2D extends Omit<CanvasRenderingContext2D, 'drawImage
   }
 }
 
+export interface SvgCanvas {
+  width: number
+  height: number
+  getContext(contextType: '2d', contextAttributes?: { alpha: boolean }): SKRSContext2D
+
+  getContent(): Buffer
+}
+
 export interface Canvas {
   width: number
   height: number
@@ -295,6 +303,8 @@ export interface Canvas {
 }
 
 export function createCanvas(width: number, height: number): Canvas
+
+export function createCanvas(width: number, height: number, svgExportFlag: SvgExportFlag): SvgCanvas
 
 interface IGlobalFonts {
   readonly families: {
@@ -340,4 +350,10 @@ export const enum StrokeCap {
   Butt = 0,
   Round = 1,
   Square = 2,
+}
+
+export const enum SvgExportFlag {
+  ConvertTextToPaths = 0x01,
+  NoPrettyXML = 0x02,
+  RelativePathEncoding = 0x04,
 }

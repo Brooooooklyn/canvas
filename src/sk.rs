@@ -1,3 +1,4 @@
+use std::convert::TryFrom;
 use std::f32::consts::PI;
 use std::ffi::{c_void, CStr, CString};
 use std::ops::{Deref, DerefMut};
@@ -20,6 +21,20 @@ mod ffi {
   #[derive(Copy, Clone, Debug)]
   pub struct skiac_surface {
     _unused: [u8; 0],
+  }
+
+  #[repr(C)]
+  #[derive(Copy, Clone, Debug)]
+  pub struct skiac_w_memory_stream {
+    _unused: [u8; 0],
+  }
+
+  #[repr(C)]
+  #[derive(Copy, Clone, Debug)]
+  pub struct skiac_svg_surface {
+    pub stream: *mut skiac_w_memory_stream,
+    pub surface: *mut skiac_surface,
+    pub canvas: *mut skiac_canvas,
   }
 
   #[repr(C)]
@@ -179,6 +194,14 @@ mod ffi {
 
     pub fn skiac_surface_create_rgba_premultiplied(width: i32, height: i32) -> *mut skiac_surface;
 
+    pub fn skiac_surface_create_svg(
+      c_surface: *mut skiac_svg_surface,
+      width: i32,
+      height: i32,
+      alphaType: i32,
+      flag: u32,
+    );
+
     pub fn skiac_surface_create_rgba(width: i32, height: i32) -> *mut skiac_surface;
 
     pub fn skiac_surface_destroy(surface: *mut skiac_surface);
@@ -221,6 +244,16 @@ mod ffi {
 
     pub fn skiac_surface_get_alpha_type(surface: *mut skiac_surface) -> i32;
 
+    pub fn skiac_surface_draw_svg(
+      surface: *mut skiac_surface,
+      paint: *mut skiac_paint,
+      width: f32,
+      height: f32,
+      flag: u32,
+      sk_data: *mut skiac_sk_data,
+    );
+
+    // SkCanvas
     pub fn skiac_canvas_clear(canvas: *mut skiac_canvas, color: u32);
 
     pub fn skiac_canvas_set_transform(canvas: *mut skiac_canvas, ts: skiac_transform);
@@ -641,6 +674,16 @@ mod ffi {
     ) -> usize;
 
     pub fn skiac_font_collection_destroy(c_font_collection: *mut skiac_font_collection);
+
+    // SkDynamicMemoryStream
+    pub fn skiac_sk_w_stream_get(
+      c_w_memory_stream: *mut skiac_w_memory_stream,
+      sk_data: *mut skiac_sk_data,
+      w: i32,
+      h: i32,
+    );
+
+    pub fn skiac_sk_w_stream_destroy(c_w_memory_stream: *mut skiac_w_memory_stream);
   }
 }
 
@@ -1264,6 +1307,27 @@ pub enum SkEncodedImageFormat {
   Avif,
 }
 
+#[repr(u32)]
+pub enum SvgExportFlag {
+  ConvertTextToPaths = 0x01,
+  NoPrettyXML = 0x02,
+  RelativePathEncoding = 0x04,
+}
+
+impl TryFrom<u32> for SvgExportFlag {
+  type Error = SkError;
+
+  #[inline]
+  fn try_from(value: u32) -> Result<Self, Self::Error> {
+    match value {
+      0x01 => Ok(Self::ConvertTextToPaths),
+      0x02 => Ok(Self::NoPrettyXML),
+      0x04 => Ok(Self::RelativePathEncoding),
+      _ => Err(SkError::U32ToStrokeJoinError(value)),
+    }
+  }
+}
+
 pub struct Surface {
   ptr: *mut ffi::skiac_surface,
   pub(crate) canvas: Canvas,
@@ -1283,6 +1347,39 @@ impl Surface {
         height as i32,
       ))
     }
+  }
+
+  #[inline]
+  pub fn new_svg(
+    width: u32,
+    height: u32,
+    alpha_type: AlphaType,
+    flag: SvgExportFlag,
+  ) -> Option<(Surface, SkWMemoryStream)> {
+    let mut svg_surface = ffi::skiac_svg_surface {
+      stream: ptr::null_mut(),
+      surface: ptr::null_mut(),
+      canvas: ptr::null_mut(),
+    };
+    unsafe {
+      ffi::skiac_surface_create_svg(
+        &mut svg_surface,
+        width as i32,
+        height as i32,
+        alpha_type as i32,
+        flag as u32,
+      );
+    };
+    if svg_surface.surface.is_null() {
+      return None;
+    }
+    Some((
+      Self {
+        ptr: svg_surface.surface,
+        canvas: Canvas(svg_surface.canvas),
+      },
+      SkWMemoryStream(svg_surface.stream),
+    ))
   }
 
   #[inline]
@@ -1379,6 +1476,30 @@ impl Surface {
           slice: slice::from_raw_parts(data.ptr, data.size as usize),
         })
       }
+    }
+  }
+
+  #[inline]
+  pub fn svg(&self, width: f32, height: f32, flag: SvgExportFlag) -> Option<SurfaceDataRef> {
+    let mut data = ffi::skiac_sk_data {
+      ptr: ptr::null_mut(),
+      size: 0,
+      data: ptr::null_mut(),
+    };
+    unsafe {
+      ffi::skiac_surface_draw_svg(
+        self.ptr,
+        ptr::null_mut(),
+        width,
+        height,
+        flag as u32,
+        &mut data,
+      );
+    };
+    if data.ptr.is_null() {
+      None
+    } else {
+      Some(SurfaceDataRef(data))
     }
   }
 
@@ -1482,6 +1603,30 @@ impl SurfaceRef {
       } else {
         Some(SurfaceDataRef(data))
       }
+    }
+  }
+
+  #[inline]
+  pub fn svg(&self, width: f32, height: f32, flag: SvgExportFlag) -> Option<SurfaceDataRef> {
+    let mut data = ffi::skiac_sk_data {
+      ptr: ptr::null_mut(),
+      size: 0,
+      data: ptr::null_mut(),
+    };
+    unsafe {
+      ffi::skiac_surface_draw_svg(
+        self.0,
+        ptr::null_mut(),
+        width,
+        height,
+        flag as u32,
+        &mut data,
+      );
+    };
+    if data.ptr.is_null() {
+      None
+    } else {
+      Some(SurfaceDataRef(data))
     }
   }
 }
@@ -2023,6 +2168,9 @@ impl Drop for Paint {
     unsafe { ffi::skiac_paint_destroy(self.0) }
   }
 }
+
+unsafe impl Send for Paint {}
+unsafe impl Sync for Paint {}
 
 #[repr(transparent)]
 #[derive(Debug)]
@@ -2980,6 +3128,29 @@ pub struct FontStyles {
 pub struct FontStyleSet {
   pub family: String,
   pub styles: Vec<FontStyles>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SkWMemoryStream(*mut ffi::skiac_w_memory_stream);
+
+impl SkWMemoryStream {
+  #[inline]
+  pub fn data(&self, w: u32, h: u32) -> SurfaceDataRef {
+    let mut data = ffi::skiac_sk_data {
+      ptr: ptr::null_mut(),
+      size: 0,
+      data: ptr::null_mut(),
+    };
+    unsafe { ffi::skiac_sk_w_stream_get(self.0, &mut data, w as i32, h as i32) };
+    SurfaceDataRef(data)
+  }
+}
+
+impl Drop for SkWMemoryStream {
+  #[inline]
+  fn drop(&mut self) {
+    unsafe { ffi::skiac_sk_w_stream_destroy(self.0) }
+  }
 }
 
 #[inline(always)]

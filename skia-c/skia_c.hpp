@@ -53,6 +53,7 @@ typedef struct skiac_font_metrics skiac_font_metrics;
 typedef struct skiac_typeface skiac_typeface;
 typedef struct skiac_font_mgr skiac_font_mgr;
 typedef struct skiac_typeface_font_provider skiac_typeface_font_provider;
+typedef struct skiac_w_memory_stream skiac_w_memory_stream;
 
 sk_sp<SkFontMgr> SkFontMgr_New_Custom_Empty();
 
@@ -64,6 +65,13 @@ enum class CssBaseline
   Alphabetic,
   Ideographic,
   Bottom,
+};
+
+struct skiac_svg_surface
+{
+  skiac_w_memory_stream *stream;
+  skiac_surface *surface;
+  skiac_canvas *canvas;
 };
 
 struct skiac_font_collection
@@ -131,7 +139,7 @@ typedef void (*skiac_on_match_font_style)(int width, int weight, int slant, void
 
 struct skiac_sk_data
 {
-  uint8_t *ptr;
+  const uint8_t *ptr;
   size_t size;
   skiac_data *data;
 };
@@ -141,6 +149,7 @@ extern "C"
 
   // Surface
   skiac_surface *skiac_surface_create_rgba_premultiplied(int width, int height);
+  void skiac_surface_create_svg(skiac_svg_surface *c_surface, int width, int height, int alphaType, uint32_t flag);
   skiac_surface *skiac_surface_create_rgba(int width, int height);
   void skiac_surface_destroy(skiac_surface *c_surface);
   skiac_surface *skiac_surface_copy_rgba(
@@ -359,6 +368,10 @@ extern "C"
   size_t skiac_font_collection_register(skiac_font_collection *c_font_collection, const uint8_t *font, size_t length, const char *name_alias);
   size_t skiac_font_collection_register_from_path(skiac_font_collection *c_font_collection, const char *font_path, const char *name_alias);
   void skiac_font_collection_destroy(skiac_font_collection *c_font_collection);
+
+  // SkDynamicMemoryWStream
+  void skiac_sk_w_stream_get(skiac_w_memory_stream *c_w_memory_stream, skiac_sk_data *sk_data, int width, int height);
+  void skiac_sk_w_stream_destroy(skiac_w_memory_stream *c_w_memory_stream);
 }
 
 #endif // SKIA_CAPI_H

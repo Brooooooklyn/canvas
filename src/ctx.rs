@@ -1,4 +1,4 @@
-use std::convert::TryInto;
+use std::convert::{TryFrom, TryInto};
 use std::f32::consts::PI;
 use std::mem;
 use std::rc::Rc;
@@ -30,6 +30,9 @@ pub struct Context {
   pub alpha: bool,
   pub(crate) states: Vec<Context2dRenderingState>,
   pub font_collection: Rc<FontCollection>,
+  pub width: u32,
+  pub height: u32,
+  pub stream: Option<SkWMemoryStream>,
 }
 
 impl Context {
@@ -144,6 +147,29 @@ impl Context {
   }
 
   #[inline(always)]
+  pub fn new_svg(
+    width: u32,
+    height: u32,
+    svg_export_flag: SvgExportFlag,
+    font_collection: &mut Rc<FontCollection>,
+  ) -> Result<Self> {
+    let (surface, stream) =
+      Surface::new_svg(width, height, AlphaType::Unpremultiplied, svg_export_flag)
+        .ok_or_else(|| Error::from_reason("Create skia svg surface failed".to_owned()))?;
+    let states = vec![Context2dRenderingState::default()];
+    Ok(Context {
+      surface,
+      alpha: true,
+      path: Path::new(),
+      states,
+      font_collection: font_collection.clone(),
+      width,
+      height,
+      stream: Some(stream),
+    })
+  }
+
+  #[inline(always)]
   pub fn new(width: u32, height: u32, font_collection: &mut Rc<FontCollection>) -> Result<Self> {
     let surface = Surface::new_rgba(width, height)
       .ok_or_else(|| Error::from_reason("Create skia surface failed".to_owned()))?;
@@ -154,6 +180,9 @@ impl Context {
       path: Path::new(),
       states,
       font_collection: font_collection.clone(),
+      width,
+      height,
+      stream: None,
     })
   }
 
@@ -572,7 +601,7 @@ impl Context {
   }
 }
 
-#[js_function(3)]
+#[js_function(4)]
 fn context_2d_constructor(ctx: CallContext) -> Result<JsUndefined> {
   let width: u32 = ctx.get::<JsNumber>(0)?.try_into()?;
   let height: u32 = ctx.get::<JsNumber>(1)?.try_into()?;
@@ -580,7 +609,18 @@ fn context_2d_constructor(ctx: CallContext) -> Result<JsUndefined> {
   let font_collection = ctx.env.unwrap::<Rc<FontCollection>>(&font_collection_js)?;
 
   let mut this = ctx.this_unchecked::<JsObject>();
-  let context_2d = Context::new(width, height, font_collection)?;
+  let context_2d = if ctx.length == 3 {
+    Context::new(width, height, font_collection)?
+  } else {
+    // SVG Canvas
+    let flag = ctx.get::<JsNumber>(3)?.get_uint32()?;
+    Context::new_svg(
+      width,
+      height,
+      SvgExportFlag::try_from(flag)?,
+      font_collection,
+    )?
+  };
   ctx.env.wrap(&mut this, context_2d)?;
   ctx.env.get_undefined()
 }

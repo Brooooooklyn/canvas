@@ -18,6 +18,8 @@ pub enum SkError {
   StringToStrokeCapError(String),
   #[error("[`{0}`] is not valid LineJoin value")]
   StringToStrokeJoinError(String),
+  #[error("[`{0}`] is not valid SvgExportFlag value")]
+  U32ToStrokeJoinError(u32),
   #[error("[`{0}`]")]
   Generic(String),
 }
