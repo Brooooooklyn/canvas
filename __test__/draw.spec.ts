@@ -1,5 +1,7 @@
 import { promises, readFileSync } from 'fs'
+import { platform } from 'os'
 import { join } from 'path'
+
 import ava, { TestInterface } from 'ava'
 import PNG from '@jimp/png'
 
@@ -418,6 +420,14 @@ test('fillText-AA', async (t) => {
   await snapshotImage(t, { canvas, ctx }, 'png', 3.2)
 })
 
+test('fillText-COLRv1', async (t) => {
+  const { ctx, canvas } = t.context
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'COLRv1.ttf'), 'Colrv1')
+  ctx.font = '100px Colrv1'
+  ctx.fillText('abc', 50, 100)
+  await snapshotImage(t, { canvas, ctx }, 'png', 0.5)
+})
+
 test('getContextAttributes', (t) => {
   const defaultCtx = t.context.ctx
   const defaultAttrs = defaultCtx.getContextAttributes()
@@ -768,6 +778,19 @@ test('strokeText', async (t) => {
   ctx.strokeStyle = gradient
   ctx.strokeText('@napi-rs/canvas', 50, 300)
   await snapshotImage(t, { canvas, ctx }, 'png', 3.5)
+})
+
+test('strokeText-emoji', async (t) => {
+  if (platform() === 'darwin') {
+    t.pass('macOS definitely supports emoji')
+    return
+  }
+  const { ctx } = t.context
+  GlobalFonts.registerFromPath(join(__dirname, '..', 'fonts', 'AppleColorEmoji@2x.ttf'))
+  ctx.font = '50px Apple Color Emoji'
+  ctx.strokeText('😀😃😄😁😆😅', 50, 100)
+  ctx.fillText('😂🤣☺️😊😊😇', 50, 220)
+  await snapshotImage(t)
 })
 
 test('transform', async (t) => {

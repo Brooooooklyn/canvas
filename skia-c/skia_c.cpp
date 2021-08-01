@@ -127,7 +127,7 @@ extern "C"
     SkPaint paint;
     paint.setAlpha(SK_AlphaOPAQUE);
 
-    const auto sampling = SkSamplingOptions(SkFilterQuality::kLow_SkFilterQuality);
+    const auto sampling = SkSamplingOptions();
     // The original surface draws itself to the copy's canvas.
     SURFACE_CAST->draw(copy->getCanvas(), -(SkScalar)x, -(SkScalar)y, sampling, &paint);
 
@@ -282,7 +282,7 @@ extern "C"
     SkPaint paint;
     paint.setAlpha(alpha);
     paint.setBlendMode((SkBlendMode)blend_mode);
-    const auto sampling = SkSamplingOptions((SkFilterQuality)filter_quality);
+    const auto sampling = SkSamplingOptions();
     CANVAS_CAST->drawImage(image, left, top, sampling, &paint);
   }
 
@@ -296,7 +296,7 @@ extern "C"
     SkPaint paint;
     auto src = SkRect::MakeXYWH(0, 0, image->width(), image->height());
     auto dst = SkRect::MakeXYWH(x, y, w, h);
-    const auto sampling = SkSamplingOptions((SkFilterQuality)filter_quality);
+    const auto sampling = SkSamplingOptions();
     CANVAS_CAST->drawImageRect(image, src, dst, sampling, &paint, SkCanvas::kFast_SrcRectConstraint);
   }
 
@@ -986,7 +986,7 @@ extern "C"
   {
     auto skia_tile_mode = SkTileMode::kRepeat;
     const auto ts = conv_from_transform(c_ts);
-    const auto sampling_options = new SkSamplingOptions((SkFilterQuality)filter_quality);
+    const auto sampling_options = new SkSamplingOptions();
     sk_sp<SkImage> image = SURFACE_CAST->makeImageSnapshot();
     auto shader = image->makeShader(
                            skia_tile_mode,

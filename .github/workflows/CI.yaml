@@ -86,6 +86,7 @@ jobs:
       - uses: actions/checkout@v2
         with:
           submodules: true
+          lfs: true
 
       - name: Setup node
         uses: actions/setup-node@v2
@@ -176,6 +177,7 @@ jobs:
       - uses: actions/checkout@v2
         with:
           submodules: true
+          lfs: true
 
       - name: Setup node
         uses: actions/setup-node@v2
@@ -226,6 +228,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v2
+        with:
+          lfs: true
 
       - name: Setup node
         uses: actions/setup-node@v2
@@ -276,6 +280,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v2
+        with:
+          lfs: true
 
       - name: Setup node
         uses: actions/setup-node@v2
@@ -328,6 +334,8 @@ jobs:
       - run: docker run --rm --privileged multiarch/qemu-user-static:register --reset
 
       - uses: actions/checkout@v2
+        with:
+          lfs: true
 
       - name: Download artifacts
         uses: actions/download-artifact@v2
@@ -372,6 +380,8 @@ jobs:
       - run: docker run --rm --privileged multiarch/qemu-user-static:register --reset
 
       - uses: actions/checkout@v2
+        with:
+          lfs: true
 
       - name: Download artifacts
         uses: actions/download-artifact@v2
@@ -415,6 +425,8 @@ jobs:
       - run: docker run --rm --privileged multiarch/qemu-user-static:register --reset
 
       - uses: actions/checkout@v2
+        with:
+          lfs: true
 
       - name: Download artifacts
         uses: actions/download-artifact@v2
