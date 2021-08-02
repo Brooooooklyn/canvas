@@ -1,12 +1,15 @@
 # `skr canvas`
 
 ![CI](https://github.com/Brooooooklyn/canvas/workflows/CI/badge.svg)
+![Skia Version](https://img.shields.io/badge/Skia-chrome%2Fm93-hotpink)
+[![install size](https://packagephobia.com/badge?p=@napi-rs/canvas)](https://packagephobia.com/result?p=@napi-rs/canvas)
+[![Downloads](https://img.shields.io/npm/dm/@napi-rs/canvas.svg?sanitize=true)](https://npmcharts.com/compare/@napi-rs/canvas?minimal=true)
 
 > 🚀 Help me to become a full-time open-source developer by [sponsoring me on Github](https://github.com/sponsors/Brooooooklyn)
 
 Google Skia binding to Node.js via [Node-API](https://napi.rs), **0 System dependencies!**
 
-⚠️ This project is in very early stage.<br/>
+⚠️ This project is in pre-release stage. And there may some bugs existed.<br/>
 For details on planned features and future direction please refer to the [Roadmap](https://github.com/Brooooooklyn/canvas/issues/113).
 
 [中文文档](./README-zh.md)

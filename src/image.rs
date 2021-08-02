@@ -236,7 +236,7 @@ fn set_src(ctx: CallContext) -> Result<JsUndefined> {
   for i in 3..length {
     if '<' == data_ref[i - 3] as char {
       match data_ref[i - 2] as char {
-        '?' | '!' => break,
+        '?' | '!' => continue,
         's' => {
           is_svg = 'v' == data_ref[i - 1] as char && 'g' == data_ref[i] as char;
           break;

@@ -1112,13 +1112,24 @@ extern "C"
   {
     auto svg_stream = new SkMemoryStream(data, length, false);
     auto svg_dom = SkSVGDOM::MakeFromStream(*svg_stream);
-    auto svg_container_size = svg_dom->containerSize();
+    auto svg_root = svg_dom->getRoot();
+    auto svg_container_size = svg_root->intrinsicSize(SkSVGLengthContext(SkSize::Make(0, 0)));
+    if (svg_container_size.isZero())
+    {
+      auto view_box = svg_root->getViewBox();
+      if (!view_box.isValid())
+      {
+        return nullptr;
+      }
+      svg_container_size = SkSize::Make(view_box->width(), view_box->height());
+      if (svg_container_size.isEmpty())
+      {
+        return nullptr;
+      }
+      svg_dom->setContainerSize(svg_container_size);
+    }
     auto imageinfo = SkImageInfo::Make(svg_container_size.width(), svg_container_size.height(), kRGBA_8888_SkColorType, SkAlphaType::kOpaque_SkAlphaType);
     auto bitmap = new SkBitmap();
-    if (imageinfo.width() == 0 || imageinfo.height() == 0)
-    {
-      return nullptr;
-    }
     bitmap->allocPixels(imageinfo);
     auto sk_svg_canvas = new SkCanvas(*bitmap);
     svg_dom->render(sk_svg_canvas);
