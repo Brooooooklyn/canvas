@@ -320,6 +320,26 @@ test('drawImage-svg', async (t) => {
   await snapshotImage(t)
 })
 
+test('drawImage-svg-with-only-viewBox', async (t) => {
+  const { ctx } = t.context
+  const filePath = './only-viewbox.svg'
+  const file = await promises.readFile(join(__dirname, filePath))
+  const image = new Image()
+  image.src = file
+  ctx.drawImage(image, 0, 0)
+  await snapshotImage(t)
+})
+
+test.skip('drawImage-svg-with-css', async (t) => {
+  const { ctx } = t.context
+  const filePath = './css-style.svg'
+  const file = await promises.readFile(join(__dirname, filePath))
+  const image = new Image()
+  image.src = file
+  ctx.drawImage(image, 0, 0)
+  await snapshotImage(t)
+})
+
 test('drawImage-svg without width height should be empty image', async (t) => {
   const { ctx, canvas } = t.context
   const filePath = './mountain.svg'
