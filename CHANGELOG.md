@@ -1,3 +1,13 @@
+## [0.1.1](https://github.com/Brooooooklyn/canvas/compare/v0.1.0...v0.1.1) (2021-08-02)
+
+### Bug Fixes
+
+- use viewbox as svg_container_size if width & height is empty ([406a298](https://github.com/Brooooooklyn/canvas/commit/406a298800ebe3807349d15d4ffa536db1f96afc))
+
+### Features
+
+- upgrade to skia/chrome/m93 latest ([6ca9526](https://github.com/Brooooooklyn/canvas/commit/6ca952651e24d6c7dbf730ebed0f13d9de07ffe3))
+
 # [0.1.0](https://github.com/Brooooooklyn/canvas/compare/v0.0.12...v0.1.0) (2021-07-30)
 
 ### Bug Fixes
