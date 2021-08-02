@@ -684,6 +684,14 @@ mod ffi {
     );
 
     pub fn skiac_sk_w_stream_destroy(c_w_memory_stream: *mut skiac_w_memory_stream);
+
+    // SkSVG
+    pub fn skiac_svg_text_to_path(
+      data: *const u8,
+      length: usize,
+      font_collection: *mut skiac_font_collection,
+      output_data: *mut skiac_sk_data,
+    );
   }
 }
 
@@ -1480,7 +1488,7 @@ impl Surface {
   }
 
   #[inline]
-  pub fn svg(&self, width: f32, height: f32, flag: SvgExportFlag) -> Option<SurfaceDataRef> {
+  pub fn svg(&self, width: f32, height: f32, flag: SvgExportFlag) -> Option<SkiaDataRef> {
     let mut data = ffi::skiac_sk_data {
       ptr: ptr::null_mut(),
       size: 0,
@@ -1499,7 +1507,7 @@ impl Surface {
     if data.ptr.is_null() {
       None
     } else {
-      Some(SurfaceDataRef(data))
+      Some(SkiaDataRef(data))
     }
   }
 
@@ -1557,7 +1565,7 @@ pub struct SurfaceRef(*mut ffi::skiac_surface);
 
 impl SurfaceRef {
   #[inline]
-  pub fn png_data(&self) -> Option<SurfaceDataRef> {
+  pub fn png_data(&self) -> Option<SkiaDataRef> {
     unsafe {
       let mut data = ffi::skiac_sk_data {
         ptr: ptr::null_mut(),
@@ -1569,7 +1577,7 @@ impl SurfaceRef {
       if data.ptr.is_null() {
         None
       } else {
-        Some(SurfaceDataRef(data))
+        Some(SkiaDataRef(data))
       }
     }
   }
@@ -1589,7 +1597,7 @@ impl SurfaceRef {
   }
 
   #[inline]
-  pub fn encode_data(&self, format: SkEncodedImageFormat, quality: u8) -> Option<SurfaceDataRef> {
+  pub fn encode_data(&self, format: SkEncodedImageFormat, quality: u8) -> Option<SkiaDataRef> {
     unsafe {
       let mut data = ffi::skiac_sk_data {
         ptr: ptr::null_mut(),
@@ -1601,13 +1609,13 @@ impl SurfaceRef {
       if data.ptr.is_null() {
         None
       } else {
-        Some(SurfaceDataRef(data))
+        Some(SkiaDataRef(data))
       }
     }
   }
 
   #[inline]
-  pub fn svg(&self, width: f32, height: f32, flag: SvgExportFlag) -> Option<SurfaceDataRef> {
+  pub fn svg(&self, width: f32, height: f32, flag: SvgExportFlag) -> Option<SkiaDataRef> {
     let mut data = ffi::skiac_sk_data {
       ptr: ptr::null_mut(),
       size: 0,
@@ -1626,7 +1634,7 @@ impl SurfaceRef {
     if data.ptr.is_null() {
       None
     } else {
-      Some(SurfaceDataRef(data))
+      Some(SkiaDataRef(data))
     }
   }
 }
@@ -1661,22 +1669,22 @@ impl<'a> Deref for SurfaceDataMut<'a> {
 }
 
 #[repr(transparent)]
-pub struct SurfaceDataRef(pub(crate) ffi::skiac_sk_data);
+pub struct SkiaDataRef(pub(crate) ffi::skiac_sk_data);
 
-impl SurfaceDataRef {
+impl SkiaDataRef {
   pub fn slice(&self) -> &'static [u8] {
     unsafe { slice::from_raw_parts(self.0.ptr, self.0.size) }
   }
 }
 
-impl Drop for SurfaceDataRef {
+impl Drop for SkiaDataRef {
   fn drop(&mut self) {
     unsafe { ffi::skiac_sk_data_destroy(self.0.data) }
   }
 }
 
-unsafe impl Send for SurfaceDataRef {}
-unsafe impl Sync for SurfaceDataRef {}
+unsafe impl Send for SkiaDataRef {}
+unsafe impl Sync for SkiaDataRef {}
 
 impl<'a> DerefMut for SurfaceDataMut<'a> {
   #[inline]
@@ -3135,14 +3143,14 @@ pub struct SkWMemoryStream(*mut ffi::skiac_w_memory_stream);
 
 impl SkWMemoryStream {
   #[inline]
-  pub fn data(&self, w: u32, h: u32) -> SurfaceDataRef {
+  pub fn data(&self, w: u32, h: u32) -> SkiaDataRef {
     let mut data = ffi::skiac_sk_data {
       ptr: ptr::null_mut(),
       size: 0,
       data: ptr::null_mut(),
     };
     unsafe { ffi::skiac_sk_w_stream_get(self.0, &mut data, w as i32, h as i32) };
-    SurfaceDataRef(data)
+    SkiaDataRef(data)
   }
 }
 
@@ -3161,6 +3169,22 @@ fn radians_to_degrees(rad: f32) -> f32 {
 #[inline(always)]
 fn almost_equal(floata: f32, floatb: f32) -> bool {
   (floata - floatb).abs() < 0.00001
+}
+
+#[inline(always)]
+pub fn sk_svg_text_to_path(svg: &[u8], fc: &FontCollection) -> Option<SkiaDataRef> {
+  let mut output_data = ffi::skiac_sk_data {
+    ptr: ptr::null_mut(),
+    data: ptr::null_mut(),
+    size: 0,
+  };
+  unsafe {
+    ffi::skiac_svg_text_to_path(svg.as_ptr(), svg.len(), fc.0, &mut output_data);
+  };
+  if output_data.ptr.is_null() {
+    return None;
+  }
+  Some(SkiaDataRef(output_data))
 }
 
 unsafe extern "C" fn skiac_on_get_style(width: i32, weight: i32, slant: i32, raw_cb: *mut c_void) {

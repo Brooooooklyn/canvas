@@ -14,7 +14,7 @@ use napi::*;
 
 use ctx::{Context, ContextData};
 use font::{init_font_regexp, FONT_REGEXP};
-use sk::SurfaceDataRef;
+use sk::SkiaDataRef;
 
 #[cfg(all(
   target_arch = "x86_64",
@@ -36,6 +36,7 @@ mod pattern;
 #[allow(dead_code)]
 mod sk;
 mod state;
+mod svg;
 
 const MIME_WEBP: &str = "image/webp";
 const MIME_PNG: &str = "image/png";
@@ -98,6 +99,8 @@ fn init(mut exports: JsObject, env: Env) -> Result<()> {
   exports.set_named_property("CanvasPattern", canvas_pattern)?;
 
   exports.set_named_property("GlobalFonts", global_fonts)?;
+
+  exports.create_named_method("convertSVGTextToPath", svg::convert_svg_text_to_path)?;
 
   // pre init font regexp
   FONT_REGEXP.get_or_init(init_font_regexp);
@@ -207,7 +210,7 @@ fn encode_sync(ctx: CallContext) -> Result<JsBuffer> {
           data_ref.0.ptr,
           data_ref.0.size,
           data_ref,
-          |data: SurfaceDataRef, _| mem::drop(data),
+          |data: SkiaDataRef, _| mem::drop(data),
         )
         .map(|b| b.into_raw())
     }
@@ -241,7 +244,7 @@ fn to_buffer(ctx: CallContext) -> Result<JsBuffer> {
         data_ref.0.ptr,
         data_ref.0.size,
         data_ref,
-        |data: SurfaceDataRef, _| mem::drop(data),
+        |data: SkiaDataRef, _| mem::drop(data),
       )
       .map(|b| b.into_raw())
   }
@@ -330,7 +333,7 @@ fn get_content(ctx: CallContext) -> Result<JsBuffer> {
 }
 
 #[inline]
-fn get_data_ref(ctx: &CallContext, mime: &str, quality: u8) -> Result<SurfaceDataRef> {
+fn get_data_ref(ctx: &CallContext, mime: &str, quality: u8) -> Result<SkiaDataRef> {
   let this = ctx.this_unchecked::<JsObject>();
   let ctx_js = this.get_named_property::<JsObject>("ctx")?;
   let ctx2d = ctx.env.unwrap::<Context>(&ctx_js)?;
@@ -369,7 +372,7 @@ fn save_png(ctx: CallContext) -> Result<JsUndefined> {
 }
 
 struct AsyncDataUrl {
-  surface_data: SurfaceDataRef,
+  surface_data: SkiaDataRef,
   mime: String,
 }
 

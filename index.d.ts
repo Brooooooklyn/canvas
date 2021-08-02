@@ -357,3 +357,5 @@ export const enum SvgExportFlag {
   NoPrettyXML = 0x02,
   RelativePathEncoding = 0x04,
 }
+
+export function convertSVGTextToPath(svg: Buffer | string): Buffer
