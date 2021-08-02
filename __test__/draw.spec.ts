@@ -806,7 +806,7 @@ test('strokeText-emoji', async (t) => {
     return
   }
   const { ctx } = t.context
-  GlobalFonts.registerFromPath(join(__dirname, '..', 'fonts', 'AppleColorEmoji@2x.ttf'))
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'AppleColorEmoji@2x.ttf'))
   ctx.font = '50px Apple Color Emoji'
   ctx.strokeText('😀😃😄😁😆😅', 50, 100)
   ctx.fillText('😂🤣☺️😊😊😇', 50, 220)
