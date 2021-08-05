@@ -542,6 +542,9 @@ jobs:
       - name: Move artifacts
         run: pnpm artifacts
 
+      - name: Download ICU for Windows
+        run: node ./scripts/release-skia-binary.js --download-icu
+
       - name: List packages
         run: ls -R ./npm
         shell: bash

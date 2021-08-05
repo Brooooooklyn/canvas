@@ -4,7 +4,7 @@
   "os": ["win32"],
   "cpu": ["x64"],
   "main": "skia.win32-x64-msvc.node",
-  "files": ["skia.win32-x64-msvc.node"],
+  "files": ["skia.win32-x64-msvc.node", "icudtl.dat"],
   "description": "Canvas for Node.js with skia backend",
   "keywords": [
     "napi-rs",

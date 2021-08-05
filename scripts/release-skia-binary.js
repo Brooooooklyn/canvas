@@ -108,7 +108,7 @@ async function download() {
   }
   if (PLATFORM_NAME === 'win32') {
     await downloadIcu()
-    await fs.copyFile(join(__dirname, '..', ICU_DAT), join(__dirname, '..', 'npm', 'icudtl', ICU_DAT))
+    await fs.copyFile(join(__dirname, '..', ICU_DAT), join(__dirname, '..', 'npm', 'win32-x64-msvc', ICU_DAT))
   }
 }
 
