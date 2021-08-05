@@ -1,3 +1,13 @@
+## [0.1.2](https://github.com/Brooooooklyn/canvas/compare/v0.1.1...v0.1.2) (2021-08-05)
+
+### Bug Fixes
+
+- Windows icudtl.data version and path ([5c81eb7](https://github.com/Brooooooklyn/canvas/commit/5c81eb7d3edb7acaaf831233199eddecda834074))
+
+### Features
+
+- implement convertSVGTextToPath function ([9c7ca98](https://github.com/Brooooooklyn/canvas/commit/9c7ca989a54c40cf4eb949f651a91bfb629fc716))
+
 ## [0.1.1](https://github.com/Brooooooklyn/canvas/compare/v0.1.0...v0.1.1) (2021-08-02)
 
 ### Bug Fixes

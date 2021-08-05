@@ -1,6 +1,6 @@
 {
   "name": "@napi-rs/canvas-linux-x64-musl",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "os": ["linux"],
   "cpu": ["x64"],
   "main": "skia.linux-x64-musl.node",
