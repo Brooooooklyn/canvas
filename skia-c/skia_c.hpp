@@ -11,12 +11,15 @@
 #include <include/core/SkBitmap.h>
 #include <include/core/SkCanvas.h>
 #include <include/core/SkData.h>
+#include <include/core/SkDrawable.h>
 #include <include/core/SkGraphics.h>
+#include <include/core/SkFontMgr.h>
 #include <include/core/SkPaint.h>
 #include <include/core/SkPathEffect.h>
 #include <include/core/SkSurface.h>
 #include <include/core/SkMaskFilter.h>
 #include <include/core/SkStream.h>
+#include <include/core/SkPictureRecorder.h>
 #include <include/core/SkStrokeRec.h>
 #include <include/effects/SkDashPathEffect.h>
 #include <include/effects/SkTrimPathEffect.h>
@@ -30,9 +33,11 @@
 #include <modules/skparagraph/include/TypefaceFontProvider.h>
 #include <modules/svg/include/SkSVGDOM.h>
 #include <modules/svg/include/SkSVGSVG.h>
+#include <modules/svg/include/SkSVGNode.h>
 #include <modules/svg/include/SkSVGRenderContext.h>
 #include <src/ports/SkFontMgr_custom.h>
 #include <src/core/SkFontDescriptor.h>
+#include <src/xml/SkXMLWriter.h>
 
 #include <stdint.h>
 
@@ -69,6 +74,34 @@ enum class CssBaseline
   Bottom,
 };
 
+class TypefaceFontProviderCustom : public TypefaceFontProvider
+{
+public:
+  explicit TypefaceFontProviderCustom(sk_sp<SkFontMgr> mgr) : font_mgr(std::move(mgr))
+  {
+  }
+
+  ~TypefaceFontProviderCustom(){};
+
+  sk_sp<SkTypeface> onLegacyMakeTypeface(const char family_name[], SkFontStyle style) const override
+  {
+    auto style_set = this->onMatchFamily(family_name);
+    if (!style_set)
+    {
+      return nullptr;
+    }
+    auto tf = style_set->matchStyle(style);
+    if (!tf)
+    {
+      return nullptr;
+    }
+    return sk_sp<SkTypeface>(const_cast<SkTypeface *>(tf));
+  }
+
+private:
+  sk_sp<SkFontMgr> font_mgr;
+};
+
 struct skiac_svg_surface
 {
   skiac_w_memory_stream *stream;
@@ -80,12 +113,13 @@ struct skiac_font_collection
 {
   sk_sp<FontCollection> collection;
   sk_sp<SkFontMgr> font_mgr;
-  sk_sp<TypefaceFontProvider> assets;
-  skiac_font_collection() : collection(sk_make_sp<FontCollection>()), font_mgr(SkFontMgr_New_Custom_Empty()), assets(sk_make_sp<TypefaceFontProvider>())
+  sk_sp<TypefaceFontProviderCustom> assets;
+  skiac_font_collection() : collection(sk_make_sp<FontCollection>()), font_mgr(SkFontMgr_New_Custom_Empty()), assets(sk_make_sp<TypefaceFontProviderCustom>(font_mgr))
   {
     collection->setDefaultFontManager(font_mgr);
     collection->setAssetFontManager(assets);
     collection->enableFontFallback();
+    assets->ref();
   }
 };
 
@@ -374,6 +408,9 @@ extern "C"
   // SkDynamicMemoryWStream
   void skiac_sk_w_stream_get(skiac_w_memory_stream *c_w_memory_stream, skiac_sk_data *sk_data, int width, int height);
   void skiac_sk_w_stream_destroy(skiac_w_memory_stream *c_w_memory_stream);
+
+  // SkSVG
+  void skiac_svg_text_to_path(const uint8_t *data, size_t length, skiac_font_collection *c_collection, skiac_sk_data *output_data);
 }
 
 #endif // SKIA_CAPI_H

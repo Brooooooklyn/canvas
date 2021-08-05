@@ -8,8 +8,17 @@ const { loadBinding } = require('@node-rs/helper')
  * loadBinding helper will load `skia.[PLATFORM].node` from `__dirname` first
  * If failed to load addon, it will fallback to load from `@napi-rs/skia-[PLATFORM]`
  */
-const { CanvasRenderingContext2D, CanvasElement, SVGCanvas, Path2D, ImageData, Image, CanvasPattern, GlobalFonts } =
-  loadBinding(__dirname, 'skia', '@napi-rs/canvas')
+const {
+  CanvasRenderingContext2D,
+  CanvasElement,
+  SVGCanvas,
+  Path2D,
+  ImageData,
+  Image,
+  CanvasPattern,
+  GlobalFonts,
+  convertSVGTextToPath: _convertSVGTextToPath,
+} = loadBinding(__dirname, 'skia', '@napi-rs/canvas')
 
 const Geometry = require('./geometry')
 
@@ -193,6 +202,10 @@ if (!process.env.DISABLE_SYSTEM_FONTS_LOAD) {
   FamilyNamesSet = JSON.parse(GlobalFontsSingleton._families)
 }
 
+function convertSVGTextToPath(input) {
+  return _convertSVGTextToPath(Buffer.from(input), GlobalFontsSingleton)
+}
+
 module.exports = {
   createCanvas,
   Path2D,
@@ -205,4 +218,5 @@ module.exports = {
   SvgExportFlag,
   ...Geometry,
   GlobalFonts: GlobalFontsSingleton,
+  convertSVGTextToPath,
 }

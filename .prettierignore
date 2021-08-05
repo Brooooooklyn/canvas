@@ -2,3 +2,4 @@ target
 depot_tools
 skia
 skia-c
+__test__/text-to-path.svg

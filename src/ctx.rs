@@ -2022,7 +2022,7 @@ unsafe impl Send for ContextData {}
 unsafe impl Sync for ContextData {}
 
 impl Task for ContextData {
-  type Output = SurfaceDataRef;
+  type Output = SkiaDataRef;
   type JsValue = JsBuffer;
 
   fn compute(&mut self) -> Result<Self::Output> {
