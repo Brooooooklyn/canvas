@@ -3,7 +3,7 @@ const { join } = require('path')
 
 const { createCanvas, GlobalFonts } = require('../index.js')
 
-GlobalFonts.registerFromPath(join(__dirname, '..', 'fonts', 'AppleColorEmoji@2x.ttf'), 'Apple Emoji')
+GlobalFonts.registerFromPath(join(__dirname, '..', '__test__', 'fonts', 'AppleColorEmoji@2x.ttf'), 'Apple Emoji')
 GlobalFonts.registerFromPath(join(__dirname, '..', '__test__', 'fonts', 'COLRv1.ttf'), 'COLRv1')
 
 console.info(GlobalFonts.families)
