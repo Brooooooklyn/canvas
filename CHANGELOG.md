@@ -1,3 +1,9 @@
+## [0.1.3](https://github.com/Brooooooklyn/canvas/compare/v0.1.2...v0.1.3) (2021-08-06)
+
+### Bug Fixes
+
+- icudtl.dat download logic in publish job ([f2bb048](https://github.com/Brooooooklyn/canvas/commit/f2bb048d0dde9e4703b5c0030011ba0c47a5038c))
+
 ## [0.1.2](https://github.com/Brooooooklyn/canvas/compare/v0.1.1...v0.1.2) (2021-08-05)
 
 ### Bug Fixes
