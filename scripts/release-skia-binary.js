@@ -1,5 +1,5 @@
 const { execSync } = require('child_process')
-const { promises: fs } = require('fs')
+const { promises: fs, copyFileSync } = require('fs')
 const { platform } = require('os')
 const { parse, join } = require('path')
 
@@ -117,6 +117,7 @@ function downloadIcu() {
   execSync(`curl -J -L -H "Accept: application/octet-stream" ${downloadUrl} -o ${ICU_DAT}`, {
     stdio: 'inherit',
   })
+  copyFileSync(join(__dirname, '..', ICU_DAT), join(__dirname, '..', 'npm', 'win32-x64-msvc', ICU_DAT))
   return Promise.resolve(null)
 }
 

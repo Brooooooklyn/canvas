@@ -86,7 +86,6 @@ jobs:
       - uses: actions/checkout@v2
         with:
           submodules: true
-          lfs: true
 
       - name: Setup node
         uses: actions/setup-node@v2
@@ -516,6 +515,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v2
+        with:
+          submodules: true
 
       - name: Setup node
         uses: actions/setup-node@v2
