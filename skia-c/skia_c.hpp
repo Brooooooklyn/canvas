@@ -381,7 +381,7 @@ extern "C"
 
   // Bitmap
   skiac_bitmap *skiac_bitmap_make_from_buffer(const uint8_t *ptr, size_t size);
-  skiac_bitmap *skiac_bitmap_make_from_svg(const uint8_t *data, size_t length);
+  skiac_bitmap *skiac_bitmap_make_from_svg(const uint8_t *data, size_t length, float width, float height);
   skiac_bitmap *skiac_bitmap_make_from_image_data(uint8_t *ptr, size_t width, size_t height, size_t row_bytes, size_t size, int ct, int at);
   uint32_t skiac_bitmap_get_width(skiac_bitmap *c_bitmap);
   uint32_t skiac_bitmap_get_height(skiac_bitmap *c_bitmap);

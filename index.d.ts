@@ -182,8 +182,8 @@ export class ImageData {
 }
 
 export class Image {
-  readonly width: number
-  readonly height: number
+  width: number
+  height: number
   readonly naturalWidth: number
   readonly naturalHeight: number
   readonly complete: boolean

@@ -894,6 +894,12 @@ fn draw_image(ctx: CallContext) -> Result<JsUndefined> {
   let image_js = ctx.get::<JsObject>(0)?;
   let image = ctx.env.unwrap::<Image>(&image_js)?;
 
+  let data = image_js
+    .get_named_property_unchecked::<JsBuffer>("_src")?
+    .into_value()?;
+
+  image.regenerate_bitmap_if_need(data);
+
   // SVG with 0 width or 0 height
   if image.bitmap.is_none() {
     return ctx.env.get_undefined();
@@ -945,6 +951,8 @@ fn draw_image(ctx: CallContext) -> Result<JsUndefined> {
       d_height as f32,
     )?;
   }
+
+  image.need_regenerate_bitmap = false;
 
   ctx.env.get_undefined()
 }

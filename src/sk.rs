@@ -615,7 +615,12 @@ mod ffi {
 
     pub fn skiac_bitmap_make_from_buffer(ptr: *mut u8, size: usize) -> *mut skiac_bitmap;
 
-    pub fn skiac_bitmap_make_from_svg(data: *const u8, size: usize) -> *mut skiac_bitmap;
+    pub fn skiac_bitmap_make_from_svg(
+      data: *const u8,
+      size: usize,
+      width: f32,
+      height: f32,
+    ) -> *mut skiac_bitmap;
 
     pub fn skiac_bitmap_make_from_image_data(
       ptr: *mut u8,
@@ -2934,7 +2939,7 @@ impl Bitmap {
   #[inline]
   pub fn from_svg_data(data: *const u8, size: usize) -> Option<Self> {
     unsafe {
-      let bitmap = ffi::skiac_bitmap_make_from_svg(data, size);
+      let bitmap = ffi::skiac_bitmap_make_from_svg(data, size, -1.0, -1.0);
 
       if bitmap.is_null() {
         return None;
@@ -2942,6 +2947,27 @@ impl Bitmap {
       Some(Bitmap {
         width: ffi::skiac_bitmap_get_width(bitmap) as usize,
         height: ffi::skiac_bitmap_get_height(bitmap) as usize,
+        bitmap,
+      })
+    }
+  }
+
+  #[inline(always)]
+  pub fn from_svg_data_with_custom_size(
+    data: *const u8,
+    size: usize,
+    width: f32,
+    height: f32,
+  ) -> Option<Self> {
+    unsafe {
+      let bitmap = ffi::skiac_bitmap_make_from_svg(data, size, width, height);
+
+      if bitmap.is_null() {
+        return None;
+      }
+      Some(Bitmap {
+        width: width as usize,
+        height: height as usize,
         bitmap,
       })
     }
