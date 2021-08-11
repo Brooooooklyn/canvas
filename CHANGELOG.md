@@ -1,3 +1,9 @@
+## [0.1.4](https://github.com/Brooooooklyn/canvas/compare/v0.1.3...v0.1.4) (2021-08-11)
+
+### Features
+
+- scale svg image if need ([72c404c](https://github.com/Brooooooklyn/canvas/commit/72c404c5049a0a0898bb91ab4ad1cd36fb71a4e4))
+
 ## [0.1.3](https://github.com/Brooooooklyn/canvas/compare/v0.1.2...v0.1.3) (2021-08-06)
 
 ### Bug Fixes
