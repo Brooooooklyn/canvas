@@ -55,12 +55,6 @@ test('properties should be readonly', (t) => {
   }
 
   // @ts-expect-error
-  t.throws(() => (image.width = 114), expectation)
-
-  // @ts-expect-error
-  t.throws(() => (image.height = 514), expectation)
-
-  // @ts-expect-error
   t.throws(() => (image.naturalWidth = 1919), expectation)
 
   // @ts-expect-error

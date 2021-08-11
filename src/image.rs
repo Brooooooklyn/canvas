@@ -120,10 +120,32 @@ fn image_data_constructor(ctx: CallContext) -> Result<JsUndefined> {
   ctx.env.get_undefined()
 }
 
-pub struct Image {
-  pub bitmap: Option<Bitmap>,
-  pub complete: bool,
-  pub alt: String,
+pub(crate) struct Image {
+  pub(crate) bitmap: Option<Bitmap>,
+  pub(crate) complete: bool,
+  pub(crate) alt: String,
+  width: f64,
+  height: f64,
+  pub(crate) need_regenerate_bitmap: bool,
+  pub(crate) is_svg: bool,
+}
+
+impl Image {
+  #[inline(always)]
+  pub(crate) fn regenerate_bitmap_if_need<D>(&mut self, data: D)
+  where
+    D: AsRef<[u8]>,
+  {
+    if !self.need_regenerate_bitmap || !self.is_svg {
+      return;
+    }
+    self.bitmap = Bitmap::from_svg_data_with_custom_size(
+      data.as_ref().as_ptr(),
+      data.as_ref().len(),
+      self.width as f32,
+      self.height as f32,
+    );
+  }
 }
 
 impl Image {
@@ -134,15 +156,15 @@ impl Image {
       &vec![
         Property::new(env, "width")?
           .with_getter(get_width)
-          .with_property_attributes(PropertyAttributes::Enumerable),
+          .with_setter(set_width),
         Property::new(env, "height")?
           .with_getter(get_height)
-          .with_property_attributes(PropertyAttributes::Enumerable),
+          .with_setter(set_height),
         Property::new(env, "naturalWidth")?
-          .with_getter(get_width)
+          .with_getter(get_natural_width)
           .with_property_attributes(PropertyAttributes::Enumerable),
         Property::new(env, "naturalHeight")?
-          .with_getter(get_height)
+          .with_getter(get_natural_height)
           .with_property_attributes(PropertyAttributes::Enumerable),
         Property::new(env, "complete")?
           .with_getter(get_complete)
@@ -164,6 +186,10 @@ fn image_constructor(ctx: CallContext) -> Result<JsUndefined> {
     complete: false,
     bitmap: None,
     alt: "".to_string(),
+    width: -1.0,
+    height: -1.0,
+    need_regenerate_bitmap: false,
+    is_svg: false,
   };
   let mut this = ctx.this_unchecked::<JsObject>();
   this.set_named_property("_src", ctx.env.get_undefined()?)?;
@@ -178,7 +204,29 @@ fn get_width(ctx: CallContext) -> Result<JsNumber> {
 
   ctx
     .env
-    .create_double(image.bitmap.as_ref().unwrap().width as f64)
+    .create_double(if image.width <= 0.0 { 0.0 } else { image.width })
+}
+
+#[js_function]
+fn get_natural_width(ctx: CallContext) -> Result<JsNumber> {
+  let this = ctx.this_unchecked::<JsObject>();
+  let image = ctx.env.unwrap::<Image>(&this)?;
+
+  ctx
+    .env
+    .create_double(image.bitmap.as_ref().map(|b| b.width).unwrap_or(0) as f64)
+}
+
+#[js_function(1)]
+fn set_width(ctx: CallContext) -> Result<JsUndefined> {
+  let width = ctx.get::<JsNumber>(0)?.get_double()?;
+  let this = ctx.this_unchecked::<JsObject>();
+  let image = ctx.env.unwrap::<Image>(&this)?;
+  if (width - image.width).abs() > f64::EPSILON {
+    image.width = width;
+    image.need_regenerate_bitmap = true;
+  }
+  ctx.env.get_undefined()
 }
 
 #[js_function]
@@ -186,9 +234,33 @@ fn get_height(ctx: CallContext) -> Result<JsNumber> {
   let this = ctx.this_unchecked::<JsObject>();
   let image = ctx.env.unwrap::<Image>(&this)?;
 
+  ctx.env.create_double(if image.height <= 0.0 {
+    0.0
+  } else {
+    image.height
+  })
+}
+
+#[js_function]
+fn get_natural_height(ctx: CallContext) -> Result<JsNumber> {
+  let this = ctx.this_unchecked::<JsObject>();
+  let image = ctx.env.unwrap::<Image>(&this)?;
+
   ctx
     .env
-    .create_double(image.bitmap.as_ref().unwrap().height as f64)
+    .create_double(image.bitmap.as_ref().map(|b| b.height).unwrap_or(0) as f64)
+}
+
+#[js_function(1)]
+fn set_height(ctx: CallContext) -> Result<JsUndefined> {
+  let height = ctx.get::<JsNumber>(0)?.get_double()?;
+  let this = ctx.this_unchecked::<JsObject>();
+  let image = ctx.env.unwrap::<Image>(&this)?;
+  if (image.height - height).abs() > f64::EPSILON {
+    image.height = height;
+    image.need_regenerate_bitmap = true;
+  }
+  ctx.env.get_undefined()
 }
 
 #[js_function]
@@ -248,12 +320,27 @@ fn set_src(ctx: CallContext) -> Result<JsUndefined> {
     }
   }
   image.complete = true;
+  image.is_svg = is_svg;
   if is_svg {
-    image.bitmap = Bitmap::from_svg_data(src_data.as_ptr(), length);
+    let bitmap = Bitmap::from_svg_data(src_data.as_ptr(), length);
+    if let Some(b) = bitmap.as_ref() {
+      if (image.width - -1.0).abs() < f64::EPSILON {
+        image.width = b.width as f64;
+      }
+      if (image.height - -1.0).abs() < f64::EPSILON {
+        image.height = b.height as f64;
+      }
+    }
+    image.bitmap = bitmap;
   } else {
-    image
-      .bitmap
-      .get_or_insert(Bitmap::from_buffer(src_data.as_ptr() as *mut u8, length));
+    let bitmap = Bitmap::from_buffer(src_data.as_ptr() as *mut u8, length);
+    if (image.width - -1.0).abs() < f64::EPSILON {
+      image.width = bitmap.width as f64;
+    }
+    if (image.height - -1.0).abs() < f64::EPSILON {
+      image.height = bitmap.height as f64;
+    }
+    image.bitmap = Some(bitmap)
   }
 
   this.set_named_property("_src", src_data.into_raw())?;

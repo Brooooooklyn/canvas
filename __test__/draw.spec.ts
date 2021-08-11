@@ -330,6 +330,18 @@ test('drawImage-svg-with-only-viewBox', async (t) => {
   await snapshotImage(t)
 })
 
+test('drawImage-svg-resize', async (t) => {
+  const { ctx, canvas } = t.context
+  const filePath = './resize.svg'
+  const file = await promises.readFile(join(__dirname, filePath))
+  const image = new Image()
+  image.src = file
+  image.width = 100
+  image.height = 100
+  ctx.drawImage(image, 0, 0)
+  await snapshotImage(t, { canvas, ctx }, 'png', 0.1)
+})
+
 test.skip('drawImage-svg-with-css', async (t) => {
   const { ctx } = t.context
   const filePath = './css-style.svg'

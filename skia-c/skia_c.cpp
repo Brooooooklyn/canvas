@@ -1108,7 +1108,7 @@ extern "C"
     return reinterpret_cast<skiac_bitmap *>(bitmap);
   }
 
-  skiac_bitmap *skiac_bitmap_make_from_svg(const uint8_t *data, size_t length)
+  skiac_bitmap *skiac_bitmap_make_from_svg(const uint8_t *data, size_t length, float width, float height)
   {
     auto svg_stream = new SkMemoryStream(data, length, false);
     auto svg_dom = SkSVGDOM::MakeFromStream(*svg_stream);
@@ -1128,7 +1128,15 @@ extern "C"
       }
       svg_dom->setContainerSize(svg_container_size);
     }
-    auto imageinfo = SkImageInfo::Make(svg_container_size.width(), svg_container_size.height(), kRGBA_8888_SkColorType, SkAlphaType::kOpaque_SkAlphaType);
+    auto image_w = svg_container_size.width();
+    auto image_h = svg_container_size.height();
+    if (width > 0 && height > 0)
+    {
+      svg_root->setTransform(SkMatrix::Scale(width / image_w, height / image_h));
+      image_w = width;
+      image_h = height;
+    }
+    auto imageinfo = SkImageInfo::Make(image_w, image_h, kRGBA_8888_SkColorType, SkAlphaType::kOpaque_SkAlphaType);
     auto bitmap = new SkBitmap();
     bitmap->allocPixels(imageinfo);
     auto sk_svg_canvas = new SkCanvas(*bitmap);
