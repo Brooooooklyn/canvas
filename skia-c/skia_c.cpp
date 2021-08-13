@@ -127,7 +127,7 @@ extern "C"
     SkPaint paint;
     paint.setAlpha(SK_AlphaOPAQUE);
 
-    const auto sampling = SkSamplingOptions();
+    const auto sampling = SkSamplingOptions(SkCubicResampler{1 / 3.0f, 1 / 3.0f});
     // The original surface draws itself to the copy's canvas.
     SURFACE_CAST->draw(copy->getCanvas(), -(SkScalar)x, -(SkScalar)y, sampling, &paint);
 
@@ -251,7 +251,7 @@ extern "C"
     const auto src_rect = SkRect::MakeXYWH(sx, sy, s_width, s_height);
     const auto dst_rect = SkRect::MakeXYWH(dx, dy, d_width, d_height);
     auto sk_image = SkImage::MakeFromBitmap(*BITMAP_CAST);
-    const auto sampling = SkSamplingOptions();
+    const auto sampling = SkSamplingOptions(SkCubicResampler{1 / 3.0f, 1 / 3.0f});
     auto paint = reinterpret_cast<const SkPaint *>(c_paint);
     CANVAS_CAST->drawImageRect(sk_image, src_rect, dst_rect, sampling, paint, SkCanvas::kFast_SrcRectConstraint);
   }
@@ -282,7 +282,8 @@ extern "C"
     SkPaint paint;
     paint.setAlpha(alpha);
     paint.setBlendMode((SkBlendMode)blend_mode);
-    const auto sampling = SkSamplingOptions();
+    // Equal to SkSamplingOptions(SkFilterQuality::kHigh_SkFilterQuality)
+    const auto sampling = SkSamplingOptions(SkCubicResampler{1 / 3.0f, 1 / 3.0f});
     CANVAS_CAST->drawImage(image, left, top, sampling, &paint);
   }
 
@@ -296,7 +297,7 @@ extern "C"
     SkPaint paint;
     auto src = SkRect::MakeXYWH(0, 0, image->width(), image->height());
     auto dst = SkRect::MakeXYWH(x, y, w, h);
-    const auto sampling = SkSamplingOptions();
+    const auto sampling = SkSamplingOptions(SkCubicResampler{1 / 3.0f, 1 / 3.0f});
     CANVAS_CAST->drawImageRect(image, src, dst, sampling, &paint, SkCanvas::kFast_SrcRectConstraint);
   }
 
@@ -475,7 +476,7 @@ extern "C"
     auto image = SkImage::MakeRasterData(info, data, row_bytes);
     auto src_rect = SkRect::MakeXYWH(dirty_x, dirty_y, dirty_width, dirty_height);
     auto dst_rect = SkRect::MakeXYWH(x + dirty_x, y + dirty_y, dirty_width, dirty_height);
-    const auto sampling = SkSamplingOptions();
+    const auto sampling = SkSamplingOptions(SkCubicResampler{1 / 3.0f, 1 / 3.0f});
     CANVAS_CAST->drawImageRect(image, src_rect, dst_rect, sampling, nullptr, SkCanvas::kFast_SrcRectConstraint);
   }
 
@@ -986,7 +987,7 @@ extern "C"
   {
     auto skia_tile_mode = SkTileMode::kRepeat;
     const auto ts = conv_from_transform(c_ts);
-    const auto sampling_options = new SkSamplingOptions();
+    const auto sampling_options = new SkSamplingOptions(SkCubicResampler{1 / 3.0f, 1 / 3.0f});
     sk_sp<SkImage> image = SURFACE_CAST->makeImageSnapshot();
     auto shader = image->makeShader(
                            skia_tile_mode,
