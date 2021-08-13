@@ -302,7 +302,7 @@ test('createConicGradient', async (t) => {
 
 test('drawImage', async (t) => {
   const { ctx } = t.context
-  const filePath = './snapshots/drawImage.png'
+  const filePath = './javascript.png'
   const file = await promises.readFile(join(__dirname, filePath))
   const image = new Image()
   image.src = file
@@ -339,7 +339,7 @@ test('drawImage-svg-resize', async (t) => {
   image.width = 100
   image.height = 100
   ctx.drawImage(image, 0, 0)
-  await snapshotImage(t, { canvas, ctx }, 'png', 0.1)
+  await snapshotImage(t, { canvas, ctx }, 'png', 0.2)
 })
 
 test.skip('drawImage-svg-with-css', async (t) => {
