@@ -23,12 +23,14 @@ serde_json = "1"
 thiserror = "1.0"
 
 [target.'cfg(all(target_arch = "x86_64", not(target_env = "musl")))'.dependencies]
-mimalloc = {version = "0.1"}
+mimalloc-rust = "0.1"
 
 [build-dependencies]
 cc = "1"
 napi-build = "1"
 
 [profile.release]
+codegen-units = 1
 lto = true
+panic = "unwind"
 strip = 'symbols'

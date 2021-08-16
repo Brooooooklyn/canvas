@@ -24,6 +24,21 @@ impl From<SkError> for Error {
 
 const MAX_TEXT_WIDTH: f32 = 100_000.0;
 
+pub(crate) enum ImageOrCanvas {
+  Image(Image),
+  Canvas,
+}
+
+impl ImageOrCanvas {
+  #[inline]
+  pub(crate) fn get_image(&mut self) -> Option<&mut Image> {
+    match self {
+      Self::Image(i) => Some(i),
+      _ => None,
+    }
+  }
+}
+
 pub struct Context {
   pub(crate) surface: Surface,
   path: Path,
@@ -42,7 +57,6 @@ impl Context {
       "CanvasRenderingContext2D",
       context_2d_constructor,
       &vec![
-        Property::new(env, "canvas")?.with_value(env.get_null()?),
         // properties
         Property::new(env, "miterLimit")?
           .with_getter(get_miter_limit)
@@ -112,7 +126,9 @@ impl Context {
         Property::new(env, "createLinearGradient")?.with_method(create_linear_gradient),
         Property::new(env, "createRadialGradient")?.with_method(create_radial_gradient),
         Property::new(env, "createConicGradient")?.with_method(create_conic_gradient),
-        Property::new(env, "drawImage")?.with_method(draw_image),
+        Property::new(env, "drawImage")?
+          .with_method(draw_image)
+          .with_property_attributes(PropertyAttributes::Writable),
         Property::new(env, "getContextAttributes")?.with_method(get_context_attributes),
         Property::new(env, "isPointInPath")?.with_method(is_point_in_path),
         Property::new(env, "isPointInStroke")?.with_method(is_point_in_stroke),
@@ -480,7 +496,7 @@ impl Context {
     d_width: f32,
     d_height: f32,
   ) -> Result<()> {
-    let bitmap = image.bitmap.as_ref().unwrap().bitmap;
+    let bitmap = image.bitmap.as_ref().unwrap().0.bitmap;
     let paint = self.fill_paint()?;
     if let Some(drop_shadow_paint) = self.drop_shadow_paint(&paint) {
       let surface = &mut self.surface;
@@ -676,8 +692,9 @@ fn begin_path(ctx: CallContext) -> Result<JsUndefined> {
   let this = ctx.this_unchecked::<JsObject>();
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
 
-  let new_sub_path = Path::new();
-  mem::drop(mem::replace(&mut context_2d.path, new_sub_path));
+  let mut new_sub_path = Path::new();
+
+  context_2d.path.swap(&mut new_sub_path);
 
   ctx.env.get_undefined()
 }
@@ -892,67 +909,120 @@ fn draw_image(ctx: CallContext) -> Result<JsUndefined> {
   let this = ctx.this_unchecked::<JsObject>();
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
   let image_js = ctx.get::<JsObject>(0)?;
-  let image = ctx.env.unwrap::<Image>(&image_js)?;
+  let image_or_canvas = ctx.env.unwrap::<ImageOrCanvas>(&image_js)?;
 
-  let data = image_js
-    .get_named_property_unchecked::<JsBuffer>("_src")?
-    .into_value()?;
+  match image_or_canvas {
+    ImageOrCanvas::Image(image) => {
+      if !image.complete {
+        return ctx.env.get_undefined();
+      }
+      let data = image_js
+        .get_named_property_unchecked::<JsBuffer>("_src")?
+        .into_value()?;
 
-  image.regenerate_bitmap_if_need(data);
+      image.regenerate_bitmap_if_need(data);
 
-  // SVG with 0 width or 0 height
-  if image.bitmap.is_none() {
-    return ctx.env.get_undefined();
-  }
+      // SVG with 0 width or 0 height
+      if image.bitmap.is_none() {
+        return ctx.env.get_undefined();
+      }
 
-  let image_w = image.bitmap.as_ref().unwrap().width as f32;
-  let image_h = image.bitmap.as_ref().unwrap().height as f32;
+      let image_w = image.bitmap.as_ref().unwrap().0.width as f32;
+      let image_h = image.bitmap.as_ref().unwrap().0.height as f32;
 
-  if ctx.length == 3 {
-    let dx: f64 = ctx.get::<JsNumber>(1)?.try_into()?;
-    let dy: f64 = ctx.get::<JsNumber>(2)?.try_into()?;
-    context_2d.draw_image(
-      image, 0f32, 0f32, image_w, image_h, dx as f32, dy as f32, image_w, image_h,
-    )?;
-  } else if ctx.length == 5 {
-    let dx: f64 = ctx.get::<JsNumber>(1)?.try_into()?;
-    let dy: f64 = ctx.get::<JsNumber>(2)?.try_into()?;
-    let d_width: f64 = ctx.get::<JsNumber>(3)?.try_into()?;
-    let d_height: f64 = ctx.get::<JsNumber>(4)?.try_into()?;
-    context_2d.draw_image(
-      image,
-      0f32,
-      0f32,
-      image_w,
-      image_h,
-      dx as f32,
-      dy as f32,
-      d_width as f32,
-      d_height as f32,
-    )?;
-  } else if ctx.length == 9 {
-    let sx: f64 = ctx.get::<JsNumber>(1)?.try_into()?;
-    let sy: f64 = ctx.get::<JsNumber>(2)?.try_into()?;
-    let s_width: f64 = ctx.get::<JsNumber>(3)?.try_into()?;
-    let s_height: f64 = ctx.get::<JsNumber>(4)?.try_into()?;
-    let dx: f64 = ctx.get::<JsNumber>(5)?.try_into()?;
-    let dy: f64 = ctx.get::<JsNumber>(6)?.try_into()?;
-    let d_width: f64 = ctx.get::<JsNumber>(7)?.try_into()?;
-    let d_height: f64 = ctx.get::<JsNumber>(8)?.try_into()?;
-    context_2d.draw_image(
-      image,
-      sx as f32,
-      sy as f32,
-      s_width as f32,
-      s_height as f32,
-      dx as f32,
-      dy as f32,
-      d_width as f32,
-      d_height as f32,
-    )?;
-  }
+      if ctx.length == 3 {
+        let dx: f64 = ctx.get::<JsNumber>(1)?.get_double()?;
+        let dy: f64 = ctx.get::<JsNumber>(2)?.get_double()?;
+        context_2d.draw_image(
+          image, 0f32, 0f32, image_w, image_h, dx as f32, dy as f32, image_w, image_h,
+        )?;
+      } else if ctx.length == 5 {
+        let dx: f64 = ctx.get::<JsNumber>(1)?.get_double()?;
+        let dy: f64 = ctx.get::<JsNumber>(2)?.get_double()?;
+        let d_width: f64 = ctx.get::<JsNumber>(3)?.get_double()?;
+        let d_height: f64 = ctx.get::<JsNumber>(4)?.get_double()?;
+        context_2d.draw_image(
+          image,
+          0f32,
+          0f32,
+          image_w,
+          image_h,
+          dx as f32,
+          dy as f32,
+          d_width as f32,
+          d_height as f32,
+        )?;
+      } else if ctx.length == 9 {
+        let sx: f64 = ctx.get::<JsNumber>(1)?.get_double()?;
+        let sy: f64 = ctx.get::<JsNumber>(2)?.get_double()?;
+        let s_width: f64 = ctx.get::<JsNumber>(3)?.get_double()?;
+        let s_height: f64 = ctx.get::<JsNumber>(4)?.get_double()?;
+        let dx: f64 = ctx.get::<JsNumber>(5)?.get_double()?;
+        let dy: f64 = ctx.get::<JsNumber>(6)?.get_double()?;
+        let d_width: f64 = ctx.get::<JsNumber>(7)?.get_double()?;
+        let d_height: f64 = ctx.get::<JsNumber>(8)?.get_double()?;
+        context_2d.draw_image(
+          image,
+          sx as f32,
+          sy as f32,
+          s_width as f32,
+          s_height as f32,
+          dx as f32,
+          dy as f32,
+          d_width as f32,
+          d_height as f32,
+        )?;
+      }
 
-  image.need_regenerate_bitmap = false;
+      image.need_regenerate_bitmap = false;
+    }
+    ImageOrCanvas::Canvas => {
+      let ctx_js = image_js.get_named_property_unchecked::<JsObject>("ctx")?;
+      let another_ctx = ctx.env.unwrap::<Context>(&ctx_js)?;
+      let width = another_ctx.width as f32;
+      let height = another_ctx.height as f32;
+      let (sx, sy, sw, sh, dx, dy, dw, dh) = if ctx.length == 3 {
+        let dx = ctx.get::<JsNumber>(1)?.get_double()? as f32;
+        let dy = ctx.get::<JsNumber>(2)?.get_double()? as f32;
+        (0.0f32, 0.0f32, width, height, dx, dy, width, height)
+      } else if ctx.length == 5 {
+        let sx = ctx.get::<JsNumber>(1)?.get_double()? as f32;
+        let sy = ctx.get::<JsNumber>(2)?.get_double()? as f32;
+        let sw = ctx.get::<JsNumber>(3)?.get_double()? as f32;
+        let sh = ctx.get::<JsNumber>(4)?.get_double()? as f32;
+        (sx, sy, sw, sh, 0.0f32, 0.0f32, sw, sh)
+      } else if ctx.length == 9 {
+        (
+          ctx.get::<JsNumber>(1)?.get_double()? as f32,
+          ctx.get::<JsNumber>(2)?.get_double()? as f32,
+          ctx.get::<JsNumber>(3)?.get_double()? as f32,
+          ctx.get::<JsNumber>(4)?.get_double()? as f32,
+          ctx.get::<JsNumber>(5)?.get_double()? as f32,
+          ctx.get::<JsNumber>(6)?.get_double()? as f32,
+          ctx.get::<JsNumber>(7)?.get_double()? as f32,
+          ctx.get::<JsNumber>(8)?.get_double()? as f32,
+        )
+      } else {
+        return Err(Error::new(
+          Status::InvalidArg,
+          format!("Invalid arguments length {}", ctx.length),
+        ));
+      };
+
+      context_2d.surface.canvas.draw_surface_rect(
+        &another_ctx.surface,
+        sx,
+        sy,
+        sw,
+        sh,
+        dx,
+        dy,
+        dw,
+        dh,
+        FilterQuality::High,
+      );
+    }
+  };
 
   ctx.env.get_undefined()
 }
@@ -1916,10 +1986,13 @@ fn set_shadow_color(ctx: CallContext) -> Result<JsUndefined> {
   let shadow_color_str = shadow_color.as_str()?;
   last_state.shadow_color_string = shadow_color_str.to_owned();
 
+  if shadow_color_str.is_empty() {
+    return ctx.env.get_undefined();
+  }
   let mut parser_input = ParserInput::new(shadow_color_str);
   let mut parser = Parser::new(&mut parser_input);
-  let color =
-    CSSColor::parse(&mut parser).map_err(|e| SkError::Generic(format!("Invalid color {:?}", e)))?;
+  let color = CSSColor::parse(&mut parser)
+    .map_err(|e| SkError::Generic(format!("Parse color [{}] error: {:?}", shadow_color_str, e)))?;
 
   match color {
     CSSColor::CurrentColor => {

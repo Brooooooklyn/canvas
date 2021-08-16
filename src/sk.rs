@@ -1,9 +1,11 @@
 use std::convert::TryFrom;
 use std::f32::consts::PI;
 use std::ffi::{c_void, CStr, CString};
+use std::fmt;
 use std::ops::{Deref, DerefMut};
 use std::os::raw::c_char;
 use std::ptr;
+use std::rc::Rc;
 use std::slice;
 use std::str::FromStr;
 
@@ -101,6 +103,14 @@ mod ffi {
   #[derive(Copy, Clone, Debug)]
   pub struct skiac_bitmap {
     _unused: [u8; 0],
+  }
+
+  #[repr(C)]
+  #[derive(Debug, Clone, Copy)]
+  pub struct skiac_bitmap_info {
+    pub bitmap: *mut skiac_bitmap,
+    pub width: i32,
+    pub height: i32,
   }
 
   #[repr(C)]
@@ -253,6 +263,8 @@ mod ffi {
       sk_data: *mut skiac_sk_data,
     );
 
+    pub fn skiac_surface_get_bitmap(surface: *mut skiac_surface, info: *mut skiac_bitmap_info);
+
     // SkCanvas
     pub fn skiac_canvas_clear(canvas: *mut skiac_canvas, color: u32);
 
@@ -314,10 +326,14 @@ mod ffi {
     pub fn skiac_canvas_draw_surface_rect(
       canvas: *mut skiac_canvas,
       surface: *mut skiac_surface,
-      x: f32,
-      y: f32,
-      w: f32,
-      h: f32,
+      sx: f32,
+      sy: f32,
+      sw: f32,
+      sh: f32,
+      dx: f32,
+      dy: f32,
+      dw: f32,
+      dh: f32,
       filter_quality: i32,
     );
 
@@ -434,6 +450,8 @@ mod ffi {
     pub fn skiac_path_from_svg(svg_path: *mut std::os::raw::c_char) -> *mut skiac_path;
 
     pub fn skiac_path_clone(path: *mut skiac_path) -> *mut skiac_path;
+
+    pub fn skiac_path_swap(path: *mut skiac_path, other: *mut skiac_path);
 
     pub fn skiac_add_path(
       c_path: *mut skiac_path,
@@ -613,14 +631,15 @@ mod ffi {
 
     pub fn skiac_sk_data_destroy(c_data: *mut skiac_data);
 
-    pub fn skiac_bitmap_make_from_buffer(ptr: *mut u8, size: usize) -> *mut skiac_bitmap;
+    pub fn skiac_bitmap_make_from_buffer(ptr: *mut u8, size: usize, info: *mut skiac_bitmap_info);
 
     pub fn skiac_bitmap_make_from_svg(
       data: *const u8,
       size: usize,
       width: f32,
       height: f32,
-    ) -> *mut skiac_bitmap;
+      info: *mut skiac_bitmap_info,
+    );
 
     pub fn skiac_bitmap_make_from_image_data(
       ptr: *mut u8,
@@ -632,9 +651,9 @@ mod ffi {
       alpha_type: i32,
     ) -> *mut skiac_bitmap;
 
-    pub fn skiac_bitmap_get_width(c_bitmap: *mut skiac_bitmap) -> u32;
+    pub fn skiac_bitmap_get_width(c_bitmap: *mut skiac_bitmap) -> usize;
 
-    pub fn skiac_bitmap_get_height(c_bitmap: *mut skiac_bitmap) -> u32;
+    pub fn skiac_bitmap_get_height(c_bitmap: *mut skiac_bitmap) -> usize;
 
     pub fn skiac_bitmap_get_shader(
       c_bitmap: *mut skiac_bitmap,
@@ -1538,6 +1557,17 @@ impl Surface {
   pub(crate) fn reference(&self) -> SurfaceRef {
     SurfaceRef(self.ptr)
   }
+
+  #[inline]
+  pub(crate) fn get_bitmap(&self) -> Bitmap {
+    let mut bitmap_info = ffi::skiac_bitmap_info {
+      bitmap: ptr::null_mut(),
+      width: 0,
+      height: 0,
+    };
+    unsafe { ffi::skiac_surface_get_bitmap(self.ptr, &mut bitmap_info) };
+    Bitmap(bitmap_info)
+  }
 }
 
 impl std::ops::Deref for Surface {
@@ -1699,8 +1729,19 @@ impl<'a> DerefMut for SurfaceDataMut<'a> {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Eq, PartialEq, Hash, PartialOrd, Ord)]
 pub struct Color(pub u32);
+
+impl fmt::Debug for Color {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    f.debug_struct("Color")
+      .field("R", &(((self.0) >> 16) & 0xFF))
+      .field("G", &(((self.0) >> 8) & 0xFF))
+      .field("B", &(self.0 & 0xFF))
+      .field("A", &(((self.0) >> 24) & 0xFF))
+      .finish()
+  }
+}
 
 impl Color {
   #[inline]
@@ -1939,14 +1980,30 @@ impl Canvas {
   pub fn draw_surface_rect(
     &mut self,
     surface: &Surface,
-    x: f32,
-    y: f32,
-    w: f32,
-    h: f32,
+    sx: f32,
+    sy: f32,
+    sw: f32,
+    sh: f32,
+    dx: f32,
+    dy: f32,
+    dw: f32,
+    dh: f32,
     filter_quality: FilterQuality,
   ) {
     unsafe {
-      ffi::skiac_canvas_draw_surface_rect(self.0, surface.ptr, x, y, w, h, filter_quality as i32);
+      ffi::skiac_canvas_draw_surface_rect(
+        self.0,
+        surface.ptr,
+        sx,
+        sy,
+        sw,
+        sh,
+        dx,
+        dy,
+        dw,
+        dh,
+        filter_quality as i32,
+      );
     }
   }
 
@@ -2199,6 +2256,11 @@ impl Path {
   #[inline]
   pub fn new() -> Path {
     unsafe { Path(ffi::skiac_path_create()) }
+  }
+
+  #[inline]
+  pub fn swap(&mut self, other: &mut Path) {
+    unsafe { ffi::skiac_path_swap(self.0, other.0) }
   }
 
   #[inline]
@@ -2770,8 +2832,8 @@ impl Transform {
   }
 
   #[inline]
-  /// | A B C |    | A/X B/X C/X |
-  /// | D E F | -> | D/X E/X F/X |   for X != 0
+  /// | A C E |    | A/X C/X E/X |
+  /// | B D F | -> | B/X D/X F/X |   for X != 0
   /// | 0 0 X |    |  0   0   1  |
   /// [interface.js](skia/modules/canvaskit/interface.js)
   pub fn map_points(&self, pt_arr: &mut [f32]) {
@@ -2780,13 +2842,13 @@ impl Transform {
       let x = pt_arr[i];
       let y = pt_arr[i + 1];
       // Gx+Hy+I
-      let denom = 1f32;
+      // let denom = 1f32;
       // Ax+By+C
-      let x_trans = self.a * x + self.c * y + self.e;
+      let x_trans = self.a * x + self.b * y + self.c;
       // Dx+Ey+F
-      let y_trans = self.b * x + self.d * y + self.f;
-      pt_arr[i] = x_trans / denom;
-      pt_arr[i + 1] = y_trans / denom;
+      let y_trans = self.d * x + self.e * y + self.f;
+      pt_arr[i] = x_trans; // x_trans / denom
+      pt_arr[i + 1] = y_trans; // y_trans / denom
       i += 2;
     }
   }
@@ -2816,10 +2878,10 @@ impl Transform {
     // that's all been combined here into one expression.
     Some(Transform {
       a: (m[4] * m[8] - m[5] * m[7]) / det,
-      b: (m[2] * m[7] - m[1] * m[8]) / det,
-      c: (m[1] * m[5] - m[2] * m[4]) / det,
-      d: (m[5] * m[6] - m[3] * m[8]) / det,
-      e: (m[0] * m[8] - m[2] * m[6]) / det,
+      c: (m[2] * m[7] - m[1] * m[8]) / det,
+      e: (m[1] * m[5] - m[2] * m[4]) / det,
+      b: (m[5] * m[6] - m[3] * m[8]) / det,
+      d: (m[0] * m[8] - m[2] * m[6]) / det,
       f: (m[2] * m[3] - m[0] * m[5]) / det,
     })
   }
@@ -2915,40 +2977,38 @@ impl Drop for ImageFilter {
   }
 }
 
+#[repr(transparent)]
 #[derive(Debug)]
-pub struct Bitmap {
-  pub width: usize,
-  pub height: usize,
-  pub bitmap: *mut ffi::skiac_bitmap,
-}
+pub(crate) struct Bitmap(pub(crate) ffi::skiac_bitmap_info);
 
 impl Bitmap {
   #[inline]
   pub fn from_buffer(ptr: *mut u8, size: usize) -> Self {
+    let mut bitmap_info = ffi::skiac_bitmap_info {
+      bitmap: ptr::null_mut(),
+      width: 0,
+      height: 0,
+    };
     unsafe {
-      let bitmap = ffi::skiac_bitmap_make_from_buffer(ptr, size);
-
-      Bitmap {
-        width: ffi::skiac_bitmap_get_width(bitmap) as usize,
-        height: ffi::skiac_bitmap_get_height(bitmap) as usize,
-        bitmap,
-      }
+      ffi::skiac_bitmap_make_from_buffer(ptr, size, &mut bitmap_info);
+      Bitmap(bitmap_info)
     }
   }
 
   #[inline]
   pub fn from_svg_data(data: *const u8, size: usize) -> Option<Self> {
+    let mut bitmap_info = ffi::skiac_bitmap_info {
+      bitmap: ptr::null_mut(),
+      width: 0,
+      height: 0,
+    };
     unsafe {
-      let bitmap = ffi::skiac_bitmap_make_from_svg(data, size, -1.0, -1.0);
+      ffi::skiac_bitmap_make_from_svg(data, size, -1.0, -1.0, &mut bitmap_info);
 
-      if bitmap.is_null() {
+      if bitmap_info.bitmap.is_null() {
         return None;
       }
-      Some(Bitmap {
-        width: ffi::skiac_bitmap_get_width(bitmap) as usize,
-        height: ffi::skiac_bitmap_get_height(bitmap) as usize,
-        bitmap,
-      })
+      Some(Bitmap(bitmap_info))
     }
   }
 
@@ -2959,17 +3019,18 @@ impl Bitmap {
     width: f32,
     height: f32,
   ) -> Option<Self> {
+    let mut bitmap_info = ffi::skiac_bitmap_info {
+      bitmap: ptr::null_mut(),
+      width: 0,
+      height: 0,
+    };
     unsafe {
-      let bitmap = ffi::skiac_bitmap_make_from_svg(data, size, width, height);
+      ffi::skiac_bitmap_make_from_svg(data, size, width, height, &mut bitmap_info);
 
-      if bitmap.is_null() {
+      if bitmap_info.bitmap.is_null() {
         return None;
       }
-      Some(Bitmap {
-        width: width as usize,
-        height: height as usize,
-        bitmap,
-      })
+      Some(Bitmap(bitmap_info))
     }
   }
 
@@ -2994,18 +3055,18 @@ impl Bitmap {
         alpha_type as i32,
       )
     };
-    Bitmap {
+    Bitmap(ffi::skiac_bitmap_info {
       bitmap,
-      width: row_bytes,
-      height: size / row_bytes / 4usize,
-    }
+      width: row_bytes as i32,
+      height: (size / row_bytes / 4) as i32,
+    })
   }
 }
 
 impl Drop for Bitmap {
   fn drop(&mut self) {
     unsafe {
-      ffi::skiac_bitmap_destroy(self.bitmap);
+      ffi::skiac_bitmap_destroy(self.0.bitmap);
     }
   }
 }
@@ -3016,6 +3077,7 @@ pub struct ImagePattern {
   pub(crate) repeat_x: TileMode,
   pub(crate) repeat_y: TileMode,
   pub(crate) transform: Transform,
+  pub(crate) bitmap_to_finalize: Option<Rc<Bitmap>>,
 }
 
 impl ImagePattern {

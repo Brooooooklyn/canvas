@@ -164,6 +164,13 @@ struct skiac_surface_data
   size_t size;
 };
 
+struct skiac_bitmap_info
+{
+  skiac_bitmap *bitmap;
+  int width;
+  int height;
+};
+
 struct skiac_string
 {
   const char *ptr;
@@ -203,6 +210,7 @@ extern "C"
   void skiac_surface_encode_data(skiac_surface *c_surface, skiac_sk_data *data, int format, int quality);
   int skiac_surface_get_alpha_type(skiac_surface *c_surface);
   bool skiac_surface_save(skiac_surface *c_surface, const char *path);
+  void skiac_surface_get_bitmap(skiac_surface *c_surface, skiac_bitmap_info *info);
 
   // Canvas
   void skiac_canvas_clear(skiac_canvas *c_canvas, uint32_t color);
@@ -231,7 +239,14 @@ extern "C"
   void skiac_canvas_draw_surface_rect(
       skiac_canvas *c_canvas,
       skiac_surface *c_surface,
-      float x, float y, float w, float h,
+      float sx,
+      float sy,
+      float sw,
+      float sh,
+      float dx,
+      float dy,
+      float dw,
+      float dh,
       int filter_quality);
   void skiac_canvas_get_line_metrics_or_draw_text(
       const char *text,
@@ -287,6 +302,7 @@ extern "C"
   skiac_path *skiac_path_create();
   skiac_path *skiac_path_from_svg(char *svg_path);
   skiac_path *skiac_path_clone(skiac_path *c_path);
+  void skiac_path_swap(skiac_path *c_path, skiac_path *other_path);
   void skiac_add_path(skiac_path *c_path, skiac_path *other_path, skiac_transform c_transform);
   bool skiac_path_op(skiac_path *c_path_one, skiac_path *c_path_two, int op);
   void skiac_path_to_svg_string(skiac_path *c_path, skiac_string *c_string);
@@ -380,11 +396,11 @@ extern "C"
   void skiac_sk_data_destroy(skiac_data *c_data);
 
   // Bitmap
-  skiac_bitmap *skiac_bitmap_make_from_buffer(const uint8_t *ptr, size_t size);
-  skiac_bitmap *skiac_bitmap_make_from_svg(const uint8_t *data, size_t length, float width, float height);
+  void skiac_bitmap_make_from_buffer(const uint8_t *ptr, size_t size, skiac_bitmap_info *bitmap_info);
+  void skiac_bitmap_make_from_svg(const uint8_t *data, size_t length, float width, float height, skiac_bitmap_info *bitmap_info);
   skiac_bitmap *skiac_bitmap_make_from_image_data(uint8_t *ptr, size_t width, size_t height, size_t row_bytes, size_t size, int ct, int at);
-  uint32_t skiac_bitmap_get_width(skiac_bitmap *c_bitmap);
-  uint32_t skiac_bitmap_get_height(skiac_bitmap *c_bitmap);
+  size_t skiac_bitmap_get_width(skiac_bitmap *c_bitmap);
+  size_t skiac_bitmap_get_height(skiac_bitmap *c_bitmap);
   skiac_shader *skiac_bitmap_get_shader(
       skiac_bitmap *c_bitmap,
       int repeat_x,

@@ -238,17 +238,21 @@ export interface StrokeOptions {
   join?: StrokeJoin
 }
 
-export interface SKRSContext2D extends Omit<CanvasRenderingContext2D, 'drawImage' | 'createPattern' | 'getTransform'> {
+export interface SKRSContext2D
+  extends Omit<
+    CanvasRenderingContext2D,
+    'drawImage' | 'createPattern' | 'getTransform' | 'drawFocusIfNeeded' | 'scrollPathIntoView'
+  > {
   /**
    * @param startAngle The angle at which to begin the gradient, in radians. Angle measurements start vertically above the centre and move around clockwise.
    * @param x The x-axis coordinate of the centre of the gradient.
    * @param y The y-axis coordinate of the centre of the gradient.
    */
   createConicGradient(startAngle: number, x: number, y: number): CanvasGradient
-  drawImage(image: Image, dx: number, dy: number): void
-  drawImage(image: Image, dx: number, dy: number, dw: number, dh: number): void
+  drawImage(image: Image | Canvas, dx: number, dy: number): void
+  drawImage(image: Image | Canvas, dx: number, dy: number, dw: number, dh: number): void
   drawImage(
-    image: Image,
+    image: Image | Canvas,
     sx: number,
     sy: number,
     sw: number,
@@ -281,7 +285,9 @@ export interface SvgCanvas {
   getContent(): Buffer
 }
 
-export interface Canvas {
+export class Canvas {
+  constructor(width: number, height: number, flag?: SvgExportFlag)
+
   width: number
   height: number
   getContext(contextType: '2d', contextAttributes?: { alpha: boolean }): SKRSContext2D

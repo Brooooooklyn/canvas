@@ -92,22 +92,21 @@ impl CanvasGradient {
         &mut conic_gradient.base.colors,
       ),
     };
-    if let Ok(pos) = stops.binary_search_by(|o| o.partial_cmp(&offset).unwrap()) {
-      colors[pos] = color;
-    } else if stops.is_empty() {
+    if stops.last().map(|l| l < &offset).unwrap_or(true) {
       stops.push(offset);
       colors.push(color);
     } else {
       let mut index = 0usize;
       // insert it in sorted order
       for (idx, val) in stops.iter().enumerate() {
-        index = idx;
-        if val > &offset {
+        if val >= &offset {
           break;
+        } else {
+          index = idx + 1;
         }
       }
-      stops.insert(index + 1, offset);
-      colors.insert(index + 1, color);
+      stops.insert(index, offset);
+      colors.insert(index, color);
     }
   }
 
@@ -124,35 +123,17 @@ impl CanvasGradient {
     current_transform: &Transform,
   ) -> result::Result<Shader, SkError> {
     match self {
-      Self::Linear(ref linear_gradient) => {
-        let (x1, y1) = linear_gradient.start_point;
-        let (x2, y2) = linear_gradient.end_point;
-        let mut pt_arr: [f32; 4] = [x1, y1, x2, y2];
-        current_transform.map_points(&mut pt_arr);
-        let sx1 = pt_arr[0];
-        let sy1 = pt_arr[1];
-        let sx2 = pt_arr[2];
-        let sy2 = pt_arr[3];
-        Ok(
-          Shader::new_linear_gradient(&LinearGradient {
-            start_point: (sx1, sy1),
-            end_point: (sx2, sy2),
-            base: linear_gradient.base.clone(),
-          })
-          .ok_or_else(|| SkError::Generic("Get shader of linear gradient failed".to_owned()))?,
-        )
-      }
+      Self::Linear(ref linear_gradient) => Ok(
+        Shader::new_linear_gradient(&LinearGradient {
+          start_point: linear_gradient.start_point,
+          end_point: linear_gradient.end_point,
+          base: linear_gradient.base.clone(),
+        })
+        .ok_or_else(|| SkError::Generic("Get shader of linear gradient failed".to_owned()))?,
+      ),
       Self::Radial(ref radial_gradient) => {
-        let (x1, y1) = radial_gradient.start;
-        let (x2, y2) = radial_gradient.end;
         let r1 = radial_gradient.start_radius;
         let r2 = radial_gradient.end_radius;
-        let mut pt_arr: [f32; 4] = [x1, y1, x2, y2];
-        current_transform.map_points(&mut pt_arr);
-        let sx1 = pt_arr[0];
-        let sy1 = pt_arr[1];
-        let sx2 = pt_arr[2];
-        let sy2 = pt_arr[3];
 
         let sx = current_transform.a;
         let sy = current_transform.d;
@@ -162,8 +143,8 @@ impl CanvasGradient {
         let sr2 = r2 * scale_factor;
 
         let new_radial_gradient = RadialGradient {
-          start: (sx1, sy1),
-          end: (sx2, sy2),
+          start: radial_gradient.start,
+          end: radial_gradient.end,
           start_radius: sr1,
           end_radius: sr2,
           base: radial_gradient.base.clone(),
@@ -208,10 +189,18 @@ fn add_color_stop(ctx: CallContext) -> Result<JsUndefined> {
   let canvas_gradient = ctx.env.unwrap::<Pattern>(&this)?;
   let index: f64 = ctx.get::<JsNumber>(0)?.try_into()?;
   let color_str = ctx.get::<JsString>(1)?.into_utf8()?;
-  let mut parser_input = ParserInput::new(color_str.as_str()?);
+  let color_str = color_str.as_str()?;
+  if color_str.is_empty() {
+    return ctx.env.get_undefined();
+  }
+  let mut parser_input = ParserInput::new(color_str);
   let mut parser = Parser::new(&mut parser_input);
-  let color = CSSColor::parse(&mut parser)
-    .map_err(|e| Error::new(Status::InvalidArg, format!("Invalid color {:?}", e)))?;
+  let color = CSSColor::parse(&mut parser).map_err(|e| {
+    Error::new(
+      Status::InvalidArg,
+      format!("Parse color [{}] error: {:?}", color_str, e),
+    )
+  })?;
   let skia_color = match color {
     CSSColor::CurrentColor => {
       return Err(Error::new(
@@ -225,4 +214,27 @@ fn add_color_stop(ctx: CallContext) -> Result<JsUndefined> {
     canvas_gradient.add_color_stop(index as f32, skia_color);
   }
   ctx.env.get_undefined()
+}
+
+#[test]
+fn test_add_color_stop() {
+  let mut linear_gradient = CanvasGradient::create_linear_gradient(0.0, 0.0, 0.0, 77.0);
+  linear_gradient.add_color_stop(1.0, Color::from_rgba(0, 128, 128, 255));
+  linear_gradient.add_color_stop(0.6, Color::from_rgba(0, 255, 255, 255));
+  linear_gradient.add_color_stop(0.3, Color::from_rgba(176, 199, 45, 255));
+  linear_gradient.add_color_stop(0.0, Color::from_rgba(204, 82, 50, 255));
+  if let CanvasGradient::Linear(linear_gradient) = linear_gradient {
+    assert_eq!(linear_gradient.base.positions, vec![0.0, 0.3, 0.6, 1.0]);
+    assert_eq!(
+      linear_gradient.base.colors,
+      vec![
+        Color::from_rgba(204, 82, 50, 255),
+        Color::from_rgba(176, 199, 45, 255),
+        Color::from_rgba(0, 255, 255, 255),
+        Color::from_rgba(0, 128, 128, 255),
+      ]
+    );
+  } else {
+    unreachable!();
+  }
 }

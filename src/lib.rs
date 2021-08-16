@@ -12,7 +12,7 @@ use std::mem;
 
 use napi::*;
 
-use ctx::{Context, ContextData};
+use ctx::{Context, ContextData, ImageOrCanvas};
 use font::{init_font_regexp, FONT_REGEXP};
 use sk::SkiaDataRef;
 
@@ -22,7 +22,7 @@ use sk::SkiaDataRef;
   not(debug_assertions)
 ))]
 #[global_allocator]
-static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
+static ALLOC: mimalloc_rust::GlobalMiMalloc = mimalloc_rust::GlobalMiMalloc;
 
 mod ctx;
 mod error;
@@ -112,6 +112,7 @@ fn canvas_element_constructor(ctx: CallContext) -> Result<JsUndefined> {
   let width = ctx.get::<JsNumber>(0)?;
   let height = ctx.get::<JsNumber>(1)?;
   let mut this = ctx.this_unchecked::<JsObject>();
+  ctx.env.wrap(&mut this, ImageOrCanvas::Canvas)?;
   this.set_named_property("width", width)?;
   this.set_named_property("height", height)?;
   ctx.env.get_undefined()
@@ -128,19 +129,23 @@ fn get_context(ctx: CallContext) -> Result<JsObject> {
   }
 
   let this = ctx.this_unchecked::<JsObject>();
-  let ctx_js = this.get_named_property::<JsObject>("ctx")?;
+  let ctx_js = this.get_named_property_unchecked::<JsObject>("ctx")?;
   let context_2d = ctx.env.unwrap::<Context>(&ctx_js)?;
 
   if ctx.length == 2 {
     let attrs = ctx.get::<JsObject>(1)?;
     let alpha = attrs
-      .get_named_property::<JsBoolean>("alpha")?
+      .get_named_property_unchecked::<JsBoolean>("alpha")?
       .get_value()?;
     if !alpha {
       let mut fill_paint = context_2d.fill_paint()?;
       fill_paint.set_color(255, 255, 255, 255);
-      let w: f64 = this.get_named_property::<JsNumber>("width")?.try_into()?;
-      let h: f64 = this.get_named_property::<JsNumber>("height")?.try_into()?;
+      let w: f64 = this
+        .get_named_property_unchecked::<JsNumber>("width")?
+        .try_into()?;
+      let h: f64 = this
+        .get_named_property_unchecked::<JsNumber>("height")?
+        .try_into()?;
       context_2d.alpha = false;
       context_2d
         .surface
@@ -288,7 +293,7 @@ fn to_data_url(ctx: CallContext) -> Result<JsString> {
   };
   let data_ref = get_data_ref(&ctx, mime.as_str(), quality)?;
   let mut output = format!("data:{};base64,", &mime);
-  base64::encode_config_buf(data_ref.slice(), base64::URL_SAFE, &mut output);
+  base64::encode_config_buf(data_ref.slice(), base64::STANDARD, &mut output);
   ctx.env.create_string_from_std(output)
 }
 

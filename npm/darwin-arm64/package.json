@@ -1,16 +1,10 @@
 {
   "name": "@napi-rs/canvas-darwin-arm64",
   "version": "0.1.5",
-  "os": [
-    "darwin"
-  ],
-  "cpu": [
-    "arm64"
-  ],
+  "os": ["darwin"],
+  "cpu": ["arm64"],
   "main": "skia.darwin-arm64.node",
-  "files": [
-    "skia.darwin-arm64.node"
-  ],
+  "files": ["skia.darwin-arm64.node"],
   "description": "Canvas for Node.js with skia backend",
   "keywords": [
     "napi-rs",

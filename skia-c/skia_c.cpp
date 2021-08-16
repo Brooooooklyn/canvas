@@ -198,6 +198,18 @@ extern "C"
     return SURFACE_CAST->imageInfo().alphaType();
   }
 
+  void skiac_surface_get_bitmap(skiac_surface *c_surface, skiac_bitmap_info *info)
+  {
+    auto image = SURFACE_CAST->makeImageSnapshot();
+    auto bitmap = new SkBitmap();
+    auto image_info = image->imageInfo();
+    bitmap->allocPixels(image_info);
+    image->readPixels(image_info, bitmap->getPixels(), bitmap->rowBytes(), 0, 0);
+    info->bitmap = reinterpret_cast<skiac_bitmap *>(bitmap);
+    info->width = (size_t)image_info.width();
+    info->height = (size_t)image_info.height();
+  }
+
   // Canvas
 
   void skiac_canvas_clear(skiac_canvas *c_canvas, uint32_t color)
@@ -290,15 +302,21 @@ extern "C"
   void skiac_canvas_draw_surface_rect(
       skiac_canvas *c_canvas,
       skiac_surface *c_surface,
-      float x, float y, float w, float h,
+      float sx,
+      float sy,
+      float sw,
+      float sh,
+      float dx,
+      float dy,
+      float dw,
+      float dh,
       int filter_quality)
   {
     auto image = SURFACE_CAST->makeImageSnapshot();
-    SkPaint paint;
-    auto src = SkRect::MakeXYWH(0, 0, image->width(), image->height());
-    auto dst = SkRect::MakeXYWH(x, y, w, h);
+    auto src = SkRect::MakeXYWH(sx, sy, sw, sh);
+    auto dst = SkRect::MakeXYWH(dx, dy, dw, dh);
     const auto sampling = SkSamplingOptions(SkCubicResampler{1 / 3.0f, 1 / 3.0f});
-    CANVAS_CAST->drawImageRect(image, src, dst, sampling, &paint, SkCanvas::kFast_SrcRectConstraint);
+    CANVAS_CAST->drawImageRect(image, src, dst, sampling, nullptr, SkCanvas::kFast_SrcRectConstraint);
   }
 
   void skiac_canvas_get_line_metrics_or_draw_text(
@@ -632,6 +650,12 @@ extern "C"
   {
     auto new_path = new SkPath(*PATH_CAST);
     return reinterpret_cast<skiac_path *>(new_path);
+  }
+
+  void skiac_path_swap(skiac_path *c_path, skiac_path *other_path)
+  {
+    auto other = reinterpret_cast<SkPath *>(other_path);
+    PATH_CAST->swap(*other);
   }
 
   void skiac_add_path(skiac_path *c_path, skiac_path *other_path, skiac_transform c_transform)
@@ -1097,7 +1121,7 @@ extern "C"
 
   // Bitmap
 
-  skiac_bitmap *skiac_bitmap_make_from_buffer(const uint8_t *ptr, size_t size)
+  void skiac_bitmap_make_from_buffer(const uint8_t *ptr, size_t size, skiac_bitmap_info *bitmap_info)
   {
     auto data = SkData::MakeWithoutCopy(reinterpret_cast<const void *>(ptr), size);
     auto codec = SkCodec::MakeFromData(data);
@@ -1106,10 +1130,12 @@ extern "C"
     auto bitmap = new SkBitmap();
     bitmap->allocPixels(info);
     codec->getPixels(info, bitmap->getPixels(), row_bytes);
-    return reinterpret_cast<skiac_bitmap *>(bitmap);
+    bitmap_info->bitmap = reinterpret_cast<skiac_bitmap *>(bitmap);
+    bitmap_info->width = info.width();
+    bitmap_info->height = info.height();
   }
 
-  skiac_bitmap *skiac_bitmap_make_from_svg(const uint8_t *data, size_t length, float width, float height)
+  void skiac_bitmap_make_from_svg(const uint8_t *data, size_t length, float width, float height, skiac_bitmap_info *bitmap_info)
   {
     auto svg_stream = new SkMemoryStream(data, length, false);
     auto svg_dom = SkSVGDOM::MakeFromStream(*svg_stream);
@@ -1120,12 +1146,12 @@ extern "C"
       auto view_box = svg_root->getViewBox();
       if (!view_box.isValid())
       {
-        return nullptr;
+        return;
       }
       svg_container_size = SkSize::Make(view_box->width(), view_box->height());
       if (svg_container_size.isEmpty())
       {
-        return nullptr;
+        return;
       }
       svg_dom->setContainerSize(svg_container_size);
     }
@@ -1142,7 +1168,9 @@ extern "C"
     bitmap->allocPixels(imageinfo);
     auto sk_svg_canvas = new SkCanvas(*bitmap);
     svg_dom->render(sk_svg_canvas);
-    return reinterpret_cast<skiac_bitmap *>(bitmap);
+    bitmap_info->bitmap = reinterpret_cast<skiac_bitmap *>(bitmap);
+    bitmap_info->width = imageinfo.width();
+    bitmap_info->height = imageinfo.height();
   }
 
   skiac_bitmap *skiac_bitmap_make_from_image_data(uint8_t *ptr, size_t width, size_t height, size_t row_bytes, size_t size, int ct, int at)
@@ -1153,13 +1181,13 @@ extern "C"
     return reinterpret_cast<skiac_bitmap *>(bitmap);
   }
 
-  uint32_t skiac_bitmap_get_width(skiac_bitmap *c_bitmap)
+  size_t skiac_bitmap_get_width(skiac_bitmap *c_bitmap)
   {
     auto bitmap = reinterpret_cast<SkBitmap *>(c_bitmap);
     return bitmap->width();
   }
 
-  uint32_t skiac_bitmap_get_height(skiac_bitmap *c_bitmap)
+  size_t skiac_bitmap_get_height(skiac_bitmap *c_bitmap)
   {
     auto bitmap = reinterpret_cast<SkBitmap *>(c_bitmap);
     return bitmap->height();

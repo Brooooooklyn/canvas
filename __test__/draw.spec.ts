@@ -364,6 +364,38 @@ test('drawImage-svg without width height should be empty image', async (t) => {
   t.deepEqual(outputData.data, Buffer.alloc(outputData.width * outputData.height * 4, 0))
 })
 
+test('draw-image-svg-noto-emoji', async (t) => {
+  const { ctx } = t.context
+  const filePath = './notoemoji-person.svg'
+  const file = await promises.readFile(join(__dirname, filePath))
+  const image = new Image()
+  image.src = file
+  ctx.drawImage(image, 0, 0)
+  await snapshotImage(t)
+})
+
+test('drawImage-another-Canvas', async (t) => {
+  const { ctx } = t.context
+
+  ctx.fillStyle = 'hotpink'
+  ctx.fillRect(10, 10, 100, 100)
+
+  const anotherCanvas = createCanvas(200, 200)
+  const anotherContext = anotherCanvas.getContext('2d')
+  anotherContext.beginPath()
+  anotherContext.ellipse(80, 80, 50, 75, Math.PI / 4, 0, 2 * Math.PI)
+  anotherContext.stroke()
+
+  // Draw the ellipse's line of reflection
+  anotherContext.beginPath()
+  anotherContext.setLineDash([5, 5])
+  anotherContext.moveTo(10, 150)
+  anotherContext.lineTo(150, 10)
+  anotherContext.stroke()
+  ctx.drawImage(anotherCanvas, 150, 150)
+  await snapshotImage(t)
+})
+
 test('ellipse', async (t) => {
   const { ctx } = t.context
   // Draw the ellipse
@@ -836,19 +868,29 @@ test('transform', async (t) => {
 
 test('translate', async (t) => {
   const { ctx } = t.context
-  drawHouse(ctx)
+  drawTranslate(ctx)
+  await snapshotImage(t)
+})
+
+test('translate-with-transform', async (t) => {
+  const { ctx } = t.context
+  ctx.translate(110, 30)
+  ctx.transform(1, 0, 0, 1, -20, -10)
+  ctx.transform(1, 0, 0, 1, 0, 0)
+  ctx.fillStyle = 'red'
+  ctx.fillRect(-30, -10, 80, 80)
   await snapshotImage(t)
 })
 
 test('webp-output', async (t) => {
   const { ctx } = t.context
-  drawHouse(ctx)
+  drawTranslate(ctx)
   await snapshotImage(t, t.context, 'webp')
 })
 
 test('raw output', async (t) => {
   const { ctx, canvas } = t.context
-  drawHouse(ctx)
+  drawTranslate(ctx)
 
   const output = canvas.data()
   const pngFromCanvas = await canvas.encode('png')
@@ -858,7 +900,7 @@ test('raw output', async (t) => {
 
 test('toDataURL', async (t) => {
   const { ctx, canvas } = t.context
-  drawHouse(ctx)
+  drawTranslate(ctx)
 
   const output = canvas.toDataURL()
   const prefix = 'data:image/png;base64,'
@@ -870,7 +912,7 @@ test('toDataURL', async (t) => {
 
 test('toDataURL with quality', async (t) => {
   const { ctx, canvas } = t.context
-  drawHouse(ctx)
+  drawTranslate(ctx)
 
   const output = canvas.toDataURL('image/jpeg', 20)
   const prefix = 'data:image/jpeg;base64,'
@@ -882,7 +924,7 @@ test('toDataURL with quality', async (t) => {
 
 test('toDataURLAsync', async (t) => {
   const { ctx, canvas } = t.context
-  drawHouse(ctx)
+  drawTranslate(ctx)
   const output = await canvas.toDataURLAsync()
   const prefix = 'data:image/png;base64,'
   t.true(output.startsWith(prefix))
@@ -891,7 +933,7 @@ test('toDataURLAsync', async (t) => {
   t.deepEqual(pngBuffer, await canvas.encode('png'))
 })
 
-function drawHouse(ctx: SKRSContext2D) {
+function drawTranslate(ctx: SKRSContext2D) {
   // Moved square
   ctx.translate(110, 30)
   ctx.fillStyle = 'red'
