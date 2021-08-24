@@ -8,8 +8,6 @@
   ],
   "lockFileMaintenance": {
     "enabled": true,
-    "extends": [
-      "schedule:monthly"
-    ]
+    "extends": ["schedule:monthly"]
   }
 }

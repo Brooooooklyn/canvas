@@ -1,6 +1,9 @@
+use std::rc::Rc;
+
 use napi::*;
 
-use crate::image::{Image, ImageData};
+use crate::ctx::{Context, ImageOrCanvas};
+use crate::image::ImageData;
 use crate::pattern::Pattern;
 use crate::sk::*;
 
@@ -8,6 +11,7 @@ use crate::sk::*;
 enum ImageKind {
   ImageData,
   Image,
+  Canvas,
 }
 
 impl From<u32> for ImageKind {
@@ -15,6 +19,7 @@ impl From<u32> for ImageKind {
     match value {
       0 => Self::ImageData,
       1 => Self::Image,
+      2 => Self::Canvas,
       _ => Self::Image,
     }
   }
@@ -26,17 +31,30 @@ pub fn canvas_pattern_constructor(ctx: CallContext) -> Result<JsUndefined> {
   let repetition = ctx.get::<JsUnknown>(1)?;
   let image_kind: ImageKind = ctx.get::<JsNumber>(2)?.get_uint32()?.into();
   let mut this: JsObject = ctx.this_unchecked();
+  let mut bitmap_to_finalize: Option<Rc<Bitmap>> = None;
   let bitmap = match image_kind {
     ImageKind::Image => {
-      let native_object = ctx.env.unwrap::<Image>(&image_or_data)?;
+      let native_object = ctx
+        .env
+        .unwrap::<ImageOrCanvas>(&image_or_data)?
+        .get_image()
+        .unwrap();
       if let Some(bitmap) = native_object.bitmap.as_ref() {
-        bitmap.bitmap
+        bitmap.0.bitmap
       } else {
         return Err(Error::new(
           Status::GenericFailure,
           "Image has not completed".to_string(),
         ));
       }
+    }
+    ImageKind::Canvas => {
+      let ctx_obj = image_or_data.get_named_property_unchecked::<JsObject>("ctx")?;
+      let other_ctx = ctx.env.unwrap::<Context>(&ctx_obj)?;
+      bitmap_to_finalize
+        .insert(Rc::new(other_ctx.surface.get_bitmap()))
+        .0
+        .bitmap
     }
     ImageKind::ImageData => {
       let native_object = ctx.env.unwrap::<ImageData>(&image_or_data)?;
@@ -51,7 +69,11 @@ pub fn canvas_pattern_constructor(ctx: CallContext) -> Result<JsUndefined> {
         AlphaType::Unpremultiplied,
       );
       let bitmap_object = ctx.env.create_external(bitmap, Some(image_size as i64))?;
-      let bitmap = ctx.env.get_value_external::<Bitmap>(&bitmap_object)?.bitmap;
+      let bitmap = ctx
+        .env
+        .get_value_external::<Bitmap>(&bitmap_object)?
+        .0
+        .bitmap;
       // wrap Bitmap to `this`, prevent it to be dropped
       this.set_named_property("_bitmap", bitmap_object)?;
       bitmap
@@ -88,6 +110,7 @@ pub fn canvas_pattern_constructor(ctx: CallContext) -> Result<JsUndefined> {
       bitmap,
       repeat_x,
       repeat_y,
+      bitmap_to_finalize,
     }),
   )?;
   ctx.env.get_undefined()

@@ -122,6 +122,8 @@ CanvasRenderingContext2D.prototype.createPattern = function createPattern(image,
     return pattern
   } else if (image instanceof Image) {
     return new CanvasPattern(image, repetition, 1)
+  } else if (image instanceof CanvasElement || image instanceof SVGCanvas) {
+    return new CanvasPattern(image, repetition, 2)
   }
   throw TypeError('Image should be instance of ImageData or Image')
 }
@@ -197,6 +199,12 @@ function createCanvas(width, height, flag) {
   return canvasElement
 }
 
+class Canvas {
+  constructor(width, height, flag) {
+    return createCanvas(width, height, flag)
+  }
+}
+
 if (!process.env.DISABLE_SYSTEM_FONTS_LOAD) {
   GlobalFontsSingleton.loadSystemFonts()
   FamilyNamesSet = JSON.parse(GlobalFontsSingleton._families)
@@ -207,6 +215,7 @@ function convertSVGTextToPath(input) {
 }
 
 module.exports = {
+  Canvas,
   createCanvas,
   Path2D,
   ImageData,

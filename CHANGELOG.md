@@ -1,16 +1,12 @@
 ## [0.1.5](https://github.com/Brooooooklyn/canvas/compare/v0.1.4...v0.1.5) (2021-08-13)
 
-
 ### Bug Fixes
 
-* default value of FilterQuality in SamplingOptions should be high ([389aa26](https://github.com/Brooooooklyn/canvas/commit/389aa26fda79dfca15b6f2d87fbd03fe92f28758))
-
+- default value of FilterQuality in SamplingOptions should be high ([389aa26](https://github.com/Brooooooklyn/canvas/commit/389aa26fda79dfca15b6f2d87fbd03fe92f28758))
 
 ### Features
 
-* add resize SVG demo ([bf8388d](https://github.com/Brooooooklyn/canvas/commit/bf8388ddab06474a01362829437bcfc7df4bd248))
-
-
+- add resize SVG demo ([bf8388d](https://github.com/Brooooooklyn/canvas/commit/bf8388ddab06474a01362829437bcfc7df4bd248))
 
 ## [0.1.4](https://github.com/Brooooooklyn/canvas/compare/v0.1.3...v0.1.4) (2021-08-11)
 

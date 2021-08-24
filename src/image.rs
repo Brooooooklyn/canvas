@@ -1,8 +1,11 @@
 use std::mem::ManuallyDrop;
 use std::slice;
+use std::str;
 
+use base64::decode;
 use napi::*;
 
+use crate::ctx::ImageOrCanvas;
 use crate::sk::Bitmap;
 
 #[derive(Debug, Clone)]
@@ -193,14 +196,14 @@ fn image_constructor(ctx: CallContext) -> Result<JsUndefined> {
   };
   let mut this = ctx.this_unchecked::<JsObject>();
   this.set_named_property("_src", ctx.env.get_undefined()?)?;
-  ctx.env.wrap(&mut this, js_image)?;
+  ctx.env.wrap(&mut this, ImageOrCanvas::Image(js_image))?;
   ctx.env.get_undefined()
 }
 
 #[js_function]
 fn get_width(ctx: CallContext) -> Result<JsNumber> {
   let this = ctx.this_unchecked::<JsObject>();
-  let image = ctx.env.unwrap::<Image>(&this)?;
+  let image = ctx.env.unwrap::<ImageOrCanvas>(&this)?.get_image().unwrap();
 
   ctx
     .env
@@ -210,18 +213,18 @@ fn get_width(ctx: CallContext) -> Result<JsNumber> {
 #[js_function]
 fn get_natural_width(ctx: CallContext) -> Result<JsNumber> {
   let this = ctx.this_unchecked::<JsObject>();
-  let image = ctx.env.unwrap::<Image>(&this)?;
+  let image = ctx.env.unwrap::<ImageOrCanvas>(&this)?.get_image().unwrap();
 
   ctx
     .env
-    .create_double(image.bitmap.as_ref().map(|b| b.width).unwrap_or(0) as f64)
+    .create_double(image.bitmap.as_ref().map(|b| b.0.width).unwrap_or(0) as f64)
 }
 
 #[js_function(1)]
 fn set_width(ctx: CallContext) -> Result<JsUndefined> {
   let width = ctx.get::<JsNumber>(0)?.get_double()?;
   let this = ctx.this_unchecked::<JsObject>();
-  let image = ctx.env.unwrap::<Image>(&this)?;
+  let image = ctx.env.unwrap::<ImageOrCanvas>(&this)?.get_image().unwrap();
   if (width - image.width).abs() > f64::EPSILON {
     image.width = width;
     image.need_regenerate_bitmap = true;
@@ -232,7 +235,7 @@ fn set_width(ctx: CallContext) -> Result<JsUndefined> {
 #[js_function]
 fn get_height(ctx: CallContext) -> Result<JsNumber> {
   let this = ctx.this_unchecked::<JsObject>();
-  let image = ctx.env.unwrap::<Image>(&this)?;
+  let image = ctx.env.unwrap::<ImageOrCanvas>(&this)?.get_image().unwrap();
 
   ctx.env.create_double(if image.height <= 0.0 {
     0.0
@@ -244,18 +247,18 @@ fn get_height(ctx: CallContext) -> Result<JsNumber> {
 #[js_function]
 fn get_natural_height(ctx: CallContext) -> Result<JsNumber> {
   let this = ctx.this_unchecked::<JsObject>();
-  let image = ctx.env.unwrap::<Image>(&this)?;
+  let image = ctx.env.unwrap::<ImageOrCanvas>(&this)?.get_image().unwrap();
 
   ctx
     .env
-    .create_double(image.bitmap.as_ref().map(|b| b.height).unwrap_or(0) as f64)
+    .create_double(image.bitmap.as_ref().map(|b| b.0.height).unwrap_or(0) as f64)
 }
 
 #[js_function(1)]
 fn set_height(ctx: CallContext) -> Result<JsUndefined> {
   let height = ctx.get::<JsNumber>(0)?.get_double()?;
   let this = ctx.this_unchecked::<JsObject>();
-  let image = ctx.env.unwrap::<Image>(&this)?;
+  let image = ctx.env.unwrap::<ImageOrCanvas>(&this)?.get_image().unwrap();
   if (image.height - height).abs() > f64::EPSILON {
     image.height = height;
     image.need_regenerate_bitmap = true;
@@ -266,7 +269,7 @@ fn set_height(ctx: CallContext) -> Result<JsUndefined> {
 #[js_function]
 fn get_complete(ctx: CallContext) -> Result<JsBoolean> {
   let this = ctx.this_unchecked::<JsObject>();
-  let image = ctx.env.unwrap::<Image>(&this)?;
+  let image = ctx.env.unwrap::<ImageOrCanvas>(&this)?.get_image().unwrap();
 
   ctx.env.get_boolean(image.complete)
 }
@@ -274,7 +277,7 @@ fn get_complete(ctx: CallContext) -> Result<JsBoolean> {
 #[js_function]
 fn get_alt(ctx: CallContext) -> Result<JsString> {
   let this = ctx.this_unchecked::<JsObject>();
-  let image = ctx.env.unwrap::<Image>(&this)?;
+  let image = ctx.env.unwrap::<ImageOrCanvas>(&this)?.get_image().unwrap();
 
   ctx.env.create_string(image.alt.as_str())
 }
@@ -282,7 +285,7 @@ fn get_alt(ctx: CallContext) -> Result<JsString> {
 #[js_function(1)]
 fn set_alt(ctx: CallContext) -> Result<JsUndefined> {
   let this = ctx.this_unchecked::<JsObject>();
-  let mut image = ctx.env.unwrap::<Image>(&this)?;
+  let image = ctx.env.unwrap::<ImageOrCanvas>(&this)?.get_image().unwrap();
   let arg = ctx.get::<JsString>(0)?.into_utf8()?;
   image.alt = arg.as_str()?.to_string();
 
@@ -300,7 +303,7 @@ fn set_src(ctx: CallContext) -> Result<JsUndefined> {
   let mut this = ctx.this_unchecked::<JsObject>();
   let src_arg = ctx.get::<JsBuffer>(0)?;
   let src_data = src_arg.into_value()?;
-  let image = ctx.env.unwrap::<Image>(&this)?;
+  let image = ctx.env.unwrap::<ImageOrCanvas>(&this)?.get_image().unwrap();
 
   let length = (&src_data).len();
   let data_ref: &[u8] = &src_data;
@@ -325,24 +328,46 @@ fn set_src(ctx: CallContext) -> Result<JsUndefined> {
     let bitmap = Bitmap::from_svg_data(src_data.as_ptr(), length);
     if let Some(b) = bitmap.as_ref() {
       if (image.width - -1.0).abs() < f64::EPSILON {
-        image.width = b.width as f64;
+        image.width = b.0.width as f64;
       }
       if (image.height - -1.0).abs() < f64::EPSILON {
-        image.height = b.height as f64;
+        image.height = b.0.height as f64;
       }
     }
     image.bitmap = bitmap;
   } else {
-    let bitmap = Bitmap::from_buffer(src_data.as_ptr() as *mut u8, length);
-    if (image.width - -1.0).abs() < f64::EPSILON {
-      image.width = bitmap.width as f64;
+    let bitmap = if str::from_utf8(&data_ref[0..10]) == Ok("data:image") {
+      let data_str = str::from_utf8(data_ref)
+        .map_err(|e| Error::new(Status::InvalidArg, format!("Decode data url failed {}", e)))?;
+      if let Some(base64_str) = data_str.split(',').last() {
+        let image_binary = decode(base64_str)
+          .map_err(|e| Error::new(Status::InvalidArg, format!("Decode data url failed {}", e)))?;
+        Some(Bitmap::from_buffer(
+          image_binary.as_ptr() as *mut u8,
+          image_binary.len(),
+        ))
+      } else {
+        None
+      }
+    } else {
+      Some(Bitmap::from_buffer(src_data.as_ptr() as *mut u8, length))
+    };
+    if let Some(ref b) = bitmap {
+      if (image.width - -1.0).abs() < f64::EPSILON {
+        image.width = b.0.width as f64;
+      }
+      if (image.height - -1.0).abs() < f64::EPSILON {
+        image.height = b.0.height as f64;
+      }
     }
-    if (image.height - -1.0).abs() < f64::EPSILON {
-      image.height = bitmap.height as f64;
-    }
-    image.bitmap = Some(bitmap)
+    image.bitmap = bitmap
   }
 
   this.set_named_property("_src", src_data.into_raw())?;
+  let onload = this.get_named_property_unchecked::<JsUnknown>("onload")?;
+  if onload.get_type()? == ValueType::Function {
+    let onload_func = unsafe { onload.cast::<JsFunction>() };
+    onload_func.call_without_args(Some(&this))?;
+  }
   ctx.env.get_undefined()
 }
