@@ -21,7 +21,7 @@ for (const pathObject of tiger) {
 }
 
 canvas
-  .png()
+  .encode('png')
   .then((data) => promises.writeFile(join(__dirname, 'tiger.png'), data))
   .catch((e) => {
     console.error(e)
