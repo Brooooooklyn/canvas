@@ -1,4 +1,5 @@
 const { execSync } = require('child_process')
+const { readFileSync, writeFileSync } = require('fs')
 const path = require('path')
 const { platform } = require('os')
 
@@ -202,6 +203,19 @@ switch (TARGET_TRIPLE) {
 const OUTPUT_PATH = path.join('out', 'Static')
 
 GN_ARGS.push(`cc=${CC}`, `cxx=${CXX}`, `extra_cflags_cc=[${ExtraCflagsCC}]`, ExtraSkiaBuildFlag)
+
+const SkLoadICUCppFilePath = path.join(__dirname, '..', 'skia', 'third_party', 'icu', 'SkLoadICU.cpp')
+const CODE_TO_PATCH = 'good = load_from(executable_directory()) || load_from(library_directory());'
+const CODE_I_WANT = 'good = load_from(library_directory()) || load_from(executable_directory());'
+
+if (PLATFORM_NAME === 'win32') {
+  const content = readFileSync(SkLoadICUCppFilePath, 'utf8')
+  const patch = content.replace(CODE_TO_PATCH, CODE_I_WANT)
+  writeFileSync(SkLoadICUCppFilePath, patch)
+  process.once('beforeExit', () => {
+    writeFileSync(SkLoadICUCppFilePath, content)
+  })
+}
 
 exec(
   `${process.env.GN_EXE ? process.env.GN_EXE : path.join('bin', 'gn')} gen ${OUTPUT_PATH} --args='${GN_ARGS.join(
