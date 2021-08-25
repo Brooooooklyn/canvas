@@ -1,3 +1,6 @@
+const { platform, homedir } = require('os')
+const { join } = require('path')
+
 const { loadBinding } = require('@node-rs/helper')
 
 /**
@@ -207,6 +210,20 @@ class Canvas {
 
 if (!process.env.DISABLE_SYSTEM_FONTS_LOAD) {
   GlobalFontsSingleton.loadSystemFonts()
+  const platformName = platform()
+  const homedirPath = homedir()
+  switch (platformName) {
+    case 'win32':
+      GlobalFontsSingleton.loadFontsFromDir(join(homedirPath, 'AppData', 'Local', 'Microsoft', 'Windows', 'Fonts'))
+      break
+    case 'darwin':
+      GlobalFontsSingleton.loadFontsFromDir(join(homedirPath, 'Library', 'Fonts'))
+      break
+    case 'linux':
+      GlobalFontsSingleton.loadFontsFromDir(join('usr', 'local', 'share', 'fonts'))
+      GlobalFontsSingleton.loadFontsFromDir(join(homedirPath, '.fonts'))
+      break
+  }
   FamilyNamesSet = JSON.parse(GlobalFontsSingleton._families)
 }
 
