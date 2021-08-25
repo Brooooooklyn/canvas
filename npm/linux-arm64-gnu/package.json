@@ -1,10 +1,16 @@
 {
   "name": "@napi-rs/canvas-linux-arm64-gnu",
-  "version": "0.1.5",
-  "os": ["linux"],
-  "cpu": ["arm64"],
+  "version": "0.1.6",
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "arm64"
+  ],
   "main": "skia.linux-arm64-gnu.node",
-  "files": ["skia.linux-arm64-gnu.node"],
+  "files": [
+    "skia.linux-arm64-gnu.node"
+  ],
   "description": "Canvas for Node.js with skia backend",
   "keywords": [
     "napi-rs",
