@@ -102,6 +102,13 @@ impl Font {
           family: family
             .split(',')
             .map(|string| string.trim())
+            .map(|s| {
+              if s.starts_with('"') || s.starts_with('\'') {
+                unsafe { s.get_unchecked(1..s.len() - 1) }
+              } else {
+                s
+              }
+            })
             .collect::<Vec<&str>>()
             .join(","),
         })
@@ -514,7 +521,15 @@ fn test_font_new() {
       "50px \"Helvetica Neue\", sans-serif",
       Font {
         size: 50.0,
-        family: "\"Helvetica Neue\",sans-serif".to_owned(),
+        family: "Helvetica Neue,sans-serif".to_owned(),
+        ..Default::default()
+      },
+    ),
+    (
+      "100px 'Microsoft YaHei'",
+      Font {
+        size: 100.0,
+        family: "Microsoft YaHei".to_owned(),
         ..Default::default()
       },
     ),
