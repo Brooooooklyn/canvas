@@ -270,7 +270,7 @@ mod ffi {
 
     pub fn skiac_canvas_set_transform(canvas: *mut skiac_canvas, ts: skiac_transform);
 
-    pub fn skiac_canvas_concat(canvas: *mut skiac_canvas, ts: skiac_transform);
+    pub fn skiac_canvas_concat(canvas: *mut skiac_canvas, ts: *mut skiac_matrix);
 
     pub fn skiac_canvas_scale(canvas: *mut skiac_canvas, sx: f32, sy: f32);
 
@@ -603,9 +603,15 @@ mod ffi {
 
     pub fn skiac_matrix_create() -> *mut skiac_matrix;
 
+    pub fn skiac_matrix_new(a: f32, b: f32, c: f32, d: f32, e: f32, f: f32) -> *mut skiac_matrix;
+
+    pub fn skiac_matrix_from_ts(ts: *mut skiac_transform) -> *mut skiac_matrix;
+
     pub fn skiac_matrix_create_rotated(rotation: f32, x: f32, y: f32) -> *mut skiac_matrix;
 
     pub fn skiac_matrix_clone(matrix: *mut skiac_matrix) -> *mut skiac_matrix;
+
+    pub fn skiac_matrix_pre_concat_transform(matrix: *mut skiac_matrix, ts: skiac_transform);
 
     pub fn skiac_matrix_pre_translate(matrix: *mut skiac_matrix, dx: f32, dy: f32);
 
@@ -1781,9 +1787,9 @@ impl Canvas {
   }
 
   #[inline]
-  pub fn concat(&mut self, ts: Transform) {
+  pub fn concat(&mut self, ts: &Matrix) {
     unsafe {
-      ffi::skiac_canvas_concat(self.0, ts.into());
+      ffi::skiac_canvas_concat(self.0, ts.0);
     }
   }
 
@@ -2346,7 +2352,7 @@ impl Path {
     rotated.pre_translate(-x, -y);
     let unrotated = rotated.invert().unwrap();
 
-    self.transform_matrix(&unrotated);
+    self.transform(&unrotated.get_transform());
 
     // draw in 2 180 degree segments because trying to draw all 360 degrees at once
     // draws nothing.
@@ -2356,10 +2362,10 @@ impl Path {
       let half_sweep = sweep_deg / 2.0;
       self.arc_to(left, top, right, bottom, start_deg, half_sweep, false);
       self.arc_to(
-        x - radius_x,
-        y - radius_y,
-        x + radius_x,
-        y + radius_y,
+        left,
+        top,
+        right,
+        bottom,
         start_deg + half_sweep,
         half_sweep,
         false,
@@ -2368,7 +2374,7 @@ impl Path {
       self.arc_to(left, top, right, bottom, start_deg, sweep_deg, false);
     }
 
-    self.transform_matrix(&rotated);
+    self.transform(&rotated.get_transform());
   }
 
   #[inline(always)]
@@ -2765,6 +2771,17 @@ impl Matrix {
   }
 
   #[inline(always)]
+  pub fn new(a: f32, b: f32, c: f32, d: f32, e: f32, f: f32) -> Self {
+    Self(unsafe { ffi::skiac_matrix_new(a, b, c, d, e, f) })
+  }
+
+  #[inline(always)]
+  pub fn from_transform(ts: &Transform) -> Self {
+    let mut c_ts: ffi::skiac_transform = ts.into();
+    Matrix(unsafe { ffi::skiac_matrix_from_ts(&mut c_ts) })
+  }
+
+  #[inline(always)]
   pub fn rotated(radians: f32, x: f32, y: f32) -> Self {
     Matrix(unsafe { ffi::skiac_matrix_create_rotated(radians, x, y) })
   }
@@ -2775,12 +2792,17 @@ impl Matrix {
   }
 
   #[inline(always)]
+  pub fn pre_transform(&mut self, ts: &Transform) {
+    unsafe { ffi::skiac_matrix_pre_concat_transform(self.0, ts.into()) }
+  }
+
+  #[inline(always)]
   pub fn pre_rotate(&mut self, degrees: f32) {
     unsafe { ffi::skiac_matrix_pre_rotate(self.0, degrees) };
   }
 
   #[inline(always)]
-  pub fn into_transform(self) -> Transform {
+  pub fn get_transform(&self) -> Transform {
     unsafe { ffi::skiac_matrix_to_transform(self.0) }.into()
   }
 

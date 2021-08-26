@@ -137,16 +137,11 @@ impl CanvasGradient {
       Self::Radial(ref radial_gradient) => {
         // From the spec: "The points in the linear gradient must be transformed
         // as described by the current transformation matrix when rendering."
-        let sx = current_transform.a;
-        let sy = current_transform.d;
-        let scale_factor = (sx.abs() + sy.abs()) / 2.0;
-        let sr1 = radial_gradient.start_radius * scale_factor;
-        let sr2 = radial_gradient.end_radius * scale_factor;
         let new_radial_gradient = RadialGradient {
           start: radial_gradient.start,
           end: radial_gradient.end,
-          start_radius: sr1,
-          end_radius: sr2,
+          start_radius: radial_gradient.start_radius,
+          end_radius: radial_gradient.end_radius,
           base: radial_gradient.base.clone(),
         };
 

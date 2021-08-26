@@ -200,7 +200,7 @@ switch (TARGET_TRIPLE) {
     if (PLATFORM_NAME !== 'win32') {
       ExtraCflagsCC += ',"-march=haswell"'
     } else {
-      ExtraCflagsCC += '\\,"-march=haswell\\"'
+      ExtraCflagsCC += ',\\"-march=haswell\\"'
     }
     break
   default:

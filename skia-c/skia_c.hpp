@@ -215,7 +215,7 @@ extern "C"
   // Canvas
   void skiac_canvas_clear(skiac_canvas *c_canvas, uint32_t color);
   void skiac_canvas_set_transform(skiac_canvas *c_canvas, skiac_transform c_ts);
-  void skiac_canvas_concat(skiac_canvas *c_canvas, skiac_transform c_ts);
+  void skiac_canvas_concat(skiac_canvas *c_canvas, skiac_matrix *c_matrix);
   void skiac_canvas_scale(skiac_canvas *c_canvas, float sx, float sy);
   void skiac_canvas_translate(skiac_canvas *c_canvas, float dx, float dy);
   void skiac_canvas_rotate(skiac_canvas *c_canvas, float degrees);
@@ -377,9 +377,12 @@ extern "C"
 
   // Matrix
   skiac_matrix *skiac_matrix_create();
+  skiac_matrix *skiac_matrix_new(float a, float b, float c, float d, float e, float f);
+  skiac_matrix *skiac_matrix_from_ts(const skiac_transform *c_ts);
   skiac_matrix *skiac_matrix_create_rotated(float rotation, float x, float y);
   skiac_matrix *skiac_matrix_clone(skiac_matrix *c_matrix);
   void skiac_matrix_pre_translate(skiac_matrix *c_matrix, float dx, float dy);
+  void skiac_matrix_pre_concat_transform(skiac_matrix *c_matrix, skiac_transform c_ts);
   void skiac_matrix_pre_rotate(skiac_matrix *c_matrix, float degrees);
   bool skiac_matrix_invert(skiac_matrix *c_matrix, skiac_matrix *inverse);
   skiac_transform skiac_matrix_to_transform(skiac_matrix *c_matrix);

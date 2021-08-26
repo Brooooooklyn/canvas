@@ -295,8 +295,18 @@ impl Context {
   }
 
   #[inline(always)]
-  pub fn stroke(&mut self, path: Option<&Path>) -> Result<()> {
-    let p = path.unwrap_or(&self.path);
+  pub fn stroke(&mut self, path: Option<&mut Path>) -> Result<()> {
+    let inverted = self.surface.canvas.get_transform_matrix().invert().unwrap();
+    let p = match path {
+      Some(path) => {
+        path.transform_matrix(&inverted);
+        path
+      }
+      None => {
+        self.path.transform_matrix(&inverted);
+        &self.path
+      }
+    };
     let stroke_paint = self.stroke_paint()?;
     if let Some(shadow_paint) = self.shadow_blur_paint(&stroke_paint) {
       let surface = &mut self.surface;
@@ -321,11 +331,14 @@ impl Context {
     path: Option<&mut Path>,
     fill_rule: FillType,
   ) -> result::Result<(), SkError> {
+    let inverted = self.surface.canvas.get_transform_matrix().invert().unwrap();
     let p = if let Some(p) = path {
       p.set_fill_type(fill_rule);
+      p.transform_matrix(&inverted);
       p
     } else {
       self.path.set_fill_type(fill_rule);
+      self.path.transform_matrix(&inverted);
       &self.path
     };
     let fill_paint = self.fill_paint()?;
@@ -608,11 +621,11 @@ impl Context {
     let invert = current_transform
       .invert()
       .ok_or_else(|| SkError::Generic("Invert matrix failed".to_owned()))?;
-    surface.canvas.concat(invert.into_transform());
+    surface.canvas.concat(&invert);
     let mut shadow_offset = current_transform.clone();
     shadow_offset.pre_translate(shadow_offset_x, shadow_offset_y);
-    surface.canvas.concat(shadow_offset.into_transform());
-    surface.canvas.concat(current_transform.into_transform());
+    surface.canvas.concat(&shadow_offset);
+    surface.canvas.concat(&current_transform);
     Ok(())
   }
 }
@@ -1356,10 +1369,10 @@ fn put_image_data(ctx: CallContext) -> Result<JsUndefined> {
     if dirty_width <= 0f32 || dirty_height <= 0f32 {
       return ctx.env.get_undefined();
     }
-    let inverted = context_2d.surface.canvas.get_transform().invert();
+    let inverted = context_2d.surface.canvas.get_transform_matrix().invert();
     context_2d.surface.canvas.save();
     if let Some(inverted) = inverted {
-      context_2d.surface.canvas.concat(inverted);
+      context_2d.surface.canvas.concat(&inverted);
     };
     context_2d.surface.canvas.write_pixels_dirty(
       image_data,
@@ -1612,7 +1625,7 @@ fn stroke(ctx: CallContext) -> Result<JsUndefined> {
     Some(path)
   };
 
-  context_2d.stroke(path.as_deref())?;
+  context_2d.stroke(path)?;
 
   ctx.env.get_undefined()
 }
@@ -1624,12 +1637,7 @@ fn translate(ctx: CallContext) -> Result<JsUndefined> {
 
   let this = ctx.this_unchecked::<JsObject>();
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
-
-  context_2d
-    .path
-    .transform(&Transform::new(1.0, 0.0, 0.0, 1.0, -x, -y));
   context_2d.surface.canvas.translate(x, y);
-
   ctx.env.get_undefined()
 }
 
@@ -1645,12 +1653,10 @@ fn transform(ctx: CallContext) -> Result<JsUndefined> {
   let this = ctx.this_unchecked::<JsObject>();
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
 
-  let new_transform = Transform::new(a, b, c, d, e, f);
-  let inverted = new_transform
-    .invert()
-    .ok_or_else(|| Error::new(Status::InvalidArg, "Invalid transform".to_owned()))?;
-  context_2d.path.transform(&inverted);
-  context_2d.surface.canvas.concat(new_transform);
+  context_2d
+    .surface
+    .canvas
+    .concat(&Matrix::new(a, c, e, b, d, f));
   ctx.env.get_undefined()
 }
 

@@ -41,7 +41,7 @@ test('transform-with-state', async (t) => {
   await snapshotImage(t, { canvas, ctx })
 })
 
-test.only('transform-with-radial-gradient', async (t) => {
+test('transform-with-radial-gradient', async (t) => {
   const canvas = createCanvas(256, 256)
   const ctx = canvas.getContext('2d')
   ctx.translate(128.5, 128.5)
@@ -51,6 +51,8 @@ test.only('transform-with-radial-gradient', async (t) => {
   ctx.save()
   ctx.transform(1, 0, 0, 0.9090909090909091, 0, 0)
   ctx.arc(0, 0, 110, 0, 6.283185307179586, false)
+  ctx.restore()
+  ctx.save()
   const p = ctx.createRadialGradient(0.5, 0.5, 0, 0.2, 0.4, 0.5)
   p.addColorStop(1, 'rgba(0, 0, 255, 1)')
   p.addColorStop(0, 'rgba(200, 200, 200, 0)')

@@ -222,9 +222,9 @@ extern "C"
     CANVAS_CAST->setMatrix(conv_from_transform(c_ts));
   }
 
-  void skiac_canvas_concat(skiac_canvas *c_canvas, skiac_transform c_ts)
+  void skiac_canvas_concat(skiac_canvas *c_canvas, skiac_matrix *c_matrix)
   {
-    CANVAS_CAST->concat(conv_from_transform(c_ts));
+    CANVAS_CAST->concat(*MATRIX_CAST);
   }
 
   void skiac_canvas_scale(skiac_canvas *c_canvas, float sx, float sy)
@@ -825,7 +825,7 @@ extern "C"
   void skiac_path_transform(skiac_path *c_path, skiac_transform c_transform)
   {
     SkMatrix matrix = conv_from_transform(c_transform);
-    PATH_CAST->transform(matrix, SkApplyPerspectiveClip::kYes);
+    PATH_CAST->transform(matrix, PATH_CAST, SkApplyPerspectiveClip::kYes);
   }
 
   void skiac_path_transform_matrix(skiac_path *c_path, skiac_matrix *c_matrix)
@@ -943,7 +943,6 @@ extern "C"
   {
     const SkPoint startPoint = {c_start_point.x, c_start_point.y};
     const SkPoint endPoint = {c_end_point.x, c_end_point.y};
-    const auto ts = conv_from_transform(c_ts);
     auto shader = SkGradientShader::MakeTwoPointConical(
                       startPoint,
                       start_radius,
@@ -954,7 +953,7 @@ extern "C"
                       count,
                       (SkTileMode)tile_mode,
                       flags,
-                      &ts)
+                      nullptr)
                       .release();
 
     if (shader)
@@ -1039,6 +1038,19 @@ extern "C"
     return reinterpret_cast<skiac_matrix *>(new SkMatrix());
   }
 
+  skiac_matrix *skiac_matrix_new(float a, float b, float c, float d, float e, float f)
+  {
+    auto m = new SkMatrix(SkMatrix::MakeAll(a, b, c, d, e, f, 0, 0, 1));
+    return reinterpret_cast<skiac_matrix *>(m);
+  }
+
+  skiac_matrix *skiac_matrix_from_ts(const skiac_transform *c_ts)
+  {
+    auto matrix = conv_from_transform(*c_ts);
+    auto m = new SkMatrix(matrix);
+    return reinterpret_cast<skiac_matrix *>(m);
+  }
+
   skiac_matrix *skiac_matrix_create_rotated(float rotation, float x, float y)
   {
     auto matrix = new SkMatrix();
@@ -1054,6 +1066,12 @@ extern "C"
   void skiac_matrix_pre_translate(skiac_matrix *c_matrix, float dx, float dy)
   {
     MATRIX_CAST->preTranslate(dx, dy);
+  }
+
+  void skiac_matrix_pre_concat_transform(skiac_matrix *c_matrix, skiac_transform c_ts)
+  {
+    auto ts = conv_from_transform(c_ts);
+    MATRIX_CAST->preConcat(ts);
   }
 
   void skiac_matrix_pre_rotate(skiac_matrix *c_matrix, float degrees)
