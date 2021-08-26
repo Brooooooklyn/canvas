@@ -1,4 +1,4 @@
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryFrom;
 use std::f32::consts::PI;
 use std::mem;
 use std::rc::Rc;
@@ -619,8 +619,8 @@ impl Context {
 
 #[js_function(4)]
 fn context_2d_constructor(ctx: CallContext) -> Result<JsUndefined> {
-  let width: u32 = ctx.get::<JsNumber>(0)?.try_into()?;
-  let height: u32 = ctx.get::<JsNumber>(1)?.try_into()?;
+  let width = ctx.get::<JsNumber>(0)?.get_uint32()?;
+  let height = ctx.get::<JsNumber>(1)?.get_uint32()?;
   let font_collection_js = ctx.get::<JsObject>(2)?;
   let font_collection = ctx.env.unwrap::<Rc<FontCollection>>(&font_collection_js)?;
 
@@ -645,24 +645,19 @@ fn context_2d_constructor(ctx: CallContext) -> Result<JsUndefined> {
 fn arc(ctx: CallContext) -> Result<JsUndefined> {
   let this = ctx.this_unchecked::<JsObject>();
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
-  let center_x: f64 = ctx.get::<JsNumber>(0)?.try_into()?;
-  let center_y: f64 = ctx.get::<JsNumber>(1)?.try_into()?;
-  let radius: f64 = ctx.get::<JsNumber>(2)?.try_into()?;
-  let start_angle: f64 = ctx.get::<JsNumber>(3)?.try_into()?;
-  let end_angle: f64 = ctx.get::<JsNumber>(4)?.try_into()?;
+  let center_x = ctx.get::<JsNumber>(0)?.get_double()? as f32;
+  let center_y = ctx.get::<JsNumber>(1)?.get_double()? as f32;
+  let radius = ctx.get::<JsNumber>(2)?.get_double()? as f32;
+  let start_angle = ctx.get::<JsNumber>(3)?.get_double()? as f32;
+  let end_angle = ctx.get::<JsNumber>(4)?.get_double()? as f32;
   let from_end = if ctx.length == 6 {
     ctx.get::<JsBoolean>(5)?.get_value()?
   } else {
     false
   };
-  context_2d.path.arc(
-    center_x as f32,
-    center_y as f32,
-    radius as f32,
-    start_angle as f32,
-    end_angle as f32,
-    from_end,
-  );
+  context_2d
+    .path
+    .arc(center_x, center_y, radius, start_angle, end_angle, from_end);
   ctx.env.get_undefined()
 }
 
@@ -671,19 +666,15 @@ fn arc_to(ctx: CallContext) -> Result<JsUndefined> {
   let this = ctx.this_unchecked::<JsObject>();
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
 
-  let ctrl_x: f64 = ctx.get::<JsNumber>(0)?.try_into()?;
-  let ctrl_y: f64 = ctx.get::<JsNumber>(1)?.try_into()?;
-  let to_x: f64 = ctx.get::<JsNumber>(2)?.try_into()?;
-  let to_y: f64 = ctx.get::<JsNumber>(3)?.try_into()?;
-  let radius: f64 = ctx.get::<JsNumber>(4)?.try_into()?;
+  let ctrl_x = ctx.get::<JsNumber>(0)?.get_double()? as f32;
+  let ctrl_y = ctx.get::<JsNumber>(1)?.get_double()? as f32;
+  let to_x = ctx.get::<JsNumber>(2)?.get_double()? as f32;
+  let to_y = ctx.get::<JsNumber>(3)?.get_double()? as f32;
+  let radius = ctx.get::<JsNumber>(4)?.get_double()? as f32;
 
-  context_2d.path.arc_to_tangent(
-    ctrl_x as f32,
-    ctrl_y as f32,
-    to_x as f32,
-    to_y as f32,
-    radius as f32,
-  );
+  context_2d
+    .path
+    .arc_to_tangent(ctrl_x, ctrl_y, to_x, to_y, radius);
   ctx.env.get_undefined()
 }
 
@@ -704,21 +695,14 @@ fn bezier_curve_to(ctx: CallContext) -> Result<JsUndefined> {
   let this = ctx.this_unchecked::<JsObject>();
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
 
-  let cp1x: f64 = ctx.get::<JsNumber>(0)?.try_into()?;
-  let cp1y: f64 = ctx.get::<JsNumber>(1)?.try_into()?;
-  let cp2x: f64 = ctx.get::<JsNumber>(2)?.try_into()?;
-  let cp2y: f64 = ctx.get::<JsNumber>(3)?.try_into()?;
-  let x: f64 = ctx.get::<JsNumber>(4)?.try_into()?;
-  let y: f64 = ctx.get::<JsNumber>(5)?.try_into()?;
+  let cp1x = ctx.get::<JsNumber>(0)?.get_double()? as f32;
+  let cp1y = ctx.get::<JsNumber>(1)?.get_double()? as f32;
+  let cp2x = ctx.get::<JsNumber>(2)?.get_double()? as f32;
+  let cp2y = ctx.get::<JsNumber>(3)?.get_double()? as f32;
+  let x = ctx.get::<JsNumber>(4)?.get_double()? as f32;
+  let y = ctx.get::<JsNumber>(5)?.get_double()? as f32;
 
-  context_2d.path.cubic_to(
-    cp1x as f32,
-    cp1y as f32,
-    cp2x as f32,
-    cp2y as f32,
-    x as f32,
-    y as f32,
-  );
+  context_2d.path.cubic_to(cp1x, cp1y, cp2x, cp2y, x, y);
 
   ctx.env.get_undefined()
 }
@@ -728,14 +712,12 @@ fn quadratic_curve_to(ctx: CallContext) -> Result<JsUndefined> {
   let this = ctx.this_unchecked::<JsObject>();
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
 
-  let cpx: f64 = ctx.get::<JsNumber>(0)?.try_into()?;
-  let cpy: f64 = ctx.get::<JsNumber>(1)?.try_into()?;
-  let x: f64 = ctx.get::<JsNumber>(2)?.try_into()?;
-  let y: f64 = ctx.get::<JsNumber>(3)?.try_into()?;
+  let cpx = ctx.get::<JsNumber>(0)?.get_double()? as f32;
+  let cpy = ctx.get::<JsNumber>(1)?.get_double()? as f32;
+  let x = ctx.get::<JsNumber>(2)?.get_double()? as f32;
+  let y = ctx.get::<JsNumber>(3)?.get_double()? as f32;
 
-  context_2d
-    .path
-    .quad_to(cpx as f32, cpy as f32, x as f32, y as f32);
+  context_2d.path.quad_to(cpx, cpy, x, y);
 
   ctx.env.get_undefined()
 }
@@ -767,10 +749,10 @@ fn rect(ctx: CallContext) -> Result<JsUndefined> {
   let this = ctx.this_unchecked::<JsObject>();
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
 
-  let x: f64 = ctx.get::<JsNumber>(0)?.try_into()?;
-  let y: f64 = ctx.get::<JsNumber>(1)?.try_into()?;
-  let width: f64 = ctx.get::<JsNumber>(2)?.try_into()?;
-  let height: f64 = ctx.get::<JsNumber>(3)?.try_into()?;
+  let x = ctx.get::<JsNumber>(0)?.get_double()? as f32;
+  let y = ctx.get::<JsNumber>(1)?.get_double()? as f32;
+  let width = ctx.get::<JsNumber>(2)?.get_double()? as f32;
+  let height = ctx.get::<JsNumber>(3)?.get_double()? as f32;
 
   context_2d
     .path
@@ -835,8 +817,8 @@ fn rotate(ctx: CallContext) -> Result<JsUndefined> {
   let this = ctx.this_unchecked::<JsObject>();
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
 
-  let angle: f64 = ctx.get::<JsNumber>(0)?.try_into()?;
-  context_2d.path.transform(&Transform::rotate(-angle as f32));
+  let angle = ctx.get::<JsNumber>(0)?.get_double()? as f32;
+  context_2d.path.transform(&Transform::rotate(-angle));
   context_2d.surface.canvas.rotate(angle as f32 / PI * 180f32);
   ctx.env.get_undefined()
 }
@@ -845,53 +827,48 @@ fn rotate(ctx: CallContext) -> Result<JsUndefined> {
 fn clear_rect(ctx: CallContext) -> Result<JsUndefined> {
   let this = ctx.this_unchecked::<JsObject>();
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
-  let x: f64 = ctx.get::<JsNumber>(0)?.try_into()?;
-  let y: f64 = ctx.get::<JsNumber>(1)?.try_into()?;
-  let width: f64 = ctx.get::<JsNumber>(2)?.try_into()?;
-  let height: f64 = ctx.get::<JsNumber>(3)?.try_into()?;
+  let x = ctx.get::<JsNumber>(0)?.get_double()? as f32;
+  let y = ctx.get::<JsNumber>(1)?.get_double()? as f32;
+  let width = ctx.get::<JsNumber>(2)?.get_double()? as f32;
+  let height = ctx.get::<JsNumber>(3)?.get_double()? as f32;
 
   let mut paint = Paint::new();
   paint.set_style(PaintStyle::Fill);
   paint.set_color(0, 0, 0, 0);
   paint.set_stroke_miter(10.0);
   paint.set_blend_mode(BlendMode::Clear);
-  context_2d
-    .surface
-    .draw_rect(x as f32, y as f32, width as f32, height as f32, &paint);
+  context_2d.surface.draw_rect(x, y, width, height, &paint);
   ctx.env.get_undefined()
 }
 
 #[js_function(4)]
 fn create_linear_gradient(ctx: CallContext) -> Result<JsObject> {
-  let x0: f64 = ctx.get::<JsNumber>(0)?.try_into()?;
-  let y0: f64 = ctx.get::<JsNumber>(1)?.try_into()?;
-  let x1: f64 = ctx.get::<JsNumber>(2)?.try_into()?;
-  let y1: f64 = ctx.get::<JsNumber>(3)?.try_into()?;
-  let linear_gradient =
-    CanvasGradient::create_linear_gradient(x0 as f32, y0 as f32, x1 as f32, y1 as f32);
+  let x0 = ctx.get::<JsNumber>(0)?.get_double()? as f32;
+  let y0 = ctx.get::<JsNumber>(1)?.get_double()? as f32;
+  let x1 = ctx.get::<JsNumber>(2)?.get_double()? as f32;
+  let y1 = ctx.get::<JsNumber>(3)?.get_double()? as f32;
+  let linear_gradient = CanvasGradient::create_linear_gradient(x0, y0, x1, y1);
   linear_gradient.into_js_instance(ctx.env)
 }
 
 #[js_function(6)]
 fn create_radial_gradient(ctx: CallContext) -> Result<JsObject> {
-  let x0: f64 = ctx.get::<JsNumber>(0)?.try_into()?;
-  let y0: f64 = ctx.get::<JsNumber>(1)?.try_into()?;
-  let r0: f64 = ctx.get::<JsNumber>(2)?.try_into()?;
-  let x1: f64 = ctx.get::<JsNumber>(3)?.try_into()?;
-  let y1: f64 = ctx.get::<JsNumber>(4)?.try_into()?;
-  let r1: f64 = ctx.get::<JsNumber>(5)?.try_into()?;
-  let radial_gradient = CanvasGradient::create_radial_gradient(
-    x0 as f32, y0 as f32, r0 as f32, x1 as f32, y1 as f32, r1 as f32,
-  );
+  let x0 = ctx.get::<JsNumber>(0)?.get_double()? as f32;
+  let y0 = ctx.get::<JsNumber>(1)?.get_double()? as f32;
+  let r0 = ctx.get::<JsNumber>(2)?.get_double()? as f32;
+  let x1 = ctx.get::<JsNumber>(3)?.get_double()? as f32;
+  let y1 = ctx.get::<JsNumber>(4)?.get_double()? as f32;
+  let r1 = ctx.get::<JsNumber>(5)?.get_double()? as f32;
+  let radial_gradient = CanvasGradient::create_radial_gradient(x0, y0, r0, x1, y1, r1);
   radial_gradient.into_js_instance(ctx.env)
 }
 
 #[js_function(3)]
 fn create_conic_gradient(ctx: CallContext) -> Result<JsObject> {
-  let r: f64 = ctx.get::<JsNumber>(0)?.try_into()?;
-  let x: f64 = ctx.get::<JsNumber>(1)?.try_into()?;
-  let y: f64 = ctx.get::<JsNumber>(2)?.try_into()?;
-  let conic_gradient = CanvasGradient::create_conic_gradient(x as f32, y as f32, r as f32);
+  let r = ctx.get::<JsNumber>(0)?.get_double()? as f32;
+  let x = ctx.get::<JsNumber>(1)?.get_double()? as f32;
+  let y = ctx.get::<JsNumber>(2)?.get_double()? as f32;
+  let conic_gradient = CanvasGradient::create_conic_gradient(x, y, r);
   conic_gradient.into_js_instance(ctx.env)
 }
 
@@ -1044,31 +1021,27 @@ fn is_point_in_path(ctx: CallContext) -> Result<JsBoolean> {
   let result;
 
   if ctx.length == 2 {
-    let x: f64 = ctx.get::<JsNumber>(0)?.try_into()?;
-    let y: f64 = ctx.get::<JsNumber>(1)?.try_into()?;
-    result = context_2d
-      .path
-      .hit_test(y as f32, x as f32, FillType::Winding);
+    let x = ctx.get::<JsNumber>(0)?.get_double()? as f32;
+    let y = ctx.get::<JsNumber>(1)?.get_double()? as f32;
+    result = context_2d.path.hit_test(y, x, FillType::Winding);
     ctx.env.get_boolean(result)
   } else if ctx.length == 3 {
     let input = ctx.get::<JsUnknown>(0)?;
     match input.get_type()? {
       ValueType::Number => {
-        let x: f64 = ctx.get::<JsNumber>(0)?.try_into()?;
-        let y: f64 = ctx.get::<JsNumber>(1)?.try_into()?;
+        let x = ctx.get::<JsNumber>(0)?.get_double()? as f32;
+        let y = ctx.get::<JsNumber>(1)?.get_double()? as f32;
         let fill_rule_js = ctx.get::<JsString>(2)?.into_utf8()?;
-        result = context_2d.path.hit_test(
-          y as f32,
-          x as f32,
-          FillType::from_str(fill_rule_js.as_str()?)?,
-        );
+        result = context_2d
+          .path
+          .hit_test(y, x, FillType::from_str(fill_rule_js.as_str()?)?);
       }
       ValueType::Object => {
-        let x: f64 = ctx.get::<JsNumber>(1)?.try_into()?;
-        let y: f64 = ctx.get::<JsNumber>(2)?.try_into()?;
+        let x = ctx.get::<JsNumber>(1)?.get_double()? as f32;
+        let y = ctx.get::<JsNumber>(2)?.get_double()? as f32;
         let path_js = ctx.get::<JsObject>(0)?;
         let path = ctx.env.unwrap::<Path>(&path_js)?;
-        result = path.hit_test(x as f32, y as f32, FillType::Winding);
+        result = path.hit_test(x, y, FillType::Winding);
       }
       _ => {
         return Err(Error::new(
@@ -1081,14 +1054,10 @@ fn is_point_in_path(ctx: CallContext) -> Result<JsBoolean> {
   } else if ctx.length == 4 {
     let path_js = ctx.get::<JsObject>(0)?;
     let path = ctx.env.unwrap::<Path>(&path_js)?;
-    let x: f64 = ctx.get::<JsNumber>(1)?.try_into()?;
-    let y: f64 = ctx.get::<JsNumber>(2)?.try_into()?;
+    let x = ctx.get::<JsNumber>(1)?.get_double()? as f32;
+    let y = ctx.get::<JsNumber>(2)?.get_double()? as f32;
     let fill_rule_js = ctx.get::<JsString>(3)?.into_utf8()?;
-    result = path.hit_test(
-      y as f32,
-      x as f32,
-      FillType::from_str(fill_rule_js.as_str()?)?,
-    );
+    result = path.hit_test(y, x, FillType::from_str(fill_rule_js.as_str()?)?);
     ctx.env.get_boolean(result)
   } else {
     Err(Error::new(
@@ -1105,20 +1074,18 @@ fn is_point_in_stroke(ctx: CallContext) -> Result<JsBoolean> {
   let mut result = false;
 
   if ctx.length == 2 {
-    let x: f64 = ctx.get::<JsNumber>(0)?.try_into()?;
-    let y: f64 = ctx.get::<JsNumber>(1)?.try_into()?;
-    let stroke_w = context_2d.states.last().unwrap().paint.get_stroke_width() as f32;
-    result = context_2d
-      .path
-      .stroke_hit_test(x as f32, y as f32, stroke_w);
+    let x = ctx.get::<JsNumber>(0)?.get_double()? as f32;
+    let y = ctx.get::<JsNumber>(1)?.get_double()? as f32;
+    let stroke_w = context_2d.states.last().unwrap().paint.get_stroke_width();
+    result = context_2d.path.stroke_hit_test(x, y, stroke_w);
   } else if ctx.length == 3 {
     let path_js = ctx.get::<JsObject>(0)?;
     let path = ctx.env.unwrap::<Path>(&path_js)?;
 
-    let x: f64 = ctx.get::<JsNumber>(1)?.try_into()?;
-    let y: f64 = ctx.get::<JsNumber>(2)?.try_into()?;
-    let stroke_w = context_2d.states.last().unwrap().paint.get_stroke_width() as f32;
-    result = path.stroke_hit_test(x as f32, y as f32, stroke_w);
+    let x = ctx.get::<JsNumber>(1)?.get_double()? as f32;
+    let y = ctx.get::<JsNumber>(2)?.get_double()? as f32;
+    let stroke_w = context_2d.states.last().unwrap().paint.get_stroke_width();
+    result = path.stroke_hit_test(x, y, stroke_w);
   }
   ctx.env.get_boolean(result)
 }
@@ -1127,13 +1094,13 @@ fn is_point_in_stroke(ctx: CallContext) -> Result<JsBoolean> {
 fn ellipse(ctx: CallContext) -> Result<JsUndefined> {
   let this = ctx.this_unchecked::<JsObject>();
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
-  let x: f64 = ctx.get::<JsNumber>(0)?.try_into()?;
-  let y: f64 = ctx.get::<JsNumber>(1)?.try_into()?;
-  let radius_x: f64 = ctx.get::<JsNumber>(2)?.try_into()?;
-  let radius_y: f64 = ctx.get::<JsNumber>(3)?.try_into()?;
-  let rotation: f64 = ctx.get::<JsNumber>(4)?.try_into()?;
-  let start_angle: f64 = ctx.get::<JsNumber>(5)?.try_into()?;
-  let end_angle: f64 = ctx.get::<JsNumber>(6)?.try_into()?;
+  let x = ctx.get::<JsNumber>(0)?.get_double()? as f32;
+  let y = ctx.get::<JsNumber>(1)?.get_double()? as f32;
+  let radius_x = ctx.get::<JsNumber>(2)?.get_double()? as f32;
+  let radius_y = ctx.get::<JsNumber>(3)?.get_double()? as f32;
+  let rotation = ctx.get::<JsNumber>(4)?.get_double()? as f32;
+  let start_angle = ctx.get::<JsNumber>(5)?.get_double()? as f32;
+  let end_angle = ctx.get::<JsNumber>(6)?.get_double()? as f32;
 
   let from_end = if ctx.length == 8 {
     ctx.get::<JsBoolean>(7)?.get_value()?
@@ -1141,13 +1108,13 @@ fn ellipse(ctx: CallContext) -> Result<JsUndefined> {
     false
   };
   context_2d.path.ellipse(
-    x as f32,
-    y as f32,
-    radius_x as f32,
-    radius_y as f32,
-    rotation as f32,
-    start_angle as f32,
-    end_angle as f32,
+    x,
+    y,
+    radius_x,
+    radius_y,
+    rotation,
+    start_angle,
+    end_angle,
     from_end,
   );
   ctx.env.get_undefined()
@@ -1158,10 +1125,10 @@ fn line_to(ctx: CallContext) -> Result<JsUndefined> {
   let this = ctx.this_unchecked::<JsObject>();
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
 
-  let x: f64 = ctx.get::<JsNumber>(0)?.try_into()?;
-  let y: f64 = ctx.get::<JsNumber>(1)?.try_into()?;
+  let x = ctx.get::<JsNumber>(0)?.get_double()? as f32;
+  let y = ctx.get::<JsNumber>(1)?.get_double()? as f32;
 
-  context_2d.path.line_to(x as f32, y as f32);
+  context_2d.path.line_to(x, y);
 
   ctx.env.get_undefined()
 }
@@ -1208,10 +1175,10 @@ fn move_to(ctx: CallContext) -> Result<JsUndefined> {
   let this = ctx.this_unchecked::<JsObject>();
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
 
-  let x: f64 = ctx.get::<JsNumber>(0)?.try_into()?;
-  let y: f64 = ctx.get::<JsNumber>(1)?.try_into()?;
+  let x = ctx.get::<JsNumber>(0)?.get_double()? as f32;
+  let y = ctx.get::<JsNumber>(1)?.get_double()? as f32;
 
-  context_2d.path.move_to(x as f32, y as f32);
+  context_2d.path.move_to(x, y);
 
   ctx.env.get_undefined()
 }
@@ -1220,13 +1187,13 @@ fn move_to(ctx: CallContext) -> Result<JsUndefined> {
 fn set_miter_limit(ctx: CallContext) -> Result<JsUndefined> {
   let this = ctx.this_unchecked::<JsObject>();
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
-  let miter: f64 = ctx.get::<JsNumber>(0)?.try_into()?;
+  let miter = ctx.get::<JsNumber>(0)?.get_double()? as f32;
   context_2d
     .states
     .last_mut()
     .unwrap()
     .paint
-    .set_stroke_miter(miter as f32);
+    .set_stroke_miter(miter);
   ctx.env.get_undefined()
 }
 
@@ -1656,33 +1623,33 @@ fn stroke(ctx: CallContext) -> Result<JsUndefined> {
 
 #[js_function(2)]
 fn translate(ctx: CallContext) -> Result<JsUndefined> {
-  let x: f64 = ctx.get::<JsNumber>(0)?.try_into()?;
-  let y: f64 = ctx.get::<JsNumber>(1)?.try_into()?;
+  let x = ctx.get::<JsNumber>(0)?.get_double()? as f32;
+  let y = ctx.get::<JsNumber>(1)?.get_double()? as f32;
 
   let this = ctx.this_unchecked::<JsObject>();
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
 
-  let mut inverted = Matrix::identity();
-  inverted.pre_translate(-x as f32, -y as f32);
-  context_2d.path.transform_matrix(&inverted);
-  context_2d.surface.canvas.translate(x as f32, y as f32);
+  context_2d
+    .path
+    .transform(&Transform::new(1.0, 0.0, 0.0, 1.0, -x, -y));
+  context_2d.surface.canvas.translate(x, y);
 
   ctx.env.get_undefined()
 }
 
 #[js_function(6)]
 fn transform(ctx: CallContext) -> Result<JsUndefined> {
-  let a: f64 = ctx.get::<JsNumber>(0)?.try_into()?;
-  let b: f64 = ctx.get::<JsNumber>(1)?.try_into()?;
-  let c: f64 = ctx.get::<JsNumber>(2)?.try_into()?;
-  let d: f64 = ctx.get::<JsNumber>(3)?.try_into()?;
-  let e: f64 = ctx.get::<JsNumber>(4)?.try_into()?;
-  let f: f64 = ctx.get::<JsNumber>(5)?.try_into()?;
+  let a = ctx.get::<JsNumber>(0)?.get_double()? as f32;
+  let b = ctx.get::<JsNumber>(1)?.get_double()? as f32;
+  let c = ctx.get::<JsNumber>(2)?.get_double()? as f32;
+  let d = ctx.get::<JsNumber>(3)?.get_double()? as f32;
+  let e = ctx.get::<JsNumber>(4)?.get_double()? as f32;
+  let f = ctx.get::<JsNumber>(5)?.get_double()? as f32;
 
   let this = ctx.this_unchecked::<JsObject>();
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
 
-  let new_transform = Transform::new(a as f32, b as f32, c as f32, d as f32, e as f32, f as f32);
+  let new_transform = Transform::new(a, b, c, d, e, f);
   let inverted = new_transform
     .invert()
     .ok_or_else(|| Error::new(Status::InvalidArg, "Invalid transform".to_owned()))?;
