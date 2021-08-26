@@ -1,5 +1,7 @@
 use thiserror::Error;
 
+use crate::sk::Matrix;
+
 #[derive(Error, Debug)]
 pub enum SkError {
   #[error("[`{0}`] is not valid Blend value")]
@@ -20,6 +22,8 @@ pub enum SkError {
   StringToStrokeJoinError(String),
   #[error("[`{0}`] is not valid SvgExportFlag value")]
   U32ToStrokeJoinError(u32),
+  #[error("[`{0}`] is not valid transform")]
+  InvalidTransform(Matrix),
   #[error("[`{0}`]")]
   Generic(String),
 }

@@ -14,6 +14,7 @@ const { loadBinding } = require('@node-rs/helper')
 const {
   CanvasRenderingContext2D,
   CanvasElement,
+  createContext,
   SVGCanvas,
   Path2D,
   ImageData,
@@ -160,44 +161,60 @@ Path2D.prototype.getFillTypeString = function getFillTypeString() {
 function createCanvas(width, height, flag) {
   const isSvgBackend = typeof flag !== 'undefined'
   const canvasElement = isSvgBackend ? new SVGCanvas(width, height) : new CanvasElement(width, height)
-  const ctx = isSvgBackend
-    ? new CanvasRenderingContext2D(width, height, GlobalFontsSingleton, flag)
-    : new CanvasRenderingContext2D(width, height, GlobalFontsSingleton)
 
-  // napi can not define writable: true but enumerable: false property
-  Object.defineProperty(ctx, '_fillStyle', {
-    value: '#000',
-    configurable: false,
-    enumerable: false,
-    writable: true,
-  })
+  let ctx
+  canvasElement.getContext = function getContext(type, attr) {
+    if (type !== '2d') {
+      throw new Error('Unsupported type')
+    }
+    ctx = ctx
+      ? ctx
+      : isSvgBackend
+      ? new CanvasRenderingContext2D(this.width, this.height, GlobalFontsSingleton, flag)
+      : new CanvasRenderingContext2D(this.width, this.height, GlobalFontsSingleton)
+    if (attr) {
+      createContext(ctx, this.width, this.height, attr)
+    } else {
+      createContext(ctx, this.width, this.height)
+    }
 
-  Object.defineProperty(ctx, '_strokeStyle', {
-    value: '#000',
-    configurable: false,
-    enumerable: false,
-    writable: true,
-  })
+    // napi can not define writable: true but enumerable: false property
+    Object.defineProperty(ctx, '_fillStyle', {
+      value: '#000',
+      configurable: false,
+      enumerable: false,
+      writable: true,
+    })
 
-  Object.defineProperty(ctx, 'createImageData', {
-    value: function createImageData(widthOrImage, height) {
-      if (widthOrImage instanceof ImageData) {
-        return new ImageData(widthOrImage.width, widthOrImage.height)
-      }
-      return new ImageData(widthOrImage, height)
-    },
-    configurable: false,
-    enumerable: false,
-    writable: false,
-  })
+    Object.defineProperty(ctx, '_strokeStyle', {
+      value: '#000',
+      configurable: false,
+      enumerable: false,
+      writable: true,
+    })
 
-  Object.defineProperty(canvasElement, 'ctx', {
-    value: ctx,
-    enumerable: false,
-    configurable: false,
-  })
+    Object.defineProperty(ctx, 'createImageData', {
+      value: function createImageData(widthOrImage, height) {
+        if (widthOrImage instanceof ImageData) {
+          return new ImageData(widthOrImage.width, widthOrImage.height)
+        }
+        return new ImageData(widthOrImage, height)
+      },
+      configurable: false,
+      enumerable: false,
+      writable: false,
+    })
 
-  ctx.canvas = canvasElement
+    Object.defineProperty(canvasElement, 'ctx', {
+      value: ctx,
+      enumerable: false,
+      configurable: false,
+    })
+
+    ctx.canvas = canvasElement
+
+    return ctx
+  }
 
   return canvasElement
 }

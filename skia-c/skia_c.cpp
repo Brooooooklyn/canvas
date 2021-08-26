@@ -217,14 +217,14 @@ extern "C"
     CANVAS_CAST->clear(static_cast<SkColor>(color));
   }
 
-  void skiac_canvas_set_transform(skiac_canvas *c_canvas, skiac_transform c_ts)
+  void skiac_canvas_set_transform(skiac_canvas *c_canvas, skiac_matrix *c_matrix)
   {
-    CANVAS_CAST->setMatrix(conv_from_transform(c_ts));
+    CANVAS_CAST->setMatrix(*MATRIX_CAST);
   }
 
-  void skiac_canvas_concat(skiac_canvas *c_canvas, skiac_transform c_ts)
+  void skiac_canvas_concat(skiac_canvas *c_canvas, skiac_matrix *c_matrix)
   {
-    CANVAS_CAST->concat(conv_from_transform(c_ts));
+    CANVAS_CAST->concat(*MATRIX_CAST);
   }
 
   void skiac_canvas_scale(skiac_canvas *c_canvas, float sx, float sy)
@@ -481,6 +481,11 @@ extern "C"
     CANVAS_CAST->restore();
   }
 
+  void skiac_canvas_reset(skiac_canvas *c_canvas)
+  {
+    CANVAS_CAST->restoreToCount(1);
+  }
+
   void skiac_canvas_write_pixels(skiac_canvas *c_canvas, int width, int height, uint8_t *pixels, size_t row_bytes, int x, int y)
   {
     auto info = SkImageInfo::Make(width, height, SkColorType::kRGBA_8888_SkColorType, SkAlphaType::kUnpremul_SkAlphaType);
@@ -658,10 +663,10 @@ extern "C"
     PATH_CAST->swap(*other);
   }
 
-  void skiac_add_path(skiac_path *c_path, skiac_path *other_path, skiac_transform c_transform)
+  void skiac_add_path(skiac_path *c_path, skiac_path *other_path, skiac_matrix *c_matrix)
   {
     auto path = PATH_CAST;
-    path->addPath(*reinterpret_cast<SkPath *>(other_path), conv_from_transform(c_transform), SkPath::AddPathMode::kExtend_AddPathMode);
+    path->addPath(*reinterpret_cast<SkPath *>(other_path), *MATRIX_CAST, SkPath::AddPathMode::kExtend_AddPathMode);
   }
 
   bool skiac_path_op(skiac_path *c_path_one, skiac_path *c_path_two, int op)
@@ -822,13 +827,14 @@ extern "C"
     PATH_CAST->addCircle(x, y, r);
   }
 
-  void skiac_path_transform(skiac_path *c_path, skiac_transform c_transform)
+  skiac_path *skiac_path_transform(skiac_path *c_path, skiac_matrix *c_matrix)
   {
-    SkMatrix matrix = conv_from_transform(c_transform);
-    PATH_CAST->transform(matrix, SkApplyPerspectiveClip::kYes);
+    auto new_path = new SkPath();
+    PATH_CAST->transform(*MATRIX_CAST, new_path, SkApplyPerspectiveClip::kYes);
+    return reinterpret_cast<skiac_path *>(new_path);
   }
 
-  void skiac_path_transform_matrix(skiac_path *c_path, skiac_matrix *c_matrix)
+  void skiac_path_transform_self(skiac_path *c_path, skiac_matrix *c_matrix)
   {
     SkMatrix matrix = *reinterpret_cast<SkMatrix *>(c_matrix);
     PATH_CAST->transform(matrix, SkApplyPerspectiveClip::kYes);
@@ -943,7 +949,6 @@ extern "C"
   {
     const SkPoint startPoint = {c_start_point.x, c_start_point.y};
     const SkPoint endPoint = {c_end_point.x, c_end_point.y};
-    const auto ts = conv_from_transform(c_ts);
     auto shader = SkGradientShader::MakeTwoPointConical(
                       startPoint,
                       start_radius,
@@ -954,7 +959,7 @@ extern "C"
                       count,
                       (SkTileMode)tile_mode,
                       flags,
-                      &ts)
+                      nullptr)
                       .release();
 
     if (shader)
@@ -1039,6 +1044,63 @@ extern "C"
     return reinterpret_cast<skiac_matrix *>(new SkMatrix());
   }
 
+  skiac_matrix *skiac_matrix_new(float a, float b, float c, float d, float e, float f)
+  {
+    auto m = new SkMatrix(SkMatrix::MakeAll(a, b, c, d, e, f, 0, 0, 1));
+    return reinterpret_cast<skiac_matrix *>(m);
+  }
+
+  skiac_matrix *skiac_matrix_from_ts(const skiac_transform *c_ts)
+  {
+    auto matrix = conv_from_transform(*c_ts);
+    auto m = new SkMatrix(matrix);
+    return reinterpret_cast<skiac_matrix *>(m);
+  }
+
+  skiac_matrix *skiac_matrix_create_rotated(float rotation, float x, float y)
+  {
+    auto matrix = new SkMatrix();
+    matrix->setRotate(rotation, x, y);
+    return reinterpret_cast<skiac_matrix *>(matrix);
+  }
+
+  skiac_matrix *skiac_matrix_create_translated(float x, float y)
+  {
+    auto matrix = new SkMatrix();
+    matrix->setTranslate(x, y);
+    return reinterpret_cast<skiac_matrix *>(matrix);
+  }
+
+  skiac_matrix *skiac_matrix_concat(skiac_matrix *c_matrix, skiac_matrix *other)
+  {
+    auto m = SkMatrix::Concat(*MATRIX_CAST, *reinterpret_cast<SkMatrix *>(other));
+    auto r = new SkMatrix(m);
+    return reinterpret_cast<skiac_matrix *>(r);
+  }
+
+  skiac_matrix *skiac_matrix_multiply(skiac_matrix *c_matrix, skiac_matrix *other)
+  {
+    auto m = *MATRIX_CAST;
+    auto o = *reinterpret_cast<SkMatrix *>(other);
+    auto r = new SkMatrix(o * m);
+    return reinterpret_cast<skiac_matrix *>(r);
+  }
+
+  void skiac_matrix_map_points(skiac_matrix *c_matrix, float x1, float y1, float x2, float y2, skiac_mapped_point *mapped_point)
+  {
+    SkPoint dst[2];
+    auto p1 = SkPoint::Make(x1, y1);
+    auto p2 = SkPoint::Make(x2, y2);
+    SkPoint src[] = {p1, p2};
+    MATRIX_CAST->mapPoints(src, dst, 2);
+    auto dp1 = dst[0];
+    auto dp2 = dst[1];
+    mapped_point->x1 = dp1.fX;
+    mapped_point->y1 = dp1.fY;
+    mapped_point->x2 = dp2.fX;
+    mapped_point->y2 = dp2.fY;
+  }
+
   skiac_matrix *skiac_matrix_clone(skiac_matrix *c_matrix)
   {
     return reinterpret_cast<skiac_matrix *>(new SkMatrix(*MATRIX_CAST));
@@ -1049,9 +1111,30 @@ extern "C"
     MATRIX_CAST->preTranslate(dx, dy);
   }
 
+  void skiac_matrix_pre_concat(skiac_matrix *c_matrix, skiac_matrix *other)
+  {
+    MATRIX_CAST->preConcat(*reinterpret_cast<SkMatrix *>(other));
+  }
+
+  void skiac_matrix_pre_scale(skiac_matrix *c_matrix, float sx, float sy)
+  {
+    MATRIX_CAST->preScale(sx, sy);
+  }
+
+  void skiac_matrix_pre_concat_transform(skiac_matrix *c_matrix, skiac_transform c_ts)
+  {
+    auto ts = conv_from_transform(c_ts);
+    MATRIX_CAST->preConcat(ts);
+  }
+
   void skiac_matrix_pre_rotate(skiac_matrix *c_matrix, float degrees)
   {
     MATRIX_CAST->preRotate(degrees);
+  }
+
+  void skiac_matrix_pre_rotate_x_y(skiac_matrix *c_matrix, float degrees, float x, float y)
+  {
+    MATRIX_CAST->preRotate(degrees, x, y);
   }
 
   bool skiac_matrix_invert(skiac_matrix *c_matrix, skiac_matrix *inverse)

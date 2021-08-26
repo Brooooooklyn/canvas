@@ -197,6 +197,15 @@ mod ffi {
     _unused: [u8; 0],
   }
 
+  #[repr(C)]
+  #[derive(Debug, Clone, Copy)]
+  pub struct skiac_mapped_point {
+    pub x1: f32,
+    pub y1: f32,
+    pub x2: f32,
+    pub y2: f32,
+  }
+
   pub type SkiacFontCollectionGetFamily =
     Option<unsafe extern "C" fn(width: i32, weight: i32, slant: i32, raw_cb: *mut c_void)>;
 
@@ -268,9 +277,9 @@ mod ffi {
     // SkCanvas
     pub fn skiac_canvas_clear(canvas: *mut skiac_canvas, color: u32);
 
-    pub fn skiac_canvas_set_transform(canvas: *mut skiac_canvas, ts: skiac_transform);
+    pub fn skiac_canvas_set_transform(canvas: *mut skiac_canvas, ts: *mut skiac_matrix);
 
-    pub fn skiac_canvas_concat(canvas: *mut skiac_canvas, ts: skiac_transform);
+    pub fn skiac_canvas_concat(canvas: *mut skiac_canvas, ts: *mut skiac_matrix);
 
     pub fn skiac_canvas_scale(canvas: *mut skiac_canvas, sx: f32, sy: f32);
 
@@ -367,6 +376,8 @@ mod ffi {
 
     pub fn skiac_canvas_restore(canvas: *mut skiac_canvas);
 
+    pub fn skiac_canvas_reset(canvas: *mut skiac_canvas);
+
     pub fn skiac_canvas_write_pixels(
       canvas: *mut skiac_canvas,
       width: i32,
@@ -456,7 +467,7 @@ mod ffi {
     pub fn skiac_add_path(
       c_path: *mut skiac_path,
       other_path: *mut skiac_path,
-      c_matrix: skiac_transform,
+      c_matrix: *mut skiac_matrix,
     );
 
     pub fn skiac_path_op(c_path_one: *mut skiac_path, c_path_two: *mut skiac_path, op: i32)
@@ -539,9 +550,12 @@ mod ffi {
 
     pub fn skiac_path_add_circle(path: *mut skiac_path, x: f32, y: f32, r: f32);
 
-    pub fn skiac_path_transform(path: *mut skiac_path, matrix: skiac_transform);
+    pub fn skiac_path_transform(
+      path: *mut skiac_path,
+      matrix: *mut skiac_matrix,
+    ) -> *mut skiac_path;
 
-    pub fn skiac_path_transform_matrix(path: *mut skiac_path, matrix: *mut skiac_matrix);
+    pub fn skiac_path_transform_self(path: *mut skiac_path, matrix: *mut skiac_matrix);
 
     pub fn skiac_path_is_empty(path: *mut skiac_path) -> bool;
 
@@ -603,11 +617,46 @@ mod ffi {
 
     pub fn skiac_matrix_create() -> *mut skiac_matrix;
 
+    pub fn skiac_matrix_new(a: f32, b: f32, c: f32, d: f32, e: f32, f: f32) -> *mut skiac_matrix;
+
+    pub fn skiac_matrix_from_ts(ts: *mut skiac_transform) -> *mut skiac_matrix;
+
+    pub fn skiac_matrix_concat(
+      ts: *mut skiac_matrix,
+      other: *mut skiac_matrix,
+    ) -> *mut skiac_matrix;
+
+    pub fn skiac_matrix_multiply(
+      ts: *mut skiac_matrix,
+      other: *mut skiac_matrix,
+    ) -> *mut skiac_matrix;
+
+    pub fn skiac_matrix_create_rotated(rotation: f32, x: f32, y: f32) -> *mut skiac_matrix;
+
+    pub fn skiac_matrix_create_translated(x: f32, y: f32) -> *mut skiac_matrix;
+
     pub fn skiac_matrix_clone(matrix: *mut skiac_matrix) -> *mut skiac_matrix;
+
+    pub fn skiac_matrix_map_points(
+      c_matrix: *mut skiac_matrix,
+      x1: f32,
+      y1: f32,
+      x2: f32,
+      y2: f32,
+      mapped_point: *mut skiac_mapped_point,
+    );
+
+    pub fn skiac_matrix_pre_concat_transform(matrix: *mut skiac_matrix, ts: skiac_transform);
 
     pub fn skiac_matrix_pre_translate(matrix: *mut skiac_matrix, dx: f32, dy: f32);
 
+    pub fn skiac_matrix_pre_concat(matrix: *mut skiac_matrix, other: *mut skiac_matrix);
+
+    pub fn skiac_matrix_pre_scale(matrix: *mut skiac_matrix, sx: f32, sy: f32);
+
     pub fn skiac_matrix_pre_rotate(matrix: *mut skiac_matrix, degrees: f32);
+
+    pub fn skiac_matrix_pre_rotate_x_y(matrix: *mut skiac_matrix, degrees: f32, x: f32, y: f32);
 
     pub fn skiac_matrix_invert(matrix: *mut skiac_matrix, inverse: *mut skiac_matrix) -> bool;
 
@@ -1093,14 +1142,12 @@ pub enum FilterQuality {
 }
 
 impl Default for FilterQuality {
-  #[inline]
   fn default() -> Self {
     FilterQuality::Low
   }
 }
 
 impl FilterQuality {
-  #[inline]
   pub fn as_str(&self) -> &'static str {
     match self {
       Self::High => "high",
@@ -1114,7 +1161,6 @@ impl FilterQuality {
 impl FromStr for FilterQuality {
   type Err = SkError;
 
-  #[inline]
   fn from_str(s: &str) -> Result<FilterQuality, SkError> {
     match s {
       "low" => Ok(Self::Low),
@@ -1158,7 +1204,6 @@ pub enum PathOp {
 }
 
 impl From<i32> for PathOp {
-  #[inline]
   fn from(value: i32) -> Self {
     match value {
       0 => Self::Difference,
@@ -1183,7 +1228,6 @@ pub enum TextAlign {
 }
 
 impl TextAlign {
-  #[inline]
   pub fn as_str(&self) -> &str {
     match self {
       Self::Start => "start",
@@ -1197,7 +1241,6 @@ impl TextAlign {
 }
 
 impl Default for TextAlign {
-  #[inline]
   fn default() -> Self {
     Self::Start
   }
@@ -1206,7 +1249,6 @@ impl Default for TextAlign {
 impl FromStr for TextAlign {
   type Err = SkError;
 
-  #[inline]
   fn from_str(s: &str) -> Result<TextAlign, SkError> {
     match s {
       "center" => Ok(TextAlign::Center),
@@ -1240,7 +1282,6 @@ impl Default for TextBaseline {
 impl FromStr for TextBaseline {
   type Err = SkError;
 
-  #[inline]
   fn from_str(s: &str) -> Result<TextBaseline, SkError> {
     match s {
       "top" => Ok(Self::Top),
@@ -1255,7 +1296,6 @@ impl FromStr for TextBaseline {
 }
 
 impl TextBaseline {
-  #[inline]
   pub fn as_str(&self) -> &'static str {
     match self {
       Self::Bottom => "bottom",
@@ -1269,7 +1309,6 @@ impl TextBaseline {
 }
 
 impl ToString for TextBaseline {
-  #[inline]
   fn to_string(&self) -> String {
     self.as_str().to_owned()
   }
@@ -1286,7 +1325,6 @@ pub enum TextDirection {
 impl FromStr for TextDirection {
   type Err = SkError;
 
-  #[inline]
   fn from_str(s: &str) -> Result<TextDirection, SkError> {
     match s {
       "inherit" | "ltr" => Ok(Self::Ltr),
@@ -1297,7 +1335,6 @@ impl FromStr for TextDirection {
 }
 
 impl TextDirection {
-  #[inline]
   pub fn as_str(&self) -> &str {
     match self {
       &Self::Inherit | &Self::Ltr => "ltr",
@@ -1305,7 +1342,6 @@ impl TextDirection {
     }
   }
 
-  #[inline]
   pub fn as_sk_direction(&self) -> i32 {
     match self {
       &Self::Inherit | &Self::Ltr => 1,
@@ -1315,7 +1351,6 @@ impl TextDirection {
 }
 
 impl Default for TextDirection {
-  #[inline]
   fn default() -> Self {
     Self::Inherit
   }
@@ -1349,7 +1384,6 @@ pub enum SvgExportFlag {
 impl TryFrom<u32> for SvgExportFlag {
   type Error = SkError;
 
-  #[inline]
   fn try_from(value: u32) -> Result<Self, Self::Error> {
     match value {
       0x01 => Ok(Self::ConvertTextToPaths),
@@ -1366,12 +1400,10 @@ pub struct Surface {
 }
 
 impl Surface {
-  #[inline]
   pub fn new_rgba(width: u32, height: u32) -> Option<Surface> {
     unsafe { Self::from_ptr(ffi::skiac_surface_create_rgba(width as i32, height as i32)) }
   }
 
-  #[inline]
   pub fn new_rgba_premultiplied(width: u32, height: u32) -> Option<Surface> {
     unsafe {
       Self::from_ptr(ffi::skiac_surface_create_rgba_premultiplied(
@@ -1381,7 +1413,6 @@ impl Surface {
     }
   }
 
-  #[inline]
   pub fn new_svg(
     width: u32,
     height: u32,
@@ -1414,7 +1445,6 @@ impl Surface {
     ))
   }
 
-  #[inline]
   unsafe fn from_ptr(ptr: *mut ffi::skiac_surface) -> Option<Surface> {
     if ptr.is_null() {
       None
@@ -1426,12 +1456,10 @@ impl Surface {
     }
   }
 
-  #[inline]
   pub fn copy_rgba(&self, x: u32, y: u32, width: u32, height: u32) -> Option<Surface> {
     unsafe { Self::from_ptr(ffi::skiac_surface_copy_rgba(self.ptr, x, y, width, height)) }
   }
 
-  #[inline]
   pub fn try_clone(&self) -> Option<Surface> {
     unsafe {
       Self::from_ptr(ffi::skiac_surface_copy_rgba(
@@ -1444,23 +1472,19 @@ impl Surface {
     }
   }
 
-  #[inline]
   pub fn save_png(&self, path: &str) -> bool {
     let c_path = std::ffi::CString::new(path).unwrap();
     unsafe { ffi::skiac_surface_save(self.ptr, c_path.as_ptr()) }
   }
 
-  #[inline]
   pub fn width(&self) -> u32 {
     unsafe { ffi::skiac_surface_get_width(self.ptr) as u32 }
   }
 
-  #[inline]
   pub fn height(&self) -> u32 {
     unsafe { ffi::skiac_surface_get_height(self.ptr) as u32 }
   }
 
-  #[inline]
   pub fn alpha_type(&self) -> AlphaType {
     let kind = unsafe { ffi::skiac_surface_get_alpha_type(self.ptr) };
     match kind {
@@ -1472,7 +1496,6 @@ impl Surface {
     }
   }
 
-  #[inline]
   pub fn read_pixels(&self, x: u32, y: u32, width: u32, height: u32) -> Option<Vec<u8>> {
     let mut result = vec![0; (width * height * 4) as usize];
     let status = unsafe {
@@ -1492,7 +1515,6 @@ impl Surface {
     }
   }
 
-  #[inline]
   pub fn data(&self) -> Option<SurfaceData> {
     unsafe {
       let mut data = ffi::skiac_surface_data {
@@ -1511,7 +1533,6 @@ impl Surface {
     }
   }
 
-  #[inline]
   pub fn svg(&self, width: f32, height: f32, flag: SvgExportFlag) -> Option<SkiaDataRef> {
     let mut data = ffi::skiac_sk_data {
       ptr: ptr::null_mut(),
@@ -1535,7 +1556,6 @@ impl Surface {
     }
   }
 
-  #[inline]
   pub fn data_mut(&mut self) -> Option<SurfaceDataMut> {
     unsafe {
       let mut data = ffi::skiac_surface_data {
@@ -1553,12 +1573,10 @@ impl Surface {
     }
   }
 
-  #[inline]
   pub(crate) fn reference(&self) -> SurfaceRef {
     SurfaceRef(self.ptr)
   }
 
-  #[inline]
   pub(crate) fn get_bitmap(&self) -> Bitmap {
     let mut bitmap_info = ffi::skiac_bitmap_info {
       bitmap: ptr::null_mut(),
@@ -1573,21 +1591,18 @@ impl Surface {
 impl std::ops::Deref for Surface {
   type Target = Canvas;
 
-  #[inline]
   fn deref(&self) -> &Self::Target {
     &self.canvas
   }
 }
 
 impl std::ops::DerefMut for Surface {
-  #[inline]
   fn deref_mut(&mut self) -> &mut Self::Target {
     &mut self.canvas
   }
 }
 
 impl Drop for Surface {
-  #[inline]
   fn drop(&mut self) {
     unsafe {
       ffi::skiac_surface_destroy(self.ptr);
@@ -1599,7 +1614,6 @@ impl Drop for Surface {
 pub struct SurfaceRef(*mut ffi::skiac_surface);
 
 impl SurfaceRef {
-  #[inline]
   pub fn png_data(&self) -> Option<SkiaDataRef> {
     unsafe {
       let mut data = ffi::skiac_sk_data {
@@ -1617,7 +1631,6 @@ impl SurfaceRef {
     }
   }
 
-  #[inline]
   pub fn data(&self) -> Option<(*const u8, usize)> {
     let mut data = ffi::skiac_surface_data {
       ptr: ptr::null_mut(),
@@ -1631,7 +1644,6 @@ impl SurfaceRef {
     }
   }
 
-  #[inline]
   pub fn encode_data(&self, format: SkEncodedImageFormat, quality: u8) -> Option<SkiaDataRef> {
     unsafe {
       let mut data = ffi::skiac_sk_data {
@@ -1649,7 +1661,6 @@ impl SurfaceRef {
     }
   }
 
-  #[inline]
   pub fn svg(&self, width: f32, height: f32, flag: SvgExportFlag) -> Option<SkiaDataRef> {
     let mut data = ffi::skiac_sk_data {
       ptr: ptr::null_mut(),
@@ -1684,7 +1695,6 @@ pub struct SurfaceData<'a> {
 impl<'a> Deref for SurfaceData<'a> {
   type Target = [u8];
 
-  #[inline]
   fn deref(&self) -> &[u8] {
     self.slice
   }
@@ -1697,7 +1707,6 @@ pub struct SurfaceDataMut<'a> {
 impl<'a> Deref for SurfaceDataMut<'a> {
   type Target = [u8];
 
-  #[inline]
   fn deref(&self) -> &[u8] {
     self.slice
   }
@@ -1722,7 +1731,6 @@ unsafe impl Send for SkiaDataRef {}
 unsafe impl Sync for SkiaDataRef {}
 
 impl<'a> DerefMut for SurfaceDataMut<'a> {
-  #[inline]
   fn deref_mut(&mut self) -> &mut [u8] {
     self.slice
   }
@@ -1744,7 +1752,6 @@ impl fmt::Debug for Color {
 }
 
 impl Color {
-  #[inline]
   pub fn from_rgba(r: u8, g: u8, b: u8, a: u8) -> Color {
     Color((a as u32) << 24 | (r as u32) << 16 | (g as u32) << 8 | (b as u32))
   }
@@ -1754,14 +1761,12 @@ impl Color {
 pub struct Canvas(*mut ffi::skiac_canvas);
 
 impl Canvas {
-  #[inline]
   pub fn clear(&mut self) {
     unsafe {
       ffi::skiac_canvas_clear(self.0, 0);
     }
   }
 
-  #[inline]
   pub fn fill(&mut self, r: u8, g: u8, b: u8, a: u8) {
     unsafe {
       ffi::skiac_canvas_clear(
@@ -1771,66 +1776,56 @@ impl Canvas {
     }
   }
 
-  #[inline]
-  pub fn set_transform(&mut self, ts: Transform) {
+  pub fn set_transform(&mut self, ts: &Matrix) {
     unsafe {
-      ffi::skiac_canvas_set_transform(self.0, ts.into());
+      ffi::skiac_canvas_set_transform(self.0, ts.0);
     }
   }
 
-  #[inline]
-  pub fn concat(&mut self, ts: Transform) {
+  pub fn concat(&mut self, ts: &Matrix) {
     unsafe {
-      ffi::skiac_canvas_concat(self.0, ts.into());
+      ffi::skiac_canvas_concat(self.0, ts.0);
     }
   }
 
-  #[inline]
   pub fn scale(&mut self, sx: f32, sy: f32) {
     unsafe {
       ffi::skiac_canvas_scale(self.0, sx, sy);
     }
   }
 
-  #[inline]
   pub fn translate(&mut self, dx: f32, dy: f32) {
     unsafe {
       ffi::skiac_canvas_translate(self.0, dx, dy);
     }
   }
 
-  #[inline]
   pub fn rotate(&mut self, degrees: f32) {
     unsafe {
       ffi::skiac_canvas_rotate(self.0, degrees);
     }
   }
 
-  #[inline]
   pub fn get_transform(&self) -> Transform {
     unsafe { ffi::skiac_canvas_get_total_transform(self.0).into() }
   }
 
-  #[inline]
   pub fn get_transform_matrix(&self) -> Matrix {
     Matrix(unsafe { ffi::skiac_canvas_get_total_transform_matrix(self.0) })
   }
 
-  #[inline]
   pub fn reset_transform(&mut self) {
     unsafe {
       ffi::skiac_canvas_reset_transform(self.0);
     }
   }
 
-  #[inline]
   pub fn draw_color(&mut self, r: f32, g: f32, b: f32, a: f32) {
     unsafe {
       ffi::skiac_canvas_draw_color(self.0, r, g, b, a);
     }
   }
 
-  #[inline]
   pub fn draw_image(
     &mut self,
     image: *mut ffi::skiac_bitmap,
@@ -1851,21 +1846,18 @@ impl Canvas {
     }
   }
 
-  #[inline]
   pub fn draw_path(&mut self, path: &Path, paint: &Paint) {
     unsafe {
       ffi::skiac_canvas_draw_path(self.0, path.0, paint.0);
     }
   }
 
-  #[inline]
   pub fn draw_rect(&mut self, x: f32, y: f32, w: f32, h: f32, paint: &Paint) {
     unsafe {
       ffi::skiac_canvas_draw_rect(self.0, x, y, w, h, paint.0);
     }
   }
 
-  #[inline]
   pub fn draw_text(
     &mut self,
     text: &str,
@@ -1909,7 +1901,6 @@ impl Canvas {
     }
   }
 
-  #[inline]
   pub fn get_line_metrics(
     &self,
     text: &str,
@@ -1953,7 +1944,6 @@ impl Canvas {
     line_metrics
   }
 
-  #[inline]
   pub fn draw_surface(
     &mut self,
     surface: &Surface,
@@ -1976,7 +1966,6 @@ impl Canvas {
     }
   }
 
-  #[inline]
   pub fn draw_surface_rect(
     &mut self,
     surface: &Surface,
@@ -2007,35 +1996,36 @@ impl Canvas {
     }
   }
 
-  #[inline]
   pub fn set_clip_rect(&mut self, x: f32, y: f32, w: f32, h: f32) {
     unsafe {
       ffi::skiac_canvas_clip_rect(self.0, x, y, w, h);
     }
   }
 
-  #[inline]
   pub fn set_clip_path(&mut self, path: &Path) {
     unsafe {
       ffi::skiac_canvas_clip_path(self.0, path.0);
     }
   }
 
-  #[inline]
   pub fn save(&mut self) {
     unsafe {
       ffi::skiac_canvas_save(self.0);
     }
   }
 
-  #[inline]
   pub fn restore(&mut self) {
     unsafe {
       ffi::skiac_canvas_restore(self.0);
     }
   }
 
-  #[inline]
+  pub fn reset(&mut self) {
+    unsafe {
+      ffi::skiac_canvas_reset(self.0);
+    }
+  }
+
   pub fn write_pixels(&mut self, image: &ImageData, x: u32, y: u32) {
     unsafe {
       ffi::skiac_canvas_write_pixels(
@@ -2050,16 +2040,15 @@ impl Canvas {
     }
   }
 
-  #[inline]
   pub fn write_pixels_dirty(
     &mut self,
     image: &ImageData,
-    x: u32,
-    y: u32,
-    dirty_x: f64,
-    dirty_y: f64,
-    dirty_width: f64,
-    dirty_height: f64,
+    x: f32,
+    y: f32,
+    dirty_x: f32,
+    dirty_y: f32,
+    dirty_width: f32,
+    dirty_height: f32,
   ) {
     unsafe {
       ffi::skiac_canvas_write_pixels_dirty(
@@ -2069,12 +2058,12 @@ impl Canvas {
         image.data,
         (image.width * 4) as usize,
         (image.width * image.height * 4) as usize,
-        x as f32,
-        y as f32,
-        dirty_x as f32,
-        dirty_y as f32,
-        dirty_width as f32,
-        dirty_height as f32,
+        x,
+        y,
+        dirty_x,
+        dirty_y,
+        dirty_width,
+        dirty_height,
       )
     }
   }
@@ -2090,126 +2079,106 @@ impl Clone for Paint {
 }
 
 impl Paint {
-  #[inline]
   pub fn new() -> Paint {
     unsafe { Paint(ffi::skiac_paint_create()) }
   }
 
-  #[inline]
   pub fn set_style(&mut self, style: PaintStyle) {
     unsafe {
       ffi::skiac_paint_set_style(self.0, style as i32);
     }
   }
 
-  #[inline]
   pub fn set_color(&mut self, r: u8, g: u8, b: u8, a: u8) {
     unsafe {
       ffi::skiac_paint_set_color(self.0, r, g, b, a);
     }
   }
 
-  #[inline]
   pub fn set_alpha(&mut self, a: u8) {
     unsafe {
       ffi::skiac_paint_set_alpha(self.0, a);
     }
   }
 
-  #[inline]
   pub fn get_alpha(&self) -> u8 {
     unsafe { ffi::skiac_paint_get_alpha(self.0) }
   }
 
-  #[inline]
   pub fn set_anti_alias(&mut self, aa: bool) {
     unsafe {
       ffi::skiac_paint_set_anti_alias(self.0, aa);
     }
   }
 
-  #[inline]
   pub fn set_blend_mode(&mut self, blend_mode: BlendMode) {
     unsafe {
       ffi::skiac_paint_set_blend_mode(self.0, blend_mode as i32);
     }
   }
 
-  #[inline]
   pub fn get_blend_mode(&self) -> BlendMode {
     unsafe { ffi::skiac_paint_get_blend_mode(self.0).into() }
   }
 
-  #[inline]
   pub fn set_shader(&mut self, shader: &Shader) {
     unsafe {
       ffi::skiac_paint_set_shader(self.0, shader.0);
     }
   }
 
-  #[inline]
   pub fn set_stroke_width(&mut self, width: f32) {
     unsafe {
       ffi::skiac_paint_set_stroke_width(self.0, width);
     }
   }
 
-  #[inline]
   pub fn get_stroke_width(&self) -> f32 {
     unsafe { ffi::skiac_paint_get_stroke_width(self.0) }
   }
 
-  #[inline]
   pub fn set_stroke_cap(&mut self, cap: StrokeCap) {
     unsafe {
       ffi::skiac_paint_set_stroke_cap(self.0, cap as i32);
     }
   }
 
-  #[inline]
   pub fn get_stroke_cap(&self) -> StrokeCap {
     StrokeCap::from_raw(unsafe { ffi::skiac_paint_get_stroke_cap(self.0) }).unwrap()
   }
 
-  #[inline]
   pub fn set_stroke_join(&mut self, join: StrokeJoin) {
     unsafe {
       ffi::skiac_paint_set_stroke_join(self.0, join as u8);
     }
   }
 
-  #[inline]
   pub fn get_stroke_join(&self) -> StrokeJoin {
     StrokeJoin::from_raw(unsafe { ffi::skiac_paint_get_stroke_join(self.0) }).unwrap()
   }
 
-  #[inline]
   pub fn set_stroke_miter(&mut self, miter: f32) {
     unsafe {
       ffi::skiac_paint_set_stroke_miter(self.0, miter as f32);
     }
   }
 
-  #[inline]
   pub fn get_stroke_miter(&self) -> f32 {
     unsafe { ffi::skiac_paint_get_stroke_miter(self.0) }
   }
 
-  #[inline]
   pub fn set_path_effect(&mut self, path_effect: &PathEffect) {
     unsafe {
       ffi::skiac_paint_set_path_effect(self.0, path_effect.0);
     }
   }
 
-  #[inline]
   pub fn set_mask_filter(&mut self, mask_filter: &MaskFilter) {
     unsafe {
       ffi::skiac_paint_set_mask_filter(self.0, mask_filter.0);
     }
   }
 
-  #[inline]
   pub fn set_image_filter(&mut self, image_filter: &ImageFilter) {
     unsafe {
       ffi::skiac_paint_set_image_filter(self.0, image_filter.0);
@@ -2233,7 +2202,6 @@ impl Default for Paint {
 }
 
 impl Drop for Paint {
-  #[inline]
   fn drop(&mut self) {
     unsafe { ffi::skiac_paint_destroy(self.0) }
   }
@@ -2253,17 +2221,14 @@ impl Clone for Path {
 }
 
 impl Path {
-  #[inline]
   pub fn new() -> Path {
     unsafe { Path(ffi::skiac_path_create()) }
   }
 
-  #[inline]
   pub fn swap(&mut self, other: &mut Path) {
     unsafe { ffi::skiac_path_swap(self.0, other.0) }
   }
 
-  #[inline]
   pub fn from_svg_path(path: &str) -> Option<Path> {
     let path_str = CString::new(path).ok()?;
     let p = unsafe { ffi::skiac_path_from_svg(path_str.into_raw()) };
@@ -2274,29 +2239,24 @@ impl Path {
     }
   }
 
-  #[inline]
-  pub fn add_path(&mut self, sub_path: &Path, transform: Transform) {
-    unsafe { ffi::skiac_add_path(self.0, sub_path.0, transform.into()) };
+  pub fn add_path(&mut self, sub_path: &Path, transform: &Matrix) {
+    unsafe { ffi::skiac_add_path(self.0, sub_path.0, transform.0) };
   }
 
-  #[inline]
   pub fn op(&self, other: &Path, op: PathOp) -> bool {
     unsafe { ffi::skiac_path_op(self.0, other.0, op as i32) }
   }
 
-  #[inline]
   pub fn set_fill_type(&mut self, kind: FillType) {
     unsafe {
       ffi::skiac_path_set_fill_type(self.0, kind as i32);
     }
   }
 
-  #[inline]
   pub fn get_fill_type(&mut self) -> i32 {
     unsafe { ffi::skiac_path_get_fill_type(self.0) }
   }
 
-  #[inline(always)]
   pub fn ellipse(
     &mut self,
     x: f32,
@@ -2344,7 +2304,7 @@ impl Path {
     rotated.pre_translate(-x, -y);
     let unrotated = rotated.invert().unwrap();
 
-    self.transform_matrix(&unrotated);
+    self.transform_self(&unrotated);
 
     // draw in 2 180 degree segments because trying to draw all 360 degrees at once
     // draws nothing.
@@ -2366,10 +2326,9 @@ impl Path {
       self.arc_to(left, top, right, bottom, start_deg, sweep_deg, false);
     }
 
-    self.transform_matrix(&rotated);
+    self.transform_self(&rotated);
   }
 
-  #[inline(always)]
   pub fn arc(
     &mut self,
     center_x: f32,
@@ -2391,7 +2350,6 @@ impl Path {
     )
   }
 
-  #[inline]
   pub fn arc_to(
     &mut self,
     left: f32,
@@ -2416,86 +2374,72 @@ impl Path {
     }
   }
 
-  #[inline]
   pub fn arc_to_tangent(&mut self, x1: f32, y1: f32, x2: f32, y2: f32, radius: f32) {
     unsafe { ffi::skiac_path_arc_to_tangent(self.0, x1, y1, x2, y2, radius) }
   }
 
-  #[inline]
   pub fn move_to(&mut self, x: f32, y: f32) {
     unsafe {
       ffi::skiac_path_move_to(self.0, x, y);
     }
   }
 
-  #[inline]
   pub fn line_to(&mut self, x: f32, y: f32) {
     unsafe {
       ffi::skiac_path_line_to(self.0, x, y);
     }
   }
 
-  #[inline]
   pub fn cubic_to(&mut self, x1: f32, y1: f32, x2: f32, y2: f32, x3: f32, y3: f32) {
     unsafe {
       ffi::skiac_path_cubic_to(self.0, x1, y1, x2, y2, x3, y3);
     }
   }
 
-  #[inline]
   pub fn quad_to(&mut self, cpx: f32, cpy: f32, x: f32, y: f32) {
     unsafe {
       ffi::skiac_path_quad_to(self.0, cpx, cpy, x, y);
     }
   }
 
-  #[inline]
   pub fn close(&mut self) {
     unsafe {
       ffi::skiac_path_close(self.0);
     }
   }
 
-  #[inline]
   pub fn add_rect(&mut self, l: f32, t: f32, r: f32, b: f32) {
     unsafe {
       ffi::skiac_path_add_rect(self.0, l, t, r, b);
     }
   }
 
-  #[inline]
   pub fn push_circle(&mut self, x: f32, y: f32, r: f32) {
     unsafe {
       ffi::skiac_path_add_circle(self.0, x, y, r);
     }
   }
 
-  #[inline]
-  pub fn transform(&mut self, transform: &Transform) {
-    unsafe { ffi::skiac_path_transform(self.0, transform.into()) };
+  pub fn transform(&self, transform: &Matrix) -> Self {
+    Self(unsafe { ffi::skiac_path_transform(self.0, transform.0) })
   }
 
-  #[inline]
-  pub fn transform_matrix(&mut self, matrix: &Matrix) {
-    unsafe { ffi::skiac_path_transform_matrix(self.0, matrix.0) };
+  pub fn transform_self(&mut self, matrix: &Matrix) {
+    unsafe { ffi::skiac_path_transform_self(self.0, matrix.0) };
   }
 
-  #[inline]
   pub fn is_empty(&self) -> bool {
     unsafe { ffi::skiac_path_is_empty(self.0) }
   }
 
-  #[inline]
   pub fn hit_test(&self, x: f32, y: f32, kind: FillType) -> bool {
     unsafe { ffi::skiac_path_hit_test(self.0, x, y, kind as i32) }
   }
 
-  #[inline]
   pub fn stroke_hit_test(&self, x: f32, y: f32, stroke_w: f32) -> bool {
     unsafe { ffi::skiac_path_stroke_hit_test(self.0, x, y, stroke_w) }
   }
 
-  #[inline]
   pub fn to_svg_string(&self) -> SkiaString {
     let mut string = SkiaString {
       ptr: ptr::null_mut(),
@@ -2506,22 +2450,18 @@ impl Path {
     string
   }
 
-  #[inline]
   pub fn simplify(&mut self) -> bool {
     unsafe { ffi::skiac_path_simplify(self.0) }
   }
 
-  #[inline]
   pub fn as_winding(&mut self) -> bool {
     unsafe { ffi::skiac_path_as_winding(self.0) }
   }
 
-  #[inline]
   pub fn stroke(&mut self, cap: StrokeCap, join: StrokeJoin, width: f32, miter_limit: f32) -> bool {
     unsafe { ffi::skiac_path_stroke(self.0, cap as i32, join as u8, width, miter_limit) }
   }
 
-  #[inline]
   pub fn compute_tight_bounds(&self) -> (f32, f32, f32, f32) {
     let mut rect = ffi::skiac_rect {
       left: 0.0f32,
@@ -2533,7 +2473,6 @@ impl Path {
     (rect.left, rect.top, rect.right, rect.bottom)
   }
 
-  #[inline]
   pub fn get_bounds(&self) -> (f32, f32, f32, f32) {
     let mut rect = ffi::skiac_rect {
       left: 0.0f32,
@@ -2545,14 +2484,43 @@ impl Path {
     (rect.left, rect.top, rect.right, rect.bottom)
   }
 
-  #[inline]
   pub fn trim(&mut self, start: f32, end: f32, is_complement: bool) -> bool {
     unsafe { ffi::skiac_path_trim(self.0, start, end, is_complement) }
   }
 
-  #[inline]
   pub fn dash(&mut self, on: f32, off: f32, phase: f32) -> bool {
     unsafe { ffi::skiac_path_dash(self.0, on, off, phase) }
+  }
+
+  fn ellipse_helper(&mut self, x: f32, y: f32, rx: f32, ry: f32, start_angle: f32, end_angle: f32) {
+    let sweep_degrees = radians_to_degrees(end_angle - start_angle);
+    let start_degrees = radians_to_degrees(start_angle);
+    let left = x - rx;
+    let top = y - ry;
+    let right = x + rx;
+    let bottom = y + ry;
+    if almost_equal(sweep_degrees.abs(), 360.0) {
+      let half_sweep = sweep_degrees / 2.0;
+      self.arc_to(left, top, right, bottom, start_degrees, half_sweep, false);
+      self.arc_to(
+        left,
+        top,
+        right,
+        bottom,
+        start_degrees + half_sweep,
+        half_sweep,
+        false,
+      );
+    };
+    self.arc_to(
+      left,
+      top,
+      right,
+      bottom,
+      start_degrees,
+      sweep_degrees,
+      false,
+    );
   }
 }
 
@@ -2563,7 +2531,6 @@ impl PartialEq for Path {
 }
 
 impl Drop for Path {
-  #[inline]
   fn drop(&mut self) {
     unsafe {
       ffi::skiac_path_destroy(self.0);
@@ -2606,7 +2573,6 @@ pub struct ConicGradient {
 pub struct Shader(*mut ffi::skiac_shader);
 
 impl Shader {
-  #[inline]
   pub fn new_linear_gradient(grad: &LinearGradient) -> Option<Shader> {
     let points = [
       ffi::skiac_point {
@@ -2632,7 +2598,6 @@ impl Shader {
     }
   }
 
-  #[inline]
   pub fn new_radial_gradient(grad: &RadialGradient) -> Option<Shader> {
     let start_point = ffi::skiac_point {
       x: grad.start.0,
@@ -2659,7 +2624,6 @@ impl Shader {
     }
   }
 
-  #[inline]
   pub fn new_conic_gradient(grad: &ConicGradient) -> Option<Shader> {
     unsafe {
       Self::from_ptr(ffi::skiac_shader_make_conic_gradient(
@@ -2676,7 +2640,6 @@ impl Shader {
     }
   }
 
-  #[inline]
   pub fn new_from_surface_image(
     surface: &Surface,
     ts: Transform,
@@ -2691,7 +2654,6 @@ impl Shader {
     }
   }
 
-  #[inline]
   pub fn from_bitmap(
     bitmap: *mut ffi::skiac_bitmap,
     repeat_x: TileMode,
@@ -2707,7 +2669,6 @@ impl Shader {
     }
   }
 
-  #[inline]
   unsafe fn from_ptr(ptr: *mut ffi::skiac_shader) -> Option<Shader> {
     if ptr.is_null() {
       None
@@ -2718,7 +2679,6 @@ impl Shader {
 }
 
 impl Drop for Shader {
-  #[inline]
   fn drop(&mut self) {
     unsafe {
       ffi::skiac_shader_destroy(self.0);
@@ -2729,7 +2689,6 @@ impl Drop for Shader {
 pub struct PathEffect(*mut ffi::skiac_path_effect);
 
 impl PathEffect {
-  #[inline]
   pub fn new_dash_path(intervals: &[f32], phase: f32) -> Option<PathEffect> {
     unsafe {
       let ptr =
@@ -2745,7 +2704,6 @@ impl PathEffect {
 }
 
 impl Drop for PathEffect {
-  #[inline]
   fn drop(&mut self) {
     unsafe {
       ffi::skiac_path_effect_destroy(self.0);
@@ -2757,27 +2715,79 @@ impl Drop for PathEffect {
 pub struct Matrix(*mut ffi::skiac_matrix);
 
 impl Matrix {
-  #[inline(always)]
   pub fn identity() -> Self {
     Matrix(unsafe { ffi::skiac_matrix_create() })
   }
 
-  #[inline(always)]
+  pub fn new(a: f32, b: f32, c: f32, d: f32, e: f32, f: f32) -> Self {
+    Self(unsafe { ffi::skiac_matrix_new(a, b, c, d, e, f) })
+  }
+
+  pub fn from_transform(ts: &Transform) -> Self {
+    let mut c_ts: ffi::skiac_transform = ts.into();
+    Matrix(unsafe { ffi::skiac_matrix_from_ts(&mut c_ts) })
+  }
+
+  pub fn rotated(radians: f32, x: f32, y: f32) -> Self {
+    Matrix(unsafe { ffi::skiac_matrix_create_rotated(radians, x, y) })
+  }
+
+  pub fn translated(x: f32, y: f32) -> Self {
+    Matrix(unsafe { ffi::skiac_matrix_create_translated(x, y) })
+  }
+
+  pub fn map_points(&self, x1: f32, y1: f32, x2: f32, y2: f32) -> (f32, f32, f32, f32) {
+    let mut mapped_point = ffi::skiac_mapped_point {
+      x1: 0.0,
+      y1: 0.0,
+      x2: 0.0,
+      y2: 0.0,
+    };
+    unsafe { ffi::skiac_matrix_map_points(self.0, x1, y1, x2, y2, &mut mapped_point) };
+    (
+      mapped_point.x1,
+      mapped_point.y1,
+      mapped_point.x2,
+      mapped_point.y2,
+    )
+  }
+
   pub fn pre_translate(&mut self, dx: f32, dy: f32) {
     unsafe { ffi::skiac_matrix_pre_translate(self.0, dx, dy) };
   }
 
-  #[inline(always)]
+  pub fn concat(&self, other: &Matrix) -> Self {
+    Self(unsafe { ffi::skiac_matrix_concat(self.0, other.0) })
+  }
+
+  pub fn multiply(&self, other: &Matrix) -> Self {
+    Self(unsafe { ffi::skiac_matrix_multiply(self.0, other.0) })
+  }
+
+  pub fn pre_concat(&mut self, other: &Matrix) {
+    unsafe { ffi::skiac_matrix_pre_concat(self.0, other.0) };
+  }
+
+  pub fn pre_scale(&mut self, sx: f32, sy: f32) {
+    unsafe { ffi::skiac_matrix_pre_scale(self.0, sx, sy) };
+  }
+
+  pub fn pre_transform(&mut self, ts: &Transform) {
+    unsafe { ffi::skiac_matrix_pre_concat_transform(self.0, ts.into()) }
+  }
+
   pub fn pre_rotate(&mut self, degrees: f32) {
     unsafe { ffi::skiac_matrix_pre_rotate(self.0, degrees) };
   }
 
-  #[inline(always)]
-  pub fn into_transform(self) -> Transform {
+  pub fn pre_rotate_x_y(&mut self, degrees: f32, x: f32, y: f32) {
+    unsafe { ffi::skiac_matrix_pre_rotate_x_y(self.0, degrees, x, y) };
+  }
+
+  pub fn get_transform(&self) -> Transform {
     unsafe { ffi::skiac_matrix_to_transform(self.0) }.into()
   }
 
-  #[inline(always)]
   pub fn invert(&self) -> Option<Matrix> {
     let m = Matrix::identity();
     if unsafe { ffi::skiac_matrix_invert(self.0, m.0) } {
@@ -2791,6 +2801,23 @@ impl Matrix {
 impl Clone for Matrix {
   fn clone(&self) -> Self {
     Matrix(unsafe { ffi::skiac_matrix_clone(self.0) })
+  }
+}
+
+impl fmt::Debug for Matrix {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    self.get_transform().fmt(f)
+  }
+}
+
+impl fmt::Display for Matrix {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    let ts = self.get_transform();
+    write!(
+      f,
+      "Matrix [{}, {}, {}, {}, {}, {}, 0, 0, 1]",
+      ts.a, ts.c, ts.e, ts.b, ts.d, ts.f
+    )
   }
 }
 
@@ -2811,12 +2838,10 @@ pub struct Transform {
 }
 
 impl Transform {
-  #[inline]
   pub fn new(a: f32, b: f32, c: f32, d: f32, e: f32, f: f32) -> Self {
     Transform { a, b, c, d, e, f }
   }
 
-  #[inline]
   pub fn rotate(radians: f32) -> Self {
     let sin_v = radians.sin();
     let cos_v = radians.cos();
@@ -2831,7 +2856,6 @@ impl Transform {
     }
   }
 
-  #[inline]
   /// | A C E |    | A/X C/X E/X |
   /// | B D F | -> | B/X D/X F/X |   for X != 0
   /// | 0 0 X |    |  0   0   1  |
@@ -2853,7 +2877,6 @@ impl Transform {
     }
   }
 
-  #[inline]
   /// | A C E |
   /// | B D F |
   /// | 0 0 1 |
@@ -2894,14 +2917,12 @@ impl Default for Transform {
 }
 
 impl From<ffi::skiac_transform> for Transform {
-  #[inline]
   fn from(ts: ffi::skiac_transform) -> Self {
     Transform::new(ts.a, ts.b, ts.c, ts.d, ts.e, ts.f)
   }
 }
 
 impl From<Transform> for ffi::skiac_transform {
-  #[inline]
   fn from(ts: Transform) -> Self {
     ffi::skiac_transform {
       a: ts.a,
@@ -2915,7 +2936,6 @@ impl From<Transform> for ffi::skiac_transform {
 }
 
 impl<'a> From<&'a Transform> for ffi::skiac_transform {
-  #[inline]
   fn from(ts: &'a Transform) -> Self {
     ffi::skiac_transform {
       a: ts.a,
@@ -2982,7 +3002,6 @@ impl Drop for ImageFilter {
 pub(crate) struct Bitmap(pub(crate) ffi::skiac_bitmap_info);
 
 impl Bitmap {
-  #[inline]
   pub fn from_buffer(ptr: *mut u8, size: usize) -> Self {
     let mut bitmap_info = ffi::skiac_bitmap_info {
       bitmap: ptr::null_mut(),
@@ -2995,7 +3014,6 @@ impl Bitmap {
     }
   }
 
-  #[inline]
   pub fn from_svg_data(data: *const u8, size: usize) -> Option<Self> {
     let mut bitmap_info = ffi::skiac_bitmap_info {
       bitmap: ptr::null_mut(),
@@ -3012,7 +3030,6 @@ impl Bitmap {
     }
   }
 
-  #[inline(always)]
   pub fn from_svg_data_with_custom_size(
     data: *const u8,
     size: usize,
@@ -3034,7 +3051,6 @@ impl Bitmap {
     }
   }
 
-  #[inline]
   pub fn from_image_data(
     ptr: *mut u8,
     width: usize,
@@ -3081,7 +3097,6 @@ pub struct ImagePattern {
 }
 
 impl ImagePattern {
-  #[inline(always)]
   pub(crate) fn get_shader(&self) -> Option<Shader> {
     Shader::from_bitmap(
       self.bitmap,
@@ -3115,7 +3130,6 @@ pub struct LineMetrics(pub ffi::skiac_line_metrics);
 pub struct FontCollection(pub *mut ffi::skiac_font_collection);
 
 impl FontCollection {
-  #[inline]
   pub fn new() -> FontCollection {
     unsafe {
       let c_font_collection = ffi::skiac_font_collection_create();
@@ -3123,7 +3137,6 @@ impl FontCollection {
     }
   }
 
-  #[inline]
   pub fn get_families(&self) -> Vec<FontStyleSet> {
     let mut names = Vec::new();
 
@@ -3173,7 +3186,6 @@ impl FontCollection {
     names
   }
 
-  #[inline]
   pub fn register(&self, font: &[u8], maybe_name_alias: Option<&str>) -> bool {
     let name_alias_ptr = match maybe_name_alias {
       Some(name_alias) => match CString::new(name_alias) {
@@ -3187,7 +3199,6 @@ impl FontCollection {
     }
   }
 
-  #[inline]
   pub fn register_from_path(&self, font_path: &str, maybe_name_alias: Option<&str>) -> bool {
     if let Ok(fp) = CString::new(font_path) {
       let name_alias_ptr = match maybe_name_alias {
@@ -3207,7 +3218,6 @@ impl FontCollection {
 }
 
 impl Drop for FontCollection {
-  #[inline]
   fn drop(&mut self) {
     unsafe { ffi::skiac_font_collection_destroy(self.0) }
   }
@@ -3230,7 +3240,6 @@ pub struct FontStyleSet {
 pub struct SkWMemoryStream(*mut ffi::skiac_w_memory_stream);
 
 impl SkWMemoryStream {
-  #[inline]
   pub fn data(&self, w: u32, h: u32) -> SkiaDataRef {
     let mut data = ffi::skiac_sk_data {
       ptr: ptr::null_mut(),
@@ -3243,7 +3252,6 @@ impl SkWMemoryStream {
 }
 
 impl Drop for SkWMemoryStream {
-  #[inline]
   fn drop(&mut self) {
     unsafe { ffi::skiac_sk_w_stream_destroy(self.0) }
   }
@@ -3259,7 +3267,6 @@ fn almost_equal(floata: f32, floatb: f32) -> bool {
   (floata - floatb).abs() < 0.00001
 }
 
-#[inline(always)]
 pub fn sk_svg_text_to_path(svg: &[u8], fc: &FontCollection) -> Option<SkiaDataRef> {
   let mut output_data = ffi::skiac_sk_data {
     ptr: ptr::null_mut(),

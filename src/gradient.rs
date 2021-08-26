@@ -17,7 +17,6 @@ pub enum CanvasGradient {
 }
 
 impl CanvasGradient {
-  #[inline(always)]
   pub fn into_js_instance(self, env: &Env) -> Result<JsObject> {
     let gradient_class = env.define_class(
       "Gradient",
@@ -30,7 +29,6 @@ impl CanvasGradient {
     Ok(instance)
   }
 
-  #[inline(always)]
   pub fn create_linear_gradient(x0: f32, y0: f32, x1: f32, y1: f32) -> Self {
     let linear_gradient = LinearGradient {
       start_point: (x0, y0),
@@ -45,7 +43,6 @@ impl CanvasGradient {
     Self::Linear(linear_gradient)
   }
 
-  #[inline(always)]
   pub fn create_radial_gradient(x0: f32, y0: f32, r0: f32, x1: f32, y1: f32, r1: f32) -> Self {
     let radial_gradient = RadialGradient {
       start: (x0, y0),
@@ -62,7 +59,6 @@ impl CanvasGradient {
     Self::Radial(radial_gradient)
   }
 
-  #[inline(always)]
   pub fn create_conic_gradient(x: f32, y: f32, r: f32) -> Self {
     Self::Conic(ConicGradient {
       center: (x, y),
@@ -76,7 +72,6 @@ impl CanvasGradient {
     })
   }
 
-  #[inline(always)]
   pub fn add_color_stop(&mut self, offset: f32, color: Color) {
     let (stops, colors) = match self {
       Self::Linear(linear_gradient) => (
@@ -110,7 +105,6 @@ impl CanvasGradient {
     }
   }
 
-  #[inline(always)]
   /// Transform is [3 x 3] matrix, but stored in 2d array:
   /// | A B C |
   /// | D E F |
@@ -118,10 +112,7 @@ impl CanvasGradient {
   /// [0 -> A, 1 -> B, 2 -> C, 3 -> D, 4 -> E, 5 -> F, 6 -> 0, 7 -> 0, 8 -> 1 ]
   /// [lineargradient.js](skia/modules/canvaskit/htmlcanvas/lineargradient.js)
   /// [radialgradient.js](skia/modules/canvaskit/htmlcanvas/radialgradient.js)
-  pub(crate) fn get_shader(
-    &self,
-    current_transform: &Transform,
-  ) -> result::Result<Shader, SkError> {
+  pub(crate) fn get_shader(&self, current_transform: Transform) -> result::Result<Shader, SkError> {
     match self {
       Self::Linear(ref linear_gradient) => Ok(
         Shader::new_linear_gradient(&LinearGradient {
@@ -131,23 +122,19 @@ impl CanvasGradient {
         })
         .ok_or_else(|| SkError::Generic("Get shader of linear gradient failed".to_owned()))?,
       ),
+      // Note, Skia has a different notion of a "radial" gradient.
+      // Skia has a twoPointConical gradient that is the same as the
+      // canvas's RadialGradient.
       Self::Radial(ref radial_gradient) => {
-        let r1 = radial_gradient.start_radius;
-        let r2 = radial_gradient.end_radius;
-
-        let sx = current_transform.a;
-        let sy = current_transform.d;
-        let scale_factor = (f32::abs(sx) + f32::abs(sy)) / 2f32;
-
-        let sr1 = r1 * scale_factor;
-        let sr2 = r2 * scale_factor;
-
+        // From the spec: "The points in the linear gradient must be transformed
+        // as described by the current transformation matrix when rendering."
+        let base = radial_gradient.base.clone();
         let new_radial_gradient = RadialGradient {
           start: radial_gradient.start,
           end: radial_gradient.end,
-          start_radius: sr1,
-          end_radius: sr2,
-          base: radial_gradient.base.clone(),
+          start_radius: radial_gradient.start_radius,
+          end_radius: radial_gradient.end_radius,
+          base,
         };
 
         Ok(
@@ -158,9 +145,8 @@ impl CanvasGradient {
       Self::Conic(ref conic_gradient) => {
         let (x, y) = conic_gradient.center;
         let r = conic_gradient.radius;
-
-        let sx = current_transform.a;
-        let sy = current_transform.d;
+        let sx = current_transform.c;
+        let sy = current_transform.b;
         let scale_factor = (f32::abs(sx) + f32::abs(sy)) / 2f32;
         let sr = r * scale_factor;
         let new_conic_gradient = ConicGradient {

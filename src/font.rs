@@ -53,7 +53,6 @@ impl Default for Font {
 }
 
 impl Font {
-  #[inline]
   pub fn new(font_rules: &str) -> Result<Font, ParseError> {
     let font_regexp = FONT_REGEXP.get_or_init(init_font_regexp);
     let default_font = Font::default();
@@ -121,7 +120,6 @@ impl Font {
   }
 }
 
-#[inline]
 // [ [ <'font-style'> || <font-variant-css21> || <'font-weight'> || <'font-stretch'> ]? <'font-size'> [ / <'line-height'> ]? <'font-family'> ] | caption | icon | menu | message-box | small-caption | status-barwhere <font-variant-css21> = [ normal | small-caps ]
 pub(crate) fn init_font_regexp() -> Regex {
   Regex::new(
@@ -152,7 +150,6 @@ pub enum FontStyle {
 }
 
 impl FontStyle {
-  #[inline]
   pub fn as_str(&self) -> &str {
     match *self {
       Self::Italic => "italic",
@@ -165,7 +162,6 @@ impl FontStyle {
 impl FromStr for FontStyle {
   type Err = ParseError;
 
-  #[inline]
   fn from_str(s: &str) -> Result<FontStyle, ParseError> {
     match s {
       "normal" => Ok(Self::Normal),
@@ -185,7 +181,6 @@ pub enum FontVariant {
 impl FromStr for FontVariant {
   type Err = ParseError;
 
-  #[inline]
   fn from_str(s: &str) -> Result<FontVariant, ParseError> {
     match s {
       "normal" => Ok(Self::Normal),
@@ -210,7 +205,6 @@ pub enum FontStretch {
 }
 
 impl From<i32> for FontStretch {
-  #[inline]
   fn from(value: i32) -> Self {
     match value {
       1 => FontStretch::UltraCondensed,
@@ -228,7 +222,6 @@ impl From<i32> for FontStretch {
 }
 
 impl FontStretch {
-  #[inline]
   pub fn as_str(&self) -> &str {
     match *self {
       FontStretch::UltraCondensed => "ultra-condensed",
@@ -244,7 +237,6 @@ impl FontStretch {
   }
 }
 
-#[inline]
 // https://drafts.csswg.org/css-fonts-4/#propdef-font-weight
 fn parse_font_weight(weight: &str) -> Option<u32> {
   match weight {
@@ -265,7 +257,6 @@ fn parse_font_weight(weight: &str) -> Option<u32> {
   }
 }
 
-#[inline]
 fn parse_font_stretch(stretch: &str) -> Option<FontStretch> {
   match stretch {
     "ultra-condensed" | "50%" => Some(FontStretch::UltraCondensed),
@@ -281,7 +272,6 @@ fn parse_font_stretch(stretch: &str) -> Option<FontStretch> {
   }
 }
 
-#[inline]
 fn parse_size_px(size: f32, unit: &str) -> f32 {
   let mut size_px = size;
   match unit {
