@@ -603,6 +603,8 @@ mod ffi {
 
     pub fn skiac_matrix_create() -> *mut skiac_matrix;
 
+    pub fn skiac_matrix_create_rotated(rotation: f32, x: f32, y: f32) -> *mut skiac_matrix;
+
     pub fn skiac_matrix_clone(matrix: *mut skiac_matrix) -> *mut skiac_matrix;
 
     pub fn skiac_matrix_pre_translate(matrix: *mut skiac_matrix, dx: f32, dy: f32);
@@ -2054,12 +2056,12 @@ impl Canvas {
   pub fn write_pixels_dirty(
     &mut self,
     image: &ImageData,
-    x: u32,
-    y: u32,
-    dirty_x: f64,
-    dirty_y: f64,
-    dirty_width: f64,
-    dirty_height: f64,
+    x: f32,
+    y: f32,
+    dirty_x: f32,
+    dirty_y: f32,
+    dirty_width: f32,
+    dirty_height: f32,
   ) {
     unsafe {
       ffi::skiac_canvas_write_pixels_dirty(
@@ -2069,12 +2071,12 @@ impl Canvas {
         image.data,
         (image.width * 4) as usize,
         (image.width * image.height * 4) as usize,
-        x as f32,
-        y as f32,
-        dirty_x as f32,
-        dirty_y as f32,
-        dirty_width as f32,
-        dirty_height as f32,
+        x,
+        y,
+        dirty_x,
+        dirty_y,
+        dirty_width,
+        dirty_height,
       )
     }
   }
@@ -2760,6 +2762,11 @@ impl Matrix {
   #[inline(always)]
   pub fn identity() -> Self {
     Matrix(unsafe { ffi::skiac_matrix_create() })
+  }
+
+  #[inline(always)]
+  pub fn rotated(radians: f32, x: f32, y: f32) -> Self {
+    Matrix(unsafe { ffi::skiac_matrix_create_rotated(radians, x, y) })
   }
 
   #[inline(always)]

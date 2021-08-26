@@ -1039,6 +1039,13 @@ extern "C"
     return reinterpret_cast<skiac_matrix *>(new SkMatrix());
   }
 
+  skiac_matrix *skiac_matrix_create_rotated(float rotation, float x, float y)
+  {
+    auto matrix = new SkMatrix();
+    matrix->setRotate(rotation, x, y);
+    return reinterpret_cast<skiac_matrix *>(matrix);
+  }
+
   skiac_matrix *skiac_matrix_clone(skiac_matrix *c_matrix)
   {
     return reinterpret_cast<skiac_matrix *>(new SkMatrix(*MATRIX_CAST));

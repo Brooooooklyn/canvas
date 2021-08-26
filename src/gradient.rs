@@ -131,17 +131,17 @@ impl CanvasGradient {
         })
         .ok_or_else(|| SkError::Generic("Get shader of linear gradient failed".to_owned()))?,
       ),
+      // Note, Skia has a different notion of a "radial" gradient.
+      // Skia has a twoPointConical gradient that is the same as the
+      // canvas's RadialGradient.
       Self::Radial(ref radial_gradient) => {
-        let r1 = radial_gradient.start_radius;
-        let r2 = radial_gradient.end_radius;
-
+        // From the spec: "The points in the linear gradient must be transformed
+        // as described by the current transformation matrix when rendering."
         let sx = current_transform.a;
         let sy = current_transform.d;
-        let scale_factor = (f32::abs(sx) + f32::abs(sy)) / 2f32;
-
-        let sr1 = r1 * scale_factor;
-        let sr2 = r2 * scale_factor;
-
+        let scale_factor = (sx.abs() + sy.abs()) / 2.0;
+        let sr1 = radial_gradient.start_radius * scale_factor;
+        let sr2 = radial_gradient.end_radius * scale_factor;
         let new_radial_gradient = RadialGradient {
           start: radial_gradient.start,
           end: radial_gradient.end,

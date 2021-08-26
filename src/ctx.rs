@@ -650,11 +650,10 @@ fn arc(ctx: CallContext) -> Result<JsUndefined> {
   let radius = ctx.get::<JsNumber>(2)?.get_double()? as f32;
   let start_angle = ctx.get::<JsNumber>(3)?.get_double()? as f32;
   let end_angle = ctx.get::<JsNumber>(4)?.get_double()? as f32;
-  let from_end = if ctx.length == 6 {
-    ctx.get::<JsBoolean>(5)?.get_value()?
-  } else {
-    false
-  };
+  let from_end = ctx
+    .get::<JsBoolean>(5)
+    .and_then(|js_bool| js_bool.get_value())
+    .unwrap_or(false);
   context_2d
     .path
     .arc(center_x, center_y, radius, start_angle, end_angle, from_end);
@@ -682,11 +681,8 @@ fn arc_to(ctx: CallContext) -> Result<JsUndefined> {
 fn begin_path(ctx: CallContext) -> Result<JsUndefined> {
   let this = ctx.this_unchecked::<JsObject>();
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
-
   let mut new_sub_path = Path::new();
-
   context_2d.path.swap(&mut new_sub_path);
-
   ctx.env.get_undefined()
 }
 
@@ -1209,15 +1205,15 @@ fn get_miter_limit(ctx: CallContext) -> Result<JsNumber> {
 
 #[js_function(4)]
 fn stroke_rect(ctx: CallContext) -> Result<JsUndefined> {
-  let x: f64 = ctx.get::<JsNumber>(0)?.try_into()?;
-  let y: f64 = ctx.get::<JsNumber>(1)?.try_into()?;
-  let w: f64 = ctx.get::<JsNumber>(2)?.try_into()?;
-  let h: f64 = ctx.get::<JsNumber>(3)?.try_into()?;
+  let x = ctx.get::<JsNumber>(0)?.get_double()? as f32;
+  let y = ctx.get::<JsNumber>(1)?.get_double()? as f32;
+  let w = ctx.get::<JsNumber>(2)?.get_double()? as f32;
+  let h = ctx.get::<JsNumber>(3)?.get_double()? as f32;
 
   let this = ctx.this_unchecked::<JsObject>();
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
 
-  context_2d.stroke_rect(x as f32, y as f32, w as f32, h as f32)?;
+  context_2d.stroke_rect(x, y, w, h)?;
 
   ctx.env.get_undefined()
 }
@@ -1225,8 +1221,8 @@ fn stroke_rect(ctx: CallContext) -> Result<JsUndefined> {
 #[js_function(4)]
 fn stroke_text(ctx: CallContext) -> Result<JsUndefined> {
   let text = ctx.get::<JsString>(0)?.into_utf8()?;
-  let x: f64 = ctx.get::<JsNumber>(1)?.try_into()?;
-  let y: f64 = ctx.get::<JsNumber>(2)?.try_into()?;
+  let x = ctx.get::<JsNumber>(1)?.get_double()? as f32;
+  let y = ctx.get::<JsNumber>(2)?.get_double()? as f32;
   let max_width = if ctx.length == 3 {
     MAX_TEXT_WIDTH
   } else {
@@ -1235,22 +1231,22 @@ fn stroke_text(ctx: CallContext) -> Result<JsUndefined> {
 
   let this = ctx.this_unchecked::<JsObject>();
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
-  context_2d.stroke_text(text.as_str()?, x as f32, y as f32, max_width)?;
+  context_2d.stroke_text(text.as_str()?, x, y, max_width)?;
 
   ctx.env.get_undefined()
 }
 
 #[js_function(4)]
 fn fill_rect(ctx: CallContext) -> Result<JsUndefined> {
-  let x: f64 = ctx.get::<JsNumber>(0)?.try_into()?;
-  let y: f64 = ctx.get::<JsNumber>(1)?.try_into()?;
-  let w: f64 = ctx.get::<JsNumber>(2)?.try_into()?;
-  let h: f64 = ctx.get::<JsNumber>(3)?.try_into()?;
+  let x = ctx.get::<JsNumber>(0)?.get_double()? as f32;
+  let y = ctx.get::<JsNumber>(1)?.get_double()? as f32;
+  let w = ctx.get::<JsNumber>(2)?.get_double()? as f32;
+  let h = ctx.get::<JsNumber>(3)?.get_double()? as f32;
 
   let this = ctx.this_unchecked::<JsObject>();
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
 
-  context_2d.fill_rect(x as f32, y as f32, w as f32, h as f32)?;
+  context_2d.fill_rect(x, y, w, h)?;
 
   ctx.env.get_undefined()
 }
@@ -1258,8 +1254,8 @@ fn fill_rect(ctx: CallContext) -> Result<JsUndefined> {
 #[js_function(4)]
 fn fill_text(ctx: CallContext) -> Result<JsUndefined> {
   let text = ctx.get::<JsString>(0)?.into_utf8()?;
-  let x: f64 = ctx.get::<JsNumber>(1)?.try_into()?;
-  let y: f64 = ctx.get::<JsNumber>(2)?.try_into()?;
+  let x = ctx.get::<JsNumber>(1)?.get_double()? as f32;
+  let y = ctx.get::<JsNumber>(2)?.get_double()? as f32;
   let max_width = if ctx.length == 3 {
     MAX_TEXT_WIDTH
   } else {
@@ -1268,7 +1264,7 @@ fn fill_text(ctx: CallContext) -> Result<JsUndefined> {
 
   let this = ctx.this_unchecked::<JsObject>();
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
-  context_2d.fill_text(text.as_str()?, x as f32, y as f32, max_width)?;
+  context_2d.fill_text(text.as_str()?, x, y, max_width)?;
 
   ctx.env.get_undefined()
 }
@@ -1277,10 +1273,10 @@ fn fill_text(ctx: CallContext) -> Result<JsUndefined> {
 fn get_image_data(ctx: CallContext) -> Result<JsTypedArray> {
   let this = ctx.this_unchecked::<JsObject>();
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
-  let x: u32 = ctx.get::<JsNumber>(0)?.try_into()?;
-  let y: u32 = ctx.get::<JsNumber>(1)?.try_into()?;
-  let width: u32 = ctx.get::<JsNumber>(2)?.try_into()?;
-  let height: u32 = ctx.get::<JsNumber>(3)?.try_into()?;
+  let x = ctx.get::<JsNumber>(0)?.get_uint32()?;
+  let y = ctx.get::<JsNumber>(1)?.get_uint32()?;
+  let width = ctx.get::<JsNumber>(2)?.get_uint32()?;
+  let height = ctx.get::<JsNumber>(3)?.get_uint32()?;
   let pixels = context_2d
     .surface
     .read_pixels(x, y, width, height)
@@ -1319,45 +1315,45 @@ fn put_image_data(ctx: CallContext) -> Result<JsUndefined> {
 
   let image_data_js = ctx.get::<JsObject>(0)?;
   let image_data = ctx.env.unwrap::<ImageData>(&image_data_js)?;
-  let dx: u32 = ctx.get::<JsNumber>(1)?.try_into()?;
-  let dy: u32 = ctx.get::<JsNumber>(2)?.try_into()?;
+  let dx = ctx.get::<JsNumber>(1)?.get_uint32()?;
+  let dy = ctx.get::<JsNumber>(2)?.get_uint32()?;
   if ctx.length == 3 {
     context_2d.surface.canvas.write_pixels(image_data, dx, dy);
   } else {
-    let mut dirty_x: f64 = ctx.get::<JsNumber>(3)?.try_into()?;
+    let mut dirty_x = ctx.get::<JsNumber>(3)?.get_double()? as f32;
     let mut dirty_y = if ctx.length >= 5 {
-      ctx.get::<JsNumber>(4)?.try_into()?
+      ctx.get::<JsNumber>(4)?.get_double()? as f32
     } else {
-      0f64
+      0.0f32
     };
     let mut dirty_width = if ctx.length >= 6 {
-      ctx.get::<JsNumber>(5)?.try_into()?
+      ctx.get::<JsNumber>(5)?.get_double()? as f32
     } else {
-      image_data.width as f64
+      image_data.width as f32
     };
     let mut dirty_height = if ctx.length == 7 {
-      ctx.get::<JsNumber>(6)?.try_into()?
+      ctx.get::<JsNumber>(6)?.get_double()? as f32
     } else {
-      image_data.height as f64
+      image_data.height as f32
     };
     // as per https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-putimagedata
-    if dirty_width < 0f64 {
+    if dirty_width < 0f32 {
       dirty_x += dirty_width;
       dirty_width = dirty_width.abs();
     }
-    if dirty_height < 0f64 {
+    if dirty_height < 0f32 {
       dirty_y += dirty_height;
       dirty_height = dirty_height.abs();
     }
-    if dirty_x < 0f64 {
+    if dirty_x < 0f32 {
       dirty_width += dirty_x;
-      dirty_x = 0f64;
+      dirty_x = 0f32;
     }
-    if dirty_y < 0f64 {
+    if dirty_y < 0f32 {
       dirty_height += dirty_y;
-      dirty_y = 0f64;
+      dirty_y = 0f32;
     }
-    if dirty_width <= 0f64 || dirty_height <= 0f64 {
+    if dirty_width <= 0f32 || dirty_height <= 0f32 {
       return ctx.env.get_undefined();
     }
     let inverted = context_2d.surface.canvas.get_transform().invert();
@@ -1367,8 +1363,8 @@ fn put_image_data(ctx: CallContext) -> Result<JsUndefined> {
     };
     context_2d.surface.canvas.write_pixels_dirty(
       image_data,
-      dx,
-      dy,
+      dx as f32,
+      dy as f32,
       dirty_x,
       dirty_y,
       dirty_width,
@@ -1385,7 +1381,7 @@ fn set_global_alpha(ctx: CallContext) -> Result<JsUndefined> {
   let this = ctx.this_unchecked::<JsObject>();
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
 
-  let alpha: f64 = ctx.get::<JsNumber>(0)?.try_into()?;
+  let alpha = ctx.get::<JsNumber>(0)?.get_double()? as f32;
 
   if !(0.0..=1.0).contains(&alpha) {
     return Err(Error::new(
@@ -1527,33 +1523,33 @@ fn set_current_transform(ctx: CallContext) -> Result<JsUndefined> {
 
   let transform = if ctx.length == 1 {
     let transform_object = ctx.get::<JsObject>(0)?;
-    let a: f64 = transform_object
+    let a = transform_object
       .get_named_property::<JsNumber>("a")?
-      .try_into()?;
-    let b: f64 = transform_object
+      .get_double()? as f32;
+    let b = transform_object
       .get_named_property::<JsNumber>("b")?
-      .try_into()?;
-    let c: f64 = transform_object
+      .get_double()? as f32;
+    let c = transform_object
       .get_named_property::<JsNumber>("c")?
-      .try_into()?;
-    let d: f64 = transform_object
+      .get_double()? as f32;
+    let d = transform_object
       .get_named_property::<JsNumber>("d")?
-      .try_into()?;
-    let e: f64 = transform_object
+      .get_double()? as f32;
+    let e = transform_object
       .get_named_property::<JsNumber>("e")?
-      .try_into()?;
-    let f: f64 = transform_object
+      .get_double()? as f32;
+    let f = transform_object
       .get_named_property::<JsNumber>("f")?
-      .try_into()?;
-    Transform::new(a as f32, b as f32, c as f32, d as f32, e as f32, f as f32)
+      .get_double()? as f32;
+    Transform::new(a, b, c, d, e, f)
   } else if ctx.length == 6 {
-    let a: f64 = ctx.get::<JsNumber>(0)?.try_into()?;
-    let b: f64 = ctx.get::<JsNumber>(1)?.try_into()?;
-    let c: f64 = ctx.get::<JsNumber>(2)?.try_into()?;
-    let d: f64 = ctx.get::<JsNumber>(3)?.try_into()?;
-    let e: f64 = ctx.get::<JsNumber>(4)?.try_into()?;
-    let f: f64 = ctx.get::<JsNumber>(5)?.try_into()?;
-    Transform::new(a as f32, b as f32, c as f32, d as f32, e as f32, f as f32)
+    let a = ctx.get::<JsNumber>(0)?.get_double()? as f32;
+    let b = ctx.get::<JsNumber>(1)?.get_double()? as f32;
+    let c = ctx.get::<JsNumber>(2)?.get_double()? as f32;
+    let d = ctx.get::<JsNumber>(3)?.get_double()? as f32;
+    let e = ctx.get::<JsNumber>(4)?.get_double()? as f32;
+    let f = ctx.get::<JsNumber>(5)?.get_double()? as f32;
+    Transform::new(a, b, c, d, e, f)
   } else {
     return Err(Error::new(
       Status::InvalidArg,
@@ -1568,13 +1564,13 @@ fn set_current_transform(ctx: CallContext) -> Result<JsUndefined> {
 
 #[js_function(2)]
 fn scale(ctx: CallContext) -> Result<JsUndefined> {
-  let x: f64 = ctx.get::<JsNumber>(0)?.try_into()?;
-  let y: f64 = ctx.get::<JsNumber>(1)?.try_into()?;
+  let x = ctx.get::<JsNumber>(0)?.get_double()? as f32;
+  let y = ctx.get::<JsNumber>(1)?.get_double()? as f32;
 
   let this = ctx.this_unchecked::<JsObject>();
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
 
-  context_2d.surface.canvas.scale(x as f32, y as f32);
+  context_2d.surface.canvas.scale(x, y);
 
   ctx.env.get_undefined()
 }
@@ -1593,7 +1589,7 @@ fn set_line_dash(ctx: CallContext) -> Result<JsUndefined> {
     vec![0f32; len]
   };
   for idx in 0..len {
-    let dash_value: f64 = dash.get_element::<JsNumber>(idx as u32)?.try_into()?;
+    let dash_value: f32 = dash.get_element::<JsNumber>(idx as u32)?.get_double()? as f32;
     dash_list[idx] = dash_value as f32;
     if is_odd {
       dash_list[idx + len] = dash_value as f32;
@@ -1770,7 +1766,7 @@ fn get_line_width(ctx: CallContext) -> Result<JsNumber> {
 
 #[js_function(1)]
 fn set_line_width(ctx: CallContext) -> Result<JsUndefined> {
-  let width: f64 = ctx.get::<JsNumber>(0)?.try_into()?;
+  let width = ctx.get::<JsNumber>(0)?.get_double()? as f32;
 
   let this = ctx.this_unchecked::<JsObject>();
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
@@ -1916,12 +1912,12 @@ fn get_shadow_blur(ctx: CallContext) -> Result<JsNumber> {
 
 #[js_function(1)]
 fn set_shadow_blur(ctx: CallContext) -> Result<JsUndefined> {
-  let blur: f64 = ctx.get::<JsNumber>(0)?.try_into()?;
+  let blur = ctx.get::<JsNumber>(0)?.get_double()? as f32;
 
   let this = ctx.this_unchecked::<JsObject>();
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
 
-  context_2d.states.last_mut().unwrap().shadow_blur = blur as f32;
+  context_2d.states.last_mut().unwrap().shadow_blur = blur;
 
   ctx.env.get_undefined()
 }
@@ -1987,13 +1983,13 @@ fn get_shadow_offset_x(ctx: CallContext) -> Result<JsNumber> {
 
 #[js_function(1)]
 fn set_shadow_offset_x(ctx: CallContext) -> Result<JsUndefined> {
-  let offset: f64 = ctx.get::<JsNumber>(0)?.try_into()?;
+  let offset: f32 = ctx.get::<JsNumber>(0)?.get_double()? as f32;
 
   let this = ctx.this_unchecked::<JsObject>();
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
   let last_state = context_2d.states.last_mut().unwrap();
 
-  last_state.shadow_offset_x = offset as f32;
+  last_state.shadow_offset_x = offset;
 
   ctx.env.get_undefined()
 }
@@ -2009,13 +2005,13 @@ fn get_shadow_offset_y(ctx: CallContext) -> Result<JsNumber> {
 
 #[js_function(1)]
 fn set_shadow_offset_y(ctx: CallContext) -> Result<JsUndefined> {
-  let offset: f64 = ctx.get::<JsNumber>(0)?.try_into()?;
+  let offset = ctx.get::<JsNumber>(0)?.get_double()? as f32;
 
   let this = ctx.this_unchecked::<JsObject>();
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
   let last_state = context_2d.states.last_mut().unwrap();
 
-  last_state.shadow_offset_y = offset as f32;
+  last_state.shadow_offset_y = offset;
 
   ctx.env.get_undefined()
 }

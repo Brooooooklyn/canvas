@@ -28,6 +28,9 @@ const CC = PLATFORM_NAME === 'win32' ? '\\"clang-cl\\"' : '"clang"'
 const CXX = PLATFORM_NAME === 'win32' ? '\\"clang-cl\\"' : '"clang++"'
 let ExtraCflagsCC = ''
 let ExtraSkiaBuildFlag = ''
+let ExtraCflags
+let ExtraLdFlags
+let ExtraAsmFlags
 
 const GN_ARGS = [
   `is_official_build=false`,
@@ -115,20 +118,16 @@ switch (PLATFORM_NAME) {
     throw new TypeError(`Don't support ${PLATFORM_NAME} for now`)
 }
 
-let ExtraCflags
-let ExtraLdFlags
-let ExtraAsmFlags
-
 switch (TARGET_TRIPLE) {
   case 'aarch64-unknown-linux-gnu':
     ExtraSkiaBuildFlag += ' target_cpu="arm64" target_os="linux"'
     ExtraCflags =
-      '"--target=aarch64-unknown-linux-gnu", "--sysroot=/usr/aarch64-linux-gnu", "--gcc-toolchain=aarch64-linux-gnu-gcc-10", "-B/usr/aarch64-linux-gnu/bin", "-I/usr/aarch64-linux-gnu/include/c++/10", "-I/usr/aarch64-linux-gnu/include/c++/10/aarch64-linux-gnu"'
+      '"--target=aarch64-unknown-linux-gnu", "--sysroot=/usr/aarch64-linux-gnu", "--gcc-toolchain=aarch64-linux-gnu-gcc-10", "-B/usr/aarch64-linux-gnu/bin", "-I/usr/aarch64-linux-gnu/include/c++/10", "-I/usr/aarch64-linux-gnu/include/c++/10/aarch64-linux-gnu", "-march=armv8-a"'
     ExtraCflagsCC +=
-      ', "--target=aarch64-unknown-linux-gnu", "--sysroot=/usr/aarch64-linux-gnu", "--gcc-toolchain=aarch64-linux-gnu-gcc-10", "-B/usr/aarch64-linux-gnu/bin", "-I/usr/aarch64-linux-gnu/include/c++/10", "-I/usr/aarch64-linux-gnu/include/c++/10/aarch64-linux-gnu"'
+      ', "--target=aarch64-unknown-linux-gnu", "--sysroot=/usr/aarch64-linux-gnu", "--gcc-toolchain=aarch64-linux-gnu-gcc-10", "-B/usr/aarch64-linux-gnu/bin", "-I/usr/aarch64-linux-gnu/include/c++/10", "-I/usr/aarch64-linux-gnu/include/c++/10/aarch64-linux-gnu", "-march=armv8-a"'
     ExtraLdFlags =
       '"--target=aarch64-unknown-linux-gnu", "-B/usr/aarch64-linux-gnu/bin", "-L/usr/aarch64-linux-gnu/lib", "-L/usr/lib/gcc-cross/aarch64-linux-gnu/10"'
-    ExtraAsmFlags = '"--sysroot=/usr/aarch64-linux-gnu", "--target=aarch64-unknown-linux-gnu"'
+    ExtraAsmFlags = '"--sysroot=/usr/aarch64-linux-gnu", "--target=aarch64-unknown-linux-gnu", "-march=armv8-a"'
 
     GN_ARGS.push(
       `extra_ldflags=[${ExtraLdFlags}]`,
@@ -141,12 +140,13 @@ switch (TARGET_TRIPLE) {
   case 'aarch64-unknown-linux-musl':
     ExtraSkiaBuildFlag += ' target_cpu="arm64" target_os="linux"'
     ExtraCflags =
-      '"--target=aarch64-unknown-linux-musl", "--sysroot=/aarch64-linux-musl-cross/aarch64-linux-musl", "--gcc-toolchain=aarch64-linux-musl-gcc", "-B/aarch64-linux-musl-cross/aarch64-linux-musl/bin", "-I/aarch64-linux-musl-cross/aarch64-linux-musl/include/c++/10.2.1", "-I/aarch64-linux-musl-cross/aarch64-linux-musl/include/c++/10.2.1/aarch64-linux-musl"'
+      '"--target=aarch64-unknown-linux-musl", "--sysroot=/aarch64-linux-musl-cross/aarch64-linux-musl", "--gcc-toolchain=aarch64-linux-musl-gcc", "-B/aarch64-linux-musl-cross/aarch64-linux-musl/bin", "-I/aarch64-linux-musl-cross/aarch64-linux-musl/include/c++/10.2.1", "-I/aarch64-linux-musl-cross/aarch64-linux-musl/include/c++/10.2.1/aarch64-linux-musl", "-march=armv8-a"'
     ExtraCflagsCC +=
-      ', "--target=aarch64-unknown-linux-musl", "--sysroot=/aarch64-linux-musl-cross/aarch64-linux-musl", "--gcc-toolchain=aarch64-linux-musl-gcc", "-B/aarch64-linux-musl-cross/aarch64-linux-musl/bin", "-I/aarch64-linux-musl-cross/aarch64-linux-musl/include/c++/10.2.1", "-I/aarch64-linux-musl-cross/aarch64-linux-musl/include/c++/10.2.1/aarch64-linux-musl"'
+      ', "--target=aarch64-unknown-linux-musl", "--sysroot=/aarch64-linux-musl-cross/aarch64-linux-musl", "--gcc-toolchain=aarch64-linux-musl-gcc", "-B/aarch64-linux-musl-cross/aarch64-linux-musl/bin", "-I/aarch64-linux-musl-cross/aarch64-linux-musl/include/c++/10.2.1", "-I/aarch64-linux-musl-cross/aarch64-linux-musl/include/c++/10.2.1/aarch64-linux-musl", "-march=armv8-a"'
     ExtraLdFlags =
       '"--target=aarch64-unknown-linux-musl", "--sysroot=/aarch64-linux-musl-cross/usr", "-B/aarch64-linux-musl-cross/usr/aarch64-linux-musl/bin", "-L/aarch64-linux-musl-cross/usr/aarch64-linux-musl/lib", "-L/aarch64-linux-musl-cross/usr/lib/gcc/aarch64-linux-musl/10.2.1"'
-    ExtraAsmFlags = '"--sysroot=/aarch64-linux-musl-cross/aarch64-linux-musl", "--target=aarch64-unknown-linux-musl"'
+    ExtraAsmFlags =
+      '"--sysroot=/aarch64-linux-musl-cross/aarch64-linux-musl", "--target=aarch64-unknown-linux-musl", "-march=armv8-a"'
     GN_ARGS.push(
       `extra_ldflags=[${ExtraLdFlags}]`,
       `ar="aarch64-linux-musl-ar"`,
@@ -158,9 +158,9 @@ switch (TARGET_TRIPLE) {
   case 'armv7-unknown-linux-gnueabihf':
     ExtraSkiaBuildFlag += ' target_cpu="armv7a" target_os="linux"'
     ExtraCflags =
-      '"--target=arm-unknown-linux-gnueabihf", "--sysroot=/usr/arm-linux-gnueabihf", "--gcc-toolchain=arm-linux-gnueabihf-gcc-10", "-B/usr/arm-linux-gnueabihf/bin", "-I/usr/arm-linux-gnueabihf/include/c++/10", "-I/usr/arm-linux-gnueabihf/include/c++/10/arm-linux-gnueabihf"'
+      '"--target=arm-unknown-linux-gnueabihf", "--sysroot=/usr/arm-linux-gnueabihf", "--gcc-toolchain=arm-linux-gnueabihf-gcc-10", "-B/usr/arm-linux-gnueabihf/bin", "-I/usr/arm-linux-gnueabihf/include/c++/10", "-I/usr/arm-linux-gnueabihf/include/c++/10/arm-linux-gnueabihf", "-march=armv7-a", "-mfpu=neon", "-mthumb"'
     ExtraCflagsCC +=
-      ', "--target=arm-unknown-linux-gnueabihf", "--sysroot=/usr/arm-linux-gnueabihf", "--gcc-toolchain=arm-linux-gnueabihf-gcc-10", "-B/usr/arm-linux-gnueabihf/bin", "-I/usr/arm-linux-gnueabihf/include/c++/10", "-I/usr/arm-linux-gnueabihf/include/c++/10/arm-linux-gnueabihf"'
+      ', "--target=arm-unknown-linux-gnueabihf", "--sysroot=/usr/arm-linux-gnueabihf", "--gcc-toolchain=arm-linux-gnueabihf-gcc-10", "-B/usr/arm-linux-gnueabihf/bin", "-I/usr/arm-linux-gnueabihf/include/c++/10", "-I/usr/arm-linux-gnueabihf/include/c++/10/arm-linux-gnueabihf", "-march=armv7-a", "-mfpu=neon", "-mthumb"'
     ExtraLdFlags =
       '"--target=arm-unknown-linux-gnueabihf", "-B/usr/arm-linux-gnueabihf/bin", "-L/usr/arm-linux-gnueabihf/lib", "-L/usr/lib/gcc-cross/arm-linux-gnueabihf/10"'
     ExtraAsmFlags =
@@ -176,10 +176,10 @@ switch (TARGET_TRIPLE) {
     break
   case 'aarch64-apple-darwin':
     ExtraSkiaBuildFlag += ' target_cpu="arm64" target_os="mac"'
-    ExtraCflagsCC += ', "--target=arm64-apple-darwin"'
-    ExtraLdFlags = '"--target=arm64-apple-darwin"'
-    ExtraAsmFlags = '"--target=arm64-apple-darwin"'
-    ExtraCflags = '"--target=arm64-apple-darwin"'
+    ExtraCflagsCC += ', "--target=arm64-apple-darwin", "-march=apple-a14"'
+    ExtraLdFlags = '"--target=arm64-apple-darwin", "-march=apple-a14"'
+    ExtraAsmFlags = '"--target=arm64-apple-darwin", "-march=apple-a14"'
+    ExtraCflags = '"--target=arm64-apple-darwin", "-march=apple-a14"'
     GN_ARGS.push(
       `extra_ldflags=[${ExtraLdFlags}]`,
       `extra_asmflags=[${ExtraAsmFlags}]`,
@@ -195,6 +195,13 @@ switch (TARGET_TRIPLE) {
     ExtraSkiaBuildFlag += ` target_cpu="arm64" ndk="${ANDROID_NDK_HOME}"`
     break
   case '':
+    // native compile for x86_64 systems
+    // enable avx2
+    if (PLATFORM_NAME !== 'win32') {
+      ExtraCflagsCC += ',"-march=haswell"'
+    } else {
+      ExtraCflagsCC += '\\,"-march=haswell\\"'
+    }
     break
   default:
     throw new TypeError(`[${TARGET_TRIPLE}] is not a valid target`)
@@ -235,4 +242,8 @@ if (process.env.GN_EXE) {
   writeFileSync(ninjaToolchain, ninjaToolchainContent.replace('python3', 'python'))
 }
 
+console.time('Build Skia')
+
 exec(`ninja -C ${OUTPUT_PATH}`)
+
+console.timeEnd('Build Skia')
