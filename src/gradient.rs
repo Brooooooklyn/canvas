@@ -17,7 +17,6 @@ pub enum CanvasGradient {
 }
 
 impl CanvasGradient {
-  #[inline(always)]
   pub fn into_js_instance(self, env: &Env) -> Result<JsObject> {
     let gradient_class = env.define_class(
       "Gradient",
@@ -30,7 +29,6 @@ impl CanvasGradient {
     Ok(instance)
   }
 
-  #[inline(always)]
   pub fn create_linear_gradient(x0: f32, y0: f32, x1: f32, y1: f32) -> Self {
     let linear_gradient = LinearGradient {
       start_point: (x0, y0),
@@ -45,7 +43,6 @@ impl CanvasGradient {
     Self::Linear(linear_gradient)
   }
 
-  #[inline(always)]
   pub fn create_radial_gradient(x0: f32, y0: f32, r0: f32, x1: f32, y1: f32, r1: f32) -> Self {
     let radial_gradient = RadialGradient {
       start: (x0, y0),
@@ -62,7 +59,6 @@ impl CanvasGradient {
     Self::Radial(radial_gradient)
   }
 
-  #[inline(always)]
   pub fn create_conic_gradient(x: f32, y: f32, r: f32) -> Self {
     Self::Conic(ConicGradient {
       center: (x, y),
@@ -76,7 +72,6 @@ impl CanvasGradient {
     })
   }
 
-  #[inline(always)]
   pub fn add_color_stop(&mut self, offset: f32, color: Color) {
     let (stops, colors) = match self {
       Self::Linear(linear_gradient) => (
@@ -110,7 +105,6 @@ impl CanvasGradient {
     }
   }
 
-  #[inline(always)]
   /// Transform is [3 x 3] matrix, but stored in 2d array:
   /// | A B C |
   /// | D E F |

@@ -217,9 +217,9 @@ extern "C"
     CANVAS_CAST->clear(static_cast<SkColor>(color));
   }
 
-  void skiac_canvas_set_transform(skiac_canvas *c_canvas, skiac_transform c_ts)
+  void skiac_canvas_set_transform(skiac_canvas *c_canvas, skiac_matrix *c_matrix)
   {
-    CANVAS_CAST->setMatrix(conv_from_transform(c_ts));
+    CANVAS_CAST->setMatrix(*MATRIX_CAST);
   }
 
   void skiac_canvas_concat(skiac_canvas *c_canvas, skiac_matrix *c_matrix)
@@ -481,6 +481,11 @@ extern "C"
     CANVAS_CAST->restore();
   }
 
+  void skiac_canvas_reset(skiac_canvas *c_canvas)
+  {
+    CANVAS_CAST->restoreToCount(1);
+  }
+
   void skiac_canvas_write_pixels(skiac_canvas *c_canvas, int width, int height, uint8_t *pixels, size_t row_bytes, int x, int y)
   {
     auto info = SkImageInfo::Make(width, height, SkColorType::kRGBA_8888_SkColorType, SkAlphaType::kUnpremul_SkAlphaType);
@@ -658,10 +663,10 @@ extern "C"
     PATH_CAST->swap(*other);
   }
 
-  void skiac_add_path(skiac_path *c_path, skiac_path *other_path, skiac_transform c_transform)
+  void skiac_add_path(skiac_path *c_path, skiac_path *other_path, skiac_matrix *c_matrix)
   {
     auto path = PATH_CAST;
-    path->addPath(*reinterpret_cast<SkPath *>(other_path), conv_from_transform(c_transform), SkPath::AddPathMode::kExtend_AddPathMode);
+    path->addPath(*reinterpret_cast<SkPath *>(other_path), *MATRIX_CAST, SkPath::AddPathMode::kExtend_AddPathMode);
   }
 
   bool skiac_path_op(skiac_path *c_path_one, skiac_path *c_path_two, int op)
@@ -822,13 +827,14 @@ extern "C"
     PATH_CAST->addCircle(x, y, r);
   }
 
-  void skiac_path_transform(skiac_path *c_path, skiac_transform c_transform)
+  skiac_path *skiac_path_transform(skiac_path *c_path, skiac_matrix *c_matrix)
   {
-    SkMatrix matrix = conv_from_transform(c_transform);
-    PATH_CAST->transform(matrix, PATH_CAST, SkApplyPerspectiveClip::kYes);
+    auto new_path = new SkPath();
+    PATH_CAST->transform(*MATRIX_CAST, new_path, SkApplyPerspectiveClip::kYes);
+    return reinterpret_cast<skiac_path *>(new_path);
   }
 
-  void skiac_path_transform_matrix(skiac_path *c_path, skiac_matrix *c_matrix)
+  void skiac_path_transform_self(skiac_path *c_path, skiac_matrix *c_matrix)
   {
     SkMatrix matrix = *reinterpret_cast<SkMatrix *>(c_matrix);
     PATH_CAST->transform(matrix, SkApplyPerspectiveClip::kYes);
@@ -1066,6 +1072,16 @@ extern "C"
   void skiac_matrix_pre_translate(skiac_matrix *c_matrix, float dx, float dy)
   {
     MATRIX_CAST->preTranslate(dx, dy);
+  }
+
+  void skiac_matrix_pre_concat(skiac_matrix *c_matrix, skiac_matrix *other)
+  {
+    MATRIX_CAST->preConcat(*reinterpret_cast<SkMatrix *>(other));
+  }
+
+  void skiac_matrix_pre_scale(skiac_matrix *c_matrix, float sx, float sy)
+  {
+    MATRIX_CAST->preScale(sx, sy);
   }
 
   void skiac_matrix_pre_concat_transform(skiac_matrix *c_matrix, skiac_transform c_ts)

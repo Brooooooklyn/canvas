@@ -337,7 +337,6 @@ fn get_content(ctx: CallContext) -> Result<JsBuffer> {
   }
 }
 
-#[inline]
 fn get_data_ref(ctx: &CallContext, mime: &str, quality: u8) -> Result<SkiaDataRef> {
   let this = ctx.this_unchecked::<JsObject>();
   let ctx_js = this.get_named_property::<JsObject>("ctx")?;

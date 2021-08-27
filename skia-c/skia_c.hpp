@@ -214,7 +214,7 @@ extern "C"
 
   // Canvas
   void skiac_canvas_clear(skiac_canvas *c_canvas, uint32_t color);
-  void skiac_canvas_set_transform(skiac_canvas *c_canvas, skiac_transform c_ts);
+  void skiac_canvas_set_transform(skiac_canvas *c_canvas, skiac_matrix *c_matrix);
   void skiac_canvas_concat(skiac_canvas *c_canvas, skiac_matrix *c_matrix);
   void skiac_canvas_scale(skiac_canvas *c_canvas, float sx, float sy);
   void skiac_canvas_translate(skiac_canvas *c_canvas, float dx, float dy);
@@ -271,6 +271,7 @@ extern "C"
   void skiac_canvas_clip_path(skiac_canvas *c_canvas, skiac_path *c_path);
   void skiac_canvas_save(skiac_canvas *c_canvas);
   void skiac_canvas_restore(skiac_canvas *c_canvas);
+  void skiac_canvas_reset(skiac_canvas *c_canvas);
   void skiac_canvas_write_pixels(skiac_canvas *c_canvas, int width, int height, uint8_t *pixels, size_t row_bytes, int x, int y);
   void skiac_canvas_write_pixels_dirty(skiac_canvas *c_canvas, int width, int height, uint8_t *pixels, size_t row_bytes, size_t length, float x, float y, float dirty_x, float dirty_y, float dirty_width, float dirty_height);
 
@@ -303,7 +304,7 @@ extern "C"
   skiac_path *skiac_path_from_svg(char *svg_path);
   skiac_path *skiac_path_clone(skiac_path *c_path);
   void skiac_path_swap(skiac_path *c_path, skiac_path *other_path);
-  void skiac_add_path(skiac_path *c_path, skiac_path *other_path, skiac_transform c_transform);
+  void skiac_add_path(skiac_path *c_path, skiac_path *other_path, skiac_matrix *c_matrix);
   bool skiac_path_op(skiac_path *c_path_one, skiac_path *c_path_two, int op);
   void skiac_path_to_svg_string(skiac_path *c_path, skiac_string *c_string);
   bool skiac_path_simplify(skiac_path *c_path);
@@ -328,8 +329,8 @@ extern "C"
   void skiac_path_close(skiac_path *c_path);
   void skiac_path_add_rect(skiac_path *c_path, float l, float t, float r, float b);
   void skiac_path_add_circle(skiac_path *c_path, float x, float y, float r);
-  void skiac_path_transform(skiac_path *c_path, skiac_transform c_transform);
-  void skiac_path_transform_matrix(skiac_path *c_path, skiac_matrix *c_matrix);
+  skiac_path *skiac_path_transform(skiac_path *c_path, skiac_matrix *c_matrix);
+  void skiac_path_transform_self(skiac_path *c_path, skiac_matrix *c_matrix);
   bool skiac_path_is_empty(skiac_path *c_path);
   bool skiac_path_hit_test(skiac_path *c_path, float x, float y, int type);
   bool skiac_path_stroke_hit_test(skiac_path *c_path, float x, float y, float stroke_w);
@@ -382,6 +383,8 @@ extern "C"
   skiac_matrix *skiac_matrix_create_rotated(float rotation, float x, float y);
   skiac_matrix *skiac_matrix_clone(skiac_matrix *c_matrix);
   void skiac_matrix_pre_translate(skiac_matrix *c_matrix, float dx, float dy);
+  void skiac_matrix_pre_concat(skiac_matrix *c_matrix, skiac_matrix *other);
+  void skiac_matrix_pre_scale(skiac_matrix *c_matrix, float sx, float sy);
   void skiac_matrix_pre_concat_transform(skiac_matrix *c_matrix, skiac_transform c_ts);
   void skiac_matrix_pre_rotate(skiac_matrix *c_matrix, float degrees);
   bool skiac_matrix_invert(skiac_matrix *c_matrix, skiac_matrix *inverse);

@@ -1,5 +1,7 @@
 use cssparser::RGBA;
 
+use crate::sk::Matrix;
+
 use super::{
   font::Font,
   pattern::Pattern,
@@ -27,6 +29,7 @@ pub struct Context2dRenderingState {
   pub text_align: TextAlign,
   pub text_baseline: TextBaseline,
   pub text_direction: TextDirection,
+  pub transform: Matrix,
 }
 
 impl Default for Context2dRenderingState {
@@ -53,6 +56,7 @@ impl Default for Context2dRenderingState {
       text_align: TextAlign::default(),
       text_baseline: TextBaseline::default(),
       text_direction: TextDirection::default(),
+      transform: Matrix::identity(),
     }
   }
 }
