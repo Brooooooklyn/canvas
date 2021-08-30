@@ -197,6 +197,15 @@ mod ffi {
     _unused: [u8; 0],
   }
 
+  #[repr(C)]
+  #[derive(Debug, Clone, Copy)]
+  pub struct skiac_mapped_point {
+    pub x1: f32,
+    pub y1: f32,
+    pub x2: f32,
+    pub y2: f32,
+  }
+
   pub type SkiacFontCollectionGetFamily =
     Option<unsafe extern "C" fn(width: i32, weight: i32, slant: i32, raw_cb: *mut c_void)>;
 
@@ -612,9 +621,25 @@ mod ffi {
 
     pub fn skiac_matrix_from_ts(ts: *mut skiac_transform) -> *mut skiac_matrix;
 
+    pub fn skiac_matrix_concat(
+      ts: *mut skiac_matrix,
+      other: *mut skiac_matrix,
+    ) -> *mut skiac_matrix;
+
     pub fn skiac_matrix_create_rotated(rotation: f32, x: f32, y: f32) -> *mut skiac_matrix;
 
+    pub fn skiac_matrix_create_translated(x: f32, y: f32) -> *mut skiac_matrix;
+
     pub fn skiac_matrix_clone(matrix: *mut skiac_matrix) -> *mut skiac_matrix;
+
+    pub fn skiac_matrix_map_points(
+      c_matrix: *mut skiac_matrix,
+      x1: f32,
+      y1: f32,
+      x2: f32,
+      y2: f32,
+      mapped_point: *mut skiac_mapped_point,
+    );
 
     pub fn skiac_matrix_pre_concat_transform(matrix: *mut skiac_matrix, ts: skiac_transform);
 
@@ -625,6 +650,8 @@ mod ffi {
     pub fn skiac_matrix_pre_scale(matrix: *mut skiac_matrix, sx: f32, sy: f32);
 
     pub fn skiac_matrix_pre_rotate(matrix: *mut skiac_matrix, degrees: f32);
+
+    pub fn skiac_matrix_pre_rotate_x_y(matrix: *mut skiac_matrix, degrees: f32, x: f32, y: f32);
 
     pub fn skiac_matrix_invert(matrix: *mut skiac_matrix, inverse: *mut skiac_matrix) -> bool;
 
@@ -2237,24 +2264,24 @@ impl Path {
     ccw: bool,
   ) {
     // based off of CanonicalizeAngle in Chrome
-    let tau = 2.0 * PI;
-    let mut new_start_angle = start_angle % tau;
+    let tao = 2.0 * PI;
+    let mut new_start_angle = start_angle % tao;
     if new_start_angle < 0.0 {
-      new_start_angle += tau;
+      new_start_angle += tao;
     }
     let delta = new_start_angle - start_angle;
     let start_angle = new_start_angle;
     let mut end_angle = end_angle + delta;
 
     // Based off of AdjustEndAngle in Chrome.
-    if !ccw && (end_angle - start_angle) >= tau {
-      end_angle = start_angle + tau; // Draw complete ellipse
-    } else if ccw && (start_angle - end_angle) >= tau {
-      end_angle = start_angle - tau; // Draw complete ellipse
+    if !ccw && (end_angle - start_angle) >= tao {
+      end_angle = start_angle + tao; // Draw complete ellipse
+    } else if ccw && (start_angle - end_angle) >= tao {
+      end_angle = start_angle - tao; // Draw complete ellipse
     } else if !ccw && start_angle > end_angle {
-      end_angle = start_angle + (tau - (start_angle - end_angle) % tau);
+      end_angle = start_angle + (tao - (start_angle - end_angle) % tao);
     } else if ccw && start_angle < end_angle {
-      end_angle = start_angle - (tau - (end_angle - start_angle) % tau);
+      end_angle = start_angle - (tao - (end_angle - start_angle) % tao);
     }
 
     // Based off of Chrome's implementation in
@@ -2262,38 +2289,14 @@ impl Path {
     // of note, can't use addArc or addOval because they close the arc, which
     // the spec says not to do (unless the user explicitly calls closePath).
     // This throws off points being in/out of the arc.
-    let left = x - radius_x;
-    let top = y - radius_y;
-    let right = x + radius_x;
-    let bottom = y + radius_y;
-    let mut rotated = Matrix::identity();
-    rotated.pre_translate(x, y);
-    rotated.pre_rotate(radians_to_degrees(rotation));
-    rotated.pre_translate(-x, -y);
-    let unrotated = rotated.invert().unwrap();
-
-    self.transform_self(&unrotated);
-
-    // draw in 2 180 degree segments because trying to draw all 360 degrees at once
-    // draws nothing.
-    let sweep_deg = radians_to_degrees(end_angle - start_angle);
-    let start_deg = radians_to_degrees(start_angle);
-    if almost_equal(sweep_deg.abs(), 360.0) {
-      let half_sweep = sweep_deg / 2.0;
-      self.arc_to(left, top, right, bottom, start_deg, half_sweep, false);
-      self.arc_to(
-        left,
-        top,
-        right,
-        bottom,
-        start_deg + half_sweep,
-        half_sweep,
-        false,
-      );
-    } else {
-      self.arc_to(left, top, right, bottom, start_deg, sweep_deg, false);
+    if rotation == 0.0 {
+      self.ellipse_helper(x, y, radius_x, radius_y, start_angle, end_angle);
+      return;
     }
-
+    let rotated = Matrix::rotated(rotation, x, y);
+    let rotated_invert = Matrix::rotated(-rotation, x, y);
+    self.transform_self(&rotated_invert);
+    self.ellipse_helper(x, y, radius_x, radius_y, start_angle, end_angle);
     self.transform_self(&rotated);
   }
 
@@ -2458,6 +2461,37 @@ impl Path {
 
   pub fn dash(&mut self, on: f32, off: f32, phase: f32) -> bool {
     unsafe { ffi::skiac_path_dash(self.0, on, off, phase) }
+  }
+
+  fn ellipse_helper(&mut self, x: f32, y: f32, rx: f32, ry: f32, start_angle: f32, end_angle: f32) {
+    let sweep_degrees = radians_to_degrees(end_angle - start_angle);
+    let start_degrees = radians_to_degrees(start_angle);
+    let left = x - rx;
+    let top = y - ry;
+    let right = x + rx;
+    let bottom = y + ry;
+    if almost_equal(sweep_degrees.abs(), 360.0) {
+      let half_sweep = sweep_degrees / 2.0;
+      self.arc_to(left, top, right, bottom, start_degrees, half_sweep, false);
+      self.arc_to(
+        left,
+        top,
+        right,
+        bottom,
+        start_degrees + half_sweep,
+        half_sweep,
+        false,
+      );
+    };
+    self.arc_to(
+      left,
+      top,
+      right,
+      bottom,
+      start_degrees,
+      sweep_degrees,
+      false,
+    );
   }
 }
 
@@ -2669,8 +2703,32 @@ impl Matrix {
     Matrix(unsafe { ffi::skiac_matrix_create_rotated(radians, x, y) })
   }
 
+  pub fn translated(x: f32, y: f32) -> Self {
+    Matrix(unsafe { ffi::skiac_matrix_create_translated(x, y) })
+  }
+
+  pub fn map_points(&self, x1: f32, y1: f32, x2: f32, y2: f32) -> (f32, f32, f32, f32) {
+    let mut mapped_point = ffi::skiac_mapped_point {
+      x1: 0.0,
+      y1: 0.0,
+      x2: 0.0,
+      y2: 0.0,
+    };
+    unsafe { ffi::skiac_matrix_map_points(self.0, x1, y1, x2, y2, &mut mapped_point) };
+    (
+      mapped_point.x1,
+      mapped_point.y1,
+      mapped_point.x2,
+      mapped_point.y2,
+    )
+  }
+
   pub fn pre_translate(&mut self, dx: f32, dy: f32) {
     unsafe { ffi::skiac_matrix_pre_translate(self.0, dx, dy) };
+  }
+
+  pub fn concat(&self, other: &Matrix) -> Self {
+    Self(unsafe { ffi::skiac_matrix_concat(self.0, other.0) })
   }
 
   pub fn pre_concat(&mut self, other: &Matrix) {
@@ -2687,6 +2745,10 @@ impl Matrix {
 
   pub fn pre_rotate(&mut self, degrees: f32) {
     unsafe { ffi::skiac_matrix_pre_rotate(self.0, degrees) };
+  }
+
+  pub fn pre_rotate_x_y(&mut self, degrees: f32, x: f32, y: f32) {
+    unsafe { ffi::skiac_matrix_pre_rotate_x_y(self.0, degrees, x, y) };
   }
 
   pub fn get_transform(&self) -> Transform {
@@ -2721,7 +2783,7 @@ impl fmt::Display for Matrix {
     write!(
       f,
       "Matrix [{}, {}, {}, {}, {}, {}, 0, 0, 1]",
-      ts.a, ts.b, ts.c, ts.d, ts.e, ts.f
+      ts.a, ts.c, ts.e, ts.b, ts.d, ts.f
     )
   }
 }
@@ -3162,10 +3224,12 @@ impl Drop for SkWMemoryStream {
   }
 }
 
+#[inline(always)]
 fn radians_to_degrees(rad: f32) -> f32 {
   (rad / PI) * 180.0
 }
 
+#[inline(always)]
 fn almost_equal(floata: f32, floatb: f32) -> bool {
   (floata - floatb).abs() < 0.00001
 }

@@ -112,10 +112,7 @@ impl CanvasGradient {
   /// [0 -> A, 1 -> B, 2 -> C, 3 -> D, 4 -> E, 5 -> F, 6 -> 0, 7 -> 0, 8 -> 1 ]
   /// [lineargradient.js](skia/modules/canvaskit/htmlcanvas/lineargradient.js)
   /// [radialgradient.js](skia/modules/canvaskit/htmlcanvas/radialgradient.js)
-  pub(crate) fn get_shader(
-    &self,
-    current_transform: &Transform,
-  ) -> result::Result<Shader, SkError> {
+  pub(crate) fn get_shader(&self, current_transform: Transform) -> result::Result<Shader, SkError> {
     match self {
       Self::Linear(ref linear_gradient) => Ok(
         Shader::new_linear_gradient(&LinearGradient {
@@ -131,12 +128,13 @@ impl CanvasGradient {
       Self::Radial(ref radial_gradient) => {
         // From the spec: "The points in the linear gradient must be transformed
         // as described by the current transformation matrix when rendering."
+        let base = radial_gradient.base.clone();
         let new_radial_gradient = RadialGradient {
           start: radial_gradient.start,
           end: radial_gradient.end,
           start_radius: radial_gradient.start_radius,
           end_radius: radial_gradient.end_radius,
-          base: radial_gradient.base.clone(),
+          base,
         };
 
         Ok(
@@ -147,9 +145,8 @@ impl CanvasGradient {
       Self::Conic(ref conic_gradient) => {
         let (x, y) = conic_gradient.center;
         let r = conic_gradient.radius;
-
-        let sx = current_transform.a;
-        let sy = current_transform.d;
+        let sx = current_transform.c;
+        let sy = current_transform.b;
         let scale_factor = (f32::abs(sx) + f32::abs(sy)) / 2f32;
         let sr = r * scale_factor;
         let new_conic_gradient = ConicGradient {

@@ -1064,6 +1064,35 @@ extern "C"
     return reinterpret_cast<skiac_matrix *>(matrix);
   }
 
+  skiac_matrix *skiac_matrix_create_translated(float x, float y)
+  {
+    auto matrix = new SkMatrix();
+    matrix->setTranslate(x, y);
+    return reinterpret_cast<skiac_matrix *>(matrix);
+  }
+
+  skiac_matrix *skiac_matrix_concat(skiac_matrix *c_matrix, skiac_matrix *other)
+  {
+    auto m = SkMatrix::Concat(*MATRIX_CAST, *reinterpret_cast<SkMatrix *>(other));
+    auto r = new SkMatrix(m);
+    return reinterpret_cast<skiac_matrix *>(r);
+  }
+
+  void skiac_matrix_map_points(skiac_matrix *c_matrix, float x1, float y1, float x2, float y2, skiac_mapped_point *mapped_point)
+  {
+    SkPoint dst[2];
+    auto p1 = SkPoint::Make(x1, y1);
+    auto p2 = SkPoint::Make(x2, y2);
+    SkPoint src[] = {p1, p2};
+    MATRIX_CAST->mapPoints(src, dst, 2);
+    auto dp1 = dst[0];
+    auto dp2 = dst[1];
+    mapped_point->x1 = dp1.fX;
+    mapped_point->y1 = dp1.fY;
+    mapped_point->x2 = dp2.fX;
+    mapped_point->y2 = dp2.fY;
+  }
+
   skiac_matrix *skiac_matrix_clone(skiac_matrix *c_matrix)
   {
     return reinterpret_cast<skiac_matrix *>(new SkMatrix(*MATRIX_CAST));
@@ -1093,6 +1122,11 @@ extern "C"
   void skiac_matrix_pre_rotate(skiac_matrix *c_matrix, float degrees)
   {
     MATRIX_CAST->preRotate(degrees);
+  }
+
+  void skiac_matrix_pre_rotate_x_y(skiac_matrix *c_matrix, float degrees, float x, float y)
+  {
+    MATRIX_CAST->preRotate(degrees, x, y);
   }
 
   bool skiac_matrix_invert(skiac_matrix *c_matrix, skiac_matrix *inverse)

@@ -208,10 +208,32 @@ impl Context {
     end_angle: f32,
     from_end: bool,
   ) {
-    let mut arc_path = Path::new();
-    let ts = &self.state.transform;
-    arc_path.arc(center_x, center_y, radius, start_angle, end_angle, from_end);
-    self.path.add_path(&arc_path, &ts);
+    self
+      .path
+      .arc(center_x, center_y, radius, start_angle, end_angle, from_end);
+  }
+
+  pub fn ellipse(
+    &mut self,
+    x: f32,
+    y: f32,
+    radius_x: f32,
+    radius_y: f32,
+    rotation: f32,
+    start_angle: f32,
+    end_angle: f32,
+    ccw: bool,
+  ) {
+    self.path.ellipse(
+      x,
+      y,
+      radius_x,
+      radius_y,
+      rotation,
+      start_angle,
+      end_angle,
+      ccw,
+    );
   }
 
   pub fn begin_path(&mut self) {
@@ -230,14 +252,15 @@ impl Context {
 
   pub fn save(&mut self) {
     self.states.push(self.state.clone());
+    self.surface.canvas.save();
   }
 
   pub fn restore(&mut self) {
     if let Some(s) = self.states.pop() {
+      let m = self.state.transform.concat(&s.transform.invert().unwrap());
+      self.path.transform_self(&m);
+      self.surface.canvas.restore();
       self.state = s;
-      self.surface.reset();
-      self.surface.save();
-      self.surface.canvas.set_transform(&self.state.transform);
     }
   }
 
@@ -262,27 +285,41 @@ impl Context {
   }
 
   pub fn translate(&mut self, x: f32, y: f32) {
-    let ts = &mut self.state.transform;
-    ts.pre_translate(x, y);
-    self.surface.canvas.set_transform(&ts);
+    let s = &mut self.state;
+    let inverse = Matrix::translated(-x, -y);
+    self.path.transform_self(&inverse);
+    self.surface.canvas.translate(x, y);
+    s.transform = self.surface.get_transform_matrix();
   }
 
-  pub fn transform(&mut self, ts: Matrix) {
-    let current_ts = &mut self.state.transform;
-    current_ts.pre_concat(&ts);
-    self.surface.canvas.set_transform(&current_ts);
+  pub fn transform(&mut self, ts: Matrix) -> result::Result<(), SkError> {
+    let s = &mut self.state;
+    self.path.transform_self(
+      &ts
+        .invert()
+        .ok_or_else(|| SkError::InvalidTransform(ts.clone()))?,
+    );
+    self.surface.concat(&ts);
+    s.transform = self.surface.get_transform_matrix();
+    Ok(())
   }
 
   pub fn rotate(&mut self, angle: f32) {
-    let ts = &mut self.state.transform;
-    ts.pre_rotate(angle as f32 / PI * 180f32);
-    self.surface.set_transform(ts);
+    let s = &mut self.state;
+    let degrees = angle as f32 / PI * 180f32;
+    let inverse = Matrix::rotated(-angle, 0.0, 0.0);
+    self.path.transform_self(&inverse);
+    self.surface.rotate(degrees);
+    s.transform = self.surface.get_transform_matrix();
   }
 
   pub fn scale(&mut self, x: f32, y: f32) {
-    let ts = &mut self.state.transform;
-    ts.pre_scale(x, y);
-    self.surface.canvas.set_transform(ts);
+    let s = &mut self.state;
+    let mut inverse = Matrix::identity();
+    inverse.pre_scale(1f32 / x, 1f32 / y);
+    self.path.transform_self(&inverse);
+    self.surface.canvas.scale(x, y);
+    s.transform = self.surface.get_transform_matrix();
   }
 
   pub fn set_transform(&mut self, ts: Matrix) {
@@ -341,11 +378,9 @@ impl Context {
 
   pub fn stroke(&mut self, path: Option<&mut Path>) -> Result<()> {
     let last_state = &self.state;
-    let ts = &last_state.transform;
-    let inverted = ts.invert().unwrap();
     let p = match path {
-      Some(path) => path.transform(&inverted),
-      None => self.path.transform(&inverted),
+      Some(path) => path,
+      None => &self.path,
     };
     let stroke_paint = self.stroke_paint()?;
     if let Some(shadow_paint) = self.shadow_blur_paint(&stroke_paint) {
@@ -370,14 +405,13 @@ impl Context {
     fill_rule: FillType,
   ) -> result::Result<(), SkError> {
     let last_state = &self.state;
-    let ts = &last_state.transform;
-    let inverted = ts.invert().unwrap();
-    let mut p = if let Some(p) = path {
-      p.transform(&inverted)
+    let p = if let Some(p) = path {
+      p.set_fill_type(fill_rule);
+      p
     } else {
-      self.path.transform(&inverted)
+      self.path.set_fill_type(fill_rule);
+      &self.path
     };
-    p.set_fill_type(fill_rule);
     let fill_paint = self.fill_paint()?;
     if let Some(shadow_paint) = self.shadow_blur_paint(&fill_paint) {
       let surface = &mut self.surface;
@@ -387,8 +421,8 @@ impl Context {
         last_state.shadow_offset_x,
         last_state.shadow_offset_y,
       )?;
-      self.surface.canvas.draw_path(&p, &shadow_paint);
-      self.surface.restore();
+      surface.canvas.draw_path(&p, &shadow_paint);
+      surface.restore();
       mem::drop(shadow_paint);
     }
     self.surface.draw_path(&p, &fill_paint);
@@ -409,7 +443,7 @@ impl Context {
       }
       Pattern::Gradient(g) => {
         let current_transform = &last_state.transform;
-        let shader = g.get_shader(&current_transform.get_transform())?;
+        let shader = g.get_shader(current_transform.get_transform())?;
         paint.set_color(0, 0, 0, alpha);
         paint.set_shader(&shader);
       }
@@ -445,7 +479,7 @@ impl Context {
       }
       Pattern::Gradient(g) => {
         let current_transform = &last_state.transform;
-        let shader = g.get_shader(&current_transform.get_transform())?;
+        let shader = g.get_shader(current_transform.get_transform())?;
         paint.set_color(0, 0, 0, global_alpha);
         paint.set_shader(&shader);
       }
@@ -1140,7 +1174,7 @@ fn ellipse(ctx: CallContext) -> Result<JsUndefined> {
   } else {
     false
   };
-  context_2d.path.ellipse(
+  context_2d.ellipse(
     x,
     y,
     radius_x,
@@ -1512,7 +1546,7 @@ fn get_current_transform(ctx: CallContext) -> Result<JsObject> {
   let this = ctx.this_unchecked::<JsObject>();
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
 
-  let current_transform = context_2d.surface.canvas.get_transform();
+  let current_transform = context_2d.state.transform.get_transform();
 
   transform_object.set_named_property("a", ctx.env.create_double(current_transform.a as f64)?)?;
   transform_object.set_named_property("b", ctx.env.create_double(current_transform.b as f64)?)?;
@@ -1647,7 +1681,7 @@ fn transform(ctx: CallContext) -> Result<JsUndefined> {
   let this = ctx.this_unchecked::<JsObject>();
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
   let ts = Matrix::new(a, c, e, b, d, f);
-  context_2d.transform(ts);
+  context_2d.transform(ts)?;
   ctx.env.get_undefined()
 }
 

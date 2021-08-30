@@ -187,6 +187,14 @@ struct skiac_sk_data
   skiac_data *data;
 };
 
+struct skiac_mapped_point
+{
+  float x1;
+  float y1;
+  float x2;
+  float y2;
+};
+
 extern "C"
 {
 
@@ -381,12 +389,16 @@ extern "C"
   skiac_matrix *skiac_matrix_new(float a, float b, float c, float d, float e, float f);
   skiac_matrix *skiac_matrix_from_ts(const skiac_transform *c_ts);
   skiac_matrix *skiac_matrix_create_rotated(float rotation, float x, float y);
+  skiac_matrix *skiac_matrix_create_translated(float x, float y);
+  skiac_matrix *skiac_matrix_concat(skiac_matrix *c_matrix, skiac_matrix *other);
   skiac_matrix *skiac_matrix_clone(skiac_matrix *c_matrix);
+  void skiac_matrix_map_points(skiac_matrix *c_matrix, float x1, float y1, float x2, float y2, skiac_mapped_point *mapped_point);
   void skiac_matrix_pre_translate(skiac_matrix *c_matrix, float dx, float dy);
   void skiac_matrix_pre_concat(skiac_matrix *c_matrix, skiac_matrix *other);
   void skiac_matrix_pre_scale(skiac_matrix *c_matrix, float sx, float sy);
   void skiac_matrix_pre_concat_transform(skiac_matrix *c_matrix, skiac_transform c_ts);
   void skiac_matrix_pre_rotate(skiac_matrix *c_matrix, float degrees);
+  void skiac_matrix_pre_rotate_x_y(skiac_matrix *c_matrix, float degrees, float x, float y);
   bool skiac_matrix_invert(skiac_matrix *c_matrix, skiac_matrix *inverse);
   skiac_transform skiac_matrix_to_transform(skiac_matrix *c_matrix);
   void skiac_matrix_destroy(skiac_matrix *c_matrix);
