@@ -30,7 +30,7 @@ test('transform-with-state', async (t) => {
   await snapshotImage(t, { canvas, ctx })
 })
 
-test('transform-with-radial-gradient', async (t) => {
+test.only('transform-with-radial-gradient', async (t) => {
   const canvas = createCanvas(256, 256)
   const ctx = canvas.getContext('2d')
   ctx.translate(128.5, 128.5)

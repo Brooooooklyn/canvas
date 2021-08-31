@@ -208,9 +208,12 @@ impl Context {
     end_angle: f32,
     from_end: bool,
   ) {
-    self
-      .path
-      .arc(center_x, center_y, radius, start_angle, end_angle, from_end);
+    let mut arc_path = Path::new();
+    arc_path.arc(center_x, center_y, radius, start_angle, end_angle, from_end);
+    self.path.add_path(
+      &mut arc_path.transform(&self.state.transform),
+      &Matrix::identity(),
+    );
   }
 
   pub fn ellipse(
@@ -224,7 +227,8 @@ impl Context {
     end_angle: f32,
     ccw: bool,
   ) {
-    self.path.ellipse(
+    let mut ellipse_path = Path::new();
+    ellipse_path.ellipse(
       x,
       y,
       radius_x,
@@ -233,6 +237,10 @@ impl Context {
       start_angle,
       end_angle,
       ccw,
+    );
+    self.path.add_path(
+      &ellipse_path.transform(&self.state.transform),
+      &Matrix::identity(),
     );
   }
 
@@ -251,15 +259,15 @@ impl Context {
   }
 
   pub fn save(&mut self) {
-    self.states.push(self.state.clone());
     self.surface.canvas.save();
+    self.states.push(self.state.clone());
   }
 
   pub fn restore(&mut self) {
+    self.surface.canvas.restore();
     if let Some(s) = self.states.pop() {
       let m = self.state.transform.concat(&s.transform.invert().unwrap());
       self.path.transform_self(&m);
-      self.surface.canvas.restore();
       self.state = s;
     }
   }

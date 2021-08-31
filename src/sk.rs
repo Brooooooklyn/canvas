@@ -2264,24 +2264,24 @@ impl Path {
     ccw: bool,
   ) {
     // based off of CanonicalizeAngle in Chrome
-    let tao = 2.0 * PI;
-    let mut new_start_angle = start_angle % tao;
+    let tau = 2.0 * PI;
+    let mut new_start_angle = start_angle % tau;
     if new_start_angle < 0.0 {
-      new_start_angle += tao;
+      new_start_angle += tau;
     }
     let delta = new_start_angle - start_angle;
     let start_angle = new_start_angle;
     let mut end_angle = end_angle + delta;
 
     // Based off of AdjustEndAngle in Chrome.
-    if !ccw && (end_angle - start_angle) >= tao {
-      end_angle = start_angle + tao; // Draw complete ellipse
-    } else if ccw && (start_angle - end_angle) >= tao {
-      end_angle = start_angle - tao; // Draw complete ellipse
+    if !ccw && (end_angle - start_angle) >= tau {
+      end_angle = start_angle + tau; // Draw complete ellipse
+    } else if ccw && (start_angle - end_angle) >= tau {
+      end_angle = start_angle - tau; // Draw complete ellipse
     } else if !ccw && start_angle > end_angle {
-      end_angle = start_angle + (tao - (start_angle - end_angle) % tao);
+      end_angle = start_angle + (tau - (start_angle - end_angle) % tau);
     } else if ccw && start_angle < end_angle {
-      end_angle = start_angle - (tao - (end_angle - start_angle) % tao);
+      end_angle = start_angle - (tau - (end_angle - start_angle) % tau);
     }
 
     // Based off of Chrome's implementation in
@@ -2289,14 +2289,38 @@ impl Path {
     // of note, can't use addArc or addOval because they close the arc, which
     // the spec says not to do (unless the user explicitly calls closePath).
     // This throws off points being in/out of the arc.
-    if rotation == 0.0 {
-      self.ellipse_helper(x, y, radius_x, radius_y, start_angle, end_angle);
-      return;
+    let left = x - radius_x;
+    let top = y - radius_y;
+    let right = x + radius_x;
+    let bottom = y + radius_y;
+    let mut rotated = Matrix::identity();
+    rotated.pre_translate(x, y);
+    rotated.pre_rotate(radians_to_degrees(rotation));
+    rotated.pre_translate(-x, -y);
+    let unrotated = rotated.invert().unwrap();
+
+    self.transform_self(&unrotated);
+
+    // draw in 2 180 degree segments because trying to draw all 360 degrees at once
+    // draws nothing.
+    let sweep_deg = radians_to_degrees(end_angle - start_angle);
+    let start_deg = radians_to_degrees(start_angle);
+    if almost_equal(sweep_deg.abs(), 360.0) {
+      let half_sweep = sweep_deg / 2.0;
+      self.arc_to(left, top, right, bottom, start_deg, half_sweep, false);
+      self.arc_to(
+        x - radius_x,
+        y - radius_y,
+        x + radius_x,
+        y + radius_y,
+        start_deg + half_sweep,
+        half_sweep,
+        false,
+      );
+    } else {
+      self.arc_to(left, top, right, bottom, start_deg, sweep_deg, false);
     }
-    let rotated = Matrix::rotated(rotation, x, y);
-    let rotated_invert = Matrix::rotated(-rotation, x, y);
-    self.transform_self(&rotated_invert);
-    self.ellipse_helper(x, y, radius_x, radius_y, start_angle, end_angle);
+
     self.transform_self(&rotated);
   }
 
