@@ -208,12 +208,9 @@ impl Context {
     end_angle: f32,
     from_end: bool,
   ) {
-    let mut arc_path = Path::new();
-    arc_path.arc(center_x, center_y, radius, start_angle, end_angle, from_end);
-    self.path.add_path(
-      &mut arc_path.transform(&self.state.transform),
-      &Matrix::identity(),
-    );
+    self
+      .path
+      .arc(center_x, center_y, radius, start_angle, end_angle, from_end);
   }
 
   pub fn ellipse(
@@ -227,8 +224,7 @@ impl Context {
     end_angle: f32,
     ccw: bool,
   ) {
-    let mut ellipse_path = Path::new();
-    ellipse_path.ellipse(
+    self.path.ellipse(
       x,
       y,
       radius_x,
@@ -237,10 +233,6 @@ impl Context {
       start_angle,
       end_angle,
       ccw,
-    );
-    self.path.add_path(
-      &ellipse_path.transform(&self.state.transform),
-      &Matrix::identity(),
     );
   }
 
@@ -264,10 +256,10 @@ impl Context {
   }
 
   pub fn restore(&mut self) {
-    self.surface.canvas.restore();
     if let Some(s) = self.states.pop() {
-      let m = self.state.transform.concat(&s.transform.invert().unwrap());
-      self.path.transform_self(&m);
+      self.path.transform_self(&self.state.transform);
+      self.surface.canvas.restore();
+      self.path.transform_self(&s.transform.invert().unwrap());
       self.state = s;
     }
   }
@@ -399,11 +391,11 @@ impl Context {
         last_state.shadow_offset_x,
         last_state.shadow_offset_y,
       )?;
-      self.surface.canvas.draw_path(&p, &shadow_paint);
+      self.surface.canvas.draw_path(p, &shadow_paint);
       self.surface.restore();
       mem::drop(shadow_paint);
     }
-    self.surface.canvas.draw_path(&p, &stroke_paint);
+    self.surface.canvas.draw_path(p, &stroke_paint);
     Ok(())
   }
 
@@ -429,11 +421,11 @@ impl Context {
         last_state.shadow_offset_x,
         last_state.shadow_offset_y,
       )?;
-      surface.canvas.draw_path(&p, &shadow_paint);
+      surface.canvas.draw_path(p, &shadow_paint);
       surface.restore();
       mem::drop(shadow_paint);
     }
-    self.surface.draw_path(&p, &fill_paint);
+    self.surface.draw_path(p, &fill_paint);
     Ok(())
   }
 
