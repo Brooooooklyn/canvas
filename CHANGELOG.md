@@ -1,19 +1,15 @@
 ## [0.1.6](https://github.com/Brooooooklyn/canvas/compare/v0.1.5...v0.1.6) (2021-08-25)
 
-
 ### Bug Fixes
 
-* example to png ([90edf49](https://github.com/Brooooooklyn/canvas/commit/90edf499f5ad1961f59e7609ae131328b6912a59))
-* pass the fabric.js visual tests ([ec55b3a](https://github.com/Brooooooklyn/canvas/commit/ec55b3a5ad4d905f060ddf0aa7d047849369bb82))
-* strip start and end ' from font family ([177e4f6](https://github.com/Brooooooklyn/canvas/commit/177e4f625d1cd0e93913cd0309e89fab8c3b0a6f))
-
+- example to png ([90edf49](https://github.com/Brooooooklyn/canvas/commit/90edf499f5ad1961f59e7609ae131328b6912a59))
+- pass the fabric.js visual tests ([ec55b3a](https://github.com/Brooooooklyn/canvas/commit/ec55b3a5ad4d905f060ddf0aa7d047849369bb82))
+- strip start and end ' from font family ([177e4f6](https://github.com/Brooooooklyn/canvas/commit/177e4f625d1cd0e93913cd0309e89fab8c3b0a6f))
 
 ### Features
 
-* chrome/m94 ([887a950](https://github.com/Brooooooklyn/canvas/commit/887a95054af022690ad6ee249f56d789c1a85a36))
-* load fonts from user dir ([fd6fb78](https://github.com/Brooooooklyn/canvas/commit/fd6fb7837ff5544e6139d9f219476194676bdaa2))
-
-
+- chrome/m94 ([887a950](https://github.com/Brooooooklyn/canvas/commit/887a95054af022690ad6ee249f56d789c1a85a36))
+- load fonts from user dir ([fd6fb78](https://github.com/Brooooooklyn/canvas/commit/fd6fb7837ff5544e6139d9f219476194676bdaa2))
 
 ## [0.1.5](https://github.com/Brooooooklyn/canvas/compare/v0.1.4...v0.1.5) (2021-08-13)
 

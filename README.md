@@ -27,13 +27,33 @@ npm install @napi-rs/canvas
 | --------------------- | ------ | ------ | ------ | ------ |
 | Windows x64           | ✓      | ✓      | ✓      | ✓      |
 | macOS x64             | ✓      | ✓      | ✓      | ✓      |
-| macOS aarch64         | ✓      | ✓      | ✓      | ✓      |
+| macOS arm64 (m chips) | ✓      | ✓      | ✓      | ✓      |
 | Linux x64 gnu         | ✓      | ✓      | ✓      | ✓      |
 | Linux x64 musl        | ✓      | ✓      | ✓      | ✓      |
-| Linux aarch64 gnu     | ✓      | ✓      | ✓      | ✓      |
-| Linux aarch64 musl    | ✓      | ✓      | ✓      | ✓      |
+| Linux arm64 gnu       | ✓      | ✓      | ✓      | ✓      |
+| Linux arm64 musl      | ✓      | ✓      | ✓      | ✓      |
 | Linux arm gnueabihf   | ✓      | ✓      | ✓      | ✓      |
-| Linux aarch64 android | ✓      | ✓      | ✓      | ✓      |
+| Linux arm64 android   | ✓      | ✓      | ✓      | ✓      |
+
+## System requirement
+
+### `x64`
+
+Because skia relies heavily on the [`AVX2`](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions#CPUs_with_AVX2) instructions, the CPU needs to be at least [`Intel haswell`](<https://en.wikipedia.org/wiki/Haswell_(microarchitecture)>), [`AMD Excavator`](<https://en.wikipedia.org/wiki/Excavator_(microarchitecture)>) (Intel Core 4th+/AMD Excavator+) or newer architecture for use on **Windows** and **Linux**.
+
+On `macOS`, the CPU needs to be at least Intel [`Intel ivybridge`](<https://en.wikipedia.org/wiki/Ivy_Bridge_(microarchitecture)>) (Intel Core 3th+).
+
+> Because Github Actions only provide `ivybridge` CPU on macOS CI, so we need support back to `ivybridge` CPU on macOS to run tests in CI.
+
+### `arm64`
+
+[**_cortex-a57_**](https://en.wikipedia.org/wiki/ARM_Cortex-A57) or newer CPU architecture on **Linux**.
+
+All `m` chips on **macOS**.
+
+### `armv7`
+
+[**_cortex-a7_**](https://en.wikipedia.org/wiki/ARM_Cortex-A7) or newer CPU architecture.
 
 # Usage
 

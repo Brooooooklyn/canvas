@@ -27,13 +27,33 @@ npm install @napi-rs/canvas
 | --------------------- | ------ | ------ | ------ | ------ |
 | Windows x64           | ✓      | ✓      | ✓      | ✓      |
 | macOS x64             | ✓      | ✓      | ✓      | ✓      |
-| macOS aarch64         | ✓      | ✓      | ✓      | ✓      |
+| macOS arm64 (m chips) | ✓      | ✓      | ✓      | ✓      |
 | Linux x64 gnu         | ✓      | ✓      | ✓      | ✓      |
 | Linux x64 musl        | ✓      | ✓      | ✓      | ✓      |
-| Linux aarch64 gnu     | ✓      | ✓      | ✓      | ✓      |
-| Linux aarch64 musl    | ✓      | ✓      | ✓      | ✓      |
+| Linux arm64 gnu       | ✓      | ✓      | ✓      | ✓      |
+| Linux arm64 musl      | ✓      | ✓      | ✓      | ✓      |
 | Linux arm gnueabihf   | ✓      | ✓      | ✓      | ✓      |
-| Linux aarch64 android | ✓      | ✓      | ✓      | ✓      |
+| Linux arm64 android   | ✓      | ✓      | ✓      | ✓      |
+
+## 系统要求
+
+### `x64`
+
+因为 Skia 大量依赖 [`AVX2`](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions#CPUs_with_AVX2) 指令集, 所以在 **Windows** 和 **Linux** 上，CPU 至少需要 [`Intel haswell`](<https://en.wikipedia.org/wiki/Haswell_(microarchitecture)>), [`AMD Excavator`](<https://en.wikipedia.org/wiki/Excavator_(microarchitecture)>) (Intel Core 4th+/AMD Excavator+) 或更新的架构.
+
+在 **macOS** 上，CPU 至少需要 [`Intel ivybridge`](<https://en.wikipedia.org/wiki/Ivy_Bridge_(microarchitecture)>).
+
+> 因为 Github Actions 的 macOS CI 只提供了 `ivybridge` 架构的 CPU, 所以我们在 macOS 上需要兼容到 `ivybridge` 架构的 CPU，这样才能在 CI 上运行我们的测试.
+
+### `arm64`
+
+**Linux** 需要 [**_cortex-a57_**](https://en.wikipedia.org/wiki/ARM_Cortex-A57) 或更新的 CPU 架构.
+
+**macOS** 上支持所有 `m` 系列芯片.
+
+### `armv7`
+
+[**_cortex-a7_**](https://en.wikipedia.org/wiki/ARM_Cortex-A7) 或更新的 CPU 架构.
 
 # 用法
 
