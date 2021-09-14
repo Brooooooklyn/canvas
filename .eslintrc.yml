@@ -26,7 +26,7 @@ rules:
   'space-before-function-paren': 0
   'no-useless-constructor': 0
   'no-undef': 2
-  'no-console': [2, { allow: ['error', 'warn', 'info', 'assert'] }]
+  'no-console': [2, { allow: ['error', 'warn', 'info', 'assert', 'time', 'timeEnd'] }]
   'comma-dangle': ['error', 'only-multiline']
   'no-unused-vars': 0
   'no-var': 2

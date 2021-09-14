@@ -23,7 +23,9 @@ jobs:
         settings:
           - host: macos-latest
             target: 'x86_64-apple-darwin'
-            build: pnpm build
+            build: |
+              rustc --print target-cpus
+              pnpm build
             downloadTarget: ''
           - host: windows-latest
             build: pnpm build

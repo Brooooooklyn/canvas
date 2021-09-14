@@ -134,7 +134,6 @@ pub(crate) struct Image {
 }
 
 impl Image {
-  #[inline(always)]
   pub(crate) fn regenerate_bitmap_if_need<D>(&mut self, data: D)
   where
     D: AsRef<[u8]>,

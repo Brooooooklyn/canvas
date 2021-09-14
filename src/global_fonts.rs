@@ -80,7 +80,6 @@ fn load_fonts(ctx: CallContext) -> Result<JsNumber> {
     .create_uint32(load_fonts_from_dir(font_collection, dir.as_str()?))
 }
 
-#[inline(always)]
 fn load_fonts_from_dir<P: AsRef<path::Path>>(
   font_collection: &mut Rc<FontCollection>,
   dir: P,

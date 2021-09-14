@@ -7,7 +7,6 @@ extern crate napi_derive;
 #[macro_use]
 extern crate serde_derive;
 
-use std::convert::TryInto;
 use std::mem;
 
 use napi::*;
@@ -48,7 +47,6 @@ fn init(mut exports: JsObject, env: Env) -> Result<()> {
     "CanvasElement",
     canvas_element_constructor,
     &[
-      Property::new(&env, "getContext")?.with_method(get_context),
       Property::new(&env, "encode")?.with_method(encode),
       Property::new(&env, "encodeSync")?.with_method(encode_sync),
       Property::new(&env, "toBuffer")?.with_method(to_buffer),
@@ -62,10 +60,7 @@ fn init(mut exports: JsObject, env: Env) -> Result<()> {
   let svg_canvas_element = env.define_class(
     "SVGCanvas",
     canvas_element_constructor,
-    &[
-      Property::new(&env, "getContext")?.with_method(get_context),
-      Property::new(&env, "getContent")?.with_method(get_content),
-    ],
+    &[Property::new(&env, "getContent")?.with_method(get_content)],
   )?;
 
   let canvas_rendering_context2d = ctx::Context::create_js_class(&env)?;
@@ -102,6 +97,8 @@ fn init(mut exports: JsObject, env: Env) -> Result<()> {
 
   exports.create_named_method("convertSVGTextToPath", svg::convert_svg_text_to_path)?;
 
+  exports.create_named_method("createContext", create_context)?;
+
   // pre init font regexp
   FONT_REGEXP.get_or_init(init_font_regexp);
   Ok(())
@@ -118,34 +115,21 @@ fn canvas_element_constructor(ctx: CallContext) -> Result<JsUndefined> {
   ctx.env.get_undefined()
 }
 
-#[js_function(2)]
-fn get_context(ctx: CallContext) -> Result<JsObject> {
-  let context_type = ctx.get::<JsString>(0)?.into_utf8()?;
-  if context_type.as_str()? != "2d" {
-    return Err(Error::new(
-      Status::InvalidArg,
-      "Only supports 2d context".to_owned(),
-    ));
-  }
+#[js_function(4)]
+fn create_context(ctx: CallContext) -> Result<JsUndefined> {
+  let context_2d_object = ctx.get::<JsObject>(0)?;
+  let context_2d = ctx.env.unwrap::<Context>(&context_2d_object)?;
 
-  let this = ctx.this_unchecked::<JsObject>();
-  let ctx_js = this.get_named_property_unchecked::<JsObject>("ctx")?;
-  let context_2d = ctx.env.unwrap::<Context>(&ctx_js)?;
-
-  if ctx.length == 2 {
-    let attrs = ctx.get::<JsObject>(1)?;
+  if ctx.length == 4 {
+    let w = ctx.get::<JsNumber>(1)?.get_double()?;
+    let h = ctx.get::<JsNumber>(2)?.get_double()?;
+    let attrs = ctx.get::<JsObject>(3)?;
     let alpha = attrs
       .get_named_property_unchecked::<JsBoolean>("alpha")?
       .get_value()?;
     if !alpha {
       let mut fill_paint = context_2d.fill_paint()?;
       fill_paint.set_color(255, 255, 255, 255);
-      let w: f64 = this
-        .get_named_property_unchecked::<JsNumber>("width")?
-        .try_into()?;
-      let h: f64 = this
-        .get_named_property_unchecked::<JsNumber>("height")?
-        .try_into()?;
       context_2d.alpha = false;
       context_2d
         .surface
@@ -153,7 +137,7 @@ fn get_context(ctx: CallContext) -> Result<JsObject> {
     }
   }
 
-  Ok(ctx_js)
+  ctx.env.get_undefined()
 }
 
 #[js_function(2)]
@@ -337,7 +321,6 @@ fn get_content(ctx: CallContext) -> Result<JsBuffer> {
   }
 }
 
-#[inline]
 fn get_data_ref(ctx: &CallContext, mime: &str, quality: u8) -> Result<SkiaDataRef> {
   let this = ctx.this_unchecked::<JsObject>();
   let ctx_js = this.get_named_property::<JsObject>("ctx")?;

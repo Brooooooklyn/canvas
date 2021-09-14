@@ -12,14 +12,12 @@ pub enum Pattern {
 }
 
 impl Default for Pattern {
-  #[inline]
   fn default() -> Self {
     Self::Color(RGBA::new(0, 0, 0, 255), "#000".to_owned())
   }
 }
 
 impl Pattern {
-  #[inline(always)]
   pub fn from_color(color_str: &str) -> Result<Self, SkError> {
     let mut parser_input = ParserInput::new(color_str);
     let mut parser = Parser::new(&mut parser_input);
