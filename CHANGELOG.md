@@ -1,3 +1,10 @@
+## [0.1.7](https://github.com/Brooooooklyn/canvas/compare/v0.1.6...v0.1.7) (2021-09-14)
+
+### Bug Fixes
+
+- **deps:** update rust crate cssparser to 0.29 ([36ff54f](https://github.com/Brooooooklyn/canvas/commit/36ff54f25545ddb9cedc61903f591f84ca861959))
+- transform state between save/restore ([d313b80](https://github.com/Brooooooklyn/canvas/commit/d313b8084d6f9dce5962ed64cc966cd78427d45b))
+
 ## [0.1.6](https://github.com/Brooooooklyn/canvas/compare/v0.1.5...v0.1.6) (2021-08-25)
 
 ### Bug Fixes
