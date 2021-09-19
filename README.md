@@ -1,7 +1,7 @@
 # `skr canvas`
 
 ![CI](https://github.com/Brooooooklyn/canvas/workflows/CI/badge.svg)
-![Skia Version](https://img.shields.io/badge/Skia-chrome%2Fm94-hotpink)
+![Skia Version](https://img.shields.io/badge/Skia-chrome%2Fm95-hotpink)
 [![install size](https://packagephobia.com/badge?p=@napi-rs/canvas)](https://packagephobia.com/result?p=@napi-rs/canvas)
 [![Downloads](https://img.shields.io/npm/dm/@napi-rs/canvas.svg?sanitize=true)](https://npmcharts.com/compare/@napi-rs/canvas?minimal=true)
 
@@ -36,14 +36,6 @@ npm install @napi-rs/canvas
 | Linux arm64 android   | ✓      | ✓      | ✓      | ✓      |
 
 ## System requirement
-
-### `x64`
-
-Because skia relies heavily on the [`AVX2`](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions#CPUs_with_AVX2) instructions, the CPU needs to be at least [`Intel haswell`](<https://en.wikipedia.org/wiki/Haswell_(microarchitecture)>), [`AMD Excavator`](<https://en.wikipedia.org/wiki/Excavator_(microarchitecture)>) (Intel Core 4th+/AMD Excavator+) or newer architecture for use on **Windows** and **Linux**.
-
-On `macOS`, the CPU needs to be at least Intel [`Intel ivybridge`](<https://en.wikipedia.org/wiki/Ivy_Bridge_(microarchitecture)>) (Intel Core 3th+).
-
-> Because Github Actions only provide `ivybridge` CPU on macOS CI, so we need support back to `ivybridge` CPU on macOS to run tests in CI.
 
 ### `arm64`
 
