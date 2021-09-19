@@ -1,7 +1,7 @@
 # `skr canvas`
 
 ![CI](https://github.com/Brooooooklyn/canvas/workflows/CI/badge.svg)
-![Skia Version](https://img.shields.io/badge/Skia-chrome%2Fm94-hotpink)
+![Skia Version](https://img.shields.io/badge/Skia-chrome%2Fm95-hotpink)
 [![install size](https://packagephobia.com/badge?p=@napi-rs/canvas)](https://packagephobia.com/result?p=@napi-rs/canvas)
 [![Downloads](https://img.shields.io/npm/dm/@napi-rs/canvas.svg?sanitize=true)](https://npmcharts.com/compare/@napi-rs/canvas?minimal=true)
 
@@ -36,14 +36,6 @@ npm install @napi-rs/canvas
 | Linux arm64 android   | ✓      | ✓      | ✓      | ✓      |
 
 ## 系统要求
-
-### `x64`
-
-因为 Skia 大量依赖 [`AVX2`](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions#CPUs_with_AVX2) 指令集, 所以在 **Windows** 和 **Linux** 上，CPU 至少需要 [`Intel haswell`](<https://en.wikipedia.org/wiki/Haswell_(microarchitecture)>), [`AMD Excavator`](<https://en.wikipedia.org/wiki/Excavator_(microarchitecture)>) (Intel Core 4th+/AMD Excavator+) 或更新的架构.
-
-在 **macOS** 上，CPU 至少需要 [`Intel ivybridge`](<https://en.wikipedia.org/wiki/Ivy_Bridge_(microarchitecture)>).
-
-> 因为 Github Actions 的 macOS CI 只提供了 `ivybridge` 架构的 CPU, 所以我们在 macOS 上需要兼容到 `ivybridge` 架构的 CPU，这样才能在 CI 上运行我们的测试.
 
 ### `arm64`
 

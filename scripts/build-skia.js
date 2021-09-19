@@ -195,14 +195,6 @@ switch (TARGET_TRIPLE) {
     ExtraSkiaBuildFlag += ` target_cpu="arm64" ndk="${ANDROID_NDK_HOME}"`
     break
   case '':
-    // native compile for x86_64 systems
-    // enable AVX2
-    // No macOS here, because Github Actions provide ivybridge CPU on macOS, which does not support AVX2
-    if (PLATFORM_NAME === 'win32') {
-      ExtraCflagsCC += ',\\"-march=haswell\\"'
-    } else if (PLATFORM_NAME === 'linux') {
-      ExtraCflagsCC += ',"-march=haswell"'
-    }
     break
   default:
     throw new TypeError(`[${TARGET_TRIPLE}] is not a valid target`)
