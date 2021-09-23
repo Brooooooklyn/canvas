@@ -184,7 +184,7 @@ fn main() {
   println!("cargo:rustc-link-search={}", skia_lib_dir);
   println!("cargo:rustc-link-search={}", &out_dir);
 
-  #[cfg(target_os = "linux")]
+  #[cfg(not(target_os = "windows"))]
   {
     println!("cargo:rustc-link-lib=static=svg");
     println!("cargo:rustc-link-lib=static=skia");
@@ -194,7 +194,7 @@ fn main() {
     println!("cargo:rustc-link-lib=static=skunicode");
   }
 
-  #[cfg(not(target_os = "linux"))]
+  #[cfg(target_os = "windows")]
   {
     println!("cargo:rustc-link-lib=svg");
     println!("cargo:rustc-link-lib=skia");
