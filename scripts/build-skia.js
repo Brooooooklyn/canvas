@@ -176,10 +176,10 @@ switch (TARGET_TRIPLE) {
     break
   case 'aarch64-apple-darwin':
     ExtraSkiaBuildFlag += ' target_cpu="arm64" target_os="mac"'
-    ExtraCflagsCC += ', "--target=arm64-apple-darwin"'
-    ExtraLdFlags = '"--target=arm64-apple-darwin"'
-    ExtraAsmFlags = '"--target=arm64-apple-darwin"'
-    ExtraCflags = '"--target=arm64-apple-darwin"'
+    ExtraCflagsCC += ', "--target=arm64-apple-macos"'
+    ExtraLdFlags = '"--target=arm64-apple-macos"'
+    ExtraAsmFlags = '"--target=arm64-apple-macos"'
+    ExtraCflags = '"--target=arm64-apple-macos"'
     GN_ARGS.push(
       `extra_ldflags=[${ExtraLdFlags}]`,
       `extra_asmflags=[${ExtraAsmFlags}]`,

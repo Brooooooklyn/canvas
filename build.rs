@@ -78,7 +78,7 @@ fn main() {
         ));
     }
     "aarch64-apple-darwin" => {
-      build.target("arm64-apple-darwin");
+      build.target("arm64-apple-macos");
     }
     "aarch64-linux-android" => {
       let nkd_home = env::var("ANDROID_NDK_HOME").unwrap();
