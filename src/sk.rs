@@ -668,12 +668,51 @@ mod ffi {
 
     pub fn skiac_mask_filter_destroy(mask_filter: *mut skiac_mask_filter);
 
+    pub fn skiac_image_filter_make_drop_shadow_only(
+      dx: f32,
+      dy: f32,
+      sigma_x: f32,
+      sigma_y: f32,
+      color: u32,
+      chained_filter: *mut skiac_image_filter,
+    ) -> *mut skiac_image_filter;
+
     pub fn skiac_image_filter_make_drop_shadow(
       dx: f32,
       dy: f32,
       sigma_x: f32,
       sigma_y: f32,
       color: u32,
+      chained_filter: *mut skiac_image_filter,
+    ) -> *mut skiac_image_filter;
+
+    pub fn skiac_image_filter_make_blur(
+      sigma_x: f32,
+      sigma_y: f32,
+      tile_mode: i32,
+      chained_filter: *mut skiac_image_filter,
+    ) -> *mut skiac_image_filter;
+
+    pub fn skiac_image_filter_color_filter(
+      m00: f32,
+      m01: f32,
+      m02: f32,
+      m10: f32,
+      m11: f32,
+      m12: f32,
+      m20: f32,
+      m21: f32,
+      m22: f32,
+      opacity: f32,
+      chained_filter: *mut skiac_image_filter,
+    ) -> *mut skiac_image_filter;
+
+    pub fn skiac_image_filter_from_argb(
+      table_a: *const u8,
+      table_r: *const u8,
+      table_g: *const u8,
+      table_b: *const u8,
+      c_image_filter: *mut skiac_image_filter,
     ) -> *mut skiac_image_filter;
 
     pub fn skiac_image_filter_destroy(image_filter: *mut skiac_image_filter);
@@ -2971,29 +3010,143 @@ impl Drop for MaskFilter {
 
 #[repr(transparent)]
 #[derive(Debug)]
-pub struct ImageFilter(*mut ffi::skiac_image_filter);
+pub struct ImageFilter(pub(crate) *mut ffi::skiac_image_filter);
 
 impl ImageFilter {
-  pub fn make_drop_shadow(
+  pub fn make_drop_shadow_only(
     dx: f32,
     dy: f32,
     sigma_x: f32,
     sigma_y: f32,
     color: u32,
+    chained_filter: Option<&ImageFilter>,
   ) -> Option<Self> {
-    let raw_ptr =
-      unsafe { ffi::skiac_image_filter_make_drop_shadow(dx, dy, sigma_x, sigma_y, color) };
+    let raw_ptr = unsafe {
+      ffi::skiac_image_filter_make_drop_shadow_only(
+        dx,
+        dy,
+        sigma_x,
+        sigma_y,
+        color,
+        chained_filter.map(|c| c.0).unwrap_or(ptr::null_mut()),
+      )
+    };
     if raw_ptr.is_null() {
       None
     } else {
       Some(ImageFilter(raw_ptr))
     }
   }
+
+  pub fn make_drop_shadow(
+    dx: f32,
+    dy: f32,
+    sigma_x: f32,
+    sigma_y: f32,
+    color: u32,
+    chained_filter: Option<&ImageFilter>,
+  ) -> Option<Self> {
+    let raw_ptr = unsafe {
+      ffi::skiac_image_filter_make_drop_shadow(
+        dx,
+        dy,
+        sigma_x,
+        sigma_y,
+        color,
+        chained_filter.map(|c| c.0).unwrap_or(ptr::null_mut()),
+      )
+    };
+    if raw_ptr.is_null() {
+      None
+    } else {
+      Some(ImageFilter(raw_ptr))
+    }
+  }
+
+  pub fn make_blur(
+    sigma_x: f32,
+    sigma_y: f32,
+    tile_mode: TileMode,
+    chained_filter: Option<&ImageFilter>,
+  ) -> Option<Self> {
+    let raw_ptr = unsafe {
+      ffi::skiac_image_filter_make_blur(
+        sigma_x,
+        sigma_y,
+        tile_mode as i32,
+        chained_filter.map(|c| c.0).unwrap_or(ptr::null_mut()),
+      )
+    };
+    if raw_ptr.is_null() {
+      None
+    } else {
+      Some(ImageFilter(raw_ptr))
+    }
+  }
+
+  pub fn make_image_filter(
+    m00: f32,
+    m01: f32,
+    m02: f32,
+    m10: f32,
+    m11: f32,
+    m12: f32,
+    m20: f32,
+    m21: f32,
+    m22: f32,
+    opacity: f32,
+    chained_filter: Option<&ImageFilter>,
+  ) -> Option<Self> {
+    let raw_ptr = unsafe {
+      ffi::skiac_image_filter_color_filter(
+        m00,
+        m01,
+        m02,
+        m10,
+        m11,
+        m12,
+        m20,
+        m21,
+        m22,
+        opacity,
+        chained_filter.map(|c| c.0).unwrap_or(ptr::null_mut()),
+      )
+    };
+    if raw_ptr.is_null() {
+      None
+    } else {
+      Some(ImageFilter(raw_ptr))
+    }
+  }
+
+  pub fn from_argb(
+    a: Option<&[u8; 256]>,
+    r: Option<&[u8; 256]>,
+    g: Option<&[u8; 256]>,
+    b: Option<&[u8; 256]>,
+    chained_filter: Option<&ImageFilter>,
+  ) -> Option<Self> {
+    let raw_ptr = unsafe {
+      ffi::skiac_image_filter_from_argb(
+        a.map_or(ptr::null(), |t| t.as_ptr()),
+        r.map_or(ptr::null(), |t| t.as_ptr()),
+        g.map_or(ptr::null(), |t| t.as_ptr()),
+        b.map_or(ptr::null(), |t| t.as_ptr()),
+        chained_filter.map_or(ptr::null_mut(), |f| f.0),
+      )
+    };
+    if raw_ptr.is_null() {
+      return None;
+    }
+    Some(ImageFilter(raw_ptr))
+  }
 }
 
 impl Drop for ImageFilter {
   fn drop(&mut self) {
-    unsafe { ffi::skiac_image_filter_destroy(self.0) };
+    if !self.0.is_null() {
+      unsafe { ffi::skiac_image_filter_destroy(self.0) };
+    }
   }
 }
 
@@ -3258,8 +3411,13 @@ impl Drop for SkWMemoryStream {
 }
 
 #[inline(always)]
-fn radians_to_degrees(rad: f32) -> f32 {
-  (rad / PI) * 180.0
+pub(crate) fn radians_to_degrees(rad: f32) -> f32 {
+  rad / PI * 180.0
+}
+
+#[inline(always)]
+pub(crate) fn degrees_to_radians(degrees: f32) -> f32 {
+  degrees / 180.0 * PI
 }
 
 #[inline(always)]

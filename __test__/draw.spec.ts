@@ -933,6 +933,30 @@ test('toDataURLAsync', async (t) => {
   t.deepEqual(pngBuffer, await canvas.encode('png'))
 })
 
+test('shadowOffsetX', async (t) => {
+  const { ctx } = t.context
+  ctx.shadowColor = 'red'
+  ctx.shadowOffsetX = 25
+  ctx.shadowBlur = 10
+
+  // Rectangle
+  ctx.fillStyle = 'blue'
+  ctx.fillRect(20, 20, 150, 100)
+  await snapshotImage(t)
+})
+
+test('shadowOffsetY', async (t) => {
+  const { ctx } = t.context
+  ctx.shadowColor = 'red'
+  ctx.shadowOffsetY = 25
+  ctx.shadowBlur = 10
+
+  // Rectangle
+  ctx.fillStyle = 'blue'
+  ctx.fillRect(20, 20, 150, 80)
+  await snapshotImage(t)
+})
+
 function drawTranslate(ctx: SKRSContext2D) {
   // Moved square
   ctx.translate(110, 30)

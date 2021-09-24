@@ -272,7 +272,7 @@ fn parse_font_stretch(stretch: &str) -> Option<FontStretch> {
   }
 }
 
-fn parse_size_px(size: f32, unit: &str) -> f32 {
+pub fn parse_size_px(size: f32, unit: &str) -> f32 {
   let mut size_px = size;
   match unit {
     "em" | "rem" | "pc" => {

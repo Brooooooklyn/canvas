@@ -14,7 +14,7 @@ export async function snapshotImage<C>(
   t: ExecutionContext<C>,
   context = t.context,
   type: 'png' | 'jpeg' | 'webp' = 'png',
-  differentRatio = ARCH_NAME === 'x64' ? 0.015 : 0.3,
+  differentRatio = ARCH_NAME === 'x64' ? 0.015 : t.title.indexOf('filter') > -1 ? 2.5 : 0.3,
 ) {
   // @ts-expect-error
   const { canvas } = context
