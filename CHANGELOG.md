@@ -1,3 +1,9 @@
+## [0.1.9](https://github.com/Brooooooklyn/canvas/compare/v0.1.8...v0.1.9) (2021-09-24)
+
+### Bug Fixes
+
+- aarch64-apple-darwin (macOS m1 chips) build [skip skia] ([4deee73](https://github.com/Brooooooklyn/canvas/commit/4deee739a1299006f3ab7b1a14975deb2809f7d4))
+
 ## [0.1.8](https://github.com/Brooooooklyn/canvas/compare/v0.1.7...v0.1.8) (2021-09-19)
 
 ## [0.1.7](https://github.com/Brooooooklyn/canvas/compare/v0.1.6...v0.1.7) (2021-09-14)
