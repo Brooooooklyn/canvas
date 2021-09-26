@@ -18,7 +18,6 @@
 
 extern "C"
 {
-
   static SkMatrix conv_from_transform(const skiac_transform &c_ts)
   {
     return SkMatrix::MakeAll(c_ts.a, c_ts.c, c_ts.e,
