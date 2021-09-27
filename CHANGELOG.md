@@ -1,3 +1,13 @@
+## [0.1.10](https://github.com/Brooooooklyn/canvas/compare/v0.1.9...v0.1.10) (2021-09-27)
+
+### Bug Fixes
+
+- image_filter to Image SamplingOptions conversion ([0719022](https://github.com/Brooooooklyn/canvas/commit/0719022a78a40577a73db0376ca21a547828396f))
+
+### Features
+
+- implement filter for Context ([6079927](https://github.com/Brooooooklyn/canvas/commit/6079927f7ca814a9d3af8efa463938e67ab93d0f))
+
 ## [0.1.9](https://github.com/Brooooooklyn/canvas/compare/v0.1.8...v0.1.9) (2021-09-24)
 
 ### Bug Fixes
