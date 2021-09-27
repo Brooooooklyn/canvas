@@ -18,7 +18,8 @@ RUN apk add --update --no-cache musl-dev wget && \
   llvm \
   gn \
   tar \
-  ninja
+  ninja && \
+  apk upgrade
 
 RUN rustup-init -y && \
   yarn global add pnpm && \
