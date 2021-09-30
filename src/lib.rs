@@ -122,21 +122,19 @@ fn create_context(ctx: CallContext) -> Result<JsUndefined> {
   let context_2d_object = ctx.get::<JsObject>(0)?;
   let context_2d = ctx.env.unwrap::<Context>(&context_2d_object)?;
 
-  if ctx.length == 4 {
-    let w = ctx.get::<JsNumber>(1)?.get_double()?;
-    let h = ctx.get::<JsNumber>(2)?.get_double()?;
-    let attrs = ctx.get::<JsObject>(3)?;
-    let alpha = attrs
-      .get_named_property_unchecked::<JsBoolean>("alpha")?
-      .get_value()?;
-    if !alpha {
-      let mut fill_paint = context_2d.fill_paint()?;
-      fill_paint.set_color(255, 255, 255, 255);
-      context_2d.alpha = false;
-      context_2d
-        .surface
-        .draw_rect(0f32, 0f32, w as f32, h as f32, &fill_paint);
-    }
+  let w = ctx.get::<JsNumber>(1)?.get_double()?;
+  let h = ctx.get::<JsNumber>(2)?.get_double()?;
+  let attrs = ctx.get::<JsObject>(3)?;
+  let alpha = attrs
+    .get_named_property_unchecked::<JsBoolean>("alpha")?
+    .get_value()?;
+  if !alpha {
+    let mut fill_paint = context_2d.fill_paint()?;
+    fill_paint.set_color(255, 255, 255, 255);
+    context_2d.alpha = false;
+    context_2d
+      .surface
+      .draw_rect(0f32, 0f32, w as f32, h as f32, &fill_paint);
   }
 
   ctx.env.get_undefined()

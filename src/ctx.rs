@@ -45,6 +45,7 @@ pub struct Context {
   pub font_collection: Rc<FontCollection>,
   pub width: u32,
   pub height: u32,
+  pub color_space: ColorSpace,
   pub stream: Option<SkWMemoryStream>,
   pub filter: Option<ImageFilter>,
   filters_string: String,
@@ -168,11 +169,17 @@ impl Context {
     width: u32,
     height: u32,
     svg_export_flag: SvgExportFlag,
+    color_space: ColorSpace,
     font_collection: &mut Rc<FontCollection>,
   ) -> Result<Self> {
-    let (surface, stream) =
-      Surface::new_svg(width, height, AlphaType::Unpremultiplied, svg_export_flag)
-        .ok_or_else(|| Error::from_reason("Create skia svg surface failed".to_owned()))?;
+    let (surface, stream) = Surface::new_svg(
+      width,
+      height,
+      AlphaType::Unpremultiplied,
+      svg_export_flag,
+      color_space,
+    )
+    .ok_or_else(|| Error::from_reason("Create skia svg surface failed".to_owned()))?;
     Ok(Context {
       surface,
       alpha: true,
@@ -182,14 +189,20 @@ impl Context {
       font_collection: font_collection.clone(),
       width,
       height,
+      color_space,
       stream: Some(stream),
       filter: None,
       filters_string: "none".to_owned(),
     })
   }
 
-  pub fn new(width: u32, height: u32, font_collection: &mut Rc<FontCollection>) -> Result<Self> {
-    let surface = Surface::new_rgba(width, height)
+  pub fn new(
+    width: u32,
+    height: u32,
+    color_space: ColorSpace,
+    font_collection: &mut Rc<FontCollection>,
+  ) -> Result<Self> {
+    let surface = Surface::new_rgba(width, height, color_space)
       .ok_or_else(|| Error::from_reason("Create skia surface failed".to_owned()))?;
     Ok(Context {
       surface,
@@ -200,6 +213,7 @@ impl Context {
       font_collection: font_collection.clone(),
       width,
       height,
+      color_space,
       stream: None,
       filter: None,
       filters_string: "none".to_owned(),
@@ -719,23 +733,26 @@ impl Context {
   }
 }
 
-#[js_function(4)]
+#[js_function(5)]
 fn context_2d_constructor(ctx: CallContext) -> Result<JsUndefined> {
   let width = ctx.get::<JsNumber>(0)?.get_uint32()?;
   let height = ctx.get::<JsNumber>(1)?.get_uint32()?;
   let font_collection_js = ctx.get::<JsObject>(2)?;
   let font_collection = ctx.env.unwrap::<Rc<FontCollection>>(&font_collection_js)?;
+  let color_space = ctx.get::<JsString>(3)?.into_utf8()?;
+  let color_space = ColorSpace::from_str(color_space.as_str()?)?;
 
   let mut this = ctx.this_unchecked::<JsObject>();
-  let context_2d = if ctx.length == 3 {
-    Context::new(width, height, font_collection)?
+  let context_2d = if ctx.length == 4 {
+    Context::new(width, height, color_space, font_collection)?
   } else {
     // SVG Canvas
-    let flag = ctx.get::<JsNumber>(3)?.get_uint32()?;
+    let flag = ctx.get::<JsNumber>(4)?.get_uint32()?;
     Context::new_svg(
       width,
       height,
       SvgExportFlag::try_from(flag)?,
+      color_space,
       font_collection,
     )?
   };
@@ -1362,7 +1379,7 @@ fn fill_text(ctx: CallContext) -> Result<JsUndefined> {
   ctx.env.get_undefined()
 }
 
-#[js_function(4)]
+#[js_function(5)]
 fn get_image_data(ctx: CallContext) -> Result<JsTypedArray> {
   let this = ctx.this_unchecked::<JsObject>();
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
@@ -1370,9 +1387,21 @@ fn get_image_data(ctx: CallContext) -> Result<JsTypedArray> {
   let y = ctx.get::<JsNumber>(1)?.get_uint32()?;
   let width = ctx.get::<JsNumber>(2)?.get_uint32()?;
   let height = ctx.get::<JsNumber>(3)?.get_uint32()?;
+  let color_space = if ctx.length == 5 {
+    let image_settings = ctx.get::<JsObject>(4)?;
+    let cs = image_settings.get_named_property_unchecked::<JsUnknown>("colorSpace")?;
+    if cs.get_type()? == ValueType::String {
+      let color_space_js = unsafe { cs.cast::<JsString>() }.into_utf8()?;
+      ColorSpace::from_str(color_space_js.as_str()?)?
+    } else {
+      ColorSpace::default()
+    }
+  } else {
+    ColorSpace::default()
+  };
   let pixels = context_2d
     .surface
-    .read_pixels(x, y, width, height)
+    .read_pixels(x, y, width, height, color_space)
     .ok_or_else(|| {
       Error::new(
         Status::GenericFailure,
@@ -1462,6 +1491,7 @@ fn put_image_data(ctx: CallContext) -> Result<JsUndefined> {
       dirty_y,
       dirty_width,
       dirty_height,
+      image_data.color_space,
     );
     context_2d.surface.canvas.restore();
   };

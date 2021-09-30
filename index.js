@@ -163,20 +163,17 @@ function createCanvas(width, height, flag) {
   const canvasElement = isSvgBackend ? new SVGCanvas(width, height) : new CanvasElement(width, height)
 
   let ctx
-  canvasElement.getContext = function getContext(type, attr) {
+  canvasElement.getContext = function getContext(type, attr = {}) {
     if (type !== '2d') {
       throw new Error('Unsupported type')
     }
+    const attrs = { alpha: true, colorSpace: 'srgb', ...attr }
     ctx = ctx
       ? ctx
       : isSvgBackend
-      ? new CanvasRenderingContext2D(this.width, this.height, GlobalFontsSingleton, flag)
-      : new CanvasRenderingContext2D(this.width, this.height, GlobalFontsSingleton)
-    if (attr) {
-      createContext(ctx, this.width, this.height, attr)
-    } else {
-      createContext(ctx, this.width, this.height)
-    }
+      ? new CanvasRenderingContext2D(this.width, this.height, GlobalFontsSingleton, attrs.colorSpace, flag)
+      : new CanvasRenderingContext2D(this.width, this.height, GlobalFontsSingleton, attrs.colorSpace)
+    createContext(ctx, this.width, this.height, attrs)
 
     // napi can not define writable: true but enumerable: false property
     Object.defineProperty(ctx, '_fillStyle', {
@@ -194,11 +191,11 @@ function createCanvas(width, height, flag) {
     })
 
     Object.defineProperty(ctx, 'createImageData', {
-      value: function createImageData(widthOrImage, height) {
+      value: function createImageData(widthOrImage, height, attrs = {}) {
         if (widthOrImage instanceof ImageData) {
-          return new ImageData(widthOrImage.width, widthOrImage.height)
+          return new ImageData(widthOrImage.data, widthOrImage.width, widthOrImage.height)
         }
-        return new ImageData(widthOrImage, height)
+        return new ImageData(widthOrImage, height, { colorSpace: 'srgb', ...attrs })
       },
       configurable: false,
       enumerable: false,
