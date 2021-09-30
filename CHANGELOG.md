@@ -1,3 +1,9 @@
+## [0.1.11](https://github.com/Brooooooklyn/canvas/compare/v0.1.10...v0.1.11) (2021-09-30)
+
+### Features
+
+- support colorSpace: 'display-p3' ([4b64310](https://github.com/Brooooooklyn/canvas/commit/4b64310ff3adb41888e7f4bfae7f3557c062620c))
+
 ## [0.1.10](https://github.com/Brooooooklyn/canvas/compare/v0.1.9...v0.1.10) (2021-09-27)
 
 ### Bug Fixes
