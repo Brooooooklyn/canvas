@@ -1,18 +1,21 @@
 use std::mem::ManuallyDrop;
 use std::slice;
 use std::str;
+use std::str::FromStr;
 
 use base64::decode;
 use napi::*;
 
 use crate::ctx::ImageOrCanvas;
 use crate::sk::Bitmap;
+use crate::sk::ColorSpace;
 
 #[derive(Debug, Clone)]
 pub struct ImageData {
   pub(crate) width: usize,
   pub(crate) height: usize,
   pub(crate) data: *const u8,
+  pub(crate) color_space: ColorSpace,
 }
 
 impl Drop for ImageData {
@@ -32,11 +35,20 @@ impl ImageData {
 fn image_data_constructor(ctx: CallContext) -> Result<JsUndefined> {
   let first_arg = ctx.get::<JsUnknown>(0)?;
   let first_arg_type = first_arg.get_type()?;
-  let ((js_width, width), (js_height, height), arraybuffer_length, mut initial_data) =
+  let ((js_width, width), (js_height, height), arraybuffer_length, mut initial_data, color_space) =
     match first_arg_type {
       ValueType::Number => {
         let js_width = unsafe { first_arg.cast::<JsNumber>() };
         let js_height = ctx.get::<JsNumber>(1)?;
+        let color_space = if ctx.length == 3 {
+          let image_settings = ctx.get::<JsObject>(2)?;
+          let js_color_space = image_settings
+            .get_named_property::<JsString>("colorSpace")?
+            .into_utf8()?;
+          ColorSpace::from_str(js_color_space.as_str()?)?
+        } else {
+          ColorSpace::default()
+        };
         let width = js_width.get_uint32()?;
         let height = js_height.get_uint32()?;
         let arraybuffer_length = (width * height * 4) as usize;
@@ -45,6 +57,7 @@ fn image_data_constructor(ctx: CallContext) -> Result<JsUndefined> {
           (js_height, height),
           arraybuffer_length,
           ManuallyDrop::new(vec![0u8; arraybuffer_length]),
+          color_space,
         ))
       }
       ValueType::Object => {
@@ -60,7 +73,7 @@ fn image_data_constructor(ctx: CallContext) -> Result<JsUndefined> {
         let arraybuffer_length = arraybuffer.len();
         let js_width = ctx.get::<JsNumber>(1)?;
         let width = js_width.get_uint32()?;
-        let (js_height, height) = if ctx.length == 3 {
+        let (js_height, height) = if ctx.length >= 3 {
           let js_height = ctx.get::<JsNumber>(2)?;
           let height = js_height.get_uint32()?;
           if height * width * 4 != arraybuffer_length as u32 {
@@ -81,6 +94,7 @@ fn image_data_constructor(ctx: CallContext) -> Result<JsUndefined> {
           ManuallyDrop::new(unsafe {
             slice::from_raw_parts(arraybuffer.as_ptr() as *const u8, arraybuffer_length).to_owned()
           }),
+          ColorSpace::default(),
         ))
       }
       _ => Err(Error::new(
@@ -96,6 +110,7 @@ fn image_data_constructor(ctx: CallContext) -> Result<JsUndefined> {
     width: width as usize,
     height: height as usize,
     data: data_ptr,
+    color_space,
   };
   let arraybuffer = unsafe {
     ctx
@@ -131,6 +146,7 @@ pub(crate) struct Image {
   height: f64,
   pub(crate) need_regenerate_bitmap: bool,
   pub(crate) is_svg: bool,
+  pub(crate) color_space: ColorSpace,
 }
 
 impl Image {
@@ -146,6 +162,7 @@ impl Image {
       data.as_ref().len(),
       self.width as f32,
       self.height as f32,
+      self.color_space,
     );
   }
 }
@@ -182,16 +199,33 @@ impl Image {
   }
 }
 
-#[js_function]
+#[js_function(3)]
 fn image_constructor(ctx: CallContext) -> Result<JsUndefined> {
+  let width = if ctx.length > 0 {
+    ctx.get::<JsNumber>(0)?.get_double()?
+  } else {
+    -1.0
+  };
+  let height = if ctx.length > 1 {
+    ctx.get::<JsNumber>(1)?.get_double()?
+  } else {
+    -1.0
+  };
+  let color_space = if ctx.length == 3 {
+    let color_space = ctx.get::<JsString>(2)?.into_utf8()?;
+    ColorSpace::from_str(color_space.as_str()?)?
+  } else {
+    ColorSpace::default()
+  };
   let js_image = Image {
     complete: false,
     bitmap: None,
     alt: "".to_string(),
-    width: -1.0,
-    height: -1.0,
+    width,
+    height,
     need_regenerate_bitmap: false,
     is_svg: false,
+    color_space,
   };
   let mut this = ctx.this_unchecked::<JsObject>();
   this.set_named_property("_src", ctx.env.get_undefined()?)?;
@@ -324,7 +358,18 @@ fn set_src(ctx: CallContext) -> Result<JsUndefined> {
   image.complete = true;
   image.is_svg = is_svg;
   if is_svg {
-    let bitmap = Bitmap::from_svg_data(src_data.as_ptr(), length);
+    let bitmap =
+      if (image.width - -1.0).abs() > f64::EPSILON && (image.height - -1.0).abs() > f64::EPSILON {
+        Bitmap::from_svg_data_with_custom_size(
+          src_data.as_ptr(),
+          length,
+          image.width as f32,
+          image.height as f32,
+          image.color_space,
+        )
+      } else {
+        Bitmap::from_svg_data(src_data.as_ptr(), length, image.color_space)
+      };
     if let Some(b) = bitmap.as_ref() {
       if (image.width - -1.0).abs() < f64::EPSILON {
         image.width = b.0.width as f64;

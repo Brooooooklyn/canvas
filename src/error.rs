@@ -4,6 +4,8 @@ use crate::sk::Matrix;
 
 #[derive(Error, Debug)]
 pub enum SkError {
+  #[error("[`{0}`] is not valid ColorSpace value")]
+  StringToColorSpaceError(String),
   #[error("[`{0}`] is not valid Blend value")]
   StringToBlendError(String),
   #[error("[`{0}`] is not valid FillRule value")]

@@ -203,21 +203,22 @@ extern "C"
 {
 
   // Surface
-  skiac_surface *skiac_surface_create_rgba_premultiplied(int width, int height);
-  void skiac_surface_create_svg(skiac_svg_surface *c_surface, int width, int height, int alphaType, uint32_t flag);
-  skiac_surface *skiac_surface_create_rgba(int width, int height);
+  skiac_surface *skiac_surface_create_rgba_premultiplied(int width, int height, uint8_t cs);
+  void skiac_surface_create_svg(skiac_svg_surface *c_surface, int width, int height, int alphaType, uint32_t flag, uint8_t cs);
+  skiac_surface *skiac_surface_create_rgba(int width, int height, uint8_t cs);
   void skiac_surface_destroy(skiac_surface *c_surface);
   skiac_surface *skiac_surface_copy_rgba(
       skiac_surface *c_surface,
       uint32_t x,
       uint32_t y,
       uint32_t width,
-      uint32_t height);
+      uint32_t height,
+      uint8_t cs);
   skiac_canvas *skiac_surface_get_canvas(skiac_surface *c_surface);
   int skiac_surface_get_width(skiac_surface *c_surface);
   int skiac_surface_get_height(skiac_surface *c_surface);
   void skiac_surface_read_pixels(skiac_surface *c_surface, skiac_surface_data *data);
-  bool skiac_surface_read_pixels_rect(skiac_surface *c_surface, uint8_t *data, int x, int y, int w, int h);
+  bool skiac_surface_read_pixels_rect(skiac_surface *c_surface, uint8_t *data, int x, int y, int w, int h, uint8_t cs);
   void skiac_surface_png_data(skiac_surface *c_surface, skiac_sk_data *data);
   void skiac_surface_encode_data(skiac_surface *c_surface, skiac_sk_data *data, int format, int quality);
   int skiac_surface_get_alpha_type(skiac_surface *c_surface);
@@ -285,7 +286,7 @@ extern "C"
   void skiac_canvas_restore(skiac_canvas *c_canvas);
   void skiac_canvas_reset(skiac_canvas *c_canvas);
   void skiac_canvas_write_pixels(skiac_canvas *c_canvas, int width, int height, uint8_t *pixels, size_t row_bytes, int x, int y);
-  void skiac_canvas_write_pixels_dirty(skiac_canvas *c_canvas, int width, int height, uint8_t *pixels, size_t row_bytes, size_t length, float x, float y, float dirty_x, float dirty_y, float dirty_width, float dirty_height);
+  void skiac_canvas_write_pixels_dirty(skiac_canvas *c_canvas, int width, int height, uint8_t *pixels, size_t row_bytes, size_t length, float x, float y, float dirty_x, float dirty_y, float dirty_width, float dirty_height, uint8_t cs);
 
   // Paint
   skiac_paint *skiac_paint_create();
@@ -425,7 +426,7 @@ extern "C"
 
   // Bitmap
   void skiac_bitmap_make_from_buffer(const uint8_t *ptr, size_t size, skiac_bitmap_info *bitmap_info);
-  void skiac_bitmap_make_from_svg(const uint8_t *data, size_t length, float width, float height, skiac_bitmap_info *bitmap_info);
+  void skiac_bitmap_make_from_svg(const uint8_t *data, size_t length, float width, float height, skiac_bitmap_info *bitmap_info, uint8_t cs);
   skiac_bitmap *skiac_bitmap_make_from_image_data(uint8_t *ptr, size_t width, size_t height, size_t row_bytes, size_t size, int ct, int at);
   size_t skiac_bitmap_get_width(skiac_bitmap *c_bitmap);
   size_t skiac_bitmap_get_height(skiac_bitmap *c_bitmap);

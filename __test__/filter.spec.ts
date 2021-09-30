@@ -13,9 +13,7 @@ const test = ava as TestInterface<{
 }>
 
 const FIREFOX = readFileSync(join(__dirname, 'fixtures', 'firefox-logo.svg'))
-const FIREFOX_IMAGE = new Image()
-FIREFOX_IMAGE.width = 200
-FIREFOX_IMAGE.height = 206.433
+const FIREFOX_IMAGE = new Image(200, 206.433)
 FIREFOX_IMAGE.src = FIREFOX
 
 test.beforeEach((t) => {

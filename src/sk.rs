@@ -211,7 +211,11 @@ mod ffi {
 
   extern "C" {
 
-    pub fn skiac_surface_create_rgba_premultiplied(width: i32, height: i32) -> *mut skiac_surface;
+    pub fn skiac_surface_create_rgba_premultiplied(
+      width: i32,
+      height: i32,
+      cs: u8,
+    ) -> *mut skiac_surface;
 
     pub fn skiac_surface_create_svg(
       c_surface: *mut skiac_svg_surface,
@@ -219,9 +223,10 @@ mod ffi {
       height: i32,
       alphaType: i32,
       flag: u32,
+      cs: u8,
     );
 
-    pub fn skiac_surface_create_rgba(width: i32, height: i32) -> *mut skiac_surface;
+    pub fn skiac_surface_create_rgba(width: i32, height: i32, cs: u8) -> *mut skiac_surface;
 
     pub fn skiac_surface_destroy(surface: *mut skiac_surface);
 
@@ -231,6 +236,7 @@ mod ffi {
       y: u32,
       width: u32,
       height: u32,
+      cs: u8,
     ) -> *mut skiac_surface;
 
     pub fn skiac_surface_save(c_surface: *mut skiac_surface, path: *const c_char) -> bool;
@@ -250,6 +256,7 @@ mod ffi {
       y: i32,
       w: i32,
       h: i32,
+      color_space: u8,
     ) -> bool;
 
     pub fn skiac_surface_png_data(surface: *mut skiac_surface, data: *mut skiac_sk_data);
@@ -401,6 +408,7 @@ mod ffi {
       dirty_y: f32,
       dirty_width: f32,
       dirty_height: f32,
+      color_space: u8,
     );
 
     pub fn skiac_paint_create() -> *mut skiac_paint;
@@ -727,6 +735,7 @@ mod ffi {
       width: f32,
       height: f32,
       info: *mut skiac_bitmap_info,
+      cs: u8,
     );
 
     pub fn skiac_bitmap_make_from_image_data(
@@ -857,6 +866,31 @@ pub enum ColorType {
   R16G16Unorm,
   /// pixel with a little endian uint16_t for red, green, blue and alpha
   R16G16B16A16Unorm,
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
+#[repr(u8)]
+pub enum ColorSpace {
+  Srgb,
+  DisplayP3,
+}
+
+impl Default for ColorSpace {
+  fn default() -> Self {
+    Self::Srgb
+  }
+}
+
+impl FromStr for ColorSpace {
+  type Err = SkError;
+
+  fn from_str(value: &str) -> Result<Self, SkError> {
+    match value {
+      "srgb" => Ok(Self::Srgb),
+      "display-p3" | "p3" => Ok(Self::DisplayP3),
+      _ => Err(SkError::StringToColorSpaceError(value.to_owned())),
+    }
+  }
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
@@ -1439,15 +1473,26 @@ pub struct Surface {
 }
 
 impl Surface {
-  pub fn new_rgba(width: u32, height: u32) -> Option<Surface> {
-    unsafe { Self::from_ptr(ffi::skiac_surface_create_rgba(width as i32, height as i32)) }
+  pub fn new_rgba(width: u32, height: u32, color_space: ColorSpace) -> Option<Surface> {
+    unsafe {
+      Self::from_ptr(ffi::skiac_surface_create_rgba(
+        width as i32,
+        height as i32,
+        color_space as u8,
+      ))
+    }
   }
 
-  pub fn new_rgba_premultiplied(width: u32, height: u32) -> Option<Surface> {
+  pub fn new_rgba_premultiplied(
+    width: u32,
+    height: u32,
+    color_space: ColorSpace,
+  ) -> Option<Surface> {
     unsafe {
       Self::from_ptr(ffi::skiac_surface_create_rgba_premultiplied(
         width as i32,
         height as i32,
+        color_space as u8,
       ))
     }
   }
@@ -1457,6 +1502,7 @@ impl Surface {
     height: u32,
     alpha_type: AlphaType,
     flag: SvgExportFlag,
+    color_space: ColorSpace,
   ) -> Option<(Surface, SkWMemoryStream)> {
     let mut svg_surface = ffi::skiac_svg_surface {
       stream: ptr::null_mut(),
@@ -1470,6 +1516,7 @@ impl Surface {
         height as i32,
         alpha_type as i32,
         flag as u32,
+        color_space as u8,
       );
     };
     if svg_surface.surface.is_null() {
@@ -1495,11 +1542,27 @@ impl Surface {
     }
   }
 
-  pub fn copy_rgba(&self, x: u32, y: u32, width: u32, height: u32) -> Option<Surface> {
-    unsafe { Self::from_ptr(ffi::skiac_surface_copy_rgba(self.ptr, x, y, width, height)) }
+  pub fn copy_rgba(
+    &self,
+    x: u32,
+    y: u32,
+    width: u32,
+    height: u32,
+    color_space: ColorSpace,
+  ) -> Option<Surface> {
+    unsafe {
+      Self::from_ptr(ffi::skiac_surface_copy_rgba(
+        self.ptr,
+        x,
+        y,
+        width,
+        height,
+        color_space as u8,
+      ))
+    }
   }
 
-  pub fn try_clone(&self) -> Option<Surface> {
+  pub fn try_clone(&self, color_space: ColorSpace) -> Option<Surface> {
     unsafe {
       Self::from_ptr(ffi::skiac_surface_copy_rgba(
         self.ptr,
@@ -1507,6 +1570,7 @@ impl Surface {
         0,
         self.width(),
         self.height(),
+        color_space as u8,
       ))
     }
   }
@@ -1535,7 +1599,14 @@ impl Surface {
     }
   }
 
-  pub fn read_pixels(&self, x: u32, y: u32, width: u32, height: u32) -> Option<Vec<u8>> {
+  pub fn read_pixels(
+    &self,
+    x: u32,
+    y: u32,
+    width: u32,
+    height: u32,
+    color_space: ColorSpace,
+  ) -> Option<Vec<u8>> {
     let mut result = vec![0; (width * height * 4) as usize];
     let status = unsafe {
       ffi::skiac_surface_read_pixels_rect(
@@ -1545,6 +1616,7 @@ impl Surface {
         y as i32,
         width as i32,
         height as i32,
+        color_space as u8,
       )
     };
     if status {
@@ -2088,6 +2160,7 @@ impl Canvas {
     dirty_y: f32,
     dirty_width: f32,
     dirty_height: f32,
+    color_space: ColorSpace,
   ) {
     unsafe {
       ffi::skiac_canvas_write_pixels_dirty(
@@ -2103,6 +2176,7 @@ impl Canvas {
         dirty_y,
         dirty_width,
         dirty_height,
+        color_space as u8,
       )
     }
   }
@@ -3167,14 +3241,14 @@ impl Bitmap {
     }
   }
 
-  pub fn from_svg_data(data: *const u8, size: usize) -> Option<Self> {
+  pub fn from_svg_data(data: *const u8, size: usize, color_space: ColorSpace) -> Option<Self> {
     let mut bitmap_info = ffi::skiac_bitmap_info {
       bitmap: ptr::null_mut(),
       width: 0,
       height: 0,
     };
     unsafe {
-      ffi::skiac_bitmap_make_from_svg(data, size, -1.0, -1.0, &mut bitmap_info);
+      ffi::skiac_bitmap_make_from_svg(data, size, -1.0, -1.0, &mut bitmap_info, color_space as u8);
 
       if bitmap_info.bitmap.is_null() {
         return None;
@@ -3188,6 +3262,7 @@ impl Bitmap {
     size: usize,
     width: f32,
     height: f32,
+    color_space: ColorSpace,
   ) -> Option<Self> {
     let mut bitmap_info = ffi::skiac_bitmap_info {
       bitmap: ptr::null_mut(),
@@ -3195,7 +3270,14 @@ impl Bitmap {
       height: 0,
     };
     unsafe {
-      ffi::skiac_bitmap_make_from_svg(data, size, width, height, &mut bitmap_info);
+      ffi::skiac_bitmap_make_from_svg(
+        data,
+        size,
+        width,
+        height,
+        &mut bitmap_info,
+        color_space as u8,
+      );
 
       if bitmap_info.bitmap.is_null() {
         return None;

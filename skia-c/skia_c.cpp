@@ -12,6 +12,7 @@
 #define MASK_FILTER_CAST reinterpret_cast<SkMaskFilter *>(c_mask_filter)
 #define IMAGE_FILTER_CAST reinterpret_cast<SkImageFilter *>(c_image_filter)
 #define TYPEFACE_CAST reinterpret_cast<SkTypeface *>(c_typeface)
+#define COLOR_SPACE_CAST cs == 0 ? SkColorSpace::MakeSRGB() : SkColorSpace::MakeRGB(SkNamedTransferFn::kSRGB, SkNamedGamut::kDisplayP3)
 
 #define MAX_LAYOUT_WIDTH 100000
 #define HANGING_AS_PERCENT_OF_ASCENT 80
@@ -57,12 +58,12 @@ extern "C"
 
   // Surface
 
-  static SkSurface *skiac_surface_create(int width, int height, SkAlphaType alphaType)
+  static SkSurface *skiac_surface_create(int width, int height, SkAlphaType alphaType, uint8_t cs)
   {
     // Init() is idempotent, so can be called more than once with no adverse effect.
     SkGraphics::Init();
-
-    auto info = SkImageInfo::Make(width, height, kRGBA_8888_SkColorType, alphaType);
+    auto color_space = COLOR_SPACE_CAST;
+    auto info = SkImageInfo::Make(width, height, kRGBA_8888_SkColorType, alphaType, color_space);
     auto surface = SkSurface::MakeRaster(info);
 
     if (surface)
@@ -76,7 +77,7 @@ extern "C"
     }
   }
 
-  void skiac_surface_create_svg(skiac_svg_surface *c_surface, int w, int h, int alphaType, uint32_t flag)
+  void skiac_surface_create_svg(skiac_svg_surface *c_surface, int w, int h, int alphaType, uint32_t flag, uint8_t cs)
   {
     auto w_stream = new SkDynamicMemoryWStream();
 
@@ -85,7 +86,7 @@ extern "C"
     {
       return;
     }
-    auto surface = skiac_surface_create(w, h, (SkAlphaType)alphaType);
+    auto surface = skiac_surface_create(w, h, (SkAlphaType)alphaType, cs);
     if (!surface)
     {
       return;
@@ -95,16 +96,16 @@ extern "C"
     c_surface->canvas = reinterpret_cast<skiac_canvas *>(canvas.release());
   }
 
-  skiac_surface *skiac_surface_create_rgba_premultiplied(int width, int height)
+  skiac_surface *skiac_surface_create_rgba_premultiplied(int width, int height, uint8_t cs)
   {
     return reinterpret_cast<skiac_surface *>(
-        skiac_surface_create(width, height, kPremul_SkAlphaType));
+        skiac_surface_create(width, height, kPremul_SkAlphaType, cs));
   }
 
-  skiac_surface *skiac_surface_create_rgba(int width, int height)
+  skiac_surface *skiac_surface_create_rgba(int width, int height, uint8_t cs)
   {
     return reinterpret_cast<skiac_surface *>(
-        skiac_surface_create(width, height, kUnpremul_SkAlphaType));
+        skiac_surface_create(width, height, kUnpremul_SkAlphaType, cs));
   }
 
   bool skiac_surface_save(skiac_surface *c_surface, const char *path)
@@ -132,10 +133,10 @@ extern "C"
 
   skiac_surface *skiac_surface_copy_rgba(
       skiac_surface *c_surface,
-      uint32_t x, uint32_t y, uint32_t width, uint32_t height)
+      uint32_t x, uint32_t y, uint32_t width, uint32_t height, uint8_t cs)
   {
     // x, y, width, height are source rectangle coordinates.
-    auto copy = skiac_surface_create((int)width, (int)height, kUnpremul_SkAlphaType);
+    auto copy = skiac_surface_create((int)width, (int)height, kUnpremul_SkAlphaType, cs);
     if (!copy)
     {
       return nullptr;
@@ -179,9 +180,10 @@ extern "C"
     }
   }
 
-  bool skiac_surface_read_pixels_rect(skiac_surface *c_surface, uint8_t *data, int x, int y, int w, int h)
+  bool skiac_surface_read_pixels_rect(skiac_surface *c_surface, uint8_t *data, int x, int y, int w, int h, uint8_t cs)
   {
-    auto image_info = SkImageInfo::Make(w, h, SkColorType::kRGBA_8888_SkColorType, SkAlphaType::kUnpremul_SkAlphaType, SkColorSpace::MakeSRGB());
+    auto color_space = COLOR_SPACE_CAST;
+    auto image_info = SkImageInfo::Make(w, h, SkColorType::kRGBA_8888_SkColorType, SkAlphaType::kUnpremul_SkAlphaType, color_space);
     auto result = SURFACE_CAST->readPixels(image_info, data, w * 4, x, y);
     return result;
   }
@@ -508,9 +510,10 @@ extern "C"
     CANVAS_CAST->writePixels(info, pixels, row_bytes, x, y);
   }
 
-  void skiac_canvas_write_pixels_dirty(skiac_canvas *c_canvas, int width, int height, uint8_t *pixels, size_t row_bytes, size_t length, float x, float y, float dirty_x, float dirty_y, float dirty_width, float dirty_height)
+  void skiac_canvas_write_pixels_dirty(skiac_canvas *c_canvas, int width, int height, uint8_t *pixels, size_t row_bytes, size_t length, float x, float y, float dirty_x, float dirty_y, float dirty_width, float dirty_height, uint8_t cs)
   {
-    auto info = SkImageInfo::Make(width, height, SkColorType::kRGBA_8888_SkColorType, SkAlphaType::kUnpremul_SkAlphaType);
+    auto color_space = COLOR_SPACE_CAST;
+    auto info = SkImageInfo::Make(width, height, SkColorType::kRGBA_8888_SkColorType, SkAlphaType::kUnpremul_SkAlphaType, color_space);
     auto data = SkData::MakeFromMalloc(pixels, length);
     auto image = SkImage::MakeRasterData(info, data, row_bytes);
     auto src_rect = SkRect::MakeXYWH(dirty_x, dirty_y, dirty_width, dirty_height);
@@ -1317,8 +1320,9 @@ extern "C"
     bitmap_info->height = info.height();
   }
 
-  void skiac_bitmap_make_from_svg(const uint8_t *data, size_t length, float width, float height, skiac_bitmap_info *bitmap_info)
+  void skiac_bitmap_make_from_svg(const uint8_t *data, size_t length, float width, float height, skiac_bitmap_info *bitmap_info, uint8_t cs)
   {
+    auto color_space = COLOR_SPACE_CAST;
     auto svg_stream = new SkMemoryStream(data, length, false);
     auto svg_dom = SkSVGDOM::MakeFromStream(*svg_stream);
     auto svg_root = svg_dom->getRoot();
@@ -1345,7 +1349,7 @@ extern "C"
       image_w = width;
       image_h = height;
     }
-    auto imageinfo = SkImageInfo::Make(image_w, image_h, kRGBA_8888_SkColorType, SkAlphaType::kOpaque_SkAlphaType);
+    auto imageinfo = SkImageInfo::Make(image_w, image_h, kRGBA_8888_SkColorType, SkAlphaType::kOpaque_SkAlphaType, color_space);
     auto bitmap = new SkBitmap();
     bitmap->allocPixels(imageinfo);
     auto sk_svg_canvas = new SkCanvas(*bitmap);

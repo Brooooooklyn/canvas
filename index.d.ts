@@ -177,11 +177,15 @@ export class ImageData {
    */
   readonly width: number
 
-  constructor(sw: number, sh: number)
+  constructor(sw: number, sh: number, attr?: { colorSpace?: ColorSpace })
+  constructor(imageData: ImageData, attr?: { colorSpace?: ColorSpace })
   constructor(data: Uint8ClampedArray, sw: number, sh?: number)
 }
 
 export class Image {
+  constructor()
+  // attrs only affects SVG
+  constructor(width: number, height: number, attrs?: { colorSpace?: ColorSpace })
   width: number
   height: number
   readonly naturalWidth: number
@@ -277,10 +281,17 @@ export interface SKRSContext2D
   }
 }
 
+export type ColorSpace = 'srgb' | 'display-p3'
+
+export interface ContextAttributes {
+  alpha?: boolean
+  colorSpace?: ColorSpace
+}
+
 export interface SvgCanvas {
   width: number
   height: number
-  getContext(contextType: '2d', contextAttributes?: { alpha: boolean }): SKRSContext2D
+  getContext(contextType: '2d', contextAttributes?: ContextAttributes): SKRSContext2D
 
   getContent(): Buffer
 }
@@ -290,7 +301,7 @@ export class Canvas {
 
   width: number
   height: number
-  getContext(contextType: '2d', contextAttributes?: { alpha: boolean }): SKRSContext2D
+  getContext(contextType: '2d', contextAttributes?: ContextAttributes): SKRSContext2D
   encodeSync(format: 'webp' | 'jpeg', quality?: number): Buffer
   encodeSync(format: 'png'): Buffer
   encode(format: 'webp' | 'jpeg', quality?: number): Promise<Buffer>
