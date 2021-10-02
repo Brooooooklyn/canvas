@@ -12,5 +12,6 @@ RUN wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - && \
   llvm \
   clang \
   rcs \
+  nasm \
   ninja-build && \
   curl https://sh.rustup.rs -sSf | sh -s -- -y

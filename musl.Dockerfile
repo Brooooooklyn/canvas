@@ -16,6 +16,7 @@ RUN apk add --update --no-cache musl-dev wget && \
   build-base \
   clang \
   llvm \
+  nasm \
   gn \
   tar \
   ninja && \
