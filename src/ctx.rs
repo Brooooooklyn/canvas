@@ -3,10 +3,12 @@ use std::f32::consts::PI;
 use std::mem;
 use std::rc::Rc;
 use std::result;
+use std::slice;
 use std::str::FromStr;
 
 use cssparser::{Color as CSSColor, Parser, ParserInput};
 use napi::*;
+use rgb::FromSlice;
 
 use crate::filter::css_filters_to_image_filter;
 use crate::{
@@ -2128,29 +2130,50 @@ fn get_text_baseline(ctx: CallContext) -> Result<JsString> {
     .create_string(context_2d.state.text_baseline.as_str())
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+pub struct AVIFConfig {
+  pub quality: f32,
+  #[serde(rename = "alphaQuality")]
+  pub alpha_quality: f32,
+  pub speed: u8,
+  pub threads: u8,
+}
+
 pub enum ContextData {
   Png(SurfaceRef),
   Jpeg(SurfaceRef, u8),
   Webp(SurfaceRef, u8),
+  Avif(SurfaceRef, AVIFConfig, u32, u32),
 }
 
 unsafe impl Send for ContextData {}
 unsafe impl Sync for ContextData {}
 
+pub enum ContextOutputData {
+  Skia(SkiaDataRef),
+  Avif(Vec<u8>),
+}
+
 impl Task for ContextData {
-  type Output = SkiaDataRef;
+  type Output = ContextOutputData;
   type JsValue = JsBuffer;
 
   fn compute(&mut self) -> Result<Self::Output> {
     match self {
-      ContextData::Png(surface) => surface.png_data().ok_or_else(|| {
-        Error::new(
-          Status::GenericFailure,
-          "Get png data from surface failed".to_string(),
-        )
-      }),
+      ContextData::Png(surface) => {
+        surface
+          .png_data()
+          .map(ContextOutputData::Skia)
+          .ok_or_else(|| {
+            Error::new(
+              Status::GenericFailure,
+              "Get png data from surface failed".to_string(),
+            )
+          })
+      }
       ContextData::Jpeg(surface, quality) => surface
         .encode_data(SkEncodedImageFormat::Jpeg, *quality)
+        .map(ContextOutputData::Skia)
         .ok_or_else(|| {
           Error::new(
             Status::GenericFailure,
@@ -2159,25 +2182,53 @@ impl Task for ContextData {
         }),
       ContextData::Webp(surface, quality) => surface
         .encode_data(SkEncodedImageFormat::Webp, *quality)
+        .map(ContextOutputData::Skia)
         .ok_or_else(|| {
           Error::new(
             Status::GenericFailure,
             "Get webp data from surface failed".to_string(),
           )
         }),
+      ContextData::Avif(surface, config, width, height) => surface
+        .data()
+        .ok_or_else(|| {
+          Error::new(
+            Status::GenericFailure,
+            "Get avif data from surface failed".to_string(),
+          )
+        })
+        .and_then(|(data, size)| {
+          ravif::encode_rgba(
+            ravif::Img::new(
+              unsafe { slice::from_raw_parts(data, size) }.as_rgba(),
+              *width as usize,
+              *height as usize,
+            ),
+            &ravif::Config {
+              quality: config.quality,
+              alpha_quality: config.alpha_quality,
+              speed: config.speed,
+              premultiplied_alpha: false,
+              threads: 0,
+              color_space: ravif::ColorSpace::RGB,
+            },
+          )
+          .map(|(o, _width, _height)| ContextOutputData::Avif(o))
+          .map_err(|e| Error::new(Status::GenericFailure, format!("{}", e)))
+        }),
     }
   }
 
-  fn resolve(self, env: Env, output: Self::Output) -> Result<Self::JsValue> {
-    unsafe {
-      env
-        .create_buffer_with_borrowed_data(
-          output.0.ptr,
-          output.0.size,
-          output,
-          |data_ref: Self::Output, _| mem::drop(data_ref),
-        )
-        .map(|value| value.into_raw())
+  fn resolve(self, env: Env, output_data: Self::Output) -> Result<Self::JsValue> {
+    match output_data {
+      ContextOutputData::Skia(output) => unsafe {
+        env
+          .create_buffer_with_borrowed_data(output.0.ptr, output.0.size, output, |data_ref, _| {
+            mem::drop(data_ref)
+          })
+          .map(|value| value.into_raw())
+      },
+      ContextOutputData::Avif(output) => env.create_buffer_with_data(output).map(|b| b.into_raw()),
     }
   }
 }

@@ -102,7 +102,7 @@
   "ava": {
     "require": ["@swc-node/register"],
     "extensions": ["ts"],
-    "timeout": "30s",
+    "timeout": "3m",
     "environmentVariables": {
       "SWC_NODE_PROJECT": "./tsconfig.json",
       "NODE_ENV": "ava"

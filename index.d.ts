@@ -296,6 +296,13 @@ export interface SvgCanvas {
   getContent(): Buffer
 }
 
+export interface AvifConfig {
+  quality?: number
+  alphaQuality?: number
+  speed?: number
+  threads?: number
+}
+
 export class Canvas {
   constructor(width: number, height: number, flag?: SvgExportFlag)
 
@@ -304,19 +311,25 @@ export class Canvas {
   getContext(contextType: '2d', contextAttributes?: ContextAttributes): SKRSContext2D
   encodeSync(format: 'webp' | 'jpeg', quality?: number): Buffer
   encodeSync(format: 'png'): Buffer
+  encodeSync(format: 'avif', cfg?: AvifConfig): Buffer
   encode(format: 'webp' | 'jpeg', quality?: number): Promise<Buffer>
   encode(format: 'png'): Promise<Buffer>
+  encode(format: 'avif', cfg?: AvifConfig): Promise<Buffer>
 
-  toBuffer(mime: 'image/png' | 'image/jpeg' | 'image/webp'): Buffer
+  toBuffer(mime: 'image/png'): Buffer
+  toBuffer(mime: 'image/jpeg' | 'image/webp', quality?: number): Buffer
+  toBuffer(mime: 'image/avif', cfg?: AvifConfig): Buffer
   // raw pixels
   data(): Buffer
   toDataURL(mime?: 'image/png'): string
   toDataURL(mime: 'image/jpeg' | 'image/webp', quality?: number): string
   toDataURL(mime?: 'image/jpeg' | 'image/webp' | 'image/png', quality?: number): string
+  toDataURL(mime?: 'image/avif', cfg?: AvifConfig): string
 
   toDataURLAsync(mime?: 'image/png'): Promise<string>
   toDataURLAsync(mime: 'image/jpeg' | 'image/webp', quality?: number): Promise<string>
   toDataURLAsync(mime?: 'image/jpeg' | 'image/webp' | 'image/png', quality?: number): Promise<string>
+  toDataURLAsync(mime?: 'image/avif', cfg?: AvifConfig): Promise<string>
 }
 
 export function createCanvas(width: number, height: number): Canvas

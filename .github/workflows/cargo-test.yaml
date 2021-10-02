@@ -57,6 +57,9 @@ jobs:
           npm install -g pnpm
           pnpm install --frozen-lockfile
 
+      - name: Install nasm
+        run: brew install nasm
+
       - name: Download skia binary
         run: node ./scripts/release-skia-binary.js --download
 

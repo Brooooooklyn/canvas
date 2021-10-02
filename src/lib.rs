@@ -7,12 +7,13 @@ extern crate napi_derive;
 #[macro_use]
 extern crate serde_derive;
 
-use std::mem;
+use std::{mem, slice};
 
 use napi::*;
 
-use ctx::{Context, ContextData, ImageOrCanvas};
+use ctx::{AVIFConfig, Context, ContextData, ContextOutputData, ImageOrCanvas};
 use font::{init_font_regexp, FONT_REGEXP};
+use rgb::FromSlice;
 use sk::SkiaDataRef;
 
 #[cfg(all(
@@ -42,6 +43,9 @@ mod svg;
 const MIME_WEBP: &str = "image/webp";
 const MIME_PNG: &str = "image/png";
 const MIME_JPEG: &str = "image/jpeg";
+const MIME_AVIF: &str = "image/avif";
+
+const DEFAULT_IMAGE_QUALITY: u8 = 92;
 
 #[module_exports]
 fn init(mut exports: JsObject, env: Env) -> Result<()> {
@@ -49,13 +53,27 @@ fn init(mut exports: JsObject, env: Env) -> Result<()> {
     "CanvasElement",
     canvas_element_constructor,
     &[
-      Property::new(&env, "encode")?.with_method(encode),
-      Property::new(&env, "encodeSync")?.with_method(encode_sync),
-      Property::new(&env, "toBuffer")?.with_method(to_buffer),
-      Property::new(&env, "savePNG")?.with_method(save_png),
-      Property::new(&env, "data")?.with_method(data),
-      Property::new(&env, "toDataURL")?.with_method(to_data_url),
-      Property::new(&env, "toDataURLAsync")?.with_method(to_data_url_async),
+      Property::new(&env, "encode")?
+        .with_method(encode)
+        .with_property_attributes(PropertyAttributes::Writable),
+      Property::new(&env, "encodeSync")?
+        .with_method(encode_sync)
+        .with_property_attributes(PropertyAttributes::Writable),
+      Property::new(&env, "toBuffer")?
+        .with_method(to_buffer)
+        .with_property_attributes(PropertyAttributes::Writable),
+      Property::new(&env, "savePNG")?
+        .with_method(save_png)
+        .with_property_attributes(PropertyAttributes::Writable),
+      Property::new(&env, "data")?
+        .with_method(data)
+        .with_property_attributes(PropertyAttributes::Writable),
+      Property::new(&env, "toDataURL")?
+        .with_method(to_data_url)
+        .with_property_attributes(PropertyAttributes::Writable),
+      Property::new(&env, "toDataURLAsync")?
+        .with_method(to_data_url_async)
+        .with_property_attributes(PropertyAttributes::Writable),
     ],
   )?;
 
@@ -143,24 +161,29 @@ fn create_context(ctx: CallContext) -> Result<JsUndefined> {
 #[js_function(2)]
 fn encode(ctx: CallContext) -> Result<JsObject> {
   let format = ctx.get::<JsString>(0)?.into_utf8()?;
-  let quality = if ctx.length == 1 {
-    92
-  } else {
+  let format_str = format.as_str()?;
+  let quality = if format_str != "avif" {
     ctx.get::<JsNumber>(1)?.get_uint32()? as u8
+  } else {
+    DEFAULT_IMAGE_QUALITY
   };
   let this = ctx.this_unchecked::<JsObject>();
   let ctx_js = this.get_named_property::<JsObject>("ctx")?;
   let ctx2d = ctx.env.unwrap::<Context>(&ctx_js)?;
   let surface_ref = ctx2d.surface.reference();
 
-  let task = match format.as_str()? {
+  let task = match format_str {
     "webp" => ContextData::Webp(surface_ref, quality),
     "jpeg" => ContextData::Jpeg(surface_ref, quality),
     "png" => ContextData::Png(surface_ref),
+    "avif" => {
+      let cfg: AVIFConfig = serde_json::from_str(ctx.get::<JsString>(1)?.into_utf8()?.as_str()?)?;
+      ContextData::Avif(surface_ref, cfg, ctx2d.width, ctx2d.height)
+    }
     _ => {
       return Err(Error::new(
         Status::InvalidArg,
-        format!("{} is not valid format", format.as_str()?),
+        format!("{} is not valid format", format_str),
       ))
     }
   };
@@ -171,24 +194,56 @@ fn encode(ctx: CallContext) -> Result<JsObject> {
 #[js_function(2)]
 fn encode_sync(ctx: CallContext) -> Result<JsBuffer> {
   let format = ctx.get::<JsString>(0)?.into_utf8()?;
-  let quality = if ctx.length == 1 {
-    100
-  } else {
+  let format_str = format.as_str()?;
+  let quality = if format_str != "avif" {
     ctx.get::<JsNumber>(1)?.get_uint32()? as u8
+  } else {
+    DEFAULT_IMAGE_QUALITY
   };
   let this = ctx.this_unchecked::<JsObject>();
   let ctx_js = this.get_named_property::<JsObject>("ctx")?;
   let ctx2d = ctx.env.unwrap::<Context>(&ctx_js)?;
   let surface_ref = ctx2d.surface.reference();
 
-  if let Some(data_ref) = match format.as_str()? {
+  if let Some(data_ref) = match format_str {
     "webp" => surface_ref.encode_data(sk::SkEncodedImageFormat::Webp, quality),
     "jpeg" => surface_ref.encode_data(sk::SkEncodedImageFormat::Jpeg, quality),
     "png" => surface_ref.png_data(),
+    "avif" => {
+      let (data, size) = surface_ref.data().ok_or_else(|| {
+        Error::new(
+          Status::GenericFailure,
+          "Encode to avif error, failed to get surface pixels".to_owned(),
+        )
+      })?;
+      let config: AVIFConfig =
+        serde_json::from_str(ctx.get::<JsString>(1)?.into_utf8()?.as_str()?)?;
+      let output = ravif::encode_rgba(
+        ravif::Img::new(
+          unsafe { slice::from_raw_parts(data, size) }.as_rgba(),
+          ctx2d.width as usize,
+          ctx2d.height as usize,
+        ),
+        &ravif::Config {
+          quality: config.quality,
+          alpha_quality: config.alpha_quality,
+          speed: config.speed,
+          premultiplied_alpha: false,
+          threads: 0,
+          color_space: ravif::ColorSpace::RGB,
+        },
+      )
+      .map(|(o, _width, _height)| o)
+      .map_err(|e| Error::new(Status::GenericFailure, format!("{}", e)))?;
+      return ctx
+        .env
+        .create_buffer_with_data(output)
+        .map(|b| b.into_raw());
+    }
     _ => {
       return Err(Error::new(
         Status::InvalidArg,
-        format!("{} is not valid format", format.as_str()?),
+        format!("{} is not valid format", format_str),
       ))
     }
   } {
@@ -213,29 +268,31 @@ fn encode_sync(ctx: CallContext) -> Result<JsBuffer> {
 
 #[js_function(2)]
 fn to_buffer(ctx: CallContext) -> Result<JsBuffer> {
-  let mime = if ctx.length == 0 {
-    MIME_PNG.to_owned()
-  } else {
-    let mime_js = ctx.get::<JsString>(0)?.into_utf8()?;
-    mime_js.as_str()?.to_owned()
-  };
+  let mime_js = ctx.get::<JsString>(0)?.into_utf8()?;
+  let mime = mime_js.as_str()?;
   let quality = if ctx.length < 2 {
-    92
+    DEFAULT_IMAGE_QUALITY
   } else {
     ctx.get::<JsNumber>(1)?.get_uint32()? as u8
   };
 
-  let data_ref = get_data_ref(&ctx, mime.as_str(), quality)?;
-  unsafe {
-    ctx
+  let context_data = get_data_ref(&ctx, mime, quality)?;
+  match context_data {
+    ContextOutputData::Skia(data_ref) => unsafe {
+      ctx
+        .env
+        .create_buffer_with_borrowed_data(
+          data_ref.0.ptr,
+          data_ref.0.size,
+          data_ref,
+          |data: SkiaDataRef, _| mem::drop(data),
+        )
+        .map(|b| b.into_raw())
+    },
+    ContextOutputData::Avif(output) => ctx
       .env
-      .create_buffer_with_borrowed_data(
-        data_ref.0.ptr,
-        data_ref.0.size,
-        data_ref,
-        |data: SkiaDataRef, _| mem::drop(data),
-      )
-      .map(|b| b.into_raw())
+      .create_buffer_with_data(output)
+      .map(|b| b.into_raw()),
   }
 }
 
@@ -263,42 +320,41 @@ fn data(ctx: CallContext) -> Result<JsBuffer> {
 
 #[js_function(2)]
 fn to_data_url(ctx: CallContext) -> Result<JsString> {
-  let mime = if ctx.length == 0 {
-    MIME_PNG.to_owned()
-  } else {
-    let mime_js = ctx.get::<JsString>(0)?.into_utf8()?;
-    mime_js.as_str()?.to_owned()
-  };
+  let mime_js = ctx.get::<JsString>(0)?.into_utf8()?;
+  let mime = mime_js.as_str()?;
   let quality = if ctx.length < 2 {
     // https://developer.mozilla.org/en-US/docs/Web/API/HTMLCanvasElement/toDataURL
-    92
+    DEFAULT_IMAGE_QUALITY
   } else {
     ctx.get::<JsNumber>(1)?.get_uint32()? as u8
   };
-  let data_ref = get_data_ref(&ctx, mime.as_str(), quality)?;
+  let data_ref = get_data_ref(&ctx, mime, quality)?;
   let mut output = format!("data:{};base64,", &mime);
-  base64::encode_config_buf(data_ref.slice(), base64::STANDARD, &mut output);
+  match data_ref {
+    ContextOutputData::Avif(data) => {
+      base64::encode_config_buf(data.as_slice(), base64::STANDARD, &mut output);
+    }
+    ContextOutputData::Skia(data_ref) => {
+      base64::encode_config_buf(data_ref.slice(), base64::STANDARD, &mut output);
+    }
+  }
   ctx.env.create_string_from_std(output)
 }
 
 #[js_function(2)]
 fn to_data_url_async(ctx: CallContext) -> Result<JsObject> {
-  let mime = if ctx.length == 0 {
-    MIME_PNG.to_owned()
-  } else {
-    let mime_js = ctx.get::<JsString>(0)?.into_utf8()?;
-    mime_js.as_str()?.to_owned()
-  };
+  let mime_js = ctx.get::<JsString>(0)?.into_utf8()?;
+  let mime = mime_js.as_str()?;
   let quality = if ctx.length < 2 {
     // https://developer.mozilla.org/en-US/docs/Web/API/HTMLCanvasElement/toDataURL
-    92
+    DEFAULT_IMAGE_QUALITY
   } else {
     ctx.get::<JsNumber>(1)?.get_uint32()? as u8
   };
-  let data_ref = get_data_ref(&ctx, mime.as_str(), quality)?;
+  let data_ref = get_data_ref(&ctx, mime, quality)?;
   let async_task = AsyncDataUrl {
     surface_data: data_ref,
-    mime,
+    mime: mime.to_owned(),
   };
   ctx.env.spawn(async_task).map(|p| p.promise_object())
 }
@@ -321,7 +377,7 @@ fn get_content(ctx: CallContext) -> Result<JsBuffer> {
   }
 }
 
-fn get_data_ref(ctx: &CallContext, mime: &str, quality: u8) -> Result<SkiaDataRef> {
+fn get_data_ref(ctx: &CallContext, mime: &str, quality: u8) -> Result<ContextOutputData> {
   let this = ctx.this_unchecked::<JsObject>();
   let ctx_js = this.get_named_property::<JsObject>("ctx")?;
   let ctx2d = ctx.env.unwrap::<Context>(&ctx_js)?;
@@ -331,6 +387,34 @@ fn get_data_ref(ctx: &CallContext, mime: &str, quality: u8) -> Result<SkiaDataRe
     MIME_WEBP => surface_ref.encode_data(sk::SkEncodedImageFormat::Webp, quality),
     MIME_JPEG => surface_ref.encode_data(sk::SkEncodedImageFormat::Jpeg, quality),
     MIME_PNG => surface_ref.png_data(),
+    MIME_AVIF => {
+      let (data, size) = surface_ref.data().ok_or_else(|| {
+        Error::new(
+          Status::GenericFailure,
+          "Encode to avif error, failed to get surface pixels".to_owned(),
+        )
+      })?;
+      let config: AVIFConfig =
+        serde_json::from_str(ctx.get::<JsString>(1)?.into_utf8()?.as_str()?)?;
+      let output = ravif::encode_rgba(
+        ravif::Img::new(
+          unsafe { slice::from_raw_parts(data, size) }.as_rgba(),
+          ctx2d.width as usize,
+          ctx2d.height as usize,
+        ),
+        &ravif::Config {
+          quality: config.quality,
+          alpha_quality: config.alpha_quality,
+          speed: config.speed,
+          premultiplied_alpha: false,
+          threads: 0,
+          color_space: ravif::ColorSpace::RGB,
+        },
+      )
+      .map(|(o, _width, _height)| o)
+      .map_err(|e| Error::new(Status::GenericFailure, format!("{}", e)))?;
+      return Ok(ContextOutputData::Avif(output));
+    }
     _ => {
       return Err(Error::new(
         Status::InvalidArg,
@@ -338,7 +422,7 @@ fn get_data_ref(ctx: &CallContext, mime: &str, quality: u8) -> Result<SkiaDataRe
       ))
     }
   } {
-    Ok(data_ref)
+    Ok(ContextOutputData::Skia(data_ref))
   } else {
     Err(Error::new(
       Status::InvalidArg,
@@ -360,7 +444,7 @@ fn save_png(ctx: CallContext) -> Result<JsUndefined> {
 }
 
 struct AsyncDataUrl {
-  surface_data: SkiaDataRef,
+  surface_data: ContextOutputData,
   mime: String,
 }
 
@@ -370,7 +454,14 @@ impl Task for AsyncDataUrl {
 
   fn compute(&mut self) -> Result<Self::Output> {
     let mut output = format!("data:{};base64,", &self.mime);
-    base64::encode_config_buf(self.surface_data.slice(), base64::URL_SAFE, &mut output);
+    match &self.surface_data {
+      ContextOutputData::Skia(data_ref) => {
+        base64::encode_config_buf(data_ref.slice(), base64::URL_SAFE, &mut output);
+      }
+      ContextOutputData::Avif(o) => {
+        base64::encode_config_buf(o.as_slice(), base64::URL_SAFE, &mut output);
+      }
+    }
     Ok(output)
   }
 

@@ -15,6 +15,7 @@ RUN apk add --update --no-cache musl-dev wget && \
   git \
   build-base \
   clang \
+  nasm \
   llvm \
   nasm \
   gn \

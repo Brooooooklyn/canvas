@@ -888,6 +888,12 @@ test('webp-output', async (t) => {
   await snapshotImage(t, t.context, 'webp')
 })
 
+test('avif-output', async (t) => {
+  const { ctx } = t.context
+  drawTranslate(ctx)
+  await snapshotImage(t, t.context, 'avif')
+})
+
 test('raw output', async (t) => {
   const { ctx, canvas } = t.context
   drawTranslate(ctx)
