@@ -32,6 +32,9 @@ jobs:
           profile: default
           override: true
 
+      - name: Install nasm
+        uses: ilammy/setup-nasm@v1
+
       - name: Generate Cargo.lock
         uses: actions-rs/cargo@v1
         with:

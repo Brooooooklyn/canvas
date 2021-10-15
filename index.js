@@ -213,6 +213,99 @@ function createCanvas(width, height, flag) {
     return ctx
   }
 
+  const {
+    encode: canvasEncode,
+    encodeSync: canvasEncodeSync,
+    toBuffer: canvasToBuffer,
+    toDataURL: canvasToDataURL,
+    toDataURLAsync: canvasToDataURLAsync,
+  } = Object.getPrototypeOf(canvasElement)
+
+  canvasElement.encode = function encode(type, qualityOrConfig) {
+    if (type === 'avif') {
+      return canvasEncode.call(
+        this,
+        type,
+        JSON.stringify({
+          quality: 92,
+          alphaQuality: 92,
+          threads: 0,
+          speed: 1,
+          ...(qualityOrConfig || {}),
+        }),
+      )
+    }
+    return canvasEncode.call(this, type, qualityOrConfig || 92)
+  }
+
+  canvasElement.encodeSync = function encodeSync(type, qualityOrConfig) {
+    if (type === 'avif') {
+      return canvasEncodeSync.call(
+        this,
+        type,
+        JSON.stringify({
+          quality: 92,
+          alphaQuality: 92,
+          threads: 0,
+          speed: 1,
+          ...(qualityOrConfig || {}),
+        }),
+      )
+    }
+    return canvasEncodeSync.call(this, type, qualityOrConfig || 92)
+  }
+
+  canvasElement.toBuffer = function toBuffer(type = 'image/png', qualityOrConfig) {
+    if (type === 'avif') {
+      return canvasToBuffer.call(
+        this,
+        type,
+        JSON.stringify({
+          quality: 92,
+          alphaQuality: 92,
+          threads: 0,
+          speed: 1,
+          ...(qualityOrConfig || {}),
+        }),
+      )
+    }
+    return canvasToBuffer.call(this, type, qualityOrConfig || 92)
+  }
+
+  canvasElement.toDataURL = function toDataURL(type = 'image/png', qualityOrConfig) {
+    if (type === 'avif') {
+      return canvasToDataURL.call(
+        this,
+        type,
+        JSON.stringify({
+          quality: 92,
+          alphaQuality: 92,
+          threads: 0,
+          speed: 1,
+          ...(qualityOrConfig || {}),
+        }),
+      )
+    }
+    return canvasToDataURL.call(this, type, qualityOrConfig || 92)
+  }
+
+  canvasElement.toDataURLAsync = function toDataURLAsync(type = 'image/png', qualityOrConfig) {
+    if (type === 'avif') {
+      return canvasToDataURLAsync.call(
+        this,
+        type,
+        JSON.stringify({
+          quality: 92,
+          alphaQuality: 92,
+          threads: 0,
+          speed: 1,
+          ...(qualityOrConfig || {}),
+        }),
+      )
+    }
+    return canvasToDataURLAsync.call(this, type, qualityOrConfig || 92)
+  }
+
   return canvasElement
 }
 
