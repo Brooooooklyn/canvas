@@ -8,8 +8,9 @@
     "noUnusedParameters": true,
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
+    "allowJs": true,
+    "outDir": "dist",
     "lib": ["ESNext", "DOM"]
   },
-  "include": ["."],
-  "exclude": ["node_modules"]
+  "exclude": ["node_modules", "depot_tools", "skia", "skia-c", "example", "target", "npm"]
 }
