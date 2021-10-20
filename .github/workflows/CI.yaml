@@ -27,6 +27,7 @@ jobs:
             build: |
               rustc --print target-cpus
               pnpm build
+              strip -x skia.darwin-x64.node
             downloadTarget: ''
           - host: windows-latest
             build: pnpm build
@@ -40,7 +41,7 @@ jobs:
               docker pull ghcr.io/brooooooklyn/canvas/debian-builder:stretch
               docker tag ghcr.io/brooooooklyn/canvas/debian-builder:stretch builder
             build: |
-              docker run --rm -v ~/.cargo/git:/root/.cargo/git -v ~/.cargo/registry:/root/.cargo/registry -v $(pwd):/canvas -w /canvas builder npm run build
+              docker run --rm -v ~/.cargo/git:/root/.cargo/git -v ~/.cargo/registry:/root/.cargo/registry -v $(pwd):/canvas -w /canvas builder sh -c "npm run build && strip skia.linux-x64-gnu.node"
           - host: ubuntu-latest
             downloadTarget: 'x86_64-unknown-linux-musl'
             target: 'x86_64-unknown-linux-musl'
@@ -48,7 +49,7 @@ jobs:
               docker login -u $DOCKER_USERNAME -p $DOCKER_PASSWORD $DOCKER_REGISTRY_URL
               docker pull ghcr.io/brooooooklyn/canvas/musl-builder:lts
               docker tag ghcr.io/brooooooklyn/canvas/musl-builder:lts builder
-            build: docker run --rm -v ~/.cargo/git:/root/.cargo/git -v ~/.cargo/registry:/root/.cargo/registry -v $(pwd):/canvas -w /canvas builder npm run build
+            build: docker run --rm -v ~/.cargo/git:/root/.cargo/git -v ~/.cargo/registry:/root/.cargo/registry -v $(pwd):/canvas -w /canvas builder sh -c "npm run build && strip skia.linux-x64-musl.node"
           - host: macos-latest
             downloadTarget: 'aarch64-apple-darwin'
             target: 'aarch64-apple-darwin'
@@ -59,13 +60,16 @@ jobs:
               SYSROOT=$(xcrun --sdk macosx --show-sdk-path);
               export CFLAGS="-isysroot $SYSROOT -isystem $SYSROOT";
               pnpm build -- --target=aarch64-apple-darwin
+              strip -x skia.darwin-arm64.node
           - host: ubuntu-18.04
             downloadTarget: 'aarch64-unknown-linux-gnu'
             target: 'aarch64-unknown-linux-gnu'
             setup: |
               sudo apt-get update
               sudo apt-get install gcc-aarch64-linux-gnu g++-aarch64-linux-gnu  -y
-            build: pnpm build -- --target=aarch64-unknown-linux-gnu
+            build: |
+              pnpm build -- --target=aarch64-unknown-linux-gnu
+              aarch64-linux-gnu-strip skia.linux-arm64-gnu.node
           - host: ubuntu-latest
             target: 'aarch64-unknown-linux-musl'
             downloadTarget: 'aarch64-unknown-linux-musl'
@@ -73,14 +77,16 @@ jobs:
               docker login -u $DOCKER_USERNAME -p $DOCKER_PASSWORD $DOCKER_REGISTRY_URL
               docker pull ghcr.io/brooooooklyn/canvas/musl-builder:lts
               docker tag ghcr.io/brooooooklyn/canvas/musl-builder:lts builder
-            build: docker run --rm -v ~/.cargo/git:/root/.cargo/git -v ~/.cargo/registry:/root/.cargo/registry -v $(pwd):/canvas -w /canvas builder sh -c "rustup toolchain install $(cat ./rust-toolchain) && rustup target add aarch64-unknown-linux-musl && pnpm build -- --target=aarch64-unknown-linux-musl"
+            build: docker run --rm -v ~/.cargo/git:/root/.cargo/git -v ~/.cargo/registry:/root/.cargo/registry -v $(pwd):/canvas -w /canvas builder sh -c "rustup toolchain install $(cat ./rust-toolchain) && rustup target add aarch64-unknown-linux-musl && pnpm build -- --target=aarch64-unknown-linux-musl && /aarch64-linux-musl-cross/bin/aarch64-linux-musl-strip skia.linux-arm64-musl.node"
           - host: ubuntu-18.04
             target: 'armv7-unknown-linux-gnueabihf'
             downloadTarget: 'armv7-unknown-linux-gnueabihf'
             setup: |
               sudo apt-get update
               sudo apt-get install gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf -y
-            build: pnpm build -- --target=armv7-unknown-linux-gnueabihf
+            build: |
+              pnpm build -- --target=armv7-unknown-linux-gnueabihf
+              arm-linux-gnueabihf-strip skia.linux-arm-gnueabihf.node
           - host: ubuntu-latest
             target: 'aarch64-linux-android'
             downloadTarget: 'aarch64-linux-android'
@@ -88,6 +94,7 @@ jobs:
               export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang"
               export PATH="${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin:${PATH}"
               pnpm build -- --target aarch64-linux-android
+              ${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android-strip skia.android-arm64.node
 
     name: stable - ${{ matrix.settings.target }} - node@14
     runs-on: ${{ matrix.settings.host }}
@@ -390,19 +397,14 @@ jobs:
         shell: bash
 
       - name: Setup and run tests
-        uses: docker://multiarch/ubuntu-core:arm64-focal
+        uses: addnab/docker-run-action@v3
         with:
-          args: >
-            sh -c "
-              apt-get update && \
-              apt-get install -y ca-certificates gnupg2 curl apt-transport-https && \
-              curl -sL https://deb.nodesource.com/setup_${{ matrix.node }}.x | bash - && \
-              apt-get install -y nodejs && \
-              npm install -g pnpm && \
-              pnpm install --ignore-scripts && \
-              npm test && \
-              ls -la
-            "
+          image: ghcr.io/napi-rs/napi-rs/nodejs:aarch64-${{ matrix.node }}
+          options: -v ${{ github.workspace }}:/skia -w /skia
+          run: |
+            pnpm install --ignore-scripts && \
+            npm test && \
+            ls -la
 
       - name: Test failed
         if: ${{ failure() }}
@@ -495,19 +497,14 @@ jobs:
         shell: bash
 
       - name: Setup and run tests
-        uses: docker://multiarch/ubuntu-core:armhf-focal
+        uses: addnab/docker-run-action@v3
         with:
-          args: >
-            sh -c "
-              apt-get update && \
-              apt-get install -y ca-certificates gnupg2 curl apt-transport-https && \
-              curl -sL https://deb.nodesource.com/setup_${{ matrix.node }}.x | bash - && \
-              apt-get install -y nodejs && \
-              npm install -g pnpm && \
-              pnpm install --ignore-scripts && \
-              npm test && \
-              ls -la
-            "
+          image: ghcr.io/napi-rs/napi-rs/nodejs:armhf-${{ matrix.node }}
+          options: -v ${{ github.workspace }}:/skia -w /skia
+          run: |
+            pnpm install --ignore-scripts && \
+            npm test && \
+            ls -la
 
       - name: Test failed
         if: ${{ failure() }}

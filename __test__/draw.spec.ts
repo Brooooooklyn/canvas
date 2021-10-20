@@ -844,17 +844,17 @@ test('strokeText', async (t) => {
   await snapshotImage(t, { canvas, ctx }, 'png', 3.5)
 })
 
-test('strokeText-emoji', async (t) => {
+test('draw-text-emoji', async (t) => {
   if (platform() === 'darwin') {
     t.pass('macOS definitely supports emoji')
     return
   }
-  const { ctx } = t.context
+  const { ctx, canvas } = t.context
   GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'AppleColorEmoji@2x.ttf'))
   ctx.font = '50px Apple Color Emoji'
   ctx.strokeText('😀😃😄😁😆😅', 50, 100)
   ctx.fillText('😂🤣☺️😊😊😇', 50, 220)
-  await snapshotImage(t)
+  await snapshotImage(t, { canvas, ctx }, 'png', 0.05)
 })
 
 test('transform', async (t) => {
