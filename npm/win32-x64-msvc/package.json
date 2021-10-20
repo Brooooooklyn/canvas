@@ -1,6 +1,6 @@
 {
   "name": "@napi-rs/canvas-win32-x64-msvc",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "os": ["win32"],
   "cpu": ["x64"],
   "main": "skia.win32-x64-msvc.node",

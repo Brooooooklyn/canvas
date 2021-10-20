@@ -1,3 +1,14 @@
+## [0.1.13](https://github.com/Brooooooklyn/canvas/compare/v0.1.12...v0.1.13) (2021-10-20)
+
+### Bug Fixes
+
+- text align position ([435e102](https://github.com/Brooooooklyn/canvas/commit/435e102e526e206a89f6a1bae2e9f8a1d1646b9f))
+
+### Features
+
+- update rust toolchain ([1cda93b](https://github.com/Brooooooklyn/canvas/commit/1cda93b9ade402893ca1e192a35522eb5b13190a))
+- upgrade to chrome/m96 ([a7b3ffe](https://github.com/Brooooooklyn/canvas/commit/a7b3ffe68e4125e2ab63e42c09409cd9cc49dc9f))
+
 ## [0.1.12](https://github.com/Brooooooklyn/canvas/compare/v0.1.11...v0.1.12) (2021-10-15)
 
 ### Features
