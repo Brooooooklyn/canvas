@@ -267,6 +267,7 @@ extern "C"
       float max_width,
       float x,
       float y,
+      float canvas_width,
       skiac_font_collection *c_collection,
       float font_size,
       int weight,

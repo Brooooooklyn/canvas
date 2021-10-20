@@ -1,3 +1,5 @@
+use std::ffi::NulError;
+
 use thiserror::Error;
 
 use crate::sk::Matrix;
@@ -26,6 +28,14 @@ pub enum SkError {
   U32ToStrokeJoinError(u32),
   #[error("[`{0}`] is not valid transform")]
   InvalidTransform(Matrix),
+  #[error("Convert String to CString failed")]
+  NulError,
   #[error("[`{0}`]")]
   Generic(String),
+}
+
+impl From<NulError> for SkError {
+  fn from(_: NulError) -> Self {
+    Self::NulError
+  }
 }

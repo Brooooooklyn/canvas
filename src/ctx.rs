@@ -662,6 +662,7 @@ impl Context {
         x,
         y,
         max_width,
+        self.width as f32,
         weight,
         stretch as i32,
         slant,
@@ -672,7 +673,7 @@ impl Context {
         state.text_align,
         state.text_direction,
         &shadow_paint,
-      );
+      )?;
       surface.restore();
     }
 
@@ -681,6 +682,7 @@ impl Context {
       x,
       y,
       max_width,
+      self.width as f32,
       weight,
       stretch as i32,
       slant,
@@ -691,7 +693,7 @@ impl Context {
       state.text_align,
       state.text_direction,
       paint,
-    );
+    )?;
     Ok(())
   }
 
@@ -713,7 +715,7 @@ impl Context {
       state.text_align,
       state.text_direction,
       &fill_paint,
-    ));
+    )?);
     Ok(line_metrics)
   }
 
