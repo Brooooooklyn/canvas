@@ -1,6 +1,6 @@
 use std::convert::TryFrom;
 use std::f32::consts::PI;
-use std::ffi::{c_void, CStr, CString};
+use std::ffi::{c_void, CStr, CString, NulError};
 use std::fmt;
 use std::ops::{Deref, DerefMut};
 use std::os::raw::c_char;
@@ -359,6 +359,7 @@ mod ffi {
       max_width: f32,
       x: f32,
       y: f32,
+      canvas_width: f32,
       font_collection: *mut skiac_font_collection,
       font_size: f32,
       weight: i32,
@@ -1975,6 +1976,7 @@ impl Canvas {
     x: f32,
     y: f32,
     max_width: f32,
+    canvas_width: f32,
     weight: u32,
     stretch: i32,
     slant: FontStyle,
@@ -1985,9 +1987,9 @@ impl Canvas {
     align: TextAlign,
     direction: TextDirection,
     paint: &Paint,
-  ) {
-    let c_text = std::ffi::CString::new(text).unwrap();
-    let c_font_family = std::ffi::CString::new(font_family).unwrap();
+  ) -> Result<(), NulError> {
+    let c_text = std::ffi::CString::new(text)?;
+    let c_font_family = std::ffi::CString::new(font_family)?;
 
     unsafe {
       ffi::skiac_canvas_get_line_metrics_or_draw_text(
@@ -1996,6 +1998,7 @@ impl Canvas {
         max_width,
         x,
         y,
+        canvas_width,
         font_collection.0,
         font_size,
         weight as i32,
@@ -2009,7 +2012,8 @@ impl Canvas {
         self.0,
         ptr::null_mut(),
       );
-    }
+    };
+    Ok(())
   }
 
   pub fn get_line_metrics(
@@ -2025,9 +2029,9 @@ impl Canvas {
     align: TextAlign,
     direction: TextDirection,
     paint: &Paint,
-  ) -> ffi::skiac_line_metrics {
-    let c_text = std::ffi::CString::new(text).unwrap();
-    let c_font_family = std::ffi::CString::new(font_family).unwrap();
+  ) -> Result<ffi::skiac_line_metrics, NulError> {
+    let c_text = std::ffi::CString::new(text)?;
+    let c_font_family = std::ffi::CString::new(font_family)?;
 
     let mut line_metrics = ffi::skiac_line_metrics::default();
 
@@ -2035,6 +2039,7 @@ impl Canvas {
       ffi::skiac_canvas_get_line_metrics_or_draw_text(
         c_text.as_ptr(),
         text.len(),
+        0.0,
         0.0,
         0.0,
         0.0,
@@ -2052,7 +2057,7 @@ impl Canvas {
         &mut line_metrics,
       );
     }
-    line_metrics
+    Ok(line_metrics)
   }
 
   pub fn draw_surface(

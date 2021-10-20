@@ -343,6 +343,7 @@ extern "C"
       float max_width,
       float x,
       float y,
+      float canvas_width,
       skiac_font_collection *c_collection,
       float font_size,
       int weight,
@@ -358,6 +359,7 @@ extern "C"
   {
     auto font_collection = c_collection->collection;
     auto font_style = SkFontStyle(weight, stretch, (SkFontStyle::Slant)slant);
+    auto text_direction = (TextDirection)direction;
     SkTArray<SkString> families;
     SkStrSplit(font_family, ",", &families);
     TextStyle text_style;
@@ -380,8 +382,7 @@ extern "C"
     ParagraphStyle paragraph_style;
     paragraph_style.turnHintingOff();
     paragraph_style.setTextStyle(text_style);
-    paragraph_style.setTextAlign((TextAlign)align);
-    paragraph_style.setTextDirection((TextDirection)direction);
+    paragraph_style.setTextDirection(text_direction);
     ParagraphBuilderImpl builder(paragraph_style, font_collection);
     builder.addText(text, text_len);
     auto paragraph = static_cast<ParagraphImpl *>(builder.Build().release());
@@ -444,8 +445,44 @@ extern "C"
 
     if (c_canvas)
     {
-      auto align_factor = 0;
-      auto paint_x = x + line_width * align_factor;
+      auto canvas_center = canvas_width / 2.0f;
+      float paint_x;
+      switch ((TextAlign)align)
+      {
+      case TextAlign::kLeft:
+        paint_x = x + canvas_center;
+        break;
+      case TextAlign::kCenter:
+        paint_x = x + canvas_center - (line_width / 2);
+        break;
+      case TextAlign::kRight:
+        paint_x = x + canvas_center - line_width;
+        break;
+      // Unreachable
+      case TextAlign::kJustify:
+        paint_x = x;
+        break;
+      case TextAlign::kStart:
+        if (text_direction == TextDirection::kLtr)
+        {
+          paint_x = x;
+        }
+        else
+        {
+          paint_x = x + canvas_width - line_width;
+        }
+        break;
+      case TextAlign::kEnd:
+        if (text_direction == TextDirection::kRtl)
+        {
+          paint_x = x;
+        }
+        else
+        {
+          paint_x = x + canvas_width - line_width;
+        }
+        break;
+      };
       auto need_scale = line_width > max_width;
       if (need_scale)
       {
