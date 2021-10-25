@@ -45,7 +45,13 @@ const MIME_PNG: &str = "image/png";
 const MIME_JPEG: &str = "image/jpeg";
 const MIME_AVIF: &str = "image/avif";
 
-const DEFAULT_IMAGE_QUALITY: u8 = 80;
+// Consistent with the default value of JPEG quality in Blink
+// https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/platform/image-encoders/image_encoder.cc;l=85;drc=81c6f843fdfd8ef660d733289a7a32abe68e247a
+const DEFAULT_JPEG_QUALITY: u8 = 92;
+
+// Consistent with the default value of WebP quality in Blink
+// https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/platform/image-encoders/image_encoder.cc;l=100;drc=81c6f843fdfd8ef660d733289a7a32abe68e247a
+const DEFAULT_WEBP_QUALITY: u8 = 80;
 
 #[module_exports]
 fn init(mut exports: JsObject, env: Env) -> Result<()> {
@@ -164,8 +170,10 @@ fn encode(ctx: CallContext) -> Result<JsObject> {
   let format_str = format.as_str()?;
   let quality = if format_str != "avif" {
     ctx.get::<JsNumber>(1)?.get_uint32()? as u8
+  } else if format_str == "webp" {
+    DEFAULT_WEBP_QUALITY
   } else {
-    DEFAULT_IMAGE_QUALITY
+    DEFAULT_JPEG_QUALITY
   };
   let this = ctx.this_unchecked::<JsObject>();
   let ctx_js = this.get_named_property::<JsObject>("ctx")?;
@@ -197,8 +205,10 @@ fn encode_sync(ctx: CallContext) -> Result<JsBuffer> {
   let format_str = format.as_str()?;
   let quality = if format_str != "avif" {
     ctx.get::<JsNumber>(1)?.get_uint32()? as u8
+  } else if format_str == "webp" {
+    DEFAULT_WEBP_QUALITY
   } else {
-    DEFAULT_IMAGE_QUALITY
+    DEFAULT_JPEG_QUALITY
   };
   let this = ctx.this_unchecked::<JsObject>();
   let ctx_js = this.get_named_property::<JsObject>("ctx")?;
@@ -271,7 +281,7 @@ fn to_buffer(ctx: CallContext) -> Result<JsBuffer> {
   let mime_js = ctx.get::<JsString>(0)?.into_utf8()?;
   let mime = mime_js.as_str()?;
   let quality = if ctx.length < 2 {
-    DEFAULT_IMAGE_QUALITY
+    DEFAULT_JPEG_QUALITY
   } else {
     ctx.get::<JsNumber>(1)?.get_uint32()? as u8
   };
@@ -324,7 +334,7 @@ fn to_data_url(ctx: CallContext) -> Result<JsString> {
   let mime = mime_js.as_str()?;
   let quality = if ctx.length < 2 {
     // https://developer.mozilla.org/en-US/docs/Web/API/HTMLCanvasElement/toDataURL
-    DEFAULT_IMAGE_QUALITY
+    DEFAULT_JPEG_QUALITY
   } else {
     ctx.get::<JsNumber>(1)?.get_uint32()? as u8
   };
@@ -347,7 +357,7 @@ fn to_data_url_async(ctx: CallContext) -> Result<JsObject> {
   let mime = mime_js.as_str()?;
   let quality = if ctx.length < 2 {
     // https://developer.mozilla.org/en-US/docs/Web/API/HTMLCanvasElement/toDataURL
-    DEFAULT_IMAGE_QUALITY
+    DEFAULT_JPEG_QUALITY
   } else {
     ctx.get::<JsNumber>(1)?.get_uint32()? as u8
   };
