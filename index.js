@@ -227,10 +227,10 @@ function createCanvas(width, height, flag) {
         this,
         type,
         JSON.stringify({
-          quality: 92,
+          quality: 80,
           alphaQuality: 92,
           threads: 0,
-          speed: 1,
+          speed: 4,
           ...(qualityOrConfig || {}),
         }),
       )
@@ -244,10 +244,10 @@ function createCanvas(width, height, flag) {
         this,
         type,
         JSON.stringify({
-          quality: 92,
+          quality: 80,
           alphaQuality: 92,
           threads: 0,
-          speed: 1,
+          speed: 4,
           ...(qualityOrConfig || {}),
         }),
       )
@@ -261,10 +261,10 @@ function createCanvas(width, height, flag) {
         this,
         type,
         JSON.stringify({
-          quality: 92,
+          quality: 80,
           alphaQuality: 92,
           threads: 0,
-          speed: 1,
+          speed: 4,
           ...(qualityOrConfig || {}),
         }),
       )
@@ -278,10 +278,10 @@ function createCanvas(width, height, flag) {
         this,
         type,
         JSON.stringify({
-          quality: 92,
+          quality: 80,
           alphaQuality: 92,
           threads: 0,
-          speed: 1,
+          speed: 4,
           ...(qualityOrConfig || {}),
         }),
       )
@@ -295,10 +295,10 @@ function createCanvas(width, height, flag) {
         this,
         type,
         JSON.stringify({
-          quality: 92,
+          quality: 80,
           alphaQuality: 92,
           threads: 0,
-          speed: 1,
+          speed: 4,
           ...(qualityOrConfig || {}),
         }),
       )

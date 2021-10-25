@@ -45,7 +45,7 @@ const MIME_PNG: &str = "image/png";
 const MIME_JPEG: &str = "image/jpeg";
 const MIME_AVIF: &str = "image/avif";
 
-const DEFAULT_IMAGE_QUALITY: u8 = 92;
+const DEFAULT_IMAGE_QUALITY: u8 = 80;
 
 #[module_exports]
 fn init(mut exports: JsObject, env: Env) -> Result<()> {
