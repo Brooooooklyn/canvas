@@ -28,10 +28,15 @@ async function main() {
 
   const pngData = await canvas.encode('png')
   await fs.writeFile(join(__dirname, 'anime-girl.png'), pngData)
-
   const t1 = performance.now()
 
-  console.log('✨ Done in', t1 - t0, 'ms')
+  const avifData = await canvas.encode('avif')
+  await fs.writeFile(join(__dirname, 'anime-girl.avif'), avifData)
+
+  const t2 = performance.now()
+
+  console.log('✨ png done in', t1 - t0, 'ms')
+  console.log('✨ avif done in', t2 - t0, 'ms')
 }
 
 main()
