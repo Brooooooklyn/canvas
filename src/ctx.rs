@@ -2135,8 +2135,6 @@ fn get_text_baseline(ctx: CallContext) -> Result<JsString> {
 #[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
 pub struct AVIFConfig {
   pub quality: f32,
-  #[serde(rename = "alphaQuality")]
-  pub alpha_quality: f32,
   pub speed: u8,
   pub threads: u8,
 }
@@ -2208,7 +2206,8 @@ impl Task for ContextData {
             ),
             &ravif::Config {
               quality: config.quality,
-              alpha_quality: config.alpha_quality,
+              alpha_quality: ((config.quality + 100.) / 2.)
+                .min(config.quality + config.quality / 4. + 2.),
               speed: config.speed,
               premultiplied_alpha: false,
               threads: 0,

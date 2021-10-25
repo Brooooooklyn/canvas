@@ -221,16 +221,28 @@ function createCanvas(width, height, flag) {
     toDataURLAsync: canvasToDataURLAsync,
   } = Object.getPrototypeOf(canvasElement)
 
+  // See also: https://github.com/kornelski/cavif-rs#usage
+  const avifDefaultQuality = 80
+  const avifConfig = {
+    // Quality from 1 (worst) to 100 (best), the default value is 80. The numbers have different meaning than JPEG's quality scale. Beware when comparing codecs. There is no lossless compression support.
+    quality: avifDefaultQuality,
+
+    // Calculate alphaQuality, this is consistent with cavif.
+    // https://github.com/kornelski/cavif-rs/blob/37847b95bb81d4cf90e36b7fab2c7fbbcf95abe2/src/main.rs#L97
+    alphaQuality: Math.min((avifDefaultQuality + 100) / 2, avifDefaultQuality + avifDefaultQuality / 4 + 2),
+    threads: 0,
+
+    // Encoding speed between 1 (best, but slowest) and 10 (fastest, but a blurry mess), the default value is 4. Speeds 1 and 2 are unbelievably slow, but make files ~3-5% smaller. Speeds 7 and above degrade compression significantly, and are not recommended.
+    speed: 4,
+  }
+
   canvasElement.encode = function encode(type, qualityOrConfig) {
     if (type === 'avif') {
       return canvasEncode.call(
         this,
         type,
         JSON.stringify({
-          quality: 92,
-          alphaQuality: 92,
-          threads: 0,
-          speed: 1,
+          ...avifConfig,
           ...(qualityOrConfig || {}),
         }),
       )
@@ -244,10 +256,7 @@ function createCanvas(width, height, flag) {
         this,
         type,
         JSON.stringify({
-          quality: 92,
-          alphaQuality: 92,
-          threads: 0,
-          speed: 1,
+          ...avifConfig,
           ...(qualityOrConfig || {}),
         }),
       )
@@ -261,10 +270,7 @@ function createCanvas(width, height, flag) {
         this,
         type,
         JSON.stringify({
-          quality: 92,
-          alphaQuality: 92,
-          threads: 0,
-          speed: 1,
+          ...avifConfig,
           ...(qualityOrConfig || {}),
         }),
       )
@@ -278,10 +284,7 @@ function createCanvas(width, height, flag) {
         this,
         type,
         JSON.stringify({
-          quality: 92,
-          alphaQuality: 92,
-          threads: 0,
-          speed: 1,
+          ...avifConfig,
           ...(qualityOrConfig || {}),
         }),
       )
@@ -295,10 +298,7 @@ function createCanvas(width, height, flag) {
         this,
         type,
         JSON.stringify({
-          quality: 92,
-          alphaQuality: 92,
-          threads: 0,
-          speed: 1,
+          ...avifConfig,
           ...(qualityOrConfig || {}),
         }),
       )

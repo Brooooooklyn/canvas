@@ -916,7 +916,7 @@ test('toDataURL', async (t) => {
   t.deepEqual(pngBuffer, await canvas.encode('png'))
 })
 
-test('toDataURL with quality', async (t) => {
+test('JPEG toDataURL with quality', async (t) => {
   const { ctx, canvas } = t.context
   drawTranslate(ctx)
 
@@ -926,6 +926,18 @@ test('toDataURL with quality', async (t) => {
   const imageBase64 = output.substr(prefix.length)
   const pngBuffer = Buffer.from(imageBase64, 'base64')
   t.deepEqual(pngBuffer, await canvas.encode('jpeg', 20))
+})
+
+test('WebP toDataURL with quality', async (t) => {
+  const { ctx, canvas } = t.context
+  drawTranslate(ctx)
+
+  const output = canvas.toDataURL('image/webp', 100)
+  const prefix = 'data:image/webp;base64,'
+  t.true(output.startsWith(prefix))
+  const imageBase64 = output.substr(prefix.length)
+  const pngBuffer = Buffer.from(imageBase64, 'base64')
+  t.deepEqual(pngBuffer, await canvas.encode('webp', 100))
 })
 
 test('toDataURLAsync', async (t) => {
