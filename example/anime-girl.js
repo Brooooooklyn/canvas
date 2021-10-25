@@ -30,7 +30,10 @@ async function main() {
   await fs.writeFile(join(__dirname, 'anime-girl.png'), pngData)
   const t1 = performance.now()
 
-  const avifData = await canvas.encode('avif')
+  const avifData = await canvas.encode('avif', {
+    quality: 79,
+    speed: 5,
+  })
   await fs.writeFile(join(__dirname, 'anime-girl.avif'), avifData)
 
   const t2 = performance.now()

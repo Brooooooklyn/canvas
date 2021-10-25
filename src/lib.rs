@@ -236,7 +236,8 @@ fn encode_sync(ctx: CallContext) -> Result<JsBuffer> {
         ),
         &ravif::Config {
           quality: config.quality,
-          alpha_quality: config.alpha_quality,
+          alpha_quality: ((config.quality + 100.) / 2.)
+            .min(config.quality + config.quality / 4. + 2.),
           speed: config.speed,
           premultiplied_alpha: false,
           threads: 0,
@@ -280,10 +281,13 @@ fn encode_sync(ctx: CallContext) -> Result<JsBuffer> {
 fn to_buffer(ctx: CallContext) -> Result<JsBuffer> {
   let mime_js = ctx.get::<JsString>(0)?.into_utf8()?;
   let mime = mime_js.as_str()?;
-  let quality = if ctx.length < 2 {
-    DEFAULT_JPEG_QUALITY
-  } else {
+  let quality = if mime != MIME_AVIF {
     ctx.get::<JsNumber>(1)?.get_uint32()? as u8
+  } else if mime == MIME_WEBP {
+    DEFAULT_WEBP_QUALITY
+  } else {
+    // https://developer.mozilla.org/en-US/docs/Web/API/HTMLCanvasElement/toDataURL
+    DEFAULT_JPEG_QUALITY
   };
 
   let context_data = get_data_ref(&ctx, mime, quality)?;
@@ -332,11 +336,13 @@ fn data(ctx: CallContext) -> Result<JsBuffer> {
 fn to_data_url(ctx: CallContext) -> Result<JsString> {
   let mime_js = ctx.get::<JsString>(0)?.into_utf8()?;
   let mime = mime_js.as_str()?;
-  let quality = if ctx.length < 2 {
+  let quality = if mime != MIME_AVIF {
+    ctx.get::<JsNumber>(1)?.get_uint32()? as u8
+  } else if mime == MIME_WEBP {
+    DEFAULT_WEBP_QUALITY
+  } else {
     // https://developer.mozilla.org/en-US/docs/Web/API/HTMLCanvasElement/toDataURL
     DEFAULT_JPEG_QUALITY
-  } else {
-    ctx.get::<JsNumber>(1)?.get_uint32()? as u8
   };
   let data_ref = get_data_ref(&ctx, mime, quality)?;
   let mut output = format!("data:{};base64,", &mime);
@@ -355,11 +361,13 @@ fn to_data_url(ctx: CallContext) -> Result<JsString> {
 fn to_data_url_async(ctx: CallContext) -> Result<JsObject> {
   let mime_js = ctx.get::<JsString>(0)?.into_utf8()?;
   let mime = mime_js.as_str()?;
-  let quality = if ctx.length < 2 {
+  let quality = if mime != MIME_AVIF {
+    ctx.get::<JsNumber>(1)?.get_uint32()? as u8
+  } else if mime == MIME_WEBP {
+    DEFAULT_WEBP_QUALITY
+  } else {
     // https://developer.mozilla.org/en-US/docs/Web/API/HTMLCanvasElement/toDataURL
     DEFAULT_JPEG_QUALITY
-  } else {
-    ctx.get::<JsNumber>(1)?.get_uint32()? as u8
   };
   let data_ref = get_data_ref(&ctx, mime, quality)?;
   let async_task = AsyncDataUrl {
@@ -414,7 +422,8 @@ fn get_data_ref(ctx: &CallContext, mime: &str, quality: u8) -> Result<ContextOut
         ),
         &ravif::Config {
           quality: config.quality,
-          alpha_quality: config.alpha_quality,
+          alpha_quality: ((config.quality + 100.) / 2.)
+            .min(config.quality + config.quality / 4. + 2.),
           speed: config.speed,
           premultiplied_alpha: false,
           threads: 0,

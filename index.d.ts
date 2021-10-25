@@ -298,7 +298,6 @@ export interface SvgCanvas {
 
 export interface AvifConfig {
   quality?: number
-  alphaQuality?: number
   speed?: number
   threads?: number
 }
