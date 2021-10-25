@@ -298,7 +298,15 @@ path.simplify().toSVGString()
 
 > The tiger.json was serialized from [gojs/samples/tiger](https://github.com/NorthwoodsSoftware/GoJS/blob/master/samples/tiger.html)
 
-![](./example/tiger.png)
+<img width="500" src="example/tiger.png">
+
+```shell
+node example/anime-girl.js
+```
+
+| SVG                                            | PNG                                            |
+| ---------------------------------------------- | ---------------------------------------------- |
+| <img width="500" src="example/anime-girl.svg"> | <img width="500" src="example/anime-girl.png"> |
 
 # 编译项目
 
