@@ -1,3 +1,19 @@
+## [0.1.14](https://github.com/Brooooooklyn/canvas/compare/v0.1.13...v0.1.14) (2021-10-26)
+
+
+### Bug Fixes
+
+* Now generating avif images is 10x+ faster. ([407d1d1](https://github.com/Brooooooklyn/canvas/commit/407d1d1f09dce622426b71ee800480534c8e0888))
+* Use different quality for WebP and JPEG formats, which is more in line with the browser's default values. ([fdefa5d](https://github.com/Brooooooklyn/canvas/commit/fdefa5dd278fcc911cb74524388ec7960d9cd1f6))
+
+
+### Features
+
+* The option to generate avif removes alphaQuality and calculates it internally. ([8de6e95](https://github.com/Brooooooklyn/canvas/commit/8de6e95d23383897870c66e59698a71cd0e73631))
+* Add a new SVG generation avif example. ([04d401a](https://github.com/Brooooooklyn/canvas/commit/04d401aaf3d35d13223e32af9e13b829f13170fc))
+
+
+
 ## [0.1.13](https://github.com/Brooooooklyn/canvas/compare/v0.1.12...v0.1.13) (2021-10-20)
 
 ### Bug Fixes
