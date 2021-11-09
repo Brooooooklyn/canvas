@@ -1,4 +1,4 @@
-FROM node:lts
+FROM node:14
 
 ARG NASM_VERSION=2.15.05
 
