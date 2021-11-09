@@ -1,4 +1,4 @@
-FROM node:14
+FROM node:17
 
 ARG NASM_VERSION=2.15.05
 
