@@ -1,3 +1,12 @@
+## [0.1.15](https://github.com/Brooooooklyn/canvas/compare/v0.1.14...v0.1.15) (2021-11-11)
+
+
+### Bug Fixes
+
+* `vercel/nft` and `webpack` compatible issue ([f2e23f5](https://github.com/Brooooooklyn/canvas/commit/f2e23f5d763795c1e499e1eda5b70078a6de501a))
+
+
+
 ## [0.1.14](https://github.com/Brooooooklyn/canvas/compare/v0.1.13...v0.1.14) (2021-10-26)
 
 
