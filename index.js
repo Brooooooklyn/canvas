@@ -1,16 +1,6 @@
 const { platform, homedir } = require('os')
 const { join } = require('path')
 
-const { loadBinding } = require('@node-rs/helper')
-
-/**
- * __dirname means load native addon from current dir
- * 'skia' means native addon name is `skia`
- * the first arguments was decided by `napi.name` field in `package.json`
- * the second arguments was decided by `name` field in `package.json`
- * loadBinding helper will load `skia.[PLATFORM].node` from `__dirname` first
- * If failed to load addon, it will fallback to load from `@napi-rs/skia-[PLATFORM]`
- */
 const {
   CanvasRenderingContext2D,
   CanvasElement,
@@ -22,9 +12,9 @@ const {
   CanvasPattern,
   GlobalFonts,
   convertSVGTextToPath: _convertSVGTextToPath,
-} = loadBinding(__dirname, 'skia', '@napi-rs/canvas')
+} = require('./js-binding')
 
-const Geometry = require('./geometry')
+const { DOMPoint, DOMMatrix, DOMRect } = require('./geometry')
 
 const StrokeJoin = {
   Miter: 0,
@@ -335,7 +325,7 @@ if (!process.env.DISABLE_SYSTEM_FONTS_LOAD) {
 }
 
 function convertSVGTextToPath(input) {
-  return _convertSVGTextToPath(Buffer.from(input), GlobalFontsSingleton)
+  return _convertSVGTextToPath(Buffer.isBuffer(input) ? input : Buffer.from(input), GlobalFontsSingleton)
 }
 
 module.exports = {
@@ -349,7 +339,9 @@ module.exports = {
   StrokeCap,
   StrokeJoin,
   SvgExportFlag,
-  ...Geometry,
   GlobalFonts: GlobalFontsSingleton,
   convertSVGTextToPath,
+  DOMPoint,
+  DOMMatrix,
+  DOMRect,
 }
