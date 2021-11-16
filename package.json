@@ -76,7 +76,7 @@
     "ava": "^3.15.0",
     "benny": "^3.7.1",
     "canvas": "^2.8.0",
-    "canvaskit-wasm": "^0.30.0",
+    "canvaskit-wasm": "^0.31.0",
     "chalk": "^4.1.2",
     "conventional-changelog-cli": "^2.1.1",
     "eslint": "^8.2.0",
