@@ -15,7 +15,7 @@ specifiers:
   benny: ^3.7.1
   canvas: ^2.8.0
   canvaskit-wasm: ^0.31.0
-  chalk: ^4.1.2
+  chalk: ^5.0.0
   conventional-changelog-cli: ^2.1.1
   eslint: ^8.2.0
   eslint-config-prettier: ^8.3.0
@@ -48,7 +48,7 @@ devDependencies:
   benny: 3.7.1
   canvas: 2.8.0
   canvaskit-wasm: 0.31.0
-  chalk: 4.1.2
+  chalk: 5.0.0
   conventional-changelog-cli: 2.1.1
   eslint: 8.2.0
   eslint-config-prettier: 8.3.0_eslint@8.2.0
@@ -1164,6 +1164,11 @@ packages:
     dependencies:
       ansi-styles: 4.3.0
       supports-color: 7.2.0
+    dev: true
+
+  /chalk/5.0.0:
+    resolution: {integrity: sha512-/duVOqst+luxCQRKEo4bNxinsOQtMP80ZYm7mMqzuh5PociNL0PvmHFvREJ9ueYL2TxlHjBcmLCdmocx9Vg+IQ==}
+    engines: {node: ^12.17.0 || ^14.13 || >=16.0.0}
     dev: true
 
   /chardet/0.7.0:
