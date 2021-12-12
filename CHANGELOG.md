@@ -1,3 +1,5 @@
+## [0.1.17](https://github.com/Brooooooklyn/canvas/compare/v0.1.16...v0.1.17) (2021-12-12)
+
 ## [0.1.16](https://github.com/Brooooooklyn/canvas/compare/v0.1.15...v0.1.16) (2021-12-12)
 
 ### Bug Fixes
