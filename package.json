@@ -83,7 +83,7 @@
     "eslint-config-prettier": "^8.3.0",
     "eslint-plugin-import": "^2.25.3",
     "eslint-plugin-prettier": "^4.0.0",
-    "eslint-plugin-sonarjs": "^0.10.0",
+    "eslint-plugin-sonarjs": "^0.11.0",
     "husky": "^7.0.4",
     "lint-staged": "^11.2.6",
     "lodash": "^4.17.21",
