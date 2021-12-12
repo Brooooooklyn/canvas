@@ -121,48 +121,122 @@ impl Context {
           .with_setter(set_text_baseline)
           .with_getter(get_text_baseline),
         // methods
-        Property::new(env, "arc")?.with_method(arc),
-        Property::new(env, "arcTo")?.with_method(arc_to),
-        Property::new(env, "beginPath")?.with_method(begin_path),
-        Property::new(env, "bezierCurveTo")?.with_method(bezier_curve_to),
-        Property::new(env, "clearRect")?.with_method(clear_rect),
-        Property::new(env, "clip")?.with_method(clip),
-        Property::new(env, "closePath")?.with_method(close_path),
-        Property::new(env, "createLinearGradient")?.with_method(create_linear_gradient),
-        Property::new(env, "createRadialGradient")?.with_method(create_radial_gradient),
-        Property::new(env, "createConicGradient")?.with_method(create_conic_gradient),
+        Property::new(env, "arc")?
+          .with_method(arc)
+          .with_property_attributes(PropertyAttributes::Writable),
+        Property::new(env, "arcTo")?
+          .with_method(arc_to)
+          .with_property_attributes(PropertyAttributes::Writable),
+        Property::new(env, "beginPath")?
+          .with_method(begin_path)
+          .with_property_attributes(PropertyAttributes::Writable),
+        Property::new(env, "bezierCurveTo")?
+          .with_method(bezier_curve_to)
+          .with_property_attributes(PropertyAttributes::Writable),
+        Property::new(env, "clearRect")?
+          .with_method(clear_rect)
+          .with_property_attributes(PropertyAttributes::Writable),
+        Property::new(env, "clip")?
+          .with_method(clip)
+          .with_property_attributes(PropertyAttributes::Writable),
+        Property::new(env, "closePath")?
+          .with_method(close_path)
+          .with_property_attributes(PropertyAttributes::Writable),
+        Property::new(env, "createLinearGradient")?
+          .with_method(create_linear_gradient)
+          .with_property_attributes(PropertyAttributes::Writable),
+        Property::new(env, "createRadialGradient")?
+          .with_method(create_radial_gradient)
+          .with_property_attributes(PropertyAttributes::Writable),
+        Property::new(env, "createConicGradient")?
+          .with_method(create_conic_gradient)
+          .with_property_attributes(PropertyAttributes::Writable),
         Property::new(env, "drawImage")?
           .with_method(draw_image)
           .with_property_attributes(PropertyAttributes::Writable),
-        Property::new(env, "getContextAttributes")?.with_method(get_context_attributes),
-        Property::new(env, "isPointInPath")?.with_method(is_point_in_path),
+        Property::new(env, "getContextAttributes")?
+          .with_method(get_context_attributes)
+          .with_property_attributes(PropertyAttributes::Writable),
+        Property::new(env, "isPointInPath")?
+          .with_method(is_point_in_path)
+          .with_property_attributes(PropertyAttributes::Writable),
         Property::new(env, "isPointInStroke")?.with_method(is_point_in_stroke),
-        Property::new(env, "ellipse")?.with_method(ellipse),
-        Property::new(env, "lineTo")?.with_method(line_to),
-        Property::new(env, "measureText")?.with_method(measure_text),
-        Property::new(env, "moveTo")?.with_method(move_to),
-        Property::new(env, "fill")?.with_method(fill),
-        Property::new(env, "fillRect")?.with_method(fill_rect),
-        Property::new(env, "fillText")?.with_method(fill_text),
-        Property::new(env, "_getImageData")?.with_method(get_image_data),
-        Property::new(env, "getLineDash")?.with_method(get_line_dash),
-        Property::new(env, "putImageData")?.with_method(put_image_data),
-        Property::new(env, "quadraticCurveTo")?.with_method(quadratic_curve_to),
-        Property::new(env, "rect")?.with_method(rect),
-        Property::new(env, "resetTransform")?.with_method(reset_transform),
-        Property::new(env, "restore")?.with_method(restore),
-        Property::new(env, "rotate")?.with_method(rotate),
-        Property::new(env, "save")?.with_method(save),
-        Property::new(env, "scale")?.with_method(scale),
-        Property::new(env, "setLineDash")?.with_method(set_line_dash),
-        Property::new(env, "stroke")?.with_method(stroke),
-        Property::new(env, "strokeRect")?.with_method(stroke_rect),
-        Property::new(env, "strokeText")?.with_method(stroke_text),
-        Property::new(env, "translate")?.with_method(translate),
-        Property::new(env, "transform")?.with_method(transform),
+        Property::new(env, "ellipse")?
+          .with_method(ellipse)
+          .with_property_attributes(PropertyAttributes::Writable),
+        Property::new(env, "lineTo")?
+          .with_method(line_to)
+          .with_property_attributes(PropertyAttributes::Writable),
+        Property::new(env, "measureText")?
+          .with_method(measure_text)
+          .with_property_attributes(PropertyAttributes::Writable),
+        Property::new(env, "moveTo")?
+          .with_method(move_to)
+          .with_property_attributes(PropertyAttributes::Writable),
+        Property::new(env, "fill")?
+          .with_method(fill)
+          .with_property_attributes(PropertyAttributes::Writable),
+        Property::new(env, "fillRect")?
+          .with_method(fill_rect)
+          .with_property_attributes(PropertyAttributes::Writable),
+        Property::new(env, "fillText")?
+          .with_method(fill_text)
+          .with_property_attributes(PropertyAttributes::Writable),
+        Property::new(env, "_getImageData")?
+          .with_method(get_image_data)
+          .with_property_attributes(PropertyAttributes::Writable),
+        Property::new(env, "getLineDash")?
+          .with_method(get_line_dash)
+          .with_property_attributes(PropertyAttributes::Writable),
+        Property::new(env, "putImageData")?
+          .with_method(put_image_data)
+          .with_property_attributes(PropertyAttributes::Writable),
+        Property::new(env, "quadraticCurveTo")?
+          .with_method(quadratic_curve_to)
+          .with_property_attributes(PropertyAttributes::Writable),
+        Property::new(env, "rect")?
+          .with_method(rect)
+          .with_property_attributes(PropertyAttributes::Writable),
+        Property::new(env, "resetTransform")?
+          .with_method(reset_transform)
+          .with_property_attributes(PropertyAttributes::Writable),
+        Property::new(env, "restore")?
+          .with_method(restore)
+          .with_property_attributes(PropertyAttributes::Writable),
+        Property::new(env, "rotate")?
+          .with_method(rotate)
+          .with_property_attributes(PropertyAttributes::Writable),
+        Property::new(env, "save")?
+          .with_method(save)
+          .with_property_attributes(PropertyAttributes::Writable),
+        Property::new(env, "scale")?
+          .with_method(scale)
+          .with_property_attributes(PropertyAttributes::Writable),
+        Property::new(env, "setLineDash")?
+          .with_method(set_line_dash)
+          .with_property_attributes(PropertyAttributes::Writable),
+        Property::new(env, "stroke")?
+          .with_method(stroke)
+          .with_property_attributes(PropertyAttributes::Writable),
+        Property::new(env, "strokeRect")?
+          .with_method(stroke_rect)
+          .with_property_attributes(PropertyAttributes::Writable),
+        Property::new(env, "strokeText")?
+          .with_method(stroke_text)
+          .with_property_attributes(PropertyAttributes::Writable),
+        Property::new(env, "translate")?
+          .with_method(translate)
+          .with_property_attributes(PropertyAttributes::Writable),
+        Property::new(env, "transform")?
+          .with_method(transform)
+          .with_property_attributes(PropertyAttributes::Writable),
         // getter setter method
-        Property::new(env, "getTransform")?.with_method(get_current_transform),
-        Property::new(env, "setTransform")?.with_method(set_current_transform),
+        Property::new(env, "getTransform")?
+          .with_method(get_current_transform)
+          .with_property_attributes(PropertyAttributes::Writable),
+        Property::new(env, "setTransform")?
+          .with_method(set_current_transform)
+          .with_property_attributes(PropertyAttributes::Writable),
       ],
     )
   }
