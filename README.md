@@ -300,7 +300,6 @@ path.simplify().toSVGString()
 
 <img width="500" src="example/tiger.png">
 
-
 ```shell
 node example/anime-girl.js
 ```
@@ -308,7 +307,6 @@ node example/anime-girl.js
 | SVG                                            | PNG                                            |
 | ---------------------------------------------- | ---------------------------------------------- |
 | <img width="500" src="example/anime-girl.svg"> | <img width="500" src="example/anime-girl.png"> |
-
 
 # Building
 

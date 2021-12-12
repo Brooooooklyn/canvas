@@ -4,3 +4,4 @@ skia
 skia-c
 __test__/text-to-path.svg
 .pnpm-store
+pnpm-lock.yaml

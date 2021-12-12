@@ -1,91 +1,89 @@
 <!DOCTYPE html>
 <html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script src="/node_modules/canvaskit-wasm/bin/canvaskit.js"></script>
+    <title>Canvas</title>
+  </head>
 
-<head>
-  <meta charset="UTF-8">
-  <meta http-equiv="X-UA-Compatible" content="IE=edge">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <script src="/node_modules/canvaskit-wasm/bin/canvaskit.js"></script>
-  <title>Canvas</title>
-</head>
+  <body>
+    <style type="text/css">
+      @font-face {
+        font-family: 'Iosevka Slab';
+        src: url('/__test__/fonts/iosevka-slab-regular.ttf');
+      }
 
-<body>
-  <style type="text/css">
-    @font-face {
-      font-family: "Iosevka Slab";
-      src: url("/__test__/fonts/iosevka-slab-regular.ttf");
-    }
+      body {
+        font-family: 'Iosevka Slab';
+      }
 
-    body {
-      font-family: "Iosevka Slab"
-    }
+      canvas {
+        margin-top: 100px;
+      }
+    </style>
+    <canvas width="1024" height="768" id="canvas"></canvas>
+    <canvas width="1024" height="768" id="canvas-text"></canvas>
+    <canvas width="512" height="512" id="regression"></canvas>
+    <img width="200" height="200" id="firefox" src="/__test__/fixtures/filter-combine-contrast-brightness.jpeg" />
+    <script>
+      setTimeout(() => {
+        const canvas = document.getElementById('canvas')
+        /**
+         * @type {CanvasRenderingContext2D}
+         */
+        const ctx = canvas.getContext('2d')
+        ctx.fillStyle = 'yellow'
+        ctx.fillRect(0, 0, canvas.width, canvas.height)
+        ctx.strokeStyle = 'black'
+        ctx.lineWidth = 3
+        ctx.font = '50px Iosevka Slab'
 
-    canvas {
-      margin-top: 100px;
-    }
-  </style>
-  <canvas width="1024" height="768" id="canvas"></canvas>
-  <canvas width="1024" height="768" id="canvas-text"></canvas>
-  <canvas width="512" height="512" id="regression"></canvas>
-  <img width="200" height="200" id="firefox" src="/__test__/fixtures/filter-combine-contrast-brightness.jpeg" />
-  <script>
-    setTimeout(() => {
-      const canvas = document.getElementById('canvas')
-      /**
-       * @type {CanvasRenderingContext2D}
-       */
-      const ctx = canvas.getContext('2d')
-      ctx.fillStyle = 'yellow'
-      ctx.fillRect(0, 0, canvas.width, canvas.height)
-      ctx.strokeStyle = 'black'
-      ctx.lineWidth = 3
-      ctx.font = '50px Iosevka Slab'
+        const baselines = ['top', 'hanging', 'middle', 'alphabetic', 'ideographic', 'bottom']
 
-      const baselines = ['top', 'hanging', 'middle', 'alphabetic', 'ideographic', 'bottom']
+        baselines.forEach(function (baseline) {
+          ctx.textBaseline = baseline
+          const metrics = ctx.measureText('@napi-rs/canvas')
+          console.info(baseline, metrics)
+        })
 
-      baselines.forEach(function (baseline) {
-        ctx.textBaseline = baseline
-        const metrics = ctx.measureText('@napi-rs/canvas')
-        console.info(baseline, metrics)
-      })
+        ctx.strokeText('skr canvas', 50, 150)
+        ctx.strokeText('@napi-rs/canvas', 50, 300)
+      }, 300)
 
-      ctx.strokeText('skr canvas', 50, 150)
-      ctx.strokeText('@napi-rs/canvas', 50, 300)
-    }, 300)
+      setTimeout(() => {
+        const canvas = document.getElementById('canvas-text')
+        /**
+         * @type {CanvasRenderingContext2D}
+         */
+        const ctx = canvas.getContext('2d')
+        ctx.fillStyle = 'yellow'
+        ctx.fillRect(0, 0, canvas.width, canvas.height)
+        const baselines = ['top', 'hanging', 'middle', 'alphabetic', 'ideographic', 'bottom']
+        ctx.font = '36px Iosevka Slab'
+        ctx.strokeStyle = 'red'
+        ctx.fillStyle = 'black'
 
-    setTimeout(() => {
-      const canvas = document.getElementById('canvas-text')
-      /**
-       * @type {CanvasRenderingContext2D}
-       */
-      const ctx = canvas.getContext('2d')
-      ctx.fillStyle = 'yellow'
-      ctx.fillRect(0, 0, canvas.width, canvas.height)
-      const baselines = ['top', 'hanging', 'middle', 'alphabetic', 'ideographic', 'bottom']
-      ctx.font = '36px Iosevka Slab'
-      ctx.strokeStyle = 'red'
-      ctx.fillStyle = 'black'
-
-      baselines.forEach(function (baseline, index) {
-        ctx.textBaseline = baseline
-        const y = 75 + index * 75
-        ctx.beginPath()
-        ctx.moveTo(0, y + 0.5)
-        ctx.lineTo(550, y + 0.5)
-        ctx.stroke()
-        ctx.fillText('Abcdefghijklmnop (' + baseline + ')', 0, y)
-      })
-    }, 300);
-  </script>
-  <script>
-    setTimeout(() => {
-      const canvas = document.getElementById('regression')
-      const ctx = canvas.getContext('2d')
-      ctx.filter = 'contrast(175%) brightness(103%)'
-      const image = document.querySelector('#firefox')
-      ctx.drawImage(image, 0, 0)
-    }, 1000)
-  </script>
-</body>
-
+        baselines.forEach(function (baseline, index) {
+          ctx.textBaseline = baseline
+          const y = 75 + index * 75
+          ctx.beginPath()
+          ctx.moveTo(0, y + 0.5)
+          ctx.lineTo(550, y + 0.5)
+          ctx.stroke()
+          ctx.fillText('Abcdefghijklmnop (' + baseline + ')', 0, y)
+        })
+      }, 300)
+    </script>
+    <script>
+      setTimeout(() => {
+        const canvas = document.getElementById('regression')
+        const ctx = canvas.getContext('2d')
+        ctx.filter = 'contrast(175%) brightness(103%)'
+        const image = document.querySelector('#firefox')
+        ctx.drawImage(image, 0, 0)
+      }, 1000)
+    </script>
+  </body>
 </html>
