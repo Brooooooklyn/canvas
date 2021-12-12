@@ -187,9 +187,9 @@ function createCanvas(width, height, flag) {
         }
         return new ImageData(widthOrImage, height, { colorSpace: 'srgb', ...attrs })
       },
-      configurable: false,
+      configurable: true,
       enumerable: false,
-      writable: false,
+      writable: true,
     })
 
     Object.defineProperty(canvasElement, 'ctx', {
