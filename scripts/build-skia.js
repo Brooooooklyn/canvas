@@ -138,13 +138,11 @@ switch (TARGET_TRIPLE) {
     )
     break
   case 'aarch64-unknown-linux-musl':
+    const gccVersion = execSync('ls /aarch64-linux-musl-cross/aarch64-linux-musl/include/c++').toString('utf8').trim()
     ExtraSkiaBuildFlag += ' target_cpu="arm64" target_os="linux"'
-    ExtraCflags =
-      '"--target=aarch64-unknown-linux-musl", "--sysroot=/aarch64-linux-musl-cross/aarch64-linux-musl", "--gcc-toolchain=aarch64-linux-musl-gcc", "-B/aarch64-linux-musl-cross/aarch64-linux-musl/bin", "-I/aarch64-linux-musl-cross/aarch64-linux-musl/include/c++/10.2.1", "-I/aarch64-linux-musl-cross/aarch64-linux-musl/include/c++/10.2.1/aarch64-linux-musl", "-march=armv8-a"'
-    ExtraCflagsCC +=
-      ', "--target=aarch64-unknown-linux-musl", "--sysroot=/aarch64-linux-musl-cross/aarch64-linux-musl", "--gcc-toolchain=aarch64-linux-musl-gcc", "-B/aarch64-linux-musl-cross/aarch64-linux-musl/bin", "-I/aarch64-linux-musl-cross/aarch64-linux-musl/include/c++/10.2.1", "-I/aarch64-linux-musl-cross/aarch64-linux-musl/include/c++/10.2.1/aarch64-linux-musl", "-march=armv8-a"'
-    ExtraLdFlags =
-      '"--target=aarch64-unknown-linux-musl", "--sysroot=/aarch64-linux-musl-cross/usr", "-B/aarch64-linux-musl-cross/usr/aarch64-linux-musl/bin", "-L/aarch64-linux-musl-cross/usr/aarch64-linux-musl/lib", "-L/aarch64-linux-musl-cross/usr/lib/gcc/aarch64-linux-musl/10.2.1"'
+    ExtraCflags = `"--target=aarch64-unknown-linux-musl", "--sysroot=/aarch64-linux-musl-cross/aarch64-linux-musl", "--gcc-toolchain=aarch64-linux-musl-gcc", "-B/aarch64-linux-musl-cross/aarch64-linux-musl/bin", "-I/aarch64-linux-musl-cross/aarch64-linux-musl/include/c++/${gccVersion}", "-I/aarch64-linux-musl-cross/aarch64-linux-musl/include/c++/${gccVersion}/aarch64-linux-musl", "-march=armv8-a"`
+    ExtraCflagsCC += `, "--target=aarch64-unknown-linux-musl", "--sysroot=/aarch64-linux-musl-cross/aarch64-linux-musl", "--gcc-toolchain=aarch64-linux-musl-gcc", "-B/aarch64-linux-musl-cross/aarch64-linux-musl/bin", "-I/aarch64-linux-musl-cross/aarch64-linux-musl/include/c++/${gccVersion}", "-I/aarch64-linux-musl-cross/aarch64-linux-musl/include/c++/${gccVersion}/aarch64-linux-musl", "-march=armv8-a"`
+    ExtraLdFlags = `"--target=aarch64-unknown-linux-musl", "--sysroot=/aarch64-linux-musl-cross/usr", "-B/aarch64-linux-musl-cross/usr/aarch64-linux-musl/bin", "-L/aarch64-linux-musl-cross/usr/aarch64-linux-musl/lib", "-L/aarch64-linux-musl-cross/usr/lib/gcc/aarch64-linux-musl/${gccVersion}"`
     ExtraAsmFlags =
       '"--sysroot=/aarch64-linux-musl-cross/aarch64-linux-musl", "--target=aarch64-unknown-linux-musl", "-march=armv8-a"'
     GN_ARGS.push(

@@ -42,14 +42,27 @@ fn main() {
         .include("/usr/aarch64-linux-gnu/include/c++/7/aarch64-linux-gnu");
     }
     "aarch64-unknown-linux-musl" => {
+      let gcc_version = String::from_utf8(
+        process::Command::new("ls")
+          .arg("/aarch64-linux-musl-cross/aarch64-linux-musl/include/c++")
+          .output()
+          .unwrap()
+          .stdout,
+      )
+      .unwrap();
+      let gcc_version_trim = gcc_version.trim();
       build
         .flag("--sysroot=/aarch64-linux-musl-cross/aarch64-linux-musl")
         .flag("--gcc-toolchain=aarch64-linux-musl-gcc")
         .include("/aarch64-linux-musl-cross/aarch64-linux-musl/include")
-        .include("/aarch64-linux-musl-cross/aarch64-linux-musl/include/c++/10.2.1")
-        .include(
-          "/aarch64-linux-musl-cross/aarch64-linux-musl/include/c++/10.2.1/aarch64-linux-musl",
-        );
+        .include(format!(
+          "/aarch64-linux-musl-cross/aarch64-linux-musl/include/c++/{}",
+          gcc_version_trim
+        ))
+        .include(format!(
+          "/aarch64-linux-musl-cross/aarch64-linux-musl/include/c++/{}/aarch64-linux-musl",
+          gcc_version_trim
+        ));
     }
     "armv7-unknown-linux-gnueabihf" => {
       build
