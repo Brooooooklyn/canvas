@@ -1,3 +1,13 @@
+## [0.1.16](https://github.com/Brooooooklyn/canvas/compare/v0.1.15...v0.1.16) (2021-12-12)
+
+### Bug Fixes
+
+- make methods on ctx configurable & writable ([affe82d](https://github.com/Brooooooklyn/canvas/commit/affe82d0b8880441737497403d790f4d39a217c3))
+
+### Features
+
+- chrome/m97 ([66c900f](https://github.com/Brooooooklyn/canvas/commit/66c900f4307f8204b55912659874a83513220460))
+
 ## [0.1.15](https://github.com/Brooooooklyn/canvas/compare/v0.1.14...v0.1.15) (2021-11-11)
 
 ### Bug Fixes
