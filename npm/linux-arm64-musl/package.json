@@ -9,8 +9,12 @@
   ],
   "main": "skia.linux-arm64-musl.node",
   "files": [
-    "skia.linux-arm64-musl.node"
+    "skia.linux-arm64-musl.node",
+    "install.js"
   ],
+  "scripts": {
+    "install": "node install.js"
+  },
   "description": "Canvas for Node.js with skia backend",
   "keywords": [
     "napi-rs",
