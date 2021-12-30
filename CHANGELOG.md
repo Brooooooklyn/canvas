@@ -1,3 +1,17 @@
+## [0.1.18](https://github.com/Brooooooklyn/canvas/compare/v0.1.17...v0.1.18) (2021-12-30)
+
+
+### Bug Fixes
+
+* reduce install size for linux glibc/musl ([8e6c7e8](https://github.com/Brooooooklyn/canvas/commit/8e6c7e8f2aeceb2598c24f8b37faa39a961739f9))
+
+
+### Features
+
+* upgrade skia to chrome/m98 ([99e3635](https://github.com/Brooooooklyn/canvas/commit/99e363540db1572a832d65e1593721ad3b051493))
+
+
+
 ## [0.1.17](https://github.com/Brooooooklyn/canvas/compare/v0.1.16...v0.1.17) (2021-12-12)
 
 ## [0.1.16](https://github.com/Brooooooklyn/canvas/compare/v0.1.15...v0.1.16) (2021-12-12)
