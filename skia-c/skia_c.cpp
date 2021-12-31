@@ -445,18 +445,18 @@ extern "C"
 
     if (c_canvas)
     {
-      auto canvas_center = canvas_width / 2.0f;
+      auto line_center = line_width / 2.0f;
       float paint_x;
       switch ((TextAlign)align)
       {
       case TextAlign::kLeft:
-        paint_x = x + canvas_center;
+        paint_x = x;
         break;
       case TextAlign::kCenter:
-        paint_x = x + canvas_center - (line_width / 2);
+        paint_x = x - line_center;
         break;
       case TextAlign::kRight:
-        paint_x = x + canvas_center - line_width;
+        paint_x = x - line_width;
         break;
       // Unreachable
       case TextAlign::kJustify:
@@ -469,7 +469,7 @@ extern "C"
         }
         else
         {
-          paint_x = x + canvas_width - line_width;
+          paint_x = x - line_width;
         }
         break;
       case TextAlign::kEnd:
@@ -479,7 +479,7 @@ extern "C"
         }
         else
         {
-          paint_x = x + canvas_width - line_width;
+          paint_x = x - line_width;
         }
         break;
       };
@@ -1499,6 +1499,13 @@ extern "C"
       c_font_collection->assets->registerTypeface(typeface, alias);
     }
     return result;
+  }
+
+  void skiac_font_collection_set_alias(skiac_font_collection *c_font_collection, const char *family, const char *alias)
+  {
+    auto style = SkFontStyle();
+    auto typeface = c_font_collection->assets->matchFamilyStyle(family, style);
+    c_font_collection->assets->registerTypeface(sk_sp(typeface), SkString(alias));
   }
 
   void skiac_font_collection_destroy(skiac_font_collection *c_font_collection)

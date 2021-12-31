@@ -80,6 +80,16 @@ fn load_fonts(ctx: CallContext) -> Result<JsNumber> {
     .create_uint32(load_fonts_from_dir(font_collection, dir.as_str()?))
 }
 
+#[js_function(2)]
+fn set_alias(ctx: CallContext) -> Result<JsUndefined> {
+  let this = ctx.this_unchecked::<JsObject>();
+  let font_collection = ctx.env.unwrap::<Rc<FontCollection>>(&this)?;
+  let font_name = ctx.get::<JsString>(0)?.into_utf8()?;
+  let alias = ctx.get::<JsString>(1)?.into_utf8()?;
+  font_collection.set_alias(font_name.as_str()?, alias.as_str()?);
+  ctx.env.get_undefined()
+}
+
 fn load_fonts_from_dir<P: AsRef<path::Path>>(
   font_collection: &mut Rc<FontCollection>,
   dir: P,
@@ -87,18 +97,25 @@ fn load_fonts_from_dir<P: AsRef<path::Path>>(
   let mut count = 0u32;
   if let Ok(dir) = read_dir(dir) {
     for f in dir.flatten() {
-      let p = f.path();
-      let ext = p.extension().and_then(|s| s.to_str());
+      if let Ok(meta) = f.metadata() {
+        if meta.is_dir() {
+          load_fonts_from_dir(font_collection, f.path());
+        } else {
+          let p = f.path();
+          let ext = p.extension().and_then(|s| s.to_str());
 
-      match ext {
-        Some("ttf") | Some("ttc") | Some("otf") | Some("pfb") | Some("woff2") | Some("woff") => {
-          if let Some(p) = p.into_os_string().to_str() {
-            if font_collection.register_from_path(p, None) {
-              count += 1;
+          match ext {
+            Some("ttf") | Some("ttc") | Some("otf") | Some("pfb") | Some("woff2")
+            | Some("woff") => {
+              if let Some(p) = p.into_os_string().to_str() {
+                if font_collection.register_from_path(p, None) {
+                  count += 1;
+                }
+              }
             }
+            _ => {}
           }
         }
-        _ => {}
       }
     }
   }
@@ -118,6 +135,7 @@ impl FontCollection {
           .with_property_attributes(PropertyAttributes::Enumerable),
         Property::new(env, "_loadFontsFromDir")?.with_method(load_fonts),
         Property::new(env, "loadSystemFonts")?.with_method(load_system_fonts),
+        Property::new(env, "setAlias")?.with_method(set_alias),
       ],
     )
   }
