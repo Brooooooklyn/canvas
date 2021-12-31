@@ -66,7 +66,16 @@ typedef struct skiac_font_mgr skiac_font_mgr;
 typedef struct skiac_typeface_font_provider skiac_typeface_font_provider;
 typedef struct skiac_w_memory_stream skiac_w_memory_stream;
 
-sk_sp<SkFontMgr> SkFontMgr_New_Custom_Empty();
+#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
+#define SK_FONT_FILE_PREFIX "C:/Windows/Fonts"
+#elif __APPLE__
+#define SK_FONT_FILE_PREFIX "/System/Library/Fonts/"
+#elif __linux__
+#define SK_FONT_FILE_PREFIX "/usr/share/fonts/"
+#endif
+
+sk_sp<SkFontMgr>
+SkFontMgr_New_Custom_Directory(const char *dir);
 
 enum class CssBaseline
 {
@@ -118,10 +127,11 @@ struct skiac_font_collection
   sk_sp<FontCollection> collection;
   sk_sp<SkFontMgr> font_mgr;
   sk_sp<TypefaceFontProviderCustom> assets;
-  skiac_font_collection() : collection(sk_make_sp<FontCollection>()), font_mgr(SkFontMgr_New_Custom_Empty()), assets(sk_make_sp<TypefaceFontProviderCustom>(font_mgr))
+  skiac_font_collection() : collection(sk_make_sp<FontCollection>()), font_mgr(SkFontMgr_New_Custom_Directory(SK_FONT_FILE_PREFIX)), assets(sk_make_sp<TypefaceFontProviderCustom>(font_mgr))
   {
-    collection->setDefaultFontManager(font_mgr);
-    collection->setAssetFontManager(assets);
+    collection->setDefaultFontManager(SkFontMgr::RefDefault());
+    collection->setAssetFontManager(font_mgr);
+    collection->setDynamicFontManager(assets);
     collection->enableFontFallback();
     assets->ref();
   }
@@ -449,6 +459,7 @@ extern "C"
   void skiac_font_collection_get_family(skiac_font_collection *c_font_collection, uint32_t i, skiac_string *c_string, void *on_get_style_rust, skiac_on_match_font_style on_match_font_style);
   size_t skiac_font_collection_register(skiac_font_collection *c_font_collection, const uint8_t *font, size_t length, const char *name_alias);
   size_t skiac_font_collection_register_from_path(skiac_font_collection *c_font_collection, const char *font_path, const char *name_alias);
+  void skiac_font_collection_set_alias(skiac_font_collection *c_font_collection, const char *family, const char *alias);
   void skiac_font_collection_destroy(skiac_font_collection *c_font_collection);
 
   // SkDynamicMemoryWStream

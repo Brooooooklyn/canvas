@@ -31,7 +31,7 @@ for (const align of ['center', 'end', 'left', 'right', 'start'] as CanvasTextAli
     ctx.stroke()
     ctx.textAlign = align
     ctx.font = '16px Iosevka Slab'
-    ctx.fillText('Hello Canvas', 0, 200)
+    ctx.fillText('Hello Canvas', x, 200)
     await snapshotImage(t)
   })
 }

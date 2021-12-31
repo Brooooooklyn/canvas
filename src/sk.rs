@@ -795,6 +795,12 @@ mod ffi {
       maybe_name_alias: *const c_char,
     ) -> usize;
 
+    pub fn skiac_font_collection_set_alias(
+      c_font_collection: *mut skiac_font_collection,
+      family: *const c_char,
+      alias: *const c_char,
+    );
+
     pub fn skiac_font_collection_destroy(c_font_collection: *mut skiac_font_collection);
 
     // SkDynamicMemoryStream
@@ -3454,6 +3460,12 @@ impl FontCollection {
     } else {
       false
     }
+  }
+
+  pub fn set_alias(&self, family: &str, alias_name: &str) {
+    let family = CString::new(family).unwrap();
+    let alias_name = CString::new(alias_name).unwrap();
+    unsafe { ffi::skiac_font_collection_set_alias(self.0, family.as_ptr(), alias_name.as_ptr()) }
   }
 }
 

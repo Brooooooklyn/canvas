@@ -17,6 +17,7 @@ specifiers:
   canvaskit-wasm: ^0.32.0
   chalk: '4'
   conventional-changelog-cli: ^2.1.1
+  echarts: ^5.2.2
   eslint: ^8.4.1
   eslint-config-prettier: ^8.3.0
   eslint-plugin-import: ^2.25.3
@@ -50,6 +51,7 @@ devDependencies:
   canvaskit-wasm: 0.32.0
   chalk: 4.1.2
   conventional-changelog-cli: 2.1.1
+  echarts: 5.2.2
   eslint: 8.4.1
   eslint-config-prettier: 8.3.0_eslint@8.4.1
   eslint-plugin-import: 2.25.3_eslint@8.4.1
@@ -1752,6 +1754,13 @@ packages:
 
   /duplexer3/0.1.4:
     resolution: {integrity: sha1-7gHdHKwO08vH/b6jfcCo8c4ALOI=}
+    dev: true
+
+  /echarts/5.2.2:
+    resolution: {integrity: sha512-yxuBfeIH5c+0FsoRP60w4De6omXhA06c7eUYBsC1ykB6Ys2yK5fSteIYWvkJ4xJVLQgCvAdO8C4mN6MLeJpBaw==}
+    dependencies:
+      tslib: 2.3.0
+      zrender: 5.2.1
     dev: true
 
   /emittery/0.8.1:
@@ -4529,6 +4538,10 @@ packages:
     resolution: {integrity: sha512-hcVC3wYEziELGGmEEXue7D75zbwIIVUMWAVbHItGPx0ziyXxrOMQx4rQEVEV45Ut/1IotuEvwqPopzIOkDMf0A==}
     dev: true
 
+  /tslib/2.3.0:
+    resolution: {integrity: sha512-N82ooyxVNm6h1riLCoyS9e3fuJ3AMG2zIZs2Gd1ATcSFjSA23Q0fzjjZeh0jbJvWVDZ0cJT8yaNNaaXHzueNjg==}
+    dev: true
+
   /tslib/2.3.1:
     resolution: {integrity: sha512-77EbyPPpMz+FRFRuAFlWMtmgUWGe9UOG2Z25NqCwiIjRhOf5iKGuzSe5P2w1laq+FkRy4p+PCuVkJSGkzTEKVw==}
     dev: true
@@ -4871,4 +4884,10 @@ packages:
       string-width: 4.2.3
       y18n: 5.0.8
       yargs-parser: 20.2.9
+    dev: true
+
+  /zrender/5.2.1:
+    resolution: {integrity: sha512-M3bPGZuyLTNBC6LiNKXJwSCtglMp8XUEqEBG+2MdICDI3d1s500Y4P0CzldQGsqpRVB7fkvf3BKQQRxsEaTlsw==}
+    dependencies:
+      tslib: 2.3.0
     dev: true
