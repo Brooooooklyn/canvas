@@ -2453,6 +2453,12 @@ impl Path {
     self.transform_self(&rotated);
   }
 
+  pub fn scoot(&mut self, x: f32, y: f32) {
+    if self.is_empty() {
+      self.move_to(x, y);
+    }
+  }
+
   pub fn arc(
     &mut self,
     center_x: f32,
@@ -2509,6 +2515,7 @@ impl Path {
   }
 
   pub fn line_to(&mut self, x: f32, y: f32) {
+    self.scoot(x, y);
     unsafe {
       ffi::skiac_path_line_to(self.0, x, y);
     }
