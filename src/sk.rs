@@ -2505,6 +2505,7 @@ impl Path {
   }
 
   pub fn arc_to_tangent(&mut self, x1: f32, y1: f32, x2: f32, y2: f32, radius: f32) {
+    self.scoot(x1, y1);
     unsafe { ffi::skiac_path_arc_to_tangent(self.0, x1, y1, x2, y2, radius) }
   }
 
@@ -2522,12 +2523,14 @@ impl Path {
   }
 
   pub fn cubic_to(&mut self, x1: f32, y1: f32, x2: f32, y2: f32, x3: f32, y3: f32) {
+    self.scoot(x1, y1);
     unsafe {
       ffi::skiac_path_cubic_to(self.0, x1, y1, x2, y2, x3, y3);
     }
   }
 
   pub fn quad_to(&mut self, cpx: f32, cpy: f32, x: f32, y: f32) {
+    self.scoot(cpx, cpy);
     unsafe {
       ffi::skiac_path_quad_to(self.0, cpx, cpy, x, y);
     }
