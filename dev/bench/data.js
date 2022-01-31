@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1643208574610,
+  "lastUpdate": 1643619953858,
   "repoUrl": "https://github.com/Brooooooklyn/canvas",
   "entries": {
     "Benchmark": [
@@ -11976,6 +11976,72 @@ window.BENCHMARK_DATA = {
             "name": "Draw gradient#@napi-rs/skia",
             "value": 24,
             "range": "±0.07%",
+            "unit": "ops/sec",
+            "extra": "44 samples"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "lynweklm@gmail.com",
+            "name": "LongYinan",
+            "username": "Brooooooklyn"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d21e3ce58263c15e3127d2ef5f822e74f9c80a3d",
+          "message": "Merge pull request #414 from meloalright/fix-empty-path\n\nfix: Fix the issue of arc to + bezier to + quad to at empty path case",
+          "timestamp": "2022-01-31T16:59:19+08:00",
+          "tree_id": "04a7d99a0d48b0fa62091d11830e3615d5fb0af6",
+          "url": "https://github.com/Brooooooklyn/canvas/commit/d21e3ce58263c15e3127d2ef5f822e74f9c80a3d"
+        },
+        "date": 1643619886370,
+        "tool": "benchmarkjs",
+        "benches": [
+          {
+            "name": "Draw house#skia-canvas",
+            "value": 21,
+            "range": "±0.53%",
+            "unit": "ops/sec",
+            "extra": "38 samples"
+          },
+          {
+            "name": "Draw house#node-canvas",
+            "value": 23,
+            "range": "±0.25%",
+            "unit": "ops/sec",
+            "extra": "42 samples"
+          },
+          {
+            "name": "Draw house#@napi-rs/skia",
+            "value": 25,
+            "range": "±0.19%",
+            "unit": "ops/sec",
+            "extra": "45 samples"
+          },
+          {
+            "name": "Draw gradient#skia-canvas",
+            "value": 20,
+            "range": "±1.03%",
+            "unit": "ops/sec",
+            "extra": "37 samples"
+          },
+          {
+            "name": "Draw gradient#node-canvas",
+            "value": 22,
+            "range": "±0.25%",
+            "unit": "ops/sec",
+            "extra": "41 samples"
+          },
+          {
+            "name": "Draw gradient#@napi-rs/skia",
+            "value": 24,
+            "range": "±0.12%",
             "unit": "ops/sec",
             "extra": "44 samples"
           }
