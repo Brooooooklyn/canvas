@@ -5,7 +5,7 @@ specifiers:
   '@jimp/custom': ^0.16.1
   '@jimp/jpeg': ^0.16.1
   '@jimp/png': ^0.16.1
-  '@napi-rs/cli': ^1.3.5
+  '@napi-rs/cli': ^2.0.0
   '@octokit/rest': ^18.12.0
   '@swc-node/register': ^1.4.0
   '@types/lodash': ^4.14.178
@@ -39,7 +39,7 @@ devDependencies:
   '@jimp/custom': 0.16.1
   '@jimp/jpeg': 0.16.1_@jimp+custom@0.16.1
   '@jimp/png': 0.16.1_@jimp+custom@0.16.1
-  '@napi-rs/cli': 1.3.5
+  '@napi-rs/cli': 2.4.2
   '@octokit/rest': 18.12.0
   '@swc-node/register': 1.4.2
   '@types/lodash': 4.14.178
@@ -241,12 +241,10 @@ packages:
       - supports-color
     dev: true
 
-  /@napi-rs/cli/1.3.5:
-    resolution: {integrity: sha512-Z0KZIciemioYODTyO908v2AtL8Zg4sohQDD+dyHeHmOiOfaez/y/xQ8XnpOHc2W5fRidKUW+MVWyTtpLTbKsqw==}
+  /@napi-rs/cli/2.4.2:
+    resolution: {integrity: sha512-+yCOuPqernvD8BMphbadF87ElaJ0rjanOZrbnauaEdR07YyoalGw3FTk15HHyflIwQKlYd69gkG5EM4WFkICKw==}
     engines: {node: '>= 10'}
     hasBin: true
-    dependencies:
-      inquirer: 8.2.0
     dev: true
 
   /@nodelib/fs.scandir/2.1.5:
@@ -1201,10 +1199,6 @@ packages:
       supports-color: 7.2.0
     dev: true
 
-  /chardet/0.7.0:
-    resolution: {integrity: sha512-mT8iDcrh03qDGRRmoA2hmBJnxpllMR+0/0qlzjqZES6NdiWDcZkCNAk4rPFZ9Q85r27unkiNNg8ZOiwZXBHwcA==}
-    dev: true
-
   /checkup/1.3.0:
     resolution: {integrity: sha1-04ACdv6l0PJH/8lRvnjIsC+ODXY=}
     engines: {node: '>=0.8'}
@@ -1283,11 +1277,6 @@ packages:
     dependencies:
       slice-ansi: 5.0.0
       string-width: 5.1.0
-    dev: true
-
-  /cli-width/3.0.0:
-    resolution: {integrity: sha512-FxqpkPPwu1HjuN93Omfm4h8uIanXofW0RxVEW3k5RKx+mJJYSthzNhp32Kzxxy3YAEZ/Dc/EWN1vZRY0+kOhbw==}
-    engines: {node: '>= 10'}
     dev: true
 
   /cliui/7.0.4:
@@ -2117,15 +2106,6 @@ packages:
     resolution: {integrity: sha1-WKnS1ywCwfbwKg70qRZicrd2CSI=}
     dev: true
 
-  /external-editor/3.1.0:
-    resolution: {integrity: sha512-hMQ4CX1p1izmuLYyZqLMO/qGNw10wSv9QDCPfzXfyFrOaCSSoRfqE1Kf1s5an66J5JZC62NewG+mK49jOCtQew==}
-    engines: {node: '>=4'}
-    dependencies:
-      chardet: 0.7.0
-      iconv-lite: 0.4.24
-      tmp: 0.0.33
-    dev: true
-
   /fast-deep-equal/3.1.3:
     resolution: {integrity: sha512-f3qQ9oQy9j2AhBe/H9VC91wLmKBCCU/gDOnKNAYG5hswO7BLKj09Hc5HYNz9cGI++xlpDCIgDaitVs03ATR84Q==}
     dev: true
@@ -2535,13 +2515,6 @@ packages:
     hasBin: true
     dev: true
 
-  /iconv-lite/0.4.24:
-    resolution: {integrity: sha512-v3MXnZAcvnywkTUEZomIActle7RXXeedOR31wwl7VlyoXO4Qi9arvSenNQWne1TcRwhCL1HwLI21bEqdpj8/rA==}
-    engines: {node: '>=0.10.0'}
-    dependencies:
-      safer-buffer: 2.1.2
-    dev: true
-
   /ieee754/1.2.1:
     resolution: {integrity: sha512-dcyqhDvX1C46lXZcVqCpK+FtMRQVdIMN6/Df5js2zouUsqG7I6sFxitIC+7KYK29KdXOLHdu9zL4sFnoVQnqaA==}
     dev: true
@@ -2611,26 +2584,6 @@ packages:
   /ini/2.0.0:
     resolution: {integrity: sha512-7PnF4oN3CvZF23ADhA5wRaYEQpJ8qygSkbtTXWBeXWXmEVRXK+1ITciHWwHhsjv1TmW0MgacIv6hEi5pX5NQdA==}
     engines: {node: '>=10'}
-    dev: true
-
-  /inquirer/8.2.0:
-    resolution: {integrity: sha512-0crLweprevJ02tTuA6ThpoAERAGyVILC4sS74uib58Xf/zSr1/ZWtmm7D5CI+bSQEaA04f0K7idaHpQbSWgiVQ==}
-    engines: {node: '>=8.0.0'}
-    dependencies:
-      ansi-escapes: 4.3.2
-      chalk: 4.1.2
-      cli-cursor: 3.1.0
-      cli-width: 3.0.0
-      external-editor: 3.1.0
-      figures: 3.2.0
-      lodash: 4.17.21
-      mute-stream: 0.0.8
-      ora: 5.4.1
-      run-async: 2.4.1
-      rxjs: 7.5.2
-      string-width: 4.2.3
-      strip-ansi: 6.0.1
-      through: 2.3.8
     dev: true
 
   /internal-slot/1.0.3:
@@ -3344,10 +3297,6 @@ packages:
     resolution: {integrity: sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==}
     dev: true
 
-  /mute-stream/0.0.8:
-    resolution: {integrity: sha512-nnbWWOkoWyUsTjKrhgD0dcz22mdkSnpYqbEjIm2nhwhuxlSkpywJmBo8h0ZqJdkp73mb90SssHkN4rsRaBAfAA==}
-    dev: true
-
   /nan/2.15.0:
     resolution: {integrity: sha512-8ZtvEnA2c5aYCZYd1cvgdnU6cqwixRoYg70xPLWUws5ORTa/lnw+u4amixRS/Ac5U5mQVgp9pnlSUnbNWFaWZQ==}
     dev: true
@@ -3531,11 +3480,6 @@ packages:
     dependencies:
       macos-release: 2.5.0
       windows-release: 3.3.3
-    dev: true
-
-  /os-tmpdir/1.0.2:
-    resolution: {integrity: sha1-u+Z0BseaqFxc/sdm/lc0VV36EnQ=}
-    engines: {node: '>=0.10.0'}
     dev: true
 
   /p-cancelable/1.1.0:
@@ -4074,11 +4018,6 @@ packages:
       glob: 7.2.0
     dev: true
 
-  /run-async/2.4.1:
-    resolution: {integrity: sha512-tvVnVv01b8c1RrA6Ep7JkStj85Guv/YrMcwqYQnwjsAS2cTmmPGBBjAjpCW7RrSodNSoE2/qg9O4bceNvUuDgQ==}
-    engines: {node: '>=0.12.0'}
-    dev: true
-
   /run-parallel/1.2.0:
     resolution: {integrity: sha512-5l4VyZR86LZ/lDxZTR6jqL8AFE2S0IFLMP26AbjsLVADxHdhB/c0GUsH+y39UfCi3dzz8OlQuPmnaJOMoDHQBA==}
     dependencies:
@@ -4097,10 +4036,6 @@ packages:
 
   /safe-buffer/5.2.1:
     resolution: {integrity: sha512-rp3So07KcdmmKbGvgaNxQSJr7bGVSVk5S9Eq1F+ppbRo70+YeaDxkw5Dd8NPN+GD6bjnYm2VuPuCXmpuYvmCXQ==}
-    dev: true
-
-  /safer-buffer/2.1.2:
-    resolution: {integrity: sha512-YZo3K82SD7Riyi0E1EQPojLz7kpepnSQI9IyPbHHg1XXXevb5dJI7tpyN2ADxGcQbHG7vcyRHk0cbwqcQriUtg==}
     dev: true
 
   /sax/1.2.4:
@@ -4509,13 +4444,6 @@ packages:
 
   /tinycolor2/1.4.2:
     resolution: {integrity: sha512-vJhccZPs965sV/L2sU4oRQVAos0pQXwsvTLkWYdqJ+a8Q5kPFzJTuOFwy7UniPli44NKQGAglksjvOcpo95aZA==}
-    dev: true
-
-  /tmp/0.0.33:
-    resolution: {integrity: sha512-jRCJlojKnZ3addtTOjdIqoRuPEKBvNXcGYqzO6zWZX8KfKEpnGY5jfggJQ3EjKuu8D4bJRr0y+cYJFmYbImXGw==}
-    engines: {node: '>=0.6.0'}
-    dependencies:
-      os-tmpdir: 1.0.2
     dev: true
 
   /to-readable-stream/1.0.0:
