@@ -237,7 +237,7 @@ function createCanvas(width, height, flag) {
         }),
       )
     }
-    return canvasEncode.call(this, type, qualityOrConfig || 92)
+    return canvasEncode.call(this, type, qualityOrConfig)
   }
 
   canvasElement.encodeSync = function encodeSync(type, qualityOrConfig) {
@@ -251,7 +251,7 @@ function createCanvas(width, height, flag) {
         }),
       )
     }
-    return canvasEncodeSync.call(this, type, qualityOrConfig || 92)
+    return canvasEncodeSync.call(this, type, qualityOrConfig)
   }
 
   canvasElement.toBuffer = function toBuffer(type = 'image/png', qualityOrConfig) {
@@ -265,7 +265,7 @@ function createCanvas(width, height, flag) {
         }),
       )
     }
-    return canvasToBuffer.call(this, type, qualityOrConfig || 92)
+    return canvasToBuffer.call(this, type, qualityOrConfig)
   }
 
   canvasElement.toDataURL = function toDataURL(type = 'image/png', qualityOrConfig) {
@@ -279,7 +279,7 @@ function createCanvas(width, height, flag) {
         }),
       )
     }
-    return canvasToDataURL.call(this, type, qualityOrConfig || 92)
+    return canvasToDataURL.call(this, type, qualityOrConfig)
   }
 
   canvasElement.toDataURLAsync = function toDataURLAsync(type = 'image/png', qualityOrConfig) {
@@ -293,7 +293,7 @@ function createCanvas(width, height, flag) {
         }),
       )
     }
-    return canvasToDataURLAsync.call(this, type, qualityOrConfig || 92)
+    return canvasToDataURLAsync.call(this, type, qualityOrConfig)
   }
 
   return canvasElement
