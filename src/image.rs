@@ -62,13 +62,6 @@ fn image_data_constructor(ctx: CallContext) -> Result<JsUndefined> {
       }
       ValueType::Object => {
         let image_data_ab = unsafe { first_arg.cast::<JsTypedArray>() }.into_value()?;
-        if image_data_ab.typedarray_type != TypedArrayType::Uint8Clamped {
-          return Err(Error::new(
-            Status::InvalidArg,
-            "ImageData constructor: Argument 1 does not implement interface Uint8ClampedArray."
-              .to_owned(),
-          ));
-        }
         let arraybuffer: &[u8] = image_data_ab.as_ref();
         let arraybuffer_length = arraybuffer.len();
         let js_width = ctx.get::<JsNumber>(1)?;
@@ -125,14 +118,14 @@ fn image_data_constructor(ctx: CallContext) -> Result<JsUndefined> {
   let mut this = ctx.this_unchecked::<JsObject>();
   ctx.env.wrap(&mut this, image_data)?;
   this.define_properties(&[
-    Property::new(ctx.env, "data")?
-      .with_value(typed_array)
+    Property::new("data")?
+      .with_value(&typed_array)
       .with_property_attributes(PropertyAttributes::Enumerable),
-    Property::new(ctx.env, "width")?
-      .with_value(js_width)
+    Property::new("width")?
+      .with_value(&js_width)
       .with_property_attributes(PropertyAttributes::Enumerable),
-    Property::new(ctx.env, "height")?
-      .with_value(js_height)
+    Property::new("height")?
+      .with_value(&js_height)
       .with_property_attributes(PropertyAttributes::Enumerable),
   ])?;
   ctx.env.get_undefined()
@@ -173,25 +166,25 @@ impl Image {
       "Image",
       image_constructor,
       &vec![
-        Property::new(env, "width")?
+        Property::new("width")?
           .with_getter(get_width)
           .with_setter(set_width),
-        Property::new(env, "height")?
+        Property::new("height")?
           .with_getter(get_height)
           .with_setter(set_height),
-        Property::new(env, "naturalWidth")?
+        Property::new("naturalWidth")?
           .with_getter(get_natural_width)
           .with_property_attributes(PropertyAttributes::Enumerable),
-        Property::new(env, "naturalHeight")?
+        Property::new("naturalHeight")?
           .with_getter(get_natural_height)
           .with_property_attributes(PropertyAttributes::Enumerable),
-        Property::new(env, "complete")?
+        Property::new("complete")?
           .with_getter(get_complete)
           .with_property_attributes(PropertyAttributes::Enumerable),
-        Property::new(env, "alt")?
+        Property::new("alt")?
           .with_setter(set_alt)
           .with_getter(get_alt),
-        Property::new(env, "src")?
+        Property::new("src")?
           .with_setter(set_src)
           .with_getter(get_src),
       ],
@@ -338,7 +331,7 @@ fn set_src(ctx: CallContext) -> Result<JsUndefined> {
   let src_data = src_arg.into_value()?;
   let image = ctx.env.unwrap::<ImageOrCanvas>(&this)?.get_image().unwrap();
 
-  let length = (&src_data).len();
+  let length = src_data.len();
   let data_ref: &[u8] = &src_data;
   let mut is_svg = false;
   for i in 3..length {

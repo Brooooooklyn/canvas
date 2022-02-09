@@ -21,10 +21,10 @@ impl CanvasGradient {
     let gradient_class = env.define_class(
       "Gradient",
       gradient_constructor,
-      &[Property::new(env, "addColorStop")?.with_method(add_color_stop)],
+      &[Property::new("addColorStop")?.with_method(add_color_stop)],
     )?;
     let arguments: Vec<JsUndefined> = vec![];
-    let mut instance = gradient_class.new(&arguments)?;
+    let mut instance = gradient_class.new_instance(&arguments)?;
     env.wrap(&mut instance, Pattern::Gradient(self))?;
     Ok(instance)
   }

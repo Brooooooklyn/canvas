@@ -4,7 +4,7 @@ const { platform } = require('os')
 const { parse, join } = require('path')
 
 const { Octokit } = require('@octokit/rest')
-const chalk = require('chalk')
+const { green } = require('colorette')
 
 const { libPath, TAG, OWNER, REPO } = require('./utils')
 
@@ -29,7 +29,7 @@ async function upload() {
   const putasset = require('putasset')
   let assets = []
   try {
-    console.info(chalk.green(`Fetching release by tag: [${TAG}]`))
+    console.info(green(`Fetching release by tag: [${TAG}]`))
     assets = (
       await CLIENT.repos.getReleaseByTag({
         repo: REPO,
@@ -39,7 +39,7 @@ async function upload() {
     ).data.assets
   } catch (e) {
     if (e.status === 404) {
-      console.info(chalk.green(`No release tag, creating release tag ${TAG}`))
+      console.info(green(`No release tag, creating release tag ${TAG}`))
       await CLIENT.repos.createRelease({
         repo: REPO,
         owner: OWNER,
@@ -52,13 +52,13 @@ async function upload() {
   }
   for (const lib of LIB) {
     const { copy, binary } = libPath(lib, PLATFORM_NAME, TARGET_TRIPLE)
-    console.info(chalk.green(`Copy [${binary}] to [${copy}]`))
+    console.info(green(`Copy [${binary}] to [${copy}]`))
     await fs.copyFile(binary, copy)
-    console.info(chalk.green(`Uploading [${copy}] to github release: [${TAG}]`))
+    console.info(green(`Uploading [${copy}] to github release: [${TAG}]`))
 
     const asset = assets.find(({ name }) => name === parse(copy).base)
     if (asset) {
-      console.info(chalk.green(`[${copy}] existed, delete it...`))
+      console.info(green(`[${copy}] existed, delete it...`))
       await CLIENT.repos.deleteReleaseAsset({
         owner: OWNER,
         repo: REPO,
@@ -79,14 +79,14 @@ async function upload() {
   if (PLATFORM_NAME === 'win32') {
     const icudtl = assets.find(({ name }) => name === ICU_DAT)
     if (icudtl) {
-      console.info(chalk.green(`[${ICU_DAT}] existed, delete it...`))
+      console.info(green(`[${ICU_DAT}] existed, delete it...`))
       await CLIENT.repos.deleteReleaseAsset({
         owner: OWNER,
         repo: REPO,
         asset_id: icudtl.id,
       })
     }
-    console.info(chalk.green(`Uploading [${ICU_DAT}] to github release: [${TAG}]`))
+    console.info(green(`Uploading [${ICU_DAT}] to github release: [${TAG}]`))
     await putasset(process.env.GITHUB_TOKEN, {
       owner: OWNER,
       repo: REPO,

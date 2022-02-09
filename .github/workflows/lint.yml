@@ -19,7 +19,7 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v2
         with:
-          node-version: 14
+          node-version: 16
           check-latest: true
 
       - name: Install nasm
@@ -41,19 +41,19 @@ jobs:
         uses: actions/cache@v2
         with:
           path: ~/.cargo/registry
-          key: lint-cargo-registry-trimmed-${{ hashFiles('**/Cargo.lock') }}
+          key: lint-cargo-registry
 
       - name: Cache cargo index
         uses: actions/cache@v2
         with:
           path: ~/.cargo/git
-          key: lint-cargo-index-trimmed-${{ hashFiles('**/Cargo.lock') }}
+          key: lint-cargo-index
 
       - name: Cache pnpm store
         uses: actions/cache@v2
         with:
           path: ~/.pnpm-store
-          key: npm-cache-test-linux-x64-gnu-${{ matrix.node }}-${{ hashFiles('pnpm-lock.yaml') }}
+          key: npm-cache-lint-linux-x64-gnu
 
       - name: Setup pnpm
         run: |
