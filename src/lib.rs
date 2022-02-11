@@ -168,12 +168,12 @@ fn create_context(ctx: CallContext) -> Result<JsUndefined> {
 fn encode(ctx: CallContext) -> Result<JsObject> {
   let format = ctx.get::<JsString>(0)?.into_utf8()?;
   let format_str = format.as_str()?;
-  let quality = if format_str != "avif" {
-    ctx.get::<JsNumber>(1)?.get_uint32()? as u8
-  } else if format_str == "webp" {
-    DEFAULT_WEBP_QUALITY
-  } else {
-    DEFAULT_JPEG_QUALITY
+  let quality = match ctx.get::<JsNumber>(1)?.get_uint32() {
+    Ok(number) => number as u8,
+    Err(_e) => match format_str {
+      "webp" => DEFAULT_WEBP_QUALITY,
+      _ => DEFAULT_JPEG_QUALITY,
+    },
   };
   let this = ctx.this_unchecked::<JsObject>();
   let ctx_js = this.get_named_property::<JsObject>("ctx")?;
@@ -203,12 +203,12 @@ fn encode(ctx: CallContext) -> Result<JsObject> {
 fn encode_sync(ctx: CallContext) -> Result<JsBuffer> {
   let format = ctx.get::<JsString>(0)?.into_utf8()?;
   let format_str = format.as_str()?;
-  let quality = if format_str != "avif" {
-    ctx.get::<JsNumber>(1)?.get_uint32()? as u8
-  } else if format_str == "webp" {
-    DEFAULT_WEBP_QUALITY
-  } else {
-    DEFAULT_JPEG_QUALITY
+  let quality = match ctx.get::<JsNumber>(1)?.get_uint32() {
+    Ok(number) => number as u8,
+    Err(_e) => match format_str {
+      "webp" => DEFAULT_WEBP_QUALITY,
+      _ => DEFAULT_JPEG_QUALITY,
+    },
   };
   let this = ctx.this_unchecked::<JsObject>();
   let ctx_js = this.get_named_property::<JsObject>("ctx")?;
@@ -281,13 +281,12 @@ fn encode_sync(ctx: CallContext) -> Result<JsBuffer> {
 fn to_buffer(ctx: CallContext) -> Result<JsBuffer> {
   let mime_js = ctx.get::<JsString>(0)?.into_utf8()?;
   let mime = mime_js.as_str()?;
-  let quality = if mime != MIME_AVIF {
-    ctx.get::<JsNumber>(1)?.get_uint32()? as u8
-  } else if mime == MIME_WEBP {
-    DEFAULT_WEBP_QUALITY
-  } else {
-    // https://developer.mozilla.org/en-US/docs/Web/API/HTMLCanvasElement/toDataURL
-    DEFAULT_JPEG_QUALITY
+  let quality = match ctx.get::<JsNumber>(1)?.get_uint32() {
+    Ok(number) => number as u8,
+    Err(_e) => match mime {
+      MIME_WEBP => DEFAULT_WEBP_QUALITY,
+      _ => DEFAULT_JPEG_QUALITY, // https://developer.mozilla.org/en-US/docs/Web/API/HTMLCanvasElement/toDataURL
+    },
   };
 
   let context_data = get_data_ref(&ctx, mime, quality)?;
@@ -336,13 +335,12 @@ fn data(ctx: CallContext) -> Result<JsBuffer> {
 fn to_data_url(ctx: CallContext) -> Result<JsString> {
   let mime_js = ctx.get::<JsString>(0)?.into_utf8()?;
   let mime = mime_js.as_str()?;
-  let quality = if mime != MIME_AVIF {
-    ctx.get::<JsNumber>(1)?.get_uint32()? as u8
-  } else if mime == MIME_WEBP {
-    DEFAULT_WEBP_QUALITY
-  } else {
-    // https://developer.mozilla.org/en-US/docs/Web/API/HTMLCanvasElement/toDataURL
-    DEFAULT_JPEG_QUALITY
+  let quality = match ctx.get::<JsNumber>(1)?.get_uint32() {
+    Ok(number) => number as u8,
+    Err(_e) => match mime {
+      MIME_WEBP => DEFAULT_WEBP_QUALITY,
+      _ => DEFAULT_JPEG_QUALITY, // https://developer.mozilla.org/en-US/docs/Web/API/HTMLCanvasElement/toDataURL
+    },
   };
   let data_ref = get_data_ref(&ctx, mime, quality)?;
   let mut output = format!("data:{};base64,", &mime);
@@ -361,13 +359,12 @@ fn to_data_url(ctx: CallContext) -> Result<JsString> {
 fn to_data_url_async(ctx: CallContext) -> Result<JsObject> {
   let mime_js = ctx.get::<JsString>(0)?.into_utf8()?;
   let mime = mime_js.as_str()?;
-  let quality = if mime != MIME_AVIF {
-    ctx.get::<JsNumber>(1)?.get_uint32()? as u8
-  } else if mime == MIME_WEBP {
-    DEFAULT_WEBP_QUALITY
-  } else {
-    // https://developer.mozilla.org/en-US/docs/Web/API/HTMLCanvasElement/toDataURL
-    DEFAULT_JPEG_QUALITY
+  let quality = match ctx.get::<JsNumber>(1)?.get_uint32() {
+    Ok(number) => number as u8,
+    Err(_e) => match mime {
+      MIME_WEBP => DEFAULT_WEBP_QUALITY,
+      _ => DEFAULT_JPEG_QUALITY, // https://developer.mozilla.org/en-US/docs/Web/API/HTMLCanvasElement/toDataURL
+    },
   };
   let data_ref = get_data_ref(&ctx, mime, quality)?;
   let async_task = AsyncDataUrl {
