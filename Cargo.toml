@@ -1,6 +1,6 @@
 [package]
 authors = ["LongYinan <lynweklm@gmail.com>"]
-edition = "2018"
+edition = "2021"
 name = "canvas"
 version = "0.1.0"
 
@@ -11,8 +11,8 @@ crate-type = ["cdylib"]
 anyhow = "1"
 base64 = "0.13"
 cssparser = "0.29"
-napi = {version = "1", features = ["serde-json"]}
-napi-derive = "1"
+napi = {version = "2", default-features = false, features = ["napi3", "serde-json", "compat-mode"]}
+napi-derive = {version = "2", default-features = false, features = ["compat-mode"]}
 nom = "7"
 once_cell = "1"
 ravif = "0.8"

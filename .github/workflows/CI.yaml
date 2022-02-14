@@ -93,7 +93,7 @@ jobs:
               pnpm build -- --target aarch64-linux-android
               ${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android-strip skia.android-arm64.node
 
-    name: stable - ${{ matrix.settings.target }} - node@14
+    name: stable - ${{ matrix.settings.target }} - node@16
     runs-on: ${{ matrix.settings.host }}
 
     steps:
@@ -132,19 +132,19 @@ jobs:
         uses: actions/cache@v2
         with:
           path: ~/.cargo/registry
-          key: ${{ matrix.settings.target }}-node@14-cargo-registry-trimmed-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ matrix.settings.target }}-cargo-registry
 
       - name: Cache cargo index
         uses: actions/cache@v2
         with:
           path: ~/.cargo/git
-          key: ${{ matrix.settings.target }}-node@14-cargo-index-trimmed-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ matrix.settings.target }}-cargo-index
 
       - name: Cache pnpm store
         uses: actions/cache@v2
         with:
           path: ~/.pnpm-store
-          key: npm-cache-${{ matrix.settings.target }}-node@14-${{ hashFiles('pnpm-lock.yaml') }}
+          key: npm-cache-${{ matrix.settings.target }}-node@16-${{ hashFiles('pnpm-lock.yaml') }}
 
       - name: Setup pnpm
         run: |
@@ -155,8 +155,6 @@ jobs:
         run: ${{ matrix.settings.docker }}
         env:
           DOCKER_REGISTRY_URL: ghcr.io
-          DOCKER_USERNAME: ${{ github.actor }}
-          DOCKER_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
         if: ${{ matrix.settings.docker }}
 
       - name: Setup toolchain

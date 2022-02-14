@@ -128,14 +128,14 @@ impl FontCollection {
       "GlobalFonts",
       global_fonts_constructor,
       &[
-        Property::new(env, "_register")?.with_method(register),
-        Property::new(env, "_registerFromPath")?.with_method(register_from_path),
-        Property::new(env, "_families")?
+        Property::new("_register")?.with_method(register),
+        Property::new("_registerFromPath")?.with_method(register_from_path),
+        Property::new("_families")?
           .with_getter(get_families)
           .with_property_attributes(PropertyAttributes::Enumerable),
-        Property::new(env, "_loadFontsFromDir")?.with_method(load_fonts),
-        Property::new(env, "loadSystemFonts")?.with_method(load_system_fonts),
-        Property::new(env, "setAlias")?.with_method(set_alias),
+        Property::new("_loadFontsFromDir")?.with_method(load_fonts),
+        Property::new("loadSystemFonts")?.with_method(load_system_fonts),
+        Property::new("setAlias")?.with_method(set_alias),
       ],
     )
   }

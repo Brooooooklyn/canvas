@@ -59,25 +59,25 @@ fn init(mut exports: JsObject, env: Env) -> Result<()> {
     "CanvasElement",
     canvas_element_constructor,
     &[
-      Property::new(&env, "encode")?
+      Property::new("encode")?
         .with_method(encode)
         .with_property_attributes(PropertyAttributes::Writable),
-      Property::new(&env, "encodeSync")?
+      Property::new("encodeSync")?
         .with_method(encode_sync)
         .with_property_attributes(PropertyAttributes::Writable),
-      Property::new(&env, "toBuffer")?
+      Property::new("toBuffer")?
         .with_method(to_buffer)
         .with_property_attributes(PropertyAttributes::Writable),
-      Property::new(&env, "savePNG")?
+      Property::new("savePNG")?
         .with_method(save_png)
         .with_property_attributes(PropertyAttributes::Writable),
-      Property::new(&env, "data")?
+      Property::new("data")?
         .with_method(data)
         .with_property_attributes(PropertyAttributes::Writable),
-      Property::new(&env, "toDataURL")?
+      Property::new("toDataURL")?
         .with_method(to_data_url)
         .with_property_attributes(PropertyAttributes::Writable),
-      Property::new(&env, "toDataURLAsync")?
+      Property::new("toDataURLAsync")?
         .with_method(to_data_url_async)
         .with_property_attributes(PropertyAttributes::Writable),
     ],
@@ -86,7 +86,7 @@ fn init(mut exports: JsObject, env: Env) -> Result<()> {
   let svg_canvas_element = env.define_class(
     "SVGCanvas",
     canvas_element_constructor,
-    &[Property::new(&env, "getContent")?.with_method(get_content)],
+    &[Property::new("getContent")?.with_method(get_content)],
   )?;
 
   let canvas_rendering_context2d = ctx::Context::create_js_class(&env)?;
@@ -100,7 +100,7 @@ fn init(mut exports: JsObject, env: Env) -> Result<()> {
   let canvas_pattern = env.define_class(
     "CanvasPattern",
     image_pattern::canvas_pattern_constructor,
-    &[Property::new(&env, "setTransform")?.with_method(image_pattern::set_transform)],
+    &[Property::new("setTransform")?.with_method(image_pattern::set_transform)],
   )?;
 
   let global_fonts = sk::FontCollection::create_js_class(&env)?;
@@ -481,7 +481,7 @@ impl Task for AsyncDataUrl {
     Ok(output)
   }
 
-  fn resolve(self, env: Env, output: Self::Output) -> Result<Self::JsValue> {
+  fn resolve(&mut self, env: Env, output: Self::Output) -> Result<Self::JsValue> {
     env.create_string_from_std(output)
   }
 }
