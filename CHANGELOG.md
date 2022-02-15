@@ -1,3 +1,16 @@
+## [0.1.20](https://github.com/Brooooooklyn/canvas/compare/v0.1.19...v0.1.20) (2022-02-15)
+
+### Bug Fixes
+
+- Fix the issue of arc to + bezier to + quad to at empty path case ([33f8558](https://github.com/Brooooooklyn/canvas/commit/33f8558f447842521213f5c685a932ac1412a530))
+- scoot method for path empty case ([a1eb529](https://github.com/Brooooooklyn/canvas/commit/a1eb5292c4d3a5d2a500cdaab3ff5f0dc410ddd9))
+- the quality default value case of encode(type, quality) method ([#418](https://github.com/Brooooooklyn/canvas/issues/418)) ([c4950ea](https://github.com/Brooooooklyn/canvas/commit/c4950ea88d75a5437aa85a48b1f1ca087a9784f7))
+
+### Features
+
+- skia chrome/m99 ([c0687c5](https://github.com/Brooooooklyn/canvas/commit/c0687c58b45eafc657d19e9b6a3643fce7003bce))
+- upgrade to napi2 ([#422](https://github.com/Brooooooklyn/canvas/issues/422)) ([4a553c7](https://github.com/Brooooooklyn/canvas/commit/4a553c711a2d2f2fd6d71a58404884bff4fe57ad))
+
 ## [0.1.19](https://github.com/Brooooooklyn/canvas/compare/v0.1.18...v0.1.19) (2021-12-31)
 
 ### Bug Fixes
