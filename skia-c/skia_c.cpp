@@ -507,6 +507,7 @@ extern "C"
       c_line_metrics->font_ascent = line_metrics.fAscent + offset;
       c_line_metrics->font_descent = line_metrics.fDescent - offset;
     }
+    delete paragraph;
   }
 
   void skiac_canvas_reset_transform(skiac_canvas *c_canvas)
