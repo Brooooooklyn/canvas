@@ -1,5 +1,5 @@
 import test from 'ava'
-import { init, setCanvasCreator } from 'echarts'
+import { init, setPlatformAPI } from 'echarts'
 
 import { createCanvas } from '../index.js'
 import { snapshotImage } from './image-snapshot'
@@ -10,8 +10,10 @@ test('echarts-start', async (t) => {
     return
   }
   const canvas = createCanvas(800, 600)
-  // @ts-expect-error
-  setCanvasCreator(() => canvas)
+  setPlatformAPI({
+    // @ts-expect-error
+    createCanvas: () => canvas,
+  })
   // @ts-expect-error
   const chart = init(canvas)
   chart.setOption({

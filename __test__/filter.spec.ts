@@ -1,13 +1,13 @@
 import { promises as fs, readFileSync } from 'fs'
 import { join } from 'path'
 
-import ava, { TestInterface } from 'ava'
+import ava, { TestFn } from 'ava'
 
 import { createCanvas, Canvas, SKRSContext2D, Image } from '../index'
 
 import { snapshotImage } from './image-snapshot'
 
-const test = ava as TestInterface<{
+const test = ava as TestFn<{
   ctx: SKRSContext2D
   canvas: Canvas
 }>
