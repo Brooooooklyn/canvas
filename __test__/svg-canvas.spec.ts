@@ -1,10 +1,10 @@
 import { join } from 'path'
 
-import ava, { TestInterface } from 'ava'
+import ava, { TestFn } from 'ava'
 
 import { createCanvas, SvgCanvas, SvgExportFlag, GlobalFonts } from '../index'
 
-const test = ava as TestInterface<{
+const test = ava as TestFn<{
   canvas: SvgCanvas
 }>
 
