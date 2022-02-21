@@ -86,7 +86,7 @@
     "lint-staged": "^12.3.3",
     "lodash": "^4.17.21",
     "npm-run-all": "^4.1.5",
-    "pinst": "^2.1.6",
+    "pinst": "^3.0.0",
     "png.js": "^0.2.1",
     "prettier": "^2.5.1",
     "putasset": "^5.0.3",
