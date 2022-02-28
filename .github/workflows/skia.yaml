@@ -29,7 +29,7 @@ jobs:
           node-version: 14
           check-latest: true
 
-      - uses: actions/setup-python@v2
+      - uses: actions/setup-python@v3
         with:
           python-version: '2.x'
           architecture: 'x64'
@@ -113,7 +113,7 @@ jobs:
           node-version: 14
           check-latest: true
 
-      - uses: actions/setup-python@v2
+      - uses: actions/setup-python@v3
         with:
           python-version: '2.x'
           architecture: 'x64'
@@ -209,7 +209,7 @@ jobs:
           node-version: 14
           check-latest: true
 
-      - uses: actions/setup-python@v2
+      - uses: actions/setup-python@v3
         with:
           python-version: '2.x'
           architecture: 'x64'
@@ -307,7 +307,7 @@ jobs:
           node-version: 14
           check-latest: true
 
-      - uses: actions/setup-python@v2
+      - uses: actions/setup-python@v3
         with:
           python-version: '2.x'
           architecture: 'x64'
@@ -357,7 +357,7 @@ jobs:
           node-version: 14
           check-latest: true
 
-      - uses: actions/setup-python@v2
+      - uses: actions/setup-python@v3
         with:
           python-version: '2.x'
           architecture: 'x64'
