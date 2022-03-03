@@ -220,7 +220,7 @@ jobs:
           pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Download artifacts
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: bindings-${{ matrix.settings.target }}
           path: .
@@ -279,7 +279,7 @@ jobs:
           pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Download artifacts
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: bindings-x86_64-unknown-linux-gnu
           path: .
@@ -338,7 +338,7 @@ jobs:
           pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Download artifacts
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: bindings-x86_64-unknown-linux-musl
           path: .
@@ -382,7 +382,7 @@ jobs:
           out-file-path: __test__/fonts/
 
       - name: Download artifacts
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: bindings-aarch64-unknown-linux-gnu
           path: .
@@ -430,7 +430,7 @@ jobs:
           out-file-path: __test__/fonts/
 
       - name: Download artifacts
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: bindings-aarch64-unknown-linux-musl
           path: .
@@ -482,7 +482,7 @@ jobs:
           out-file-path: __test__/fonts/
 
       - name: Download artifacts
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: bindings-armv7-unknown-linux-gnueabihf
           path: .
@@ -542,7 +542,7 @@ jobs:
           pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: artifacts
 
