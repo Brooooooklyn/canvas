@@ -7,6 +7,9 @@
   "cpu": [
     "x64"
   ],
+  "libc": [
+    "glibc"
+  ],
   "main": "skia.linux-x64-gnu.node",
   "files": [
     "skia.linux-x64-gnu.node",

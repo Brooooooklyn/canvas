@@ -8,6 +8,9 @@
     "x64"
   ],
   "main": "skia.linux-x64-musl.node",
+  "libc": [
+    "musl"
+  ],
   "files": [
     "skia.linux-x64-musl.node",
     "install.js"
