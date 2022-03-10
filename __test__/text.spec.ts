@@ -35,3 +35,19 @@ for (const align of ['center', 'end', 'left', 'right', 'start'] as CanvasTextAli
     await snapshotImage(t)
   })
 }
+
+test(`fillText-line-break-as-space`, async (t) => {
+  const { ctx, canvas } = t.context
+  const x = canvas.width / 2
+  ctx.font = '16px Iosevka Slab'
+  ctx.fillText('Hello\nCanvas', x, 200)
+  await snapshotImage(t)
+})
+
+test(`strokeText-line-break-as-space`, async (t) => {
+  const { ctx, canvas } = t.context
+  const x = canvas.width / 2
+  ctx.font = '32px Iosevka Slab'
+  ctx.strokeText('Hello\nCanvas', x, 200)
+  await snapshotImage(t)
+})

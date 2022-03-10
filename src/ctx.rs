@@ -437,7 +437,13 @@ impl Context {
     max_width: f32,
   ) -> result::Result<(), SkError> {
     let stroke_paint = self.stroke_paint()?;
-    self.draw_text(text, x, y, max_width, &stroke_paint)?;
+    self.draw_text(
+      text.replace('\n', " ").as_str(),
+      x,
+      y,
+      max_width,
+      &stroke_paint,
+    )?;
     Ok(())
   }
 
@@ -469,7 +475,13 @@ impl Context {
     max_width: f32,
   ) -> result::Result<(), SkError> {
     let fill_paint = self.fill_paint()?;
-    self.draw_text(text, x, y, max_width, &fill_paint)?;
+    self.draw_text(
+      text.replace('\n', " ").as_str(),
+      x,
+      y,
+      max_width,
+      &fill_paint,
+    )?;
     Ok(())
   }
 
