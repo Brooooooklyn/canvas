@@ -1338,11 +1338,23 @@ fn line_to(ctx: CallContext) -> Result<JsUndefined> {
 fn measure_text(ctx: CallContext) -> Result<JsObject> {
   let text = ctx.get::<JsString>(0)?.into_utf8()?;
   let this = ctx.this_unchecked::<JsObject>();
+  let mut metrics = ctx.env.create_object()?;
+  let text_str = text.as_str()?;
+  if text_str.is_empty() {
+    metrics.set_named_property("actualBoundingBoxAscent", ctx.env.create_double(0.0f64)?)?;
+    metrics.set_named_property("actualBoundingBoxDescent", ctx.env.create_double(0.0f64)?)?;
+    metrics.set_named_property("actualBoundingBoxLeft", ctx.env.create_double(0.0f64)?)?;
+    metrics.set_named_property("actualBoundingBoxRight", ctx.env.create_double(0.0f64)?)?;
+    metrics.set_named_property("fontBoundingBoxAscent", ctx.env.create_double(0.0f64)?)?;
+    metrics.set_named_property("fontBoundingBoxDescent", ctx.env.create_double(0.0f64)?)?;
+    metrics.set_named_property("width", ctx.env.create_double(0.0f64)?)?;
+    return Ok(metrics);
+  }
+
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
 
-  let m = context_2d.get_line_metrics(text.as_str()?)?.0;
+  let m = context_2d.get_line_metrics(text_str)?.0;
 
-  let mut metrics = ctx.env.create_object()?;
   metrics.set_named_property(
     "actualBoundingBoxAscent",
     ctx.env.create_double(m.ascent as f64)?,

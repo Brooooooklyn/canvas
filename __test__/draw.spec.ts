@@ -578,6 +578,20 @@ test('measureText', (t) => {
   t.true(Math.abs(metrics.actualBoundingBoxRight - 372) < 0.001)
 })
 
+test('measureText with empty string should not throw', (t) => {
+  const { ctx } = t.context
+  ctx.font = '50px Iosevka Slab'
+  t.deepEqual(ctx.measureText(''), {
+    actualBoundingBoxAscent: 0,
+    actualBoundingBoxDescent: 0,
+    actualBoundingBoxLeft: 0,
+    actualBoundingBoxRight: 0,
+    fontBoundingBoxAscent: 0,
+    fontBoundingBoxDescent: 0,
+    width: 0,
+  })
+})
+
 test('moveTo', async (t) => {
   const { ctx } = t.context
   ctx.beginPath()
