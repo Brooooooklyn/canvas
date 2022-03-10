@@ -963,6 +963,20 @@ test('shadowOffsetX', async (t) => {
   await snapshotImage(t)
 })
 
+test('should not throw while fill/stroke style is invalid', (t) => {
+  const { ctx } = t.context
+  t.notThrows(() => {
+    ctx.fillStyle = '#'
+    ctx.fillStyle = '#123'
+    // @ts-expect-error
+    ctx.fillStyle = {}
+    ctx.strokeStyle = '#'
+    ctx.strokeStyle = '#123'
+    // @ts-expect-error
+    ctx.strokeStyle = {}
+  })
+})
+
 test('shadowOffsetY', async (t) => {
   const { ctx } = t.context
   ctx.shadowColor = 'red'

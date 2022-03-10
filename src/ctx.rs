@@ -1931,27 +1931,26 @@ fn set_fill_style(ctx: CallContext) -> Result<JsUndefined> {
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
   let js_fill_style = ctx.get::<JsUnknown>(0)?;
 
-  let p = match js_fill_style.get_type()? {
+  let pattern = match js_fill_style.get_type()? {
     ValueType::String => {
       let js_color = unsafe { js_fill_style.cast::<JsString>() }.into_utf8()?;
-      Pattern::from_color(js_color.as_str()?)?
+      Pattern::from_color(js_color.as_str()?).ok()
     }
     ValueType::Object => {
       let fill_object = unsafe { js_fill_style.cast::<JsObject>() };
-      let pattern = ctx.env.unwrap::<Pattern>(&fill_object)?;
-      pattern.clone()
+      ctx
+        .env
+        .unwrap::<Pattern>(&fill_object)
+        .ok()
+        .map(|p| p.clone())
     }
-    _ => {
-      return Err(Error::new(
-        Status::InvalidArg,
-        "Invalid fillStyle".to_string(),
-      ))
-    }
+    _ => None,
   };
 
-  context_2d.state.fill_style = p;
-
-  this.set_named_property("_fillStyle", js_fill_style)?;
+  if let Some(p) = pattern {
+    context_2d.state.fill_style = p;
+    this.set_named_property("_fillStyle", js_fill_style)?;
+  }
 
   ctx.env.get_undefined()
 }
@@ -2029,26 +2028,27 @@ fn set_stroke_style(ctx: CallContext) -> Result<JsUndefined> {
   let js_stroke_style = ctx.get::<JsUnknown>(0)?;
   let last_state = &mut context_2d.state;
 
-  match js_stroke_style.get_type()? {
+  let pattern = match js_stroke_style.get_type()? {
     ValueType::String => {
       let js_color = unsafe { JsString::from_raw_unchecked(ctx.env.raw(), js_stroke_style.raw()) }
         .into_utf8()?;
-      last_state.stroke_style = Pattern::from_color(js_color.as_str()?)?;
+      Pattern::from_color(js_color.as_str()?).ok()
     }
     ValueType::Object => {
       let stroke_object = unsafe { js_stroke_style.cast::<JsObject>() };
-      let pattern = ctx.env.unwrap::<Pattern>(&stroke_object)?;
-      last_state.stroke_style = pattern.clone();
+      ctx
+        .env
+        .unwrap::<Pattern>(&stroke_object)
+        .ok()
+        .map(|p| p.clone())
     }
-    _ => {
-      return Err(Error::new(
-        Status::InvalidArg,
-        "Invalid strokeStyle".to_string(),
-      ))
-    }
-  }
+    _ => None,
+  };
 
-  this.set_named_property("_strokeStyle", js_stroke_style)?;
+  if let Some(p) = pattern {
+    last_state.stroke_style = p;
+    this.set_named_property("_strokeStyle", js_stroke_style)?;
+  }
 
   ctx.env.get_undefined()
 }
