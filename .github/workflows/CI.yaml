@@ -129,19 +129,19 @@ jobs:
           command: generate-lockfile
 
       - name: Cache cargo registry
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: ~/.cargo/registry
           key: ${{ matrix.settings.target }}-cargo-registry
 
       - name: Cache cargo index
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: ~/.cargo/git
           key: ${{ matrix.settings.target }}-cargo-index
 
       - name: Cache pnpm store
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: ~/.pnpm-store
           key: npm-cache-${{ matrix.settings.target }}-node@16-${{ hashFiles('pnpm-lock.yaml') }}
@@ -209,7 +209,7 @@ jobs:
           check-latest: true
 
       - name: Cache pnpm store
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: ~/.pnpm-store
           key: npm-cache-test-${{ matrix.settings.target }}-${{ matrix.node }}-${{ hashFiles('pnpm-lock.yaml') }}
@@ -268,7 +268,7 @@ jobs:
           check-latest: true
 
       - name: Cache pnpm store
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: ~/.pnpm-store
           key: npm-cache-test-linux-x64-gnu-${{ matrix.node }}-${{ hashFiles('pnpm-lock.yaml') }}
@@ -327,7 +327,7 @@ jobs:
           check-latest: true
 
       - name: Cache pnpm store
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: ~/.pnpm-store
           key: npm-cache-test-linux-x64-gnu-${{ matrix.node }}-${{ hashFiles('pnpm-lock.yaml') }}
@@ -531,7 +531,7 @@ jobs:
           check-latest: true
 
       - name: Cache pnpm store
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: ~/.pnpm-store
           key: npm-cache-test-linux-x64-gnu-${{ matrix.node }}-${{ hashFiles('pnpm-lock.yaml') }}

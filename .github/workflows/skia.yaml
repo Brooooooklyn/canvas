@@ -80,7 +80,7 @@ jobs:
         run: node ./scripts/build-skia.js
 
       - name: Cache pnpm store
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: ~/.pnpm-store
           key: npm-cache-build-skia-${{ matrix.os }}-${{ matrix.node }}-${{ hashFiles('pnpm-lock.yaml') }}
@@ -129,7 +129,7 @@ jobs:
         run: node ./scripts/build-skia.js --target=aarch64-apple-darwin
 
       - name: Cache pnpm store
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: ~/.pnpm-store
           key: npm-cache-build-skia-darwin-aarch64-${{ matrix.node }}-${{ hashFiles('pnpm-lock.yaml') }}
@@ -177,7 +177,7 @@ jobs:
           PYTHONHTTPSVERIFY: 0
 
       - name: Cache pnpm store
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: ~/.pnpm-store
           key: npm-cache-build-skia-linux-x64-musl-${{ matrix.node }}-${{ hashFiles('pnpm-lock.yaml') }}
@@ -227,7 +227,7 @@ jobs:
         run: node ./scripts/build-skia.js --target=aarch64-unknown-linux-gnu
 
       - name: Cache pnpm store
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: ~/.pnpm-store
           key: npm-cache-build-skia-linux-aarch64-gnu-${{ matrix.node }}-${{ hashFiles('pnpm-lock.yaml') }}
@@ -275,7 +275,7 @@ jobs:
           PYTHONHTTPSVERIFY: 0
 
       - name: Cache pnpm store
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: ~/.pnpm-store
           key: npm-cache-build-skia-linux-aarch64-musl-${{ matrix.node }}-${{ hashFiles('pnpm-lock.yaml') }}
@@ -325,7 +325,7 @@ jobs:
         run: node ./scripts/build-skia.js --target=armv7-unknown-linux-gnueabihf
 
       - name: Cache pnpm store
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: ~/.pnpm-store
           key: npm-cache-build-skia-linux-armv7-gnu-${{ matrix.node }}-${{ hashFiles('pnpm-lock.yaml') }}
@@ -370,7 +370,7 @@ jobs:
         run: node ./scripts/build-skia.js --target=aarch64-linux-android
 
       - name: Cache pnpm store
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: ~/.pnpm-store
           key: npm-cache-build-skia-android-aarch64-${{ matrix.node }}-${{ hashFiles('pnpm-lock.yaml') }}
