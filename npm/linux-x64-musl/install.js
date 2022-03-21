@@ -1,4 +1,5 @@
-// Node.js 10.x, ignore
+// Node.js < v13.12.0, v12.17.0, ignore
+// https://nodejs.org/api/process.html#processreport
 if (!process.report || typeof process.report.getReport !== 'function') {
   process.exit(0)
 }
