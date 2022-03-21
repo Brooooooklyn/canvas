@@ -306,7 +306,7 @@ node example/anime-girl.js
 
 | SVG                                            | PNG                                            |
 | ---------------------------------------------- | ---------------------------------------------- |
-| <img width="500" src="example/anime-girl.svg"> | <img width="500" src="example/anime-girl.png"> |
+| <img width="500" src="example/anime-girl.svg"><br/>[CC-BY-SA 3.0](https://creativecommons.org/licenses/by/3.0) by [Niabot](https://commons.wikimedia.org/wiki/User:Niabot) | <img width="500" src="example/anime-girl.png"><br/>[CC-BY-SA 3.0](https://creativecommons.org/licenses/by/3.0) by [Niabot](https://commons.wikimedia.org/wiki/User:Niabot) |
 
 # Building
 
@@ -323,7 +323,9 @@ $ cd canvas
 $ node scripts/build-skia.js
 
 # Install NPM packages, build the Node.js addon:
+$ curl -f https://get.pnpm.io/v6.16.js | node - add --global pnpm # https://pnpm.io/installation
 $ pnpm install --ignore-scripts
+$ sudo dnf install clang # https://fedora.pkgs.org/34/fedora-x86_64/clang-12.0.0-0.3.rc1.fc34.x86_64.rpm.html
 $ pnpm build
 
 # All done! Run test cases or examples now:
@@ -345,7 +347,9 @@ $ cd canvas
 $ node scripts/release-skia-binary.js --download
 
 # Install NPM packages, build the Node.js addon:
+$ curl -f https://get.pnpm.io/v6.16.js | node - add --global pnpm # https://pnpm.io/installation
 $ pnpm install --ignore-scripts
+$ sudo dnf install clang # https://fedora.pkgs.org/34/fedora-x86_64/clang-12.0.0-0.3.rc1.fc34.x86_64.rpm.html
 $ pnpm build
 
 # All done! Run test cases or examples now:
