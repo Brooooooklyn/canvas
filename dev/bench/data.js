@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1647866981042,
+  "lastUpdate": 1647933810036,
   "repoUrl": "https://github.com/Brooooooklyn/canvas",
   "entries": {
     "Benchmark": [
@@ -13298,6 +13298,72 @@ window.BENCHMARK_DATA = {
             "range": "±0.13%",
             "unit": "ops/sec",
             "extra": "44 samples"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "lynweklm@gmail.com",
+            "name": "LongYinan",
+            "username": "Brooooooklyn"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c20ecdbcbd63a8dcf5de5a0625d737d6bc9c3a88",
+          "message": "Merge pull request #448 from JoKalliauer/patch-1\n\nExample with copyrightinfo, Bulid with dependencies",
+          "timestamp": "2022-03-22T15:16:34+08:00",
+          "tree_id": "b52e0b1ab77117905efb73a2c47a8b7177c75de4",
+          "url": "https://github.com/Brooooooklyn/canvas/commit/c20ecdbcbd63a8dcf5de5a0625d737d6bc9c3a88"
+        },
+        "date": 1647933731448,
+        "tool": "benchmarkjs",
+        "benches": [
+          {
+            "name": "Draw house#skia-canvas",
+            "value": 19,
+            "range": "±0.52%",
+            "unit": "ops/sec",
+            "extra": "50 samples"
+          },
+          {
+            "name": "Draw house#node-canvas",
+            "value": 18,
+            "range": "±0.36%",
+            "unit": "ops/sec",
+            "extra": "48 samples"
+          },
+          {
+            "name": "Draw house#@napi-rs/skia",
+            "value": 21,
+            "range": "±0.64%",
+            "unit": "ops/sec",
+            "extra": "39 samples"
+          },
+          {
+            "name": "Draw gradient#skia-canvas",
+            "value": 18,
+            "range": "±0.93%",
+            "unit": "ops/sec",
+            "extra": "48 samples"
+          },
+          {
+            "name": "Draw gradient#node-canvas",
+            "value": 17,
+            "range": "±0.31%",
+            "unit": "ops/sec",
+            "extra": "46 samples"
+          },
+          {
+            "name": "Draw gradient#@napi-rs/skia",
+            "value": 21,
+            "range": "±0.31%",
+            "unit": "ops/sec",
+            "extra": "38 samples"
           }
         ]
       }
