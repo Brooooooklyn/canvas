@@ -1,7 +1,7 @@
 # `skr canvas`
 
 ![CI](https://github.com/Brooooooklyn/canvas/workflows/CI/badge.svg)
-![Skia Version](https://img.shields.io/badge/Skia-chrome%2Fm99-hotpink)
+![Skia Version](https://img.shields.io/badge/Skia-chrome%2Fm101-hotpink)
 [![install size](https://packagephobia.com/badge?p=@napi-rs/canvas)](https://packagephobia.com/result?p=@napi-rs/canvas)
 [![Downloads](https://img.shields.io/npm/dm/@napi-rs/canvas.svg?sanitize=true)](https://npmcharts.com/compare/@napi-rs/canvas?minimal=true)
 
@@ -131,7 +131,7 @@ Memory: 32688MiB
 ```
 
 ```
-❯ pnpm bench
+❯ yarn bench
 
 > @napi-rs/canvas@0.0.9 bench D:\workspace\skia-rs
 > node -r @swc-node/register benchmark/bench.ts
@@ -145,11 +145,11 @@ Progress: 100%
   node-canvas:
     30 ops/s, ±6.95%   | 18.92% slower
 
-  @napi-rs/skia:
+  @napi-rs/canvas:
     37 ops/s, ±6.30%   | fastest
 
 Finished 3 cases!
-  Fastest: @napi-rs/skia
+  Fastest: @napi-rs/canvas
   Slowest: skia-canvas
 Running "Draw gradient" suite...
 Progress: 100%
@@ -160,11 +160,11 @@ Progress: 100%
   node-canvas:
     34 ops/s, ±5.60%   | slowest, 19.05% slower
 
-  @napi-rs/skia:
+  @napi-rs/canvas:
     42 ops/s, ±0.53%   | fastest
 
 Finished 3 cases!
-  Fastest: @napi-rs/skia
+  Fastest: @napi-rs/canvas
   Slowest: node-canvas
 ```
 
@@ -312,7 +312,7 @@ node example/anime-girl.js
 
 ## Build skia from source
 
-You can build this project from source, with no OS-specific package installing commands required:
+You can build this project from source, the system requirements are here: https://skia.org/docs/user/build
 
 ```sh
 # Clone the code:
@@ -323,13 +323,13 @@ $ cd canvas
 $ node scripts/build-skia.js
 
 # Install NPM packages, build the Node.js addon:
-$ curl -f https://get.pnpm.io/v6.16.js | node - add --global pnpm # https://pnpm.io/installation
-$ pnpm install --ignore-scripts
+$ npm install -g yarn
+$ yarn install --mode=skip=build # Here are modules are used for benchmarking and hard to install, you can skip it by specifying `--mode=skip=build`
 $ sudo dnf install clang # https://fedora.pkgs.org/34/fedora-x86_64/clang-12.0.0-0.3.rc1.fc34.x86_64.rpm.html
-$ pnpm build
+$ yarn build
 
 # All done! Run test cases or examples now:
-$ pnpm test
+$ yarn test
 $ node example/tiger.js
 ```
 
@@ -347,12 +347,12 @@ $ cd canvas
 $ node scripts/release-skia-binary.js --download
 
 # Install NPM packages, build the Node.js addon:
-$ curl -f https://get.pnpm.io/v6.16.js | node - add --global pnpm # https://pnpm.io/installation
-$ pnpm install --ignore-scripts
+$ npm install -g yarn
+$ yarn install --mode=skip-build
 $ sudo dnf install clang # https://fedora.pkgs.org/34/fedora-x86_64/clang-12.0.0-0.3.rc1.fc34.x86_64.rpm.html
-$ pnpm build
+$ yarn build
 
 # All done! Run test cases or examples now:
-$ pnpm test
+$ yarn test
 $ node example/tiger.js
 ```

@@ -25,6 +25,7 @@ jobs:
         with:
           node-version: 16
           check-latest: true
+          cache: 'yarn'
 
       - name: Install
         uses: actions-rs/toolchain@v1
@@ -35,42 +36,31 @@ jobs:
       - name: Install nasm
         uses: ilammy/setup-nasm@v1
 
-      - name: Generate Cargo.lock
-        uses: actions-rs/cargo@v1
-        with:
-          command: generate-lockfile
-
       - name: Cache cargo registry
         uses: actions/cache@v3
         with:
-          path: ~/.cargo/registry
-          key: bench-cargo-registry
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: bench-cargo-cache
 
-      - name: Cache cargo index
+      - name: Cache yarn
         uses: actions/cache@v3
         with:
-          path: ~/.cargo/git
-          key: bench-cargo-index
+          path: .yarn/cache
+          key: bench-yarn-cache-node-16
 
-      - name: Cache pnpm store
-        uses: actions/cache@v3
-        with:
-          path: ~/.pnpm-store
-          key: npm-cache-bench-linux-x64-gnu
-
-      - name: Setup pnpm
-        run: |
-          npm install -g pnpm
-          pnpm install --frozen-lockfile
+      - name: Install dependencies
+        run: yarn install --immutable
 
       - name: Download skia binary
         run: node ./scripts/release-skia-binary.js --download
 
       - name: 'Build'
-        run: pnpm build
+        run: yarn build
 
       - name: 'Run benchmark'
-        run: pnpm bench
+        run: yarn bench
 
       - name: Store benchmark result
         uses: rhysd/github-action-benchmark@v1

@@ -45,7 +45,6 @@ const GN_ARGS = [
   `skia_enable_particles=true`,
   `skia_enable_pdf=true`,
   `skia_enable_skottie=false`,
-  `skia_enable_skrive=false`,
   `skia_enable_skshaper=true`,
   `skia_enable_tools=false`,
   `skia_enable_svg=true`,

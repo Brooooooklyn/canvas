@@ -21,6 +21,7 @@ jobs:
         with:
           node-version: 16
           check-latest: true
+          cache: 'yarn'
 
       - name: Install nasm
         uses: ilammy/setup-nasm@v1
@@ -32,39 +33,28 @@ jobs:
           override: true
           components: rustfmt, clippy
 
-      - name: Generate Cargo.lock
-        uses: actions-rs/cargo@v1
-        with:
-          command: generate-lockfile
-
       - name: Cache cargo registry
         uses: actions/cache@v3
         with:
-          path: ~/.cargo/registry
-          key: lint-cargo-registry
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: lint-cargo-cache
 
-      - name: Cache cargo index
+      - name: Cache yarn
         uses: actions/cache@v3
         with:
-          path: ~/.cargo/git
-          key: lint-cargo-index
+          path: .yarn/cache
+          key: bench-yarn-cache-node-16
 
-      - name: Cache pnpm store
-        uses: actions/cache@v3
-        with:
-          path: ~/.pnpm-store
-          key: npm-cache-lint-linux-x64-gnu
-
-      - name: Setup pnpm
-        run: |
-          npm install -g pnpm
-          pnpm install --frozen-lockfile
+      - name: Install dependencies
+        run: yarn install --immutable --mode=skip-build
 
       - name: Download skia binary
         run: node ./scripts/release-skia-binary.js --download
 
       - name: 'Lint JS/TS'
-        run: pnpm lint
+        run: yarn lint
 
       - name: Cargo fmt
         run: cargo fmt -- --check

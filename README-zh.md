@@ -1,7 +1,7 @@
 # `skr canvas`
 
 ![CI](https://github.com/Brooooooklyn/canvas/workflows/CI/badge.svg)
-![Skia Version](https://img.shields.io/badge/Skia-chrome%2Fm99-hotpink)
+![Skia Version](https://img.shields.io/badge/Skia-chrome%2Fm101-hotpink)
 [![install size](https://packagephobia.com/badge?p=@napi-rs/canvas)](https://packagephobia.com/result?p=@napi-rs/canvas)
 [![Downloads](https://img.shields.io/npm/dm/@napi-rs/canvas.svg?sanitize=true)](https://npmcharts.com/compare/@napi-rs/canvas?minimal=true)
 
@@ -131,7 +131,7 @@ Memory: 32688MiB
 ```
 
 ```
-❯ pnpm bench
+❯ yarn bench
 
 > @napi-rs/canvas@0.0.9 bench D:\workspace\skia-rs
 > node -r @swc-node/register benchmark/bench.ts
@@ -145,11 +145,11 @@ Progress: 100%
   node-canvas:
     30 ops/s, ±6.95%   | 18.92% slower
 
-  @napi-rs/skia:
+  @napi-rs/canvas:
     37 ops/s, ±6.30%   | fastest
 
 Finished 3 cases!
-  Fastest: @napi-rs/skia
+  Fastest: @napi-rs/canvas
   Slowest: skia-canvas
 Running "Draw gradient" suite...
 Progress: 100%
@@ -160,11 +160,11 @@ Progress: 100%
   node-canvas:
     34 ops/s, ±5.60%   | slowest, 19.05% slower
 
-  @napi-rs/skia:
+  @napi-rs/canvas:
     42 ops/s, ±0.53%   | fastest
 
 Finished 3 cases!
-  Fastest: @napi-rs/skia
+  Fastest: @napi-rs/canvas
   Slowest: node-canvas
 ```
 
@@ -323,11 +323,11 @@ $ cd canvas
 $ node scripts/build-skia.js
 
 # Install NPM packages, build the Node.js addon:
-$ pnpm install --ignore-scripts
-$ pnpm build
+$ yarn install --ignore-scripts
+$ yarn build
 
 # All done! Run test cases or examples now:
-$ pnpm test
+$ yarn test
 $ node example/tiger.js
 ```
 
