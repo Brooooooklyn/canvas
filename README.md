@@ -131,7 +131,7 @@ Memory: 32688MiB
 ```
 
 ```
-❯ pnpm bench
+❯ yarn bench
 
 > @napi-rs/canvas@0.0.9 bench D:\workspace\skia-rs
 > node -r @swc-node/register benchmark/bench.ts
@@ -312,7 +312,7 @@ node example/anime-girl.js
 
 ## Build skia from source
 
-You can build this project from source, with no OS-specific package installing commands required:
+You can build this project from source, the system requirements are here: https://skia.org/docs/user/build
 
 ```sh
 # Clone the code:
@@ -323,13 +323,13 @@ $ cd canvas
 $ node scripts/build-skia.js
 
 # Install NPM packages, build the Node.js addon:
-$ curl -f https://get.pnpm.io/v6.16.js | node - add --global pnpm # https://pnpm.io/installation
-$ pnpm install --ignore-scripts
+$ npm install -g yarn
+$ yarn install --mode=skip=build # Here are modules are used for benchmarking and hard to install, you can skip it by specifying `--mode=skip=build`
 $ sudo dnf install clang # https://fedora.pkgs.org/34/fedora-x86_64/clang-12.0.0-0.3.rc1.fc34.x86_64.rpm.html
-$ pnpm build
+$ yarn build
 
 # All done! Run test cases or examples now:
-$ pnpm test
+$ yarn test
 $ node example/tiger.js
 ```
 
@@ -347,12 +347,12 @@ $ cd canvas
 $ node scripts/release-skia-binary.js --download
 
 # Install NPM packages, build the Node.js addon:
-$ curl -f https://get.pnpm.io/v6.16.js | node - add --global pnpm # https://pnpm.io/installation
-$ pnpm install --ignore-scripts
+$ npm install -g yarn
+$ yarn install --mode=skip-build
 $ sudo dnf install clang # https://fedora.pkgs.org/34/fedora-x86_64/clang-12.0.0-0.3.rc1.fc34.x86_64.rpm.html
-$ pnpm build
+$ yarn build
 
 # All done! Run test cases or examples now:
-$ pnpm test
+$ yarn test
 $ node example/tiger.js
 ```

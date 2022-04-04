@@ -26,8 +26,9 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v3
         with:
-          node-version: 14
+          node-version: 16
           check-latest: true
+          cache: 'yarn'
 
       - uses: actions/setup-python@v3
         with:
@@ -59,8 +60,8 @@ jobs:
       - name: Compile skia
         if: matrix.os == 'ubuntu-latest'
         run: |
-          docker pull ghcr.io/brooooooklyn/canvas/debian-builder:stretch
-          docker tag ghcr.io/brooooooklyn/canvas/debian-builder:stretch builder
+          docker pull ghcr.io/brooooooklyn/canvas/debian-builder:buster
+          docker tag ghcr.io/brooooooklyn/canvas/debian-builder:buster builder
           docker run --user "$(id -u):$(id -g)" --rm -v $(pwd):/canvas -w /canvas builder node ./scripts/build-skia.js
         env:
           PYTHONHTTPSVERIFY: 0
@@ -79,16 +80,14 @@ jobs:
           PYTHONHTTPSVERIFY: 0
         run: node ./scripts/build-skia.js
 
-      - name: Cache pnpm store
+      - name: Cache yarn
         uses: actions/cache@v3
         with:
-          path: ~/.pnpm-store
-          key: npm-cache-build-skia-${{ matrix.os }}-${{ matrix.node }}-${{ hashFiles('pnpm-lock.yaml') }}
+          path: .yarn/cache
+          key: build-skia-${{ matrix.os }}-yarn-cache-node-16
 
-      - name: Setup pnpm
-        run: |
-          npm install -g pnpm
-          pnpm install --frozen-lockfile --ignore-scripts
+      - name: Install dependencies
+        run: yarn install --immutable --mode=skip-build
 
       - name: Upload release
         run: node ./scripts/release-skia-binary.js --upload
@@ -110,8 +109,9 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v3
         with:
-          node-version: 14
+          node-version: 16
           check-latest: true
+          cache: 'yarn'
 
       - uses: actions/setup-python@v3
         with:
@@ -128,16 +128,14 @@ jobs:
       - name: Compile skia
         run: node ./scripts/build-skia.js --target=aarch64-apple-darwin
 
-      - name: Cache pnpm store
+      - name: Cache yarn
         uses: actions/cache@v3
         with:
-          path: ~/.pnpm-store
-          key: npm-cache-build-skia-darwin-aarch64-${{ matrix.node }}-${{ hashFiles('pnpm-lock.yaml') }}
+          path: .yarn/cache
+          key: build-skia-apple-aarch64-yarn-cache-node-16
 
-      - name: Setup pnpm
-        run: |
-          npm install -g pnpm
-          pnpm install --frozen-lockfile --ignore-scripts
+      - name: Install dependencies
+        run: yarn install --immutable --mode=skip-build
 
       - name: Upload release
         run: node ./scripts/release-skia-binary.js --upload --target=aarch64-apple-darwin
@@ -158,8 +156,9 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v3
         with:
-          node-version: 14
+          node-version: 16
           check-latest: true
+          cache: 'yarn'
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v1
@@ -176,16 +175,14 @@ jobs:
         env:
           PYTHONHTTPSVERIFY: 0
 
-      - name: Cache pnpm store
+      - name: Cache yarn
         uses: actions/cache@v3
         with:
-          path: ~/.pnpm-store
-          key: npm-cache-build-skia-linux-x64-musl-${{ matrix.node }}-${{ hashFiles('pnpm-lock.yaml') }}
+          path: .yarn/cache
+          key: build-skia-linux-x64-musl-yarn-cache-node-16
 
-      - name: Setup pnpm
-        run: |
-          npm install -g pnpm
-          pnpm install --frozen-lockfile --ignore-scripts
+      - name: Install dependencies
+        run: yarn install --immutable --mode=skip-build
 
       - name: Upload release
         run: node ./scripts/release-skia-binary.js --upload --target=x86_64-unknown-linux-musl
@@ -206,8 +203,9 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v3
         with:
-          node-version: 14
+          node-version: 16
           check-latest: true
+          cache: 'yarn'
 
       - uses: actions/setup-python@v3
         with:
@@ -226,16 +224,14 @@ jobs:
       - name: Compile skia
         run: node ./scripts/build-skia.js --target=aarch64-unknown-linux-gnu
 
-      - name: Cache pnpm store
+      - name: Cache yarn
         uses: actions/cache@v3
         with:
-          path: ~/.pnpm-store
-          key: npm-cache-build-skia-linux-aarch64-gnu-${{ matrix.node }}-${{ hashFiles('pnpm-lock.yaml') }}
+          path: .yarn/cache
+          key: build-skia-linux-aarch64-gnu-yarn-cache-node-16
 
-      - name: Setup pnpm
-        run: |
-          npm install -g pnpm
-          pnpm install --frozen-lockfile --ignore-scripts
+      - name: Install dependencies
+        run: yarn install --immutable --mode=skip-build
 
       - name: Upload release
         run: node ./scripts/release-skia-binary.js --upload --target=aarch64-unknown-linux-gnu
@@ -256,8 +252,9 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v3
         with:
-          node-version: 14
+          node-version: 16
           check-latest: true
+          cache: 'yarn'
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v1
@@ -274,16 +271,14 @@ jobs:
         env:
           PYTHONHTTPSVERIFY: 0
 
-      - name: Cache pnpm store
+      - name: Cache yarn
         uses: actions/cache@v3
         with:
-          path: ~/.pnpm-store
-          key: npm-cache-build-skia-linux-aarch64-musl-${{ matrix.node }}-${{ hashFiles('pnpm-lock.yaml') }}
+          path: .yarn/cache
+          key: build-skia-linux-aarch64-musl-yarn-cache-node-16
 
-      - name: Setup pnpm
-        run: |
-          npm install -g pnpm
-          pnpm install --frozen-lockfile --ignore-scripts
+      - name: Install dependencies
+        run: yarn install --immutable --mode=skip-build
 
       - name: Upload release
         run: node ./scripts/release-skia-binary.js --upload --target=aarch64-unknown-linux-musl
@@ -304,8 +299,9 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v3
         with:
-          node-version: 14
+          node-version: 16
           check-latest: true
+          cache: 'yarn'
 
       - uses: actions/setup-python@v3
         with:
@@ -324,16 +320,14 @@ jobs:
       - name: Compile skia
         run: node ./scripts/build-skia.js --target=armv7-unknown-linux-gnueabihf
 
-      - name: Cache pnpm store
+      - name: Cache yarn
         uses: actions/cache@v3
         with:
-          path: ~/.pnpm-store
-          key: npm-cache-build-skia-linux-armv7-gnu-${{ matrix.node }}-${{ hashFiles('pnpm-lock.yaml') }}
+          path: .yarn/cache
+          key: build-skia-linux-armv7-gnueabihf-yarn-cache-node-16
 
-      - name: Setup pnpm
-        run: |
-          npm install -g pnpm
-          pnpm install --frozen-lockfile --ignore-scripts
+      - name: Install dependencies
+        run: yarn install --immutable --mode=skip-build
 
       - name: Upload release
         run: node ./scripts/release-skia-binary.js --upload --target=armv7-unknown-linux-gnueabihf
@@ -354,8 +348,9 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v3
         with:
-          node-version: 14
+          node-version: 16
           check-latest: true
+          cache: 'yarn'
 
       - uses: actions/setup-python@v3
         with:
@@ -369,16 +364,14 @@ jobs:
       - name: Compile skia
         run: node ./scripts/build-skia.js --target=aarch64-linux-android
 
-      - name: Cache pnpm store
+      - name: Cache yarn
         uses: actions/cache@v3
         with:
-          path: ~/.pnpm-store
-          key: npm-cache-build-skia-android-aarch64-${{ matrix.node }}-${{ hashFiles('pnpm-lock.yaml') }}
+          path: .yarn/cache
+          key: build-skia-linux-aarch64-android-yarn-cache-node-16
 
-      - name: Setup pnpm
-        run: |
-          npm install -g pnpm
-          pnpm install --frozen-lockfile --ignore-scripts
+      - name: Install dependencies
+        run: yarn install --immutable --mode=skip-build
 
       - name: Upload release
         run: node ./scripts/release-skia-binary.js --upload --target=aarch64-linux-android

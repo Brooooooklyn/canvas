@@ -131,7 +131,7 @@ Memory: 32688MiB
 ```
 
 ```
-❯ pnpm bench
+❯ yarn bench
 
 > @napi-rs/canvas@0.0.9 bench D:\workspace\skia-rs
 > node -r @swc-node/register benchmark/bench.ts
@@ -323,11 +323,11 @@ $ cd canvas
 $ node scripts/build-skia.js
 
 # Install NPM packages, build the Node.js addon:
-$ pnpm install --ignore-scripts
-$ pnpm build
+$ yarn install --ignore-scripts
+$ yarn build
 
 # All done! Run test cases or examples now:
-$ pnpm test
+$ yarn test
 $ node example/tiger.js
 ```
 
