@@ -145,11 +145,11 @@ Progress: 100%
   node-canvas:
     30 ops/s, ±6.95%   | 18.92% slower
 
-  @napi-rs/skia:
+  @napi-rs/canvas:
     37 ops/s, ±6.30%   | fastest
 
 Finished 3 cases!
-  Fastest: @napi-rs/skia
+  Fastest: @napi-rs/canvas
   Slowest: skia-canvas
 Running "Draw gradient" suite...
 Progress: 100%
@@ -160,11 +160,11 @@ Progress: 100%
   node-canvas:
     34 ops/s, ±5.60%   | slowest, 19.05% slower
 
-  @napi-rs/skia:
+  @napi-rs/canvas:
     42 ops/s, ±0.53%   | fastest
 
 Finished 3 cases!
-  Fastest: @napi-rs/skia
+  Fastest: @napi-rs/canvas
   Slowest: node-canvas
 ```
 
