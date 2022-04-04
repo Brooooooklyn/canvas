@@ -6,7 +6,7 @@ on:
 
 jobs:
   build_image:
-    name: Build debian-builder:stretch
+    name: Build Docker images
     runs-on: ubuntu-latest
 
     steps:
@@ -21,10 +21,10 @@ jobs:
 
       - name: Build docker image
         run: |
-          docker build . --pull --no-cache -t ghcr.io/brooooooklyn/canvas/debian-builder:stretch
+          docker build . --pull --no-cache -t ghcr.io/brooooooklyn/canvas/debian-builder:buster
           docker build . --pull --no-cache -f musl.Dockerfile -t ghcr.io/brooooooklyn/canvas/musl-builder:lts
 
       - name: Push docker image
         run: |
-          docker push ghcr.io/brooooooklyn/canvas/debian-builder:stretch
+          docker push ghcr.io/brooooooklyn/canvas/debian-builder:buster
           docker push ghcr.io/brooooooklyn/canvas/musl-builder:lts

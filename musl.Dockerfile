@@ -16,6 +16,7 @@ RUN apk add --update --no-cache musl-dev wget rustup \
   llvm \
   nasm \
   tar \
+  xz \
   ninja && \
   apk add --update --no-cache --repository http://dl-cdn.alpinelinux.org/alpine/edge/testing gn
 
