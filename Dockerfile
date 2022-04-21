@@ -1,4 +1,4 @@
-FROM node:16-buster
+FROM node:18-buster
 
 ARG NASM_VERSION=2.15.05
 
