@@ -28,7 +28,7 @@ mimalloc-rust = "0.1"
 
 [build-dependencies]
 cc = "1"
-napi-build = "1"
+napi-build = "2"
 
 [profile.release]
 codegen-units = 1
