@@ -244,7 +244,7 @@ __metadata:
     eslint-plugin-import: ^2.25.4
     eslint-plugin-prettier: ^4.0.0
     eslint-plugin-sonarjs: ^0.13.0
-    husky: ^7.0.4
+    husky: ^8.0.0
     lint-staged: ^12.3.7
     lodash: ^4.17.21
     npm-run-all: ^4.1.5
@@ -3014,12 +3014,12 @@ __metadata:
   languageName: node
   linkType: hard
 
-"husky@npm:^7.0.4":
-  version: 7.0.4
-  resolution: "husky@npm:7.0.4"
+"husky@npm:^8.0.0":
+  version: 8.0.0
+  resolution: "husky@npm:8.0.0"
   bin:
     husky: lib/bin.js
-  checksum: c6ec4af63da2c9522da8674a20ad9b48362cc92704896cc8a58c6a2a39d797feb2b806f93fbd83a6d653fbdceb2c3b6e0b602c6b2e8565206ffc2882ef7db9e9
+  checksum: b6b842abdd1bbc9322ad0c2003471fa35f94c9c01fccef3a6b5262f53e3f1bde1d78787f8a96ed8ef8a15ab3a7d56c83f576afd1cf7618588df77940044081df
   languageName: node
   linkType: hard
 
