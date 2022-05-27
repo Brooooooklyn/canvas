@@ -1,5 +1,5 @@
 const { execSync } = require('child_process')
-const { promises: fs, copyFileSync } = require('fs')
+const { promises: fs, copyFileSync, createReadStream, statSync } = require('fs')
 const { platform } = require('os')
 const { parse, join } = require('path')
 
@@ -26,32 +26,33 @@ const CLIENT = new Octokit({
 })
 
 async function upload() {
-  const putasset = require('putasset')
+  let release_id
   let assets = []
   try {
     console.info(green(`Fetching release by tag: [${TAG}]`))
-    assets = (
-      await CLIENT.repos.getReleaseByTag({
-        repo: REPO,
-        owner: OWNER,
-        tag: TAG,
-      })
-    ).data.assets
+    const release = await CLIENT.repos.getReleaseByTag({
+      repo: REPO,
+      owner: OWNER,
+      tag: TAG,
+    })
+    release_id = release.data.id
+    assets = release.data.assets
   } catch (e) {
     if (e.status === 404) {
       console.info(green(`No release tag, creating release tag ${TAG}`))
-      await CLIENT.repos.createRelease({
+      const release = await CLIENT.repos.createRelease({
         repo: REPO,
         owner: OWNER,
         tag_name: TAG,
         name: TAG,
       })
+      release_id = release.data.id
     } else {
       throw e
     }
   }
   for (const lib of LIB) {
-    const { copy, binary } = libPath(lib, PLATFORM_NAME, TARGET_TRIPLE)
+    const { copy, binary, filename } = libPath(lib, PLATFORM_NAME, TARGET_TRIPLE)
     console.info(green(`Copy [${binary}] to [${copy}]`))
     await fs.copyFile(binary, copy)
     console.info(green(`Uploading [${copy}] to github release: [${TAG}]`))
@@ -65,16 +66,25 @@ async function upload() {
         asset_id: asset.id,
       })
     }
-    await putasset(process.env.GITHUB_TOKEN, {
-      owner: OWNER,
-      repo: REPO,
-      tag: TAG,
-      filename: copy,
-    }).catch((e) => {
-      execSync(`ls -la ./skia/out/Static`, { stdio: 'inherit' })
-      execSync(`ls -la .`, { stdio: 'inherit' })
-      throw e
-    })
+    const dstFileStats = statSync(copy)
+    await CLIENT.repos
+      .uploadReleaseAsset({
+        owner: OWNER,
+        repo: REPO,
+        name: filename,
+        release_id,
+        mediaType: { format: 'raw' },
+        headers: {
+          'content-length': dstFileStats.size,
+          'content-type': 'application/octet-stream',
+        },
+        data: createReadStream(copy),
+      })
+      .catch((e) => {
+        execSync(`ls -la ./skia/out/Static`, { stdio: 'inherit' })
+        execSync(`ls -la .`, { stdio: 'inherit' })
+        throw e
+      })
   }
   if (PLATFORM_NAME === 'win32') {
     const icudtl = assets.find(({ name }) => name === ICU_DAT)
@@ -87,11 +97,18 @@ async function upload() {
       })
     }
     console.info(green(`Uploading [${ICU_DAT}] to github release: [${TAG}]`))
-    await putasset(process.env.GITHUB_TOKEN, {
+    const icuDataPath = join(__dirname, '..', 'skia', 'out', 'Static', ICU_DAT)
+    await await CLIENT.repos.uploadReleaseAsset({
       owner: OWNER,
       repo: REPO,
-      tag: TAG,
-      filename: join(__dirname, '..', 'skia', 'out', 'Static', ICU_DAT),
+      name: ICU_DAT,
+      release_id,
+      mediaType: { format: 'raw' },
+      headers: {
+        'content-length': statSync(icuDataPath).size,
+        'content-type': 'application/octet-stream',
+      },
+      data: createReadStream(icuDataPath),
     })
   }
 }

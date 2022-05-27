@@ -15,7 +15,7 @@ const TAG = `skia-${SHORT_HASH}`
  * @param {string} lib Static lib name
  * @param {string} hostPlatform require('os').platform()
  * @param {string | undefined} triple rust target triple
- * @returns {{ binary: string; copy: string; downloadUrl: string }}
+ * @returns {{ binary: string; copy: string; downloadUrl: string; filename: string }}
  */
 function libPath(lib, hostPlatform, triple, tag = TAG) {
   let platformName
@@ -61,7 +61,7 @@ function libPath(lib, hostPlatform, triple, tag = TAG) {
 
   const copy = join(__dirname, '..', platformName)
   const downloadUrl = `https://github.com/${OWNER}/${REPO}/releases/download/${tag}/${platformName}`
-  return { binary, copy, downloadUrl }
+  return { binary, copy, downloadUrl, filename: platformName }
 }
 
 module.exports = { libPath, OWNER, REPO, TAG }
