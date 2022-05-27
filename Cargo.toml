@@ -24,7 +24,7 @@ serde_json = "1"
 thiserror = "1"
 
 [target.'cfg(all(target_arch = "x86_64", not(target_env = "musl")))'.dependencies]
-mimalloc-rust = "0.1"
+mimalloc-rust = "0.2"
 
 [build-dependencies]
 cc = "1"
