@@ -392,15 +392,19 @@ extern "C"
     paragraph->getLineMetrics(metrics_vec);
     auto line_metrics = metrics_vec[0];
     auto run = paragraph->run(0);
-    auto first_char_bounds = run.getBounds(0);
+    auto glyphs = run.glyphs();
+    auto font = run.font();
+    auto glyphs_size = glyphs.size();
+    SkRect bounds[glyphs_size];
+    font.getBounds(glyphs.data(), glyphs_size, &bounds[0], nullptr);
+    auto first_char_bounds = bounds[0];
     auto descent = first_char_bounds.fBottom;
     auto ascent = first_char_bounds.fTop;
-    auto run_size = run.size();
-    auto last_char_bounds = run.getBounds(run_size - 1);
-    auto last_char_pos_x = run.positionX(run_size - 1);
-    for (size_t i = 1; i <= run_size - 1; ++i)
+    auto last_char_bounds = bounds[glyphs_size - 1];
+    auto last_char_pos_x = run.positionX(glyphs_size - 1);
+    for (size_t i = 1; i <= glyphs_size - 1; ++i)
     {
-      auto char_bounds = run.getBounds(i);
+      auto char_bounds = bounds[i];
       auto char_bottom = char_bounds.fBottom;
       if (char_bottom > descent)
       {
