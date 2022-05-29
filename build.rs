@@ -202,7 +202,7 @@ fn main() {
     println!("cargo:rustc-link-lib=static=svg");
     println!("cargo:rustc-link-lib=static=skia");
     println!("cargo:rustc-link-lib=static=skiac");
-    println!("cargo:rustc-link-lib=skparagraph");
+    println!("cargo:rustc-link-lib=static=skparagraph");
     println!("cargo:rustc-link-lib=skshaper");
     println!("cargo:rustc-link-lib=static=skunicode");
   }

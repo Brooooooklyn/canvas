@@ -11,8 +11,14 @@ crate-type = ["cdylib"]
 anyhow = "1"
 base64 = "0.13"
 cssparser = "0.29"
-napi = {version = "2", default-features = false, features = ["napi3", "serde-json", "compat-mode"]}
-napi-derive = {version = "2", default-features = false, features = ["compat-mode"]}
+napi = { version = "2", default-features = false, features = [
+  "napi3",
+  "serde-json",
+  "compat-mode",
+] }
+napi-derive = { version = "2", default-features = false, features = [
+  "compat-mode",
+] }
 nom = "7"
 once_cell = "1"
 ravif = "0.8"
@@ -23,14 +29,16 @@ serde_derive = "1"
 serde_json = "1"
 thiserror = "1"
 
-[target.'cfg(all(target_arch = "x86_64", not(target_env = "musl")))'.dependencies]
-mimalloc-rust = "0.1"
+[target.'cfg(not(target_os = "linux"))'.dependencies]
+mimalloc-rust = "0.2"
+
+[target.'cfg(all(target_os = "linux", not(all(target_env = "musl", target_arch = "aarch64"))))'.dependencies]
+mimalloc-rust = { version = "0.2", features = ["local-dynamic-tls"] }
 
 [build-dependencies]
 cc = "1"
-napi-build = "1"
+napi-build = "2"
 
 [profile.release]
-codegen-units = 1
 lto = true
 panic = "unwind"
