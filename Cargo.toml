@@ -40,6 +40,5 @@ cc = "1"
 napi-build = "2"
 
 [profile.release]
-codegen-units = 1
 lto = true
 panic = "unwind"
