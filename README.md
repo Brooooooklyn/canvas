@@ -304,8 +304,8 @@ path.simplify().toSVGString()
 node example/anime-girl.js
 ```
 
-| SVG                                            | PNG                                            |
-| ---------------------------------------------- | ---------------------------------------------- |
+| SVG                                                                                                                                                                        | PNG                                                                                                                                                                        |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | <img width="500" src="example/anime-girl.svg"><br/>[CC-BY-SA 3.0](https://creativecommons.org/licenses/by/3.0) by [Niabot](https://commons.wikimedia.org/wiki/User:Niabot) | <img width="500" src="example/anime-girl.png"><br/>[CC-BY-SA 3.0](https://creativecommons.org/licenses/by/3.0) by [Niabot](https://commons.wikimedia.org/wiki/User:Niabot) |
 
 # Building
