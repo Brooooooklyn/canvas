@@ -62,3 +62,13 @@ test(`measureText with suffix spaces`, async (t) => {
   t.is(ctx.measureText(' ').width, widthWithSpace - width)
   t.is(ctx.measureText('  ').width, widthWithTwoSpace - width)
 })
+
+// https://github.com/Brooooooklyn/canvas/issues/386
+test('text-baseline', async (t) => {
+  const { ctx } = t.context
+  ctx.font = '48px Iosevka Slab'
+  ctx.textBaseline = 'bottom'
+  ctx.fillText('abcdef', 50, 50)
+  ctx.fillText('abcdefg', 50, 50)
+  await snapshotImage(t)
+})
