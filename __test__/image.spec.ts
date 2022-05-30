@@ -1,11 +1,13 @@
-import { promises } from 'fs'
+import { promises as fs } from 'fs'
 import { join } from 'path'
 import test from 'ava'
 
-import { Image } from '../index'
+import { createCanvas, Image } from '../index'
+
+import { snapshotImage } from './image-snapshot'
 
 async function loadImageFile() {
-  return await promises.readFile(join(__dirname, '../example/simple.png'))
+  return await fs.readFile(join(__dirname, '../example/simple.png'))
 }
 
 test('should be able to create Image', (t) => {
@@ -62,4 +64,27 @@ test('properties should be readonly', (t) => {
 
   // @ts-expect-error
   t.throws(() => (image.complete = true), expectation)
+})
+
+test('svg-transparent-background', async (t) => {
+  const image = new Image()
+  image.src = await fs.readFile(join(__dirname, '..', 'example', 'resize-svg.svg'))
+
+  const w = 1000
+  const h = 1000
+
+  // resize SVG
+  image.width = w / 2
+  image.height = h / 2
+
+  // create a canvas of the same size as the image
+  const canvas = createCanvas(w, h)
+  const ctx = canvas.getContext('2d')
+
+  // fill the canvas with the image
+  ctx.fillStyle = 'pink'
+  ctx.fillRect(0, 0, w, h)
+  ctx.drawImage(image, 250, 250)
+
+  await snapshotImage(t, { canvas })
 })
