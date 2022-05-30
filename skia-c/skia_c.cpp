@@ -425,7 +425,7 @@ extern "C"
       baseline_offset = -alphabetic_baseline - font_metrics.fAscent;
       break;
     case CssBaseline::Hanging:
-      // https://github1s.com/chromium/chromium/blob/HEAD/third_party/blink/renderer/core/html/canvas/text_metrics.cc#L21-L24
+      // https://github.com/chromium/chromium/blob/104.0.5092.1/third_party/blink/renderer/core/html/canvas/text_metrics.cc#L21-L25
       // According to
       // http://wiki.apache.org/xmlgraphics-fop/LineLayout/AlignmentHandling
       // "FOP (Formatting Objects Processor) puts the hanging baseline at 80% of
@@ -442,7 +442,7 @@ extern "C"
       baseline_offset = -paragraph->getIdeographicBaseline();
       break;
     case CssBaseline::Bottom:
-      baseline_offset = -alphabetic_baseline - descent;
+      baseline_offset = font_metrics.fStrikeoutPosition;
       break;
     };
 
