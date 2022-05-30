@@ -376,14 +376,10 @@ extern "C"
     text_style.setForegroundColor(*PAINT_CAST);
     text_style.setTextBaseline(TextBaseline::kAlphabetic);
 
-    SkFontMetrics font_metrics;
-    text_style.getFontMetrics(&font_metrics);
-
     ParagraphStyle paragraph_style;
-    paragraph_style.turnHintingOff();
     paragraph_style.setTextStyle(text_style);
     paragraph_style.setTextDirection(text_direction);
-    ParagraphBuilderImpl builder(paragraph_style, font_collection);
+    ParagraphBuilderImpl builder(paragraph_style, font_collection, SkUnicode::Make());
     builder.addText(text, text_len);
     auto paragraph = static_cast<ParagraphImpl *>(builder.Build().release());
     paragraph->layout(MAX_LAYOUT_WIDTH);
@@ -395,6 +391,8 @@ extern "C"
     auto glyphs = run.glyphs();
     auto font = run.font();
     auto glyphs_size = glyphs.size();
+    SkFontMetrics font_metrics;
+    font.getMetrics(&font_metrics);
     SkRect bounds[glyphs_size];
     font.getBounds(glyphs.data(), glyphs_size, &bounds[0], nullptr);
     auto first_char_bounds = bounds[0];
@@ -416,7 +414,8 @@ extern "C"
         ascent = char_top;
       }
     }
-    auto line_width = line_metrics.fWidth;
+    // line_metrics.fWidth doesn't contain the suffix spaces
+    auto line_width = run.calculateWidth(0, glyphs_size, false);
     auto alphabetic_baseline = paragraph->getAlphabeticBaseline();
     auto css_baseline = (CssBaseline)baseline;
     SkScalar baseline_offset = 0;
