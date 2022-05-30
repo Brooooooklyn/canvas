@@ -339,7 +339,7 @@ jobs:
         shell: bash
 
       - name: Test bindings
-        run: docker run --rm -v $(pwd):/canvas -w /canvas node:${{ matrix.node }}-alpine sh -c "yarn install --immutable --mode=skip-build && yarn test" 
+        run: docker run --rm -v $(pwd):/canvas -w /canvas node:${{ matrix.node }}-alpine sh -c "yarn install --immutable --mode=skip-build && yarn test"
 
       - name: Test failed
         if: ${{ failure() }}
@@ -381,7 +381,7 @@ jobs:
       - name: List packages
         run: ls -R .
         shell: bash
-      
+
       - name: Cache yarn
         uses: actions/cache@v3
         with:

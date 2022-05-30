@@ -1,14 +1,11 @@
 ## [0.1.21](https://github.com/Brooooooklyn/canvas/compare/v0.1.20...v0.1.21) (2022-03-10)
 
-
 ### Bug Fixes
 
-* BlendMode::Source should be copy instead of source ([a010fba](https://github.com/Brooooooklyn/canvas/commit/a010fba4c8e7ae3bed2e8119c6862c98e5a466b4))
-* prevent segmentation fault if mesuring empty text ([2117ddb](https://github.com/Brooooooklyn/canvas/commit/2117ddbb413df47df8a716eb66e79eb552b2a986))
-* should not throw if fill/stroke style is invalid ([0d12337](https://github.com/Brooooooklyn/canvas/commit/0d12337e8ed6590a4788fd7758e30a77db312577))
-* stroke/fill text should treat \n as space ([4c9ac1e](https://github.com/Brooooooklyn/canvas/commit/4c9ac1e60b8a16b5209d83e115947cd7cbbf273e))
-
-
+- BlendMode::Source should be copy instead of source ([a010fba](https://github.com/Brooooooklyn/canvas/commit/a010fba4c8e7ae3bed2e8119c6862c98e5a466b4))
+- prevent segmentation fault if mesuring empty text ([2117ddb](https://github.com/Brooooooklyn/canvas/commit/2117ddbb413df47df8a716eb66e79eb552b2a986))
+- should not throw if fill/stroke style is invalid ([0d12337](https://github.com/Brooooooklyn/canvas/commit/0d12337e8ed6590a4788fd7758e30a77db312577))
+- stroke/fill text should treat \n as space ([4c9ac1e](https://github.com/Brooooooklyn/canvas/commit/4c9ac1e60b8a16b5209d83e115947cd7cbbf273e))
 
 ## [0.1.20](https://github.com/Brooooooklyn/canvas/compare/v0.1.19...v0.1.20) (2022-02-15)
 
