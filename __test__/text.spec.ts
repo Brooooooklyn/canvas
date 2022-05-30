@@ -51,3 +51,14 @@ test(`strokeText-line-break-as-space`, async (t) => {
   ctx.strokeText('Hello\nCanvas', x, 200)
   await snapshotImage(t)
 })
+
+test(`measureText with suffix spaces`, async (t) => {
+  const { ctx } = t.context
+  ctx.font = '50px Iosevka Slab'
+  const { width } = ctx.measureText('Hello')
+  const { width: widthWithSpace } = ctx.measureText('hello ')
+  const { width: widthWithTwoSpace } = ctx.measureText('hello  ')
+  t.not(width, widthWithSpace)
+  t.is(ctx.measureText(' ').width, widthWithSpace - width)
+  t.is(ctx.measureText('  ').width, widthWithTwoSpace - width)
+})
