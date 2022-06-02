@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1654091797068,
+  "lastUpdate": 1654150695199,
   "repoUrl": "https://github.com/Brooooooklyn/canvas",
   "entries": {
     "Benchmark": [
@@ -14220,6 +14220,72 @@ window.BENCHMARK_DATA = {
             "name": "Draw gradient#@napi-rs/skia",
             "value": 20,
             "range": "±1.48%",
+            "unit": "ops/sec",
+            "extra": "38 samples"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "lynweklm@gmail.com",
+            "name": "LongYinan",
+            "username": "Brooooooklyn"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "39f3fb1b14417ad6117cd8ea5358debd47942a85",
+          "message": "Merge pull request #470 from Brooooooklyn/preserve-svg-transparent-bg\n\nfix: svg image transparent background should be preserved",
+          "timestamp": "2022-06-02T14:11:20+08:00",
+          "tree_id": "798d0909070463ae32dd93cd9ddffa55a79a369f",
+          "url": "https://github.com/Brooooooklyn/canvas/commit/39f3fb1b14417ad6117cd8ea5358debd47942a85"
+        },
+        "date": 1654150609856,
+        "tool": "benchmarkjs",
+        "benches": [
+          {
+            "name": "Draw house#skia-canvas",
+            "value": 18.9,
+            "range": "±0.43%",
+            "unit": "ops/sec",
+            "extra": "50 samples"
+          },
+          {
+            "name": "Draw house#node-canvas",
+            "value": 19.2,
+            "range": "±0.59%",
+            "unit": "ops/sec",
+            "extra": "44 samples"
+          },
+          {
+            "name": "Draw house#@napi-rs/skia",
+            "value": 21.3,
+            "range": "±0.2%",
+            "unit": "ops/sec",
+            "extra": "39 samples"
+          },
+          {
+            "name": "Draw gradient#skia-canvas",
+            "value": 18,
+            "range": "±0.41%",
+            "unit": "ops/sec",
+            "extra": "49 samples"
+          },
+          {
+            "name": "Draw gradient#node-canvas",
+            "value": 19,
+            "range": "±0.29%",
+            "unit": "ops/sec",
+            "extra": "49 samples"
+          },
+          {
+            "name": "Draw gradient#@napi-rs/skia",
+            "value": 21,
+            "range": "±0.24%",
             "unit": "ops/sec",
             "extra": "38 samples"
           }
