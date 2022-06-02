@@ -570,6 +570,17 @@ test('lineTo', async (t) => {
   await snapshotImage(t)
 })
 
+test('lineTo-with-invalid-point', async (t) => {
+  const { ctx } = t.context
+  ctx.beginPath() // Start a new path
+  ctx.lineTo(NaN, 100)
+  ctx.lineTo(50, 50)
+  ctx.lineTo(100, NaN)
+  ctx.lineTo(250, 100)
+  ctx.stroke()
+  await snapshotImage(t)
+})
+
 test('measureText', (t) => {
   const { ctx } = t.context
   ctx.font = '50px Iosevka Slab'
