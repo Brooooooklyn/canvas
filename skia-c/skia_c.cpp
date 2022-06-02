@@ -1390,7 +1390,7 @@ extern "C"
       image_w = width;
       image_h = height;
     }
-    auto imageinfo = SkImageInfo::Make(image_w, image_h, kRGBA_8888_SkColorType, SkAlphaType::kOpaque_SkAlphaType, color_space);
+    auto imageinfo = SkImageInfo::Make(image_w, image_h, kRGBA_8888_SkColorType, SkAlphaType::kPremul_SkAlphaType, color_space);
     auto bitmap = new SkBitmap();
     bitmap->allocPixels(imageinfo);
     auto sk_svg_canvas = new SkCanvas(*bitmap);
