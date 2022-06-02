@@ -1,6 +1,6 @@
 {
   "name": "@napi-rs/canvas-darwin-arm64",
-  "version": "0.1.21",
+  "version": "0.1.22",
   "os": [
     "darwin"
   ],
