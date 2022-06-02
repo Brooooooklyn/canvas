@@ -1326,10 +1326,16 @@ fn line_to(ctx: CallContext) -> Result<JsUndefined> {
   let this = ctx.this_unchecked::<JsObject>();
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
 
-  let x = ctx.get::<JsNumber>(0)?.get_double()? as f32;
-  let y = ctx.get::<JsNumber>(1)?.get_double()? as f32;
-
-  context_2d.path.line_to(x, y);
+  if let Ok((x, y)) = ctx.get::<JsNumber>(0)?.get_double().and_then(|x| {
+    ctx
+      .get::<JsNumber>(1)?
+      .get_double()
+      .map(|y| (x as f32, y as f32))
+  }) {
+    if !x.is_nan() && !y.is_nan() {
+      context_2d.path.line_to(x, y);
+    }
+  }
 
   ctx.env.get_undefined()
 }
