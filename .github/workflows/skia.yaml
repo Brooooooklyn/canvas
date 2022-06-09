@@ -30,7 +30,7 @@ jobs:
           check-latest: true
           cache: 'yarn'
 
-      - uses: actions/setup-python@v3
+      - uses: actions/setup-python@v4
         with:
           python-version: '2.x'
           architecture: 'x64'
@@ -113,7 +113,7 @@ jobs:
           check-latest: true
           cache: 'yarn'
 
-      - uses: actions/setup-python@v3
+      - uses: actions/setup-python@v4
         with:
           python-version: '2.x'
           architecture: 'x64'
@@ -207,7 +207,7 @@ jobs:
           check-latest: true
           cache: 'yarn'
 
-      - uses: actions/setup-python@v3
+      - uses: actions/setup-python@v4
         with:
           python-version: '2.x'
           architecture: 'x64'
@@ -303,7 +303,7 @@ jobs:
           check-latest: true
           cache: 'yarn'
 
-      - uses: actions/setup-python@v3
+      - uses: actions/setup-python@v4
         with:
           python-version: '2.x'
           architecture: 'x64'
@@ -352,7 +352,7 @@ jobs:
           check-latest: true
           cache: 'yarn'
 
-      - uses: actions/setup-python@v3
+      - uses: actions/setup-python@v4
         with:
           python-version: '2.x'
           architecture: 'x64'
