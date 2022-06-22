@@ -11,18 +11,20 @@ fn main() {
   println!("cargo:rerun-if-changed=skia-c/skia_c.cpp");
   println!("cargo:rerun-if-changed=skia-c/skia_c.hpp");
 
-  let compile_target = env::var("TARGET").unwrap();
+  let compile_target = env::var("TARGET").expect("TARGET");
+  let compile_target_os = env::var("CARGO_CFG_TARGET_OS").expect("CARGO_CFG_TARGET_OS");
+  let compile_target_env = env::var("CARGO_CFG_TARGET_ENV").expect("CARGO_CFG_TARGET_ENV");
+  let compile_target_arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
 
-  #[cfg(target_os = "windows")]
-  {
-    env::set_var("CC", "clang-cl");
-    env::set_var("CXX", "clang-cl");
-  }
-
-  #[cfg(not(target_os = "windows"))]
-  {
-    env::set_var("CC", "clang");
-    env::set_var("CXX", "clang++");
+  match compile_target_os.as_str() {
+    "windows" => {
+      env::set_var("CC", "clang-cl");
+      env::set_var("CXX", "clang-cl");
+    }
+    _ => {
+      env::set_var("CC", "clang");
+      env::set_var("CXX", "clang++");
+    }
   }
 
   let skia_dir = env::var("SKIA_DIR").unwrap_or_else(|_| "./skia".to_owned());
@@ -144,45 +146,71 @@ fn main() {
     _ => {}
   }
 
-  #[cfg(target_os = "windows")]
-  {
-    build
-      .flag("/std:c++17")
-      .flag("-Wno-unused-function")
-      .flag("-Wno-unused-parameter")
-      .static_crt(true);
-  }
-
-  #[cfg(target_os = "linux")]
-  {
-    build.cpp_set_stdlib("stdc++");
-  }
-
-  #[cfg(target_os = "macos")]
-  {
-    build.cpp_set_stdlib("c++");
-  }
-
-  #[cfg(not(target_os = "windows"))]
-  {
-    build
-      .flag("-std=c++17")
-      .flag("-fPIC")
-      .flag("-fno-exceptions")
-      .flag("-fno-rtti")
-      .flag("-fstrict-aliasing")
-      .flag("-fvisibility=hidden")
-      .flag("-fvisibility-inlines-hidden")
-      .flag("-fdata-sections")
-      .flag("-ffunction-sections")
-      .flag("-Wno-unused-function")
-      .flag("-Wno-unused-parameter");
-  }
-
-  #[cfg(target_os = "macos")]
-  {
-    println!("cargo:rustc-link-lib=c++");
-    println!("cargo:rustc-link-lib=framework=ApplicationServices");
+  match compile_target_os.as_str() {
+    "windows" => {
+      build
+        .flag("/std:c++17")
+        .flag("-Wno-unused-function")
+        .flag("-Wno-unused-parameter")
+        .static_crt(true);
+    }
+    "linux" => {
+      build
+        .flag("-std=c++17")
+        .flag("-fPIC")
+        .flag("-fno-exceptions")
+        .flag("-fno-rtti")
+        .flag("-fstrict-aliasing")
+        .flag("-fvisibility=hidden")
+        .flag("-fvisibility-inlines-hidden")
+        .flag("-fdata-sections")
+        .flag("-ffunction-sections")
+        .flag("-Wno-unused-function")
+        .flag("-Wno-unused-parameter");
+      if (compile_target_arch != "x86_64" && compile_target_arch != "aarch64")
+        || compile_target_env != "gnu"
+      {
+        build.cpp_set_stdlib("stdc++");
+      } else {
+        build
+          .cpp_set_stdlib("c++")
+          .flag("-std=c++17")
+          .flag("-fPIC")
+          .flag("-fno-exceptions")
+          .flag("-fno-rtti")
+          .flag("-fstrict-aliasing")
+          .flag("-fvisibility=hidden")
+          .flag("-fvisibility-inlines-hidden")
+          .flag("-fdata-sections")
+          .flag("-ffunction-sections")
+          .flag("-Wno-unused-function")
+          .flag("-Wno-unused-parameter")
+          .flag("-static")
+          .include("/usr/lib/llvm-14/include/c++/v1");
+        println!("cargo:rustc-link-search=/usr/lib/llvm-14/lib");
+        println!("cargo:rustc-link-lib=static=c++");
+      }
+    }
+    "macos" => {
+      build
+        .cpp_set_stdlib("c++")
+        .flag("-std=c++17")
+        .flag("-fPIC")
+        .flag("-fno-exceptions")
+        .flag("-fno-rtti")
+        .flag("-fstrict-aliasing")
+        .flag("-fvisibility=hidden")
+        .flag("-fvisibility-inlines-hidden")
+        .flag("-fdata-sections")
+        .flag("-ffunction-sections")
+        .flag("-Wno-unused-function")
+        .flag("-Wno-unused-parameter");
+      println!("cargo:rustc-link-lib=c++");
+      println!("cargo:rustc-link-lib=framework=ApplicationServices");
+    }
+    _ => {
+      unimplemented!("not support target platform {}", compile_target);
+    }
   }
 
   let out_dir = env::var("OUT_DIR").unwrap();
@@ -197,18 +225,14 @@ fn main() {
   println!("cargo:rustc-link-search={}", skia_lib_dir);
   println!("cargo:rustc-link-search={}", &out_dir);
 
-  #[cfg(not(target_os = "windows"))]
-  {
+  if compile_target_os != "windows" {
     println!("cargo:rustc-link-lib=static=svg");
     println!("cargo:rustc-link-lib=static=skia");
     println!("cargo:rustc-link-lib=static=skiac");
     println!("cargo:rustc-link-lib=static=skparagraph");
     println!("cargo:rustc-link-lib=skshaper");
     println!("cargo:rustc-link-lib=static=skunicode");
-  }
-
-  #[cfg(target_os = "windows")]
-  {
+  } else {
     println!("cargo:rustc-link-lib=svg");
     println!("cargo:rustc-link-lib=skia");
     println!("cargo:rustc-link-lib=skiac");
