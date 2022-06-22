@@ -223,11 +223,6 @@ fn main() {
 
   println!("cargo:rustc-link-search={}", skia_lib_dir);
   println!("cargo:rustc-link-search={}", &out_dir);
-
-  if compile_target_os != "windows" {
-    println!("cargo:rustc-link-lib=skshaper");
-  } else {
-    println!("cargo:rustc-link-lib=skshaper");
-  }
+  println!("cargo:rustc-link-lib=skshaper");
   napi_build::setup();
 }

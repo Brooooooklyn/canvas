@@ -142,7 +142,7 @@ pub(crate) fn init_font_regexp() -> Regex {
   .unwrap()
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FontStyle {
   Normal,
   Italic,
@@ -172,7 +172,7 @@ impl FromStr for FontStyle {
   }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FontVariant {
   Normal,
   SmallCaps,
@@ -191,7 +191,7 @@ impl FromStr for FontVariant {
 }
 
 #[repr(i32)]
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FontStretch {
   UltraCondensed = 1,
   ExtraCondensed = 2,
