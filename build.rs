@@ -208,9 +208,7 @@ fn main() {
       println!("cargo:rustc-link-lib=c++");
       println!("cargo:rustc-link-lib=framework=ApplicationServices");
     }
-    _ => {
-      unimplemented!("not support target platform {}", compile_target);
-    }
+    _ => {}
   }
 
   let out_dir = env::var("OUT_DIR").unwrap();

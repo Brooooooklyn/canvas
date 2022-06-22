@@ -130,11 +130,6 @@ jobs:
           override: true
           target: ${{ matrix.settings.target }}
 
-      - name: Generate Cargo.lock
-        uses: actions-rs/cargo@v1
-        with:
-          command: generate-lockfile
-
       - name: Cache cargo registry
         uses: actions/cache@v3
         with:
@@ -186,7 +181,7 @@ jobs:
             target: 'x86_64-apple-darwin'
           - host: windows-latest
             target: 'x86_64-pc-windows-msvc'
-        node: ['12', '14', '16']
+        node: ['14', '16', '18']
     runs-on: ${{ matrix.settings.host }}
 
     steps:
@@ -245,7 +240,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: ['12', '14', '16']
+        node: ['14', '16', '18']
     runs-on: ubuntu-latest
 
     steps:
@@ -303,7 +298,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: ['12', '14', '16']
+        node: ['14', '16', '18']
     runs-on: ubuntu-latest
 
     steps:
@@ -361,7 +356,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: ['12', '14', '16']
+        node: ['14', '16', '18']
     runs-on: ubuntu-latest
 
     steps:
@@ -474,7 +469,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: ['12', '14', '16']
+        node: ['14', '16', '18']
     runs-on: ubuntu-latest
 
     steps:
