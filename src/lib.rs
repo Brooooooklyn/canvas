@@ -1,3 +1,4 @@
+#![feature(link_cfg)]
 #![deny(clippy::all)]
 #![allow(clippy::many_single_char_names)]
 #![allow(clippy::too_many_arguments)]

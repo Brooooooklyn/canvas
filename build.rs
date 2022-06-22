@@ -137,13 +137,28 @@ fn main() {
         )
         .archiver(
           format!(
-            "{}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android-ar",
+            "{}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar",
             nkd_home
           )
           .as_str(),
         );
     }
     _ => {}
+  }
+
+  if compile_target_os != "windows" {
+    build
+      .flag("-std=c++17")
+      .flag("-fPIC")
+      .flag("-fno-exceptions")
+      .flag("-fno-rtti")
+      .flag("-fstrict-aliasing")
+      .flag("-fvisibility=hidden")
+      .flag("-fvisibility-inlines-hidden")
+      .flag("-fdata-sections")
+      .flag("-ffunction-sections")
+      .flag("-Wno-unused-function")
+      .flag("-Wno-unused-parameter");
   }
 
   match compile_target_os.as_str() {
@@ -155,18 +170,6 @@ fn main() {
         .static_crt(true);
     }
     "linux" => {
-      build
-        .flag("-std=c++17")
-        .flag("-fPIC")
-        .flag("-fno-exceptions")
-        .flag("-fno-rtti")
-        .flag("-fstrict-aliasing")
-        .flag("-fvisibility=hidden")
-        .flag("-fvisibility-inlines-hidden")
-        .flag("-fdata-sections")
-        .flag("-ffunction-sections")
-        .flag("-Wno-unused-function")
-        .flag("-Wno-unused-parameter");
       if (compile_target_arch != "x86_64" && compile_target_arch != "aarch64")
         || compile_target_env != "gnu"
       {
@@ -174,17 +177,6 @@ fn main() {
       } else {
         build
           .cpp_set_stdlib("c++")
-          .flag("-std=c++17")
-          .flag("-fPIC")
-          .flag("-fno-exceptions")
-          .flag("-fno-rtti")
-          .flag("-fstrict-aliasing")
-          .flag("-fvisibility=hidden")
-          .flag("-fvisibility-inlines-hidden")
-          .flag("-fdata-sections")
-          .flag("-ffunction-sections")
-          .flag("-Wno-unused-function")
-          .flag("-Wno-unused-parameter")
           .flag("-static")
           .include("/usr/lib/llvm-14/include/c++/v1");
         println!("cargo:rustc-link-search=/usr/lib/llvm-14/lib");
@@ -192,19 +184,7 @@ fn main() {
       }
     }
     "macos" => {
-      build
-        .cpp_set_stdlib("c++")
-        .flag("-std=c++17")
-        .flag("-fPIC")
-        .flag("-fno-exceptions")
-        .flag("-fno-rtti")
-        .flag("-fstrict-aliasing")
-        .flag("-fvisibility=hidden")
-        .flag("-fvisibility-inlines-hidden")
-        .flag("-fdata-sections")
-        .flag("-ffunction-sections")
-        .flag("-Wno-unused-function")
-        .flag("-Wno-unused-parameter");
+      build.cpp_set_stdlib("c++");
       println!("cargo:rustc-link-lib=c++");
       println!("cargo:rustc-link-lib=framework=ApplicationServices");
     }
