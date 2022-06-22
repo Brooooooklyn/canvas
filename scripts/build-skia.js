@@ -1,9 +1,10 @@
 const { execSync } = require('child_process')
 const { readFileSync, writeFileSync } = require('fs')
 const path = require('path')
-const { platform } = require('os')
+const { platform, arch } = require('os')
 
 const PLATFORM_NAME = platform()
+const HOST_ARCH = arch()
 const HOST_LIBC =
   PLATFORM_NAME === 'linux' ? (process.report?.getReport()?.glibcVersionRuntime ? 'glibc' : 'musl') : null
 
@@ -116,7 +117,7 @@ switch (PLATFORM_NAME) {
       '"-DSK_CODEC_DECODES_JPEG",' +
       '"-DSK_HAS_HEIF_LIBRARY",' +
       '"-DSK_SHAPER_HARFBUZZ_AVAILABLE"'
-    if (PLATFORM_NAME === 'linux' && !TARGET_TRIPLE && HOST_LIBC === 'glibc') {
+    if (PLATFORM_NAME === 'linux' && !TARGET_TRIPLE && HOST_LIBC === 'glibc' && HOST_ARCH == 'x64') {
       ExtraCflagsCC += ',"-stdlib=libc++", "-static", "-I/usr/lib/llvm-14/include/c++/v1"'
     }
     break

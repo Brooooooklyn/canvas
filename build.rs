@@ -170,9 +170,7 @@ fn main() {
         .static_crt(true);
     }
     "linux" => {
-      if (compile_target_arch != "x86_64" && compile_target_arch != "aarch64")
-        || compile_target_env != "gnu"
-      {
+      if compile_target_arch != "x86_64" || compile_target_env != "gnu" {
         build.cpp_set_stdlib("stdc++");
       } else {
         build

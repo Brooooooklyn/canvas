@@ -10,6 +10,8 @@ jobs:
   lint:
     name: Lint SourceCode
     runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/brooooooklyn/canvas/ubuntu-builder:focal
 
     steps:
       - uses: actions/checkout@v3
