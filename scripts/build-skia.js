@@ -4,7 +4,8 @@ const path = require('path')
 const { platform } = require('os')
 
 const PLATFORM_NAME = platform()
-const HOST_LIBC = PLATFORM_NAME === 'linux' ? process.report?.getReport()?.glibcVersionRuntime ? 'glibc' : 'musl' : null
+const HOST_LIBC =
+  PLATFORM_NAME === 'linux' ? (process.report?.getReport()?.glibcVersionRuntime ? 'glibc' : 'musl') : null
 
 const [, , TARGET] = process.argv
 
