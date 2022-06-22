@@ -6,7 +6,7 @@ const { platform, arch } = require('os')
 const PLATFORM_NAME = platform()
 const HOST_ARCH = arch()
 const HOST_LIBC =
-  PLATFORM_NAME === 'linux' ? (process.report?.getReport()?.glibcVersionRuntime ? 'glibc' : 'musl') : null
+  PLATFORM_NAME === 'linux' ? (process.report?.getReport()?.header?.glibcVersionRuntime ? 'glibc' : 'musl') : null
 
 const [, , TARGET] = process.argv
 
@@ -117,6 +117,7 @@ switch (PLATFORM_NAME) {
       '"-DSK_CODEC_DECODES_JPEG",' +
       '"-DSK_HAS_HEIF_LIBRARY",' +
       '"-DSK_SHAPER_HARFBUZZ_AVAILABLE"'
+    console.log(HOST_LIBC, HOST_ARCH)
     if (PLATFORM_NAME === 'linux' && !TARGET_TRIPLE && HOST_LIBC === 'glibc' && HOST_ARCH == 'x64') {
       ExtraCflagsCC += ',"-stdlib=libc++", "-static", "-I/usr/lib/llvm-14/include/c++/v1"'
     }
