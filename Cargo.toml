@@ -38,7 +38,3 @@ mimalloc-rust = { version = "0.2", features = ["local-dynamic-tls"] }
 [build-dependencies]
 cc = "1"
 napi-build = "2"
-
-[profile.release]
-lto = true
-panic = "unwind"

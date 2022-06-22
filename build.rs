@@ -218,7 +218,8 @@ fn main() {
   build
     .include("./skia-c")
     .include(skia_path)
-    .cargo_metadata(true)
+    // https://github.com/rust-lang/rust/pull/93901#issuecomment-1119360260
+    .cargo_metadata(false)
     .out_dir(&out_dir)
     .compile("skiac");
 
@@ -226,19 +227,9 @@ fn main() {
   println!("cargo:rustc-link-search={}", &out_dir);
 
   if compile_target_os != "windows" {
-    println!("cargo:rustc-link-lib=static=svg");
-    println!("cargo:rustc-link-lib=static=skia");
-    println!("cargo:rustc-link-lib=static=skiac");
-    println!("cargo:rustc-link-lib=static=skparagraph");
     println!("cargo:rustc-link-lib=skshaper");
-    println!("cargo:rustc-link-lib=static=skunicode");
   } else {
-    println!("cargo:rustc-link-lib=svg");
-    println!("cargo:rustc-link-lib=skia");
-    println!("cargo:rustc-link-lib=skiac");
-    println!("cargo:rustc-link-lib=skparagraph");
     println!("cargo:rustc-link-lib=skshaper");
-    println!("cargo:rustc-link-lib=skunicode");
   }
   napi_build::setup();
 }

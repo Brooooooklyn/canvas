@@ -209,6 +209,20 @@ mod ffi {
   pub type SkiacFontCollectionGetFamily =
     Option<unsafe extern "C" fn(width: i32, weight: i32, slant: i32, raw_cb: *mut c_void)>;
 
+  // https://github.com/rust-lang/rust/issues/96192
+  #[link(name = "svg", kind = "static", modifiers = "+bundle,+whole-archive")]
+  #[link(
+    name = "skparagraph",
+    kind = "static",
+    modifiers = "+bundle,+whole-archive"
+  )]
+  #[link(
+    name = "skunicode",
+    kind = "static",
+    modifiers = "+bundle,+whole-archive"
+  )]
+  #[link(name = "skia", kind = "static", modifiers = "+bundle,+whole-archive")]
+  #[link(name = "skiac", kind = "static", modifiers = "+bundle,+whole-archive")]
   extern "C" {
 
     pub fn skiac_surface_create_rgba_premultiplied(
