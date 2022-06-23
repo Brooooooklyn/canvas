@@ -10,6 +10,8 @@ jobs:
   lint:
     name: Lint SourceCode
     runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/brooooooklyn/canvas/ubuntu-builder:focal
 
     steps:
       - uses: actions/checkout@v3
@@ -22,9 +24,6 @@ jobs:
           node-version: 16
           check-latest: true
           cache: 'yarn'
-
-      - name: Install nasm
-        uses: ilammy/setup-nasm@v1
 
       - name: Install
         uses: actions-rs/toolchain@v1
@@ -51,7 +50,9 @@ jobs:
         run: yarn install --immutable --mode=skip-build
 
       - name: Download skia binary
-        run: node ./scripts/release-skia-binary.js --download
+        run: |
+          git config --global --add safe.directory $(pwd)
+          node ./scripts/release-skia-binary.js --download
 
       - name: 'Lint JS/TS'
         run: yarn lint

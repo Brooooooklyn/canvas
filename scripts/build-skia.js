@@ -1,9 +1,12 @@
 const { execSync } = require('child_process')
 const { readFileSync, writeFileSync } = require('fs')
 const path = require('path')
-const { platform } = require('os')
+const { platform, arch } = require('os')
 
 const PLATFORM_NAME = platform()
+const HOST_ARCH = arch()
+const HOST_LIBC =
+  PLATFORM_NAME === 'linux' ? (process.report?.getReport()?.header?.glibcVersionRuntime ? 'glibc' : 'musl') : null
 
 const [, , TARGET] = process.argv
 
@@ -114,6 +117,9 @@ switch (PLATFORM_NAME) {
       '"-DSK_CODEC_DECODES_JPEG",' +
       '"-DSK_HAS_HEIF_LIBRARY",' +
       '"-DSK_SHAPER_HARFBUZZ_AVAILABLE"'
+    if (PLATFORM_NAME === 'linux' && !TARGET_TRIPLE && HOST_LIBC === 'glibc' && HOST_ARCH === 'x64') {
+      ExtraCflagsCC += ',"-stdlib=libc++", "-static", "-I/usr/lib/llvm-14/include/c++/v1"'
+    }
     break
   default:
     throw new TypeError(`Don't support ${PLATFORM_NAME} for now`)
@@ -206,6 +212,12 @@ GN_ARGS.push(`cc=${CC}`, `cxx=${CXX}`, `extra_cflags_cc=[${ExtraCflagsCC}]`, Ext
 const SkLoadICUCppFilePath = path.join(__dirname, '..', 'skia', 'third_party', 'icu', 'SkLoadICU.cpp')
 const CODE_TO_PATCH = 'good = load_from(executable_directory()) || load_from(library_directory());'
 const CODE_I_WANT = 'good = load_from(library_directory()) || load_from(executable_directory());'
+const GNConfigPath = path.join(__dirname, '..', 'skia', 'BUILD.gn')
+const GNExampleCode = `skia_executable("skia_c_api_example") {
+  sources = [ "experimental/c-api-example/skia-c-example.c" ]
+  include_dirs = [ "." ]
+  deps = [ ":skia" ]
+}`
 
 if (PLATFORM_NAME === 'win32') {
   const content = readFileSync(SkLoadICUCppFilePath, 'utf8')
@@ -215,6 +227,13 @@ if (PLATFORM_NAME === 'win32') {
     writeFileSync(SkLoadICUCppFilePath, content)
   })
 }
+
+const GN_BUILD_CONTENT = readFileSync(GNConfigPath, 'utf8')
+writeFileSync(GNConfigPath, GN_BUILD_CONTENT.replace(GNExampleCode, ''))
+
+process.once('beforeExit', () => {
+  writeFileSync(GNConfigPath, GN_BUILD_CONTENT)
+})
 
 exec(
   `${process.env.GN_EXE ? process.env.GN_EXE : path.join('bin', 'gn')} gen ${OUTPUT_PATH} --args='${GN_ARGS.join(

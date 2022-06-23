@@ -60,8 +60,8 @@ jobs:
       - name: Compile skia
         if: matrix.os == 'ubuntu-latest'
         run: |
-          docker pull ghcr.io/brooooooklyn/canvas/debian-builder:buster
-          docker tag ghcr.io/brooooooklyn/canvas/debian-builder:buster builder
+          docker pull ghcr.io/brooooooklyn/canvas/ubuntu-builder:focal
+          docker tag ghcr.io/brooooooklyn/canvas/ubuntu-builder:focal builder
           docker run --user "$(id -u):$(id -g)" --rm -v $(pwd):/canvas -w /canvas builder node ./scripts/build-skia.js
         env:
           PYTHONHTTPSVERIFY: 0

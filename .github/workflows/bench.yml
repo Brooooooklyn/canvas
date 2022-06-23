@@ -14,6 +14,8 @@ jobs:
     if: "!contains(github.event.head_commit.message, 'skip ci')"
     name: Bench
     runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/brooooooklyn/canvas/ubuntu-builder:focal
 
     steps:
       - uses: actions/checkout@v3
@@ -33,9 +35,6 @@ jobs:
           profile: default
           override: true
 
-      - name: Install nasm
-        uses: ilammy/setup-nasm@v1
-
       - name: Cache cargo registry
         uses: actions/cache@v3
         with:
@@ -54,7 +53,9 @@ jobs:
         run: yarn install --immutable
 
       - name: Download skia binary
-        run: node ./scripts/release-skia-binary.js --download
+        run: |
+          git config --global --add safe.directory $(pwd)
+          node ./scripts/release-skia-binary.js --download
 
       - name: 'Build'
         run: yarn build
