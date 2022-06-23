@@ -1,20 +1,18 @@
-## [0.1.22](https://github.com/Brooooooklyn/canvas/compare/v0.1.21...v0.1.22) (2022-06-02)
+## [0.1.23](https://github.com/Brooooooklyn/canvas/compare/v0.1.22...v0.1.23) (2022-06-23)
 
+## [0.1.22](https://github.com/Brooooooklyn/canvas/compare/v0.1.21...v0.1.22) (2022-06-02)
 
 ### Bug Fixes
 
-* do nothing if lineTo parameters invalid ([0ddeb7c](https://github.com/Brooooooklyn/canvas/commit/0ddeb7cf8e97aff54f2fb315da8a3cc34a19ba48))
-* svg image transparent background should be preserved ([531bde8](https://github.com/Brooooooklyn/canvas/commit/531bde88f219fd4b7f72f550a2bb647ed859f9c2))
-* width in TextMetrics when text is ending with spaces ([5961fd2](https://github.com/Brooooooklyn/canvas/commit/5961fd2228c3f0965f25ab6f8b78ebb1a0220974))
-* y offset when textBaseline is bottom ([26fdc3c](https://github.com/Brooooooklyn/canvas/commit/26fdc3c003d4e49ef4a4e45a1faebe34fdb29089))
-
+- do nothing if lineTo parameters invalid ([0ddeb7c](https://github.com/Brooooooklyn/canvas/commit/0ddeb7cf8e97aff54f2fb315da8a3cc34a19ba48))
+- svg image transparent background should be preserved ([531bde8](https://github.com/Brooooooklyn/canvas/commit/531bde88f219fd4b7f72f550a2bb647ed859f9c2))
+- width in TextMetrics when text is ending with spaces ([5961fd2](https://github.com/Brooooooklyn/canvas/commit/5961fd2228c3f0965f25ab6f8b78ebb1a0220974))
+- y offset when textBaseline is bottom ([26fdc3c](https://github.com/Brooooooklyn/canvas/commit/26fdc3c003d4e49ef4a4e45a1faebe34fdb29089))
 
 ### Features
 
-* chrome/m101 ([0b77261](https://github.com/Brooooooklyn/canvas/commit/0b77261a4bcc24a8ecf0b526afa1583cf6679118))
-* upgrade to chrome/m103 ([#465](https://github.com/Brooooooklyn/canvas/issues/465)) ([1f73a77](https://github.com/Brooooooklyn/canvas/commit/1f73a774b586c1e91fa9a36b1c9c478be4149571))
-
-
+- chrome/m101 ([0b77261](https://github.com/Brooooooklyn/canvas/commit/0b77261a4bcc24a8ecf0b526afa1583cf6679118))
+- upgrade to chrome/m103 ([#465](https://github.com/Brooooooklyn/canvas/issues/465)) ([1f73a77](https://github.com/Brooooooklyn/canvas/commit/1f73a774b586c1e91fa9a36b1c9c478be4149571))
 
 ## [0.1.21](https://github.com/Brooooooklyn/canvas/compare/v0.1.20...v0.1.21) (2022-03-10)
 
