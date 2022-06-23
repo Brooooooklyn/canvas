@@ -1331,6 +1331,12 @@ extern "C"
     }
   }
 
+  void skiac_image_filter_ref(skiac_image_filter *c_image_filter)
+  {
+    auto image_filter = IMAGE_FILTER_CAST;
+    image_filter->ref();
+  }
+
   void skiac_image_filter_destroy(skiac_image_filter *c_image_filter)
   {
     auto image_filter = IMAGE_FILTER_CAST;

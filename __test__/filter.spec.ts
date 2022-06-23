@@ -110,6 +110,16 @@ test('filter-combine-contrast-brightness', async (t) => {
   await snapshotImage(t)
 })
 
+test('filter-save-restore', async (t) => {
+  const { ctx } = t.context
+  ctx.filter = 'none'
+  ctx.save()
+  ctx.filter = 'invert(100%)'
+  ctx.restore()
+  ctx.drawImage(await createImage('filter-invert.jpeg'), 0, 0)
+  await snapshotImage(t)
+})
+
 async function createImage(name: string) {
   const i = new Image()
   i.src = await fs.readFile(join(__dirname, 'fixtures', name))

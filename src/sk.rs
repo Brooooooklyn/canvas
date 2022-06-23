@@ -760,6 +760,8 @@ mod ffi {
       c_image_filter: *mut skiac_image_filter,
     ) -> *mut skiac_image_filter;
 
+    pub fn skiac_image_filter_ref(image_filter: *mut skiac_image_filter);
+
     pub fn skiac_image_filter_destroy(image_filter: *mut skiac_image_filter);
 
     pub fn skiac_sk_data_destroy(c_data: *mut skiac_data);
@@ -3142,6 +3144,15 @@ impl Drop for MaskFilter {
 #[repr(transparent)]
 #[derive(Debug)]
 pub struct ImageFilter(pub(crate) *mut ffi::skiac_image_filter);
+
+impl Clone for ImageFilter {
+  fn clone(&self) -> Self {
+    unsafe {
+      ffi::skiac_image_filter_ref(self.0);
+    };
+    Self(self.0)
+  }
+}
 
 impl ImageFilter {
   pub fn make_drop_shadow_only(

@@ -49,8 +49,6 @@ pub struct Context {
   pub height: u32,
   pub color_space: ColorSpace,
   pub stream: Option<SkWMemoryStream>,
-  pub filter: Option<ImageFilter>,
-  filters_string: String,
 }
 
 impl Context {
@@ -267,8 +265,6 @@ impl Context {
       height,
       color_space,
       stream: Some(stream),
-      filter: None,
-      filters_string: "none".to_owned(),
     })
   }
 
@@ -291,8 +287,6 @@ impl Context {
       height,
       color_space,
       stream: None,
-      filter: None,
-      filters_string: "none".to_owned(),
     })
   }
 
@@ -571,7 +565,7 @@ impl Context {
       .ok_or_else(|| SkError::Generic("Make line dash path effect failed".to_string()))?;
       paint.set_path_effect(&path_effect);
     }
-    if let Some(f) = &self.filter {
+    if let Some(f) = &self.state.filter {
       paint.set_image_filter(f);
     }
     Ok(paint)
@@ -579,13 +573,13 @@ impl Context {
 
   pub fn set_filter(&mut self, filter_str: &str) -> result::Result<(), SkError> {
     if filter_str.trim() == "none" {
-      self.filters_string = "none".to_owned();
-      self.filter = None;
+      self.state.filters_string = "none".to_owned();
+      self.state.filter = None;
     } else {
       let (_, filters) =
         css_filter(filter_str).map_err(|e| SkError::StringToFillRuleError(format!("{}", e)))?;
-      self.filter = css_filters_to_image_filter(filters);
-      self.filters_string = filter_str.to_owned();
+      self.state.filter = css_filters_to_image_filter(filters);
+      self.state.filters_string = filter_str.to_owned();
     }
     Ok(())
   }
@@ -623,7 +617,7 @@ impl Context {
       .ok_or_else(|| SkError::Generic("Make line dash path effect failed".to_string()))?;
       paint.set_path_effect(&path_effect);
     }
-    if let Some(f) = &self.filter {
+    if let Some(f) = &self.state.filter {
       paint.set_image_filter(f);
     }
     Ok(paint)
@@ -2005,7 +1999,9 @@ fn set_filter(ctx: CallContext) -> Result<JsUndefined> {
 fn get_filter(ctx: CallContext) -> Result<JsString> {
   let this = ctx.this_unchecked::<JsObject>();
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
-  ctx.env.create_string(context_2d.filters_string.as_str())
+  ctx
+    .env
+    .create_string(context_2d.state.filters_string.as_str())
 }
 
 #[js_function]
