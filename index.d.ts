@@ -393,4 +393,4 @@ export interface LoadImageOptions {
   maxRedirects?: number
 }
 
-export function loadImage(source: string | URL | Buffer | Image, options?: LoadImageOptions): Image
+export function loadImage(source: string | URL | Buffer | Image, options?: LoadImageOptions): Promise<Image>
