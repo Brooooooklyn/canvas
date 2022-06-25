@@ -388,3 +388,9 @@ export const enum SvgExportFlag {
 }
 
 export function convertSVGTextToPath(svg: Buffer | string): Buffer
+
+export interface LoadImageOptions {
+  maxRedirects?: number
+}
+
+export function loadImage(source: string | URL | Buffer | Image, options?: LoadImageOptions): Image
