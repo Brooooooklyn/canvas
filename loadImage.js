@@ -44,7 +44,7 @@ function makeRequest(url, resolve, reject, redirectCount) {
   lib.get(url, (res) => {
     const shouldRedirect = REDIRECT_STATUSES.includes(res.statusCode) && typeof res.headers.location === 'string'
     if (shouldRedirect && redirectCount > 0)
-      return makeRequest(res.headers.location, redirectCount - 1, resolve, reject)
+      return makeRequest(res.headers.location, resolve, reject, redirectCount - 1)
     if (typeof res.statusCode === 'number' && res.statusCode < 200 && res.statusCode >= 300) {
       return reject(new Error(`remote source rejected with status code ${res.statusCode}`))
     }
