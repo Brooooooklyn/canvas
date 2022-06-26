@@ -11,9 +11,6 @@ function drawGradient(factory: (width: number, height: number) => Canvas) {
 
   const ctx = canvas.getContext('2d')!
 
-  // @ts-expect-error
-  canvas.async = false
-
   const gradient = ctx.createLinearGradient(20, 0, 220, 0)
 
   // Add three color stops
@@ -25,7 +22,13 @@ function drawGradient(factory: (width: number, height: number) => Canvas) {
   ctx.fillStyle = gradient
   ctx.fillRect(20, 20, 200, 100)
 
-  canvas.toBuffer('image/png')
+  if (canvas instanceof SkiaCanvas) {
+    canvas.toBufferSync('image/png')
+  } else {
+    // @ts-expect-error
+    canvas.async = false
+    canvas.toBuffer('image/png')
+  }
 }
 
 export function gradient() {

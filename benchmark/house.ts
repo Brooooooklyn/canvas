@@ -9,9 +9,6 @@ import { createCanvas as skiaCreateCanvas } from '../index'
 function drawHouse(factory: (width: number, height: number) => Canvas) {
   const canvas = factory(1024, 768)
 
-  // @ts-expect-error
-  canvas.async = false
-
   const ctx = canvas.getContext('2d')!
 
   ctx.lineWidth = 10
@@ -32,7 +29,13 @@ function drawHouse(factory: (width: number, height: number) => Canvas) {
   ctx.closePath()
   ctx.stroke()
 
-  canvas.toBuffer('image/png')
+  if (canvas instanceof SkiaCanvas) {
+    canvas.toBufferSync('image/png')
+  } else {
+    // @ts-expect-error
+    canvas.async = false
+    canvas.toBuffer('image/png')
+  }
 }
 
 export function house() {
