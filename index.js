@@ -16,6 +16,8 @@ const {
 
 const { DOMPoint, DOMMatrix, DOMRect } = require('./geometry')
 
+const loadImage = require('./load-image')
+
 const StrokeJoin = {
   Miter: 0,
   Round: 1,
@@ -344,4 +346,5 @@ module.exports = {
   DOMPoint,
   DOMMatrix,
   DOMRect,
+  loadImage,
 }

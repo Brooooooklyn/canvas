@@ -388,3 +388,13 @@ export const enum SvgExportFlag {
 }
 
 export function convertSVGTextToPath(svg: Buffer | string): Buffer
+
+export interface LoadImageOptions {
+  maxRedirects?: number
+  requestOptions?: import('http').RequestOptions
+}
+
+export function loadImage(
+  source: string | URL | Buffer | ArrayBufferLike | Uint8Array | Image,
+  options?: LoadImageOptions,
+): Promise<Image>
