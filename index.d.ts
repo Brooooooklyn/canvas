@@ -391,6 +391,7 @@ export function convertSVGTextToPath(svg: Buffer | string): Buffer
 
 export interface LoadImageOptions {
   maxRedirects?: number
+  requestOptions?: import('http').RequestOptions
 }
 
 export function loadImage(

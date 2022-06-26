@@ -36,7 +36,7 @@ module.exports = async function loadImage(source, options = {}) {
       source = !(source instanceof URL) ? new URL(source) : source
       // attempt to download the remote source and construct image
       const data = await new Promise((resolve, reject) =>
-        makeRequest(source, resolve, reject, options.maxRedirects ?? MAX_REDIRECTS),
+        makeRequest(source, resolve, reject, options.maxRedirects ?? MAX_REDIRECTS, options.requestOptions),
       )
       return createImage(data)
     }
@@ -46,15 +46,15 @@ module.exports = async function loadImage(source, options = {}) {
   throw new TypeError('unsupported image source')
 }
 
-function makeRequest(url, resolve, reject, redirectCount) {
+function makeRequest(url, resolve, reject, redirectCount, requestOptions) {
   const isHttps = url.protocol === 'https:'
   // lazy load the lib
   const lib = isHttps ? (!https ? (https = require('https')) : https) : !http ? (http = require('http')) : http
 
-  lib.get(url, (res) => {
+  lib.get(url, requestOptions ?? {}, (res) => {
     const shouldRedirect = REDIRECT_STATUSES.includes(res.statusCode) && typeof res.headers.location === 'string'
     if (shouldRedirect && redirectCount > 0)
-      return makeRequest(res.headers.location, resolve, reject, redirectCount - 1)
+      return makeRequest(res.headers.location, resolve, reject, redirectCount - 1, requestOptions)
     if (typeof res.statusCode === 'number' && res.statusCode < 200 && res.statusCode >= 300) {
       return reject(new Error(`remote source rejected with status code ${res.statusCode}`))
     }
