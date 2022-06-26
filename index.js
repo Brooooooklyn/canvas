@@ -16,7 +16,7 @@ const {
 
 const { DOMPoint, DOMMatrix, DOMRect } = require('./geometry')
 
-const loadImage = require('./loadImage')
+const loadImage = require('./load-image')
 
 const StrokeJoin = {
   Miter: 0,
