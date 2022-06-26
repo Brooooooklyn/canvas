@@ -16,7 +16,7 @@ module.exports = async function loadImage(source, options = {}) {
   // use the same buffer without copying if the source is a buffer
   if (Buffer.isBuffer(source)) return createImage(source)
   // construct a buffer if the source is buffer-like
-  if (isBufferLike(source)) return Buffer.from(source)
+  if (isBufferLike(source)) return createImage(Buffer.from(source))
   // if the source is Image instance, copy the image src to new image
   if (source instanceof Image) return createImage(source.src)
   // if source is string and in data uri format, construct image using data uri
