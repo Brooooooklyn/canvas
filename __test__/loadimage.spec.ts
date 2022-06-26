@@ -5,15 +5,21 @@ import { createCanvas, Image, loadImage } from '../index'
 
 import { snapshotImage } from './image-snapshot'
 
-test('should be able to load file src', async (t) => {
-  t.notThrowsAsync(async () => {
-    await loadImage(join(__dirname, '../example/simple.png'))
-  })
+test('should load file src', async (t) => {
+  const img = await loadImage(join(__dirname, '../example/simple.png'))
+  t.is(img instanceof Image, true)
 })
 
 test('should load remote url', async (t) => {
   const img = await loadImage(
     'https://raw.githubusercontent.com/Brooooooklyn/canvas/462fce53afeaee6d6b4ae5d1b407c17e2359ff7e/example/anime-girl.png',
+  )
+  t.is(img instanceof Image, true)
+})
+
+test('should load data uri', async (t) => {
+  const img = await loadImage(
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAIAQMAAAD+wSzIAAAABlBMVEX///+/v7+jQ3Y5AAAADklEQVQI12P4AIX8EAgALgAD/aNpbtEAAAAASUVORK5CYII',
   )
   t.is(img instanceof Image, true)
 })
