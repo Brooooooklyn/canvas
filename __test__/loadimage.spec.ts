@@ -1,5 +1,6 @@
 import { join } from 'path'
 import test from 'ava'
+import fs from 'fs'
 
 import { createCanvas, Image, loadImage } from '../index'
 
@@ -8,6 +9,18 @@ import { snapshotImage } from './image-snapshot'
 test('should load file src', async (t) => {
   const img = await loadImage(join(__dirname, '../example/simple.png'))
   t.is(img instanceof Image, true)
+})
+
+test('should load file stream', async (t) => {
+  const img = await loadImage(fs.createReadStream(join(__dirname, '../example/simple.png')))
+  t.is(img instanceof Image, true)
+})
+
+test('should load image with alt', async (t) => {
+  const img = await loadImage(join(__dirname, '../example/simple.png'), {
+    alt: 'demo-image',
+  })
+  t.is(img.alt, 'demo-image')
 })
 
 test('should load remote url', async (t) => {
