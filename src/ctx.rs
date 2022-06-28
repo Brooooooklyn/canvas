@@ -274,7 +274,7 @@ impl Context {
     color_space: ColorSpace,
     font_collection: &mut Rc<FontCollection>,
   ) -> Result<Self> {
-    let surface = Surface::new_rgba(width, height, color_space)
+    let surface = Surface::new_rgba_premultiplied(width, height, color_space)
       .ok_or_else(|| Error::from_reason("Create skia surface failed".to_owned()))?;
     Ok(Context {
       surface,
