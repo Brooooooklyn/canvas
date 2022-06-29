@@ -1,6 +1,6 @@
 use cssparser::RGBA;
 
-use crate::sk::Matrix;
+use crate::sk::{ImageFilter, Matrix};
 
 use super::{
   font::Font,
@@ -30,6 +30,8 @@ pub struct Context2dRenderingState {
   pub text_baseline: TextBaseline,
   pub text_direction: TextDirection,
   pub transform: Matrix,
+  pub filter: Option<ImageFilter>,
+  pub filters_string: String,
 }
 
 impl Default for Context2dRenderingState {
@@ -57,6 +59,8 @@ impl Default for Context2dRenderingState {
       text_baseline: TextBaseline::default(),
       text_direction: TextDirection::default(),
       transform: Matrix::identity(),
+      filter: None,
+      filters_string: "none".to_owned(),
     }
   }
 }

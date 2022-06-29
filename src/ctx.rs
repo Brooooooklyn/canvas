@@ -49,8 +49,6 @@ pub struct Context {
   pub height: u32,
   pub color_space: ColorSpace,
   pub stream: Option<SkWMemoryStream>,
-  pub filter: Option<ImageFilter>,
-  filters_string: String,
 }
 
 impl Context {
@@ -267,8 +265,6 @@ impl Context {
       height,
       color_space,
       stream: Some(stream),
-      filter: None,
-      filters_string: "none".to_owned(),
     })
   }
 
@@ -278,7 +274,7 @@ impl Context {
     color_space: ColorSpace,
     font_collection: &mut Rc<FontCollection>,
   ) -> Result<Self> {
-    let surface = Surface::new_rgba(width, height, color_space)
+    let surface = Surface::new_rgba_premultiplied(width, height, color_space)
       .ok_or_else(|| Error::from_reason("Create skia surface failed".to_owned()))?;
     Ok(Context {
       surface,
@@ -291,8 +287,6 @@ impl Context {
       height,
       color_space,
       stream: None,
-      filter: None,
-      filters_string: "none".to_owned(),
     })
   }
 
@@ -571,7 +565,7 @@ impl Context {
       .ok_or_else(|| SkError::Generic("Make line dash path effect failed".to_string()))?;
       paint.set_path_effect(&path_effect);
     }
-    if let Some(f) = &self.filter {
+    if let Some(f) = &self.state.filter {
       paint.set_image_filter(f);
     }
     Ok(paint)
@@ -579,13 +573,13 @@ impl Context {
 
   pub fn set_filter(&mut self, filter_str: &str) -> result::Result<(), SkError> {
     if filter_str.trim() == "none" {
-      self.filters_string = "none".to_owned();
-      self.filter = None;
+      self.state.filters_string = "none".to_owned();
+      self.state.filter = None;
     } else {
       let (_, filters) =
         css_filter(filter_str).map_err(|e| SkError::StringToFillRuleError(format!("{}", e)))?;
-      self.filter = css_filters_to_image_filter(filters);
-      self.filters_string = filter_str.to_owned();
+      self.state.filter = css_filters_to_image_filter(filters);
+      self.state.filters_string = filter_str.to_owned();
     }
     Ok(())
   }
@@ -623,7 +617,7 @@ impl Context {
       .ok_or_else(|| SkError::Generic("Make line dash path effect failed".to_string()))?;
       paint.set_path_effect(&path_effect);
     }
-    if let Some(f) = &self.filter {
+    if let Some(f) = &self.state.filter {
       paint.set_image_filter(f);
     }
     Ok(paint)
@@ -693,7 +687,7 @@ impl Context {
 
   pub(crate) fn draw_image(
     &mut self,
-    image: &Image,
+    bitmap: &Bitmap,
     sx: f32,
     sy: f32,
     s_width: f32,
@@ -703,7 +697,7 @@ impl Context {
     d_width: f32,
     d_height: f32,
   ) -> Result<()> {
-    let bitmap = image.bitmap.as_ref().unwrap().0.bitmap;
+    let bitmap = bitmap.0.bitmap;
     let paint = self.fill_paint()?;
     if let Some(drop_shadow_paint) = self.drop_shadow_paint(&paint) {
       let surface = &mut self.surface;
@@ -1105,14 +1099,15 @@ fn draw_image(ctx: CallContext) -> Result<JsUndefined> {
         return ctx.env.get_undefined();
       }
 
-      let image_w = image.bitmap.as_ref().unwrap().0.width as f32;
-      let image_h = image.bitmap.as_ref().unwrap().0.height as f32;
+      let bitmap = image.bitmap.as_ref().unwrap();
+      let image_w = bitmap.0.width as f32;
+      let image_h = bitmap.0.height as f32;
 
       if ctx.length == 3 {
         let dx: f64 = ctx.get::<JsNumber>(1)?.get_double()?;
         let dy: f64 = ctx.get::<JsNumber>(2)?.get_double()?;
         context_2d.draw_image(
-          image, 0f32, 0f32, image_w, image_h, dx as f32, dy as f32, image_w, image_h,
+          bitmap, 0f32, 0f32, image_w, image_h, dx as f32, dy as f32, image_w, image_h,
         )?;
       } else if ctx.length == 5 {
         let dx: f64 = ctx.get::<JsNumber>(1)?.get_double()?;
@@ -1120,7 +1115,7 @@ fn draw_image(ctx: CallContext) -> Result<JsUndefined> {
         let d_width: f64 = ctx.get::<JsNumber>(3)?.get_double()?;
         let d_height: f64 = ctx.get::<JsNumber>(4)?.get_double()?;
         context_2d.draw_image(
-          image,
+          bitmap,
           0f32,
           0f32,
           image_w,
@@ -1140,7 +1135,7 @@ fn draw_image(ctx: CallContext) -> Result<JsUndefined> {
         let d_width: f64 = ctx.get::<JsNumber>(7)?.get_double()?;
         let d_height: f64 = ctx.get::<JsNumber>(8)?.get_double()?;
         context_2d.draw_image(
-          image,
+          bitmap,
           sx as f32,
           sy as f32,
           s_width as f32,
@@ -1164,11 +1159,11 @@ fn draw_image(ctx: CallContext) -> Result<JsUndefined> {
         let dy = ctx.get::<JsNumber>(2)?.get_double()? as f32;
         (0.0f32, 0.0f32, width, height, dx, dy, width, height)
       } else if ctx.length == 5 {
-        let sx = ctx.get::<JsNumber>(1)?.get_double()? as f32;
-        let sy = ctx.get::<JsNumber>(2)?.get_double()? as f32;
-        let sw = ctx.get::<JsNumber>(3)?.get_double()? as f32;
-        let sh = ctx.get::<JsNumber>(4)?.get_double()? as f32;
-        (sx, sy, sw, sh, 0.0f32, 0.0f32, sw, sh)
+        let dx = ctx.get::<JsNumber>(1)?.get_double()? as f32;
+        let dy = ctx.get::<JsNumber>(2)?.get_double()? as f32;
+        let d_width = ctx.get::<JsNumber>(3)?.get_double()? as f32;
+        let d_height = ctx.get::<JsNumber>(4)?.get_double()? as f32;
+        (0.0, 0.0, width, height, dx, dy, d_width, d_height)
       } else if ctx.length == 9 {
         (
           ctx.get::<JsNumber>(1)?.get_double()? as f32,
@@ -1187,8 +1182,8 @@ fn draw_image(ctx: CallContext) -> Result<JsUndefined> {
         ));
       };
 
-      context_2d.surface.canvas.draw_surface_rect(
-        &another_ctx.surface,
+      context_2d.draw_image(
+        &another_ctx.surface.get_bitmap(),
         sx,
         sy,
         sw,
@@ -1197,8 +1192,7 @@ fn draw_image(ctx: CallContext) -> Result<JsUndefined> {
         dy,
         dw,
         dh,
-        FilterQuality::High,
-      );
+      )?;
     }
   };
 
@@ -2005,7 +1999,9 @@ fn set_filter(ctx: CallContext) -> Result<JsUndefined> {
 fn get_filter(ctx: CallContext) -> Result<JsString> {
   let this = ctx.this_unchecked::<JsObject>();
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
-  ctx.env.create_string(context_2d.filters_string.as_str())
+  ctx
+    .env
+    .create_string(context_2d.state.filters_string.as_str())
 }
 
 #[js_function]

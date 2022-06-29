@@ -836,7 +836,6 @@ test('stroke-and-filling', async (t) => {
 test('strokeRect', async (t) => {
   const { ctx } = t.context
   ctx.shadowColor = '#d53'
-  ctx.shadowBlur = 20
   ctx.lineJoin = 'bevel'
   ctx.lineWidth = 15
   ctx.strokeStyle = '#38f'

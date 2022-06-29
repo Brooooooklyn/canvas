@@ -54,6 +54,10 @@ test('transform-with-radial-gradient', async (t) => {
 })
 
 test('transform-with-radial-gradient-x', async (t) => {
+  if (process.arch === 'arm') {
+    t.pass('skip on arm')
+    return
+  }
   const canvas = createCanvas(400, 282)
   const ctx = canvas.getContext('2d')
   ctx.translate(200.5, 141.5)
