@@ -94,7 +94,7 @@
     "typescript": "^4.7.2"
   },
   "lint-staged": {
-    "*.@(js|ts|tsx|yml|yaml|md|json)": [
+    "*.@(js|ts|tsx|yml|yaml|md|json|html)": [
       "prettier --write"
     ],
     "*.@(js|ts|tsx)": [
