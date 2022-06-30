@@ -1,3 +1,19 @@
+## [0.1.24](https://github.com/Brooooooklyn/canvas/compare/v0.1.23...v0.1.24) (2022-06-30)
+
+### Bug Fixes
+
+- ctx.filter should store in state and be able to save/restore ([b85ee7b](https://github.com/Brooooooklyn/canvas/commit/b85ee7bd7093a6ab00b5806fdfdb0b13bcc438da))
+- parameters for drawImage(canvas) ([2392263](https://github.com/Brooooooklyn/canvas/commit/23922636605d3a3ededa7006532327bfa36a7ebf))
+- skia async prop deprecated in future release ([088e628](https://github.com/Brooooooklyn/canvas/commit/088e628dfe8b73abf777dda97ba057df1a8f340e))
+- use premultiplied surface as default ([f13c1a3](https://github.com/Brooooooklyn/canvas/commit/f13c1a3fd0e3d2718fa1fd7c32c2a7979d98c5c5))
+- wrong text metrics if text contains chars not including in current font-family ([cfcca26](https://github.com/Brooooooklyn/canvas/commit/cfcca2677facdd51ceb68e59e964b25ae75d211a))
+
+### Features
+
+- add stream and alt support for Image ([#486](https://github.com/Brooooooklyn/canvas/issues/486)) ([671c4b1](https://github.com/Brooooooklyn/canvas/commit/671c4b1535ddd6b38c644ed2c0e8aacccf4abc8c))
+- implement loadImage function ([#483](https://github.com/Brooooooklyn/canvas/issues/483)) ([fa0d857](https://github.com/Brooooooklyn/canvas/commit/fa0d857ec90fb5357516487776b9ab7b1f851ae9))
+- skia chrome/m104 ([0b2c865](https://github.com/Brooooooklyn/canvas/commit/0b2c865187027aedcebd7c9a49eac50c4b73ce23))
+
 ## [0.1.23](https://github.com/Brooooooklyn/canvas/compare/v0.1.22...v0.1.23) (2022-06-23)
 
 ## [0.1.22](https://github.com/Brooooooklyn/canvas/compare/v0.1.21...v0.1.22) (2022-06-02)
