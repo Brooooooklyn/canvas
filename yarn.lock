@@ -236,7 +236,7 @@ __metadata:
     ava: ^4.2.0
     benny: ^3.7.1
     canvas: ^2.9.1
-    canvaskit-wasm: ^0.34.0
+    canvaskit-wasm: ^0.35.0
     colorette: ^2.0.16
     conventional-changelog-cli: ^2.2.2
     echarts: ^5.3.2
@@ -785,6 +785,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@webgpu/types@npm:^0.1.20":
+  version: 0.1.20
+  resolution: "@webgpu/types@npm:0.1.20"
+  checksum: b59858805efd907a001a28c166365bad00660455a6c6499fe3a223e1c71bb0dd77b8d54707f0a5856b2add9450e8b40e9e2f3ad9f9e129909044cb7933e88600
+  languageName: node
+  linkType: hard
+
 "JSONStream@npm:^1.0.4":
   version: 1.3.5
   resolution: "JSONStream@npm:1.3.5"
@@ -1324,10 +1331,12 @@ __metadata:
   languageName: node
   linkType: hard
 
-"canvaskit-wasm@npm:^0.34.0":
-  version: 0.34.0
-  resolution: "canvaskit-wasm@npm:0.34.0"
-  checksum: 0e51f04a6b9b8d8c103575d55b6482cb61fe01a43d707535f05433442ce68dee42d89dbdeed08e1301571b6ba4067e2623e882996973fa0c39dd8cd5d4fe4ade
+"canvaskit-wasm@npm:^0.35.0":
+  version: 0.35.0
+  resolution: "canvaskit-wasm@npm:0.35.0"
+  dependencies:
+    "@webgpu/types": ^0.1.20
+  checksum: 33080e47730021870b38d7bf04fb77a390c5a5aaa4d2bec9679d22ae862a4c3e5201397f5ab6801ab55e8200dbe5e621a7da8f0e4c39a79db9bb0a49e0427247
   languageName: node
   linkType: hard
 
