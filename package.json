@@ -22,7 +22,8 @@
     "index.d.ts",
     "index.js",
     "geometry.js",
-    "js-binding.js"
+    "js-binding.js",
+    "load-image.js"
   ],
   "napi": {
     "name": "skia",
