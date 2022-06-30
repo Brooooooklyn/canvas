@@ -383,23 +383,30 @@ extern "C"
     builder.addText(text, text_len);
     auto paragraph = static_cast<ParagraphImpl *>(builder.Build().release());
     paragraph->layout(MAX_LAYOUT_WIDTH);
-
     std::vector<LineMetrics> metrics_vec;
     paragraph->getLineMetrics(metrics_vec);
     auto line_metrics = metrics_vec[0];
     auto run = paragraph->run(0);
-    auto glyphs = run.glyphs();
     auto font = run.font();
-    auto glyphs_size = glyphs.size();
     SkFontMetrics font_metrics;
     font.getMetrics(&font_metrics);
-    SkRect bounds[glyphs_size];
-    font.getBounds(glyphs.data(), glyphs_size, &bounds[0], nullptr);
+    SkRect bounds[text_len];
+    auto glyphs = run.glyphs();
+    auto glyphs_size = glyphs.size();
+    font.getBounds(glyphs.data(), text_len, &bounds[0], nullptr);
+    auto text_box = paragraph->getRectsForRange(0, text_len, RectHeightStyle::kTight, RectWidthStyle::kTight);
+    // line_metrics.fWidth doesn't contain the suffix spaces
+    // run.calculateWidth will return 0 if font is rendering as fallback
+    auto line_width = 0.0;
     auto first_char_bounds = bounds[0];
     auto descent = first_char_bounds.fBottom;
     auto ascent = first_char_bounds.fTop;
     auto last_char_bounds = bounds[glyphs_size - 1];
     auto last_char_pos_x = run.positionX(glyphs_size - 1);
+    for (auto &box : text_box)
+    {
+      line_width += box.rect.width();
+    }
     for (size_t i = 1; i <= glyphs_size - 1; ++i)
     {
       auto char_bounds = bounds[i];
@@ -414,8 +421,6 @@ extern "C"
         ascent = char_top;
       }
     }
-    // line_metrics.fWidth doesn't contain the suffix spaces
-    auto line_width = run.calculateWidth(0, glyphs_size, false);
     auto alphabetic_baseline = paragraph->getAlphabeticBaseline();
     auto css_baseline = (CssBaseline)baseline;
     SkScalar baseline_offset = 0;
@@ -507,8 +512,8 @@ extern "C"
       c_line_metrics->left = line_metrics.fLeft - first_char_bounds.fLeft;
       c_line_metrics->right = last_char_pos_x + last_char_bounds.fRight;
       c_line_metrics->width = line_width;
-      c_line_metrics->font_ascent = line_metrics.fAscent + offset;
-      c_line_metrics->font_descent = line_metrics.fDescent - offset;
+      c_line_metrics->font_ascent = -font_metrics.fAscent + offset;
+      c_line_metrics->font_descent = font_metrics.fDescent - offset;
     }
     delete paragraph;
   }

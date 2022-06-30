@@ -51,5 +51,5 @@ test('should draw img', async (t) => {
   ctx.fillRect(0, 0, canvas.width, canvas.height)
   ctx.drawImage(img, 250, 250)
 
-  await snapshotImage(t, { canvas }, 'jpeg')
+  await snapshotImage(t, { canvas }, 'jpeg', process.arch === 'x64' ? 0.05 : 0.3)
 })
