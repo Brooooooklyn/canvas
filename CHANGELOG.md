@@ -1,3 +1,9 @@
+## [0.1.25](https://github.com/Brooooooklyn/canvas/compare/v0.1.24...v0.1.25) (2022-06-30)
+
+### Bug Fixes
+
+- missing load-image.js in package.json ([ddb2419](https://github.com/Brooooooklyn/canvas/commit/ddb2419d02dae6f71745fb081a654f044af5148d))
+
 ## [0.1.24](https://github.com/Brooooooklyn/canvas/compare/v0.1.23...v0.1.24) (2022-06-30)
 
 ### Bug Fixes
