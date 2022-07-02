@@ -1,3 +1,5 @@
+/// <reference lib="dom" />
+
 export interface DOMMatrix2DInit {
   a: number
   b: number
