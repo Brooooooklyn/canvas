@@ -109,6 +109,10 @@
     "extensions": [
       "ts"
     ],
+    "files": [
+      "__test__/**/*.spec.ts",
+      "scripts/__test__/**/*.spec.ts"
+    ],
     "workerThreads": false,
     "cache": false,
     "timeout": "3m",

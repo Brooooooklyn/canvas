@@ -170,10 +170,7 @@ test('Convert stroke to path', (t) => {
   )
   path.stroke({ width: 10, miterLimit: 1 }).simplify().asWinding()
 
-  t.is(
-    path.toSVGString(),
-    'M57.6458 39.75L37.2942 4.5Q34.6962 -2.38419e-06 29.5 -2.38419e-06Q24.3038 -2.90573e-06 21.7058 4.5L1.35417 39.75Q-1.2439 44.25 1.35418 48.75Q3.95226 53.25 9.14841 53.25L49.8516 53.25Q55.0478 53.25 57.6458 48.75Q60.2439 44.25 57.6458 39.75ZM29.5 11L48.1195 43.25L10.8805 43.25L29.5 11Z',
-  )
+  t.snapshot(path.toSVGString())
 })
 
 test('Convert stroke to path 2', (t) => {
