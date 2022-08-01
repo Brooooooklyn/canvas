@@ -193,11 +193,11 @@ switch (TARGET_TRIPLE) {
     )
     break
   case 'aarch64-linux-android':
-    const { ANDROID_NDK_HOME } = process.env
-    if (!ANDROID_NDK_HOME) {
-      throw new TypeError('ANDROID_NDK_HOME must be specified in env variable')
+    const { ANDROID_NDK_LATEST_HOME } = process.env
+    if (!ANDROID_NDK_LATEST_HOME) {
+      throw new TypeError('ANDROID_NDK_LATEST_HOME must be specified in env variable')
     }
-    ExtraSkiaBuildFlag += ` target_cpu="arm64" ndk="${ANDROID_NDK_HOME}"`
+    ExtraSkiaBuildFlag += ` target_cpu="arm64" ndk="${ANDROID_NDK_LATEST_HOME}"`
     break
   case '':
     break

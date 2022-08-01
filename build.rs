@@ -96,7 +96,7 @@ fn main() {
       build.target("arm64-apple-macos");
     }
     "aarch64-linux-android" => {
-      let nkd_home = env::var("ANDROID_NDK_HOME").unwrap();
+      let nkd_home = env::var("ANDROID_NDK_LATEST_HOME").unwrap();
       env::set_var(
         "CC",
         format!(
