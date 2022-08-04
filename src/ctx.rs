@@ -639,16 +639,18 @@ impl Context {
       return None;
     }
     let mut drop_shadow_paint = paint.clone();
-    let sigma = last_state.shadow_blur / 2f32;
     let a = shadow_color.alpha;
     let r = shadow_color.red;
     let g = shadow_color.green;
     let b = shadow_color.blue;
+    let transform = last_state.transform.get_transform();
+    let sigma_x = last_state.shadow_blur / (2f32 * transform.scale_x());
+    let sigma_y = last_state.shadow_blur / (2f32 * transform.scale_y());
     let shadow_effect = ImageFilter::make_drop_shadow_only(
       last_state.shadow_offset_x,
       last_state.shadow_offset_y,
-      sigma,
-      sigma,
+      sigma_x,
+      sigma_y,
       (a as u32) << 24 | (r as u32) << 16 | (g as u32) << 8 | b as u32,
       None,
     )?;
@@ -673,13 +675,23 @@ impl Context {
       return None;
     }
     let mut drop_shadow_paint = paint.clone();
-    drop_shadow_paint.set_color(
-      shadow_color.red,
-      shadow_color.green,
-      shadow_color.blue,
-      shadow_color.alpha,
-    );
+    let a = shadow_color.alpha;
+    let r = shadow_color.red;
+    let g = shadow_color.green;
+    let b = shadow_color.blue;
+    let transform = last_state.transform.get_transform();
+    let sigma_x = last_state.shadow_blur / (2f32 * transform.scale_x());
+    let sigma_y = last_state.shadow_blur / (2f32 * transform.scale_y());
+    let shadow_effect = ImageFilter::make_drop_shadow_only(
+      0.0,
+      0.0,
+      sigma_x,
+      sigma_y,
+      (a as u32) << 24 | (r as u32) << 16 | (g as u32) << 8 | b as u32,
+      None,
+    )?;
     drop_shadow_paint.set_alpha(shadow_alpha);
+    drop_shadow_paint.set_image_filter(&shadow_effect);
     let blur_effect = MaskFilter::make_blur(last_state.shadow_blur / 2f32)?;
     drop_shadow_paint.set_mask_filter(&blur_effect);
     Some(drop_shadow_paint)

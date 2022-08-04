@@ -3017,12 +3017,19 @@ impl Drop for Matrix {
 }
 
 #[derive(Copy, Clone, PartialEq, Debug)]
+/// https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D/transform
 pub struct Transform {
+  /// (m11) Horizontal scaling. A value of `1` results in no scaling.
   pub a: f32,
+  /// (m12) Vertical skewing.
   pub b: f32,
+  /// (m21) Horizontal skewing.
   pub c: f32,
+  /// (m22) Vertical scaling. A value of `1` results in no scaling.
   pub d: f32,
+  /// (dx) Horizontal translation (moving).
   pub e: f32,
+  /// (dy) Vertical translation (moving).
   pub f: f32,
 }
 
@@ -3096,6 +3103,16 @@ impl Transform {
       d: (m[0] * m[8] - m[2] * m[6]) / det,
       f: (m[2] * m[3] - m[0] * m[5]) / det,
     })
+  }
+
+  #[inline]
+  pub fn scale_x(&self) -> f32 {
+    self.a
+  }
+
+  #[inline]
+  pub fn scale_y(&self) -> f32 {
+    self.d
   }
 }
 
