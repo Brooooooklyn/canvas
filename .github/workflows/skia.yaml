@@ -207,22 +207,11 @@ jobs:
           check-latest: true
           cache: 'yarn'
 
-      - uses: actions/setup-python@v4
-        with:
-          python-version: '2.x'
-          architecture: 'x64'
-
-      - name: Set env
-        run: echo "${PWD}/depot_tools" >> $GITHUB_PATH
-        shell: bash
-
-      - name: Install cross compile tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install g++-10-aarch64-linux-gnu gcc-10-aarch64-linux-gnu -y
-
       - name: Compile skia
-        run: node ./scripts/build-skia.js --target=aarch64-unknown-linux-gnu
+        run: |
+          docker pull ghcr.io/brooooooklyn/canvas/ubuntu-builder:focal-aarch64
+          docker tag ghcr.io/brooooooklyn/canvas/ubuntu-builder:focal-aarch64 builder
+          docker run --user "$(id -u):$(id -g)" --rm -v $(pwd):/canvas -w /canvas builder node ./scripts/build-skia.js --target=aarch64-unknown-linux-gnu
 
       - name: Cache yarn
         uses: actions/cache@v3

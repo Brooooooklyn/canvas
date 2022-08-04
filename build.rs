@@ -170,15 +170,28 @@ fn main() {
         .static_crt(true);
     }
     "linux" => {
-      if compile_target_arch != "x86_64" || compile_target_env != "gnu" {
+      if compile_target_env != "gnu"
+        || (compile_target_arch != "x86_64" && compile_target_arch != "aarch64")
+      {
         build.cpp_set_stdlib("stdc++");
       } else {
         build
           .cpp_set_stdlib("c++")
           .flag("-static")
           .include("/usr/lib/llvm-14/include/c++/v1");
-        println!("cargo:rustc-link-search=/usr/lib/llvm-14/lib");
         println!("cargo:rustc-link-lib=static=c++");
+        if compile_target_arch == "aarch64" {
+          build
+            .include("/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot/usr/include")
+            .flag("--sysroot=/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot");
+          println!("cargo:rustc-link-search=/usr/aarch64-unknown-linux-gnu/lib/llvm-14/lib");
+          println!("cargo:rustc-link-search=/usr/aarch64-unknown-linux-gnu/lib");
+          println!("cargo:rustc-link-search=/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot/lib");
+          println!("cargo:rustc-link-search=/usr/aarch64-unknown-linux-gnu/lib/gcc/aarch64-unknown-linux-gnu/4.8.5");
+        } else {
+          println!("cargo:rustc-link-lib=static=c++abi");
+          println!("cargo:rustc-link-search=/usr/lib/llvm-14/lib");
+        }
       }
     }
     "macos" => {

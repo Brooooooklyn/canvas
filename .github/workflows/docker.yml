@@ -28,3 +28,27 @@ jobs:
         run: |
           docker push ghcr.io/brooooooklyn/canvas/ubuntu-builder:focal
           docker push ghcr.io/brooooooklyn/canvas/musl-builder:lts
+
+      - name: Install latest libc++-dev for cross build
+        uses: addnab/docker-run-action@v3
+        with:
+          image: ghcr.io/napi-rs/napi-rs/nodejs:aarch64-16
+          options: '--user 0:0 -e GITHUB_TOKEN -v ${{ github.workspace }}/lib/llvm-14:/usr/lib/llvm-14'
+          run: >-
+            apt-get update &&
+            apt-get install -y wget &&
+            wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - &&
+            echo "deb http://apt.llvm.org/focal/ llvm-toolchain-focal-14 main" >> /etc/apt/sources.list &&
+            echo "deb-src http://apt.llvm.org/focal/ llvm-toolchain-focal-14 main" >> /etc/apt/sources.list &&
+            apt-get update &&
+            apt-get install libc++-14-dev libc++abi-14-dev -y --fix-missing --no-install-recommends &&
+            rm /usr/aarch64-unknown-linux-gnu/lib/llvm-14/lib/libc++abi.so
+
+      - name: Build and push Linux aarch64
+        uses: docker/build-push-action@v2
+        with:
+          file: linux-aarch64.Dockerfile
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: ghcr.io/brooooooklyn/canvas/ubuntu-builder:focal-aarch64
