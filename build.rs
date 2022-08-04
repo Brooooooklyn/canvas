@@ -36,13 +36,6 @@ fn main() {
   build.cpp(true).file("skia-c/skia_c.cpp");
 
   match compile_target.as_str() {
-    "aarch64-unknown-linux-gnu" => {
-      build
-        .flag("--sysroot=/usr/aarch64-linux-gnu")
-        .flag("--gcc-toolchain=aarch64-linux-gnu-gcc")
-        .include("/usr/aarch64-linux-gnu/include/c++/7")
-        .include("/usr/aarch64-linux-gnu/include/c++/7/aarch64-linux-gnu");
-    }
     "aarch64-unknown-linux-musl" => {
       let gcc_version = String::from_utf8(
         process::Command::new("ls")
@@ -189,7 +182,6 @@ fn main() {
           println!("cargo:rustc-link-search=/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot/lib");
           println!("cargo:rustc-link-search=/usr/aarch64-unknown-linux-gnu/lib/gcc/aarch64-unknown-linux-gnu/4.8.5");
         } else {
-          println!("cargo:rustc-link-lib=static=c++abi");
           println!("cargo:rustc-link-search=/usr/lib/llvm-14/lib");
         }
       }
