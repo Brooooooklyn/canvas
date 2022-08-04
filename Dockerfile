@@ -24,6 +24,7 @@ RUN apt-get update && \
   clang-14 \
   lld-14 \
   libc++-14-dev \
+  libc++abi-14-dev \
   nodejs \
   rcs \
   xz-utils \
@@ -34,8 +35,7 @@ RUN apt-get update && \
   ln -sf /usr/bin/clang-14 /usr/bin/clang && \
   ln -sf /usr/bin/clang++-14 /usr/bin/clang++ && \
   ln -sf /usr/bin/lld-14 /usr/bin/lld && \
-  ln -sf /usr/bin/clang-14 /usr/bin/cc && \
-  ln -sf /usr/lib/llvm-14/lib/libc++abi.so.1.0 /usr/lib/llvm-14/lib/libc++abi.so && \
+  rm /usr/lib/llvm-14/lib/libc++abi.so && \
   npm install --location=global yarn && \
   npm cache clean --force && \
   curl https://sh.rustup.rs -sSf | sh -s -- -y && \

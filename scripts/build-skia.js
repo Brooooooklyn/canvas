@@ -117,7 +117,12 @@ switch (PLATFORM_NAME) {
       '"-DSK_CODEC_DECODES_JPEG",' +
       '"-DSK_HAS_HEIF_LIBRARY",' +
       '"-DSK_SHAPER_HARFBUZZ_AVAILABLE"'
-    if (PLATFORM_NAME === 'linux' && !TARGET_TRIPLE && HOST_LIBC === 'glibc' && HOST_ARCH === 'x64') {
+    if (
+      PLATFORM_NAME === 'linux' &&
+      !TARGET_TRIPLE &&
+      HOST_LIBC === 'glibc' &&
+      (HOST_ARCH === 'x64' || HOST_ARCH === 'arm64')
+    ) {
       ExtraCflagsCC += ',"-stdlib=libc++", "-static", "-I/usr/lib/llvm-14/include/c++/v1"'
     }
     break
@@ -129,16 +134,16 @@ switch (TARGET_TRIPLE) {
   case 'aarch64-unknown-linux-gnu':
     ExtraSkiaBuildFlag += ' target_cpu="arm64" target_os="linux"'
     ExtraCflags =
-      '"--target=aarch64-unknown-linux-gnu", "--sysroot=/usr/aarch64-linux-gnu", "--gcc-toolchain=aarch64-linux-gnu-gcc-10", "-B/usr/aarch64-linux-gnu/bin", "-I/usr/aarch64-linux-gnu/include/c++/10", "-I/usr/aarch64-linux-gnu/include/c++/10/aarch64-linux-gnu", "-march=armv8-a"'
+      '"--target=aarch64-unknown-linux-gnu", "--sysroot=/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot", "-I/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot/usr/include", "-march=armv8-a"'
     ExtraCflagsCC +=
-      ', "--target=aarch64-unknown-linux-gnu", "--sysroot=/usr/aarch64-linux-gnu", "--gcc-toolchain=aarch64-linux-gnu-gcc-10", "-B/usr/aarch64-linux-gnu/bin", "-I/usr/aarch64-linux-gnu/include/c++/10", "-I/usr/aarch64-linux-gnu/include/c++/10/aarch64-linux-gnu", "-march=armv8-a"'
+      ', "--target=aarch64-unknown-linux-gnu", "--sysroot=/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot", "-I/usr/lib/llvm-14/include/c++/v1", "-I/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot/usr/include", "-march=armv8-a"'
     ExtraLdFlags =
-      '"--target=aarch64-unknown-linux-gnu", "-B/usr/aarch64-linux-gnu/bin", "-L/usr/aarch64-linux-gnu/lib", "-L/usr/lib/gcc-cross/aarch64-linux-gnu/10"'
-    ExtraAsmFlags = '"--sysroot=/usr/aarch64-linux-gnu", "--target=aarch64-unknown-linux-gnu", "-march=armv8-a"'
+      '"-fuse-ld=lld", "-L/usr/aarch64-unknown-linux-gnu/lib/llvm-14/lib", "-L/usr/aarch64-unknown-linux-gnu/lib", "-L/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot/lib", "-L/usr/aarch64-unknown-linux-gnu/lib/gcc/aarch64-unknown-linux-gnu/4.8.5"'
+    ExtraAsmFlags = '"--target=aarch64-unknown-linux-gnu", "-march=armv8-a"'
 
     GN_ARGS.push(
       `extra_ldflags=[${ExtraLdFlags}]`,
-      `ar="aarch64-linux-gnu-gcc-ar-10"`,
+      `ar="llvm-ar-14"`,
       `extra_asmflags=[${ExtraAsmFlags}]`,
       `extra_cflags=[${ExtraCflags}]`,
       `extra_cflags_c=[${ExtraCflags}]`,
