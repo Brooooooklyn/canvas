@@ -711,11 +711,24 @@ impl Context {
         dy,
         d_width,
         d_height,
+        self.state.image_smoothing_enabled,
+        self.state.image_smoothing_quality,
         &drop_shadow_paint,
       );
     }
     self.surface.canvas.draw_image(
-      bitmap, sx, sy, s_width, s_height, dx, dy, d_width, d_height, &paint,
+      bitmap,
+      sx,
+      sy,
+      s_width,
+      s_height,
+      dx,
+      dy,
+      d_width,
+      d_height,
+      self.state.image_smoothing_enabled,
+      self.state.image_smoothing_quality,
+      &paint,
     );
 
     Ok(())
