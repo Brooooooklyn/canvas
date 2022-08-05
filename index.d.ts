@@ -356,7 +356,7 @@ interface IGlobalFonts {
 
 export const GlobalFonts: IGlobalFonts
 
-export const enum PathOp {
+export enum PathOp {
   Difference = 0, // subtract the op path from the first path
   Intersect = 1, // intersect the two paths
   Union = 2, // union (inclusive-or) the two paths
@@ -364,26 +364,26 @@ export const enum PathOp {
   ReverseDifference = 4, // subtract the first path from the op path
 }
 
-export const enum FillType {
+export enum FillType {
   Winding = 0,
   EvenOdd = 1,
   InverseWinding = 2,
   InverseEvenOdd = 3,
 }
 
-export const enum StrokeJoin {
+export enum StrokeJoin {
   Miter = 0,
   Round = 1,
   Bevel = 2,
 }
 
-export const enum StrokeCap {
+export enum StrokeCap {
   Butt = 0,
   Round = 1,
   Square = 2,
 }
 
-export const enum SvgExportFlag {
+export enum SvgExportFlag {
   ConvertTextToPaths = 0x01,
   NoPrettyXML = 0x02,
   RelativePathEncoding = 0x04,
@@ -392,9 +392,9 @@ export const enum SvgExportFlag {
 export function convertSVGTextToPath(svg: Buffer | string): Buffer
 
 export interface LoadImageOptions {
-  alt?: string,
-  maxRedirects?: number,
-  requestOptions?: import('http').RequestOptions,
+  alt?: string
+  maxRedirects?: number
+  requestOptions?: import('http').RequestOptions
 }
 
 export function loadImage(
