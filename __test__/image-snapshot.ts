@@ -32,7 +32,7 @@ export async function snapshotImage<C>(
   } catch {
     existed = false
   }
-  if (!existed) {
+  if (!existed || process.env.UPDATE_SNAPSHOT) {
     await fs.writeFile(p, image)
     t.pass()
   } else {

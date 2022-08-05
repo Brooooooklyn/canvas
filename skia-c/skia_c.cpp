@@ -277,12 +277,26 @@ extern "C"
     CANVAS_CAST->drawColor(SkColor4f{r, g, b, a});
   }
 
-  void skiac_canvas_draw_image(skiac_canvas *c_canvas, skiac_bitmap *c_bitmap, float sx, float sy, float s_width, float s_height, float dx, float dy, float d_width, float d_height, skiac_paint *c_paint)
+  void skiac_canvas_draw_image(
+      skiac_canvas *c_canvas,
+      skiac_bitmap *c_bitmap,
+      float sx,
+      float sy,
+      float s_width,
+      float s_height,
+      float dx,
+      float dy,
+      float d_width,
+      float d_height,
+      bool enable_smoothing,
+      int filter_quality,
+      skiac_paint *c_paint)
   {
     const auto src_rect = SkRect::MakeXYWH(sx, sy, s_width, s_height);
     const auto dst_rect = SkRect::MakeXYWH(dx, dy, d_width, d_height);
     auto sk_image = SkImage::MakeFromBitmap(*BITMAP_CAST);
-    const auto sampling = SkSamplingOptions(SkCubicResampler::Mitchell());
+    auto fq = enable_smoothing ? filter_quality : 0;
+    const auto sampling = SamplingOptionsFromFQ(fq);
     auto paint = reinterpret_cast<const SkPaint *>(c_paint);
     CANVAS_CAST->drawImageRect(sk_image, src_rect, dst_rect, sampling, paint, SkCanvas::kFast_SrcRectConstraint);
   }

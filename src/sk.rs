@@ -347,6 +347,8 @@ mod ffi {
       dy: f32,
       d_width: f32,
       d_height: f32,
+      enable_smoothing: bool,
+      filter_quality: i32,
       paint: *mut skiac_paint,
     );
 
@@ -1251,6 +1253,7 @@ impl From<i32> for BlendMode {
   }
 }
 
+#[repr(i32)]
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub enum FilterQuality {
   None = 0,
@@ -1993,11 +1996,25 @@ impl Canvas {
     dy: f32,
     d_width: f32,
     d_height: f32,
+    enable_smoothing: bool,
+    quality: FilterQuality,
     paint: &Paint,
   ) {
     unsafe {
       ffi::skiac_canvas_draw_image(
-        self.0, image, sx, sy, s_width, s_height, dx, dy, d_width, d_height, paint.0,
+        self.0,
+        image,
+        sx,
+        sy,
+        s_width,
+        s_height,
+        dx,
+        dy,
+        d_width,
+        d_height,
+        enable_smoothing,
+        quality as i32,
+        paint.0,
       );
     }
   }
