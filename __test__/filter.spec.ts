@@ -97,10 +97,10 @@ test('filter-saturate', async (t) => {
 })
 
 test('filter-sepia', async (t) => {
-  const { ctx } = t.context
+  const { ctx, canvas } = t.context
   ctx.filter = 'sepia(100%)'
   ctx.drawImage(await createImage('filter-sepia.jpeg'), 0, 0)
-  await snapshotImage(t)
+  await snapshotImage(t, { ctx, canvas }, 'png', 0.05)
 })
 
 test('filter-combine-contrast-brightness', async (t) => {
