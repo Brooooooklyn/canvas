@@ -259,7 +259,7 @@ __metadata:
     pinst: ^3.0.0
     png.js: ^0.2.1
     prettier: ^2.6.2
-    skia-canvas: ^0.9.29
+    skia-canvas: ^1.0.0
     typescript: ^4.7.2
   languageName: unknown
   linkType: soft
@@ -5293,9 +5293,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"skia-canvas@npm:^0.9.29":
-  version: 0.9.30
-  resolution: "skia-canvas@npm:0.9.30"
+"skia-canvas@npm:^1.0.0":
+  version: 1.0.0
+  resolution: "skia-canvas@npm:1.0.0"
   dependencies:
     "@mapbox/node-pre-gyp": ^1.0.9
     cargo-cp-artifact: ^0.1
@@ -5303,7 +5303,7 @@ __metadata:
     path-browserify: ^1.0.1
     simple-get: ^4.0.1
     string-split-by: ^1.0.0
-  checksum: c072949083b8e46d82bb9353e3e29f8a779cae57012df560662a6e5f61d9c2b7e47282a8e3e00c36211ee5acfb6da20b0d1abb36716f43605652c37f7c8dc9cd
+  checksum: 514475a5adab3d5dbed72e5a4b9cc0f1fa59917511297c2bc36d9d6eea638c170c2b61791a70b4693db7b4364a77a7254adf06302a0913902764140960aad59e
   languageName: node
   linkType: hard
 
