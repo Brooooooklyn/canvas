@@ -335,8 +335,10 @@ fn data(ctx: CallContext) -> Result<JsBuffer> {
 fn to_data_url(ctx: CallContext) -> Result<JsString> {
   let mime_js = ctx.get::<JsString>(0)?.into_utf8()?;
   let mime = mime_js.as_str()?;
-  let quality = match ctx.get::<JsNumber>(1)?.get_uint32() {
-    Ok(number) => number as u8,
+  // https://developer.mozilla.org/en-US/docs/Web/API/HTMLCanvasElement/toDataURL
+  // quality is a number between 0.0 and 1.0
+  let quality = match ctx.get::<JsNumber>(1)?.get_double() {
+    Ok(number) => (number * 100.0) as u8,
     Err(_e) => match mime {
       MIME_WEBP => DEFAULT_WEBP_QUALITY,
       _ => DEFAULT_JPEG_QUALITY, // https://developer.mozilla.org/en-US/docs/Web/API/HTMLCanvasElement/toDataURL

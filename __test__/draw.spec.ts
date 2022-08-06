@@ -946,7 +946,7 @@ test('JPEG toDataURL with quality', async (t) => {
   const { ctx, canvas } = t.context
   drawTranslate(ctx)
 
-  const output = canvas.toDataURL('image/jpeg', 20)
+  const output = canvas.toDataURL('image/jpeg', 0.2)
   const prefix = 'data:image/jpeg;base64,'
   t.true(output.startsWith(prefix))
   const imageBase64 = output.substring(prefix.length)
@@ -958,7 +958,7 @@ test('WebP toDataURL with quality', async (t) => {
   const { ctx, canvas } = t.context
   drawTranslate(ctx)
 
-  const output = canvas.toDataURL('image/webp', 100)
+  const output = canvas.toDataURL('image/webp', 1)
   const prefix = 'data:image/webp;base64,'
   t.true(output.startsWith(prefix))
   const imageBase64 = output.substring(prefix.length)
