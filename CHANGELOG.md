@@ -1,3 +1,17 @@
+## [0.1.26](https://github.com/Brooooooklyn/canvas/compare/v0.1.25...v0.1.26) (2022-08-07)
+
+### Bug Fixes
+
+- **loadImage:** redirect handler ([dbbf826](https://github.com/Brooooooklyn/canvas/commit/dbbf826652f512bfd9afb14d9719e85c13bbc453))
+- miss applying image_smoothing_enabled and image_smoothing_quality ([815bc91](https://github.com/Brooooooklyn/canvas/commit/815bc91e219b6d0173954843030737114baf2d16))
+- shadow color was not applied correctly ([4054e44](https://github.com/Brooooooklyn/canvas/commit/4054e4458df2b0b99fa8edbc679484328b95a61d))
+- test snapshots diff on arm64 ([21983c2](https://github.com/Brooooooklyn/canvas/commit/21983c2f25e7a99e63606f58de626d0f65530d24))
+- the quality of toDataURL should between 0 and 1 ([27e87df](https://github.com/Brooooooklyn/canvas/commit/27e87dffcb6e49efcc48b85885c4d76ef89f5edb))
+
+### Features
+
+- chrome/m105 ([ade8f64](https://github.com/Brooooooklyn/canvas/commit/ade8f6452b0cdad2ee5b8c7107a667372f7fdb2f))
+
 ## [0.1.25](https://github.com/Brooooooklyn/canvas/compare/v0.1.24...v0.1.25) (2022-06-30)
 
 ### Bug Fixes
