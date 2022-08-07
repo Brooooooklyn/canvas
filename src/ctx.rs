@@ -7,10 +7,13 @@ use std::slice;
 use std::str::FromStr;
 
 use cssparser::{Color as CSSColor, Parser, ParserInput};
+use napi::bindgen_prelude::{Either3, Unknown};
 use napi::*;
 use rgb::FromSlice;
 
 use crate::filter::css_filters_to_image_filter;
+use crate::CanvasElement;
+use crate::SVGCanvas;
 use crate::{
   error::SkError, filter::css_filter, font::Font, gradient::CanvasGradient, image::*,
   pattern::Pattern, sk::*, state::Context2dRenderingState,
@@ -1103,10 +1106,20 @@ fn close_path(ctx: CallContext) -> Result<JsUndefined> {
 
 #[js_function(9)]
 fn draw_image(ctx: CallContext) -> Result<JsUndefined> {
+  use napi::bindgen_prelude::ValidateNapiValue;
+
   let this = ctx.this_unchecked::<JsObject>();
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
   let image_js = ctx.get::<JsObject>(0)?;
-  let image_or_canvas = ctx.env.unwrap::<ImageOrCanvas>(&image_js)?;
+  let mut the_canvas = ImageOrCanvas::Canvas;
+  let image_or_canvas = if unsafe {
+    <&CanvasElement>::validate(ctx.env.raw(), image_js.raw()).is_ok()
+      || <&SVGCanvas>::validate(ctx.env.raw(), image_js.raw()).is_ok()
+  } {
+    &mut the_canvas
+  } else {
+    ctx.env.unwrap::<ImageOrCanvas>(&image_js)?
+  };
 
   match image_or_canvas {
     ImageOrCanvas::Image(image) => {
@@ -2257,11 +2270,68 @@ fn get_text_baseline(ctx: CallContext) -> Result<JsString> {
     .create_string(context_2d.state.text_baseline.as_str())
 }
 
+const AVIF_DEFAULT_QUALITY: f32 = 80.0;
+
 #[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
 pub struct AVIFConfig {
-  pub quality: f32,
-  pub speed: u8,
-  pub threads: u8,
+  /// Quality from 1 (worst) to 100 (best), the default value is 80.
+  /// The numbers have different meaning than JPEG's quality scale.
+  pub quality: Option<f32>,
+  pub speed: Option<u8>,
+  pub threads: Option<u8>,
+}
+
+impl Default for AVIFConfig {
+  fn default() -> Self {
+    AVIFConfig {
+      quality: Some(AVIF_DEFAULT_QUALITY),
+      speed: Some(0),
+      threads: Some(4),
+    }
+  }
+}
+
+impl From<&Either3<u32, String, Unknown>> for AVIFConfig {
+  fn from(value: &Either3<u32, String, Unknown>) -> Self {
+    if let Either3::B(config_str) = value {
+      if let Ok(c) = serde_json::from_str::<AVIFConfig>(config_str) {
+        return c;
+      }
+    }
+    AVIFConfig::default()
+  }
+}
+
+impl From<Either3<u32, String, Unknown>> for AVIFConfig {
+  fn from(value: Either3<u32, String, Unknown>) -> Self {
+    Self::from(&value)
+  }
+}
+
+impl From<&AVIFConfig> for ravif::Config {
+  fn from(config: &AVIFConfig) -> Self {
+    let quality = config.quality.unwrap_or(AVIF_DEFAULT_QUALITY);
+    ravif::Config {
+      quality,
+      alpha_quality: ((quality + 100.) / 2.).min(quality + quality / 4. + 2.),
+      speed: config.speed.unwrap_or(0),
+      threads: config.threads.unwrap_or(4) as usize,
+      color_space: ravif::ColorSpace::RGB,
+      premultiplied_alpha: false,
+    }
+  }
+}
+
+impl From<&mut AVIFConfig> for ravif::Config {
+  fn from(config: &mut AVIFConfig) -> Self {
+    ravif::Config::from(&*config)
+  }
+}
+
+impl From<AVIFConfig> for ravif::Config {
+  fn from(config: AVIFConfig) -> Self {
+    ravif::Config::from(&config)
+  }
 }
 
 pub enum ContextData {
@@ -2329,15 +2399,7 @@ impl Task for ContextData {
               *width as usize,
               *height as usize,
             ),
-            &ravif::Config {
-              quality: config.quality,
-              alpha_quality: ((config.quality + 100.) / 2.)
-                .min(config.quality + config.quality / 4. + 2.),
-              speed: config.speed,
-              premultiplied_alpha: false,
-              threads: 0,
-              color_space: ravif::ColorSpace::RGB,
-            },
+            &ravif::Config::from(config),
           )
           .map(|(o, _width, _height)| ContextOutputData::Avif(o))
           .map_err(|e| Error::new(Status::GenericFailure, format!("{}", e)))

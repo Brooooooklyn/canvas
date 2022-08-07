@@ -937,7 +937,7 @@ test('toDataURL', async (t) => {
   const output = canvas.toDataURL()
   const prefix = 'data:image/png;base64,'
   t.true(output.startsWith(prefix))
-  const imageBase64 = output.substr(prefix.length)
+  const imageBase64 = output.substring(prefix.length)
   const pngBuffer = Buffer.from(imageBase64, 'base64')
   t.deepEqual(pngBuffer, await canvas.encode('png'))
 })
@@ -962,8 +962,8 @@ test('WebP toDataURL with quality', async (t) => {
   const prefix = 'data:image/webp;base64,'
   t.true(output.startsWith(prefix))
   const imageBase64 = output.substring(prefix.length)
-  const pngBuffer = Buffer.from(imageBase64, 'base64')
-  t.deepEqual(pngBuffer, await canvas.encode('webp', 100))
+  const webpBuffer = Buffer.from(imageBase64, 'base64')
+  t.deepEqual(webpBuffer, await canvas.encode('webp', 100))
 })
 
 test('toDataURLAsync', async (t) => {
