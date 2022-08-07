@@ -23,6 +23,6 @@ RUN apk add --no-cache \
   ln -sf /usr/bin/python3 /usr/bin/python
 
 RUN rustup-init -y && \
-  wget http://more.musl.cc/10/x86_64-linux-musl/aarch64-linux-musl-cross.tgz && \
+  wget https://github.com/napi-rs/napi-rs/releases/download/linux-musl-cross%4011.2.1/aarch64-linux-musl-cross.tgz && \
   tar -xvf aarch64-linux-musl-cross.tgz && \
   rm aarch64-linux-musl-cross.tgz
