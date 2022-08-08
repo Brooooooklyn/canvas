@@ -45,7 +45,7 @@ jobs:
             echo "deb-src http://apt.llvm.org/focal/ llvm-toolchain-focal-14 main" >> /etc/apt/sources.list &&
             apt-get update &&
             apt-get install libc++-14-dev libc++abi-14-dev -y --fix-missing --no-install-recommends &&
-            rm /usr/aarch64-unknown-linux-gnu/lib/llvm-14/lib/libc++abi.so
+            rm /usr/lib/llvm-14/lib/libc++abi.so
 
       - name: Build and push Linux aarch64
         uses: docker/build-push-action@v3
