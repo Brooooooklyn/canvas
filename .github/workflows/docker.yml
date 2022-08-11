@@ -50,7 +50,7 @@ jobs:
       - name: Build and push Linux aarch64
         uses: docker/build-push-action@v3
         with:
-          file: linux-aarch64.Dockerfile
+          file: aarch64.Dockerfile
           context: .
           platforms: linux/amd64
           push: true
