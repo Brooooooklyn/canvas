@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1660029136257,
+  "lastUpdate": 1660194648865,
   "repoUrl": "https://github.com/Brooooooklyn/canvas",
   "entries": {
     "Benchmark": [
@@ -16523,6 +16523,72 @@ window.BENCHMARK_DATA = {
             "name": "Draw gradient#node-canvas",
             "value": 25,
             "range": "±0.43%",
+            "unit": "ops/sec",
+            "extra": "45 samples"
+          },
+          {
+            "name": "Draw gradient#@napi-rs/skia",
+            "value": 22,
+            "range": "±0.09%",
+            "unit": "ops/sec",
+            "extra": "41 samples"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "66224939+MajesticString@users.noreply.github.com",
+            "name": "Harry Allen",
+            "username": "MajesticString"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "ba5f539b279121200b8ce9214cff81e940429b0b",
+          "message": "docs: Clarify that AVIF is also supported in README (#524)",
+          "timestamp": "2022-08-11T13:03:50+08:00",
+          "tree_id": "97679174f073c6953790c12dd299c94bf654e1fd",
+          "url": "https://github.com/Brooooooklyn/canvas/commit/ba5f539b279121200b8ce9214cff81e940429b0b"
+        },
+        "date": 1660194575483,
+        "tool": "benchmarkjs",
+        "benches": [
+          {
+            "name": "Draw house#skia-canvas",
+            "value": 24,
+            "range": "±0.92%",
+            "unit": "ops/sec",
+            "extra": "43 samples"
+          },
+          {
+            "name": "Draw house#node-canvas",
+            "value": 26,
+            "range": "±0.32%",
+            "unit": "ops/sec",
+            "extra": "47 samples"
+          },
+          {
+            "name": "Draw house#@napi-rs/skia",
+            "value": 23,
+            "range": "±0.82%",
+            "unit": "ops/sec",
+            "extra": "42 samples"
+          },
+          {
+            "name": "Draw gradient#skia-canvas",
+            "value": 23,
+            "range": "±0.05%",
+            "unit": "ops/sec",
+            "extra": "42 samples"
+          },
+          {
+            "name": "Draw gradient#node-canvas",
+            "value": 25,
+            "range": "±0.44%",
             "unit": "ops/sec",
             "extra": "45 samples"
           },
