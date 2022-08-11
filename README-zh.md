@@ -76,7 +76,7 @@ ctx.closePath()
 ctx.stroke()
 
 async function main() {
-  const pngData = await canvas.encode('png') // 也支持 JPEG 和 WebP
+  const pngData = await canvas.encode('png') // 也支持 JPEG 、AVIF 和 WebP
   // encoding in libuv thread pool, non-blocking
   await promises.writeFile(join(__dirname, 'simple.png'), pngData)
 }
