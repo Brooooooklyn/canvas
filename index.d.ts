@@ -360,7 +360,7 @@ export enum PathOp {
   Difference = 0, // subtract the op path from the first path
   Intersect = 1, // intersect the two paths
   Union = 2, // union (inclusive-or) the two paths
-  XOR = 3, // exclusive-or the two paths
+  Xor = 3, // exclusive-or the two paths
   ReverseDifference = 4, // subtract the first path from the op path
 }
 

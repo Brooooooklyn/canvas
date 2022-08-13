@@ -200,21 +200,29 @@ const {
   CanvasElement,
   createContext,
   SVGCanvas,
-  Path2D,
+  Path,
   ImageData,
   Image,
   CanvasPattern,
   GlobalFonts,
   convertSVGTextToPath,
+  PathOp,
+  FillType,
+  StrokeJoin,
+  StrokeCap,
 } = nativeBinding
 
 module.exports.CanvasRenderingContext2D = CanvasRenderingContext2D
 module.exports.CanvasElement = CanvasElement
 module.exports.createContext = createContext
 module.exports.SVGCanvas = SVGCanvas
-module.exports.Path2D = Path2D
+module.exports.Path2D = Path
 module.exports.ImageData = ImageData
 module.exports.Image = Image
 module.exports.CanvasPattern = CanvasPattern
 module.exports.GlobalFonts = GlobalFonts
 module.exports.convertSVGTextToPath = convertSVGTextToPath
+module.exports.PathOp = PathOp
+module.exports.FillType = FillType
+module.exports.StrokeJoin = StrokeJoin
+module.exports.StrokeCap = StrokeCap

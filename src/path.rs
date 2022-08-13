@@ -1,418 +1,376 @@
-use napi::*;
+use napi::{bindgen_prelude::*, JsObject, JsString};
 
-use crate::sk::*;
+use crate::sk::{
+  FillType as SkFillType, Matrix as SkMatrix, Path as SkPath, PathOp as SkPathOp,
+  StrokeCap as SkStrokeCap, StrokeJoin as SkStrokeJoin,
+};
 
-impl Path {
-  pub fn create_js_class(env: &Env) -> Result<JsFunction> {
-    env.define_class(
-      "Path2D",
-      path_constructor,
-      &vec![
-        // Standard Path2d methods
-        Property::new("addPath")?.with_method(add_path),
-        Property::new("closePath")?.with_method(close_path),
-        Property::new("moveTo")?.with_method(move_to),
-        Property::new("lineTo")?.with_method(line_to),
-        Property::new("bezierCurveTo")?.with_method(bezier_curve_to),
-        Property::new("quadraticCurveTo")?.with_method(quadratic_curve_to),
-        Property::new("arc")?.with_method(arc),
-        Property::new("arcTo")?.with_method(arc_to),
-        Property::new("ellipse")?.with_method(ellipse),
-        Property::new("rect")?.with_method(rect),
-        // extra methods in PathKit
-        Property::new("op")?.with_method(op),
-        Property::new("simplify")?.with_method(simplify),
-        Property::new("setFillType")?.with_method(set_fill_type),
-        Property::new("getFillType")?.with_method(get_fill_type),
-        Property::new("asWinding")?.with_method(as_winding),
-        Property::new("toSVGString")?.with_method(to_svg_string),
-        Property::new("getBounds")?.with_method(get_bounds),
-        Property::new("computeTightBounds")?.with_method(compute_tight_bounds),
-        Property::new("transform")?.with_method(transform),
-        Property::new("trim")?.with_method(trim),
-        Property::new("dash")?.with_method(dash),
-        Property::new("equals")?.with_method(equals),
-        Property::new("_stroke")?.with_method(stroke),
-      ],
-    )
+#[napi(object)]
+pub struct Matrix {
+  pub a: f64,
+  pub b: f64,
+  pub c: f64,
+  pub d: f64,
+  pub e: f64,
+  pub f: f64,
+}
+
+#[napi]
+pub enum PathOp {
+  Difference,        // subtract the op path from the first path
+  Intersect,         // intersect the two paths
+  Union,             // union (inclusive-or) the two paths
+  Xor,               // exclusive-or the two paths
+  ReverseDifference, // subtract the first path from the op path
+}
+
+impl From<PathOp> for SkPathOp {
+  fn from(value: PathOp) -> Self {
+    match value {
+      PathOp::Difference => SkPathOp::Difference,
+      PathOp::Intersect => SkPathOp::Intersect,
+      PathOp::Union => SkPathOp::Union,
+      PathOp::Xor => SkPathOp::Xor,
+      PathOp::ReverseDifference => SkPathOp::ReverseDifference,
+    }
   }
 }
 
-#[js_function(1)]
-fn path_constructor(ctx: CallContext) -> Result<JsUndefined> {
-  let mut this = ctx.this_unchecked::<JsObject>();
-  let p = if ctx.length == 0 {
-    Path::new()
-  } else {
-    let input = ctx.get::<JsUnknown>(0)?;
-    match input.get_type()? {
-      ValueType::String => {
-        let path_string = unsafe { input.cast::<JsString>() }.into_utf8()?;
-        Path::from_svg_path(path_string.as_str()?).ok_or_else(|| {
-          Error::new(
-            Status::InvalidArg,
-            "Create path from provided path string failed.".to_owned(),
-          )
-        })?
-      }
-      ValueType::Object => {
-        let path_object = unsafe { input.cast::<JsObject>() };
-        let input_path = ctx.env.unwrap::<Path>(&path_object)?;
-        input_path.clone()
-      }
-      _ => {
+#[napi]
+#[derive(PartialEq, Eq, Hash, Debug)]
+pub enum FillType {
+  Winding = 0,
+  EvenOdd = 1,
+  InverseWinding = 2,
+  InverseEvenOdd = 3,
+}
+
+impl From<FillType> for SkFillType {
+  fn from(value: FillType) -> Self {
+    match value {
+      FillType::Winding => SkFillType::Winding,
+      FillType::EvenOdd => SkFillType::EvenOdd,
+      FillType::InverseWinding => SkFillType::InverseWinding,
+      FillType::InverseEvenOdd => SkFillType::InverseEvenOdd,
+    }
+  }
+}
+
+impl From<i32> for FillType {
+  fn from(value: i32) -> Self {
+    match value {
+      0 => FillType::Winding,
+      1 => FillType::EvenOdd,
+      2 => FillType::InverseWinding,
+      3 => FillType::InverseEvenOdd,
+      _ => unreachable!(),
+    }
+  }
+}
+
+#[napi]
+pub enum StrokeCap {
+  Butt = 0,
+  Round = 1,
+  Square = 2,
+}
+
+impl From<StrokeCap> for SkStrokeCap {
+  fn from(value: StrokeCap) -> Self {
+    match value {
+      StrokeCap::Butt => SkStrokeCap::Butt,
+      StrokeCap::Round => SkStrokeCap::Round,
+      StrokeCap::Square => SkStrokeCap::Square,
+    }
+  }
+}
+
+impl Default for StrokeCap {
+  fn default() -> Self {
+    StrokeCap::Butt
+  }
+}
+
+#[napi]
+pub enum StrokeJoin {
+  Miter = 0,
+  Round = 1,
+  Bevel = 2,
+}
+
+impl Default for StrokeJoin {
+  fn default() -> Self {
+    StrokeJoin::Miter
+  }
+}
+
+impl From<StrokeJoin> for SkStrokeJoin {
+  fn from(value: StrokeJoin) -> Self {
+    match value {
+      StrokeJoin::Miter => SkStrokeJoin::Miter,
+      StrokeJoin::Round => SkStrokeJoin::Round,
+      StrokeJoin::Bevel => SkStrokeJoin::Bevel,
+    }
+  }
+}
+
+#[napi(object)]
+pub struct StrokeOptions {
+  pub width: Option<f64>,
+  pub miter_limit: Option<f64>,
+  pub cap: Option<StrokeCap>,
+  pub join: Option<StrokeJoin>,
+}
+
+#[napi]
+pub struct Path {
+  pub(crate) inner: SkPath,
+}
+
+#[napi]
+impl Path {
+  #[napi(constructor)]
+  pub fn new(path: Option<Either3<String, &mut Path, Unknown>>) -> Result<Self> {
+    let inner = match &path {
+      Some(Either3::A(path)) => SkPath::from_svg_path(path).ok_or_else(|| {
+        Error::new(
+          Status::InvalidArg,
+          "Create path from provided path string failed.".to_owned(),
+        )
+      })?,
+      Some(Either3::B(path)) => path.inner.clone(),
+      Some(Either3::C(c)) => {
         return Err(Error::new(
           Status::InvalidArg,
-          "Invalid Path2D constructor argument".to_string(),
-        ))
+          format!(
+            "Create path from provided unknown value failed {}.",
+            c.get_type()?
+          ),
+        ));
       }
+      None => SkPath::new(),
+    };
+    Ok(Path { inner })
+  }
+
+  #[napi]
+  pub fn add_path(&mut self, sub_path: &Path, matrix: Option<Matrix>) {
+    let transform = matrix
+      .map(|m| {
+        SkMatrix::new(
+          m.a as f32, m.c as f32, m.e as f32, m.b as f32, m.d as f32, m.f as f32,
+        )
+      })
+      .unwrap_or_else(SkMatrix::identity);
+    self.inner.add_path(&sub_path.inner, &transform);
+  }
+
+  #[napi]
+  pub fn close_path(&mut self) {
+    self.inner.close();
+  }
+
+  #[napi]
+  pub fn move_to(&mut self, x: f64, y: f64) {
+    self.inner.move_to(x as f32, y as f32);
+  }
+
+  #[napi]
+  pub fn line_to(&mut self, x: f64, y: f64) {
+    self.inner.line_to(x as f32, y as f32);
+  }
+
+  #[napi]
+  pub fn bezier_curve_to(&mut self, cp1x: f64, cp1y: f64, cp2x: f64, cp2y: f64, x: f64, y: f64) {
+    self.inner.cubic_to(
+      cp1x as f32,
+      cp1y as f32,
+      cp2x as f32,
+      cp2y as f32,
+      x as f32,
+      y as f32,
+    );
+  }
+
+  #[napi]
+  pub fn quadratic_curve_to(&mut self, cpx: f64, cpy: f64, x: f64, y: f64) {
+    self
+      .inner
+      .quad_to(cpx as f32, cpy as f32, x as f32, y as f32);
+  }
+
+  #[napi]
+  pub fn arc(
+    &mut self,
+    x: f64,
+    y: f64,
+    radius: f64,
+    start_angle: f64,
+    end_angle: f64,
+    anticlockwise: Option<bool>,
+  ) {
+    self.inner.arc(
+      x as f32,
+      y as f32,
+      radius as f32,
+      start_angle as f32,
+      end_angle as f32,
+      anticlockwise.unwrap_or(false),
+    );
+  }
+
+  #[napi]
+  pub fn arc_to(&mut self, x1: f64, y1: f64, x2: f64, y2: f64, radius: f64) {
+    self
+      .inner
+      .arc_to_tangent(x1 as f32, y1 as f32, x2 as f32, y2 as f32, radius as f32);
+  }
+
+  #[napi]
+  pub fn ellipse(
+    &mut self,
+    x: f64,
+    y: f64,
+    radius_x: f64,
+    radius_y: f64,
+    rotation: f64,
+    start_angle: f64,
+    end_angle: f64,
+    anticlockwise: Option<bool>,
+  ) {
+    self.inner.ellipse(
+      x as f32,
+      y as f32,
+      radius_x as f32,
+      radius_y as f32,
+      rotation as f32,
+      start_angle as f32,
+      end_angle as f32,
+      anticlockwise.unwrap_or(false),
+    );
+  }
+
+  #[napi]
+  pub fn rect(&mut self, x: f64, y: f64, width: f64, height: f64) {
+    self
+      .inner
+      .add_rect(x as f32, y as f32, width as f32, height as f32);
+  }
+
+  #[napi]
+  pub fn op(&mut self, other: &Path, op: PathOp) -> &Self {
+    self.inner.op(&other.inner, op.into());
+    self
+  }
+
+  #[napi(js_name = "toSVGString")]
+  pub fn to_svg_string(&self, env: Env) -> Result<JsString> {
+    let sk_string = self.inner.to_svg_string();
+    unsafe { env.create_string_from_c_char(sk_string.ptr, sk_string.length) }
+  }
+
+  #[napi]
+  pub fn simplify(&mut self) -> &Self {
+    self.inner.simplify();
+    self
+  }
+
+  #[napi]
+  pub fn set_fill_type(&mut self, fill_type: FillType) {
+    self.inner.set_fill_type(fill_type.into());
+  }
+
+  #[napi]
+  pub fn get_fill_type(&mut self) -> FillType {
+    self.inner.get_fill_type().into()
+  }
+
+  #[napi]
+  pub fn get_fill_type_string(&mut self) -> String {
+    match self.get_fill_type() {
+      FillType::EvenOdd => "evenodd".to_owned(),
+      _ => "nonzero".to_owned(),
     }
-  };
-  ctx.env.wrap(&mut this, p)?;
-  ctx.env.get_undefined()
-}
+  }
 
-#[js_function(2)]
-fn add_path(ctx: CallContext) -> Result<JsUndefined> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let path_2d = ctx.env.unwrap::<Path>(&this)?;
+  #[napi]
+  pub fn as_winding(&mut self) -> &Self {
+    self.inner.as_winding();
+    self
+  }
 
-  let sub_path_obj = ctx.get::<JsObject>(0)?;
-  let sub_path = ctx.env.unwrap::<Path>(&sub_path_obj)?;
-  let transform = if ctx.length == 2 {
-    let transform_object = ctx.get::<JsObject>(1)?;
-    let a = transform_object
-      .get_named_property::<JsNumber>("a")?
-      .get_double()? as f32;
-    let b = transform_object
-      .get_named_property::<JsNumber>("b")?
-      .get_double()? as f32;
-    let c = transform_object
-      .get_named_property::<JsNumber>("c")?
-      .get_double()? as f32;
-    let d = transform_object
-      .get_named_property::<JsNumber>("d")?
-      .get_double()? as f32;
-    let e = transform_object
-      .get_named_property::<JsNumber>("e")?
-      .get_double()? as f32;
-    let f = transform_object
-      .get_named_property::<JsNumber>("f")?
-      .get_double()? as f32;
-    Matrix::new(a, c, e, b, d, f)
-  } else {
-    Matrix::identity()
-  };
-  path_2d.add_path(sub_path, &transform);
-  ctx.env.get_undefined()
-}
+  #[napi]
+  pub fn stroke(&mut self, options: StrokeOptions) -> &Self {
+    self.inner.stroke(
+      options.cap.unwrap_or_default().into(),
+      options.join.unwrap_or_default().into(),
+      options.width.unwrap_or(1.0) as f32,
+      options.miter_limit.unwrap_or(4.0) as f32,
+    );
+    self
+  }
 
-#[js_function]
-fn close_path(ctx: CallContext) -> Result<JsUndefined> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let path_2d = ctx.env.unwrap::<Path>(&this)?;
+  #[napi]
+  pub fn compute_tight_bounds(&self) -> Vec<f64> {
+    let ltrb = self.inner.compute_tight_bounds();
+    vec![ltrb.0 as f64, ltrb.1 as f64, ltrb.2 as f64, ltrb.3 as f64]
+  }
 
-  path_2d.close();
+  #[napi]
+  pub fn get_bounds(&self) -> Vec<f64> {
+    let ltrb = self.inner.get_bounds();
+    vec![ltrb.0 as f64, ltrb.1 as f64, ltrb.2 as f64, ltrb.3 as f64]
+  }
 
-  ctx.env.get_undefined()
-}
+  #[napi]
+  pub fn transform(&mut self, matrix: Matrix) -> &Self {
+    let trans = SkMatrix::new(
+      matrix.a as f32,
+      matrix.c as f32,
+      matrix.e as f32,
+      matrix.b as f32,
+      matrix.d as f32,
+      matrix.f as f32,
+    );
+    self.inner.transform_self(&trans);
+    self
+  }
 
-#[js_function(2)]
-fn move_to(ctx: CallContext) -> Result<JsUndefined> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let path_2d = ctx.env.unwrap::<Path>(&this)?;
-  let x = ctx.get::<JsNumber>(0)?.get_double()? as f32;
-  let y = ctx.get::<JsNumber>(1)?.get_double()? as f32;
+  #[napi]
+  pub fn trim(&mut self, start: f64, end: f64, is_complement: Option<bool>) -> &Self {
+    self
+      .inner
+      .trim(start as f32, end as f32, is_complement.unwrap_or(false));
+    self
+  }
 
-  path_2d.move_to(x, y);
+  #[napi]
+  pub fn dash(&mut self, on: f64, off: f64, phase: f64) -> &Self {
+    self.inner.dash(on as f32, off as f32, phase as f32);
+    self
+  }
 
-  ctx.env.get_undefined()
-}
-
-#[js_function(2)]
-fn line_to(ctx: CallContext) -> Result<JsUndefined> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let path_2d = ctx.env.unwrap::<Path>(&this)?;
-  let x = ctx.get::<JsNumber>(0)?.get_double()? as f32;
-  let y = ctx.get::<JsNumber>(1)?.get_double()? as f32;
-
-  path_2d.line_to(x, y);
-
-  ctx.env.get_undefined()
-}
-
-#[js_function(6)]
-fn bezier_curve_to(ctx: CallContext) -> Result<JsUndefined> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let path_2d = ctx.env.unwrap::<Path>(&this)?;
-  let cp1x = ctx.get::<JsNumber>(0)?.get_double()? as f32;
-  let cp1y = ctx.get::<JsNumber>(1)?.get_double()? as f32;
-  let cp2x = ctx.get::<JsNumber>(2)?.get_double()? as f32;
-  let cp2y = ctx.get::<JsNumber>(3)?.get_double()? as f32;
-  let x = ctx.get::<JsNumber>(4)?.get_double()? as f32;
-  let y = ctx.get::<JsNumber>(5)?.get_double()? as f32;
-
-  path_2d.cubic_to(cp1x, cp1y, cp2x, cp2y, x, y);
-
-  ctx.env.get_undefined()
-}
-
-#[js_function(4)]
-fn quadratic_curve_to(ctx: CallContext) -> Result<JsUndefined> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let path_2d = ctx.env.unwrap::<Path>(&this)?;
-  let cpx = ctx.get::<JsNumber>(0)?.get_double()? as f32;
-  let cpy = ctx.get::<JsNumber>(1)?.get_double()? as f32;
-  let x = ctx.get::<JsNumber>(2)?.get_double()? as f32;
-  let y = ctx.get::<JsNumber>(3)?.get_double()? as f32;
-
-  path_2d.quad_to(cpx, cpy, x, y);
-
-  ctx.env.get_undefined()
-}
-
-#[js_function(6)]
-fn arc(ctx: CallContext) -> Result<JsUndefined> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let path_2d = ctx.env.unwrap::<Path>(&this)?;
-  let center_x = ctx.get::<JsNumber>(0)?.get_double()? as f32;
-  let center_y = ctx.get::<JsNumber>(1)?.get_double()? as f32;
-  let radius = ctx.get::<JsNumber>(2)?.get_double()? as f32;
-  let start_angle = ctx.get::<JsNumber>(3)?.get_double()? as f32;
-  let end_angle = ctx.get::<JsNumber>(4)?.get_double()? as f32;
-  let from_end = if ctx.length == 6 {
-    ctx.get::<JsBoolean>(5)?.get_value()?
-  } else {
-    false
-  };
-  path_2d.arc(center_x, center_y, radius, start_angle, end_angle, from_end);
-  ctx.env.get_undefined()
-}
-
-#[js_function(5)]
-fn arc_to(ctx: CallContext) -> Result<JsUndefined> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let path_2d = ctx.env.unwrap::<Path>(&this)?;
-
-  let ctrl_x = ctx.get::<JsNumber>(0)?.get_double()? as f32;
-  let ctrl_y = ctx.get::<JsNumber>(1)?.get_double()? as f32;
-  let to_x = ctx.get::<JsNumber>(2)?.get_double()? as f32;
-  let to_y = ctx.get::<JsNumber>(3)?.get_double()? as f32;
-  let radius = ctx.get::<JsNumber>(4)?.get_double()? as f32;
-
-  path_2d.arc_to_tangent(ctrl_x, ctrl_y, to_x, to_y, radius);
-  ctx.env.get_undefined()
-}
-
-#[js_function(8)]
-fn ellipse(ctx: CallContext) -> Result<JsUndefined> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let path_2d = ctx.env.unwrap::<Path>(&this)?;
-  let x = ctx.get::<JsNumber>(0)?.get_double()? as f32;
-  let y = ctx.get::<JsNumber>(1)?.get_double()? as f32;
-  let radius_x = ctx.get::<JsNumber>(2)?.get_double()? as f32;
-  let radius_y = ctx.get::<JsNumber>(3)?.get_double()? as f32;
-  let rotation = ctx.get::<JsNumber>(4)?.get_double()? as f32;
-  let start_angle = ctx.get::<JsNumber>(5)?.get_double()? as f32;
-  let end_angle = ctx.get::<JsNumber>(6)?.get_double()? as f32;
-
-  let from_end = if ctx.length == 8 {
-    ctx.get::<JsBoolean>(7)?.get_value()?
-  } else {
-    false
-  };
-  path_2d.ellipse(
-    x,
-    y,
-    radius_x,
-    radius_y,
-    rotation,
-    start_angle,
-    end_angle,
-    from_end,
-  );
-  ctx.env.get_undefined()
-}
-
-#[js_function(4)]
-fn rect(ctx: CallContext) -> Result<JsUndefined> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let path_2d = ctx.env.unwrap::<Path>(&this)?;
-  let x = ctx.get::<JsNumber>(0)?.get_double()? as f32;
-  let y = ctx.get::<JsNumber>(1)?.get_double()? as f32;
-  let width = ctx.get::<JsNumber>(2)?.get_double()? as f32;
-  let height = ctx.get::<JsNumber>(3)?.get_double()? as f32;
-
-  path_2d.add_rect(x as f32, y as f32, width as f32, height as f32);
-
-  ctx.env.get_undefined()
-}
-
-#[js_function(2)]
-fn op(ctx: CallContext) -> Result<JsObject> {
-  let this: JsObject = ctx.this_unchecked();
-  let path_2d = ctx.env.unwrap::<Path>(&this)?;
-  let other = ctx.get::<JsObject>(0)?;
-  let other_path = ctx.env.unwrap::<Path>(&other)?;
-  let operation = ctx.get::<JsNumber>(1)?.get_int32()?;
-  path_2d.op(other_path, operation.into());
-  Ok(this)
-}
-
-#[js_function]
-fn to_svg_string(ctx: CallContext) -> Result<JsString> {
-  let this: JsObject = ctx.this_unchecked();
-  let path_2d = ctx.env.unwrap::<Path>(&this)?;
-  let sk_string = path_2d.to_svg_string();
-  unsafe {
-    ctx
-      .env
-      .create_string_from_c_char(sk_string.ptr, sk_string.length)
+  #[napi]
+  pub fn equals(&self, other: &Path) -> bool {
+    self.inner == other.inner
   }
 }
 
-#[js_function]
-fn simplify(ctx: CallContext) -> Result<JsObject> {
-  let this: JsObject = ctx.this_unchecked();
-  let path_2d = ctx.env.unwrap::<Path>(&this)?;
-
-  path_2d.simplify();
-  Ok(this)
+pub trait UnwrapPath {
+  fn unwrap(&self, env: Env) -> Result<&mut Path>;
 }
 
-#[js_function(1)]
-fn set_fill_type(ctx: CallContext) -> Result<JsUndefined> {
-  let this: JsObject = ctx.this_unchecked();
-  let path_2d = ctx.env.unwrap::<Path>(&this)?;
-  let fill_type = ctx.get::<JsNumber>(0)?.get_uint32()?;
+impl UnwrapPath for JsObject {
+  fn unwrap(&self, env: Env) -> Result<&mut Path> {
+    use napi::NapiRaw;
 
-  path_2d.set_fill_type(fill_type.into());
-
-  ctx.env.get_undefined()
-}
-
-#[js_function]
-fn get_fill_type(ctx: CallContext) -> Result<JsNumber> {
-  let this: JsObject = ctx.this_unchecked();
-  let path_2d = ctx.env.unwrap::<Path>(&this)?;
-
-  ctx.env.create_int32(path_2d.get_fill_type())
-}
-
-#[js_function]
-fn as_winding(ctx: CallContext) -> Result<JsObject> {
-  let this: JsObject = ctx.this_unchecked();
-  let path_2d = ctx.env.unwrap::<Path>(&this)?;
-  path_2d.as_winding();
-  Ok(this)
-}
-
-#[js_function(4)]
-fn stroke(ctx: CallContext) -> Result<JsObject> {
-  let this: JsObject = ctx.this_unchecked();
-  let path_2d = ctx.env.unwrap::<Path>(&this)?;
-  let stroke_width = ctx.get::<JsNumber>(0)?;
-  let miter_limit = ctx.get::<JsNumber>(1)?;
-  let join = ctx.get::<JsNumber>(2)?;
-  let cap = ctx.get::<JsNumber>(3)?;
-
-  path_2d.stroke(
-    StrokeCap::from_raw(cap.get_int32()?)?,
-    StrokeJoin::from_raw(join.get_uint32()? as u8)?,
-    stroke_width.get_double()? as f32,
-    miter_limit.get_double()? as f32,
-  );
-  Ok(this)
-}
-
-#[js_function]
-fn compute_tight_bounds(ctx: CallContext) -> Result<JsObject> {
-  let this: JsObject = ctx.this_unchecked();
-  let path_2d = ctx.env.unwrap::<Path>(&this)?;
-
-  let ltrb = path_2d.compute_tight_bounds();
-  let mut arr = ctx.env.create_array_with_length(4)?;
-  arr.set_element(0, ctx.env.create_double(ltrb.0 as f64)?)?;
-  arr.set_element(1, ctx.env.create_double(ltrb.1 as f64)?)?;
-  arr.set_element(2, ctx.env.create_double(ltrb.2 as f64)?)?;
-  arr.set_element(3, ctx.env.create_double(ltrb.3 as f64)?)?;
-  Ok(arr)
-}
-
-#[js_function]
-fn get_bounds(ctx: CallContext) -> Result<JsObject> {
-  let this: JsObject = ctx.this_unchecked();
-  let path_2d = ctx.env.unwrap::<Path>(&this)?;
-
-  let ltrb = path_2d.get_bounds();
-  let mut arr = ctx.env.create_array_with_length(4)?;
-  arr.set_element(0, ctx.env.create_double(ltrb.0 as f64)?)?;
-  arr.set_element(1, ctx.env.create_double(ltrb.1 as f64)?)?;
-  arr.set_element(2, ctx.env.create_double(ltrb.2 as f64)?)?;
-  arr.set_element(3, ctx.env.create_double(ltrb.3 as f64)?)?;
-  Ok(arr)
-}
-
-#[js_function(1)]
-fn transform(ctx: CallContext) -> Result<JsObject> {
-  let this: JsObject = ctx.this_unchecked();
-  let path_2d = ctx.env.unwrap::<Path>(&this)?;
-  let transform_object = ctx.get::<JsObject>(0)?;
-  let a = transform_object
-    .get_named_property::<JsNumber>("a")?
-    .get_double()? as f32;
-  let b = transform_object
-    .get_named_property::<JsNumber>("b")?
-    .get_double()? as f32;
-  let c = transform_object
-    .get_named_property::<JsNumber>("c")?
-    .get_double()? as f32;
-  let d = transform_object
-    .get_named_property::<JsNumber>("d")?
-    .get_double()? as f32;
-  let e = transform_object
-    .get_named_property::<JsNumber>("e")?
-    .get_double()? as f32;
-  let f = transform_object
-    .get_named_property::<JsNumber>("f")?
-    .get_double()? as f32;
-  let trans = Matrix::new(a, c, e, b, d, f);
-
-  path_2d.transform_self(&trans);
-  Ok(this)
-}
-
-#[js_function(3)]
-fn trim(ctx: CallContext) -> Result<JsObject> {
-  let this: JsObject = ctx.this_unchecked();
-  let path_2d = ctx.env.unwrap::<Path>(&this)?;
-  let start = ctx.get::<JsNumber>(0)?.get_double()?;
-  let end = ctx.get::<JsNumber>(1)?.get_double()?;
-  let is_complement = ctx
-    .get::<JsBoolean>(2)
-    .and_then(|v| v.get_value())
-    .unwrap_or(false);
-  path_2d.trim(start as f32, end as f32, is_complement);
-  Ok(this)
-}
-
-#[js_function(3)]
-fn dash(ctx: CallContext) -> Result<JsObject> {
-  let this: JsObject = ctx.this_unchecked();
-  let path_2d = ctx.env.unwrap::<Path>(&this)?;
-  let on = ctx.get::<JsNumber>(0)?.get_double()?;
-  let off = ctx.get::<JsNumber>(1)?.get_double()?;
-  let phase = ctx.get::<JsNumber>(1)?.get_double()?;
-
-  path_2d.dash(on as f32, off as f32, phase as f32);
-  Ok(this)
-}
-
-#[js_function(1)]
-fn equals(ctx: CallContext) -> Result<JsBoolean> {
-  let this: JsObject = ctx.this_unchecked();
-  let path_2d = ctx.env.unwrap::<Path>(&this)?;
-  let other = ctx.get::<JsObject>(0)?;
-  let is_eq = path_2d == ctx.env.unwrap::<Path>(&other)?;
-  ctx.env.get_boolean(is_eq)
+    unsafe { <&Path>::validate(env.raw(), self.raw()) }.and_then(|_| {
+      let mut path_ptr = std::ptr::null_mut();
+      napi::check_status!(
+        unsafe { napi::sys::napi_unwrap(env.raw(), self.raw(), &mut path_ptr) },
+        "Unwrap Path from Path2D failed",
+      )?;
+      Ok(Box::leak(unsafe { Box::from_raw(path_ptr as *mut Path) }))
+    })
+  }
 }

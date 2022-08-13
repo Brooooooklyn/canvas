@@ -12,6 +12,7 @@ use napi::*;
 use rgb::FromSlice;
 
 use crate::filter::css_filters_to_image_filter;
+use crate::path::UnwrapPath;
 use crate::CanvasElement;
 use crate::SVGCanvas;
 use crate::{
@@ -960,7 +961,7 @@ fn clip(ctx: CallContext) -> Result<JsUndefined> {
     let path = ctx.get::<JsObject>(0)?;
     let rule = ctx.get::<JsString>(1)?;
     context_2d.clip(
-      Some(ctx.env.unwrap::<Path>(&path)?),
+      Some(&mut path.unwrap(*ctx.env)?.inner),
       FillType::from_str(rule.into_utf8()?.as_str()?)?,
     );
   };
@@ -1000,7 +1001,7 @@ fn fill(ctx: CallContext) -> Result<JsUndefined> {
       }
       ValueType::Object => {
         let path_js = ctx.get::<JsObject>(0)?;
-        let path = ctx.env.unwrap::<Path>(&path_js)?;
+        let path = &mut path_js.unwrap(*ctx.env)?.inner;
         context_2d.fill(Some(path), FillType::Winding)?;
       }
       _ => {
@@ -1013,7 +1014,7 @@ fn fill(ctx: CallContext) -> Result<JsUndefined> {
   } else {
     let path_js = ctx.get::<JsObject>(0)?;
     let fill_rule_js = ctx.get::<JsString>(1)?.into_utf8()?;
-    let path = ctx.env.unwrap::<Path>(&path_js)?;
+    let path = &mut path_js.unwrap(*ctx.env)?.inner;
     context_2d.fill(Some(path), FillType::from_str(fill_rule_js.as_str()?)?)?;
   };
 
@@ -1273,7 +1274,7 @@ fn is_point_in_path(ctx: CallContext) -> Result<JsBoolean> {
         let x = ctx.get::<JsNumber>(1)?.get_double()? as f32;
         let y = ctx.get::<JsNumber>(2)?.get_double()? as f32;
         let path_js = ctx.get::<JsObject>(0)?;
-        let path = ctx.env.unwrap::<Path>(&path_js)?;
+        let path = &mut path_js.unwrap(*ctx.env)?.inner;
         result = path.hit_test(x, y, FillType::Winding);
       }
       _ => {
@@ -1286,7 +1287,7 @@ fn is_point_in_path(ctx: CallContext) -> Result<JsBoolean> {
     ctx.env.get_boolean(result)
   } else if ctx.length == 4 {
     let path_js = ctx.get::<JsObject>(0)?;
-    let path = ctx.env.unwrap::<Path>(&path_js)?;
+    let path = &mut path_js.unwrap(*ctx.env)?.inner;
     let x = ctx.get::<JsNumber>(1)?.get_double()? as f32;
     let y = ctx.get::<JsNumber>(2)?.get_double()? as f32;
     let fill_rule_js = ctx.get::<JsString>(3)?.into_utf8()?;
@@ -1313,7 +1314,7 @@ fn is_point_in_stroke(ctx: CallContext) -> Result<JsBoolean> {
     result = context_2d.path.stroke_hit_test(x, y, stroke_w);
   } else if ctx.length == 3 {
     let path_js = ctx.get::<JsObject>(0)?;
-    let path = ctx.env.unwrap::<Path>(&path_js)?;
+    let path = &mut path_js.unwrap(*ctx.env)?.inner;
 
     let x = ctx.get::<JsNumber>(1)?.get_double()? as f32;
     let y = ctx.get::<JsNumber>(2)?.get_double()? as f32;
@@ -1850,15 +1851,13 @@ fn stroke(ctx: CallContext) -> Result<JsUndefined> {
   let this = ctx.this_unchecked::<JsObject>();
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
 
-  let path = if ctx.length == 0 {
-    None
+  if ctx.length == 0 {
+    context_2d.stroke(None)?;
   } else {
-    let js_path = ctx.get::<JsObject>(0)?;
-    let path = ctx.env.unwrap::<Path>(&js_path)?;
-    Some(path)
+    let path_js = ctx.get::<JsObject>(0)?;
+    let path = &mut path_js.unwrap(*ctx.env)?.inner;
+    context_2d.stroke(Some(path))?;
   };
-
-  context_2d.stroke(path)?;
 
   ctx.env.get_undefined()
 }
