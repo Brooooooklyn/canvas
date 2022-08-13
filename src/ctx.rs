@@ -1471,6 +1471,10 @@ fn stroke_rect(ctx: CallContext) -> Result<JsUndefined> {
 #[js_function(4)]
 fn stroke_text(ctx: CallContext) -> Result<JsUndefined> {
   let text = ctx.get::<JsString>(0)?.into_utf8()?;
+  let text = text.as_str()?;
+  if text.is_empty() {
+    return ctx.env.get_undefined();
+  }
   let x = ctx.get::<JsNumber>(1)?.get_double()? as f32;
   let y = ctx.get::<JsNumber>(2)?.get_double()? as f32;
   let max_width = if ctx.length == 3 {
@@ -1481,7 +1485,7 @@ fn stroke_text(ctx: CallContext) -> Result<JsUndefined> {
 
   let this = ctx.this_unchecked::<JsObject>();
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
-  context_2d.stroke_text(text.as_str()?, x, y, max_width)?;
+  context_2d.stroke_text(text, x, y, max_width)?;
 
   ctx.env.get_undefined()
 }
@@ -1504,6 +1508,10 @@ fn fill_rect(ctx: CallContext) -> Result<JsUndefined> {
 #[js_function(4)]
 fn fill_text(ctx: CallContext) -> Result<JsUndefined> {
   let text = ctx.get::<JsString>(0)?.into_utf8()?;
+  let text = text.as_str()?;
+  if text.is_empty() {
+    return ctx.env.get_undefined();
+  }
   let x = ctx.get::<JsNumber>(1)?.get_double()? as f32;
   let y = ctx.get::<JsNumber>(2)?.get_double()? as f32;
   let max_width = if ctx.length == 3 {
@@ -1514,7 +1522,7 @@ fn fill_text(ctx: CallContext) -> Result<JsUndefined> {
 
   let this = ctx.this_unchecked::<JsObject>();
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
-  context_2d.fill_text(text.as_str()?, x, y, max_width)?;
+  context_2d.fill_text(text, x, y, max_width)?;
 
   ctx.env.get_undefined()
 }

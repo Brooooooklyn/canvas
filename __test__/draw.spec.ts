@@ -870,6 +870,12 @@ test('strokeText', async (t) => {
   await snapshotImage(t, { canvas, ctx }, 'png', 3.5)
 })
 
+test('empty text', async (t) => {
+  const { ctx } = t.context
+  t.notThrows(() => ctx.fillText('', 50, 50))
+  t.notThrows(() => ctx.strokeText('', 50, 50))
+})
+
 test('draw-text-emoji', async (t) => {
   if (platform() === 'darwin') {
     t.pass('macOS definitely supports emoji')
