@@ -11,39 +11,16 @@ const {
   Image,
   CanvasPattern,
   GlobalFonts,
+  PathOp,
+  FillType,
+  StrokeJoin,
+  StrokeCap,
   convertSVGTextToPath: _convertSVGTextToPath,
 } = require('./js-binding')
 
 const { DOMPoint, DOMMatrix, DOMRect } = require('./geometry')
 
 const loadImage = require('./load-image')
-
-const StrokeJoin = {
-  Miter: 0,
-  Round: 1,
-  Bevel: 2,
-}
-
-const StrokeCap = {
-  Butt: 0,
-  Round: 1,
-  Square: 2,
-}
-
-const PathOp = {
-  Difference: 0, // subtract the op path from the first path
-  Intersect: 1, // intersect the two paths
-  Union: 2, // union (inclusive-or) the two paths
-  XOR: 3, // exclusive-or the two paths
-  ReverseDifference: 4, // subtract the first path from the op path
-}
-
-const FillType = {
-  Winding: 0,
-  EvenOdd: 1,
-  InverseWinding: 2,
-  InverseEvenOdd: 3,
-}
 
 const SvgExportFlag = {
   ConvertTextToPaths: 0x01,
@@ -127,27 +104,6 @@ CanvasRenderingContext2D.prototype.createPattern = function createPattern(image,
 CanvasRenderingContext2D.prototype.getImageData = function getImageData(x, y, w, h) {
   const data = this._getImageData(x, y, w, h)
   return new ImageData(data, w, h)
-}
-
-Path2D.prototype.stroke = function stroke(strokeOptions = {}) {
-  const width = typeof strokeOptions.width === 'undefined' ? 1 : strokeOptions.width
-  const miterLimit = typeof strokeOptions.miterLimit === 'undefined' ? 4 : strokeOptions.miterLimit
-  const join = typeof strokeOptions.join === 'undefined' ? StrokeJoin.Miter : strokeOptions.join
-  const cap = typeof strokeOptions.cap === 'undefined' ? StrokeCap.Butt : strokeOptions.cap
-
-  return this._stroke(width, miterLimit, join, cap)
-}
-
-Path2D.prototype.getFillTypeString = function getFillTypeString() {
-  const fillType = this.getFillType()
-
-  if (fillType === FillType.Winding) {
-    return 'nonzero'
-  } else if (fillType === FillType.EvenOdd) {
-    return 'evenodd'
-  } else {
-    return 'nonzero' // default
-  }
 }
 
 function createCanvas(width, height, flag) {
