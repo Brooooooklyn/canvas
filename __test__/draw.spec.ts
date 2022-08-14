@@ -19,13 +19,12 @@ const fontIosevka = readFileSync(join(__dirname, 'fonts', 'iosevka-slab-regular.
 const fontSourceSerifPro = readFileSync(join(__dirname, 'fonts', 'SourceSerifPro-Regular.ttf'))
 const fontOSRSPath = join(__dirname, 'fonts', 'osrs-font-compact.otf')
 
-console.assert(GlobalFonts.register(fontIosevka), 'Register Iosevka font failed')
-console.assert(GlobalFonts.register(fontSourceSerifPro), 'Register SourceSerifPro font failed')
-
 test.beforeEach((t) => {
   const canvas = createCanvas(512, 512)
   t.context.canvas = canvas
   t.context.ctx = canvas.getContext('2d')!
+  console.assert(GlobalFonts.register(fontIosevka), 'Register Iosevka font failed')
+  console.assert(GlobalFonts.register(fontSourceSerifPro), 'Register SourceSerifPro font failed')
 })
 
 test('alpha-false', async (t) => {

@@ -29,7 +29,7 @@ mod ctx;
 mod error;
 mod filter;
 mod font;
-mod global_fonts;
+pub mod global_fonts;
 mod gradient;
 mod image;
 mod image_pattern;
@@ -39,7 +39,7 @@ mod pattern;
 #[allow(dead_code)]
 mod sk;
 mod state;
-mod svg;
+pub mod svg;
 
 const MIME_WEBP: &str = "image/webp";
 const MIME_PNG: &str = "image/png";
@@ -68,8 +68,6 @@ fn init(mut exports: JsObject, env: Env) -> Result<()> {
     &[Property::new("setTransform")?.with_method(image_pattern::set_transform)],
   )?;
 
-  let global_fonts = sk::FontCollection::create_js_class(&env)?;
-
   exports.set_named_property("CanvasRenderingContext2D", canvas_rendering_context2d)?;
 
   exports.set_named_property("ImageData", image_data_class)?;
@@ -77,10 +75,6 @@ fn init(mut exports: JsObject, env: Env) -> Result<()> {
   exports.set_named_property("Image", image_class)?;
 
   exports.set_named_property("CanvasPattern", canvas_pattern)?;
-
-  exports.set_named_property("GlobalFonts", global_fonts)?;
-
-  exports.create_named_method("convertSVGTextToPath", svg::convert_svg_text_to_path)?;
 
   // pre init font regexp
   FONT_REGEXP.get_or_init(init_font_regexp);

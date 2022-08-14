@@ -3466,6 +3466,9 @@ pub struct LineMetrics(pub ffi::skiac_line_metrics);
 #[derive(Debug)]
 pub struct FontCollection(pub *mut ffi::skiac_font_collection);
 
+unsafe impl Send for FontCollection {}
+unsafe impl Sync for FontCollection {}
+
 impl FontCollection {
   pub fn new() -> FontCollection {
     unsafe {
@@ -3523,9 +3526,9 @@ impl FontCollection {
     names
   }
 
-  pub fn register(&self, font: &[u8], maybe_name_alias: Option<&str>) -> bool {
+  pub fn register<S: AsRef<str>>(&self, font: &[u8], maybe_name_alias: Option<S>) -> bool {
     let name_alias_ptr = match maybe_name_alias {
-      Some(name_alias) => match CString::new(name_alias) {
+      Some(name_alias) => match CString::new(name_alias.as_ref()) {
         Ok(cstring) => cstring.into_raw(),
         Err(_) => ptr::null_mut(),
       },
@@ -3536,10 +3539,14 @@ impl FontCollection {
     }
   }
 
-  pub fn register_from_path(&self, font_path: &str, maybe_name_alias: Option<&str>) -> bool {
+  pub fn register_from_path<S: AsRef<str>>(
+    &self,
+    font_path: &str,
+    maybe_name_alias: Option<S>,
+  ) -> bool {
     if let Ok(fp) = CString::new(font_path) {
       let name_alias_ptr = match maybe_name_alias {
-        Some(name) => match CString::new(name) {
+        Some(name) => match CString::new(name.as_ref()) {
           Ok(cstring) => cstring.into_raw(),
           Err(_) => ptr::null_mut(),
         },

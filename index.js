@@ -15,7 +15,7 @@ const {
   FillType,
   StrokeJoin,
   StrokeCap,
-  convertSVGTextToPath: _convertSVGTextToPath,
+  convertSVGTextToPath,
 } = require('./js-binding')
 
 const { DOMPoint, DOMMatrix, DOMRect } = require('./geometry')
@@ -28,55 +28,18 @@ const SvgExportFlag = {
   RelativePathEncoding: 0x04,
 }
 
-const GlobalFontsSingleton = new GlobalFonts()
-let FamilyNamesSet = JSON.parse(GlobalFontsSingleton._families)
-
 // eslint-disable-next-line sonarjs/no-unused-collection
 const Fonts = []
 
-Object.defineProperty(GlobalFontsSingleton, 'register', {
-  value: function register(fontData, nameAlias = '') {
-    const result = GlobalFontsSingleton._register(fontData, nameAlias)
-    FamilyNamesSet = JSON.parse(GlobalFontsSingleton._families)
-    Fonts.push(fontData)
-    return result
-  },
-  configurable: false,
-  enumerable: false,
-  writable: false,
-})
-
-Object.defineProperty(GlobalFontsSingleton, 'registerFromPath', {
-  value: function registerFromPath(path, nameAlias = '') {
-    const result = GlobalFontsSingleton._registerFromPath(path, nameAlias)
-    FamilyNamesSet = JSON.parse(GlobalFontsSingleton._families)
-    return result
-  },
-  configurable: false,
-  enumerable: false,
-  writable: false,
-})
-
-Object.defineProperty(GlobalFontsSingleton, 'loadFontsFromDir', {
-  value: function loadFontsFromDir(path) {
-    const result = GlobalFontsSingleton._loadFontsFromDir(path)
-    FamilyNamesSet = JSON.parse(GlobalFontsSingleton._families)
-    return result
-  },
-  configurable: false,
-  enumerable: false,
-  writable: false,
-})
-
-Object.defineProperty(GlobalFontsSingleton, 'families', {
+Object.defineProperty(GlobalFonts, 'families', {
   get: function () {
-    return FamilyNamesSet
+    return JSON.parse(GlobalFonts.getFamilies())
   },
 })
 
-Object.defineProperty(GlobalFontsSingleton, 'has', {
+Object.defineProperty(GlobalFonts, 'has', {
   value: function has(name) {
-    return !!FamilyNamesSet.find(({ family }) => family === name)
+    return !!JSON.parse(GlobalFonts.getFamilies()).find(({ family }) => family === name)
   },
   configurable: false,
   enumerable: false,
@@ -119,8 +82,8 @@ function createCanvas(width, height, flag) {
     ctx = ctx
       ? ctx
       : isSvgBackend
-      ? new CanvasRenderingContext2D(this.width, this.height, GlobalFontsSingleton, attrs.colorSpace, flag)
-      : new CanvasRenderingContext2D(this.width, this.height, GlobalFontsSingleton, attrs.colorSpace)
+      ? new CanvasRenderingContext2D(this.width, this.height, attrs.colorSpace, flag)
+      : new CanvasRenderingContext2D(this.width, this.height, attrs.colorSpace)
     createContext(ctx, this.width, this.height, attrs)
 
     // napi can not define writable: true but enumerable: false property
@@ -214,26 +177,21 @@ class Canvas {
 }
 
 if (!process.env.DISABLE_SYSTEM_FONTS_LOAD) {
-  GlobalFontsSingleton.loadSystemFonts()
+  GlobalFonts.loadSystemFonts()
   const platformName = platform()
   const homedirPath = homedir()
   switch (platformName) {
     case 'win32':
-      GlobalFontsSingleton.loadFontsFromDir(join(homedirPath, 'AppData', 'Local', 'Microsoft', 'Windows', 'Fonts'))
+      GlobalFonts.loadFontsFromDir(join(homedirPath, 'AppData', 'Local', 'Microsoft', 'Windows', 'Fonts'))
       break
     case 'darwin':
-      GlobalFontsSingleton.loadFontsFromDir(join(homedirPath, 'Library', 'Fonts'))
+      GlobalFonts.loadFontsFromDir(join(homedirPath, 'Library', 'Fonts'))
       break
     case 'linux':
-      GlobalFontsSingleton.loadFontsFromDir(join('usr', 'local', 'share', 'fonts'))
-      GlobalFontsSingleton.loadFontsFromDir(join(homedirPath, '.fonts'))
+      GlobalFonts.loadFontsFromDir(join('usr', 'local', 'share', 'fonts'))
+      GlobalFonts.loadFontsFromDir(join(homedirPath, '.fonts'))
       break
   }
-  FamilyNamesSet = JSON.parse(GlobalFontsSingleton._families)
-}
-
-function convertSVGTextToPath(input) {
-  return _convertSVGTextToPath(Buffer.isBuffer(input) ? input : Buffer.from(input), GlobalFontsSingleton)
 }
 
 module.exports = {
@@ -247,7 +205,7 @@ module.exports = {
   StrokeCap,
   StrokeJoin,
   SvgExportFlag,
-  GlobalFonts: GlobalFontsSingleton,
+  GlobalFonts: GlobalFonts,
   convertSVGTextToPath,
   DOMPoint,
   DOMMatrix,
