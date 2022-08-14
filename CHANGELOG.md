@@ -1,3 +1,9 @@
+## [0.1.27](https://github.com/Brooooooklyn/canvas/compare/v0.1.26...v0.1.27) (2022-08-14)
+
+### Bug Fixes
+
+- segfault while drawing empty text ([#528](https://github.com/Brooooooklyn/canvas/issues/528)) ([88f736c](https://github.com/Brooooooklyn/canvas/commit/88f736ce058fea085450f3a7ea9c51ac18f81beb))
+
 ## [0.1.26](https://github.com/Brooooooklyn/canvas/compare/v0.1.25...v0.1.26) (2022-08-07)
 
 ### Bug Fixes
