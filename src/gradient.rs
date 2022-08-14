@@ -1,13 +1,15 @@
-use std::convert::TryInto;
 use std::result;
 
 use cssparser::{Color as CSSColor, Parser, ParserInput};
-use napi::{
-  CallContext, Env, Error, JsNumber, JsObject, JsString, JsUndefined, Property, Result, Status,
-};
+use napi::bindgen_prelude::*;
 
-use crate::pattern::Pattern;
-use crate::{error::SkError, sk::*};
+use crate::{
+  error::SkError,
+  sk::{
+    Color, ConicGradient, Gradient as SkGradient, LinearGradient, RadialGradient, Shader, TileMode,
+    Transform,
+  },
+};
 
 #[derive(Debug, Clone)]
 pub enum CanvasGradient {
@@ -17,23 +19,11 @@ pub enum CanvasGradient {
 }
 
 impl CanvasGradient {
-  pub fn into_js_instance(self, env: &Env) -> Result<JsObject> {
-    let gradient_class = env.define_class(
-      "Gradient",
-      gradient_constructor,
-      &[Property::new("addColorStop")?.with_method(add_color_stop)],
-    )?;
-    let arguments: Vec<JsUndefined> = vec![];
-    let mut instance = gradient_class.new_instance(&arguments)?;
-    env.wrap(&mut instance, Pattern::Gradient(self))?;
-    Ok(instance)
-  }
-
   pub fn create_linear_gradient(x0: f32, y0: f32, x1: f32, y1: f32) -> Self {
     let linear_gradient = LinearGradient {
       start_point: (x0, y0),
       end_point: (x1, y1),
-      base: Gradient {
+      base: SkGradient {
         colors: Vec::new(),
         positions: Vec::new(),
         tile_mode: TileMode::Clamp,
@@ -49,7 +39,7 @@ impl CanvasGradient {
       start_radius: r0,
       end: (x1, y1),
       end_radius: r1,
-      base: Gradient {
+      base: SkGradient {
         colors: Vec::new(),
         positions: Vec::new(),
         tile_mode: TileMode::Clamp,
@@ -63,7 +53,7 @@ impl CanvasGradient {
     Self::Conic(ConicGradient {
       center: (x, y),
       radius: r,
-      base: Gradient {
+      base: SkGradient {
         colors: Vec::new(),
         positions: Vec::new(),
         tile_mode: TileMode::Clamp,
@@ -164,42 +154,37 @@ impl CanvasGradient {
   }
 }
 
-#[js_function(1)]
-fn gradient_constructor(ctx: CallContext) -> Result<JsUndefined> {
-  ctx.env.get_undefined()
-}
+#[napi]
+pub struct Gradient(pub(crate) CanvasGradient);
 
-#[js_function(2)]
-fn add_color_stop(ctx: CallContext) -> Result<JsUndefined> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let canvas_gradient = ctx.env.unwrap::<Pattern>(&this)?;
-  let index: f64 = ctx.get::<JsNumber>(0)?.try_into()?;
-  let color_str = ctx.get::<JsString>(1)?.into_utf8()?;
-  let color_str = color_str.as_str()?;
-  if color_str.is_empty() {
-    return ctx.env.get_undefined();
-  }
-  let mut parser_input = ParserInput::new(color_str);
-  let mut parser = Parser::new(&mut parser_input);
-  let color = CSSColor::parse(&mut parser).map_err(|e| {
-    Error::new(
-      Status::InvalidArg,
-      format!("Parse color [{}] error: {:?}", color_str, e),
-    )
-  })?;
-  let skia_color = match color {
-    CSSColor::CurrentColor => {
-      return Err(Error::new(
-        Status::InvalidArg,
-        "Gradient stop color should not be `currentcolor` keyword".to_owned(),
-      ))
+#[napi]
+impl Gradient {
+  #[napi]
+  pub fn add_color_stop(&mut self, index: f64, color: String) -> Result<()> {
+    if color.is_empty() {
+      return Ok(());
     }
-    CSSColor::RGBA(rgba) => Color::from_rgba(rgba.red, rgba.green, rgba.blue, rgba.alpha),
-  };
-  if let Pattern::Gradient(canvas_gradient) = canvas_gradient {
-    canvas_gradient.add_color_stop(index as f32, skia_color);
+    let color_str = color.as_str();
+    let mut parser_input = ParserInput::new(color_str);
+    let mut parser = Parser::new(&mut parser_input);
+    let color = CSSColor::parse(&mut parser).map_err(|e| {
+      Error::new(
+        Status::InvalidArg,
+        format!("Parse color [{}] error: {:?}", color_str, e),
+      )
+    })?;
+    let skia_color = match color {
+      CSSColor::CurrentColor => {
+        return Err(Error::new(
+          Status::InvalidArg,
+          "Gradient stop color should not be `currentcolor` keyword".to_owned(),
+        ))
+      }
+      CSSColor::RGBA(rgba) => Color::from_rgba(rgba.red, rgba.green, rgba.blue, rgba.alpha),
+    };
+    self.0.add_color_stop(index as f32, skia_color);
+    Ok(())
   }
-  ctx.env.get_undefined()
 }
 
 #[test]

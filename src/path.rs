@@ -1,4 +1,4 @@
-use napi::{bindgen_prelude::*, JsObject, JsString};
+use napi::{bindgen_prelude::*, JsString};
 
 use crate::sk::{
   FillType as SkFillType, Matrix as SkMatrix, Path as SkPath, PathOp as SkPathOp,
@@ -353,24 +353,5 @@ impl Path {
   #[napi]
   pub fn equals(&self, other: &Path) -> bool {
     self.inner == other.inner
-  }
-}
-
-pub trait UnwrapPath {
-  fn unwrap(&self, env: Env) -> Result<&mut Path>;
-}
-
-impl UnwrapPath for JsObject {
-  fn unwrap(&self, env: Env) -> Result<&mut Path> {
-    use napi::NapiRaw;
-
-    unsafe { <&Path>::validate(env.raw(), self.raw()) }.and_then(|_| {
-      let mut path_ptr = std::ptr::null_mut();
-      napi::check_status!(
-        unsafe { napi::sys::napi_unwrap(env.raw(), self.raw(), &mut path_ptr) },
-        "Unwrap Path from Path2D failed",
-      )?;
-      Ok(Box::leak(unsafe { Box::from_raw(path_ptr as *mut Path) }))
-    })
   }
 }

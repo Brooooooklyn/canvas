@@ -35,11 +35,11 @@ mod image;
 mod image_pattern;
 mod path;
 mod pattern;
-
 #[allow(dead_code)]
 mod sk;
 mod state;
 pub mod svg;
+mod util;
 
 const MIME_WEBP: &str = "image/webp";
 const MIME_PNG: &str = "image/png";

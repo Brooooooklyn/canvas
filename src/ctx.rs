@@ -6,12 +6,12 @@ use std::slice;
 use std::str::FromStr;
 
 use cssparser::{Color as CSSColor, Parser, ParserInput};
-use napi::bindgen_prelude::{Either3, Unknown};
+use napi::bindgen_prelude::{ClassInstance, Either3, Unknown};
 use napi::*;
 use rgb::FromSlice;
 
 use crate::filter::css_filters_to_image_filter;
-use crate::path::UnwrapPath;
+use crate::util::UnwrapObject;
 use crate::CanvasElement;
 use crate::SVGCanvas;
 use crate::{
@@ -943,7 +943,7 @@ fn clip(ctx: CallContext) -> Result<JsUndefined> {
     let path = ctx.get::<JsObject>(0)?;
     let rule = ctx.get::<JsString>(1)?;
     context_2d.clip(
-      Some(&mut path.unwrap(*ctx.env)?.inner),
+      Some(&mut path.unwrap::<crate::path::Path>(ctx.env)?.inner),
       FillType::from_str(rule.into_utf8()?.as_str()?)?,
     );
   };
@@ -983,7 +983,7 @@ fn fill(ctx: CallContext) -> Result<JsUndefined> {
       }
       ValueType::Object => {
         let path_js = ctx.get::<JsObject>(0)?;
-        let path = &mut path_js.unwrap(*ctx.env)?.inner;
+        let path = &mut path_js.unwrap::<crate::path::Path>(ctx.env)?.inner;
         context_2d.fill(Some(path), FillType::Winding)?;
       }
       _ => {
@@ -996,7 +996,7 @@ fn fill(ctx: CallContext) -> Result<JsUndefined> {
   } else {
     let path_js = ctx.get::<JsObject>(0)?;
     let fill_rule_js = ctx.get::<JsString>(1)?.into_utf8()?;
-    let path = &mut path_js.unwrap(*ctx.env)?.inner;
+    let path = &mut path_js.unwrap::<crate::path::Path>(ctx.env)?.inner;
     context_2d.fill(Some(path), FillType::from_str(fill_rule_js.as_str()?)?)?;
   };
 
@@ -1048,17 +1048,17 @@ fn clear_rect(ctx: CallContext) -> Result<JsUndefined> {
 }
 
 #[js_function(4)]
-fn create_linear_gradient(ctx: CallContext) -> Result<JsObject> {
+fn create_linear_gradient(ctx: CallContext) -> Result<ClassInstance<crate::gradient::Gradient>> {
   let x0 = ctx.get::<JsNumber>(0)?.get_double()? as f32;
   let y0 = ctx.get::<JsNumber>(1)?.get_double()? as f32;
   let x1 = ctx.get::<JsNumber>(2)?.get_double()? as f32;
   let y1 = ctx.get::<JsNumber>(3)?.get_double()? as f32;
   let linear_gradient = CanvasGradient::create_linear_gradient(x0, y0, x1, y1);
-  linear_gradient.into_js_instance(ctx.env)
+  crate::gradient::Gradient::into_instance(crate::gradient::Gradient(linear_gradient), *ctx.env)
 }
 
 #[js_function(6)]
-fn create_radial_gradient(ctx: CallContext) -> Result<JsObject> {
+fn create_radial_gradient(ctx: CallContext) -> Result<ClassInstance<crate::gradient::Gradient>> {
   let x0 = ctx.get::<JsNumber>(0)?.get_double()? as f32;
   let y0 = ctx.get::<JsNumber>(1)?.get_double()? as f32;
   let r0 = ctx.get::<JsNumber>(2)?.get_double()? as f32;
@@ -1066,16 +1066,16 @@ fn create_radial_gradient(ctx: CallContext) -> Result<JsObject> {
   let y1 = ctx.get::<JsNumber>(4)?.get_double()? as f32;
   let r1 = ctx.get::<JsNumber>(5)?.get_double()? as f32;
   let radial_gradient = CanvasGradient::create_radial_gradient(x0, y0, r0, x1, y1, r1);
-  radial_gradient.into_js_instance(ctx.env)
+  crate::gradient::Gradient::into_instance(crate::gradient::Gradient(radial_gradient), *ctx.env)
 }
 
 #[js_function(3)]
-fn create_conic_gradient(ctx: CallContext) -> Result<JsObject> {
+fn create_conic_gradient(ctx: CallContext) -> Result<ClassInstance<crate::gradient::Gradient>> {
   let r = ctx.get::<JsNumber>(0)?.get_double()? as f32;
   let x = ctx.get::<JsNumber>(1)?.get_double()? as f32;
   let y = ctx.get::<JsNumber>(2)?.get_double()? as f32;
   let conic_gradient = CanvasGradient::create_conic_gradient(x, y, r);
-  conic_gradient.into_js_instance(ctx.env)
+  crate::gradient::Gradient::into_instance(crate::gradient::Gradient(conic_gradient), *ctx.env)
 }
 
 #[js_function]
@@ -1256,7 +1256,7 @@ fn is_point_in_path(ctx: CallContext) -> Result<JsBoolean> {
         let x = ctx.get::<JsNumber>(1)?.get_double()? as f32;
         let y = ctx.get::<JsNumber>(2)?.get_double()? as f32;
         let path_js = ctx.get::<JsObject>(0)?;
-        let path = &mut path_js.unwrap(*ctx.env)?.inner;
+        let path = &mut path_js.unwrap::<crate::path::Path>(ctx.env)?.inner;
         result = path.hit_test(x, y, FillType::Winding);
       }
       _ => {
@@ -1269,7 +1269,7 @@ fn is_point_in_path(ctx: CallContext) -> Result<JsBoolean> {
     ctx.env.get_boolean(result)
   } else if ctx.length == 4 {
     let path_js = ctx.get::<JsObject>(0)?;
-    let path = &mut path_js.unwrap(*ctx.env)?.inner;
+    let path = &mut path_js.unwrap::<crate::path::Path>(ctx.env)?.inner;
     let x = ctx.get::<JsNumber>(1)?.get_double()? as f32;
     let y = ctx.get::<JsNumber>(2)?.get_double()? as f32;
     let fill_rule_js = ctx.get::<JsString>(3)?.into_utf8()?;
@@ -1296,7 +1296,7 @@ fn is_point_in_stroke(ctx: CallContext) -> Result<JsBoolean> {
     result = context_2d.path.stroke_hit_test(x, y, stroke_w);
   } else if ctx.length == 3 {
     let path_js = ctx.get::<JsObject>(0)?;
-    let path = &mut path_js.unwrap(*ctx.env)?.inner;
+    let path = &mut path_js.unwrap::<crate::path::Path>(ctx.env)?.inner;
 
     let x = ctx.get::<JsNumber>(1)?.get_double()? as f32;
     let y = ctx.get::<JsNumber>(2)?.get_double()? as f32;
@@ -1837,7 +1837,7 @@ fn stroke(ctx: CallContext) -> Result<JsUndefined> {
     context_2d.stroke(None)?;
   } else {
     let path_js = ctx.get::<JsObject>(0)?;
-    let path = &mut path_js.unwrap(*ctx.env)?.inner;
+    let path = &mut path_js.unwrap::<crate::path::Path>(ctx.env)?.inner;
     context_2d.stroke(Some(path))?;
   };
 
@@ -1989,11 +1989,11 @@ fn set_fill_style(ctx: CallContext) -> Result<JsUndefined> {
     }
     ValueType::Object => {
       let fill_object = unsafe { js_fill_style.cast::<JsObject>() };
-      ctx
-        .env
-        .unwrap::<Pattern>(&fill_object)
+      fill_object
+        .unwrap::<crate::gradient::Gradient>(ctx.env)
+        .map(|g| Pattern::Gradient(g.0.clone()))
+        .or_else(|_| ctx.env.unwrap::<Pattern>(&fill_object).map(|p| p.clone()))
         .ok()
-        .map(|p| p.clone())
     }
     _ => None,
   };
@@ -2089,11 +2089,11 @@ fn set_stroke_style(ctx: CallContext) -> Result<JsUndefined> {
     }
     ValueType::Object => {
       let stroke_object = unsafe { js_stroke_style.cast::<JsObject>() };
-      ctx
-        .env
-        .unwrap::<Pattern>(&stroke_object)
+      stroke_object
+        .unwrap::<crate::gradient::Gradient>(ctx.env)
+        .map(|g| Pattern::Gradient(g.0.clone()))
+        .or_else(|_| ctx.env.unwrap::<Pattern>(&stroke_object).map(|p| p.clone()))
         .ok()
-        .map(|p| p.clone())
     }
     _ => None,
   };
