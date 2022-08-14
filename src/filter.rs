@@ -183,7 +183,6 @@ percentage_parser!(opacity_parser, "opacity(", Opacity);
 percentage_parser!(saturate_parser, "saturate(", Saturate);
 percentage_parser!(sepia_parser, "sepia(", Sepia);
 
-#[inline(always)]
 fn blur_parser(input: &str) -> IResult<&str, CssFilter> {
   let (blurred_input, _) = tag("blur(")(input)?;
 
@@ -192,7 +191,6 @@ fn blur_parser(input: &str) -> IResult<&str, CssFilter> {
   Ok((finished_input.trim(), CssFilter::Blur(pixel)))
 }
 
-#[inline(always)]
 #[allow(clippy::unnecessary_lazy_evaluations)]
 fn drop_shadow_parser(input: &str) -> IResult<&str, CssFilter> {
   let (drop_shadow_input, _) = tag("drop-shadow(")(input)?;
@@ -239,7 +237,6 @@ fn drop_shadow_parser(input: &str) -> IResult<&str, CssFilter> {
   ))
 }
 
-#[inline(always)]
 pub fn css_filter(input: &str) -> IResult<&str, Vec<CssFilter>> {
   let mut filters = Vec::with_capacity(10);
   let mut input = input.trim();

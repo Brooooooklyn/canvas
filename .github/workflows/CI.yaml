@@ -327,7 +327,9 @@ jobs:
           key: linux-x64-musl-yarn-cache-node-${{ matrix.node }}
 
       - name: Install dependencies
-        run: yarn install --immutable --mode=skip-build
+        run: |
+          yarn config set supportedArchitectures.libc "musl"
+          yarn install --immutable --mode=skip-build
 
       - name: Download artifacts
         uses: actions/download-artifact@v3
@@ -340,7 +342,7 @@ jobs:
         shell: bash
 
       - name: Test bindings
-        run: docker run --rm -v $(pwd):/canvas -w /canvas node:${{ matrix.node }}-alpine sh -c "yarn install --immutable --mode=skip-build && yarn test"
+        run: docker run --rm -v $(pwd):/canvas -w /canvas node:${{ matrix.node }}-alpine yarn test
 
       - name: Test failed
         if: ${{ failure() }}
@@ -389,6 +391,12 @@ jobs:
           path: .yarn/cache
           key: linux-aarch64-gnu-yarn-cache-node-${{ matrix.node }}
 
+      - name: Install dependencies
+        run: |
+          yarn config set supportedArchitectures.cpu "arm64"
+          yarn config set supportedArchitectures.libc "glibc"
+          yarn install --immutable --mode=skip-build
+
       - name: Setup and run tests
         uses: addnab/docker-run-action@v3
         with:
@@ -396,7 +404,6 @@ jobs:
           options: -v ${{ github.workspace }}:/skia -w /skia
           run: |
             set -e && \
-            yarn install --immutable --mode=skip-build && \
             yarn test && \
             ls -la
 
@@ -444,6 +451,12 @@ jobs:
           path: .yarn/cache
           key: linux-aarch64-musl-yarn-cache-node-${{ matrix.node }}
 
+      - name: Install dependencies
+        run: |
+          yarn config set supportedArchitectures.cpu "arm64"
+          yarn config set supportedArchitectures.libc "musl"
+          yarn install --immutable --mode=skip-build
+
       - name: Setup and run tests
         uses: addnab/docker-run-action@v3
         with:
@@ -452,7 +465,6 @@ jobs:
           run: |
             set -e
             apk add nodejs npm yarn
-            yarn install --immutable --mode=skip-build
             yarn test
 
       - name: Test failed
@@ -502,6 +514,11 @@ jobs:
           path: .yarn/cache
           key: linux-arm-gnueabihf-yarn-cache-node-${{ matrix.node }}
 
+      - name: Install dependencies
+        run: |
+          yarn config set supportedArchitectures.cpu "arm"
+          yarn install --immutable --mode=skip-build
+
       - name: Setup and run tests
         uses: addnab/docker-run-action@v3
         with:
@@ -509,7 +526,6 @@ jobs:
           options: -v ${{ github.workspace }}:/skia -w /skia
           run: |
             set -e && \
-            yarn install --immutable --mode=skip-build && \
             yarn test && \
             ls -la
 

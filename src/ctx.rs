@@ -1,7 +1,6 @@
 use std::convert::TryFrom;
 use std::f32::consts::PI;
 use std::mem;
-use std::rc::Rc;
 use std::result;
 use std::slice;
 use std::str::FromStr;
@@ -48,7 +47,6 @@ pub struct Context {
   pub alpha: bool,
   pub(crate) states: Vec<Context2dRenderingState>,
   state: Context2dRenderingState,
-  pub font_collection: Rc<FontCollection>,
   pub width: u32,
   pub height: u32,
   pub color_space: ColorSpace,
@@ -248,7 +246,6 @@ impl Context {
     height: u32,
     svg_export_flag: SvgExportFlag,
     color_space: ColorSpace,
-    font_collection: &mut Rc<FontCollection>,
   ) -> Result<Self> {
     let (surface, stream) = Surface::new_svg(
       width,
@@ -264,7 +261,6 @@ impl Context {
       path: Path::new(),
       states: vec![],
       state: Context2dRenderingState::default(),
-      font_collection: font_collection.clone(),
       width,
       height,
       color_space,
@@ -272,12 +268,7 @@ impl Context {
     })
   }
 
-  pub fn new(
-    width: u32,
-    height: u32,
-    color_space: ColorSpace,
-    font_collection: &mut Rc<FontCollection>,
-  ) -> Result<Self> {
+  pub fn new(width: u32, height: u32, color_space: ColorSpace) -> Result<Self> {
     let surface = Surface::new_rgba_premultiplied(width, height, color_space)
       .ok_or_else(|| Error::from_reason("Create skia surface failed".to_owned()))?;
     Ok(Context {
@@ -286,7 +277,6 @@ impl Context {
       path: Path::new(),
       states: vec![],
       state: Context2dRenderingState::default(),
-      font_collection: font_collection.clone(),
       width,
       height,
       color_space,
@@ -775,7 +765,7 @@ impl Context {
         weight,
         stretch as i32,
         slant,
-        &self.font_collection,
+        &*crate::global_fonts::GLOBAL_FONT_COLLECTION,
         state.font_style.size,
         &state.font_style.family,
         state.text_baseline,
@@ -795,7 +785,7 @@ impl Context {
       weight,
       stretch as i32,
       slant,
-      &self.font_collection,
+      &*crate::global_fonts::GLOBAL_FONT_COLLECTION,
       state.font_style.size,
       &state.font_style.family,
       state.text_baseline,
@@ -814,7 +804,7 @@ impl Context {
     let slant = state.font_style.style;
     let line_metrics = LineMetrics(self.surface.canvas.get_line_metrics(
       text,
-      &self.font_collection,
+      &*crate::global_fonts::GLOBAL_FONT_COLLECTION,
       state.font_style.size,
       weight,
       stretch as i32,
@@ -846,28 +836,20 @@ impl Context {
   }
 }
 
-#[js_function(5)]
+#[js_function(4)]
 fn context_2d_constructor(ctx: CallContext) -> Result<JsUndefined> {
   let width = ctx.get::<JsNumber>(0)?.get_uint32()?;
   let height = ctx.get::<JsNumber>(1)?.get_uint32()?;
-  let font_collection_js = ctx.get::<JsObject>(2)?;
-  let font_collection = ctx.env.unwrap::<Rc<FontCollection>>(&font_collection_js)?;
-  let color_space = ctx.get::<JsString>(3)?.into_utf8()?;
+  let color_space = ctx.get::<JsString>(2)?.into_utf8()?;
   let color_space = ColorSpace::from_str(color_space.as_str()?)?;
 
   let mut this = ctx.this_unchecked::<JsObject>();
-  let context_2d = if ctx.length == 4 {
-    Context::new(width, height, color_space, font_collection)?
+  let context_2d = if ctx.length == 3 {
+    Context::new(width, height, color_space)?
   } else {
     // SVG Canvas
-    let flag = ctx.get::<JsNumber>(4)?.get_uint32()?;
-    Context::new_svg(
-      width,
-      height,
-      SvgExportFlag::try_from(flag)?,
-      color_space,
-      font_collection,
-    )?
+    let flag = ctx.get::<JsNumber>(3)?.get_uint32()?;
+    Context::new_svg(width, height, SvgExportFlag::try_from(flag)?, color_space)?
   };
   ctx.env.wrap(&mut this, context_2d)?;
   ctx.env.get_undefined()
