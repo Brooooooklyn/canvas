@@ -1,3 +1,9 @@
+## [0.1.28](https://github.com/Brooooooklyn/canvas/compare/v0.1.27...v0.1.28) (2022-08-16)
+
+### Bug Fixes
+
+- adjust Node.js external memory while creating Canvas ([77ecc52](https://github.com/Brooooooklyn/canvas/commit/77ecc52a8259cfe959e23f615eee2a4484c72ed5))
+
 ## [0.1.27](https://github.com/Brooooooklyn/canvas/compare/v0.1.26...v0.1.27) (2022-08-14)
 
 ### Bug Fixes
