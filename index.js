@@ -2,6 +2,7 @@ const { platform, homedir } = require('os')
 const { join } = require('path')
 
 const {
+  clearAllCache,
   CanvasRenderingContext2D,
   CanvasElement,
   createContext,
@@ -195,6 +196,7 @@ if (!process.env.DISABLE_SYSTEM_FONTS_LOAD) {
 }
 
 module.exports = {
+  clearAllCache,
   Canvas,
   createCanvas,
   Path2D,

@@ -417,3 +417,8 @@ impl SVGCanvas {
     }
   }
 }
+
+#[napi]
+pub fn clear_all_cache() {
+  unsafe { sk::ffi::skiac_clear_all_cache() };
+}

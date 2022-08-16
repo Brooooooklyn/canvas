@@ -1,5 +1,8 @@
 /// <reference lib="dom" />
 
+// Clear all type of caches in Skia
+export function clearAllCache(): void
+
 export interface DOMMatrix2DInit {
   a: number
   b: number

@@ -13,7 +13,7 @@ use crate::error::SkError;
 use crate::font::{FontStretch, FontStyle};
 use crate::image::ImageData;
 
-mod ffi {
+pub mod ffi {
   use std::ffi::c_void;
   use std::os::raw::c_char;
 
@@ -246,6 +246,8 @@ mod ffi {
   )]
   #[link(name = "skiac", kind = "static", cfg(target_os = "windows"))]
   extern "C" {
+
+    pub fn skiac_clear_all_cache();
 
     pub fn skiac_surface_create_rgba_premultiplied(
       width: i32,
