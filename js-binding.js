@@ -196,6 +196,7 @@ if (!nativeBinding) {
 }
 
 const {
+  clearAllCache,
   CanvasRenderingContext2D,
   CanvasElement,
   createContext,
@@ -212,6 +213,7 @@ const {
   StrokeCap,
 } = nativeBinding
 
+module.exports.clearAllCache = clearAllCache
 module.exports.CanvasRenderingContext2D = CanvasRenderingContext2D
 module.exports.CanvasElement = CanvasElement
 module.exports.createContext = createContext

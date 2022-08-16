@@ -211,7 +211,7 @@ struct skiac_mapped_point
 
 extern "C"
 {
-
+  void skiac_clear_all_cache();
   // Surface
   skiac_surface *skiac_surface_create_rgba_premultiplied(int width, int height, uint8_t cs);
   void skiac_surface_create_svg(skiac_svg_surface *c_surface, int width, int height, int alphaType, uint32_t flag, uint8_t cs);

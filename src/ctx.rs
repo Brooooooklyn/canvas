@@ -42,6 +42,7 @@ impl ImageOrCanvas {
 }
 
 pub struct Context {
+  env: Env,
   pub(crate) surface: Surface,
   path: Path,
   pub alpha: bool,
@@ -51,6 +52,17 @@ pub struct Context {
   pub height: u32,
   pub color_space: ColorSpace,
   pub stream: Option<SkWMemoryStream>,
+}
+
+impl Drop for Context {
+  fn drop(&mut self) {
+    if let Err(e) = self
+      .env
+      .adjust_external_memory(-((self.width * self.height * 4) as i64))
+    {
+      eprintln!("{e}");
+    }
+  }
 }
 
 impl Context {
@@ -242,6 +254,7 @@ impl Context {
   }
 
   pub fn new_svg(
+    env: Env,
     width: u32,
     height: u32,
     svg_export_flag: SvgExportFlag,
@@ -256,6 +269,7 @@ impl Context {
     )
     .ok_or_else(|| Error::from_reason("Create skia svg surface failed".to_owned()))?;
     Ok(Context {
+      env,
       surface,
       alpha: true,
       path: Path::new(),
@@ -268,10 +282,11 @@ impl Context {
     })
   }
 
-  pub fn new(width: u32, height: u32, color_space: ColorSpace) -> Result<Self> {
+  pub fn new(env: Env, width: u32, height: u32, color_space: ColorSpace) -> Result<Self> {
     let surface = Surface::new_rgba_premultiplied(width, height, color_space)
       .ok_or_else(|| Error::from_reason("Create skia surface failed".to_owned()))?;
     Ok(Context {
+      env,
       surface,
       alpha: true,
       path: Path::new(),
@@ -845,12 +860,21 @@ fn context_2d_constructor(ctx: CallContext) -> Result<JsUndefined> {
 
   let mut this = ctx.this_unchecked::<JsObject>();
   let context_2d = if ctx.length == 3 {
-    Context::new(width, height, color_space)?
+    Context::new(*ctx.env, width, height, color_space)?
   } else {
     // SVG Canvas
     let flag = ctx.get::<JsNumber>(3)?.get_uint32()?;
-    Context::new_svg(width, height, SvgExportFlag::try_from(flag)?, color_space)?
+    Context::new_svg(
+      *ctx.env,
+      width,
+      height,
+      SvgExportFlag::try_from(flag)?,
+      color_space,
+    )?
   };
+  ctx
+    .env
+    .adjust_external_memory((width * height * 4) as i64)?;
   ctx.env.wrap(&mut this, context_2d)?;
   ctx.env.get_undefined()
 }

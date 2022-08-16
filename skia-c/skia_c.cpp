@@ -56,6 +56,11 @@ extern "C"
     };
   }
 
+  void skiac_clear_all_cache()
+  {
+    SkGraphics::PurgeAllCaches();
+  }
+
   // Surface
 
   static SkSurface *skiac_surface_create(int width, int height, SkAlphaType alphaType, uint8_t cs)
