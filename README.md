@@ -41,11 +41,15 @@ npm install @napi-rs/canvas
 
 [**_cortex-a57_**](https://en.wikipedia.org/wiki/ARM_Cortex-A57) or newer CPU architecture on **Linux**.
 
-All `m` chips on **macOS**.
+All Apple M chips on **macOS**.
 
 ### `armv7`
 
 [**_cortex-a7_**](https://en.wikipedia.org/wiki/ARM_Cortex-A7) or newer CPU architecture.
+
+### glibc
+
+Since Skia relies on the [glibc](https://www.gnu.org/software/libc/) 2.18 API, you need to have at least glibc version >= 2.18 on your system.
 
 # Usage
 

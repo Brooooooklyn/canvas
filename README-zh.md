@@ -39,13 +39,17 @@ npm install @napi-rs/canvas
 
 ### `arm64`
 
-**Linux** 需要 [**_cortex-a57_**](https://en.wikipedia.org/wiki/ARM_Cortex-A57) 或更新的 CPU 架构.
+**Linux** 需要 [**_cortex-a57_**](https://en.wikipedia.org/wiki/ARM_Cortex-A57) 或更新的 CPU 架构。
 
-**macOS** 上支持所有 `m` 系列芯片.
+**macOS** 上支持所有 Apple M 系列芯片。
 
 ### `armv7`
 
-[**_cortex-a7_**](https://en.wikipedia.org/wiki/ARM_Cortex-A7) 或更新的 CPU 架构.
+[**_cortex-a7_**](https://en.wikipedia.org/wiki/ARM_Cortex-A7) 或更新的 CPU 架构。
+
+### glibc
+
+由于 Skia 依赖 [glibc](https://www.gnu.org/software/libc/) 2.18 的 API，所以最少需要您的系统中 glibc 版本 >= 2.18。
 
 # 用法
 
@@ -117,7 +121,7 @@ writeFileSync(join(__dirname, 'draw-emoji.png'), b)
 
 # 性能
 
-[benchmark](./benchmark) 代码.
+[benchmark](./benchmark) 代码。
 
 硬件信息:
 
