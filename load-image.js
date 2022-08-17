@@ -86,6 +86,7 @@ function createImage(src, alt) {
 
 function isBufferLike(src) {
   return (
+    (src && src.type === 'Buffer') ||
     Array.isArray(src) ||
     src instanceof ArrayBuffer ||
     src instanceof SharedArrayBuffer ||
