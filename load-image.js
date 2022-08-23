@@ -39,7 +39,13 @@ module.exports = async function loadImage(source, options = {}) {
       source = !(source instanceof URL) ? new URL(source) : source
       // attempt to download the remote source and construct image
       const data = await new Promise((resolve, reject) =>
-        makeRequest(source, resolve, reject, options.maxRedirects ?? MAX_REDIRECTS, options.requestOptions),
+        makeRequest(
+          source,
+          resolve,
+          reject,
+          typeof options.maxRedirects === 'number' && options.maxRedirects >= 0 ? options.maxRedirects : MAX_REDIRECTS,
+          options.requestOptions,
+        ),
       )
       return createImage(data, options.alt)
     }
@@ -54,7 +60,7 @@ function makeRequest(url, resolve, reject, redirectCount, requestOptions) {
   // lazy load the lib
   const lib = isHttps ? (!https ? (https = require('https')) : https) : !http ? (http = require('http')) : http
 
-  lib.get(url, requestOptions ?? {}, (res) => {
+  lib.get(url, requestOptions || {}, (res) => {
     const shouldRedirect = REDIRECT_STATUSES.has(res.statusCode) && typeof res.headers.location === 'string'
     if (shouldRedirect && redirectCount > 0)
       return makeRequest(new URL(res.headers.location), resolve, reject, redirectCount - 1, requestOptions)

@@ -5,7 +5,6 @@ use std::fmt;
 use std::ops::{Deref, DerefMut};
 use std::os::raw::c_char;
 use std::ptr;
-use std::rc::Rc;
 use std::slice;
 use std::str::FromStr;
 
@@ -3432,7 +3431,6 @@ pub struct ImagePattern {
   pub(crate) repeat_x: TileMode,
   pub(crate) repeat_y: TileMode,
   pub(crate) transform: Transform,
-  pub(crate) bitmap_to_finalize: Option<Rc<Bitmap>>,
 }
 
 impl ImagePattern {

@@ -199,7 +199,6 @@ const {
   clearAllCache,
   CanvasRenderingContext2D,
   CanvasElement,
-  createContext,
   SVGCanvas,
   Path,
   ImageData,
@@ -216,7 +215,6 @@ const {
 module.exports.clearAllCache = clearAllCache
 module.exports.CanvasRenderingContext2D = CanvasRenderingContext2D
 module.exports.CanvasElement = CanvasElement
-module.exports.createContext = createContext
 module.exports.SVGCanvas = SVGCanvas
 module.exports.Path2D = Path
 module.exports.ImageData = ImageData

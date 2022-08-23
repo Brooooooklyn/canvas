@@ -8,15 +8,19 @@ extern crate napi_derive;
 #[macro_use]
 extern crate serde_derive;
 
+use std::str::FromStr;
 use std::{mem, slice};
 
-use napi::bindgen_prelude::{AsyncTask, Either3, Object, This, Unknown};
+use napi::bindgen_prelude::{AsyncTask, ClassInstance, Either3, This, Unknown};
 use napi::*;
 
-use ctx::{AVIFConfig, Context, ContextData, ContextOutputData};
+use ctx::{
+  AVIFConfig, CanvasRenderingContext2D, Context, ContextData, ContextOutputData, SvgExportFlag,
+  FILL_STYLE_HIDDEN_NAME, STROKE_STYLE_HIDDEN_NAME,
+};
 use font::{init_font_regexp, FONT_REGEXP};
 use rgb::FromSlice;
-use sk::SkiaDataRef;
+use sk::{ColorSpace, SkiaDataRef};
 
 #[cfg(all(
   not(all(target_os = "linux", target_env = "musl", target_arch = "aarch64")),
@@ -32,14 +36,12 @@ mod font;
 pub mod global_fonts;
 mod gradient;
 mod image;
-mod image_pattern;
-mod path;
+pub mod path;
 mod pattern;
 #[allow(dead_code)]
 mod sk;
 mod state;
 pub mod svg;
-mod util;
 
 const MIME_WEBP: &str = "image/webp";
 const MIME_PNG: &str = "image/png";
@@ -54,71 +56,103 @@ const DEFAULT_JPEG_QUALITY: u8 = 92;
 // https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/platform/image-encoders/image_encoder.cc;l=100;drc=81c6f843fdfd8ef660d733289a7a32abe68e247a
 const DEFAULT_WEBP_QUALITY: u8 = 80;
 
-#[module_exports]
-fn init(mut exports: JsObject, env: Env) -> Result<()> {
-  let canvas_rendering_context2d = ctx::Context::create_js_class(&env)?;
-
-  let image_data_class = image::ImageData::create_js_class(&env)?;
-
-  let image_class = image::Image::create_js_class(&env)?;
-
-  let canvas_pattern = env.define_class(
-    "CanvasPattern",
-    image_pattern::canvas_pattern_constructor,
-    &[Property::new("setTransform")?.with_method(image_pattern::set_transform)],
-  )?;
-
-  exports.set_named_property("CanvasRenderingContext2D", canvas_rendering_context2d)?;
-
-  exports.set_named_property("ImageData", image_data_class)?;
-
-  exports.set_named_property("Image", image_class)?;
-
-  exports.set_named_property("CanvasPattern", canvas_pattern)?;
-
+#[napi::module_init]
+fn init() {
   // pre init font regexp
   FONT_REGEXP.get_or_init(init_font_regexp);
-  Ok(())
+}
+
+#[napi(object)]
+pub struct CanvasRenderingContext2DAttributes {
+  pub alpha: Option<bool>,
+  pub color_space: Option<String>,
 }
 
 #[napi]
 pub struct CanvasElement {
   pub width: u32,
   pub height: u32,
+  pub(crate) ctx: ClassInstance<CanvasRenderingContext2D>,
 }
 
 #[napi]
 impl CanvasElement {
   #[napi(constructor)]
-  pub fn new(width: u32, height: u32) -> Self {
-    Self { width, height }
+  pub fn new(mut env: Env, mut this: This, width: u32, height: u32) -> Result<Self> {
+    let ctx = CanvasRenderingContext2D::into_instance(
+      CanvasRenderingContext2D {
+        context: Context::new(width, height, ColorSpace::default())?,
+      },
+      env,
+    )?;
+    ctx.as_object(env).define_properties(&[
+      Property::new(FILL_STYLE_HIDDEN_NAME)?
+        .with_value(&env.create_string("#000")?)
+        .with_property_attributes(PropertyAttributes::Writable | PropertyAttributes::Configurable),
+      Property::new(STROKE_STYLE_HIDDEN_NAME)?
+        .with_value(&env.create_string("#000")?)
+        .with_property_attributes(PropertyAttributes::Writable | PropertyAttributes::Configurable),
+    ])?;
+    env.adjust_external_memory((width * height * 4) as i64)?;
+    this.define_properties(&[Property::new("ctx")?
+      .with_value(&ctx)
+      .with_property_attributes(PropertyAttributes::Default)])?;
+    Ok(Self { width, height, ctx })
+  }
+
+  #[napi]
+  pub fn get_context(
+    &mut self,
+    this: This,
+    context_type: String,
+    attrs: Option<CanvasRenderingContext2DAttributes>,
+  ) -> Result<Unknown> {
+    if context_type != "2d" {
+      return Err(Error::new(
+        Status::InvalidArg,
+        format!("{context_type} is not supported"),
+      ));
+    }
+    let context_2d = &mut self.ctx.context;
+    if !attrs.as_ref().and_then(|a| a.alpha).unwrap_or(true) {
+      let mut fill_paint = context_2d.fill_paint()?;
+      fill_paint.set_color(255, 255, 255, 255);
+      context_2d.alpha = false;
+      context_2d.surface.draw_rect(
+        0f32,
+        0f32,
+        self.width as f32,
+        self.height as f32,
+        &fill_paint,
+      );
+    }
+    let color_space = attrs
+      .and_then(|a| a.color_space)
+      .and_then(|cs| ColorSpace::from_str(&cs).ok())
+      .unwrap_or_default();
+    context_2d.color_space = color_space;
+    this.get_named_property("ctx")
   }
 
   #[napi]
   pub fn encode(
     &self,
-    env: Env,
-    this: This,
     format: String,
     quality_or_config: Either3<u32, String, Unknown>,
   ) -> Result<AsyncTask<ContextData>> {
-    Ok(AsyncTask::new(self.encode_inner(
-      env,
-      this,
-      format,
-      quality_or_config,
-    )?))
+    Ok(AsyncTask::new(
+      self.encode_inner(format, quality_or_config)?,
+    ))
   }
 
   #[napi]
   pub fn encode_sync(
     &self,
     env: Env,
-    this: This,
     format: String,
     quality_or_config: Either3<u32, String, Unknown>,
   ) -> Result<JsBuffer> {
-    let mut task = self.encode_inner(env, this, format, quality_or_config)?;
+    let mut task = self.encode_inner(format, quality_or_config)?;
     let output = task.compute()?;
     task.resolve(env, output)
   }
@@ -127,12 +161,11 @@ impl CanvasElement {
   pub fn to_buffer(
     &self,
     env: Env,
-    this: This,
     mime: String,
     quality_or_config: Either3<u32, String, Unknown>,
   ) -> Result<JsBuffer> {
     let mime = mime.as_str();
-    let context_data = get_data_ref(&env, &this, mime, &quality_or_config)?;
+    let context_data = get_data_ref(&self.ctx.context, mime, &quality_or_config)?;
     match context_data {
       ContextOutputData::Skia(data_ref) => unsafe {
         env
@@ -149,9 +182,8 @@ impl CanvasElement {
   }
 
   #[napi]
-  pub fn data(&self, env: Env, this: This) -> Result<JsBuffer> {
-    let ctx_js = this.get_named_property::<JsObject>("ctx")?;
-    let ctx2d = env.unwrap::<Context>(&ctx_js)?;
+  pub fn data(&self, env: Env) -> Result<JsBuffer> {
+    let ctx2d = &self.ctx.context;
 
     let surface_ref = ctx2d.surface.reference();
 
@@ -171,51 +203,38 @@ impl CanvasElement {
   #[napi(js_name = "toDataURLAsync")]
   pub fn to_data_url_async(
     &self,
-    env: Env,
-    this: This,
     mime: String,
     quality_or_config: Either3<f64, String, Unknown>,
   ) -> Result<AsyncTask<AsyncDataUrl>> {
-    Ok(AsyncTask::new(self.to_data_url_inner(
-      &env,
-      &this,
-      mime.as_str(),
-      quality_or_config,
-    )?))
+    Ok(AsyncTask::new(
+      self.to_data_url_inner(mime.as_str(), quality_or_config)?,
+    ))
   }
 
   #[napi(js_name = "toDataURL")]
   pub fn to_data_url(
     &self,
-    env: Env,
-    this: This,
     mime: String,
     quality_or_config: Either3<f64, String, Unknown>,
   ) -> Result<String> {
-    let mut task = self.to_data_url_inner(&env, &this, mime.as_str(), quality_or_config)?;
+    let mut task = self.to_data_url_inner(mime.as_str(), quality_or_config)?;
     task.compute()
   }
 
   #[napi]
-  pub fn save_png(&self, env: Env, this: This, path: String) -> Result<()> {
-    let ctx_js = this.get_named_property::<JsObject>("ctx")?;
-    let ctx2d = env.unwrap::<Context>(&ctx_js)?;
-
+  pub fn save_png(&self, path: String) {
+    let ctx2d = &self.ctx.context;
     ctx2d.surface.save_png(&path);
-    Ok(())
   }
 
   fn encode_inner(
     &self,
-    env: Env,
-    this: This,
     format: String,
     quality_or_config: Either3<u32, String, Unknown>,
   ) -> Result<ContextData> {
     let format_str = format.as_str();
     let quality = quality_or_config.to_quality(format_str);
-    let ctx_js = this.get_named_property::<JsObject>("ctx")?;
-    let ctx2d = env.unwrap::<Context>(&ctx_js)?;
+    let ctx2d = &self.ctx.context;
     let surface_ref = ctx2d.surface.reference();
 
     let task = match format_str {
@@ -239,14 +258,11 @@ impl CanvasElement {
 
   fn to_data_url_inner(
     &self,
-    env: &Env,
-    this: &This,
     mime: &str,
     quality_or_config: Either3<f64, String, Unknown>,
   ) -> Result<AsyncDataUrl> {
     let data_ref = get_data_ref(
-      env,
-      this,
+      &self.ctx.context,
       mime,
       &match quality_or_config {
         Either3::A(q) => Either3::A((q * 100.0) as u32),
@@ -266,34 +282,11 @@ pub struct ContextAttr {
   pub alpha: Option<bool>,
 }
 
-#[napi]
-pub fn create_context(
-  env: Env,
-  context_object: JsObject,
-  width: f64,
-  height: f64,
-  attrs: ContextAttr,
-) -> Result<()> {
-  let context_2d: &mut Context = env.unwrap(&context_object)?;
-  if !attrs.alpha.unwrap_or(true) {
-    let mut fill_paint = context_2d.fill_paint()?;
-    fill_paint.set_color(255, 255, 255, 255);
-    context_2d.alpha = false;
-    context_2d
-      .surface
-      .draw_rect(0f32, 0f32, width as f32, height as f32, &fill_paint);
-  }
-  Ok(())
-}
-
 fn get_data_ref(
-  env: &Env,
-  this: &Object,
+  ctx2d: &Context,
   mime: &str,
   quality_or_config: &Either3<u32, String, Unknown>,
 ) -> Result<ContextOutputData> {
-  let ctx_js = this.get_named_property::<JsObject>("ctx")?;
-  let ctx2d = env.unwrap::<Context>(&ctx_js)?;
   let surface_ref = ctx2d.surface.reference();
   let quality = quality_or_config.to_quality(mime);
 
@@ -392,22 +385,78 @@ impl ToQuality for Either3<u32, String, Unknown> {
 pub struct SVGCanvas {
   pub width: u32,
   pub height: u32,
+  pub(crate) ctx: ClassInstance<CanvasRenderingContext2D>,
 }
 
 #[napi]
 impl SVGCanvas {
   #[napi(constructor)]
-  pub fn new(width: u32, height: u32) -> Self {
-    Self { width, height }
+  pub fn new(
+    mut env: Env,
+    mut this: This,
+    width: u32,
+    height: u32,
+    flag: SvgExportFlag,
+  ) -> Result<Self> {
+    let ctx = CanvasRenderingContext2D::into_instance(
+      CanvasRenderingContext2D {
+        context: Context::new_svg(width, height, flag.into(), ColorSpace::default())?,
+      },
+      env,
+    )?;
+    ctx.as_object(env).define_properties(&[
+      Property::new(FILL_STYLE_HIDDEN_NAME)?
+        .with_value(&env.create_string("#000")?)
+        .with_property_attributes(PropertyAttributes::Writable | PropertyAttributes::Configurable),
+      Property::new(STROKE_STYLE_HIDDEN_NAME)?
+        .with_value(&env.create_string("#000")?)
+        .with_property_attributes(PropertyAttributes::Writable | PropertyAttributes::Configurable),
+    ])?;
+    env.adjust_external_memory((width * height * 4) as i64)?;
+    this.define_properties(&[Property::new("ctx")?
+      .with_value(&ctx)
+      .with_property_attributes(PropertyAttributes::Default)])?;
+    Ok(Self { width, height, ctx })
   }
 
   #[napi]
-  pub fn get_content(&self, this: This, env: Env) -> Result<JsBuffer> {
-    let ctx_js = this.get_named_property::<JsObject>("ctx")?;
-    let ctx2d = env.unwrap::<Context>(&ctx_js)?;
+  pub fn get_context(
+    &mut self,
+    this: This,
+    context_type: String,
+    attrs: Option<CanvasRenderingContext2DAttributes>,
+  ) -> Result<Unknown> {
+    if context_type != "2d" {
+      return Err(Error::new(
+        Status::InvalidArg,
+        format!("{context_type} is not supported"),
+      ));
+    }
+    let context_2d = &mut self.ctx.context;
+    if !attrs.as_ref().and_then(|a| a.alpha).unwrap_or(true) {
+      let mut fill_paint = context_2d.fill_paint()?;
+      fill_paint.set_color(255, 255, 255, 255);
+      context_2d.alpha = false;
+      context_2d.surface.draw_rect(
+        0f32,
+        0f32,
+        self.width as f32,
+        self.height as f32,
+        &fill_paint,
+      );
+    }
+    let color_space = attrs
+      .and_then(|a| a.color_space)
+      .and_then(|cs| ColorSpace::from_str(&cs).ok())
+      .unwrap_or_default();
+    context_2d.color_space = color_space;
+    this.get_named_property("ctx")
+  }
 
-    let svg_data_stream = ctx2d.stream.as_ref().unwrap();
-    let svg_data = svg_data_stream.data(ctx2d.width, ctx2d.height);
+  #[napi]
+  pub fn get_content(&self, env: Env) -> Result<JsBuffer> {
+    let svg_data_stream = self.ctx.context.stream.as_ref().unwrap();
+    let svg_data = svg_data_stream.data(self.ctx.context.width, self.ctx.context.height);
     unsafe {
       env
         .create_buffer_with_borrowed_data(svg_data.0.ptr, svg_data.0.size, svg_data, |d, _| {
