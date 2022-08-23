@@ -2,19 +2,12 @@ use std::str::FromStr;
 
 use once_cell::sync::OnceCell;
 use regex::Regex;
-use thiserror::Error;
+
+use crate::error::SkError;
 
 pub(crate) static FONT_REGEXP: OnceCell<Regex> = OnceCell::new();
 
 const DEFAULT_FONT: &str = "sans-serif";
-
-#[derive(Error, Clone, Debug)]
-pub enum ParseError {
-  #[error("[`{0}`] is not valid font style")]
-  InvalidFontStyle(String),
-  #[error("[`{0}`] is not valid font variant")]
-  InvalidFontVariant(String),
-}
 
 /// The minimum font-weight value per:
 ///
@@ -53,7 +46,7 @@ impl Default for Font {
 }
 
 impl Font {
-  pub fn new(font_rules: &str) -> Result<Font, ParseError> {
+  pub fn new(font_rules: &str) -> Result<Font, SkError> {
     let font_regexp = FONT_REGEXP.get_or_init(init_font_regexp);
     let default_font = Font::default();
     if let Some(cap) = font_regexp.captures(font_rules) {
@@ -112,10 +105,10 @@ impl Font {
             .join(","),
         })
       } else {
-        Err(ParseError::InvalidFontStyle(font_rules.to_owned()))
+        Err(SkError::InvalidFontStyle(font_rules.to_owned()))
       }
     } else {
-      Err(ParseError::InvalidFontStyle(font_rules.to_owned()))
+      Err(SkError::InvalidFontStyle(font_rules.to_owned()))
     }
   }
 }
@@ -160,14 +153,14 @@ impl FontStyle {
 }
 
 impl FromStr for FontStyle {
-  type Err = ParseError;
+  type Err = SkError;
 
-  fn from_str(s: &str) -> Result<FontStyle, ParseError> {
+  fn from_str(s: &str) -> Result<FontStyle, SkError> {
     match s {
       "normal" => Ok(Self::Normal),
       "italic" => Ok(Self::Italic),
       "oblique" => Ok(Self::Oblique),
-      _ => Err(ParseError::InvalidFontStyle(s.to_owned())),
+      _ => Err(SkError::InvalidFontStyle(s.to_owned())),
     }
   }
 }
@@ -179,13 +172,13 @@ pub enum FontVariant {
 }
 
 impl FromStr for FontVariant {
-  type Err = ParseError;
+  type Err = SkError;
 
-  fn from_str(s: &str) -> Result<FontVariant, ParseError> {
+  fn from_str(s: &str) -> Result<FontVariant, SkError> {
     match s {
       "normal" => Ok(Self::Normal),
       "small-caps" => Ok(Self::SmallCaps),
-      _ => Err(ParseError::InvalidFontVariant(s.to_owned())),
+      _ => Err(SkError::InvalidFontVariant(s.to_owned())),
     }
   }
 }

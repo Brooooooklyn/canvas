@@ -354,4 +354,13 @@ impl Path {
   pub fn equals(&self, other: &Path) -> bool {
     self.inner == other.inner
   }
+
+  #[napi]
+  pub fn is_point_in_path(&self, x: f64, y: f64, fill_type: Option<FillType>) -> bool {
+    self.inner.hit_test(
+      x as f32,
+      y as f32,
+      fill_type.unwrap_or(FillType::Winding).into(),
+    )
+  }
 }

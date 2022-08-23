@@ -40,7 +40,6 @@ test('properties should be readonly', (t) => {
   const fakeData = new Uint8ClampedArray()
   const expectation = {
     instanceOf: TypeError,
-    message: /Cannot assign to read only property/,
   }
 
   // @ts-expect-error

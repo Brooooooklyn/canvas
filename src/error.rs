@@ -30,6 +30,10 @@ pub enum SkError {
   InvalidTransform(Matrix),
   #[error("Convert String to CString failed")]
   NulError,
+  #[error("[`{0}`] is not valid font style")]
+  InvalidFontStyle(String),
+  #[error("[`{0}`] is not valid font variant")]
+  InvalidFontVariant(String),
   #[error("[`{0}`]")]
   Generic(String),
 }

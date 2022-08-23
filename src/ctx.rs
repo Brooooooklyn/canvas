@@ -1,4 +1,3 @@
-use std::convert::TryFrom;
 use std::f32::consts::PI;
 use std::mem;
 use std::result;
@@ -6,17 +5,28 @@ use std::slice;
 use std::str::FromStr;
 
 use cssparser::{Color as CSSColor, Parser, ParserInput};
-use napi::bindgen_prelude::{ClassInstance, Either3, Unknown};
+use napi::bindgen_prelude::*;
 use napi::*;
 use rgb::FromSlice;
 
-use crate::filter::css_filters_to_image_filter;
-use crate::util::UnwrapObject;
-use crate::CanvasElement;
-use crate::SVGCanvas;
+use crate::pattern::CanvasPattern;
+use crate::sk::Transform;
 use crate::{
-  error::SkError, filter::css_filter, font::Font, gradient::CanvasGradient, image::*,
-  pattern::Pattern, sk::*, state::Context2dRenderingState,
+  error::SkError,
+  filter::css_filter,
+  filter::css_filters_to_image_filter,
+  font::Font,
+  gradient::{CanvasGradient, Gradient},
+  image::*,
+  path::Path,
+  pattern::Pattern,
+  sk::{
+    AlphaType, Bitmap, BlendMode, ColorSpace, FillType, ImageFilter, LineMetrics, MaskFilter,
+    Matrix, Paint, PaintStyle, Path as SkPath, PathEffect, SkEncodedImageFormat, SkWMemoryStream,
+    SkiaDataRef, Surface, SurfaceRef,
+  },
+  state::Context2dRenderingState,
+  CanvasElement, SVGCanvas,
 };
 
 impl From<SkError> for Error {
@@ -25,26 +35,13 @@ impl From<SkError> for Error {
   }
 }
 
-const MAX_TEXT_WIDTH: f32 = 100_000.0;
-
-pub(crate) enum ImageOrCanvas {
-  Image(Image),
-  Canvas,
-}
-
-impl ImageOrCanvas {
-  pub(crate) fn get_image(&mut self) -> Option<&mut Image> {
-    match self {
-      Self::Image(i) => Some(i),
-      _ => None,
-    }
-  }
-}
+pub(crate) const MAX_TEXT_WIDTH: f32 = 100_000.0;
+pub(crate) const FILL_STYLE_HIDDEN_NAME: &str = "_fillStyle";
+pub(crate) const STROKE_STYLE_HIDDEN_NAME: &str = "_strokeStyle";
 
 pub struct Context {
-  env: Env,
   pub(crate) surface: Surface,
-  path: Path,
+  path: SkPath,
   pub alpha: bool,
   pub(crate) states: Vec<Context2dRenderingState>,
   state: Context2dRenderingState,
@@ -54,225 +51,25 @@ pub struct Context {
   pub stream: Option<SkWMemoryStream>,
 }
 
-impl Drop for Context {
-  fn drop(&mut self) {
-    if let Err(e) = self
-      .env
-      .adjust_external_memory(-((self.width * self.height * 4) as i64))
-    {
-      eprintln!("{e}");
-    }
-  }
-}
-
 impl Context {
-  pub fn create_js_class(env: &Env) -> Result<JsFunction> {
-    env.define_class(
-      "CanvasRenderingContext2D",
-      context_2d_constructor,
-      &vec![
-        // properties
-        Property::new("miterLimit")?
-          .with_getter(get_miter_limit)
-          .with_setter(set_miter_limit),
-        Property::new("globalAlpha")?
-          .with_getter(get_global_alpha)
-          .with_setter(set_global_alpha),
-        Property::new("globalCompositeOperation")?
-          .with_getter(get_global_composite_operation)
-          .with_setter(set_global_composite_operation),
-        Property::new("imageSmoothingEnabled")?
-          .with_getter(get_image_smoothing_enabled)
-          .with_setter(set_image_smoothing_enabled),
-        Property::new("imageSmoothingQuality")?
-          .with_getter(get_image_smoothing_quality)
-          .with_setter(set_image_smoothing_quality),
-        Property::new("lineCap")?
-          .with_setter(set_line_cap)
-          .with_getter(get_line_cap),
-        Property::new("lineDashOffset")?
-          .with_setter(set_line_dash_offset)
-          .with_getter(get_line_dash_offset),
-        Property::new("lineJoin")?
-          .with_setter(set_line_join)
-          .with_getter(get_line_join),
-        Property::new("lineWidth")?
-          .with_setter(set_line_width)
-          .with_getter(get_line_width),
-        Property::new("fillStyle")?
-          .with_setter(set_fill_style)
-          .with_getter(get_fill_style),
-        Property::new("filter")?
-          .with_setter(set_filter)
-          .with_getter(get_filter),
-        Property::new("font")?
-          .with_setter(set_font)
-          .with_getter(get_font),
-        Property::new("direction")?
-          .with_setter(set_text_direction)
-          .with_getter(get_text_direction),
-        Property::new("strokeStyle")?
-          .with_setter(set_stroke_style)
-          .with_getter(get_stroke_style),
-        Property::new("shadowBlur")?
-          .with_setter(set_shadow_blur)
-          .with_getter(get_shadow_blur),
-        Property::new("shadowColor")?
-          .with_setter(set_shadow_color)
-          .with_getter(get_shadow_color),
-        Property::new("shadowOffsetX")?
-          .with_setter(set_shadow_offset_x)
-          .with_getter(get_shadow_offset_x),
-        Property::new("shadowOffsetY")?
-          .with_setter(set_shadow_offset_y)
-          .with_getter(get_shadow_offset_y),
-        Property::new("textAlign")?
-          .with_setter(set_text_align)
-          .with_getter(get_text_align),
-        Property::new("textBaseline")?
-          .with_setter(set_text_baseline)
-          .with_getter(get_text_baseline),
-        // methods
-        Property::new("arc")?
-          .with_method(arc)
-          .with_property_attributes(PropertyAttributes::Writable),
-        Property::new("arcTo")?
-          .with_method(arc_to)
-          .with_property_attributes(PropertyAttributes::Writable),
-        Property::new("beginPath")?
-          .with_method(begin_path)
-          .with_property_attributes(PropertyAttributes::Writable),
-        Property::new("bezierCurveTo")?
-          .with_method(bezier_curve_to)
-          .with_property_attributes(PropertyAttributes::Writable),
-        Property::new("clearRect")?
-          .with_method(clear_rect)
-          .with_property_attributes(PropertyAttributes::Writable),
-        Property::new("clip")?
-          .with_method(clip)
-          .with_property_attributes(PropertyAttributes::Writable),
-        Property::new("closePath")?
-          .with_method(close_path)
-          .with_property_attributes(PropertyAttributes::Writable),
-        Property::new("createLinearGradient")?
-          .with_method(create_linear_gradient)
-          .with_property_attributes(PropertyAttributes::Writable),
-        Property::new("createRadialGradient")?
-          .with_method(create_radial_gradient)
-          .with_property_attributes(PropertyAttributes::Writable),
-        Property::new("createConicGradient")?
-          .with_method(create_conic_gradient)
-          .with_property_attributes(PropertyAttributes::Writable),
-        Property::new("drawImage")?
-          .with_method(draw_image)
-          .with_property_attributes(PropertyAttributes::Writable),
-        Property::new("getContextAttributes")?
-          .with_method(get_context_attributes)
-          .with_property_attributes(PropertyAttributes::Writable),
-        Property::new("isPointInPath")?
-          .with_method(is_point_in_path)
-          .with_property_attributes(PropertyAttributes::Writable),
-        Property::new("isPointInStroke")?.with_method(is_point_in_stroke),
-        Property::new("ellipse")?
-          .with_method(ellipse)
-          .with_property_attributes(PropertyAttributes::Writable),
-        Property::new("lineTo")?
-          .with_method(line_to)
-          .with_property_attributes(PropertyAttributes::Writable),
-        Property::new("measureText")?
-          .with_method(measure_text)
-          .with_property_attributes(PropertyAttributes::Writable),
-        Property::new("moveTo")?
-          .with_method(move_to)
-          .with_property_attributes(PropertyAttributes::Writable),
-        Property::new("fill")?
-          .with_method(fill)
-          .with_property_attributes(PropertyAttributes::Writable),
-        Property::new("fillRect")?
-          .with_method(fill_rect)
-          .with_property_attributes(PropertyAttributes::Writable),
-        Property::new("fillText")?
-          .with_method(fill_text)
-          .with_property_attributes(PropertyAttributes::Writable),
-        Property::new("_getImageData")?
-          .with_method(get_image_data)
-          .with_property_attributes(PropertyAttributes::Writable),
-        Property::new("getLineDash")?
-          .with_method(get_line_dash)
-          .with_property_attributes(PropertyAttributes::Writable),
-        Property::new("putImageData")?
-          .with_method(put_image_data)
-          .with_property_attributes(PropertyAttributes::Writable),
-        Property::new("quadraticCurveTo")?
-          .with_method(quadratic_curve_to)
-          .with_property_attributes(PropertyAttributes::Writable),
-        Property::new("rect")?
-          .with_method(rect)
-          .with_property_attributes(PropertyAttributes::Writable),
-        Property::new("resetTransform")?
-          .with_method(reset_transform)
-          .with_property_attributes(PropertyAttributes::Writable),
-        Property::new("restore")?
-          .with_method(restore)
-          .with_property_attributes(PropertyAttributes::Writable),
-        Property::new("rotate")?
-          .with_method(rotate)
-          .with_property_attributes(PropertyAttributes::Writable),
-        Property::new("save")?
-          .with_method(save)
-          .with_property_attributes(PropertyAttributes::Writable),
-        Property::new("scale")?
-          .with_method(scale)
-          .with_property_attributes(PropertyAttributes::Writable),
-        Property::new("setLineDash")?
-          .with_method(set_line_dash)
-          .with_property_attributes(PropertyAttributes::Writable),
-        Property::new("stroke")?
-          .with_method(stroke)
-          .with_property_attributes(PropertyAttributes::Writable),
-        Property::new("strokeRect")?
-          .with_method(stroke_rect)
-          .with_property_attributes(PropertyAttributes::Writable),
-        Property::new("strokeText")?
-          .with_method(stroke_text)
-          .with_property_attributes(PropertyAttributes::Writable),
-        Property::new("translate")?
-          .with_method(translate)
-          .with_property_attributes(PropertyAttributes::Writable),
-        Property::new("transform")?
-          .with_method(transform)
-          .with_property_attributes(PropertyAttributes::Writable),
-        // getter setter method
-        Property::new("getTransform")?
-          .with_method(get_current_transform)
-          .with_property_attributes(PropertyAttributes::Writable),
-        Property::new("setTransform")?
-          .with_method(set_current_transform)
-          .with_property_attributes(PropertyAttributes::Writable),
-      ],
-    )
-  }
-
   pub fn new_svg(
-    env: Env,
     width: u32,
     height: u32,
-    svg_export_flag: SvgExportFlag,
+    svg_export_flag: crate::sk::SvgExportFlag,
     color_space: ColorSpace,
   ) -> Result<Self> {
     let (surface, stream) = Surface::new_svg(
       width,
       height,
-      AlphaType::Unpremultiplied,
+      AlphaType::Premultiplied,
       svg_export_flag,
       color_space,
     )
     .ok_or_else(|| Error::from_reason("Create skia svg surface failed".to_owned()))?;
     Ok(Context {
-      env,
       surface,
       alpha: true,
-      path: Path::new(),
+      path: SkPath::new(),
       states: vec![],
       state: Context2dRenderingState::default(),
       width,
@@ -282,14 +79,13 @@ impl Context {
     })
   }
 
-  pub fn new(env: Env, width: u32, height: u32, color_space: ColorSpace) -> Result<Self> {
+  pub fn new(width: u32, height: u32, color_space: ColorSpace) -> Result<Self> {
     let surface = Surface::new_rgba_premultiplied(width, height, color_space)
       .ok_or_else(|| Error::from_reason("Create skia surface failed".to_owned()))?;
     Ok(Context {
-      env,
       surface,
       alpha: true,
-      path: Path::new(),
+      path: SkPath::new(),
       states: vec![],
       state: Context2dRenderingState::default(),
       width,
@@ -311,6 +107,10 @@ impl Context {
     self
       .path
       .arc(center_x, center_y, radius, start_angle, end_angle, from_end);
+  }
+
+  pub fn arc_to(&mut self, x1: f32, y1: f32, x2: f32, y2: f32, radius: f32) {
+    self.path.arc_to_tangent(x1, y1, x2, y2, radius);
   }
 
   pub fn ellipse(
@@ -337,17 +137,42 @@ impl Context {
   }
 
   pub fn begin_path(&mut self) {
-    let mut new_sub_path = Path::new();
+    let mut new_sub_path = SkPath::new();
     self.path.swap(&mut new_sub_path);
   }
 
-  pub fn clip(&mut self, path: Option<&mut Path>, fill_rule: FillType) {
+  pub fn bezier_curve_to(&mut self, cp1x: f32, cp1y: f32, cp2x: f32, cp2y: f32, x: f32, y: f32) {
+    self.path.cubic_to(cp1x, cp1y, cp2x, cp2y, x, y);
+  }
+
+  pub fn quadratic_curve_to(&mut self, cpx: f32, cpy: f32, x: f32, y: f32) {
+    self.path.quad_to(cpx, cpy, x, y);
+  }
+
+  pub fn clip(&mut self, path: Option<&mut SkPath>, fill_rule: FillType) {
     let clip = match path {
       Some(path) => path,
       None => &mut self.path,
     };
     clip.set_fill_type(fill_rule);
     self.surface.canvas.set_clip_path(clip);
+  }
+
+  pub fn clear_rect(&mut self, x: f32, y: f32, width: f32, height: f32) {
+    let mut paint = Paint::new();
+    paint.set_style(PaintStyle::Fill);
+    paint.set_color(0, 0, 0, 0);
+    paint.set_stroke_miter(10.0);
+    paint.set_blend_mode(BlendMode::Clear);
+    self.surface.draw_rect(x, y, width, height, &paint);
+  }
+
+  pub fn close_path(&mut self) {
+    self.path.close();
+  }
+
+  pub fn rect(&mut self, x: f32, y: f32, width: f32, height: f32) {
+    self.path.add_rect(x, y, width, height);
   }
 
   pub fn save(&mut self) {
@@ -488,7 +313,7 @@ impl Context {
     Ok(())
   }
 
-  pub fn stroke(&mut self, path: Option<&mut Path>) -> Result<()> {
+  pub fn stroke(&mut self, path: Option<&mut SkPath>) -> Result<()> {
     let last_state = &self.state;
     let p = match path {
       Some(path) => path,
@@ -513,7 +338,7 @@ impl Context {
 
   pub fn fill(
     &mut self,
-    path: Option<&mut Path>,
+    path: Option<&mut SkPath>,
     fill_rule: FillType,
   ) -> result::Result<(), SkError> {
     let last_state = &self.state;
@@ -591,6 +416,80 @@ impl Context {
       self.state.filters_string = filter_str.to_owned();
     }
     Ok(())
+  }
+
+  pub fn get_font(&self) -> &str {
+    &self.state.font
+  }
+
+  pub fn set_font(&mut self, font: String) -> result::Result<(), SkError> {
+    self.state.font_style = Font::new(&font)?;
+    self.state.font = font;
+    Ok(())
+  }
+
+  pub fn get_stroke_width(&self) -> f32 {
+    self.state.paint.get_stroke_width()
+  }
+
+  pub fn get_miter_limit(&self) -> f32 {
+    self.state.paint.get_stroke_miter()
+  }
+
+  pub fn set_miter_limit(&mut self, miter_limit: f32) {
+    self.state.paint.set_stroke_miter(miter_limit);
+  }
+
+  pub fn get_global_alpha(&self) -> f64 {
+    self.state.paint.get_alpha() as f64 / 255.0
+  }
+
+  pub fn set_shadow_color(&mut self, shadow_color: String) -> result::Result<(), SkError> {
+    let mut parser_input = ParserInput::new(&shadow_color);
+    let mut parser = Parser::new(&mut parser_input);
+    let color = CSSColor::parse(&mut parser)
+      .map_err(|e| SkError::Generic(format!("Parse color [{}] error: {:?}", &shadow_color, e)))?;
+
+    match color {
+      CSSColor::CurrentColor => {
+        return Err(SkError::Generic(
+          "Color should not be `currentcolor` keyword".to_owned(),
+        ))
+      }
+      CSSColor::RGBA(rgba) => {
+        drop(parser_input);
+        self.state.shadow_color_string = shadow_color;
+        self.state.shadow_color = rgba;
+      }
+    }
+    Ok(())
+  }
+
+  pub fn set_text_align(&mut self, text_align: String) -> result::Result<(), SkError> {
+    self.state.text_align = text_align.parse()?;
+    Ok(())
+  }
+
+  pub fn set_text_baseline(&mut self, text_baseline: String) -> result::Result<(), SkError> {
+    self.state.text_baseline = text_baseline.parse()?;
+    Ok(())
+  }
+
+  pub fn get_image_data(
+    &mut self,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    color_type: ColorSpace,
+  ) -> Option<Vec<u8>> {
+    self
+      .surface
+      .read_pixels(x as u32, y as u32, w as u32, h as u32, color_type)
+  }
+
+  pub fn set_line_dash(&mut self, line_dash_list: Vec<f32>) {
+    self.state.line_dash_list = line_dash_list;
   }
 
   fn stroke_paint(&self) -> result::Result<Paint, SkError> {
@@ -851,336 +750,647 @@ impl Context {
   }
 }
 
-#[js_function(4)]
-fn context_2d_constructor(ctx: CallContext) -> Result<JsUndefined> {
-  let width = ctx.get::<JsNumber>(0)?.get_uint32()?;
-  let height = ctx.get::<JsNumber>(1)?.get_uint32()?;
-  let color_space = ctx.get::<JsString>(2)?.into_utf8()?;
-  let color_space = ColorSpace::from_str(color_space.as_str()?)?;
-
-  let mut this = ctx.this_unchecked::<JsObject>();
-  let context_2d = if ctx.length == 3 {
-    Context::new(*ctx.env, width, height, color_space)?
-  } else {
-    // SVG Canvas
-    let flag = ctx.get::<JsNumber>(3)?.get_uint32()?;
-    Context::new_svg(
-      *ctx.env,
-      width,
-      height,
-      SvgExportFlag::try_from(flag)?,
-      color_space,
-    )?
-  };
-  ctx
-    .env
-    .adjust_external_memory((width * height * 4) as i64)?;
-  ctx.env.wrap(&mut this, context_2d)?;
-  ctx.env.get_undefined()
+#[napi(object)]
+pub struct ContextAttributes {
+  pub alpha: bool,
+  pub desynchronized: bool,
 }
 
-#[js_function(6)]
-fn arc(ctx: CallContext) -> Result<JsUndefined> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-  let center_x = ctx.get::<JsNumber>(0)?.get_double()? as f32;
-  let center_y = ctx.get::<JsNumber>(1)?.get_double()? as f32;
-  let radius = ctx.get::<JsNumber>(2)?.get_double()? as f32;
-  let start_angle = ctx.get::<JsNumber>(3)?.get_double()? as f32;
-  let end_angle = ctx.get::<JsNumber>(4)?.get_double()? as f32;
-  let from_end = ctx
-    .get::<JsBoolean>(5)
-    .and_then(|js_bool| js_bool.get_value())
-    .unwrap_or(false);
-  context_2d.arc(center_x, center_y, radius, start_angle, end_angle, from_end);
-  ctx.env.get_undefined()
+#[napi]
+pub enum SvgExportFlag {
+  ConvertTextToPaths = 0x01,
+  NoPrettyXML = 0x02,
+  RelativePathEncoding = 0x04,
 }
 
-#[js_function(5)]
-fn arc_to(ctx: CallContext) -> Result<JsUndefined> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-
-  let ctrl_x = ctx.get::<JsNumber>(0)?.get_double()? as f32;
-  let ctrl_y = ctx.get::<JsNumber>(1)?.get_double()? as f32;
-  let to_x = ctx.get::<JsNumber>(2)?.get_double()? as f32;
-  let to_y = ctx.get::<JsNumber>(3)?.get_double()? as f32;
-  let radius = ctx.get::<JsNumber>(4)?.get_double()? as f32;
-
-  context_2d
-    .path
-    .arc_to_tangent(ctrl_x, ctrl_y, to_x, to_y, radius);
-  ctx.env.get_undefined()
+impl From<SvgExportFlag> for crate::sk::SvgExportFlag {
+  fn from(value: SvgExportFlag) -> Self {
+    match value {
+      SvgExportFlag::ConvertTextToPaths => crate::sk::SvgExportFlag::ConvertTextToPaths,
+      SvgExportFlag::NoPrettyXML => crate::sk::SvgExportFlag::NoPrettyXML,
+      SvgExportFlag::RelativePathEncoding => crate::sk::SvgExportFlag::RelativePathEncoding,
+    }
+  }
 }
 
-#[js_function]
-fn begin_path(ctx: CallContext) -> Result<JsUndefined> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-  context_2d.begin_path();
-  ctx.env.get_undefined()
+#[napi(custom_finalize)]
+pub struct CanvasRenderingContext2D {
+  pub(crate) context: Context,
 }
 
-#[js_function(6)]
-fn bezier_curve_to(ctx: CallContext) -> Result<JsUndefined> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-
-  let cp1x = ctx.get::<JsNumber>(0)?.get_double()? as f32;
-  let cp1y = ctx.get::<JsNumber>(1)?.get_double()? as f32;
-  let cp2x = ctx.get::<JsNumber>(2)?.get_double()? as f32;
-  let cp2y = ctx.get::<JsNumber>(3)?.get_double()? as f32;
-  let x = ctx.get::<JsNumber>(4)?.get_double()? as f32;
-  let y = ctx.get::<JsNumber>(5)?.get_double()? as f32;
-
-  context_2d.path.cubic_to(cp1x, cp1y, cp2x, cp2y, x, y);
-
-  ctx.env.get_undefined()
+impl ObjectFinalize for CanvasRenderingContext2D {
+  fn finalize(self, mut env: Env) -> Result<()> {
+    env.adjust_external_memory(-((self.context.width * self.context.height * 4) as i64))?;
+    Ok(())
+  }
 }
 
-#[js_function(4)]
-fn quadratic_curve_to(ctx: CallContext) -> Result<JsUndefined> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
+#[napi]
+impl CanvasRenderingContext2D {
+  #[napi(constructor)]
+  pub fn new(
+    width: u32,
+    height: u32,
+    color_space: String,
+    flag: Option<SvgExportFlag>,
+  ) -> Result<Self> {
+    let color_space = ColorSpace::from_str(&color_space)?;
+    let context = if let Some(flag) = flag {
+      Context::new_svg(width, height, flag.into(), color_space)?
+    } else {
+      Context::new(width, height, color_space)?
+    };
+    Ok(Self { context })
+  }
 
-  let cpx = ctx.get::<JsNumber>(0)?.get_double()? as f32;
-  let cpy = ctx.get::<JsNumber>(1)?.get_double()? as f32;
-  let x = ctx.get::<JsNumber>(2)?.get_double()? as f32;
-  let y = ctx.get::<JsNumber>(3)?.get_double()? as f32;
+  #[napi(getter)]
+  pub fn get_miter_limit(&self) -> f32 {
+    self.context.get_miter_limit()
+  }
 
-  context_2d.path.quad_to(cpx, cpy, x, y);
+  #[napi(setter, return_if_invalid)]
+  pub fn set_miter_limit(&mut self, miter_limit: f64) {
+    if !miter_limit.is_nan() && !miter_limit.is_infinite() {
+      self.context.set_miter_limit(miter_limit as f32);
+    }
+  }
 
-  ctx.env.get_undefined()
-}
+  #[napi(getter)]
+  pub fn get_global_alpha(&self) -> f64 {
+    self.context.get_global_alpha()
+  }
 
-#[js_function(2)]
-fn clip(ctx: CallContext) -> Result<JsUndefined> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
+  #[napi(setter, return_if_invalid)]
+  pub fn set_global_alpha(&mut self, alpha: f64) {
+    let alpha = alpha as f32;
+    if !(0.0..=1.0).contains(&alpha) {
+      #[cfg(debug_assertions)]
+      eprintln!(
+        "Alpha value out of range, expected 0.0 - 1.0, but got : {}",
+        alpha
+      );
+      return;
+    }
 
-  if ctx.length == 0 {
-    context_2d.clip(None, FillType::Winding);
-  } else if ctx.length == 1 {
-    let rule = ctx.get::<JsString>(0)?;
-    context_2d.clip(None, FillType::from_str(rule.into_utf8()?.as_str()?)?);
-  } else {
-    let path = ctx.get::<JsObject>(0)?;
-    let rule = ctx.get::<JsString>(1)?;
-    context_2d.clip(
-      Some(&mut path.unwrap::<crate::path::Path>(ctx.env)?.inner),
-      FillType::from_str(rule.into_utf8()?.as_str()?)?,
+    self.context.state.paint.set_alpha((alpha * 255.0) as u8);
+  }
+
+  #[napi(getter)]
+  pub fn get_global_composite_operation(&self) -> String {
+    self
+      .context
+      .state
+      .paint
+      .get_blend_mode()
+      .as_str()
+      .to_owned()
+  }
+
+  #[napi(setter, return_if_invalid)]
+  pub fn set_global_composite_operation(&mut self, mode: String) {
+    if let Ok(blend_mode) = mode.parse() {
+      self.context.state.paint.set_blend_mode(blend_mode);
+    };
+  }
+
+  #[napi(getter)]
+  pub fn get_image_smoothing_enabled(&self) -> bool {
+    self.context.state.image_smoothing_enabled
+  }
+
+  #[napi(setter, return_if_invalid)]
+  pub fn set_image_smoothing_enabled(&mut self, enabled: bool) {
+    self.context.state.image_smoothing_enabled = enabled;
+  }
+
+  #[napi(getter)]
+  pub fn get_image_smoothing_quality(&self) -> String {
+    self
+      .context
+      .state
+      .image_smoothing_quality
+      .as_str()
+      .to_owned()
+  }
+
+  #[napi(setter, return_if_invalid)]
+  pub fn set_image_smoothing_quality(&mut self, quality: String) {
+    if let Ok(quality) = quality.parse() {
+      self.context.state.image_smoothing_quality = quality;
+    };
+  }
+
+  #[napi(getter)]
+  pub fn get_line_cap(&self) -> String {
+    self
+      .context
+      .state
+      .paint
+      .get_stroke_cap()
+      .as_str()
+      .to_owned()
+  }
+
+  #[napi(setter, return_if_invalid)]
+  pub fn set_line_cap(&mut self, cap: String) {
+    if let Ok(cap) = cap.parse() {
+      self.context.state.paint.set_stroke_cap(cap);
+    };
+  }
+
+  #[napi(getter)]
+  pub fn get_line_dash_offset(&self) -> f64 {
+    self.context.state.line_dash_offset as f64
+  }
+
+  #[napi(setter, return_if_invalid)]
+  pub fn set_line_dash_offset(&mut self, offset: f64) {
+    self.context.state.line_dash_offset = offset as f32;
+  }
+
+  #[napi(getter)]
+  pub fn get_line_join(&self) -> String {
+    self
+      .context
+      .state
+      .paint
+      .get_stroke_join()
+      .as_str()
+      .to_owned()
+  }
+
+  #[napi(setter, return_if_invalid)]
+  pub fn set_line_join(&mut self, join: String) {
+    if let Ok(join) = join.parse() {
+      self.context.state.paint.set_stroke_join(join);
+    };
+  }
+
+  #[napi(getter)]
+  pub fn get_line_width(&self) -> f64 {
+    self.context.state.paint.get_stroke_width() as f64
+  }
+
+  #[napi(setter, return_if_invalid)]
+  pub fn set_line_width(&mut self, width: f64) {
+    self.context.state.paint.set_stroke_width(width as f32);
+  }
+
+  #[napi(getter)]
+  pub fn get_fill_style(&self, this: This) -> Result<Unknown> {
+    this.get_named_property_unchecked(FILL_STYLE_HIDDEN_NAME)
+  }
+
+  #[napi(setter, return_if_invalid)]
+  pub fn set_fill_style(
+    &mut self,
+    env: Env,
+    mut this: This,
+    fill_style: Either3<JsString, ClassInstance<CanvasGradient>, ClassInstance<CanvasPattern>>,
+  ) -> Result<()> {
+    if let Some(pattern) = match &fill_style {
+      Either3::A(color) => Pattern::from_color(color.into_utf8()?.as_str()?).ok(),
+      Either3::B(gradient) => Some(Pattern::Gradient(gradient.0.clone())),
+      Either3::C(pattern) => Some(pattern.inner.clone()),
+    } {
+      let raw_fill_style = fill_style.as_unknown(env);
+      self.context.state.fill_style = pattern;
+      this.set(FILL_STYLE_HIDDEN_NAME, &raw_fill_style)?;
+    }
+    Ok(())
+  }
+
+  #[napi(getter)]
+  pub fn get_filter(&self) -> String {
+    self.context.state.filters_string.clone()
+  }
+
+  #[napi(setter, return_if_invalid)]
+  pub fn set_filter(&mut self, filter: String) -> Result<()> {
+    self.context.set_filter(&filter)?;
+    Ok(())
+  }
+
+  #[napi(getter)]
+  pub fn get_font(&self) -> String {
+    self.context.get_font().to_owned()
+  }
+
+  #[napi(setter, return_if_invalid)]
+  pub fn set_font(&mut self, font: String) -> Result<()> {
+    self.context.set_font(font)?;
+    Ok(())
+  }
+
+  #[napi(getter)]
+  pub fn get_text_direction(&self) -> String {
+    self.context.state.text_direction.as_str().to_owned()
+  }
+
+  #[napi(setter, return_if_invalid)]
+  pub fn set_text_direction(&mut self, direction: String) {
+    if let Ok(d) = direction.parse() {
+      self.context.state.text_direction = d;
+    };
+  }
+
+  #[napi(getter)]
+  pub fn get_stroke_style(&self, this: This) -> Option<Unknown> {
+    this.get(STROKE_STYLE_HIDDEN_NAME).ok().flatten()
+  }
+
+  #[napi(setter, return_if_invalid)]
+  pub fn set_stroke_style(
+    &mut self,
+    env: Env,
+    mut this: This,
+    fill_style: Either3<JsString, ClassInstance<CanvasGradient>, ClassInstance<CanvasPattern>>,
+  ) -> Result<()> {
+    if let Some(pattern) = match &fill_style {
+      Either3::A(color) => Pattern::from_color(color.into_utf8()?.as_str()?).ok(),
+      Either3::B(gradient) => Some(Pattern::Gradient(gradient.0.clone())),
+      Either3::C(pattern) => Some(pattern.inner.clone()),
+    } {
+      let raw_fill_style = fill_style.as_unknown(env);
+      this.set(STROKE_STYLE_HIDDEN_NAME, &raw_fill_style)?;
+      self.context.state.stroke_style = pattern;
+    }
+    Ok(())
+  }
+
+  #[napi(getter)]
+  pub fn get_shadow_blur(&self) -> f64 {
+    self.context.state.shadow_blur as f64
+  }
+
+  #[napi(setter, return_if_invalid)]
+  pub fn set_shadow_blur(&mut self, blur: f64) {
+    self.context.state.shadow_blur = blur as f32;
+  }
+
+  #[napi(getter)]
+  pub fn get_shadow_color(&self) -> String {
+    self.context.state.shadow_color_string.clone()
+  }
+
+  #[napi(setter, return_if_invalid)]
+  pub fn set_shadow_color(&mut self, shadow_color: String) -> Result<()> {
+    self.context.set_shadow_color(shadow_color)?;
+    Ok(())
+  }
+
+  #[napi(getter)]
+  pub fn get_shadow_offset_x(&self) -> f64 {
+    self.context.state.shadow_offset_x as f64
+  }
+
+  #[napi(setter, return_if_invalid)]
+  pub fn set_shadow_offset_x(&mut self, offset_x: f64) {
+    self.context.state.shadow_offset_x = offset_x as f32;
+  }
+
+  #[napi(getter)]
+  pub fn get_shadow_offset_y(&self) -> f64 {
+    self.context.state.shadow_offset_y as f64
+  }
+
+  #[napi(setter, return_if_invalid)]
+  pub fn set_shadow_offset_y(&mut self, offset_y: f64) {
+    self.context.state.shadow_offset_y = offset_y as f32;
+  }
+
+  #[napi(getter)]
+  pub fn get_text_align(&self) -> String {
+    self.context.state.text_align.as_str().to_owned()
+  }
+
+  #[napi(setter, return_if_invalid)]
+  pub fn set_text_align(&mut self, align: String) -> Result<()> {
+    self.context.set_text_align(align)?;
+    Ok(())
+  }
+
+  #[napi(getter)]
+  pub fn get_text_baseline(&self) -> String {
+    self.context.state.text_baseline.as_str().to_owned()
+  }
+
+  #[napi(setter, return_if_invalid)]
+  pub fn set_text_baseline(&mut self, baseline: String) -> Result<()> {
+    self.context.set_text_baseline(baseline)?;
+    Ok(())
+  }
+
+  #[napi]
+  pub fn arc(
+    &mut self,
+    x: f64,
+    y: f64,
+    radius: f64,
+    start_angle: f64,
+    end_angle: f64,
+    anticlockwise: Option<bool>,
+  ) {
+    self.context.arc(
+      x as f32,
+      y as f32,
+      radius as f32,
+      start_angle as f32,
+      end_angle as f32,
+      anticlockwise.unwrap_or(false),
     );
-  };
+  }
 
-  ctx.env.get_undefined()
-}
+  #[napi]
+  pub fn arc_to(&mut self, x1: f64, y1: f64, x2: f64, y2: f64, radius: f64) {
+    self
+      .context
+      .arc_to(x1 as f32, y1 as f32, x2 as f32, y2 as f32, radius as f32);
+  }
 
-#[js_function(4)]
-fn rect(ctx: CallContext) -> Result<JsUndefined> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
+  #[napi]
+  pub fn begin_path(&mut self) {
+    self.context.begin_path();
+  }
 
-  let x = ctx.get::<JsNumber>(0)?.get_double()? as f32;
-  let y = ctx.get::<JsNumber>(1)?.get_double()? as f32;
-  let width = ctx.get::<JsNumber>(2)?.get_double()? as f32;
-  let height = ctx.get::<JsNumber>(3)?.get_double()? as f32;
+  #[napi]
+  pub fn bezier_curve_to(&mut self, cp1x: f64, cp1y: f64, cp2x: f64, cp2y: f64, x: f64, y: f64) {
+    self.context.bezier_curve_to(
+      cp1x as f32,
+      cp1y as f32,
+      cp2x as f32,
+      cp2y as f32,
+      x as f32,
+      y as f32,
+    );
+  }
 
-  context_2d
-    .path
-    .add_rect(x as f32, y as f32, width as f32, height as f32);
-  ctx.env.get_undefined()
-}
+  #[napi]
+  pub fn quadratic_curve_to(&mut self, cpx: f64, cpy: f64, x: f64, y: f64) {
+    self
+      .context
+      .quadratic_curve_to(cpx as f32, cpy as f32, x as f32, y as f32);
+  }
 
-#[js_function(2)]
-fn fill(ctx: CallContext) -> Result<JsUndefined> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
+  #[napi]
+  pub fn clip(
+    &mut self,
+    rule_or_path: Option<Either<String, &mut Path>>,
+    maybe_rule: Option<String>,
+  ) {
+    let rule = rule_or_path
+      .as_ref()
+      .and_then(|e| match e {
+        Either::A(s) => FillType::from_str(s).ok(),
+        Either::B(_) => None,
+      })
+      .or_else(|| maybe_rule.and_then(|s| FillType::from_str(&s).ok()))
+      .unwrap_or(FillType::Winding);
+    let path = rule_or_path.and_then(|e| match e {
+      Either::A(_) => None,
+      Either::B(p) => Some(p),
+    });
+    self.context.clip(path.map(|p| &mut p.inner), rule);
+  }
 
-  if ctx.length == 0 {
-    context_2d.fill(None, FillType::Winding)?;
-  } else if ctx.length == 1 {
-    let input = ctx.get::<JsUnknown>(0)?;
-    match input.get_type()? {
-      ValueType::String => {
-        let fill_rule_js = unsafe { input.cast::<JsString>() }.into_utf8()?;
-        context_2d.fill(None, FillType::from_str(fill_rule_js.as_str()?)?)?;
+  #[napi]
+  pub fn clear_rect(&mut self, x: f64, y: f64, width: f64, height: f64) {
+    self
+      .context
+      .clear_rect(x as f32, y as f32, width as f32, height as f32);
+  }
+
+  #[napi]
+  pub fn close_path(&mut self) {
+    self.context.close_path();
+  }
+
+  #[napi]
+  pub fn create_image_data(
+    &mut self,
+    env: Env,
+    width_or_data: Either<u32, Uint8ClampedArray>,
+    width_or_height: u32,
+    height_or_settings: Option<Either<u32, Settings>>,
+    maybe_settings: Option<Settings>,
+  ) -> Result<ClassInstance<ImageData>> {
+    match width_or_data {
+      Either::A(width) => {
+        let height = width_or_height;
+        let color_space = match height_or_settings {
+          Some(Either::B(settings)) => {
+            ColorSpace::from_str(&settings.color_space).unwrap_or_default()
+          }
+          _ => ColorSpace::default(),
+        };
+        let arraybuffer_length = (width * height * 4) as usize;
+        let mut data_buffer = vec![0; arraybuffer_length];
+        let data_ptr = data_buffer.as_mut_ptr();
+        let data_object = unsafe {
+          Object::from_raw_unchecked(
+            env.raw(),
+            Uint8ClampedArray::to_napi_value(env.raw(), Uint8ClampedArray::new(data_buffer))?,
+          )
+        };
+        let instance = ImageData {
+          width: width as usize,
+          height: height as usize,
+          color_space,
+          data: data_ptr,
+        }
+        .into_instance(env)?;
+        let mut image_instance = unsafe { Object::from_raw_unchecked(env.raw(), instance.raw()) };
+        image_instance.set("data", &data_object)?;
+        Ok(instance)
       }
-      ValueType::Object => {
-        let path_js = ctx.get::<JsObject>(0)?;
-        let path = &mut path_js.unwrap::<crate::path::Path>(ctx.env)?.inner;
-        context_2d.fill(Some(path), FillType::Winding)?;
-      }
-      _ => {
-        return Err(Error::new(
-          Status::InvalidArg,
-          "Invalid fill argument".to_string(),
-        ))
+      Either::B(mut data_object) => {
+        let input_data_length = data_object.len();
+        let width = width_or_height;
+        let height = match &height_or_settings {
+          Some(Either::A(height)) => *height,
+          _ => (input_data_length as u32) / 4 / width,
+        };
+        let data = data_object.as_mut_ptr();
+        let color_space = maybe_settings
+          .and_then(|settings| ColorSpace::from_str(&settings.color_space).ok())
+          .unwrap_or_default();
+        let instance = ImageData {
+          width: width as usize,
+          height: height as usize,
+          color_space,
+          data,
+        }
+        .into_instance(env)?;
+        let mut image_instance = unsafe { Object::from_raw_unchecked(env.raw(), instance.raw()) };
+        image_instance.set("data", data_object)?;
+        Ok(instance)
       }
     }
-  } else {
-    let path_js = ctx.get::<JsObject>(0)?;
-    let fill_rule_js = ctx.get::<JsString>(1)?.into_utf8()?;
-    let path = &mut path_js.unwrap::<crate::path::Path>(ctx.env)?.inner;
-    context_2d.fill(Some(path), FillType::from_str(fill_rule_js.as_str()?)?)?;
-  };
+  }
 
-  ctx.env.get_undefined()
-}
+  #[napi]
+  pub fn create_linear_gradient(
+    &mut self,
+    env: Env,
+    x0: f64,
+    y0: f64,
+    x1: f64,
+    y1: f64,
+  ) -> Result<ClassInstance<CanvasGradient>> {
+    let linear_gradient =
+      Gradient::create_linear_gradient(x0 as f32, y0 as f32, x1 as f32, y1 as f32);
+    CanvasGradient(linear_gradient).into_instance(env)
+  }
 
-#[js_function]
-fn save(ctx: CallContext) -> Result<JsUndefined> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-  context_2d.save();
-  ctx.env.get_undefined()
-}
+  #[napi]
+  pub fn create_radial_gradient(
+    &mut self,
+    env: Env,
+    x0: f64,
+    y0: f64,
+    r0: f64,
+    x1: f64,
+    y1: f64,
+    r1: f64,
+  ) -> Result<ClassInstance<CanvasGradient>> {
+    let radial_gradient = Gradient::create_radial_gradient(
+      x0 as f32, y0 as f32, r0 as f32, x1 as f32, y1 as f32, r1 as f32,
+    );
+    CanvasGradient(radial_gradient).into_instance(env)
+  }
 
-#[js_function]
-fn restore(ctx: CallContext) -> Result<JsUndefined> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-  context_2d.restore();
-  ctx.env.get_undefined()
-}
+  #[napi]
+  pub fn create_conic_gradient(
+    &mut self,
+    env: Env,
+    r: f64,
+    x: f64,
+    y: f64,
+  ) -> Result<ClassInstance<CanvasGradient>> {
+    let conic_gradient = Gradient::create_conic_gradient(x as f32, y as f32, r as f32);
+    CanvasGradient(conic_gradient).into_instance(env)
+  }
 
-#[js_function(1)]
-fn rotate(ctx: CallContext) -> Result<JsUndefined> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
+  #[napi]
+  pub fn create_pattern(
+    &self,
+    env: Env,
+    input: Either4<&mut Image, &mut ImageData, &mut CanvasElement, &mut SVGCanvas>,
+    repetition: Option<String>,
+  ) -> Result<ClassInstance<CanvasPattern>> {
+    CanvasPattern::new(input, repetition)?.into_instance(env)
+  }
 
-  let angle = ctx.get::<JsNumber>(0)?.get_double()? as f32;
-  context_2d.rotate(angle);
-  ctx.env.get_undefined()
-}
+  #[napi]
+  pub fn rect(&mut self, x: f64, y: f64, width: f64, height: f64) {
+    self
+      .context
+      .rect(x as f32, y as f32, width as f32, height as f32);
+  }
 
-#[js_function(4)]
-fn clear_rect(ctx: CallContext) -> Result<JsUndefined> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-  let x = ctx.get::<JsNumber>(0)?.get_double()? as f32;
-  let y = ctx.get::<JsNumber>(1)?.get_double()? as f32;
-  let width = ctx.get::<JsNumber>(2)?.get_double()? as f32;
-  let height = ctx.get::<JsNumber>(3)?.get_double()? as f32;
+  #[napi]
+  pub fn fill(
+    &mut self,
+    rule_or_path: Option<Either<String, &mut Path>>,
+    maybe_rule: Option<String>,
+  ) -> Result<()> {
+    let rule = rule_or_path
+      .as_ref()
+      .and_then(|e| match e {
+        Either::A(s) => FillType::from_str(s).ok(),
+        Either::B(_) => None,
+      })
+      .or_else(|| maybe_rule.and_then(|s| FillType::from_str(&s).ok()))
+      .unwrap_or(FillType::Winding);
+    let path = rule_or_path.and_then(|e| match e {
+      Either::A(_) => None,
+      Either::B(p) => Some(p),
+    });
+    self.context.fill(path.map(|p| &mut p.inner), rule)?;
+    Ok(())
+  }
 
-  let mut paint = Paint::new();
-  paint.set_style(PaintStyle::Fill);
-  paint.set_color(0, 0, 0, 0);
-  paint.set_stroke_miter(10.0);
-  paint.set_blend_mode(BlendMode::Clear);
-  context_2d.surface.draw_rect(x, y, width, height, &paint);
-  ctx.env.get_undefined()
-}
+  #[napi]
+  pub fn save(&mut self) {
+    self.context.save();
+  }
 
-#[js_function(4)]
-fn create_linear_gradient(ctx: CallContext) -> Result<ClassInstance<crate::gradient::Gradient>> {
-  let x0 = ctx.get::<JsNumber>(0)?.get_double()? as f32;
-  let y0 = ctx.get::<JsNumber>(1)?.get_double()? as f32;
-  let x1 = ctx.get::<JsNumber>(2)?.get_double()? as f32;
-  let y1 = ctx.get::<JsNumber>(3)?.get_double()? as f32;
-  let linear_gradient = CanvasGradient::create_linear_gradient(x0, y0, x1, y1);
-  crate::gradient::Gradient::into_instance(crate::gradient::Gradient(linear_gradient), *ctx.env)
-}
+  #[napi(return_if_invalid)]
+  pub fn restore(&mut self) {
+    self.context.restore();
+  }
 
-#[js_function(6)]
-fn create_radial_gradient(ctx: CallContext) -> Result<ClassInstance<crate::gradient::Gradient>> {
-  let x0 = ctx.get::<JsNumber>(0)?.get_double()? as f32;
-  let y0 = ctx.get::<JsNumber>(1)?.get_double()? as f32;
-  let r0 = ctx.get::<JsNumber>(2)?.get_double()? as f32;
-  let x1 = ctx.get::<JsNumber>(3)?.get_double()? as f32;
-  let y1 = ctx.get::<JsNumber>(4)?.get_double()? as f32;
-  let r1 = ctx.get::<JsNumber>(5)?.get_double()? as f32;
-  let radial_gradient = CanvasGradient::create_radial_gradient(x0, y0, r0, x1, y1, r1);
-  crate::gradient::Gradient::into_instance(crate::gradient::Gradient(radial_gradient), *ctx.env)
-}
+  #[napi(return_if_invalid)]
+  pub fn rotate(&mut self, angle: f64) {
+    self.context.rotate(angle as f32);
+  }
 
-#[js_function(3)]
-fn create_conic_gradient(ctx: CallContext) -> Result<ClassInstance<crate::gradient::Gradient>> {
-  let r = ctx.get::<JsNumber>(0)?.get_double()? as f32;
-  let x = ctx.get::<JsNumber>(1)?.get_double()? as f32;
-  let y = ctx.get::<JsNumber>(2)?.get_double()? as f32;
-  let conic_gradient = CanvasGradient::create_conic_gradient(x, y, r);
-  crate::gradient::Gradient::into_instance(crate::gradient::Gradient(conic_gradient), *ctx.env)
-}
+  #[napi(return_if_invalid)]
+  pub fn scale(&mut self, x: f64, y: f64) {
+    self.context.scale(x as f32, y as f32);
+  }
 
-#[js_function]
-fn close_path(ctx: CallContext) -> Result<JsUndefined> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-
-  context_2d.path.close();
-  ctx.env.get_undefined()
-}
-
-#[js_function(9)]
-fn draw_image(ctx: CallContext) -> Result<JsUndefined> {
-  use napi::bindgen_prelude::ValidateNapiValue;
-
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-  let image_js = ctx.get::<JsObject>(0)?;
-  let mut the_canvas = ImageOrCanvas::Canvas;
-  let image_or_canvas = if unsafe {
-    <&CanvasElement>::validate(ctx.env.raw(), image_js.raw()).is_ok()
-      || <&SVGCanvas>::validate(ctx.env.raw(), image_js.raw()).is_ok()
-  } {
-    &mut the_canvas
-  } else {
-    ctx.env.unwrap::<ImageOrCanvas>(&image_js)?
-  };
-
-  match image_or_canvas {
-    ImageOrCanvas::Image(image) => {
-      if !image.complete {
-        return ctx.env.get_undefined();
+  #[napi]
+  pub fn draw_image(
+    &mut self,
+    image: Either3<&mut CanvasElement, &mut SVGCanvas, &mut Image>,
+    sx: Option<f64>,
+    sy: Option<f64>,
+    s_width: Option<f64>,
+    s_height: Option<f64>,
+    dx: Option<f64>,
+    dy: Option<f64>,
+    d_width: Option<f64>,
+    d_height: Option<f64>,
+  ) -> Result<()> {
+    let bitmap = match image {
+      Either3::A(canvas) => BitmapRef::Owned(canvas.ctx.as_ref().context.surface.get_bitmap()),
+      Either3::B(svg) => BitmapRef::Owned(svg.ctx.as_ref().context.surface.get_bitmap()),
+      Either3::C(image) => {
+        if !image.complete {
+          return Ok(());
+        }
+        image.regenerate_bitmap_if_need();
+        if let Some(bitmap) = &mut image.bitmap {
+          BitmapRef::Borrowed(bitmap)
+        } else {
+          return Ok(());
+        }
       }
-      let data = image_js
-        .get_named_property_unchecked::<JsBuffer>("_src")?
-        .into_value()?;
-
-      image.regenerate_bitmap_if_need(data);
-
-      // SVG with 0 width or 0 height
-      if image.bitmap.is_none() {
-        return ctx.env.get_undefined();
-      }
-
-      let bitmap = image.bitmap.as_ref().unwrap();
-      let image_w = bitmap.0.width as f32;
-      let image_h = bitmap.0.height as f32;
-
-      if ctx.length == 3 {
-        let dx: f64 = ctx.get::<JsNumber>(1)?.get_double()?;
-        let dy: f64 = ctx.get::<JsNumber>(2)?.get_double()?;
-        context_2d.draw_image(
-          bitmap, 0f32, 0f32, image_w, image_h, dx as f32, dy as f32, image_w, image_h,
-        )?;
-      } else if ctx.length == 5 {
-        let dx: f64 = ctx.get::<JsNumber>(1)?.get_double()?;
-        let dy: f64 = ctx.get::<JsNumber>(2)?.get_double()?;
-        let d_width: f64 = ctx.get::<JsNumber>(3)?.get_double()?;
-        let d_height: f64 = ctx.get::<JsNumber>(4)?.get_double()?;
-        context_2d.draw_image(
-          bitmap,
-          0f32,
-          0f32,
-          image_w,
-          image_h,
+    };
+    let bitmap_ref = bitmap.as_ref();
+    let (sx, sy, s_width, s_height, dx, dy, d_width, d_height) =
+      match (sx, sy, s_width, s_height, dx, dy, d_width, d_height) {
+        (Some(dx), Some(dy), None, None, None, None, None, None) => (
+          0.0,
+          0.0,
+          bitmap_ref.0.width as f32,
+          bitmap_ref.0.height as f32,
+          dx as f32,
+          dy as f32,
+          bitmap_ref.0.width as f32,
+          bitmap_ref.0.height as f32,
+        ),
+        (Some(dx), Some(dy), Some(d_width), Some(d_height), None, None, None, None) => (
+          0.0,
+          0.0,
+          bitmap_ref.0.width as f32,
+          bitmap_ref.0.height as f32,
           dx as f32,
           dy as f32,
           d_width as f32,
           d_height as f32,
-        )?;
-      } else if ctx.length == 9 {
-        let sx: f64 = ctx.get::<JsNumber>(1)?.get_double()?;
-        let sy: f64 = ctx.get::<JsNumber>(2)?.get_double()?;
-        let s_width: f64 = ctx.get::<JsNumber>(3)?.get_double()?;
-        let s_height: f64 = ctx.get::<JsNumber>(4)?.get_double()?;
-        let dx: f64 = ctx.get::<JsNumber>(5)?.get_double()?;
-        let dy: f64 = ctx.get::<JsNumber>(6)?.get_double()?;
-        let d_width: f64 = ctx.get::<JsNumber>(7)?.get_double()?;
-        let d_height: f64 = ctx.get::<JsNumber>(8)?.get_double()?;
-        context_2d.draw_image(
-          bitmap,
+        ),
+        (
+          Some(sx),
+          Some(sy),
+          Some(s_width),
+          Some(s_height),
+          Some(dx),
+          Some(dy),
+          Some(d_width),
+          Some(d_height),
+        ) => (
           sx as f32,
           sy as f32,
           s_width as f32,
@@ -1189,1098 +1399,491 @@ fn draw_image(ctx: CallContext) -> Result<JsUndefined> {
           dy as f32,
           d_width as f32,
           d_height as f32,
-        )?;
-      }
-
-      image.need_regenerate_bitmap = false;
-    }
-    ImageOrCanvas::Canvas => {
-      let ctx_js = image_js.get_named_property_unchecked::<JsObject>("ctx")?;
-      let another_ctx = ctx.env.unwrap::<Context>(&ctx_js)?;
-      let width = another_ctx.width as f32;
-      let height = another_ctx.height as f32;
-      let (sx, sy, sw, sh, dx, dy, dw, dh) = if ctx.length == 3 {
-        let dx = ctx.get::<JsNumber>(1)?.get_double()? as f32;
-        let dy = ctx.get::<JsNumber>(2)?.get_double()? as f32;
-        (0.0f32, 0.0f32, width, height, dx, dy, width, height)
-      } else if ctx.length == 5 {
-        let dx = ctx.get::<JsNumber>(1)?.get_double()? as f32;
-        let dy = ctx.get::<JsNumber>(2)?.get_double()? as f32;
-        let d_width = ctx.get::<JsNumber>(3)?.get_double()? as f32;
-        let d_height = ctx.get::<JsNumber>(4)?.get_double()? as f32;
-        (0.0, 0.0, width, height, dx, dy, d_width, d_height)
-      } else if ctx.length == 9 {
-        (
-          ctx.get::<JsNumber>(1)?.get_double()? as f32,
-          ctx.get::<JsNumber>(2)?.get_double()? as f32,
-          ctx.get::<JsNumber>(3)?.get_double()? as f32,
-          ctx.get::<JsNumber>(4)?.get_double()? as f32,
-          ctx.get::<JsNumber>(5)?.get_double()? as f32,
-          ctx.get::<JsNumber>(6)?.get_double()? as f32,
-          ctx.get::<JsNumber>(7)?.get_double()? as f32,
-          ctx.get::<JsNumber>(8)?.get_double()? as f32,
-        )
-      } else {
-        return Err(Error::new(
-          Status::InvalidArg,
-          format!("Invalid arguments length {}", ctx.length),
-        ));
+        ),
+        _ => return Ok(()),
       };
+    self.context.draw_image(
+      bitmap_ref, sx, sy, s_width, s_height, dx, dy, d_width, d_height,
+    )?;
+    Ok(())
+  }
 
-      context_2d.draw_image(
-        &another_ctx.surface.get_bitmap(),
-        sx,
-        sy,
-        sw,
-        sh,
-        dx,
-        dy,
-        dw,
-        dh,
+  #[napi]
+  pub fn get_context_attributes(&self) -> ContextAttributes {
+    ContextAttributes {
+      alpha: self.context.alpha,
+      desynchronized: false,
+    }
+  }
+
+  #[napi]
+  pub fn is_point_in_path(
+    &self,
+    x_or_path: Either<f64, &Path>,
+    x_or_y: f64,
+    y_or_fill_rule: Option<Either<f64, String>>,
+    maybe_fill_rule: Option<String>,
+  ) -> Result<bool> {
+    match x_or_path {
+      Either::A(x) => {
+        let y = x_or_y;
+        let fill_rule = y_or_fill_rule
+          .and_then(|v| match v {
+            Either::B(rule) => rule.parse().ok(),
+            _ => None,
+          })
+          .unwrap_or(FillType::Winding);
+        Ok(self.context.path.hit_test(x as f32, y as f32, fill_rule))
+      }
+      Either::B(path) => {
+        let x = x_or_y;
+        let y = match y_or_fill_rule {
+          Some(Either::A(y)) => y,
+          _ => {
+            return Err(Error::new(
+              Status::InvalidArg,
+              "The y-axis coordinate of the point to check is missing".to_owned(),
+            ))
+          }
+        };
+        let fill_rule = maybe_fill_rule
+          .and_then(|s| s.parse().ok())
+          .unwrap_or(FillType::Winding);
+        Ok(path.inner.hit_test(x as f32, y as f32, fill_rule))
+      }
+    }
+  }
+
+  #[napi]
+  pub fn is_point_in_stroke(
+    &self,
+    x_or_path: Either<f64, &Path>,
+    x_or_y: f64,
+    maybe_y: Option<f64>,
+  ) -> Result<bool> {
+    let stroke_w = self.context.get_stroke_width();
+    match x_or_path {
+      Either::A(x) => {
+        let y = x_or_y;
+        Ok(
+          self
+            .context
+            .path
+            .stroke_hit_test(x as f32, y as f32, stroke_w),
+        )
+      }
+      Either::B(path) => {
+        let x = x_or_y;
+        if let Some(y) = maybe_y {
+          Ok(path.inner.stroke_hit_test(x as f32, y as f32, stroke_w))
+        } else {
+          Err(Error::new(
+            Status::InvalidArg,
+            "The y-axis coordinate of the point to check is missing".to_owned(),
+          ))
+        }
+      }
+    }
+  }
+
+  #[napi(return_if_invalid)]
+  pub fn ellipse(
+    &mut self,
+    x: f64,
+    y: f64,
+    radius_x: f64,
+    radius_y: f64,
+    rotation: f64,
+    start_angle: f64,
+    end_angle: f64,
+    anticlockwise: Option<bool>,
+  ) {
+    self.context.ellipse(
+      x as f32,
+      y as f32,
+      radius_x as f32,
+      radius_y as f32,
+      rotation as f32,
+      start_angle as f32,
+      end_angle as f32,
+      anticlockwise.unwrap_or(false),
+    );
+  }
+
+  #[napi(return_if_invalid)]
+  pub fn line_to(&mut self, x: f64, y: f64) {
+    if !x.is_nan() && !x.is_infinite() && !y.is_nan() && !y.is_infinite() {
+      self.context.path.line_to(x as f32, y as f32);
+    }
+  }
+
+  #[napi]
+  pub fn measure_text(&mut self, text: String) -> Result<TextMetrics> {
+    if text.is_empty() {
+      return Ok(TextMetrics {
+        actual_bounding_box_ascent: 0.0,
+        actual_bounding_box_descent: 0.0,
+        actual_bounding_box_left: 0.0,
+        actual_bounding_box_right: 0.0,
+        font_bounding_box_ascent: 0.0,
+        font_bounding_box_descent: 0.0,
+        width: 0.0,
+      });
+    }
+    let metrics = self.context.get_line_metrics(&text)?;
+    Ok(TextMetrics {
+      actual_bounding_box_ascent: metrics.0.ascent as f64,
+      actual_bounding_box_descent: metrics.0.descent as f64,
+      actual_bounding_box_left: metrics.0.left as f64,
+      actual_bounding_box_right: metrics.0.right as f64,
+      font_bounding_box_ascent: metrics.0.font_ascent as f64,
+      font_bounding_box_descent: metrics.0.font_descent as f64,
+      width: metrics.0.width as f64,
+    })
+  }
+
+  #[napi(return_if_invalid)]
+  pub fn move_to(&mut self, x: f64, y: f64) {
+    if !x.is_nan() && !x.is_infinite() && !y.is_nan() && !y.is_infinite() {
+      self.context.path.move_to(x as f32, y as f32);
+    }
+  }
+
+  #[napi(return_if_invalid)]
+  pub fn fill_rect(&mut self, x: f64, y: f64, width: f64, height: f64) -> Result<()> {
+    if !x.is_nan()
+      && !x.is_infinite()
+      && !y.is_nan()
+      && !y.is_infinite()
+      && !width.is_nan()
+      && !width.is_infinite()
+      && !height.is_nan()
+      && !height.is_infinite()
+    {
+      self
+        .context
+        .fill_rect(x as f32, y as f32, width as f32, height as f32)?;
+    }
+    Ok(())
+  }
+
+  #[napi(return_if_invalid)]
+  pub fn fill_text(&mut self, text: String, x: f64, y: f64, max_width: Option<f64>) -> Result<()> {
+    if text.is_empty() {
+      return Ok(());
+    }
+    if !x.is_nan() && !x.is_infinite() && !y.is_nan() && !y.is_infinite() {
+      self.context.fill_text(
+        &text,
+        x as f32,
+        y as f32,
+        max_width.map(|f| f as f32).unwrap_or(MAX_TEXT_WIDTH),
       )?;
     }
-  };
+    Ok(())
+  }
 
-  ctx.env.get_undefined()
-}
+  #[napi]
+  pub fn stroke(&mut self, path: Option<&mut Path>) -> Result<()> {
+    self.context.stroke(path.map(|p| &mut p.inner))?;
+    Ok(())
+  }
 
-#[js_function]
-fn get_context_attributes(ctx: CallContext) -> Result<JsObject> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-  let mut obj = ctx.env.create_object()?;
-  obj.set_named_property("alpha", ctx.env.get_boolean(context_2d.alpha)?)?;
-  obj.set_named_property("desynchronized", ctx.env.get_boolean(false)?)?;
-  Ok(obj)
-}
+  #[napi(return_if_invalid)]
+  pub fn stroke_rect(&mut self, x: f64, y: f64, width: f64, height: f64) -> Result<()> {
+    if !x.is_nan()
+      && !x.is_infinite()
+      && !y.is_nan()
+      && !y.is_infinite()
+      && !width.is_nan()
+      && !width.is_infinite()
+      && !height.is_nan()
+      && !height.is_infinite()
+    {
+      self
+        .context
+        .stroke_rect(x as f32, y as f32, width as f32, height as f32)?;
+    }
+    Ok(())
+  }
 
-#[js_function(4)]
-fn is_point_in_path(ctx: CallContext) -> Result<JsBoolean> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-  let result;
+  #[napi(return_if_invalid)]
+  pub fn stroke_text(
+    &mut self,
+    text: String,
+    x: f64,
+    y: f64,
+    max_width: Option<f64>,
+  ) -> Result<()> {
+    if text.is_empty() {
+      return Ok(());
+    }
+    if !x.is_nan() && !x.is_infinite() && !y.is_nan() && !y.is_infinite() {
+      self.context.stroke_text(
+        &text,
+        x as f32,
+        y as f32,
+        max_width.map(|v| v as f32).unwrap_or(MAX_TEXT_WIDTH),
+      )?;
+    }
+    Ok(())
+  }
 
-  if ctx.length == 2 {
-    let x = ctx.get::<JsNumber>(0)?.get_double()? as f32;
-    let y = ctx.get::<JsNumber>(1)?.get_double()? as f32;
-    result = context_2d.path.hit_test(y, x, FillType::Winding);
-    ctx.env.get_boolean(result)
-  } else if ctx.length == 3 {
-    let input = ctx.get::<JsUnknown>(0)?;
-    match input.get_type()? {
-      ValueType::Number => {
-        let x = ctx.get::<JsNumber>(0)?.get_double()? as f32;
-        let y = ctx.get::<JsNumber>(1)?.get_double()? as f32;
-        let fill_rule_js = ctx.get::<JsString>(2)?.into_utf8()?;
-        result = context_2d
-          .path
-          .hit_test(y, x, FillType::from_str(fill_rule_js.as_str()?)?);
+  #[napi]
+  pub fn get_image_data(
+    &mut self,
+    env: Env,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    color_space: Option<String>,
+  ) -> Result<ClassInstance<ImageData>> {
+    if !x.is_nan()
+      && !x.is_infinite()
+      && !y.is_nan()
+      && !y.is_infinite()
+      && !width.is_nan()
+      && !width.is_infinite()
+      && !height.is_nan()
+      && !height.is_infinite()
+    {
+      let color_space = color_space
+        .and_then(|cs| cs.parse().ok())
+        .unwrap_or(ColorSpace::Srgb);
+      let mut image_data = self
+        .context
+        .get_image_data(x as f32, y as f32, width as f32, height as f32, color_space)
+        .ok_or_else(|| {
+          Error::new(
+            Status::GenericFailure,
+            "Read pixels from canvas failed".to_string(),
+          )
+        })?;
+      let data = image_data.as_mut_ptr();
+      let data_object = unsafe {
+        Object::from_raw_unchecked(
+          env.raw(),
+          Uint8ClampedArray::to_napi_value(env.raw(), Uint8ClampedArray::new(image_data))?,
+        )
+      };
+      let instance = ImageData {
+        width: width as usize,
+        height: height as usize,
+        color_space,
+        data,
       }
-      ValueType::Object => {
-        let x = ctx.get::<JsNumber>(1)?.get_double()? as f32;
-        let y = ctx.get::<JsNumber>(2)?.get_double()? as f32;
-        let path_js = ctx.get::<JsObject>(0)?;
-        let path = &mut path_js.unwrap::<crate::path::Path>(ctx.env)?.inner;
-        result = path.hit_test(x, y, FillType::Winding);
-      }
-      _ => {
-        return Err(Error::new(
-          Status::InvalidArg,
-          "Invalid isPointInPath argument".to_string(),
-        ))
-      }
-    }
-    ctx.env.get_boolean(result)
-  } else if ctx.length == 4 {
-    let path_js = ctx.get::<JsObject>(0)?;
-    let path = &mut path_js.unwrap::<crate::path::Path>(ctx.env)?.inner;
-    let x = ctx.get::<JsNumber>(1)?.get_double()? as f32;
-    let y = ctx.get::<JsNumber>(2)?.get_double()? as f32;
-    let fill_rule_js = ctx.get::<JsString>(3)?.into_utf8()?;
-    result = path.hit_test(y, x, FillType::from_str(fill_rule_js.as_str()?)?);
-    ctx.env.get_boolean(result)
-  } else {
-    Err(Error::new(
-      Status::InvalidArg,
-      "Invalid isPointInPath arguments length".to_string(),
-    ))
-  }
-}
-
-#[js_function(3)]
-fn is_point_in_stroke(ctx: CallContext) -> Result<JsBoolean> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-  let mut result = false;
-
-  if ctx.length == 2 {
-    let x = ctx.get::<JsNumber>(0)?.get_double()? as f32;
-    let y = ctx.get::<JsNumber>(1)?.get_double()? as f32;
-    let stroke_w = context_2d.state.paint.get_stroke_width();
-    result = context_2d.path.stroke_hit_test(x, y, stroke_w);
-  } else if ctx.length == 3 {
-    let path_js = ctx.get::<JsObject>(0)?;
-    let path = &mut path_js.unwrap::<crate::path::Path>(ctx.env)?.inner;
-
-    let x = ctx.get::<JsNumber>(1)?.get_double()? as f32;
-    let y = ctx.get::<JsNumber>(2)?.get_double()? as f32;
-    let stroke_w = context_2d.state.paint.get_stroke_width();
-    result = path.stroke_hit_test(x, y, stroke_w);
-  }
-  ctx.env.get_boolean(result)
-}
-
-#[js_function(8)]
-fn ellipse(ctx: CallContext) -> Result<JsUndefined> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-  let x = ctx.get::<JsNumber>(0)?.get_double()? as f32;
-  let y = ctx.get::<JsNumber>(1)?.get_double()? as f32;
-  let radius_x = ctx.get::<JsNumber>(2)?.get_double()? as f32;
-  let radius_y = ctx.get::<JsNumber>(3)?.get_double()? as f32;
-  let rotation = ctx.get::<JsNumber>(4)?.get_double()? as f32;
-  let start_angle = ctx.get::<JsNumber>(5)?.get_double()? as f32;
-  let end_angle = ctx.get::<JsNumber>(6)?.get_double()? as f32;
-
-  let from_end = if ctx.length == 8 {
-    ctx.get::<JsBoolean>(7)?.get_value()?
-  } else {
-    false
-  };
-  context_2d.ellipse(
-    x,
-    y,
-    radius_x,
-    radius_y,
-    rotation,
-    start_angle,
-    end_angle,
-    from_end,
-  );
-  ctx.env.get_undefined()
-}
-
-#[js_function(2)]
-fn line_to(ctx: CallContext) -> Result<JsUndefined> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-
-  if let Ok((x, y)) = ctx.get::<JsNumber>(0)?.get_double().and_then(|x| {
-    ctx
-      .get::<JsNumber>(1)?
-      .get_double()
-      .map(|y| (x as f32, y as f32))
-  }) {
-    if !x.is_nan() && !y.is_nan() {
-      context_2d.path.line_to(x, y);
-    }
-  }
-
-  ctx.env.get_undefined()
-}
-
-#[js_function(1)]
-fn measure_text(ctx: CallContext) -> Result<JsObject> {
-  let text = ctx.get::<JsString>(0)?.into_utf8()?;
-  let this = ctx.this_unchecked::<JsObject>();
-  let mut metrics = ctx.env.create_object()?;
-  let text_str = text.as_str()?;
-  if text_str.is_empty() {
-    metrics.set_named_property("actualBoundingBoxAscent", ctx.env.create_double(0.0f64)?)?;
-    metrics.set_named_property("actualBoundingBoxDescent", ctx.env.create_double(0.0f64)?)?;
-    metrics.set_named_property("actualBoundingBoxLeft", ctx.env.create_double(0.0f64)?)?;
-    metrics.set_named_property("actualBoundingBoxRight", ctx.env.create_double(0.0f64)?)?;
-    metrics.set_named_property("fontBoundingBoxAscent", ctx.env.create_double(0.0f64)?)?;
-    metrics.set_named_property("fontBoundingBoxDescent", ctx.env.create_double(0.0f64)?)?;
-    metrics.set_named_property("width", ctx.env.create_double(0.0f64)?)?;
-    return Ok(metrics);
-  }
-
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-
-  let m = context_2d.get_line_metrics(text_str)?.0;
-
-  metrics.set_named_property(
-    "actualBoundingBoxAscent",
-    ctx.env.create_double(m.ascent as f64)?,
-  )?;
-  metrics.set_named_property(
-    "actualBoundingBoxDescent",
-    ctx.env.create_double(m.descent as f64)?,
-  )?;
-  metrics.set_named_property(
-    "actualBoundingBoxLeft",
-    ctx.env.create_double(m.left as f64)?,
-  )?;
-  metrics.set_named_property(
-    "actualBoundingBoxRight",
-    ctx.env.create_double(m.right as f64)?,
-  )?;
-  metrics.set_named_property(
-    "fontBoundingBoxAscent",
-    ctx.env.create_double(m.font_ascent as f64)?,
-  )?;
-  metrics.set_named_property(
-    "fontBoundingBoxDescent",
-    ctx.env.create_double(m.font_descent as f64)?,
-  )?;
-  metrics.set_named_property("width", ctx.env.create_double(m.width as f64)?)?;
-  Ok(metrics)
-}
-
-#[js_function(2)]
-fn move_to(ctx: CallContext) -> Result<JsUndefined> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-
-  let x = ctx.get::<JsNumber>(0)?.get_double()? as f32;
-  let y = ctx.get::<JsNumber>(1)?.get_double()? as f32;
-
-  context_2d.path.move_to(x, y);
-
-  ctx.env.get_undefined()
-}
-
-#[js_function(1)]
-fn set_miter_limit(ctx: CallContext) -> Result<JsUndefined> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-  let miter = ctx.get::<JsNumber>(0)?.get_double()? as f32;
-  context_2d.state.paint.set_stroke_miter(miter);
-  ctx.env.get_undefined()
-}
-
-#[js_function]
-fn get_miter_limit(ctx: CallContext) -> Result<JsNumber> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-
-  ctx
-    .env
-    .create_double(context_2d.state.paint.get_stroke_miter() as f64)
-}
-
-#[js_function(4)]
-fn stroke_rect(ctx: CallContext) -> Result<JsUndefined> {
-  let x = ctx.get::<JsNumber>(0)?.get_double()? as f32;
-  let y = ctx.get::<JsNumber>(1)?.get_double()? as f32;
-  let w = ctx.get::<JsNumber>(2)?.get_double()? as f32;
-  let h = ctx.get::<JsNumber>(3)?.get_double()? as f32;
-
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-
-  context_2d.stroke_rect(x, y, w, h)?;
-
-  ctx.env.get_undefined()
-}
-
-#[js_function(4)]
-fn stroke_text(ctx: CallContext) -> Result<JsUndefined> {
-  let text = ctx.get::<JsString>(0)?.into_utf8()?;
-  let text = text.as_str()?;
-  if text.is_empty() {
-    return ctx.env.get_undefined();
-  }
-  let x = ctx.get::<JsNumber>(1)?.get_double()? as f32;
-  let y = ctx.get::<JsNumber>(2)?.get_double()? as f32;
-  let max_width = if ctx.length == 3 {
-    MAX_TEXT_WIDTH
-  } else {
-    ctx.get::<JsNumber>(3)?.get_double()? as f32
-  };
-
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-  context_2d.stroke_text(text, x, y, max_width)?;
-
-  ctx.env.get_undefined()
-}
-
-#[js_function(4)]
-fn fill_rect(ctx: CallContext) -> Result<JsUndefined> {
-  let x = ctx.get::<JsNumber>(0)?.get_double()? as f32;
-  let y = ctx.get::<JsNumber>(1)?.get_double()? as f32;
-  let w = ctx.get::<JsNumber>(2)?.get_double()? as f32;
-  let h = ctx.get::<JsNumber>(3)?.get_double()? as f32;
-
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-
-  context_2d.fill_rect(x, y, w, h)?;
-
-  ctx.env.get_undefined()
-}
-
-#[js_function(4)]
-fn fill_text(ctx: CallContext) -> Result<JsUndefined> {
-  let text = ctx.get::<JsString>(0)?.into_utf8()?;
-  let text = text.as_str()?;
-  if text.is_empty() {
-    return ctx.env.get_undefined();
-  }
-  let x = ctx.get::<JsNumber>(1)?.get_double()? as f32;
-  let y = ctx.get::<JsNumber>(2)?.get_double()? as f32;
-  let max_width = if ctx.length == 3 {
-    MAX_TEXT_WIDTH
-  } else {
-    ctx.get::<JsNumber>(3)?.get_double()? as f32
-  };
-
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-  context_2d.fill_text(text, x, y, max_width)?;
-
-  ctx.env.get_undefined()
-}
-
-#[js_function(5)]
-fn get_image_data(ctx: CallContext) -> Result<JsTypedArray> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-  let x = ctx.get::<JsNumber>(0)?.get_uint32()?;
-  let y = ctx.get::<JsNumber>(1)?.get_uint32()?;
-  let width = ctx.get::<JsNumber>(2)?.get_uint32()?;
-  let height = ctx.get::<JsNumber>(3)?.get_uint32()?;
-  let color_space = if ctx.length == 5 {
-    let image_settings = ctx.get::<JsObject>(4)?;
-    let cs = image_settings.get_named_property_unchecked::<JsUnknown>("colorSpace")?;
-    if cs.get_type()? == ValueType::String {
-      let color_space_js = unsafe { cs.cast::<JsString>() }.into_utf8()?;
-      ColorSpace::from_str(color_space_js.as_str()?)?
+      .into_instance(env)?;
+      let mut image_instance = unsafe { Object::from_raw_unchecked(env.raw(), instance.raw()) };
+      image_instance.set("data", data_object)?;
+      Ok(instance)
     } else {
-      ColorSpace::default()
-    }
-  } else {
-    ColorSpace::default()
-  };
-  let pixels = context_2d
-    .surface
-    .read_pixels(x, y, width, height, color_space)
-    .ok_or_else(|| {
-      Error::new(
-        Status::GenericFailure,
-        "Read pixels from canvas failed".to_string(),
-      )
-    })?;
-  let length = pixels.len();
-  ctx.env.create_arraybuffer_with_data(pixels).and_then(|ab| {
-    ab.into_raw()
-      .into_typedarray(TypedArrayType::Uint8Clamped, length, 0)
-  })
-}
-
-#[js_function]
-fn get_line_dash(ctx: CallContext) -> Result<JsObject> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-
-  let line_dash_list = &context_2d.state.line_dash_list;
-
-  let mut arr = ctx.env.create_array_with_length(line_dash_list.len())?;
-
-  for (index, a) in line_dash_list.iter().enumerate() {
-    arr.set_element(index as u32, ctx.env.create_double(*a as f64)?)?;
-  }
-  Ok(arr)
-}
-
-#[js_function(7)]
-fn put_image_data(ctx: CallContext) -> Result<JsUndefined> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-
-  let image_data_js = ctx.get::<JsObject>(0)?;
-  let image_data = ctx.env.unwrap::<ImageData>(&image_data_js)?;
-  let dx = ctx.get::<JsNumber>(1)?.get_uint32()?;
-  let dy = ctx.get::<JsNumber>(2)?.get_uint32()?;
-  if ctx.length == 3 {
-    context_2d.surface.canvas.write_pixels(image_data, dx, dy);
-  } else {
-    let mut dirty_x = ctx.get::<JsNumber>(3)?.get_double()? as f32;
-    let mut dirty_y = if ctx.length >= 5 {
-      ctx.get::<JsNumber>(4)?.get_double()? as f32
-    } else {
-      0.0f32
-    };
-    let mut dirty_width = if ctx.length >= 6 {
-      ctx.get::<JsNumber>(5)?.get_double()? as f32
-    } else {
-      image_data.width as f32
-    };
-    let mut dirty_height = if ctx.length == 7 {
-      ctx.get::<JsNumber>(6)?.get_double()? as f32
-    } else {
-      image_data.height as f32
-    };
-    // as per https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-putimagedata
-    if dirty_width < 0f32 {
-      dirty_x += dirty_width;
-      dirty_width = dirty_width.abs();
-    }
-    if dirty_height < 0f32 {
-      dirty_y += dirty_height;
-      dirty_height = dirty_height.abs();
-    }
-    if dirty_x < 0f32 {
-      dirty_width += dirty_x;
-      dirty_x = 0f32;
-    }
-    if dirty_y < 0f32 {
-      dirty_height += dirty_y;
-      dirty_y = 0f32;
-    }
-    if dirty_width <= 0f32 || dirty_height <= 0f32 {
-      return ctx.env.get_undefined();
-    }
-    let inverted = context_2d.surface.canvas.get_transform_matrix().invert();
-    context_2d.surface.canvas.save();
-    if let Some(inverted) = inverted {
-      context_2d.surface.canvas.concat(&inverted);
-    };
-    context_2d.surface.canvas.write_pixels_dirty(
-      image_data,
-      dx as f32,
-      dy as f32,
-      dirty_x,
-      dirty_y,
-      dirty_width,
-      dirty_height,
-      image_data.color_space,
-    );
-    context_2d.surface.canvas.restore();
-  };
-
-  ctx.env.get_undefined()
-}
-
-#[js_function(1)]
-fn set_global_alpha(ctx: CallContext) -> Result<JsUndefined> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-
-  let alpha = ctx.get::<JsNumber>(0)?.get_double()? as f32;
-
-  if !(0.0..=1.0).contains(&alpha) {
-    return Err(Error::new(
-      Status::InvalidArg,
-      format!(
-        "Alpha value out of range, expected 0.0 - 1.0, but got : {}",
-        alpha
-      ),
-    ));
-  }
-
-  context_2d.state.paint.set_alpha((alpha * 255.0) as u8);
-  ctx.env.get_undefined()
-}
-
-#[js_function]
-fn get_global_alpha(ctx: CallContext) -> Result<JsNumber> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-
-  ctx
-    .env
-    .create_double((context_2d.state.paint.get_alpha() as f64) / 255.0)
-}
-
-#[js_function(1)]
-fn set_global_composite_operation(ctx: CallContext) -> Result<JsUndefined> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-  let blend_string = ctx.get::<JsString>(0)?.into_utf8()?;
-
-  context_2d
-    .state
-    .paint
-    .set_blend_mode(BlendMode::from_str(blend_string.as_str()?).map_err(Error::from)?);
-
-  ctx.env.get_undefined()
-}
-
-#[js_function]
-fn get_global_composite_operation(ctx: CallContext) -> Result<JsString> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-
-  ctx
-    .env
-    .create_string(context_2d.state.paint.get_blend_mode().as_str())
-}
-
-#[js_function(1)]
-fn set_image_smoothing_enabled(ctx: CallContext) -> Result<JsUndefined> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-  let enabled = ctx.get::<JsBoolean>(0)?;
-
-  context_2d.state.image_smoothing_enabled = enabled.get_value()?;
-
-  ctx.env.get_undefined()
-}
-
-#[js_function]
-fn get_image_smoothing_enabled(ctx: CallContext) -> Result<JsBoolean> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-
-  ctx
-    .env
-    .get_boolean(context_2d.state.image_smoothing_enabled)
-}
-
-#[js_function(1)]
-fn set_image_smoothing_quality(ctx: CallContext) -> Result<JsUndefined> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-  let quality = ctx.get::<JsString>(0)?.into_utf8()?;
-
-  context_2d.state.image_smoothing_quality =
-    FilterQuality::from_str(quality.as_str()?).map_err(Error::from)?;
-
-  ctx.env.get_undefined()
-}
-
-#[js_function]
-fn get_image_smoothing_quality(ctx: CallContext) -> Result<JsString> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-
-  ctx
-    .env
-    .create_string(context_2d.state.image_smoothing_quality.as_str())
-}
-
-#[js_function]
-fn get_current_transform(ctx: CallContext) -> Result<JsObject> {
-  let mut transform_object = ctx.env.create_object()?;
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-
-  let current_transform = context_2d.state.transform.get_transform();
-
-  transform_object.set_named_property("a", ctx.env.create_double(current_transform.a as f64)?)?;
-  transform_object.set_named_property("b", ctx.env.create_double(current_transform.b as f64)?)?;
-  transform_object.set_named_property("c", ctx.env.create_double(current_transform.c as f64)?)?;
-  transform_object.set_named_property("d", ctx.env.create_double(current_transform.d as f64)?)?;
-  transform_object.set_named_property("e", ctx.env.create_double(current_transform.e as f64)?)?;
-  transform_object.set_named_property("f", ctx.env.create_double(current_transform.f as f64)?)?;
-  Ok(transform_object)
-}
-
-#[js_function(6)]
-fn set_current_transform(ctx: CallContext) -> Result<JsUndefined> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-
-  let transform = if ctx.length == 1 {
-    let transform_object = ctx.get::<JsObject>(0)?;
-    let a = transform_object
-      .get_named_property::<JsNumber>("a")?
-      .get_double()? as f32;
-    let b = transform_object
-      .get_named_property::<JsNumber>("b")?
-      .get_double()? as f32;
-    let c = transform_object
-      .get_named_property::<JsNumber>("c")?
-      .get_double()? as f32;
-    let d = transform_object
-      .get_named_property::<JsNumber>("d")?
-      .get_double()? as f32;
-    let e = transform_object
-      .get_named_property::<JsNumber>("e")?
-      .get_double()? as f32;
-    let f = transform_object
-      .get_named_property::<JsNumber>("f")?
-      .get_double()? as f32;
-    Matrix::new(a, c, e, b, d, f)
-  } else if ctx.length == 6 {
-    let a = ctx.get::<JsNumber>(0)?.get_double()? as f32;
-    let b = ctx.get::<JsNumber>(1)?.get_double()? as f32;
-    let c = ctx.get::<JsNumber>(2)?.get_double()? as f32;
-    let d = ctx.get::<JsNumber>(3)?.get_double()? as f32;
-    let e = ctx.get::<JsNumber>(4)?.get_double()? as f32;
-    let f = ctx.get::<JsNumber>(5)?.get_double()? as f32;
-    Matrix::new(a, c, e, b, d, f)
-  } else {
-    return Err(Error::new(
-      Status::InvalidArg,
-      "Invalid argument length in setTransform".to_string(),
-    ));
-  };
-
-  context_2d.set_transform(transform);
-
-  ctx.env.get_undefined()
-}
-
-#[js_function(2)]
-fn scale(ctx: CallContext) -> Result<JsUndefined> {
-  let x = ctx.get::<JsNumber>(0)?.get_double()? as f32;
-  let y = ctx.get::<JsNumber>(1)?.get_double()? as f32;
-
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-
-  context_2d.scale(x, y);
-
-  ctx.env.get_undefined()
-}
-
-#[js_function(1)]
-fn set_line_dash(ctx: CallContext) -> Result<JsUndefined> {
-  let dash = ctx.get::<JsObject>(0)?;
-  let len = dash.get_array_length()? as usize;
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-
-  let is_odd = len & 1 != 0;
-  let mut dash_list = if is_odd {
-    vec![0f32; len * 2]
-  } else {
-    vec![0f32; len]
-  };
-  for idx in 0..len {
-    let dash_value: f32 = dash.get_element::<JsNumber>(idx as u32)?.get_double()? as f32;
-    dash_list[idx] = dash_value as f32;
-    if is_odd {
-      dash_list[idx + len] = dash_value as f32;
-    }
-  }
-  context_2d.state.line_dash_list = dash_list;
-  ctx.env.get_undefined()
-}
-
-#[js_function(1)]
-fn stroke(ctx: CallContext) -> Result<JsUndefined> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-
-  if ctx.length == 0 {
-    context_2d.stroke(None)?;
-  } else {
-    let path_js = ctx.get::<JsObject>(0)?;
-    let path = &mut path_js.unwrap::<crate::path::Path>(ctx.env)?.inner;
-    context_2d.stroke(Some(path))?;
-  };
-
-  ctx.env.get_undefined()
-}
-
-#[js_function(2)]
-fn translate(ctx: CallContext) -> Result<JsUndefined> {
-  let x = ctx.get::<JsNumber>(0)?.get_double()? as f32;
-  let y = ctx.get::<JsNumber>(1)?.get_double()? as f32;
-
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-  context_2d.translate(x, y);
-  ctx.env.get_undefined()
-}
-
-#[js_function(6)]
-fn transform(ctx: CallContext) -> Result<JsUndefined> {
-  let a = ctx.get::<JsNumber>(0)?.get_double()? as f32;
-  let b = ctx.get::<JsNumber>(1)?.get_double()? as f32;
-  let c = ctx.get::<JsNumber>(2)?.get_double()? as f32;
-  let d = ctx.get::<JsNumber>(3)?.get_double()? as f32;
-  let e = ctx.get::<JsNumber>(4)?.get_double()? as f32;
-  let f = ctx.get::<JsNumber>(5)?.get_double()? as f32;
-
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-  let ts = Matrix::new(a, c, e, b, d, f);
-  context_2d.transform(ts)?;
-  ctx.env.get_undefined()
-}
-
-#[js_function]
-fn reset_transform(ctx: CallContext) -> Result<JsUndefined> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-
-  context_2d.reset_transform();
-  ctx.env.get_undefined()
-}
-
-#[js_function]
-fn get_line_cap(ctx: CallContext) -> Result<JsString> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-
-  ctx
-    .env
-    .create_string(context_2d.state.paint.get_stroke_cap().as_str())
-}
-
-#[js_function(1)]
-fn set_line_cap(ctx: CallContext) -> Result<JsUndefined> {
-  let line_cap_string = ctx.get::<JsString>(0)?;
-  let line_cap = line_cap_string.into_utf8()?;
-
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-
-  context_2d
-    .state
-    .paint
-    .set_stroke_cap(StrokeCap::from_str(line_cap.as_str()?)?);
-
-  ctx.env.get_undefined()
-}
-
-#[js_function]
-fn get_line_dash_offset(ctx: CallContext) -> Result<JsNumber> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-
-  ctx
-    .env
-    .create_double(context_2d.state.line_dash_offset as f64)
-}
-
-#[js_function(1)]
-fn set_line_dash_offset(ctx: CallContext) -> Result<JsUndefined> {
-  let line_offset = ctx.get::<JsNumber>(0)?.get_double()? as f32;
-
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-
-  context_2d.state.line_dash_offset = line_offset as f32;
-
-  ctx.env.get_undefined()
-}
-
-#[js_function]
-fn get_line_join(ctx: CallContext) -> Result<JsString> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-
-  ctx
-    .env
-    .create_string(context_2d.state.paint.get_stroke_join().as_str())
-}
-
-#[js_function(1)]
-fn set_line_join(ctx: CallContext) -> Result<JsUndefined> {
-  let line_join_string = ctx.get::<JsString>(0)?;
-  let line_join = line_join_string.into_utf8()?;
-
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-
-  context_2d
-    .state
-    .paint
-    .set_stroke_join(StrokeJoin::from_str(line_join.as_str()?)?);
-
-  ctx.env.get_undefined()
-}
-
-#[js_function]
-fn get_line_width(ctx: CallContext) -> Result<JsNumber> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-
-  ctx
-    .env
-    .create_double(context_2d.state.paint.get_stroke_width() as f64)
-}
-
-#[js_function(1)]
-fn set_line_width(ctx: CallContext) -> Result<JsUndefined> {
-  let width = ctx.get::<JsNumber>(0)?.get_double()? as f32;
-
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-
-  context_2d.state.paint.set_stroke_width(width as f32);
-
-  ctx.env.get_undefined()
-}
-
-#[js_function(1)]
-fn set_fill_style(ctx: CallContext) -> Result<JsUndefined> {
-  let mut this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-  let js_fill_style = ctx.get::<JsUnknown>(0)?;
-
-  let pattern = match js_fill_style.get_type()? {
-    ValueType::String => {
-      let js_color = unsafe { js_fill_style.cast::<JsString>() }.into_utf8()?;
-      Pattern::from_color(js_color.as_str()?).ok()
-    }
-    ValueType::Object => {
-      let fill_object = unsafe { js_fill_style.cast::<JsObject>() };
-      fill_object
-        .unwrap::<crate::gradient::Gradient>(ctx.env)
-        .map(|g| Pattern::Gradient(g.0.clone()))
-        .or_else(|_| ctx.env.unwrap::<Pattern>(&fill_object).map(|p| p.clone()))
-        .ok()
-    }
-    _ => None,
-  };
-
-  if let Some(p) = pattern {
-    context_2d.state.fill_style = p;
-    this.set_named_property("_fillStyle", js_fill_style)?;
-  }
-
-  ctx.env.get_undefined()
-}
-
-#[js_function]
-fn get_fill_style(ctx: CallContext) -> Result<JsUnknown> {
-  let this = ctx.this_unchecked::<JsObject>();
-  this.get_named_property("_fillStyle")
-}
-
-#[js_function(1)]
-fn set_filter(ctx: CallContext) -> Result<JsUndefined> {
-  let filter_str = ctx.get::<JsString>(0)?.into_utf8()?;
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-  let filter_str = filter_str.as_str()?;
-  context_2d.set_filter(filter_str)?;
-  ctx.env.get_undefined()
-}
-
-#[js_function]
-fn get_filter(ctx: CallContext) -> Result<JsString> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-  ctx
-    .env
-    .create_string(context_2d.state.filters_string.as_str())
-}
-
-#[js_function]
-fn get_font(ctx: CallContext) -> Result<JsString> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-
-  ctx.env.create_string(context_2d.state.font.as_str())
-}
-
-#[js_function(1)]
-fn set_font(ctx: CallContext) -> Result<JsUndefined> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-
-  let last_state = &mut context_2d.state;
-  let font_style = ctx.get::<JsString>(0)?.into_utf8()?.into_owned()?;
-  last_state.font_style =
-    Font::new(font_style.as_str()).map_err(|e| Error::new(Status::InvalidArg, format!("{}", e)))?;
-
-  last_state.font = font_style;
-  ctx.env.get_undefined()
-}
-
-#[js_function]
-fn get_text_direction(ctx: CallContext) -> Result<JsString> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-
-  let last_state = &context_2d.state;
-  ctx.env.create_string(last_state.text_direction.as_str())
-}
-
-#[js_function(1)]
-fn set_text_direction(ctx: CallContext) -> Result<JsUndefined> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-  let direction = ctx.get::<JsString>(0)?.into_utf8()?;
-  let text_direction = TextDirection::from_str(direction.as_str()?)?;
-  let last_state = &mut context_2d.state;
-  last_state.text_direction = text_direction;
-  ctx.env.get_undefined()
-}
-
-#[js_function(1)]
-fn set_stroke_style(ctx: CallContext) -> Result<JsUndefined> {
-  let mut this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-
-  let js_stroke_style = ctx.get::<JsUnknown>(0)?;
-  let last_state = &mut context_2d.state;
-
-  let pattern = match js_stroke_style.get_type()? {
-    ValueType::String => {
-      let js_color = unsafe { JsString::from_raw_unchecked(ctx.env.raw(), js_stroke_style.raw()) }
-        .into_utf8()?;
-      Pattern::from_color(js_color.as_str()?).ok()
-    }
-    ValueType::Object => {
-      let stroke_object = unsafe { js_stroke_style.cast::<JsObject>() };
-      stroke_object
-        .unwrap::<crate::gradient::Gradient>(ctx.env)
-        .map(|g| Pattern::Gradient(g.0.clone()))
-        .or_else(|_| ctx.env.unwrap::<Pattern>(&stroke_object).map(|p| p.clone()))
-        .ok()
-    }
-    _ => None,
-  };
-
-  if let Some(p) = pattern {
-    last_state.stroke_style = p;
-    this.set_named_property("_strokeStyle", js_stroke_style)?;
-  }
-
-  ctx.env.get_undefined()
-}
-
-#[js_function]
-fn get_stroke_style(ctx: CallContext) -> Result<JsUnknown> {
-  let this = ctx.this_unchecked::<JsObject>();
-  this.get_named_property("_strokeStyle")
-}
-
-#[js_function]
-fn get_shadow_blur(ctx: CallContext) -> Result<JsNumber> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-  let last_state = &mut context_2d.state;
-
-  ctx.env.create_double(last_state.shadow_blur as f64)
-}
-
-#[js_function(1)]
-fn set_shadow_blur(ctx: CallContext) -> Result<JsUndefined> {
-  let blur = ctx.get::<JsNumber>(0)?.get_double()? as f32;
-
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-
-  context_2d.state.shadow_blur = blur;
-
-  ctx.env.get_undefined()
-}
-
-#[js_function]
-fn get_shadow_color(ctx: CallContext) -> Result<JsString> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-
-  ctx
-    .env
-    .create_string(context_2d.state.shadow_color_string.as_str())
-}
-
-#[js_function(1)]
-fn set_shadow_color(ctx: CallContext) -> Result<JsUndefined> {
-  let shadow_color_string = ctx.get::<JsString>(0)?;
-  let shadow_color = shadow_color_string.into_utf8()?;
-
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-
-  let last_state = &mut context_2d.state;
-  let shadow_color_str = shadow_color.as_str()?;
-  last_state.shadow_color_string = shadow_color_str.to_owned();
-
-  if shadow_color_str.is_empty() {
-    return ctx.env.get_undefined();
-  }
-  let mut parser_input = ParserInput::new(shadow_color_str);
-  let mut parser = Parser::new(&mut parser_input);
-  let color = CSSColor::parse(&mut parser)
-    .map_err(|e| SkError::Generic(format!("Parse color [{}] error: {:?}", shadow_color_str, e)))?;
-
-  match color {
-    CSSColor::CurrentColor => {
-      return Err(Error::new(
+      Err(Error::new(
         Status::InvalidArg,
-        "Color should not be `currentcolor` keyword".to_owned(),
+        "The x, y, width, and height arguments must be finite numbers".to_owned(),
       ))
     }
-    CSSColor::RGBA(rgba) => {
-      last_state.shadow_color = rgba;
+  }
+
+  #[napi]
+  pub fn get_line_dash(&self) -> Vec<f64> {
+    self
+      .context
+      .state
+      .line_dash_list
+      .iter()
+      .map(|l| *l as f64)
+      .collect()
+  }
+
+  #[napi]
+  pub fn put_image_data(
+    &mut self,
+    image_data: &mut ImageData,
+    dx: u32,
+    dy: u32,
+    dirty_x: Option<f64>,
+    dirty_y: Option<f64>,
+    dirty_width: Option<f64>,
+    dirty_height: Option<f64>,
+  ) {
+    if let Some(dirty_x) = dirty_x {
+      let mut dirty_x = dirty_x as f32;
+      let mut dirty_y = dirty_y.map(|d| d as f32).unwrap_or(0.0);
+      let mut dirty_width = dirty_width
+        .map(|d| d as f32)
+        .unwrap_or(image_data.width as f32);
+      let mut dirty_height = dirty_height
+        .map(|d| d as f32)
+        .unwrap_or(image_data.height as f32);
+      // as per https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-putimagedata
+      if dirty_width < 0f32 {
+        dirty_x += dirty_width;
+        dirty_width = dirty_width.abs();
+      }
+      if dirty_height < 0f32 {
+        dirty_y += dirty_height;
+        dirty_height = dirty_height.abs();
+      }
+      if dirty_x < 0f32 {
+        dirty_width += dirty_x;
+        dirty_x = 0f32;
+      }
+      if dirty_y < 0f32 {
+        dirty_height += dirty_y;
+        dirty_y = 0f32;
+      }
+      if dirty_width <= 0f32 || dirty_height <= 0f32 {
+        return;
+      }
+      let inverted = self.context.surface.canvas.get_transform_matrix().invert();
+      self.context.surface.canvas.save();
+      if let Some(inverted) = inverted {
+        self.context.surface.canvas.concat(&inverted);
+      };
+      self.context.surface.canvas.write_pixels_dirty(
+        image_data,
+        dx as f32,
+        dy as f32,
+        dirty_x,
+        dirty_y,
+        dirty_width,
+        dirty_height,
+        image_data.color_space,
+      );
+      self.context.surface.canvas.restore();
+    } else {
+      self.context.surface.canvas.write_pixels(image_data, dx, dy);
     }
   }
 
+  #[napi]
+  pub fn set_line_dash(&mut self, dash_list: Vec<f64>) {
+    let len = dash_list.len();
+    let is_odd = len & 1 != 0;
+    let mut line_dash_list = if is_odd {
+      vec![0f32; len * 2]
+    } else {
+      vec![0f32; len]
+    };
+    for (idx, dash) in dash_list.iter().enumerate() {
+      line_dash_list[idx] = *dash as f32;
+      if is_odd {
+        line_dash_list[idx + len] = *dash as f32;
+      }
+    }
+    self.context.set_line_dash(line_dash_list);
+  }
+
+  #[napi]
+  pub fn reset_transform(&mut self) {
+    self.context.reset_transform();
+  }
+
+  #[napi(return_if_invalid)]
+  pub fn translate(&mut self, x: f64, y: f64) {
+    self.context.translate(x as f32, y as f32);
+  }
+
+  #[napi(return_if_invalid)]
+  pub fn transform(&mut self, a: f64, b: f64, c: f64, d: f64, e: f64, f: f64) -> Result<()> {
+    let ts = Matrix::new(a as f32, c as f32, e as f32, b as f32, d as f32, f as f32);
+    self.context.transform(ts)?;
+    Ok(())
+  }
+
+  #[napi]
+  pub fn get_transform(&self) -> TransformObject {
+    self.context.state.transform.get_transform().into()
+  }
+
+  #[napi]
+  pub fn set_transform(
+    &mut self,
+    a_or_transform: Either<f64, TransformObject>,
+    b: Option<f64>,
+    c: Option<f64>,
+    d: Option<f64>,
+    e: Option<f64>,
+    f: Option<f64>,
+  ) -> Option<()> {
+    let ts = match a_or_transform {
+      Either::A(a) => Transform::new(
+        a as f32, c? as f32, e? as f32, b? as f32, d? as f32, f? as f32,
+      ),
+      Either::B(transform) => transform.into(),
+    };
+    self
+      .context
+      .set_transform(Matrix::new(ts.a, ts.b, ts.c, ts.d, ts.e, ts.f));
+    None
+  }
+}
+
+#[js_function(4)]
+fn context_2d_constructor(ctx: CallContext) -> Result<JsUndefined> {
   ctx.env.get_undefined()
 }
 
-#[js_function]
-fn get_shadow_offset_x(ctx: CallContext) -> Result<JsNumber> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-  let last_state = &mut context_2d.state;
-
-  ctx.env.create_double(last_state.shadow_offset_x as f64)
+enum BitmapRef<'a> {
+  Borrowed(&'a mut Bitmap),
+  Owned(Bitmap),
 }
 
-#[js_function(1)]
-fn set_shadow_offset_x(ctx: CallContext) -> Result<JsUndefined> {
-  let offset: f32 = ctx.get::<JsNumber>(0)?.get_double()? as f32;
-
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-  let last_state = &mut context_2d.state;
-
-  last_state.shadow_offset_x = offset;
-
-  ctx.env.get_undefined()
+impl AsRef<Bitmap> for BitmapRef<'_> {
+  fn as_ref(&self) -> &Bitmap {
+    match self {
+      BitmapRef::Borrowed(bitmap) => bitmap,
+      BitmapRef::Owned(bitmap) => bitmap,
+    }
+  }
 }
 
-#[js_function]
-fn get_shadow_offset_y(ctx: CallContext) -> Result<JsNumber> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-  let last_state = &mut context_2d.state;
-
-  ctx.env.create_double(last_state.shadow_offset_y as f64)
+#[napi(object)]
+pub struct TextMetrics {
+  pub actual_bounding_box_ascent: f64,
+  pub actual_bounding_box_descent: f64,
+  pub actual_bounding_box_left: f64,
+  pub actual_bounding_box_right: f64,
+  pub font_bounding_box_ascent: f64,
+  pub font_bounding_box_descent: f64,
+  pub width: f64,
 }
 
-#[js_function(1)]
-fn set_shadow_offset_y(ctx: CallContext) -> Result<JsUndefined> {
-  let offset = ctx.get::<JsNumber>(0)?.get_double()? as f32;
-
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-  let last_state = &mut context_2d.state;
-
-  last_state.shadow_offset_y = offset;
-
-  ctx.env.get_undefined()
+#[napi(object)]
+pub struct TransformObject {
+  pub a: f64,
+  pub b: f64,
+  pub c: f64,
+  pub d: f64,
+  pub e: f64,
+  pub f: f64,
 }
 
-#[js_function(1)]
-fn set_text_align(ctx: CallContext) -> Result<JsUndefined> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-
-  context_2d.state.text_align =
-    TextAlign::from_str(ctx.get::<JsString>(0)?.into_utf8()?.as_str()?)?;
-  ctx.env.get_undefined()
+impl From<TransformObject> for Transform {
+  fn from(value: TransformObject) -> Self {
+    Self::new(
+      value.a as f32,
+      value.b as f32,
+      value.c as f32,
+      value.d as f32,
+      value.e as f32,
+      value.f as f32,
+    )
+  }
 }
 
-#[js_function]
-fn get_text_align(ctx: CallContext) -> Result<JsString> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-
-  ctx.env.create_string(context_2d.state.text_align.as_str())
-}
-
-#[js_function(1)]
-fn set_text_baseline(ctx: CallContext) -> Result<JsUndefined> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-  context_2d.state.text_baseline =
-    TextBaseline::from_str(ctx.get::<JsString>(0)?.into_utf8()?.as_str()?)?;
-  ctx.env.get_undefined()
-}
-
-#[js_function]
-fn get_text_baseline(ctx: CallContext) -> Result<JsString> {
-  let this = ctx.this_unchecked::<JsObject>();
-  let context_2d = ctx.env.unwrap::<Context>(&this)?;
-
-  ctx
-    .env
-    .create_string(context_2d.state.text_baseline.as_str())
+impl From<Transform> for TransformObject {
+  fn from(value: Transform) -> Self {
+    Self {
+      a: value.a as f64,
+      b: value.b as f64,
+      c: value.c as f64,
+      d: value.d as f64,
+      e: value.e as f64,
+      f: value.f as f64,
+    }
+  }
 }
 
 const AVIF_DEFAULT_QUALITY: f32 = 80.0;

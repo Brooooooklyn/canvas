@@ -12,13 +12,13 @@ use crate::{
 };
 
 #[derive(Debug, Clone)]
-pub enum CanvasGradient {
+pub enum Gradient {
   Linear(LinearGradient),
   Radial(RadialGradient),
   Conic(ConicGradient),
 }
 
-impl CanvasGradient {
+impl Gradient {
   pub fn create_linear_gradient(x0: f32, y0: f32, x1: f32, y1: f32) -> Self {
     let linear_gradient = LinearGradient {
       start_point: (x0, y0),
@@ -155,10 +155,10 @@ impl CanvasGradient {
 }
 
 #[napi]
-pub struct Gradient(pub(crate) CanvasGradient);
+pub struct CanvasGradient(pub(crate) Gradient);
 
 #[napi]
-impl Gradient {
+impl CanvasGradient {
   #[napi]
   pub fn add_color_stop(&mut self, index: f64, color: String) -> Result<()> {
     if color.is_empty() {
@@ -189,12 +189,12 @@ impl Gradient {
 
 #[test]
 fn test_add_color_stop() {
-  let mut linear_gradient = CanvasGradient::create_linear_gradient(0.0, 0.0, 0.0, 77.0);
+  let mut linear_gradient = Gradient::create_linear_gradient(0.0, 0.0, 0.0, 77.0);
   linear_gradient.add_color_stop(1.0, Color::from_rgba(0, 128, 128, 255));
   linear_gradient.add_color_stop(0.6, Color::from_rgba(0, 255, 255, 255));
   linear_gradient.add_color_stop(0.3, Color::from_rgba(176, 199, 45, 255));
   linear_gradient.add_color_stop(0.0, Color::from_rgba(204, 82, 50, 255));
-  if let CanvasGradient::Linear(linear_gradient) = linear_gradient {
+  if let Gradient::Linear(linear_gradient) = linear_gradient {
     assert_eq!(linear_gradient.base.positions, vec![0.0, 0.3, 0.6, 1.0]);
     assert_eq!(
       linear_gradient.base.colors,
