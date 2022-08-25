@@ -4,9 +4,8 @@ use std::result;
 use std::slice;
 use std::str::FromStr;
 
-use cssparser::{Color as CSSColor, Parser, ParserInput};
-use napi::bindgen_prelude::*;
-use napi::*;
+use cssparser::{Color as CSSColor, Parser, ParserInput, RGBA};
+use napi::{bindgen_prelude::*, JsBuffer, JsString, NapiRaw, NapiValue};
 use rgb::FromSlice;
 
 use crate::pattern::CanvasPattern;
@@ -374,8 +373,7 @@ impl Context {
     let alpha = current_paint.get_alpha();
     match &last_state.fill_style {
       Pattern::Color(c, _) => {
-        let mut color = *c;
-        color.alpha = ((color.alpha as f32) * (alpha as f32 / 255.0)).round() as u8;
+        let color = Self::multiply_by_alpha(c, alpha);
         paint.set_color(color.red, color.green, color.blue, color.alpha);
       }
       Pattern::Gradient(g) => {
@@ -500,8 +498,7 @@ impl Context {
     let global_alpha = current_paint.get_alpha();
     match &last_state.stroke_style {
       Pattern::Color(c, _) => {
-        let mut color = *c;
-        color.alpha = ((color.alpha as f32) * (global_alpha as f32 / 255.0)).round() as u8;
+        let color = Self::multiply_by_alpha(c, global_alpha);
         paint.set_color(color.red, color.green, color.blue, color.alpha);
       }
       Pattern::Gradient(g) => {
@@ -570,9 +567,8 @@ impl Context {
   fn shadow_blur_paint(&self, paint: &Paint) -> Option<Paint> {
     let alpha = paint.get_alpha();
     let last_state = &self.state;
-    let shadow_color = &last_state.shadow_color;
-    let mut shadow_alpha = shadow_color.alpha;
-    shadow_alpha = ((shadow_alpha as f32) * (alpha as f32 / 255.0)) as u8;
+    let shadow_color = Self::multiply_by_alpha(&last_state.shadow_color, alpha);
+    let shadow_alpha = shadow_color.alpha;
     if shadow_alpha == 0 {
       return None;
     }
@@ -618,7 +614,8 @@ impl Context {
     d_height: f32,
   ) -> Result<()> {
     let bitmap = bitmap.0.bitmap;
-    let paint = self.fill_paint()?;
+    let mut paint = self.fill_paint()?;
+    paint.set_alpha((self.state.global_alpha * 255.0).round() as u8);
     if let Some(drop_shadow_paint) = self.drop_shadow_paint(&paint) {
       let surface = &mut self.surface;
       surface.canvas.draw_image(
@@ -747,6 +744,15 @@ impl Context {
     surface.canvas.concat(&shadow_offset);
     surface.canvas.concat(&current_transform);
     Ok(())
+  }
+
+  // ./skia/modules/canvaskit/color.js
+  fn multiply_by_alpha(color: &RGBA, global_alpha: u8) -> RGBA {
+    let mut result = *color;
+    result.alpha = ((0.0_f32.max((result.alpha_f32() * (global_alpha as f32 / 255.0)).min(1.0)))
+      * 255.0)
+      .round() as u8;
+    result
   }
 }
 
@@ -1818,11 +1824,6 @@ impl CanvasRenderingContext2D {
       .set_transform(Matrix::new(ts.a, ts.b, ts.c, ts.d, ts.e, ts.f));
     None
   }
-}
-
-#[js_function(4)]
-fn context_2d_constructor(ctx: CallContext) -> Result<JsUndefined> {
-  ctx.env.get_undefined()
 }
 
 enum BitmapRef<'a> {
