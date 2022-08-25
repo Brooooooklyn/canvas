@@ -1,7 +1,10 @@
+import { promises as fs } from 'fs'
+
 import test from 'ava'
 
-import { createCanvas } from '../index'
+import { createCanvas, loadImage } from '../index'
 import { snapshotImage } from './image-snapshot'
+import { join } from 'path'
 
 test('transform-with-state', async (t) => {
   const canvas = createCanvas(256, 256)
@@ -78,4 +81,15 @@ test('transform-with-radial-gradient-x', async (t) => {
   ctx.fill()
   ctx.restore()
   await snapshotImage(t, { canvas, ctx })
+})
+
+test('global-alpha-should-not-effect-drawImage', async (t) => {
+  const canvas = createCanvas(300, 320)
+  const ctx = canvas.getContext('2d')
+  ctx.fillStyle = 'rgba(3, 169, 244, 0.5)'
+
+  // Image
+  const image = await fs.readFile(join(__dirname, 'javascript.png'))
+  ctx.drawImage(await loadImage(image), 0, 0, 200, 100)
+  await snapshotImage(t, { ctx, canvas })
 })
