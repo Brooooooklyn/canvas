@@ -72,7 +72,7 @@
     "@types/node": "^18.7.13",
     "@typescript-eslint/eslint-plugin": "^5.35.1",
     "@typescript-eslint/parser": "^5.35.1",
-    "ava": "^4.3.1",
+    "ava": "^4.3.3",
     "benny": "^3.7.1",
     "canvas": "^2.9.3",
     "canvaskit-wasm": "^0.36.1",
