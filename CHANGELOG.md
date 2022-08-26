@@ -1,3 +1,15 @@
+## [0.1.29](https://github.com/Brooooooklyn/canvas/compare/v0.1.28...v0.1.29) (2022-08-26)
+
+### Bug Fixes
+
+- data url should be standard base64 ([a59cb40](https://github.com/Brooooooklyn/canvas/commit/a59cb40058448c0f59c4f3904e43bfe56a4a4afd))
+- drawImage alpha should not effect by fillStyle ([41a6f29](https://github.com/Brooooooklyn/canvas/commit/41a6f2905281268e1847b2b38704ae0da9108ea5))
+- isBufferLike in load-image.js ([#536](https://github.com/Brooooooklyn/canvas/issues/536)) ([c6ad306](https://github.com/Brooooooklyn/canvas/commit/c6ad306ee1b2c2e486e5aceb8592060b4ddb17a6))
+
+### Features
+
+- chrome m106 ([45f425c](https://github.com/Brooooooklyn/canvas/commit/45f425c5d7f8561ed8c2b781d32bd6b5c8236271))
+
 ## [0.1.28](https://github.com/Brooooooklyn/canvas/compare/v0.1.27...v0.1.28) (2022-08-16)
 
 ### Bug Fixes
