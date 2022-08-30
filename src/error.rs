@@ -1,5 +1,6 @@
 use std::ffi::NulError;
 
+use libavif::Error;
 use thiserror::Error;
 
 use crate::sk::Matrix;
@@ -34,6 +35,10 @@ pub enum SkError {
   InvalidFontStyle(String),
   #[error("[`{0}`] is not valid font variant")]
   InvalidFontVariant(String),
+  #[error("[`{0}`]")]
+  PixelsToRgb(Error),
+  #[error("[`{0}`]")]
+  EncodeAvifError(Error),
   #[error("[`{0}`]")]
   Generic(String),
 }

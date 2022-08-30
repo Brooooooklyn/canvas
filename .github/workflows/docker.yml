@@ -15,6 +15,12 @@ jobs:
       - name: Setup QEMU
         run: docker run --rm --privileged multiarch/qemu-user-static:register --reset
 
+      - name: Download aom-dev
+        run: |
+          wget https://github.com/Brooooooklyn/canvas/releases/download/libaom-v3.4.0/aom-aarch64-linux-musl.tar
+          tar -xvf aom-aarch64-linux-musl.tar
+          rm aom-aarch64-linux-musl.tar
+
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v2
         with:

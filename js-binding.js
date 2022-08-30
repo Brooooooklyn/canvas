@@ -5,27 +5,54 @@ const { platform, arch } = process
 
 let nativeBinding = null
 let localFileExisted = false
-let isMusl = false
 let loadError = null
+
+function isMusl() {
+  // For Node 10
+  if (!process.report || typeof process.report.getReport !== 'function') {
+    try {
+      return readFileSync('/usr/bin/ldd', 'utf8').includes('musl')
+    } catch (e) {
+      return true
+    }
+  } else {
+    const { glibcVersionRuntime } = process.report.getReport().header
+    return !glibcVersionRuntime
+  }
+}
 
 switch (platform) {
   case 'android':
-    if (arch !== 'arm64') {
-      throw new Error(`Unsupported architecture on Android ${arch}`)
-    }
-    localFileExisted = existsSync(join(__dirname, 'skia.android-arm64.node'))
-    try {
-      if (localFileExisted) {
-        nativeBinding = require('./skia.android-arm64.node')
-      } else {
-        nativeBinding = require('@napi-rs/canvas-android-arm64')
-      }
-    } catch (e) {
-      loadError = e
+    switch (arch) {
+      case 'arm64':
+        localFileExisted = existsSync(join(__dirname, 'skia.android-arm64.node'))
+        try {
+          if (localFileExisted) {
+            nativeBinding = require('./skia.android-arm64.node')
+          } else {
+            nativeBinding = require('@napi-rs/canvas-android-arm64')
+          }
+        } catch (e) {
+          loadError = e
+        }
+        break
+      case 'arm':
+        localFileExisted = existsSync(join(__dirname, 'skia.android-arm-eabi.node'))
+        try {
+          if (localFileExisted) {
+            nativeBinding = require('./skia.android-arm-eabi.node')
+          } else {
+            nativeBinding = require('@napi-rs/canvas-android-arm-eabi')
+          }
+        } catch (e) {
+          loadError = e
+        }
+        break
+      default:
+        throw new Error(`Unsupported architecture on Android ${arch}`)
     }
     break
   case 'win32':
-    // eslint-disable-next-line sonarjs/no-nested-switch
     switch (arch) {
       case 'x64':
         localFileExisted = existsSync(join(__dirname, 'skia.win32-x64-msvc.node'))
@@ -68,7 +95,6 @@ switch (platform) {
     }
     break
   case 'darwin':
-    // eslint-disable-next-line sonarjs/no-nested-switch
     switch (arch) {
       case 'x64':
         localFileExisted = existsSync(join(__dirname, 'skia.darwin-x64.node'))
@@ -114,11 +140,9 @@ switch (platform) {
     }
     break
   case 'linux':
-    // eslint-disable-next-line sonarjs/no-nested-switch
     switch (arch) {
       case 'x64':
-        isMusl = readFileSync('/usr/bin/ldd', 'utf8').includes('musl')
-        if (isMusl) {
+        if (isMusl()) {
           localFileExisted = existsSync(join(__dirname, 'skia.linux-x64-musl.node'))
           try {
             if (localFileExisted) {
@@ -143,8 +167,7 @@ switch (platform) {
         }
         break
       case 'arm64':
-        isMusl = readFileSync('/usr/bin/ldd', 'utf8').includes('musl')
-        if (isMusl) {
+        if (isMusl()) {
           localFileExisted = existsSync(join(__dirname, 'skia.linux-arm64-musl.node'))
           try {
             if (localFileExisted) {
@@ -196,33 +219,39 @@ if (!nativeBinding) {
 }
 
 const {
-  clearAllCache,
+  ChromaSubsampling,
+  SvgExportFlag,
   CanvasRenderingContext2D,
-  CanvasElement,
-  SVGCanvas,
-  Path,
+  CanvasGradient,
   ImageData,
   Image,
-  CanvasPattern,
-  GlobalFonts,
-  convertSVGTextToPath,
   PathOp,
   FillType,
-  StrokeJoin,
   StrokeCap,
+  StrokeJoin,
+  Path,
+  CanvasPattern,
+  convertSVGTextToPath,
+  CanvasElement,
+  SVGCanvas,
+  clearAllCache,
+  GlobalFonts,
 } = nativeBinding
 
-module.exports.clearAllCache = clearAllCache
+module.exports.ChromaSubsampling = ChromaSubsampling
+module.exports.SvgExportFlag = SvgExportFlag
 module.exports.CanvasRenderingContext2D = CanvasRenderingContext2D
-module.exports.CanvasElement = CanvasElement
-module.exports.SVGCanvas = SVGCanvas
-module.exports.Path2D = Path
+module.exports.CanvasGradient = CanvasGradient
 module.exports.ImageData = ImageData
 module.exports.Image = Image
-module.exports.CanvasPattern = CanvasPattern
-module.exports.GlobalFonts = GlobalFonts
-module.exports.convertSVGTextToPath = convertSVGTextToPath
 module.exports.PathOp = PathOp
 module.exports.FillType = FillType
-module.exports.StrokeJoin = StrokeJoin
 module.exports.StrokeCap = StrokeCap
+module.exports.StrokeJoin = StrokeJoin
+module.exports.Path = Path
+module.exports.CanvasPattern = CanvasPattern
+module.exports.convertSVGTextToPath = convertSVGTextToPath
+module.exports.CanvasElement = CanvasElement
+module.exports.SVGCanvas = SVGCanvas
+module.exports.clearAllCache = clearAllCache
+module.exports.GlobalFonts = GlobalFonts

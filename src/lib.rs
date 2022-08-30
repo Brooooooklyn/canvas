@@ -15,12 +15,13 @@ use napi::bindgen_prelude::{AsyncTask, ClassInstance, Either3, This, Unknown};
 use napi::*;
 
 use ctx::{
-  AVIFConfig, CanvasRenderingContext2D, Context, ContextData, ContextOutputData, SvgExportFlag,
+  CanvasRenderingContext2D, Context, ContextData, ContextOutputData, SvgExportFlag,
   FILL_STYLE_HIDDEN_NAME, STROKE_STYLE_HIDDEN_NAME,
 };
 use font::{init_font_regexp, FONT_REGEXP};
-use rgb::FromSlice;
 use sk::{ColorSpace, SkiaDataRef};
+
+use avif::AvifConfig;
 
 #[cfg(all(
   not(all(target_os = "linux", target_env = "musl", target_arch = "aarch64")),
@@ -29,6 +30,7 @@ use sk::{ColorSpace, SkiaDataRef};
 #[global_allocator]
 static ALLOC: mimalloc_rust::GlobalMiMalloc = mimalloc_rust::GlobalMiMalloc;
 
+mod avif;
 mod ctx;
 mod error;
 mod filter;
@@ -138,7 +140,7 @@ impl CanvasElement {
   pub fn encode(
     &self,
     format: String,
-    quality_or_config: Either3<u32, String, Unknown>,
+    quality_or_config: Either3<u32, AvifConfig, Unknown>,
   ) -> Result<AsyncTask<ContextData>> {
     Ok(AsyncTask::new(
       self.encode_inner(format, quality_or_config)?,
@@ -150,7 +152,7 @@ impl CanvasElement {
     &self,
     env: Env,
     format: String,
-    quality_or_config: Either3<u32, String, Unknown>,
+    quality_or_config: Either3<u32, AvifConfig, Unknown>,
   ) -> Result<JsBuffer> {
     let mut task = self.encode_inner(format, quality_or_config)?;
     let output = task.compute()?;
@@ -162,7 +164,7 @@ impl CanvasElement {
     &self,
     env: Env,
     mime: String,
-    quality_or_config: Either3<u32, String, Unknown>,
+    quality_or_config: Either3<u32, AvifConfig, Unknown>,
   ) -> Result<JsBuffer> {
     let mime = mime.as_str();
     let context_data = get_data_ref(&self.ctx.context, mime, &quality_or_config)?;
@@ -177,7 +179,13 @@ impl CanvasElement {
           )
           .map(|b| b.into_raw())
       },
-      ContextOutputData::Avif(output) => env.create_buffer_with_data(output).map(|b| b.into_raw()),
+      ContextOutputData::Avif(output) => unsafe {
+        env
+          .create_buffer_with_borrowed_data(output.as_ptr(), output.len(), output, |data, _| {
+            mem::drop(data)
+          })
+          .map(|b| b.into_raw())
+      },
     }
   }
 
@@ -203,21 +211,21 @@ impl CanvasElement {
   #[napi(js_name = "toDataURLAsync")]
   pub fn to_data_url_async(
     &self,
-    mime: String,
-    quality_or_config: Either3<f64, String, Unknown>,
+    mime: Option<String>,
+    quality_or_config: Either3<f64, AvifConfig, Unknown>,
   ) -> Result<AsyncTask<AsyncDataUrl>> {
     Ok(AsyncTask::new(
-      self.to_data_url_inner(mime.as_str(), quality_or_config)?,
+      self.to_data_url_inner(mime.as_deref(), quality_or_config)?,
     ))
   }
 
   #[napi(js_name = "toDataURL")]
   pub fn to_data_url(
     &self,
-    mime: String,
-    quality_or_config: Either3<f64, String, Unknown>,
+    mime: Option<String>,
+    quality_or_config: Either3<f64, AvifConfig, Unknown>,
   ) -> Result<String> {
-    let mut task = self.to_data_url_inner(mime.as_str(), quality_or_config)?;
+    let mut task = self.to_data_url_inner(mime.as_deref(), quality_or_config)?;
     task.compute()
   }
 
@@ -230,7 +238,7 @@ impl CanvasElement {
   fn encode_inner(
     &self,
     format: String,
-    quality_or_config: Either3<u32, String, Unknown>,
+    quality_or_config: Either3<u32, AvifConfig, Unknown>,
   ) -> Result<ContextData> {
     let format_str = format.as_str();
     let quality = quality_or_config.to_quality(format_str);
@@ -242,8 +250,8 @@ impl CanvasElement {
       "jpeg" => ContextData::Jpeg(surface_ref, quality),
       "png" => ContextData::Png(surface_ref),
       "avif" => {
-        let cfg: AVIFConfig = AVIFConfig::from(quality_or_config);
-        ContextData::Avif(surface_ref, cfg, ctx2d.width, ctx2d.height)
+        let cfg = AvifConfig::from(&quality_or_config);
+        ContextData::Avif(surface_ref, cfg.into(), ctx2d.width, ctx2d.height)
       }
       _ => {
         return Err(Error::new(
@@ -258,9 +266,10 @@ impl CanvasElement {
 
   fn to_data_url_inner(
     &self,
-    mime: &str,
-    quality_or_config: Either3<f64, String, Unknown>,
+    mime: Option<&str>,
+    quality_or_config: Either3<f64, AvifConfig, Unknown>,
   ) -> Result<AsyncDataUrl> {
+    let mime = mime.unwrap_or(MIME_PNG);
     let data_ref = get_data_ref(
       &self.ctx.context,
       mime,
@@ -285,7 +294,7 @@ pub struct ContextAttr {
 fn get_data_ref(
   ctx2d: &Context,
   mime: &str,
-  quality_or_config: &Either3<u32, String, Unknown>,
+  quality_or_config: &Either3<u32, AvifConfig, Unknown>,
 ) -> Result<ContextOutputData> {
   let surface_ref = ctx2d.surface.reference();
   let quality = quality_or_config.to_quality(mime);
@@ -301,16 +310,13 @@ fn get_data_ref(
           "Encode to avif error, failed to get surface pixels".to_owned(),
         )
       })?;
-      let config = AVIFConfig::from(quality_or_config);
-      let output = ravif::encode_rgba(
-        ravif::Img::new(
-          unsafe { slice::from_raw_parts(data, size) }.as_rgba(),
-          ctx2d.width as usize,
-          ctx2d.height as usize,
-        ),
-        &ravif::Config::from(config),
+      let config = AvifConfig::from(quality_or_config).into();
+      let output = avif::encode(
+        unsafe { slice::from_raw_parts(data, size) },
+        ctx2d.width,
+        ctx2d.height,
+        &config,
       )
-      .map(|(o, _width, _height)| o)
       .map_err(|e| Error::new(Status::GenericFailure, format!("{}", e)))?;
       return Ok(ContextOutputData::Avif(output));
     }
@@ -362,7 +368,7 @@ trait ToQuality {
   fn to_quality(&self, mime: &str) -> u8;
 }
 
-impl ToQuality for &Either3<u32, String, Unknown> {
+impl ToQuality for &Either3<u32, AvifConfig, Unknown> {
   fn to_quality(&self, mime_or_format: &str) -> u8 {
     if let Either3::A(q) = &self {
       *q as u8
@@ -375,7 +381,7 @@ impl ToQuality for &Either3<u32, String, Unknown> {
   }
 }
 
-impl ToQuality for Either3<u32, String, Unknown> {
+impl ToQuality for Either3<u32, AvifConfig, Unknown> {
   fn to_quality(&self, mime: &str) -> u8 {
     ToQuality::to_quality(&self, mime)
   }
