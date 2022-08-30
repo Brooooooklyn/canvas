@@ -1,7 +1,6 @@
 import b from 'benny'
 
 import { createCanvas, Canvas } from 'canvas'
-// @ts-expect-error
 import { Canvas as SkiaCanvas } from 'skia-canvas'
 
 import { createCanvas as skiaCreateCanvas } from '../index'
@@ -23,7 +22,7 @@ function drawGradient(factory: (width: number, height: number) => Canvas) {
   ctx.fillRect(20, 20, 200, 100)
 
   if (canvas instanceof SkiaCanvas) {
-    canvas.toBufferSync('image/png')
+    canvas.toBufferSync('png')
   } else {
     // @ts-expect-error
     canvas.async = false
@@ -36,6 +35,7 @@ export function gradient() {
     'Draw gradient',
 
     b.add('skia-canvas', () => {
+      // @ts-expect-error
       drawGradient((w, h) => new SkiaCanvas(w, h))
     }),
 
