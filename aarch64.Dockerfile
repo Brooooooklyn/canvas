@@ -1,5 +1,8 @@
 FROM ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-debian-aarch64
 
+ENV CFLAGS="-fuse-ld=lld --sysroot=/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot" \
+  CXXFLAGS="-fuse-ld=lld --sysroot=/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot"
+
 ADD ./lib/llvm-14 /usr/aarch64-unknown-linux-gnu/lib/llvm-14
 
 RUN apt-get update && \

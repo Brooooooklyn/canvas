@@ -5,12 +5,11 @@ use std::slice;
 use std::str::FromStr;
 
 use cssparser::{Color as CSSColor, Parser, ParserInput, RGBA};
+use libavif::AvifData;
 use napi::{bindgen_prelude::*, JsBuffer, JsString, NapiRaw, NapiValue};
-use rgb::FromSlice;
 
-use crate::pattern::CanvasPattern;
-use crate::sk::Transform;
 use crate::{
+  avif::Config,
   error::SkError,
   filter::css_filter,
   filter::css_filters_to_image_filter,
@@ -18,11 +17,11 @@ use crate::{
   gradient::{CanvasGradient, Gradient},
   image::*,
   path::Path,
-  pattern::Pattern,
+  pattern::{CanvasPattern, Pattern},
   sk::{
     AlphaType, Bitmap, BlendMode, ColorSpace, FillType, ImageFilter, LineMetrics, MaskFilter,
     Matrix, Paint, PaintStyle, Path as SkPath, PathEffect, SkEncodedImageFormat, SkWMemoryStream,
-    SkiaDataRef, Surface, SurfaceRef,
+    SkiaDataRef, Surface, SurfaceRef, Transform,
   },
   state::Context2dRenderingState,
   CanvasElement, SVGCanvas,
@@ -1887,84 +1886,20 @@ impl From<Transform> for TransformObject {
   }
 }
 
-const AVIF_DEFAULT_QUALITY: f32 = 80.0;
-
-#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
-pub struct AVIFConfig {
-  /// Quality from 1 (worst) to 100 (best), the default value is 80.
-  /// The numbers have different meaning than JPEG's quality scale.
-  pub quality: Option<f32>,
-  pub speed: Option<u8>,
-  pub threads: Option<u8>,
-}
-
-impl Default for AVIFConfig {
-  fn default() -> Self {
-    AVIFConfig {
-      quality: Some(AVIF_DEFAULT_QUALITY),
-      speed: Some(0),
-      threads: Some(4),
-    }
-  }
-}
-
-impl From<&Either3<u32, String, Unknown>> for AVIFConfig {
-  fn from(value: &Either3<u32, String, Unknown>) -> Self {
-    if let Either3::B(config_str) = value {
-      if let Ok(c) = serde_json::from_str::<AVIFConfig>(config_str) {
-        return c;
-      }
-    }
-    AVIFConfig::default()
-  }
-}
-
-impl From<Either3<u32, String, Unknown>> for AVIFConfig {
-  fn from(value: Either3<u32, String, Unknown>) -> Self {
-    Self::from(&value)
-  }
-}
-
-impl From<&AVIFConfig> for ravif::Config {
-  fn from(config: &AVIFConfig) -> Self {
-    let quality = config.quality.unwrap_or(AVIF_DEFAULT_QUALITY);
-    ravif::Config {
-      quality,
-      alpha_quality: ((quality + 100.) / 2.).min(quality + quality / 4. + 2.),
-      speed: config.speed.unwrap_or(0),
-      threads: config.threads.unwrap_or(4) as usize,
-      color_space: ravif::ColorSpace::RGB,
-      premultiplied_alpha: false,
-    }
-  }
-}
-
-impl From<&mut AVIFConfig> for ravif::Config {
-  fn from(config: &mut AVIFConfig) -> Self {
-    ravif::Config::from(&*config)
-  }
-}
-
-impl From<AVIFConfig> for ravif::Config {
-  fn from(config: AVIFConfig) -> Self {
-    ravif::Config::from(&config)
-  }
-}
-
 pub enum ContextData {
   Png(SurfaceRef),
   Jpeg(SurfaceRef, u8),
   Webp(SurfaceRef, u8),
-  Avif(SurfaceRef, AVIFConfig, u32, u32),
+  Avif(SurfaceRef, Config, u32, u32),
 }
-
-unsafe impl Send for ContextData {}
-unsafe impl Sync for ContextData {}
 
 pub enum ContextOutputData {
   Skia(SkiaDataRef),
-  Avif(Vec<u8>),
+  Avif(AvifData<'static>),
 }
+
+unsafe impl Send for ContextOutputData {}
+unsafe impl Sync for ContextOutputData {}
 
 impl Task for ContextData {
   type Output = ContextOutputData;
@@ -2010,15 +1945,13 @@ impl Task for ContextData {
           )
         })
         .and_then(|(data, size)| {
-          ravif::encode_rgba(
-            ravif::Img::new(
-              unsafe { slice::from_raw_parts(data, size) }.as_rgba(),
-              *width as usize,
-              *height as usize,
-            ),
-            &ravif::Config::from(config),
+          crate::avif::encode(
+            unsafe { slice::from_raw_parts(data, size) },
+            *width,
+            *height,
+            config,
           )
-          .map(|(o, _width, _height)| ContextOutputData::Avif(o))
+          .map(ContextOutputData::Avif)
           .map_err(|e| Error::new(Status::GenericFailure, format!("{}", e)))
         }),
     }
@@ -2033,7 +1966,13 @@ impl Task for ContextData {
           })
           .map(|value| value.into_raw())
       },
-      ContextOutputData::Avif(output) => env.create_buffer_with_data(output).map(|b| b.into_raw()),
+      ContextOutputData::Avif(output) => unsafe {
+        env
+          .create_buffer_with_borrowed_data(output.as_ptr(), output.len(), output, |data_ref, _| {
+            mem::drop(data_ref)
+          })
+          .map(|b| b.into_raw())
+      },
     }
   }
 }

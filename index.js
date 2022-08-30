@@ -6,7 +6,7 @@ const {
   CanvasRenderingContext2D,
   CanvasElement,
   SVGCanvas,
-  Path2D,
+  Path: Path2D,
   ImageData,
   Image,
   CanvasPattern,
@@ -48,51 +48,7 @@ Object.defineProperty(GlobalFonts, 'has', {
 
 function createCanvas(width, height, flag) {
   const isSvgBackend = typeof flag !== 'undefined'
-  const canvasElement = isSvgBackend ? new SVGCanvas(width, height, flag) : new CanvasElement(width, height)
-  const {
-    encode: canvasEncode,
-    encodeSync: canvasEncodeSync,
-    toBuffer: canvasToBuffer,
-    toDataURL: canvasToDataURL,
-    toDataURLAsync: canvasToDataURLAsync,
-  } = Object.getPrototypeOf(canvasElement)
-
-  canvasElement.encode = function encode(type, qualityOrConfig = {}) {
-    if (type === 'avif') {
-      return canvasEncode.call(this, type, JSON.stringify(qualityOrConfig))
-    }
-    return canvasEncode.call(this, type, qualityOrConfig)
-  }
-
-  canvasElement.encodeSync = function encodeSync(type, qualityOrConfig = {}) {
-    if (type === 'avif') {
-      return canvasEncodeSync.call(this, type, JSON.stringify(qualityOrConfig))
-    }
-    return canvasEncodeSync.call(this, type, qualityOrConfig)
-  }
-
-  canvasElement.toBuffer = function toBuffer(type = 'image/png', qualityOrConfig = {}) {
-    if (type === 'avif') {
-      return canvasToBuffer.call(this, type, JSON.stringify(qualityOrConfig))
-    }
-    return canvasToBuffer.call(this, type, qualityOrConfig)
-  }
-
-  canvasElement.toDataURL = function toDataURL(type = 'image/png', qualityOrConfig = {}) {
-    if (type === 'avif') {
-      return canvasToDataURL.call(this, type, JSON.stringify(qualityOrConfig))
-    }
-    return canvasToDataURL.call(this, type, qualityOrConfig)
-  }
-
-  canvasElement.toDataURLAsync = function toDataURLAsync(type = 'image/png', qualityOrConfig = {}) {
-    if (type === 'avif') {
-      return canvasToDataURLAsync.call(this, type, JSON.stringify(qualityOrConfig))
-    }
-    return canvasToDataURLAsync.call(this, type, qualityOrConfig)
-  }
-
-  return canvasElement
+  return isSvgBackend ? new SVGCanvas(width, height, flag) : new CanvasElement(width, height)
 }
 
 class Canvas {

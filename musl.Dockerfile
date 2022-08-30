@@ -1,9 +1,9 @@
 FROM node:14-alpine
 
 ENV PATH="/aarch64-linux-musl-cross/bin:/usr/local/cargo/bin/rustup:/root/.cargo/bin:$PATH" \
-  CC="clang" \
-  CXX="clang++" \
   GN_EXE=gn
+
+COPY aom /usr/aarch64-alpine-linux-musl/aom
 
 RUN apk add --no-cache \
   musl-dev \
@@ -13,13 +13,14 @@ RUN apk add --no-cache \
   python3 \
   git \
   build-base \
+  cmake \
+  perl \
   clang \
   llvm \
-  nasm \
   tar \
   xz \
   ninja && \
-  apk add --no-cache --repository http://dl-cdn.alpinelinux.org/alpine/edge/testing gn && \
+  apk add --no-cache --repository http://dl-cdn.alpinelinux.org/alpine/edge/testing gn perl nasm aom-dev meson && \
   ln -sf /usr/bin/python3 /usr/bin/python
 
 RUN rustup-init -y && \
