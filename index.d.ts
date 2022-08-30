@@ -302,9 +302,58 @@ export interface SvgCanvas {
 }
 
 export interface AvifConfig {
+  /** 0-100 scale, 100 is lossless */
   quality?: number
+  /** 0-100 scale */
+  alphaQuality?: number
+  /** rav1e preset 1 (slow) 10 (fast but crappy), default is 4 */
   speed?: number
+  /** How many threads should be used (0 = match core count) */
   threads?: number
+  /** set to '4:2:0' to use chroma subsampling, default '4:4:4' */
+  chromaSubsampling?: ChromaSubsampling
+}
+/**
+ * https://en.wikipedia.org/wiki/Chroma_subsampling#Types_of_sampling_and_subsampling
+ * https://developer.mozilla.org/en-US/docs/Web/Media/Formats/Video_concepts
+ */
+export enum ChromaSubsampling {
+  /**
+   * Each of the three Y'CbCr components has the same sample rate, thus there is no chroma subsampling. This scheme is sometimes used in high-end film scanners and cinematic post-production.
+   * Note that "4:4:4" may instead be wrongly referring to R'G'B' color space, which implicitly also does not have any chroma subsampling (except in JPEG R'G'B' can be subsampled).
+   * Formats such as HDCAM SR can record 4:4:4 R'G'B' over dual-link HD-SDI.
+   */
+  Yuv444 = 0,
+  /**
+   * The two chroma components are sampled at half the horizontal sample rate of luma: the horizontal chroma resolution is halved. This reduces the bandwidth of an uncompressed video signal by one-third.
+   * Many high-end digital video formats and interfaces use this scheme:
+   * - [AVC-Intra 100](https://en.wikipedia.org/wiki/AVC-Intra)
+   * - [Digital Betacam](https://en.wikipedia.org/wiki/Betacam#Digital_Betacam)
+   * - [Betacam SX](https://en.wikipedia.org/wiki/Betacam#Betacam_SX)
+   * - [DVCPRO50](https://en.wikipedia.org/wiki/DV#DVCPRO) and [DVCPRO HD](https://en.wikipedia.org/wiki/DV#DVCPRO_HD)
+   * - [Digital-S](https://en.wikipedia.org/wiki/Digital-S)
+   * - [CCIR 601](https://en.wikipedia.org/wiki/Rec._601) / [Serial Digital Interface](https://en.wikipedia.org/wiki/Serial_digital_interface) / [D1](https://en.wikipedia.org/wiki/D-1_(Sony))
+   * - [ProRes (HQ, 422, LT, and Proxy)](https://en.wikipedia.org/wiki/Apple_ProRes)
+   * - [XDCAM HD422](https://en.wikipedia.org/wiki/XDCAM)
+   * - [Canon MXF HD422](https://en.wikipedia.org/wiki/Canon_XF-300)
+   */
+  Yuv422 = 1,
+  /**
+   * n 4:2:0, the horizontal sampling is doubled compared to 4:1:1,
+   * but as the **Cb** and **Cr** channels are only sampled on each alternate line in this scheme, the vertical resolution is halved.
+   * The data rate is thus the same.
+   * This fits reasonably well with the PAL color encoding system, since this has only half the vertical chrominance resolution of [NTSC](https://en.wikipedia.org/wiki/NTSC).
+   * It would also fit extremely well with the [SECAM](https://en.wikipedia.org/wiki/SECAM) color encoding system,
+   * since like that format, 4:2:0 only stores and transmits one color channel per line (the other channel being recovered from the previous line).
+   * However, little equipment has actually been produced that outputs a SECAM analogue video signal.
+   * In general, SECAM territories either have to use a PAL-capable display or a [transcoder](https://en.wikipedia.org/wiki/Transcoding) to convert the PAL signal to SECAM for display.
+   */
+  Yuv420 = 2,
+  /**
+   * What if the chroma subsampling model is 4:0:0?
+   * That says to use every pixel of luma data, but that each row has 0 chroma samples applied to it. The resulting image, then, is comprised solely of the luminance data—a greyscale image.
+   */
+  Yuv400 = 3,
 }
 
 export class Canvas {
