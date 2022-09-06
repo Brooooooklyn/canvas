@@ -70,6 +70,7 @@ function makeRequest(url, resolve, reject, redirectCount, requestOptions) {
 
     consumeStream(res).then(resolve, reject)
   })
+  .on("error", reject);
 }
 
 // use stream/consumers in the future?
