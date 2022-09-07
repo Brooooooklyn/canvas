@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1661849702767,
+  "lastUpdate": 1662521010630,
   "repoUrl": "https://github.com/Brooooooklyn/canvas",
   "entries": {
     "Benchmark": [
@@ -17918,6 +17918,72 @@ window.BENCHMARK_DATA = {
             "range": "±0.92%",
             "unit": "ops/sec",
             "extra": "47 samples"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "liluwei123@163.com",
+            "name": "rambo-panda",
+            "username": "rambo-panda"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "8491685defb651b591b1db7c2c484cd8a5a858df",
+          "message": "fix: error listening to req (#555)\n\n* fix: error listening to req\r\n\r\n* feat: eslint\r\n\r\nCo-authored-by: rambo <luwei.li@17zuoye.com>",
+          "timestamp": "2022-09-07T11:15:15+08:00",
+          "tree_id": "c8e689e1942d3cd5dc83cf81da1639deeb2a2306",
+          "url": "https://github.com/Brooooooklyn/canvas/commit/8491685defb651b591b1db7c2c484cd8a5a858df"
+        },
+        "date": 1662520939314,
+        "tool": "benchmarkjs",
+        "benches": [
+          {
+            "name": "Draw house#skia-canvas",
+            "value": 24,
+            "range": "±0.5%",
+            "unit": "ops/sec",
+            "extra": "43 samples"
+          },
+          {
+            "name": "Draw house#node-canvas",
+            "value": 26,
+            "range": "±0.9%",
+            "unit": "ops/sec",
+            "extra": "47 samples"
+          },
+          {
+            "name": "Draw house#@napi-rs/skia",
+            "value": 23,
+            "range": "±0.18%",
+            "unit": "ops/sec",
+            "extra": "42 samples"
+          },
+          {
+            "name": "Draw gradient#skia-canvas",
+            "value": 23,
+            "range": "±0.05%",
+            "unit": "ops/sec",
+            "extra": "42 samples"
+          },
+          {
+            "name": "Draw gradient#node-canvas",
+            "value": 25,
+            "range": "±0.23%",
+            "unit": "ops/sec",
+            "extra": "46 samples"
+          },
+          {
+            "name": "Draw gradient#@napi-rs/skia",
+            "value": 22,
+            "range": "±0.15%",
+            "unit": "ops/sec",
+            "extra": "41 samples"
           }
         ]
       }
