@@ -836,7 +836,7 @@ impl CanvasRenderingContext2D {
       );
       return;
     }
-
+    self.context.state.global_alpha = alpha;
     self.context.state.paint.set_alpha((alpha * 255.0) as u8);
   }
 
