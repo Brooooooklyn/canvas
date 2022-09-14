@@ -83,10 +83,21 @@ test('transform-with-radial-gradient-x', async (t) => {
   await snapshotImage(t, { canvas, ctx })
 })
 
-test('global-alpha-should-not-effect-drawImage', async (t) => {
+test('fill-alpha-should-not-effect-drawImage', async (t) => {
   const canvas = createCanvas(300, 320)
   const ctx = canvas.getContext('2d')
   ctx.fillStyle = 'rgba(3, 169, 244, 0.5)'
+
+  // Image
+  const image = await fs.readFile(join(__dirname, 'javascript.png'))
+  ctx.drawImage(await loadImage(image), 0, 0, 200, 100)
+  await snapshotImage(t, { ctx, canvas })
+})
+
+test('global-alpha-should-effect-drawImage', async (t) => {
+  const canvas = createCanvas(300, 320)
+  const ctx = canvas.getContext('2d')
+  ctx.globalAlpha = 0.2
 
   // Image
   const image = await fs.readFile(join(__dirname, 'javascript.png'))

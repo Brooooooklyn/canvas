@@ -613,8 +613,7 @@ impl Context {
     d_height: f32,
   ) -> Result<()> {
     let bitmap = bitmap.0.bitmap;
-    let mut paint = self.fill_paint()?;
-    paint.set_alpha((self.state.global_alpha * 255.0).round() as u8);
+    let paint = self.fill_paint()?;
     if let Some(drop_shadow_paint) = self.drop_shadow_paint(&paint) {
       let surface = &mut self.surface;
       surface.canvas.draw_image(
@@ -836,7 +835,7 @@ impl CanvasRenderingContext2D {
       );
       return;
     }
-
+    self.context.state.global_alpha = alpha;
     self.context.state.paint.set_alpha((alpha * 255.0) as u8);
   }
 
