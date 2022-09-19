@@ -1,5 +1,3 @@
-/// <reference lib="dom" />
-
 // Clear all type of caches in Skia
 export function clearAllCache(): void
 
