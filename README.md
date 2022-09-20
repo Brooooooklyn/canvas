@@ -328,7 +328,7 @@ $ node scripts/build-skia.js
 
 # Install NPM packages, build the Node.js addon:
 $ npm install -g yarn
-$ yarn install --mode=skip-build # Here are modules are used for benchmarking and hard to install, you can skip it by specifying `--mode=skip=build`
+$ yarn install --mode=skip-build # Here are modules that are used for benchmarking and are hard to install, you can skip it by specifying `--mode=skip-build`
 $ sudo dnf install clang # https://fedora.pkgs.org/34/fedora-x86_64/clang-12.0.0-0.3.rc1.fc34.x86_64.rpm.html
 $ yarn build
 
