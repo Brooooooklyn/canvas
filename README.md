@@ -96,7 +96,7 @@ main()
 const { writeFileSync } = require('fs')
 const { join } = require('path')
 
-const { createCanvas, GlobalFonts } = require('../index.js')
+const { createCanvas, GlobalFonts } = require('@napi-rs/canvas')
 
 GlobalFonts.registerFromPath(join(__dirname, '..', 'fonts', 'AppleColorEmoji@2x.ttf'), 'Apple Emoji')
 GlobalFonts.registerFromPath(join(__dirname, '..', '__test__', 'fonts', 'COLRv1.ttf'), 'COLRv1')
