@@ -72,15 +72,18 @@ pub struct CanvasRenderingContext2DAttributes {
 
 #[napi]
 pub struct CanvasElement {
-  pub width: u32,
-  pub height: u32,
+  pub(crate) width: u32,
+  pub(crate) height: u32,
   pub(crate) ctx: ClassInstance<CanvasRenderingContext2D>,
 }
 
 #[napi]
 impl CanvasElement {
-  #[napi(constructor)]
-  pub fn new(mut env: Env, mut this: This, width: u32, height: u32) -> Result<Self> {
+  fn create_context(
+    mut env: Env,
+    width: u32,
+    height: u32,
+  ) -> Result<ClassInstance<CanvasRenderingContext2D>> {
     let ctx = CanvasRenderingContext2D::into_instance(
       CanvasRenderingContext2D {
         context: Context::new(width, height, ColorSpace::default())?,
@@ -96,10 +99,50 @@ impl CanvasElement {
         .with_property_attributes(PropertyAttributes::Writable | PropertyAttributes::Configurable),
     ])?;
     env.adjust_external_memory((width * height * 4) as i64)?;
+    Ok(ctx)
+  }
+
+  #[napi(constructor)]
+  pub fn new(env: Env, mut this: This, width: u32, height: u32) -> Result<Self> {
+    let ctx = Self::create_context(env, width, height)?;
     this.define_properties(&[Property::new("ctx")?
       .with_value(&ctx)
       .with_property_attributes(PropertyAttributes::Default)])?;
     Ok(Self { width, height, ctx })
+  }
+
+  #[napi(setter)]
+  pub fn set_width(&mut self, mut env: Env, width: u32) -> Result<()> {
+    self.width = width;
+    let height = self.height;
+    let old_ctx = mem::replace(
+      &mut self.ctx.context,
+      Context::new(width, height, ColorSpace::default())?,
+    );
+    env.adjust_external_memory((width as i64 - old_ctx.width as i64) * 4)?;
+    Ok(())
+  }
+
+  #[napi(getter)]
+  pub fn get_width(&self) -> u32 {
+    self.width
+  }
+
+  #[napi(setter)]
+  pub fn set_height(&mut self, mut env: Env, height: u32) -> Result<()> {
+    self.height = height;
+    let width = self.width;
+    let old_ctx = mem::replace(
+      &mut self.ctx.context,
+      Context::new(width, height, ColorSpace::default())?,
+    );
+    env.adjust_external_memory((height as i64 - old_ctx.height as i64) * 4)?;
+    Ok(())
+  }
+
+  #[napi(getter)]
+  pub fn get_height(&self) -> u32 {
+    self.height
   }
 
   #[napi]
