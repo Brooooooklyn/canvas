@@ -2,27 +2,25 @@ use std::mem;
 
 use napi::{bindgen_prelude::*, JsBuffer};
 
-use crate::sk::sk_svg_text_to_path;
+use crate::{error::SkError, global_fonts::get_font, sk::sk_svg_text_to_path};
 
 #[napi(js_name = "convertSVGTextToPath")]
 pub fn convert_svg_text_to_path(
   env: Env,
   input: Either3<Buffer, String, Unknown>,
 ) -> Result<JsBuffer> {
-  sk_svg_text_to_path(
-    input.as_bytes()?,
-    &*crate::global_fonts::GLOBAL_FONT_COLLECTION,
-  )
-  .ok_or_else(|| {
-    Error::new(
-      Status::InvalidArg,
-      "Convert svg text to path failed".to_owned(),
-    )
-  })
-  .and_then(|v| unsafe {
-    env.create_buffer_with_borrowed_data(v.0.ptr, v.0.size, v, |d, _| mem::drop(d))
-  })
-  .map(|b| b.into_raw())
+  let font = get_font().map_err(SkError::from)?;
+  sk_svg_text_to_path(input.as_bytes()?, &*font)
+    .ok_or_else(|| {
+      Error::new(
+        Status::InvalidArg,
+        "Convert svg text to path failed".to_owned(),
+      )
+    })
+    .and_then(|v| unsafe {
+      env.create_buffer_with_borrowed_data(v.0.ptr, v.0.size, v, |d, _| mem::drop(d))
+    })
+    .map(|b| b.into_raw())
 }
 
 trait AsBytes {

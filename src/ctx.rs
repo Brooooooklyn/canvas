@@ -8,6 +8,7 @@ use cssparser::{Color as CSSColor, Parser, ParserInput, RGBA};
 use libavif::AvifData;
 use napi::{bindgen_prelude::*, JsBuffer, JsString, NapiRaw, NapiValue};
 
+use crate::global_fonts::get_font;
 use crate::{
   avif::Config,
   error::SkError,
@@ -666,6 +667,7 @@ impl Context {
       let surface = &mut self.surface;
       surface.save();
       Self::apply_shadow_offset_matrix(surface, state.shadow_offset_x, state.shadow_offset_y)?;
+      let font = get_font()?;
       surface.canvas.draw_text(
         text,
         x,
@@ -675,7 +677,7 @@ impl Context {
         weight,
         stretch as i32,
         slant,
-        &*crate::global_fonts::GLOBAL_FONT_COLLECTION,
+        &*font,
         state.font_style.size,
         &state.font_style.family,
         state.text_baseline,
@@ -683,9 +685,10 @@ impl Context {
         state.text_direction,
         &shadow_paint,
       )?;
+      mem::drop(font);
       surface.restore();
     }
-
+    let font = get_font()?;
     self.surface.canvas.draw_text(
       text,
       x,
@@ -695,7 +698,7 @@ impl Context {
       weight,
       stretch as i32,
       slant,
-      &*crate::global_fonts::GLOBAL_FONT_COLLECTION,
+      &*font,
       state.font_style.size,
       &state.font_style.family,
       state.text_baseline,
@@ -712,9 +715,10 @@ impl Context {
     let weight = state.font_style.weight;
     let stretch = state.font_style.stretch;
     let slant = state.font_style.style;
+    let font = get_font()?;
     let line_metrics = LineMetrics(self.surface.canvas.get_line_metrics(
       text,
-      &*crate::global_fonts::GLOBAL_FONT_COLLECTION,
+      &*font,
       state.font_style.size,
       weight,
       stretch as i32,
