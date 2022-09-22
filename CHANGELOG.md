@@ -1,3 +1,14 @@
+## [0.1.30](https://github.com/Brooooooklyn/canvas/compare/v0.1.29...v0.1.30) (2022-09-22)
+
+### Bug Fixes
+
+- add Mutex guard to GlobalFont ([7e0a51a](https://github.com/Brooooooklyn/canvas/commit/7e0a51a63aa443871e0a7efd45c27998162e944a))
+- ctx.globalAlpha should effect drawImage ([#561](https://github.com/Brooooooklyn/canvas/issues/561)) ([9c505e2](https://github.com/Brooooooklyn/canvas/commit/9c505e2530a6c526b1e338a785115edeeafae267))
+- error listening to req ([#555](https://github.com/Brooooooklyn/canvas/issues/555)) ([8491685](https://github.com/Brooooooklyn/canvas/commit/8491685defb651b591b1db7c2c484cd8a5a858df))
+- resize canvas should clear the context ([8ece352](https://github.com/Brooooooklyn/canvas/commit/8ece352cf242ad0be0f5ebd05a0c7fbde4f5ab37))
+- TypeScript types for avif config ([29b17f8](https://github.com/Brooooooklyn/canvas/commit/29b17f88c12daa3d0f3d8f6860428ab8d079cb52))
+- **types:** do not use `reference` tags ([#563](https://github.com/Brooooooklyn/canvas/issues/563)) ([9e5cc29](https://github.com/Brooooooklyn/canvas/commit/9e5cc29807949045cdfb3cca74cb42f7b14709fc))
+
 ## [0.1.29](https://github.com/Brooooooklyn/canvas/compare/v0.1.28...v0.1.29) (2022-08-26)
 
 ### Bug Fixes
