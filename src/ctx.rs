@@ -677,7 +677,7 @@ impl Context {
         weight,
         stretch as i32,
         slant,
-        &*font,
+        &font,
         state.font_style.size,
         &state.font_style.family,
         state.text_baseline,
@@ -698,7 +698,7 @@ impl Context {
       weight,
       stretch as i32,
       slant,
-      &*font,
+      &font,
       state.font_style.size,
       &state.font_style.family,
       state.text_baseline,
@@ -718,7 +718,7 @@ impl Context {
     let font = get_font()?;
     let line_metrics = LineMetrics(self.surface.canvas.get_line_metrics(
       text,
-      &*font,
+      &font,
       state.font_style.size,
       weight,
       stretch as i32,
