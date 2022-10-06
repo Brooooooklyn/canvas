@@ -10,7 +10,7 @@ pub fn convert_svg_text_to_path(
   input: Either3<Buffer, String, Unknown>,
 ) -> Result<JsBuffer> {
   let font = get_font().map_err(SkError::from)?;
-  sk_svg_text_to_path(input.as_bytes()?, &*font)
+  sk_svg_text_to_path(input.as_bytes()?, &font)
     .ok_or_else(|| {
       Error::new(
         Status::InvalidArg,
