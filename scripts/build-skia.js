@@ -59,7 +59,6 @@ const GN_ARGS = [
   `skia_use_harfbuzz=true`,
   `skia_use_icu=true`,
   `skia_use_sfntly=false`,
-  `skia_use_libgifcodec=true`,
   `skia_use_libheif=true`,
   `skia_use_libjpeg_turbo_decode=true`,
   `skia_use_libjpeg_turbo_encode=true`,
