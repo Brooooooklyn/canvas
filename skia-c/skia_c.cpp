@@ -1377,6 +1377,25 @@ extern "C"
 
   // Bitmap
 
+  SkBitmap *get_oriented_bitmap(SkBitmap *bitmap, SkImageInfo info, SkEncodedOrigin origin)
+  {
+    bool flip_width_height = origin == kLeftTop_SkEncodedOrigin ||
+                            origin == kRightTop_SkEncodedOrigin ||
+                            origin == kRightBottom_SkEncodedOrigin ||
+                            origin == kLeftBottom_SkEncodedOrigin;
+    int width = flip_width_height ? bitmap->height() : bitmap->width();
+    int height = flip_width_height ? bitmap->width() : bitmap->height();
+    auto oriented_bitmap = new SkBitmap();
+    auto oriented_bitmap_info = SkImageInfo::Make(width, height, info.colorType(), info.alphaType());
+    oriented_bitmap->allocPixels(oriented_bitmap_info);
+    auto canvas = new SkCanvas(*oriented_bitmap);
+    auto matrix = SkEncodedOriginToMatrix(origin, width, height);
+    canvas->setMatrix(matrix);
+    auto image = SkImage::MakeFromBitmap(*bitmap);
+    canvas->drawImage(image, 0, 0);
+    return oriented_bitmap;
+  }
+
   void skiac_bitmap_make_from_buffer(const uint8_t *ptr, size_t size, skiac_bitmap_info *bitmap_info)
   {
     auto data = SkData::MakeWithoutCopy(reinterpret_cast<const void *>(ptr), size);
@@ -1386,9 +1405,14 @@ extern "C"
     auto bitmap = new SkBitmap();
     bitmap->allocPixels(info);
     codec->getPixels(info, bitmap->getPixels(), row_bytes);
+    SkEncodedOrigin origin = codec->getOrigin();
+    if (origin != kDefault_SkEncodedOrigin)
+    {
+      bitmap = get_oriented_bitmap(bitmap, info, origin);
+    }
     bitmap_info->bitmap = reinterpret_cast<skiac_bitmap *>(bitmap);
-    bitmap_info->width = info.width();
-    bitmap_info->height = info.height();
+    bitmap_info->width = bitmap->width();
+    bitmap_info->height = bitmap->height();
   }
 
   void skiac_bitmap_make_from_svg(const uint8_t *data, size_t length, float width, float height, skiac_bitmap_info *bitmap_info, uint8_t cs)
