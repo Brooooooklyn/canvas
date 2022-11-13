@@ -32,7 +32,7 @@ module.exports = async function loadImage(source, options = {}) {
   // if source is a string or URL instance
   if (typeof source === 'string' || source instanceof URL) {
     // if the source exists as a file, construct image from that file
-    if (fs.existsSync(source)) {
+    if (await exists(source)) {
       return createImage(await fs.promises.readFile(source), options.alt)
     } else {
       // the source is a remote url here
@@ -100,4 +100,13 @@ function isBufferLike(src) {
     src instanceof SharedArrayBuffer ||
     src instanceof Object.getPrototypeOf(Uint8Array)
   )
+}
+
+async function exists(path) {
+  try {
+    await fs.promises.access(path, fs.constants.F_OK)
+    return true
+  } catch {
+    return false
+  }
 }
