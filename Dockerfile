@@ -9,13 +9,16 @@ ENV RUSTUP_HOME=/usr/local/rustup \
   CXX=clang++ \
   CC_x86_64_unknown_linux_gnu=clang \
   CXX_x86_64_unknown_linux_gnu=clang++ \
-  RUST_TARGET=x86_64-unknown-linux-gnu
+  RUST_TARGET=x86_64-unknown-linux-gnu \
+  LDFLAGS="-fuse-ld=lld --sysroot=/usr/x86_64-unknown-linux-gnu/x86_64-unknown-linux-gnu/sysroot" \
+  CFLAGS="-fuse-ld=lld --sysroot=/usr/x86_64-unknown-linux-gnu/x86_64-unknown-linux-gnu/sysroot" \
+  CXX_FLAGS="-fuse-ld=lld --sysroot=/usr/x86_64-unknown-linux-gnu/x86_64-unknown-linux-gnu/sysroot"
 
 RUN apt-get update && \
   apt-get install -y --fix-missing --no-install-recommends gpg-agent ca-certificates openssl && \
   wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - && \
-  echo "deb http://apt.llvm.org/focal/ llvm-toolchain-focal-15 main" >> /etc/apt/sources.list && \
-  echo "deb-src http://apt.llvm.org/focal/ llvm-toolchain-focal-15 main" >> /etc/apt/sources.list && \
+  echo "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-15 main" >> /etc/apt/sources.list && \
+  echo "deb-src http://apt.llvm.org/jammy/ llvm-toolchain-jammy-15 main" >> /etc/apt/sources.list && \
   curl -sL https://deb.nodesource.com/setup_16.x | bash - && \
   apt-get update && \
   apt-get install -y --fix-missing --no-install-recommends \
@@ -36,6 +39,7 @@ RUN apt-get update && \
   ln -sf /usr/bin/clang++-15 /usr/bin/clang++ && \
   ln -sf /usr/bin/lld-15 /usr/bin/lld && \
   rm /usr/lib/llvm-15/lib/libc++abi.so && \
+  ln -sf /usr/lib/llvm-15/lib/libc++.a /usr/x86_64-unknown-linux-gnu/lib/gcc/x86_64-unknown-linux-gnu/4.8.5/libc++.a && \
   npm install --location=global yarn && \
   npm cache clean --force && \
   curl https://sh.rustup.rs -sSf | sh -s -- -y && \
