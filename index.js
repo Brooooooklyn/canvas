@@ -31,20 +31,24 @@ const SvgExportFlag = {
 // eslint-disable-next-line sonarjs/no-unused-collection
 const Fonts = []
 
-Object.defineProperty(GlobalFonts, 'families', {
-  get: function () {
-    return JSON.parse(GlobalFonts.getFamilies())
-  },
-})
+if (!('families' in GlobalFonts)) {
+  Object.defineProperty(GlobalFonts, 'families', {
+    get: function () {
+      return JSON.parse(GlobalFonts.getFamilies())
+    },
+  })
+}
 
-Object.defineProperty(GlobalFonts, 'has', {
-  value: function has(name) {
-    return !!JSON.parse(GlobalFonts.getFamilies()).find(({ family }) => family === name)
-  },
-  configurable: false,
-  enumerable: false,
-  writable: false,
-})
+if (!('has' in GlobalFonts)) {
+  Object.defineProperty(GlobalFonts, 'has', {
+    value: function has(name) {
+      return !!JSON.parse(GlobalFonts.getFamilies()).find(({ family }) => family === name)
+    },
+    configurable: false,
+    enumerable: false,
+    writable: false,
+  })
+}
 
 function createCanvas(width, height, flag) {
   const isSvgBackend = typeof flag !== 'undefined'
