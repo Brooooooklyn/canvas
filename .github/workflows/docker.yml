@@ -42,7 +42,7 @@ jobs:
         uses: addnab/docker-run-action@v3
         with:
           image: ghcr.io/napi-rs/napi-rs/nodejs:aarch64-16
-          options: '--user 0:0 -e GITHUB_TOKEN -v ${{ github.workspace }}/lib/llvm-14:/usr/lib/llvm-14'
+          options: '--user 0:0 -e GITHUB_TOKEN -v ${{ github.workspace }}/lib/llvm-15:/usr/lib/llvm-15'
           run: >-
             apt-get update &&
             apt-get install -y wget &&
