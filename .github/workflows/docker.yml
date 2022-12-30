@@ -3,6 +3,7 @@ name: Docker nightly build
 on:
   schedule:
     - cron: '0 1 * * *'
+  workflow_dispatch:
 
 jobs:
   build_image:
