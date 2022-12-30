@@ -10,7 +10,7 @@ ENV RUSTUP_HOME=/usr/local/rustup \
   CC_x86_64_unknown_linux_gnu=clang \
   CXX_x86_64_unknown_linux_gnu=clang++ \
   RUST_TARGET=x86_64-unknown-linux-gnu \
-  LDFLAGS="-fuse-ld=lld --sysroot=/usr/x86_64-unknown-linux-gnu/x86_64-unknown-linux-gnu/sysroot" \
+  LDFLAGS="-fuse-ld=lld --sysroot=/usr/x86_64-unknown-linux-gnu/x86_64-unknown-linux-gnu/sysroot -L/usr/lib/llvm-15/lib" \
   CFLAGS="-fuse-ld=lld --sysroot=/usr/x86_64-unknown-linux-gnu/x86_64-unknown-linux-gnu/sysroot" \
   CXXFLAGS="-fuse-ld=lld -stdlib=libc++ --sysroot=/usr/x86_64-unknown-linux-gnu/x86_64-unknown-linux-gnu/sysroot"
 
@@ -39,6 +39,7 @@ RUN apt-get update && \
   ln -sf /usr/bin/clang++-15 /usr/bin/clang++ && \
   ln -sf /usr/bin/lld-15 /usr/bin/lld && \
   rm /usr/lib/llvm-15/lib/libc++abi.so && \
+  rm /usr/lib/llvm-15/lib/libunwind.so && \
   ln -sf /usr/lib/llvm-15/lib/libc++.a /usr/x86_64-unknown-linux-gnu/lib/gcc/x86_64-unknown-linux-gnu/4.8.5/libc++.a && \
   npm install --location=global yarn && \
   npm cache clean --force && \
