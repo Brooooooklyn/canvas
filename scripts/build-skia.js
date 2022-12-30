@@ -122,7 +122,7 @@ switch (PLATFORM_NAME) {
       HOST_LIBC === 'glibc' &&
       (HOST_ARCH === 'x64' || HOST_ARCH === 'arm64')
     ) {
-      ExtraCflagsCC += ',"-stdlib=libc++", "-static", "-I/usr/lib/llvm-14/include/c++/v1"'
+      ExtraCflagsCC += ',"-stdlib=libc++", "-static", "-I/usr/lib/llvm-15/include/c++/v1"'
     }
     break
   default:
@@ -135,9 +135,9 @@ switch (TARGET_TRIPLE) {
     ExtraCflags =
       '"--target=aarch64-unknown-linux-gnu", "--sysroot=/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot", "-I/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot/usr/include", "-march=armv8-a"'
     ExtraCflagsCC +=
-      ', "--target=aarch64-unknown-linux-gnu", "--sysroot=/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot", "-I/usr/lib/llvm-14/include/c++/v1", "-I/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot/usr/include", "-march=armv8-a"'
+      ', "--target=aarch64-unknown-linux-gnu", "--sysroot=/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot", "-I/usr/lib/llvm-15/include/c++/v1", "-I/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot/usr/include", "-march=armv8-a"'
     ExtraLdFlags =
-      '"-fuse-ld=lld", "-L/usr/aarch64-unknown-linux-gnu/lib/llvm-14/lib", "-L/usr/aarch64-unknown-linux-gnu/lib", "-L/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot/lib", "-L/usr/aarch64-unknown-linux-gnu/lib/gcc/aarch64-unknown-linux-gnu/4.8.5"'
+      '"-fuse-ld=lld", "-L/usr/aarch64-unknown-linux-gnu/lib/llvm-15/lib", "-L/usr/aarch64-unknown-linux-gnu/lib", "-L/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot/lib", "-L/usr/aarch64-unknown-linux-gnu/lib/gcc/aarch64-unknown-linux-gnu/4.8.5"'
     ExtraAsmFlags = '"--target=aarch64-unknown-linux-gnu", "-march=armv8-a"'
 
     GN_ARGS.push(
