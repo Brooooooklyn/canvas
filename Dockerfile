@@ -12,7 +12,7 @@ ENV RUSTUP_HOME=/usr/local/rustup \
   RUST_TARGET=x86_64-unknown-linux-gnu \
   LDFLAGS="-fuse-ld=lld --sysroot=/usr/x86_64-unknown-linux-gnu/x86_64-unknown-linux-gnu/sysroot" \
   CFLAGS="-fuse-ld=lld --sysroot=/usr/x86_64-unknown-linux-gnu/x86_64-unknown-linux-gnu/sysroot" \
-  CXX_FLAGS="-fuse-ld=lld -stdlib=libc++ --sysroot=/usr/x86_64-unknown-linux-gnu/x86_64-unknown-linux-gnu/sysroot"
+  CXXFLAGS="-fuse-ld=lld -stdlib=libc++ --sysroot=/usr/x86_64-unknown-linux-gnu/x86_64-unknown-linux-gnu/sysroot"
 
 RUN apt-get update && \
   apt-get install -y --fix-missing --no-install-recommends gpg-agent ca-certificates openssl && \
