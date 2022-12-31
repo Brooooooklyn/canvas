@@ -57,6 +57,7 @@
     "lint": "eslint . -c ./.eslintrc.yml",
     "prepublishOnly": "pinst --disable && napi prepublish -t npm",
     "postpublish": "pinst --enable",
+    "test:ci": "ava -c 1",
     "test": "ava",
     "version": "napi version && conventional-changelog -p angular -i CHANGELOG.md -s && git add CHANGELOG.md"
   },

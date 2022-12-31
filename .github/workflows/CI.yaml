@@ -243,7 +243,7 @@ jobs:
         run: node ./scripts/release-skia-binary.js --download-icu
 
       - name: Test bindings
-        run: yarn test
+        run: yarn test:ci
 
       - name: Test failed
         if: ${{ failure() }}
@@ -301,7 +301,7 @@ jobs:
         shell: bash
 
       - name: Test bindings
-        run: docker run --rm -v $(pwd):/canvas -w /canvas node:${{ matrix.node }}-slim yarn test
+        run: docker run --rm -v $(pwd):/canvas -w /canvas node:${{ matrix.node }}-slim yarn test:ci
 
       - name: Test failed
         if: ${{ failure() }}
@@ -361,7 +361,7 @@ jobs:
         shell: bash
 
       - name: Test bindings
-        run: docker run --rm -v $(pwd):/canvas -w /canvas node:${{ matrix.node }}-alpine yarn test
+        run: docker run --rm -v $(pwd):/canvas -w /canvas node:${{ matrix.node }}-alpine yarn test:ci
 
       - name: Test failed
         if: ${{ failure() }}
@@ -423,7 +423,7 @@ jobs:
           options: -v ${{ github.workspace }}:/skia -w /skia
           run: |
             set -e && \
-            yarn test && \
+            yarn test:ci && \
             ls -la
 
       - name: Test failed
@@ -484,7 +484,7 @@ jobs:
           run: |
             set -e
             apk add nodejs npm yarn
-            yarn test
+            yarn test:ci
 
       - name: Test failed
         if: ${{ failure() }}
@@ -545,7 +545,7 @@ jobs:
           options: -v ${{ github.workspace }}:/skia -w /skia
           run: |
             set -e && \
-            yarn test && \
+            yarn test:ci && \
             ls -la
 
       - name: Test failed
