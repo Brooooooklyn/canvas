@@ -58,11 +58,24 @@ fn main() {
         ));
     }
     "armv7-unknown-linux-gnueabihf" => {
+      let gcc_version = String::from_utf8(
+        process::Command::new("ls")
+          .arg("/usr/arm-linux-gnueabihf/include/c++")
+          .output()
+          .unwrap()
+          .stdout,
+      )
+      .unwrap();
+      let gcc_version_trim = gcc_version.trim();
       build
         .flag("--sysroot=/usr/arm-linux-gnueabihf")
         .flag("--gcc-toolchain=arm-linux-gnueabihf-gcc")
-        .include("/usr/arm-linux-gnueabihf/include/c++/7")
-        .include("/usr/arm-linux-gnueabihf/include/c++/7/arm-linux-gnueabihf");
+        .include(format!(
+          "/usr/arm-linux-gnueabihf/include/c++/{gcc_version_trim}"
+        ))
+        .include(format!(
+          "/usr/arm-linux-gnueabihf/include/c++/{gcc_version_trim}/arm-linux-gnueabihf"
+        ));
     }
     "x86_64-unknown-linux-musl" => {
       let gcc_version = String::from_utf8(
