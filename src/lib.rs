@@ -393,10 +393,14 @@ impl Task for AsyncDataUrl {
     let mut output = format!("data:{};base64,", &self.mime);
     match &self.surface_data {
       ContextOutputData::Skia(data_ref) => {
-        base64::encode_config_buf(data_ref.slice(), base64::STANDARD, &mut output);
+        base64::encode_engine_string(
+          data_ref.slice(),
+          &mut output,
+          &base64::engine::DEFAULT_ENGINE,
+        );
       }
       ContextOutputData::Avif(o) => {
-        base64::encode_config_buf(o.as_slice(), base64::STANDARD, &mut output);
+        base64::encode_engine_string(o.as_slice(), &mut output, &base64::engine::DEFAULT_ENGINE);
       }
     }
     Ok(output)
