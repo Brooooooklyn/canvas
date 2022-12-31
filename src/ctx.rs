@@ -30,7 +30,7 @@ use crate::{
 
 impl From<SkError> for Error {
   fn from(err: SkError) -> Error {
-    Error::new(Status::InvalidArg, format!("{}", err))
+    Error::new(Status::InvalidArg, format!("{err}"))
   }
 }
 
@@ -230,7 +230,7 @@ impl Context {
 
   pub fn rotate(&mut self, angle: f32) {
     let s = &mut self.state;
-    let degrees = angle as f32 / PI * 180f32;
+    let degrees = angle / PI * 180f32;
     let inverse = Matrix::rotated(-angle, 0.0, 0.0);
     self.path.transform_self(&inverse);
     s.transform.pre_rotate(degrees);
@@ -409,7 +409,7 @@ impl Context {
       self.state.filter = None;
     } else {
       let (_, filters) =
-        css_filter(filter_str).map_err(|e| SkError::StringToFillRuleError(format!("{}", e)))?;
+        css_filter(filter_str).map_err(|e| SkError::StringToFillRuleError(format!("{e}")))?;
       self.state.filter = css_filters_to_image_filter(filters);
       self.state.filters_string = filter_str.to_owned();
     }
@@ -834,10 +834,7 @@ impl CanvasRenderingContext2D {
     let alpha = alpha as f32;
     if !(0.0..=1.0).contains(&alpha) {
       #[cfg(debug_assertions)]
-      eprintln!(
-        "Alpha value out of range, expected 0.0 - 1.0, but got : {}",
-        alpha
-      );
+      eprintln!("Alpha value out of range, expected 0.0 - 1.0, but got : {alpha}");
       return;
     }
     self.context.state.global_alpha = alpha;
@@ -964,7 +961,7 @@ impl CanvasRenderingContext2D {
     } {
       let raw_fill_style = fill_style.as_unknown(env);
       self.context.state.fill_style = pattern;
-      this.set(FILL_STYLE_HIDDEN_NAME, &raw_fill_style)?;
+      this.set(FILL_STYLE_HIDDEN_NAME, raw_fill_style)?;
     }
     Ok(())
   }
@@ -1021,7 +1018,7 @@ impl CanvasRenderingContext2D {
       Either3::C(pattern) => Some(pattern.inner.clone()),
     } {
       let raw_fill_style = fill_style.as_unknown(env);
-      this.set(STROKE_STYLE_HIDDEN_NAME, &raw_fill_style)?;
+      this.set(STROKE_STYLE_HIDDEN_NAME, raw_fill_style)?;
       self.context.state.stroke_style = pattern;
     }
     Ok(())
@@ -1209,7 +1206,7 @@ impl CanvasRenderingContext2D {
         }
         .into_instance(env)?;
         let mut image_instance = unsafe { Object::from_raw_unchecked(env.raw(), instance.raw()) };
-        image_instance.set("data", &data_object)?;
+        image_instance.set("data", data_object)?;
         Ok(instance)
       }
       Either::B(mut data_object) => {
@@ -1956,7 +1953,7 @@ impl Task for ContextData {
             config,
           )
           .map(ContextOutputData::Avif)
-          .map_err(|e| Error::new(Status::GenericFailure, format!("{}", e)))
+          .map_err(|e| Error::new(Status::GenericFailure, format!("{e}")))
         }),
     }
   }

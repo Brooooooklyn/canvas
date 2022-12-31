@@ -51,12 +51,10 @@ fn main() {
         .flag("--gcc-toolchain=aarch64-linux-musl-gcc")
         .include("/aarch64-linux-musl-cross/aarch64-linux-musl/include")
         .include(format!(
-          "/aarch64-linux-musl-cross/aarch64-linux-musl/include/c++/{}",
-          gcc_version_trim
+          "/aarch64-linux-musl-cross/aarch64-linux-musl/include/c++/{gcc_version_trim}"
         ))
         .include(format!(
-          "/aarch64-linux-musl-cross/aarch64-linux-musl/include/c++/{}/aarch64-linux-musl",
-          gcc_version_trim
+          "/aarch64-linux-musl-cross/aarch64-linux-musl/include/c++/{gcc_version_trim}/aarch64-linux-musl"
         ));
     }
     "armv7-unknown-linux-gnueabihf" => {
@@ -79,10 +77,9 @@ fn main() {
       build
         .static_flag(true)
         .include("/usr/include")
-        .include(format!("/usr/include/c++/{}", gcc_version_trim))
+        .include(format!("/usr/include/c++/{gcc_version_trim}"))
         .include(format!(
-          "/usr/include/c++/{}/x86_64-alpine-linux-musl",
-          gcc_version_trim
+          "/usr/include/c++/{gcc_version_trim}/x86_64-alpine-linux-musl"
         ));
     }
     "aarch64-apple-darwin" => {
@@ -93,45 +90,39 @@ fn main() {
       env::set_var(
         "CC",
         format!(
-          "{}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang",
-          nkd_home
+          "{nkd_home}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang"
         )
         .as_str(),
       );
       env::set_var(
         "CXX",
         format!(
-          "{}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang++",
-          nkd_home
+          "{nkd_home}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang++"
         )
         .as_str(),
       );
       build
         .include(
           format!(
-            "{}/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include",
-            nkd_home
+            "{nkd_home}/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include"
           )
           .as_str(),
         )
         .include(
           format!(
-            "{}/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/c++/v1",
-            nkd_home
+            "{nkd_home}/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/c++/v1"
           )
           .as_str(),
         )
         .include(
           format!(
-            "{}/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/aarch64-linux-android",
-            nkd_home
+            "{nkd_home}/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/aarch64-linux-android"
           )
           .as_str(),
         )
         .archiver(
           format!(
-            "{}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar",
-            nkd_home
+            "{nkd_home}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar"
           )
           .as_str(),
         );
@@ -204,7 +195,7 @@ fn main() {
     .out_dir(&out_dir)
     .compile("skiac");
 
-  println!("cargo:rustc-link-search={}", skia_lib_dir);
+  println!("cargo:rustc-link-search={skia_lib_dir}");
   println!("cargo:rustc-link-search={}", &out_dir);
   println!("cargo:rustc-link-lib=skshaper");
   napi_build::setup();

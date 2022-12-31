@@ -51,6 +51,6 @@ impl From<NulError> for SkError {
 
 impl<T> From<std::sync::PoisonError<T>> for SkError {
   fn from(err: std::sync::PoisonError<T>) -> Self {
-    Self::Generic(format!("PoisonError {}", err))
+    Self::Generic(format!("PoisonError {err}"))
   }
 }

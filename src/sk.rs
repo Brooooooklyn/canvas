@@ -993,8 +993,7 @@ impl StrokeCap {
       1 => Ok(Self::Round),
       2 => Ok(Self::Square),
       _ => Err(SkError::Generic(format!(
-        "{} is not valid StrokeCap value",
-        cap
+        "{cap} is not valid StrokeCap value"
       ))),
     }
   }
@@ -1036,8 +1035,7 @@ impl StrokeJoin {
       1 => Ok(Self::Round),
       2 => Ok(Self::Bevel),
       _ => Err(SkError::Generic(format!(
-        "{} is not a valid StrokeJoin value",
-        join
+        "{join} is not a valid StrokeJoin value"
       ))),
     }
   }
@@ -1333,7 +1331,7 @@ impl From<i32> for PathOp {
       2 => Self::Union,
       3 => Self::Xor,
       4 => Self::ReverseDifference,
-      _ => panic!("[{}] is not valid path op", value),
+      _ => panic!("[{value}] is not valid path op"),
     }
   }
 }
@@ -1687,7 +1685,7 @@ impl Surface {
         None
       } else {
         Some(SurfaceData {
-          slice: slice::from_raw_parts(data.ptr, data.size as usize),
+          slice: slice::from_raw_parts(data.ptr, data.size),
         })
       }
     }
@@ -1727,7 +1725,7 @@ impl Surface {
         None
       } else {
         Some(SurfaceDataMut {
-          slice: slice::from_raw_parts_mut(data.ptr, data.size as usize),
+          slice: slice::from_raw_parts_mut(data.ptr, data.size),
         })
       }
     }
@@ -2211,7 +2209,7 @@ impl Canvas {
         image.width as i32,
         image.height as i32,
         image.data,
-        (image.width * 4) as usize,
+        image.width * 4,
         x as i32,
         y as i32,
       );
@@ -2235,8 +2233,8 @@ impl Canvas {
         image.width as i32,
         image.height as i32,
         image.data,
-        (image.width * 4) as usize,
-        (image.width * image.height * 4) as usize,
+        image.width * 4,
+        image.width * image.height * 4,
         x,
         y,
         dirty_x,
@@ -2339,7 +2337,7 @@ impl Paint {
 
   pub fn set_stroke_miter(&mut self, miter: f32) {
     unsafe {
-      ffi::skiac_paint_set_stroke_miter(self.0, miter as f32);
+      ffi::skiac_paint_set_stroke_miter(self.0, miter);
     }
   }
 

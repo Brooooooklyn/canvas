@@ -257,10 +257,10 @@ impl Image {
     } else {
       let bitmap = if str::from_utf8(&data_ref[0..10]) == Ok("data:image") {
         let data_str = str::from_utf8(data_ref)
-          .map_err(|e| Error::new(Status::InvalidArg, format!("Decode data url failed {}", e)))?;
+          .map_err(|e| Error::new(Status::InvalidArg, format!("Decode data url failed {e}")))?;
         if let Some(base64_str) = data_str.split(',').last() {
           let image_binary = decode(base64_str)
-            .map_err(|e| Error::new(Status::InvalidArg, format!("Decode data url failed {}", e)))?;
+            .map_err(|e| Error::new(Status::InvalidArg, format!("Decode data url failed {e}")))?;
           Some(Bitmap::from_buffer(
             image_binary.as_ptr() as *mut u8,
             image_binary.len(),

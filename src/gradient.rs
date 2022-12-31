@@ -170,7 +170,7 @@ impl CanvasGradient {
     let color = CSSColor::parse(&mut parser).map_err(|e| {
       Error::new(
         Status::InvalidArg,
-        format!("Parse color [{}] error: {:?}", color_str, e),
+        format!("Parse color [{color_str}] error: {e:?}"),
       )
     })?;
     let skia_color = match color {

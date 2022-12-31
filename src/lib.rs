@@ -299,7 +299,7 @@ impl CanvasElement {
       _ => {
         return Err(Error::new(
           Status::InvalidArg,
-          format!("{} is not valid format", format_str),
+          format!("{format_str} is not valid format"),
         ))
       }
     };
@@ -360,13 +360,13 @@ fn get_data_ref(
         ctx2d.height,
         &config,
       )
-      .map_err(|e| Error::new(Status::GenericFailure, format!("{}", e)))?;
+      .map_err(|e| Error::new(Status::GenericFailure, format!("{e}")))?;
       return Ok(ContextOutputData::Avif(output));
     }
     _ => {
       return Err(Error::new(
         Status::InvalidArg,
-        format!("{} is not valid mime", mime),
+        format!("{mime} is not valid mime"),
       ))
     }
   } {
@@ -374,7 +374,7 @@ fn get_data_ref(
   } else {
     Err(Error::new(
       Status::InvalidArg,
-      format!("encode {} output failed", mime),
+      format!("encode {mime} output failed"),
     ))
   }
 }
