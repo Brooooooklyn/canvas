@@ -84,12 +84,10 @@ impl CanvasElement {
     width: u32,
     height: u32,
   ) -> Result<ClassInstance<CanvasRenderingContext2D>> {
-    let ctx = CanvasRenderingContext2D::into_instance(
-      CanvasRenderingContext2D {
-        context: Context::new(width, height, ColorSpace::default())?,
-      },
-      env,
-    )?;
+    let ctx = CanvasRenderingContext2D {
+      context: Context::new(width, height, ColorSpace::default())?,
+    }
+    .into_instance(env)?;
     ctx.as_object(env).define_properties(&[
       Property::new(FILL_STYLE_HIDDEN_NAME)?
         .with_value(&env.create_string("#000")?)
@@ -108,6 +106,15 @@ impl CanvasElement {
     this.define_properties(&[Property::new("ctx")?
       .with_value(&ctx)
       .with_property_attributes(PropertyAttributes::Default)])?;
+    ctx
+      .as_object(env)
+      .define_properties(&[Property::new("canvas")?
+        .with_value(&this)
+        .with_property_attributes(
+          PropertyAttributes::Default
+            | PropertyAttributes::Writable
+            | PropertyAttributes::Enumerable,
+        )])?;
     Ok(Self { width, height, ctx })
   }
 
