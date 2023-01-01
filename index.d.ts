@@ -248,8 +248,9 @@ export interface StrokeOptions {
 export interface SKRSContext2D
   extends Omit<
     CanvasRenderingContext2D,
-    'drawImage' | 'createPattern' | 'getTransform' | 'drawFocusIfNeeded' | 'scrollPathIntoView'
+    'drawImage' | 'createPattern' | 'getTransform' | 'drawFocusIfNeeded' | 'scrollPathIntoView' | 'canvas'
   > {
+  canvas: Canvas
   /**
    * @param startAngle The angle at which to begin the gradient, in radians. Angle measurements start vertically above the centre and move around clockwise.
    * @param x The x-axis coordinate of the centre of the gradient.
