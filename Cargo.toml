@@ -9,7 +9,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 anyhow = "1"
-base64 = "0.13"
+base64 = "0.20"
 cssparser = "0.29"
 napi = { version = "2", default-features = false, features = [
   "napi3",

@@ -51,20 +51,11 @@ fn main() {
         .flag("--gcc-toolchain=aarch64-linux-musl-gcc")
         .include("/aarch64-linux-musl-cross/aarch64-linux-musl/include")
         .include(format!(
-          "/aarch64-linux-musl-cross/aarch64-linux-musl/include/c++/{}",
-          gcc_version_trim
+          "/aarch64-linux-musl-cross/aarch64-linux-musl/include/c++/{gcc_version_trim}"
         ))
         .include(format!(
-          "/aarch64-linux-musl-cross/aarch64-linux-musl/include/c++/{}/aarch64-linux-musl",
-          gcc_version_trim
+          "/aarch64-linux-musl-cross/aarch64-linux-musl/include/c++/{gcc_version_trim}/aarch64-linux-musl"
         ));
-    }
-    "armv7-unknown-linux-gnueabihf" => {
-      build
-        .flag("--sysroot=/usr/arm-linux-gnueabihf")
-        .flag("--gcc-toolchain=arm-linux-gnueabihf-gcc")
-        .include("/usr/arm-linux-gnueabihf/include/c++/7")
-        .include("/usr/arm-linux-gnueabihf/include/c++/7/arm-linux-gnueabihf");
     }
     "x86_64-unknown-linux-musl" => {
       let gcc_version = String::from_utf8(
@@ -79,10 +70,9 @@ fn main() {
       build
         .static_flag(true)
         .include("/usr/include")
-        .include(format!("/usr/include/c++/{}", gcc_version_trim))
+        .include(format!("/usr/include/c++/{gcc_version_trim}"))
         .include(format!(
-          "/usr/include/c++/{}/x86_64-alpine-linux-musl",
-          gcc_version_trim
+          "/usr/include/c++/{gcc_version_trim}/x86_64-alpine-linux-musl"
         ));
     }
     "aarch64-apple-darwin" => {
@@ -93,45 +83,39 @@ fn main() {
       env::set_var(
         "CC",
         format!(
-          "{}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang",
-          nkd_home
+          "{nkd_home}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang"
         )
         .as_str(),
       );
       env::set_var(
         "CXX",
         format!(
-          "{}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang++",
-          nkd_home
+          "{nkd_home}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang++"
         )
         .as_str(),
       );
       build
         .include(
           format!(
-            "{}/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include",
-            nkd_home
+            "{nkd_home}/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include"
           )
           .as_str(),
         )
         .include(
           format!(
-            "{}/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/c++/v1",
-            nkd_home
+            "{nkd_home}/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/c++/v1"
           )
           .as_str(),
         )
         .include(
           format!(
-            "{}/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/aarch64-linux-android",
-            nkd_home
+            "{nkd_home}/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/aarch64-linux-android"
           )
           .as_str(),
         )
         .archiver(
           format!(
-            "{}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar",
-            nkd_home
+            "{nkd_home}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar"
           )
           .as_str(),
         );
@@ -163,26 +147,46 @@ fn main() {
         .static_crt(true);
     }
     "linux" => {
-      if compile_target_env != "gnu"
-        || (compile_target_arch != "x86_64" && compile_target_arch != "aarch64")
-      {
+      if compile_target_env != "gnu" {
         build.cpp_set_stdlib("stdc++");
       } else {
-        build
-          .cpp_set_stdlib("c++")
-          .flag("-static")
-          .include("/usr/lib/llvm-15/include/c++/v1");
+        build.cpp_set_stdlib("c++").flag("-static");
         println!("cargo:rustc-link-lib=static=c++");
-        if compile_target_arch == "aarch64" {
-          build
-            .include("/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot/usr/include")
-            .flag("--sysroot=/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot");
-          println!("cargo:rustc-link-search=/usr/aarch64-unknown-linux-gnu/lib/llvm-15/lib");
-          println!("cargo:rustc-link-search=/usr/aarch64-unknown-linux-gnu/lib");
-          println!("cargo:rustc-link-search=/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot/lib");
-          println!("cargo:rustc-link-search=/usr/aarch64-unknown-linux-gnu/lib/gcc/aarch64-unknown-linux-gnu/4.8.5");
-        } else {
-          println!("cargo:rustc-link-search=/usr/lib/llvm-15/lib");
+        match compile_target_arch.as_str() {
+          "aarch64" => {
+            build
+              .include(
+                "/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot/usr/include",
+              )
+              .flag("--sysroot=/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot");
+            println!("cargo:rustc-link-search=/usr/aarch64-unknown-linux-gnu/lib/llvm-15/lib");
+            println!("cargo:rustc-link-search=/usr/aarch64-unknown-linux-gnu/lib");
+            println!("cargo:rustc-link-search=/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot/lib");
+            println!("cargo:rustc-link-search=/usr/aarch64-unknown-linux-gnu/lib/gcc/aarch64-unknown-linux-gnu/4.8.5");
+          }
+          "x86_64" => {
+            build.include("/usr/lib/llvm-15/include/c++/v1");
+            println!("cargo:rustc-link-search=/usr/lib/llvm-15/lib");
+          }
+          "arm" => {
+            let gcc_version = String::from_utf8(
+              process::Command::new("ls")
+                .arg("/usr/arm-linux-gnueabihf/include/c++")
+                .output()
+                .unwrap()
+                .stdout,
+            )
+            .unwrap();
+            let gcc_version_trim = gcc_version.trim();
+            build
+              .include("/usr/arm-linux-gnueabihf/include")
+              .include(format!(
+                "/usr/arm-linux-gnueabihf/include/c++/${gcc_version_trim}/arm-linux-gnueabihf"
+              ));
+            println!("cargo:rustc-link-search=/usr/arm-linux-gnueabihf/lib");
+            println!("cargo:rustc-link-search=/usr/arm-linux-gnueabihf/lib/llvm-14/lib");
+          }
+          _ => {}
         }
       }
     }
@@ -204,7 +208,7 @@ fn main() {
     .out_dir(&out_dir)
     .compile("skiac");
 
-  println!("cargo:rustc-link-search={}", skia_lib_dir);
+  println!("cargo:rustc-link-search={skia_lib_dir}");
   println!("cargo:rustc-link-search={}", &out_dir);
   println!("cargo:rustc-link-lib=skshaper");
   napi_build::setup();

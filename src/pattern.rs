@@ -28,7 +28,7 @@ impl Pattern {
     let mut parser_input = ParserInput::new(color_str);
     let mut parser = Parser::new(&mut parser_input);
     let color = CSSColor::parse(&mut parser)
-      .map_err(|e| SkError::Generic(format!("Parse color [{}] error: {:?}", color_str, e)))?;
+      .map_err(|e| SkError::Generic(format!("Parse color [{color_str}] error: {e:?}")))?;
     match color {
       CSSColor::CurrentColor => Err(SkError::Generic(
         "Color should not be `currentcolor` keyword".to_owned(),

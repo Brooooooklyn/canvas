@@ -142,7 +142,7 @@ switch (TARGET_TRIPLE) {
 
     GN_ARGS.push(
       `extra_ldflags=[${ExtraLdFlags}]`,
-      `ar="llvm-ar-14"`,
+      `ar="llvm-ar-15"`,
       `extra_asmflags=[${ExtraAsmFlags}]`,
       `extra_cflags=[${ExtraCflags}]`,
       `extra_cflags_c=[${ExtraCflags}]`,
@@ -165,19 +165,18 @@ switch (TARGET_TRIPLE) {
     )
     break
   case 'armv7-unknown-linux-gnueabihf':
+    const armv7GccVersion = execSync('ls /usr/arm-linux-gnueabihf/include/c++').toString('utf8').trim()
     ExtraSkiaBuildFlag += ' target_cpu="armv7a" target_os="linux"'
-    ExtraCflags =
-      '"--target=arm-unknown-linux-gnueabihf", "--sysroot=/usr/arm-linux-gnueabihf", "--gcc-toolchain=arm-linux-gnueabihf-gcc-10", "-B/usr/arm-linux-gnueabihf/bin", "-I/usr/arm-linux-gnueabihf/include/c++/10", "-I/usr/arm-linux-gnueabihf/include/c++/10/arm-linux-gnueabihf", "-march=armv7-a", "-mthumb"'
-    ExtraCflagsCC +=
-      ', "--target=arm-unknown-linux-gnueabihf", "--sysroot=/usr/arm-linux-gnueabihf", "--gcc-toolchain=arm-linux-gnueabihf-gcc-10", "-B/usr/arm-linux-gnueabihf/bin", "-I/usr/arm-linux-gnueabihf/include/c++/10", "-I/usr/arm-linux-gnueabihf/include/c++/10/arm-linux-gnueabihf", "-march=armv7-a", "-mthumb"'
+    ExtraCflags = `"--target=arm-unknown-linux-gnueabihf", "-I/usr/arm-linux-gnueabihf/include/c++/${armv7GccVersion}/arm-linux-gnueabihf", "-march=armv7-a", "-mthumb"`
+    ExtraCflagsCC += `,"-stdlib=libc++", "-static", "--target=arm-unknown-linux-gnueabihf", "-I/usr/arm-linux-gnueabihf/include/c++/${armv7GccVersion}/arm-linux-gnueabihf", "-march=armv7-a", "-mthumb"`
     ExtraLdFlags =
-      '"--target=arm-unknown-linux-gnueabihf", "-B/usr/arm-linux-gnueabihf/bin", "-L/usr/arm-linux-gnueabihf/lib", "-L/usr/lib/gcc-cross/arm-linux-gnueabihf/10"'
+      '"--target=arm-unknown-linux-gnueabihf", "-B/usr/arm-linux-gnueabihf/bin", "-L/usr/arm-linux-gnueabihf/lib"'
     ExtraAsmFlags =
       '"--sysroot=/usr/arm-linux-gnueabihf", "--target=arm-unknown-linux-gnueabihf", "-march=armv7-a", "-mthumb"'
 
     GN_ARGS.push(
       `extra_ldflags=[${ExtraLdFlags}]`,
-      `ar="arm-linux-gnueabihf-gcc-ar-10"`,
+      `ar="llvm-ar-15"`,
       `extra_asmflags=[${ExtraAsmFlags}]`,
       `extra_cflags=[${ExtraCflags}]`,
       `extra_cflags_c=[${ExtraCflags}]`,

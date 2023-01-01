@@ -26,11 +26,11 @@ jobs:
             setup: brew install nasm
             build: |
               rustc --print target-cpus
-              yarn build
+              yarn build --target x86_64-apple-darwin
               strip -x skia.darwin-x64.node
             downloadTarget: ''
           - host: windows-latest
-            build: yarn build
+            build: yarn build --target x86_64-pc-windows-msvc
             target: 'x86_64-pc-windows-msvc'
             downloadTarget: ''
           - host: ubuntu-latest
@@ -39,7 +39,7 @@ jobs:
             docker: ghcr.io/brooooooklyn/canvas/ubuntu-builder:focal
             build: >-
               set -e &&
-              yarn build &&
+              yarn build --target x86_64-unknown-linux-gnu &&
               strip skia.linux-x64-gnu.node
           - host: ubuntu-latest
             downloadTarget: 'x86_64-unknown-linux-musl'
@@ -72,7 +72,7 @@ jobs:
               rustup toolchain install $(cat ./rust-toolchain) &&
               rustup target add aarch64-unknown-linux-gnu &&
               yarn build --target aarch64-unknown-linux-gnu &&
-              llvm-strip-14 skia.linux-arm64-gnu.node
+              llvm-strip-15 skia.linux-arm64-gnu.node
           - host: ubuntu-latest
             target: 'aarch64-unknown-linux-musl'
             downloadTarget: 'aarch64-unknown-linux-musl'
@@ -87,14 +87,21 @@ jobs:
               export LIB_AOM_STATIC_LIB_PATH=/usr/aarch64-alpine-linux-musl/aom/lib &&
               yarn build --target aarch64-unknown-linux-musl &&
               /aarch64-linux-musl-cross/bin/aarch64-linux-musl-strip skia.linux-arm64-musl.node
-          - host: ubuntu-18.04
+          - host: ubuntu-latest
             target: 'armv7-unknown-linux-gnueabihf'
             downloadTarget: 'armv7-unknown-linux-gnueabihf'
             setup: |
               sudo apt-get update
               sudo apt-get install gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf -y
+              docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+              docker buildx build --load --platform linux/arm/v7 -t ubuntu:jammy-armv7 . -f jammy-armv7.Dockerfile
+              docker run --rm -dt --name ubuntu-jammy-armv7 ubuntu:jammy-armv7
+              sudo mkdir -p /usr/arm-linux-gnueabihf/lib/llvm-14
+              sudo docker cp ubuntu-jammy-armv7:/usr/lib/llvm-14/lib /usr/arm-linux-gnueabihf/lib/llvm-14/lib
+              sudo docker cp ubuntu-jammy-armv7:/usr/lib/llvm-14/include /usr/arm-linux-gnueabihf/lib/llvm-14/include
+              docker stop ubuntu-jammy-armv7
             build: |
-              yarn build --target armv7-unknown-linux-gnueabihf
+              yarn build --target armv7-unknown-linux-gnueabihf --zig --zig-link-only --zig-abi-suffix=2.18
               arm-linux-gnueabihf-strip skia.linux-arm-gnueabihf.node
           - host: ubuntu-latest
             target: 'aarch64-linux-android'
@@ -112,7 +119,7 @@ jobs:
               yarn build --target aarch64-linux-android
               ${ANDROID_NDK_LATEST_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip skia.android-arm64.node
 
-    name: stable - ${{ matrix.settings.target }} - node@16
+    name: stable - ${{ matrix.settings.target }} - node@18
     runs-on: ${{ matrix.settings.host }}
 
     steps:
@@ -123,9 +130,25 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v3
         with:
-          node-version: 16
+          node-version: 18
           check-latest: true
           cache: 'yarn'
+
+      - name: Set up QEMU
+        if: ${{ matrix.settings.target == 'armv7-unknown-linux-gnueabihf' }}
+        uses: docker/setup-qemu-action@v2
+        with:
+          platforms: linux/arm/v7
+      - name: Set up Docker Buildx
+        if: ${{ matrix.settings.target == 'armv7-unknown-linux-gnueabihf' }}
+        uses: docker/setup-buildx-action@v2
+        with:
+          platforms: linux/arm/v7
+
+      - uses: goto-bus-stop/setup-zig@v2
+        if: ${{ matrix.settings.target == 'armv7-unknown-linux-gnueabihf' }}
+        with:
+          version: 0.10.0
 
       - name: Set env
         if: matrix.settings.host == 'windows-latest'
@@ -137,11 +160,10 @@ jobs:
         if: matrix.settings.host == 'windows-latest'
 
       - name: Install
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          profile: minimal
-          override: true
-          target: ${{ matrix.settings.target }}
+          targets: ${{ matrix.settings.target }}
+          toolchain: nightly-2022-12-31
 
       - name: Cache cargo registry
         uses: actions/cache@v3
@@ -153,12 +175,6 @@ jobs:
             .cargo-cache
             target/
           key: ${{ matrix.settings.target }}-cargo-registry
-
-      - name: Cache yarn
-        uses: actions/cache@v3
-        with:
-          path: .yarn/cache
-          key: ${{ matrix.settings.target }}-yarn-cache-node-16
 
       - name: Install dependencies
         run: yarn install --immutable --mode=skip-build
@@ -243,7 +259,7 @@ jobs:
         run: node ./scripts/release-skia-binary.js --download-icu
 
       - name: Test bindings
-        run: yarn test
+        run: yarn test:ci
 
       - name: Test failed
         if: ${{ failure() }}
@@ -301,7 +317,7 @@ jobs:
         shell: bash
 
       - name: Test bindings
-        run: docker run --rm -v $(pwd):/canvas -w /canvas node:${{ matrix.node }}-slim yarn test
+        run: docker run --rm -v $(pwd):/canvas -w /canvas node:${{ matrix.node }}-slim yarn test:ci
 
       - name: Test failed
         if: ${{ failure() }}
@@ -361,7 +377,7 @@ jobs:
         shell: bash
 
       - name: Test bindings
-        run: docker run --rm -v $(pwd):/canvas -w /canvas node:${{ matrix.node }}-alpine yarn test
+        run: docker run --rm -v $(pwd):/canvas -w /canvas node:${{ matrix.node }}-alpine yarn test:ci
 
       - name: Test failed
         if: ${{ failure() }}
@@ -423,7 +439,7 @@ jobs:
           options: -v ${{ github.workspace }}:/skia -w /skia
           run: |
             set -e && \
-            yarn test && \
+            yarn test:ci && \
             ls -la
 
       - name: Test failed
@@ -484,7 +500,7 @@ jobs:
           run: |
             set -e
             apk add nodejs npm yarn
-            yarn test
+            yarn test:ci
 
       - name: Test failed
         if: ${{ failure() }}
@@ -545,7 +561,7 @@ jobs:
           options: -v ${{ github.workspace }}:/skia -w /skia
           run: |
             set -e && \
-            yarn test && \
+            yarn test:ci && \
             ls -la
 
       - name: Test failed
