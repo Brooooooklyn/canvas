@@ -1,4 +1,4 @@
-import { promises, readFileSync } from 'fs'
+import { promises } from 'fs'
 import { platform } from 'os'
 import { join } from 'path'
 
@@ -15,16 +15,20 @@ const test = ava as TestFn<{
 
 const png = PNG()
 
-const fontIosevka = readFileSync(join(__dirname, 'fonts', 'iosevka-slab-regular.ttf'))
-const fontSourceSerifPro = readFileSync(join(__dirname, 'fonts', 'SourceSerifPro-Regular.ttf'))
-const fontOSRSPath = join(__dirname, 'fonts', 'osrs-font-compact.otf')
-
 test.beforeEach((t) => {
   const canvas = createCanvas(512, 512)
   t.context.canvas = canvas
   t.context.ctx = canvas.getContext('2d')!
-  console.assert(GlobalFonts.register(fontIosevka), 'Register Iosevka font failed')
-  console.assert(GlobalFonts.register(fontSourceSerifPro), 'Register SourceSerifPro font failed')
+  const fontOSRSPath = join(__dirname, 'fonts', 'osrs-font-compact.otf')
+  t.truthy(
+    GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'iosevka-slab-regular.ttf')),
+    'Register Iosevka font failed',
+  )
+  t.truthy(
+    GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'SourceSerifPro-Regular.ttf')),
+    'Register SourceSerifPro font failed',
+  )
+  t.truthy(GlobalFonts.registerFromPath(fontOSRSPath))
 })
 
 test('alpha-false', async (t) => {
@@ -471,7 +475,6 @@ test('fillText-maxWidth', async (t) => {
 })
 
 test('fillText-AA', async (t) => {
-  GlobalFonts.registerFromPath(fontOSRSPath)
   const { ctx, canvas } = t.context
   ctx.imageSmoothingEnabled = false
   ctx.font = '16px OSRSFontCompact'
