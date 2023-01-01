@@ -1,4 +1,3 @@
-import { readFileSync } from 'fs'
 import { join } from 'path'
 
 import ava, { TestFn } from 'ava'
@@ -11,13 +10,14 @@ const test = ava as TestFn<{
   ctx: SKRSContext2D
 }>
 
-const fontIosevka = readFileSync(join(__dirname, 'fonts', 'iosevka-slab-regular.ttf'))
-console.assert(GlobalFonts.register(fontIosevka), 'Register Iosevka font failed')
-
 test.beforeEach((t) => {
   const canvas = createCanvas(512, 512)
   t.context.canvas = canvas
   t.context.ctx = canvas.getContext('2d')!
+  t.truthy(
+    GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'iosevka-slab-regular.ttf')),
+    'Register Iosevka font failed',
+  )
 })
 
 for (const align of ['center', 'end', 'left', 'right', 'start'] as CanvasTextAlign[]) {
