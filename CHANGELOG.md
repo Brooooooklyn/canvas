@@ -1,3 +1,19 @@
+## [0.1.31](https://github.com/Brooooooklyn/canvas/compare/v0.1.30...v0.1.31) (2023-01-02)
+
+
+### Bug Fixes
+
+* missing canvas property on Context2D ([#597](https://github.com/Brooooooklyn/canvas/issues/597)) ([b0a351a](https://github.com/Brooooooklyn/canvas/commit/b0a351a8a8c1693ca2edcf009e77ec56df616fb5))
+* multiple define on cached native object in jest ([88f5ee9](https://github.com/Brooooooklyn/canvas/commit/88f5ee9893ed55ab3bb41947feb133507914acef))
+
+
+### Features
+
+* chrome/m107 ([9f02e86](https://github.com/Brooooooklyn/canvas/commit/9f02e869cf11f8346f65500009cba8e69b722d31))
+* chrome/m108 ([04f5a41](https://github.com/Brooooooklyn/canvas/commit/04f5a414fb45ff7e25c6d0fb3400aef969ef919b))
+
+
+
 ## [0.1.30](https://github.com/Brooooooklyn/canvas/compare/v0.1.29...v0.1.30) (2022-09-22)
 
 ### Bug Fixes
