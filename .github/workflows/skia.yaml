@@ -288,7 +288,7 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v3
         with:
-          node-version: 16
+          node-version: 18
           check-latest: true
           cache: 'yarn'
 
@@ -301,19 +301,32 @@ jobs:
         run: echo "${PWD}/depot_tools" >> $GITHUB_PATH
         shell: bash
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+        with:
+          platforms: linux/arm/v7
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+        with:
+          platforms: linux/arm/v7
+
       - name: Install cross compile tools
         run: |
+          wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
+          echo "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-15 main" | sudo tee -a /etc/apt/sources.list > /dev/null
+          echo "deb-src http://apt.llvm.org/jammy/ llvm-toolchain-jammy-15 main" | sudo tee -a /etc/apt/sources.list > /dev/null
           sudo apt-get update
-          sudo apt-get install gcc-10-arm-linux-gnueabihf g++-10-arm-linux-gnueabihf -y
+          sudo apt-get install llvm-15 clang-15 lld-15 gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf -y
+          docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+          docker buildx build --load --platform linux/arm/v7 -t ubuntu:jammy-armv7 . -f jammy-armv7.Dockerfile
+          docker run --rm -dt --name ubuntu-jammy-armv7 ubuntu:jammy-armv7
+          sudo mkdir -p /usr/arm-linux-gnueabihf/lib/llvm-14
+          sudo docker cp ubuntu-jammy-armv7:/usr/lib/llvm-14/lib /usr/arm-linux-gnueabihf/lib/llvm-14/lib
+          sudo docker cp ubuntu-jammy-armv7:/usr/lib/llvm-14/include /usr/arm-linux-gnueabihf/lib/llvm-14/include
+          docker stop ubuntu-jammy-armv7
 
       - name: Compile skia
         run: node ./scripts/build-skia.js --target=armv7-unknown-linux-gnueabihf
-
-      - name: Cache yarn
-        uses: actions/cache@v3
-        with:
-          path: .yarn/cache
-          key: build-skia-linux-armv7-gnueabihf-yarn-cache-node-16
 
       - name: Install dependencies
         run: yarn install --immutable --mode=skip-build
