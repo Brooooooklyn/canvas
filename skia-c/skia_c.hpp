@@ -9,6 +9,7 @@
 #include <include/pathops/SkPathOps.h>
 #include <include/utils/SkParsePath.h>
 #include <include/core/SkBitmap.h>
+#include <include/core/SkBlurTypes.h>
 #include <include/core/SkCanvas.h>
 #include <include/core/SkColorFilter.h>
 #include <include/core/SkData.h>
@@ -17,6 +18,7 @@
 #include <include/core/SkFontMgr.h>
 #include <include/core/SkPaint.h>
 #include <include/core/SkPathEffect.h>
+#include <include/core/SkPathUtils.h>
 #include <include/core/SkSurface.h>
 #include <include/core/SkMaskFilter.h>
 #include <include/core/SkStream.h>

@@ -760,11 +760,13 @@ extern "C"
 
   void skiac_path_to_svg_string(skiac_path *c_path, skiac_string *c_string)
   {
-    auto string = new SkString();
-    SkParsePath::ToSVGString(*PATH_CAST, string);
-    c_string->length = string->size();
-    c_string->ptr = string->c_str();
-    c_string->sk_string = string;
+    auto string = SkParsePath::ToSVGString(*PATH_CAST);
+    auto length = string.size();
+    auto result_string = new SkString(length);
+    string.swap(*result_string);
+    c_string->length = length;
+    c_string->ptr = result_string->c_str();
+    c_string->sk_string = result_string;
   }
 
   bool skiac_path_simplify(skiac_path *c_path)
@@ -786,8 +788,9 @@ extern "C"
     p.setStrokeJoin((SkPaint::Join)join);
     p.setStrokeWidth(width);
     p.setStrokeMiter(miter_limit);
-
-    return p.getFillPath(*path, path);
+    const SkPath *const_path = path;
+    const SkPaint const_paint = p;
+    return FillPathWithPaint(*const_path, const_paint, path);
   }
 
   void skiac_path_compute_tight_bounds(skiac_path *c_path, skiac_rect *c_rect)
@@ -949,7 +952,9 @@ extern "C"
 
     bool result;
     auto precision = 0.3; // Based on config in Chromium
-    if (paint.getFillPath(*path, &traced_path, nullptr, precision))
+    const SkPath *const_path = path;
+    const SkPaint const_paint = paint;
+    if (FillPathWithPaint(*const_path, const_paint, &traced_path, nullptr, precision))
     {
       result = traced_path.contains(x, y);
     }
