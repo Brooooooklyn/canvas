@@ -612,6 +612,16 @@ pub mod ffi {
     pub fn skiac_path_stroke_hit_test(path: *mut skiac_path, x: f32, y: f32, stroke_w: f32)
       -> bool;
 
+    pub fn skiac_path_round_rect(
+      path: *mut skiac_path,
+      x: f32,
+      y: f32,
+      width: f32,
+      height: f32,
+      radii: *const f32,
+      clockwise: bool,
+    );
+
     pub fn skiac_path_effect_make_dash_path(
       intervals: *const f32,
       count: i32,
@@ -2678,6 +2688,34 @@ impl Path {
 
   pub fn dash(&mut self, on: f32, off: f32, phase: f32) -> bool {
     unsafe { ffi::skiac_path_dash(self.0, on, off, phase) }
+  }
+
+  pub fn round_rect(
+    &mut self,
+    mut x: f32,
+    mut y: f32,
+    mut width: f32,
+    mut height: f32,
+    mut radii: [f32; 4],
+  ) {
+    // https://github.com/chromium/chromium/blob/111.0.5520.1/third_party/blink/renderer/modules/canvas/canvas2d/canvas_path.cc#L601
+    let mut clockwise = true;
+    if width < 0f32 {
+      clockwise = false;
+      x += width;
+      width = -width;
+      radii.swap(0, 1);
+      radii.swap(2, 3);
+    }
+    if height < 0f32 {
+      clockwise = !clockwise;
+      y += height;
+      height = -height;
+      radii.swap(0, 2);
+      radii.swap(1, 3);
+    }
+    unsafe { ffi::skiac_path_round_rect(self.0, x, y, width, height, radii.as_ptr(), clockwise) };
+    unsafe { ffi::skiac_path_move_to(self.0, x, y) };
   }
 
   fn ellipse_helper(&mut self, x: f32, y: f32, rx: f32, ry: f32, start_angle: f32, end_angle: f32) {

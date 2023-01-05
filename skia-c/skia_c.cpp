@@ -967,6 +967,27 @@ extern "C"
     return result;
   }
 
+  void skiac_path_round_rect(
+      skiac_path *c_path,
+      SkScalar x,
+      SkScalar y,
+      SkScalar width,
+      SkScalar height,
+      SkScalar *radii,
+      bool clockwise)
+  {
+    auto path = PATH_CAST;
+    SkScalar radii_vec[8];
+    for (size_t i = 0; i < 4; i++)
+    {
+      radii_vec[i * 2] = radii[i];
+      radii_vec[i * 2 + 1] = radii[i];
+    }
+    SkRect rect = SkRect::MakeXYWH(x, y, width, height);
+    auto ccw = clockwise ? SkPathDirection::kCW : SkPathDirection::kCCW;
+    path->addRoundRect(rect, radii_vec, ccw);
+  }
+
   // PathEffect
 
   skiac_path_effect *skiac_path_effect_make_dash_path(const float *intervals, int count, float phase)
