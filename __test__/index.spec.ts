@@ -1,6 +1,6 @@
 import ava, { TestFn } from 'ava'
 
-import { createCanvas, Path2D, Canvas, SKRSContext2D } from '../index'
+import { createCanvas, Path2D, Canvas, SKRSContext2D, DOMMatrix } from '../index'
 
 import { snapshotImage } from './image-snapshot'
 
@@ -154,14 +154,7 @@ test('textBaseline state should be ok', (t) => {
 
 test('getTransform', (t) => {
   const { ctx } = t.context
-  t.deepEqual(ctx.getTransform(), {
-    a: 1,
-    b: 0,
-    c: 0,
-    d: 1,
-    e: 0,
-    f: 0,
-  })
+  t.deepEqual(ctx.getTransform(), new DOMMatrix([1, 0, 0, 1, 0, 0]))
 })
 
 test('stroke-and-filling-jpeg', async (t) => {

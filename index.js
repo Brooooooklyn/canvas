@@ -50,6 +50,18 @@ if (!('has' in GlobalFonts)) {
   })
 }
 
+const _getTransform = CanvasRenderingContext2D.prototype.getTransform
+
+CanvasRenderingContext2D.prototype.getTransform = function getTransform() {
+  const transform = _getTransform.apply(this, arguments)
+  // monkey patched, skip
+  if (transform instanceof DOMMatrix) {
+    return transform
+  }
+  const { a, b, c, d, e, f } = transform
+  return new DOMMatrix([a, b, c, d, e, f])
+}
+
 function createCanvas(width, height, flag) {
   const isSvgBackend = typeof flag !== 'undefined'
   return isSvgBackend ? new SVGCanvas(width, height, flag) : new CanvasElement(width, height)
