@@ -174,6 +174,10 @@ impl Context {
     self.path.add_rect(x, y, width, height);
   }
 
+  pub fn round_rect(&mut self, x: f32, y: f32, width: f32, height: f32, radii: [f32; 4]) {
+    self.path.round_rect(x, y, width, height, radii);
+  }
+
   pub fn save(&mut self) {
     self.surface.canvas.save();
     self.states.push(self.state.clone());
@@ -1292,6 +1296,47 @@ impl CanvasRenderingContext2D {
     self
       .context
       .rect(x as f32, y as f32, width as f32, height as f32);
+  }
+
+  #[napi]
+  pub fn round_rect(
+    &mut self,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    radii: Either3<f64, Vec<f64>, Undefined>,
+  ) {
+    // https://github.com/chromium/chromium/blob/111.0.5520.1/third_party/blink/renderer/modules/canvas/canvas2d/canvas_path.cc#L579
+    let radii_array: [f32; 4] = match radii {
+      Either3::A(radii) => [radii as f32; 4],
+      Either3::B(radii_vec) => match radii_vec.len() {
+        0 => [0f32; 4],
+        1 => [radii_vec[0] as f32; 4],
+        2 => [
+          radii_vec[0] as f32,
+          radii_vec[1] as f32,
+          radii_vec[0] as f32,
+          radii_vec[1] as f32,
+        ],
+        3 => [
+          radii_vec[0] as f32,
+          radii_vec[1] as f32,
+          radii_vec[1] as f32,
+          radii_vec[2] as f32,
+        ],
+        _ => [
+          radii_vec[0] as f32,
+          radii_vec[1] as f32,
+          radii_vec[2] as f32,
+          radii_vec[3] as f32,
+        ],
+      },
+      Either3::C(_) => [0f32; 4],
+    };
+    self
+      .context
+      .round_rect(x as f32, y as f32, width as f32, height as f32, radii_array);
   }
 
   #[napi]

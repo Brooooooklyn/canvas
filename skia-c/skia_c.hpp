@@ -373,6 +373,14 @@ extern "C"
   bool skiac_path_is_empty(skiac_path *c_path);
   bool skiac_path_hit_test(skiac_path *c_path, float x, float y, int type);
   bool skiac_path_stroke_hit_test(skiac_path *c_path, float x, float y, float stroke_w);
+  void skiac_path_round_rect(
+      skiac_path *c_path,
+      SkScalar x,
+      SkScalar y,
+      SkScalar width,
+      SkScalar height,
+      SkScalar *radii,
+      bool clockwise);
 
   // PathEffect
   skiac_path_effect *skiac_path_effect_make_dash_path(const float *intervals, int count, float phase);
