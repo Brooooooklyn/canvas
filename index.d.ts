@@ -276,14 +276,7 @@ export interface SKRSContext2D
     repeat: 'repeat' | 'repeat-x' | 'repeat-y' | 'no-repeat' | null,
   ): CanvasPattern
   getContextAttributes(): { alpha: boolean; desynchronized: boolean }
-  getTransform(): {
-    a: number
-    b: number
-    c: number
-    d: number
-    e: number
-    f: number
-  }
+  getTransform(): DOMMatrix
 }
 
 export type ColorSpace = 'srgb' | 'display-p3'
