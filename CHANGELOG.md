@@ -1,3 +1,18 @@
+## [0.1.32](https://github.com/Brooooooklyn/canvas/compare/v0.1.31...v0.1.32) (2023-01-07)
+
+
+### Bug Fixes
+
+* getTransform should return DOMMatrix ([#602](https://github.com/Brooooooklyn/canvas/issues/602)) ([fc576e9](https://github.com/Brooooooklyn/canvas/commit/fc576e974c320f08a54f07b5665795b6c8b0d857))
+
+
+### Features
+
+* chrome/m110 [skip skia] ([#599](https://github.com/Brooooooklyn/canvas/issues/599)) ([e1efc1d](https://github.com/Brooooooklyn/canvas/commit/e1efc1d5b1f8e8dda18553a754dfd7d4232631b6))
+* roundRect ([#601](https://github.com/Brooooooklyn/canvas/issues/601)) ([0823325](https://github.com/Brooooooklyn/canvas/commit/08233257bb814fc82c4aa6a994f6200ea5a55819))
+
+
+
 ## [0.1.31](https://github.com/Brooooooklyn/canvas/compare/v0.1.30...v0.1.31) (2023-01-02)
 
 
