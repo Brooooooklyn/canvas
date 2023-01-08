@@ -1,10 +1,10 @@
 import { promises as fs } from 'fs'
+import { join } from 'path'
 
 import test from 'ava'
 
-import { createCanvas, loadImage } from '../index'
+import { createCanvas, loadImage, GlobalFonts } from '../index'
 import { snapshotImage } from './image-snapshot'
-import { join } from 'path'
 
 test('transform-with-state', async (t) => {
   const canvas = createCanvas(256, 256)
@@ -103,4 +103,24 @@ test('global-alpha-should-effect-drawImage', async (t) => {
   const image = await fs.readFile(join(__dirname, 'javascript.png'))
   ctx.drawImage(await loadImage(image), 0, 0, 200, 100)
   await snapshotImage(t, { ctx, canvas }, 'png', 1)
+})
+
+test('draw-text-maxWidth', async (t) => {
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'iosevka-slab-regular.ttf'))
+  const canvas = createCanvas(150, 150)
+  const ctx = canvas.getContext('2d')
+  const pad = 10 // padding
+  ctx.textBaseline = 'top'
+  ctx.font = '50px Iosevka Slab'
+
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+  ctx.fillStyle = 'blue'
+  ctx.fillRect(pad, pad, canvas.width - pad * 2, canvas.height - pad * 2)
+
+  const maxWidth = canvas.width - pad * 2
+  ctx.fillStyle = 'white'
+  ctx.fillText('Short text', pad, 10, maxWidth)
+  ctx.fillText(`Very ${'long '.repeat(2)} text`, pad, 80, maxWidth)
+  await snapshotImage(t, { ctx, canvas })
 })

@@ -511,13 +511,14 @@ extern "C"
         break;
       };
       auto need_scale = line_width > max_width;
+      float ratio = need_scale ? max_width / line_width : 1.0;
       if (need_scale)
       {
         CANVAS_CAST->save();
-        CANVAS_CAST->scale(max_width / line_width, 1.0);
+        CANVAS_CAST->scale(ratio, 1.0);
       }
       auto paint_y = y + baseline_offset;
-      paragraph->paint(CANVAS_CAST, paint_x, paint_y);
+      paragraph->paint(CANVAS_CAST, need_scale ? paint_x / ratio : paint_x, paint_y);
       if (need_scale)
       {
         CANVAS_CAST->restore();
