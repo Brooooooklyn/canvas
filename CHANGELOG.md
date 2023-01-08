@@ -1,33 +1,31 @@
-## [0.1.32](https://github.com/Brooooooklyn/canvas/compare/v0.1.31...v0.1.32) (2023-01-07)
-
+## [0.1.33](https://github.com/Brooooooklyn/canvas/compare/v0.1.32...v0.1.33) (2023-01-08)
 
 ### Bug Fixes
 
-* getTransform should return DOMMatrix ([#602](https://github.com/Brooooooklyn/canvas/issues/602)) ([fc576e9](https://github.com/Brooooooklyn/canvas/commit/fc576e974c320f08a54f07b5665795b6c8b0d857))
+- maxWidth overflow paint_x position should power the scale ratio ([#603](https://github.com/Brooooooklyn/canvas/issues/603)) ([17c7902](https://github.com/Brooooooklyn/canvas/commit/17c7902327d51ee6a044bad909b51d23e6a66805))
 
+## [0.1.32](https://github.com/Brooooooklyn/canvas/compare/v0.1.31...v0.1.32) (2023-01-07)
+
+### Bug Fixes
+
+- getTransform should return DOMMatrix ([#602](https://github.com/Brooooooklyn/canvas/issues/602)) ([fc576e9](https://github.com/Brooooooklyn/canvas/commit/fc576e974c320f08a54f07b5665795b6c8b0d857))
 
 ### Features
 
-* chrome/m110 [skip skia] ([#599](https://github.com/Brooooooklyn/canvas/issues/599)) ([e1efc1d](https://github.com/Brooooooklyn/canvas/commit/e1efc1d5b1f8e8dda18553a754dfd7d4232631b6))
-* roundRect ([#601](https://github.com/Brooooooklyn/canvas/issues/601)) ([0823325](https://github.com/Brooooooklyn/canvas/commit/08233257bb814fc82c4aa6a994f6200ea5a55819))
-
-
+- chrome/m110 [skip skia] ([#599](https://github.com/Brooooooklyn/canvas/issues/599)) ([e1efc1d](https://github.com/Brooooooklyn/canvas/commit/e1efc1d5b1f8e8dda18553a754dfd7d4232631b6))
+- roundRect ([#601](https://github.com/Brooooooklyn/canvas/issues/601)) ([0823325](https://github.com/Brooooooklyn/canvas/commit/08233257bb814fc82c4aa6a994f6200ea5a55819))
 
 ## [0.1.31](https://github.com/Brooooooklyn/canvas/compare/v0.1.30...v0.1.31) (2023-01-02)
 
-
 ### Bug Fixes
 
-* missing canvas property on Context2D ([#597](https://github.com/Brooooooklyn/canvas/issues/597)) ([b0a351a](https://github.com/Brooooooklyn/canvas/commit/b0a351a8a8c1693ca2edcf009e77ec56df616fb5))
-* multiple define on cached native object in jest ([88f5ee9](https://github.com/Brooooooklyn/canvas/commit/88f5ee9893ed55ab3bb41947feb133507914acef))
-
+- missing canvas property on Context2D ([#597](https://github.com/Brooooooklyn/canvas/issues/597)) ([b0a351a](https://github.com/Brooooooklyn/canvas/commit/b0a351a8a8c1693ca2edcf009e77ec56df616fb5))
+- multiple define on cached native object in jest ([88f5ee9](https://github.com/Brooooooklyn/canvas/commit/88f5ee9893ed55ab3bb41947feb133507914acef))
 
 ### Features
 
-* chrome/m107 ([9f02e86](https://github.com/Brooooooklyn/canvas/commit/9f02e869cf11f8346f65500009cba8e69b722d31))
-* chrome/m108 ([04f5a41](https://github.com/Brooooooklyn/canvas/commit/04f5a414fb45ff7e25c6d0fb3400aef969ef919b))
-
-
+- chrome/m107 ([9f02e86](https://github.com/Brooooooklyn/canvas/commit/9f02e869cf11f8346f65500009cba8e69b722d31))
+- chrome/m108 ([04f5a41](https://github.com/Brooooooklyn/canvas/commit/04f5a414fb45ff7e25c6d0fb3400aef969ef919b))
 
 ## [0.1.30](https://github.com/Brooooooklyn/canvas/compare/v0.1.29...v0.1.30) (2022-09-22)
 
