@@ -148,6 +148,7 @@ struct skiac_line_metrics
   float width;
   float font_ascent;
   float font_descent;
+  float alphabetic_baseline;
 };
 
 struct skiac_rect

@@ -603,6 +603,9 @@ test('measureText with empty string should not throw', (t) => {
     actualBoundingBoxRight: 0,
     fontBoundingBoxAscent: 0,
     fontBoundingBoxDescent: 0,
+    alphabeticBaseline: 0,
+    emHeightAscent: 0,
+    emHeightDescent: 0,
     width: 0,
   })
 })

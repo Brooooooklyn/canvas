@@ -1578,6 +1578,9 @@ impl CanvasRenderingContext2D {
         actual_bounding_box_right: 0.0,
         font_bounding_box_ascent: 0.0,
         font_bounding_box_descent: 0.0,
+        alphabetic_baseline: 0.0,
+        em_height_ascent: 0.0,
+        em_height_descent: 0.0,
         width: 0.0,
       });
     }
@@ -1589,6 +1592,9 @@ impl CanvasRenderingContext2D {
       actual_bounding_box_right: metrics.0.right as f64,
       font_bounding_box_ascent: metrics.0.font_ascent as f64,
       font_bounding_box_descent: metrics.0.font_descent as f64,
+      alphabetic_baseline: metrics.0.alphabetic_baseline as f64,
+      em_height_ascent: metrics.0.font_ascent as f64,
+      em_height_descent: metrics.0.font_descent as f64,
       width: metrics.0.width as f64,
     })
   }
@@ -1893,6 +1899,9 @@ pub struct TextMetrics {
   pub actual_bounding_box_right: f64,
   pub font_bounding_box_ascent: f64,
   pub font_bounding_box_descent: f64,
+  pub alphabetic_baseline: f64,
+  pub em_height_ascent: f64,
+  pub em_height_descent: f64,
   pub width: f64,
 }
 

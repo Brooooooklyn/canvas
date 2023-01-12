@@ -446,7 +446,7 @@ extern "C"
     switch (css_baseline)
     {
     case CssBaseline::Top:
-      baseline_offset = -alphabetic_baseline - font_metrics.fAscent;
+      baseline_offset = -alphabetic_baseline - font_metrics.fAscent - font_metrics.fUnderlinePosition - font_metrics.fUnderlineThickness;
       break;
     case CssBaseline::Hanging:
       // https://github.com/chromium/chromium/blob/104.0.5092.1/third_party/blink/renderer/core/html/canvas/text_metrics.cc#L21-L25
@@ -454,7 +454,7 @@ extern "C"
       // http://wiki.apache.org/xmlgraphics-fop/LineLayout/AlignmentHandling
       // "FOP (Formatting Objects Processor) puts the hanging baseline at 80% of
       // the ascender height"
-      baseline_offset = -alphabetic_baseline - (font_metrics.fAscent - font_metrics.fDescent) * HANGING_AS_PERCENT_OF_ASCENT / 100.0;
+      baseline_offset = -alphabetic_baseline - font_metrics.fAscent * HANGING_AS_PERCENT_OF_ASCENT / 100.0;
       break;
     case CssBaseline::Middle:
       baseline_offset = -paragraph->getHeight() / 2;
@@ -466,50 +466,51 @@ extern "C"
       baseline_offset = -paragraph->getIdeographicBaseline();
       break;
     case CssBaseline::Bottom:
-      baseline_offset = font_metrics.fStrikeoutPosition;
+      baseline_offset = -alphabetic_baseline + font_metrics.fStrikeoutPosition + font_metrics.fStrikeoutThickness;
+      break;
+    };
+
+    auto line_center = line_width / 2.0f;
+    float paint_x;
+    switch ((TextAlign)align)
+    {
+    case TextAlign::kLeft:
+      paint_x = x;
+      break;
+    case TextAlign::kCenter:
+      paint_x = x - line_center;
+      break;
+    case TextAlign::kRight:
+      paint_x = x - line_width;
+      break;
+    // Unreachable
+    case TextAlign::kJustify:
+      paint_x = x;
+      break;
+    case TextAlign::kStart:
+      if (text_direction == TextDirection::kLtr)
+      {
+        paint_x = x;
+      }
+      else
+      {
+        paint_x = x - line_width;
+      }
+      break;
+    case TextAlign::kEnd:
+      if (text_direction == TextDirection::kRtl)
+      {
+        paint_x = x;
+      }
+      else
+      {
+        paint_x = x - line_width;
+      }
       break;
     };
 
     if (c_canvas)
     {
-      auto line_center = line_width / 2.0f;
-      float paint_x;
-      switch ((TextAlign)align)
-      {
-      case TextAlign::kLeft:
-        paint_x = x;
-        break;
-      case TextAlign::kCenter:
-        paint_x = x - line_center;
-        break;
-      case TextAlign::kRight:
-        paint_x = x - line_width;
-        break;
-      // Unreachable
-      case TextAlign::kJustify:
-        paint_x = x;
-        break;
-      case TextAlign::kStart:
-        if (text_direction == TextDirection::kLtr)
-        {
-          paint_x = x;
-        }
-        else
-        {
-          paint_x = x - line_width;
-        }
-        break;
-      case TextAlign::kEnd:
-        if (text_direction == TextDirection::kRtl)
-        {
-          paint_x = x;
-        }
-        else
-        {
-          paint_x = x - line_width;
-        }
-        break;
-      };
       auto need_scale = line_width > max_width;
       float ratio = need_scale ? max_width / line_width : 1.0;
       if (need_scale)
@@ -529,11 +530,12 @@ extern "C"
       auto offset = -baseline_offset - alphabetic_baseline;
       c_line_metrics->ascent = -ascent + offset;
       c_line_metrics->descent = descent - offset;
-      c_line_metrics->left = line_metrics.fLeft - first_char_bounds.fLeft;
-      c_line_metrics->right = last_char_pos_x + last_char_bounds.fRight;
+      c_line_metrics->left = -paint_x + line_metrics.fLeft - first_char_bounds.fLeft;
+      c_line_metrics->right = paint_x + last_char_pos_x + last_char_bounds.fRight;
       c_line_metrics->width = line_width;
       c_line_metrics->font_ascent = -font_metrics.fAscent + offset;
       c_line_metrics->font_descent = font_metrics.fDescent - offset;
+      c_line_metrics->alphabetic_baseline = -font_metrics.fAscent + offset;
     }
     delete paragraph;
   }
