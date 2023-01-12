@@ -1,3 +1,12 @@
+## [0.1.34](https://github.com/Brooooooklyn/canvas/compare/v0.1.33...v0.1.34) (2023-01-12)
+
+
+### Bug Fixes
+
+* wrong text baseline calculation in drawText and measureText ([#606](https://github.com/Brooooooklyn/canvas/issues/606)) ([bba0296](https://github.com/Brooooooklyn/canvas/commit/bba0296d659c559fad1337fe963712fb91bc6407))
+
+
+
 ## [0.1.33](https://github.com/Brooooooklyn/canvas/compare/v0.1.32...v0.1.33) (2023-01-08)
 
 ### Bug Fixes
