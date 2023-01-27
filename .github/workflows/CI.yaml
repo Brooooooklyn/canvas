@@ -71,6 +71,7 @@ jobs:
               set -e &&
               rustup toolchain install $(cat ./rust-toolchain) &&
               rustup target add aarch64-unknown-linux-gnu &&
+              export CXXFLAGS="-fuse-ld=lld --sysroot=/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot -stdlib=libc++ -L/usr/aarch64-unknown-linux-gnu/lib/llvm-15" &&
               yarn build --target aarch64-unknown-linux-gnu &&
               llvm-strip-15 skia.linux-arm64-gnu.node
           - host: ubuntu-latest
@@ -239,12 +240,6 @@ jobs:
           node-version: ${{ matrix.node }}
           check-latest: true
 
-      - name: Cache yarn
-        uses: actions/cache@v3
-        with:
-          path: .yarn/cache
-          key: ${{ matrix.settings.target }}-yarn-cache-node-${{ matrix.node }}
-
       - name: Install dependencies
         run: yarn install --immutable --mode=skip-build
 
@@ -297,12 +292,6 @@ jobs:
           check-latest: true
           cache: 'yarn'
 
-      - name: Cache yarn
-        uses: actions/cache@v3
-        with:
-          path: .yarn/cache
-          key: linux-x64-gnu-yarn-cache-node-${{ matrix.node }}
-
       - name: Install dependencies
         run: yarn install --immutable --mode=skip-build
 
@@ -354,12 +343,6 @@ jobs:
           node-version: ${{ matrix.node }}
           check-latest: true
           cache: 'yarn'
-
-      - name: Cache yarn
-        uses: actions/cache@v3
-        with:
-          path: .yarn/cache
-          key: linux-x64-musl-yarn-cache-node-${{ matrix.node }}
 
       - name: Install dependencies
         run: |
@@ -420,12 +403,6 @@ jobs:
         run: ls -R .
         shell: bash
 
-      - name: Cache yarn
-        uses: actions/cache@v3
-        with:
-          path: .yarn/cache
-          key: linux-aarch64-gnu-yarn-cache-node-${{ matrix.node }}
-
       - name: Install dependencies
         run: |
           yarn config set supportedArchitectures.cpu "arm64"
@@ -479,12 +456,6 @@ jobs:
       - name: List packages
         run: ls -R .
         shell: bash
-
-      - name: Cache yarn
-        uses: actions/cache@v3
-        with:
-          path: .yarn/cache
-          key: linux-aarch64-musl-yarn-cache-node-${{ matrix.node }}
 
       - name: Install dependencies
         run: |
@@ -543,12 +514,6 @@ jobs:
         run: ls -R .
         shell: bash
 
-      - name: Cache yarn
-        uses: actions/cache@v3
-        with:
-          path: .yarn/cache
-          key: linux-arm-gnueabihf-yarn-cache-node-${{ matrix.node }}
-
       - name: Install dependencies
         run: |
           yarn config set supportedArchitectures.cpu "arm"
@@ -590,15 +555,9 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v3
         with:
-          node-version: 16
+          node-version: 18
           check-latest: true
           cache: 'yarn'
-
-      - name: Cache yarn
-        uses: actions/cache@v3
-        with:
-          path: .yarn/cache
-          key: publish-yarn-cache-node-16
 
       - name: Install dependencies
         run: yarn install --immutable --mode=skip-build
