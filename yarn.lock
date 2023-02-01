@@ -233,7 +233,7 @@ __metadata:
     "@jimp/custom": ^0.16.2
     "@jimp/jpeg": ^0.16.2
     "@jimp/png": ^0.16.2
-    "@napi-rs/cli": ^2.14.0
+    "@napi-rs/cli": ^2.14.5
     "@octokit/rest": ^19.0.5
     "@swc-node/register": ^1.5.4
     "@swc/core": ^1.3.24
@@ -267,12 +267,12 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@napi-rs/cli@npm:^2.14.0":
-  version: 2.14.0
-  resolution: "@napi-rs/cli@npm:2.14.0"
+"@napi-rs/cli@npm:^2.14.5":
+  version: 2.14.5
+  resolution: "@napi-rs/cli@npm:2.14.5"
   bin:
     napi: scripts/index.js
-  checksum: 9f16b93c7f9ee6f8bd3fe1bf6ee8135f6e1a14120b9d7f7f1991508ae1ad0762fef3fd4569ef4eb4375effce5e010a6e33af7192d06610aff2cec1b8add4bbcb
+  checksum: 2b6b16f90fbf49d0200792fb5a9c41da5e287eb666759182fb9c80e4ce05abe4a40002d129096ec2c47a53b5969619bdf9092b424f18bd605dcda2ebaff98eee
   languageName: node
   linkType: hard
 
