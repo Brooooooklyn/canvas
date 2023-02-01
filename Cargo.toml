@@ -19,7 +19,7 @@ napi-derive = { version = "2", default-features = false }
 nom = "7"
 num_cpus = "1"
 once_cell = "1"
-libavif = { version = "0.10", default-features = false, features = [
+libavif = { version = "0.11", default-features = false, features = [
   "codec-aom",
 ] }
 regex = "1"
