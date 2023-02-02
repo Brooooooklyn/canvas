@@ -55,7 +55,7 @@ jobs:
             rm /usr/lib/llvm-15/lib/libc++abi.so
 
       - name: Build and push Linux aarch64
-        uses: docker/build-push-action@v3
+        uses: docker/build-push-action@v4
         with:
           file: aarch64.Dockerfile
           context: .
