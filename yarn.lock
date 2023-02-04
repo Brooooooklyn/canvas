@@ -200,26 +200,16 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@jimp/png@npm:^0.16.2":
-  version: 0.16.2
-  resolution: "@jimp/png@npm:0.16.2"
+"@jimp/png@npm:^0.17.0":
+  version: 0.17.9
+  resolution: "@jimp/png@npm:0.17.9"
   dependencies:
     "@babel/runtime": ^7.7.2
-    "@jimp/utils": ^0.16.2
+    "@jimp/utils": ^0.17.9
     pngjs: ^3.3.3
   peerDependencies:
     "@jimp/custom": ">=0.3.5"
-  checksum: c25e0fdd3bf296e0df6e514ced95b59135590742a5243ef1070644140aa550311fcc0c4fa9f96d43a850b6499dea7507209c5a3825419bb8c4b25ca4eca8cd92
-  languageName: node
-  linkType: hard
-
-"@jimp/utils@npm:^0.16.2":
-  version: 0.16.2
-  resolution: "@jimp/utils@npm:0.16.2"
-  dependencies:
-    "@babel/runtime": ^7.7.2
-    regenerator-runtime: ^0.13.3
-  checksum: 96f3c815f3ac5bd16ab7cdfe97eef9839e070fca6d15ca171dbf934a8ab9af17ad4c861445ca69d0f00a4ea5fe70303efbde77325c5b181db5441d6bfa96b444
+  checksum: 33dedf0bfb2a9425e01e59223c4f7aefdf8df0d5df88842696ea454e2d381d0467562bcd1cbb6f93e66380ef43526a46cdd5ac8f92e66b4b561d50b8cd67ce7e
   languageName: node
   linkType: hard
 
@@ -269,7 +259,7 @@ __metadata:
     "@jimp/core": ^0.17.0
     "@jimp/custom": ^0.17.0
     "@jimp/jpeg": ^0.17.0
-    "@jimp/png": ^0.16.2
+    "@jimp/png": ^0.17.0
     "@napi-rs/cli": ^2.14.5
     "@octokit/rest": ^19.0.5
     "@swc-node/register": ^1.5.4
