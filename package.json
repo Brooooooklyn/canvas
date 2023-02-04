@@ -63,7 +63,7 @@
   },
   "devDependencies": {
     "@jimp/core": "^0.17.0",
-    "@jimp/custom": "^0.16.2",
+    "@jimp/custom": "^0.17.0",
     "@jimp/jpeg": "^0.16.2",
     "@jimp/png": "^0.16.2",
     "@napi-rs/cli": "^2.14.5",
