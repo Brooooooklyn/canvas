@@ -187,16 +187,16 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@jimp/jpeg@npm:^0.16.2":
-  version: 0.16.2
-  resolution: "@jimp/jpeg@npm:0.16.2"
+"@jimp/jpeg@npm:^0.17.0":
+  version: 0.17.9
+  resolution: "@jimp/jpeg@npm:0.17.9"
   dependencies:
     "@babel/runtime": ^7.7.2
-    "@jimp/utils": ^0.16.2
-    jpeg-js: ^0.4.2
+    "@jimp/utils": ^0.17.9
+    jpeg-js: ^0.4.4
   peerDependencies:
     "@jimp/custom": ">=0.3.5"
-  checksum: cae9d8fc323d2d673b0104aebc60764de9681c5c213417b8cc67d11d1251361a7f5b0bc37fb76fc84ece4d13e1c2de5e9f23dfdb1510fd5e280e95efa2329dda
+  checksum: 239b39da66966cfc3bbd7ece2fb7ab66984a0e1ce01a7947f4b85ef4c487aba30ceba243cb7f617c3db31a69481f1f458cb8c9ea7bf55c33a286698c06f770c5
   languageName: node
   linkType: hard
 
@@ -268,7 +268,7 @@ __metadata:
   dependencies:
     "@jimp/core": ^0.17.0
     "@jimp/custom": ^0.17.0
-    "@jimp/jpeg": ^0.16.2
+    "@jimp/jpeg": ^0.17.0
     "@jimp/png": ^0.16.2
     "@napi-rs/cli": ^2.14.5
     "@octokit/rest": ^19.0.5
@@ -3566,7 +3566,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"jpeg-js@npm:^0.4.2":
+"jpeg-js@npm:^0.4.4":
   version: 0.4.4
   resolution: "jpeg-js@npm:0.4.4"
   checksum: bd7cb61aa8df40a9ee2c2106839c3df6054891e56cfc22c0ac581402e06c6295f962a4754b0b2ac50a401789131b1c6dc9df8d24400f1352168be1894833c590
