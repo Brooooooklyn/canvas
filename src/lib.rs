@@ -11,6 +11,7 @@ extern crate serde_derive;
 use std::str::FromStr;
 use std::{mem, slice};
 
+use base64::Engine;
 use napi::bindgen_prelude::{AsyncTask, ClassInstance, Either3, This, Unknown};
 use napi::*;
 
@@ -400,14 +401,10 @@ impl Task for AsyncDataUrl {
     let mut output = format!("data:{};base64,", &self.mime);
     match &self.surface_data {
       ContextOutputData::Skia(data_ref) => {
-        base64::encode_engine_string(
-          data_ref.slice(),
-          &mut output,
-          &base64::engine::DEFAULT_ENGINE,
-        );
+        base64::engine::general_purpose::STANDARD.encode_string(data_ref.slice(), &mut output);
       }
-      ContextOutputData::Avif(o) => {
-        base64::encode_engine_string(o.as_slice(), &mut output, &base64::engine::DEFAULT_ENGINE);
+      ContextOutputData::Avif(data_ref) => {
+        base64::engine::general_purpose::STANDARD.encode_string(data_ref.as_ref(), &mut output);
       }
     }
     Ok(output)
