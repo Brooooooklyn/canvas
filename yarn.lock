@@ -141,24 +141,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@jimp/core@npm:^0.17.9":
-  version: 0.17.9
-  resolution: "@jimp/core@npm:0.17.9"
-  dependencies:
-    "@babel/runtime": ^7.7.2
-    "@jimp/utils": ^0.17.9
-    any-base: ^1.1.0
-    buffer: ^5.2.0
-    exif-parser: ^0.1.12
-    file-type: ^16.5.4
-    mkdirp: ^0.5.1
-    phin: ^2.9.1
-    pixelmatch: ^4.0.2
-    tinycolor2: ^1.4.1
-  checksum: 2eec77599df51db881f65ece61d0cd24468df328d7f8b61bd59bddb9bbf76329775042c36e16b55ea4ccc0df4f6fe2fba151ad2916b1587d90c0d91364e7e394
-  languageName: node
-  linkType: hard
-
 "@jimp/core@npm:^0.21.0":
   version: 0.21.0
   resolution: "@jimp/core@npm:0.21.0"
@@ -176,13 +158,12 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@jimp/custom@npm:^0.17.0":
-  version: 0.17.9
-  resolution: "@jimp/custom@npm:0.17.9"
+"@jimp/custom@npm:^0.21.0":
+  version: 0.21.0
+  resolution: "@jimp/custom@npm:0.21.0"
   dependencies:
-    "@babel/runtime": ^7.7.2
-    "@jimp/core": ^0.17.9
-  checksum: 15d5ee7157f7d45b39db0e18f669773a168bb34953ae1a354803d3ae1ed645ddcfd757c2db39bab991db7286b758cc14115a159a3e82303d36301755444cc545
+    "@jimp/core": ^0.21.0
+  checksum: 5518b628ada016fd74f39f3e7c48d5343a463b62241af65a9b31fc52521a6f455e5e1fac27ee971599444493c8d1550bafd225149ae0c009bd98134cef17e622
   languageName: node
   linkType: hard
 
@@ -255,7 +236,7 @@ __metadata:
   resolution: "@napi-rs/canvas@workspace:."
   dependencies:
     "@jimp/core": ^0.21.0
-    "@jimp/custom": ^0.17.0
+    "@jimp/custom": ^0.21.0
     "@jimp/jpeg": ^0.17.0
     "@jimp/png": ^0.17.0
     "@napi-rs/cli": ^2.14.5
