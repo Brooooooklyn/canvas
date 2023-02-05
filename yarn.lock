@@ -76,15 +76,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@babel/runtime@npm:^7.7.2":
-  version: 7.20.13
-  resolution: "@babel/runtime@npm:7.20.13"
-  dependencies:
-    regenerator-runtime: ^0.13.11
-  checksum: 09b7a97a05c80540db6c9e4ddf8c5d2ebb06cae5caf3a87e33c33f27f8c4d49d9c67a2d72f1570e796045288fad569f98a26ceba0c4f5fad2af84b6ad855c4fb
-  languageName: node
-  linkType: hard
-
 "@eslint/eslintrc@npm:^1.4.1":
   version: 1.4.1
   resolution: "@eslint/eslintrc@npm:1.4.1"
@@ -179,26 +170,15 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@jimp/png@npm:^0.17.0":
-  version: 0.17.9
-  resolution: "@jimp/png@npm:0.17.9"
+"@jimp/png@npm:^0.21.0":
+  version: 0.21.0
+  resolution: "@jimp/png@npm:0.21.0"
   dependencies:
-    "@babel/runtime": ^7.7.2
-    "@jimp/utils": ^0.17.9
-    pngjs: ^3.3.3
+    "@jimp/utils": ^0.21.0
+    pngjs: ^6.0.0
   peerDependencies:
     "@jimp/custom": ">=0.3.5"
-  checksum: 33dedf0bfb2a9425e01e59223c4f7aefdf8df0d5df88842696ea454e2d381d0467562bcd1cbb6f93e66380ef43526a46cdd5ac8f92e66b4b561d50b8cd67ce7e
-  languageName: node
-  linkType: hard
-
-"@jimp/utils@npm:^0.17.9":
-  version: 0.17.9
-  resolution: "@jimp/utils@npm:0.17.9"
-  dependencies:
-    "@babel/runtime": ^7.7.2
-    regenerator-runtime: ^0.13.3
-  checksum: a1dc16da403ad976943cb09b3629f9653b1b927771cdaf3e0512caa37bfe78b3b8ab03d8aa6d63789d5951d56df900522095b17aa89d12b9099a9d21d247554d
+  checksum: d15b6f226c44f20200b712b38431ed881dcb48271fa6287b763ca193854afba9dd60383f338742526480e61a7d4d960670b043b9130bc0dcf061fe0d0beda964
   languageName: node
   linkType: hard
 
@@ -237,7 +217,7 @@ __metadata:
     "@jimp/core": ^0.21.0
     "@jimp/custom": ^0.21.0
     "@jimp/jpeg": ^0.21.0
-    "@jimp/png": ^0.17.0
+    "@jimp/png": ^0.21.0
     "@napi-rs/cli": ^2.14.5
     "@octokit/rest": ^19.0.5
     "@swc-node/register": ^1.5.4
@@ -4836,10 +4816,17 @@ __metadata:
   languageName: node
   linkType: hard
 
-"pngjs@npm:^3.0.0, pngjs@npm:^3.3.3":
+"pngjs@npm:^3.0.0":
   version: 3.4.0
   resolution: "pngjs@npm:3.4.0"
   checksum: 8bd40bd698abd16b72c97b85cb858c80894fbedc76277ce72a784aa441e14795d45d9856e97333ca469b34b67528860ffc8a7317ca6beea349b645366df00bcd
+  languageName: node
+  linkType: hard
+
+"pngjs@npm:^6.0.0":
+  version: 6.0.0
+  resolution: "pngjs@npm:6.0.0"
+  checksum: ab6c285086060087097eab9fe6b5a528a24f9e79c03dea2b4fd6264ed4fdb5beff4a3257eeeaf2a9dc18249b539609c2a4e4013c567164a1f6b5ba2c974d5ecb
   languageName: node
   linkType: hard
 
@@ -5034,7 +5021,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"regenerator-runtime@npm:^0.13.11, regenerator-runtime@npm:^0.13.3":
+"regenerator-runtime@npm:^0.13.3":
   version: 0.13.11
   resolution: "regenerator-runtime@npm:0.13.11"
   checksum: 27481628d22a1c4e3ff551096a683b424242a216fee44685467307f14d58020af1e19660bf2e26064de946bad7eff28950eae9f8209d55723e2d9351e632bbb4
