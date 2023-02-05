@@ -141,24 +141,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@jimp/core@npm:^0.17.0":
-  version: 0.17.8
-  resolution: "@jimp/core@npm:0.17.8"
-  dependencies:
-    "@babel/runtime": ^7.7.2
-    "@jimp/utils": ^0.17.8
-    any-base: ^1.1.0
-    buffer: ^5.2.0
-    exif-parser: ^0.1.12
-    file-type: ^16.5.4
-    mkdirp: ^0.5.1
-    phin: ^2.9.1
-    pixelmatch: ^4.0.2
-    tinycolor2: ^1.4.1
-  checksum: 7b74fd5c12b3cd53060af0c662708244c27f4be040354883cd985aac5908dc80bbf422214a9277bc1283baac716f58d179b04bfa2232476c92850aaf03126e59
-  languageName: node
-  linkType: hard
-
 "@jimp/core@npm:^0.17.9":
   version: 0.17.9
   resolution: "@jimp/core@npm:0.17.9"
@@ -174,6 +156,23 @@ __metadata:
     pixelmatch: ^4.0.2
     tinycolor2: ^1.4.1
   checksum: 2eec77599df51db881f65ece61d0cd24468df328d7f8b61bd59bddb9bbf76329775042c36e16b55ea4ccc0df4f6fe2fba151ad2916b1587d90c0d91364e7e394
+  languageName: node
+  linkType: hard
+
+"@jimp/core@npm:^0.21.0":
+  version: 0.21.0
+  resolution: "@jimp/core@npm:0.21.0"
+  dependencies:
+    "@jimp/utils": ^0.21.0
+    any-base: ^1.1.0
+    buffer: ^5.2.0
+    exif-parser: ^0.1.12
+    file-type: ^16.5.4
+    mkdirp: ^0.5.1
+    phin: ^2.9.1
+    pixelmatch: ^4.0.2
+    tinycolor2: ^1.4.1
+  checksum: 7163e53838bcc884c13e7809ee068952cca07ac13cd54de600013525b4357efea91c68b7ff0dfc943c9ae5096d7cf49533de7a4057a80f00034b0884c7fad949
   languageName: node
   linkType: hard
 
@@ -213,16 +212,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@jimp/utils@npm:^0.17.8":
-  version: 0.17.8
-  resolution: "@jimp/utils@npm:0.17.8"
-  dependencies:
-    "@babel/runtime": ^7.7.2
-    regenerator-runtime: ^0.13.3
-  checksum: 8fdbcc505d18178e55847ae6f59b81a1bf45925ad3533f03bec760ab356046adfb7cf2a05745b5af40241c93ac7d93d6f93e0a5948f77c322953eb70305dd8d3
-  languageName: node
-  linkType: hard
-
 "@jimp/utils@npm:^0.17.9":
   version: 0.17.9
   resolution: "@jimp/utils@npm:0.17.9"
@@ -230,6 +219,15 @@ __metadata:
     "@babel/runtime": ^7.7.2
     regenerator-runtime: ^0.13.3
   checksum: a1dc16da403ad976943cb09b3629f9653b1b927771cdaf3e0512caa37bfe78b3b8ab03d8aa6d63789d5951d56df900522095b17aa89d12b9099a9d21d247554d
+  languageName: node
+  linkType: hard
+
+"@jimp/utils@npm:^0.21.0":
+  version: 0.21.0
+  resolution: "@jimp/utils@npm:0.21.0"
+  dependencies:
+    regenerator-runtime: ^0.13.3
+  checksum: bddaf9802d559dbc4d4a2b0cf54039763c1d267379a4d7d3c43b797963e4a8a44d19a644f1a6ba420139379e457cf9066598987ecf2d55fa4563bf9b31d1de6c
   languageName: node
   linkType: hard
 
@@ -256,7 +254,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@napi-rs/canvas@workspace:."
   dependencies:
-    "@jimp/core": ^0.17.0
+    "@jimp/core": ^0.21.0
     "@jimp/custom": ^0.17.0
     "@jimp/jpeg": ^0.17.0
     "@jimp/png": ^0.17.0
