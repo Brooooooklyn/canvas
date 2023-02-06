@@ -132,23 +132,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@jimp/core@npm:^0.21.0":
-  version: 0.21.0
-  resolution: "@jimp/core@npm:0.21.0"
-  dependencies:
-    "@jimp/utils": ^0.21.0
-    any-base: ^1.1.0
-    buffer: ^5.2.0
-    exif-parser: ^0.1.12
-    file-type: ^16.5.4
-    mkdirp: ^0.5.1
-    phin: ^2.9.1
-    pixelmatch: ^4.0.2
-    tinycolor2: ^1.4.1
-  checksum: 7163e53838bcc884c13e7809ee068952cca07ac13cd54de600013525b4357efea91c68b7ff0dfc943c9ae5096d7cf49533de7a4057a80f00034b0884c7fad949
-  languageName: node
-  linkType: hard
-
 "@jimp/core@npm:^0.22.0":
   version: 0.22.0
   resolution: "@jimp/core@npm:0.22.0"
@@ -166,12 +149,29 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@jimp/custom@npm:^0.21.0":
-  version: 0.21.0
-  resolution: "@jimp/custom@npm:0.21.0"
+"@jimp/core@npm:^0.22.1":
+  version: 0.22.1
+  resolution: "@jimp/core@npm:0.22.1"
   dependencies:
-    "@jimp/core": ^0.21.0
-  checksum: 5518b628ada016fd74f39f3e7c48d5343a463b62241af65a9b31fc52521a6f455e5e1fac27ee971599444493c8d1550bafd225149ae0c009bd98134cef17e622
+    "@jimp/utils": ^0.22.1
+    any-base: ^1.1.0
+    buffer: ^5.2.0
+    exif-parser: ^0.1.12
+    file-type: ^16.5.4
+    isomorphic-fetch: ^3.0.0
+    mkdirp: ^2.1.3
+    pixelmatch: ^4.0.2
+    tinycolor2: ^1.4.1
+  checksum: cad8401550a425c1942770ba99d5100e1dbbb1fc42daa25671d321ff0f4feb44da803f6cab57668f061c306a09da30c6af96be05962e607bb455ee26e0337913
+  languageName: node
+  linkType: hard
+
+"@jimp/custom@npm:^0.22.0":
+  version: 0.22.1
+  resolution: "@jimp/custom@npm:0.22.1"
+  dependencies:
+    "@jimp/core": ^0.22.1
+  checksum: 05c454217b89cdfc4d5034b0d395fc57ef2b92138fa92af73e6a0c1bb87d6de079dfbca30209fa08856616fbc9e53e658cde7ea99d87db07ef17c85afe274c7b
   languageName: node
   linkType: hard
 
@@ -217,6 +217,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@jimp/utils@npm:^0.22.1":
+  version: 0.22.1
+  resolution: "@jimp/utils@npm:0.22.1"
+  dependencies:
+    regenerator-runtime: ^0.13.3
+  checksum: 7881775143180e5af37a49305c6b4cd2a1650734e1f966b00228391a2e7500d0864b98a53144a5878c193275026cf9d86e9646dc299816e0b616e52fb4da86a3
+  languageName: node
+  linkType: hard
+
 "@mapbox/node-pre-gyp@npm:^1.0.0, @mapbox/node-pre-gyp@npm:^1.0.9":
   version: 1.0.10
   resolution: "@mapbox/node-pre-gyp@npm:1.0.10"
@@ -241,7 +250,7 @@ __metadata:
   resolution: "@napi-rs/canvas@workspace:."
   dependencies:
     "@jimp/core": ^0.22.0
-    "@jimp/custom": ^0.21.0
+    "@jimp/custom": ^0.22.0
     "@jimp/jpeg": ^0.22.0
     "@jimp/png": ^0.21.0
     "@napi-rs/cli": ^2.14.5
@@ -4190,6 +4199,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"mkdirp@npm:^2.1.3":
+  version: 2.1.3
+  resolution: "mkdirp@npm:2.1.3"
+  bin:
+    mkdirp: dist/cjs/src/bin.js
+  checksum: 5d7d7997e38a962e8b66dd4db1974bdcb841f084531ba8c9e1f3d52d71f5e6639677a96b2eb5d5940406d729a2153d820f396077ed3a6716058d3e75041dc1f2
+  languageName: node
+  linkType: hard
+
 "modify-values@npm:^1.0.0":
   version: 1.0.1
   resolution: "modify-values@npm:1.0.1"
@@ -4743,13 +4761,6 @@ __metadata:
   version: 4.1.0
   resolution: "peek-readable@npm:4.1.0"
   checksum: 02c673f9bc816f8e4e74a054c097225ad38d457d745b775e2b96faf404a54473b2f62f5bcd496f5ebc28696708bcc5e95bed409856f4bef5ed62eae9b4ac0dab
-  languageName: node
-  linkType: hard
-
-"phin@npm:^2.9.1":
-  version: 2.9.3
-  resolution: "phin@npm:2.9.3"
-  checksum: 7e2abd7be74a54eb7be92dccb1d7a019725c8adaa79ac22a38f25220f9a859393e654ea753a559d326aed7bbc966fadac88270cc8c39d78896f7784219560c47
   languageName: node
   linkType: hard
 
