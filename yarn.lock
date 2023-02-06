@@ -175,15 +175,15 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@jimp/jpeg@npm:^0.21.0":
-  version: 0.21.0
-  resolution: "@jimp/jpeg@npm:0.21.0"
+"@jimp/jpeg@npm:^0.22.0":
+  version: 0.22.0
+  resolution: "@jimp/jpeg@npm:0.22.0"
   dependencies:
-    "@jimp/utils": ^0.21.0
+    "@jimp/utils": ^0.22.0
     jpeg-js: ^0.4.4
   peerDependencies:
     "@jimp/custom": ">=0.3.5"
-  checksum: 3d7e95bc5ce3a4e0b0a8cdcdd1a36c287ffca604aae2495b0d97f87f7cad0eb994b0655bbe10ab2fdf544597d3ca57027cf2f59458c7127469714fab83b6b187
+  checksum: 1b62ebf223bdaf6b9bec0c3a5da9e0e3dd2694350f3547048e891585e139978f125170b43bdd5eb362ebc5bb8a1ece9e3d6b8c009a5b137ee95797dacc2dffb3
   languageName: node
   linkType: hard
 
@@ -242,7 +242,7 @@ __metadata:
   dependencies:
     "@jimp/core": ^0.22.0
     "@jimp/custom": ^0.21.0
-    "@jimp/jpeg": ^0.21.0
+    "@jimp/jpeg": ^0.22.0
     "@jimp/png": ^0.21.0
     "@napi-rs/cli": ^2.14.5
     "@octokit/rest": ^19.0.5
