@@ -149,6 +149,23 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@jimp/core@npm:^0.22.0":
+  version: 0.22.0
+  resolution: "@jimp/core@npm:0.22.0"
+  dependencies:
+    "@jimp/utils": ^0.22.0
+    any-base: ^1.1.0
+    buffer: ^5.2.0
+    exif-parser: ^0.1.12
+    file-type: ^16.5.4
+    isomorphic-fetch: ^3.0.0
+    mkdirp: ^0.5.1
+    pixelmatch: ^4.0.2
+    tinycolor2: ^1.4.1
+  checksum: ab7eb76690881abcb22571e1449d572626b7ed36475e585f34a5f1488ae73b2656724e91119dd8ea389d531fe0944c7720d6a303191e440b68b56a7391f1393f
+  languageName: node
+  linkType: hard
+
 "@jimp/custom@npm:^0.21.0":
   version: 0.21.0
   resolution: "@jimp/custom@npm:0.21.0"
@@ -191,6 +208,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@jimp/utils@npm:^0.22.0":
+  version: 0.22.0
+  resolution: "@jimp/utils@npm:0.22.0"
+  dependencies:
+    regenerator-runtime: ^0.13.3
+  checksum: f0d66fdf5ca2f1b7de350e9372234588dfe7dcedf6fa9cc6402eeca769ca041874455494fb5dc2ff14d50b9f16494f70e78d9734705400e8b6a556efb213c281
+  languageName: node
+  linkType: hard
+
 "@mapbox/node-pre-gyp@npm:^1.0.0, @mapbox/node-pre-gyp@npm:^1.0.9":
   version: 1.0.10
   resolution: "@mapbox/node-pre-gyp@npm:1.0.10"
@@ -214,7 +240,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@napi-rs/canvas@workspace:."
   dependencies:
-    "@jimp/core": ^0.21.0
+    "@jimp/core": ^0.22.0
     "@jimp/custom": ^0.21.0
     "@jimp/jpeg": ^0.21.0
     "@jimp/png": ^0.21.0
@@ -3514,6 +3540,16 @@ __metadata:
   languageName: node
   linkType: hard
 
+"isomorphic-fetch@npm:^3.0.0":
+  version: 3.0.0
+  resolution: "isomorphic-fetch@npm:3.0.0"
+  dependencies:
+    node-fetch: ^2.6.1
+    whatwg-fetch: ^3.4.1
+  checksum: e5ab79a56ce5af6ddd21265f59312ad9a4bc5a72cebc98b54797b42cb30441d5c5f8d17c5cd84a99e18101c8af6f90c081ecb8d12fd79e332be1778d58486d75
+  languageName: node
+  linkType: hard
+
 "jpeg-js@npm:^0.4.4":
   version: 0.4.4
   resolution: "jpeg-js@npm:0.4.4"
@@ -4219,7 +4255,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"node-fetch@npm:^2.6.7":
+"node-fetch@npm:^2.6.1, node-fetch@npm:^2.6.7":
   version: 2.6.9
   resolution: "node-fetch@npm:2.6.9"
   dependencies:
@@ -6061,6 +6097,13 @@ __metadata:
   version: 2.0.0
   resolution: "well-known-symbols@npm:2.0.0"
   checksum: 4f54bbc3012371cb4d228f436891b8e7536d34ac61a57541890257e96788608e096231e0121ac24d08ef2f908b3eb2dc0adba35023eaeb2a7df655da91415402
+  languageName: node
+  linkType: hard
+
+"whatwg-fetch@npm:^3.4.1":
+  version: 3.6.2
+  resolution: "whatwg-fetch@npm:3.6.2"
+  checksum: ee976b7249e7791edb0d0a62cd806b29006ad7ec3a3d89145921ad8c00a3a67e4be8f3fb3ec6bc7b58498724fd568d11aeeeea1f7827e7e1e5eae6c8a275afed
   languageName: node
   linkType: hard
 
