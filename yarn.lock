@@ -187,24 +187,15 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@jimp/png@npm:^0.21.0":
-  version: 0.21.0
-  resolution: "@jimp/png@npm:0.21.0"
+"@jimp/png@npm:^0.22.0":
+  version: 0.22.4
+  resolution: "@jimp/png@npm:0.22.4"
   dependencies:
-    "@jimp/utils": ^0.21.0
+    "@jimp/utils": ^0.22.4
     pngjs: ^6.0.0
   peerDependencies:
     "@jimp/custom": ">=0.3.5"
-  checksum: d15b6f226c44f20200b712b38431ed881dcb48271fa6287b763ca193854afba9dd60383f338742526480e61a7d4d960670b043b9130bc0dcf061fe0d0beda964
-  languageName: node
-  linkType: hard
-
-"@jimp/utils@npm:^0.21.0":
-  version: 0.21.0
-  resolution: "@jimp/utils@npm:0.21.0"
-  dependencies:
-    regenerator-runtime: ^0.13.3
-  checksum: bddaf9802d559dbc4d4a2b0cf54039763c1d267379a4d7d3c43b797963e4a8a44d19a644f1a6ba420139379e457cf9066598987ecf2d55fa4563bf9b31d1de6c
+  checksum: 0becf40c6b7bb1e8fc08b0291b8ab0a0a8d560806e4310aa33b1bf0acc8dccf89936dfdd542307f657e754adc737208a42c129256b179d2873f9d570c04ce8fd
   languageName: node
   linkType: hard
 
@@ -223,6 +214,15 @@ __metadata:
   dependencies:
     regenerator-runtime: ^0.13.3
   checksum: 7881775143180e5af37a49305c6b4cd2a1650734e1f966b00228391a2e7500d0864b98a53144a5878c193275026cf9d86e9646dc299816e0b616e52fb4da86a3
+  languageName: node
+  linkType: hard
+
+"@jimp/utils@npm:^0.22.4":
+  version: 0.22.4
+  resolution: "@jimp/utils@npm:0.22.4"
+  dependencies:
+    regenerator-runtime: ^0.13.3
+  checksum: 0af55ccf8651e9db30ca2dc58e7e51a54c2937d79c27e96ecde5413ef4b08c59ed73d069de4d7a3059afd41134fa266d434f70e8e2caedfce79134402d31604d
   languageName: node
   linkType: hard
 
@@ -252,7 +252,7 @@ __metadata:
     "@jimp/core": ^0.22.0
     "@jimp/custom": ^0.22.0
     "@jimp/jpeg": ^0.22.0
-    "@jimp/png": ^0.21.0
+    "@jimp/png": ^0.22.0
     "@napi-rs/cli": ^2.14.5
     "@octokit/rest": ^19.0.5
     "@swc-node/register": ^1.5.4
