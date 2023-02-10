@@ -71,6 +71,10 @@ class Canvas {
   constructor(width, height, flag) {
     return createCanvas(width, height, flag)
   }
+
+  static [Symbol.hasInstance](instance) {
+    return instance instanceof CanvasElement || instance instanceof SVGCanvas
+  }
 }
 
 if (!process.env.DISABLE_SYSTEM_FONTS_LOAD) {
