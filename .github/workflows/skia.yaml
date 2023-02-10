@@ -26,7 +26,7 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v3
         with:
-          node-version: 16
+          node-version: 18
           check-latest: true
           cache: 'yarn'
 
@@ -80,12 +80,6 @@ jobs:
           PYTHONHTTPSVERIFY: 0
         run: node ./scripts/build-skia.js
 
-      - name: Cache yarn
-        uses: actions/cache@v3
-        with:
-          path: .yarn/cache
-          key: build-skia-${{ matrix.os }}-yarn-cache-node-16
-
       - name: Install dependencies
         run: yarn install --immutable --mode=skip-build
 
@@ -109,7 +103,7 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v3
         with:
-          node-version: 16
+          node-version: 18
           check-latest: true
           cache: 'yarn'
 
@@ -127,12 +121,6 @@ jobs:
 
       - name: Compile skia
         run: node ./scripts/build-skia.js --target=aarch64-apple-darwin
-
-      - name: Cache yarn
-        uses: actions/cache@v3
-        with:
-          path: .yarn/cache
-          key: build-skia-apple-aarch64-yarn-cache-node-16
 
       - name: Install dependencies
         run: yarn install --immutable --mode=skip-build
@@ -156,7 +144,7 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v3
         with:
-          node-version: 16
+          node-version: 18
           check-latest: true
           cache: 'yarn'
 
@@ -174,12 +162,6 @@ jobs:
           docker run --user "$(id -u):$(id -g)" --rm -v $(pwd):/canvas -w /canvas builder node ./scripts/build-skia.js
         env:
           PYTHONHTTPSVERIFY: 0
-
-      - name: Cache yarn
-        uses: actions/cache@v3
-        with:
-          path: .yarn/cache
-          key: build-skia-linux-x64-musl-yarn-cache-node-16
 
       - name: Install dependencies
         run: yarn install --immutable --mode=skip-build
@@ -203,7 +185,7 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v3
         with:
-          node-version: 16
+          node-version: 18
           check-latest: true
           cache: 'yarn'
 
@@ -212,12 +194,6 @@ jobs:
           docker pull ghcr.io/brooooooklyn/canvas/ubuntu-builder:focal-aarch64
           docker tag ghcr.io/brooooooklyn/canvas/ubuntu-builder:focal-aarch64 builder
           docker run --user "$(id -u):$(id -g)" --rm -v $(pwd):/canvas -w /canvas builder node ./scripts/build-skia.js --target=aarch64-unknown-linux-gnu
-
-      - name: Cache yarn
-        uses: actions/cache@v3
-        with:
-          path: .yarn/cache
-          key: build-skia-linux-aarch64-gnu-yarn-cache-node-16
 
       - name: Install dependencies
         run: yarn install --immutable --mode=skip-build
@@ -241,7 +217,7 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v3
         with:
-          node-version: 16
+          node-version: 18
           check-latest: true
           cache: 'yarn'
 
@@ -259,12 +235,6 @@ jobs:
           docker run --user "$(id -u):$(id -g)" --rm -v $(pwd):/canvas -w /canvas builder node ./scripts/build-skia.js --target=aarch64-unknown-linux-musl
         env:
           PYTHONHTTPSVERIFY: 0
-
-      - name: Cache yarn
-        uses: actions/cache@v3
-        with:
-          path: .yarn/cache
-          key: build-skia-linux-aarch64-musl-yarn-cache-node-16
 
       - name: Install dependencies
         run: yarn install --immutable --mode=skip-build
@@ -350,7 +320,7 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v3
         with:
-          node-version: 16
+          node-version: 18
           check-latest: true
           cache: 'yarn'
 
@@ -365,12 +335,6 @@ jobs:
 
       - name: Compile skia
         run: node ./scripts/build-skia.js --target=aarch64-linux-android
-
-      - name: Cache yarn
-        uses: actions/cache@v3
-        with:
-          path: .yarn/cache
-          key: build-skia-linux-aarch64-android-yarn-cache-node-16
 
       - name: Install dependencies
         run: yarn install --immutable --mode=skip-build

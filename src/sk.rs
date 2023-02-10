@@ -1266,18 +1266,13 @@ impl From<i32> for BlendMode {
 }
 
 #[repr(i32)]
-#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, Default)]
 pub enum FilterQuality {
   None = 0,
+  #[default]
   Low = 1,
   Medium = 2,
   High = 3,
-}
-
-impl Default for FilterQuality {
-  fn default() -> Self {
-    FilterQuality::Low
-  }
 }
 
 impl FilterQuality {

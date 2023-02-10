@@ -69,7 +69,9 @@ impl From<i32> for FillType {
 }
 
 #[napi]
+#[derive(Default)]
 pub enum StrokeCap {
+  #[default]
   Butt = 0,
   Round = 1,
   Square = 2,
@@ -85,23 +87,13 @@ impl From<StrokeCap> for SkStrokeCap {
   }
 }
 
-impl Default for StrokeCap {
-  fn default() -> Self {
-    StrokeCap::Butt
-  }
-}
-
 #[napi]
+#[derive(Default)]
 pub enum StrokeJoin {
+  #[default]
   Miter = 0,
   Round = 1,
   Bevel = 2,
-}
-
-impl Default for StrokeJoin {
-  fn default() -> Self {
-    StrokeJoin::Miter
-  }
 }
 
 impl From<StrokeJoin> for SkStrokeJoin {

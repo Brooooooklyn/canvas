@@ -148,7 +148,7 @@ jobs:
       - uses: goto-bus-stop/setup-zig@v2
         if: ${{ matrix.settings.target == 'armv7-unknown-linux-gnueabihf' }}
         with:
-          version: 0.10.0
+          version: 0.10.1
 
       - name: Set env
         if: matrix.settings.host == 'windows-latest'
@@ -163,7 +163,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.settings.target }}
-          toolchain: nightly-2022-12-31
+          toolchain: nightly-2023-02-10
 
       - name: Cache cargo registry
         uses: actions/cache@v3
@@ -237,7 +237,6 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: ${{ matrix.node }}
-          check-latest: true
 
       - name: Cache yarn
         uses: actions/cache@v3
@@ -297,12 +296,6 @@ jobs:
           check-latest: true
           cache: 'yarn'
 
-      - name: Cache yarn
-        uses: actions/cache@v3
-        with:
-          path: .yarn/cache
-          key: linux-x64-gnu-yarn-cache-node-${{ matrix.node }}
-
       - name: Install dependencies
         run: yarn install --immutable --mode=skip-build
 
@@ -355,12 +348,6 @@ jobs:
           check-latest: true
           cache: 'yarn'
 
-      - name: Cache yarn
-        uses: actions/cache@v3
-        with:
-          path: .yarn/cache
-          key: linux-x64-musl-yarn-cache-node-${{ matrix.node }}
-
       - name: Install dependencies
         run: |
           yarn config set supportedArchitectures.libc "musl"
@@ -397,8 +384,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - run: docker run --rm --privileged multiarch/qemu-user-static:register --reset
-
       - uses: actions/checkout@v3
 
       - name: Download Apple Emoji font
@@ -420,23 +405,23 @@ jobs:
         run: ls -R .
         shell: bash
 
-      - name: Cache yarn
-        uses: actions/cache@v3
-        with:
-          path: .yarn/cache
-          key: linux-aarch64-gnu-yarn-cache-node-${{ matrix.node }}
-
       - name: Install dependencies
         run: |
           yarn config set supportedArchitectures.cpu "arm64"
           yarn config set supportedArchitectures.libc "glibc"
           yarn install --immutable --mode=skip-build
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+        with:
+          platforms: arm64
+
+      - run: docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
 
       - name: Setup and run tests
         uses: addnab/docker-run-action@v3
         with:
-          image: ghcr.io/napi-rs/napi-rs/nodejs:aarch64-${{ matrix.node }}
-          options: -v ${{ github.workspace }}:/skia -w /skia
+          image: node:${{ matrix.node }}-slim
+          options: '--platform linux/arm64 -v ${{ github.workspace }}:/skia -w /skia'
           run: |
             set -e && \
             yarn test:ci && \
@@ -457,8 +442,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - run: docker run --rm --privileged multiarch/qemu-user-static:register --reset
-
       - uses: actions/checkout@v3
 
       - name: Download Apple Emoji font
@@ -480,26 +463,26 @@ jobs:
         run: ls -R .
         shell: bash
 
-      - name: Cache yarn
-        uses: actions/cache@v3
-        with:
-          path: .yarn/cache
-          key: linux-aarch64-musl-yarn-cache-node-${{ matrix.node }}
-
       - name: Install dependencies
         run: |
           yarn config set supportedArchitectures.cpu "arm64"
           yarn config set supportedArchitectures.libc "musl"
           yarn install --immutable --mode=skip-build
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+        with:
+          platforms: arm64
+
+      - run: docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+
       - name: Setup and run tests
         uses: addnab/docker-run-action@v3
         with:
-          image: multiarch/alpine:aarch64-latest-stable
-          options: -v ${{ github.workspace }}:/skia -w /skia
+          image: node:lts-alpine
+          options: '--platform linux/arm64 -v ${{ github.workspace }}:/skia -w /skia'
           run: |
             set -e
-            apk add nodejs npm yarn
             yarn test:ci
 
       - name: Test failed
@@ -520,8 +503,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - run: docker run --rm --privileged multiarch/qemu-user-static:register --reset
-
       - uses: actions/checkout@v3
 
       - name: Download Apple Emoji font
@@ -543,22 +524,23 @@ jobs:
         run: ls -R .
         shell: bash
 
-      - name: Cache yarn
-        uses: actions/cache@v3
-        with:
-          path: .yarn/cache
-          key: linux-arm-gnueabihf-yarn-cache-node-${{ matrix.node }}
-
       - name: Install dependencies
         run: |
           yarn config set supportedArchitectures.cpu "arm"
           yarn install --immutable --mode=skip-build
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+        with:
+          platforms: arm
+
+      - run: docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+
       - name: Setup and run tests
         uses: addnab/docker-run-action@v3
         with:
-          image: ghcr.io/napi-rs/napi-rs/nodejs:armhf-${{ matrix.node }}
-          options: -v ${{ github.workspace }}:/skia -w /skia
+          image: node:${{ matrix.node }}-bullseye-slim
+          options: '--platform linux/arm/v7 -v ${{ github.workspace }}:/skia -w /skia'
           run: |
             set -e && \
             yarn test:ci && \
@@ -590,15 +572,9 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v3
         with:
-          node-version: 16
+          node-version: 18
           check-latest: true
           cache: 'yarn'
-
-      - name: Cache yarn
-        uses: actions/cache@v3
-        with:
-          path: .yarn/cache
-          key: publish-yarn-cache-node-16
 
       - name: Install dependencies
         run: yarn install --immutable --mode=skip-build
