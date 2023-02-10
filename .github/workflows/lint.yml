@@ -21,16 +21,16 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v3
         with:
-          node-version: 16
+          node-version: 18
           check-latest: true
           cache: 'yarn'
 
       - name: Install
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          profile: default
-          override: true
-          components: rustfmt, clippy
+          targets: x86_64-apple-darwin
+          toolchain: nightly-2023-02-10
+          components: clippy, rustfmt
 
       - name: Cache cargo registry
         uses: actions/cache@v3
@@ -39,12 +39,6 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
           key: lint-cargo-cache
-
-      - name: Cache yarn
-        uses: actions/cache@v3
-        with:
-          path: .yarn/cache
-          key: bench-yarn-cache-node-16
 
       - name: Install dependencies
         run: yarn install --immutable --mode=skip-build

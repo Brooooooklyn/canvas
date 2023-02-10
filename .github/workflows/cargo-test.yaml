@@ -24,10 +24,10 @@ jobs:
           submodules: true
 
       - name: Install
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          profile: minimal
-          override: true
+          targets: x86_64-apple-darwin
+          toolchain: nightly-2023-02-10
 
       - name: Cache cargo registry
         uses: actions/cache@v3
@@ -36,12 +36,6 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
           key: macOS-latest-test-cargo-cache
-
-      - name: Cache yarn
-        uses: actions/cache@v3
-        with:
-          path: .yarn/cache
-          key: bench-yarn-cache-node-16
 
       - name: Install dependencies
         run: yarn install --immutable --mode=skip-build
