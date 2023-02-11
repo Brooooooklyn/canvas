@@ -793,7 +793,7 @@ extern "C"
     p.setStrokeMiter(miter_limit);
     const SkPath *const_path = path;
     const SkPaint const_paint = p;
-    return FillPathWithPaint(*const_path, const_paint, path);
+    return skpathutils::FillPathWithPaint(*const_path, const_paint, path);
   }
 
   void skiac_path_compute_tight_bounds(skiac_path *c_path, skiac_rect *c_rect)
@@ -957,7 +957,7 @@ extern "C"
     auto precision = 0.3; // Based on config in Chromium
     const SkPath *const_path = path;
     const SkPaint const_paint = paint;
-    if (FillPathWithPaint(*const_path, const_paint, &traced_path, nullptr, precision))
+    if (skpathutils::FillPathWithPaint(*const_path, const_paint, &traced_path, nullptr, precision))
     {
       result = traced_path.contains(x, y);
     }
