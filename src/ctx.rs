@@ -1868,7 +1868,7 @@ impl CanvasRenderingContext2D {
       Either::A(a) => Transform::new(
         a as f32, c? as f32, e? as f32, b? as f32, d? as f32, f? as f32,
       ),
-      Either::B(transform) => transform.into(),
+      Either::B(transform) => transform.into_context_transform(),
     };
     self
       .context
@@ -1915,14 +1915,27 @@ pub struct TransformObject {
   pub f: f64,
 }
 
+impl TransformObject {
+  pub(crate) fn into_context_transform(self) -> Transform {
+    Transform::new(
+      self.a as f32,
+      self.c as f32,
+      self.e as f32,
+      self.b as f32,
+      self.d as f32,
+      self.f as f32,
+    )
+  }
+}
+
 impl From<TransformObject> for Transform {
   fn from(value: TransformObject) -> Self {
     Self::new(
       value.a as f32,
-      value.c as f32,
-      value.e as f32,
       value.b as f32,
+      value.c as f32,
       value.d as f32,
+      value.e as f32,
       value.f as f32,
     )
   }
