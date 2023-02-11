@@ -1,5 +1,5 @@
 const { execSync } = require('child_process')
-const { promises: fs, copyFileSync, createReadStream, statSync } = require('fs')
+const { promises: fs, copyFileSync, statSync } = require('fs')
 const { platform } = require('os')
 const { parse, join } = require('path')
 
@@ -78,7 +78,7 @@ async function upload() {
           'content-length': dstFileStats.size,
           'content-type': 'application/octet-stream',
         },
-        data: createReadStream(copy),
+        data: await fs.readFile(copy),
       })
       .catch((e) => {
         execSync(`ls -la ./skia/out/Static`, { stdio: 'inherit' })
@@ -98,7 +98,7 @@ async function upload() {
     }
     console.info(green(`Uploading [${ICU_DAT}] to github release: [${TAG}]`))
     const icuDataPath = join(__dirname, '..', 'skia', 'out', 'Static', ICU_DAT)
-    await await CLIENT.repos.uploadReleaseAsset({
+    await CLIENT.repos.uploadReleaseAsset({
       owner: OWNER,
       repo: REPO,
       name: ICU_DAT,
@@ -108,7 +108,7 @@ async function upload() {
         'content-length': statSync(icuDataPath).size,
         'content-type': 'application/octet-stream',
       },
-      data: createReadStream(icuDataPath),
+      data: await fs.readFile(icuDataPath),
     })
   }
 }
