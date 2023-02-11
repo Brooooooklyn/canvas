@@ -796,6 +796,18 @@ test('setTransform', async (t) => {
   await snapshotImage(t)
 })
 
+test('setTransform matrix', async (t) => {
+  const { ctx } = t.context
+  const mat = new DOMMatrix()
+    .rotate(30)
+    .skewX(30)
+    .scale(1, Math.sqrt(3) / 2)
+  ctx.setTransform(mat)
+  ctx.fillStyle = 'red'
+  ctx.fillRect(100, 100, 100, 100)
+  await snapshotImage(t)
+})
+
 test('stroke', async (t) => {
   const { ctx } = t.context
   // First sub-path
