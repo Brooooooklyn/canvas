@@ -1,3 +1,15 @@
+## [0.1.35](https://github.com/Brooooooklyn/canvas/compare/v0.1.34...v0.1.35) (2023-02-16)
+
+
+### Bug Fixes
+
+* canvas instance check ([#632](https://github.com/Brooooooklyn/canvas/issues/632)) ([08ee680](https://github.com/Brooooooklyn/canvas/commit/08ee6803a9339d0e8c9c53a1fc920c4850ce4842))
+* **deps:** update rust crate libavif to 0.11 ([fd1515b](https://github.com/Brooooooklyn/canvas/commit/fd1515be6eab70ec1928888545e21592b00c6aa4))
+* DOMMatrix object to skia Transform convert ([#633](https://github.com/Brooooooklyn/canvas/issues/633)) ([c82d41d](https://github.com/Brooooooklyn/canvas/commit/c82d41d33e4c98700a49aadf66e4c23f0fe50500))
+* DOMMatrix to skia Transform ([#634](https://github.com/Brooooooklyn/canvas/issues/634)) ([f43ccbd](https://github.com/Brooooooklyn/canvas/commit/f43ccbdb93a5a312d92793b60c00801f0f8b75b1))
+
+
+
 ## [0.1.34](https://github.com/Brooooooklyn/canvas/compare/v0.1.33...v0.1.34) (2023-01-12)
 
 
