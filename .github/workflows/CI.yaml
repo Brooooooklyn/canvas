@@ -228,8 +228,8 @@ jobs:
         uses: robinraju/release-downloader@v1
         with:
           repository: 'PoomSmart/EmojiLibrary'
-          latest: true
           fileName: AppleColorEmoji@2x.ttf
+          tag: '0.15.4'
           token: ${{ secrets.GITHUB_TOKEN }}
           out-file-path: __test__/fonts/
 
@@ -284,7 +284,7 @@ jobs:
         uses: robinraju/release-downloader@v1
         with:
           repository: 'PoomSmart/EmojiLibrary'
-          latest: true
+          tag: '0.15.4'
           fileName: AppleColorEmoji@2x.ttf
           token: ${{ secrets.GITHUB_TOKEN }}
           out-file-path: __test__/fonts/
@@ -336,8 +336,8 @@ jobs:
         uses: robinraju/release-downloader@v1
         with:
           repository: 'PoomSmart/EmojiLibrary'
-          latest: true
           fileName: AppleColorEmoji@2x.ttf
+          tag: '0.15.4'
           token: ${{ secrets.GITHUB_TOKEN }}
           out-file-path: __test__/fonts/
 
@@ -390,7 +390,7 @@ jobs:
         uses: robinraju/release-downloader@v1
         with:
           repository: 'PoomSmart/EmojiLibrary'
-          latest: true
+          tag: '0.15.4'
           fileName: AppleColorEmoji@2x.ttf
           token: ${{ secrets.GITHUB_TOKEN }}
           out-file-path: __test__/fonts/
@@ -448,7 +448,7 @@ jobs:
         uses: robinraju/release-downloader@v1
         with:
           repository: 'PoomSmart/EmojiLibrary'
-          latest: true
+          tag: '0.15.4'
           fileName: AppleColorEmoji@2x.ttf
           token: ${{ secrets.GITHUB_TOKEN }}
           out-file-path: __test__/fonts/
@@ -509,7 +509,7 @@ jobs:
         uses: robinraju/release-downloader@v1
         with:
           repository: 'PoomSmart/EmojiLibrary'
-          latest: true
+          tag: '0.15.4'
           fileName: AppleColorEmoji@2x.ttf
           token: ${{ secrets.GITHUB_TOKEN }}
           out-file-path: __test__/fonts/
