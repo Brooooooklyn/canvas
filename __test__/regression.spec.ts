@@ -135,7 +135,7 @@ test('draw-text-right-maxWidth', async (t) => {
   ctx.fillRect(0, 0, canvas.width, canvas.height)
   ctx.fillStyle = 'blue'
   ctx.fillRect(padding, 0, maxWidth, canvas.height)
-  ctx.font = '16px Arial'
+  ctx.font = '16px Iosevka Slab'
   ctx.textAlign = 'right'
   ctx.fillStyle = 'white'
   ctx.textBaseline = 'top'
@@ -158,7 +158,7 @@ test('draw-text-center-maxWidth', async (t) => {
   ctx.fillRect(0, 0, canvas.width, canvas.height)
   ctx.fillStyle = 'blue'
   ctx.fillRect(padding, 0, maxWidth, canvas.height)
-  ctx.font = '16px Arial'
+  ctx.font = '16px Iosevka Slab'
   ctx.textAlign = 'center'
   ctx.fillStyle = 'white'
   ctx.textBaseline = 'top'
