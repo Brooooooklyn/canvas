@@ -472,6 +472,7 @@ extern "C"
 
     auto line_center = line_width / 2.0f;
     float paint_x;
+    float offset_x = 0.0;
     switch ((TextAlign)align)
     {
     case TextAlign::kLeft:
@@ -479,9 +480,11 @@ extern "C"
       break;
     case TextAlign::kCenter:
       paint_x = x - line_center;
+      offset_x = line_center;
       break;
     case TextAlign::kRight:
       paint_x = x - line_width;
+      offset_x = line_width;
       break;
     // Unreachable
     case TextAlign::kJustify:
@@ -495,6 +498,7 @@ extern "C"
       else
       {
         paint_x = x - line_width;
+        offset_x = line_width;
       }
       break;
     case TextAlign::kEnd:
@@ -505,6 +509,7 @@ extern "C"
       else
       {
         paint_x = x - line_width;
+        offset_x = line_width;
       }
       break;
     };
@@ -519,7 +524,7 @@ extern "C"
         CANVAS_CAST->scale(ratio, 1.0);
       }
       auto paint_y = y + baseline_offset;
-      paragraph->paint(CANVAS_CAST, need_scale ? paint_x / ratio : paint_x, paint_y);
+      paragraph->paint(CANVAS_CAST, need_scale ? (paint_x + (1 - ratio) * offset_x) / ratio : paint_x, paint_y);
       if (need_scale)
       {
         CANVAS_CAST->restore();

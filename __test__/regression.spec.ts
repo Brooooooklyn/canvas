@@ -124,3 +124,49 @@ test('draw-text-maxWidth', async (t) => {
   ctx.fillText(`Very ${'long '.repeat(2)} text`, pad, 80, maxWidth)
   await snapshotImage(t, { ctx, canvas })
 })
+
+test('draw-text-right-maxWidth', async (t) => {
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'iosevka-slab-regular.ttf'))
+  const canvas = createCanvas(500, 100)
+  const ctx = canvas.getContext('2d')
+  const padding = 50
+  const maxWidth = canvas.width - padding * 2
+  // The background
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  ctx.fillStyle = 'blue'
+  ctx.fillRect(padding, 0, maxWidth, canvas.height)
+  ctx.font = '16px Iosevka Slab'
+  ctx.textAlign = 'right'
+  ctx.fillStyle = 'white'
+  ctx.textBaseline = 'top'
+  /** Short text */
+  ctx.fillText('Short text', canvas.width - padding, 10, maxWidth)
+  /** Very long text (10 repetitions) */
+  ctx.fillText(`Very ${'long '.repeat(10)} text`, canvas.width - padding, 30, maxWidth)
+  /** Very long text (20 repetitions) */
+  ctx.fillText(`Very ${'long '.repeat(20)} text`, canvas.width - padding, 50, maxWidth)
+  await snapshotImage(t, { ctx, canvas })
+})
+
+test('draw-text-center-maxWidth', async (t) => {
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'iosevka-slab-regular.ttf'))
+  const canvas = createCanvas(500, 100)
+  const ctx = canvas.getContext('2d')
+  const padding = 50
+  const maxWidth = canvas.width - padding * 2
+  // The background
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  ctx.fillStyle = 'blue'
+  ctx.fillRect(padding, 0, maxWidth, canvas.height)
+  ctx.font = '16px Iosevka Slab'
+  ctx.textAlign = 'center'
+  ctx.fillStyle = 'white'
+  ctx.textBaseline = 'top'
+  /** Short text */
+  ctx.fillText('Short text', canvas.width / 2, 10, maxWidth)
+  /** Very long text (10 repetitions) */
+  ctx.fillText(`Very ${'long '.repeat(10)} text`, canvas.width / 2, 30, maxWidth)
+  /** Very long text (20 repetitions) */
+  ctx.fillText(`Very ${'long '.repeat(20)} text`, canvas.width / 2, 50, maxWidth)
+  await snapshotImage(t, { ctx, canvas })
+})
