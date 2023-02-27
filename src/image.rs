@@ -262,15 +262,29 @@ impl Image {
           let image_binary = STANDARD
             .decode(base64_str)
             .map_err(|e| Error::new(Status::InvalidArg, format!("Decode data url failed {e}")))?;
-          Some(Bitmap::from_buffer(
-            image_binary.as_ptr() as *mut u8,
-            image_binary.len(),
-          ))
+          if let Some(kind) = infer::get(&image_binary) {
+            if kind.matcher_type() == infer::MatcherType::Image {
+              Some(Bitmap::from_buffer(
+                image_binary.as_ptr() as *mut u8,
+                image_binary.len(),
+              ))
+            } else {
+              return Err(Error::new(Status::InvalidArg, "Unsupported image type"));
+            }
+          } else {
+            return Err(Error::new(Status::InvalidArg, "Unsupported image type"));
+          }
         } else {
           None
         }
+      } else if let Some(kind) = infer::get(&data) {
+        if kind.matcher_type() == infer::MatcherType::Image {
+          Some(Bitmap::from_buffer(data.as_ptr() as *mut u8, length))
+        } else {
+          return Err(Error::new(Status::InvalidArg, "Unsupported image type"));
+        }
       } else {
-        Some(Bitmap::from_buffer(data.as_ptr() as *mut u8, length))
+        return Err(Error::new(Status::InvalidArg, "Unsupported image type"));
       };
       if let Some(ref b) = bitmap {
         if (self.width - -1.0).abs() < f64::EPSILON {

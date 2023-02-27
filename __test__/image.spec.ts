@@ -2,7 +2,7 @@ import { promises as fs } from 'fs'
 import { join } from 'path'
 import test from 'ava'
 
-import { createCanvas, Image } from '../index'
+import { createCanvas, Image, loadImage } from '../index'
 
 import { snapshotImage } from './image-snapshot'
 
@@ -87,4 +87,8 @@ test('svg-transparent-background', async (t) => {
   ctx.drawImage(image, 250, 250)
 
   await snapshotImage(t, { canvas })
+})
+
+test('load invalid image should throw error', async (t) => {
+  await t.throwsAsync(() => loadImage(join(__dirname, 'fixtures', 'broken.png')))
 })

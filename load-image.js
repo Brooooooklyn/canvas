@@ -51,7 +51,7 @@ module.exports = async function loadImage(source, options = {}) {
     }
   }
 
-  // throw error as dont support that source
+  // throw error as don't support that source
   throw new TypeError('unsupported image source')
 }
 
