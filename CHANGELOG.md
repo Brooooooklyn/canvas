@@ -1,3 +1,9 @@
+## [0.1.37](https://github.com/Brooooooklyn/canvas/compare/v0.1.36...v0.1.37) (2023-02-27)
+
+### Bug Fixes
+
+- reject if image is not supported ([#642](https://github.com/Brooooooklyn/canvas/issues/642)) ([e4f4930](https://github.com/Brooooooklyn/canvas/commit/e4f49306c03ed0cdac6e9fa17fb8a59b3b9ef70f))
+
 ## [0.1.36](https://github.com/Brooooooklyn/canvas/compare/v0.1.35...v0.1.36) (2023-02-21)
 
 ### Bug Fixes
