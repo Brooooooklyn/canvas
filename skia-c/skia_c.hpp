@@ -101,7 +101,6 @@ public:
 
   sk_sp<SkTypeface> onLegacyMakeTypeface(const char family_name[], SkFontStyle style) const override
   {
-    SkDebugf("onLegacyMakeTypeface: %s, \n", family_name);
     auto style_set = this->onMatchFamily(family_name);
     if (!style_set)
     {
