@@ -1,3 +1,17 @@
+## [0.1.38](https://github.com/Brooooooklyn/canvas/compare/v0.1.37...v0.1.38) (2023-03-11)
+
+
+### Bug Fixes
+
+* **deps:** update rust crate infer to 0.13 ([bad913c](https://github.com/Brooooooklyn/canvas/commit/bad913cb4a85b563fd02212269e2801956271a86))
+
+
+### Features
+
+* skia/m112 ([#648](https://github.com/Brooooooklyn/canvas/issues/648)) ([439a3c5](https://github.com/Brooooooklyn/canvas/commit/439a3c59beb0cc111d8de46048f3a131aec4337b))
+
+
+
 ## [0.1.37](https://github.com/Brooooooklyn/canvas/compare/v0.1.36...v0.1.37) (2023-02-27)
 
 ### Bug Fixes
