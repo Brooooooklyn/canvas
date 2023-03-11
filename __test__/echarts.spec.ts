@@ -17,6 +17,9 @@ test('echarts-start', async (t) => {
   // @ts-expect-error
   const chart = init(canvas)
   chart.setOption({
+    textStyle: {
+      fontFamily: 'Iosevka Slab, PingFang HK',
+    },
     title: {
       text: 'ECharts 入门示例',
     },

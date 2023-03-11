@@ -36,7 +36,7 @@ let ExtraLdFlags
 let ExtraAsmFlags
 
 const GN_ARGS = [
-  `is_official_build=false`,
+  `is_official_build=true`,
   `is_component_build=false`,
   `is_debug=false`,
   `werror=false`,
@@ -45,7 +45,6 @@ const GN_ARGS = [
   `skia_enable_android_utils=false`,
   `skia_enable_discrete_gpu=false`,
   `skia_enable_gpu=false`,
-  `skia_enable_particles=true`,
   `skia_enable_pdf=true`,
   `skia_enable_skottie=false`,
   `skia_enable_skshaper=true`,
@@ -55,6 +54,7 @@ const GN_ARGS = [
   `skia_enable_sktext=true`,
   `skia_pdf_subset_harfbuzz=true`,
   `skia_use_expat=true`,
+  `skia_use_system_expat=false`,
   `skia_use_gl=false`,
   `skia_use_harfbuzz=true`,
   `skia_use_icu=true`,
@@ -78,6 +78,10 @@ const GN_ARGS = [
   `skia_use_system_harfbuzz=false`,
   `skia_use_lua=false`,
   `skia_use_piex=false`,
+  `skia_enable_fontmgr_custom_directory=true`,
+  `skia_enable_fontmgr_custom_embedded=false`,
+  `skia_enable_fontmgr_custom_empty=true`,
+  `skia_enable_fontmgr_android=false`,
 ]
 
 switch (PLATFORM_NAME) {
@@ -98,6 +102,8 @@ switch (PLATFORM_NAME) {
       '\\"-DSK_HAS_HEIF_LIBRARY\\",' +
       '\\"-DSK_SHAPER_HARFBUZZ_AVAILABLE\\"'
     ExtraSkiaBuildFlag = 'clang_win=\\"C:\\\\Program Files\\\\LLVM\\"'
+    GN_ARGS.push(`skia_enable_fontmgr_win=false`)
+    GN_ARGS.push(`skia_fontmgr_factory=\\":fontmgr_custom_directory_factory\\"`)
     break
   case 'linux':
   case 'darwin':
@@ -124,6 +130,7 @@ switch (PLATFORM_NAME) {
     ) {
       ExtraCflagsCC += ',"-stdlib=libc++", "-static", "-I/usr/lib/llvm-15/include/c++/v1"'
     }
+    GN_ARGS.push(`skia_fontmgr_factory=":fontmgr_custom_directory_factory"`)
     break
   default:
     throw new TypeError(`Don't support ${PLATFORM_NAME} for now`)

@@ -14,6 +14,7 @@
 #include <include/core/SkColorFilter.h>
 #include <include/core/SkData.h>
 #include <include/core/SkDrawable.h>
+#include <include/core/SkEncodedImageFormat.h>
 #include <include/core/SkGraphics.h>
 #include <include/core/SkFontMgr.h>
 #include <include/core/SkPaint.h>
@@ -100,6 +101,7 @@ public:
 
   sk_sp<SkTypeface> onLegacyMakeTypeface(const char family_name[], SkFontStyle style) const override
   {
+    SkDebugf("onLegacyMakeTypeface: %s, \n", family_name);
     auto style_set = this->onMatchFamily(family_name);
     if (!style_set)
     {
@@ -129,7 +131,7 @@ struct skiac_font_collection
   sk_sp<FontCollection> collection;
   sk_sp<SkFontMgr> font_mgr;
   sk_sp<TypefaceFontProviderCustom> assets;
-  skiac_font_collection() : collection(sk_make_sp<FontCollection>()), font_mgr(SkFontMgr_New_Custom_Directory(SK_FONT_FILE_PREFIX)), assets(sk_make_sp<TypefaceFontProviderCustom>(font_mgr))
+  skiac_font_collection() : collection(sk_make_sp<FontCollection>()), font_mgr(SkFontMgr::RefDefault()), assets(sk_make_sp<TypefaceFontProviderCustom>(font_mgr))
   {
     collection->setDefaultFontManager(SkFontMgr::RefDefault());
     collection->setAssetFontManager(font_mgr);

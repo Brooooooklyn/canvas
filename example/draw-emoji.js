@@ -3,15 +3,17 @@ const { join } = require('path')
 
 const { createCanvas, GlobalFonts } = require('../index.js')
 
-GlobalFonts.registerFromPath(join(__dirname, '..', '__test__', 'fonts', 'AppleColorEmoji@2x.ttf'), 'Apple Emoji')
+GlobalFonts.registerFromPath(join(__dirname, '..', '__test__', 'fonts', 'AppleColorEmoji@2x.ttf'), 'Apple Color Emoji')
 GlobalFonts.registerFromPath(join(__dirname, '..', '__test__', 'fonts', 'COLRv1.ttf'), 'COLRv1')
 
-console.info(GlobalFonts.families)
+GlobalFonts.families.forEach(({ family }) => {
+  console.info(family)
+})
 
 const canvas = createCanvas(760, 360)
 const ctx = canvas.getContext('2d')
 
-ctx.font = '50px Apple Emoji'
+ctx.font = '50px Apple Color Emoji'
 ctx.strokeText('😀😃😄😁😆😅😂🤣☺️😊😊😇', 50, 150)
 
 ctx.font = '100px COLRv1'
