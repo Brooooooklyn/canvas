@@ -212,20 +212,28 @@ impl Image {
   }
 
   #[napi(setter)]
-  pub fn set_src(&mut self, this: This, data: Buffer) -> Result<()> {
+  pub fn set_src(&mut self, env: Env, this: This, data: Buffer) -> Result<()> {
     let length = data.len();
+    if length <= 2 {
+      self.src = Some(data);
+      self.on_load(&this)?;
+      return Ok(());
+    }
     let data_ref: &[u8] = &data;
     let mut is_svg = false;
-    for i in 3..length {
-      if '<' == data_ref[i - 3] as char {
-        match data_ref[i - 2] as char {
-          '?' | '!' => continue,
-          's' => {
-            is_svg = 'v' == data_ref[i - 1] as char && 'g' == data_ref[i] as char;
-            break;
-          }
-          _ => {
-            is_svg = false;
+    // <svg></svg>
+    if length >= 11 {
+      for i in 3..length {
+        if '<' == data_ref[i - 3] as char {
+          match data_ref[i - 2] as char {
+            '?' | '!' => continue,
+            's' => {
+              is_svg = 'v' == data_ref[i - 1] as char && 'g' == data_ref[i] as char;
+              break;
+            }
+            _ => {
+              is_svg = false;
+            }
           }
         }
       }
@@ -269,10 +277,12 @@ impl Image {
                 image_binary.len(),
               ))
             } else {
-              return Err(Error::new(Status::InvalidArg, "Unsupported image type"));
+              self.on_error(env, &this)?;
+              None
             }
           } else {
-            return Err(Error::new(Status::InvalidArg, "Unsupported image type"));
+            self.on_error(env, &this)?;
+            None
           }
         } else {
           None
@@ -281,10 +291,12 @@ impl Image {
         if kind.matcher_type() == infer::MatcherType::Image {
           Some(Bitmap::from_buffer(data.as_ptr() as *mut u8, length))
         } else {
-          return Err(Error::new(Status::InvalidArg, "Unsupported image type"));
+          self.on_error(env, &this)?;
+          None
         }
       } else {
-        return Err(Error::new(Status::InvalidArg, "Unsupported image type"));
+        self.on_error(env, &this)?;
+        None
       };
       if let Some(ref b) = bitmap {
         if (self.width - -1.0).abs() < f64::EPSILON {
@@ -297,11 +309,7 @@ impl Image {
       self.bitmap = bitmap
     }
     self.src = Some(data);
-    let onload = this.get_named_property_unchecked::<Unknown>("onload")?;
-    if onload.get_type()? == ValueType::Function {
-      let onload_func = unsafe { onload.cast::<JsFunction>() };
-      onload_func.call_without_args(Some(&this))?;
-    }
+    self.on_load(&this)?;
     Ok(())
   }
 
@@ -317,6 +325,27 @@ impl Image {
         self.height as f32,
         self.color_space,
       );
+    }
+  }
+
+  fn on_load(&self, this: &This) -> Result<()> {
+    let onload = this.get_named_property_unchecked::<Unknown>("onload")?;
+    if onload.get_type()? == ValueType::Function {
+      let onload_func = unsafe { onload.cast::<JsFunction>() };
+      onload_func.call_without_args(Some(this))?;
+    }
+    Ok(())
+  }
+
+  fn on_error(&self, env: Env, this: &This) -> Result<()> {
+    let onerror = this.get_named_property_unchecked::<Unknown>("onerror")?;
+    let err = Error::new(Status::InvalidArg, "Unsupported image type");
+    if onerror.get_type()? == ValueType::Function {
+      let onerror_func = unsafe { onerror.cast::<JsFunction>() };
+      onerror_func.call(Some(this), &[JsError::from(err).into_unknown(env)])?;
+      Ok(())
+    } else {
+      Err(err)
     }
   }
 }

@@ -196,6 +196,8 @@ export class Image {
   readonly complete: boolean
   alt: string
   src: Buffer
+  onload?(): void
+  onerror?(err: Error): void
 }
 
 export class Path2D {

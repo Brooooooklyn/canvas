@@ -92,3 +92,36 @@ test('svg-transparent-background', async (t) => {
 test('load invalid image should throw error', async (t) => {
   await t.throwsAsync(() => loadImage(join(__dirname, 'fixtures', 'broken.png')))
 })
+
+test('load invalid image should not throw if onerror is provided', async (t) => {
+  const broken = await fs.readFile(join(__dirname, 'fixtures', 'broken.png'))
+  await t.notThrowsAsync(
+    () =>
+      new Promise<void>((resolve) => {
+        const image = new Image()
+        image.onload = () => {
+          resolve()
+        }
+        image.onerror = (err) => {
+          t.is(err.message, 'Unsupported image type')
+        }
+        image.src = broken
+      }),
+  )
+})
+
+test('reset src to empty should not throw error', async (t) => {
+  await t.notThrowsAsync(
+    () =>
+      new Promise<void>((resolve, reject) => {
+        const image = new Image()
+        image.onload = () => {
+          resolve()
+        }
+        image.onerror = (err) => {
+          reject(err)
+        }
+        image.src = Buffer.from('')
+      }),
+  )
+})
