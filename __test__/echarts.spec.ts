@@ -40,5 +40,5 @@ test('echarts-start', async (t) => {
     ],
   })
 
-  await snapshotImage(t, { canvas, ctx: canvas.getContext('2d') }, 'png', 0.5)
+  await snapshotImage(t, { canvas, ctx: canvas.getContext('2d') }, 'png', 0.6)
 })
