@@ -27,7 +27,6 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: 18
-          check-latest: true
           cache: 'yarn'
 
       - uses: actions/setup-python@v4
@@ -104,7 +103,6 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: 18
-          check-latest: true
           cache: 'yarn'
 
       - uses: actions/setup-python@v4
@@ -145,7 +143,6 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: 18
-          check-latest: true
           cache: 'yarn'
 
       - name: Login to GitHub Container Registry
@@ -186,7 +183,6 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: 18
-          check-latest: true
           cache: 'yarn'
 
       - name: Compile skia
@@ -206,7 +202,7 @@ jobs:
   build-aarch64-linux-musl:
     if: "!contains(github.event.head_commit.message, 'skip skia')"
 
-    name: stable - linux-x64-musl - build skia
+    name: stable - linux-aarch64-musl - build skia
     runs-on: ubuntu-latest
 
     steps:
@@ -218,7 +214,6 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: 18
-          check-latest: true
           cache: 'yarn'
 
       - name: Login to GitHub Container Registry
@@ -259,7 +254,6 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: 18
-          check-latest: true
           cache: 'yarn'
 
       - uses: actions/setup-python@v4
@@ -321,7 +315,6 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: 18
-          check-latest: true
           cache: 'yarn'
 
       - uses: actions/setup-python@v4
