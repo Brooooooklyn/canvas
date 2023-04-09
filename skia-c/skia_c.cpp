@@ -19,6 +19,30 @@
 
 extern "C"
 {
+  void SkStrSplit(const char* str,
+                const char* delimiters,
+                SkTArray<SkString>* out) {
+    // Skip any delimiters.
+    str += strspn(str, delimiters);
+    if (!*str) {
+      return;
+    }
+
+    while (true) {
+      // Find a token.
+      const size_t len = strcspn(str, delimiters);
+      if (len > 0) {
+        out->push_back().set(str, len);
+        str += len;
+      }
+
+      if (!*str) {
+        return;
+      }
+      // Skip any delimiters.
+      str += strspn(str, delimiters);
+    }
+  }
 
   static SkSamplingOptions SamplingOptionsFromFQ(int fq)
   {
