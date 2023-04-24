@@ -14,11 +14,11 @@ jobs:
       - uses: actions/checkout@v3
 
       - name: Setup QEMU
-        run: docker run --rm --privileged multiarch/qemu-user-static:register --reset
+        run: docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
 
       - name: Download aom-dev
         run: |
-          wget https://github.com/Brooooooklyn/canvas/releases/download/libaom-v3.4.0/aom-aarch64-linux-musl.tar
+          wget https://github.com/Brooooooklyn/canvas/releases/download/libaom-v3.5.0/aom-aarch64-linux-musl.tar
           tar -xvf aom-aarch64-linux-musl.tar
           rm aom-aarch64-linux-musl.tar
 
@@ -31,28 +31,30 @@ jobs:
 
       - name: Build docker image
         run: |
-          docker build . --pull --no-cache -t ghcr.io/brooooooklyn/canvas/ubuntu-builder:focal
+          docker build . --pull --no-cache -t ghcr.io/brooooooklyn/canvas/ubuntu-builder:jammy
           docker build . --pull --no-cache -f musl.Dockerfile -t ghcr.io/brooooooklyn/canvas/musl-builder:lts
 
       - name: Push docker image
         run: |
-          docker push ghcr.io/brooooooklyn/canvas/ubuntu-builder:focal
+          docker push ghcr.io/brooooooklyn/canvas/ubuntu-builder:jammy
           docker push ghcr.io/brooooooklyn/canvas/musl-builder:lts
 
       - name: Install latest libc++-dev for cross build
         uses: addnab/docker-run-action@v3
         with:
-          image: ghcr.io/napi-rs/napi-rs/nodejs:aarch64-16
-          options: '--user 0:0 -e GITHUB_TOKEN -v ${{ github.workspace }}/lib/llvm-15:/usr/lib/llvm-15'
+          image: ubuntu:jammy
+          options: '--platform linux/arm64 --user 0:0 -e GITHUB_TOKEN -v ${{ github.workspace }}/lib/llvm-16:/usr/lib/llvm-16'
           run: >-
             apt-get update &&
-            apt-get install -y wget &&
+            apt-get install -y wget gnupg2 &&
             wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - &&
-            echo "deb http://apt.llvm.org/focal/ llvm-toolchain-focal-15 main" >> /etc/apt/sources.list &&
-            echo "deb-src http://apt.llvm.org/focal/ llvm-toolchain-focal-15 main" >> /etc/apt/sources.list &&
+            echo "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-16 main" >> /etc/apt/sources.list &&
+            echo "deb-src http://apt.llvm.org/jammy/ llvm-toolchain-jammy-16 main" >> /etc/apt/sources.list &&
             apt-get update &&
-            apt-get install libc++-15-dev libc++abi-15-dev -y --fix-missing --no-install-recommends &&
-            rm /usr/lib/llvm-15/lib/libc++abi.so
+            apt-get install libc++-16-dev libc++abi-16-dev -y --fix-missing --no-install-recommends &&
+            rm /usr/lib/llvm-16/lib/libc++abi.so &&
+            rm /usr/lib/llvm-16/lib/libunwind.so &&
+            rm /usr/lib/llvm-16/lib/libc++.so
 
       - name: Build and push Linux aarch64
         uses: docker/build-push-action@v4
@@ -61,4 +63,4 @@ jobs:
           context: .
           platforms: linux/amd64
           push: true
-          tags: ghcr.io/brooooooklyn/canvas/ubuntu-builder:focal-aarch64
+          tags: ghcr.io/brooooooklyn/canvas/ubuntu-builder:jammy-aarch64
