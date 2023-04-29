@@ -27,7 +27,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-apple-darwin
-          toolchain: nightly-2023-02-10
+          toolchain: nightly-2023-04-23
 
       - name: Cache cargo registry
         uses: actions/cache@v3

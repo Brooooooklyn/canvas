@@ -11,7 +11,7 @@ jobs:
     name: Lint SourceCode
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/brooooooklyn/canvas/ubuntu-builder:focal
+      image: ghcr.io/brooooooklyn/canvas/ubuntu-builder:jammy
 
     steps:
       - uses: actions/checkout@v3
@@ -29,7 +29,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-apple-darwin
-          toolchain: nightly-2023-02-10
+          toolchain: nightly-2023-04-23
           components: clippy, rustfmt
 
       - name: Cache cargo registry

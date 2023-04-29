@@ -36,7 +36,7 @@ jobs:
           - host: ubuntu-latest
             target: 'x86_64-unknown-linux-gnu'
             downloadTarget: ''
-            docker: ghcr.io/brooooooklyn/canvas/ubuntu-builder:focal
+            docker: ghcr.io/brooooooklyn/canvas/ubuntu-builder:jammy
             build: >-
               set -e &&
               yarn build --target x86_64-unknown-linux-gnu &&
@@ -66,13 +66,13 @@ jobs:
           - host: ubuntu-latest
             downloadTarget: 'aarch64-unknown-linux-gnu'
             target: 'aarch64-unknown-linux-gnu'
-            docker: ghcr.io/brooooooklyn/canvas/ubuntu-builder:focal-aarch64
+            docker: ghcr.io/brooooooklyn/canvas/ubuntu-builder:jammy-aarch64
             build: >-
               set -e &&
               rustup toolchain install $(cat ./rust-toolchain) &&
               rustup target add aarch64-unknown-linux-gnu &&
               yarn build --target aarch64-unknown-linux-gnu &&
-              llvm-strip-15 skia.linux-arm64-gnu.node
+              llvm-strip-16 skia.linux-arm64-gnu.node
           - host: ubuntu-latest
             target: 'aarch64-unknown-linux-musl'
             downloadTarget: 'aarch64-unknown-linux-musl'
@@ -163,7 +163,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.settings.target }}
-          toolchain: nightly-2023-02-10
+          toolchain: nightly-2023-04-23
 
       - name: Cache cargo registry
         uses: actions/cache@v3

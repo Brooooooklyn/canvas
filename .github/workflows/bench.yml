@@ -15,7 +15,7 @@ jobs:
     name: Bench
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/brooooooklyn/canvas/ubuntu-builder:focal
+      image: ghcr.io/brooooooklyn/canvas/ubuntu-builder:jammy
 
     steps:
       - uses: actions/checkout@v3

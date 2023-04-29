@@ -59,8 +59,8 @@ jobs:
       - name: Compile skia
         if: matrix.os == 'ubuntu-latest'
         run: |
-          docker pull ghcr.io/brooooooklyn/canvas/ubuntu-builder:focal
-          docker tag ghcr.io/brooooooklyn/canvas/ubuntu-builder:focal builder
+          docker pull ghcr.io/brooooooklyn/canvas/ubuntu-builder:jammy
+          docker tag ghcr.io/brooooooklyn/canvas/ubuntu-builder:jammy builder
           docker run --user "$(id -u):$(id -g)" --rm -v $(pwd):/canvas -w /canvas builder node ./scripts/build-skia.js
         env:
           PYTHONHTTPSVERIFY: 0
@@ -187,8 +187,8 @@ jobs:
 
       - name: Compile skia
         run: |
-          docker pull ghcr.io/brooooooklyn/canvas/ubuntu-builder:focal-aarch64
-          docker tag ghcr.io/brooooooklyn/canvas/ubuntu-builder:focal-aarch64 builder
+          docker pull ghcr.io/brooooooklyn/canvas/ubuntu-builder:jammy-aarch64
+          docker tag ghcr.io/brooooooklyn/canvas/ubuntu-builder:jammy-aarch64 builder
           docker run --user "$(id -u):$(id -g)" --rm -v $(pwd):/canvas -w /canvas builder node ./scripts/build-skia.js --target=aarch64-unknown-linux-gnu
 
       - name: Install dependencies
@@ -277,10 +277,10 @@ jobs:
       - name: Install cross compile tools
         run: |
           wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
-          echo "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-15 main" | sudo tee -a /etc/apt/sources.list > /dev/null
-          echo "deb-src http://apt.llvm.org/jammy/ llvm-toolchain-jammy-15 main" | sudo tee -a /etc/apt/sources.list > /dev/null
+          echo "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-16 main" | sudo tee -a /etc/apt/sources.list > /dev/null
+          echo "deb-src http://apt.llvm.org/jammy/ llvm-toolchain-jammy-16 main" | sudo tee -a /etc/apt/sources.list > /dev/null
           sudo apt-get update
-          sudo apt-get install llvm-15 clang-15 lld-15 gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf -y
+          sudo apt-get install llvm-16 clang-16 lld-16 gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf -y
           docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
           docker buildx build --load --platform linux/arm/v7 -t ubuntu:jammy-armv7 . -f jammy-armv7.Dockerfile
           docker run --rm -dt --name ubuntu-jammy-armv7 ubuntu:jammy-armv7
