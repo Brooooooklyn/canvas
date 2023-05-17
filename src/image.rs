@@ -220,94 +220,60 @@ impl Image {
       return Ok(());
     }
     let data_ref: &[u8] = &data;
-    let mut is_svg = false;
-    // <svg></svg>
-    if length >= 11 {
-      for i in 3..length {
-        if '<' == data_ref[i - 3] as char {
-          match data_ref[i - 2] as char {
-            '?' | '!' => continue,
-            's' => {
-              is_svg = 'v' == data_ref[i - 1] as char && 'g' == data_ref[i] as char;
-              break;
-            }
-            _ => {
-              is_svg = false;
-            }
-          }
-        }
-      }
-    }
     self.complete = true;
-    self.is_svg = is_svg;
-    if is_svg {
-      let bitmap =
-        if (self.width - -1.0).abs() > f64::EPSILON && (self.height - -1.0).abs() > f64::EPSILON {
-          Bitmap::from_svg_data_with_custom_size(
-            data.as_ptr(),
-            length,
-            self.width as f32,
-            self.height as f32,
-            self.color_space,
-          )
-        } else {
-          Bitmap::from_svg_data(data.as_ptr(), length, self.color_space)
-        };
-      if let Some(b) = bitmap.as_ref() {
-        if (self.width - -1.0).abs() < f64::EPSILON {
-          self.width = b.0.width as f64;
-        }
-        if (self.height - -1.0).abs() < f64::EPSILON {
-          self.height = b.0.height as f64;
-        }
-      }
-      self.bitmap = bitmap;
-    } else {
-      let bitmap = if str::from_utf8(&data_ref[0..10]) == Ok("data:image") {
-        let data_str = str::from_utf8(data_ref)
+    self.is_svg = false;
+    let bitmap = if str::from_utf8(&data_ref[0..10]) == Ok("data:image") {
+      let data_str = str::from_utf8(data_ref)
+        .map_err(|e| Error::new(Status::InvalidArg, format!("Decode data url failed {e}")))?;
+      if let Some(base64_str) = data_str.split(',').last() {
+        let image_binary = STANDARD
+          .decode(base64_str)
           .map_err(|e| Error::new(Status::InvalidArg, format!("Decode data url failed {e}")))?;
-        if let Some(base64_str) = data_str.split(',').last() {
-          let image_binary = STANDARD
-            .decode(base64_str)
-            .map_err(|e| Error::new(Status::InvalidArg, format!("Decode data url failed {e}")))?;
-          if let Some(kind) = infer::get(&image_binary) {
-            if kind.matcher_type() == infer::MatcherType::Image {
-              Some(Bitmap::from_buffer(
-                image_binary.as_ptr() as *mut u8,
-                image_binary.len(),
-              ))
-            } else {
-              self.on_error(env, &this)?;
-              None
-            }
+        if let Some(kind) = infer::get(&image_binary) {
+          if kind.matcher_type() == infer::MatcherType::Image {
+            Some(Bitmap::from_buffer(
+              image_binary.as_ptr() as *mut u8,
+              image_binary.len(),
+            ))
           } else {
             self.on_error(env, &this)?;
             None
           }
         } else {
-          None
-        }
-      } else if let Some(kind) = infer::get(&data) {
-        if kind.matcher_type() == infer::MatcherType::Image {
-          Some(Bitmap::from_buffer(data.as_ptr() as *mut u8, length))
-        } else {
           self.on_error(env, &this)?;
           None
         }
       } else {
-        self.on_error(env, &this)?;
         None
-      };
-      if let Some(ref b) = bitmap {
-        if (self.width - -1.0).abs() < f64::EPSILON {
-          self.width = b.0.width as f64;
-        }
-        if (self.height - -1.0).abs() < f64::EPSILON {
-          self.height = b.0.height as f64;
-        }
       }
-      self.bitmap = bitmap
+    } else if let Some(kind) = infer::get(&data) && kind.matcher_type() == infer::MatcherType::Image {
+      Some(Bitmap::from_buffer(data.as_ptr() as *mut u8, length))
+    } else if self.is_svg_image(data_ref, length) {
+      self.is_svg = true;
+      if (self.width - -1.0).abs() > f64::EPSILON && (self.height - -1.0).abs() > f64::EPSILON {
+        Bitmap::from_svg_data_with_custom_size(
+          data.as_ptr(),
+          length,
+          self.width as f32,
+          self.height as f32,
+          self.color_space,
+        )
+      } else {
+        Bitmap::from_svg_data(data.as_ptr(), length, self.color_space)
+      }
+    } else {
+      self.on_error(env, &this)?;
+      None
+    };
+    if let Some(ref b) = bitmap {
+      if (self.width - -1.0).abs() < f64::EPSILON {
+        self.width = b.0.width as f64;
+      }
+      if (self.height - -1.0).abs() < f64::EPSILON {
+        self.height = b.0.height as f64;
+      }
     }
+    self.bitmap = bitmap;
     self.src = Some(data);
     self.on_load(&this)?;
     Ok(())
@@ -347,5 +313,26 @@ impl Image {
     } else {
       Err(err)
     }
+  }
+
+  fn is_svg_image(&self, data: &[u8], length: usize) -> bool {
+    let mut is_svg = false;
+    if length >= 11 {
+      for i in 3..length {
+        if '<' == data[i - 3] as char {
+          match data[i - 2] as char {
+            '?' | '!' => continue,
+            's' => {
+              is_svg = 'v' == data[i - 1] as char && 'g' == data[i] as char;
+              break;
+            }
+            _ => {
+              is_svg = false;
+            }
+          }
+        }
+      }
+    }
+    is_svg
   }
 }
