@@ -184,7 +184,7 @@ new Path2D(path: string)
 ```
 
 ```typescript
-export interface DOMMatrix2DInit {
+export interface DOMMatrix2D {
   a: number
   b: number
   c: number
@@ -196,7 +196,7 @@ export interface DOMMatrix2DInit {
 export class Path2D {
   constructor(path?: Path2D | string)
 
-  addPath(path: Path2D, transform?: DOMMatrix2DInit): void
+  addPath(path: Path2D, transform?: DOMMatrix2D): void
   arc(x: number, y: number, radius: number, startAngle: number, endAngle: number, anticlockwise?: boolean): void
   arcTo(x1: number, y1: number, x2: number, y2: number, radius: number): void
   bezierCurveTo(cp1x: number, cp1y: number, cp2x: number, cp2y: number, x: number, y: number): void
@@ -225,7 +225,7 @@ export class Path2D {
   simplify(): Path2D
   asWinding(): Path2D
   stroke(stroke?: StrokeOptions): Path2D
-  transform(transform: DOMMatrix2DInit): Path2D
+  transform(transform: DOMMatrix2D): Path2D
   getBounds(): [left: number, top: number, right: number, bottom: number]
   computeTightBounds(): [left: number, top: number, right: number, bottom: number]
   trim(start: number, end: number, isComplement?: boolean): Path2D
