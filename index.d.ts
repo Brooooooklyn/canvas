@@ -1,7 +1,203 @@
 // Clear all type of caches in Skia
 export function clearAllCache(): void
 
-export interface DOMMatrix2DInit {
+export type GlobalCompositeOperation =
+  | 'clear'
+  | 'copy'
+  | 'destination'
+  | 'source-over'
+  | 'destination-over'
+  | 'source-in'
+  | 'destination-in'
+  | 'source-out'
+  | 'destination-out'
+  | 'source-atop'
+  | 'destination-atop'
+  | 'xor'
+  | 'lighter'
+  | 'normal'
+  | 'multiply'
+  | 'screen'
+  | 'overlay'
+  | 'darken'
+  | 'lighten'
+  | 'color-dodge'
+  | 'color-burn'
+  | 'hard-light'
+  | 'soft-light'
+  | 'difference'
+  | 'exclusion'
+  | 'hue'
+  | 'saturation'
+  | 'color'
+  | 'luminosity'
+  | 'saturate'
+
+export type CanvasLineCap = 'butt' | 'round' | 'square'
+
+export type CanvasLineJoin = 'bevel' | 'miter' | 'round'
+
+export type CanvasTextBaseline = 'alphabetic' | 'bottom' | 'hanging' | 'ideographic' | 'middle' | 'top'
+
+export type CanvasTextAlign = 'center' | 'end' | 'left' | 'right' | 'start'
+
+export interface TextMetrics {
+  readonly actualBoundingBoxAscent: number
+  readonly actualBoundingBoxDescent: number
+  readonly actualBoundingBoxLeft: number
+  readonly actualBoundingBoxRight: number
+  readonly fontBoundingBoxAscent: number
+  readonly fontBoundingBoxDescent: number
+  readonly width: number
+}
+
+export type CanvasFillRule = 'evenodd' | 'nonzero'
+
+export class CanvasRenderingContext2D {
+  drawImage(image: Canvas | Image, dx: number, dy: number): void
+  drawImage(image: Canvas | Image, dx: number, dy: number, dw: number, dh: number): void
+  drawImage(
+    image: Canvas | Image,
+    sx: number,
+    sy: number,
+    sw: number,
+    sh: number,
+    dx: number,
+    dy: number,
+    dw: number,
+    dh: number,
+  ): void
+  putImageData(imagedata: ImageData, dx: number, dy: number): void
+  putImageData(
+    imagedata: ImageData,
+    dx: number,
+    dy: number,
+    dirtyX: number,
+    dirtyY: number,
+    dirtyWidth: number,
+    dirtyHeight: number,
+  ): void
+  getImageData(sx: number, sy: number, sw: number, sh: number): ImageData
+  createImageData(sw: number, sh: number): ImageData
+  createImageData(imagedata: ImageData): ImageData
+  /**
+   * For PDF canvases, adds another page. If width and/or height are omitted,
+   * the canvas's initial size is used.
+   */
+  addPage(width?: number, height?: number): void
+  save(): void
+  restore(): void
+  rotate(angle: number): void
+  translate(x: number, y: number): void
+  transform(a: number, b: number, c: number, d: number, e: number, f: number): void
+  getTransform(): DOMMatrix2D
+  resetTransform(): void
+  setTransform(a: number, b: number, c: number, d: number, e: number, f: number): void
+  setTransform(transform?: DOMMatrix2D): void
+  isPointInPath(x: number, y: number, fillRule?: CanvasFillRule): boolean
+  scale(x: number, y: number): void
+  clip(fillRule?: CanvasFillRule): void
+  fill(path?: Path2D, fillRule?: CanvasFillRule): void
+  stroke(): void
+  fillText(text: string, x: number, y: number, maxWidth?: number): void
+  strokeText(text: string, x: number, y: number, maxWidth?: number): void
+  fillRect(x: number, y: number, w: number, h: number): void
+  strokeRect(x: number, y: number, w: number, h: number): void
+  clearRect(x: number, y: number, w: number, h: number): void
+  rect(x: number, y: number, w: number, h: number): void
+  roundRect(x: number, y: number, w: number, h: number, radii?: number | number[]): void
+  measureText(text: string): TextMetrics
+  moveTo(x: number, y: number): void
+  lineTo(x: number, y: number): void
+  bezierCurveTo(cp1x: number, cp1y: number, cp2x: number, cp2y: number, x: number, y: number): void
+  quadraticCurveTo(cpx: number, cpy: number, x: number, y: number): void
+  beginPath(): void
+  closePath(): void
+  arc(x: number, y: number, radius: number, startAngle: number, endAngle: number, counterclockwise?: boolean): void
+  arcTo(x1: number, y1: number, x2: number, y2: number, radius: number): void
+  ellipse(
+    x: number,
+    y: number,
+    radiusX: number,
+    radiusY: number,
+    rotation: number,
+    startAngle: number,
+    endAngle: number,
+    counterclockwise?: boolean,
+  ): void
+  setLineDash(segments: number[]): void
+  getLineDash(): number[]
+  createPattern(
+    image: Canvas | Image,
+    repetition: 'repeat' | 'repeat-x' | 'repeat-y' | 'no-repeat' | '' | null,
+  ): CanvasPattern
+  createLinearGradient(x0: number, y0: number, x1: number, y1: number): CanvasGradient
+  createRadialGradient(x0: number, y0: number, r0: number, x1: number, y1: number, r1: number): CanvasGradient
+  /**
+   * _Non-standard_. Defaults to 'good'. Affects pattern (gradient, image,
+   * etc.) rendering quality.
+   */
+  patternQuality: 'fast' | 'good' | 'best' | 'nearest' | 'bilinear'
+  imageSmoothingEnabled: boolean
+  globalCompositeOperation: GlobalCompositeOperation
+  globalAlpha: number
+  shadowColor: string
+  miterLimit: number
+  lineWidth: number
+  lineCap: CanvasLineCap
+  lineJoin: CanvasLineJoin
+  lineDashOffset: number
+  shadowOffsetX: number
+  shadowOffsetY: number
+  shadowBlur: number
+  /** _Non-standard_. Sets the antialiasing mode. */
+  antialias: 'default' | 'gray' | 'none' | 'subpixel'
+  /**
+   * Defaults to 'path'. The effect depends on the canvas type:
+   *
+   * * **Standard (image)** `'glyph'` and `'path'` both result in rasterized
+   *   text. Glyph mode is faster than path, but may result in lower-quality
+   *   text, especially when rotated or translated.
+   *
+   * * **PDF** `'glyph'` will embed text instead of paths into the PDF. This
+   *   is faster to encode, faster to open with PDF viewers, yields a smaller
+   *   file size and makes the text selectable. The subset of the font needed
+   *   to render the glyphs will be embedded in the PDF. This is usually the
+   *   mode you want to use with PDF canvases.
+   *
+   * * **SVG** glyph does not cause `<text>` elements to be produced as one
+   *   might expect ([cairo bug](https://gitlab.freedesktop.org/cairo/cairo/issues/253)).
+   *   Rather, glyph will create a `<defs>` section with a `<symbol>` for each
+   *   glyph, then those glyphs be reused via `<use>` elements. `'path'` mode
+   *   creates a `<path>` element for each text string. glyph mode is faster
+   *   and yields a smaller file size.
+   *
+   * In glyph mode, `ctx.strokeText()` and `ctx.fillText()` behave the same
+   * (aside from using the stroke and fill style, respectively).
+   */
+  textDrawingMode: 'path' | 'glyph'
+  /**
+   * _Non-standard_. Defaults to 'good'. Like `patternQuality`, but applies to
+   * transformations affecting more than just patterns.
+   */
+  quality: 'fast' | 'good' | 'best' | 'nearest' | 'bilinear'
+  /** Returns or sets a `DOMMatrix` for the current transformation matrix. */
+  currentTransform: DOMMatrix
+  fillStyle: string | CanvasGradient | CanvasPattern
+  strokeStyle: string | CanvasGradient | CanvasPattern
+  font: string
+  textBaseline: CanvasTextBaseline
+  textAlign: CanvasTextAlign
+  canvas: Canvas
+}
+export class CanvasGradient {
+  addColorStop(offset: number, color: string): void
+}
+export class CanvasPattern {
+  setTransform(transform?: DOMMatrix): void
+}
+
+export interface DOMMatrix2D {
   a: number
   b: number
   c: number
@@ -38,7 +234,7 @@ interface DOMMatrixReadOnly {
   flipX(): DOMMatrix
   flipY(): DOMMatrix
   inverse(): DOMMatrix
-  multiply(other?: DOMMatrixInit): DOMMatrix
+  multiply(other?: DOMMatrix): DOMMatrix
   rotate(rotX?: number, rotY?: number, rotZ?: number): DOMMatrix
   rotateAxisAngle(x?: number, y?: number, z?: number, angle?: number): DOMMatrix
   rotateFromVector(x?: number, y?: number): DOMMatrix
@@ -55,7 +251,7 @@ interface DOMMatrixReadOnly {
   skewY(sy?: number): DOMMatrix
   toFloat32Array(): Float32Array
   toFloat64Array(): Float64Array
-  transformPoint(point?: DOMPointInit): DOMPoint
+  transformPoint(point?: DOMPoint): DOMPoint
   translate(tx?: number, ty?: number, tz?: number): DOMMatrix
   toString(): string
 }
@@ -84,8 +280,8 @@ export interface DOMMatrix extends DOMMatrixReadOnly {
   m43: number
   m44: number
   invertSelf(): DOMMatrix
-  multiplySelf(other?: DOMMatrixInit): DOMMatrix
-  preMultiplySelf(other?: DOMMatrixInit): DOMMatrix
+  multiplySelf(other?: DOMMatrix): DOMMatrix
+  preMultiplySelf(other?: DOMMatrix): DOMMatrix
   rotateAxisAngleSelf(x?: number, y?: number, z?: number, angle?: number): DOMMatrix
   rotateFromVectorSelf(x?: number, y?: number): DOMMatrix
   rotateSelf(rotX?: number, rotY?: number, rotZ?: number): DOMMatrix
@@ -116,7 +312,7 @@ export const DOMMatrix: {
   new (init?: string | number[]): DOMMatrix
   fromFloat32Array(array32: Float32Array): DOMMatrix
   fromFloat64Array(array64: Float64Array): DOMMatrix
-  fromMatrix(other?: DOMMatrixInit): DOMMatrix
+  fromMatrix(other?: DOMMatrix): DOMMatrix
 }
 
 interface DOMRectReadOnly {
@@ -141,7 +337,7 @@ export interface DOMRect extends DOMRectReadOnly {
 export const DOMRect: {
   prototype: DOMRect
   new (x?: number, y?: number, width?: number, height?: number): DOMRect
-  fromRect(other?: DOMRectInit): DOMRect
+  fromRect(other?: DOMRect): DOMRect
 }
 
 interface DOMPointReadOnly {
@@ -149,7 +345,7 @@ interface DOMPointReadOnly {
   readonly x: number
   readonly y: number
   readonly z: number
-  matrixTransform(matrix?: DOMMatrixInit): DOMPoint
+  matrixTransform(matrix?: DOMMatrix): DOMPoint
 }
 
 export interface DOMPoint extends DOMPointReadOnly {
@@ -163,7 +359,7 @@ export interface DOMPoint extends DOMPointReadOnly {
 export const DOMPoint: {
   prototype: DOMPoint
   new (x?: number, y?: number, z?: number, w?: number): DOMPoint
-  fromPoint(other?: DOMPointInit): DOMPoint
+  fromPoint(other?: DOMPoint): DOMPoint
 }
 
 export class ImageData {
@@ -203,7 +399,7 @@ export class Image {
 export class Path2D {
   constructor(path?: Path2D | string)
 
-  addPath(path: Path2D, transform?: DOMMatrix2DInit): void
+  addPath(path: Path2D, transform?: DOMMatrix2D): void
   arc(x: number, y: number, radius: number, startAngle: number, endAngle: number, anticlockwise?: boolean): void
   arcTo(x1: number, y1: number, x2: number, y2: number, radius: number): void
   bezierCurveTo(cp1x: number, cp1y: number, cp2x: number, cp2y: number, x: number, y: number): void
@@ -233,7 +429,7 @@ export class Path2D {
   simplify(): Path2D
   asWinding(): Path2D
   stroke(stroke?: StrokeOptions): Path2D
-  transform(transform: DOMMatrix2DInit): Path2D
+  transform(transform: DOMMatrix2D): Path2D
   getBounds(): [left: number, top: number, right: number, bottom: number]
   computeTightBounds(): [left: number, top: number, right: number, bottom: number]
   trim(start: number, end: number, isComplement?: boolean): Path2D
