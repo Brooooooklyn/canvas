@@ -469,6 +469,13 @@ impl SVGCanvas {
       Property::new(STROKE_STYLE_HIDDEN_NAME)?
         .with_value(&env.create_string("#000")?)
         .with_property_attributes(PropertyAttributes::Writable | PropertyAttributes::Configurable),
+      Property::new("canvas")?
+        .with_value(&this)
+        .with_property_attributes(
+          PropertyAttributes::Default
+            | PropertyAttributes::Writable
+            | PropertyAttributes::Enumerable,
+        )
     ])?;
     env.adjust_external_memory((width * height * 4) as i64)?;
     this.define_properties(&[Property::new("ctx")?
