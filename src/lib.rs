@@ -475,7 +475,7 @@ impl SVGCanvas {
           PropertyAttributes::Default
             | PropertyAttributes::Writable
             | PropertyAttributes::Enumerable,
-        )
+        ),
     ])?;
     env.adjust_external_memory((width * height * 4) as i64)?;
     this.define_properties(&[Property::new("ctx")?
