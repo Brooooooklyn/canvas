@@ -11,7 +11,7 @@ crate-type = ["cdylib"]
 anyhow = "1"
 base64 = "0.21"
 cssparser = "0.29"
-infer = "0.13"
+infer = "0.15"
 napi = { version = "2", default-features = false, features = [
   "napi3",
   "serde-json",
