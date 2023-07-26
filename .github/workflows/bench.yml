@@ -25,15 +25,14 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v3
         with:
-          node-version: 16
-          check-latest: true
+          node-version: 18
           cache: 'yarn'
 
       - name: Install
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          profile: default
-          override: true
+          targets: x86_64-apple-darwin
+          toolchain: nightly-2023-04-23
 
       - name: Cache cargo registry
         uses: actions/cache@v3

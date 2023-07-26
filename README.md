@@ -52,6 +52,7 @@ All Apple M chips on **macOS**.
 Since Skia relies on the [glibc](https://www.gnu.org/software/libc/) 2.18 API, you need to have at least glibc version >= 2.18 on your system.
 
 ## AWS Lambda usage
+
 To use this library on Lambda you will need to use a Lambda layer.
 
 You can simply attach a lambda layer by getting an ARN from [Canvas-Lambda-Layer](https://github.com/ShivamJoker/Canvas-Lambda-Layer)

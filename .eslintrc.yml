@@ -3,7 +3,7 @@ parser: '@typescript-eslint/parser'
 parserOptions:
   ecmaFeatures:
     jsx: true
-  ecmaVersion: 2020
+  ecmaVersion: latest
   sourceType: module
 
 env:
@@ -19,7 +19,7 @@ plugins:
 extends:
   - eslint:recommended
   - plugin:sonarjs/recommended
-  - plugin:prettier/recommended
+  - prettier
 
 rules:
   # 0 = off, 1 = warn, 2 = error
