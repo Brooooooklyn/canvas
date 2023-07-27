@@ -2411,7 +2411,7 @@ impl Path {
     unsafe { Path(ffi::skiac_path_create()) }
   }
 
-  pub fn swap(&mut self, other: &mut Path) {
+  pub fn swap(&mut self, other: &Path) {
     unsafe { ffi::skiac_path_swap(self.0, other.0) }
   }
 

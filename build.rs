@@ -78,42 +78,51 @@ fn main() {
     }
     "aarch64-linux-android" => {
       let nkd_home = env::var("ANDROID_NDK_LATEST_HOME").unwrap();
+      let host = if cfg!(target_os = "windows") {
+        "windows"
+      } else if cfg!(target_os = "macos") {
+        "darwin"
+      } else if cfg!(target_os = "linux") {
+        "linux"
+      } else {
+        panic!("Unsupported host OS");
+      };
       env::set_var(
         "CC",
         format!(
-          "{nkd_home}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang"
+          "{nkd_home}/toolchains/llvm/prebuilt/{host}-x86_64/bin/aarch64-linux-android24-clang"
         )
         .as_str(),
       );
       env::set_var(
         "CXX",
         format!(
-          "{nkd_home}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang++"
+          "{nkd_home}/toolchains/llvm/prebuilt/{host}-x86_64/bin/aarch64-linux-android24-clang++"
         )
         .as_str(),
       );
       build
         .include(
           format!(
-            "{nkd_home}/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include"
+            "{nkd_home}/toolchains/llvm/prebuilt/{host}-x86_64/sysroot/usr/include"
           )
           .as_str(),
         )
         .include(
           format!(
-            "{nkd_home}/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/c++/v1"
+            "{nkd_home}/toolchains/llvm/prebuilt/{host}-x86_64/sysroot/usr/include/c++/v1"
           )
           .as_str(),
         )
         .include(
           format!(
-            "{nkd_home}/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/aarch64-linux-android"
+            "{nkd_home}/toolchains/llvm/prebuilt/{host}-x86_64/sysroot/usr/include/aarch64-linux-android"
           )
           .as_str(),
         )
         .archiver(
           format!(
-            "{nkd_home}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar"
+            "{nkd_home}/toolchains/llvm/prebuilt/{host}-x86_64/bin/llvm-ar"
           )
           .as_str(),
         );

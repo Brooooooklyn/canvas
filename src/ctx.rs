@@ -136,8 +136,8 @@ impl Context {
   }
 
   pub fn begin_path(&mut self) {
-    let mut new_sub_path = SkPath::new();
-    self.path.swap(&mut new_sub_path);
+    let new_sub_path = SkPath::new();
+    self.path.swap(&new_sub_path);
   }
 
   pub fn bezier_curve_to(&mut self, cp1x: f32, cp1y: f32, cp2x: f32, cp2y: f32, x: f32, y: f32) {
@@ -1756,7 +1756,7 @@ impl CanvasRenderingContext2D {
   #[napi]
   pub fn put_image_data(
     &mut self,
-    image_data: &mut ImageData,
+    image_data: &ImageData,
     dx: u32,
     dy: u32,
     dirty_x: Option<f64>,
