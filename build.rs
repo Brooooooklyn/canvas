@@ -47,8 +47,6 @@ fn main() {
       .unwrap();
       let gcc_version_trim = gcc_version.trim();
       build
-        .flag("--sysroot=/aarch64-linux-musl-cross/aarch64-linux-musl")
-        .flag("--gcc-toolchain=aarch64-linux-musl-gcc")
         .include("/aarch64-linux-musl-cross/aarch64-linux-musl/include")
         .include(format!(
           "/aarch64-linux-musl-cross/aarch64-linux-musl/include/c++/{gcc_version_trim}"

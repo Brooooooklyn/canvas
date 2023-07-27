@@ -19,3 +19,9 @@ test('ctx.canvas should be equal to canvas', (t) => {
   const ctx = canvas.getContext('2d')
   t.is(ctx.canvas, canvas)
 })
+
+test('[SVG] ctx.canvas should be equal to canvas', (t) => {
+  const canvas = createCanvas(100, 100, SvgExportFlag.NoPrettyXML)
+  const ctx = canvas.getContext('2d')
+  t.is(ctx.canvas, canvas)
+})

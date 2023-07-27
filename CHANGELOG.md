@@ -1,20 +1,14 @@
 ## [0.1.41](https://github.com/Brooooooklyn/canvas/compare/v0.1.40...v0.1.41) (2023-05-22)
 
-
 ### Bug Fixes
 
-* adjust order of generating bitmap ([#675](https://github.com/Brooooooklyn/canvas/issues/675)) ([8df17af](https://github.com/Brooooooklyn/canvas/commit/8df17af589bf48a14a5fa36cefa9984c3d8aeb5e))
-
-
+- adjust order of generating bitmap ([#675](https://github.com/Brooooooklyn/canvas/issues/675)) ([8df17af](https://github.com/Brooooooklyn/canvas/commit/8df17af589bf48a14a5fa36cefa9984c3d8aeb5e))
 
 ## [0.1.40](https://github.com/Brooooooklyn/canvas/compare/v0.1.39...v0.1.40) (2023-04-09)
 
-
 ### Features
 
-* chrome/m113 ([#656](https://github.com/Brooooooklyn/canvas/issues/656)) ([0141b20](https://github.com/Brooooooklyn/canvas/commit/0141b205c98802f879946a7b58c9761dc7d238cc))
-
-
+- chrome/m113 ([#656](https://github.com/Brooooooklyn/canvas/issues/656)) ([0141b20](https://github.com/Brooooooklyn/canvas/commit/0141b205c98802f879946a7b58c9761dc7d238cc))
 
 ## [0.1.39](https://github.com/Brooooooklyn/canvas/compare/v0.1.38...v0.1.39) (2023-03-14)
 
