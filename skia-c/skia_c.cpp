@@ -21,7 +21,7 @@ extern "C"
 {
   void SkStrSplit(const char* str,
                 const char* delimiters,
-                SkTArray<SkString>* out) {
+                skia_private::TArray<SkString>* out) {
     // Skip any delimiters.
     str += strspn(str, delimiters);
     if (!*str) {
@@ -93,7 +93,7 @@ extern "C"
     SkGraphics::Init();
     auto color_space = COLOR_SPACE_CAST;
     auto info = SkImageInfo::Make(width, height, kRGBA_8888_SkColorType, alphaType, color_space);
-    auto surface = SkSurface::MakeRaster(info);
+    auto surface = SkSurfaces::Raster(info);
 
     if (surface)
     {
@@ -140,7 +140,7 @@ extern "C"
   bool skiac_surface_save(skiac_surface *c_surface, const char *path)
   {
     auto image = SURFACE_CAST->makeImageSnapshot();
-    auto data = image->encodeToData(SkEncodedImageFormat::kPNG, 0);
+    auto data = SkPngEncoder::Encode(nullptr, image.release(), SkPngEncoder::Options());
     if (data)
     {
       SkFILEWStream stream(path);
@@ -220,24 +220,36 @@ extern "C"
   void skiac_surface_png_data(skiac_surface *c_surface, skiac_sk_data *data)
   {
     auto image = SURFACE_CAST->makeImageSnapshot();
-    auto png_data = image->encodeToData().release();
+    auto png_data = SkPngEncoder::Encode(nullptr, image.release(), SkPngEncoder::Options());
     if (png_data)
     {
       data->ptr = png_data->bytes();
       data->size = png_data->size();
-      data->data = reinterpret_cast<skiac_data *>(png_data);
+      data->data = reinterpret_cast<skiac_data *>(png_data.release());
     }
   }
 
   void skiac_surface_encode_data(skiac_surface *c_surface, skiac_sk_data *data, int format, int quality)
   {
     auto image = SURFACE_CAST->makeImageSnapshot();
-    auto encoded_data = image->encodeToData((SkEncodedImageFormat)format, quality).release();
+    sk_sp<SkData> encoded_data;
+    if (format == int(SkEncodedImageFormat::kJPEG)) {
+      SkJpegEncoder::Options options;
+      options.fQuality = quality;
+      encoded_data = SkJpegEncoder::Encode(nullptr, image.release(), options);
+    } else if (format == int(SkEncodedImageFormat::kPNG)) {
+      encoded_data = SkPngEncoder::Encode(nullptr, image.release(), SkPngEncoder::Options());
+    } else if (format == int(SkEncodedImageFormat::kWEBP)){
+      SkWebpEncoder::Options options;
+      options.fCompression = quality == 100 ? SkWebpEncoder::Compression::kLossless : SkWebpEncoder::Compression::kLossy;
+      options.fQuality = quality == 100 ? 75 : quality;
+      encoded_data = SkWebpEncoder::Encode(nullptr, image.release(), options);
+    }
     if (encoded_data)
     {
       data->ptr = const_cast<uint8_t *>(encoded_data->bytes());
       data->size = encoded_data->size();
-      data->data = reinterpret_cast<skiac_data *>(encoded_data);
+      data->data = reinterpret_cast<skiac_data *>(encoded_data.release());
     }
   }
 
@@ -323,7 +335,7 @@ extern "C"
   {
     const auto src_rect = SkRect::MakeXYWH(sx, sy, s_width, s_height);
     const auto dst_rect = SkRect::MakeXYWH(dx, dy, d_width, d_height);
-    auto sk_image = SkImage::MakeFromBitmap(*BITMAP_CAST);
+    auto sk_image = SkImages::RasterFromBitmap(*BITMAP_CAST);
     auto fq = enable_smoothing ? filter_quality : 0;
     const auto sampling = SamplingOptionsFromFQ(fq);
     auto paint = reinterpret_cast<const SkPaint *>(c_paint);
@@ -403,7 +415,7 @@ extern "C"
     auto font_collection = c_collection->collection;
     auto font_style = SkFontStyle(weight, stretch, (SkFontStyle::Slant)slant);
     auto text_direction = (TextDirection)direction;
-    SkTArray<SkString> families;
+    skia_private::TArray<SkString> families;
     SkStrSplit(font_family, ",", &families);
     TextStyle text_style;
     std::vector<SkString> families_vec;
@@ -612,7 +624,7 @@ extern "C"
     auto color_space = COLOR_SPACE_CAST;
     auto info = SkImageInfo::Make(width, height, SkColorType::kRGBA_8888_SkColorType, SkAlphaType::kUnpremul_SkAlphaType, color_space);
     auto data = SkData::MakeFromMalloc(pixels, length);
-    auto image = SkImage::MakeRasterData(info, data, row_bytes);
+    auto image = SkImages::RasterFromData(info, data, row_bytes);
     auto src_rect = SkRect::MakeXYWH(dirty_x, dirty_y, dirty_width, dirty_height);
     auto dst_rect = SkRect::MakeXYWH(x + dirty_x, y + dirty_y, dirty_width, dirty_height);
     const auto sampling = SkSamplingOptions(SkCubicResampler::Mitchell());
@@ -1396,7 +1408,7 @@ extern "C"
 
   skiac_image_filter *skiac_image_filter_from_argb(const uint8_t table_a[256], const uint8_t table_r[256], const uint8_t table_g[256], const uint8_t table_b[256], skiac_image_filter *c_image_filter)
   {
-    auto cf = SkTableColorFilter::MakeARGB(table_a, table_r, table_g, table_b);
+    auto cf = SkColorFilters::TableARGB(table_a, table_r, table_g, table_b);
     auto chained_filter = sk_sp(IMAGE_FILTER_CAST);
     if (c_image_filter)
     {
@@ -1547,7 +1559,12 @@ extern "C"
     return c_font_collection->assets->countFamilies();
   }
 
-  void skiac_font_collection_get_family(skiac_font_collection *c_font_collection, uint32_t i, skiac_string *c_string, void *on_get_style_rust, skiac_on_match_font_style on_match_font_style)
+  void skiac_font_collection_get_family(
+    skiac_font_collection *c_font_collection,
+    uint32_t i,
+    skiac_string *c_string,
+    void *on_get_style_rust,
+    skiac_on_match_font_style on_match_font_style)
   {
     auto name = new SkString();
     c_font_collection->assets->getFamilyName(i, name);
@@ -1562,7 +1579,6 @@ extern "C"
         on_match_font_style(style.width(), style.weight(), (int)style.slant(), on_get_style_rust);
       }
     }
-    font_style_set->unref();
     c_string->length = name->size();
     c_string->ptr = name->c_str();
     c_string->sk_string = name;
