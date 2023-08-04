@@ -488,7 +488,7 @@ test('fillText-AA', async (t) => {
 
 test('fillText-COLRv1', async (t) => {
   const { ctx, canvas } = t.context
-  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'COLRv1.ttf'), 'Colrv1')
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'COLR-v1.ttf'), 'Colrv1')
   ctx.font = '100px Colrv1'
   ctx.fillText('abc', 50, 100)
   await snapshotImage(t, { canvas, ctx }, 'png', 0.5)
