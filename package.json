@@ -84,7 +84,7 @@
     "conventional-changelog-cli": "^3.0.0",
     "echarts": "^5.4.3",
     "eslint": "^8.45.0",
-    "eslint-config-prettier": "^8.8.0",
+    "eslint-config-prettier": "^9.0.0",
     "eslint-plugin-import": "^2.27.5",
     "eslint-plugin-sonarjs": "^0.20.0",
     "husky": "^8.0.3",
