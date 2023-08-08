@@ -3517,7 +3517,7 @@ impl FontCollection {
     unsafe {
       let size = ffi::skiac_font_collection_get_default_fonts_count(self.0);
       for i in 0..size {
-        let mut styles = Vec::new();
+        let mut styles = Vec::with_capacity(4);
         let on_get_style: Box<dyn FnMut(i32, i32, i32)> =
           Box::new(|width: i32, weight: i32, slant: i32| {
             styles.push((
@@ -3536,14 +3536,16 @@ impl FontCollection {
           length: 0,
           sk_string: ptr::null_mut(),
         };
+        let on_get_style_ptr: *mut dyn FnMut(i32, i32, i32) = Box::into_raw(Box::new(on_get_style));
         ffi::skiac_font_collection_get_family(
           self.0,
           i,
           &mut name,
-          Box::into_raw(Box::new(on_get_style)) as *mut c_void,
+          on_get_style_ptr.cast(),
           Some(skiac_on_get_style),
         );
         let c_str: &CStr = CStr::from_ptr(name.ptr);
+        drop(Box::from_raw(on_get_style_ptr));
         names.push(FontStyleSet {
           family: c_str.to_string_lossy().into_owned(),
           styles: styles

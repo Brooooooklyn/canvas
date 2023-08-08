@@ -34,7 +34,7 @@ const Fonts = []
 if (!('families' in GlobalFonts)) {
   Object.defineProperty(GlobalFonts, 'families', {
     get: function () {
-      return JSON.parse(GlobalFonts.getFamilies())
+      return JSON.parse(GlobalFonts.getFamilies().toString())
     },
   })
 }
@@ -42,7 +42,7 @@ if (!('families' in GlobalFonts)) {
 if (!('has' in GlobalFonts)) {
   Object.defineProperty(GlobalFonts, 'has', {
     value: function has(name) {
-      return !!JSON.parse(GlobalFonts.getFamilies()).find(({ family }) => family === name)
+      return !!JSON.parse(GlobalFonts.getFamilies().toString()).find(({ family }) => family === name)
     },
     configurable: false,
     enumerable: false,
