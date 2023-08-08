@@ -1,3 +1,19 @@
+## [0.1.42](https://github.com/Brooooooklyn/canvas/compare/v0.1.41...v0.1.42) (2023-08-08)
+
+
+### Bug Fixes
+
+* add `ctx.canvas` property on svg context ([#697](https://github.com/Brooooooklyn/canvas/issues/697)) ([968e501](https://github.com/Brooooooklyn/canvas/commit/968e501e5d09d5b11fb02829b6ba402ffc3575d1))
+* **deps:** update rust crate infer to 0.15 ([376b19e](https://github.com/Brooooooklyn/canvas/commit/376b19ebc53640a89e1dad73b8281922675cf834))
+* url is string type ([#671](https://github.com/Brooooooklyn/canvas/issues/671)) ([31a8ff9](https://github.com/Brooooooklyn/canvas/commit/31a8ff9a5295697b965ba4e48a19a30dc0f0b1d6))
+
+
+### Features
+
+* upgrade skia to m116 ([#702](https://github.com/Brooooooklyn/canvas/issues/702)) ([926c472](https://github.com/Brooooooklyn/canvas/commit/926c47249b77894eb96fd002755ad73e50e602d6))
+
+
+
 ## [0.1.41](https://github.com/Brooooooklyn/canvas/compare/v0.1.40...v0.1.41) (2023-05-22)
 
 ### Bug Fixes
