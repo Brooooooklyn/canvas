@@ -28,10 +28,12 @@
 #include <include/effects/SkColorMatrix.h>
 #include <include/effects/SkDashPathEffect.h>
 #include <include/effects/SkImageFilters.h>
-#include <include/effects/SkTableColorFilter.h>
 #include <include/effects/SkTrimPathEffect.h>
 #include <include/effects/SkGradientShader.h>
 #include <include/svg/SkSVGCanvas.h>
+#include <include/encode/SkJpegEncoder.h>
+#include <include/encode/SkPngEncoder.h>
+#include <include/encode/SkWebpEncoder.h>
 #include <modules/skparagraph/include/FontCollection.h>
 #include <modules/skparagraph/include/Paragraph.h>
 #include <modules/skparagraph/include/ParagraphBuilder.h>
@@ -111,7 +113,7 @@ public:
     {
       return nullptr;
     }
-    return sk_sp<SkTypeface>(const_cast<SkTypeface *>(tf));
+    return sk_sp<SkTypeface>(tf);
   }
 
 private:

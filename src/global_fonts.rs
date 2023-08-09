@@ -52,9 +52,9 @@ pub mod GlobalFonts {
   }
 
   #[napi]
-  pub fn get_families() -> Result<String> {
+  pub fn get_families() -> Result<Buffer> {
     let font = get_font().map_err(into_napi_error)?;
-    Ok(serde_json::to_string(&font.get_families())?)
+    Ok(serde_json::to_vec(&font.get_families())?.into())
   }
 
   #[napi]
