@@ -1,3 +1,7 @@
+## [0.1.43](https://github.com/Brooooooklyn/canvas/compare/v0.1.42...v0.1.43) (2023-08-11)
+
+
+
 ## [0.1.42](https://github.com/Brooooooklyn/canvas/compare/v0.1.41...v0.1.42) (2023-08-08)
 
 
