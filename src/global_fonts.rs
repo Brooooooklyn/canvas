@@ -44,6 +44,9 @@ pub mod GlobalFonts {
     Ok(font.register(font_data.as_ref(), maybe_name_alias))
   }
 
+  // TODO: Do file extensions in font_path need to be converted to lowercase?
+  // Windows and macOS are case-insensitive, Linux is not.
+  // See: https://github.com/Brooooooklyn/canvas/actions/runs/5893418006/job/15985737723
   #[napi]
   pub fn register_from_path(font_path: String, name_alias: Option<String>) -> Result<bool> {
     let maybe_name_alias = name_alias.and_then(|s| if s.is_empty() { None } else { Some(s) });
@@ -86,9 +89,13 @@ fn load_fonts_from_dir<P: AsRef<path::Path>>(dir: P) -> napi::Result<u32> {
           load_fonts_from_dir(f.path())?;
         } else {
           let p = f.path();
-          let ext = p.extension().and_then(|s| s.to_str());
+          // The font file extensions are case-insensitive.
+          let ext = p
+            .extension()
+            .and_then(|s| s.to_str())
+            .map(|s| s.to_ascii_lowercase());
 
-          match ext {
+          match ext.as_deref() {
             Some("ttf") | Some("ttc") | Some("otf") | Some("pfb") | Some("woff2")
             | Some("woff") => {
               if let Some(p) = p.into_os_string().to_str() {
