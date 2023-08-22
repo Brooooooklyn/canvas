@@ -1,3 +1,12 @@
+## [0.1.44](https://github.com/Brooooooklyn/canvas/compare/v0.1.43...v0.1.44) (2023-08-22)
+
+
+### Bug Fixes
+
+* file extensions in `loadFontsFromDir()` are no longer case-sensitive ([9342e33](https://github.com/Brooooooklyn/canvas/commit/9342e3386f575f3864c1bfa0036caa0956f1a914))
+
+
+
 ## [0.1.43](https://github.com/Brooooooklyn/canvas/compare/v0.1.42...v0.1.43) (2023-08-11)
 
 
