@@ -134,7 +134,7 @@ jobs:
 
       - name: Set up QEMU
         if: ${{ matrix.settings.target == 'armv7-unknown-linux-gnueabihf' }}
-        uses: docker/setup-qemu-action@v2
+        uses: docker/setup-qemu-action@v3
         with:
           platforms: linux/arm/v7
       - name: Set up Docker Buildx
@@ -409,7 +409,7 @@ jobs:
           yarn config set supportedArchitectures.libc "glibc"
           yarn install --immutable --mode=skip-build
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v2
+        uses: docker/setup-qemu-action@v3
         with:
           platforms: arm64
 
@@ -468,7 +468,7 @@ jobs:
           yarn install --immutable --mode=skip-build
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v2
+        uses: docker/setup-qemu-action@v3
         with:
           platforms: arm64
 
@@ -528,7 +528,7 @@ jobs:
           yarn install --immutable --mode=skip-build
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v2
+        uses: docker/setup-qemu-action@v3
         with:
           platforms: arm
 
