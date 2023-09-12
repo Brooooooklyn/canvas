@@ -49,7 +49,7 @@ jobs:
           pip install certifi
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3
         if: matrix.os == 'ubuntu-latest'
         with:
           registry: ghcr.io
@@ -146,7 +146,7 @@ jobs:
           cache: 'yarn'
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ secrets.GH_CONTAINER_UNAME }}
@@ -217,7 +217,7 @@ jobs:
           cache: 'yarn'
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ secrets.GH_CONTAINER_UNAME }}
