@@ -139,7 +139,7 @@ jobs:
           platforms: linux/arm/v7
       - name: Set up Docker Buildx
         if: ${{ matrix.settings.target == 'armv7-unknown-linux-gnueabihf' }}
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v3
         with:
           platforms: linux/arm/v7
 
