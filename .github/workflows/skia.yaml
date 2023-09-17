@@ -23,6 +23,11 @@ jobs:
         with:
           submodules: true
 
+      - name: List llvm dir
+        if: matrix.os == 'windows-latest'
+        run: ls -R "C:\Program Files\LLVM"
+        shell: bash
+
       - name: Setup node
         uses: actions/setup-node@v4
         with:
@@ -46,6 +51,7 @@ jobs:
         if: matrix.os == 'windows-latest'
         run: |
           choco install llvm ninja -y
+          choco upgrade llvm
           pip install certifi
 
       - name: Login to GitHub Container Registry

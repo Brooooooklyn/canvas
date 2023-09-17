@@ -12,6 +12,7 @@ use crate::error::SkError;
 use crate::font::{FontStretch, FontStyle};
 use crate::image::ImageData;
 
+#[allow(non_camel_case_types)]
 pub mod ffi {
   use std::ffi::c_void;
   use std::os::raw::c_char;
@@ -750,7 +751,6 @@ pub mod ffi {
     pub fn skiac_image_filter_make_blur(
       sigma_x: f32,
       sigma_y: f32,
-      tile_mode: i32,
       chained_filter: *mut skiac_image_filter,
     ) -> *mut skiac_image_filter;
 
@@ -3277,14 +3277,12 @@ impl ImageFilter {
   pub fn make_blur(
     sigma_x: f32,
     sigma_y: f32,
-    tile_mode: TileMode,
     chained_filter: Option<&ImageFilter>,
   ) -> Option<Self> {
     let raw_ptr = unsafe {
       ffi::skiac_image_filter_make_blur(
         sigma_x,
         sigma_y,
-        tile_mode as i32,
         chained_filter.map(|c| c.0).unwrap_or(ptr::null_mut()),
       )
     };

@@ -1364,14 +1364,14 @@ extern "C"
     }
   }
 
-  skiac_image_filter *skiac_image_filter_make_blur(float sigma_x, float sigma_y, int tile_mode, skiac_image_filter *c_image_filter)
+  skiac_image_filter *skiac_image_filter_make_blur(float sigma_x, float sigma_y, skiac_image_filter *c_image_filter)
   {
     auto chained_filter = sk_sp(IMAGE_FILTER_CAST);
     if (c_image_filter)
     {
       chained_filter->ref();
     }
-    auto filter = SkImageFilters::Blur(sigma_x, sigma_y, (SkTileMode)tile_mode, chained_filter).release();
+    auto filter = SkImageFilters::Blur(sigma_x, sigma_y, chained_filter).release();
     if (filter)
     {
       return reinterpret_cast<skiac_image_filter *>(filter);
