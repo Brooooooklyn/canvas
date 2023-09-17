@@ -1,7 +1,7 @@
-const { execSync } = require('child_process')
-const { readFileSync, writeFileSync } = require('fs')
-const path = require('path')
-const { platform, arch } = require('os')
+const { execSync } = require('node:child_process')
+const { readFileSync, writeFileSync, existsSync, readdirSync } = require('node:fs')
+const path = require('node:path')
+const { platform, arch } = require('node:os')
 
 const PLATFORM_NAME = platform()
 const HOST_ARCH = arch()
@@ -101,7 +101,11 @@ switch (PLATFORM_NAME) {
       '\\"-DSK_CODEC_DECODES_JPEG\\",' +
       '\\"-DSK_HAS_HEIF_LIBRARY\\",' +
       '\\"-DSK_SHAPER_HARFBUZZ_AVAILABLE\\"'
-    ExtraSkiaBuildFlag = 'clang_win=\\"C:\\\\Program Files\\\\LLVM\\"'
+    const clangVersion = findClangWinVersion()
+    if (clangVersion) {
+      console.info(`Found clang version: ${clangVersion}`)
+      ExtraSkiaBuildFlag = `clang_win_version=\\"${clangVersion}"`
+    }
     GN_ARGS.push(`skia_enable_fontmgr_win=false`)
     GN_ARGS.push(`skia_fontmgr_factory=\\":fontmgr_custom_directory_factory\\"`)
     break
@@ -161,8 +165,7 @@ switch (TARGET_TRIPLE) {
     ExtraCflags = `"--target=aarch64-unknown-linux-musl", "-B/aarch64-linux-musl-cross/aarch64-linux-musl/bin", "-I/aarch64-linux-musl-cross/aarch64-linux-musl/include", "-I/aarch64-linux-musl-cross/aarch64-linux-musl/include/c++/${gccVersion}", "-I/aarch64-linux-musl-cross/aarch64-linux-musl/include/c++/${gccVersion}/aarch64-linux-musl", "-march=armv8-a"`
     ExtraCflagsCC += `, "--target=aarch64-unknown-linux-musl", "-B/aarch64-linux-musl-cross/aarch64-linux-musl/bin", "-I/aarch64-linux-musl-cross/aarch64-linux-musl/include", "-I/aarch64-linux-musl-cross/aarch64-linux-musl/include/c++/${gccVersion}", "-I/aarch64-linux-musl-cross/aarch64-linux-musl/include/c++/${gccVersion}/aarch64-linux-musl", "-march=armv8-a"`
     ExtraLdFlags = `"--target=aarch64-unknown-linux-musl", "-B/aarch64-linux-musl-cross/usr/aarch64-linux-musl/bin", "-L/aarch64-linux-musl-cross/usr/aarch64-linux-musl/lib", "-L/aarch64-linux-musl-cross/usr/lib/gcc/aarch64-linux-musl/${gccVersion}"`
-    ExtraAsmFlags =
-      '"--target=aarch64-unknown-linux-musl", "-march=armv8-a"'
+    ExtraAsmFlags = '"--target=aarch64-unknown-linux-musl", "-march=armv8-a"'
     GN_ARGS.push(
       `extra_ldflags=[${ExtraLdFlags}]`,
       `ar="aarch64-linux-musl-ar"`,
@@ -268,3 +271,22 @@ console.time('Build Skia')
 exec(`ninja -C ${OUTPUT_PATH}`)
 
 console.timeEnd('Build Skia')
+
+
+function findClangWinVersion() {
+  const { LLVM_HOME } = process.env
+  const commonRoot = ['C:\\Program Files\\LLVM', 'C:\\LLVM']
+  if (LLVM_HOME) {
+    commonRoot.unshift(LLVM_HOME)
+  }
+  for (const root of commonRoot) {
+    const libClangPath = path.join(root, 'lib', 'clang')
+    console.info(`Checking ${libClangPath}`)
+    if (existsSync(libClangPath)) {
+      const versions = readdirSync(libClangPath).sort((a, b) => parseInt(a)).filter((v) => !isNaN(v))
+      if (versions.length) {
+        return versions[versions.length - 1]
+      }
+    }
+  }
+}
