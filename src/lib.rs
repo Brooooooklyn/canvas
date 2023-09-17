@@ -235,9 +235,12 @@ impl CanvasElement {
       },
       ContextOutputData::Avif(output) => unsafe {
         env
-          .create_buffer_with_borrowed_data(output.as_ptr(), output.len(), output, |data, _| {
-            mem::drop(data)
-          })
+          .create_buffer_with_borrowed_data(
+            output.as_ptr().cast_mut(),
+            output.len(),
+            output,
+            |data, _| mem::drop(data),
+          )
           .map(|b| b.into_raw())
       },
     }
@@ -257,7 +260,7 @@ impl CanvasElement {
     })?;
     unsafe {
       env
-        .create_buffer_with_borrowed_data(ptr, size, 0, noop_finalize)
+        .create_buffer_with_borrowed_data(ptr.cast_mut(), size, 0, noop_finalize)
         .map(|value| value.into_raw())
     }
   }
