@@ -30,9 +30,9 @@ fn into_napi_error(err: PoisonError<MutexGuard<'_, FontCollection>>) -> napi::Er
   napi::Error::new(napi::Status::GenericFailure, format!("{err}"))
 }
 
-#[napi]
+#[napi(js_name = "GlobalFonts")]
 #[allow(non_snake_case)]
-pub mod GlobalFonts {
+pub mod global_fonts {
   use napi::bindgen_prelude::*;
 
   use super::{get_font, into_napi_error, FONT_DIR, FONT_PATH};

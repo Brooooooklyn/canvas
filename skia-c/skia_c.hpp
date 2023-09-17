@@ -2,19 +2,16 @@
 #define SKIA_CAPI_H
 
 #include <include/codec/SkCodec.h>
+#include <include/codec/SkEncodedImageFormat.h>
 #include <include/core/SkPicture.h>
 #include <include/core/SkSamplingOptions.h>
 #include <include/core/SkString.h>
-#include <include/effects/SkImageFilters.h>
-#include <include/pathops/SkPathOps.h>
-#include <include/utils/SkParsePath.h>
 #include <include/core/SkBitmap.h>
 #include <include/core/SkBlurTypes.h>
 #include <include/core/SkCanvas.h>
 #include <include/core/SkColorFilter.h>
 #include <include/core/SkData.h>
 #include <include/core/SkDrawable.h>
-#include <include/core/SkEncodedImageFormat.h>
 #include <include/core/SkGraphics.h>
 #include <include/core/SkFontMgr.h>
 #include <include/core/SkPaint.h>
@@ -30,6 +27,9 @@
 #include <include/effects/SkImageFilters.h>
 #include <include/effects/SkTrimPathEffect.h>
 #include <include/effects/SkGradientShader.h>
+#include <include/effects/SkImageFilters.h>
+#include <include/pathops/SkPathOps.h>
+#include <include/utils/SkParsePath.h>
 #include <include/svg/SkSVGCanvas.h>
 #include <include/encode/SkJpegEncoder.h>
 #include <include/encode/SkPngEncoder.h>
@@ -45,6 +45,7 @@
 #include <modules/svg/include/SkSVGNode.h>
 #include <modules/svg/include/SkSVGRenderContext.h>
 #include <src/ports/SkFontMgr_custom.h>
+#include <src/ports/SkFontMgr_custom_empty.cpp>
 #include <src/core/SkFontDescriptor.h>
 #include <src/xml/SkXMLWriter.h>
 
@@ -134,9 +135,9 @@ struct skiac_font_collection
   sk_sp<FontCollection> collection;
   sk_sp<SkFontMgr> font_mgr;
   sk_sp<TypefaceFontProviderCustom> assets;
-  skiac_font_collection() : collection(sk_make_sp<FontCollection>()), font_mgr(SkFontMgr::RefDefault()), assets(sk_make_sp<TypefaceFontProviderCustom>(font_mgr))
+  skiac_font_collection() : collection(sk_make_sp<FontCollection>()), font_mgr(SkFontMgr_New_Custom_Empty()), assets(sk_make_sp<TypefaceFontProviderCustom>(font_mgr))
   {
-    collection->setDefaultFontManager(SkFontMgr::RefDefault());
+    collection->setDefaultFontManager(SkFontMgr_New_Custom_Empty());
     collection->setAssetFontManager(font_mgr);
     collection->setDynamicFontManager(assets);
     collection->enableFontFallback();
@@ -457,7 +458,7 @@ extern "C"
   // ImageFilter
   skiac_image_filter *skiac_image_filter_make_drop_shadow_only(float dx, float dy, float sigma_x, float sigma_y, uint32_t color, skiac_image_filter *c_image_filter);
   skiac_image_filter *skiac_image_filter_make_drop_shadow(float dx, float dy, float sigma_x, float sigma_y, uint32_t color, skiac_image_filter *c_image_filter);
-  skiac_image_filter *skiac_image_filter_make_blur(float sigma_x, float sigma_y, int tile_mode, skiac_image_filter *c_image_filter);
+  skiac_image_filter *skiac_image_filter_make_blur(float sigma_x, float sigma_y, skiac_image_filter *c_image_filter);
   skiac_image_filter *skiac_image_filter_color_filter(float m00, float m01, float m02, float m10, float m11, float m12, float m20, float m21, float m22, float opacity, skiac_image_filter *c_image_filter);
   skiac_image_filter *skiac_image_filter_from_argb(const uint8_t table_a[256], const uint8_t table_r[256], const uint8_t table_g[256], const uint8_t table_b[256], skiac_image_filter *c_image_filter);
   void skiac_image_filter_destroy(skiac_image_filter *c_image_filter);

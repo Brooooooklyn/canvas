@@ -19,13 +19,11 @@ on:
 
 jobs:
   build:
-    if: "!contains(github.event.head_commit.message, 'skip ci')"
-
     strategy:
       fail-fast: false
       matrix:
         settings:
-          - host: macos-latest
+          - host: macos-14
             target: 'x86_64-apple-darwin'
             setup: brew install nasm
             build: |
@@ -56,7 +54,7 @@ jobs:
               export LIB_AOM_PKG_CONFIG_PATH=/usr/lib/pkgconfig &&
               yarn build --target x86_64-unknown-linux-musl &&
               strip skia.linux-x64-musl.node
-          - host: macos-latest
+          - host: macos-14
             downloadTarget: 'aarch64-apple-darwin'
             target: 'aarch64-apple-darwin'
             build: |
@@ -210,7 +208,7 @@ jobs:
       fail-fast: false
       matrix:
         settings:
-          - host: macos-latest
+          - host: macos-14
             target: 'x86_64-apple-darwin'
           - host: windows-latest
             target: 'x86_64-pc-windows-msvc'
