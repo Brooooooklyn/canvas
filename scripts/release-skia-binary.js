@@ -119,6 +119,7 @@ async function download() {
   })
   for (const lib of LIB) {
     const { downloadUrl, binary } = libPath(lib, PLATFORM_NAME, TARGET_TRIPLE)
+    console.info(`downloading ${downloadUrl} to ${binary}`)
     execSync(`curl -J -L -H "Accept: application/octet-stream" ${downloadUrl} -o ${binary}`, {
       stdio: 'inherit',
     })
