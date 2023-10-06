@@ -112,9 +112,9 @@ jobs:
             downloadTarget: 'aarch64-linux-android'
             build: |
               export CLANG_VERSION=`ls ${ANDROID_NDK_LATEST_HOME}/toolchains/llvm/prebuilt/linux-x86_64/lib/clang | sed 's/ *$//g'`
-              touch "${ANDROID_NDK_LATEST_HOME}/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/${CLANG_VERSION}/lib/linux/aarch64/libgcc.a"
-              chmod 777 "${ANDROID_NDK_LATEST_HOME}/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/${CLANG_VERSION}/lib/linux/aarch64/libgcc.a"
-              echo "INPUT(-lunwind)" > "${ANDROID_NDK_LATEST_HOME}/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/${CLANG_VERSION}/lib/linux/aarch64/libgcc.a"
+              touch "${ANDROID_NDK_LATEST_HOME}/toolchains/llvm/prebuilt/linux-x86_64/lib/clang/${CLANG_VERSION}/lib/linux/aarch64/libgcc.a"
+              chmod 777 "${ANDROID_NDK_LATEST_HOME}/toolchains/llvm/prebuilt/linux-x86_64/lib/clang/${CLANG_VERSION}/lib/linux/aarch64/libgcc.a"
+              echo "INPUT(-lunwind)" > "${ANDROID_NDK_LATEST_HOME}/toolchains/llvm/prebuilt/linux-x86_64/lib/clang/${CLANG_VERSION}/lib/linux/aarch64/libgcc.a"
               yarn build --target aarch64-linux-android
               ${ANDROID_NDK_LATEST_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip skia.android-arm64.node
 
