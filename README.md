@@ -64,7 +64,7 @@ You can simply attach a lambda layer by getting an ARN from [Canvas-Lambda-Layer
 ```js
 const { promises } = require('fs')
 const { join } = require('path')
-const { createCanvas } = require('@napi-rs/canvas')
+const { createCanvas, loadImage } = require('@napi-rs/canvas')
 
 const canvas = createCanvas(300, 320)
 const ctx = canvas.getContext('2d')
@@ -88,6 +88,21 @@ ctx.closePath()
 ctx.stroke()
 
 async function main() {
+  // load images from disk or from a URL
+  const catImage = await loadImage("path/to/cat.png")
+  const dogImage = await loadImage("https://example.com/path/to/dog.jpg")
+
+  ctx.drawImage(catImage, 0, 0, catImage.width, catImage.height)
+
+  ctx.drawImage(
+    dogImage,
+    canvas.width / 2,
+    canvas.height / 2,
+    dogImage.width,
+    dogImage.height
+  )
+
+  // export canvas as image
   const pngData = await canvas.encode('png') // JPEG, AVIF and WebP are also supported
   // encoding in libuv thread pool, non-blocking
   await promises.writeFile(join(__dirname, 'simple.png'), pngData)
