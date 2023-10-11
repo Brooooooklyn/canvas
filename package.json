@@ -79,7 +79,7 @@
     "ava": "^5.3.1",
     "benny": "^3.7.1",
     "canvas": "^2.11.2",
-    "canvaskit-wasm": "^0.38.2",
+    "canvaskit-wasm": "^0.39.0",
     "colorette": "^2.0.20",
     "conventional-changelog-cli": "^4.0.0",
     "echarts": "^5.4.3",

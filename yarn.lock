@@ -269,7 +269,7 @@ __metadata:
     ava: ^5.3.1
     benny: ^3.7.1
     canvas: ^2.11.2
-    canvaskit-wasm: ^0.38.2
+    canvaskit-wasm: ^0.39.0
     colorette: ^2.0.20
     conventional-changelog-cli: ^4.0.0
     echarts: ^5.4.3
@@ -1390,10 +1390,10 @@ __metadata:
   languageName: node
   linkType: hard
 
-"canvaskit-wasm@npm:^0.38.2":
-  version: 0.38.2
-  resolution: "canvaskit-wasm@npm:0.38.2"
-  checksum: a0b526759d0a1df9a76b69efe6fc9451b3dab81ecff0978c7153ead973e886e0ea33af53e67ab42d8b376e04091dbb3e898ab820cc7bf61fb6cdc36be900b812
+"canvaskit-wasm@npm:^0.39.0":
+  version: 0.39.0
+  resolution: "canvaskit-wasm@npm:0.39.0"
+  checksum: 958aeb2d3be179df86beb4e4d30dd46692f84a7b0835e7950056964d0f1b1bd6adad133ce64788bff4ad3747994b4419e7e7ceeb9903f379cd242aefd9ab624a
   languageName: node
   linkType: hard
 
