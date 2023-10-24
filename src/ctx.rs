@@ -88,6 +88,9 @@ impl Context {
   }
 
   pub fn new(width: u32, height: u32, color_space: ColorSpace) -> Result<Self> {
+    // Default fallback of canvas on browser and skia-canvas is 350x150
+    let width = if width <= 0 { 350 } else { width };
+    let height = if height <= 0 { 150 } else { height };
     let surface = Surface::new_rgba_premultiplied(width, height, color_space)
       .ok_or_else(|| Error::from_reason("Create skia surface failed".to_owned()))?;
     Ok(Context {
