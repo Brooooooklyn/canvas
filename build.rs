@@ -154,7 +154,9 @@ fn main() {
         .static_crt(true);
     }
     "linux" => {
-      println!("cargo:rustc-cdylib-link-arg=-Wl,--allow-multiple-definition");
+      if compile_target_arch != "arm" {
+        println!("cargo:rustc-cdylib-link-arg=-Wl,--allow-multiple-definition");
+      }
       if compile_target_env != "gnu" {
         build.cpp_set_stdlib("stdc++");
       } else {
@@ -221,6 +223,6 @@ fn main() {
 
   println!("cargo:rustc-link-search={skia_lib_dir}");
   println!("cargo:rustc-link-search={}", &out_dir);
-  println!("cargo:rustc-link-lib=skshaper");
+  println!("cargo:rustc-link-lib=static=skshaper");
   napi_build::setup();
 }

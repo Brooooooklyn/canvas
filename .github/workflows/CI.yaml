@@ -146,7 +146,7 @@ jobs:
       - uses: goto-bus-stop/setup-zig@v2
         if: ${{ matrix.settings.target == 'armv7-unknown-linux-gnueabihf' }}
         with:
-          version: 0.10.1
+          version: 0.11.0
 
       - name: Set env
         if: matrix.settings.host == 'windows-latest'
@@ -214,7 +214,7 @@ jobs:
             target: 'x86_64-apple-darwin'
           - host: windows-latest
             target: 'x86_64-pc-windows-msvc'
-        node: ['16', '18']
+        node: ['18', '20']
     runs-on: ${{ matrix.settings.host }}
 
     steps:
@@ -272,7 +272,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: ['16', '18']
+        node: ['18', '20']
     runs-on: ubuntu-latest
 
     steps:
@@ -291,7 +291,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
-          check-latest: true
           cache: 'yarn'
 
       - name: Install dependencies
@@ -324,7 +323,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: ['16', '18']
+        node: ['18', '20']
     runs-on: ubuntu-latest
 
     steps:
@@ -343,7 +342,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
-          check-latest: true
           cache: 'yarn'
 
       - name: Install dependencies
@@ -378,7 +376,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: ['16', '18']
+        node: ['18', '20']
     runs-on: ubuntu-latest
 
     steps:
@@ -433,7 +431,7 @@ jobs:
           path: __test__/failure/**
 
   test-linux-aarch64-musl-binding:
-    name: Test bindings on aarch64-unknown-linux-musl - node@${{ matrix.node }}
+    name: Test bindings on aarch64-unknown-linux-musl - node@lts
     needs:
       - build
 
@@ -487,7 +485,7 @@ jobs:
         if: ${{ failure() }}
         uses: actions/upload-artifact@v3
         with:
-          name: failure-images-aarch64-unknown-linux-musl-${{ matrix.node }}
+          name: failure-images-aarch64-unknown-linux-musl-lts
           path: __test__/failure/**
 
   test-linux-arm-gnueabihf-binding:
@@ -497,7 +495,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: ['16', '18']
+        node: ['18', '20']
     runs-on: ubuntu-latest
 
     steps:
@@ -571,7 +569,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 18
-          check-latest: true
           cache: 'yarn'
 
       - name: Install dependencies
