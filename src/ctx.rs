@@ -9,6 +9,8 @@ use libavif::AvifData;
 use napi::{bindgen_prelude::*, JsBuffer, JsString, NapiRaw, NapiValue};
 
 use crate::global_fonts::get_font;
+use crate::picture_recorder::PictureRecorder;
+use crate::sk::Canvas;
 use crate::{
   avif::Config,
   error::SkError,
@@ -157,13 +159,17 @@ impl Context {
     self.surface.canvas.set_clip_path(clip);
   }
 
-  pub fn clear_rect(&mut self, x: f32, y: f32, width: f32, height: f32) {
+  pub fn clear_rect(&mut self, x: f32, y: f32, width: f32, height: f32) -> result::Result<(), SkError> {
     let mut paint = Paint::new();
     paint.set_style(PaintStyle::Fill);
     paint.set_color(0, 0, 0, 0);
     paint.set_stroke_miter(10.0);
     paint.set_blend_mode(BlendMode::Clear);
-    self.surface.draw_rect(x, y, width, height, &paint);
+    self.render_canvas(&mut paint, |canvas, paint| {
+      canvas.draw_rect(x, y, width, height, paint);
+      Ok(())
+    })?;
+    Ok(())
   }
 
   pub fn close_path(&mut self) {
@@ -193,22 +199,24 @@ impl Context {
   }
 
   pub fn stroke_rect(&mut self, x: f32, y: f32, w: f32, h: f32) -> result::Result<(), SkError> {
-    let stroke_paint = self.stroke_paint()?;
-    if let Some(shadow_paint) = self.shadow_blur_paint(&stroke_paint) {
-      let surface = &mut self.surface;
-      let last_state = &self.state;
-      surface.save();
-      Self::apply_shadow_offset_matrix(
-        surface,
-        last_state.shadow_offset_x,
-        last_state.shadow_offset_y,
-      )?;
-      surface.draw_rect(x, y, w, h, &shadow_paint);
-      surface.restore();
-    };
-
-    self.surface.draw_rect(x, y, w, h, &stroke_paint);
-
+    let mut stroke_paint = self.stroke_paint()?;
+    let shadow_offset_x = self.state.shadow_offset_x;
+    let shadow_offset_y = self.state.shadow_offset_y;
+    let shadow_blur_paint_option = &self.shadow_blur_paint(&stroke_paint);
+    self.render_canvas(&mut stroke_paint, |canvas, paint| {
+      if let Some(shadow_paint) = shadow_blur_paint_option {
+        canvas.save();
+        Self::apply_shadow_offset_matrix_to_canvas(
+          canvas,
+          shadow_offset_x,
+          shadow_offset_y,
+        )?;
+        canvas.draw_rect(x, y, w, h, shadow_paint);
+        canvas.restore();
+      };
+      canvas.draw_rect(x, y, w, h, paint);
+      Ok(())
+    })?;
     Ok(())
   }
 
@@ -267,34 +275,37 @@ impl Context {
     y: f32,
     max_width: f32,
   ) -> result::Result<(), SkError> {
-    let stroke_paint = self.stroke_paint()?;
+    let mut stroke_paint = self.stroke_paint()?;
     self.draw_text(
       text.replace('\n', " ").as_str(),
       x,
       y,
       max_width,
-      &stroke_paint,
+      &mut stroke_paint,
     )?;
     Ok(())
   }
 
   pub fn fill_rect(&mut self, x: f32, y: f32, w: f32, h: f32) -> result::Result<(), SkError> {
-    let fill_paint = self.fill_paint()?;
-    if let Some(shadow_paint) = self.shadow_blur_paint(&fill_paint) {
-      let surface = &mut self.surface;
-      let last_state = &self.state;
-      surface.save();
-      Self::apply_shadow_offset_matrix(
-        surface,
-        last_state.shadow_offset_x,
-        last_state.shadow_offset_y,
-      )?;
-      surface.draw_rect(x, y, w, h, &shadow_paint);
-      surface.restore();
-    };
+    let mut fill_paint = self.fill_paint()?;
+    let shadow_offset_x = self.state.shadow_offset_x;
+    let shadow_offset_y = self.state.shadow_offset_y;
+    let shadow_paint_option = &self.shadow_blur_paint(&fill_paint);
+    self.render_canvas(&mut fill_paint, |canvas, paint| {
+      if let Some(shadow_paint) = shadow_paint_option {
+        canvas.save();
+        Self::apply_shadow_offset_matrix_to_canvas(
+          canvas,
+          shadow_offset_x,
+          shadow_offset_y,
+        )?;
+        canvas.draw_rect(x, y, w, h, shadow_paint);
+        canvas.restore();
+      };
 
-    self.surface.draw_rect(x, y, w, h, &fill_paint);
-
+      canvas.draw_rect(x, y, w, h, paint);
+      Ok(())
+    })?;
     Ok(())
   }
 
@@ -305,38 +316,75 @@ impl Context {
     y: f32,
     max_width: f32,
   ) -> result::Result<(), SkError> {
-    let fill_paint = self.fill_paint()?;
+    let mut fill_paint = self.fill_paint()?;
     self.draw_text(
       text.replace('\n', " ").as_str(),
       x,
       y,
       max_width,
-      &fill_paint,
+      &mut fill_paint,
     )?;
     Ok(())
   }
 
   pub fn stroke(&mut self, path: Option<&mut SkPath>) -> Result<()> {
     let last_state = &self.state;
+    let path_cloned = self.path.clone();
     let p = match path {
       Some(path) => path,
-      None => &self.path,
+      None => &path_cloned,
     };
-    let stroke_paint = self.stroke_paint()?;
-    if let Some(shadow_paint) = self.shadow_blur_paint(&stroke_paint) {
-      let surface = &mut self.surface;
-      surface.save();
-      Self::apply_shadow_offset_matrix(
-        surface,
-        last_state.shadow_offset_x,
-        last_state.shadow_offset_y,
-      )?;
-      self.surface.canvas.draw_path(p, &shadow_paint);
-      self.surface.restore();
-      mem::drop(shadow_paint);
-    }
-    self.surface.canvas.draw_path(p, &stroke_paint);
+    let mut stroke_paint = self.stroke_paint()?;
+    let shadow_blur_paint_option = &self.shadow_blur_paint(&stroke_paint);
+    let shadow_offset_x = last_state.shadow_offset_x;
+    let shadow_offset_y = last_state.shadow_offset_y;
+    self.render_canvas(&mut stroke_paint, |canvas, paint| {
+      if let Some(shadow_paint) = shadow_blur_paint_option {
+        canvas.save();
+        Self::apply_shadow_offset_matrix_to_canvas(
+          canvas,
+          shadow_offset_x,
+          shadow_offset_y,
+        )?;
+        canvas.draw_path(p, shadow_paint);
+        canvas.restore();
+      }
+      canvas.draw_path(p, paint);
+      Ok(())
+    })?;
     Ok(())
+  }
+
+  pub fn render_canvas<F>(&mut self, paint: &mut Paint, f: F) -> result::Result<(), SkError>
+    where F: Fn(&mut Canvas, &Paint) -> result::Result<(), SkError>
+  {
+    match self.state.global_composite_operation {
+      BlendMode::SourceIn
+      | BlendMode::SourceOut
+      | BlendMode::DestinationIn
+      | BlendMode::DestinationOut
+      | BlendMode::DestinationATop
+      | BlendMode::Source => {
+        let mut recorder_paint = paint.clone();
+        recorder_paint.set_blend_mode(BlendMode::SourceOver);
+        let mut recorder = PictureRecorder::new();
+        recorder.begin_recording(0.0, 0.0, self.width as f32, self.height as f32);
+        if let Some(mut canvas) = recorder.get_recording_canvas() {
+          f(&mut canvas, &recorder_paint)?;
+        }
+        if let Some(pict) = recorder.finish_recording_as_picture() {
+          self.surface.save();
+          self.surface.draw_picture(pict, &Matrix::identity(), paint);
+          self.surface.restore();
+
+        }
+        Ok(())
+      }
+      _ => {
+        f(&mut self.surface.canvas, paint)?;
+        Ok(())
+      }
+    }
   }
 
   pub fn fill(
@@ -344,28 +392,32 @@ impl Context {
     path: Option<&mut SkPath>,
     fill_rule: FillType,
   ) -> result::Result<(), SkError> {
-    let last_state = &self.state;
+    let mut fill_paint = self.fill_paint()?;
+    let mut path_cloned = self.path.clone();
     let p = if let Some(p) = path {
       p.set_fill_type(fill_rule);
       p
     } else {
-      self.path.set_fill_type(fill_rule);
-      &self.path
+      path_cloned.set_fill_type(fill_rule);
+      &path_cloned
     };
-    let fill_paint = self.fill_paint()?;
-    if let Some(shadow_paint) = self.shadow_blur_paint(&fill_paint) {
-      let surface = &mut self.surface;
-      surface.save();
-      Self::apply_shadow_offset_matrix(
-        surface,
-        last_state.shadow_offset_x,
-        last_state.shadow_offset_y,
-      )?;
-      surface.canvas.draw_path(p, &shadow_paint);
-      surface.restore();
-      mem::drop(shadow_paint);
-    }
-    self.surface.draw_path(p, &fill_paint);
+    let shadow_offset_x = self.state.shadow_offset_x;
+    let shadow_offset_y = self.state.shadow_offset_y;
+    let shadow_paint_option = &self.shadow_blur_paint(&fill_paint);
+    self.render_canvas(&mut fill_paint, |canvas, paint| {
+      if let Some(shadow_paint) = shadow_paint_option {
+        canvas.save();
+        Self::apply_shadow_offset_matrix_to_canvas(
+          canvas,
+          shadow_offset_x,
+          shadow_offset_y
+        )?;
+        canvas.draw_path(p, shadow_paint);
+        canvas.restore();
+      }
+      canvas.draw_path(p, paint);
+      Ok(())
+    })?;
     Ok(())
   }
 
@@ -618,11 +670,29 @@ impl Context {
     d_height: f32,
   ) -> Result<()> {
     let bitmap = bitmap.0.bitmap;
-    let mut paint = self.fill_paint()?;
+    let mut paint: Paint = self.fill_paint()?;
     paint.set_alpha((self.state.global_alpha * 255.0).round() as u8);
-    if let Some(drop_shadow_paint) = self.drop_shadow_paint(&paint) {
-      let surface = &mut self.surface;
-      surface.canvas.draw_image(
+    let drop_shadow_paint_option = &self.drop_shadow_paint(&paint);
+    let image_smoothing_quality = self.state.image_smoothing_quality;
+    let image_smoothing_enabled = self.state.image_smoothing_enabled;
+    self.render_canvas(&mut paint, |canvas: &mut Canvas, paint| {
+      if let Some(drop_shadow_paint) = drop_shadow_paint_option {
+        canvas.draw_image(
+          bitmap,
+          sx,
+          sy,
+          s_width,
+          s_height,
+          dx,
+          dy,
+          d_width,
+          d_height,
+          image_smoothing_enabled,
+          image_smoothing_quality,
+          drop_shadow_paint,
+        );
+      }
+      canvas.draw_image(
         bitmap,
         sx,
         sy,
@@ -632,25 +702,12 @@ impl Context {
         dy,
         d_width,
         d_height,
-        self.state.image_smoothing_enabled,
-        self.state.image_smoothing_quality,
-        &drop_shadow_paint,
+        image_smoothing_enabled,
+        image_smoothing_quality,
+        &paint,
       );
-    }
-    self.surface.canvas.draw_image(
-      bitmap,
-      sx,
-      sy,
-      s_width,
-      s_height,
-      dx,
-      dy,
-      d_width,
-      d_height,
-      self.state.image_smoothing_enabled,
-      self.state.image_smoothing_quality,
-      &paint,
-    );
+      Ok(())
+    })?;
 
     Ok(())
   }
@@ -661,55 +718,64 @@ impl Context {
     x: f32,
     y: f32,
     max_width: f32,
-    paint: &Paint,
+    paint: &mut Paint,
   ) -> result::Result<(), SkError> {
     let state = &self.state;
     let weight = state.font_style.weight;
-    let stretch = state.font_style.stretch;
-    let slant = state.font_style.style;
-    if let Some(shadow_paint) = self.shadow_blur_paint(paint) {
-      let surface = &mut self.surface;
-      surface.save();
-      Self::apply_shadow_offset_matrix(surface, state.shadow_offset_x, state.shadow_offset_y)?;
-      let font = get_font()?;
-      surface.canvas.draw_text(
+    let stretch = state.font_style.stretch.clone();
+    let slant = state.font_style.style.clone();
+    let shadow_offset_x = state.shadow_offset_x;
+    let shadow_offset_y = state.shadow_offset_y;
+    let font_size = state.font_style.size;
+    let font_family = &state.font_style.family.clone();
+    let text_baseline = state.text_baseline.clone();
+    let text_align = state.text_align.clone();
+    let text_direction = state.text_direction.clone();
+    let width = self.width;
+    let font = get_font()?;
+    let shadow_blur_paint_option = &self.shadow_blur_paint(paint);
+    self.render_canvas(paint, |canvas, paint| {
+      if let Some(shadow_paint) = shadow_blur_paint_option {
+        canvas.save();
+        Self::apply_shadow_offset_matrix_to_canvas(canvas, shadow_offset_x, shadow_offset_y)?;
+        canvas.draw_text(
+          text,
+          x,
+          y,
+          max_width,
+          width as f32,
+          weight,
+          stretch as i32,
+          slant,
+          &font,
+          font_size,
+          font_family,
+          text_baseline,
+          text_align,
+          text_direction,
+          shadow_paint,
+        )?;
+        canvas.restore();
+      }
+      canvas.draw_text(
         text,
         x,
         y,
         max_width,
-        self.width as f32,
+        width as f32,
         weight,
         stretch as i32,
         slant,
         &font,
-        state.font_style.size,
-        &state.font_style.family,
-        state.text_baseline,
-        state.text_align,
-        state.text_direction,
-        &shadow_paint,
+        font_size,
+        &font_family,
+        text_baseline,
+        text_align,
+        text_direction,
+        paint,
       )?;
-      mem::drop(font);
-      surface.restore();
-    }
-    let font = get_font()?;
-    self.surface.canvas.draw_text(
-      text,
-      x,
-      y,
-      max_width,
-      self.width as f32,
-      weight,
-      stretch as i32,
-      slant,
-      &font,
-      state.font_style.size,
-      &state.font_style.family,
-      state.text_baseline,
-      state.text_align,
-      state.text_direction,
-      paint,
-    )?;
+      Ok(())
+    })?;
     Ok(())
   }
 
@@ -741,15 +807,27 @@ impl Context {
     shadow_offset_x: f32,
     shadow_offset_y: f32,
   ) -> result::Result<(), SkError> {
-    let current_transform = surface.canvas.get_transform_matrix();
+    Self::apply_shadow_offset_matrix_to_canvas(
+      &mut surface.canvas,
+      shadow_offset_x,
+      shadow_offset_y,
+    )
+  }
+
+  fn apply_shadow_offset_matrix_to_canvas(
+    canvas: &mut Canvas,
+    shadow_offset_x: f32,
+    shadow_offset_y: f32,
+  ) -> result::Result<(), SkError> {
+    let current_transform = canvas.get_transform_matrix();
     let invert = current_transform
       .invert()
       .ok_or_else(|| SkError::Generic("Invert matrix failed".to_owned()))?;
-    surface.canvas.concat(&invert);
+    canvas.concat(&invert);
     let mut shadow_offset = current_transform.clone();
     shadow_offset.pre_translate(shadow_offset_x, shadow_offset_y);
-    surface.canvas.concat(&shadow_offset);
-    surface.canvas.concat(&current_transform);
+    canvas.concat(&shadow_offset);
+    canvas.concat(&current_transform);
     Ok(())
   }
 
@@ -860,6 +938,7 @@ impl CanvasRenderingContext2D {
   pub fn set_global_composite_operation(&mut self, mode: String) {
     if let Ok(blend_mode) = mode.parse() {
       self.context.state.paint.set_blend_mode(blend_mode);
+      self.context.state.global_composite_operation = blend_mode;
     };
   }
 

@@ -94,7 +94,6 @@ extern "C"
     auto color_space = COLOR_SPACE_CAST;
     auto info = SkImageInfo::Make(width, height, kRGBA_8888_SkColorType, alphaType, color_space);
     auto surface = SkSurfaces::Raster(info);
-
     if (surface)
     {
       // The surface ref count will equal one after the pointer is returned.
@@ -631,6 +630,12 @@ extern "C"
     CANVAS_CAST->drawImageRect(image, src_rect, dst_rect, sampling, nullptr, SkCanvas::kFast_SrcRectConstraint);
   }
 
+  void skiac_canvas_draw_picture(skiac_canvas *c_canvas, skiac_picture *c_picture, skiac_matrix *c_matrix, skiac_paint *c_paint) {
+    auto picture = reinterpret_cast<SkPicture *>(c_picture);
+    reinterpret_cast<SkCanvas *>(c_canvas)->drawPicture(picture, MATRIX_CAST, PAINT_CAST);
+  }
+
+
   // Paint
 
   skiac_paint *skiac_paint_create()
@@ -782,6 +787,26 @@ extern "C"
   {
     auto new_path = new SkPath(*PATH_CAST);
     return reinterpret_cast<skiac_path *>(new_path);
+  }
+
+  // SkPictureRecorder
+  skiac_picture_recorder *skiac_picture_recorder_create() {
+    return reinterpret_cast<skiac_picture_recorder *>(new SkPictureRecorder());
+  }
+
+  void skiac_picture_recorder_begin_recording(skiac_picture_recorder *c_picture_recorder, float x, float y, float width, float height) {
+    auto rect = SkRect::MakeXYWH(x, y, width, height);
+    reinterpret_cast<SkPictureRecorder *>(c_picture_recorder)->beginRecording(rect);
+  }
+
+  skiac_canvas*skiac_picture_recorder_get_recording_canvas(skiac_picture_recorder *c_picture_recorder) {
+    auto canvas = reinterpret_cast<SkPictureRecorder *>(c_picture_recorder)->getRecordingCanvas();
+    return reinterpret_cast<skiac_canvas *>(canvas);
+  }
+
+  skiac_picture* skiac_picture_recorder_finish_recording_as_picture(skiac_picture_recorder *c_picture_recorder)  {
+    auto picture = reinterpret_cast<SkPictureRecorder *>(c_picture_recorder)->finishRecordingAsPicture();
+    return reinterpret_cast<skiac_picture *>(picture.release());
   }
 
   void skiac_path_swap(skiac_path *c_path, skiac_path *other_path)
