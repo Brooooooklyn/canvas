@@ -632,7 +632,7 @@ extern "C"
 
   void skiac_canvas_draw_picture(skiac_canvas *c_canvas, skiac_picture *c_picture, skiac_matrix *c_matrix, skiac_paint *c_paint) {
     auto picture = reinterpret_cast<SkPicture *>(c_picture);
-    reinterpret_cast<SkCanvas *>(c_canvas)->drawPicture(picture, MATRIX_CAST, PAINT_CAST);
+    CANVAS_CAST->drawPicture(picture, MATRIX_CAST, PAINT_CAST);
   }
 
 

@@ -389,14 +389,14 @@ impl Context {
       | BlendMode::DestinationOut
       | BlendMode::DestinationATop
       | BlendMode::Source => {
-        let mut recorder_paint = paint.clone();
-        recorder_paint.set_blend_mode(BlendMode::SourceOver);
-        let mut recorder = PictureRecorder::new();
-        recorder.begin_recording(0.0, 0.0, width, height);
-        if let Some(mut canvas) = recorder.get_recording_canvas() {
-          f(&mut canvas, &recorder_paint)?;
+        let mut layer_paint = paint.clone();
+        layer_paint.set_blend_mode(BlendMode::SourceOver);
+        let mut layer = PictureRecorder::new();
+        layer.begin_recording(0.0, 0.0, width, height);
+        if let Some(mut canvas) = layer.get_recording_canvas() {
+          f(&mut canvas, &layer_paint)?;
         }
-        if let Some(pict) = recorder.finish_recording_as_picture() {
+        if let Some(pict) = layer.finish_recording_as_picture() {
           surface_canvas.save();
           surface_canvas.draw_picture(pict, &Matrix::identity(), paint);
           surface_canvas.restore();
