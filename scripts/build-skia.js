@@ -51,7 +51,6 @@ const GN_ARGS = [
   `skia_enable_tools=false`,
   `skia_enable_svg=true`,
   `skia_enable_skparagraph=true`,
-  `skia_enable_sktext=true`,
   `skia_pdf_subset_harfbuzz=true`,
   `skia_use_expat=true`,
   `skia_use_system_expat=false`,
