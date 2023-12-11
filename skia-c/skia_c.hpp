@@ -2,6 +2,7 @@
 #define SKIA_CAPI_H
 
 #include <include/codec/SkCodec.h>
+#include <include/codec/SkEncodedImageFormat.h>
 #include <include/core/SkPicture.h>
 #include <include/core/SkSamplingOptions.h>
 #include <include/core/SkString.h>
@@ -14,7 +15,6 @@
 #include <include/core/SkColorFilter.h>
 #include <include/core/SkData.h>
 #include <include/core/SkDrawable.h>
-#include <include/core/SkEncodedImageFormat.h>
 #include <include/core/SkGraphics.h>
 #include <include/core/SkFontMgr.h>
 #include <include/core/SkPaint.h>

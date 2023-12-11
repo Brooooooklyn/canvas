@@ -45,9 +45,9 @@ impl Default for Context2dRenderingState {
       shadow_blur: 0f32,
       shadow_color: RGBA::new(0, 0, 0, 255),
       shadow_color_string: "#000000".to_owned(),
-      /// 0.0 ~ 1.0
+      // 0.0 ~ 1.0
       global_alpha: 1.0,
-      /// A float specifying the amount of the line dash offset. The default value is 0.0.
+      // A float specifying the amount of the line dash offset. The default value is 0.0.
       line_dash_offset: 0.0,
       image_smoothing_enabled: true,
       image_smoothing_quality: FilterQuality::default(),
