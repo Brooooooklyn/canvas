@@ -44,13 +44,26 @@ pub struct Context {
   pub alpha: bool,
   pub(crate) states: Vec<Context2dRenderingState>,
   state: Context2dRenderingState,
-  pub width: u32,
-  pub height: u32,
   pub color_space: ColorSpace,
   pub stream: Option<SkWMemoryStream>,
 }
 
 impl Context {
+  pub fn new_recorder(width: u32, height: u32, color_space: ColorSpace) -> Result<Self> {
+    let surface = Surface::new_picture_recorder(width, height).ok_or_else(|| {
+      Error::from_reason("Create skia picture recorder surface failed".to_owned())
+    })?;
+    Ok(Self {
+      surface,
+      alpha: true,
+      path: SkPath::new(),
+      states: vec![],
+      state: Context2dRenderingState::default(),
+      color_space,
+      stream: None,
+    })
+  }
+
   pub fn new_svg(
     width: u32,
     height: u32,
@@ -71,8 +84,6 @@ impl Context {
       path: SkPath::new(),
       states: vec![],
       state: Context2dRenderingState::default(),
-      width,
-      height,
       color_space,
       stream: Some(stream),
     })
@@ -87,8 +98,6 @@ impl Context {
       path: SkPath::new(),
       states: vec![],
       state: Context2dRenderingState::default(),
-      width,
-      height,
       color_space,
       stream: None,
     })
@@ -664,6 +673,7 @@ impl Context {
     paint: &Paint,
   ) -> result::Result<(), SkError> {
     let state = &self.state;
+    let width = self.surface.width;
     let weight = state.font_style.weight;
     let stretch = state.font_style.stretch;
     let slant = state.font_style.style;
@@ -677,7 +687,7 @@ impl Context {
         x,
         y,
         max_width,
-        self.width as f32,
+        width as f32,
         weight,
         stretch as i32,
         slant,
@@ -698,7 +708,7 @@ impl Context {
       x,
       y,
       max_width,
-      self.width as f32,
+      self.surface.width as f32,
       weight,
       stretch as i32,
       slant,
@@ -793,7 +803,9 @@ pub struct CanvasRenderingContext2D {
 
 impl ObjectFinalize for CanvasRenderingContext2D {
   fn finalize(self, mut env: Env) -> Result<()> {
-    env.adjust_external_memory(-((self.context.width * self.context.height * 4) as i64))?;
+    env.adjust_external_memory(
+      -((self.context.surface.width * self.context.surface.height * 4) as i64),
+    )?;
     Ok(())
   }
 }
@@ -811,7 +823,7 @@ impl CanvasRenderingContext2D {
     let context = if let Some(flag) = flag {
       Context::new_svg(width, height, flag.into(), color_space)?
     } else {
-      Context::new(width, height, color_space)?
+      Context::new_recorder(width, height, color_space)?
     };
     Ok(Self { context })
   }

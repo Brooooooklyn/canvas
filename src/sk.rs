@@ -40,6 +40,26 @@ pub mod ffi {
 
   #[repr(C)]
   #[derive(Copy, Clone, Debug)]
+  pub struct skiac_picture_recorder_created {
+    pub recorder: *mut skiac_picture_recorder,
+    pub canvas: *mut skiac_canvas,
+    pub surface: *mut skiac_surface,
+  }
+
+  #[repr(C)]
+  #[derive(Copy, Clone, Debug)]
+  pub struct skiac_picture_recorder {
+    _unused: [u8; 0],
+  }
+
+  #[repr(C)]
+  #[derive(Copy, Clone, Debug)]
+  pub struct skiac_picture {
+    _unused: [u8; 0],
+  }
+
+  #[repr(C)]
+  #[derive(Copy, Clone, Debug)]
   pub struct skiac_canvas {
     _unused: [u8; 0],
   }
@@ -251,6 +271,22 @@ pub mod ffi {
 
     pub fn skiac_clear_all_cache();
 
+    pub fn skiac_create_picture_recorder(
+      width: u32,
+      height: u32,
+      pr: *mut skiac_picture_recorder_created,
+    );
+
+    pub fn skiac_picture_recorder_destroy(pr: *mut skiac_picture_recorder);
+
+    pub fn skiac_picture_recorder_finish_as_picture(
+      pr: *mut skiac_picture_recorder,
+    ) -> *mut skiac_picture;
+
+    pub fn skiac_picture_ref(picture: *mut skiac_picture);
+
+    pub fn skiac_picture_destroy(picture: *mut skiac_picture);
+
     pub fn skiac_surface_create_rgba_premultiplied(
       width: i32,
       height: i32,
@@ -393,6 +429,13 @@ pub mod ffi {
       dw: f32,
       dh: f32,
       filter_quality: i32,
+    );
+
+    pub fn skiac_canvas_draw_picture(
+      canvas: *mut skiac_canvas,
+      picture: *mut skiac_picture,
+      matrix: *mut skiac_matrix,
+      paint: *mut skiac_paint,
     );
 
     pub fn skiac_canvas_get_line_metrics_or_draw_text(
@@ -1522,19 +1565,44 @@ impl TryFrom<u32> for SvgExportFlag {
   }
 }
 
+pub struct Picture(*mut ffi::skiac_picture);
+
+impl Clone for Picture {
+  fn clone(&self) -> Self {
+    unsafe {
+      ffi::skiac_picture_ref(self.0);
+    }
+    Self(self.0)
+  }
+}
+
+impl Drop for Picture {
+  fn drop(&mut self) {
+    unsafe {
+      ffi::skiac_picture_destroy(self.0);
+    }
+  }
+}
+
+unsafe impl Send for Picture {}
+unsafe impl Sync for Picture {}
+
 pub struct Surface {
   ptr: *mut ffi::skiac_surface,
   pub(crate) canvas: Canvas,
+  picture_recorder: *mut ffi::skiac_picture_recorder,
+  pub width: u32,
+  pub height: u32,
 }
 
 impl Surface {
   pub fn new_rgba(width: u32, height: u32, color_space: ColorSpace) -> Option<Surface> {
     unsafe {
-      Self::from_ptr(ffi::skiac_surface_create_rgba(
-        width as i32,
-        height as i32,
-        color_space as u8,
-      ))
+      Self::from_ptr(
+        ffi::skiac_surface_create_rgba(width as i32, height as i32, color_space as u8),
+        width,
+        height,
+      )
     }
   }
 
@@ -1544,11 +1612,15 @@ impl Surface {
     color_space: ColorSpace,
   ) -> Option<Surface> {
     unsafe {
-      Self::from_ptr(ffi::skiac_surface_create_rgba_premultiplied(
-        width as i32,
-        height as i32,
-        color_space as u8,
-      ))
+      Self::from_ptr(
+        ffi::skiac_surface_create_rgba_premultiplied(
+          width as i32,
+          height as i32,
+          color_space as u8,
+        ),
+        width,
+        height,
+      )
     }
   }
 
@@ -1581,20 +1653,51 @@ impl Surface {
       Self {
         ptr: svg_surface.surface,
         canvas: Canvas(svg_surface.canvas),
+        picture_recorder: ptr::null_mut(),
+        width,
+        height,
       },
       SkWMemoryStream(svg_surface.stream),
     ))
   }
 
-  unsafe fn from_ptr(ptr: *mut ffi::skiac_surface) -> Option<Surface> {
+  pub fn new_picture_recorder(width: u32, height: u32) -> Option<Self> {
+    let mut pr = ffi::skiac_picture_recorder_created {
+      surface: ptr::null_mut(),
+      recorder: ptr::null_mut(),
+      canvas: ptr::null_mut(),
+    };
+    unsafe {
+      ffi::skiac_create_picture_recorder(width, height, &mut pr);
+    };
+    if pr.recorder.is_null() || pr.surface.is_null() || pr.canvas.is_null() {
+      return None;
+    }
+    Some(Surface {
+      ptr: pr.surface,
+      canvas: Canvas(pr.canvas),
+      picture_recorder: pr.recorder,
+      width,
+      height,
+    })
+  }
+
+  unsafe fn from_ptr(ptr: *mut ffi::skiac_surface, width: u32, height: u32) -> Option<Surface> {
     if ptr.is_null() {
       None
     } else {
       Some(Surface {
         ptr,
         canvas: Canvas(ffi::skiac_surface_get_canvas(ptr)),
+        picture_recorder: ptr::null_mut(),
+        width,
+        height,
       })
     }
+  }
+
+  pub fn is_recorder(&self) -> bool {
+    !self.picture_recorder.is_null()
   }
 
   pub fn copy_rgba(
@@ -1606,27 +1709,28 @@ impl Surface {
     color_space: ColorSpace,
   ) -> Option<Surface> {
     unsafe {
-      Self::from_ptr(ffi::skiac_surface_copy_rgba(
-        self.ptr,
-        x,
-        y,
+      Self::from_ptr(
+        ffi::skiac_surface_copy_rgba(self.ptr, x, y, width, height, color_space as u8),
         width,
         height,
-        color_space as u8,
-      ))
+      )
     }
   }
 
   pub fn try_clone(&self, color_space: ColorSpace) -> Option<Surface> {
     unsafe {
-      Self::from_ptr(ffi::skiac_surface_copy_rgba(
-        self.ptr,
-        0,
-        0,
-        self.width(),
-        self.height(),
-        color_space as u8,
-      ))
+      Self::from_ptr(
+        ffi::skiac_surface_copy_rgba(
+          self.ptr,
+          0,
+          0,
+          self.width(),
+          self.height(),
+          color_space as u8,
+        ),
+        self.width,
+        self.height,
+      )
     }
   }
 
@@ -1770,8 +1874,14 @@ impl std::ops::DerefMut for Surface {
 
 impl Drop for Surface {
   fn drop(&mut self) {
-    unsafe {
-      ffi::skiac_surface_destroy(self.ptr);
+    if self.picture_recorder.is_null() {
+      unsafe {
+        ffi::skiac_surface_destroy(self.ptr);
+      }
+    } else {
+      unsafe {
+        ffi::skiac_picture_recorder_destroy(self.picture_recorder);
+      }
     }
   }
 }

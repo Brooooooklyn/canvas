@@ -5,6 +5,7 @@
 #include <include/core/SkPicture.h>
 #include <include/core/SkSamplingOptions.h>
 #include <include/core/SkString.h>
+#include <include/core/SkPictureRecorder.h>
 #include <include/effects/SkImageFilters.h>
 #include <include/pathops/SkPathOps.h>
 #include <include/utils/SkParsePath.h>
@@ -52,10 +53,12 @@
 
 using namespace skia::textlayout;
 
+typedef struct skiac_picture_recorder skiac_picture_recorder;
 typedef struct skiac_surface skiac_surface;
 typedef struct skiac_canvas skiac_canvas;
 typedef struct skiac_paint skiac_paint;
 typedef struct skiac_path skiac_path;
+typedef struct skiac_picture skiac_picture;
 typedef struct skiac_shader skiac_shader;
 typedef struct skiac_path_effect skiac_path_effect;
 typedef struct skiac_matrix skiac_matrix;
@@ -142,6 +145,13 @@ struct skiac_font_collection
   }
 };
 
+struct skiac_picture_recorder_created
+{
+  skiac_picture_recorder *recorder;
+  skiac_canvas *canvas;
+  skiac_surface *surface;
+};
+
 struct skiac_line_metrics
 {
   float ascent;
@@ -218,6 +228,13 @@ struct skiac_mapped_point
 extern "C"
 {
   void skiac_clear_all_cache();
+  // PictureRecorder
+  void skiac_create_picture_recorder(uint32_t width, uint32_t height, skiac_picture_recorder_created *pr);
+  void skiac_picture_recorder_destroy(skiac_picture_recorder *pr);
+  // Picture
+  skiac_picture *skiac_picture_recorder_finish_as_picture(skiac_picture_recorder *pr);
+  void skiac_picture_ref(skiac_picture *picture);
+  void skiac_picture_destroy(skiac_picture *picture);
   // Surface
   skiac_surface *skiac_surface_create_rgba_premultiplied(int width, int height, uint8_t cs);
   void skiac_surface_create_svg(skiac_svg_surface *c_surface, int width, int height, int alphaType, uint32_t flag, uint8_t cs);
@@ -290,6 +307,11 @@ extern "C"
       float dw,
       float dh,
       int filter_quality);
+  void skiac_canvas_draw_picture(
+      skiac_canvas *c_canvas,
+      skiac_picture *c_picture,
+      skiac_matrix *c_matrix,
+      skiac_paint *c_paint);
   void skiac_canvas_get_line_metrics_or_draw_text(
       const char *text,
       size_t text_len,

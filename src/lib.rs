@@ -303,7 +303,12 @@ impl CanvasElement {
       "png" => ContextData::Png(surface_ref),
       "avif" => {
         let cfg = AvifConfig::from(&quality_or_config);
-        ContextData::Avif(surface_ref, cfg.into(), ctx2d.width, ctx2d.height)
+        ContextData::Avif(
+          surface_ref,
+          cfg.into(),
+          ctx2d.surface.width,
+          ctx2d.surface.height,
+        )
       }
       _ => {
         return Err(Error::new(
@@ -365,8 +370,8 @@ fn get_data_ref(
       let config = AvifConfig::from(quality_or_config).into();
       let output = avif::encode(
         unsafe { slice::from_raw_parts(data, size) },
-        ctx2d.width,
-        ctx2d.height,
+        ctx2d.surface.width,
+        ctx2d.surface.height,
         &config,
       )
       .map_err(|e| Error::new(Status::GenericFailure, format!("{e}")))?;
@@ -521,7 +526,10 @@ impl SVGCanvas {
   #[napi]
   pub fn get_content(&self, env: Env) -> Result<JsBuffer> {
     let svg_data_stream = self.ctx.context.stream.as_ref().unwrap();
-    let svg_data = svg_data_stream.data(self.ctx.context.width, self.ctx.context.height);
+    let svg_data = svg_data_stream.data(
+      self.ctx.context.surface.width,
+      self.ctx.context.surface.height,
+    );
     unsafe {
       env
         .create_buffer_with_borrowed_data(svg_data.0.ptr, svg_data.0.size, svg_data, |d, _| {

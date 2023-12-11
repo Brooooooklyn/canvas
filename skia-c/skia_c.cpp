@@ -85,6 +85,38 @@ extern "C"
     SkGraphics::PurgeAllCaches();
   }
 
+  void skiac_create_picture_recorder(uint32_t width, uint32_t height, skiac_picture_recorder_created *pr)
+  {
+    auto picture_recorder = new SkPictureRecorder();
+    auto canvas = picture_recorder->beginRecording((SkScalar)width, (SkScalar)height);
+    auto surface = canvas->getSurface();
+    pr->recorder = reinterpret_cast<skiac_picture_recorder *>(picture_recorder);
+    pr->canvas = reinterpret_cast<skiac_canvas *>(canvas);
+    pr->surface = reinterpret_cast<skiac_surface *>(surface);
+  }
+
+  void skiac_picture_recorder_destroy(skiac_picture_recorder *pr)
+  {
+    delete reinterpret_cast<SkPictureRecorder *>(pr);
+  }
+
+  skiac_picture *skiac_picture_recorder_finish_as_picture(skiac_picture_recorder *pr)
+  {
+    auto picture_recorder = reinterpret_cast<SkPictureRecorder *>(pr);
+    auto picture = picture_recorder->finishRecordingAsPicture().release();
+    return reinterpret_cast<skiac_picture *>(picture);
+  }
+
+  void skiac_picture_ref(skiac_picture *picture)
+  {
+    SkSafeRef(reinterpret_cast<SkPicture *>(picture));
+  }
+
+  void skiac_picture_destroy(skiac_picture *picture)
+  {
+    SkSafeUnref(reinterpret_cast<SkPicture *>(picture));
+  }
+
   // Surface
 
   static SkSurface *skiac_surface_create(int width, int height, SkAlphaType alphaType, uint8_t cs)
@@ -157,7 +189,7 @@ extern "C"
   void skiac_surface_destroy(skiac_surface *c_surface)
   {
     // SkSurface is ref counted.
-    SURFACE_CAST->unref();
+    SkSafeUnref(SURFACE_CAST);
   }
 
   skiac_surface *skiac_surface_copy_rgba(
@@ -390,6 +422,16 @@ extern "C"
     auto dst = SkRect::MakeXYWH(dx, dy, dw, dh);
     const auto sampling = SamplingOptionsFromFQ(filter_quality);
     CANVAS_CAST->drawImageRect(image, src, dst, sampling, nullptr, SkCanvas::kFast_SrcRectConstraint);
+  }
+
+  void skiac_canvas_draw_picture(
+      skiac_canvas *c_canvas,
+      skiac_picture *c_picture,
+      skiac_matrix *c_matrix,
+      skiac_paint *c_paint)
+  {
+    auto picture = reinterpret_cast<SkPicture *>(c_picture);
+    CANVAS_CAST->drawPicture(picture, MATRIX_CAST, PAINT_CAST);
   }
 
   void skiac_canvas_get_line_metrics_or_draw_text(
