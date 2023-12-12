@@ -208,6 +208,18 @@ pub mod ffi {
     pub y2: f32,
   }
 
+  #[repr(C)]
+  #[derive(Debug, Clone, Copy)]
+  pub struct skiac_picture_recorder {
+    _unused: [u8; 0],
+  }
+
+  #[repr(C)]
+  #[derive(Debug, Clone, Copy)]
+  pub struct skiac_picture {
+    _unused: [u8; 0],
+  }
+
   pub type SkiacFontCollectionGetFamily =
     Option<unsafe extern "C" fn(width: i32, weight: i32, slant: i32, raw_cb: *mut c_void)>;
 
@@ -452,6 +464,13 @@ pub mod ffi {
       dirty_width: f32,
       dirty_height: f32,
       color_space: u8,
+    );
+
+    pub fn skiac_canvas_draw_picture(
+      canvas: *mut skiac_canvas,
+      picture: *mut skiac_picture,
+      matrix: *mut skiac_matrix,
+      paint: *mut skiac_paint,
     );
 
     pub fn skiac_paint_create() -> *mut skiac_paint;
@@ -874,6 +893,25 @@ pub mod ffi {
       font_collection: *mut skiac_font_collection,
       output_data: *mut skiac_sk_data,
     );
+
+    // SkPictureRecorder
+    pub fn skiac_picture_recorder_create() -> *mut skiac_picture_recorder;
+
+    pub fn skiac_picture_recorder_begin_recording(
+      picture_recorder: *mut skiac_picture_recorder,
+      x: f32,
+      y: f32,
+      w: f32,
+      h: f32,
+    );
+
+    pub fn skiac_picture_recorder_get_recording_canvas(
+      picture_recorder: *mut skiac_picture_recorder,
+    ) -> *mut skiac_canvas;
+
+    pub fn skiac_picture_recorder_finish_recording_as_picture(
+      picture_recorder: *mut skiac_picture_recorder,
+    ) -> *mut skiac_picture;
   }
 }
 
@@ -2251,6 +2289,12 @@ impl Canvas {
         dirty_height,
         color_space as u8,
       )
+    }
+  }
+
+  pub fn draw_picture(&self, picture: SkPicture, matrix: &Matrix, paint: &Paint) {
+    unsafe {
+      ffi::skiac_canvas_draw_picture(self.0, picture.0, matrix.0, paint.0);
     }
   }
 }
@@ -3640,6 +3684,41 @@ impl SkWMemoryStream {
 impl Drop for SkWMemoryStream {
   fn drop(&mut self) {
     unsafe { ffi::skiac_sk_w_stream_destroy(self.0) }
+  }
+}
+
+#[derive(Debug)]
+pub struct SkPicture(*mut ffi::skiac_picture);
+
+#[derive(Debug)]
+pub struct SkPictureRecorder(pub(crate) *mut ffi::skiac_picture_recorder);
+
+impl SkPictureRecorder {
+  pub fn new() -> SkPictureRecorder {
+    SkPictureRecorder(unsafe { ffi::skiac_picture_recorder_create() })
+  }
+
+  pub fn begin_recording(&self, x: f32, y: f32, w: f32, h: f32) {
+    unsafe {
+      ffi::skiac_picture_recorder_begin_recording(self.0, x, y, w, h);
+    }
+  }
+
+  pub fn get_recording_canvas(&self) -> Option<Canvas> {
+    let canvas_ref = unsafe { ffi::skiac_picture_recorder_get_recording_canvas(self.0) };
+    if canvas_ref.is_null() {
+      return None;
+    }
+    Some(Canvas(canvas_ref))
+  }
+  pub fn finish_recording_as_picture(&self) -> Option<SkPicture> {
+    let picture_ref = unsafe { ffi::skiac_picture_recorder_finish_recording_as_picture(self.0) };
+
+    if picture_ref.is_null() {
+      return None;
+    }
+
+    Some(SkPicture(picture_ref))
   }
 }
 

@@ -3,6 +3,7 @@
 #![deny(clippy::all)]
 #![allow(clippy::many_single_char_names)]
 #![allow(clippy::too_many_arguments)]
+#![allow(clippy::new_without_default)]
 
 #[macro_use]
 extern crate napi_derive;
@@ -42,6 +43,7 @@ mod gradient;
 mod image;
 pub mod path;
 mod pattern;
+pub mod picture_recorder;
 #[allow(dead_code)]
 mod sk;
 mod state;

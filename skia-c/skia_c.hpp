@@ -70,6 +70,8 @@ typedef struct skiac_typeface skiac_typeface;
 typedef struct skiac_font_mgr skiac_font_mgr;
 typedef struct skiac_typeface_font_provider skiac_typeface_font_provider;
 typedef struct skiac_w_memory_stream skiac_w_memory_stream;
+typedef struct skiac_picture_recorder skiac_picture_recorder;
+typedef struct skiac_picture skiac_picture;
 
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
 #define SK_FONT_FILE_PREFIX "C:/Windows/Fonts"
@@ -317,6 +319,7 @@ extern "C"
   void skiac_canvas_reset(skiac_canvas *c_canvas);
   void skiac_canvas_write_pixels(skiac_canvas *c_canvas, int width, int height, uint8_t *pixels, size_t row_bytes, int x, int y);
   void skiac_canvas_write_pixels_dirty(skiac_canvas *c_canvas, int width, int height, uint8_t *pixels, size_t row_bytes, size_t length, float x, float y, float dirty_x, float dirty_y, float dirty_width, float dirty_height, uint8_t cs);
+  void skiac_canvas_draw_picture(skiac_canvas *c_canvas, skiac_picture *c_picture, skiac_matrix *c_matrix, skiac_paint *c_paint);
 
   // Paint
   skiac_paint *skiac_paint_create();
@@ -495,6 +498,12 @@ extern "C"
 
   // SkSVG
   void skiac_svg_text_to_path(const uint8_t *data, size_t length, skiac_font_collection *c_collection, skiac_sk_data *output_data);
+
+  // SkPictureRecorder
+  skiac_picture_recorder *skiac_picture_recorder_create();
+  void skiac_picture_recorder_begin_recording(skiac_picture_recorder *c_picture_recorder, float x, float y, float width, float height);
+  skiac_canvas *skiac_picture_recorder_get_recording_canvas(skiac_picture_recorder *c_picture_recorder);
+  skiac_picture *skiac_picture_recorder_finish_recording_as_picture(skiac_picture_recorder *c_picture_recorder);
 }
 
 #endif // SKIA_CAPI_H
