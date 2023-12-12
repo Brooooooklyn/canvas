@@ -3,6 +3,7 @@
 #![deny(clippy::all)]
 #![allow(clippy::many_single_char_names)]
 #![allow(clippy::too_many_arguments)]
+#![allow(clippy::new_without_default)]
 
 #[macro_use]
 extern crate napi_derive;

@@ -292,13 +292,13 @@ impl Context {
     y: f32,
     max_width: f32,
   ) -> result::Result<(), SkError> {
-    let mut stroke_paint = self.stroke_paint()?;
+    let stroke_paint = self.stroke_paint()?;
     self.draw_text(
       text.replace('\n', " ").as_str(),
       x,
       y,
       max_width,
-      &mut stroke_paint,
+      &stroke_paint,
     )?;
     Ok(())
   }
@@ -337,13 +337,13 @@ impl Context {
     y: f32,
     max_width: f32,
   ) -> result::Result<(), SkError> {
-    let mut fill_paint = self.fill_paint()?;
+    let fill_paint = self.fill_paint()?;
     self.draw_text(
       text.replace('\n', " ").as_str(),
       x,
       y,
       max_width,
-      &mut fill_paint,
+      &fill_paint,
     )?;
     Ok(())
   }
@@ -699,12 +699,12 @@ impl Context {
     paint.set_alpha((self.state.global_alpha * 255.0).round() as u8);
     Self::render_canvas(
       &mut self.surface.canvas,
-      &mut paint,
+      &paint,
       self.state.global_composite_operation,
       self.width as f32,
       self.height as f32,
       |canvas: &mut Canvas, paint| {
-        if let Some(drop_shadow_paint) = Self::drop_shadow_paint(&self.state, &paint) {
+        if let Some(drop_shadow_paint) = Self::drop_shadow_paint(&self.state, paint) {
           canvas.draw_image(
             bitmap,
             sx,
@@ -732,7 +732,7 @@ impl Context {
           d_height,
           self.state.image_smoothing_enabled,
           self.state.image_smoothing_quality,
-          &paint,
+          paint,
         );
         Ok(())
       },
@@ -746,7 +746,7 @@ impl Context {
     x: f32,
     y: f32,
     max_width: f32,
-    paint: &mut Paint,
+    paint: &Paint,
   ) -> result::Result<(), SkError> {
     let state = &self.state;
     let width = self.width;
