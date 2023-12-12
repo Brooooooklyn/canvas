@@ -1,8 +1,7 @@
-use crate::sk::{SkPictureRecorder, Canvas, SkPicture};
-
+use crate::sk::{Canvas, SkPicture, SkPictureRecorder};
 
 pub struct PictureRecorder {
-  pub (crate) inner: SkPictureRecorder,
+  pub(crate) inner: SkPictureRecorder,
 }
 
 impl PictureRecorder {

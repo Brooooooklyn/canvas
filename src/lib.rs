@@ -42,11 +42,11 @@ mod gradient;
 mod image;
 pub mod path;
 mod pattern;
+pub mod picture_recorder;
 #[allow(dead_code)]
 mod sk;
 mod state;
 pub mod svg;
-pub mod picture_recorder;
 
 const MIME_WEBP: &str = "image/webp";
 const MIME_PNG: &str = "image/png";

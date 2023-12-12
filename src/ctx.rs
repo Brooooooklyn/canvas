@@ -159,7 +159,13 @@ impl Context {
     self.surface.canvas.set_clip_path(clip);
   }
 
-  pub fn clear_rect(&mut self, x: f32, y: f32, width: f32, height: f32) -> result::Result<(), SkError> {
+  pub fn clear_rect(
+    &mut self,
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
+  ) -> result::Result<(), SkError> {
     let mut paint = Paint::new();
     paint.set_style(PaintStyle::Fill);
     paint.set_color(0, 0, 0, 0);
@@ -174,7 +180,7 @@ impl Context {
       |canvas, paint| {
         canvas.draw_rect(x, y, width, height, paint);
         Ok(())
-      }
+      },
     )?;
     Ok(())
   }
@@ -226,7 +232,7 @@ impl Context {
         };
         canvas.draw_rect(x, y, w, h, paint);
         Ok(())
-      }
+      },
     )?;
     Ok(())
   }
@@ -319,7 +325,7 @@ impl Context {
 
         canvas.draw_rect(x, y, w, h, paint);
         Ok(())
-      }
+      },
     )?;
     Ok(())
   }
@@ -367,7 +373,7 @@ impl Context {
         }
         canvas.draw_path(p, paint);
         Ok(())
-      }
+      },
     )?;
     Ok(())
   }
@@ -378,9 +384,10 @@ impl Context {
     blend_mode: BlendMode,
     width: f32,
     height: f32,
-    f: F
+    f: F,
   ) -> result::Result<(), SkError>
-    where F: Fn(&mut Canvas, &Paint) -> result::Result<(), SkError>
+  where
+    F: Fn(&mut Canvas, &Paint) -> result::Result<(), SkError>,
   {
     match blend_mode {
       BlendMode::SourceIn
@@ -400,7 +407,6 @@ impl Context {
           surface_canvas.save();
           surface_canvas.draw_picture(pict, &Matrix::identity(), paint);
           surface_canvas.restore();
-
         }
         Ok(())
       }
@@ -430,20 +436,20 @@ impl Context {
       self.state.global_composite_operation,
       self.width as f32,
       self.height as f32,
-    |canvas, paint| {
+      |canvas, paint| {
         if let Some(shadow_paint) = Self::shadow_blur_paint(&self.state, &fill_paint) {
           canvas.save();
           Self::apply_shadow_offset_matrix_to_canvas(
             canvas,
             self.state.shadow_offset_x,
-            self.state.shadow_offset_y
+            self.state.shadow_offset_y,
           )?;
           canvas.draw_path(p, &shadow_paint);
           canvas.restore();
         }
         canvas.draw_path(p, paint);
         Ok(())
-      }
+      },
     )?;
     Ok(())
   }
@@ -619,10 +625,7 @@ impl Context {
     if shadow_alpha == 0 {
       return None;
     }
-    if state.shadow_blur == 0f32
-      && state.shadow_offset_x == 0f32
-      && state.shadow_offset_y == 0f32
-    {
+    if state.shadow_blur == 0f32 && state.shadow_offset_x == 0f32 && state.shadow_offset_y == 0f32 {
       return None;
     }
     let mut drop_shadow_paint = paint.clone();
@@ -653,10 +656,7 @@ impl Context {
     if shadow_alpha == 0 {
       return None;
     }
-    if state.shadow_blur == 0f32
-      && state.shadow_offset_x == 0f32
-      && state.shadow_offset_y == 0f32
-    {
+    if state.shadow_blur == 0f32 && state.shadow_offset_x == 0f32 && state.shadow_offset_y == 0f32 {
       return None;
     }
     let mut drop_shadow_paint = paint.clone();
@@ -703,8 +703,23 @@ impl Context {
       self.state.global_composite_operation,
       self.width as f32,
       self.height as f32,
-    |canvas: &mut Canvas, paint| {
-      if let Some(drop_shadow_paint) = Self::drop_shadow_paint(&self.state, &paint) {
+      |canvas: &mut Canvas, paint| {
+        if let Some(drop_shadow_paint) = Self::drop_shadow_paint(&self.state, &paint) {
+          canvas.draw_image(
+            bitmap,
+            sx,
+            sy,
+            s_width,
+            s_height,
+            dx,
+            dy,
+            d_width,
+            d_height,
+            self.state.image_smoothing_enabled,
+            self.state.image_smoothing_quality,
+            &drop_shadow_paint,
+          );
+        }
         canvas.draw_image(
           bitmap,
           sx,
@@ -717,25 +732,11 @@ impl Context {
           d_height,
           self.state.image_smoothing_enabled,
           self.state.image_smoothing_quality,
-          &drop_shadow_paint,
+          &paint,
         );
-      }
-      canvas.draw_image(
-        bitmap,
-        sx,
-        sy,
-        s_width,
-        s_height,
-        dx,
-        dy,
-        d_width,
-        d_height,
-        self.state.image_smoothing_enabled,
-        self.state.image_smoothing_quality,
-        &paint,
-      );
-      Ok(())
-    })?;
+        Ok(())
+      },
+    )?;
     Ok(())
   }
 
@@ -756,10 +757,14 @@ impl Context {
       self.state.global_composite_operation,
       self.width as f32,
       self.height as f32,
-    |canvas, paint| {
+      |canvas, paint| {
         if let Some(shadow_paint) = Self::shadow_blur_paint(state, paint) {
           canvas.save();
-          Self::apply_shadow_offset_matrix_to_canvas(canvas, state.shadow_offset_x, state.shadow_offset_y)?;
+          Self::apply_shadow_offset_matrix_to_canvas(
+            canvas,
+            state.shadow_offset_x,
+            state.shadow_offset_y,
+          )?;
           canvas.draw_text(
             text,
             x,
@@ -797,7 +802,7 @@ impl Context {
           paint,
         )?;
         Ok(())
-      }
+      },
     )?;
     Ok(())
   }
