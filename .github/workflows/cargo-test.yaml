@@ -14,7 +14,6 @@ on:
 
 jobs:
   build:
-    if: "!contains(github.event.head_commit.message, 'skip ci')"
     name: stable - macOS - cargo - test
     runs-on: macos-latest
 
