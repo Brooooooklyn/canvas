@@ -175,3 +175,39 @@ test('stroke-and-filling-jpeg', async (t) => {
   ctx.fill()
   await snapshotImage(t, t.context, 'jpeg')
 })
+
+test('composition-destination-in', async (t) => {
+  const { ctx } = t.context
+  t.context.canvas.width = 300
+  t.context.canvas.height = 300
+  ctx.fillStyle = 'red'
+  ctx.fillRect(0, 0, 300, 300)
+  ctx.save()
+  ctx.globalCompositeOperation = 'destination-in';
+  ctx.fillStyle = 'green';
+  ctx.beginPath();
+  ctx.arc(150, 150, 100, 0, Math.PI * 2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore()
+
+  await snapshotImage(t, t.context, 'png')
+})
+
+test('composition-source-in', async (t) => {
+  const { ctx } = t.context
+  t.context.canvas.width = 300
+  t.context.canvas.height = 300
+  ctx.fillStyle = 'red'
+  ctx.fillRect(0, 0, 300, 300)
+  ctx.save()
+  ctx.globalCompositeOperation = 'source-in';
+  ctx.fillStyle = 'green';
+  ctx.beginPath();
+  ctx.arc(150, 150, 100, 0, Math.PI * 2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore()
+
+  await snapshotImage(t, t.context, 'png')
+})
