@@ -261,7 +261,7 @@ __metadata:
     "@octokit/rest": "npm:^20.0.2"
     "@swc-node/register": "npm:^1.6.8"
     "@swc/core": "npm:^1.3.95"
-    "@taplo/cli": "npm:^0.5.2"
+    "@taplo/cli": "npm:^0.7.0"
     "@types/lodash": "npm:^4.14.200"
     "@types/node": "npm:^20.8.10"
     "@typescript-eslint/eslint-plugin": "npm:^6.9.1"
@@ -664,12 +664,12 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@taplo/cli@npm:^0.5.2":
-  version: 0.5.2
-  resolution: "@taplo/cli@npm:0.5.2"
+"@taplo/cli@npm:^0.7.0":
+  version: 0.7.0
+  resolution: "@taplo/cli@npm:0.7.0"
   bin:
     taplo: dist/cli.js
-  checksum: 10c0/673c0b32c5cabdfd3dfe7054f21202b3ec1601b3ef02f6384f0a09a77dac8888bc777e7c08d374edd34e5bef73927709455e037b346f548158a34ed06782f26b
+  checksum: 10c0/c5a9a34502335731e405547fe24ba1a2f867fccdf8abe4d13e261e30fad6c18a2773a961981206166fde0c85b19accef40381c189c8c6ed4952c5b082c1d4996
   languageName: node
   linkType: hard
 
