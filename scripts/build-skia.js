@@ -197,7 +197,7 @@ switch (TARGET_TRIPLE) {
     break
   case 'aarch64-apple-darwin':
     ExtraSkiaBuildFlag += ' target_cpu="arm64" target_os="mac"'
-    ExtraCflagsCC += ', "--target=arm64-apple-macos"'
+    ExtraCflagsCC += ', "--target=arm64-apple-macos", "-mmacosx-version-min=11.0"'
     ExtraLdFlags = '"--target=arm64-apple-macos"'
     ExtraAsmFlags = '"--target=arm64-apple-macos"'
     ExtraCflags = '"--target=arm64-apple-macos"'
