@@ -1,7 +1,9 @@
 #![feature(link_cfg)]
+#![feature(let_chains)]
 #![deny(clippy::all)]
 #![allow(clippy::many_single_char_names)]
 #![allow(clippy::too_many_arguments)]
+#![allow(clippy::new_without_default)]
 
 #[macro_use]
 extern crate napi_derive;
@@ -11,6 +13,7 @@ extern crate serde_derive;
 use std::str::FromStr;
 use std::{mem, slice};
 
+use base64::Engine;
 use napi::bindgen_prelude::{AsyncTask, ClassInstance, Either3, This, Unknown};
 use napi::*;
 
@@ -40,6 +43,7 @@ mod gradient;
 mod image;
 pub mod path;
 mod pattern;
+pub mod picture_recorder;
 #[allow(dead_code)]
 mod sk;
 mod state;
@@ -84,12 +88,10 @@ impl CanvasElement {
     width: u32,
     height: u32,
   ) -> Result<ClassInstance<CanvasRenderingContext2D>> {
-    let ctx = CanvasRenderingContext2D::into_instance(
-      CanvasRenderingContext2D {
-        context: Context::new(width, height, ColorSpace::default())?,
-      },
-      env,
-    )?;
+    let ctx = CanvasRenderingContext2D {
+      context: Context::new(width, height, ColorSpace::default())?,
+    }
+    .into_instance(env)?;
     ctx.as_object(env).define_properties(&[
       Property::new(FILL_STYLE_HIDDEN_NAME)?
         .with_value(&env.create_string("#000")?)
@@ -108,6 +110,15 @@ impl CanvasElement {
     this.define_properties(&[Property::new("ctx")?
       .with_value(&ctx)
       .with_property_attributes(PropertyAttributes::Default)])?;
+    ctx
+      .as_object(env)
+      .define_properties(&[Property::new("canvas")?
+        .with_value(&this)
+        .with_property_attributes(
+          PropertyAttributes::Default
+            | PropertyAttributes::Writable
+            | PropertyAttributes::Enumerable,
+        )])?;
     Ok(Self { width, height, ctx })
   }
 
@@ -224,9 +235,12 @@ impl CanvasElement {
       },
       ContextOutputData::Avif(output) => unsafe {
         env
-          .create_buffer_with_borrowed_data(output.as_ptr(), output.len(), output, |data, _| {
-            mem::drop(data)
-          })
+          .create_buffer_with_borrowed_data(
+            output.as_ptr().cast_mut(),
+            output.len(),
+            output,
+            |data, _| mem::drop(data),
+          )
           .map(|b| b.into_raw())
       },
     }
@@ -246,7 +260,7 @@ impl CanvasElement {
     })?;
     unsafe {
       env
-        .create_buffer_with_borrowed_data(ptr, size, 0, noop_finalize)
+        .create_buffer_with_borrowed_data(ptr.cast_mut(), size, 0, noop_finalize)
         .map(|value| value.into_raw())
     }
   }
@@ -299,7 +313,7 @@ impl CanvasElement {
       _ => {
         return Err(Error::new(
           Status::InvalidArg,
-          format!("{} is not valid format", format_str),
+          format!("{format_str} is not valid format"),
         ))
       }
     };
@@ -360,13 +374,13 @@ fn get_data_ref(
         ctx2d.height,
         &config,
       )
-      .map_err(|e| Error::new(Status::GenericFailure, format!("{}", e)))?;
+      .map_err(|e| Error::new(Status::GenericFailure, format!("{e}")))?;
       return Ok(ContextOutputData::Avif(output));
     }
     _ => {
       return Err(Error::new(
         Status::InvalidArg,
-        format!("{} is not valid mime", mime),
+        format!("{mime} is not valid mime"),
       ))
     }
   } {
@@ -374,7 +388,7 @@ fn get_data_ref(
   } else {
     Err(Error::new(
       Status::InvalidArg,
-      format!("encode {} output failed", mime),
+      format!("encode {mime} output failed"),
     ))
   }
 }
@@ -393,10 +407,10 @@ impl Task for AsyncDataUrl {
     let mut output = format!("data:{};base64,", &self.mime);
     match &self.surface_data {
       ContextOutputData::Skia(data_ref) => {
-        base64::encode_config_buf(data_ref.slice(), base64::STANDARD, &mut output);
+        base64::engine::general_purpose::STANDARD.encode_string(data_ref.slice(), &mut output);
       }
-      ContextOutputData::Avif(o) => {
-        base64::encode_config_buf(o.as_slice(), base64::STANDARD, &mut output);
+      ContextOutputData::Avif(data_ref) => {
+        base64::engine::general_purpose::STANDARD.encode_string(data_ref.as_ref(), &mut output);
       }
     }
     Ok(output)
@@ -460,6 +474,13 @@ impl SVGCanvas {
       Property::new(STROKE_STYLE_HIDDEN_NAME)?
         .with_value(&env.create_string("#000")?)
         .with_property_attributes(PropertyAttributes::Writable | PropertyAttributes::Configurable),
+      Property::new("canvas")?
+        .with_value(&this)
+        .with_property_attributes(
+          PropertyAttributes::Default
+            | PropertyAttributes::Writable
+            | PropertyAttributes::Enumerable,
+        ),
     ])?;
     env.adjust_external_memory((width * height * 4) as i64)?;
     this.define_properties(&[Property::new("ctx")?

@@ -2,13 +2,12 @@
 #define SKIA_CAPI_H
 
 #include <include/codec/SkCodec.h>
+#include <include/codec/SkEncodedImageFormat.h>
 #include <include/core/SkPicture.h>
 #include <include/core/SkSamplingOptions.h>
 #include <include/core/SkString.h>
-#include <include/effects/SkImageFilters.h>
-#include <include/pathops/SkPathOps.h>
-#include <include/utils/SkParsePath.h>
 #include <include/core/SkBitmap.h>
+#include <include/core/SkBlurTypes.h>
 #include <include/core/SkCanvas.h>
 #include <include/core/SkColorFilter.h>
 #include <include/core/SkData.h>
@@ -17,6 +16,7 @@
 #include <include/core/SkFontMgr.h>
 #include <include/core/SkPaint.h>
 #include <include/core/SkPathEffect.h>
+#include <include/core/SkPathUtils.h>
 #include <include/core/SkSurface.h>
 #include <include/core/SkMaskFilter.h>
 #include <include/core/SkStream.h>
@@ -25,10 +25,15 @@
 #include <include/effects/SkColorMatrix.h>
 #include <include/effects/SkDashPathEffect.h>
 #include <include/effects/SkImageFilters.h>
-#include <include/effects/SkTableColorFilter.h>
 #include <include/effects/SkTrimPathEffect.h>
 #include <include/effects/SkGradientShader.h>
+#include <include/effects/SkImageFilters.h>
+#include <include/pathops/SkPathOps.h>
+#include <include/utils/SkParsePath.h>
 #include <include/svg/SkSVGCanvas.h>
+#include <include/encode/SkJpegEncoder.h>
+#include <include/encode/SkPngEncoder.h>
+#include <include/encode/SkWebpEncoder.h>
 #include <modules/skparagraph/include/FontCollection.h>
 #include <modules/skparagraph/include/Paragraph.h>
 #include <modules/skparagraph/include/ParagraphBuilder.h>
@@ -65,6 +70,8 @@ typedef struct skiac_typeface skiac_typeface;
 typedef struct skiac_font_mgr skiac_font_mgr;
 typedef struct skiac_typeface_font_provider skiac_typeface_font_provider;
 typedef struct skiac_w_memory_stream skiac_w_memory_stream;
+typedef struct skiac_picture_recorder skiac_picture_recorder;
+typedef struct skiac_picture skiac_picture;
 
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
 #define SK_FONT_FILE_PREFIX "C:/Windows/Fonts"
@@ -76,6 +83,8 @@ typedef struct skiac_w_memory_stream skiac_w_memory_stream;
 
 sk_sp<SkFontMgr>
 SkFontMgr_New_Custom_Directory(const char *dir);
+
+sk_sp<SkFontMgr> SkFontMgr_New_Custom_Empty();
 
 enum class CssBaseline
 {
@@ -108,7 +117,7 @@ public:
     {
       return nullptr;
     }
-    return sk_sp<SkTypeface>(const_cast<SkTypeface *>(tf));
+    return sk_sp<SkTypeface>(tf);
   }
 
 private:
@@ -129,7 +138,7 @@ struct skiac_font_collection
   sk_sp<TypefaceFontProviderCustom> assets;
   skiac_font_collection() : collection(sk_make_sp<FontCollection>()), font_mgr(SkFontMgr_New_Custom_Directory(SK_FONT_FILE_PREFIX)), assets(sk_make_sp<TypefaceFontProviderCustom>(font_mgr))
   {
-    collection->setDefaultFontManager(SkFontMgr::RefDefault());
+    collection->setDefaultFontManager(SkFontMgr_New_Custom_Empty());
     collection->setAssetFontManager(font_mgr);
     collection->setDynamicFontManager(assets);
     collection->enableFontFallback();
@@ -146,6 +155,7 @@ struct skiac_line_metrics
   float width;
   float font_ascent;
   float font_descent;
+  float alphabetic_baseline;
 };
 
 struct skiac_rect
@@ -311,6 +321,7 @@ extern "C"
   void skiac_canvas_reset(skiac_canvas *c_canvas);
   void skiac_canvas_write_pixels(skiac_canvas *c_canvas, int width, int height, uint8_t *pixels, size_t row_bytes, int x, int y);
   void skiac_canvas_write_pixels_dirty(skiac_canvas *c_canvas, int width, int height, uint8_t *pixels, size_t row_bytes, size_t length, float x, float y, float dirty_x, float dirty_y, float dirty_width, float dirty_height, uint8_t cs);
+  void skiac_canvas_draw_picture(skiac_canvas *c_canvas, skiac_picture *c_picture, skiac_matrix *c_matrix, skiac_paint *c_paint);
 
   // Paint
   skiac_paint *skiac_paint_create();
@@ -371,6 +382,14 @@ extern "C"
   bool skiac_path_is_empty(skiac_path *c_path);
   bool skiac_path_hit_test(skiac_path *c_path, float x, float y, int type);
   bool skiac_path_stroke_hit_test(skiac_path *c_path, float x, float y, float stroke_w);
+  void skiac_path_round_rect(
+      skiac_path *c_path,
+      SkScalar x,
+      SkScalar y,
+      SkScalar width,
+      SkScalar height,
+      SkScalar *radii,
+      bool clockwise);
 
   // PathEffect
   skiac_path_effect *skiac_path_effect_make_dash_path(const float *intervals, int count, float phase);
@@ -440,7 +459,7 @@ extern "C"
   // ImageFilter
   skiac_image_filter *skiac_image_filter_make_drop_shadow_only(float dx, float dy, float sigma_x, float sigma_y, uint32_t color, skiac_image_filter *c_image_filter);
   skiac_image_filter *skiac_image_filter_make_drop_shadow(float dx, float dy, float sigma_x, float sigma_y, uint32_t color, skiac_image_filter *c_image_filter);
-  skiac_image_filter *skiac_image_filter_make_blur(float sigma_x, float sigma_y, int tile_mode, skiac_image_filter *c_image_filter);
+  skiac_image_filter *skiac_image_filter_make_blur(float sigma_x, float sigma_y, skiac_image_filter *c_image_filter);
   skiac_image_filter *skiac_image_filter_color_filter(float m00, float m01, float m02, float m10, float m11, float m12, float m20, float m21, float m22, float opacity, skiac_image_filter *c_image_filter);
   skiac_image_filter *skiac_image_filter_from_argb(const uint8_t table_a[256], const uint8_t table_r[256], const uint8_t table_g[256], const uint8_t table_b[256], skiac_image_filter *c_image_filter);
   void skiac_image_filter_destroy(skiac_image_filter *c_image_filter);
@@ -481,6 +500,12 @@ extern "C"
 
   // SkSVG
   void skiac_svg_text_to_path(const uint8_t *data, size_t length, skiac_font_collection *c_collection, skiac_sk_data *output_data);
+
+  // SkPictureRecorder
+  skiac_picture_recorder *skiac_picture_recorder_create();
+  void skiac_picture_recorder_begin_recording(skiac_picture_recorder *c_picture_recorder, float x, float y, float width, float height);
+  skiac_canvas *skiac_picture_recorder_get_recording_canvas(skiac_picture_recorder *c_picture_recorder);
+  skiac_picture *skiac_picture_recorder_finish_recording_as_picture(skiac_picture_recorder *c_picture_recorder);
 }
 
 #endif // SKIA_CAPI_H

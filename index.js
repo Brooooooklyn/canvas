@@ -31,20 +31,36 @@ const SvgExportFlag = {
 // eslint-disable-next-line sonarjs/no-unused-collection
 const Fonts = []
 
-Object.defineProperty(GlobalFonts, 'families', {
-  get: function () {
-    return JSON.parse(GlobalFonts.getFamilies())
-  },
-})
+if (!('families' in GlobalFonts)) {
+  Object.defineProperty(GlobalFonts, 'families', {
+    get: function () {
+      return JSON.parse(GlobalFonts.getFamilies().toString())
+    },
+  })
+}
 
-Object.defineProperty(GlobalFonts, 'has', {
-  value: function has(name) {
-    return !!JSON.parse(GlobalFonts.getFamilies()).find(({ family }) => family === name)
-  },
-  configurable: false,
-  enumerable: false,
-  writable: false,
-})
+if (!('has' in GlobalFonts)) {
+  Object.defineProperty(GlobalFonts, 'has', {
+    value: function has(name) {
+      return !!JSON.parse(GlobalFonts.getFamilies().toString()).find(({ family }) => family === name)
+    },
+    configurable: false,
+    enumerable: false,
+    writable: false,
+  })
+}
+
+const _getTransform = CanvasRenderingContext2D.prototype.getTransform
+
+CanvasRenderingContext2D.prototype.getTransform = function getTransform() {
+  const transform = _getTransform.apply(this, arguments)
+  // monkey patched, skip
+  if (transform instanceof DOMMatrix) {
+    return transform
+  }
+  const { a, b, c, d, e, f } = transform
+  return new DOMMatrix([a, b, c, d, e, f])
+}
 
 function createCanvas(width, height, flag) {
   const isSvgBackend = typeof flag !== 'undefined'
@@ -54,6 +70,10 @@ function createCanvas(width, height, flag) {
 class Canvas {
   constructor(width, height, flag) {
     return createCanvas(width, height, flag)
+  }
+
+  static [Symbol.hasInstance](instance) {
+    return instance instanceof CanvasElement || instance instanceof SVGCanvas
   }
 }
 

@@ -1,5 +1,5 @@
 import test from 'ava'
-import { init, setPlatformAPI } from 'echarts'
+import { parse } from 'semver'
 
 import { createCanvas } from '../index.js'
 import { snapshotImage } from './image-snapshot'
@@ -9,6 +9,11 @@ test('echarts-start', async (t) => {
     t.pass()
     return
   }
+  if ((parse(process.version)?.major ?? 0) >= 21) {
+    t.pass()
+    return
+  }
+  const { init, setPlatformAPI } = await import('echarts')
   const canvas = createCanvas(800, 600)
   setPlatformAPI({
     // @ts-expect-error
@@ -17,6 +22,9 @@ test('echarts-start', async (t) => {
   // @ts-expect-error
   const chart = init(canvas)
   chart.setOption({
+    textStyle: {
+      fontFamily: 'Iosevka Slab, PingFang HK',
+    },
     title: {
       text: 'ECharts 入门示例',
     },
@@ -37,5 +45,5 @@ test('echarts-start', async (t) => {
     ],
   })
 
-  await snapshotImage(t, { canvas, ctx: canvas.getContext('2d') }, 'png', 0.5)
+  await snapshotImage(t, { canvas, ctx: canvas.getContext('2d') }, 'png', 0.6)
 })

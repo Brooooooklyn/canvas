@@ -12,7 +12,7 @@ use nom::{
 };
 use thiserror::Error;
 
-use crate::sk::{degrees_to_radians, ImageFilter, TileMode};
+use crate::sk::{degrees_to_radians, ImageFilter};
 
 #[derive(Error, Debug)]
 pub enum ParseFilterError<'a> {
@@ -261,12 +261,10 @@ pub fn css_filter(input: &str) -> IResult<&str, Vec<CssFilter>> {
 }
 
 pub(crate) fn css_filters_to_image_filter(filters: Vec<CssFilter>) -> Option<ImageFilter> {
-  filters.into_iter().fold(
-    Some(ImageFilter(ptr::null_mut())),
-    |image_filter, f| match f {
-      CssFilter::Blur(blur) => {
-        ImageFilter::make_blur(blur, blur, TileMode::Clamp, image_filter.as_ref())
-      }
+  filters
+    .into_iter()
+    .try_fold(ImageFilter(ptr::null_mut()), |image_filter, f| match f {
+      CssFilter::Blur(blur) => ImageFilter::make_blur(blur, blur, Some(&image_filter)),
       CssFilter::Brightness(brightness) => {
         let brightness = brightness.max(0.0);
         ImageFilter::make_image_filter(
@@ -280,7 +278,7 @@ pub(crate) fn css_filters_to_image_filter(filters: Vec<CssFilter>) -> Option<Ima
           0.0,
           brightness,
           1.0,
-          image_filter.as_ref(),
+          Some(&image_filter),
         )
       }
       CssFilter::Contrast(contrast) => {
@@ -291,7 +289,7 @@ pub(crate) fn css_filters_to_image_filter(filters: Vec<CssFilter>) -> Option<Ima
           *v = (127.0 + amt * (orig - 127.0)) as u8;
         });
         let ramp = Some(&ramp);
-        ImageFilter::from_argb(None, ramp, ramp, ramp, image_filter.as_ref())
+        ImageFilter::from_argb(None, ramp, ramp, ramp, Some(&image_filter))
       }
       CssFilter::DropShadow(offset_x, offset_y, blur_radius, shadow_color) => {
         let sigma = blur_radius / 2.0;
@@ -310,7 +308,7 @@ pub(crate) fn css_filters_to_image_filter(filters: Vec<CssFilter>) -> Option<Ima
             | (shadow_color.red as u32) << 16
             | (shadow_color.green as u32) << 8
             | shadow_color.blue as u32,
-          image_filter.as_ref(),
+          Some(&image_filter),
         )
       }
       CssFilter::Grayscale(amt) => {
@@ -326,7 +324,7 @@ pub(crate) fn css_filters_to_image_filter(filters: Vec<CssFilter>) -> Option<Ima
           0.7152 - 0.7152 * amt,
           0.0722 + 0.9278 * amt,
           1.0,
-          image_filter.as_ref(),
+          Some(&image_filter),
         )
       }
       CssFilter::HueRotate(angle) => {
@@ -343,7 +341,7 @@ pub(crate) fn css_filters_to_image_filter(filters: Vec<CssFilter>) -> Option<Ima
           0.715 - cos * 0.715 + sin * 0.715,
           0.072 + cos * 0.928 + sin * 0.072,
           1.0,
-          image_filter.as_ref(),
+          Some(&image_filter),
         )
       }
       CssFilter::Invert(amt) => {
@@ -359,7 +357,7 @@ pub(crate) fn css_filters_to_image_filter(filters: Vec<CssFilter>) -> Option<Ima
             *val = (orig * (1.0 - amt) + inv * amt) as u8;
           });
         let ramp = Some(&ramp);
-        ImageFilter::from_argb(None, ramp, ramp, ramp, image_filter.as_ref())
+        ImageFilter::from_argb(None, ramp, ramp, ramp, Some(&image_filter))
       }
       CssFilter::Opacity(opacity) => {
         let opacity = opacity.max(0.0).min(1.0);
@@ -374,7 +372,7 @@ pub(crate) fn css_filters_to_image_filter(filters: Vec<CssFilter>) -> Option<Ima
           0.0,
           1.0,
           opacity,
-          image_filter.as_ref(),
+          Some(&image_filter),
         )
       }
       CssFilter::Saturate(amt) => {
@@ -390,7 +388,7 @@ pub(crate) fn css_filters_to_image_filter(filters: Vec<CssFilter>) -> Option<Ima
           0.7152 - 0.7152 * amt,
           0.0722 + 0.9278 * amt,
           1.0,
-          image_filter.as_ref(),
+          Some(&image_filter),
         )
       }
       CssFilter::Sepia(amt) => {
@@ -406,11 +404,10 @@ pub(crate) fn css_filters_to_image_filter(filters: Vec<CssFilter>) -> Option<Ima
           0.534 - 0.534 * amt,
           0.131 + 0.869 * amt,
           1.0,
-          image_filter.as_ref(),
+          Some(&image_filter),
         )
       }
-    },
-  )
+    })
 }
 
 #[test]

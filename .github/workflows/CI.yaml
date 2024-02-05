@@ -5,6 +5,10 @@ env:
   APP_NAME: 'skia'
   MACOSX_DEPLOYMENT_TARGET: '10.13'
 
+permissions:
+  contents: write
+  id-token: write
+
 on:
   push:
     branches:
@@ -13,34 +17,74 @@ on:
       - '**'
   pull_request:
 
-jobs:
-  build:
-    if: "!contains(github.event.head_commit.message, 'skip ci')"
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.ref_name != 'main' }}
 
+jobs:
+  lint:
+    name: Lint SourceCode
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/brooooooklyn/canvas/ubuntu-builder:jammy
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: 'yarn'
+
+      - name: Install
+        uses: ./.github/actions/setup-rust
+        with:
+          targets: x86_64-apple-darwin
+          components: clippy, rustfmt
+
+      - name: Install dependencies
+        run: yarn install --immutable --mode=skip-build
+
+      - name: Download skia binary
+        run: |
+          git config --global --add safe.directory $(pwd)
+          node ./scripts/release-skia-binary.js --download
+
+      - name: 'Lint JS/TS'
+        run: yarn lint
+
+      - name: Cargo fmt
+        run: cargo fmt -- --check
+
+      - name: Clippy
+        run: cargo clippy
+
+  build:
     strategy:
       fail-fast: false
       matrix:
         settings:
-          - host: macos-latest
+          - host: macos-14
             target: 'x86_64-apple-darwin'
-            setup: brew install nasm
+            setup: brew install nasm llvm
             build: |
               rustc --print target-cpus
-              yarn build
-              strip -x skia.darwin-x64.node
+              export PATH="/opt/homebrew/opt/llvm/bin:$PATH"
+              clang --version
+              yarn build --target x86_64-apple-darwin
             downloadTarget: ''
           - host: windows-latest
-            build: yarn build
+            build: yarn build --target x86_64-pc-windows-msvc
             target: 'x86_64-pc-windows-msvc'
             downloadTarget: ''
           - host: ubuntu-latest
             target: 'x86_64-unknown-linux-gnu'
             downloadTarget: ''
-            docker: ghcr.io/brooooooklyn/canvas/ubuntu-builder:focal
-            build: >-
-              set -e &&
-              yarn build &&
-              strip skia.linux-x64-gnu.node
+            docker: ghcr.io/brooooooklyn/canvas/ubuntu-builder:jammy
+            build: yarn build --target x86_64-unknown-linux-gnu
           - host: ubuntu-latest
             downloadTarget: 'x86_64-unknown-linux-musl'
             target: 'x86_64-unknown-linux-musl'
@@ -50,82 +94,90 @@ jobs:
               export LIB_AOM_STATIC_LIB_PATH=/usr/lib &&
               export LIB_AOM_INCLUDE_PATH=/usr/include/aom/aom &&
               export LIB_AOM_PKG_CONFIG_PATH=/usr/lib/pkgconfig &&
-              yarn build --target x86_64-unknown-linux-musl &&
-              strip skia.linux-x64-musl.node
-          - host: macos-latest
+              yarn build --target x86_64-unknown-linux-musl
+          - host: macos-14
             downloadTarget: 'aarch64-apple-darwin'
             target: 'aarch64-apple-darwin'
+            setup: |
+              brew install llvm
             build: |
-              sudo rm -Rf /Library/Developer/CommandLineTools/SDKs/*;
-              export CC=$(xcrun -f clang);
-              export CXX=$(xcrun -f clang++);
-              SYSROOT=$(xcrun --sdk macosx --show-sdk-path);
-              export CFLAGS="-isysroot $SYSROOT -isystem $SYSROOT";
+              export MACOSX_DEPLOYMENT_TARGET='11.0'
+              export PATH="/opt/homebrew/opt/llvm/bin:$PATH"
+              clang --version
               yarn build --target aarch64-apple-darwin
-              strip -x skia.darwin-arm64.node
           - host: ubuntu-latest
             downloadTarget: 'aarch64-unknown-linux-gnu'
             target: 'aarch64-unknown-linux-gnu'
-            docker: ghcr.io/brooooooklyn/canvas/ubuntu-builder:focal-aarch64
+            docker: ghcr.io/brooooooklyn/canvas/ubuntu-builder:jammy-aarch64
             build: >-
               set -e &&
-              rustup toolchain install $(cat ./rust-toolchain) &&
               rustup target add aarch64-unknown-linux-gnu &&
-              yarn build --target aarch64-unknown-linux-gnu &&
-              llvm-strip-14 skia.linux-arm64-gnu.node
+              yarn build --target aarch64-unknown-linux-gnu
           - host: ubuntu-latest
             target: 'aarch64-unknown-linux-musl'
             downloadTarget: 'aarch64-unknown-linux-musl'
             docker: ghcr.io/brooooooklyn/canvas/musl-builder:lts
             build: >-
               set -e &&
-              rustup toolchain install $(cat ./rust-toolchain) &&
               rustup target add aarch64-unknown-linux-musl &&
               unset RUSTFLAGS &&
               export LIB_AOM_PKG_CONFIG_PATH=/usr/aarch64-alpine-linux-musl/aom/lib/pkgconfig/aom.pc &&
               export LIB_AOM_INCLUDE_PATH=/usr/aarch64-alpine-linux-musl/aom/include &&
               export LIB_AOM_STATIC_LIB_PATH=/usr/aarch64-alpine-linux-musl/aom/lib &&
-              yarn build --target aarch64-unknown-linux-musl &&
-              /aarch64-linux-musl-cross/bin/aarch64-linux-musl-strip skia.linux-arm64-musl.node
-          - host: ubuntu-18.04
+              yarn build --target aarch64-unknown-linux-musl
+          - host: ubuntu-latest
             target: 'armv7-unknown-linux-gnueabihf'
             downloadTarget: 'armv7-unknown-linux-gnueabihf'
             setup: |
               sudo apt-get update
               sudo apt-get install gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf -y
-            build: |
-              yarn build --target armv7-unknown-linux-gnueabihf
-              arm-linux-gnueabihf-strip skia.linux-arm-gnueabihf.node
+              docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+              docker buildx build --load --platform linux/arm/v7 -t ubuntu:jammy-armv7 . -f jammy-armv7.Dockerfile
+              docker run --rm -dt --name ubuntu-jammy-armv7 ubuntu:jammy-armv7
+              sudo mkdir -p /usr/arm-linux-gnueabihf/lib/llvm-14
+              sudo docker cp ubuntu-jammy-armv7:/usr/lib/llvm-14/lib /usr/arm-linux-gnueabihf/lib/llvm-14/lib
+              sudo docker cp ubuntu-jammy-armv7:/usr/lib/llvm-14/include /usr/arm-linux-gnueabihf/lib/llvm-14/include
+              docker stop ubuntu-jammy-armv7
+            build: yarn build --target armv7-unknown-linux-gnueabihf --zig --zig-link-only --zig-abi-suffix=2.18
           - host: ubuntu-latest
             target: 'aarch64-linux-android'
             downloadTarget: 'aarch64-linux-android'
             build: |
-              export CLANG_VERSION=`ls ${ANDROID_NDK_LATEST_HOME}/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang | sed 's/ *$//g'`
-              export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="${ANDROID_NDK_LATEST_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang"
-              export CC="${ANDROID_NDK_LATEST_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang"
-              export CXX="${ANDROID_NDK_LATEST_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang++"
-              export AR="${ANDROID_NDK_LATEST_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar"
-              export PATH="${ANDROID_NDK_LATEST_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin:${PATH}"
-              touch "${ANDROID_NDK_LATEST_HOME}/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/${CLANG_VERSION}/lib/linux/aarch64/libgcc.a"
-              chmod 777 "${ANDROID_NDK_LATEST_HOME}/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/${CLANG_VERSION}/lib/linux/aarch64/libgcc.a"
-              echo "INPUT(-lunwind)" > "${ANDROID_NDK_LATEST_HOME}/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/${CLANG_VERSION}/lib/linux/aarch64/libgcc.a"
+              export CLANG_VERSION=`ls ${ANDROID_NDK_LATEST_HOME}/toolchains/llvm/prebuilt/linux-x86_64/lib/clang | sed 's/ *$//g'`
+              touch "${ANDROID_NDK_LATEST_HOME}/toolchains/llvm/prebuilt/linux-x86_64/lib/clang/${CLANG_VERSION}/lib/linux/aarch64/libgcc.a"
+              chmod 777 "${ANDROID_NDK_LATEST_HOME}/toolchains/llvm/prebuilt/linux-x86_64/lib/clang/${CLANG_VERSION}/lib/linux/aarch64/libgcc.a"
+              echo "INPUT(-lunwind)" > "${ANDROID_NDK_LATEST_HOME}/toolchains/llvm/prebuilt/linux-x86_64/lib/clang/${CLANG_VERSION}/lib/linux/aarch64/libgcc.a"
               yarn build --target aarch64-linux-android
-              ${ANDROID_NDK_LATEST_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip skia.android-arm64.node
 
-    name: stable - ${{ matrix.settings.target }} - node@16
+    name: stable - ${{ matrix.settings.target }} - node@18
     runs-on: ${{ matrix.settings.host }}
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           submodules: true
 
       - name: Setup node
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: 16
-          check-latest: true
+          node-version: 18
           cache: 'yarn'
+
+      - name: Set up QEMU
+        if: ${{ matrix.settings.target == 'armv7-unknown-linux-gnueabihf' }}
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: linux/arm/v7
+      - name: Set up Docker Buildx
+        if: ${{ matrix.settings.target == 'armv7-unknown-linux-gnueabihf' }}
+        uses: docker/setup-buildx-action@v3
+        with:
+          platforms: linux/arm/v7
+
+      - uses: goto-bus-stop/setup-zig@v2
+        if: ${{ matrix.settings.target == 'armv7-unknown-linux-gnueabihf' }}
+        with:
+          version: 0.11.0
 
       - name: Set env
         if: matrix.settings.host == 'windows-latest'
@@ -137,28 +189,9 @@ jobs:
         if: matrix.settings.host == 'windows-latest'
 
       - name: Install
-        uses: actions-rs/toolchain@v1
+        uses: ./.github/actions/setup-rust
         with:
-          profile: minimal
-          override: true
-          target: ${{ matrix.settings.target }}
-
-      - name: Cache cargo registry
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            .cargo-cache
-            target/
-          key: ${{ matrix.settings.target }}-cargo-registry
-
-      - name: Cache yarn
-        uses: actions/cache@v3
-        with:
-          path: .yarn/cache
-          key: ${{ matrix.settings.target }}-yarn-cache-node-16
+          targets: ${{ matrix.settings.target }}
 
       - name: Install dependencies
         run: yarn install --immutable --mode=skip-build
@@ -183,7 +216,7 @@ jobs:
           run: ${{ matrix.settings.build }}
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: bindings-${{ matrix.settings.target }}
           path: ${{ env.APP_NAME }}.*.node
@@ -196,15 +229,17 @@ jobs:
       fail-fast: false
       matrix:
         settings:
-          - host: macos-latest
+          - host: macos-14
             target: 'x86_64-apple-darwin'
+          - host: macos-14
+            target: 'aarch64-apple-darwin'
           - host: windows-latest
             target: 'x86_64-pc-windows-msvc'
-        node: ['14', '16', '18']
+        node: ['18', '20']
     runs-on: ${{ matrix.settings.host }}
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           submodules: true
 
@@ -212,28 +247,32 @@ jobs:
         uses: robinraju/release-downloader@v1
         with:
           repository: 'PoomSmart/EmojiLibrary'
-          latest: true
           fileName: AppleColorEmoji@2x.ttf
+          tag: '0.15.4'
           token: ${{ secrets.GITHUB_TOKEN }}
           out-file-path: __test__/fonts/
 
       - name: Setup node
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
+        if: startsWith(matrix.settings.target, 'x86_64')
         with:
           node-version: ${{ matrix.node }}
-          check-latest: true
+          cache: 'yarn'
+          architecture: 'x64'
 
-      - name: Cache yarn
-        uses: actions/cache@v3
+      - name: Setup node
+        uses: actions/setup-node@v4
+        if: startsWith(matrix.settings.target, 'aarch64')
         with:
-          path: .yarn/cache
-          key: ${{ matrix.settings.target }}-yarn-cache-node-${{ matrix.node }}
+          node-version: ${{ matrix.node }}
+          cache: 'yarn'
+          architecture: 'arm64'
 
       - name: Install dependencies
         run: yarn install --immutable --mode=skip-build
 
       - name: Download artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: bindings-${{ matrix.settings.target }}
           path: .
@@ -243,11 +282,11 @@ jobs:
         run: node ./scripts/release-skia-binary.js --download-icu
 
       - name: Test bindings
-        run: yarn test
+        run: yarn test:ci
 
       - name: Test failed
         if: ${{ failure() }}
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: failure-images-${{ matrix.settings.target }}-${{ matrix.node }}
           path: __test__/failure/**
@@ -259,39 +298,32 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: ['14', '16', '18']
+        node: ['18', '20']
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Download Apple Emoji font
         uses: robinraju/release-downloader@v1
         with:
           repository: 'PoomSmart/EmojiLibrary'
-          latest: true
+          tag: '0.15.4'
           fileName: AppleColorEmoji@2x.ttf
           token: ${{ secrets.GITHUB_TOKEN }}
           out-file-path: __test__/fonts/
 
       - name: Setup node
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
-          check-latest: true
           cache: 'yarn'
-
-      - name: Cache yarn
-        uses: actions/cache@v3
-        with:
-          path: .yarn/cache
-          key: linux-x64-gnu-yarn-cache-node-${{ matrix.node }}
 
       - name: Install dependencies
         run: yarn install --immutable --mode=skip-build
 
       - name: Download artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: bindings-x86_64-unknown-linux-gnu
           path: .
@@ -301,11 +333,11 @@ jobs:
         shell: bash
 
       - name: Test bindings
-        run: docker run --rm -v $(pwd):/canvas -w /canvas node:${{ matrix.node }}-slim yarn test
+        run: docker run --rm -v $(pwd):/canvas -w /canvas node:${{ matrix.node }}-slim yarn test:ci
 
       - name: Test failed
         if: ${{ failure() }}
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: failure-images-x86_64-unknown-linux-gnu-${{ matrix.node }}
           path: __test__/failure/**
@@ -317,33 +349,26 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: ['14', '16', '18']
+        node: ['18', '20']
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Download Apple Emoji font
         uses: robinraju/release-downloader@v1
         with:
           repository: 'PoomSmart/EmojiLibrary'
-          latest: true
           fileName: AppleColorEmoji@2x.ttf
+          tag: '0.15.4'
           token: ${{ secrets.GITHUB_TOKEN }}
           out-file-path: __test__/fonts/
 
       - name: Setup node
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
-          check-latest: true
           cache: 'yarn'
-
-      - name: Cache yarn
-        uses: actions/cache@v3
-        with:
-          path: .yarn/cache
-          key: linux-x64-musl-yarn-cache-node-${{ matrix.node }}
 
       - name: Install dependencies
         run: |
@@ -351,7 +376,7 @@ jobs:
           yarn install --immutable --mode=skip-build
 
       - name: Download artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: bindings-x86_64-unknown-linux-musl
           path: .
@@ -361,11 +386,11 @@ jobs:
         shell: bash
 
       - name: Test bindings
-        run: docker run --rm -v $(pwd):/canvas -w /canvas node:${{ matrix.node }}-alpine yarn test
+        run: docker run --rm -v $(pwd):/canvas -w /canvas node:${{ matrix.node }}-alpine yarn test:ci
 
       - name: Test failed
         if: ${{ failure() }}
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: failure-images-x86_64-unknown-linux-musl-${{ matrix.node }}
           path: __test__/failure/**
@@ -377,25 +402,23 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: ['14', '16', '18']
+        node: ['20', '21']
     runs-on: ubuntu-latest
 
     steps:
-      - run: docker run --rm --privileged multiarch/qemu-user-static:register --reset
-
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Download Apple Emoji font
         uses: robinraju/release-downloader@v1
         with:
           repository: 'PoomSmart/EmojiLibrary'
-          latest: true
+          tag: '0.15.4'
           fileName: AppleColorEmoji@2x.ttf
           token: ${{ secrets.GITHUB_TOKEN }}
           out-file-path: __test__/fonts/
 
       - name: Download artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: bindings-aarch64-unknown-linux-gnu
           path: .
@@ -404,58 +427,56 @@ jobs:
         run: ls -R .
         shell: bash
 
-      - name: Cache yarn
-        uses: actions/cache@v3
-        with:
-          path: .yarn/cache
-          key: linux-aarch64-gnu-yarn-cache-node-${{ matrix.node }}
-
       - name: Install dependencies
         run: |
           yarn config set supportedArchitectures.cpu "arm64"
           yarn config set supportedArchitectures.libc "glibc"
           yarn install --immutable --mode=skip-build
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - run: docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
 
       - name: Setup and run tests
         uses: addnab/docker-run-action@v3
         with:
-          image: ghcr.io/napi-rs/napi-rs/nodejs:aarch64-${{ matrix.node }}
-          options: -v ${{ github.workspace }}:/skia -w /skia
+          image: node:${{ matrix.node }}-slim
+          options: '--platform linux/arm64 -v ${{ github.workspace }}:/skia -w /skia'
           run: |
             set -e && \
-            yarn test && \
+            yarn test:ci && \
             ls -la
 
       - name: Test failed
         if: ${{ failure() }}
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: failure-images-aarch64-unknown-linux-gnu-${{ matrix.node }}
           path: __test__/failure/**
 
   test-linux-aarch64-musl-binding:
-    name: Test bindings on aarch64-unknown-linux-musl - node@${{ matrix.node }}
+    name: Test bindings on aarch64-unknown-linux-musl - node@lts
     needs:
       - build
 
     runs-on: ubuntu-latest
 
     steps:
-      - run: docker run --rm --privileged multiarch/qemu-user-static:register --reset
-
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Download Apple Emoji font
         uses: robinraju/release-downloader@v1
         with:
           repository: 'PoomSmart/EmojiLibrary'
-          latest: true
+          tag: '0.15.4'
           fileName: AppleColorEmoji@2x.ttf
           token: ${{ secrets.GITHUB_TOKEN }}
           out-file-path: __test__/fonts/
 
       - name: Download artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: bindings-aarch64-unknown-linux-musl
           path: .
@@ -464,33 +485,33 @@ jobs:
         run: ls -R .
         shell: bash
 
-      - name: Cache yarn
-        uses: actions/cache@v3
-        with:
-          path: .yarn/cache
-          key: linux-aarch64-musl-yarn-cache-node-${{ matrix.node }}
-
       - name: Install dependencies
         run: |
           yarn config set supportedArchitectures.cpu "arm64"
           yarn config set supportedArchitectures.libc "musl"
           yarn install --immutable --mode=skip-build
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - run: docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+
       - name: Setup and run tests
         uses: addnab/docker-run-action@v3
         with:
-          image: multiarch/alpine:aarch64-latest-stable
-          options: -v ${{ github.workspace }}:/skia -w /skia
+          image: node:lts-alpine
+          options: '--platform linux/arm64 -v ${{ github.workspace }}:/skia -w /skia'
           run: |
             set -e
-            apk add nodejs npm yarn
-            yarn test
+            yarn test:ci
 
       - name: Test failed
         if: ${{ failure() }}
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: failure-images-aarch64-unknown-linux-musl-${{ matrix.node }}
+          name: failure-images-aarch64-unknown-linux-musl-lts
           path: __test__/failure/**
 
   test-linux-arm-gnueabihf-binding:
@@ -500,25 +521,23 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: ['14', '16', '18']
+        node: ['18', '20']
     runs-on: ubuntu-latest
 
     steps:
-      - run: docker run --rm --privileged multiarch/qemu-user-static:register --reset
-
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Download Apple Emoji font
         uses: robinraju/release-downloader@v1
         with:
           repository: 'PoomSmart/EmojiLibrary'
-          latest: true
+          tag: '0.15.4'
           fileName: AppleColorEmoji@2x.ttf
           token: ${{ secrets.GITHUB_TOKEN }}
           out-file-path: __test__/fonts/
 
       - name: Download artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: bindings-armv7-unknown-linux-gnueabihf
           path: .
@@ -527,33 +546,119 @@ jobs:
         run: ls -R .
         shell: bash
 
-      - name: Cache yarn
-        uses: actions/cache@v3
-        with:
-          path: .yarn/cache
-          key: linux-arm-gnueabihf-yarn-cache-node-${{ matrix.node }}
-
       - name: Install dependencies
         run: |
           yarn config set supportedArchitectures.cpu "arm"
           yarn install --immutable --mode=skip-build
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm
+
+      - run: docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+
       - name: Setup and run tests
         uses: addnab/docker-run-action@v3
         with:
-          image: ghcr.io/napi-rs/napi-rs/nodejs:armhf-${{ matrix.node }}
-          options: -v ${{ github.workspace }}:/skia -w /skia
+          image: node:${{ matrix.node }}-bullseye-slim
+          options: '--platform linux/arm/v7 -v ${{ github.workspace }}:/skia -w /skia'
           run: |
             set -e && \
-            yarn test && \
+            yarn test:ci && \
             ls -la
 
       - name: Test failed
         if: ${{ failure() }}
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: failure-images-armv7-unknown-linux-gnueabihf-${{ matrix.node }}
           path: __test__/failure/**
+
+  rust-test:
+    name: stable - macOS - cargo - test
+    runs-on: macos-14
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Install
+        uses: ./.github/actions/setup-rust
+        with:
+          targets: x86_64-apple-darwin
+
+      - name: Install dependencies
+        run: yarn install --immutable --mode=skip-build
+
+      - name: Install nasm
+        run: brew install nasm llvm
+
+      - name: Download skia binary
+        run: node ./scripts/release-skia-binary.js --download
+
+      - name: Test
+        run: |
+          export PATH="/opt/homebrew/opt/llvm/bin:$PATH"
+          clang --version
+          cargo test -- --nocapture
+
+  bench:
+    name: Bench
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/brooooooklyn/canvas/ubuntu-builder:jammy
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: 'yarn'
+
+      - name: Install
+        uses: ./.github/actions/setup-rust
+        with:
+          targets: x86_64-unknown-linux-gnu
+          toolchain: nightly-2023-08-09
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      - name: Download skia binary
+        run: |
+          git config --global --add safe.directory $(pwd)
+          node ./scripts/release-skia-binary.js --download
+
+      - name: 'Build'
+        run: yarn build
+
+      - name: 'Run benchmark'
+        run: yarn bench
+
+      - name: Store benchmark result
+        uses: rhysd/github-action-benchmark@v1
+        if: github.ref == 'refs/heads/main'
+        with:
+          tool: 'benchmarkjs'
+          output-file-path: bench.txt
+          github-token: ${{ secrets.GH_TOKEN }}
+          auto-push: true
+
+      - name: Store benchmark result
+        uses: rhysd/github-action-benchmark@v1
+        continue-on-error: true
+        if: github.ref != 'refs/heads/main'
+        with:
+          tool: 'benchmarkjs'
+          output-file-path: bench.txt
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          comment-always: true
 
   publish:
     name: Publish
@@ -567,28 +672,21 @@ jobs:
       - test-macOS-windows-binding
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           submodules: true
 
       - name: Setup node
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: 16
-          check-latest: true
+          node-version: 18
           cache: 'yarn'
-
-      - name: Cache yarn
-        uses: actions/cache@v3
-        with:
-          path: .yarn/cache
-          key: publish-yarn-cache-node-16
 
       - name: Install dependencies
         run: yarn install --immutable --mode=skip-build
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           path: artifacts
 
@@ -604,6 +702,7 @@ jobs:
 
       - name: Publish
         run: |
+          npm config set provenance true
           if git log -1 --pretty=%B | grep "^[0-9]\+\.[0-9]\+\.[0-9]\+$";
           then
             echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" >> ~/.npmrc

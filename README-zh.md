@@ -1,7 +1,7 @@
 # `skr canvas`
 
 ![CI](https://github.com/Brooooooklyn/canvas/workflows/CI/badge.svg)
-![Skia Version](https://img.shields.io/badge/Skia-chrome%2Fm107-hotpink)
+![Skia Version](https://img.shields.io/badge/Skia-chrome%2Fm122-hotpink)
 [![install size](https://packagephobia.com/badge?p=@napi-rs/canvas)](https://packagephobia.com/result?p=@napi-rs/canvas)
 [![Downloads](https://img.shields.io/npm/dm/@napi-rs/canvas.svg?sanitize=true)](https://npmcharts.com/compare/@napi-rs/canvas?minimal=true)
 
@@ -23,17 +23,17 @@ npm install @napi-rs/canvas
 
 # 支持的系统和 Node.js 版本
 
-|                       | node10 | node12 | node14 | node16 |
-| --------------------- | ------ | ------ | ------ | ------ |
-| Windows x64           | ✓      | ✓      | ✓      | ✓      |
-| macOS x64             | ✓      | ✓      | ✓      | ✓      |
-| macOS arm64 (m chips) | ✓      | ✓      | ✓      | ✓      |
-| Linux x64 gnu         | ✓      | ✓      | ✓      | ✓      |
-| Linux x64 musl        | ✓      | ✓      | ✓      | ✓      |
-| Linux arm64 gnu       | ✓      | ✓      | ✓      | ✓      |
-| Linux arm64 musl      | ✓      | ✓      | ✓      | ✓      |
-| Linux arm gnueabihf   | ✓      | ✓      | ✓      | ✓      |
-| Linux arm64 android   | ✓      | ✓      | ✓      | ✓      |
+|                       | node10 | node12 | node14 | node16 | node18 |
+| --------------------- | ------ | ------ | ------ | ------ | ------ |
+| Windows x64           | ✓      | ✓      | ✓      | ✓      | ------ |
+| macOS x64             | ✓      | ✓      | ✓      | ✓      | ------ |
+| macOS arm64 (m chips) | ✓      | ✓      | ✓      | ✓      | ------ |
+| Linux x64 gnu         | ✓      | ✓      | ✓      | ✓      | ------ |
+| Linux x64 musl        | ✓      | ✓      | ✓      | ✓      | ------ |
+| Linux arm64 gnu       | ✓      | ✓      | ✓      | ✓      | ------ |
+| Linux arm64 musl      | ✓      | ✓      | ✓      | ✓      | ------ |
+| Linux arm gnueabihf   | ✓      | ✓      | ✓      | ✓      | ------ |
+| Linux arm64 android   | ✓      | ✓      | ✓      | ✓      | ------ |
 
 ## 系统要求
 
@@ -96,7 +96,7 @@ main()
 const { writeFileSync } = require('fs')
 const { join } = require('path')
 
-const { createCanvas, GlobalFonts } = require('../index.js')
+const { createCanvas, GlobalFonts } = require('@napi-rs/canvas')
 
 GlobalFonts.registerFromPath(join(__dirname, '..', 'fonts', 'AppleColorEmoji@2x.ttf'), 'Apple Emoji')
 GlobalFonts.registerFromPath(join(__dirname, '..', '__test__', 'fonts', 'COLRv1.ttf'), 'COLRv1')

@@ -1,4 +1,4 @@
-import { promises, readFileSync } from 'fs'
+import { promises } from 'fs'
 import { platform } from 'os'
 import { join } from 'path'
 
@@ -15,16 +15,20 @@ const test = ava as TestFn<{
 
 const png = PNG()
 
-const fontIosevka = readFileSync(join(__dirname, 'fonts', 'iosevka-slab-regular.ttf'))
-const fontSourceSerifPro = readFileSync(join(__dirname, 'fonts', 'SourceSerifPro-Regular.ttf'))
-const fontOSRSPath = join(__dirname, 'fonts', 'osrs-font-compact.otf')
-
 test.beforeEach((t) => {
   const canvas = createCanvas(512, 512)
   t.context.canvas = canvas
   t.context.ctx = canvas.getContext('2d')!
-  console.assert(GlobalFonts.register(fontIosevka), 'Register Iosevka font failed')
-  console.assert(GlobalFonts.register(fontSourceSerifPro), 'Register SourceSerifPro font failed')
+  const fontOSRSPath = join(__dirname, 'fonts', 'osrs-font-compact.otf')
+  t.truthy(
+    GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'iosevka-slab-regular.ttf')),
+    'Register Iosevka font failed',
+  )
+  t.truthy(
+    GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'SourceSerifPro-Regular.ttf')),
+    'Register SourceSerifPro font failed',
+  )
+  t.truthy(GlobalFonts.registerFromPath(fontOSRSPath))
 })
 
 test('alpha-false', async (t) => {
@@ -471,7 +475,6 @@ test('fillText-maxWidth', async (t) => {
 })
 
 test('fillText-AA', async (t) => {
-  GlobalFonts.registerFromPath(fontOSRSPath)
   const { ctx, canvas } = t.context
   ctx.imageSmoothingEnabled = false
   ctx.font = '16px OSRSFontCompact'
@@ -485,7 +488,7 @@ test('fillText-AA', async (t) => {
 
 test('fillText-COLRv1', async (t) => {
   const { ctx, canvas } = t.context
-  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'COLRv1.ttf'), 'Colrv1')
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'COLR-v1.ttf'), 'Colrv1')
   ctx.font = '100px Colrv1'
   ctx.fillText('abc', 50, 100)
   await snapshotImage(t, { canvas, ctx }, 'png', 0.5)
@@ -600,6 +603,9 @@ test('measureText with empty string should not throw', (t) => {
     actualBoundingBoxRight: 0,
     fontBoundingBoxAscent: 0,
     fontBoundingBoxDescent: 0,
+    alphabeticBaseline: 0,
+    emHeightAscent: 0,
+    emHeightDescent: 0,
     width: 0,
   })
 })
@@ -790,6 +796,18 @@ test('setTransform', async (t) => {
   await snapshotImage(t)
 })
 
+test('setTransform matrix', async (t) => {
+  const { ctx } = t.context
+  const mat = new DOMMatrix()
+    .rotate(30)
+    .skewX(30)
+    .scale(1, Math.sqrt(3) / 2)
+  ctx.setTransform(mat)
+  ctx.fillStyle = 'red'
+  ctx.fillRect(100, 100, 100, 100)
+  await snapshotImage(t)
+})
+
 test('stroke', async (t) => {
   const { ctx } = t.context
   // First sub-path
@@ -842,6 +860,42 @@ test('strokeRect', async (t) => {
   ctx.strokeStyle = '#38f'
   ctx.strokeRect(30, 30, 160, 90)
   await snapshotImage(t)
+})
+
+test('strokeRoundRect', async (t) => {
+  const canvas = createCanvas(700, 300)
+  const ctx = canvas.getContext('2d')
+  // Rounded rectangle with zero radius (specified as a number)
+  ctx.strokeStyle = 'red'
+  ctx.beginPath()
+  ctx.roundRect(10, 20, 150, 100, 0)
+  ctx.stroke()
+
+  // Rounded rectangle with 40px radius (single element list)
+  ctx.strokeStyle = 'blue'
+  ctx.beginPath()
+  ctx.roundRect(10, 20, 150, 100, [40])
+  ctx.stroke()
+
+  // Rounded rectangle with 2 different radii
+  ctx.strokeStyle = 'orange'
+  ctx.beginPath()
+  ctx.roundRect(10, 150, 150, 100, [10, 40])
+  ctx.stroke()
+
+  // Rounded rectangle with four different radii
+  ctx.strokeStyle = 'green'
+  ctx.beginPath()
+  ctx.roundRect(400, 20, 200, 100, [0, 30, 50, 60])
+  ctx.stroke()
+
+  // Same rectangle drawn backwards
+  ctx.strokeStyle = 'magenta'
+  ctx.beginPath()
+  ctx.roundRect(400, 150, -200, 100, [0, 30, 50, 60])
+  ctx.stroke()
+
+  await snapshotImage(t, { canvas, ctx })
 })
 
 test('strokeText', async (t) => {

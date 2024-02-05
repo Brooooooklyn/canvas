@@ -69,7 +69,9 @@ impl From<i32> for FillType {
 }
 
 #[napi]
+#[derive(Default)]
 pub enum StrokeCap {
+  #[default]
   Butt = 0,
   Round = 1,
   Square = 2,
@@ -85,23 +87,13 @@ impl From<StrokeCap> for SkStrokeCap {
   }
 }
 
-impl Default for StrokeCap {
-  fn default() -> Self {
-    StrokeCap::Butt
-  }
-}
-
 #[napi]
+#[derive(Default)]
 pub enum StrokeJoin {
+  #[default]
   Miter = 0,
   Round = 1,
   Bevel = 2,
-}
-
-impl Default for StrokeJoin {
-  fn default() -> Self {
-    StrokeJoin::Miter
-  }
 }
 
 impl From<StrokeJoin> for SkStrokeJoin {
@@ -255,6 +247,46 @@ impl Path {
     self
       .inner
       .add_rect(x as f32, y as f32, width as f32, height as f32);
+  }
+
+  #[napi]
+  pub fn round_rect(
+    &mut self,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    radii: Either3<f64, Vec<f64>, Undefined>,
+  ) {
+    let radii_array: [f32; 4] = match radii {
+      Either3::A(radii) => [radii as f32; 4],
+      Either3::B(radii_vec) => match radii_vec.len() {
+        0 => [0f32; 4],
+        1 => [radii_vec[0] as f32; 4],
+        2 => [
+          radii_vec[0] as f32,
+          radii_vec[1] as f32,
+          radii_vec[0] as f32,
+          radii_vec[1] as f32,
+        ],
+        3 => [
+          radii_vec[0] as f32,
+          radii_vec[1] as f32,
+          radii_vec[1] as f32,
+          radii_vec[2] as f32,
+        ],
+        _ => [
+          radii_vec[0] as f32,
+          radii_vec[1] as f32,
+          radii_vec[2] as f32,
+          radii_vec[3] as f32,
+        ],
+      },
+      Either3::C(_) => [0f32; 4],
+    };
+    self
+      .inner
+      .round_rect(x as f32, y as f32, width as f32, height as f32, radii_array);
   }
 
   #[napi]

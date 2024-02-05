@@ -1,3 +1,107 @@
+## [0.1.44](https://github.com/Brooooooklyn/canvas/compare/v0.1.43...v0.1.44) (2023-08-22)
+
+### Bug Fixes
+
+- file extensions in `loadFontsFromDir()` are no longer case-sensitive ([9342e33](https://github.com/Brooooooklyn/canvas/commit/9342e3386f575f3864c1bfa0036caa0956f1a914))
+
+## [0.1.43](https://github.com/Brooooooklyn/canvas/compare/v0.1.42...v0.1.43) (2023-08-11)
+
+## [0.1.42](https://github.com/Brooooooklyn/canvas/compare/v0.1.41...v0.1.42) (2023-08-08)
+
+### Bug Fixes
+
+- add `ctx.canvas` property on svg context ([#697](https://github.com/Brooooooklyn/canvas/issues/697)) ([968e501](https://github.com/Brooooooklyn/canvas/commit/968e501e5d09d5b11fb02829b6ba402ffc3575d1))
+- **deps:** update rust crate infer to 0.15 ([376b19e](https://github.com/Brooooooklyn/canvas/commit/376b19ebc53640a89e1dad73b8281922675cf834))
+- url is string type ([#671](https://github.com/Brooooooklyn/canvas/issues/671)) ([31a8ff9](https://github.com/Brooooooklyn/canvas/commit/31a8ff9a5295697b965ba4e48a19a30dc0f0b1d6))
+
+### Features
+
+- upgrade skia to m116 ([#702](https://github.com/Brooooooklyn/canvas/issues/702)) ([926c472](https://github.com/Brooooooklyn/canvas/commit/926c47249b77894eb96fd002755ad73e50e602d6))
+
+## [0.1.41](https://github.com/Brooooooklyn/canvas/compare/v0.1.40...v0.1.41) (2023-05-22)
+
+### Bug Fixes
+
+- adjust order of generating bitmap ([#675](https://github.com/Brooooooklyn/canvas/issues/675)) ([8df17af](https://github.com/Brooooooklyn/canvas/commit/8df17af589bf48a14a5fa36cefa9984c3d8aeb5e))
+
+## [0.1.40](https://github.com/Brooooooklyn/canvas/compare/v0.1.39...v0.1.40) (2023-04-09)
+
+### Features
+
+- chrome/m113 ([#656](https://github.com/Brooooooklyn/canvas/issues/656)) ([0141b20](https://github.com/Brooooooklyn/canvas/commit/0141b205c98802f879946a7b58c9761dc7d238cc))
+
+## [0.1.39](https://github.com/Brooooooklyn/canvas/compare/v0.1.38...v0.1.39) (2023-03-14)
+
+### Bug Fixes
+
+- set empty src to Image ([#649](https://github.com/Brooooooklyn/canvas/issues/649)) ([d7e14cf](https://github.com/Brooooooklyn/canvas/commit/d7e14cf4fff6fb92fafc03877b0976f71a2fc5e4))
+
+## [0.1.38](https://github.com/Brooooooklyn/canvas/compare/v0.1.37...v0.1.38) (2023-03-11)
+
+### Bug Fixes
+
+- **deps:** update rust crate infer to 0.13 ([bad913c](https://github.com/Brooooooklyn/canvas/commit/bad913cb4a85b563fd02212269e2801956271a86))
+
+### Features
+
+- skia/m112 ([#648](https://github.com/Brooooooklyn/canvas/issues/648)) ([439a3c5](https://github.com/Brooooooklyn/canvas/commit/439a3c59beb0cc111d8de46048f3a131aec4337b))
+
+## [0.1.37](https://github.com/Brooooooklyn/canvas/compare/v0.1.36...v0.1.37) (2023-02-27)
+
+### Bug Fixes
+
+- reject if image is not supported ([#642](https://github.com/Brooooooklyn/canvas/issues/642)) ([e4f4930](https://github.com/Brooooooklyn/canvas/commit/e4f49306c03ed0cdac6e9fa17fb8a59b3b9ef70f))
+
+## [0.1.36](https://github.com/Brooooooklyn/canvas/compare/v0.1.35...v0.1.36) (2023-02-21)
+
+### Bug Fixes
+
+- recalc paint_x according to align if maxWidth is set ([#639](https://github.com/Brooooooklyn/canvas/issues/639)) ([7f74567](https://github.com/Brooooooklyn/canvas/commit/7f7456743b65b0f7aee365ff7d9aa3a6b613a9d2))
+
+## [0.1.35](https://github.com/Brooooooklyn/canvas/compare/v0.1.34...v0.1.35) (2023-02-16)
+
+### Bug Fixes
+
+- canvas instance check ([#632](https://github.com/Brooooooklyn/canvas/issues/632)) ([08ee680](https://github.com/Brooooooklyn/canvas/commit/08ee6803a9339d0e8c9c53a1fc920c4850ce4842))
+- **deps:** update rust crate libavif to 0.11 ([fd1515b](https://github.com/Brooooooklyn/canvas/commit/fd1515be6eab70ec1928888545e21592b00c6aa4))
+- DOMMatrix object to skia Transform convert ([#633](https://github.com/Brooooooklyn/canvas/issues/633)) ([c82d41d](https://github.com/Brooooooklyn/canvas/commit/c82d41d33e4c98700a49aadf66e4c23f0fe50500))
+- DOMMatrix to skia Transform ([#634](https://github.com/Brooooooklyn/canvas/issues/634)) ([f43ccbd](https://github.com/Brooooooklyn/canvas/commit/f43ccbdb93a5a312d92793b60c00801f0f8b75b1))
+
+## [0.1.34](https://github.com/Brooooooklyn/canvas/compare/v0.1.33...v0.1.34) (2023-01-12)
+
+### Bug Fixes
+
+- wrong text baseline calculation in drawText and measureText ([#606](https://github.com/Brooooooklyn/canvas/issues/606)) ([bba0296](https://github.com/Brooooooklyn/canvas/commit/bba0296d659c559fad1337fe963712fb91bc6407))
+
+## [0.1.33](https://github.com/Brooooooklyn/canvas/compare/v0.1.32...v0.1.33) (2023-01-08)
+
+### Bug Fixes
+
+- maxWidth overflow paint_x position should power the scale ratio ([#603](https://github.com/Brooooooklyn/canvas/issues/603)) ([17c7902](https://github.com/Brooooooklyn/canvas/commit/17c7902327d51ee6a044bad909b51d23e6a66805))
+
+## [0.1.32](https://github.com/Brooooooklyn/canvas/compare/v0.1.31...v0.1.32) (2023-01-07)
+
+### Bug Fixes
+
+- getTransform should return DOMMatrix ([#602](https://github.com/Brooooooklyn/canvas/issues/602)) ([fc576e9](https://github.com/Brooooooklyn/canvas/commit/fc576e974c320f08a54f07b5665795b6c8b0d857))
+
+### Features
+
+- chrome/m110 [skip skia] ([#599](https://github.com/Brooooooklyn/canvas/issues/599)) ([e1efc1d](https://github.com/Brooooooklyn/canvas/commit/e1efc1d5b1f8e8dda18553a754dfd7d4232631b6))
+- roundRect ([#601](https://github.com/Brooooooklyn/canvas/issues/601)) ([0823325](https://github.com/Brooooooklyn/canvas/commit/08233257bb814fc82c4aa6a994f6200ea5a55819))
+
+## [0.1.31](https://github.com/Brooooooklyn/canvas/compare/v0.1.30...v0.1.31) (2023-01-02)
+
+### Bug Fixes
+
+- missing canvas property on Context2D ([#597](https://github.com/Brooooooklyn/canvas/issues/597)) ([b0a351a](https://github.com/Brooooooklyn/canvas/commit/b0a351a8a8c1693ca2edcf009e77ec56df616fb5))
+- multiple define on cached native object in jest ([88f5ee9](https://github.com/Brooooooklyn/canvas/commit/88f5ee9893ed55ab3bb41947feb133507914acef))
+
+### Features
+
+- chrome/m107 ([9f02e86](https://github.com/Brooooooklyn/canvas/commit/9f02e869cf11f8346f65500009cba8e69b722d31))
+- chrome/m108 ([04f5a41](https://github.com/Brooooooklyn/canvas/commit/04f5a414fb45ff7e25c6d0fb3400aef969ef919b))
+
 ## [0.1.30](https://github.com/Brooooooklyn/canvas/compare/v0.1.29...v0.1.30) (2022-09-22)
 
 ### Bug Fixes

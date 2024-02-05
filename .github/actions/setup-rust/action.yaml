@@ -1,0 +1,38 @@
+name: 'Setup rust'
+description: 'Rust setup, including cache configuration'
+inputs:
+  targets:
+    description: 'Cargo target'
+    required: true
+  components:
+    description: 'Rustup components'
+    required: false
+    default: ''
+runs:
+  using: 'composite'
+  steps:
+    - name: Print rustup toolchain version
+      shell: bash
+      id: rustup-version
+      run: |
+        export RUST_TOOLCHAIN_VERSION="$(grep 'channel' rust-toolchain.toml | head -1 | awk -F '"' '{print $2}')"
+        echo "Rust toolchain version: $RUST_TOOLCHAIN_VERSION"
+        echo "RUST_TOOLCHAIN_VERSION=$RUST_TOOLCHAIN_VERSION" >> "$GITHUB_OUTPUT"
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: '${{ steps.rustup-version.outputs.RUST_TOOLCHAIN_VERSION }}'
+        targets: ${{ inputs.targets }}
+        components: ${{ inputs.components }}
+      env:
+        CARGO_INCREMENTAL: '1'
+
+    - name: Cache cargo
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry/
+          ~/.cargo/git/db/
+          ~/.napi-rs
+          target/${{ inputs.target }}
+        key: ${{ steps.rustup-version.outputs.RUST_TOOLCHAIN_VERSION }}-${{ inputs.target }}-cargo-cache

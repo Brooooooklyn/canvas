@@ -53,3 +53,9 @@ test('should draw img', async (t) => {
 
   await snapshotImage(t, { canvas }, 'jpeg', process.arch === 'x64' ? 0.05 : 0.3)
 })
+
+test('should load issue-672 img', async (t) => {
+  const img = await loadImage(join(__dirname, './issue-672.jpeg'))
+  t.is(img.width, 297)
+  t.is(img.height, 465)
+})

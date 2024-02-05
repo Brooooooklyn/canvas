@@ -32,7 +32,7 @@ module.exports = async function loadImage(source, options = {}) {
   // if source is a string or URL instance
   if (typeof source === 'string' || source instanceof URL) {
     // if the source exists as a file, construct image from that file
-    if (fs.existsSync(source)) {
+    if (await exists(source)) {
       return createImage(await fs.promises.readFile(source), options.alt)
     } else {
       // the source is a remote url here
@@ -51,7 +51,7 @@ module.exports = async function loadImage(source, options = {}) {
     }
   }
 
-  // throw error as dont support that source
+  // throw error as don't support that source
   throw new TypeError('unsupported image source')
 }
 
@@ -61,7 +61,7 @@ function makeRequest(url, resolve, reject, redirectCount, requestOptions) {
   const lib = isHttps ? (!https ? (https = require('https')) : https) : !http ? (http = require('http')) : http
 
   lib
-    .get(url, requestOptions || {}, (res) => {
+    .get(url.toString(), requestOptions || {}, (res) => {
       const shouldRedirect = REDIRECT_STATUSES.has(res.statusCode) && typeof res.headers.location === 'string'
       if (shouldRedirect && redirectCount > 0)
         return makeRequest(new URL(res.headers.location), resolve, reject, redirectCount - 1, requestOptions)
@@ -100,4 +100,13 @@ function isBufferLike(src) {
     src instanceof SharedArrayBuffer ||
     src instanceof Object.getPrototypeOf(Uint8Array)
   )
+}
+
+async function exists(path) {
+  try {
+    await fs.promises.access(path, fs.constants.F_OK)
+    return true
+  } catch {
+    return false
+  }
 }

@@ -2,7 +2,7 @@ import { promises as fs } from 'fs'
 import { join } from 'path'
 import test from 'ava'
 
-import { createCanvas, Image } from '../index'
+import { createCanvas, Image, loadImage } from '../index'
 
 import { snapshotImage } from './image-snapshot'
 
@@ -87,4 +87,41 @@ test('svg-transparent-background', async (t) => {
   ctx.drawImage(image, 250, 250)
 
   await snapshotImage(t, { canvas })
+})
+
+test('load invalid image should throw error', async (t) => {
+  await t.throwsAsync(() => loadImage(join(__dirname, 'fixtures', 'broken.png')))
+})
+
+test('load invalid image should not throw if onerror is provided', async (t) => {
+  const broken = await fs.readFile(join(__dirname, 'fixtures', 'broken.png'))
+  await t.notThrowsAsync(
+    () =>
+      new Promise<void>((resolve) => {
+        const image = new Image()
+        image.onload = () => {
+          resolve()
+        }
+        image.onerror = (err) => {
+          t.is(err.message, 'Unsupported image type')
+        }
+        image.src = broken
+      }),
+  )
+})
+
+test('reset src to empty should not throw error', async (t) => {
+  await t.notThrowsAsync(
+    () =>
+      new Promise<void>((resolve, reject) => {
+        const image = new Image()
+        image.onload = () => {
+          resolve()
+        }
+        image.onerror = (err) => {
+          reject(err)
+        }
+        image.src = Buffer.from('')
+      }),
+  )
 })

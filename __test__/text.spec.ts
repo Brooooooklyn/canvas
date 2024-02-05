@@ -1,4 +1,3 @@
-import { readFileSync } from 'fs'
 import { join } from 'path'
 
 import ava, { TestFn } from 'ava'
@@ -11,13 +10,14 @@ const test = ava as TestFn<{
   ctx: SKRSContext2D
 }>
 
-const fontIosevka = readFileSync(join(__dirname, 'fonts', 'iosevka-slab-regular.ttf'))
-console.assert(GlobalFonts.register(fontIosevka), 'Register Iosevka font failed')
-
 test.beforeEach((t) => {
   const canvas = createCanvas(512, 512)
   t.context.canvas = canvas
   t.context.ctx = canvas.getContext('2d')!
+  t.truthy(
+    GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'iosevka-slab-regular.ttf')),
+    'Register Iosevka font failed',
+  )
 })
 
 for (const align of ['center', 'end', 'left', 'right', 'start'] as CanvasTextAlign[]) {
@@ -67,8 +67,26 @@ test('text-baseline', async (t) => {
   const { ctx } = t.context
   ctx.font = '48px Iosevka Slab'
   ctx.textBaseline = 'bottom'
-  ctx.fillText('abcdef', 50, 50)
-  ctx.fillText('abcdefg', 50, 50)
+  ctx.fillText('abcdef', 50, 100)
+  ctx.fillText('abcdefg', 50, 100)
+  await snapshotImage(t)
+})
+
+test('text-baseline-all', async (t) => {
+  const { ctx } = t.context
+  const baselines = ['top', 'hanging', 'middle', 'alphabetic', 'ideographic', 'bottom'] as const
+  ctx.font = '36px Iosevka Slab'
+  ctx.strokeStyle = 'red'
+
+  baselines.forEach((baseline, index) => {
+    ctx.textBaseline = baseline
+    const y = 75 + index * 75
+    ctx.beginPath()
+    ctx.moveTo(0, y + 0.5)
+    ctx.lineTo(550, y + 0.5)
+    ctx.stroke()
+    ctx.fillText(`Abcdefghijklmnop (${baseline})`, 0, y)
+  })
   await snapshotImage(t)
 })
 
@@ -83,7 +101,7 @@ test('text-align-with-space', async (t) => {
   ctx.moveTo(100, 0)
   ctx.lineTo(100, 512)
   ctx.stroke()
-  ctx.font = '48px sans-serif'
+  ctx.font = '48px sans-serif, PingFang HK'
   ctx.textAlign = 'center'
   ctx.fillText('蒙娜丽莎', 100, 50)
   ctx.fillText('兔 宝 宝', 100, 200)

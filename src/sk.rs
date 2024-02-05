@@ -12,6 +12,7 @@ use crate::error::SkError;
 use crate::font::{FontStretch, FontStyle};
 use crate::image::ImageData;
 
+#[allow(non_camel_case_types)]
 pub mod ffi {
   use std::ffi::c_void;
   use std::os::raw::c_char;
@@ -182,6 +183,9 @@ pub mod ffi {
     pub width: f32,
     pub font_ascent: f32,
     pub font_descent: f32,
+    pub alphabetic_baseline: f32,
+    pub em_height_ascent: f32,
+    pub em_height_descent: f32,
   }
 
   #[repr(C)]
@@ -203,6 +207,18 @@ pub mod ffi {
     pub y1: f32,
     pub x2: f32,
     pub y2: f32,
+  }
+
+  #[repr(C)]
+  #[derive(Debug, Clone, Copy)]
+  pub struct skiac_picture_recorder {
+    _unused: [u8; 0],
+  }
+
+  #[repr(C)]
+  #[derive(Debug, Clone, Copy)]
+  pub struct skiac_picture {
+    _unused: [u8; 0],
   }
 
   pub type SkiacFontCollectionGetFamily =
@@ -451,6 +467,13 @@ pub mod ffi {
       color_space: u8,
     );
 
+    pub fn skiac_canvas_draw_picture(
+      canvas: *mut skiac_canvas,
+      picture: *mut skiac_picture,
+      matrix: *mut skiac_matrix,
+      paint: *mut skiac_paint,
+    );
+
     pub fn skiac_paint_create() -> *mut skiac_paint;
 
     pub fn skiac_paint_clone(source: *mut skiac_paint) -> *mut skiac_paint;
@@ -612,6 +635,16 @@ pub mod ffi {
     pub fn skiac_path_stroke_hit_test(path: *mut skiac_path, x: f32, y: f32, stroke_w: f32)
       -> bool;
 
+    pub fn skiac_path_round_rect(
+      path: *mut skiac_path,
+      x: f32,
+      y: f32,
+      width: f32,
+      height: f32,
+      radii: *const f32,
+      clockwise: bool,
+    );
+
     pub fn skiac_path_effect_make_dash_path(
       intervals: *const f32,
       count: i32,
@@ -737,7 +770,6 @@ pub mod ffi {
     pub fn skiac_image_filter_make_blur(
       sigma_x: f32,
       sigma_y: f32,
-      tile_mode: i32,
       chained_filter: *mut skiac_image_filter,
     ) -> *mut skiac_image_filter;
 
@@ -861,6 +893,25 @@ pub mod ffi {
       font_collection: *mut skiac_font_collection,
       output_data: *mut skiac_sk_data,
     );
+
+    // SkPictureRecorder
+    pub fn skiac_picture_recorder_create() -> *mut skiac_picture_recorder;
+
+    pub fn skiac_picture_recorder_begin_recording(
+      picture_recorder: *mut skiac_picture_recorder,
+      x: f32,
+      y: f32,
+      w: f32,
+      h: f32,
+    );
+
+    pub fn skiac_picture_recorder_get_recording_canvas(
+      picture_recorder: *mut skiac_picture_recorder,
+    ) -> *mut skiac_canvas;
+
+    pub fn skiac_picture_recorder_finish_recording_as_picture(
+      picture_recorder: *mut skiac_picture_recorder,
+    ) -> *mut skiac_picture;
   }
 }
 
@@ -993,8 +1044,7 @@ impl StrokeCap {
       1 => Ok(Self::Round),
       2 => Ok(Self::Square),
       _ => Err(SkError::Generic(format!(
-        "{} is not valid StrokeCap value",
-        cap
+        "{cap} is not valid StrokeCap value"
       ))),
     }
   }
@@ -1036,8 +1086,7 @@ impl StrokeJoin {
       1 => Ok(Self::Round),
       2 => Ok(Self::Bevel),
       _ => Err(SkError::Generic(format!(
-        "{} is not a valid StrokeJoin value",
-        join
+        "{join} is not a valid StrokeJoin value"
       ))),
     }
   }
@@ -1255,18 +1304,13 @@ impl From<i32> for BlendMode {
 }
 
 #[repr(i32)]
-#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, Default)]
 pub enum FilterQuality {
   None = 0,
+  #[default]
   Low = 1,
   Medium = 2,
   High = 3,
-}
-
-impl Default for FilterQuality {
-  fn default() -> Self {
-    FilterQuality::Low
-  }
 }
 
 impl FilterQuality {
@@ -1333,7 +1377,7 @@ impl From<i32> for PathOp {
       2 => Self::Union,
       3 => Self::Xor,
       4 => Self::ReverseDifference,
-      _ => panic!("[{}] is not valid path op", value),
+      _ => panic!("[{value}] is not valid path op"),
     }
   }
 }
@@ -1687,7 +1731,7 @@ impl Surface {
         None
       } else {
         Some(SurfaceData {
-          slice: slice::from_raw_parts(data.ptr, data.size as usize),
+          slice: slice::from_raw_parts(data.ptr, data.size),
         })
       }
     }
@@ -1727,7 +1771,7 @@ impl Surface {
         None
       } else {
         Some(SurfaceDataMut {
-          slice: slice::from_raw_parts_mut(data.ptr, data.size as usize),
+          slice: slice::from_raw_parts_mut(data.ptr, data.size),
         })
       }
     }
@@ -2211,7 +2255,7 @@ impl Canvas {
         image.width as i32,
         image.height as i32,
         image.data,
-        (image.width * 4) as usize,
+        image.width * 4,
         x as i32,
         y as i32,
       );
@@ -2235,8 +2279,8 @@ impl Canvas {
         image.width as i32,
         image.height as i32,
         image.data,
-        (image.width * 4) as usize,
-        (image.width * image.height * 4) as usize,
+        image.width * 4,
+        image.width * image.height * 4,
         x,
         y,
         dirty_x,
@@ -2245,6 +2289,12 @@ impl Canvas {
         dirty_height,
         color_space as u8,
       )
+    }
+  }
+
+  pub fn draw_picture(&self, picture: SkPicture, matrix: &Matrix, paint: &Paint) {
+    unsafe {
+      ffi::skiac_canvas_draw_picture(self.0, picture.0, matrix.0, paint.0);
     }
   }
 }
@@ -2339,7 +2389,7 @@ impl Paint {
 
   pub fn set_stroke_miter(&mut self, miter: f32) {
     unsafe {
-      ffi::skiac_paint_set_stroke_miter(self.0, miter as f32);
+      ffi::skiac_paint_set_stroke_miter(self.0, miter);
     }
   }
 
@@ -2405,7 +2455,7 @@ impl Path {
     unsafe { Path(ffi::skiac_path_create()) }
   }
 
-  pub fn swap(&mut self, other: &mut Path) {
+  pub fn swap(&mut self, other: &Path) {
     unsafe { ffi::skiac_path_swap(self.0, other.0) }
   }
 
@@ -2680,6 +2730,34 @@ impl Path {
 
   pub fn dash(&mut self, on: f32, off: f32, phase: f32) -> bool {
     unsafe { ffi::skiac_path_dash(self.0, on, off, phase) }
+  }
+
+  pub fn round_rect(
+    &mut self,
+    mut x: f32,
+    mut y: f32,
+    mut width: f32,
+    mut height: f32,
+    mut radii: [f32; 4],
+  ) {
+    // https://github.com/chromium/chromium/blob/111.0.5520.1/third_party/blink/renderer/modules/canvas/canvas2d/canvas_path.cc#L601
+    let mut clockwise = true;
+    if width < 0f32 {
+      clockwise = false;
+      x += width;
+      width = -width;
+      radii.swap(0, 1);
+      radii.swap(2, 3);
+    }
+    if height < 0f32 {
+      clockwise = !clockwise;
+      y += height;
+      height = -height;
+      radii.swap(0, 2);
+      radii.swap(1, 3);
+    }
+    unsafe { ffi::skiac_path_round_rect(self.0, x, y, width, height, radii.as_ptr(), clockwise) };
+    unsafe { ffi::skiac_path_move_to(self.0, x, y) };
   }
 
   fn ellipse_helper(&mut self, x: f32, y: f32, rx: f32, ry: f32, start_angle: f32, end_angle: f32) {
@@ -3243,14 +3321,12 @@ impl ImageFilter {
   pub fn make_blur(
     sigma_x: f32,
     sigma_y: f32,
-    tile_mode: TileMode,
     chained_filter: Option<&ImageFilter>,
   ) -> Option<Self> {
     let raw_ptr = unsafe {
       ffi::skiac_image_filter_make_blur(
         sigma_x,
         sigma_y,
-        tile_mode as i32,
         chained_filter.map(|c| c.0).unwrap_or(ptr::null_mut()),
       )
     };
@@ -3483,7 +3559,7 @@ impl FontCollection {
     unsafe {
       let size = ffi::skiac_font_collection_get_default_fonts_count(self.0);
       for i in 0..size {
-        let mut styles = Vec::new();
+        let mut styles = Vec::with_capacity(4);
         let on_get_style: Box<dyn FnMut(i32, i32, i32)> =
           Box::new(|width: i32, weight: i32, slant: i32| {
             styles.push((
@@ -3502,14 +3578,16 @@ impl FontCollection {
           length: 0,
           sk_string: ptr::null_mut(),
         };
+        let on_get_style_ptr: *mut dyn FnMut(i32, i32, i32) = Box::into_raw(Box::new(on_get_style));
         ffi::skiac_font_collection_get_family(
           self.0,
           i,
           &mut name,
-          Box::into_raw(Box::new(on_get_style)) as *mut c_void,
+          on_get_style_ptr.cast(),
           Some(skiac_on_get_style),
         );
         let c_str: &CStr = CStr::from_ptr(name.ptr);
+        drop(Box::from_raw(on_get_style_ptr));
         names.push(FontStyleSet {
           family: c_str.to_string_lossy().into_owned(),
           styles: styles
@@ -3604,6 +3682,41 @@ impl SkWMemoryStream {
 impl Drop for SkWMemoryStream {
   fn drop(&mut self) {
     unsafe { ffi::skiac_sk_w_stream_destroy(self.0) }
+  }
+}
+
+#[derive(Debug)]
+pub struct SkPicture(*mut ffi::skiac_picture);
+
+#[derive(Debug)]
+pub struct SkPictureRecorder(pub(crate) *mut ffi::skiac_picture_recorder);
+
+impl SkPictureRecorder {
+  pub fn new() -> SkPictureRecorder {
+    SkPictureRecorder(unsafe { ffi::skiac_picture_recorder_create() })
+  }
+
+  pub fn begin_recording(&self, x: f32, y: f32, w: f32, h: f32) {
+    unsafe {
+      ffi::skiac_picture_recorder_begin_recording(self.0, x, y, w, h);
+    }
+  }
+
+  pub fn get_recording_canvas(&self) -> Option<Canvas> {
+    let canvas_ref = unsafe { ffi::skiac_picture_recorder_get_recording_canvas(self.0) };
+    if canvas_ref.is_null() {
+      return None;
+    }
+    Some(Canvas(canvas_ref))
+  }
+  pub fn finish_recording_as_picture(&self) -> Option<SkPicture> {
+    let picture_ref = unsafe { ffi::skiac_picture_recorder_finish_recording_as_picture(self.0) };
+
+    if picture_ref.is_null() {
+      return None;
+    }
+
+    Some(SkPicture(picture_ref))
   }
 }
 

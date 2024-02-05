@@ -196,6 +196,8 @@ export class Image {
   readonly complete: boolean
   alt: string
   src: Buffer
+  onload?(): void
+  onerror?(err: Error): void
 }
 
 export class Path2D {
@@ -220,6 +222,7 @@ export class Path2D {
   moveTo(x: number, y: number): void
   quadraticCurveTo(cpx: number, cpy: number, x: number, y: number): void
   rect(x: number, y: number, w: number, h: number): void
+  roundRect(x: number, y: number, w: number, h: number, radii?: number | number[]): void
 
   // PathKit methods
   op(path: Path2D, operation: PathOp): Path2D
@@ -248,8 +251,9 @@ export interface StrokeOptions {
 export interface SKRSContext2D
   extends Omit<
     CanvasRenderingContext2D,
-    'drawImage' | 'createPattern' | 'getTransform' | 'drawFocusIfNeeded' | 'scrollPathIntoView'
+    'drawImage' | 'createPattern' | 'getTransform' | 'drawFocusIfNeeded' | 'scrollPathIntoView' | 'canvas'
   > {
+  canvas: Canvas
   /**
    * @param startAngle The angle at which to begin the gradient, in radians. Angle measurements start vertically above the centre and move around clockwise.
    * @param x The x-axis coordinate of the centre of the gradient.
@@ -274,14 +278,7 @@ export interface SKRSContext2D
     repeat: 'repeat' | 'repeat-x' | 'repeat-y' | 'no-repeat' | null,
   ): CanvasPattern
   getContextAttributes(): { alpha: boolean; desynchronized: boolean }
-  getTransform(): {
-    a: number
-    b: number
-    c: number
-    d: number
-    e: number
-    f: number
-  }
+  getTransform(): DOMMatrix
 }
 
 export type ColorSpace = 'srgb' | 'display-p3'

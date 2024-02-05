@@ -1,7 +1,7 @@
 # `skr canvas`
 
 ![CI](https://github.com/Brooooooklyn/canvas/workflows/CI/badge.svg)
-![Skia Version](https://img.shields.io/badge/Skia-chrome%2Fm107-hotpink)
+![Skia Version](https://img.shields.io/badge/Skia-chrome%2Fm122-hotpink)
 [![install size](https://packagephobia.com/badge?p=@napi-rs/canvas)](https://packagephobia.com/result?p=@napi-rs/canvas)
 [![Downloads](https://img.shields.io/npm/dm/@napi-rs/canvas.svg?sanitize=true)](https://npmcharts.com/compare/@napi-rs/canvas?minimal=true)
 
@@ -23,17 +23,17 @@ npm install @napi-rs/canvas
 
 # Support matrix
 
-|                       | node10 | node12 | node14 | node16 |
-| --------------------- | ------ | ------ | ------ | ------ |
-| Windows x64           | ✓      | ✓      | ✓      | ✓      |
-| macOS x64             | ✓      | ✓      | ✓      | ✓      |
-| macOS arm64 (m chips) | ✓      | ✓      | ✓      | ✓      |
-| Linux x64 gnu         | ✓      | ✓      | ✓      | ✓      |
-| Linux x64 musl        | ✓      | ✓      | ✓      | ✓      |
-| Linux arm64 gnu       | ✓      | ✓      | ✓      | ✓      |
-| Linux arm64 musl      | ✓      | ✓      | ✓      | ✓      |
-| Linux arm gnueabihf   | ✓      | ✓      | ✓      | ✓      |
-| Linux arm64 android   | ✓      | ✓      | ✓      | ✓      |
+|                       | node10 | node12 | node14 | node16 | node18 |
+| --------------------- | ------ | ------ | ------ | ------ | ------ |
+| Windows x64           | ✓      | ✓      | ✓      | ✓      | ✓      |
+| macOS x64             | ✓      | ✓      | ✓      | ✓      | ✓      |
+| macOS arm64 (m chips) | ✓      | ✓      | ✓      | ✓      | ✓      |
+| Linux x64 gnu         | ✓      | ✓      | ✓      | ✓      | ✓      |
+| Linux x64 musl        | ✓      | ✓      | ✓      | ✓      | ✓      |
+| Linux arm64 gnu       | ✓      | ✓      | ✓      | ✓      | ✓      |
+| Linux arm64 musl      | ✓      | ✓      | ✓      | ✓      | ✓      |
+| Linux arm gnueabihf   | ✓      | ✓      | ✓      | ✓      | ✓      |
+| Linux arm64 android   | ✓      | ✓      | ✓      | ✓      | ✓      |
 
 ## System requirement
 
@@ -51,12 +51,20 @@ All Apple M chips on **macOS**.
 
 Since Skia relies on the [glibc](https://www.gnu.org/software/libc/) 2.18 API, you need to have at least glibc version >= 2.18 on your system.
 
+## AWS Lambda usage
+
+To use this library on Lambda you will need to use a Lambda layer.
+
+You can simply attach a lambda layer by getting an ARN from [Canvas-Lambda-Layer](https://github.com/ShivamJoker/Canvas-Lambda-Layer)
+
+> Make sure to exclude `@napi-rs/canvas` while bundling your Lambda.
+
 # Usage
 
 ```js
 const { promises } = require('fs')
 const { join } = require('path')
-const { createCanvas } = require('@napi-rs/canvas')
+const { createCanvas, loadImage } = require('@napi-rs/canvas')
 
 const canvas = createCanvas(300, 320)
 const ctx = canvas.getContext('2d')
@@ -80,6 +88,15 @@ ctx.closePath()
 ctx.stroke()
 
 async function main() {
+  // load images from disk or from a URL
+  const catImage = await loadImage('path/to/cat.png')
+  const dogImage = await loadImage('https://example.com/path/to/dog.jpg')
+
+  ctx.drawImage(catImage, 0, 0, catImage.width, catImage.height)
+
+  ctx.drawImage(dogImage, canvas.width / 2, canvas.height / 2, dogImage.width, dogImage.height)
+
+  // export canvas as image
   const pngData = await canvas.encode('png') // JPEG, AVIF and WebP are also supported
   // encoding in libuv thread pool, non-blocking
   await promises.writeFile(join(__dirname, 'simple.png'), pngData)
