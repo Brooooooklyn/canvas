@@ -31,10 +31,10 @@ serde_json = "1"
 thiserror = "1"
 
 [target.'cfg(not(target_os = "linux"))'.dependencies]
-mimalloc-rust = "0.2"
+mimalloc = "0.1"
 
-[target.'cfg(all(target_os = "linux", not(all(target_env = "musl", target_arch = "aarch64"))))'.dependencies]
-mimalloc-rust = { version = "0.2", features = ["local-dynamic-tls"] }
+[target.'cfg(target_os = "linux")'.dependencies]
+mimalloc = { version = "0.1", features = ["local_dynamic_tls"] }
 
 [build-dependencies]
 cc         = "1"
