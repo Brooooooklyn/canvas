@@ -85,7 +85,7 @@ jobs:
         run: |
           export PATH="/opt/homebrew/opt/llvm/bin:$PATH"
           clang --version
-          node ./scripts/build-skia.js
+          node ./scripts/build-skia.js --target=x86_64-apple-darwin
 
       - name: Compile skia
         shell: powershell

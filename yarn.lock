@@ -264,6 +264,7 @@ __metadata:
     "@taplo/cli": "npm:^0.7.0"
     "@types/lodash": "npm:^4.14.200"
     "@types/node": "npm:^20.8.10"
+    "@types/semver": "npm:^7"
     "@typescript-eslint/eslint-plugin": "npm:^6.9.1"
     "@typescript-eslint/parser": "npm:^6.9.1"
     ava: "npm:^6.0.0"
@@ -285,6 +286,7 @@ __metadata:
     png.js: "npm:^0.2.1"
     prettier: "npm:^3.0.3"
     pretty-bytes: "npm:^6.1.1"
+    semver: "npm:^7.5.4"
     skia-canvas: "npm:^1.0.1"
     table: "npm:^6.8.1"
     typescript: "npm:^5.2.2"
@@ -717,7 +719,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@types/semver@npm:^7.5.0":
+"@types/semver@npm:^7, @types/semver@npm:^7.5.0":
   version: 7.5.6
   resolution: "@types/semver@npm:7.5.6"
   checksum: 10c0/196dc32db5f68cbcde2e6a42bb4aa5cbb100fa2b7bd9c8c82faaaf3e03fbe063e205dbb4f03c7cdf53da2edb70a0d34c9f2e601b54281b377eb8dc1743226acd

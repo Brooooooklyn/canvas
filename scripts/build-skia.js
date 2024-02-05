@@ -215,6 +215,12 @@ switch (TARGET_TRIPLE) {
     }
     ExtraSkiaBuildFlag += ` target_cpu="arm64" ndk="${ANDROID_NDK_LATEST_HOME}"`
     break
+  case 'x86_64-apple-darwin':
+    if (HOST_ARCH === 'arm64') {
+      ExtraSkiaBuildFlag += ' target_cpu="x64" target_os="mac"'
+      ExtraCflagsCC += ',"-Wno-psabi"'
+    }
+    break
   case '':
     break
   default:
