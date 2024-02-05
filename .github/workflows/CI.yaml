@@ -111,7 +111,6 @@ jobs:
             docker: ghcr.io/brooooooklyn/canvas/ubuntu-builder:jammy-aarch64
             build: >-
               set -e &&
-              rustup toolchain install $(cat ./rust-toolchain) &&
               rustup target add aarch64-unknown-linux-gnu &&
               yarn build --target aarch64-unknown-linux-gnu
           - host: ubuntu-latest
@@ -120,7 +119,6 @@ jobs:
             docker: ghcr.io/brooooooklyn/canvas/musl-builder:lts
             build: >-
               set -e &&
-              rustup toolchain install $(cat ./rust-toolchain) &&
               rustup target add aarch64-unknown-linux-musl &&
               unset RUSTFLAGS &&
               export LIB_AOM_PKG_CONFIG_PATH=/usr/aarch64-alpine-linux-musl/aom/lib/pkgconfig/aom.pc &&

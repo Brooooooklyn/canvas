@@ -1,7 +1,7 @@
 name: 'Setup rust'
 description: 'Rust setup, including cache configuration'
 inputs:
-  target:
+  targets:
     description: 'Cargo target'
     required: true
   components:
