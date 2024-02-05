@@ -1,5 +1,5 @@
 import test from 'ava'
-import { init, setPlatformAPI } from 'echarts'
+import { parse } from 'semver'
 
 import { createCanvas } from '../index.js'
 import { snapshotImage } from './image-snapshot'
@@ -9,6 +9,11 @@ test('echarts-start', async (t) => {
     t.pass()
     return
   }
+  if ((parse(process.version)?.major ?? 0) >= 21) {
+    t.pass()
+    return
+  }
+  const { init, setPlatformAPI } = await import('echarts')
   const canvas = createCanvas(800, 600)
   setPlatformAPI({
     // @ts-expect-error

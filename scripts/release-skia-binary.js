@@ -18,7 +18,7 @@ if (TARGET && TARGET.startsWith('--target=')) {
   TARGET_TRIPLE = TARGET.replace('--target=', '')
 }
 
-const LIB = ['skia', 'skparagraph', 'skshaper', 'svg', 'sktext', 'skunicode']
+const LIB = ['skia', 'skparagraph', 'skshaper', 'svg', 'skunicode']
 const ICU_DAT = 'icudtl.dat'
 
 const CLIENT = new Octokit({
@@ -119,6 +119,7 @@ async function download() {
   })
   for (const lib of LIB) {
     const { downloadUrl, binary } = libPath(lib, PLATFORM_NAME, TARGET_TRIPLE)
+    console.info(`downloading ${downloadUrl} to ${binary}`)
     execSync(`curl -J -L -H "Accept: application/octet-stream" ${downloadUrl} -o ${binary}`, {
       stdio: 'inherit',
     })

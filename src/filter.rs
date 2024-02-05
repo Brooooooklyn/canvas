@@ -12,7 +12,7 @@ use nom::{
 };
 use thiserror::Error;
 
-use crate::sk::{degrees_to_radians, ImageFilter, TileMode};
+use crate::sk::{degrees_to_radians, ImageFilter};
 
 #[derive(Error, Debug)]
 pub enum ParseFilterError<'a> {
@@ -264,9 +264,7 @@ pub(crate) fn css_filters_to_image_filter(filters: Vec<CssFilter>) -> Option<Ima
   filters
     .into_iter()
     .try_fold(ImageFilter(ptr::null_mut()), |image_filter, f| match f {
-      CssFilter::Blur(blur) => {
-        ImageFilter::make_blur(blur, blur, TileMode::Clamp, Some(&image_filter))
-      }
+      CssFilter::Blur(blur) => ImageFilter::make_blur(blur, blur, Some(&image_filter)),
       CssFilter::Brightness(brightness) => {
         let brightness = brightness.max(0.0);
         ImageFilter::make_image_filter(

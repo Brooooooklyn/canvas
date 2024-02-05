@@ -1,7 +1,7 @@
-const { execSync } = require('child_process')
-const { readFileSync, writeFileSync } = require('fs')
-const path = require('path')
-const { platform, arch } = require('os')
+const { execSync } = require('node:child_process')
+const { readFileSync, writeFileSync, existsSync, readdirSync } = require('node:fs')
+const path = require('node:path')
+const { platform, arch } = require('node:os')
 
 const PLATFORM_NAME = platform()
 const HOST_ARCH = arch()
@@ -25,10 +25,12 @@ function exec(command) {
   })
 }
 
-exec('python ./tools/git-sync-deps')
+if (process.env.SKIP_SYNC_SK_DEPS !== 'false' && process.env.SKIP_SYNC_SK_DEPS !== '0') {
+  exec('python ./tools/git-sync-deps')
+}
 
 const CC = PLATFORM_NAME === 'win32' ? '\\"clang-cl\\"' : '"clang"'
-const CXX = PLATFORM_NAME === 'win32' ? '\\"clang-cl\\"' : '"clang++"'
+const CXX = PLATFORM_NAME === 'win32' ? '\\"clang-cpp\\"' : '"clang++"'
 let ExtraCflagsCC = ''
 let ExtraSkiaBuildFlag = ''
 let ExtraCflags
@@ -51,7 +53,6 @@ const GN_ARGS = [
   `skia_enable_tools=false`,
   `skia_enable_svg=true`,
   `skia_enable_skparagraph=true`,
-  `skia_enable_sktext=true`,
   `skia_pdf_subset_harfbuzz=true`,
   `skia_use_expat=true`,
   `skia_use_system_expat=false`,
@@ -101,9 +102,13 @@ switch (PLATFORM_NAME) {
       '\\"-DSK_CODEC_DECODES_JPEG\\",' +
       '\\"-DSK_HAS_HEIF_LIBRARY\\",' +
       '\\"-DSK_SHAPER_HARFBUZZ_AVAILABLE\\"'
-    ExtraSkiaBuildFlag = 'clang_win=\\"C:\\\\Program Files\\\\LLVM\\"'
+    const clangVersion = findClangWinVersion()
+    if (clangVersion) {
+      console.info(`Found clang version: ${clangVersion}`)
+      ExtraSkiaBuildFlag = `clang_win_version=\\"${clangVersion}\\"`
+    }
+    GN_ARGS.push(`clang_win=\\"C:\\\\Program Files\\\\LLVM\\"`)
     GN_ARGS.push(`skia_enable_fontmgr_win=false`)
-    GN_ARGS.push(`skia_fontmgr_factory=\\":fontmgr_custom_directory_factory\\"`)
     break
   case 'linux':
   case 'darwin':
@@ -126,11 +131,13 @@ switch (PLATFORM_NAME) {
       PLATFORM_NAME === 'linux' &&
       !TARGET_TRIPLE &&
       HOST_LIBC === 'glibc' &&
-      (HOST_ARCH === 'x64' || HOST_ARCH === 'arm64')
+      HOST_ARCH === 'x64'
     ) {
-      ExtraCflagsCC += ',"-stdlib=libc++", "-static", "-I/usr/lib/llvm-16/include/c++/v1"'
+      ExtraCflagsCC += ',"-stdlib=libc++","-static","-I/usr/lib/llvm-16/include/c++/v1"'
     }
-    GN_ARGS.push(`skia_fontmgr_factory=":fontmgr_custom_directory_factory"`)
+    if (PLATFORM_NAME === 'linux' && (!TARGET_TRIPLE || TARGET_TRIPLE.startsWith('x86_64'))) {
+      ExtraCflagsCC += ',"-Wno-psabi"'
+    }
     break
   default:
     throw new TypeError(`Don't support ${PLATFORM_NAME} for now`)
@@ -161,8 +168,7 @@ switch (TARGET_TRIPLE) {
     ExtraCflags = `"--target=aarch64-unknown-linux-musl", "-B/aarch64-linux-musl-cross/aarch64-linux-musl/bin", "-I/aarch64-linux-musl-cross/aarch64-linux-musl/include", "-I/aarch64-linux-musl-cross/aarch64-linux-musl/include/c++/${gccVersion}", "-I/aarch64-linux-musl-cross/aarch64-linux-musl/include/c++/${gccVersion}/aarch64-linux-musl", "-march=armv8-a"`
     ExtraCflagsCC += `, "--target=aarch64-unknown-linux-musl", "-B/aarch64-linux-musl-cross/aarch64-linux-musl/bin", "-I/aarch64-linux-musl-cross/aarch64-linux-musl/include", "-I/aarch64-linux-musl-cross/aarch64-linux-musl/include/c++/${gccVersion}", "-I/aarch64-linux-musl-cross/aarch64-linux-musl/include/c++/${gccVersion}/aarch64-linux-musl", "-march=armv8-a"`
     ExtraLdFlags = `"--target=aarch64-unknown-linux-musl", "-B/aarch64-linux-musl-cross/usr/aarch64-linux-musl/bin", "-L/aarch64-linux-musl-cross/usr/aarch64-linux-musl/lib", "-L/aarch64-linux-musl-cross/usr/lib/gcc/aarch64-linux-musl/${gccVersion}"`
-    ExtraAsmFlags =
-      '"--target=aarch64-unknown-linux-musl", "-march=armv8-a"'
+    ExtraAsmFlags = '"--target=aarch64-unknown-linux-musl", "-march=armv8-a"'
     GN_ARGS.push(
       `extra_ldflags=[${ExtraLdFlags}]`,
       `ar="aarch64-linux-musl-ar"`,
@@ -191,10 +197,10 @@ switch (TARGET_TRIPLE) {
     break
   case 'aarch64-apple-darwin':
     ExtraSkiaBuildFlag += ' target_cpu="arm64" target_os="mac"'
-    ExtraCflagsCC += ', "--target=arm64-apple-macos"'
-    ExtraLdFlags = '"--target=arm64-apple-macos"'
-    ExtraAsmFlags = '"--target=arm64-apple-macos"'
-    ExtraCflags = '"--target=arm64-apple-macos"'
+    ExtraCflagsCC += ', "--target=arm64-apple-macos", "-mmacosx-version-min=11.0"'
+    ExtraLdFlags = '"--target=arm64-apple-macos", "-mmacosx-version-min=11.0"'
+    ExtraAsmFlags = '"--target=arm64-apple-macos", "-mmacosx-version-min=11.0"'
+    ExtraCflags = '"--target=arm64-apple-macos", "-mmacosx-version-min=11.0"'
     GN_ARGS.push(
       `extra_ldflags=[${ExtraLdFlags}]`,
       `extra_asmflags=[${ExtraAsmFlags}]`,
@@ -208,6 +214,12 @@ switch (TARGET_TRIPLE) {
       throw new TypeError('ANDROID_NDK_LATEST_HOME must be specified in env variable')
     }
     ExtraSkiaBuildFlag += ` target_cpu="arm64" ndk="${ANDROID_NDK_LATEST_HOME}"`
+    break
+  case 'x86_64-apple-darwin':
+    if (HOST_ARCH === 'arm64') {
+      ExtraSkiaBuildFlag += ' target_cpu="x64" target_os="mac"'
+      ExtraCflagsCC += ',"-Wno-psabi"'
+    }
     break
   case '':
     break
@@ -268,3 +280,14 @@ console.time('Build Skia')
 exec(`ninja -C ${OUTPUT_PATH}`)
 
 console.timeEnd('Build Skia')
+
+function findClangWinVersion() {
+  const stdout = execSync('clang --version', {
+    encoding: 'utf8',
+  })
+  const clangVersion = stdout.match(/clang version\s(\d+\.\d+\.\d+)/)
+  if (!clangVersion) {
+    return null
+  }
+  return clangVersion[1]?.split('.')?.at(0)
+}

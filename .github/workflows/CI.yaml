@@ -17,21 +17,64 @@ on:
       - '**'
   pull_request:
 
-jobs:
-  build:
-    if: "!contains(github.event.head_commit.message, 'skip ci')"
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.ref_name != 'main' }}
 
+jobs:
+  lint:
+    name: Lint SourceCode
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/brooooooklyn/canvas/ubuntu-builder:jammy
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: 'yarn'
+
+      - name: Install
+        uses: ./.github/actions/setup-rust
+        with:
+          targets: x86_64-apple-darwin
+          components: clippy, rustfmt
+
+      - name: Install dependencies
+        run: yarn install --immutable --mode=skip-build
+
+      - name: Download skia binary
+        run: |
+          git config --global --add safe.directory $(pwd)
+          node ./scripts/release-skia-binary.js --download
+
+      - name: 'Lint JS/TS'
+        run: yarn lint
+
+      - name: Cargo fmt
+        run: cargo fmt -- --check
+
+      - name: Clippy
+        run: cargo clippy
+
+  build:
     strategy:
       fail-fast: false
       matrix:
         settings:
-          - host: macos-latest
+          - host: macos-14
             target: 'x86_64-apple-darwin'
-            setup: brew install nasm
+            setup: brew install nasm llvm
             build: |
               rustc --print target-cpus
+              export PATH="/opt/homebrew/opt/llvm/bin:$PATH"
+              clang --version
               yarn build --target x86_64-apple-darwin
-              strip -x skia.darwin-x64.node
             downloadTarget: ''
           - host: windows-latest
             build: yarn build --target x86_64-pc-windows-msvc
@@ -41,10 +84,7 @@ jobs:
             target: 'x86_64-unknown-linux-gnu'
             downloadTarget: ''
             docker: ghcr.io/brooooooklyn/canvas/ubuntu-builder:jammy
-            build: >-
-              set -e &&
-              yarn build --target x86_64-unknown-linux-gnu &&
-              strip skia.linux-x64-gnu.node
+            build: yarn build --target x86_64-unknown-linux-gnu
           - host: ubuntu-latest
             downloadTarget: 'x86_64-unknown-linux-musl'
             target: 'x86_64-unknown-linux-musl'
@@ -54,43 +94,37 @@ jobs:
               export LIB_AOM_STATIC_LIB_PATH=/usr/lib &&
               export LIB_AOM_INCLUDE_PATH=/usr/include/aom/aom &&
               export LIB_AOM_PKG_CONFIG_PATH=/usr/lib/pkgconfig &&
-              yarn build --target x86_64-unknown-linux-musl &&
-              strip skia.linux-x64-musl.node
-          - host: macos-latest
+              yarn build --target x86_64-unknown-linux-musl
+          - host: macos-14
             downloadTarget: 'aarch64-apple-darwin'
             target: 'aarch64-apple-darwin'
+            setup: |
+              brew install llvm
             build: |
-              sudo rm -Rf /Library/Developer/CommandLineTools/SDKs/*;
-              export CC=$(xcrun -f clang);
-              export CXX=$(xcrun -f clang++);
-              SYSROOT=$(xcrun --sdk macosx --show-sdk-path);
-              export CFLAGS="-isysroot $SYSROOT -isystem $SYSROOT";
+              export MACOSX_DEPLOYMENT_TARGET='11.0'
+              export PATH="/opt/homebrew/opt/llvm/bin:$PATH"
+              clang --version
               yarn build --target aarch64-apple-darwin
-              strip -x skia.darwin-arm64.node
           - host: ubuntu-latest
             downloadTarget: 'aarch64-unknown-linux-gnu'
             target: 'aarch64-unknown-linux-gnu'
             docker: ghcr.io/brooooooklyn/canvas/ubuntu-builder:jammy-aarch64
             build: >-
               set -e &&
-              rustup toolchain install $(cat ./rust-toolchain) &&
               rustup target add aarch64-unknown-linux-gnu &&
-              yarn build --target aarch64-unknown-linux-gnu &&
-              llvm-strip-16 skia.linux-arm64-gnu.node
+              yarn build --target aarch64-unknown-linux-gnu
           - host: ubuntu-latest
             target: 'aarch64-unknown-linux-musl'
             downloadTarget: 'aarch64-unknown-linux-musl'
             docker: ghcr.io/brooooooklyn/canvas/musl-builder:lts
             build: >-
               set -e &&
-              rustup toolchain install $(cat ./rust-toolchain) &&
               rustup target add aarch64-unknown-linux-musl &&
               unset RUSTFLAGS &&
               export LIB_AOM_PKG_CONFIG_PATH=/usr/aarch64-alpine-linux-musl/aom/lib/pkgconfig/aom.pc &&
               export LIB_AOM_INCLUDE_PATH=/usr/aarch64-alpine-linux-musl/aom/include &&
               export LIB_AOM_STATIC_LIB_PATH=/usr/aarch64-alpine-linux-musl/aom/lib &&
-              yarn build --target aarch64-unknown-linux-musl &&
-              /aarch64-linux-musl-cross/bin/aarch64-linux-musl-strip skia.linux-arm64-musl.node
+              yarn build --target aarch64-unknown-linux-musl
           - host: ubuntu-latest
             target: 'armv7-unknown-linux-gnueabihf'
             downloadTarget: 'armv7-unknown-linux-gnueabihf'
@@ -104,9 +138,7 @@ jobs:
               sudo docker cp ubuntu-jammy-armv7:/usr/lib/llvm-14/lib /usr/arm-linux-gnueabihf/lib/llvm-14/lib
               sudo docker cp ubuntu-jammy-armv7:/usr/lib/llvm-14/include /usr/arm-linux-gnueabihf/lib/llvm-14/include
               docker stop ubuntu-jammy-armv7
-            build: |
-              yarn build --target armv7-unknown-linux-gnueabihf --zig --zig-link-only --zig-abi-suffix=2.18
-              arm-linux-gnueabihf-strip skia.linux-arm-gnueabihf.node
+            build: yarn build --target armv7-unknown-linux-gnueabihf --zig --zig-link-only --zig-abi-suffix=2.18
           - host: ubuntu-latest
             target: 'aarch64-linux-android'
             downloadTarget: 'aarch64-linux-android'
@@ -116,7 +148,6 @@ jobs:
               chmod 777 "${ANDROID_NDK_LATEST_HOME}/toolchains/llvm/prebuilt/linux-x86_64/lib/clang/${CLANG_VERSION}/lib/linux/aarch64/libgcc.a"
               echo "INPUT(-lunwind)" > "${ANDROID_NDK_LATEST_HOME}/toolchains/llvm/prebuilt/linux-x86_64/lib/clang/${CLANG_VERSION}/lib/linux/aarch64/libgcc.a"
               yarn build --target aarch64-linux-android
-              ${ANDROID_NDK_LATEST_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip skia.android-arm64.node
 
     name: stable - ${{ matrix.settings.target }} - node@18
     runs-on: ${{ matrix.settings.host }}
@@ -158,21 +189,9 @@ jobs:
         if: matrix.settings.host == 'windows-latest'
 
       - name: Install
-        uses: dtolnay/rust-toolchain@stable
+        uses: ./.github/actions/setup-rust
         with:
           targets: ${{ matrix.settings.target }}
-          toolchain: nightly-2023-08-09
-
-      - name: Cache cargo registry
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            .cargo-cache
-            target/
-          key: ${{ matrix.settings.target }}-cargo-registry
 
       - name: Install dependencies
         run: yarn install --immutable --mode=skip-build
@@ -197,7 +216,7 @@ jobs:
           run: ${{ matrix.settings.build }}
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: bindings-${{ matrix.settings.target }}
           path: ${{ env.APP_NAME }}.*.node
@@ -210,8 +229,10 @@ jobs:
       fail-fast: false
       matrix:
         settings:
-          - host: macos-latest
+          - host: macos-14
             target: 'x86_64-apple-darwin'
+          - host: macos-14
+            target: 'aarch64-apple-darwin'
           - host: windows-latest
             target: 'x86_64-pc-windows-msvc'
         node: ['18', '20']
@@ -233,20 +254,25 @@ jobs:
 
       - name: Setup node
         uses: actions/setup-node@v4
+        if: startsWith(matrix.settings.target, 'x86_64')
         with:
           node-version: ${{ matrix.node }}
+          cache: 'yarn'
+          architecture: 'x64'
 
-      - name: Cache yarn
-        uses: actions/cache@v4
+      - name: Setup node
+        uses: actions/setup-node@v4
+        if: startsWith(matrix.settings.target, 'aarch64')
         with:
-          path: .yarn/cache
-          key: ${{ matrix.settings.target }}-yarn-cache-node-${{ matrix.node }}
+          node-version: ${{ matrix.node }}
+          cache: 'yarn'
+          architecture: 'arm64'
 
       - name: Install dependencies
         run: yarn install --immutable --mode=skip-build
 
       - name: Download artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: bindings-${{ matrix.settings.target }}
           path: .
@@ -260,7 +286,7 @@ jobs:
 
       - name: Test failed
         if: ${{ failure() }}
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: failure-images-${{ matrix.settings.target }}-${{ matrix.node }}
           path: __test__/failure/**
@@ -297,7 +323,7 @@ jobs:
         run: yarn install --immutable --mode=skip-build
 
       - name: Download artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: bindings-x86_64-unknown-linux-gnu
           path: .
@@ -311,7 +337,7 @@ jobs:
 
       - name: Test failed
         if: ${{ failure() }}
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: failure-images-x86_64-unknown-linux-gnu-${{ matrix.node }}
           path: __test__/failure/**
@@ -350,7 +376,7 @@ jobs:
           yarn install --immutable --mode=skip-build
 
       - name: Download artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: bindings-x86_64-unknown-linux-musl
           path: .
@@ -364,7 +390,7 @@ jobs:
 
       - name: Test failed
         if: ${{ failure() }}
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: failure-images-x86_64-unknown-linux-musl-${{ matrix.node }}
           path: __test__/failure/**
@@ -376,7 +402,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: ['18', '20']
+        node: ['20', '21']
     runs-on: ubuntu-latest
 
     steps:
@@ -392,7 +418,7 @@ jobs:
           out-file-path: __test__/fonts/
 
       - name: Download artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: bindings-aarch64-unknown-linux-gnu
           path: .
@@ -425,7 +451,7 @@ jobs:
 
       - name: Test failed
         if: ${{ failure() }}
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: failure-images-aarch64-unknown-linux-gnu-${{ matrix.node }}
           path: __test__/failure/**
@@ -450,7 +476,7 @@ jobs:
           out-file-path: __test__/fonts/
 
       - name: Download artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: bindings-aarch64-unknown-linux-musl
           path: .
@@ -483,7 +509,7 @@ jobs:
 
       - name: Test failed
         if: ${{ failure() }}
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: failure-images-aarch64-unknown-linux-musl-lts
           path: __test__/failure/**
@@ -511,7 +537,7 @@ jobs:
           out-file-path: __test__/fonts/
 
       - name: Download artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: bindings-armv7-unknown-linux-gnueabihf
           path: .
@@ -544,10 +570,95 @@ jobs:
 
       - name: Test failed
         if: ${{ failure() }}
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: failure-images-armv7-unknown-linux-gnueabihf-${{ matrix.node }}
           path: __test__/failure/**
+
+  rust-test:
+    name: stable - macOS - cargo - test
+    runs-on: macos-14
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Install
+        uses: ./.github/actions/setup-rust
+        with:
+          targets: x86_64-apple-darwin
+
+      - name: Install dependencies
+        run: yarn install --immutable --mode=skip-build
+
+      - name: Install nasm
+        run: brew install nasm llvm
+
+      - name: Download skia binary
+        run: node ./scripts/release-skia-binary.js --download
+
+      - name: Test
+        run: |
+          export PATH="/opt/homebrew/opt/llvm/bin:$PATH"
+          clang --version
+          cargo test -- --nocapture
+
+  bench:
+    name: Bench
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/brooooooklyn/canvas/ubuntu-builder:jammy
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: 'yarn'
+
+      - name: Install
+        uses: ./.github/actions/setup-rust
+        with:
+          targets: x86_64-unknown-linux-gnu
+          toolchain: nightly-2023-08-09
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      - name: Download skia binary
+        run: |
+          git config --global --add safe.directory $(pwd)
+          node ./scripts/release-skia-binary.js --download
+
+      - name: 'Build'
+        run: yarn build
+
+      - name: 'Run benchmark'
+        run: yarn bench
+
+      - name: Store benchmark result
+        uses: rhysd/github-action-benchmark@v1
+        if: github.ref == 'refs/heads/main'
+        with:
+          tool: 'benchmarkjs'
+          output-file-path: bench.txt
+          github-token: ${{ secrets.GH_TOKEN }}
+          auto-push: true
+
+      - name: Store benchmark result
+        uses: rhysd/github-action-benchmark@v1
+        continue-on-error: true
+        if: github.ref != 'refs/heads/main'
+        with:
+          tool: 'benchmarkjs'
+          output-file-path: bench.txt
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          comment-always: true
 
   publish:
     name: Publish
@@ -575,7 +686,7 @@ jobs:
         run: yarn install --immutable --mode=skip-build
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           path: artifacts
 
