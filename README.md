@@ -1,7 +1,7 @@
 # `skr canvas`
 
 ![CI](https://github.com/Brooooooklyn/canvas/workflows/CI/badge.svg)
-![Skia Version](https://img.shields.io/badge/Skia-chrome%2Fm118-hotpink)
+![Skia Version](https://img.shields.io/badge/Skia-chrome%2Fm122-hotpink)
 [![install size](https://packagephobia.com/badge?p=@napi-rs/canvas)](https://packagephobia.com/result?p=@napi-rs/canvas)
 [![Downloads](https://img.shields.io/npm/dm/@napi-rs/canvas.svg?sanitize=true)](https://npmcharts.com/compare/@napi-rs/canvas?minimal=true)
 
@@ -89,18 +89,12 @@ ctx.stroke()
 
 async function main() {
   // load images from disk or from a URL
-  const catImage = await loadImage("path/to/cat.png")
-  const dogImage = await loadImage("https://example.com/path/to/dog.jpg")
+  const catImage = await loadImage('path/to/cat.png')
+  const dogImage = await loadImage('https://example.com/path/to/dog.jpg')
 
   ctx.drawImage(catImage, 0, 0, catImage.width, catImage.height)
 
-  ctx.drawImage(
-    dogImage,
-    canvas.width / 2,
-    canvas.height / 2,
-    dogImage.width,
-    dogImage.height
-  )
+  ctx.drawImage(dogImage, canvas.width / 2, canvas.height / 2, dogImage.width, dogImage.height)
 
   // export canvas as image
   const pngData = await canvas.encode('png') // JPEG, AVIF and WebP are also supported
