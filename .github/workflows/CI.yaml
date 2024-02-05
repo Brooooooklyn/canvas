@@ -57,11 +57,6 @@ jobs:
             setup: |
               brew install llvm
             build: |
-              sudo rm -Rf /Library/Developer/CommandLineTools/SDKs/*;
-              export CC=$(xcrun -f clang);
-              export CXX=$(xcrun -f clang++);
-              SYSROOT=$(xcrun --sdk macosx --show-sdk-path);
-              export CFLAGS="-isysroot $SYSROOT -isystem $SYSROOT";
               export MACOSX_DEPLOYMENT_TARGET='11.0'
               export PATH="/opt/homebrew/opt/llvm/bin:$PATH"
               clang --version

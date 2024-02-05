@@ -45,7 +45,6 @@
 #include <modules/svg/include/SkSVGNode.h>
 #include <modules/svg/include/SkSVGRenderContext.h>
 #include <src/ports/SkFontMgr_custom.h>
-#include <src/ports/SkFontMgr_custom_empty.cpp>
 #include <src/core/SkFontDescriptor.h>
 #include <src/xml/SkXMLWriter.h>
 
@@ -84,6 +83,8 @@ typedef struct skiac_picture skiac_picture;
 
 sk_sp<SkFontMgr>
 SkFontMgr_New_Custom_Directory(const char *dir);
+
+sk_sp<SkFontMgr> SkFontMgr_New_Custom_Empty();
 
 enum class CssBaseline
 {
@@ -135,7 +136,7 @@ struct skiac_font_collection
   sk_sp<FontCollection> collection;
   sk_sp<SkFontMgr> font_mgr;
   sk_sp<TypefaceFontProviderCustom> assets;
-  skiac_font_collection() : collection(sk_make_sp<FontCollection>()), font_mgr(SkFontMgr_New_Custom_Empty()), assets(sk_make_sp<TypefaceFontProviderCustom>(font_mgr))
+  skiac_font_collection() : collection(sk_make_sp<FontCollection>()), font_mgr(SkFontMgr_New_Custom_Directory(SK_FONT_FILE_PREFIX)), assets(sk_make_sp<TypefaceFontProviderCustom>(font_mgr))
   {
     collection->setDefaultFontManager(SkFontMgr_New_Custom_Empty());
     collection->setAssetFontManager(font_mgr);
