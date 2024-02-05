@@ -2132,9 +2132,12 @@ impl Task for ContextData {
       },
       ContextOutputData::Avif(output) => unsafe {
         env
-          .create_buffer_with_borrowed_data(output.as_ptr(), output.len(), output, |data_ref, _| {
-            mem::drop(data_ref)
-          })
+          .create_buffer_with_borrowed_data(
+            output.as_ptr().cast_mut(),
+            output.len(),
+            output,
+            |data_ref, _| mem::drop(data_ref),
+          )
           .map(|b| b.into_raw())
       },
     }

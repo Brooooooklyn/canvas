@@ -74,6 +74,7 @@
     "@taplo/cli": "^0.7.0",
     "@types/lodash": "^4.14.200",
     "@types/node": "^20.8.10",
+    "@types/semver": "^7",
     "@typescript-eslint/eslint-plugin": "^6.9.1",
     "@typescript-eslint/parser": "^6.9.1",
     "ava": "^6.0.0",
@@ -95,6 +96,7 @@
     "png.js": "^0.2.1",
     "prettier": "^3.0.3",
     "pretty-bytes": "^6.1.1",
+    "semver": "^7.5.4",
     "skia-canvas": "^1.0.1",
     "table": "^6.8.1",
     "typescript": "^5.2.2"
