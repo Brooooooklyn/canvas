@@ -132,6 +132,8 @@ jobs:
 
       - name: Compile skia
         run: node ./scripts/build-skia.js --target=aarch64-apple-darwin
+        env:
+          MACOSX_DEPLOYMENT_TARGET: '11.0'
 
       - name: Install dependencies
         run: yarn install --immutable --mode=skip-build

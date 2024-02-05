@@ -63,6 +63,7 @@ jobs:
               export CXX=$(xcrun -f clang++);
               SYSROOT=$(xcrun --sdk macosx --show-sdk-path);
               export CFLAGS="-isysroot $SYSROOT -isystem $SYSROOT";
+              export MACOSX_DEPLOYMENT_TARGET='11.0'
               yarn build --target aarch64-apple-darwin
               strip -x skia.darwin-arm64.node
           - host: ubuntu-latest
