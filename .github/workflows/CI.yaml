@@ -298,7 +298,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: ['20', '21']
+        node: ['18', '20']
     runs-on: ubuntu-latest
 
     steps:
@@ -402,7 +402,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: ['18', '20']
+        node: ['20', '21']
     runs-on: ubuntu-latest
 
     steps:
