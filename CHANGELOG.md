@@ -1,3 +1,18 @@
+## [0.1.45](https://github.com/Brooooooklyn/canvas/compare/v0.1.44...v0.1.45) (2024-02-05)
+
+
+### Bug Fixes
+
+* use `drawPicture` in some blending modes such as `destination-in` ([#755](https://github.com/Brooooooklyn/canvas/issues/755)) ([35f7f72](https://github.com/Brooooooklyn/canvas/commit/35f7f7261424e64c63f07a829331980ec2feb76f)), closes [#695](https://github.com/Brooooooklyn/canvas/issues/695)
+
+
+### Features
+
+* upgrade Rust toolchain ([#776](https://github.com/Brooooooklyn/canvas/issues/776)) ([6ce93d8](https://github.com/Brooooooklyn/canvas/commit/6ce93d8e0402f9627e6b5d1b18199c5225cfa2fc))
+* upgrade skia to chrome/122 ([#775](https://github.com/Brooooooklyn/canvas/issues/775)) ([48c2f88](https://github.com/Brooooooklyn/canvas/commit/48c2f88799c4f07480d76af24e96b0f0a58682a4))
+
+
+
 ## [0.1.44](https://github.com/Brooooooklyn/canvas/compare/v0.1.43...v0.1.44) (2023-08-22)
 
 ### Bug Fixes
