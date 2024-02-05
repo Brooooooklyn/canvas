@@ -40,7 +40,7 @@ jobs:
           cache: 'yarn'
 
       - name: Install
-        uses: ./actions/setup-rust
+        uses: ./.github/actions/setup-rust
         with:
           targets: x86_64-apple-darwin
           components: clippy, rustfmt
@@ -191,20 +191,9 @@ jobs:
         if: matrix.settings.host == 'windows-latest'
 
       - name: Install
-        uses: ./actions/setup-rust
+        uses: ./.github/actions/setup-rust
         with:
           targets: ${{ matrix.settings.target }}
-
-      - name: Cache cargo registry
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            .cargo-cache
-            target/
-          key: ${{ matrix.settings.target }}-cargo-registry
 
       - name: Install dependencies
         run: yarn install --immutable --mode=skip-build
@@ -598,7 +587,7 @@ jobs:
           submodules: true
 
       - name: Install
-        uses: ./actions/setup-rust
+        uses: ./.github/actions/setup-rust
         with:
           targets: x86_64-apple-darwin
 
@@ -635,18 +624,10 @@ jobs:
           cache: 'yarn'
 
       - name: Install
-        uses: ./actions/setup-rust
+        uses: ./.github/actions/setup-rust
         with:
           targets: x86_64-unknown-linux-gnu
           toolchain: nightly-2023-08-09
-
-      - name: Cache cargo registry
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: bench-cargo-cache
 
       - name: Install dependencies
         run: yarn install --immutable
