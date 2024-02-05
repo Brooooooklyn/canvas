@@ -22,7 +22,7 @@ runs:
       uses: dtolnay/rust-toolchain@stable
       with:
         toolchain: '${{ steps.rustup-version.outputs.RUST_TOOLCHAIN_VERSION }}'
-        targets: ${{ inputs.target }}
+        targets: ${{ inputs.targets }}
         components: ${{ inputs.components }}
       env:
         CARGO_INCREMENTAL: '1'
