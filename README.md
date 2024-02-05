@@ -23,18 +23,6 @@ npm install @napi-rs/canvas
 
 # Support matrix
 
-|                       | node10 | node12 | node14 | node16 | node18 |
-| --------------------- | ------ | ------ | ------ | ------ | ------ |
-| Windows x64           | ✓      | ✓      | ✓      | ✓      | ✓      |
-| macOS x64             | ✓      | ✓      | ✓      | ✓      | ✓      |
-| macOS arm64 (m chips) | ✓      | ✓      | ✓      | ✓      | ✓      |
-| Linux x64 gnu         | ✓      | ✓      | ✓      | ✓      | ✓      |
-| Linux x64 musl        | ✓      | ✓      | ✓      | ✓      | ✓      |
-| Linux arm64 gnu       | ✓      | ✓      | ✓      | ✓      | ✓      |
-| Linux arm64 musl      | ✓      | ✓      | ✓      | ✓      | ✓      |
-| Linux arm gnueabihf   | ✓      | ✓      | ✓      | ✓      | ✓      |
-| Linux arm64 android   | ✓      | ✓      | ✓      | ✓      | ✓      |
-
 ## System requirement
 
 ### `arm64`
@@ -62,8 +50,8 @@ You can simply attach a lambda layer by getting an ARN from [Canvas-Lambda-Layer
 # Usage
 
 ```js
-const { promises } = require('fs')
-const { join } = require('path')
+const { promises } = require('node:fs')
+const { join } = require('node:path')
 const { createCanvas, loadImage } = require('@napi-rs/canvas')
 
 const canvas = createCanvas(300, 320)

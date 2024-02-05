@@ -246,7 +246,9 @@ impl Image {
       } else {
         None
       }
-    } else if let Some(kind) = infer::get(&data) && kind.matcher_type() == infer::MatcherType::Image {
+    } else if let Some(kind) = infer::get(&data)
+      && kind.matcher_type() == infer::MatcherType::Image
+    {
       Some(Bitmap::from_buffer(data.as_ptr() as *mut u8, length))
     } else if self.is_svg_image(data_ref, length) {
       self.is_svg = true;
