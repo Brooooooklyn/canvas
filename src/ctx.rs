@@ -1497,7 +1497,7 @@ impl CanvasRenderingContext2D {
         if !image.complete {
           return Ok(());
         }
-        image.regenerate_bitmap_if_need();
+        image.regenerate_bitmap_if_need()?;
         if let Some(bitmap) = &mut image.bitmap {
           BitmapRef::Borrowed(bitmap)
         } else {

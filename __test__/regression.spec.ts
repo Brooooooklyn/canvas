@@ -1,9 +1,9 @@
-import { promises as fs } from 'fs'
-import { join } from 'path'
+import { promises as fs } from 'node:fs'
+import { join } from 'node:path'
 
 import test from 'ava'
 
-import { createCanvas, loadImage, GlobalFonts } from '../index'
+import { createCanvas, loadImage, GlobalFonts, Image } from '../index'
 import { snapshotImage } from './image-snapshot'
 
 test('transform-with-state', async (t) => {
@@ -169,4 +169,24 @@ test('draw-text-center-maxWidth', async (t) => {
   /** Very long text (20 repetitions) */
   ctx.fillText(`Very ${'long '.repeat(20)} text`, canvas.width / 2, 50, maxWidth)
   await snapshotImage(t, { ctx, canvas })
+})
+
+test('draw-svg-with-text', async (t) => {
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'iosevka-slab-regular.ttf'))
+  const canvas = createCanvas(1200, 700)
+  const ctx = canvas.getContext('2d')
+  const ViceCityGradient = ctx.createLinearGradient(0, 0, 1200, 0)
+  ViceCityGradient.addColorStop(0, '#3494e6')
+  ViceCityGradient.addColorStop(1, '#EC6EAD')
+  ctx.fillStyle = ViceCityGradient
+  ctx.fillRect(0, 0, 1200, 700)
+  ctx.fillStyle = 'white'
+  ctx.font = '48px Iosevka Slab'
+  const Title = '@napi-rs/image'
+  ctx.fillText(Title, 80, 100)
+
+  const Arrow = new Image()
+  Arrow.src = await fs.readFile(join(__dirname, 'image-og.svg'))
+  ctx.drawImage(Arrow, 80, 60)
+  await snapshotImage(t, { ctx, canvas }, 'png', process.arch === 'x64' && process.platform !== 'darwin' ? 0.015 : 0.3)
 })
