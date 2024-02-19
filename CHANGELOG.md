@@ -1,3 +1,13 @@
+## [0.1.46](https://github.com/Brooooooklyn/canvas/compare/v0.1.45...v0.1.46) (2024-02-19)
+
+
+### Bug Fixes
+
+* **deps:** update rust crate libavif to 0.13 ([08f3ff4](https://github.com/Brooooooklyn/canvas/commit/08f3ff4e8b522b3fb7c9204f08689a02d49b5218))
+* draw text on svg ([#780](https://github.com/Brooooooklyn/canvas/issues/780)) ([b6928f2](https://github.com/Brooooooklyn/canvas/commit/b6928f2976624a598f79e7724119b0888a0859d8))
+
+
+
 ## [0.1.45](https://github.com/Brooooooklyn/canvas/compare/v0.1.44...v0.1.45) (2024-02-05)
 
 
