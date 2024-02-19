@@ -1,3 +1,13 @@
+## [0.1.47](https://github.com/Brooooooklyn/canvas/compare/v0.1.46...v0.1.47) (2024-02-19)
+
+
+### Bug Fixes
+
+* DOMMatrix#transformPoint ([#782](https://github.com/Brooooooklyn/canvas/issues/782)) ([dfc2224](https://github.com/Brooooooklyn/canvas/commit/dfc2224b99ec23952cfb43ea35f7c4f8714c813b))
+* font css parser should handle the font height ([#783](https://github.com/Brooooooklyn/canvas/issues/783)) ([382c304](https://github.com/Brooooooklyn/canvas/commit/382c304176beee304eed7569d4c965dcb2042804))
+
+
+
 ## [0.1.46](https://github.com/Brooooooklyn/canvas/compare/v0.1.45...v0.1.46) (2024-02-19)
 
 
