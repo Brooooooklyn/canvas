@@ -59,7 +59,7 @@ impl Font {
       } else {
         size_str.parse::<f32>().ok()
       };
-      let family = cap.get(9).map(|c| c.as_str()).unwrap_or(DEFAULT_FONT);
+      let family = cap.get(11).map(|c| c.as_str()).unwrap_or(DEFAULT_FONT);
       // return if no valid size
       if let Some(size) = size {
         let style = cap
@@ -127,6 +127,7 @@ pub(crate) fn init_font_regexp() -> Regex {
       ([\d\.]+)                                       # size
       (%|px|pt|pc|in|cm|mm|%|em|ex|ch|rem|q)?\s*      # unit
     )
+    (/[\d\.]+(%|px|pt|pc|in|cm|mm|%|em|ex|ch|rem|q)?\s*)? # optional line height
     # line-height is ignored here, as per the spec
     # Borrowed from https://github.com/Automattic/node-canvas/blob/master/lib/parse-font.js#L21
     ((?:'([^']+)'|"([^"]+)"|[\w\s-]+)(\s*,\s*(?:'([^']+)'|"([^"]+)"|[\w\s-]+))*)?                                            # family
@@ -388,7 +389,7 @@ fn test_font_regexp() {
   // unit
   assert_eq!(caps.get(8).map(|m| m.as_str()), Some("em"));
   // family
-  assert_eq!(caps.get(9).map(|m| m.as_str()), Some("\"Fira Sans\""));
+  assert_eq!(caps.get(11).map(|m| m.as_str()), Some("\"Fira Sans\""));
 }
 
 #[test]
@@ -403,7 +404,7 @@ fn test_font_regexp_order1() {
   assert_eq!(caps.get(5), None); // stretch
   assert_eq!(caps.get(7).map(|m| m.as_str()), Some("50")); // size
   assert_eq!(caps.get(8).map(|m| m.as_str()), Some("px")); // unit
-  assert_eq!(caps.get(9).map(|m| m.as_str()), Some("Arial, sans-serif")); // family
+  assert_eq!(caps.get(11).map(|m| m.as_str()), Some("Arial, sans-serif")); // family
 }
 
 #[test]
@@ -530,6 +531,15 @@ fn test_font_new() {
       Font {
         size: 50.0,
         family: "sans-serif".to_owned(),
+        ..Default::default()
+      },
+    ),
+    (
+      "400 48px/57.599999999999994px Cascadia",
+      Font {
+        size: 48.0,
+        weight: 400,
+        family: "Cascadia".to_owned(),
         ..Default::default()
       },
     ),
