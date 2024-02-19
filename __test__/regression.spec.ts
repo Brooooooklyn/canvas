@@ -3,7 +3,7 @@ import { join } from 'node:path'
 
 import test from 'ava'
 
-import { createCanvas, loadImage, GlobalFonts, Image } from '../index'
+import { createCanvas, loadImage, GlobalFonts, Image, DOMMatrix, DOMPoint } from '../index'
 import { snapshotImage } from './image-snapshot'
 
 test('transform-with-state', async (t) => {
@@ -189,4 +189,9 @@ test('draw-svg-with-text', async (t) => {
   Arrow.src = await fs.readFile(join(__dirname, 'image-og.svg'))
   ctx.drawImage(Arrow, 80, 60)
   await snapshotImage(t, { ctx, canvas }, 'png', process.arch === 'x64' && process.platform !== 'darwin' ? 0.015 : 0.3)
+})
+
+test('DOMMatrix::transformPoint', (t) => {
+  console.info(new DOMPoint(1, 2))
+  t.deepEqual(new DOMMatrix().transformPoint({ x: 1, y: 2 }), new DOMPoint(1, 2))
 })
