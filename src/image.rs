@@ -4,6 +4,8 @@ use std::str::FromStr;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use napi::{bindgen_prelude::*, NapiValue};
 
+use crate::error::SkError;
+use crate::global_fonts::get_font;
 use crate::sk::Bitmap;
 use crate::sk::ColorSpace;
 
@@ -252,6 +254,7 @@ impl Image {
       Some(Bitmap::from_buffer(data.as_ptr() as *mut u8, length))
     } else if self.is_svg_image(data_ref, length) {
       self.is_svg = true;
+      let font = get_font().map_err(SkError::from)?;
       if (self.width - -1.0).abs() > f64::EPSILON && (self.height - -1.0).abs() > f64::EPSILON {
         Bitmap::from_svg_data_with_custom_size(
           data.as_ptr(),
@@ -259,9 +262,10 @@ impl Image {
           self.width as f32,
           self.height as f32,
           self.color_space,
+          &font,
         )
       } else {
-        Bitmap::from_svg_data(data.as_ptr(), length, self.color_space)
+        Bitmap::from_svg_data(data.as_ptr(), length, self.color_space, &font)
       }
     } else {
       self.on_error(env, &this)?;
@@ -281,19 +285,22 @@ impl Image {
     Ok(())
   }
 
-  pub(crate) fn regenerate_bitmap_if_need(&mut self) {
+  pub(crate) fn regenerate_bitmap_if_need(&mut self) -> Result<()> {
     if !self.need_regenerate_bitmap || !self.is_svg || self.src.is_none() {
-      return;
+      return Ok(());
     }
     if let Some(data) = self.src.as_mut() {
+      let font = get_font().map_err(SkError::from)?;
       self.bitmap = Bitmap::from_svg_data_with_custom_size(
         data.as_ref().as_ptr(),
         data.as_ref().len(),
         self.width as f32,
         self.height as f32,
         self.color_space,
+        &font,
       );
     }
+    Ok(())
   }
 
   fn on_load(&self, this: &This) -> Result<()> {

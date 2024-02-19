@@ -809,6 +809,7 @@ pub mod ffi {
       width: f32,
       height: f32,
       info: *mut skiac_bitmap_info,
+      font_collection: *mut skiac_font_collection,
       cs: u8,
     );
 
@@ -3420,14 +3421,27 @@ impl Bitmap {
     }
   }
 
-  pub fn from_svg_data(data: *const u8, size: usize, color_space: ColorSpace) -> Option<Self> {
+  pub fn from_svg_data(
+    data: *const u8,
+    size: usize,
+    color_space: ColorSpace,
+    fc: &FontCollection,
+  ) -> Option<Self> {
     let mut bitmap_info = ffi::skiac_bitmap_info {
       bitmap: ptr::null_mut(),
       width: 0,
       height: 0,
     };
     unsafe {
-      ffi::skiac_bitmap_make_from_svg(data, size, -1.0, -1.0, &mut bitmap_info, color_space as u8);
+      ffi::skiac_bitmap_make_from_svg(
+        data,
+        size,
+        -1.0,
+        -1.0,
+        &mut bitmap_info,
+        fc.0,
+        color_space as u8,
+      );
 
       if bitmap_info.bitmap.is_null() {
         return None;
@@ -3442,6 +3456,7 @@ impl Bitmap {
     width: f32,
     height: f32,
     color_space: ColorSpace,
+    fc: &FontCollection,
   ) -> Option<Self> {
     let mut bitmap_info = ffi::skiac_bitmap_info {
       bitmap: ptr::null_mut(),
@@ -3455,6 +3470,7 @@ impl Bitmap {
         width,
         height,
         &mut bitmap_info,
+        fc.0,
         color_space as u8,
       );
 

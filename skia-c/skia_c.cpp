@@ -1486,11 +1486,11 @@ extern "C"
     bitmap_info->height = info.height();
   }
 
-  void skiac_bitmap_make_from_svg(const uint8_t *data, size_t length, float width, float height, skiac_bitmap_info *bitmap_info, uint8_t cs)
+  void skiac_bitmap_make_from_svg(const uint8_t *data, size_t length, float width, float height, skiac_bitmap_info *bitmap_info, skiac_font_collection *c_collection, uint8_t cs)
   {
     auto color_space = COLOR_SPACE_CAST;
     auto svg_stream = new SkMemoryStream(data, length, false);
-    auto svg_dom = SkSVGDOM::MakeFromStream(*svg_stream);
+    auto svg_dom = SkSVGDOM::Builder().setFontManager(c_collection->assets).make(*svg_stream);
     auto svg_root = svg_dom->getRoot();
     auto svg_container_size = svg_root->intrinsicSize(SkSVGLengthContext(SkSize::Make(0, 0)));
     if (svg_container_size.isZero())
