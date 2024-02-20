@@ -230,20 +230,21 @@ extern "C"
 
   void skiac_surface_encode_data(skiac_surface *c_surface, skiac_sk_data *data, int format, int quality)
   {
-    auto image = SURFACE_CAST->makeImageSnapshot();
+    auto image = SURFACE_CAST->makeImageSnapshot().release();
     sk_sp<SkData> encoded_data;
     if (format == int(SkEncodedImageFormat::kJPEG)) {
       SkJpegEncoder::Options options;
       options.fQuality = quality;
-      encoded_data = SkJpegEncoder::Encode(nullptr, image.release(), options);
+      encoded_data = SkJpegEncoder::Encode(nullptr, image, options);
     } else if (format == int(SkEncodedImageFormat::kPNG)) {
-      encoded_data = SkPngEncoder::Encode(nullptr, image.release(), SkPngEncoder::Options());
+      encoded_data = SkPngEncoder::Encode(nullptr, image, SkPngEncoder::Options());
     } else if (format == int(SkEncodedImageFormat::kWEBP)){
       SkWebpEncoder::Options options;
       options.fCompression = quality == 100 ? SkWebpEncoder::Compression::kLossless : SkWebpEncoder::Compression::kLossy;
       options.fQuality = quality == 100 ? 75 : quality;
-      encoded_data = SkWebpEncoder::Encode(nullptr, image.release(), options);
+      encoded_data = SkWebpEncoder::Encode(nullptr, image, options);
     }
+    image->unref();
     if (encoded_data)
     {
       data->ptr = const_cast<uint8_t *>(encoded_data->bytes());
