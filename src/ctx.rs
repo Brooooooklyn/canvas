@@ -1583,7 +1583,7 @@ impl CanvasRenderingContext2D {
           })
           .unwrap_or(FillType::Winding);
         if let Some(inverted) = inverted {
-          let (mapped_x, mapped_y) = inverted.map_points(x as f32, y as f32);
+          let (mapped_x, mapped_y) = inverted.map_points(x, y);
           x = mapped_x;
           y = mapped_y;
         }
