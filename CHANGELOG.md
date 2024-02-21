@@ -1,3 +1,14 @@
+## [0.1.48](https://github.com/Brooooooklyn/canvas/compare/v0.1.47...v0.1.48) (2024-02-21)
+
+
+### Bug Fixes
+
+* isPointInPath/isPointInStroke should respect transform ([#787](https://github.com/Brooooooklyn/canvas/issues/787)) ([9b068f1](https://github.com/Brooooooklyn/canvas/commit/9b068f17448c97df7315dd4ac75528edc9952537))
+* map points args order ([#788](https://github.com/Brooooooklyn/canvas/issues/788)) ([72d3d35](https://github.com/Brooooooklyn/canvas/commit/72d3d35a8f98be0ba5cb4a8c5f98b202984403e9))
+* memory leak in Canvas encode ([#786](https://github.com/Brooooooklyn/canvas/issues/786)) ([9a4ade5](https://github.com/Brooooooklyn/canvas/commit/9a4ade5f965e43896894dbac64a8e2b358313305))
+
+
+
 ## [0.1.47](https://github.com/Brooooooklyn/canvas/compare/v0.1.46...v0.1.47) (2024-02-19)
 
 
