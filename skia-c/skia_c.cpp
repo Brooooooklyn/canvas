@@ -1270,7 +1270,7 @@ extern "C"
     SkPoint dst[1];
     auto p = SkPoint::Make(x, y);
     SkPoint src[] = {p};
-    MATRIX_CAST->mapPoints(src, dst, 1);
+    MATRIX_CAST->mapPoints(dst, src, 1);
     auto dp = dst[0];
     mapped_point->x = dp.fX;
     mapped_point->y = dp.fY;
