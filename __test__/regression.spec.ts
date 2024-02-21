@@ -192,6 +192,16 @@ test('draw-svg-with-text', async (t) => {
 })
 
 test('DOMMatrix::transformPoint', (t) => {
-  console.info(new DOMPoint(1, 2))
   t.deepEqual(new DOMMatrix().transformPoint({ x: 1, y: 2 }), new DOMPoint(1, 2))
+})
+
+test('isPointInPath with translate', (t) => {
+  const canvas = createCanvas(1200, 700)
+  const ctx = canvas.getContext('2d')
+  ctx.translate(10, 10)
+  ctx.rect(0, 0, 100, 100)
+  t.false(ctx.isPointInPath(0, 0))
+  t.true(ctx.isPointInPath(10, 10))
+  t.true(ctx.isPointInPath(100, 100))
+  t.true(ctx.isPointInPath(110, 110))
 })

@@ -203,10 +203,8 @@ pub mod ffi {
   #[repr(C)]
   #[derive(Debug, Clone, Copy)]
   pub struct skiac_mapped_point {
-    pub x1: f32,
-    pub y1: f32,
-    pub x2: f32,
-    pub y2: f32,
+    pub x: f32,
+    pub y: f32,
   }
 
   #[repr(C)]
@@ -718,12 +716,10 @@ pub mod ffi {
 
     pub fn skiac_matrix_clone(matrix: *mut skiac_matrix) -> *mut skiac_matrix;
 
-    pub fn skiac_matrix_map_points(
+    pub fn skiac_matrix_map_points_1(
       c_matrix: *mut skiac_matrix,
-      x1: f32,
-      y1: f32,
-      x2: f32,
-      y2: f32,
+      x: f32,
+      y: f32,
       mapped_point: *mut skiac_mapped_point,
     );
 
@@ -3005,20 +3001,10 @@ impl Matrix {
     Matrix(unsafe { ffi::skiac_matrix_create_translated(x, y) })
   }
 
-  pub fn map_points(&self, x1: f32, y1: f32, x2: f32, y2: f32) -> (f32, f32, f32, f32) {
-    let mut mapped_point = ffi::skiac_mapped_point {
-      x1: 0.0,
-      y1: 0.0,
-      x2: 0.0,
-      y2: 0.0,
-    };
-    unsafe { ffi::skiac_matrix_map_points(self.0, x1, y1, x2, y2, &mut mapped_point) };
-    (
-      mapped_point.x1,
-      mapped_point.y1,
-      mapped_point.x2,
-      mapped_point.y2,
-    )
+  pub fn map_points(&self, x: f32, y: f32) -> (f32, f32) {
+    let mut mapped_point = ffi::skiac_mapped_point { x: 0.0, y: 0.0 };
+    unsafe { ffi::skiac_matrix_map_points_1(self.0, x, y, &mut mapped_point) };
+    (mapped_point.x, mapped_point.y)
   }
 
   pub fn pre_translate(&mut self, dx: f32, dy: f32) {
