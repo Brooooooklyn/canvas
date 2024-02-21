@@ -238,22 +238,22 @@ impl Context {
   }
 
   pub fn translate(&mut self, x: f32, y: f32) {
-    let s = &mut self.state;
+    let current_state = &mut self.state;
     let inverse = Matrix::translated(-x, -y);
     self.path.transform_self(&inverse);
-    s.transform.pre_translate(x, y);
-    self.surface.canvas.set_transform(&s.transform);
+    current_state.transform.pre_translate(x, y);
+    self.surface.canvas.set_transform(&current_state.transform);
   }
 
   pub fn transform(&mut self, ts: Matrix) -> result::Result<(), SkError> {
-    let s = &mut self.state;
+    let current_state = &mut self.state;
     self.path.transform_self(
       &ts
         .invert()
         .ok_or_else(|| SkError::InvalidTransform(ts.clone()))?,
     );
-    s.transform = ts.multiply(&s.transform);
-    self.surface.set_transform(&s.transform);
+    current_state.transform = ts.multiply(&current_state.transform);
+    self.surface.set_transform(&current_state.transform);
     Ok(())
   }
 
@@ -1571,21 +1571,28 @@ impl CanvasRenderingContext2D {
     y_or_fill_rule: Option<Either<f64, String>>,
     maybe_fill_rule: Option<String>,
   ) -> Result<bool> {
+    let inverted = self.context.state.transform.invert();
     match x_or_path {
       Either::A(x) => {
-        let y = x_or_y;
+        let mut x = x as f32;
+        let mut y = x_or_y as f32;
         let fill_rule = y_or_fill_rule
           .and_then(|v| match v {
             Either::B(rule) => rule.parse().ok(),
             _ => None,
           })
           .unwrap_or(FillType::Winding);
-        Ok(self.context.path.hit_test(x as f32, y as f32, fill_rule))
+        if let Some(inverted) = inverted {
+          let (mapped_x, mapped_y) = inverted.map_points(x, y);
+          x = mapped_x;
+          y = mapped_y;
+        }
+        Ok(self.context.path.hit_test(x, y, fill_rule))
       }
       Either::B(path) => {
-        let x = x_or_y;
-        let y = match y_or_fill_rule {
-          Some(Either::A(y)) => y,
+        let mut x = x_or_y as f32;
+        let mut y = match y_or_fill_rule {
+          Some(Either::A(y)) => y as f32,
           _ => {
             return Err(Error::new(
               Status::InvalidArg,
@@ -1596,7 +1603,12 @@ impl CanvasRenderingContext2D {
         let fill_rule = maybe_fill_rule
           .and_then(|s| s.parse().ok())
           .unwrap_or(FillType::Winding);
-        Ok(path.inner.hit_test(x as f32, y as f32, fill_rule))
+        if let Some(inverted) = inverted {
+          let (mapped_x, mapped_y) = inverted.map_points(x, y);
+          x = mapped_x;
+          y = mapped_y;
+        }
+        Ok(path.inner.hit_test(x, y, fill_rule))
       }
     }
   }
@@ -1609,20 +1621,28 @@ impl CanvasRenderingContext2D {
     maybe_y: Option<f64>,
   ) -> Result<bool> {
     let stroke_w = self.context.get_stroke_width();
+    let inverted = self.context.state.transform.invert();
     match x_or_path {
       Either::A(x) => {
-        let y = x_or_y;
-        Ok(
-          self
-            .context
-            .path
-            .stroke_hit_test(x as f32, y as f32, stroke_w),
-        )
+        let mut x = x as f32;
+        let mut y = x_or_y as f32;
+        if let Some(inverted) = inverted {
+          let (mapped_x, mapped_y) = inverted.map_points(x, y);
+          x = mapped_x;
+          y = mapped_y;
+        }
+        Ok(self.context.path.stroke_hit_test(x, y, stroke_w))
       }
       Either::B(path) => {
-        let x = x_or_y;
+        let mut x = x_or_y as f32;
         if let Some(y) = maybe_y {
-          Ok(path.inner.stroke_hit_test(x as f32, y as f32, stroke_w))
+          let mut y = y as f32;
+          if let Some(inverted) = inverted {
+            let (mapped_x, mapped_y) = inverted.map_points(x, y);
+            x = mapped_x;
+            y = mapped_y;
+          }
+          Ok(path.inner.stroke_hit_test(x, y, stroke_w))
         } else {
           Err(Error::new(
             Status::InvalidArg,

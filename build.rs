@@ -73,9 +73,6 @@ fn main() {
           "/usr/include/c++/{gcc_version_trim}/x86_64-alpine-linux-musl"
         ));
     }
-    "aarch64-apple-darwin" => {
-      build.target("arm64-apple-macos");
-    }
     "aarch64-linux-android" => {
       let nkd_home = env::var("ANDROID_NDK_LATEST_HOME").unwrap();
       let host = if cfg!(target_os = "windows") {
@@ -211,6 +208,8 @@ fn main() {
       println!("cargo:rustc-link-lib=framework=ApplicationServices");
     }
     "android" => {
+      build.cpp_set_stdlib("c++").flag("-static");
+      println!("cargo:rustc-link-lib=static=c++");
       println!("cargo:rustc-cdylib-link-arg=-Wl,--allow-multiple-definition");
     }
     _ => {}

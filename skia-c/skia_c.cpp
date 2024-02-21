@@ -1265,19 +1265,15 @@ extern "C"
     return reinterpret_cast<skiac_matrix *>(r);
   }
 
-  void skiac_matrix_map_points(skiac_matrix *c_matrix, float x1, float y1, float x2, float y2, skiac_mapped_point *mapped_point)
+  void skiac_matrix_map_points_1(skiac_matrix *c_matrix, float x, float y, skiac_mapped_point *mapped_point)
   {
-    SkPoint dst[2];
-    auto p1 = SkPoint::Make(x1, y1);
-    auto p2 = SkPoint::Make(x2, y2);
-    SkPoint src[] = {p1, p2};
-    MATRIX_CAST->mapPoints(src, dst, 2);
-    auto dp1 = dst[0];
-    auto dp2 = dst[1];
-    mapped_point->x1 = dp1.fX;
-    mapped_point->y1 = dp1.fY;
-    mapped_point->x2 = dp2.fX;
-    mapped_point->y2 = dp2.fY;
+    SkPoint dst[1];
+    auto p = SkPoint::Make(x, y);
+    SkPoint src[] = {p};
+    MATRIX_CAST->mapPoints(src, dst, 1);
+    auto dp = dst[0];
+    mapped_point->x = dp.fX;
+    mapped_point->y = dp.fY;
   }
 
   skiac_matrix *skiac_matrix_clone(skiac_matrix *c_matrix)
