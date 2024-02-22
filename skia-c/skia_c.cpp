@@ -218,8 +218,9 @@ extern "C"
 
   void skiac_surface_png_data(skiac_surface *c_surface, skiac_sk_data *data)
   {
-    auto image = SURFACE_CAST->makeImageSnapshot();
-    auto png_data = SkPngEncoder::Encode(nullptr, image.release(), SkPngEncoder::Options());
+    auto image = SURFACE_CAST->makeImageSnapshot().release();
+    auto png_data = SkPngEncoder::Encode(nullptr, image, SkPngEncoder::Options());
+    image->unref();
     if (png_data)
     {
       data->ptr = png_data->bytes();
