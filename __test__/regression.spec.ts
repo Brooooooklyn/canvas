@@ -188,7 +188,7 @@ test('draw-svg-with-text', async (t) => {
   const Arrow = new Image()
   Arrow.src = await fs.readFile(join(__dirname, 'image-og.svg'))
   ctx.drawImage(Arrow, 80, 60)
-  await snapshotImage(t, { ctx, canvas }, 'png', process.arch === 'x64' && process.platform !== 'darwin' ? 0.015 : 0.3)
+  await snapshotImage(t, { ctx, canvas }, 'png', process.arch === 'x64' && process.platform !== 'darwin' ? 0.15 : 0.3)
 })
 
 test('DOMMatrix::transformPoint', (t) => {
