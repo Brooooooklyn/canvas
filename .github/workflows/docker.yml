@@ -43,18 +43,18 @@ jobs:
         uses: addnab/docker-run-action@v3
         with:
           image: ubuntu:jammy
-          options: '--platform linux/arm64 --user 0:0 -e GITHUB_TOKEN -v ${{ github.workspace }}/lib/llvm-16:/usr/lib/llvm-16'
+          options: '--platform linux/arm64 --user 0:0 -e GITHUB_TOKEN -v ${{ github.workspace }}/lib/llvm-18:/usr/lib/llvm-18'
           run: >-
             apt-get update &&
             apt-get install -y wget gnupg2 &&
             wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - &&
-            echo "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-16 main" >> /etc/apt/sources.list &&
-            echo "deb-src http://apt.llvm.org/jammy/ llvm-toolchain-jammy-16 main" >> /etc/apt/sources.list &&
+            echo "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-18 main" >> /etc/apt/sources.list &&
+            echo "deb-src http://apt.llvm.org/jammy/ llvm-toolchain-jammy-18 main" >> /etc/apt/sources.list &&
             apt-get update &&
-            apt-get install libc++-16-dev libc++abi-16-dev -y --fix-missing --no-install-recommends &&
-            rm /usr/lib/llvm-16/lib/libc++abi.so &&
-            rm /usr/lib/llvm-16/lib/libunwind.so &&
-            rm /usr/lib/llvm-16/lib/libc++.so
+            apt-get install libc++-18-dev libc++abi-18-dev -y --fix-missing --no-install-recommends &&
+            rm /usr/lib/llvm-18/lib/libc++abi.so &&
+            rm /usr/lib/llvm-18/lib/libunwind.so &&
+            rm /usr/lib/llvm-18/lib/libc++.so
 
       - name: Build and push Linux aarch64
         uses: docker/build-push-action@v5
