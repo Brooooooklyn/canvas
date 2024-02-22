@@ -1,3 +1,17 @@
+## [0.1.49](https://github.com/Brooooooklyn/canvas/compare/v0.1.48...v0.1.49) (2024-02-22)
+
+
+### Bug Fixes
+
+* memory leak while encoding png from Canvas ([#791](https://github.com/Brooooooklyn/canvas/issues/791)) ([3f17b38](https://github.com/Brooooooklyn/canvas/commit/3f17b384445868a37062d7e2b42d558c03d24586))
+
+
+### Features
+
+* chrome/m123 ([#790](https://github.com/Brooooooklyn/canvas/issues/790)) ([a70a8d4](https://github.com/Brooooooklyn/canvas/commit/a70a8d4edc2c5aa48122a34edc4f69fe48e24bd0))
+
+
+
 ## [0.1.48](https://github.com/Brooooooklyn/canvas/compare/v0.1.47...v0.1.48) (2024-02-21)
 
 
