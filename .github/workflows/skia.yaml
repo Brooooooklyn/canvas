@@ -35,7 +35,7 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20
           cache: 'yarn'
 
       - uses: actions/setup-python@v5
@@ -117,7 +117,7 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20
           cache: 'yarn'
 
       - uses: actions/setup-python@v5
@@ -162,7 +162,7 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20
           cache: 'yarn'
 
       - name: Login to GitHub Container Registry
@@ -191,7 +191,7 @@ jobs:
   build-aarch64-linux-gnu:
     if: "!contains(github.event.head_commit.message, 'skip skia')"
 
-    name: stable - aarch64-linux - build skia
+    name: stable - aarch64-linux-gnu - build skia
     runs-on: ubuntu-latest
 
     steps:
@@ -202,7 +202,7 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20
           cache: 'yarn'
 
       - uses: actions/setup-python@v5
@@ -242,7 +242,7 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20
           cache: 'yarn'
 
       - name: Login to GitHub Container Registry
@@ -282,7 +282,7 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20
           cache: 'yarn'
 
       - uses: actions/setup-python@v5
@@ -306,10 +306,10 @@ jobs:
       - name: Install cross compile tools
         run: |
           wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
-          echo "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-16 main" | sudo tee -a /etc/apt/sources.list > /dev/null
-          echo "deb-src http://apt.llvm.org/jammy/ llvm-toolchain-jammy-16 main" | sudo tee -a /etc/apt/sources.list > /dev/null
+          echo "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-18 main" | sudo tee -a /etc/apt/sources.list > /dev/null
+          echo "deb-src http://apt.llvm.org/jammy/ llvm-toolchain-jammy-18 main" | sudo tee -a /etc/apt/sources.list > /dev/null
           sudo apt-get update
-          sudo apt-get install llvm-16 clang-16 lld-16 gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf -y
+          sudo apt-get install llvm-18 clang-18 lld-18 gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf -y
           docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
           docker buildx build --load --platform linux/arm/v7 -t ubuntu:jammy-armv7 . -f jammy-armv7.Dockerfile
           docker run --rm -dt --name ubuntu-jammy-armv7 ubuntu:jammy-armv7
@@ -343,7 +343,7 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20
           cache: 'yarn'
 
       - uses: actions/setup-python@v5

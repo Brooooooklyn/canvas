@@ -133,7 +133,7 @@ switch (PLATFORM_NAME) {
       HOST_LIBC === 'glibc' &&
       HOST_ARCH === 'x64'
     ) {
-      ExtraCflagsCC += ',"-stdlib=libc++","-static","-I/usr/lib/llvm-16/include/c++/v1"'
+      ExtraCflagsCC += ',"-stdlib=libc++","-static","-I/usr/lib/llvm-18/include/c++/v1"'
     }
     if (PLATFORM_NAME === 'linux' && (!TARGET_TRIPLE || TARGET_TRIPLE.startsWith('x86_64'))) {
       ExtraCflagsCC += ',"-Wno-psabi"'
@@ -149,14 +149,14 @@ switch (TARGET_TRIPLE) {
     ExtraCflags =
       '"--target=aarch64-unknown-linux-gnu", "--sysroot=/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot", "-I/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot/usr/include", "-march=armv8-a"'
     ExtraCflagsCC +=
-      ', "--target=aarch64-unknown-linux-gnu", "--sysroot=/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot", "-I/usr/lib/llvm-16/include/c++/v1", "-I/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot/usr/include", "-march=armv8-a"'
+      ', "--target=aarch64-unknown-linux-gnu", "--sysroot=/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot", "-I/usr/lib/llvm-18/include/c++/v1", "-I/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot/usr/include", "-march=armv8-a"'
     ExtraLdFlags =
-      '"-fuse-ld=lld", "-L/usr/aarch64-unknown-linux-gnu/lib/llvm-16/lib", "-L/usr/aarch64-unknown-linux-gnu/lib", "-L/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot/lib", "-L/usr/aarch64-unknown-linux-gnu/lib/gcc/aarch64-unknown-linux-gnu/4.8.5"'
+      '"-fuse-ld=lld", "-L/usr/aarch64-unknown-linux-gnu/lib/llvm-18/lib", "-L/usr/aarch64-unknown-linux-gnu/lib", "-L/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot/lib", "-L/usr/aarch64-unknown-linux-gnu/lib/gcc/aarch64-unknown-linux-gnu/4.8.5"'
     ExtraAsmFlags = '"--target=aarch64-unknown-linux-gnu", "-march=armv8-a"'
 
     GN_ARGS.push(
       `extra_ldflags=[${ExtraLdFlags}]`,
-      `ar="llvm-ar-16"`,
+      `ar="llvm-ar-18"`,
       `extra_asmflags=[${ExtraAsmFlags}]`,
       `extra_cflags=[${ExtraCflags}]`,
       `extra_cflags_c=[${ExtraCflags}]`,
@@ -189,7 +189,7 @@ switch (TARGET_TRIPLE) {
 
     GN_ARGS.push(
       `extra_ldflags=[${ExtraLdFlags}]`,
-      `ar="llvm-ar-16"`,
+      `ar="llvm-ar-18"`,
       `extra_asmflags=[${ExtraAsmFlags}]`,
       `extra_cflags=[${ExtraCflags}]`,
       `extra_cflags_c=[${ExtraCflags}]`,
