@@ -2211,17 +2211,15 @@ fn parse_css_size(css_size: &str) -> Option<f32> {
       .parse::<f32>()
       .map(|v| v / 100.0 * FONT_MEDIUM_PX)
       .ok();
-  } else {
-    if let Some(captures) = CSS_SIZE_REGEXP.captures(&css_size) {
-      return captures.get(1).and_then(|size| {
-        captures.get(2).and_then(|unit| {
-          Some(parse_size_px(
-            size.as_str().parse::<f32>().ok()?,
-            unit.as_str(),
-          ))
-        })
-      });
-    }
+  } else if let Some(captures) = CSS_SIZE_REGEXP.captures(css_size) {
+    return captures.get(1).and_then(|size| {
+      captures.get(2).and_then(|unit| {
+        Some(parse_size_px(
+          size.as_str().parse::<f32>().ok()?,
+          unit.as_str(),
+        ))
+      })
+    });
   }
   None
 }
