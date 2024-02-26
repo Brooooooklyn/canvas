@@ -1,3 +1,12 @@
+## [0.1.50](https://github.com/Brooooooklyn/canvas/compare/v0.1.49...v0.1.50) (2024-02-26)
+
+
+### Features
+
+* support ctx.letterSpacing and ctx.wordSpacing ([#794](https://github.com/Brooooooklyn/canvas/issues/794)) ([793d2a0](https://github.com/Brooooooklyn/canvas/commit/793d2a0e02728ce9de224b1d03061b30f00f901d))
+
+
+
 ## [0.1.49](https://github.com/Brooooooklyn/canvas/compare/v0.1.48...v0.1.49) (2024-02-22)
 
 
