@@ -90,6 +90,64 @@ test('text-baseline-all', async (t) => {
   await snapshotImage(t)
 })
 
+test('letter-spacing', async (t) => {
+  const canvas = createCanvas(800, 800)
+  const ctx = canvas.getContext('2d')!
+  ctx.font = '30px Iosevka Slab'
+
+  // Default letter spacing
+  ctx.fillText(`Hello world (default: ${ctx.letterSpacing})`, 10, 40)
+
+  // Custom letter spacing: 10px
+  ctx.letterSpacing = '10px'
+  ctx.fillText(`Hello world (${ctx.letterSpacing})`, 10, 90)
+  ctx.save()
+  // Custom letter spacing: 20px
+  ctx.letterSpacing = '20px'
+  ctx.fillText(`Hello world (${ctx.letterSpacing})`, 10, 140)
+  ctx.restore()
+  ctx.fillText(`Hello world (${ctx.letterSpacing})`, 10, 190)
+
+  ctx.textAlign = 'center'
+  const { width } = ctx.measureText(`Hello world (${ctx.letterSpacing})`)
+  ctx.fillText(`Hello world (${ctx.letterSpacing})`, width / 2 + 10, 240)
+
+  ctx.textAlign = 'start'
+  ctx.fillText(`Hello world (${ctx.letterSpacing})`, 10, 290)
+  ctx.textAlign = 'right'
+  ctx.fillText(`Hello world (${ctx.letterSpacing})`, -width + 10, 340)
+  await snapshotImage(t, { canvas, ctx })
+})
+
+test('word-spacing', async (t) => {
+  const canvas = createCanvas(800, 800)
+  const ctx = canvas.getContext('2d')!
+  ctx.font = '30px Iosevka Slab'
+
+  // Default word spacing
+  ctx.fillText(`Hello world (default: ${ctx.wordSpacing})`, 10, 40)
+
+  // Custom word spacing: 10px
+  ctx.wordSpacing = '10px'
+  ctx.fillText(`Hello world (${ctx.wordSpacing})`, 10, 90)
+  ctx.save()
+  // Custom word spacing: 20px
+  ctx.wordSpacing = '20px'
+  ctx.fillText(`Hello world (${ctx.wordSpacing})`, 10, 140)
+  ctx.restore()
+  ctx.fillText(`Hello world (${ctx.wordSpacing})`, 10, 190)
+
+  ctx.textAlign = 'center'
+  const { width } = ctx.measureText(`Hello world (${ctx.wordSpacing})`)
+  ctx.fillText(`Hello world (${ctx.wordSpacing})`, width / 2 + 10, 240)
+
+  ctx.textAlign = 'start'
+  ctx.fillText(`Hello world (${ctx.wordSpacing})`, 10, 290)
+  ctx.textAlign = 'right'
+  ctx.fillText(`Hello world (${ctx.wordSpacing})`, -width + 10, 340)
+  await snapshotImage(t, { canvas, ctx })
+})
+
 test('text-align-with-space', async (t) => {
   if (process.platform !== 'darwin') {
     t.pass('Skip test, no fallback fonts on this platform in CI')

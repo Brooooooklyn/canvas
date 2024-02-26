@@ -409,6 +409,8 @@ extern "C"
       int baseline,
       int align,
       int direction,
+      float letter_spacing,
+      float world_spacing,
       skiac_paint *c_paint,
       skiac_canvas *c_canvas,
       skiac_line_metrics *c_line_metrics)
@@ -426,15 +428,19 @@ extern "C"
     }
     text_style.setFontFamilies(families_vec);
     text_style.setFontSize(font_size);
-    text_style.setWordSpacing(0);
+    text_style.setWordSpacing(world_spacing);
+    text_style.setLetterSpacing(letter_spacing);
     text_style.setHeight(1);
     text_style.setFontStyle(font_style);
     text_style.setForegroundColor(*PAINT_CAST);
     text_style.setTextBaseline(TextBaseline::kAlphabetic);
+    StrutStyle struct_style;
+    struct_style.setLeading(0);
 
     ParagraphStyle paragraph_style;
     paragraph_style.setTextStyle(text_style);
     paragraph_style.setTextDirection(text_direction);
+    paragraph_style.setStrutStyle(struct_style);
     ParagraphBuilderImpl builder(paragraph_style, font_collection, SkUnicode::Make());
     builder.addText(text, text_len);
     auto paragraph = static_cast<ParagraphImpl *>(builder.Build().release());
@@ -561,6 +567,7 @@ extern "C"
         CANVAS_CAST->scale(ratio, 1.0);
       }
       auto paint_y = y + baseline_offset;
+      paint_x = paint_x - letter_spacing / 2;
       paragraph->paint(CANVAS_CAST, need_scale ? (paint_x + (1 - ratio) * offset_x) / ratio : paint_x, paint_y);
       if (need_scale)
       {

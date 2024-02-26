@@ -279,6 +279,9 @@ export interface SKRSContext2D
   ): CanvasPattern
   getContextAttributes(): { alpha: boolean; desynchronized: boolean }
   getTransform(): DOMMatrix
+
+  letterSpacing: string
+  wordSpacing: string
 }
 
 export type ColorSpace = 'srgb' | 'display-p3'
