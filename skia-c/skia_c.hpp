@@ -312,6 +312,8 @@ extern "C"
       int baseline,
       int align,
       int direction,
+      float letter_spacing,
+      float world_spacing,
       skiac_paint *c_paint,
       skiac_canvas *c_canvas,
       skiac_line_metrics *c_line_metrics);

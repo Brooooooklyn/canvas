@@ -422,6 +422,8 @@ pub mod ffi {
       baseline: i32,
       align: i32,
       direction: i32,
+      letter_spacing: f32,
+      word_spacing: f32,
       paint: *mut skiac_paint,
       canvas: *mut skiac_canvas,
       line_metrics: *mut skiac_line_metrics,
@@ -2089,6 +2091,8 @@ impl Canvas {
     baseline: TextBaseline,
     align: TextAlign,
     direction: TextDirection,
+    letter_spacing: f32,
+    word_spacing: f32,
     paint: &Paint,
   ) -> Result<(), NulError> {
     let c_text = std::ffi::CString::new(text)?;
@@ -2111,6 +2115,8 @@ impl Canvas {
         baseline as i32,
         align as i32,
         direction.as_sk_direction(),
+        letter_spacing,
+        word_spacing,
         paint.0,
         self.0,
         ptr::null_mut(),
@@ -2131,6 +2137,8 @@ impl Canvas {
     baseline: TextBaseline,
     align: TextAlign,
     direction: TextDirection,
+    letter_spacing: f32,
+    word_spacing: f32,
     paint: &Paint,
   ) -> Result<ffi::skiac_line_metrics, NulError> {
     let c_text = std::ffi::CString::new(text)?;
@@ -2155,6 +2163,8 @@ impl Canvas {
         baseline as i32,
         align as i32,
         direction.as_sk_direction(),
+        letter_spacing,
+        word_spacing,
         paint.0,
         ptr::null_mut(),
         &mut line_metrics,

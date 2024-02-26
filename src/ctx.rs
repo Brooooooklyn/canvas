@@ -7,7 +7,11 @@ use std::str::FromStr;
 use cssparser::{Color as CSSColor, Parser, ParserInput, RGBA};
 use libavif::AvifData;
 use napi::{bindgen_prelude::*, JsBuffer, JsString, NapiRaw, NapiValue};
+use once_cell::sync::Lazy;
+use regex::Regex;
 
+use crate::font::parse_size_px;
+use crate::font::FONT_MEDIUM_PX;
 use crate::global_fonts::get_font;
 use crate::picture_recorder::PictureRecorder;
 use crate::sk::Canvas;
@@ -29,6 +33,9 @@ use crate::{
   state::Context2dRenderingState,
   CanvasElement, SVGCanvas,
 };
+
+static CSS_SIZE_REGEXP: Lazy<Regex> =
+  Lazy::new(|| Regex::new(r#"([\d\.]+)(%|px|pt|pc|in|cm|mm|%|em|ex|ch|rem|q)?\s*"#).unwrap());
 
 impl From<SkError> for Error {
   fn from(err: SkError) -> Error {
@@ -780,6 +787,8 @@ impl Context {
             state.text_baseline,
             state.text_align,
             state.text_direction,
+            state.letter_spacing,
+            state.word_spacing,
             &shadow_paint,
           )?;
           canvas.restore();
@@ -799,6 +808,8 @@ impl Context {
           state.text_baseline,
           state.text_align,
           state.text_direction,
+          state.letter_spacing,
+          state.word_spacing,
           paint,
         )?;
         Ok(())
@@ -825,6 +836,8 @@ impl Context {
       state.text_baseline,
       state.text_align,
       state.text_direction,
+      state.letter_spacing,
+      state.word_spacing,
       &fill_paint,
     )?);
     Ok(line_metrics)
@@ -1097,6 +1110,34 @@ impl CanvasRenderingContext2D {
     if let Ok(d) = direction.parse() {
       self.context.state.text_direction = d;
     };
+  }
+
+  #[napi(getter)]
+  pub fn get_letter_spacing(&self) -> String {
+    self.context.state.letter_spacing_raw.clone()
+  }
+
+  #[napi(setter, return_if_invalid)]
+  pub fn set_letter_spacing(&mut self, spacing: String) -> Result<()> {
+    if let Some(size) = parse_css_size(&spacing) {
+      self.context.state.letter_spacing = size;
+      self.context.state.letter_spacing_raw = spacing;
+    }
+    Ok(())
+  }
+
+  #[napi(getter)]
+  pub fn get_word_spacing(&self) -> String {
+    self.context.state.word_spacing_raw.clone()
+  }
+
+  #[napi(setter, return_if_invalid)]
+  pub fn set_word_spacing(&mut self, spacing: String) -> Result<()> {
+    if let Some(size) = parse_css_size(&spacing) {
+      self.context.state.word_spacing = size;
+      self.context.state.word_spacing_raw = spacing;
+    }
+    Ok(())
   }
 
   #[napi(getter)]
@@ -2162,4 +2203,25 @@ impl Task for ContextData {
       },
     }
   }
+}
+
+fn parse_css_size(css_size: &str) -> Option<f32> {
+  if css_size.ends_with('%') {
+    return css_size
+      .parse::<f32>()
+      .map(|v| v / 100.0 * FONT_MEDIUM_PX)
+      .ok();
+  } else {
+    if let Some(captures) = CSS_SIZE_REGEXP.captures(&css_size) {
+      return captures.get(1).and_then(|size| {
+        captures.get(2).and_then(|unit| {
+          Some(parse_size_px(
+            size.as_str().parse::<f32>().ok()?,
+            unit.as_str(),
+          ))
+        })
+      });
+    }
+  }
+  None
 }
