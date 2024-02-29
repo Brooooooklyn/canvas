@@ -12,12 +12,8 @@
   ],
   "main": "skia.linux-arm64-gnu.node",
   "files": [
-    "skia.linux-arm64-gnu.node",
-    "install.js"
+    "skia.linux-arm64-gnu.node"
   ],
-  "scripts": {
-    "install": "node install.js"
-  },
   "description": "Canvas for Node.js with skia backend",
   "keywords": [
     "napi-rs",
@@ -40,5 +36,8 @@
     "registry": "https://registry.npmjs.org/",
     "access": "public"
   },
-  "repository": "https://github.com/Brooooooklyn/canvas.git"
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Brooooooklyn/canvas.git"
+  }
 }
