@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1709184193230,
+  "lastUpdate": 1709267441726,
   "repoUrl": "https://github.com/Brooooooklyn/canvas",
   "entries": {
     "Benchmark": [
@@ -28148,6 +28148,72 @@ window.BENCHMARK_DATA = {
             "range": "±0.77%",
             "unit": "ops/sec",
             "extra": "55 samples"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "29139614+renovate[bot]@users.noreply.github.com",
+            "name": "renovate[bot]",
+            "username": "renovate[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d75c3b72986f380a9be6fdd20a510f64c70719b0",
+          "message": "chore(deps): lock file maintenance (#798)\n\nCo-authored-by: renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>",
+          "timestamp": "2024-03-01T12:23:44+08:00",
+          "tree_id": "1baa9354bfa8fcf85d4a7ad092ae8acd32df9bb9",
+          "url": "https://github.com/Brooooooklyn/canvas/commit/d75c3b72986f380a9be6fdd20a510f64c70719b0"
+        },
+        "date": 1709267376201,
+        "tool": "benchmarkjs",
+        "benches": [
+          {
+            "name": "Draw house#skia-canvas",
+            "value": 30,
+            "range": "±0.27%",
+            "unit": "ops/sec",
+            "extra": "53 samples"
+          },
+          {
+            "name": "Draw house#node-canvas",
+            "value": 37,
+            "range": "±0.76%",
+            "unit": "ops/sec",
+            "extra": "64 samples"
+          },
+          {
+            "name": "Draw house#@napi-rs/skia",
+            "value": 32,
+            "range": "±0.84%",
+            "unit": "ops/sec",
+            "extra": "56 samples"
+          },
+          {
+            "name": "Draw gradient#skia-canvas",
+            "value": 28,
+            "range": "±0.34%",
+            "unit": "ops/sec",
+            "extra": "51 samples"
+          },
+          {
+            "name": "Draw gradient#node-canvas",
+            "value": 36,
+            "range": "±0.46%",
+            "unit": "ops/sec",
+            "extra": "62 samples"
+          },
+          {
+            "name": "Draw gradient#@napi-rs/skia",
+            "value": 31,
+            "range": "±0.86%",
+            "unit": "ops/sec",
+            "extra": "54 samples"
           }
         ]
       }
