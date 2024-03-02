@@ -9,7 +9,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 anyhow = "1"
-base64 = "0.21"
+base64 = "0.22"
 cssparser = "0.29"
 infer = "0.15"
 libavif = { version = "0.13", default-features = false, features = [
