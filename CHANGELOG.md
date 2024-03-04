@@ -1,3 +1,13 @@
+## [0.1.51](https://github.com/Brooooooklyn/canvas/compare/v0.1.50...v0.1.51) (2024-03-04)
+
+
+### Bug Fixes
+
+* **deps:** update rust crate base64 to 0.22 ([84fd52f](https://github.com/Brooooooklyn/canvas/commit/84fd52fa448607ce4cbdf45dc3513b0baa2479a5))
+* remove postinstall script for gnu/musl platform ([#797](https://github.com/Brooooooklyn/canvas/issues/797)) ([d37da08](https://github.com/Brooooooklyn/canvas/commit/d37da08b8c2620d9895ac9b0050ab1bf654f284e))
+
+
+
 ## [0.1.50](https://github.com/Brooooooklyn/canvas/compare/v0.1.49...v0.1.50) (2024-02-26)
 
 
