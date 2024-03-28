@@ -277,7 +277,7 @@ __metadata:
     eslint: "npm:^8.56.0"
     eslint-config-prettier: "npm:^9.1.0"
     eslint-plugin-import: "npm:^2.29.1"
-    eslint-plugin-sonarjs: "npm:^0.24.0"
+    eslint-plugin-sonarjs: "npm:^0.25.0"
     husky: "npm:^9.0.10"
     lint-staged: "npm:^15.2.1"
     lodash: "npm:^4.17.21"
@@ -2334,12 +2334,12 @@ __metadata:
   languageName: node
   linkType: hard
 
-"eslint-plugin-sonarjs@npm:^0.24.0":
-  version: 0.24.0
-  resolution: "eslint-plugin-sonarjs@npm:0.24.0"
+"eslint-plugin-sonarjs@npm:^0.25.0":
+  version: 0.25.0
+  resolution: "eslint-plugin-sonarjs@npm:0.25.0"
   peerDependencies:
     eslint: ^5.0.0 || ^6.0.0 || ^7.0.0 || ^8.0.0
-  checksum: 10c0/b27f45ec33af8e3962309106e5564eaae45ea83873fbf2796175dd85b675b8042bef0c35535efb5778f598d8ca91a1d5683ca22b36599481e3b827c621ba8a50
+  checksum: 10c0/5fc9264f7fda28a2f58b4dcd928d86a9981eca80242e275f11bcd8d8fcecd11da3ee6d709f46e8c4aa644340f939bce46ae0501ff20e2301920d38152935907a
   languageName: node
   linkType: hard
 
