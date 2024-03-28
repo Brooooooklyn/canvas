@@ -90,7 +90,7 @@
     "eslint": "^8.56.0",
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-import": "^2.29.1",
-    "eslint-plugin-sonarjs": "^0.24.0",
+    "eslint-plugin-sonarjs": "^0.25.0",
     "husky": "^9.0.10",
     "lint-staged": "^15.2.1",
     "lodash": "^4.17.21",
