@@ -35,7 +35,7 @@ use crate::{
 };
 
 static CSS_SIZE_REGEXP: Lazy<Regex> =
-  Lazy::new(|| Regex::new(r#"([\d\.]+)(%|px|pt|pc|in|cm|mm|%|em|ex|ch|rem|q)?\s*"#).unwrap());
+  Lazy::new(|| Regex::new(r#"(-?[\d\.]+)(%|px|pt|pc|in|cm|mm|%|em|ex|ch|rem|q)?\s*"#).unwrap());
 
 impl From<SkError> for Error {
   fn from(err: SkError) -> Error {
