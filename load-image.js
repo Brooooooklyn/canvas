@@ -4,9 +4,8 @@ const { Readable } = require('stream')
 
 let http, https
 
-const MAX_REDIRECTS = 20,
-  REDIRECT_STATUSES = new Set([301, 302]),
-  DATA_URI = /^\s*data:/
+const MAX_REDIRECTS = 20
+const REDIRECT_STATUSES = new Set([301, 302])
 
 /**
  * Loads the given source into canvas Image
@@ -23,7 +22,7 @@ module.exports = async function loadImage(source, options = {}) {
   // if the source is Image instance, copy the image src to new image
   if (source instanceof Image) return createImage(source.src, options.alt)
   // if source is string and in data uri format, construct image using data uri
-  if (typeof source === 'string' && DATA_URI.test(source)) {
+  if (typeof source === 'string' && source.trimStart().startsWith('data:')) {
     const commaIdx = source.indexOf(',')
     const encoding = source.lastIndexOf('base64', commaIdx) < 0 ? 'utf-8' : 'base64'
     const data = Buffer.from(source.slice(commaIdx + 1), encoding)
