@@ -1482,13 +1482,42 @@ extern "C"
     auto data = SkData::MakeWithoutCopy(reinterpret_cast<const void *>(ptr), size);
     auto codec = SkCodec::MakeFromData(data);
     auto info = codec->getInfo();
-    auto row_bytes = info.width() * info.bytesPerPixel();
+    auto row_bytes = info.minRowBytes();
     auto bitmap = new SkBitmap();
     bitmap->allocPixels(info);
     codec->getPixels(info, bitmap->getPixels(), row_bytes);
-    bitmap_info->bitmap = reinterpret_cast<skiac_bitmap *>(bitmap);
-    bitmap_info->width = info.width();
-    bitmap_info->height = info.height();
+    auto dimension = codec->dimensions();
+    auto origin = codec->getOrigin();
+    auto width = dimension.width();
+    auto height = dimension.height();
+    // https://github.com/chromium/chromium/blob/126.0.6423.1/third_party/blink/renderer/platform/graphics/image.cc#L124
+    // need to create a new bitmap with the correct orientation
+    if (origin != SkEncodedOrigin::kTopLeft_SkEncodedOrigin) {
+      if (
+        origin == SkEncodedOrigin::kLeftTop_SkEncodedOrigin ||
+        origin == SkEncodedOrigin::kRightTop_SkEncodedOrigin  ||
+        origin == SkEncodedOrigin::kRightBottom_SkEncodedOrigin ||
+        origin == SkEncodedOrigin::kLeftBottom_SkEncodedOrigin
+      )
+      {
+        width = height;
+        height = dimension.width();
+      }
+      auto oriented_bitmap = new SkBitmap();
+      auto oriented_bitmap_info = SkImageInfo::Make(width, height, info.colorType(), info.alphaType());
+      oriented_bitmap->allocPixels(oriented_bitmap_info);
+      auto canvas = new SkCanvas(*oriented_bitmap);
+      auto matrix = SkEncodedOriginToMatrix(origin, width, height);
+      canvas->setMatrix(matrix);
+      auto image = SkImages::RasterFromBitmap(*bitmap);
+      canvas->drawImage(image, 0, 0);
+      bitmap_info->bitmap = reinterpret_cast<skiac_bitmap *>(oriented_bitmap);
+      delete bitmap;
+    } else {
+      bitmap_info->bitmap = reinterpret_cast<skiac_bitmap *>(bitmap);
+    }
+    bitmap_info->width = width;
+    bitmap_info->height = height;
   }
 
   void skiac_bitmap_make_from_svg(const uint8_t *data, size_t length, float width, float height, skiac_bitmap_info *bitmap_info, skiac_font_collection *c_collection, uint8_t cs)

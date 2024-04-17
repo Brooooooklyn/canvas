@@ -48,6 +48,24 @@ test('alt state should be ok', (t) => {
   t.is(image.alt, 'hello')
 })
 
+test('with-exif image width and height should be correct', async (t) => {
+  const file = await fs.readFile(join(__dirname, 'fixtures', 'with-exif.jpg'))
+  const image = new Image()
+  image.src = file
+  t.is(image.width, 450)
+  t.is(image.height, 600)
+})
+
+test('draw-image-exif', async (t) => {
+  const file = await fs.readFile(join(__dirname, 'fixtures', 'with-exif.jpg'))
+  const image = new Image()
+  image.src = file
+  const canvas = createCanvas(800, 800)
+  const ctx = canvas.getContext('2d')
+  ctx.drawImage(image, 0, 0)
+  await snapshotImage(t, { canvas })
+})
+
 test('properties should be readonly', (t) => {
   const image = new Image()
   const expectation = {
