@@ -58,7 +58,7 @@
     "format:rs": "cargo fmt",
     "format:source": "prettier . -w",
     "format:toml": "taplo format",
-    "lint": "eslint . -c ./.eslintrc.yml",
+    "lint": "oxlint",
     "prepublishOnly": "pinst --disable && napi prepublish -t npm",
     "postpublish": "pinst --enable",
     "test:ci": "ava -c 1",
@@ -78,8 +78,6 @@
     "@types/lodash": "^4.14.202",
     "@types/node": "^20.11.16",
     "@types/semver": "^7",
-    "@typescript-eslint/eslint-plugin": "^7.0.0",
-    "@typescript-eslint/parser": "^7.0.0",
     "ava": "^6.1.1",
     "benny": "^3.7.1",
     "canvas": "^2.11.2",
@@ -87,14 +85,11 @@
     "colorette": "^2.0.20",
     "conventional-changelog-cli": "^4.1.0",
     "echarts": "^5.4.3",
-    "eslint": "^8.56.0",
-    "eslint-config-prettier": "^9.1.0",
-    "eslint-plugin-import": "^2.29.1",
-    "eslint-plugin-sonarjs": "^0.25.0",
     "husky": "^9.0.10",
     "lint-staged": "^15.2.1",
     "lodash": "^4.17.21",
     "npm-run-all2": "^6.1.2",
+    "oxlint": "^0.2.17",
     "pinst": "^3.0.0",
     "png.js": "^0.2.1",
     "prettier": "^3.2.5",
@@ -109,7 +104,7 @@
       "prettier --write"
     ],
     "*.@(js|ts|tsx)": [
-      "eslint -c .eslintrc.yml --fix"
+      "oxlint --fix"
     ]
   },
   "ava": {
