@@ -1,3 +1,18 @@
+## [0.1.52](https://github.com/Brooooooklyn/canvas/compare/v0.1.51...v0.1.52) (2024-04-17)
+
+
+### Bug Fixes
+
+* drawImage with exif orientation ([#814](https://github.com/Brooooooklyn/canvas/issues/814)) ([a54cd33](https://github.com/Brooooooklyn/canvas/commit/a54cd33cb86d3670c31defdb2d2bd1ecdbba1a31))
+* negative letter spacing ([#813](https://github.com/Brooooooklyn/canvas/issues/813)) ([11ab7e2](https://github.com/Brooooooklyn/canvas/commit/11ab7e2f4239e0456e5b4169f744b71d504cfce0))
+
+
+### Features
+
+* chrome/m125 ([#815](https://github.com/Brooooooklyn/canvas/issues/815)) ([7edc894](https://github.com/Brooooooklyn/canvas/commit/7edc894dd531313f0a75ebafca1f1448a1829baf))
+
+
+
 ## [0.1.51](https://github.com/Brooooooklyn/canvas/compare/v0.1.50...v0.1.51) (2024-03-04)
 
 
