@@ -119,6 +119,19 @@ test('letter-spacing', async (t) => {
   await snapshotImage(t, { canvas, ctx })
 })
 
+test('negative-letter-spacing', async (t) => {
+  const canvas = createCanvas(800, 800)
+  const ctx = canvas.getContext('2d')!
+  ctx.font = '30px Iosevka Slab'
+
+  // Default letter spacing
+  ctx.fillText(`Hello world (default: ${ctx.letterSpacing})`, 10, 40)
+
+  ctx.letterSpacing = '-5px'
+  ctx.fillText(`Hello world (${ctx.letterSpacing})`, 10, 90)
+  await snapshotImage(t, { canvas, ctx })
+})
+
 test('word-spacing', async (t) => {
   const canvas = createCanvas(800, 800)
   const ctx = canvas.getContext('2d')!
