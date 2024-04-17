@@ -18,7 +18,7 @@ if (TARGET && TARGET.startsWith('--target=')) {
   TARGET_TRIPLE = TARGET.replace('--target=', '')
 }
 
-const LIB = ['skia', 'skparagraph', 'skshaper', 'svg', 'skunicode']
+const LIB = ['skia', 'skparagraph', 'skshaper', 'svg', 'skunicode_core', 'skunicode_icu']
 const ICU_DAT = 'icudtl.dat'
 
 const CLIENT = new Octokit({
