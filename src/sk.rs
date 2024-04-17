@@ -238,12 +238,19 @@ pub mod ffi {
   )]
   #[link(name = "skparagraph", kind = "static", cfg(target_os = "windows"))]
   #[link(
-    name = "skunicode",
+    name = "skunicode_core",
     kind = "static",
     modifiers = "+bundle,+whole-archive",
     cfg(not(target_os = "windows"))
   )]
-  #[link(name = "skunicode", kind = "static", cfg(target_os = "windows"))]
+  #[link(name = "skunicode_core", kind = "static", cfg(target_os = "windows"))]
+  #[link(
+    name = "skunicode_icu",
+    kind = "static",
+    modifiers = "+bundle,+whole-archive",
+    cfg(not(target_os = "windows"))
+  )]
+  #[link(name = "skunicode_icu", kind = "static", cfg(target_os = "windows"))]
   #[link(
     name = "skia",
     kind = "static",

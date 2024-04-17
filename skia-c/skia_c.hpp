@@ -40,6 +40,7 @@
 #include <modules/skparagraph/src/ParagraphBuilderImpl.h>
 #include <modules/skparagraph/src/ParagraphImpl.h>
 #include <modules/skparagraph/include/TypefaceFontProvider.h>
+#include <modules/skunicode/include/SkUnicode_icu.h>
 #include <modules/svg/include/SkSVGDOM.h>
 #include <modules/svg/include/SkSVGSVG.h>
 #include <modules/svg/include/SkSVGNode.h>

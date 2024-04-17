@@ -441,7 +441,7 @@ extern "C"
     paragraph_style.setTextStyle(text_style);
     paragraph_style.setTextDirection(text_direction);
     paragraph_style.setStrutStyle(struct_style);
-    ParagraphBuilderImpl builder(paragraph_style, font_collection, SkUnicode::Make());
+    ParagraphBuilderImpl builder(paragraph_style, font_collection, SkUnicodes::ICU::Make());
     builder.addText(text, text_len);
     auto paragraph = static_cast<ParagraphImpl *>(builder.Build().release());
     paragraph->layout(MAX_LAYOUT_WIDTH);
