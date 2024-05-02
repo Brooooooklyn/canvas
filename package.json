@@ -133,5 +133,5 @@
     "singleQuote": true,
     "arrowParens": "always"
   },
-  "packageManager": "yarn@4.1.1"
+  "packageManager": "yarn@4.2.0"
 }
