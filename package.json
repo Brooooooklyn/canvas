@@ -83,7 +83,7 @@
     "canvas": "^2.11.2",
     "canvaskit-wasm": "^0.39.1",
     "colorette": "^2.0.20",
-    "conventional-changelog-cli": "^4.1.0",
+    "conventional-changelog-cli": "^5.0.0",
     "echarts": "^5.4.3",
     "husky": "^9.0.10",
     "lint-staged": "^15.2.1",
@@ -133,5 +133,5 @@
     "singleQuote": true,
     "arrowParens": "always"
   },
-  "packageManager": "yarn@4.1.1"
+  "packageManager": "yarn@4.2.2"
 }
