@@ -33,7 +33,7 @@ thiserror = "1"
 [target.'cfg(not(target_os = "linux"))'.dependencies]
 mimalloc = "0.1"
 
-[target.'cfg(target_os = "linux")'.dependencies]
+[target.'cfg(all(target_os = "linux", not(target_arch = "arm")))'.dependencies]
 mimalloc = { version = "0.1", features = ["local_dynamic_tls"] }
 
 [build-dependencies]
