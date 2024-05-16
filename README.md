@@ -9,7 +9,7 @@
 
 Google Skia binding to Node.js via [Node-API](https://napi.rs), **0 System dependencies!**
 
-⚠️ This project is in pre-release stage. And there may some bugs existed.<br/>
+⚠️ This project is in pre-release stage. And there may be some bugs.<br/>
 For details on planned features and future direction please refer to the [Roadmap](https://github.com/Brooooooklyn/canvas/issues/113).
 
 [中文文档](./README-zh.md)
