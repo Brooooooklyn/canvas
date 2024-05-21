@@ -190,8 +190,16 @@ fn main() {
               .include(format!(
                 "/usr/arm-linux-gnueabihf/include/c++/${gcc_version_trim}/arm-linux-gnueabihf"
               ));
+            const CROSS_LIB_PATH: &str = "/usr/lib/gcc-cross/arm-linux-gnueabihf";
+            if let Ok(version) = std::process::Command::new("ls")
+              .arg(CROSS_LIB_PATH)
+              .output()
+              .map(|o| String::from_utf8(o.stdout).unwrap().trim().to_string())
+            {
+              println!("cargo:rustc-link-search={CROSS_LIB_PATH}/{version}");
+            };
             println!("cargo:rustc-link-search=/usr/arm-linux-gnueabihf/lib");
-            println!("cargo:rustc-link-search=/usr/arm-linux-gnueabihf/lib/llvm-14/lib");
+            println!("cargo:rustc-link-search=/usr/arm-linux-gnueabihf/lib/llvm-18/lib");
           }
           _ => {}
         }

@@ -67,7 +67,7 @@ jobs:
       fail-fast: false
       matrix:
         settings:
-          - host: macos-14
+          - host: macos-latest
             target: 'x86_64-apple-darwin'
             setup: brew install nasm llvm
             build: |
@@ -95,7 +95,7 @@ jobs:
               export LIB_AOM_INCLUDE_PATH=/usr/include/aom/aom &&
               export LIB_AOM_PKG_CONFIG_PATH=/usr/lib/pkgconfig &&
               yarn build --target x86_64-unknown-linux-musl
-          - host: macos-14
+          - host: macos-latest
             downloadTarget: 'aarch64-apple-darwin'
             target: 'aarch64-apple-darwin'
             setup: |
@@ -130,13 +130,13 @@ jobs:
             downloadTarget: 'armv7-unknown-linux-gnueabihf'
             setup: |
               sudo apt-get update
-              sudo apt-get install gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf -y
+              sudo apt-get install gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf libatomic1-armhf-cross -y
               docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
               docker buildx build --load --platform linux/arm/v7 -t ubuntu:jammy-armv7 . -f jammy-armv7.Dockerfile
               docker run --rm -dt --name ubuntu-jammy-armv7 ubuntu:jammy-armv7
-              sudo mkdir -p /usr/arm-linux-gnueabihf/lib/llvm-14
-              sudo docker cp ubuntu-jammy-armv7:/usr/lib/llvm-14/lib /usr/arm-linux-gnueabihf/lib/llvm-14/lib
-              sudo docker cp ubuntu-jammy-armv7:/usr/lib/llvm-14/include /usr/arm-linux-gnueabihf/lib/llvm-14/include
+              sudo mkdir -p /usr/arm-linux-gnueabihf/lib/llvm-18
+              sudo docker cp ubuntu-jammy-armv7:/usr/lib/llvm-18/lib /usr/arm-linux-gnueabihf/lib/llvm-18/lib
+              sudo docker cp ubuntu-jammy-armv7:/usr/lib/llvm-18/include /usr/arm-linux-gnueabihf/lib/llvm-18/include
               docker stop ubuntu-jammy-armv7
             build: yarn build --target armv7-unknown-linux-gnueabihf --zig --zig-link-only --zig-abi-suffix=2.18
           - host: ubuntu-latest
