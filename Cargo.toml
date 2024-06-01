@@ -11,7 +11,7 @@ crate-type = ["cdylib"]
 anyhow = "1"
 base64 = "0.22"
 cssparser = "0.29"
-infer = "0.15"
+infer = "0.16"
 libavif = { version = "0.13", default-features = false, features = [
   "codec-aom",
 ] }
