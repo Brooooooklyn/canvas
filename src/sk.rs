@@ -1,7 +1,7 @@
 use std::convert::TryFrom;
 use std::f32::consts::PI;
 use std::ffi::{c_void, CStr, CString, NulError};
-use std::fmt;
+use std::fmt::{self, Display};
 use std::ops::{Deref, DerefMut};
 use std::os::raw::c_char;
 use std::ptr;
@@ -222,6 +222,7 @@ pub mod ffi {
   pub type SkiacFontCollectionGetFamily =
     Option<unsafe extern "C" fn(width: i32, weight: i32, slant: i32, raw_cb: *mut c_void)>;
 
+  #[allow(clippy::duplicated_attributes)]
   // https://github.com/rust-lang/rust/issues/96192
   #[link(
     name = "svg",
@@ -1480,9 +1481,9 @@ impl TextBaseline {
   }
 }
 
-impl ToString for TextBaseline {
-  fn to_string(&self) -> String {
-    self.as_str().to_owned()
+impl Display for TextBaseline {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    write!(f, "{}", self.as_str())
   }
 }
 

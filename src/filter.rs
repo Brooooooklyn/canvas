@@ -312,7 +312,7 @@ pub(crate) fn css_filters_to_image_filter(filters: Vec<CssFilter>) -> Option<Ima
         )
       }
       CssFilter::Grayscale(amt) => {
-        let amt = 1.0 - amt.max(0.0).min(1.0);
+        let amt = 1.0 - amt.clamp(0.0, 1.0);
         ImageFilter::make_image_filter(
           0.2126 + 0.7874 * amt,
           0.7152 - 0.7152 * amt,
@@ -345,7 +345,7 @@ pub(crate) fn css_filters_to_image_filter(filters: Vec<CssFilter>) -> Option<Ima
         )
       }
       CssFilter::Invert(amt) => {
-        let amt = amt.max(0.0).min(1.0);
+        let amt = amt.clamp(0.0, 1.0);
         let mut ramp = [0u8; 256];
         ramp
           .iter_mut()
@@ -360,7 +360,7 @@ pub(crate) fn css_filters_to_image_filter(filters: Vec<CssFilter>) -> Option<Ima
         ImageFilter::from_argb(None, ramp, ramp, ramp, Some(&image_filter))
       }
       CssFilter::Opacity(opacity) => {
-        let opacity = opacity.max(0.0).min(1.0);
+        let opacity = opacity.clamp(0.0, 1.0);
         ImageFilter::make_image_filter(
           1.0,
           0.0,
@@ -392,7 +392,7 @@ pub(crate) fn css_filters_to_image_filter(filters: Vec<CssFilter>) -> Option<Ima
         )
       }
       CssFilter::Sepia(amt) => {
-        let amt = 1.0 - amt.max(0.0).min(1.0);
+        let amt = 1.0 - amt.clamp(0.0, 1.0);
         ImageFilter::make_image_filter(
           0.393 + 0.607 * amt,
           0.769 - 0.769 * amt,

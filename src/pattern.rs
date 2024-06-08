@@ -12,6 +12,7 @@ use crate::{CanvasElement, SVGCanvas};
 
 #[derive(Debug, Clone)]
 pub enum Pattern {
+  #[allow(dead_code)]
   Color(RGBA, String),
   Gradient(Gradient),
   Image(ImagePattern),

@@ -77,6 +77,8 @@ jobs:
               yarn build --target x86_64-apple-darwin
             downloadTarget: ''
           - host: windows-latest
+            setup: |
+              choco upgrade llvm
             build: yarn build --target x86_64-pc-windows-msvc
             target: 'x86_64-pc-windows-msvc'
             downloadTarget: ''
@@ -150,7 +152,7 @@ jobs:
               export LDFLAGS="--target=aarch64-linux-android24"
               yarn build --target aarch64-linux-android
 
-    name: stable - ${{ matrix.settings.target }} - node@18
+    name: stable - ${{ matrix.settings.target }} - node@20
     runs-on: ${{ matrix.settings.host }}
 
     steps:
