@@ -143,3 +143,22 @@ test('reset src to empty should not throw error', async (t) => {
       }),
   )
 })
+
+test('load invalid svg should throw error', async (t) => {
+  await t.throwsAsync(
+    () =>
+      new Promise((_, reject) => {
+        const image = new Image()
+        image.onload = () => {
+          reject(new Error('should not be called'))
+        }
+        image.onerror = (err) => {
+          reject(err)
+        }
+        image.src = Buffer.from('<svg></svg><p></p>')
+      }),
+    {
+      message: /Invalid/,
+    },
+  )
+})

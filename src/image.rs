@@ -238,11 +238,11 @@ impl Image {
               image_binary.len(),
             ))
           } else {
-            self.on_error(env, &this)?;
+            self.on_error(env, &this, None)?;
             None
           }
         } else {
-          self.on_error(env, &this)?;
+          self.on_error(env, &this, None)?;
           None
         }
       } else {
@@ -256,19 +256,29 @@ impl Image {
       self.is_svg = true;
       let font = get_font().map_err(SkError::from)?;
       if (self.width - -1.0).abs() > f64::EPSILON && (self.height - -1.0).abs() > f64::EPSILON {
-        Bitmap::from_svg_data_with_custom_size(
+        if let Some(bitmap) = Bitmap::from_svg_data_with_custom_size(
           data.as_ptr(),
           length,
           self.width as f32,
           self.height as f32,
           self.color_space,
           &font,
-        )
-      } else {
+        ) {
+          Some(bitmap)
+        } else {
+          self.on_error(env, &this, Some("Invalid SVG image"))?;
+          None
+        }
+      } else if let Some(bitmap) =
         Bitmap::from_svg_data(data.as_ptr(), length, self.color_space, &font)
+      {
+        Some(bitmap)
+      } else {
+        self.on_error(env, &this, Some("Invalid SVG image"))?;
+        None
       }
     } else {
-      self.on_error(env, &this)?;
+      self.on_error(env, &this, None)?;
       None
     };
     if let Some(ref b) = bitmap {
@@ -312,9 +322,10 @@ impl Image {
     Ok(())
   }
 
-  fn on_error(&self, env: Env, this: &This) -> Result<()> {
+  fn on_error(&self, env: Env, this: &This, msg: Option<&str>) -> Result<()> {
     let onerror = this.get_named_property_unchecked::<Unknown>("onerror")?;
-    let err = Error::new(Status::InvalidArg, "Unsupported image type");
+    let reason = msg.unwrap_or("Unsupported image type");
+    let err = Error::new(Status::InvalidArg, reason);
     if onerror.get_type()? == ValueType::Function {
       let onerror_func = unsafe { onerror.cast::<JsFunction>() };
       onerror_func.call(Some(this), &[JsError::from(err).into_unknown(env)])?;

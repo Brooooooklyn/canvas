@@ -1525,6 +1525,10 @@ extern "C"
     auto color_space = COLOR_SPACE_CAST;
     auto svg_stream = new SkMemoryStream(data, length, false);
     auto svg_dom = SkSVGDOM::Builder().setFontManager(c_collection->assets).make(*svg_stream);
+    if (!svg_dom)
+    {
+      return;
+    }
     auto svg_root = svg_dom->getRoot();
     auto svg_container_size = svg_root->intrinsicSize(SkSVGLengthContext(SkSize::Make(0, 0)));
     if (svg_container_size.isZero())
