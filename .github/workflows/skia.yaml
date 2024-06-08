@@ -17,7 +17,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-14, windows-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
 
     name: stable - ${{ matrix.os }} - build skia
     runs-on: ${{ matrix.os }}
@@ -49,7 +49,7 @@ jobs:
 
       - name: Install tools on macOS
         run: brew install ninja llvm
-        if: matrix.os == 'macos-14'
+        if: matrix.os == 'macos-latest'
 
       - name: Install tools on Windows
         if: matrix.os == 'windows-latest'
@@ -79,7 +79,7 @@ jobs:
           docker run --user "$(id -u):$(id -g)" -e PYTHONHTTPSVERIFY=0 -e SKIP_SYNC_SK_DEPS=0 --rm -v $(pwd):/canvas -w /canvas builder node ./scripts/build-skia.js
 
       - name: Compile skia
-        if: matrix.os == 'macos-14'
+        if: matrix.os == 'macos-latest'
         env:
           PYTHONHTTPSVERIFY: 0
         run: |
@@ -107,7 +107,7 @@ jobs:
     if: "!contains(github.event.head_commit.message, 'skip skia')"
 
     name: stable - apple-silicon - build skia
-    runs-on: macos-14
+    runs-on: macos-latest
 
     steps:
       - uses: actions/checkout@v4
@@ -313,9 +313,9 @@ jobs:
           docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
           docker buildx build --load --platform linux/arm/v7 -t ubuntu:jammy-armv7 . -f jammy-armv7.Dockerfile
           docker run --rm -dt --name ubuntu-jammy-armv7 ubuntu:jammy-armv7
-          sudo mkdir -p /usr/arm-linux-gnueabihf/lib/llvm-14
-          sudo docker cp ubuntu-jammy-armv7:/usr/lib/llvm-14/lib /usr/arm-linux-gnueabihf/lib/llvm-14/lib
-          sudo docker cp ubuntu-jammy-armv7:/usr/lib/llvm-14/include /usr/arm-linux-gnueabihf/lib/llvm-14/include
+          sudo mkdir -p /usr/arm-linux-gnueabihf/lib/llvm-18
+          sudo docker cp ubuntu-jammy-armv7:/usr/lib/llvm-18/lib /usr/arm-linux-gnueabihf/lib/llvm-18/lib
+          sudo docker cp ubuntu-jammy-armv7:/usr/lib/llvm-18/include /usr/arm-linux-gnueabihf/lib/llvm-18/include
           docker stop ubuntu-jammy-armv7
 
       - name: Compile skia

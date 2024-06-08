@@ -77,6 +77,8 @@ jobs:
               yarn build --target x86_64-apple-darwin
             downloadTarget: ''
           - host: windows-latest
+            setup: |
+              choco upgrade llvm
             build: yarn build --target x86_64-pc-windows-msvc
             target: 'x86_64-pc-windows-msvc'
             downloadTarget: ''
@@ -150,7 +152,7 @@ jobs:
               export LDFLAGS="--target=aarch64-linux-android24"
               yarn build --target aarch64-linux-android
 
-    name: stable - ${{ matrix.settings.target }} - node@18
+    name: stable - ${{ matrix.settings.target }} - node@20
     runs-on: ${{ matrix.settings.host }}
 
     steps:
@@ -178,7 +180,7 @@ jobs:
       - uses: goto-bus-stop/setup-zig@v2
         if: ${{ matrix.settings.target == 'armv7-unknown-linux-gnueabihf' }}
         with:
-          version: 0.11.0
+          version: 0.13.0
 
       - name: Set env
         if: matrix.settings.host == 'windows-latest'
