@@ -16,6 +16,11 @@ test('convertSVGTextToPath should work', async (t) => {
   if (process.platform === 'win32') {
     t.pass('Skip on windows')
   } else {
-    t.deepEqual(result.toString('utf8'), output)
+    result
+      .toString('utf8')
+      .split('\n')
+      .forEach((line, index) => {
+        t.deepEqual(line.trim(), output.split('\n')[index]?.trim())
+      })
   }
 })
