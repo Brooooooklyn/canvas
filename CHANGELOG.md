@@ -1,3 +1,20 @@
+## [0.1.53](https://github.com/Brooooooklyn/canvas/compare/v0.1.52...v0.1.53) (2024-06-09)
+
+
+### Bug Fixes
+
+* armv7 segmentfault ([#830](https://github.com/Brooooooklyn/canvas/issues/830)) ([e17e6b6](https://github.com/Brooooooklyn/canvas/commit/e17e6b69c752e738d69896605a7dea2690417ede))
+* **deps:** update rust crate infer to 0.16 ([3859fe4](https://github.com/Brooooooklyn/canvas/commit/3859fe43d410e8a7e98884123336e1b19bcd1146))
+* **loadImage:** use promise ([#841](https://github.com/Brooooooklyn/canvas/issues/841)) ([e85ceee](https://github.com/Brooooooklyn/canvas/commit/e85ceeea9e21b76dc46bc712bf38557f1bcb8428))
+* trigger onerror while svg image is invalid ([#840](https://github.com/Brooooooklyn/canvas/issues/840)) ([31bd832](https://github.com/Brooooooklyn/canvas/commit/31bd832ba9ed17b2f07463f8f788edbdf21683d2))
+
+
+### Features
+
+* chrome/m116 ([#839](https://github.com/Brooooooklyn/canvas/issues/839)) ([23276d7](https://github.com/Brooooooklyn/canvas/commit/23276d7ccb8c904b4b558767a16d1af1850fa5b7))
+
+
+
 ## [0.1.52](https://github.com/Brooooooklyn/canvas/compare/v0.1.51...v0.1.52) (2024-04-17)
 
 
