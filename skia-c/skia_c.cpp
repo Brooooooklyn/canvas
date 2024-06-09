@@ -1520,11 +1520,22 @@ extern "C"
     bitmap_info->height = height;
   }
 
-  void skiac_bitmap_make_from_svg(const uint8_t *data, size_t length, float width, float height, skiac_bitmap_info *bitmap_info, skiac_font_collection *c_collection, uint8_t cs)
+  bool skiac_bitmap_make_from_svg(
+    const uint8_t *data,
+    size_t length,
+    float width,
+    float height,
+    skiac_bitmap_info *bitmap_info,
+    skiac_font_collection *c_collection,
+    uint8_t cs)
   {
     auto color_space = COLOR_SPACE_CAST;
     auto svg_stream = new SkMemoryStream(data, length, false);
     auto svg_dom = SkSVGDOM::Builder().setFontManager(c_collection->assets).make(*svg_stream);
+    if (!svg_dom)
+    {
+      return false;
+    }
     auto svg_root = svg_dom->getRoot();
     auto svg_container_size = svg_root->intrinsicSize(SkSVGLengthContext(SkSize::Make(0, 0)));
     if (svg_container_size.isZero())
@@ -1532,12 +1543,12 @@ extern "C"
       auto view_box = svg_root->getViewBox();
       if (!view_box.isValid())
       {
-        return;
+        return true;
       }
       svg_container_size = SkSize::Make(view_box->width(), view_box->height());
       if (svg_container_size.isEmpty())
       {
-        return;
+        return true;
       }
       svg_dom->setContainerSize(svg_container_size);
     }
@@ -1557,6 +1568,7 @@ extern "C"
     bitmap_info->bitmap = reinterpret_cast<skiac_bitmap *>(bitmap);
     bitmap_info->width = imageinfo.width();
     bitmap_info->height = imageinfo.height();
+    return true;
   }
 
   skiac_bitmap *skiac_bitmap_make_from_image_data(uint8_t *ptr, size_t width, size_t height, size_t row_bytes, size_t size, int ct, int at)

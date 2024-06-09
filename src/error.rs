@@ -31,6 +31,8 @@ pub enum SkError {
   InvalidTransform(Matrix),
   #[error("Convert String to CString failed")]
   NulError,
+  #[error("Invalid SVG")]
+  InvalidSvg,
   #[error("[`{0}`] is not valid font style")]
   InvalidFontStyle(String),
   #[error("[`{0}`] is not valid font variant")]
