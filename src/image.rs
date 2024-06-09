@@ -272,9 +272,13 @@ impl Image {
       } else if let Some(bitmap) =
         Bitmap::from_svg_data(data.as_ptr(), length, self.color_space, &font)
       {
-        Some(bitmap)
+        if let Ok(bitmap) = bitmap {
+          Some(bitmap)
+        } else {
+          self.on_error(env, &this, Some("Invalid SVG image"))?;
+          None
+        }
       } else {
-        self.on_error(env, &this, Some("Invalid SVG image"))?;
         None
       }
     } else {

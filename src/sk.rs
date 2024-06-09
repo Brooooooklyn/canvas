@@ -817,7 +817,7 @@ pub mod ffi {
       info: *mut skiac_bitmap_info,
       font_collection: *mut skiac_font_collection,
       cs: u8,
-    );
+    ) -> bool;
 
     pub fn skiac_bitmap_make_from_image_data(
       ptr: *mut u8,
@@ -3430,14 +3430,14 @@ impl Bitmap {
     size: usize,
     color_space: ColorSpace,
     fc: &FontCollection,
-  ) -> Option<Self> {
+  ) -> Option<Result<Self, crate::error::SkError>> {
     let mut bitmap_info = ffi::skiac_bitmap_info {
       bitmap: ptr::null_mut(),
       width: 0,
       height: 0,
     };
     unsafe {
-      ffi::skiac_bitmap_make_from_svg(
+      let is_valid = ffi::skiac_bitmap_make_from_svg(
         data,
         size,
         -1.0,
@@ -3447,10 +3447,14 @@ impl Bitmap {
         color_space as u8,
       );
 
+      if !is_valid {
+        return Some(Err(crate::error::SkError::InvalidSvg));
+      }
+
       if bitmap_info.bitmap.is_null() {
         return None;
       }
-      Some(Bitmap(bitmap_info))
+      Some(Ok(Bitmap(bitmap_info)))
     }
   }
 
