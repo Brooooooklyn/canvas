@@ -85,10 +85,13 @@ function consumeStream(res) {
 }
 
 function createImage(src, alt) {
-  const image = new Image()
-  image.src = src
-  if (typeof alt === 'string') image.alt = alt
-  return image
+  return new Promise((resolve, reject) => {
+    const image = new Image()
+    if (typeof alt === 'string') image.alt = alt
+    image.onload = () => resolve(image)
+    image.onerror = (e) => reject(e)
+    image.src = src
+  })
 }
 
 function isBufferLike(src) {
