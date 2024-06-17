@@ -57,7 +57,7 @@ jobs:
             rm /usr/lib/llvm-18/lib/libc++.so
 
       - name: Build and push Linux aarch64
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           file: aarch64.Dockerfile
           context: .
