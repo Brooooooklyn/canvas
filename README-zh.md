@@ -334,7 +334,7 @@ $ cd canvas
 
 # Download Skia binaries:
 # It will pull the binaries match the git hash in `./skia` submodule
-$ node scripts/release-skia-binary.js --download
+$ node scripts/release-skia-binary.mjs --download
 
 # Install NPM packages, build the Node.js addon:
 $ yarn install --ignore-scripts

@@ -51,7 +51,7 @@ jobs:
       - name: Download skia binary
         run: |
           git config --global --add safe.directory $(pwd)
-          node ./scripts/release-skia-binary.js --download
+          node ./scripts/release-skia-binary.mjs --download
 
       - name: 'Lint JS/TS'
         run: yarn lint
@@ -204,7 +204,7 @@ jobs:
         if: ${{ matrix.settings.setup }}
 
       - name: Download skia binary
-        run: node ./scripts/release-skia-binary.js --download --target=${{ matrix.settings.downloadTarget }}
+        run: node ./scripts/release-skia-binary.mjs --download --target=${{ matrix.settings.downloadTarget }}
 
       - name: 'Build'
         if: ${{ !matrix.settings.docker }}
@@ -282,7 +282,7 @@ jobs:
 
       - name: Download icudtl.dat
         if: matrix.settings.host == 'windows-latest'
-        run: node ./scripts/release-skia-binary.js --download-icu
+        run: node ./scripts/release-skia-binary.mjs --download-icu
 
       - name: Test bindings
         run: yarn test:ci
@@ -599,7 +599,7 @@ jobs:
         run: brew install nasm llvm
 
       - name: Download skia binary
-        run: node ./scripts/release-skia-binary.js --download
+        run: node ./scripts/release-skia-binary.mjs --download
 
       - name: Test
         run: |
@@ -636,7 +636,7 @@ jobs:
       - name: Download skia binary
         run: |
           git config --global --add safe.directory $(pwd)
-          node ./scripts/release-skia-binary.js --download
+          node ./scripts/release-skia-binary.mjs --download
 
       - name: 'Build'
         run: yarn build
@@ -697,7 +697,7 @@ jobs:
         run: yarn artifacts
 
       - name: Download ICU for Windows
-        run: node ./scripts/release-skia-binary.js --download-icu
+        run: node ./scripts/release-skia-binary.mjs --download-icu
 
       - name: List packages
         run: ls -R ./npm

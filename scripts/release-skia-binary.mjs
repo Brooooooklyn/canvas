@@ -1,12 +1,12 @@
-const { execSync } = require('child_process')
-const { promises: fs, copyFileSync, statSync } = require('fs')
-const { platform } = require('os')
-const { parse, join } = require('path')
+import { execSync } from 'node:child_process'
+import { promises as fs, copyFileSync, statSync } from 'node:fs'
+import { platform } from 'node:os'
+import { parse, join } from 'node:path'
 
-const { Octokit } = require('@octokit/rest')
-const { green } = require('colorette')
+import { Octokit } from '@octokit/rest'
+import { green } from 'colorette'
 
-const { libPath, TAG, OWNER, REPO } = require('./utils')
+import { libPath, TAG, OWNER, REPO, dirname } from './utils.mjs'
 
 const PLATFORM_NAME = platform()
 
@@ -97,7 +97,7 @@ async function upload() {
       })
     }
     console.info(green(`Uploading [${ICU_DAT}] to github release: [${TAG}]`))
-    const icuDataPath = join(__dirname, '..', 'skia', 'out', 'Static', ICU_DAT)
+    const icuDataPath = join(dirname, '..', 'skia', 'out', 'Static', ICU_DAT)
     await CLIENT.repos.uploadReleaseAsset({
       owner: OWNER,
       repo: REPO,
@@ -126,7 +126,7 @@ async function download() {
   }
   if (PLATFORM_NAME === 'win32') {
     await downloadIcu()
-    await fs.copyFile(join(__dirname, '..', ICU_DAT), join(__dirname, '..', 'npm', 'win32-x64-msvc', ICU_DAT))
+    await fs.copyFile(join(dirname, '..', ICU_DAT), join(dirname, '..', 'npm', 'win32-x64-msvc', ICU_DAT))
   }
 }
 
@@ -135,7 +135,7 @@ function downloadIcu() {
   execSync(`curl -J -L -H "Accept: application/octet-stream" ${downloadUrl} -o ${ICU_DAT}`, {
     stdio: 'inherit',
   })
-  copyFileSync(join(__dirname, '..', ICU_DAT), join(__dirname, '..', 'npm', 'win32-x64-msvc', ICU_DAT))
+  copyFileSync(join(dirname, '..', ICU_DAT), join(dirname, '..', 'npm', 'win32-x64-msvc', ICU_DAT))
   return Promise.resolve(null)
 }
 

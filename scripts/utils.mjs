@@ -1,15 +1,18 @@
-const { execSync } = require('child_process')
-const { join } = require('path')
+import { execSync } from 'node:child_process'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-const OWNER = 'Brooooooklyn'
-const REPO = 'canvas'
+export const OWNER = 'Brooooooklyn'
+export const REPO = 'canvas'
 
 const [FULL_HASH] =
   process.env.NODE_ENV === 'ava' ? ['000000'] : execSync(`git submodule status skia`).toString('utf8').trim().split(' ')
 
 const SHORT_HASH = FULL_HASH.substring(0, 8)
 
-const TAG = `skia-${SHORT_HASH}`
+export const dirname = join(fileURLToPath(import.meta.url), '..')
+
+export const TAG = `skia-${SHORT_HASH}`
 
 /**
  * @param {string} lib Static lib name
@@ -17,7 +20,7 @@ const TAG = `skia-${SHORT_HASH}`
  * @param {string | undefined} triple rust target triple
  * @returns {{ binary: string; copy: string; downloadUrl: string; filename: string }}
  */
-function libPath(lib, hostPlatform, triple, tag = TAG) {
+export function libPath(lib, hostPlatform, triple, tag = TAG) {
   let platformName
   if (!triple) {
     switch (hostPlatform) {
@@ -57,11 +60,9 @@ function libPath(lib, hostPlatform, triple, tag = TAG) {
         throw new TypeError(`[${triple}] is not a valid target`)
     }
   }
-  const binary = join(__dirname, '..', 'skia', 'out', 'Static', hostPlatform === 'win32' ? `${lib}.lib` : `lib${lib}.a`)
+  const binary = join(dirname, '..', 'skia', 'out', 'Static', hostPlatform === 'win32' ? `${lib}.lib` : `lib${lib}.a`)
 
-  const copy = join(__dirname, '..', platformName)
+  const copy = join(dirname, '..', platformName)
   const downloadUrl = `https://github.com/${OWNER}/${REPO}/releases/download/${tag}/${platformName}`
   return { binary, copy, downloadUrl, filename: platformName }
 }
-
-module.exports = { libPath, OWNER, REPO, TAG }
