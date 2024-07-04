@@ -98,7 +98,7 @@ jobs:
         run: yarn install --immutable --mode=skip-build
 
       - name: Upload release
-        run: node ./scripts/release-skia-binary.js --upload
+        run: node ./scripts/release-skia-binary.mjs --upload
         shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -144,7 +144,7 @@ jobs:
         run: yarn install --immutable --mode=skip-build
 
       - name: Upload release
-        run: node ./scripts/release-skia-binary.js --upload --target=aarch64-apple-darwin
+        run: node ./scripts/release-skia-binary.mjs --upload --target=aarch64-apple-darwin
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -184,7 +184,7 @@ jobs:
         run: yarn install --immutable --mode=skip-build
 
       - name: Upload release
-        run: node ./scripts/release-skia-binary.js --upload --target=x86_64-unknown-linux-musl
+        run: node ./scripts/release-skia-binary.mjs --upload --target=x86_64-unknown-linux-musl
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -224,7 +224,7 @@ jobs:
         run: yarn install --immutable --mode=skip-build
 
       - name: Upload release
-        run: node ./scripts/release-skia-binary.js --upload --target=aarch64-unknown-linux-gnu
+        run: node ./scripts/release-skia-binary.mjs --upload --target=aarch64-unknown-linux-gnu
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -264,7 +264,7 @@ jobs:
         run: yarn install --immutable --mode=skip-build
 
       - name: Upload release
-        run: node ./scripts/release-skia-binary.js --upload --target=aarch64-unknown-linux-musl
+        run: node ./scripts/release-skia-binary.mjs --upload --target=aarch64-unknown-linux-musl
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -325,7 +325,7 @@ jobs:
         run: yarn install --immutable --mode=skip-build
 
       - name: Upload release
-        run: node ./scripts/release-skia-binary.js --upload --target=armv7-unknown-linux-gnueabihf
+        run: node ./scripts/release-skia-binary.mjs --upload --target=armv7-unknown-linux-gnueabihf
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -362,6 +362,6 @@ jobs:
         run: yarn install --immutable --mode=skip-build
 
       - name: Upload release
-        run: node ./scripts/release-skia-binary.js --upload --target=aarch64-linux-android
+        run: node ./scripts/release-skia-binary.mjs --upload --target=aarch64-linux-android
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
