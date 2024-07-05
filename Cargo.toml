@@ -12,7 +12,7 @@ anyhow = "1"
 base64 = "0.22"
 cssparser = "0.29"
 infer = "0.16"
-libavif = { version = "0.13", default-features = false, features = [
+libavif = { version = "0.14", default-features = false, features = [
   "codec-aom",
 ] }
 napi = { version = "2", default-features = false, features = [
