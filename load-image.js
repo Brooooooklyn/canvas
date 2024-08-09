@@ -61,14 +61,18 @@ function makeRequest(url, resolve, reject, redirectCount, requestOptions) {
 
   lib
     .get(url.toString(), requestOptions || {}, (res) => {
-      const shouldRedirect = REDIRECT_STATUSES.has(res.statusCode) && typeof res.headers.location === 'string'
-      if (shouldRedirect && redirectCount > 0)
-        return makeRequest(new URL(res.headers.location), resolve, reject, redirectCount - 1, requestOptions)
-      if (typeof res.statusCode === 'number' && (res.statusCode < 200 || res.statusCode >= 300)) {
-        return reject(new Error(`remote source rejected with status code ${res.statusCode}`))
+      try {
+        const shouldRedirect = REDIRECT_STATUSES.has(res.statusCode) && typeof res.headers.location === 'string'
+        if (shouldRedirect && redirectCount > 0)
+          return makeRequest(new URL(res.headers.location), resolve, reject, redirectCount - 1, requestOptions)
+        if (typeof res.statusCode === 'number' && (res.statusCode < 200 || res.statusCode >= 300)) {
+          return reject(new Error(`remote source rejected with status code ${res.statusCode}`))
+        }
+  
+        consumeStream(res).then(resolve, reject)
+      } catch (err) {
+        reject(err)
       }
-
-      consumeStream(res).then(resolve, reject)
     })
     .on('error', reject)
 }
