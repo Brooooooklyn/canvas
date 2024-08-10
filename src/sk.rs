@@ -169,6 +169,12 @@ pub mod ffi {
 
   #[repr(C)]
   #[derive(Copy, Clone, Debug)]
+  pub struct skiac_resource_provider {
+    _unused: [u8; 0],
+  }
+
+  #[repr(C)]
+  #[derive(Copy, Clone, Debug)]
   pub struct skiac_typeface_font_provider {
     _unused: [u8; 0],
   }
@@ -221,6 +227,9 @@ pub mod ffi {
 
   pub type SkiacFontCollectionGetFamily =
     Option<unsafe extern "C" fn(width: i32, weight: i32, slant: i32, raw_cb: *mut c_void)>;
+
+  pub type SkiacResourceProviderLoadImage =
+    Option<unsafe extern "C" fn(resource_path: *const c_char, on_load_image: *mut c_void)>;
 
   #[allow(clippy::duplicated_attributes)]
   // https://github.com/rust-lang/rust/issues/96192
@@ -882,6 +891,13 @@ pub mod ffi {
     );
 
     pub fn skiac_font_collection_destroy(c_font_collection: *mut skiac_font_collection);
+
+    // ResourceProvider
+
+    pub fn skiac_resource_provider_create(
+      on_load_image_rust: *mut c_void,
+      on_load_image: SkiacResourceProviderLoadImage,
+    ) -> *mut skiac_resource_provider;
 
     // SkDynamicMemoryStream
     pub fn skiac_sk_w_stream_get(
@@ -3689,6 +3705,24 @@ pub struct FontStyleSet {
 }
 
 #[derive(Debug, Clone)]
+pub struct ResourceProvider {
+  pub(crate) inner: *mut ffi::skiac_resource_provider,
+}
+
+impl ResourceProvider {
+  pub fn new<F: FnOnce(String)>() -> Self {
+    let on_load_image = Box::new(|_resource: *const c_char| {});
+    let inner = unsafe {
+      ffi::skiac_resource_provider_create(
+        Box::into_raw(on_load_image).cast(),
+        Some(skiac_on_load_image),
+      )
+    };
+    Self { inner }
+  }
+}
+
+#[derive(Debug, Clone)]
 pub struct SkWMemoryStream(*mut ffi::skiac_w_memory_stream);
 
 impl SkWMemoryStream {
@@ -3772,6 +3806,11 @@ pub fn sk_svg_text_to_path(svg: &[u8], fc: &FontCollection) -> Option<SkiaDataRe
     return None;
   }
   Some(SkiaDataRef(output_data))
+}
+
+unsafe extern "C" fn skiac_on_load_image(resource: *const c_char, raw_cb: *mut c_void) {
+  let cb = Box::leak(Box::from_raw(raw_cb as *mut Box<dyn FnMut(*const c_char)>));
+  cb(resource);
 }
 
 unsafe extern "C" fn skiac_on_get_style(width: i32, weight: i32, slant: i32, raw_cb: *mut c_void) {

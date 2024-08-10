@@ -1620,6 +1620,7 @@ extern "C"
     delete reinterpret_cast<SkString *>(c_sk_string);
   }
 
+  // FontCollection
   skiac_font_collection *skiac_font_collection_create()
   {
     return new skiac_font_collection();
@@ -1690,6 +1691,16 @@ extern "C"
   void skiac_font_collection_destroy(skiac_font_collection *c_font_collection)
   {
     delete c_font_collection;
+  }
+
+  // ResourceProvider
+
+  skiac_resource_provider *skiac_resource_provider_create(
+    void *skiac_on_load_image_rust,
+    skiac_on_load_image on_load_image)
+  {
+    auto rp = ResourceProviderCustom::Make(skiac_on_load_image_rust, on_load_image);
+    return reinterpret_cast<skiac_resource_provider *>(rp.release());
   }
 
   // SkWStream
