@@ -1,8 +1,8 @@
-use std::str;
 use std::str::FromStr;
+use std::{ptr, str};
 
-use base64::{engine::general_purpose::STANDARD, Engine};
-use napi::{bindgen_prelude::*, NapiValue};
+use base64_simd::STANDARD;
+use napi::{bindgen_prelude::*, check_status, NapiRaw, NapiValue, Ref};
 
 use crate::error::SkError;
 use crate::global_fonts::get_font;
@@ -124,7 +124,7 @@ pub struct Image {
   pub(crate) need_regenerate_bitmap: bool,
   pub(crate) is_svg: bool,
   pub(crate) color_space: ColorSpace,
-  pub(crate) src: Option<Buffer>,
+  pub(crate) src: Option<Uint8Array>,
 }
 
 #[napi]
@@ -209,93 +209,49 @@ impl Image {
   }
 
   #[napi(getter)]
-  pub fn get_src(&mut self) -> Option<&mut Buffer> {
+  pub fn get_src(&mut self) -> Option<&mut Uint8Array> {
     self.src.as_mut()
   }
 
   #[napi(setter)]
-  pub fn set_src(&mut self, env: Env, this: This, data: Buffer) -> Result<()> {
+  pub fn set_src(&mut self, env: Env, this: This, data: Uint8Array) -> Result<()> {
     let length = data.len();
     if length <= 2 {
       self.src = Some(data);
-      self.on_load(&this)?;
+      let onload = this.get_named_property_unchecked::<Unknown>("onload")?;
+      if onload.get_type()? == ValueType::Function {
+        let onload_func: Function<(), ()> = Function::from_unknown(onload)?;
+        onload_func.apply(this, ())?;
+      }
       return Ok(());
     }
-    let data_ref: &[u8] = &data;
-    self.complete = true;
-    self.is_svg = false;
-    let bitmap = if str::from_utf8(&data_ref[0..10]) == Ok("data:image") {
-      let data_str = str::from_utf8(data_ref)
-        .map_err(|e| Error::new(Status::InvalidArg, format!("Decode data url failed {e}")))?;
-      if let Some(base64_str) = data_str.split(',').last() {
-        let image_binary = STANDARD
-          .decode(base64_str)
-          .map_err(|e| Error::new(Status::InvalidArg, format!("Decode data url failed {e}")))?;
-        if let Some(kind) = infer::get(&image_binary) {
-          if kind.matcher_type() == infer::MatcherType::Image {
-            Some(Bitmap::from_buffer(
-              image_binary.as_ptr() as *mut u8,
-              image_binary.len(),
-            ))
-          } else {
-            self.on_error(env, &this, None)?;
-            None
-          }
-        } else {
-          self.on_error(env, &this, None)?;
-          None
-        }
+    let on_error_in_catch = {
+      let on_error = this.get_named_property_unchecked::<Unknown>("onerror")?;
+      if on_error.get_type()? == ValueType::Function {
+        let onerror_func: Function<Unknown, ()> = Function::from_unknown(on_error)?;
+        Some(onerror_func.create_ref()?)
       } else {
         None
       }
-    } else if let Some(kind) = infer::get(&data)
-      && kind.matcher_type() == infer::MatcherType::Image
-    {
-      Some(Bitmap::from_buffer(data.as_ptr() as *mut u8, length))
-    } else if self.is_svg_image(data_ref, length) {
-      self.is_svg = true;
-      let font = get_font().map_err(SkError::from)?;
-      if (self.width - -1.0).abs() > f64::EPSILON && (self.height - -1.0).abs() > f64::EPSILON {
-        if let Some(bitmap) = Bitmap::from_svg_data_with_custom_size(
-          data.as_ptr(),
-          length,
-          self.width as f32,
-          self.height as f32,
-          self.color_space,
-          &font,
-        ) {
-          Some(bitmap)
-        } else {
-          self.on_error(env, &this, Some("Invalid SVG image"))?;
-          None
-        }
-      } else if let Some(bitmap) =
-        Bitmap::from_svg_data(data.as_ptr(), length, self.color_space, &font)
-      {
-        if let Ok(bitmap) = bitmap {
-          Some(bitmap)
-        } else {
-          self.on_error(env, &this, Some("Invalid SVG image"))?;
-          None
-        }
-      } else {
-        None
-      }
-    } else {
-      self.on_error(env, &this, None)?;
-      None
     };
-    if let Some(ref b) = bitmap {
-      if (self.width - -1.0).abs() < f64::EPSILON {
-        self.width = b.0.width as f64;
-      }
-      if (self.height - -1.0).abs() < f64::EPSILON {
-        self.height = b.0.height as f64;
-      }
-    }
-    self.bitmap = bitmap;
-    self.src = Some(data);
-    self.on_load(&this)?;
+    let decoder = BitmapDecoder {
+      width: self.width,
+      height: self.height,
+      color_space: self.color_space,
+      data,
+      this_ref: env.create_reference(&this)?,
+    };
+    let task_output = env.spawn(decoder)?;
+
+    task_output
+      .promise_object()
+      .catch(move |ctx: CallbackContext<Unknown>| {
+        if let Some(on_error) = on_error_in_catch {
+          let on_err = on_error.borrow_back(&ctx.env)?;
+          on_err.call(ctx.value)?;
+        }
+        Ok(())
+      })?;
     Ok(())
   }
 
@@ -316,47 +272,198 @@ impl Image {
     }
     Ok(())
   }
+}
 
-  fn on_load(&self, this: &This) -> Result<()> {
-    let onload = this.get_named_property_unchecked::<Unknown>("onload")?;
-    if onload.get_type()? == ValueType::Function {
-      let onload_func = unsafe { onload.cast::<JsFunction>() };
-      onload_func.call_without_args(Some(this))?;
-    }
-    Ok(())
-  }
-
-  fn on_error(&self, env: Env, this: &This, msg: Option<&str>) -> Result<()> {
-    let onerror = this.get_named_property_unchecked::<Unknown>("onerror")?;
-    let reason = msg.unwrap_or("Unsupported image type");
-    let err = Error::new(Status::InvalidArg, reason);
-    if onerror.get_type()? == ValueType::Function {
-      let onerror_func = unsafe { onerror.cast::<JsFunction>() };
-      onerror_func.call(Some(this), &[JsError::from(err).into_unknown(env)])?;
-      Ok(())
-    } else {
-      Err(err)
-    }
-  }
-
-  fn is_svg_image(&self, data: &[u8], length: usize) -> bool {
-    let mut is_svg = false;
-    if length >= 11 {
-      for i in 3..length {
-        if '<' == data[i - 3] as char {
-          match data[i - 2] as char {
-            '?' | '!' => continue,
-            's' => {
-              is_svg = 'v' == data[i - 1] as char && 'g' == data[i] as char;
-              break;
-            }
-            _ => {
-              is_svg = false;
-            }
+fn is_svg_image(data: &[u8], length: usize) -> bool {
+  let mut is_svg = false;
+  if length >= 11 {
+    for i in 3..length {
+      if '<' == data[i - 3] as char {
+        match data[i - 2] as char {
+          '?' | '!' => continue,
+          's' => {
+            is_svg = 'v' == data[i - 1] as char && 'g' == data[i] as char;
+            break;
+          }
+          _ => {
+            is_svg = false;
           }
         }
       }
     }
-    is_svg
+  }
+  is_svg
+}
+
+struct BitmapDecoder {
+  width: f64,
+  height: f64,
+  color_space: ColorSpace,
+  data: Uint8Array,
+  this_ref: Ref<()>,
+}
+
+#[derive(Debug)]
+pub(crate) struct DecodedBitmap {
+  bitmap: DecodeStatus,
+  width: f64,
+  height: f64,
+}
+
+#[derive(Debug)]
+struct BitmapInfo {
+  data: Bitmap,
+  is_svg: bool,
+}
+
+#[derive(Debug)]
+enum DecodeStatus {
+  Ok(BitmapInfo),
+  Empty,
+  InvalidSvg,
+  InvalidImage,
+}
+
+impl Task for BitmapDecoder {
+  type Output = DecodedBitmap;
+  type JsValue = ();
+
+  fn compute(&mut self) -> Result<Self::Output> {
+    let length = self.data.len();
+    let data_ref: &[u8] = &self.data;
+    let mut width = self.width;
+    let mut height = self.height;
+    let bitmap = if str::from_utf8(&data_ref[0..10]) == Ok("data:image") {
+      let data_str = str::from_utf8(data_ref)
+        .map_err(|e| Error::new(Status::InvalidArg, format!("Decode data url failed {e}")))?;
+      if let Some(base64_str) = data_str.split(',').last() {
+        let image_binary = STANDARD
+          .decode_to_vec(base64_str)
+          .map_err(|e| Error::new(Status::InvalidArg, format!("Decode data url failed {e}")))?;
+        if let Some(kind) = infer::get(&image_binary) {
+          if kind.matcher_type() == infer::MatcherType::Image {
+            DecodeStatus::Ok(BitmapInfo {
+              data: Bitmap::from_buffer(image_binary.as_ptr().cast_mut(), image_binary.len()),
+              is_svg: false,
+            })
+          } else {
+            DecodeStatus::InvalidImage
+          }
+        } else {
+          DecodeStatus::InvalidImage
+        }
+      } else {
+        DecodeStatus::Empty
+      }
+    } else if let Some(kind) = infer::get(&self.data)
+      && kind.matcher_type() == infer::MatcherType::Image
+    {
+      DecodeStatus::Ok(BitmapInfo {
+        data: Bitmap::from_buffer(self.data.as_ptr().cast_mut(), length),
+        is_svg: false,
+      })
+    } else if is_svg_image(data_ref, length) {
+      let font = get_font().map_err(SkError::from)?;
+      if (self.width - -1.0).abs() > f64::EPSILON && (self.height - -1.0).abs() > f64::EPSILON {
+        if let Some(bitmap) = Bitmap::from_svg_data_with_custom_size(
+          self.data.as_ptr(),
+          length,
+          self.width as f32,
+          self.height as f32,
+          self.color_space,
+          &font,
+        ) {
+          DecodeStatus::Ok(BitmapInfo {
+            data: bitmap,
+            is_svg: true,
+          })
+        } else {
+          DecodeStatus::InvalidSvg
+        }
+      } else if let Some(bitmap) =
+        Bitmap::from_svg_data(self.data.as_ptr(), length, self.color_space, &font)
+      {
+        if let Ok(bitmap) = bitmap {
+          DecodeStatus::Ok(BitmapInfo {
+            data: bitmap,
+            is_svg: true,
+          })
+        } else {
+          DecodeStatus::InvalidSvg
+        }
+      } else {
+        DecodeStatus::Empty
+      }
+    } else {
+      DecodeStatus::InvalidImage
+    };
+
+    if let DecodeStatus::Ok(ref b) = bitmap {
+      if (self.width - -1.0).abs() < f64::EPSILON {
+        width = b.data.0.width as f64;
+      }
+      if (self.height - -1.0).abs() < f64::EPSILON {
+        height = b.data.0.height as f64;
+      }
+    }
+    Ok(DecodedBitmap {
+      bitmap,
+      width,
+      height,
+    })
+  }
+
+  fn resolve(&mut self, env: Env, output: Self::Output) -> Result<Self::JsValue> {
+    let this: This = env.get_reference_value(&self.this_ref)?;
+    let mut image_ptr = ptr::null_mut();
+    check_status!(
+      unsafe { sys::napi_unwrap(env.raw(), this.raw(), &mut image_ptr) },
+      "Failed to unwrap Image from this"
+    )?;
+    let self_mut = unsafe { Box::leak(Box::from_raw(image_ptr.cast::<Image>())) };
+    self_mut.width = output.width;
+    self_mut.height = output.height;
+    self_mut.complete = true;
+    match output.bitmap {
+      DecodeStatus::Ok(bitmap) => {
+        let onload = this.get_named_property_unchecked::<Unknown>("onload")?;
+        if onload.get_type()? == ValueType::Function {
+          let onload_func: Function<(), ()> = Function::from_unknown(onload)?;
+          onload_func.apply(this, ())?;
+          self_mut.src = Some(self.data.clone());
+        }
+        self_mut.is_svg = bitmap.is_svg;
+        self_mut.bitmap = Some(bitmap.data);
+      }
+      DecodeStatus::Empty => {
+        let onload = this.get_named_property_unchecked::<Unknown>("onload")?;
+        if onload.get_type()? == ValueType::Function {
+          let onload_func: Function<(), ()> = Function::from_unknown(onload)?;
+          onload_func.apply(this, ())?;
+        }
+        self_mut.bitmap = None;
+      }
+      DecodeStatus::InvalidSvg => {
+        let on_error = this.get_named_property_unchecked::<Unknown>("onerror")?;
+        if on_error.get_type()? == ValueType::Function {
+          let onerror_func: Function<Unknown, ()> = Function::from_unknown(on_error)?;
+          onerror_func.apply(
+            this,
+            JsError::from(Error::new(Status::InvalidArg, "Invalid SVG image")).into_unknown(env),
+          )?;
+        }
+      }
+      DecodeStatus::InvalidImage => {
+        let on_error = this.get_named_property_unchecked::<Unknown>("onerror")?;
+        if on_error.get_type()? == ValueType::Function {
+          let onerror_func: Function<Object, Unknown> = Function::from_unknown(on_error)?;
+          onerror_func.apply(
+            this,
+            env.create_error(Error::new(Status::InvalidArg, "Unsupported image type"))?,
+          )?;
+        }
+      }
+    }
+    Ok(())
   }
 }

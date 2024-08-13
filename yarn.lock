@@ -244,6 +244,7 @@ __metadata:
     canvaskit-wasm: "npm:^0.39.1"
     colorette: "npm:^2.0.20"
     conventional-changelog-cli: "npm:^5.0.0"
+    core-js: "npm:^3.38.0"
     echarts: "npm:^5.4.3"
     husky: "npm:^9.0.10"
     lint-staged: "npm:^15.2.1"
@@ -1697,6 +1698,13 @@ __metadata:
   version: 2.0.1
   resolution: "convert-to-spaces@npm:2.0.1"
   checksum: 10c0/d90aa0e3b6a27f9d5265a8d32def3c5c855b3e823a9db1f26d772f8146d6b91020a2fdfd905ce8048a73fad3aaf836fef8188c67602c374405e2ae8396c4ac46
+  languageName: node
+  linkType: hard
+
+"core-js@npm:^3.38.0":
+  version: 3.38.0
+  resolution: "core-js@npm:3.38.0"
+  checksum: 10c0/3218ae19bfe0c6560663012cbd3e7f3dc1b36d50fc71e8c365f3b119185e8a35ac4e8bb9698ae510b3c201ef93f40bdc29f9215716ccf31aca28f77969bb4ed0
   languageName: node
   linkType: hard
 

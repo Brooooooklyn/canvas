@@ -14,12 +14,17 @@ const test = ava as TestFn<{
 
 const FIREFOX = readFileSync(join(__dirname, 'fixtures', 'firefox-logo.svg'))
 const FIREFOX_IMAGE = new Image(200, 206.433)
+const { promise: firefoxImageLoad, resolve } = Promise.withResolvers<void>()
+FIREFOX_IMAGE.onload = () => {
+  resolve()
+}
 FIREFOX_IMAGE.src = FIREFOX
 
-test.beforeEach((t) => {
+test.beforeEach(async (t) => {
   const canvas = createCanvas(300, 300)
   t.context.canvas = canvas
   t.context.ctx = canvas.getContext('2d')
+  await firefoxImageLoad
 })
 
 test('filter-blur', async (t) => {
@@ -33,7 +38,12 @@ test('filter-brightness', async (t) => {
   const { ctx } = t.context
   ctx.filter = 'brightness(2)'
   const image = new Image()
+  const { promise, resolve } = Promise.withResolvers<void>()
+  image.onload = () => {
+    resolve()
+  }
   image.src = await fs.readFile(join(__dirname, 'fixtures', 'filter-brightness.jpg'))
+  await promise
   ctx.drawImage(image, 0, 0)
   await snapshotImage(t)
 })
@@ -42,7 +52,12 @@ test('filter-contrast', async (t) => {
   const { ctx } = t.context
   ctx.filter = 'contrast(200%)'
   const image = new Image()
+  const { promise, resolve } = Promise.withResolvers<void>()
+  image.onload = () => {
+    resolve()
+  }
   image.src = await fs.readFile(join(__dirname, 'fixtures', 'filter-contrast.jpeg'))
+  await promise
   ctx.drawImage(image, 0, 0)
   await snapshotImage(t)
 })
@@ -122,6 +137,11 @@ test('filter-save-restore', async (t) => {
 
 async function createImage(name: string) {
   const i = new Image()
+  const { promise, resolve } = Promise.withResolvers<void>()
+  i.onload = () => {
+    resolve()
+  }
   i.src = await fs.readFile(join(__dirname, 'fixtures', name))
+  await promise
   return i
 }

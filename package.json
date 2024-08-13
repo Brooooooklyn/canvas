@@ -84,6 +84,7 @@
     "canvaskit-wasm": "^0.39.1",
     "colorette": "^2.0.20",
     "conventional-changelog-cli": "^5.0.0",
+    "core-js": "^3.38.0",
     "echarts": "^5.4.3",
     "husky": "^9.0.10",
     "lint-staged": "^15.2.1",
@@ -109,7 +110,8 @@
   },
   "ava": {
     "require": [
-      "@swc-node/register"
+      "@swc-node/register",
+      "core-js/proposals/promise-with-resolvers.js"
     ],
     "extensions": [
       "ts"
