@@ -149,7 +149,10 @@ jobs:
               touch "${ANDROID_NDK_LATEST_HOME}/toolchains/llvm/prebuilt/linux-x86_64/lib/clang/${CLANG_VERSION}/lib/linux/aarch64/libgcc.a"
               chmod 777 "${ANDROID_NDK_LATEST_HOME}/toolchains/llvm/prebuilt/linux-x86_64/lib/clang/${CLANG_VERSION}/lib/linux/aarch64/libgcc.a"
               echo "INPUT(-lunwind)" > "${ANDROID_NDK_LATEST_HOME}/toolchains/llvm/prebuilt/linux-x86_64/lib/clang/${CLANG_VERSION}/lib/linux/aarch64/libgcc.a"
-              export LDFLAGS="--target=aarch64-linux-android24"
+              export LDFLAGS="-fuse-ld=lld"
+              export CC=aarch64-linux-android24-clang
+              export CXX=aarch64-linux-android24-clang++
+              export CMAKE_TOOLCHAIN_FILE_aarch64_linux_android="$(pwd)/cmake/android-determine.cmake"
               yarn build --target aarch64-linux-android
 
     name: stable - ${{ matrix.settings.target }} - node@20
