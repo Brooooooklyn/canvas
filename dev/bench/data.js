@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1723626982676,
+  "lastUpdate": 1723630025788,
   "repoUrl": "https://github.com/Brooooooklyn/canvas",
   "entries": {
     "Benchmark": [
@@ -30852,6 +30852,72 @@ window.BENCHMARK_DATA = {
             "name": "Draw gradient#@napi-rs/skia",
             "value": 31,
             "range": "±0.61%",
+            "unit": "ops/sec",
+            "extra": "54 samples"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "lostfictions@users.noreply.github.com",
+            "name": "six",
+            "username": "lostfictions"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "1666a33d23c779bf5cb6b9fcd4d0cace1ada609b",
+          "message": "fix: handle relative and invalid URLs in redirects when passing URL to loadImage() (#866)\n\n* fix: handle invalid urls in load-image.js (#865)\r\n\r\n* fix: handle relative urls in redirects (#865)\r\n\r\n---------\r\n\r\nCo-authored-by: LongYinan <lynweklm@gmail.com>",
+          "timestamp": "2024-08-14T18:00:43+08:00",
+          "tree_id": "10899aaf3040a58659421ba3477421b2b3949c79",
+          "url": "https://github.com/Brooooooklyn/canvas/commit/1666a33d23c779bf5cb6b9fcd4d0cace1ada609b"
+        },
+        "date": 1723629962351,
+        "tool": "benchmarkjs",
+        "benches": [
+          {
+            "name": "Draw house#skia-canvas",
+            "value": 30,
+            "range": "±0.24%",
+            "unit": "ops/sec",
+            "extra": "53 samples"
+          },
+          {
+            "name": "Draw house#node-canvas",
+            "value": 38,
+            "range": "±0.39%",
+            "unit": "ops/sec",
+            "extra": "66 samples"
+          },
+          {
+            "name": "Draw house#@napi-rs/skia",
+            "value": 32,
+            "range": "±0.52%",
+            "unit": "ops/sec",
+            "extra": "56 samples"
+          },
+          {
+            "name": "Draw gradient#skia-canvas",
+            "value": 28,
+            "range": "±0.26%",
+            "unit": "ops/sec",
+            "extra": "51 samples"
+          },
+          {
+            "name": "Draw gradient#node-canvas",
+            "value": 37,
+            "range": "±0.34%",
+            "unit": "ops/sec",
+            "extra": "63 samples"
+          },
+          {
+            "name": "Draw gradient#@napi-rs/skia",
+            "value": 31,
+            "range": "±0.95%",
             "unit": "ops/sec",
             "extra": "54 samples"
           }
