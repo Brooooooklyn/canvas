@@ -73,6 +73,10 @@ typedef struct skiac_typeface_font_provider skiac_typeface_font_provider;
 typedef struct skiac_w_memory_stream skiac_w_memory_stream;
 typedef struct skiac_picture_recorder skiac_picture_recorder;
 typedef struct skiac_picture skiac_picture;
+typedef struct skiac_resource_provider skiac_resource_provider;
+
+typedef void (*skiac_on_match_font_style)(int width, int weight, int slant, void *skiac_on_match_font_style_rust);
+typedef void (*skiac_on_load_image)(const char *image_path, void *skiac_on_load_image_rust);
 
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
 #define SK_FONT_FILE_PREFIX "C:/Windows/Fonts"
@@ -127,6 +131,29 @@ public:
 
 private:
   sk_sp<SkFontMgr> font_mgr;
+};
+
+class ResourceProviderCustom: public skresources::ResourceProvider {
+  public:
+    static sk_sp<ResourceProviderCustom> Make(void *skiac_on_load_image_rust, skiac_on_load_image on_load_image) {
+        return sk_sp<ResourceProviderCustom>(new ResourceProviderCustom(skiac_on_load_image_rust, on_load_image));
+    }
+
+  sk_sp<skresources::ImageAsset> loadImageAsset(const char resource_path[],
+                                            const char resource_name[],
+                                            const char resource_id[]) const {
+      SkDebugf("loadImageAsset: %s %s %s\n", resource_path, resource_name, resource_id);
+      if (this->on_load_image) {
+          this->on_load_image(resource_path, this->skiac_on_load_image_rust);
+      }
+      return nullptr;
+  }
+
+  private:
+    explicit ResourceProviderCustom(void* skiac_on_load_image_rust, skiac_on_load_image on_load_image) : skiac_on_load_image_rust(skiac_on_load_image_rust), on_load_image(on_load_image) {}
+
+    void* skiac_on_load_image_rust;
+    skiac_on_load_image on_load_image;
 };
 
 struct skiac_svg_surface
@@ -206,8 +233,6 @@ struct skiac_string
   size_t length;
   SkString *sk_string;
 };
-
-typedef void (*skiac_on_match_font_style)(int width, int weight, int slant, void *skiac_on_match_font_style_rust);
 
 struct skiac_sk_data
 {
@@ -493,13 +518,22 @@ extern "C"
   // FontCollection
   skiac_font_collection *skiac_font_collection_create();
   uint32_t skiac_font_collection_get_default_fonts_count(skiac_font_collection *c_font_collection);
-  void skiac_font_collection_get_family(skiac_font_collection *c_font_collection, uint32_t i, skiac_string *c_string, void *on_get_style_rust, skiac_on_match_font_style on_match_font_style);
+  void skiac_font_collection_get_family(
+    skiac_font_collection *c_font_collection,
+    uint32_t i,
+    skiac_string *c_string,
+    void *on_get_style_rust,
+    skiac_on_match_font_style on_match_font_style);
   size_t skiac_font_collection_register(skiac_font_collection *c_font_collection, const uint8_t *font, size_t length, const char *name_alias);
   size_t skiac_font_collection_register_from_path(skiac_font_collection *c_font_collection, const char *font_path, const char *name_alias);
   void skiac_font_collection_set_alias(skiac_font_collection *c_font_collection, const char *family, const char *alias);
   void skiac_font_collection_destroy(skiac_font_collection *c_font_collection);
 
-  // SkDynamicMemoryWStream
+  // ResourceProvider
+
+  skiac_resource_provider *skiac_resource_provider_create(void *skiac_on_load_image_rust, skiac_on_load_image on_load_image);
+
+  // SkWStream
   void skiac_sk_w_stream_get(skiac_w_memory_stream *c_w_memory_stream, skiac_sk_data *sk_data, int width, int height);
   void skiac_sk_w_stream_destroy(skiac_w_memory_stream *c_w_memory_stream);
 
