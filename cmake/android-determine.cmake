@@ -1,0 +1,7 @@
+set(NDK_ARCH_arm64_ABI    "arm64-v8a")
+set(NDK_ARCH_aarch64_ABI  "arm64-v8a")
+set(NDK_ARCH_arm_ABI      "armeabi")
+set(NDK_ARCH_mips_ABI     "mips")
+set(NDK_ARCH_mips64_ABI   "mips64")
+set(NDK_ARCH_x86_ABI      "x86")
+set(NDK_ARCH_x86_64_ABI   "x86_64")
