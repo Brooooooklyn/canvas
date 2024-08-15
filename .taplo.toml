@@ -5,3 +5,4 @@ exclude = ["node_modules/**/*.toml", "skia/**/*.toml"]
 align_entries = true
 indent_tables = true
 reorder_keys  = true
+column_width = 180

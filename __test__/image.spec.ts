@@ -16,16 +16,29 @@ test('should be able to create Image', (t) => {
 
 test('should be able to set src with buffer', async (t) => {
   const file = await loadImageFile()
-  t.notThrows(() => {
+  await t.notThrowsAsync(async () => {
     const image = new Image()
+    const { promise, resolve, reject } = Promise.withResolvers<void>()
+    image.onload = () => {
+      resolve()
+    }
+    image.onerror = (err) => {
+      reject(err)
+    }
     image.src = file
+    await promise
   })
 })
 
 test('width and height state should be ok', async (t) => {
   const file = await loadImageFile()
   const image = new Image()
+  const { promise, resolve } = Promise.withResolvers<void>()
+  image.onload = () => {
+    resolve()
+  }
   image.src = file
+  await promise
   t.is(image.width, 300)
   t.is(image.height, 320)
   t.is(image.naturalWidth, 300)
@@ -36,8 +49,13 @@ test('width and height state should be ok', async (t) => {
 test('complete state should be ok', async (t) => {
   const file = await loadImageFile()
   const image = new Image()
+  const { promise, resolve } = Promise.withResolvers<void>()
+  image.onload = () => {
+    resolve()
+  }
   t.is(image.complete, false)
   image.src = file
+  await promise
   t.is(image.complete, true)
 })
 
@@ -51,7 +69,12 @@ test('alt state should be ok', (t) => {
 test('with-exif image width and height should be correct', async (t) => {
   const file = await fs.readFile(join(__dirname, 'fixtures', 'with-exif.jpg'))
   const image = new Image()
+  const { promise, resolve } = Promise.withResolvers<void>()
+  image.onload = () => {
+    resolve()
+  }
   image.src = file
+  await promise
   t.is(image.width, 450)
   t.is(image.height, 600)
 })
@@ -59,7 +82,12 @@ test('with-exif image width and height should be correct', async (t) => {
 test('draw-image-exif', async (t) => {
   const file = await fs.readFile(join(__dirname, 'fixtures', 'with-exif.jpg'))
   const image = new Image()
+  const { promise, resolve } = Promise.withResolvers<void>()
+  image.onload = () => {
+    resolve()
+  }
   image.src = file
+  await promise
   const canvas = createCanvas(800, 800)
   const ctx = canvas.getContext('2d')
   ctx.drawImage(image, 0, 0)
@@ -86,7 +114,12 @@ test('properties should be readonly', (t) => {
 
 test('svg-transparent-background', async (t) => {
   const image = new Image()
+  const { promise, resolve } = Promise.withResolvers<void>()
+  image.onload = () => {
+    resolve()
+  }
   image.src = await fs.readFile(join(__dirname, '..', 'example', 'resize-svg.svg'))
+  await promise
 
   const w = 1000
   const h = 1000
@@ -117,11 +150,9 @@ test('load invalid image should not throw if onerror is provided', async (t) => 
     () =>
       new Promise<void>((resolve) => {
         const image = new Image()
-        image.onload = () => {
-          resolve()
-        }
         image.onerror = (err) => {
           t.is(err.message, 'Unsupported image type')
+          resolve()
         }
         image.src = broken
       }),

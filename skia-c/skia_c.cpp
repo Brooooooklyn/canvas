@@ -1511,9 +1511,11 @@ extern "C"
       canvas->setMatrix(matrix);
       auto image = SkImages::RasterFromBitmap(*bitmap);
       canvas->drawImage(image, 0, 0);
+      oriented_bitmap->setImmutable();
       bitmap_info->bitmap = reinterpret_cast<skiac_bitmap *>(oriented_bitmap);
       delete bitmap;
     } else {
+      bitmap->setImmutable();
       bitmap_info->bitmap = reinterpret_cast<skiac_bitmap *>(bitmap);
     }
     bitmap_info->width = width;

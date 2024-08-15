@@ -47,7 +47,6 @@ export async function snapshotImage<C>(
     if (existedPixels.length !== imagePixels.length) {
       await writeFailureImage()
       t.fail('Image size is not equal')
-      return
     }
     let diffCount = 0
     imagePixels.forEach((u8, index) => {
@@ -58,7 +57,6 @@ export async function snapshotImage<C>(
     if (diffCount / existedPixels.length > differentRatio / 100) {
       await writeFailureImage()
       t.fail(`Image bytes is not equal, different ratio is ${((diffCount / existedPixels.length) * 100).toFixed(2)}%`)
-      return
     }
     t.pass('Image pixels is equal')
   }

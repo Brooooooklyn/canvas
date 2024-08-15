@@ -240,7 +240,12 @@ test('createPattern-no-transform', async (t) => {
   const { ctx } = t.context
   const imageSrc = await promises.readFile(join(__dirname, 'canvas_createpattern.png'))
   const image = new Image()
+  const { promise, resolve } = Promise.withResolvers<void>()
+  image.onload = () => {
+    resolve()
+  }
   image.src = imageSrc
+  await promise
   const pattern = ctx.createPattern(image, 'repeat')
   ctx.fillStyle = pattern
   ctx.fillRect(0, 0, 300, 300)
@@ -262,7 +267,12 @@ test('createPattern-with-transform', async (t) => {
   const { ctx } = t.context
   const imageSrc = await promises.readFile(join(__dirname, 'canvas_createpattern.png'))
   const image = new Image()
+  const { promise, resolve } = Promise.withResolvers<void>()
+  image.onload = () => {
+    resolve()
+  }
   image.src = imageSrc
+  await promise
   const pattern = ctx.createPattern(image, 'repeat')
   const matrix = new DOMMatrix()
   pattern.setTransform(matrix.rotate(-45).scale(1.5))
@@ -308,7 +318,12 @@ test('drawImage', async (t) => {
   const filePath = './javascript.png'
   const file = await promises.readFile(join(__dirname, filePath))
   const image = new Image()
+  const { promise, resolve } = Promise.withResolvers<void>()
+  image.onload = () => {
+    resolve()
+  }
   image.src = file
+  await promise
   ctx.drawImage(image, 0, 0)
   await snapshotImage(t)
 })
@@ -318,7 +333,12 @@ test('drawImage-svg', async (t) => {
   const filePath = './mountain.svg'
   const file = await promises.readFile(join(__dirname, filePath))
   const image = new Image()
+  const { promise, resolve } = Promise.withResolvers<void>()
+  image.onload = () => {
+    resolve()
+  }
   image.src = file
+  await promise
   ctx.drawImage(image, 0, 0)
   await snapshotImage(t)
 })
@@ -328,7 +348,12 @@ test('drawImage-svg-with-only-viewBox', async (t) => {
   const filePath = './only-viewbox.svg'
   const file = await promises.readFile(join(__dirname, filePath))
   const image = new Image()
+  const { promise, resolve } = Promise.withResolvers<void>()
+  image.onload = () => {
+    resolve()
+  }
   image.src = file
+  await promise
   ctx.drawImage(image, 0, 0)
   await snapshotImage(t)
 })
@@ -338,7 +363,12 @@ test('drawImage-svg-resize', async (t) => {
   const filePath = './resize.svg'
   const file = await promises.readFile(join(__dirname, filePath))
   const image = new Image()
+  const { promise, resolve } = Promise.withResolvers<void>()
+  image.onload = () => {
+    resolve()
+  }
   image.src = file
+  await promise
   image.width = 100
   image.height = 100
   ctx.drawImage(image, 0, 0)
@@ -360,7 +390,15 @@ test('drawImage-svg without width height should be empty image', async (t) => {
   const filePath = './mountain.svg'
   const svgContent = (await promises.readFile(join(__dirname, filePath))).toString('utf-8')
   const image = new Image()
+  const { promise, resolve, reject } = Promise.withResolvers<void>()
+  image.onload = () => {
+    resolve()
+  }
+  image.onerror = (err) => {
+    reject(err)
+  }
   image.src = Buffer.from(svgContent.replace('width="128"', '').replace('height="128"', ''))
+  await promise
   ctx.drawImage(image, 0, 0)
   const output = await canvas.encode('png')
   const outputData = png.decoders['image/png'](output)
@@ -372,7 +410,12 @@ test('draw-image-svg-noto-emoji', async (t) => {
   const filePath = './notoemoji-person.svg'
   const file = await promises.readFile(join(__dirname, filePath))
   const image = new Image()
+  const { promise, resolve } = Promise.withResolvers<void>()
+  image.onload = () => {
+    resolve()
+  }
   image.src = file
+  await promise
   ctx.drawImage(image, 0, 0)
   await snapshotImage(t)
 })

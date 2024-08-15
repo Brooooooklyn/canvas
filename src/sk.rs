@@ -3412,6 +3412,9 @@ impl Drop for ImageFilter {
 #[derive(Debug)]
 pub(crate) struct Bitmap(pub(crate) ffi::skiac_bitmap_info);
 
+unsafe impl Send for Bitmap {}
+unsafe impl Sync for Bitmap {}
+
 impl Bitmap {
   pub fn from_buffer(ptr: *mut u8, size: usize) -> Self {
     let mut bitmap_info = ffi::skiac_bitmap_info {

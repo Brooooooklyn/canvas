@@ -186,7 +186,12 @@ test('draw-svg-with-text', async (t) => {
   ctx.fillText(Title, 80, 100)
 
   const Arrow = new Image()
+  const { promise, resolve } = Promise.withResolvers<void>()
+  Arrow.onload = () => {
+    resolve()
+  }
   Arrow.src = await fs.readFile(join(__dirname, 'image-og.svg'))
+  await promise
   ctx.drawImage(Arrow, 80, 60)
   await snapshotImage(t, { ctx, canvas }, 'png', process.arch === 'x64' && process.platform !== 'darwin' ? 0.15 : 0.3)
 })
