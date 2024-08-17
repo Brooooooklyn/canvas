@@ -1,3 +1,20 @@
+## [0.1.54](https://github.com/Brooooooklyn/canvas/compare/v0.1.53...v0.1.54) (2024-08-17)
+
+
+### Bug Fixes
+
+* **deps:** update rust crate libavif to 0.14 ([d5db090](https://github.com/Brooooooklyn/canvas/commit/d5db090d03bbe3ec7a689c4d6431b992e7f335d8))
+* handle relative and invalid URLs in redirects when passing URL to loadImage() ([#866](https://github.com/Brooooooklyn/canvas/issues/866)) ([1666a33](https://github.com/Brooooooklyn/canvas/commit/1666a33d23c779bf5cb6b9fcd4d0cace1ada609b)), closes [#865](https://github.com/Brooooooklyn/canvas/issues/865) [#865](https://github.com/Brooooooklyn/canvas/issues/865)
+* image decode should be async ([#872](https://github.com/Brooooooklyn/canvas/issues/872)) ([713ca40](https://github.com/Brooooooklyn/canvas/commit/713ca40d0ec36052a201269dab155b3e07fd7dab))
+
+
+### Features
+
+* chrome/m118 ([#875](https://github.com/Brooooooklyn/canvas/issues/875)) ([f209603](https://github.com/Brooooooklyn/canvas/commit/f2096037d5b4e05b7676fe65e7506285c52a4370))
+* update skia to m127 ([#853](https://github.com/Brooooooklyn/canvas/issues/853)) ([3d60556](https://github.com/Brooooooklyn/canvas/commit/3d60556b2c22fd5f6c6639cbede566bd8b233747))
+
+
+
 ## [0.1.53](https://github.com/Brooooooklyn/canvas/compare/v0.1.52...v0.1.53) (2024-06-09)
 
 
