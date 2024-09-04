@@ -238,7 +238,7 @@ impl Image {
       width: self.width,
       height: self.height,
       color_space: self.color_space,
-      data,
+      data: Some(data),
       this_ref: env.create_reference(&this)?,
     };
     let task_output = env.spawn(decoder)?;
@@ -299,7 +299,7 @@ struct BitmapDecoder {
   width: f64,
   height: f64,
   color_space: ColorSpace,
-  data: Uint8Array,
+  data: Option<Uint8Array>,
   this_ref: Ref<()>,
 }
 
@@ -329,8 +329,17 @@ impl Task for BitmapDecoder {
   type JsValue = ();
 
   fn compute(&mut self) -> Result<Self::Output> {
-    let length = self.data.len();
-    let data_ref: &[u8] = &self.data;
+    let data_ref = match self.data.as_ref() {
+      Some(data) => data.as_ref(),
+      None => {
+        return Ok(DecodedBitmap {
+          bitmap: DecodeStatus::Empty,
+          width: self.width,
+          height: self.height,
+        })
+      }
+    };
+    let length = data_ref.len();
     let mut width = self.width;
     let mut height = self.height;
     let bitmap = if str::from_utf8(&data_ref[0..10]) == Ok("data:image") {
@@ -355,18 +364,18 @@ impl Task for BitmapDecoder {
       } else {
         DecodeStatus::Empty
       }
-    } else if let Some(kind) = infer::get(&self.data)
+    } else if let Some(kind) = infer::get(data_ref)
       && kind.matcher_type() == infer::MatcherType::Image
     {
       DecodeStatus::Ok(BitmapInfo {
-        data: Bitmap::from_buffer(self.data.as_ptr().cast_mut(), length),
+        data: Bitmap::from_buffer(data_ref.as_ptr().cast_mut(), length),
         is_svg: false,
       })
     } else if is_svg_image(data_ref, length) {
       let font = get_font().map_err(SkError::from)?;
       if (self.width - -1.0).abs() > f64::EPSILON && (self.height - -1.0).abs() > f64::EPSILON {
         if let Some(bitmap) = Bitmap::from_svg_data_with_custom_size(
-          self.data.as_ptr(),
+          data_ref.as_ptr(),
           length,
           self.width as f32,
           self.height as f32,
@@ -381,7 +390,7 @@ impl Task for BitmapDecoder {
           DecodeStatus::InvalidSvg
         }
       } else if let Some(bitmap) =
-        Bitmap::from_svg_data(self.data.as_ptr(), length, self.color_space, &font)
+        Bitmap::from_svg_data(data_ref.as_ptr(), length, self.color_space, &font)
       {
         if let Ok(bitmap) = bitmap {
           DecodeStatus::Ok(BitmapInfo {
@@ -426,11 +435,11 @@ impl Task for BitmapDecoder {
     self_mut.complete = true;
     match output.bitmap {
       DecodeStatus::Ok(bitmap) => {
+        self_mut.src = self.data.take();
         let onload = this.get_named_property_unchecked::<Unknown>("onload")?;
         if onload.get_type()? == ValueType::Function {
           let onload_func: Function<(), ()> = Function::from_unknown(onload)?;
           onload_func.apply(this, ())?;
-          self_mut.src = Some(self.data.clone());
         }
         self_mut.is_svg = bitmap.is_svg;
         self_mut.bitmap = Some(bitmap.data);
