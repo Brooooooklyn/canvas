@@ -1,3 +1,17 @@
+## [0.1.55](https://github.com/Brooooooklyn/canvas/compare/v0.1.54...v0.1.55) (2024-09-04)
+
+
+### Bug Fixes
+
+* image src is null after loaded ([#886](https://github.com/Brooooooklyn/canvas/issues/886)) ([1628756](https://github.com/Brooooooklyn/canvas/commit/16287561a804fd065aa900996cc696d16cf3dd07))
+
+
+### Features
+
+* upgrade skia to m129 ([#888](https://github.com/Brooooooklyn/canvas/issues/888)) ([b103fc2](https://github.com/Brooooooklyn/canvas/commit/b103fc2bc77a54c12bb054dda6d8ec98f90af04b))
+
+
+
 ## [0.1.54](https://github.com/Brooooooklyn/canvas/compare/v0.1.53...v0.1.54) (2024-08-17)
 
 
