@@ -771,10 +771,10 @@ class DOMMatrix {
   }
 
   transformPoint(point) {
-    const x = point.x ?? 0
-    const y = point.y ?? 0
-    const z = point.z ?? 0
-    const w = point.w ?? 1
+    const x = point.x || 0
+    const y = point.y || 0
+    const z = point.z || 0
+    const w = point.w || 1
 
     const values = this[VALUES]
 
