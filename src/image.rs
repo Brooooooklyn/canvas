@@ -436,21 +436,21 @@ impl Task for BitmapDecoder {
     match output.bitmap {
       DecodeStatus::Ok(bitmap) => {
         self_mut.src = self.data.take();
-        let onload = this.get_named_property_unchecked::<Unknown>("onload")?;
-        if onload.get_type()? == ValueType::Function {
-          let onload_func: Function<(), ()> = Function::from_unknown(onload)?;
-          onload_func.apply(this, ())?;
-        }
         self_mut.is_svg = bitmap.is_svg;
         self_mut.bitmap = Some(bitmap.data);
-      }
-      DecodeStatus::Empty => {
         let onload = this.get_named_property_unchecked::<Unknown>("onload")?;
         if onload.get_type()? == ValueType::Function {
           let onload_func: Function<(), ()> = Function::from_unknown(onload)?;
           onload_func.apply(this, ())?;
         }
+      }
+      DecodeStatus::Empty => {
         self_mut.bitmap = None;
+        let onload = this.get_named_property_unchecked::<Unknown>("onload")?;
+        if onload.get_type()? == ValueType::Function {
+          let onload_func: Function<(), ()> = Function::from_unknown(onload)?;
+          onload_func.apply(this, ())?;
+        }
       }
       DecodeStatus::InvalidSvg => {
         let on_error = this.get_named_property_unchecked::<Unknown>("onerror")?;
