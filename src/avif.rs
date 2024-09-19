@@ -24,6 +24,7 @@ pub struct AvifConfig {
 #[napi]
 /// https://en.wikipedia.org/wiki/Chroma_subsampling#Types_of_sampling_and_subsampling
 /// https://developer.mozilla.org/en-US/docs/Web/Media/Formats/Video_concepts
+#[derive(Clone, Copy)]
 pub enum ChromaSubsampling {
   /// Each of the three Y'CbCr components has the same sample rate, thus there is no chroma subsampling. This scheme is sometimes used in high-end film scanners and cinematic post-production.
   /// Note that "4:4:4" may instead be wrongly referring to R'G'B' color space, which implicitly also does not have any chroma subsampling (except in JPEG R'G'B' can be subsampled).

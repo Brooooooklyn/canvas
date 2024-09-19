@@ -14,11 +14,12 @@ use std::str::FromStr;
 use std::{mem, slice};
 
 use base64::Engine;
+use bindgen_prelude::BufferSlice;
 use napi::bindgen_prelude::{AsyncTask, ClassInstance, Either3, This, Unknown};
 use napi::*;
 
 use ctx::{
-  CanvasRenderingContext2D, Context, ContextData, ContextOutputData, SvgExportFlag,
+  encode_surface, CanvasRenderingContext2D, Context, ContextData, ContextOutputData, SvgExportFlag,
   FILL_STYLE_HIDDEN_NAME, STROKE_STYLE_HIDDEN_NAME,
 };
 use font::{init_font_regexp, FONT_REGEXP};
@@ -204,10 +205,10 @@ impl CanvasElement {
     env: Env,
     format: String,
     quality_or_config: Either3<u32, AvifConfig, Unknown>,
-  ) -> Result<JsBuffer> {
-    let mut task = self.encode_inner(format, quality_or_config)?;
-    let output = task.compute()?;
-    task.resolve(env, output)
+  ) -> Result<BufferSlice> {
+    let data = self.encode_inner(format, quality_or_config)?;
+    let output = encode_surface(&data)?;
+    output.into_buffer_slice(env)
   }
 
   #[napi]
@@ -216,35 +217,33 @@ impl CanvasElement {
     env: Env,
     mime: String,
     quality_or_config: Either3<u32, AvifConfig, Unknown>,
-  ) -> Result<JsBuffer> {
+  ) -> Result<BufferSlice> {
     let mime = mime.as_str();
     let context_data = get_data_ref(&self.ctx.context, mime, &quality_or_config)?;
     match context_data {
       ContextOutputData::Skia(data_ref) => unsafe {
-        env
-          .create_buffer_with_borrowed_data(
-            data_ref.0.ptr,
-            data_ref.0.size,
-            data_ref,
-            |data: SkiaDataRef, _| mem::drop(data),
-          )
-          .map(|b| b.into_raw())
+        BufferSlice::from_external(
+          &env,
+          data_ref.0.ptr,
+          data_ref.0.size,
+          data_ref,
+          |data: SkiaDataRef, _| mem::drop(data),
+        )
       },
       ContextOutputData::Avif(output) => unsafe {
-        env
-          .create_buffer_with_borrowed_data(
-            output.as_ptr().cast_mut(),
-            output.len(),
-            output,
-            |data, _| mem::drop(data),
-          )
-          .map(|b| b.into_raw())
+        BufferSlice::from_external(
+          &env,
+          output.as_ptr().cast_mut(),
+          output.len(),
+          output,
+          |data, _| mem::drop(data),
+        )
       },
     }
   }
 
   #[napi]
-  pub fn data(&self, env: Env) -> Result<JsBuffer> {
+  pub fn data(&self, env: Env) -> Result<BufferSlice> {
     let ctx2d = &self.ctx.context;
 
     let surface_ref = ctx2d.surface.reference();
@@ -255,11 +254,7 @@ impl CanvasElement {
         "Get png data from surface failed".to_string(),
       )
     })?;
-    unsafe {
-      env
-        .create_buffer_with_borrowed_data(ptr.cast_mut(), size, 0, noop_finalize)
-        .map(|value| value.into_raw())
-    }
+    unsafe { BufferSlice::from_external(&env, ptr.cast_mut(), size, 0, noop_finalize) }
   }
 
   #[napi(js_name = "toDataURLAsync")]
@@ -521,15 +516,13 @@ impl SVGCanvas {
   }
 
   #[napi]
-  pub fn get_content(&self, env: Env) -> Result<JsBuffer> {
+  pub fn get_content(&self, env: Env) -> Result<BufferSlice> {
     let svg_data_stream = self.ctx.context.stream.as_ref().unwrap();
     let svg_data = svg_data_stream.data(self.ctx.context.width, self.ctx.context.height);
     unsafe {
-      env
-        .create_buffer_with_borrowed_data(svg_data.0.ptr, svg_data.0.size, svg_data, |d, _| {
-          mem::drop(d)
-        })
-        .map(|b| b.into_raw())
+      BufferSlice::from_external(&env, svg_data.0.ptr, svg_data.0.size, svg_data, |d, _| {
+        mem::drop(d)
+      })
     }
   }
 }

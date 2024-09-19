@@ -1,14 +1,14 @@
 use std::mem;
 
-use napi::{bindgen_prelude::*, JsBuffer};
+use napi::bindgen_prelude::*;
 
 use crate::{error::SkError, global_fonts::get_font, sk::sk_svg_text_to_path};
 
 #[napi(js_name = "convertSVGTextToPath")]
 pub fn convert_svg_text_to_path(
-  env: Env,
+  env: &Env,
   input: Either3<Buffer, String, Unknown>,
-) -> Result<JsBuffer> {
+) -> Result<BufferSlice> {
   let font = get_font().map_err(SkError::from)?;
   sk_svg_text_to_path(input.as_bytes()?, &font)
     .ok_or_else(|| {
@@ -18,9 +18,8 @@ pub fn convert_svg_text_to_path(
       )
     })
     .and_then(|v| unsafe {
-      env.create_buffer_with_borrowed_data(v.0.ptr, v.0.size, v, |d, _| mem::drop(d))
+      BufferSlice::from_external(env, v.0.ptr, v.0.size, v, |d, _| mem::drop(d))
     })
-    .map(|b| b.into_raw())
 }
 
 trait AsBytes {

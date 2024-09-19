@@ -6,7 +6,7 @@ use std::str::FromStr;
 
 use cssparser::{Color as CSSColor, Parser, ParserInput, RGBA};
 use libavif::AvifData;
-use napi::{bindgen_prelude::*, JsBuffer, JsString, NapiRaw, NapiValue};
+use napi::{bindgen_prelude::*, JsString, NapiRaw, NapiValue};
 use once_cell::sync::Lazy;
 use regex::Regex;
 
@@ -2123,85 +2123,93 @@ pub enum ContextOutputData {
   Avif(AvifData<'static>),
 }
 
+impl ContextOutputData {
+  pub(crate) fn into_buffer_slice<'a>(self, env: Env) -> Result<BufferSlice<'a>> {
+    match self {
+      ContextOutputData::Skia(output) => unsafe {
+        BufferSlice::from_external(&env, output.0.ptr, output.0.size, output, |data_ref, _| {
+          mem::drop(data_ref)
+        })
+      },
+      ContextOutputData::Avif(output) => unsafe {
+        BufferSlice::from_external(
+          &env,
+          output.as_ptr().cast_mut(),
+          output.len(),
+          output,
+          |data_ref, _| mem::drop(data_ref),
+        )
+      },
+    }
+  }
+}
+
+#[inline]
+pub(crate) fn encode_surface(data: &ContextData) -> Result<ContextOutputData> {
+  match data {
+    ContextData::Png(surface) => surface
+      .png_data()
+      .map(ContextOutputData::Skia)
+      .ok_or_else(|| {
+        Error::new(
+          Status::GenericFailure,
+          "Get png data from surface failed".to_string(),
+        )
+      }),
+    ContextData::Jpeg(surface, quality) => surface
+      .encode_data(SkEncodedImageFormat::Jpeg, *quality)
+      .map(ContextOutputData::Skia)
+      .ok_or_else(|| {
+        Error::new(
+          Status::GenericFailure,
+          "Get jpeg data from surface failed".to_string(),
+        )
+      }),
+    ContextData::Webp(surface, quality) => surface
+      .encode_data(SkEncodedImageFormat::Webp, *quality)
+      .map(ContextOutputData::Skia)
+      .ok_or_else(|| {
+        Error::new(
+          Status::GenericFailure,
+          "Get webp data from surface failed".to_string(),
+        )
+      }),
+    ContextData::Avif(surface, config, width, height) => surface
+      .data()
+      .ok_or_else(|| {
+        Error::new(
+          Status::GenericFailure,
+          "Get avif data from surface failed".to_string(),
+        )
+      })
+      .and_then(|(data, size)| {
+        crate::avif::encode(
+          unsafe { slice::from_raw_parts(data, size) },
+          *width,
+          *height,
+          config,
+        )
+        .map(ContextOutputData::Avif)
+        .map_err(|e| Error::new(Status::GenericFailure, format!("{e}")))
+      }),
+  }
+}
+
 unsafe impl Send for ContextOutputData {}
 unsafe impl Sync for ContextOutputData {}
 
 impl Task for ContextData {
   type Output = ContextOutputData;
-  type JsValue = JsBuffer;
+  type JsValue = Buffer;
 
   fn compute(&mut self) -> Result<Self::Output> {
-    match self {
-      ContextData::Png(surface) => {
-        surface
-          .png_data()
-          .map(ContextOutputData::Skia)
-          .ok_or_else(|| {
-            Error::new(
-              Status::GenericFailure,
-              "Get png data from surface failed".to_string(),
-            )
-          })
-      }
-      ContextData::Jpeg(surface, quality) => surface
-        .encode_data(SkEncodedImageFormat::Jpeg, *quality)
-        .map(ContextOutputData::Skia)
-        .ok_or_else(|| {
-          Error::new(
-            Status::GenericFailure,
-            "Get jpeg data from surface failed".to_string(),
-          )
-        }),
-      ContextData::Webp(surface, quality) => surface
-        .encode_data(SkEncodedImageFormat::Webp, *quality)
-        .map(ContextOutputData::Skia)
-        .ok_or_else(|| {
-          Error::new(
-            Status::GenericFailure,
-            "Get webp data from surface failed".to_string(),
-          )
-        }),
-      ContextData::Avif(surface, config, width, height) => surface
-        .data()
-        .ok_or_else(|| {
-          Error::new(
-            Status::GenericFailure,
-            "Get avif data from surface failed".to_string(),
-          )
-        })
-        .and_then(|(data, size)| {
-          crate::avif::encode(
-            unsafe { slice::from_raw_parts(data, size) },
-            *width,
-            *height,
-            config,
-          )
-          .map(ContextOutputData::Avif)
-          .map_err(|e| Error::new(Status::GenericFailure, format!("{e}")))
-        }),
-    }
+    encode_surface(self)
   }
 
   fn resolve(&mut self, env: Env, output_data: Self::Output) -> Result<Self::JsValue> {
-    match output_data {
-      ContextOutputData::Skia(output) => unsafe {
-        env
-          .create_buffer_with_borrowed_data(output.0.ptr, output.0.size, output, |data_ref, _| {
-            mem::drop(data_ref)
-          })
-          .map(|value| value.into_raw())
-      },
-      ContextOutputData::Avif(output) => unsafe {
-        env
-          .create_buffer_with_borrowed_data(
-            output.as_ptr().cast_mut(),
-            output.len(),
-            output,
-            |data_ref, _| mem::drop(data_ref),
-          )
-          .map(|b| b.into_raw())
-      },
-    }
+    output_data
+      .into_buffer_slice(env)
+      .and_then(|slice| slice.into_buffer(&env))
   }
 }
 
