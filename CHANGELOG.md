@@ -1,3 +1,14 @@
+## [0.1.56](https://github.com/Brooooooklyn/canvas/compare/v0.1.55...v0.1.56) (2024-09-19)
+
+
+### Bug Fixes
+
+* `??` is error on node@10 ([#889](https://github.com/Brooooooklyn/canvas/issues/889)) ([366d738](https://github.com/Brooooooklyn/canvas/commit/366d73809d56c2066f878d4240e231920deaaae4))
+* adjust the order of onload calls ([#898](https://github.com/Brooooooklyn/canvas/issues/898)) ([df6df8d](https://github.com/Brooooooklyn/canvas/commit/df6df8d0295c4ff8a1c08eb345fa3b5ed78503a7))
+* **deps:** update rust crate napi to 3.0.0-alpha ([d692f59](https://github.com/Brooooooklyn/canvas/commit/d692f593b06004a85709e7dd4e8a2e9814f3f2d9))
+
+
+
 ## [0.1.55](https://github.com/Brooooooklyn/canvas/compare/v0.1.54...v0.1.55) (2024-09-04)
 
 
