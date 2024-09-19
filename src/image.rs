@@ -2,7 +2,7 @@ use std::str::FromStr;
 use std::{ptr, str};
 
 use base64_simd::STANDARD;
-use napi::{bindgen_prelude::*, check_status, JsObject, NapiRaw, NapiValue, Ref};
+use napi::{bindgen_prelude::*, check_status, NapiRaw, NapiValue, Ref};
 
 use crate::error::SkError;
 use crate::global_fonts::get_font;
