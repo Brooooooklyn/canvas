@@ -300,7 +300,7 @@ struct BitmapDecoder {
   height: f64,
   color_space: ColorSpace,
   data: Option<Uint8Array>,
-  this_ref: Ref<()>,
+  this_ref: Ref<Object>,
 }
 
 #[derive(Debug)]
