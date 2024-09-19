@@ -2,7 +2,7 @@ use std::str::FromStr;
 use std::{ptr, str};
 
 use base64_simd::STANDARD;
-use napi::{bindgen_prelude::*, check_status, NapiRaw, NapiValue, Ref};
+use napi::{bindgen_prelude::*, check_status, JsObject, NapiRaw, NapiValue, Ref};
 
 use crate::error::SkError;
 use crate::global_fonts::get_font;
@@ -433,44 +433,39 @@ impl Task for BitmapDecoder {
     self_mut.width = output.width;
     self_mut.height = output.height;
     self_mut.complete = true;
+    self_mut.bitmap = None;
+
+    let mut err: Option<&str> = None;
+
     match output.bitmap {
       DecodeStatus::Ok(bitmap) => {
         self_mut.src = self.data.take();
-        let onload = this.get_named_property_unchecked::<Unknown>("onload")?;
-        if onload.get_type()? == ValueType::Function {
-          let onload_func: Function<(), ()> = Function::from_unknown(onload)?;
-          onload_func.apply(this, ())?;
-        }
         self_mut.is_svg = bitmap.is_svg;
         self_mut.bitmap = Some(bitmap.data);
       }
-      DecodeStatus::Empty => {
-        let onload = this.get_named_property_unchecked::<Unknown>("onload")?;
-        if onload.get_type()? == ValueType::Function {
-          let onload_func: Function<(), ()> = Function::from_unknown(onload)?;
-          onload_func.apply(this, ())?;
-        }
-        self_mut.bitmap = None;
-      }
+      DecodeStatus::Empty => {}
       DecodeStatus::InvalidSvg => {
-        let on_error = this.get_named_property_unchecked::<Unknown>("onerror")?;
-        if on_error.get_type()? == ValueType::Function {
-          let onerror_func: Function<Unknown, ()> = Function::from_unknown(on_error)?;
-          onerror_func.apply(
-            this,
-            JsError::from(Error::new(Status::InvalidArg, "Invalid SVG image")).into_unknown(env),
-          )?;
-        }
+        err = Some("Invalid SVG image");
       }
       DecodeStatus::InvalidImage => {
-        let on_error = this.get_named_property_unchecked::<Unknown>("onerror")?;
-        if on_error.get_type()? == ValueType::Function {
-          let onerror_func: Function<Object, Unknown> = Function::from_unknown(on_error)?;
-          onerror_func.apply(
-            this,
-            env.create_error(Error::new(Status::InvalidArg, "Unsupported image type"))?,
-          )?;
-        }
+        err = Some("Unsupported image type");
+      }
+    }
+
+    if let Some(err_str) = err.take() {
+      let on_error = this.get_named_property_unchecked::<Unknown>("onerror")?;
+      if on_error.get_type()? == ValueType::Function {
+        let onerror_func: Function<Object, Unknown> = Function::from_unknown(on_error)?;
+        onerror_func.apply(
+          this,
+          env.create_error(Error::new(Status::InvalidArg, err_str))?,
+        )?;
+      }
+    } else {
+      let onload = this.get_named_property_unchecked::<Unknown>("onload")?;
+      if onload.get_type()? == ValueType::Function {
+        let onload_func: Function<(), ()> = Function::from_unknown(onload)?;
+        onload_func.apply(this, ())?;
       }
     }
     Ok(())

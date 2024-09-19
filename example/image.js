@@ -8,6 +8,7 @@ async function main() {
 
   const image = new Image()
   image.src = file
+  await new Promise(r =>  image.onload = r)
 
   const w = image.width
   const h = image.height
