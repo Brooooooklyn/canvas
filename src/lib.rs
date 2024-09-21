@@ -14,7 +14,7 @@ use std::str::FromStr;
 use std::{mem, slice};
 
 use base64::Engine;
-use bindgen_prelude::BufferSlice;
+use bindgen_prelude::{BufferSlice, JavaScriptClassExt};
 use napi::bindgen_prelude::{AsyncTask, ClassInstance, Either3, This, Unknown};
 use napi::*;
 
