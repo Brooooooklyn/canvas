@@ -69,10 +69,9 @@ jobs:
         settings:
           - host: macos-latest
             target: 'x86_64-apple-darwin'
-            setup: brew install nasm llvm
+            setup: brew install nasm
             build: |
               rustc --print target-cpus
-              export PATH="/opt/homebrew/opt/llvm/bin:$PATH"
               clang --version
               yarn build --target x86_64-apple-darwin
             downloadTarget: ''
@@ -100,11 +99,8 @@ jobs:
           - host: macos-latest
             downloadTarget: 'aarch64-apple-darwin'
             target: 'aarch64-apple-darwin'
-            setup: |
-              brew install llvm
             build: |
               export MACOSX_DEPLOYMENT_TARGET='11.0'
-              export PATH="/opt/homebrew/opt/llvm/bin:$PATH"
               clang --version
               yarn build --target aarch64-apple-darwin
           - host: ubuntu-latest
@@ -606,7 +602,6 @@ jobs:
 
       - name: Test
         run: |
-          export PATH="/opt/homebrew/opt/llvm/bin:$PATH"
           clang --version
           cargo test -- --nocapture
 

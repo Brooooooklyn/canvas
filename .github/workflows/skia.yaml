@@ -48,7 +48,7 @@ jobs:
         shell: bash
 
       - name: Install tools on macOS
-        run: brew install ninja llvm
+        run: brew install ninja
         if: matrix.os == 'macos-latest'
 
       - name: Install tools on Windows
@@ -83,7 +83,6 @@ jobs:
         env:
           PYTHONHTTPSVERIFY: 0
         run: |
-          export PATH="/opt/homebrew/opt/llvm/bin:$PATH"
           clang --version
           node ./scripts/build-skia.js --target=x86_64-apple-darwin
 
@@ -130,11 +129,10 @@ jobs:
         shell: bash
 
       - name: Install tools on macOS
-        run: brew install ninja llvm
+        run: brew install ninja
 
       - name: Compile skia
         run: |
-          export PATH="/opt/homebrew/opt/llvm/bin:$PATH"
           clang --version
           node ./scripts/build-skia.js --target=aarch64-apple-darwin
         env:
