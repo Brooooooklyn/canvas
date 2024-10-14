@@ -1,3 +1,12 @@
+## [0.1.58](https://github.com/Brooooooklyn/canvas/compare/v0.1.57...v0.1.58) (2024-10-14)
+
+
+### Bug Fixes
+
+* loadImage memleak and performance issue ([#914](https://github.com/Brooooooklyn/canvas/issues/914)) ([d4fd676](https://github.com/Brooooooklyn/canvas/commit/d4fd676d01f2d7c70f81953d4368b9e9c5e8bf44))
+
+
+
 ## [0.1.57](https://github.com/Brooooooklyn/canvas/compare/v0.1.56...v0.1.57) (2024-10-14)
 
 
