@@ -470,4 +470,8 @@ impl Task for BitmapDecoder {
     }
     Ok(())
   }
+
+  fn finally(mut self, env: Env) -> Result<()> {
+    self.this_ref.unref(&env)
+  }
 }
