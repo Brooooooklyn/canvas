@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1728868876153,
+  "lastUpdate": 1728872465828,
   "repoUrl": "https://github.com/Brooooooklyn/canvas",
   "entries": {
     "Benchmark": [
@@ -32365,6 +32365,72 @@ window.BENCHMARK_DATA = {
             "range": "±0.48%",
             "unit": "ops/sec",
             "extra": "62 samples"
+          },
+          {
+            "name": "Draw gradient#@napi-rs/skia",
+            "value": 31,
+            "range": "±0.58%",
+            "unit": "ops/sec",
+            "extra": "54 samples"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "kaloyan@bozhkov.com",
+            "name": "Kaloyan D. Bozhkov",
+            "username": "kaloyanBozhkov"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "3a26c7da384a2367e8da1688070ec89f73d118dd",
+          "message": "fix: Creating canvas with width or height of zero or less (#739)\n\n* fix: Creating canvas with width or height of zero or less\r\n\r\n* test: createCanvas default sizes for non-positive values\r\n\r\n* fix\r\n\r\n---------\r\n\r\nCo-authored-by: LongYinan <lynweklm@gmail.com>",
+          "timestamp": "2024-10-14T10:14:55+08:00",
+          "tree_id": "2a479cb7efbc87792c09aa789839195d70f96a46",
+          "url": "https://github.com/Brooooooklyn/canvas/commit/3a26c7da384a2367e8da1688070ec89f73d118dd"
+        },
+        "date": 1728872404171,
+        "tool": "benchmarkjs",
+        "benches": [
+          {
+            "name": "Draw house#skia-canvas",
+            "value": 28,
+            "range": "±1.17%",
+            "unit": "ops/sec",
+            "extra": "51 samples"
+          },
+          {
+            "name": "Draw house#node-canvas",
+            "value": 37,
+            "range": "±0.57%",
+            "unit": "ops/sec",
+            "extra": "64 samples"
+          },
+          {
+            "name": "Draw house#@napi-rs/skia",
+            "value": 32,
+            "range": "±0.6%",
+            "unit": "ops/sec",
+            "extra": "56 samples"
+          },
+          {
+            "name": "Draw gradient#skia-canvas",
+            "value": 27,
+            "range": "±0.25%",
+            "unit": "ops/sec",
+            "extra": "49 samples"
+          },
+          {
+            "name": "Draw gradient#node-canvas",
+            "value": 35,
+            "range": "±0.63%",
+            "unit": "ops/sec",
+            "extra": "61 samples"
           },
           {
             "name": "Draw gradient#@napi-rs/skia",
