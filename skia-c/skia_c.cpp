@@ -452,7 +452,7 @@ extern "C"
     auto font = run.font();
     SkFontMetrics font_metrics;
     font.getMetrics(&font_metrics);
-    SkRect bounds[text_len];
+    std::vector<SkRect> bounds(text_len);
     auto glyphs = run.glyphs();
     auto glyphs_size = glyphs.size();
     font.getBounds(glyphs.data(), text_len, &bounds[0], nullptr);
