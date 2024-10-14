@@ -1,6 +1,7 @@
 const fs = require('fs')
-const { Image } = require('./js-binding')
 const { Readable } = require('stream')
+
+const { Image } = require('./js-binding')
 
 let http, https
 
@@ -13,10 +14,12 @@ const REDIRECT_STATUSES = new Set([301, 302])
  * @param {object} options Options passed to the loader
  */
 module.exports = async function loadImage(source, options = {}) {
+  // use the same buffer without copying if the source is a buffer
+  if (Buffer.isBuffer(source) || source instanceof Uint8Array) return createImage(source, options.alt)
   // load readable stream as image
   if (source instanceof Readable) return createImage(await consumeStream(source), options.alt)
-  // use the same buffer without copying if the source is a buffer
-  if (Buffer.isBuffer(source)) return createImage(source, options.alt)
+  // construct a Uint8Array if the source is ArrayBuffer or SharedArrayBuffer
+  if (source instanceof ArrayBuffer || source instanceof SharedArrayBuffer) return createImage(Uint8Array.from(source), options.alt)
   // construct a buffer if the source is buffer-like
   if (isBufferLike(source)) return createImage(Buffer.from(source), options.alt)
   // if the source is Image instance, copy the image src to new image
@@ -68,7 +71,7 @@ function makeRequest(url, resolve, reject, redirectCount, requestOptions) {
         if (typeof res.statusCode === 'number' && (res.statusCode < 200 || res.statusCode >= 300)) {
           return reject(new Error(`remote source rejected with status code ${res.statusCode}`))
         }
-  
+
         consumeStream(res).then(resolve, reject)
       } catch (err) {
         reject(err)
@@ -100,11 +103,7 @@ function createImage(src, alt) {
 
 function isBufferLike(src) {
   return (
-    (src && src.type === 'Buffer') ||
-    Array.isArray(src) ||
-    src instanceof ArrayBuffer ||
-    src instanceof SharedArrayBuffer ||
-    src instanceof Object.getPrototypeOf(Uint8Array)
+    (src && src.type === 'Buffer') || Array.isArray(src)
   )
 }
 
