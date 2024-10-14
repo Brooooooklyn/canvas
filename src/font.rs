@@ -1,11 +1,11 @@
 use std::str::FromStr;
+use std::sync::OnceLock;
 
-use once_cell::sync::OnceCell;
 use regex::Regex;
 
 use crate::error::SkError;
 
-pub(crate) static FONT_REGEXP: OnceCell<Regex> = OnceCell::new();
+pub(crate) static FONT_REGEXP: OnceLock<Regex> = OnceLock::new();
 
 const DEFAULT_FONT: &str = "sans-serif";
 
@@ -122,7 +122,7 @@ pub(crate) fn init_font_regexp() -> Regex {
       (small-caps|normal){0,1}\s+                  |  # variant
       (bold|bolder|lighter|[1-9]00|normal){0,1}\s+ |  # weight
       (ultra-condensed|extra-condensed|condensed|semi-condensed|semi-expanded|expanded|extra-expanded|ultra-expanded|[\d\.]+%){0,1}\s+ # stretch
-    ){0,4}               
+    ){0,4}
     (
       ([\d\.]+)                                       # size
       (%|px|pt|pc|in|cm|mm|%|em|ex|ch|rem|q)?\s*      # unit

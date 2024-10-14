@@ -3,11 +3,11 @@ use std::mem;
 use std::result;
 use std::slice;
 use std::str::FromStr;
+use std::sync::LazyLock;
 
 use cssparser::{Color as CSSColor, Parser, ParserInput, RGBA};
 use libavif::AvifData;
 use napi::{bindgen_prelude::*, JsString, NapiRaw, NapiValue};
-use once_cell::sync::Lazy;
 use regex::Regex;
 
 use crate::font::parse_size_px;
@@ -34,8 +34,8 @@ use crate::{
   CanvasElement, SVGCanvas,
 };
 
-static CSS_SIZE_REGEXP: Lazy<Regex> =
-  Lazy::new(|| Regex::new(r#"(-?[\d\.]+)(%|px|pt|pc|in|cm|mm|%|em|ex|ch|rem|q)?\s*"#).unwrap());
+static CSS_SIZE_REGEXP: LazyLock<Regex> =
+  LazyLock::new(|| Regex::new(r#"(-?[\d\.]+)(%|px|pt|pc|in|cm|mm|%|em|ex|ch|rem|q)?\s*"#).unwrap());
 
 impl From<SkError> for Error {
   fn from(err: SkError) -> Error {
