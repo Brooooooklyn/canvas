@@ -103,7 +103,10 @@ impl<'scope> CanvasElement<'scope> {
   }
 
   #[napi(constructor)]
-  pub fn new(env: &Env, mut this: This, width: u32, height: u32) -> Result<Self> {
+  pub fn new(env: &Env, mut this: This, width: i32, height: i32) -> Result<Self> {
+    // Default fallback of canvas on browser and skia-canvas is 350x150
+    let width = (if width <= 0 { 350 } else { width }) as u32;
+    let height = (if height <= 0 { 150 } else { height }) as u32;
     let ctx = Self::create_context(env, width, height)?;
     let ctx = ctx.assign_to_this_with_attributes("ctx", PropertyAttributes::Default, &mut this)?;
     let mut ctx_obj = ctx.as_object(env);
@@ -116,7 +119,8 @@ impl<'scope> CanvasElement<'scope> {
   }
 
   #[napi(setter)]
-  pub fn set_width(&mut self, env: Env, width: u32) -> Result<()> {
+  pub fn set_width(&mut self, env: Env, width: i32) -> Result<()> {
+    let width = (if width <= 0 { 350 } else { width }) as u32;
     self.width = width;
     let height = self.height;
     let old_ctx = mem::replace(
@@ -133,7 +137,8 @@ impl<'scope> CanvasElement<'scope> {
   }
 
   #[napi(setter)]
-  pub fn set_height(&mut self, env: Env, height: u32) -> Result<()> {
+  pub fn set_height(&mut self, env: Env, height: i32) -> Result<()> {
+    let height = (if height <= 0 { 150 } else { height }) as u32;
     self.height = height;
     let width = self.width;
     let old_ctx = mem::replace(
@@ -444,10 +449,13 @@ impl<'scope> SVGCanvas<'scope> {
   pub fn new(
     env: &Env,
     mut this: This,
-    width: u32,
-    height: u32,
+    width: i32,
+    height: i32,
     flag: SvgExportFlag,
   ) -> Result<SVGCanvas<'scope>> {
+    // Default fallback of canvas on browser and skia-canvas is 350x150
+    let width = (if width <= 0 { 350 } else { width }) as u32;
+    let height = (if height <= 0 { 150 } else { height }) as u32;
     let ctx = CanvasRenderingContext2D::into_instance(
       CanvasRenderingContext2D {
         context: Context::new_svg(width, height, flag.into(), ColorSpace::default())?,
