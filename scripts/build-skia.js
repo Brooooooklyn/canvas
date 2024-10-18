@@ -220,6 +220,16 @@ switch (TARGET_TRIPLE) {
       ExtraSkiaBuildFlag += ' target_cpu="x64" target_os="mac"'
       ExtraCflagsCC += ',"-Wno-psabi"'
     }
+    ExtraCflagsCC += ', "-mmacosx-version-min=10.13"'
+    ExtraLdFlags = ' "-mmacosx-version-min=10.13"'
+    ExtraAsmFlags = '"-mmacosx-version-min=10.13"'
+    ExtraCflags = '"-mmacosx-version-min=10.13"'
+    GN_ARGS.push(
+      `extra_ldflags=[${ExtraLdFlags}]`,
+      `extra_asmflags=[${ExtraAsmFlags}]`,
+      `extra_cflags=[${ExtraCflags}]`,
+      `extra_cflags_c=[${ExtraCflags}]`,
+    )
     break
   case '':
     break
