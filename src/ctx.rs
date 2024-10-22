@@ -3,11 +3,11 @@ use std::mem;
 use std::result;
 use std::slice;
 use std::str::FromStr;
+use std::sync::LazyLock;
 
 use cssparser::{Color as CSSColor, Parser, ParserInput, RGBA};
 use libavif::AvifData;
 use napi::{bindgen_prelude::*, JsString, NapiRaw, NapiValue};
-use once_cell::sync::Lazy;
 use regex::Regex;
 
 use crate::font::parse_size_px;
@@ -34,8 +34,8 @@ use crate::{
   CanvasElement, SVGCanvas,
 };
 
-static CSS_SIZE_REGEXP: Lazy<Regex> =
-  Lazy::new(|| Regex::new(r#"(-?[\d\.]+)(%|px|pt|pc|in|cm|mm|%|em|ex|ch|rem|q)?\s*"#).unwrap());
+static CSS_SIZE_REGEXP: LazyLock<Regex> =
+  LazyLock::new(|| Regex::new(r#"(-?[\d\.]+)(%|px|pt|pc|in|cm|mm|%|em|ex|ch|rem|q)?\s*"#).unwrap());
 
 impl From<SkError> for Error {
   fn from(err: SkError) -> Error {
@@ -899,7 +899,7 @@ pub struct CanvasRenderingContext2D {
 }
 
 impl ObjectFinalize for CanvasRenderingContext2D {
-  fn finalize(self, mut env: Env) -> Result<()> {
+  fn finalize(self, env: Env) -> Result<()> {
     env.adjust_external_memory(-((self.context.width * self.context.height * 4) as i64))?;
     Ok(())
   }
@@ -1313,14 +1313,14 @@ impl CanvasRenderingContext2D {
   }
 
   #[napi]
-  pub fn create_image_data(
-    &mut self,
-    env: Env,
+  pub fn create_image_data<'scope>(
+    &'scope mut self,
+    env: &'scope Env,
     width_or_data: Either<u32, Uint8ClampedArray>,
     width_or_height: u32,
     height_or_settings: Option<Either<u32, Settings>>,
     maybe_settings: Option<Settings>,
-  ) -> Result<ClassInstance<ImageData>> {
+  ) -> Result<ClassInstance<'scope, ImageData>> {
     match width_or_data {
       Either::A(width) => {
         let height = width_or_height;
@@ -1376,30 +1376,30 @@ impl CanvasRenderingContext2D {
   }
 
   #[napi]
-  pub fn create_linear_gradient(
-    &mut self,
-    env: Env,
+  pub fn create_linear_gradient<'scope>(
+    &'scope mut self,
+    env: &'scope Env,
     x0: f64,
     y0: f64,
     x1: f64,
     y1: f64,
-  ) -> Result<ClassInstance<CanvasGradient>> {
+  ) -> Result<ClassInstance<'scope, CanvasGradient>> {
     let linear_gradient =
       Gradient::create_linear_gradient(x0 as f32, y0 as f32, x1 as f32, y1 as f32);
     CanvasGradient(linear_gradient).into_instance(env)
   }
 
   #[napi]
-  pub fn create_radial_gradient(
-    &mut self,
-    env: Env,
+  pub fn create_radial_gradient<'scope>(
+    &'scope mut self,
+    env: &'scope Env,
     x0: f64,
     y0: f64,
     r0: f64,
     x1: f64,
     y1: f64,
     r1: f64,
-  ) -> Result<ClassInstance<CanvasGradient>> {
+  ) -> Result<ClassInstance<'scope, CanvasGradient>> {
     let radial_gradient = Gradient::create_radial_gradient(
       x0 as f32, y0 as f32, r0 as f32, x1 as f32, y1 as f32, r1 as f32,
     );
@@ -1407,24 +1407,24 @@ impl CanvasRenderingContext2D {
   }
 
   #[napi]
-  pub fn create_conic_gradient(
-    &mut self,
-    env: Env,
+  pub fn create_conic_gradient<'scope>(
+    &'scope mut self,
+    env: &'scope Env,
     r: f64,
     x: f64,
     y: f64,
-  ) -> Result<ClassInstance<CanvasGradient>> {
+  ) -> Result<ClassInstance<'scope, CanvasGradient>> {
     let conic_gradient = Gradient::create_conic_gradient(x as f32, y as f32, r as f32);
     CanvasGradient(conic_gradient).into_instance(env)
   }
 
   #[napi]
-  pub fn create_pattern(
-    &self,
-    env: Env,
+  pub fn create_pattern<'scope>(
+    &'scope self,
+    env: &'scope Env,
     input: Either4<&mut Image, &mut ImageData, &mut CanvasElement, &mut SVGCanvas>,
     repetition: Option<String>,
-  ) -> Result<ClassInstance<CanvasPattern>> {
+  ) -> Result<ClassInstance<'scope, CanvasPattern>> {
     CanvasPattern::new(input, repetition)?.into_instance(env)
   }
 
@@ -1844,15 +1844,15 @@ impl CanvasRenderingContext2D {
   }
 
   #[napi]
-  pub fn get_image_data(
-    &mut self,
-    env: Env,
+  pub fn get_image_data<'scope>(
+    &'scope mut self,
+    env: &'scope Env,
     x: f64,
     y: f64,
     width: f64,
     height: f64,
     color_space: Option<String>,
-  ) -> Result<ClassInstance<ImageData>> {
+  ) -> Result<ClassInstance<'scope, ImageData>> {
     if !x.is_nan()
       && !x.is_infinite()
       && !y.is_nan()

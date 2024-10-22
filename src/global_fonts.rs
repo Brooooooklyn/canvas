@@ -1,8 +1,6 @@
 use std::fs::read_dir;
 use std::path;
-use std::sync::{LockResult, Mutex, MutexGuard, PoisonError};
-
-use once_cell::sync::{Lazy, OnceCell};
+use std::sync::{LazyLock, LockResult, Mutex, MutexGuard, OnceLock, PoisonError};
 
 use crate::sk::*;
 
@@ -15,10 +13,10 @@ const FONT_PATH: &str = "/usr/share/fonts/";
 #[cfg(target_os = "android")]
 const FONT_PATH: &str = "/system/fonts";
 
-static FONT_DIR: OnceCell<napi::Result<u32>> = OnceCell::new();
+static FONT_DIR: OnceLock<napi::Result<u32>> = OnceLock::new();
 
-pub(crate) static GLOBAL_FONT_COLLECTION: Lazy<Mutex<FontCollection>> =
-  Lazy::new(|| Mutex::new(FontCollection::new()));
+pub(crate) static GLOBAL_FONT_COLLECTION: LazyLock<Mutex<FontCollection>> =
+  LazyLock::new(|| Mutex::new(FontCollection::new()));
 
 #[inline]
 pub(crate) fn get_font<'a>() -> LockResult<MutexGuard<'a, FontCollection>> {

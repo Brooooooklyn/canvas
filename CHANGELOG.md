@@ -1,3 +1,27 @@
+## [0.1.58](https://github.com/Brooooooklyn/canvas/compare/v0.1.57...v0.1.58) (2024-10-14)
+
+
+### Bug Fixes
+
+* loadImage memleak and performance issue ([#914](https://github.com/Brooooooklyn/canvas/issues/914)) ([d4fd676](https://github.com/Brooooooklyn/canvas/commit/d4fd676d01f2d7c70f81953d4368b9e9c5e8bf44))
+
+
+
+## [0.1.57](https://github.com/Brooooooklyn/canvas/compare/v0.1.56...v0.1.57) (2024-10-14)
+
+
+### Bug Fixes
+
+* Creating canvas with width or height of zero or less ([#739](https://github.com/Brooooooklyn/canvas/issues/739)) ([3a26c7d](https://github.com/Brooooooklyn/canvas/commit/3a26c7da384a2367e8da1688070ec89f73d118dd))
+* memory leak in Image/loadImage ([#913](https://github.com/Brooooooklyn/canvas/issues/913)) ([527c0da](https://github.com/Brooooooklyn/canvas/commit/527c0daa5f25b76d568a45fddfaf3e36252e1d9e))
+
+
+### Features
+
+* chrome/m130 ([#904](https://github.com/Brooooooklyn/canvas/issues/904)) ([f45b4dd](https://github.com/Brooooooklyn/canvas/commit/f45b4dd9b641e8567f07da046f31ea317e03c6d7))
+
+
+
 ## [0.1.56](https://github.com/Brooooooklyn/canvas/compare/v0.1.55...v0.1.56) (2024-09-19)
 
 

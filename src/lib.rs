@@ -73,16 +73,16 @@ pub struct CanvasRenderingContext2DAttributes {
 }
 
 #[napi]
-pub struct CanvasElement {
+pub struct CanvasElement<'scope> {
   pub(crate) width: u32,
   pub(crate) height: u32,
-  pub(crate) ctx: ClassInstance<CanvasRenderingContext2D>,
+  pub(crate) ctx: ClassInstance<'scope, CanvasRenderingContext2D>,
 }
 
 #[napi]
-impl CanvasElement {
+impl<'scope> CanvasElement<'scope> {
   fn create_context(
-    mut env: Env,
+    env: &Env,
     width: u32,
     height: u32,
   ) -> Result<ClassInstance<CanvasRenderingContext2D>> {
@@ -92,10 +92,10 @@ impl CanvasElement {
     .into_instance(env)?;
     ctx.as_object(env).define_properties(&[
       Property::new(FILL_STYLE_HIDDEN_NAME)?
-        .with_value(&env.create_string("#000")?)
+        .with_napi_value(env, "#000")?
         .with_property_attributes(PropertyAttributes::Writable | PropertyAttributes::Configurable),
       Property::new(STROKE_STYLE_HIDDEN_NAME)?
-        .with_value(&env.create_string("#000")?)
+        .with_napi_value(env, "#000")?
         .with_property_attributes(PropertyAttributes::Writable | PropertyAttributes::Configurable),
     ])?;
     env.adjust_external_memory((width * height * 4) as i64)?;
@@ -103,25 +103,24 @@ impl CanvasElement {
   }
 
   #[napi(constructor)]
-  pub fn new(env: Env, mut this: This, width: u32, height: u32) -> Result<Self> {
+  pub fn new(env: &Env, mut this: This, width: i32, height: i32) -> Result<Self> {
+    // Default fallback of canvas on browser and skia-canvas is 350x150
+    let width = (if width <= 0 { 350 } else { width }) as u32;
+    let height = (if height <= 0 { 150 } else { height }) as u32;
     let ctx = Self::create_context(env, width, height)?;
-    this.define_properties(&[Property::new("ctx")?
-      .with_value(&ctx)
-      .with_property_attributes(PropertyAttributes::Default)])?;
-    ctx
-      .as_object(env)
-      .define_properties(&[Property::new("canvas")?
-        .with_value(&this)
-        .with_property_attributes(
-          PropertyAttributes::Default
-            | PropertyAttributes::Writable
-            | PropertyAttributes::Enumerable,
-        )])?;
+    let ctx = ctx.assign_to_this_with_attributes("ctx", PropertyAttributes::Default, &mut this)?;
+    let mut ctx_obj = ctx.as_object(env);
+    ctx_obj.define_properties(&[Property::new("canvas")?
+      .with_value(&this)
+      .with_property_attributes(
+        PropertyAttributes::Default | PropertyAttributes::Writable | PropertyAttributes::Enumerable,
+      )])?;
     Ok(Self { width, height, ctx })
   }
 
   #[napi(setter)]
-  pub fn set_width(&mut self, mut env: Env, width: u32) -> Result<()> {
+  pub fn set_width(&mut self, env: Env, width: i32) -> Result<()> {
+    let width = (if width <= 0 { 350 } else { width }) as u32;
     self.width = width;
     let height = self.height;
     let old_ctx = mem::replace(
@@ -138,7 +137,8 @@ impl CanvasElement {
   }
 
   #[napi(setter)]
-  pub fn set_height(&mut self, mut env: Env, height: u32) -> Result<()> {
+  pub fn set_height(&mut self, env: Env, height: i32) -> Result<()> {
+    let height = (if height <= 0 { 150 } else { height }) as u32;
     self.height = height;
     let width = self.width;
     let old_ctx = mem::replace(
@@ -437,29 +437,33 @@ impl ToQuality for Either3<u32, AvifConfig, Unknown> {
 }
 
 #[napi(js_name = "SVGCanvas")]
-pub struct SVGCanvas {
+pub struct SVGCanvas<'scope> {
   pub width: u32,
   pub height: u32,
-  pub(crate) ctx: ClassInstance<CanvasRenderingContext2D>,
+  pub(crate) ctx: ClassInstance<'scope, CanvasRenderingContext2D>,
 }
 
 #[napi]
-impl SVGCanvas {
+impl<'scope> SVGCanvas<'scope> {
   #[napi(constructor)]
   pub fn new(
-    mut env: Env,
+    env: &Env,
     mut this: This,
-    width: u32,
-    height: u32,
+    width: i32,
+    height: i32,
     flag: SvgExportFlag,
-  ) -> Result<Self> {
+  ) -> Result<SVGCanvas<'scope>> {
+    // Default fallback of canvas on browser and skia-canvas is 350x150
+    let width = (if width <= 0 { 350 } else { width }) as u32;
+    let height = (if height <= 0 { 150 } else { height }) as u32;
     let ctx = CanvasRenderingContext2D::into_instance(
       CanvasRenderingContext2D {
         context: Context::new_svg(width, height, flag.into(), ColorSpace::default())?,
       },
       env,
     )?;
-    ctx.as_object(env).define_properties(&[
+    let mut ctx_obj = ctx.as_object(env);
+    ctx_obj.define_properties(&[
       Property::new(FILL_STYLE_HIDDEN_NAME)?
         .with_value(&env.create_string("#000")?)
         .with_property_attributes(PropertyAttributes::Writable | PropertyAttributes::Configurable),
@@ -475,10 +479,12 @@ impl SVGCanvas {
         ),
     ])?;
     env.adjust_external_memory((width * height * 4) as i64)?;
-    this.define_properties(&[Property::new("ctx")?
-      .with_value(&ctx)
-      .with_property_attributes(PropertyAttributes::Default)])?;
-    Ok(Self { width, height, ctx })
+
+    Ok(Self {
+      width,
+      height,
+      ctx: ctx.assign_to_this_with_attributes("ctx", PropertyAttributes::Default, &mut this)?,
+    })
   }
 
   #[napi]

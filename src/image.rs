@@ -239,7 +239,7 @@ impl Image {
       height: self.height,
       color_space: self.color_space,
       data: Some(data),
-      this_ref: env.create_reference(&this)?,
+      this_ref: env.create_reference(&*this)?,
     };
     let task_output = env.spawn(decoder)?;
 
@@ -423,7 +423,7 @@ impl Task for BitmapDecoder {
   }
 
   fn resolve(&mut self, env: Env, output: Self::Output) -> Result<Self::JsValue> {
-    let this: This = env.get_reference_value(&self.this_ref)?;
+    let this: Object = env.get_reference_value(&self.this_ref)?;
     let mut image_ptr = ptr::null_mut();
     check_status!(
       unsafe { sys::napi_unwrap(env.raw(), this.raw(), &mut image_ptr) },
@@ -469,5 +469,9 @@ impl Task for BitmapDecoder {
       }
     }
     Ok(())
+  }
+
+  fn finally(mut self, env: Env) -> Result<()> {
+    self.this_ref.unref(&env)
   }
 }

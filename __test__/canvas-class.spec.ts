@@ -23,5 +23,22 @@ test('ctx.canvas should be equal to canvas', (t) => {
 test('[SVG] ctx.canvas should be equal to canvas', (t) => {
   const canvas = createCanvas(100, 100, SvgExportFlag.NoPrettyXML)
   const ctx = canvas.getContext('2d')
+  // @ts-expect-error
   t.is(ctx.canvas, canvas)
+})
+
+test('Canvas size should equal 350x150 when provided non-positive values', (t) => {
+  let canvas = createCanvas(0, 0)
+  t.is(canvas.width, 350)
+  t.is(canvas.height, 150)
+  canvas = createCanvas(-1, 10)
+  t.is(canvas.width, 350)
+  t.is(canvas.height, 10)
+  canvas = createCanvas(10, -10)
+  t.is(canvas.height, 150)
+  t.is(canvas.width, 10)
+
+  const svgCanvas = createCanvas(10, -10, SvgExportFlag.ConvertTextToPaths)
+  t.is(svgCanvas.height, 150)
+  t.is(svgCanvas.width, 10)
 })
