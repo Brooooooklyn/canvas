@@ -634,6 +634,9 @@ test('measureText', (t) => {
   t.is(metrics.actualBoundingBoxAscent, 42)
   t.is(metrics.actualBoundingBoxDescent, 10)
   t.true(Math.abs(metrics.actualBoundingBoxRight - 372) < 0.001)
+  t.notThrows(() => {
+    ctx.measureText('\u200b')
+  })
 })
 
 test('measureText with empty string should not throw', (t) => {
