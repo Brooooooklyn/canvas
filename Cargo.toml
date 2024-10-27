@@ -14,8 +14,8 @@ base64-simd  = "0.8"
 cssparser    = "0.29"
 infer        = "0.16"
 libavif      = { version = "0.14", default-features = false, features = ["codec-aom"] }
-napi         = { version = "3.0.0-alpha.15", default-features = false, features = ["napi3", "serde-json"] }
-napi-derive  = { version = "3.0.0-alpha.14", default-features = false }
+napi         = { version = "3.0.0-alpha.16", default-features = false, features = ["napi3", "serde-json"] }
+napi-derive  = { version = "3.0.0-alpha.15", default-features = false }
 nom          = "7"
 num_cpus     = "1"
 regex        = "1"
