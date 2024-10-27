@@ -1,3 +1,18 @@
+## [0.1.59](https://github.com/Brooooooklyn/canvas/compare/v0.1.58...v0.1.59) (2024-10-27)
+
+
+### Bug Fixes
+
+* build macos with xcode llvm ([#905](https://github.com/Brooooooklyn/canvas/issues/905)) ([b099c0a](https://github.com/Brooooooklyn/canvas/commit/b099c0ae047cb84ed7f44762a9ee92bb80f23cce))
+* loadImage convert ArrayBuffer issue ([#920](https://github.com/Brooooooklyn/canvas/issues/920)) ([0636775](https://github.com/Brooooooklyn/canvas/commit/06367753950cf6a62c5f950550a88c4573b19c65))
+
+
+### Features
+
+* upgrade skia to m131 ([#923](https://github.com/Brooooooklyn/canvas/issues/923)) ([75525d6](https://github.com/Brooooooklyn/canvas/commit/75525d61068f29dbf8309cd38e5b74228ab6bcb1))
+
+
+
 ## [0.1.58](https://github.com/Brooooooklyn/canvas/compare/v0.1.57...v0.1.58) (2024-10-14)
 
 
