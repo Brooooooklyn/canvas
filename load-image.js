@@ -19,7 +19,8 @@ module.exports = async function loadImage(source, options = {}) {
   // load readable stream as image
   if (source instanceof Readable) return createImage(await consumeStream(source), options.alt)
   // construct a Uint8Array if the source is ArrayBuffer or SharedArrayBuffer
-  if (source instanceof ArrayBuffer || source instanceof SharedArrayBuffer) return createImage(Uint8Array.from(source), options.alt)
+  if (source instanceof ArrayBuffer || source instanceof SharedArrayBuffer)
+    return createImage(new Uint8Array(source), options.alt)
   // construct a buffer if the source is buffer-like
   if (isBufferLike(source)) return createImage(Buffer.from(source), options.alt)
   // if the source is Image instance, copy the image src to new image
@@ -67,7 +68,13 @@ function makeRequest(url, resolve, reject, redirectCount, requestOptions) {
       try {
         const shouldRedirect = REDIRECT_STATUSES.has(res.statusCode) && typeof res.headers.location === 'string'
         if (shouldRedirect && redirectCount > 0)
-          return makeRequest(new URL(res.headers.location, url.origin), resolve, reject, redirectCount - 1, requestOptions)
+          return makeRequest(
+            new URL(res.headers.location, url.origin),
+            resolve,
+            reject,
+            redirectCount - 1,
+            requestOptions,
+          )
         if (typeof res.statusCode === 'number' && (res.statusCode < 200 || res.statusCode >= 300)) {
           return reject(new Error(`remote source rejected with status code ${res.statusCode}`))
         }
@@ -102,9 +109,7 @@ function createImage(src, alt) {
 }
 
 function isBufferLike(src) {
-  return (
-    (src && src.type === 'Buffer') || Array.isArray(src)
-  )
+  return (src && src.type === 'Buffer') || Array.isArray(src)
 }
 
 async function exists(path) {

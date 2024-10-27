@@ -1,6 +1,8 @@
-import { join } from 'path'
+import { join } from 'node:path'
+import fs from 'node:fs'
+import { readFile } from 'node:fs/promises'
+
 import test from 'ava'
-import fs from 'fs'
 
 import { createCanvas, Image, loadImage } from '../index'
 
@@ -28,6 +30,13 @@ test('should load remote url', async (t) => {
     'https://raw.githubusercontent.com/Brooooooklyn/canvas/462fce53afeaee6d6b4ae5d1b407c17e2359ff7e/example/anime-girl.png',
   )
   t.is(img instanceof Image, true)
+})
+
+test('should load arrayBuffer', async (t) => {
+  const imageBuffer = await readFile(join(__dirname, '../example/simple.png'))
+  const img = await loadImage(imageBuffer.buffer)
+  t.is(img instanceof Image, true)
+  t.true(img.width > 0)
 })
 
 test('should load data uri', async (t) => {
