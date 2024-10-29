@@ -76,7 +76,7 @@
     "@swc/core": "^1.4.0",
     "@taplo/cli": "^0.7.0",
     "@types/lodash": "^4.14.202",
-    "@types/node": "^20.11.16",
+    "@types/node": "^22.0.0",
     "@types/semver": "^7",
     "ava": "^6.1.1",
     "benny": "^3.7.1",
