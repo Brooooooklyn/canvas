@@ -298,7 +298,7 @@ impl Path {
   #[napi(js_name = "toSVGString")]
   pub fn to_svg_string(&self, env: Env) -> Result<JsString> {
     let sk_string = self.inner.to_svg_string();
-    unsafe { env.create_string_from_c_char(sk_string.ptr, sk_string.length) }
+    unsafe { env.create_string_from_c_char(sk_string.ptr, sk_string.length as isize) }
   }
 
   #[napi]

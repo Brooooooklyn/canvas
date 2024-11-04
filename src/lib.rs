@@ -532,7 +532,7 @@ impl<'scope> SVGCanvas<'scope> {
     }
   }
 
-   #[napi(setter)]
+  #[napi(setter)]
   pub fn set_width(&mut self, env: Env, width: i32) -> Result<()> {
     let width = (if width <= 0 { 350 } else { width }) as u32;
     self.width = width;
