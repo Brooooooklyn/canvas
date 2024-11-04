@@ -1,7 +1,7 @@
-use napi::{bindgen_prelude::*, JsString};
+use napi::bindgen_prelude::*;
 
 use crate::sk::{
-  FillType as SkFillType, Matrix as SkMatrix, Path as SkPath, PathOp as SkPathOp,
+  FillType as SkFillType, Matrix as SkMatrix, Path as SkPath, PathOp as SkPathOp, SkiaString,
   StrokeCap as SkStrokeCap, StrokeJoin as SkStrokeJoin,
 };
 
@@ -295,10 +295,9 @@ impl Path {
     self
   }
 
-  #[napi(js_name = "toSVGString")]
-  pub fn to_svg_string(&self, env: Env) -> Result<JsString> {
-    let sk_string = self.inner.to_svg_string();
-    unsafe { env.create_string_from_c_char(sk_string.ptr, sk_string.length as isize) }
+  #[napi(js_name = "toSVGString", ts_return_type = "string")]
+  pub fn to_svg_string(&self) -> SkiaString {
+    self.inner.to_svg_string()
   }
 
   #[napi]
@@ -394,5 +393,18 @@ impl Path {
       y as f32,
       fill_type.unwrap_or(FillType::Winding).into(),
     )
+  }
+}
+
+impl ToNapiValue for SkiaString {
+  unsafe fn to_napi_value(env: sys::napi_env, val: Self) -> Result<sys::napi_value> {
+    let mut result = std::ptr::null_mut();
+    napi::check_status!(sys::napi_create_string_utf8(
+      env,
+      val.ptr,
+      val.length as isize,
+      &mut result,
+    ))?;
+    Ok(result)
   }
 }
