@@ -46,6 +46,7 @@ impl From<SkError> for Error {
 pub(crate) const MAX_TEXT_WIDTH: f32 = 100_000.0;
 pub(crate) const FILL_STYLE_HIDDEN_NAME: &str = "_fillStyle";
 pub(crate) const STROKE_STYLE_HIDDEN_NAME: &str = "_strokeStyle";
+pub(crate) const SVG_CTX_FLAG_HIDDEN_NAME: &str = "_svgCtxFlag";
 
 pub struct Context {
   pub(crate) surface: Surface,
