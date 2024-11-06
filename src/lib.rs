@@ -531,6 +531,42 @@ impl<'scope> SVGCanvas<'scope> {
       })
     }
   }
+
+  #[napi(setter)]
+  pub fn set_width(&mut self, env: Env, width: i32) -> Result<()> {
+    let width = (if width <= 0 { 350 } else { width }) as u32;
+    self.width = width;
+    let height = self.height;
+    let old_ctx = mem::replace(
+      &mut self.ctx.context,
+      Context::new(width, height, ColorSpace::default())?,
+    );
+    env.adjust_external_memory((width as i64 - old_ctx.width as i64) * 4)?;
+    Ok(())
+  }
+
+  #[napi(getter)]
+  pub fn get_width(&self) -> u32 {
+    self.width
+  }
+
+  #[napi(setter)]
+  pub fn set_height(&mut self, env: Env, height: i32) -> Result<()> {
+    let height = (if height <= 0 { 150 } else { height }) as u32;
+    self.height = height;
+    let width = self.width;
+    let old_ctx = mem::replace(
+      &mut self.ctx.context,
+      Context::new(width, height, ColorSpace::default())?,
+    );
+    env.adjust_external_memory((height as i64 - old_ctx.height as i64) * 4)?;
+    Ok(())
+  }
+
+  #[napi(getter)]
+  pub fn get_height(&self) -> u32 {
+    self.height
+  }
 }
 
 #[napi]

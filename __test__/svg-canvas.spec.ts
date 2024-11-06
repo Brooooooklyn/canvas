@@ -12,6 +12,15 @@ test.beforeEach((t) => {
   t.context.canvas = createCanvas(1024, 768, SvgExportFlag.ConvertTextToPaths)
 })
 
+test('should be able to adjust size', (t) => {
+  const { canvas } = t.context
+  canvas.width = 512
+  canvas.height = 384
+  
+  t.is(canvas.width, 512)
+  t.is(canvas.height, 384)
+})
+
 test('should be able to export path/arc/rect', (t) => {
   const { canvas } = t.context
   const ctx = canvas.getContext('2d')
