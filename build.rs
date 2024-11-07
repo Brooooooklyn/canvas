@@ -22,8 +22,12 @@ fn main() {
       env::set_var("CXX", "clang-cl");
     }
     _ => {
-      env::set_var("CC", "clang");
-      env::set_var("CXX", "clang++");
+      if env::var("CC").is_err() {
+        env::set_var("CC", "clang");
+      }
+      if env::var("CXX").is_err() {
+        env::set_var("CXX", "clang++");
+      }
     }
   }
 
