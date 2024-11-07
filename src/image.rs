@@ -114,7 +114,7 @@ impl ImageData {
   }
 }
 
-#[napi]
+#[napi(custom_finalize)]
 pub struct Image {
   pub(crate) bitmap: Option<Bitmap>,
   pub(crate) complete: bool,
@@ -125,6 +125,15 @@ pub struct Image {
   pub(crate) is_svg: bool,
   pub(crate) color_space: ColorSpace,
   pub(crate) src: Option<Uint8Array>,
+}
+
+impl ObjectFinalize for Image {
+  fn finalize(self, env: Env) -> Result<()> {
+    if let Some(bitmap) = self.bitmap {
+      env.adjust_external_memory(-(bitmap.0.width as i64) * (bitmap.0.height as i64) * 4)?;
+    }
+    Ok(())
+  }
 }
 
 #[napi]
@@ -239,7 +248,7 @@ impl Image {
       height: self.height,
       color_space: self.color_space,
       data: Some(data),
-      this_ref: env.create_reference(&*this)?,
+      this_ref: Ref::new(&env, &*this)?,
     };
     let task_output = env.spawn(decoder)?;
 
@@ -442,6 +451,7 @@ impl Task for BitmapDecoder {
         self_mut.src = self.data.take();
         self_mut.is_svg = bitmap.is_svg;
         self_mut.bitmap = Some(bitmap.data);
+        env.adjust_external_memory((output.width as i64) * (output.height as i64) * 4)?;
       }
       DecodeStatus::Empty => {}
       DecodeStatus::InvalidSvg => {
