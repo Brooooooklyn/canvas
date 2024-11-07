@@ -877,6 +877,7 @@ pub struct ContextAttributes {
 }
 
 #[napi]
+#[derive(Debug, Clone, Copy)]
 pub enum SvgExportFlag {
   ConvertTextToPaths = 0x01,
   NoPrettyXML = 0x02,

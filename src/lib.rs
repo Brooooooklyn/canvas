@@ -441,6 +441,7 @@ pub struct SVGCanvas<'scope> {
   pub width: u32,
   pub height: u32,
   pub(crate) ctx: ClassInstance<'scope, CanvasRenderingContext2D>,
+  pub(crate) flag: SvgExportFlag,
 }
 
 #[napi]
@@ -483,6 +484,7 @@ impl<'scope> SVGCanvas<'scope> {
     Ok(Self {
       width,
       height,
+      flag,
       ctx: ctx.assign_to_this_with_attributes("ctx", PropertyAttributes::Default, &mut this)?,
     })
   }
@@ -539,9 +541,9 @@ impl<'scope> SVGCanvas<'scope> {
     let height = self.height;
     let old_ctx = mem::replace(
       &mut self.ctx.context,
-      Context::new(width, height, ColorSpace::default())?,
+      Context::new_svg(width, height, self.flag.into(), ColorSpace::default())?,
     );
-    env.adjust_external_memory((width as i64 - old_ctx.width as i64) * 4)?;
+    env.adjust_external_memory((width as i64 - old_ctx.width as i64) * (height as i64) * 4)?;
     Ok(())
   }
 
@@ -557,9 +559,9 @@ impl<'scope> SVGCanvas<'scope> {
     let width = self.width;
     let old_ctx = mem::replace(
       &mut self.ctx.context,
-      Context::new(width, height, ColorSpace::default())?,
+      Context::new_svg(width, height, self.flag.into(), ColorSpace::default())?,
     );
-    env.adjust_external_memory((height as i64 - old_ctx.height as i64) * 4)?;
+    env.adjust_external_memory((width as i64) * (height as i64 - old_ctx.height as i64) * 4)?;
     Ok(())
   }
 
