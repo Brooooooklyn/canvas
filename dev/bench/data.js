@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1730909139578,
+  "lastUpdate": 1730961218883,
   "repoUrl": "https://github.com/Brooooooklyn/canvas",
   "entries": {
     "Benchmark": [
@@ -33690,6 +33690,72 @@ window.BENCHMARK_DATA = {
             "name": "Draw gradient#@napi-rs/skia",
             "value": 31,
             "range": "±1.02%",
+            "unit": "ops/sec",
+            "extra": "55 samples"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "lynweklm@gmail.com",
+            "name": "LongYinan",
+            "username": "Brooooooklyn"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "cfc4da53c395a06454b172e18d81cb7f67881fca",
+          "message": "fix: memory leak in Image (#934)\n\nThere 2 leak points in the `Image` class.\r\n\r\n1. The `Env::create_reference` was wrong in NAPI-RS, related pr: https://github.com/napi-rs/napi-rs/pull/2347, change to the `Ref::new` can resolve it.\r\n2. The `PromiseRaw::catch` callback was leaked, it cause the whole `Image` objects not be GCed, it was fixed in https://github.com/napi-rs/napi-rs/pull/2348",
+          "timestamp": "2024-11-07T14:27:42+08:00",
+          "tree_id": "bed168d7f2de1a90389c5df48cde2eee00feded3",
+          "url": "https://github.com/Brooooooklyn/canvas/commit/cfc4da53c395a06454b172e18d81cb7f67881fca"
+        },
+        "date": 1730961170713,
+        "tool": "benchmarkjs",
+        "benches": [
+          {
+            "name": "Draw house#skia-canvas",
+            "value": 28,
+            "range": "±0.21%",
+            "unit": "ops/sec",
+            "extra": "51 samples"
+          },
+          {
+            "name": "Draw house#node-canvas",
+            "value": 37,
+            "range": "±0.58%",
+            "unit": "ops/sec",
+            "extra": "64 samples"
+          },
+          {
+            "name": "Draw house#@napi-rs/skia",
+            "value": 32,
+            "range": "±0.44%",
+            "unit": "ops/sec",
+            "extra": "56 samples"
+          },
+          {
+            "name": "Draw gradient#skia-canvas",
+            "value": 27,
+            "range": "±0.18%",
+            "unit": "ops/sec",
+            "extra": "49 samples"
+          },
+          {
+            "name": "Draw gradient#node-canvas",
+            "value": 36,
+            "range": "±0.57%",
+            "unit": "ops/sec",
+            "extra": "62 samples"
+          },
+          {
+            "name": "Draw gradient#@napi-rs/skia",
+            "value": 31,
+            "range": "±0.61%",
             "unit": "ops/sec",
             "extra": "55 samples"
           }
