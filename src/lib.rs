@@ -20,7 +20,7 @@ use napi::*;
 
 use ctx::{
   encode_surface, CanvasRenderingContext2D, Context, ContextData, ContextOutputData, SvgExportFlag,
-  FILL_STYLE_HIDDEN_NAME, STROKE_STYLE_HIDDEN_NAME, SVG_CTX_FLAG_HIDDEN_NAME,
+  FILL_STYLE_HIDDEN_NAME, STROKE_STYLE_HIDDEN_NAME,
 };
 use font::{init_font_regexp, FONT_REGEXP};
 use sk::{ColorSpace, SkiaDataRef};
@@ -441,6 +441,7 @@ pub struct SVGCanvas<'scope> {
   pub width: u32,
   pub height: u32,
   pub(crate) ctx: ClassInstance<'scope, CanvasRenderingContext2D>,
+  pub(crate) flag: SvgExportFlag,
 }
 
 #[napi]
@@ -477,15 +478,13 @@ impl<'scope> SVGCanvas<'scope> {
             | PropertyAttributes::Writable
             | PropertyAttributes::Enumerable,
         ),
-      // Property::new(SVG_CTX_FLAG_HIDDEN_NAME)?
-      //   .with_value(&env.create_string(flag.to_string())?)
-      //   .with_property_attributes(PropertyAttributes::Writable | PropertyAttributes::Configurable),
     ])?;
     env.adjust_external_memory((width * height * 4) as i64)?;
 
     Ok(Self {
       width,
       height,
+      flag,
       ctx: ctx.assign_to_this_with_attributes("ctx", PropertyAttributes::Default, &mut this)?,
     })
   }
@@ -542,9 +541,9 @@ impl<'scope> SVGCanvas<'scope> {
     let height = self.height;
     let old_ctx = mem::replace(
       &mut self.ctx.context,
-      Context::new_svg(width, height, ColorSpace::default())?,
+      Context::new_svg(width, height, self.flag.into(), ColorSpace::default())?,
     );
-    env.adjust_external_memory((width as i64 - old_ctx.width as i64) * 4)?;
+    env.adjust_external_memory((width as i64 - old_ctx.width as i64) * (height as i64) * 4)?;
     Ok(())
   }
 
@@ -560,9 +559,9 @@ impl<'scope> SVGCanvas<'scope> {
     let width = self.width;
     let old_ctx = mem::replace(
       &mut self.ctx.context,
-      Context::new_svg(width, height, ColorSpace::default())?,
+      Context::new_svg(width, height, self.flag.into(), ColorSpace::default())?,
     );
-    env.adjust_external_memory((height as i64 - old_ctx.height as i64) * 4)?;
+    env.adjust_external_memory((width as i64) * (height as i64 - old_ctx.height as i64) * 4)?;
     Ok(())
   }
 
