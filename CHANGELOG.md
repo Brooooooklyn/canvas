@@ -1,3 +1,16 @@
+## [0.1.60](https://github.com/Brooooooklyn/canvas/compare/v0.1.59...v0.1.60) (2024-11-07)
+
+
+### Bug Fixes
+
+* allow svg canvas size modification ([#928](https://github.com/Brooooooklyn/canvas/issues/928)) ([15c7eab](https://github.com/Brooooooklyn/canvas/commit/15c7eabef3fbd202b891c527de77144a4151709b))
+* **deps:** update rust crate thiserror to v2 ([#930](https://github.com/Brooooooklyn/canvas/issues/930)) ([4680dc2](https://github.com/Brooooooklyn/canvas/commit/4680dc2ea6c8387ca0459a95f6c56432472f4c6c))
+* memory leak in Image ([#934](https://github.com/Brooooooklyn/canvas/issues/934)) ([cfc4da5](https://github.com/Brooooooklyn/canvas/commit/cfc4da53c395a06454b172e18d81cb7f67881fca))
+* svg context ([#932](https://github.com/Brooooooklyn/canvas/issues/932)) ([8b53e25](https://github.com/Brooooooklyn/canvas/commit/8b53e25b559cfdaaf0f43db15cef78126a5e64a1))
+* upgrade to NAPI-RS 3.0.0-alpha.19 ([#929](https://github.com/Brooooooklyn/canvas/issues/929)) ([1304a9e](https://github.com/Brooooooklyn/canvas/commit/1304a9e5cd58039ba49eb0bbd68358de260ad979))
+
+
+
 ## [0.1.59](https://github.com/Brooooooklyn/canvas/compare/v0.1.58...v0.1.59) (2024-10-27)
 
 
