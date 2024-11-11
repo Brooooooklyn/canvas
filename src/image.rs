@@ -227,6 +227,10 @@ impl Image {
     let length = data.len();
     if length <= 2 {
       self.src = Some(data);
+      self.width = -1.0;
+      self.height = -1.0;
+      self.bitmap = None;
+
       let onload = this.get_named_property_unchecked::<Unknown>("onload")?;
       if onload.get_type()? == ValueType::Function {
         let onload_func: Function<(), ()> = Function::from_unknown(onload)?;
