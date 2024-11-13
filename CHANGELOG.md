@@ -1,3 +1,12 @@
+## [0.1.61](https://github.com/Brooooooklyn/canvas/compare/v0.1.60...v0.1.61) (2024-11-13)
+
+
+### Features
+
+* after clearing, the bitmap should be cleared, and the width and height should be reset to the initial values. ([#937](https://github.com/Brooooooklyn/canvas/issues/937)) ([e2a86fe](https://github.com/Brooooooklyn/canvas/commit/e2a86fec591ff6d12724488f2e34ee7e85992f71))
+
+
+
 ## [0.1.60](https://github.com/Brooooooklyn/canvas/compare/v0.1.59...v0.1.60) (2024-11-07)
 
 
