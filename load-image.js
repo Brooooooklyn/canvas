@@ -36,7 +36,7 @@ module.exports = async function loadImage(source, options = {}) {
   if (typeof source === 'string' || source instanceof URL) {
     // if the source exists as a file, construct image from that file
     if (await exists(source)) {
-      return createImage(await fs.promises.readFile(source), options.alt)
+      return createImage(source, options.alt)
     } else {
       // the source is a remote url here
       source = !(source instanceof URL) ? new URL(source) : source
