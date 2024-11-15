@@ -193,3 +193,38 @@ test('load invalid svg should throw error', async (t) => {
     },
   )
 })
+
+test('should be able to load file path as src', async (t) => {
+  const image = new Image()
+  const { promise, resolve } = Promise.withResolvers<void>()
+  image.onload = () => {
+    resolve()
+  }
+  const imagePath = join(__dirname, '../example/simple.png')
+  image.src = imagePath
+  await promise
+  t.is(image.width, 300)
+  t.is(image.height, 320)
+  t.is(image.naturalWidth, 300)
+  t.is(image.naturalHeight, 320)
+  t.is(image.src, imagePath)
+})
+
+test('should throw if src path is invalid', async (t) => {
+  await t.throwsAsync(
+    () =>
+      new Promise((_, reject) => {
+        const image = new Image()
+        image.onload = () => {
+          reject(new Error('should not be called'))
+        }
+        image.onerror = (err) => {
+          reject(err)
+        }
+        image.src = 'invalid/path/to/image.png'
+      }),
+    {
+      message: process.platform === 'win32' ? /The system cannot find the path specified/ : /No such file/,
+    },
+  )
+})

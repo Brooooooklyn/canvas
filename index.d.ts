@@ -195,7 +195,7 @@ export class Image {
   readonly naturalHeight: number
   readonly complete: boolean
   alt: string
-  src: Buffer
+  src: Uint8Array | string
   onload?(): void
   onerror?(err: Error): void
 }

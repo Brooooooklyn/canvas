@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::str::FromStr;
 use std::{ptr, str};
 
@@ -124,7 +125,7 @@ pub struct Image {
   pub(crate) need_regenerate_bitmap: bool,
   pub(crate) is_svg: bool,
   pub(crate) color_space: ColorSpace,
-  pub(crate) src: Option<Uint8Array>,
+  pub(crate) src: Option<Either<Uint8Array, String>>,
 }
 
 impl ObjectFinalize for Image {
@@ -218,14 +219,19 @@ impl Image {
   }
 
   #[napi(getter)]
-  pub fn get_src(&mut self) -> Option<&mut Uint8Array> {
-    self.src.as_mut()
+  pub fn get_src(&mut self) -> Option<Either<&mut Uint8Array, &str>> {
+    match self.src.as_mut() {
+      Some(Either::A(d)) => Some(Either::A(d)),
+      Some(Either::B(s)) => Some(Either::B(s.as_str())),
+      None => None,
+    }
   }
 
   #[napi(setter)]
-  pub fn set_src(&mut self, env: Env, this: This, data: Uint8Array) -> Result<()> {
-    let length = data.len();
-    if length <= 2 {
+  pub fn set_src(&mut self, env: Env, this: This, data: Either<Uint8Array, String>) -> Result<()> {
+    if let Either::A(d) = &data
+      && d.len() <= 2
+    {
       self.src = Some(data);
       self.width = -1.0;
       self.height = -1.0;
@@ -312,7 +318,7 @@ struct BitmapDecoder {
   width: f64,
   height: f64,
   color_space: ColorSpace,
-  data: Option<Uint8Array>,
+  data: Option<Either<Uint8Array, String>>,
   this_ref: Ref<Object>,
 }
 
@@ -343,7 +349,13 @@ impl Task for BitmapDecoder {
 
   fn compute(&mut self) -> Result<Self::Output> {
     let data_ref = match self.data.as_ref() {
-      Some(data) => data.as_ref(),
+      Some(Either::A(data)) => Cow::Borrowed(data.as_ref()),
+      Some(Either::B(path)) => Cow::Owned(std::fs::read(path).map_err(|io_err| {
+        Error::new(
+          Status::GenericFailure,
+          format!("Failed to read {}: {io_err}", path),
+        )
+      })?),
       None => {
         return Ok(DecodedBitmap {
           bitmap: DecodeStatus::Empty,
@@ -356,7 +368,7 @@ impl Task for BitmapDecoder {
     let mut width = self.width;
     let mut height = self.height;
     let bitmap = if str::from_utf8(&data_ref[0..10]) == Ok("data:image") {
-      let data_str = str::from_utf8(data_ref)
+      let data_str = str::from_utf8(&data_ref)
         .map_err(|e| Error::new(Status::InvalidArg, format!("Decode data url failed {e}")))?;
       if let Some(base64_str) = data_str.split(',').last() {
         let image_binary = STANDARD
@@ -377,14 +389,14 @@ impl Task for BitmapDecoder {
       } else {
         DecodeStatus::Empty
       }
-    } else if let Some(kind) = infer::get(data_ref)
+    } else if let Some(kind) = infer::get(&data_ref)
       && kind.matcher_type() == infer::MatcherType::Image
     {
       DecodeStatus::Ok(BitmapInfo {
         data: Bitmap::from_buffer(data_ref.as_ptr().cast_mut(), length),
         is_svg: false,
       })
-    } else if is_svg_image(data_ref, length) {
+    } else if is_svg_image(&data_ref, length) {
       let font = get_font().map_err(SkError::from)?;
       if (self.width - -1.0).abs() > f64::EPSILON && (self.height - -1.0).abs() > f64::EPSILON {
         if let Some(bitmap) = Bitmap::from_svg_data_with_custom_size(
