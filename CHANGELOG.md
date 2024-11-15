@@ -1,3 +1,18 @@
+## [0.1.62](https://github.com/Brooooooklyn/canvas/compare/v0.1.61...v0.1.62) (2024-11-15)
+
+
+### Bug Fixes
+
+* align the imageSmoothingQuality behavior with chrome ([#942](https://github.com/Brooooooklyn/canvas/issues/942)) ([991edbb](https://github.com/Brooooooklyn/canvas/commit/991edbbfacd8d17fdb30dad5e81e578bdb4eab9c))
+
+
+### Features
+
+* allow set file path as Image#src ([#938](https://github.com/Brooooooklyn/canvas/issues/938)) ([a94a2ad](https://github.com/Brooooooklyn/canvas/commit/a94a2ad885f493a200d099ed1f5db50a24699198))
+* support data url as Image#src ([#941](https://github.com/Brooooooklyn/canvas/issues/941)) ([8686c8b](https://github.com/Brooooooklyn/canvas/commit/8686c8badae9d763fd67bb8babeb0fa542449fde))
+
+
+
 ## [0.1.61](https://github.com/Brooooooklyn/canvas/compare/v0.1.60...v0.1.61) (2024-11-13)
 
 
