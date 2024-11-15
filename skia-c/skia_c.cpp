@@ -44,15 +44,16 @@ extern "C"
     }
   }
 
+  // https://source.chromium.org/chromium/chromium/src/+/refs/tags/131.0.6778.9:cc/paint/paint_flags.cc;l=171
   static SkSamplingOptions SamplingOptionsFromFQ(int fq)
   {
     switch (fq)
     {
     case 3:
-      return SkSamplingOptions(SkCubicResampler{1 / 3.0f, 1 / 3.0f});
+      return SkSamplingOptions(SkCubicResampler::Mitchell());
     case 2:
       return SkSamplingOptions(SkFilterMode::kLinear,
-                               SkMipmapMode::kNearest);
+                              SkMipmapMode::kNearest);
     case 1:
       return SkSamplingOptions(SkFilterMode::kLinear, SkMipmapMode::kNone);
     case 0:

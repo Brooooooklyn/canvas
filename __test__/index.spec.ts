@@ -1,6 +1,8 @@
+import { join } from 'node:path'
+
 import ava, { TestFn } from 'ava'
 
-import { createCanvas, Path2D, Canvas, SKRSContext2D, DOMMatrix } from '../index'
+import { createCanvas, Path2D, Canvas, SKRSContext2D, DOMMatrix, loadImage } from '../index'
 
 import { snapshotImage } from './image-snapshot'
 
@@ -54,12 +56,17 @@ test('imageSmoothingEnabled state should be ok', (t) => {
   t.is(ctx.imageSmoothingEnabled, false)
 })
 
-test('imageSmoothingQuality state should be ok', (t) => {
-  const { ctx } = t.context
-  t.is(ctx.imageSmoothingQuality, 'low')
-  ctx.imageSmoothingQuality = 'high'
-  t.is(ctx.imageSmoothingQuality, 'high')
-})
+for (const quality of ['low', 'medium', 'high'] as const) {
+  test(`draw-image-quality-${quality}`, async (t) => {
+    const { ctx } = t.context
+    ctx.imageSmoothingEnabled = true
+    ctx.imageSmoothingQuality = quality
+    t.is(ctx.imageSmoothingQuality, quality)
+    const image = await loadImage(join(__dirname, 'fixtures', 'filter-drop-shadow.jpeg'))
+    ctx.drawImage(image, 0, 0, 426, 322)
+    await snapshotImage(t)
+  })
+}
 
 test('lineCap state should be ok', (t) => {
   const { ctx } = t.context
@@ -183,12 +190,12 @@ test('composition-destination-in', async (t) => {
   ctx.fillStyle = 'red'
   ctx.fillRect(0, 0, 300, 300)
   ctx.save()
-  ctx.globalCompositeOperation = 'destination-in';
-  ctx.fillStyle = 'green';
-  ctx.beginPath();
-  ctx.arc(150, 150, 100, 0, Math.PI * 2);
-  ctx.closePath();
-  ctx.fill();
+  ctx.globalCompositeOperation = 'destination-in'
+  ctx.fillStyle = 'green'
+  ctx.beginPath()
+  ctx.arc(150, 150, 100, 0, Math.PI * 2)
+  ctx.closePath()
+  ctx.fill()
   ctx.restore()
 
   await snapshotImage(t, t.context, 'png')
@@ -201,12 +208,12 @@ test('composition-source-in', async (t) => {
   ctx.fillStyle = 'red'
   ctx.fillRect(0, 0, 300, 300)
   ctx.save()
-  ctx.globalCompositeOperation = 'source-in';
-  ctx.fillStyle = 'green';
-  ctx.beginPath();
-  ctx.arc(150, 150, 100, 0, Math.PI * 2);
-  ctx.closePath();
-  ctx.fill();
+  ctx.globalCompositeOperation = 'source-in'
+  ctx.fillStyle = 'green'
+  ctx.beginPath()
+  ctx.arc(150, 150, 100, 0, Math.PI * 2)
+  ctx.closePath()
+  ctx.fill()
   ctx.restore()
 
   await snapshotImage(t, t.context, 'png')
