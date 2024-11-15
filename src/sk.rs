@@ -224,48 +224,48 @@ pub mod ffi {
 
   #[allow(clippy::duplicated_attributes)]
   // https://github.com/rust-lang/rust/issues/96192
-  #[link(
-    name = "svg",
-    kind = "static",
-    modifiers = "+bundle,+whole-archive",
-    cfg(not(target_os = "windows"))
+  #[cfg_attr(
+    not(target_os = "windows"),
+    link(name = "svg", kind = "static", modifiers = "+bundle,+whole-archive",)
   )]
-  #[link(name = "svg", kind = "static", cfg(target_os = "windows"))]
-  #[link(
-    name = "skparagraph",
-    kind = "static",
-    modifiers = "+bundle,+whole-archive",
-    cfg(not(target_os = "windows"))
+  #[cfg_attr(target_os = "windows", link(name = "svg", kind = "static"))]
+  #[cfg_attr(
+    not(target_os = "windows"),
+    link(
+      name = "skparagraph",
+      kind = "static",
+      modifiers = "+bundle,+whole-archive"
+    )
   )]
-  #[link(name = "skparagraph", kind = "static", cfg(target_os = "windows"))]
-  #[link(
-    name = "skunicode_core",
-    kind = "static",
-    modifiers = "+bundle,+whole-archive",
-    cfg(not(target_os = "windows"))
+  #[cfg_attr(target_os = "windows", link(name = "skparagraph", kind = "static"))]
+  #[cfg_attr(
+    not(target_os = "windows"),
+    link(
+      name = "skunicode_core",
+      kind = "static",
+      modifiers = "+bundle,+whole-archive",
+    )
   )]
-  #[link(name = "skunicode_core", kind = "static", cfg(target_os = "windows"))]
-  #[link(
-    name = "skunicode_icu",
-    kind = "static",
-    modifiers = "+bundle,+whole-archive",
-    cfg(not(target_os = "windows"))
+  #[cfg_attr(target_os = "windows", link(name = "skunicode_core", kind = "static"))]
+  #[cfg_attr(
+    not(target_os = "windows"),
+    link(
+      name = "skunicode_icu",
+      kind = "static",
+      modifiers = "+bundle,+whole-archive"
+    )
   )]
-  #[link(name = "skunicode_icu", kind = "static", cfg(target_os = "windows"))]
-  #[link(
-    name = "skia",
-    kind = "static",
-    modifiers = "+bundle,+whole-archive",
-    cfg(not(target_os = "windows"))
+  #[cfg_attr(target_os = "windows", link(name = "skunicode_icu", kind = "static"))]
+  #[cfg_attr(
+    not(target_os = "windows"),
+    link(name = "skia", kind = "static", modifiers = "+bundle,+whole-archive")
   )]
-  #[link(name = "skia", kind = "static", cfg(target_os = "windows"))]
-  #[link(
-    name = "skiac",
-    kind = "static",
-    modifiers = "+bundle,+whole-archive",
-    cfg(not(target_os = "windows"))
+  #[cfg_attr(target_os = "windows", link(name = "skia", kind = "static"))]
+  #[cfg_attr(
+    not(target_os = "windows"),
+    link(name = "skiac", kind = "static", modifiers = "+bundle,+whole-archive")
   )]
-  #[link(name = "skiac", kind = "static", cfg(target_os = "windows"))]
+  #[cfg_attr(target_os = "windows", link(name = "skiac", kind = "static"))]
   extern "C" {
 
     pub fn skiac_clear_all_cache();

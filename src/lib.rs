@@ -1,5 +1,3 @@
-#![feature(link_cfg)]
-#![feature(let_chains)]
 #![deny(clippy::all)]
 #![allow(clippy::many_single_char_names)]
 #![allow(clippy::too_many_arguments)]
@@ -13,7 +11,6 @@ extern crate serde_derive;
 use std::str::FromStr;
 use std::{mem, slice};
 
-use base64::Engine;
 use bindgen_prelude::{BufferSlice, JavaScriptClassExt};
 use napi::bindgen_prelude::{AsyncTask, ClassInstance, Either3, This, Unknown};
 use napi::*;
@@ -399,10 +396,10 @@ impl Task for AsyncDataUrl {
     let mut output = format!("data:{};base64,", &self.mime);
     match &self.surface_data {
       ContextOutputData::Skia(data_ref) => {
-        base64::engine::general_purpose::STANDARD.encode_string(data_ref.slice(), &mut output);
+        base64_simd::STANDARD.encode_append(data_ref.slice(), &mut output);
       }
       ContextOutputData::Avif(data_ref) => {
-        base64::engine::general_purpose::STANDARD.encode_string(data_ref.as_ref(), &mut output);
+        base64_simd::STANDARD.encode_append(data_ref.as_ref(), &mut output);
       }
     }
     Ok(output)
