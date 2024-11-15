@@ -1,7 +1,6 @@
-import b from 'benny'
-
 import { createCanvas, Canvas } from 'canvas'
-// @ts-expect-error
+import { cyan } from 'colorette'
+import { Bench } from 'tinybench'
 import { Canvas as SkiaCanvas } from 'skia-canvas'
 
 import { createCanvas as skiaCreateCanvas } from '../index'
@@ -30,7 +29,7 @@ function drawHouse(factory: (width: number, height: number) => Canvas) {
   ctx.stroke()
 
   if (canvas instanceof SkiaCanvas) {
-    canvas.toBufferSync('image/png')
+    canvas.toBufferSync('png')
   } else {
     // @ts-expect-error
     canvas.async = false
@@ -38,24 +37,28 @@ function drawHouse(factory: (width: number, height: number) => Canvas) {
   }
 }
 
-export function house() {
-  return b.suite(
-    'Draw house',
+export async function house() {
+  const bench = new Bench({
+    name: 'house',
+  })
 
-    b.add('skia-canvas', () => {
-      drawHouse((w, h) => new SkiaCanvas(w, h))
-    }),
-
-    b.add('node-canvas', () => {
-      drawHouse(createCanvas)
-    }),
-
-    b.add('@napi-rs/skia', () => {
+  bench
+    .add('@napi-rs/skia', () => {
       // @ts-expect-error
       drawHouse(skiaCreateCanvas)
-    }),
+    })
+    .add('skia-canvas', () => {
+      // @ts-expect-error
+      drawHouse((w, h) => new SkiaCanvas(w, h))
+    })
+    .add('node-canvas', () => {
+      drawHouse(createCanvas)
+    })
 
-    b.cycle(),
-    b.complete(),
-  )
+  await bench.run()
+
+  console.info(cyan('Draw a House and export to PNG'))
+  console.table(bench.table())
+
+  return bench
 }
