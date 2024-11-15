@@ -1,6 +1,6 @@
-import b from 'benny'
-
 import { createCanvas, Canvas } from 'canvas'
+import { cyan } from 'colorette'
+import { Bench } from 'tinybench'
 import { Canvas as SkiaCanvas } from 'skia-canvas'
 
 import { createCanvas as skiaCreateCanvas } from '../index'
@@ -30,25 +30,27 @@ function drawGradient(factory: (width: number, height: number) => Canvas) {
   }
 }
 
-export function gradient() {
-  return b.suite(
-    'Draw gradient',
+export async function gradient() {
+  const bench = new Bench({
+    name: 'gradient',
+  })
 
-    b.add('skia-canvas', () => {
-      // @ts-expect-error
-      drawGradient((w, h) => new SkiaCanvas(w, h))
-    }),
-
-    b.add('node-canvas', () => {
-      drawGradient(createCanvas)
-    }),
-
-    b.add('@napi-rs/skia', () => {
+  bench
+    .add('@napi-rs/skia', () => {
       // @ts-expect-error
       drawGradient(skiaCreateCanvas)
-    }),
+    })
+    .add('skia-canvas', () => {
+      // @ts-expect-error
+      drawGradient((w, h) => new SkiaCanvas(w, h))
+    })
+    .add('node-canvas', () => {
+      drawGradient(createCanvas)
+    })
 
-    b.cycle(),
-    b.complete(),
-  )
+  await bench.run()
+  console.info(cyan('Draw Gradient and export to PNG'))
+  console.table(bench.table())
+
+  return bench
 }

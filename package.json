@@ -79,7 +79,6 @@
     "@types/node": "^20.11.16",
     "@types/semver": "^7",
     "ava": "^6.1.1",
-    "benny": "^3.7.1",
     "canvas": "^2.11.2",
     "canvaskit-wasm": "^0.39.1",
     "colorette": "^2.0.20",
@@ -98,6 +97,7 @@
     "semver": "^7.5.4",
     "skia-canvas": "^1.0.1",
     "table": "^6.8.1",
+    "tinybench": "^3.0.6",
     "typescript": "^5.3.3"
   },
   "lint-staged": {
