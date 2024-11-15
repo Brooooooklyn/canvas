@@ -229,9 +229,12 @@ impl Image {
 
   #[napi(setter)]
   pub fn set_src(&mut self, env: Env, this: This, data: Either<Uint8Array, String>) -> Result<()> {
-    if let Either::A(d) = &data
-      && d.len() <= 2
-    {
+    let data_is_too_small = if let Either::A(d) = &data {
+      d.len() <= 2
+    } else {
+      false
+    };
+    if data_is_too_small {
       self.src = Some(data);
       self.width = -1.0;
       self.height = -1.0;
@@ -389,9 +392,11 @@ impl Task for BitmapDecoder {
       } else {
         DecodeStatus::Empty
       }
-    } else if let Some(kind) = infer::get(&data_ref)
-      && kind.matcher_type() == infer::MatcherType::Image
-    {
+    } else if if let Some(kind) = infer::get(&data_ref) {
+      kind.matcher_type() == infer::MatcherType::Image
+    } else {
+      false
+    } {
       DecodeStatus::Ok(BitmapInfo {
         data: Bitmap::from_buffer(data_ref.as_ptr().cast_mut(), length),
         is_svg: false,

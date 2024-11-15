@@ -9,7 +9,6 @@ crate-type = ["cdylib"]
 
 [dependencies]
 anyhow       = "1"
-base64       = "0.22"
 base64-simd  = "0.8"
 cssparser    = "0.29"
 infer        = "0.16"
