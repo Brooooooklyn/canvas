@@ -353,12 +353,18 @@ impl Task for BitmapDecoder {
   fn compute(&mut self) -> Result<Self::Output> {
     let data_ref = match self.data.as_ref() {
       Some(Either::A(data)) => Cow::Borrowed(data.as_ref()),
-      Some(Either::B(path)) => Cow::Owned(std::fs::read(path).map_err(|io_err| {
-        Error::new(
-          Status::GenericFailure,
-          format!("Failed to read {}: {io_err}", path),
-        )
-      })?),
+      Some(Either::B(path_or_svg)) => {
+        if path_or_svg.starts_with("data:image") {
+          Cow::Borrowed(path_or_svg.as_bytes())
+        } else {
+          Cow::Owned(std::fs::read(path_or_svg).map_err(|io_err| {
+            Error::new(
+              Status::GenericFailure,
+              format!("Failed to read {}: {io_err}", path_or_svg),
+            )
+          })?)
+        }
+      }
       None => {
         return Ok(DecodedBitmap {
           bitmap: DecodeStatus::Empty,

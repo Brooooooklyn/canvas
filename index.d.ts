@@ -195,6 +195,8 @@ export class Image {
   readonly naturalHeight: number
   readonly complete: boolean
   alt: string
+  // the src can be a Uint8Array or a string
+  // if it's a string, it can be a file path, a data URL, a remote URL, or a SVG string
   src: Uint8Array | string
   onload?(): void
   onerror?(err: Error): void

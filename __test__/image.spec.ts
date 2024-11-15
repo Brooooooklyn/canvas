@@ -228,3 +228,38 @@ test('should throw if src path is invalid', async (t) => {
     },
   )
 })
+
+test('should be able to set data url as Image src', async (t) => {
+  const image = new Image()
+  const { promise, resolve } = Promise.withResolvers<void>()
+  image.onload = () => {
+    resolve()
+  }
+  const imagePath = `data:image/png;base64,${await fs.readFile(join(__dirname, '../example/simple.png'), 'base64')}`
+  image.src = imagePath
+  await promise
+  t.is(image.width, 300)
+  t.is(image.height, 320)
+  t.is(image.naturalWidth, 300)
+  t.is(image.naturalHeight, 320)
+  t.is(image.src, imagePath)
+})
+
+test('should trigger onerror if src data url is invalid', async (t) => {
+  await t.throwsAsync(
+    () =>
+      new Promise((_, reject) => {
+        const image = new Image()
+        image.onload = () => {
+          reject(new Error('should not be called'))
+        }
+        image.onerror = (err) => {
+          reject(err)
+        }
+        image.src = 'data:image/png;base64,invalid'
+      }),
+    {
+      message: 'Decode data url failed Base64Error',
+    },
+  )
+})
