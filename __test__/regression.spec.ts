@@ -220,3 +220,17 @@ test('restore from scale(0, 0)', (t) => {
     ctx.restore()
   })
 })
+
+// https://github.com/Brooooooklyn/canvas/issues/856
+test('shadow-blur-with-translate', async (t) => {
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'iosevka-slab-regular.ttf'))
+  const canvas = createCanvas(500, 500)
+  const ctx = canvas.getContext('2d')
+  ctx.font = '48px Iosevka Slab'
+  ctx.shadowColor = 'rgb(255, 0, 0)'
+  ctx.shadowBlur = 10
+  ctx.translate(50, 50)
+  ctx.fillText('TEST', 0, 0)
+  ctx.strokeRect(-50, -50, 200, 100)
+  await snapshotImage(t, { ctx, canvas })
+})
