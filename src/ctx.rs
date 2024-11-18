@@ -213,7 +213,9 @@ impl Context {
     if let Some(s) = self.states.pop() {
       self.path.transform_self(&self.state.transform);
       self.surface.canvas.restore();
-      self.path.transform_self(&s.transform.invert().unwrap());
+      if let Some(inverse) = s.transform.invert() {
+        self.path.transform_self(&inverse);
+      }
       self.state = s;
     }
   }
@@ -275,9 +277,11 @@ impl Context {
 
   pub fn scale(&mut self, x: f32, y: f32) {
     let s = &mut self.state;
-    let mut inverse = Matrix::identity();
-    inverse.pre_scale(1f32 / x, 1f32 / y);
-    self.path.transform_self(&inverse);
+    if x != 0.0 && y != 0.0 {
+      let mut inverse = Matrix::identity();
+      inverse.pre_scale(1f32 / x, 1f32 / y);
+      self.path.transform_self(&inverse);
+    }
     s.transform.pre_scale(x, y);
     self.surface.canvas.set_transform(&s.transform);
   }

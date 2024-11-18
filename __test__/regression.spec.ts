@@ -210,3 +210,13 @@ test('isPointInPath with translate', (t) => {
   t.true(ctx.isPointInPath(100, 100))
   t.true(ctx.isPointInPath(110, 110))
 })
+
+test('restore from scale(0, 0)', (t) => {
+  const canvas = createCanvas(1200, 700)
+  const ctx = canvas.getContext('2d')
+  t.notThrows(() => {
+    ctx.scale(0, 0)
+    ctx.save()
+    ctx.restore()
+  })
+})
