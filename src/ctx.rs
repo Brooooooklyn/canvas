@@ -675,21 +675,28 @@ impl Context {
     let r = shadow_color.red;
     let g = shadow_color.green;
     let b = shadow_color.blue;
-    let transform = state.transform.get_transform();
-    let sigma_x = state.shadow_blur / (2f32 * transform.scale_x());
-    let sigma_y = state.shadow_blur / (2f32 * transform.scale_y());
-    let shadow_effect = ImageFilter::make_drop_shadow_only(
-      0.0,
-      0.0,
-      sigma_x,
-      sigma_y,
-      (a as u32) << 24 | (r as u32) << 16 | (g as u32) << 8 | b as u32,
-      None,
-    )?;
-    drop_shadow_paint.set_alpha(shadow_alpha);
-    drop_shadow_paint.set_image_filter(&shadow_effect);
-    let blur_effect = MaskFilter::make_blur(state.shadow_blur / 2f32)?;
-    drop_shadow_paint.set_mask_filter(&blur_effect);
+    if state.shadow_blur == 0f32 {
+      // No blur, so set the paint color to the shadow color without any blur effects
+      drop_shadow_paint.set_color(r, g, b, a);
+    } else {
+      let transform = state.transform.get_transform();
+      let sigma_x = state.shadow_blur / (2f32 * transform.scale_x());
+      let sigma_y = state.shadow_blur / (2f32 * transform.scale_y());
+      // If sigma_x and sigma_y are zero, make_drop_shadow_only will return None
+      // So we need to handle that case separately
+      let shadow_effect = ImageFilter::make_drop_shadow_only(
+        0.0,
+        0.0,
+        sigma_x,
+        sigma_y,
+        (a as u32) << 24 | (r as u32) << 16 | (g as u32) << 8 | b as u32,
+        None,
+      )?;
+      drop_shadow_paint.set_alpha(shadow_alpha);
+      drop_shadow_paint.set_image_filter(&shadow_effect);
+      let blur_effect = MaskFilter::make_blur(state.shadow_blur / 2f32)?;
+      drop_shadow_paint.set_mask_filter(&blur_effect);
+    }
     Some(drop_shadow_paint)
   }
 
