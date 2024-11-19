@@ -150,6 +150,15 @@ jobs:
               export CXX=aarch64-linux-android24-clang++
               export CMAKE_TOOLCHAIN_FILE_aarch64_linux_android="$(pwd)/cmake/android-determine.cmake"
               yarn build --target aarch64-linux-android
+          - host: ubuntu-latest
+            target: 'riscv64gc-unknown-linux-gnu'
+            downloadTarget: 'riscv64gc-unknown-linux-gnu'
+            build: |
+              sudo apt-get update
+              sudo apt-get install gcc-riscv64-linux-gnu g++-riscv64-linux-gnu -y
+              export CC=riscv64-linux-gnu-gcc
+              export CXX=riscv64-linux-gnu-g++
+              yarn build --target riscv64-unknown-linux-gnu
 
     name: stable - ${{ matrix.settings.target }} - node@20
     runs-on: ${{ matrix.settings.host }}
@@ -231,13 +240,13 @@ jobs:
       fail-fast: false
       matrix:
         settings:
-          - host: macos-14
+          - host: macos-latest
             target: 'x86_64-apple-darwin'
-          - host: macos-14
+          - host: macos-latest
             target: 'aarch64-apple-darwin'
           - host: windows-latest
             target: 'x86_64-pc-windows-msvc'
-        node: ['18', '20']
+        node: ['18', '20', '22']
     runs-on: ${{ matrix.settings.host }}
 
     steps:
@@ -300,7 +309,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: ['18', '20']
+        node: ['18', '20', '22']
     runs-on: ubuntu-latest
 
     steps:
@@ -351,7 +360,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: ['18', '20']
+        node: ['18', '20', '22']
     runs-on: ubuntu-latest
 
     steps:
@@ -404,7 +413,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: ['20', '21']
+        node: ['20', '22']
     runs-on: ubuntu-latest
 
     steps:
@@ -523,7 +532,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: ['18', '20']
+        node: ['18', '20', '22']
     runs-on: ubuntu-latest
 
     steps:
@@ -579,7 +588,7 @@ jobs:
 
   rust-test:
     name: stable - macOS - cargo - test
-    runs-on: macos-14
+    runs-on: macos-latest
 
     steps:
       - uses: actions/checkout@v4
@@ -589,13 +598,13 @@ jobs:
       - name: Install
         uses: ./.github/actions/setup-rust
         with:
-          targets: x86_64-apple-darwin
+          targets: aarch64-apple-darwin
 
       - name: Install dependencies
         run: yarn install --immutable --mode=skip-build
 
-      - name: Install nasm
-        run: brew install nasm llvm
+      - name: Install llvm
+        run: brew install llvm
 
       - name: Download skia binary
         run: node ./scripts/release-skia-binary.mjs --download

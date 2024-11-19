@@ -161,10 +161,9 @@ fn main() {
       if compile_target_env != "gnu" {
         build.cpp_set_stdlib("stdc++");
       } else {
-        build.cpp_set_stdlib("c++").flag("-static");
-        println!("cargo:rustc-link-lib=static=c++");
         match compile_target_arch.as_str() {
           "aarch64" => {
+            link_libcxx(&mut build);
             build
               .include(
                 "/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot/usr/include",
@@ -176,10 +175,16 @@ fn main() {
             println!("cargo:rustc-link-search=/usr/aarch64-unknown-linux-gnu/lib/gcc/aarch64-unknown-linux-gnu/4.8.5");
           }
           "x86_64" => {
+            link_libcxx(&mut build);
             build.include("/usr/lib/llvm-18/include/c++/v1");
             println!("cargo:rustc-link-search=/usr/lib/llvm-18/lib");
           }
+          "riscv64" => {
+            println!("cargo:rustc-link-search=/usr/lib/gcc-cross/riscv64-linux-gnu/11");
+            println!("cargo:rustc-link-lib=static=atomic");
+          }
           "arm" => {
+            link_libcxx(&mut build);
             let gcc_version = String::from_utf8(
               process::Command::new("ls")
                 .arg("/usr/arm-linux-gnueabihf/include/c++")
@@ -241,4 +246,9 @@ fn main() {
   println!("cargo:rustc-link-search={}", &out_dir);
   println!("cargo:rustc-link-lib=static=skshaper");
   napi_build::setup();
+}
+
+fn link_libcxx(build: &mut cc::Build) {
+  build.cpp_set_stdlib("c++").flag("-static");
+  println!("cargo:rustc-link-lib=static=c++");
 }
