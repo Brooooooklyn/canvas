@@ -852,15 +852,9 @@ impl Context {
     shadow_offset_x: f32,
     shadow_offset_y: f32,
   ) -> result::Result<(), SkError> {
-    let current_transform = canvas.get_transform_matrix();
-    let invert = current_transform
-      .invert()
-      .ok_or_else(|| SkError::Generic("Invert matrix failed".to_owned()))?;
-    canvas.concat(&invert);
-    let mut shadow_offset = current_transform.clone();
-    shadow_offset.pre_translate(shadow_offset_x, shadow_offset_y);
-    canvas.concat(&shadow_offset);
-    canvas.concat(&current_transform);
+    let mut shadow_transform = canvas.get_transform_matrix().clone();
+    shadow_transform.pre_translate(shadow_offset_x, shadow_offset_y);
+    canvas.set_transform(&shadow_transform);
     Ok(())
   }
 
