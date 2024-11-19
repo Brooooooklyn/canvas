@@ -144,6 +144,9 @@ switch (PLATFORM_NAME) {
 }
 
 switch (TARGET_TRIPLE) {
+  case 'aarch64-pc-windows-msvc':
+    ExtraSkiaBuildFlag += ' target_cpu=\\"arm64\\"'
+    break
   case 'aarch64-unknown-linux-gnu':
     ExtraSkiaBuildFlag += ' target_cpu="arm64" target_os="linux"'
     ExtraCflags =
