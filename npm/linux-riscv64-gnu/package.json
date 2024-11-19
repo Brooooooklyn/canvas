@@ -1,15 +1,15 @@
 {
-  "name": "@napi-rs/canvas-linux-arm64-musl",
+  "name": "@napi-rs/canvas-linux-riscv64-gnu",
   "version": "0.1.62",
   "os": [
     "linux"
   ],
   "cpu": [
-    "arm64"
+    "riscv64"
   ],
-  "main": "skia.linux-arm64-musl.node",
+  "main": "skia.linux-riscv64-gnu.node",
   "files": [
-    "skia.linux-arm64-musl.node"
+    "skia.linux-riscv64-gnu.node"
   ],
   "description": "Canvas for Node.js with skia backend",
   "keywords": [
@@ -38,6 +38,6 @@
     "url": "git+https://github.com/Brooooooklyn/canvas.git"
   },
   "libc": [
-    "musl"
+    "glibc"
   ]
 }
