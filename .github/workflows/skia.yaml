@@ -292,6 +292,11 @@ jobs:
         run: echo "${PWD}/depot_tools" >> $GITHUB_PATH
         shell: bash
 
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install ninja-build -y
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
         with:
@@ -353,6 +358,11 @@ jobs:
         run: echo "${PWD}/depot_tools" >> $GITHUB_PATH
         shell: bash
 
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install ninja-build -y
+
       - name: Compile skia
         run: node ./scripts/build-skia.js --target=aarch64-linux-android
 
@@ -361,5 +371,42 @@ jobs:
 
       - name: Upload release
         run: node ./scripts/release-skia-binary.mjs --upload --target=aarch64-linux-android
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-riscv64-linux-gnu:
+    if: "!contains(github.event.head_commit.message, 'skip skia')"
+    name: stable - riscv64-linux-gnu - build skia
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - name: Setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'yarn'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+          architecture: 'x64'
+      - name: Set env
+        run: echo "${PWD}/depot_tools" >> $GITHUB_PATH
+        shell: bash
+      - name: Install cross compile tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install ninja-build gcc-riscv64-linux-gnu g++-riscv64-linux-gnu -y
+      - name: Compile skia
+        run: node ./scripts/build-skia.js --target=riscv64gc-unknown-linux-gnu
+        env:
+          CC: riscv64-linux-gnu-gcc
+          CXX: riscv64-linux-gnu-g++
+      - name: Install dependencies
+        run: yarn install --immutable --mode=skip-build
+
+      - name: Upload release
+        run: node ./scripts/release-skia-binary.mjs --upload --target=riscv64gc-unknown-linux-gnu
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -56,6 +56,9 @@ export function libPath(lib, hostPlatform, triple, tag = TAG) {
       case 'aarch64-linux-android':
         platformName = `lib${lib}-android-aarch64.a`
         break
+      case 'riscv64gc-unknown-linux-gnu':
+        platformName = `lib${lib}-linux-riscv64-gnu.a`
+        break
       default:
         throw new TypeError(`[${triple}] is not a valid target`)
     }

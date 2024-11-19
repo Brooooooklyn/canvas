@@ -203,6 +203,18 @@ switch (platform) {
           loadError = e
         }
         break
+      case 'riscv64':
+        localFileExisted = existsSync(join(__dirname, 'skia.linux-riscv64-gnu.node'))
+        try {
+          if (localFileExisted) {
+            nativeBinding = require('./skia.linux-riscv64-gnu.node')
+          } else {
+            nativeBinding = require('@napi-rs/canvas-linux-riscv64-gnu')
+          }
+        } catch (e) {
+          loadError = e
+        }
+        break
       default:
         throw new Error(`Unsupported architecture on Linux: ${arch}`)
     }

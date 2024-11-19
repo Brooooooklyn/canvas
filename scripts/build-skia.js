@@ -29,8 +29,8 @@ if (process.env.SKIP_SYNC_SK_DEPS !== 'false' && process.env.SKIP_SYNC_SK_DEPS !
   exec('python ./tools/git-sync-deps')
 }
 
-const CC = PLATFORM_NAME === 'win32' ? '\\"clang-cl\\"' : '"clang"'
-const CXX = PLATFORM_NAME === 'win32' ? '\\"clang-cpp\\"' : '"clang++"'
+let CC = PLATFORM_NAME === 'win32' ? '\\"clang-cl\\"' : '"clang"'
+let CXX = PLATFORM_NAME === 'win32' ? '\\"clang-cpp\\"' : '"clang++"'
 let ExtraCflagsCC = ''
 let ExtraSkiaBuildFlag = ''
 let ExtraCflags
@@ -233,6 +233,11 @@ switch (TARGET_TRIPLE) {
     break
   case '':
     break
+  case 'riscv64gc-unknown-linux-gnu':
+    ExtraSkiaBuildFlag += ' target_cpu="riscv64" target_os="linux"'
+    CC = '"riscv64-linux-gnu-gcc"'
+    CXX = '"riscv64-linux-gnu-g++"'
+    break;
   default:
     throw new TypeError(`[${TARGET_TRIPLE}] is not a valid target`)
 }

@@ -8,9 +8,6 @@
     "x64"
   ],
   "main": "skia.linux-x64-musl.node",
-  "libc": [
-    "musl"
-  ],
   "files": [
     "skia.linux-x64-musl.node"
   ],
@@ -39,5 +36,8 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Brooooooklyn/canvas.git"
-  }
+  },
+  "libc": [
+    "musl"
+  ]
 }
