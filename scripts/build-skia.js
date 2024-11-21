@@ -64,8 +64,8 @@ const GN_ARGS = [
   `skia_use_libjpeg_turbo_encode=true`,
   `skia_use_libwebp_decode=true`,
   `skia_use_libwebp_encode=true`,
-  `skia_use_freetype=true`,
-  `skia_use_freetype_woff2=true`,
+  `skia_use_freetype=${TARGET_TRIPLE !== 'aarch64-pc-windows-msvc'}`,
+  `skia_use_freetype_woff2=${TARGET_TRIPLE !== 'aarch64-pc-windows-msvc'}`,
   `skia_use_fontconfig=false`,
   `skia_use_x11=false`,
   `skia_use_wuffs=true`,
@@ -108,7 +108,7 @@ switch (PLATFORM_NAME) {
       ExtraSkiaBuildFlag = `clang_win_version=\\"${clangVersion}\\"`
     }
     GN_ARGS.push(`clang_win=\\"C:\\\\Program Files\\\\LLVM\\"`)
-    GN_ARGS.push(`skia_enable_fontmgr_win=false`)
+    GN_ARGS.push(`skia_enable_fontmgr_win=${TARGET_TRIPLE === 'aarch64-pc-windows-msvc'}`)
     break
   case 'linux':
   case 'darwin':
@@ -145,7 +145,15 @@ switch (PLATFORM_NAME) {
 
 switch (TARGET_TRIPLE) {
   case 'aarch64-pc-windows-msvc':
-    ExtraSkiaBuildFlag += ' target_cpu=\\"arm64\\"'
+    ExtraCflagsCC += ', \\"--target=aarch64-pc-windows-msvc\\"'
+    ExtraCflags = '\\"--target=aarch64-pc-windows-msvc\\"'
+    ExtraSkiaBuildFlag += ' target_cpu=\\"arm64\\" target_os=\\"win\\"'
+    ExtraAsmFlags = '\\"--target=aarch64-pc-windows-msvc\\"'
+    GN_ARGS.push(
+      `extra_asmflags=[${ExtraAsmFlags}]`,
+      `extra_cflags=[${ExtraCflags}]`,
+      `extra_cflags_c=[${ExtraCflags}]`,
+    )
     break
   case 'aarch64-unknown-linux-gnu':
     ExtraSkiaBuildFlag += ' target_cpu="arm64" target_os="linux"'
