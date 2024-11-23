@@ -1,3 +1,19 @@
+## [0.1.63](https://github.com/Brooooooklyn/canvas/compare/v0.1.62...v0.1.63) (2024-11-23)
+
+
+### Bug Fixes
+
+* panic when restore from scale(0,0) state ([#944](https://github.com/Brooooooklyn/canvas/issues/944)) ([973adab](https://github.com/Brooooooklyn/canvas/commit/973adab0cf69403ab0fee4ddcdb414a826c73ced))
+* shadow blur 0 makes text shadow not render at all ([#946](https://github.com/Brooooooklyn/canvas/issues/946)) ([04a0cfd](https://github.com/Brooooooklyn/canvas/commit/04a0cfdfd28dc484fa199e31d7e31d6d43edb79e))
+* shadowBlur position ([#945](https://github.com/Brooooooklyn/canvas/issues/945)) ([2beeedb](https://github.com/Brooooooklyn/canvas/commit/2beeedbff723786bf1c1fa74a8489071f3c0b940))
+
+
+### Features
+
+* add riscv64gc-unknown-linux-gnu ([#947](https://github.com/Brooooooklyn/canvas/issues/947)) ([d2c83f9](https://github.com/Brooooooklyn/canvas/commit/d2c83f90a8ad2a25869c9a8a62595bf8a8cea096))
+
+
+
 ## [0.1.62](https://github.com/Brooooooklyn/canvas/compare/v0.1.61...v0.1.62) (2024-11-15)
 
 
