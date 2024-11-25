@@ -1,3 +1,12 @@
+## [0.1.64](https://github.com/Brooooooklyn/canvas/compare/v0.1.63...v0.1.64) (2024-11-25)
+
+
+### Bug Fixes
+
+* missing icudtl.dat on Windows ([#953](https://github.com/Brooooooklyn/canvas/issues/953)) ([2acc354](https://github.com/Brooooooklyn/canvas/commit/2acc3547862b4c1966ccc79e2294279cd79dcc27))
+
+
+
 ## [0.1.63](https://github.com/Brooooooklyn/canvas/compare/v0.1.62...v0.1.63) (2024-11-23)
 
 
