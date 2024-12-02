@@ -1,3 +1,12 @@
+## [0.1.65](https://github.com/Brooooooklyn/canvas/compare/v0.1.64...v0.1.65) (2024-12-02)
+
+
+### Bug Fixes
+
+* loadImage should handle file URL ([#959](https://github.com/Brooooooklyn/canvas/issues/959)) ([0b56645](https://github.com/Brooooooklyn/canvas/commit/0b5664520b0c396913d588197f71361900fb075a))
+
+
+
 ## [0.1.64](https://github.com/Brooooooklyn/canvas/compare/v0.1.63...v0.1.64) (2024-11-25)
 
 
