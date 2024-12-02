@@ -1,5 +1,6 @@
 const fs = require('fs')
 const { Readable } = require('stream')
+const { URL } = require('url')
 
 const { Image } = require('./js-binding')
 
@@ -33,14 +34,32 @@ module.exports = async function loadImage(source, options = {}) {
     return createImage(data, options.alt)
   }
   // if source is a string or URL instance
-  if (typeof source === 'string' || source instanceof URL) {
+  if (typeof source === 'string') {
     // if the source exists as a file, construct image from that file
-    if (await exists(source)) {
+    if ((!source.startsWith('http') && !source.startsWith('https')) && await exists(source)) {
       return createImage(source, options.alt)
     } else {
       // the source is a remote url here
-      source = !(source instanceof URL) ? new URL(source) : source
+      source = new URL(source)
       // attempt to download the remote source and construct image
+      const data = await new Promise((resolve, reject) =>
+        makeRequest(
+          source,
+          resolve,
+          reject,
+          typeof options.maxRedirects === 'number' && options.maxRedirects >= 0 ? options.maxRedirects : MAX_REDIRECTS,
+          options.requestOptions,
+        ),
+      )
+      return createImage(data, options.alt)
+    }
+  }
+
+  if (source instanceof URL) {
+    if (source.protocol === 'file:') {
+      // remove the leading slash on windows
+      return createImage(process.platform === 'win32' ? source.pathname.substring(1) : source.pathname, options.alt)
+    } else {
       const data = await new Promise((resolve, reject) =>
         makeRequest(
           source,
