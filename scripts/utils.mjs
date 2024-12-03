@@ -38,6 +38,9 @@ export function libPath(lib, hostPlatform, triple, tag = TAG) {
     }
   } else {
     switch (triple) {
+      case 'aarch64-pc-windows-msvc':
+        platformName = `${lib}-win32-aarch64-msvc.lib`
+        break
       case 'aarch64-unknown-linux-gnu':
         platformName = `lib${lib}-linux-aarch64-gnu.a`
         break
