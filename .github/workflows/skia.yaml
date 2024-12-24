@@ -102,6 +102,57 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  build-windows-arm64:
+    if: "!contains(github.event.head_commit.message, 'skip skia')"
+
+    name: stable - windows-arm64 - build skia
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: List llvm dir
+        run: ls -R "C:\Program Files\LLVM"
+        shell: bash
+
+      - name: Setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'yarn'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+          architecture: 'x64'
+
+      - name: Set env
+        run: echo "${PWD}/depot_tools" >> $GITHUB_PATH
+        shell: bash
+
+      - name: Install tools on Windows
+        run: |
+          choco install llvm ninja -y
+          choco upgrade llvm
+          pip install certifi
+
+      - name: Compile skia
+        shell: powershell
+        env:
+          PYTHONHTTPSVERIFY: 0
+        run: node ./scripts/build-skia.js --target=aarch64-pc-windows-msvc
+
+      - name: Install dependencies
+        run: yarn install --immutable --mode=skip-build
+
+      - name: Upload release
+        run: node ./scripts/release-skia-binary.mjs --upload --target=aarch64-pc-windows-msvc
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   build-apple-silicon:
     if: "!contains(github.event.head_commit.message, 'skip skia')"
 
