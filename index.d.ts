@@ -1,3 +1,5 @@
+import { ReadableStream } from 'node:stream/web'
+
 // Clear all type of caches in Skia
 export function clearAllCache(): void
 
@@ -368,7 +370,8 @@ export class Canvas {
   encode(format: 'webp' | 'jpeg', quality?: number): Promise<Buffer>
   encode(format: 'png'): Promise<Buffer>
   encode(format: 'avif', cfg?: AvifConfig): Promise<Buffer>
-
+  encodeStream(format: 'webp' | 'jpeg', quality?: number): ReadableStream<Buffer>
+  encodeStream(format: 'png'): ReadableStream<Buffer>
   toBuffer(mime: 'image/png'): Buffer
   toBuffer(mime: 'image/jpeg' | 'image/webp', quality?: number): Buffer
   toBuffer(mime: 'image/avif', cfg?: AvifConfig): Buffer

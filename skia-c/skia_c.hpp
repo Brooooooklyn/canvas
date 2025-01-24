@@ -73,6 +73,7 @@ typedef struct skiac_typeface_font_provider skiac_typeface_font_provider;
 typedef struct skiac_w_memory_stream skiac_w_memory_stream;
 typedef struct skiac_picture_recorder skiac_picture_recorder;
 typedef struct skiac_picture skiac_picture;
+typedef struct skiac_encoder skiac_encoder;
 
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
 #define SK_FONT_FILE_PREFIX "C:/Windows/Fonts"
@@ -151,6 +152,31 @@ struct skiac_font_collection
   }
 };
 
+typedef void (*write_callback_t)(const void* buffer, size_t size, void* context);
+
+class SkJavaScriptWStream : public SkWStream {
+public:
+  SkJavaScriptWStream(write_callback_t write_callback, void* context) : fBytesWritten(0), fWriteCallback(write_callback), fContext(context) {}
+
+  bool write(const void* buffer, size_t size) override {
+    fBytesWritten += size;
+    fWriteCallback(buffer, size, fContext);
+    return true;
+  }
+
+  void flush() override {
+    fBytesWritten = 0;
+  }
+
+  size_t bytesWritten() const override {
+    return fBytesWritten;
+  }
+
+private:
+    size_t fBytesWritten;
+    write_callback_t fWriteCallback;
+    void* fContext;
+};
 struct skiac_line_metrics
 {
   float ascent;
@@ -244,6 +270,13 @@ extern "C"
   bool skiac_surface_read_pixels_rect(skiac_surface *c_surface, uint8_t *data, int x, int y, int w, int h, uint8_t cs);
   void skiac_surface_png_data(skiac_surface *c_surface, skiac_sk_data *data);
   void skiac_surface_encode_data(skiac_surface *c_surface, skiac_sk_data *data, int format, int quality);
+  bool skiac_surface_encode_stream(
+    skiac_surface *c_surface,
+    int format,
+    int quality,
+    write_callback_t write_callback,
+    void* context
+  );
   int skiac_surface_get_alpha_type(skiac_surface *c_surface);
   bool skiac_surface_save(skiac_surface *c_surface, const char *path);
   void skiac_surface_get_bitmap(skiac_surface *c_surface, skiac_bitmap_info *info);

@@ -217,9 +217,9 @@ fn main() {
     "macos" => {
       build.cpp_set_stdlib("c++");
       if compile_target_arch == "aarch64" {
-        build.flag("-mmacosx-version-min=11.0");
+        build.flag_if_supported("-mmacosx-version-min=11.0");
       } else {
-        build.flag("-mmacosx-version-min=10.13");
+        build.flag_if_supported("-mmacosx-version-min=10.13");
       }
       println!("cargo:rustc-link-lib=c++");
       println!("cargo:rustc-link-lib=framework=ApplicationServices");

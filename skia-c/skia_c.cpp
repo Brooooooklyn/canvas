@@ -2,7 +2,6 @@
 #include <math.h>
 
 #include "skia_c.hpp"
-
 #define SURFACE_CAST reinterpret_cast<SkSurface *>(c_surface)
 #define CANVAS_CAST reinterpret_cast<SkCanvas *>(c_canvas)
 #define PAINT_CAST reinterpret_cast<SkPaint *>(c_paint)
@@ -253,6 +252,38 @@ extern "C"
       data->size = encoded_data->size();
       data->data = reinterpret_cast<skiac_data *>(encoded_data.release());
     }
+  }
+
+  bool skiac_surface_encode_stream(
+    skiac_surface *c_surface,
+    int format,
+    int quality,
+    write_callback_t write_callback,
+    void* context
+  )
+  {
+    auto sk_pixmap = new SkPixmap();
+    if (!SURFACE_CAST->peekPixels(sk_pixmap)) {
+      return false;
+    }
+    SkJavaScriptWStream stream(write_callback, context);
+    std::unique_ptr<SkEncoder> encoder;
+    if (format == int(SkEncodedImageFormat::kJPEG)) {
+      SkJpegEncoder::Options options;
+      options.fQuality = quality;
+      encoder = SkJpegEncoder::Make(&stream, *sk_pixmap, options);
+    } else if (format == int(SkEncodedImageFormat::kPNG)) {
+      encoder = SkPngEncoder::Make(&stream, *sk_pixmap, SkPngEncoder::Options());
+    } else if (format == int(SkEncodedImageFormat::kWEBP)){
+      SkWebpEncoder::Options options;
+      options.fCompression = quality == 100 ? SkWebpEncoder::Compression::kLossless : SkWebpEncoder::Compression::kLossy;
+      options.fQuality = quality == 100 ? 75 : quality;
+      return SkWebpEncoder::Encode(&stream, *sk_pixmap, options);
+    }
+    if (encoder) {
+      return encoder->encodeRows(sk_pixmap->height());
+    }
+    return false;
   }
 
   int skiac_surface_get_alpha_type(skiac_surface *c_surface)

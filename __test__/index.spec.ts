@@ -218,3 +218,14 @@ test('composition-source-in', async (t) => {
 
   await snapshotImage(t, t.context, 'png')
 })
+
+test('should be able to encode image stream', async (t) => {
+  const { ctx } = t.context
+  ctx.fillStyle = 'red'
+  ctx.fillRect(0, 0, 100, 100)
+  const buffers = []
+  for await (const chunk of ctx.canvas.encodeStream('png')) {
+    buffers.push(chunk)
+  }
+  t.deepEqual(Buffer.concat(buffers), await ctx.canvas.encode('png'))
+})

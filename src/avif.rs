@@ -109,6 +109,16 @@ impl From<&Either3<u32, AvifConfig, Unknown>> for AvifConfig {
   }
 }
 
+impl From<&Either<u32, AvifConfig>> for AvifConfig {
+  fn from(value: &Either<u32, AvifConfig>) -> Self {
+    if let Either::B(a) = value {
+      a.clone()
+    } else {
+      Default::default()
+    }
+  }
+}
+
 pub(crate) fn encode(
   avif_image: &[u8],
   width: u32,
