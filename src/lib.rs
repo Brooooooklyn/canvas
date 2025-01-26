@@ -77,7 +77,7 @@ pub struct CanvasElement<'scope> {
 }
 
 #[napi]
-impl<'scope> CanvasElement<'scope> {
+impl CanvasElement<'_> {
   fn create_context(
     env: &Env,
     width: u32,
@@ -224,7 +224,7 @@ impl<'scope> CanvasElement<'scope> {
           data_ref.0.ptr,
           data_ref.0.size,
           data_ref,
-          |data: SkiaDataRef, _| mem::drop(data),
+          |_, data: SkiaDataRef| mem::drop(data),
         )
       },
       ContextOutputData::Avif(output) => unsafe {
@@ -233,7 +233,7 @@ impl<'scope> CanvasElement<'scope> {
           output.as_ptr().cast_mut(),
           output.len(),
           output,
-          |data, _| mem::drop(data),
+          |_, data| mem::drop(data),
         )
       },
     }
@@ -525,7 +525,7 @@ impl<'scope> SVGCanvas<'scope> {
     let svg_data_stream = self.ctx.context.stream.as_ref().unwrap();
     let svg_data = svg_data_stream.data(self.ctx.context.width, self.ctx.context.height);
     unsafe {
-      BufferSlice::from_external(&env, svg_data.0.ptr, svg_data.0.size, svg_data, |d, _| {
+      BufferSlice::from_external(&env, svg_data.0.ptr, svg_data.0.size, svg_data, |_, d| {
         mem::drop(d)
       })
     }

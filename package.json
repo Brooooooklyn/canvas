@@ -29,19 +29,19 @@
     "load-image.js"
   ],
   "napi": {
-    "name": "skia",
-    "triples": {
-      "defaults": true,
-      "additional": [
-        "armv7-unknown-linux-gnueabihf",
-        "x86_64-unknown-linux-musl",
-        "aarch64-unknown-linux-gnu",
-        "aarch64-unknown-linux-musl",
-        "aarch64-apple-darwin",
-        "aarch64-linux-android",
-        "riscv64-unknown-linux-gnu"
-      ]
-    }
+    "binaryName": "skia",
+    "targets": [
+      "x86_64-unknown-linux-gnu",
+      "x86_64-apple-darwin",
+      "x86_64-pc-windows-msvc",
+      "armv7-unknown-linux-gnueabihf",
+      "x86_64-unknown-linux-musl",
+      "aarch64-unknown-linux-gnu",
+      "aarch64-unknown-linux-musl",
+      "aarch64-apple-darwin",
+      "aarch64-linux-android",
+      "riscv64-unknown-linux-gnu"
+    ]
   },
   "engines": {
     "node": ">= 10"
@@ -71,7 +71,7 @@
     "@jimp/custom": "^0.22.10",
     "@jimp/jpeg": "^0.22.10",
     "@jimp/png": "^0.22.10",
-    "@napi-rs/cli": "^2.18.0",
+    "@napi-rs/cli": "^3.0.0-alpha.69",
     "@octokit/rest": "^21.0.0",
     "@swc-node/register": "^1.8.0",
     "@swc/core": "^1.4.0",
