@@ -30,7 +30,7 @@ impl<'a> From<Err<Error<&'a str>>> for ParseFilterError<'a> {
   }
 }
 
-impl<'a> From<ParseFloatError> for ParseFilterError<'a> {
+impl From<ParseFloatError> for ParseFilterError<'_> {
   fn from(value: ParseFloatError) -> Self {
     Self::ParseFloatError(value)
   }

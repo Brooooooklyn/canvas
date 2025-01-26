@@ -632,8 +632,8 @@ extern "C"
   {
     auto color_space = COLOR_SPACE_CAST;
     auto info = SkImageInfo::Make(width, height, SkColorType::kRGBA_8888_SkColorType, SkAlphaType::kUnpremul_SkAlphaType, color_space);
-    auto data = SkData::MakeFromMalloc(pixels, length);
-    auto image = SkImages::RasterFromData(info, data, row_bytes);
+    auto pixmap = SkPixmap(info, pixels, row_bytes);
+    auto image = SkImages::RasterFromPixmap(pixmap, nullptr, nullptr);
     auto src_rect = SkRect::MakeXYWH(dirty_x, dirty_y, dirty_width, dirty_height);
     auto dst_rect = SkRect::MakeXYWH(x + dirty_x, y + dirty_y, dirty_width, dirty_height);
     const auto sampling = SkSamplingOptions(SkCubicResampler::Mitchell());

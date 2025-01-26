@@ -18,7 +18,7 @@ pub fn convert_svg_text_to_path(
       )
     })
     .and_then(|v| unsafe {
-      BufferSlice::from_external(env, v.0.ptr, v.0.size, v, |d, _| mem::drop(d))
+      BufferSlice::from_external(env, v.0.ptr, v.0.size, v, |_, d| mem::drop(d))
     })
 }
 

@@ -185,28 +185,15 @@ fn main() {
           }
           "arm" => {
             link_libcxx(&mut build);
-            let gcc_version = String::from_utf8(
-              process::Command::new("ls")
-                .arg("/usr/arm-linux-gnueabihf/include/c++")
-                .output()
-                .unwrap()
-                .stdout,
-            )
-            .unwrap();
-            let gcc_version_trim = gcc_version.trim();
+            env::set_var("CC", "clang");
+            env::set_var("CXX", "clang++");
+            env::set_var("TARGET_CC", "clang");
+            env::set_var("TARGET_CXX", "clang++");
             build
               .include("/usr/arm-linux-gnueabihf/include")
               .include(format!(
-                "/usr/arm-linux-gnueabihf/include/c++/${gcc_version_trim}/arm-linux-gnueabihf"
+                "/usr/arm-linux-gnueabihf/lib/llvm-18/include/c++/v1"
               ));
-            const CROSS_LIB_PATH: &str = "/usr/lib/gcc-cross/arm-linux-gnueabihf";
-            if let Ok(version) = std::process::Command::new("ls")
-              .arg(CROSS_LIB_PATH)
-              .output()
-              .map(|o| String::from_utf8(o.stdout).unwrap().trim().to_string())
-            {
-              println!("cargo:rustc-link-search={CROSS_LIB_PATH}/{version}");
-            };
             println!("cargo:rustc-link-search=/usr/arm-linux-gnueabihf/lib");
             println!("cargo:rustc-link-search=/usr/arm-linux-gnueabihf/lib/llvm-18/lib");
           }

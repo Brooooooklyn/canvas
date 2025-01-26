@@ -2133,7 +2133,7 @@ impl ContextOutputData {
   pub(crate) fn into_buffer_slice<'a>(self, env: Env) -> Result<BufferSlice<'a>> {
     match self {
       ContextOutputData::Skia(output) => unsafe {
-        BufferSlice::from_external(&env, output.0.ptr, output.0.size, output, |data_ref, _| {
+        BufferSlice::from_external(&env, output.0.ptr, output.0.size, output, |_, data_ref| {
           mem::drop(data_ref)
         })
       },
@@ -2143,7 +2143,7 @@ impl ContextOutputData {
           output.as_ptr().cast_mut(),
           output.len(),
           output,
-          |data_ref, _| mem::drop(data_ref),
+          |_, data_ref| mem::drop(data_ref),
         )
       },
     }
