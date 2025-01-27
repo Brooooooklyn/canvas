@@ -183,9 +183,9 @@ switch (TARGET_TRIPLE) {
     ExtraCflags = `"--target=arm-unknown-linux-gnueabihf", "-I/usr/arm-linux-gnueabihf/include/c++/${armv7GccVersion}/arm-linux-gnueabihf", "-march=armv7-a", "-mthumb"`
     ExtraCflagsCC += `,"-stdlib=libc++", "-static", "--target=arm-unknown-linux-gnueabihf", "-I/usr/arm-linux-gnueabihf/include/c++/${armv7GccVersion}/arm-linux-gnueabihf", "-march=armv7-a", "-mthumb"`
     ExtraLdFlags =
-      '"--target=arm-unknown-linux-gnueabihf", "-B/usr/arm-linux-gnueabihf/bin", "-L/usr/arm-linux-gnueabihf/lib", "-L/usr/arm-linux-gnueabihf/lib/llvm-14/lib"'
+      '"--target=arm-unknown-linux-gnueabihf", "-B/usr/arm-linux-gnueabihf/bin", "-L/usr/arm-linux-gnueabihf/lib", "-L/usr/arm-linux-gnueabihf/lib/llvm-18/lib"'
     ExtraAsmFlags =
-      '"--sysroot=/usr/arm-linux-gnueabihf", "--target=arm-unknown-linux-gnueabihf", "-march=armv7-a", "-mthumb"'
+      '"--sysroot=/usr/arm-linux-gnueabihf", "--target=arm-unknown-linux-gnueabihf", "-march=armv7-a", "-mthumb", "-mfpu=neon"'
 
     GN_ARGS.push(
       `extra_ldflags=[${ExtraLdFlags}]`,
