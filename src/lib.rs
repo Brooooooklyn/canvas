@@ -8,19 +8,22 @@ extern crate napi_derive;
 #[macro_use]
 extern crate serde_derive;
 
-use std::str::FromStr;
-use std::{mem, slice};
+use std::{ffi::c_void, mem, slice, str::FromStr};
 
-use bindgen_prelude::{BufferSlice, JavaScriptClassExt};
-use napi::bindgen_prelude::{AsyncTask, ClassInstance, Either3, This, Unknown};
-use napi::*;
+use napi::{
+  bindgen_prelude::*,
+  noop_finalize,
+  tokio::sync::mpsc::{channel, error::TrySendError},
+  tokio_stream::wrappers::ReceiverStream,
+  Property,
+};
 
 use ctx::{
   encode_surface, CanvasRenderingContext2D, Context, ContextData, ContextOutputData, SvgExportFlag,
   FILL_STYLE_HIDDEN_NAME, STROKE_STYLE_HIDDEN_NAME,
 };
 use font::{init_font_regexp, FONT_REGEXP};
-use sk::{ColorSpace, SkiaDataRef};
+use sk::{ColorSpace, SkiaDataRef, SurfaceRef};
 
 use avif::AvifConfig;
 
@@ -216,7 +219,17 @@ impl CanvasElement<'_> {
     quality_or_config: Either3<u32, AvifConfig, Unknown>,
   ) -> Result<BufferSlice> {
     let mime = mime.as_str();
-    let context_data = get_data_ref(&self.ctx.context, mime, &quality_or_config)?;
+    let context_data = get_data_ref(
+      &self.ctx.context.surface.reference(),
+      mime,
+      &match quality_or_config {
+        Either3::A(q) => Either::A(q),
+        Either3::B(s) => Either::B(s),
+        Either3::C(_) => Either::A(DEFAULT_JPEG_QUALITY as u32),
+      },
+      self.ctx.context.width,
+      self.ctx.context.height,
+    )?;
     match context_data {
       ContextOutputData::Skia(data_ref) => unsafe {
         BufferSlice::from_external(
@@ -271,8 +284,55 @@ impl CanvasElement<'_> {
     mime: Option<String>,
     quality_or_config: Either3<f64, AvifConfig, Unknown>,
   ) -> Result<String> {
-    let mut task = self.to_data_url_inner(mime.as_deref(), quality_or_config)?;
-    task.compute()
+    self
+      .to_data_url_inner(mime.as_deref(), quality_or_config)?
+      .compute()
+  }
+
+  #[napi]
+  pub fn encode_stream(
+    &self,
+    env: &Env,
+    mime: Option<String>,
+    quality: Option<u8>,
+  ) -> Result<ReadableStream<BufferSlice>> {
+    let mime = match mime.as_deref() {
+      Some("webp") => sk::SkEncodedImageFormat::Webp,
+      Some("jpeg") => sk::SkEncodedImageFormat::Jpeg,
+      Some("png") | None => sk::SkEncodedImageFormat::Png,
+      _ => return Err(Error::new(Status::InvalidArg, "Invalid mime")),
+    };
+    let (tx, rx) = channel(1024);
+    let callback = |buffer: &[u8]| match tx.try_send(Ok(buffer.to_vec())) {
+      Ok(_) | Err(TrySendError::Closed(_)) => {
+        println!("buffer write success {}", buffer.len());
+      }
+      Err(TrySendError::Full(_)) => {
+        eprintln!("encode_image_stream_callback: channel is full");
+      }
+    };
+    if !self.encode_image_inner(mime, quality.unwrap_or(DEFAULT_JPEG_QUALITY), callback) {
+      return Err(Error::new(
+        Status::GenericFailure,
+        "Encode image stream failed",
+      ));
+    }
+    ReadableStream::create_with_stream_bytes(env, ReceiverStream::new(rx))
+  }
+
+  // let the compiler infer the type of the callback
+  fn encode_image_inner<F: Fn(&[u8])>(
+    &self,
+    mime: sk::SkEncodedImageFormat,
+    quality: u8,
+    callback: F,
+  ) -> bool {
+    self.ctx.context.surface.encode_stream(
+      mime,
+      quality,
+      Some(encode_image_stream_callback::<F>),
+      Box::into_raw(Box::new(callback)).cast(),
+    )
   }
 
   #[napi]
@@ -287,7 +347,11 @@ impl CanvasElement<'_> {
     quality_or_config: Either3<u32, AvifConfig, Unknown>,
   ) -> Result<ContextData> {
     let format_str = format.as_str();
-    let quality = quality_or_config.to_quality(format_str);
+    let quality = match &quality_or_config {
+      Either3::A(q) => (*q) as u8,
+      Either3::B(s) => s.quality.map(|q| q as u8).unwrap_or(DEFAULT_JPEG_QUALITY),
+      Either3::C(_) => DEFAULT_JPEG_QUALITY,
+    };
     let ctx2d = &self.ctx.context;
     let surface_ref = ctx2d.surface.reference();
 
@@ -316,18 +380,16 @@ impl CanvasElement<'_> {
     quality_or_config: Either3<f64, AvifConfig, Unknown>,
   ) -> Result<AsyncDataUrl> {
     let mime = mime.unwrap_or(MIME_PNG);
-    let data_ref = get_data_ref(
-      &self.ctx.context,
-      mime,
-      &match quality_or_config {
-        Either3::A(q) => Either3::A((q * 100.0) as u32),
-        Either3::B(s) => Either3::B(s),
-        Either3::C(u) => Either3::C(u),
-      },
-    )?;
     Ok(AsyncDataUrl {
-      surface_data: data_ref,
+      surface_data: self.ctx.context.surface.reference(),
       mime: mime.to_owned(),
+      quality_or_config: match quality_or_config {
+        Either3::A(q) => Either::A((q * 100.0) as u32),
+        Either3::B(s) => Either::B(s),
+        Either3::C(_) => Either::A(DEFAULT_JPEG_QUALITY as u32),
+      },
+      width: self.ctx.context.width,
+      height: self.ctx.context.height,
     })
   }
 }
@@ -338,11 +400,12 @@ pub struct ContextAttr {
 }
 
 fn get_data_ref(
-  ctx2d: &Context,
+  surface_ref: &SurfaceRef,
   mime: &str,
-  quality_or_config: &Either3<u32, AvifConfig, Unknown>,
+  quality_or_config: &Either<u32, AvifConfig>,
+  width: u32,
+  height: u32,
 ) -> Result<ContextOutputData> {
-  let surface_ref = ctx2d.surface.reference();
   let quality = quality_or_config.to_quality(mime);
 
   if let Some(data_ref) = match mime {
@@ -359,8 +422,8 @@ fn get_data_ref(
       let config = AvifConfig::from(quality_or_config).into();
       let output = avif::encode(
         unsafe { slice::from_raw_parts(data, size) },
-        ctx2d.width,
-        ctx2d.height,
+        width,
+        height,
         &config,
       )
       .map_err(|e| Error::new(Status::GenericFailure, format!("{e}")))?;
@@ -383,8 +446,11 @@ fn get_data_ref(
 }
 
 pub struct AsyncDataUrl {
-  surface_data: ContextOutputData,
+  surface_data: SurfaceRef,
+  quality_or_config: Either<u32, AvifConfig>,
   mime: String,
+  width: u32,
+  height: u32,
 }
 
 #[napi]
@@ -394,7 +460,14 @@ impl Task for AsyncDataUrl {
 
   fn compute(&mut self) -> Result<Self::Output> {
     let mut output = format!("data:{};base64,", &self.mime);
-    match &self.surface_data {
+    let surface_data = get_data_ref(
+      &self.surface_data,
+      &self.mime,
+      &self.quality_or_config,
+      self.width,
+      self.height,
+    )?;
+    match surface_data {
       ContextOutputData::Skia(data_ref) => {
         base64_simd::STANDARD.encode_append(data_ref.slice(), &mut output);
       }
@@ -414,9 +487,9 @@ trait ToQuality {
   fn to_quality(&self, mime: &str) -> u8;
 }
 
-impl ToQuality for &Either3<u32, AvifConfig, Unknown> {
+impl ToQuality for &Either<u32, AvifConfig> {
   fn to_quality(&self, mime_or_format: &str) -> u8 {
-    if let Either3::A(q) = &self {
+    if let Either::A(q) = &self {
       *q as u8
     } else {
       match mime_or_format {
@@ -427,7 +500,7 @@ impl ToQuality for &Either3<u32, AvifConfig, Unknown> {
   }
 }
 
-impl ToQuality for Either3<u32, AvifConfig, Unknown> {
+impl ToQuality for Either<u32, AvifConfig> {
   fn to_quality(&self, mime: &str) -> u8 {
     ToQuality::to_quality(&self, mime)
   }
@@ -571,4 +644,13 @@ impl<'scope> SVGCanvas<'scope> {
 #[napi]
 pub fn clear_all_cache() {
   unsafe { sk::ffi::skiac_clear_all_cache() };
+}
+
+unsafe extern "C" fn encode_image_stream_callback<F: Fn(&[u8])>(
+  data: *mut c_void,
+  size: usize,
+  context: *mut c_void,
+) {
+  let rust_callback: &mut F = unsafe { Box::leak(Box::from_raw(context.cast())) };
+  rust_callback(unsafe { slice::from_raw_parts(data.cast(), size) });
 }

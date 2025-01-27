@@ -36,10 +36,10 @@ pub mod global_fonts {
   use super::{get_font, into_napi_error, FONT_DIR, FONT_PATH};
 
   #[napi]
-  pub fn register(font_data: Buffer, name_alias: Option<String>) -> Result<bool> {
+  pub fn register(font_data: &[u8], name_alias: Option<String>) -> Result<bool> {
     let maybe_name_alias = name_alias.and_then(|s| if s.is_empty() { None } else { Some(s) });
     let font = get_font().map_err(into_napi_error)?;
-    Ok(font.register(font_data.as_ref(), maybe_name_alias))
+    Ok(font.register(font_data, maybe_name_alias))
   }
 
   // TODO: Do file extensions in font_path need to be converted to lowercase?

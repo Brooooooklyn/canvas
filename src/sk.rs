@@ -222,6 +222,9 @@ pub mod ffi {
   pub type SkiacFontCollectionGetFamily =
     Option<unsafe extern "C" fn(width: i32, weight: i32, slant: i32, raw_cb: *mut c_void)>;
 
+  pub type SkiacWStreamWriteCallback =
+    Option<unsafe extern "C" fn(data: *mut c_void, size: usize, context: *mut c_void)>;
+
   #[allow(clippy::duplicated_attributes)]
   // https://github.com/rust-lang/rust/issues/96192
   #[cfg_attr(
@@ -326,6 +329,14 @@ pub mod ffi {
       format: i32,
       quality: i32,
     );
+
+    pub fn skiac_surface_encode_stream(
+      surface: *mut skiac_surface,
+      format: i32,
+      quality: i32,
+      write_callback: SkiacWStreamWriteCallback,
+      context: *mut c_void,
+    ) -> bool;
 
     pub fn skiac_surface_get_alpha_type(surface: *mut skiac_surface) -> i32;
 
@@ -1781,6 +1792,24 @@ impl Surface {
           slice: slice::from_raw_parts_mut(data.ptr, data.size),
         })
       }
+    }
+  }
+
+  pub fn encode_stream(
+    &self,
+    format: SkEncodedImageFormat,
+    quality: u8,
+    write_callback: ffi::SkiacWStreamWriteCallback,
+    context: *mut c_void,
+  ) -> bool {
+    unsafe {
+      ffi::skiac_surface_encode_stream(
+        self.ptr,
+        format as i32,
+        quality as i32,
+        write_callback,
+        context,
+      )
     }
   }
 
