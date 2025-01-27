@@ -249,3 +249,20 @@ test('shadow-blur-zero-with-text', async (t) => {
   ctx.fillText('TEST', 100, 100)
   await snapshotImage(t, { ctx, canvas })
 })
+
+// https://github.com/Brooooooklyn/canvas/issues/973
+test('putImageData double free', (t) => {
+  const canvas = createCanvas(1920, 1080)
+  const ctx = canvas.getContext('2d')
+
+  const canvas2 = createCanvas(640, 480)
+  const ctx2 = canvas2.getContext('2d')
+  ctx2.fillStyle = 'white'
+  ctx2.fillRect(0, 0, canvas2.width, canvas2.height)
+
+  let imgData = ctx2.getImageData(0, 0, canvas2.width, canvas2.height)
+
+  t.notThrows(() => {
+    ctx.putImageData(imgData, 0, 0, 0, 0, canvas.width, canvas.height)
+  })
+})

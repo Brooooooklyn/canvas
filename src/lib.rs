@@ -80,7 +80,7 @@ pub struct CanvasElement<'scope> {
 }
 
 #[napi]
-impl<'scope> CanvasElement<'scope> {
+impl CanvasElement<'_> {
   fn create_context(
     env: &Env,
     width: u32,

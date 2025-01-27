@@ -969,7 +969,7 @@ pub enum ColorType {
   RGBAF32,
   /// pixel using C float for red, green, blue, alpha; in 128-bit word
   /// The following 6 colortypes are just for reading from - not for rendering to
-
+  ///
   /// pixel with a uint8_t for red and green
   R8G8Unorm,
   // pixel with a half float for alpha
@@ -1932,7 +1932,7 @@ pub struct SurfaceData<'a> {
   slice: &'a [u8],
 }
 
-impl<'a> Deref for SurfaceData<'a> {
+impl Deref for SurfaceData<'_> {
   type Target = [u8];
 
   fn deref(&self) -> &[u8] {
@@ -1944,7 +1944,7 @@ pub struct SurfaceDataMut<'a> {
   slice: &'a mut [u8],
 }
 
-impl<'a> Deref for SurfaceDataMut<'a> {
+impl Deref for SurfaceDataMut<'_> {
   type Target = [u8];
 
   fn deref(&self) -> &[u8] {
@@ -1970,7 +1970,7 @@ impl Drop for SkiaDataRef {
 unsafe impl Send for SkiaDataRef {}
 unsafe impl Sync for SkiaDataRef {}
 
-impl<'a> DerefMut for SurfaceDataMut<'a> {
+impl DerefMut for SurfaceDataMut<'_> {
   fn deref_mut(&mut self) -> &mut [u8] {
     self.slice
   }
