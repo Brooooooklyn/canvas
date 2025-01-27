@@ -304,9 +304,7 @@ impl CanvasElement<'_> {
     };
     let (tx, rx) = channel(1024);
     let callback = |buffer: &[u8]| match tx.try_send(Ok(buffer.to_vec())) {
-      Ok(_) | Err(TrySendError::Closed(_)) => {
-        println!("buffer write success {}", buffer.len());
-      }
+      Ok(_) | Err(TrySendError::Closed(_)) => {}
       Err(TrySendError::Full(_)) => {
         eprintln!("encode_image_stream_callback: channel is full");
       }
