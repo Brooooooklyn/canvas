@@ -159,11 +159,12 @@ Temporary Items
 
 # Temporary example image output
 example/*-tmp.*
-# docker temporary files 
+# docker temporary files
 lib
 aom
 
 icudtl.dat
+aarch64-linux-musl-cross
 .pnp.*
 .yarn/*
 !.yarn/patches

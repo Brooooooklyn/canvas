@@ -174,7 +174,7 @@ jobs:
         run: |
           docker pull ghcr.io/brooooooklyn/canvas/musl-builder:lts
           docker tag ghcr.io/brooooooklyn/canvas/musl-builder:lts builder
-          docker run --user "$(id -u):$(id -g)" --rm -v $(pwd):/canvas -w /canvas builder node ./scripts/build-skia.js
+          docker run --rm -v $(pwd):/canvas -w /canvas builder sh -c "apk add libc++-dev && node ./scripts/build-skia.js"
         env:
           PYTHONHTTPSVERIFY: 0
 
@@ -250,11 +250,18 @@ jobs:
           username: ${{ secrets.GH_CONTAINER_UNAME }}
           password: ${{ secrets.GH_TOKEN }}
 
+      - name: Install libc++-dev-aarch64
+        run: |
+          mkdir -p aarch64-linux-musl-cross/llvm/include
+          mkdir -p aarch64-linux-musl-cross/llvm/lib
+          docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+          docker run --platform=linux/arm64 --rm -v $(pwd)/aarch64-linux-musl-cross:/aarch64-linux-musl-cross -w /canvas node:18-alpine sh -c "apk add libc++-dev libc++-static && cp -r /usr/include/c++ /aarch64-linux-musl-cross/llvm/include && cp /usr/lib/libc++.a /aarch64-linux-musl-cross/llvm/lib/libc++.a && cp /usr/lib/libc++abi.a /aarch64-linux-musl-cross/llvm/lib/libc++abi.a"
+
       - name: Compile skia
         run: |
           docker pull ghcr.io/brooooooklyn/canvas/musl-builder:lts
           docker tag ghcr.io/brooooooklyn/canvas/musl-builder:lts builder
-          docker run --user "$(id -u):$(id -g)" --rm -v $(pwd):/canvas -w /canvas builder node ./scripts/build-skia.js --target=aarch64-unknown-linux-musl
+          docker run --rm -v $(pwd):/canvas -w /canvas builder sh -c "cp -r /canvas/aarch64-linux-musl-cross/llvm/include/c++ /aarch64-linux-musl-cross/include && cp /canvas/aarch64-linux-musl-cross/llvm/lib/* /aarch64-linux-musl-cross/lib && node ./scripts/build-skia.js --target=aarch64-unknown-linux-musl"
         env:
           PYTHONHTTPSVERIFY: 0
 
@@ -309,17 +316,17 @@ jobs:
       - name: Install cross compile tools
         run: |
           wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
-          echo "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-18 main" | sudo tee -a /etc/apt/sources.list > /dev/null
-          echo "deb-src http://apt.llvm.org/jammy/ llvm-toolchain-jammy-18 main" | sudo tee -a /etc/apt/sources.list > /dev/null
+          echo "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-19 main" | sudo tee -a /etc/apt/sources.list > /dev/null
+          echo "deb-src http://apt.llvm.org/noble/ llvm-toolchain-noble-19 main" | sudo tee -a /etc/apt/sources.list > /dev/null
           sudo apt-get update
-          sudo apt-get install llvm-18 clang-18 lld-18 gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf -y
+          sudo apt-get install llvm-19 clang-19 lld-19 gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf -y
           docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
-          docker buildx build --load --platform linux/arm/v7 -t ubuntu:jammy-armv7 . -f jammy-armv7.Dockerfile
-          docker run --rm -dt --name ubuntu-jammy-armv7 ubuntu:jammy-armv7
+          docker buildx build --load --platform linux/arm/v7 -t ubuntu:noble-armv7 . -f noble-armv7.Dockerfile
+          docker run --rm -dt --name ubuntu-noble-armv7 ubuntu:noble-armv7
           sudo mkdir -p /usr/arm-linux-gnueabihf/lib/llvm-18
-          sudo docker cp ubuntu-jammy-armv7:/usr/lib/llvm-18/lib /usr/arm-linux-gnueabihf/lib/llvm-18/lib
-          sudo docker cp ubuntu-jammy-armv7:/usr/lib/llvm-18/include /usr/arm-linux-gnueabihf/lib/llvm-18/include
-          docker stop ubuntu-jammy-armv7
+          sudo docker cp ubuntu-noble-armv7:/usr/lib/llvm-18/lib /usr/arm-linux-gnueabihf/lib/llvm-18/lib
+          sudo docker cp ubuntu-noble-armv7:/usr/lib/llvm-18/include /usr/arm-linux-gnueabihf/lib/llvm-18/include
+          docker stop ubuntu-noble-armv7
 
       - name: Compile skia
         run: node ./scripts/build-skia.js --target=armv7-unknown-linux-gnueabihf

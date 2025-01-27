@@ -1,5 +1,5 @@
 const { execSync } = require('node:child_process')
-const { readFileSync, writeFileSync, existsSync, readdirSync } = require('node:fs')
+const { readFileSync, writeFileSync } = require('node:fs')
 const path = require('node:path')
 const { platform, arch } = require('node:os')
 
@@ -130,10 +130,13 @@ switch (PLATFORM_NAME) {
     if (
       PLATFORM_NAME === 'linux' &&
       !TARGET_TRIPLE &&
-      HOST_LIBC === 'glibc' &&
       HOST_ARCH === 'x64'
     ) {
-      ExtraCflagsCC += ',"-stdlib=libc++","-static","-I/usr/lib/llvm-18/include/c++/v1"'
+      if (HOST_LIBC === 'glibc') {
+        ExtraCflagsCC += ',"-stdlib=libc++","-static","-I/usr/lib/llvm-18/include/c++/v1"'
+      } else {
+        ExtraCflagsCC += ',"-stdlib=libc++","-static","-I/usr/include/c++/v1"'
+      }
     }
     if (PLATFORM_NAME === 'linux' && (!TARGET_TRIPLE || TARGET_TRIPLE.startsWith('x86_64'))) {
       ExtraCflagsCC += ',"-Wno-psabi"'
@@ -163,11 +166,10 @@ switch (TARGET_TRIPLE) {
     )
     break
   case 'aarch64-unknown-linux-musl':
-    const gccVersion = execSync('ls /aarch64-linux-musl-cross/aarch64-linux-musl/include/c++').toString('utf8').trim()
     ExtraSkiaBuildFlag += ' target_cpu="arm64" target_os="linux"'
-    ExtraCflags = `"--target=aarch64-unknown-linux-musl", "-B/aarch64-linux-musl-cross/aarch64-linux-musl/bin", "-I/aarch64-linux-musl-cross/aarch64-linux-musl/include", "-I/aarch64-linux-musl-cross/aarch64-linux-musl/include/c++/${gccVersion}", "-I/aarch64-linux-musl-cross/aarch64-linux-musl/include/c++/${gccVersion}/aarch64-linux-musl", "-march=armv8-a"`
-    ExtraCflagsCC += `, "--target=aarch64-unknown-linux-musl", "-B/aarch64-linux-musl-cross/aarch64-linux-musl/bin", "-I/aarch64-linux-musl-cross/aarch64-linux-musl/include", "-I/aarch64-linux-musl-cross/aarch64-linux-musl/include/c++/${gccVersion}", "-I/aarch64-linux-musl-cross/aarch64-linux-musl/include/c++/${gccVersion}/aarch64-linux-musl", "-march=armv8-a"`
-    ExtraLdFlags = `"--target=aarch64-unknown-linux-musl", "-B/aarch64-linux-musl-cross/usr/aarch64-linux-musl/bin", "-L/aarch64-linux-musl-cross/usr/aarch64-linux-musl/lib", "-L/aarch64-linux-musl-cross/usr/lib/gcc/aarch64-linux-musl/${gccVersion}"`
+    ExtraCflags = `"--target=aarch64-unknown-linux-musl", "-stdlib=libc++", "-I/aarch64-linux-musl-cross/include/c++/v1", "-I/aarch64-linux-musl-cross/aarch64-linux-musl/include", "-march=armv8-a"`
+    ExtraCflagsCC += `, "--target=aarch64-unknown-linux-musl", "-stdlib=libc++", "-I/aarch64-linux-musl-cross/include/c++/v1", "-I/aarch64-linux-musl-cross/aarch64-linux-musl/include", "-march=armv8-a"`
+    ExtraLdFlags = `"--target=aarch64-unknown-linux-musl", "-L/aarch64-linux-musl-cross/usr/aarch64-linux-musl/lib", "-L/aarch64-linux-musl-cross/lib"`
     ExtraAsmFlags = '"--target=aarch64-unknown-linux-musl", "-march=armv8-a"'
     GN_ARGS.push(
       `extra_ldflags=[${ExtraLdFlags}]`,
@@ -178,14 +180,13 @@ switch (TARGET_TRIPLE) {
     )
     break
   case 'armv7-unknown-linux-gnueabihf':
-    const armv7GccVersion = execSync('ls /usr/arm-linux-gnueabihf/include/c++').toString('utf8').trim()
     ExtraSkiaBuildFlag += ' target_cpu="armv7a" target_os="linux"'
-    ExtraCflags = `"--target=arm-unknown-linux-gnueabihf", "-I/usr/arm-linux-gnueabihf/include/c++/${armv7GccVersion}/arm-linux-gnueabihf", "-march=armv7-a", "-mthumb"`
-    ExtraCflagsCC += `,"-stdlib=libc++", "-static", "--target=arm-unknown-linux-gnueabihf", "-I/usr/arm-linux-gnueabihf/include/c++/${armv7GccVersion}/arm-linux-gnueabihf", "-march=armv7-a", "-mthumb"`
+    ExtraCflags = `"--target=arm-unknown-linux-gnueabihf", "-I/usr/arm-linux-gnueabihf/lib/llvm-18/include/c++/v1", "-march=armv7-a", "-mthumb"`
+    ExtraCflagsCC += `,"-stdlib=libc++", "-static", "--target=arm-unknown-linux-gnueabihf", "-I/usr/arm-linux-gnueabihf/lib/llvm-18/include/c++/v1", "-march=armv7-a", "-mthumb"`
     ExtraLdFlags =
-      '"--target=arm-unknown-linux-gnueabihf", "-B/usr/arm-linux-gnueabihf/bin", "-L/usr/arm-linux-gnueabihf/lib", "-L/usr/arm-linux-gnueabihf/lib/llvm-14/lib"'
+      '"--target=arm-unknown-linux-gnueabihf", "-B/usr/arm-linux-gnueabihf/bin", "-L/usr/arm-linux-gnueabihf/lib", "-L/usr/arm-linux-gnueabihf/lib/llvm-18/lib"'
     ExtraAsmFlags =
-      '"--sysroot=/usr/arm-linux-gnueabihf", "--target=arm-unknown-linux-gnueabihf", "-march=armv7-a", "-mthumb"'
+      '"--sysroot=/usr/arm-linux-gnueabihf", "--target=arm-unknown-linux-gnueabihf", "-march=armv7-a", "-mthumb", "-mfpu=neon"'
 
     GN_ARGS.push(
       `extra_ldflags=[${ExtraLdFlags}]`,
