@@ -130,12 +130,12 @@ jobs:
               sudo apt-get update
               sudo apt-get install gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf libatomic1-armhf-cross -y
               docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
-              docker buildx build --load --platform linux/arm/v7 -t ubuntu:jammy-armv7 . -f jammy-armv7.Dockerfile
-              docker run --rm -dt --name ubuntu-jammy-armv7 ubuntu:jammy-armv7
+              docker buildx build --load --platform linux/arm/v7 -t ubuntu:noble-armv7 . -f noble-armv7.Dockerfile
+              docker run --rm -dt --name ubuntu-noble-armv7 ubuntu:noble-armv7
               sudo mkdir -p /usr/arm-linux-gnueabihf/lib/llvm-18
-              sudo docker cp ubuntu-jammy-armv7:/usr/lib/llvm-18/lib /usr/arm-linux-gnueabihf/lib/llvm-18/lib
-              sudo docker cp ubuntu-jammy-armv7:/usr/lib/llvm-18/include /usr/arm-linux-gnueabihf/lib/llvm-18/include
-              docker stop ubuntu-jammy-armv7
+              sudo docker cp ubuntu-noble-armv7:/usr/lib/llvm-18/lib /usr/arm-linux-gnueabihf/lib/llvm-18/lib
+              sudo docker cp ubuntu-noble-armv7:/usr/lib/llvm-18/include /usr/arm-linux-gnueabihf/lib/llvm-18/include
+              docker stop ubuntu-noble-armv7
             build: yarn build --target armv7-unknown-linux-gnueabihf --use-napi-cross
           - host: ubuntu-latest
             target: 'aarch64-linux-android'
