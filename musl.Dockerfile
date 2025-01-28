@@ -17,6 +17,7 @@ RUN apk add --no-cache \
   perl \
   clang \
   llvm \
+  libc++-dev \
   tar \
   xz \
   ninja && \
