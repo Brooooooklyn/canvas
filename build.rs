@@ -107,7 +107,7 @@ fn main() {
 
   if compile_target_os != "windows" {
     build
-      .flag("-std=c++23")
+      .flag("-std=c++20")
       .flag("-fPIC")
       .flag("-fno-exceptions")
       .flag("-fno-rtti")

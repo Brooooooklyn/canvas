@@ -125,9 +125,6 @@ jobs:
               set -e &&
               rustup target add aarch64-unknown-linux-musl &&
               unset RUSTFLAGS &&
-              export LIB_AOM_PKG_CONFIG_PATH=/usr/aarch64-alpine-linux-musl/aom/lib/pkgconfig/aom.pc &&
-              export LIB_AOM_INCLUDE_PATH=/usr/aarch64-alpine-linux-musl/aom/include &&
-              export LIB_AOM_STATIC_LIB_PATH=/usr/aarch64-alpine-linux-musl/aom/lib &&
               yarn build --target aarch64-unknown-linux-musl
           - host: ubuntu-latest
             target: 'armv7-unknown-linux-gnueabihf'
