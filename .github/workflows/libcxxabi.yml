@@ -1,0 +1,89 @@
+name: Build libc++abi
+
+on:
+  push:
+    branches:
+      - release-libcxxabi
+    tags-ignore:
+      - '**'
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  setup-llvm-version:
+    runs-on: ubuntu-latest
+    outputs:
+      llvm-version: ${{ steps.setup-llvm-version.outputs.llvm-version }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup
+        id: setup-llvm-version
+        run: |
+          echo "llvm-version=$(cat llvm-version)" >> $GITHUB_OUTPUT
+
+  build-musl:
+    runs-on: ${{ matrix.settings.runs-on }}
+    needs: setup-llvm-version
+    name: Build libc++abi for ${{ matrix.settings.arch }} Linux musl
+    strategy:
+      fail-fast: false
+      matrix:
+        settings:
+          - { arch: x86_64, runs-on: ubuntu-latest }
+          - { arch: aarch64, runs-on: ubuntu-24.04-arm }
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build in docker
+        uses: addnab/docker-run-action@v3
+        with:
+          image: node:18-alpine
+          options: -v ${{ github.workspace }}:/build -w /build
+          run: |
+            apk add clang llvm wget unzip cmake ninja xz tar musl-dev python3
+            node scripts/build-c++abi.mjs
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            libc++abi.a
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: libc++abi-${{ matrix.settings.arch }}.a
+          path: libc++abi.a
+
+  release:
+    needs:
+      - setup-llvm-version
+      - build-musl
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download x86_64
+        uses: actions/download-artifact@v4
+        with:
+          name: libc++abi-x86_64.a
+          path: .
+      - name: Rename
+        run: |
+          mv libc++abi.a libc++abi-x86_64.a
+      - name: Download aarch64
+        uses: actions/download-artifact@v4
+        with:
+          name: libc++abi-aarch64.a
+          path: .
+      - name: Rename
+        run: |
+          mv libc++abi.a libc++abi-aarch64.a
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            libc++abi-x86_64.a
+            libc++abi-aarch64.a
+          name: libcxxabi-${{ needs.setup-llvm-version.outputs.llvm-version }}
+          tag_name: libcxxabi-${{ needs.setup-llvm-version.outputs.llvm-version }}
+          make_latest: false
+

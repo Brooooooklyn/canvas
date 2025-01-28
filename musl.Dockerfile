@@ -3,8 +3,6 @@ FROM node:18-alpine
 ENV PATH="/aarch64-linux-musl-cross/bin:/usr/local/cargo/bin/rustup:/root/.cargo/bin:$PATH" \
   GN_EXE=gn
 
-COPY aom /usr/aarch64-alpine-linux-musl/aom
-
 RUN apk add --no-cache \
   musl-dev \
   wget \
@@ -17,6 +15,9 @@ RUN apk add --no-cache \
   perl \
   clang \
   llvm \
+  libc++-dev \
+  libc++-static \
+  llvm-libunwind-static \
   tar \
   xz \
   ninja && \
