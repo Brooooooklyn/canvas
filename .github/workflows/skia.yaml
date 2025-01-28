@@ -174,7 +174,7 @@ jobs:
         run: |
           docker pull ghcr.io/brooooooklyn/canvas/musl-builder:lts
           docker tag ghcr.io/brooooooklyn/canvas/musl-builder:lts builder
-          docker run --rm -v $(pwd):/canvas -w /canvas builder sh -c "apk add libc++-dev && node ./scripts/build-skia.js"
+          docker run --rm -v $(pwd):/canvas -w /canvas builder sh -c "apk add libc++-dev libc++-static && rm /usr/lib/libc++.so /usr/lib/libc++.so.1 /usr/lib/libc++.so.1.0 /usr/lib/libc++abi.so /usr/lib/libc++abi.so.1 /usr/lib/libc++abi.so.1.0 && node ./scripts/build-skia.js"
         env:
           PYTHONHTTPSVERIFY: 0
 

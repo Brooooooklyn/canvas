@@ -18,6 +18,9 @@ RUN apk add --no-cache \
   clang \
   llvm \
   libc++-dev \
+  libc++-static \
+  llvm-libunwind-static \
+  libc++-dev \
   tar \
   xz \
   ninja && \

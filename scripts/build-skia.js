@@ -88,7 +88,7 @@ const GN_ARGS = [
 switch (PLATFORM_NAME) {
   case 'win32':
     ExtraCflagsCC =
-      '\\"/std:c++17\\",' +
+      '\\"/std:c++20\\",' +
       '\\"/MT\\",' +
       '\\"-DSK_FORCE_RASTER_PIPELINE_BLITTER\\",' +
       '\\"-DSK_ENABLE_SVG\\",' +
@@ -113,7 +113,7 @@ switch (PLATFORM_NAME) {
   case 'linux':
   case 'darwin':
     ExtraCflagsCC =
-      '"-std=c++17",' +
+      '"-std=c++20",' +
       '"-fno-exceptions",' +
       '"-DSK_FORCE_RASTER_PIPELINE_BLITTER",' +
       '"-DSK_ENABLE_SVG",' +
@@ -135,7 +135,7 @@ switch (PLATFORM_NAME) {
       if (HOST_LIBC === 'glibc') {
         ExtraCflagsCC += ',"-stdlib=libc++","-static","-I/usr/lib/llvm-18/include/c++/v1"'
       } else {
-        ExtraCflagsCC += ',"-stdlib=libc++","-static","-I/usr/include/c++/v1"'
+        ExtraCflagsCC += ',"-stdlib=libc++","-static","-I/usr/include/c++/v1","-fPIC","-fno-cxx-exceptions"'
       }
     }
     if (PLATFORM_NAME === 'linux' && (!TARGET_TRIPLE || TARGET_TRIPLE.startsWith('x86_64'))) {
@@ -167,8 +167,8 @@ switch (TARGET_TRIPLE) {
     break
   case 'aarch64-unknown-linux-musl':
     ExtraSkiaBuildFlag += ' target_cpu="arm64" target_os="linux"'
-    ExtraCflags = `"--target=aarch64-unknown-linux-musl", "-stdlib=libc++", "-I/aarch64-linux-musl-cross/include/c++/v1", "-I/aarch64-linux-musl-cross/aarch64-linux-musl/include", "-march=armv8-a"`
-    ExtraCflagsCC += `, "--target=aarch64-unknown-linux-musl", "-stdlib=libc++", "-I/aarch64-linux-musl-cross/include/c++/v1", "-I/aarch64-linux-musl-cross/aarch64-linux-musl/include", "-march=armv8-a"`
+    ExtraCflags = `"--target=aarch64-unknown-linux-musl", "-stdlib=libc++", "-fPIC", "-I/aarch64-linux-musl-cross/include/c++/v1", "-I/aarch64-linux-musl-cross/aarch64-linux-musl/include", "-march=armv8-a"`
+    ExtraCflagsCC += `, "--target=aarch64-unknown-linux-musl", "-stdlib=libc++", "-fPIC", "-I/aarch64-linux-musl-cross/include/c++/v1", "-I/aarch64-linux-musl-cross/aarch64-linux-musl/include", "-march=armv8-a"`
     ExtraLdFlags = `"--target=aarch64-unknown-linux-musl", "-L/aarch64-linux-musl-cross/usr/aarch64-linux-musl/lib", "-L/aarch64-linux-musl-cross/lib"`
     ExtraAsmFlags = '"--target=aarch64-unknown-linux-musl", "-march=armv8-a"'
     GN_ARGS.push(

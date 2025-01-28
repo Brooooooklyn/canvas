@@ -2,7 +2,6 @@ extern crate napi_build;
 
 use std::env;
 use std::path;
-use std::process;
 
 fn main() {
   println!("cargo:rerun-if-env-changed=SKIA_DIR");
@@ -41,41 +40,16 @@ fn main() {
 
   match compile_target.as_str() {
     "aarch64-unknown-linux-musl" => {
-      let gcc_version = String::from_utf8(
-        process::Command::new("ls")
-          .arg("/aarch64-linux-musl-cross/aarch64-linux-musl/include/c++")
-          .output()
-          .unwrap()
-          .stdout,
-      )
-      .unwrap();
-      let gcc_version_trim = gcc_version.trim();
+      link_libcxx(&mut build);
+      println!("cargo:rustc-link-lib=static=c++abi");
       build
         .include("/aarch64-linux-musl-cross/aarch64-linux-musl/include")
-        .include(format!(
-          "/aarch64-linux-musl-cross/aarch64-linux-musl/include/c++/{gcc_version_trim}"
-        ))
-        .include(format!(
-          "/aarch64-linux-musl-cross/aarch64-linux-musl/include/c++/{gcc_version_trim}/aarch64-linux-musl"
-        ));
+        .include("/aarch64-linux-musl-cross/include/c++/v1");
     }
     "x86_64-unknown-linux-musl" => {
-      let gcc_version = String::from_utf8(
-        process::Command::new("ls")
-          .arg("/usr/include/c++")
-          .output()
-          .unwrap()
-          .stdout,
-      )
-      .unwrap();
-      let gcc_version_trim = gcc_version.trim();
-      build
-        .static_flag(true)
-        .include("/usr/include")
-        .include(format!("/usr/include/c++/{gcc_version_trim}"))
-        .include(format!(
-          "/usr/include/c++/{gcc_version_trim}/x86_64-alpine-linux-musl"
-        ));
+      link_libcxx(&mut build);
+      println!("cargo:rustc-link-lib=static=c++abi");
+      build.include("/usr/include").include("/usr/include/c++/v1");
     }
     "aarch64-linux-android" => {
       let nkd_home = env::var("ANDROID_NDK_LATEST_HOME").unwrap();
@@ -133,7 +107,7 @@ fn main() {
 
   if compile_target_os != "windows" {
     build
-      .flag("-std=c++17")
+      .flag("-std=c++23")
       .flag("-fPIC")
       .flag("-fno-exceptions")
       .flag("-fno-rtti")
@@ -149,7 +123,7 @@ fn main() {
   match compile_target_os.as_str() {
     "windows" => {
       build
-        .flag("/std:c++17")
+        .flag("/std:c++20")
         .flag("-Wno-unused-function")
         .flag("-Wno-unused-parameter")
         .static_crt(true);
@@ -158,9 +132,7 @@ fn main() {
       if compile_target_arch != "arm" {
         println!("cargo:rustc-cdylib-link-arg=-Wl,--allow-multiple-definition");
       }
-      if compile_target_env != "gnu" {
-        build.cpp_set_stdlib("stdc++");
-      } else {
+      if compile_target_env == "gnu" {
         match compile_target_arch.as_str() {
           "aarch64" => {
             link_libcxx(&mut build);

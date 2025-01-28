@@ -92,10 +92,16 @@ jobs:
             docker: ghcr.io/brooooooklyn/canvas/musl-builder:lts
             build: >-
               set -e &&
-              export LIB_AOM_STATIC_LIB_PATH=/usr/lib &&
-              export LIB_AOM_INCLUDE_PATH=/usr/include/aom/aom &&
-              export LIB_AOM_PKG_CONFIG_PATH=/usr/lib/pkgconfig &&
-              yarn build --target x86_64-unknown-linux-musl
+              apk add libc++-dev libc++-static llvm-libunwind-static &&
+              cp /usr/lib/gcc/x86_64-alpine-linux-musl/14.2.0/crtendS.o /usr/lib/ &&
+              cp /usr/lib/gcc/x86_64-alpine-linux-musl/14.2.0/crtbeginS.o /usr/lib/ &&
+              cp /usr/lib/gcc/x86_64-alpine-linux-musl/14.2.0/crtbeginT.o /usr/lib/ &&
+              cp /usr/lib/gcc/x86_64-alpine-linux-musl/14.2.0/crtend.o /usr/lib/ &&
+              cp /usr/lib/gcc/x86_64-alpine-linux-musl/14.2.0/libgcc.a /usr/lib/ &&
+              cp /usr/lib/gcc/x86_64-alpine-linux-musl/14.2.0/libgcc_eh.a /usr/lib/ &&
+              rm /usr/lib/libc++.so /usr/lib/libc++.so.1 /usr/lib/libc++.so.1.0 /usr/lib/libc++abi.so /usr/lib/libc++abi.so.1 /usr/lib/libc++abi.so.1.0 &&
+              node ./scripts/build-c++abi.mjs &&
+              CXXFLAGS="-std=c++20 -stdlib=libc++ -static -fPIC -fno-cxx-exceptions -fno-exceptions -I/usr/include/c++/v1" CC=clang CXX=clang++ yarn build --target x86_64-unknown-linux-musl
           - host: macos-latest
             downloadTarget: 'aarch64-apple-darwin'
             target: 'aarch64-apple-darwin'

@@ -165,6 +165,8 @@ aom
 
 icudtl.dat
 aarch64-linux-musl-cross
+*.zip
+llvm-project-llvmorg-*
 .pnp.*
 .yarn/*
 !.yarn/patches
