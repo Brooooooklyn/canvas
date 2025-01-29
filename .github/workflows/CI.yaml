@@ -134,20 +134,6 @@ jobs:
               export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=aarch64-alpine-linux-musl-gcc &&
               CC=clang CXX=clang++ yarn build --target aarch64-unknown-linux-musl
           - host: ubuntu-latest
-            target: 'armv7-unknown-linux-gnueabihf'
-            downloadTarget: 'armv7-unknown-linux-gnueabihf'
-            setup: |
-              sudo apt-get update
-              sudo apt-get install gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf libatomic1-armhf-cross -y
-              docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
-              docker buildx build --load --platform linux/arm/v7 -t ubuntu:noble-armv7 . -f noble-armv7.Dockerfile
-              docker run --rm -dt --name ubuntu-noble-armv7 ubuntu:noble-armv7
-              sudo mkdir -p /usr/arm-linux-gnueabihf/lib/llvm-18
-              sudo docker cp ubuntu-noble-armv7:/usr/lib/llvm-18/lib /usr/arm-linux-gnueabihf/lib/llvm-18/lib
-              sudo docker cp ubuntu-noble-armv7:/usr/lib/llvm-18/include /usr/arm-linux-gnueabihf/lib/llvm-18/include
-              docker stop ubuntu-noble-armv7
-            build: yarn build --target armv7-unknown-linux-gnueabihf --use-napi-cross
-          - host: ubuntu-latest
             target: 'aarch64-linux-android'
             downloadTarget: 'aarch64-linux-android'
             build: |
@@ -183,22 +169,6 @@ jobs:
         with:
           node-version: 20
           cache: 'yarn'
-
-      - name: Set up QEMU
-        if: ${{ matrix.settings.target == 'armv7-unknown-linux-gnueabihf' }}
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: linux/arm/v7
-      - name: Set up Docker Buildx
-        if: ${{ matrix.settings.target == 'armv7-unknown-linux-gnueabihf' }}
-        uses: docker/setup-buildx-action@v3
-        with:
-          platforms: linux/arm/v7
-
-      - uses: goto-bus-stop/setup-zig@v2
-        if: ${{ matrix.settings.target == 'armv7-unknown-linux-gnueabihf' }}
-        with:
-          version: 0.13.0
 
       - name: Set env
         if: matrix.settings.host == 'windows-latest'
@@ -240,6 +210,60 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: bindings-${{ matrix.settings.target }}
+          path: ${{ env.APP_NAME }}.*.node
+
+  build-armv7-linux-gnueabihf:
+    name: Build armv7-unknown-linux-gnueabihf
+    runs-on: ubuntu-latest
+    container:
+      image: debian:buster
+
+    steps:
+      - name: Setup tools
+        run: |
+          apt-get update
+          apt-get install -y gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf libatomic1-armhf-cross git build-essential cmake ninja-build wget curl gnupg
+          echo "deb http://apt.llvm.org/buster/ llvm-toolchain-buster-18 main" >> /etc/apt/sources.list
+          echo "deb-src http://apt.llvm.org/buster/ llvm-toolchain-buster-18 main" >> /etc/apt/sources.list
+          wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -
+          apt-get update
+          apt-get install -y clang-18
+          ln -s /usr/bin/clang-18 /usr/bin/clang
+          ln -s /usr/bin/clang++-18 /usr/bin/clang++
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install
+        uses: ./.github/actions/setup-rust
+        with:
+          targets: "armv7-unknown-linux-gnueabihf"
+
+      - name: Install dependencies
+        run: |
+          corepack enable
+          yarn install --immutable --mode=skip-build
+
+      - name: Download skia binary
+        run: |
+          git config --global --add safe.directory "$(pwd)"
+          git config --global --add safe.directory "$(pwd)/skia"
+          node ./scripts/release-skia-binary.mjs --download --target=armv7-unknown-linux-gnueabihf
+
+      - name: Build
+        run: |
+          export CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_LINKER=arm-linux-gnueabihf-gcc
+          yarn build --target armv7-unknown-linux-gnueabihf
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bindings-armv7-unknown-linux-gnueabihf
           path: ${{ env.APP_NAME }}.*.node
 
   test-macOS-windows-binding:
@@ -535,6 +559,58 @@ jobs:
           name: failure-images-aarch64-unknown-linux-musl-lts
           path: __test__/failure/**
 
+  test-linux-arm-gnueabihf-binding:
+    name: Test bindings on armv7-unknown-linux-gnueabihf - node@${{ matrix.node }}
+    needs:
+      - build-armv7-linux-gnueabihf
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['18', '20', '22']
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download Apple Emoji font
+        uses: robinraju/release-downloader@v1
+        with:
+          repository: 'PoomSmart/EmojiLibrary'
+          tag: '0.15.4'
+          fileName: AppleColorEmoji@2x.ttf
+          token: ${{ secrets.GITHUB_TOKEN }}
+          out-file-path: __test__/fonts/
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: bindings-armv7-unknown-linux-gnueabihf
+          path: .
+      - name: List packages
+        run: ls -R .
+        shell: bash
+      - name: Install dependencies
+        run: |
+          yarn config set supportedArchitectures.cpu "arm"
+          yarn install --immutable --mode=skip-build
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm
+      - run: docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+      - name: Setup and run tests
+        uses: addnab/docker-run-action@v3
+        with:
+          image: node:${{ matrix.node }}-bookworm-slim
+          options: '--platform linux/arm/v7 -v ${{ github.workspace }}:/skia -w /skia'
+          run: |
+            set -e && \
+            yarn test:ci && \
+            ls -la
+      - name: Test failed
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: failure-images-armv7-unknown-linux-gnueabihf-${{ matrix.node }}
+          path: __test__/failure/**
+
   rust-test:
     name: stable - macOS - cargo - test
     runs-on: macos-latest
@@ -607,6 +683,7 @@ jobs:
       - test-linux-x64-musl-binding
       - test-linux-aarch64-gnu-binding
       - test-linux-aarch64-musl-binding
+      - test-linux-arm-gnueabihf-binding
       - test-macOS-windows-binding
 
     steps:

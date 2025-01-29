@@ -156,18 +156,17 @@ fn main() {
             println!("cargo:rustc-link-lib=static=atomic");
           }
           "arm" => {
-            link_libcxx(&mut build);
             env::set_var("CC", "clang");
             env::set_var("CXX", "clang++");
             env::set_var("TARGET_CC", "clang");
             env::set_var("TARGET_CXX", "clang++");
             build
+              .cpp_set_stdlib("stdc++")
+              .flag("-static")
               .include("/usr/arm-linux-gnueabihf/include")
-              .include(format!(
-                "/usr/arm-linux-gnueabihf/lib/llvm-18/include/c++/v1"
-              ));
-            println!("cargo:rustc-link-search=/usr/arm-linux-gnueabihf/lib");
-            println!("cargo:rustc-link-search=/usr/arm-linux-gnueabihf/lib/llvm-18/lib");
+              .include(format!("/usr/arm-linux-gnueabihf/include/c++/8"));
+            println!("cargo:rustc-link-lib=static=stdc++");
+            println!("cargo:rustc-link-search=/usr/lib/gcc-cross/arm-linux-gnueabihf/8");
           }
           _ => {}
         }
