@@ -216,7 +216,7 @@ jobs:
     name: Build armv7-unknown-linux-gnueabihf
     runs-on: ubuntu-latest
     container:
-      image: debian:buster
+      image: debian:bookworm
 
     steps:
       - name: Setup tools

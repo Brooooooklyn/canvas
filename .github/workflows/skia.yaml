@@ -279,7 +279,7 @@ jobs:
     name: stable - armv7-linux - build skia
     runs-on: ubuntu-latest
     container:
-      image: debian:buster
+      image: debian:bookworm
 
     steps:
       - name: Setup tools
