@@ -71,7 +71,7 @@
     "@jimp/custom": "^0.22.10",
     "@jimp/jpeg": "^0.22.10",
     "@jimp/png": "^0.22.10",
-    "@napi-rs/cli": "^3.0.0-alpha.69",
+    "@napi-rs/cli": "^3.0.0-alpha.70",
     "@octokit/rest": "^21.0.0",
     "@swc-node/register": "^1.8.0",
     "@swc/core": "^1.4.0",

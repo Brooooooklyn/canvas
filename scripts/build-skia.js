@@ -82,7 +82,8 @@ const GN_ARGS = [
   `skia_enable_fontmgr_custom_embedded=false`,
   `skia_enable_fontmgr_custom_empty=true`,
   `skia_enable_fontmgr_android=false`,
-  `skunicode_tests_enabled=false`
+  `skunicode_tests_enabled=false`,
+  `skia_enable_skshaper_tests=false`
 ]
 
 switch (PLATFORM_NAME) {
@@ -113,7 +114,7 @@ switch (PLATFORM_NAME) {
   case 'linux':
   case 'darwin':
     ExtraCflagsCC =
-      '"-std=c++20",' +
+      '"-std=c++17",' +
       '"-fno-exceptions",' +
       '"-DSK_FORCE_RASTER_PIPELINE_BLITTER",' +
       '"-DSK_ENABLE_SVG",' +
@@ -180,21 +181,10 @@ switch (TARGET_TRIPLE) {
     )
     break
   case 'armv7-unknown-linux-gnueabihf':
+    CC='"arm-linux-gnueabihf-gcc"'
+    CXX='"arm-linux-gnueabihf-g++"'
     ExtraSkiaBuildFlag += ' target_cpu="armv7a" target_os="linux"'
-    ExtraCflags = `"--target=arm-unknown-linux-gnueabihf", "-I/usr/arm-linux-gnueabihf/lib/llvm-18/include/c++/v1", "-march=armv7-a", "-mthumb"`
-    ExtraCflagsCC += `,"-stdlib=libc++", "-static", "--target=arm-unknown-linux-gnueabihf", "-I/usr/arm-linux-gnueabihf/lib/llvm-18/include/c++/v1", "-march=armv7-a", "-mthumb"`
-    ExtraLdFlags =
-      '"--target=arm-unknown-linux-gnueabihf", "-B/usr/arm-linux-gnueabihf/bin", "-L/usr/arm-linux-gnueabihf/lib", "-L/usr/arm-linux-gnueabihf/lib/llvm-18/lib"'
-    ExtraAsmFlags =
-      '"--sysroot=/usr/arm-linux-gnueabihf", "--target=arm-unknown-linux-gnueabihf", "-march=armv7-a", "-mthumb", "-mfpu=neon"'
-
-    GN_ARGS.push(
-      `extra_ldflags=[${ExtraLdFlags}]`,
-      `ar="llvm-ar-18"`,
-      `extra_asmflags=[${ExtraAsmFlags}]`,
-      `extra_cflags=[${ExtraCflags}]`,
-      `extra_cflags_c=[${ExtraCflags}]`,
-    )
+    ExtraCflags = `"-march=armv7-a", "-mthumb", "-mfpu=neon"`
     break
   case 'aarch64-apple-darwin':
     ExtraSkiaBuildFlag += ' target_cpu="arm64" target_os="mac"'
@@ -232,13 +222,13 @@ switch (TARGET_TRIPLE) {
       `extra_cflags_c=[${ExtraCflags}]`,
     )
     break
-  case '':
-    break
   case 'riscv64gc-unknown-linux-gnu':
     ExtraSkiaBuildFlag += ' target_cpu="riscv64" target_os="linux"'
     CC = '"riscv64-linux-gnu-gcc"'
     CXX = '"riscv64-linux-gnu-g++"'
     break;
+  case '':
+    break
   default:
     throw new TypeError(`[${TARGET_TRIPLE}] is not a valid target`)
 }

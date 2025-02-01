@@ -278,8 +278,15 @@ jobs:
 
     name: stable - armv7-linux - build skia
     runs-on: ubuntu-latest
+    container:
+      image: debian:buster
 
     steps:
+      - name: Setup tools
+        run: |
+          apt-get update
+          apt-get install -y gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf libatomic1-armhf-cross git build-essential cmake ninja-build wget curl python3
+          ln -s /usr/bin/python3 /usr/bin/python
       - uses: actions/checkout@v4
         with:
           submodules: true
@@ -288,54 +295,20 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'yarn'
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.x'
-          architecture: 'x64'
-
-      - name: Set env
-        run: echo "${PWD}/depot_tools" >> $GITHUB_PATH
-        shell: bash
-
-      - name: Install build tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install ninja-build -y
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: linux/arm/v7
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-        with:
-          platforms: linux/arm/v7
-
-      - name: Install cross compile tools
-        run: |
-          wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
-          echo "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-19 main" | sudo tee -a /etc/apt/sources.list > /dev/null
-          echo "deb-src http://apt.llvm.org/noble/ llvm-toolchain-noble-19 main" | sudo tee -a /etc/apt/sources.list > /dev/null
-          sudo apt-get update
-          sudo apt-get install llvm-19 clang-19 lld-19 gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf -y
-          docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
-          docker buildx build --load --platform linux/arm/v7 -t ubuntu:noble-armv7 . -f noble-armv7.Dockerfile
-          docker run --rm -dt --name ubuntu-noble-armv7 ubuntu:noble-armv7
-          sudo mkdir -p /usr/arm-linux-gnueabihf/lib/llvm-18
-          sudo docker cp ubuntu-noble-armv7:/usr/lib/llvm-18/lib /usr/arm-linux-gnueabihf/lib/llvm-18/lib
-          sudo docker cp ubuntu-noble-armv7:/usr/lib/llvm-18/include /usr/arm-linux-gnueabihf/lib/llvm-18/include
-          docker stop ubuntu-noble-armv7
 
       - name: Compile skia
         run: node ./scripts/build-skia.js --target=armv7-unknown-linux-gnueabihf
 
       - name: Install dependencies
-        run: yarn install --immutable --mode=skip-build
+        run: |
+          corepack enable
+          yarn install --immutable --mode=skip-build
 
       - name: Upload release
-        run: node ./scripts/release-skia-binary.mjs --upload --target=armv7-unknown-linux-gnueabihf
+        run: |
+          git config --global --add safe.directory "$(pwd)"
+          git config --global --add safe.directory "$(pwd)/skia"
+          node ./scripts/release-skia-binary.mjs --upload --target=armv7-unknown-linux-gnueabihf
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

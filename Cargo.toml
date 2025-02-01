@@ -37,4 +37,4 @@ napi-build = "2"
 [profile.release]
 codegen-units = 1
 lto           = true
-strip         = "symbols"
+# strip         = "symbols"

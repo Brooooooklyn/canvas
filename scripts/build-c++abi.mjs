@@ -32,11 +32,15 @@ execSync(
   },
 )
 
-execSync(`ninja -C build cxxabi`, {
+execSync(`ninja -C build cxx cxxabi`, {
   stdio: 'inherit',
   cwd: `llvm-project-llvmorg-${LLVM_VERSION}`,
 })
 
 execSync(`cp llvm-project-llvmorg-${LLVM_VERSION}/build/lib/libc++abi.a .`, {
+  stdio: 'inherit',
+})
+
+execSync(`cp llvm-project-llvmorg-${LLVM_VERSION}/build/lib/libc++.a .`, {
   stdio: 'inherit',
 })
