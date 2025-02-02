@@ -1,3 +1,27 @@
+## [0.1.66](https://github.com/Brooooooklyn/canvas/compare/v0.1.65...v0.1.66) (2025-02-02)
+
+
+### Bug Fixes
+
+* armv7 glibc version ([#981](https://github.com/Brooooooklyn/canvas/issues/981)) ([0bdd714](https://github.com/Brooooooklyn/canvas/commit/0bdd714df35c9f2138ac2640ad56720eb89d7bca))
+* **deps:** update rust crate infer to 0.19 ([#985](https://github.com/Brooooooklyn/canvas/issues/985)) ([967bddf](https://github.com/Brooooooklyn/canvas/commit/967bddf235c6a7679588ad41620da69493327d15))
+* **deps:** update rust crate nom to v8 ([#976](https://github.com/Brooooooklyn/canvas/issues/976)) ([521d1af](https://github.com/Brooooooklyn/canvas/commit/521d1af3529f9dcee8a280fc8d5518abfe619667))
+* double free in putImageData ([#975](https://github.com/Brooooooklyn/canvas/issues/975)) ([2887aec](https://github.com/Brooooooklyn/canvas/commit/2887aeca4a5c8f45d08ff85916747a2f393cb389))
+* flush svg stream after write end ([#986](https://github.com/Brooooooklyn/canvas/issues/986)) ([8538673](https://github.com/Brooooooklyn/canvas/commit/853867334b92bda8d7e0bbec3cdad895aadb5cf6))
+
+
+### Features
+
+* chrome/m133 ([#979](https://github.com/Brooooooklyn/canvas/issues/979)) ([9eba52d](https://github.com/Brooooooklyn/canvas/commit/9eba52d4b15225357c91bd7bc7c440ea05c6730f))
+* support encode stream ([#974](https://github.com/Brooooooklyn/canvas/issues/974)) ([daccce1](https://github.com/Brooooooklyn/canvas/commit/daccce18d7a87e4bbdc6c6dae6fcf78c8aea02e1))
+
+
+### Performance Improvements
+
+* avoid memcpy while drawing canvas on canvas ([#984](https://github.com/Brooooooklyn/canvas/issues/984)) ([8f00680](https://github.com/Brooooooklyn/canvas/commit/8f00680da5d17578af2e592b23f2ebdac636e1d2))
+
+
+
 ## [0.1.65](https://github.com/Brooooooklyn/canvas/compare/v0.1.64...v0.1.65) (2024-12-02)
 
 
