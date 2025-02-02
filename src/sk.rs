@@ -111,6 +111,7 @@ pub mod ffi {
     pub bitmap: *mut skiac_bitmap,
     pub width: i32,
     pub height: i32,
+    pub is_canvas: bool,
   }
 
   #[repr(C)]
@@ -373,6 +374,7 @@ pub mod ffi {
     pub fn skiac_canvas_draw_image(
       canvas: *mut skiac_canvas,
       bitmap: *mut skiac_bitmap,
+      is_image: bool,
       sx: f32,
       sy: f32,
       s_width: f32,
@@ -1822,6 +1824,7 @@ impl Surface {
       bitmap: ptr::null_mut(),
       width: 0,
       height: 0,
+      is_canvas: true,
     };
     unsafe { ffi::skiac_surface_get_bitmap(self.ptr, &mut bitmap_info) };
     Bitmap(bitmap_info)
@@ -2068,7 +2071,7 @@ impl Canvas {
 
   pub fn draw_image(
     &mut self,
-    image: *mut ffi::skiac_bitmap,
+    image: &Bitmap,
     sx: f32,
     sy: f32,
     s_width: f32,
@@ -2084,7 +2087,8 @@ impl Canvas {
     unsafe {
       ffi::skiac_canvas_draw_image(
         self.0,
-        image,
+        image.0.bitmap,
+        image.0.is_canvas,
         sx,
         sy,
         s_width,
@@ -3439,7 +3443,7 @@ impl Drop for ImageFilter {
 
 #[repr(transparent)]
 #[derive(Debug)]
-pub(crate) struct Bitmap(pub(crate) ffi::skiac_bitmap_info);
+pub struct Bitmap(pub(crate) ffi::skiac_bitmap_info);
 
 unsafe impl Send for Bitmap {}
 unsafe impl Sync for Bitmap {}
@@ -3450,6 +3454,7 @@ impl Bitmap {
       bitmap: ptr::null_mut(),
       width: 0,
       height: 0,
+      is_canvas: false,
     };
     unsafe {
       ffi::skiac_bitmap_make_from_buffer(ptr, size, &mut bitmap_info);
@@ -3467,6 +3472,7 @@ impl Bitmap {
       bitmap: ptr::null_mut(),
       width: 0,
       height: 0,
+      is_canvas: false,
     };
     unsafe {
       let is_valid = ffi::skiac_bitmap_make_from_svg(
@@ -3502,6 +3508,7 @@ impl Bitmap {
       bitmap: ptr::null_mut(),
       width: 0,
       height: 0,
+      is_canvas: false,
     };
     unsafe {
       ffi::skiac_bitmap_make_from_svg(
@@ -3545,6 +3552,7 @@ impl Bitmap {
       bitmap,
       width: row_bytes as i32,
       height: (size / row_bytes / 4) as i32,
+      is_canvas: false,
     })
   }
 }
@@ -3552,7 +3560,9 @@ impl Bitmap {
 impl Drop for Bitmap {
   fn drop(&mut self) {
     unsafe {
-      ffi::skiac_bitmap_destroy(self.0.bitmap);
+      if !self.0.is_canvas {
+        ffi::skiac_bitmap_destroy(self.0.bitmap);
+      }
     }
   }
 }
