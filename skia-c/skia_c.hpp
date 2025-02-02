@@ -224,6 +224,7 @@ struct skiac_bitmap_info
   skiac_bitmap *bitmap;
   int width;
   int height;
+  bool is_canvas;
 };
 
 struct skiac_string
@@ -294,6 +295,7 @@ extern "C"
   void skiac_canvas_draw_image(
       skiac_canvas *c_canvas,
       skiac_bitmap *c_bitmap,
+      bool is_canvas,
       float sx,
       float sy,
       float s_width,

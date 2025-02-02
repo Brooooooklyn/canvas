@@ -712,7 +712,6 @@ impl Context {
     d_width: f32,
     d_height: f32,
   ) -> Result<()> {
-    let bitmap = bitmap.0.bitmap;
     let mut paint: Paint = self.fill_paint()?;
     paint.set_alpha((self.state.global_alpha * 255.0).round() as u8);
     Self::render_canvas(

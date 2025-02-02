@@ -293,14 +293,10 @@ extern "C"
 
   void skiac_surface_get_bitmap(skiac_surface *c_surface, skiac_bitmap_info *info)
   {
-    auto image = SURFACE_CAST->makeImageSnapshot();
-    auto bitmap = new SkBitmap();
-    auto image_info = image->imageInfo();
-    bitmap->allocPixels(image_info);
-    image->readPixels(image_info, bitmap->getPixels(), bitmap->rowBytes(), 0, 0);
-    info->bitmap = reinterpret_cast<skiac_bitmap *>(bitmap);
-    info->width = (size_t)image_info.width();
-    info->height = (size_t)image_info.height();
+    info->is_canvas = true;
+    info->bitmap = reinterpret_cast<skiac_bitmap *>(c_surface);
+    info->width = (size_t)SURFACE_CAST->width();
+    info->height = (size_t)SURFACE_CAST->height();
   }
 
   // Canvas
@@ -354,6 +350,7 @@ extern "C"
   void skiac_canvas_draw_image(
       skiac_canvas *c_canvas,
       skiac_bitmap *c_bitmap,
+      bool is_canvas,
       float sx,
       float sy,
       float s_width,
@@ -368,11 +365,19 @@ extern "C"
   {
     const auto src_rect = SkRect::MakeXYWH(sx, sy, s_width, s_height);
     const auto dst_rect = SkRect::MakeXYWH(dx, dy, d_width, d_height);
-    auto sk_image = SkImages::RasterFromBitmap(*BITMAP_CAST);
     auto fq = enable_smoothing ? filter_quality : 0;
     const auto sampling = SamplingOptionsFromFQ(fq);
     auto paint = reinterpret_cast<const SkPaint *>(c_paint);
-    CANVAS_CAST->drawImageRect(sk_image, src_rect, dst_rect, sampling, paint, SkCanvas::kFast_SrcRectConstraint);
+    if (is_canvas) {
+      auto srcSurface = reinterpret_cast<SkSurface *>(c_bitmap);
+      CANVAS_CAST->save();
+      CANVAS_CAST->translate(dx, dy);
+      CANVAS_CAST->clipRect(SkRect::MakeWH(d_width, d_height));
+      srcSurface->draw(CANVAS_CAST, -sx, -sy, sampling, paint);
+      CANVAS_CAST->restore();
+    } else {
+      CANVAS_CAST->drawImageRect(SkImages::RasterFromBitmap(*BITMAP_CAST), src_rect, dst_rect, sampling, paint, SkCanvas::kFast_SrcRectConstraint);
+    }
   }
 
   void skiac_canvas_draw_path(skiac_canvas *c_canvas, skiac_path *c_path, skiac_paint *c_paint)
