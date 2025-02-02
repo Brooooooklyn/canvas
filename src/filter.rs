@@ -4,11 +4,11 @@ use cssparser::{Color, Parser, ParserInput, RGBA};
 use nom::{
   branch::alt,
   bytes::complete::{tag, take_till, take_until},
-  character::{complete::char, is_alphabetic},
+  character::complete::char,
   combinator::map_res,
   error::Error,
   number::complete::float,
-  Err, IResult,
+  AsChar, Err, IResult, Parser as NomParser,
 };
 use thiserror::Error;
 
@@ -51,7 +51,7 @@ pub enum CssFilter {
 }
 
 fn pixel(input: &str) -> Result<f32, ParseFilterError> {
-  let (input, size) = take_till(|c| is_alphabetic(c as u8))(input)?;
+  let (input, size) = take_till(|c: char| c.is_alpha())(input)?;
   let (_, unit) = take_till(|c| c == ')')(input)?;
   let size = size.trim().parse::<f32>()?;
   let mut size_px = size;
@@ -95,7 +95,7 @@ fn pixel(input: &str) -> Result<f32, ParseFilterError> {
 
 #[inline(always)]
 fn pixel_in_tuple(input: &str) -> IResult<&str, f32> {
-  map_res(take_until(")"), pixel)(input)
+  map_res(take_until(")"), pixel).parse(input)
 }
 
 fn number_percentage(input: &str) -> IResult<&str, f32> {
@@ -195,14 +195,14 @@ fn blur_parser(input: &str) -> IResult<&str, CssFilter> {
 fn drop_shadow_parser(input: &str) -> IResult<&str, CssFilter> {
   let (drop_shadow_input, _) = tag("drop-shadow(")(input)?;
   let drop_shadow_input = drop_shadow_input.trim();
-  let (offset_x_output, offset_x) = map_res(take_until(" "), pixel)(drop_shadow_input)?;
+  let (offset_x_output, offset_x) = map_res(take_until(" "), pixel).parse(drop_shadow_input)?;
   let offset_x_output = offset_x_output.trim();
   let (offset_y_output, offset_y) =
-    map_res(take_till(|ch| ch == ' ' || ch == ')'), pixel)(offset_x_output)?;
+    map_res(take_till(|ch| ch == ' ' || ch == ')'), pixel).parse(offset_x_output)?;
   let offset_y_output = offset_y_output.trim();
-  let (blur_radius_output, blur_radius) =
-    map_res(take_till(|ch| ch == ' ' || ch == ')'), pixel)(offset_y_output)
-      .unwrap_or_else(|_: Err<Error<&str>>| (offset_y_output, 0.0f32));
+  let (blur_radius_output, blur_radius) = map_res(take_till(|ch| ch == ' ' || ch == ')'), pixel)
+    .parse(offset_y_output)
+    .unwrap_or_else(|_: Err<Error<&str>>| (offset_y_output, 0.0f32));
   let blur_radius_output = blur_radius_output.trim();
   let is_rgb_fn = blur_radius_output.starts_with("rgb(") || blur_radius_output.starts_with("rgba(");
   let (shadow_color_output, shadow_color_str) =
@@ -251,7 +251,8 @@ pub fn css_filter(input: &str) -> IResult<&str, Vec<CssFilter>> {
     opacity_parser,
     saturate_parser,
     sepia_parser,
-  ))(input)
+  ))
+  .parse(input)
   {
     input = output;
     filters.push(filter);
