@@ -1747,6 +1747,7 @@ extern "C"
     string->appendS32(height);
     string->append("\">\n");
     stream->write(string->c_str(), string->size());
+    stream->flush();
   }
 
   void skiac_sk_w_stream_destroy(skiac_w_memory_stream *c_w_memory_stream)
