@@ -363,19 +363,25 @@ extern "C"
       int filter_quality,
       skiac_paint *c_paint)
   {
-    const auto src_rect = SkRect::MakeXYWH(sx, sy, s_width, s_height);
-    const auto dst_rect = SkRect::MakeXYWH(dx, dy, d_width, d_height);
     auto fq = enable_smoothing ? filter_quality : 0;
     const auto sampling = SamplingOptionsFromFQ(fq);
     auto paint = reinterpret_cast<const SkPaint *>(c_paint);
     if (is_canvas) {
-      auto srcSurface = reinterpret_cast<SkSurface *>(c_bitmap);
+      auto src_surface = reinterpret_cast<SkSurface *>(c_bitmap);
       CANVAS_CAST->save();
+      // Translate to the destination position
       CANVAS_CAST->translate(dx, dy);
-      CANVAS_CAST->clipRect(SkRect::MakeWH(d_width, d_height));
-      srcSurface->draw(CANVAS_CAST, -sx, -sy, sampling, paint);
+      // Scale using the ratio of destination size to source surface size
+      CANVAS_CAST->scale(
+          d_width / src_surface->width(),
+          d_height / src_surface->height()
+      );
+      // Draw the surface directly
+      src_surface->draw(CANVAS_CAST, -sx, -sy, sampling, paint);
       CANVAS_CAST->restore();
     } else {
+      const auto src_rect = SkRect::MakeXYWH(sx, sy, s_width, s_height);
+      const auto dst_rect = SkRect::MakeXYWH(dx, dy, d_width, d_height);
       CANVAS_CAST->drawImageRect(SkImages::RasterFromBitmap(*BITMAP_CAST), src_rect, dst_rect, sampling, paint, SkCanvas::kFast_SrcRectConstraint);
     }
   }

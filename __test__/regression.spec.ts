@@ -266,3 +266,24 @@ test('putImageData double free', (t) => {
     ctx.putImageData(imgData, 0, 0, 0, 0, canvas.width, canvas.height)
   })
 })
+
+// https://github.com/Brooooooklyn/canvas/issues/987
+test('draw-canvas-on-canvas', async (t) => {
+  const backCanvas = createCanvas(1920, 1080)
+  const backCtx = backCanvas.getContext('2d')
+
+  const picCanvas = createCanvas(640, 480)
+  const picCtx = picCanvas.getContext('2d')
+
+  backCtx.fillStyle = '#000000'
+  backCtx.fillRect(0, 0, 1920, 1080)
+
+  // load images from disk or from a URL
+  const catImage = await loadImage(join(__dirname, 'javascript.png'))
+
+  picCtx.drawImage(catImage, 0, 0, catImage.width, catImage.height)
+
+  backCtx.drawImage(picCanvas, 240, 0, 1440, 1080)
+
+  await snapshotImage(t, { ctx: backCtx, canvas: backCanvas })
+})
