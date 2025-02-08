@@ -362,6 +362,7 @@ extern "C"
   void skiac_canvas_write_pixels(skiac_canvas *c_canvas, int width, int height, uint8_t *pixels, size_t row_bytes, int x, int y);
   void skiac_canvas_write_pixels_dirty(skiac_canvas *c_canvas, int width, int height, uint8_t *pixels, size_t row_bytes, size_t length, float x, float y, float dirty_x, float dirty_y, float dirty_width, float dirty_height, uint8_t cs);
   void skiac_canvas_draw_picture(skiac_canvas *c_canvas, skiac_picture *c_picture, skiac_matrix *c_matrix, skiac_paint *c_paint);
+  void skiac_canvas_destroy(skiac_canvas *c_canvas);
 
   // Paint
   skiac_paint *skiac_paint_create();

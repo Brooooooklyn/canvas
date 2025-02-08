@@ -495,6 +495,8 @@ pub mod ffi {
       paint: *mut skiac_paint,
     );
 
+    pub fn skiac_canvas_destroy(canvas: *mut skiac_canvas);
+
     pub fn skiac_paint_create() -> *mut skiac_paint;
 
     pub fn skiac_paint_clone(source: *mut skiac_paint) -> *mut skiac_paint;
@@ -2001,7 +2003,7 @@ impl Color {
 }
 
 #[repr(transparent)]
-pub struct Canvas(*mut ffi::skiac_canvas);
+pub struct Canvas(pub(crate) *mut ffi::skiac_canvas);
 
 impl Canvas {
   pub fn clear(&mut self) {
