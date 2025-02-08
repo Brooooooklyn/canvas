@@ -1,3 +1,13 @@
+## [0.1.67](https://github.com/Brooooooklyn/canvas/compare/v0.1.66...v0.1.67) (2025-02-08)
+
+
+### Bug Fixes
+
+* drawImage canvas implementation ([#989](https://github.com/Brooooooklyn/canvas/issues/989)) ([1420291](https://github.com/Brooooooklyn/canvas/commit/142029168b3a9acc888a09e7a2aac7283346996c))
+* make sure SVGCanvas get content is complete ([#990](https://github.com/Brooooooklyn/canvas/issues/990)) ([09120d1](https://github.com/Brooooooklyn/canvas/commit/09120d1e193eee6ddad6bd061e5f5dd766a98ef6))
+
+
+
 ## [0.1.66](https://github.com/Brooooooklyn/canvas/compare/v0.1.65...v0.1.66) (2025-02-02)
 
 
