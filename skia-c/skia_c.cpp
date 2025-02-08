@@ -687,6 +687,12 @@ extern "C"
     CANVAS_CAST->drawPicture(picture, MATRIX_CAST, PAINT_CAST);
   }
 
+  void skiac_canvas_destroy(skiac_canvas *c_canvas) {
+    if (c_canvas) {
+      delete CANVAS_CAST;
+    }
+  }
+
 
   // Paint
 
@@ -1741,19 +1747,13 @@ extern "C"
   void skiac_sk_w_stream_get(skiac_w_memory_stream *c_w_memory_stream, skiac_sk_data *sk_data, int width, int height)
   {
     auto stream = reinterpret_cast<SkDynamicMemoryWStream *>(c_w_memory_stream);
-    stream->write("</svg>", 6);
-    auto data = stream->detachAsData().release();
-
-    sk_data->data = reinterpret_cast<skiac_data *>(data);
-    sk_data->ptr = data->bytes();
-    sk_data->size = data->size();
-    auto string = new SkString("<?xml version=\"1.0\" encoding=\"utf-8\" ?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" width=\"");
-    string->appendS32(width);
-    string->append("\" height=\"");
-    string->appendS32(height);
-    string->append("\">\n");
-    stream->write(string->c_str(), string->size());
-    stream->flush();
+    auto size = stream->bytesWritten();
+    auto data = SkData::MakeUninitialized(size);
+    stream->copyTo(data->writable_data());
+    auto data_ptr = data.release();
+    sk_data->data = reinterpret_cast<skiac_data *>(data_ptr);
+    sk_data->ptr = data_ptr->bytes();
+    sk_data->size = data_ptr->size();
   }
 
   void skiac_sk_w_stream_destroy(skiac_w_memory_stream *c_w_memory_stream)

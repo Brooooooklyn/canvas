@@ -592,9 +592,27 @@ impl<'scope> SVGCanvas<'scope> {
   }
 
   #[napi]
-  pub fn get_content(&self, env: Env) -> Result<BufferSlice> {
-    let svg_data_stream = self.ctx.context.stream.as_ref().unwrap();
+  pub fn get_content(&mut self, env: Env) -> Result<BufferSlice> {
+    let svg_data_stream = self
+      .ctx
+      .context
+      .stream
+      .take()
+      .ok_or_else(|| Error::new(Status::GenericFailure, "SVGCanvas has no stream"))?;
+    unsafe {
+      sk::ffi::skiac_canvas_destroy(self.ctx.context.surface.0);
+    };
     let svg_data = svg_data_stream.data(self.ctx.context.width, self.ctx.context.height);
+    let (surface, stream) = sk::Surface::new_svg(
+      self.ctx.context.width,
+      self.ctx.context.height,
+      self.ctx.context.surface.alpha_type(),
+      self.flag.into(),
+      ColorSpace::default(),
+    )
+    .ok_or_else(|| Error::new(Status::GenericFailure, "Failed to create surface"))?;
+    self.ctx.context.surface = surface;
+    self.ctx.context.stream = Some(stream);
     unsafe {
       BufferSlice::from_external(&env, svg_data.0.ptr, svg_data.0.size, svg_data, |_, d| {
         mem::drop(d)
