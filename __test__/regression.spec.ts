@@ -296,3 +296,10 @@ test('transform-with-non-inverted-matrix', (t) => {
     ctx.transform(0, 0, 0, 0, 1019, 1165)
   })
 })
+
+// https://github.com/Brooooooklyn/canvas/issues/996
+test('load avif image segmentation fault', async (t) => {
+  await t.notThrowsAsync(async () => {
+    await loadImage(join(__dirname, 'fixtures', 'issue-996.avif'))
+  })
+})
