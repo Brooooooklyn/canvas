@@ -60,7 +60,7 @@ const DEFAULT_JPEG_QUALITY: u8 = 92;
 // https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/platform/image-encoders/image_encoder.cc;l=100;drc=81c6f843fdfd8ef660d733289a7a32abe68e247a
 const DEFAULT_WEBP_QUALITY: u8 = 80;
 
-#[napi::module_init]
+#[napi_derive::module_init]
 fn init() {
   // pre init font regexp
   FONT_REGEXP.get_or_init(init_font_regexp);
