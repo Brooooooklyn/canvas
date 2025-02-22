@@ -3106,6 +3106,12 @@ impl Matrix {
   }
 }
 
+impl Default for Matrix {
+  fn default() -> Self {
+    Self::identity()
+  }
+}
+
 impl Clone for Matrix {
   fn clone(&self) -> Self {
     Matrix(unsafe { ffi::skiac_matrix_clone(self.0) })

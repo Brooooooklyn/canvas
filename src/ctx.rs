@@ -256,11 +256,9 @@ impl Context {
 
   pub fn transform(&mut self, ts: Matrix) -> result::Result<(), SkError> {
     let current_state = &mut self.state;
-    self.path.transform_self(
-      &ts
-        .invert()
-        .ok_or_else(|| SkError::InvalidTransform(ts.clone()))?,
-    );
+    if let Some(inverse) = ts.invert() {
+      self.path.transform_self(&inverse);
+    }
     current_state.transform = ts.multiply(&current_state.transform);
     self.surface.set_transform(&current_state.transform);
     Ok(())

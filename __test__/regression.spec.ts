@@ -287,3 +287,12 @@ test('draw-canvas-on-canvas', async (t) => {
 
   await snapshotImage(t, { ctx: backCtx, canvas: backCanvas })
 })
+
+// https://github.com/Brooooooklyn/canvas/issues/1000
+test('transform-with-non-inverted-matrix', (t) => {
+  const canvas = createCanvas(100, 100)
+  const ctx = canvas.getContext('2d')
+  t.notThrows(() => {
+    ctx.transform(0, 0, 0, 0, 1019, 1165)
+  })
+})
