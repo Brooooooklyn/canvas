@@ -77,9 +77,34 @@ impl CanvasPattern {
         ptr
       }
       Either4::C(canvas) => {
-        let canvas_bitmap = canvas.ctx.context.surface.get_bitmap();
-        let ptr = canvas_bitmap.0.bitmap;
-        inner_bitmap = Some(canvas_bitmap);
+        let width = canvas.width as usize;
+        let height = canvas.height as usize;
+        let bytes_per_row = width * 4;
+        let context = &canvas.ctx.context;
+        let color_space = context.color_space;
+        
+        let pixels = context.surface.read_pixels(
+          0,
+          0,
+          canvas.width,
+          canvas.height,
+          color_space,
+        ).ok_or_else(|| {
+          Error::new(Status::GenericFailure, "Failed to read pixels from canvas".to_owned())
+        })?;
+        
+        let bitmap = Bitmap::from_image_data(
+          pixels.as_ptr() as *mut u8,
+          width,
+          height,
+          bytes_per_row,
+          pixels.len(),
+          ColorType::RGBA8888,
+          AlphaType::Unpremultiplied,
+        );
+        
+        let ptr = bitmap.0.bitmap;
+        inner_bitmap = Some(bitmap);
         ptr
       }
       Either4::D(svg_canvas) => {
