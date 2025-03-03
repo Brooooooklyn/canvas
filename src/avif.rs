@@ -1,4 +1,4 @@
-use std::result;
+use std::{fmt::Display, result};
 
 use libavif::{AvifData, RgbPixels, YuvFormat};
 use libavif_sys as sys;
@@ -283,8 +283,8 @@ impl AvifImage {
 impl Drop for AvifImage {
   fn drop(&mut self) {
     unsafe {
-      sys::avifImageDestroy(self.image);
       sys::avifRGBImageFreePixels(&mut self.rgb_image);
+      sys::avifImageDestroy(self.image);
     }
   }
 }
