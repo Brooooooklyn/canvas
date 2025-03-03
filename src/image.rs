@@ -1,14 +1,12 @@
-use std::borrow::Cow;
-use std::str::FromStr;
-use std::{ptr, str};
+use std::{borrow::Cow, ptr, str, str::FromStr};
 
 use base64_simd::STANDARD;
 use napi::{bindgen_prelude::*, check_status, NapiRaw, NapiValue, Ref};
 
+use crate::avif::AvifImage;
 use crate::error::SkError;
 use crate::global_fonts::get_font;
-use crate::sk::Bitmap;
-use crate::sk::ColorSpace;
+use crate::sk::{AlphaType, Bitmap, ColorSpace, ColorType};
 
 #[napi]
 pub struct ImageData {
@@ -325,20 +323,21 @@ struct BitmapDecoder {
   this_ref: Ref<Object>,
 }
 
-#[derive(Debug)]
 pub(crate) struct DecodedBitmap {
   bitmap: DecodeStatus,
   width: f64,
   height: f64,
 }
 
-#[derive(Debug)]
+unsafe impl Send for DecodedBitmap {}
+
 struct BitmapInfo {
   data: Bitmap,
   is_svg: bool,
+  #[allow(dead_code)]
+  decoded_image: Option<AvifImage>,
 }
 
-#[derive(Debug)]
 enum DecodeStatus {
   Ok(BitmapInfo),
   Empty,
@@ -388,6 +387,7 @@ impl Task for BitmapDecoder {
             DecodeStatus::Ok(BitmapInfo {
               data: Bitmap::from_buffer(image_binary.as_ptr().cast_mut(), image_binary.len()),
               is_svg: false,
+              decoded_image: None,
             })
           } else {
             DecodeStatus::InvalidImage
@@ -403,10 +403,31 @@ impl Task for BitmapDecoder {
     } else {
       false
     } {
-      DecodeStatus::Ok(BitmapInfo {
-        data: Bitmap::from_buffer(data_ref.as_ptr().cast_mut(), length),
-        is_svg: false,
-      })
+      if libavif::is_avif(data_ref.as_ref()) {
+        let avif_image = AvifImage::decode_from(data_ref.as_ref())
+          .map_err(|e| Error::new(Status::InvalidArg, format!("Decode avif image failed {e}")))?;
+
+        let bitmap = Bitmap::from_image_data(
+          avif_image.data,
+          avif_image.width as usize,
+          avif_image.height as usize,
+          avif_image.row_bytes as usize,
+          (avif_image.row_bytes * avif_image.height) as usize,
+          ColorType::RGBA8888,
+          AlphaType::Premultiplied,
+        );
+        DecodeStatus::Ok(BitmapInfo {
+          data: bitmap,
+          is_svg: false,
+          decoded_image: Some(avif_image),
+        })
+      } else {
+        DecodeStatus::Ok(BitmapInfo {
+          data: Bitmap::from_buffer(data_ref.as_ptr().cast_mut(), length),
+          is_svg: false,
+          decoded_image: None,
+        })
+      }
     } else if is_svg_image(&data_ref, length) {
       let font = get_font().map_err(SkError::from)?;
       if (self.width - -1.0).abs() > f64::EPSILON && (self.height - -1.0).abs() > f64::EPSILON {
@@ -421,6 +442,7 @@ impl Task for BitmapDecoder {
           DecodeStatus::Ok(BitmapInfo {
             data: bitmap,
             is_svg: true,
+            decoded_image: None,
           })
         } else {
           DecodeStatus::InvalidSvg
@@ -432,6 +454,7 @@ impl Task for BitmapDecoder {
           DecodeStatus::Ok(BitmapInfo {
             data: bitmap,
             is_svg: true,
+            decoded_image: None,
           })
         } else {
           DecodeStatus::InvalidSvg

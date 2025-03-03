@@ -60,7 +60,8 @@ const GN_ARGS = [
   `skia_use_harfbuzz=true`,
   `skia_use_icu=true`,
   `skia_use_libheif=true`,
-  `skia_use_libavif=true`,
+  // the libavif would conflict with the Rust libavif, use the Rust library to handle avif images
+  `skia_use_libavif=false`,
   `skia_use_libjxl_decode=${!TARGET_TRIPLE.startsWith('riscv64')}`,
   `skia_use_libjpeg_turbo_decode=true`,
   `skia_use_libjpeg_turbo_encode=true`,

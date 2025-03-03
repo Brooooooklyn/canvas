@@ -1,6 +1,7 @@
-use std::result;
+use std::{fmt::Display, result};
 
 use libavif::{AvifData, RgbPixels, YuvFormat};
+use libavif_sys as sys;
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 
@@ -133,4 +134,163 @@ pub(crate) fn encode(
   encoder.set_speed(config.speed);
   encoder.set_max_threads(config.threads);
   encoder.encode(&image).map_err(SkError::EncodeAvifError)
+}
+
+/// Enum representing AVIF error codes
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AvifErrorCode {
+  Ok = 0,
+  UnknownError = 1,
+  InvalidFtyp = 2,
+  NoContent = 3,
+  NoYuvFormatSelected = 4,
+  ReformatFailed = 5,
+  UnsupportedDepth = 6,
+  EncodeColorFailed = 7,
+  EncodeAlphaFailed = 8,
+  BmffParseFailed = 9,
+  MissingImageItem = 10,
+  DecodeColorFailed = 11,
+  DecodeAlphaFailed = 12,
+  ColorAlphaSizeMismatch = 13,
+  IspeSizeMismatch = 14,
+  NoCodecAvailable = 15,
+  NoImagesRemaining = 16,
+  InvalidExifPayload = 17,
+  InvalidImageGrid = 18,
+  InvalidCodecSpecificOption = 19,
+  TruncatedData = 20,
+  IoNotSet = 21,
+  IoError = 22,
+  WaitingOnIo = 23,
+  InvalidArgument = 24,
+  NotImplemented = 25,
+  OutOfMemory = 26,
+  CannotChangeSetting = 27,
+  IncompatibleImage = 28,
+  InternalError = 29,
+  EncodeGainMapFailed = 30,
+  DecodeGainMapFailed = 31,
+  InvalidToneMappedImage = 32,
+}
+
+impl Display for AvifErrorCode {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    write!(f, "{}", self)
+  }
+}
+
+#[derive(Debug)]
+pub enum AvifError {
+  Known(AvifErrorCode),
+  Unknown(u32),
+}
+
+impl std::fmt::Display for AvifError {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      AvifError::Known(code) => write!(f, "AvifError: {}", code),
+      AvifError::Unknown(code) => write!(f, "AvifError: {}", code),
+    }
+  }
+}
+
+impl std::error::Error for AvifError {}
+
+impl From<u32> for AvifError {
+  fn from(code: u32) -> Self {
+    match code {
+      0 => AvifError::Known(AvifErrorCode::Ok),
+      1 => AvifError::Known(AvifErrorCode::UnknownError),
+      2 => AvifError::Known(AvifErrorCode::InvalidFtyp),
+      3 => AvifError::Known(AvifErrorCode::NoContent),
+      4 => AvifError::Known(AvifErrorCode::NoYuvFormatSelected),
+      5 => AvifError::Known(AvifErrorCode::ReformatFailed),
+      6 => AvifError::Known(AvifErrorCode::UnsupportedDepth),
+      7 => AvifError::Known(AvifErrorCode::EncodeColorFailed),
+      8 => AvifError::Known(AvifErrorCode::EncodeAlphaFailed),
+      9 => AvifError::Known(AvifErrorCode::BmffParseFailed),
+      10 => AvifError::Known(AvifErrorCode::MissingImageItem),
+      11 => AvifError::Known(AvifErrorCode::DecodeColorFailed),
+      12 => AvifError::Known(AvifErrorCode::DecodeAlphaFailed),
+      13 => AvifError::Known(AvifErrorCode::ColorAlphaSizeMismatch),
+      14 => AvifError::Known(AvifErrorCode::IspeSizeMismatch),
+      15 => AvifError::Known(AvifErrorCode::NoCodecAvailable),
+      16 => AvifError::Known(AvifErrorCode::NoImagesRemaining),
+      17 => AvifError::Known(AvifErrorCode::InvalidExifPayload),
+      18 => AvifError::Known(AvifErrorCode::InvalidImageGrid),
+      19 => AvifError::Known(AvifErrorCode::InvalidCodecSpecificOption),
+      20 => AvifError::Known(AvifErrorCode::TruncatedData),
+      21 => AvifError::Known(AvifErrorCode::IoNotSet),
+      22 => AvifError::Known(AvifErrorCode::IoError),
+      23 => AvifError::Known(AvifErrorCode::WaitingOnIo),
+      24 => AvifError::Known(AvifErrorCode::InvalidArgument),
+      25 => AvifError::Known(AvifErrorCode::NotImplemented),
+      26 => AvifError::Known(AvifErrorCode::OutOfMemory),
+      27 => AvifError::Known(AvifErrorCode::CannotChangeSetting),
+      28 => AvifError::Known(AvifErrorCode::IncompatibleImage),
+      29 => AvifError::Known(AvifErrorCode::InternalError),
+      30 => AvifError::Known(AvifErrorCode::EncodeGainMapFailed),
+      31 => AvifError::Known(AvifErrorCode::DecodeGainMapFailed),
+      32 => AvifError::Known(AvifErrorCode::InvalidToneMappedImage),
+      _ => AvifError::Unknown(code),
+    }
+  }
+}
+
+impl AvifError {
+  pub fn from_code(code: u32) -> result::Result<(), AvifError> {
+    match code {
+      0 => Ok(()),
+      _ => Err(AvifError::Unknown(code)),
+    }
+  }
+}
+
+pub struct AvifImage {
+  image: *mut sys::avifImage,
+  rgb_image: sys::avifRGBImage,
+  pub width: u32,
+  pub height: u32,
+  pub row_bytes: u32,
+  pub data: *mut u8,
+}
+
+impl AvifImage {
+  pub fn decode_from(avif_bytes: &[u8]) -> result::Result<Self, AvifError> {
+    let decoder = unsafe { sys::avifDecoderCreate() };
+    let image = unsafe { sys::avifImageCreateEmpty() };
+    AvifError::from_code(unsafe {
+      sys::avifDecoderReadMemory(decoder, image, avif_bytes.as_ptr(), avif_bytes.len())
+    })?;
+
+    unsafe {
+      sys::avifDecoderDestroy(decoder);
+    }
+    let mut rgb_image = sys::avifRGBImage::default();
+    unsafe {
+      sys::avifRGBImageSetDefaults(&mut rgb_image, image);
+      rgb_image.format = sys::AVIF_RGB_FORMAT_RGBA;
+      rgb_image.depth = 8;
+      AvifError::from_code(sys::avifRGBImageAllocatePixels(&mut rgb_image))?;
+      AvifError::from_code(sys::avifImageYUVToRGB(image, &mut rgb_image))?;
+    };
+    Ok(Self {
+      image,
+      width: unsafe { (*image).width },
+      height: unsafe { (*image).height },
+      data: rgb_image.pixels,
+      row_bytes: rgb_image.rowBytes,
+      rgb_image,
+    })
+  }
+}
+
+impl Drop for AvifImage {
+  fn drop(&mut self) {
+    unsafe {
+      sys::avifImageDestroy(self.image);
+      sys::avifRGBImageFreePixels(&mut self.rgb_image);
+    }
+  }
 }

@@ -298,8 +298,10 @@ test('transform-with-non-inverted-matrix', (t) => {
 })
 
 // https://github.com/Brooooooklyn/canvas/issues/996
-test('load avif image segmentation fault', async (t) => {
-  await t.notThrowsAsync(async () => {
-    await loadImage(join(__dirname, 'fixtures', 'issue-996.avif'))
-  })
+test('draw-avif-image', async (t) => {
+  const canvas = createCanvas(1920, 1080)
+  const ctx = canvas.getContext('2d')
+  const image = await loadImage(join(__dirname, 'fixtures', 'issue-996.avif'))
+  ctx.drawImage(image, 0, 0)
+  await snapshotImage(t, { ctx, canvas })
 })
