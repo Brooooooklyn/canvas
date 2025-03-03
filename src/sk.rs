@@ -3558,8 +3558,8 @@ impl Bitmap {
     };
     Bitmap(ffi::skiac_bitmap_info {
       bitmap,
-      width: row_bytes as i32,
-      height: (size / row_bytes / 4) as i32,
+      width: width as i32,
+      height: height as i32,
       is_canvas: false,
     })
   }
