@@ -473,7 +473,7 @@ __metadata:
     "@swc/core": "npm:^1.4.0"
     "@taplo/cli": "npm:^0.7.0"
     "@types/lodash": "npm:^4.14.202"
-    "@types/node": "npm:^20.11.16"
+    "@types/node": "npm:^22.0.0"
     "@types/semver": "npm:^7"
     ava: "npm:^6.1.1"
     canvas: "npm:^3.0.0"
@@ -1614,12 +1614,12 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@types/node@npm:^20.11.16":
-  version: 20.17.22
-  resolution: "@types/node@npm:20.17.22"
+"@types/node@npm:^22.0.0":
+  version: 22.13.8
+  resolution: "@types/node@npm:22.13.8"
   dependencies:
-    undici-types: "npm:~6.19.2"
-  checksum: 10c0/5a78f60144bd69eaf1bdce39c906d988b0dc0f4c13068af9a3c44b0df737a0f363680a97d073a45d962b061cd4b3a8cfab71eec491ca6845888b68ab7855a778
+    undici-types: "npm:~6.20.0"
+  checksum: 10c0/bfc92b734a9dce6ac5daee0a52feccdf5dcb3804d895e4bc5384e2f4644612b8801725cd03c8c3c0888fb5eeb16b875877ac44b77641e0196dc1a837b1c2a366
   languageName: node
   linkType: hard
 
@@ -5188,10 +5188,10 @@ __metadata:
   languageName: node
   linkType: hard
 
-"undici-types@npm:~6.19.2":
-  version: 6.19.8
-  resolution: "undici-types@npm:6.19.8"
-  checksum: 10c0/078afa5990fba110f6824823ace86073b4638f1d5112ee26e790155f481f2a868cc3e0615505b6f4282bdf74a3d8caad715fd809e870c2bb0704e3ea6082f344
+"undici-types@npm:~6.20.0":
+  version: 6.20.0
+  resolution: "undici-types@npm:6.20.0"
+  checksum: 10c0/68e659a98898d6a836a9a59e6adf14a5d799707f5ea629433e025ac90d239f75e408e2e5ff086afc3cace26f8b26ee52155293564593fbb4a2f666af57fc59bf
   languageName: node
   linkType: hard
 
