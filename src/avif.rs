@@ -1,4 +1,4 @@
-use std::{fmt::Display, result};
+use std::result;
 
 use libavif::{AvifData, RgbPixels, YuvFormat};
 use libavif_sys as sys;
@@ -174,12 +174,6 @@ pub enum AvifErrorCode {
   InvalidToneMappedImage = 32,
 }
 
-impl Display for AvifErrorCode {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    write!(f, "{}", self)
-  }
-}
-
 #[derive(Debug)]
 pub enum AvifError {
   Known(AvifErrorCode),
@@ -189,7 +183,7 @@ pub enum AvifError {
 impl std::fmt::Display for AvifError {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
-      AvifError::Known(code) => write!(f, "AvifError: {}", code),
+      AvifError::Known(code) => write!(f, "AvifError: {:?}", code),
       AvifError::Unknown(code) => write!(f, "AvifError: {}", code),
     }
   }
