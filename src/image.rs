@@ -124,6 +124,8 @@ pub struct Image {
   pub(crate) is_svg: bool,
   pub(crate) color_space: ColorSpace,
   pub(crate) src: Option<Either<Uint8Array, String>>,
+  // take ownership of avif image, let it be dropped when image is dropped
+  _avif_image_ref: Option<AvifImage>,
 }
 
 impl ObjectFinalize for Image {
@@ -154,6 +156,7 @@ impl Image {
       is_svg: false,
       color_space,
       src: None,
+      _avif_image_ref: None,
     })
   }
 
@@ -501,6 +504,7 @@ impl Task for BitmapDecoder {
         self_mut.src = self.data.take();
         self_mut.is_svg = bitmap.is_svg;
         self_mut.bitmap = Some(bitmap.data);
+        self_mut._avif_image_ref = bitmap.decoded_image;
         env.adjust_external_memory((output.width as i64) * (output.height as i64) * 4)?;
       }
       DecodeStatus::Empty => {}
