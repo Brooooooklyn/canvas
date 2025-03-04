@@ -1,3 +1,19 @@
+## [0.1.68](https://github.com/Brooooooklyn/canvas/compare/v0.1.67...v0.1.68) (2025-03-04)
+
+
+### Bug Fixes
+
+* Bitmap::from_image_data width and height ([#1012](https://github.com/Brooooooklyn/canvas/issues/1012)) ([dc9cdd1](https://github.com/Brooooooklyn/canvas/commit/dc9cdd15e68ff1401e62fe5d1c0bcddf8a64ef92))
+* BlendMode::Plus should be mapped to "plus" globalCompositeOperation ([#1016](https://github.com/Brooooooklyn/canvas/issues/1016)) ([bd61a90](https://github.com/Brooooooklyn/canvas/commit/bd61a90f9debc274d7464b879b44267612f953cf))
+* create pattern from Canvas ([#1013](https://github.com/Brooooooklyn/canvas/issues/1013)) ([d1137a5](https://github.com/Brooooooklyn/canvas/commit/d1137a549e6278c14e265253862fa7ff9bb6dbfa))
+* decode avif Image with libavif ([#1005](https://github.com/Brooooooklyn/canvas/issues/1005)) ([d369c55](https://github.com/Brooooooklyn/canvas/commit/d369c55b4e6fdb30cc9e6ef8b4d0d9d72c2f41cb))
+* don't panic if current ts is not able to invert when transform ([#1002](https://github.com/Brooooooklyn/canvas/issues/1002)) ([27e1cc8](https://github.com/Brooooooklyn/canvas/commit/27e1cc82fb8678e839f13c000f713b30fc9cb1ca))
+* draw canvas on canvas clip ([#1003](https://github.com/Brooooooklyn/canvas/issues/1003)) ([e609b20](https://github.com/Brooooooklyn/canvas/commit/e609b202ed35b0c0bfc16d7dcfa95afb0c66100c))
+* make sure registered font Buffer is valid ([#1014](https://github.com/Brooooooklyn/canvas/issues/1014)) ([529e96c](https://github.com/Brooooooklyn/canvas/commit/529e96c39401f81ff427093de26e039cf310b616))
+* memory leak in some blend mode ([#1015](https://github.com/Brooooooklyn/canvas/issues/1015)) ([319f5b2](https://github.com/Brooooooklyn/canvas/commit/319f5b24119a22c882e0dd71b461f33edd36eba4))
+
+
+
 ## [0.1.67](https://github.com/Brooooooklyn/canvas/compare/v0.1.66...v0.1.67) (2025-02-08)
 
 
