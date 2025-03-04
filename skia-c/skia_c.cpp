@@ -1644,6 +1644,7 @@ extern "C"
   }
 
   skiac_shader *skiac_bitmap_get_shader(
+      bool is_canvas,
       skiac_bitmap *c_bitmap,
       int repeat_x,
       int repeat_y,
@@ -1652,7 +1653,19 @@ extern "C"
       skiac_transform c_ts)
   {
     const auto ts = conv_from_transform(c_ts);
-    auto bitmap = reinterpret_cast<SkBitmap *>(c_bitmap);
+    SkBitmap *bitmap;
+    if (is_canvas) {
+      auto surface = reinterpret_cast<SkSurface *>(c_bitmap);
+      auto bm = new SkBitmap();
+      bm->allocPixels(surface->imageInfo());
+      if (surface->readPixels(*bm, 0, 0)) {
+        bitmap = bm;
+      } else {
+        return nullptr;
+      }
+    } else {
+      bitmap = reinterpret_cast<SkBitmap *>(c_bitmap);
+    }
     auto shader = bitmap->makeShader((SkTileMode)repeat_x, (SkTileMode)repeat_y, SkSamplingOptions({B, C}), &ts).release();
     if (shader)
     {

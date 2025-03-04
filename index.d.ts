@@ -107,9 +107,7 @@ export interface DOMMatrix extends DOMMatrixReadOnly {
   toJSON(): { [K in OmitNeverOfMatrix]: DOMMatrix[K] }
 }
 
-type OmitMatrixMethod = {
-  [K in keyof DOMMatrix]: DOMMatrix[K] extends (...args: any[]) => any ? never : K
-}
+type OmitMatrixMethod = { [K in keyof DOMMatrix]: DOMMatrix[K] extends (...args: any[]) => any ? never : K }
 
 type OmitNeverOfMatrix = OmitMatrixMethod[keyof OmitMatrixMethod]
 
@@ -278,7 +276,7 @@ export interface SKRSContext2D
     dh: number,
   ): void
   createPattern(
-    image: Image | ImageData,
+    image: Image | ImageData | Canvas | SvgCanvas,
     repeat: 'repeat' | 'repeat-x' | 'repeat-y' | 'no-repeat' | null,
   ): CanvasPattern
   getContextAttributes(): { alpha: boolean; desynchronized: boolean }
@@ -393,14 +391,7 @@ export function createCanvas(width: number, height: number): Canvas
 export function createCanvas(width: number, height: number, svgExportFlag: SvgExportFlag): SvgCanvas
 
 interface IGlobalFonts {
-  readonly families: {
-    family: string
-    styles: {
-      weight: number
-      width: string
-      style: string
-    }[]
-  }[]
+  readonly families: { family: string; styles: { weight: number; width: string; style: string }[] }[]
   // return true if succeeded
   register(font: Buffer, nameAlias?: string): boolean
   // absolute path

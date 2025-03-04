@@ -515,6 +515,7 @@ extern "C"
   size_t skiac_bitmap_get_width(skiac_bitmap *c_bitmap);
   size_t skiac_bitmap_get_height(skiac_bitmap *c_bitmap);
   skiac_shader *skiac_bitmap_get_shader(
+      bool is_canvas,
       skiac_bitmap *c_bitmap,
       int repeat_x,
       int repeat_y,

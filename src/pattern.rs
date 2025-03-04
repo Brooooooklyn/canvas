@@ -55,6 +55,7 @@ impl CanvasPattern {
     repetition: Option<String>,
   ) -> Result<Self> {
     let mut inner_bitmap = None;
+    let mut is_canvas = false;
     let bitmap = match input {
       Either4::A(image) => image
         .bitmap
@@ -80,12 +81,14 @@ impl CanvasPattern {
         let canvas_bitmap = canvas.ctx.context.surface.get_bitmap();
         let ptr = canvas_bitmap.0.bitmap;
         inner_bitmap = Some(canvas_bitmap);
+        is_canvas = true;
         ptr
       }
       Either4::D(svg_canvas) => {
         let canvas_bitmap = svg_canvas.ctx.context.surface.get_bitmap();
         let ptr = canvas_bitmap.0.bitmap;
         inner_bitmap = Some(canvas_bitmap);
+        is_canvas = true;
         ptr
       }
     };
@@ -110,6 +113,7 @@ impl CanvasPattern {
         bitmap,
         repeat_x,
         repeat_y,
+        is_canvas,
       }),
       bitmap: inner_bitmap,
     })

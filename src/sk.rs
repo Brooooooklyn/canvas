@@ -849,6 +849,7 @@ pub mod ffi {
     pub fn skiac_bitmap_get_height(c_bitmap: *mut skiac_bitmap) -> usize;
 
     pub fn skiac_bitmap_get_shader(
+      is_canvas: bool,
       c_bitmap: *mut skiac_bitmap,
       repeat_x: i32,
       repeat_y: i32,
@@ -2973,6 +2974,7 @@ impl Shader {
   }
 
   pub fn from_bitmap(
+    is_canvas: bool,
     bitmap: *mut ffi::skiac_bitmap,
     repeat_x: TileMode,
     repeat_y: TileMode,
@@ -2981,8 +2983,15 @@ impl Shader {
     ts: Transform,
   ) -> Option<Shader> {
     unsafe {
-      let shader_ptr =
-        ffi::skiac_bitmap_get_shader(bitmap, repeat_x as i32, repeat_y as i32, b, c, ts.into());
+      let shader_ptr = ffi::skiac_bitmap_get_shader(
+        is_canvas,
+        bitmap,
+        repeat_x as i32,
+        repeat_y as i32,
+        b,
+        c,
+        ts.into(),
+      );
       Shader::from_ptr(shader_ptr)
     }
   }
@@ -3581,11 +3590,13 @@ pub struct ImagePattern {
   pub(crate) repeat_x: TileMode,
   pub(crate) repeat_y: TileMode,
   pub(crate) transform: Transform,
+  pub(crate) is_canvas: bool,
 }
 
 impl ImagePattern {
   pub(crate) fn get_shader(&self) -> Option<Shader> {
     Shader::from_bitmap(
+      self.is_canvas,
       self.bitmap,
       self.repeat_x,
       self.repeat_y,
