@@ -956,14 +956,8 @@ impl CanvasRenderingContext2D {
   }
 
   #[napi(getter)]
-  pub fn get_global_composite_operation(&self) -> String {
-    self
-      .context
-      .state
-      .paint
-      .get_blend_mode()
-      .as_str()
-      .to_owned()
+  pub fn get_global_composite_operation(&self) -> &str {
+    self.context.state.paint.get_blend_mode().as_str()
   }
 
   #[napi(setter, return_if_invalid)]

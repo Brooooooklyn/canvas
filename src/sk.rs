@@ -1216,7 +1216,7 @@ impl Default for BlendMode {
 }
 
 impl BlendMode {
-  pub fn as_str(&self) -> &str {
+  pub fn as_str(&self) -> &'static str {
     match self {
       BlendMode::Clear => "clear",
       BlendMode::Color => "color",
@@ -1237,7 +1237,7 @@ impl BlendMode {
       BlendMode::Modulate => "modulate",
       BlendMode::Multiply => "multiply",
       BlendMode::Overlay => "overlay",
-      BlendMode::Plus => "plus",
+      BlendMode::Plus => "lighter",
       BlendMode::Saturation => "saturation",
       BlendMode::Screen => "screen",
       BlendMode::SoftLight => "soft-light",
@@ -1275,7 +1275,7 @@ impl FromStr for BlendMode {
       "modulate" => Ok(BlendMode::Modulate),
       "multiply" => Ok(BlendMode::Multiply),
       "overlay" => Ok(BlendMode::Overlay),
-      "plus" => Ok(BlendMode::Plus),
+      "lighter" => Ok(BlendMode::Plus),
       "saturation" => Ok(BlendMode::Saturation),
       "screen" => Ok(BlendMode::Screen),
       "soft-light" => Ok(BlendMode::SoftLight),
