@@ -390,14 +390,20 @@ export function createCanvas(width: number, height: number): Canvas
 
 export function createCanvas(width: number, height: number, svgExportFlag: SvgExportFlag): SvgCanvas
 
+export declare class FontKey {
+  // make it a unique type
+  private readonly key: symbol
+}
+
 interface IGlobalFonts {
   readonly families: { family: string; styles: { weight: number; width: string; style: string }[] }[]
   // return true if succeeded
-  register(font: Buffer, nameAlias?: string): boolean
+  register(font: Buffer, nameAlias?: string): FontKey | null
   // absolute path
   registerFromPath(path: string, nameAlias?: string): boolean
   has(name: string): boolean
   loadFontsFromDir(path: string): number
+  remove(key: FontKey): void
 }
 
 export const GlobalFonts: IGlobalFonts
