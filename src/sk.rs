@@ -1998,7 +1998,7 @@ impl fmt::Debug for Color {
 
 impl Color {
   pub fn from_rgba(r: u8, g: u8, b: u8, a: u8) -> Color {
-    Color((a as u32) << 24 | (r as u32) << 16 | (g as u32) << 8 | (b as u32))
+    Color(((a as u32) << 24) | ((r as u32) << 16) | ((g as u32) << 8) | (b as u32))
   }
 }
 
@@ -2016,7 +2016,7 @@ impl Canvas {
     unsafe {
       ffi::skiac_canvas_clear(
         self.0,
-        (a as u32) << 24 | (r as u32) << 16 | (g as u32) << 8 | b as u32,
+        ((a as u32) << 24) | ((r as u32) << 16) | ((g as u32) << 8) | b as u32,
       );
     }
   }

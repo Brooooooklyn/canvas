@@ -296,3 +296,12 @@ test('transform-with-non-inverted-matrix', (t) => {
     ctx.transform(0, 0, 0, 0, 1019, 1165)
   })
 })
+
+// https://github.com/Brooooooklyn/canvas/issues/996
+test('draw-avif-image', async (t) => {
+  const canvas = createCanvas(1920, 1080)
+  const ctx = canvas.getContext('2d')
+  const image = await loadImage(join(__dirname, 'fixtures', 'issue-996.avif'))
+  ctx.drawImage(image, 0, 0)
+  await snapshotImage(t, { ctx, canvas })
+})

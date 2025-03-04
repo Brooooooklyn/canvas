@@ -305,9 +305,9 @@ pub(crate) fn css_filters_to_image_filter(filters: Vec<CssFilter>) -> Option<Ima
           offset_y,
           sigma,
           sigma,
-          (shadow_color.alpha as u32) << 24
-            | (shadow_color.red as u32) << 16
-            | (shadow_color.green as u32) << 8
+          ((shadow_color.alpha as u32) << 24)
+            | ((shadow_color.red as u32) << 16)
+            | ((shadow_color.green as u32) << 8)
             | shadow_color.blue as u32,
           Some(&image_filter),
         )

@@ -60,6 +60,9 @@ const GN_ARGS = [
   `skia_use_harfbuzz=true`,
   `skia_use_icu=true`,
   `skia_use_libheif=true`,
+  // the libavif would conflict with the Rust libavif, use the Rust library to handle avif images
+  `skia_use_libavif=false`,
+  `skia_use_libjxl_decode=${!TARGET_TRIPLE.startsWith('riscv64')}`,
   `skia_use_libjpeg_turbo_decode=true`,
   `skia_use_libjpeg_turbo_encode=true`,
   `skia_use_libwebp_decode=true`,
@@ -83,7 +86,7 @@ const GN_ARGS = [
   `skia_enable_fontmgr_custom_empty=true`,
   `skia_enable_fontmgr_android=false`,
   `skunicode_tests_enabled=false`,
-  `skia_enable_skshaper_tests=false`
+  `skia_enable_skshaper_tests=false`,
 ]
 
 switch (PLATFORM_NAME) {
@@ -128,11 +131,7 @@ switch (PLATFORM_NAME) {
       '"-DSK_CODEC_DECODES_JPEG",' +
       '"-DSK_HAS_HEIF_LIBRARY",' +
       '"-DSK_SHAPER_HARFBUZZ_AVAILABLE"'
-    if (
-      PLATFORM_NAME === 'linux' &&
-      !TARGET_TRIPLE &&
-      HOST_ARCH === 'x64'
-    ) {
+    if (PLATFORM_NAME === 'linux' && !TARGET_TRIPLE && HOST_ARCH === 'x64') {
       if (HOST_LIBC === 'glibc') {
         ExtraCflagsCC += ',"-stdlib=libc++","-static","-I/usr/lib/llvm-18/include/c++/v1"'
       } else {
@@ -181,8 +180,8 @@ switch (TARGET_TRIPLE) {
     )
     break
   case 'armv7-unknown-linux-gnueabihf':
-    CC='"arm-linux-gnueabihf-gcc"'
-    CXX='"arm-linux-gnueabihf-g++"'
+    CC = '"arm-linux-gnueabihf-gcc"'
+    CXX = '"arm-linux-gnueabihf-g++"'
     ExtraSkiaBuildFlag += ' target_cpu="armv7a" target_os="linux"'
     ExtraCflags = `"-march=armv7-a", "-mthumb", "-mfpu=neon"`
     break
@@ -226,7 +225,7 @@ switch (TARGET_TRIPLE) {
     ExtraSkiaBuildFlag += ' target_cpu="riscv64" target_os="linux"'
     CC = '"riscv64-linux-gnu-gcc"'
     CXX = '"riscv64-linux-gnu-g++"'
-    break;
+    break
   case '':
     break
   default:

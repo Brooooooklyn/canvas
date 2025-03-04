@@ -650,7 +650,7 @@ impl Context {
       state.shadow_offset_y,
       sigma_x,
       sigma_y,
-      (a as u32) << 24 | (r as u32) << 16 | (g as u32) << 8 | b as u32,
+      ((a as u32) << 24) | ((r as u32) << 16) | ((g as u32) << 8) | b as u32,
       None,
     )?;
     drop_shadow_paint.set_alpha(shadow_alpha);
@@ -687,7 +687,7 @@ impl Context {
         0.0,
         sigma_x,
         sigma_y,
-        (a as u32) << 24 | (r as u32) << 16 | (g as u32) << 8 | b as u32,
+        ((a as u32) << 24) | ((r as u32) << 16) | ((g as u32) << 8) | b as u32,
         None,
       )?;
       drop_shadow_paint.set_alpha(shadow_alpha);
