@@ -2,7 +2,7 @@ import { readFileSync } from 'fs'
 import { join } from 'path'
 import test from 'ava'
 
-import { GlobalFonts } from '../index'
+import { GlobalFonts, FontKey } from '../index'
 
 const fontPath = join(__dirname, 'fonts', 'SourceSerifPro-Regular.ttf')
 const fontData = readFileSync(fontPath)
@@ -16,8 +16,12 @@ test('should be able to register font and test font existence', (t) => {
   t.is(GlobalFonts.has('114514'), false)
 
   if (!GlobalFonts.has('Source Serif Pro')) {
-    t.true(GlobalFonts.register(fontData))
+    const fontKey = GlobalFonts.register(fontData)
+    t.true(fontKey instanceof FontKey)
     t.is(GlobalFonts.families.length, defaultCount + 1)
+    t.notThrows(() => {
+      GlobalFonts.remove(fontKey!)
+    })
   } else {
     t.is(GlobalFonts.families.length, defaultCount)
   }
@@ -32,7 +36,7 @@ test('multiple identical fonts should only exist within one font family', (t) =>
 })
 
 test('return false if font path not existed', (t) => {
-  t.false(GlobalFonts.register(Buffer.from('whatever')))
+  t.is(GlobalFonts.register(Buffer.from('whatever')), null)
 })
 
 test('should be able to register font with name alias', (t) => {

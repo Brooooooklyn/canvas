@@ -24,22 +24,52 @@ pub(crate) fn get_font<'a>() -> LockResult<MutexGuard<'a, FontCollection>> {
 }
 
 #[inline]
-fn into_napi_error(err: PoisonError<MutexGuard<'_, FontCollection>>) -> napi::Error {
+fn into_napi_error<E>(err: PoisonError<MutexGuard<'_, E>>) -> napi::Error {
   napi::Error::new(napi::Status::GenericFailure, format!("{err}"))
+}
+
+#[napi]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct FontKey {
+  inner: uuid::Uuid,
 }
 
 #[napi(js_name = "GlobalFonts")]
 #[allow(non_snake_case)]
 pub mod global_fonts {
+  use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex, OnceLock},
+  };
+
   use napi::bindgen_prelude::*;
 
-  use super::{get_font, into_napi_error, FONT_DIR, FONT_PATH};
+  use super::{get_font, into_napi_error, FontKey, FONT_DIR, FONT_PATH};
+
+  type ThreadsafePtrKeyHashmap = HashMap<uuid::Uuid, Arc<Uint8Array>>;
+
+  static GLOBAL_REGISTERED_BUFFERS: OnceLock<Mutex<ThreadsafePtrKeyHashmap>> = OnceLock::new();
 
   #[napi]
-  pub fn register(font_data: &[u8], name_alias: Option<String>) -> Result<bool> {
+  pub fn register(
+    font_data: Arc<Uint8Array>,
+    name_alias: Option<String>,
+  ) -> Result<Option<FontKey>> {
     let maybe_name_alias = name_alias.and_then(|s| if s.is_empty() { None } else { Some(s) });
     let font = get_font().map_err(into_napi_error)?;
-    Ok(font.register(font_data, maybe_name_alias))
+    let global_buffers = GLOBAL_REGISTERED_BUFFERS.get_or_init(Default::default);
+    let key = FontKey {
+      inner: uuid::Uuid::new_v4(),
+    };
+    global_buffers
+      .lock()
+      .map_err(into_napi_error)?
+      .insert(key.inner.clone(), font_data.clone());
+    Ok(
+      font
+        .register(font_data.as_ref(), maybe_name_alias)
+        .then(|| key),
+    )
   }
 
   // TODO: Do file extensions in font_path need to be converted to lowercase?
@@ -74,6 +104,16 @@ pub mod global_fonts {
   pub fn set_alias(font_name: String, alias: String) -> Result<()> {
     let font = get_font().map_err(into_napi_error)?;
     font.set_alias(font_name.as_str(), alias.as_str());
+    Ok(())
+  }
+
+  #[napi]
+  pub fn remove(key: &FontKey) -> Result<()> {
+    let global_buffers = GLOBAL_REGISTERED_BUFFERS.get_or_init(Default::default);
+    global_buffers
+      .lock()
+      .map_err(into_napi_error)?
+      .remove(&key.inner);
     Ok(())
   }
 }

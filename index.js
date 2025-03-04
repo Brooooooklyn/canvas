@@ -9,7 +9,7 @@ const {
   Path: Path2D,
   ImageData,
   Image,
-  CanvasPattern,
+  FontKey,
   GlobalFonts,
   PathOp,
   FillType,
@@ -27,9 +27,6 @@ const SvgExportFlag = {
   NoPrettyXML: 0x02,
   RelativePathEncoding: 0x04,
 }
-
-// eslint-disable-next-line sonarjs/no-unused-collection
-const Fonts = []
 
 if (!('families' in GlobalFonts)) {
   Object.defineProperty(GlobalFonts, 'families', {
@@ -113,4 +110,5 @@ module.exports = {
   DOMMatrix,
   DOMRect,
   loadImage,
+  FontKey,
 }
