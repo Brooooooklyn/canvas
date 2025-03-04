@@ -62,6 +62,18 @@ jobs:
       - name: Clippy
         run: cargo clippy
 
+  lint-cpp:
+    name: Lint C++ Code
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install clang-format
+        run: brew install clang-format
+
+      - name: Format C++ Code
+        run: clang-format --Werror --style=Chromium --fail-on-incomplete-format --dry-run skia-c/*
+
   build:
     strategy:
       fail-fast: false
