@@ -64,11 +64,11 @@ pub mod global_fonts {
     global_buffers
       .lock()
       .map_err(into_napi_error)?
-      .insert(key.inner.clone(), font_data.clone());
+      .insert(key.inner, font_data.clone());
     Ok(
       font
         .register(font_data.as_ref(), maybe_name_alias)
-        .then(|| key),
+        .then_some(key),
     )
   }
 
