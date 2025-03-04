@@ -3777,7 +3777,7 @@ pub struct SkPicture(*mut ffi::skiac_picture);
 impl Drop for SkPicture {
   fn drop(&mut self) {
     unsafe {
-        ffi::skiac_picture_destroy(self.0);
+      ffi::skiac_picture_destroy(self.0);
     }
   }
 }
