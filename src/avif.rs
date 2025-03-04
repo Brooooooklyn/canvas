@@ -1,4 +1,4 @@
-use std::{fmt::Display, result};
+use std::result;
 
 use libavif::{AvifData, RgbPixels, YuvFormat};
 use libavif_sys as sys;

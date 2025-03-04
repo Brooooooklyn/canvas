@@ -85,7 +85,10 @@ jobs:
             target: 'x86_64-unknown-linux-gnu'
             downloadTarget: ''
             docker: ghcr.io/brooooooklyn/canvas/ubuntu-builder:jammy
-            build: yarn build --target x86_64-unknown-linux-gnu
+            build: >-
+              rustup install &&
+              rustup target add x86_64-unknown-linux-gnu &&
+              yarn build --target x86_64-unknown-linux-gnu
           - host: ubuntu-latest
             downloadTarget: 'x86_64-unknown-linux-musl'
             target: 'x86_64-unknown-linux-musl'
@@ -112,6 +115,7 @@ jobs:
             docker: ghcr.io/brooooooklyn/canvas/ubuntu-builder:jammy-aarch64
             build: >-
               set -e &&
+              rustup install &&
               rustup target add aarch64-unknown-linux-gnu &&
               yarn build --target aarch64-unknown-linux-gnu
           - host: ubuntu-24.04-arm
@@ -167,7 +171,7 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'yarn'
 
       - name: Set env
