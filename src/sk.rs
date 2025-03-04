@@ -859,6 +859,7 @@ pub mod ffi {
     ) -> *mut skiac_shader;
 
     pub fn skiac_bitmap_destroy(c_bitmap: *mut skiac_bitmap);
+    pub fn skiac_picture_destroy(c_picture: *mut skiac_picture);
 
     // SkString
     pub fn skiac_delete_sk_string(c_sk_string: *mut skiac_sk_string);
@@ -3772,6 +3773,14 @@ impl Drop for SkWMemoryStream {
 
 #[derive(Debug)]
 pub struct SkPicture(*mut ffi::skiac_picture);
+
+impl Drop for SkPicture {
+  fn drop(&mut self) {
+    unsafe {
+      ffi::skiac_picture_destroy(self.0);
+    }
+  }
+}
 
 #[derive(Debug)]
 pub struct SkPictureRecorder(pub(crate) *mut ffi::skiac_picture_recorder);

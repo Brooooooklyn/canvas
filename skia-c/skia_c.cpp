@@ -848,6 +848,11 @@ extern "C"
     return reinterpret_cast<skiac_path *>(new_path);
   }
 
+  void skiac_picture_destroy(skiac_picture *c_picture)
+  {
+    reinterpret_cast<SkPicture *>(c_picture)->unref();
+  }
+
   // SkPictureRecorder
   skiac_picture_recorder *skiac_picture_recorder_create() {
     return reinterpret_cast<skiac_picture_recorder *>(new SkPictureRecorder());

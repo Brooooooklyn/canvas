@@ -544,6 +544,7 @@ extern "C"
   void skiac_svg_text_to_path(const uint8_t *data, size_t length, skiac_font_collection *c_collection, skiac_sk_data *output_data);
 
   // SkPictureRecorder
+  void skiac_picture_destroy(skiac_picture *c_picture);
   skiac_picture_recorder *skiac_picture_recorder_create();
   void skiac_picture_recorder_begin_recording(skiac_picture_recorder *c_picture_recorder, float x, float y, float width, float height);
   skiac_canvas *skiac_picture_recorder_get_recording_canvas(skiac_picture_recorder *c_picture_recorder);
