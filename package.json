@@ -81,7 +81,7 @@
     "@types/semver": "^7",
     "ava": "^6.1.1",
     "canvas": "^3.0.0",
-    "canvaskit-wasm": "^0.39.1",
+    "canvaskit-wasm": "^0.40.0",
     "colorette": "^2.0.20",
     "conventional-changelog-cli": "^5.0.0",
     "core-js": "^3.38.0",
