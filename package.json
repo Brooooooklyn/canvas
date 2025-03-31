@@ -98,7 +98,7 @@
     "semver": "^7.5.4",
     "skia-canvas": "^2.0.0",
     "table": "^6.8.1",
-    "tinybench": "^3.0.6",
+    "tinybench": "^4.0.0",
     "typescript": "^5.3.3"
   },
   "lint-staged": {
