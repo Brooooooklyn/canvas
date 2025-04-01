@@ -1574,6 +1574,7 @@ bool skiac_bitmap_make_from_svg(const uint8_t* data,
   bitmap->allocPixels(imageinfo);
   auto sk_svg_canvas = new SkCanvas(*bitmap);
   svg_dom->render(sk_svg_canvas);
+  delete sk_svg_canvas;
   bitmap_info->bitmap = reinterpret_cast<skiac_bitmap*>(bitmap);
   bitmap_info->width = imageinfo.width();
   bitmap_info->height = imageinfo.height();
