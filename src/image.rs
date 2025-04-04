@@ -373,7 +373,7 @@ impl Task for BitmapDecoder {
     let bitmap = if str::from_utf8(&data_ref[0..10]) == Ok("data:image") {
       let data_str = str::from_utf8(&data_ref)
         .map_err(|e| Error::new(Status::InvalidArg, format!("Decode data url failed {e}")))?;
-      if let Some(base64_str) = data_str.split(',').last() {
+      if let Some(base64_str) = data_str.split(',').next_back() {
         let image_binary = STANDARD
           .decode_to_vec(base64_str)
           .map_err(|e| Error::new(Status::InvalidArg, format!("Decode data url failed {e}")))?;
