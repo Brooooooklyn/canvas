@@ -2,17 +2,17 @@ use std::{num::ParseFloatError, ptr};
 
 use cssparser::{Color, Parser, ParserInput, RGBA};
 use nom::{
+  AsChar, Err, IResult, Parser as NomParser,
   branch::alt,
   bytes::complete::{tag, take_till, take_until},
   character::complete::char,
   combinator::map_res,
   error::Error,
   number::complete::float,
-  AsChar, Err, IResult, Parser as NomParser,
 };
 use thiserror::Error;
 
-use crate::sk::{degrees_to_radians, ImageFilter};
+use crate::sk::{ImageFilter, degrees_to_radians};
 
 #[derive(Error, Debug)]
 pub enum ParseFilterError<'a> {

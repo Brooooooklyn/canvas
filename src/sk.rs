@@ -1,6 +1,6 @@
 use std::convert::TryFrom;
 use std::f32::consts::PI;
-use std::ffi::{c_void, CStr, CString, NulError};
+use std::ffi::{CStr, CString, NulError, c_void};
 use std::fmt::{self, Display};
 use std::ops::{Deref, DerefMut};
 use std::os::raw::c_char;
@@ -270,7 +270,7 @@ pub mod ffi {
     link(name = "skiac", kind = "static", modifiers = "+bundle,+whole-archive")
   )]
   #[cfg_attr(target_os = "windows", link(name = "skiac", kind = "static"))]
-  extern "C" {
+  unsafe extern "C" {
 
     pub fn skiac_clear_all_cache();
 
@@ -565,7 +565,7 @@ pub mod ffi {
     );
 
     pub fn skiac_path_op(c_path_one: *mut skiac_path, c_path_two: *mut skiac_path, op: i32)
-      -> bool;
+    -> bool;
 
     pub fn skiac_path_to_svg_string(c_path: *mut skiac_path, skia_string: *mut SkiaString);
 
@@ -656,7 +656,7 @@ pub mod ffi {
     pub fn skiac_path_hit_test(path: *mut skiac_path, x: f32, y: f32, kind: i32) -> bool;
 
     pub fn skiac_path_stroke_hit_test(path: *mut skiac_path, x: f32, y: f32, stroke_w: f32)
-      -> bool;
+    -> bool;
 
     pub fn skiac_path_round_rect(
       path: *mut skiac_path,
@@ -1654,7 +1654,7 @@ impl Surface {
     } else {
       Some(Surface {
         ptr,
-        canvas: Canvas(ffi::skiac_surface_get_canvas(ptr)),
+        canvas: Canvas(unsafe { ffi::skiac_surface_get_canvas(ptr) }),
       })
     }
   }
@@ -1736,11 +1736,7 @@ impl Surface {
         color_space as u8,
       )
     };
-    if status {
-      Some(result)
-    } else {
-      None
-    }
+    if status { Some(result) } else { None }
   }
 
   pub fn data(&self) -> Option<SurfaceData> {
@@ -2514,11 +2510,7 @@ impl Path {
   pub fn from_svg_path(path: &str) -> Option<Path> {
     let path_str = CString::new(path).ok()?;
     let p = unsafe { ffi::skiac_path_from_svg(path_str.into_raw()) };
-    if p.is_null() {
-      None
-    } else {
-      Some(Path(p))
-    }
+    if p.is_null() { None } else { Some(Path(p)) }
   }
 
   pub fn add_path(&mut self, sub_path: &Path, transform: &Matrix) {
@@ -3845,6 +3837,6 @@ pub fn sk_svg_text_to_path(svg: &[u8], fc: &FontCollection) -> Option<SkiaDataRe
 }
 
 unsafe extern "C" fn skiac_on_get_style(width: i32, weight: i32, slant: i32, raw_cb: *mut c_void) {
-  let cb = Box::leak(Box::from_raw(raw_cb as *mut Box<dyn FnMut(i32, i32, i32)>));
+  let cb = Box::leak(unsafe { Box::from_raw(raw_cb as *mut Box<dyn FnMut(i32, i32, i32)>) });
   cb(width, weight, slant);
 }
