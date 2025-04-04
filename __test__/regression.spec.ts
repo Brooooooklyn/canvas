@@ -323,3 +323,19 @@ test('canvas-pattern-1010', async (t) => {
   ctx.fillRect(512 / 2, 0, 512 / 2, 512)
   await snapshotImage(t, { ctx, canvas })
 })
+
+// https://github.com/Brooooooklyn/canvas/issues/1018
+test('draw-non-string-text', async (t) => {
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'iosevka-slab-regular.ttf'))
+  const canvas = createCanvas(300, 300)
+  const ctx = canvas.getContext('2d')
+  ctx.font = '36px Iosevka Slab'
+  ctx.fillStyle = 'red'
+  // @ts-expect-error
+  ctx.fillText(2015, 100, 100)
+  t.notThrows(() => {
+    // @ts-expect-error
+    ctx.measureText(2015)
+  })
+  await snapshotImage(t, { ctx, canvas })
+})

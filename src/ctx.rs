@@ -1723,7 +1723,9 @@ impl CanvasRenderingContext2D {
   }
 
   #[napi]
-  pub fn measure_text(&mut self, text: String) -> Result<TextMetrics> {
+  pub fn measure_text(&mut self, text: Unknown) -> Result<TextMetrics> {
+    let text = text.coerce_to_string()?.into_utf8()?;
+    let text = text.as_str()?;
     if text.is_empty() {
       return Ok(TextMetrics {
         actual_bounding_box_ascent: 0.0,
@@ -1738,7 +1740,7 @@ impl CanvasRenderingContext2D {
         width: 0.0,
       });
     }
-    let metrics = self.context.get_line_metrics(&text)?;
+    let metrics = self.context.get_line_metrics(text)?;
     Ok(TextMetrics {
       actual_bounding_box_ascent: metrics.0.ascent as f64,
       actual_bounding_box_descent: metrics.0.descent as f64,
@@ -1779,13 +1781,15 @@ impl CanvasRenderingContext2D {
   }
 
   #[napi(return_if_invalid)]
-  pub fn fill_text(&mut self, text: String, x: f64, y: f64, max_width: Option<f64>) -> Result<()> {
+  pub fn fill_text(&mut self, text: Unknown, x: f64, y: f64, max_width: Option<f64>) -> Result<()> {
+    let text = text.coerce_to_string()?.into_utf8()?;
+    let text = text.as_str()?;
     if text.is_empty() {
       return Ok(());
     }
     if !x.is_nan() && !x.is_infinite() && !y.is_nan() && !y.is_infinite() {
       self.context.fill_text(
-        &text,
+        text,
         x as f32,
         y as f32,
         max_width.map(|f| f as f32).unwrap_or(MAX_TEXT_WIDTH),
@@ -1821,17 +1825,19 @@ impl CanvasRenderingContext2D {
   #[napi(return_if_invalid)]
   pub fn stroke_text(
     &mut self,
-    text: String,
+    text: Unknown,
     x: f64,
     y: f64,
     max_width: Option<f64>,
   ) -> Result<()> {
+    let text = text.coerce_to_string()?.into_utf8()?;
+    let text = text.as_str()?;
     if text.is_empty() {
       return Ok(());
     }
     if !x.is_nan() && !x.is_infinite() && !y.is_nan() && !y.is_infinite() {
       self.context.stroke_text(
-        &text,
+        text,
         x as f32,
         y as f32,
         max_width.map(|v| v as f32).unwrap_or(MAX_TEXT_WIDTH),
