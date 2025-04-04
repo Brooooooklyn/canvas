@@ -1,3 +1,18 @@
+## [0.1.69](https://github.com/Brooooooklyn/canvas/compare/v0.1.68...v0.1.69) (2025-04-04)
+
+
+### Bug Fixes
+
+* accept non-string param as text ([#1030](https://github.com/Brooooooklyn/canvas/issues/1030)) ([c04cfd7](https://github.com/Brooooooklyn/canvas/commit/c04cfd7e68898eed0389b7c594844d43c0f4a646))
+* memory leak when creating bitmap from svg ([#1023](https://github.com/Brooooooklyn/canvas/issues/1023)) ([1bd4caa](https://github.com/Brooooooklyn/canvas/commit/1bd4caa419172a0dc3aae3ad5cacbb5f815faab3))
+
+
+### Features
+
+* chrome m136 ([#1033](https://github.com/Brooooooklyn/canvas/issues/1033)) ([e71612b](https://github.com/Brooooooklyn/canvas/commit/e71612bb57fa1b9d66604a13ae10aaf4d3c52e98))
+
+
+
 ## [0.1.68](https://github.com/Brooooooklyn/canvas/compare/v0.1.67...v0.1.68) (2025-03-04)
 
 
