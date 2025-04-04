@@ -16,16 +16,20 @@ fn main() {
   let compile_target_arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
 
   match compile_target_os.as_str() {
-    "windows" => {
+    "windows" => unsafe {
       env::set_var("CC", "clang-cl");
       env::set_var("CXX", "clang-cl");
-    }
+    },
     _ => {
       if env::var("CC").is_err() {
-        env::set_var("CC", "clang");
+        unsafe {
+          env::set_var("CC", "clang");
+        }
       }
       if env::var("CXX").is_err() {
-        env::set_var("CXX", "clang++");
+        unsafe {
+          env::set_var("CXX", "clang++");
+        }
       }
     }
   }
@@ -62,20 +66,22 @@ fn main() {
       } else {
         panic!("Unsupported host OS");
       };
-      env::set_var(
-        "CC",
-        format!(
-          "{nkd_home}/toolchains/llvm/prebuilt/{host}-x86_64/bin/aarch64-linux-android24-clang"
-        )
-        .as_str(),
-      );
-      env::set_var(
-        "CXX",
-        format!(
-          "{nkd_home}/toolchains/llvm/prebuilt/{host}-x86_64/bin/aarch64-linux-android24-clang++"
-        )
-        .as_str(),
-      );
+      unsafe {
+        env::set_var(
+          "CC",
+          format!(
+            "{nkd_home}/toolchains/llvm/prebuilt/{host}-x86_64/bin/aarch64-linux-android24-clang"
+          )
+          .as_str(),
+        );
+        env::set_var(
+          "CXX",
+          format!(
+            "{nkd_home}/toolchains/llvm/prebuilt/{host}-x86_64/bin/aarch64-linux-android24-clang++"
+          )
+          .as_str(),
+        );
+      }
       build
         .include(
           format!(
@@ -143,8 +149,12 @@ fn main() {
               .flag("--sysroot=/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot");
             println!("cargo:rustc-link-search=/usr/aarch64-unknown-linux-gnu/lib/llvm-18/lib");
             println!("cargo:rustc-link-search=/usr/aarch64-unknown-linux-gnu/lib");
-            println!("cargo:rustc-link-search=/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot/lib");
-            println!("cargo:rustc-link-search=/usr/aarch64-unknown-linux-gnu/lib/gcc/aarch64-unknown-linux-gnu/4.8.5");
+            println!(
+              "cargo:rustc-link-search=/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot/lib"
+            );
+            println!(
+              "cargo:rustc-link-search=/usr/aarch64-unknown-linux-gnu/lib/gcc/aarch64-unknown-linux-gnu/4.8.5"
+            );
           }
           "x86_64" => {
             link_libcxx(&mut build);
@@ -156,10 +166,12 @@ fn main() {
             println!("cargo:rustc-link-lib=static=atomic");
           }
           "arm" => {
-            env::set_var("CC", "clang");
-            env::set_var("CXX", "clang++");
-            env::set_var("TARGET_CC", "clang");
-            env::set_var("TARGET_CXX", "clang++");
+            unsafe {
+              env::set_var("CC", "clang");
+              env::set_var("CXX", "clang++");
+              env::set_var("TARGET_CC", "clang");
+              env::set_var("TARGET_CXX", "clang++");
+            }
             build
               .cpp_set_stdlib("stdc++")
               .flag("-static")

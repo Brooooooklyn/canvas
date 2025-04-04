@@ -1,7 +1,7 @@
 use std::{borrow::Cow, ptr, str, str::FromStr};
 
 use base64_simd::STANDARD;
-use napi::{bindgen_prelude::*, check_status, NapiRaw, NapiValue, Ref};
+use napi::{NapiRaw, NapiValue, Ref, bindgen_prelude::*, check_status};
 
 use crate::avif::AvifImage;
 use crate::error::SkError;
@@ -162,11 +162,7 @@ impl Image {
 
   #[napi(getter)]
   pub fn get_width(&self) -> f64 {
-    if self.width >= 0.0 {
-      self.width
-    } else {
-      0.0
-    }
+    if self.width >= 0.0 { self.width } else { 0.0 }
   }
 
   #[napi(setter)]
@@ -184,11 +180,7 @@ impl Image {
 
   #[napi(getter)]
   pub fn get_height(&self) -> f64 {
-    if self.height >= 0.0 {
-      self.height
-    } else {
-      0.0
-    }
+    if self.height >= 0.0 { self.height } else { 0.0 }
   }
 
   #[napi(setter)]
@@ -372,7 +364,7 @@ impl Task for BitmapDecoder {
           bitmap: DecodeStatus::Empty,
           width: self.width,
           height: self.height,
-        })
+        });
       }
     };
     let length = data_ref.len();

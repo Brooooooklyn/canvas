@@ -44,7 +44,7 @@ pub mod global_fonts {
 
   use napi::bindgen_prelude::*;
 
-  use super::{get_font, into_napi_error, FontKey, FONT_DIR, FONT_PATH};
+  use super::{FONT_DIR, FONT_PATH, FontKey, get_font, into_napi_error};
 
   type ThreadsafePtrKeyHashmap = HashMap<uuid::Uuid, Arc<Uint8Array>>;
 
