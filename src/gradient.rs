@@ -104,7 +104,7 @@ impl Gradient {
   /// [radialgradient.js](skia/modules/canvaskit/htmlcanvas/radialgradient.js)
   pub(crate) fn get_shader(&self, current_transform: Transform) -> result::Result<Shader, SkError> {
     match self {
-      Self::Linear(ref linear_gradient) => Ok(
+      Self::Linear(linear_gradient) => Ok(
         Shader::new_linear_gradient(&LinearGradient {
           start_point: linear_gradient.start_point,
           end_point: linear_gradient.end_point,
@@ -115,7 +115,7 @@ impl Gradient {
       // Note, Skia has a different notion of a "radial" gradient.
       // Skia has a twoPointConical gradient that is the same as the
       // canvas's RadialGradient.
-      Self::Radial(ref radial_gradient) => {
+      Self::Radial(radial_gradient) => {
         // From the spec: "The points in the linear gradient must be transformed
         // as described by the current transformation matrix when rendering."
         let base = radial_gradient.base.clone();
@@ -132,7 +132,7 @@ impl Gradient {
             .ok_or_else(|| SkError::Generic("Get shader of radial gradient failed".to_owned()))?,
         )
       }
-      Self::Conic(ref conic_gradient) => {
+      Self::Conic(conic_gradient) => {
         let (x, y) = conic_gradient.center;
         let r = conic_gradient.radius;
         let sx = current_transform.c;
@@ -178,7 +178,7 @@ impl CanvasGradient {
         return Err(Error::new(
           Status::InvalidArg,
           "Gradient stop color should not be `currentcolor` keyword".to_owned(),
-        ))
+        ));
       }
       CSSColor::RGBA(rgba) => Color::from_rgba(rgba.red, rgba.green, rgba.blue, rgba.alpha),
     };

@@ -11,23 +11,27 @@ extern crate serde_derive;
 use std::{ffi::c_void, mem, slice, str::FromStr};
 
 use napi::{
+  Property,
   bindgen_prelude::*,
   noop_finalize,
   tokio::sync::mpsc::{channel, error::TrySendError},
   tokio_stream::wrappers::ReceiverStream,
-  Property,
 };
 
 use ctx::{
-  encode_surface, CanvasRenderingContext2D, Context, ContextData, ContextOutputData, SvgExportFlag,
-  FILL_STYLE_HIDDEN_NAME, STROKE_STYLE_HIDDEN_NAME,
+  CanvasRenderingContext2D, Context, ContextData, ContextOutputData, FILL_STYLE_HIDDEN_NAME,
+  STROKE_STYLE_HIDDEN_NAME, SvgExportFlag, encode_surface,
 };
-use font::{init_font_regexp, FONT_REGEXP};
+use font::{FONT_REGEXP, init_font_regexp};
 use sk::{ColorSpace, SkiaDataRef, SurfaceRef};
 
 use avif::AvifConfig;
 
-#[cfg(not(target_arch = "arm"))]
+#[cfg(not(any(target_arch = "arm", target_os = "windows")))]
+#[global_allocator]
+static ALLOC: mimalloc_safe::MiMalloc = mimalloc_safe::MiMalloc;
+
+#[cfg(target_os = "windows")]
 #[global_allocator]
 static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
@@ -365,7 +369,7 @@ impl CanvasElement<'_> {
         return Err(Error::new(
           Status::InvalidArg,
           format!("{format_str} is not valid format"),
-        ))
+        ));
       }
     };
 
@@ -431,7 +435,7 @@ fn get_data_ref(
       return Err(Error::new(
         Status::InvalidArg,
         format!("{mime} is not valid mime"),
-      ))
+      ));
     }
   } {
     Ok(ContextOutputData::Skia(data_ref))

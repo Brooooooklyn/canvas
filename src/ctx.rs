@@ -7,15 +7,16 @@ use std::sync::LazyLock;
 
 use cssparser::{Color as CSSColor, Parser, ParserInput, RGBA};
 use libavif::AvifData;
-use napi::{bindgen_prelude::*, JsString, NapiRaw, NapiValue};
+use napi::{JsString, NapiRaw, NapiValue, bindgen_prelude::*};
 use regex::Regex;
 
-use crate::font::parse_size_px;
 use crate::font::FONT_MEDIUM_PX;
+use crate::font::parse_size_px;
 use crate::global_fonts::get_font;
 use crate::picture_recorder::PictureRecorder;
 use crate::sk::Canvas;
 use crate::{
+  CanvasElement, SVGCanvas,
   avif::Config,
   error::SkError,
   filter::css_filter,
@@ -31,7 +32,6 @@ use crate::{
     SkiaDataRef, Surface, SurfaceRef, Transform,
   },
   state::Context2dRenderingState,
-  CanvasElement, SVGCanvas,
 };
 
 static CSS_SIZE_REGEXP: LazyLock<Regex> =
@@ -550,7 +550,7 @@ impl Context {
       CSSColor::CurrentColor => {
         return Err(SkError::Generic(
           "Color should not be `currentcolor` keyword".to_owned(),
-        ))
+        ));
       }
       CSSColor::RGBA(rgba) => {
         drop(parser_input);
@@ -1635,7 +1635,7 @@ impl CanvasRenderingContext2D {
             return Err(Error::new(
               Status::InvalidArg,
               "The y-axis coordinate of the point to check is missing".to_owned(),
-            ))
+            ));
           }
         };
         let fill_rule = maybe_fill_rule

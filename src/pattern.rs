@@ -103,7 +103,7 @@ impl CanvasPattern {
           return Err(Error::new(
             Status::InvalidArg,
             format!("{repetition} is not valid repetition rule"),
-          ))
+          ));
         }
       },
     };
