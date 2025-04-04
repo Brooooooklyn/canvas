@@ -11,7 +11,7 @@
     "allowJs": true,
     "outDir": "dist",
     "sourceMap": true,
-    "lib": ["ESNext", "DOM"]
+    "lib": ["ESNext"]
   },
   "exclude": ["node_modules", "depot_tools", "skia", "skia-c", "example", "target", "npm"]
 }
