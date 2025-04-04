@@ -399,12 +399,10 @@ impl Path {
 impl ToNapiValue for SkiaString {
   unsafe fn to_napi_value(env: sys::napi_env, val: Self) -> Result<sys::napi_value> {
     let mut result = std::ptr::null_mut();
-    napi::check_status!(sys::napi_create_string_utf8(
-      env,
-      val.ptr,
-      val.length as isize,
-      &mut result,
-    ))?;
+    napi::check_status!(
+      unsafe { sys::napi_create_string_utf8(env, val.ptr, val.length as isize, &mut result) },
+      "Failed to create string from SkiaString"
+    )?;
     Ok(result)
   }
 }
