@@ -33,8 +33,11 @@ mimalloc = "0.1.45"
 [target.'cfg(not(any(target_os = "linux", target_os = "windows")))'.dependencies]
 mimalloc-safe = "0.1"
 
-[target.'cfg(all(target_os = "linux", not(target_arch = "arm")))'.dependencies]
+[target.'cfg(all(target_os = "linux", not(target_arch = "aarch64")))'.dependencies]
 mimalloc-safe = { version = "0.1", features = ["local_dynamic_tls"] }
+
+[target.'cfg(all(target_os = "linux", target_arch = "aarch64"))'.dependencies]
+mimalloc-safe = { version = "0.1", features = ["local_dynamic_tls", "no_opt_arch"] }
 
 [build-dependencies]
 cc         = "1"
