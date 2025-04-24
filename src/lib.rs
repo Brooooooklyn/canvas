@@ -27,7 +27,7 @@ use sk::{ColorSpace, SkiaDataRef, SurfaceRef};
 
 use avif::AvifConfig;
 
-#[cfg(not(any(target_arch = "arm", target_os = "windows")))]
+#[cfg(not(target_os = "windows"))]
 #[global_allocator]
 static ALLOC: mimalloc_safe::MiMalloc = mimalloc_safe::MiMalloc;
 

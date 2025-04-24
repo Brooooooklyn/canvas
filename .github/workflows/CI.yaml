@@ -250,6 +250,11 @@ jobs:
         with:
           submodules: true
 
+      - name: Setup cmake
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: '3.x'
+
       - name: Setup node
         uses: actions/setup-node@v4
         with:
