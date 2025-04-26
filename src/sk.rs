@@ -592,6 +592,8 @@ pub mod ffi {
 
     pub fn skiac_path_dash(path: *mut skiac_path, on: f32, off: f32, phase: f32) -> bool;
 
+    pub fn skiac_path_round(path: *mut skiac_path, radius: f32) -> bool;
+
     pub fn skiac_path_equals(path: *mut skiac_path, other: *mut skiac_path) -> bool;
 
     pub fn skiac_path_destroy(path: *mut skiac_path);
@@ -2774,6 +2776,10 @@ impl Path {
 
   pub fn dash(&mut self, on: f32, off: f32, phase: f32) -> bool {
     unsafe { ffi::skiac_path_dash(self.0, on, off, phase) }
+  }
+
+  pub fn round(&mut self, radius: f32) -> bool {
+    unsafe { ffi::skiac_path_round(self.0, radius) }
   }
 
   pub fn round_rect(

@@ -228,6 +228,7 @@ export class Path2D {
   getBounds(): [left: number, top: number, right: number, bottom: number]
   computeTightBounds(): [left: number, top: number, right: number, bottom: number]
   trim(start: number, end: number, isComplement?: boolean): Path2D
+  round(radius: number): Path2D
   equals(path: Path2D): boolean
 }
 ```
