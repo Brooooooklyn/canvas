@@ -23,6 +23,7 @@
 #include <include/core/SkStrokeRec.h>
 #include <include/core/SkSurface.h>
 #include <include/effects/SkColorMatrix.h>
+#include <include/effects/SkCornerPathEffect.h>
 #include <include/effects/SkDashPathEffect.h>
 #include <include/effects/SkGradientShader.h>
 #include <include/effects/SkImageFilters.h>
@@ -447,6 +448,7 @@ bool skiac_path_trim(skiac_path* c_path,
                      float stop_t,
                      bool is_complement);
 bool skiac_path_dash(skiac_path* c_path, float on, float off, float phase);
+bool skiac_path_round(skiac_path* c_path, float radius);
 bool skiac_path_equals(skiac_path* c_path, skiac_path* other_path);
 void skiac_path_destroy(skiac_path* c_path);
 void skiac_path_set_fill_type(skiac_path* c_path, int type);

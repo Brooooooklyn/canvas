@@ -974,6 +974,18 @@ bool skiac_path_dash(skiac_path* c_path, float on, float off, float phase) {
   return false;
 }
 
+bool skiac_path_round(skiac_path* c_path, float radius) {
+  auto pe = SkCornerPathEffect::Make(radius);
+  if (!pe) {
+    return false;
+  }
+  SkStrokeRec rec(SkStrokeRec::InitStyle::kHairline_InitStyle);
+  if (pe->filterPath(PATH_CAST, *PATH_CAST, &rec, nullptr)) {
+    return true;
+  }
+  return false;
+}
+
 bool skiac_path_equals(skiac_path* c_path, skiac_path* other_path) {
   return *PATH_CAST == *reinterpret_cast<SkPath*>(other_path);
 }

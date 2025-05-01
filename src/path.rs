@@ -387,6 +387,12 @@ impl Path {
   }
 
   #[napi]
+  pub fn round(&mut self, radius: f64) -> &Self {
+    self.inner.round(radius as f32);
+    self
+  }
+
+  #[napi]
   pub fn is_point_in_path(&self, x: f64, y: f64, fill_type: Option<FillType>) -> bool {
     self.inner.hit_test(
       x as f32,
