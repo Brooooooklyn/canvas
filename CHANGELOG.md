@@ -1,3 +1,17 @@
+## [0.1.70](https://github.com/Brooooooklyn/canvas/compare/v0.1.69...v0.1.70) (2025-05-02)
+
+
+### Bug Fixes
+
+* resize svg from file path render an empty image ([#1046](https://github.com/Brooooooklyn/canvas/issues/1046)) ([2f03306](https://github.com/Brooooooklyn/canvas/commit/2f03306c0e90e6b4bee11230ee3d00b4d758c581))
+
+
+### Features
+
+* expose SkCornerPathEffect as round() fn on Path2D ([#1040](https://github.com/Brooooooklyn/canvas/issues/1040)) ([68c9f2c](https://github.com/Brooooooklyn/canvas/commit/68c9f2c3c5f922de266d861ab226eb2b7f906e24))
+
+
+
 ## [0.1.69](https://github.com/Brooooooklyn/canvas/compare/v0.1.68...v0.1.69) (2025-04-04)
 
 
