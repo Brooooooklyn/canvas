@@ -339,3 +339,15 @@ test('draw-non-string-text', async (t) => {
   })
   await snapshotImage(t, { ctx, canvas })
 })
+
+// https://github.com/Brooooooklyn/canvas/issues/1038
+test('scale-svg-image', async (t) => {
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'iosevka-slab-regular.ttf'))
+  const image = await loadImage(join(__dirname, 'image-og.svg'))
+  image.width = image.naturalWidth * 2
+  image.height = image.naturalHeight * 2
+  const canvas = createCanvas(image.width, image.height)
+  const ctx = canvas.getContext('2d')
+  ctx.drawImage(image, 0, 0)
+  await snapshotImage(t, { ctx, canvas })
+})

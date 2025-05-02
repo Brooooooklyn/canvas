@@ -124,6 +124,8 @@ pub struct Image {
   pub(crate) is_svg: bool,
   pub(crate) color_space: ColorSpace,
   pub(crate) src: Option<Either<Uint8Array, String>>,
+  // read data from file path
+  file_content: Option<Vec<u8>>,
   // take ownership of avif image, let it be dropped when image is dropped
   _avif_image_ref: Option<AvifImage>,
 }
@@ -156,6 +158,7 @@ impl Image {
       is_svg: false,
       color_space,
       src: None,
+      file_content: None,
       _avif_image_ref: None,
     })
   }
@@ -254,6 +257,7 @@ impl Image {
       height: self.height,
       color_space: self.color_space,
       data: Some(data),
+      file_content: None,
       this_ref: Ref::new(&env, &*this)?,
     };
     let task_output = env.spawn(decoder)?;
@@ -274,7 +278,20 @@ impl Image {
     if !self.need_regenerate_bitmap || !self.is_svg || self.src.is_none() {
       return Ok(());
     }
-    if let Some(data) = self.src.as_mut() {
+
+    if let Some(data) = self.file_content.as_deref() {
+      let font = get_font().map_err(SkError::from)?;
+      self.bitmap = Bitmap::from_svg_data_with_custom_size(
+        data.as_ptr(),
+        data.len(),
+        self.width as f32,
+        self.height as f32,
+        self.color_space,
+        &font,
+      );
+      return Ok(());
+    }
+    if let Some(data) = self.src.as_ref() {
       let font = get_font().map_err(SkError::from)?;
       self.bitmap = Bitmap::from_svg_data_with_custom_size(
         data.as_ref().as_ptr(),
@@ -315,6 +332,8 @@ struct BitmapDecoder {
   height: f64,
   color_space: ColorSpace,
   data: Option<Either<Uint8Array, String>>,
+  // data from file path
+  file_content: Option<Vec<u8>>,
   this_ref: Ref<Object>,
 }
 
@@ -351,12 +370,18 @@ impl Task for BitmapDecoder {
         if path_or_svg.starts_with("data:image") {
           Cow::Borrowed(path_or_svg.as_bytes())
         } else {
-          Cow::Owned(std::fs::read(path_or_svg).map_err(|io_err| {
-            Error::new(
-              Status::GenericFailure,
-              format!("Failed to read {}: {io_err}", path_or_svg),
-            )
-          })?)
+          match std::fs::read(path_or_svg) {
+            Ok(file_content) => {
+              self.file_content = Some(file_content);
+              Cow::Borrowed(self.file_content.as_ref().unwrap().as_ref())
+            }
+            Err(io_err) => {
+              return Err(Error::new(
+                Status::GenericFailure,
+                format!("Failed to read {}: {io_err}", path_or_svg),
+              ));
+            }
+          }
         }
       }
       None => {
@@ -488,6 +513,10 @@ impl Task for BitmapDecoder {
     self_mut.height = output.height;
     self_mut.complete = true;
     self_mut.bitmap = None;
+
+    if let Some(data) = self.file_content.take() {
+      self_mut.file_content = Some(data);
+    }
 
     let mut err: Option<&str> = None;
 
