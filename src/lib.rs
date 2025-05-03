@@ -27,13 +27,8 @@ use sk::{ColorSpace, SkiaDataRef, SurfaceRef};
 
 use avif::AvifConfig;
 
-#[cfg(not(target_os = "windows"))]
 #[global_allocator]
 static ALLOC: mimalloc_safe::MiMalloc = mimalloc_safe::MiMalloc;
-
-#[cfg(target_os = "windows")]
-#[global_allocator]
-static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 mod avif;
 mod ctx;
