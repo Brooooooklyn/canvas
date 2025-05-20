@@ -100,7 +100,7 @@ impl From<AvifConfig> for Config {
   }
 }
 
-impl From<&Either3<u32, AvifConfig, Unknown>> for AvifConfig {
+impl From<&Either3<u32, AvifConfig, Unknown<'_>>> for AvifConfig {
   fn from(value: &Either3<u32, AvifConfig, Unknown>) -> Self {
     if let Either3::B(a) = value {
       a.clone()

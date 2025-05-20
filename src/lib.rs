@@ -79,12 +79,12 @@ pub struct CanvasElement<'scope> {
 }
 
 #[napi]
-impl CanvasElement<'_> {
+impl<'c> CanvasElement<'c> {
   fn create_context(
     env: &Env,
     width: u32,
     height: u32,
-  ) -> Result<ClassInstance<CanvasRenderingContext2D>> {
+  ) -> Result<ClassInstance<'_, CanvasRenderingContext2D>> {
     let ctx = CanvasRenderingContext2D {
       context: Context::new(width, height, ColorSpace::default())?,
     }
@@ -102,7 +102,7 @@ impl CanvasElement<'_> {
   }
 
   #[napi(constructor)]
-  pub fn new(env: &Env, mut this: This, width: i32, height: i32) -> Result<Self> {
+  pub fn new<'env>(env: &'env Env, mut this: This<'c>, width: i32, height: i32) -> Result<Self> {
     // Default fallback of canvas on browser and skia-canvas is 350x150
     let width = (if width <= 0 { 350 } else { width }) as u32;
     let height = (if height <= 0 { 150 } else { height }) as u32;
@@ -516,7 +516,7 @@ impl<'scope> SVGCanvas<'scope> {
   #[napi(constructor)]
   pub fn new(
     env: &Env,
-    mut this: This,
+    mut this: This<'scope>,
     width: i32,
     height: i32,
     flag: SvgExportFlag,

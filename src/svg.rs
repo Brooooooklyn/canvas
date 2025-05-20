@@ -5,10 +5,10 @@ use napi::bindgen_prelude::*;
 use crate::{error::SkError, global_fonts::get_font, sk::sk_svg_text_to_path};
 
 #[napi(js_name = "convertSVGTextToPath")]
-pub fn convert_svg_text_to_path(
-  env: &Env,
-  input: Either3<Buffer, String, Unknown>,
-) -> Result<BufferSlice> {
+pub fn convert_svg_text_to_path<'env>(
+  env: &'env Env,
+  input: Either3<BufferSlice, String, Unknown>,
+) -> Result<BufferSlice<'env>> {
   let font = get_font().map_err(SkError::from)?;
   sk_svg_text_to_path(input.as_bytes()?, &font)
     .ok_or_else(|| {
@@ -26,7 +26,7 @@ trait AsBytes {
   fn as_bytes(&self) -> Result<&[u8]>;
 }
 
-impl AsBytes for Either3<Buffer, String, Unknown> {
+impl AsBytes for Either3<BufferSlice<'_>, String, Unknown<'_>> {
   fn as_bytes(&self) -> Result<&[u8]> {
     match self {
       Either3::A(b) => Ok(b.as_ref()),

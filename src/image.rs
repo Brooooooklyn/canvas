@@ -1,7 +1,7 @@
 use std::{borrow::Cow, ptr, str, str::FromStr};
 
 use base64_simd::STANDARD;
-use napi::{NapiRaw, NapiValue, Ref, bindgen_prelude::*, check_status};
+use napi::{Ref, bindgen_prelude::*};
 
 use crate::avif::AvifImage;
 use crate::error::SkError;
@@ -44,12 +44,7 @@ impl ImageData {
         let arraybuffer_length = (width * height * 4) as usize;
         let mut data_buffer = vec![0; arraybuffer_length];
         let data_ptr = data_buffer.as_mut_ptr();
-        let data_object = unsafe {
-          Object::from_raw_unchecked(
-            env.raw(),
-            Uint8ClampedArray::to_napi_value(env.raw(), Uint8ClampedArray::new(data_buffer))?,
-          )
-        };
+        let data_object = Uint8ClampedSlice::from_data(&env, data_buffer)?;
         this.define_properties(&[Property::new("data")?
           .with_value(&data_object)
           .with_property_attributes(
@@ -77,15 +72,10 @@ impl ImageData {
         }
         // https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D/createImageData
         // An existing ImageData object from which to copy the width and height.
-        let mut cloned_data = Uint8ClampedArray::new(data_object.to_vec());
+        let mut cloned_data = Uint8ClampedSlice::from_data(&env, data_object.to_vec())?;
         let data = cloned_data.as_mut_ptr();
         this.define_properties(&[Property::new("data")?
-          .with_value(&unsafe {
-            Object::from_raw_unchecked(
-              env.raw(),
-              Uint8ClampedArray::to_napi_value(env.raw(), cloned_data)?,
-            )
-          })
+          .with_value(&cloned_data)
           .with_property_attributes(
             PropertyAttributes::Enumerable | PropertyAttributes::Configurable,
           )])?;
@@ -258,7 +248,7 @@ impl Image {
       color_space: self.color_space,
       data: Some(data),
       file_content: None,
-      this_ref: Ref::new(&env, &*this)?,
+      this_ref: this.create_ref()?,
     };
     let task_output = env.spawn(decoder)?;
 
@@ -334,7 +324,7 @@ struct BitmapDecoder {
   data: Option<Either<Uint8Array, String>>,
   // data from file path
   file_content: Option<Vec<u8>>,
-  this_ref: Ref<Object>,
+  this_ref: Ref<Object<'static>>,
 }
 
 pub(crate) struct DecodedBitmap {
@@ -502,7 +492,7 @@ impl Task for BitmapDecoder {
   }
 
   fn resolve(&mut self, env: Env, output: Self::Output) -> Result<Self::JsValue> {
-    let this: Object = env.get_reference_value(&self.this_ref)?;
+    let this: Object = self.this_ref.get_value(&env)?;
     let mut image_ptr = ptr::null_mut();
     check_status!(
       unsafe { sys::napi_unwrap(env.raw(), this.raw(), &mut image_ptr) },
