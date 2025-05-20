@@ -7,7 +7,7 @@ use std::sync::LazyLock;
 
 use cssparser::{Color as CSSColor, Parser, ParserInput, RGBA};
 use libavif::AvifData;
-use napi::{JsString, NapiRaw, NapiValue, bindgen_prelude::*};
+use napi::{JsString, bindgen_prelude::*};
 use regex::Regex;
 
 use crate::font::FONT_MEDIUM_PX;
@@ -1059,7 +1059,6 @@ impl CanvasRenderingContext2D {
   #[napi(setter, return_if_invalid)]
   pub fn set_fill_style(
     &mut self,
-    env: Env,
     mut this: This,
     fill_style: Either3<JsString, ClassInstance<CanvasGradient>, ClassInstance<CanvasPattern>>,
   ) -> Result<()> {
@@ -1068,7 +1067,7 @@ impl CanvasRenderingContext2D {
       Either3::B(gradient) => Some(Pattern::Gradient(gradient.0.clone())),
       Either3::C(pattern) => Some(pattern.inner.clone()),
     } {
-      let raw_fill_style = fill_style.as_unknown(env);
+      let raw_fill_style = fill_style.as_unknown();
       self.context.state.fill_style = pattern;
       this.set(FILL_STYLE_HIDDEN_NAME, raw_fill_style)?;
     }
@@ -1145,7 +1144,6 @@ impl CanvasRenderingContext2D {
   #[napi(setter, return_if_invalid)]
   pub fn set_stroke_style(
     &mut self,
-    env: Env,
     mut this: This,
     fill_style: Either3<JsString, ClassInstance<CanvasGradient>, ClassInstance<CanvasPattern>>,
   ) -> Result<()> {
@@ -1154,7 +1152,7 @@ impl CanvasRenderingContext2D {
       Either3::B(gradient) => Some(Pattern::Gradient(gradient.0.clone())),
       Either3::C(pattern) => Some(pattern.inner.clone()),
     } {
-      let raw_fill_style = fill_style.as_unknown(env);
+      let raw_fill_style = fill_style.as_unknown();
       this.set(STROKE_STYLE_HIDDEN_NAME, raw_fill_style)?;
       self.context.state.stroke_style = pattern;
     }
@@ -1313,7 +1311,7 @@ impl CanvasRenderingContext2D {
   pub fn create_image_data<'scope>(
     &'scope mut self,
     env: &'scope Env,
-    width_or_data: Either<u32, Uint8ClampedArray>,
+    width_or_data: Either<u32, Uint8ClampedSlice<'scope>>,
     width_or_height: u32,
     height_or_settings: Option<Either<u32, Settings>>,
     maybe_settings: Option<Settings>,
@@ -1330,21 +1328,15 @@ impl CanvasRenderingContext2D {
         let arraybuffer_length = (width * height * 4) as usize;
         let mut data_buffer = vec![0; arraybuffer_length];
         let data_ptr = data_buffer.as_mut_ptr();
-        let data_object = unsafe {
-          Object::from_raw_unchecked(
-            env.raw(),
-            Uint8ClampedArray::to_napi_value(env.raw(), Uint8ClampedArray::new(data_buffer))?,
-          )
-        };
-        let instance = ImageData {
+        let data_object = Uint8ClampedSlice::from_data(env, data_buffer)?;
+        let mut instance = ImageData {
           width: width as usize,
           height: height as usize,
           color_space,
           data: data_ptr,
         }
         .into_instance(env)?;
-        let mut image_instance = unsafe { Object::from_raw_unchecked(env.raw(), instance.raw()) };
-        image_instance.set("data", data_object)?;
+        instance.set_named_property("data", data_object)?;
         Ok(instance)
       }
       Either::B(mut data_object) => {
@@ -1358,15 +1350,14 @@ impl CanvasRenderingContext2D {
         let color_space = maybe_settings
           .and_then(|settings| ColorSpace::from_str(&settings.color_space).ok())
           .unwrap_or_default();
-        let instance = ImageData {
+        let mut instance = ImageData {
           width: width as usize,
           height: height as usize,
           color_space,
           data,
         }
         .into_instance(env)?;
-        let mut image_instance = unsafe { Object::from_raw_unchecked(env.raw(), instance.raw()) };
-        image_instance.set("data", data_object)?;
+        instance.set_named_property("data", data_object)?;
         Ok(instance)
       }
     }
@@ -1878,21 +1869,15 @@ impl CanvasRenderingContext2D {
           )
         })?;
       let data = image_data.as_mut_ptr();
-      let data_object = unsafe {
-        Object::from_raw_unchecked(
-          env.raw(),
-          Uint8ClampedArray::to_napi_value(env.raw(), Uint8ClampedArray::new(image_data))?,
-        )
-      };
-      let instance = ImageData {
+      let data_object = Uint8ClampedSlice::from_data(env, image_data)?;
+      let mut instance = ImageData {
         width: width as usize,
         height: height as usize,
         color_space,
         data,
       }
       .into_instance(env)?;
-      let mut image_instance = unsafe { Object::from_raw_unchecked(env.raw(), instance.raw()) };
-      image_instance.set("data", data_object)?;
+      instance.set_named_property("data", data_object)?;
       Ok(instance)
     } else {
       Err(Error::new(

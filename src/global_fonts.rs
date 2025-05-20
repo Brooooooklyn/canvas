@@ -92,7 +92,9 @@ pub mod global_fonts {
   pub fn load_system_fonts() -> Result<u32> {
     FONT_DIR
       .get_or_init(move || super::load_fonts_from_dir(FONT_PATH))
-      .clone()
+      .as_ref()
+      .map(|s| *s)
+      .map_err(|e| Error::new(e.status, e.reason.clone()))
   }
 
   #[napi]
