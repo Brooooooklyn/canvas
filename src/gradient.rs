@@ -1,6 +1,7 @@
 use std::result;
 
-use cssparser::{Color as CSSColor, Parser, ParserInput};
+use cssparser::{Parser, ParserInput};
+use cssparser_color::Color as CSSColor;
 use napi::bindgen_prelude::*;
 
 use crate::{
@@ -180,7 +181,18 @@ impl CanvasGradient {
           "Gradient stop color should not be `currentcolor` keyword".to_owned(),
         ));
       }
-      CSSColor::RGBA(rgba) => Color::from_rgba(rgba.red, rgba.green, rgba.blue, rgba.alpha),
+      CSSColor::Rgba(rgba) => Color::from_rgba(
+        rgba.red,                   // Already u8
+        rgba.green,                 // Already u8
+        rgba.blue,                  // Already u8
+        (rgba.alpha * 255.0) as u8, // Scale f32 0.0-1.0 to u8 0-255
+      ),
+      _ => {
+        return Err(Error::new(
+          Status::InvalidArg,
+          "Unsupported color format".to_owned(),
+        ));
+      }
     };
     self.0.add_color_stop(index as f32, skia_color);
     Ok(())

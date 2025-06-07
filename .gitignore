@@ -174,3 +174,4 @@ llvm-project-llvmorg-*
 !.yarn/releases
 !.yarn/sdks
 !.yarn/versions
+.claude

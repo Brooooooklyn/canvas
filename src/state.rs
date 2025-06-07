@@ -1,4 +1,4 @@
-use cssparser::RGBA;
+use rgb::RGBA;
 
 use crate::sk::{BlendMode, ImageFilter, Matrix};
 
@@ -16,7 +16,7 @@ pub struct Context2dRenderingState {
   pub shadow_offset_x: f32,
   pub shadow_offset_y: f32,
   pub shadow_blur: f32,
-  pub shadow_color: RGBA,
+  pub shadow_color: RGBA<u8>,
   pub shadow_color_string: String,
   pub global_alpha: f32,
   pub line_dash_offset: f32,

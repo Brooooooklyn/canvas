@@ -263,7 +263,7 @@ jobs:
       - name: Install
         uses: ./.github/actions/setup-rust
         with:
-          targets: "armv7-unknown-linux-gnueabihf"
+          targets: 'armv7-unknown-linux-gnueabihf'
 
       - name: Install dependencies
         run: |

@@ -1,344 +1,252 @@
 ## [0.1.70](https://github.com/Brooooooklyn/canvas/compare/v0.1.69...v0.1.70) (2025-05-02)
 
-
 ### Bug Fixes
 
-* resize svg from file path render an empty image ([#1046](https://github.com/Brooooooklyn/canvas/issues/1046)) ([2f03306](https://github.com/Brooooooklyn/canvas/commit/2f03306c0e90e6b4bee11230ee3d00b4d758c581))
-
+- resize svg from file path render an empty image ([#1046](https://github.com/Brooooooklyn/canvas/issues/1046)) ([2f03306](https://github.com/Brooooooklyn/canvas/commit/2f03306c0e90e6b4bee11230ee3d00b4d758c581))
 
 ### Features
 
-* expose SkCornerPathEffect as round() fn on Path2D ([#1040](https://github.com/Brooooooklyn/canvas/issues/1040)) ([68c9f2c](https://github.com/Brooooooklyn/canvas/commit/68c9f2c3c5f922de266d861ab226eb2b7f906e24))
-
-
+- expose SkCornerPathEffect as round() fn on Path2D ([#1040](https://github.com/Brooooooklyn/canvas/issues/1040)) ([68c9f2c](https://github.com/Brooooooklyn/canvas/commit/68c9f2c3c5f922de266d861ab226eb2b7f906e24))
 
 ## [0.1.69](https://github.com/Brooooooklyn/canvas/compare/v0.1.68...v0.1.69) (2025-04-04)
 
-
 ### Bug Fixes
 
-* accept non-string param as text ([#1030](https://github.com/Brooooooklyn/canvas/issues/1030)) ([c04cfd7](https://github.com/Brooooooklyn/canvas/commit/c04cfd7e68898eed0389b7c594844d43c0f4a646))
-* memory leak when creating bitmap from svg ([#1023](https://github.com/Brooooooklyn/canvas/issues/1023)) ([1bd4caa](https://github.com/Brooooooklyn/canvas/commit/1bd4caa419172a0dc3aae3ad5cacbb5f815faab3))
-
+- accept non-string param as text ([#1030](https://github.com/Brooooooklyn/canvas/issues/1030)) ([c04cfd7](https://github.com/Brooooooklyn/canvas/commit/c04cfd7e68898eed0389b7c594844d43c0f4a646))
+- memory leak when creating bitmap from svg ([#1023](https://github.com/Brooooooklyn/canvas/issues/1023)) ([1bd4caa](https://github.com/Brooooooklyn/canvas/commit/1bd4caa419172a0dc3aae3ad5cacbb5f815faab3))
 
 ### Features
 
-* chrome m136 ([#1033](https://github.com/Brooooooklyn/canvas/issues/1033)) ([e71612b](https://github.com/Brooooooklyn/canvas/commit/e71612bb57fa1b9d66604a13ae10aaf4d3c52e98))
-
-
+- chrome m136 ([#1033](https://github.com/Brooooooklyn/canvas/issues/1033)) ([e71612b](https://github.com/Brooooooklyn/canvas/commit/e71612bb57fa1b9d66604a13ae10aaf4d3c52e98))
 
 ## [0.1.68](https://github.com/Brooooooklyn/canvas/compare/v0.1.67...v0.1.68) (2025-03-04)
 
-
 ### Bug Fixes
 
-* Bitmap::from_image_data width and height ([#1012](https://github.com/Brooooooklyn/canvas/issues/1012)) ([dc9cdd1](https://github.com/Brooooooklyn/canvas/commit/dc9cdd15e68ff1401e62fe5d1c0bcddf8a64ef92))
-* BlendMode::Plus should be mapped to "plus" globalCompositeOperation ([#1016](https://github.com/Brooooooklyn/canvas/issues/1016)) ([bd61a90](https://github.com/Brooooooklyn/canvas/commit/bd61a90f9debc274d7464b879b44267612f953cf))
-* create pattern from Canvas ([#1013](https://github.com/Brooooooklyn/canvas/issues/1013)) ([d1137a5](https://github.com/Brooooooklyn/canvas/commit/d1137a549e6278c14e265253862fa7ff9bb6dbfa))
-* decode avif Image with libavif ([#1005](https://github.com/Brooooooklyn/canvas/issues/1005)) ([d369c55](https://github.com/Brooooooklyn/canvas/commit/d369c55b4e6fdb30cc9e6ef8b4d0d9d72c2f41cb))
-* don't panic if current ts is not able to invert when transform ([#1002](https://github.com/Brooooooklyn/canvas/issues/1002)) ([27e1cc8](https://github.com/Brooooooklyn/canvas/commit/27e1cc82fb8678e839f13c000f713b30fc9cb1ca))
-* draw canvas on canvas clip ([#1003](https://github.com/Brooooooklyn/canvas/issues/1003)) ([e609b20](https://github.com/Brooooooklyn/canvas/commit/e609b202ed35b0c0bfc16d7dcfa95afb0c66100c))
-* make sure registered font Buffer is valid ([#1014](https://github.com/Brooooooklyn/canvas/issues/1014)) ([529e96c](https://github.com/Brooooooklyn/canvas/commit/529e96c39401f81ff427093de26e039cf310b616))
-* memory leak in some blend mode ([#1015](https://github.com/Brooooooklyn/canvas/issues/1015)) ([319f5b2](https://github.com/Brooooooklyn/canvas/commit/319f5b24119a22c882e0dd71b461f33edd36eba4))
-
-
+- Bitmap::from_image_data width and height ([#1012](https://github.com/Brooooooklyn/canvas/issues/1012)) ([dc9cdd1](https://github.com/Brooooooklyn/canvas/commit/dc9cdd15e68ff1401e62fe5d1c0bcddf8a64ef92))
+- BlendMode::Plus should be mapped to "plus" globalCompositeOperation ([#1016](https://github.com/Brooooooklyn/canvas/issues/1016)) ([bd61a90](https://github.com/Brooooooklyn/canvas/commit/bd61a90f9debc274d7464b879b44267612f953cf))
+- create pattern from Canvas ([#1013](https://github.com/Brooooooklyn/canvas/issues/1013)) ([d1137a5](https://github.com/Brooooooklyn/canvas/commit/d1137a549e6278c14e265253862fa7ff9bb6dbfa))
+- decode avif Image with libavif ([#1005](https://github.com/Brooooooklyn/canvas/issues/1005)) ([d369c55](https://github.com/Brooooooklyn/canvas/commit/d369c55b4e6fdb30cc9e6ef8b4d0d9d72c2f41cb))
+- don't panic if current ts is not able to invert when transform ([#1002](https://github.com/Brooooooklyn/canvas/issues/1002)) ([27e1cc8](https://github.com/Brooooooklyn/canvas/commit/27e1cc82fb8678e839f13c000f713b30fc9cb1ca))
+- draw canvas on canvas clip ([#1003](https://github.com/Brooooooklyn/canvas/issues/1003)) ([e609b20](https://github.com/Brooooooklyn/canvas/commit/e609b202ed35b0c0bfc16d7dcfa95afb0c66100c))
+- make sure registered font Buffer is valid ([#1014](https://github.com/Brooooooklyn/canvas/issues/1014)) ([529e96c](https://github.com/Brooooooklyn/canvas/commit/529e96c39401f81ff427093de26e039cf310b616))
+- memory leak in some blend mode ([#1015](https://github.com/Brooooooklyn/canvas/issues/1015)) ([319f5b2](https://github.com/Brooooooklyn/canvas/commit/319f5b24119a22c882e0dd71b461f33edd36eba4))
 
 ## [0.1.67](https://github.com/Brooooooklyn/canvas/compare/v0.1.66...v0.1.67) (2025-02-08)
 
-
 ### Bug Fixes
 
-* drawImage canvas implementation ([#989](https://github.com/Brooooooklyn/canvas/issues/989)) ([1420291](https://github.com/Brooooooklyn/canvas/commit/142029168b3a9acc888a09e7a2aac7283346996c))
-* make sure SVGCanvas get content is complete ([#990](https://github.com/Brooooooklyn/canvas/issues/990)) ([09120d1](https://github.com/Brooooooklyn/canvas/commit/09120d1e193eee6ddad6bd061e5f5dd766a98ef6))
-
-
+- drawImage canvas implementation ([#989](https://github.com/Brooooooklyn/canvas/issues/989)) ([1420291](https://github.com/Brooooooklyn/canvas/commit/142029168b3a9acc888a09e7a2aac7283346996c))
+- make sure SVGCanvas get content is complete ([#990](https://github.com/Brooooooklyn/canvas/issues/990)) ([09120d1](https://github.com/Brooooooklyn/canvas/commit/09120d1e193eee6ddad6bd061e5f5dd766a98ef6))
 
 ## [0.1.66](https://github.com/Brooooooklyn/canvas/compare/v0.1.65...v0.1.66) (2025-02-02)
 
-
 ### Bug Fixes
 
-* armv7 glibc version ([#981](https://github.com/Brooooooklyn/canvas/issues/981)) ([0bdd714](https://github.com/Brooooooklyn/canvas/commit/0bdd714df35c9f2138ac2640ad56720eb89d7bca))
-* **deps:** update rust crate infer to 0.19 ([#985](https://github.com/Brooooooklyn/canvas/issues/985)) ([967bddf](https://github.com/Brooooooklyn/canvas/commit/967bddf235c6a7679588ad41620da69493327d15))
-* **deps:** update rust crate nom to v8 ([#976](https://github.com/Brooooooklyn/canvas/issues/976)) ([521d1af](https://github.com/Brooooooklyn/canvas/commit/521d1af3529f9dcee8a280fc8d5518abfe619667))
-* double free in putImageData ([#975](https://github.com/Brooooooklyn/canvas/issues/975)) ([2887aec](https://github.com/Brooooooklyn/canvas/commit/2887aeca4a5c8f45d08ff85916747a2f393cb389))
-* flush svg stream after write end ([#986](https://github.com/Brooooooklyn/canvas/issues/986)) ([8538673](https://github.com/Brooooooklyn/canvas/commit/853867334b92bda8d7e0bbec3cdad895aadb5cf6))
-
+- armv7 glibc version ([#981](https://github.com/Brooooooklyn/canvas/issues/981)) ([0bdd714](https://github.com/Brooooooklyn/canvas/commit/0bdd714df35c9f2138ac2640ad56720eb89d7bca))
+- **deps:** update rust crate infer to 0.19 ([#985](https://github.com/Brooooooklyn/canvas/issues/985)) ([967bddf](https://github.com/Brooooooklyn/canvas/commit/967bddf235c6a7679588ad41620da69493327d15))
+- **deps:** update rust crate nom to v8 ([#976](https://github.com/Brooooooklyn/canvas/issues/976)) ([521d1af](https://github.com/Brooooooklyn/canvas/commit/521d1af3529f9dcee8a280fc8d5518abfe619667))
+- double free in putImageData ([#975](https://github.com/Brooooooklyn/canvas/issues/975)) ([2887aec](https://github.com/Brooooooklyn/canvas/commit/2887aeca4a5c8f45d08ff85916747a2f393cb389))
+- flush svg stream after write end ([#986](https://github.com/Brooooooklyn/canvas/issues/986)) ([8538673](https://github.com/Brooooooklyn/canvas/commit/853867334b92bda8d7e0bbec3cdad895aadb5cf6))
 
 ### Features
 
-* chrome/m133 ([#979](https://github.com/Brooooooklyn/canvas/issues/979)) ([9eba52d](https://github.com/Brooooooklyn/canvas/commit/9eba52d4b15225357c91bd7bc7c440ea05c6730f))
-* support encode stream ([#974](https://github.com/Brooooooklyn/canvas/issues/974)) ([daccce1](https://github.com/Brooooooklyn/canvas/commit/daccce18d7a87e4bbdc6c6dae6fcf78c8aea02e1))
-
+- chrome/m133 ([#979](https://github.com/Brooooooklyn/canvas/issues/979)) ([9eba52d](https://github.com/Brooooooklyn/canvas/commit/9eba52d4b15225357c91bd7bc7c440ea05c6730f))
+- support encode stream ([#974](https://github.com/Brooooooklyn/canvas/issues/974)) ([daccce1](https://github.com/Brooooooklyn/canvas/commit/daccce18d7a87e4bbdc6c6dae6fcf78c8aea02e1))
 
 ### Performance Improvements
 
-* avoid memcpy while drawing canvas on canvas ([#984](https://github.com/Brooooooklyn/canvas/issues/984)) ([8f00680](https://github.com/Brooooooklyn/canvas/commit/8f00680da5d17578af2e592b23f2ebdac636e1d2))
-
-
+- avoid memcpy while drawing canvas on canvas ([#984](https://github.com/Brooooooklyn/canvas/issues/984)) ([8f00680](https://github.com/Brooooooklyn/canvas/commit/8f00680da5d17578af2e592b23f2ebdac636e1d2))
 
 ## [0.1.65](https://github.com/Brooooooklyn/canvas/compare/v0.1.64...v0.1.65) (2024-12-02)
 
-
 ### Bug Fixes
 
-* loadImage should handle file URL ([#959](https://github.com/Brooooooklyn/canvas/issues/959)) ([0b56645](https://github.com/Brooooooklyn/canvas/commit/0b5664520b0c396913d588197f71361900fb075a))
-
-
+- loadImage should handle file URL ([#959](https://github.com/Brooooooklyn/canvas/issues/959)) ([0b56645](https://github.com/Brooooooklyn/canvas/commit/0b5664520b0c396913d588197f71361900fb075a))
 
 ## [0.1.64](https://github.com/Brooooooklyn/canvas/compare/v0.1.63...v0.1.64) (2024-11-25)
 
-
 ### Bug Fixes
 
-* missing icudtl.dat on Windows ([#953](https://github.com/Brooooooklyn/canvas/issues/953)) ([2acc354](https://github.com/Brooooooklyn/canvas/commit/2acc3547862b4c1966ccc79e2294279cd79dcc27))
-
-
+- missing icudtl.dat on Windows ([#953](https://github.com/Brooooooklyn/canvas/issues/953)) ([2acc354](https://github.com/Brooooooklyn/canvas/commit/2acc3547862b4c1966ccc79e2294279cd79dcc27))
 
 ## [0.1.63](https://github.com/Brooooooklyn/canvas/compare/v0.1.62...v0.1.63) (2024-11-23)
 
-
 ### Bug Fixes
 
-* panic when restore from scale(0,0) state ([#944](https://github.com/Brooooooklyn/canvas/issues/944)) ([973adab](https://github.com/Brooooooklyn/canvas/commit/973adab0cf69403ab0fee4ddcdb414a826c73ced))
-* shadow blur 0 makes text shadow not render at all ([#946](https://github.com/Brooooooklyn/canvas/issues/946)) ([04a0cfd](https://github.com/Brooooooklyn/canvas/commit/04a0cfdfd28dc484fa199e31d7e31d6d43edb79e))
-* shadowBlur position ([#945](https://github.com/Brooooooklyn/canvas/issues/945)) ([2beeedb](https://github.com/Brooooooklyn/canvas/commit/2beeedbff723786bf1c1fa74a8489071f3c0b940))
-
+- panic when restore from scale(0,0) state ([#944](https://github.com/Brooooooklyn/canvas/issues/944)) ([973adab](https://github.com/Brooooooklyn/canvas/commit/973adab0cf69403ab0fee4ddcdb414a826c73ced))
+- shadow blur 0 makes text shadow not render at all ([#946](https://github.com/Brooooooklyn/canvas/issues/946)) ([04a0cfd](https://github.com/Brooooooklyn/canvas/commit/04a0cfdfd28dc484fa199e31d7e31d6d43edb79e))
+- shadowBlur position ([#945](https://github.com/Brooooooklyn/canvas/issues/945)) ([2beeedb](https://github.com/Brooooooklyn/canvas/commit/2beeedbff723786bf1c1fa74a8489071f3c0b940))
 
 ### Features
 
-* add riscv64gc-unknown-linux-gnu ([#947](https://github.com/Brooooooklyn/canvas/issues/947)) ([d2c83f9](https://github.com/Brooooooklyn/canvas/commit/d2c83f90a8ad2a25869c9a8a62595bf8a8cea096))
-
-
+- add riscv64gc-unknown-linux-gnu ([#947](https://github.com/Brooooooklyn/canvas/issues/947)) ([d2c83f9](https://github.com/Brooooooklyn/canvas/commit/d2c83f90a8ad2a25869c9a8a62595bf8a8cea096))
 
 ## [0.1.62](https://github.com/Brooooooklyn/canvas/compare/v0.1.61...v0.1.62) (2024-11-15)
 
-
 ### Bug Fixes
 
-* align the imageSmoothingQuality behavior with chrome ([#942](https://github.com/Brooooooklyn/canvas/issues/942)) ([991edbb](https://github.com/Brooooooklyn/canvas/commit/991edbbfacd8d17fdb30dad5e81e578bdb4eab9c))
-
+- align the imageSmoothingQuality behavior with chrome ([#942](https://github.com/Brooooooklyn/canvas/issues/942)) ([991edbb](https://github.com/Brooooooklyn/canvas/commit/991edbbfacd8d17fdb30dad5e81e578bdb4eab9c))
 
 ### Features
 
-* allow set file path as Image#src ([#938](https://github.com/Brooooooklyn/canvas/issues/938)) ([a94a2ad](https://github.com/Brooooooklyn/canvas/commit/a94a2ad885f493a200d099ed1f5db50a24699198))
-* support data url as Image#src ([#941](https://github.com/Brooooooklyn/canvas/issues/941)) ([8686c8b](https://github.com/Brooooooklyn/canvas/commit/8686c8badae9d763fd67bb8babeb0fa542449fde))
-
-
+- allow set file path as Image#src ([#938](https://github.com/Brooooooklyn/canvas/issues/938)) ([a94a2ad](https://github.com/Brooooooklyn/canvas/commit/a94a2ad885f493a200d099ed1f5db50a24699198))
+- support data url as Image#src ([#941](https://github.com/Brooooooklyn/canvas/issues/941)) ([8686c8b](https://github.com/Brooooooklyn/canvas/commit/8686c8badae9d763fd67bb8babeb0fa542449fde))
 
 ## [0.1.61](https://github.com/Brooooooklyn/canvas/compare/v0.1.60...v0.1.61) (2024-11-13)
 
-
 ### Features
 
-* after clearing, the bitmap should be cleared, and the width and height should be reset to the initial values. ([#937](https://github.com/Brooooooklyn/canvas/issues/937)) ([e2a86fe](https://github.com/Brooooooklyn/canvas/commit/e2a86fec591ff6d12724488f2e34ee7e85992f71))
-
-
+- after clearing, the bitmap should be cleared, and the width and height should be reset to the initial values. ([#937](https://github.com/Brooooooklyn/canvas/issues/937)) ([e2a86fe](https://github.com/Brooooooklyn/canvas/commit/e2a86fec591ff6d12724488f2e34ee7e85992f71))
 
 ## [0.1.60](https://github.com/Brooooooklyn/canvas/compare/v0.1.59...v0.1.60) (2024-11-07)
 
-
 ### Bug Fixes
 
-* allow svg canvas size modification ([#928](https://github.com/Brooooooklyn/canvas/issues/928)) ([15c7eab](https://github.com/Brooooooklyn/canvas/commit/15c7eabef3fbd202b891c527de77144a4151709b))
-* **deps:** update rust crate thiserror to v2 ([#930](https://github.com/Brooooooklyn/canvas/issues/930)) ([4680dc2](https://github.com/Brooooooklyn/canvas/commit/4680dc2ea6c8387ca0459a95f6c56432472f4c6c))
-* memory leak in Image ([#934](https://github.com/Brooooooklyn/canvas/issues/934)) ([cfc4da5](https://github.com/Brooooooklyn/canvas/commit/cfc4da53c395a06454b172e18d81cb7f67881fca))
-* svg context ([#932](https://github.com/Brooooooklyn/canvas/issues/932)) ([8b53e25](https://github.com/Brooooooklyn/canvas/commit/8b53e25b559cfdaaf0f43db15cef78126a5e64a1))
-* upgrade to NAPI-RS 3.0.0-alpha.19 ([#929](https://github.com/Brooooooklyn/canvas/issues/929)) ([1304a9e](https://github.com/Brooooooklyn/canvas/commit/1304a9e5cd58039ba49eb0bbd68358de260ad979))
-
-
+- allow svg canvas size modification ([#928](https://github.com/Brooooooklyn/canvas/issues/928)) ([15c7eab](https://github.com/Brooooooklyn/canvas/commit/15c7eabef3fbd202b891c527de77144a4151709b))
+- **deps:** update rust crate thiserror to v2 ([#930](https://github.com/Brooooooklyn/canvas/issues/930)) ([4680dc2](https://github.com/Brooooooklyn/canvas/commit/4680dc2ea6c8387ca0459a95f6c56432472f4c6c))
+- memory leak in Image ([#934](https://github.com/Brooooooklyn/canvas/issues/934)) ([cfc4da5](https://github.com/Brooooooklyn/canvas/commit/cfc4da53c395a06454b172e18d81cb7f67881fca))
+- svg context ([#932](https://github.com/Brooooooklyn/canvas/issues/932)) ([8b53e25](https://github.com/Brooooooklyn/canvas/commit/8b53e25b559cfdaaf0f43db15cef78126a5e64a1))
+- upgrade to NAPI-RS 3.0.0-alpha.19 ([#929](https://github.com/Brooooooklyn/canvas/issues/929)) ([1304a9e](https://github.com/Brooooooklyn/canvas/commit/1304a9e5cd58039ba49eb0bbd68358de260ad979))
 
 ## [0.1.59](https://github.com/Brooooooklyn/canvas/compare/v0.1.58...v0.1.59) (2024-10-27)
 
-
 ### Bug Fixes
 
-* build macos with xcode llvm ([#905](https://github.com/Brooooooklyn/canvas/issues/905)) ([b099c0a](https://github.com/Brooooooklyn/canvas/commit/b099c0ae047cb84ed7f44762a9ee92bb80f23cce))
-* loadImage convert ArrayBuffer issue ([#920](https://github.com/Brooooooklyn/canvas/issues/920)) ([0636775](https://github.com/Brooooooklyn/canvas/commit/06367753950cf6a62c5f950550a88c4573b19c65))
-
+- build macos with xcode llvm ([#905](https://github.com/Brooooooklyn/canvas/issues/905)) ([b099c0a](https://github.com/Brooooooklyn/canvas/commit/b099c0ae047cb84ed7f44762a9ee92bb80f23cce))
+- loadImage convert ArrayBuffer issue ([#920](https://github.com/Brooooooklyn/canvas/issues/920)) ([0636775](https://github.com/Brooooooklyn/canvas/commit/06367753950cf6a62c5f950550a88c4573b19c65))
 
 ### Features
 
-* upgrade skia to m131 ([#923](https://github.com/Brooooooklyn/canvas/issues/923)) ([75525d6](https://github.com/Brooooooklyn/canvas/commit/75525d61068f29dbf8309cd38e5b74228ab6bcb1))
-
-
+- upgrade skia to m131 ([#923](https://github.com/Brooooooklyn/canvas/issues/923)) ([75525d6](https://github.com/Brooooooklyn/canvas/commit/75525d61068f29dbf8309cd38e5b74228ab6bcb1))
 
 ## [0.1.58](https://github.com/Brooooooklyn/canvas/compare/v0.1.57...v0.1.58) (2024-10-14)
 
-
 ### Bug Fixes
 
-* loadImage memleak and performance issue ([#914](https://github.com/Brooooooklyn/canvas/issues/914)) ([d4fd676](https://github.com/Brooooooklyn/canvas/commit/d4fd676d01f2d7c70f81953d4368b9e9c5e8bf44))
-
-
+- loadImage memleak and performance issue ([#914](https://github.com/Brooooooklyn/canvas/issues/914)) ([d4fd676](https://github.com/Brooooooklyn/canvas/commit/d4fd676d01f2d7c70f81953d4368b9e9c5e8bf44))
 
 ## [0.1.57](https://github.com/Brooooooklyn/canvas/compare/v0.1.56...v0.1.57) (2024-10-14)
 
-
 ### Bug Fixes
 
-* Creating canvas with width or height of zero or less ([#739](https://github.com/Brooooooklyn/canvas/issues/739)) ([3a26c7d](https://github.com/Brooooooklyn/canvas/commit/3a26c7da384a2367e8da1688070ec89f73d118dd))
-* memory leak in Image/loadImage ([#913](https://github.com/Brooooooklyn/canvas/issues/913)) ([527c0da](https://github.com/Brooooooklyn/canvas/commit/527c0daa5f25b76d568a45fddfaf3e36252e1d9e))
-
+- Creating canvas with width or height of zero or less ([#739](https://github.com/Brooooooklyn/canvas/issues/739)) ([3a26c7d](https://github.com/Brooooooklyn/canvas/commit/3a26c7da384a2367e8da1688070ec89f73d118dd))
+- memory leak in Image/loadImage ([#913](https://github.com/Brooooooklyn/canvas/issues/913)) ([527c0da](https://github.com/Brooooooklyn/canvas/commit/527c0daa5f25b76d568a45fddfaf3e36252e1d9e))
 
 ### Features
 
-* chrome/m130 ([#904](https://github.com/Brooooooklyn/canvas/issues/904)) ([f45b4dd](https://github.com/Brooooooklyn/canvas/commit/f45b4dd9b641e8567f07da046f31ea317e03c6d7))
-
-
+- chrome/m130 ([#904](https://github.com/Brooooooklyn/canvas/issues/904)) ([f45b4dd](https://github.com/Brooooooklyn/canvas/commit/f45b4dd9b641e8567f07da046f31ea317e03c6d7))
 
 ## [0.1.56](https://github.com/Brooooooklyn/canvas/compare/v0.1.55...v0.1.56) (2024-09-19)
 
-
 ### Bug Fixes
 
-* `??` is error on node@10 ([#889](https://github.com/Brooooooklyn/canvas/issues/889)) ([366d738](https://github.com/Brooooooklyn/canvas/commit/366d73809d56c2066f878d4240e231920deaaae4))
-* adjust the order of onload calls ([#898](https://github.com/Brooooooklyn/canvas/issues/898)) ([df6df8d](https://github.com/Brooooooklyn/canvas/commit/df6df8d0295c4ff8a1c08eb345fa3b5ed78503a7))
-* **deps:** update rust crate napi to 3.0.0-alpha ([d692f59](https://github.com/Brooooooklyn/canvas/commit/d692f593b06004a85709e7dd4e8a2e9814f3f2d9))
-
-
+- `??` is error on node@10 ([#889](https://github.com/Brooooooklyn/canvas/issues/889)) ([366d738](https://github.com/Brooooooklyn/canvas/commit/366d73809d56c2066f878d4240e231920deaaae4))
+- adjust the order of onload calls ([#898](https://github.com/Brooooooklyn/canvas/issues/898)) ([df6df8d](https://github.com/Brooooooklyn/canvas/commit/df6df8d0295c4ff8a1c08eb345fa3b5ed78503a7))
+- **deps:** update rust crate napi to 3.0.0-alpha ([d692f59](https://github.com/Brooooooklyn/canvas/commit/d692f593b06004a85709e7dd4e8a2e9814f3f2d9))
 
 ## [0.1.55](https://github.com/Brooooooklyn/canvas/compare/v0.1.54...v0.1.55) (2024-09-04)
 
-
 ### Bug Fixes
 
-* image src is null after loaded ([#886](https://github.com/Brooooooklyn/canvas/issues/886)) ([1628756](https://github.com/Brooooooklyn/canvas/commit/16287561a804fd065aa900996cc696d16cf3dd07))
-
+- image src is null after loaded ([#886](https://github.com/Brooooooklyn/canvas/issues/886)) ([1628756](https://github.com/Brooooooklyn/canvas/commit/16287561a804fd065aa900996cc696d16cf3dd07))
 
 ### Features
 
-* upgrade skia to m129 ([#888](https://github.com/Brooooooklyn/canvas/issues/888)) ([b103fc2](https://github.com/Brooooooklyn/canvas/commit/b103fc2bc77a54c12bb054dda6d8ec98f90af04b))
-
-
+- upgrade skia to m129 ([#888](https://github.com/Brooooooklyn/canvas/issues/888)) ([b103fc2](https://github.com/Brooooooklyn/canvas/commit/b103fc2bc77a54c12bb054dda6d8ec98f90af04b))
 
 ## [0.1.54](https://github.com/Brooooooklyn/canvas/compare/v0.1.53...v0.1.54) (2024-08-17)
 
-
 ### Bug Fixes
 
-* **deps:** update rust crate libavif to 0.14 ([d5db090](https://github.com/Brooooooklyn/canvas/commit/d5db090d03bbe3ec7a689c4d6431b992e7f335d8))
-* handle relative and invalid URLs in redirects when passing URL to loadImage() ([#866](https://github.com/Brooooooklyn/canvas/issues/866)) ([1666a33](https://github.com/Brooooooklyn/canvas/commit/1666a33d23c779bf5cb6b9fcd4d0cace1ada609b)), closes [#865](https://github.com/Brooooooklyn/canvas/issues/865) [#865](https://github.com/Brooooooklyn/canvas/issues/865)
-* image decode should be async ([#872](https://github.com/Brooooooklyn/canvas/issues/872)) ([713ca40](https://github.com/Brooooooklyn/canvas/commit/713ca40d0ec36052a201269dab155b3e07fd7dab))
-
+- **deps:** update rust crate libavif to 0.14 ([d5db090](https://github.com/Brooooooklyn/canvas/commit/d5db090d03bbe3ec7a689c4d6431b992e7f335d8))
+- handle relative and invalid URLs in redirects when passing URL to loadImage() ([#866](https://github.com/Brooooooklyn/canvas/issues/866)) ([1666a33](https://github.com/Brooooooklyn/canvas/commit/1666a33d23c779bf5cb6b9fcd4d0cace1ada609b)), closes [#865](https://github.com/Brooooooklyn/canvas/issues/865) [#865](https://github.com/Brooooooklyn/canvas/issues/865)
+- image decode should be async ([#872](https://github.com/Brooooooklyn/canvas/issues/872)) ([713ca40](https://github.com/Brooooooklyn/canvas/commit/713ca40d0ec36052a201269dab155b3e07fd7dab))
 
 ### Features
 
-* chrome/m118 ([#875](https://github.com/Brooooooklyn/canvas/issues/875)) ([f209603](https://github.com/Brooooooklyn/canvas/commit/f2096037d5b4e05b7676fe65e7506285c52a4370))
-* update skia to m127 ([#853](https://github.com/Brooooooklyn/canvas/issues/853)) ([3d60556](https://github.com/Brooooooklyn/canvas/commit/3d60556b2c22fd5f6c6639cbede566bd8b233747))
-
-
+- chrome/m118 ([#875](https://github.com/Brooooooklyn/canvas/issues/875)) ([f209603](https://github.com/Brooooooklyn/canvas/commit/f2096037d5b4e05b7676fe65e7506285c52a4370))
+- update skia to m127 ([#853](https://github.com/Brooooooklyn/canvas/issues/853)) ([3d60556](https://github.com/Brooooooklyn/canvas/commit/3d60556b2c22fd5f6c6639cbede566bd8b233747))
 
 ## [0.1.53](https://github.com/Brooooooklyn/canvas/compare/v0.1.52...v0.1.53) (2024-06-09)
 
-
 ### Bug Fixes
 
-* armv7 segmentfault ([#830](https://github.com/Brooooooklyn/canvas/issues/830)) ([e17e6b6](https://github.com/Brooooooklyn/canvas/commit/e17e6b69c752e738d69896605a7dea2690417ede))
-* **deps:** update rust crate infer to 0.16 ([3859fe4](https://github.com/Brooooooklyn/canvas/commit/3859fe43d410e8a7e98884123336e1b19bcd1146))
-* **loadImage:** use promise ([#841](https://github.com/Brooooooklyn/canvas/issues/841)) ([e85ceee](https://github.com/Brooooooklyn/canvas/commit/e85ceeea9e21b76dc46bc712bf38557f1bcb8428))
-* trigger onerror while svg image is invalid ([#840](https://github.com/Brooooooklyn/canvas/issues/840)) ([31bd832](https://github.com/Brooooooklyn/canvas/commit/31bd832ba9ed17b2f07463f8f788edbdf21683d2))
-
+- armv7 segmentfault ([#830](https://github.com/Brooooooklyn/canvas/issues/830)) ([e17e6b6](https://github.com/Brooooooklyn/canvas/commit/e17e6b69c752e738d69896605a7dea2690417ede))
+- **deps:** update rust crate infer to 0.16 ([3859fe4](https://github.com/Brooooooklyn/canvas/commit/3859fe43d410e8a7e98884123336e1b19bcd1146))
+- **loadImage:** use promise ([#841](https://github.com/Brooooooklyn/canvas/issues/841)) ([e85ceee](https://github.com/Brooooooklyn/canvas/commit/e85ceeea9e21b76dc46bc712bf38557f1bcb8428))
+- trigger onerror while svg image is invalid ([#840](https://github.com/Brooooooklyn/canvas/issues/840)) ([31bd832](https://github.com/Brooooooklyn/canvas/commit/31bd832ba9ed17b2f07463f8f788edbdf21683d2))
 
 ### Features
 
-* chrome/m116 ([#839](https://github.com/Brooooooklyn/canvas/issues/839)) ([23276d7](https://github.com/Brooooooklyn/canvas/commit/23276d7ccb8c904b4b558767a16d1af1850fa5b7))
-
-
+- chrome/m116 ([#839](https://github.com/Brooooooklyn/canvas/issues/839)) ([23276d7](https://github.com/Brooooooklyn/canvas/commit/23276d7ccb8c904b4b558767a16d1af1850fa5b7))
 
 ## [0.1.52](https://github.com/Brooooooklyn/canvas/compare/v0.1.51...v0.1.52) (2024-04-17)
 
-
 ### Bug Fixes
 
-* drawImage with exif orientation ([#814](https://github.com/Brooooooklyn/canvas/issues/814)) ([a54cd33](https://github.com/Brooooooklyn/canvas/commit/a54cd33cb86d3670c31defdb2d2bd1ecdbba1a31))
-* negative letter spacing ([#813](https://github.com/Brooooooklyn/canvas/issues/813)) ([11ab7e2](https://github.com/Brooooooklyn/canvas/commit/11ab7e2f4239e0456e5b4169f744b71d504cfce0))
-
+- drawImage with exif orientation ([#814](https://github.com/Brooooooklyn/canvas/issues/814)) ([a54cd33](https://github.com/Brooooooklyn/canvas/commit/a54cd33cb86d3670c31defdb2d2bd1ecdbba1a31))
+- negative letter spacing ([#813](https://github.com/Brooooooklyn/canvas/issues/813)) ([11ab7e2](https://github.com/Brooooooklyn/canvas/commit/11ab7e2f4239e0456e5b4169f744b71d504cfce0))
 
 ### Features
 
-* chrome/m125 ([#815](https://github.com/Brooooooklyn/canvas/issues/815)) ([7edc894](https://github.com/Brooooooklyn/canvas/commit/7edc894dd531313f0a75ebafca1f1448a1829baf))
-
-
+- chrome/m125 ([#815](https://github.com/Brooooooklyn/canvas/issues/815)) ([7edc894](https://github.com/Brooooooklyn/canvas/commit/7edc894dd531313f0a75ebafca1f1448a1829baf))
 
 ## [0.1.51](https://github.com/Brooooooklyn/canvas/compare/v0.1.50...v0.1.51) (2024-03-04)
 
-
 ### Bug Fixes
 
-* **deps:** update rust crate base64 to 0.22 ([84fd52f](https://github.com/Brooooooklyn/canvas/commit/84fd52fa448607ce4cbdf45dc3513b0baa2479a5))
-* remove postinstall script for gnu/musl platform ([#797](https://github.com/Brooooooklyn/canvas/issues/797)) ([d37da08](https://github.com/Brooooooklyn/canvas/commit/d37da08b8c2620d9895ac9b0050ab1bf654f284e))
-
-
+- **deps:** update rust crate base64 to 0.22 ([84fd52f](https://github.com/Brooooooklyn/canvas/commit/84fd52fa448607ce4cbdf45dc3513b0baa2479a5))
+- remove postinstall script for gnu/musl platform ([#797](https://github.com/Brooooooklyn/canvas/issues/797)) ([d37da08](https://github.com/Brooooooklyn/canvas/commit/d37da08b8c2620d9895ac9b0050ab1bf654f284e))
 
 ## [0.1.50](https://github.com/Brooooooklyn/canvas/compare/v0.1.49...v0.1.50) (2024-02-26)
 
-
 ### Features
 
-* support ctx.letterSpacing and ctx.wordSpacing ([#794](https://github.com/Brooooooklyn/canvas/issues/794)) ([793d2a0](https://github.com/Brooooooklyn/canvas/commit/793d2a0e02728ce9de224b1d03061b30f00f901d))
-
-
+- support ctx.letterSpacing and ctx.wordSpacing ([#794](https://github.com/Brooooooklyn/canvas/issues/794)) ([793d2a0](https://github.com/Brooooooklyn/canvas/commit/793d2a0e02728ce9de224b1d03061b30f00f901d))
 
 ## [0.1.49](https://github.com/Brooooooklyn/canvas/compare/v0.1.48...v0.1.49) (2024-02-22)
 
-
 ### Bug Fixes
 
-* memory leak while encoding png from Canvas ([#791](https://github.com/Brooooooklyn/canvas/issues/791)) ([3f17b38](https://github.com/Brooooooklyn/canvas/commit/3f17b384445868a37062d7e2b42d558c03d24586))
-
+- memory leak while encoding png from Canvas ([#791](https://github.com/Brooooooklyn/canvas/issues/791)) ([3f17b38](https://github.com/Brooooooklyn/canvas/commit/3f17b384445868a37062d7e2b42d558c03d24586))
 
 ### Features
 
-* chrome/m123 ([#790](https://github.com/Brooooooklyn/canvas/issues/790)) ([a70a8d4](https://github.com/Brooooooklyn/canvas/commit/a70a8d4edc2c5aa48122a34edc4f69fe48e24bd0))
-
-
+- chrome/m123 ([#790](https://github.com/Brooooooklyn/canvas/issues/790)) ([a70a8d4](https://github.com/Brooooooklyn/canvas/commit/a70a8d4edc2c5aa48122a34edc4f69fe48e24bd0))
 
 ## [0.1.48](https://github.com/Brooooooklyn/canvas/compare/v0.1.47...v0.1.48) (2024-02-21)
 
-
 ### Bug Fixes
 
-* isPointInPath/isPointInStroke should respect transform ([#787](https://github.com/Brooooooklyn/canvas/issues/787)) ([9b068f1](https://github.com/Brooooooklyn/canvas/commit/9b068f17448c97df7315dd4ac75528edc9952537))
-* map points args order ([#788](https://github.com/Brooooooklyn/canvas/issues/788)) ([72d3d35](https://github.com/Brooooooklyn/canvas/commit/72d3d35a8f98be0ba5cb4a8c5f98b202984403e9))
-* memory leak in Canvas encode ([#786](https://github.com/Brooooooklyn/canvas/issues/786)) ([9a4ade5](https://github.com/Brooooooklyn/canvas/commit/9a4ade5f965e43896894dbac64a8e2b358313305))
-
-
+- isPointInPath/isPointInStroke should respect transform ([#787](https://github.com/Brooooooklyn/canvas/issues/787)) ([9b068f1](https://github.com/Brooooooklyn/canvas/commit/9b068f17448c97df7315dd4ac75528edc9952537))
+- map points args order ([#788](https://github.com/Brooooooklyn/canvas/issues/788)) ([72d3d35](https://github.com/Brooooooklyn/canvas/commit/72d3d35a8f98be0ba5cb4a8c5f98b202984403e9))
+- memory leak in Canvas encode ([#786](https://github.com/Brooooooklyn/canvas/issues/786)) ([9a4ade5](https://github.com/Brooooooklyn/canvas/commit/9a4ade5f965e43896894dbac64a8e2b358313305))
 
 ## [0.1.47](https://github.com/Brooooooklyn/canvas/compare/v0.1.46...v0.1.47) (2024-02-19)
 
-
 ### Bug Fixes
 
-* DOMMatrix#transformPoint ([#782](https://github.com/Brooooooklyn/canvas/issues/782)) ([dfc2224](https://github.com/Brooooooklyn/canvas/commit/dfc2224b99ec23952cfb43ea35f7c4f8714c813b))
-* font css parser should handle the font height ([#783](https://github.com/Brooooooklyn/canvas/issues/783)) ([382c304](https://github.com/Brooooooklyn/canvas/commit/382c304176beee304eed7569d4c965dcb2042804))
-
-
+- DOMMatrix#transformPoint ([#782](https://github.com/Brooooooklyn/canvas/issues/782)) ([dfc2224](https://github.com/Brooooooklyn/canvas/commit/dfc2224b99ec23952cfb43ea35f7c4f8714c813b))
+- font css parser should handle the font height ([#783](https://github.com/Brooooooklyn/canvas/issues/783)) ([382c304](https://github.com/Brooooooklyn/canvas/commit/382c304176beee304eed7569d4c965dcb2042804))
 
 ## [0.1.46](https://github.com/Brooooooklyn/canvas/compare/v0.1.45...v0.1.46) (2024-02-19)
 
-
 ### Bug Fixes
 
-* **deps:** update rust crate libavif to 0.13 ([08f3ff4](https://github.com/Brooooooklyn/canvas/commit/08f3ff4e8b522b3fb7c9204f08689a02d49b5218))
-* draw text on svg ([#780](https://github.com/Brooooooklyn/canvas/issues/780)) ([b6928f2](https://github.com/Brooooooklyn/canvas/commit/b6928f2976624a598f79e7724119b0888a0859d8))
-
-
+- **deps:** update rust crate libavif to 0.13 ([08f3ff4](https://github.com/Brooooooklyn/canvas/commit/08f3ff4e8b522b3fb7c9204f08689a02d49b5218))
+- draw text on svg ([#780](https://github.com/Brooooooklyn/canvas/issues/780)) ([b6928f2](https://github.com/Brooooooklyn/canvas/commit/b6928f2976624a598f79e7724119b0888a0859d8))
 
 ## [0.1.45](https://github.com/Brooooooklyn/canvas/compare/v0.1.44...v0.1.45) (2024-02-05)
 
-
 ### Bug Fixes
 
-* use `drawPicture` in some blending modes such as `destination-in` ([#755](https://github.com/Brooooooklyn/canvas/issues/755)) ([35f7f72](https://github.com/Brooooooklyn/canvas/commit/35f7f7261424e64c63f07a829331980ec2feb76f)), closes [#695](https://github.com/Brooooooklyn/canvas/issues/695)
-
+- use `drawPicture` in some blending modes such as `destination-in` ([#755](https://github.com/Brooooooklyn/canvas/issues/755)) ([35f7f72](https://github.com/Brooooooklyn/canvas/commit/35f7f7261424e64c63f07a829331980ec2feb76f)), closes [#695](https://github.com/Brooooooklyn/canvas/issues/695)
 
 ### Features
 
-* upgrade Rust toolchain ([#776](https://github.com/Brooooooklyn/canvas/issues/776)) ([6ce93d8](https://github.com/Brooooooklyn/canvas/commit/6ce93d8e0402f9627e6b5d1b18199c5225cfa2fc))
-* upgrade skia to chrome/122 ([#775](https://github.com/Brooooooklyn/canvas/issues/775)) ([48c2f88](https://github.com/Brooooooklyn/canvas/commit/48c2f88799c4f07480d76af24e96b0f0a58682a4))
-
-
+- upgrade Rust toolchain ([#776](https://github.com/Brooooooklyn/canvas/issues/776)) ([6ce93d8](https://github.com/Brooooooklyn/canvas/commit/6ce93d8e0402f9627e6b5d1b18199c5225cfa2fc))
+- upgrade skia to chrome/122 ([#775](https://github.com/Brooooooklyn/canvas/issues/775)) ([48c2f88](https://github.com/Brooooooklyn/canvas/commit/48c2f88799c4f07480d76af24e96b0f0a58682a4))
 
 ## [0.1.44](https://github.com/Brooooooklyn/canvas/compare/v0.1.43...v0.1.44) (2023-08-22)
 

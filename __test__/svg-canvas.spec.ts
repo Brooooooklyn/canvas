@@ -16,7 +16,7 @@ test('should be able to adjust size', (t) => {
   const { canvas } = t.context
   canvas.width = 512
   canvas.height = 384
-  
+
   t.is(canvas.width, 512)
   t.is(canvas.height, 384)
 })
