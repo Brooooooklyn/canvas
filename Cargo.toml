@@ -1,32 +1,32 @@
 [package]
-authors = ["LongYinan <lynweklm@gmail.com>"]
-edition = "2024"
-name    = "canvas"
-version = "0.1.0"
+authors  = ["LongYinan <lynweklm@gmail.com>"]
+edition  = "2024"
+name     = "canvas"
 resolver = "3"
+version  = "0.1.0"
 
 [lib]
 crate-type = ["cdylib"]
 
 [dependencies]
-anyhow       = "1"
-base64-simd  = "0.8"
-cssparser    = "0.35"
+anyhow          = "1"
+base64-simd     = "0.8"
+cssparser       = "0.35"
 cssparser-color = "0.3"
-infer        = "0.19"
-libavif      = { version = "0.14", default-features = false, features = ["codec-aom"] }
-libavif-sys  = { version = "0.17", default-features = false, features = ["codec-aom"] }
-napi         = { version = "3.0.0-beta.1", default-features = false, features = ["napi4", "web_stream", "serde-json"] }
-napi-derive  = { version = "3.0.0-beta.1", default-features = false }
-nom          = "8"
-num_cpus     = "1"
-regex        = "1"
-rgb          = "0.8"
-serde        = "1"
-serde_derive = "1"
-serde_json   = "1"
-thiserror    = "2"
-uuid         = { version = "1", features = ["v4"] }
+infer           = "0.19"
+libavif         = { version = "0.14", default-features = false, features = ["codec-aom"] }
+libavif-sys     = { version = "0.17", default-features = false, features = ["codec-aom"] }
+napi            = { version = "3.0.0-beta.1", default-features = false, features = ["napi4", "web_stream", "serde-json"] }
+napi-derive     = { version = "3.0.0-beta.1", default-features = false }
+nom             = "8"
+num_cpus        = "1"
+regex           = "1"
+rgb             = "0.8"
+serde           = "1"
+serde_derive    = "1"
+serde_json      = "1"
+thiserror       = "2"
+uuid            = { version = "1", features = ["v4"] }
 
 [target.'cfg(not(target_os = "linux"))'.dependencies]
 mimalloc-safe = { version = "0.1", features = ["skip_collect_on_exit"] }

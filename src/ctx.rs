@@ -6,11 +6,11 @@ use std::str::FromStr;
 use std::sync::LazyLock;
 
 use cssparser::{Parser, ParserInput};
-use cssparser_color::{Color as CSSColor};
-use rgb::RGBA;
+use cssparser_color::Color as CSSColor;
 use libavif::AvifData;
 use napi::{JsString, bindgen_prelude::*};
 use regex::Regex;
+use rgb::RGBA;
 
 use crate::font::FONT_MEDIUM_PX;
 use crate::font::parse_size_px;
@@ -558,17 +558,15 @@ impl Context {
         drop(parser_input);
         self.state.shadow_color_string = shadow_color;
         // Convert RgbaLegacy to RGBA<u8>
-        self.state.shadow_color = RGBA { 
-          r: rgba.red, 
-          g: rgba.green, 
-          b: rgba.blue, 
-          a: (rgba.alpha * 255.0) as u8 
+        self.state.shadow_color = RGBA {
+          r: rgba.red,
+          g: rgba.green,
+          b: rgba.blue,
+          a: (rgba.alpha * 255.0) as u8,
         };
       }
       _ => {
-        return Err(SkError::Generic(
-          "Unsupported color format".to_owned(),
-        ));
+        return Err(SkError::Generic("Unsupported color format".to_owned()));
       }
     }
     Ok(())

@@ -1,9 +1,9 @@
 use std::result::Result as StdResult;
 
 use cssparser::{Parser, ParserInput};
-use cssparser_color::{Color as CSSColor};
-use rgb::RGBA;
+use cssparser_color::Color as CSSColor;
 use napi::bindgen_prelude::*;
+use rgb::RGBA;
 
 use crate::ctx::TransformObject;
 use crate::error::SkError;
@@ -43,11 +43,9 @@ impl Pattern {
           b: rgba.blue,
           a: (rgba.alpha * 255.0) as u8,
         },
-        color_str.to_owned()
+        color_str.to_owned(),
       )),
-      _ => Err(SkError::Generic(
-        "Unsupported color format".to_owned(),
-      )),
+      _ => Err(SkError::Generic("Unsupported color format".to_owned())),
     }
   }
 }

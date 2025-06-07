@@ -2,7 +2,6 @@ use std::{num::ParseFloatError, ptr};
 
 use cssparser::{Parser, ParserInput};
 use cssparser_color::{Color, RgbaLegacy};
-use rgb::RGBA;
 use nom::{
   AsChar, Err, IResult, Parser as NomParser,
   branch::alt,
@@ -12,6 +11,7 @@ use nom::{
   error::Error,
   number::complete::float,
 };
+use rgb::RGBA;
 use thiserror::Error;
 
 use crate::sk::{ImageFilter, degrees_to_radians};
@@ -219,7 +219,14 @@ fn drop_shadow_parser(input: &str) -> IResult<&str, CssFilter> {
   let shadow_color = if !shadow_color_str.is_empty() {
     let mut parser_input = ParserInput::new(shadow_color_str);
     let mut parser = Parser::new(&mut parser_input);
-    let color = Color::parse(&mut parser).unwrap_or_else(|_| Color::Rgba(RgbaLegacy { red: 0, green: 0, blue: 0, alpha: 1.0 }));
+    let color = Color::parse(&mut parser).unwrap_or_else(|_| {
+      Color::Rgba(RgbaLegacy {
+        red: 0,
+        green: 0,
+        blue: 0,
+        alpha: 1.0,
+      })
+    });
     if let Color::Rgba(rgba) = color {
       // Convert RgbaLegacy to RGBA<u8>
       RGBA {

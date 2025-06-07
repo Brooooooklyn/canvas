@@ -1,7 +1,7 @@
 use std::result;
 
 use cssparser::{Parser, ParserInput};
-use cssparser_color::{Color as CSSColor};
+use cssparser_color::Color as CSSColor;
 use napi::bindgen_prelude::*;
 
 use crate::{
@@ -182,10 +182,10 @@ impl CanvasGradient {
         ));
       }
       CSSColor::Rgba(rgba) => Color::from_rgba(
-        rgba.red,   // Already u8
-        rgba.green, // Already u8
-        rgba.blue,  // Already u8
-        (rgba.alpha * 255.0) as u8  // Scale f32 0.0-1.0 to u8 0-255
+        rgba.red,                   // Already u8
+        rgba.green,                 // Already u8
+        rgba.blue,                  // Already u8
+        (rgba.alpha * 255.0) as u8, // Scale f32 0.0-1.0 to u8 0-255
       ),
       _ => {
         return Err(Error::new(
