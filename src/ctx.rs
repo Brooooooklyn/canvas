@@ -5,7 +5,9 @@ use std::slice;
 use std::str::FromStr;
 use std::sync::LazyLock;
 
-use cssparser::{Color as CSSColor, Parser, ParserInput, RGBA};
+use cssparser::{Parser, ParserInput};
+use cssparser_color::{Color as CSSColor};
+use rgb::RGBA;
 use libavif::AvifData;
 use napi::{JsString, bindgen_prelude::*};
 use regex::Regex;
@@ -472,7 +474,7 @@ impl Context {
     match &last_state.fill_style {
       Pattern::Color(c, _) => {
         let color = Self::multiply_by_alpha(c, alpha);
-        paint.set_color(color.red, color.green, color.blue, color.alpha);
+        paint.set_color(color.r, color.g, color.b, color.a);
       }
       Pattern::Gradient(g) => {
         let current_transform = &last_state.transform;
@@ -552,10 +554,21 @@ impl Context {
           "Color should not be `currentcolor` keyword".to_owned(),
         ));
       }
-      CSSColor::RGBA(rgba) => {
+      CSSColor::Rgba(rgba) => {
         drop(parser_input);
         self.state.shadow_color_string = shadow_color;
-        self.state.shadow_color = rgba;
+        // Convert RgbaLegacy to RGBA<u8>
+        self.state.shadow_color = RGBA { 
+          r: rgba.red, 
+          g: rgba.green, 
+          b: rgba.blue, 
+          a: (rgba.alpha * 255.0) as u8 
+        };
+      }
+      _ => {
+        return Err(SkError::Generic(
+          "Unsupported color format".to_owned(),
+        ));
       }
     }
     Ok(())
@@ -597,7 +610,7 @@ impl Context {
     match &last_state.stroke_style {
       Pattern::Color(c, _) => {
         let color = Self::multiply_by_alpha(c, global_alpha);
-        paint.set_color(color.red, color.green, color.blue, color.alpha);
+        paint.set_color(color.r, color.g, color.b, color.a);
       }
       Pattern::Gradient(g) => {
         let current_transform = &last_state.transform;
@@ -629,7 +642,7 @@ impl Context {
   fn drop_shadow_paint(state: &Context2dRenderingState, paint: &Paint) -> Option<Paint> {
     let alpha = paint.get_alpha();
     let shadow_color = &state.shadow_color;
-    let mut shadow_alpha = shadow_color.alpha;
+    let mut shadow_alpha = shadow_color.a;
     shadow_alpha = ((shadow_alpha as f32) * (alpha as f32 / 255.0)) as u8;
     if shadow_alpha == 0 {
       return None;
@@ -638,10 +651,10 @@ impl Context {
       return None;
     }
     let mut drop_shadow_paint = paint.clone();
-    let a = shadow_color.alpha;
-    let r = shadow_color.red;
-    let g = shadow_color.green;
-    let b = shadow_color.blue;
+    let a = shadow_color.a;
+    let r = shadow_color.r;
+    let g = shadow_color.g;
+    let b = shadow_color.b;
     let transform = state.transform.get_transform();
     let sigma_x = state.shadow_blur / (2f32 * transform.scale_x());
     let sigma_y = state.shadow_blur / (2f32 * transform.scale_y());
@@ -661,7 +674,7 @@ impl Context {
   fn shadow_blur_paint(state: &Context2dRenderingState, paint: &Paint) -> Option<Paint> {
     let alpha = paint.get_alpha();
     let shadow_color = Self::multiply_by_alpha(&state.shadow_color, alpha);
-    let shadow_alpha = shadow_color.alpha;
+    let shadow_alpha = shadow_color.a;
     if shadow_alpha == 0 {
       return None;
     }
@@ -669,10 +682,10 @@ impl Context {
       return None;
     }
     let mut drop_shadow_paint = paint.clone();
-    let a = shadow_color.alpha;
-    let r = shadow_color.red;
-    let g = shadow_color.green;
-    let b = shadow_color.blue;
+    let a = shadow_color.a;
+    let r = shadow_color.r;
+    let g = shadow_color.g;
+    let b = shadow_color.b;
     if state.shadow_blur == 0f32 {
       // No blur, so set the paint color to the shadow color without any blur effects
       drop_shadow_paint.set_color(r, g, b, a);
@@ -863,9 +876,9 @@ impl Context {
   }
 
   // ./skia/modules/canvaskit/color.js
-  fn multiply_by_alpha(color: &RGBA, global_alpha: u8) -> RGBA {
+  fn multiply_by_alpha(color: &RGBA<u8>, global_alpha: u8) -> RGBA<u8> {
     let mut result = *color;
-    result.alpha = ((0.0_f32.max((result.alpha_f32() * (global_alpha as f32 / 255.0)).min(1.0)))
+    result.a = ((0.0_f32.max((result.a as f32 / 255.0 * (global_alpha as f32 / 255.0)).min(1.0)))
       * 255.0)
       .round() as u8;
     result

@@ -1,6 +1,8 @@
 use std::result::Result as StdResult;
 
-use cssparser::{Color as CSSColor, Parser, ParserInput, RGBA};
+use cssparser::{Parser, ParserInput};
+use cssparser_color::{Color as CSSColor};
+use rgb::RGBA;
 use napi::bindgen_prelude::*;
 
 use crate::ctx::TransformObject;
@@ -13,7 +15,7 @@ use crate::{CanvasElement, SVGCanvas};
 #[derive(Debug, Clone)]
 pub enum Pattern {
   #[allow(dead_code)]
-  Color(RGBA, String),
+  Color(RGBA<u8>, String),
   Gradient(Gradient),
   Image(ImagePattern),
 }
@@ -34,7 +36,18 @@ impl Pattern {
       CSSColor::CurrentColor => Err(SkError::Generic(
         "Color should not be `currentcolor` keyword".to_owned(),
       )),
-      CSSColor::RGBA(rgba) => Ok(Pattern::Color(rgba, color_str.to_owned())),
+      CSSColor::Rgba(rgba) => Ok(Pattern::Color(
+        RGBA {
+          r: rgba.red,
+          g: rgba.green,
+          b: rgba.blue,
+          a: (rgba.alpha * 255.0) as u8,
+        },
+        color_str.to_owned()
+      )),
+      _ => Err(SkError::Generic(
+        "Unsupported color format".to_owned(),
+      )),
     }
   }
 }

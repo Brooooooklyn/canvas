@@ -1,6 +1,8 @@
 use std::{num::ParseFloatError, ptr};
 
-use cssparser::{Color, Parser, ParserInput, RGBA};
+use cssparser::{Parser, ParserInput};
+use cssparser_color::{Color, RgbaLegacy};
+use rgb::RGBA;
 use nom::{
   AsChar, Err, IResult, Parser as NomParser,
   branch::alt,
@@ -41,7 +43,7 @@ pub enum CssFilter {
   Blur(f32),
   Brightness(f32),
   Contrast(f32),
-  DropShadow(f32, f32, f32, RGBA),
+  DropShadow(f32, f32, f32, RGBA<u8>),
   Grayscale(f32),
   HueRotate(f32),
   Invert(f32),
@@ -208,18 +210,24 @@ fn drop_shadow_parser(input: &str) -> IResult<&str, CssFilter> {
   let (shadow_color_output, shadow_color_str) =
     take_until(if is_rgb_fn { "))" } else { ")" })(blur_radius_output)?;
   let shadow_color_str = shadow_color_str.trim();
-  static BLACK: RGBA = RGBA {
-    red: 0,
-    green: 0,
-    blue: 0,
-    alpha: 255,
+  static BLACK: RGBA<u8> = RGBA {
+    r: 0,
+    g: 0,
+    b: 0,
+    a: 255,
   };
   let shadow_color = if !shadow_color_str.is_empty() {
     let mut parser_input = ParserInput::new(shadow_color_str);
     let mut parser = Parser::new(&mut parser_input);
-    let color = Color::parse(&mut parser).unwrap_or_else(|_| Color::RGBA(BLACK));
-    if let Color::RGBA(rgba) = color {
-      rgba
+    let color = Color::parse(&mut parser).unwrap_or_else(|_| Color::Rgba(RgbaLegacy { red: 0, green: 0, blue: 0, alpha: 1.0 }));
+    if let Color::Rgba(rgba) = color {
+      // Convert RgbaLegacy to RGBA<u8>
+      RGBA {
+        r: rgba.red,
+        g: rgba.green,
+        b: rgba.blue,
+        a: (rgba.alpha * 255.0) as u8,
+      }
     } else {
       BLACK
     }
@@ -294,7 +302,7 @@ pub(crate) fn css_filters_to_image_filter(filters: Vec<CssFilter>) -> Option<Ima
       }
       CssFilter::DropShadow(offset_x, offset_y, blur_radius, shadow_color) => {
         let sigma = blur_radius / 2.0;
-        if shadow_color.alpha == 0 {
+        if shadow_color.a == 0 {
           return None;
         }
         if blur_radius == 0f32 && offset_x == 0f32 && offset_y == 0f32 {
@@ -305,10 +313,10 @@ pub(crate) fn css_filters_to_image_filter(filters: Vec<CssFilter>) -> Option<Ima
           offset_y,
           sigma,
           sigma,
-          ((shadow_color.alpha as u32) << 24)
-            | ((shadow_color.red as u32) << 16)
-            | ((shadow_color.green as u32) << 8)
-            | shadow_color.blue as u32,
+          ((shadow_color.a as u32) << 24)
+            | ((shadow_color.r as u32) << 16)
+            | ((shadow_color.g as u32) << 8)
+            | shadow_color.b as u32,
           Some(&image_filter),
         )
       }
