@@ -45,7 +45,8 @@ impl ImageData {
         let mut data_buffer = vec![0; arraybuffer_length];
         let data_ptr = data_buffer.as_mut_ptr();
         let data_object = Uint8ClampedSlice::from_data(&env, data_buffer)?;
-        this.define_properties(&[Property::new("data")?
+        this.define_properties(&[Property::new()
+          .with_utf8_name("data")?
           .with_value(&data_object)
           .with_property_attributes(
             PropertyAttributes::Enumerable | PropertyAttributes::Configurable,
@@ -74,7 +75,8 @@ impl ImageData {
         // An existing ImageData object from which to copy the width and height.
         let mut cloned_data = Uint8ClampedSlice::from_data(&env, data_object.to_vec())?;
         let data = cloned_data.as_mut_ptr();
-        this.define_properties(&[Property::new("data")?
+        this.define_properties(&[Property::new()
+          .with_utf8_name("data")?
           .with_value(&cloned_data)
           .with_property_attributes(
             PropertyAttributes::Enumerable | PropertyAttributes::Configurable,

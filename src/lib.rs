@@ -90,10 +90,12 @@ impl<'c> CanvasElement<'c> {
     }
     .into_instance(env)?;
     ctx.as_object(env).define_properties(&[
-      Property::new(FILL_STYLE_HIDDEN_NAME)?
+      Property::new()
+        .with_utf8_name(FILL_STYLE_HIDDEN_NAME)?
         .with_napi_value(env, "#000")?
         .with_property_attributes(PropertyAttributes::Writable | PropertyAttributes::Configurable),
-      Property::new(STROKE_STYLE_HIDDEN_NAME)?
+      Property::new()
+        .with_utf8_name(STROKE_STYLE_HIDDEN_NAME)?
         .with_napi_value(env, "#000")?
         .with_property_attributes(PropertyAttributes::Writable | PropertyAttributes::Configurable),
     ])?;
@@ -109,7 +111,8 @@ impl<'c> CanvasElement<'c> {
     let ctx = Self::create_context(env, width, height)?;
     let ctx = ctx.assign_to_this_with_attributes("ctx", PropertyAttributes::Default, &mut this)?;
     let mut ctx_obj = ctx.as_object(env);
-    ctx_obj.define_properties(&[Property::new("canvas")?
+    ctx_obj.define_properties(&[Property::new()
+      .with_utf8_name("canvas")?
       .with_value(&this)
       .with_property_attributes(
         PropertyAttributes::Default | PropertyAttributes::Writable | PropertyAttributes::Enumerable,
@@ -532,13 +535,16 @@ impl<'scope> SVGCanvas<'scope> {
     )?;
     let mut ctx_obj = ctx.as_object(env);
     ctx_obj.define_properties(&[
-      Property::new(FILL_STYLE_HIDDEN_NAME)?
+      Property::new()
+        .with_utf8_name(FILL_STYLE_HIDDEN_NAME)?
         .with_value(&env.create_string("#000")?)
         .with_property_attributes(PropertyAttributes::Writable | PropertyAttributes::Configurable),
-      Property::new(STROKE_STYLE_HIDDEN_NAME)?
+      Property::new()
+        .with_utf8_name(STROKE_STYLE_HIDDEN_NAME)?
         .with_value(&env.create_string("#000")?)
         .with_property_attributes(PropertyAttributes::Writable | PropertyAttributes::Configurable),
-      Property::new("canvas")?
+      Property::new()
+        .with_utf8_name("canvas")?
         .with_value(&this)
         .with_property_attributes(
           PropertyAttributes::Default
