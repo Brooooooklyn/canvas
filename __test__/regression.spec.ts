@@ -351,3 +351,32 @@ test('scale-svg-image', async (t) => {
   ctx.drawImage(image, 0, 0)
   await snapshotImage(t, { ctx, canvas })
 })
+
+// https://github.com/Brooooooklyn/canvas/issues/1059
+test('shadow-alpha-with-global-alpha', async (t) => {
+  const canvas = createCanvas(200, 100)
+  const ctx = canvas.getContext('2d')
+
+  // Fill with white background
+  ctx.fillStyle = 'white'
+  ctx.fillRect(0, 0, 200, 100)
+
+  // Set globalAlpha to 1 (full opacity)
+  ctx.globalAlpha = 1
+
+  // Set shadow with semi-transparent black
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.5)'
+  ctx.shadowBlur = 10
+  ctx.shadowOffsetX = 5
+  ctx.shadowOffsetY = 5
+
+  // Draw a rectangle with shadow
+  ctx.fillStyle = 'blue'
+  ctx.fillRect(20, 20, 60, 40)
+
+  if (process.arch === 'x64') {
+    await snapshotImage(t, { ctx, canvas })
+  } else {
+    await snapshotImage(t, { ctx, canvas }, 'png', 2.5)
+  }
+})

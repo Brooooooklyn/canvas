@@ -14,7 +14,7 @@ export async function snapshotImage<C>(
   t: ExecutionContext<C>,
   context = t.context,
   type: 'png' | 'jpeg' | 'webp' | 'avif' = 'png',
-  differentRatio = ARCH_NAME === 'x64' ? 0.015 : t.title.indexOf('filter') > -1 ? 2.5 : 0.3,
+  differentRatio = ARCH_NAME === 'x64' ? 0.015 : t.title.includes('filter') ? 2.5 : 0.3,
 ) {
   // @ts-expect-error
   const { canvas } = context
@@ -43,7 +43,8 @@ export async function snapshotImage<C>(
     }
     const existedPixels =
       type === 'png' ? png.decoders['image/png'](existed).data : jpeg.decoders['image/jpeg'](existed).data
-    const imagePixels = type === 'png' ? png.decoders['image/png'](image).data : jpeg.decoders['image/jpeg'](image).data
+    const imagePixels: Uint8Array =
+      type === 'png' ? png.decoders['image/png'](image).data : jpeg.decoders['image/jpeg'](image).data
     if (existedPixels.length !== imagePixels.length) {
       await writeFailureImage()
       t.fail('Image size is not equal')

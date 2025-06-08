@@ -638,10 +638,8 @@ impl Context {
   }
 
   fn drop_shadow_paint(state: &Context2dRenderingState, paint: &Paint) -> Option<Paint> {
-    let alpha = paint.get_alpha();
     let shadow_color = &state.shadow_color;
-    let mut shadow_alpha = shadow_color.a;
-    shadow_alpha = ((shadow_alpha as f32) * (alpha as f32 / 255.0)) as u8;
+    let shadow_alpha = shadow_color.a;
     if shadow_alpha == 0 {
       return None;
     }
@@ -670,8 +668,7 @@ impl Context {
   }
 
   fn shadow_blur_paint(state: &Context2dRenderingState, paint: &Paint) -> Option<Paint> {
-    let alpha = paint.get_alpha();
-    let shadow_color = Self::multiply_by_alpha(&state.shadow_color, alpha);
+    let shadow_color = &state.shadow_color;
     let shadow_alpha = shadow_color.a;
     if shadow_alpha == 0 {
       return None;
