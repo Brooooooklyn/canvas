@@ -1,4 +1,3 @@
-import { join } from 'node:path'
 import { createRequire } from 'node:module'
 import { setTimeout } from 'node:timers/promises'
 
@@ -28,7 +27,7 @@ function paint() {
 const initial = process.memoryUsage()
 
 async function main() {
-  for (const [index, _] of Array.from({ length: 100 }).entries()) {
+  for (const _ of Array.from({ length: 100 })) {
     displayMemoryUsageFromNode(initial)
     await setTimeout(100)
     global?.gc?.()

@@ -1,7 +1,7 @@
 const fs = require('fs').promises
 const { join } = require('path')
 
-const { createCanvas, Image } = require('../index')
+const { createCanvas } = require('../index')
 /* eslint-disable no-console */
 
 async function main() {
