@@ -473,7 +473,7 @@ class DOMMatrix {
     console.info([mat.slice(0, 4), mat.slice(4, 8), mat.slice(8, 12), mat.slice(12, 16)])
   }
 
-  [inspect.custom](depth, options) {
+  [inspect.custom](depth) {
     if (depth < 0) return '[DOMMatrix]'
 
     const { a, b, c, d, e, f, is2D, isIdentity } = this

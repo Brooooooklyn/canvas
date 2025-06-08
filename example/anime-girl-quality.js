@@ -1,6 +1,5 @@
-const fs = require('fs').promises
-const { join } = require('path')
-const { performance } = require('perf_hooks')
+const fs = require('node:fs/promises')
+const { join } = require('node:path')
 
 const { createCanvas, Image } = require('../index')
 /* eslint-disable no-console */
