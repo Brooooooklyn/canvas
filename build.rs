@@ -147,7 +147,7 @@ fn main() {
                 "/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot/usr/include",
               )
               .flag("--sysroot=/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot");
-            println!("cargo:rustc-link-search=/usr/aarch64-unknown-linux-gnu/lib/llvm-18/lib");
+            println!("cargo:rustc-link-search=/usr/aarch64-unknown-linux-gnu/lib/llvm-19/lib");
             println!("cargo:rustc-link-search=/usr/aarch64-unknown-linux-gnu/lib");
             println!(
               "cargo:rustc-link-search=/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot/lib"
@@ -158,8 +158,8 @@ fn main() {
           }
           "x86_64" => {
             link_libcxx(&mut build);
-            build.include("/usr/lib/llvm-18/include/c++/v1");
-            println!("cargo:rustc-link-search=/usr/lib/llvm-18/lib");
+            build.include("/usr/lib/llvm-19/include/c++/v1");
+            println!("cargo:rustc-link-search=/usr/lib/llvm-19/lib");
           }
           "riscv64" => {
             println!("cargo:rustc-link-search=/usr/lib/gcc-cross/riscv64-linux-gnu/11");

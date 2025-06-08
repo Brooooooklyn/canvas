@@ -1,5 +1,7 @@
 FROM messense/manylinux2014-cross:aarch64
 
+ARG LLVM_VERSION=19
+
 ENV RUSTUP_HOME=/usr/local/rustup \
   CARGO_HOME=/usr/local/cargo \
   PATH=/usr/local/cargo/bin:$PATH \
@@ -9,23 +11,23 @@ ENV RUSTUP_HOME=/usr/local/rustup \
   CXX_aarch64_unknown_linux_gnu="clang++ --sysroot=/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot" \
   C_INCLUDE_PATH="/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot/usr/include" \
   CFLAGS="-fuse-ld=lld --sysroot=/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot" \
-  CXXFLAGS="--sysroot=/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot -L/usr/aarch64-unknown-linux-gnu/lib/llvm-18/lib -stdlib=libc++"
+  CXXFLAGS="--sysroot=/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot -L/usr/aarch64-unknown-linux-gnu/lib/llvm-${LLVM_VERSION}/lib -stdlib=libc++"
 
-ADD ./lib/llvm-18 /usr/aarch64-unknown-linux-gnu/lib/llvm-18
+COPY ./lib/llvm-${LLVM_VERSION} /usr/aarch64-unknown-linux-gnu/lib/llvm-${LLVM_VERSION}
 
 RUN apt-get update && \
   apt-get install -y --fix-missing --no-install-recommends gpg-agent ca-certificates openssl && \
   wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - && \
-  echo "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-18 main" >> /etc/apt/sources.list && \
-  echo "deb-src http://apt.llvm.org/jammy/ llvm-toolchain-jammy-18 main" >> /etc/apt/sources.list && \
-  curl -sL https://deb.nodesource.com/setup_20.x | bash - && \
+  echo "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-${LLVM_VERSION} main" >> /etc/apt/sources.list && \
+  echo "deb-src http://apt.llvm.org/jammy/ llvm-toolchain-jammy-${LLVM_VERSION} main" >> /etc/apt/sources.list && \
+  curl -sL https://deb.nodesource.com/setup_22.x | bash - && \
   apt-get install -y --fix-missing --no-install-recommends \
   curl \
-  llvm-18 \
-  clang-18 \
-  lld-18 \
-  libc++-18-dev \
-  libc++abi-18-dev \
+  llvm-${LLVM_VERSION} \
+  clang-${LLVM_VERSION} \
+  lld-${LLVM_VERSION} \
+  libc++-${LLVM_VERSION}-dev \
+  libc++abi-${LLVM_VERSION}-dev \
   nodejs \
   xz-utils \
   rcs \
@@ -39,9 +41,9 @@ RUN apt-get update && \
   npm install -g yarn pnpm lerna && \
   npm cache clean --force && \
   npm cache verify && \
-  ln -sf /usr/bin/clang-18 /usr/bin/clang && \
-  ln -sf /usr/bin/clang++-18 /usr/bin/clang++ && \
-  ln -sf /usr/bin/lld-18 /usr/bin/lld && \
-  ln -sf /usr/bin/clang-18 /usr/bin/cc && \
+  ln -sf /usr/bin/clang-${LLVM_VERSION} /usr/bin/clang && \
+  ln -sf /usr/bin/clang++-${LLVM_VERSION} /usr/bin/clang++ && \
+  ln -sf /usr/bin/lld-${LLVM_VERSION} /usr/bin/lld && \
+  ln -sf /usr/bin/clang-${LLVM_VERSION} /usr/bin/cc && \
   cp -r /usr/aarch64-unknown-linux-gnu/lib/gcc /usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot/lib/ && \
   rm -rf /var/lib/apt/lists/*
