@@ -1,5 +1,5 @@
 use std::result::Result as StdResult;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use cssparser::{Parser, ParserInput};
 use cssparser_color::Color as CSSColor;
@@ -26,13 +26,7 @@ impl Clone for Pattern {
     match self {
       Pattern::Color(rgba, s) => Pattern::Color(*rgba, s.clone()),
       Pattern::Gradient(g) => Pattern::Gradient(g.clone()),
-      Pattern::Image(img) => Pattern::Image(ImagePattern {
-        bitmap: img.bitmap,
-        repeat_x: img.repeat_x.clone(),
-        repeat_y: img.repeat_y.clone(),
-        transform: img.transform.clone(),
-        is_canvas: img.is_canvas,
-      }),
+      Pattern::Image(img) => Pattern::Image(img.clone()),
     }
   }
 }
@@ -106,16 +100,18 @@ impl CanvasPattern {
         ptr
       }
       Either4::C(canvas) => {
-        let canvas_bitmap = canvas.ctx.context.surface.get_bitmap();
-        let ptr = canvas_bitmap.0.bitmap;
-        inner_bitmap = Some(Arc::new(canvas_bitmap));
+        // For canvas patterns, use the surface pointer directly as the bitmap pointer.
+        // This avoids creating unnecessary Bitmap wrapper objects that accumulate memory.
+        // The C implementation of get_bitmap just returns the surface pointer anyway.
+        let ptr = canvas.ctx.context.surface.get_bitmap_ptr();
         is_canvas = true;
         ptr
       }
       Either4::D(svg_canvas) => {
-        let canvas_bitmap = svg_canvas.ctx.context.surface.get_bitmap();
-        let ptr = canvas_bitmap.0.bitmap;
-        inner_bitmap = Some(Arc::new(canvas_bitmap));
+        // For SVG canvas patterns, use the surface pointer directly as the bitmap pointer.
+        // This avoids creating unnecessary Bitmap wrapper objects that accumulate memory.
+        // The C implementation of get_bitmap just returns the surface pointer anyway.
+        let ptr = svg_canvas.ctx.context.surface.get_bitmap_ptr();
         is_canvas = true;
         ptr
       }
@@ -142,6 +138,7 @@ impl CanvasPattern {
         repeat_x,
         repeat_y,
         is_canvas,
+        shader_cache: OnceLock::new(),
       }),
       bitmap: inner_bitmap,
     })

@@ -1243,6 +1243,11 @@ skiac_shader* skiac_shader_make_from_surface_image(skiac_surface* c_surface,
   return nullptr;
 }
 
+void skiac_shader_ref(skiac_shader* c_shader) {
+  auto shader = reinterpret_cast<SkShader*>(c_shader);
+  shader->ref();
+}
+
 void skiac_shader_destroy(skiac_shader* c_shader) {
   // SkShader is ref counted.
   auto shader = reinterpret_cast<SkShader*>(c_shader);
