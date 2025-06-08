@@ -1,4 +1,5 @@
 use std::result::Result as StdResult;
+use std::sync::Arc;
 
 use cssparser::{Parser, ParserInput};
 use cssparser_color::Color as CSSColor;
@@ -12,12 +13,28 @@ use crate::image::{Image, ImageData};
 use crate::sk::{AlphaType, Bitmap, ColorType, ImagePattern, TileMode, Transform};
 use crate::{CanvasElement, SVGCanvas};
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum Pattern {
   #[allow(dead_code)]
   Color(RGBA<u8>, String),
   Gradient(Gradient),
   Image(ImagePattern),
+}
+
+impl Clone for Pattern {
+  fn clone(&self) -> Self {
+    match self {
+      Pattern::Color(rgba, s) => Pattern::Color(*rgba, s.clone()),
+      Pattern::Gradient(g) => Pattern::Gradient(g.clone()),
+      Pattern::Image(img) => Pattern::Image(ImagePattern {
+        bitmap: img.bitmap,
+        repeat_x: img.repeat_x.clone(),
+        repeat_y: img.repeat_y.clone(),
+        transform: img.transform.clone(),
+        is_canvas: img.is_canvas,
+      }),
+    }
+  }
 }
 
 impl Default for Pattern {
@@ -55,7 +72,7 @@ pub struct CanvasPattern {
   pub(crate) inner: Pattern,
   #[allow(unused)]
   // hold it for Drop
-  bitmap: Option<Bitmap>,
+  bitmap: Option<Arc<Bitmap>>,
 }
 
 #[napi]
@@ -85,20 +102,20 @@ impl CanvasPattern {
           AlphaType::Unpremultiplied,
         );
         let ptr = bitmap.0.bitmap;
-        inner_bitmap = Some(bitmap);
+        inner_bitmap = Some(Arc::new(bitmap));
         ptr
       }
       Either4::C(canvas) => {
         let canvas_bitmap = canvas.ctx.context.surface.get_bitmap();
         let ptr = canvas_bitmap.0.bitmap;
-        inner_bitmap = Some(canvas_bitmap);
+        inner_bitmap = Some(Arc::new(canvas_bitmap));
         is_canvas = true;
         ptr
       }
       Either4::D(svg_canvas) => {
         let canvas_bitmap = svg_canvas.ctx.context.surface.get_bitmap();
         let ptr = canvas_bitmap.0.bitmap;
-        inner_bitmap = Some(canvas_bitmap);
+        inner_bitmap = Some(Arc::new(canvas_bitmap));
         is_canvas = true;
         ptr
       }
