@@ -1,3 +1,22 @@
+## [0.1.71](https://github.com/Brooooooklyn/canvas/compare/v0.1.70...v0.1.71) (2025-06-08)
+
+
+### Bug Fixes
+
+* memory leak in createPattern ([#1067](https://github.com/Brooooooklyn/canvas/issues/1067)) ([2e9f718](https://github.com/Brooooooklyn/canvas/commit/2e9f718b3037bcf2c711cf3697b379ca9bdfe0fc))
+* shadow clipping beyond canvas bounds ([#1068](https://github.com/Brooooooklyn/canvas/issues/1068)) ([deeeea7](https://github.com/Brooooooklyn/canvas/commit/deeeea772ac68e05542d0f4c71d3b1153868083d))
+* wrong shadow alpha calculation ([#1064](https://github.com/Brooooooklyn/canvas/issues/1064)) ([e853757](https://github.com/Brooooooklyn/canvas/commit/e853757112f190be945c82ca32b514f8e7137a97))
+
+
+### Features
+
+* chrome m137 ([#1049](https://github.com/Brooooooklyn/canvas/issues/1049)) ([da30726](https://github.com/Brooooooklyn/canvas/commit/da3072634ae265e3a1fd3c6637c7500ebcec800e))
+* chrome m138 ([#1070](https://github.com/Brooooooklyn/canvas/issues/1070)) ([2938333](https://github.com/Brooooooklyn/canvas/commit/29383332e13321f516446459511e1bf1dfb93ade))
+* upgrade cssparser ([#1063](https://github.com/Brooooooklyn/canvas/issues/1063)) ([9c497a3](https://github.com/Brooooooklyn/canvas/commit/9c497a3415d3c309603b70707f2d0b5b49ad137f))
+* upgrade to NAPI-RS beta ([#1052](https://github.com/Brooooooklyn/canvas/issues/1052)) ([91a20a0](https://github.com/Brooooooklyn/canvas/commit/91a20a07c24856c11258b17e26d4fff8c9e1b756))
+
+
+
 ## [0.1.70](https://github.com/Brooooooklyn/canvas/compare/v0.1.69...v0.1.70) (2025-05-02)
 
 ### Bug Fixes
