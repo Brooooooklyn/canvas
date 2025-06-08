@@ -7,6 +7,7 @@ use std::os::raw::c_char;
 use std::ptr;
 use std::slice;
 use std::str::FromStr;
+use std::sync::OnceLock;
 
 use crate::error::SkError;
 use crate::font::{FontStretch, FontStyle};
@@ -718,6 +719,8 @@ pub mod ffi {
       ts: skiac_transform,
       filter_quality: i32,
     ) -> *mut skiac_shader;
+
+    pub fn skiac_shader_ref(shader: *mut skiac_shader);
 
     pub fn skiac_shader_destroy(shader: *mut skiac_shader);
 
@@ -1831,6 +1834,12 @@ impl Surface {
     unsafe { ffi::skiac_surface_get_bitmap(self.ptr, &mut bitmap_info) };
     Bitmap(bitmap_info)
   }
+
+  // Get the surface pointer as a bitmap pointer for patterns
+  // This avoids creating Bitmap wrapper objects that can accumulate
+  pub(crate) fn get_bitmap_ptr(&self) -> *mut ffi::skiac_bitmap {
+    self.ptr as *mut ffi::skiac_bitmap
+  }
 }
 
 impl std::ops::Deref for Surface {
@@ -2887,8 +2896,15 @@ pub struct ConicGradient {
   pub base: Gradient,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Shader(*mut ffi::skiac_shader);
+
+impl Clone for Shader {
+  fn clone(&self) -> Self {
+    unsafe { ffi::skiac_shader_ref(self.0) };
+    Shader(self.0)
+  }
+}
 
 impl Shader {
   pub fn new_linear_gradient(grad: &LinearGradient) -> Option<Shader> {
@@ -3583,26 +3599,47 @@ impl Drop for Bitmap {
   }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct ImagePattern {
   pub(crate) bitmap: *mut ffi::skiac_bitmap,
   pub(crate) repeat_x: TileMode,
   pub(crate) repeat_y: TileMode,
   pub(crate) transform: Transform,
   pub(crate) is_canvas: bool,
+  // Cache the shader to avoid creating new ones on every use
+  pub(crate) shader_cache: OnceLock<Option<Shader>>,
+}
+
+impl Clone for ImagePattern {
+  fn clone(&self) -> Self {
+    Self {
+      bitmap: self.bitmap,
+      repeat_x: self.repeat_x,
+      repeat_y: self.repeat_y,
+      transform: self.transform,
+      is_canvas: self.is_canvas,
+      shader_cache: OnceLock::new(), // New patterns start with empty cache
+    }
+  }
 }
 
 impl ImagePattern {
   pub(crate) fn get_shader(&self) -> Option<Shader> {
-    Shader::from_bitmap(
-      self.is_canvas,
-      self.bitmap,
-      self.repeat_x,
-      self.repeat_y,
-      1.0 / 3.0,
-      1.0 / 3.0,
-      self.transform,
-    )
+    // Use cached shader if available, otherwise create and cache it
+    self
+      .shader_cache
+      .get_or_init(|| {
+        Shader::from_bitmap(
+          self.is_canvas,
+          self.bitmap,
+          self.repeat_x,
+          self.repeat_y,
+          1.0 / 3.0,
+          1.0 / 3.0,
+          self.transform,
+        )
+      })
+      .clone()
   }
 }
 
