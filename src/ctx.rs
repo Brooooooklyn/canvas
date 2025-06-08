@@ -232,14 +232,28 @@ impl Context {
       self.height as f32,
       |canvas, paint| {
         if let Some(shadow_paint) = Self::shadow_blur_paint(&self.state, &stroke_paint) {
-          canvas.save();
-          Self::apply_shadow_offset_matrix_to_canvas(
+          // Use the special shadow rendering that allows shadows to extend beyond canvas bounds
+          Self::render_shadow_canvas(
             canvas,
+            &shadow_paint,
+            self.state.global_composite_operation,
+            self.width as f32,
+            self.height as f32,
             self.state.shadow_offset_x,
             self.state.shadow_offset_y,
+            self.state.shadow_blur,
+            |shadow_canvas, shadow_paint| {
+              shadow_canvas.save();
+              Self::apply_shadow_offset_matrix_to_canvas(
+                shadow_canvas,
+                self.state.shadow_offset_x,
+                self.state.shadow_offset_y,
+              )?;
+              shadow_canvas.draw_rect(x, y, w, h, shadow_paint);
+              shadow_canvas.restore();
+              Ok(())
+            },
           )?;
-          canvas.draw_rect(x, y, w, h, &shadow_paint);
-          canvas.restore();
         };
         canvas.draw_rect(x, y, w, h, paint);
         Ok(())
@@ -324,14 +338,28 @@ impl Context {
       self.height as f32,
       |canvas, paint| {
         if let Some(shadow_paint) = Self::shadow_blur_paint(&self.state, &fill_paint) {
-          canvas.save();
-          Self::apply_shadow_offset_matrix_to_canvas(
+          // Use the special shadow rendering that allows shadows to extend beyond canvas bounds
+          Self::render_shadow_canvas(
             canvas,
+            &shadow_paint,
+            self.state.global_composite_operation,
+            self.width as f32,
+            self.height as f32,
             self.state.shadow_offset_x,
             self.state.shadow_offset_y,
+            self.state.shadow_blur,
+            |shadow_canvas, shadow_paint| {
+              shadow_canvas.save();
+              Self::apply_shadow_offset_matrix_to_canvas(
+                shadow_canvas,
+                self.state.shadow_offset_x,
+                self.state.shadow_offset_y,
+              )?;
+              shadow_canvas.draw_rect(x, y, w, h, shadow_paint);
+              shadow_canvas.restore();
+              Ok(())
+            },
           )?;
-          canvas.draw_rect(x, y, w, h, &shadow_paint);
-          canvas.restore();
         };
 
         canvas.draw_rect(x, y, w, h, paint);
@@ -373,14 +401,28 @@ impl Context {
           None => &self.path,
         };
         if let Some(shadow_paint) = Self::shadow_blur_paint(&self.state, &stroke_paint) {
-          canvas.save();
-          Self::apply_shadow_offset_matrix_to_canvas(
+          // Use the special shadow rendering that allows shadows to extend beyond canvas bounds
+          Self::render_shadow_canvas(
             canvas,
+            &shadow_paint,
+            self.state.global_composite_operation,
+            self.width as f32,
+            self.height as f32,
             self.state.shadow_offset_x,
             self.state.shadow_offset_y,
+            self.state.shadow_blur,
+            |shadow_canvas, shadow_paint| {
+              shadow_canvas.save();
+              Self::apply_shadow_offset_matrix_to_canvas(
+                shadow_canvas,
+                self.state.shadow_offset_x,
+                self.state.shadow_offset_y,
+              )?;
+              shadow_canvas.draw_path(p, shadow_paint);
+              shadow_canvas.restore();
+              Ok(())
+            },
           )?;
-          canvas.draw_path(p, &shadow_paint);
-          canvas.restore();
         }
         canvas.draw_path(p, paint);
         Ok(())
@@ -449,14 +491,28 @@ impl Context {
       self.height as f32,
       |canvas, paint| {
         if let Some(shadow_paint) = Self::shadow_blur_paint(&self.state, &fill_paint) {
-          canvas.save();
-          Self::apply_shadow_offset_matrix_to_canvas(
+          // Use the special shadow rendering that allows shadows to extend beyond canvas bounds
+          Self::render_shadow_canvas(
             canvas,
+            &shadow_paint,
+            self.state.global_composite_operation,
+            self.width as f32,
+            self.height as f32,
             self.state.shadow_offset_x,
             self.state.shadow_offset_y,
+            self.state.shadow_blur,
+            |shadow_canvas, shadow_paint| {
+              shadow_canvas.save();
+              Self::apply_shadow_offset_matrix_to_canvas(
+                shadow_canvas,
+                self.state.shadow_offset_x,
+                self.state.shadow_offset_y,
+              )?;
+              shadow_canvas.draw_path(p, shadow_paint);
+              shadow_canvas.restore();
+              Ok(())
+            },
           )?;
-          canvas.draw_path(p, &shadow_paint);
-          canvas.restore();
         }
         canvas.draw_path(p, paint);
         Ok(())
@@ -720,6 +776,9 @@ impl Context {
   ) -> Result<()> {
     let mut paint: Paint = self.fill_paint()?;
     paint.set_alpha((self.state.global_alpha * 255.0).round() as u8);
+    let state = &self.state;
+    let width = self.width;
+    let height = self.height;
     Self::render_canvas(
       &mut self.surface.canvas,
       &paint,
@@ -727,21 +786,35 @@ impl Context {
       self.width as f32,
       self.height as f32,
       |canvas: &mut Canvas, paint| {
-        if let Some(drop_shadow_paint) = Self::drop_shadow_paint(&self.state, paint) {
-          canvas.draw_image(
-            bitmap,
-            sx,
-            sy,
-            s_width,
-            s_height,
-            dx,
-            dy,
-            d_width,
-            d_height,
-            self.state.image_smoothing_enabled,
-            self.state.image_smoothing_quality,
+        if let Some(drop_shadow_paint) = Self::drop_shadow_paint(state, paint) {
+          // Use the special shadow rendering that allows shadows to extend beyond canvas bounds
+          Self::render_shadow_canvas(
+            canvas,
             &drop_shadow_paint,
-          );
+            state.global_composite_operation,
+            width as f32,
+            height as f32,
+            state.shadow_offset_x,
+            state.shadow_offset_y,
+            state.shadow_blur,
+            |shadow_canvas, shadow_paint| {
+              shadow_canvas.draw_image(
+                bitmap,
+                sx,
+                sy,
+                s_width,
+                s_height,
+                dx,
+                dy,
+                d_width,
+                d_height,
+                state.image_smoothing_enabled,
+                state.image_smoothing_quality,
+                shadow_paint,
+              );
+              Ok(())
+            },
+          )?;
         }
         canvas.draw_image(
           bitmap,
@@ -753,8 +826,8 @@ impl Context {
           dy,
           d_width,
           d_height,
-          self.state.image_smoothing_enabled,
-          self.state.image_smoothing_quality,
+          state.image_smoothing_enabled,
+          state.image_smoothing_quality,
           paint,
         );
         Ok(())
@@ -773,6 +846,7 @@ impl Context {
   ) -> result::Result<(), SkError> {
     let state = &self.state;
     let width = self.width;
+    let height = self.height;
     let font = get_font()?;
     Self::render_canvas(
       &mut self.surface.canvas,
@@ -782,32 +856,46 @@ impl Context {
       self.height as f32,
       |canvas, paint| {
         if let Some(shadow_paint) = Self::shadow_blur_paint(state, paint) {
-          canvas.save();
-          Self::apply_shadow_offset_matrix_to_canvas(
+          // Use the special shadow rendering that allows shadows to extend beyond canvas bounds
+          Self::render_shadow_canvas(
             canvas,
+            &shadow_paint,
+            state.global_composite_operation,
+            width as f32,
+            height as f32,
             state.shadow_offset_x,
             state.shadow_offset_y,
+            state.shadow_blur,
+            |shadow_canvas, shadow_paint| {
+              shadow_canvas.save();
+              Self::apply_shadow_offset_matrix_to_canvas(
+                shadow_canvas,
+                state.shadow_offset_x,
+                state.shadow_offset_y,
+              )?;
+              shadow_canvas.draw_text(
+                text,
+                x,
+                y,
+                max_width,
+                width as f32,
+                state.font_style.weight,
+                state.font_style.stretch as i32,
+                state.font_style.style,
+                &font,
+                state.font_style.size,
+                &state.font_style.family,
+                state.text_baseline,
+                state.text_align,
+                state.text_direction,
+                state.letter_spacing,
+                state.word_spacing,
+                shadow_paint,
+              )?;
+              shadow_canvas.restore();
+              Ok(())
+            },
           )?;
-          canvas.draw_text(
-            text,
-            x,
-            y,
-            max_width,
-            width as f32,
-            state.font_style.weight,
-            state.font_style.stretch as i32,
-            state.font_style.style,
-            &font,
-            state.font_style.size,
-            &state.font_style.family,
-            state.text_baseline,
-            state.text_align,
-            state.text_direction,
-            state.letter_spacing,
-            state.word_spacing,
-            &shadow_paint,
-          )?;
-          canvas.restore();
         }
         canvas.draw_text(
           text,
@@ -877,6 +965,71 @@ impl Context {
       * 255.0)
       .round() as u8;
     result
+  }
+
+  // Helper function to render shadows without canvas bounds clipping
+  fn render_shadow_canvas<F>(
+    surface_canvas: &mut Canvas,
+    paint: &Paint,
+    blend_mode: BlendMode,
+    width: f32,
+    height: f32,
+    shadow_offset_x: f32,
+    shadow_offset_y: f32,
+    shadow_blur: f32,
+    f: F,
+  ) -> result::Result<(), SkError>
+  where
+    F: Fn(&mut Canvas, &Paint) -> result::Result<(), SkError>,
+  {
+    // Calculate expanded bounds to accommodate shadows
+    let shadow_expansion =
+      (shadow_blur.abs() + shadow_offset_x.abs() + shadow_offset_y.abs()).max(shadow_blur * 2.0);
+    let expanded_width = width + shadow_expansion * 2.0;
+    let expanded_height = height + shadow_expansion * 2.0;
+
+    match blend_mode {
+      BlendMode::SourceIn
+      | BlendMode::SourceOut
+      | BlendMode::DestinationIn
+      | BlendMode::DestinationOut
+      | BlendMode::DestinationATop
+      | BlendMode::Source => {
+        let mut layer_paint = paint.clone();
+        layer_paint.set_blend_mode(BlendMode::SourceOver);
+        let mut layer = PictureRecorder::new();
+        layer.begin_recording(
+          -shadow_expansion,
+          -shadow_expansion,
+          expanded_width,
+          expanded_height,
+        );
+        if let Some(mut canvas) = layer.get_recording_canvas() {
+          f(&mut canvas, &layer_paint)?;
+        }
+        if let Some(pict) = layer.finish_recording_as_picture() {
+          surface_canvas.save();
+          surface_canvas.draw_picture(pict, &Matrix::identity(), paint);
+          surface_canvas.restore();
+        }
+        Ok(())
+      }
+      _ => {
+        // For regular blend modes, temporarily disable clipping for shadows
+        surface_canvas.save();
+        // Get current transform to restore it later
+        let current_transform = surface_canvas.get_transform_matrix().clone();
+
+        // Remove any existing clip bounds temporarily
+        surface_canvas.restore();
+        surface_canvas.save();
+        surface_canvas.set_transform(&current_transform);
+
+        f(surface_canvas, paint)?;
+        surface_canvas.restore();
+        Ok(())
+      }
+    }
   }
 }
 

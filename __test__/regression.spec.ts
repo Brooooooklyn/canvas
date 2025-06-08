@@ -380,3 +380,70 @@ test('shadow-alpha-with-global-alpha', async (t) => {
     await snapshotImage(t, { ctx, canvas }, 'png', 2.5)
   }
 })
+
+// https://github.com/Brooooooklyn/canvas/issues/1060
+test('shadow-clipping-beyond-canvas-bounds', async (t) => {
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'iosevka-slab-regular.ttf'))
+  const canvas = createCanvas(200, 200)
+  const ctx = canvas.getContext('2d')
+
+  // Fill with white background
+  ctx.fillStyle = 'white'
+  ctx.fillRect(0, 0, 200, 200)
+
+  // Test 1: Rectangle near right edge with shadow extending beyond canvas
+  ctx.shadowColor = 'rgba(255, 0, 0, 0.8)'
+  ctx.shadowBlur = 20
+  ctx.shadowOffsetX = 30
+  ctx.shadowOffsetY = 10
+  ctx.fillStyle = 'blue'
+  ctx.fillRect(160, 50, 30, 30) // Rectangle positioned so shadow extends beyond right edge
+
+  // Reset shadow for next shape
+  ctx.shadowColor = 'transparent'
+  ctx.shadowBlur = 0
+  ctx.shadowOffsetX = 0
+  ctx.shadowOffsetY = 0
+
+  // Test 2: Circle near bottom edge with shadow extending beyond canvas
+  ctx.shadowColor = 'rgba(0, 255, 0, 0.8)'
+  ctx.shadowBlur = 15
+  ctx.shadowOffsetX = 10
+  ctx.shadowOffsetY = 25
+  ctx.fillStyle = 'purple'
+  ctx.beginPath()
+  ctx.arc(100, 170, 20, 0, 2 * Math.PI)
+  ctx.fill()
+
+  // Reset shadow for text
+  ctx.shadowColor = 'transparent'
+  ctx.shadowBlur = 0
+  ctx.shadowOffsetX = 0
+  ctx.shadowOffsetY = 0
+
+  // Test 3: Text near top edge with shadow extending beyond canvas
+  ctx.shadowColor = 'rgba(0, 0, 255, 0.8)'
+  ctx.shadowBlur = 10
+  ctx.shadowOffsetX = 5
+  ctx.shadowOffsetY = -15
+  ctx.fillStyle = 'black'
+  ctx.font = '16px Iosevka Slab'
+  ctx.fillText('Shadow Test', 50, 20) // Text positioned so shadow extends beyond top edge
+
+  // Reset shadow for stroke test
+  ctx.shadowColor = 'transparent'
+  ctx.shadowBlur = 0
+  ctx.shadowOffsetX = 0
+  ctx.shadowOffsetY = 0
+
+  // Test 4: Stroke near left edge with shadow extending beyond canvas
+  ctx.shadowColor = 'rgba(255, 255, 0, 0.8)'
+  ctx.shadowBlur = 12
+  ctx.shadowOffsetX = -20
+  ctx.shadowOffsetY = 5
+  ctx.strokeStyle = 'red'
+  ctx.lineWidth = 3
+  ctx.strokeRect(10, 110, 40, 40) // Rectangle positioned so shadow extends beyond left edge
+
+  await snapshotImage(t, { ctx, canvas }, 'png', process.arch === 'x64' ? 0.015 : 2.7)
+})
