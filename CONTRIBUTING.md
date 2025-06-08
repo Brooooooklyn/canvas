@@ -64,7 +64,7 @@ Choose this path if you need to:
 - `.github/workflows/skia.yaml` — authoritative reference of how every official binary is built and uploaded;
 - `scripts/build-skia.js` — wraps Skia's `gn gen` / `ninja` commands per target;
 - `scripts/release-skia-binary.mjs` — downloads **or** uploads the `skia/<triple>.tar.xz` artefacts to GitHub Releases;
-- `skia/` — the Skia submodule itself (pointing to `chrome/m137` by default).
+- `skia/` — the Skia submodule itself (pointing to `chrome/m138` by default).
 
 ### Local build (single target)
 
