@@ -90,7 +90,7 @@
     "lint-staged": "^16.1.0",
     "lodash": "^4.17.21",
     "npm-run-all2": "^8.0.4",
-    "oxlint": "^0.18.0",
+    "oxlint": "^1.0.0",
     "pinst": "^3.0.0",
     "png.js": "^0.2.1",
     "prettier": "^3.5.3",
