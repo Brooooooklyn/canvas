@@ -59,6 +59,37 @@ CanvasRenderingContext2D.prototype.getTransform = function getTransform() {
   return new DOMMatrix([a, b, c, d, e, f])
 }
 
+// Workaround for webpack bundling issue with drawImage
+// Store the original drawImage method
+const _drawImage = CanvasRenderingContext2D.prototype.drawImage
+
+// Override drawImage to ensure proper type recognition in bundled environments
+CanvasRenderingContext2D.prototype.drawImage = function drawImage(image, ...args) {
+  // If the image is a Canvas-like object but not recognized due to bundling,
+  // we need to ensure it's properly identified
+  if (image && typeof image === 'object') {
+    // First check if it's a wrapped canvas object
+    if (image.canvas instanceof CanvasElement || image.canvas instanceof SVGCanvas) {
+      image = image.canvas
+    } else if (image._canvas instanceof CanvasElement || image._canvas instanceof SVGCanvas) {
+      image = image._canvas
+    }
+    // Then check if it's a Canvas-like object by checking for getContext method
+    else if (typeof image.getContext === 'function' && image.width && image.height) {
+      // If it has canvas properties but isn't recognized as CanvasElement or SVGCanvas,
+      // try to correct the prototype chain
+      if (!(image instanceof CanvasElement) && !(image instanceof SVGCanvas)) {
+        // Try to create a proper CanvasElement from the canvas-like object
+        // This helps when webpack has transformed the prototype chain
+        Object.setPrototypeOf(image, CanvasElement.prototype)
+      }
+    }
+  }
+  
+  // Call the original drawImage with the potentially corrected image
+  return _drawImage.apply(this, [image, ...args])
+}
+
 function createCanvas(width, height, flag) {
   const isSvgBackend = typeof flag !== 'undefined'
   return isSvgBackend ? new SVGCanvas(width, height, flag) : new CanvasElement(width, height)
@@ -111,4 +142,7 @@ module.exports = {
   DOMRect,
   loadImage,
   FontKey,
+  // Export these for better webpack compatibility
+  CanvasElement,
+  SVGCanvas,
 }
