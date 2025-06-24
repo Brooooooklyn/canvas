@@ -7,6 +7,9 @@
     "type": "git",
     "url": "git+https://github.com/Brooooooklyn/canvas.git"
   },
+  "workspaces": [
+    "e2e/*"
+  ],
   "license": "MIT",
   "keywords": [
     "napi-rs",
@@ -64,6 +67,7 @@
     "postpublish": "pinst --enable",
     "test:ci": "ava -c 1",
     "test": "ava",
+    "e2e": "yarn workspace @napi-rs/canvas-e2e-webpack test",
     "version": "napi version && conventional-changelog -p angular -i CHANGELOG.md -s && git add ."
   },
   "devDependencies": {

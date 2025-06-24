@@ -1,0 +1,24 @@
+{
+  "name": "@napi-rs/canvas-e2e-webpack",
+  "version": "1.0.0",
+  "description": "E2E test for @napi-rs/canvas with webpack bundling",
+  "private": true,
+  "main": "index.js",
+  "scripts": {
+    "build": "webpack --mode production",
+    "test": "node dist/bundle.js",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "pdfjs-dist": "^5.3.31",
+    "webpack": "^5.99.9",
+    "webpack-cli": "^6.0.1"
+  },
+  "dependencies": {
+    "@napi-rs/canvas": "workspace:*",
+    "node-loader": "^2.1.0"
+  },
+  "resolutions": {
+    "@napi-rs/canvas": "workspace:*"
+  }
+}
