@@ -1,3 +1,13 @@
+## [0.1.72](https://github.com/Brooooooklyn/canvas/compare/v0.1.71...v0.1.72) (2025-06-25)
+
+
+### Bug Fixes
+
+* putImageData doesn't work on Electron environment ([#1075](https://github.com/Brooooooklyn/canvas/issues/1075)) ([cc15b02](https://github.com/Brooooooklyn/canvas/commit/cc15b02d94ead56db2157b347a733b702b89a9f3))
+* use this library with webpack ([#1074](https://github.com/Brooooooklyn/canvas/issues/1074)) ([7b411bf](https://github.com/Brooooooklyn/canvas/commit/7b411bf1450de2afc135b049d72996039eb79bc5))
+
+
+
 ## [0.1.71](https://github.com/Brooooooklyn/canvas/compare/v0.1.70...v0.1.71) (2025-06-08)
 
 
