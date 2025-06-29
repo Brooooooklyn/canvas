@@ -231,7 +231,7 @@ pub mod ffi {
   // https://github.com/rust-lang/rust/issues/96192
   #[cfg_attr(
     not(target_os = "windows"),
-    link(name = "svg", kind = "static", modifiers = "+bundle,+whole-archive",)
+    link(name = "svg", kind = "static", modifiers = "+bundle",)
   )]
   #[cfg_attr(target_os = "windows", link(name = "svg", kind = "static"))]
   #[cfg_attr(

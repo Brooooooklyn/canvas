@@ -489,7 +489,7 @@ void skiac_canvas_get_line_metrics_or_draw_text(
   std::vector<SkRect> bounds(text_len);
   auto glyphs = run.glyphs();
   auto glyphs_size = glyphs.size();
-  font.getBounds(glyphs.data(), text_len, &bounds[0], nullptr);
+  font.getBounds(glyphs, bounds, PAINT_CAST);
   auto text_box = paragraph->getRectsForRange(
       0, text_len, RectHeightStyle::kTight, RectWidthStyle::kTight);
   // line_metrics.fWidth doesn't contain the suffix spaces
@@ -963,7 +963,7 @@ bool skiac_path_trim(skiac_path* c_path,
 
 bool skiac_path_dash(skiac_path* c_path, float on, float off, float phase) {
   float intervals[] = {on, off};
-  auto pe = SkDashPathEffect::Make(intervals, 2, phase);
+  auto pe = SkDashPathEffect::Make(intervals, phase);
   if (!pe) {
     return false;
   }
@@ -1140,7 +1140,8 @@ void skiac_path_round_rect(skiac_path* c_path,
 skiac_path_effect* skiac_path_effect_make_dash_path(const float* intervals,
                                                     int count,
                                                     float phase) {
-  auto effect = SkDashPathEffect::Make(intervals, count, phase).release();
+  SkSpan<const SkScalar> intervals_span(intervals, count);
+  auto effect = SkDashPathEffect::Make(intervals_span, phase).release();
   if (effect) {
     return reinterpret_cast<skiac_path_effect*>(effect);
   } else {
@@ -1307,7 +1308,7 @@ void skiac_matrix_map_points_1(skiac_matrix* c_matrix,
   SkPoint dst[1];
   auto p = SkPoint::Make(x, y);
   SkPoint src[] = {p};
-  MATRIX_CAST->mapPoints(dst, src, 1);
+  MATRIX_CAST->mapPoints({dst, 1}, {src, 1});
   auto dp = dst[0];
   mapped_point->x = dp.fX;
   mapped_point->y = dp.fY;

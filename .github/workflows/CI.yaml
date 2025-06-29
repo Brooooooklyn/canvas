@@ -233,17 +233,15 @@ jobs:
     steps:
       - name: Setup tools
         run: |
-          apt-get update
-          apt-get install -y gcc-9-arm-linux-gnueabihf g++-9-arm-linux-gnueabihf libatomic1-armhf-cross git build-essential cmake ninja-build wget curl gnupg
-          echo "deb http://apt.llvm.org/bullseye/ llvm-toolchain-bullseye-20 main" >> /etc/apt/sources.list
-          echo "deb-src http://apt.llvm.org/bullseye/ llvm-toolchain-bullseye-20 main" >> /etc/apt/sources.list
-          wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -
-          apt-get update
-          apt-get install -y clang-20
-          ln -s /usr/bin/clang-20 /usr/bin/clang
-          ln -s /usr/bin/clang++-20 /usr/bin/clang++
-          ln -s /usr/bin/arm-linux-gnueabihf-gcc-9 /usr/bin/arm-linux-gnueabihf-gcc
-          ln -s /usr/bin/arm-linux-gnueabihf-g++-9 /usr/bin/arm-linux-gnueabihf-g++
+            apt-get update
+            apt-get install -y gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf libatomic1-armhf-cross git build-essential cmake ninja-build wget curl gnupg
+            echo "deb http://apt.llvm.org/bullseye/ llvm-toolchain-bullseye-19 main" >> /etc/apt/sources.list
+            echo "deb-src http://apt.llvm.org/bullseye/ llvm-toolchain-bullseye-19 main" >> /etc/apt/sources.list
+            wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -
+            apt-get update
+            apt-get install -y clang-19
+            ln -s /usr/bin/clang-19 /usr/bin/clang
+            ln -s /usr/bin/clang++-19 /usr/bin/clang++
       - uses: actions/checkout@v5
         with:
           submodules: true
