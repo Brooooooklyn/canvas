@@ -1,3 +1,12 @@
+## [0.1.73](https://github.com/Brooooooklyn/canvas/compare/v0.1.72...v0.1.73) (2025-06-29)
+
+
+### Bug Fixes
+
+* wrong data pointer to ImageData in Electron env ([#1076](https://github.com/Brooooooklyn/canvas/issues/1076)) ([c347654](https://github.com/Brooooooklyn/canvas/commit/c347654ba767ef24609de6fd4cff78ef8e308bd6))
+
+
+
 ## [0.1.72](https://github.com/Brooooooklyn/canvas/compare/v0.1.71...v0.1.72) (2025-06-25)
 
 
