@@ -370,7 +370,7 @@ impl Task for BitmapDecoder {
             Err(io_err) => {
               return Err(Error::new(
                 Status::GenericFailure,
-                format!("Failed to read {}: {io_err}", path_or_svg),
+                format!("Failed to read {path_or_svg}: {io_err}"),
               ));
             }
           }

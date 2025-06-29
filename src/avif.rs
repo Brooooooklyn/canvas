@@ -183,8 +183,8 @@ pub enum AvifError {
 impl std::fmt::Display for AvifError {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
-      AvifError::Known(code) => write!(f, "AvifError: {:?}", code),
-      AvifError::Unknown(code) => write!(f, "AvifError: {}", code),
+      AvifError::Known(code) => write!(f, "AvifError: {code:?}"),
+      AvifError::Unknown(code) => write!(f, "AvifError: {code}"),
     }
   }
 }
