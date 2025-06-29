@@ -1487,14 +1487,13 @@ impl CanvasRenderingContext2D {
           _ => ColorSpace::default(),
         };
         let arraybuffer_length = (width * height * 4) as usize;
-        let mut data_buffer = vec![0; arraybuffer_length];
-        let data_ptr = data_buffer.as_mut_ptr();
-        let data_object = Uint8ClampedSlice::from_data(env, data_buffer)?;
+        let data_buffer = vec![0; arraybuffer_length];
+        let mut data_object = Uint8ClampedSlice::from_data(env, data_buffer)?;
         let mut instance = ImageData {
           width: width as usize,
           height: height as usize,
           color_space,
-          data: data_ptr,
+          data: data_object.as_mut_ptr(),
         }
         .into_instance(env)?;
         instance.set_named_property("data", data_object)?;
@@ -2020,7 +2019,7 @@ impl CanvasRenderingContext2D {
       let color_space = color_space
         .and_then(|cs| cs.parse().ok())
         .unwrap_or(ColorSpace::Srgb);
-      let mut image_data = self
+      let image_data = self
         .context
         .get_image_data(x as f32, y as f32, width as f32, height as f32, color_space)
         .ok_or_else(|| {
@@ -2029,13 +2028,12 @@ impl CanvasRenderingContext2D {
             "Read pixels from canvas failed".to_string(),
           )
         })?;
-      let data = image_data.as_mut_ptr();
-      let data_object = Uint8ClampedSlice::from_data(env, image_data)?;
+      let mut data_object = Uint8ClampedSlice::from_data(env, image_data)?;
       let mut instance = ImageData {
         width: width as usize,
         height: height as usize,
         color_space,
-        data,
+        data: data_object.as_mut_ptr(),
       }
       .into_instance(env)?;
       instance.set_named_property("data", data_object)?;
