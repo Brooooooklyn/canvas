@@ -74,7 +74,7 @@ impl ImageData {
         // https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D/createImageData
         // An existing ImageData object from which to copy the width and height.
         let mut cloned_data = Uint8ClampedSlice::from_data(&env, data_object.to_vec())?;
-        let data = cloned_data.as_mut_ptr();
+        let data = unsafe { cloned_data.as_mut() }.as_mut_ptr();
         this.define_properties(&[Property::new()
           .with_utf8_name("data")?
           .with_value(&cloned_data)
