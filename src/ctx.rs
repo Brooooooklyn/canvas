@@ -1493,7 +1493,7 @@ impl CanvasRenderingContext2D {
           width: width as usize,
           height: height as usize,
           color_space,
-          data: data_object.as_mut_ptr(),
+          data: unsafe { data_object.as_mut() }.as_mut_ptr(),
         }
         .into_instance(env)?;
         instance.set_named_property("data", data_object)?;
@@ -1506,7 +1506,7 @@ impl CanvasRenderingContext2D {
           Some(Either::A(height)) => *height,
           _ => (input_data_length as u32) / 4 / width,
         };
-        let data = data_object.as_mut_ptr();
+        let data = unsafe { data_object.as_mut() }.as_mut_ptr();
         let color_space = maybe_settings
           .and_then(|settings| ColorSpace::from_str(&settings.color_space).ok())
           .unwrap_or_default();
@@ -2033,7 +2033,7 @@ impl CanvasRenderingContext2D {
         width: width as usize,
         height: height as usize,
         color_space,
-        data: data_object.as_mut_ptr(),
+        data: unsafe { data_object.as_mut() }.as_mut_ptr(),
       }
       .into_instance(env)?;
       instance.set_named_property("data", data_object)?;
