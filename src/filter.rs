@@ -1,7 +1,7 @@
 use std::{num::ParseFloatError, ptr};
 
 use cssparser::{Parser, ParserInput};
-use cssparser_color::{Color, RgbaLegacy};
+use cssparser_color::{Color, RgbaLegacy, hsl_to_rgb};
 use nom::{
   AsChar, Err, IResult, Parser as NomParser,
   branch::alt,
@@ -227,16 +227,32 @@ fn drop_shadow_parser(input: &str) -> IResult<&str, CssFilter> {
         alpha: 1.0,
       })
     });
-    if let Color::Rgba(rgba) = color {
-      // Convert RgbaLegacy to RGBA<u8>
-      RGBA {
-        r: rgba.red,
-        g: rgba.green,
-        b: rgba.blue,
-        a: (rgba.alpha * 255.0) as u8,
+    match color {
+      Color::Rgba(rgba) => {
+        // Convert RgbaLegacy to RGBA<u8>
+        RGBA {
+          r: rgba.red,
+          g: rgba.green,
+          b: rgba.blue,
+          a: (rgba.alpha * 255.0) as u8,
+        }
       }
-    } else {
-      BLACK
+      Color::Hsl(hsl) => {
+        let h = hsl.hue.unwrap_or(0.0) / 360.0;
+        let s = hsl.saturation.unwrap_or(0.0);
+        let l = hsl.lightness.unwrap_or(0.0);
+        let a = hsl.alpha.unwrap_or(1.0);
+
+        let (r, g, b) = hsl_to_rgb(h, s, l);
+
+        RGBA {
+          r: (r * 255.0) as u8,
+          g: (g * 255.0) as u8,
+          b: (b * 255.0) as u8,
+          a: (a * 255.0) as u8,
+        }
+      }
+      _ => BLACK,
     }
   } else {
     BLACK

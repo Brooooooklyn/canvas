@@ -2,7 +2,7 @@ use std::result::Result as StdResult;
 use std::sync::{Arc, OnceLock};
 
 use cssparser::{Parser, ParserInput};
-use cssparser_color::Color as CSSColor;
+use cssparser_color::{Color as CSSColor, hsl_to_rgb};
 use napi::bindgen_prelude::*;
 use rgb::RGBA;
 
@@ -56,6 +56,24 @@ impl Pattern {
         },
         color_str.to_owned(),
       )),
+      CSSColor::Hsl(hsl) => {
+        let h = hsl.hue.unwrap_or(0.0) / 360.0;
+        let s = hsl.saturation.unwrap_or(0.0);
+        let l = hsl.lightness.unwrap_or(0.0);
+        let a = hsl.alpha.unwrap_or(1.0);
+
+        let (r, g, b) = hsl_to_rgb(h, s, l);
+
+        Ok(Pattern::Color(
+          RGBA {
+            r: (r * 255.0) as u8,
+            g: (g * 255.0) as u8,
+            b: (b * 255.0) as u8,
+            a: (a * 255.0) as u8,
+          },
+          color_str.to_owned(),
+        ))
+      }
       _ => Err(SkError::Generic("Unsupported color format".to_owned())),
     }
   }
