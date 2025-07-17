@@ -1,3 +1,18 @@
+## [0.1.74](https://github.com/Brooooooklyn/canvas/compare/v0.1.73...v0.1.74) (2025-07-17)
+
+
+### Bug Fixes
+
+* hsl color parsing ([#1084](https://github.com/Brooooooklyn/canvas/issues/1084)) ([40f47b8](https://github.com/Brooooooklyn/canvas/commit/40f47b85ae52f82c05f33e9a5ab4e8ec55ad043f))
+* Ref was deprecated in NAPI-RS ([#1085](https://github.com/Brooooooklyn/canvas/issues/1085)) ([e21858a](https://github.com/Brooooooklyn/canvas/commit/e21858a0061951954fdf6fe900b181085fdca991))
+
+
+### Features
+
+* upgrade to NAPI-RS 3.0.0-beta.11 ([#1081](https://github.com/Brooooooklyn/canvas/issues/1081)) ([a299185](https://github.com/Brooooooklyn/canvas/commit/a2991853d1bd67e28dcdeb817ffe4c8283948657))
+
+
+
 ## [0.1.73](https://github.com/Brooooooklyn/canvas/compare/v0.1.72...v0.1.73) (2025-06-29)
 
 
