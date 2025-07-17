@@ -176,9 +176,9 @@ fn main() {
               .cpp_set_stdlib("stdc++")
               .flag("-static")
               .include("/usr/arm-linux-gnueabihf/include")
-              .include("/usr/arm-linux-gnueabihf/include/c++/8");
+              .include("/usr/arm-linux-gnueabihf/include/c++/9");
             println!("cargo:rustc-link-lib=static=stdc++");
-            println!("cargo:rustc-link-search=/usr/lib/gcc-cross/arm-linux-gnueabihf/8");
+            println!("cargo:rustc-link-search=/usr/lib/gcc-cross/arm-linux-gnueabihf/9");
           }
           _ => {}
         }

@@ -1,7 +1,7 @@
 use std::{borrow::Cow, ptr, str, str::FromStr};
 
 use base64_simd::STANDARD;
-use napi::{Ref, bindgen_prelude::*};
+use napi::bindgen_prelude::*;
 
 use crate::avif::AvifImage;
 use crate::error::SkError;
@@ -326,7 +326,7 @@ struct BitmapDecoder {
   data: Option<Either<Uint8Array, String>>,
   // data from file path
   file_content: Option<Vec<u8>>,
-  this_ref: Ref<Object<'static>>,
+  this_ref: ObjectRef,
 }
 
 pub(crate) struct DecodedBitmap {
@@ -548,7 +548,7 @@ impl Task for BitmapDecoder {
     Ok(())
   }
 
-  fn finally(mut self, env: Env) -> Result<()> {
+  fn finally(self, env: Env) -> Result<()> {
     self.this_ref.unref(&env)
   }
 }
