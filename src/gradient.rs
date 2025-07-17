@@ -1,7 +1,7 @@
 use std::result;
 
 use cssparser::{Parser, ParserInput};
-use cssparser_color::Color as CSSColor;
+use cssparser_color::{Color as CSSColor, hsl_to_rgb};
 use napi::bindgen_prelude::*;
 
 use crate::{
@@ -187,6 +187,21 @@ impl CanvasGradient {
         rgba.blue,                  // Already u8
         (rgba.alpha * 255.0) as u8, // Scale f32 0.0-1.0 to u8 0-255
       ),
+      CSSColor::Hsl(hsl) => {
+        let h = hsl.hue.unwrap_or(0.0) / 360.0;
+        let s = hsl.saturation.unwrap_or(0.0);
+        let l = hsl.lightness.unwrap_or(0.0);
+        let a = hsl.alpha.unwrap_or(1.0);
+
+        let (r, g, b) = hsl_to_rgb(h, s, l);
+
+        Color::from_rgba(
+          (r * 255.0) as u8,
+          (g * 255.0) as u8,
+          (b * 255.0) as u8,
+          (a * 255.0) as u8,
+        )
+      }
       _ => {
         return Err(Error::new(
           Status::InvalidArg,

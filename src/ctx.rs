@@ -6,7 +6,7 @@ use std::str::FromStr;
 use std::sync::LazyLock;
 
 use cssparser::{Parser, ParserInput};
-use cssparser_color::Color as CSSColor;
+use cssparser_color::{Color as CSSColor, hsl_to_rgb};
 use libavif::AvifData;
 use napi::{JsString, bindgen_prelude::*};
 use regex::Regex;
@@ -619,6 +619,23 @@ impl Context {
           g: rgba.green,
           b: rgba.blue,
           a: (rgba.alpha * 255.0) as u8,
+        };
+      }
+      CSSColor::Hsl(hsl) => {
+        let h = hsl.hue.unwrap_or(0.0) / 360.0;
+        let s = hsl.saturation.unwrap_or(0.0);
+        let l = hsl.lightness.unwrap_or(0.0);
+        let a = hsl.alpha.unwrap_or(1.0);
+
+        let (r, g, b) = hsl_to_rgb(h, s, l);
+
+        drop(parser_input);
+        self.state.shadow_color_string = shadow_color;
+        self.state.shadow_color = RGBA {
+          r: (r * 255.0) as u8,
+          g: (g * 255.0) as u8,
+          b: (b * 255.0) as u8,
+          a: (a * 255.0) as u8,
         };
       }
       _ => {
