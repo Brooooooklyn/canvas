@@ -160,6 +160,62 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+
+  build-windows-arm64:
+    if: "!contains(github.event.head_commit.message, 'skip skia')"
+    name: stable - windows-arm64 - build skia
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: List llvm dir
+        run: ls -R "C:\Program Files\LLVM"
+        shell: bash
+
+      - name: Setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'yarn'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+          architecture: 'x64'
+
+      - name: Set env
+        run: echo "${PWD}/depot_tools" >> $GITHUB_PATH
+        shell: bash
+
+      - name: Install tools on Windows
+        run: |
+          choco install llvm ninja -y
+          pip install certifi
+
+      # See https://github.com/ilammy/msvc-dev-cmd?tab=readme-ov-file#caveats
+      - name: Remove GNU link.exe from GH actions
+        if: runner.os == 'Windows'
+        run: rm /usr/bin/link
+        shell: bash
+
+      - name: Compile skia
+        shell: powershell
+        env:
+          PYTHONHTTPSVERIFY: 0
+        run: node ./scripts/build-skia.js --target=aarch64-pc-windows-msvc
+
+      - name: Install dependencies
+        run: yarn install --immutable --mode=skip-build
+
+      - name: Upload release
+        run: node ./scripts/release-skia-binary.mjs --upload --target=aarch64-pc-windows-msvc
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   build-x64-linux-musl:
     if: "!contains(github.event.head_commit.message, 'skip skia')"
 
@@ -174,7 +230,7 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'yarn'
 
       - name: Login to GitHub Container Registry
@@ -254,7 +310,7 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'yarn'
 
       - name: Login to GitHub Container Registry
@@ -293,14 +349,13 @@ jobs:
     name: stable - armv7-linux - build skia
     runs-on: ubuntu-latest
     container:
-      image: debian:buster
+      image: python:3.13-bullseye
 
     steps:
       - name: Setup tools
         run: |
           apt-get update
-          apt-get install -y gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf libatomic1-armhf-cross git build-essential cmake ninja-build wget curl python3
-          ln -s /usr/bin/python3 /usr/bin/python
+          apt-get install -y gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf libatomic1-armhf-cross git build-essential cmake ninja-build wget curl
       - uses: actions/checkout@v4
         with:
           submodules: true
@@ -308,10 +363,18 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
+
+      - name: Sync deps on host
+        run: python ./tools/git-sync-deps
+        working-directory: skia
+        env:
+          PYTHONHTTPSVERIFY: 0
 
       - name: Compile skia
         run: node ./scripts/build-skia.js --target=armv7-unknown-linux-gnueabihf
+        env:
+          SKIP_SYNC_SK_DEPS: 0
 
       - name: Install dependencies
         run: |
@@ -340,7 +403,7 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'yarn'
 
       - uses: actions/setup-python@v5

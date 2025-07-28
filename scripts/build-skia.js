@@ -147,6 +147,15 @@ switch (PLATFORM_NAME) {
 }
 
 switch (TARGET_TRIPLE) {
+  case 'aarch64-pc-windows-msvc':
+    ExtraSkiaBuildFlag += ' target_cpu="arm64" target_os="windows"'
+    const clangVersion = findClangWinVersion()
+    if (clangVersion) {
+      console.info(`Found clang version: ${clangVersion}`)
+      ExtraSkiaBuildFlag = `clang_win_version=\\"${clangVersion}\\"`
+    }
+    GN_ARGS.push(`clang_win=\\"C:\\\\Program Files\\\\LLVM\\"`)
+    break
   case 'aarch64-unknown-linux-gnu':
     ExtraSkiaBuildFlag += ' target_cpu="arm64" target_os="linux"'
     ExtraCflags =
