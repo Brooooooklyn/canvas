@@ -294,39 +294,41 @@ impl<'c> CanvasElement<'c> {
   #[napi(js_name = "toBlob")]
   pub fn to_blob(
     &self,
-    env: Env,
-    callback: JsFunction,
+    callback: Function,
     mime: Option<String>,
     quality_or_config: Either3<f64, AvifConfig, Unknown>,
-  ) -> Result<()> {
-    let task_data = AsyncBlobData {
-      surface_data: self.ctx.context.surface.reference(),
-      mime: mime.unwrap_or_else(|| MIME_PNG.to_owned()),
-      quality_or_config: match quality_or_config {
-        Either3::A(q) => Either::A((q * 100.0) as u32),
-        Either3::B(s) => Either::B(s),
-        Either3::C(_) => Either::A(DEFAULT_JPEG_QUALITY as u32),
-      },
-      width: self.ctx.context.width,
-      height: self.ctx.context.height,
+  ) -> Result<Promise<()>> {
+    let surface_data = self.ctx.context.surface.reference();
+    let mime = mime.unwrap_or_else(|| MIME_PNG.to_owned());
+    let quality_or_config = match quality_or_config {
+      Either3::A(q) => Either::A((q * 100.0) as u32),
+      Either3::B(s) => Either::B(s),
+      Either3::C(_) => Either::A(DEFAULT_JPEG_QUALITY as u32),
     };
+    let width = self.ctx.context.width;
+    let height = self.ctx.context.height;
 
-    let task = AsyncBlobTask { 
-      data: task_data,
-      callback: callback.create_ref()?,
-    };
+    // Encode the image data immediately
+    let surface_data_result = get_data_ref(&surface_data, &mime, &quality_or_config, width, height);
     
-    let task_output = env.spawn(task)?;
-    
-    task_output
-      .promise_object()
-      .catch(move |_ctx: CallbackContext<Unknown>| {
-        // In case of error, we should call the callback with null
-        // This matches the browser behavior for toBlob
-        Ok(())
-      })?;
+    match surface_data_result {
+      Ok(context_data) => {
+        let buffer_data = match context_data {
+          ContextOutputData::Skia(data_ref) => data_ref.slice().to_vec(),
+          ContextOutputData::Avif(data_ref) => data_ref.to_vec(),
+        };
+        let buffer = Buffer::from(buffer_data);
+        
+        // Call the callback with the buffer
+        callback.call(buffer.into_unknown(&callback.env)?)?;
+      }
+      Err(_) => {
+        // Call callback with undefined on error (browser behavior)
+        callback.call(callback.env.get_undefined()?)?;
+      }
+    }
 
-    Ok(())
+    Promise::resolve(())
   }
 
   #[napi]
@@ -501,7 +503,6 @@ pub struct AsyncBlobData {
 
 pub struct AsyncBlobTask {
   data: AsyncBlobData,
-  callback: Reference<JsFunction>,
 }
 
 #[napi]
@@ -537,7 +538,7 @@ impl Task for AsyncDataUrl {
 #[napi]
 impl Task for AsyncBlobTask {
   type Output = Vec<u8>;
-  type JsValue = ();
+  type JsValue = Buffer;
 
   fn compute(&mut self) -> Result<Self::Output> {
     let surface_data = get_data_ref(
@@ -558,17 +559,7 @@ impl Task for AsyncBlobTask {
   }
 
   fn resolve(&mut self, env: Env, output: Self::Output) -> Result<Self::JsValue> {
-    let buffer = env.create_buffer_with_data(output)?;
-    let callback = self.callback.borrow_back(&env)?;
-    callback.call(None, &[buffer])?;
-    Ok(())
-  }
-
-  fn reject(&mut self, env: Env, _err: Error) -> Result<Self::JsValue> {
-    // In case of error, call callback with null (browser behavior)
-    let callback = self.callback.borrow_back(&env)?;
-    callback.call(None, &[env.get_null()?])?;
-    Ok(())
+    unsafe { Buffer::from(output).into_unknown(&env)?.cast() }
   }
 }
 
