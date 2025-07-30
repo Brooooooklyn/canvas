@@ -291,6 +291,44 @@ impl<'c> CanvasElement<'c> {
       .compute()
   }
 
+  #[napi(js_name = "toBlob")]
+  pub fn to_blob(
+    &self,
+    env: Env,
+    callback: JsFunction,
+    mime: Option<String>,
+    quality_or_config: Either3<f64, AvifConfig, Unknown>,
+  ) -> Result<()> {
+    let task_data = AsyncBlobData {
+      surface_data: self.ctx.context.surface.reference(),
+      mime: mime.unwrap_or_else(|| MIME_PNG.to_owned()),
+      quality_or_config: match quality_or_config {
+        Either3::A(q) => Either::A((q * 100.0) as u32),
+        Either3::B(s) => Either::B(s),
+        Either3::C(_) => Either::A(DEFAULT_JPEG_QUALITY as u32),
+      },
+      width: self.ctx.context.width,
+      height: self.ctx.context.height,
+    };
+
+    let task = AsyncBlobTask { 
+      data: task_data,
+      callback: callback.create_ref()?,
+    };
+    
+    let task_output = env.spawn(task)?;
+    
+    task_output
+      .promise_object()
+      .catch(move |_ctx: CallbackContext<Unknown>| {
+        // In case of error, we should call the callback with null
+        // This matches the browser behavior for toBlob
+        Ok(())
+      })?;
+
+    Ok(())
+  }
+
   #[napi]
   pub fn encode_stream(
     &self,
@@ -453,6 +491,19 @@ pub struct AsyncDataUrl {
   height: u32,
 }
 
+pub struct AsyncBlobData {
+  surface_data: SurfaceRef,
+  quality_or_config: Either<u32, AvifConfig>,
+  mime: String,
+  width: u32,
+  height: u32,
+}
+
+pub struct AsyncBlobTask {
+  data: AsyncBlobData,
+  callback: Reference<JsFunction>,
+}
+
 #[napi]
 impl Task for AsyncDataUrl {
   type Output = String;
@@ -480,6 +531,44 @@ impl Task for AsyncDataUrl {
 
   fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
     Ok(output)
+  }
+}
+
+#[napi]
+impl Task for AsyncBlobTask {
+  type Output = Vec<u8>;
+  type JsValue = ();
+
+  fn compute(&mut self) -> Result<Self::Output> {
+    let surface_data = get_data_ref(
+      &self.data.surface_data,
+      &self.data.mime,
+      &self.data.quality_or_config,
+      self.data.width,
+      self.data.height,
+    )?;
+    match surface_data {
+      ContextOutputData::Skia(data_ref) => {
+        Ok(data_ref.slice().to_vec())
+      }
+      ContextOutputData::Avif(data_ref) => {
+        Ok(data_ref.to_vec())
+      }
+    }
+  }
+
+  fn resolve(&mut self, env: Env, output: Self::Output) -> Result<Self::JsValue> {
+    let buffer = env.create_buffer_with_data(output)?;
+    let callback = self.callback.borrow_back(&env)?;
+    callback.call(None, &[buffer])?;
+    Ok(())
+  }
+
+  fn reject(&mut self, env: Env, _err: Error) -> Result<Self::JsValue> {
+    // In case of error, call callback with null (browser behavior)
+    let callback = self.callback.borrow_back(&env)?;
+    callback.call(None, &[env.get_null()?])?;
+    Ok(())
   }
 }
 
