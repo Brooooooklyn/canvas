@@ -291,7 +291,7 @@ impl<'c> CanvasElement<'c> {
       .compute()
   }
 
-  #[napi(js_name = "toBlob")]
+  #[napi]
   pub fn to_blob(
     &self,
     env: Env,
