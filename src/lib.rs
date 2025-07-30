@@ -302,7 +302,7 @@ impl<'c> CanvasElement<'c> {
     let surface_data = self.ctx.context.surface.reference();
     let mime = mime.unwrap_or_else(|| MIME_PNG.to_owned());
     let quality_or_config = match quality_or_config {
-      Either3::A(q) => Either::A((q * 100.0) as u32),
+      Either3::A(q) => Either::A((q.clamp(0.0, 1.0) * 100.0) as u32),
       Either3::B(s) => Either::B(s),
       Either3::C(_) => Either::A(DEFAULT_JPEG_QUALITY as u32),
     };
@@ -311,7 +311,7 @@ impl<'c> CanvasElement<'c> {
 
     // Encode the image data
     let surface_data_result = get_data_ref(&surface_data, &mime, &quality_or_config, width, height);
-    
+
     match surface_data_result {
       Ok(context_data) => {
         let buffer_data = match context_data {
@@ -319,7 +319,7 @@ impl<'c> CanvasElement<'c> {
           ContextOutputData::Avif(data_ref) => data_ref.to_vec(),
         };
         let buffer = Buffer::from(buffer_data);
-        
+
         // Call the callback with the buffer
         callback.call(buffer.into_unknown(&env)?)?;
       }
