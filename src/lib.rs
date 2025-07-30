@@ -294,10 +294,11 @@ impl<'c> CanvasElement<'c> {
   #[napi(js_name = "toBlob")]
   pub fn to_blob(
     &self,
+    env: Env,
     callback: Function,
     mime: Option<String>,
     quality_or_config: Either3<f64, AvifConfig, Unknown>,
-  ) -> Result<Promise<()>> {
+  ) -> Result<()> {
     let surface_data = self.ctx.context.surface.reference();
     let mime = mime.unwrap_or_else(|| MIME_PNG.to_owned());
     let quality_or_config = match quality_or_config {
@@ -308,7 +309,7 @@ impl<'c> CanvasElement<'c> {
     let width = self.ctx.context.width;
     let height = self.ctx.context.height;
 
-    // Encode the image data immediately
+    // Encode the image data
     let surface_data_result = get_data_ref(&surface_data, &mime, &quality_or_config, width, height);
     
     match surface_data_result {
@@ -320,15 +321,16 @@ impl<'c> CanvasElement<'c> {
         let buffer = Buffer::from(buffer_data);
         
         // Call the callback with the buffer
-        callback.call(buffer.into_unknown(&callback.env)?)?;
+        callback.call(buffer.into_unknown(&env)?)?;
       }
       Err(_) => {
-        // Call callback with undefined on error (browser behavior)
-        callback.call(callback.env.get_undefined()?)?;
+        // Call callback with empty buffer on error to indicate failure
+        let empty_buffer = Buffer::from(Vec::<u8>::new());
+        callback.call(empty_buffer.into_unknown(&env)?)?;
       }
     }
 
-    Promise::resolve(())
+    Ok(())
   }
 
   #[napi]
@@ -493,18 +495,6 @@ pub struct AsyncDataUrl {
   height: u32,
 }
 
-pub struct AsyncBlobData {
-  surface_data: SurfaceRef,
-  quality_or_config: Either<u32, AvifConfig>,
-  mime: String,
-  width: u32,
-  height: u32,
-}
-
-pub struct AsyncBlobTask {
-  data: AsyncBlobData,
-}
-
 #[napi]
 impl Task for AsyncDataUrl {
   type Output = String;
@@ -532,34 +522,6 @@ impl Task for AsyncDataUrl {
 
   fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
     Ok(output)
-  }
-}
-
-#[napi]
-impl Task for AsyncBlobTask {
-  type Output = Vec<u8>;
-  type JsValue = Buffer;
-
-  fn compute(&mut self) -> Result<Self::Output> {
-    let surface_data = get_data_ref(
-      &self.data.surface_data,
-      &self.data.mime,
-      &self.data.quality_or_config,
-      self.data.width,
-      self.data.height,
-    )?;
-    match surface_data {
-      ContextOutputData::Skia(data_ref) => {
-        Ok(data_ref.slice().to_vec())
-      }
-      ContextOutputData::Avif(data_ref) => {
-        Ok(data_ref.to_vec())
-      }
-    }
-  }
-
-  fn resolve(&mut self, env: Env, output: Self::Output) -> Result<Self::JsValue> {
-    unsafe { Buffer::from(output).into_unknown(&env)?.cast() }
   }
 }
 
