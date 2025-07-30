@@ -359,7 +359,7 @@ impl Task for BitmapDecoder {
     let data_ref = match self.data.as_ref() {
       Some(Either::A(data)) => Cow::Borrowed(data.as_ref()),
       Some(Either::B(path_or_svg)) => {
-        if path_or_svg.starts_with("data:image") {
+        if path_or_svg.starts_with("data:") {
           Cow::Borrowed(path_or_svg.as_bytes())
         } else {
           match std::fs::read(path_or_svg) {
@@ -387,7 +387,7 @@ impl Task for BitmapDecoder {
     let length = data_ref.len();
     let mut width = self.width;
     let mut height = self.height;
-    let bitmap = if str::from_utf8(&data_ref[0..10]) == Ok("data:image") {
+    let bitmap = if str::from_utf8(&data_ref[0..5]) == Ok("data:") {
       let data_str = str::from_utf8(&data_ref)
         .map_err(|e| Error::new(Status::InvalidArg, format!("Decode data url failed {e}")))?;
       if let Some(base64_str) = data_str.split(',').next_back() {
