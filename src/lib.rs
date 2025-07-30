@@ -297,14 +297,18 @@ impl<'c> CanvasElement<'c> {
     env: Env,
     callback: Function,
     mime: Option<String>,
-    quality_or_config: Either3<f64, AvifConfig, Unknown>,
+    quality: Option<f64>,
   ) -> Result<()> {
     let surface_data = self.ctx.context.surface.reference();
     let mime = mime.unwrap_or_else(|| MIME_PNG.to_owned());
-    let quality_or_config = match quality_or_config {
-      Either3::A(q) => Either::A((q.clamp(0.0, 1.0) * 100.0) as u32),
-      Either3::B(s) => Either::B(s),
-      Either3::C(_) => Either::A(DEFAULT_JPEG_QUALITY as u32),
+    let quality_value = quality.unwrap_or(0.92).clamp(0.0, 1.0);
+    let quality_or_config = if mime == MIME_AVIF {
+      Either::B(AvifConfig {
+        quality: Some((quality_value * 100.0) as u32),
+        ..Default::default()
+      })
+    } else {
+      Either::A((quality_value * 100.0) as u32)
     };
     let width = self.ctx.context.width;
     let height = self.ctx.context.height;
