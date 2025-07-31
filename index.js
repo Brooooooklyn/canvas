@@ -47,6 +47,32 @@ if (!('has' in GlobalFonts)) {
   })
 }
 
+const _toBlob = CanvasElement.prototype.toBlob
+const _convertToBlob = CanvasElement.prototype.convertToBlob
+if ('Blob' in globalThis) {
+  CanvasElement.prototype.toBlob = function toBlob(callback, mimeType, quality) {
+    _toBlob.call(this, function(/** @type {Uint8Array} */ imageBuffer) {
+      const blob = new Blob([imageBuffer.buffer], { type: mimeType })
+      callback(blob)
+    }, mimeType, quality)
+  }
+  CanvasElement.prototype.convertToBlob = function convertToBlob(options) {
+    return _convertToBlob.call(this, options).then((/** @type {Uint8Array} */ imageBuffer) => {
+      const blob = new Blob([imageBuffer.buffer], { type: options?.mime || 'image/png' })
+      return blob
+    })
+  }
+} else {
+  // oxlint-disable-next-line no-unused-vars
+  CanvasElement.prototype.toBlob = function toBlob(callback, mimeType, quality) {
+    callback(null)
+  }
+  // oxlint-disable-next-line no-unused-vars
+  CanvasElement.prototype.convertToBlob = function convertToBlob(options) {
+    return Promise.reject(new Error('Blob is not supported in this environment'))
+  }
+}
+
 const _getTransform = CanvasRenderingContext2D.prototype.getTransform
 
 CanvasRenderingContext2D.prototype.getTransform = function getTransform() {
@@ -85,7 +111,7 @@ CanvasRenderingContext2D.prototype.drawImage = function drawImage(image, ...args
       }
     }
   }
-  
+
   // Call the original drawImage with the potentially corrected image
   return _drawImage.apply(this, [image, ...args])
 }
