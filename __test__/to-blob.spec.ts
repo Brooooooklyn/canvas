@@ -91,3 +91,16 @@ test('toBlob with callback that converts to arrayBuffer (issue #1087)', async (t
     }, 'image/png')
   })
 })
+
+test('convertToBlob with PNG format', async (t) => {
+  const canvas = createCanvas(10, 10)
+  const ctx = canvas.getContext('2d')
+
+  ctx.fillStyle = 'red'
+  ctx.fillRect(0, 0, 10, 10)
+
+  const blob = await canvas.convertToBlob()
+  t.truthy(blob)
+  t.true(blob instanceof Blob)
+  t.true(blob!.size > 0)
+})

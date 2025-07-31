@@ -57,7 +57,7 @@ if ('Blob' in globalThis) {
     }, mimeType, quality)
   }
   CanvasElement.prototype.convertToBlob = function convertToBlob(options) {
-    _convertToBlob.call(this, options).then((/** @type {Uint8Array} */ imageBuffer) => {
+    return _convertToBlob.call(this, options).then((/** @type {Uint8Array} */ imageBuffer) => {
       const blob = new Blob([imageBuffer.buffer], { type: options?.mime || 'image/png' })
       return blob
     })

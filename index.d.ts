@@ -626,6 +626,11 @@ export enum ChromaSubsampling {
   Yuv400 = 3,
 }
 
+export interface ConvertToBlobOptions {
+  mime?: string
+  quality?: number
+}
+
 export class Canvas {
   constructor(width: number, height: number, flag?: SvgExportFlag)
 
@@ -656,6 +661,7 @@ export class Canvas {
   toDataURLAsync(mime?: 'image/avif', cfg?: AvifConfig): Promise<string>
 
   toBlob(callback: (blob: Blob | null) => void, mime?: string, quality?: number): void
+  convertToBlob(options?: ConvertToBlobOptions): Promise<Blob>
 }
 
 export function createCanvas(width: number, height: number): Canvas
