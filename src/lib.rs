@@ -8,7 +8,7 @@ extern crate napi_derive;
 #[macro_use]
 extern crate serde_derive;
 
-use std::{ffi::c_void, mem, slice, str::FromStr};
+use std::{ffi::c_void, mem, rc::Rc, slice, str::FromStr};
 
 use napi::{
   Property, ScopedTask,
@@ -63,6 +63,21 @@ const DEFAULT_WEBP_QUALITY: u8 = 80;
 fn init() {
   // pre init font regexp
   FONT_REGEXP.get_or_init(init_font_regexp);
+}
+
+#[napi(object, object_to_js = false)]
+pub struct ConvertToBlobOptions {
+  pub mime: Option<String>,
+  pub quality: Option<f64>,
+}
+
+impl Default for ConvertToBlobOptions {
+  fn default() -> Self {
+    Self {
+      mime: Some(MIME_PNG.to_owned()),
+      quality: None,
+    }
+  }
 }
 
 #[napi(object)]
@@ -293,7 +308,7 @@ impl<'c> CanvasElement<'c> {
   pub fn to_blob<'env>(
     &self,
     env: &'env Env,
-    callback: Function<'env, Either<Uint8ArraySlice, Null>, Unknown>,
+    callback: Function<Either<Uint8ArraySlice, Null>, Unknown>,
     mime: Option<String>,
     quality: Option<f64>,
   ) -> Result<()> {
@@ -310,19 +325,53 @@ impl<'c> CanvasElement<'c> {
     };
     let width = self.ctx.context.width;
     let height = self.ctx.context.height;
-    let callback_ref = callback.create_ref()?;
+    let callback_ref = Rc::new(callback.create_ref()?);
+    let callback_ref_in_catch = callback_ref.clone();
     let async_blob_task = AsyncBlob {
       surface_ref: surface_data,
       mime,
       quality_or_config,
       width,
       height,
-      callback_ref,
     };
 
-    env.spawn(async_blob_task)?;
+    env
+      .spawn(async_blob_task)?
+      .promise_object()
+      .then(move |ctx| {
+        let callback = callback_ref.borrow_back(&ctx.env)?;
+        callback.call(Either::A(ctx.value))?;
+        Ok(())
+      })?
+      .catch(|ctx: CallbackContext<Unknown>| {
+        let callback = callback_ref_in_catch.borrow_back(&ctx.env)?;
+        callback.call(Either::B(Null))?;
+        Ok(())
+      })?;
 
     Ok(())
+  }
+
+  #[napi]
+  pub fn convert_to_blob(&self, options: Option<ConvertToBlobOptions>) -> AsyncTask<AsyncBlob> {
+    let options = options.unwrap_or_default();
+    let mime = options.mime.unwrap_or_else(|| MIME_PNG.to_owned());
+    let quality = options.quality.unwrap_or(0.92).clamp(0.0, 1.0);
+    let quality_or_config = if mime == MIME_AVIF {
+      Either::B(AvifConfig {
+        quality: Some((quality * 100.0) as u32),
+        ..Default::default()
+      })
+    } else {
+      Either::A((quality * 100.0) as u32)
+    };
+    AsyncTask::new(AsyncBlob {
+      surface_ref: self.ctx.context.surface.reference(),
+      mime,
+      quality_or_config,
+      width: self.ctx.context.width,
+      height: self.ctx.context.height,
+    })
   }
 
   #[napi]
@@ -517,21 +566,18 @@ impl Task for AsyncDataUrl {
   }
 }
 
-struct AsyncBlob<'env> {
+pub struct AsyncBlob {
   surface_ref: SurfaceRef,
   mime: String,
   quality_or_config: Either<u32, AvifConfig>,
   width: u32,
   height: u32,
-  callback_ref: FunctionRef<Either<Uint8ArraySlice<'env>, Null>, Unknown<'env>>,
 }
 
-unsafe impl<'env> Send for AsyncBlob<'env> {}
-
 #[napi]
-impl<'env> ScopedTask<'env> for AsyncBlob<'env> {
+impl<'env> ScopedTask<'env> for AsyncBlob {
   type Output = ContextOutputData;
-  type JsValue = ();
+  type JsValue = Uint8ArraySlice<'env>;
 
   fn compute(&mut self) -> Result<Self::Output> {
     get_data_ref(
@@ -544,35 +590,23 @@ impl<'env> ScopedTask<'env> for AsyncBlob<'env> {
   }
 
   fn resolve(&mut self, env: &'env Env, output: Self::Output) -> Result<Self::JsValue> {
-    let callback = self.callback_ref.borrow_back(env)?;
     match output {
       ContextOutputData::Skia(data_ref) => unsafe {
-        callback.call(Either::A(Uint8ArraySlice::from_external(
-          env,
-          data_ref.0.ptr,
-          data_ref.0.size,
-          data_ref,
-          |_, d| mem::drop(d),
-        )?))?;
+        Uint8ArraySlice::from_external(env, data_ref.0.ptr, data_ref.0.size, data_ref, |_, d| {
+          mem::drop(d)
+        })
       },
       ContextOutputData::Avif(data_ref) => unsafe {
         let data_slice = data_ref.as_slice();
-        callback.call(Either::A(Uint8ArraySlice::from_external(
+        Uint8ArraySlice::from_external(
           env,
           data_slice.as_ptr().cast_mut(),
           data_slice.len(),
           data_ref,
           |_, d| mem::drop(d),
-        )?))?;
+        )
       },
     }
-    Ok(())
-  }
-
-  fn reject(&mut self, env: &'env Env, _: Error) -> Result<Self::JsValue> {
-    let callback = self.callback_ref.borrow_back(env)?;
-    callback.call(Either::B(Null))?;
-    Ok(())
   }
 }
 
