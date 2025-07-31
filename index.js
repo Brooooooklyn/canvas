@@ -67,6 +67,7 @@ if ('Blob' in globalThis) {
   CanvasElement.prototype.toBlob = function toBlob(callback, mimeType, quality) {
     callback(null)
   }
+  // oxlint-disable-next-line no-unused-vars
   CanvasElement.prototype.convertToBlob = function convertToBlob(options) {
     return Promise.reject(new Error('Blob is not supported in this environment'))
   }
