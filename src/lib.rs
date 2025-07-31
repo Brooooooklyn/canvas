@@ -11,7 +11,7 @@ extern crate serde_derive;
 use std::{ffi::c_void, mem, slice, str::FromStr};
 
 use napi::{
-  Property,
+  Property, ScopedTask,
   bindgen_prelude::*,
   noop_finalize,
   tokio::sync::mpsc::{channel, error::TrySendError},
@@ -286,16 +286,14 @@ impl<'c> CanvasElement<'c> {
     mime: Option<String>,
     quality_or_config: Either3<f64, AvifConfig, Unknown>,
   ) -> Result<String> {
-    self
-      .to_data_url_inner(mime.as_deref(), quality_or_config)?
-      .compute()
+    Task::compute(&mut self.to_data_url_inner(mime.as_deref(), quality_or_config)?)
   }
 
   #[napi]
-  pub fn to_blob(
+  pub fn to_blob<'env>(
     &self,
-    env: Env,
-    callback: Function,
+    env: &'env Env,
+    callback: Function<'env, Either<Uint8ArraySlice, Null>, Unknown>,
     mime: Option<String>,
     quality: Option<f64>,
   ) -> Result<()> {
@@ -312,27 +310,17 @@ impl<'c> CanvasElement<'c> {
     };
     let width = self.ctx.context.width;
     let height = self.ctx.context.height;
+    let callback_ref = callback.create_ref()?;
+    let async_blob_task = AsyncBlob {
+      surface_ref: surface_data,
+      mime,
+      quality_or_config,
+      width,
+      height,
+      callback_ref,
+    };
 
-    // Encode the image data
-    let surface_data_result = get_data_ref(&surface_data, &mime, &quality_or_config, width, height);
-
-    match surface_data_result {
-      Ok(context_data) => {
-        let buffer_data = match context_data {
-          ContextOutputData::Skia(data_ref) => data_ref.slice().to_vec(),
-          ContextOutputData::Avif(data_ref) => data_ref.to_vec(),
-        };
-        let buffer = Buffer::from(buffer_data);
-
-        // Call the callback with the buffer
-        callback.call(buffer.into_unknown(&env)?)?;
-      }
-      Err(_) => {
-        // Call callback with empty buffer on error to indicate failure
-        let empty_buffer = Buffer::from(Vec::<u8>::new());
-        callback.call(empty_buffer.into_unknown(&env)?)?;
-      }
-    }
+    env.spawn(async_blob_task)?;
 
     Ok(())
   }
@@ -526,6 +514,65 @@ impl Task for AsyncDataUrl {
 
   fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
     Ok(output)
+  }
+}
+
+struct AsyncBlob<'env> {
+  surface_ref: SurfaceRef,
+  mime: String,
+  quality_or_config: Either<u32, AvifConfig>,
+  width: u32,
+  height: u32,
+  callback_ref: FunctionRef<Either<Uint8ArraySlice<'env>, Null>, Unknown<'env>>,
+}
+
+unsafe impl<'env> Send for AsyncBlob<'env> {}
+
+#[napi]
+impl<'env> ScopedTask<'env> for AsyncBlob<'env> {
+  type Output = ContextOutputData;
+  type JsValue = ();
+
+  fn compute(&mut self) -> Result<Self::Output> {
+    get_data_ref(
+      &self.surface_ref,
+      &self.mime,
+      &self.quality_or_config,
+      self.width,
+      self.height,
+    )
+  }
+
+  fn resolve(&mut self, env: &'env Env, output: Self::Output) -> Result<Self::JsValue> {
+    let callback = self.callback_ref.borrow_back(env)?;
+    match output {
+      ContextOutputData::Skia(data_ref) => unsafe {
+        callback.call(Either::A(Uint8ArraySlice::from_external(
+          env,
+          data_ref.0.ptr,
+          data_ref.0.size,
+          data_ref,
+          |_, d| mem::drop(d),
+        )?))?;
+      },
+      ContextOutputData::Avif(data_ref) => unsafe {
+        let data_slice = data_ref.as_slice();
+        callback.call(Either::A(Uint8ArraySlice::from_external(
+          env,
+          data_slice.as_ptr().cast_mut(),
+          data_slice.len(),
+          data_ref,
+          |_, d| mem::drop(d),
+        )?))?;
+      },
+    }
+    Ok(())
+  }
+
+  fn reject(&mut self, env: &'env Env, _: Error) -> Result<Self::JsValue> {
+    let callback = self.callback_ref.borrow_back(env)?;
+    callback.call(Either::B(Null))?;
+    Ok(())
   }
 }
 

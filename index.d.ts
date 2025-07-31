@@ -655,7 +655,7 @@ export class Canvas {
   toDataURLAsync(mime?: 'image/jpeg' | 'image/webp' | 'image/png', quality?: number): Promise<string>
   toDataURLAsync(mime?: 'image/avif', cfg?: AvifConfig): Promise<string>
 
-  toBlob(callback: (blob: Buffer | null) => void, mime?: string, quality?: number): void
+  toBlob(callback: (blob: Blob | null) => void, mime?: string, quality?: number): void
 }
 
 export function createCanvas(width: number, height: number): Canvas
