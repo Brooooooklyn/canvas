@@ -305,9 +305,9 @@ impl<'c> CanvasElement<'c> {
   }
 
   #[napi]
-  pub fn to_blob<'env>(
+  pub fn to_blob(
     &self,
-    env: &'env Env,
+    env: &Env,
     callback: Function<Either<Uint8ArraySlice, Null>, Unknown>,
     mime: Option<String>,
     quality: Option<f64>,
