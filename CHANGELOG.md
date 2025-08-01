@@ -1,3 +1,17 @@
+## [0.1.75](https://github.com/Brooooooklyn/canvas/compare/v0.1.74...v0.1.75) (2025-08-01)
+
+
+### Bug Fixes
+
+* data URL handling for non-image MIME types (resolves [#1088](https://github.com/Brooooooklyn/canvas/issues/1088)) ([#1089](https://github.com/Brooooooklyn/canvas/issues/1089)) ([22d45df](https://github.com/Brooooooklyn/canvas/commit/22d45df8c56429c64af22836761ccf4acc86aded))
+
+
+### Features
+
+* implement toBlob and convertToBlob ([a7f259f](https://github.com/Brooooooklyn/canvas/commit/a7f259f4afbee21f1d87a7082171da24b62c0cf6))
+
+
+
 ## [0.1.74](https://github.com/Brooooooklyn/canvas/compare/v0.1.73...v0.1.74) (2025-07-17)
 
 

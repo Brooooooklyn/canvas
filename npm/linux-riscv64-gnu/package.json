@@ -1,6 +1,6 @@
 {
   "name": "@napi-rs/canvas-linux-riscv64-gnu",
-  "version": "0.1.74",
+  "version": "0.1.75",
   "os": [
     "linux"
   ],
