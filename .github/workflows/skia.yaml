@@ -55,17 +55,8 @@ jobs:
         if: matrix.os == 'windows-latest'
         run: |
           choco install llvm ninja -y
-          choco upgrade llvm --version "19.1.7"
           pip install certifi
 
-      - name: Apply workaround for https://github.com/llvm/llvm-project/issues/95133
-        if: runner.os == 'Windows'
-        shell: cmd
-        run: |
-          perl -i -ne "print unless /unsigned __int32 xbegin\(void\);/" "C:\Program Files\LLVM\lib\clang\19\include\intrin.h"
-          perl -i -ne "print unless /void _xend\(void\);/" "C:\Program Files\LLVM\lib\clang\19\include\intrin.h"
-          findstr /C:"unsigned __int32 xbegin(void);" "C:\Program Files\LLVM\lib\clang\19\include\intrin.h" || exit /b 0
-          findstr /C:"void _xend(void);" "C:\Program Files\LLVM\lib\clang\19\include\intrin.h" || exit /b 0
       # See https://github.com/ilammy/msvc-dev-cmd?tab=readme-ov-file#caveats
       - name: Remove GNU link.exe from GH actions
         if: runner.os == 'Windows'
@@ -130,7 +121,7 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'yarn'
 
       - uses: actions/setup-python@v5
@@ -270,7 +261,7 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'yarn'
 
       - uses: actions/setup-python@v5
@@ -366,10 +357,14 @@ jobs:
           node-version: 22
 
       - name: Sync deps on host
-        run: python ./tools/git-sync-deps
-        working-directory: skia
-        env:
-          PYTHONHTTPSVERIFY: 0
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 10
+          max_attempts: 5
+          command: |
+            export PYTHONHTTPSVERIFY="0"
+            cd skia
+            python ./tools/git-sync-deps
 
       - name: Compile skia
         run: node ./scripts/build-skia.js --target=armv7-unknown-linux-gnueabihf
