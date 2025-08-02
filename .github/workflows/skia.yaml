@@ -55,17 +55,8 @@ jobs:
         if: matrix.os == 'windows-latest'
         run: |
           choco install llvm ninja -y
-          choco upgrade llvm --version "19.1.7"
           pip install certifi
 
-      - name: Apply workaround for https://github.com/llvm/llvm-project/issues/95133
-        if: runner.os == 'Windows'
-        shell: cmd
-        run: |
-          perl -i -ne "print unless /unsigned __int32 xbegin\(void\);/" "C:\Program Files\LLVM\lib\clang\19\include\intrin.h"
-          perl -i -ne "print unless /void _xend\(void\);/" "C:\Program Files\LLVM\lib\clang\19\include\intrin.h"
-          findstr /C:"unsigned __int32 xbegin(void);" "C:\Program Files\LLVM\lib\clang\19\include\intrin.h" || exit /b 0
-          findstr /C:"void _xend(void);" "C:\Program Files\LLVM\lib\clang\19\include\intrin.h" || exit /b 0
       # See https://github.com/ilammy/msvc-dev-cmd?tab=readme-ov-file#caveats
       - name: Remove GNU link.exe from GH actions
         if: runner.os == 'Windows'
@@ -130,7 +121,7 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'yarn'
 
       - uses: actions/setup-python@v5
@@ -160,6 +151,73 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+
+  build-windows-arm64:
+    if: "!contains(github.event.head_commit.message, 'skip skia')"
+    name: stable - windows-arm64 - build skia
+    runs-on: windows-11-arm
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: List llvm dir
+        run: ls -R "C:\Program Files\LLVM"
+        shell: bash
+
+      - name: Setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'yarn'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+          architecture: 'x64'
+
+      - name: Set env
+        run: echo "${PWD}/depot_tools" >> $GITHUB_PATH
+        shell: bash
+
+      - name: Install tools on Windows
+        run: |
+          choco install llvm ninja -y
+          pip install certifi
+
+      # See https://github.com/ilammy/msvc-dev-cmd?tab=readme-ov-file#caveats
+      - name: Remove GNU link.exe from GH actions
+        if: runner.os == 'Windows'
+        run: rm /usr/bin/link
+        shell: bash
+
+      - name: Sync deps
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 10
+          max_attempts: 5
+          command: |
+            cd skia
+            python ./tools/git-sync-deps
+        env:
+          PYTHONHTTPSVERIFY: 0
+
+      - name: Compile skia
+        shell: powershell
+        env:
+          SKIP_SYNC_SK_DEPS: 0
+        run: node ./scripts/build-skia.js --target=aarch64-pc-windows-msvc
+
+      - name: Install dependencies
+        run: yarn install --immutable --mode=skip-build
+
+      - name: Upload release
+        run: node ./scripts/release-skia-binary.mjs --upload --target=aarch64-pc-windows-msvc
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   build-x64-linux-musl:
     if: "!contains(github.event.head_commit.message, 'skip skia')"
 
@@ -174,7 +232,7 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'yarn'
 
       - name: Login to GitHub Container Registry
@@ -214,7 +272,7 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'yarn'
 
       - uses: actions/setup-python@v5
@@ -254,7 +312,7 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'yarn'
 
       - name: Login to GitHub Container Registry
@@ -293,14 +351,13 @@ jobs:
     name: stable - armv7-linux - build skia
     runs-on: ubuntu-latest
     container:
-      image: debian:buster
+      image: python:3.13-bullseye
 
     steps:
       - name: Setup tools
         run: |
           apt-get update
-          apt-get install -y gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf libatomic1-armhf-cross git build-essential cmake ninja-build wget curl python3
-          ln -s /usr/bin/python3 /usr/bin/python
+          apt-get install -y gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf libatomic1-armhf-cross git build-essential cmake ninja-build wget curl
       - uses: actions/checkout@v4
         with:
           submodules: true
@@ -308,10 +365,22 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
+
+      - name: Sync deps
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 10
+          max_attempts: 5
+          command: |
+            export PYTHONHTTPSVERIFY="0"
+            cd skia
+            python ./tools/git-sync-deps
 
       - name: Compile skia
         run: node ./scripts/build-skia.js --target=armv7-unknown-linux-gnueabihf
+        env:
+          SKIP_SYNC_SK_DEPS: 0
 
       - name: Install dependencies
         run: |
@@ -340,7 +409,7 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'yarn'
 
       - uses: actions/setup-python@v5
