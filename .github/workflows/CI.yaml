@@ -5,10 +5,6 @@ env:
   APP_NAME: 'skia'
   MACOSX_DEPLOYMENT_TARGET: '10.13'
 
-permissions:
-  contents: write
-  id-token: write
-
 on:
   push:
     branches:
@@ -87,6 +83,12 @@ jobs:
               clang --version
               yarn build --target x86_64-apple-darwin
             downloadTarget: ''
+          - host: windows-latest
+            setup: |
+              choco upgrade llvm
+            build: yarn build --target aarch64-pc-windows-msvc
+            target: 'aarch64-pc-windows-msvc'
+            downloadTarget: 'aarch64-pc-windows-msvc'
           - host: windows-latest
             setup: |
               choco upgrade llvm
@@ -299,10 +301,16 @@ jobs:
         settings:
           - host: macos-latest
             target: 'x86_64-apple-darwin'
+            architecture: 'x64'
           - host: macos-latest
             target: 'aarch64-apple-darwin'
+            architecture: 'arm64'
           - host: windows-latest
             target: 'x86_64-pc-windows-msvc'
+            architecture: 'x64'
+          - host: windows-11-arm
+            target: 'aarch64-pc-windows-msvc'
+            architecture: 'arm64'
         node: ['20', '22']
     runs-on: ${{ matrix.settings.host }}
 
@@ -322,19 +330,10 @@ jobs:
 
       - name: Setup node
         uses: actions/setup-node@v4
-        if: startsWith(matrix.settings.target, 'x86_64')
         with:
           node-version: ${{ matrix.node }}
           cache: 'yarn'
-          architecture: 'x64'
-
-      - name: Setup node
-        uses: actions/setup-node@v4
-        if: startsWith(matrix.settings.target, 'aarch64')
-        with:
-          node-version: ${{ matrix.node }}
-          cache: 'yarn'
-          architecture: 'arm64'
+          architecture: ${{ matrix.settings.architecture }}
 
       - name: Install dependencies
         run: yarn install --immutable --mode=skip-build
@@ -346,7 +345,7 @@ jobs:
           path: .
 
       - name: Download icudtl.dat
-        if: matrix.settings.host == 'windows-latest'
+        if: ${{ contains(matrix.settings.host, 'windows') }}
         run: node ./scripts/release-skia-binary.mjs --download-icu
 
       - name: Test bindings
@@ -685,6 +684,9 @@ jobs:
   publish:
     name: Publish
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
     needs:
       - test-linux-x64-gnu-binding
       - test-linux-x64-musl-binding
