@@ -155,7 +155,7 @@ jobs:
   build-windows-arm64:
     if: "!contains(github.event.head_commit.message, 'skip skia')"
     name: stable - windows-arm64 - build skia
-    runs-on: windows-latest
+    runs-on: windows-11-arm
 
     steps:
       - uses: actions/checkout@v4

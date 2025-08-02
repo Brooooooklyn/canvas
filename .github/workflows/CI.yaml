@@ -83,7 +83,7 @@ jobs:
               clang --version
               yarn build --target x86_64-apple-darwin
             downloadTarget: ''
-          - host: windows-latest
+          - host: windows-11-arm
             setup: |
               choco upgrade llvm
             build: yarn build --target aarch64-pc-windows-msvc

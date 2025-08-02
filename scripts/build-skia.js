@@ -106,12 +106,14 @@ switch (PLATFORM_NAME) {
       '\\"-DSK_CODEC_DECODES_JPEG\\",' +
       '\\"-DSK_HAS_HEIF_LIBRARY\\",' +
       '\\"-DSK_SHAPER_HARFBUZZ_AVAILABLE\\"'
-    const clangVersion = findClangWinVersion()
-    if (clangVersion) {
-      console.info(`Found clang version: ${clangVersion}`)
-      ExtraSkiaBuildFlag = `clang_win_version=\\"${clangVersion}\\"`
+    if (TARGET_TRIPLE !== 'aarch64-pc-windows-msvc') {
+      const clangVersion = findClangWinVersion()
+      if (clangVersion) {
+        console.info(`Found clang version: ${clangVersion}`)
+        ExtraSkiaBuildFlag = `clang_win_version=\\"${clangVersion}\\"`
+      }
+      GN_ARGS.push(`clang_win=\\"C:\\\\Program Files\\\\LLVM\\"`)
     }
-    GN_ARGS.push(`clang_win=\\"C:\\\\Program Files\\\\LLVM\\"`)
     GN_ARGS.push(`skia_enable_fontmgr_win=false`)
     break
   case 'linux':
@@ -149,12 +151,6 @@ switch (PLATFORM_NAME) {
 switch (TARGET_TRIPLE) {
   case 'aarch64-pc-windows-msvc':
     ExtraSkiaBuildFlag += ' target_cpu="arm64" target_os="windows"'
-    const clangVersion = findClangWinVersion()
-    if (clangVersion) {
-      console.info(`Found clang version: ${clangVersion}`)
-      ExtraSkiaBuildFlag = `clang_win_version=\\"${clangVersion}\\"`
-    }
-    GN_ARGS.push(`clang_win=\\"C:\\\\Program Files\\\\LLVM\\"`)
     break
   case 'aarch64-unknown-linux-gnu':
     ExtraSkiaBuildFlag += ' target_cpu="arm64" target_os="linux"'
