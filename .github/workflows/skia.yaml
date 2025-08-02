@@ -192,10 +192,21 @@ jobs:
         run: rm /usr/bin/link
         shell: bash
 
+      - name: Sync deps
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 10
+          max_attempts: 5
+          command: |
+            cd skia
+            python ./tools/git-sync-deps
+        env:
+          PYTHONHTTPSVERIFY: 0
+
       - name: Compile skia
         shell: powershell
         env:
-          PYTHONHTTPSVERIFY: 0
+          SKIP_SYNC_SK_DEPS: 0
         run: node ./scripts/build-skia.js --target=aarch64-pc-windows-msvc
 
       - name: Install dependencies
@@ -356,7 +367,7 @@ jobs:
         with:
           node-version: 22
 
-      - name: Sync deps on host
+      - name: Sync deps
         uses: nick-fields/retry@v3
         with:
           timeout_minutes: 10
