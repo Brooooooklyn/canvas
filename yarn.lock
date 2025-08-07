@@ -579,7 +579,7 @@ __metadata:
     colorette: "npm:^2.0.20"
     conventional-changelog-cli: "npm:^5.0.0"
     core-js: "npm:^3.42.0"
-    echarts: "npm:^5.6.0"
+    echarts: "npm:^6.0.0"
     electron: "npm:^37.1.0"
     husky: "npm:^9.1.7"
     lint-staged: "npm:^16.1.0"
@@ -3171,13 +3171,13 @@ __metadata:
   languageName: node
   linkType: hard
 
-"echarts@npm:^5.6.0":
-  version: 5.6.0
-  resolution: "echarts@npm:5.6.0"
+"echarts@npm:^6.0.0":
+  version: 6.0.0
+  resolution: "echarts@npm:6.0.0"
   dependencies:
     tslib: "npm:2.3.0"
-    zrender: "npm:5.6.1"
-  checksum: 10c0/6d6a2ee88534d1ff0433e935c542237b9896de1c94959f47ebc7e0e9da26f59bf11c91ed6fc135b62ad2786c779ee12bc536fa481e60532dad5b6a2f5167e9ea
+    zrender: "npm:6.0.0"
+  checksum: 10c0/60bbb4f00ac679d2f81d7a0aa684597c8ccc46041c5ae536def4c4bbb85d5557c1653a536ac6e11f42757718ab66e2bbc35d53d795173c50e8541154c8d59bbd
   languageName: node
   linkType: hard
 
@@ -6936,11 +6936,11 @@ __metadata:
   languageName: node
   linkType: hard
 
-"zrender@npm:5.6.1":
-  version: 5.6.1
-  resolution: "zrender@npm:5.6.1"
+"zrender@npm:6.0.0":
+  version: 6.0.0
+  resolution: "zrender@npm:6.0.0"
   dependencies:
     tslib: "npm:2.3.0"
-  checksum: 10c0/dc1cc570054640cbd8fbb7b92e6252f225319522bfe3e8dc8bf02cc02d414e00a4c8d0a6f89bfc9d96e5e9511fdca94dd3d06bf53690df2b2f12b0fc560ac307
+  checksum: 10c0/c794e05ee969c750de6d17cfff60d9d4e6342d1591cf6ba3e488fb084ac7a0415355fe4aec55f83a400fd4cda63792db0533362455058ac06f6e1343be28d0ce
   languageName: node
   linkType: hard
