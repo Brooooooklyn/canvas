@@ -1,5 +1,4 @@
 import test from 'ava'
-import { parse } from 'semver'
 
 import { createCanvas } from '../index.js'
 import { snapshotImage } from './image-snapshot'
@@ -9,36 +8,30 @@ test('echarts-start', async (t) => {
     t.pass()
     return
   }
-  if ((parse(process.version)?.major ?? 0) >= 21) {
-    t.pass()
-    return
-  }
   const { init, setPlatformAPI } = await import('echarts')
   const canvas = createCanvas(800, 600)
   setPlatformAPI({
-    // @ts-expect-error
     createCanvas: () => canvas,
   })
-  // @ts-expect-error
   const chart = init(canvas)
   chart.setOption({
     textStyle: {
-      fontFamily: 'Iosevka Slab, PingFang HK',
+      fontFamily: 'Iosevka Slab',
     },
     title: {
-      text: 'ECharts 入门示例',
+      text: 'ECharts Demo',
     },
     tooltip: {},
     legend: {
-      data: ['销量'],
+      data: ['Sales'],
     },
     xAxis: {
-      data: ['衬衫', '羊毛衫', '雪纺衫', '裤子', '高跟鞋', '袜子'],
+      data: ['Shirt', 'Sweater', 'Chiffon Shirt', 'Pants', 'High Heels', 'Socks'],
     },
     yAxis: {},
     series: [
       {
-        name: '销量',
+        name: 'Sales',
         type: 'bar',
         data: [5, 20, 36, 10, 10, 20],
       },
