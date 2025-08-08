@@ -51,10 +51,15 @@ const _toBlob = CanvasElement.prototype.toBlob
 const _convertToBlob = CanvasElement.prototype.convertToBlob
 if ('Blob' in globalThis) {
   CanvasElement.prototype.toBlob = function toBlob(callback, mimeType, quality) {
-    _toBlob.call(this, function(/** @type {Uint8Array} */ imageBuffer) {
-      const blob = new Blob([imageBuffer.buffer], { type: mimeType })
-      callback(blob)
-    }, mimeType, quality)
+    _toBlob.call(
+      this,
+      function (/** @type {Uint8Array} */ imageBuffer) {
+        const blob = new Blob([imageBuffer.buffer], { type: mimeType })
+        callback(blob)
+      },
+      mimeType,
+      quality,
+    )
   }
   CanvasElement.prototype.convertToBlob = function convertToBlob(options) {
     return _convertToBlob.call(this, options).then((/** @type {Uint8Array} */ imageBuffer) => {

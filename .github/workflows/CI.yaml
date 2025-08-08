@@ -5,10 +5,6 @@ env:
   APP_NAME: 'skia'
   MACOSX_DEPLOYMENT_TARGET: '10.13'
 
-permissions:
-  contents: write
-  id-token: write
-
 on:
   push:
     branches:
@@ -685,6 +681,9 @@ jobs:
   publish:
     name: Publish
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
     needs:
       - test-linux-x64-gnu-binding
       - test-linux-x64-musl-binding
@@ -724,18 +723,15 @@ jobs:
 
       - name: Publish
         run: |
-          npm config set provenance true
+          npm install -g npm
           if git log -1 --pretty=%B | grep "^[0-9]\+\.[0-9]\+\.[0-9]\+$";
           then
-            echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" >> ~/.npmrc
             npm publish --access public
           elif git log -1 --pretty=%B | grep "^[0-9]\+\.[0-9]\+\.[0-9]\+";
           then
-            echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" >> ~/.npmrc
             npm publish --tag next --access public
           else
             echo "Not a release, skipping publish"
           fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
