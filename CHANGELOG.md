@@ -1,3 +1,12 @@
+## [0.1.77](https://github.com/Brooooooklyn/canvas/compare/v0.1.76...v0.1.77) (2025-08-08)
+
+
+### Bug Fixes
+
+* return early if setLineDash param is invalid ([#1097](https://github.com/Brooooooklyn/canvas/issues/1097)) ([6c9e9f7](https://github.com/Brooooooklyn/canvas/commit/6c9e9f74b68beb74a7b1e7e7d9bc1ee5d0d5fd9b))
+
+
+
 ## [0.1.76](https://github.com/Brooooooklyn/canvas/compare/v0.1.75...v0.1.76) (2025-08-01)
 
 
