@@ -565,7 +565,7 @@ __metadata:
     "@jimp/custom": "npm:^0.22.12"
     "@jimp/jpeg": "npm:^0.22.12"
     "@jimp/png": "npm:^0.22.12"
-    "@napi-rs/cli": "npm:^3.0.0"
+    "@napi-rs/cli": "npm:^3.1.1"
     "@octokit/rest": "npm:^22.0.0"
     "@swc-node/register": "npm:^1.10.10"
     "@swc/core": "npm:^1.11.31"
@@ -598,9 +598,9 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@napi-rs/cli@npm:^3.0.0":
-  version: 3.0.4
-  resolution: "@napi-rs/cli@npm:3.0.4"
+"@napi-rs/cli@npm:^3.1.1":
+  version: 3.1.1
+  resolution: "@napi-rs/cli@npm:3.1.1"
   dependencies:
     "@inquirer/prompts": "npm:^7.4.0"
     "@napi-rs/cross-toolchain": "npm:^1.0.0"
@@ -624,9 +624,9 @@ __metadata:
     emnapi:
       optional: true
   bin:
-    napi: ./dist/cli.js
-    napi-raw: ./cli.mjs
-  checksum: 10c0/0473827231926ad6d4ffa11288fd489d1777e3586c435e5824aafe40a5e4379067726458ce8acbc2ac83ea4626fe52a3c16b0561c24cb077d2bae090153a6eb0
+    napi: dist/cli.js
+    napi-raw: cli.mjs
+  checksum: 10c0/c5be57e1bef376dec5fd0b06bc434c84a2857eb2cc069ddd7f84f888b0069c74c30ac5bf6edbb179bb089d33473e1f855565fc92a567a6ed29673f556f31e7c3
   languageName: node
   linkType: hard
 

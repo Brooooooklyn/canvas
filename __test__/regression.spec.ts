@@ -447,3 +447,21 @@ test('shadow-clipping-beyond-canvas-bounds', async (t) => {
 
   await snapshotImage(t, { ctx, canvas }, 'png', process.arch === 'x64' ? 0.015 : 2.7)
 })
+
+test('pass invalid args to setLineDash should not throw', (t) => {
+  const canvas = createCanvas(100, 100)
+  const ctx = canvas.getContext('2d')
+  t.notThrows(() => {
+    ctx.setLineDash([NaN, 10])
+    ctx.setLineDash([
+      // @ts-expect-error
+      {
+        cmd: 'n',
+      },
+      // @ts-expect-error
+      {
+        cmd: 'one',
+      },
+    ])
+  })
+})

@@ -2135,7 +2135,7 @@ impl CanvasRenderingContext2D {
     }
   }
 
-  #[napi]
+  #[napi(return_if_invalid)]
   pub fn set_line_dash(&mut self, dash_list: Vec<f64>) {
     let len = dash_list.len();
     let is_odd = len & 1 != 0;
