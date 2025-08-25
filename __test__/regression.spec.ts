@@ -324,6 +324,41 @@ test('canvas-pattern-1010', async (t) => {
   await snapshotImage(t, { ctx, canvas })
 })
 
+// https://github.com/Brooooooklyn/canvas/issues/1106
+test('canvas-pattern-should-capture-state-at-creation-1106', async (t) => {
+  const width = 200
+  const height = 150
+  
+  const canvas = createCanvas(width, height)
+  const context = canvas.getContext('2d')
+  const tmpCanvas = createCanvas(width, height)
+  const tmpContext = tmpCanvas.getContext('2d')
+  
+  // Create initial red pattern
+  tmpContext.fillStyle = 'red'
+  tmpContext.fillRect(0, 0, width, height)
+  
+  const pattern = tmpContext.createPattern(tmpCanvas, 'no-repeat')
+  
+  // Modify the tmpCanvas after pattern creation
+  tmpCanvas.width = width / 2
+  tmpCanvas.height = height / 2
+  tmpContext.fillStyle = 'blue'
+  tmpContext.fillRect(0, 0, width / 2, height / 2)
+  
+  const pattern2 = tmpContext.createPattern(tmpCanvas, 'no-repeat')
+  
+  // Fill with the first pattern (should still be red, not affected by blue changes)
+  context.fillStyle = pattern!
+  context.fillRect(width / 2, height / 2, width / 2, height / 2)
+  
+  // Fill with the second pattern (should be blue)
+  context.fillStyle = pattern2!
+  context.fillRect(0, 0, width / 2, height / 2)
+  
+  await snapshotImage(t, { ctx: context, canvas })
+})
+
 // https://github.com/Brooooooklyn/canvas/issues/1018
 test('draw-non-string-text', async (t) => {
   GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'iosevka-slab-regular.ttf'))
