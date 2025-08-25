@@ -172,7 +172,7 @@ test('text-align-with-space', async (t) => {
   ctx.moveTo(100, 0)
   ctx.lineTo(100, 512)
   ctx.stroke()
-  ctx.font = '48px sans-serif'
+  ctx.font = '48px sans-serif, PingFang SC'
   ctx.textAlign = 'center'
   ctx.fillText('蒙娜丽莎', 100, 50)
   ctx.fillText('兔 宝 宝', 100, 200)
