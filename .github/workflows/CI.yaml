@@ -228,7 +228,7 @@ jobs:
     name: Build armv7-unknown-linux-gnueabihf
     runs-on: ubuntu-latest
     container:
-      image: debian:bullseye
+      image: debian:trixie
 
     steps:
       - name: Setup tools
