@@ -35,7 +35,7 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'yarn'
 
       - uses: actions/setup-python@v5
@@ -130,7 +130,7 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'yarn'
 
       - uses: actions/setup-python@v5
@@ -174,7 +174,7 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'yarn'
 
       - name: Login to GitHub Container Registry
@@ -214,7 +214,7 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'yarn'
 
       - uses: actions/setup-python@v5
@@ -254,7 +254,7 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'yarn'
 
       - name: Login to GitHub Container Registry
@@ -308,7 +308,7 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Compile skia
         run: node ./scripts/build-skia.js --target=armv7-unknown-linux-gnueabihf
@@ -340,7 +340,7 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'yarn'
 
       - uses: actions/setup-python@v5
@@ -379,7 +379,7 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'yarn'
       - uses: actions/setup-python@v5
         with:
