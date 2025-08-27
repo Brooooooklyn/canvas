@@ -118,18 +118,22 @@ impl CanvasPattern {
         ptr
       }
       Either4::C(canvas) => {
-        // For canvas patterns, use the surface pointer directly as the bitmap pointer.
-        // This avoids creating unnecessary Bitmap wrapper objects that accumulate memory.
-        // The C implementation of get_bitmap just returns the surface pointer anyway.
-        let ptr = canvas.ctx.context.surface.get_bitmap_ptr();
+        // For canvas patterns, capture the bitmap state at pattern creation time
+        // to avoid the pattern being affected by subsequent changes to the source canvas.
+        // This matches the behavior specified in the Canvas API standard.
+        let bitmap = canvas.ctx.context.surface.get_bitmap();
+        let ptr = bitmap.0.bitmap;
+        inner_bitmap = Some(Arc::new(bitmap));
         is_canvas = true;
         ptr
       }
       Either4::D(svg_canvas) => {
-        // For SVG canvas patterns, use the surface pointer directly as the bitmap pointer.
-        // This avoids creating unnecessary Bitmap wrapper objects that accumulate memory.
-        // The C implementation of get_bitmap just returns the surface pointer anyway.
-        let ptr = svg_canvas.ctx.context.surface.get_bitmap_ptr();
+        // For SVG canvas patterns, capture the bitmap state at pattern creation time
+        // to avoid the pattern being affected by subsequent changes to the source canvas.
+        // This matches the behavior specified in the Canvas API standard.
+        let bitmap = svg_canvas.ctx.context.surface.get_bitmap();
+        let ptr = bitmap.0.bitmap;
+        inner_bitmap = Some(Arc::new(bitmap));
         is_canvas = true;
         ptr
       }
