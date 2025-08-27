@@ -101,7 +101,7 @@
     "prettier": "^3.5.3",
     "pretty-bytes": "^7.0.0",
     "semver": "^7.7.2",
-    "skia-canvas": "^2.0.2",
+    "skia-canvas": "^3.0.0",
     "table": "^6.9.0",
     "tinybench": "^4.0.1",
     "typescript": "^5.8.3"
