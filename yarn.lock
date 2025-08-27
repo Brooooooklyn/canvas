@@ -558,7 +558,7 @@ __metadata:
     semver: "npm:^7.7.2"
     skia-canvas: "npm:^3.0.0"
     table: "npm:^6.9.0"
-    tinybench: "npm:^4.0.1"
+    tinybench: "npm:^5.0.0"
     typescript: "npm:^5.8.3"
   languageName: unknown
   linkType: soft
@@ -6022,10 +6022,10 @@ __metadata:
   languageName: node
   linkType: hard
 
-"tinybench@npm:^4.0.1":
-  version: 4.0.1
-  resolution: "tinybench@npm:4.0.1"
-  checksum: 10c0/42ed8abf2eb914cfbff2cede5fa98cca7dcaf135ab5342a3701d2f90ed3d29fc1a2dcc092a91b1dc483d0de1fa69feac3fea64fad2ddef284bba34391bc96405
+"tinybench@npm:^5.0.0":
+  version: 5.0.1
+  resolution: "tinybench@npm:5.0.1"
+  checksum: 10c0/727be52f4f50f2486548e0564f43669de2201282aba22c8ba3de3dc8a2c169f976e899f54d096f8c7fb0522e5a55d956549ba4ccd9223177ce2879e6228d2529
   languageName: node
   linkType: hard
 
