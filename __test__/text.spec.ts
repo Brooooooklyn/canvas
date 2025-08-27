@@ -1,8 +1,8 @@
-import { join } from 'path'
+import { join } from 'node:path'
 
 import ava, { TestFn } from 'ava'
 
-import { GlobalFonts, createCanvas, Canvas, SKRSContext2D } from '../index'
+import { GlobalFonts, createCanvas, Canvas, SKRSContext2D, type CanvasTextAlign } from '../index'
 import { snapshotImage } from './image-snapshot'
 
 const test = ava as TestFn<{
@@ -172,9 +172,9 @@ test('text-align-with-space', async (t) => {
   ctx.moveTo(100, 0)
   ctx.lineTo(100, 512)
   ctx.stroke()
-  ctx.font = '48px sans-serif, PingFang HK'
+  ctx.font = '38px Iosevka Slab'
   ctx.textAlign = 'center'
-  ctx.fillText('蒙娜丽莎', 100, 50)
-  ctx.fillText('兔 宝 宝', 100, 200)
+  ctx.fillText('Mona Lisa', 100, 50)
+  ctx.fillText('A B C', 100, 200)
   await snapshotImage(t)
 })
