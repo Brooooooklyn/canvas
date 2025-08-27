@@ -18,7 +18,7 @@ jobs:
     outputs:
       llvm-version: ${{ steps.setup-llvm-version.outputs.llvm-version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Setup
         id: setup-llvm-version
         run: |
@@ -35,7 +35,7 @@ jobs:
           - { arch: x86_64, runs-on: ubuntu-latest }
           - { arch: aarch64, runs-on: ubuntu-24.04-arm }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Build in docker
         uses: addnab/docker-run-action@v3
         with:
@@ -60,7 +60,7 @@ jobs:
       - build-musl
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Download x86_64
         uses: actions/download-artifact@v5
         with:
