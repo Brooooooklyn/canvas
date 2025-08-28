@@ -123,7 +123,7 @@ fn main() {
         .static_crt(true);
     }
     "linux" => {
-      if compile_target_arch != "arm" && compile_target_env != "musl" {
+      if compile_target_env != "musl" {
         println!("cargo:rustc-cdylib-link-arg=-Wl,--allow-multiple-definition");
       }
       match compile_target_env.as_str() {
