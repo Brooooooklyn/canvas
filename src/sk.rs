@@ -230,10 +230,16 @@ pub mod ffi {
   #[allow(clippy::duplicated_attributes)]
   // https://github.com/rust-lang/rust/issues/96192
   #[cfg_attr(
-    not(target_os = "windows"),
-    link(name = "svg", kind = "static", modifiers = "+bundle,+whole-archive",)
+    any(
+      target_os = "windows",
+      not(all(target_os = "linux", target_env = "gnu"))
+    ),
+    link(name = "svg", kind = "static")
   )]
-  #[cfg_attr(target_os = "windows", link(name = "svg", kind = "static"))]
+  #[cfg_attr(
+    all(target_os = "linux", target_env = "gnu"),
+    link(name = "svg", kind = "static", modifiers = "+bundle,+whole-archive")
+  )]
   #[cfg_attr(
     not(target_os = "windows"),
     link(
@@ -262,10 +268,16 @@ pub mod ffi {
   )]
   #[cfg_attr(target_os = "windows", link(name = "skunicode_icu", kind = "static"))]
   #[cfg_attr(
-    not(target_os = "windows"),
+    any(
+      target_os = "windows",
+      not(all(target_os = "linux", target_env = "gnu"))
+    ),
+    link(name = "skia", kind = "static")
+  )]
+  #[cfg_attr(
+    all(target_os = "linux", target_env = "gnu"),
     link(name = "skia", kind = "static", modifiers = "+bundle,+whole-archive")
   )]
-  #[cfg_attr(target_os = "windows", link(name = "skia", kind = "static"))]
   #[cfg_attr(
     not(target_os = "windows"),
     link(name = "skiac", kind = "static", modifiers = "+bundle,+whole-archive")
