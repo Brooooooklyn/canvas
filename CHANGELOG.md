@@ -1,3 +1,17 @@
+## [0.1.78](https://github.com/Brooooooklyn/canvas/compare/v0.1.77...v0.1.78) (2025-08-28)
+
+
+### Bug Fixes
+
+* canvas pattern live reference issue causing incorrect rendering ([#1107](https://github.com/Brooooooklyn/canvas/issues/1107)) ([255b16e](https://github.com/Brooooooklyn/canvas/commit/255b16e9bc65d2c039b85ad125fa5954548dce68))
+
+
+### Features
+
+* chrome m140 ([#1110](https://github.com/Brooooooklyn/canvas/issues/1110)) ([ec4152c](https://github.com/Brooooooklyn/canvas/commit/ec4152ccffa637fe0c1173b0d190c908c0ebd26d))
+
+
+
 ## [0.1.77](https://github.com/Brooooooklyn/canvas/compare/v0.1.76...v0.1.77) (2025-08-08)
 
 
