@@ -179,7 +179,7 @@ jobs:
         run: |
           docker pull ghcr.io/brooooooklyn/canvas/musl-builder:lts
           docker tag ghcr.io/brooooooklyn/canvas/musl-builder:lts builder
-          docker run --rm -v $(pwd):/canvas -w /canvas builder sh -c "apk add libc++-dev libc++-static && rm /usr/lib/libc++.so /usr/lib/libc++.so.1 /usr/lib/libc++.so.1.0 /usr/lib/libc++abi.so /usr/lib/libc++abi.so.1 /usr/lib/libc++abi.so.1.0 && node ./scripts/build-skia.js"
+          docker run --rm -v $(pwd):/canvas -w /canvas builder sh -c "apk add gn libc++-dev libc++-static && rm /usr/lib/libc++.so /usr/lib/libc++.so.1 /usr/lib/libc++.so.1.0 /usr/lib/libc++abi.so /usr/lib/libc++abi.so.1 /usr/lib/libc++abi.so.1.0 && node ./scripts/build-skia.js"
         env:
           PYTHONHTTPSVERIFY: 0
 
@@ -266,7 +266,7 @@ jobs:
         run: |
           docker pull ghcr.io/brooooooklyn/canvas/musl-builder:lts
           docker tag ghcr.io/brooooooklyn/canvas/musl-builder:lts builder
-          docker run --rm -v $(pwd):/canvas -w /canvas builder sh -c "cp -r /canvas/aarch64-linux-musl-cross/llvm/include/c++ /aarch64-linux-musl-cross/include && cp /canvas/aarch64-linux-musl-cross/llvm/lib/* /aarch64-linux-musl-cross/lib && node ./scripts/build-skia.js --target=aarch64-unknown-linux-musl"
+          docker run --rm -v $(pwd):/canvas -w /canvas builder sh -c "cp -r /canvas/aarch64-linux-musl-cross/llvm/include/c++ /aarch64-linux-musl-cross/include && cp /canvas/aarch64-linux-musl-cross/llvm/lib/* /aarch64-linux-musl-cross/lib && apk add gn && node ./scripts/build-skia.js --target=aarch64-unknown-linux-musl"
         env:
           PYTHONHTTPSVERIFY: 0
 
@@ -303,6 +303,8 @@ jobs:
 
       - name: Compile skia
         run: node ./scripts/build-skia.js --target=armv7-unknown-linux-gnueabihf
+        env:
+          PYTHONHTTPSVERIFY: 0
 
       - name: Install dependencies
         run: |

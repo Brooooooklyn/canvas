@@ -21,6 +21,7 @@ RUN apk add --no-cache \
   tar \
   xz \
   ninja && \
+  gn && \
   apk add --no-cache --repository http://dl-cdn.alpinelinux.org/alpine/edge/testing gn perl nasm aom-dev meson && \
   ln -sf /usr/bin/python3 /usr/bin/python
 
