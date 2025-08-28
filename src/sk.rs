@@ -272,11 +272,11 @@ pub mod ffi {
       target_os = "windows",
       not(all(target_os = "linux", target_env = "gnu"))
     ),
-    link(name = "svg", kind = "static")
+    link(name = "skia", kind = "static")
   )]
   #[cfg_attr(
     all(target_os = "linux", target_env = "gnu"),
-    link(name = "svg", kind = "static", modifiers = "+bundle,+whole-archive")
+    link(name = "skia", kind = "static", modifiers = "+bundle,+whole-archive")
   )]
   #[cfg_attr(
     not(target_os = "windows"),
