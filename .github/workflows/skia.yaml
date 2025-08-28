@@ -176,12 +176,14 @@ jobs:
           password: ${{ secrets.GH_TOKEN }}
 
       - name: Compile skia
-        run: |
-          docker pull ghcr.io/brooooooklyn/canvas/musl-builder:lts
-          docker tag ghcr.io/brooooooklyn/canvas/musl-builder:lts builder
-          docker run --rm -v $(pwd):/canvas -w /canvas builder sh -c "apk add gn libc++-dev libc++-static && rm /usr/lib/libc++.so /usr/lib/libc++.so.1 /usr/lib/libc++.so.1.0 /usr/lib/libc++abi.so /usr/lib/libc++abi.so.1 /usr/lib/libc++abi.so.1.0 && node ./scripts/build-skia.js"
-        env:
-          PYTHONHTTPSVERIFY: 0
+        uses: addnab/docker-run-action@v3
+        with:
+          image: ghcr.io/brooooooklyn/canvas/musl-builder:lts
+          options: '-v ${{ github.workspace }}:/canvas -w /canvas -e GN_EXE=gn -e PYTHONHTTPSVERIFY=0'
+          run: |
+            apk add gn libc++-dev libc++-static
+            rm /usr/lib/libc++.so /usr/lib/libc++.so.1 /usr/lib/libc++.so.1.0 /usr/lib/libc++abi.so /usr/lib/libc++abi.so.1 /usr/lib/libc++abi.so.1.0
+            node ./scripts/build-skia.js
 
       - name: Install dependencies
         run: yarn install --immutable --mode=skip-build
@@ -263,12 +265,15 @@ jobs:
           docker run --platform=linux/arm64 --rm -v $(pwd)/aarch64-linux-musl-cross:/aarch64-linux-musl-cross -w /canvas node:18-alpine sh -c "apk add libc++-dev libc++-static && cp -r /usr/include/c++ /aarch64-linux-musl-cross/llvm/include && cp /usr/lib/libc++.a /aarch64-linux-musl-cross/llvm/lib/libc++.a && cp /usr/lib/libc++abi.a /aarch64-linux-musl-cross/llvm/lib/libc++abi.a"
 
       - name: Compile skia
-        run: |
-          docker pull ghcr.io/brooooooklyn/canvas/musl-builder:lts
-          docker tag ghcr.io/brooooooklyn/canvas/musl-builder:lts builder
-          docker run --rm -v $(pwd):/canvas -w /canvas builder sh -c "cp -r /canvas/aarch64-linux-musl-cross/llvm/include/c++ /aarch64-linux-musl-cross/include && cp /canvas/aarch64-linux-musl-cross/llvm/lib/* /aarch64-linux-musl-cross/lib && apk add gn && node ./scripts/build-skia.js --target=aarch64-unknown-linux-musl"
-        env:
-          PYTHONHTTPSVERIFY: 0
+        uses: addnab/docker-run-action@v3
+        with:
+          image: ghcr.io/brooooooklyn/canvas/musl-builder:lts
+          options: '-v ${{ github.workspace }}:/canvas -w /canvas -e GN_EXE=gn -e PYTHONHTTPSVERIFY=0'
+          run: |
+            cp -r /canvas/aarch64-linux-musl-cross/llvm/include/c++ /aarch64-linux-musl-cross/include
+            cp /canvas/aarch64-linux-musl-cross/llvm/lib/* /aarch64-linux-musl-cross/lib
+            apk add gn
+            node ./scripts/build-skia.js --target=aarch64-unknown-linux-musl
 
       - name: Install dependencies
         run: yarn install --immutable --mode=skip-build
