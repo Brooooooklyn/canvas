@@ -43,18 +43,6 @@ fn main() {
   build.cpp(true).file("skia-c/skia_c.cpp");
 
   match compile_target.as_str() {
-    "aarch64-unknown-linux-musl" => {
-      link_libcxx(&mut build);
-      println!("cargo:rustc-link-lib=static=c++abi");
-      build
-        .include("/aarch64-linux-musl-cross/aarch64-linux-musl/include")
-        .include("/aarch64-linux-musl-cross/include/c++/v1");
-    }
-    "x86_64-unknown-linux-musl" => {
-      link_libcxx(&mut build);
-      println!("cargo:rustc-link-lib=static=c++abi");
-      build.include("/usr/include").include("/usr/include/c++/v1");
-    }
     "aarch64-linux-android" => {
       let nkd_home = env::var("ANDROID_NDK_LATEST_HOME").unwrap();
       let host = if cfg!(target_os = "windows") {
@@ -135,11 +123,11 @@ fn main() {
         .static_crt(true);
     }
     "linux" => {
-      if compile_target_arch != "arm" {
+      if compile_target_arch != "arm" && compile_target_env != "musl" {
         println!("cargo:rustc-cdylib-link-arg=-Wl,--allow-multiple-definition");
       }
-      if compile_target_env == "gnu" {
-        match compile_target_arch.as_str() {
+      match compile_target_env.as_str() {
+        "gnu" => match compile_target_arch.as_str() {
           "aarch64" => {
             link_libcxx(&mut build);
             build
@@ -181,7 +169,13 @@ fn main() {
             println!("cargo:rustc-link-search=/usr/lib/gcc-cross/arm-linux-gnueabihf/9");
           }
           _ => {}
+        },
+        "musl" => {
+          build.flag_if_supported("-static");
+          println!("cargo:rustc-link-lib=static=c++");
+          println!("cargo:rustc-link-lib=static=c++abi");
         }
+        _ => {}
       }
     }
     "macos" => {

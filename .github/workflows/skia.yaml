@@ -168,23 +168,18 @@ jobs:
           node-version: 22
           cache: 'yarn'
 
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
+      - uses: mlugg/setup-zig@v2
         with:
-          registry: ghcr.io
-          username: ${{ secrets.GH_CONTAINER_UNAME }}
-          password: ${{ secrets.GH_TOKEN }}
+          version: 0.15.1
+      - name: Install cargo-zigbuild
+        uses: taiki-e/install-action@v2
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          tool: cargo-zigbuild
 
       - name: Compile skia
-        uses: addnab/docker-run-action@v3
-        with:
-          image: ghcr.io/brooooooklyn/canvas/musl-builder:lts
-          options: '-v ${{ github.workspace }}:/canvas -w /canvas -e PYTHONHTTPSVERIFY=0'
-          run: |
-            apk add gn libc++-dev libc++-static
-            rm /usr/lib/libc++.so /usr/lib/libc++.so.1 /usr/lib/libc++.so.1.0 /usr/lib/libc++abi.so /usr/lib/libc++abi.so.1 /usr/lib/libc++abi.so.1.0
-            ln -sf $(which gn) /canvas/skia/bin/gn
-            node ./scripts/build-skia.js
+        run: node ./scripts/build-skia.js --target=x86_64-unknown-linux-musl
 
       - name: Install dependencies
         run: yarn install --immutable --mode=skip-build
@@ -251,31 +246,18 @@ jobs:
           node-version: 22
           cache: 'yarn'
 
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
+      - uses: mlugg/setup-zig@v2
         with:
-          registry: ghcr.io
-          username: ${{ secrets.GH_CONTAINER_UNAME }}
-          password: ${{ secrets.GH_TOKEN }}
-
-      - name: Install libc++-dev-aarch64
-        run: |
-          mkdir -p aarch64-linux-musl-cross/llvm/include
-          mkdir -p aarch64-linux-musl-cross/llvm/lib
-          docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
-          docker run --platform=linux/arm64 --rm -v $(pwd)/aarch64-linux-musl-cross:/aarch64-linux-musl-cross -w /canvas node:18-alpine sh -c "apk add libc++-dev libc++-static && cp -r /usr/include/c++ /aarch64-linux-musl-cross/llvm/include && cp /usr/lib/libc++.a /aarch64-linux-musl-cross/llvm/lib/libc++.a && cp /usr/lib/libc++abi.a /aarch64-linux-musl-cross/llvm/lib/libc++abi.a"
+          version: 0.15.1
+      - name: Install cargo-zigbuild
+        uses: taiki-e/install-action@v2
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          tool: cargo-zigbuild
 
       - name: Compile skia
-        uses: addnab/docker-run-action@v3
-        with:
-          image: ghcr.io/brooooooklyn/canvas/musl-builder:lts
-          options: '-v ${{ github.workspace }}:/canvas -w /canvas -e PYTHONHTTPSVERIFY=0'
-          run: |
-            cp -r /canvas/aarch64-linux-musl-cross/llvm/include/c++ /aarch64-linux-musl-cross/include
-            cp /canvas/aarch64-linux-musl-cross/llvm/lib/* /aarch64-linux-musl-cross/lib
-            apk add gn
-            ln -sf $(which gn) /canvas/skia/bin/gn
-            node ./scripts/build-skia.js --target=aarch64-unknown-linux-musl
+        run: node ./scripts/build-skia.js --target=aarch64-unknown-linux-musl
 
       - name: Install dependencies
         run: yarn install --immutable --mode=skip-build

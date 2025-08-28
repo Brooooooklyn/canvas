@@ -100,16 +100,7 @@ jobs:
           - host: ubuntu-latest
             downloadTarget: 'x86_64-unknown-linux-musl'
             target: 'x86_64-unknown-linux-musl'
-            docker: ghcr.io/brooooooklyn/canvas/musl-builder:lts
-            build: >-
-              set -e &&
-              apk add libc++-dev libc++-static &&
-              cp /usr/lib/gcc/x86_64-alpine-linux-musl/14.2.0/*.o /usr/lib/ &&
-              cp /usr/lib/gcc/x86_64-alpine-linux-musl/14.2.0/libgcc.a /usr/lib/ &&
-              cp /usr/lib/gcc/x86_64-alpine-linux-musl/14.2.0/libgcc_eh.a /usr/lib/ &&
-              wget "https://github.com/Brooooooklyn/canvas/releases/download/libcxxabi-$(cat llvm-version)/libc++abi-x86_64.a" &&
-              mv libc++abi-x86_64.a /usr/lib/libc++abi.a &&
-              CXXFLAGS="-std=c++20 -stdlib=libc++ -static -fPIC -fno-cxx-exceptions -fno-exceptions -I/usr/include/c++/v1" CC=clang CXX=clang++ yarn build --target x86_64-unknown-linux-musl
+            build: yarn build --target x86_64-unknown-linux-musl -x
           - host: macos-latest
             downloadTarget: 'aarch64-apple-darwin'
             target: 'aarch64-apple-darwin'
@@ -129,22 +120,7 @@ jobs:
           - host: ubuntu-24.04-arm
             target: 'aarch64-unknown-linux-musl'
             downloadTarget: 'aarch64-unknown-linux-musl'
-            docker: node:18-alpine
-            build: >-
-              set -e &&
-              apk add musl-dev wget rustup bash python3 git build-base cmake perl clang llvm libc++-dev libc++-static llvm-libunwind-static tar xz ninja &&
-              apk add --no-cache --repository http://dl-cdn.alpinelinux.org/alpine/edge/testing gn perl meson &&
-              wget "https://github.com/Brooooooklyn/canvas/releases/download/libcxxabi-$(cat llvm-version)/libc++abi-aarch64.a" &&
-              mv libc++abi-aarch64.a /usr/lib/libc++abi.a &&
-              cp /usr/lib/gcc/aarch64-alpine-linux-musl/14.2.0/*.o /usr/lib/ &&
-              cp /usr/lib/gcc/aarch64-alpine-linux-musl/14.2.0/libgcc.a /usr/lib/ &&
-              cp /usr/lib/gcc/aarch64-alpine-linux-musl/14.2.0/libgcc_eh.a /usr/lib/ &&
-              export GN_EXE=gn &&
-              rustup-init -y --default-host aarch64-unknown-linux-musl &&
-              source "$HOME/.cargo/env" &&
-              export CXXFLAGS="-std=c++20 -stdlib=libc++ -static -fPIC -fno-cxx-exceptions -fno-exceptions -I/usr/include/c++/v1" &&
-              export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=aarch64-alpine-linux-musl-gcc &&
-              CC=clang CXX=clang++ yarn build --target aarch64-unknown-linux-musl
+            build: yarn build --target aarch64-unknown-linux-musl -x
           - host: ubuntu-latest
             target: 'aarch64-linux-android'
             downloadTarget: 'aarch64-linux-android'
@@ -186,6 +162,18 @@ jobs:
         if: matrix.settings.host == 'windows-latest'
         run: echo "C:\\msys64\\mingw64\\bin" >> $GITHUB_PATH
         shell: bash
+
+      - uses: mlugg/setup-zig@v2
+        if: ${{ contains(matrix.settings.target, 'musl') }}
+        with:
+          version: 0.15.1
+      - name: Install cargo-zigbuild
+        uses: taiki-e/install-action@v2
+        if: ${{ contains(matrix.settings.target, 'musl') }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          tool: cargo-zigbuild
 
       - name: Setup nasm
         uses: ilammy/setup-nasm@v1

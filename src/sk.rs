@@ -229,11 +229,7 @@ pub mod ffi {
 
   #[allow(clippy::duplicated_attributes)]
   // https://github.com/rust-lang/rust/issues/96192
-  #[cfg_attr(
-    not(target_os = "windows"),
-    link(name = "svg", kind = "static", modifiers = "+bundle",)
-  )]
-  #[cfg_attr(target_os = "windows", link(name = "svg", kind = "static"))]
+  #[link(name = "svg", kind = "static")]
   #[cfg_attr(
     not(target_os = "windows"),
     link(
@@ -261,11 +257,7 @@ pub mod ffi {
     )
   )]
   #[cfg_attr(target_os = "windows", link(name = "skunicode_icu", kind = "static"))]
-  #[cfg_attr(
-    not(target_os = "windows"),
-    link(name = "skia", kind = "static", modifiers = "+bundle,+whole-archive")
-  )]
-  #[cfg_attr(target_os = "windows", link(name = "skia", kind = "static"))]
+  #[link(name = "skia", kind = "static")]
   #[cfg_attr(
     not(target_os = "windows"),
     link(name = "skiac", kind = "static", modifiers = "+bundle,+whole-archive")

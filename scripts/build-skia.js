@@ -166,14 +166,32 @@ switch (TARGET_TRIPLE) {
     )
     break
   case 'aarch64-unknown-linux-musl':
+    CC = '"zig cc"'
+    CXX = '"zig c++"'
     ExtraSkiaBuildFlag += ' target_cpu="arm64" target_os="linux"'
-    ExtraCflags = `"--target=aarch64-unknown-linux-musl", "-stdlib=libc++", "-fPIC", "-I/aarch64-linux-musl-cross/include/c++/v1", "-I/aarch64-linux-musl-cross/aarch64-linux-musl/include", "-march=armv8-a"`
-    ExtraCflagsCC += `, "--target=aarch64-unknown-linux-musl", "-stdlib=libc++", "-fPIC", "-I/aarch64-linux-musl-cross/include/c++/v1", "-I/aarch64-linux-musl-cross/aarch64-linux-musl/include", "-march=armv8-a"`
-    ExtraLdFlags = `"--target=aarch64-unknown-linux-musl", "-L/aarch64-linux-musl-cross/usr/aarch64-linux-musl/lib", "-L/aarch64-linux-musl-cross/lib"`
-    ExtraAsmFlags = '"--target=aarch64-unknown-linux-musl", "-march=armv8-a"'
+    ExtraCflags = `"--target=aarch64-linux-musl", "-fPIC", "-march=cortex_a78"`
+    ExtraCflagsCC += `, "--target=aarch64-linux-musl", "-static", "-fPIC", "-march=cortex_a78"`
+    ExtraLdFlags = `"--target=aarch64-linux-musl"`
+    ExtraAsmFlags = '"--target=aarch64-linux-musl", "-march=cortex_a78"'
     GN_ARGS.push(
       `extra_ldflags=[${ExtraLdFlags}]`,
-      `ar="aarch64-linux-musl-ar"`,
+      `ar="zig ar"`,
+      `extra_asmflags=[${ExtraAsmFlags}]`,
+      `extra_cflags=[${ExtraCflags}]`,
+      `extra_cflags_c=[${ExtraCflags}]`,
+    )
+    break
+  case 'x86_64-unknown-linux-musl':
+    CC = '"zig cc"'
+    CXX = '"zig c++"'
+    ExtraSkiaBuildFlag += ' target_cpu="x64" target_os="linux"'
+    ExtraCflags = `"--target=x86_64-linux-musl", "-fPIC"`
+    ExtraCflagsCC += `, "--target=x86_64-linux-musl", "-static", "-fPIC", "-march=sandybridge", "-mevex512"`
+    ExtraLdFlags = `"--target=x86_64-linux-musl"`
+    ExtraAsmFlags = '"--target=x86_64-linux-musl"'
+    GN_ARGS.push(
+      `extra_ldflags=[${ExtraLdFlags}]`,
+      `ar="zig ar"`,
       `extra_asmflags=[${ExtraAsmFlags}]`,
       `extra_cflags=[${ExtraCflags}]`,
       `extra_cflags_c=[${ExtraCflags}]`,
