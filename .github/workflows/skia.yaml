@@ -179,10 +179,11 @@ jobs:
         uses: addnab/docker-run-action@v3
         with:
           image: ghcr.io/brooooooklyn/canvas/musl-builder:lts
-          options: '-v ${{ github.workspace }}:/canvas -w /canvas -e GN_EXE=gn -e PYTHONHTTPSVERIFY=0'
+          options: '-v ${{ github.workspace }}:/canvas -w /canvas -e PYTHONHTTPSVERIFY=0'
           run: |
             apk add gn libc++-dev libc++-static
             rm /usr/lib/libc++.so /usr/lib/libc++.so.1 /usr/lib/libc++.so.1.0 /usr/lib/libc++abi.so /usr/lib/libc++abi.so.1 /usr/lib/libc++abi.so.1.0
+            ln -sf $(which gn) /canvas/skia/bin/gn
             node ./scripts/build-skia.js
 
       - name: Install dependencies
@@ -268,11 +269,12 @@ jobs:
         uses: addnab/docker-run-action@v3
         with:
           image: ghcr.io/brooooooklyn/canvas/musl-builder:lts
-          options: '-v ${{ github.workspace }}:/canvas -w /canvas -e GN_EXE=gn -e PYTHONHTTPSVERIFY=0'
+          options: '-v ${{ github.workspace }}:/canvas -w /canvas -e PYTHONHTTPSVERIFY=0'
           run: |
             cp -r /canvas/aarch64-linux-musl-cross/llvm/include/c++ /aarch64-linux-musl-cross/include
             cp /canvas/aarch64-linux-musl-cross/llvm/lib/* /aarch64-linux-musl-cross/lib
             apk add gn
+            ln -sf $(which gn) /canvas/skia/bin/gn
             node ./scripts/build-skia.js --target=aarch64-unknown-linux-musl
 
       - name: Install dependencies
@@ -306,10 +308,21 @@ jobs:
         with:
           node-version: 22
 
+      - name: Sync deps
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 10
+          max_attempts: 5
+          command: |
+            cd skia
+            python ./tools/git-sync-deps
+        env:
+          PYTHONHTTPSVERIFY: 0
+
       - name: Compile skia
         run: node ./scripts/build-skia.js --target=armv7-unknown-linux-gnueabihf
         env:
-          PYTHONHTTPSVERIFY: 0
+          SKIP_SYNC_SK_DEPS: 0
 
       - name: Install dependencies
         run: |
