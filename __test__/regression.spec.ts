@@ -200,6 +200,34 @@ test('DOMMatrix::transformPoint', (t) => {
   t.deepEqual(new DOMMatrix().transformPoint({ x: 1, y: 2 }), new DOMPoint(1, 2))
 })
 
+// https://github.com/Brooooooklyn/canvas/issues/1112
+test('DOMMatrix::invertSelf should return self for non-invertible matrices', (t) => {
+  // Test invertible matrix - should modify this and return this
+  const invertibleMatrix = new DOMMatrix([2, 0, 0, 2, 10, 10])
+  const originalInvertible = invertibleMatrix
+  const result1 = invertibleMatrix.invertSelf()
+
+  t.is(result1, originalInvertible, 'invertSelf should return the same object for invertible matrix')
+  t.is(invertibleMatrix.a, 0.5, 'Matrix should be modified in place for invertible matrix')
+  t.is(invertibleMatrix.e, -5, 'Matrix translation should be inverted')
+
+  // Test non-invertible matrix - should set to NaN and return this (not undefined)
+  const nonInvertibleMatrix = new DOMMatrix([0, 0, 0, 0, 100, 200])
+  const originalNonInvertible = nonInvertibleMatrix
+  const result2 = nonInvertibleMatrix.invertSelf()
+
+  t.is(result2, originalNonInvertible, 'invertSelf should return the same object for non-invertible matrix')
+  t.not(result2, undefined, 'invertSelf should not return undefined for non-invertible matrix')
+  t.true(Number.isNaN(nonInvertibleMatrix.a), 'Non-invertible matrix elements should be NaN')
+  t.false(nonInvertibleMatrix.is2D, 'Non-invertible matrix should have is2D set to false')
+
+  // Test destructuring (what was failing in pdf.js)
+  t.notThrows(() => {
+    const { a } = result2
+    t.true(Number.isNaN(a), 'Destructured values should be NaN')
+  }, 'Should be able to destructure result of invertSelf on non-invertible matrix')
+})
+
 test('isPointInPath with translate', (t) => {
   const canvas = createCanvas(1200, 700)
   const ctx = canvas.getContext('2d')
@@ -328,34 +356,34 @@ test('canvas-pattern-1010', async (t) => {
 test('canvas-pattern-should-capture-state-at-creation-1106', async (t) => {
   const width = 200
   const height = 150
-  
+
   const canvas = createCanvas(width, height)
   const context = canvas.getContext('2d')
   const tmpCanvas = createCanvas(width, height)
   const tmpContext = tmpCanvas.getContext('2d')
-  
+
   // Create initial red pattern
   tmpContext.fillStyle = 'red'
   tmpContext.fillRect(0, 0, width, height)
-  
+
   const pattern = tmpContext.createPattern(tmpCanvas, 'no-repeat')
-  
+
   // Modify the tmpCanvas after pattern creation
   tmpCanvas.width = width / 2
   tmpCanvas.height = height / 2
   tmpContext.fillStyle = 'blue'
   tmpContext.fillRect(0, 0, width / 2, height / 2)
-  
+
   const pattern2 = tmpContext.createPattern(tmpCanvas, 'no-repeat')
-  
+
   // Fill with the first pattern (should still be red, not affected by blue changes)
   context.fillStyle = pattern!
   context.fillRect(width / 2, height / 2, width / 2, height / 2)
-  
+
   // Fill with the second pattern (should be blue)
   context.fillStyle = pattern2!
   context.fillRect(0, 0, width / 2, height / 2)
-  
+
   await snapshotImage(t, { ctx: context, canvas })
 })
 
