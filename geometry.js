@@ -729,7 +729,7 @@ class DOMMatrix {
   }
 
   inverse() {
-    return newInstance(this[VALUES]).invertSelf()
+    return newInstance(this[VALUES].slice()).invertSelf()
   }
 
   invertSelf() {
