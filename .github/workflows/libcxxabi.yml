@@ -44,7 +44,7 @@ jobs:
           run: |
             apk add clang llvm wget unzip cmake ninja xz tar musl-dev python3
             node scripts/build-c++abi.mjs
-      - uses: actions/attest-build-provenance@v2
+      - uses: actions/attest-build-provenance@v3
         with:
           subject-path: |
             libc++abi.a
