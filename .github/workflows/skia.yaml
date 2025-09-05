@@ -38,7 +38,7 @@ jobs:
           node-version: 22
           cache: 'yarn'
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.x'
           architecture: 'x64'
@@ -124,7 +124,7 @@ jobs:
           node-version: 22
           cache: 'yarn'
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.x'
           architecture: 'x64'
@@ -206,7 +206,7 @@ jobs:
           node-version: 22
           cache: 'yarn'
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.x'
           architecture: 'x64'
@@ -336,7 +336,7 @@ jobs:
           node-version: 22
           cache: 'yarn'
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.x'
           architecture: 'x64'
@@ -374,7 +374,7 @@ jobs:
         with:
           node-version: 22
           cache: 'yarn'
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.x'
           architecture: 'x64'
