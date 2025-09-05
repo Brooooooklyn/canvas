@@ -30,7 +30,7 @@ jobs:
           submodules: true
 
       - name: Setup node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: 'yarn'
@@ -153,7 +153,7 @@ jobs:
           submodules: true
 
       - name: Setup node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: 'yarn'
@@ -240,7 +240,7 @@ jobs:
           cmake-version: '3.x'
 
       - name: Setup node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
 
@@ -303,7 +303,7 @@ jobs:
           out-file-path: __test__/fonts/
 
       - name: Setup node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         if: startsWith(matrix.settings.target, 'x86_64')
         with:
           node-version: ${{ matrix.node }}
@@ -311,7 +311,7 @@ jobs:
           architecture: 'x64'
 
       - name: Setup node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         if: startsWith(matrix.settings.target, 'aarch64')
         with:
           node-version: ${{ matrix.node }}
@@ -364,7 +364,7 @@ jobs:
           out-file-path: __test__/fonts/
 
       - name: Setup node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: ${{ matrix.node }}
           cache: 'yarn'
@@ -415,7 +415,7 @@ jobs:
           out-file-path: __test__/fonts/
 
       - name: Setup node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: ${{ matrix.node }}
           cache: 'yarn'
@@ -640,7 +640,7 @@ jobs:
           submodules: true
 
       - name: Setup node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: 'yarn'
@@ -684,7 +684,7 @@ jobs:
           submodules: true
 
       - name: Setup node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: 'yarn'
