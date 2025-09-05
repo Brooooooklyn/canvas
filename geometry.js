@@ -729,7 +729,7 @@ class DOMMatrix {
   }
 
   inverse() {
-    return newInstance(this[VALUES]).invertSelf()
+    return newInstance(this[VALUES].slice()).invertSelf()
   }
 
   invertSelf() {
@@ -738,16 +738,21 @@ class DOMMatrix {
 
       // Invertable
       if (det !== 0) {
-        const result = new DOMMatrix()
+        const newA = this[VALUES][D] / det
+        const newB = -this[VALUES][B] / det
+        const newC = -this[VALUES][C] / det
+        const newD = this[VALUES][A] / det
+        const newE = (this[VALUES][C] * this[VALUES][F] - this[VALUES][D] * this[VALUES][E]) / det
+        const newF = (this[VALUES][B] * this[VALUES][E] - this[VALUES][A] * this[VALUES][F]) / det
 
-        result.a = this[VALUES][D] / det
-        result.b = -this[VALUES][B] / det
-        result.c = -this[VALUES][C] / det
-        result.d = this[VALUES][A] / det
-        result.e = (this[VALUES][C] * this[VALUES][F] - this[VALUES][D] * this[VALUES][E]) / det
-        result.f = (this[VALUES][B] * this[VALUES][E] - this[VALUES][A] * this[VALUES][F]) / det
+        this.a = newA
+        this.b = newB
+        this.c = newC
+        this.d = newD
+        this.e = newE
+        this.f = newF
 
-        return result
+        return this
       }
 
       // Not invertable
@@ -755,6 +760,8 @@ class DOMMatrix {
         this[IS_2D] = false
 
         this[VALUES] = [NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN]
+
+        return this
       }
     } else {
       throw new Error('3D matrix inversion is not implemented.')
