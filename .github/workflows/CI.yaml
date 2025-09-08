@@ -30,7 +30,7 @@ jobs:
           submodules: true
 
       - name: Setup node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: 'yarn'
@@ -153,7 +153,7 @@ jobs:
           submodules: true
 
       - name: Setup node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: 'yarn'
@@ -230,6 +230,9 @@ jobs:
             apt-get install -y clang-19
             ln -s /usr/bin/clang-19 /usr/bin/clang
             ln -s /usr/bin/clang++-19 /usr/bin/clang++
+            curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+            apt-get install -y nodejs
+            npm install -g yarn corepack
       - uses: actions/checkout@v5
         with:
           submodules: true
@@ -240,7 +243,7 @@ jobs:
           cmake-version: '3.x'
 
       - name: Setup node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
 
@@ -303,7 +306,7 @@ jobs:
           out-file-path: __test__/fonts/
 
       - name: Setup node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         if: startsWith(matrix.settings.target, 'x86_64')
         with:
           node-version: ${{ matrix.node }}
@@ -311,7 +314,7 @@ jobs:
           architecture: 'x64'
 
       - name: Setup node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         if: startsWith(matrix.settings.target, 'aarch64')
         with:
           node-version: ${{ matrix.node }}
@@ -364,7 +367,7 @@ jobs:
           out-file-path: __test__/fonts/
 
       - name: Setup node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: ${{ matrix.node }}
           cache: 'yarn'
@@ -415,7 +418,7 @@ jobs:
           out-file-path: __test__/fonts/
 
       - name: Setup node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: ${{ matrix.node }}
           cache: 'yarn'
@@ -640,7 +643,7 @@ jobs:
           submodules: true
 
       - name: Setup node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: 'yarn'
@@ -684,7 +687,7 @@ jobs:
           submodules: true
 
       - name: Setup node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: 'yarn'
