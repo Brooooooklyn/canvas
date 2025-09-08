@@ -10,7 +10,7 @@ use crate::ctx::TransformObject;
 use crate::error::SkError;
 use crate::gradient::Gradient;
 use crate::image::{Image, ImageData};
-use crate::sk::{AlphaType, Bitmap, ColorType, ImagePattern, TileMode, Transform};
+use crate::sk::{AlphaType, Bitmap, ColorType, ImagePattern, Surface, TileMode, Transform};
 use crate::{CanvasElement, SVGCanvas};
 
 #[derive(Debug)]
@@ -85,6 +85,9 @@ pub struct CanvasPattern {
   #[allow(unused)]
   // hold it for Drop
   bitmap: Option<Arc<Bitmap>>,
+  #[allow(unused)]
+  // hold cloned surface for Drop
+  surface: Option<Surface>,
 }
 
 #[napi]
@@ -95,6 +98,7 @@ impl CanvasPattern {
     repetition: Option<String>,
   ) -> Result<Self> {
     let mut inner_bitmap = None;
+    let mut inner_surface = None;
     let mut is_canvas = false;
     let bitmap = match input {
       Either4::A(image) => image
@@ -118,23 +122,45 @@ impl CanvasPattern {
         ptr
       }
       Either4::C(canvas) => {
-        // For canvas patterns, capture the bitmap state at pattern creation time
-        // to avoid the pattern being affected by subsequent changes to the source canvas.
-        // This matches the behavior specified in the Canvas API standard.
-        let bitmap = canvas.ctx.context.surface.get_bitmap();
-        let ptr = bitmap.0.bitmap;
-        inner_bitmap = Some(Arc::new(bitmap));
-        is_canvas = true;
+        // Clone the surface to capture its current state and prevent segfaults
+        // when the original canvas is resized or destroyed
+        let cloned_surface = canvas
+          .ctx
+          .context
+          .surface
+          .try_clone(canvas.ctx.context.color_space)
+          .ok_or_else(|| {
+            Error::new(
+              Status::GenericFailure,
+              "Failed to clone canvas surface".to_owned(),
+            )
+          })?;
+        // Get the bitmap pointer from the cloned surface
+        let ptr = cloned_surface.get_bitmap_ptr();
+        // Store the cloned surface to keep it alive
+        inner_surface = Some(cloned_surface);
+        is_canvas = true; // Keep as true since it's a surface pointer
         ptr
       }
       Either4::D(svg_canvas) => {
-        // For SVG canvas patterns, capture the bitmap state at pattern creation time
-        // to avoid the pattern being affected by subsequent changes to the source canvas.
-        // This matches the behavior specified in the Canvas API standard.
-        let bitmap = svg_canvas.ctx.context.surface.get_bitmap();
-        let ptr = bitmap.0.bitmap;
-        inner_bitmap = Some(Arc::new(bitmap));
-        is_canvas = true;
+        // Clone the surface to capture its current state and prevent segfaults
+        // when the original canvas is resized or destroyed
+        let cloned_surface = svg_canvas
+          .ctx
+          .context
+          .surface
+          .try_clone(svg_canvas.ctx.context.color_space)
+          .ok_or_else(|| {
+            Error::new(
+              Status::GenericFailure,
+              "Failed to clone SVG canvas surface".to_owned(),
+            )
+          })?;
+        // Get the bitmap pointer from the cloned surface
+        let ptr = cloned_surface.get_bitmap_ptr();
+        // Store the cloned surface to keep it alive
+        inner_surface = Some(cloned_surface);
+        is_canvas = true; // Keep as true since it's a surface pointer
         ptr
       }
     };
@@ -163,6 +189,7 @@ impl CanvasPattern {
         shader_cache: OnceLock::new(),
       }),
       bitmap: inner_bitmap,
+      surface: inner_surface,
     })
   }
 
