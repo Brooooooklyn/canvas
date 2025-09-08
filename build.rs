@@ -42,61 +42,58 @@ fn main() {
 
   build.cpp(true).file("skia-c/skia_c.cpp");
 
-  match compile_target.as_str() {
-    "aarch64-linux-android" => {
-      let nkd_home = env::var("ANDROID_NDK_LATEST_HOME").unwrap();
-      let host = if cfg!(target_os = "windows") {
-        "windows"
-      } else if cfg!(target_os = "macos") {
-        "darwin"
-      } else if cfg!(target_os = "linux") {
-        "linux"
-      } else {
-        panic!("Unsupported host OS");
-      };
-      unsafe {
-        env::set_var(
-          "CC",
-          format!(
-            "{nkd_home}/toolchains/llvm/prebuilt/{host}-x86_64/bin/aarch64-linux-android24-clang"
-          )
-          .as_str(),
-        );
-        env::set_var(
-          "CXX",
-          format!(
-            "{nkd_home}/toolchains/llvm/prebuilt/{host}-x86_64/bin/aarch64-linux-android24-clang++"
-          )
-          .as_str(),
-        );
-      }
-      build
-        .include(
-          format!(
-            "{nkd_home}/toolchains/llvm/prebuilt/{host}-x86_64/sysroot/usr/include"
-          )
-          .as_str(),
+  if compile_target.as_str() == "aarch64-linux-android" {
+    let nkd_home = env::var("ANDROID_NDK_LATEST_HOME").unwrap();
+    let host = if cfg!(target_os = "windows") {
+      "windows"
+    } else if cfg!(target_os = "macos") {
+      "darwin"
+    } else if cfg!(target_os = "linux") {
+      "linux"
+    } else {
+      panic!("Unsupported host OS");
+    };
+    unsafe {
+      env::set_var(
+        "CC",
+        format!(
+          "{nkd_home}/toolchains/llvm/prebuilt/{host}-x86_64/bin/aarch64-linux-android24-clang"
         )
-        .include(
-          format!(
-            "{nkd_home}/toolchains/llvm/prebuilt/{host}-x86_64/sysroot/usr/include/c++/v1"
-          )
-          .as_str(),
+        .as_str(),
+      );
+      env::set_var(
+        "CXX",
+        format!(
+          "{nkd_home}/toolchains/llvm/prebuilt/{host}-x86_64/bin/aarch64-linux-android24-clang++"
         )
-        .include(
-          format!(
-            "{nkd_home}/toolchains/llvm/prebuilt/{host}-x86_64/sysroot/usr/include/aarch64-linux-android"
-          )
-          .as_str(),
-        )
-        .archiver(
-          format!(
-            "{nkd_home}/toolchains/llvm/prebuilt/{host}-x86_64/bin/llvm-ar"
-          )
-          .as_str(),
-        );
+        .as_str(),
+      );
     }
-    _ => {}
+    build
+      .include(
+        format!(
+          "{nkd_home}/toolchains/llvm/prebuilt/{host}-x86_64/sysroot/usr/include"
+        )
+        .as_str(),
+      )
+      .include(
+        format!(
+          "{nkd_home}/toolchains/llvm/prebuilt/{host}-x86_64/sysroot/usr/include/c++/v1"
+        )
+        .as_str(),
+      )
+      .include(
+        format!(
+          "{nkd_home}/toolchains/llvm/prebuilt/{host}-x86_64/sysroot/usr/include/aarch64-linux-android"
+        )
+        .as_str(),
+      )
+      .archiver(
+        format!(
+          "{nkd_home}/toolchains/llvm/prebuilt/{host}-x86_64/bin/llvm-ar"
+        )
+        .as_str(),
+      );
   }
 
   if compile_target_os != "windows" {

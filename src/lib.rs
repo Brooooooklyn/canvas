@@ -172,12 +172,12 @@ impl<'c> CanvasElement<'c> {
   }
 
   #[napi]
-  pub fn get_context(
+  pub fn get_context<'env>(
     &mut self,
     this: This,
     context_type: String,
     attrs: Option<CanvasRenderingContext2DAttributes>,
-  ) -> Result<Unknown> {
+  ) -> Result<Unknown<'env>> {
     if context_type != "2d" {
       return Err(Error::new(
         Status::InvalidArg,
@@ -217,24 +217,24 @@ impl<'c> CanvasElement<'c> {
   }
 
   #[napi]
-  pub fn encode_sync(
-    &self,
+  pub fn encode_sync<'env>(
+    &'env self,
     env: Env,
     format: String,
     quality_or_config: Either3<u32, AvifConfig, Unknown>,
-  ) -> Result<BufferSlice> {
+  ) -> Result<BufferSlice<'env>> {
     let data = self.encode_inner(format, quality_or_config)?;
     let output = encode_surface(&data)?;
     output.into_buffer_slice(env)
   }
 
   #[napi]
-  pub fn to_buffer(
-    &self,
+  pub fn to_buffer<'env>(
+    &'env self,
     env: Env,
     mime: String,
     quality_or_config: Either3<u32, AvifConfig, Unknown>,
-  ) -> Result<BufferSlice> {
+  ) -> Result<BufferSlice<'env>> {
     let mime = mime.as_str();
     let context_data = get_data_ref(
       &self.ctx.context.surface.reference(),
@@ -270,7 +270,7 @@ impl<'c> CanvasElement<'c> {
   }
 
   #[napi]
-  pub fn data(&self, env: Env) -> Result<BufferSlice> {
+  pub fn data<'env>(&self, env: Env) -> Result<BufferSlice<'env>> {
     let ctx2d = &self.ctx.context;
 
     let surface_ref = ctx2d.surface.reference();
@@ -375,12 +375,12 @@ impl<'c> CanvasElement<'c> {
   }
 
   #[napi]
-  pub fn encode_stream(
-    &self,
+  pub fn encode_stream<'env>(
+    &'env self,
     env: &Env,
     mime: Option<String>,
     quality: Option<u8>,
-  ) -> Result<ReadableStream<BufferSlice>> {
+  ) -> Result<ReadableStream<'env, BufferSlice<'env>>> {
     let mime = match mime.as_deref() {
       Some("webp") => sk::SkEncodedImageFormat::Webp,
       Some("jpeg") => sk::SkEncodedImageFormat::Jpeg,
@@ -690,12 +690,12 @@ impl<'scope> SVGCanvas<'scope> {
   }
 
   #[napi]
-  pub fn get_context(
-    &mut self,
-    this: This,
+  pub fn get_context<'env>(
+    &'env mut self,
+    this: This<'env>,
     context_type: String,
     attrs: Option<CanvasRenderingContext2DAttributes>,
-  ) -> Result<Unknown> {
+  ) -> Result<Unknown<'env>> {
     if context_type != "2d" {
       return Err(Error::new(
         Status::InvalidArg,
@@ -724,7 +724,7 @@ impl<'scope> SVGCanvas<'scope> {
   }
 
   #[napi]
-  pub fn get_content(&mut self, env: Env) -> Result<BufferSlice> {
+  pub fn get_content<'env>(&'env mut self, env: Env) -> Result<BufferSlice<'env>> {
     let svg_data_stream = self
       .ctx
       .context

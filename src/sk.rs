@@ -1756,7 +1756,7 @@ impl Surface {
     if status { Some(result) } else { None }
   }
 
-  pub fn data(&self) -> Option<SurfaceData> {
+  pub fn data<'env>(&'env self) -> Option<SurfaceData<'env>> {
     unsafe {
       let mut data = ffi::skiac_surface_data {
         ptr: ptr::null_mut(),
@@ -1797,7 +1797,7 @@ impl Surface {
     }
   }
 
-  pub fn data_mut(&mut self) -> Option<SurfaceDataMut> {
+  pub fn data_mut<'env>(&'env mut self) -> Option<SurfaceDataMut<'env>> {
     unsafe {
       let mut data = ffi::skiac_surface_data {
         ptr: ptr::null_mut(),
