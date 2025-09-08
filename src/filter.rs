@@ -52,7 +52,7 @@ pub enum CssFilter {
   Sepia(f32),
 }
 
-fn pixel(input: &str) -> Result<f32, ParseFilterError> {
+fn pixel<'a>(input: &'a str) -> Result<f32, ParseFilterError<'a>> {
   let (input, size) = take_till(|c: char| c.is_alpha())(input)?;
   let (_, unit) = take_till(|c| c == ')')(input)?;
   let size = size.trim().parse::<f32>()?;

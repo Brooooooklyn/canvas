@@ -1230,7 +1230,7 @@ impl CanvasRenderingContext2D {
   }
 
   #[napi(getter)]
-  pub fn get_fill_style(&self, this: This) -> Result<Unknown> {
+  pub fn get_fill_style<'env>(&'env self, this: This<'env>) -> Result<Unknown<'env>> {
     this.get_named_property_unchecked(FILL_STYLE_HIDDEN_NAME)
   }
 
@@ -1315,7 +1315,7 @@ impl CanvasRenderingContext2D {
   }
 
   #[napi(getter)]
-  pub fn get_stroke_style(&self, this: This) -> Option<Unknown> {
+  pub fn get_stroke_style<'env>(&'env self, this: This<'env>) -> Option<Unknown<'env>> {
     this.get(STROKE_STYLE_HIDDEN_NAME).ok().flatten()
   }
 
