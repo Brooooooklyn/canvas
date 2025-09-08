@@ -1,3 +1,13 @@
+## [0.1.79](https://github.com/Brooooooklyn/canvas/compare/v0.1.78...v0.1.79) (2025-09-08)
+
+
+### Bug Fixes
+
+* DOMMatrix.invertSelf() to return self for non-invertible matrices per DOM spec ([#1113](https://github.com/Brooooooklyn/canvas/issues/1113)) ([d280e8a](https://github.com/Brooooooklyn/canvas/commit/d280e8aad20725877ec94fd768f795ff4141831a))
+* prevent segfault when creating patterns from canvases ([#1118](https://github.com/Brooooooklyn/canvas/issues/1118)) ([3d50fca](https://github.com/Brooooooklyn/canvas/commit/3d50fca2e7c85281569d9f63cd82fdf0233ae103)), closes [#1107](https://github.com/Brooooooklyn/canvas/issues/1107) [#1107](https://github.com/Brooooooklyn/canvas/issues/1107) [#1106](https://github.com/Brooooooklyn/canvas/issues/1106)
+
+
+
 ## [0.1.78](https://github.com/Brooooooklyn/canvas/compare/v0.1.77...v0.1.78) (2025-08-28)
 
 
