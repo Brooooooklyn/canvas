@@ -282,6 +282,7 @@ jobs:
           apt-get install -y gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf libatomic1-armhf-cross git build-essential cmake ninja-build wget curl python3
           curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
           apt-get install -y nodejs
+          npm install -g yarn corepack
           ln -s /usr/bin/python3 /usr/bin/python
       - uses: actions/checkout@v5
         with:

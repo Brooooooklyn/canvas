@@ -232,6 +232,7 @@ jobs:
             ln -s /usr/bin/clang++-19 /usr/bin/clang++
             curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
             apt-get install -y nodejs
+            npm install -g yarn corepack
       - uses: actions/checkout@v5
         with:
           submodules: true
