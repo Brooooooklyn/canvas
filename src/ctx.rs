@@ -243,14 +243,7 @@ impl Context {
             self.state.shadow_offset_y,
             self.state.shadow_blur,
             |shadow_canvas, shadow_paint| {
-              shadow_canvas.save();
-              Self::apply_shadow_offset_matrix_to_canvas(
-                shadow_canvas,
-                self.state.shadow_offset_x,
-                self.state.shadow_offset_y,
-              )?;
               shadow_canvas.draw_rect(x, y, w, h, shadow_paint);
-              shadow_canvas.restore();
               Ok(())
             },
           )?;
@@ -349,14 +342,7 @@ impl Context {
             self.state.shadow_offset_y,
             self.state.shadow_blur,
             |shadow_canvas, shadow_paint| {
-              shadow_canvas.save();
-              Self::apply_shadow_offset_matrix_to_canvas(
-                shadow_canvas,
-                self.state.shadow_offset_x,
-                self.state.shadow_offset_y,
-              )?;
               shadow_canvas.draw_rect(x, y, w, h, shadow_paint);
-              shadow_canvas.restore();
               Ok(())
             },
           )?;
@@ -412,14 +398,7 @@ impl Context {
             self.state.shadow_offset_y,
             self.state.shadow_blur,
             |shadow_canvas, shadow_paint| {
-              shadow_canvas.save();
-              Self::apply_shadow_offset_matrix_to_canvas(
-                shadow_canvas,
-                self.state.shadow_offset_x,
-                self.state.shadow_offset_y,
-              )?;
               shadow_canvas.draw_path(p, shadow_paint);
-              shadow_canvas.restore();
               Ok(())
             },
           )?;
@@ -502,14 +481,7 @@ impl Context {
             self.state.shadow_offset_y,
             self.state.shadow_blur,
             |shadow_canvas, shadow_paint| {
-              shadow_canvas.save();
-              Self::apply_shadow_offset_matrix_to_canvas(
-                shadow_canvas,
-                self.state.shadow_offset_x,
-                self.state.shadow_offset_y,
-              )?;
               shadow_canvas.draw_path(p, shadow_paint);
-              shadow_canvas.restore();
               Ok(())
             },
           )?;
@@ -764,8 +736,8 @@ impl Context {
       // If sigma_x and sigma_y are zero, make_drop_shadow_only will return None
       // So we need to handle that case separately
       let shadow_effect = ImageFilter::make_drop_shadow_only(
-        0.0,
-        0.0,
+        state.shadow_offset_x,
+        state.shadow_offset_y,
         sigma_x,
         sigma_y,
         ((a as u32) << 24) | ((r as u32) << 16) | ((g as u32) << 8) | b as u32,
@@ -884,12 +856,6 @@ impl Context {
             state.shadow_offset_y,
             state.shadow_blur,
             |shadow_canvas, shadow_paint| {
-              shadow_canvas.save();
-              Self::apply_shadow_offset_matrix_to_canvas(
-                shadow_canvas,
-                state.shadow_offset_x,
-                state.shadow_offset_y,
-              )?;
               shadow_canvas.draw_text(
                 text,
                 x,
@@ -909,7 +875,6 @@ impl Context {
                 state.word_spacing,
                 shadow_paint,
               )?;
-              shadow_canvas.restore();
               Ok(())
             },
           )?;
@@ -962,17 +927,6 @@ impl Context {
       &fill_paint,
     )?);
     Ok(line_metrics)
-  }
-
-  fn apply_shadow_offset_matrix_to_canvas(
-    canvas: &mut Canvas,
-    shadow_offset_x: f32,
-    shadow_offset_y: f32,
-  ) -> result::Result<(), SkError> {
-    let mut shadow_transform = canvas.get_transform_matrix().clone();
-    shadow_transform.pre_translate(shadow_offset_x, shadow_offset_y);
-    canvas.set_transform(&shadow_transform);
-    Ok(())
   }
 
   // ./skia/modules/canvaskit/color.js
