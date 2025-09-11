@@ -120,12 +120,14 @@ pub struct Image {
   file_content: Option<Vec<u8>>,
   // take ownership of avif image, let it be dropped when image is dropped
   _avif_image_ref: Option<AvifImage>,
+  // Bytes accounted to V8 via adjust_external_memory for this image
+  accounted_bytes: i64,
 }
 
 impl ObjectFinalize for Image {
   fn finalize(self, env: Env) -> Result<()> {
-    if let Some(bitmap) = self.bitmap {
-      env.adjust_external_memory(-(bitmap.0.width as i64) * (bitmap.0.height as i64) * 4)?;
+    if self.accounted_bytes != 0 {
+      env.adjust_external_memory(-self.accounted_bytes)?;
     }
     Ok(())
   }
@@ -152,6 +154,7 @@ impl Image {
       src: None,
       file_content: None,
       _avif_image_ref: None,
+      accounted_bytes: 0,
     })
   }
 
@@ -266,7 +269,7 @@ impl Image {
     Ok(())
   }
 
-  pub(crate) fn regenerate_bitmap_if_need(&mut self) -> Result<()> {
+  pub(crate) fn regenerate_bitmap_if_need(&mut self, env: &Env) -> Result<()> {
     if !self.need_regenerate_bitmap || !self.is_svg || self.src.is_none() {
       return Ok(());
     }
@@ -281,6 +284,15 @@ impl Image {
         self.color_space,
         &font,
       );
+      if let Some(bmp) = &self.bitmap {
+        let new_bytes = (bmp.0.width as i64) * (bmp.0.height as i64) * 4;
+        let delta = new_bytes - self.accounted_bytes;
+        if delta != 0 {
+          env.adjust_external_memory(delta)?;
+          self.accounted_bytes = new_bytes;
+        }
+      }
+      self.need_regenerate_bitmap = false;
       return Ok(());
     }
     if let Some(data) = self.src.as_ref() {
@@ -293,6 +305,15 @@ impl Image {
         self.color_space,
         &font,
       );
+      if let Some(bmp) = &self.bitmap {
+        let new_bytes = (bmp.0.width as i64) * (bmp.0.height as i64) * 4;
+        let delta = new_bytes - self.accounted_bytes;
+        if delta != 0 {
+          env.adjust_external_memory(delta)?;
+          self.accounted_bytes = new_bytes;
+        }
+      }
+      self.need_regenerate_bitmap = false;
     }
     Ok(())
   }
@@ -518,7 +539,12 @@ impl Task for BitmapDecoder {
         self_mut.is_svg = bitmap.is_svg;
         self_mut.bitmap = Some(bitmap.data);
         self_mut._avif_image_ref = bitmap.decoded_image;
-        env.adjust_external_memory((output.width as i64) * (output.height as i64) * 4)?;
+        let new_bytes = (output.width as i64) * (output.height as i64) * 4;
+        let delta = new_bytes - self_mut.accounted_bytes;
+        if delta != 0 {
+          env.adjust_external_memory(delta)?;
+          self_mut.accounted_bytes = new_bytes;
+        }
       }
       DecodeStatus::Empty => {}
       DecodeStatus::InvalidSvg => {
