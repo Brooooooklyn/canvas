@@ -1,6 +1,6 @@
 {
   "name": "@napi-rs/canvas",
-  "version": "0.1.79",
+  "version": "0.1.80",
   "description": "Canvas for Node.js with skia backend",
   "main": "index.js",
   "repository": {

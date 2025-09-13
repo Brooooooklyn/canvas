@@ -1,3 +1,13 @@
+## [0.1.80](https://github.com/Brooooooklyn/canvas/compare/v0.1.79...v0.1.80) (2025-09-13)
+
+
+### Bug Fixes
+
+* external memory usage adjustment mismatch ([#1123](https://github.com/Brooooooklyn/canvas/issues/1123)) ([e0b76b9](https://github.com/Brooooooklyn/canvas/commit/e0b76b95884ea9504a61676a7b9671ab9568a827))
+* shadow is not applied with transform correctly ([#1124](https://github.com/Brooooooklyn/canvas/issues/1124)) ([05d10b1](https://github.com/Brooooooklyn/canvas/commit/05d10b128667bda5a7dcc1653fbf059a95f7cee3))
+
+
+
 ## [0.1.79](https://github.com/Brooooooklyn/canvas/compare/v0.1.78...v0.1.79) (2025-09-08)
 
 
