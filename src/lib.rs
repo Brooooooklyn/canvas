@@ -144,7 +144,7 @@ impl<'c> CanvasElement<'c> {
       &mut self.ctx.context,
       Context::new(width, height, ColorSpace::default())?,
     );
-    env.adjust_external_memory((width as i64 - old_ctx.width as i64) * 4)?;
+    env.adjust_external_memory((width as i64 - old_ctx.width as i64) * (height as i64) * 4)?;
     Ok(())
   }
 
@@ -162,7 +162,7 @@ impl<'c> CanvasElement<'c> {
       &mut self.ctx.context,
       Context::new(width, height, ColorSpace::default())?,
     );
-    env.adjust_external_memory((height as i64 - old_ctx.height as i64) * 4)?;
+    env.adjust_external_memory((height as i64 - old_ctx.height as i64) * (width as i64) * 4)?;
     Ok(())
   }
 

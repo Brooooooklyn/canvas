@@ -1686,6 +1686,7 @@ impl CanvasRenderingContext2D {
   #[napi]
   pub fn draw_image(
     &mut self,
+    env: &Env,
     image: Either3<&mut CanvasElement, &mut SVGCanvas, &mut Image>,
     sx: Option<f64>,
     sy: Option<f64>,
@@ -1703,7 +1704,7 @@ impl CanvasRenderingContext2D {
         if !image.complete {
           return Ok(());
         }
-        image.regenerate_bitmap_if_need()?;
+        image.regenerate_bitmap_if_need(env)?;
         if let Some(bitmap) = &mut image.bitmap {
           BitmapRef::Borrowed(bitmap)
         } else {
