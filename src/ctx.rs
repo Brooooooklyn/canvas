@@ -969,9 +969,21 @@ impl Context {
     shadow_offset_x: f32,
     shadow_offset_y: f32,
   ) -> result::Result<(), SkError> {
-    let mut shadow_transform = canvas.get_transform_matrix().clone();
-    shadow_transform.pre_translate(shadow_offset_x, shadow_offset_y);
-    canvas.set_transform(&shadow_transform);
+    // Following CanvasKit's approach: apply shadow offset in device coordinates
+    // by inverting the current transform, applying the offset, then re-applying the transform
+    let current_transform = canvas.get_transform_matrix().clone();
+
+    // Invert the current transform to get back to device coordinates
+    if let Some(inverted) = current_transform.invert() {
+      canvas.concat(&inverted);
+      // Apply shadow offset in device coordinates
+      canvas.concat(&Matrix::translated(shadow_offset_x, shadow_offset_y));
+      // Re-apply the original transform
+      canvas.concat(&current_transform);
+    } else {
+      // If the transform is not invertible, fall back to simple translation
+      canvas.concat(&Matrix::translated(shadow_offset_x, shadow_offset_y));
+    }
     Ok(())
   }
 
