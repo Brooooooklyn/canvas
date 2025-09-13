@@ -528,3 +528,32 @@ test('pass invalid args to setLineDash should not throw', (t) => {
     ])
   })
 })
+
+// https://github.com/Brooooooklyn/canvas/issues/1121
+test('shadow-offset-with-transform', async (t) => {
+  // Test for issue #1121 - shadow offset should be in device coordinates
+  const canvas = createCanvas(300, 300)
+  const ctx = canvas.getContext('2d')
+
+  // Fill with white background
+  ctx.fillStyle = 'white'
+  ctx.fillRect(0, 0, 300, 300)
+
+  // Apply transform - scale down by 0.5 and translate
+  ctx.transform(0.5, 0, 0, 0.5, 100, 100)
+
+  // Set shadow properties
+  ctx.shadowColor = 'rgba(0, 0, 0, 1)'
+  ctx.shadowBlur = 0
+  ctx.shadowOffsetX = 5
+  ctx.shadowOffsetY = 5
+
+  // Draw green rectangle
+  ctx.fillStyle = 'green'
+  ctx.rect(0, 0, 100, 100)
+  ctx.fill()
+
+  // The shadow should be offset by exactly 5px in both X and Y directions
+  // in device/screen coordinates, regardless of the transform applied
+  await snapshotImage(t, { canvas, ctx }, 'png', 0.3)
+})
