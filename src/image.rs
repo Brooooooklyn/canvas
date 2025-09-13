@@ -286,11 +286,7 @@ impl Image {
       );
       if let Some(bmp) = &self.bitmap {
         let new_bytes = (bmp.0.width as i64) * (bmp.0.height as i64) * 4;
-        let delta = new_bytes - self.accounted_bytes;
-        if delta != 0 {
-          env.adjust_external_memory(delta)?;
-          self.accounted_bytes = new_bytes;
-        }
+        self.adjust_external_memory_if_need(env, new_bytes)?;
       }
       self.need_regenerate_bitmap = false;
       return Ok(());
@@ -307,13 +303,18 @@ impl Image {
       );
       if let Some(bmp) = &self.bitmap {
         let new_bytes = (bmp.0.width as i64) * (bmp.0.height as i64) * 4;
-        let delta = new_bytes - self.accounted_bytes;
-        if delta != 0 {
-          env.adjust_external_memory(delta)?;
-          self.accounted_bytes = new_bytes;
-        }
+        self.adjust_external_memory_if_need(env, new_bytes)?;
       }
       self.need_regenerate_bitmap = false;
+    }
+    Ok(())
+  }
+
+  fn adjust_external_memory_if_need(&mut self, env: &Env, new_bytes: i64) -> Result<()> {
+    let delta = new_bytes - self.accounted_bytes;
+    if delta != 0 {
+      env.adjust_external_memory(delta)?;
+      self.accounted_bytes = new_bytes;
     }
     Ok(())
   }

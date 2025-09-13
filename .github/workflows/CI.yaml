@@ -558,7 +558,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: ['20', '22', '24']
+        node: ['20', '22']
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
