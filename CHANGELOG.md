@@ -1,3 +1,12 @@
+## [0.1.81](https://github.com/Brooooooklyn/canvas/compare/v0.1.80...v0.1.81) (2025-10-26)
+
+
+### Features
+
+* upgrade to chrome/142 ([#1136](https://github.com/Brooooooklyn/canvas/issues/1136)) ([bcee494](https://github.com/Brooooooklyn/canvas/commit/bcee49414d1e8ddb3951f75aa26d688bafe6ce7a))
+
+
+
 ## [0.1.80](https://github.com/Brooooooklyn/canvas/compare/v0.1.79...v0.1.80) (2025-09-13)
 
 
