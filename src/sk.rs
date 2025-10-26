@@ -999,7 +999,10 @@ pub mod ffi {
 
     pub fn skiac_document_end_page(c_document: *mut skiac_pdf_document);
 
-    pub fn skiac_document_close(c_document: *mut skiac_pdf_document, output_data: *mut skiac_sk_data);
+    pub fn skiac_document_close(
+      c_document: *mut skiac_pdf_document,
+      output_data: *mut skiac_sk_data,
+    );
   }
 }
 

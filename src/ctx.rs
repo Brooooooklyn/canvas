@@ -106,11 +106,7 @@ impl Context {
   }
 
   // Create a Context from an existing Surface (e.g., from PDFDocument)
-  pub(crate) fn new_from_surface(
-    surface: Surface,
-    width: u32,
-    height: u32,
-  ) -> Self {
+  pub(crate) fn new_from_surface(surface: Surface, width: u32, height: u32) -> Self {
     Context {
       surface,
       alpha: true,
