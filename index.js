@@ -16,6 +16,7 @@ const {
   StrokeJoin,
   StrokeCap,
   convertSVGTextToPath,
+  PdfDocument,
 } = require('./js-binding')
 
 const { DOMPoint, DOMMatrix, DOMRect } = require('./geometry')
@@ -176,4 +177,5 @@ module.exports = {
   // Export these for better webpack compatibility
   CanvasElement,
   SVGCanvas,
+  PDFDocument: PdfDocument,
 }

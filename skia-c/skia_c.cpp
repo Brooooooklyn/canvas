@@ -1781,4 +1781,118 @@ void skiac_svg_text_to_path(const uint8_t* data,
   output_data->size = d->size();
   output_data->ptr = d->bytes();
 }
+
+// SkDocument
+void skiac_document_create(skiac_pdf_document* c_document,
+                           const skiac_pdf_metadata* metadata) {
+  auto w_stream = new SkDynamicMemoryWStream();
+
+  SkPDF::Metadata pdf_metadata;
+  if (metadata) {
+    if (metadata->title) {
+      pdf_metadata.fTitle = SkString(metadata->title);
+    }
+    if (metadata->author) {
+      pdf_metadata.fAuthor = SkString(metadata->author);
+    }
+    if (metadata->subject) {
+      pdf_metadata.fSubject = SkString(metadata->subject);
+    }
+    if (metadata->keywords) {
+      pdf_metadata.fKeywords = SkString(metadata->keywords);
+    }
+    if (metadata->creator) {
+      pdf_metadata.fCreator = SkString(metadata->creator);
+    }
+    if (metadata->producer) {
+      pdf_metadata.fProducer = SkString(metadata->producer);
+    }
+    if (metadata->raster_dpi > 0) {
+      pdf_metadata.fRasterDPI = metadata->raster_dpi;
+    }
+    if (metadata->encoding_quality >= 0) {
+      pdf_metadata.fEncodingQuality = metadata->encoding_quality;
+    }
+    pdf_metadata.fPDFA = metadata->pdfa;
+
+    switch (metadata->compression_level) {
+      case -1:
+        pdf_metadata.fCompressionLevel =
+            SkPDF::Metadata::CompressionLevel::Default;
+        break;
+      case 0:
+        pdf_metadata.fCompressionLevel =
+            SkPDF::Metadata::CompressionLevel::None;
+        break;
+      case 1:
+        pdf_metadata.fCompressionLevel =
+            SkPDF::Metadata::CompressionLevel::LowButFast;
+        break;
+      case 6:
+        pdf_metadata.fCompressionLevel =
+            SkPDF::Metadata::CompressionLevel::Average;
+        break;
+      case 9:
+        pdf_metadata.fCompressionLevel =
+            SkPDF::Metadata::CompressionLevel::HighButSlow;
+        break;
+      default:
+        pdf_metadata.fCompressionLevel =
+            SkPDF::Metadata::CompressionLevel::Default;
+        break;
+    }
+  }
+
+  pdf_metadata.jpegDecoder = SkPDF::JPEG::Decode;
+  pdf_metadata.jpegEncoder = SkPDF::JPEG::Encode;
+
+  auto doc = SkPDF::MakeDocument(w_stream, pdf_metadata);
+  c_document->document = reinterpret_cast<skiac_document*>(doc.release());
+  c_document->stream = reinterpret_cast<skiac_w_memory_stream*>(w_stream);
+}
+
+void skiac_document_destroy(skiac_pdf_document* c_document) {
+  auto doc = reinterpret_cast<SkDocument*>(c_document->document);
+  SkSafeUnref(doc);
+  delete reinterpret_cast<SkDynamicMemoryWStream*>(c_document->stream);
+}
+
+skiac_canvas* skiac_document_begin_page(skiac_pdf_document* c_document,
+                                        float width,
+                                        float height,
+                                        skiac_rect* content) {
+  auto doc = reinterpret_cast<SkDocument*>(c_document->document);
+
+  SkCanvas* canvas = nullptr;
+
+  if (content) {
+    auto rect = SkRect::MakeLTRB(content->left, content->top, content->right,
+                                 content->bottom);
+    canvas = doc->beginPage(width, height, &rect);
+  } else {
+    canvas = doc->beginPage(width, height);
+  }
+
+  if (canvas) {
+    return reinterpret_cast<skiac_canvas*>(canvas);
+  }
+  return nullptr;
+}
+
+void skiac_document_end_page(skiac_pdf_document* c_document) {
+  auto doc = reinterpret_cast<SkDocument*>(c_document->document);
+  doc->endPage();
+}
+
+void skiac_document_close(skiac_pdf_document* c_document,
+                          skiac_sk_data* output_data) {
+  auto doc = reinterpret_cast<SkDocument*>(c_document->document);
+  auto stream = reinterpret_cast<SkDynamicMemoryWStream*>(c_document->stream);
+  doc->close();
+  auto data = stream->detachAsData();
+  auto raw_data = data.get();
+  output_data->size = raw_data ? raw_data->size() : 0;
+  output_data->ptr = raw_data ? raw_data->bytes() : nullptr;
+  output_data->data = reinterpret_cast<skiac_data*>(data.release());
+}
 }

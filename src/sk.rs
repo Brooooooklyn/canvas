@@ -221,6 +221,34 @@ pub mod ffi {
     _unused: [u8; 0],
   }
 
+  #[repr(C)]
+  #[derive(Debug, Clone, Copy)]
+  pub struct skiac_document {
+    _unused: [u8; 0],
+  }
+
+  #[repr(C)]
+  #[derive(Debug, Clone, Copy)]
+  pub struct skiac_pdf_document {
+    pub document: *mut skiac_document,
+    pub stream: *mut skiac_w_memory_stream,
+  }
+
+  #[repr(C)]
+  #[derive(Debug, Clone, Copy)]
+  pub struct skiac_pdf_metadata {
+    pub title: *const c_char,
+    pub author: *const c_char,
+    pub subject: *const c_char,
+    pub keywords: *const c_char,
+    pub creator: *const c_char,
+    pub producer: *const c_char,
+    pub raster_dpi: f32,
+    pub encoding_quality: i32,
+    pub pdfa: bool,
+    pub compression_level: i32,
+  }
+
   pub type SkiacFontCollectionGetFamily =
     Option<unsafe extern "C" fn(width: i32, weight: i32, slant: i32, raw_cb: *mut c_void)>;
 
@@ -953,6 +981,25 @@ pub mod ffi {
     pub fn skiac_picture_recorder_finish_recording_as_picture(
       picture_recorder: *mut skiac_picture_recorder,
     ) -> *mut skiac_picture;
+
+    // SkDocument
+    pub fn skiac_document_create(
+      c_document: *mut skiac_pdf_document,
+      metadata: *const skiac_pdf_metadata,
+    );
+
+    pub fn skiac_document_destroy(c_document: *mut skiac_pdf_document);
+
+    pub fn skiac_document_begin_page(
+      c_document: *mut skiac_pdf_document,
+      width: f32,
+      height: f32,
+      content: *mut skiac_rect,
+    ) -> *mut skiac_canvas;
+
+    pub fn skiac_document_end_page(c_document: *mut skiac_pdf_document);
+
+    pub fn skiac_document_close(c_document: *mut skiac_pdf_document, output_data: *mut skiac_sk_data);
   }
 }
 
@@ -1676,6 +1723,15 @@ impl Surface {
     }
   }
 
+  // Create a Surface from a borrowed canvas (e.g., from PDFDocument)
+  // The canvas is not owned by this Surface and won't be freed
+  pub(crate) fn from_borrowed_canvas(canvas: Canvas) -> Surface {
+    Surface {
+      ptr: ptr::null_mut(), // null indicates we don't own the surface
+      canvas,
+    }
+  }
+
   pub fn copy_rgba(
     &self,
     x: u32,
@@ -1870,8 +1926,11 @@ impl std::ops::DerefMut for Surface {
 
 impl Drop for Surface {
   fn drop(&mut self) {
-    unsafe {
-      ffi::skiac_surface_destroy(self.ptr);
+    // Only destroy if we own the surface (ptr is not null)
+    if !self.ptr.is_null() {
+      unsafe {
+        ffi::skiac_surface_destroy(self.ptr);
+      }
     }
   }
 }
@@ -3797,7 +3856,7 @@ pub struct FontStyleSet {
   pub styles: Vec<FontStyles>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct SkWMemoryStream(*mut ffi::skiac_w_memory_stream);
 
 impl SkWMemoryStream {

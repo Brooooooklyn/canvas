@@ -8,7 +8,13 @@ extern crate napi_derive;
 #[macro_use]
 extern crate serde_derive;
 
-use std::{ffi::c_void, mem, rc::Rc, slice, str::FromStr};
+use std::{
+  ffi::{CString, c_void},
+  mem,
+  rc::Rc,
+  slice,
+  str::FromStr,
+};
 
 use napi::{
   Property, ScopedTask,
@@ -786,6 +792,192 @@ impl<'scope> SVGCanvas<'scope> {
   #[napi(getter)]
   pub fn get_height(&self) -> u32 {
     self.height
+  }
+}
+
+#[napi(object)]
+pub struct Rect {
+  pub left: f64,
+  pub top: f64,
+  pub right: f64,
+  pub bottom: f64,
+}
+
+#[napi(object)]
+pub struct PDFMetadata {
+  /// The document's title
+  pub title: Option<String>,
+  /// The name of the person who created the document
+  pub author: Option<String>,
+  /// The subject of the document
+  pub subject: Option<String>,
+  /// Keywords associated with the document
+  pub keywords: Option<String>,
+  /// The product that created the original document
+  pub creator: Option<String>,
+  /// The product that is converting this document to PDF (defaults to "Skia/PDF")
+  pub producer: Option<String>,
+  /// The DPI for rasterization (default: 72.0)
+  pub raster_dpi: Option<f64>,
+  /// Encoding quality: 0-100 for lossy JPEG, 101 for lossless (default: 101)
+  pub encoding_quality: Option<i32>,
+  /// Whether to conform to PDF/A-2b standard (default: false)
+  pub pdfa: Option<bool>,
+  /// Compression level: -1 (default), 0 (none), 1 (low/fast), 6 (average), 9 (high/slow)
+  pub compression_level: Option<i32>,
+}
+
+#[napi]
+pub struct PDFDocument {
+  document: sk::ffi::skiac_pdf_document,
+  // Keep CStrings alive for the lifetime of the document
+  _metadata_strings: Option<PDFMetadataStrings>,
+}
+
+struct PDFMetadataStrings {
+  _title: Option<CString>,
+  _author: Option<CString>,
+  _subject: Option<CString>,
+  _keywords: Option<CString>,
+  _creator: Option<CString>,
+  _producer: Option<CString>,
+}
+
+#[napi]
+impl PDFDocument {
+  #[napi(constructor)]
+  pub fn new(metadata: Option<PDFMetadata>) -> Self {
+    let mut document = sk::ffi::skiac_pdf_document {
+      document: std::ptr::null_mut(),
+      stream: std::ptr::null_mut(),
+    };
+
+    let (c_metadata, metadata_strings) = if let Some(meta) = metadata {
+      let title = meta.title.and_then(|s| CString::new(s).ok());
+      let author = meta.author.and_then(|s| CString::new(s).ok());
+      let subject = meta.subject.and_then(|s| CString::new(s).ok());
+      let keywords = meta.keywords.and_then(|s| CString::new(s).ok());
+      let creator = meta.creator.and_then(|s| CString::new(s).ok());
+      let producer = meta.producer.and_then(|s| CString::new(s).ok());
+
+      let c_meta = sk::ffi::skiac_pdf_metadata {
+        title: title.as_ref().map_or(std::ptr::null(), |s| s.as_ptr()),
+        author: author.as_ref().map_or(std::ptr::null(), |s| s.as_ptr()),
+        subject: subject.as_ref().map_or(std::ptr::null(), |s| s.as_ptr()),
+        keywords: keywords.as_ref().map_or(std::ptr::null(), |s| s.as_ptr()),
+        creator: creator.as_ref().map_or(std::ptr::null(), |s| s.as_ptr()),
+        producer: producer.as_ref().map_or(std::ptr::null(), |s| s.as_ptr()),
+        raster_dpi: meta.raster_dpi.unwrap_or(72.0) as f32,
+        encoding_quality: meta.encoding_quality.unwrap_or(101),
+        pdfa: meta.pdfa.unwrap_or(false),
+        compression_level: meta.compression_level.unwrap_or(-1),
+      };
+
+      let strings = PDFMetadataStrings {
+        _title: title,
+        _author: author,
+        _subject: subject,
+        _keywords: keywords,
+        _creator: creator,
+        _producer: producer,
+      };
+
+      (Some(c_meta), Some(strings))
+    } else {
+      (None, None)
+    };
+
+    unsafe {
+      sk::ffi::skiac_document_create(
+        &mut document,
+        c_metadata
+          .as_ref()
+          .map_or(std::ptr::null(), |m| m as *const _),
+      );
+    }
+
+    Self {
+      document,
+      _metadata_strings: metadata_strings,
+    }
+  }
+
+  #[napi]
+  pub fn begin_page(
+    &mut self,
+    env: Env,
+    width: f64,
+    height: f64,
+    rect: Option<Rect>,
+  ) -> Result<CanvasRenderingContext2D> {
+    let canvas_ptr = unsafe {
+      let rect = rect.map(|r| sk::ffi::skiac_rect {
+        left: r.left as f32,
+        top: r.top as f32,
+        right: r.right as f32,
+        bottom: r.bottom as f32,
+      });
+      sk::ffi::skiac_document_begin_page(
+        &mut self.document,
+        width as f32,
+        height as f32,
+        if let Some(mut rect) = rect {
+          &mut rect
+        } else {
+          std::ptr::null_mut()
+        },
+      )
+    };
+
+    if canvas_ptr.is_null() {
+      return Err(Error::new(Status::GenericFailure, "Failed to begin page"));
+    }
+
+    // Create a borrowed surface from the canvas
+    // The canvas is owned by the document, not by the Surface
+    let canvas = sk::Canvas(canvas_ptr);
+    let surface = sk::Surface::from_borrowed_canvas(canvas);
+    let context = Context::new_from_surface(surface, width as u32, height as u32);
+
+    env.adjust_external_memory((width as i64) * (height as i64) * 4)?;
+
+    Ok(CanvasRenderingContext2D { context })
+  }
+
+  #[napi]
+  pub fn end_page(&mut self) {
+    unsafe {
+      sk::ffi::skiac_document_end_page(&mut self.document);
+    }
+  }
+
+  #[napi]
+  pub fn close<'env>(&mut self, env: &'env Env) -> Result<BufferSlice<'env>> {
+    let mut data = sk::ffi::skiac_sk_data {
+      ptr: std::ptr::null_mut(),
+      size: 0,
+      data: std::ptr::null_mut(),
+    };
+    unsafe {
+      sk::ffi::skiac_document_close(&mut self.document, &mut data);
+    }
+    let pdf_data = SkiaDataRef(data);
+    if pdf_data.0.ptr.is_null() {
+      return BufferSlice::from_data(env, []);
+    }
+    unsafe {
+      BufferSlice::from_external(env, pdf_data.0.ptr, pdf_data.0.size, pdf_data, |_, d| {
+        mem::drop(d)
+      })
+    }
+  }
+}
+
+impl Drop for PDFDocument {
+  fn drop(&mut self) {
+    unsafe {
+      sk::ffi::skiac_document_destroy(&mut self.document);
+    }
   }
 }
 
