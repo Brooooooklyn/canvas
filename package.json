@@ -55,7 +55,7 @@
   },
   "scripts": {
     "artifacts": "napi artifacts",
-    "bench": "node -r @swc-node/register benchmark/bench.ts",
+    "bench": "node --import @oxc-node/core/register benchmark/bench.ts",
     "build": "napi build --platform --release --js js-binding.js",
     "build:debug": "napi build --platform --js js-binding.js",
     "format": "run-p format:source format:rs format:toml",
