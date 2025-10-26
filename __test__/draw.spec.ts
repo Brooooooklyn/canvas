@@ -1,12 +1,15 @@
-import { promises } from 'fs'
-import { platform } from 'os'
-import { join } from 'path'
+import { promises } from 'node:fs'
+import { platform } from 'node:os'
+import { join, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import ava, { TestFn } from 'ava'
 import PNG from '@jimp/png'
 
 import { GlobalFonts, createCanvas, Canvas, Image, ImageData, Path2D, SKRSContext2D, DOMMatrix } from '../index'
 import { snapshotImage } from './image-snapshot'
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
 
 const test = ava as TestFn<{
   canvas: Canvas

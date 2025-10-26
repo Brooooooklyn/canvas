@@ -1,8 +1,11 @@
-import { join } from 'path'
+import { join, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import ava, { TestFn } from 'ava'
 
 import { createCanvas, SvgCanvas, SvgExportFlag, GlobalFonts } from '../index'
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
 
 const test = ava as TestFn<{
   canvas: SvgCanvas

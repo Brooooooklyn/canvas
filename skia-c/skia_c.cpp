@@ -831,8 +831,12 @@ skiac_path* skiac_path_create() {
 
 skiac_path* skiac_path_from_svg(char* svg_path) {
   auto path = new SkPath();
-  SkParsePath::FromSVGString(svg_path, path);
-  return reinterpret_cast<skiac_path*>(path);
+  auto maybe_path = SkParsePath::FromSVGString(svg_path);
+  if (maybe_path) {
+    maybe_path->swap(*path);
+    return reinterpret_cast<skiac_path*>(path);
+  }
+  return nullptr;
 }
 
 skiac_path* skiac_path_clone(skiac_path* c_path) {
@@ -1569,7 +1573,7 @@ bool skiac_bitmap_make_from_svg(const uint8_t* data,
       svg_root->intrinsicSize(SkSVGLengthContext(SkSize::Make(0, 0)));
   if (svg_container_size.isZero()) {
     auto view_box = svg_root->getViewBox();
-    if (!view_box.isValid()) {
+    if (!view_box) {
       return true;
     }
     svg_container_size = SkSize::Make(view_box->width(), view_box->height());

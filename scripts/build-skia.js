@@ -59,7 +59,6 @@ const GN_ARGS = [
   `skia_use_gl=false`,
   `skia_use_harfbuzz=true`,
   `skia_use_icu=true`,
-  `skia_use_libheif=true`,
   // the libavif would conflict with the Rust libavif, use the Rust library to handle avif images
   `skia_use_libavif=false`,
   `skia_use_libjxl_decode=${!TARGET_TRIPLE.startsWith('riscv64')}`,
@@ -104,7 +103,6 @@ switch (PLATFORM_NAME) {
       '\\"-DSK_CODEC_DECODES_PNG\\",' +
       '\\"-DSK_ENCODE_JPEG\\",' +
       '\\"-DSK_CODEC_DECODES_JPEG\\",' +
-      '\\"-DSK_HAS_HEIF_LIBRARY\\",' +
       '\\"-DSK_SHAPER_HARFBUZZ_AVAILABLE\\"'
     const clangVersion = findClangWinVersion()
     if (clangVersion) {
@@ -129,7 +127,6 @@ switch (PLATFORM_NAME) {
       '"-DSK_CODEC_DECODES_PNG",' +
       '"-DSK_ENCODE_JPEG",' +
       '"-DSK_CODEC_DECODES_JPEG",' +
-      '"-DSK_HAS_HEIF_LIBRARY",' +
       '"-DSK_SHAPER_HARFBUZZ_AVAILABLE"'
     if (PLATFORM_NAME === 'linux' && !TARGET_TRIPLE && HOST_ARCH === 'x64') {
       if (HOST_LIBC === 'glibc') {
