@@ -731,3 +731,40 @@ export function loadImage(
   source: string | URL | Buffer | ArrayBufferLike | Uint8Array | Image | import('stream').Readable,
   options?: LoadImageOptions,
 ): Promise<Image>
+
+export interface PDFMetadata {
+  /// The document's title
+  title?: string
+  /// The name of the person who created the document
+  author?: string
+  /// The subject of the document
+  subject?: string
+  /// Keywords associated with the document
+  keywords?: string
+  /// The product that created the original document
+  creator?: string
+  /// The product that is converting this document to PDF (defaults to "Skia/PDF")
+  producer?: string
+  /// The DPI for rasterization (default: 72.0)
+  rasterDPI?: number
+  /// Encoding quality: 0-100 for lossy JPEG, 101 for lossless (default: 101)
+  encodingQuality?: number
+  /// Whether to conform to PDF/A-2b standard (default: false)
+  pdfa?: boolean
+  /// Compression level: -1 (default), 0 (none), 1 (low/fast), 6 (average), 9 (high/slow)
+  compressionLevel?: number
+}
+
+export interface Rect {
+  left: number
+  top: number
+  right: number
+  bottom: number
+}
+
+export declare class PDFDocument {
+  constructor(metadata?: PDFMetadata | undefined | null)
+  beginPage(width: number, height: number, rect?: Rect | undefined | null): CanvasRenderingContext2D
+  endPage(): void
+  close(): Buffer
+}

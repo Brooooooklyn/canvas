@@ -22,6 +22,8 @@
 #include <include/core/SkString.h>
 #include <include/core/SkStrokeRec.h>
 #include <include/core/SkSurface.h>
+#include <include/docs/SkPDFDocument.h>
+#include <include/docs/SkPDFJpegHelpers.h>
 #include <include/effects/SkColorMatrix.h>
 #include <include/effects/SkCornerPathEffect.h>
 #include <include/effects/SkDashPathEffect.h>
@@ -74,6 +76,7 @@ typedef struct skiac_w_memory_stream skiac_w_memory_stream;
 typedef struct skiac_picture_recorder skiac_picture_recorder;
 typedef struct skiac_picture skiac_picture;
 typedef struct skiac_encoder skiac_encoder;
+typedef struct skiac_document skiac_document;
 
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
 #define SK_FONT_FILE_PREFIX "C:/Windows/Fonts"
@@ -233,6 +236,25 @@ struct skiac_sk_data {
 struct skiac_mapped_point {
   float x;
   float y;
+};
+
+struct skiac_pdf_document {
+  skiac_document* document;
+  skiac_w_memory_stream* stream;
+};
+
+struct skiac_pdf_metadata {
+  const char* title;
+  const char* author;
+  const char* subject;
+  const char* keywords;
+  const char* creator;
+  const char* producer;
+  float raster_dpi;
+  int encoding_quality;
+  bool pdfa;
+  int compression_level;  // -1 = default, 0 = none, 1 = low, 6 = average, 9 =
+                          // high
 };
 
 extern "C" {
@@ -706,6 +728,18 @@ skiac_canvas* skiac_picture_recorder_get_recording_canvas(
     skiac_picture_recorder* c_picture_recorder);
 skiac_picture* skiac_picture_recorder_finish_recording_as_picture(
     skiac_picture_recorder* c_picture_recorder);
+
+// SkDocument
+void skiac_document_create(skiac_pdf_document* c_document,
+                           const skiac_pdf_metadata* metadata = nullptr);
+void skiac_document_destroy(skiac_pdf_document* c_document);
+skiac_canvas* skiac_document_begin_page(skiac_pdf_document* c_document,
+                                        float width,
+                                        float height,
+                                        skiac_rect* content = nullptr);
+void skiac_document_end_page(skiac_pdf_document* c_document);
+void skiac_document_close(skiac_pdf_document* c_document,
+                          skiac_sk_data* output_data);
 }
 
 #endif  // SKIA_CAPI_H

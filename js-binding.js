@@ -32,7 +32,11 @@ const isMuslFromFilesystem = () => {
 }
 
 const isMuslFromReport = () => {
-  const report = typeof process.report.getReport === 'function' ? process.report.getReport() : null
+  let report = null
+  if (typeof process.report?.getReport === 'function') {
+    process.report.excludeNetwork = true
+    report = process.report.getReport()
+  }
   if (!report) {
     return null
   }
@@ -59,7 +63,7 @@ const isMuslFromChildProcess = () => {
 function requireNative() {
   if (process.env.NAPI_RS_NATIVE_LIBRARY_PATH) {
     try {
-      nativeBinding = require(process.env.NAPI_RS_NATIVE_LIBRARY_PATH)
+      return require(process.env.NAPI_RS_NATIVE_LIBRARY_PATH)
     } catch (err) {
       loadErrors.push(err)
     }
@@ -91,15 +95,31 @@ function requireNative() {
     }
   } else if (process.platform === 'win32') {
     if (process.arch === 'x64') {
-      try {
-        return require('./skia.win32-x64-msvc.node')
-      } catch (e) {
-        loadErrors.push(e)
-      }
-      try {
-        return require('@napi-rs/canvas-win32-x64-msvc')
-      } catch (e) {
-        loadErrors.push(e)
+      if (
+        process.config?.variables?.shlib_suffix === 'dll.a' ||
+        process.config?.variables?.node_target_type === 'shared_library'
+      ) {
+        try {
+          return require('./skia.win32-x64-gnu.node')
+        } catch (e) {
+          loadErrors.push(e)
+        }
+        try {
+          return require('@napi-rs/canvas-win32-x64-gnu')
+        } catch (e) {
+          loadErrors.push(e)
+        }
+      } else {
+        try {
+          return require('./skia.win32-x64-msvc.node')
+        } catch (e) {
+          loadErrors.push(e)
+        }
+        try {
+          return require('@napi-rs/canvas-win32-x64-msvc')
+        } catch (e) {
+          loadErrors.push(e)
+        }
       }
     } else if (process.arch === 'ia32') {
       try {
@@ -137,7 +157,6 @@ function requireNative() {
     } catch (e) {
       loadErrors.push(e)
     }
-
     if (process.arch === 'x64') {
       try {
         return require('./skia.darwin-x64.node')
@@ -262,6 +281,30 @@ function requireNative() {
           loadErrors.push(e)
         }
       }
+    } else if (process.arch === 'loong64') {
+      if (isMusl()) {
+        try {
+          return require('./skia.linux-loong64-musl.node')
+        } catch (e) {
+          loadErrors.push(e)
+        }
+        try {
+          return require('@napi-rs/canvas-linux-loong64-musl')
+        } catch (e) {
+          loadErrors.push(e)
+        }
+      } else {
+        try {
+          return require('./skia.linux-loong64-gnu.node')
+        } catch (e) {
+          loadErrors.push(e)
+        }
+        try {
+          return require('@napi-rs/canvas-linux-loong64-gnu')
+        } catch (e) {
+          loadErrors.push(e)
+        }
+      }
     } else if (process.arch === 'riscv64') {
       if (isMusl()) {
         try {
@@ -311,6 +354,44 @@ function requireNative() {
     } else {
       loadErrors.push(new Error(`Unsupported architecture on Linux: ${process.arch}`))
     }
+  } else if (process.platform === 'openharmony') {
+    if (process.arch === 'arm64') {
+      try {
+        return require('./skia.openharmony-arm64.node')
+      } catch (e) {
+        loadErrors.push(e)
+      }
+      try {
+        return require('@napi-rs/canvas-openharmony-arm64')
+      } catch (e) {
+        loadErrors.push(e)
+      }
+    } else if (process.arch === 'x64') {
+      try {
+        return require('./skia.openharmony-x64.node')
+      } catch (e) {
+        loadErrors.push(e)
+      }
+      try {
+        return require('@napi-rs/canvas-openharmony-x64')
+      } catch (e) {
+        loadErrors.push(e)
+      }
+    } else if (process.arch === 'arm') {
+      try {
+        return require('./skia.openharmony-arm.node')
+      } catch (e) {
+        loadErrors.push(e)
+      }
+      try {
+        const binding = require('@napi-rs/canvas-openharmony-arm')
+        return binding
+      } catch (e) {
+        loadErrors.push(e)
+      }
+    } else {
+      loadErrors.push(new Error(`Unsupported architecture on OpenHarmony: ${process.arch}`))
+    }
   } else {
     loadErrors.push(new Error(`Unsupported OS: ${process.platform}, architecture: ${process.arch}`))
   }
@@ -319,18 +400,23 @@ function requireNative() {
 nativeBinding = requireNative()
 
 if (!nativeBinding || process.env.NAPI_RS_FORCE_WASI) {
+  let wasiBinding = null
+  let wasiBindingError = null
   try {
-    nativeBinding = require('./skia.wasi.cjs')
+    wasiBinding = require('./skia.wasi.cjs')
+    nativeBinding = wasiBinding
   } catch (err) {
     if (process.env.NAPI_RS_FORCE_WASI) {
-      loadErrors.push(err)
+      wasiBindingError = err
     }
   }
   if (!nativeBinding) {
     try {
-      nativeBinding = require('@napi-rs/canvas-wasm32-wasi')
+      wasiBinding = require('@napi-rs/canvas-wasm32-wasi')
+      nativeBinding = wasiBinding
     } catch (err) {
       if (process.env.NAPI_RS_FORCE_WASI) {
+        wasiBindingError.cause = err
         loadErrors.push(err)
       }
     }
@@ -339,15 +425,22 @@ if (!nativeBinding || process.env.NAPI_RS_FORCE_WASI) {
 
 if (!nativeBinding) {
   if (loadErrors.length > 0) {
-    // TODO Link to documentation with potential fixes
-    //  - The package owner could build/publish bindings for this arch
-    //  - The user may need to bundle the correct files
-    //  - The user may need to re-install node_modules to get new packages
-    throw new Error('Failed to load native binding', { cause: loadErrors })
+    throw new Error(
+      `Cannot find native binding. ` +
+        `npm has a bug related to optional dependencies (https://github.com/npm/cli/issues/4828). ` +
+        'Please try `npm i` again after removing both package-lock.json and node_modules directory.',
+      {
+        cause: loadErrors.reduce((err, cur) => {
+          cur.cause = err
+          return cur
+        }),
+      },
+    )
   }
   throw new Error(`Failed to load native binding`)
 }
 
+module.exports = nativeBinding
 module.exports.GlobalFonts = nativeBinding.GlobalFonts
 module.exports.CanvasElement = nativeBinding.CanvasElement
 module.exports.CanvasGradient = nativeBinding.CanvasGradient
@@ -357,6 +450,7 @@ module.exports.FontKey = nativeBinding.FontKey
 module.exports.Image = nativeBinding.Image
 module.exports.ImageData = nativeBinding.ImageData
 module.exports.Path = nativeBinding.Path
+module.exports.PdfDocument = nativeBinding.PdfDocument
 module.exports.SVGCanvas = nativeBinding.SVGCanvas
 module.exports.ChromaSubsampling = nativeBinding.ChromaSubsampling
 module.exports.clearAllCache = nativeBinding.clearAllCache

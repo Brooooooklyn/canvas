@@ -105,6 +105,21 @@ impl Context {
     })
   }
 
+  // Create a Context from an existing Surface (e.g., from PDFDocument)
+  pub(crate) fn new_from_surface(surface: Surface, width: u32, height: u32) -> Self {
+    Context {
+      surface,
+      alpha: true,
+      path: SkPath::new(),
+      states: vec![],
+      state: Context2dRenderingState::default(),
+      width,
+      height,
+      color_space: ColorSpace::default(),
+      stream: None,
+    }
+  }
+
   pub fn arc(
     &mut self,
     center_x: f32,
