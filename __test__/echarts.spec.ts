@@ -1,9 +1,16 @@
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
 import test from 'ava'
 
-import { createCanvas } from '../index.js'
+import { createCanvas, GlobalFonts } from '../index.js'
 import { snapshotImage } from './image-snapshot'
 
 test('echarts-start', async (t) => {
+  t.truthy(
+    GlobalFonts.registerFromPath(join(fileURLToPath(import.meta.url), '..', 'fonts', 'iosevka-slab-regular.ttf')),
+    'Register Iosevka font failed',
+  )
   if (process.platform !== 'darwin') {
     t.pass()
     return

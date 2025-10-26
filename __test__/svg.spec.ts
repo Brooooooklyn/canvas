@@ -1,13 +1,18 @@
-import { join } from 'path'
-import { readFileSync, promises as fs } from 'fs'
+import { join, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { readFileSync, promises as fs } from 'node:fs'
 
 import test from 'ava'
 
 import { convertSVGTextToPath, GlobalFonts } from '../index'
 
-GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'iosevka-slab-regular.ttf'))
+const __dirname = dirname(fileURLToPath(import.meta.url))
 
 const FIXTURE = readFileSync(join(__dirname, 'text.svg'), 'utf8')
+
+test.beforeEach((t) => {
+  t.true(GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'iosevka-slab-regular.ttf')))
+})
 
 test('convertSVGTextToPath should work', async (t) => {
   const result = convertSVGTextToPath(FIXTURE)

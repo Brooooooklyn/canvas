@@ -1,7 +1,7 @@
 # `skr canvas`
 
 [![CI](https://github.com/Brooooooklyn/canvas/actions/workflows/CI.yaml/badge.svg)](https://github.com/Brooooooklyn/canvas/actions/workflows/CI.yaml)
-![Skia Version](https://img.shields.io/badge/Skia-chrome%2Fm140-hotpink)
+![Skia Version](https://img.shields.io/badge/Skia-chrome%2Fm142-hotpink)
 [![install size](https://packagephobia.com/badge?p=@napi-rs/canvas)](https://packagephobia.com/result?p=@napi-rs/canvas)
 [![Downloads](https://img.shields.io/npm/dm/@napi-rs/canvas.svg?sanitize=true)](https://npmcharts.com/compare/@napi-rs/canvas?minimal=true)
 

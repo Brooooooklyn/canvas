@@ -2,7 +2,7 @@ import { sep } from 'node:path'
 
 import test from 'ava'
 
-const { libPath } = require('../utils')
+import { libPath } from '../utils.mjs'
 
 const TEST_MATRIX = [
   { platform: 'win32' },

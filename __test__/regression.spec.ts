@@ -1,10 +1,13 @@
 import { promises as fs } from 'node:fs'
-import { join } from 'node:path'
+import { join, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import test from 'ava'
 
 import { createCanvas, loadImage, GlobalFonts, Image, DOMMatrix, DOMPoint } from '../index'
 import { snapshotImage } from './image-snapshot'
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
 
 test('transform-with-state', async (t) => {
   const canvas = createCanvas(256, 256)

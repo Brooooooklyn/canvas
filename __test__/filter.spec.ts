@@ -1,11 +1,14 @@
-import { promises as fs, readFileSync } from 'fs'
-import { join } from 'path'
+import { promises as fs, readFileSync } from 'node:fs'
+import { join, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import ava, { TestFn } from 'ava'
 
 import { createCanvas, Canvas, SKRSContext2D, Image } from '../index'
 
 import { snapshotImage } from './image-snapshot'
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
 
 const test = ava as TestFn<{
   ctx: SKRSContext2D
