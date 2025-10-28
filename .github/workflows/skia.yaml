@@ -35,7 +35,7 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 24
           cache: 'yarn'
 
       - uses: actions/setup-python@v6
@@ -121,7 +121,7 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 24
           cache: 'yarn'
 
       - uses: actions/setup-python@v6
@@ -165,7 +165,7 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 24
           cache: 'yarn'
 
       - uses: mlugg/setup-zig@v2
@@ -203,7 +203,7 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 24
           cache: 'yarn'
 
       - uses: actions/setup-python@v6
@@ -243,7 +243,7 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 24
           cache: 'yarn'
 
       - uses: mlugg/setup-zig@v2
@@ -291,7 +291,7 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 24
 
       - name: Sync deps
         uses: nick-fields/retry@v3
@@ -336,7 +336,7 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 24
           cache: 'yarn'
 
       - uses: actions/setup-python@v6
@@ -375,7 +375,7 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 24
           cache: 'yarn'
       - uses: actions/setup-python@v6
         with:

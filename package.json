@@ -80,7 +80,7 @@
     "@oxc-node/core": "^0.0.32",
     "@taplo/cli": "^0.7.0",
     "@types/lodash": "^4.17.17",
-    "@types/node": "^22.15.30",
+    "@types/node": "^24.0.0",
     "@types/semver": "^7",
     "ava": "^6.3.0",
     "canvas": "^3.1.0",
