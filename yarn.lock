@@ -557,7 +557,7 @@ __metadata:
     "@oxc-node/core": "npm:^0.0.32"
     "@taplo/cli": "npm:^0.7.0"
     "@types/lodash": "npm:^4.17.17"
-    "@types/node": "npm:^22.15.30"
+    "@types/node": "npm:^24.0.0"
     "@types/semver": "npm:^7"
     ava: "npm:^6.3.0"
     canvas: "npm:^3.1.0"
@@ -1721,12 +1721,21 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@types/node@npm:^22.15.30, @types/node@npm:^22.7.7":
+"@types/node@npm:^22.7.7":
   version: 22.18.12
   resolution: "@types/node@npm:22.18.12"
   dependencies:
     undici-types: "npm:~6.21.0"
   checksum: 10c0/13a4638f2baba3efba2b8bc369dd6f950dccbfca78f318f9c9f2c7adc11fce14fc119723c38567dada2d57a873c092b7356c024924d5974a08f3c1f93dc706c6
+  languageName: node
+  linkType: hard
+
+"@types/node@npm:^24.0.0":
+  version: 24.9.2
+  resolution: "@types/node@npm:24.9.2"
+  dependencies:
+    undici-types: "npm:~7.16.0"
+  checksum: 10c0/7905d43f65cee72ef475fe76316e10bbf6ac5d08a7f0f6c38f2b6285d7ca3009e8fcafc8f8a1d2bf3f55889c9c278dbb203a9081fd0cf2d6d62161703924c6fa
   languageName: node
   linkType: hard
 
