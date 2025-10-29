@@ -4,6 +4,7 @@
 #include <include/codec/SkCodec.h>
 #include <include/codec/SkEncodedImageFormat.h>
 #include <include/core/SkBitmap.h>
+#include <include/core/SkAnnotation.h>
 #include <include/core/SkBlurTypes.h>
 #include <include/core/SkCanvas.h>
 #include <include/core/SkColorFilter.h>
@@ -740,6 +741,18 @@ skiac_canvas* skiac_document_begin_page(skiac_pdf_document* c_document,
 void skiac_document_end_page(skiac_pdf_document* c_document);
 void skiac_document_close(skiac_pdf_document* c_document,
                           skiac_sk_data* output_data);
+
+// SkAnnotation
+void skiac_canvas_annotate_link_url(skiac_canvas* c_canvas,
+                                    const skiac_rect* rect,
+                                    const char* url);
+void skiac_canvas_annotate_named_destination(skiac_canvas* c_canvas,
+                                             float x,
+                                             float y,
+                                             const char* name);
+void skiac_canvas_annotate_link_to_destination(skiac_canvas* c_canvas,
+                                               const skiac_rect* rect,
+                                               const char* name);
 }
 
 #endif  // SKIA_CAPI_H
