@@ -1904,7 +1904,8 @@ void skiac_canvas_annotate_link_url(skiac_canvas* c_canvas,
     return;
   }
   auto canvas = CANVAS_CAST;
-  SkRect sk_rect = SkRect::MakeLTRB(rect->left, rect->top, rect->right, rect->bottom);
+  SkRect sk_rect =
+      SkRect::MakeLTRB(rect->left, rect->top, rect->right, rect->bottom);
   sk_sp<SkData> url_data = SkData::MakeWithCString(url);
   SkAnnotateLinkURL(canvas, sk_rect, url_data.get());
 }
@@ -1929,7 +1930,8 @@ void skiac_canvas_annotate_link_to_destination(skiac_canvas* c_canvas,
     return;
   }
   auto canvas = CANVAS_CAST;
-  SkRect sk_rect = SkRect::MakeLTRB(rect->left, rect->top, rect->right, rect->bottom);
+  SkRect sk_rect =
+      SkRect::MakeLTRB(rect->left, rect->top, rect->right, rect->bottom);
   sk_sp<SkData> name_data = SkData::MakeWithCString(name);
   SkAnnotateLinkToDestination(canvas, sk_rect, name_data.get());
 }

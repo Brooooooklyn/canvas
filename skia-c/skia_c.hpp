@@ -3,8 +3,8 @@
 
 #include <include/codec/SkCodec.h>
 #include <include/codec/SkEncodedImageFormat.h>
-#include <include/core/SkBitmap.h>
 #include <include/core/SkAnnotation.h>
+#include <include/core/SkBitmap.h>
 #include <include/core/SkBlurTypes.h>
 #include <include/core/SkCanvas.h>
 #include <include/core/SkColorFilter.h>
@@ -105,7 +105,7 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
   explicit TypefaceFontProviderCustom(sk_sp<SkFontMgr> mgr)
       : font_mgr(std::move(mgr)) {}
 
-  ~TypefaceFontProviderCustom() {};
+  ~TypefaceFontProviderCustom(){};
 
   sk_sp<SkTypeface> onLegacyMakeTypeface(const char family_name[],
                                          SkFontStyle style) const override {

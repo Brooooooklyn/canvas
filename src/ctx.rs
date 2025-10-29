@@ -1083,7 +1083,9 @@ impl Context {
   }
 
   pub fn annotate_named_destination(&self, x: f64, y: f64, name: String) {
-    self.surface.annotate_named_destination(x as f32, y as f32, &name);
+    self
+      .surface
+      .annotate_named_destination(x as f32, y as f32, &name);
   }
 
   pub fn annotate_link_to_destination(
@@ -2255,7 +2257,9 @@ impl CanvasRenderingContext2D {
   /// Annotate a rectangular region with a clickable URL link (for PDF documents)
   #[napi]
   pub fn annotate_link_url(&self, left: f64, top: f64, right: f64, bottom: f64, url: String) {
-    self.context.annotate_link_url(left, top, right, bottom, url);
+    self
+      .context
+      .annotate_link_url(left, top, right, bottom, url);
   }
 
   /// Create a named destination at a specific point (for PDF documents)
