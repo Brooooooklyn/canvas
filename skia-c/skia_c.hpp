@@ -3,6 +3,7 @@
 
 #include <include/codec/SkCodec.h>
 #include <include/codec/SkEncodedImageFormat.h>
+#include <include/core/SkAnnotation.h>
 #include <include/core/SkBitmap.h>
 #include <include/core/SkBlurTypes.h>
 #include <include/core/SkCanvas.h>

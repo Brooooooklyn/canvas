@@ -1907,7 +1907,7 @@ void skiac_canvas_annotate_link_url(skiac_canvas* c_canvas,
   SkRect sk_rect =
       SkRect::MakeLTRB(rect->left, rect->top, rect->right, rect->bottom);
   sk_sp<SkData> url_data = SkData::MakeWithCString(url);
-  canvas->drawAnnotation(sk_rect, "URL", url_data.get());
+  SkAnnotateLinkURL(canvas, sk_rect, url_data.get());
 }
 
 void skiac_canvas_annotate_named_destination(skiac_canvas* c_canvas,
@@ -1919,9 +1919,8 @@ void skiac_canvas_annotate_named_destination(skiac_canvas* c_canvas,
   }
   auto canvas = CANVAS_CAST;
   SkPoint point = SkPoint::Make(x, y);
-  SkRect sk_rect = SkRect::MakeXYWH(point.fX, point.fY, 0, 0);
   sk_sp<SkData> name_data = SkData::MakeWithCString(name);
-  canvas->drawAnnotation(sk_rect, "NamedDest", name_data.get());
+  SkAnnotateNamedDestination(canvas, point, name_data.get());
 }
 
 void skiac_canvas_annotate_link_to_destination(skiac_canvas* c_canvas,
@@ -1934,6 +1933,6 @@ void skiac_canvas_annotate_link_to_destination(skiac_canvas* c_canvas,
   SkRect sk_rect =
       SkRect::MakeLTRB(rect->left, rect->top, rect->right, rect->bottom);
   sk_sp<SkData> name_data = SkData::MakeWithCString(name);
-  canvas->drawAnnotation(sk_rect, "Link_Named_Dest", name_data.get());
+  SkAnnotateLinkToDestination(canvas, sk_rect, name_data.get());
 }
 }
