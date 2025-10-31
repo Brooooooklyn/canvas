@@ -1003,6 +1003,26 @@ pub mod ffi {
       c_document: *mut skiac_pdf_document,
       output_data: *mut skiac_sk_data,
     );
+
+    // SkAnnotation
+    pub fn skiac_canvas_annotate_link_url(
+      c_canvas: *mut skiac_canvas,
+      rect: *const skiac_rect,
+      url: *const c_char,
+    );
+
+    pub fn skiac_canvas_annotate_named_destination(
+      c_canvas: *mut skiac_canvas,
+      x: f32,
+      y: f32,
+      name: *const c_char,
+    );
+
+    pub fn skiac_canvas_annotate_link_to_destination(
+      c_canvas: *mut skiac_canvas,
+      rect: *const skiac_rect,
+      name: *const c_char,
+    );
   }
 }
 
@@ -2428,6 +2448,46 @@ impl Canvas {
   pub fn draw_picture(&self, picture: SkPicture, matrix: &Matrix, paint: &Paint) {
     unsafe {
       ffi::skiac_canvas_draw_picture(self.0, picture.0, matrix.0, paint.0);
+    }
+  }
+
+  pub fn annotate_link_url(&self, left: f32, top: f32, right: f32, bottom: f32, url: &str) {
+    let c_url = CString::new(url).expect("Failed to convert URL to CString");
+    let rect = ffi::skiac_rect {
+      left,
+      top,
+      right,
+      bottom,
+    };
+    unsafe {
+      ffi::skiac_canvas_annotate_link_url(self.0, &rect, c_url.as_ptr());
+    }
+  }
+
+  pub fn annotate_named_destination(&self, x: f32, y: f32, name: &str) {
+    let c_name = CString::new(name).expect("Failed to convert name to CString");
+    unsafe {
+      ffi::skiac_canvas_annotate_named_destination(self.0, x, y, c_name.as_ptr());
+    }
+  }
+
+  pub fn annotate_link_to_destination(
+    &self,
+    left: f32,
+    top: f32,
+    right: f32,
+    bottom: f32,
+    name: &str,
+  ) {
+    let c_name = CString::new(name).expect("Failed to convert name to CString");
+    let rect = ffi::skiac_rect {
+      left,
+      top,
+      right,
+      bottom,
+    };
+    unsafe {
+      ffi::skiac_canvas_annotate_link_to_destination(self.0, &rect, c_name.as_ptr());
     }
   }
 }

@@ -1075,6 +1075,35 @@ impl Context {
       }
     }
   }
+
+  pub fn annotate_link_url(&self, left: f64, top: f64, right: f64, bottom: f64, url: String) {
+    self
+      .surface
+      .annotate_link_url(left as f32, top as f32, right as f32, bottom as f32, &url);
+  }
+
+  pub fn annotate_named_destination(&self, x: f64, y: f64, name: String) {
+    self
+      .surface
+      .annotate_named_destination(x as f32, y as f32, &name);
+  }
+
+  pub fn annotate_link_to_destination(
+    &self,
+    left: f64,
+    top: f64,
+    right: f64,
+    bottom: f64,
+    name: String,
+  ) {
+    self.surface.annotate_link_to_destination(
+      left as f32,
+      top as f32,
+      right as f32,
+      bottom as f32,
+      &name,
+    );
+  }
 }
 
 #[napi(object)]
@@ -2223,6 +2252,35 @@ impl CanvasRenderingContext2D {
       .context
       .set_transform(Matrix::new(ts.a, ts.b, ts.c, ts.d, ts.e, ts.f));
     None
+  }
+
+  /// Annotate a rectangular region with a clickable URL link (for PDF documents)
+  #[napi]
+  pub fn annotate_link_url(&self, left: f64, top: f64, right: f64, bottom: f64, url: String) {
+    self
+      .context
+      .annotate_link_url(left, top, right, bottom, url);
+  }
+
+  /// Create a named destination at a specific point (for PDF documents)
+  #[napi]
+  pub fn annotate_named_destination(&self, x: f64, y: f64, name: String) {
+    self.context.annotate_named_destination(x, y, name);
+  }
+
+  /// Annotate a rectangular region with a link to a named destination (for PDF documents)
+  #[napi]
+  pub fn annotate_link_to_destination(
+    &self,
+    left: f64,
+    top: f64,
+    right: f64,
+    bottom: f64,
+    name: String,
+  ) {
+    self
+      .context
+      .annotate_link_to_destination(left, top, right, bottom, name);
   }
 }
 

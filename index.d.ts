@@ -18,7 +18,8 @@ interface CanvasRenderingContext2D
     CanvasState,
     CanvasText,
     CanvasTextDrawingStyles,
-    CanvasTransform {}
+    CanvasTransform,
+    CanvasPDFAnnotations {}
 
 interface CanvasState {
   isContextLost(): boolean
@@ -120,6 +121,40 @@ interface CanvasTransform {
   transform(a: number, b: number, c: number, d: number, e: number, f: number): void
   translate(x: number, y: number): void
 }
+
+interface CanvasPDFAnnotations {
+  /**
+   * Create a clickable URL link annotation in a PDF document.
+   * This is only effective when used with PDF documents.
+   * @param left - Left coordinate of the link rectangle
+   * @param top - Top coordinate of the link rectangle
+   * @param right - Right coordinate of the link rectangle
+   * @param bottom - Bottom coordinate of the link rectangle
+   * @param url - The URL to link to
+   */
+  annotateLinkUrl(left: number, top: number, right: number, bottom: number, url: string): void
+
+  /**
+   * Create a named destination at a specific point in a PDF document.
+   * This destination can be used as a target for internal links.
+   * @param x - X coordinate of the destination point
+   * @param y - Y coordinate of the destination point
+   * @param name - Name identifier for the destination
+   */
+  annotateNamedDestination(x: number, y: number, name: string): void
+
+  /**
+   * Create a link to a named destination within the PDF document.
+   * This is only effective when used with PDF documents.
+   * @param left - Left coordinate of the link rectangle
+   * @param top - Top coordinate of the link rectangle
+   * @param right - Right coordinate of the link rectangle
+   * @param bottom - Bottom coordinate of the link rectangle
+   * @param name - Name of the destination to link to
+   */
+  annotateLinkToDestination(left: number, top: number, right: number, bottom: number, name: string): void
+}
+
 type PredefinedColorSpace = 'display-p3' | 'srgb'
 
 interface ImageDataSettings {
