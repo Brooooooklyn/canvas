@@ -105,7 +105,7 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
   explicit TypefaceFontProviderCustom(sk_sp<SkFontMgr> mgr)
       : font_mgr(std::move(mgr)) {}
 
-  ~TypefaceFontProviderCustom(){};
+  ~TypefaceFontProviderCustom() {};
 
   sk_sp<SkTypeface> onLegacyMakeTypeface(const char family_name[],
                                          SkFontStyle style) const override {

@@ -102,7 +102,7 @@ test('should create PDF with multiple URL links', async (t) => {
     { text: 'Documentation', url: 'https://github.com/Brooooooklyn/canvas#readme', y: 220 },
   ]
 
-  links.forEach((link, index) => {
+  links.forEach((link) => {
     // Draw link background
     ctx.fillStyle = 'lightblue'
     ctx.fillRect(50, link.y, 300, 40)
@@ -151,7 +151,7 @@ test('should create table of contents with multiple named destinations', async (
   doc.endPage()
 
   // Create pages for each chapter
-  chapters.forEach((chapter, index) => {
+  chapters.forEach((chapter) => {
     const ctx = doc.beginPage(612, 792)
     ctx.annotateNamedDestination(50, 50, chapter.dest)
     ctx.fillStyle = 'black'
