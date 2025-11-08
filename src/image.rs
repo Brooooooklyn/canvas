@@ -27,13 +27,13 @@ impl ImageData {
   pub fn new(
     env: Env,
     mut this: This,
-    width_or_data: Either<u32, Uint8ClampedArray>,
+    width_or_data: Either4<u32, Uint8ClampedArray, Uint16Array, Float32Array>,
     width_or_height: u32,
     height_or_settings: Option<Either<u32, Settings>>,
     maybe_settings: Option<Settings>,
   ) -> Result<Self> {
     match width_or_data {
-      Either::A(width) => {
+      Either4::A(width) => {
         let height = width_or_height;
         let color_space = match height_or_settings {
           Some(Either::B(settings)) => {
@@ -58,7 +58,8 @@ impl ImageData {
           data: data_ptr,
         })
       }
-      Either::B(data_object) => {
+      Either4::B(data_object) => {
+        // Uint8ClampedArray - each pixel takes 4 bytes
         let input_data_length = data_object.len();
         let width = width_or_height;
         let height = match &height_or_settings {
@@ -74,6 +75,83 @@ impl ImageData {
         // https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D/createImageData
         // An existing ImageData object from which to copy the width and height.
         let mut cloned_data = Uint8ClampedSlice::from_data(&env, data_object.to_vec())?;
+        let data = unsafe { cloned_data.as_mut() }.as_mut_ptr();
+        this.define_properties(&[Property::new()
+          .with_utf8_name("data")?
+          .with_value(&cloned_data)
+          .with_property_attributes(
+            PropertyAttributes::Enumerable | PropertyAttributes::Configurable,
+          )])?;
+        let color_space = maybe_settings
+          .and_then(|settings| ColorSpace::from_str(&settings.color_space).ok())
+          .unwrap_or_default();
+        Ok(ImageData {
+          width: width as usize,
+          height: height as usize,
+          color_space,
+          data,
+        })
+      }
+      Either4::C(data_object) => {
+        // Uint16Array - each pixel takes 4 elements (RGBA), 2 bytes per element
+        let input_data_length = data_object.len();
+        let width = width_or_height;
+        let height = match &height_or_settings {
+          Some(Either::A(height)) => *height,
+          _ => (input_data_length as u32) / 4 / width,
+        };
+        if height * width * 4 != data_object.len() as u32 {
+          return Err(Error::new(
+            Status::InvalidArg,
+            "Index or size is negative or greater than the allowed amount".to_owned(),
+          ));
+        }
+        // Convert Uint16Array to Uint8ClampedArray
+        let mut u8_data = vec![0u8; width as usize * height as usize * 4];
+        for (i, &val) in data_object.as_ref().iter().enumerate() {
+          // Convert from 16-bit (0-65535) to 8-bit (0-255)
+          u8_data[i] = ((val as u32 * 255 + 32767) / 65535) as u8;
+        }
+        let mut cloned_data = Uint8ClampedSlice::from_data(&env, u8_data)?;
+        let data = unsafe { cloned_data.as_mut() }.as_mut_ptr();
+        this.define_properties(&[Property::new()
+          .with_utf8_name("data")?
+          .with_value(&cloned_data)
+          .with_property_attributes(
+            PropertyAttributes::Enumerable | PropertyAttributes::Configurable,
+          )])?;
+        let color_space = maybe_settings
+          .and_then(|settings| ColorSpace::from_str(&settings.color_space).ok())
+          .unwrap_or_default();
+        Ok(ImageData {
+          width: width as usize,
+          height: height as usize,
+          color_space,
+          data,
+        })
+      }
+      Either4::D(data_object) => {
+        // Float32Array - each pixel takes 4 elements (RGBA), 4 bytes per element
+        let input_data_length = data_object.len();
+        let width = width_or_height;
+        let height = match &height_or_settings {
+          Some(Either::A(height)) => *height,
+          _ => (input_data_length as u32) / 4 / width,
+        };
+        if height * width * 4 != data_object.len() as u32 {
+          return Err(Error::new(
+            Status::InvalidArg,
+            "Index or size is negative or greater than the allowed amount".to_owned(),
+          ));
+        }
+        // Convert Float32Array to Uint8ClampedArray
+        let mut u8_data = vec![0u8; width as usize * height as usize * 4];
+        for (i, &val) in data_object.as_ref().iter().enumerate() {
+          // Clamp float values to [0.0, 1.0] and convert to 8-bit (0-255)
+          let clamped = val.clamp(0.0, 1.0);
+          u8_data[i] = (clamped * 255.0).round() as u8;
+        }
+        let mut cloned_data = Uint8ClampedSlice::from_data(&env, u8_data)?;
         let data = unsafe { cloned_data.as_mut() }.as_mut_ptr();
         this.define_properties(&[Property::new()
           .with_utf8_name("data")?

@@ -490,7 +490,7 @@ export class ImageData {
 
   constructor(sw: number, sh: number, attr?: { colorSpace?: ColorSpace })
   constructor(imageData: ImageData, attr?: { colorSpace?: ColorSpace })
-  constructor(data: Uint8ClampedArray, sw: number, sh?: number)
+  constructor(data: Uint8ClampedArray | Uint16Array | Float16Array | Float32Array, sw: number, sh?: number)
 }
 
 export class Image {
