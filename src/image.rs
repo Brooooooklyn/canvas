@@ -148,7 +148,7 @@ impl ImageData {
         let mut u8_data = vec![0u8; width as usize * height as usize * 4];
         for (i, &val) in data_object.as_ref().iter().enumerate() {
           // Clamp float values to [0.0, 1.0] and convert to 8-bit (0-255)
-          let clamped = val.max(0.0).min(1.0);
+          let clamped = val.clamp(0.0, 1.0);
           u8_data[i] = (clamped * 255.0).round() as u8;
         }
         let mut cloned_data = Uint8ClampedSlice::from_data(&env, u8_data)?;
