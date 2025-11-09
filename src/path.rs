@@ -122,7 +122,7 @@ pub struct Path {
 #[napi]
 impl Path {
   #[napi(constructor)]
-  pub fn new(path: Option<Either3<String, &mut Path, Unknown>>) -> Result<Self> {
+  pub fn new(env: Env, path: Option<Either3<String, &mut Path, Unknown>>) -> Result<Self> {
     let inner = match &path {
       Some(Either3::A(path)) => SkPath::from_svg_path(path).ok_or_else(|| {
         Error::new(
@@ -131,14 +131,21 @@ impl Path {
         )
       })?,
       Some(Either3::B(path)) => path.inner.clone(),
-      Some(Either3::C(c)) => {
-        return Err(Error::new(
-          Status::InvalidArg,
-          format!(
-            "Create path from provided unknown value failed {}.",
-            c.get_type()?
-          ),
-        ));
+      Some(Either3::C(unknown)) => {
+        // Try to extract a Path from the Unknown value
+        // This handles webpack-bundled instances where napi-rs misclassifies Path as Unknown
+        match Path::from_napi_value(env.raw(), unknown.raw()) {
+          Ok(path) => path.inner.clone(),
+          Err(_) => {
+            return Err(Error::new(
+              Status::InvalidArg,
+              format!(
+                "Value is none of these types `String`, `Path`. Got {}.",
+                unknown.get_type()?
+              ),
+            ));
+          }
+        }
       }
       None => SkPath::new(),
     };
