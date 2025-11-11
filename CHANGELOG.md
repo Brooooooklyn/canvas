@@ -1,3 +1,14 @@
+## [0.1.82](https://github.com/Brooooooklyn/canvas/compare/v0.1.81...v0.1.82) (2025-11-11)
+
+
+### Features
+
+* add PDF annotation APIs for interactive links and navigation ([#1140](https://github.com/Brooooooklyn/canvas/issues/1140)) ([52cd89f](https://github.com/Brooooooklyn/canvas/commit/52cd89f6a24314b8abef3f04365235a02683afbb))
+* add Uint16Array and Float32Array support to ImageData constructor ([#1144](https://github.com/Brooooooklyn/canvas/issues/1144)) ([b6fc7d8](https://github.com/Brooooooklyn/canvas/commit/b6fc7d8b12a77127a88fbae2e10cc70c6f52102a))
+* PDFDocument support ([#1137](https://github.com/Brooooooklyn/canvas/issues/1137)) ([4ca7479](https://github.com/Brooooooklyn/canvas/commit/4ca7479e230bcea9255213f75a64194209b77c86))
+
+
+
 ## [0.1.81](https://github.com/Brooooooklyn/canvas/compare/v0.1.80...v0.1.81) (2025-10-26)
 
 
