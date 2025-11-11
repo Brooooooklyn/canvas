@@ -258,6 +258,20 @@ struct skiac_pdf_metadata {
                           // high
 };
 
+struct skiac_variable_font_axis {
+  uint32_t tag;           // OpenType tag (e.g., 'wght', 'wdth', 'slnt', 'ital')
+  float value;            // Current value for this axis
+  float min;              // Minimum value for this axis
+  float max;              // Maximum value for this axis
+  float def;              // Default value for this axis
+  bool hidden;            // Whether this axis should be hidden
+};
+
+struct skiac_font_variation {
+  uint32_t tag;           // OpenType tag
+  float value;            // Value for this axis
+};
+
 extern "C" {
 void skiac_clear_all_cache();
 // Surface
@@ -380,7 +394,9 @@ void skiac_canvas_get_line_metrics_or_draw_text(
     float world_spacing,
     skiac_paint* c_paint,
     skiac_canvas* c_canvas,
-    skiac_line_metrics* c_line_metrics);
+    skiac_line_metrics* c_line_metrics,
+    const skiac_font_variation* variations,
+    int variations_count);
 void skiac_canvas_reset_transform(skiac_canvas* c_canvas);
 void skiac_canvas_clip_rect(skiac_canvas* c_canvas,
                             float x,
@@ -702,6 +718,21 @@ void skiac_font_collection_set_alias(skiac_font_collection* c_font_collection,
                                      const char* family,
                                      const char* alias);
 void skiac_font_collection_destroy(skiac_font_collection* c_font_collection);
+
+// Variable Fonts
+int skiac_typeface_get_variation_design_position(
+    skiac_font_collection* c_font_collection,
+    const char* family_name,
+    int weight,
+    int width,
+    int slant,
+    skiac_variable_font_axis* axes,
+    int max_axis_count);
+bool skiac_font_has_variations(skiac_font_collection* c_font_collection,
+                               const char* family_name,
+                               int weight,
+                               int width,
+                               int slant);
 
 // SkDynamicMemoryWStream
 void skiac_sk_w_stream_get(skiac_w_memory_stream* c_w_memory_stream,

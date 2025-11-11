@@ -448,7 +448,9 @@ void skiac_canvas_get_line_metrics_or_draw_text(
     float world_spacing,
     skiac_paint* c_paint,
     skiac_canvas* c_canvas,
-    skiac_line_metrics* c_line_metrics) {
+    skiac_line_metrics* c_line_metrics,
+    const skiac_font_variation* variations,
+    int variations_count) {
   auto font_collection = c_collection->collection;
   auto font_style = SkFontStyle(weight, stretch, (SkFontStyle::Slant)slant);
   auto text_direction = (TextDirection)direction;
@@ -465,6 +467,17 @@ void skiac_canvas_get_line_metrics_or_draw_text(
   text_style.setLetterSpacing(letter_spacing);
   text_style.setHeight(1);
   text_style.setFontStyle(font_style);
+
+  // Apply variable font variations if provided
+  if (variations && variations_count > 0) {
+    std::vector<SkFontArguments::VariationPosition::Coordinate> coords;
+    coords.reserve(variations_count);
+    for (int i = 0; i < variations_count; i++) {
+      coords.push_back({variations[i].tag, variations[i].value});
+    }
+    text_style.setFontArguments(SkFontArguments().setVariationDesignPosition({coords.data(), coords.size()}));
+  }
+
   text_style.setForegroundColor(*PAINT_CAST);
   text_style.setTextBaseline(TextBaseline::kAlphabetic);
   StrutStyle struct_style;
@@ -1737,6 +1750,67 @@ void skiac_font_collection_set_alias(skiac_font_collection* c_font_collection,
 
 void skiac_font_collection_destroy(skiac_font_collection* c_font_collection) {
   delete c_font_collection;
+}
+
+// Variable Fonts
+int skiac_typeface_get_variation_design_position(
+    skiac_font_collection* c_font_collection,
+    const char* family_name,
+    int weight,
+    int width,
+    int slant,
+    skiac_variable_font_axis* axes,
+    int max_axis_count) {
+  if (!c_font_collection || !family_name || !axes || max_axis_count <= 0) {
+    return 0;
+  }
+
+  auto font_style = SkFontStyle(weight, width, (SkFontStyle::Slant)slant);
+  auto typeface = c_font_collection->assets->matchFamilyStyle(family_name, font_style);
+  if (!typeface) {
+    return 0;
+  }
+
+  int axis_count = typeface->getVariationDesignPosition(nullptr, 0);
+  if (axis_count <= 0) {
+    return 0;
+  }
+
+  std::vector<SkFontArguments::VariationPosition::Coordinate> coords(axis_count);
+  axis_count = typeface->getVariationDesignPosition(coords.data(), axis_count);
+
+  int count = std::min(axis_count, max_axis_count);
+  for (int i = 0; i < count; i++) {
+    axes[i].tag = coords[i].axis;
+    axes[i].value = coords[i].value;
+    // Note: Skia's getVariationDesignPosition only returns current values, not ranges
+    // We would need getVariationDesignParameters for full axis information
+    axes[i].min = coords[i].value;
+    axes[i].max = coords[i].value;
+    axes[i].def = coords[i].value;
+    axes[i].hidden = false;
+  }
+
+  return count;
+}
+
+bool skiac_font_has_variations(skiac_font_collection* c_font_collection,
+                               const char* family_name,
+                               int weight,
+                               int width,
+                               int slant) {
+  if (!c_font_collection || !family_name) {
+    return false;
+  }
+
+  auto font_style = SkFontStyle(weight, width, (SkFontStyle::Slant)slant);
+  auto typeface = c_font_collection->assets->matchFamilyStyle(family_name, font_style);
+  if (!typeface) {
+    return false;
+  }
+
+  int axis_count = typeface->getVariationDesignPosition(nullptr, 0);
+  return axis_count > 0;
 }
 
 // SkWStream
