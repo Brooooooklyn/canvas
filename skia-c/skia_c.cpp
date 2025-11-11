@@ -475,7 +475,9 @@ void skiac_canvas_get_line_metrics_or_draw_text(
     for (int i = 0; i < variations_count; i++) {
       coords.push_back({variations[i].tag, variations[i].value});
     }
-    text_style.setFontArguments(SkFontArguments().setVariationDesignPosition({coords.data(), coords.size()}));
+    SkFontArguments font_args;
+    font_args.setVariationDesignPosition({coords.data(), static_cast<int>(coords.size())});
+    text_style.setFontArguments(std::make_optional(font_args));
   }
 
   text_style.setForegroundColor(*PAINT_CAST);
