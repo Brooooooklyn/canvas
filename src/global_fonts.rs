@@ -123,10 +123,10 @@ pub mod global_fonts {
   #[derive(Debug, Clone)]
   pub struct FontVariationAxis {
     pub tag: u32,
-    pub value: f32,
-    pub min: f32,
-    pub max: f32,
-    pub def: f32,
+    pub value: f64,
+    pub min: f64,
+    pub max: f64,
+    pub def: f64,
     pub hidden: bool,
   }
 
@@ -144,10 +144,10 @@ pub mod global_fonts {
         .into_iter()
         .map(|axis| FontVariationAxis {
           tag: axis.tag,
-          value: axis.value,
-          min: axis.min,
-          max: axis.max,
-          def: axis.def,
+          value: axis.value as f64,
+          min: axis.min as f64,
+          max: axis.max as f64,
+          def: axis.def as f64,
           hidden: axis.hidden,
         })
         .collect(),
