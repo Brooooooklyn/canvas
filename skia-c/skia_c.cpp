@@ -1773,13 +1773,15 @@ int skiac_typeface_get_variation_design_position(
     return 0;
   }
 
-  int axis_count = typeface->getVariationDesignPosition(nullptr, 0);
+  // First call to get the number of axes
+  int axis_count = typeface->getVariationDesignPosition({});
   if (axis_count <= 0) {
     return 0;
   }
 
+  // Allocate and retrieve the actual coordinates
   std::vector<SkFontArguments::VariationPosition::Coordinate> coords(axis_count);
-  axis_count = typeface->getVariationDesignPosition(coords.data(), axis_count);
+  typeface->getVariationDesignPosition({coords.data(), coords.size()});
 
   int count = std::min(axis_count, max_axis_count);
   for (int i = 0; i < count; i++) {
@@ -1811,7 +1813,7 @@ bool skiac_font_has_variations(skiac_font_collection* c_font_collection,
     return false;
   }
 
-  int axis_count = typeface->getVariationDesignPosition(nullptr, 0);
+  int axis_count = typeface->getVariationDesignPosition({});
   return axis_count > 0;
 }
 
