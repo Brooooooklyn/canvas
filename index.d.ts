@@ -708,6 +708,21 @@ export declare class FontKey {
   private readonly key: symbol
 }
 
+export interface FontVariationAxis {
+  /** OpenType tag as a 32-bit integer (e.g., 0x77676874 for 'wght') */
+  tag: number
+  /** Current value for this axis */
+  value: number
+  /** Minimum value for this axis */
+  min: number
+  /** Maximum value for this axis */
+  max: number
+  /** Default value for this axis */
+  def: number
+  /** Whether this axis should be hidden from UI */
+  hidden: boolean
+}
+
 interface IGlobalFonts {
   readonly families: { family: string; styles: { weight: number; width: string; style: string }[] }[]
   // return true if succeeded
@@ -717,6 +732,24 @@ interface IGlobalFonts {
   has(name: string): boolean
   loadFontsFromDir(path: string): number
   remove(key: FontKey): void
+  /**
+   * Get variation axes for a specific font instance
+   * @param familyName The font family name
+   * @param weight Font weight (100-900)
+   * @param width Font width/stretch value
+   * @param slant Font slant (0 = upright, 1 = italic, 2 = oblique)
+   * @returns Array of variation axes or empty array if not a variable font
+   */
+  getVariationAxes(familyName: string, weight: number, width: number, slant: number): FontVariationAxis[]
+  /**
+   * Check if a font has variable font capabilities
+   * @param familyName The font family name
+   * @param weight Font weight (100-900)
+   * @param width Font width/stretch value
+   * @param slant Font slant (0 = upright, 1 = italic, 2 = oblique)
+   * @returns true if the font is a variable font
+   */
+  hasVariations(familyName: string, weight: number, width: number, slant: number): boolean
 }
 
 export const GlobalFonts: IGlobalFonts
