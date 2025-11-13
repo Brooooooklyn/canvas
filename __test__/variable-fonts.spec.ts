@@ -1,7 +1,10 @@
+import { join, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
 import test from 'ava'
 import { GlobalFonts } from '../index.js'
-import { promises as fs } from 'fs'
-import { join } from 'path'
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
 
 // This test demonstrates the new variable font support
 // It requires a variable font to be present in the test fonts directory
