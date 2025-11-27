@@ -470,9 +470,10 @@ void skiac_canvas_get_line_metrics_or_draw_text(
   text_style.setHeight(1);
   text_style.setFontStyle(font_style);
 
+  std::vector<SkFontArguments::VariationPosition::Coordinate> coords;
+
   // Apply variable font variations if provided
   if (variations && variations_count > 0) {
-    std::vector<SkFontArguments::VariationPosition::Coordinate> coords;
     coords.reserve(variations_count);
     for (int i = 0; i < variations_count; i++) {
       coords.push_back({variations[i].tag, variations[i].value});
