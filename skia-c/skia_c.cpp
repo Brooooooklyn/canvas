@@ -1,6 +1,7 @@
 #include <assert.h>
 #include <math.h>
 #include <algorithm>
+#include <optional>
 #include <vector>
 
 #include "skia_c.hpp"
@@ -8,8 +9,31 @@
 #define CANVAS_CAST reinterpret_cast<SkCanvas*>(c_canvas)
 #define PAINT_CAST reinterpret_cast<SkPaint*>(c_paint)
 #define BITMAP_CAST reinterpret_cast<SkBitmap*>(c_bitmap)
-#define PATH_CAST reinterpret_cast<SkPath*>(c_path)
 #define MATRIX_CAST reinterpret_cast<SkMatrix*>(c_matrix)
+
+// skiac_path struct with lazy caching for SkPath
+struct skiac_path {
+  SkPathBuilder builder;
+  mutable std::optional<SkPath> cached_path;
+
+  skiac_path() = default;
+  explicit skiac_path(const SkPath& path) : builder(path), cached_path(path) {}
+  explicit skiac_path(SkPathFillType ft) : builder(ft) {}
+
+  void invalidate() { cached_path.reset(); }
+
+  const SkPath& path() const {
+    if (!cached_path) {
+      cached_path = builder.snapshot();
+    }
+    return *cached_path;
+  }
+
+  void replace_from_path(const SkPath& p) {
+    builder = SkPathBuilder(p);
+    cached_path.reset();
+  }
+};
 #define MASK_FILTER_CAST reinterpret_cast<SkMaskFilter*>(c_mask_filter)
 #define IMAGE_FILTER_CAST reinterpret_cast<SkImageFilter*>(c_image_filter)
 #define TYPEFACE_CAST reinterpret_cast<SkTypeface*>(c_typeface)
@@ -384,7 +408,7 @@ void skiac_canvas_draw_image(skiac_canvas* c_canvas,
 void skiac_canvas_draw_path(skiac_canvas* c_canvas,
                             skiac_path* c_path,
                             skiac_paint* c_paint) {
-  CANVAS_CAST->drawPath(*PATH_CAST, *PAINT_CAST);
+  CANVAS_CAST->drawPath(c_path->path(), *PAINT_CAST);
 }
 
 void skiac_canvas_draw_rect(skiac_canvas* c_canvas,
@@ -649,8 +673,7 @@ void skiac_canvas_clip_rect(skiac_canvas* c_canvas,
 }
 
 void skiac_canvas_clip_path(skiac_canvas* c_canvas, skiac_path* c_path) {
-  auto path = reinterpret_cast<SkPath*>(c_path);
-  CANVAS_CAST->clipPath(*path, true);
+  CANVAS_CAST->clipPath(c_path->path(), true);
 }
 
 void skiac_canvas_save(skiac_canvas* c_canvas) {
@@ -845,22 +868,19 @@ float skiac_paint_get_stroke_miter(skiac_paint* c_paint) {
 // Path
 
 skiac_path* skiac_path_create() {
-  return reinterpret_cast<skiac_path*>(new SkPath());
+  return new skiac_path();
 }
 
 skiac_path* skiac_path_from_svg(char* svg_path) {
-  auto path = new SkPath();
   auto maybe_path = SkParsePath::FromSVGString(svg_path);
   if (maybe_path) {
-    maybe_path->swap(*path);
-    return reinterpret_cast<skiac_path*>(path);
+    return new skiac_path(*maybe_path);
   }
   return nullptr;
 }
 
 skiac_path* skiac_path_clone(skiac_path* c_path) {
-  auto new_path = new SkPath(*PATH_CAST);
-  return reinterpret_cast<skiac_path*>(new_path);
+  return new skiac_path(c_path->path());
 }
 
 void skiac_picture_destroy(skiac_picture* c_picture) {
@@ -898,26 +918,29 @@ skiac_picture* skiac_picture_recorder_finish_recording_as_picture(
 }
 
 void skiac_path_swap(skiac_path* c_path, skiac_path* other_path) {
-  auto other = reinterpret_cast<SkPath*>(other_path);
-  PATH_CAST->swap(*other);
+  std::swap(c_path->builder, other_path->builder);
+  std::swap(c_path->cached_path, other_path->cached_path);
 }
 
 void skiac_add_path(skiac_path* c_path,
                     skiac_path* other_path,
                     skiac_matrix* c_matrix) {
-  auto path = PATH_CAST;
-  path->addPath(*reinterpret_cast<SkPath*>(other_path), *MATRIX_CAST,
-                SkPath::AddPathMode::kExtend_AddPathMode);
+  c_path->builder.addPath(other_path->path(), *MATRIX_CAST,
+                          SkPath::AddPathMode::kExtend_AddPathMode);
+  c_path->invalidate();
 }
 
 bool skiac_path_op(skiac_path* c_path_one, skiac_path* c_path_two, int op) {
-  auto path_one = reinterpret_cast<SkPath*>(c_path_one);
-  return Op(*path_one, *reinterpret_cast<SkPath*>(c_path_two), (SkPathOp)op,
-            path_one);
+  SkPath result;
+  if (Op(c_path_one->path(), c_path_two->path(), (SkPathOp)op, &result)) {
+    c_path_one->replace_from_path(result);
+    return true;
+  }
+  return false;
 }
 
 void skiac_path_to_svg_string(skiac_path* c_path, skiac_string* c_string) {
-  auto string = SkParsePath::ToSVGString(*PATH_CAST);
+  auto string = SkParsePath::ToSVGString(c_path->path());
   auto length = string.size();
   auto result_string = new SkString(length);
   string.swap(*result_string);
@@ -927,11 +950,21 @@ void skiac_path_to_svg_string(skiac_path* c_path, skiac_string* c_string) {
 }
 
 bool skiac_path_simplify(skiac_path* c_path) {
-  return Simplify(*PATH_CAST, PATH_CAST);
+  SkPath result;
+  if (Simplify(c_path->path(), &result)) {
+    c_path->replace_from_path(result);
+    return true;
+  }
+  return false;
 }
 
 bool skiac_path_as_winding(skiac_path* c_path) {
-  return AsWinding(*PATH_CAST, PATH_CAST);
+  SkPath result;
+  if (AsWinding(c_path->path(), &result)) {
+    c_path->replace_from_path(result);
+    return true;
+  }
+  return false;
 }
 
 bool skiac_path_stroke(skiac_path* c_path,
@@ -939,20 +972,22 @@ bool skiac_path_stroke(skiac_path* c_path,
                        uint8_t join,
                        float width,
                        float miter_limit) {
-  auto path = PATH_CAST;
   SkPaint p;
   p.setStyle(SkPaint::kStroke_Style);
   p.setStrokeCap((SkPaint::Cap)cap);
   p.setStrokeJoin((SkPaint::Join)join);
   p.setStrokeWidth(width);
   p.setStrokeMiter(miter_limit);
-  const SkPath* const_path = path;
-  const SkPaint const_paint = p;
-  return skpathutils::FillPathWithPaint(*const_path, const_paint, path);
+  SkPath result;
+  if (skpathutils::FillPathWithPaint(c_path->path(), p, &result)) {
+    c_path->replace_from_path(result);
+    return true;
+  }
+  return false;
 }
 
 void skiac_path_compute_tight_bounds(skiac_path* c_path, skiac_rect* c_rect) {
-  auto rect = PATH_CAST->computeTightBounds();
+  auto rect = c_path->builder.computeBounds();
   c_rect->left = rect.fLeft;
   c_rect->top = rect.fTop;
   c_rect->right = rect.fRight;
@@ -960,7 +995,7 @@ void skiac_path_compute_tight_bounds(skiac_path* c_path, skiac_rect* c_rect) {
 }
 
 void skiac_path_get_bounds(skiac_path* c_path, skiac_rect* c_rect) {
-  auto rect = PATH_CAST->getBounds();
+  auto rect = c_path->builder.computeBounds();
   c_rect->left = rect.fLeft;
   c_rect->top = rect.fTop;
   c_rect->right = rect.fRight;
@@ -978,7 +1013,9 @@ bool skiac_path_trim(skiac_path* c_path,
     return false;
   }
   SkStrokeRec rec(SkStrokeRec::InitStyle::kHairline_InitStyle);
-  if (pe->filterPath(PATH_CAST, *PATH_CAST, &rec, nullptr)) {
+  SkPath result;
+  if (pe->filterPath(&result, c_path->path(), &rec, nullptr)) {
+    c_path->replace_from_path(result);
     return true;
   }
   return false;
@@ -991,7 +1028,9 @@ bool skiac_path_dash(skiac_path* c_path, float on, float off, float phase) {
     return false;
   }
   SkStrokeRec rec(SkStrokeRec::InitStyle::kHairline_InitStyle);
-  if (pe->filterPath(PATH_CAST, *PATH_CAST, &rec, nullptr)) {
+  SkPath result;
+  if (pe->filterPath(&result, c_path->path(), &rec, nullptr)) {
+    c_path->replace_from_path(result);
     return true;
   }
   return false;
@@ -1003,27 +1042,29 @@ bool skiac_path_round(skiac_path* c_path, float radius) {
     return false;
   }
   SkStrokeRec rec(SkStrokeRec::InitStyle::kHairline_InitStyle);
-  if (pe->filterPath(PATH_CAST, *PATH_CAST, &rec, nullptr)) {
+  SkPath result;
+  if (pe->filterPath(&result, c_path->path(), &rec, nullptr)) {
+    c_path->replace_from_path(result);
     return true;
   }
   return false;
 }
 
 bool skiac_path_equals(skiac_path* c_path, skiac_path* other_path) {
-  return *PATH_CAST == *reinterpret_cast<SkPath*>(other_path);
+  return c_path->path() == other_path->path();
 }
 
 void skiac_path_destroy(skiac_path* c_path) {
-  // SkPath is NOT ref counted
-  delete PATH_CAST;
+  delete c_path;
 }
 
 void skiac_path_set_fill_type(skiac_path* c_path, int type) {
-  PATH_CAST->setFillType((SkPathFillType)type);
+  c_path->builder.setFillType((SkPathFillType)type);
+  c_path->invalidate();
 }
 
 int skiac_path_get_fill_type(skiac_path* c_path) {
-  return (int)PATH_CAST->getFillType();
+  return (int)c_path->builder.fillType();
 }
 
 void skiac_path_arc_to_tangent(skiac_path* c_path,
@@ -1032,7 +1073,8 @@ void skiac_path_arc_to_tangent(skiac_path* c_path,
                                float x2,
                                float y2,
                                float radius) {
-  PATH_CAST->arcTo(x1, y1, x2, y2, radius);
+  c_path->builder.arcTo(SkPoint::Make(x1, y1), SkPoint::Make(x2, y2), radius);
+  c_path->invalidate();
 }
 
 void skiac_path_arc_to(skiac_path* c_path,
@@ -1044,15 +1086,18 @@ void skiac_path_arc_to(skiac_path* c_path,
                        float sweepAngle,
                        bool forceMoveTo) {
   SkRect rect = SkRect::MakeLTRB(left, top, right, bottom);
-  PATH_CAST->arcTo(rect, startAngle, sweepAngle, forceMoveTo);
+  c_path->builder.arcTo(rect, startAngle, sweepAngle, forceMoveTo);
+  c_path->invalidate();
 }
 
 void skiac_path_move_to(skiac_path* c_path, float x, float y) {
-  PATH_CAST->moveTo(x, y);
+  c_path->builder.moveTo(x, y);
+  c_path->invalidate();
 }
 
 void skiac_path_line_to(skiac_path* c_path, float x, float y) {
-  PATH_CAST->lineTo(x, y);
+  c_path->builder.lineTo(x, y);
+  c_path->invalidate();
 }
 
 void skiac_path_cubic_to(skiac_path* c_path,
@@ -1062,7 +1107,8 @@ void skiac_path_cubic_to(skiac_path* c_path,
                          float y2,
                          float x3,
                          float y3) {
-  PATH_CAST->cubicTo(x1, y1, x2, y2, x3, y3);
+  c_path->builder.cubicTo(x1, y1, x2, y2, x3, y3);
+  c_path->invalidate();
 }
 
 void skiac_path_quad_to(skiac_path* c_path,
@@ -1070,11 +1116,13 @@ void skiac_path_quad_to(skiac_path* c_path,
                         float cpy,
                         float x,
                         float y) {
-  PATH_CAST->quadTo(cpx, cpy, x, y);
+  c_path->builder.quadTo(cpx, cpy, x, y);
+  c_path->invalidate();
 }
 
 void skiac_path_close(skiac_path* c_path) {
-  PATH_CAST->close();
+  c_path->builder.close();
+  c_path->invalidate();
 }
 
 void skiac_path_add_rect(skiac_path* c_path,
@@ -1083,33 +1131,37 @@ void skiac_path_add_rect(skiac_path* c_path,
                          float width,
                          float height) {
   SkRect rect = SkRect::MakeXYWH(x, y, width, height);
-  PATH_CAST->addRect(rect);
+  c_path->builder.addRect(rect);
+  c_path->invalidate();
 }
 
 void skiac_path_add_circle(skiac_path* c_path, float x, float y, float r) {
-  PATH_CAST->addCircle(x, y, r);
+  c_path->builder.addCircle(x, y, r);
+  c_path->invalidate();
 }
 
 skiac_path* skiac_path_transform(skiac_path* c_path, skiac_matrix* c_matrix) {
-  auto new_path = new SkPath();
-  PATH_CAST->transform(*MATRIX_CAST, new_path, SkApplyPerspectiveClip::kYes);
-  return reinterpret_cast<skiac_path*>(new_path);
+  SkPath transformed = c_path->path().makeTransform(*MATRIX_CAST);
+  return new skiac_path(transformed);
 }
 
 void skiac_path_transform_self(skiac_path* c_path, skiac_matrix* c_matrix) {
   SkMatrix matrix = *reinterpret_cast<SkMatrix*>(c_matrix);
-  PATH_CAST->transform(matrix, SkApplyPerspectiveClip::kYes);
+  SkPath transformed = c_path->path().makeTransform(matrix);
+  c_path->replace_from_path(transformed);
 }
 
 bool skiac_path_is_empty(skiac_path* c_path) {
-  return PATH_CAST->isEmpty();
+  return c_path->builder.isEmpty();
 }
 
 bool skiac_path_hit_test(skiac_path* c_path, float x, float y, int type) {
-  auto prev_fill = PATH_CAST->getFillType();
-  PATH_CAST->setFillType((SkPathFillType)type);
-  auto result = PATH_CAST->contains(x, y);
-  PATH_CAST->setFillType(prev_fill);
+  auto prev_fill = c_path->builder.fillType();
+  c_path->builder.setFillType((SkPathFillType)type);
+  c_path->invalidate();
+  auto result = c_path->path().contains(x, y);
+  c_path->builder.setFillType(prev_fill);
+  c_path->invalidate();
   return result;
 }
 
@@ -1117,9 +1169,11 @@ bool skiac_path_stroke_hit_test(skiac_path* c_path,
                                 float x,
                                 float y,
                                 float stroke_w) {
-  auto path = PATH_CAST;
-  auto prev_fill = path->getFillType();
-  path->setFillType(SkPathFillType::kWinding);
+  // Use the cached path with winding fill type for stroke hit testing
+  auto prev_fill = c_path->builder.fillType();
+  c_path->builder.setFillType(SkPathFillType::kWinding);
+  c_path->invalidate();
+
   SkPaint paint;
   paint.setStrokeWidth(stroke_w);
   paint.setStyle(SkPaint::kStroke_Style);
@@ -1127,16 +1181,18 @@ bool skiac_path_stroke_hit_test(skiac_path* c_path,
 
   bool result;
   auto precision = 0.3;  // Based on config in Chromium
-  const SkPath* const_path = path;
+  const SkPath& path_ref = c_path->path();
   const SkPaint const_paint = paint;
-  if (skpathutils::FillPathWithPaint(*const_path, const_paint, &traced_path,
+  if (skpathutils::FillPathWithPaint(path_ref, const_paint, &traced_path,
                                      nullptr, precision)) {
     result = traced_path.contains(x, y);
   } else {
-    result = path->contains(x, y);
+    result = path_ref.contains(x, y);
   }
 
-  path->setFillType(prev_fill);
+  // Restore original fill type
+  c_path->builder.setFillType(prev_fill);
+  c_path->invalidate();
   return result;
 }
 
@@ -1147,15 +1203,17 @@ void skiac_path_round_rect(skiac_path* c_path,
                            SkScalar height,
                            SkScalar* radii,
                            bool clockwise) {
-  auto path = PATH_CAST;
-  SkScalar radii_vec[8];
+  // Convert 4 radii to SkVector array for SkRRect
+  SkVector radii_vectors[4];
   for (size_t i = 0; i < 4; i++) {
-    radii_vec[i * 2] = radii[i];
-    radii_vec[i * 2 + 1] = radii[i];
+    radii_vectors[i] = {radii[i], radii[i]};
   }
   SkRect rect = SkRect::MakeXYWH(x, y, width, height);
-  auto ccw = clockwise ? SkPathDirection::kCW : SkPathDirection::kCCW;
-  path->addRoundRect(rect, radii_vec, ccw);
+  SkRRect rrect;
+  rrect.setRectRadii(rect, radii_vectors);
+  auto direction = clockwise ? SkPathDirection::kCW : SkPathDirection::kCCW;
+  c_path->builder.addRRect(rrect, direction);
+  c_path->invalidate();
 }
 
 // PathEffect
