@@ -1169,11 +1169,8 @@ bool skiac_path_stroke_hit_test(skiac_path* c_path,
                                 float x,
                                 float y,
                                 float stroke_w) {
-  // Create a temporary path with winding fill type to avoid mutating the
-  // builder
-  SkPathBuilder temp_builder(c_path->path());
-  temp_builder.setFillType(SkPathFillType::kWinding);
-  SkPath path_with_winding = temp_builder.detach();
+  SkPath path_with_winding = c_path->path();
+  path_with_winding.setFillType(SkPathFillType::kWinding);
 
   SkPaint paint;
   paint.setStrokeWidth(stroke_w);
@@ -1195,7 +1192,7 @@ void skiac_path_round_rect(skiac_path* c_path,
                            SkScalar height,
                            SkScalar* radii,
                            bool clockwise) {
-  // Convert 4 radii to SkVector array for SkRRect
+  // Convert 4 scalar radii to uniform SkVector radii (same x/y per corner)
   SkVector radii_vectors[4];
   for (size_t i = 0; i < 4; i++) {
     radii_vectors[i] = {radii[i], radii[i]};

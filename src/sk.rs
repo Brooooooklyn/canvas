@@ -1126,7 +1126,6 @@ pub enum ColorSpace {
   DisplayP3,
 }
 
-
 impl FromStr for ColorSpace {
   type Err = SkError;
 
@@ -1270,8 +1269,7 @@ pub enum TileMode {
 }
 
 #[repr(u8)]
-#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
-#[derive(Default)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, Default)]
 pub enum BlendMode {
   /// Replaces destination with zero: fully transparent.
   Clear = 0,
@@ -1333,7 +1331,6 @@ pub enum BlendMode {
   /// Luminosity of source with hue and saturation of destination.
   Luminosity,
 }
-
 
 impl BlendMode {
   pub fn as_str(&self) -> &'static str {
@@ -1527,8 +1524,7 @@ impl From<i32> for PathOp {
 }
 
 #[repr(i32)]
-#[derive(Debug, Clone, Copy)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub enum TextAlign {
   Left,
   Right,
@@ -1552,7 +1548,6 @@ impl TextAlign {
   }
 }
 
-
 impl FromStr for TextAlign {
   type Err = SkError;
 
@@ -1570,8 +1565,7 @@ impl FromStr for TextAlign {
 }
 
 #[repr(i32)]
-#[derive(Debug, Clone, Copy)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub enum TextBaseline {
   Top,
   Hanging,
@@ -1581,7 +1575,6 @@ pub enum TextBaseline {
   Ideographic,
   Bottom,
 }
-
 
 impl FromStr for TextBaseline {
   type Err = SkError;
@@ -1619,8 +1612,7 @@ impl Display for TextBaseline {
 }
 
 #[repr(i32)]
-#[derive(Debug, Clone, Copy)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub enum TextDirection {
   #[default]
   Inherit,
@@ -1655,7 +1647,6 @@ impl TextDirection {
     }
   }
 }
-
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(i32)]
