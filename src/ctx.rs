@@ -333,12 +333,14 @@ impl Context {
     max_width: f32,
   ) -> result::Result<(), SkError> {
     let stroke_paint = self.stroke_paint()?;
+    let variations = self.state.font_variations.clone();
     self.draw_text(
       text.replace('\n', " ").as_str(),
       x,
       y,
       max_width,
       &stroke_paint,
+      &variations,
     )?;
     Ok(())
   }
@@ -392,12 +394,14 @@ impl Context {
     max_width: f32,
   ) -> result::Result<(), SkError> {
     let fill_paint = self.fill_paint()?;
+    let variations = self.state.font_variations.clone();
     self.draw_text(
       text.replace('\n', " ").as_str(),
       x,
       y,
       max_width,
       &fill_paint,
+      &variations,
     )?;
     Ok(())
   }
@@ -594,6 +598,17 @@ impl Context {
   pub fn set_font(&mut self, font: String) -> result::Result<(), SkError> {
     self.state.font_style = Font::new(&font)?;
     self.state.font = font;
+    Ok(())
+  }
+
+  pub fn get_font_variation_settings(&self) -> &str {
+    &self.state.font_variation_settings
+  }
+
+  pub fn set_font_variation_settings(&mut self, settings: String) -> result::Result<(), SkError> {
+    let (settings, variations) = parse_font_variation_settings(&settings);
+    self.state.font_variation_settings = settings;
+    self.state.font_variations = variations;
     Ok(())
   }
 
@@ -875,6 +890,7 @@ impl Context {
     y: f32,
     max_width: f32,
     paint: &Paint,
+    variations: &[crate::sk::FontVariation],
   ) -> result::Result<(), SkError> {
     let state = &self.state;
     let width = self.width;
@@ -923,6 +939,7 @@ impl Context {
                 state.letter_spacing,
                 state.word_spacing,
                 shadow_paint,
+                variations,
               )?;
               shadow_canvas.restore();
               Ok(())
@@ -947,6 +964,7 @@ impl Context {
           state.letter_spacing,
           state.word_spacing,
           paint,
+          variations,
         )?;
         Ok(())
       },
@@ -975,6 +993,7 @@ impl Context {
       state.letter_spacing,
       state.word_spacing,
       &fill_paint,
+      &self.state.font_variations,
     )?);
     Ok(line_metrics)
   }
@@ -1322,6 +1341,17 @@ impl CanvasRenderingContext2D {
   #[napi(getter)]
   pub fn get_font(&self) -> String {
     self.context.get_font().to_owned()
+  }
+
+  #[napi(getter)]
+  pub fn get_font_variation_settings(&self) -> String {
+    self.context.get_font_variation_settings().to_owned()
+  }
+
+  #[napi(setter)]
+  pub fn set_font_variation_settings(&mut self, settings: String) -> Result<()> {
+    self.context.set_font_variation_settings(settings)?;
+    Ok(())
   }
 
   #[napi(setter, return_if_invalid)]
@@ -2480,4 +2510,179 @@ fn parse_css_size(css_size: &str) -> Option<f32> {
     });
   }
   None
+}
+
+fn parse_font_variation_settings(settings: &str) -> (String, Vec<crate::sk::FontVariation>) {
+  let trimmed = settings.trim();
+  if trimmed.eq_ignore_ascii_case("normal") || trimmed.is_empty() {
+    return ("normal".to_owned(), vec![]);
+  }
+
+  let mut variations: Vec<crate::sk::FontVariation> = Vec::new();
+  let mut valid = true;
+
+  for part in trimmed.split(',') {
+    let part = part.trim();
+    if part.is_empty() {
+      continue;
+    }
+
+    let mut chars = part.chars();
+    let first = chars.next();
+    let quote = match first {
+      Some('\'') => '\'',
+      Some('"') => '"',
+      _ => {
+        valid = false;
+        break;
+      }
+    };
+
+    let mut tag_str = String::new();
+    let mut closed = false;
+    for c in chars.by_ref() {
+      if c == quote {
+        closed = true;
+        break;
+      }
+      tag_str.push(c);
+    }
+
+    if !closed || tag_str.len() != 4 {
+      valid = false;
+      break;
+    }
+
+    let rest: String = chars.collect();
+    let val_str = rest.trim();
+    let val = match val_str.parse::<f32>() {
+      Ok(v) => v,
+      Err(_) => {
+        valid = false;
+        break;
+      }
+    };
+
+    let bytes = tag_str.as_bytes();
+    let tag = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+
+    if let Some(existing) = variations.iter_mut().find(|v| v.tag == tag) {
+      existing.value = val;
+    } else {
+      variations.push(crate::sk::FontVariation { tag, value: val });
+    }
+  }
+
+  if !valid {
+    return (settings.to_owned(), vec![]);
+  }
+
+  (settings.to_owned(), variations)
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn test_parse_font_variation_settings_normal() {
+    let (settings, variations) = parse_font_variation_settings("normal");
+    assert_eq!(settings, "normal");
+    assert!(variations.is_empty());
+
+    let (settings, variations) = parse_font_variation_settings("NORMAL");
+    assert_eq!(settings, "normal");
+    assert!(variations.is_empty());
+  }
+
+  #[test]
+  fn test_parse_font_variation_settings_single() {
+    let (settings, variations) = parse_font_variation_settings("'wght' 700");
+    assert_eq!(settings, "'wght' 700");
+    assert_eq!(variations.len(), 1);
+    assert_eq!(variations[0].tag, 0x77676874); // 'wght'
+    assert_eq!(variations[0].value, 700.0);
+  }
+
+  #[test]
+  fn test_parse_font_variation_settings_multiple() {
+    let (settings, variations) = parse_font_variation_settings("'wght' 700, 'wdth' 50");
+    assert_eq!(settings, "'wght' 700, 'wdth' 50");
+    assert_eq!(variations.len(), 2);
+    assert_eq!(variations[0].tag, 0x77676874); // 'wght'
+    assert_eq!(variations[0].value, 700.0);
+    assert_eq!(variations[1].tag, 0x77647468); // 'wdth'
+    assert_eq!(variations[1].value, 50.0);
+  }
+
+  #[test]
+  fn test_parse_font_variation_settings_double_quotes() {
+    let (settings, variations) = parse_font_variation_settings("\"wght\" 700");
+    assert_eq!(settings, "\"wght\" 700");
+    assert_eq!(variations.len(), 1);
+    assert_eq!(variations[0].tag, 0x77676874); // 'wght'
+    assert_eq!(variations[0].value, 700.0);
+  }
+
+  #[test]
+  fn test_parse_font_variation_settings_whitespace() {
+    let (settings, variations) = parse_font_variation_settings("  'wght'  700  ,  'wdth'  50  ");
+    assert_eq!(settings, "  'wght'  700  ,  'wdth'  50  ");
+    assert_eq!(variations.len(), 2);
+    assert_eq!(variations[0].tag, 0x77676874);
+    assert_eq!(variations[0].value, 700.0);
+    assert_eq!(variations[1].tag, 0x77647468);
+    assert_eq!(variations[1].value, 50.0);
+  }
+
+  #[test]
+  fn test_parse_font_variation_settings_invalid() {
+    let (settings, variations) = parse_font_variation_settings("invalid");
+    assert_eq!(settings, "invalid");
+    assert!(variations.is_empty());
+
+    let (settings, variations) = parse_font_variation_settings("'inv' 100"); // Tag too short
+    assert_eq!(settings, "'inv' 100");
+    assert!(variations.is_empty());
+
+    let (settings, variations) = parse_font_variation_settings("'wght' 100, invalid"); // One invalid part
+    assert_eq!(settings, "'wght' 100, invalid");
+    assert!(variations.is_empty()); // Should fail completely
+  }
+
+  #[test]
+  fn test_parse_font_variation_settings_repeated() {
+    let (settings, variations) = parse_font_variation_settings("'wght' 100, 'wght' 200");
+    assert_eq!(settings, "'wght' 100, 'wght' 200");
+    assert_eq!(variations.len(), 1); // Deduplicated
+    assert_eq!(variations[0].tag, 0x77676874);
+    assert_eq!(variations[0].value, 200.0); // Last wins
+  }
+
+  #[test]
+  fn test_parse_font_variation_settings_unknown_tag() {
+    let (settings, variations) = parse_font_variation_settings("'abcd' 123");
+    assert_eq!(settings, "'abcd' 123");
+    assert_eq!(variations.len(), 1);
+    assert_eq!(variations[0].tag, 0x61626364); // 'abcd'
+    assert_eq!(variations[0].value, 123.0);
+  }
+
+  #[test]
+  fn test_parse_font_variation_settings_numeric() {
+    let (settings, variations) = parse_font_variation_settings("'wght' 123.45, 'slnt' -10");
+    assert_eq!(settings, "'wght' 123.45, 'slnt' -10");
+    assert_eq!(variations.len(), 2);
+    assert_eq!(variations[0].value, 123.45);
+    assert_eq!(variations[1].value, -10.0);
+  }
+
+  #[test]
+  fn test_parse_font_variation_settings_complex_quoting() {
+    let (settings, variations) = parse_font_variation_settings(r#"'wght' 400, "wdth" 50"#);
+    assert_eq!(settings, r#"'wght' 400, "wdth" 50"#);
+    assert_eq!(variations.len(), 2);
+    assert_eq!(variations[0].tag, 0x77676874);
+    assert_eq!(variations[1].tag, 0x77647468);
+  }
 }

@@ -181,3 +181,12 @@ test('text-align-with-space', async (t) => {
   ctx.fillText('A B C', 100, 200)
   await snapshotImage(t)
 })
+
+test('font-variation-settings', async (t) => {
+  const { ctx } = t.context
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'Oswald.ttf'), 'Oswald')
+  ctx.font = '50px Oswald'
+  ctx.fontVariationSettings = "'wght' 700"
+  ctx.fillText('Hello World', 50, 100)
+  await snapshotImage(t)
+})

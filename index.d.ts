@@ -5,21 +5,21 @@ export function clearAllCache(): void
 
 interface CanvasRenderingContext2D
   extends CanvasCompositing,
-    CanvasDrawPath,
-    CanvasFillStrokeStyles,
-    CanvasFilters,
-    CanvasImageData,
-    CanvasImageSmoothing,
-    CanvasPath,
-    CanvasPathDrawingStyles,
-    CanvasRect,
-    CanvasSettings,
-    CanvasShadowStyles,
-    CanvasState,
-    CanvasText,
-    CanvasTextDrawingStyles,
-    CanvasTransform,
-    CanvasPDFAnnotations {}
+  CanvasDrawPath,
+  CanvasFillStrokeStyles,
+  CanvasFilters,
+  CanvasImageData,
+  CanvasImageSmoothing,
+  CanvasPath,
+  CanvasPathDrawingStyles,
+  CanvasRect,
+  CanvasSettings,
+  CanvasShadowStyles,
+  CanvasState,
+  CanvasText,
+  CanvasTextDrawingStyles,
+  CanvasTransform,
+  CanvasPDFAnnotations { }
 
 interface CanvasState {
   isContextLost(): boolean
@@ -211,6 +211,7 @@ interface CanvasTextDrawingStyles {
   textBaseline: CanvasTextBaseline
   textRendering: CanvasTextRendering
   wordSpacing: string
+  fontVariationSettings: string
 }
 
 interface CanvasFilters {
@@ -421,7 +422,7 @@ type OmitNeverOfMatrix = OmitMatrixMethod[keyof OmitMatrixMethod]
 
 export const DOMMatrix: {
   prototype: DOMMatrix
-  new (init?: string | number[]): DOMMatrix
+  new(init?: string | number[]): DOMMatrix
   fromFloat32Array(array32: Float32Array): DOMMatrix
   fromFloat64Array(array64: Float64Array): DOMMatrix
   fromMatrix(other?: DOMMatrixInit): DOMMatrix
@@ -448,7 +449,7 @@ export interface DOMRect extends DOMRectReadOnly {
 
 export const DOMRect: {
   prototype: DOMRect
-  new (x?: number, y?: number, width?: number, height?: number): DOMRect
+  new(x?: number, y?: number, width?: number, height?: number): DOMRect
   fromRect(other?: DOMRectInit): DOMRect
 }
 
@@ -470,7 +471,7 @@ export interface DOMPoint extends DOMPointReadOnly {
 
 export const DOMPoint: {
   prototype: DOMPoint
-  new (x?: number, y?: number, z?: number, w?: number): DOMPoint
+  new(x?: number, y?: number, z?: number, w?: number): DOMPoint
   fromPoint(other?: DOMPointInit): DOMPoint
 }
 

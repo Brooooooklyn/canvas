@@ -2,7 +2,8 @@ import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import test from 'ava'
-import { GlobalFonts } from '../index.js'
+
+import { GlobalFonts, Canvas } from '../index.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -27,35 +28,26 @@ test('GlobalFonts.getVariationAxes should return empty array for non-variable fo
   t.is(axes.length, 0)
 })
 
-test.skip('GlobalFonts.hasVariations should return true for variable fonts', async (t) => {
-  // This test would require a variable font file
-  // Variable fonts have .ttf extension but contain variation axes
-  // Example: Roboto Flex, Inter Variable, etc.
-
-  // Uncomment and update path when a variable font is available:
-  // GlobalFonts.registerFromPath('/path/to/variable-font.ttf', 'VariableFont')
-  // const hasVariations = GlobalFonts.hasVariations('VariableFont', 400, 5, 0)
-  // t.true(hasVariations)
-
-  t.pass('Test requires a variable font')
+test('GlobalFonts.hasVariations should return true for variable fonts', (t) => {
+  const fontPath = join(__dirname, 'fonts', 'Oswald.ttf')
+  GlobalFonts.registerFromPath(fontPath, 'Oswald')
+  const hasVariations = GlobalFonts.hasVariations('Oswald', 400, 5, 0)
+  t.true(hasVariations)
 })
 
-test.skip('GlobalFonts.getVariationAxes should return axes for variable fonts', async (t) => {
-  // This test would require a variable font file
-  // Variable fonts typically have axes like 'wght' (weight), 'wdth' (width), 'slnt' (slant), etc.
+test('GlobalFonts.getVariationAxes should return axes for variable fonts', (t) => {
+  const fontPath = join(__dirname, 'fonts', 'Oswald.ttf')
+  GlobalFonts.registerFromPath(fontPath, 'Oswald')
+  const axes = GlobalFonts.getVariationAxes('Oswald', 400, 5, 0)
+  t.true(axes.length > 0)
 
-  // Uncomment and update path when a variable font is available:
-  // GlobalFonts.registerFromPath('/path/to/variable-font.ttf', 'VariableFont')
-  // const axes = GlobalFonts.getVariationAxes('VariableFont', 400, 5, 0)
-  // t.true(axes.length > 0)
-  //
-  // Example assertions:
-  // const weightAxis = axes.find(axis => axis.tag === 0x77676874) // 'wght'
-  // t.truthy(weightAxis)
-  // t.true(weightAxis.min <= weightAxis.def)
-  // t.true(weightAxis.def <= weightAxis.max)
-
-  t.pass('Test requires a variable font')
+  const weightAxis = axes.find(axis => axis.tag === 0x77676874) // 'wght'
+  t.truthy(weightAxis)
+  if (weightAxis) {
+    t.is(weightAxis.min, 200)
+    t.is(weightAxis.max, 700)
+    t.is(weightAxis.def, 400)
+  }
 })
 
 test('FontVariationAxis interface has correct properties', (t) => {
@@ -75,4 +67,17 @@ test('FontVariationAxis interface has correct properties', (t) => {
   // - hidden: boolean (whether hidden from UI)
 
   t.pass()
+})
+
+test('CanvasRenderingContext2D.fontVariationSettings should persist', (t) => {
+  const canvas = new Canvas(200, 200)
+  const ctx = canvas.getContext('2d')
+
+  t.is(ctx.fontVariationSettings, 'normal')
+
+  ctx.fontVariationSettings = "'wght' 700, 'wdth' 50"
+  t.is(ctx.fontVariationSettings, "'wght' 700, 'wdth' 50")
+
+  ctx.fontVariationSettings = "normal"
+  t.is(ctx.fontVariationSettings, "normal")
 })

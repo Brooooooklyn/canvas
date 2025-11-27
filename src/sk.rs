@@ -2147,6 +2147,12 @@ impl Color {
 #[repr(transparent)]
 pub struct Canvas(pub(crate) *mut ffi::skiac_canvas);
 
+#[derive(Debug, Clone, Copy)]
+pub struct FontVariation {
+  pub tag: u32,
+  pub value: f32,
+}
+
 impl Canvas {
   pub fn clear(&mut self) {
     unsafe {
@@ -2279,6 +2285,7 @@ impl Canvas {
     letter_spacing: f32,
     word_spacing: f32,
     paint: &Paint,
+    variations: &[FontVariation],
   ) -> Result<(), NulError> {
     let c_text = std::ffi::CString::new(text)?;
     let c_font_family = std::ffi::CString::new(font_family)?;
@@ -2305,11 +2312,59 @@ impl Canvas {
         paint.0,
         self.0,
         ptr::null_mut(),
-        ptr::null(),
-        0,
+        variations.as_ptr() as *const ffi::skiac_font_variation,
+        variations.len() as i32,
       );
     };
     Ok(())
+  }
+
+  pub fn measure_text(
+    &mut self,
+    text: &str,
+    font_collection: &FontCollection,
+    font_size: f32,
+    weight: u32,
+    stretch: i32,
+    slant: FontStyle,
+    font_family: &str,
+    letter_spacing: f32,
+    word_spacing: f32,
+    paint: &Paint,
+    variations: &[FontVariation],
+  ) -> Result<f32, NulError> {
+    let c_text = std::ffi::CString::new(text)?;
+    let c_font_family = std::ffi::CString::new(font_family)?;
+
+    let mut line_metrics = ffi::skiac_line_metrics::default();
+
+    unsafe {
+      ffi::skiac_canvas_get_line_metrics_or_draw_text(
+        c_text.as_ptr(),
+        text.len(),
+        f32::INFINITY,
+        0.0,
+        0.0,
+        f32::INFINITY,
+        font_collection.0,
+        font_size,
+        weight as i32,
+        stretch,
+        slant as i32,
+        c_font_family.as_ptr(),
+        0, // baseline
+        0, // align
+        0, // direction
+        letter_spacing,
+        word_spacing,
+        paint.0,
+        ptr::null_mut(), // canvas
+        &mut line_metrics,
+        variations.as_ptr() as *const ffi::skiac_font_variation,
+        variations.len() as i32,
+      );
+    };
+    Ok(line_metrics.width)
   }
 
   pub fn get_line_metrics(
@@ -2327,6 +2382,7 @@ impl Canvas {
     letter_spacing: f32,
     word_spacing: f32,
     paint: &Paint,
+    variations: &[FontVariation],
   ) -> Result<ffi::skiac_line_metrics, NulError> {
     let c_text = std::ffi::CString::new(text)?;
     let c_font_family = std::ffi::CString::new(font_family)?;
@@ -2355,8 +2411,8 @@ impl Canvas {
         paint.0,
         ptr::null_mut(),
         &mut line_metrics,
-        ptr::null(),
-        0,
+        variations.as_ptr() as *const ffi::skiac_font_variation,
+        variations.len() as i32,
       );
     }
     Ok(line_metrics)
