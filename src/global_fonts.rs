@@ -118,6 +118,47 @@ pub mod global_fonts {
       .remove(&key.inner);
     Ok(())
   }
+
+  #[napi(object)]
+  #[derive(Debug, Clone)]
+  pub struct FontVariationAxis {
+    pub tag: u32,
+    pub value: f64,
+    pub min: f64,
+    pub max: f64,
+    pub def: f64,
+    pub hidden: bool,
+  }
+
+  #[napi]
+  pub fn get_variation_axes(
+    family_name: String,
+    weight: i32,
+    width: i32,
+    slant: i32,
+  ) -> Result<Vec<FontVariationAxis>> {
+    let font = get_font().map_err(into_napi_error)?;
+    let axes = font.get_variation_axes(&family_name, weight, width, slant);
+    Ok(
+      axes
+        .into_iter()
+        .map(|axis| FontVariationAxis {
+          tag: axis.tag,
+          value: axis.value as f64,
+          min: axis.min as f64,
+          max: axis.max as f64,
+          def: axis.def as f64,
+          hidden: axis.hidden,
+        })
+        .collect(),
+    )
+  }
+
+  #[napi]
+  pub fn has_variations(family_name: String, weight: i32, width: i32, slant: i32) -> Result<bool> {
+    let font = get_font().map_err(into_napi_error)?;
+    Ok(font.has_variations(&family_name, weight, width, slant))
+  }
 }
 
 fn load_fonts_from_dir<P: AsRef<path::Path>>(dir: P) -> napi::Result<u32> {

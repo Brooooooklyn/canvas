@@ -8,6 +8,8 @@ use super::{
   sk::{FilterQuality, Paint, TextAlign, TextBaseline, TextDirection},
 };
 
+use crate::sk::FontVariation;
+
 #[derive(Debug, Clone)]
 pub struct Context2dRenderingState {
   pub line_dash_list: Vec<f32>,
@@ -25,6 +27,8 @@ pub struct Context2dRenderingState {
   pub paint: Paint,
   pub font: String,
   pub font_style: Font,
+  pub font_variation_settings: String,
+  pub font_variations: Vec<FontVariation>,
   pub text_align: TextAlign,
   pub text_baseline: TextBaseline,
   pub text_direction: TextDirection,
@@ -58,6 +62,8 @@ impl Default for Context2dRenderingState {
       paint: Paint::default(),
       font: "10px sans-serif".to_owned(),
       font_style: Font::default(),
+      font_variation_settings: "normal".to_owned(),
+      font_variations: vec![],
       text_align: TextAlign::default(),
       text_baseline: TextBaseline::default(),
       text_direction: TextDirection::default(),

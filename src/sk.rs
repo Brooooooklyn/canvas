@@ -211,6 +211,24 @@ pub mod ffi {
 
   #[repr(C)]
   #[derive(Debug, Clone, Copy)]
+  pub struct skiac_variable_font_axis {
+    pub tag: u32,
+    pub value: f32,
+    pub min: f32,
+    pub max: f32,
+    pub def: f32,
+    pub hidden: bool,
+  }
+
+  #[repr(C)]
+  #[derive(Debug, Clone, Copy)]
+  pub struct skiac_font_variation {
+    pub tag: u32,
+    pub value: f32,
+  }
+
+  #[repr(C)]
+  #[derive(Debug, Clone, Copy)]
   pub struct skiac_picture_recorder {
     _unused: [u8; 0],
   }
@@ -489,6 +507,8 @@ pub mod ffi {
       paint: *mut skiac_paint,
       canvas: *mut skiac_canvas,
       line_metrics: *mut skiac_line_metrics,
+      variations: *const skiac_font_variation,
+      variations_count: i32,
     );
 
     pub fn skiac_canvas_reset_transform(canvas: *mut skiac_canvas);
@@ -944,6 +964,25 @@ pub mod ffi {
     );
 
     pub fn skiac_font_collection_destroy(c_font_collection: *mut skiac_font_collection);
+
+    // Variable Fonts
+    pub fn skiac_typeface_get_variation_design_position(
+      c_font_collection: *mut skiac_font_collection,
+      family_name: *const c_char,
+      weight: i32,
+      width: i32,
+      slant: i32,
+      axes: *mut skiac_variable_font_axis,
+      max_axis_count: i32,
+    ) -> i32;
+
+    pub fn skiac_font_has_variations(
+      c_font_collection: *mut skiac_font_collection,
+      family_name: *const c_char,
+      weight: i32,
+      width: i32,
+      slant: i32,
+    ) -> bool;
 
     // SkDynamicMemoryStream
     pub fn skiac_sk_w_stream_get(
@@ -2108,6 +2147,12 @@ impl Color {
 #[repr(transparent)]
 pub struct Canvas(pub(crate) *mut ffi::skiac_canvas);
 
+#[derive(Debug, Clone, Copy)]
+pub struct FontVariation {
+  pub tag: u32,
+  pub value: f32,
+}
+
 impl Canvas {
   pub fn clear(&mut self) {
     unsafe {
@@ -2240,6 +2285,7 @@ impl Canvas {
     letter_spacing: f32,
     word_spacing: f32,
     paint: &Paint,
+    variations: &[FontVariation],
   ) -> Result<(), NulError> {
     let c_text = std::ffi::CString::new(text)?;
     let c_font_family = std::ffi::CString::new(font_family)?;
@@ -2266,6 +2312,8 @@ impl Canvas {
         paint.0,
         self.0,
         ptr::null_mut(),
+        variations.as_ptr() as *const ffi::skiac_font_variation,
+        variations.len() as i32,
       );
     };
     Ok(())
@@ -2286,6 +2334,7 @@ impl Canvas {
     letter_spacing: f32,
     word_spacing: f32,
     paint: &Paint,
+    variations: &[FontVariation],
   ) -> Result<ffi::skiac_line_metrics, NulError> {
     let c_text = std::ffi::CString::new(text)?;
     let c_font_family = std::ffi::CString::new(font_family)?;
@@ -2314,6 +2363,8 @@ impl Canvas {
         paint.0,
         ptr::null_mut(),
         &mut line_metrics,
+        variations.as_ptr() as *const ffi::skiac_font_variation,
+        variations.len() as i32,
       );
     }
     Ok(line_metrics)
@@ -3897,6 +3948,70 @@ impl FontCollection {
     let family = CString::new(family).unwrap();
     let alias_name = CString::new(alias_name).unwrap();
     unsafe { ffi::skiac_font_collection_set_alias(self.0, family.as_ptr(), alias_name.as_ptr()) }
+  }
+
+  pub fn get_variation_axes(
+    &self,
+    family_name: &str,
+    weight: i32,
+    width: i32,
+    slant: i32,
+  ) -> Vec<ffi::skiac_variable_font_axis> {
+    let c_family_name = match CString::new(family_name) {
+      Ok(s) => s,
+      Err(_) => return Vec::new(),
+    };
+
+    // First, check if the font has variations
+    let has_variations = unsafe {
+      ffi::skiac_font_has_variations(self.0, c_family_name.as_ptr(), weight, width, slant)
+    };
+
+    if !has_variations {
+      return Vec::new();
+    }
+
+    // Allocate buffer for up to 16 axes (should be more than enough for any variable font)
+    let max_axes = 16;
+    let mut axes = vec![
+      ffi::skiac_variable_font_axis {
+        tag: 0,
+        value: 0.0,
+        min: 0.0,
+        max: 0.0,
+        def: 0.0,
+        hidden: false,
+      };
+      max_axes
+    ];
+
+    let axis_count = unsafe {
+      ffi::skiac_typeface_get_variation_design_position(
+        self.0,
+        c_family_name.as_ptr(),
+        weight,
+        width,
+        slant,
+        axes.as_mut_ptr(),
+        max_axes as i32,
+      )
+    };
+
+    if axis_count > 0 {
+      axes.truncate(axis_count as usize);
+      axes
+    } else {
+      Vec::new()
+    }
+  }
+
+  pub fn has_variations(&self, family_name: &str, weight: i32, width: i32, slant: i32) -> bool {
+    let c_family_name = match CString::new(family_name) {
+      Ok(s) => s,
+      Err(_) => return false,
+    };
+
+    unsafe { ffi::skiac_font_has_variations(self.0, c_family_name.as_ptr(), weight, width, slant) }
   }
 }
 

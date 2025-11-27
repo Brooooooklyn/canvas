@@ -5,21 +5,21 @@ export function clearAllCache(): void
 
 interface CanvasRenderingContext2D
   extends CanvasCompositing,
-    CanvasDrawPath,
-    CanvasFillStrokeStyles,
-    CanvasFilters,
-    CanvasImageData,
-    CanvasImageSmoothing,
-    CanvasPath,
-    CanvasPathDrawingStyles,
-    CanvasRect,
-    CanvasSettings,
-    CanvasShadowStyles,
-    CanvasState,
-    CanvasText,
-    CanvasTextDrawingStyles,
-    CanvasTransform,
-    CanvasPDFAnnotations {}
+  CanvasDrawPath,
+  CanvasFillStrokeStyles,
+  CanvasFilters,
+  CanvasImageData,
+  CanvasImageSmoothing,
+  CanvasPath,
+  CanvasPathDrawingStyles,
+  CanvasRect,
+  CanvasSettings,
+  CanvasShadowStyles,
+  CanvasState,
+  CanvasText,
+  CanvasTextDrawingStyles,
+  CanvasTransform,
+  CanvasPDFAnnotations { }
 
 interface CanvasState {
   isContextLost(): boolean
@@ -211,6 +211,7 @@ interface CanvasTextDrawingStyles {
   textBaseline: CanvasTextBaseline
   textRendering: CanvasTextRendering
   wordSpacing: string
+  fontVariationSettings: string
 }
 
 interface CanvasFilters {
@@ -421,7 +422,7 @@ type OmitNeverOfMatrix = OmitMatrixMethod[keyof OmitMatrixMethod]
 
 export const DOMMatrix: {
   prototype: DOMMatrix
-  new (init?: string | number[]): DOMMatrix
+  new(init?: string | number[]): DOMMatrix
   fromFloat32Array(array32: Float32Array): DOMMatrix
   fromFloat64Array(array64: Float64Array): DOMMatrix
   fromMatrix(other?: DOMMatrixInit): DOMMatrix
@@ -448,7 +449,7 @@ export interface DOMRect extends DOMRectReadOnly {
 
 export const DOMRect: {
   prototype: DOMRect
-  new (x?: number, y?: number, width?: number, height?: number): DOMRect
+  new(x?: number, y?: number, width?: number, height?: number): DOMRect
   fromRect(other?: DOMRectInit): DOMRect
 }
 
@@ -470,7 +471,7 @@ export interface DOMPoint extends DOMPointReadOnly {
 
 export const DOMPoint: {
   prototype: DOMPoint
-  new (x?: number, y?: number, z?: number, w?: number): DOMPoint
+  new(x?: number, y?: number, z?: number, w?: number): DOMPoint
   fromPoint(other?: DOMPointInit): DOMPoint
 }
 
@@ -708,6 +709,21 @@ export declare class FontKey {
   private readonly key: symbol
 }
 
+export interface FontVariationAxis {
+  /** OpenType tag as a 32-bit integer (e.g., 0x77676874 for 'wght') */
+  tag: number
+  /** Current value for this axis */
+  value: number
+  /** Minimum value for this axis */
+  min: number
+  /** Maximum value for this axis */
+  max: number
+  /** Default value for this axis */
+  def: number
+  /** Whether this axis should be hidden from UI */
+  hidden: boolean
+}
+
 interface IGlobalFonts {
   readonly families: { family: string; styles: { weight: number; width: string; style: string }[] }[]
   // return true if succeeded
@@ -717,6 +733,24 @@ interface IGlobalFonts {
   has(name: string): boolean
   loadFontsFromDir(path: string): number
   remove(key: FontKey): void
+  /**
+   * Get variation axes for a specific font instance
+   * @param familyName The font family name
+   * @param weight Font weight (100-900)
+   * @param width Font width/stretch value
+   * @param slant Font slant (0 = upright, 1 = italic, 2 = oblique)
+   * @returns Array of variation axes or empty array if not a variable font
+   */
+  getVariationAxes(familyName: string, weight: number, width: number, slant: number): FontVariationAxis[]
+  /**
+   * Check if a font has variable font capabilities
+   * @param familyName The font family name
+   * @param weight Font weight (100-900)
+   * @param width Font width/stretch value
+   * @param slant Font slant (0 = upright, 1 = italic, 2 = oblique)
+   * @returns true if the font is a variable font
+   */
+  hasVariations(familyName: string, weight: number, width: number, slant: number): boolean
 }
 
 export const GlobalFonts: IGlobalFonts
