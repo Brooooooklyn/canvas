@@ -1119,15 +1119,11 @@ pub enum ColorType {
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 #[repr(u8)]
+#[derive(Default)]
 pub enum ColorSpace {
+  #[default]
   Srgb,
   DisplayP3,
-}
-
-impl Default for ColorSpace {
-  fn default() -> Self {
-    Self::Srgb
-  }
 }
 
 impl FromStr for ColorSpace {
@@ -1273,7 +1269,7 @@ pub enum TileMode {
 }
 
 #[repr(u8)]
-#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, Default)]
 pub enum BlendMode {
   /// Replaces destination with zero: fully transparent.
   Clear = 0,
@@ -1282,6 +1278,7 @@ pub enum BlendMode {
   /// Preserves destination.
   Destination,
   /// Source over destination.
+  #[default]
   SourceOver,
   /// Destination over source.
   DestinationOver,
@@ -1333,12 +1330,6 @@ pub enum BlendMode {
   Color,
   /// Luminosity of source with hue and saturation of destination.
   Luminosity,
-}
-
-impl Default for BlendMode {
-  fn default() -> Self {
-    Self::SourceOver
-  }
 }
 
 impl BlendMode {
@@ -1533,12 +1524,13 @@ impl From<i32> for PathOp {
 }
 
 #[repr(i32)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub enum TextAlign {
   Left,
   Right,
   Center,
   Justify,
+  #[default]
   Start,
   End,
 }
@@ -1553,12 +1545,6 @@ impl TextAlign {
       Self::Right => "right",
       Self::Justify => "justify",
     }
-  }
-}
-
-impl Default for TextAlign {
-  fn default() -> Self {
-    Self::Start
   }
 }
 
@@ -1579,20 +1565,15 @@ impl FromStr for TextAlign {
 }
 
 #[repr(i32)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub enum TextBaseline {
   Top,
   Hanging,
   Middle,
+  #[default]
   Alphabetic,
   Ideographic,
   Bottom,
-}
-
-impl Default for TextBaseline {
-  fn default() -> Self {
-    Self::Alphabetic
-  }
 }
 
 impl FromStr for TextBaseline {
@@ -1631,8 +1612,9 @@ impl Display for TextBaseline {
 }
 
 #[repr(i32)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub enum TextDirection {
+  #[default]
   Inherit,
   Ltr,
   Rtl,
@@ -1663,12 +1645,6 @@ impl TextDirection {
       &Self::Inherit | &Self::Ltr => 1,
       &Self::Rtl => 0,
     }
-  }
-}
-
-impl Default for TextDirection {
-  fn default() -> Self {
-    Self::Inherit
   }
 }
 

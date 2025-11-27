@@ -14,6 +14,7 @@
 #include <include/core/SkGraphics.h>
 #include <include/core/SkMaskFilter.h>
 #include <include/core/SkPaint.h>
+#include <include/core/SkPathBuilder.h>
 #include <include/core/SkPathEffect.h>
 #include <include/core/SkPathUtils.h>
 #include <include/core/SkPicture.h>
