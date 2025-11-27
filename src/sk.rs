@@ -3998,7 +3998,13 @@ impl FontCollection {
     unsafe { ffi::skiac_font_collection_set_alias(self.0, family.as_ptr(), alias_name.as_ptr()) }
   }
 
-  pub fn get_variation_axes(&self, family_name: &str, weight: i32, width: i32, slant: i32) -> Vec<ffi::skiac_variable_font_axis> {
+  pub fn get_variation_axes(
+    &self,
+    family_name: &str,
+    weight: i32,
+    width: i32,
+    slant: i32,
+  ) -> Vec<ffi::skiac_variable_font_axis> {
     let c_family_name = match CString::new(family_name) {
       Ok(s) => s,
       Err(_) => return Vec::new(),
@@ -4006,13 +4012,7 @@ impl FontCollection {
 
     // First, check if the font has variations
     let has_variations = unsafe {
-      ffi::skiac_font_has_variations(
-        self.0,
-        c_family_name.as_ptr(),
-        weight,
-        width,
-        slant,
-      )
+      ffi::skiac_font_has_variations(self.0, c_family_name.as_ptr(), weight, width, slant)
     };
 
     if !has_variations {
@@ -4021,14 +4021,17 @@ impl FontCollection {
 
     // Allocate buffer for up to 16 axes (should be more than enough for any variable font)
     let max_axes = 16;
-    let mut axes = vec![ffi::skiac_variable_font_axis {
-      tag: 0,
-      value: 0.0,
-      min: 0.0,
-      max: 0.0,
-      def: 0.0,
-      hidden: false,
-    }; max_axes];
+    let mut axes = vec![
+      ffi::skiac_variable_font_axis {
+        tag: 0,
+        value: 0.0,
+        min: 0.0,
+        max: 0.0,
+        def: 0.0,
+        hidden: false,
+      };
+      max_axes
+    ];
 
     let axis_count = unsafe {
       ffi::skiac_typeface_get_variation_design_position(
@@ -4056,15 +4059,7 @@ impl FontCollection {
       Err(_) => return false,
     };
 
-    unsafe {
-      ffi::skiac_font_has_variations(
-        self.0,
-        c_family_name.as_ptr(),
-        weight,
-        width,
-        slant,
-      )
-    }
+    unsafe { ffi::skiac_font_has_variations(self.0, c_family_name.as_ptr(), weight, width, slant) }
   }
 }
 

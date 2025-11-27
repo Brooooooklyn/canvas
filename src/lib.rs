@@ -994,4 +994,3 @@ unsafe extern "C" fn encode_image_stream_callback<F: Fn(&[u8])>(
   let rust_callback: &mut F = unsafe { Box::leak(Box::from_raw(context.cast())) };
   rust_callback(unsafe { slice::from_raw_parts(data.cast(), size) });
 }
-

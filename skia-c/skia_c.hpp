@@ -259,17 +259,17 @@ struct skiac_pdf_metadata {
 };
 
 struct skiac_variable_font_axis {
-  uint32_t tag;           // OpenType tag (e.g., 'wght', 'wdth', 'slnt', 'ital')
-  float value;            // Current value for this axis
-  float min;              // Minimum value for this axis
-  float max;              // Maximum value for this axis
-  float def;              // Default value for this axis
-  bool hidden;            // Whether this axis should be hidden
+  uint32_t tag;  // OpenType tag (e.g., 'wght', 'wdth', 'slnt', 'ital')
+  float value;   // Current value for this axis
+  float min;     // Minimum value for this axis
+  float max;     // Maximum value for this axis
+  float def;     // Default value for this axis
+  bool hidden;   // Whether this axis should be hidden
 };
 
 struct skiac_font_variation {
-  uint32_t tag;           // OpenType tag
-  float value;            // Value for this axis
+  uint32_t tag;  // OpenType tag
+  float value;   // Value for this axis
 };
 
 extern "C" {
