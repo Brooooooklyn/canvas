@@ -1,6 +1,6 @@
 {
   "name": "@napi-rs/canvas-win32-x64-msvc",
-  "version": "0.1.82",
+  "version": "0.1.83",
   "os": [
     "win32"
   ],
