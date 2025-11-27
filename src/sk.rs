@@ -1119,16 +1119,13 @@ pub enum ColorType {
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 #[repr(u8)]
+#[derive(Default)]
 pub enum ColorSpace {
+  #[default]
   Srgb,
   DisplayP3,
 }
 
-impl Default for ColorSpace {
-  fn default() -> Self {
-    Self::Srgb
-  }
-}
 
 impl FromStr for ColorSpace {
   type Err = SkError;
@@ -1274,6 +1271,7 @@ pub enum TileMode {
 
 #[repr(u8)]
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Default)]
 pub enum BlendMode {
   /// Replaces destination with zero: fully transparent.
   Clear = 0,
@@ -1282,6 +1280,7 @@ pub enum BlendMode {
   /// Preserves destination.
   Destination,
   /// Source over destination.
+  #[default]
   SourceOver,
   /// Destination over source.
   DestinationOver,
@@ -1335,11 +1334,6 @@ pub enum BlendMode {
   Luminosity,
 }
 
-impl Default for BlendMode {
-  fn default() -> Self {
-    Self::SourceOver
-  }
-}
 
 impl BlendMode {
   pub fn as_str(&self) -> &'static str {
@@ -1534,11 +1528,13 @@ impl From<i32> for PathOp {
 
 #[repr(i32)]
 #[derive(Debug, Clone, Copy)]
+#[derive(Default)]
 pub enum TextAlign {
   Left,
   Right,
   Center,
   Justify,
+  #[default]
   Start,
   End,
 }
@@ -1556,11 +1552,6 @@ impl TextAlign {
   }
 }
 
-impl Default for TextAlign {
-  fn default() -> Self {
-    Self::Start
-  }
-}
 
 impl FromStr for TextAlign {
   type Err = SkError;
@@ -1580,20 +1571,17 @@ impl FromStr for TextAlign {
 
 #[repr(i32)]
 #[derive(Debug, Clone, Copy)]
+#[derive(Default)]
 pub enum TextBaseline {
   Top,
   Hanging,
   Middle,
+  #[default]
   Alphabetic,
   Ideographic,
   Bottom,
 }
 
-impl Default for TextBaseline {
-  fn default() -> Self {
-    Self::Alphabetic
-  }
-}
 
 impl FromStr for TextBaseline {
   type Err = SkError;
@@ -1632,7 +1620,9 @@ impl Display for TextBaseline {
 
 #[repr(i32)]
 #[derive(Debug, Clone, Copy)]
+#[derive(Default)]
 pub enum TextDirection {
+  #[default]
   Inherit,
   Ltr,
   Rtl,
@@ -1666,11 +1656,6 @@ impl TextDirection {
   }
 }
 
-impl Default for TextDirection {
-  fn default() -> Self {
-    Self::Inherit
-  }
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(i32)]

@@ -1158,7 +1158,8 @@ bool skiac_path_is_empty(skiac_path* c_path) {
 }
 
 bool skiac_path_hit_test(skiac_path* c_path, float x, float y, int type) {
-  // Create a temporary path with the desired fill type to avoid mutating the builder
+  // Create a temporary path with the desired fill type to avoid mutating the
+  // builder
   SkPathBuilder temp_builder(c_path->path());
   temp_builder.setFillType((SkPathFillType)type);
   return temp_builder.snapshot().contains(x, y);
@@ -1168,7 +1169,8 @@ bool skiac_path_stroke_hit_test(skiac_path* c_path,
                                 float x,
                                 float y,
                                 float stroke_w) {
-  // Create a temporary path with winding fill type to avoid mutating the builder
+  // Create a temporary path with winding fill type to avoid mutating the
+  // builder
   SkPathBuilder temp_builder(c_path->path());
   temp_builder.setFillType(SkPathFillType::kWinding);
   SkPath path_with_winding = temp_builder.detach();
