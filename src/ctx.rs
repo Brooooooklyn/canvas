@@ -2548,7 +2548,7 @@ fn parse_font_variation_settings(settings: &str) -> (String, Vec<crate::sk::Font
       tag_str.push(c);
     }
 
-    if !closed || tag_str.len() != 4 {
+    if !closed || tag_str.len() != 4 || !tag_str.is_ascii() {
       valid = false;
       break;
     }
