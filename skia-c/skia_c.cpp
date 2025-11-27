@@ -987,7 +987,8 @@ bool skiac_path_stroke(skiac_path* c_path,
 }
 
 void skiac_path_compute_tight_bounds(skiac_path* c_path, skiac_rect* c_rect) {
-  auto rect = c_path->builder.computeBounds();
+  // Use SkPath::computeTightBounds() for precise bounds that evaluate curves
+  auto rect = c_path->path().computeTightBounds();
   c_rect->left = rect.fLeft;
   c_rect->top = rect.fTop;
   c_rect->right = rect.fRight;
@@ -995,7 +996,8 @@ void skiac_path_compute_tight_bounds(skiac_path* c_path, skiac_rect* c_rect) {
 }
 
 void skiac_path_get_bounds(skiac_path* c_path, skiac_rect* c_rect) {
-  auto rect = c_path->builder.computeBounds();
+  // Use SkPath::getBounds() which has internal caching
+  auto rect = c_path->path().getBounds();
   c_rect->left = rect.fLeft;
   c_rect->top = rect.fTop;
   c_rect->right = rect.fRight;
@@ -1156,44 +1158,32 @@ bool skiac_path_is_empty(skiac_path* c_path) {
 }
 
 bool skiac_path_hit_test(skiac_path* c_path, float x, float y, int type) {
-  auto prev_fill = c_path->builder.fillType();
-  c_path->builder.setFillType((SkPathFillType)type);
-  c_path->invalidate();
-  auto result = c_path->path().contains(x, y);
-  c_path->builder.setFillType(prev_fill);
-  c_path->invalidate();
-  return result;
+  // Create a temporary path with the desired fill type to avoid mutating the builder
+  SkPathBuilder temp_builder(c_path->path());
+  temp_builder.setFillType((SkPathFillType)type);
+  return temp_builder.snapshot().contains(x, y);
 }
 
 bool skiac_path_stroke_hit_test(skiac_path* c_path,
                                 float x,
                                 float y,
                                 float stroke_w) {
-  // Use the cached path with winding fill type for stroke hit testing
-  auto prev_fill = c_path->builder.fillType();
-  c_path->builder.setFillType(SkPathFillType::kWinding);
-  c_path->invalidate();
+  // Create a temporary path with winding fill type to avoid mutating the builder
+  SkPathBuilder temp_builder(c_path->path());
+  temp_builder.setFillType(SkPathFillType::kWinding);
+  SkPath path_with_winding = temp_builder.detach();
 
   SkPaint paint;
   paint.setStrokeWidth(stroke_w);
   paint.setStyle(SkPaint::kStroke_Style);
   SkPath traced_path;
 
-  bool result;
   auto precision = 0.3;  // Based on config in Chromium
-  const SkPath& path_ref = c_path->path();
-  const SkPaint const_paint = paint;
-  if (skpathutils::FillPathWithPaint(path_ref, const_paint, &traced_path,
+  if (skpathutils::FillPathWithPaint(path_with_winding, paint, &traced_path,
                                      nullptr, precision)) {
-    result = traced_path.contains(x, y);
-  } else {
-    result = path_ref.contains(x, y);
+    return traced_path.contains(x, y);
   }
-
-  // Restore original fill type
-  c_path->builder.setFillType(prev_fill);
-  c_path->invalidate();
-  return result;
+  return path_with_winding.contains(x, y);
 }
 
 void skiac_path_round_rect(skiac_path* c_path,
