@@ -190,3 +190,18 @@ test('font-variation-settings', async (t) => {
   ctx.fillText('Hello World', 50, 100)
   await snapshotImage(t)
 })
+
+test('font-variation-settings-with-font-family', async (t) => {
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'RobotoMono-VariableFont_wght.ttf'), 'Roboto Mono');
+  const canvas = createCanvas(1280, 680)
+  const ctx = canvas.getContext('2d')
+  ctx.fillStyle = 'blue'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  ctx.fillStyle = 'white'
+  for (let i = 1; i <= 9; i++) {
+    ctx.font = `${i * 100} 45px Roboto Mono`;
+    ctx.fontVariationSettings = `'wght' ${i * 100}`
+    ctx.fillText(`${i * 100}: Jackdaws love my big sphinx of quartz`, 30, i * 65);
+  }
+  await snapshotImage(t, { canvas, ctx })
+})
