@@ -285,3 +285,143 @@ test('font-kerning-invalid-value-ignored', (t) => {
   ctx.fontKerning = 'invalid-kerning' as any
   t.is(ctx.fontKerning, 'none') // Should remain unchanged
 })
+
+test('font-variant-caps-default-value', (t) => {
+  const { ctx } = t.context
+  t.is(ctx.fontVariantCaps, 'normal')
+})
+
+test('font-variant-caps-invalid-value-ignored', (t) => {
+  const { ctx } = t.context
+  ctx.fontVariantCaps = 'small-caps'
+  t.is(ctx.fontVariantCaps, 'small-caps')
+  ctx.fontVariantCaps = 'invalid-caps' as any
+  t.is(ctx.fontVariantCaps, 'small-caps') // Should remain unchanged
+})
+
+test('font-variant-caps-all-values', (t) => {
+  const { ctx } = t.context
+  const validValues = [
+    'normal',
+    'small-caps',
+    'all-small-caps',
+    'petite-caps',
+    'all-petite-caps',
+    'unicase',
+    'titling-caps',
+  ] as const
+
+  validValues.forEach((value) => {
+    ctx.fontVariantCaps = value
+    t.is(ctx.fontVariantCaps, value)
+  })
+})
+
+test('font-variant-caps', async (t) => {
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'ScienceGothic-VariableFont.ttf'), 'Science Gothic');
+  const canvas = createCanvas(650, 390)
+  const ctx = canvas.getContext('2d')!
+
+  // Set white background
+  ctx.fillStyle = 'white'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  ctx.fillStyle = 'black'
+
+  ctx.font = '32px Science Gothic'
+
+  // Test text to show caps variants
+  const testText = 'Hello World 123'
+
+  // Default (normal)
+  ctx.fillText(`${testText} (normal)`, 10, 50)
+  t.is(ctx.fontVariantCaps, 'normal')
+
+  // small-caps
+  ctx.fontVariantCaps = 'small-caps'
+  ctx.fillText(`${testText} (small-caps)`, 10, 100)
+  t.is(ctx.fontVariantCaps, 'small-caps')
+
+  // all-small-caps
+  ctx.fontVariantCaps = 'all-small-caps'
+  ctx.fillText(`${testText} (all-small-caps)`, 10, 150)
+  t.is(ctx.fontVariantCaps, 'all-small-caps')
+
+  // petite-caps
+  ctx.fontVariantCaps = 'petite-caps'
+  ctx.fillText(`${testText} (petite-caps)`, 10, 200)
+  t.is(ctx.fontVariantCaps, 'petite-caps')
+
+  // all-petite-caps
+  ctx.fontVariantCaps = 'all-petite-caps'
+  ctx.fillText(`${testText} (all-petite-caps)`, 10, 250)
+  t.is(ctx.fontVariantCaps, 'all-petite-caps')
+
+  // unicase
+  ctx.fontVariantCaps = 'unicase'
+  ctx.fillText(`${testText} (unicase)`, 10, 300)
+  t.is(ctx.fontVariantCaps, 'unicase')
+
+  // titling-caps
+  ctx.fontVariantCaps = 'titling-caps'
+  ctx.fillText(`${testText} (titling-caps)`, 10, 350)
+  t.is(ctx.fontVariantCaps, 'titling-caps')
+
+  await snapshotImage(t, { canvas, ctx })
+})
+
+test('font-variant-caps-from-css-font-shorthand', async (t) => {
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'ScienceGothic-VariableFont.ttf'), 'Science Gothic');
+  const canvas = createCanvas(620, 200)
+  const ctx = canvas.getContext('2d')!
+
+  // Set white background
+  ctx.fillStyle = 'white'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  ctx.fillStyle = 'black'
+
+  // Test font shorthand with small-caps
+  ctx.font = 'small-caps 36px Science Gothic'
+  t.is(ctx.fontVariantCaps, 'small-caps', 'font shorthand should set fontVariantCaps to small-caps')
+  ctx.fillText('Hello World(small-caps)', 10, 50)
+
+  // Setting font without small-caps should reset fontVariantCaps to normal
+  ctx.font = '36px Science Gothic'
+  t.is(ctx.fontVariantCaps, 'normal', 'Font without small-caps should reset fontVariantCaps to normal')
+  ctx.fillText('Hello World(normal)', 10, 110)
+
+  // Setting font with normal variant explicitly
+  ctx.font = 'normal 36px Science Gothic'
+  t.is(ctx.fontVariantCaps, 'normal', 'font shorthand with normal should set fontVariantCaps to normal')
+  ctx.fillText('Hello World(normal explicit)', 10, 170)
+
+  await snapshotImage(t, { canvas, ctx })
+})
+
+test('font-variant-caps-shorthand-vs-property-equality', async (t) => {
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'ScienceGothic-VariableFont.ttf'), 'Science Gothic');
+
+  // Canvas 1: Use font shorthand with small-caps
+  const canvas1 = createCanvas(500, 100)
+  const ctx1 = canvas1.getContext('2d')!
+  ctx1.fillStyle = 'white'
+  ctx1.fillRect(0, 0, canvas1.width, canvas1.height)
+  ctx1.fillStyle = 'black'
+  ctx1.font = 'small-caps 36px Science Gothic'
+  ctx1.fillText('Hello World ABC xyz', 10, 60)
+
+  // Canvas 2: Use fontVariantCaps property
+  const canvas2 = createCanvas(500, 100)
+  const ctx2 = canvas2.getContext('2d')!
+  ctx2.fillStyle = 'white'
+  ctx2.fillRect(0, 0, canvas2.width, canvas2.height)
+  ctx2.fillStyle = 'black'
+  ctx2.font = '36px Science Gothic'
+  ctx2.fontVariantCaps = 'small-caps'
+  ctx2.fillText('Hello World ABC xyz', 10, 60)
+
+  // Compare the two canvases - they should produce identical output
+  const buffer1 = canvas1.toBuffer('image/png')
+  const buffer2 = canvas2.toBuffer('image/png')
+
+  t.deepEqual(buffer1, buffer2, 'font shorthand small-caps should produce identical output as fontVariantCaps property')
+})

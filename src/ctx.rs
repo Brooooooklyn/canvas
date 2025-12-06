@@ -30,9 +30,9 @@ use crate::{
   path::Path,
   pattern::{CanvasPattern, Pattern},
   sk::{
-    AlphaType, Bitmap, BlendMode, ColorSpace, FillType, ImageFilter, LineMetrics, MaskFilter,
-    Matrix, Paint, PaintStyle, Path as SkPath, PathEffect, SkEncodedImageFormat, SkWMemoryStream,
-    SkiaDataRef, Surface, SurfaceRef, Transform,
+    AlphaType, Bitmap, BlendMode, ColorSpace, FillType, FontVariantCaps, ImageFilter, LineMetrics,
+    MaskFilter, Matrix, Paint, PaintStyle, Path as SkPath, PathEffect, SkEncodedImageFormat,
+    SkWMemoryStream, SkiaDataRef, Surface, SurfaceRef, Transform,
   },
   state::Context2dRenderingState,
 };
@@ -598,6 +598,13 @@ impl Context {
 
   pub fn set_font(&mut self, font: String) -> result::Result<(), SkError> {
     self.state.font_style = Font::new(&font)?;
+    // Apply CSS font-variant-css2 to fontVariantCaps state.
+    // In font shorthand, it only supports `<font-variant-css2>= normal | small-caps`
+    // Spec: https://drafts.csswg.org/css-fonts/#font-prop
+    self.state.font_variant_caps = match self.state.font_style.variant {
+      crate::font::FontVariant::SmallCaps => FontVariantCaps::SmallCaps,
+      crate::font::FontVariant::Normal => FontVariantCaps::Normal,
+    };
     self.state.font = font;
     Ok(())
   }
@@ -697,6 +704,13 @@ impl Context {
   pub fn set_font_kerning(&mut self, kerning: String) -> result::Result<(), SkError> {
     if let Ok(k) = kerning.parse() {
       self.state.font_kerning = k;
+    }
+    Ok(())
+  }
+
+  pub fn set_font_variant_caps(&mut self, variant_caps: String) -> result::Result<(), SkError> {
+    if let Ok(v) = variant_caps.parse() {
+      self.state.font_variant_caps = v;
     }
     Ok(())
   }
@@ -958,6 +972,7 @@ impl Context {
                 shadow_paint,
                 variations,
                 state.font_kerning,
+                state.font_variant_caps,
               )?;
               shadow_canvas.restore();
               Ok(())
@@ -985,6 +1000,7 @@ impl Context {
           paint,
           variations,
           state.font_kerning,
+          state.font_variant_caps,
         )?;
         Ok(())
       },
@@ -1016,6 +1032,7 @@ impl Context {
       &fill_paint,
       &self.state.font_variations,
       self.state.font_kerning,
+      self.state.font_variant_caps,
     )?);
     Ok(line_metrics)
   }
@@ -1527,6 +1544,17 @@ impl CanvasRenderingContext2D {
   #[napi(setter, return_if_invalid)]
   pub fn set_font_kerning(&mut self, kerning: String) -> Result<()> {
     self.context.set_font_kerning(kerning)?;
+    Ok(())
+  }
+
+  #[napi(getter)]
+  pub fn get_font_variant_caps(&self) -> String {
+    self.context.state.font_variant_caps.as_str().to_owned()
+  }
+
+  #[napi(setter, return_if_invalid)]
+  pub fn set_font_variant_caps(&mut self, variant_caps: String) -> Result<()> {
+    self.context.set_font_variant_caps(variant_caps)?;
     Ok(())
   }
 

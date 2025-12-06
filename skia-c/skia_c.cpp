@@ -478,7 +478,8 @@ void skiac_canvas_get_line_metrics_or_draw_text(
     skiac_line_metrics* c_line_metrics,
     const skiac_font_variation* variations,
     int variations_count,
-    int kerning) {
+    int kerning,
+    int variant_caps) {
   auto font_collection = c_collection->collection;
   auto font_style = SkFontStyle(weight, stretch, (SkFontStyle::Slant)slant);
   auto text_direction = (TextDirection)direction;
@@ -525,6 +526,32 @@ void skiac_canvas_get_line_metrics_or_draw_text(
     text_style.addFontFeature(SkString("kern"), 0);
   } else if (kerning == 2) {
     text_style.addFontFeature(SkString("kern"), 1);
+  }
+
+  // TODO: Support fontFeatureSettings
+  // Apply font variant caps features
+  // variant_caps: 0=normal, 1=small-caps, 2=all-small-caps, 3=petite-caps,
+  // 4=all-petite-caps, 5=unicase, 6=titling-caps
+  if (variant_caps == 1) {
+    // small-caps
+    text_style.addFontFeature(SkString("smcp"), 1);
+  } else if (variant_caps == 2) {
+    // all-small-caps
+    text_style.addFontFeature(SkString("smcp"), 1);
+    text_style.addFontFeature(SkString("c2sc"), 1);
+  } else if (variant_caps == 3) {
+    // petite-caps
+    text_style.addFontFeature(SkString("pcap"), 1);
+  } else if (variant_caps == 4) {
+    // all-petite-caps
+    text_style.addFontFeature(SkString("pcap"), 1);
+    text_style.addFontFeature(SkString("c2pc"), 1);
+  } else if (variant_caps == 5) {
+    // unicase
+    text_style.addFontFeature(SkString("unic"), 1);
+  } else if (variant_caps == 6) {
+    // titling-caps
+    text_style.addFontFeature(SkString("titl"), 1);
   }
 
   text_style.setForegroundColor(*PAINT_CAST);

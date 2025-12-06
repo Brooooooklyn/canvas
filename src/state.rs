@@ -5,7 +5,9 @@ use crate::sk::{BlendMode, ImageFilter, Matrix};
 use super::{
   font::{Font, FontStretch},
   pattern::Pattern,
-  sk::{FilterQuality, FontKerning, Paint, TextAlign, TextBaseline, TextDirection},
+  sk::{
+    FilterQuality, FontKerning, FontVariantCaps, Paint, TextAlign, TextBaseline, TextDirection,
+  },
 };
 
 use crate::sk::FontVariation;
@@ -39,6 +41,7 @@ pub struct Context2dRenderingState {
   pub font_stretch: FontStretch,
   pub font_stretch_raw: String,
   pub font_kerning: FontKerning,
+  pub font_variant_caps: FontVariantCaps,
   pub transform: Matrix,
   pub filter: Option<ImageFilter>,
   pub filters_string: String,
@@ -77,6 +80,7 @@ impl Default for Context2dRenderingState {
       font_stretch: FontStretch::Normal,
       font_stretch_raw: "normal".to_owned(),
       font_kerning: FontKerning::Auto,
+      font_variant_caps: FontVariantCaps::Normal,
       transform: Matrix::identity(),
       filter: None,
       filters_string: "none".to_owned(),
