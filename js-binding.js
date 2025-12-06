@@ -460,3 +460,5 @@ module.exports.PathOp = nativeBinding.PathOp
 module.exports.StrokeCap = nativeBinding.StrokeCap
 module.exports.StrokeJoin = nativeBinding.StrokeJoin
 module.exports.SvgExportFlag = nativeBinding.SvgExportFlag
+module.exports.GifEncoder = nativeBinding.GifEncoder
+module.exports.GifDisposal = nativeBinding.GifDisposal

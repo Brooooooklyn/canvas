@@ -17,11 +17,20 @@ const {
   StrokeCap,
   convertSVGTextToPath,
   PdfDocument,
+  GifEncoder,
+  GifDisposal,
 } = require('./js-binding')
 
 const { DOMPoint, DOMMatrix, DOMRect } = require('./geometry')
 
 const loadImage = require('./load-image')
+
+// Add Symbol.dispose support for GifEncoder (ECMAScript 2024 Explicit Resource Management)
+if (GifEncoder && typeof Symbol.dispose !== 'undefined') {
+  GifEncoder.prototype[Symbol.dispose] = function () {
+    this.dispose()
+  }
+}
 
 const SvgExportFlag = {
   ConvertTextToPaths: 0x01,
@@ -178,4 +187,7 @@ module.exports = {
   CanvasElement,
   SVGCanvas,
   PDFDocument: PdfDocument,
+  // GIF encoding
+  GifEncoder,
+  GifDisposal,
 }
