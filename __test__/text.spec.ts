@@ -205,3 +205,83 @@ test('font-variation-settings-with-font-family', async (t) => {
   }
   await snapshotImage(t, { canvas, ctx })
 })
+
+test('font-stretch', async (t) => {
+  // Inconsolata is a variable font that supports width from 50% to 200%
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'Inconsolata-VariableFont_wdth,wght.woff2'), 'Inconsolata')
+  const canvas = createCanvas(800, 600)
+  const ctx = canvas.getContext('2d')!
+  ctx.font = '30px Inconsolata'
+
+  const stretches = [
+    'ultra-condensed',
+    'extra-condensed',
+    'condensed',
+    'semi-condensed',
+    'normal',
+    'semi-expanded',
+    'expanded',
+    'extra-expanded',
+    'ultra-expanded',
+  ] as const
+
+  stretches.forEach((stretch, index) => {
+    ctx.fontStretch = stretch
+    ctx.fillText(`Hello World (${ctx.fontStretch})`, 10, 40 + index * 60)
+  })
+
+  await snapshotImage(t, { canvas, ctx })
+})
+
+test('font-kerning', async (t) => {
+  // Use a serif font that has kerning information
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'SourceSerifPro-Regular.ttf'), 'Source Serif Pro')
+  const canvas = createCanvas(600, 300)
+  const ctx = canvas.getContext('2d')!
+  ctx.font = '48px Source Serif Pro'
+
+  // Test text with common kerning pairs: AV, Ta, We
+  const testText = 'AVA Ta We'
+
+  // Default (auto)
+  ctx.fillText(`${testText} (auto)`, 10, 60)
+  t.is(ctx.fontKerning, 'auto')
+
+  // Kerning normal
+  ctx.fontKerning = 'normal'
+  ctx.fillText(`${testText} (normal)`, 10, 140)
+  t.is(ctx.fontKerning, 'normal')
+
+  // Kerning none - characters should be evenly spread
+  ctx.fontKerning = 'none'
+  ctx.fillText(`${testText} (none)`, 10, 220)
+  t.is(ctx.fontKerning, 'none')
+
+  await snapshotImage(t, { canvas, ctx })
+})
+
+test('font-stretch-default-value', (t) => {
+  const { ctx } = t.context
+  t.is(ctx.fontStretch, 'normal')
+})
+
+test('font-kerning-default-value', (t) => {
+  const { ctx } = t.context
+  t.is(ctx.fontKerning, 'auto')
+})
+
+test('font-stretch-invalid-value-ignored', (t) => {
+  const { ctx } = t.context
+  ctx.fontStretch = 'condensed'
+  t.is(ctx.fontStretch, 'condensed')
+  ctx.fontStretch = 'invalid-stretch' as any
+  t.is(ctx.fontStretch, 'condensed') // Should remain unchanged
+})
+
+test('font-kerning-invalid-value-ignored', (t) => {
+  const { ctx } = t.context
+  ctx.fontKerning = 'none'
+  t.is(ctx.fontKerning, 'none')
+  ctx.fontKerning = 'invalid-kerning' as any
+  t.is(ctx.fontKerning, 'none') // Should remain unchanged
+})

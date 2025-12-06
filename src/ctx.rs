@@ -686,6 +686,21 @@ impl Context {
     Ok(())
   }
 
+  pub fn set_font_stretch(&mut self, stretch: String) -> result::Result<(), SkError> {
+    if let Some(s) = crate::font::parse_font_stretch(&stretch) {
+      self.state.font_stretch = s;
+      self.state.font_stretch_raw = stretch;
+    }
+    Ok(())
+  }
+
+  pub fn set_font_kerning(&mut self, kerning: String) -> result::Result<(), SkError> {
+    if let Ok(k) = kerning.parse() {
+      self.state.font_kerning = k;
+    }
+    Ok(())
+  }
+
   pub fn get_image_data(
     &mut self,
     x: f32,
@@ -929,7 +944,8 @@ impl Context {
                 max_width,
                 width as f32,
                 state.font_style.weight,
-                state.font_style.stretch as i32,
+                state.font_stretch as i32,
+                state.font_stretch.to_width_percentage(),
                 state.font_style.style,
                 &font,
                 state.font_style.size,
@@ -941,6 +957,7 @@ impl Context {
                 state.word_spacing,
                 shadow_paint,
                 variations,
+                state.font_kerning,
               )?;
               shadow_canvas.restore();
               Ok(())
@@ -954,7 +971,8 @@ impl Context {
           max_width,
           width as f32,
           state.font_style.weight,
-          state.font_style.stretch as i32,
+          state.font_stretch as i32,
+          state.font_stretch.to_width_percentage(),
           state.font_style.style,
           &font,
           state.font_style.size,
@@ -966,6 +984,7 @@ impl Context {
           state.word_spacing,
           paint,
           variations,
+          state.font_kerning,
         )?;
         Ok(())
       },
@@ -977,7 +996,7 @@ impl Context {
     let state = &self.state;
     let fill_paint = self.fill_paint()?;
     let weight = state.font_style.weight;
-    let stretch = state.font_style.stretch;
+    let stretch = state.font_stretch;
     let slant = state.font_style.style;
     let font = get_font()?;
     let line_metrics = LineMetrics(self.surface.canvas.get_line_metrics(
@@ -986,6 +1005,7 @@ impl Context {
       state.font_style.size,
       weight,
       stretch as i32,
+      stretch.to_width_percentage(),
       slant,
       &state.font_style.family,
       state.text_baseline,
@@ -995,6 +1015,7 @@ impl Context {
       state.word_spacing,
       &fill_paint,
       &self.state.font_variations,
+      self.state.font_kerning,
     )?);
     Ok(line_metrics)
   }
@@ -1484,6 +1505,28 @@ impl CanvasRenderingContext2D {
   #[napi(setter, return_if_invalid)]
   pub fn set_text_baseline(&mut self, baseline: String) -> Result<()> {
     self.context.set_text_baseline(baseline)?;
+    Ok(())
+  }
+
+  #[napi(getter)]
+  pub fn get_font_stretch(&self) -> String {
+    self.context.state.font_stretch_raw.clone()
+  }
+
+  #[napi(setter, return_if_invalid)]
+  pub fn set_font_stretch(&mut self, stretch: String) -> Result<()> {
+    self.context.set_font_stretch(stretch)?;
+    Ok(())
+  }
+
+  #[napi(getter)]
+  pub fn get_font_kerning(&self) -> String {
+    self.context.state.font_kerning.as_str().to_owned()
+  }
+
+  #[napi(setter, return_if_invalid)]
+  pub fn set_font_kerning(&mut self, kerning: String) -> Result<()> {
+    self.context.set_font_kerning(kerning)?;
     Ok(())
   }
 

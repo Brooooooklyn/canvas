@@ -229,6 +229,22 @@ impl FontStretch {
       FontStretch::UltraExpanded => "ultra-expanded",
     }
   }
+
+  /// Returns the width percentage for variable font 'wdth' axis
+  /// Based on CSS font-stretch percentages
+  pub fn to_width_percentage(self) -> f32 {
+    match self {
+      FontStretch::UltraCondensed => 50.0,
+      FontStretch::ExtraCondensed => 62.5,
+      FontStretch::Condensed => 75.0,
+      FontStretch::SemiCondensed => 87.5,
+      FontStretch::Normal => 100.0,
+      FontStretch::SemiExpanded => 112.5,
+      FontStretch::Expanded => 125.0,
+      FontStretch::ExtraExpanded => 150.0,
+      FontStretch::UltraExpanded => 200.0,
+    }
+  }
 }
 
 // https://drafts.csswg.org/css-fonts-4/#propdef-font-weight
@@ -251,7 +267,7 @@ fn parse_font_weight(weight: &str) -> Option<u32> {
   }
 }
 
-fn parse_font_stretch(stretch: &str) -> Option<FontStretch> {
+pub fn parse_font_stretch(stretch: &str) -> Option<FontStretch> {
   match stretch {
     "ultra-condensed" | "50%" => Some(FontStretch::UltraCondensed),
     "extra-condensed" | "62.5%" => Some(FontStretch::ExtraCondensed),

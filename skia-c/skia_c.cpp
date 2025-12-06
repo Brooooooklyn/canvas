@@ -465,6 +465,7 @@ void skiac_canvas_get_line_metrics_or_draw_text(
     float font_size,
     int weight,
     int stretch,
+    float stretch_width,
     int slant,
     const char* font_family,
     int baseline,
@@ -476,7 +477,8 @@ void skiac_canvas_get_line_metrics_or_draw_text(
     skiac_canvas* c_canvas,
     skiac_line_metrics* c_line_metrics,
     const skiac_font_variation* variations,
-    int variations_count) {
+    int variations_count,
+    int kerning) {
   auto font_collection = c_collection->collection;
   auto font_style = SkFontStyle(weight, stretch, (SkFontStyle::Slant)slant);
   auto text_direction = (TextDirection)direction;
@@ -498,14 +500,31 @@ void skiac_canvas_get_line_metrics_or_draw_text(
 
   // Apply variable font variations if provided
   if (variations && variations_count > 0) {
-    coords.reserve(variations_count);
+    coords.reserve(variations_count + 1);
     for (int i = 0; i < variations_count; i++) {
       coords.push_back({variations[i].tag, variations[i].value});
     }
+  }
+
+  // Apply font stretch as 'wdth' variation for variable fonts
+  // 'wdth' tag = 0x77647468
+  if (stretch_width != 100.0f) {
+    coords.push_back({SkSetFourByteTag('w', 'd', 't', 'h'), stretch_width});
+  }
+
+  if (!coords.empty()) {
     SkFontArguments font_args;
     font_args.setVariationDesignPosition(
         {coords.data(), static_cast<int>(coords.size())});
     text_style.setFontArguments(std::make_optional(font_args));
+  }
+
+  // Apply font kerning feature
+  // kerning: 0=auto (don't set feature), 1=none (disable), 2=normal (enable)
+  if (kerning == 1) {
+    text_style.addFontFeature(SkString("kern"), 0);
+  } else if (kerning == 2) {
+    text_style.addFontFeature(SkString("kern"), 1);
   }
 
   text_style.setForegroundColor(*PAINT_CAST);
