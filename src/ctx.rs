@@ -14,6 +14,7 @@ use rgb::RGBA;
 
 use crate::font::FONT_MEDIUM_PX;
 use crate::font::parse_size_px;
+use crate::gif::GifConfig;
 use crate::global_fonts::get_font;
 use crate::picture_recorder::PictureRecorder;
 use crate::sk::Canvas;
@@ -2396,11 +2397,13 @@ pub enum ContextData {
   Jpeg(SurfaceRef, u8),
   Webp(SurfaceRef, u8),
   Avif(SurfaceRef, Config, u32, u32),
+  Gif(SurfaceRef, GifConfig, u32, u32),
 }
 
 pub enum ContextOutputData {
   Skia(SkiaDataRef),
   Avif(AvifData<'static>),
+  Gif(Vec<u8>),
 }
 
 impl ContextOutputData {
@@ -2412,6 +2415,15 @@ impl ContextOutputData {
         })
       },
       ContextOutputData::Avif(output) => unsafe {
+        BufferSlice::from_external(
+          &env,
+          output.as_ptr().cast_mut(),
+          output.len(),
+          output,
+          |_, data_ref| mem::drop(data_ref),
+        )
+      },
+      ContextOutputData::Gif(output) => unsafe {
         BufferSlice::from_external(
           &env,
           output.as_ptr().cast_mut(),
@@ -2472,6 +2484,11 @@ pub(crate) fn encode_surface(data: &ContextData) -> Result<ContextOutputData> {
         .map(ContextOutputData::Avif)
         .map_err(|e| Error::new(Status::GenericFailure, format!("{e}")))
       }),
+    ContextData::Gif(surface, config, width, height) => {
+      crate::gif::encode_surface(surface, *width, *height, config)
+        .map(ContextOutputData::Gif)
+        .map_err(|e| Error::new(Status::GenericFailure, format!("{e}")))
+    }
   }
 }
 

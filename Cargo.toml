@@ -13,6 +13,7 @@ anyhow          = "1"
 base64-simd     = "0.8"
 cssparser       = "0.35"
 cssparser-color = "0.3"
+gif             = "0.14"
 infer           = "0.19"
 libavif         = { version = "0.14", default-features = false, features = ["codec-aom"] }
 libavif-sys     = { version = "0.17", default-features = false, features = ["codec-aom"] }

@@ -619,6 +619,121 @@ export interface AvifConfig {
   /** set to '4:2:0' to use chroma subsampling, default '4:4:4' */
   chromaSubsampling?: ChromaSubsampling
 }
+
+/** GIF encoding configuration for single-frame encoding */
+export interface GifConfig {
+  /**
+   * Quality for NeuQuant color quantization (1-30, lower = slower but better quality)
+   * @default 10
+   */
+  quality?: number
+}
+
+/** Configuration for the GIF encoder (animated GIFs) */
+export interface GifEncoderConfig {
+  /**
+   * Loop count: 0 = infinite loop, positive number = finite loops
+   * @default 0 (infinite)
+   */
+  repeat?: number
+  /**
+   * Quality for NeuQuant color quantization (1-30, lower = slower but better quality)
+   * @default 10
+   */
+  quality?: number
+}
+
+/** Configuration for individual GIF frames */
+export interface GifFrameConfig {
+  /**
+   * Frame delay in milliseconds
+   * @default 100
+   */
+  delay?: number
+  /** Disposal method for this frame */
+  disposal?: GifDisposal
+  /** Transparent color index (0-255), if the frame has transparency */
+  transparent?: number
+  /** X offset of this frame within the canvas */
+  left?: number
+  /** Y offset of this frame within the canvas */
+  top?: number
+}
+
+/** GIF frame disposal method */
+export enum GifDisposal {
+  /** Keep the frame visible (default) */
+  Keep = 0,
+  /** Clear the frame area to the background color */
+  Background = 1,
+  /** Restore to the previous frame */
+  Previous = 2,
+}
+
+/**
+ * GIF Encoder for creating animated GIFs.
+ * Implements `Disposable` interface for use with the `using` keyword (ES2024).
+ *
+ * @example
+ * ```typescript
+ * // Basic usage
+ * const encoder = new GifEncoder(100, 100, { repeat: 0, quality: 10 });
+ * encoder.addFrame(rgbaData, 100, 100, { delay: 100 });
+ * encoder.addFrame(rgbaData2, 100, 100, { delay: 100 });
+ * const buffer = encoder.finish();
+ *
+ * // With `using` keyword (automatic cleanup)
+ * {
+ *   using encoder = new GifEncoder(100, 100);
+ *   encoder.addFrame(frame1, 100, 100, { delay: 100 });
+ *   const buffer = encoder.finish();
+ * } // encoder automatically disposed
+ * ```
+ */
+export class GifEncoder implements Disposable {
+  /**
+   * Create a new GIF encoder with the specified dimensions
+   * @param width - Width of the GIF canvas in pixels
+   * @param height - Height of the GIF canvas in pixels
+   * @param config - Optional encoder configuration
+   */
+  constructor(width: number, height: number, config?: GifEncoderConfig)
+
+  /** Width of the GIF canvas */
+  readonly width: number
+  /** Height of the GIF canvas */
+  readonly height: number
+  /** Number of frames added so far */
+  readonly frameCount: number
+
+  /**
+   * Add a frame from RGBA pixel data
+   * @param data - RGBA pixel data (must be width * height * 4 bytes)
+   * @param width - Width of the frame in pixels
+   * @param height - Height of the frame in pixels
+   * @param config - Optional frame configuration
+   */
+  addFrame(data: Uint8Array, width: number, height: number, config?: GifFrameConfig): void
+
+  /**
+   * Finish encoding and return the GIF data.
+   * Clears all accumulated frames after encoding.
+   * @throws Error if no frames have been added
+   */
+  finish(): Buffer
+
+  /**
+   * Dispose of the encoder, clearing all accumulated frames without encoding.
+   * Called automatically when using the `using` keyword.
+   */
+  dispose(): void
+
+  /**
+   * Symbol.dispose implementation for ES2024 Explicit Resource Management.
+   * Allows using `using encoder = new GifEncoder(...)` syntax.
+   */
+  [Symbol.dispose](): void
+}
 /**
  * https://en.wikipedia.org/wiki/Chroma_subsampling#Types_of_sampling_and_subsampling
  * https://developer.mozilla.org/en-US/docs/Web/Media/Formats/Video_concepts
@@ -676,24 +791,29 @@ export class Canvas {
   encodeSync(format: 'webp' | 'jpeg', quality?: number): Buffer
   encodeSync(format: 'png'): Buffer
   encodeSync(format: 'avif', cfg?: AvifConfig): Buffer
+  encodeSync(format: 'gif', quality?: number): Buffer
   encode(format: 'webp' | 'jpeg', quality?: number): Promise<Buffer>
   encode(format: 'png'): Promise<Buffer>
   encode(format: 'avif', cfg?: AvifConfig): Promise<Buffer>
+  encode(format: 'gif', quality?: number): Promise<Buffer>
   encodeStream(format: 'webp' | 'jpeg', quality?: number): ReadableStream<Buffer>
   encodeStream(format: 'png'): ReadableStream<Buffer>
   toBuffer(mime: 'image/png'): Buffer
   toBuffer(mime: 'image/jpeg' | 'image/webp', quality?: number): Buffer
   toBuffer(mime: 'image/avif', cfg?: AvifConfig): Buffer
+  toBuffer(mime: 'image/gif', quality?: number): Buffer
   // raw pixels
   data(): Buffer
   toDataURL(mime?: 'image/png'): string
   toDataURL(mime: 'image/jpeg' | 'image/webp', quality?: number): string
-  toDataURL(mime?: 'image/jpeg' | 'image/webp' | 'image/png', quality?: number): string
+  toDataURL(mime: 'image/gif', quality?: number): string
+  toDataURL(mime?: 'image/jpeg' | 'image/webp' | 'image/png' | 'image/gif', quality?: number): string
   toDataURL(mime?: 'image/avif', cfg?: AvifConfig): string
 
   toDataURLAsync(mime?: 'image/png'): Promise<string>
   toDataURLAsync(mime: 'image/jpeg' | 'image/webp', quality?: number): Promise<string>
-  toDataURLAsync(mime?: 'image/jpeg' | 'image/webp' | 'image/png', quality?: number): Promise<string>
+  toDataURLAsync(mime: 'image/gif', quality?: number): Promise<string>
+  toDataURLAsync(mime?: 'image/jpeg' | 'image/webp' | 'image/png' | 'image/gif', quality?: number): Promise<string>
   toDataURLAsync(mime?: 'image/avif', cfg?: AvifConfig): Promise<string>
 
   toBlob(callback: (blob: Blob | null) => void, mime?: string, quality?: number): void

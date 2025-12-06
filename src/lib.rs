@@ -41,6 +41,7 @@ mod ctx;
 mod error;
 mod filter;
 mod font;
+mod gif;
 pub mod global_fonts;
 mod gradient;
 mod image;
@@ -56,6 +57,7 @@ const MIME_WEBP: &str = "image/webp";
 const MIME_PNG: &str = "image/png";
 const MIME_JPEG: &str = "image/jpeg";
 const MIME_AVIF: &str = "image/avif";
+const MIME_GIF: &str = "image/gif";
 
 // Consistent with the default value of JPEG quality in Blink
 // https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/platform/image-encoders/image_encoder.cc;l=85;drc=81c6f843fdfd8ef660d733289a7a32abe68e247a
@@ -272,6 +274,15 @@ impl<'c> CanvasElement<'c> {
           |_, data| mem::drop(data),
         )
       },
+      ContextOutputData::Gif(output) => unsafe {
+        BufferSlice::from_external(
+          &env,
+          output.as_ptr().cast_mut(),
+          output.len(),
+          output,
+          |_, data| mem::drop(data),
+        )
+      },
     }
   }
 
@@ -452,6 +463,15 @@ impl<'c> CanvasElement<'c> {
         let cfg = AvifConfig::from(&quality_or_config);
         ContextData::Avif(surface_ref, cfg.into(), ctx2d.width, ctx2d.height)
       }
+      "gif" => {
+        let cfg = gif::GifConfig {
+          quality: match &quality_or_config {
+            Either3::A(q) => Some(*q),
+            _ => None,
+          },
+        };
+        ContextData::Gif(surface_ref, cfg, ctx2d.width, ctx2d.height)
+      }
       _ => {
         return Err(Error::new(
           Status::InvalidArg,
@@ -518,6 +538,17 @@ fn get_data_ref(
       .map_err(|e| Error::new(Status::GenericFailure, format!("{e}")))?;
       return Ok(ContextOutputData::Avif(output));
     }
+    MIME_GIF => {
+      let config = gif::GifConfig {
+        quality: match quality_or_config {
+          Either::A(q) => Some(*q),
+          _ => None,
+        },
+      };
+      let output = gif::encode_surface(surface_ref, width, height, &config)
+        .map_err(|e| Error::new(Status::GenericFailure, format!("{e}")))?;
+      return Ok(ContextOutputData::Gif(output));
+    }
     _ => {
       return Err(Error::new(
         Status::InvalidArg,
@@ -562,6 +593,9 @@ impl Task for AsyncDataUrl {
       }
       ContextOutputData::Avif(data_ref) => {
         base64_simd::STANDARD.encode_append(data_ref.as_ref(), &mut output);
+      }
+      ContextOutputData::Gif(data_ref) => {
+        base64_simd::STANDARD.encode_append(&data_ref, &mut output);
       }
     }
     Ok(output)
@@ -608,6 +642,15 @@ impl<'env> ScopedTask<'env> for AsyncBlob {
           env,
           data_slice.as_ptr().cast_mut(),
           data_slice.len(),
+          data_ref,
+          |_, d| mem::drop(d),
+        )
+      },
+      ContextOutputData::Gif(data_ref) => unsafe {
+        Uint8ArraySlice::from_external(
+          env,
+          data_ref.as_ptr().cast_mut(),
+          data_ref.len(),
           data_ref,
           |_, d| mem::drop(d),
         )
