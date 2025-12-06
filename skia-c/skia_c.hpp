@@ -399,7 +399,8 @@ void skiac_canvas_get_line_metrics_or_draw_text(
     skiac_line_metrics* c_line_metrics,
     const skiac_font_variation* variations,
     int variations_count,
-    int kerning);
+    int kerning,
+    int variant_caps);
 void skiac_canvas_reset_transform(skiac_canvas* c_canvas);
 void skiac_canvas_clip_rect(skiac_canvas* c_canvas,
                             float x,

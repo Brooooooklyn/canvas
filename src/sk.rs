@@ -511,6 +511,7 @@ pub mod ffi {
       variations: *const skiac_font_variation,
       variations_count: i32,
       kerning: i32,
+      variant_caps: i32,
     );
 
     pub fn skiac_canvas_reset_transform(canvas: *mut skiac_canvas);
@@ -1682,6 +1683,53 @@ impl FontKerning {
   }
 }
 
+#[repr(i32)]
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub enum FontVariantCaps {
+  #[default]
+  Normal = 0,
+  SmallCaps = 1,
+  AllSmallCaps = 2,
+  PetiteCaps = 3,
+  AllPetiteCaps = 4,
+  Unicase = 5,
+  TitlingCaps = 6,
+}
+
+impl FromStr for FontVariantCaps {
+  type Err = SkError;
+
+  fn from_str(s: &str) -> Result<FontVariantCaps, SkError> {
+    match s {
+      "normal" => Ok(Self::Normal),
+      "small-caps" => Ok(Self::SmallCaps),
+      "all-small-caps" => Ok(Self::AllSmallCaps),
+      "petite-caps" => Ok(Self::PetiteCaps),
+      "all-petite-caps" => Ok(Self::AllPetiteCaps),
+      "unicase" => Ok(Self::Unicase),
+      "titling-caps" => Ok(Self::TitlingCaps),
+      _ => Err(SkError::Generic(format!(
+        "Invalid font variant caps: {}",
+        s
+      ))),
+    }
+  }
+}
+
+impl FontVariantCaps {
+  pub fn as_str(&self) -> &str {
+    match self {
+      Self::Normal => "normal",
+      Self::SmallCaps => "small-caps",
+      Self::AllSmallCaps => "all-small-caps",
+      Self::PetiteCaps => "petite-caps",
+      Self::AllPetiteCaps => "all-petite-caps",
+      Self::Unicase => "unicase",
+      Self::TitlingCaps => "titling-caps",
+    }
+  }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(i32)]
 pub enum SkEncodedImageFormat {
@@ -2298,6 +2346,7 @@ impl Canvas {
     paint: &Paint,
     variations: &[FontVariation],
     kerning: FontKerning,
+    variant_caps: FontVariantCaps,
   ) -> Result<(), NulError> {
     let c_text = std::ffi::CString::new(text)?;
     let c_font_family = std::ffi::CString::new(font_family)?;
@@ -2328,6 +2377,7 @@ impl Canvas {
         variations.as_ptr() as *const ffi::skiac_font_variation,
         variations.len() as i32,
         kerning as i32,
+        variant_caps as i32,
       );
     };
     Ok(())
@@ -2351,6 +2401,7 @@ impl Canvas {
     paint: &Paint,
     variations: &[FontVariation],
     kerning: FontKerning,
+    variant_caps: FontVariantCaps,
   ) -> Result<ffi::skiac_line_metrics, NulError> {
     let c_text = std::ffi::CString::new(text)?;
     let c_font_family = std::ffi::CString::new(font_family)?;
@@ -2383,6 +2434,7 @@ impl Canvas {
         variations.as_ptr() as *const ffi::skiac_font_variation,
         variations.len() as i32,
         kerning as i32,
+        variant_caps as i32,
       );
     }
     Ok(line_metrics)
