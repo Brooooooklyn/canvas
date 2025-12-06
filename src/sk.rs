@@ -497,6 +497,7 @@ pub mod ffi {
       font_size: f32,
       weight: i32,
       width: i32,
+      stretch_width: f32,
       slant: i32,
       font_family: *const c_char,
       baseline: i32,
@@ -509,6 +510,7 @@ pub mod ffi {
       line_metrics: *mut skiac_line_metrics,
       variations: *const skiac_font_variation,
       variations_count: i32,
+      kerning: i32,
     );
 
     pub fn skiac_canvas_reset_transform(canvas: *mut skiac_canvas);
@@ -1648,6 +1650,38 @@ impl TextDirection {
   }
 }
 
+#[repr(i32)]
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub enum FontKerning {
+  #[default]
+  Auto = 0,
+  None = 1,
+  Normal = 2,
+}
+
+impl FromStr for FontKerning {
+  type Err = SkError;
+
+  fn from_str(s: &str) -> Result<FontKerning, SkError> {
+    match s {
+      "auto" => Ok(Self::Auto),
+      "none" => Ok(Self::None),
+      "normal" => Ok(Self::Normal),
+      _ => Err(SkError::Generic(format!("Invalid font kerning: {}", s))),
+    }
+  }
+}
+
+impl FontKerning {
+  pub fn as_str(&self) -> &str {
+    match self {
+      Self::Auto => "auto",
+      Self::None => "none",
+      Self::Normal => "normal",
+    }
+  }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(i32)]
 pub enum SkEncodedImageFormat {
@@ -2251,6 +2285,7 @@ impl Canvas {
     canvas_width: f32,
     weight: u32,
     stretch: i32,
+    stretch_width: f32,
     slant: FontStyle,
     font_collection: &FontCollection,
     font_size: f32,
@@ -2262,6 +2297,7 @@ impl Canvas {
     word_spacing: f32,
     paint: &Paint,
     variations: &[FontVariation],
+    kerning: FontKerning,
   ) -> Result<(), NulError> {
     let c_text = std::ffi::CString::new(text)?;
     let c_font_family = std::ffi::CString::new(font_family)?;
@@ -2278,6 +2314,7 @@ impl Canvas {
         font_size,
         weight as i32,
         stretch,
+        stretch_width,
         slant as i32,
         c_font_family.as_ptr(),
         baseline as i32,
@@ -2290,6 +2327,7 @@ impl Canvas {
         ptr::null_mut(),
         variations.as_ptr() as *const ffi::skiac_font_variation,
         variations.len() as i32,
+        kerning as i32,
       );
     };
     Ok(())
@@ -2302,6 +2340,7 @@ impl Canvas {
     font_size: f32,
     weight: u32,
     stretch: i32,
+    stretch_width: f32,
     slant: FontStyle,
     font_family: &str,
     baseline: TextBaseline,
@@ -2311,6 +2350,7 @@ impl Canvas {
     word_spacing: f32,
     paint: &Paint,
     variations: &[FontVariation],
+    kerning: FontKerning,
   ) -> Result<ffi::skiac_line_metrics, NulError> {
     let c_text = std::ffi::CString::new(text)?;
     let c_font_family = std::ffi::CString::new(font_family)?;
@@ -2329,6 +2369,7 @@ impl Canvas {
         font_size,
         weight as i32,
         stretch,
+        stretch_width,
         slant as i32,
         c_font_family.as_ptr(),
         baseline as i32,
@@ -2341,6 +2382,7 @@ impl Canvas {
         &mut line_metrics,
         variations.as_ptr() as *const ffi::skiac_font_variation,
         variations.len() as i32,
+        kerning as i32,
       );
     }
     Ok(line_metrics)

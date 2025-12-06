@@ -3,9 +3,9 @@ use rgb::RGBA;
 use crate::sk::{BlendMode, ImageFilter, Matrix};
 
 use super::{
-  font::Font,
+  font::{Font, FontStretch},
   pattern::Pattern,
-  sk::{FilterQuality, Paint, TextAlign, TextBaseline, TextDirection},
+  sk::{FilterQuality, FontKerning, Paint, TextAlign, TextBaseline, TextDirection},
 };
 
 use crate::sk::FontVariation;
@@ -36,6 +36,9 @@ pub struct Context2dRenderingState {
   pub letter_spacing_raw: String,
   pub word_spacing: f32,
   pub word_spacing_raw: String,
+  pub font_stretch: FontStretch,
+  pub font_stretch_raw: String,
+  pub font_kerning: FontKerning,
   pub transform: Matrix,
   pub filter: Option<ImageFilter>,
   pub filters_string: String,
@@ -71,6 +74,9 @@ impl Default for Context2dRenderingState {
       letter_spacing_raw: "0px".to_owned(),
       word_spacing: 0.0,
       word_spacing_raw: "0px".to_owned(),
+      font_stretch: FontStretch::Normal,
+      font_stretch_raw: "normal".to_owned(),
+      font_kerning: FontKerning::Auto,
       transform: Matrix::identity(),
       filter: None,
       filters_string: "none".to_owned(),
