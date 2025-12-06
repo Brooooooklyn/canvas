@@ -1,3 +1,13 @@
+## [0.1.84](https://github.com/Brooooooklyn/canvas/compare/v0.1.83...v0.1.84) (2025-12-06)
+
+
+### Features
+
+* add fontStretch and fontKerning support ([#1160](https://github.com/Brooooooklyn/canvas/issues/1160)) ([8da5eea](https://github.com/Brooooooklyn/canvas/commit/8da5eea1c4f7ce14d9ebeba147636c4b47841295))
+* add GIF encoding support ([#1159](https://github.com/Brooooooklyn/canvas/issues/1159)) ([0cf2fcc](https://github.com/Brooooooklyn/canvas/commit/0cf2fcc619de57c0ca24f1a5ea774200fd4285f1))
+
+
+
 ## [0.1.83](https://github.com/Brooooooklyn/canvas/compare/v0.1.82...v0.1.83) (2025-11-27)
 
 
