@@ -425,3 +425,67 @@ test('font-variant-caps-shorthand-vs-property-equality', async (t) => {
 
   t.deepEqual(buffer1, buffer2, 'font shorthand small-caps should produce identical output as fontVariantCaps property')
 })
+
+test('font-weight-bold-should-work-without-fontVariationSettings', async (t) => {
+  // Test that font-weight (like 'bold') in ctx.font works without needing fontVariationSettings
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'RobotoMono-VariableFont_wght.ttf'), 'Roboto Mono')
+  const canvas = createCanvas(1280, 680)
+  const ctx = canvas.getContext('2d')
+  ctx.fillStyle = 'blue'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  ctx.fillStyle = 'white'
+  // Test various font-weight values WITHOUT using fontVariationSettings
+  const weights = ['100', '200', '300', 'normal', '500', '600', 'bold', '800', '900']
+  for (let i = 0; i < weights.length; i++) {
+    ctx.font = `${weights[i]} 45px Roboto Mono`
+    ctx.fillText(`${weights[i]}: Jackdaws love my big sphinx of quartz`, 30, (i + 1) * 65)
+  }
+  await snapshotImage(t, { canvas, ctx })
+})
+
+test('font-weight-bold-synthesis-for-non-variable-font', async (t) => {
+  // Test synthetic bold for non-variable fonts (fonts without wght axis)
+  // CSS Fonts Level 4: "For TrueType / OpenType fonts that do not have the wght axis,
+  // the UA may synthesize bold"
+  // Iosevka Slab Regular is a non-variable font (only regular weight)
+  //
+  // font-weight values: normal | bold | <number [1,1000]>
+  // Note: 'bolder' and 'lighter' are relative keywords that depend on inherited weight,
+  // which is not applicable in canvas context (no inheritance)
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'SourceSerifPro-Regular.ttf'), 'Source Serif Pro')
+  const canvas = createCanvas(420, 900)
+  const ctx = canvas.getContext('2d')!
+  ctx.fillStyle = 'white'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  ctx.fillStyle = 'black'
+
+  // Test all font-weight values: keywords and numeric [1, 1000]
+  // 'normal' = 400, 'bold' = 700
+  // Pairs show keyword and its numeric equivalent should render identically
+  const weights = [
+    ['normal', '400'], // normal keyword equivalent to 400
+    ['bold', '700'], // bold keyword equivalent to 700
+    ['102'],
+    ['202'],
+    ['302'],
+    ['502'],
+    ['602'], // synthetic bold triggered: weight >= 600 and diff >= 200
+    ['802'],
+    ['900.99999'],
+    ['901'],
+    ['950'],
+    ['1000'],
+  ]
+
+  let y = 40
+  for (const group of weights) {
+    for (const weight of group) {
+      ctx.font = `${weight} 32px Source Serif Pro`
+      ctx.fillText(`Hello World (${weight})`, 20, y)
+      y += 40
+    }
+    y += 10 // extra spacing between groups
+  }
+
+  await snapshotImage(t, { canvas, ctx })
+})
