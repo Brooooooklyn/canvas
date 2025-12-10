@@ -140,5 +140,9 @@
     "singleQuote": true,
     "arrowParens": "always"
   },
+  "funding": {
+    "type": "github",
+    "url": "https://github.com/sponsors/Brooooooklyn"
+  },
   "packageManager": "yarn@4.12.0"
 }
