@@ -238,6 +238,23 @@ impl Context {
     }
   }
 
+  pub fn reset(&mut self) {
+    // Clear the backing buffer to transparent black
+    self.surface.canvas.clear();
+
+    // Reset canvas state (restores to initial save state)
+    self.surface.canvas.reset();
+
+    // Clear the current path
+    self.path = SkPath::new();
+
+    // Clear the drawing state stack
+    self.states.clear();
+
+    // Reset all styles to default
+    self.state = Context2dRenderingState::default();
+  }
+
   pub fn stroke_rect(&mut self, x: f32, y: f32, w: f32, h: f32) -> result::Result<(), SkError> {
     let stroke_paint = self.stroke_paint()?;
     Self::render_canvas(
@@ -1829,6 +1846,16 @@ impl CanvasRenderingContext2D {
   #[napi(return_if_invalid)]
   pub fn restore(&mut self) {
     self.context.restore();
+  }
+
+  #[napi]
+  pub fn reset(&mut self, env: Env, mut this: This) -> Result<()> {
+    self.context.reset();
+    // Reset the hidden fill/stroke style properties to default "#000000"
+    let default_color = env.create_string("#000000")?;
+    this.set(FILL_STYLE_HIDDEN_NAME, default_color)?;
+    this.set(STROKE_STYLE_HIDDEN_NAME, default_color)?;
+    Ok(())
   }
 
   #[napi(return_if_invalid)]
