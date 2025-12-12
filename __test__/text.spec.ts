@@ -425,3 +425,91 @@ test('font-variant-caps-shorthand-vs-property-equality', async (t) => {
 
   t.deepEqual(buffer1, buffer2, 'font shorthand small-caps should produce identical output as fontVariantCaps property')
 })
+
+// MDN example: https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D/direction
+test('direction-letter-spacing', async (t) => {
+  const canvas = createCanvas(500, 150)
+  const ctx = canvas.getContext('2d')!
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'ScienceGothic-VariableFont.ttf'), 'Science Gothic')
+  const x = canvas.width / 2
+
+  // 1. Fill background first
+  ctx.fillStyle = 'white'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+  // 2. Draw center line
+  ctx.beginPath()
+  ctx.moveTo(x, 0)
+  ctx.lineTo(x, canvas.height)
+  ctx.strokeStyle = 'green'
+  ctx.stroke()
+
+  ctx.font = '48px Science Gothic'
+  ctx.fillStyle = 'black'
+  ctx.letterSpacing = '20px'
+
+  // First line: default direction (should be ltr)
+  ctx.fillText('Hi!', x, 50)
+  // Second line: rtl direction - "Hi!" should become "!Hi" visually
+  ctx.direction = 'rtl'
+  ctx.letterSpacing = '20px'
+  ctx.fillText('Hi!', x, 130)
+
+  await snapshotImage(t, { canvas, ctx })
+})
+
+test('direction-align', async (t) => {
+  const canvas = createCanvas(500, 580)
+  const ctx = canvas.getContext('2d')!
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'ScienceGothic-VariableFont.ttf'), 'Science Gothic');
+  const x = canvas.width / 2
+
+  ctx.fillStyle = 'white'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+  // Draw center line
+  ctx.beginPath()
+  ctx.moveTo(x, 0)
+  ctx.lineTo(x, canvas.height)
+  ctx.strokeStyle = 'green'
+  ctx.stroke()
+
+  ctx.font = '48px Science Gothic'
+  ctx.fillStyle = 'black'
+  ctx.letterSpacing = '3px'
+
+  // ltr align
+  // start = left in ltr
+  ctx.direction = 'ltr'
+  ctx.fillText('ltr start!', 0, 50)
+  ctx.textAlign = 'left'
+  ctx.fillText('ltr left!', 0, 100)
+
+  ctx.textAlign = 'center'
+  ctx.fillText('ltr center!', x, 150)
+
+  // end = right in ltr
+  ctx.textAlign = 'end'
+  ctx.fillText('ltr end!', canvas.width, 200)
+  ctx.textAlign = 'right'
+  ctx.fillText('ltr right!', canvas.width, 250)
+
+  // rtl align
+  // start = right in rtl
+  ctx.direction = 'rtl'
+  ctx.textAlign = 'start'
+  ctx.fillText('rtl start!', canvas.width, 350)
+  ctx.textAlign = 'right'
+  ctx.fillText('rtl right!', canvas.width, 400)
+
+  ctx.textAlign = 'center'
+  ctx.fillText('rtl center!', x, 450)
+
+  // end = left in rtl
+  ctx.textAlign = 'end'
+  ctx.fillText('rtl end!', 0, 500)
+  ctx.textAlign = 'left'
+  ctx.fillText('rtl left!', 0, 550)
+
+  await snapshotImage(t, { canvas, ctx })
+})

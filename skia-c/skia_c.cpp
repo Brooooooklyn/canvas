@@ -592,6 +592,16 @@ void skiac_canvas_get_line_metrics_or_draw_text(
   for (auto& box : text_box) {
     line_width += box.rect.width();
   }
+
+  // Debug output for width comparison
+  // printf("=== Line Width Debug ===\n");
+  // printf("line_width (getRectsForRange): %f\n", line_width);
+  // printf("line_metrics.fWidth: %f\n", line_metrics.fWidth);
+  // printf("getLongestLine: %f\n", paragraph->getLongestLine());
+  // printf("getMaxIntrinsicWidth: %f\n", paragraph->getMaxIntrinsicWidth());
+  // printf("letter_spacing: %f\n", letter_spacing);
+  // printf("text_direction: %s\n", text_direction == TextDirection::kRtl ? "RTL" : "LTR");
+
   for (size_t i = 1; i <= glyphs_size - 1; ++i) {
     auto char_bounds = bounds[i];
     auto char_bottom = char_bounds.fBottom;
@@ -640,35 +650,43 @@ void skiac_canvas_get_line_metrics_or_draw_text(
   auto line_center = line_width / 2.0f;
   float paint_x;
   float offset_x = 0.0;
+  // When RTL, Skia lays out text starting from the right edge of the layout width (MAX_LAYOUT_WIDTH).
+  // We need to compensate for this by subtracting the RTL offset.
+  float rtl_offset = (text_direction == TextDirection::kRtl) ? (MAX_LAYOUT_WIDTH - line_width) : 0.0f;
+  // Skia Paragraph adds letter_spacing / 2 before the first character and after
+  // the last character.
+  // For LTR: we need to shift left by letter_spacing / 2 to compensate for the
+  // spacing before the first character.
+  float letter_spacing_offset = (text_direction == TextDirection::kLtr) ? -letter_spacing / 2 : 0.0f;
   switch ((TextAlign)align) {
     case TextAlign::kLeft:
-      paint_x = x;
+      paint_x = x - rtl_offset + letter_spacing_offset;
       break;
     case TextAlign::kCenter:
-      paint_x = x - line_center;
+      paint_x = x - line_center - rtl_offset + letter_spacing_offset;
       offset_x = line_center;
       break;
     case TextAlign::kRight:
-      paint_x = x - line_width;
+      paint_x = x - line_width - rtl_offset + letter_spacing_offset;
       offset_x = line_width;
       break;
     // Unreachable
     case TextAlign::kJustify:
-      paint_x = x;
+      paint_x = x - rtl_offset + letter_spacing_offset;
       break;
     case TextAlign::kStart:
       if (text_direction == TextDirection::kLtr) {
-        paint_x = x;
+        paint_x = x + letter_spacing_offset;
       } else {
-        paint_x = x - line_width;
+        paint_x = x - line_width - rtl_offset;
         offset_x = line_width;
       }
       break;
     case TextAlign::kEnd:
       if (text_direction == TextDirection::kRtl) {
-        paint_x = x;
+        paint_x = x - rtl_offset;
       } else {
-        paint_x = x - line_width;
+        paint_x = x - line_width + letter_spacing_offset;
         offset_x = line_width;
       }
       break;
@@ -682,7 +700,6 @@ void skiac_canvas_get_line_metrics_or_draw_text(
       CANVAS_CAST->scale(ratio, 1.0);
     }
     auto paint_y = y + baseline_offset;
-    paint_x = paint_x - letter_spacing / 2;
     paragraph->paint(
         CANVAS_CAST,
         need_scale ? (paint_x + (1 - ratio) * offset_x) / ratio : paint_x,

@@ -175,3 +175,5 @@ llvm-project-llvmorg-*
 !.yarn/sdks
 !.yarn/versions
 .claude
+
+*.code-workspace
