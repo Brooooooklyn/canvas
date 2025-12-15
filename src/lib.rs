@@ -115,11 +115,11 @@ impl<'c> CanvasElement<'c> {
     ctx.as_object(env).define_properties(&[
       Property::new()
         .with_utf8_name(FILL_STYLE_HIDDEN_NAME)?
-        .with_napi_value(env, "#000")?
+        .with_napi_value(env, "#000000")?
         .with_property_attributes(PropertyAttributes::Writable | PropertyAttributes::Configurable),
       Property::new()
         .with_utf8_name(STROKE_STYLE_HIDDEN_NAME)?
-        .with_napi_value(env, "#000")?
+        .with_napi_value(env, "#000000")?
         .with_property_attributes(PropertyAttributes::Writable | PropertyAttributes::Configurable),
     ])?;
     env.adjust_external_memory((width * height * 4) as i64)?;
@@ -713,11 +713,11 @@ impl<'scope> SVGCanvas<'scope> {
     ctx_obj.define_properties(&[
       Property::new()
         .with_utf8_name(FILL_STYLE_HIDDEN_NAME)?
-        .with_value(&env.create_string("#000")?)
+        .with_value(&env.create_string("#000000")?)
         .with_property_attributes(PropertyAttributes::Writable | PropertyAttributes::Configurable),
       Property::new()
         .with_utf8_name(STROKE_STYLE_HIDDEN_NAME)?
-        .with_value(&env.create_string("#000")?)
+        .with_value(&env.create_string("#000000")?)
         .with_property_attributes(PropertyAttributes::Writable | PropertyAttributes::Configurable),
       Property::new()
         .with_utf8_name("canvas")?
