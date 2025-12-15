@@ -765,6 +765,180 @@ test('resetTransform', async (t) => {
   await snapshotImage(t)
 })
 
+test('reset', async (t) => {
+  const { ctx } = t.context
+  // Draw something and change styles
+  ctx.fillStyle = 'red'
+  ctx.strokeStyle = 'blue'
+  ctx.lineWidth = 5
+  ctx.globalAlpha = 0.5
+  ctx.shadowColor = 'green'
+  ctx.shadowBlur = 10
+  ctx.shadowOffsetX = 5
+  ctx.shadowOffsetY = 5
+  ctx.transform(1, 0.2, 0.8, 1, 0, 0)
+  // Change font-related properties
+  ctx.font = '24px Iosevka Slab'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'top'
+  ctx.direction = 'rtl'
+  ctx.letterSpacing = '5px'
+  ctx.wordSpacing = '10px'
+  ctx.fontStretch = 'expanded'
+  ctx.fontKerning = 'none'
+  ctx.fontVariationSettings = '"wght" 700'
+  ctx.fillRect(50, 50, 100, 100)
+
+  // Save state
+  ctx.save()
+  ctx.fillStyle = 'purple'
+  ctx.save()
+
+  // Reset the context
+  ctx.reset()
+
+  // Verify all styles are reset to defaults
+  t.is(ctx.fillStyle, '#000000')
+  t.is(ctx.strokeStyle, '#000000')
+  t.is(ctx.lineWidth, 1)
+  t.is(ctx.globalAlpha, 1)
+  t.is(ctx.shadowColor, '#000000')
+  t.is(ctx.shadowBlur, 0)
+  t.is(ctx.shadowOffsetX, 0)
+  t.is(ctx.shadowOffsetY, 0)
+  t.is(ctx.lineCap, 'butt')
+  t.is(ctx.lineJoin, 'miter')
+  t.is(ctx.miterLimit, 10)
+  t.is(ctx.lineDashOffset, 0)
+  t.deepEqual(ctx.getLineDash(), [])
+  // Font-related properties
+  t.is(ctx.font, '10px sans-serif')
+  t.is(ctx.textAlign, 'start')
+  t.is(ctx.textBaseline, 'alphabetic')
+  // TODO: Support direction
+  // t.is(ctx.direction, 'rtl')
+  t.is(ctx.letterSpacing, '0px')
+  t.is(ctx.wordSpacing, '0px')
+  t.is(ctx.fontStretch, 'normal')
+  t.is(ctx.fontKerning, 'auto')
+  t.is(ctx.fontVariationSettings, 'normal')
+  t.is(ctx.fontVariantCaps, 'normal')
+  // TODO Support textRendering
+  // t.is(ctx.textRendering , 'auto')
+  // Other properties
+  t.is(ctx.globalCompositeOperation, 'source-over')
+  t.is(ctx.imageSmoothingEnabled, true)
+  t.is(ctx.imageSmoothingQuality, 'low')
+  t.is(ctx.filter, 'none')
+
+  // Verify transform is reset to identity
+  const transform = ctx.getTransform()
+  t.is(transform.a, 1)
+  t.is(transform.b, 0)
+  t.is(transform.c, 0)
+  t.is(transform.d, 1)
+  t.is(transform.e, 0)
+  t.is(transform.f, 0)
+
+  // Verify state stack is cleared (restore should not change anything)
+  ctx.fillStyle = 'yellow'
+  ctx.restore()
+  t.is(ctx.fillStyle, 'yellow') // Should still be yellow, not restored
+
+  // Draw a rect with default styles to verify canvas was cleared
+  ctx.fillStyle = 'blue'
+  ctx.fillRect(200, 200, 100, 100)
+  await snapshotImage(t)
+})
+
+test('reset-clears-canvas', async (t) => {
+  const { ctx, canvas } = t.context
+  // Fill the entire canvas with red
+  ctx.fillStyle = 'red'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+  // Reset should clear to transparent
+  ctx.reset()
+
+  // Draw something small to verify canvas was cleared
+  ctx.fillStyle = 'green'
+  ctx.fillRect(100, 100, 50, 50)
+  await snapshotImage(t)
+})
+
+test('reset-clears-path', async (t) => {
+  const { ctx } = t.context
+  // Create a path
+  ctx.beginPath()
+  ctx.moveTo(50, 50)
+  ctx.lineTo(200, 200)
+  ctx.lineTo(50, 200)
+  ctx.closePath()
+
+  // Reset should clear the path
+  ctx.reset()
+
+  // Try to fill the path - nothing should be drawn since path was cleared
+  ctx.fillStyle = 'red'
+  ctx.fill()
+
+  // Draw a small rect to show canvas is working
+  ctx.fillStyle = 'green'
+  ctx.fillRect(100, 100, 50, 50)
+  await snapshotImage(t)
+})
+
+test('reset-clears-clip', async (t) => {
+  const { ctx, canvas } = t.context
+  // Create a clipping region
+  ctx.beginPath()
+  ctx.rect(100, 100, 100, 100)
+  ctx.clip()
+
+  // This rect should be clipped
+  ctx.fillStyle = 'red'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+  // Reset should clear the clipping region
+  ctx.reset()
+
+  // This rect should NOT be clipped
+  ctx.fillStyle = 'green'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  await snapshotImage(t)
+})
+
+test('reset-mdn-example', async (t) => {
+  const { ctx } = t.context
+
+  function drawRect() {
+    ctx.lineWidth = 10
+    ctx.strokeRect(50, 50, 150, 100)
+
+    ctx.font = '50px Iosevka Slab'
+    ctx.fillText('Rect', 70, 110)
+  }
+
+  function drawCircle() {
+    ctx.lineWidth = 5
+    ctx.beginPath()
+    ctx.arc(300, 100, 50, 0, 2 * Math.PI)
+    ctx.stroke()
+
+    ctx.font = '22px Iosevka Slab'
+    ctx.fillText('Circle', 265, 100)
+  }
+
+  // Draw rect first
+  drawRect()
+  // Reset the context (simulates toggle button click)
+  ctx.reset()
+  // Draw circle after reset
+  drawCircle()
+
+  await snapshotImage(t)
+})
+
 test('save-restore', async (t) => {
   const { ctx } = t.context
   // Save the default state
