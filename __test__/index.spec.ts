@@ -101,14 +101,14 @@ test('lineWidth state should be ok', (t) => {
 
 test('fillStyle state should be ok', (t) => {
   const { ctx } = t.context
-  t.is(ctx.fillStyle, '#000')
+  t.is(ctx.fillStyle, '#000000')
   ctx.fillStyle = 'hotpink'
   t.is(ctx.fillStyle, 'hotpink')
 })
 
 test('strokeStyle state should be ok', (t) => {
   const { ctx } = t.context
-  t.is(ctx.strokeStyle, '#000')
+  t.is(ctx.strokeStyle, '#000000')
   ctx.strokeStyle = 'hotpink'
   t.is(ctx.strokeStyle, 'hotpink')
 })

@@ -33,7 +33,7 @@ impl Clone for Pattern {
 
 impl Default for Pattern {
   fn default() -> Self {
-    Self::Color(RGBA::new(0, 0, 0, 255), "#000".to_owned())
+    Self::Color(RGBA::new(0, 0, 0, 255), "#000000".to_owned())
   }
 }
 
