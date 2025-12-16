@@ -241,6 +241,9 @@ switch (TARGET_TRIPLE) {
     CC = '"riscv64-linux-gnu-gcc"'
     CXX = '"riscv64-linux-gnu-g++"'
     break
+  case 'aarch64-pc-windows-msvc':
+    ExtraSkiaBuildFlag += ' target_cpu=\\"arm64\\"'
+    break
   case '':
     break
   default:

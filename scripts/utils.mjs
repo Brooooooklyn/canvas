@@ -59,6 +59,9 @@ export function libPath(lib, hostPlatform, triple, tag = TAG) {
       case 'riscv64gc-unknown-linux-gnu':
         platformName = `lib${lib}-linux-riscv64-gnu.a`
         break
+      case 'aarch64-pc-windows-msvc':
+        platformName = `${lib}-win32-arm64-msvc.lib`
+        break
       default:
         throw new TypeError(`[${triple}] is not a valid target`)
     }

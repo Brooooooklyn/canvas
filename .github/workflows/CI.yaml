@@ -88,6 +88,12 @@ jobs:
             build: yarn build --target x86_64-pc-windows-msvc
             target: 'x86_64-pc-windows-msvc'
             downloadTarget: ''
+          - host: windows-latest
+            setup: |
+              choco upgrade llvm
+            build: yarn build --target aarch64-pc-windows-msvc
+            target: 'aarch64-pc-windows-msvc'
+            downloadTarget: 'aarch64-pc-windows-msvc'
           - host: ubuntu-latest
             target: 'x86_64-unknown-linux-gnu'
             downloadTarget: ''
@@ -341,6 +347,59 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: failure-images-${{ matrix.settings.target }}-${{ matrix.node }}
+          path: __test__/failure/**
+
+  test-windows-arm64-binding:
+    name: Test bindings on Windows ARM64 - node@${{ matrix.node }}
+    needs:
+      - build
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['20', '22', '24']
+    runs-on: windows-11-arm
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: true
+
+      - name: Download Apple Emoji font
+        uses: robinraju/release-downloader@v1
+        with:
+          repository: 'PoomSmart/EmojiLibrary'
+          fileName: AppleColorEmoji@2x.ttf
+          tag: '0.15.4'
+          token: ${{ secrets.GITHUB_TOKEN }}
+          out-file-path: __test__/fonts/
+
+      - name: Setup node
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node }}
+          cache: 'yarn'
+          architecture: 'arm64'
+
+      - name: Install dependencies
+        run: yarn install --immutable --mode=skip-build
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v7
+        with:
+          name: bindings-aarch64-pc-windows-msvc
+          path: .
+
+      - name: Download icudtl.dat
+        run: node ./scripts/release-skia-binary.mjs --download-icu
+
+      - name: Test bindings
+        run: yarn test:ci
+
+      - name: Test failed
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: failure-images-aarch64-pc-windows-msvc-${{ matrix.node }}
           path: __test__/failure/**
 
   test-linux-x64-gnu-binding:
@@ -679,6 +738,7 @@ jobs:
       - test-linux-aarch64-musl-binding
       - test-linux-arm-gnueabihf-binding
       - test-macOS-windows-binding
+      - test-windows-arm64-binding
 
     steps:
       - uses: actions/checkout@v6
