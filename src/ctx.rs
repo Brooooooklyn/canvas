@@ -1417,12 +1417,12 @@ impl CanvasRenderingContext2D {
   }
 
   #[napi(getter)]
-  pub fn get_text_direction(&self) -> String {
+  pub fn get_direction(&self) -> String {
     self.context.state.text_direction.as_str().to_owned()
   }
 
   #[napi(setter, return_if_invalid)]
-  pub fn set_text_direction(&mut self, direction: String) {
+  pub fn set_direction(&mut self, direction: String) {
     if let Ok(d) = direction.parse() {
       self.context.state.text_direction = d;
     };
