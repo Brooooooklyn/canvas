@@ -593,16 +593,6 @@ void skiac_canvas_get_line_metrics_or_draw_text(
     line_width += box.rect.width();
   }
 
-  // Debug output for width comparison
-  // printf("=== Line Width Debug ===\n");
-  // printf("line_width (getRectsForRange): %f\n", line_width);
-  // printf("line_metrics.fWidth: %f\n", line_metrics.fWidth);
-  // printf("getLongestLine: %f\n", paragraph->getLongestLine());
-  // printf("getMaxIntrinsicWidth: %f\n", paragraph->getMaxIntrinsicWidth());
-  // printf("letter_spacing: %f\n", letter_spacing);
-  // printf("text_direction: %s\n", text_direction == TextDirection::kRtl ?
-  // "RTL" : "LTR");
-
   for (size_t i = 1; i <= glyphs_size - 1; ++i) {
     auto char_bounds = bounds[i];
     auto char_bottom = char_bounds.fBottom;

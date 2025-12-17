@@ -426,6 +426,24 @@ test('font-variant-caps-shorthand-vs-property-equality', async (t) => {
   t.deepEqual(buffer1, buffer2, 'font shorthand small-caps should produce identical output as fontVariantCaps property')
 })
 
+test('direction-all-values', (t) => {
+  const { ctx } = t.context
+  const validValues = [
+    'ltr',
+    'rtl',
+    'inherit',
+  ] as const
+
+  validValues.forEach((value) => {
+    ctx.direction = value
+    if (value === 'inherit') {
+      t.is(ctx.direction, 'ltr')
+    } else {
+      t.is(ctx.direction, value)
+    }
+  })
+})
+
 // MDN example: https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D/direction
 test('direction-letter-spacing', async (t) => {
   const canvas = createCanvas(500, 150)
@@ -482,6 +500,7 @@ test('direction-align', async (t) => {
   // start = left in ltr
   ctx.direction = 'ltr'
   ctx.fillText('ltr start!', 0, 50)
+  ctx.direction = 'inherit' // inherit = ltr
   ctx.textAlign = 'left'
   ctx.fillText('ltr left!', 0, 100)
 
