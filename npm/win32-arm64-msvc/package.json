@@ -1,0 +1,41 @@
+{
+  "name": "@napi-rs/canvas-win32-arm64-msvc",
+  "version": "0.1.84",
+  "os": [
+    "win32"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "main": "skia.win32-arm64-msvc.node",
+  "files": [
+    "skia.win32-arm64-msvc.node",
+    "icudtl.dat"
+  ],
+  "description": "Canvas for Node.js with skia backend",
+  "keywords": [
+    "napi-rs",
+    "NAPI",
+    "N-API",
+    "Rust",
+    "node-addon",
+    "node-addon-api",
+    "canvas",
+    "image",
+    "pdf",
+    "svg",
+    "skia"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">= 10"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Brooooooklyn/canvas.git"
+  }
+}
