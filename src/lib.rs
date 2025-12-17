@@ -28,7 +28,6 @@ use ctx::{
   CanvasRenderingContext2D, Context, ContextData, ContextOutputData, FILL_STYLE_HIDDEN_NAME,
   STROKE_STYLE_HIDDEN_NAME, SvgExportFlag, encode_surface,
 };
-use font::{FONT_REGEXP, init_font_regexp};
 use sk::{ColorSpace, SkiaDataRef, SurfaceRef};
 
 use avif::AvifConfig;
@@ -69,8 +68,7 @@ const DEFAULT_WEBP_QUALITY: u8 = 80;
 
 #[napi_derive::module_init]
 fn init() {
-  // pre init font regexp
-  FONT_REGEXP.get_or_init(init_font_regexp);
+  // No pre-initialization needed after switching to cssparser
 }
 
 #[napi(object, object_to_js = false)]
