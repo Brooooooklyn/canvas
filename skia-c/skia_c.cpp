@@ -600,7 +600,8 @@ void skiac_canvas_get_line_metrics_or_draw_text(
   // printf("getLongestLine: %f\n", paragraph->getLongestLine());
   // printf("getMaxIntrinsicWidth: %f\n", paragraph->getMaxIntrinsicWidth());
   // printf("letter_spacing: %f\n", letter_spacing);
-  // printf("text_direction: %s\n", text_direction == TextDirection::kRtl ? "RTL" : "LTR");
+  // printf("text_direction: %s\n", text_direction == TextDirection::kRtl ?
+  // "RTL" : "LTR");
 
   for (size_t i = 1; i <= glyphs_size - 1; ++i) {
     auto char_bounds = bounds[i];
@@ -650,14 +651,18 @@ void skiac_canvas_get_line_metrics_or_draw_text(
   auto line_center = line_width / 2.0f;
   float paint_x;
   float offset_x = 0.0;
-  // When RTL, Skia lays out text starting from the right edge of the layout width (MAX_LAYOUT_WIDTH).
-  // We need to compensate for this by subtracting the RTL offset.
-  float rtl_offset = (text_direction == TextDirection::kRtl) ? (MAX_LAYOUT_WIDTH - line_width) : 0.0f;
+  // When RTL, Skia lays out text starting from the right edge of the layout
+  // width (MAX_LAYOUT_WIDTH). We need to compensate for this by subtracting the
+  // RTL offset.
+  float rtl_offset = (text_direction == TextDirection::kRtl)
+                         ? (MAX_LAYOUT_WIDTH - line_width)
+                         : 0.0f;
   // Skia Paragraph adds letter_spacing / 2 before the first character and after
   // the last character.
   // For LTR: we need to shift left by letter_spacing / 2 to compensate for the
   // spacing before the first character.
-  float letter_spacing_offset = (text_direction == TextDirection::kLtr) ? -letter_spacing / 2 : 0.0f;
+  float letter_spacing_offset =
+      (text_direction == TextDirection::kLtr) ? -letter_spacing / 2 : 0.0f;
   switch ((TextAlign)align) {
     case TextAlign::kLeft:
       paint_x = x - rtl_offset + letter_spacing_offset;
