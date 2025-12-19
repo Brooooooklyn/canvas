@@ -19,6 +19,7 @@ const {
   PdfDocument,
   GifEncoder,
   GifDisposal,
+  LottieAnimation,
 } = require('./js-binding')
 
 const { DOMPoint, DOMMatrix, DOMRect } = require('./geometry')
@@ -190,4 +191,6 @@ module.exports = {
   // GIF encoding
   GifEncoder,
   GifDisposal,
+  // Lottie animation
+  LottieAnimation,
 }

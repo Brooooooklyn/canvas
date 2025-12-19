@@ -177,3 +177,5 @@ llvm-project-llvmorg-*
 .claude
 
 *.code-workspace
+/example/output.mp4
+/example/lottie_extracted

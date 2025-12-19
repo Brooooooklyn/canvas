@@ -253,6 +253,12 @@ pub mod ffi {
   }
 
   #[repr(C)]
+  #[derive(Copy, Clone, Debug)]
+  pub struct skiac_skottie_animation {
+    _unused: [u8; 0],
+  }
+
+  #[repr(C)]
   #[derive(Debug, Clone, Copy)]
   pub struct skiac_pdf_metadata {
     pub title: *const c_char,
@@ -285,6 +291,62 @@ pub mod ffi {
   #[cfg_attr(
     all(target_os = "linux", target_env = "gnu"),
     link(name = "svg", kind = "static", modifiers = "+bundle,+whole-archive")
+  )]
+  #[cfg_attr(
+    any(
+      target_os = "windows",
+      not(all(target_os = "linux", target_env = "gnu"))
+    ),
+    link(name = "skottie", kind = "static")
+  )]
+  #[cfg_attr(
+    all(target_os = "linux", target_env = "gnu"),
+    link(
+      name = "skottie",
+      kind = "static",
+      modifiers = "+bundle,+whole-archive"
+    )
+  )]
+  #[cfg_attr(
+    any(
+      target_os = "windows",
+      not(all(target_os = "linux", target_env = "gnu"))
+    ),
+    link(name = "skresources", kind = "static")
+  )]
+  #[cfg_attr(
+    all(target_os = "linux", target_env = "gnu"),
+    link(
+      name = "skresources",
+      kind = "static",
+      modifiers = "+bundle,+whole-archive"
+    )
+  )]
+  #[cfg_attr(
+    any(
+      target_os = "windows",
+      not(all(target_os = "linux", target_env = "gnu"))
+    ),
+    link(name = "sksg", kind = "static")
+  )]
+  #[cfg_attr(
+    all(target_os = "linux", target_env = "gnu"),
+    link(name = "sksg", kind = "static", modifiers = "+bundle,+whole-archive")
+  )]
+  #[cfg_attr(
+    any(
+      target_os = "windows",
+      not(all(target_os = "linux", target_env = "gnu"))
+    ),
+    link(name = "jsonreader", kind = "static")
+  )]
+  #[cfg_attr(
+    all(target_os = "linux", target_env = "gnu"),
+    link(
+      name = "jsonreader",
+      kind = "static",
+      modifiers = "+bundle,+whole-archive"
+    )
   )]
   #[cfg_attr(
     not(target_os = "windows"),
@@ -1064,6 +1126,63 @@ pub mod ffi {
       c_canvas: *mut skiac_canvas,
       rect: *const skiac_rect,
       name: *const c_char,
+    );
+
+    // Skottie (Lottie Animation)
+    pub fn skiac_skottie_animation_make(
+      data: *const c_char,
+      length: usize,
+      resource_path: *const c_char,
+    ) -> *mut skiac_skottie_animation;
+
+    pub fn skiac_skottie_animation_make_from_file(
+      path: *const c_char,
+    ) -> *mut skiac_skottie_animation;
+
+    pub fn skiac_skottie_animation_destroy(c_animation: *mut skiac_skottie_animation);
+
+    pub fn skiac_skottie_animation_get_duration(c_animation: *mut skiac_skottie_animation) -> f64;
+
+    pub fn skiac_skottie_animation_get_fps(c_animation: *mut skiac_skottie_animation) -> f64;
+
+    pub fn skiac_skottie_animation_get_in_point(c_animation: *mut skiac_skottie_animation) -> f64;
+
+    pub fn skiac_skottie_animation_get_out_point(c_animation: *mut skiac_skottie_animation) -> f64;
+
+    pub fn skiac_skottie_animation_get_size(
+      c_animation: *mut skiac_skottie_animation,
+      width: *mut f32,
+      height: *mut f32,
+    );
+
+    pub fn skiac_skottie_animation_get_version(
+      c_animation: *mut skiac_skottie_animation,
+      c_string: *mut SkiaString,
+    );
+
+    pub fn skiac_skottie_animation_seek(c_animation: *mut skiac_skottie_animation, t: f32);
+
+    pub fn skiac_skottie_animation_seek_frame(
+      c_animation: *mut skiac_skottie_animation,
+      frame: f64,
+    );
+
+    pub fn skiac_skottie_animation_seek_frame_time(
+      c_animation: *mut skiac_skottie_animation,
+      t: f64,
+    );
+
+    pub fn skiac_skottie_animation_render(
+      c_animation: *mut skiac_skottie_animation,
+      c_canvas: *mut skiac_canvas,
+      dst: *const skiac_rect,
+    );
+
+    pub fn skiac_skottie_animation_render_with_flags(
+      c_animation: *mut skiac_skottie_animation,
+      c_canvas: *mut skiac_canvas,
+      dst: *const skiac_rect,
+      flags: u32,
     );
   }
 }
@@ -4167,6 +4286,194 @@ impl SkPictureRecorder {
     Some(SkPicture(picture_ref))
   }
 }
+
+/// Render flags for Skottie animation
+#[repr(u32)]
+#[derive(Debug, Clone, Copy, Default)]
+pub enum SkottieRenderFlag {
+  #[default]
+  None = 0,
+  /// Skip top-level isolation (for transparent buffer optimization)
+  SkipTopLevelIsolation = 0x01,
+  /// Disable top-level clipping (allow drawing outside bounds)
+  DisableTopLevelClipping = 0x02,
+}
+
+/// Skottie animation wrapper for Lottie files
+pub struct SkottieAnimation {
+  ptr: *mut ffi::skiac_skottie_animation,
+  width: f32,
+  height: f32,
+  version: String,
+}
+
+impl SkottieAnimation {
+  /// Load animation from JSON data
+  pub fn from_data(data: &[u8], resource_path: Option<&str>) -> Option<Self> {
+    let resource_path_cstr = resource_path.and_then(|p| CString::new(p).ok());
+    let resource_path_ptr = resource_path_cstr
+      .as_ref()
+      .map(|s| s.as_ptr())
+      .unwrap_or(ptr::null());
+
+    let ptr = unsafe {
+      ffi::skiac_skottie_animation_make(
+        data.as_ptr() as *const c_char,
+        data.len(),
+        resource_path_ptr,
+      )
+    };
+
+    if ptr.is_null() {
+      return None;
+    }
+
+    let mut width: f32 = 0.0;
+    let mut height: f32 = 0.0;
+    unsafe { ffi::skiac_skottie_animation_get_size(ptr, &mut width, &mut height) };
+
+    let mut version_str = SkiaString {
+      ptr: ptr::null(),
+      length: 0,
+      sk_string: ptr::null_mut(),
+    };
+    unsafe { ffi::skiac_skottie_animation_get_version(ptr, &mut version_str) };
+    let version = if !version_str.ptr.is_null() && version_str.length > 0 {
+      unsafe {
+        String::from_utf8_lossy(slice::from_raw_parts(
+          version_str.ptr as *const u8,
+          version_str.length,
+        ))
+        .to_string()
+      }
+    } else {
+      String::new()
+    };
+
+    Some(Self {
+      ptr,
+      width,
+      height,
+      version,
+    })
+  }
+
+  /// Load animation from file path
+  pub fn from_file(path: &str) -> Option<Self> {
+    let path_cstr = CString::new(path).ok()?;
+    let ptr = unsafe { ffi::skiac_skottie_animation_make_from_file(path_cstr.as_ptr()) };
+
+    if ptr.is_null() {
+      return None;
+    }
+
+    let mut width: f32 = 0.0;
+    let mut height: f32 = 0.0;
+    unsafe { ffi::skiac_skottie_animation_get_size(ptr, &mut width, &mut height) };
+
+    let mut version_str = SkiaString {
+      ptr: ptr::null(),
+      length: 0,
+      sk_string: ptr::null_mut(),
+    };
+    unsafe { ffi::skiac_skottie_animation_get_version(ptr, &mut version_str) };
+    let version = if !version_str.ptr.is_null() && version_str.length > 0 {
+      unsafe {
+        String::from_utf8_lossy(slice::from_raw_parts(
+          version_str.ptr as *const u8,
+          version_str.length,
+        ))
+        .to_string()
+      }
+    } else {
+      String::new()
+    };
+
+    Some(Self {
+      ptr,
+      width,
+      height,
+      version,
+    })
+  }
+
+  /// Get animation duration in seconds
+  pub fn duration(&self) -> f64 {
+    unsafe { ffi::skiac_skottie_animation_get_duration(self.ptr) }
+  }
+
+  /// Get animation frame rate (frames per second)
+  pub fn fps(&self) -> f64 {
+    unsafe { ffi::skiac_skottie_animation_get_fps(self.ptr) }
+  }
+
+  /// Get total frame count
+  pub fn frames(&self) -> f64 {
+    self.duration() * self.fps()
+  }
+
+  /// Get animation in-point (start frame)
+  pub fn in_point(&self) -> f64 {
+    unsafe { ffi::skiac_skottie_animation_get_in_point(self.ptr) }
+  }
+
+  /// Get animation out-point (end frame)
+  pub fn out_point(&self) -> f64 {
+    unsafe { ffi::skiac_skottie_animation_get_out_point(self.ptr) }
+  }
+
+  /// Get animation width
+  pub fn width(&self) -> f32 {
+    self.width
+  }
+
+  /// Get animation height
+  pub fn height(&self) -> f32 {
+    self.height
+  }
+
+  /// Get Lottie format version
+  pub fn version(&self) -> &str {
+    &self.version
+  }
+
+  /// Seek to normalized position [0..1]
+  pub fn seek(&self, t: f32) {
+    unsafe { ffi::skiac_skottie_animation_seek(self.ptr, t) }
+  }
+
+  /// Seek to specific frame index
+  pub fn seek_frame(&self, frame: f64) {
+    unsafe { ffi::skiac_skottie_animation_seek_frame(self.ptr, frame) }
+  }
+
+  /// Seek to specific time in seconds
+  pub fn seek_frame_time(&self, t: f64) {
+    unsafe { ffi::skiac_skottie_animation_seek_frame_time(self.ptr, t) }
+  }
+
+  /// Render current frame to canvas
+  pub fn render(&self, canvas: &Canvas, dst: Option<&ffi::skiac_rect>) {
+    let dst_ptr = dst.map(|r| r as *const _).unwrap_or(ptr::null());
+    unsafe { ffi::skiac_skottie_animation_render(self.ptr, canvas.0, dst_ptr) }
+  }
+
+  /// Render current frame to canvas with flags
+  pub fn render_with_flags(&self, canvas: &Canvas, dst: Option<&ffi::skiac_rect>, flags: u32) {
+    let dst_ptr = dst.map(|r| r as *const _).unwrap_or(ptr::null());
+    unsafe { ffi::skiac_skottie_animation_render_with_flags(self.ptr, canvas.0, dst_ptr, flags) }
+  }
+}
+
+impl Drop for SkottieAnimation {
+  fn drop(&mut self) {
+    unsafe { ffi::skiac_skottie_animation_destroy(self.ptr) }
+  }
+}
+
+// SkottieAnimation is not thread-safe (contains raw pointer)
+// but can be sent between threads
+unsafe impl Send for SkottieAnimation {}
 
 #[inline(always)]
 pub(crate) fn radians_to_degrees(rad: f32) -> f32 {

@@ -957,3 +957,99 @@ export declare class PDFDocument {
   endPage(): void
   close(): Buffer
 }
+
+export interface LottieAnimationOptions {
+  /** Base path for resolving external resources (images, fonts) */
+  resourcePath?: string
+}
+
+export interface LottieRenderRect {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+/**
+ * Lottie animation class for loading and rendering Lottie JSON files.
+ *
+ * @example
+ * ```typescript
+ * import { LottieAnimation, createCanvas } from '@napi-rs/canvas'
+ *
+ * const animation = LottieAnimation.loadFromFile('./animation.json')
+ * const canvas = createCanvas(animation.width, animation.height)
+ * const ctx = canvas.getContext('2d')
+ *
+ * // Render frame 0
+ * animation.seekFrame(0)
+ * animation.render(ctx)
+ *
+ * // Save to PNG
+ * const buffer = canvas.toBuffer('image/png')
+ * ```
+ */
+export declare class LottieAnimation {
+  /**
+   * Load animation from JSON string or Buffer
+   * @param data - JSON string or Buffer containing Lottie animation data
+   * @param options - Optional configuration
+   */
+  static loadFromData(data: string | Buffer, options?: LottieAnimationOptions): LottieAnimation
+
+  /**
+   * Load animation from file path
+   * @param path - Path to the Lottie JSON file
+   * @param options - Optional configuration
+   */
+  static loadFromFile(path: string, options?: LottieAnimationOptions): LottieAnimation
+
+  /** Animation duration in seconds */
+  readonly duration: number
+
+  /** Frame rate (frames per second) */
+  readonly fps: number
+
+  /** Total frame count */
+  readonly frames: number
+
+  /** Animation width in pixels */
+  readonly width: number
+
+  /** Animation height in pixels */
+  readonly height: number
+
+  /** Lottie format version string */
+  readonly version: string
+
+  /** Animation in-point (start frame) */
+  readonly inPoint: number
+
+  /** Animation out-point (end frame) */
+  readonly outPoint: number
+
+  /**
+   * Seek to normalized position
+   * @param t - Position between 0.0 (start) and 1.0 (end)
+   */
+  seek(t: number): void
+
+  /**
+   * Seek to specific frame index
+   * @param frame - Frame index (0 = first frame)
+   */
+  seekFrame(frame: number): void
+
+  /**
+   * Seek to specific time in seconds
+   * @param seconds - Time in seconds from start
+   */
+  seekTime(seconds: number): void
+
+  /**
+   * Render current frame to canvas context
+   * @param ctx - Canvas 2D rendering context
+   * @param dst - Optional destination rectangle for scaling/positioning
+   */
+  render(ctx: CanvasRenderingContext2D, dst?: LottieRenderRect): void
+}

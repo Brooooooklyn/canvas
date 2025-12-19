@@ -38,12 +38,14 @@
 #include <include/pathops/SkPathOps.h>
 #include <include/svg/SkSVGCanvas.h>
 #include <include/utils/SkParsePath.h>
+#include <modules/skottie/include/Skottie.h>
 #include <modules/skparagraph/include/FontCollection.h>
 #include <modules/skparagraph/include/Paragraph.h>
 #include <modules/skparagraph/include/ParagraphBuilder.h>
 #include <modules/skparagraph/include/TypefaceFontProvider.h>
 #include <modules/skparagraph/src/ParagraphBuilderImpl.h>
 #include <modules/skparagraph/src/ParagraphImpl.h>
+#include <modules/skresources/include/SkResources.h>
 #include <modules/skunicode/include/SkUnicode_icu.h>
 #include <modules/svg/include/SkSVGDOM.h>
 #include <modules/svg/include/SkSVGNode.h>
@@ -79,6 +81,7 @@ typedef struct skiac_picture_recorder skiac_picture_recorder;
 typedef struct skiac_picture skiac_picture;
 typedef struct skiac_encoder skiac_encoder;
 typedef struct skiac_document skiac_document;
+typedef struct skiac_skottie_animation skiac_skottie_animation;
 
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
 #define SK_FONT_FILE_PREFIX "C:/Windows/Fonts"
@@ -788,6 +791,42 @@ void skiac_canvas_annotate_named_destination(skiac_canvas* c_canvas,
 void skiac_canvas_annotate_link_to_destination(skiac_canvas* c_canvas,
                                                const skiac_rect* rect,
                                                const char* name);
+
+// Skottie (Lottie Animation)
+skiac_skottie_animation* skiac_skottie_animation_make(
+    const char* data,
+    size_t length,
+    const char* resource_path);
+skiac_skottie_animation* skiac_skottie_animation_make_from_file(
+    const char* path);
+void skiac_skottie_animation_destroy(skiac_skottie_animation* c_animation);
+double skiac_skottie_animation_get_duration(
+    skiac_skottie_animation* c_animation);
+double skiac_skottie_animation_get_fps(skiac_skottie_animation* c_animation);
+double skiac_skottie_animation_get_in_point(
+    skiac_skottie_animation* c_animation);
+double skiac_skottie_animation_get_out_point(
+    skiac_skottie_animation* c_animation);
+void skiac_skottie_animation_get_size(skiac_skottie_animation* c_animation,
+                                      float* width,
+                                      float* height);
+void skiac_skottie_animation_get_version(skiac_skottie_animation* c_animation,
+                                         skiac_string* c_string);
+void skiac_skottie_animation_seek(skiac_skottie_animation* c_animation,
+                                  float t);
+void skiac_skottie_animation_seek_frame(skiac_skottie_animation* c_animation,
+                                        double frame);
+void skiac_skottie_animation_seek_frame_time(
+    skiac_skottie_animation* c_animation,
+    double t);
+void skiac_skottie_animation_render(skiac_skottie_animation* c_animation,
+                                    skiac_canvas* c_canvas,
+                                    const skiac_rect* dst);
+void skiac_skottie_animation_render_with_flags(
+    skiac_skottie_animation* c_animation,
+    skiac_canvas* c_canvas,
+    const skiac_rect* dst,
+    uint32_t flags);
 }
 
 #endif  // SKIA_CAPI_H

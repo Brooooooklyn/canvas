@@ -569,7 +569,9 @@ __metadata:
     "@jimp/jpeg": "npm:^0.22.12"
     "@jimp/png": "npm:^0.22.12"
     "@napi-rs/cli": "npm:^3.1.1"
+    "@napi-rs/webcodecs": "npm:^1.1.0"
     "@octokit/rest": "npm:^22.0.0"
+    "@oxc-node/cli": "npm:^0.0.35"
     "@oxc-node/core": "npm:^0.0.35"
     "@taplo/cli": "npm:^0.7.0"
     "@types/lodash": "npm:^4.17.17"
@@ -1177,6 +1179,110 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@napi-rs/webcodecs-darwin-arm64@npm:1.1.0":
+  version: 1.1.0
+  resolution: "@napi-rs/webcodecs-darwin-arm64@npm:1.1.0"
+  conditions: os=darwin & cpu=arm64
+  languageName: node
+  linkType: hard
+
+"@napi-rs/webcodecs-darwin-x64@npm:1.1.0":
+  version: 1.1.0
+  resolution: "@napi-rs/webcodecs-darwin-x64@npm:1.1.0"
+  conditions: os=darwin & cpu=x64
+  languageName: node
+  linkType: hard
+
+"@napi-rs/webcodecs-linux-arm-gnueabihf@npm:1.1.0":
+  version: 1.1.0
+  resolution: "@napi-rs/webcodecs-linux-arm-gnueabihf@npm:1.1.0"
+  conditions: os=linux & cpu=arm
+  languageName: node
+  linkType: hard
+
+"@napi-rs/webcodecs-linux-arm64-gnu@npm:1.1.0":
+  version: 1.1.0
+  resolution: "@napi-rs/webcodecs-linux-arm64-gnu@npm:1.1.0"
+  conditions: os=linux & cpu=arm64 & libc=glibc
+  languageName: node
+  linkType: hard
+
+"@napi-rs/webcodecs-linux-arm64-musl@npm:1.1.0":
+  version: 1.1.0
+  resolution: "@napi-rs/webcodecs-linux-arm64-musl@npm:1.1.0"
+  conditions: os=linux & cpu=arm64 & libc=musl
+  languageName: node
+  linkType: hard
+
+"@napi-rs/webcodecs-linux-x64-gnu@npm:1.1.0":
+  version: 1.1.0
+  resolution: "@napi-rs/webcodecs-linux-x64-gnu@npm:1.1.0"
+  conditions: os=linux & cpu=x64 & libc=glibc
+  languageName: node
+  linkType: hard
+
+"@napi-rs/webcodecs-linux-x64-musl@npm:1.1.0":
+  version: 1.1.0
+  resolution: "@napi-rs/webcodecs-linux-x64-musl@npm:1.1.0"
+  conditions: os=linux & cpu=x64 & libc=musl
+  languageName: node
+  linkType: hard
+
+"@napi-rs/webcodecs-win32-arm64-msvc@npm:1.1.0":
+  version: 1.1.0
+  resolution: "@napi-rs/webcodecs-win32-arm64-msvc@npm:1.1.0"
+  conditions: os=win32 & cpu=arm64
+  languageName: node
+  linkType: hard
+
+"@napi-rs/webcodecs-win32-x64-msvc@npm:1.1.0":
+  version: 1.1.0
+  resolution: "@napi-rs/webcodecs-win32-x64-msvc@npm:1.1.0"
+  conditions: os=win32 & cpu=x64
+  languageName: node
+  linkType: hard
+
+"@napi-rs/webcodecs@npm:^1.1.0":
+  version: 1.1.0
+  resolution: "@napi-rs/webcodecs@npm:1.1.0"
+  dependencies:
+    "@napi-rs/webcodecs-darwin-arm64": "npm:1.1.0"
+    "@napi-rs/webcodecs-darwin-x64": "npm:1.1.0"
+    "@napi-rs/webcodecs-linux-arm-gnueabihf": "npm:1.1.0"
+    "@napi-rs/webcodecs-linux-arm64-gnu": "npm:1.1.0"
+    "@napi-rs/webcodecs-linux-arm64-musl": "npm:1.1.0"
+    "@napi-rs/webcodecs-linux-x64-gnu": "npm:1.1.0"
+    "@napi-rs/webcodecs-linux-x64-musl": "npm:1.1.0"
+    "@napi-rs/webcodecs-win32-arm64-msvc": "npm:1.1.0"
+    "@napi-rs/webcodecs-win32-x64-msvc": "npm:1.1.0"
+  peerDependencies:
+    "@napi-rs/canvas": ">=0.1.0"
+  dependenciesMeta:
+    "@napi-rs/webcodecs-darwin-arm64":
+      optional: true
+    "@napi-rs/webcodecs-darwin-x64":
+      optional: true
+    "@napi-rs/webcodecs-linux-arm-gnueabihf":
+      optional: true
+    "@napi-rs/webcodecs-linux-arm64-gnu":
+      optional: true
+    "@napi-rs/webcodecs-linux-arm64-musl":
+      optional: true
+    "@napi-rs/webcodecs-linux-x64-gnu":
+      optional: true
+    "@napi-rs/webcodecs-linux-x64-musl":
+      optional: true
+    "@napi-rs/webcodecs-win32-arm64-msvc":
+      optional: true
+    "@napi-rs/webcodecs-win32-x64-msvc":
+      optional: true
+  peerDependenciesMeta:
+    "@napi-rs/canvas":
+      optional: true
+  checksum: 10c0/f61d1842c9474034c3a7beeba51dac639c427348f168216935a7a69e2b8a10e758e683e935da82f7e687bb9ddb71401ac6bb306a357ce2be31d7688c9fbdac43
+  languageName: node
+  linkType: hard
+
 "@nodelib/fs.scandir@npm:2.1.5":
   version: 2.1.5
   resolution: "@nodelib/fs.scandir@npm:2.1.5"
@@ -1350,6 +1456,17 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@oxc-node/cli@npm:^0.0.35":
+  version: 0.0.35
+  resolution: "@oxc-node/cli@npm:0.0.35"
+  dependencies:
+    "@oxc-node/core": "npm:0.0.35"
+  bin:
+    oxnode: dist/index.js
+  checksum: 10c0/3d2732a3ca888ac80344b1e99a99d6fbd0832bbc42d5f2c7f458bedb63127bd3864a580f1f2d027cab47e14386f0731392ba3075db1fc2a54f505c4a8aa8c9f6
+  languageName: node
+  linkType: hard
+
 "@oxc-node/core-android-arm-eabi@npm:0.0.35":
   version: 0.0.35
   resolution: "@oxc-node/core-android-arm-eabi@npm:0.0.35"
@@ -1471,7 +1588,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@oxc-node/core@npm:^0.0.35":
+"@oxc-node/core@npm:0.0.35, @oxc-node/core@npm:^0.0.35":
   version: 0.0.35
   resolution: "@oxc-node/core@npm:0.0.35"
   dependencies:
