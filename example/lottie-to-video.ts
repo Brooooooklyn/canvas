@@ -15,7 +15,7 @@ const __dirname = new URL('.', import.meta.url).pathname
 
 async function main() {
   // Load the Lottie animation from extracted data
-  const animation = LottieAnimation.loadFromData(readFileSync(join(__dirname, 'LoopingCircless.json'), 'utf-8'))
+  const animation = LottieAnimation.loadFromData(readFileSync(join(__dirname, 'Merry Christmas.json'), 'utf-8'))
 
   console.log('Animation loaded:')
   console.log(`  Duration: ${animation.duration.toFixed(2)}s`)
