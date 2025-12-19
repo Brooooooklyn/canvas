@@ -999,10 +999,10 @@ export declare class LottieAnimation {
 
   /**
    * Load animation from file path
+   * External assets are resolved relative to the file's directory
    * @param path - Path to the Lottie JSON file
-   * @param options - Optional configuration
    */
-  static loadFromFile(path: string, options?: LottieAnimationOptions): LottieAnimation
+  static loadFromFile(path: string): LottieAnimation
 
   /** Animation duration in seconds */
   readonly duration: number

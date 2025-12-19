@@ -30,12 +30,12 @@ impl LottieAnimation {
   /// Load animation from JSON string or Buffer
   #[napi(factory, js_name = "loadFromData")]
   pub fn load_from_data(
-    data: Either<String, Buffer>,
+    data: Either<String, &[u8]>,
     options: Option<LottieAnimationOptions>,
   ) -> Result<Self> {
     let data_bytes = match &data {
       Either::A(s) => s.as_bytes(),
-      Either::B(b) => b.as_ref(),
+      Either::B(b) => b,
     };
 
     let resource_path = options.as_ref().and_then(|o| o.resource_path.as_deref());
@@ -51,8 +51,9 @@ impl LottieAnimation {
   }
 
   /// Load animation from file path
+  /// External assets are resolved relative to the file's directory
   #[napi(factory, js_name = "loadFromFile")]
-  pub fn load_from_file(path: String, _options: Option<LottieAnimationOptions>) -> Result<Self> {
+  pub fn load_from_file(path: String) -> Result<Self> {
     let inner = sk::SkottieAnimation::from_file(&path).ok_or_else(|| {
       Error::new(
         Status::InvalidArg,
