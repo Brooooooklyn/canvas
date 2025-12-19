@@ -2139,4 +2139,208 @@ void skiac_canvas_annotate_link_to_destination(skiac_canvas* c_canvas,
   sk_sp<SkData> name_data = SkData::MakeWithCString(name);
   SkAnnotateLinkToDestination(canvas, sk_rect, name_data.get());
 }
+
+// Skottie (Lottie Animation)
+struct skiac_skottie_animation_impl {
+  sk_sp<skottie::Animation> animation;
+  SkString version;
+};
+
+#define SKOTTIE_CAST \
+  reinterpret_cast<skiac_skottie_animation_impl*>(c_animation)
+
+skiac_skottie_animation* skiac_skottie_animation_make(
+    const char* data,
+    size_t length,
+    const char* resource_path) {
+  // Use kPreferEmbeddedFonts flag to prioritize embedded glyph paths over
+  // system fonts This ensures Lottie files with embedded chars render correctly
+  // without requiring the original fonts to be installed
+  skottie::Animation::Builder builder(
+      skottie::Animation::Builder::kPreferEmbeddedFonts);
+
+  // Provide system font manager as fallback for any missing glyphs
+  auto fontMgr = SkFontMgr_New_Custom_Directory(SK_FONT_FILE_PREFIX);
+  builder.setFontManager(fontMgr);
+
+  // Create base resource provider (file-based if path provided, otherwise null)
+  sk_sp<skresources::ResourceProvider> baseProvider;
+  if (resource_path && resource_path[0] != '\0') {
+    baseProvider = skresources::FileResourceProvider::Make(
+        SkString(resource_path), skresources::ImageDecodeStrategy::kLazyDecode);
+  }
+
+  // Wrap with DataURIResourceProviderProxy to support embedded base64 images
+  builder.setResourceProvider(skresources::DataURIResourceProviderProxy::Make(
+      std::move(baseProvider), skresources::ImageDecodeStrategy::kLazyDecode,
+      fontMgr));
+
+  auto animation = builder.make(data, length);
+  if (!animation) {
+    return nullptr;
+  }
+
+  auto impl = new skiac_skottie_animation_impl();
+  impl->animation = std::move(animation);
+  impl->version = impl->animation->version();
+  return reinterpret_cast<skiac_skottie_animation*>(impl);
+}
+
+skiac_skottie_animation* skiac_skottie_animation_make_from_file(
+    const char* path) {
+  // Use kPreferEmbeddedFonts flag to prioritize embedded glyph paths over
+  // system fonts
+  skottie::Animation::Builder builder(
+      skottie::Animation::Builder::kPreferEmbeddedFonts);
+
+  // Provide system font manager as fallback for any missing glyphs
+  auto fontMgr = SkFontMgr_New_Custom_Directory(SK_FONT_FILE_PREFIX);
+  builder.setFontManager(fontMgr);
+
+  // Extract directory from path for resource loading
+  sk_sp<skresources::ResourceProvider> baseProvider;
+  const char* last_slash = strrchr(path, '/');
+  if (!last_slash) {
+    last_slash = strrchr(path, '\\');
+  }
+  if (last_slash) {
+    SkString dir(path, last_slash - path + 1);
+    baseProvider = skresources::FileResourceProvider::Make(
+        dir, skresources::ImageDecodeStrategy::kLazyDecode);
+  }
+
+  // Wrap with DataURIResourceProviderProxy to support embedded base64 images
+  builder.setResourceProvider(skresources::DataURIResourceProviderProxy::Make(
+      std::move(baseProvider), skresources::ImageDecodeStrategy::kLazyDecode,
+      fontMgr));
+
+  auto animation = builder.makeFromFile(path);
+  if (!animation) {
+    return nullptr;
+  }
+
+  auto impl = new skiac_skottie_animation_impl();
+  impl->animation = std::move(animation);
+  impl->version = impl->animation->version();
+  return reinterpret_cast<skiac_skottie_animation*>(impl);
+}
+
+void skiac_skottie_animation_destroy(skiac_skottie_animation* c_animation) {
+  if (c_animation) {
+    delete SKOTTIE_CAST;
+  }
+}
+
+double skiac_skottie_animation_get_duration(
+    skiac_skottie_animation* c_animation) {
+  if (!c_animation) {
+    return 0.0;
+  }
+  return SKOTTIE_CAST->animation->duration();
+}
+
+double skiac_skottie_animation_get_fps(skiac_skottie_animation* c_animation) {
+  if (!c_animation) {
+    return 0.0;
+  }
+  return SKOTTIE_CAST->animation->fps();
+}
+
+double skiac_skottie_animation_get_in_point(
+    skiac_skottie_animation* c_animation) {
+  if (!c_animation) {
+    return 0.0;
+  }
+  return SKOTTIE_CAST->animation->inPoint();
+}
+
+double skiac_skottie_animation_get_out_point(
+    skiac_skottie_animation* c_animation) {
+  if (!c_animation) {
+    return 0.0;
+  }
+  return SKOTTIE_CAST->animation->outPoint();
+}
+
+void skiac_skottie_animation_get_size(skiac_skottie_animation* c_animation,
+                                      float* width,
+                                      float* height) {
+  if (!c_animation || !width || !height) {
+    return;
+  }
+  const auto& size = SKOTTIE_CAST->animation->size();
+  *width = size.width();
+  *height = size.height();
+}
+
+void skiac_skottie_animation_get_version(skiac_skottie_animation* c_animation,
+                                         skiac_string* c_string) {
+  if (!c_animation || !c_string) {
+    return;
+  }
+  c_string->ptr = SKOTTIE_CAST->version.c_str();
+  c_string->length = SKOTTIE_CAST->version.size();
+  c_string->sk_string = nullptr;
+}
+
+void skiac_skottie_animation_seek(skiac_skottie_animation* c_animation,
+                                  float t) {
+  if (!c_animation) {
+    return;
+  }
+  SKOTTIE_CAST->animation->seek(t);
+}
+
+void skiac_skottie_animation_seek_frame(skiac_skottie_animation* c_animation,
+                                        double frame) {
+  if (!c_animation) {
+    return;
+  }
+  SKOTTIE_CAST->animation->seekFrame(frame);
+}
+
+void skiac_skottie_animation_seek_frame_time(
+    skiac_skottie_animation* c_animation,
+    double t) {
+  if (!c_animation) {
+    return;
+  }
+  SKOTTIE_CAST->animation->seekFrameTime(t);
+}
+
+void skiac_skottie_animation_render(skiac_skottie_animation* c_animation,
+                                    skiac_canvas* c_canvas,
+                                    const skiac_rect* dst) {
+  if (!c_animation || !c_canvas) {
+    return;
+  }
+  auto canvas = CANVAS_CAST;
+  if (dst) {
+    SkRect sk_rect =
+        SkRect::MakeLTRB(dst->left, dst->top, dst->right, dst->bottom);
+    SKOTTIE_CAST->animation->render(canvas, &sk_rect);
+  } else {
+    SKOTTIE_CAST->animation->render(canvas);
+  }
+}
+
+void skiac_skottie_animation_render_with_flags(
+    skiac_skottie_animation* c_animation,
+    skiac_canvas* c_canvas,
+    const skiac_rect* dst,
+    uint32_t flags) {
+  if (!c_animation || !c_canvas) {
+    return;
+  }
+  auto canvas = CANVAS_CAST;
+  if (dst) {
+    SkRect sk_rect =
+        SkRect::MakeLTRB(dst->left, dst->top, dst->right, dst->bottom);
+    SKOTTIE_CAST->animation->render(
+        canvas, &sk_rect, static_cast<skottie::Animation::RenderFlags>(flags));
+  } else {
+    SKOTTIE_CAST->animation->render(
+        canvas, nullptr, static_cast<skottie::Animation::RenderFlags>(flags));
+  }
+}
 }

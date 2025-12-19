@@ -45,6 +45,7 @@ mod gif;
 pub mod global_fonts;
 mod gradient;
 mod image;
+pub mod lottie;
 pub mod path;
 mod pattern;
 pub mod picture_recorder;

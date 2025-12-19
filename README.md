@@ -298,6 +298,92 @@ path.simplify().toSVGString()
 // => "M89.005 3.818L2.933 89.89Q1.526 91.296 0.765 93.134Q0.004 94.972 0.004 96.961Q0.004 98.95 0.765 100.788Q1.526 102.625 2.933 104.032Q4.339 105.439 6.177 106.2Q8.015 106.961 10.004 106.961Q11.993 106.961 13.831 106.2Q15.668 105.439 17.075 104.032L96.076 25.031L175.077 104.032Q176.484 105.439 178.322 106.2Q180.159 106.961 182.148 106.961Q184.138 106.961 185.975 106.2Q187.813 105.439 189.219 104.032Q190.626 102.625 191.387 100.788Q192.148 98.95 192.148 96.961Q192.148 94.972 191.387 93.134Q190.626 91.296 189.22 89.89L103.147 3.818Q101.741 2.411 99.903 1.65Q98.065 0.889 96.076 0.889Q94.087 0.889 92.249 1.65Q90.412 2.411 89.005 3.818Z"
 ```
 
+## Lottie Animation
+
+Render [Lottie](https://airbnb.io/lottie/) animations using Skia's [Skottie](https://skia.org/docs/user/modules/skottie/) module.
+
+### Load Animation
+
+```js
+const { LottieAnimation } = require('@napi-rs/canvas')
+
+// Load from file
+const animation = LottieAnimation.loadFromFile('animation.json')
+
+// Load from JSON string with resource path for external assets
+const animation = LottieAnimation.loadFromData(jsonString, {
+  resourcePath: '/path/to/assets',
+})
+```
+
+### Animation Properties
+
+```js
+animation.duration // Total duration in seconds
+animation.fps // Frames per second
+animation.frames // Total frame count
+animation.width // Animation width
+animation.height // Animation height
+animation.version // Lottie format version
+```
+
+### Playback Control
+
+```js
+animation.seekFrame(30) // Seek to frame 30
+animation.seek(1.5) // Seek to 1.5 seconds
+```
+
+### Render to Canvas
+
+```js
+const { createCanvas, LottieAnimation } = require('@napi-rs/canvas')
+
+const animation = LottieAnimation.loadFromFile('animation.json')
+const canvas = createCanvas(animation.width, animation.height)
+const ctx = canvas.getContext('2d')
+
+// Render at original size
+animation.render(ctx)
+
+// Render with custom destination rect
+animation.render(ctx, { x: 0, y: 0, width: 800, height: 600 })
+```
+
+### Supported Features
+
+- **Embedded images** - Base64-encoded images (`data:image/png;base64,...`)
+- **Embedded fonts** - Vector glyph paths for text rendering without system fonts
+- **External assets** - Load images from `resourcePath` directory
+- **dotLottie format** - Extract `.lottie` ZIP files at runtime (see example)
+
+### Example: Encode Lottie to Video
+
+See [`example/lottie-to-video.ts`](./example/lottie-to-video.ts) for encoding Lottie animations to MP4 using [`@napi-rs/webcodecs`](https://github.com/Brooooooklyn/webcodecs-node).
+
+```js
+import { createCanvas, LottieAnimation } from '@napi-rs/canvas'
+import {
+  VideoEncoder,
+  VideoFrame,
+  Mp4Muxer,
+  type EncodedVideoChunk,
+  type EncodedVideoChunkMetadata,
+} from '@napi-rs/webcodecs'
+
+const animation = LottieAnimation.loadFromFile('animation.json')
+const canvas = createCanvas(animation.width, animation.height)
+const ctx = canvas.getContext('2d')
+
+for (let frame = 0; frame < animation.frames; frame++) {
+  animation.seekFrame(frame)
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  animation.render(ctx)
+  // Encode frame to video...
+}
+```
+
 # [Example](./example/tiger.js)
 
 > The tiger.json was serialized from [gojs/samples/tiger](https://github.com/NorthwoodsSoftware/GoJS/blob/master/samples/tiger.html)
