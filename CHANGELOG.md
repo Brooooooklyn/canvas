@@ -1,3 +1,20 @@
+## [0.1.85](https://github.com/Brooooooklyn/canvas/compare/v0.1.84...v0.1.85) (2025-12-19)
+
+
+### Bug Fixes
+
+* initial black color string should be `[#000000](https://github.com/Brooooooklyn/canvas/issues/000000)` rather than `[#000](https://github.com/Brooooooklyn/canvas/issues/000)` ([#1174](https://github.com/Brooooooklyn/canvas/issues/1174)) ([c45020a](https://github.com/Brooooooklyn/canvas/commit/c45020aa119b579126f16c9f5052cbdae9640c97))
+
+
+### Features
+
+* add `fontVariantCaps` ([#1161](https://github.com/Brooooooklyn/canvas/issues/1161)) ([d21c146](https://github.com/Brooooooklyn/canvas/commit/d21c146332e2b5b8acb0f69e05747c09cd17d3af))
+* basic support for `direction` ([#1175](https://github.com/Brooooooklyn/canvas/issues/1175)) ([5c04020](https://github.com/Brooooooklyn/canvas/commit/5c04020590cdad9aa797f655153877e9dbb42220))
+* support Lottie API ([#1177](https://github.com/Brooooooklyn/canvas/issues/1177)) ([ca1f5f5](https://github.com/Brooooooklyn/canvas/commit/ca1f5f5295375a061dc888b67bd9169bcfb13f7f))
+* support windows arm64 ([#1176](https://github.com/Brooooooklyn/canvas/issues/1176)) ([e17c4e5](https://github.com/Brooooooklyn/canvas/commit/e17c4e5f15409e8867b340c914f5ca216e9c7909))
+
+
+
 ## [0.1.84](https://github.com/Brooooooklyn/canvas/compare/v0.1.83...v0.1.84) (2025-12-06)
 
 
