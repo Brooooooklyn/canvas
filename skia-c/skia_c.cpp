@@ -1206,7 +1206,8 @@ skiac_path* skiac_path_transform(skiac_path* c_path, skiac_matrix* c_matrix) {
   // Check for trailing moveTo (Skia trims these during SkPath creation)
   SkSpan<const SkPathVerb> verbs = c_path->builder.verbs();
   bool hasTrailingMove = !verbs.empty() && verbs.back() == SkPathVerb::kMove;
-  SkPoint trailingMovePoint = hasTrailingMove ? c_path->builder.points().back() : SkPoint{0, 0};
+  SkPoint trailingMovePoint =
+      hasTrailingMove ? c_path->builder.points().back() : SkPoint{0, 0};
 
   // Transform the path (this will lose trailing moveTo)
   SkPath transformed = c_path->path().makeTransform(matrix);
@@ -1225,7 +1226,8 @@ skiac_path* skiac_path_transform(skiac_path* c_path, skiac_matrix* c_matrix) {
 void skiac_path_transform_self(skiac_path* c_path, skiac_matrix* c_matrix) {
   SkMatrix matrix = *reinterpret_cast<SkMatrix*>(c_matrix);
 
-  // Check for trailing moveTo before transform (Skia trims these during SkPath creation)
+  // Check for trailing moveTo before transform (Skia trims these during SkPath
+  // creation)
   SkSpan<const SkPathVerb> verbs = c_path->builder.verbs();
   bool hasTrailingMove = !verbs.empty() && verbs.back() == SkPathVerb::kMove;
   SkPoint trailingMovePoint = {0, 0};
