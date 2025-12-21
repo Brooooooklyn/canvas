@@ -199,6 +199,10 @@ switch (TARGET_TRIPLE) {
     CXX = '"arm-linux-gnueabihf-g++"'
     ExtraSkiaBuildFlag += ' target_cpu="armv7a" target_os="linux"'
     ExtraCflags = `"-march=armv7-a", "-mthumb", "-mfpu=neon"`
+    GN_ARGS.push(
+      `extra_cflags=[${ExtraCflags}]`,
+      `extra_cflags_c=[${ExtraCflags}]`,
+    )
     break
   case 'aarch64-apple-darwin':
     ExtraSkiaBuildFlag += ' target_cpu="arm64" target_os="mac"'

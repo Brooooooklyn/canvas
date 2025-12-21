@@ -652,6 +652,7 @@ jobs:
           options: '--platform linux/arm/v7 -v ${{ github.workspace }}:/skia -w /skia'
           run: |
             set -e && \
+            export LC_ALL=C && \
             yarn test:ci && \
             ls -la
       - name: Test failed
