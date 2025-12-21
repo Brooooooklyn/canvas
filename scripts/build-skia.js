@@ -197,8 +197,12 @@ switch (TARGET_TRIPLE) {
   case 'armv7-unknown-linux-gnueabihf':
     CC = '"arm-linux-gnueabihf-gcc"'
     CXX = '"arm-linux-gnueabihf-g++"'
+    // Disable SkPathData backend - it has issues on 32-bit ARM under QEMU emulation
+    // The kill switch was added in Chrome m144: skia commit 7f325708d2
+    ExtraCflagsCC += ',"-DSK_DISABLE_PATHDATA"'
+    // Use "armv7a" (not "arm") to avoid Skia's zlib bug where ARM CRC32
+    // (armv8-only) is incorrectly enabled for all ARM targets
     ExtraSkiaBuildFlag += ' target_cpu="armv7a" target_os="linux"'
-    ExtraCflags = `"-march=armv7-a", "-mthumb", "-mfpu=neon"`
     break
   case 'aarch64-apple-darwin':
     ExtraSkiaBuildFlag += ' target_cpu="arm64" target_os="mac"'

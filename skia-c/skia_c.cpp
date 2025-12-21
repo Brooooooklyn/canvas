@@ -1201,14 +1201,50 @@ void skiac_path_add_circle(skiac_path* c_path, float x, float y, float r) {
 }
 
 skiac_path* skiac_path_transform(skiac_path* c_path, skiac_matrix* c_matrix) {
-  SkPath transformed = c_path->path().makeTransform(*MATRIX_CAST);
-  return new skiac_path(transformed);
+  SkMatrix matrix = *MATRIX_CAST;
+
+  // Check for trailing moveTo (Skia trims these during SkPath creation)
+  SkSpan<const SkPathVerb> verbs = c_path->builder.verbs();
+  bool hasTrailingMove = !verbs.empty() && verbs.back() == SkPathVerb::kMove;
+  SkPoint trailingMovePoint =
+      hasTrailingMove ? c_path->builder.points().back() : SkPoint{0, 0};
+
+  // Transform the path (this will lose trailing moveTo)
+  SkPath transformed = c_path->path().makeTransform(matrix);
+  skiac_path* result = new skiac_path(transformed);
+
+  // Restore trailing moveTo with transformed coordinates
+  if (hasTrailingMove) {
+    SkPoint transformedPoint = matrix.mapPoint(trailingMovePoint);
+    result->builder.moveTo(transformedPoint);
+    result->invalidate();
+  }
+
+  return result;
 }
 
 void skiac_path_transform_self(skiac_path* c_path, skiac_matrix* c_matrix) {
   SkMatrix matrix = *reinterpret_cast<SkMatrix*>(c_matrix);
+
+  // Check for trailing moveTo before transform (Skia trims these during SkPath
+  // creation)
+  SkSpan<const SkPathVerb> verbs = c_path->builder.verbs();
+  bool hasTrailingMove = !verbs.empty() && verbs.back() == SkPathVerb::kMove;
+  SkPoint trailingMovePoint = {0, 0};
+  if (hasTrailingMove) {
+    trailingMovePoint = c_path->builder.points().back();
+  }
+
+  // Transform the path (this will lose trailing moveTo)
   SkPath transformed = c_path->path().makeTransform(matrix);
   c_path->replace_from_path(transformed);
+
+  // Restore trailing moveTo with transformed coordinates
+  if (hasTrailingMove) {
+    SkPoint transformedPoint = matrix.mapPoint(trailingMovePoint);
+    c_path->builder.moveTo(transformedPoint);
+    c_path->invalidate();
+  }
 }
 
 bool skiac_path_is_empty(skiac_path* c_path) {

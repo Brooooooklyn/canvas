@@ -36,5 +36,9 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Brooooooklyn/canvas.git"
+  },
+  "funding": {
+    "type": "github",
+    "url": "https://github.com/sponsors/Brooooooklyn"
   }
 }
