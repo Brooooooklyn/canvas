@@ -1,3 +1,17 @@
+## [0.1.86](https://github.com/Brooooooklyn/canvas/compare/v0.1.85...v0.1.86) (2025-12-21)
+
+
+### Bug Fixes
+
+* RTL text `fillText(maxWidth)` x positioning calculation error ([#1179](https://github.com/Brooooooklyn/canvas/issues/1179)) ([4db0dac](https://github.com/Brooooooklyn/canvas/commit/4db0dacc166187ccd287f8ab5c24c2c8536cb590))
+
+
+### Features
+
+* chrome m144 ([#1182](https://github.com/Brooooooklyn/canvas/issues/1182)) ([dfb65a3](https://github.com/Brooooooklyn/canvas/commit/dfb65a30d960eeeff502c0c8e31228caa88bf7e3))
+
+
+
 ## [0.1.85](https://github.com/Brooooooklyn/canvas/compare/v0.1.84...v0.1.85) (2025-12-19)
 
 
