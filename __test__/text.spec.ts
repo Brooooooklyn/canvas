@@ -677,3 +677,45 @@ test('direction-measure-text', (t) => {
   const rtlMetrics3 = ctx.measureText(textTrailingSpace)
   t.is(ltrMetrics3.width, rtlMetrics3.width, 'Text with trailing space should have same width in LTR and RTL')
 })
+
+test('cursive-scripts', async (t) => {
+  const canvas = createCanvas(650, 300)
+  const ctx = canvas.getContext('2d')!
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'Harmattan-Regular.ttf'), 'Harmattan')
+
+  ctx.fillStyle = 'white'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  ctx.fillStyle = 'black'
+  ctx.font = '50px Harmattan'
+
+  ctx.fillText('مرحبا بالعالم', 0, 50)
+  ctx.fillText('English مرحبا بالعالم', 0, 110)
+
+  ctx.direction = 'rtl'
+  ctx.fillText('مرحبا بالعالم', canvas.width, 200)
+  ctx.fillText('English مرحبا بالعالم', canvas.width, 260)
+
+  await snapshotImage(t, { canvas, ctx })
+})
+
+test('cursive-scripts-ignore-letter-spacing', async (t) => {
+  const canvas = createCanvas(650, 300)
+  const ctx = canvas.getContext('2d')!
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'Harmattan-Regular.ttf'), 'Harmattan')
+
+  ctx.fillStyle = 'white'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  ctx.fillStyle = 'black'
+  ctx.font = '50px Harmattan'
+
+  ctx.letterSpacing = '30px'
+
+  ctx.fillText('مرحبا بالعالم', 0, 50)
+  ctx.fillText('English مرحبا بالعالم', 0, 110)
+
+  ctx.direction = 'rtl'
+  ctx.fillText('مرحبا بالعالم', canvas.width, 200)
+  ctx.fillText('English مرحبا بالعالم', canvas.width, 260)
+
+  await snapshotImage(t, { canvas, ctx })
+})
