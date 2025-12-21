@@ -446,7 +446,7 @@ test('direction-all-values', (t) => {
 
 // MDN example: https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D/direction
 test('direction-letter-spacing', async (t) => {
-  const canvas = createCanvas(500, 150)
+  const canvas = createCanvas(600, 360)
   const ctx = canvas.getContext('2d')!
   GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'ScienceGothic-VariableFont.ttf'), 'Science Gothic')
   const x = canvas.width / 2
@@ -462,7 +462,7 @@ test('direction-letter-spacing', async (t) => {
   ctx.strokeStyle = 'green'
   ctx.stroke()
 
-  ctx.font = '48px Science Gothic'
+  ctx.font = '45px Science Gothic'
   ctx.fillStyle = 'black'
   ctx.letterSpacing = '20px'
 
@@ -470,16 +470,21 @@ test('direction-letter-spacing', async (t) => {
   ctx.fillText('Hi!', x, 50)
   // Second line: rtl direction - "Hi!" should become "!Hi" visually
   ctx.direction = 'rtl'
-  ctx.letterSpacing = '20px'
   ctx.fillText('Hi!', x, 130)
+
+  ctx.letterSpacing = '12.832px'
+  ctx.fillText('Hello world!', x, 210, 236.21)
+  ctx.direction = 'ltr'
+  ctx.fillText('Hello world!', x, 280, 236.21)
 
   await snapshotImage(t, { canvas, ctx })
 })
 
-test('direction-align', async (t) => {
-  const canvas = createCanvas(500, 580)
-  const ctx = canvas.getContext('2d')!
-  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'ScienceGothic-VariableFont.ttf'), 'Science Gothic');
+function drawDirectionAlignTest(
+  ctx: SKRSContext2D,
+  { text, maxWidth, letterSpacing }: { text?: string; maxWidth?: number; letterSpacing: string },
+) {
+  const canvas = ctx.canvas
   const x = canvas.width / 2
 
   ctx.fillStyle = 'white'
@@ -494,41 +499,181 @@ test('direction-align', async (t) => {
 
   ctx.font = '48px Science Gothic'
   ctx.fillStyle = 'black'
-  ctx.letterSpacing = '3px'
+  ctx.letterSpacing = letterSpacing
 
-  // ltr align
-  // start = left in ltr
+  const getText = (dir: string, align: string) => text ?? `${dir} ${align}!`
+
+  // ltr align (start = left in ltr)
   ctx.direction = 'ltr'
-  ctx.fillText('ltr start!', 0, 50)
+  ctx.fillText(getText('ltr', 'start'), 0, 50, maxWidth)
   ctx.direction = 'inherit' // inherit = ltr
   ctx.textAlign = 'left'
-  ctx.fillText('ltr left!', 0, 100)
+  ctx.fillText(getText('ltr', 'left'), 0, 100, maxWidth)
 
   ctx.textAlign = 'center'
-  ctx.fillText('ltr center!', x, 150)
+  ctx.fillText(getText('ltr', 'center'), x, 150, maxWidth)
 
   // end = right in ltr
   ctx.textAlign = 'end'
-  ctx.fillText('ltr end!', canvas.width, 200)
+  ctx.fillText(getText('ltr', 'end'), canvas.width, 200, maxWidth)
   ctx.textAlign = 'right'
-  ctx.fillText('ltr right!', canvas.width, 250)
+  ctx.fillText(getText('ltr', 'right'), canvas.width, 250, maxWidth)
 
-  // rtl align
-  // start = right in rtl
+  // rtl align (start = right in rtl)
   ctx.direction = 'rtl'
   ctx.textAlign = 'start'
-  ctx.fillText('rtl start!', canvas.width, 350)
+  ctx.fillText(getText('rtl', 'start'), canvas.width, 350, maxWidth)
   ctx.textAlign = 'right'
-  ctx.fillText('rtl right!', canvas.width, 400)
+  ctx.fillText(getText('rtl', 'right'), canvas.width, 400, maxWidth)
 
   ctx.textAlign = 'center'
-  ctx.fillText('rtl center!', x, 450)
+  ctx.fillText(getText('rtl', 'center'), x, 450, maxWidth)
 
   // end = left in rtl
   ctx.textAlign = 'end'
-  ctx.fillText('rtl end!', 0, 500)
+  ctx.fillText(getText('rtl', 'end'), 0, 500, maxWidth)
   ctx.textAlign = 'left'
-  ctx.fillText('rtl left!', 0, 550)
+  ctx.fillText(getText('rtl', 'left'), 0, 550, maxWidth)
+}
+
+test('direction-align', async (t) => {
+  const canvas = createCanvas(500, 580)
+  const ctx = canvas.getContext('2d')!
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'ScienceGothic-VariableFont.ttf'), 'Science Gothic')
+  drawDirectionAlignTest(ctx, { letterSpacing: '3px' })
+  await snapshotImage(t, { canvas, ctx })
+})
+
+test('direction-align-max-width', async (t) => {
+  const canvas = createCanvas(500, 580)
+  const ctx = canvas.getContext('2d')!
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'ScienceGothic-VariableFont.ttf'), 'Science Gothic')
+  drawDirectionAlignTest(ctx, { text: 'Hello!', maxWidth: 160, letterSpacing: '20px' })
+  await snapshotImage(t, { canvas, ctx })
+})
+
+test('direction-save-restore', async (t) => {
+  const canvas = createCanvas(400, 160)
+  const ctx = canvas.getContext('2d')!
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'ScienceGothic-VariableFont.ttf'), 'Science Gothic')
+
+  ctx.fillStyle = 'white'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+  ctx.font = '38px Science Gothic'
+  ctx.fillStyle = 'black'
+
+  // Default direction
+  ctx.fillText(`direction: ${ctx.direction}`, 0, 50)
+
+  ctx.save()
+  ctx.direction = 'rtl'
+  ctx.fillText(`direction: ${ctx.direction}`, canvas.width, 90)
+  ctx.restore()
+
+  // Should be back to default after restore
+  ctx.fillText(`direction: ${ctx.direction}`, 0, 130)
+
+  t.is(ctx.direction, 'ltr')
+  await snapshotImage(t, { canvas, ctx })
+})
+
+test('direction-stroke-letter-spacing', async (t) => {
+  const canvas = createCanvas(500, 260)
+  const ctx = canvas.getContext('2d')!
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'SourceSerifPro-Regular.ttf'), 'Source Serif Pro')
+  const x = canvas.width / 2
+
+  ctx.fillStyle = 'white'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+  // Draw center line
+  ctx.beginPath()
+  ctx.moveTo(x, 0)
+  ctx.lineTo(x, canvas.height)
+  ctx.strokeStyle = 'green'
+  ctx.stroke()
+
+  ctx.font = '38px Source Serif Pro'
+  ctx.letterSpacing = '10px'
+
+  // LTR with letterSpacing
+  ctx.direction = 'ltr'
+  ctx.fillStyle = 'black'
+  ctx.fillText('LTR text', x, 50)
+  ctx.strokeStyle = 'blue'
+  ctx.lineWidth = 1.5
+  ctx.strokeText('LTR text', x, 100)
+
+  // RTL with letterSpacing
+  ctx.direction = 'rtl'
+  ctx.fillStyle = 'black'
+  ctx.fillText('RTL text', x, 170)
+  ctx.strokeStyle = 'red'
+  ctx.strokeText('RTL text', x, 220)
 
   await snapshotImage(t, { canvas, ctx })
+})
+
+test('direction-negative-letter-spacing', async (t) => {
+  const canvas = createCanvas(500, 200)
+  const ctx = canvas.getContext('2d')!
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'ScienceGothic-VariableFont.ttf'), 'Science Gothic')
+  const x = canvas.width / 2
+
+  ctx.fillStyle = 'white'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+  // Draw center line
+  ctx.beginPath()
+  ctx.moveTo(x, 0)
+  ctx.lineTo(x, canvas.height)
+  ctx.strokeStyle = 'green'
+  ctx.stroke()
+
+  ctx.font = '40px Science Gothic'
+  ctx.fillStyle = 'black'
+  ctx.letterSpacing = '-5px'
+
+  ctx.direction = 'ltr'
+  ctx.fillText('Negative', x, 60)
+
+  ctx.direction = 'rtl'
+  ctx.fillText('Negative', x, 140)
+
+  await snapshotImage(t, { canvas, ctx })
+})
+
+// Ensure that measureText.width is exactly the same in LRT and RTL.
+// This is consistent with the behavior of Chrome and Firefox.
+test('direction-measure-text', (t) => {
+  const canvas = createCanvas(400, 100)
+  const ctx = canvas.getContext('2d')!
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'ScienceGothic-VariableFont.ttf'), 'Science Gothic')
+
+  ctx.font = '38px Science Gothic'
+
+  // Test without internal spaces
+  const textNoSpaces = 'Hello'
+  ctx.direction = 'ltr'
+  const ltrMetrics1 = ctx.measureText(textNoSpaces)
+  ctx.direction = 'rtl'
+  const rtlMetrics1 = ctx.measureText(textNoSpaces)
+  t.is(ltrMetrics1.width, rtlMetrics1.width, 'Text without spaces should have same width in LTR and RTL')
+
+  // Test with internal spaces
+  const textWithSpaces = 'Hello World!'
+  ctx.direction = 'ltr'
+  const ltrMetrics2 = ctx.measureText(textWithSpaces)
+  ctx.direction = 'rtl'
+  const rtlMetrics2 = ctx.measureText(textWithSpaces)
+  t.is(ltrMetrics2.width, rtlMetrics2.width, 'Text with spaces should have same width in LTR and RTL')
+
+  // Test with trailing spaces
+  const textTrailingSpace = '  Hello World '
+  ctx.direction = 'ltr'
+  const ltrMetrics3 = ctx.measureText(textTrailingSpace)
+  ctx.direction = 'rtl'
+  const rtlMetrics3 = ctx.measureText(textTrailingSpace)
+  t.is(ltrMetrics3.width, rtlMetrics3.width, 'Text with trailing space should have same width in LTR and RTL')
 })

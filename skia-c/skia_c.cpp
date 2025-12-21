@@ -579,19 +579,25 @@ void skiac_canvas_get_line_metrics_or_draw_text(
   auto glyphs = run.glyphs();
   auto glyphs_size = glyphs.size();
   font.getBounds(glyphs, bounds, PAINT_CAST);
-  auto text_box = paragraph->getRectsForRange(
-      0, text_len, RectHeightStyle::kTight, RectWidthStyle::kTight);
+
   // line_metrics.fWidth doesn't contain the suffix spaces
   // run.calculateWidth will return 0 if font is rendering as fallback
-  auto line_width = 0.0;
+  //
+  // So we use `getMaxIntrinsicWidth()` to get the `line_width`.
+  // - For single-run text without internal spaces: uses run.advance().fX from
+  // HarfBuzz shaping
+  // - For text with internal spaces or multiple runs: uses TextWrapper's
+  // cluster-based calculation Both are direction-independent and include
+  // trailing spaces.
+  //
+  // Note: Using `getRectsForRange()` may cause `measureText.width` to return
+  // different values for LTR and RTL layouts.
+  auto line_width = paragraph->getMaxIntrinsicWidth();
   auto first_char_bounds = bounds[0];
   auto descent = first_char_bounds.fBottom;
   auto ascent = first_char_bounds.fTop;
   auto last_char_bounds = bounds[glyphs_size - 1];
   auto last_char_pos_x = run.positionX(glyphs_size - 1);
-  for (auto& box : text_box) {
-    line_width += box.rect.width();
-  }
 
   for (size_t i = 1; i <= glyphs_size - 1; ++i) {
     auto char_bounds = bounds[i];
@@ -640,75 +646,65 @@ void skiac_canvas_get_line_metrics_or_draw_text(
 
   auto line_center = line_width / 2.0f;
   float paint_x;
-  float offset_x = 0.0;
-  // When RTL, Skia lays out text starting from the right edge of the layout
-  // width (MAX_LAYOUT_WIDTH). We need to compensate for this by subtracting the
-  // RTL offset.
+  float offset_x = 0.0f;
+
+  // RTL: Skia lays out text from MAX_LAYOUT_WIDTH right edge, compensate here.
+  // Separated from paint_x to avoid being affected by maxWidth scaling.
   float rtl_offset = (text_direction == TextDirection::kRtl)
                          ? (MAX_LAYOUT_WIDTH - line_width)
                          : 0.0f;
-  // Skia Paragraph adds letter_spacing / 2 before the first character and after
-  // the last character.
-  // For LTR: we need to shift left by letter_spacing / 2 to compensate for the
-  // spacing before the first character.
+
+  // LTR: Skia adds letter_spacing/2 before first char, compensate here.
+  // Separated from paint_x to avoid being affected by maxWidth scaling.
   float letter_spacing_offset =
       (text_direction == TextDirection::kLtr) ? -letter_spacing / 2 : 0.0f;
-  switch ((TextAlign)align) {
-    case TextAlign::kLeft:
-      paint_x = x - rtl_offset + letter_spacing_offset;
-      break;
-    case TextAlign::kCenter:
-      paint_x = x - line_center - rtl_offset + letter_spacing_offset;
-      offset_x = line_center;
-      break;
-    case TextAlign::kRight:
-      paint_x = x - line_width - rtl_offset + letter_spacing_offset;
-      offset_x = line_width;
-      break;
+
+  // Determine alignment type
+  auto text_align = (TextAlign)align;
+  bool is_right_aligned =
+      text_align == TextAlign::kRight ||
+      (text_align == TextAlign::kStart &&
+       text_direction == TextDirection::kRtl) ||
+      (text_align == TextAlign::kEnd && text_direction == TextDirection::kLtr);
+
+  // Calculate paint_x and offset_x based on alignment
+  if (text_align == TextAlign::kCenter) {
+    paint_x = x - line_center;
+    offset_x = line_center;
+  } else if (is_right_aligned) {
+    paint_x = x - line_width;
+    offset_x = line_width;
+  } else if (text_align == TextAlign::kJustify) {
     // Unreachable
-    case TextAlign::kJustify:
-      paint_x = x - rtl_offset + letter_spacing_offset;
-      break;
-    case TextAlign::kStart:
-      if (text_direction == TextDirection::kLtr) {
-        paint_x = x + letter_spacing_offset;
-      } else {
-        paint_x = x - line_width - rtl_offset;
-        offset_x = line_width;
-      }
-      break;
-    case TextAlign::kEnd:
-      if (text_direction == TextDirection::kRtl) {
-        paint_x = x - rtl_offset;
-      } else {
-        paint_x = x - line_width + letter_spacing_offset;
-        offset_x = line_width;
-      }
-      break;
-  };
+    paint_x = x;
+  } else {
+    paint_x = x;
+  }
 
   if (c_canvas) {
     auto need_scale = line_width > max_width;
-    float ratio = need_scale ? max_width / line_width : 1.0;
+    float ratio = need_scale ? max_width / line_width : 1.0f;
     if (need_scale) {
       CANVAS_CAST->save();
-      CANVAS_CAST->scale(ratio, 1.0);
+      CANVAS_CAST->scale(ratio, 1.0f);
     }
-    auto paint_y = y + baseline_offset;
-    paragraph->paint(
-        CANVAS_CAST,
-        need_scale ? (paint_x + (1 - ratio) * offset_x) / ratio : paint_x,
-        paint_y);
+    // final_x: scale user coords (paint_x, offset_x), then apply Skia offsets
+    float final_x = need_scale ? (paint_x + (1 - ratio) * offset_x) / ratio -
+                                     rtl_offset + letter_spacing_offset
+                               : paint_x - rtl_offset + letter_spacing_offset;
+    paragraph->paint(CANVAS_CAST, final_x, y + baseline_offset);
     if (need_scale) {
       CANVAS_CAST->restore();
     }
   } else {
     auto offset = -baseline_offset - alphabetic_baseline;
+    float metrics_paint_x = paint_x + letter_spacing_offset;
     c_line_metrics->ascent = -ascent + offset;
     c_line_metrics->descent = descent - offset;
     c_line_metrics->left =
-        -paint_x + line_metrics.fLeft - first_char_bounds.fLeft;
-    c_line_metrics->right = paint_x + last_char_pos_x + last_char_bounds.fRight;
+        -metrics_paint_x + line_metrics.fLeft - first_char_bounds.fLeft;
+    c_line_metrics->right =
+        metrics_paint_x + last_char_pos_x + last_char_bounds.fRight;
     c_line_metrics->width = line_width;
     c_line_metrics->font_ascent = -font_metrics.fAscent + offset;
     c_line_metrics->font_descent = font_metrics.fDescent - offset;
