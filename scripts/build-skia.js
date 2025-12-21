@@ -197,8 +197,9 @@ switch (TARGET_TRIPLE) {
   case 'armv7-unknown-linux-gnueabihf':
     CC = '"arm-linux-gnueabihf-gcc"'
     CXX = '"arm-linux-gnueabihf-g++"'
-    // Use "arm" (not "armv7a") so GN recognizes it and enables NEON optimizations
-    ExtraSkiaBuildFlag += ' target_cpu="arm" target_os="linux"'
+    // Use "armv7a" (not "arm") to avoid Skia's zlib bug where ARM CRC32
+    // (armv8-only) is incorrectly enabled for all ARM targets
+    ExtraSkiaBuildFlag += ' target_cpu="armv7a" target_os="linux"'
     break
   case 'aarch64-apple-darwin':
     ExtraSkiaBuildFlag += ' target_cpu="arm64" target_os="mac"'
