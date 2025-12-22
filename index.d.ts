@@ -503,6 +503,7 @@ export class Image {
   readonly naturalWidth: number
   readonly naturalHeight: number
   readonly complete: boolean
+  readonly currentSrc: string | null
   alt: string
   // the src can be a Uint8Array or a string
   // if it's a string, it can be a file path, a data URL, a remote URL, or a SVG string
