@@ -188,6 +188,7 @@ pub struct Image {
   pub(crate) bitmap: Option<Bitmap>,
   pub(crate) complete: bool,
   pub(crate) alt: String,
+  pub(crate) current_src: Option<String>,
   width: f64,
   height: f64,
   pub(crate) need_regenerate_bitmap: bool,
@@ -200,6 +201,8 @@ pub struct Image {
   _avif_image_ref: Option<AvifImage>,
   // Bytes accounted to V8 via adjust_external_memory for this image
   accounted_bytes: i64,
+  // Generation counter to handle overlapping loads
+  load_generation: u64,
 }
 
 impl ObjectFinalize for Image {
@@ -221,9 +224,10 @@ impl Image {
       .and_then(|c| ColorSpace::from_str(&c).ok())
       .unwrap_or_default();
     Ok(Image {
-      complete: false,
+      complete: true,
       bitmap: None,
       alt: "".to_string(),
+      current_src: None,
       width,
       height,
       need_regenerate_bitmap: false,
@@ -233,6 +237,7 @@ impl Image {
       file_content: None,
       _avif_image_ref: None,
       accounted_bytes: 0,
+      load_generation: 0,
     })
   }
 
@@ -278,6 +283,11 @@ impl Image {
   }
 
   #[napi(getter)]
+  pub fn get_current_src(&self) -> Option<&str> {
+    self.current_src.as_deref()
+  }
+
+  #[napi(getter)]
   pub fn get_alt(&self) -> String {
     self.alt.clone()
   }
@@ -298,33 +308,44 @@ impl Image {
 
   #[napi(setter)]
   pub fn set_src(&mut self, env: Env, this: This, data: Either<Uint8Array, String>) -> Result<()> {
-    let data_is_too_small = if let Either::A(d) = &data {
-      d.len() <= 2
-    } else {
-      false
+    // Increment generation FIRST to invalidate all in-flight loads
+    // This must happen for BOTH empty and valid src to prevent race conditions
+    self.load_generation = self.load_generation.wrapping_add(1);
+
+    // Check if src is empty (per HTML spec)
+    // Also treat very small buffers as empty to avoid invalid/ambiguous image headers.
+    let is_empty_or_too_small = match &data {
+      Either::A(buffer) => buffer.is_empty() || buffer.len() < 5,
+      Either::B(string) => string.is_empty(),
     };
-    if data_is_too_small {
-      self.src = Some(data);
+
+    if is_empty_or_too_small {
+      // HTML spec: empty src = clear state, complete=true, NO events
+      self.src = None;
+      self.current_src = None;
       self.width = -1.0;
       self.height = -1.0;
       self.bitmap = None;
+      self.file_content = None;
+      self._avif_image_ref = None;
+      self.complete = true;
+      self.is_svg = false;
+      self.need_regenerate_bitmap = false;
 
-      let onload = this.get_named_property_unchecked::<Unknown>("onload")?;
-      if onload.get_type()? == ValueType::Function {
-        let onload_func: Function<(), ()> = Function::from_unknown(onload)?;
-        onload_func.apply(this, ())?;
+      // Clear external memory accounting
+      if self.accounted_bytes != 0 {
+        env.adjust_external_memory(-self.accounted_bytes)?;
+        self.accounted_bytes = 0;
       }
       return Ok(());
     }
-    let on_error_in_catch = {
-      let on_error = this.get_named_property_unchecked::<Unknown>("onerror")?;
-      if on_error.get_type()? == ValueType::Function {
-        let onerror_func: Function<Unknown, ()> = Function::from_unknown(on_error)?;
-        Some(onerror_func.create_ref()?)
-      } else {
-        None
-      }
-    };
+
+    // Valid src: start async loading
+    self.complete = false;
+
+    // NOTE: current_src is NOT set here - only set in resolve() after successful load
+    // On failure, it remains the last successful value (per HTML spec).
+
     let decoder = BitmapDecoder {
       width: self.width,
       height: self.height,
@@ -332,18 +353,9 @@ impl Image {
       data: Some(data),
       file_content: None,
       this_ref: this.create_ref()?,
+      generation: self.load_generation,
     };
-    let task_output = env.spawn(decoder)?;
-
-    task_output
-      .promise_object()
-      .catch(move |ctx: CallbackContext<Unknown>| {
-        if let Some(on_error) = on_error_in_catch {
-          let on_err = on_error.borrow_back(&ctx.env)?;
-          on_err.call(ctx.value)?;
-        }
-        Ok(())
-      })?;
+    let _task_output = env.spawn(decoder)?;
     Ok(())
   }
 
@@ -427,6 +439,8 @@ struct BitmapDecoder {
   // data from file path
   file_content: Option<Vec<u8>>,
   this_ref: ObjectRef,
+  // Generation counter to detect stale loads
+  generation: u64,
 }
 
 pub(crate) struct DecodedBitmap {
@@ -487,7 +501,7 @@ impl Task for BitmapDecoder {
     let length = data_ref.len();
     let mut width = self.width;
     let mut height = self.height;
-    let bitmap = if str::from_utf8(&data_ref[0..5]) == Ok("data:") {
+    let bitmap = if data_ref.as_ref().starts_with(b"data:") {
       let data_str = str::from_utf8(&data_ref)
         .map_err(|e| Error::new(Status::InvalidArg, format!("Decode data url failed {e}")))?;
       if let Some(base64_str) = data_str.split(',').next_back() {
@@ -601,6 +615,13 @@ impl Task for BitmapDecoder {
       "Failed to unwrap Image from this"
     )?;
     let self_mut = unsafe { Box::leak(Box::from_raw(image_ptr.cast::<Image>())) };
+
+    // Check if this load has been superseded by a newer load
+    if self.generation != self_mut.load_generation {
+      // This is a stale load - silently abort without updating state or firing events
+      return Ok(());
+    }
+
     self_mut.width = output.width;
     self_mut.height = output.height;
     self_mut.complete = true;
@@ -615,6 +636,12 @@ impl Task for BitmapDecoder {
     match output.bitmap {
       DecodeStatus::Ok(bitmap) => {
         self_mut.src = self.data.take();
+        // Update current_src based on what was actually loaded
+        self_mut.current_src = match &self_mut.src {
+          Some(Either::A(_)) => Some("[Buffer]".to_string()),
+          Some(Either::B(s)) => Some(s.clone()),
+          None => None,
+        };
         self_mut.is_svg = bitmap.is_svg;
         self_mut.bitmap = Some(bitmap.data);
         self_mut._avif_image_ref = bitmap.decoded_image;
@@ -653,7 +680,46 @@ impl Task for BitmapDecoder {
     Ok(())
   }
 
+  fn reject(&mut self, env: Env, err: Error) -> Result<Self::JsValue> {
+    let this: Object = self.this_ref.get_value(&env)?;
+    let mut image_ptr = ptr::null_mut();
+    check_status!(
+      unsafe { sys::napi_unwrap(env.raw(), this.raw(), &mut image_ptr) },
+      "Failed to unwrap Image from this"
+    )?;
+    let image = unsafe { Box::leak(Box::from_raw(image_ptr.cast::<Image>())) };
+
+    // Ignore stale errors from superseded loads
+    if self.generation != image.load_generation {
+      return Ok(());
+    }
+
+    // Per HTML spec: complete must be true after load finishes, even on error (broken state)
+    image.complete = true;
+    // Clear decoded state so naturalWidth/naturalHeight reflect broken image
+    image.bitmap = None;
+    image.file_content = None;
+    image._avif_image_ref = None;
+    image.is_svg = false;
+    image.need_regenerate_bitmap = false;
+    if image.accounted_bytes != 0 {
+      env.adjust_external_memory(-image.accounted_bytes)?;
+      image.accounted_bytes = 0;
+    }
+
+    let on_error = this.get_named_property_unchecked::<Unknown>("onerror")?;
+    if on_error.get_type()? == ValueType::Function {
+      let onerror_func: Function<Object, Unknown> = Function::from_unknown(on_error)?;
+      onerror_func.apply(this, env.create_error(err)?)?;
+    }
+
+    // Swallow the rejection to avoid unhandled promise rejections
+    Ok(())
+  }
+
   fn finally(self, env: Env) -> Result<()> {
-    self.this_ref.unref(&env)
+    // Unref this_ref (used in resolve/reject paths)
+    self.this_ref.unref(&env)?;
+    Ok(())
   }
 }
