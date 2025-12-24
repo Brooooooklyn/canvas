@@ -656,8 +656,19 @@ void skiac_canvas_get_line_metrics_or_draw_text(
 
   // LTR: Skia adds letter_spacing/2 before first char, compensate here.
   // Separated from paint_x to avoid being affected by maxWidth scaling.
+  //
+  // However, Cursive Scripts do not allow gaps between their letters for either
+  // justification or letter-spacing.
+  // Cursive scripts are included:
+  // Arabic, Hanifi Rohingya, Mandaic, Mongolian, N’Ko, Phags Pa, Syriac
+  //
+  // CSS Spec: https://www.w3.org/TR/css-text-3/#cursive-tracking
+  // Blink CL: https://chromium-review.googlesource.com/c/chromium/src/+/6399436
+  // Skia CL: https://skia-review.googlesource.com/c/skia/+/1099477
   float letter_spacing_offset =
-      (text_direction == TextDirection::kLtr) ? -letter_spacing / 2 : 0.0f;
+      (text_direction == TextDirection::kLtr && !run.isCursiveScript())
+          ? -letter_spacing / 2
+          : 0.0f;
 
   // Determine alignment type
   auto text_align = (TextAlign)align;
