@@ -1,7 +1,7 @@
 use std::{borrow::Cow, ptr, str, str::FromStr};
 
 use base64_simd::STANDARD;
-use napi::bindgen_prelude::*;
+use napi::{ScopedTask, bindgen_prelude::*};
 
 use crate::avif::AvifImage;
 use crate::error::SkError;
@@ -191,6 +191,9 @@ pub struct Image {
   pub(crate) current_src: Option<String>,
   width: f64,
   height: f64,
+  // Natural dimensions - extracted from image header, available before full decode
+  natural_width: f64,
+  natural_height: f64,
   pub(crate) need_regenerate_bitmap: bool,
   pub(crate) is_svg: bool,
   pub(crate) color_space: ColorSpace,
@@ -203,12 +206,17 @@ pub struct Image {
   accounted_bytes: i64,
   // Generation counter to handle overlapping loads
   load_generation: u64,
+
+  decoder_task: Option<ObjectRef>,
 }
 
 impl ObjectFinalize for Image {
   fn finalize(self, env: Env) -> Result<()> {
     if self.accounted_bytes != 0 {
       env.adjust_external_memory(-self.accounted_bytes)?;
+    }
+    if let Some(decoder_task) = self.decoder_task {
+      decoder_task.unref(&env)?;
     }
     Ok(())
   }
@@ -230,6 +238,8 @@ impl Image {
       current_src: None,
       width,
       height,
+      natural_width: 0.0,
+      natural_height: 0.0,
       need_regenerate_bitmap: false,
       is_svg: false,
       color_space,
@@ -238,6 +248,7 @@ impl Image {
       _avif_image_ref: None,
       accounted_bytes: 0,
       load_generation: 0,
+      decoder_task: None,
     })
   }
 
@@ -256,7 +267,13 @@ impl Image {
 
   #[napi(getter)]
   pub fn get_natural_width(&self) -> f64 {
-    self.bitmap.as_ref().map(|b| b.0.width).unwrap_or(0) as f64
+    // Return stored natural_width (set from imagesize header parsing)
+    // Falls back to bitmap dimensions if natural_width not set
+    if self.natural_width > 0.0 {
+      self.natural_width
+    } else {
+      self.bitmap.as_ref().map(|b| b.0.width).unwrap_or(0) as f64
+    }
   }
 
   #[napi(getter)]
@@ -274,7 +291,13 @@ impl Image {
 
   #[napi(getter)]
   pub fn get_natural_height(&self) -> f64 {
-    self.bitmap.as_ref().map(|b| b.0.height).unwrap_or(0) as f64
+    // Return stored natural_height (set from imagesize header parsing)
+    // Falls back to bitmap dimensions if natural_height not set
+    if self.natural_height > 0.0 {
+      self.natural_height
+    } else {
+      self.bitmap.as_ref().map(|b| b.0.height).unwrap_or(0) as f64
+    }
   }
 
   #[napi(getter)]
@@ -307,7 +330,22 @@ impl Image {
   }
 
   #[napi(setter)]
-  pub fn set_src(&mut self, env: Env, this: This, data: Either<Uint8Array, String>) -> Result<()> {
+  pub fn set_src(&mut self, env: Env, this: This, raw_data: Unknown) -> Result<()> {
+    let data = match raw_data.get_type()? {
+      ValueType::Object => {
+        if raw_data.is_buffer()? || raw_data.is_typedarray()? {
+          let data: Uint8Array = unsafe { raw_data.cast() }?;
+          self.src.insert(Either::A(data))
+        } else {
+          return Ok(());
+        }
+      }
+      ValueType::String => {
+        let string = unsafe { raw_data.cast()? };
+        self.src.insert(Either::B(string))
+      }
+      _ => return Ok(()),
+    };
     // Increment generation FIRST to invalidate all in-flight loads
     // This must happen for BOTH empty and valid src to prevent race conditions
     self.load_generation = self.load_generation.wrapping_add(1);
@@ -325,12 +363,19 @@ impl Image {
       self.current_src = None;
       self.width = -1.0;
       self.height = -1.0;
+      self.natural_width = 0.0;
+      self.natural_height = 0.0;
       self.bitmap = None;
       self.file_content = None;
       self._avif_image_ref = None;
       self.complete = true;
       self.is_svg = false;
       self.need_regenerate_bitmap = false;
+
+      // Clear decoder_task so decode() returns fresh resolved promise
+      if let Some(previous_task) = self.decoder_task.take() {
+        previous_task.unref(&env)?;
+      }
 
       // Clear external memory accounting
       if self.accounted_bytes != 0 {
@@ -340,7 +385,258 @@ impl Image {
       return Ok(());
     }
 
-    // Valid src: start async loading
+    // For Buffer: load synchronously (dimensions + events), decode bitmap synchronously
+    // This matches node-canvas behavior where onerror/onload fire synchronously
+    if let Either::A(buffer) = data {
+      let buffer_data = buffer.as_ref();
+      let length = buffer_data.len();
+
+      // Check if it's SVG (imagesize doesn't support SVG)
+      let is_svg = is_svg_image(buffer_data, length);
+      // Try to extract dimensions from image header using imagesize (fast, no full decode)
+      let (img_width, img_height, is_valid_image) = if is_svg {
+        // For SVG, we'll get dimensions after decode; for invalid images, we'll error
+        (0.0, 0.0, false)
+      } else if let Ok(size) = imagesize::blob_size(buffer_data) {
+        (size.width as f64, size.height as f64, true)
+      } else {
+        (0.0, 0.0, false)
+      };
+
+      if is_valid_image || is_svg {
+        // Set natural dimensions (sync, from header)
+        // For SVG (where imagesize fails), leave at 0 - will be set after decode
+        self.natural_width = img_width;
+        self.natural_height = img_height;
+
+        // Set width/height if not explicitly set (auto sizing)
+        // For SVG, keep at -1.0 to signal that we need auto-sizing after decode
+        if is_valid_image {
+          if (self.width - -1.0).abs() < f64::EPSILON {
+            self.width = img_width;
+          }
+          if (self.height - -1.0).abs() < f64::EPSILON {
+            self.height = img_height;
+          }
+        }
+
+        // For SVG, we need to decode synchronously to get dimensions
+        if is_svg {
+          let font = get_font().map_err(SkError::from)?;
+          if (self.width - -1.0).abs() > f64::EPSILON && (self.height - -1.0).abs() > f64::EPSILON {
+            if let Some(bitmap) = Bitmap::from_svg_data_with_custom_size(
+              buffer_data.as_ptr(),
+              length,
+              self.width as f32,
+              self.height as f32,
+              self.color_space,
+              &font,
+            ) {
+              self.is_svg = true;
+              self.natural_width = bitmap.0.width as f64;
+              self.natural_height = bitmap.0.height as f64;
+              let new_bytes = (bitmap.0.width as i64) * (bitmap.0.height as i64) * 4;
+              self.adjust_external_memory_if_need(&env, new_bytes)?;
+              self.bitmap = Some(bitmap);
+            } else {
+              // Invalid SVG - fire onerror synchronously
+              // Clear prior image state to prevent stale data from being drawn
+              // Reset width/height to auto (-1.0) so getters return 0 for broken image
+              self.complete = true;
+              self.width = -1.0;
+              self.height = -1.0;
+              self.natural_width = 0.0;
+              self.natural_height = 0.0;
+              self.bitmap = None;
+              self.file_content = None;
+              self._avif_image_ref = None;
+              self.is_svg = false;
+              self.need_regenerate_bitmap = false;
+              if self.accounted_bytes != 0 {
+                env.adjust_external_memory(-self.accounted_bytes)?;
+                self.accounted_bytes = 0;
+              }
+
+              let onerror = this.get_named_property_unchecked::<Unknown>("onerror")?;
+              let error = env.create_error(Error::new(Status::InvalidArg, "Invalid SVG image"))?;
+              if onerror.get_type()? == ValueType::Function {
+                let onerror_func: Function<Object, Unknown> = Function::from_unknown(onerror)?;
+                onerror_func.apply(this, error)?;
+              }
+              if let Some(previous_task) = self.decoder_task.replace(
+                PromiseRaw::resolve(&env, error)?
+                  .coerce_to_object()?
+                  .create_ref()?,
+              ) {
+                previous_task.unref(&env)?;
+              }
+              return Ok(());
+            }
+          } else {
+            // SVG without explicit dimensions - use default decode
+            match Bitmap::from_svg_data(buffer_data.as_ptr(), length, self.color_space, &font) {
+              Some(Ok(bitmap)) => {
+                self.is_svg = true;
+                self.natural_width = bitmap.0.width as f64;
+                self.natural_height = bitmap.0.height as f64;
+                self.width = bitmap.0.width as f64;
+                self.height = bitmap.0.height as f64;
+                let new_bytes = (bitmap.0.width as i64) * (bitmap.0.height as i64) * 4;
+                self.adjust_external_memory_if_need(&env, new_bytes)?;
+                self.bitmap = Some(bitmap);
+              }
+              Some(Err(_)) => {
+                // Invalid SVG - fire onerror synchronously
+                // Clear prior image state to prevent stale data from being drawn
+                // Reset width/height to auto (-1.0) so getters return 0 for broken image
+                self.complete = true;
+                self.width = -1.0;
+                self.height = -1.0;
+                self.natural_width = 0.0;
+                self.natural_height = 0.0;
+                self.bitmap = None;
+                self.file_content = None;
+                self._avif_image_ref = None;
+                self.is_svg = false;
+                self.need_regenerate_bitmap = false;
+                if self.accounted_bytes != 0 {
+                  env.adjust_external_memory(-self.accounted_bytes)?;
+                  self.accounted_bytes = 0;
+                }
+
+                let onerror = this.get_named_property_unchecked::<Unknown>("onerror")?;
+                let error =
+                  env.create_error(Error::new(Status::InvalidArg, "Invalid SVG image"))?;
+                if onerror.get_type()? == ValueType::Function {
+                  let onerror_func: Function<Object, Unknown> = Function::from_unknown(onerror)?;
+                  onerror_func.apply(this, error)?;
+                }
+                if let Some(previous_task) = self.decoder_task.replace(
+                  PromiseRaw::resolve(&env, error)?
+                    .coerce_to_object()?
+                    .create_ref()?,
+                ) {
+                  previous_task.unref(&env)?;
+                }
+                return Ok(());
+              }
+              None => {
+                // SVG has no dimensions - valid but empty, still fire onload
+                self.is_svg = true;
+              }
+            }
+          }
+        }
+
+        // Set complete = true immediately for Buffer sources (jsdom compatibility).
+        // NOTE: For non-SVG buffers, complete=true means dimensions are available from header
+        // parsing, but bitmap decoding is still async. This differs from the HTML spec where
+        // complete implies the image is fully decoded. Callers should either:
+        // 1. Use the onload handler (fires after bitmap decode) before drawImage/createPattern
+        // 2. Call await image.decode() before drawing
+        // Calling drawImage while complete=true but before decode finishes will silently no-op.
+        self.complete = true;
+
+        // For non-SVG images, spawn async bitmap decoding task.
+        // onload fires in resolve() after bitmap is decoded, so drawImage works in onload handler.
+        if !is_svg {
+          // Clear previous bitmap and related state to prevent stale renders during async decode.
+          // Without this, drawImage could render the old image until the new decode completes.
+          self.bitmap = None;
+          self._avif_image_ref = None;
+          self.file_content = None;
+          self.is_svg = false;
+          self.need_regenerate_bitmap = false;
+          if self.accounted_bytes != 0 {
+            env.adjust_external_memory(-self.accounted_bytes)?;
+            self.accounted_bytes = 0;
+          }
+
+          let task = BitmapDecoder {
+            width: self.width,
+            height: self.height,
+            this_ref: this.create_ref()?,
+            generation: self.load_generation,
+            color_space: self.color_space,
+            data: Some(Either::A(unsafe { raw_data.cast()? })),
+            file_content: None,
+            fire_events: true, // Fire onload after decode completes
+          };
+          let decode_task = env.spawn(task)?;
+          let promise_object = decode_task.promise_object();
+
+          if let Some(previous_task) = self
+            .decoder_task
+            .replace(promise_object.coerce_to_object()?.create_ref()?)
+          {
+            previous_task.unref(&env)?;
+          }
+        } else {
+          // For SVG: bitmap already decoded synchronously above, fire onload now
+          self.current_src = Some("[Buffer]".to_string());
+
+          // Set decoder_task to resolved promise so decode() works correctly
+          if let Some(previous_task) = self.decoder_task.replace(
+            PromiseRaw::resolve(&env, ())?
+              .coerce_to_object()?
+              .create_ref()?,
+          ) {
+            previous_task.unref(&env)?;
+          }
+
+          let onload = this.get_named_property_unchecked::<Unknown>("onload")?;
+          if onload.get_type()? == ValueType::Function {
+            let onload_func: Function<(), ()> = Function::from_unknown(onload)?;
+            onload_func.apply(this, ())?;
+          }
+        }
+
+        return Ok(());
+      } else {
+        // imagesize failed (format not supported by imagesize, e.g. BMP, ICO, TIFF)
+        // Fall through to async decode - let Skia/infer determine validity.
+        // NOTE: complete=true but dimensions are 0 until decode completes.
+        // Same caveats apply as above: use onload or decode() before drawing.
+        self.complete = true;
+
+        // Clear previous state to avoid exposing stale data from previous loads.
+        // Dimensions will be set by resolve() after successful decode.
+        self.natural_width = 0.0;
+        self.natural_height = 0.0;
+        self.bitmap = None;
+        self._avif_image_ref = None;
+        self.file_content = None;
+        self.is_svg = false;
+        self.need_regenerate_bitmap = false;
+        if self.accounted_bytes != 0 {
+          env.adjust_external_memory(-self.accounted_bytes)?;
+          self.accounted_bytes = 0;
+        }
+
+        let task = BitmapDecoder {
+          width: self.width,
+          height: self.height,
+          this_ref: this.create_ref()?,
+          generation: self.load_generation,
+          color_space: self.color_space,
+          data: Some(Either::A(unsafe { raw_data.cast()? })),
+          file_content: None,
+          fire_events: true,
+        };
+        let decode_task = env.spawn(task)?;
+        let promise_object = decode_task.promise_object();
+
+        if let Some(previous_task) = self
+          .decoder_task
+          .replace(promise_object.coerce_to_object()?.create_ref()?)
+        {
+          previous_task.unref(&env)?;
+        }
+        return Ok(());
+      }
+    }
+
+    // For file path/URL: use existing async loading (complete = false until loaded)
     self.complete = false;
 
     // NOTE: current_src is NOT set here - only set in resolve() after successful load
@@ -350,13 +646,39 @@ impl Image {
       width: self.width,
       height: self.height,
       color_space: self.color_space,
-      data: Some(data),
+      data: Some(unsafe { raw_data.cast()? }),
       file_content: None,
       this_ref: this.create_ref()?,
       generation: self.load_generation,
+      fire_events: true,
     };
-    let _task_output = env.spawn(decoder)?;
+    let task_output = env.spawn(decoder)?;
+    let promise_object = task_output.promise_object();
+    if let Some(previous_task) = self
+      .decoder_task
+      .replace(promise_object.coerce_to_object()?.create_ref()?)
+    {
+      previous_task.unref(&env)?;
+    }
     Ok(())
+  }
+
+  #[napi(ts_return_type = "Promise<void>")]
+  pub fn decode<'env>(&self, env: &'env Env) -> Result<Object<'env>> {
+    if let Some(promise_ref) = self.decoder_task.as_ref() {
+      // Return the stored promise reference
+      let promise = promise_ref.get_value(env)?;
+      return PromiseRaw::resolve(env, promise)?
+        .then(|ctx| {
+          if ctx.value.is_error()? {
+            ctx.env.throw(ctx.value)?;
+          }
+          Ok(ctx.value)
+        })?
+        .coerce_to_object();
+    }
+
+    PromiseRaw::resolve(env, ())?.coerce_to_object()
   }
 
   pub(crate) fn regenerate_bitmap_if_need(&mut self, env: &Env) -> Result<()> {
@@ -431,18 +753,6 @@ fn is_svg_image(data: &[u8], length: usize) -> bool {
   is_svg
 }
 
-struct BitmapDecoder {
-  width: f64,
-  height: f64,
-  color_space: ColorSpace,
-  data: Option<Either<Uint8Array, String>>,
-  // data from file path
-  file_content: Option<Vec<u8>>,
-  this_ref: ObjectRef,
-  // Generation counter to detect stale loads
-  generation: u64,
-}
-
 pub(crate) struct DecodedBitmap {
   bitmap: DecodeStatus,
   width: f64,
@@ -465,9 +775,24 @@ enum DecodeStatus {
   InvalidImage,
 }
 
-impl Task for BitmapDecoder {
+struct BitmapDecoder {
+  width: f64,
+  height: f64,
+  color_space: ColorSpace,
+  data: Option<Either<Uint8Array, String>>,
+  // data from file path
+  file_content: Option<Vec<u8>>,
+  this_ref: ObjectRef,
+  // Generation counter to detect stale loads
+  generation: u64,
+  // Whether to fire events in the Task resolve/reject
+  // The `src = Buffer` fire events in the `set_src`, so it doesn't need to fire events in the Task resolve/reject
+  fire_events: bool,
+}
+
+impl<'env> ScopedTask<'env> for BitmapDecoder {
   type Output = DecodedBitmap;
-  type JsValue = ();
+  type JsValue = Unknown<'env>;
 
   fn compute(&mut self) -> Result<Self::Output> {
     let data_ref = match self.data.as_ref() {
@@ -524,36 +849,36 @@ impl Task for BitmapDecoder {
       } else {
         DecodeStatus::Empty
       }
+    } else if libavif::is_avif(data_ref.as_ref()) {
+      // Check AVIF first - infer::get() may not recognize AVIF format
+      let avif_image = AvifImage::decode_from(data_ref.as_ref())
+        .map_err(|e| Error::new(Status::InvalidArg, format!("Decode avif image failed {e}")))?;
+
+      let bitmap = Bitmap::from_image_data(
+        avif_image.data,
+        avif_image.width as usize,
+        avif_image.height as usize,
+        avif_image.row_bytes as usize,
+        (avif_image.row_bytes * avif_image.height) as usize,
+        ColorType::RGBA8888,
+        AlphaType::Premultiplied,
+      );
+      DecodeStatus::Ok(BitmapInfo {
+        data: bitmap,
+        is_svg: false,
+        decoded_image: Some(avif_image),
+      })
     } else if if let Some(kind) = infer::get(&data_ref) {
       kind.matcher_type() == infer::MatcherType::Image
     } else {
       false
     } {
-      if libavif::is_avif(data_ref.as_ref()) {
-        let avif_image = AvifImage::decode_from(data_ref.as_ref())
-          .map_err(|e| Error::new(Status::InvalidArg, format!("Decode avif image failed {e}")))?;
-
-        let bitmap = Bitmap::from_image_data(
-          avif_image.data,
-          avif_image.width as usize,
-          avif_image.height as usize,
-          avif_image.row_bytes as usize,
-          (avif_image.row_bytes * avif_image.height) as usize,
-          ColorType::RGBA8888,
-          AlphaType::Premultiplied,
-        );
-        DecodeStatus::Ok(BitmapInfo {
-          data: bitmap,
-          is_svg: false,
-          decoded_image: Some(avif_image),
-        })
-      } else {
-        DecodeStatus::Ok(BitmapInfo {
-          data: Bitmap::from_buffer(data_ref.as_ptr().cast_mut(), length),
-          is_svg: false,
-          decoded_image: None,
-        })
-      }
+      // Other image formats detected by infer (PNG, JPEG, GIF, WebP, etc.)
+      DecodeStatus::Ok(BitmapInfo {
+        data: Bitmap::from_buffer(data_ref.as_ptr().cast_mut(), length),
+        is_svg: false,
+        decoded_image: None,
+      })
     } else if is_svg_image(&data_ref, length) {
       let font = get_font().map_err(SkError::from)?;
       if (self.width - -1.0).abs() > f64::EPSILON && (self.height - -1.0).abs() > f64::EPSILON {
@@ -593,10 +918,14 @@ impl Task for BitmapDecoder {
     };
 
     if let DecodeStatus::Ok(ref b) = bitmap {
-      if (self.width - -1.0).abs() < f64::EPSILON {
+      if (self.width - -1.0).abs() < f64::EPSILON
+        || (self.width - b.data.0.width as f64).abs() > f64::EPSILON
+      {
         width = b.data.0.width as f64;
       }
-      if (self.height - -1.0).abs() < f64::EPSILON {
+      if (self.height - -1.0).abs() < f64::EPSILON
+        || (self.height - b.data.0.height as f64).abs() > f64::EPSILON
+      {
         height = b.data.0.height as f64;
       }
     }
@@ -607,8 +936,8 @@ impl Task for BitmapDecoder {
     })
   }
 
-  fn resolve(&mut self, env: Env, output: Self::Output) -> Result<Self::JsValue> {
-    let this: Object = self.this_ref.get_value(&env)?;
+  fn resolve(&mut self, env: &'env Env, output: Self::Output) -> Result<Self::JsValue> {
+    let this: Object = self.this_ref.get_value(env)?;
     let mut image_ptr = ptr::null_mut();
     check_status!(
       unsafe { sys::napi_unwrap(env.raw(), this.raw(), &mut image_ptr) },
@@ -619,22 +948,26 @@ impl Task for BitmapDecoder {
     // Check if this load has been superseded by a newer load
     if self.generation != self_mut.load_generation {
       // This is a stale load - silently abort without updating state or firing events
-      return Ok(());
+      return ().into_unknown(env);
     }
 
-    self_mut.width = output.width;
-    self_mut.height = output.height;
     self_mut.complete = true;
     self_mut.bitmap = None;
-
-    if let Some(data) = self.file_content.take() {
-      self_mut.file_content = Some(data);
-    }
 
     let mut err: Option<&str> = None;
 
     match output.bitmap {
       DecodeStatus::Ok(bitmap) => {
+        // SUCCESS PATH: set dimensions, bitmap, currentSrc, file_content
+        self_mut.width = output.width;
+        self_mut.height = output.height;
+        self_mut.natural_width = output.width;
+        self_mut.natural_height = output.height;
+
+        if let Some(data) = self.file_content.take() {
+          self_mut.file_content = Some(data);
+        }
+
         self_mut.src = self.data.take();
         // Update current_src based on what was actually loaded
         self_mut.current_src = match &self_mut.src {
@@ -654,34 +987,64 @@ impl Task for BitmapDecoder {
       }
       DecodeStatus::Empty => {}
       DecodeStatus::InvalidSvg => {
+        // ERROR PATH: clear state like reject() does
+        // Reset width/height to auto (-1.0) so getters return 0 (from natural_width/height)
+        self_mut.width = -1.0;
+        self_mut.height = -1.0;
+        self_mut.natural_width = 0.0;
+        self_mut.natural_height = 0.0;
+        self_mut.file_content = None;
+        self_mut._avif_image_ref = None;
+        self_mut.is_svg = false;
+        self_mut.need_regenerate_bitmap = false;
+        if self_mut.accounted_bytes != 0 {
+          env.adjust_external_memory(-self_mut.accounted_bytes)?;
+          self_mut.accounted_bytes = 0;
+        }
         err = Some("Invalid SVG image");
       }
       DecodeStatus::InvalidImage => {
+        // ERROR PATH: clear state like reject() does
+        // Reset width/height to auto (-1.0) so getters return 0 (from natural_width/height)
+        self_mut.width = -1.0;
+        self_mut.height = -1.0;
+        self_mut.natural_width = 0.0;
+        self_mut.natural_height = 0.0;
+        self_mut.file_content = None;
+        self_mut._avif_image_ref = None;
+        self_mut.is_svg = false;
+        self_mut.need_regenerate_bitmap = false;
+        if self_mut.accounted_bytes != 0 {
+          env.adjust_external_memory(-self_mut.accounted_bytes)?;
+          self_mut.accounted_bytes = 0;
+        }
         err = Some("Unsupported image type");
       }
     }
 
     if let Some(err_str) = err.take() {
-      let on_error = this.get_named_property_unchecked::<Unknown>("onerror")?;
-      if on_error.get_type()? == ValueType::Function {
-        let onerror_func: Function<Object, Unknown> = Function::from_unknown(on_error)?;
-        onerror_func.apply(
-          this,
-          env.create_error(Error::new(Status::InvalidArg, err_str))?,
-        )?;
+      let error = env.create_error(Error::new(Status::InvalidArg, err_str))?;
+      if self.fire_events {
+        let on_error = this.get_named_property_unchecked::<Unknown>("onerror")?;
+        if on_error.get_type()? == ValueType::Function {
+          let onerror_func: Function<Object, Unknown> = Function::from_unknown(on_error)?;
+          onerror_func.apply(this, error)?;
+        }
       }
-    } else {
+      // Return error so decode() promise rejects (even when fire_events is false)
+      return error.into_unknown(env);
+    } else if self.fire_events {
       let onload = this.get_named_property_unchecked::<Unknown>("onload")?;
       if onload.get_type()? == ValueType::Function {
         let onload_func: Function<(), ()> = Function::from_unknown(onload)?;
         onload_func.apply(this, ())?;
       }
     }
-    Ok(())
+    ().into_unknown(env)
   }
 
-  fn reject(&mut self, env: Env, err: Error) -> Result<Self::JsValue> {
-    let this: Object = self.this_ref.get_value(&env)?;
+  fn reject(&mut self, env: &'env Env, err: Error) -> Result<Self::JsValue> {
+    let this: Object = self.this_ref.get_value(env)?;
     let mut image_ptr = ptr::null_mut();
     check_status!(
       unsafe { sys::napi_unwrap(env.raw(), this.raw(), &mut image_ptr) },
@@ -691,12 +1054,17 @@ impl Task for BitmapDecoder {
 
     // Ignore stale errors from superseded loads
     if self.generation != image.load_generation {
-      return Ok(());
+      return ().into_unknown(env);
     }
 
     // Per HTML spec: complete must be true after load finishes, even on error (broken state)
     image.complete = true;
-    // Clear decoded state so naturalWidth/naturalHeight reflect broken image
+    // Clear decoded state so all dimension getters return 0 for broken image
+    // Reset width/height to auto (-1.0) so getters return 0 (from natural_width/height)
+    image.width = -1.0;
+    image.height = -1.0;
+    image.natural_width = 0.0;
+    image.natural_height = 0.0;
     image.bitmap = None;
     image.file_content = None;
     image._avif_image_ref = None;
@@ -707,14 +1075,18 @@ impl Task for BitmapDecoder {
       image.accounted_bytes = 0;
     }
 
-    let on_error = this.get_named_property_unchecked::<Unknown>("onerror")?;
-    if on_error.get_type()? == ValueType::Function {
-      let onerror_func: Function<Object, Unknown> = Function::from_unknown(on_error)?;
-      onerror_func.apply(this, env.create_error(err)?)?;
+    if self.fire_events {
+      let on_error = this.get_named_property_unchecked::<Unknown>("onerror")?;
+      if on_error.get_type()? == ValueType::Function {
+        let onerror_func: Function<Object, Unknown> = Function::from_unknown(on_error)?;
+        onerror_func.apply(
+          this,
+          env.create_error(Error::new(err.status, err.reason.clone()))?,
+        )?;
+      }
     }
 
-    // Swallow the rejection to avoid unhandled promise rejections
-    Ok(())
+    Error::new(err.status, err.reason.clone()).into_unknown(env)
   }
 
   fn finally(self, env: Env) -> Result<()> {
