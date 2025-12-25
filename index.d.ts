@@ -510,6 +510,7 @@ export class Image {
   src: Uint8Array | string
   onload?(): void
   onerror?(err: Error): void
+  decode(): Promise<void>
 }
 
 export class Path2D {

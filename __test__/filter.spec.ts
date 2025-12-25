@@ -41,12 +41,8 @@ test('filter-brightness', async (t) => {
   const { ctx } = t.context
   ctx.filter = 'brightness(2)'
   const image = new Image()
-  const { promise, resolve } = Promise.withResolvers<void>()
-  image.onload = () => {
-    resolve()
-  }
   image.src = await fs.readFile(join(__dirname, 'fixtures', 'filter-brightness.jpg'))
-  await promise
+  await image.decode()
   ctx.drawImage(image, 0, 0)
   await snapshotImage(t)
 })
@@ -55,12 +51,8 @@ test('filter-contrast', async (t) => {
   const { ctx } = t.context
   ctx.filter = 'contrast(200%)'
   const image = new Image()
-  const { promise, resolve } = Promise.withResolvers<void>()
-  image.onload = () => {
-    resolve()
-  }
   image.src = await fs.readFile(join(__dirname, 'fixtures', 'filter-contrast.jpeg'))
-  await promise
+  await image.decode()
   ctx.drawImage(image, 0, 0)
   await snapshotImage(t)
 })
@@ -140,11 +132,7 @@ test('filter-save-restore', async (t) => {
 
 async function createImage(name: string) {
   const i = new Image()
-  const { promise, resolve } = Promise.withResolvers<void>()
-  i.onload = () => {
-    resolve()
-  }
   i.src = await fs.readFile(join(__dirname, 'fixtures', name))
-  await promise
+  await i.decode()
   return i
 }

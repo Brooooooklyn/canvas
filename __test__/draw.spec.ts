@@ -243,12 +243,8 @@ test('createPattern-no-transform', async (t) => {
   const { ctx } = t.context
   const imageSrc = await promises.readFile(join(__dirname, 'canvas_createpattern.png'))
   const image = new Image()
-  const { promise, resolve } = Promise.withResolvers<void>()
-  image.onload = () => {
-    resolve()
-  }
   image.src = imageSrc
-  await promise
+  await image.decode()
   const pattern = ctx.createPattern(image, 'repeat')
   ctx.fillStyle = pattern
   ctx.fillRect(0, 0, 300, 300)
@@ -270,12 +266,8 @@ test('createPattern-with-transform', async (t) => {
   const { ctx } = t.context
   const imageSrc = await promises.readFile(join(__dirname, 'canvas_createpattern.png'))
   const image = new Image()
-  const { promise, resolve } = Promise.withResolvers<void>()
-  image.onload = () => {
-    resolve()
-  }
   image.src = imageSrc
-  await promise
+  await image.decode()
   const pattern = ctx.createPattern(image, 'repeat')
   const matrix = new DOMMatrix()
   pattern.setTransform(matrix.rotate(-45).scale(1.5))
@@ -321,12 +313,8 @@ test('drawImage', async (t) => {
   const filePath = './javascript.png'
   const file = await promises.readFile(join(__dirname, filePath))
   const image = new Image()
-  const { promise, resolve } = Promise.withResolvers<void>()
-  image.onload = () => {
-    resolve()
-  }
   image.src = file
-  await promise
+  await image.decode()
   ctx.drawImage(image, 0, 0)
   await snapshotImage(t)
 })

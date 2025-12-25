@@ -117,11 +117,15 @@ function consumeStream(res) {
   })
 }
 
-function createImage(src, alt) {
+async function createImage(src, alt) {
+  const image = new Image()
+  if (typeof alt === 'string') image.alt = alt
+
   return new Promise((resolve, reject) => {
-    const image = new Image()
-    if (typeof alt === 'string') image.alt = alt
-    image.onload = () => resolve(image)
+    image.onload = () => {
+      // Wait for bitmap decode before resolving
+      image.decode().then(() => resolve(image), reject)
+    }
     image.onerror = (e) => reject(e)
     image.src = src
   })
