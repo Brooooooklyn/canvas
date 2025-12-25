@@ -677,3 +677,62 @@ test('direction-measure-text', (t) => {
   const rtlMetrics3 = ctx.measureText(textTrailingSpace)
   t.is(ltrMetrics3.width, rtlMetrics3.width, 'Text with trailing space should have same width in LTR and RTL')
 })
+
+test('cursive-scripts', async (t) => {
+  const canvas = createCanvas(650, 300)
+  const ctx = canvas.getContext('2d')!
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'Harmattan-Regular.ttf'), 'Harmattan')
+
+  ctx.fillStyle = 'white'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  ctx.fillStyle = 'black'
+  ctx.font = '50px Harmattan'
+
+  ctx.fillText('مرحبا بالعالم', 0, 50)
+  ctx.fillText('English مرحبا بالعالم', 0, 110)
+
+  ctx.direction = 'rtl'
+  ctx.fillText('مرحبا بالعالم', canvas.width, 200)
+  ctx.fillText('English مرحبا بالعالم', canvas.width, 260)
+
+  await snapshotImage(t, { canvas, ctx })
+})
+
+// Cursive scripts do not allow gaps between their letters for either justification or letter-spacing.
+// Cursive scripts are included:
+// Arabic, Hanifi Rohingya, Mandaic, Mongolian, N’Ko, Phags Pa, Syriac
+// CSS Spec: https://www.w3.org/TR/css-text-3/#cursive-tracking
+test('cursive-scripts-ignore-letter-spacing', async (t) => {
+  const canvas = createCanvas(680, 600)
+  const ctx = canvas.getContext('2d')!
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'Harmattan-Regular.ttf'), 'Harmattan')
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'NotoSansMongolian-Regular.ttf'), 'Mongolian')
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'NotoSansNKo-Regular.ttf'), 'NKo')
+
+  const end = canvas.width
+  ctx.fillStyle = 'white'
+  ctx.fillRect(0, 0, end, canvas.height)
+  ctx.fillStyle = 'black'
+  ctx.font = '50px Mongolian, NKo, Harmattan'
+
+  ctx.letterSpacing = '26px'
+  ctx.wordSpacing = '18px'
+
+  // Arabic Script: "Hello World"
+  ctx.fillText('مرحبا بالعالم', 0, 50)
+  // N’Ko Script: "Hello World"
+  ctx.fillText('ߌ ߣߌ߫ ߖߐ߫ ߘߎߢߊ߫', 0, 120)
+  // Mongolian Script
+  ctx.fillText('ᠺᠣᠮᠫᠢᠦ᠋ᠲ᠋ᠧᠷ', 0, 190)
+
+  ctx.direction = 'rtl'
+  ctx.fillText('مرحبا بالعالم', end, 260)
+  ctx.fillText('ߌ ߣߌ߫ ߖߐ߫ ߘߎߢߊ߫', end, 330)
+  ctx.fillText('ᠺᠣᠮᠫᠢᠦ᠋ᠲ᠋ᠧᠷ', end, 400)
+
+  ctx.fillText('English مرحبا بالعالم', end, 500)
+  ctx.direction = 'ltr'
+  ctx.fillText('English مرحبا بالعالم', 0, 570)
+
+  await snapshotImage(t, { canvas, ctx })
+})
