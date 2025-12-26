@@ -1,3 +1,20 @@
+## [0.1.87](https://github.com/Brooooooklyn/canvas/compare/v0.1.86...v0.1.87) (2025-12-26)
+
+
+### Bug Fixes
+
+* **image:** make Buffer load synchronous and add decode() method ([#1186](https://github.com/Brooooooklyn/canvas/issues/1186)) ([d418593](https://github.com/Brooooooklyn/canvas/commit/d41859391ffa8712be526b45270ae3908ccefcc3))
+* make Image class HTML spec compliant for jsdom integration ([#1184](https://github.com/Brooooooklyn/canvas/issues/1184)) ([a6d3993](https://github.com/Brooooooklyn/canvas/commit/a6d399352c90299f29ea8fcebd27c965861f0428))
+
+
+### Features
+
+* add `ctx.lang` property for language-specific text rendering ([#1187](https://github.com/Brooooooklyn/canvas/issues/1187)) ([5dfbfb6](https://github.com/Brooooooklyn/canvas/commit/5dfbfb6a68c144ff054714bb106ba6658a404053))
+* add `textRendering` property for text rendering hints ([#1189](https://github.com/Brooooooklyn/canvas/issues/1189)) ([6707c48](https://github.com/Brooooooklyn/canvas/commit/6707c4834de8d30419666c665e99a1d677189a98))
+* ignore Letter Spacing in Cursive Scripts ([#1185](https://github.com/Brooooooklyn/canvas/issues/1185)) ([2fa4b40](https://github.com/Brooooooklyn/canvas/commit/2fa4b401bb684e3926d9cb924a0a0df4ece02dea))
+
+
+
 ## [0.1.86](https://github.com/Brooooooklyn/canvas/compare/v0.1.85...v0.1.86) (2025-12-21)
 
 
