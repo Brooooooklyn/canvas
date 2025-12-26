@@ -732,6 +732,10 @@ impl Context {
     Ok(())
   }
 
+  pub fn set_lang(&mut self, lang: String) {
+    self.state.lang = lang;
+  }
+
   pub fn get_image_data(
     &mut self,
     x: f32,
@@ -990,6 +994,7 @@ impl Context {
                 variations,
                 state.font_kerning,
                 state.font_variant_caps,
+                &state.lang,
               )?;
               shadow_canvas.restore();
               Ok(())
@@ -1018,6 +1023,7 @@ impl Context {
           variations,
           state.font_kerning,
           state.font_variant_caps,
+          &state.lang,
         )?;
         Ok(())
       },
@@ -1050,6 +1056,7 @@ impl Context {
       &self.state.font_variations,
       self.state.font_kerning,
       self.state.font_variant_caps,
+      &self.state.lang,
     )?);
     Ok(line_metrics)
   }
@@ -1573,6 +1580,16 @@ impl CanvasRenderingContext2D {
   pub fn set_font_variant_caps(&mut self, variant_caps: String) -> Result<()> {
     self.context.set_font_variant_caps(variant_caps)?;
     Ok(())
+  }
+
+  #[napi(getter)]
+  pub fn get_lang(&self) -> String {
+    self.context.state.lang.clone()
+  }
+
+  #[napi(setter)]
+  pub fn set_lang(&mut self, lang: String) {
+    self.context.set_lang(lang);
   }
 
   #[napi]

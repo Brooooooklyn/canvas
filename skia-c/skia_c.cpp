@@ -4,6 +4,13 @@
 #include <optional>
 #include <vector>
 
+#ifdef _WIN32
+#include <string.h>
+#define strncasecmp _strnicmp
+#else
+#include <strings.h>
+#endif
+
 #include "skia_c.hpp"
 #define SURFACE_CAST reinterpret_cast<SkSurface*>(c_surface)
 #define CANVAS_CAST reinterpret_cast<SkCanvas*>(c_canvas)
@@ -479,7 +486,8 @@ void skiac_canvas_get_line_metrics_or_draw_text(
     const skiac_font_variation* variations,
     int variations_count,
     int kerning,
-    int variant_caps) {
+    int variant_caps,
+    const char* lang) {
   auto font_collection = c_collection->collection;
   auto font_style = SkFontStyle(weight, stretch, (SkFontStyle::Slant)slant);
   auto text_direction = (TextDirection)direction;
@@ -552,6 +560,26 @@ void skiac_canvas_get_line_metrics_or_draw_text(
   } else if (variant_caps == 6) {
     // titling-caps
     text_style.addFontFeature(SkString("titl"), 1);
+  }
+
+  // Apply language/locale for language-specific glyph variants
+  // lang: BCP-47 language tag (e.g., "en", "tr", "zh-Hans") or
+  // nullptr/"inherit"
+  if (lang != nullptr && strcmp(lang, "") != 0 &&
+      strcmp(lang, "inherit") != 0) {
+    text_style.setLocale(SkString(lang));
+
+    // Turkish/Azerbaijani locale: disable standard and contextual ligatures
+    // These languages have a dotless i (ı) as a separate letter from dotted i.
+    // The "fi" ligature would incorrectly merge "f" with "i", obscuring the dot
+    // which is semantically significant. Browsers disable common ligatures
+    // (liga + clig) for these locales per MDN CanvasRenderingContext2D.lang
+    // spec. Use case-insensitive comparison per BCP-47 (RFC 5646).
+    if ((strncasecmp(lang, "tr", 2) == 0 || strncasecmp(lang, "az", 2) == 0) &&
+        (lang[2] == '\0' || lang[2] == '-' || lang[2] == '_')) {
+      text_style.addFontFeature(SkString("liga"), 0);
+      text_style.addFontFeature(SkString("clig"), 0);
+    }
   }
 
   text_style.setForegroundColor(*PAINT_CAST);
