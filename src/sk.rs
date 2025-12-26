@@ -575,6 +575,7 @@ pub mod ffi {
       kerning: i32,
       variant_caps: i32,
       lang: *const c_char,
+      text_rendering: i32,
     );
 
     pub fn skiac_canvas_reset_transform(canvas: *mut skiac_canvas);
@@ -1850,6 +1851,41 @@ impl FontVariantCaps {
   }
 }
 
+#[repr(i32)]
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub enum TextRendering {
+  #[default]
+  Auto = 0,
+  OptimizeSpeed = 1,
+  OptimizeLegibility = 2,
+  GeometricPrecision = 3,
+}
+
+impl FromStr for TextRendering {
+  type Err = SkError;
+
+  fn from_str(s: &str) -> Result<TextRendering, SkError> {
+    match s {
+      "auto" => Ok(Self::Auto),
+      "optimizeSpeed" => Ok(Self::OptimizeSpeed),
+      "optimizeLegibility" => Ok(Self::OptimizeLegibility),
+      "geometricPrecision" => Ok(Self::GeometricPrecision),
+      _ => Err(SkError::Generic(format!("Invalid text rendering: {}", s))),
+    }
+  }
+}
+
+impl TextRendering {
+  pub fn as_str(&self) -> &str {
+    match self {
+      Self::Auto => "auto",
+      Self::OptimizeSpeed => "optimizeSpeed",
+      Self::OptimizeLegibility => "optimizeLegibility",
+      Self::GeometricPrecision => "geometricPrecision",
+    }
+  }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(i32)]
 pub enum SkEncodedImageFormat {
@@ -2468,6 +2504,7 @@ impl Canvas {
     kerning: FontKerning,
     variant_caps: FontVariantCaps,
     lang: &str,
+    text_rendering: TextRendering,
   ) -> Result<(), NulError> {
     let c_text = std::ffi::CString::new(text)?;
     let c_font_family = std::ffi::CString::new(font_family)?;
@@ -2506,6 +2543,7 @@ impl Canvas {
         kerning as i32,
         variant_caps as i32,
         c_lang.as_ref().map_or(ptr::null(), |s| s.as_ptr()),
+        text_rendering as i32,
       );
     };
     Ok(())
@@ -2531,6 +2569,7 @@ impl Canvas {
     kerning: FontKerning,
     variant_caps: FontVariantCaps,
     lang: &str,
+    text_rendering: TextRendering,
   ) -> Result<ffi::skiac_line_metrics, NulError> {
     let c_text = std::ffi::CString::new(text)?;
     let c_font_family = std::ffi::CString::new(font_family)?;
@@ -2571,6 +2610,7 @@ impl Canvas {
         kerning as i32,
         variant_caps as i32,
         c_lang.as_ref().map_or(ptr::null(), |s| s.as_ptr()),
+        text_rendering as i32,
       );
     }
     Ok(line_metrics)

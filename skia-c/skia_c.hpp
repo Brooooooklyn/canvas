@@ -404,7 +404,8 @@ void skiac_canvas_get_line_metrics_or_draw_text(
     int variations_count,
     int kerning,
     int variant_caps,
-    const char* lang);
+    const char* lang,
+    int text_rendering);
 void skiac_canvas_reset_transform(skiac_canvas* c_canvas);
 void skiac_canvas_clip_rect(skiac_canvas* c_canvas,
                             float x,

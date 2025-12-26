@@ -732,6 +732,13 @@ impl Context {
     Ok(())
   }
 
+  pub fn set_text_rendering(&mut self, rendering: String) -> result::Result<(), SkError> {
+    if let Ok(r) = rendering.parse() {
+      self.state.text_rendering = r;
+    }
+    Ok(())
+  }
+
   pub fn set_lang(&mut self, lang: String) {
     self.state.lang = lang;
   }
@@ -995,6 +1002,7 @@ impl Context {
                 state.font_kerning,
                 state.font_variant_caps,
                 &state.lang,
+                state.text_rendering,
               )?;
               shadow_canvas.restore();
               Ok(())
@@ -1024,6 +1032,7 @@ impl Context {
           state.font_kerning,
           state.font_variant_caps,
           &state.lang,
+          state.text_rendering,
         )?;
         Ok(())
       },
@@ -1057,6 +1066,7 @@ impl Context {
       self.state.font_kerning,
       self.state.font_variant_caps,
       &self.state.lang,
+      self.state.text_rendering,
     )?);
     Ok(line_metrics)
   }
@@ -1579,6 +1589,17 @@ impl CanvasRenderingContext2D {
   #[napi(setter, return_if_invalid)]
   pub fn set_font_variant_caps(&mut self, variant_caps: String) -> Result<()> {
     self.context.set_font_variant_caps(variant_caps)?;
+    Ok(())
+  }
+
+  #[napi(getter)]
+  pub fn get_text_rendering(&self) -> String {
+    self.context.state.text_rendering.as_str().to_owned()
+  }
+
+  #[napi(setter, return_if_invalid)]
+  pub fn set_text_rendering(&mut self, rendering: String) -> Result<()> {
+    self.context.set_text_rendering(rendering)?;
     Ok(())
   }
 
