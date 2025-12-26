@@ -790,3 +790,92 @@ test('lang-ligature-turkish-vs-english', async (t) => {
 
   await snapshotImage(t, { canvas, ctx })
 })
+
+// =============================================================================
+// textRendering property tests
+// =============================================================================
+
+test('text-rendering-default-value', (t) => {
+  const { ctx } = t.context
+  t.is(ctx.textRendering, 'auto')
+})
+
+test('text-rendering-all-values', (t) => {
+  const { ctx } = t.context
+  const validValues = ['auto', 'optimizeSpeed', 'optimizeLegibility', 'geometricPrecision'] as const
+
+  validValues.forEach((value) => {
+    ctx.textRendering = value
+    t.is(ctx.textRendering, value)
+  })
+})
+
+test('text-rendering-invalid-value-ignored', (t) => {
+  const { ctx } = t.context
+  ctx.textRendering = 'optimizeSpeed'
+  t.is(ctx.textRendering, 'optimizeSpeed')
+  ctx.textRendering = 'invalid-rendering' as any
+  t.is(ctx.textRendering, 'optimizeSpeed') // Should remain unchanged
+})
+
+test('text-rendering-save-restore', (t) => {
+  const { ctx } = t.context
+  t.is(ctx.textRendering, 'auto')
+
+  ctx.textRendering = 'optimizeLegibility'
+  t.is(ctx.textRendering, 'optimizeLegibility')
+
+  ctx.save()
+  ctx.textRendering = 'optimizeSpeed'
+  t.is(ctx.textRendering, 'optimizeSpeed')
+
+  ctx.restore()
+  t.is(ctx.textRendering, 'optimizeLegibility', 'textRendering should be restored after ctx.restore()')
+})
+
+test('text-rendering-comparison', async (t) => {
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'SourceSerifPro-Regular.ttf'), 'Source Serif Pro')
+  const canvas = createCanvas(800, 400)
+  const ctx = canvas.getContext('2d')!
+
+  ctx.fillStyle = 'white'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  ctx.fillStyle = 'black'
+  ctx.font = '28px Source Serif Pro'
+
+  // Use text with ligatures (office has "ffi", waffle has "ffl")
+  // Per Chromium's implementation, textRendering only affects ligatures (liga, clig)
+  // and contextual alternates (calt), NOT kerning. Kerning is controlled by fontKerning.
+  const testText = 'office waffle'
+  const modes = ['auto', 'optimizeSpeed', 'optimizeLegibility', 'geometricPrecision'] as const
+
+  const widths: Record<string, number> = {}
+  modes.forEach((mode, index) => {
+    ctx.textRendering = mode
+    widths[mode] = ctx.measureText(testText).width
+    ctx.fillText(`${mode}: ${testText}`, 20, 60 + index * 80)
+  })
+
+  // Per Chromium: only optimizeSpeed changes behavior by disabling liga, clig, calt.
+  // auto, optimizeLegibility, and geometricPrecision all use defaults (ligatures ON).
+  // So optimizeSpeed should produce wider text (no ligatures = more glyphs = wider).
+  t.true(
+    widths.optimizeSpeed >= widths.auto,
+    `Expected 'optimizeSpeed' (${widths.optimizeSpeed.toFixed(2)}) >= 'auto' (${widths.auto.toFixed(2)})`
+  )
+
+  // auto, optimizeLegibility, geometricPrecision should all produce the same width
+  // since they all use HarfBuzz defaults
+  t.is(
+    widths.auto,
+    widths.optimizeLegibility,
+    `Expected 'auto' (${widths.auto.toFixed(2)}) === 'optimizeLegibility' (${widths.optimizeLegibility.toFixed(2)})`
+  )
+  t.is(
+    widths.auto,
+    widths.geometricPrecision,
+    `Expected 'auto' (${widths.auto.toFixed(2)}) === 'geometricPrecision' (${widths.geometricPrecision.toFixed(2)})`
+  )
+
+  await snapshotImage(t, { canvas, ctx })
+})

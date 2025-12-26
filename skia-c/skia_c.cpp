@@ -487,7 +487,8 @@ void skiac_canvas_get_line_metrics_or_draw_text(
     int variations_count,
     int kerning,
     int variant_caps,
-    const char* lang) {
+    const char* lang,
+    int text_rendering) {
   auto font_collection = c_collection->collection;
   auto font_style = SkFontStyle(weight, stretch, (SkFontStyle::Slant)slant);
   auto text_direction = (TextDirection)direction;
@@ -581,6 +582,23 @@ void skiac_canvas_get_line_metrics_or_draw_text(
       text_style.addFontFeature(SkString("clig"), 0);
     }
   }
+
+  // Apply textRendering: only optimizeSpeed changes behavior.
+  // Per Chromium's implementation in font_features.cc, textRendering does NOT
+  // affect kerning - that's controlled solely by fontKerning.
+  // textRendering only affects ligatures (liga, clig) and contextual alternates
+  // (calt) when set to optimizeSpeed.
+  // text_rendering: 0=auto, 1=optimizeSpeed, 2=optimizeLegibility,
+  // 3=geometricPrecision
+  if (text_rendering == 1) {
+    // optimizeSpeed: disable ligatures and contextual alternates for speed
+    // Note: kern is NOT touched here - it's fontKerning's responsibility
+    text_style.addFontFeature(SkString("liga"), 0);
+    text_style.addFontFeature(SkString("clig"), 0);
+    text_style.addFontFeature(SkString("calt"), 0);
+  }
+  // auto, optimizeLegibility, geometricPrecision: use HarfBuzz/Skia defaults
+  // (liga, clig, calt are ON by default)
 
   text_style.setForegroundColor(*PAINT_CAST);
   text_style.setTextBaseline(TextBaseline::kAlphabetic);

@@ -7,6 +7,7 @@ use super::{
   pattern::Pattern,
   sk::{
     FilterQuality, FontKerning, FontVariantCaps, Paint, TextAlign, TextBaseline, TextDirection,
+    TextRendering,
   },
 };
 
@@ -42,6 +43,7 @@ pub struct Context2dRenderingState {
   pub font_stretch_raw: String,
   pub font_kerning: FontKerning,
   pub font_variant_caps: FontVariantCaps,
+  pub text_rendering: TextRendering,
   pub lang: String,
   pub transform: Matrix,
   pub filter: Option<ImageFilter>,
@@ -82,6 +84,7 @@ impl Default for Context2dRenderingState {
       font_stretch_raw: "normal".to_owned(),
       font_kerning: FontKerning::Auto,
       font_variant_caps: FontVariantCaps::Normal,
+      text_rendering: TextRendering::Auto,
       lang: "inherit".to_owned(),
       transform: Matrix::identity(),
       filter: None,
