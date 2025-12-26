@@ -273,6 +273,11 @@ struct skiac_font_variation {
   float value;   // Value for this axis
 };
 
+struct skiac_font_feature {
+  uint32_t tag;  // OpenType feature tag (e.g., 'liga', 'kern')
+  int value;     // Feature value (typically 0=off, 1=on)
+};
+
 extern "C" {
 void skiac_clear_all_cache();
 // Surface
@@ -400,7 +405,13 @@ void skiac_canvas_get_line_metrics_or_draw_text(
     const skiac_font_variation* variations,
     int variations_count,
     int kerning,
-    int variant_caps);
+    int variant_caps,
+    const skiac_font_feature* features,
+    int features_count,
+    int font_optical_sizing,
+    const char* lang,
+    float font_size_adjust,
+    int text_rendering);
 void skiac_canvas_reset_transform(skiac_canvas* c_canvas);
 void skiac_canvas_clip_rect(skiac_canvas* c_canvas,
                             float x,

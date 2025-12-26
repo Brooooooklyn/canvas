@@ -63,10 +63,29 @@ impl Default for Font {
   }
 }
 
+impl TryFrom<&str> for Font {
+  type Error = SkError;
+
+  fn try_from(font_rules: &str) -> Result<Self, Self::Error> {
+    Font::new(font_rules)
+  }
+}
+
 impl Font {
   /// Parse CSS font shorthand property using cssparser
   /// Syntax: [ [ <'font-style'> || <font-variant-css2> || <'font-weight'> || <font-width-css3> ]? <'font-size'> [ / <'line-height'> ]? <'font-family'># ] | <system-family-name>
   pub fn new(font_rules: &str) -> Result<Font, SkError> {
+    // W3C spec: Property-independent keywords (inherit, initial, unset, revert, revert-layer)
+    // must be rejected in canvas font property
+    let trimmed = font_rules.trim();
+    let lower = trimmed.to_ascii_lowercase();
+    if matches!(
+      lower.as_str(),
+      "inherit" | "initial" | "unset" | "revert" | "revert-layer"
+    ) {
+      return Err(SkError::InvalidFontStyle(font_rules.to_owned()));
+    }
+
     let mut input = ParserInput::new(font_rules);
     let mut parser = Parser::new(&mut input);
 
@@ -127,6 +146,10 @@ impl Font {
             // Try to parse optional angle
             if let Ok(angle) = parser.try_parse(parse_oblique_angle) {
               font.oblique_angle = Some(angle);
+            } else {
+              // Per W3C CSS Fonts Level 4: default oblique angle is 14deg
+              // See: https://drafts.csswg.org/css-fonts-4/#font-style-prop
+              font.oblique_angle = Some(14.0);
             }
             continue;
           }
@@ -161,7 +184,8 @@ impl Font {
           // Could be font-weight (1-1000)
           let v = *value;
           if (MIN_FONT_WEIGHT..=MAX_FONT_WEIGHT).contains(&v) {
-            font.weight = v as u32;
+            // Round to nearest integer per CSS Fonts Level 4
+            font.weight = v.round() as u32;
             weight_set = true;
             continue;
           }
@@ -169,7 +193,17 @@ impl Font {
           parser.reset(&state);
           break;
         }
-        Token::Dimension { .. } | Token::Percentage { .. } => {
+        Token::Percentage { .. } => {
+          // Per W3C CSS Fonts Level 4, the font shorthand uses <font-width-css3>
+          // which only allows keyword values for font-stretch, not percentages.
+          // This avoids ambiguity between font-stretch and font-size percentages.
+          // See: https://drafts.csswg.org/css-fonts-4/#font-prop
+          // See: https://bugzilla.mozilla.org/show_bug.cgi?id=1454883
+          // Percentages in the font shorthand are always treated as font-size.
+          parser.reset(&state);
+          break;
+        }
+        Token::Dimension { .. } => {
           // This is the font-size, reset and parse it properly
           parser.reset(&state);
           break;
@@ -184,7 +218,12 @@ impl Font {
 
     // Parse font-size (required)
     if let Ok((size, unit)) = parse_font_size(&mut parser) {
-      font.size = parse_size_px(size, unit.as_deref().unwrap_or("px"));
+      let size_px = parse_size_px(size, unit.as_deref().unwrap_or("px"));
+      // Reject negative font-size per CSS Fonts Level 4 (font-size: <length-percentage [0,∞]>)
+      if size_px < 0.0 {
+        return Err(SkError::InvalidFontStyle(font_rules.to_owned()));
+      }
+      font.size = size_px;
       found_size = true;
     }
 
@@ -214,7 +253,9 @@ impl Font {
 }
 
 /// Parse <system-family-name>: caption | icon | menu | message-box | small-caption | status-bar
-fn parse_system_font<'i>(parser: &mut Parser<'i, '_>) -> Result<Font, cssparser::ParseError<'i, ()>> {
+fn parse_system_font<'i>(
+  parser: &mut Parser<'i, '_>,
+) -> Result<Font, cssparser::ParseError<'i, ()>> {
   let ident = parser.expect_ident()?.clone();
   let ident_lower = ident.to_ascii_lowercase();
 
@@ -242,7 +283,9 @@ fn parse_system_font<'i>(parser: &mut Parser<'i, '_>) -> Result<Font, cssparser:
 }
 
 /// Parse oblique angle: <angle [-90deg,90deg]>
-fn parse_oblique_angle<'i>(parser: &mut Parser<'i, '_>) -> Result<f32, cssparser::ParseError<'i, ()>> {
+fn parse_oblique_angle<'i>(
+  parser: &mut Parser<'i, '_>,
+) -> Result<f32, cssparser::ParseError<'i, ()>> {
   match parser.next()? {
     Token::Dimension { value, unit, .. } => {
       let angle = match unit.to_ascii_lowercase().as_str() {
@@ -253,11 +296,7 @@ fn parse_oblique_angle<'i>(parser: &mut Parser<'i, '_>) -> Result<f32, cssparser
         _ => return Err(parser.new_custom_error(())),
       };
       // Clamp to valid range [-90deg, 90deg]
-      if (-90.0..=90.0).contains(&angle) {
-        Ok(angle)
-      } else {
-        Err(parser.new_custom_error(()))
-      }
+      Ok(angle.clamp(-90.0, 90.0))
     }
     _ => Err(parser.new_custom_error(())),
   }
@@ -279,19 +318,19 @@ fn parse_font_size(parser: &mut Parser) -> Result<(f32, Option<String>), ()> {
       let ident_lower = ident.to_ascii_lowercase();
       // <absolute-size>
       let size = match ident_lower.as_str() {
-        "xx-small" => FONT_MEDIUM_PX * 0.5625,    // 9px at 16px base
-        "x-small" => FONT_MEDIUM_PX * 0.625,      // 10px at 16px base
-        "small" => FONT_MEDIUM_PX * 0.8125,       // 13px at 16px base
-        "medium" => FONT_MEDIUM_PX,               // 16px
-        "large" => FONT_MEDIUM_PX * 1.125,        // 18px at 16px base
-        "x-large" => FONT_MEDIUM_PX * 1.5,        // 24px at 16px base
-        "xx-large" => FONT_MEDIUM_PX * 2.0,       // 32px at 16px base
-        "xxx-large" => FONT_MEDIUM_PX * 3.0,      // 48px at 16px base
+        "xx-small" => FONT_MEDIUM_PX * 0.5625, // 9px at 16px base
+        "x-small" => FONT_MEDIUM_PX * 0.625,   // 10px at 16px base
+        "small" => FONT_MEDIUM_PX * 0.8125,    // 13px at 16px base
+        "medium" => FONT_MEDIUM_PX,            // 16px
+        "large" => FONT_MEDIUM_PX * 1.125,     // 18px at 16px base
+        "x-large" => FONT_MEDIUM_PX * 1.5,     // 24px at 16px base
+        "xx-large" => FONT_MEDIUM_PX * 2.0,    // 32px at 16px base
+        "xxx-large" => FONT_MEDIUM_PX * 3.0,   // 48px at 16px base
         // <relative-size> (relative to parent, we use FONT_MEDIUM_PX as reference)
-        "smaller" => FONT_MEDIUM_PX * 0.8333,     // ~13.3px at 16px base
-        "larger" => FONT_MEDIUM_PX * 1.2,         // ~19.2px at 16px base
+        "smaller" => FONT_MEDIUM_PX * 0.8333, // ~13.3px at 16px base
+        "larger" => FONT_MEDIUM_PX * 1.2,     // ~19.2px at 16px base
         // math keyword
-        "math" => FONT_MEDIUM_PX,                 // Use medium size for math
+        "math" => FONT_MEDIUM_PX, // Use medium size for math
         _ => return Err(()),
       };
       Ok((size, Some("px".to_string())))
@@ -306,10 +345,8 @@ fn parse_font_family(parser: &mut Parser) -> Vec<String> {
 
   loop {
     // Skip comma if not first
-    if !families.is_empty() {
-      if parser.try_parse(|p| p.expect_comma()).is_err() {
-        break;
-      }
+    if !families.is_empty() && parser.try_parse(|p| p.expect_comma()).is_err() {
+      break;
     }
 
     // Try quoted string first
@@ -394,6 +431,14 @@ fn parse_font_weight_keyword(s: &str) -> Option<u32> {
 }
 
 /// Parse font-weight keyword excluding "normal" (for use in Font::new where normal is handled specially)
+///
+/// Note: Per W3C CSS Fonts Level 4, "bolder" and "lighter" are relative keywords
+/// that should compute based on inherited font-weight. In Canvas API context,
+/// there is no parent element, so we use reasonable fixed values:
+/// - bolder → 700 (bold)
+/// - lighter → 100 (thin)
+///
+/// See: <https://drafts.csswg.org/css-fonts-4/#font-weight-relative-values>
 fn parse_font_weight_keyword_no_normal(s: &str) -> Option<u32> {
   match s {
     "bold" => Some(700),
@@ -730,8 +775,12 @@ fn test_font_new() {
         ..Default::default()
       },
     ),
-    // Note: percentage font-stretch (e.g., "62.5%") is not supported in font shorthand
-    // It's only valid in the standalone font-stretch property
+    // Per W3C CSS Fonts Level 4, percentage font-stretch (e.g., "62.5%") is not
+    // supported in the font shorthand - only keyword values are allowed.
+    // Percentages in shorthand are always interpreted as font-size.
+    // The standalone font-stretch property does accept percentages.
+    // See: https://drafts.csswg.org/css-fonts-4/#font-prop
+    // See: https://bugzilla.mozilla.org/show_bug.cgi?id=1454883
     (
       "extra-condensed 50% Arial",
       Font {
@@ -845,11 +894,13 @@ fn test_font_new() {
       },
     ),
     // Test oblique with angle
+    // Per W3C CSS Fonts Level 4, oblique without explicit angle defaults to 14deg
     (
       "oblique 20px Arial",
       Font {
         size: 20.0,
         style: FontStyle::Oblique,
+        oblique_angle: Some(14.0), // Default per spec
         family: "Arial".to_owned(),
         ..Default::default()
       },
@@ -1045,4 +1096,174 @@ fn test_font_size_keywords() {
 
   let font = Font::new("larger Arial").unwrap();
   assert!((font.size - 19.2).abs() < 0.01);
+}
+
+#[test]
+fn test_empty_and_whitespace() {
+  // Empty string should error
+  assert!(Font::new("").is_err());
+
+  // Whitespace only should error
+  assert!(Font::new("   ").is_err());
+  assert!(Font::new("\t").is_err());
+  assert!(Font::new("\n").is_err());
+  assert!(Font::new("  \t\n  ").is_err());
+
+  // Leading/trailing whitespace with valid input should work
+  let font = Font::new("  20px Arial  ").unwrap();
+  assert_eq!(font.size, 20.0);
+  assert_eq!(font.family, "Arial");
+}
+
+#[test]
+fn test_font_weight_boundaries() {
+  // Valid boundary: weight = 1 (minimum per CSS Fonts Level 4)
+  let font = Font::new("1 20px Arial").unwrap();
+  assert_eq!(font.weight, 1);
+
+  // Valid boundary: weight = 1000 (maximum per CSS Fonts Level 4)
+  let font = Font::new("1000 20px Arial").unwrap();
+  assert_eq!(font.weight, 1000);
+
+  // Invalid: weight = 0 (below minimum)
+  // 0 is not a valid weight, so it's not consumed as weight
+  // Parser will try to parse "0" as something else, likely failing or treating as size
+  let result = Font::new("0 20px Arial");
+  // This should either error or parse 0 as size (0px) which is valid but unusual
+  if let Ok(font) = result {
+    // If it succeeds, 0 was treated as size, weight should be default
+    assert_eq!(font.weight, 400);
+  }
+
+  // Invalid: weight = 1001 (above maximum)
+  // 1001 is not a valid weight, parser should not consume it as weight
+  let result = Font::new("1001 20px Arial");
+  if let Ok(font) = result {
+    // If it succeeds, 1001 was not treated as weight
+    assert_eq!(font.weight, 400);
+  }
+
+  // Edge: fractional weights (rounded to nearest integer per CSS Fonts Level 4)
+  let font = Font::new("1.5 20px Arial").unwrap();
+  assert_eq!(font.weight, 2); // rounded to nearest
+
+  let font = Font::new("999.9 20px Arial").unwrap();
+  assert_eq!(font.weight, 1000); // rounded to nearest
+
+  // Fractional at boundary
+  let font = Font::new("999.999 20px Arial").unwrap();
+  assert_eq!(font.weight, 1000); // rounded to nearest
+}
+
+#[test]
+fn test_unicode_font_family() {
+  // Chinese font name (quoted)
+  let font = Font::new("20px '微软雅黑'").unwrap();
+  assert_eq!(font.family, "微软雅黑");
+
+  // Japanese font name
+  let font = Font::new("20px 'ヒラギノ角ゴ'").unwrap();
+  assert_eq!(font.family, "ヒラギノ角ゴ");
+
+  // Korean font name
+  let font = Font::new("20px '맑은 고딕'").unwrap();
+  assert_eq!(font.family, "맑은 고딕");
+
+  // Double-quoted Unicode
+  let font = Font::new("20px \"宋体\"").unwrap();
+  assert_eq!(font.family, "宋体");
+
+  // Mixed Unicode and ASCII
+  let font = Font::new("20px 'Noto Sans 日本語'").unwrap();
+  assert_eq!(font.family, "Noto Sans 日本語");
+
+  // Multiple Unicode families in fallback list
+  let font = Font::new("20px '微软雅黑', '宋体', sans-serif").unwrap();
+  assert_eq!(font.family, "微软雅黑,宋体,sans-serif");
+
+  // Emoji in font name (edge case)
+  let font = Font::new("20px 'Font 🎨'").unwrap();
+  assert_eq!(font.family, "Font 🎨");
+}
+
+#[test]
+fn test_invalid_input() {
+  // Missing font-size entirely
+  assert!(Font::new("Arial").is_err());
+  assert!(Font::new("bold Arial").is_err());
+  assert!(Font::new("italic Arial").is_err());
+  assert!(Font::new("bold italic Arial").is_err());
+
+  // Invalid size format
+  assert!(Font::new("px Arial").is_err());
+  assert!(Font::new("abcpx Arial").is_err());
+
+  // Negative font-size values are invalid per CSS Fonts Level 4
+  assert!(Font::new("-20px Arial").is_err());
+
+  // Missing size before slash (line-height syntax)
+  assert!(Font::new("/2 Arial").is_err());
+
+  // Only whitespace after valid prefix
+  assert!(Font::new("bold   ").is_err());
+
+  // Random garbage
+  assert!(Font::new("@#$%^").is_err());
+  assert!(Font::new("{}[]").is_err());
+
+  // Property-independent keywords must be rejected per W3C spec
+  assert!(Font::new("inherit").is_err());
+  assert!(Font::new("initial").is_err());
+  assert!(Font::new("unset").is_err());
+  assert!(Font::new("revert").is_err());
+  assert!(Font::new("revert-layer").is_err());
+  // Case-insensitive
+  assert!(Font::new("INHERIT").is_err());
+  assert!(Font::new("Initial").is_err());
+}
+
+#[test]
+fn test_oblique_angle_clamping() {
+  // Oblique without explicit angle should default to 14deg per W3C CSS Fonts Level 4
+  // See: https://drafts.csswg.org/css-fonts-4/#font-style-prop
+  let font = Font::new("oblique 20px Arial").unwrap();
+  assert_eq!(font.style, FontStyle::Oblique);
+  assert_eq!(font.oblique_angle, Some(14.0)); // Default per spec
+  assert_eq!(font.size, 20.0);
+  assert_eq!(font.family, "Arial");
+
+  // Valid oblique with explicit angle in range
+  let font = Font::new("oblique 14deg 20px Arial").unwrap();
+  assert_eq!(font.style, FontStyle::Oblique);
+  assert_eq!(font.oblique_angle, Some(14.0));
+  assert_eq!(font.size, 20.0);
+  assert_eq!(font.family, "Arial");
+
+  // Out-of-range positive should clamp to 90
+  let font = Font::new("oblique 100deg 20px Arial").unwrap();
+  assert_eq!(font.style, FontStyle::Oblique);
+  assert_eq!(font.oblique_angle, Some(90.0));
+  assert_eq!(font.size, 20.0);
+  assert_eq!(font.family, "Arial");
+
+  // Out-of-range negative should clamp to -90
+  let font = Font::new("oblique -100deg 20px Arial").unwrap();
+  assert_eq!(font.style, FontStyle::Oblique);
+  assert_eq!(font.oblique_angle, Some(-90.0));
+  assert_eq!(font.size, 20.0);
+  assert_eq!(font.family, "Arial");
+
+  // Boundary values should work exactly
+  let font = Font::new("oblique 90deg 20px Arial").unwrap();
+  assert_eq!(font.oblique_angle, Some(90.0));
+
+  let font = Font::new("oblique -90deg 20px Arial").unwrap();
+  assert_eq!(font.oblique_angle, Some(-90.0));
+
+  // Different angle units
+  let font = Font::new("oblique 0.5turn 20px Arial").unwrap(); // 180deg -> clamp to 90
+  assert_eq!(font.oblique_angle, Some(90.0));
+
+  let font = Font::new("oblique 100grad 20px Arial").unwrap(); // 90deg
+  assert_eq!(font.oblique_angle, Some(90.0));
 }

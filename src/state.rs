@@ -6,11 +6,13 @@ use super::{
   font::{Font, FontStretch},
   pattern::Pattern,
   sk::{
-    FilterQuality, FontKerning, FontVariantCaps, Paint, TextAlign, TextBaseline, TextDirection,
+    FilterQuality, FontKerning, FontOpticalSizing, FontVariantCaps, FontVariantLigatures,
+    FontVariantNumeric, FontVariantPosition, Paint, TextAlign, TextBaseline, TextDirection,
+    TextRendering,
   },
 };
 
-use crate::sk::FontVariation;
+use crate::sk::{FontFeature, FontVariation};
 
 #[derive(Debug, Clone)]
 pub struct Context2dRenderingState {
@@ -31,6 +33,8 @@ pub struct Context2dRenderingState {
   pub font_style: Font,
   pub font_variation_settings: String,
   pub font_variations: Vec<FontVariation>,
+  pub font_feature_settings: String,
+  pub font_features: Vec<FontFeature>,
   pub text_align: TextAlign,
   pub text_baseline: TextBaseline,
   pub text_direction: TextDirection,
@@ -42,6 +46,13 @@ pub struct Context2dRenderingState {
   pub font_stretch_raw: String,
   pub font_kerning: FontKerning,
   pub font_variant_caps: FontVariantCaps,
+  pub text_rendering: TextRendering,
+  pub font_optical_sizing: FontOpticalSizing,
+  pub font_variant_ligatures: FontVariantLigatures,
+  pub font_variant_numeric: FontVariantNumeric,
+  pub font_variant_position: FontVariantPosition,
+  pub font_size_adjust: Option<f32>,
+  pub lang: String,
   pub transform: Matrix,
   pub filter: Option<ImageFilter>,
   pub filters_string: String,
@@ -70,6 +81,8 @@ impl Default for Context2dRenderingState {
       font_style: Font::default(),
       font_variation_settings: "normal".to_owned(),
       font_variations: vec![],
+      font_feature_settings: "normal".to_owned(),
+      font_features: vec![],
       text_align: TextAlign::default(),
       text_baseline: TextBaseline::default(),
       text_direction: TextDirection::default(),
@@ -81,6 +94,13 @@ impl Default for Context2dRenderingState {
       font_stretch_raw: "normal".to_owned(),
       font_kerning: FontKerning::Auto,
       font_variant_caps: FontVariantCaps::Normal,
+      text_rendering: TextRendering::Auto,
+      font_optical_sizing: FontOpticalSizing::Auto,
+      font_variant_ligatures: FontVariantLigatures::Normal,
+      font_variant_numeric: FontVariantNumeric::Normal,
+      font_variant_position: FontVariantPosition::Normal,
+      font_size_adjust: None,
+      lang: "inherit".to_owned(),
       transform: Matrix::identity(),
       filter: None,
       filters_string: "none".to_owned(),

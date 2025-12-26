@@ -199,6 +199,31 @@ type CanvasFontVariantCaps =
 type CanvasTextAlign = 'center' | 'end' | 'left' | 'right' | 'start'
 type CanvasTextBaseline = 'alphabetic' | 'bottom' | 'hanging' | 'ideographic' | 'middle' | 'top'
 type CanvasTextRendering = 'auto' | 'geometricPrecision' | 'optimizeLegibility' | 'optimizeSpeed'
+type CanvasFontOpticalSizing = 'auto' | 'none'
+type CanvasFontVariantLigatures =
+  | 'normal'
+  | 'none'
+  | 'common-ligatures'
+  | 'no-common-ligatures'
+  | 'discretionary-ligatures'
+  | 'no-discretionary-ligatures'
+  | 'historical-ligatures'
+  | 'no-historical-ligatures'
+  | 'contextual'
+  | 'no-contextual'
+  | string // For combinations like "common-ligatures discretionary-ligatures"
+type CanvasFontVariantNumeric =
+  | 'normal'
+  | 'lining-nums'
+  | 'oldstyle-nums'
+  | 'proportional-nums'
+  | 'tabular-nums'
+  | 'diagonal-fractions'
+  | 'stacked-fractions'
+  | 'ordinal'
+  | 'slashed-zero'
+  | string // For combinations
+type CanvasFontVariantPosition = 'normal' | 'sub' | 'super'
 
 interface CanvasTextDrawingStyles {
   direction: CanvasDirection
@@ -206,12 +231,19 @@ interface CanvasTextDrawingStyles {
   fontKerning: CanvasFontKerning
   fontStretch: CanvasFontStretch
   fontVariantCaps: CanvasFontVariantCaps
+  fontOpticalSizing: CanvasFontOpticalSizing
+  fontVariantLigatures: CanvasFontVariantLigatures
+  fontVariantNumeric: CanvasFontVariantNumeric
+  fontVariantPosition: CanvasFontVariantPosition
+  fontSizeAdjust: number | null
   letterSpacing: string
   textAlign: CanvasTextAlign
   textBaseline: CanvasTextBaseline
   textRendering: CanvasTextRendering
   wordSpacing: string
   fontVariationSettings: string
+  fontFeatureSettings: string
+  lang: string
 }
 
 interface CanvasFilters {

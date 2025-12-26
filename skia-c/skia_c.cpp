@@ -479,7 +479,13 @@ void skiac_canvas_get_line_metrics_or_draw_text(
     const skiac_font_variation* variations,
     int variations_count,
     int kerning,
-    int variant_caps) {
+    int variant_caps,
+    const skiac_font_feature* features,
+    int features_count,
+    int font_optical_sizing,
+    const char* lang,
+    float font_size_adjust,
+    int text_rendering) {
   auto font_collection = c_collection->collection;
   auto font_style = SkFontStyle(weight, stretch, (SkFontStyle::Slant)slant);
   auto text_direction = (TextDirection)direction;
@@ -491,7 +497,44 @@ void skiac_canvas_get_line_metrics_or_draw_text(
     families_vec.emplace_back(family);
   }
   text_style.setFontFamilies(families_vec);
-  text_style.setFontSize(font_size);
+
+  // Apply font-size-adjust if specified (positive value means apply adjustment)
+  float effective_font_size = font_size;
+  if (font_size_adjust > 0) {
+    // Create a temporary paragraph to get the font's actual x-height
+    TextStyle temp_style;
+    temp_style.setFontFamilies(families_vec);
+    temp_style.setFontSize(font_size);
+    temp_style.setFontStyle(font_style);
+
+    ParagraphStyle temp_para_style;
+    temp_para_style.setTextStyle(temp_style);
+    ParagraphBuilderImpl temp_builder(temp_para_style, font_collection,
+                                      SkUnicodes::ICU::Make());
+    temp_builder.addText("x", 1);  // Use 'x' to measure x-height
+    auto temp_paragraph =
+        static_cast<ParagraphImpl*>(temp_builder.Build().release());
+    temp_paragraph->layout(1000);
+
+    if (temp_paragraph->lineNumber() > 0) {
+      auto run = temp_paragraph->run(0);
+      auto font = run.font();
+      SkFontMetrics metrics;
+      font.getMetrics(&metrics);
+
+      // fXHeight is the height of lowercase 'x', typically negative in Skia
+      if (metrics.fXHeight != 0) {
+        // Calculate actual aspect ratio: |x-height| / font-size
+        float actual_aspect = std::abs(metrics.fXHeight) / font_size;
+        // Apply font-size-adjust formula:
+        // adjusted_size = (target_aspect / actual_aspect) * font_size
+        effective_font_size = (font_size_adjust / actual_aspect) * font_size;
+      }
+    }
+    delete temp_paragraph;
+  }
+
+  text_style.setFontSize(effective_font_size);
   text_style.setWordSpacing(world_spacing);
   text_style.setLetterSpacing(letter_spacing);
   text_style.setHeight(1);
@@ -499,18 +542,54 @@ void skiac_canvas_get_line_metrics_or_draw_text(
 
   std::vector<SkFontArguments::VariationPosition::Coordinate> coords;
 
+  // Track if wght/wdth are already set via fontVariationSettings
+  bool has_wght = false;
+  bool has_wdth = false;
+
   // Apply variable font variations if provided
   if (variations && variations_count > 0) {
-    coords.reserve(variations_count + 1);
+    coords.reserve(variations_count + 2);
     for (int i = 0; i < variations_count; i++) {
       coords.push_back({variations[i].tag, variations[i].value});
+      // Check if user explicitly set wght or wdth
+      if (variations[i].tag == SkSetFourByteTag('w', 'g', 'h', 't')) {
+        has_wght = true;
+      }
+      if (variations[i].tag == SkSetFourByteTag('w', 'd', 't', 'h')) {
+        has_wdth = true;
+      }
     }
   }
 
+  // Apply font weight as 'wght' variation for variable fonts
+  // Only if not already set via fontVariationSettings (explicit settings take
+  // precedence) 'wght' tag = 0x77676874
+  if (weight != 400 && !has_wght) {
+    coords.push_back(
+        {SkSetFourByteTag('w', 'g', 'h', 't'), static_cast<float>(weight)});
+  }
+
   // Apply font stretch as 'wdth' variation for variable fonts
-  // 'wdth' tag = 0x77647468
-  if (stretch_width != 100.0f) {
+  // Only if not already set via fontVariationSettings (explicit settings take
+  // precedence) 'wdth' tag = 0x77647468
+  if (stretch_width != 100.0f && !has_wdth) {
     coords.push_back({SkSetFourByteTag('w', 'd', 't', 'h'), stretch_width});
+  }
+
+  // Apply font optical sizing ('opsz' axis)
+  // font_optical_sizing: 0=auto (set to font_size), 1=none (don't set)
+  if (font_optical_sizing == 0) {
+    // Check if opsz is already set via fontVariationSettings
+    bool has_opsz = false;
+    for (const auto& coord : coords) {
+      if (coord.axis == SkSetFourByteTag('o', 'p', 's', 'z')) {
+        has_opsz = true;
+        break;
+      }
+    }
+    if (!has_opsz) {
+      coords.push_back({SkSetFourByteTag('o', 'p', 's', 'z'), font_size});
+    }
   }
 
   if (!coords.empty()) {
@@ -528,7 +607,21 @@ void skiac_canvas_get_line_metrics_or_draw_text(
     text_style.addFontFeature(SkString("kern"), 1);
   }
 
-  // TODO: Support fontFeatureSettings
+  // Apply fontFeatureSettings (explicit features from the fontFeatureSettings
+  // property) These are applied AFTER font-variant-* properties, so they take
+  // precedence
+  if (features && features_count > 0) {
+    for (int i = 0; i < features_count; i++) {
+      uint32_t tag = features[i].tag;
+      // Convert tag to 4-char string
+      char tag_str[5] = {static_cast<char>((tag >> 24) & 0xFF),
+                         static_cast<char>((tag >> 16) & 0xFF),
+                         static_cast<char>((tag >> 8) & 0xFF),
+                         static_cast<char>(tag & 0xFF), '\0'};
+      text_style.addFontFeature(SkString(tag_str), features[i].value);
+    }
+  }
+
   // Apply font variant caps features
   // variant_caps: 0=normal, 1=small-caps, 2=all-small-caps, 3=petite-caps,
   // 4=all-petite-caps, 5=unicase, 6=titling-caps
@@ -553,6 +646,38 @@ void skiac_canvas_get_line_metrics_or_draw_text(
     // titling-caps
     text_style.addFontFeature(SkString("titl"), 1);
   }
+
+  // Apply language/locale for language-specific glyph variants
+  // lang: BCP-47 language tag (e.g., "en", "tr", "zh-Hans") or
+  // nullptr/"inherit"
+  if (lang != nullptr && strlen(lang) > 0 && strcmp(lang, "inherit") != 0) {
+    text_style.setLocale(SkString(lang));
+
+    // Turkish locale: disable "fi" ligature
+    // In Turkish, the dotless i (ı) is a separate letter, and the fi ligature
+    // would incorrectly merge "f" with "i" when it should remain separate.
+    // This matches browser behavior per MDN CanvasRenderingContext2D.lang spec.
+    if (strncmp(lang, "tr", 2) == 0 &&
+        (lang[2] == '\0' || lang[2] == '-' || lang[2] == '_')) {
+      text_style.addFontFeature(SkString("liga"), 0);
+    }
+  }
+
+  // Apply textRendering overrides (these take precedence over fontKerning and
+  // fontVariantLigatures) text_rendering: 0=auto, 1=optimizeSpeed,
+  // 2=optimizeLegibility, 3=geometricPrecision
+  if (text_rendering == 1) {
+    // optimizeSpeed: disable kerning and ligatures for speed
+    text_style.addFontFeature(SkString("kern"), 0);
+    text_style.addFontFeature(SkString("liga"), 0);
+    text_style.addFontFeature(SkString("clig"), 0);
+  } else if (text_rendering == 2 || text_rendering == 3) {
+    // optimizeLegibility / geometricPrecision: enable kerning and ligatures
+    text_style.addFontFeature(SkString("kern"), 1);
+    text_style.addFontFeature(SkString("liga"), 1);
+    text_style.addFontFeature(SkString("clig"), 1);
+  }
+  // auto (0): respect existing fontKerning and fontVariantLigatures settings
 
   text_style.setForegroundColor(*PAINT_CAST);
   text_style.setTextBaseline(TextBaseline::kAlphabetic);
