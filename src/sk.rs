@@ -229,6 +229,13 @@ pub mod ffi {
 
   #[repr(C)]
   #[derive(Debug, Clone, Copy)]
+  pub struct skiac_font_feature {
+    pub tag: u32,
+    pub value: i32,
+  }
+
+  #[repr(C)]
+  #[derive(Debug, Clone, Copy)]
   pub struct skiac_picture_recorder {
     _unused: [u8; 0],
   }
@@ -512,6 +519,12 @@ pub mod ffi {
       variations_count: i32,
       kerning: i32,
       variant_caps: i32,
+      features: *const skiac_font_feature,
+      features_count: i32,
+      font_optical_sizing: i32,
+      lang: *const c_char,
+      font_size_adjust: f32,
+      text_rendering: i32,
     );
 
     pub fn skiac_canvas_reset_transform(canvas: *mut skiac_canvas);
@@ -1730,6 +1743,372 @@ impl FontVariantCaps {
   }
 }
 
+#[repr(i32)]
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub enum TextRendering {
+  #[default]
+  Auto = 0,
+  OptimizeSpeed = 1,
+  OptimizeLegibility = 2,
+  GeometricPrecision = 3,
+}
+
+impl FromStr for TextRendering {
+  type Err = SkError;
+
+  fn from_str(s: &str) -> Result<TextRendering, SkError> {
+    match s {
+      "auto" => Ok(Self::Auto),
+      "optimizeSpeed" => Ok(Self::OptimizeSpeed),
+      "optimizeLegibility" => Ok(Self::OptimizeLegibility),
+      "geometricPrecision" => Ok(Self::GeometricPrecision),
+      _ => Err(SkError::Generic(format!("Invalid text rendering: {}", s))),
+    }
+  }
+}
+
+impl TextRendering {
+  pub fn as_str(&self) -> &str {
+    match self {
+      Self::Auto => "auto",
+      Self::OptimizeSpeed => "optimizeSpeed",
+      Self::OptimizeLegibility => "optimizeLegibility",
+      Self::GeometricPrecision => "geometricPrecision",
+    }
+  }
+}
+
+#[repr(i32)]
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub enum FontOpticalSizing {
+  #[default]
+  Auto = 0,
+  None = 1,
+}
+
+impl FromStr for FontOpticalSizing {
+  type Err = SkError;
+
+  fn from_str(s: &str) -> Result<FontOpticalSizing, SkError> {
+    match s {
+      "auto" => Ok(Self::Auto),
+      "none" => Ok(Self::None),
+      _ => Err(SkError::Generic(format!(
+        "Invalid font optical sizing: {}",
+        s
+      ))),
+    }
+  }
+}
+
+impl FontOpticalSizing {
+  pub fn as_str(&self) -> &str {
+    match self {
+      Self::Auto => "auto",
+      Self::None => "none",
+    }
+  }
+}
+
+/// Bitflags for font-variant-ligatures.
+/// Each bit represents a feature setting.
+#[repr(i32)]
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub enum FontVariantLigatures {
+  #[default]
+  Normal = 0,
+  None = 1,
+  // Combination of feature flags encoded in the value
+  Custom(i32) = 2,
+}
+
+// Feature flag bits for Custom variant
+pub const LIGA_COMMON_ON: i32 = 1 << 0;
+pub const LIGA_COMMON_OFF: i32 = 1 << 1;
+pub const LIGA_DISCRETIONARY_ON: i32 = 1 << 2;
+pub const LIGA_DISCRETIONARY_OFF: i32 = 1 << 3;
+pub const LIGA_HISTORICAL_ON: i32 = 1 << 4;
+pub const LIGA_HISTORICAL_OFF: i32 = 1 << 5;
+pub const LIGA_CONTEXTUAL_ON: i32 = 1 << 6;
+pub const LIGA_CONTEXTUAL_OFF: i32 = 1 << 7;
+
+impl FontVariantLigatures {
+  pub fn parse(s: &str) -> Result<Self, SkError> {
+    let trimmed = s.trim();
+    if trimmed.eq_ignore_ascii_case("normal") {
+      return Ok(Self::Normal);
+    }
+    if trimmed.eq_ignore_ascii_case("none") {
+      return Ok(Self::None);
+    }
+
+    let mut flags: i32 = 0;
+    for part in trimmed.split_whitespace() {
+      match part.to_ascii_lowercase().as_str() {
+        "common-ligatures" => flags |= LIGA_COMMON_ON,
+        "no-common-ligatures" => flags |= LIGA_COMMON_OFF,
+        "discretionary-ligatures" => flags |= LIGA_DISCRETIONARY_ON,
+        "no-discretionary-ligatures" => flags |= LIGA_DISCRETIONARY_OFF,
+        "historical-ligatures" => flags |= LIGA_HISTORICAL_ON,
+        "no-historical-ligatures" => flags |= LIGA_HISTORICAL_OFF,
+        "contextual" => flags |= LIGA_CONTEXTUAL_ON,
+        "no-contextual" => flags |= LIGA_CONTEXTUAL_OFF,
+        _ => {
+          return Err(SkError::Generic(format!(
+            "Invalid ligature value: {}",
+            part
+          )));
+        }
+      }
+    }
+
+    if flags == 0 {
+      return Err(SkError::Generic("Empty ligature value".to_owned()));
+    }
+
+    Ok(Self::Custom(flags))
+  }
+
+  pub fn as_str(&self) -> String {
+    match self {
+      Self::Normal => "normal".to_owned(),
+      Self::None => "none".to_owned(),
+      Self::Custom(flags) => {
+        let mut parts = Vec::new();
+        if flags & LIGA_COMMON_ON != 0 {
+          parts.push("common-ligatures");
+        }
+        if flags & LIGA_COMMON_OFF != 0 {
+          parts.push("no-common-ligatures");
+        }
+        if flags & LIGA_DISCRETIONARY_ON != 0 {
+          parts.push("discretionary-ligatures");
+        }
+        if flags & LIGA_DISCRETIONARY_OFF != 0 {
+          parts.push("no-discretionary-ligatures");
+        }
+        if flags & LIGA_HISTORICAL_ON != 0 {
+          parts.push("historical-ligatures");
+        }
+        if flags & LIGA_HISTORICAL_OFF != 0 {
+          parts.push("no-historical-ligatures");
+        }
+        if flags & LIGA_CONTEXTUAL_ON != 0 {
+          parts.push("contextual");
+        }
+        if flags & LIGA_CONTEXTUAL_OFF != 0 {
+          parts.push("no-contextual");
+        }
+        parts.join(" ")
+      }
+    }
+  }
+
+  /// Get the OpenType features implied by this setting
+  pub fn get_features(&self) -> Vec<(u32, i32)> {
+    match self {
+      Self::Normal => vec![], // Browser default
+      Self::None => {
+        // All ligatures off
+        vec![
+          (u32::from_be_bytes(*b"liga"), 0),
+          (u32::from_be_bytes(*b"clig"), 0),
+          (u32::from_be_bytes(*b"dlig"), 0),
+          (u32::from_be_bytes(*b"hlig"), 0),
+          (u32::from_be_bytes(*b"calt"), 0),
+        ]
+      }
+      Self::Custom(flags) => {
+        let mut features = Vec::new();
+        if flags & LIGA_COMMON_ON != 0 {
+          features.push((u32::from_be_bytes(*b"liga"), 1));
+          features.push((u32::from_be_bytes(*b"clig"), 1));
+        }
+        if flags & LIGA_COMMON_OFF != 0 {
+          features.push((u32::from_be_bytes(*b"liga"), 0));
+          features.push((u32::from_be_bytes(*b"clig"), 0));
+        }
+        if flags & LIGA_DISCRETIONARY_ON != 0 {
+          features.push((u32::from_be_bytes(*b"dlig"), 1));
+        }
+        if flags & LIGA_DISCRETIONARY_OFF != 0 {
+          features.push((u32::from_be_bytes(*b"dlig"), 0));
+        }
+        if flags & LIGA_HISTORICAL_ON != 0 {
+          features.push((u32::from_be_bytes(*b"hlig"), 1));
+        }
+        if flags & LIGA_HISTORICAL_OFF != 0 {
+          features.push((u32::from_be_bytes(*b"hlig"), 0));
+        }
+        if flags & LIGA_CONTEXTUAL_ON != 0 {
+          features.push((u32::from_be_bytes(*b"calt"), 1));
+        }
+        if flags & LIGA_CONTEXTUAL_OFF != 0 {
+          features.push((u32::from_be_bytes(*b"calt"), 0));
+        }
+        features
+      }
+    }
+  }
+}
+
+/// Bitflags for font-variant-numeric
+#[repr(i32)]
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub enum FontVariantNumeric {
+  #[default]
+  Normal = 0,
+  Custom(i32) = 1,
+}
+
+// Feature flag bits for numeric
+pub const NUM_LINING: i32 = 1 << 0;
+pub const NUM_OLDSTYLE: i32 = 1 << 1;
+pub const NUM_PROPORTIONAL: i32 = 1 << 2;
+pub const NUM_TABULAR: i32 = 1 << 3;
+pub const NUM_DIAGONAL_FRACTIONS: i32 = 1 << 4;
+pub const NUM_STACKED_FRACTIONS: i32 = 1 << 5;
+pub const NUM_ORDINAL: i32 = 1 << 6;
+pub const NUM_SLASHED_ZERO: i32 = 1 << 7;
+
+impl FontVariantNumeric {
+  pub fn parse(s: &str) -> Result<Self, SkError> {
+    let trimmed = s.trim();
+    if trimmed.eq_ignore_ascii_case("normal") {
+      return Ok(Self::Normal);
+    }
+
+    let mut flags: i32 = 0;
+    for part in trimmed.split_whitespace() {
+      match part.to_ascii_lowercase().as_str() {
+        "lining-nums" => flags |= NUM_LINING,
+        "oldstyle-nums" => flags |= NUM_OLDSTYLE,
+        "proportional-nums" => flags |= NUM_PROPORTIONAL,
+        "tabular-nums" => flags |= NUM_TABULAR,
+        "diagonal-fractions" => flags |= NUM_DIAGONAL_FRACTIONS,
+        "stacked-fractions" => flags |= NUM_STACKED_FRACTIONS,
+        "ordinal" => flags |= NUM_ORDINAL,
+        "slashed-zero" => flags |= NUM_SLASHED_ZERO,
+        _ => return Err(SkError::Generic(format!("Invalid numeric value: {}", part))),
+      }
+    }
+
+    if flags == 0 {
+      return Err(SkError::Generic("Empty numeric value".to_owned()));
+    }
+
+    Ok(Self::Custom(flags))
+  }
+
+  pub fn as_str(&self) -> String {
+    match self {
+      Self::Normal => "normal".to_owned(),
+      Self::Custom(flags) => {
+        let mut parts = Vec::new();
+        if flags & NUM_LINING != 0 {
+          parts.push("lining-nums");
+        }
+        if flags & NUM_OLDSTYLE != 0 {
+          parts.push("oldstyle-nums");
+        }
+        if flags & NUM_PROPORTIONAL != 0 {
+          parts.push("proportional-nums");
+        }
+        if flags & NUM_TABULAR != 0 {
+          parts.push("tabular-nums");
+        }
+        if flags & NUM_DIAGONAL_FRACTIONS != 0 {
+          parts.push("diagonal-fractions");
+        }
+        if flags & NUM_STACKED_FRACTIONS != 0 {
+          parts.push("stacked-fractions");
+        }
+        if flags & NUM_ORDINAL != 0 {
+          parts.push("ordinal");
+        }
+        if flags & NUM_SLASHED_ZERO != 0 {
+          parts.push("slashed-zero");
+        }
+        parts.join(" ")
+      }
+    }
+  }
+
+  pub fn get_features(&self) -> Vec<(u32, i32)> {
+    match self {
+      Self::Normal => vec![],
+      Self::Custom(flags) => {
+        let mut features = Vec::new();
+        if flags & NUM_LINING != 0 {
+          features.push((u32::from_be_bytes(*b"lnum"), 1));
+        }
+        if flags & NUM_OLDSTYLE != 0 {
+          features.push((u32::from_be_bytes(*b"onum"), 1));
+        }
+        if flags & NUM_PROPORTIONAL != 0 {
+          features.push((u32::from_be_bytes(*b"pnum"), 1));
+        }
+        if flags & NUM_TABULAR != 0 {
+          features.push((u32::from_be_bytes(*b"tnum"), 1));
+        }
+        if flags & NUM_DIAGONAL_FRACTIONS != 0 {
+          features.push((u32::from_be_bytes(*b"frac"), 1));
+        }
+        if flags & NUM_STACKED_FRACTIONS != 0 {
+          features.push((u32::from_be_bytes(*b"afrc"), 1));
+        }
+        if flags & NUM_ORDINAL != 0 {
+          features.push((u32::from_be_bytes(*b"ordn"), 1));
+        }
+        if flags & NUM_SLASHED_ZERO != 0 {
+          features.push((u32::from_be_bytes(*b"zero"), 1));
+        }
+        features
+      }
+    }
+  }
+}
+
+#[repr(i32)]
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub enum FontVariantPosition {
+  #[default]
+  Normal = 0,
+  Sub = 1,
+  Super = 2,
+}
+
+impl FromStr for FontVariantPosition {
+  type Err = SkError;
+
+  fn from_str(s: &str) -> Result<FontVariantPosition, SkError> {
+    match s.trim().to_ascii_lowercase().as_str() {
+      "normal" => Ok(Self::Normal),
+      "sub" => Ok(Self::Sub),
+      "super" => Ok(Self::Super),
+      _ => Err(SkError::Generic(format!("Invalid position: {}", s))),
+    }
+  }
+}
+
+impl FontVariantPosition {
+  pub fn as_str(&self) -> &str {
+    match self {
+      Self::Normal => "normal",
+      Self::Sub => "sub",
+      Self::Super => "super",
+    }
+  }
+
+  pub fn get_features(&self) -> Vec<(u32, i32)> {
+    match self {
+      Self::Normal => vec![],
+      Self::Sub => vec![(u32::from_be_bytes(*b"subs"), 1)],
+      Self::Super => vec![(u32::from_be_bytes(*b"sups"), 1)],
+    }
+  }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(i32)]
 pub enum SkEncodedImageFormat {
@@ -2211,6 +2590,13 @@ pub struct FontVariation {
   pub value: f32,
 }
 
+#[derive(Debug, Clone, Copy)]
+#[repr(C)]
+pub struct FontFeature {
+  pub tag: u32,
+  pub value: i32,
+}
+
 impl Canvas {
   pub fn clear(&mut self) {
     unsafe {
@@ -2347,9 +2733,22 @@ impl Canvas {
     variations: &[FontVariation],
     kerning: FontKerning,
     variant_caps: FontVariantCaps,
+    features: &[FontFeature],
+    font_optical_sizing: FontOpticalSizing,
+    lang: &str,
+    font_size_adjust: Option<f32>,
+    text_rendering: TextRendering,
   ) -> Result<(), NulError> {
     let c_text = std::ffi::CString::new(text)?;
     let c_font_family = std::ffi::CString::new(font_family)?;
+    // Convert lang to C string, or null if empty/"inherit"
+    let c_lang = if lang.is_empty() || lang == "inherit" {
+      None
+    } else {
+      Some(std::ffi::CString::new(lang)?)
+    };
+    // Use -1.0 to indicate no adjustment (None)
+    let adjust = font_size_adjust.unwrap_or(-1.0);
 
     unsafe {
       ffi::skiac_canvas_get_line_metrics_or_draw_text(
@@ -2378,6 +2777,12 @@ impl Canvas {
         variations.len() as i32,
         kerning as i32,
         variant_caps as i32,
+        features.as_ptr() as *const ffi::skiac_font_feature,
+        features.len() as i32,
+        font_optical_sizing as i32,
+        c_lang.as_ref().map_or(ptr::null(), |s| s.as_ptr()),
+        adjust,
+        text_rendering as i32,
       );
     };
     Ok(())
@@ -2402,9 +2807,22 @@ impl Canvas {
     variations: &[FontVariation],
     kerning: FontKerning,
     variant_caps: FontVariantCaps,
+    features: &[FontFeature],
+    font_optical_sizing: FontOpticalSizing,
+    lang: &str,
+    font_size_adjust: Option<f32>,
+    text_rendering: TextRendering,
   ) -> Result<ffi::skiac_line_metrics, NulError> {
     let c_text = std::ffi::CString::new(text)?;
     let c_font_family = std::ffi::CString::new(font_family)?;
+    // Convert lang to C string, or null if empty/"inherit"
+    let c_lang = if lang.is_empty() || lang == "inherit" {
+      None
+    } else {
+      Some(std::ffi::CString::new(lang)?)
+    };
+    // Use -1.0 to indicate no adjustment (None)
+    let adjust = font_size_adjust.unwrap_or(-1.0);
 
     let mut line_metrics = ffi::skiac_line_metrics::default();
 
@@ -2435,6 +2853,12 @@ impl Canvas {
         variations.len() as i32,
         kerning as i32,
         variant_caps as i32,
+        features.as_ptr() as *const ffi::skiac_font_feature,
+        features.len() as i32,
+        font_optical_sizing as i32,
+        c_lang.as_ref().map_or(ptr::null(), |s| s.as_ptr()),
+        adjust,
+        text_rendering as i32,
       );
     }
     Ok(line_metrics)

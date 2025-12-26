@@ -620,6 +620,17 @@ impl Context {
     Ok(())
   }
 
+  pub fn get_font_feature_settings(&self) -> &str {
+    &self.state.font_feature_settings
+  }
+
+  pub fn set_font_feature_settings(&mut self, settings: String) -> result::Result<(), SkError> {
+    let (settings, features) = parse_font_feature_settings(&settings);
+    self.state.font_feature_settings = settings;
+    self.state.font_features = features;
+    Ok(())
+  }
+
   pub fn get_stroke_width(&self) -> f32 {
     self.state.paint.get_stroke_width()
   }
@@ -713,6 +724,49 @@ impl Context {
       self.state.font_variant_caps = v;
     }
     Ok(())
+  }
+
+  pub fn set_text_rendering(&mut self, rendering: String) -> result::Result<(), SkError> {
+    if let Ok(r) = rendering.parse() {
+      self.state.text_rendering = r;
+    }
+    Ok(())
+  }
+
+  pub fn set_font_optical_sizing(&mut self, sizing: String) -> result::Result<(), SkError> {
+    if let Ok(s) = sizing.parse() {
+      self.state.font_optical_sizing = s;
+    }
+    Ok(())
+  }
+
+  pub fn set_lang(&mut self, lang: String) {
+    self.state.lang = lang;
+  }
+
+  pub fn set_font_variant_ligatures(&mut self, ligatures: String) -> result::Result<(), SkError> {
+    if let Ok(l) = crate::sk::FontVariantLigatures::parse(&ligatures) {
+      self.state.font_variant_ligatures = l;
+    }
+    Ok(())
+  }
+
+  pub fn set_font_variant_numeric(&mut self, numeric: String) -> result::Result<(), SkError> {
+    if let Ok(n) = crate::sk::FontVariantNumeric::parse(&numeric) {
+      self.state.font_variant_numeric = n;
+    }
+    Ok(())
+  }
+
+  pub fn set_font_variant_position(&mut self, position: String) -> result::Result<(), SkError> {
+    if let Ok(p) = position.parse() {
+      self.state.font_variant_position = p;
+    }
+    Ok(())
+  }
+
+  pub fn set_font_size_adjust(&mut self, adjust: Option<f32>) {
+    self.state.font_size_adjust = adjust;
   }
 
   pub fn get_image_data(
@@ -926,6 +980,9 @@ impl Context {
     let width = self.width;
     let height = self.height;
     let font = get_font()?;
+    // Collect combined font features from variant properties and explicit fontFeatureSettings
+    let combined_features = self.collect_font_features();
+    let font_optical_sizing = state.font_optical_sizing;
     Self::render_canvas(
       &mut self.surface.canvas,
       paint,
@@ -973,6 +1030,11 @@ impl Context {
                 variations,
                 state.font_kerning,
                 state.font_variant_caps,
+                &combined_features,
+                font_optical_sizing,
+                &state.lang,
+                state.font_size_adjust,
+                state.text_rendering,
               )?;
               shadow_canvas.restore();
               Ok(())
@@ -1001,6 +1063,11 @@ impl Context {
           variations,
           state.font_kerning,
           state.font_variant_caps,
+          &combined_features,
+          font_optical_sizing,
+          &state.lang,
+          state.font_size_adjust,
+          state.text_rendering,
         )?;
         Ok(())
       },
@@ -1015,6 +1082,7 @@ impl Context {
     let stretch = state.font_stretch;
     let slant = state.font_style.style;
     let font = get_font()?;
+    let combined_features = self.collect_font_features();
     let line_metrics = LineMetrics(self.surface.canvas.get_line_metrics(
       text,
       &font,
@@ -1033,8 +1101,49 @@ impl Context {
       &self.state.font_variations,
       self.state.font_kerning,
       self.state.font_variant_caps,
+      &combined_features,
+      self.state.font_optical_sizing,
+      &self.state.lang,
+      self.state.font_size_adjust,
+      self.state.text_rendering,
     )?);
     Ok(line_metrics)
+  }
+
+  /// Collects font features from font-variant-* properties and fontFeatureSettings.
+  /// Features from fontVariantLigatures, fontVariantNumeric, fontVariantPosition
+  /// are collected first, then fontFeatureSettings are applied (taking precedence).
+  fn collect_font_features(&self) -> Vec<crate::sk::FontFeature> {
+    use std::collections::HashMap;
+
+    // Use a HashMap to track features by tag, allowing later features to override earlier ones
+    let mut features_map: HashMap<u32, i32> = HashMap::new();
+
+    // Collect features from fontVariantLigatures
+    for (tag, value) in self.state.font_variant_ligatures.get_features() {
+      features_map.insert(tag, value);
+    }
+
+    // Collect features from fontVariantNumeric
+    for (tag, value) in self.state.font_variant_numeric.get_features() {
+      features_map.insert(tag, value);
+    }
+
+    // Collect features from fontVariantPosition
+    for (tag, value) in self.state.font_variant_position.get_features() {
+      features_map.insert(tag, value);
+    }
+
+    // Apply fontFeatureSettings last (they take precedence)
+    for feature in &self.state.font_features {
+      features_map.insert(feature.tag, feature.value);
+    }
+
+    // Convert to Vec<FontFeature>
+    features_map
+      .into_iter()
+      .map(|(tag, value)| crate::sk::FontFeature { tag, value })
+      .collect()
   }
 
   fn apply_shadow_offset_matrix_to_canvas(
@@ -1393,6 +1502,17 @@ impl CanvasRenderingContext2D {
     Ok(())
   }
 
+  #[napi(getter)]
+  pub fn get_font_feature_settings(&self) -> String {
+    self.context.get_font_feature_settings().to_owned()
+  }
+
+  #[napi(setter)]
+  pub fn set_font_feature_settings(&mut self, settings: String) -> Result<()> {
+    self.context.set_font_feature_settings(settings)?;
+    Ok(())
+  }
+
   #[napi(setter, return_if_invalid)]
   pub fn set_font(&mut self, font: String) -> Result<()> {
     self.context.set_font(font)?;
@@ -1556,6 +1676,81 @@ impl CanvasRenderingContext2D {
   pub fn set_font_variant_caps(&mut self, variant_caps: String) -> Result<()> {
     self.context.set_font_variant_caps(variant_caps)?;
     Ok(())
+  }
+
+  #[napi(getter)]
+  pub fn get_text_rendering(&self) -> String {
+    self.context.state.text_rendering.as_str().to_owned()
+  }
+
+  #[napi(setter, return_if_invalid)]
+  pub fn set_text_rendering(&mut self, rendering: String) -> Result<()> {
+    self.context.set_text_rendering(rendering)?;
+    Ok(())
+  }
+
+  #[napi(getter)]
+  pub fn get_font_optical_sizing(&self) -> String {
+    self.context.state.font_optical_sizing.as_str().to_owned()
+  }
+
+  #[napi(setter, return_if_invalid)]
+  pub fn set_font_optical_sizing(&mut self, sizing: String) -> Result<()> {
+    self.context.set_font_optical_sizing(sizing)?;
+    Ok(())
+  }
+
+  #[napi(getter)]
+  pub fn get_lang(&self) -> String {
+    self.context.state.lang.clone()
+  }
+
+  #[napi(setter)]
+  pub fn set_lang(&mut self, lang: String) {
+    self.context.set_lang(lang);
+  }
+
+  #[napi(getter)]
+  pub fn get_font_variant_ligatures(&self) -> String {
+    self.context.state.font_variant_ligatures.as_str()
+  }
+
+  #[napi(setter, return_if_invalid)]
+  pub fn set_font_variant_ligatures(&mut self, ligatures: String) -> Result<()> {
+    self.context.set_font_variant_ligatures(ligatures)?;
+    Ok(())
+  }
+
+  #[napi(getter)]
+  pub fn get_font_variant_numeric(&self) -> String {
+    self.context.state.font_variant_numeric.as_str()
+  }
+
+  #[napi(setter, return_if_invalid)]
+  pub fn set_font_variant_numeric(&mut self, numeric: String) -> Result<()> {
+    self.context.set_font_variant_numeric(numeric)?;
+    Ok(())
+  }
+
+  #[napi(getter)]
+  pub fn get_font_variant_position(&self) -> String {
+    self.context.state.font_variant_position.as_str().to_owned()
+  }
+
+  #[napi(setter, return_if_invalid)]
+  pub fn set_font_variant_position(&mut self, position: String) -> Result<()> {
+    self.context.set_font_variant_position(position)?;
+    Ok(())
+  }
+
+  #[napi(getter)]
+  pub fn get_font_size_adjust(&self) -> Option<f64> {
+    self.context.state.font_size_adjust.map(|v| v as f64)
+  }
+
+  #[napi(setter)]
+  pub fn set_font_size_adjust(&mut self, adjust: Option<f64>) {
+    self.context.set_font_size_adjust(adjust.map(|v| v as f32));
   }
 
   #[napi]
@@ -2666,6 +2861,86 @@ fn parse_font_variation_settings(settings: &str) -> (String, Vec<crate::sk::Font
   }
 
   (settings.to_owned(), variations)
+}
+
+/// Parse font-feature-settings CSS property.
+/// Format: "normal" | "<tag>" [<value>], ...
+/// Value can be: integer, "on" (=1), "off" (=0), or omitted (=1)
+fn parse_font_feature_settings(settings: &str) -> (String, Vec<crate::sk::FontFeature>) {
+  let trimmed = settings.trim();
+  if trimmed.eq_ignore_ascii_case("normal") || trimmed.is_empty() {
+    return ("normal".to_owned(), vec![]);
+  }
+
+  let mut features: Vec<crate::sk::FontFeature> = Vec::new();
+  let mut valid = true;
+
+  for part in trimmed.split(',') {
+    let part = part.trim();
+    if part.is_empty() {
+      continue;
+    }
+
+    let mut chars = part.chars();
+    let first = chars.next();
+    let quote = match first {
+      Some('\'') => '\'',
+      Some('"') => '"',
+      _ => {
+        valid = false;
+        break;
+      }
+    };
+
+    let mut tag_str = String::new();
+    let mut closed = false;
+    for c in chars.by_ref() {
+      if c == quote {
+        closed = true;
+        break;
+      }
+      tag_str.push(c);
+    }
+
+    if !closed || tag_str.len() != 4 || !tag_str.is_ascii() {
+      valid = false;
+      break;
+    }
+
+    let rest: String = chars.collect();
+    let val_str = rest.trim();
+
+    // Value is optional, defaults to 1
+    // Can also be "on" (1) or "off" (0)
+    let val = if val_str.is_empty() || val_str.eq_ignore_ascii_case("on") {
+      1
+    } else if val_str.eq_ignore_ascii_case("off") {
+      0
+    } else {
+      match val_str.parse::<i32>() {
+        Ok(v) => v,
+        Err(_) => {
+          valid = false;
+          break;
+        }
+      }
+    };
+
+    let bytes = tag_str.as_bytes();
+    let tag = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+
+    if let Some(existing) = features.iter_mut().find(|f| f.tag == tag) {
+      existing.value = val;
+    } else {
+      features.push(crate::sk::FontFeature { tag, value: val });
+    }
+  }
+
+  if !valid {
+    return (settings.to_owned(), vec![]);
+  }
+
+  (settings.to_owned(), features)
 }
 
 #[cfg(test)]

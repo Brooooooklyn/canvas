@@ -66,11 +66,6 @@ const DEFAULT_JPEG_QUALITY: u8 = 92;
 // https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/platform/image-encoders/image_encoder.cc;l=100;drc=81c6f843fdfd8ef660d733289a7a32abe68e247a
 const DEFAULT_WEBP_QUALITY: u8 = 80;
 
-#[napi_derive::module_init]
-fn init() {
-  // No pre-initialization needed after switching to cssparser
-}
-
 #[napi(object, object_to_js = false)]
 pub struct ConvertToBlobOptions {
   pub mime: Option<String>,
