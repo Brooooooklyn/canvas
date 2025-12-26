@@ -4,6 +4,13 @@
 #include <optional>
 #include <vector>
 
+#ifdef _WIN32
+#include <string.h>
+#define strncasecmp _strnicmp
+#else
+#include <strings.h>
+#endif
+
 #include "skia_c.hpp"
 #define SURFACE_CAST reinterpret_cast<SkSurface*>(c_surface)
 #define CANVAS_CAST reinterpret_cast<SkCanvas*>(c_canvas)
