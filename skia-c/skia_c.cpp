@@ -565,15 +565,16 @@ void skiac_canvas_get_line_metrics_or_draw_text(
   // Apply language/locale for language-specific glyph variants
   // lang: BCP-47 language tag (e.g., "en", "tr", "zh-Hans") or
   // nullptr/"inherit"
-  if (lang != nullptr && strcmp(lang, "") != 0 && strcmp(lang, "inherit") != 0) {
+  if (lang != nullptr && strcmp(lang, "") != 0 &&
+      strcmp(lang, "inherit") != 0) {
     text_style.setLocale(SkString(lang));
 
     // Turkish/Azerbaijani locale: disable standard and contextual ligatures
     // These languages have a dotless i (ı) as a separate letter from dotted i.
     // The "fi" ligature would incorrectly merge "f" with "i", obscuring the dot
     // which is semantically significant. Browsers disable common ligatures
-    // (liga + clig) for these locales per MDN CanvasRenderingContext2D.lang spec.
-    // Use case-insensitive comparison per BCP-47 (RFC 5646).
+    // (liga + clig) for these locales per MDN CanvasRenderingContext2D.lang
+    // spec. Use case-insensitive comparison per BCP-47 (RFC 5646).
     if ((strncasecmp(lang, "tr", 2) == 0 || strncasecmp(lang, "az", 2) == 0) &&
         (lang[2] == '\0' || lang[2] == '-' || lang[2] == '_')) {
       text_style.addFontFeature(SkString("liga"), 0);
