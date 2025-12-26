@@ -212,6 +212,7 @@ interface CanvasTextDrawingStyles {
   textRendering: CanvasTextRendering
   wordSpacing: string
   fontVariationSettings: string
+  lang: string
 }
 
 interface CanvasFilters {

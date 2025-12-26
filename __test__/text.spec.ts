@@ -736,3 +736,42 @@ test('cursive-scripts-ignore-letter-spacing', async (t) => {
 
   await snapshotImage(t, { canvas, ctx })
 })
+
+// lang property tests
+test('lang-default-value', (t) => {
+  const { ctx } = t.context
+  t.is(ctx.lang, 'inherit')
+})
+
+test('lang-accepts-bcp47-tags', (t) => {
+  const { ctx } = t.context
+  const tags = ['en', 'en-US', 'zh-Hans', 'zh-Hant', 'ja', 'ko', 'ar', 'he']
+
+  tags.forEach((tag) => {
+    ctx.lang = tag
+    t.is(ctx.lang, tag)
+  })
+})
+
+test('lang-ligature-turkish-vs-english', async (t) => {
+  // Test based on MDN example: https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D/lang
+  // Turkish locale disables "fi" ligature because Turkish has dotless i (ı)
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'Lato-Regular.ttf'), 'Lato')
+  const canvas = createCanvas(450, 150)
+  const ctx = canvas.getContext('2d')!
+
+  ctx.fillStyle = 'white'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  ctx.fillStyle = 'black'
+  ctx.font = '36px Lato'
+
+  // English: "fi" should render as ligature (combined glyph)
+  ctx.lang = 'en'
+  ctx.fillText('en: finish crafting', 20, 55)
+
+  // Turkish: "fi" should NOT be a ligature (separate f and i glyphs)
+  ctx.lang = 'tr'
+  ctx.fillText('tr: finish crafting', 20, 115)
+
+  await snapshotImage(t, { canvas, ctx })
+})

@@ -574,6 +574,7 @@ pub mod ffi {
       variations_count: i32,
       kerning: i32,
       variant_caps: i32,
+      lang: *const c_char,
     );
 
     pub fn skiac_canvas_reset_transform(canvas: *mut skiac_canvas);
@@ -2466,9 +2467,16 @@ impl Canvas {
     variations: &[FontVariation],
     kerning: FontKerning,
     variant_caps: FontVariantCaps,
+    lang: &str,
   ) -> Result<(), NulError> {
     let c_text = std::ffi::CString::new(text)?;
     let c_font_family = std::ffi::CString::new(font_family)?;
+    // Convert lang to C string, or null if empty/"inherit"
+    let c_lang = if lang.is_empty() || lang == "inherit" {
+      None
+    } else {
+      Some(std::ffi::CString::new(lang)?)
+    };
 
     unsafe {
       ffi::skiac_canvas_get_line_metrics_or_draw_text(
@@ -2497,6 +2505,7 @@ impl Canvas {
         variations.len() as i32,
         kerning as i32,
         variant_caps as i32,
+        c_lang.as_ref().map_or(ptr::null(), |s| s.as_ptr()),
       );
     };
     Ok(())
@@ -2521,9 +2530,16 @@ impl Canvas {
     variations: &[FontVariation],
     kerning: FontKerning,
     variant_caps: FontVariantCaps,
+    lang: &str,
   ) -> Result<ffi::skiac_line_metrics, NulError> {
     let c_text = std::ffi::CString::new(text)?;
     let c_font_family = std::ffi::CString::new(font_family)?;
+    // Convert lang to C string, or null if empty/"inherit"
+    let c_lang = if lang.is_empty() || lang == "inherit" {
+      None
+    } else {
+      Some(std::ffi::CString::new(lang)?)
+    };
 
     let mut line_metrics = ffi::skiac_line_metrics::default();
 
@@ -2554,6 +2570,7 @@ impl Canvas {
         variations.len() as i32,
         kerning as i32,
         variant_caps as i32,
+        c_lang.as_ref().map_or(ptr::null(), |s| s.as_ptr()),
       );
     }
     Ok(line_metrics)

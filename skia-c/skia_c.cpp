@@ -479,7 +479,8 @@ void skiac_canvas_get_line_metrics_or_draw_text(
     const skiac_font_variation* variations,
     int variations_count,
     int kerning,
-    int variant_caps) {
+    int variant_caps,
+    const char* lang) {
   auto font_collection = c_collection->collection;
   auto font_style = SkFontStyle(weight, stretch, (SkFontStyle::Slant)slant);
   auto text_direction = (TextDirection)direction;
@@ -552,6 +553,22 @@ void skiac_canvas_get_line_metrics_or_draw_text(
   } else if (variant_caps == 6) {
     // titling-caps
     text_style.addFontFeature(SkString("titl"), 1);
+  }
+
+  // Apply language/locale for language-specific glyph variants
+  // lang: BCP-47 language tag (e.g., "en", "tr", "zh-Hans") or
+  // nullptr/"inherit"
+  if (lang != nullptr && strlen(lang) > 0 && strcmp(lang, "inherit") != 0) {
+    text_style.setLocale(SkString(lang));
+
+    // Turkish locale: disable "fi" ligature
+    // In Turkish, the dotless i (ı) is a separate letter, and the fi ligature
+    // would incorrectly merge "f" with "i" when it should remain separate.
+    // This matches browser behavior per MDN CanvasRenderingContext2D.lang spec.
+    if (strncmp(lang, "tr", 2) == 0 &&
+        (lang[2] == '\0' || lang[2] == '-' || lang[2] == '_')) {
+      text_style.addFontFeature(SkString("liga"), 0);
+    }
   }
 
   text_style.setForegroundColor(*PAINT_CAST);
