@@ -753,6 +753,21 @@ test('lang-accepts-bcp47-tags', (t) => {
   })
 })
 
+test('lang-save-restore', (t) => {
+  const { ctx } = t.context
+  t.is(ctx.lang, 'inherit')
+
+  ctx.lang = 'tr'
+  t.is(ctx.lang, 'tr')
+
+  ctx.save()
+  ctx.lang = 'en-US'
+  t.is(ctx.lang, 'en-US')
+
+  ctx.restore()
+  t.is(ctx.lang, 'tr', 'lang should be restored after ctx.restore()')
+})
+
 test('lang-ligature-turkish-vs-english', async (t) => {
   // Test based on MDN example: https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D/lang
   // Turkish locale disables "fi" ligature because Turkish has dotless i (ı)
