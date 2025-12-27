@@ -1,3 +1,12 @@
+## [0.1.88](https://github.com/Brooooooklyn/canvas/compare/v0.1.87...v0.1.88) (2025-12-27)
+
+
+### Bug Fixes
+
+* should throw TypeError if drawImage param mismatched ([#1190](https://github.com/Brooooooklyn/canvas/issues/1190)) ([386ac90](https://github.com/Brooooooklyn/canvas/commit/386ac9071707683f5e8f5369eaca9e07cad095b9))
+
+
+
 ## [0.1.87](https://github.com/Brooooooklyn/canvas/compare/v0.1.86...v0.1.87) (2025-12-26)
 
 
