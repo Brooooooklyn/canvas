@@ -1910,7 +1910,7 @@ impl CanvasRenderingContext2D {
   pub fn draw_image(
     &mut self,
     env: &Env,
-    image: Either3<&mut CanvasElement, &mut SVGCanvas, &mut Image>,
+    image: Unknown,
     sx: Option<f64>,
     sy: Option<f64>,
     s_width: Option<f64>,
@@ -1920,6 +1920,17 @@ impl CanvasRenderingContext2D {
     d_width: Option<f64>,
     d_height: Option<f64>,
   ) -> Result<()> {
+    let Ok(image) = (unsafe {
+      <Either3<&mut CanvasElement, &mut SVGCanvas, &mut Image> as FromNapiValue>::from_napi_value(
+        env.raw(),
+        image.raw(),
+      )
+    }) else {
+      return env.throw_type_error(
+        "Value is not one of these types: `CanvasElement`, `SVGCanvas`, `Image`",
+        Some("InvalidArg"),
+      );
+    };
     let bitmap = match image {
       Either3::A(canvas) => BitmapRef::Owned(canvas.ctx.as_ref().context.surface.get_bitmap()),
       Either3::B(svg) => BitmapRef::Owned(svg.ctx.as_ref().context.surface.get_bitmap()),
