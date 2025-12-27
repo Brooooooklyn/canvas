@@ -1927,7 +1927,7 @@ impl CanvasRenderingContext2D {
       )
     }) else {
       return env.throw_type_error(
-        "TypeError: Value is not one of these types: `CanvasElement`, `SVGCanvas`, `Image`",
+        "Value is not one of these types: `CanvasElement`, `SVGCanvas`, `Image`",
         Some("InvalidArg"),
       );
     };
