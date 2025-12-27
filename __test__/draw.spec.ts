@@ -433,6 +433,70 @@ test('drawImage-another-Canvas', async (t) => {
   await snapshotImage(t)
 })
 
+test('drawImage-throws-TypeError-for-invalid-image-type', (t) => {
+  const { ctx } = t.context
+
+  // Test with plain object
+  t.throws(
+    () => {
+      // @ts-expect-error - Testing invalid type
+      ctx.drawImage({}, 0, 0)
+    },
+    {
+      instanceOf: TypeError,
+      message: /Value is not one of these types/,
+    },
+  )
+
+  // Test with number
+  t.throws(
+    () => {
+      // @ts-expect-error - Testing invalid type
+      ctx.drawImage(42, 0, 0)
+    },
+    {
+      instanceOf: TypeError,
+      message: /Value is not one of these types/,
+    },
+  )
+
+  // Test with string
+  t.throws(
+    () => {
+      // @ts-expect-error - Testing invalid type
+      ctx.drawImage('not an image', 0, 0)
+    },
+    {
+      instanceOf: TypeError,
+      message: /Value is not one of these types/,
+    },
+  )
+
+  // Test with null
+  t.throws(
+    () => {
+      // @ts-expect-error - Testing invalid type
+      ctx.drawImage(null, 0, 0)
+    },
+    {
+      instanceOf: TypeError,
+      message: /Value is not one of these types/,
+    },
+  )
+
+  // Test with undefined
+  t.throws(
+    () => {
+      // @ts-expect-error - Testing invalid type
+      ctx.drawImage(undefined, 0, 0)
+    },
+    {
+      instanceOf: TypeError,
+      message: /Value is not one of these types/,
+    },
+  )
+})
+
 test('ellipse', async (t) => {
   const { ctx } = t.context
   // Draw the ellipse
