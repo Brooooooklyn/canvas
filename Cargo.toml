@@ -18,7 +18,7 @@ imagesize       = { version = "0.14", default-features = false, features = ["png
 infer           = "0.19"
 libavif         = { version = "0.14", default-features = false, features = ["codec-aom"] }
 libavif-sys     = { version = "0.17", default-features = false, features = ["codec-aom"] }
-napi            = { version = "3.1", default-features = false, features = ["napi4", "web_stream", "serde-json"] }
+napi            = { version = "3.1", default-features = false, features = ["napi5", "web_stream", "serde-json"] }
 napi-derive     = { version = "3.1", default-features = false }
 nom             = "8"
 num_cpus        = "1"
