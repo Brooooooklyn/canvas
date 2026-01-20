@@ -93,7 +93,7 @@
     "conventional-changelog-cli": "^5.0.0",
     "core-js": "^3.47.0",
     "echarts": "^6.0.0",
-    "electron": "^39.2.7",
+    "electron": "^40.0.0",
     "husky": "^9.1.7",
     "lint-staged": "^16.2.7",
     "lodash": "^4.17.21",
