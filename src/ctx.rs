@@ -253,7 +253,7 @@ impl Context {
 
   pub fn clip(&mut self, path: Option<&mut SkPath>, fill_rule: FillType) {
     // Clone the clip path to avoid borrow conflicts
-    let clip_path = match path {
+    let mut clip_path = match path {
       Some(p) => {
         p.set_fill_type(fill_rule);
         p.clone()
@@ -266,22 +266,36 @@ impl Context {
 
     // Per Canvas2D spec, multiple clip() calls should intersect with each other.
     // If there's an existing clip, compute the intersection.
-    if let Some(ref existing_clip) = self.state.clip_path {
+    let should_update_state = if let Some(ref existing_clip) = self.state.clip_path {
       // op() returns false if intersection fails (degenerate paths, numerical instability)
-      // In that case, we keep the new clip path as-is for spec compatibility
+      // If op() fails, clip_path remains unchanged (the new path) while the canvas will
+      // still intersect with its existing clip. To avoid state divergence, we keep the
+      // existing state.clip_path when op() fails, ensuring layer promotion restores correctly.
       if !clip_path.op(existing_clip, PathOp::Intersect) {
         #[cfg(debug_assertions)]
         eprintln!("Warning: Path intersection operation failed in clip()");
+        false // Don't update state - keep existing clip to match canvas behavior
+      } else {
+        true
       }
-    }
+    } else {
+      true // No existing clip, always update state
+    };
 
     // Store the cumulative clip path in state for restoration after layer promotion
-    self.state.clip_path = Some(clip_path.clone());
-    self.sync_clip_to_recorder();
-
-    self.with_canvas_state(|canvas| {
-      canvas.set_clip_path(&clip_path);
-    });
+    // Only update if intersection succeeded (or there was no existing clip)
+    // IMPORTANT: We must also skip calling set_clip_path when op() fails to avoid
+    // state divergence. If op() fails, the tracked state keeps OLD while Skia's
+    // clipPath() would compute OLD ∩ NEW. After layer promotion, we'd restore to
+    // OLD instead of OLD ∩ NEW. By skipping both state update AND canvas clip,
+    // we make clip() a no-op when intersection fails, keeping everything consistent.
+    if should_update_state {
+      self.state.clip_path = Some(clip_path.clone());
+      self.sync_clip_to_recorder();
+      self.with_canvas_state(|canvas| {
+        canvas.set_clip_path(&clip_path);
+      });
+    }
   }
 
   pub fn clear_rect(
@@ -293,7 +307,10 @@ impl Context {
   ) -> result::Result<(), SkError> {
     // Optimization: If clearing the entire canvas with identity transform, reset the page recorder
     // This prevents memory growth in game loops that clear each frame
-    // Only apply optimization if transform is identity - otherwise the clear might not cover everything
+    // Only apply optimization if:
+    // - Transform is identity - otherwise the clear might not cover everything
+    // - No clip path - otherwise the clear is masked
+    // - No pending save/restore states - otherwise resetting would break the save stack
     if x <= 0.0
       && y <= 0.0
       && (x + width) >= self.width as f32
@@ -301,6 +318,7 @@ impl Context {
       && self.page_recorder.is_some()
       && self.state.transform.get_transform().is_identity()
       && self.state.clip_path.is_none()
+      && self.states.is_empty()
     {
       // Full canvas clear - reset layers instead of accumulating
       if let Some(ref recorder) = self.page_recorder {
@@ -343,6 +361,13 @@ impl Context {
       canvas.save();
     });
     self.states.push(self.state.clone());
+    // Sync state to recorder at save time for layer promotion restoration
+    self.sync_transform_to_recorder();
+    self.sync_clip_to_recorder();
+    // Track save count for layer promotion restoration
+    if let Some(ref recorder) = self.page_recorder {
+      recorder.borrow_mut().increment_save();
+    }
   }
 
   pub fn restore(&mut self) {
@@ -355,8 +380,32 @@ impl Context {
         self.path.transform_self(&inverse);
       }
       self.state = s;
+
+      // In deferred mode, explicitly restore canvas transform and clip.
+      // This is needed because layer promotion recreates the save stack with
+      // identity transform/no clip at save time, so canvas.restore() may not
+      // restore the correct state.
+      if self.page_recorder.is_some() {
+        let transform = self.state.transform.clone();
+        let clip = self.state.clip_path.clone();
+        self.with_canvas_state(|canvas| {
+          canvas.set_transform(&transform);
+        });
+        // Re-apply clip if the restored state has one.
+        // If restored state has no clip, canvas.restore() already removed it.
+        if let Some(ref clip_path) = clip {
+          self.with_canvas_state(|canvas| {
+            canvas.set_clip_path(clip_path);
+          });
+        }
+      }
+
       self.sync_transform_to_recorder();
       self.sync_clip_to_recorder();
+      // Track save count for layer promotion restoration
+      if let Some(ref recorder) = self.page_recorder {
+        recorder.borrow_mut().decrement_save();
+      }
     }
   }
 

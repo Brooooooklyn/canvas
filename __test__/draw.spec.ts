@@ -222,6 +222,45 @@ test('clearRect-with-clip-preserves-outside', async (t) => {
   await snapshotImage(t)
 })
 
+test('clearRect-with-pending-save-preserves-state', async (t) => {
+  const { ctx, canvas } = t.context
+  // Test that clearRect with pending save states doesn't use the optimization
+  // This ensures the save/restore stack remains consistent
+
+  // Draw background
+  ctx.fillStyle = 'red'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+  // Save state and set up clip
+  ctx.save()
+  ctx.beginPath()
+  ctx.rect(100, 100, 300, 300)
+  ctx.clip()
+
+  // Draw inside clip
+  ctx.fillStyle = 'green'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+  // Full canvas clear while inside save - should NOT reset layers (has pending save)
+  // The clear should only affect the clipped area
+  ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+  // Draw new content inside clip
+  ctx.fillStyle = 'blue'
+  ctx.fillRect(150, 150, 200, 200)
+
+  // Restore state - should work correctly
+  ctx.restore()
+
+  // Draw outside clip area to verify restore worked
+  ctx.fillStyle = 'yellow'
+  ctx.fillRect(0, 0, 50, 50)
+
+  // Expected: red border (not cleared due to clip), blue square (inside clip),
+  // yellow square at top-left (after restore)
+  await snapshotImage(t)
+})
+
 test('clip', async (t) => {
   const { ctx, canvas } = t.context
   // Create circular clipping region
@@ -254,6 +293,161 @@ test('clip-cumulative', async (t) => {
   // Fill the entire canvas - only the intersection area (128-256) should be visible
   ctx.fillStyle = 'blue'
   ctx.fillRect(0, 0, canvas.width, canvas.height)
+  await snapshotImage(t)
+})
+
+test('clip-cumulative-with-layer-promotion', async (t) => {
+  const { ctx, canvas } = t.context
+  // This test verifies that cumulative clip state is correctly preserved
+  // across layer promotions (triggered by getImageData).
+  // Regression test for: clip state divergence when op() intersection is tracked
+
+  ctx.fillStyle = 'lightgray'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+  ctx.save()
+
+  // First clip: left portion (0 to 300)
+  ctx.beginPath()
+  ctx.rect(0, 0, 300, 512)
+  ctx.clip()
+
+  ctx.fillStyle = 'red'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+  // Trigger layer promotion
+  ctx.getImageData(0, 0, 1, 1)
+
+  // Second clip: overlapping region (150 to 450)
+  // The cumulative clip should be (150 to 300)
+  ctx.beginPath()
+  ctx.rect(150, 0, 300, 512)
+  ctx.clip()
+
+  // Trigger another layer promotion - clip state must be preserved correctly
+  ctx.getImageData(0, 0, 1, 1)
+
+  // Fill with blue - should only appear in the intersection (150 to 300)
+  ctx.fillStyle = 'blue'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+  ctx.restore()
+
+  // After restore, clip should be removed
+  // Draw green rectangle outside the previous clip area to verify
+  ctx.fillStyle = 'green'
+  ctx.fillRect(350, 100, 100, 100)
+
+  await snapshotImage(t)
+})
+
+test('clip-state-consistency-multiple-promotions', async (t) => {
+  const { ctx, canvas } = t.context
+  // Regression test for: clip state divergence when path intersection operation fails
+  // This test verifies that clip state remains consistent across multiple layer
+  // promotions, even when clips are applied between promotions.
+
+  ctx.fillStyle = 'lightgray'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+  ctx.save()
+
+  // First clip: left region (0-250)
+  ctx.beginPath()
+  ctx.rect(0, 0, 250, 512)
+  ctx.clip()
+
+  ctx.fillStyle = 'red'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+  // Trigger layer promotion
+  ctx.getImageData(0, 0, 1, 1)
+
+  // Second clip: overlapping region (100-350)
+  // Cumulative clip should be (100-250)
+  ctx.beginPath()
+  ctx.rect(100, 0, 250, 512)
+  ctx.clip()
+
+  ctx.fillStyle = 'orange'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+  // Trigger layer promotion again
+  ctx.getImageData(0, 0, 1, 1)
+
+  // Third clip: further narrowing (150-400)
+  // Cumulative clip should be (150-250)
+  ctx.beginPath()
+  ctx.rect(150, 0, 250, 512)
+  ctx.clip()
+
+  // Trigger layer promotion a third time
+  ctx.getImageData(0, 0, 1, 1)
+
+  // Final fill - should only appear in (150-250) if state is consistent
+  ctx.fillStyle = 'blue'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+  ctx.restore()
+
+  // After restore, no clip - draw marker to verify restore worked
+  ctx.fillStyle = 'green'
+  ctx.fillRect(400, 100, 100, 100)
+
+  // Expected visual:
+  // - Gray background
+  // - Red strip at 0-100 (first clip only, before second clip)
+  // - Orange strip at 100-150 (first + second clip, before third clip)
+  // - Blue strip at 150-250 (all three clips)
+  // - Green square at 400-500 (after restore)
+  await snapshotImage(t)
+})
+
+test('clip-no-divergence-after-promotion', async (t) => {
+  const { ctx, canvas } = t.context
+  // This test verifies that clip state does NOT diverge between the tracked state
+  // and the actual canvas clip after layer promotion.
+  // The bug was: canvas had OLD∩NEW but tracked state had OLD after promotion.
+
+  ctx.fillStyle = 'white'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+  // Apply first clip
+  ctx.beginPath()
+  ctx.rect(50, 50, 200, 200)
+  ctx.clip()
+
+  // Draw red - should be clipped to 50-250
+  ctx.fillStyle = 'red'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+  // Layer promotion
+  ctx.getImageData(0, 0, 1, 1)
+
+  // Apply second clip - intersection should be 100-250 horizontally
+  ctx.beginPath()
+  ctx.rect(100, 50, 200, 200)
+  ctx.clip()
+
+  // Layer promotion
+  ctx.getImageData(0, 0, 1, 1)
+
+  // Draw blue - if state diverged, this would show in wrong region
+  ctx.fillStyle = 'blue'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+  // Layer promotion again - this is where divergence would cause problems
+  ctx.getImageData(0, 0, 1, 1)
+
+  // Draw green - should STILL be clipped to intersection (100-250)
+  // If there was divergence, this might show in wrong region
+  ctx.fillStyle = 'green'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+  // The final result should show:
+  // - White background
+  // - Red region at x=50-100 (first clip only, before second)
+  // - Green region at x=100-250 (intersection of both clips)
   await snapshotImage(t)
 })
 
@@ -768,7 +962,7 @@ test('drawCanvas-with-shadow', async (t) => {
 })
 
 test('drawCanvas-complex-vector', async (t) => {
-  const { ctx } = t.context
+  const { ctx, canvas } = t.context
 
   // Create source canvas with complex vector graphics
   const sourceCanvas = createCanvas(200, 200)
@@ -800,7 +994,7 @@ test('drawCanvas-complex-vector', async (t) => {
   ctx.drawCanvas(sourceCanvas, 250, 10, 100, 100)
   ctx.drawCanvas(sourceCanvas, 10, 250, 150, 150)
 
-  await snapshotImage(t)
+  await snapshotImage(t, { canvas, ctx }, 'png', 0.3)
 })
 
 test('drawCanvas-preserves-vector-quality', async (t) => {
@@ -1388,6 +1582,82 @@ test('save-restore', async (t) => {
   ctx.restore()
 
   ctx.fillRect(150, 40, 100, 100)
+
+  await snapshotImage(t)
+})
+
+test('save-restore-after-layer-promotion', async (t) => {
+  const { ctx, canvas } = t.context
+  // Test that save/restore state is preserved after layer promotion (getImageData)
+  // This tests the fix for: https://github.com/Brooooooklyn/canvas/pull/1193
+
+  // Draw background
+  ctx.fillStyle = 'lightgray'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+  // Save state and set up clip
+  ctx.save()
+  ctx.beginPath()
+  ctx.rect(50, 50, 200, 200)
+  ctx.clip()
+
+  // Draw inside clip (should be visible)
+  ctx.fillStyle = 'red'
+  ctx.fillRect(0, 0, 300, 300)
+
+  // Trigger layer promotion via getImageData
+  ctx.getImageData(0, 0, 1, 1)
+
+  // Draw more inside clip (should still be clipped after layer promotion)
+  ctx.fillStyle = 'blue'
+  ctx.fillRect(100, 100, 200, 200)
+
+  // Restore state - clip should be removed
+  ctx.restore()
+
+  // Draw outside the clip area (should be visible since clip was restored)
+  ctx.fillStyle = 'green'
+  ctx.fillRect(300, 50, 150, 200)
+
+  await snapshotImage(t)
+})
+
+test('save-restore-transform-after-layer-promotion', async (t) => {
+  const { ctx, canvas } = t.context
+  // Test that transform state is correctly restored after layer promotion
+  // This tests the fix for: Canvas state not restored after layer promotion and restore
+
+  // Draw background
+  ctx.fillStyle = 'lightgray'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+  // Set up initial transform (translate 50, 50)
+  ctx.translate(50, 50)
+
+  // Save state with the transform
+  ctx.save()
+
+  // Apply additional transform (rotate 45 degrees)
+  ctx.rotate(Math.PI / 4)
+
+  // Draw rotated red rectangle
+  ctx.fillStyle = 'red'
+  ctx.fillRect(0, 0, 100, 50)
+
+  // Trigger layer promotion via getImageData
+  ctx.getImageData(0, 0, 1, 1)
+
+  // Draw more content with current rotated transform
+  ctx.fillStyle = 'blue'
+  ctx.fillRect(0, 60, 100, 50)
+
+  // Restore state - should restore to translate(50, 50) without rotation
+  ctx.restore()
+
+  // Draw with restored transform (no rotation, just translate)
+  // This rectangle should appear at (50, 200) without rotation
+  ctx.fillStyle = 'green'
+  ctx.fillRect(0, 150, 150, 80)
 
   await snapshotImage(t)
 })

@@ -3065,7 +3065,7 @@ impl Path {
     unsafe { ffi::skiac_add_path(self.0, sub_path.0, transform.0) };
   }
 
-  pub fn op(&self, other: &Path, op: PathOp) -> bool {
+  pub fn op(&mut self, other: &Path, op: PathOp) -> bool {
     unsafe { ffi::skiac_path_op(self.0, other.0, op as i32) }
   }
 
@@ -4422,20 +4422,24 @@ pub struct SkPicture(*mut ffi::skiac_picture);
 
 impl Drop for SkPicture {
   fn drop(&mut self) {
-    unsafe {
-      ffi::skiac_picture_destroy(self.0);
+    if !self.0.is_null() {
+      unsafe {
+        ffi::skiac_picture_destroy(self.0);
+      }
     }
   }
 }
 
 impl Clone for SkPicture {
   fn clone(&self) -> Self {
-    unsafe {
-      // Increment the reference count on the underlying SkPicture
-      // SkPicture is reference-counted (inherits from SkRefCnt)
-      ffi::skiac_picture_ref(self.0);
-      SkPicture(self.0)
+    if !self.0.is_null() {
+      unsafe {
+        // Increment the reference count on the underlying SkPicture
+        // SkPicture is reference-counted (inherits from SkRefCnt)
+        ffi::skiac_picture_ref(self.0);
+      }
     }
+    SkPicture(self.0)
   }
 }
 
@@ -4472,12 +4476,14 @@ impl Drop for SkImage {
 
 impl Clone for SkImage {
   fn clone(&self) -> Self {
-    unsafe {
-      // Increment the reference count on the underlying SkImage
-      // SkImage is reference-counted (inherits from SkRefCnt)
-      ffi::skiac_image_ref(self.0);
-      SkImage(self.0)
+    if !self.0.is_null() {
+      unsafe {
+        // Increment the reference count on the underlying SkImage
+        // SkImage is reference-counted (inherits from SkRefCnt)
+        ffi::skiac_image_ref(self.0);
+      }
     }
+    SkImage(self.0)
   }
 }
 
@@ -4512,8 +4518,10 @@ pub struct SkDrawable(pub(crate) *mut ffi::skiac_drawable);
 
 impl Drop for SkDrawable {
   fn drop(&mut self) {
-    unsafe {
-      ffi::skiac_drawable_destroy(self.0);
+    if !self.0.is_null() {
+      unsafe {
+        ffi::skiac_drawable_destroy(self.0);
+      }
     }
   }
 }

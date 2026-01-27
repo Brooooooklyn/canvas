@@ -94,6 +94,7 @@ pub struct PageRecorder {
   recording_surface: RecordingSurface, // Persistent surface for incremental rendering
   current_transform: Option<Matrix>, // Transform to restore after layer promotion
   current_clip: Option<SkPath>, // Clip path to restore after layer promotion
+  save_count: usize, // Track save stack depth to restore after layer promotion
 }
 
 impl PageRecorder {
@@ -113,6 +114,7 @@ impl PageRecorder {
       recording_surface: RecordingSurface::new(),
       current_transform: None,
       current_clip: None,
+      save_count: 0,
     }
   }
 
@@ -138,17 +140,20 @@ impl PageRecorder {
       self
         .current
         .begin_recording(0.0, 0.0, self.width, self.height);
-      // Restore the transform state on the new recording canvas
-      if let Some(ref transform) = self.current_transform
-        && let Some(canvas) = self.current.get_recording_canvas()
-      {
-        canvas.set_transform(transform);
-      }
-      // Restore the clip state on the new recording canvas
-      if let Some(ref clip_path) = self.current_clip
-        && let Some(canvas) = self.current.get_recording_canvas()
-      {
-        canvas.set_clip_path(clip_path);
+      // Restore canvas state on the new recording canvas
+      if let Some(canvas) = self.current.get_recording_canvas() {
+        // First restore save stack depth so transform/clip are applied at correct level
+        for _ in 0..self.save_count {
+          canvas.save();
+        }
+        // Then restore transform state
+        if let Some(ref transform) = self.current_transform {
+          canvas.set_transform(transform);
+        }
+        // Then restore clip state
+        if let Some(ref clip_path) = self.current_clip {
+          canvas.set_clip_path(clip_path);
+        }
       }
       self.changed = false;
     }
@@ -162,6 +167,16 @@ impl PageRecorder {
   /// Set the current clip path to restore after layer promotion
   pub fn set_clip(&mut self, clip_path: Option<SkPath>) {
     self.current_clip = clip_path;
+  }
+
+  /// Increment save count (called when ctx.save() is invoked)
+  pub fn increment_save(&mut self) {
+    self.save_count += 1;
+  }
+
+  /// Decrement save count (called when ctx.restore() is invoked)
+  pub fn decrement_save(&mut self) {
+    self.save_count = self.save_count.saturating_sub(1);
   }
 
   /// Get composite picture of all layers (for drawCanvas)
@@ -230,6 +245,8 @@ impl PageRecorder {
     // Reset transform and clip state
     self.current_transform = None;
     self.current_clip = None;
+    // Reset save count
+    self.save_count = 0;
   }
 
   /// Get pixels using the persistent RecordingSurface.

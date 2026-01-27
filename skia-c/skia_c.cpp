@@ -1050,15 +1050,22 @@ skiac_path* skiac_path_clone(skiac_path* c_path) {
 }
 
 void skiac_picture_ref(skiac_picture* c_picture) {
-  reinterpret_cast<SkPicture*>(c_picture)->ref();
+  if (c_picture) {
+    reinterpret_cast<SkPicture*>(c_picture)->ref();
+  }
 }
 
 void skiac_picture_destroy(skiac_picture* c_picture) {
-  reinterpret_cast<SkPicture*>(c_picture)->unref();
+  if (c_picture) {
+    reinterpret_cast<SkPicture*>(c_picture)->unref();
+  }
 }
 
 // Direct playback without matrix/paint overhead
 void skiac_picture_playback(skiac_picture* c_picture, skiac_canvas* c_canvas) {
+  if (c_picture == nullptr || c_canvas == nullptr) {
+    return;
+  }
   reinterpret_cast<SkPicture*>(c_picture)->playback(
       reinterpret_cast<SkCanvas*>(c_canvas));
 }
@@ -1111,6 +1118,9 @@ skiac_drawable* skiac_picture_recorder_finish_recording_as_drawable(
 void skiac_canvas_draw_drawable(skiac_canvas* c_canvas,
                                 skiac_drawable* c_drawable,
                                 skiac_matrix* c_matrix) {
+  if (c_canvas == nullptr || c_drawable == nullptr) {
+    return;
+  }
   auto canvas = reinterpret_cast<SkCanvas*>(c_canvas);
   auto drawable = reinterpret_cast<SkDrawable*>(c_drawable);
   if (c_matrix) {
@@ -1121,7 +1131,9 @@ void skiac_canvas_draw_drawable(skiac_canvas* c_canvas,
 }
 
 void skiac_drawable_destroy(skiac_drawable* c_drawable) {
-  reinterpret_cast<SkDrawable*>(c_drawable)->unref();
+  if (c_drawable) {
+    reinterpret_cast<SkDrawable*>(c_drawable)->unref();
+  }
 }
 
 void skiac_path_swap(skiac_path* c_path, skiac_path* other_path) {
@@ -1821,19 +1833,23 @@ skiac_image* skiac_surface_make_image_snapshot(skiac_surface* c_surface) {
 }
 
 void skiac_image_ref(skiac_image* c_image) {
-  IMAGE_CAST->ref();
+  if (c_image) {
+    IMAGE_CAST->ref();
+  }
 }
 
 void skiac_image_destroy(skiac_image* c_image) {
-  IMAGE_CAST->unref();
+  if (c_image) {
+    IMAGE_CAST->unref();
+  }
 }
 
 int skiac_image_get_width(skiac_image* c_image) {
-  return IMAGE_CAST->width();
+  return c_image ? IMAGE_CAST->width() : 0;
 }
 
 int skiac_image_get_height(skiac_image* c_image) {
-  return IMAGE_CAST->height();
+  return c_image ? IMAGE_CAST->height() : 0;
 }
 
 void skiac_canvas_draw_sk_image(skiac_canvas* c_canvas,
