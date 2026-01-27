@@ -215,6 +215,11 @@ impl PageRecorder {
     self.width = width;
     self.height = height;
     self.current.begin_recording(0.0, 0.0, width, height);
+    // Record a clear() command to ensure picture playback clears the target canvas
+    // This is necessary because begin_recording may not fully reset canvas state
+    if let Some(canvas) = self.current.get_recording_canvas() {
+      canvas.clear();
+    }
     self.changed = false;
     // Reset all caches
     self.depth = 0;
