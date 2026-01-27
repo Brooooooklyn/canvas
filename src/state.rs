@@ -1,6 +1,6 @@
 use rgb::RGBA;
 
-use crate::sk::{BlendMode, ImageFilter, Matrix};
+use crate::sk::{BlendMode, ImageFilter, Matrix, Path as SkPath};
 
 use super::{
   font::{Font, FontStretch},
@@ -49,6 +49,7 @@ pub struct Context2dRenderingState {
   pub filter: Option<ImageFilter>,
   pub filters_string: String,
   pub global_composite_operation: BlendMode,
+  pub clip_path: Option<SkPath>,
 }
 
 impl Default for Context2dRenderingState {
@@ -90,6 +91,7 @@ impl Default for Context2dRenderingState {
       filter: None,
       filters_string: "none".to_owned(),
       global_composite_operation: BlendMode::default(),
+      clip_path: None,
     }
   }
 }

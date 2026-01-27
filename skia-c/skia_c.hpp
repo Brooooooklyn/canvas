@@ -4,6 +4,7 @@
 #include <include/codec/SkCodec.h>
 #include <include/codec/SkEncodedImageFormat.h>
 #include <include/core/SkAnnotation.h>
+#include <include/core/SkBBHFactory.h>
 #include <include/core/SkBitmap.h>
 #include <include/core/SkBlurTypes.h>
 #include <include/core/SkCanvas.h>
@@ -79,6 +80,7 @@ typedef struct skiac_typeface_font_provider skiac_typeface_font_provider;
 typedef struct skiac_w_memory_stream skiac_w_memory_stream;
 typedef struct skiac_picture_recorder skiac_picture_recorder;
 typedef struct skiac_picture skiac_picture;
+typedef struct skiac_drawable skiac_drawable;
 typedef struct skiac_encoder skiac_encoder;
 typedef struct skiac_document skiac_document;
 typedef struct skiac_skottie_animation skiac_skottie_animation;
@@ -440,6 +442,18 @@ void skiac_canvas_draw_picture(skiac_canvas* c_canvas,
                                skiac_picture* c_picture,
                                skiac_matrix* c_matrix,
                                skiac_paint* c_paint);
+// Optimized: combines save/clip/transform/draw/restore into single call
+void skiac_canvas_draw_picture_rect(skiac_canvas* c_canvas,
+                                    skiac_picture* c_picture,
+                                    float sx,
+                                    float sy,
+                                    float sw,
+                                    float sh,
+                                    float dx,
+                                    float dy,
+                                    float dw,
+                                    float dh,
+                                    skiac_paint* c_paint);
 void skiac_canvas_destroy(skiac_canvas* c_canvas);
 
 // Paint
@@ -669,6 +683,18 @@ skiac_image_filter* skiac_image_filter_from_argb(
     skiac_image_filter* c_image_filter);
 void skiac_image_filter_destroy(skiac_image_filter* c_image_filter);
 
+// SkImage (for PageCache)
+skiac_image* skiac_surface_make_image_snapshot(skiac_surface* c_surface);
+void skiac_image_ref(skiac_image* c_image);
+void skiac_image_destroy(skiac_image* c_image);
+int skiac_image_get_width(skiac_image* c_image);
+int skiac_image_get_height(skiac_image* c_image);
+void skiac_canvas_draw_sk_image(skiac_canvas* c_canvas,
+                                skiac_image* c_image,
+                                float left,
+                                float top,
+                                int filter_quality);
+
 // Data
 void skiac_sk_data_destroy(skiac_data* c_data);
 
@@ -757,18 +783,29 @@ void skiac_svg_text_to_path(const uint8_t* data,
                             skiac_sk_data* output_data);
 
 // SkPictureRecorder
+void skiac_picture_ref(skiac_picture* c_picture);
 void skiac_picture_destroy(skiac_picture* c_picture);
+void skiac_picture_playback(skiac_picture* c_picture, skiac_canvas* c_canvas);
 skiac_picture_recorder* skiac_picture_recorder_create();
 void skiac_picture_recorder_begin_recording(
     skiac_picture_recorder* c_picture_recorder,
     float x,
     float y,
     float width,
-    float height);
+    float height,
+    bool use_bbh);
 skiac_canvas* skiac_picture_recorder_get_recording_canvas(
     skiac_picture_recorder* c_picture_recorder);
 skiac_picture* skiac_picture_recorder_finish_recording_as_picture(
     skiac_picture_recorder* c_picture_recorder);
+skiac_drawable* skiac_picture_recorder_finish_recording_as_drawable(
+    skiac_picture_recorder* c_picture_recorder);
+
+// SkDrawable
+void skiac_canvas_draw_drawable(skiac_canvas* c_canvas,
+                                skiac_drawable* c_drawable,
+                                skiac_matrix* c_matrix);
+void skiac_drawable_destroy(skiac_drawable* c_drawable);
 
 // SkDocument
 void skiac_document_create(skiac_pdf_document* c_document,

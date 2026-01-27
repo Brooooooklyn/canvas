@@ -241,6 +241,12 @@ pub mod ffi {
 
   #[repr(C)]
   #[derive(Debug, Clone, Copy)]
+  pub struct skiac_drawable {
+    _unused: [u8; 0],
+  }
+
+  #[repr(C)]
+  #[derive(Debug, Clone, Copy)]
   pub struct skiac_document {
     _unused: [u8; 0],
   }
@@ -623,6 +629,21 @@ pub mod ffi {
       paint: *mut skiac_paint,
     );
 
+    // Optimized: combines save/clip/transform/draw/restore into single FFI call
+    pub fn skiac_canvas_draw_picture_rect(
+      canvas: *mut skiac_canvas,
+      picture: *mut skiac_picture,
+      sx: f32,
+      sy: f32,
+      sw: f32,
+      sh: f32,
+      dx: f32,
+      dy: f32,
+      dw: f32,
+      dh: f32,
+      paint: *mut skiac_paint,
+    );
+
     pub fn skiac_canvas_destroy(canvas: *mut skiac_canvas);
 
     pub fn skiac_paint_create() -> *mut skiac_paint;
@@ -952,6 +973,25 @@ pub mod ffi {
 
     pub fn skiac_image_filter_destroy(image_filter: *mut skiac_image_filter);
 
+    // SkImage
+    pub fn skiac_surface_make_image_snapshot(surface: *mut skiac_surface) -> *mut skiac_image;
+
+    pub fn skiac_image_ref(image: *mut skiac_image);
+
+    pub fn skiac_image_destroy(image: *mut skiac_image);
+
+    pub fn skiac_image_get_width(image: *mut skiac_image) -> i32;
+
+    pub fn skiac_image_get_height(image: *mut skiac_image) -> i32;
+
+    pub fn skiac_canvas_draw_sk_image(
+      canvas: *mut skiac_canvas,
+      image: *mut skiac_image,
+      left: f32,
+      top: f32,
+      filter_quality: i32,
+    );
+
     pub fn skiac_sk_data_destroy(c_data: *mut skiac_data);
 
     pub fn skiac_bitmap_make_from_buffer(ptr: *mut u8, size: usize, info: *mut skiac_bitmap_info);
@@ -991,7 +1031,9 @@ pub mod ffi {
     ) -> *mut skiac_shader;
 
     pub fn skiac_bitmap_destroy(c_bitmap: *mut skiac_bitmap);
+    pub fn skiac_picture_ref(c_picture: *mut skiac_picture);
     pub fn skiac_picture_destroy(c_picture: *mut skiac_picture);
+    pub fn skiac_picture_playback(c_picture: *mut skiac_picture, c_canvas: *mut skiac_canvas);
 
     // SkString
     pub fn skiac_delete_sk_string(c_sk_string: *mut skiac_sk_string);
@@ -1078,6 +1120,7 @@ pub mod ffi {
       y: f32,
       w: f32,
       h: f32,
+      use_bbh: bool,
     );
 
     pub fn skiac_picture_recorder_get_recording_canvas(
@@ -1087,6 +1130,19 @@ pub mod ffi {
     pub fn skiac_picture_recorder_finish_recording_as_picture(
       picture_recorder: *mut skiac_picture_recorder,
     ) -> *mut skiac_picture;
+
+    pub fn skiac_picture_recorder_finish_recording_as_drawable(
+      picture_recorder: *mut skiac_picture_recorder,
+    ) -> *mut skiac_drawable;
+
+    // SkDrawable
+    pub fn skiac_canvas_draw_drawable(
+      canvas: *mut skiac_canvas,
+      drawable: *mut skiac_drawable,
+      matrix: *mut skiac_matrix,
+    );
+
+    pub fn skiac_drawable_destroy(drawable: *mut skiac_drawable);
 
     // SkDocument
     pub fn skiac_document_create(
@@ -2184,6 +2240,16 @@ impl Surface {
   pub(crate) fn get_bitmap_ptr(&self) -> *mut ffi::skiac_bitmap {
     self.ptr as *mut ffi::skiac_bitmap
   }
+
+  /// Create an immutable image snapshot of the surface for caching
+  pub fn make_image_snapshot(&self) -> Option<SkImage> {
+    let image_ptr = unsafe { ffi::skiac_surface_make_image_snapshot(self.ptr) };
+    if image_ptr.is_null() {
+      None
+    } else {
+      Some(SkImage(image_ptr))
+    }
+  }
 }
 
 impl std::ops::Deref for Surface {
@@ -2282,6 +2348,16 @@ impl SurfaceRef {
       None
     } else {
       Some(SkiaDataRef(data))
+    }
+  }
+
+  /// Create an immutable image snapshot of the surface for caching
+  pub fn make_image_snapshot(&self) -> Option<SkImage> {
+    let image_ptr = unsafe { ffi::skiac_surface_make_image_snapshot(self.0) };
+    if image_ptr.is_null() {
+      None
+    } else {
+      Some(SkImage(image_ptr))
     }
   }
 }
@@ -2742,9 +2818,39 @@ impl Canvas {
     }
   }
 
-  pub fn draw_picture(&self, picture: SkPicture, matrix: &Matrix, paint: &Paint) {
+  pub fn draw_picture(&self, picture: &SkPicture, matrix: &Matrix, paint: &Paint) {
     unsafe {
       ffi::skiac_canvas_draw_picture(self.0, picture.0, matrix.0, paint.0);
+    }
+  }
+
+  /// Optimized: draws picture with source/dest rects in a single FFI call
+  /// Combines save/clip/transform/draw/restore operations
+  #[inline]
+  pub fn draw_picture_rect(
+    &mut self,
+    picture: &SkPicture,
+    sx: f32,
+    sy: f32,
+    sw: f32,
+    sh: f32,
+    dx: f32,
+    dy: f32,
+    dw: f32,
+    dh: f32,
+    paint: &Paint,
+  ) {
+    unsafe {
+      ffi::skiac_canvas_draw_picture_rect(
+        self.0, picture.0, sx, sy, sw, sh, dx, dy, dw, dh, paint.0,
+      );
+    }
+  }
+
+  pub fn draw_drawable(&self, drawable: &SkDrawable, matrix: Option<&Matrix>) {
+    unsafe {
+      let matrix_ptr = matrix.map(|m| m.0).unwrap_or(std::ptr::null_mut());
+      ffi::skiac_canvas_draw_drawable(self.0, drawable.0, matrix_ptr);
     }
   }
 
@@ -3618,6 +3724,16 @@ impl Transform {
     Transform { a, b, c, d, e, f }
   }
 
+  /// Check if this is an identity transform (no transformation applied)
+  pub fn is_identity(&self) -> bool {
+    self.a == 1.0
+      && self.b == 0.0
+      && self.c == 0.0
+      && self.d == 1.0
+      && self.e == 0.0
+      && self.f == 0.0
+  }
+
   pub fn rotate(radians: f32) -> Self {
     let sin_v = radians.sin();
     let cos_v = radians.cos();
@@ -4312,6 +4428,96 @@ impl Drop for SkPicture {
   }
 }
 
+impl Clone for SkPicture {
+  fn clone(&self) -> Self {
+    unsafe {
+      // Increment the reference count on the underlying SkPicture
+      // SkPicture is reference-counted (inherits from SkRefCnt)
+      ffi::skiac_picture_ref(self.0);
+      SkPicture(self.0)
+    }
+  }
+}
+
+impl SkPicture {
+  /// Direct playback of picture commands to canvas.
+  /// This is faster than draw_picture() as it doesn't wrap in save/restore
+  /// or create temporary layers for matrix/paint.
+  #[inline]
+  pub fn playback(&self, canvas: &Canvas) {
+    unsafe {
+      ffi::skiac_picture_playback(self.0, canvas.0);
+    }
+  }
+}
+
+/// SkImage wrapper for cached bitmap snapshots.
+/// SkImage is reference-counted and immutable after creation.
+#[derive(Debug)]
+pub struct SkImage(pub(crate) *mut ffi::skiac_image);
+
+// Safety: SkImage is reference-counted and immutable, safe to send between threads
+unsafe impl Send for SkImage {}
+unsafe impl Sync for SkImage {}
+
+impl Drop for SkImage {
+  fn drop(&mut self) {
+    if !self.0.is_null() {
+      unsafe {
+        ffi::skiac_image_destroy(self.0);
+      }
+    }
+  }
+}
+
+impl Clone for SkImage {
+  fn clone(&self) -> Self {
+    unsafe {
+      // Increment the reference count on the underlying SkImage
+      // SkImage is reference-counted (inherits from SkRefCnt)
+      ffi::skiac_image_ref(self.0);
+      SkImage(self.0)
+    }
+  }
+}
+
+impl SkImage {
+  /// Get the width of the image
+  #[inline]
+  pub fn width(&self) -> i32 {
+    unsafe { ffi::skiac_image_get_width(self.0) }
+  }
+
+  /// Get the height of the image
+  #[inline]
+  pub fn height(&self) -> i32 {
+    unsafe { ffi::skiac_image_get_height(self.0) }
+  }
+
+  /// Draw this image to a canvas at the specified position
+  #[inline]
+  pub fn draw(&self, canvas: &Canvas, left: f32, top: f32, filter_quality: FilterQuality) {
+    unsafe {
+      ffi::skiac_canvas_draw_sk_image(canvas.0, self.0, left, top, filter_quality as i32);
+    }
+  }
+}
+
+/// SkDrawable wrapper for content deduplication.
+/// Drawables are intermediate representations that can be converted to Pictures.
+/// Using finish_recording_as_drawable() before converting to Picture enables
+/// Skia's internal content deduplication for repeated drawing operations.
+#[derive(Debug)]
+pub struct SkDrawable(pub(crate) *mut ffi::skiac_drawable);
+
+impl Drop for SkDrawable {
+  fn drop(&mut self) {
+    unsafe {
+      ffi::skiac_drawable_destroy(self.0);
+    }
+  }
+}
+
 #[derive(Debug)]
 pub struct SkPictureRecorder(pub(crate) *mut ffi::skiac_picture_recorder);
 
@@ -4320,9 +4526,15 @@ impl SkPictureRecorder {
     SkPictureRecorder(unsafe { ffi::skiac_picture_recorder_create() })
   }
 
+  /// Begin recording with optional bounding box hierarchy (BBH) support.
+  /// BBH enables efficient culling during playback - recommended for pictures with many operations.
   pub fn begin_recording(&self, x: f32, y: f32, w: f32, h: f32) {
+    self.begin_recording_with_bbh(x, y, w, h, true) // Enable BBH by default like skia-canvas
+  }
+
+  pub fn begin_recording_with_bbh(&self, x: f32, y: f32, w: f32, h: f32, use_bbh: bool) {
     unsafe {
-      ffi::skiac_picture_recorder_begin_recording(self.0, x, y, w, h);
+      ffi::skiac_picture_recorder_begin_recording(self.0, x, y, w, h, use_bbh);
     }
   }
 
@@ -4341,6 +4553,19 @@ impl SkPictureRecorder {
     }
 
     Some(SkPicture(picture_ref))
+  }
+
+  /// Finish recording as a drawable for content deduplication.
+  /// This is useful when the recorded content will be drawn to multiple targets
+  /// or when the content contains repeated elements that can be deduplicated.
+  pub fn finish_recording_as_drawable(&self) -> Option<SkDrawable> {
+    let drawable_ref = unsafe { ffi::skiac_picture_recorder_finish_recording_as_drawable(self.0) };
+
+    if drawable_ref.is_null() {
+      return None;
+    }
+
+    Some(SkDrawable(drawable_ref))
   }
 }
 

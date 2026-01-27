@@ -847,6 +847,61 @@ void skiac_canvas_draw_picture(skiac_canvas* c_canvas,
   CANVAS_CAST->drawPicture(picture, MATRIX_CAST, PAINT_CAST);
 }
 
+// Optimized version that combines save/clip/transform/draw/restore into single
+// call Uses pre-computed matrix like skia-canvas for better performance
+void skiac_canvas_draw_picture_rect(skiac_canvas* c_canvas,
+                                    skiac_picture* c_picture,
+                                    float sx,
+                                    float sy,
+                                    float sw,
+                                    float sh,
+                                    float dx,
+                                    float dy,
+                                    float dw,
+                                    float dh,
+                                    skiac_paint* c_paint) {
+  if (c_canvas == nullptr || c_picture == nullptr) {
+    return;
+  }
+
+  auto canvas = CANVAS_CAST;
+  auto picture = reinterpret_cast<SkPicture*>(c_picture);
+
+  // Guard against division by zero
+  if (sw == 0.0f || sh == 0.0f) {
+    return;
+  }
+
+  // Pre-compute matrix like skia-canvas does
+  float scale_x = dw / sw;
+  float scale_y = dh / sh;
+
+  // Build transformation matrix: scale then translate
+  // postTranslate ensures translation is not scaled
+  SkMatrix matrix = SkMatrix::I();
+  matrix.setScale(scale_x, scale_y);
+  matrix.postTranslate(dx - sx * scale_x, dy - sy * scale_y);
+
+  canvas->save();
+  canvas->clipRect(SkRect::MakeXYWH(dx, dy, dw, dh), SkClipOp::kIntersect,
+                   true /* antialias */);
+
+  // Optimization: skip paint if it's default (SrcOver blend, full alpha, no
+  // filter) This matches skia-canvas behavior
+  const SkPaint* paint = PAINT_CAST;
+  if (paint != nullptr) {
+    auto blendMode = paint->asBlendMode();
+    if (blendMode.has_value() && blendMode.value() == SkBlendMode::kSrcOver &&
+        paint->getAlpha() == 255 && paint->getImageFilter() == nullptr) {
+      paint = nullptr;  // Skip paint for default case
+    }
+  }
+
+  // Pass matrix directly to drawPicture instead of using canvas transforms
+  canvas->drawPicture(picture, &matrix, paint);
+  canvas->restore();
+}
+
 void skiac_canvas_destroy(skiac_canvas* c_canvas) {
   if (c_canvas) {
     delete CANVAS_CAST;
@@ -994,8 +1049,18 @@ skiac_path* skiac_path_clone(skiac_path* c_path) {
   return new skiac_path(c_path->path());
 }
 
+void skiac_picture_ref(skiac_picture* c_picture) {
+  reinterpret_cast<SkPicture*>(c_picture)->ref();
+}
+
 void skiac_picture_destroy(skiac_picture* c_picture) {
   reinterpret_cast<SkPicture*>(c_picture)->unref();
+}
+
+// Direct playback without matrix/paint overhead
+void skiac_picture_playback(skiac_picture* c_picture, skiac_canvas* c_canvas) {
+  reinterpret_cast<SkPicture*>(c_picture)->playback(
+      reinterpret_cast<SkCanvas*>(c_canvas));
 }
 
 // SkPictureRecorder
@@ -1008,10 +1073,18 @@ void skiac_picture_recorder_begin_recording(
     float x,
     float y,
     float width,
-    float height) {
+    float height,
+    bool use_bbh) {
   auto rect = SkRect::MakeXYWH(x, y, width, height);
-  reinterpret_cast<SkPictureRecorder*>(c_picture_recorder)
-      ->beginRecording(rect);
+  auto recorder = reinterpret_cast<SkPictureRecorder*>(c_picture_recorder);
+  if (use_bbh) {
+    // Create an RTree for bounding box hierarchy - enables efficient culling
+    // during playback
+    sk_sp<SkBBoxHierarchy> bbh = SkRTreeFactory()();
+    recorder->beginRecording(rect, std::move(bbh));
+  } else {
+    recorder->beginRecording(rect);
+  }
 }
 
 skiac_canvas* skiac_picture_recorder_get_recording_canvas(
@@ -1026,6 +1099,29 @@ skiac_picture* skiac_picture_recorder_finish_recording_as_picture(
   auto picture = reinterpret_cast<SkPictureRecorder*>(c_picture_recorder)
                      ->finishRecordingAsPicture();
   return reinterpret_cast<skiac_picture*>(picture.release());
+}
+
+skiac_drawable* skiac_picture_recorder_finish_recording_as_drawable(
+    skiac_picture_recorder* c_picture_recorder) {
+  auto drawable = reinterpret_cast<SkPictureRecorder*>(c_picture_recorder)
+                      ->finishRecordingAsDrawable();
+  return reinterpret_cast<skiac_drawable*>(drawable.release());
+}
+
+void skiac_canvas_draw_drawable(skiac_canvas* c_canvas,
+                                skiac_drawable* c_drawable,
+                                skiac_matrix* c_matrix) {
+  auto canvas = reinterpret_cast<SkCanvas*>(c_canvas);
+  auto drawable = reinterpret_cast<SkDrawable*>(c_drawable);
+  if (c_matrix) {
+    canvas->drawDrawable(drawable, MATRIX_CAST);
+  } else {
+    canvas->drawDrawable(drawable);
+  }
+}
+
+void skiac_drawable_destroy(skiac_drawable* c_drawable) {
+  reinterpret_cast<SkDrawable*>(c_drawable)->unref();
 }
 
 void skiac_path_swap(skiac_path* c_path, skiac_path* other_path) {
@@ -1711,6 +1807,42 @@ void skiac_image_filter_ref(skiac_image_filter* c_image_filter) {
 void skiac_image_filter_destroy(skiac_image_filter* c_image_filter) {
   auto image_filter = IMAGE_FILTER_CAST;
   image_filter->unref();
+}
+
+// SkImage (for PageCache)
+#define IMAGE_CAST reinterpret_cast<SkImage*>(c_image)
+
+skiac_image* skiac_surface_make_image_snapshot(skiac_surface* c_surface) {
+  auto image = SURFACE_CAST->makeImageSnapshot();
+  if (image) {
+    return reinterpret_cast<skiac_image*>(image.release());
+  }
+  return nullptr;
+}
+
+void skiac_image_ref(skiac_image* c_image) {
+  IMAGE_CAST->ref();
+}
+
+void skiac_image_destroy(skiac_image* c_image) {
+  IMAGE_CAST->unref();
+}
+
+int skiac_image_get_width(skiac_image* c_image) {
+  return IMAGE_CAST->width();
+}
+
+int skiac_image_get_height(skiac_image* c_image) {
+  return IMAGE_CAST->height();
+}
+
+void skiac_canvas_draw_sk_image(skiac_canvas* c_canvas,
+                                skiac_image* c_image,
+                                float left,
+                                float top,
+                                int filter_quality) {
+  const auto sampling = SamplingOptionsFromFQ(filter_quality);
+  CANVAS_CAST->drawImage(IMAGE_CAST, left, top, sampling, nullptr);
 }
 
 // SkData

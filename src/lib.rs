@@ -46,6 +46,7 @@ pub mod global_fonts;
 mod gradient;
 mod image;
 pub mod lottie;
+mod page_recorder;
 pub mod path;
 mod pattern;
 pub mod picture_recorder;
@@ -216,10 +217,12 @@ impl<'c> CanvasElement<'c> {
 
   #[napi]
   pub fn encode(
-    &self,
+    &mut self,
     format: String,
     quality_or_config: Either3<u32, AvifConfig, Unknown>,
   ) -> Result<AsyncTask<ContextData>> {
+    // Flush deferred rendering before encoding
+    self.ctx.context.flush();
     Ok(AsyncTask::new(
       self.encode_inner(format, quality_or_config)?,
     ))
@@ -227,11 +230,13 @@ impl<'c> CanvasElement<'c> {
 
   #[napi]
   pub fn encode_sync<'env>(
-    &'env self,
+    &'env mut self,
     env: Env,
     format: String,
     quality_or_config: Either3<u32, AvifConfig, Unknown>,
   ) -> Result<BufferSlice<'env>> {
+    // Flush deferred rendering before encoding
+    self.ctx.context.flush();
     let data = self.encode_inner(format, quality_or_config)?;
     let output = encode_surface(&data)?;
     output.into_buffer_slice(env)
@@ -239,11 +244,13 @@ impl<'c> CanvasElement<'c> {
 
   #[napi]
   pub fn to_buffer<'env>(
-    &'env self,
+    &'env mut self,
     env: Env,
     mime: String,
     quality_or_config: Either3<u32, AvifConfig, Unknown>,
   ) -> Result<BufferSlice<'env>> {
+    // Flush deferred rendering before encoding
+    self.ctx.context.flush();
     let mime = mime.as_str();
     let context_data = get_data_ref(
       &self.ctx.context.surface.reference(),
@@ -288,7 +295,9 @@ impl<'c> CanvasElement<'c> {
   }
 
   #[napi]
-  pub fn data<'env>(&self, env: Env) -> Result<BufferSlice<'env>> {
+  pub fn data<'env>(&mut self, env: Env) -> Result<BufferSlice<'env>> {
+    // Flush deferred rendering before reading data
+    self.ctx.context.flush();
     let ctx2d = &self.ctx.context;
 
     let surface_ref = ctx2d.surface.reference();
@@ -304,10 +313,12 @@ impl<'c> CanvasElement<'c> {
 
   #[napi(js_name = "toDataURLAsync")]
   pub fn to_data_url_async(
-    &self,
+    &mut self,
     mime: Option<String>,
     quality_or_config: Either3<f64, AvifConfig, Unknown>,
   ) -> Result<AsyncTask<AsyncDataUrl>> {
+    // Flush deferred rendering before encoding
+    self.ctx.context.flush();
     Ok(AsyncTask::new(
       self.to_data_url_inner(mime.as_deref(), quality_or_config)?,
     ))
@@ -315,21 +326,25 @@ impl<'c> CanvasElement<'c> {
 
   #[napi(js_name = "toDataURL")]
   pub fn to_data_url(
-    &self,
+    &mut self,
     mime: Option<String>,
     quality_or_config: Either3<f64, AvifConfig, Unknown>,
   ) -> Result<String> {
+    // Flush deferred rendering before encoding
+    self.ctx.context.flush();
     Task::compute(&mut self.to_data_url_inner(mime.as_deref(), quality_or_config)?)
   }
 
   #[napi]
   pub fn to_blob(
-    &self,
+    &mut self,
     env: &Env,
     callback: Function<Either<Uint8ArraySlice, Null>, Unknown>,
     mime: Option<String>,
     quality: Option<f64>,
   ) -> Result<()> {
+    // Flush deferred rendering before encoding
+    self.ctx.context.flush();
     let surface_data = self.ctx.context.surface.reference();
     let mime = mime.unwrap_or_else(|| MIME_PNG.to_owned());
     let quality_value = quality.unwrap_or(0.92).clamp(0.0, 1.0);
@@ -371,7 +386,9 @@ impl<'c> CanvasElement<'c> {
   }
 
   #[napi]
-  pub fn convert_to_blob(&self, options: Option<ConvertToBlobOptions>) -> AsyncTask<AsyncBlob> {
+  pub fn convert_to_blob(&mut self, options: Option<ConvertToBlobOptions>) -> AsyncTask<AsyncBlob> {
+    // Flush deferred rendering before encoding
+    self.ctx.context.flush();
     let options = options.unwrap_or_default();
     let mime = options.mime.unwrap_or_else(|| MIME_PNG.to_owned());
     let quality = options.quality.unwrap_or(0.92).clamp(0.0, 1.0);
@@ -394,11 +411,13 @@ impl<'c> CanvasElement<'c> {
 
   #[napi]
   pub fn encode_stream<'env>(
-    &'env self,
+    &'env mut self,
     env: &Env,
     mime: Option<String>,
     quality: Option<u8>,
   ) -> Result<ReadableStream<'env, BufferSlice<'env>>> {
+    // Flush deferred rendering before encoding
+    self.ctx.context.flush();
     let mime = match mime.as_deref() {
       Some("webp") => sk::SkEncodedImageFormat::Webp,
       Some("jpeg") => sk::SkEncodedImageFormat::Jpeg,
@@ -437,7 +456,9 @@ impl<'c> CanvasElement<'c> {
   }
 
   #[napi]
-  pub fn save_png(&self, path: String) {
+  pub fn save_png(&mut self, path: String) {
+    // Flush deferred rendering before saving
+    self.ctx.context.flush();
     let ctx2d = &self.ctx.context;
     ctx2d.surface.save_png(&path);
   }
