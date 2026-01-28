@@ -165,6 +165,102 @@ test('clearRect', async (t) => {
   await snapshotImage(t)
 })
 
+test('clearRect-full-canvas-optimization', async (t) => {
+  const { ctx, canvas } = t.context
+
+  // Draw multiple shapes to accumulate layers
+  ctx.fillStyle = 'red'
+  ctx.fillRect(0, 0, 200, 200)
+  ctx.fillStyle = 'green'
+  ctx.fillRect(200, 0, 200, 200)
+  ctx.fillStyle = 'blue'
+  ctx.fillRect(0, 200, 200, 200)
+
+  // Full canvas clear with identity transform - should reset layers
+  ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+  // Draw new content
+  ctx.fillStyle = 'purple'
+  ctx.fillRect(150, 150, 200, 200)
+
+  await snapshotImage(t)
+})
+
+test('clearRect-with-transform-preserves-outside', async (t) => {
+  const { ctx, canvas } = t.context
+
+  // Draw background
+  ctx.fillStyle = 'red'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+  // Apply transform - clear won't cover everything
+  ctx.translate(100, 100)
+
+  // Clear "full canvas" but transform means it doesn't cover everything
+  ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+  // The red area at top-left (0,0 to 100,100) should still be visible
+  await snapshotImage(t)
+})
+
+test('clearRect-with-clip-preserves-outside', async (t) => {
+  const { ctx, canvas } = t.context
+
+  // Draw background
+  ctx.fillStyle = 'red'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+  // Apply clip to center region
+  ctx.beginPath()
+  ctx.rect(100, 100, 300, 300)
+  ctx.clip()
+
+  // Clear "full canvas" but clip limits it
+  ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+  // The red border around the clip should still be visible
+  await snapshotImage(t)
+})
+
+test('clearRect-with-pending-save-preserves-state', async (t) => {
+  const { ctx, canvas } = t.context
+  // Test that clearRect with pending save states doesn't use the optimization
+  // This ensures the save/restore stack remains consistent
+
+  // Draw background
+  ctx.fillStyle = 'red'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+  // Save state and set up clip
+  ctx.save()
+  ctx.beginPath()
+  ctx.rect(100, 100, 300, 300)
+  ctx.clip()
+
+  // Draw inside clip
+  ctx.fillStyle = 'green'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+  // Full canvas clear while inside save - should NOT reset layers (has pending save)
+  // The clear should only affect the clipped area
+  ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+  // Draw new content inside clip
+  ctx.fillStyle = 'blue'
+  ctx.fillRect(150, 150, 200, 200)
+
+  // Restore state - should work correctly
+  ctx.restore()
+
+  // Draw outside clip area to verify restore worked
+  ctx.fillStyle = 'yellow'
+  ctx.fillRect(0, 0, 50, 50)
+
+  // Expected: red border (not cleared due to clip), blue square (inside clip),
+  // yellow square at top-left (after restore)
+  await snapshotImage(t)
+})
+
 test('clip', async (t) => {
   const { ctx, canvas } = t.context
   // Create circular clipping region
@@ -177,6 +273,181 @@ test('clip', async (t) => {
   ctx.fillRect(0, 0, canvas.width, canvas.height)
   ctx.fillStyle = 'orange'
   ctx.fillRect(0, 0, 100, 100)
+  await snapshotImage(t)
+})
+
+test('clip-cumulative', async (t) => {
+  const { ctx, canvas } = t.context
+  // Per Canvas2D spec, multiple clip() calls should intersect with each other
+  // First clip: left half of the canvas (0 to 256)
+  ctx.beginPath()
+  ctx.rect(0, 0, 256, 512)
+  ctx.clip()
+
+  // Second clip: right half of the canvas (128 to 512)
+  // The intersection should be the middle strip (128 to 256)
+  ctx.beginPath()
+  ctx.rect(128, 0, 384, 512)
+  ctx.clip()
+
+  // Fill the entire canvas - only the intersection area (128-256) should be visible
+  ctx.fillStyle = 'blue'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  await snapshotImage(t)
+})
+
+test('clip-cumulative-with-layer-promotion', async (t) => {
+  const { ctx, canvas } = t.context
+  // This test verifies that cumulative clip state is correctly preserved
+  // across layer promotions (triggered by getImageData).
+  // Regression test for: clip state divergence when op() intersection is tracked
+
+  ctx.fillStyle = 'lightgray'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+  ctx.save()
+
+  // First clip: left portion (0 to 300)
+  ctx.beginPath()
+  ctx.rect(0, 0, 300, 512)
+  ctx.clip()
+
+  ctx.fillStyle = 'red'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+  // Trigger layer promotion
+  ctx.getImageData(0, 0, 1, 1)
+
+  // Second clip: overlapping region (150 to 450)
+  // The cumulative clip should be (150 to 300)
+  ctx.beginPath()
+  ctx.rect(150, 0, 300, 512)
+  ctx.clip()
+
+  // Trigger another layer promotion - clip state must be preserved correctly
+  ctx.getImageData(0, 0, 1, 1)
+
+  // Fill with blue - should only appear in the intersection (150 to 300)
+  ctx.fillStyle = 'blue'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+  ctx.restore()
+
+  // After restore, clip should be removed
+  // Draw green rectangle outside the previous clip area to verify
+  ctx.fillStyle = 'green'
+  ctx.fillRect(350, 100, 100, 100)
+
+  await snapshotImage(t)
+})
+
+test('clip-state-consistency-multiple-promotions', async (t) => {
+  const { ctx, canvas } = t.context
+  // Regression test for: clip state divergence when path intersection operation fails
+  // This test verifies that clip state remains consistent across multiple layer
+  // promotions, even when clips are applied between promotions.
+
+  ctx.fillStyle = 'lightgray'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+  ctx.save()
+
+  // First clip: left region (0-250)
+  ctx.beginPath()
+  ctx.rect(0, 0, 250, 512)
+  ctx.clip()
+
+  ctx.fillStyle = 'red'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+  // Trigger layer promotion
+  ctx.getImageData(0, 0, 1, 1)
+
+  // Second clip: overlapping region (100-350)
+  // Cumulative clip should be (100-250)
+  ctx.beginPath()
+  ctx.rect(100, 0, 250, 512)
+  ctx.clip()
+
+  ctx.fillStyle = 'orange'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+  // Trigger layer promotion again
+  ctx.getImageData(0, 0, 1, 1)
+
+  // Third clip: further narrowing (150-400)
+  // Cumulative clip should be (150-250)
+  ctx.beginPath()
+  ctx.rect(150, 0, 250, 512)
+  ctx.clip()
+
+  // Trigger layer promotion a third time
+  ctx.getImageData(0, 0, 1, 1)
+
+  // Final fill - should only appear in (150-250) if state is consistent
+  ctx.fillStyle = 'blue'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+  ctx.restore()
+
+  // After restore, no clip - draw marker to verify restore worked
+  ctx.fillStyle = 'green'
+  ctx.fillRect(400, 100, 100, 100)
+
+  // Expected visual:
+  // - Gray background
+  // - Red strip at 0-100 (first clip only, before second clip)
+  // - Orange strip at 100-150 (first + second clip, before third clip)
+  // - Blue strip at 150-250 (all three clips)
+  // - Green square at 400-500 (after restore)
+  await snapshotImage(t)
+})
+
+test('clip-no-divergence-after-promotion', async (t) => {
+  const { ctx, canvas } = t.context
+  // This test verifies that clip state does NOT diverge between the tracked state
+  // and the actual canvas clip after layer promotion.
+  // The bug was: canvas had OLD∩NEW but tracked state had OLD after promotion.
+
+  ctx.fillStyle = 'white'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+  // Apply first clip
+  ctx.beginPath()
+  ctx.rect(50, 50, 200, 200)
+  ctx.clip()
+
+  // Draw red - should be clipped to 50-250
+  ctx.fillStyle = 'red'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+  // Layer promotion
+  ctx.getImageData(0, 0, 1, 1)
+
+  // Apply second clip - intersection should be 100-250 horizontally
+  ctx.beginPath()
+  ctx.rect(100, 50, 200, 200)
+  ctx.clip()
+
+  // Layer promotion
+  ctx.getImageData(0, 0, 1, 1)
+
+  // Draw blue - if state diverged, this would show in wrong region
+  ctx.fillStyle = 'blue'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+  // Layer promotion again - this is where divergence would cause problems
+  ctx.getImageData(0, 0, 1, 1)
+
+  // Draw green - should STILL be clipped to intersection (100-250)
+  // If there was divergence, this might show in wrong region
+  ctx.fillStyle = 'green'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+  // The final result should show:
+  // - White background
+  // - Red region at x=50-100 (first clip only, before second)
+  // - Green region at x=100-250 (intersection of both clips)
   await snapshotImage(t)
 })
 
@@ -433,6 +704,66 @@ test('drawImage-another-Canvas', async (t) => {
   await snapshotImage(t)
 })
 
+test('drawImage-canvas-with-source-rect', async (t) => {
+  const { ctx } = t.context
+
+  const sourceCanvas = createCanvas(200, 200)
+  const sourceCtx = sourceCanvas.getContext('2d')
+
+  // Draw quadrants
+  sourceCtx.fillStyle = 'red'
+  sourceCtx.fillRect(0, 0, 100, 100)
+  sourceCtx.fillStyle = 'green'
+  sourceCtx.fillRect(100, 0, 100, 100)
+  sourceCtx.fillStyle = 'blue'
+  sourceCtx.fillRect(0, 100, 100, 100)
+  sourceCtx.fillStyle = 'yellow'
+  sourceCtx.fillRect(100, 100, 100, 100)
+
+  // Draw only green quadrant scaled up
+  ctx.drawImage(sourceCanvas, 100, 0, 100, 100, 50, 50, 200, 200)
+
+  await snapshotImage(t)
+})
+
+test('drawImage-canvas-with-alpha', async (t) => {
+  const { ctx } = t.context
+
+  ctx.fillStyle = 'blue'
+  ctx.fillRect(0, 0, 512, 512)
+
+  const sourceCanvas = createCanvas(200, 200)
+  const sourceCtx = sourceCanvas.getContext('2d')
+  sourceCtx.fillStyle = 'red'
+  sourceCtx.fillRect(0, 0, 200, 200)
+
+  ctx.globalAlpha = 0.5
+  ctx.drawImage(sourceCanvas, 150, 150)
+
+  // Higher tolerance (5%) due to cross-platform alpha blending differences:
+  // When blending red (255,0,0) at 0.5 alpha over blue (0,0,255), the blue channel
+  // calculation is: B = 0 * 0.5 + 255 * 0.5 = 127.5
+  // - Linux x86-64 rounds to 127
+  // - macOS ARM64 rounds to 126
+  // This 1-value difference across the 200x200 blended area causes ~3.8% pixel diff.
+  await snapshotImage(t, t.context, 'png', 5)
+})
+
+test('drawImage-canvas-with-transform', async (t) => {
+  const { ctx } = t.context
+
+  const sourceCanvas = createCanvas(100, 100)
+  const sourceCtx = sourceCanvas.getContext('2d')
+  sourceCtx.fillStyle = 'red'
+  sourceCtx.fillRect(0, 0, 100, 100)
+
+  ctx.translate(256, 256)
+  ctx.rotate(Math.PI / 4)
+  ctx.drawImage(sourceCanvas, -50, -50)
+
+  await snapshotImage(t)
+})
+
 test('drawImage-throws-TypeError-for-invalid-image-type', (t) => {
   const { ctx } = t.context
 
@@ -495,6 +826,254 @@ test('drawImage-throws-TypeError-for-invalid-image-type', (t) => {
       message: /Value is not one of these types/,
     },
   )
+})
+
+// drawCanvas tests - optimized canvas-to-canvas drawing that preserves vector graphics
+test('drawCanvas-basic', async (t) => {
+  const { ctx } = t.context
+
+  // Create source canvas with some drawings
+  const sourceCanvas = createCanvas(200, 200)
+  const sourceCtx = sourceCanvas.getContext('2d')!
+
+  // Draw an ellipse with dashed line (same pattern as drawImage-another-Canvas)
+  sourceCtx.beginPath()
+  sourceCtx.ellipse(80, 80, 50, 75, Math.PI / 4, 0, 2 * Math.PI)
+  sourceCtx.stroke()
+
+  sourceCtx.beginPath()
+  sourceCtx.setLineDash([5, 5])
+  sourceCtx.moveTo(10, 150)
+  sourceCtx.lineTo(150, 10)
+  sourceCtx.stroke()
+
+  // Draw hotpink rect on destination first
+  ctx.fillStyle = 'hotpink'
+  ctx.fillRect(10, 10, 100, 100)
+
+  // Draw source canvas to destination at position (150, 150)
+  ctx.drawCanvas(sourceCanvas, 150, 150)
+
+  await snapshotImage(t)
+})
+
+test('drawCanvas-with-scaling', async (t) => {
+  const { ctx } = t.context
+
+  // Create source canvas with a simple shape
+  const sourceCanvas = createCanvas(100, 100)
+  const sourceCtx = sourceCanvas.getContext('2d')!
+
+  // Draw a filled circle
+  sourceCtx.fillStyle = 'blue'
+  sourceCtx.beginPath()
+  sourceCtx.arc(50, 50, 40, 0, Math.PI * 2)
+  sourceCtx.fill()
+
+  // Draw a smaller version at top-left
+  ctx.drawCanvas(sourceCanvas, 10, 10, 50, 50)
+
+  // Draw a larger version at center
+  ctx.drawCanvas(sourceCanvas, 150, 150, 200, 200)
+
+  await snapshotImage(t)
+})
+
+test('drawCanvas-with-source-rect', async (t) => {
+  const { ctx } = t.context
+
+  // Create source canvas with four colored quadrants
+  const sourceCanvas = createCanvas(200, 200)
+  const sourceCtx = sourceCanvas.getContext('2d')!
+
+  // Draw quadrants
+  sourceCtx.fillStyle = 'red'
+  sourceCtx.fillRect(0, 0, 100, 100)
+  sourceCtx.fillStyle = 'green'
+  sourceCtx.fillRect(100, 0, 100, 100)
+  sourceCtx.fillStyle = 'blue'
+  sourceCtx.fillRect(0, 100, 100, 100)
+  sourceCtx.fillStyle = 'yellow'
+  sourceCtx.fillRect(100, 100, 100, 100)
+
+  // Draw only green quadrant scaled up
+  ctx.drawCanvas(sourceCanvas, 100, 0, 100, 100, 50, 50, 200, 200)
+
+  await snapshotImage(t)
+})
+
+test('drawCanvas-with-alpha', async (t) => {
+  const { ctx } = t.context
+
+  // Fill background with blue
+  ctx.fillStyle = 'blue'
+  ctx.fillRect(0, 0, 512, 512)
+
+  // Create source canvas with red rectangle
+  const sourceCanvas = createCanvas(200, 200)
+  const sourceCtx = sourceCanvas.getContext('2d')!
+  sourceCtx.fillStyle = 'red'
+  sourceCtx.fillRect(0, 0, 200, 200)
+
+  // Draw with 50% alpha
+  ctx.globalAlpha = 0.5
+  ctx.drawCanvas(sourceCanvas, 150, 150)
+
+  // Higher tolerance (5%) due to cross-platform alpha blending differences
+  await snapshotImage(t, t.context, 'png', 5)
+})
+
+test('drawCanvas-with-transform', async (t) => {
+  const { ctx } = t.context
+
+  // Create source canvas with red square
+  const sourceCanvas = createCanvas(100, 100)
+  const sourceCtx = sourceCanvas.getContext('2d')!
+  sourceCtx.fillStyle = 'red'
+  sourceCtx.fillRect(0, 0, 100, 100)
+
+  // Apply rotation transform
+  ctx.translate(256, 256)
+  ctx.rotate(Math.PI / 4)
+  ctx.drawCanvas(sourceCanvas, -50, -50)
+
+  await snapshotImage(t)
+})
+
+test('drawCanvas-with-shadow', async (t) => {
+  const { ctx } = t.context
+
+  // Create source canvas with a shape
+  const sourceCanvas = createCanvas(100, 100)
+  const sourceCtx = sourceCanvas.getContext('2d')!
+  sourceCtx.fillStyle = 'blue'
+  sourceCtx.fillRect(10, 10, 80, 80)
+
+  // Set up shadow
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.5)'
+  ctx.shadowBlur = 20
+  ctx.shadowOffsetX = 10
+  ctx.shadowOffsetY = 10
+
+  // Draw canvas with shadow
+  ctx.drawCanvas(sourceCanvas, 100, 100)
+
+  await snapshotImage(t)
+})
+
+test('drawCanvas-complex-vector', async (t) => {
+  const { ctx, canvas } = t.context
+
+  // Create source canvas with complex vector graphics
+  const sourceCanvas = createCanvas(200, 200)
+  const sourceCtx = sourceCanvas.getContext('2d')!
+
+  // Draw gradient-filled shape
+  const gradient = sourceCtx.createLinearGradient(0, 0, 200, 200)
+  gradient.addColorStop(0, 'red')
+  gradient.addColorStop(0.5, 'yellow')
+  gradient.addColorStop(1, 'green')
+
+  sourceCtx.fillStyle = gradient
+  sourceCtx.beginPath()
+  sourceCtx.moveTo(100, 10)
+  sourceCtx.lineTo(190, 190)
+  sourceCtx.lineTo(10, 190)
+  sourceCtx.closePath()
+  sourceCtx.fill()
+
+  // Add stroked circle
+  sourceCtx.strokeStyle = 'purple'
+  sourceCtx.lineWidth = 5
+  sourceCtx.beginPath()
+  sourceCtx.arc(100, 100, 60, 0, Math.PI * 2)
+  sourceCtx.stroke()
+
+  // Draw the source canvas at different positions and sizes
+  ctx.drawCanvas(sourceCanvas, 10, 10)
+  ctx.drawCanvas(sourceCanvas, 250, 10, 100, 100)
+  ctx.drawCanvas(sourceCanvas, 10, 250, 150, 150)
+
+  await snapshotImage(t, { canvas, ctx }, 'png', 0.3)
+})
+
+test('drawCanvas-preserves-vector-quality', async (t) => {
+  const { ctx } = t.context
+
+  // Create a small source canvas with crisp vector graphics
+  const sourceCanvas = createCanvas(50, 50)
+  const sourceCtx = sourceCanvas.getContext('2d')!
+
+  // Draw a precise shape
+  sourceCtx.strokeStyle = 'black'
+  sourceCtx.lineWidth = 2
+  sourceCtx.beginPath()
+  sourceCtx.moveTo(5, 25)
+  sourceCtx.lineTo(25, 5)
+  sourceCtx.lineTo(45, 25)
+  sourceCtx.lineTo(25, 45)
+  sourceCtx.closePath()
+  sourceCtx.stroke()
+
+  // Scale up significantly - vector graphics should remain crisp
+  ctx.drawCanvas(sourceCanvas, 50, 50, 400, 400)
+
+  await snapshotImage(t)
+})
+
+test('drawCanvas-preserves-source-transform-after-read', async (t) => {
+  const { ctx } = t.context
+
+  const sourceCanvas = createCanvas(200, 200)
+  const sourceCtx = sourceCanvas.getContext('2d')!
+
+  // Apply transform to source
+  sourceCtx.translate(100, 100)
+  sourceCtx.rotate(Math.PI / 4)
+
+  // Draw initial content with transform
+  sourceCtx.fillStyle = 'red'
+  sourceCtx.fillRect(-50, -50, 100, 100)
+
+  // Draw source to destination (triggers layer promotion in source)
+  ctx.drawCanvas(sourceCanvas, 0, 0)
+
+  // Continue drawing on source - transform should still be active
+  sourceCtx.fillStyle = 'blue'
+  sourceCtx.fillRect(-25, -25, 50, 50)
+
+  // Draw again to verify continued operations work with restored transform
+  ctx.drawCanvas(sourceCanvas, 250, 0)
+
+  await snapshotImage(t)
+})
+
+test('drawCanvas-preserves-source-clip-after-read', async (t) => {
+  const { ctx } = t.context
+
+  const sourceCanvas = createCanvas(200, 200)
+  const sourceCtx = sourceCanvas.getContext('2d')!
+
+  // Apply circular clip to source
+  sourceCtx.beginPath()
+  sourceCtx.arc(100, 100, 80, 0, Math.PI * 2)
+  sourceCtx.clip()
+
+  // Draw initial content (clipped to circle)
+  sourceCtx.fillStyle = 'red'
+  sourceCtx.fillRect(0, 0, 200, 200)
+
+  // Draw source to destination (triggers layer promotion)
+  ctx.drawCanvas(sourceCanvas, 0, 0)
+
+  // Continue drawing on source - clip should still be active
+  sourceCtx.fillStyle = 'blue'
+  sourceCtx.fillRect(0, 0, 100, 100)
+
+  // Draw again to verify clip was restored
+  ctx.drawCanvas(sourceCanvas, 250, 0)
+
+  await snapshotImage(t)
 })
 
 test('ellipse', async (t) => {
@@ -1003,6 +1582,82 @@ test('save-restore', async (t) => {
   ctx.restore()
 
   ctx.fillRect(150, 40, 100, 100)
+
+  await snapshotImage(t)
+})
+
+test('save-restore-after-layer-promotion', async (t) => {
+  const { ctx, canvas } = t.context
+  // Test that save/restore state is preserved after layer promotion (getImageData)
+  // This tests the fix for: https://github.com/Brooooooklyn/canvas/pull/1193
+
+  // Draw background
+  ctx.fillStyle = 'lightgray'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+  // Save state and set up clip
+  ctx.save()
+  ctx.beginPath()
+  ctx.rect(50, 50, 200, 200)
+  ctx.clip()
+
+  // Draw inside clip (should be visible)
+  ctx.fillStyle = 'red'
+  ctx.fillRect(0, 0, 300, 300)
+
+  // Trigger layer promotion via getImageData
+  ctx.getImageData(0, 0, 1, 1)
+
+  // Draw more inside clip (should still be clipped after layer promotion)
+  ctx.fillStyle = 'blue'
+  ctx.fillRect(100, 100, 200, 200)
+
+  // Restore state - clip should be removed
+  ctx.restore()
+
+  // Draw outside the clip area (should be visible since clip was restored)
+  ctx.fillStyle = 'green'
+  ctx.fillRect(300, 50, 150, 200)
+
+  await snapshotImage(t)
+})
+
+test('save-restore-transform-after-layer-promotion', async (t) => {
+  const { ctx, canvas } = t.context
+  // Test that transform state is correctly restored after layer promotion
+  // This tests the fix for: Canvas state not restored after layer promotion and restore
+
+  // Draw background
+  ctx.fillStyle = 'lightgray'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+  // Set up initial transform (translate 50, 50)
+  ctx.translate(50, 50)
+
+  // Save state with the transform
+  ctx.save()
+
+  // Apply additional transform (rotate 45 degrees)
+  ctx.rotate(Math.PI / 4)
+
+  // Draw rotated red rectangle
+  ctx.fillStyle = 'red'
+  ctx.fillRect(0, 0, 100, 50)
+
+  // Trigger layer promotion via getImageData
+  ctx.getImageData(0, 0, 1, 1)
+
+  // Draw more content with current rotated transform
+  ctx.fillStyle = 'blue'
+  ctx.fillRect(0, 60, 100, 50)
+
+  // Restore state - should restore to translate(50, 50) without rotation
+  ctx.restore()
+
+  // Draw with restored transform (no rotation, just translate)
+  // This rectangle should appear at (50, 200) without rotation
+  ctx.fillStyle = 'green'
+  ctx.fillRect(0, 150, 150, 80)
 
   await snapshotImage(t)
 })

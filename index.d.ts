@@ -584,6 +584,25 @@ export interface SKRSContext2D extends CanvasRenderingContext2D {
     dw: number,
     dh: number,
   ): void
+  /**
+   * Draw another canvas, preserving vector graphics when possible.
+   * When the source canvas has recorded operations, this method preserves the
+   * SkPicture representation without rasterization, which can be faster than
+   * drawImage. Falls back to bitmap rendering if no picture is available.
+   */
+  drawCanvas(canvas: Canvas, dx: number, dy: number): void
+  drawCanvas(canvas: Canvas, dx: number, dy: number, dWidth: number, dHeight: number): void
+  drawCanvas(
+    canvas: Canvas,
+    sx: number,
+    sy: number,
+    sWidth: number,
+    sHeight: number,
+    dx: number,
+    dy: number,
+    dWidth: number,
+    dHeight: number,
+  ): void
   createPattern(
     image: Image | ImageData | Canvas | SvgCanvas,
     repeat: 'repeat' | 'repeat-x' | 'repeat-y' | 'no-repeat' | null,

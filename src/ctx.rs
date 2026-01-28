@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::f32::consts::PI;
 use std::mem;
 use std::result;
@@ -16,6 +17,7 @@ use crate::font::FONT_MEDIUM_PX;
 use crate::font::parse_size_px;
 use crate::gif::GifConfig;
 use crate::global_fonts::get_font;
+use crate::page_recorder::PageRecorder;
 use crate::picture_recorder::PictureRecorder;
 use crate::sk::Canvas;
 use crate::{
@@ -31,8 +33,8 @@ use crate::{
   pattern::{CanvasPattern, Pattern},
   sk::{
     AlphaType, Bitmap, BlendMode, ColorSpace, FillType, FontVariantCaps, ImageFilter, LineMetrics,
-    MaskFilter, Matrix, Paint, PaintStyle, Path as SkPath, PathEffect, SkEncodedImageFormat,
-    SkWMemoryStream, SkiaDataRef, Surface, SurfaceRef, Transform,
+    MaskFilter, Matrix, Paint, PaintStyle, Path as SkPath, PathEffect, PathOp,
+    SkEncodedImageFormat, SkWMemoryStream, SkiaDataRef, Surface, SurfaceRef, Transform,
   },
   state::Context2dRenderingState,
 };
@@ -52,6 +54,7 @@ pub(crate) const STROKE_STYLE_HIDDEN_NAME: &str = "_strokeStyle";
 
 pub struct Context {
   pub(crate) surface: Surface,
+  pub(crate) page_recorder: Option<RefCell<PageRecorder>>, // Deferred rendering recorder (RefCell for interior mutability)
   path: SkPath,
   pub alpha: bool,
   pub(crate) states: Vec<Context2dRenderingState>,
@@ -79,6 +82,7 @@ impl Context {
     .ok_or_else(|| Error::from_reason("Create skia svg surface failed".to_owned()))?;
     Ok(Context {
       surface,
+      page_recorder: None, // SVG uses direct rendering
       alpha: true,
       path: SkPath::new(),
       states: vec![],
@@ -95,6 +99,7 @@ impl Context {
       .ok_or_else(|| Error::from_reason("Create skia surface failed".to_owned()))?;
     Ok(Context {
       surface,
+      page_recorder: Some(RefCell::new(PageRecorder::new(width as f32, height as f32))), // Enable deferred rendering
       alpha: true,
       path: SkPath::new(),
       states: vec![],
@@ -110,6 +115,7 @@ impl Context {
   pub(crate) fn new_from_surface(surface: Surface, width: u32, height: u32) -> Self {
     Context {
       surface,
+      page_recorder: None, // PDF uses direct rendering
       alpha: true,
       path: SkPath::new(),
       states: vec![],
@@ -119,6 +125,76 @@ impl Context {
       color_space: ColorSpace::default(),
       stream: None,
     }
+  }
+
+  /// Flush deferred rendering to surface (if deferred mode is enabled)
+  pub fn flush(&mut self) {
+    if let Some(ref recorder) = self.page_recorder {
+      recorder.borrow_mut().playback_to(&mut self.surface.canvas);
+      // DON'T reset here - preserve layers for incremental rendering
+      // Reset only happens on canvas resize or explicit clear
+    }
+  }
+
+  /// Execute a canvas state operation on the appropriate canvas (recording or direct)
+  /// For deferred mode, operations are recorded to the PageRecorder
+  /// For direct mode (SVG, PDF), operations go directly to the surface
+  fn with_canvas_state<F>(&mut self, f: F)
+  where
+    F: FnOnce(&mut Canvas),
+  {
+    if let Some(ref recorder) = self.page_recorder {
+      let mut rec = recorder.borrow_mut();
+      if let Some(canvas) = rec.get_recording_canvas() {
+        f(canvas);
+        return;
+      }
+    }
+    // Direct mode - use surface canvas
+    f(&mut self.surface.canvas);
+  }
+
+  /// Sync transform state to PageRecorder for restoration after layer promotion
+  fn sync_transform_to_recorder(&self) {
+    if let Some(ref recorder) = self.page_recorder {
+      recorder.borrow_mut().set_transform(&self.state.transform);
+    }
+  }
+
+  /// Sync clip state to PageRecorder for restoration after layer promotion
+  fn sync_clip_to_recorder(&self) {
+    if let Some(ref recorder) = self.page_recorder {
+      recorder.borrow_mut().set_clip(self.state.clip_path.clone());
+    }
+  }
+
+  /// Execute a rendering operation on the appropriate canvas (recording or direct)
+  /// For deferred mode, operations are recorded to the PageRecorder
+  /// For direct mode (SVG, PDF), operations go directly to the surface
+  fn with_render_canvas<F>(&mut self, paint: &Paint, f: F) -> result::Result<(), SkError>
+  where
+    F: Fn(&mut Canvas, &Paint) -> result::Result<(), SkError>,
+  {
+    let blend_mode = self.state.global_composite_operation;
+    let width = self.width as f32;
+    let height = self.height as f32;
+
+    if let Some(ref recorder) = self.page_recorder {
+      let mut rec = recorder.borrow_mut();
+      if let Some(canvas) = rec.get_recording_canvas() {
+        // Use the recording canvas for deferred mode
+        return Self::render_canvas(canvas, paint, blend_mode, width, height, f);
+      }
+    }
+    // Direct mode - use surface canvas
+    Self::render_canvas(
+      &mut self.surface.canvas,
+      paint,
+      blend_mode,
+      width,
+      height,
+      f,
+    )
   }
 
   pub fn arc(
@@ -176,12 +252,50 @@ impl Context {
   }
 
   pub fn clip(&mut self, path: Option<&mut SkPath>, fill_rule: FillType) {
-    let clip = match path {
-      Some(path) => path,
-      None => &mut self.path,
+    // Clone the clip path to avoid borrow conflicts
+    let mut clip_path = match path {
+      Some(p) => {
+        p.set_fill_type(fill_rule);
+        p.clone()
+      }
+      None => {
+        self.path.set_fill_type(fill_rule);
+        self.path.clone()
+      }
     };
-    clip.set_fill_type(fill_rule);
-    self.surface.canvas.set_clip_path(clip);
+
+    // Per Canvas2D spec, multiple clip() calls should intersect with each other.
+    // If there's an existing clip, compute the intersection.
+    let should_update_state = if let Some(ref existing_clip) = self.state.clip_path {
+      // op() returns false if intersection fails (degenerate paths, numerical instability)
+      // If op() fails, clip_path remains unchanged (the new path) while the canvas will
+      // still intersect with its existing clip. To avoid state divergence, we keep the
+      // existing state.clip_path when op() fails, ensuring layer promotion restores correctly.
+      if !clip_path.op(existing_clip, PathOp::Intersect) {
+        #[cfg(debug_assertions)]
+        eprintln!("Warning: Path intersection operation failed in clip()");
+        false // Don't update state - keep existing clip to match canvas behavior
+      } else {
+        true
+      }
+    } else {
+      true // No existing clip, always update state
+    };
+
+    // Store the cumulative clip path in state for restoration after layer promotion
+    // Only update if intersection succeeded (or there was no existing clip)
+    // IMPORTANT: We must also skip calling set_clip_path when op() fails to avoid
+    // state divergence. If op() fails, the tracked state keeps OLD while Skia's
+    // clipPath() would compute OLD ∩ NEW. After layer promotion, we'd restore to
+    // OLD instead of OLD ∩ NEW. By skipping both state update AND canvas clip,
+    // we make clip() a no-op when intersection fails, keeping everything consistent.
+    if should_update_state {
+      self.state.clip_path = Some(clip_path.clone());
+      self.sync_clip_to_recorder();
+      self.with_canvas_state(|canvas| {
+        canvas.set_clip_path(&clip_path);
+      });
+    }
   }
 
   pub fn clear_rect(
@@ -191,22 +305,42 @@ impl Context {
     width: f32,
     height: f32,
   ) -> result::Result<(), SkError> {
+    // Optimization: If clearing the entire canvas with identity transform, reset the page recorder
+    // This prevents memory growth in game loops that clear each frame
+    // Only apply optimization if:
+    // - Transform is identity - otherwise the clear might not cover everything
+    // - No clip path - otherwise the clear is masked
+    // - No pending save/restore states - otherwise resetting would break the save stack
+    if x <= 0.0
+      && y <= 0.0
+      && (x + width) >= self.width as f32
+      && (y + height) >= self.height as f32
+      && self.page_recorder.is_some()
+      && self.state.transform.get_transform().is_identity()
+      && self.state.clip_path.is_none()
+      && self.states.is_empty()
+    {
+      // Full canvas clear - reset layers instead of accumulating
+      if let Some(ref recorder) = self.page_recorder {
+        recorder
+          .borrow_mut()
+          .reset(self.width as f32, self.height as f32);
+      }
+      // Also clear the main surface
+      self.surface.canvas.clear();
+      return Ok(());
+    }
+
+    // Partial clear - record as a clear operation
     let mut paint = Paint::new();
     paint.set_style(PaintStyle::Fill);
     paint.set_color(0, 0, 0, 0);
     paint.set_stroke_miter(10.0);
     paint.set_blend_mode(BlendMode::Clear);
-    Self::render_canvas(
-      &mut self.surface.canvas,
-      &paint,
-      self.state.global_composite_operation,
-      self.width as f32,
-      self.height as f32,
-      |canvas, paint| {
-        canvas.draw_rect(x, y, width, height, paint);
-        Ok(())
-      },
-    )?;
+    self.with_render_canvas(&paint, |canvas, paint| {
+      canvas.draw_rect(x, y, width, height, paint);
+      Ok(())
+    })?;
     Ok(())
   }
 
@@ -223,27 +357,73 @@ impl Context {
   }
 
   pub fn save(&mut self) {
-    self.surface.canvas.save();
+    self.with_canvas_state(|canvas| {
+      canvas.save();
+    });
     self.states.push(self.state.clone());
+    // Sync state to recorder at save time for layer promotion restoration
+    self.sync_transform_to_recorder();
+    self.sync_clip_to_recorder();
+    // Track save count for layer promotion restoration
+    if let Some(ref recorder) = self.page_recorder {
+      recorder.borrow_mut().increment_save();
+    }
   }
 
   pub fn restore(&mut self) {
     if let Some(s) = self.states.pop() {
       self.path.transform_self(&self.state.transform);
-      self.surface.canvas.restore();
+      self.with_canvas_state(|canvas| {
+        canvas.restore();
+      });
       if let Some(inverse) = s.transform.invert() {
         self.path.transform_self(&inverse);
       }
       self.state = s;
+
+      // In deferred mode, explicitly restore canvas transform and clip.
+      // This is needed because layer promotion recreates the save stack with
+      // identity transform/no clip at save time, so canvas.restore() may not
+      // restore the correct state.
+      if self.page_recorder.is_some() {
+        let transform = self.state.transform.clone();
+        let clip = self.state.clip_path.clone();
+        self.with_canvas_state(|canvas| {
+          canvas.set_transform(&transform);
+        });
+        // Re-apply clip if the restored state has one.
+        // If restored state has no clip, canvas.restore() already removed it.
+        if let Some(ref clip_path) = clip {
+          self.with_canvas_state(|canvas| {
+            canvas.set_clip_path(clip_path);
+          });
+        }
+      }
+
+      self.sync_transform_to_recorder();
+      self.sync_clip_to_recorder();
+      // Track save count for layer promotion restoration
+      if let Some(ref recorder) = self.page_recorder {
+        recorder.borrow_mut().decrement_save();
+      }
     }
   }
 
   pub fn reset(&mut self) {
-    // Clear the backing buffer to transparent black
-    self.surface.canvas.clear();
+    // Clear the backing buffer to transparent black and reset canvas state
+    self.with_canvas_state(|canvas| {
+      canvas.clear();
+      canvas.reset();
+    });
 
-    // Reset canvas state (restores to initial save state)
-    self.surface.canvas.reset();
+    // Reset the page recorder if in deferred mode
+    if let Some(ref recorder) = self.page_recorder {
+      recorder
+        .borrow_mut()
+        .reset(self.width as f32, self.height as f32);
+      // Also clear main surface which accumulates content from flush() calls
+      self.surface.canvas.clear();
+    }
 
     // Clear the current path
     self.path = SkPath::new();
@@ -257,90 +437,111 @@ impl Context {
 
   pub fn stroke_rect(&mut self, x: f32, y: f32, w: f32, h: f32) -> result::Result<(), SkError> {
     let stroke_paint = self.stroke_paint()?;
-    Self::render_canvas(
-      &mut self.surface.canvas,
-      &stroke_paint,
-      self.state.global_composite_operation,
-      self.width as f32,
-      self.height as f32,
-      |canvas, paint| {
-        if let Some(shadow_paint) = Self::shadow_blur_paint(&self.state, &stroke_paint) {
-          // Use the special shadow rendering that allows shadows to extend beyond canvas bounds
-          Self::render_shadow_canvas(
-            canvas,
-            &shadow_paint,
-            self.state.global_composite_operation,
-            self.width as f32,
-            self.height as f32,
-            self.state.shadow_offset_x,
-            self.state.shadow_offset_y,
-            self.state.shadow_blur,
-            |shadow_canvas, shadow_paint| {
-              shadow_canvas.save();
-              Self::apply_shadow_offset_matrix_to_canvas(
-                shadow_canvas,
-                self.state.shadow_offset_x,
-                self.state.shadow_offset_y,
-              )?;
-              shadow_canvas.draw_rect(x, y, w, h, shadow_paint);
-              shadow_canvas.restore();
-              Ok(())
-            },
-          )?;
-        };
-        canvas.draw_rect(x, y, w, h, paint);
-        Ok(())
-      },
-    )?;
+
+    // Extract state for shadow rendering to avoid borrow conflicts
+    let shadow_paint = Self::shadow_blur_paint(&self.state, &stroke_paint);
+    let global_composite_operation = self.state.global_composite_operation;
+    let width = self.width as f32;
+    let height = self.height as f32;
+    let shadow_offset_x = self.state.shadow_offset_x;
+    let shadow_offset_y = self.state.shadow_offset_y;
+    let shadow_blur = self.state.shadow_blur;
+
+    self.with_render_canvas(&stroke_paint, |canvas, paint| {
+      if let Some(shadow_paint) = &shadow_paint {
+        // Use the special shadow rendering that allows shadows to extend beyond canvas bounds
+        Self::render_shadow_canvas(
+          canvas,
+          shadow_paint,
+          global_composite_operation,
+          width,
+          height,
+          shadow_offset_x,
+          shadow_offset_y,
+          shadow_blur,
+          |shadow_canvas, shadow_paint| {
+            shadow_canvas.save();
+            Self::apply_shadow_offset_matrix_to_canvas(
+              shadow_canvas,
+              shadow_offset_x,
+              shadow_offset_y,
+            )?;
+            shadow_canvas.draw_rect(x, y, w, h, shadow_paint);
+            shadow_canvas.restore();
+            Ok(())
+          },
+        )?;
+      };
+      canvas.draw_rect(x, y, w, h, paint);
+      Ok(())
+    })?;
     Ok(())
   }
 
   pub fn translate(&mut self, x: f32, y: f32) {
-    let current_state = &mut self.state;
     let inverse = Matrix::translated(-x, -y);
     self.path.transform_self(&inverse);
-    current_state.transform.pre_translate(x, y);
-    self.surface.canvas.set_transform(&current_state.transform);
+    self.state.transform.pre_translate(x, y);
+    let transform = self.state.transform.clone();
+    self.with_canvas_state(|canvas| {
+      canvas.set_transform(&transform);
+    });
+    self.sync_transform_to_recorder();
   }
 
   pub fn transform(&mut self, ts: Matrix) -> result::Result<(), SkError> {
-    let current_state = &mut self.state;
     if let Some(inverse) = ts.invert() {
       self.path.transform_self(&inverse);
     }
-    current_state.transform = ts.multiply(&current_state.transform);
-    self.surface.set_transform(&current_state.transform);
+    self.state.transform = ts.multiply(&self.state.transform);
+    let transform = self.state.transform.clone();
+    self.with_canvas_state(|canvas| {
+      canvas.set_transform(&transform);
+    });
+    self.sync_transform_to_recorder();
     Ok(())
   }
 
   pub fn rotate(&mut self, angle: f32) {
-    let s = &mut self.state;
     let degrees = angle / PI * 180f32;
     let inverse = Matrix::rotated(-angle, 0.0, 0.0);
     self.path.transform_self(&inverse);
-    s.transform.pre_rotate(degrees);
-    self.surface.canvas.set_transform(&s.transform);
+    self.state.transform.pre_rotate(degrees);
+    let transform = self.state.transform.clone();
+    self.with_canvas_state(|canvas| {
+      canvas.set_transform(&transform);
+    });
+    self.sync_transform_to_recorder();
   }
 
   pub fn scale(&mut self, x: f32, y: f32) {
-    let s = &mut self.state;
     if x != 0.0 && y != 0.0 {
       let mut inverse = Matrix::identity();
       inverse.pre_scale(1f32 / x, 1f32 / y);
       self.path.transform_self(&inverse);
     }
-    s.transform.pre_scale(x, y);
-    self.surface.canvas.set_transform(&s.transform);
+    self.state.transform.pre_scale(x, y);
+    let transform = self.state.transform.clone();
+    self.with_canvas_state(|canvas| {
+      canvas.set_transform(&transform);
+    });
+    self.sync_transform_to_recorder();
   }
 
   pub fn set_transform(&mut self, ts: Matrix) {
-    self.surface.canvas.set_transform(&ts);
-    self.state.transform = ts;
+    self.state.transform = ts.clone();
+    self.with_canvas_state(|canvas| {
+      canvas.set_transform(&ts);
+    });
+    self.sync_transform_to_recorder();
   }
 
   pub fn reset_transform(&mut self) {
-    self.surface.canvas.reset_transform();
     self.state.transform = Matrix::identity();
+    self.with_canvas_state(|canvas| {
+      canvas.reset_transform();
+    });
+    self.sync_transform_to_recorder();
   }
 
   pub fn stroke_text(
@@ -365,42 +566,45 @@ impl Context {
 
   pub fn fill_rect(&mut self, x: f32, y: f32, w: f32, h: f32) -> result::Result<(), SkError> {
     let fill_paint = self.fill_paint()?;
-    Self::render_canvas(
-      &mut self.surface.canvas,
-      &fill_paint,
-      self.state.global_composite_operation,
-      self.width as f32,
-      self.height as f32,
-      |canvas, paint| {
-        if let Some(shadow_paint) = Self::shadow_blur_paint(&self.state, &fill_paint) {
-          // Use the special shadow rendering that allows shadows to extend beyond canvas bounds
-          Self::render_shadow_canvas(
-            canvas,
-            &shadow_paint,
-            self.state.global_composite_operation,
-            self.width as f32,
-            self.height as f32,
-            self.state.shadow_offset_x,
-            self.state.shadow_offset_y,
-            self.state.shadow_blur,
-            |shadow_canvas, shadow_paint| {
-              shadow_canvas.save();
-              Self::apply_shadow_offset_matrix_to_canvas(
-                shadow_canvas,
-                self.state.shadow_offset_x,
-                self.state.shadow_offset_y,
-              )?;
-              shadow_canvas.draw_rect(x, y, w, h, shadow_paint);
-              shadow_canvas.restore();
-              Ok(())
-            },
-          )?;
-        };
 
-        canvas.draw_rect(x, y, w, h, paint);
-        Ok(())
-      },
-    )?;
+    // Extract state for shadow rendering to avoid borrow conflicts
+    let shadow_paint = Self::shadow_blur_paint(&self.state, &fill_paint);
+    let global_composite_operation = self.state.global_composite_operation;
+    let width = self.width as f32;
+    let height = self.height as f32;
+    let shadow_offset_x = self.state.shadow_offset_x;
+    let shadow_offset_y = self.state.shadow_offset_y;
+    let shadow_blur = self.state.shadow_blur;
+
+    self.with_render_canvas(&fill_paint, |canvas, paint| {
+      if let Some(shadow_paint) = &shadow_paint {
+        // Use the special shadow rendering that allows shadows to extend beyond canvas bounds
+        Self::render_shadow_canvas(
+          canvas,
+          shadow_paint,
+          global_composite_operation,
+          width,
+          height,
+          shadow_offset_x,
+          shadow_offset_y,
+          shadow_blur,
+          |shadow_canvas, shadow_paint| {
+            shadow_canvas.save();
+            Self::apply_shadow_offset_matrix_to_canvas(
+              shadow_canvas,
+              shadow_offset_x,
+              shadow_offset_y,
+            )?;
+            shadow_canvas.draw_rect(x, y, w, h, shadow_paint);
+            shadow_canvas.restore();
+            Ok(())
+          },
+        )?;
+      };
+
+      canvas.draw_rect(x, y, w, h, paint);
+      Ok(())
+    })?;
     Ok(())
   }
 
@@ -426,45 +630,50 @@ impl Context {
 
   pub fn stroke(&mut self, path: Option<&mut SkPath>) -> Result<()> {
     let stroke_paint = self.stroke_paint()?;
-    Self::render_canvas(
-      &mut self.surface.canvas,
-      &stroke_paint,
-      self.state.global_composite_operation,
-      self.width as f32,
-      self.height as f32,
-      |canvas, paint| {
-        let p: &SkPath = match &path {
-          Some(path) => path,
-          None => &self.path,
-        };
-        if let Some(shadow_paint) = Self::shadow_blur_paint(&self.state, &stroke_paint) {
-          // Use the special shadow rendering that allows shadows to extend beyond canvas bounds
-          Self::render_shadow_canvas(
-            canvas,
-            &shadow_paint,
-            self.state.global_composite_operation,
-            self.width as f32,
-            self.height as f32,
-            self.state.shadow_offset_x,
-            self.state.shadow_offset_y,
-            self.state.shadow_blur,
-            |shadow_canvas, shadow_paint| {
-              shadow_canvas.save();
-              Self::apply_shadow_offset_matrix_to_canvas(
-                shadow_canvas,
-                self.state.shadow_offset_x,
-                self.state.shadow_offset_y,
-              )?;
-              shadow_canvas.draw_path(p, shadow_paint);
-              shadow_canvas.restore();
-              Ok(())
-            },
-          )?;
-        }
-        canvas.draw_path(p, paint);
-        Ok(())
-      },
-    )?;
+
+    // Clone the path to avoid borrow conflicts with with_render_canvas
+    let path_to_draw = match path {
+      Some(p) => p.clone(),
+      None => self.path.clone(),
+    };
+
+    // Extract state for shadow rendering to avoid borrow conflicts
+    let shadow_paint = Self::shadow_blur_paint(&self.state, &stroke_paint);
+    let global_composite_operation = self.state.global_composite_operation;
+    let width = self.width as f32;
+    let height = self.height as f32;
+    let shadow_offset_x = self.state.shadow_offset_x;
+    let shadow_offset_y = self.state.shadow_offset_y;
+    let shadow_blur = self.state.shadow_blur;
+
+    self.with_render_canvas(&stroke_paint, |canvas, paint| {
+      if let Some(shadow_paint) = &shadow_paint {
+        // Use the special shadow rendering that allows shadows to extend beyond canvas bounds
+        Self::render_shadow_canvas(
+          canvas,
+          shadow_paint,
+          global_composite_operation,
+          width,
+          height,
+          shadow_offset_x,
+          shadow_offset_y,
+          shadow_blur,
+          |shadow_canvas, shadow_paint| {
+            shadow_canvas.save();
+            Self::apply_shadow_offset_matrix_to_canvas(
+              shadow_canvas,
+              shadow_offset_x,
+              shadow_offset_y,
+            )?;
+            shadow_canvas.draw_path(&path_to_draw, shadow_paint);
+            shadow_canvas.restore();
+            Ok(())
+          },
+        )?;
+      }
+      canvas.draw_path(&path_to_draw, paint);
+      Ok(())
+    })?;
     Ok(())
   }
 
@@ -490,12 +699,12 @@ impl Context {
         layer_paint.set_blend_mode(BlendMode::SourceOver);
         let mut layer = PictureRecorder::new();
         layer.begin_recording(0.0, 0.0, width, height);
-        if let Some(mut canvas) = layer.get_recording_canvas() {
-          f(&mut canvas, &layer_paint)?;
+        if let Some(canvas) = layer.get_recording_canvas() {
+          f(canvas, &layer_paint)?;
         }
         if let Some(pict) = layer.finish_recording_as_picture() {
           surface_canvas.save();
-          surface_canvas.draw_picture(pict, &Matrix::identity(), paint);
+          surface_canvas.draw_picture(&pict, &Matrix::identity(), paint);
           surface_canvas.restore();
         }
         Ok(())
@@ -513,48 +722,53 @@ impl Context {
     fill_rule: FillType,
   ) -> result::Result<(), SkError> {
     let fill_paint = self.fill_paint()?;
-    let p = if let Some(p) = path {
+
+    // Clone the path and set fill type to avoid borrow conflicts with with_render_canvas
+    let path_to_draw = if let Some(p) = path {
       p.set_fill_type(fill_rule);
-      p
+      p.clone()
     } else {
       self.path.set_fill_type(fill_rule);
-      &self.path
+      self.path.clone()
     };
-    Self::render_canvas(
-      &mut self.surface.canvas,
-      &fill_paint,
-      self.state.global_composite_operation,
-      self.width as f32,
-      self.height as f32,
-      |canvas, paint| {
-        if let Some(shadow_paint) = Self::shadow_blur_paint(&self.state, &fill_paint) {
-          // Use the special shadow rendering that allows shadows to extend beyond canvas bounds
-          Self::render_shadow_canvas(
-            canvas,
-            &shadow_paint,
-            self.state.global_composite_operation,
-            self.width as f32,
-            self.height as f32,
-            self.state.shadow_offset_x,
-            self.state.shadow_offset_y,
-            self.state.shadow_blur,
-            |shadow_canvas, shadow_paint| {
-              shadow_canvas.save();
-              Self::apply_shadow_offset_matrix_to_canvas(
-                shadow_canvas,
-                self.state.shadow_offset_x,
-                self.state.shadow_offset_y,
-              )?;
-              shadow_canvas.draw_path(p, shadow_paint);
-              shadow_canvas.restore();
-              Ok(())
-            },
-          )?;
-        }
-        canvas.draw_path(p, paint);
-        Ok(())
-      },
-    )?;
+
+    // Extract state for shadow rendering to avoid borrow conflicts
+    let shadow_paint = Self::shadow_blur_paint(&self.state, &fill_paint);
+    let global_composite_operation = self.state.global_composite_operation;
+    let width = self.width as f32;
+    let height = self.height as f32;
+    let shadow_offset_x = self.state.shadow_offset_x;
+    let shadow_offset_y = self.state.shadow_offset_y;
+    let shadow_blur = self.state.shadow_blur;
+
+    self.with_render_canvas(&fill_paint, |canvas, paint| {
+      if let Some(shadow_paint) = &shadow_paint {
+        // Use the special shadow rendering that allows shadows to extend beyond canvas bounds
+        Self::render_shadow_canvas(
+          canvas,
+          shadow_paint,
+          global_composite_operation,
+          width,
+          height,
+          shadow_offset_x,
+          shadow_offset_y,
+          shadow_blur,
+          |shadow_canvas, shadow_paint| {
+            shadow_canvas.save();
+            Self::apply_shadow_offset_matrix_to_canvas(
+              shadow_canvas,
+              shadow_offset_x,
+              shadow_offset_y,
+            )?;
+            shadow_canvas.draw_path(&path_to_draw, shadow_paint);
+            shadow_canvas.restore();
+            Ok(())
+          },
+        )?;
+      }
+      canvas.draw_path(&path_to_draw, paint);
+      Ok(())
+    })?;
     Ok(())
   }
 
@@ -751,6 +965,14 @@ impl Context {
     h: f32,
     color_type: ColorSpace,
   ) -> Option<Vec<u8>> {
+    // Use RecordingSurface for deferred mode - enables incremental rendering
+    if let Some(ref recorder) = self.page_recorder {
+      return recorder
+        .borrow_mut()
+        .get_pixels(x as u32, y as u32, w as u32, h as u32, color_type);
+    }
+
+    // Direct mode - read from main surface
     self
       .surface
       .read_pixels(x as u32, y as u32, w as u32, h as u32, color_type)
@@ -881,63 +1103,140 @@ impl Context {
   ) -> Result<()> {
     let mut paint: Paint = self.fill_paint()?;
     paint.set_alpha((self.state.global_alpha * 255.0).round() as u8);
-    let state = &self.state;
-    let width = self.width;
-    let height = self.height;
-    Self::render_canvas(
-      &mut self.surface.canvas,
-      &paint,
-      self.state.global_composite_operation,
-      self.width as f32,
-      self.height as f32,
-      |canvas: &mut Canvas, paint| {
-        if let Some(drop_shadow_paint) = Self::drop_shadow_paint(state, paint) {
-          // Use the special shadow rendering that allows shadows to extend beyond canvas bounds
-          Self::render_shadow_canvas(
-            canvas,
-            &drop_shadow_paint,
-            state.global_composite_operation,
-            width as f32,
-            height as f32,
-            state.shadow_offset_x,
-            state.shadow_offset_y,
-            state.shadow_blur,
-            |shadow_canvas, shadow_paint| {
-              shadow_canvas.draw_image(
-                bitmap,
-                sx,
-                sy,
-                s_width,
-                s_height,
-                dx,
-                dy,
-                d_width,
-                d_height,
-                state.image_smoothing_enabled,
-                state.image_smoothing_quality,
-                shadow_paint,
-              );
-              Ok(())
-            },
-          )?;
-        }
-        canvas.draw_image(
-          bitmap,
-          sx,
-          sy,
-          s_width,
-          s_height,
-          dx,
-          dy,
-          d_width,
-          d_height,
-          state.image_smoothing_enabled,
-          state.image_smoothing_quality,
-          paint,
-        );
-        Ok(())
-      },
-    )?;
+
+    // Extract state for shadow rendering to avoid borrow conflicts
+    let drop_shadow_paint = Self::drop_shadow_paint(&self.state, &paint);
+    let global_composite_operation = self.state.global_composite_operation;
+    let width = self.width as f32;
+    let height = self.height as f32;
+    let shadow_offset_x = self.state.shadow_offset_x;
+    let shadow_offset_y = self.state.shadow_offset_y;
+    let shadow_blur = self.state.shadow_blur;
+    let image_smoothing_enabled = self.state.image_smoothing_enabled;
+    let image_smoothing_quality = self.state.image_smoothing_quality;
+
+    self.with_render_canvas(&paint, |canvas: &mut Canvas, paint| {
+      if let Some(drop_shadow_paint) = &drop_shadow_paint {
+        // Use the special shadow rendering that allows shadows to extend beyond canvas bounds
+        Self::render_shadow_canvas(
+          canvas,
+          drop_shadow_paint,
+          global_composite_operation,
+          width,
+          height,
+          shadow_offset_x,
+          shadow_offset_y,
+          shadow_blur,
+          |shadow_canvas, shadow_paint| {
+            shadow_canvas.draw_image(
+              bitmap,
+              sx,
+              sy,
+              s_width,
+              s_height,
+              dx,
+              dy,
+              d_width,
+              d_height,
+              image_smoothing_enabled,
+              image_smoothing_quality,
+              shadow_paint,
+            );
+            Ok(())
+          },
+        )?;
+      }
+      canvas.draw_image(
+        bitmap,
+        sx,
+        sy,
+        s_width,
+        s_height,
+        dx,
+        dy,
+        d_width,
+        d_height,
+        image_smoothing_enabled,
+        image_smoothing_quality,
+        paint,
+      );
+      Ok(())
+    })?;
+    Ok(())
+  }
+
+  /// Get a composite picture of all recorded operations (for drawCanvas)
+  pub fn get_picture(&mut self) -> Option<crate::sk::SkPicture> {
+    if let Some(ref recorder) = self.page_recorder {
+      recorder.borrow_mut().get_picture()
+    } else {
+      // For non-deferred mode, we can't get a picture
+      // The caller should use get_bitmap instead
+      None
+    }
+  }
+
+  /// Draw another canvas, preserving vector graphics when possible.
+  /// When the source has a SkPicture, this avoids rasterization.
+  /// Shadow rendering requires additional FFI calls when enabled.
+  pub(crate) fn draw_canvas(
+    &mut self,
+    picture: &crate::sk::SkPicture,
+    sx: f32,
+    sy: f32,
+    s_width: f32,
+    s_height: f32,
+    dx: f32,
+    dy: f32,
+    d_width: f32,
+    d_height: f32,
+  ) -> Result<()> {
+    let mut paint: Paint = self.fill_paint()?;
+    paint.set_alpha((self.state.global_alpha * 255.0).round() as u8);
+
+    // Extract state for shadow rendering to avoid borrow conflicts
+    let drop_shadow_paint = Self::drop_shadow_paint(&self.state, &paint);
+    let global_composite_operation = self.state.global_composite_operation;
+    let width = self.width as f32;
+    let height = self.height as f32;
+    let shadow_offset_x = self.state.shadow_offset_x;
+    let shadow_offset_y = self.state.shadow_offset_y;
+    let shadow_blur = self.state.shadow_blur;
+
+    self.with_render_canvas(&paint, |canvas: &mut Canvas, paint| {
+      if let Some(drop_shadow_paint) = &drop_shadow_paint {
+        // Use the special shadow rendering that allows shadows to extend beyond canvas bounds
+        Self::render_shadow_canvas(
+          canvas,
+          drop_shadow_paint,
+          global_composite_operation,
+          width,
+          height,
+          shadow_offset_x,
+          shadow_offset_y,
+          shadow_blur,
+          |shadow_canvas, shadow_paint| {
+            shadow_canvas.draw_picture_rect(
+              picture,
+              sx,
+              sy,
+              s_width,
+              s_height,
+              dx,
+              dy,
+              d_width,
+              d_height,
+              shadow_paint,
+            );
+            Ok(())
+          },
+        )?;
+      }
+      canvas.draw_picture_rect(
+        picture, sx, sy, s_width, s_height, dx, dy, d_width, d_height, paint,
+      );
+      Ok(())
+    })?;
     Ok(())
   }
 
@@ -950,93 +1249,108 @@ impl Context {
     paint: &Paint,
     variations: &[crate::sk::FontVariation],
   ) -> result::Result<(), SkError> {
-    let state = &self.state;
-    let width = self.width;
-    let height = self.height;
     let font = get_font()?;
-    Self::render_canvas(
-      &mut self.surface.canvas,
-      paint,
-      self.state.global_composite_operation,
-      self.width as f32,
-      self.height as f32,
-      |canvas, paint| {
-        if let Some(shadow_paint) = Self::shadow_blur_paint(state, paint) {
-          // Use the special shadow rendering that allows shadows to extend beyond canvas bounds
-          Self::render_shadow_canvas(
-            canvas,
-            &shadow_paint,
-            state.global_composite_operation,
-            width as f32,
-            height as f32,
-            state.shadow_offset_x,
-            state.shadow_offset_y,
-            state.shadow_blur,
-            |shadow_canvas, shadow_paint| {
-              shadow_canvas.save();
-              Self::apply_shadow_offset_matrix_to_canvas(
-                shadow_canvas,
-                state.shadow_offset_x,
-                state.shadow_offset_y,
-              )?;
-              shadow_canvas.draw_text(
-                text,
-                x,
-                y,
-                max_width,
-                width as f32,
-                state.font_style.weight,
-                state.font_stretch as i32,
-                state.font_stretch.to_width_percentage(),
-                state.font_style.style,
-                &font,
-                state.font_style.size,
-                &state.font_style.family,
-                state.text_baseline,
-                state.text_align,
-                state.text_direction,
-                state.letter_spacing,
-                state.word_spacing,
-                shadow_paint,
-                variations,
-                state.font_kerning,
-                state.font_variant_caps,
-                &state.lang,
-                state.text_rendering,
-              )?;
-              shadow_canvas.restore();
-              Ok(())
-            },
-          )?;
-        }
-        canvas.draw_text(
-          text,
-          x,
-          y,
-          max_width,
-          width as f32,
-          state.font_style.weight,
-          state.font_stretch as i32,
-          state.font_stretch.to_width_percentage(),
-          state.font_style.style,
-          &font,
-          state.font_style.size,
-          &state.font_style.family,
-          state.text_baseline,
-          state.text_align,
-          state.text_direction,
-          state.letter_spacing,
-          state.word_spacing,
-          paint,
-          variations,
-          state.font_kerning,
-          state.font_variant_caps,
-          &state.lang,
-          state.text_rendering,
+
+    // Extract all state values to avoid borrow conflicts with with_render_canvas
+    let shadow_paint = Self::shadow_blur_paint(&self.state, paint);
+    let global_composite_operation = self.state.global_composite_operation;
+    let width = self.width as f32;
+    let height = self.height as f32;
+    let shadow_offset_x = self.state.shadow_offset_x;
+    let shadow_offset_y = self.state.shadow_offset_y;
+    let shadow_blur = self.state.shadow_blur;
+    let font_weight = self.state.font_style.weight;
+    let font_stretch = self.state.font_stretch;
+    let font_stretch_percentage = font_stretch.to_width_percentage();
+    let font_style_style = self.state.font_style.style;
+    let font_size = self.state.font_style.size;
+    let font_family = self.state.font_style.family.clone();
+    let text_baseline = self.state.text_baseline;
+    let text_align = self.state.text_align;
+    let text_direction = self.state.text_direction;
+    let letter_spacing = self.state.letter_spacing;
+    let word_spacing = self.state.word_spacing;
+    let font_kerning = self.state.font_kerning;
+    let font_variant_caps = self.state.font_variant_caps;
+    let lang = self.state.lang.clone();
+    let text_rendering = self.state.text_rendering;
+
+    self.with_render_canvas(paint, |canvas, paint| {
+      if let Some(shadow_paint) = &shadow_paint {
+        // Use the special shadow rendering that allows shadows to extend beyond canvas bounds
+        Self::render_shadow_canvas(
+          canvas,
+          shadow_paint,
+          global_composite_operation,
+          width,
+          height,
+          shadow_offset_x,
+          shadow_offset_y,
+          shadow_blur,
+          |shadow_canvas, shadow_paint| {
+            shadow_canvas.save();
+            Self::apply_shadow_offset_matrix_to_canvas(
+              shadow_canvas,
+              shadow_offset_x,
+              shadow_offset_y,
+            )?;
+            shadow_canvas.draw_text(
+              text,
+              x,
+              y,
+              max_width,
+              width,
+              font_weight,
+              font_stretch as i32,
+              font_stretch_percentage,
+              font_style_style,
+              &font,
+              font_size,
+              &font_family,
+              text_baseline,
+              text_align,
+              text_direction,
+              letter_spacing,
+              word_spacing,
+              shadow_paint,
+              variations,
+              font_kerning,
+              font_variant_caps,
+              &lang,
+              text_rendering,
+            )?;
+            shadow_canvas.restore();
+            Ok(())
+          },
         )?;
-        Ok(())
-      },
-    )?;
+      }
+      canvas.draw_text(
+        text,
+        x,
+        y,
+        max_width,
+        width,
+        font_weight,
+        font_stretch as i32,
+        font_stretch_percentage,
+        font_style_style,
+        &font,
+        font_size,
+        &font_family,
+        text_baseline,
+        text_align,
+        text_direction,
+        letter_spacing,
+        word_spacing,
+        paint,
+        variations,
+        font_kerning,
+        font_variant_caps,
+        &lang,
+        text_rendering,
+      )?;
+      Ok(())
+    })?;
     Ok(())
   }
 
@@ -1140,12 +1454,12 @@ impl Context {
           expanded_width,
           expanded_height,
         );
-        if let Some(mut canvas) = layer.get_recording_canvas() {
-          f(&mut canvas, &layer_paint)?;
+        if let Some(canvas) = layer.get_recording_canvas() {
+          f(canvas, &layer_paint)?;
         }
         if let Some(pict) = layer.finish_recording_as_picture() {
           surface_canvas.save();
-          surface_canvas.draw_picture(pict, &Matrix::identity(), paint);
+          surface_canvas.draw_picture(&pict, &Matrix::identity(), paint);
           surface_canvas.restore();
         }
         Ok(())
@@ -1932,8 +2246,12 @@ impl CanvasRenderingContext2D {
       );
     };
     let bitmap = match image {
-      Either3::A(canvas) => BitmapRef::Owned(canvas.ctx.as_ref().context.surface.get_bitmap()),
-      Either3::B(svg) => BitmapRef::Owned(svg.ctx.as_ref().context.surface.get_bitmap()),
+      Either3::A(canvas) => {
+        // Flush the source canvas to render deferred operations before getting bitmap
+        canvas.ctx.context.flush();
+        BitmapRef::Owned(canvas.ctx.context.surface.get_bitmap())
+      }
+      Either3::B(svg) => BitmapRef::Owned(svg.ctx.context.surface.get_bitmap()),
       Either3::C(image) => {
         if !image.complete {
           return Ok(());
@@ -1992,6 +2310,134 @@ impl CanvasRenderingContext2D {
       };
     self.context.draw_image(
       bitmap_ref, sx, sy, s_width, s_height, dx, dy, d_width, d_height,
+    )?;
+    Ok(())
+  }
+
+  /// Draw another canvas, preserving vector graphics when possible.
+  /// When the source canvas has recorded operations, this preserves the SkPicture
+  /// representation without rasterization. Falls back to bitmap if no picture available.
+  #[napi]
+  pub fn draw_canvas(
+    &mut self,
+    canvas: &mut CanvasElement,
+    sx: Option<f64>,
+    sy: Option<f64>,
+    s_width: Option<f64>,
+    s_height: Option<f64>,
+    dx: Option<f64>,
+    dy: Option<f64>,
+    d_width: Option<f64>,
+    d_height: Option<f64>,
+  ) -> Result<()> {
+    let source_width = canvas.width as f32;
+    let source_height = canvas.height as f32;
+
+    // Get picture from source canvas (preserves vector graphics)
+    // Note: We need mutable access to the source context to get the picture
+    // This is safe because we have exclusive access to the CanvasElement
+    let picture = canvas.ctx.context.get_picture();
+
+    let picture = if let Some(pic) = picture {
+      pic
+    } else {
+      // Fallback to bitmap if picture not available (e.g., SVG canvas or no deferred rendering)
+      let bitmap = canvas.ctx.as_ref().context.surface.get_bitmap();
+      let (sx, sy, s_width, s_height, dx, dy, d_width, d_height) =
+        match (sx, sy, s_width, s_height, dx, dy, d_width, d_height) {
+          (Some(dx), Some(dy), None, None, None, None, None, None) => (
+            0.0,
+            0.0,
+            source_width,
+            source_height,
+            dx as f32,
+            dy as f32,
+            source_width,
+            source_height,
+          ),
+          (Some(dx), Some(dy), Some(d_width), Some(d_height), None, None, None, None) => (
+            0.0,
+            0.0,
+            source_width,
+            source_height,
+            dx as f32,
+            dy as f32,
+            d_width as f32,
+            d_height as f32,
+          ),
+          (
+            Some(sx),
+            Some(sy),
+            Some(s_width),
+            Some(s_height),
+            Some(dx),
+            Some(dy),
+            Some(d_width),
+            Some(d_height),
+          ) => (
+            sx as f32,
+            sy as f32,
+            s_width as f32,
+            s_height as f32,
+            dx as f32,
+            dy as f32,
+            d_width as f32,
+            d_height as f32,
+          ),
+          _ => return Ok(()),
+        };
+      return self.context.draw_image(
+        &bitmap, sx, sy, s_width, s_height, dx, dy, d_width, d_height,
+      );
+    };
+
+    // Parse parameters similar to drawImage
+    let (sx, sy, s_width, s_height, dx, dy, d_width, d_height) =
+      match (sx, sy, s_width, s_height, dx, dy, d_width, d_height) {
+        (Some(dx), Some(dy), None, None, None, None, None, None) => (
+          0.0,
+          0.0,
+          source_width,
+          source_height,
+          dx as f32,
+          dy as f32,
+          source_width,
+          source_height,
+        ),
+        (Some(dx), Some(dy), Some(d_width), Some(d_height), None, None, None, None) => (
+          0.0,
+          0.0,
+          source_width,
+          source_height,
+          dx as f32,
+          dy as f32,
+          d_width as f32,
+          d_height as f32,
+        ),
+        (
+          Some(sx),
+          Some(sy),
+          Some(s_width),
+          Some(s_height),
+          Some(dx),
+          Some(dy),
+          Some(d_width),
+          Some(d_height),
+        ) => (
+          sx as f32,
+          sy as f32,
+          s_width as f32,
+          s_height as f32,
+          dx as f32,
+          dy as f32,
+          d_width as f32,
+          d_height as f32,
+        ),
+        _ => return Ok(()),
+      };
+
+    self.context.draw_canvas(
+      &picture, sx, sy, s_width, s_height, dx, dy, d_width, d_height,
     )?;
     Ok(())
   }

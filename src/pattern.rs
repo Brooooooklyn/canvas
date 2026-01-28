@@ -122,6 +122,8 @@ impl CanvasPattern {
         ptr
       }
       Either4::C(canvas) => {
+        // Flush deferred rendering before accessing the surface
+        canvas.ctx.context.flush();
         // Clone the surface to capture its current state and prevent segfaults
         // when the original canvas is resized or destroyed
         let cloned_surface = canvas
