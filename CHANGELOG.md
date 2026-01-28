@@ -1,3 +1,17 @@
+## [0.1.89](https://github.com/Brooooooklyn/canvas/compare/v0.1.88...v0.1.89) (2026-01-28)
+
+
+### Bug Fixes
+
+* napi feature ([#1191](https://github.com/Brooooooklyn/canvas/issues/1191)) ([eb260b2](https://github.com/Brooooooklyn/canvas/commit/eb260b2b2bc5202fd46af6843954e4990fe8989a))
+
+
+### Features
+
+* implement deferred rendering with incremental layer caching ([#1193](https://github.com/Brooooooklyn/canvas/issues/1193)) ([4643bfe](https://github.com/Brooooooklyn/canvas/commit/4643bfe2c6dda4f874221db8b36f04215ec2aae5))
+
+
+
 ## [0.1.88](https://github.com/Brooooooklyn/canvas/compare/v0.1.87...v0.1.88) (2025-12-27)
 
 
