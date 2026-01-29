@@ -28,7 +28,6 @@ serde           = "1"
 serde_derive    = "1"
 serde_json      = "1"
 thiserror       = "2"
-uuid            = { version = "1", features = ["v4"] }
 
 [target.'cfg(not(target_os = "linux"))'.dependencies]
 mimalloc-safe = { version = "0.1", features = ["skip_collect_on_exit"] }
