@@ -37,39 +37,18 @@ pub struct FontKey {
 #[napi(js_name = "GlobalFonts")]
 #[allow(non_snake_case)]
 pub mod global_fonts {
-  use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex, OnceLock},
-  };
-
   use napi::bindgen_prelude::*;
 
   use super::{FONT_DIR, FONT_PATH, FontKey, get_font, into_napi_error};
 
-  type ThreadsafePtrKeyHashmap = HashMap<uuid::Uuid, Arc<Uint8Array>>;
-
-  static GLOBAL_REGISTERED_BUFFERS: OnceLock<Mutex<ThreadsafePtrKeyHashmap>> = OnceLock::new();
-
   #[napi]
-  pub fn register(
-    font_data: Arc<Uint8Array>,
-    name_alias: Option<String>,
-  ) -> Result<Option<FontKey>> {
+  pub fn register(font_data: &[u8], name_alias: Option<String>) -> Result<Option<FontKey>> {
     let maybe_name_alias = name_alias.and_then(|s| if s.is_empty() { None } else { Some(s) });
     let font = get_font().map_err(into_napi_error)?;
-    let global_buffers = GLOBAL_REGISTERED_BUFFERS.get_or_init(Default::default);
     let key = FontKey {
       inner: uuid::Uuid::new_v4(),
     };
-    global_buffers
-      .lock()
-      .map_err(into_napi_error)?
-      .insert(key.inner, font_data.clone());
-    Ok(
-      font
-        .register(font_data.as_ref(), maybe_name_alias)
-        .then_some(key),
-    )
+    Ok(font.register(font_data, maybe_name_alias).then_some(key))
   }
 
   // TODO: Do file extensions in font_path need to be converted to lowercase?
@@ -109,13 +88,11 @@ pub mod global_fonts {
     Ok(())
   }
 
+  /// Note: This function is kept for API compatibility but is now a no-op.
+  /// Since Skia copies font data internally, there's no need to manually manage buffer lifetime.
+  /// The font remains registered in Skia's font collection.
   #[napi]
-  pub fn remove(key: &FontKey) -> Result<()> {
-    let global_buffers = GLOBAL_REGISTERED_BUFFERS.get_or_init(Default::default);
-    global_buffers
-      .lock()
-      .map_err(into_napi_error)?
-      .remove(&key.inner);
+  pub fn remove(_key: &FontKey) -> Result<()> {
     Ok(())
   }
 

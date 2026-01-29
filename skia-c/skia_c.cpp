@@ -2065,7 +2065,7 @@ size_t skiac_font_collection_register(skiac_font_collection* c_font_collection,
                                       const uint8_t* font,
                                       size_t length,
                                       const char* name_alias) {
-  auto typeface_data = SkData::MakeWithoutCopy(font, length);
+  auto typeface_data = SkData::MakeWithCopy(font, length);
   auto typeface = c_font_collection->font_mgr->makeFromData(typeface_data);
   auto result = c_font_collection->assets->registerTypeface(typeface);
   if (name_alias) {
