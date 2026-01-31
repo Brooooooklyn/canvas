@@ -11,7 +11,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const FIXTURE = readFileSync(join(__dirname, 'text.svg'), 'utf8')
 
 test.beforeEach((t) => {
-  t.true(GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'iosevka-slab-regular.ttf')))
+  t.truthy(GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'iosevka-slab-regular.ttf')))
 })
 
 test('convertSVGTextToPath should work', async (t) => {

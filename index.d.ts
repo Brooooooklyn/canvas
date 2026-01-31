@@ -849,6 +849,7 @@ export function createCanvas(width: number, height: number, svgExportFlag: SvgEx
 export declare class FontKey {
   // make it a unique type
   private readonly key: symbol
+  readonly typefaceId: number
 }
 
 export interface FontVariationAxis {
@@ -868,13 +869,32 @@ export interface FontVariationAxis {
 
 interface IGlobalFonts {
   readonly families: { family: string; styles: { weight: number; width: string; style: string }[] }[]
-  // return true if succeeded
+  // return FontKey if succeeded, null if failed
   register(font: Buffer, nameAlias?: string): FontKey | null
-  // absolute path
-  registerFromPath(path: string, nameAlias?: string): boolean
+  // absolute path - returns FontKey if succeeded, null if failed
+  registerFromPath(path: string, nameAlias?: string): FontKey | null
   has(name: string): boolean
   loadFontsFromDir(path: string): number
-  remove(key: FontKey): void
+  /**
+   * Set an alias for a font family.
+   * @param fontName The original font family name
+   * @param alias The alias name to set
+   * @returns true if the alias was set successfully, false if the font family doesn't exist
+   */
+  setAlias(fontName: string, alias: string): boolean
+  remove(key: FontKey): boolean
+  /**
+   * Remove multiple fonts by their keys in a single operation.
+   * More efficient than calling remove() multiple times as it triggers only one rebuild.
+   * @param fontKeys Array of FontKey objects to remove
+   * @returns Number of fonts successfully removed
+   */
+  removeBatch(fontKeys: FontKey[]): number
+  /**
+   * Remove ALL registered fonts.
+   * @returns Number of fonts removed
+   */
+  removeAll(): number
   /**
    * Get variation axes for a specific font instance
    * @param familyName The font family name

@@ -1058,19 +1058,34 @@ pub mod ffi {
       font: *const u8,
       length: usize,
       maybe_name_alias: *const c_char,
-    ) -> usize;
+    ) -> u32;
 
     pub fn skiac_font_collection_register_from_path(
       c_font_collection: *mut skiac_font_collection,
       font_path: *const c_char,
       maybe_name_alias: *const c_char,
+    ) -> u32;
+
+    pub fn skiac_font_collection_unregister(
+      c_font_collection: *mut skiac_font_collection,
+      typeface_id: u32,
+    ) -> usize;
+
+    pub fn skiac_font_collection_unregister_batch(
+      c_font_collection: *mut skiac_font_collection,
+      typeface_ids: *const u32,
+      count: usize,
+    ) -> usize;
+
+    pub fn skiac_font_collection_unregister_all(
+      c_font_collection: *mut skiac_font_collection,
     ) -> usize;
 
     pub fn skiac_font_collection_set_alias(
       c_font_collection: *mut skiac_font_collection,
       family: *const c_char,
       alias: *const c_char,
-    );
+    ) -> bool;
 
     pub fn skiac_font_collection_destroy(c_font_collection: *mut skiac_font_collection);
 
@@ -4272,7 +4287,7 @@ impl FontCollection {
     names
   }
 
-  pub fn register<S: AsRef<str>>(&self, font: &[u8], maybe_name_alias: Option<S>) -> bool {
+  pub fn register<S: AsRef<str>>(&self, font: &[u8], maybe_name_alias: Option<S>) -> Option<u32> {
     let name_alias_ptr = match maybe_name_alias {
       Some(name_alias) => match CString::new(name_alias.as_ref()) {
         Ok(cstring) => cstring.into_raw(),
@@ -4280,16 +4295,29 @@ impl FontCollection {
       },
       None => ptr::null_mut(),
     };
-    unsafe {
-      ffi::skiac_font_collection_register(self.0, font.as_ptr(), font.len(), name_alias_ptr) > 0
+    let result = unsafe {
+      let typeface_id =
+        ffi::skiac_font_collection_register(self.0, font.as_ptr(), font.len(), name_alias_ptr);
+      if typeface_id > 0 {
+        Some(typeface_id)
+      } else {
+        None
+      }
+    };
+    // Reclaim the CString memory if we allocated it
+    if !name_alias_ptr.is_null() {
+      unsafe {
+        drop(CString::from_raw(name_alias_ptr));
+      }
     }
+    result
   }
 
   pub fn register_from_path<S: AsRef<str>>(
     &self,
     font_path: &str,
     maybe_name_alias: Option<S>,
-  ) -> bool {
+  ) -> Option<u32> {
     if let Ok(fp) = CString::new(font_path) {
       let name_alias_ptr = match maybe_name_alias {
         Some(name) => match CString::new(name.as_ref()) {
@@ -4298,15 +4326,42 @@ impl FontCollection {
         },
         None => ptr::null_mut(),
       };
-      unsafe {
-        ffi::skiac_font_collection_register_from_path(self.0, fp.as_ptr(), name_alias_ptr) > 0
+      let result = unsafe {
+        let typeface_id =
+          ffi::skiac_font_collection_register_from_path(self.0, fp.as_ptr(), name_alias_ptr);
+        if typeface_id > 0 {
+          Some(typeface_id)
+        } else {
+          None
+        }
+      };
+      // Reclaim the CString memory if we allocated it
+      if !name_alias_ptr.is_null() {
+        unsafe {
+          drop(CString::from_raw(name_alias_ptr));
+        }
       }
+      result
     } else {
-      false
+      None
     }
   }
 
-  pub fn set_alias(&self, family: &str, alias_name: &str) {
+  pub fn unregister(&self, typeface_id: u32) -> bool {
+    unsafe { ffi::skiac_font_collection_unregister(self.0, typeface_id) > 0 }
+  }
+
+  pub fn unregister_batch(&self, typeface_ids: &[u32]) -> usize {
+    unsafe {
+      ffi::skiac_font_collection_unregister_batch(self.0, typeface_ids.as_ptr(), typeface_ids.len())
+    }
+  }
+
+  pub fn unregister_all(&self) -> usize {
+    unsafe { ffi::skiac_font_collection_unregister_all(self.0) }
+  }
+
+  pub fn set_alias(&self, family: &str, alias_name: &str) -> bool {
     let family = CString::new(family).unwrap();
     let alias_name = CString::new(alias_name).unwrap();
     unsafe { ffi::skiac_font_collection_set_alias(self.0, family.as_ptr(), alias_name.as_ptr()) }

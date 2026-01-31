@@ -31,55 +31,60 @@ fn into_napi_error<E>(err: PoisonError<MutexGuard<'_, E>>) -> napi::Error {
 #[napi]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FontKey {
-  inner: uuid::Uuid,
+  pub typeface_id: u32,
 }
 
 #[napi(js_name = "GlobalFonts")]
 #[allow(non_snake_case)]
 pub mod global_fonts {
-  use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex, OnceLock},
-  };
-
   use napi::bindgen_prelude::*;
 
   use super::{FONT_DIR, FONT_PATH, FontKey, get_font, into_napi_error};
 
-  type ThreadsafePtrKeyHashmap = HashMap<uuid::Uuid, Arc<Uint8Array>>;
-
-  static GLOBAL_REGISTERED_BUFFERS: OnceLock<Mutex<ThreadsafePtrKeyHashmap>> = OnceLock::new();
-
   #[napi]
-  pub fn register(
-    font_data: Arc<Uint8Array>,
-    name_alias: Option<String>,
-  ) -> Result<Option<FontKey>> {
+  pub fn register(font_data: &[u8], name_alias: Option<String>) -> Result<Option<FontKey>> {
     let maybe_name_alias = name_alias.and_then(|s| if s.is_empty() { None } else { Some(s) });
     let font = get_font().map_err(into_napi_error)?;
-    let global_buffers = GLOBAL_REGISTERED_BUFFERS.get_or_init(Default::default);
-    let key = FontKey {
-      inner: uuid::Uuid::new_v4(),
-    };
-    global_buffers
-      .lock()
-      .map_err(into_napi_error)?
-      .insert(key.inner, font_data.clone());
     Ok(
       font
-        .register(font_data.as_ref(), maybe_name_alias)
-        .then_some(key),
+        .register(font_data, maybe_name_alias)
+        .map(|typeface_id| FontKey { typeface_id }),
     )
   }
 
+  /// Register a font from a file path.
+  ///
+  /// Fonts registered via path are deduplicated by the path string itself, not by file contents.
+  /// This means:
+  /// - Registering the same path multiple times returns the existing registration
+  /// - If the font file is modified on disk and `registerFromPath` is called again,
+  ///   the new contents will NOT be loaded - it returns the existing registration
+  ///
+  /// This behavior is intentional to prevent memory waste from duplicate registrations.
+  ///
+  /// ## Hot-reload workaround
+  ///
+  /// To reload a font after modifying the file on disk:
+  /// 1. Call `GlobalFonts.remove(fontKey)` with the key from the original registration
+  /// 2. Call `GlobalFonts.registerFromPath()` again to register the updated font
+  ///
+  /// Note: The `register()` function (buffer-based) deduplicates by content hash,
+  /// so it will detect when font data has changed.
   // TODO: Do file extensions in font_path need to be converted to lowercase?
   // Windows and macOS are case-insensitive, Linux is not.
   // See: https://github.com/Brooooooklyn/canvas/actions/runs/5893418006/job/15985737723
   #[napi]
-  pub fn register_from_path(font_path: String, name_alias: Option<String>) -> Result<bool> {
+  pub fn register_from_path(
+    font_path: String,
+    name_alias: Option<String>,
+  ) -> Result<Option<FontKey>> {
     let maybe_name_alias = name_alias.and_then(|s| if s.is_empty() { None } else { Some(s) });
     let font = get_font().map_err(into_napi_error)?;
-    Ok(font.register_from_path(font_path.as_str(), maybe_name_alias))
+    Ok(
+      font
+        .register_from_path(font_path.as_str(), maybe_name_alias)
+        .map(|typeface_id| FontKey { typeface_id }),
+    )
   }
 
   #[napi]
@@ -103,20 +108,35 @@ pub mod global_fonts {
   }
 
   #[napi]
-  pub fn set_alias(font_name: String, alias: String) -> Result<()> {
+  pub fn set_alias(font_name: String, alias: String) -> Result<bool> {
     let font = get_font().map_err(into_napi_error)?;
-    font.set_alias(font_name.as_str(), alias.as_str());
-    Ok(())
+    Ok(font.set_alias(font_name.as_str(), alias.as_str()))
+  }
+
+  /// Remove a previously registered font from the global font collection.
+  /// Returns true if the font was successfully removed, false if it was not found.
+  #[napi]
+  pub fn remove(key: &FontKey) -> Result<bool> {
+    let font = get_font().map_err(into_napi_error)?;
+    Ok(font.unregister(key.typeface_id))
   }
 
   #[napi]
-  pub fn remove(key: &FontKey) -> Result<()> {
-    let global_buffers = GLOBAL_REGISTERED_BUFFERS.get_or_init(Default::default);
-    global_buffers
-      .lock()
-      .map_err(into_napi_error)?
-      .remove(&key.inner);
-    Ok(())
+  /// Remove multiple fonts by their keys in a single operation.
+  /// More efficient than calling remove() multiple times as it triggers only one rebuild.
+  /// Returns the number of fonts successfully removed.
+  pub fn remove_batch(font_keys: Vec<&FontKey>) -> Result<u32> {
+    let typeface_ids: Vec<u32> = font_keys.iter().map(|k| k.typeface_id).collect();
+    let font = get_font().map_err(into_napi_error)?;
+    Ok(font.unregister_batch(&typeface_ids) as u32)
+  }
+
+  #[napi]
+  /// Remove ALL registered fonts in a single operation.
+  /// Returns the number of fonts removed.
+  pub fn remove_all() -> Result<u32> {
+    let font = get_font().map_err(into_napi_error)?;
+    Ok(font.unregister_all() as u32)
   }
 
   #[napi(object)]
@@ -181,7 +201,10 @@ fn load_fonts_from_dir<P: AsRef<path::Path>>(dir: P) -> napi::Result<u32> {
             | Some("woff") => {
               if let Some(p) = p.into_os_string().to_str() {
                 let font_collection = get_font().map_err(into_napi_error)?;
-                if font_collection.register_from_path::<String>(p, None) {
+                if font_collection
+                  .register_from_path::<String>(p, None)
+                  .is_some()
+                {
                   count += 1;
                 }
               }

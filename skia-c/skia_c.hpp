@@ -55,6 +55,12 @@
 #include <src/core/SkFontDescriptor.h>
 #include <src/ports/SkFontMgr_custom.h>
 #include <src/xml/SkXMLWriter.h>
+#include <algorithm>
+#include <cstring>
+#include <map>
+#include <set>
+#include <string>
+#include <vector>
 
 #include <stdint.h>
 
@@ -106,6 +112,44 @@ enum class CssBaseline {
   Bottom,
 };
 
+// Compute stable content-based ID from font data using FNV-1a hash
+// IMPORTANT: Never returns 0 because Rust wrapper treats 0 as failure
+inline uint32_t computeFontContentHash(const sk_sp<SkData>& data) {
+  if (!data)
+    return 1;  // Use 1 instead of 0 (0 means failure to Rust)
+  const uint8_t* bytes = static_cast<const uint8_t*>(data->data());
+  size_t size = data->size();
+  // FNV-1a hash
+  uint32_t hash = 2166136261u;
+  for (size_t i = 0; i < size && i < 1024; i++) {  // Hash first 1KB for speed
+    hash ^= bytes[i];
+    hash *= 16777619u;
+  }
+  // Include size in hash to differentiate similar prefixes
+  hash ^= static_cast<uint32_t>(size);
+  return hash ? hash : 1;  // Never return 0
+}
+
+// Compute stable content-based ID from file path using FNV-1a hash
+// IMPORTANT: Never returns 0 because Rust wrapper treats 0 as failure
+inline uint32_t computePathHash(const std::string& path) {
+  if (path.empty())
+    return 1;  // Use 1 for empty path (0 means failure to Rust)
+  uint32_t hash = 2166136261u;
+  for (char c : path) {
+    hash ^= static_cast<uint8_t>(c);
+    hash *= 16777619u;
+  }
+  return hash ? hash : 1;  // Never return 0
+}
+
+// Stores font data needed to recreate a typeface after rebuild
+struct RegisteredFont {
+  sk_sp<SkData> data;  // For buffer-registered fonts (null for path-registered)
+  std::string path;  // For path-registered fonts (empty for buffer-registered)
+  std::vector<std::string> aliases;  // All aliases for this font
+};
+
 class TypefaceFontProviderCustom : public TypefaceFontProvider {
  public:
   explicit TypefaceFontProviderCustom(sk_sp<SkFontMgr> mgr)
@@ -113,24 +157,375 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
 
   ~TypefaceFontProviderCustom() {};
 
-  sk_sp<SkTypeface> onLegacyMakeTypeface(const char family_name[],
-                                         SkFontStyle style) const override {
-    if (!family_name) {
-      return nullptr;
+  // Get font manager for rebuild
+  sk_sp<SkFontMgr> getFontMgr() const { return font_mgr; }
+
+  // Get registered fonts for rebuild
+  const std::map<uint32_t, RegisteredFont>& getRegisteredFonts() const {
+    return registered_fonts;
+  }
+
+  // Register typeface with data tracking for rebuild capability
+  uint32_t registerTypefaceWithTracking(sk_sp<SkData> data,
+                                        sk_sp<SkTypeface> typeface) {
+    if (!typeface || !data) {
+      return 0;
     }
-    auto style_set = this->onMatchFamily(family_name);
-    if (!style_set) {
-      return nullptr;
+    // Use content-based hash instead of uniqueID for stable deduplication
+    uint32_t content_hash = computeFontContentHash(data);
+
+    // First, check the secondary index for existing registration with same
+    // content This handles the case where the probe chain was broken by a
+    // removal
+    auto index_it = content_hash_index.find(content_hash);
+    if (index_it != content_hash_index.end()) {
+      for (uint32_t existing_id : index_it->second) {
+        auto font_it = registered_fonts.find(existing_id);
+        if (font_it != registered_fonts.end() && font_it->second.data) {
+          if (font_it->second.data->size() == data->size() &&
+              memcmp(font_it->second.data->data(), data->data(),
+                     data->size()) == 0) {
+            // Found matching content via index - true duplicate
+            return existing_id;
+          }
+        }
+      }
     }
-    auto tf = style_set->matchStyle(style);
-    if (!tf) {
-      return nullptr;
+
+    // Find an available slot using linear probe
+    uint32_t id = content_hash;
+    while (registered_fonts.find(id) != registered_fonts.end()) {
+      id++;
+      if (id == 0) {
+        return 0;  // Overflow protection - treat as registration failure
+      }
     }
-    return sk_sp<SkTypeface>(tf);
+
+    // Get original family name
+    SkString familyName;
+    typeface->getFamilyName(&familyName);
+    std::string originalName = std::string(familyName.c_str());
+
+    // Store font data with original family name for rebuild
+    RegisteredFont font_info;
+    font_info.data = data;
+    font_info.aliases.push_back(
+        originalName);  // Track under what name it's registered
+    registered_fonts[id] = std::move(font_info);
+
+    // Update secondary index
+    content_hash_index[content_hash].insert(id);
+
+    this->registerTypeface(std::move(typeface));
+    return id;
+  }
+
+  uint32_t registerTypefaceWithTracking(sk_sp<SkData> data,
+                                        sk_sp<SkTypeface> typeface,
+                                        const SkString& alias) {
+    if (!typeface || !data) {
+      return 0;
+    }
+    // Use content-based hash instead of uniqueID for stable deduplication
+    uint32_t content_hash = computeFontContentHash(data);
+    std::string aliasStr = std::string(alias.c_str());
+
+    // Get original family name from typeface
+    SkString familyName;
+    typeface->getFamilyName(&familyName);
+    std::string originalName = std::string(familyName.c_str());
+
+    // First, check the secondary index for existing registration with same
+    // content This handles the case where the probe chain was broken by a
+    // removal
+    auto index_it = content_hash_index.find(content_hash);
+    if (index_it != content_hash_index.end()) {
+      for (uint32_t existing_id : index_it->second) {
+        auto font_it = registered_fonts.find(existing_id);
+        if (font_it != registered_fonts.end() && font_it->second.data) {
+          if (font_it->second.data->size() == data->size() &&
+              memcmp(font_it->second.data->data(), data->data(),
+                     data->size()) == 0) {
+            // Found matching content via index - true duplicate, add alias if
+            // new
+            auto& aliases = font_it->second.aliases;
+            if (std::find(aliases.begin(), aliases.end(), aliasStr) ==
+                aliases.end()) {
+              aliases.push_back(aliasStr);
+              this->registerTypeface(typeface, alias);
+            }
+            return existing_id;
+          }
+        }
+      }
+    }
+
+    // Find an available slot using linear probe
+    uint32_t id = content_hash;
+    while (registered_fonts.find(id) != registered_fonts.end()) {
+      id++;
+      if (id == 0) {
+        return 0;  // Overflow protection - treat as registration failure
+      }
+    }
+
+    // Store font data - avoid duplicates if alias equals original name
+    RegisteredFont font_info;
+    font_info.data = data;
+    font_info.aliases.push_back(originalName);  // Track original name
+
+    // Only add alias if different from original name
+    if (aliasStr != originalName) {
+      font_info.aliases.push_back(aliasStr);
+    }
+    registered_fonts[id] = std::move(font_info);
+
+    // Update secondary index
+    content_hash_index[content_hash].insert(id);
+
+    // Register under original name
+    this->registerTypeface(typeface);
+
+    // Only register under alias if different from original
+    if (aliasStr != originalName) {
+      this->registerTypeface(std::move(typeface), alias);
+    }
+    return id;
+  }
+
+  // Register with explicit ID (used during rebuild to preserve FontKey)
+  // Only registers under the names in aliases (which includes original family
+  // name if tracked)
+  void registerTypefaceWithId(uint32_t id,
+                              sk_sp<SkData> data,
+                              const std::string& path,
+                              sk_sp<SkTypeface> typeface,
+                              const std::vector<std::string>& aliases) {
+    if (!typeface) {
+      return;
+    }
+
+    RegisteredFont font_info;
+    font_info.data = data;
+    font_info.path = path;
+    font_info.aliases = aliases;
+    registered_fonts[id] = std::move(font_info);
+
+    // Update secondary index
+    uint32_t content_hash;
+    if (!path.empty()) {
+      content_hash = computePathHash(path);
+    } else if (data) {
+      content_hash = computeFontContentHash(data);
+    } else {
+      content_hash = id;  // Fallback to id if no path or data
+    }
+    content_hash_index[content_hash].insert(id);
+
+    // Register under each tracked name (first one is typically original family
+    // name)
+    for (const auto& name : aliases) {
+      this->registerTypeface(typeface, SkString(name.c_str()));
+    }
+  }
+
+  /**
+   * Register a typeface from a file path.
+   *
+   * Fonts are deduplicated by path string: if the same path is registered
+   * multiple times, subsequent calls return the existing ID without re-reading
+   * the file. This is intentional to prevent memory waste from duplicate
+   * registrations.
+   *
+   * IMPORTANT: Path-based deduplication means that if a font file is modified
+   * on disk and this function is called again with the same path, the new
+   * contents will NOT be loaded - it will return the existing registration.
+   *
+   * To reload a font after modifying the file on disk:
+   * 1. Call removeTypeface() with the existing ID
+   * 2. Call this function again to register the updated font
+   *
+   * @param path The file path to the font
+   * @param typeface The typeface created from the font file
+   * @return The font ID (content hash), or 0 on failure
+   */
+  uint32_t registerTypefaceFromPathWithTracking(const std::string& path,
+                                                sk_sp<SkTypeface> typeface) {
+    if (!typeface) {
+      return 0;
+    }
+    // Use path-based hash instead of uniqueID for stable deduplication
+    uint32_t content_hash = computePathHash(path);
+
+    // First, check the secondary index for existing registration with same path
+    // This handles the case where the probe chain was broken by a removal
+    auto index_it = content_hash_index.find(content_hash);
+    if (index_it != content_hash_index.end()) {
+      for (uint32_t existing_id : index_it->second) {
+        auto font_it = registered_fonts.find(existing_id);
+        if (font_it != registered_fonts.end() &&
+            !font_it->second.path.empty() && font_it->second.path == path) {
+          // Found matching path via index - true duplicate
+          return existing_id;
+        }
+      }
+    }
+
+    // Find an available slot using linear probe
+    uint32_t id = content_hash;
+    while (registered_fonts.find(id) != registered_fonts.end()) {
+      id++;
+      if (id == 0) {
+        return 0;  // Overflow protection - treat as registration failure
+      }
+    }
+
+    // Get original family name
+    SkString familyName;
+    typeface->getFamilyName(&familyName);
+    std::string originalName = std::string(familyName.c_str());
+
+    // Store path (not data) with original family name for rebuild
+    RegisteredFont font_info;
+    font_info.path = path;
+    font_info.aliases.push_back(originalName);
+    registered_fonts[id] = std::move(font_info);
+
+    // Update secondary index
+    content_hash_index[content_hash].insert(id);
+
+    this->registerTypeface(std::move(typeface));
+    return id;
+  }
+
+  uint32_t registerTypefaceFromPathWithTracking(const std::string& path,
+                                                sk_sp<SkTypeface> typeface,
+                                                const SkString& alias) {
+    if (!typeface) {
+      return 0;
+    }
+    // Use path-based hash instead of uniqueID for stable deduplication
+    uint32_t content_hash = computePathHash(path);
+    std::string aliasStr = std::string(alias.c_str());
+
+    // Get original family name from typeface
+    SkString familyName;
+    typeface->getFamilyName(&familyName);
+    std::string originalName = std::string(familyName.c_str());
+
+    // First, check the secondary index for existing registration with same path
+    // This handles the case where the probe chain was broken by a removal
+    auto index_it = content_hash_index.find(content_hash);
+    if (index_it != content_hash_index.end()) {
+      for (uint32_t existing_id : index_it->second) {
+        auto font_it = registered_fonts.find(existing_id);
+        if (font_it != registered_fonts.end() &&
+            !font_it->second.path.empty() && font_it->second.path == path) {
+          // Found matching path via index - true duplicate, add alias if new
+          auto& aliases = font_it->second.aliases;
+          if (std::find(aliases.begin(), aliases.end(), aliasStr) ==
+              aliases.end()) {
+            aliases.push_back(aliasStr);
+            this->registerTypeface(typeface, alias);
+          }
+          return existing_id;
+        }
+      }
+    }
+
+    // Find an available slot using linear probe
+    uint32_t id = content_hash;
+    while (registered_fonts.find(id) != registered_fonts.end()) {
+      id++;
+      if (id == 0) {
+        return 0;  // Overflow protection - treat as registration failure
+      }
+    }
+
+    // Store path (not data) - avoid duplicates if alias equals original name
+    RegisteredFont font_info;
+    font_info.path = path;
+    font_info.aliases.push_back(originalName);
+
+    // Only add alias if different from original name
+    if (aliasStr != originalName) {
+      font_info.aliases.push_back(aliasStr);
+    }
+    registered_fonts[id] = std::move(font_info);
+
+    // Update secondary index
+    content_hash_index[content_hash].insert(id);
+
+    // Register under original name
+    this->registerTypeface(typeface);
+
+    // Only register under alias if different from original
+    if (aliasStr != originalName) {
+      this->registerTypeface(std::move(typeface), alias);
+    }
+    return id;
+  }
+
+  // Remove typeface from tracking
+  // Note: caller must also clean up set_aliases in skiac_font_collection
+  // to prevent stale alias persistence bug
+  bool removeTypeface(uint32_t typeface_id,
+                      std::vector<std::string>* removed_aliases = nullptr) {
+    auto it = registered_fonts.find(typeface_id);
+    if (it == registered_fonts.end()) {
+      return false;
+    }
+
+    // Return the aliases so caller can clean up set_aliases
+    if (removed_aliases) {
+      *removed_aliases = it->second.aliases;
+    }
+
+    // Get the content hash to update the secondary index
+    uint32_t content_hash;
+    const auto& font_info = it->second;
+    if (!font_info.path.empty()) {
+      // Path-registered font
+      content_hash = computePathHash(font_info.path);
+    } else if (font_info.data) {
+      // Buffer-registered font
+      content_hash = computeFontContentHash(font_info.data);
+    } else {
+      // No data - just erase
+      registered_fonts.erase(it);
+      return true;
+    }
+
+    // Remove from secondary index
+    auto index_it = content_hash_index.find(content_hash);
+    if (index_it != content_hash_index.end()) {
+      index_it->second.erase(typeface_id);
+      if (index_it->second.empty()) {
+        content_hash_index.erase(index_it);
+      }
+    }
+
+    registered_fonts.erase(it);
+    return true;
+  }
+
+  // Remove all typefaces from tracking
+  // Note: caller must also clear set_aliases in skiac_font_collection
+  size_t removeAllTypefaces() {
+    size_t count = registered_fonts.size();
+    registered_fonts.clear();
+    content_hash_index.clear();
+    return count;
   }
 
  private:
   sk_sp<SkFontMgr> font_mgr;
+  std::map<uint32_t, RegisteredFont> registered_fonts;
+  // Secondary index: content hash -> set of registered IDs with that hash
+  // This enables fast duplicate detection even after removals break the probe
+  // chain. Complexity is O(k) where k is the number of hash collisions
+  // (typically 1-2).
+  std::map<uint32_t, std::set<uint32_t>> content_hash_index;
 };
 
 struct skiac_svg_surface {
@@ -143,6 +538,11 @@ struct skiac_font_collection {
   sk_sp<FontCollection> collection;
   sk_sp<SkFontMgr> font_mgr;
   sk_sp<TypefaceFontProviderCustom> assets;
+  // Keep old providers alive to avoid destruction issues
+  std::vector<sk_sp<TypefaceFontProviderCustom>> retired_assets;
+  // Track setAlias mappings for rebuild: {family, alias} pairs
+  std::set<std::pair<std::string, std::string>> set_aliases;
+
   skiac_font_collection()
       : collection(sk_make_sp<FontCollection>()),
         font_mgr(SkFontMgr_New_Custom_Directory(SK_FONT_FILE_PREFIX)),
@@ -151,7 +551,79 @@ struct skiac_font_collection {
     collection->setAssetFontManager(font_mgr);
     collection->setDynamicFontManager(assets);
     collection->enableFontFallback();
-    assets->ref();
+  }
+
+  // Rebuild the dynamic font provider with only remaining fonts
+  // Since sk_sp is reference-counted, old providers stay alive as long as any
+  // typeface from them is still in use. We can safely clear retired_assets.
+  void rebuildAssets() {
+    // Get current registered fonts before swap
+    auto old_fonts = assets->getRegisteredFonts();
+
+    // Clear caches before swap
+    collection->clearCaches();
+
+    // Create new provider
+    auto new_assets = sk_make_sp<TypefaceFontProviderCustom>(font_mgr);
+
+    // Re-register all remaining fonts, preserving original IDs
+    for (const auto& [id, font_info] : old_fonts) {
+      sk_sp<SkTypeface> typeface;
+
+      if (!font_info.path.empty()) {
+        // Path-registered font: reload from path (lazy loading)
+        typeface = font_mgr->makeFromFile(font_info.path.c_str());
+      } else if (font_info.data) {
+        // Buffer-registered font: recreate from stored data
+        typeface = font_mgr->makeFromData(font_info.data);
+      }
+
+      if (typeface) {
+        new_assets->registerTypefaceWithId(id, font_info.data, font_info.path,
+                                           typeface, font_info.aliases);
+      }
+    }
+
+    // Replay setAlias mappings
+    // These aliases intentionally shadow/override existing family names
+    for (const auto& [family, alias] : set_aliases) {
+      auto style = SkFontStyle();
+      auto typeface = new_assets->matchFamilyStyle(family.c_str(), style);
+      if (typeface) {
+        // Register the alias - this may shadow existing families (intended
+        // behavior)
+        new_assets->registerTypeface(std::move(typeface),
+                                     SkString(alias.c_str()));
+      }
+    }
+
+    // IMPORTANT: Font Provider Lifecycle Management
+    //
+    // Old providers must be kept alive because:
+    // - Skia typefaces hold references to their parent provider
+    // - If provider is destroyed while typefaces are in use, crash occurs
+    // - Typefaces may be held by Paragraphs, Pictures, or cached renders
+    //
+    // Current approach: Fixed-size FIFO buffer of retired providers
+    // - Cap of 1000 handles most real-world scenarios
+    // - Memory impact is minimal (providers contain metadata, not font data)
+    //
+    // LIMITATION: If an application:
+    // 1. Performs 1000+ font removal operations, AND
+    // 2. Keeps references to typefaces from the oldest removals
+    // Then a use-after-free crash can occur.
+    //
+    // This is acceptable for typical usage but may need ref-counting
+    // for heavy font manipulation utilities.
+    static constexpr size_t kMaxRetiredAssets = 1000;
+    if (retired_assets.size() >= kMaxRetiredAssets) {
+      retired_assets.erase(retired_assets.begin());  // Remove oldest
+    }
+    retired_assets.push_back(assets);
+
+    // Swap to new provider
+    assets = new_assets;
+    collection->setDynamicFontManager(assets);
   }
 };
 
@@ -741,15 +1213,25 @@ void skiac_font_collection_get_family(
     skiac_string* c_string,
     void* on_get_style_rust,
     skiac_on_match_font_style on_match_font_style);
-size_t skiac_font_collection_register(skiac_font_collection* c_font_collection,
-                                      const uint8_t* font,
-                                      size_t length,
-                                      const char* name_alias);
-size_t skiac_font_collection_register_from_path(
+uint32_t skiac_font_collection_register(
+    skiac_font_collection* c_font_collection,
+    const uint8_t* font,
+    size_t length,
+    const char* name_alias);
+uint32_t skiac_font_collection_register_from_path(
     skiac_font_collection* c_font_collection,
     const char* font_path,
     const char* name_alias);
-void skiac_font_collection_set_alias(skiac_font_collection* c_font_collection,
+size_t skiac_font_collection_unregister(
+    skiac_font_collection* c_font_collection,
+    uint32_t typeface_id);
+size_t skiac_font_collection_unregister_batch(
+    skiac_font_collection* c_font_collection,
+    const uint32_t* typeface_ids,
+    size_t count);
+size_t skiac_font_collection_unregister_all(
+    skiac_font_collection* c_font_collection);
+bool skiac_font_collection_set_alias(skiac_font_collection* c_font_collection,
                                      const char* family,
                                      const char* alias);
 void skiac_font_collection_destroy(skiac_font_collection* c_font_collection);
