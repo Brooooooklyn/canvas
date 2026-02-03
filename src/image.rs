@@ -1,7 +1,7 @@
 use std::{borrow::Cow, ptr, str, str::FromStr};
 
 use base64_simd::STANDARD;
-use napi::{ScopedTask, bindgen_prelude::*};
+use napi::{JsString, JsStringUtf8, ScopedTask, bindgen_prelude::*};
 
 use crate::avif::AvifImage;
 use crate::error::SkError;
@@ -636,6 +636,139 @@ impl Image {
       }
     }
 
+    // Check if this is an HTTP/HTTPS URL - use fetch API instead of file read
+    if let Either::B(url_string) = data
+      && is_http_url(url_string)
+    {
+      self.complete = false;
+
+      // Get global fetch function
+      let global = env.get_global()?;
+      let fetch_fn: Function<&str, Unknown> = global.get_named_property("fetch")?;
+
+      // Store references for promise chain
+      let url_clone = url_string.clone();
+      // Create separate ObjectRefs for each callback - they will be unrefed properly
+      let this_ref_then: ObjectRef<false> = this.create_ref()?;
+      let this_ref_catch: ObjectRef<false> = this.create_ref()?;
+      let generation = self.load_generation;
+      let width = self.width;
+      let height = self.height;
+      let color_space = self.color_space;
+
+      // Call fetch(url)
+      let fetch_promise = fetch_fn.call(url_clone.as_str())?;
+
+      // Chain promises: fetch -> response.arrayBuffer() -> decode
+      let promise = PromiseRaw::from_unknown(fetch_promise)?
+        .then(move |ctx: CallbackContext<Object>| {
+          // Check response.ok
+          let response = ctx.value;
+          let ok: bool = response.get_named_property("ok")?;
+          if !ok {
+            let status: u32 = response.get_named_property("status")?;
+            return Err(Error::new(
+              Status::GenericFailure,
+              format!("HTTP request failed with status {}", status),
+            ));
+          }
+          // Call response.arrayBuffer()
+          let array_buffer_method: Function<(), Unknown> =
+            response.get_named_property("arrayBuffer")?;
+          array_buffer_method.apply(response, ())
+        })?
+        .then(move |ctx: CallbackContext<Unknown>| {
+          // Convert ArrayBuffer to Uint8Array using JavaScript constructor
+          let global = ctx.env.get_global()?;
+          let uint8array_ctor: Function<Unknown, Unknown> =
+            global.get_named_property("Uint8Array")?;
+          let buffer_unknown = uint8array_ctor.new_instance(ctx.value)?;
+          let buffer: Uint8Array = unsafe { buffer_unknown.cast()? };
+
+          // Get Image instance and verify generation
+          let this: Object = this_ref_then.get_value(&ctx.env)?;
+          // Unref this_ref_then after getting the value
+          this_ref_then.unref(&ctx.env)?;
+
+          let mut image_ptr = ptr::null_mut();
+          unsafe {
+            sys::napi_unwrap(ctx.env.raw(), this.raw(), &mut image_ptr);
+          }
+          let image = unsafe { &mut *image_ptr.cast::<Image>() };
+
+          if generation != image.load_generation {
+            // Stale load - return unit to skip
+            return Ok(());
+          }
+
+          // Spawn BitmapDecoder with downloaded buffer
+          let decoder = BitmapDecoder {
+            width,
+            height,
+            color_space,
+            data: Some(Either::A(buffer)),
+            file_content: None,
+            this_ref: this.create_ref()?,
+            generation,
+            fire_events: true,
+          };
+          ctx.env.spawn(decoder)?;
+          Ok(())
+        })?
+        .catch(move |ctx: CallbackContext<Unknown>| {
+          // Fire onerror event
+          let this: Object = this_ref_catch.get_value(&ctx.env)?;
+          // Unref this_ref_catch after getting the value
+          this_ref_catch.unref(&ctx.env)?;
+
+          // Get Image instance and update state
+          let mut image_ptr = ptr::null_mut();
+          unsafe {
+            sys::napi_unwrap(ctx.env.raw(), this.raw(), &mut image_ptr);
+          }
+          let image = unsafe { &mut *image_ptr.cast::<Image>() };
+
+          // Only update if this is still the current load
+          if generation == image.load_generation {
+            image.complete = true;
+            image.width = -1.0;
+            image.height = -1.0;
+            image.natural_width = 0.0;
+            image.natural_height = 0.0;
+            image.bitmap = None;
+            image.file_content = None;
+            image._avif_image_ref = None;
+            image.is_svg = false;
+            image.need_regenerate_bitmap = false;
+          }
+
+          let onerror = this.get_named_property_unchecked::<Unknown>("onerror")?;
+          if onerror.get_type()? == ValueType::Function {
+            let onerror_func: Function<Object, Unknown> = Function::from_unknown(onerror)?;
+            let error_msg: String = ctx
+              .value
+              .coerce_to_string()
+              .and_then(|s: JsString| s.into_utf8())
+              .and_then(|s: JsStringUtf8| s.into_owned())
+              .unwrap_or_else(|_| "Network error".to_string());
+            let error_obj = ctx
+              .env
+              .create_error(Error::new(Status::GenericFailure, error_msg))?;
+            onerror_func.apply(this, error_obj)?;
+          }
+          Ok(())
+        })?;
+
+      // Store promise reference
+      if let Some(previous_task) = self
+        .decoder_task
+        .replace(promise.coerce_to_object()?.create_ref()?)
+      {
+        previous_task.unref(&env)?;
+      }
+      return Ok(());
+    }
+
     // For file path/URL: use existing async loading (complete = false until loaded)
     self.complete = false;
 
@@ -751,6 +884,10 @@ fn is_svg_image(data: &[u8], length: usize) -> bool {
     }
   }
   is_svg
+}
+
+fn is_http_url(s: &str) -> bool {
+  s.starts_with("http://") || s.starts_with("https://")
 }
 
 pub(crate) struct DecodedBitmap {
