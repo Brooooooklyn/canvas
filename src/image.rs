@@ -1,3 +1,5 @@
+use std::cell::Cell;
+use std::rc::Rc;
 use std::{borrow::Cow, ptr, str, str::FromStr};
 
 use base64_simd::STANDARD;
@@ -561,6 +563,7 @@ impl Image {
             data: Some(Either::A(unsafe { raw_data.cast()? })),
             file_content: None,
             fire_events: true, // Fire onload after decode completes
+            original_url: None,
           };
           let decode_task = env.spawn(task)?;
           let promise_object = decode_task.promise_object();
@@ -622,6 +625,7 @@ impl Image {
           data: Some(Either::A(unsafe { raw_data.cast()? })),
           file_content: None,
           fire_events: true,
+          original_url: None,
         };
         let decode_task = env.spawn(task)?;
         let promise_object = decode_task.promise_object();
@@ -648,9 +652,20 @@ impl Image {
 
       // Store references for promise chain
       let url_clone = url_string.clone();
-      // Create separate ObjectRefs for each callback - they will be unrefed properly
-      let this_ref_then: ObjectRef<false> = this.create_ref()?;
-      let this_ref_catch: ObjectRef<false> = this.create_ref()?;
+      let url_for_src = url_string.clone();
+      // Create separate ObjectRefs for each callback, wrapped in Rc<Cell<Option<...>>>
+      // so that whichever closure runs (then or catch) can clean up BOTH refs.
+      // This prevents a memory leak: without this, on success the catch ref leaks
+      // (catch never fires), and on error the then ref leaks (second then never fires).
+      let this_ref_then_rc: Rc<Cell<Option<ObjectRef<false>>>> =
+        Rc::new(Cell::new(Some(this.create_ref()?)));
+      let this_ref_catch_rc: Rc<Cell<Option<ObjectRef<false>>>> =
+        Rc::new(Cell::new(Some(this.create_ref()?)));
+
+      let ref_then_for_then = this_ref_then_rc.clone();
+      let ref_catch_for_then = this_ref_catch_rc.clone();
+      let ref_then_for_catch = this_ref_then_rc.clone();
+      let ref_catch_for_catch = this_ref_catch_rc.clone();
       let generation = self.load_generation;
       let width = self.width;
       let height = self.height;
@@ -686,19 +701,26 @@ impl Image {
           let buffer: Uint8Array = unsafe { buffer_unknown.cast()? };
 
           // Get Image instance and verify generation
-          let this: Object = this_ref_then.get_value(&ctx.env)?;
-          // Unref this_ref_then after getting the value
-          this_ref_then.unref(&ctx.env)?;
+          let this_ref = ref_then_for_then
+            .take()
+            .expect("then ObjectRef already taken");
+          let this: Object = this_ref.get_value(&ctx.env)?;
+          this_ref.unref(&ctx.env)?;
+          // Also unref the catch ref since catch won't run on success
+          if let Some(catch_ref) = ref_catch_for_then.take() {
+            catch_ref.unref(&ctx.env)?;
+          }
 
           let mut image_ptr = ptr::null_mut();
-          unsafe {
-            sys::napi_unwrap(ctx.env.raw(), this.raw(), &mut image_ptr);
-          }
+          check_status!(
+            unsafe { sys::napi_unwrap(ctx.env.raw(), this.raw(), &mut image_ptr) },
+            "Failed to unwrap Image from this"
+          )?;
           let image = unsafe { &mut *image_ptr.cast::<Image>() };
 
           if generation != image.load_generation {
-            // Stale load - return unit to skip
-            return Ok(());
+            // Stale load - return a resolved promise so the chain completes
+            return PromiseRaw::resolve(&ctx.env, ())?.coerce_to_object();
           }
 
           // Spawn BitmapDecoder with downloaded buffer
@@ -711,35 +733,58 @@ impl Image {
             this_ref: this.create_ref()?,
             generation,
             fire_events: true,
+            original_url: Some(url_for_src),
           };
-          ctx.env.spawn(decoder)?;
-          Ok(())
+          let decode_task = ctx.env.spawn(decoder)?;
+          // Return the decoder's promise so the chain waits for bitmap decoding to finish.
+          // JS promise chaining automatically flattens returned promises (thenables).
+          decode_task.promise_object().coerce_to_object()
         })?
         .catch(move |ctx: CallbackContext<Unknown>| {
-          // Fire onerror event
-          let this: Object = this_ref_catch.get_value(&ctx.env)?;
-          // Unref this_ref_catch after getting the value
-          this_ref_catch.unref(&ctx.env)?;
+          // Take the catch ref - may be None if the second .then() already unrefed it
+          // (e.g. .then() succeeded in unrefing but then failed at spawn)
+          let catch_ref = ref_catch_for_catch.take();
+          // Also unref the then ref since second then didn't run on error
+          if let Some(then_ref) = ref_then_for_catch.take() {
+            then_ref.unref(&ctx.env)?;
+          }
+
+          // If catch_ref was already taken by the success path, the second .then()
+          // already ran (and unrefed both refs) but errored afterwards.
+          // We still need to handle the error but can skip state updates since
+          // the .then() may have already spawned the decoder.
+          let Some(catch_ref) = catch_ref else {
+            return Ok(());
+          };
+          let this: Object = catch_ref.get_value(&ctx.env)?;
+          catch_ref.unref(&ctx.env)?;
 
           // Get Image instance and update state
           let mut image_ptr = ptr::null_mut();
-          unsafe {
-            sys::napi_unwrap(ctx.env.raw(), this.raw(), &mut image_ptr);
-          }
+          check_status!(
+            unsafe { sys::napi_unwrap(ctx.env.raw(), this.raw(), &mut image_ptr) },
+            "Failed to unwrap Image from this"
+          )?;
           let image = unsafe { &mut *image_ptr.cast::<Image>() };
 
-          // Only update if this is still the current load
-          if generation == image.load_generation {
-            image.complete = true;
-            image.width = -1.0;
-            image.height = -1.0;
-            image.natural_width = 0.0;
-            image.natural_height = 0.0;
-            image.bitmap = None;
-            image.file_content = None;
-            image._avif_image_ref = None;
-            image.is_svg = false;
-            image.need_regenerate_bitmap = false;
+          // Ignore stale errors from superseded loads
+          if generation != image.load_generation {
+            return Ok(());
+          }
+
+          image.complete = true;
+          image.width = -1.0;
+          image.height = -1.0;
+          image.natural_width = 0.0;
+          image.natural_height = 0.0;
+          image.bitmap = None;
+          image.file_content = None;
+          image._avif_image_ref = None;
+          image.is_svg = false;
+          image.need_regenerate_bitmap = false;
+          if image.accounted_bytes != 0 {
+            ctx.env.adjust_external_memory(-image.accounted_bytes)?;
+            image.accounted_bytes = 0;
           }
 
           let onerror = this.get_named_property_unchecked::<Unknown>("onerror")?;
@@ -784,6 +829,7 @@ impl Image {
       this_ref: this.create_ref()?,
       generation: self.load_generation,
       fire_events: true,
+      original_url: None,
     };
     let task_output = env.spawn(decoder)?;
     let promise_object = task_output.promise_object();
@@ -925,6 +971,8 @@ struct BitmapDecoder {
   // Whether to fire events in the Task resolve/reject
   // The `src = Buffer` fire events in the `set_src`, so it doesn't need to fire events in the Task resolve/reject
   fire_events: bool,
+  // Preserve original HTTP URL for currentSrc when data is downloaded bytes
+  original_url: Option<String>,
 }
 
 impl<'env> ScopedTask<'env> for BitmapDecoder {
@@ -1106,6 +1154,10 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
         }
 
         self_mut.src = self.data.take();
+        // If this was an HTTP URL load, override src with the original URL
+        if let Some(url) = self.original_url.take() {
+          self_mut.src = Some(Either::B(url));
+        }
         // Update current_src based on what was actually loaded
         self_mut.current_src = match &self_mut.src {
           Some(Either::A(_)) => Some("[Buffer]".to_string()),
