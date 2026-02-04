@@ -1344,3 +1344,44 @@ test('AVIF from Buffer should work (regression fix for infer crate detection)', 
   }
   t.true(hasVisiblePixel, 'AVIF image should have been drawn (has visible pixels)')
 })
+
+// HTTP URL tests (issue #1082 - Windows path character handling)
+test('should load HTTP URL with query params via image.src', async (t) => {
+  const image = new Image()
+  const { promise, resolve, reject } = Promise.withResolvers<void>()
+  image.onload = () => resolve()
+  image.onerror = (e) => reject(e)
+  // Use httpbin.org with query param to test URL handling (the main issue in #1082)
+  // The query param contains characters like ? and = that are invalid in Windows file paths
+  image.src = 'https://httpbin.org/image/png?dummy=test&another=value'
+  await promise
+  t.true(image.width > 0, 'image width should be greater than 0')
+  t.true(image.complete, 'image should be complete after load')
+})
+
+test('should handle HTTP URL without query params', async (t) => {
+  const image = new Image()
+  const { promise, resolve, reject } = Promise.withResolvers<void>()
+  image.onload = () => resolve()
+  image.onerror = (e) => reject(e)
+  image.src = 'https://httpbin.org/image/png'
+  await promise
+  t.true(image.width > 0, 'image width should be greater than 0')
+  t.true(image.complete, 'image should be complete after load')
+})
+
+test('should fire onerror for invalid HTTP URL', async (t) => {
+  const image = new Image()
+  const { promise, resolve } = Promise.withResolvers<void>()
+  image.onload = () => {
+    t.fail('onload should not be called for invalid URL')
+    resolve()
+  }
+  image.onerror = () => {
+    t.pass('onerror was called for invalid URL')
+    resolve()
+  }
+  image.src = 'https://httpbin.org/status/404'
+  await promise
+  t.true(image.complete, 'image should be complete after error')
+})

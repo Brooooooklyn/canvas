@@ -1,7 +1,9 @@
+use std::cell::Cell;
+use std::rc::Rc;
 use std::{borrow::Cow, ptr, str, str::FromStr};
 
 use base64_simd::STANDARD;
-use napi::{ScopedTask, bindgen_prelude::*};
+use napi::{JsString, JsStringUtf8, ScopedTask, bindgen_prelude::*};
 
 use crate::avif::AvifImage;
 use crate::error::SkError;
@@ -561,6 +563,7 @@ impl Image {
             data: Some(Either::A(unsafe { raw_data.cast()? })),
             file_content: None,
             fire_events: true, // Fire onload after decode completes
+            original_url: None,
           };
           let decode_task = env.spawn(task)?;
           let promise_object = decode_task.promise_object();
@@ -622,6 +625,7 @@ impl Image {
           data: Some(Either::A(unsafe { raw_data.cast()? })),
           file_content: None,
           fire_events: true,
+          original_url: None,
         };
         let decode_task = env.spawn(task)?;
         let promise_object = decode_task.promise_object();
@@ -634,6 +638,180 @@ impl Image {
         }
         return Ok(());
       }
+    }
+
+    // Check if this is an HTTP/HTTPS URL - use fetch API instead of file read
+    if let Either::B(url_string) = data
+      && is_http_url(url_string)
+    {
+      self.complete = false;
+
+      // Get global fetch function
+      let global = env.get_global()?;
+      let fetch_fn: Function<&str, Unknown> = global.get_named_property("fetch")?;
+
+      // Store references for promise chain
+      let url_clone = url_string.clone();
+      let url_for_src = url_string.clone();
+      // Create separate ObjectRefs for each callback, wrapped in Rc<Cell<Option<...>>>
+      // so that whichever closure runs (then or catch) can clean up BOTH refs.
+      // This prevents a memory leak: without this, on success the catch ref leaks
+      // (catch never fires), and on error the then ref leaks (second then never fires).
+      let this_ref_then_rc: Rc<Cell<Option<ObjectRef<false>>>> =
+        Rc::new(Cell::new(Some(this.create_ref()?)));
+      let this_ref_catch_rc: Rc<Cell<Option<ObjectRef<false>>>> =
+        Rc::new(Cell::new(Some(this.create_ref()?)));
+
+      let ref_then_for_then = this_ref_then_rc.clone();
+      let ref_catch_for_then = this_ref_catch_rc.clone();
+      let ref_then_for_catch = this_ref_then_rc.clone();
+      let ref_catch_for_catch = this_ref_catch_rc.clone();
+      let generation = self.load_generation;
+      let width = self.width;
+      let height = self.height;
+      let color_space = self.color_space;
+
+      // Call fetch(url)
+      let fetch_promise = fetch_fn.call(url_clone.as_str())?;
+
+      // Chain promises: fetch -> response.arrayBuffer() -> decode
+      let promise = PromiseRaw::from_unknown(fetch_promise)?
+        .then(move |ctx: CallbackContext<Object>| {
+          // Check response.ok
+          let response = ctx.value;
+          let ok: bool = response.get_named_property("ok")?;
+          if !ok {
+            let status: u32 = response.get_named_property("status")?;
+            return Err(Error::new(
+              Status::GenericFailure,
+              format!("HTTP request failed with status {}", status),
+            ));
+          }
+          // Call response.arrayBuffer()
+          let array_buffer_method: Function<(), Unknown> =
+            response.get_named_property("arrayBuffer")?;
+          array_buffer_method.apply(response, ())
+        })?
+        .then(move |ctx: CallbackContext<Unknown>| {
+          // Convert ArrayBuffer to Uint8Array using JavaScript constructor
+          let global = ctx.env.get_global()?;
+          let uint8array_ctor: Function<Unknown, Unknown> =
+            global.get_named_property("Uint8Array")?;
+          let buffer_unknown = uint8array_ctor.new_instance(ctx.value)?;
+          let buffer: Uint8Array = unsafe { buffer_unknown.cast()? };
+
+          // Get Image instance and verify generation
+          let this_ref = ref_then_for_then
+            .take()
+            .expect("then ObjectRef already taken");
+          let this: Object = this_ref.get_value(&ctx.env)?;
+          this_ref.unref(&ctx.env)?;
+          // Also unref the catch ref since catch won't run on success
+          if let Some(catch_ref) = ref_catch_for_then.take() {
+            catch_ref.unref(&ctx.env)?;
+          }
+
+          let mut image_ptr = ptr::null_mut();
+          check_status!(
+            unsafe { sys::napi_unwrap(ctx.env.raw(), this.raw(), &mut image_ptr) },
+            "Failed to unwrap Image from this"
+          )?;
+          let image = unsafe { &mut *image_ptr.cast::<Image>() };
+
+          if generation != image.load_generation {
+            // Stale load - return a resolved promise so the chain completes
+            return PromiseRaw::resolve(&ctx.env, ())?.coerce_to_object();
+          }
+
+          // Spawn BitmapDecoder with downloaded buffer
+          let decoder = BitmapDecoder {
+            width,
+            height,
+            color_space,
+            data: Some(Either::A(buffer)),
+            file_content: None,
+            this_ref: this.create_ref()?,
+            generation,
+            fire_events: true,
+            original_url: Some(url_for_src),
+          };
+          let decode_task = ctx.env.spawn(decoder)?;
+          // Return the decoder's promise so the chain waits for bitmap decoding to finish.
+          // JS promise chaining automatically flattens returned promises (thenables).
+          decode_task.promise_object().coerce_to_object()
+        })?
+        .catch(move |ctx: CallbackContext<Unknown>| {
+          // Take the catch ref - may be None if the second .then() already unrefed it
+          // (e.g. .then() succeeded in unrefing but then failed at spawn)
+          let catch_ref = ref_catch_for_catch.take();
+          // Also unref the then ref since second then didn't run on error
+          if let Some(then_ref) = ref_then_for_catch.take() {
+            then_ref.unref(&ctx.env)?;
+          }
+
+          // If catch_ref was already taken by the success path, the second .then()
+          // already ran (and unrefed both refs) but errored afterwards.
+          // We still need to handle the error but can skip state updates since
+          // the .then() may have already spawned the decoder.
+          let Some(catch_ref) = catch_ref else {
+            return Ok(());
+          };
+          let this: Object = catch_ref.get_value(&ctx.env)?;
+          catch_ref.unref(&ctx.env)?;
+
+          // Get Image instance and update state
+          let mut image_ptr = ptr::null_mut();
+          check_status!(
+            unsafe { sys::napi_unwrap(ctx.env.raw(), this.raw(), &mut image_ptr) },
+            "Failed to unwrap Image from this"
+          )?;
+          let image = unsafe { &mut *image_ptr.cast::<Image>() };
+
+          // Ignore stale errors from superseded loads
+          if generation != image.load_generation {
+            return Ok(());
+          }
+
+          image.complete = true;
+          image.width = -1.0;
+          image.height = -1.0;
+          image.natural_width = 0.0;
+          image.natural_height = 0.0;
+          image.bitmap = None;
+          image.file_content = None;
+          image._avif_image_ref = None;
+          image.is_svg = false;
+          image.need_regenerate_bitmap = false;
+          if image.accounted_bytes != 0 {
+            ctx.env.adjust_external_memory(-image.accounted_bytes)?;
+            image.accounted_bytes = 0;
+          }
+
+          let onerror = this.get_named_property_unchecked::<Unknown>("onerror")?;
+          if onerror.get_type()? == ValueType::Function {
+            let onerror_func: Function<Object, Unknown> = Function::from_unknown(onerror)?;
+            let error_msg: String = ctx
+              .value
+              .coerce_to_string()
+              .and_then(|s: JsString| s.into_utf8())
+              .and_then(|s: JsStringUtf8| s.into_owned())
+              .unwrap_or_else(|_| "Network error".to_string());
+            let error_obj = ctx
+              .env
+              .create_error(Error::new(Status::GenericFailure, error_msg))?;
+            onerror_func.apply(this, error_obj)?;
+          }
+          Ok(())
+        })?;
+
+      // Store promise reference
+      if let Some(previous_task) = self
+        .decoder_task
+        .replace(promise.coerce_to_object()?.create_ref()?)
+      {
+        previous_task.unref(&env)?;
+      }
+      return Ok(());
     }
 
     // For file path/URL: use existing async loading (complete = false until loaded)
@@ -651,6 +829,7 @@ impl Image {
       this_ref: this.create_ref()?,
       generation: self.load_generation,
       fire_events: true,
+      original_url: None,
     };
     let task_output = env.spawn(decoder)?;
     let promise_object = task_output.promise_object();
@@ -753,6 +932,10 @@ fn is_svg_image(data: &[u8], length: usize) -> bool {
   is_svg
 }
 
+fn is_http_url(s: &str) -> bool {
+  s.starts_with("http://") || s.starts_with("https://")
+}
+
 pub(crate) struct DecodedBitmap {
   bitmap: DecodeStatus,
   width: f64,
@@ -788,6 +971,8 @@ struct BitmapDecoder {
   // Whether to fire events in the Task resolve/reject
   // The `src = Buffer` fire events in the `set_src`, so it doesn't need to fire events in the Task resolve/reject
   fire_events: bool,
+  // Preserve original HTTP URL for currentSrc when data is downloaded bytes
+  original_url: Option<String>,
 }
 
 impl<'env> ScopedTask<'env> for BitmapDecoder {
@@ -969,6 +1154,10 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
         }
 
         self_mut.src = self.data.take();
+        // If this was an HTTP URL load, override src with the original URL
+        if let Some(url) = self.original_url.take() {
+          self_mut.src = Some(Either::B(url));
+        }
         // Update current_src based on what was actually loaded
         self_mut.current_src = match &self_mut.src {
           Some(Either::A(_)) => Some("[Buffer]".to_string()),
