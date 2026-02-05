@@ -11,7 +11,7 @@ crate-type = ["cdylib"]
 [dependencies]
 anyhow          = "1"
 base64-simd     = "0.8"
-cssparser       = "0.35"
+cssparser       = "0.36"
 cssparser-color = "0.3"
 gif             = "0.14"
 imagesize       = { version = "0.14", default-features = false, features = ["png", "jpeg", "gif", "webp", "heif"] }
