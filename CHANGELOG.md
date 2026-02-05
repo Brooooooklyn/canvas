@@ -1,3 +1,19 @@
+## [0.1.90](https://github.com/Brooooooklyn/canvas/compare/v0.1.89...v0.1.90) (2026-02-05)
+
+
+### Bug Fixes
+
+* add Drop impl for SkPictureRecorder to prevent memory leak ([#1199](https://github.com/Brooooooklyn/canvas/issues/1199)) ([dd4f96c](https://github.com/Brooooooklyn/canvas/commit/dd4f96c55fe980af04f5e42c1754f20219359b92))
+* copy font data in GlobalFonts.register to prevent buffer invalidation ([#1194](https://github.com/Brooooooklyn/canvas/issues/1194)) ([fa5b40a](https://github.com/Brooooooklyn/canvas/commit/fa5b40a6dc72fae2aaf982309798b7a4f98e4156))
+* prevent memory leaks in encode_stream callback and SkPixmap ([#1200](https://github.com/Brooooooklyn/canvas/issues/1200)) ([c21e2ea](https://github.com/Brooooooklyn/canvas/commit/c21e2ea1583efe6cf4d54456e7d6955c52b39440))
+
+
+### Features
+
+* support http url in image src ([#1197](https://github.com/Brooooooklyn/canvas/issues/1197)) ([8c65ffe](https://github.com/Brooooooklyn/canvas/commit/8c65ffed7177db1fc5dd82304ccb86fb7c1bf93b))
+
+
+
 ## [0.1.89](https://github.com/Brooooooklyn/canvas/compare/v0.1.88...v0.1.89) (2026-01-28)
 
 
