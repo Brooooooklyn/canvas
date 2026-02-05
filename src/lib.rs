@@ -447,12 +447,17 @@ impl<'c> CanvasElement<'c> {
     quality: u8,
     callback: F,
   ) -> bool {
-    self.ctx.context.surface.encode_stream(
+    let ptr = Box::into_raw(Box::new(callback));
+    let result = self.ctx.context.surface.encode_stream(
       mime,
       quality,
       Some(encode_image_stream_callback::<F>),
-      Box::into_raw(Box::new(callback)).cast(),
-    )
+      ptr.cast(),
+    );
+    // SAFETY: encode_stream is synchronous, so the callback is no longer referenced.
+    // Recover the Box to free the allocation.
+    unsafe { drop(Box::from_raw(ptr)) };
+    result
   }
 
   #[napi]
@@ -1056,6 +1061,10 @@ unsafe extern "C" fn encode_image_stream_callback<F: Fn(&[u8])>(
   size: usize,
   context: *mut c_void,
 ) {
-  let rust_callback: &mut F = unsafe { Box::leak(Box::from_raw(context.cast())) };
+  // SAFETY: context points to a live Box<F> owned by encode_image_inner.
+  // Borrow it rather than taking ownership, since this callback may be invoked
+  // multiple times during encoding. The Box is freed by encode_image_inner after
+  // encode_stream returns.
+  let rust_callback: &F = unsafe { &*context.cast() };
   rust_callback(unsafe { slice::from_raw_parts(data.cast(), size) });
 }

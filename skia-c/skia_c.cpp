@@ -293,8 +293,8 @@ bool skiac_surface_encode_stream(skiac_surface* c_surface,
                                  int quality,
                                  write_callback_t write_callback,
                                  void* context) {
-  auto sk_pixmap = new SkPixmap();
-  if (!SURFACE_CAST->peekPixels(sk_pixmap)) {
+  SkPixmap sk_pixmap;
+  if (!SURFACE_CAST->peekPixels(&sk_pixmap)) {
     return false;
   }
   SkJavaScriptWStream stream(write_callback, context);
@@ -302,19 +302,19 @@ bool skiac_surface_encode_stream(skiac_surface* c_surface,
   if (format == int(SkEncodedImageFormat::kJPEG)) {
     SkJpegEncoder::Options options;
     options.fQuality = quality;
-    encoder = SkJpegEncoder::Make(&stream, *sk_pixmap, options);
+    encoder = SkJpegEncoder::Make(&stream, sk_pixmap, options);
   } else if (format == int(SkEncodedImageFormat::kPNG)) {
-    encoder = SkPngEncoder::Make(&stream, *sk_pixmap, SkPngEncoder::Options());
+    encoder = SkPngEncoder::Make(&stream, sk_pixmap, SkPngEncoder::Options());
   } else if (format == int(SkEncodedImageFormat::kWEBP)) {
     SkWebpEncoder::Options options;
     options.fCompression = quality == 100
                                ? SkWebpEncoder::Compression::kLossless
                                : SkWebpEncoder::Compression::kLossy;
     options.fQuality = quality == 100 ? 75 : quality;
-    return SkWebpEncoder::Encode(&stream, *sk_pixmap, options);
+    return SkWebpEncoder::Encode(&stream, sk_pixmap, options);
   }
   if (encoder) {
-    return encoder->encodeRows(sk_pixmap->height());
+    return encoder->encodeRows(sk_pixmap.height());
   }
   return false;
 }
