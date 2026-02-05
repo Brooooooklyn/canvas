@@ -1128,6 +1128,7 @@ pub mod ffi {
 
     // SkPictureRecorder
     pub fn skiac_picture_recorder_create() -> *mut skiac_picture_recorder;
+    pub fn skiac_picture_recorder_destroy(picture_recorder: *mut skiac_picture_recorder);
 
     pub fn skiac_picture_recorder_begin_recording(
       picture_recorder: *mut skiac_picture_recorder,
@@ -4583,6 +4584,16 @@ impl Drop for SkDrawable {
 
 #[derive(Debug)]
 pub struct SkPictureRecorder(pub(crate) *mut ffi::skiac_picture_recorder);
+
+impl Drop for SkPictureRecorder {
+  fn drop(&mut self) {
+    if !self.0.is_null() {
+      unsafe {
+        ffi::skiac_picture_recorder_destroy(self.0);
+      }
+    }
+  }
+}
 
 impl SkPictureRecorder {
   pub fn new() -> SkPictureRecorder {

@@ -1269,6 +1269,7 @@ void skiac_picture_ref(skiac_picture* c_picture);
 void skiac_picture_destroy(skiac_picture* c_picture);
 void skiac_picture_playback(skiac_picture* c_picture, skiac_canvas* c_canvas);
 skiac_picture_recorder* skiac_picture_recorder_create();
+void skiac_picture_recorder_destroy(skiac_picture_recorder* c_picture_recorder);
 void skiac_picture_recorder_begin_recording(
     skiac_picture_recorder* c_picture_recorder,
     float x,

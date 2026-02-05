@@ -1075,6 +1075,11 @@ skiac_picture_recorder* skiac_picture_recorder_create() {
   return reinterpret_cast<skiac_picture_recorder*>(new SkPictureRecorder());
 }
 
+void skiac_picture_recorder_destroy(
+    skiac_picture_recorder* c_picture_recorder) {
+  delete reinterpret_cast<SkPictureRecorder*>(c_picture_recorder);
+}
+
 void skiac_picture_recorder_begin_recording(
     skiac_picture_recorder* c_picture_recorder,
     float x,
