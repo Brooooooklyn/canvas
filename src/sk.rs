@@ -1999,6 +1999,7 @@ impl TryFrom<u32> for SvgExportFlag {
 pub struct Surface {
   ptr: *mut ffi::skiac_surface,
   pub(crate) canvas: Canvas,
+  is_svg: bool,
 }
 
 impl Surface {
@@ -2055,6 +2056,7 @@ impl Surface {
       Self {
         ptr: svg_surface.surface,
         canvas: Canvas(svg_surface.canvas),
+        is_svg: true,
       },
       SkWMemoryStream(svg_surface.stream),
     ))
@@ -2067,6 +2069,7 @@ impl Surface {
       Some(Surface {
         ptr,
         canvas: Canvas(unsafe { ffi::skiac_surface_get_canvas(ptr) }),
+        is_svg: false,
       })
     }
   }
@@ -2077,6 +2080,7 @@ impl Surface {
     Surface {
       ptr: ptr::null_mut(), // null indicates we don't own the surface
       canvas,
+      is_svg: false,
     }
   }
 
@@ -2284,6 +2288,13 @@ impl std::ops::DerefMut for Surface {
 
 impl Drop for Surface {
   fn drop(&mut self) {
+    // For SVG surfaces, the canvas was independently allocated via SkSVGCanvas::Make().release()
+    // and is NOT owned by the SkSurface, so we must destroy it separately.
+    if self.is_svg && !self.canvas.0.is_null() {
+      unsafe {
+        ffi::skiac_canvas_destroy(self.canvas.0);
+      }
+    }
     // Only destroy if we own the surface (ptr is not null)
     if !self.ptr.is_null() {
       unsafe {

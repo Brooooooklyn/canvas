@@ -142,10 +142,12 @@ void skiac_surface_create_svg(skiac_svg_surface* c_surface,
 
   auto canvas = SkSVGCanvas::Make(SkRect::MakeWH(w, h), w_stream, flag);
   if (!canvas.get()) {
+    delete w_stream;
     return;
   }
   auto surface = skiac_surface_create(w, h, (SkAlphaType)alphaType, cs);
   if (!surface) {
+    delete w_stream;
     return;
   }
   c_surface->stream = reinterpret_cast<skiac_w_memory_stream*>(w_stream);
@@ -1927,10 +1929,9 @@ bool skiac_bitmap_make_from_svg(const uint8_t* data,
                                 skiac_font_collection* c_collection,
                                 uint8_t cs) {
   auto color_space = COLOR_SPACE_CAST;
-  auto svg_stream = new SkMemoryStream(data, length, false);
-  auto svg_dom = SkSVGDOM::Builder()
-                     .setFontManager(c_collection->assets)
-                     .make(*svg_stream);
+  SkMemoryStream svg_stream(data, length, false);
+  auto svg_dom =
+      SkSVGDOM::Builder().setFontManager(c_collection->assets).make(svg_stream);
   if (!svg_dom) {
     return false;
   }
@@ -2002,13 +2003,13 @@ skiac_shader* skiac_bitmap_get_shader(
     float C,  // See SkSamplingOptions.h for docs.
     skiac_transform c_ts) {
   const auto ts = conv_from_transform(c_ts);
+  SkBitmap bm;
   SkBitmap* bitmap;
   if (is_canvas) {
     auto surface = reinterpret_cast<SkSurface*>(c_bitmap);
-    auto bm = new SkBitmap();
-    bm->allocPixels(surface->imageInfo());
-    if (surface->readPixels(*bm, 0, 0)) {
-      bitmap = bm;
+    bm.allocPixels(surface->imageInfo());
+    if (surface->readPixels(bm, 0, 0)) {
+      bitmap = &bm;
     } else {
       return nullptr;
     }
@@ -2332,20 +2333,19 @@ void skiac_svg_text_to_path(const uint8_t* data,
                             size_t length,
                             skiac_font_collection* c_collection,
                             skiac_sk_data* output_data) {
-  auto svg_stream = new SkMemoryStream(data, length, false);
-  auto w_stream = new SkDynamicMemoryWStream();
-  auto svg_dom = SkSVGDOM::Builder()
-                     .setFontManager(c_collection->assets)
-                     .make(*svg_stream);
+  SkMemoryStream svg_stream(data, length, false);
+  SkDynamicMemoryWStream w_stream;
+  auto svg_dom =
+      SkSVGDOM::Builder().setFontManager(c_collection->assets).make(svg_stream);
   auto svg_root = svg_dom->getRoot();
   auto svg_container_size =
       svg_root->intrinsicSize(SkSVGLengthContext(SkSize::Make(0, 0)));
   auto canvas =
-      SkSVGCanvas::Make(SkRect::MakeSize(svg_container_size), w_stream,
+      SkSVGCanvas::Make(SkRect::MakeSize(svg_container_size), &w_stream,
                         SkSVGCanvas::kConvertTextToPaths_Flag);
   svg_dom->render(canvas.get());
   canvas.reset();
-  auto d = w_stream->detachAsData().release();
+  auto d = w_stream.detachAsData().release();
   output_data->data = reinterpret_cast<skiac_data*>(d);
   output_data->size = d->size();
   output_data->ptr = d->bytes();
