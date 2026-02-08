@@ -3084,7 +3084,9 @@ impl Path {
 
   pub fn from_svg_path(path: &str) -> Option<Path> {
     let path_str = CString::new(path).ok()?;
-    let p = unsafe { ffi::skiac_path_from_svg(path_str.into_raw()) };
+    let raw = path_str.into_raw();
+    let p = unsafe { ffi::skiac_path_from_svg(raw) };
+    unsafe { drop(CString::from_raw(raw)); }
     if p.is_null() { None } else { Some(Path(p)) }
   }
 

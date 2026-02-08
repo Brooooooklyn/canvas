@@ -170,7 +170,7 @@ skiac_surface* skiac_surface_create_rgba(int width, int height, uint8_t cs) {
 bool skiac_surface_save(skiac_surface* c_surface, const char* path) {
   auto image = SURFACE_CAST->makeImageSnapshot();
   auto data =
-      SkPngEncoder::Encode(nullptr, image.release(), SkPngEncoder::Options());
+      SkPngEncoder::Encode(nullptr, image.get(), SkPngEncoder::Options());
   if (data) {
     SkFILEWStream stream(path);
     if (stream.write(data->data(), data->size())) {
@@ -1910,6 +1910,7 @@ void skiac_bitmap_make_from_buffer(const uint8_t* ptr,
     canvas->setMatrix(matrix);
     auto image = SkImages::RasterFromBitmap(*bitmap);
     canvas->drawImage(image, 0, 0);
+    delete canvas;
     oriented_bitmap->setImmutable();
     bitmap_info->bitmap = reinterpret_cast<skiac_bitmap*>(oriented_bitmap);
     delete bitmap;
