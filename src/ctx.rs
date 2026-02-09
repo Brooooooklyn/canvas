@@ -252,8 +252,7 @@ impl Context {
   }
 
   pub fn clip(&mut self, path: Option<&mut SkPath>, fill_rule: FillType) {
-    // Clone the clip path to avoid borrow conflicts
-    let mut clip_path = match path {
+    let clip_path = match path {
       Some(p) => {
         p.set_fill_type(fill_rule);
         p.clone()
@@ -264,38 +263,30 @@ impl Context {
       }
     };
 
-    // Per Canvas2D spec, multiple clip() calls should intersect with each other.
-    // If there's an existing clip, compute the intersection.
-    let should_update_state = if let Some(ref existing_clip) = self.state.clip_path {
-      // op() returns false if intersection fails (degenerate paths, numerical instability)
-      // If op() fails, clip_path remains unchanged (the new path) while the canvas will
-      // still intersect with its existing clip. To avoid state divergence, we keep the
-      // existing state.clip_path when op() fails, ensuring layer promotion restores correctly.
-      if !clip_path.op(existing_clip, PathOp::Intersect) {
-        #[cfg(debug_assertions)]
-        eprintln!("Warning: Path intersection operation failed in clip()");
-        false // Don't update state - keep existing clip to match canvas behavior
-      } else {
-        true
-      }
-    } else {
-      true // No existing clip, always update state
-    };
+    // For state tracking (used by save/restore and layer promotion), compute the
+    // cumulative clip in device space. Transform the new path by the current CTM
+    // and intersect with the existing device-space clip.
+    let mut device_clip = clip_path.clone();
+    device_clip.transform_self(&self.state.transform);
 
-    // Store the cumulative clip path in state for restoration after layer promotion
-    // Only update if intersection succeeded (or there was no existing clip)
-    // IMPORTANT: We must also skip calling set_clip_path when op() fails to avoid
-    // state divergence. If op() fails, the tracked state keeps OLD while Skia's
-    // clipPath() would compute OLD ∩ NEW. After layer promotion, we'd restore to
-    // OLD instead of OLD ∩ NEW. By skipping both state update AND canvas clip,
-    // we make clip() a no-op when intersection fails, keeping everything consistent.
-    if should_update_state {
-      self.state.clip_path = Some(clip_path.clone());
-      self.sync_clip_to_recorder();
-      self.with_canvas_state(|canvas| {
-        canvas.set_clip_path(&clip_path);
-      });
+    if let Some(ref existing_clip) = self.state.clip_path
+      && !device_clip.op(existing_clip, PathOp::Intersect)
+    {
+      #[cfg(debug_assertions)]
+      eprintln!("Warning: Path intersection operation failed in clip()");
+      // op() failed (degenerate paths). Skip both Skia and state update
+      // to avoid divergence between tracked state and actual canvas clip.
+      return;
     }
+
+    // Pass the raw path to Skia. Skia's clipPath() is cumulative and applies the
+    // current canvas CTM, so it correctly handles nested clips at different transforms.
+    self.with_canvas_state(|canvas| {
+      canvas.set_clip_path(&clip_path);
+    });
+
+    self.state.clip_path = Some(device_clip);
+    self.sync_clip_to_recorder();
   }
 
   pub fn clear_rect(
@@ -388,16 +379,18 @@ impl Context {
       if self.page_recorder.is_some() {
         let transform = self.state.transform.clone();
         let clip = self.state.clip_path.clone();
-        self.with_canvas_state(|canvas| {
-          canvas.set_transform(&transform);
-        });
         // Re-apply clip if the restored state has one.
-        // If restored state has no clip, canvas.restore() already removed it.
+        // The clip is stored in device space, so apply at identity transform first.
         if let Some(ref clip_path) = clip {
           self.with_canvas_state(|canvas| {
+            canvas.reset_transform();
             canvas.set_clip_path(clip_path);
           });
         }
+        // Then restore the actual transform
+        self.with_canvas_state(|canvas| {
+          canvas.set_transform(&transform);
+        });
       }
 
       self.sync_transform_to_recorder();

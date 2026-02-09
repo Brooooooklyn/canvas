@@ -451,6 +451,98 @@ test('clip-no-divergence-after-promotion', async (t) => {
   await snapshotImage(t)
 })
 
+// Regression test for https://github.com/Brooooooklyn/canvas/issues/1198
+// Nested clips at different transforms should intersect in device space, not raw path coordinates
+test('clip-nested-different-transforms', async (t) => {
+  const canvas = createCanvas(200, 200)
+  const ctx = canvas.getContext('2d')!
+  ctx.fillStyle = 'white'
+  ctx.fillRect(0, 0, 200, 200)
+
+  // Clip 1 at 2x scale: rect(0,0,80,80) → device space 0,0 to 160,160
+  ctx.setTransform(2, 0, 0, 2, 0, 0)
+  const clip1 = new Path2D()
+  clip1.rect(0, 0, 80, 80)
+  ctx.clip(clip1)
+
+  // Clip 2 at identity: rect(0,0,160,160) → device space 0,0 to 160,160
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
+  const clip2 = new Path2D()
+  clip2.rect(0, 0, 160, 160)
+  ctx.clip(clip2)
+
+  // Fill the intersection — should be 160x160 (both clips map to same device-space region)
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
+  ctx.fillStyle = 'green'
+  ctx.fillRect(0, 0, 200, 200)
+
+  // Expected: 160x160 green area (both clips cover 0,0 to 160,160 in device space)
+  // Bug: only 80x80 green area (intersection computed in raw coords without transforms)
+  await snapshotImage(t, { canvas, ctx })
+})
+
+// Regression test for https://github.com/Brooooooklyn/canvas/issues/1198
+// Y-flip transform with nested clip (PDF.js use case)
+test('clip-nested-y-flip-transform', async (t) => {
+  const canvas = createCanvas(200, 200)
+  const ctx = canvas.getContext('2d')!
+  ctx.fillStyle = 'white'
+  ctx.fillRect(0, 0, 200, 200)
+
+  // Y-flip transform: maps (0,0)-(200,200) in path coords to full canvas
+  ctx.setTransform(1, 0, 0, -1, 0, 200)
+
+  // First clip covering full canvas in flipped coords
+  const clip1 = new Path2D()
+  clip1.rect(0, 0, 200, 200)
+  ctx.clip(clip1)
+
+  // Second clip at different scale
+  ctx.setTransform(2, 0, 0, 2, 0, 0)
+  const clip2 = new Path2D()
+  clip2.rect(0, 0, 50, 50)
+  ctx.clip(clip2)
+
+  // Reset transform and fill
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
+  ctx.fillStyle = 'blue'
+  ctx.fillRect(0, 0, 200, 200)
+
+  // Expected: 100x100 blue area (clip2 at 2x scale maps to 0,0-100,100 in device space,
+  //           intersected with clip1 which covers full canvas)
+  await snapshotImage(t, { canvas, ctx })
+})
+
+// Regression test for https://github.com/Brooooooklyn/canvas/issues/1198
+// Current path clip (beginPath/rect/clip) also affected, not just Path2D
+test('clip-nested-different-transforms-current-path', async (t) => {
+  const canvas = createCanvas(200, 200)
+  const ctx = canvas.getContext('2d')!
+  ctx.fillStyle = 'white'
+  ctx.fillRect(0, 0, 200, 200)
+
+  // Clip 1 at 2x scale: rect(0,0,80,80) → device space 0,0 to 160,160
+  ctx.setTransform(2, 0, 0, 2, 0, 0)
+  ctx.beginPath()
+  ctx.rect(0, 0, 80, 80)
+  ctx.clip()
+
+  // Clip 2 at identity: rect(0,0,160,160) → device space 0,0 to 160,160
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
+  ctx.beginPath()
+  ctx.rect(0, 0, 160, 160)
+  ctx.clip()
+
+  // Fill the intersection — should be 160x160
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
+  ctx.fillStyle = 'red'
+  ctx.fillRect(0, 0, 200, 200)
+
+  // Expected: 160x160 red area
+  // Bug: only 80x80 red area
+  await snapshotImage(t, { canvas, ctx })
+})
+
 test('closePath', async (t) => {
   const { ctx } = t.context
   ctx.beginPath()
