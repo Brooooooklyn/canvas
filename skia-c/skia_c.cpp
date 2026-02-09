@@ -147,6 +147,7 @@ void skiac_surface_create_svg(skiac_svg_surface* c_surface,
   }
   auto surface = skiac_surface_create(w, h, (SkAlphaType)alphaType, cs);
   if (!surface) {
+    canvas.reset();
     delete w_stream;
     return;
   }
