@@ -146,13 +146,14 @@ impl PageRecorder {
         for _ in 0..self.save_count {
           canvas.save();
         }
+        // Restore clip state first (clip is stored in device space, apply at identity)
+        if let Some(ref clip_path) = self.current_clip {
+          canvas.reset_transform();
+          canvas.set_clip_path(clip_path);
+        }
         // Then restore transform state
         if let Some(ref transform) = self.current_transform {
           canvas.set_transform(transform);
-        }
-        // Then restore clip state
-        if let Some(ref clip_path) = self.current_clip {
-          canvas.set_clip_path(clip_path);
         }
       }
       self.changed = false;
