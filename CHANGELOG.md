@@ -1,3 +1,13 @@
+## [0.1.91](https://github.com/Brooooooklyn/canvas/compare/v0.1.90...v0.1.91) (2026-02-09)
+
+
+### Bug Fixes
+
+* clip with nested transforms intersects in device space ([#1202](https://github.com/Brooooooklyn/canvas/issues/1202)) ([7e87f9e](https://github.com/Brooooooklyn/canvas/commit/7e87f9e099b1e09ee17ebb835cd5d38e2bb7c203))
+* plug native memory leaks in SVG canvas, bitmap shader, and stream allocations ([#1201](https://github.com/Brooooooklyn/canvas/issues/1201)) ([60a34e8](https://github.com/Brooooooklyn/canvas/commit/60a34e87c672099d3a05bba893349f5209ec4f85))
+
+
+
 ## [0.1.90](https://github.com/Brooooooklyn/canvas/compare/v0.1.89...v0.1.90) (2026-02-05)
 
 
