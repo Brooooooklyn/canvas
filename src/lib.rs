@@ -810,6 +810,9 @@ impl<'scope> SVGCanvas<'scope> {
     unsafe {
       sk::ffi::skiac_canvas_destroy(self.ctx.context.surface.0);
     };
+    // Null out the canvas pointer so that Surface::drop() won't double-free it.
+    // The canvas was already destroyed above to flush/finalize SVG content to the stream.
+    self.ctx.context.surface.canvas.0 = std::ptr::null_mut();
     let svg_data = svg_data_stream.data(self.ctx.context.width, self.ctx.context.height);
     let (surface, stream) = sk::Surface::new_svg(
       self.ctx.context.width,
