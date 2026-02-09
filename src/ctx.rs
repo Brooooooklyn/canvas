@@ -269,15 +269,14 @@ impl Context {
     let mut device_clip = clip_path.clone();
     device_clip.transform_self(&self.state.transform);
 
-    if let Some(ref existing_clip) = self.state.clip_path {
-      if !device_clip.op(existing_clip, PathOp::Intersect) {
+    if let Some(ref existing_clip) = self.state.clip_path
+      && !device_clip.op(existing_clip, PathOp::Intersect) {
         #[cfg(debug_assertions)]
         eprintln!("Warning: Path intersection operation failed in clip()");
         // op() failed (degenerate paths). Skip both Skia and state update
         // to avoid divergence between tracked state and actual canvas clip.
         return;
       }
-    }
 
     // Pass the raw path to Skia. Skia's clipPath() is cumulative and applies the
     // current canvas CTM, so it correctly handles nested clips at different transforms.
