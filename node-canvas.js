@@ -166,12 +166,9 @@ function _compatToBuffer(mimeOrCallback, configOrQuality) {
     return this.data()
   }
 
-  // Sync: JPEG/WebP with quality mapping
+  // Sync: pass normalized quality (number or undefined) — never the raw config object
   const quality = _normalizeQuality(mimeOrCallback, configOrQuality)
-  if (quality != null) {
-    return _origToBuffer.call(this, mimeOrCallback, quality)
-  }
-  return _origToBuffer.call(this, mimeOrCallback, configOrQuality)
+  return _origToBuffer.call(this, mimeOrCallback, quality)
 }
 
 /**
@@ -210,12 +207,9 @@ function _compatToDataURL(mimeOrCallback, qualityOrCallback) {
     return
   }
 
-  // Sync form with quality mapping
+  // Sync form: pass normalized quality (number or undefined) — never the raw value
   const quality = _normalizeQuality(mimeOrCallback, qualityOrCallback)
-  if (quality != null) {
-    return _origToDataURL.call(this, mimeOrCallback, quality)
-  }
-  return _origToDataURL.call(this, mimeOrCallback, qualityOrCallback)
+  return _origToDataURL.call(this, mimeOrCallback, quality)
 }
 
 /**
