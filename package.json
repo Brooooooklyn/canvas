@@ -3,6 +3,16 @@
   "version": "0.1.91",
   "description": "Canvas for Node.js with skia backend",
   "main": "index.js",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    },
+    "./node-canvas": {
+      "types": "./node-canvas.d.ts",
+      "default": "./node-canvas.js"
+    }
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Brooooooklyn/canvas.git"
@@ -29,7 +39,9 @@
     "index.js",
     "geometry.js",
     "js-binding.js",
-    "load-image.js"
+    "load-image.js",
+    "node-canvas.js",
+    "node-canvas.d.ts"
   ],
   "napi": {
     "binaryName": "skia",
@@ -99,6 +111,7 @@
     "lodash": "^4.17.21",
     "npm-run-all2": "^8.0.4",
     "oxlint": "^1.34.0",
+    "oxlint-tsgolint": "^0.11.5",
     "pinst": "^3.0.0",
     "png.js": "^0.2.1",
     "prettier": "^3.7.4",
