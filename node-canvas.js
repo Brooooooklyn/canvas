@@ -233,6 +233,11 @@ function _addCompatMethods(canvas) {
 // Public API: registerFont / deregisterAllFonts
 // ---------------------------------------------------------------------------
 
+// Track FontKeys from registerFont() so deregisterAllFonts() can remove
+// only user-registered fonts (matching node-canvas behavior which leaves
+// system fonts untouched).
+const _registeredFontKeys = []
+
 /**
  * Register a font file with the specified font face properties.
  * Compatible with node-canvas's registerFont(path, { family, weight?, style? }).
@@ -248,15 +253,22 @@ function registerFont(path, fontFace) {
   if (!fontFace || typeof fontFace.family !== 'string') {
     throw new TypeError('registerFont requires a fontFace with a "family" property')
   }
-  GlobalFonts.registerFromPath(path, fontFace.family)
+  const key = GlobalFonts.registerFromPath(path, fontFace.family)
+  if (key) {
+    _registeredFontKeys.push(key)
+  }
 }
 
 /**
- * Deregister all previously registered fonts.
- * Compatible with node-canvas's deregisterAllFonts().
+ * Deregister all fonts previously registered via registerFont().
+ * Compatible with node-canvas's deregisterAllFonts() which only removes
+ * user-registered fonts and leaves system fonts untouched.
  */
 function deregisterAllFonts() {
-  GlobalFonts.removeAll()
+  if (_registeredFontKeys.length > 0) {
+    GlobalFonts.removeBatch(_registeredFontKeys)
+    _registeredFontKeys.length = 0
+  }
 }
 
 // ---------------------------------------------------------------------------

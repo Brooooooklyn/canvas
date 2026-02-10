@@ -110,13 +110,17 @@ test.serial('registerFont accepts weight and style (compat)', (t) => {
 // deregisterAllFonts
 // ---------------------------------------------------------------------------
 
-test.serial('deregisterAllFonts removes all fonts', (t) => {
+test.serial('deregisterAllFonts removes only user-registered fonts', (t) => {
+  // Clear any fonts tracked by prior tests
+  deregisterAllFonts()
+  const systemFontCount = GlobalFonts.families.length
+  t.true(systemFontCount > 0, 'system fonts should exist')
   registerFont(fontPath, { family: 'ToBeRemoved' })
   t.true(GlobalFonts.has('ToBeRemoved'))
   deregisterAllFonts()
-  t.is(GlobalFonts.families.length, 0)
-  // Re-load system fonts so other tests aren't affected
-  GlobalFonts.loadSystemFonts()
+  t.false(GlobalFonts.has('ToBeRemoved'))
+  // System fonts should still be present
+  t.is(GlobalFonts.families.length, systemFontCount)
 })
 
 // ---------------------------------------------------------------------------
@@ -344,8 +348,13 @@ test('createCanvas with svg type returns SvgCanvas', (t) => {
   t.truthy(ctx)
   ctx.fillStyle = '#ff0000'
   ctx.fillRect(0, 0, 100, 100)
-  // SVG canvas should have getContent
+  // SVG canvas should have getContent for vector output
   t.is(typeof (canvas as any).getContent, 'function')
+  const content = (canvas as any).getContent() as Buffer
+  t.true(content.toString('utf-8').includes('<svg'))
+  // SVG canvas should NOT have raster compat methods
+  t.is(typeof (canvas as any).createPNGStream, 'undefined')
+  t.is(typeof (canvas as any).createJPEGStream, 'undefined')
 })
 
 // ---------------------------------------------------------------------------

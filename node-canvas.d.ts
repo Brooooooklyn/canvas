@@ -133,11 +133,15 @@ export class JPEGStream extends Readable {}
  * Canvas instances created through this function have `createPNGStream()`,
  * `createJPEGStream()`, and node-canvas compatible `toBuffer()` overloads.
  *
+ * When `type` is `'svg'`, returns a `SvgCanvas` which produces vector output
+ * via `getContent()` instead of raster encoding methods.
+ *
  * @param width  Canvas width in pixels
  * @param height Canvas height in pixels
  * @param type   Canvas type: 'image' (default), 'svg', or 'pdf'
  */
-export function createCanvas(width: number, height: number, type?: 'image' | 'svg' | 'pdf'): Canvas
+export function createCanvas(width: number, height: number, type: 'svg'): SvgCanvas
+export function createCanvas(width: number, height: number, type?: 'image' | 'pdf'): Canvas
 
 /**
  * Create an ImageData instance.
