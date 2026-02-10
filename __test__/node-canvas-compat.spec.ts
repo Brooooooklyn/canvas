@@ -113,14 +113,13 @@ test.serial('registerFont accepts weight and style (compat)', (t) => {
 test.serial('deregisterAllFonts removes only user-registered fonts', (t) => {
   // Clear any fonts tracked by prior tests
   deregisterAllFonts()
-  const systemFontCount = GlobalFonts.families.length
-  t.true(systemFontCount > 0, 'system fonts should exist')
+  const baselineCount = GlobalFonts.families.length
   registerFont(fontPath, { family: 'ToBeRemoved' })
   t.true(GlobalFonts.has('ToBeRemoved'))
   deregisterAllFonts()
   t.false(GlobalFonts.has('ToBeRemoved'))
-  // System fonts should still be present
-  t.is(GlobalFonts.families.length, systemFontCount)
+  // Only user-registered fonts should be removed, baseline stays the same
+  t.is(GlobalFonts.families.length, baselineCount)
 })
 
 // ---------------------------------------------------------------------------

@@ -383,7 +383,7 @@ jobs:
           architecture: 'arm64'
 
       - name: Install dependencies
-        run: yarn install --immutable
+        run: yarn install --immutable --mode=skip-build
 
       - name: Download artifacts
         uses: actions/download-artifact@v7
