@@ -8,11 +8,15 @@
  *
  * NOTE: We do NOT compare pixel-by-pixel output (Skia vs Cairo render differently),
  * exact buffer sizes, raw buffer formats, or PDF support.
+ *
+ * These tests require the `canvas` (node-canvas) npm package to be installed.
+ * They are skipped on platforms where it is not available (e.g. Linux CI).
  */
 
 import { Readable } from 'node:stream'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { createRequire } from 'node:module'
 
 import test from 'ava'
 
@@ -24,13 +28,31 @@ import {
   deregisterAllFonts as napiDeregisterAllFonts,
 } from '../node-canvas'
 
-// Real node-canvas
-import nodeCanvas from 'canvas'
+// Real node-canvas — skip all tests if not available
+const require = createRequire(import.meta.url)
+let nodeCanvas: typeof import('canvas')
+try {
+  nodeCanvas = require('canvas')
+} catch {
+  test('cross-compat tests skipped: canvas (node-canvas) package not available', (t) => {
+    t.pass()
+  })
+}
 
-const ncCreateCanvas = nodeCanvas.createCanvas
-const ncCreateImageData = nodeCanvas.createImageData
-const ncRegisterFont = nodeCanvas.registerFont
-const ncDeregisterAllFonts = nodeCanvas.deregisterAllFonts
+// @ts-expect-error nodeCanvas is used before assignment check — guarded by the macro below
+const ncCreateCanvas = nodeCanvas?.createCanvas
+// @ts-expect-error same guard
+const ncCreateImageData = nodeCanvas?.createImageData
+// @ts-expect-error same guard
+const ncRegisterFont = nodeCanvas?.registerFont
+// @ts-expect-error same guard
+const ncDeregisterAllFonts = nodeCanvas?.deregisterAllFonts
+
+const hasNodeCanvas = !!ncCreateCanvas
+
+// Conditional test: skip when node-canvas is not installed
+const ctest = hasNodeCanvas ? test : test.skip
+const cserial = hasNodeCanvas ? test.serial : test.serial.skip
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const fontPath = join(__dirname, 'fonts', 'SourceSerifPro-Regular.ttf')
@@ -64,14 +86,14 @@ async function streamToBuffer(stream: Readable): Promise<Buffer> {
 // createCanvas
 // ---------------------------------------------------------------------------
 
-test('createCanvas: both return canvas with matching dimensions', (t) => {
+ctest('createCanvas: both return canvas with matching dimensions', (t) => {
   const napiCanvas = napiCreateCanvas(100, 200)
   const ncCanvas = ncCreateCanvas(100, 200)
   t.is(napiCanvas.width, ncCanvas.width)
   t.is(napiCanvas.height, ncCanvas.height)
 })
 
-test('createCanvas: both support getContext("2d")', (t) => {
+ctest('createCanvas: both support getContext("2d")', (t) => {
   const napiCanvas = napiCreateCanvas(50, 50)
   const ncCanvas = ncCreateCanvas(50, 50)
   const napiCtx = napiCanvas.getContext('2d')
@@ -80,7 +102,7 @@ test('createCanvas: both support getContext("2d")', (t) => {
   t.truthy(ncCtx)
 })
 
-test('createCanvas: both return width/height of 1x1', (t) => {
+ctest('createCanvas: both return width/height of 1x1', (t) => {
   const napiCanvas = napiCreateCanvas(1, 1)
   const ncCanvas = ncCreateCanvas(1, 1)
   t.is(napiCanvas.width, 1)
@@ -89,7 +111,7 @@ test('createCanvas: both return width/height of 1x1', (t) => {
   t.is(ncCanvas.height, 1)
 })
 
-test('createCanvas: both return width/height of large canvas', (t) => {
+ctest('createCanvas: both return width/height of large canvas', (t) => {
   const napiCanvas = napiCreateCanvas(4096, 2048)
   const ncCanvas = ncCreateCanvas(4096, 2048)
   t.is(napiCanvas.width, ncCanvas.width)
@@ -100,7 +122,7 @@ test('createCanvas: both return width/height of large canvas', (t) => {
 // registerFont
 // ---------------------------------------------------------------------------
 
-test.serial('registerFont: both accept {family} signature', (t) => {
+cserial('registerFont: both accept {family} signature', (t) => {
   t.notThrows(() => {
     napiRegisterFont(fontPath, { family: 'CrossTestNapi' })
   })
@@ -109,7 +131,7 @@ test.serial('registerFont: both accept {family} signature', (t) => {
   })
 })
 
-test.serial('registerFont: both accept {family, weight, style} signature', (t) => {
+cserial('registerFont: both accept {family, weight, style} signature', (t) => {
   t.notThrows(() => {
     napiRegisterFont(latoFontPath, { family: 'CrossTestLatoNapi', weight: 'bold', style: 'italic' })
   })
@@ -118,7 +140,7 @@ test.serial('registerFont: both accept {family, weight, style} signature', (t) =
   })
 })
 
-test.serial('registerFont: registered fonts can be used to draw text (both produce output)', (t) => {
+cserial('registerFont: registered fonts can be used to draw text (both produce output)', (t) => {
   napiRegisterFont(iosevkaFontPath, { family: 'CrossIosevkaNapi' })
   ncRegisterFont(iosevkaFontPath, { family: 'CrossIosevkaNC' })
 
@@ -143,12 +165,12 @@ test.serial('registerFont: registered fonts can be used to draw text (both produ
 // deregisterAllFonts
 // ---------------------------------------------------------------------------
 
-test('deregisterAllFonts: both expose the function', (t) => {
+ctest('deregisterAllFonts: both expose the function', (t) => {
   t.is(typeof napiDeregisterAllFonts, 'function')
   t.is(typeof ncDeregisterAllFonts, 'function')
 })
 
-test('deregisterAllFonts: both are callable without error', (t) => {
+ctest('deregisterAllFonts: both are callable without error', (t) => {
   // We don't test cross-library side-effects since they have separate font registries.
   // Just verify the function exists and is callable.
   t.notThrows(() => napiDeregisterAllFonts())
@@ -159,7 +181,7 @@ test('deregisterAllFonts: both are callable without error', (t) => {
 // toBuffer() - no args defaults to PNG
 // ---------------------------------------------------------------------------
 
-test('toBuffer(): both default to PNG buffer', (t) => {
+ctest('toBuffer(): both default to PNG buffer', (t) => {
   const napiCanvas = napiCreateCanvas(10, 10)
   napiCanvas.getContext('2d').fillRect(0, 0, 10, 10)
   const napiBuf = napiCanvas.toBuffer()
@@ -178,7 +200,7 @@ test('toBuffer(): both default to PNG buffer', (t) => {
 // toBuffer('image/png')
 // ---------------------------------------------------------------------------
 
-test('toBuffer("image/png"): both produce PNG buffers', (t) => {
+ctest('toBuffer("image/png"): both produce PNG buffers', (t) => {
   const napiCanvas = napiCreateCanvas(10, 10)
   napiCanvas.getContext('2d').fillRect(0, 0, 10, 10)
   const napiBuf = napiCanvas.toBuffer('image/png')
@@ -197,7 +219,7 @@ test('toBuffer("image/png"): both produce PNG buffers', (t) => {
 // toBuffer('image/jpeg', { quality })
 // ---------------------------------------------------------------------------
 
-test('toBuffer("image/jpeg", { quality: 0.75 }): both produce JPEG buffers', (t) => {
+ctest('toBuffer("image/jpeg", { quality: 0.75 }): both produce JPEG buffers', (t) => {
   const napiCanvas = napiCreateCanvas(10, 10)
   const napiCtx = napiCanvas.getContext('2d')
   napiCtx.fillStyle = '#ff0000'
@@ -220,7 +242,7 @@ test('toBuffer("image/jpeg", { quality: 0.75 }): both produce JPEG buffers', (t)
 // toBuffer(callback) - async callback form defaults to PNG
 // ---------------------------------------------------------------------------
 
-test('toBuffer(callback): both call back with PNG buffer', async (t) => {
+ctest('toBuffer(callback): both call back with PNG buffer', async (t) => {
   const napiCanvas = napiCreateCanvas(10, 10)
   napiCanvas.getContext('2d').fillRect(0, 0, 10, 10)
   const napiBuf = await new Promise<Buffer>((resolve, reject) => {
@@ -249,7 +271,7 @@ test('toBuffer(callback): both call back with PNG buffer', async (t) => {
 // toBuffer(callback, 'image/jpeg', { quality })
 // ---------------------------------------------------------------------------
 
-test('toBuffer(callback, "image/jpeg", { quality: 0.9 }): both call back with JPEG', async (t) => {
+ctest('toBuffer(callback, "image/jpeg", { quality: 0.9 }): both call back with JPEG', async (t) => {
   const napiCanvas = napiCreateCanvas(10, 10)
   napiCanvas.getContext('2d').fillRect(0, 0, 10, 10)
   const napiBuf = await new Promise<Buffer>((resolve, reject) => {
@@ -286,7 +308,7 @@ test('toBuffer(callback, "image/jpeg", { quality: 0.9 }): both call back with JP
 // createPNGStream
 // ---------------------------------------------------------------------------
 
-test('createPNGStream: both return Readable streams producing PNG data', async (t) => {
+ctest('createPNGStream: both return Readable streams producing PNG data', async (t) => {
   const napiCanvas = napiCreateCanvas(10, 10)
   const napiCtx = napiCanvas.getContext('2d')
   napiCtx.fillStyle = '#00ff00'
@@ -312,7 +334,7 @@ test('createPNGStream: both return Readable streams producing PNG data', async (
 // createJPEGStream
 // ---------------------------------------------------------------------------
 
-test('createJPEGStream({ quality: 0.8 }): both return Readable streams producing JPEG data', async (t) => {
+ctest('createJPEGStream({ quality: 0.8 }): both return Readable streams producing JPEG data', async (t) => {
   const napiCanvas = napiCreateCanvas(10, 10)
   const napiCtx = napiCanvas.getContext('2d')
   napiCtx.fillStyle = '#0000ff'
@@ -338,7 +360,7 @@ test('createJPEGStream({ quality: 0.8 }): both return Readable streams producing
 // toDataURL() - no args defaults to PNG
 // ---------------------------------------------------------------------------
 
-test('toDataURL(): both return PNG data URLs', (t) => {
+ctest('toDataURL(): both return PNG data URLs', (t) => {
   const napiCanvas = napiCreateCanvas(10, 10)
   napiCanvas.getContext('2d').fillRect(0, 0, 10, 10)
   const napiUrl = napiCanvas.toDataURL()
@@ -355,7 +377,7 @@ test('toDataURL(): both return PNG data URLs', (t) => {
 // toDataURL('image/jpeg', quality)
 // ---------------------------------------------------------------------------
 
-test('toDataURL("image/jpeg", 0.5): both return JPEG data URLs', (t) => {
+ctest('toDataURL("image/jpeg", 0.5): both return JPEG data URLs', (t) => {
   const napiCanvas = napiCreateCanvas(10, 10)
   napiCanvas.getContext('2d').fillRect(0, 0, 10, 10)
   const napiUrl = napiCanvas.toDataURL('image/jpeg', 0.5)
@@ -378,7 +400,7 @@ test('toDataURL("image/jpeg", 0.5): both return JPEG data URLs', (t) => {
 // createImageData
 // ---------------------------------------------------------------------------
 
-test('createImageData(width, height): both return ImageData with correct dimensions', (t) => {
+ctest('createImageData(width, height): both return ImageData with correct dimensions', (t) => {
   const napiData = napiCreateImageData(20, 30)
   const ncData = ncCreateImageData(20, 30)
 
@@ -392,7 +414,7 @@ test('createImageData(width, height): both return ImageData with correct dimensi
 // Drawing operations produce similar results
 // ---------------------------------------------------------------------------
 
-test('drawing fillRect: both produce valid non-empty PNGs', (t) => {
+ctest('drawing fillRect: both produce valid non-empty PNGs', (t) => {
   const napiCanvas = napiCreateCanvas(50, 50)
   const napiCtx = napiCanvas.getContext('2d')
   napiCtx.fillStyle = '#ff0000'
@@ -411,7 +433,7 @@ test('drawing fillRect: both produce valid non-empty PNGs', (t) => {
   t.true(ncBuf.length > 50, 'node-canvas fillRect PNG should be non-trivial')
 })
 
-test('drawing strokeRect: both produce valid non-empty PNGs', (t) => {
+ctest('drawing strokeRect: both produce valid non-empty PNGs', (t) => {
   const napiCanvas = napiCreateCanvas(50, 50)
   const napiCtx = napiCanvas.getContext('2d')
   napiCtx.strokeStyle = '#0000ff'
@@ -432,7 +454,7 @@ test('drawing strokeRect: both produce valid non-empty PNGs', (t) => {
   t.true(ncBuf.length > 50)
 })
 
-test('drawing arc: both produce valid non-empty PNGs', (t) => {
+ctest('drawing arc: both produce valid non-empty PNGs', (t) => {
   const napiCanvas = napiCreateCanvas(100, 100)
   const napiCtx = napiCanvas.getContext('2d')
   napiCtx.beginPath()
@@ -455,7 +477,7 @@ test('drawing arc: both produce valid non-empty PNGs', (t) => {
   t.true(ncBuf.length > 50)
 })
 
-test('drawing fillText: both produce valid non-empty PNGs', (t) => {
+ctest('drawing fillText: both produce valid non-empty PNGs', (t) => {
   const napiCanvas = napiCreateCanvas(200, 50)
   const napiCtx = napiCanvas.getContext('2d')
   napiCtx.font = '20px sans-serif'
@@ -476,7 +498,7 @@ test('drawing fillText: both produce valid non-empty PNGs', (t) => {
   t.true(ncBuf.length > 50)
 })
 
-test('drawing drawImage (canvas onto canvas): both produce valid non-empty PNGs', (t) => {
+ctest('drawing drawImage (canvas onto canvas): both produce valid non-empty PNGs', (t) => {
   // Create a source canvas with both libraries
   const napiSrc = napiCreateCanvas(20, 20)
   const napiSrcCtx = napiSrc.getContext('2d')
@@ -508,7 +530,7 @@ test('drawing drawImage (canvas onto canvas): both produce valid non-empty PNGs'
 // Combined drawing operations
 // ---------------------------------------------------------------------------
 
-test('drawing complex scene: both produce valid non-empty PNGs', (t) => {
+ctest('drawing complex scene: both produce valid non-empty PNGs', (t) => {
   // Draw the same complex scene with both libraries
   function drawScene(ctx: any) {
     // Background
@@ -554,7 +576,7 @@ test('drawing complex scene: both produce valid non-empty PNGs', (t) => {
 // API shape compatibility: both canvas instances have same method names
 // ---------------------------------------------------------------------------
 
-test('API shape: both canvas instances expose the same core methods', (t) => {
+ctest('API shape: both canvas instances expose the same core methods', (t) => {
   const napiCanvas = napiCreateCanvas(10, 10)
   const ncCanvas = ncCreateCanvas(10, 10)
 
@@ -566,7 +588,7 @@ test('API shape: both canvas instances expose the same core methods', (t) => {
   }
 })
 
-test('API shape: both contexts expose the same core drawing methods', (t) => {
+ctest('API shape: both contexts expose the same core drawing methods', (t) => {
   const napiCtx = napiCreateCanvas(10, 10).getContext('2d')
   const ncCtx = ncCreateCanvas(10, 10).getContext('2d')
 
@@ -611,7 +633,7 @@ test('API shape: both contexts expose the same core drawing methods', (t) => {
 // Factory function signatures match
 // ---------------------------------------------------------------------------
 
-test('API shape: both export createCanvas, createImageData, registerFont, deregisterAllFonts', (t) => {
+ctest('API shape: both export createCanvas, createImageData, registerFont, deregisterAllFonts', (t) => {
   t.is(typeof napiCreateCanvas, 'function')
   t.is(typeof ncCreateCanvas, 'function')
   t.is(typeof napiCreateImageData, 'function')
