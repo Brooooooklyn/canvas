@@ -308,12 +308,27 @@ function createImageData(dataOrWidth, widthOrHeight, height) {
 }
 
 // ---------------------------------------------------------------------------
+// Canvas constructor wrapper
+// ---------------------------------------------------------------------------
+
+// In node-canvas, `new Canvas(w, h)` and `createCanvas(w, h)` produce
+// equivalent canvases. Wrap the native Canvas constructor so that
+// `new Canvas(w, h)` also gets compat methods, without polluting the
+// prototype (which would affect @napi-rs/canvas users who don't use
+// this compat layer).
+const CompatCanvas = new Proxy(Canvas, {
+  construct(target, args) {
+    return _addCompatMethods(new target(...args))
+  },
+})
+
+// ---------------------------------------------------------------------------
 // Exports (matches node-canvas export shape)
 // ---------------------------------------------------------------------------
 
 module.exports = {
   // Factory functions
-  Canvas,
+  Canvas: CompatCanvas,
   createCanvas,
   createImageData,
   loadImage,

@@ -62,6 +62,19 @@ test('createCanvas returns a canvas with compat methods', (t) => {
   t.is(typeof canvas.toDataURL, 'function')
 })
 
+test('new Canvas() returns a canvas with compat methods', async (t) => {
+  const canvas = new Canvas(100, 100) as any
+  t.is(canvas.width, 100)
+  t.is(canvas.height, 100)
+  t.is(typeof canvas.createPNGStream, 'function')
+  t.is(typeof canvas.createJPEGStream, 'function')
+  t.is(typeof canvas.toBuffer, 'function')
+  t.is(typeof canvas.toDataURL, 'function')
+  // instanceof should still work
+  const { Canvas: OrigCanvas } = await import('../index')
+  t.true(canvas instanceof OrigCanvas)
+})
+
 test('createCanvas 2d context works', (t) => {
   const canvas = createCanvas(100, 100)
   const ctx = canvas.getContext('2d')
