@@ -22,6 +22,10 @@ const {
 // CanvasRenderingContext2D is not re-exported by index.js, grab from native bindings
 const { CanvasRenderingContext2D } = require('./js-binding')
 
+// node-canvas defaults JPEG quality to 0.75 across all paths.
+// @napi-rs/canvas native default is 0.92 (matching Blink/Chrome).
+const NODE_CANVAS_DEFAULT_QUALITY = 0.75
+
 // ---------------------------------------------------------------------------
 // Stream classes (node-canvas returns Node.js Readable streams)
 // ---------------------------------------------------------------------------
@@ -54,8 +58,8 @@ class JPEGStream extends Readable {
     super()
     this._canvas = canvas
     const opts = options || {}
-    // node-canvas quality: 0-1 (default 0.75), @napi-rs quality: 0-100
-    this._quality = opts.quality != null ? Math.round(opts.quality * 100) : 75
+    // node-canvas quality: 0-1 (default 0.75), encode() expects 0-100
+    this._quality = Math.round((opts.quality != null ? opts.quality : NODE_CANVAS_DEFAULT_QUALITY) * 100)
     this._done = false
   }
 
@@ -87,23 +91,22 @@ const MIME_FORMAT_MAP = {
 }
 
 /**
- * Normalize node-canvas quality config to @napi-rs/canvas quality number.
- * node-canvas uses 0-1 scale for JPEG/WebP, @napi-rs uses 0-100.
+ * Extract quality from a node-canvas config object or number.
+ * Returns the raw 0-1 quality value, defaulting to NODE_CANVAS_DEFAULT_QUALITY
+ * for JPEG/WebP when not specified.
  *
  * @param {string} mime
  * @param {number|object|undefined} configOrQuality
- * @returns {number|undefined}
+ * @returns {number|undefined}  0-1 scale for JPEG/WebP, undefined for other mimes
  */
-function _normalizeQuality(mime, configOrQuality) {
+function _extractQuality(mime, configOrQuality) {
   if (mime !== 'image/jpeg' && mime !== 'image/webp') return undefined
-  if (configOrQuality == null) return undefined
-  if (typeof configOrQuality === 'number') {
-    return Math.round(configOrQuality * 100)
-  }
+  if (configOrQuality == null) return NODE_CANVAS_DEFAULT_QUALITY
+  if (typeof configOrQuality === 'number') return configOrQuality
   if (typeof configOrQuality === 'object' && configOrQuality.quality != null) {
-    return Math.round(configOrQuality.quality * 100)
+    return configOrQuality.quality
   }
-  return undefined
+  return NODE_CANVAS_DEFAULT_QUALITY
 }
 
 // ---------------------------------------------------------------------------
@@ -148,8 +151,8 @@ function _compatToBuffer(mimeOrCallback, configOrQuality) {
     }
 
     const format = MIME_FORMAT_MAP[mime] || 'png'
-    const quality = _normalizeQuality(mime, config)
-    this.encode(format, quality).then(
+    const q = _extractQuality(mime, config)
+    this.encode(format, q != null ? Math.round(q * 100) : undefined).then(
       (buf) => callback(null, buf),
       (err) => callback(err),
     )
@@ -166,9 +169,9 @@ function _compatToBuffer(mimeOrCallback, configOrQuality) {
     return this.data()
   }
 
-  // Sync: pass normalized quality (number or undefined) — never the raw config object
-  const quality = _normalizeQuality(mimeOrCallback, configOrQuality)
-  return _origToBuffer.call(this, mimeOrCallback, quality)
+  // Sync: extract quality (0-1) and scale to 0-100 for native toBuffer
+  const q = _extractQuality(mimeOrCallback, configOrQuality)
+  return _origToBuffer.call(this, mimeOrCallback, q != null ? Math.round(q * 100) : undefined)
 }
 
 /**
@@ -190,7 +193,7 @@ function _compatToDataURL(mimeOrCallback, qualityOrCallback) {
   }
   // toDataURL(mime, callback)
   if (typeof qualityOrCallback === 'function') {
-    this.toDataURLAsync(mimeOrCallback).then(
+    this.toDataURLAsync(mimeOrCallback, _extractQuality(mimeOrCallback, undefined)).then(
       (url) => qualityOrCallback(null, url),
       (err) => qualityOrCallback(err),
     )
@@ -199,7 +202,8 @@ function _compatToDataURL(mimeOrCallback, qualityOrCallback) {
   // toDataURL(mime, quality, callback)
   const cb = arguments[2]
   if (typeof cb === 'function') {
-    const quality = _normalizeQuality(mimeOrCallback, qualityOrCallback)
+    // Native toDataURLAsync expects 0-1 (f64) — pass quality through as-is
+    const quality = _extractQuality(mimeOrCallback, qualityOrCallback)
     this.toDataURLAsync(mimeOrCallback, quality).then(
       (url) => cb(null, url),
       (err) => cb(err),
@@ -207,8 +211,8 @@ function _compatToDataURL(mimeOrCallback, qualityOrCallback) {
     return
   }
 
-  // Sync form: pass normalized quality (number or undefined) — never the raw value
-  const quality = _normalizeQuality(mimeOrCallback, qualityOrCallback)
+  // Sync form: native toDataURL expects 0-1 (f64) — pass quality through as-is
+  const quality = _extractQuality(mimeOrCallback, qualityOrCallback)
   return _origToDataURL.call(this, mimeOrCallback, quality)
 }
 
