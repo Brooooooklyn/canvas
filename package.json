@@ -3,16 +3,6 @@
   "version": "0.1.91",
   "description": "Canvas for Node.js with skia backend",
   "main": "index.js",
-  "exports": {
-    ".": {
-      "types": "./index.d.ts",
-      "default": "./index.js"
-    },
-    "./node-canvas": {
-      "types": "./node-canvas.d.ts",
-      "default": "./node-canvas.js"
-    }
-  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Brooooooklyn/canvas.git"
