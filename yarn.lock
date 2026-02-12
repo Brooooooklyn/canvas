@@ -584,7 +584,7 @@ __metadata:
     lodash: "npm:^4.17.21"
     npm-run-all2: "npm:^8.0.4"
     oxlint: "npm:^1.34.0"
-    oxlint-tsgolint: "npm:^0.11.5"
+    oxlint-tsgolint: "npm:^0.12.0"
     pinst: "npm:^3.0.0"
     png.js: "npm:^0.2.1"
     prettier: "npm:^3.7.4"
@@ -1642,44 +1642,44 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@oxlint-tsgolint/darwin-arm64@npm:0.11.5":
-  version: 0.11.5
-  resolution: "@oxlint-tsgolint/darwin-arm64@npm:0.11.5"
+"@oxlint-tsgolint/darwin-arm64@npm:0.12.0":
+  version: 0.12.0
+  resolution: "@oxlint-tsgolint/darwin-arm64@npm:0.12.0"
   conditions: os=darwin & cpu=arm64
   languageName: node
   linkType: hard
 
-"@oxlint-tsgolint/darwin-x64@npm:0.11.5":
-  version: 0.11.5
-  resolution: "@oxlint-tsgolint/darwin-x64@npm:0.11.5"
+"@oxlint-tsgolint/darwin-x64@npm:0.12.0":
+  version: 0.12.0
+  resolution: "@oxlint-tsgolint/darwin-x64@npm:0.12.0"
   conditions: os=darwin & cpu=x64
   languageName: node
   linkType: hard
 
-"@oxlint-tsgolint/linux-arm64@npm:0.11.5":
-  version: 0.11.5
-  resolution: "@oxlint-tsgolint/linux-arm64@npm:0.11.5"
+"@oxlint-tsgolint/linux-arm64@npm:0.12.0":
+  version: 0.12.0
+  resolution: "@oxlint-tsgolint/linux-arm64@npm:0.12.0"
   conditions: os=linux & cpu=arm64
   languageName: node
   linkType: hard
 
-"@oxlint-tsgolint/linux-x64@npm:0.11.5":
-  version: 0.11.5
-  resolution: "@oxlint-tsgolint/linux-x64@npm:0.11.5"
+"@oxlint-tsgolint/linux-x64@npm:0.12.0":
+  version: 0.12.0
+  resolution: "@oxlint-tsgolint/linux-x64@npm:0.12.0"
   conditions: os=linux & cpu=x64
   languageName: node
   linkType: hard
 
-"@oxlint-tsgolint/win32-arm64@npm:0.11.5":
-  version: 0.11.5
-  resolution: "@oxlint-tsgolint/win32-arm64@npm:0.11.5"
+"@oxlint-tsgolint/win32-arm64@npm:0.12.0":
+  version: 0.12.0
+  resolution: "@oxlint-tsgolint/win32-arm64@npm:0.12.0"
   conditions: os=win32 & cpu=arm64
   languageName: node
   linkType: hard
 
-"@oxlint-tsgolint/win32-x64@npm:0.11.5":
-  version: 0.11.5
-  resolution: "@oxlint-tsgolint/win32-x64@npm:0.11.5"
+"@oxlint-tsgolint/win32-x64@npm:0.12.0":
+  version: 0.12.0
+  resolution: "@oxlint-tsgolint/win32-x64@npm:0.12.0"
   conditions: os=win32 & cpu=x64
   languageName: node
   linkType: hard
@@ -4910,16 +4910,16 @@ __metadata:
   languageName: node
   linkType: hard
 
-"oxlint-tsgolint@npm:^0.11.5":
-  version: 0.11.5
-  resolution: "oxlint-tsgolint@npm:0.11.5"
+"oxlint-tsgolint@npm:^0.12.0":
+  version: 0.12.0
+  resolution: "oxlint-tsgolint@npm:0.12.0"
   dependencies:
-    "@oxlint-tsgolint/darwin-arm64": "npm:0.11.5"
-    "@oxlint-tsgolint/darwin-x64": "npm:0.11.5"
-    "@oxlint-tsgolint/linux-arm64": "npm:0.11.5"
-    "@oxlint-tsgolint/linux-x64": "npm:0.11.5"
-    "@oxlint-tsgolint/win32-arm64": "npm:0.11.5"
-    "@oxlint-tsgolint/win32-x64": "npm:0.11.5"
+    "@oxlint-tsgolint/darwin-arm64": "npm:0.12.0"
+    "@oxlint-tsgolint/darwin-x64": "npm:0.12.0"
+    "@oxlint-tsgolint/linux-arm64": "npm:0.12.0"
+    "@oxlint-tsgolint/linux-x64": "npm:0.12.0"
+    "@oxlint-tsgolint/win32-arm64": "npm:0.12.0"
+    "@oxlint-tsgolint/win32-x64": "npm:0.12.0"
   dependenciesMeta:
     "@oxlint-tsgolint/darwin-arm64":
       optional: true
@@ -4935,7 +4935,7 @@ __metadata:
       optional: true
   bin:
     tsgolint: bin/tsgolint.js
-  checksum: 10c0/83c510cf019cd77a31fb61dafcca90d5794869d8a296e0636a7f229858af9410f38ff9cc6617c9ae4e7bd5474884a8078a20f578b5a9bc6694f348539668e38a
+  checksum: 10c0/cbe345d08390fd02988af7ab7dd96cb40230e2f7e3c9e96f552df530fa05ac352a6ebd71d4b453f39d660c56ec018ef3a26d3bfa7d111d7204cc032ef8997308
   languageName: node
   linkType: hard
 
