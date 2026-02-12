@@ -815,38 +815,10 @@ void skiac_canvas_write_pixels(skiac_canvas* c_canvas,
   CANVAS_CAST->writePixels(info, pixels, row_bytes, x, y);
 }
 
-void skiac_canvas_write_pixels_dirty(skiac_canvas* c_canvas,
-                                     int width,
-                                     int height,
-                                     uint8_t* pixels,
-                                     size_t row_bytes,
-                                     size_t length,
-                                     float x,
-                                     float y,
-                                     float dirty_x,
-                                     float dirty_y,
-                                     float dirty_width,
-                                     float dirty_height,
-                                     uint8_t cs) {
-  auto color_space = COLOR_SPACE_CAST;
-  auto info =
-      SkImageInfo::Make(width, height, SkColorType::kRGBA_8888_SkColorType,
-                        SkAlphaType::kUnpremul_SkAlphaType, color_space);
-  auto pixmap = SkPixmap(info, pixels, row_bytes);
-  auto image = SkImages::RasterFromPixmap(pixmap, nullptr, nullptr);
-  auto src_rect = SkRect::MakeXYWH(dirty_x, dirty_y, dirty_width, dirty_height);
-  auto dst_rect =
-      SkRect::MakeXYWH(x + dirty_x, y + dirty_y, dirty_width, dirty_height);
-  const auto sampling = SkSamplingOptions(SkCubicResampler::Mitchell());
-  CANVAS_CAST->drawImageRect(image, src_rect, dst_rect, sampling, nullptr,
-                             SkCanvas::kFast_SrcRectConstraint);
-}
-
-// putImageData variant: uses kSrc blend mode for direct pixel replacement
-// per HTML spec, putImageData must replace pixels, not composite.
-// Unlike write_pixels_dirty (which uses default SrcOver), this function
-// uses drawImageRect with kSrc so it works on recording canvases
-// (PictureRecorder) while correctly replacing destination pixels.
+// putImageData: uses drawImageRect with kSrc blend mode for direct pixel
+// replacement. Per HTML spec, putImageData must replace pixels, not composite.
+// Uses drawImageRect (recordable by PictureRecorder) instead of
+// SkCanvas::writePixels (which only works on raster surfaces).
 void skiac_canvas_put_image_data(skiac_canvas* c_canvas,
                                  int width,
                                  int height,
