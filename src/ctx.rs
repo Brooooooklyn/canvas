@@ -2788,6 +2788,26 @@ impl CanvasRenderingContext2D {
       if dirty_width <= 0f32 || dirty_height <= 0f32 {
         return;
       }
+      // Deferred mode: record via PageRecorder on a fresh layer (no clip/transform)
+      // write_pixels_dirty uses drawImageRect which IS recordable by PictureRecorder
+      if let Some(ref recorder) = self.context.page_recorder {
+        let dx_f = dx as f32;
+        let color_space = image_data.color_space;
+        recorder.borrow_mut().put_pixels(|canvas| {
+          canvas.write_pixels_dirty(
+            image_data,
+            dx_f,
+            dy as f32,
+            dirty_x,
+            dirty_y,
+            dirty_width,
+            dirty_height,
+            color_space,
+          );
+        });
+        return;
+      }
+      // Direct mode (SVG/PDF): write to surface canvas with inverted transform
       let inverted = self.context.surface.canvas.get_transform_matrix().invert();
       self.context.surface.canvas.save();
       if let Some(inverted) = inverted {
@@ -2805,6 +2825,20 @@ impl CanvasRenderingContext2D {
       );
       self.context.surface.canvas.restore();
     } else {
+      // Deferred mode: use write_pixels_dirty with full image dimensions
+      // because write_pixels (SkCanvas::writePixels) is NOT recordable by PictureRecorder
+      if let Some(ref recorder) = self.context.page_recorder {
+        let dx_f = dx as f32;
+        let dy_f = dy as f32;
+        let w = image_data.width as f32;
+        let h = image_data.height as f32;
+        let color_space = image_data.color_space;
+        recorder.borrow_mut().put_pixels(|canvas| {
+          canvas.write_pixels_dirty(image_data, dx_f, dy_f, 0.0, 0.0, w, h, color_space);
+        });
+        return;
+      }
+      // Direct mode (SVG/PDF): write pixels directly
       self.context.surface.canvas.write_pixels(image_data, dx, dy);
     }
   }
