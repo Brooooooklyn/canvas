@@ -142,11 +142,14 @@ function _compatToBuffer(mimeOrCallback, configOrQuality) {
     const config = arguments[2]
 
     if (mime === 'raw') {
+      let buf
       try {
-        callback(null, this.data())
+        buf = this.data()
       } catch (err) {
         callback(err)
+        return
       }
+      callback(null, buf)
       return
     }
 
