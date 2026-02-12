@@ -2789,12 +2789,13 @@ impl CanvasRenderingContext2D {
         return;
       }
       // Deferred mode: record via PageRecorder on a fresh layer (no clip/transform)
-      // write_pixels_dirty uses drawImageRect which IS recordable by PictureRecorder
+      // put_image_data uses drawImageRect with kSrc blend (pixel replacement),
+      // which IS recordable by PictureRecorder unlike SkCanvas::writePixels.
       if let Some(ref recorder) = self.context.page_recorder {
         let dx_f = dx as f32;
         let color_space = image_data.color_space;
         recorder.borrow_mut().put_pixels(|canvas| {
-          canvas.write_pixels_dirty(
+          canvas.put_image_data(
             image_data,
             dx_f,
             dy as f32,
@@ -2813,7 +2814,7 @@ impl CanvasRenderingContext2D {
       if let Some(inverted) = inverted {
         self.context.surface.canvas.concat(&inverted);
       };
-      self.context.surface.canvas.write_pixels_dirty(
+      self.context.surface.canvas.put_image_data(
         image_data,
         dx as f32,
         dy as f32,
@@ -2825,7 +2826,7 @@ impl CanvasRenderingContext2D {
       );
       self.context.surface.canvas.restore();
     } else {
-      // Deferred mode: use write_pixels_dirty with full image dimensions
+      // Deferred mode: use put_image_data with full image dimensions
       // because write_pixels (SkCanvas::writePixels) is NOT recordable by PictureRecorder
       if let Some(ref recorder) = self.context.page_recorder {
         let dx_f = dx as f32;
@@ -2834,7 +2835,7 @@ impl CanvasRenderingContext2D {
         let h = image_data.height as f32;
         let color_space = image_data.color_space;
         recorder.borrow_mut().put_pixels(|canvas| {
-          canvas.write_pixels_dirty(image_data, dx_f, dy_f, 0.0, 0.0, w, h, color_space);
+          canvas.put_image_data(image_data, dx_f, dy_f, 0.0, 0.0, w, h, color_space);
         });
         return;
       }
