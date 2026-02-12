@@ -118,6 +118,26 @@ impl PageRecorder {
     }
   }
 
+  /// Begin a new recording and restore the current canvas state (save stack, clip, transform).
+  fn resume_recording(&mut self) {
+    self
+      .current
+      .begin_recording(0.0, 0.0, self.width, self.height);
+    if let Some(canvas) = self.current.get_recording_canvas() {
+      for _ in 0..self.save_count {
+        canvas.save();
+      }
+      if let Some(ref clip_path) = self.current_clip {
+        canvas.reset_transform();
+        canvas.set_clip_path(clip_path);
+      }
+      if let Some(ref transform) = self.current_transform {
+        canvas.set_transform(transform);
+      }
+    }
+    self.changed = false;
+  }
+
   /// Promote current recording to a layer if changed (lazy finalization)
   fn promote_layer(&mut self) {
     if self.changed {
@@ -136,27 +156,7 @@ impl PageRecorder {
           );
         }
       }
-      // Resume recording
-      self
-        .current
-        .begin_recording(0.0, 0.0, self.width, self.height);
-      // Restore canvas state on the new recording canvas
-      if let Some(canvas) = self.current.get_recording_canvas() {
-        // First restore save stack depth so transform/clip are applied at correct level
-        for _ in 0..self.save_count {
-          canvas.save();
-        }
-        // Restore clip state first (clip is stored in device space, apply at identity)
-        if let Some(ref clip_path) = self.current_clip {
-          canvas.reset_transform();
-          canvas.set_clip_path(clip_path);
-        }
-        // Then restore transform state
-        if let Some(ref transform) = self.current_transform {
-          canvas.set_transform(transform);
-        }
-      }
-      self.changed = false;
+      self.resume_recording();
     }
   }
 
@@ -274,6 +274,46 @@ impl PageRecorder {
 
     // Read pixels from the surface
     surface.read_pixels(x, y, width, height, color_space)
+  }
+
+  /// Write pixel data as a separate layer, bypassing clip and transform.
+  /// This is used for putImageData which per HTML spec must ignore
+  /// the current transform, clip, globalAlpha, and compositing state.
+  ///
+  /// The approach:
+  /// 1. Promote current recording to a layer (preserving pending draw operations)
+  /// 2. Create a fresh recording (no clip, identity transform) and execute the draw
+  /// 3. Promote that recording as another layer
+  /// 4. Start a new recording with the original state restored
+  pub fn put_pixels<F>(&mut self, f: F)
+  where
+    F: FnOnce(&mut Canvas),
+  {
+    // Step 1: Promote current recording if it has changes
+    if self.changed {
+      if let Some(picture) = self.current.finish_recording_as_picture() {
+        self.layers.push(picture);
+        self.cached_picture = None;
+      }
+      self.changed = false;
+    }
+
+    // Step 2: Fresh recording for pixel data (clean canvas: no clip, identity transform)
+    self
+      .current
+      .begin_recording(0.0, 0.0, self.width, self.height);
+    if let Some(canvas) = self.current.get_recording_canvas() {
+      f(canvas);
+    }
+
+    // Step 3: Promote the pixel data recording as a layer
+    if let Some(picture) = self.current.finish_recording_as_picture() {
+      self.layers.push(picture);
+      self.cached_picture = None;
+    }
+
+    // Step 4: Start new recording and restore state
+    self.resume_recording();
   }
 
   /// Get recording canvas for direct access (needed for SVG/PDF direct mode)

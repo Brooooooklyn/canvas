@@ -9,6 +9,71 @@ import { snapshotImage } from './image-snapshot'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
+// https://github.com/Brooooooklyn/canvas/issues/1204
+test('putImageData should modify the canvas', (t) => {
+  const canvas = createCanvas(100, 100)
+  const ctx = canvas.getContext('2d')
+
+  // Fill canvas with red
+  ctx.fillStyle = 'red'
+  ctx.fillRect(0, 0, 100, 100)
+
+  // Get image data and modify to green
+  const imageData = ctx.getImageData(0, 0, 10, 10)
+  for (let i = 0; i < imageData.data.length; i += 4) {
+    imageData.data[i] = 0       // R
+    imageData.data[i + 1] = 255 // G
+    imageData.data[i + 2] = 0   // B
+    imageData.data[i + 3] = 255 // A
+  }
+
+  // putImageData should replace pixels at (0,0)
+  ctx.putImageData(imageData, 0, 0)
+
+  // Read back and verify the pixels were actually written
+  const result = ctx.getImageData(0, 0, 1, 1)
+  t.is(result.data[0], 0, 'R should be 0 (green)')
+  t.is(result.data[1], 255, 'G should be 255 (green)')
+  t.is(result.data[2], 0, 'B should be 0 (green)')
+  t.is(result.data[3], 255, 'A should be 255')
+})
+
+// https://github.com/Brooooooklyn/canvas/issues/1204
+test('putImageData with dirty rect should modify the canvas', (t) => {
+  const canvas = createCanvas(100, 100)
+  const ctx = canvas.getContext('2d')
+
+  // Fill canvas with blue
+  ctx.fillStyle = 'blue'
+  ctx.fillRect(0, 0, 100, 100)
+
+  // Create green image data
+  const imageData = ctx.getImageData(0, 0, 20, 20)
+  for (let i = 0; i < imageData.data.length; i += 4) {
+    imageData.data[i] = 0       // R
+    imageData.data[i + 1] = 255 // G
+    imageData.data[i + 2] = 0   // B
+    imageData.data[i + 3] = 255 // A
+  }
+
+  // putImageData with dirty rect
+  ctx.putImageData(imageData, 10, 10, 0, 0, 10, 10)
+
+  // Pixel at (15, 15) should be green (inside dirty rect)
+  const inside = ctx.getImageData(15, 15, 1, 1)
+  t.is(inside.data[0], 0, 'R should be 0 (green) inside dirty rect')
+  t.is(inside.data[1], 255, 'G should be 255 (green) inside dirty rect')
+  t.is(inside.data[2], 0, 'B should be 0 (green) inside dirty rect')
+  t.is(inside.data[3], 255, 'A should be 255 inside dirty rect')
+
+  // Pixel at (25, 25) should still be blue (outside dirty rect)
+  const outside = ctx.getImageData(25, 25, 1, 1)
+  t.is(outside.data[0], 0, 'R should be 0 (blue) outside dirty rect')
+  t.is(outside.data[1], 0, 'G should be 0 (blue) outside dirty rect')
+  t.is(outside.data[2], 255, 'B should be 255 (blue) outside dirty rect')
+  t.is(outside.data[3], 255, 'A should be 255 outside dirty rect')
+})
+
 test('transform-with-state', async (t) => {
   const canvas = createCanvas(256, 256)
   const ctx = canvas.getContext('2d')

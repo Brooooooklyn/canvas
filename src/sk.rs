@@ -606,7 +606,7 @@ pub mod ffi {
       y: i32,
     );
 
-    pub fn skiac_canvas_write_pixels_dirty(
+    pub fn skiac_canvas_put_image_data(
       canvas: *mut skiac_canvas,
       width: i32,
       height: i32,
@@ -2815,7 +2815,10 @@ impl Canvas {
     }
   }
 
-  pub fn write_pixels_dirty(
+  /// drawImageRect with kSrc blend mode for putImageData.
+  /// Replaces destination pixels per HTML spec.
+  /// Works on recording canvases (PictureRecorder).
+  pub fn put_image_data(
     &mut self,
     image: &ImageData,
     x: f32,
@@ -2827,7 +2830,7 @@ impl Canvas {
     color_space: ColorSpace,
   ) {
     unsafe {
-      ffi::skiac_canvas_write_pixels_dirty(
+      ffi::skiac_canvas_put_image_data(
         self.0,
         image.width as i32,
         image.height as i32,

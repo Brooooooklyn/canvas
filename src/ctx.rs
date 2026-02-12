@@ -2788,12 +2788,33 @@ impl CanvasRenderingContext2D {
       if dirty_width <= 0f32 || dirty_height <= 0f32 {
         return;
       }
+      // Deferred mode: record via PageRecorder on a fresh layer (no clip/transform)
+      // put_image_data uses drawImageRect with kSrc blend (pixel replacement),
+      // which IS recordable by PictureRecorder unlike SkCanvas::writePixels.
+      if let Some(ref recorder) = self.context.page_recorder {
+        let dx_f = dx as f32;
+        let color_space = image_data.color_space;
+        recorder.borrow_mut().put_pixels(|canvas| {
+          canvas.put_image_data(
+            image_data,
+            dx_f,
+            dy as f32,
+            dirty_x,
+            dirty_y,
+            dirty_width,
+            dirty_height,
+            color_space,
+          );
+        });
+        return;
+      }
+      // Direct mode (SVG/PDF): write to surface canvas with inverted transform
       let inverted = self.context.surface.canvas.get_transform_matrix().invert();
       self.context.surface.canvas.save();
       if let Some(inverted) = inverted {
         self.context.surface.canvas.concat(&inverted);
       };
-      self.context.surface.canvas.write_pixels_dirty(
+      self.context.surface.canvas.put_image_data(
         image_data,
         dx as f32,
         dy as f32,
@@ -2805,6 +2826,20 @@ impl CanvasRenderingContext2D {
       );
       self.context.surface.canvas.restore();
     } else {
+      // Deferred mode: use put_image_data with full image dimensions
+      // because write_pixels (SkCanvas::writePixels) is NOT recordable by PictureRecorder
+      if let Some(ref recorder) = self.context.page_recorder {
+        let dx_f = dx as f32;
+        let dy_f = dy as f32;
+        let w = image_data.width as f32;
+        let h = image_data.height as f32;
+        let color_space = image_data.color_space;
+        recorder.borrow_mut().put_pixels(|canvas| {
+          canvas.put_image_data(image_data, dx_f, dy_f, 0.0, 0.0, w, h, color_space);
+        });
+        return;
+      }
+      // Direct mode (SVG/PDF): write pixels directly
       self.context.surface.canvas.write_pixels(image_data, dx, dy);
     }
   }
