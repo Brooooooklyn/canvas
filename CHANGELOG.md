@@ -1,3 +1,17 @@
+## [0.1.92](https://github.com/Brooooooklyn/canvas/compare/v0.1.91...v0.1.92) (2026-02-12)
+
+
+### Bug Fixes
+
+* putImageData bypassed deferred rendering PageRecorder ([#1206](https://github.com/Brooooooklyn/canvas/issues/1206)) ([ae938a3](https://github.com/Brooooooklyn/canvas/commit/ae938a316920e4236367668944f3b766a8791f46))
+
+
+### Features
+
+* add node-canvas compatibility layer (`@napi-rs/canvas/node-canvas`) ([#1203](https://github.com/Brooooooklyn/canvas/issues/1203)) ([2ab43b6](https://github.com/Brooooooklyn/canvas/commit/2ab43b6ad5a2a3ad60ad8b875b5bde91b5ce2b2c))
+
+
+
 ## [0.1.91](https://github.com/Brooooooklyn/canvas/compare/v0.1.90...v0.1.91) (2026-02-09)
 
 
