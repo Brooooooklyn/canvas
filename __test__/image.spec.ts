@@ -1351,9 +1351,10 @@ test('should load HTTP URL with query params via image.src', async (t) => {
   const { promise, resolve, reject } = Promise.withResolvers<void>()
   image.onload = () => resolve()
   image.onerror = (e) => reject(e)
-  // Use httpbin.org with query param to test URL handling (the main issue in #1082)
+  // Use a pinned GitHub raw URL with query params to test URL handling (the main issue in #1082)
   // The query param contains characters like ? and = that are invalid in Windows file paths
-  image.src = 'https://httpbin.org/image/png?dummy=test&another=value'
+  image.src =
+    'https://raw.githubusercontent.com/Brooooooklyn/canvas/462fce53afeaee6d6b4ae5d1b407c17e2359ff7e/example/anime-girl.png?dummy=test&another=value'
   await promise
   t.true(image.width > 0, 'image width should be greater than 0')
   t.true(image.complete, 'image should be complete after load')
@@ -1364,7 +1365,8 @@ test('should handle HTTP URL without query params', async (t) => {
   const { promise, resolve, reject } = Promise.withResolvers<void>()
   image.onload = () => resolve()
   image.onerror = (e) => reject(e)
-  image.src = 'https://httpbin.org/image/png'
+  image.src =
+    'https://raw.githubusercontent.com/Brooooooklyn/canvas/462fce53afeaee6d6b4ae5d1b407c17e2359ff7e/example/anime-girl.png'
   await promise
   t.true(image.width > 0, 'image width should be greater than 0')
   t.true(image.complete, 'image should be complete after load')
