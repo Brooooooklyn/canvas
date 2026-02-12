@@ -150,7 +150,11 @@ function _compatToBuffer(mimeOrCallback, configOrQuality) {
       return
     }
 
-    const format = MIME_FORMAT_MAP[mime] || 'png'
+    const format = MIME_FORMAT_MAP[mime]
+    if (!format) {
+      callback(new TypeError(`Unsupported MIME type "${mime}". Supported: ${Object.keys(MIME_FORMAT_MAP).join(', ')}`))
+      return
+    }
     const q = _extractQuality(mime, config)
     this.encode(format, q != null ? Math.round(q * 100) : undefined).then(
       (buf) => callback(null, buf),
@@ -252,9 +256,10 @@ function registerFont(path, fontFace) {
     throw new TypeError('registerFont requires a fontFace with a "family" property')
   }
   const key = GlobalFonts.registerFromPath(path, fontFace.family)
-  if (key) {
-    _registeredFontKeys.push(key)
+  if (!key) {
+    throw new Error(`Failed to register font from "${path}" with family "${fontFace.family}"`)
   }
+  _registeredFontKeys.push(key)
 }
 
 /**
@@ -278,7 +283,7 @@ function deregisterAllFonts() {
  *
  * @param {number} width
  * @param {number} height
- * @param {'image'|'svg'|'pdf'} [type='image']
+ * @param {'image'|'svg'} [type='image']
  * @returns {Canvas}
  */
 function createCanvas(width, height, type) {
@@ -287,8 +292,14 @@ function createCanvas(width, height, type) {
     // least impactful on rendering behavior (only affects XML whitespace).
     return _createCanvas(width, height, SvgExportFlag.NoPrettyXML)
   }
-  // 'pdf' type: node-canvas creates a PDF canvas, but @napi-rs/canvas uses
-  // a separate PDFDocument class. Create a regular canvas for now.
+  if (type === 'pdf') {
+    throw new Error(
+      'createCanvas with type "pdf" is not supported. Use the PDFDocument class from @napi-rs/canvas directly.',
+    )
+  }
+  if (type != null && type !== 'image') {
+    throw new TypeError(`createCanvas: unknown type "${type}". Supported types: "image", "svg".`)
+  }
   return _addCompatMethods(_createCanvas(width, height))
 }
 
@@ -322,7 +333,11 @@ function createImageData(dataOrWidth, widthOrHeight, height) {
 // this compat layer).
 const CompatCanvas = new Proxy(Canvas, {
   construct(target, args) {
-    return _addCompatMethods(new target(...args))
+    const canvas = new target(...args)
+    if (canvas instanceof CanvasElement) {
+      return _addCompatMethods(canvas)
+    }
+    return canvas
   },
 })
 

@@ -27,6 +27,7 @@ import {
   SKRSContext2D,
   Canvas as NapiCanvas,
   SvgCanvas,
+  SvgExportFlag,
   IGlobalFonts,
   PDFDocument,
 } from './index'
@@ -57,21 +58,11 @@ export interface JpegConfig {
   chromaSubsampling?: boolean
 }
 
-export interface PdfConfig {
-  title?: string
-  author?: string
-  subject?: string
-  keywords?: string
-  creator?: string
-  creationDate?: Date
-  modDate?: Date
-}
-
 // ---------------------------------------------------------------------------
 // Canvas class (with node-canvas compatible methods)
 // ---------------------------------------------------------------------------
 
-export interface Canvas extends NapiCanvas {
+export interface Canvas extends Omit<NapiCanvas, 'toBuffer' | 'toDataURL'> {
   /**
    * Encode the canvas as a PNG and return a Node.js Readable stream.
    * @param config PNG encoding options (accepted for compatibility)
@@ -138,10 +129,10 @@ export class JPEGStream extends Readable {}
  *
  * @param width  Canvas width in pixels
  * @param height Canvas height in pixels
- * @param type   Canvas type: 'image' (default), 'svg', or 'pdf'
+ * @param type   Canvas type: 'image' (default) or 'svg'
  */
 export function createCanvas(width: number, height: number, type: 'svg'): SvgCanvas
-export function createCanvas(width: number, height: number, type?: 'image' | 'pdf'): Canvas
+export function createCanvas(width: number, height: number, type?: 'image'): Canvas
 
 /**
  * Create an ImageData instance.
@@ -189,8 +180,12 @@ export function deregisterAllFonts(): void
 // ---------------------------------------------------------------------------
 
 // Canvas is exported both as a type (the compat interface above) and as a
-// value (the NapiCanvas class constructor for instanceof checks).
-export declare const Canvas: typeof NapiCanvas
+// value (constructor that returns compat Canvas instances at runtime).
+export declare const Canvas: {
+  new (width: number, height: number): Canvas
+  new (width: number, height: number, flag: SvgExportFlag): SvgCanvas
+  prototype: NapiCanvas
+}
 
 export { NapiImage as Image }
 export { NapiImageData as ImageData }
@@ -202,10 +197,10 @@ export { NapiDOMRect as DOMRect }
 // SKRSContext2D is an interface in index.d.ts but a class value at runtime.
 // Declare as const to export the value for instanceof checks and re-export the type.
 export type CanvasRenderingContext2D = SKRSContext2D
-export declare const CanvasRenderingContext2D: Function
+export declare const CanvasRenderingContext2D: { prototype: SKRSContext2D }
 /** Legacy alias for CanvasRenderingContext2D. */
 export type Context2d = SKRSContext2D
-export declare const Context2d: Function
+export declare const Context2d: { prototype: SKRSContext2D }
 
 // ---------------------------------------------------------------------------
 // @napi-rs/canvas extras (not part of node-canvas, but useful)
@@ -214,7 +209,7 @@ export declare const Context2d: Function
 export { IGlobalFonts }
 export declare const GlobalFonts: IGlobalFonts & {
   /** Reload system fonts. Available at runtime but not declared in IGlobalFonts. */
-  loadSystemFonts(): void
+  loadSystemFonts(): number
 }
 export { PDFDocument }
 export { NapiCanvas as CanvasElement }

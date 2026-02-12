@@ -63,7 +63,7 @@ test('createCanvas returns a canvas with compat methods', (t) => {
 })
 
 test('new Canvas() returns a canvas with compat methods', async (t) => {
-  const canvas = new Canvas(100, 100) as any
+  const canvas = new Canvas(100, 100)
   t.is(canvas.width, 100)
   t.is(canvas.height, 100)
   t.is(typeof canvas.createPNGStream, 'function')
@@ -73,6 +73,16 @@ test('new Canvas() returns a canvas with compat methods', async (t) => {
   // instanceof should still work
   const { Canvas: OrigCanvas } = await import('../index')
   t.true(canvas instanceof OrigCanvas)
+})
+
+test('new Canvas() with SvgExportFlag does not get raster compat methods', async (t) => {
+  const { SvgExportFlag } = await import('../index')
+  const canvas = new Canvas(100, 100, SvgExportFlag.NoPrettyXML)
+  t.is(canvas.width, 100)
+  t.is(typeof (canvas as any).getContent, 'function')
+  // SVG canvas should NOT have raster compat methods
+  t.is(typeof (canvas as any).createPNGStream, 'undefined')
+  t.is(typeof (canvas as any).createJPEGStream, 'undefined')
 })
 
 test('createCanvas 2d context works', (t) => {
@@ -109,6 +119,15 @@ test('registerFont throws without family', (t) => {
       registerFont(fontPath)
     },
     { instanceOf: TypeError },
+  )
+})
+
+test('registerFont throws for invalid font path', (t) => {
+  t.throws(
+    () => {
+      registerFont('/nonexistent/path/font.ttf', { family: 'NonexistentFont' })
+    },
+    { instanceOf: Error, message: /Failed to register font/ },
   )
 })
 
@@ -233,6 +252,38 @@ test('toBuffer(callback, "image/jpeg", config) calls back with JPEG', async (t) 
   t.is(buf[1], 0xd8)
 })
 
+test('toBuffer(callback, invalidMime) calls back with error', async (t) => {
+  const canvas = createCanvas(10, 10)
+  canvas.getContext('2d').fillRect(0, 0, 10, 10)
+  const err = await new Promise<Error>((resolve) => {
+    canvas.toBuffer(
+      (err: Error | null, _result: Buffer) => {
+        resolve(err!)
+      },
+      'image/jepg' as any,
+    )
+  })
+  t.truthy(err)
+  t.true(err instanceof TypeError)
+  t.regex(err.message, /Unsupported MIME type/)
+})
+
+test('toBuffer(callback, "raw") calls back with raw pixel data', async (t) => {
+  const canvas = createCanvas(10, 10)
+  canvas.getContext('2d').fillRect(0, 0, 10, 10)
+  const buf = await new Promise<Buffer>((resolve, reject) => {
+    canvas.toBuffer(
+      (err: Error | null, result: Buffer) => {
+        if (err) reject(err)
+        else resolve(result)
+      },
+      'raw' as any,
+    )
+  })
+  t.true(Buffer.isBuffer(buf))
+  t.is(buf.length, 10 * 10 * 4) // RGBA
+})
+
 // ---------------------------------------------------------------------------
 // toDataURL
 // ---------------------------------------------------------------------------
@@ -261,6 +312,30 @@ test('toDataURL(callback) calls back async', async (t) => {
     })
   })
   t.true(url.startsWith('data:image/png;base64,'))
+})
+
+test('toDataURL("image/jpeg", callback) calls back with JPEG data URL', async (t) => {
+  const canvas = createCanvas(10, 10)
+  canvas.getContext('2d').fillRect(0, 0, 10, 10)
+  const url = await new Promise<string>((resolve, reject) => {
+    canvas.toDataURL('image/jpeg', (err: Error | null, result: string) => {
+      if (err) reject(err)
+      else resolve(result)
+    })
+  })
+  t.true(url.startsWith('data:image/jpeg;base64,'))
+})
+
+test('toDataURL("image/jpeg", 0.9, callback) calls back with JPEG data URL', async (t) => {
+  const canvas = createCanvas(10, 10)
+  canvas.getContext('2d').fillRect(0, 0, 10, 10)
+  const url = await new Promise<string>((resolve, reject) => {
+    canvas.toDataURL('image/jpeg', 0.9, (err: Error | null, result: string) => {
+      if (err) reject(err)
+      else resolve(result)
+    })
+  })
+  t.true(url.startsWith('data:image/jpeg;base64,'))
 })
 
 // ---------------------------------------------------------------------------
@@ -352,6 +427,26 @@ test('loadImage loads from file path', async (t) => {
 // ---------------------------------------------------------------------------
 // SVG canvas
 // ---------------------------------------------------------------------------
+
+test('createCanvas with pdf type throws', (t) => {
+  t.throws(
+    () => {
+      // @ts-expect-error testing unsupported type
+      createCanvas(100, 100, 'pdf')
+    },
+    { instanceOf: Error, message: /not supported/ },
+  )
+})
+
+test('createCanvas with unknown type throws', (t) => {
+  t.throws(
+    () => {
+      // @ts-expect-error testing invalid type
+      createCanvas(100, 100, 'foobar')
+    },
+    { instanceOf: TypeError, message: /unknown type/ },
+  )
+})
 
 test('createCanvas with svg type returns SvgCanvas', (t) => {
   const canvas = createCanvas(100, 100, 'svg')
