@@ -2096,6 +2096,73 @@ test('shadowOffsetY', async (t) => {
   await snapshotImage(t)
 })
 
+test('createLinearGradient-two-stops', async (t) => {
+  const { ctx } = t.context
+  const gradient = ctx.createLinearGradient(0, 0, 256, 0)
+  gradient.addColorStop(0, 'red')
+  gradient.addColorStop(1, 'blue')
+  ctx.fillStyle = gradient
+  ctx.fillRect(0, 0, 256, 256)
+  await snapshotImage(t)
+})
+
+test('createRadialGradient-concentric', async (t) => {
+  const { ctx } = t.context
+  // Same center, different radii (concentric circles)
+  const gradient = ctx.createRadialGradient(128, 128, 10, 128, 128, 128)
+  gradient.addColorStop(0, 'white')
+  gradient.addColorStop(0.5, 'red')
+  gradient.addColorStop(1, 'black')
+  ctx.fillStyle = gradient
+  ctx.fillRect(0, 0, 256, 256)
+  await snapshotImage(t)
+})
+
+test('createConicGradient-rotated', async (t) => {
+  const { ctx } = t.context
+  // Non-zero start angle
+  const gradient = ctx.createConicGradient(Math.PI / 4, 128, 128)
+  gradient.addColorStop(0, 'red')
+  gradient.addColorStop(0.5, 'blue')
+  gradient.addColorStop(1, 'red')
+  ctx.fillStyle = gradient
+  ctx.fillRect(0, 0, 256, 256)
+  await snapshotImage(t)
+})
+
+test('isPointInStroke-with-wide-line', (t) => {
+  const { ctx } = t.context
+  // Draw a horizontal line
+  const path = new Path2D()
+  path.moveTo(10, 50)
+  path.lineTo(200, 50)
+
+  ctx.lineWidth = 20
+  // Point well within the wide stroke
+  t.is(ctx.isPointInStroke(path, 100, 50), true)
+  // Point just outside the stroke (20px wide = ±10px from center at y=50)
+  t.is(ctx.isPointInStroke(path, 100, 39), false)
+  t.is(ctx.isPointInStroke(path, 100, 61), false)
+  // Point at the stroke boundary
+  t.is(ctx.isPointInStroke(path, 100, 40), true)
+  t.is(ctx.isPointInStroke(path, 100, 60), true)
+})
+
+test('isPointInStroke-curved-path', (t) => {
+  const { ctx } = t.context
+  const path = new Path2D()
+  path.arc(100, 100, 50, 0, 2 * Math.PI)
+
+  ctx.lineWidth = 1
+  // On the circle stroke
+  t.is(ctx.isPointInStroke(path, 150, 100), true)
+  t.is(ctx.isPointInStroke(path, 50, 100), true)
+  // Center of circle - not on stroke
+  t.is(ctx.isPointInStroke(path, 100, 100), false)
+  // Well outside
+  t.is(ctx.isPointInStroke(path, 200, 200), false)
+})
+
 function drawTranslate(ctx: SKRSContext2D) {
   // Moved square
   ctx.translate(110, 30)

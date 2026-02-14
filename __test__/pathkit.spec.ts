@@ -275,6 +275,88 @@ test('Equals', (t) => {
   t.false(blank.equals(p2))
 })
 
+test('round', (t) => {
+  const path = new Path2D()
+  path.moveTo(0, 0)
+  path.lineTo(100, 0)
+  path.lineTo(100, 100)
+  path.lineTo(0, 100)
+  path.closePath()
+  path.round(10)
+
+  const svg = path.toSVGString()
+  // After rounding, the sharp corners should be replaced with curves
+  t.true(svg.length > 0)
+  // Original rect SVG would have only L commands; rounded should have curves (C or Q)
+  t.true(svg.includes('C') || svg.includes('Q'), 'Rounded path should contain curve commands')
+  // Should not be identical to the un-rounded rectangle
+  const unrounded = new Path2D()
+  unrounded.rect(0, 0, 100, 100)
+  t.false(path.equals(unrounded), 'Rounded path should differ from un-rounded rectangle')
+})
+
+test('round with zero radius is identity', (t) => {
+  const path = new Path2D()
+  path.rect(0, 0, 100, 100)
+  const before = path.toSVGString()
+  path.round(0)
+  t.is(path.toSVGString(), before, 'Zero radius should not change the path')
+})
+
+test('round on triangle', (t) => {
+  const path = new Path2D()
+  path.moveTo(50, 0)
+  path.lineTo(100, 100)
+  path.lineTo(0, 100)
+  path.closePath()
+  path.round(5)
+
+  const svg = path.toSVGString()
+  t.true(svg.length > 0)
+  t.true(svg.includes('C') || svg.includes('Q'), 'Rounded triangle should contain curve commands')
+})
+
+test('trim with complement', (t) => {
+  const path = new Path2D()
+  path.rect(0, 0, 100, 100)
+  // trim with complement=true should return the inverse segment
+  path.trim(0.25, 0.75, true)
+
+  const svg = path.toSVGString()
+  t.true(svg.length > 0, 'Complemented trim should produce a non-empty path')
+
+  // Compare: normal trim vs complement trim should produce different paths
+  const normalPath = new Path2D()
+  normalPath.rect(0, 0, 100, 100)
+  normalPath.trim(0.25, 0.75)
+
+  t.false(path.equals(normalPath), 'Complement trim should differ from normal trim')
+})
+
+test('trim full range produces same path', (t) => {
+  const path = new Path2D()
+  path.rect(0, 0, 100, 100)
+  const before = path.toSVGString()
+  path.trim(0, 1)
+  t.is(path.toSVGString(), before, 'Trimming [0, 1] should keep the full path')
+})
+
+test('dash with various parameters', (t) => {
+  const path = new Path2D()
+  path.rect(0, 0, 100, 100)
+  path.dash(5, 5, 0)
+
+  const svg = path.toSVGString()
+  t.true(svg.length > 0, 'Dashed path should produce a non-empty path')
+
+  // With a different phase
+  const path2 = new Path2D()
+  path2.rect(0, 0, 100, 100)
+  path2.dash(5, 5, 2.5)
+
+  t.false(path.equals(path2), 'Different phase should produce different paths')
+})
+
 function drawStar() {
   const path = new Path2D()
   const R = 115.2

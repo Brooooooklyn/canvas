@@ -38,21 +38,13 @@ jobs:
           docker push ghcr.io/brooooooklyn/canvas/musl-builder:lts
 
       - name: Install latest libc++-dev for cross build
-        uses: addnab/docker-run-action@v3
+        uses: tj-actions/docker-run@v2
         with:
           image: ubuntu:jammy
+          name: libc-build-arm64
           options: '--platform linux/arm64 --user 0:0 -e GITHUB_TOKEN -v ${{ github.workspace }}/lib/llvm-19:/usr/lib/llvm-19'
-          run: >-
-            apt-get update &&
-            apt-get install -y wget gnupg2 &&
-            wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - &&
-            echo "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-19 main" >> /etc/apt/sources.list &&
-            echo "deb-src http://apt.llvm.org/jammy/ llvm-toolchain-jammy-19 main" >> /etc/apt/sources.list &&
-            apt-get update &&
-            apt-get install libc++-19-dev libc++abi-19-dev -y --fix-missing --no-install-recommends &&
-            rm /usr/lib/llvm-19/lib/libc++abi.so &&
-            rm /usr/lib/llvm-19/lib/libunwind.so &&
-            rm /usr/lib/llvm-19/lib/libc++.so
+          args: |
+            sh -c "apt-get update && apt-get install -y wget gnupg2 && wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - && echo 'deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-19 main' >> /etc/apt/sources.list && echo 'deb-src http://apt.llvm.org/jammy/ llvm-toolchain-jammy-19 main' >> /etc/apt/sources.list && apt-get update && apt-get install libc++-19-dev libc++abi-19-dev -y --fix-missing --no-install-recommends && rm /usr/lib/llvm-19/lib/libc++abi.so && rm /usr/lib/llvm-19/lib/libunwind.so && rm /usr/lib/llvm-19/lib/libc++.so"
 
       - name: Build and push Linux aarch64
         uses: docker/build-push-action@v6

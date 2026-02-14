@@ -30,7 +30,7 @@
 #include <include/effects/SkColorMatrix.h>
 #include <include/effects/SkCornerPathEffect.h>
 #include <include/effects/SkDashPathEffect.h>
-#include <include/effects/SkGradientShader.h>
+#include <include/effects/SkGradient.h>
 #include <include/effects/SkImageFilters.h>
 #include <include/effects/SkTrimPathEffect.h>
 #include <include/encode/SkJpegEncoder.h>
