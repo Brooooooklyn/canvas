@@ -1508,8 +1508,10 @@ skiac_shader* skiac_shader_make_linear_gradient(const skiac_point* c_points,
   for (int i = 0; i < count; i++) {
     colors4f[i] = SkColor4f::FromColor(colors[i]);
   }
-  SkSpan<const float> posSpan = positions ? SkSpan<const float>(positions, count) : SkSpan<const float>();
-  SkGradient::Colors gradColors(SkSpan<const SkColor4f>(colors4f.data(), count), posSpan, skia_tile_mode);
+  SkSpan<const float> posSpan =
+      positions ? SkSpan<const float>(positions, count) : SkSpan<const float>();
+  SkGradient::Colors gradColors(SkSpan<const SkColor4f>(colors4f.data(), count),
+                                posSpan, skia_tile_mode);
   SkGradient grad(gradColors, SkGradient::Interpolation::FromFlags(flags));
   auto shader = SkShaders::LinearGradient(points, grad, &ts).release();
 
@@ -1536,10 +1538,15 @@ skiac_shader* skiac_shader_make_radial_gradient(skiac_point c_start_point,
   for (int i = 0; i < count; i++) {
     colors4f[i] = SkColor4f::FromColor(colors[i]);
   }
-  SkSpan<const float> posSpan = positions ? SkSpan<const float>(positions, count) : SkSpan<const float>();
-  SkGradient::Colors gradColors(SkSpan<const SkColor4f>(colors4f.data(), count), posSpan, (SkTileMode)tile_mode);
+  SkSpan<const float> posSpan =
+      positions ? SkSpan<const float>(positions, count) : SkSpan<const float>();
+  SkGradient::Colors gradColors(SkSpan<const SkColor4f>(colors4f.data(), count),
+                                posSpan, (SkTileMode)tile_mode);
   SkGradient grad(gradColors, SkGradient::Interpolation::FromFlags(flags));
-  auto shader = SkShaders::TwoPointConicalGradient(startPoint, start_radius, endPoint, end_radius, grad, nullptr).release();
+  auto shader =
+      SkShaders::TwoPointConicalGradient(startPoint, start_radius, endPoint,
+                                         end_radius, grad, nullptr)
+          .release();
 
   if (shader) {
     return reinterpret_cast<skiac_shader*>(shader);
@@ -1564,10 +1571,13 @@ skiac_shader* skiac_shader_make_conic_gradient(SkScalar cx,
   for (int i = 0; i < count; i++) {
     colors4f[i] = SkColor4f::FromColor(colors[i]);
   }
-  SkSpan<const float> posSpan = positions ? SkSpan<const float>(positions, count) : SkSpan<const float>();
-  SkGradient::Colors gradColors(SkSpan<const SkColor4f>(colors4f.data(), count), posSpan, (SkTileMode)tile_mode);
+  SkSpan<const float> posSpan =
+      positions ? SkSpan<const float>(positions, count) : SkSpan<const float>();
+  SkGradient::Colors gradColors(SkSpan<const SkColor4f>(colors4f.data(), count),
+                                posSpan, (SkTileMode)tile_mode);
   SkGradient grad(gradColors, SkGradient::Interpolation::FromFlags(flags));
-  auto shader = SkShaders::SweepGradient({cx, cy}, radius, 360.0f, grad, &ts).release();
+  auto shader =
+      SkShaders::SweepGradient({cx, cy}, radius, 360.0f, grad, &ts).release();
 
   if (shader) {
     return reinterpret_cast<skiac_shader*>(shader);
