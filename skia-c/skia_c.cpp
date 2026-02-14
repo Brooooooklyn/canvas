@@ -1211,9 +1211,9 @@ bool skiac_path_stroke(skiac_path* c_path,
   p.setStrokeJoin((SkPaint::Join)join);
   p.setStrokeWidth(width);
   p.setStrokeMiter(miter_limit);
-  SkPath result;
+  SkPathBuilder result;
   if (skpathutils::FillPathWithPaint(c_path->path(), p, &result)) {
-    c_path->replace_from_path(result);
+    c_path->replace_from_path(result.detach());
     return true;
   }
   return false;
@@ -1248,9 +1248,9 @@ bool skiac_path_trim(skiac_path* c_path,
     return false;
   }
   SkStrokeRec rec(SkStrokeRec::InitStyle::kHairline_InitStyle);
-  SkPath result;
-  if (pe->filterPath(&result, c_path->path(), &rec, nullptr)) {
-    c_path->replace_from_path(result);
+  SkPathBuilder result;
+  if (pe->filterPath(&result, c_path->path(), &rec)) {
+    c_path->replace_from_path(result.detach());
     return true;
   }
   return false;
@@ -1263,9 +1263,9 @@ bool skiac_path_dash(skiac_path* c_path, float on, float off, float phase) {
     return false;
   }
   SkStrokeRec rec(SkStrokeRec::InitStyle::kHairline_InitStyle);
-  SkPath result;
-  if (pe->filterPath(&result, c_path->path(), &rec, nullptr)) {
-    c_path->replace_from_path(result);
+  SkPathBuilder result;
+  if (pe->filterPath(&result, c_path->path(), &rec)) {
+    c_path->replace_from_path(result.detach());
     return true;
   }
   return false;
@@ -1277,9 +1277,9 @@ bool skiac_path_round(skiac_path* c_path, float radius) {
     return false;
   }
   SkStrokeRec rec(SkStrokeRec::InitStyle::kHairline_InitStyle);
-  SkPath result;
-  if (pe->filterPath(&result, c_path->path(), &rec, nullptr)) {
-    c_path->replace_from_path(result);
+  SkPathBuilder result;
+  if (pe->filterPath(&result, c_path->path(), &rec)) {
+    c_path->replace_from_path(result.detach());
     return true;
   }
   return false;
@@ -1444,12 +1444,10 @@ bool skiac_path_stroke_hit_test(skiac_path* c_path,
   SkPaint paint;
   paint.setStrokeWidth(stroke_w);
   paint.setStyle(SkPaint::kStroke_Style);
-  SkPath traced_path;
+  SkPathBuilder traced_path;
 
-  auto precision = 0.3;  // Based on config in Chromium
-  if (skpathutils::FillPathWithPaint(path_with_winding, paint, &traced_path,
-                                     nullptr, precision)) {
-    return traced_path.contains(x, y);
+  if (skpathutils::FillPathWithPaint(path_with_winding, paint, &traced_path)) {
+    return traced_path.detach().contains(x, y);
   }
   return path_with_winding.contains(x, y);
 }
@@ -1506,9 +1504,14 @@ skiac_shader* skiac_shader_make_linear_gradient(const skiac_point* c_points,
   const auto points = reinterpret_cast<const SkPoint*>(c_points);
   const auto skia_tile_mode = (SkTileMode)tile_mode;
   const auto ts = conv_from_transform(c_ts);
-  auto shader = SkGradientShader::MakeLinear(points, colors, positions, count,
-                                             skia_tile_mode, flags, &ts)
-                    .release();
+  std::vector<SkColor4f> colors4f(count);
+  for (int i = 0; i < count; i++) {
+    colors4f[i] = SkColor4f::FromColor(colors[i]);
+  }
+  SkSpan<const float> posSpan = positions ? SkSpan<const float>(positions, count) : SkSpan<const float>();
+  SkGradient::Colors gradColors(SkSpan<const SkColor4f>(colors4f.data(), count), posSpan, skia_tile_mode);
+  SkGradient grad(gradColors, SkGradient::Interpolation::FromFlags(flags));
+  auto shader = SkShaders::LinearGradient(points, grad, &ts).release();
 
   if (shader) {
     return reinterpret_cast<skiac_shader*>(shader);
@@ -1529,10 +1532,14 @@ skiac_shader* skiac_shader_make_radial_gradient(skiac_point c_start_point,
                                                 skiac_transform c_ts) {
   const SkPoint startPoint = {c_start_point.x, c_start_point.y};
   const SkPoint endPoint = {c_end_point.x, c_end_point.y};
-  auto shader = SkGradientShader::MakeTwoPointConical(
-                    startPoint, start_radius, endPoint, end_radius, colors,
-                    positions, count, (SkTileMode)tile_mode, flags, nullptr)
-                    .release();
+  std::vector<SkColor4f> colors4f(count);
+  for (int i = 0; i < count; i++) {
+    colors4f[i] = SkColor4f::FromColor(colors[i]);
+  }
+  SkSpan<const float> posSpan = positions ? SkSpan<const float>(positions, count) : SkSpan<const float>();
+  SkGradient::Colors gradColors(SkSpan<const SkColor4f>(colors4f.data(), count), posSpan, (SkTileMode)tile_mode);
+  SkGradient grad(gradColors, SkGradient::Interpolation::FromFlags(flags));
+  auto shader = SkShaders::TwoPointConicalGradient(startPoint, start_radius, endPoint, end_radius, grad, nullptr).release();
 
   if (shader) {
     return reinterpret_cast<skiac_shader*>(shader);
@@ -1553,10 +1560,14 @@ skiac_shader* skiac_shader_make_conic_gradient(SkScalar cx,
   auto ts = conv_from_transform(c_ts);
   // Skia's sweep gradient angles are relative to the x-axis, not the y-axis.
   ts.preRotate(radius - 90.0, cx, cy);
-  auto shader = SkGradientShader::MakeSweep(cx, cy, colors, positions, count,
-                                            (SkTileMode)tile_mode, radius,
-                                            360.0, flags, &ts)
-                    .release();
+  std::vector<SkColor4f> colors4f(count);
+  for (int i = 0; i < count; i++) {
+    colors4f[i] = SkColor4f::FromColor(colors[i]);
+  }
+  SkSpan<const float> posSpan = positions ? SkSpan<const float>(positions, count) : SkSpan<const float>();
+  SkGradient::Colors gradColors(SkSpan<const SkColor4f>(colors4f.data(), count), posSpan, (SkTileMode)tile_mode);
+  SkGradient grad(gradColors, SkGradient::Interpolation::FromFlags(flags));
+  auto shader = SkShaders::SweepGradient({cx, cy}, radius, 360.0f, grad, &ts).release();
 
   if (shader) {
     return reinterpret_cast<skiac_shader*>(shader);
