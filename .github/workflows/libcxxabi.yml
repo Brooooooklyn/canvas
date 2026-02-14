@@ -37,13 +37,13 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Build in docker
-        uses: addnab/docker-run-action@v3
+        uses: tj-actions/docker-run@v2
         with:
           image: node:18-alpine
+          name: libcxxabi-build-${{ matrix.settings.arch }}
           options: -v ${{ github.workspace }}:/build -w /build
-          run: |
-            apk add clang llvm wget unzip cmake ninja xz tar musl-dev python3
-            node scripts/build-c++abi.mjs
+          args: |
+            sh -c "apk add clang llvm wget unzip cmake ninja xz tar musl-dev python3 && node scripts/build-c++abi.mjs"
       - uses: actions/attest-build-provenance@v3
         with:
           subject-path: |

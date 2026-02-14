@@ -204,12 +204,14 @@ jobs:
         run: ${{ matrix.settings.build }}
 
       - name: Build in docker
-        uses: addnab/docker-run-action@v3
+        uses: tj-actions/docker-run@v2
         if: ${{ matrix.settings.docker }}
         with:
           image: ${{ matrix.settings.docker }}
+          name: build-${{ matrix.settings.target }}
           options: --user 0:0 -v ${{ github.workspace }}/.cargo-cache/git/db:/usr/local/cargo/git/db -v ${{ github.workspace }}/.cargo/registry/cache:/usr/local/cargo/registry/cache -v ${{ github.workspace }}/.cargo/registry/index:/usr/local/cargo/registry/index -v ${{ github.workspace }}:/build -w /build
-          run: ${{ matrix.settings.build }}
+          args: |
+            sh -c "${{ matrix.settings.build }}"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v6
@@ -544,14 +546,13 @@ jobs:
         run: yarn install --immutable --mode=skip-build
 
       - name: Setup and run tests
-        uses: addnab/docker-run-action@v3
+        uses: tj-actions/docker-run@v2
         with:
           image: node:${{ matrix.node }}-slim
+          name: test-aarch64-${{ matrix.node }}
           options: '--platform linux/arm64 -v ${{ github.workspace }}:/skia -w /skia'
-          run: |
-            set -e && \
-            yarn test:ci && \
-            ls -la
+          args: |
+            sh -c "set -e && yarn test:ci && ls -la"
 
       - name: Test failed
         if: ${{ failure() }}
@@ -596,13 +597,13 @@ jobs:
           yarn install --immutable --mode=skip-build
 
       - name: Setup and run tests
-        uses: addnab/docker-run-action@v3
+        uses: tj-actions/docker-run@v2
         with:
           image: node:lts-alpine
+          name: test-alpine-musl
           options: '--platform linux/arm64 -v ${{ github.workspace }}:/skia -w /skia'
-          run: |
-            set -e
-            yarn test:ci
+          args: |
+            sh -c "set -e && yarn test:ci"
 
       - name: Test failed
         if: ${{ failure() }}
