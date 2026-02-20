@@ -841,7 +841,8 @@ void skiac_canvas_put_image_data(skiac_canvas* c_canvas,
   auto src_rect = SkRect::MakeXYWH(dirty_x, dirty_y, dirty_width, dirty_height);
   auto dst_rect =
       SkRect::MakeXYWH(x + dirty_x, y + dirty_y, dirty_width, dirty_height);
-  const auto sampling = SkSamplingOptions(SkCubicResampler::Mitchell());
+  const auto sampling =
+      SkSamplingOptions(SkFilterMode::kNearest, SkMipmapMode::kNone);
   SkPaint paint;
   paint.setBlendMode(SkBlendMode::kSrc);
   CANVAS_CAST->drawImageRect(image, src_rect, dst_rect, sampling, &paint,

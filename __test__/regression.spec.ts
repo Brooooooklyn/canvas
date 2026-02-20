@@ -3,11 +3,55 @@ import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import test from 'ava'
+import PNG from '@jimp/png'
 
 import { createCanvas, loadImage, GlobalFonts, Image, DOMMatrix, DOMPoint } from '../index'
 import { snapshotImage } from './image-snapshot'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
+
+// https://github.com/Brooooooklyn/canvas/issues/1210
+test('putImageData should not blend opaque pixels with semi-transparent neighbors', (t) => {
+  // Simulate pdfjs putBinaryImageData: canvas filled in 16-row chunks,
+  // each chunk has MIXED pixels — mostly semi-transparent (edge/anti-alias
+  // pixels from SMask) plus one fully opaque content pixel.
+  const WIDTH = 20
+  const CHUNK_HEIGHT = 16
+  const NUM_CHUNKS = 3
+  const canvas = createCanvas(WIDTH, CHUNK_HEIGHT * NUM_CHUNKS)
+  const ctx = canvas.getContext('2d')
+
+  for (let c = 0; c < NUM_CHUNKS; c++) {
+    const imgData = ctx.createImageData(WIDTH, CHUNK_HEIGHT)
+    // Fill with semi-transparent light gray (alpha=14)
+    for (let i = 0; i < imgData.data.length; i += 4) {
+      imgData.data[i] = 230
+      imgData.data[i + 1] = 229
+      imgData.data[i + 2] = 229
+      imgData.data[i + 3] = 14
+    }
+    // One fully opaque dark pixel in the middle
+    const idx = (8 * WIDTH + 10) * 4
+    const v = 50 + c * 48
+    imgData.data[idx] = v
+    imgData.data[idx + 1] = v
+    imgData.data[idx + 2] = v
+    imgData.data[idx + 3] = 255
+    ctx.putImageData(imgData, 0, c * CHUNK_HEIGHT)
+  }
+
+  const pngCodec = PNG()
+  const decoded = pngCodec.decoders['image/png'](canvas.toBuffer('image/png'))
+  for (let c = 0; c < NUM_CHUNKS; c++) {
+    const row = c * CHUNK_HEIGHT + 8
+    const idx = (row * WIDTH + 10) * 4
+    const expected = 50 + c * 48
+    t.is(decoded.data[idx], expected, `Chunk ${c}: R should be ${expected}`)
+    t.is(decoded.data[idx + 1], expected, `Chunk ${c}: G should be ${expected}`)
+    t.is(decoded.data[idx + 2], expected, `Chunk ${c}: B should be ${expected}`)
+    t.is(decoded.data[idx + 3], 255, `Chunk ${c}: A should be 255`)
+  }
+})
 
 // https://github.com/Brooooooklyn/canvas/issues/1204
 test('putImageData should modify the canvas', (t) => {
