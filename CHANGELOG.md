@@ -1,3 +1,12 @@
+## [0.1.94](https://github.com/Brooooooklyn/canvas/compare/v0.1.93...v0.1.94) (2026-02-20)
+
+
+### Bug Fixes
+
+* putImageData incorrectly blending pixels due to Mitchell cubic resampler ([#1211](https://github.com/Brooooooklyn/canvas/issues/1211)) ([d83e648](https://github.com/Brooooooklyn/canvas/commit/d83e64870578a37a60daf79e761802b1bc25c69e))
+
+
+
 ## [0.1.93](https://github.com/Brooooooklyn/canvas/compare/v0.1.92...v0.1.93) (2026-02-17)
 
 
