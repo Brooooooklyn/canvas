@@ -620,6 +620,7 @@ pub mod ffi {
       dirty_width: f32,
       dirty_height: f32,
       color_space: u8,
+      snapshot: bool,
     );
 
     pub fn skiac_canvas_draw_picture(
@@ -2818,6 +2819,8 @@ impl Canvas {
   /// drawImageRect with kSrc blend mode for putImageData.
   /// Replaces destination pixels per HTML spec.
   /// Works on recording canvases (PictureRecorder).
+  /// When `snapshot` is true, the pixel data is copied so the resulting SkImage
+  /// is independent of the source buffer (required for deferred/recorded mode).
   pub fn put_image_data(
     &mut self,
     image: &ImageData,
@@ -2828,6 +2831,7 @@ impl Canvas {
     dirty_width: f32,
     dirty_height: f32,
     color_space: ColorSpace,
+    snapshot: bool,
   ) {
     unsafe {
       ffi::skiac_canvas_put_image_data(
@@ -2844,6 +2848,7 @@ impl Canvas {
         dirty_width,
         dirty_height,
         color_space as u8,
+        snapshot,
       )
     }
   }
