@@ -1,3 +1,12 @@
+## [0.1.95](https://github.com/Brooooooklyn/canvas/compare/v0.1.94...v0.1.95) (2026-02-24)
+
+
+### Bug Fixes
+
+* snapshot pixel data in putImageData for deferred rendering mode ([#1213](https://github.com/Brooooooklyn/canvas/issues/1213)) ([c2526ac](https://github.com/Brooooooklyn/canvas/commit/c2526ac4fac52c76f0895fa1ef323105df3ac1da))
+
+
+
 ## [0.1.94](https://github.com/Brooooooklyn/canvas/compare/v0.1.93...v0.1.94) (2026-02-20)
 
 
