@@ -831,13 +831,21 @@ void skiac_canvas_put_image_data(skiac_canvas* c_canvas,
                                  float dirty_y,
                                  float dirty_width,
                                  float dirty_height,
-                                 uint8_t cs) {
+                                 uint8_t cs,
+                                 bool snapshot) {
   auto color_space = COLOR_SPACE_CAST;
   auto info =
       SkImageInfo::Make(width, height, SkColorType::kRGBA_8888_SkColorType,
                         SkAlphaType::kUnpremul_SkAlphaType, color_space);
   auto pixmap = SkPixmap(info, pixels, row_bytes);
-  auto image = SkImages::RasterFromPixmap(pixmap, nullptr, nullptr);
+  // When snapshot=true (deferred/recorded mode), copy the pixel data so the
+  // SkPicture owns an independent snapshot. Without this, reusing and mutating
+  // the same ImageData buffer between putImageData calls would corrupt earlier
+  // recorded frames (they all alias the same JS buffer).
+  // When snapshot=false (direct mode), the pixels are consumed immediately by
+  // drawImageRect so a zero-copy reference is safe.
+  auto image = snapshot ? SkImages::RasterFromPixmapCopy(pixmap)
+                        : SkImages::RasterFromPixmap(pixmap, nullptr, nullptr);
   auto src_rect = SkRect::MakeXYWH(dirty_x, dirty_y, dirty_width, dirty_height);
   auto dst_rect =
       SkRect::MakeXYWH(x + dirty_x, y + dirty_y, dirty_width, dirty_height);

@@ -53,6 +53,55 @@ test('putImageData should not blend opaque pixels with semi-transparent neighbor
   }
 })
 
+// https://github.com/Brooooooklyn/canvas/issues/1212
+test('putImageData should snapshot pixel data when the same ImageData is reused', (t) => {
+  const CHUNK_HEIGHT = 16
+  const width = 100
+  const height = 80 // 5 chunks of 16 rows
+  const canvas = createCanvas(width, height)
+  const ctx = canvas.getContext('2d')
+
+  // Build a simple RGB gradient as source data
+  const src = new Uint8Array(width * height * 3)
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const i = (y * width + x) * 3
+      src[i] = (x * 255 / width) | 0     // R: horizontal gradient
+      src[i + 1] = (y * 255 / height) | 0 // G: vertical gradient
+      src[i + 2] = 128                     // B: constant
+    }
+  }
+
+  // Reuse the same ImageData object across all putImageData calls (as pdfjs-dist does)
+  const chunkImgData = ctx.createImageData(width, CHUNK_HEIGHT)
+  const dest = chunkImgData.data
+  let srcPos = 0
+  for (let i = 0; i < height / CHUNK_HEIGHT; i++) {
+    let destPos = 0
+    for (let j = width * CHUNK_HEIGHT; j--;) {
+      dest[destPos++] = src[srcPos++]
+      dest[destPos++] = src[srcPos++]
+      dest[destPos++] = src[srcPos++]
+      dest[destPos++] = 255
+    }
+    ctx.putImageData(chunkImgData, 0, i * CHUNK_HEIGHT)
+  }
+
+  // Verify pixel at (0, 0) — should be R≈0, G≈0, B=128 (first chunk)
+  const result = ctx.getImageData(0, 0, width, height)
+  t.is(result.data[0], 0, 'Pixel (0,0) R should be 0')
+  t.is(result.data[1], 0, 'Pixel (0,0) G should be 0 (not from last chunk)')
+  t.is(result.data[2], 128, 'Pixel (0,0) B should be 128')
+
+  // Verify a pixel in the middle chunk (chunk 2, y=32)
+  const midIdx = (32 * width + 50) * 4
+  const expectedR = (50 * 255 / width) | 0
+  const expectedG = (32 * 255 / height) | 0
+  t.is(result.data[midIdx], expectedR, `Pixel (50,32) R should be ${expectedR}`)
+  t.is(result.data[midIdx + 1], expectedG, `Pixel (50,32) G should be ${expectedG}`)
+  t.is(result.data[midIdx + 2], 128, 'Pixel (50,32) B should be 128')
+})
+
 // https://github.com/Brooooooklyn/canvas/issues/1204
 test('putImageData should modify the canvas', (t) => {
   const canvas = createCanvas(100, 100)

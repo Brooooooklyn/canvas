@@ -2791,6 +2791,8 @@ impl CanvasRenderingContext2D {
       // Deferred mode: record via PageRecorder on a fresh layer (no clip/transform)
       // put_image_data uses drawImageRect with kSrc blend (pixel replacement),
       // which IS recordable by PictureRecorder unlike SkCanvas::writePixels.
+      // snapshot=true: copy pixel data so the SkPicture is independent of the
+      // JS buffer (required when the same ImageData is reused across calls).
       if let Some(ref recorder) = self.context.page_recorder {
         let dx_f = dx as f32;
         let color_space = image_data.color_space;
@@ -2804,11 +2806,13 @@ impl CanvasRenderingContext2D {
             dirty_width,
             dirty_height,
             color_space,
+            true,
           );
         });
         return;
       }
       // Direct mode (SVG/PDF): write to surface canvas with inverted transform
+      // snapshot=false: pixels are consumed immediately, no copy needed.
       let inverted = self.context.surface.canvas.get_transform_matrix().invert();
       self.context.surface.canvas.save();
       if let Some(inverted) = inverted {
@@ -2823,6 +2827,7 @@ impl CanvasRenderingContext2D {
         dirty_width,
         dirty_height,
         image_data.color_space,
+        false,
       );
       self.context.surface.canvas.restore();
     } else {
@@ -2835,7 +2840,7 @@ impl CanvasRenderingContext2D {
         let h = image_data.height as f32;
         let color_space = image_data.color_space;
         recorder.borrow_mut().put_pixels(|canvas| {
-          canvas.put_image_data(image_data, dx_f, dy_f, 0.0, 0.0, w, h, color_space);
+          canvas.put_image_data(image_data, dx_f, dy_f, 0.0, 0.0, w, h, color_space, true);
         });
         return;
       }
