@@ -49,7 +49,7 @@ jobs:
           subject-path: |
             libc++abi.a
       - name: Upload
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: libc++abi-${{ matrix.settings.arch }}.a
           path: libc++abi.a
@@ -62,7 +62,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Download x86_64
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: libc++abi-x86_64.a
           path: .
@@ -70,7 +70,7 @@ jobs:
         run: |
           mv libc++abi.a libc++abi-x86_64.a
       - name: Download aarch64
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: libc++abi-aarch64.a
           path: .
