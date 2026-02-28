@@ -88,7 +88,7 @@
     "@types/lodash": "^4.17.21",
     "@types/node": "^25.0.3",
     "@types/semver": "^7",
-    "ava": "^6.4.1",
+    "ava": "^7.0.0",
     "canvas": "^3.2.0",
     "canvaskit-wasm": "^0.40.0",
     "colorette": "^2.0.20",
