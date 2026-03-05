@@ -130,9 +130,16 @@ impl Context {
   /// Flush deferred rendering to surface (if deferred mode is enabled)
   pub fn flush(&mut self) {
     if let Some(ref recorder) = self.page_recorder {
-      recorder.borrow_mut().playback_to(&mut self.surface.canvas);
-      // DON'T reset here - preserve layers for incremental rendering
-      // Reset only happens on canvas resize or explicit clear
+      let mut rec = recorder.borrow_mut();
+      rec.playback_to(&mut self.surface.canvas);
+      // Consolidate accumulated layers into a single snapshot-based picture
+      // to prevent unbounded memory growth when canvas is repeatedly drawn
+      // via drawImage() (see: https://github.com/Brooooooklyn/canvas/issues/1221)
+      if rec.should_consolidate()
+        && let Some(snapshot) = self.surface.make_image_snapshot()
+      {
+        rec.consolidate_with_snapshot(snapshot);
+      }
     }
   }
 
