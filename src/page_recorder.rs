@@ -1,5 +1,7 @@
 use crate::picture_recorder::PictureRecorder;
-use crate::sk::{Canvas, ColorSpace, Matrix, Path as SkPath, SkPicture, Surface};
+use crate::sk::{
+  Canvas, ColorSpace, FilterQuality, Matrix, Path as SkPath, SkImage, SkPicture, Surface,
+};
 
 /// Persistent surface for caching intermediate rendering results.
 /// Based on skia-canvas's RecordingSurface pattern.
@@ -222,6 +224,32 @@ impl PageRecorder {
         layer.playback(target);
       }
       self.depth = self.layers.len(); // Update depth to mark all layers as rendered
+    }
+  }
+
+  /// Returns whether layers should be consolidated to prevent memory buildup
+  pub fn should_consolidate(&self) -> bool {
+    self.layers.len() > 1
+  }
+
+  /// Replace all accumulated layers with a single picture that draws the given
+  /// surface snapshot. This bounds memory to O(canvas_size) instead of
+  /// O(total_draw_commands), preventing unbounded growth when a canvas is
+  /// repeatedly drawn via drawImage().
+  pub fn consolidate_with_snapshot(&mut self, image: SkImage) {
+    let mut compositor = PictureRecorder::new();
+    compositor.begin_recording(0.0, 0.0, self.width, self.height);
+    let Some(canvas) = compositor.get_recording_canvas() else {
+      return;
+    };
+    image.draw(canvas, 0.0, 0.0, FilterQuality::Low);
+    if let Some(picture) = compositor.finish_recording_as_picture() {
+      self.layers.clear();
+      self.layers.push(picture);
+      self.depth = 1;
+      self.cached_picture = None;
+      self.layers_at_cache = 0;
+      self.recording_surface.reset();
     }
   }
 
