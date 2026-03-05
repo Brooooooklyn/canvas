@@ -1,3 +1,12 @@
+## [0.1.96](https://github.com/Brooooooklyn/canvas/compare/v0.1.95...v0.1.96) (2026-03-05)
+
+
+### Bug Fixes
+
+* prevent memory leak when drawing canvas onto another via drawImage() ([#1222](https://github.com/Brooooooklyn/canvas/issues/1222)) ([85ef08b](https://github.com/Brooooooklyn/canvas/commit/85ef08b105bcc1b3f08d20d9ac4b5b50ad7b80cb))
+
+
+
 ## [0.1.95](https://github.com/Brooooooklyn/canvas/compare/v0.1.94...v0.1.95) (2026-02-24)
 
 
