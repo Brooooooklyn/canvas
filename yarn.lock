@@ -557,7 +557,7 @@ __metadata:
     conventional-changelog-cli: "npm:^5.0.0"
     core-js: "npm:^3.47.0"
     echarts: "npm:^6.0.0"
-    electron: "npm:^40.0.0"
+    electron: "npm:^41.0.0"
     husky: "npm:^9.1.7"
     lint-staged: "npm:^16.2.7"
     lodash: "npm:^4.17.21"
@@ -3220,16 +3220,16 @@ __metadata:
   languageName: node
   linkType: hard
 
-"electron@npm:^40.0.0":
-  version: 40.6.1
-  resolution: "electron@npm:40.6.1"
+"electron@npm:^41.0.0":
+  version: 41.0.0
+  resolution: "electron@npm:41.0.0"
   dependencies:
     "@electron/get": "npm:^2.0.0"
     "@types/node": "npm:^24.9.0"
     extract-zip: "npm:^2.0.1"
   bin:
     electron: cli.js
-  checksum: 10c0/e8f1cc92d3bd93d8bb2b83cc238dd6957f69f12ddb62d1a50459eb24650be765d840abc2bb29e766ba564fb3f0fee057b757e4656d668b2aba128bece8179a29
+  checksum: 10c0/b4fa6b3860fddd24d141f28d9272a708554b28c83986f262f265aa52b6ff33012cebec6ca0f2d4f809278ae918b61853e9073c994da3b6837de58f5353089095
   languageName: node
   linkType: hard
 
