@@ -12,7 +12,7 @@
   "devDependencies": {
     "pdfjs-dist": "^5.3.31",
     "webpack": "^5.99.9",
-    "webpack-cli": "^6.0.1"
+    "webpack-cli": "^7.0.0"
   },
   "dependencies": {
     "@napi-rs/canvas": "workspace:*",
