@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import test from 'ava'
 import PNG from '@jimp/png'
 
-import { createCanvas, loadImage, GlobalFonts, Image, DOMMatrix, DOMPoint } from '../index'
+import { createCanvas, loadImage, GlobalFonts, Image, ImageData, DOMMatrix, DOMPoint } from '../index'
 import { snapshotImage } from './image-snapshot'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -454,6 +454,79 @@ test('putImageData double free', (t) => {
   t.notThrows(() => {
     ctx.putImageData(imgData, 0, 0, 0, 0, canvas.width, canvas.height)
   })
+})
+
+// https://github.com/Brooooooklyn/canvas/issues/1226
+test('putImageData with negative dx/dy should draw correctly', (t) => {
+  const canvas = createCanvas(200, 200)
+  const ctx = canvas.getContext('2d')
+  // Fill canvas with black
+  ctx.fillStyle = 'black'
+  ctx.fillRect(0, 0, 200, 200)
+  // Create a 100x100 white ImageData
+  const imageData = new ImageData(100, 100)
+  imageData.data.fill(255)
+  // putImageData at (-20, -20): should place an 80x80 white region at (0,0)
+  ctx.putImageData(imageData, -20, -20)
+  // Pixel at (0,0) should be white (within the drawn region)
+  const topLeft = ctx.getImageData(0, 0, 1, 1).data
+  t.is(topLeft[0], 255)
+  t.is(topLeft[1], 255)
+  t.is(topLeft[2], 255)
+  t.is(topLeft[3], 255)
+  // Pixel at (79,79) should be white (last pixel of the drawn region)
+  const edge = ctx.getImageData(79, 79, 1, 1).data
+  t.is(edge[0], 255)
+  t.is(edge[1], 255)
+  t.is(edge[2], 255)
+  t.is(edge[3], 255)
+  // Pixel at (80,80) should be black (outside the drawn region)
+  const outside = ctx.getImageData(80, 80, 1, 1).data
+  t.is(outside[0], 0)
+  t.is(outside[1], 0)
+  t.is(outside[2], 0)
+  t.is(outside[3], 255)
+})
+
+// https://github.com/Brooooooklyn/canvas/issues/1226
+test('getImageData with negative x/y should return correct pixels', (t) => {
+  const canvas = createCanvas(100, 100)
+  const ctx = canvas.getContext('2d')
+  // Fill entire canvas red
+  ctx.fillStyle = 'red'
+  ctx.fillRect(0, 0, 100, 100)
+  // getImageData(-10, -10, 20, 20): top-left 10x10 is outside canvas (transparent black),
+  // bottom-right 10x10 is canvas pixels (red)
+  const data = ctx.getImageData(-10, -10, 20, 20)
+  t.is(data.width, 20)
+  t.is(data.height, 20)
+  // Pixel at (0,0) in the ImageData corresponds to canvas (-10,-10) — outside, should be transparent black
+  const outOfBounds = [data.data[0], data.data[1], data.data[2], data.data[3]]
+  t.deepEqual(outOfBounds, [0, 0, 0, 0])
+  // Pixel at (5,5) in the ImageData is still outside canvas (-5,-5) — transparent black
+  const stillOutside = 4 * (5 * 20 + 5)
+  t.deepEqual([data.data[stillOutside], data.data[stillOutside + 1], data.data[stillOutside + 2], data.data[stillOutside + 3]], [0, 0, 0, 0])
+  // Pixel at (10,10) in the ImageData corresponds to canvas (0,0) — should be red
+  const insideOffset = 4 * (10 * 20 + 10)
+  t.is(data.data[insideOffset], 255)     // R
+  t.is(data.data[insideOffset + 1], 0)   // G
+  t.is(data.data[insideOffset + 2], 0)   // B
+  t.is(data.data[insideOffset + 3], 255) // A
+  // Pixel at (19,19) in the ImageData corresponds to canvas (9,9) — should be red
+  const cornerOffset = 4 * (19 * 20 + 19)
+  t.is(data.data[cornerOffset], 255)     // R
+  t.is(data.data[cornerOffset + 1], 0)   // G
+  t.is(data.data[cornerOffset + 2], 0)   // B
+  t.is(data.data[cornerOffset + 3], 255) // A
+})
+
+test('createImageData with negative dimensions should use absolute values', (t) => {
+  const canvas = createCanvas(100, 100)
+  const ctx = canvas.getContext('2d')
+  const imageData = ctx.createImageData(-50, -30)
+  t.is(imageData.width, 50)
+  t.is(imageData.height, 30)
+  t.is(imageData.data.length, 50 * 30 * 4)
 })
 
 // https://github.com/Brooooooklyn/canvas/issues/987
