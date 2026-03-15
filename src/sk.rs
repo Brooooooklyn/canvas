@@ -2144,8 +2144,8 @@ impl Surface {
 
   pub fn read_pixels(
     &self,
-    x: u32,
-    y: u32,
+    x: i32,
+    y: i32,
     width: u32,
     height: u32,
     color_space: ColorSpace,
@@ -2155,8 +2155,8 @@ impl Surface {
       ffi::skiac_surface_read_pixels_rect(
         self.ptr,
         result.as_mut_ptr(),
-        x as i32,
-        y as i32,
+        x,
+        y,
         width as i32,
         height as i32,
         color_space as u8,
@@ -2802,7 +2802,7 @@ impl Canvas {
     }
   }
 
-  pub fn write_pixels(&mut self, image: &ImageData, x: u32, y: u32) {
+  pub fn write_pixels(&mut self, image: &ImageData, x: i32, y: i32) {
     unsafe {
       ffi::skiac_canvas_write_pixels(
         self.0,
@@ -2810,8 +2810,8 @@ impl Canvas {
         image.height as i32,
         image.data,
         image.width * 4,
-        x as i32,
-        y as i32,
+        x,
+        y,
       );
     }
   }

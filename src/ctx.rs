@@ -969,13 +969,13 @@ impl Context {
     if let Some(ref recorder) = self.page_recorder {
       return recorder
         .borrow_mut()
-        .get_pixels(x as u32, y as u32, w as u32, h as u32, color_type);
+        .get_pixels(x as i32, y as i32, w as u32, h as u32, color_type);
     }
 
     // Direct mode - read from main surface
     self
       .surface
-      .read_pixels(x as u32, y as u32, w as u32, h as u32, color_type)
+      .read_pixels(x as i32, y as i32, w as u32, h as u32, color_type)
   }
 
   pub fn set_line_dash(&mut self, line_dash_list: Vec<f32>) {
@@ -2016,14 +2016,15 @@ impl CanvasRenderingContext2D {
   pub fn create_image_data<'scope>(
     &'scope mut self,
     env: &'scope Env,
-    width_or_data: Either<u32, Uint8ClampedSlice<'scope>>,
-    width_or_height: u32,
-    height_or_settings: Option<Either<u32, Settings>>,
+    width_or_data: Either<i32, Uint8ClampedSlice<'scope>>,
+    width_or_height: i32,
+    height_or_settings: Option<Either<i32, Settings>>,
     maybe_settings: Option<Settings>,
   ) -> Result<ClassInstance<'scope, ImageData>> {
     match width_or_data {
       Either::A(width) => {
-        let height = width_or_height;
+        let width = width.unsigned_abs();
+        let height = width_or_height.unsigned_abs();
         let color_space = match height_or_settings {
           Some(Either::B(settings)) => {
             ColorSpace::from_str(&settings.color_space).unwrap_or_default()
@@ -2045,9 +2046,9 @@ impl CanvasRenderingContext2D {
       }
       Either::B(mut data_object) => {
         let input_data_length = data_object.len();
-        let width = width_or_height;
+        let width = width_or_height as u32;
         let height = match &height_or_settings {
-          Some(Either::A(height)) => *height,
+          Some(Either::A(height)) => *height as u32,
           _ => (input_data_length as u32) / 4 / width,
         };
         let data = unsafe { data_object.as_mut() }.as_mut_ptr();
@@ -2759,8 +2760,8 @@ impl CanvasRenderingContext2D {
   pub fn put_image_data(
     &mut self,
     image_data: &ImageData,
-    dx: u32,
-    dy: u32,
+    dx: i32,
+    dy: i32,
     dirty_x: Option<f64>,
     dirty_y: Option<f64>,
     dirty_width: Option<f64>,

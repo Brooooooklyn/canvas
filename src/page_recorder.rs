@@ -283,8 +283,8 @@ impl PageRecorder {
   /// Returns pixel data for the requested region.
   pub fn get_pixels(
     &mut self,
-    x: u32,
-    y: u32,
+    x: i32,
+    y: i32,
     width: u32,
     height: u32,
     color_space: ColorSpace,
