@@ -520,6 +520,26 @@ test('getImageData with negative x/y should return correct pixels', (t) => {
   t.is(data.data[cornerOffset + 3], 255) // A
 })
 
+test('getImageData with negative width/height should flip the region per spec', (t) => {
+  const canvas = createCanvas(100, 100)
+  const ctx = canvas.getContext('2d')
+  // Paint a 10x10 green square at (5,5)
+  ctx.fillStyle = 'green'
+  ctx.fillRect(5, 5, 10, 10)
+  // getImageData(15, 15, -10, -10) per spec: sx=15+(-10)=5, sy=15+(-10)=5, sw=10, sh=10
+  // Should return the 10x10 region starting at (5,5) — the green square
+  const data = ctx.getImageData(15, 15, -10, -10)
+  t.is(data.width, 10)
+  t.is(data.height, 10)
+  t.is(data.data.length, 10 * 10 * 4)
+  // Center pixel (5,5) in the ImageData should be green
+  const centerOffset = 4 * (5 * 10 + 5)
+  t.is(data.data[centerOffset], 0)       // R
+  t.is(data.data[centerOffset + 1], 128) // G (green is 0,128,0)
+  t.is(data.data[centerOffset + 2], 0)   // B
+  t.is(data.data[centerOffset + 3], 255) // A
+})
+
 test('createImageData with negative dimensions should use absolute values', (t) => {
   const canvas = createCanvas(100, 100)
   const ctx = canvas.getContext('2d')

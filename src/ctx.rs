@@ -2718,9 +2718,20 @@ impl CanvasRenderingContext2D {
       let color_space = color_space
         .and_then(|cs| cs.parse().ok())
         .unwrap_or(ColorSpace::Srgb);
+      // Per spec: if sw/sh is negative, flip the origin and use abs value
+      let (sx, sw) = if width < 0.0 {
+        (x + width, -width)
+      } else {
+        (x, width)
+      };
+      let (sy, sh) = if height < 0.0 {
+        (y + height, -height)
+      } else {
+        (y, height)
+      };
       let image_data = self
         .context
-        .get_image_data(x as f32, y as f32, width as f32, height as f32, color_space)
+        .get_image_data(sx as f32, sy as f32, sw as f32, sh as f32, color_space)
         .ok_or_else(|| {
           Error::new(
             Status::GenericFailure,
@@ -2729,8 +2740,8 @@ impl CanvasRenderingContext2D {
         })?;
       let mut data_object = Uint8ClampedSlice::from_data(env, image_data)?;
       let mut instance = ImageData {
-        width: width as usize,
-        height: height as usize,
+        width: sw as usize,
+        height: sh as usize,
         color_space,
         data: unsafe { data_object.as_mut() }.as_mut_ptr(),
       }
