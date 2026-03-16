@@ -2046,9 +2046,9 @@ impl CanvasRenderingContext2D {
       }
       Either::B(mut data_object) => {
         let input_data_length = data_object.len();
-        let width = width_or_height as u32;
+        let width = width_or_height.unsigned_abs();
         let height = match &height_or_settings {
-          Some(Either::A(height)) => *height as u32,
+          Some(Either::A(height)) => height.unsigned_abs(),
           _ => (input_data_length as u32) / 4 / width,
         };
         let data = unsafe { data_object.as_mut() }.as_mut_ptr();
