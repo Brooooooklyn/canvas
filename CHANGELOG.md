@@ -1,3 +1,12 @@
+## [0.1.97](https://github.com/Brooooooklyn/canvas/compare/v0.1.96...v0.1.97) (2026-03-16)
+
+
+### Bug Fixes
+
+* use signed integers for canvas APIs that accept negative coordinates ([#1227](https://github.com/Brooooooklyn/canvas/issues/1227)) ([fa7c7c1](https://github.com/Brooooooklyn/canvas/commit/fa7c7c1b40c5b02ec9c596778b864a7383d61aa1))
+
+
+
 ## [0.1.96](https://github.com/Brooooooklyn/canvas/compare/v0.1.95...v0.1.96) (2026-03-05)
 
 
