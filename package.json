@@ -90,7 +90,7 @@
     "@types/semver": "^7",
     "ava": "^7.0.0",
     "canvas": "^3.2.0",
-    "canvaskit-wasm": "^0.40.0",
+    "canvaskit-wasm": "^0.41.0",
     "colorette": "^2.0.20",
     "conventional-changelog-cli": "^5.0.0",
     "core-js": "^3.47.0",

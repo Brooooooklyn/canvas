@@ -552,7 +552,7 @@ __metadata:
     "@types/semver": "npm:^7"
     ava: "npm:^7.0.0"
     canvas: "npm:^3.2.0"
-    canvaskit-wasm: "npm:^0.40.0"
+    canvaskit-wasm: "npm:^0.41.0"
     colorette: "npm:^2.0.20"
     conventional-changelog-cli: "npm:^5.0.0"
     core-js: "npm:^3.47.0"
@@ -2653,12 +2653,12 @@ __metadata:
   languageName: node
   linkType: hard
 
-"canvaskit-wasm@npm:^0.40.0":
-  version: 0.40.0
-  resolution: "canvaskit-wasm@npm:0.40.0"
+"canvaskit-wasm@npm:^0.41.0":
+  version: 0.41.0
+  resolution: "canvaskit-wasm@npm:0.41.0"
   dependencies:
     "@webgpu/types": "npm:0.1.21"
-  checksum: 10c0/dde817c0ef979a67afad4ac3adf31c03133af2592efec17f715a98508fdf801104fbf05af29723fb39b4d8b2798ce5306bb3cb5c062209d9d90a750430f3361d
+  checksum: 10c0/a55eb2cb627f2cdf017e05dba794c35225725af13c223c573ffb04f9f783d16e6c80fa0eb21a712c7b0a56f29dc0a693aee1eee61fe75e2b74e821a10236d8ef
   languageName: node
   linkType: hard
 
