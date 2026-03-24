@@ -110,7 +110,7 @@
     "skia-canvas": "^3.0.8",
     "table": "^6.9.0",
     "tinybench": "^6.0.0",
-    "typescript": "^5.9.3"
+    "typescript": "^6.0.0"
   },
   "lint-staged": {
     "*.@(js|ts|tsx|yml|yaml|md|json|html)": [
