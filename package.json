@@ -82,7 +82,7 @@
     "@napi-rs/cli": "^3.5.0",
     "@napi-rs/webcodecs": "^1.1.1",
     "@octokit/rest": "^22.0.1",
-    "@oxc-node/cli": "^0.0.35",
+    "@oxc-node/cli": "^0.1.0",
     "@oxc-node/core": "^0.1.0",
     "@taplo/cli": "^0.7.0",
     "@types/lodash": "^4.17.21",
