@@ -149,7 +149,7 @@ jobs:
               export CXX=riscv64-linux-gnu-g++
               yarn build --target riscv64gc-unknown-linux-gnu
 
-    name: stable - ${{ matrix.settings.target }} - node@22
+    name: stable - ${{ matrix.settings.target }} - node@24
     runs-on: ${{ matrix.settings.host }}
 
     steps:
@@ -295,7 +295,7 @@ jobs:
             target: 'aarch64-apple-darwin'
           - host: windows-latest
             target: 'x86_64-pc-windows-msvc'
-        node: ['20', '22', '24']
+        node: ['22', '24']
     runs-on: ${{ matrix.settings.host }}
 
     steps:
@@ -360,7 +360,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: ['20', '22', '24']
+        node: ['22', '24']
     runs-on: windows-11-arm
 
     steps:
@@ -413,7 +413,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: ['20', '22', '24']
+        node: ['22', '24']
     runs-on: ubuntu-latest
 
     steps:
@@ -464,7 +464,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: ['20', '22', '24']
+        node: ['22', '24']
     runs-on: ubuntu-latest
 
     steps:
@@ -517,7 +517,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: ['20', '22', '24']
+        node: ['22', '24']
     runs-on: ubuntu-24.04-arm
 
     steps:
