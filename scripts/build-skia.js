@@ -115,7 +115,7 @@ switch (PLATFORM_NAME) {
   case 'linux':
   case 'darwin':
     ExtraCflagsCC =
-      '"-std=c++17",' +
+      '"-std=c++20",' +
       '"-fno-exceptions",' +
       '"-DSK_FORCE_RASTER_PIPELINE_BLITTER",' +
       '"-DSK_ENABLE_SVG",' +
