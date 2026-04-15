@@ -1,3 +1,9 @@
+## [0.1.98](https://github.com/Brooooooklyn/canvas/compare/v0.1.97...v0.1.98) (2026-04-15)
+
+
+### Features
+
+* chrome m148 ([#1248](https://github.com/Brooooooklyn/canvas/issues/1248)) ([9b96c19](https://github.com/Brooooooklyn/canvas/commit/9b96c1951c4d6e9fddedbfafeb99d69bd63a8999))
 ## [0.1.97](https://github.com/Brooooooklyn/canvas/compare/v0.1.96...v0.1.97) (2026-03-16)
 
 
