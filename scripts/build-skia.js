@@ -15,6 +15,13 @@ if (TARGET && TARGET.startsWith('--target=')) {
   TARGET_TRIPLE = TARGET.replace('--target=', '')
 }
 
+const PDF_HARFBUZZ_SUBSET_CRASHING_TARGETS = new Set([
+  'x86_64-pc-windows-msvc',
+  'x86_64-unknown-linux-musl',
+  'aarch64-unknown-linux-musl',
+])
+const PDF_HARFBUZZ_SUBSET_ENABLED = !PDF_HARFBUZZ_SUBSET_CRASHING_TARGETS.has(TARGET_TRIPLE)
+
 function exec(command) {
   console.info(command)
   execSync(command, {
@@ -53,7 +60,12 @@ const GN_ARGS = [
   `skia_enable_tools=false`,
   `skia_enable_svg=true`,
   `skia_enable_skparagraph=true`,
-  `skia_pdf_subset_harfbuzz=true`,
+  // The harfbuzz PDF subsetter crashes inside hb_subset_or_fail on musl and
+  // MSVC x64 when subsetting woff/woff2 fonts via hb_face_create_for_tables
+  // (introduced by skia commit e179431b2b in m148). Disable it on the affected
+  // targets so SkPDFSubsetFont returns null and skia falls back to embedding
+  // the original font data (see skia/src/pdf/SkPDFFont.cpp:474-478).
+  `skia_pdf_subset_harfbuzz=${PDF_HARFBUZZ_SUBSET_ENABLED}`,
   `skia_use_expat=true`,
   `skia_use_system_expat=false`,
   `skia_use_gl=false`,
