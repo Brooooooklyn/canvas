@@ -15,6 +15,40 @@ if (TARGET && TARGET.startsWith('--target=')) {
   TARGET_TRIPLE = TARGET.replace('--target=', '')
 }
 
+// Skia m148 (commit e179431b2b, "[pdf] Allow table based font subsetting")
+// introduced a new path in src/pdf/SkPDFSubsetFont.cpp::subset_harfbuzz that
+// wraps woff/woff2 typefaces through hb_face_create_for_tables +
+// hb_face_set_get_table_tags_func (HB_VERSION_ATLEAST(10,0,0)) and then calls
+// hb_subset_or_fail. For woff/woff2 fonts hb_face_count on the raw blob
+// returns 0 (HarfBuzz cannot parse woff2 natively), so execution always falls
+// through to the table-based path, and hb_subset_or_fail segfaults inside the
+// HarfBuzz 13.1.0 subset module on the targets listed below. glibc linux,
+// darwin, aarch64-pc-windows-msvc, android, and riscv64 are unaffected, so
+// this is very likely a toolchain/ABI interaction in the static-linked musl
+// and MSVC x64 builds rather than a pure logic bug. There is no upstream fix
+// as of HarfBuzz 14.1.0 and no revert of the Skia commit.
+//
+// Workaround: disable skia_pdf_subset_harfbuzz on the affected targets. The
+// flag is declared in skia/gn/skia.gni:158 and gates both the harfbuzz subset
+// dependency and the SK_PDF_USE_HARFBUZZ_SUBSET define at skia/BUILD.gn:1255.
+// With it off, SkPDFSubsetFont compiles as the #else branch and returns null,
+// which SkPDFFont.cpp:474-478 handles gracefully: "If subsetting fails, fall
+// back to original font data." TrueType fonts on these targets are embedded
+// whole instead of subsetted (slightly larger PDFs) and woff/woff2 fonts go
+// through the pre-m148 Type3 fallback. All other targets keep full subsetting.
+const PDF_HARFBUZZ_SUBSET_CRASHING_TARGETS = new Set([
+  'x86_64-pc-windows-msvc',
+  'x86_64-unknown-linux-musl',
+  'aarch64-unknown-linux-musl',
+])
+// Windows-latest in skia.yaml invokes this script with no --target= flag
+// (native x64 host build), so TARGET_TRIPLE is empty even though the resulting
+// binary is x86_64-pc-windows-msvc and is affected by the crash. Match the
+// native host explicitly in addition to the --target= lookup.
+const IS_NATIVE_WIN_X64 = !TARGET_TRIPLE && PLATFORM_NAME === 'win32' && HOST_ARCH === 'x64'
+const PDF_HARFBUZZ_SUBSET_ENABLED =
+  !PDF_HARFBUZZ_SUBSET_CRASHING_TARGETS.has(TARGET_TRIPLE) && !IS_NATIVE_WIN_X64
+
 function exec(command) {
   console.info(command)
   execSync(command, {
@@ -53,7 +87,8 @@ const GN_ARGS = [
   `skia_enable_tools=false`,
   `skia_enable_svg=true`,
   `skia_enable_skparagraph=true`,
-  `skia_pdf_subset_harfbuzz=true`,
+  // See PDF_HARFBUZZ_SUBSET_CRASHING_TARGETS above for the crash details.
+  `skia_pdf_subset_harfbuzz=${PDF_HARFBUZZ_SUBSET_ENABLED}`,
   `skia_use_expat=true`,
   `skia_use_system_expat=false`,
   `skia_use_gl=false`,
@@ -115,7 +150,7 @@ switch (PLATFORM_NAME) {
   case 'linux':
   case 'darwin':
     ExtraCflagsCC =
-      '"-std=c++17",' +
+      '"-std=c++20",' +
       '"-fno-exceptions",' +
       '"-DSK_FORCE_RASTER_PIPELINE_BLITTER",' +
       '"-DSK_ENABLE_SVG",' +
