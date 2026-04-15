@@ -41,7 +41,13 @@ const PDF_HARFBUZZ_SUBSET_CRASHING_TARGETS = new Set([
   'x86_64-unknown-linux-musl',
   'aarch64-unknown-linux-musl',
 ])
-const PDF_HARFBUZZ_SUBSET_ENABLED = !PDF_HARFBUZZ_SUBSET_CRASHING_TARGETS.has(TARGET_TRIPLE)
+// Windows-latest in skia.yaml invokes this script with no --target= flag
+// (native x64 host build), so TARGET_TRIPLE is empty even though the resulting
+// binary is x86_64-pc-windows-msvc and is affected by the crash. Match the
+// native host explicitly in addition to the --target= lookup.
+const IS_NATIVE_WIN_X64 = !TARGET_TRIPLE && PLATFORM_NAME === 'win32' && HOST_ARCH === 'x64'
+const PDF_HARFBUZZ_SUBSET_ENABLED =
+  !PDF_HARFBUZZ_SUBSET_CRASHING_TARGETS.has(TARGET_TRIPLE) && !IS_NATIVE_WIN_X64
 
 function exec(command) {
   console.info(command)
