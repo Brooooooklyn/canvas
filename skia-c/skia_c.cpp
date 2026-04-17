@@ -1920,6 +1920,14 @@ void skiac_bitmap_make_from_buffer(const uint8_t* ptr,
   auto data = SkData::MakeWithoutCopy(reinterpret_cast<const void*>(ptr), size);
   auto codec = SkCodec::MakeFromData(data);
   auto info = codec->getInfo();
+  // PNG/WebP/GIF codecs report unpremultiplied alpha (required by those
+  // formats on disk). Ask the codec to output premultiplied pixels so that
+  // downstream bilinear/cubic sampling in drawImage does not bleed
+  // black-but-transparent border pixels into visible edges.
+  // See https://github.com/Brooooooklyn/canvas/issues/1250.
+  if (info.alphaType() == kUnpremul_SkAlphaType) {
+    info = info.makeAlphaType(kPremul_SkAlphaType);
+  }
   auto row_bytes = info.minRowBytes();
   auto bitmap = new SkBitmap();
   bitmap->allocPixels(info);
