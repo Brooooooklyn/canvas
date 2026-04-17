@@ -10,6 +10,57 @@ import { snapshotImage } from './image-snapshot'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
+// https://github.com/Brooooooklyn/canvas/issues/1250
+test('drawImage with imageSmoothingEnabled should not produce gray halo around transparent PNG edges', async (t) => {
+  // Build a small PNG whose transparent pixels have RGB=(0,0,0) underneath — the
+  // standard storage for PNG images with transparency. A 10x10 image with a 6x6
+  // opaque-white interior (x,y ∈ [2,8)) and a fully-transparent (0,0,0,0) border.
+  const SRC = 10
+  const srcCanvas = createCanvas(SRC, SRC)
+  const srcCtx = srcCanvas.getContext('2d')
+  const srcData = srcCtx.createImageData(SRC, SRC)
+  for (let y = 0; y < SRC; y++) {
+    for (let x = 0; x < SRC; x++) {
+      const i = (y * SRC + x) * 4
+      const inside = x >= 2 && x < 8 && y >= 2 && y < 8
+      if (inside) {
+        srcData.data[i] = 255
+        srcData.data[i + 1] = 255
+        srcData.data[i + 2] = 255
+        srcData.data[i + 3] = 255
+      }
+      // else: leave as (0,0,0,0) — transparent black, the classic halo-causing pattern
+    }
+  }
+  srcCtx.putImageData(srcData, 0, 0)
+  const pngBuffer = srcCanvas.toBuffer('image/png')
+
+  // Draw the PNG scaled 10x (10→100) with high-quality smoothing onto a white
+  // background. With unpremultiplied-alpha sampling the transparent black pixels
+  // bleed into the edge, producing a visible gray halo.
+  const image = await loadImage(pngBuffer)
+  const DST = 100
+  const dstCanvas = createCanvas(DST, DST)
+  const dstCtx = dstCanvas.getContext('2d')
+  dstCtx.fillStyle = '#ffffff'
+  dstCtx.fillRect(0, 0, DST, DST)
+  dstCtx.imageSmoothingEnabled = true
+  dstCtx.imageSmoothingQuality = 'high'
+  dstCtx.drawImage(image, 0, 0, DST, DST)
+
+  // Probe a pixel in the halo zone: destination (18, 50) lies inside the
+  // transparent border region (source x≈1.8, transparent) but close to the
+  // opaque-white interior edge (source x=2). With the bug the cubic filter
+  // mixes opaque white RGB with black-but-transparent neighbors, then composites
+  // the resulting semi-transparent gray onto the white background, yielding a
+  // pixel noticeably darker than white. With correct premultiplied sampling the
+  // pixel should remain very close to the white background.
+  const halo = dstCtx.getImageData(18, 50, 1, 1).data
+  t.true(halo[0] >= 250, `halo R should be ~255 (white bg), got ${halo[0]}`)
+  t.true(halo[1] >= 250, `halo G should be ~255 (white bg), got ${halo[1]}`)
+  t.true(halo[2] >= 250, `halo B should be ~255 (white bg), got ${halo[2]}`)
+})
+
 // https://github.com/Brooooooklyn/canvas/issues/1210
 test('putImageData should not blend opaque pixels with semi-transparent neighbors', (t) => {
   // Simulate pdfjs putBinaryImageData: canvas filled in 16-row chunks,
