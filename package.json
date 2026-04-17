@@ -155,6 +155,9 @@
   "dependenciesMeta": {
     "canvas": {
       "built": true
+    },
+    "skia-canvas": {
+      "built": true
     }
   }
 }

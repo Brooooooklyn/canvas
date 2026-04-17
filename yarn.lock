@@ -575,6 +575,8 @@ __metadata:
   dependenciesMeta:
     canvas:
       built: true
+    skia-canvas:
+      built: true
   languageName: unknown
   linkType: soft
 
