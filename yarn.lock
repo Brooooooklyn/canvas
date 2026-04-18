@@ -572,6 +572,11 @@ __metadata:
     table: "npm:^6.9.0"
     tinybench: "npm:^6.0.0"
     typescript: "npm:^6.0.0"
+  dependenciesMeta:
+    canvas:
+      built: true
+    skia-canvas:
+      built: true
   languageName: unknown
   linkType: soft
 
