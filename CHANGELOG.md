@@ -1,3 +1,9 @@
+## [0.1.99](https://github.com/Brooooooklyn/canvas/compare/v0.1.98...v0.1.99) (2026-04-18)
+
+
+### Bug Fixes
+
+* drawImage gray halo on transparent PNG edges with imageSmoothingEnabled ([#1252](https://github.com/Brooooooklyn/canvas/issues/1252)) ([a748f3f](https://github.com/Brooooooklyn/canvas/commit/a748f3f565cfdfb975e28b5ee13f702000a9059a))
 ## [0.1.98](https://github.com/Brooooooklyn/canvas/compare/v0.1.97...v0.1.98) (2026-04-15)
 
 
