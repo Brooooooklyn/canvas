@@ -338,7 +338,7 @@ jobs:
     name: stable - armv7-linux - build skia
     runs-on: ubuntu-latest
     container:
-      image: debian:bullseye-20260406
+      image: debian:bullseye-20260421
 
     steps:
       - name: Setup tools
