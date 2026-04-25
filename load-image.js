@@ -31,6 +31,10 @@ module.exports = async function loadImage(source, options = {}) {
     const commaIdx = source.indexOf(',')
     const encoding = source.lastIndexOf('base64', commaIdx) < 0 ? 'utf-8' : 'base64'
     const data = Buffer.from(source.slice(commaIdx + 1), encoding)
+    // Empty payload would silently complete on Image (HTML spec) and the loadImage
+    // promise would never settle; reject upfront instead.
+    // See https://github.com/Brooooooklyn/canvas/issues/1255
+    if (data.length === 0) throw new Error(`Invalid data URI: empty payload in ${source.slice(0, 64)}`)
     return createImage(data, options.alt)
   }
   // if source is a string or URL instance
@@ -118,6 +122,13 @@ function consumeStream(res) {
 }
 
 async function createImage(src, alt) {
+  // Empty Buffer / Uint8Array: Image follows the HTML spec (silent completion,
+  // no events) so the promise below would hang. Reject upfront.
+  // See https://github.com/Brooooooklyn/canvas/issues/1255
+  if ((Buffer.isBuffer(src) || src instanceof Uint8Array) && src.length === 0) {
+    throw new Error('loadImage: empty image data')
+  }
+
   const image = new Image()
   if (typeof alt === 'string') image.alt = alt
 

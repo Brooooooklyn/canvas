@@ -86,3 +86,37 @@ test('should load file url', async (t) => {
   t.is(img.width, 512)
   t.is(img.height, 512)
 })
+
+// Regression tests for https://github.com/Brooooooklyn/canvas/issues/1255
+// loadImage must settle (resolve or reject) for invalid inputs — must not hang.
+
+const TIMEOUT_SENTINEL = Symbol('loadImage timed out')
+
+async function settles<T>(promise: Promise<T>, ms = 2000): Promise<T | typeof TIMEOUT_SENTINEL> {
+  let timer: NodeJS.Timeout | undefined
+  try {
+    return await Promise.race<T | typeof TIMEOUT_SENTINEL>([
+      promise,
+      new Promise<typeof TIMEOUT_SENTINEL>((resolve) => {
+        timer = setTimeout(() => resolve(TIMEOUT_SENTINEL), ms)
+      }),
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
+test('loadImage settles on empty Buffer (issue #1255)', async (t) => {
+  const result = await settles(loadImage(Buffer.alloc(0)).catch((e) => e))
+  t.not(result, TIMEOUT_SENTINEL, 'loadImage(Buffer.alloc(0)) hung')
+})
+
+test('loadImage settles on tiny invalid Buffer (issue #1255)', async (t) => {
+  const result = await settles(loadImage(Buffer.from([1])).catch((e) => e))
+  t.not(result, TIMEOUT_SENTINEL, 'loadImage(Buffer.from([1])) hung')
+})
+
+test('loadImage settles on invalid base64 data URL (issue #1255)', async (t) => {
+  const result = await settles(loadImage('data:image/png;base64,=').catch((e) => e))
+  t.not(result, TIMEOUT_SENTINEL, 'loadImage("data:image/png;base64,=") hung')
+})
