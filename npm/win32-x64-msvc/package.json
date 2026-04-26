@@ -1,5 +1,5 @@
 {
-  "name": "@napi-rs/canvas-win32-x64-msvc",
+  "name": "@aphrody-code/canvas-win32-x64-msvc",
   "version": "0.1.99",
   "os": [
     "win32"
@@ -31,7 +31,7 @@
     "node": ">= 10"
   },
   "publishConfig": {
-    "registry": "https://registry.npmjs.org/",
+    "registry": "https://npm.pkg.github.com",
     "access": "public"
   },
   "repository": {

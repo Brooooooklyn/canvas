@@ -703,16 +703,32 @@ jobs:
         run: ls -R ./npm
         shell: bash
 
+      - name: Setup GitHub Packages auth
+        run: |
+          # Le `bun publish` lit `.npmrc` pour résoudre l'auth du registry GH Packages.
+          # Le scope @aphrody-code est routé vers npm.pkg.github.com, le token vient
+          # du GITHUB_TOKEN auto-fourni par Actions (avec permission packages: write).
+          cat > .npmrc <<EOF
+          @aphrody-code:registry=https://npm.pkg.github.com/
+          //npm.pkg.github.com/:_authToken=${{ secrets.GITHUB_TOKEN }}
+          always-auth=true
+          EOF
+          # Idem dans chaque sub-package npm/<target>/ pour `napi prepublish`
+          for d in npm/*/; do cp .npmrc "$d/.npmrc"; done
+
       - name: Publish
         run: |
-          if git log -1 --pretty=%B | grep "^[0-9]\+\.[0-9]\+\.[0-9]\+$";
+          # Détecte un tag de release "X.Y.Z" ou "X.Y.Z-prerelease" dans le dernier commit
+          if git log -1 --pretty=%B | grep -qE "^[0-9]+\.[0-9]+\.[0-9]+(-[a-z0-9.]+)?$";
           then
+            # Le `prepublishOnly` (`napi prepublish -t npm`) recopie le binaire
+            # téléchargé depuis les artifacts dans chaque npm/<target>/, puis
+            # `bun publish` itère sur eux + le main package.
             bun publish --access public
-          elif git log -1 --pretty=%B | grep "^[0-9]\+\.[0-9]\+\.[0-9]\+";
-          then
-            bun publish --tag next --access public
           else
-            echo "Not a release, skipping publish"
+            echo "Not a release commit, skipping publish"
           fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Permet à `bun publish` de re-authentifier au besoin
+          NPM_CONFIG_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -75,7 +75,7 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        return require('@napi-rs/canvas-android-arm64')
+        return require('@aphrody-code/canvas-android-arm64')
       } catch (e) {
         loadErrors.push(e)
       }
@@ -86,7 +86,7 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        return require('@napi-rs/canvas-android-arm-eabi')
+        return require('@aphrody-code/canvas-android-arm-eabi')
       } catch (e) {
         loadErrors.push(e)
       }
@@ -105,7 +105,7 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          return require('@napi-rs/canvas-win32-x64-gnu')
+          return require('@aphrody-code/canvas-win32-x64-gnu')
         } catch (e) {
           loadErrors.push(e)
         }
@@ -116,7 +116,7 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          return require('@napi-rs/canvas-win32-x64-msvc')
+          return require('@aphrody-code/canvas-win32-x64-msvc')
         } catch (e) {
           loadErrors.push(e)
         }
@@ -128,7 +128,7 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        return require('@napi-rs/canvas-win32-ia32-msvc')
+        return require('@aphrody-code/canvas-win32-ia32-msvc')
       } catch (e) {
         loadErrors.push(e)
       }
@@ -139,7 +139,7 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        return require('@napi-rs/canvas-win32-arm64-msvc')
+        return require('@aphrody-code/canvas-win32-arm64-msvc')
       } catch (e) {
         loadErrors.push(e)
       }
@@ -153,7 +153,7 @@ function requireNative() {
       loadErrors.push(e)
     }
     try {
-      return require('@napi-rs/canvas-darwin-universal')
+      return require('@aphrody-code/canvas-darwin-universal')
     } catch (e) {
       loadErrors.push(e)
     }
@@ -164,7 +164,7 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        return require('@napi-rs/canvas-darwin-x64')
+        return require('@aphrody-code/canvas-darwin-x64')
       } catch (e) {
         loadErrors.push(e)
       }
@@ -175,7 +175,7 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        return require('@napi-rs/canvas-darwin-arm64')
+        return require('@aphrody-code/canvas-darwin-arm64')
       } catch (e) {
         loadErrors.push(e)
       }
@@ -190,7 +190,7 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        return require('@napi-rs/canvas-freebsd-x64')
+        return require('@aphrody-code/canvas-freebsd-x64')
       } catch (e) {
         loadErrors.push(e)
       }
@@ -201,7 +201,7 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        return require('@napi-rs/canvas-freebsd-arm64')
+        return require('@aphrody-code/canvas-freebsd-arm64')
       } catch (e) {
         loadErrors.push(e)
       }
@@ -217,7 +217,7 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          return require('@napi-rs/canvas-linux-x64-musl')
+          return require('@aphrody-code/canvas-linux-x64-musl')
         } catch (e) {
           loadErrors.push(e)
         }
@@ -228,7 +228,7 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          return require('@napi-rs/canvas-linux-x64-gnu')
+          return require('@aphrody-code/canvas-linux-x64-gnu')
         } catch (e) {
           loadErrors.push(e)
         }
@@ -241,7 +241,7 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          return require('@napi-rs/canvas-linux-arm64-musl')
+          return require('@aphrody-code/canvas-linux-arm64-musl')
         } catch (e) {
           loadErrors.push(e)
         }
@@ -252,7 +252,7 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          return require('@napi-rs/canvas-linux-arm64-gnu')
+          return require('@aphrody-code/canvas-linux-arm64-gnu')
         } catch (e) {
           loadErrors.push(e)
         }
@@ -265,7 +265,7 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          return require('@napi-rs/canvas-linux-arm-musleabihf')
+          return require('@aphrody-code/canvas-linux-arm-musleabihf')
         } catch (e) {
           loadErrors.push(e)
         }
@@ -276,7 +276,7 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          return require('@napi-rs/canvas-linux-arm-gnueabihf')
+          return require('@aphrody-code/canvas-linux-arm-gnueabihf')
         } catch (e) {
           loadErrors.push(e)
         }
@@ -289,7 +289,7 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          return require('@napi-rs/canvas-linux-loong64-musl')
+          return require('@aphrody-code/canvas-linux-loong64-musl')
         } catch (e) {
           loadErrors.push(e)
         }
@@ -300,7 +300,7 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          return require('@napi-rs/canvas-linux-loong64-gnu')
+          return require('@aphrody-code/canvas-linux-loong64-gnu')
         } catch (e) {
           loadErrors.push(e)
         }
@@ -313,7 +313,7 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          return require('@napi-rs/canvas-linux-riscv64-musl')
+          return require('@aphrody-code/canvas-linux-riscv64-musl')
         } catch (e) {
           loadErrors.push(e)
         }
@@ -324,7 +324,7 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          return require('@napi-rs/canvas-linux-riscv64-gnu')
+          return require('@aphrody-code/canvas-linux-riscv64-gnu')
         } catch (e) {
           loadErrors.push(e)
         }
@@ -336,7 +336,7 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        return require('@napi-rs/canvas-linux-ppc64-gnu')
+        return require('@aphrody-code/canvas-linux-ppc64-gnu')
       } catch (e) {
         loadErrors.push(e)
       }
@@ -347,7 +347,7 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        return require('@napi-rs/canvas-linux-s390x-gnu')
+        return require('@aphrody-code/canvas-linux-s390x-gnu')
       } catch (e) {
         loadErrors.push(e)
       }
@@ -362,7 +362,7 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        return require('@napi-rs/canvas-openharmony-arm64')
+        return require('@aphrody-code/canvas-openharmony-arm64')
       } catch (e) {
         loadErrors.push(e)
       }
@@ -373,7 +373,7 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        return require('@napi-rs/canvas-openharmony-x64')
+        return require('@aphrody-code/canvas-openharmony-x64')
       } catch (e) {
         loadErrors.push(e)
       }
@@ -384,7 +384,7 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('@napi-rs/canvas-openharmony-arm')
+        const binding = require('@aphrody-code/canvas-openharmony-arm')
         return binding
       } catch (e) {
         loadErrors.push(e)
@@ -412,7 +412,7 @@ if (!nativeBinding || process.env.NAPI_RS_FORCE_WASI) {
   }
   if (!nativeBinding) {
     try {
-      wasiBinding = require('@napi-rs/canvas-wasm32-wasi')
+      wasiBinding = require('@aphrody-code/canvas-wasm32-wasi')
       nativeBinding = wasiBinding
     } catch (err) {
       if (process.env.NAPI_RS_FORCE_WASI) {

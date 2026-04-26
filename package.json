@@ -7,9 +7,6 @@
     "type": "git",
     "url": "git+https://github.com/aphrody-code/canvas.git"
   },
-  "workspaces": [
-    "e2e/*"
-  ],
   "license": "MIT",
   "keywords": [
     "napi-rs",
