@@ -29,11 +29,10 @@ jobs:
         with:
           submodules: true
 
-      - name: Setup node
-        uses: actions/setup-node@v6
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2
         with:
-          node-version: 24
-          cache: 'yarn'
+          bun-version: latest
 
       - name: Install
         uses: ./.github/actions/setup-rust
@@ -42,7 +41,7 @@ jobs:
           components: clippy, rustfmt
 
       - name: Install dependencies
-        run: yarn install --immutable --mode=skip-build
+        run: bun install --immutable --mode=skip-build
 
       - name: Download skia binary
         run: |
@@ -50,7 +49,7 @@ jobs:
           node ./scripts/release-skia-binary.mjs --download
 
       - name: 'Lint JS/TS'
-        run: yarn lint
+        run: bun lint
 
       - name: Cargo fmt
         run: cargo fmt -- --check
@@ -80,18 +79,18 @@ jobs:
             build: |
               rustc --print target-cpus
               clang --version
-              yarn build --target x86_64-apple-darwin
+              bun run build --target x86_64-apple-darwin
             downloadTarget: ''
           - host: windows-latest
             setup: |
               choco upgrade llvm
-            build: yarn build --target x86_64-pc-windows-msvc
+            build: bun run build --target x86_64-pc-windows-msvc
             target: 'x86_64-pc-windows-msvc'
             downloadTarget: ''
           - host: windows-latest
             setup: |
               choco upgrade llvm
-            build: yarn build --target aarch64-pc-windows-msvc
+            build: bun run build --target aarch64-pc-windows-msvc
             target: 'aarch64-pc-windows-msvc'
             downloadTarget: 'aarch64-pc-windows-msvc'
           - host: ubuntu-latest
@@ -101,18 +100,18 @@ jobs:
             build: >-
               rustup install &&
               rustup target add x86_64-unknown-linux-gnu &&
-              yarn build --target x86_64-unknown-linux-gnu
+              bun run build --target x86_64-unknown-linux-gnu
           - host: ubuntu-latest
             downloadTarget: 'x86_64-unknown-linux-musl'
             target: 'x86_64-unknown-linux-musl'
-            build: yarn build --target x86_64-unknown-linux-musl -x
+            build: bun run build --target x86_64-unknown-linux-musl -x
           - host: macos-latest
             downloadTarget: 'aarch64-apple-darwin'
             target: 'aarch64-apple-darwin'
             build: |
               export MACOSX_DEPLOYMENT_TARGET='11.0'
               clang --version
-              yarn build --target aarch64-apple-darwin
+              bun run build --target aarch64-apple-darwin
           - host: ubuntu-latest
             downloadTarget: 'aarch64-unknown-linux-gnu'
             target: 'aarch64-unknown-linux-gnu'
@@ -121,11 +120,11 @@ jobs:
               set -e &&
               rustup install &&
               rustup target add aarch64-unknown-linux-gnu &&
-              yarn build --target aarch64-unknown-linux-gnu
+              bun run build --target aarch64-unknown-linux-gnu
           - host: ubuntu-24.04-arm
             target: 'aarch64-unknown-linux-musl'
             downloadTarget: 'aarch64-unknown-linux-musl'
-            build: yarn build --target aarch64-unknown-linux-musl -x
+            build: bun run build --target aarch64-unknown-linux-musl -x
           - host: ubuntu-latest
             target: 'aarch64-linux-android'
             downloadTarget: 'aarch64-linux-android'
@@ -138,7 +137,7 @@ jobs:
               export CC=aarch64-linux-android24-clang
               export CXX=aarch64-linux-android24-clang++
               export CMAKE_TOOLCHAIN_FILE_aarch64_linux_android="$(pwd)/cmake/android-determine.cmake"
-              yarn build --target aarch64-linux-android
+              bun run build --target aarch64-linux-android
           - host: ubuntu-latest
             target: 'riscv64gc-unknown-linux-gnu'
             downloadTarget: 'riscv64gc-unknown-linux-gnu'
@@ -147,7 +146,7 @@ jobs:
               sudo apt-get install gcc-riscv64-linux-gnu g++-riscv64-linux-gnu -y
               export CC=riscv64-linux-gnu-gcc
               export CXX=riscv64-linux-gnu-g++
-              yarn build --target riscv64gc-unknown-linux-gnu
+              bun run build --target riscv64gc-unknown-linux-gnu
 
     name: stable - ${{ matrix.settings.target }} - node@24
     runs-on: ${{ matrix.settings.host }}
@@ -157,11 +156,10 @@ jobs:
         with:
           submodules: true
 
-      - name: Setup node
-        uses: actions/setup-node@v6
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2
         with:
-          node-version: 24
-          cache: 'yarn'
+          bun-version: latest
 
       - name: Set env
         if: matrix.settings.host == 'windows-latest'
@@ -190,7 +188,7 @@ jobs:
           targets: ${{ matrix.settings.target }}
 
       - name: Install dependencies
-        run: yarn install --immutable --mode=skip-build
+        run: bun install --immutable --mode=skip-build
 
       - name: Setup toolchain
         run: ${{ matrix.settings.setup }}
@@ -237,9 +235,8 @@ jobs:
             apt-get install -y clang-19
             ln -s /usr/bin/clang-19 /usr/bin/clang
             ln -s /usr/bin/clang++-19 /usr/bin/clang++
-            curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
-            apt-get install -y nodejs
-            npm install -g yarn corepack
+            curl -fsSL https://bun.sh/install | bash
+            ln -s /root/.bun/bin/bun /usr/local/bin/bun
       - uses: actions/checkout@v6
         with:
           submodules: true
@@ -249,10 +246,10 @@ jobs:
         with:
           cmake-version: '3.x'
 
-      - name: Setup node
-        uses: actions/setup-node@v6
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2
         with:
-          node-version: 24
+          bun-version: latest
 
       - name: Install
         uses: ./.github/actions/setup-rust
@@ -260,9 +257,7 @@ jobs:
           targets: 'armv7-unknown-linux-gnueabihf'
 
       - name: Install dependencies
-        run: |
-          corepack enable
-          yarn install --immutable --mode=skip-build
+        run: bun install --immutable --mode=skip-build
 
       - name: Download skia binary
         run: |
@@ -273,7 +268,7 @@ jobs:
       - name: Build
         run: |
           export CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_LINKER=arm-linux-gnueabihf-gcc
-          yarn build --target armv7-unknown-linux-gnueabihf
+          bun run build --target armv7-unknown-linux-gnueabihf
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
@@ -312,24 +307,22 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           out-file-path: __test__/fonts/
 
-      - name: Setup node
-        uses: actions/setup-node@v6
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2
         if: startsWith(matrix.settings.target, 'x86_64')
         with:
-          node-version: ${{ matrix.node }}
-          cache: 'yarn'
+          bun-version: latest
           architecture: 'x64'
 
-      - name: Setup node
-        uses: actions/setup-node@v6
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2
         if: startsWith(matrix.settings.target, 'aarch64')
         with:
-          node-version: ${{ matrix.node }}
-          cache: 'yarn'
+          bun-version: latest
           architecture: 'arm64'
 
       - name: Install dependencies
-        run: yarn install --immutable
+        run: bun install --immutable
 
       - name: Download artifacts
         uses: actions/download-artifact@v8
@@ -342,7 +335,7 @@ jobs:
         run: node ./scripts/release-skia-binary.mjs --download-icu
 
       - name: Test bindings
-        run: yarn test:ci
+        run: bun test:ci
         env:
           RUN_STRESS_TESTS: 'true'
 
@@ -377,15 +370,14 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           out-file-path: __test__/fonts/
 
-      - name: Setup node
-        uses: actions/setup-node@v6
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2
         with:
-          node-version: ${{ matrix.node }}
-          cache: 'yarn'
+          bun-version: latest
           architecture: 'arm64'
 
       - name: Install dependencies
-        run: yarn install --immutable --mode=skip-build
+        run: bun install --immutable --mode=skip-build
 
       - name: Download artifacts
         uses: actions/download-artifact@v8
@@ -397,7 +389,7 @@ jobs:
         run: node ./scripts/release-skia-binary.mjs --download-icu
 
       - name: Test bindings
-        run: yarn test:ci
+        run: bun test:ci
 
       - name: Test failed
         if: ${{ failure() }}
@@ -428,14 +420,13 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           out-file-path: __test__/fonts/
 
-      - name: Setup node
-        uses: actions/setup-node@v6
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2
         with:
-          node-version: ${{ matrix.node }}
-          cache: 'yarn'
+          bun-version: latest
 
       - name: Install dependencies
-        run: yarn install --immutable --mode=skip-build
+        run: bun install --immutable --mode=skip-build
 
       - name: Download artifacts
         uses: actions/download-artifact@v8
@@ -448,7 +439,7 @@ jobs:
         shell: bash
 
       - name: Test bindings
-        run: docker run --rm -v $(pwd):/canvas -w /canvas node:${{ matrix.node }}-slim yarn test:ci
+        run: docker run --rm -v $(pwd):/canvas -w /canvas oven/bun:latest bun run test:ci
 
       - name: Test failed
         if: ${{ failure() }}
@@ -479,16 +470,13 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           out-file-path: __test__/fonts/
 
-      - name: Setup node
-        uses: actions/setup-node@v6
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2
         with:
-          node-version: ${{ matrix.node }}
-          cache: 'yarn'
+          bun-version: latest
 
       - name: Install dependencies
-        run: |
-          yarn config set supportedArchitectures.libc "musl"
-          yarn install --immutable --mode=skip-build
+        run: bun install --immutable --mode=skip-build
 
       - name: Download artifacts
         uses: actions/download-artifact@v8
@@ -501,7 +489,7 @@ jobs:
         shell: bash
 
       - name: Test bindings
-        run: docker run --rm -v $(pwd):/canvas -w /canvas node:${{ matrix.node }}-alpine yarn test:ci
+        run: docker run --rm -v $(pwd):/canvas -w /canvas oven/bun:alpine bun run test:ci
 
       - name: Test failed
         if: ${{ failure() }}
@@ -543,16 +531,16 @@ jobs:
         shell: bash
 
       - name: Install dependencies
-        run: yarn install --immutable --mode=skip-build
+        run: bun install --immutable --mode=skip-build
 
       - name: Setup and run tests
         uses: tj-actions/docker-run@v2
         with:
-          image: node:${{ matrix.node }}-slim
+          image: oven/bun:latest
           name: test-aarch64-${{ matrix.node }}
           options: '--platform linux/arm64 -v ${{ github.workspace }}:/skia -w /skia'
           args: |
-            sh -c "set -e && yarn test:ci && ls -la"
+            sh -c "set -e && bun run test:ci && ls -la"
 
       - name: Test failed
         if: ${{ failure() }}
@@ -591,19 +579,16 @@ jobs:
         shell: bash
 
       - name: Install dependencies
-        run: |
-          yarn config set supportedArchitectures.cpu "arm64"
-          yarn config set supportedArchitectures.libc "musl"
-          yarn install --immutable --mode=skip-build
+        run: bun install --immutable --mode=skip-build
 
       - name: Setup and run tests
         uses: tj-actions/docker-run@v2
         with:
-          image: node:lts-alpine
+          image: oven/bun:alpine
           name: test-alpine-musl
           options: '--platform linux/arm64 -v ${{ github.workspace }}:/skia -w /skia'
           args: |
-            sh -c "set -e && yarn test:ci"
+            sh -c "set -e && bun run test:ci"
 
       - name: Test failed
         if: ${{ failure() }}
@@ -627,7 +612,7 @@ jobs:
           targets: aarch64-apple-darwin
 
       - name: Install dependencies
-        run: yarn install --immutable --mode=skip-build
+        run: bun install --immutable --mode=skip-build
 
       - name: Install llvm
         run: brew install llvm
@@ -651,11 +636,10 @@ jobs:
         with:
           submodules: true
 
-      - name: Setup node
-        uses: actions/setup-node@v6
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2
         with:
-          node-version: 24
-          cache: 'yarn'
+          bun-version: latest
 
       - name: Install
         uses: ./.github/actions/setup-rust
@@ -663,7 +647,7 @@ jobs:
           targets: x86_64-unknown-linux-gnu
 
       - name: Install dependencies
-        run: yarn install --immutable
+        run: bun install --immutable
 
       - name: Download skia binary
         run: |
@@ -671,10 +655,10 @@ jobs:
           node ./scripts/release-skia-binary.mjs --download
 
       - name: 'Build'
-        run: yarn build
+        run: bun run build
 
       - name: 'Run benchmark'
-        run: yarn bench
+        run: bun run bench
 
   publish:
     name: Publish
@@ -696,14 +680,13 @@ jobs:
         with:
           submodules: true
 
-      - name: Setup node
-        uses: actions/setup-node@v6
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2
         with:
-          node-version: 24
-          cache: 'yarn'
+          bun-version: latest
 
       - name: Install dependencies
-        run: yarn install --immutable --mode=skip-build
+        run: bun install --immutable --mode=skip-build
 
       - name: Download all artifacts
         uses: actions/download-artifact@v8
@@ -711,7 +694,7 @@ jobs:
           path: artifacts
 
       - name: Move artifacts
-        run: yarn artifacts
+        run: bun run artifacts
 
       - name: Download ICU for Windows
         run: node ./scripts/release-skia-binary.mjs --download-icu
@@ -722,13 +705,12 @@ jobs:
 
       - name: Publish
         run: |
-          npm install -g npm
           if git log -1 --pretty=%B | grep "^[0-9]\+\.[0-9]\+\.[0-9]\+$";
           then
-            npm publish --access public
+            bun publish --access public
           elif git log -1 --pretty=%B | grep "^[0-9]\+\.[0-9]\+\.[0-9]\+";
           then
-            npm publish --tag next --access public
+            bun publish --tag next --access public
           else
             echo "Not a release, skipping publish"
           fi

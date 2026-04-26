@@ -20,7 +20,6 @@ RUN apt-get update && \
   wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - && \
   echo "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-${LLVM_VERSION} main" >> /etc/apt/sources.list && \
   echo "deb-src http://apt.llvm.org/jammy/ llvm-toolchain-jammy-${LLVM_VERSION} main" >> /etc/apt/sources.list && \
-  curl -sL https://deb.nodesource.com/setup_22.x | bash - && \
   apt-get update && \
   apt-get install -y --fix-missing --no-install-recommends \
   curl \
@@ -29,7 +28,6 @@ RUN apt-get update && \
   lld-${LLVM_VERSION} \
   libc++-${LLVM_VERSION}-dev \
   libc++abi-${LLVM_VERSION}-dev \
-  nodejs \
   rcs \
   xz-utils \
   rcs \
@@ -43,8 +41,8 @@ RUN apt-get update && \
   rm /usr/lib/llvm-${LLVM_VERSION}/lib/libunwind.so && \
   ln -sf /usr/lib/llvm-${LLVM_VERSION}/lib/libc++.a /usr/x86_64-unknown-linux-gnu/lib/gcc/x86_64-unknown-linux-gnu/4.8.5/libc++.a && \
   cp -r /usr/x86_64-unknown-linux-gnu/lib/gcc/x86_64-unknown-linux-gnu/4.8.5/* /usr/x86_64-unknown-linux-gnu/x86_64-unknown-linux-gnu/sysroot/usr/lib && \
-  npm install --location=global yarn && \
-  npm cache clean --force && \
+  curl -fsSL https://bun.sh/install | bash && \
+  ln -s /root/.bun/bin/bun /usr/local/bin/bun && \
   curl https://sh.rustup.rs -sSf | sh -s -- -y && \
   rm -rf /var/lib/apt/lists/*
 

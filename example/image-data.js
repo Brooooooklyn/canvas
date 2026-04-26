@@ -1,5 +1,5 @@
-const { promises } = require('fs')
-const { join } = require('path')
+const { promises } = require('node:fs')
+const { join } = require('node:path')
 const PNGReader = require('png.js')
 
 const { createCanvas, ImageData } = require('../index')

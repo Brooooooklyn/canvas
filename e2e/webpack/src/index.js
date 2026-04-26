@@ -1,7 +1,7 @@
 // E2E test for PDF rendering with pdfjs-dist and @napi-rs/canvas
 // This test verifies that pdfjs-dist can render PDFs to canvas in a webpack bundle
 
-import fs from 'fs';
+import fs from 'node:fs';
 import { createCanvas } from '@napi-rs/canvas';
 
 const init = async () => {

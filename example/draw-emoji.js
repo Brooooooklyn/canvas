@@ -1,5 +1,5 @@
-const { writeFileSync } = require('fs')
-const { join } = require('path')
+const { writeFileSync } = require('node:fs')
+const { join } = require('node:path')
 
 const { createCanvas, GlobalFonts } = require('../index.js')
 
