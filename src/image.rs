@@ -352,14 +352,17 @@ impl Image {
     // This must happen for BOTH empty and valid src to prevent race conditions
     self.load_generation = self.load_generation.wrapping_add(1);
 
-    // Check if src is empty (per HTML spec)
-    // Also treat very small buffers as empty to avoid invalid/ambiguous image headers.
-    let is_empty_or_too_small = match &data {
-      Either::A(buffer) => buffer.is_empty() || buffer.len() < 5,
+    // Check if src is empty per HTML spec.
+    // The previous `< 5` byte heuristic incorrectly silenced tiny invalid buffers
+    // (e.g. Buffer.from([1])), causing loadImage() to hang. Such buffers must
+    // fall through to the async decoder, which reports them via onerror.
+    // See https://github.com/Brooooooklyn/canvas/issues/1255
+    let is_empty = match &data {
+      Either::A(buffer) => buffer.is_empty(),
       Either::B(string) => string.is_empty(),
     };
 
-    if is_empty_or_too_small {
+    if is_empty {
       // HTML spec: empty src = clear state, complete=true, NO events
       self.src = None;
       self.current_src = None;
@@ -1174,7 +1177,24 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
           self_mut.accounted_bytes = new_bytes;
         }
       }
-      DecodeStatus::Empty => {}
+      DecodeStatus::Empty => {
+        // ERROR PATH: empty / undecodable input. Surface via onerror so callers
+        // (especially loadImage) settle instead of hanging.
+        // See https://github.com/Brooooooklyn/canvas/issues/1255
+        self_mut.width = -1.0;
+        self_mut.height = -1.0;
+        self_mut.natural_width = 0.0;
+        self_mut.natural_height = 0.0;
+        self_mut.file_content = None;
+        self_mut._avif_image_ref = None;
+        self_mut.is_svg = false;
+        self_mut.need_regenerate_bitmap = false;
+        if self_mut.accounted_bytes != 0 {
+          env.adjust_external_memory(-self_mut.accounted_bytes)?;
+          self_mut.accounted_bytes = 0;
+        }
+        err = Some("Empty image data");
+      }
       DecodeStatus::InvalidSvg => {
         // ERROR PATH: clear state like reject() does
         // Reset width/height to auto (-1.0) so getters return 0 (from natural_width/height)
