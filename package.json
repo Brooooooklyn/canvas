@@ -1,11 +1,11 @@
 {
-  "name": "@napi-rs/canvas",
-  "version": "0.1.99",
-  "description": "Canvas for Node.js with skia backend",
+  "name": "@aphrody-code/canvas",
+  "version": "0.1.99-fork.1",
+  "description": "Canvas for Node.js with skia backend (aphrody-code fork — published to GitHub Packages)",
   "main": "index.js",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Brooooooklyn/canvas.git"
+    "url": "git+https://github.com/aphrody-code/canvas.git"
   },
   "workspaces": [
     "e2e/*"
@@ -53,7 +53,7 @@
     "node": ">= 10"
   },
   "publishConfig": {
-    "registry": "https://registry.npmjs.org/",
+    "registry": "https://npm.pkg.github.com",
     "access": "public"
   },
   "scripts": {
