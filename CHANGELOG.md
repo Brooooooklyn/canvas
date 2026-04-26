@@ -1,3 +1,9 @@
+## [0.1.100](https://github.com/Brooooooklyn/canvas/compare/v0.1.99...v0.1.100) (2026-04-26)
+
+
+### Bug Fixes
+
+* loadImage settles on invalid input ([#1257](https://github.com/Brooooooklyn/canvas/issues/1257)) ([bed5c31](https://github.com/Brooooooklyn/canvas/commit/bed5c311ab9bfce23138b59cdd4867896f36a55d))
 ## [0.1.99](https://github.com/Brooooooklyn/canvas/compare/v0.1.98...v0.1.99) (2026-04-18)
 
 
