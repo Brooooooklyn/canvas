@@ -1,18 +1,22 @@
-const { execSync } = require('node:child_process')
-const { readFileSync, writeFileSync } = require('node:fs')
-const path = require('node:path')
-const { platform, arch } = require('node:os')
+const { execSync } = require("node:child_process");
+const { readFileSync, writeFileSync } = require("node:fs");
+const path = require("node:path");
+const { platform, arch } = require("node:os");
 
-const PLATFORM_NAME = platform()
-const HOST_ARCH = arch()
+const PLATFORM_NAME = platform();
+const HOST_ARCH = arch();
 const HOST_LIBC =
-  PLATFORM_NAME === 'linux' ? (process.report?.getReport()?.header?.glibcVersionRuntime ? 'glibc' : 'musl') : null
+  PLATFORM_NAME === "linux"
+    ? process.report?.getReport()?.header?.glibcVersionRuntime
+      ? "glibc"
+      : "musl"
+    : null;
 
-const [, , TARGET] = process.argv
+const [, , TARGET] = process.argv;
 
-let TARGET_TRIPLE = ''
-if (TARGET && TARGET.startsWith('--target=')) {
-  TARGET_TRIPLE = TARGET.replace('--target=', '')
+let TARGET_TRIPLE = "";
+if (TARGET && TARGET.startsWith("--target=")) {
+  TARGET_TRIPLE = TARGET.replace("--target=", "");
 }
 
 // Skia m148 (commit e179431b2b, "[pdf] Allow table based font subsetting")
@@ -37,39 +41,39 @@ if (TARGET && TARGET.startsWith('--target=')) {
 // whole instead of subsetted (slightly larger PDFs) and woff/woff2 fonts go
 // through the pre-m148 Type3 fallback. All other targets keep full subsetting.
 const PDF_HARFBUZZ_SUBSET_CRASHING_TARGETS = new Set([
-  'x86_64-pc-windows-msvc',
-  'x86_64-unknown-linux-musl',
-  'aarch64-unknown-linux-musl',
-])
+  "x86_64-pc-windows-msvc",
+  "x86_64-unknown-linux-musl",
+  "aarch64-unknown-linux-musl",
+]);
 // Windows-latest in skia.yaml invokes this script with no --target= flag
 // (native x64 host build), so TARGET_TRIPLE is empty even though the resulting
 // binary is x86_64-pc-windows-msvc and is affected by the crash. Match the
 // native host explicitly in addition to the --target= lookup.
-const IS_NATIVE_WIN_X64 = !TARGET_TRIPLE && PLATFORM_NAME === 'win32' && HOST_ARCH === 'x64'
+const IS_NATIVE_WIN_X64 = !TARGET_TRIPLE && PLATFORM_NAME === "win32" && HOST_ARCH === "x64";
 const PDF_HARFBUZZ_SUBSET_ENABLED =
-  !PDF_HARFBUZZ_SUBSET_CRASHING_TARGETS.has(TARGET_TRIPLE) && !IS_NATIVE_WIN_X64
+  !PDF_HARFBUZZ_SUBSET_CRASHING_TARGETS.has(TARGET_TRIPLE) && !IS_NATIVE_WIN_X64;
 
 function exec(command) {
-  console.info(command)
+  console.info(command);
   execSync(command, {
-    stdio: 'inherit',
-    cwd: path.join(__dirname, '..', 'skia'),
+    stdio: "inherit",
+    cwd: path.join(__dirname, "..", "skia"),
     env: process.env,
-    shell: PLATFORM_NAME === 'win32' ? 'powershell' : 'bash',
-  })
+    shell: PLATFORM_NAME === "win32" ? "powershell" : "bash",
+  });
 }
 
-if (process.env.SKIP_SYNC_SK_DEPS !== 'false' && process.env.SKIP_SYNC_SK_DEPS !== '0') {
-  exec('python ./tools/git-sync-deps')
+if (process.env.SKIP_SYNC_SK_DEPS !== "false" && process.env.SKIP_SYNC_SK_DEPS !== "0") {
+  exec("python ./tools/git-sync-deps");
 }
 
-let CC = PLATFORM_NAME === 'win32' ? '\\"clang-cl\\"' : '"clang"'
-let CXX = PLATFORM_NAME === 'win32' ? '\\"clang-cpp\\"' : '"clang++"'
-let ExtraCflagsCC = ''
-let ExtraSkiaBuildFlag = ''
-let ExtraCflags
-let ExtraLdFlags
-let ExtraAsmFlags
+let CC = PLATFORM_NAME === "win32" ? '\\"clang-cl\\"' : '"clang"';
+let CXX = PLATFORM_NAME === "win32" ? '\\"clang-cpp\\"' : '"clang++"';
+let ExtraCflagsCC = "";
+let ExtraSkiaBuildFlag = "";
+let ExtraCflags;
+let ExtraLdFlags;
+let ExtraAsmFlags;
 
 const GN_ARGS = [
   `is_official_build=true`,
@@ -96,7 +100,7 @@ const GN_ARGS = [
   `skia_use_icu=true`,
   // the libavif would conflict with the Rust libavif, use the Rust library to handle avif images
   `skia_use_libavif=false`,
-  `skia_use_libjxl_decode=${!TARGET_TRIPLE.startsWith('riscv64')}`,
+  `skia_use_libjxl_decode=${!TARGET_TRIPLE.startsWith("riscv64")}`,
   `skia_use_libjpeg_turbo_decode=true`,
   `skia_use_libjpeg_turbo_encode=true`,
   `skia_use_libwebp_decode=true`,
@@ -121,10 +125,10 @@ const GN_ARGS = [
   `skia_enable_fontmgr_android=false`,
   `skunicode_tests_enabled=false`,
   `skia_enable_skshaper_tests=false`,
-]
+];
 
 switch (PLATFORM_NAME) {
-  case 'win32':
+  case "win32":
     ExtraCflagsCC =
       '\\"/std:c++20\\",' +
       '\\"/MT\\",' +
@@ -138,17 +142,17 @@ switch (PLATFORM_NAME) {
       '\\"-DSK_CODEC_DECODES_PNG\\",' +
       '\\"-DSK_ENCODE_JPEG\\",' +
       '\\"-DSK_CODEC_DECODES_JPEG\\",' +
-      '\\"-DSK_SHAPER_HARFBUZZ_AVAILABLE\\"'
-    const clangVersion = findClangWinVersion()
+      '\\"-DSK_SHAPER_HARFBUZZ_AVAILABLE\\"';
+    const clangVersion = findClangWinVersion();
     if (clangVersion) {
-      console.info(`Found clang version: ${clangVersion}`)
-      ExtraSkiaBuildFlag = `clang_win_version=\\"${clangVersion}\\"`
+      console.info(`Found clang version: ${clangVersion}`);
+      ExtraSkiaBuildFlag = `clang_win_version=\\"${clangVersion}\\"`;
     }
-    GN_ARGS.push(`clang_win=\\"C:\\\\Program Files\\\\LLVM\\"`)
-    GN_ARGS.push(`skia_enable_fontmgr_win=false`)
-    break
-  case 'linux':
-  case 'darwin':
+    GN_ARGS.push(`clang_win=\\"C:\\\\Program Files\\\\LLVM\\"`);
+    GN_ARGS.push(`skia_enable_fontmgr_win=false`);
+    break;
+  case "linux":
+  case "darwin":
     ExtraCflagsCC =
       '"-std=c++20",' +
       '"-fno-exceptions",' +
@@ -162,32 +166,33 @@ switch (PLATFORM_NAME) {
       '"-DSK_CODEC_DECODES_PNG",' +
       '"-DSK_ENCODE_JPEG",' +
       '"-DSK_CODEC_DECODES_JPEG",' +
-      '"-DSK_SHAPER_HARFBUZZ_AVAILABLE"'
-    if (PLATFORM_NAME === 'linux' && !TARGET_TRIPLE && HOST_ARCH === 'x64') {
-      if (HOST_LIBC === 'glibc') {
-        ExtraCflagsCC += ',"-stdlib=libc++","-static","-I/usr/lib/llvm-19/include/c++/v1"'
+      '"-DSK_SHAPER_HARFBUZZ_AVAILABLE"';
+    if (PLATFORM_NAME === "linux" && !TARGET_TRIPLE && HOST_ARCH === "x64") {
+      if (HOST_LIBC === "glibc") {
+        ExtraCflagsCC += ',"-stdlib=libc++","-static","-I/usr/lib/llvm-19/include/c++/v1"';
       } else {
-        ExtraCflagsCC += ',"-stdlib=libc++","-static","-I/usr/include/c++/v1","-fPIC","-fno-cxx-exceptions"'
+        ExtraCflagsCC +=
+          ',"-stdlib=libc++","-static","-I/usr/include/c++/v1","-fPIC","-fno-cxx-exceptions"';
       }
     }
-    if (PLATFORM_NAME === 'linux' && (!TARGET_TRIPLE || TARGET_TRIPLE.startsWith('x86_64'))) {
-      ExtraCflagsCC += ',"-Wno-psabi"'
+    if (PLATFORM_NAME === "linux" && (!TARGET_TRIPLE || TARGET_TRIPLE.startsWith("x86_64"))) {
+      ExtraCflagsCC += ',"-Wno-psabi"';
     }
-    break
+    break;
   default:
-    throw new TypeError(`Don't support ${PLATFORM_NAME} for now`)
+    throw new TypeError(`Don't support ${PLATFORM_NAME} for now`);
 }
 
 switch (TARGET_TRIPLE) {
-  case 'aarch64-unknown-linux-gnu':
-    ExtraSkiaBuildFlag += ' target_cpu="arm64" target_os="linux"'
+  case "aarch64-unknown-linux-gnu":
+    ExtraSkiaBuildFlag += ' target_cpu="arm64" target_os="linux"';
     ExtraCflags =
-      '"--target=aarch64-unknown-linux-gnu", "--sysroot=/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot", "-I/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot/usr/include", "-march=armv8-a"'
+      '"--target=aarch64-unknown-linux-gnu", "--sysroot=/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot", "-I/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot/usr/include", "-march=armv8-a"';
     ExtraCflagsCC +=
-      ', "--target=aarch64-unknown-linux-gnu", "--sysroot=/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot", "-I/usr/lib/llvm-19/include/c++/v1", "-I/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot/usr/include", "-march=armv8-a"'
+      ', "--target=aarch64-unknown-linux-gnu", "--sysroot=/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot", "-I/usr/lib/llvm-19/include/c++/v1", "-I/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot/usr/include", "-march=armv8-a"';
     ExtraLdFlags =
-      '"-fuse-ld=lld", "-L/usr/aarch64-unknown-linux-gnu/lib/llvm-19/lib", "-L/usr/aarch64-unknown-linux-gnu/lib", "-L/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot/lib", "-L/usr/aarch64-unknown-linux-gnu/lib/gcc/aarch64-unknown-linux-gnu/4.8.5"'
-    ExtraAsmFlags = '"--target=aarch64-unknown-linux-gnu", "-march=armv8-a"'
+      '"-fuse-ld=lld", "-L/usr/aarch64-unknown-linux-gnu/lib/llvm-19/lib", "-L/usr/aarch64-unknown-linux-gnu/lib", "-L/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot/lib", "-L/usr/aarch64-unknown-linux-gnu/lib/gcc/aarch64-unknown-linux-gnu/4.8.5"';
+    ExtraAsmFlags = '"--target=aarch64-unknown-linux-gnu", "-march=armv8-a"';
 
     GN_ARGS.push(
       `extra_ldflags=[${ExtraLdFlags}]`,
@@ -195,161 +200,168 @@ switch (TARGET_TRIPLE) {
       `extra_asmflags=[${ExtraAsmFlags}]`,
       `extra_cflags=[${ExtraCflags}]`,
       `extra_cflags_c=[${ExtraCflags}]`,
-    )
-    break
-  case 'aarch64-unknown-linux-musl':
-    CC = '"zig cc"'
-    CXX = '"zig c++"'
-    ExtraSkiaBuildFlag += ' target_cpu="arm64" target_os="linux"'
-    ExtraCflags = `"--target=aarch64-linux-musl", "-fPIC", "-march=cortex_a78"`
-    ExtraCflagsCC += `, "--target=aarch64-linux-musl", "-static", "-fPIC", "-march=cortex_a78"`
-    ExtraLdFlags = `"--target=aarch64-linux-musl"`
-    ExtraAsmFlags = '"--target=aarch64-linux-musl", "-march=cortex_a78"'
+    );
+    break;
+  case "aarch64-unknown-linux-musl":
+    CC = '"zig cc"';
+    CXX = '"zig c++"';
+    ExtraSkiaBuildFlag += ' target_cpu="arm64" target_os="linux"';
+    ExtraCflags = `"--target=aarch64-linux-musl", "-fPIC", "-march=cortex_a78"`;
+    ExtraCflagsCC += `, "--target=aarch64-linux-musl", "-static", "-fPIC", "-march=cortex_a78"`;
+    ExtraLdFlags = `"--target=aarch64-linux-musl"`;
+    ExtraAsmFlags = '"--target=aarch64-linux-musl", "-march=cortex_a78"';
     GN_ARGS.push(
       `extra_ldflags=[${ExtraLdFlags}]`,
       `ar="zig ar"`,
       `extra_asmflags=[${ExtraAsmFlags}]`,
       `extra_cflags=[${ExtraCflags}]`,
       `extra_cflags_c=[${ExtraCflags}]`,
-    )
-    break
-  case 'x86_64-unknown-linux-musl':
-    CC = '"zig cc"'
-    CXX = '"zig c++"'
-    ExtraSkiaBuildFlag += ' target_cpu="x64" target_os="linux"'
-    ExtraCflags = `"--target=x86_64-linux-musl", "-fPIC"`
-    ExtraCflagsCC += `, "--target=x86_64-linux-musl", "-static", "-fPIC", "-march=sandybridge", "-mevex512"`
-    ExtraLdFlags = `"--target=x86_64-linux-musl"`
-    ExtraAsmFlags = '"--target=x86_64-linux-musl"'
+    );
+    break;
+  case "x86_64-unknown-linux-musl":
+    CC = '"zig cc"';
+    CXX = '"zig c++"';
+    ExtraSkiaBuildFlag += ' target_cpu="x64" target_os="linux"';
+    ExtraCflags = `"--target=x86_64-linux-musl", "-fPIC"`;
+    ExtraCflagsCC += `, "--target=x86_64-linux-musl", "-static", "-fPIC", "-march=sandybridge", "-mevex512"`;
+    ExtraLdFlags = `"--target=x86_64-linux-musl"`;
+    ExtraAsmFlags = '"--target=x86_64-linux-musl"';
     GN_ARGS.push(
       `extra_ldflags=[${ExtraLdFlags}]`,
       `ar="zig ar"`,
       `extra_asmflags=[${ExtraAsmFlags}]`,
       `extra_cflags=[${ExtraCflags}]`,
       `extra_cflags_c=[${ExtraCflags}]`,
-    )
-    break
-  case 'armv7-unknown-linux-gnueabihf':
-    CC = '"arm-linux-gnueabihf-gcc"'
-    CXX = '"arm-linux-gnueabihf-g++"'
+    );
+    break;
+  case "armv7-unknown-linux-gnueabihf":
+    CC = '"arm-linux-gnueabihf-gcc"';
+    CXX = '"arm-linux-gnueabihf-g++"';
     // Disable SkPathData backend - it has issues on 32-bit ARM under QEMU emulation
     // The kill switch was added in Chrome m144: skia commit 7f325708d2
-    ExtraCflagsCC += ',"-DSK_DISABLE_PATHDATA"'
+    ExtraCflagsCC += ',"-DSK_DISABLE_PATHDATA"';
     // Use "armv7a" (not "arm") to avoid Skia's zlib bug where ARM CRC32
     // (armv8-only) is incorrectly enabled for all ARM targets
-    ExtraSkiaBuildFlag += ' target_cpu="armv7a" target_os="linux"'
-    break
-  case 'aarch64-apple-darwin':
-    ExtraSkiaBuildFlag += ' target_cpu="arm64" target_os="mac"'
-    ExtraCflagsCC += ', "--target=arm64-apple-macos", "-mmacosx-version-min=11.0"'
-    ExtraLdFlags = '"--target=arm64-apple-macos", "-mmacosx-version-min=11.0"'
-    ExtraAsmFlags = '"--target=arm64-apple-macos", "-mmacosx-version-min=11.0"'
-    ExtraCflags = '"--target=arm64-apple-macos", "-mmacosx-version-min=11.0"'
+    ExtraSkiaBuildFlag += ' target_cpu="armv7a" target_os="linux"';
+    break;
+  case "aarch64-apple-darwin":
+    ExtraSkiaBuildFlag += ' target_cpu="arm64" target_os="mac"';
+    ExtraCflagsCC += ', "--target=arm64-apple-macos", "-mmacosx-version-min=11.0"';
+    ExtraLdFlags = '"--target=arm64-apple-macos", "-mmacosx-version-min=11.0"';
+    ExtraAsmFlags = '"--target=arm64-apple-macos", "-mmacosx-version-min=11.0"';
+    ExtraCflags = '"--target=arm64-apple-macos", "-mmacosx-version-min=11.0"';
     GN_ARGS.push(
       `extra_ldflags=[${ExtraLdFlags}]`,
       `extra_asmflags=[${ExtraAsmFlags}]`,
       `extra_cflags=[${ExtraCflags}]`,
       `extra_cflags_c=[${ExtraCflags}]`,
-    )
-    break
-  case 'aarch64-linux-android':
-    const { ANDROID_NDK_LATEST_HOME } = process.env
+    );
+    break;
+  case "aarch64-linux-android":
+    const { ANDROID_NDK_LATEST_HOME } = process.env;
     if (!ANDROID_NDK_LATEST_HOME) {
-      throw new TypeError('ANDROID_NDK_LATEST_HOME must be specified in env variable')
+      throw new TypeError("ANDROID_NDK_LATEST_HOME must be specified in env variable");
     }
-    ExtraSkiaBuildFlag += ` target_cpu="arm64" ndk="${ANDROID_NDK_LATEST_HOME}"`
-    break
-  case 'x86_64-apple-darwin':
-    if (HOST_ARCH === 'arm64') {
-      ExtraSkiaBuildFlag += ' target_cpu="x64" target_os="mac"'
-      ExtraCflagsCC += ',"-Wno-psabi"'
+    ExtraSkiaBuildFlag += ` target_cpu="arm64" ndk="${ANDROID_NDK_LATEST_HOME}"`;
+    break;
+  case "x86_64-apple-darwin":
+    if (HOST_ARCH === "arm64") {
+      ExtraSkiaBuildFlag += ' target_cpu="x64" target_os="mac"';
+      ExtraCflagsCC += ',"-Wno-psabi"';
     }
-    ExtraCflagsCC += ', "-mmacosx-version-min=10.13"'
-    ExtraLdFlags = ' "-mmacosx-version-min=10.13"'
-    ExtraAsmFlags = '"-mmacosx-version-min=10.13"'
-    ExtraCflags = '"-mmacosx-version-min=10.13"'
+    ExtraCflagsCC += ', "-mmacosx-version-min=10.13"';
+    ExtraLdFlags = ' "-mmacosx-version-min=10.13"';
+    ExtraAsmFlags = '"-mmacosx-version-min=10.13"';
+    ExtraCflags = '"-mmacosx-version-min=10.13"';
     GN_ARGS.push(
       `extra_ldflags=[${ExtraLdFlags}]`,
       `extra_asmflags=[${ExtraAsmFlags}]`,
       `extra_cflags=[${ExtraCflags}]`,
       `extra_cflags_c=[${ExtraCflags}]`,
-    )
-    break
-  case 'riscv64gc-unknown-linux-gnu':
-    ExtraSkiaBuildFlag += ' target_cpu="riscv64" target_os="linux"'
-    CC = '"riscv64-linux-gnu-gcc"'
-    CXX = '"riscv64-linux-gnu-g++"'
-    break
-  case 'aarch64-pc-windows-msvc':
-    ExtraSkiaBuildFlag += ' target_cpu=\\"arm64\\"'
-    break
-  case '':
-    break
+    );
+    break;
+  case "riscv64gc-unknown-linux-gnu":
+    ExtraSkiaBuildFlag += ' target_cpu="riscv64" target_os="linux"';
+    CC = '"riscv64-linux-gnu-gcc"';
+    CXX = '"riscv64-linux-gnu-g++"';
+    break;
+  case "aarch64-pc-windows-msvc":
+    ExtraSkiaBuildFlag += ' target_cpu=\\"arm64\\"';
+    break;
+  case "":
+    break;
   default:
-    throw new TypeError(`[${TARGET_TRIPLE}] is not a valid target`)
+    throw new TypeError(`[${TARGET_TRIPLE}] is not a valid target`);
 }
 
-const OUTPUT_PATH = path.join('out', 'Static')
+const OUTPUT_PATH = path.join("out", "Static");
 
-GN_ARGS.push(`cc=${CC}`, `cxx=${CXX}`, `extra_cflags_cc=[${ExtraCflagsCC}]`, ExtraSkiaBuildFlag)
+GN_ARGS.push(`cc=${CC}`, `cxx=${CXX}`, `extra_cflags_cc=[${ExtraCflagsCC}]`, ExtraSkiaBuildFlag);
 
-const SkLoadICUCppFilePath = path.join(__dirname, '..', 'skia', 'third_party', 'icu', 'SkLoadICU.cpp')
-const CODE_TO_PATCH = 'good = load_from(executable_directory()) || load_from(library_directory());'
-const CODE_I_WANT = 'good = load_from(library_directory()) || load_from(executable_directory());'
-const GNConfigPath = path.join(__dirname, '..', 'skia', 'BUILD.gn')
+const SkLoadICUCppFilePath = path.join(
+  __dirname,
+  "..",
+  "skia",
+  "third_party",
+  "icu",
+  "SkLoadICU.cpp",
+);
+const CODE_TO_PATCH = "good = load_from(executable_directory()) || load_from(library_directory());";
+const CODE_I_WANT = "good = load_from(library_directory()) || load_from(executable_directory());";
+const GNConfigPath = path.join(__dirname, "..", "skia", "BUILD.gn");
 const GNExampleCode = `skia_executable("skia_c_api_example") {
   sources = [ "experimental/c-api-example/skia-c-example.c" ]
   include_dirs = [ "." ]
   deps = [ ":skia" ]
-}`
+}`;
 
-if (PLATFORM_NAME === 'win32') {
-  const content = readFileSync(SkLoadICUCppFilePath, 'utf8')
-  const patch = content.replace(CODE_TO_PATCH, CODE_I_WANT)
-  writeFileSync(SkLoadICUCppFilePath, patch)
-  process.once('beforeExit', () => {
-    writeFileSync(SkLoadICUCppFilePath, content)
-  })
+if (PLATFORM_NAME === "win32") {
+  const content = readFileSync(SkLoadICUCppFilePath, "utf8");
+  const patch = content.replace(CODE_TO_PATCH, CODE_I_WANT);
+  writeFileSync(SkLoadICUCppFilePath, patch);
+  process.once("beforeExit", () => {
+    writeFileSync(SkLoadICUCppFilePath, content);
+  });
 }
 
-const GN_BUILD_CONTENT = readFileSync(GNConfigPath, 'utf8')
-writeFileSync(GNConfigPath, GN_BUILD_CONTENT.replace(GNExampleCode, ''))
+const GN_BUILD_CONTENT = readFileSync(GNConfigPath, "utf8");
+writeFileSync(GNConfigPath, GN_BUILD_CONTENT.replace(GNExampleCode, ""));
 
-process.once('beforeExit', () => {
-  writeFileSync(GNConfigPath, GN_BUILD_CONTENT)
-})
+process.once("beforeExit", () => {
+  writeFileSync(GNConfigPath, GN_BUILD_CONTENT);
+});
 
 exec(
-  `${process.env.GN_EXE ? process.env.GN_EXE : path.join('bin', 'gn')} gen ${OUTPUT_PATH} --args='${GN_ARGS.join(
-    ' ',
+  `${process.env.GN_EXE ? process.env.GN_EXE : path.join("bin", "gn")} gen ${OUTPUT_PATH} --args='${GN_ARGS.join(
+    " ",
   )}'`,
-)
+);
 
 // linux musl
 // don't know why generated: python3 ../../third_party/externals/icu/scripts/make_data_assembly.py ../../third_party/externals/icu/common/icudtl.dat gen/third_party/icu/icudtl_dat.S
 // `python3` should be `python`
 if (process.env.GN_EXE) {
-  const { readFileSync, writeFileSync } = require('fs')
-  const { join } = require('path')
+  const { readFileSync, writeFileSync } = require("node:fs");
+  const { join } = require("node:path");
 
-  const ninjaToolchain = join(__dirname, '..', 'skia', 'out', 'Static', 'toolchain.ninja')
-  const ninjaToolchainContent = readFileSync(ninjaToolchain, 'utf8')
-  writeFileSync(ninjaToolchain, ninjaToolchainContent.replace('python3', 'python'))
+  const ninjaToolchain = join(__dirname, "..", "skia", "out", "Static", "toolchain.ninja");
+  const ninjaToolchainContent = readFileSync(ninjaToolchain, "utf8");
+  writeFileSync(ninjaToolchain, ninjaToolchainContent.replace("python3", "python"));
 }
 
-console.time('Build Skia')
+console.time("Build Skia");
 
-exec(`ninja -C ${OUTPUT_PATH}`)
+exec(`ninja -C ${OUTPUT_PATH}`);
 
-console.timeEnd('Build Skia')
+console.timeEnd("Build Skia");
 
 function findClangWinVersion() {
-  const stdout = execSync('clang --version', {
-    encoding: 'utf8',
-  })
-  const clangVersion = stdout.match(/clang version\s(\d+\.\d+\.\d+)/)
+  const stdout = execSync("clang --version", {
+    encoding: "utf8",
+  });
+  const clangVersion = stdout.match(/clang version\s(\d+\.\d+\.\d+)/);
   if (!clangVersion) {
-    return null
+    return null;
   }
-  return clangVersion[1]?.split('.')?.at(0)
+  return clangVersion[1]?.split(".")?.at(0);
 }

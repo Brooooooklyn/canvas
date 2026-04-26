@@ -1,64 +1,65 @@
-import { createCanvas, Canvas } from 'canvas'
-import { cyan } from 'colorette'
-import { Bench } from 'tinybench'
-import { Canvas as SkiaCanvas } from 'skia-canvas'
+import { createCanvas, Canvas } from "canvas";
+import { Bench } from "tinybench";
+import { Canvas as SkiaCanvas } from "skia-canvas";
 
-import { createCanvas as skiaCreateCanvas } from '../index'
+import { createCanvas as skiaCreateCanvas } from "../index";
+
+const cyan = (s: string) => `\x1b[36m${s}\x1b[0m`;
 
 function drawHouse(factory: (width: number, height: number) => Canvas) {
-  const canvas = factory(1024, 768)
+  const canvas = factory(1024, 768);
 
-  const ctx = canvas.getContext('2d')!
+  const ctx = canvas.getContext("2d")!;
 
-  ctx.lineWidth = 10
-  ctx.strokeStyle = '#03a9f4'
-  ctx.fillStyle = '#03a9f4'
+  ctx.lineWidth = 10;
+  ctx.strokeStyle = "#03a9f4";
+  ctx.fillStyle = "#03a9f4";
 
   // Wall
-  ctx.strokeRect(75, 140, 150, 110)
+  ctx.strokeRect(75, 140, 150, 110);
 
   // Door
-  ctx.fillRect(130, 190, 40, 60)
+  ctx.fillRect(130, 190, 40, 60);
 
   // Roof
-  ctx.beginPath()
-  ctx.moveTo(50, 140)
-  ctx.lineTo(150, 60)
-  ctx.lineTo(250, 140)
-  ctx.closePath()
-  ctx.stroke()
+  ctx.beginPath();
+  ctx.moveTo(50, 140);
+  ctx.lineTo(150, 60);
+  ctx.lineTo(250, 140);
+  ctx.closePath();
+  ctx.stroke();
 
   if (canvas instanceof SkiaCanvas) {
-    canvas.toBufferSync('png')
+    canvas.toBufferSync("png");
   } else {
     // @ts-expect-error
-    canvas.async = false
-    canvas.toBuffer('image/png')
+    canvas.async = false;
+    canvas.toBuffer("image/png");
   }
 }
 
 export async function house() {
   const bench = new Bench({
-    name: 'house',
-  })
+    name: "house",
+  });
 
   bench
-    .add('@napi-rs/skia', () => {
+    .add("@napi-rs/skia", () => {
       // @ts-expect-error
-      drawHouse(skiaCreateCanvas)
+      drawHouse(skiaCreateCanvas);
     })
-    .add('skia-canvas', () => {
+    .add("skia-canvas", () => {
       // @ts-expect-error
-      drawHouse((w, h) => new SkiaCanvas(w, h))
+      drawHouse((w, h) => new SkiaCanvas(w, h));
     })
-    .add('node-canvas', () => {
-      drawHouse(createCanvas)
-    })
+    .add("node-canvas", () => {
+      drawHouse(createCanvas);
+    });
 
-  await bench.run()
+  await bench.run();
 
-  console.info(cyan('Draw a House and export to PNG'))
-  console.table(bench.table())
+  console.info(cyan("Draw a House and export to PNG"));
+  console.table(bench.table());
 
-  return bench
+  return bench;
 }

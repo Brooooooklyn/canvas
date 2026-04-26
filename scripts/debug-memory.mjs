@@ -1,65 +1,69 @@
-import { createRequire } from 'node:module'
-import { setTimeout } from 'node:timers/promises'
+import { createRequire } from "node:module";
+import { setTimeout } from "node:timers/promises";
 
-import { whiteBright, red, green, gray } from 'colorette'
-import prettyBytes from 'pretty-bytes'
-import { table } from 'table'
+import prettyBytes from "pretty-bytes";
+import { table } from "table";
 
-import { createCanvas, Path2D, clearAllCache } from '../index.js'
+const whiteBright = (s) => `\x1b[97m${s}\x1b[0m`;
+const red = (s) => `\x1b[31m${s}\x1b[0m`;
+const green = (s) => `\x1b[32m${s}\x1b[0m`;
+const gray = (s) => `\x1b[90m${s}\x1b[0m`;
+
+import { createCanvas, Path2D, clearAllCache } from "../index.js";
 
 function paint() {
-  const require = createRequire(import.meta.url)
-  const tiger = require('../example/tiger.json')
-  const canvas = createCanvas(6016, 3384)
-  const ctx = canvas.getContext('2d')
+  const require = createRequire(import.meta.url);
+  const tiger = require("../example/tiger.json");
+  const canvas = createCanvas(6016, 3384);
+  const ctx = canvas.getContext("2d");
   for (const pathObject of tiger) {
-    const p = new Path2D(pathObject.d)
-    ctx.fillStyle = pathObject.fillStyle
-    ctx.strokeStyle = pathObject.strokeStyle
+    const p = new Path2D(pathObject.d);
+    ctx.fillStyle = pathObject.fillStyle;
+    ctx.strokeStyle = pathObject.strokeStyle;
     if (pathObject.lineWidth) {
-      ctx.lineWidth = parseInt(pathObject.lineWidth, 10)
+      ctx.lineWidth = parseInt(pathObject.lineWidth, 10);
     }
-    ctx.stroke(p)
-    ctx.fill(p)
+    ctx.stroke(p);
+    ctx.fill(p);
   }
 }
 
-const initial = process.memoryUsage()
+const initial = process.memoryUsage();
 
 async function main() {
   for (const _ of Array.from({ length: 100 })) {
-    displayMemoryUsageFromNode(initial)
-    await setTimeout(100)
-    global?.gc?.()
-    await paint()
+    displayMemoryUsageFromNode(initial);
+    await setTimeout(100);
+    global?.gc?.();
+    await paint();
   }
 }
 
 main().then(() => {
-  displayMemoryUsageFromNode(initial)
-  clearAllCache()
-  global?.gc?.()
+  displayMemoryUsageFromNode(initial);
+  clearAllCache();
+  global?.gc?.();
   setInterval(() => {
-    displayMemoryUsageFromNode(initial)
-  }, 2000)
-})
+    displayMemoryUsageFromNode(initial);
+  }, 2000);
+});
 
 function displayMemoryUsageFromNode(initialMemoryUsage) {
-  const finalMemoryUsage = process.memoryUsage()
-  const titles = Object.keys(initialMemoryUsage).map((k) => whiteBright(k))
-  const tableData = [titles]
-  const diffColumn = []
+  const finalMemoryUsage = process.memoryUsage();
+  const titles = Object.keys(initialMemoryUsage).map((k) => whiteBright(k));
+  const tableData = [titles];
+  const diffColumn = [];
   for (const [key, value] of Object.entries(initialMemoryUsage)) {
-    const diff = finalMemoryUsage[key] - value
-    const prettyDiff = prettyBytes(diff, { signed: true })
+    const diff = finalMemoryUsage[key] - value;
+    const prettyDiff = prettyBytes(diff, { signed: true });
     if (diff > 0) {
-      diffColumn.push(red(prettyDiff))
+      diffColumn.push(red(prettyDiff));
     } else if (diff < 0) {
-      diffColumn.push(green(prettyDiff))
+      diffColumn.push(green(prettyDiff));
     } else {
-      diffColumn.push(gray(prettyDiff))
+      diffColumn.push(gray(prettyDiff));
     }
   }
-  tableData.push(diffColumn)
-  console.info(table(tableData))
+  tableData.push(diffColumn);
+  console.info(table(tableData));
 }
