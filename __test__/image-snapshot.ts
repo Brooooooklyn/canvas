@@ -1,13 +1,12 @@
 import { promises as fs } from 'node:fs'
-import { join, dirname } from 'node:path'
+import { join } from 'node:path'
 import { arch } from 'node:os'
-import { fileURLToPath } from 'node:url'
 
 import PNG from '@jimp/png'
 import JPEG from '@jimp/jpeg'
 import { ExecutionContext } from 'ava'
 
-const __dirname = dirname(fileURLToPath(import.meta.url))
+const __dirname = import.meta.dir
 
 const png = PNG()
 const jpeg = JPEG()

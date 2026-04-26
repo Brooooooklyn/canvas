@@ -1,5 +1,4 @@
-import { join, dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 
 import ava, { TestFn } from 'ava'
 
@@ -7,7 +6,7 @@ import { createCanvas, Path2D, Canvas, SKRSContext2D, DOMMatrix, loadImage } fro
 
 import { snapshotImage } from './image-snapshot'
 
-const __dirname = dirname(fileURLToPath(import.meta.url))
+const __dirname = import.meta.dir
 
 const test = ava as TestFn<{
   canvas: Canvas

@@ -1,7 +1,7 @@
-import { join, dirname } from 'node:path'
+import { join } from 'node:path'
 import fs from 'node:fs'
 import { readFile } from 'node:fs/promises'
-import { URL, pathToFileURL, fileURLToPath } from 'node:url'
+import { URL, pathToFileURL } from 'node:url'
 
 import test from 'ava'
 
@@ -9,7 +9,7 @@ import { createCanvas, Image, loadImage } from '../index'
 
 import { snapshotImage } from './image-snapshot'
 
-const __dirname = dirname(fileURLToPath(import.meta.url))
+const __dirname = import.meta.dir
 
 test('should load file src', async (t) => {
   const img = await loadImage(join(__dirname, '../example/simple.png'))

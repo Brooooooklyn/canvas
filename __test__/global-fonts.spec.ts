@@ -1,12 +1,11 @@
 import { readFileSync } from 'node:fs'
-import { join, dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 
 import test from 'ava'
 
 import { GlobalFonts, FontKey } from '../index'
 
-const __dirname = dirname(fileURLToPath(import.meta.url))
+const __dirname = import.meta.dir
 const fontPath = join(__dirname, 'fonts', 'SourceSerifPro-Regular.ttf')
 const fontData = readFileSync(fontPath)
 const defaultCount = GlobalFonts.families.length

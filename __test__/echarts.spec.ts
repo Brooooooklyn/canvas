@@ -1,5 +1,4 @@
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 
 import test from 'ava'
 
@@ -8,7 +7,7 @@ import { snapshotImage } from './image-snapshot'
 
 test('echarts-start', async (t) => {
   t.truthy(
-    GlobalFonts.registerFromPath(join(fileURLToPath(import.meta.url), '..', 'fonts', 'iosevka-slab-regular.ttf')),
+    GlobalFonts.registerFromPath(join(import.meta.dir, 'fonts', 'iosevka-slab-regular.ttf')),
     'Register Iosevka font failed',
   )
   if (process.platform !== 'darwin') {

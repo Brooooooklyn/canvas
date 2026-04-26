@@ -1,12 +1,11 @@
-import { join, dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 import { readFileSync, promises as fs } from 'node:fs'
 
 import test from 'ava'
 
 import { convertSVGTextToPath, GlobalFonts } from '../index'
 
-const __dirname = dirname(fileURLToPath(import.meta.url))
+const __dirname = import.meta.dir
 
 const FIXTURE = readFileSync(join(__dirname, 'text.svg'), 'utf8')
 

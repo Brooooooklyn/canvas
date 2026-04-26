@@ -1,5 +1,4 @@
-import { join, dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 import { readFileSync, unlinkSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 
@@ -19,7 +18,7 @@ const shouldSkip = process.env.RUN_STRESS_TESTS !== 'true'
 
 const test = shouldSkip ? ava.skip : ava
 
-const __dirname = dirname(fileURLToPath(import.meta.url))
+const __dirname = import.meta.dir
 const ITERATIONS = 500
 
 // ============================================================================

@@ -1,6 +1,5 @@
 import { promises as fs } from 'node:fs'
-import { join, dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 
 import test from 'ava'
 
@@ -8,7 +7,7 @@ import { createCanvas, Image, loadImage } from '../index'
 
 import { snapshotImage } from './image-snapshot'
 
-const __dirname = dirname(fileURLToPath(import.meta.url))
+const __dirname = import.meta.dir
 
 async function loadImageFile() {
   return await fs.readFile(join(__dirname, '../example/simple.png'))

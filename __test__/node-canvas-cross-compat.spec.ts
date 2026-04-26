@@ -14,8 +14,7 @@
  */
 
 import { Readable } from 'node:stream'
-import { join, dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 import { createRequire } from 'node:module'
 
 import test from 'ava'
@@ -54,7 +53,7 @@ const hasNodeCanvas = !!ncCreateCanvas
 const ctest = hasNodeCanvas ? test : test.skip
 const cserial = hasNodeCanvas ? test.serial : test.serial.skip
 
-const __dirname = dirname(fileURLToPath(import.meta.url))
+const __dirname = import.meta.dir
 const fontPath = join(__dirname, 'fonts', 'SourceSerifPro-Regular.ttf')
 const latoFontPath = join(__dirname, 'fonts', 'Lato-Regular.ttf')
 const iosevkaFontPath = join(__dirname, 'fonts', 'iosevka-slab-regular.ttf')
