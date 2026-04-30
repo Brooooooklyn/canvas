@@ -69,8 +69,8 @@
     "lint": "oxlint",
     "prepublishOnly": "pinst --disable && napi prepublish -t npm",
     "postpublish": "pinst --enable",
-    "test:ci": "ava -c 1",
-    "test": "ava",
+    "test:ci": "NODE_OPTIONS='--import=core-js/proposals/iterator-helpers.js' ava -c 1",
+    "test": "NODE_OPTIONS='--import=core-js/proposals/iterator-helpers.js' ava",
     "e2e": "yarn workspace @napi-rs/canvas-e2e-webpack test",
     "version": "napi version && conventional-changelog -p angular -i CHANGELOG.md -s && git add ."
   },
@@ -125,9 +125,9 @@
       "--import=@oxc-node/core/register",
       "--import=core-js/proposals/promise-with-resolvers.js"
     ],
-    "extensions": {
-      "ts": "module"
-    },
+    "extensions": [
+      "ts"
+    ],
     "files": [
       "__test__/**/*.spec.ts",
       "scripts/__test__/**/*.spec.ts"
