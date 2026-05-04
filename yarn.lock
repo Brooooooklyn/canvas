@@ -532,7 +532,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@napi-rs/canvas@npm:^0.1.96, @napi-rs/canvas@workspace:*, @napi-rs/canvas@workspace:.":
+"@napi-rs/canvas@workspace:, @napi-rs/canvas@workspace:.":
   version: 0.0.0-use.local
   resolution: "@napi-rs/canvas@workspace:."
   dependencies:

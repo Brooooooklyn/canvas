@@ -159,5 +159,8 @@
     "skia-canvas": {
       "built": true
     }
+  },
+  "resolutions": {
+    "@napi-rs/canvas": "workspace:"
   }
 }
