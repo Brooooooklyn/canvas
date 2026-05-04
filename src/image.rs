@@ -334,13 +334,9 @@ impl Image {
   #[napi(setter)]
   pub fn set_src(&mut self, env: Env, this: This, raw_data: Unknown) -> Result<()> {
     let data = match raw_data.get_type()? {
-      ValueType::Object => {
-        if raw_data.is_buffer()? || raw_data.is_typedarray()? {
-          let data: Uint8Array = unsafe { raw_data.cast() }?;
-          self.src.insert(Either::A(data))
-        } else {
-          return Ok(());
-        }
+      ValueType::Object if (raw_data.is_buffer()? || raw_data.is_typedarray()?) => {
+        let data: Uint8Array = unsafe { raw_data.cast() }?;
+        self.src.insert(Either::A(data))
       }
       ValueType::String => {
         let string = unsafe { raw_data.cast()? };
