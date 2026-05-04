@@ -1,3 +1,4 @@
+# [1.0.0](https://github.com/Brooooooklyn/canvas/compare/v0.1.100...v1.0.0) (2026-05-04)
 ## [0.1.100](https://github.com/Brooooooklyn/canvas/compare/v0.1.99...v0.1.100) (2026-04-26)
 
 
