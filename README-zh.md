@@ -9,9 +9,6 @@
 
 通过 [Node-API](https://napi.rs) 将 Google Skia 绑定到 Node.js。 **零系统依赖**。
 
-> ⚠️ 这个项目还处于预发布阶段，可能会存在一些 Bug。<br/>
-> 在这里可以找到此项目的具体开发计划和路线图 [Roadmap](https://github.com/Brooooooklyn/canvas/issues/113)。
-
 [English](./README.md)
 
 # 安装
