@@ -99,7 +99,7 @@
     "husky": "^9.1.7",
     "lint-staged": "^17.0.0",
     "lodash": "^4.17.21",
-    "npm-run-all2": "^8.0.4",
+    "npm-run-all2": "^9.0.0",
     "oxlint": "^1.34.0",
     "oxlint-tsgolint": "^0.23.0",
     "pinst": "^3.0.0",
