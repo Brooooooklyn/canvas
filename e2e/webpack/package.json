@@ -10,7 +10,7 @@
     "clean": "rm -rf dist"
   },
   "devDependencies": {
-    "pdfjs-dist": "^5.3.31",
+    "pdfjs-dist": "^6.0.0",
     "webpack": "^5.99.9",
     "webpack-cli": "^7.0.0"
   },
