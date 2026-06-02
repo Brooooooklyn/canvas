@@ -532,7 +532,7 @@ __metadata:
   dependencies:
     "@napi-rs/canvas": "workspace:*"
     node-loader: "npm:^2.1.0"
-    pdfjs-dist: "npm:^5.3.31"
+    pdfjs-dist: "npm:^6.0.0"
     webpack: "npm:^5.99.9"
     webpack-cli: "npm:^7.0.0"
   languageName: unknown
@@ -4614,15 +4614,15 @@ __metadata:
   languageName: node
   linkType: hard
 
-"pdfjs-dist@npm:^5.3.31":
-  version: 5.7.284
-  resolution: "pdfjs-dist@npm:5.7.284"
+"pdfjs-dist@npm:^6.0.0":
+  version: 6.0.227
+  resolution: "pdfjs-dist@npm:6.0.227"
   dependencies:
-    "@napi-rs/canvas": "npm:^0.1.100"
+    "@napi-rs/canvas": "npm:^1.0.0"
   dependenciesMeta:
     "@napi-rs/canvas":
       optional: true
-  checksum: 10c0/5ff7678e9b197acb90b22329753c11e45dbb862d8e1d721e311fc13d5cfab4f6b87114d75307b5db8b057e25c732226ef0a9feff89dbb1f2bbc3ef362ca649af
+  checksum: 10c0/e364dad374de36e0e746272b05bb01709e164d4e1a90f56915af4af4ae96200dbd6985b5ff8fb25ceabf7699b22d60b0ee862af61723e7aea08771c3ea2f9bc2
   languageName: node
   linkType: hard
 
