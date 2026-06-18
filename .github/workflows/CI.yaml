@@ -25,7 +25,7 @@ jobs:
       image: ghcr.io/brooooooklyn/canvas/ubuntu-builder:jammy
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           submodules: true
 
@@ -62,7 +62,7 @@ jobs:
     name: Lint C++ Code
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Install clang-format
         run: brew install clang-format
@@ -153,7 +153,7 @@ jobs:
     runs-on: ${{ matrix.settings.host }}
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           submodules: true
 
@@ -240,7 +240,7 @@ jobs:
             curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
             apt-get install -y nodejs
             npm install -g yarn corepack
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           submodules: true
 
@@ -299,7 +299,7 @@ jobs:
     runs-on: ${{ matrix.settings.host }}
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           submodules: true
 
@@ -364,7 +364,7 @@ jobs:
     runs-on: windows-11-arm
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           submodules: true
 
@@ -417,7 +417,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Download Apple Emoji font
         uses: robinraju/release-downloader@v1
@@ -468,7 +468,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Download Apple Emoji font
         uses: robinraju/release-downloader@v1
@@ -521,7 +521,7 @@ jobs:
     runs-on: ubuntu-24.04-arm
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Download Apple Emoji font
         uses: robinraju/release-downloader@v1
@@ -569,7 +569,7 @@ jobs:
     runs-on: ubuntu-24.04-arm
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Download Apple Emoji font
         uses: robinraju/release-downloader@v1
@@ -617,7 +617,7 @@ jobs:
     runs-on: macos-latest
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           submodules: true
 
@@ -647,7 +647,7 @@ jobs:
       image: ghcr.io/brooooooklyn/canvas/ubuntu-builder:jammy
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           submodules: true
 
@@ -692,7 +692,7 @@ jobs:
       - test-windows-arm64-binding
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           submodules: true
 
