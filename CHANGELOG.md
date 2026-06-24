@@ -1,3 +1,10 @@
+## [1.0.1](https://github.com/Brooooooklyn/canvas/compare/v1.0.0...v1.0.1) (2026-06-24)
+
+
+### Bug Fixes
+
+* link aarch64-pc-windows-msvc against static CRT ([#1276](https://github.com/Brooooooklyn/canvas/issues/1276)) ([8483662](https://github.com/Brooooooklyn/canvas/commit/848366210ba63332e93c78a990a7e2f9f9af51ea))
+* missing icudtl.dat in win32-arm64 package ([#1278](https://github.com/Brooooooklyn/canvas/issues/1278)) ([e1a75d1](https://github.com/Brooooooklyn/canvas/commit/e1a75d1aa888dcdf44467875829d58ea19c6cdd7))
 # [1.0.0](https://github.com/Brooooooklyn/canvas/compare/v0.1.100...v1.0.0) (2026-05-04)
 ## [0.1.100](https://github.com/Brooooooklyn/canvas/compare/v0.1.99...v0.1.100) (2026-04-26)
 
