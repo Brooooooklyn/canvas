@@ -1,3 +1,9 @@
+## [1.0.2](https://github.com/Brooooooklyn/canvas/compare/v1.0.1...v1.0.2) (2026-06-30)
+
+
+### Features
+
+* chrome/m149 ([#1281](https://github.com/Brooooooklyn/canvas/issues/1281)) ([3fe9b54](https://github.com/Brooooooklyn/canvas/commit/3fe9b54471dab51b464ad0e16801f65ab0bcecc0))
 ## [1.0.1](https://github.com/Brooooooklyn/canvas/compare/v1.0.0...v1.0.1) (2026-06-24)
 
 
