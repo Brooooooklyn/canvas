@@ -95,7 +95,7 @@
     "conventional-changelog-cli": "^5.0.0",
     "core-js": "^3.47.0",
     "echarts": "^6.0.0",
-    "electron": "^42.0.0",
+    "electron": "^43.0.0",
     "husky": "^9.1.7",
     "lint-staged": "^17.0.0",
     "lodash": "^4.17.21",
