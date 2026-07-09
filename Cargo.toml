@@ -14,7 +14,7 @@ base64-simd     = "0.8"
 cssparser       = "0.37"
 cssparser-color = "0.5"
 gif             = "0.14"
-imagesize       = { version = "0.14", default-features = false, features = ["png", "jpeg", "gif", "webp", "heif"] }
+imagesize       = { version = "0.15", default-features = false, features = ["png", "jpeg", "gif", "webp", "heif"] }
 infer           = "0.19"
 libavif         = { version = "0.14", default-features = false, features = ["codec-aom"] }
 libavif-sys     = { version = "0.17", default-features = false, features = ["codec-aom"] }
