@@ -43,7 +43,7 @@ pub mod global_fonts {
 
   #[napi]
   pub fn register(font_data: &[u8], name_alias: Option<String>) -> Result<Option<FontKey>> {
-    let maybe_name_alias = name_alias.and_then(|s| if s.is_empty() { None } else { Some(s) });
+    let maybe_name_alias = name_alias.filter(|s| !s.is_empty());
     let font = get_font().map_err(into_napi_error)?;
     Ok(
       font
@@ -78,7 +78,7 @@ pub mod global_fonts {
     font_path: String,
     name_alias: Option<String>,
   ) -> Result<Option<FontKey>> {
-    let maybe_name_alias = name_alias.and_then(|s| if s.is_empty() { None } else { Some(s) });
+    let maybe_name_alias = name_alias.filter(|s| !s.is_empty());
     let font = get_font().map_err(into_napi_error)?;
     Ok(
       font

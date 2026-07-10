@@ -606,7 +606,7 @@ impl Task for AsyncDataUrl {
   type JsValue = String;
 
   fn compute(&mut self) -> Result<Self::Output> {
-    let mut output = format!("data:{};base64,", &self.mime);
+    let mut output = format!("data:{};base64,", self.mime);
     let surface_data = get_data_ref(
       &self.surface_data,
       &self.mime,
