@@ -871,7 +871,7 @@ impl Context {
     let mut parser_input = ParserInput::new(&shadow_color);
     let mut parser = Parser::new(&mut parser_input);
     let color = CSSColor::parse(&mut parser)
-      .map_err(|e| SkError::Generic(format!("Parse color [{}] error: {:?}", &shadow_color, e)))?;
+      .map_err(|e| SkError::Generic(format!("Parse color [{}] error: {:?}", shadow_color, e)))?;
 
     match color {
       CSSColor::CurrentColor => {
