@@ -15,7 +15,7 @@ cssparser       = "0.37"
 cssparser-color = "0.5"
 gif             = "0.14"
 imagesize       = { version = "0.15", default-features = false, features = ["png", "jpeg", "gif", "webp", "heif"] }
-infer           = "0.19"
+infer           = "0.22"
 libavif         = { version = "0.14", default-features = false, features = ["codec-aom"] }
 libavif-sys     = { version = "0.17", default-features = false, features = ["codec-aom"] }
 napi            = { version = "3.1", default-features = false, features = ["napi5", "web_stream", "serde-json"] }
