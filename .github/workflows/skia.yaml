@@ -37,7 +37,7 @@ jobs:
         shell: bash
 
       - name: Setup node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: 'yarn'
@@ -127,7 +127,7 @@ jobs:
         shell: bash
 
       - name: Setup node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: 'yarn'
@@ -178,7 +178,7 @@ jobs:
           submodules: true
 
       - name: Setup node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: 'yarn'
@@ -222,7 +222,7 @@ jobs:
           submodules: true
 
       - name: Setup node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: 'yarn'
@@ -259,7 +259,7 @@ jobs:
           submodules: true
 
       - name: Setup node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: 'yarn'
@@ -306,7 +306,7 @@ jobs:
           submodules: true
 
       - name: Setup node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: 'yarn'
@@ -354,7 +354,7 @@ jobs:
           submodules: true
 
       - name: Setup node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: 24
 
@@ -399,7 +399,7 @@ jobs:
           submodules: true
 
       - name: Setup node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: 'yarn'
@@ -438,7 +438,7 @@ jobs:
         with:
           submodules: true
       - name: Setup node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: 'yarn'
