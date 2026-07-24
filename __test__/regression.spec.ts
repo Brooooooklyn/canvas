@@ -862,3 +862,41 @@ test('shadow-offset-with-transform', async (t) => {
   // in device/screen coordinates, regardless of the transform applied
   await snapshotImage(t, { canvas, ctx }, 'png', 0.3)
 })
+
+// https://github.com/Brooooooklyn/canvas/issues/1297
+test('shadow opacity should scale linearly with shadowColor alpha', (t) => {
+  // A blurred shadow's darkness must be proportional to the shadowColor alpha:
+  // alpha 0.5 should be ~half as dark as alpha 1.0. The bug applied the shadow
+  // alpha twice (baked into the drop-shadow filter colour AND via a redundant
+  // paint set_alpha), so darkness scaled with alpha**2 -- alpha 0.5 came out at
+  // ~0.25 strength, alpha 0.3 at ~0.09, making low-opacity shadows near-invisible.
+  const haloDarkness = (alpha: number) => {
+    const canvas = createCanvas(200, 200)
+    const ctx = canvas.getContext('2d')
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, 200, 200)
+    ctx.shadowColor = `rgba(0, 0, 0, ${alpha})`
+    ctx.shadowBlur = 20
+    ctx.shadowOffsetX = 0
+    ctx.shadowOffsetY = 0
+    ctx.fillStyle = '#000000'
+    ctx.fillRect(80, 80, 40, 40)
+    // Probe a halo pixel just outside the left edge (box left edge x=80).
+    const gray = ctx.getImageData(75, 100, 1, 1).data[0]
+    return (255 - gray) / 255
+  }
+
+  const full = haloDarkness(1)
+  const half = haloDarkness(0.5)
+
+  // Sanity: the full-opacity shadow must actually be visible at the probe.
+  t.true(full > 0.05, `full-opacity shadow darkness should be visible, got ${full}`)
+
+  const ratio = half / full
+  // Linear scaling => ~0.5. The squared bug => ~0.25. Allow a generous window
+  // around the linear expectation that still excludes the buggy value.
+  t.true(
+    ratio > 0.4 && ratio < 0.6,
+    `alpha-0.5 shadow should be ~0.5x the alpha-1.0 shadow (linear), got ${ratio.toFixed(3)}`,
+  )
+})
