@@ -397,6 +397,22 @@ for (const useDrawCanvas of [false, true]) {
     t.deepEqual(px(ctx, 230, 230), [255, 255, 255, 255])
   })
 
+  // Regression: at the DEFAULT globalAlpha of 1 a zero-blur shadow paint carries
+  // no image filter, and for image sources its colour lives in a kSrcIn colour
+  // filter. `skiac_canvas_draw_picture_rect`'s default-paint elision did not
+  // inspect the colour filter, so it dropped the entire shadow paint and the
+  // picture replayed unpainted -- rendering the shadow as a displaced copy of
+  // the SOURCE ([255,0,0,255] instead of [0,0,0,255]). `drawImage` has no such
+  // elision and was always correct, so the two APIs disagreed. The test above
+  // could not catch it because globalAlpha 0.5 stops the predicate firing.
+  test(`shadow-zero-blur-uses-shadowColor-at-default-globalAlpha-${api}`, (t) => {
+    const ctx = canvasSourceScene({ background: 'white', shadowBlur: 0, offset: 20, useDrawCanvas })
+    // Shadow band only, clear of the red foreground: opaque black shadow.
+    t.deepEqual(px(ctx, 215, 215), [0, 0, 0, 255])
+    // The foreground is still the source colour.
+    t.deepEqual(px(ctx, 110, 110), [255, 0, 0, 255])
+  })
+
   // sigma = 20 * 0.5 = 10; the halo reaches ~3 sigma past the dst rect.
   test(`shadow-blur-halo-escapes-the-destination-rect-${api}`, (t) => {
     const ctx = canvasSourceScene({ background: null, shadowBlur: 20, offset: 10, useDrawCanvas })

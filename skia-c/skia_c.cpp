@@ -994,16 +994,33 @@ void skiac_canvas_draw_picture_rect(skiac_canvas* c_canvas,
   // Optimization: skip paint if it's default (SrcOver blend, full alpha, no
   // filter) This matches skia-canvas behavior.
   //
-  // LOAD-BEARING once the filter is hoisted: on the shadow pass at globalAlpha
-  // 1 the inner paint is now default, so this elides it to nullptr and the
-  // picture replays with no paint at all -- exactly Blink's paintless
+  // LOAD-BEARING once the filter is hoisted: on the BLURRED shadow pass at
+  // globalAlpha 1 the inner paint is now default, so this elides it to nullptr
+  // and the picture replays with no paint at all -- exactly Blink's paintless
   // `c->drawPicture(std::move(paint_record))`
-  // (base_rendering_context_2d.cc:1508). The shadow colour comes solely from
-  // the layer's filter, so the elision is correct, not merely an optimization.
+  // (base_rendering_context_2d.cc:1508). There the shadow colour comes solely
+  // from the layer's filter, so the elision is correct, not merely an
+  // optimization.
+  //
+  // The colour-filter test is equally load-bearing, in the other direction: a
+  // ZERO-blur shadow carries no image filter, and for image sources its colour
+  // lives in a kSrcIn `SkColorFilter` on this paint (`shadow_paint`, via
+  // `ShadowSource::Image`, which is never a solid colour). Without the check
+  // below, a default-globalAlpha zero-blur `drawCanvas` shadow was elided
+  // wholesale and the picture replayed unpainted -- rendering the shadow as a
+  // displaced copy of the SOURCE. Measured before the fix: shadow-only pixel
+  // [255,0,0,255] for a red source under an opaque black shadow, where
+  // `drawImage` (which has no elision) correctly gave [0,0,0,255].
+  //
+  // Shader / mask filter / path effect deliberately are NOT tested: no caller
+  // sets a mask filter, and a gradient shader or dash reaching here does not
+  // leak into the result (verified in pixels), so testing them would only cost
+  // the fast path.
   if (paint != nullptr) {
     auto blendMode = paint->asBlendMode();
     if (blendMode.has_value() && blendMode.value() == SkBlendMode::kSrcOver &&
-        paint->getAlpha() == 255 && paint->getImageFilter() == nullptr) {
+        paint->getAlpha() == 255 && paint->getImageFilter() == nullptr &&
+        paint->getColorFilter() == nullptr) {
       paint = nullptr;  // Skip paint for default case
     }
   }
