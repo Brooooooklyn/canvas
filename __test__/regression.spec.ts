@@ -900,3 +900,174 @@ test('shadow opacity should scale linearly with shadowColor alpha', (t) => {
     `alpha-0.5 shadow should be ~0.5x the alpha-1.0 shadow (linear), got ${ratio.toFixed(3)}`,
   )
 })
+
+test('shadowOffsetX/Y are device-space on the image path, not local-space', (t) => {
+  // shadowOffsetX/Y are device-space in Blink on EVERY path: the looper carries
+  // kPostTransformFlag and does setMatrix(getLocalToDevice().postTranslate(dx,
+  // dy)) (cc/paint/draw_looper.cc:37-40), and the image-filter path runs its
+  // shadow inside a ScopedResetCtm (canvas_2d_recorder_context.cc:545-565).
+  // drawImage/drawCanvas used to bake the offset into the DropShadowOnly
+  // filter's dx/dy, which is a LOCAL-space vector, so the CTM rotated and
+  // scaled it.
+  const W = 600
+  const H = 400
+  // Red foreground, blue shadow, so the two are separable per pixel.
+  const source = createCanvas(100, 100)
+  const sourceCtx = source.getContext('2d')
+  sourceCtx.fillStyle = 'red'
+  sourceCtx.fillRect(0, 0, 100, 100)
+
+  // translate(300, 200) + rotate(PI) puts the 100x100 square back on device
+  // [250, 350] x [150, 250]; a device-space +100 offset must therefore centre
+  // the shadow on device x = 400, and a local-space one on x = 200.
+  const measure = (draw: (ctx: ReturnType<typeof source.getContext>) => void) => {
+    const canvas = createCanvas(W, H)
+    const ctx = canvas.getContext('2d')
+    ctx.translate(300, 200)
+    ctx.rotate(Math.PI)
+    ctx.shadowColor = 'rgba(0, 0, 255, 1)'
+    ctx.shadowBlur = 20
+    ctx.shadowOffsetX = 100
+    ctx.shadowOffsetY = 0
+    ctx.fillStyle = 'red'
+    draw(ctx)
+
+    const data = canvas.data()
+    let minX = Infinity
+    let maxX = -Infinity
+    let weight = 0
+    let weightedX = 0
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const i = (y * W + x) * 4
+        const alpha = data[i + 3]
+        // shadow pixels only: blue present, red absent
+        if (alpha === 0 || data[i + 2] <= 8 || data[i] >= 8) continue
+        if (x < minX) minX = x
+        if (x > maxX) maxX = x
+        weightedX += x * alpha
+        weight += alpha
+      }
+    }
+    return { minX, maxX, centroidX: Number((weightedX / weight).toFixed(1)) }
+  }
+
+  // The geometry path has always been device-space; it is the oracle here.
+  const oracle = measure((ctx) => ctx.fillRect(-50, -50, 100, 100))
+  t.true(
+    oracle.centroidX > 380 && oracle.centroidX < 420,
+    `the geometry shadow should sit around device x = 400, got ${oracle.centroidX}`,
+  )
+
+  for (const [name, draw] of [
+    ['drawImage', (ctx: any) => ctx.drawImage(source, -50, -50, 100, 100)],
+    ['drawCanvas', (ctx: any) => ctx.drawCanvas(source, -50, -50, 100, 100)],
+  ] as const) {
+    const measured = measure(draw)
+    // Before the fix this was { minX: 133, maxX: 263, centroidX: 197.5 } -- the
+    // shadow 100 device px to the LEFT, mirrored by the rotation.
+    t.deepEqual(measured, oracle, `${name} shadow should match the geometry path, got ${measured.centroidX}`)
+  }
+})
+
+test('a scaled CTM does not scale the image path shadow offset', (t) => {
+  // Same rule under a pure scale: scale(2, 0.5) + a 40px offset must move the
+  // shadow 40 DEVICE px, not 80.
+  const source = createCanvas(100, 100)
+  const sourceCtx = source.getContext('2d')
+  sourceCtx.fillStyle = 'red'
+  sourceCtx.fillRect(0, 0, 100, 100)
+
+  const canvas = createCanvas(400, 300)
+  const ctx = canvas.getContext('2d')
+  ctx.scale(2, 0.5)
+  ctx.shadowColor = 'rgba(0, 0, 255, 1)'
+  ctx.shadowBlur = 0
+  ctx.shadowOffsetX = 40
+  ctx.shadowOffsetY = 0
+  // local [5, 25] x [40, 120] -> device [10, 50] x [20, 60]
+  ctx.drawImage(source, 5, 40, 20, 80)
+
+  const data = canvas.data()
+  let minX = Infinity
+  let maxX = -Infinity
+  for (let x = 0; x < 400; x++) {
+    const i = (40 * 400 + x) * 4
+    if (data[i + 3] !== 0 && data[i + 2] > 8 && data[i] < 8) {
+      if (x < minX) minX = x
+      if (x > maxX) maxX = x
+    }
+  }
+  // device [10, 50] shifted by 40 device px is [50, 90), i.e. the last lit
+  // column is 89. The local-space bug scaled the offset to 80 and gave [90, 129].
+  t.deepEqual([minX, maxX], [50, 89], `zero-blur shadow span at device y = 40, got ${[minX, maxX]}`)
+})
+
+test('the shadow setters discard the values Blink rejects', (t) => {
+  // setShadowBlur drops a non-finite or negative assignment, setShadowOffsetX/Y
+  // a non-finite one, and both keep the previous value
+  // (canvas_2d_recorder_context.cc:1170-1211). Storing them was not inert: the
+  // blur becomes the sigma, and SkImageFilters::Blur rejects a non-finite or
+  // negative sigma (SkBlurImageFilter.cpp:83-88), so make_drop_shadow_graph
+  // silently dropped the Blur node and every later shadow came out hard-edged.
+  const ctx = createCanvas(10, 10).getContext('2d')
+
+  ctx.shadowBlur = 10
+  for (const bad of [-5, NaN, Infinity, -Infinity]) {
+    ctx.shadowBlur = bad
+    t.is(ctx.shadowBlur, 10, `shadowBlur = ${bad} should be ignored`)
+  }
+  ctx.shadowBlur = 0
+  t.is(ctx.shadowBlur, 0, 'zero blur is a legal assignment')
+
+  ctx.shadowOffsetX = 10
+  ctx.shadowOffsetY = 20
+  for (const bad of [NaN, Infinity, -Infinity]) {
+    ctx.shadowOffsetX = bad
+    ctx.shadowOffsetY = bad
+    t.is(ctx.shadowOffsetX, 10, `shadowOffsetX = ${bad} should be ignored`)
+    t.is(ctx.shadowOffsetY, 20, `shadowOffsetY = ${bad} should be ignored`)
+  }
+  // Negative offsets are legal -- they cast the shadow left/up.
+  ctx.shadowOffsetX = -30
+  ctx.shadowOffsetY = -40
+  t.is(ctx.shadowOffsetX, -30)
+  t.is(ctx.shadowOffsetY, -40)
+
+  // A finite double out of float range saturates at +/-FLT_MAX, matching
+  // Blink's ClampTo<float> (platform/wtf/math_extras.h:192-206); a plain cast
+  // would overflow it to an infinity that Skia then rejects.
+  ctx.shadowBlur = 1e300
+  t.is(ctx.shadowBlur, 3.4028234663852886e38, 'an out-of-range blur clamps to FLT_MAX')
+
+  // A rejected assignment must leave rendering untouched, not merely the getter.
+  const haloLeftEdge = (mutate: (c: typeof ctx) => void) => {
+    const canvas = createCanvas(200, 200)
+    const c = canvas.getContext('2d')
+    c.shadowColor = 'black'
+    c.shadowBlur = 10
+    mutate(c)
+    c.fillStyle = 'red'
+    c.fillRect(20, 20, 60, 60)
+    const data = canvas.data()
+    let minX = Infinity
+    for (let y = 0; y < 200; y++) {
+      for (let x = 0; x < 200; x++) {
+        if (data[(y * 200 + x) * 4 + 3] !== 0 && x < minX) minX = x
+      }
+    }
+    return minX
+  }
+  const blurred = haloLeftEdge(() => {})
+  t.true(blurred < 20, `blur 10 should push the halo left of the rect, got ${blurred}`)
+  t.is(
+    haloLeftEdge((c) => (c.shadowBlur = NaN)),
+    blurred,
+    'shadowBlur = NaN must not erase the blur',
+  )
+  t.is(
+    haloLeftEdge((c) => (c.shadowBlur = -5)),
+    blurred,
+    'shadowBlur = -5 must not erase the blur',
+  )
+})

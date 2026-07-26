@@ -52,9 +52,8 @@ pub(crate) const MAX_TEXT_WIDTH: f32 = 100_000.0;
 pub(crate) const FILL_STYLE_HIDDEN_NAME: &str = "_fillStyle";
 pub(crate) const STROKE_STYLE_HIDDEN_NAME: &str = "_strokeStyle";
 
-// The shadow half of a draw: the paint built by `shadow_blur_paint` /
-// `drop_shadow_paint`, plus the state `render_canvas` needs to size the shadow
-// layer's cull rect.
+// The shadow half of a draw: the paint built by `shadow_paint`, plus the state
+// `render_canvas` needs to size the shadow layer's cull rect.
 struct ShadowPass<'a> {
   paint: &'a Paint,
   offset_x: f32,
@@ -476,7 +475,7 @@ impl Context {
     let stroke_paint = self.stroke_paint()?;
 
     // Extract state for shadow rendering to avoid borrow conflicts
-    let shadow_paint = Self::shadow_blur_paint(&self.state, &stroke_paint);
+    let shadow_paint = Self::shadow_paint(&self.state, &stroke_paint);
     let shadow_offset_x = self.state.shadow_offset_x;
     let shadow_offset_y = self.state.shadow_offset_y;
 
@@ -592,7 +591,7 @@ impl Context {
     let fill_paint = self.fill_paint()?;
 
     // Extract state for shadow rendering to avoid borrow conflicts
-    let shadow_paint = Self::shadow_blur_paint(&self.state, &fill_paint);
+    let shadow_paint = Self::shadow_paint(&self.state, &fill_paint);
     let shadow_offset_x = self.state.shadow_offset_x;
     let shadow_offset_y = self.state.shadow_offset_y;
 
@@ -648,7 +647,7 @@ impl Context {
     };
 
     // Extract state for shadow rendering to avoid borrow conflicts
-    let shadow_paint = Self::shadow_blur_paint(&self.state, &stroke_paint);
+    let shadow_paint = Self::shadow_paint(&self.state, &stroke_paint);
     let shadow_offset_x = self.state.shadow_offset_x;
     let shadow_offset_y = self.state.shadow_offset_y;
 
@@ -800,7 +799,7 @@ impl Context {
           // rect, so its cull rect is expanded. FIXME: this under-covers. Skia
           // bounds a Gaussian at 3 * sigma
           // (skia/src/effects/imagefilters/SkBlurImageFilter.cpp:64-69) and sigma
-          // is `shadow_blur / 2` (see shadow_blur_paint), so the halo needs
+          // is `shadow_blur / 2` (see shadow_paint), so the halo needs
           // `1.5 * shadow_blur + |dx| + |dy|`, not `shadow_blur + |dx| + |dy|`.
           // The `.max(shadow_blur * 2.0)` term only rescues the zero-offset case:
           // blur=4, dx=100, dy=0 yields 104 where 106 is required.
@@ -876,7 +875,7 @@ impl Context {
     };
 
     // Extract state for shadow rendering to avoid borrow conflicts
-    let shadow_paint = Self::shadow_blur_paint(&self.state, &fill_paint);
+    let shadow_paint = Self::shadow_paint(&self.state, &fill_paint);
     let shadow_offset_x = self.state.shadow_offset_x;
     let shadow_offset_y = self.state.shadow_offset_y;
 
@@ -1178,11 +1177,20 @@ impl Context {
   /// `SkColorFilters::Blend(color, kSrcIn)` binding that skia-c does not
   /// expose, whereas `DropShadowOnly` carries that blend internally
   /// (SkDropShadowImageFilter.cpp:47-49). Do not "fix" this back.
-  fn shadow_only_image_filter(
-    state: &Context2dRenderingState,
-    dx: f32,
-    dy: f32,
-  ) -> Option<ImageFilter> {
+  ///
+  /// The filter carries NO offset. `make_drop_shadow_graph` implements dx/dy as
+  /// an `SkImageFilters::MatrixTransform(SkMatrix::Translate(dx, dy))`
+  /// (SkDropShadowImageFilter.cpp:52-54) whose matrix is a
+  /// `skif::ParameterSpace<SkMatrix>` run through `mapping().paramToLayer()`
+  /// (SkMatrixTransformImageFilter.cpp:71, :151), i.e. a LOCAL-space offset that
+  /// the CTM rotates and scales. Chromium's offsets are device-space in every
+  /// path -- `kPostTransformFlag` makes the looper
+  /// `setMatrix(getLocalToDevice().postTranslate(dx, dy))`
+  /// (cc/paint/draw_looper.cc:37-40), and the image-filter path runs its shadow
+  /// `saveLayer` inside a `ScopedResetCtm`
+  /// (canvas_2d_recorder_context.cc:545-565). Every caller therefore translates
+  /// the canvas with `apply_shadow_offset_matrix_to_canvas` instead.
+  fn shadow_only_image_filter(state: &Context2dRenderingState) -> Option<ImageFilter> {
     let shadow_color = &state.shadow_color;
     let a = shadow_color.a;
     let r = shadow_color.r;
@@ -1224,8 +1232,10 @@ impl Context {
       sigma
     };
     ImageFilter::make_drop_shadow_only(
-      dx,
-      dy,
+      // dx, dy: see the doc comment -- the offset is a canvas translate, not a
+      // filter parameter.
+      0f32,
+      0f32,
       sigma_x,
       sigma_y,
       ((a as u32) << 24) | ((r as u32) << 16) | ((g as u32) << 8) | b as u32,
@@ -1233,28 +1243,11 @@ impl Context {
     )
   }
 
-  fn drop_shadow_paint(state: &Context2dRenderingState, paint: &Paint) -> Option<Paint> {
-    let shadow_color = &state.shadow_color;
-    let shadow_alpha = shadow_color.a;
-    if shadow_alpha == 0 {
-      return None;
-    }
-    if state.shadow_blur == 0f32 && state.shadow_offset_x == 0f32 && state.shadow_offset_y == 0f32 {
-      return None;
-    }
-    let mut drop_shadow_paint = paint.clone();
-    let shadow_effect =
-      Self::shadow_only_image_filter(state, state.shadow_offset_x, state.shadow_offset_y)?;
-    // Do NOT re-apply `shadow_alpha` here: the drop-shadow filter above already
-    // encodes the shadow colour's alpha, and the cloned `paint` already carries
-    // the source alpha (globalAlpha). Calling `set_alpha(shadow_alpha)` would
-    // multiply the shadow opacity a second time, so `shadowColor` alpha `a`
-    // renders as `a * a`. See the linear-scaling regression test.
-    drop_shadow_paint.set_image_filter(&shadow_effect);
-    Some(drop_shadow_paint)
-  }
-
-  fn shadow_blur_paint(state: &Context2dRenderingState, paint: &Paint) -> Option<Paint> {
+  /// The shadow half of every draw -- geometry, text and images alike. There
+  /// used to be a second, image-only builder here; the two differed only in
+  /// baking the offset into the filter, and once that moved to the canvas they
+  /// were the same function.
+  fn shadow_paint(state: &Context2dRenderingState, paint: &Paint) -> Option<Paint> {
     let shadow_color = &state.shadow_color;
     let shadow_alpha = shadow_color.a;
     if shadow_alpha == 0 {
@@ -1292,8 +1285,13 @@ impl Context {
     // The offset is applied on the canvas by
     // `apply_shadow_offset_matrix_to_canvas`, in device space (matching Blink's
     // `kShadowIgnoresTransforms` / `kPostTransformFlag`,
-    // cc/paint/draw_looper.cc:28-40), so the filter itself carries none.
-    let shadow_effect = Self::shadow_only_image_filter(state, 0.0, 0.0)?;
+    // cc/paint/draw_looper.cc:28-40), so the filter itself carries none. The
+    // image path used to bake it into the filter's dx/dy instead, where it is a
+    // local-space vector: `translate(300, 200); rotate(PI); shadowOffsetX = 100;
+    // drawImage(...)` put the shadow 100 device px to the LEFT (measured
+    // centroid 197.5 where the geometry path gives 401.5), and `scale(2, 0.5)`
+    // doubled a 40px offset to 80.
+    let shadow_effect = Self::shadow_only_image_filter(state)?;
     // Do NOT re-apply `shadow_alpha` here: the drop-shadow filter above is
     // already built with the shadow colour's alpha, and the cloned `paint`
     // already carries the source alpha (fillStyle alpha * globalAlpha). A
@@ -1340,14 +1338,22 @@ impl Context {
     paint.set_alpha((self.state.global_alpha * 255.0).round() as u8);
 
     // Extract state for shadow rendering to avoid borrow conflicts
-    let drop_shadow_paint = Self::drop_shadow_paint(&self.state, &paint);
+    let shadow_paint = Self::shadow_paint(&self.state, &paint);
+    let shadow_offset_x = self.state.shadow_offset_x;
+    let shadow_offset_y = self.state.shadow_offset_y;
     let image_smoothing_enabled = self.state.image_smoothing_enabled;
     let image_smoothing_quality = self.state.image_smoothing_quality;
 
     self.with_shadowed_render_canvas(
       &paint,
-      drop_shadow_paint.as_ref(),
+      shadow_paint.as_ref(),
       |shadow_canvas: &mut Canvas, shadow_paint| {
+        shadow_canvas.save();
+        Self::apply_shadow_offset_matrix_to_canvas(
+          shadow_canvas,
+          shadow_offset_x,
+          shadow_offset_y,
+        )?;
         shadow_canvas.draw_image(
           bitmap,
           sx,
@@ -1362,6 +1368,7 @@ impl Context {
           image_smoothing_quality,
           shadow_paint,
         );
+        shadow_canvas.restore();
         Ok(())
       },
       |canvas: &mut Canvas, paint| {
@@ -1415,12 +1422,20 @@ impl Context {
     paint.set_alpha((self.state.global_alpha * 255.0).round() as u8);
 
     // Extract state for shadow rendering to avoid borrow conflicts
-    let drop_shadow_paint = Self::drop_shadow_paint(&self.state, &paint);
+    let shadow_paint = Self::shadow_paint(&self.state, &paint);
+    let shadow_offset_x = self.state.shadow_offset_x;
+    let shadow_offset_y = self.state.shadow_offset_y;
 
     self.with_shadowed_render_canvas(
       &paint,
-      drop_shadow_paint.as_ref(),
+      shadow_paint.as_ref(),
       |shadow_canvas: &mut Canvas, shadow_paint| {
+        shadow_canvas.save();
+        Self::apply_shadow_offset_matrix_to_canvas(
+          shadow_canvas,
+          shadow_offset_x,
+          shadow_offset_y,
+        )?;
         shadow_canvas.draw_picture_rect(
           picture,
           sx,
@@ -1433,6 +1448,7 @@ impl Context {
           d_height,
           shadow_paint,
         );
+        shadow_canvas.restore();
         Ok(())
       },
       |canvas: &mut Canvas, paint| {
@@ -1457,7 +1473,7 @@ impl Context {
     let font = get_font()?;
 
     // Extract all state values to avoid borrow conflicts with with_render_canvas
-    let shadow_paint = Self::shadow_blur_paint(&self.state, paint);
+    let shadow_paint = Self::shadow_paint(&self.state, paint);
     let width = self.width as f32;
     let shadow_offset_x = self.state.shadow_offset_x;
     let shadow_offset_y = self.state.shadow_offset_y;
@@ -1583,8 +1599,15 @@ impl Context {
     shadow_offset_x: f32,
     shadow_offset_y: f32,
   ) -> result::Result<(), SkError> {
-    // Following CanvasKit's approach: apply shadow offset in device coordinates
-    // by inverting the current transform, applying the offset, then re-applying the transform
+    // shadowOffsetX/Y are DEVICE-space in Chromium, on every path: the looper
+    // carries `kPostTransformFlag` and does
+    // `setMatrix(getLocalToDevice().postTranslate(dx, dy))`
+    // (cc/paint/draw_looper.cc:37-40), and the image-filter path draws its
+    // shadow inside a `ScopedResetCtm` (canvas_2d_recorder_context.cc:545-565).
+    // `concat(M^-1) . concat(T) . concat(M)` leaves the canvas at `T * M`, which
+    // is that same post-translate: the linear part of the CTM is untouched (so
+    // the sigma correction in `shadow_only_image_filter` still holds) and only
+    // the translation moves.
     let current_transform = canvas.get_transform_matrix().clone();
 
     // Invert the current transform to get back to device coordinates
@@ -1945,7 +1968,17 @@ impl CanvasRenderingContext2D {
 
   #[napi(setter, return_if_invalid)]
   pub fn set_shadow_blur(&mut self, blur: f64) {
-    self.context.state.shadow_blur = blur as f32;
+    // Blink discards a non-finite or negative assignment and keeps the previous
+    // value (canvas_2d_recorder_context.cc:1202-1207). Storing it instead is not
+    // inert: the value becomes the sigma, `SkImageFilters::Blur` rejects
+    // non-finite and negative sigma (SkBlurImageFilter.cpp:83-88) and
+    // `make_drop_shadow_graph` then silently drops the Blur node
+    // (SkDropShadowImageFilter.cpp:45-54), so `shadowBlur = -5` or `= NaN`
+    // quietly turned every later shadow into a hard-edged one.
+    if !blur.is_finite() || blur < 0.0 {
+      return;
+    }
+    self.context.state.shadow_blur = clamp_to_f32(blur);
   }
 
   #[napi(getter)]
@@ -1966,7 +1999,13 @@ impl CanvasRenderingContext2D {
 
   #[napi(setter, return_if_invalid)]
   pub fn set_shadow_offset_x(&mut self, offset_x: f64) {
-    self.context.state.shadow_offset_x = offset_x as f32;
+    // Same rule as `set_shadow_blur`, minus the sign test: Blink drops only
+    // non-finite offsets (canvas_2d_recorder_context.cc:1170-1179) -- a negative
+    // offset is meaningful, it casts the shadow left/up.
+    if !offset_x.is_finite() {
+      return;
+    }
+    self.context.state.shadow_offset_x = clamp_to_f32(offset_x);
   }
 
   #[napi(getter)]
@@ -1976,7 +2015,11 @@ impl CanvasRenderingContext2D {
 
   #[napi(setter, return_if_invalid)]
   pub fn set_shadow_offset_y(&mut self, offset_y: f64) {
-    self.context.state.shadow_offset_y = offset_y as f32;
+    // canvas_2d_recorder_context.cc:1186-1195, see `set_shadow_offset_x`.
+    if !offset_y.is_finite() {
+      return;
+    }
+    self.context.state.shadow_offset_y = clamp_to_f32(offset_y);
   }
 
   #[napi(getter)]
@@ -3281,6 +3324,14 @@ impl Task for ContextData {
       .into_buffer_slice(env)
       .and_then(|slice| slice.into_buffer(&env))
   }
+}
+
+/// Blink's `ClampTo<float>` (platform/wtf/math_extras.h:314-322 -> :192-206):
+/// a finite double outside the float range saturates at +/-FLT_MAX. A plain
+/// `as f32` would overflow it to an infinity instead, which every downstream
+/// Skia filter then rejects.
+fn clamp_to_f32(value: f64) -> f32 {
+  value.clamp(f32::MIN as f64, f32::MAX as f64) as f32
 }
 
 fn parse_css_size(css_size: &str) -> Option<f32> {
