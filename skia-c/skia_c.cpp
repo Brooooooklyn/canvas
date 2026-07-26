@@ -378,6 +378,55 @@ void skiac_canvas_draw_color(skiac_canvas* c_canvas,
   CANVAS_CAST->drawColor(SkColor4f{r, g, b, a});
 }
 
+// Hoists an image filter (the canvas2d shadow, or `ctx.filter`) out of the
+// content paint and into an enclosing saveLayer, so the crop clip the callers
+// install can be issued INSIDE that layer and never truncates the filter's
+// outset. This is Chromium's rule: it clips a filtered image draw only from
+// inside the filter layer, never around it --
+// blink canvas_2d_recorder_context.cc:2137-2148 builds `layer_flags` carrying
+// ONLY {blend mode, image filter} and opens the layer first,
+// canvas_2d_recorder_context.cc:2172-2178 and
+// base_rendering_context_2d.cc:1484-1508 issue the clip after it.
+//
+// The bounds are safe to pass: with a filter present SkCanvas treats them as
+// the layer's CONTENT bounds (skia/src/core/SkCanvas.cpp:942-949) and derives
+// the layer's OUTPUT from `priorDevice->devClipBounds()`
+// (skia/src/core/SkCanvas.cpp:941), so the halo is bounded by the device clip
+// rather than by the destination rect.
+//
+// Returns true when a layer was pushed; the caller then owes one extra
+// restore(). `inner_paint` receives the paint the content must be drawn with.
+static bool skiac_push_image_filter_layer(SkCanvas* canvas,
+                                          const SkPaint* paint,
+                                          const SkRect& dst_rect,
+                                          SkPaint* inner_paint) {
+  if (canvas == nullptr || paint == nullptr ||
+      paint->getImageFilter() == nullptr) {
+    return false;
+  }
+  SkRect bounds = dst_rect;
+  bounds.sort();  // drawImage allows a negative d_width / d_height
+  if (bounds.isEmpty()) {
+    return false;
+  }
+  // The layer paint carries ONLY the compositing op and the filter -- alpha 1,
+  // no shader, no colour filter -- so nothing is applied twice.
+  // canvas_2d_recorder_context.h:935-937: "Resetting the alpha of the shadow
+  // layer, to avoid the alpha being applied twice." refBlender/setBlender
+  // rather than asBlendMode so a custom blender survives instead of silently
+  // degrading to kSrcOver.
+  SkPaint layer_paint;
+  layer_paint.setBlender(paint->refBlender());
+  layer_paint.setImageFilter(paint->refImageFilter());
+  // The content keeps colour/alpha/shader, drops the filter, and composites
+  // source-over into the transparent layer.
+  *inner_paint = *paint;
+  inner_paint->setImageFilter(nullptr);
+  inner_paint->setBlendMode(SkBlendMode::kSrcOver);
+  canvas->saveLayer(&bounds, &layer_paint);
+  return true;
+}
+
 void skiac_canvas_draw_image(skiac_canvas* c_canvas,
                              skiac_bitmap* c_bitmap,
                              bool is_canvas,
@@ -397,26 +446,32 @@ void skiac_canvas_draw_image(skiac_canvas* c_canvas,
   auto paint = reinterpret_cast<const SkPaint*>(c_paint);
   if (is_canvas) {
     auto src_surface = reinterpret_cast<SkSurface*>(c_bitmap);
+    // Any image filter goes on an enclosing layer FIRST, so the crop clip below
+    // lands inside it and only crops the image, never the halo.
+    SkPaint inner_paint;
+    const bool layered = skiac_push_image_filter_layer(
+        CANVAS_CAST, paint, SkRect::MakeXYWH(dx, dy, d_width, d_height),
+        &inner_paint);
+    const SkPaint* content_paint = layered ? &inner_paint : paint;
+
     CANVAS_CAST->save();
     // Translate to the destination position
     CANVAS_CAST->translate(dx, dy);
     // NOTE: this clip is the ONLY thing implementing the sx/sy/s_width/s_height
     // source crop, because SkSurface::draw paints the whole source surface
-    // (skia/src/image/SkSurface_Raster.cpp:106-109). But it is installed BEFORE
-    // the draw, so it also truncates any drop-shadow halo carried by `paint`:
-    // every non-transparent pixel ends up inside the dst rect. Chromium issues
-    // no clipRect on the image path at all
-    // (canvas_2d_recorder_context.cc:2166-2171); it hoists the filter into a
-    // saveLayer whose bounds are only a content hint that Skia expands through
-    // the filter (canvas_2d_recorder_context.cc:2137-2148,
-    // skia/src/core/SkCanvas.cpp:940-949). Widening this clip is NOT the fix --
-    // it would let un-cropped source content leak in.
+    // (skia/src/image/SkSurface_Raster.cpp:106-109), so it must stay. Widening
+    // it is NOT how the halo is freed -- that would let un-cropped source
+    // content leak in. The filter is hoisted above it instead, which is what
+    // Chromium does (canvas_2d_recorder_context.cc:2137-2148 then :2172-2178).
     CANVAS_CAST->clipRect(SkRect::MakeWH(d_width, d_height));
     // Scale using the ratio of destination size to source surface size
     CANVAS_CAST->scale(d_width / s_width, d_height / s_height);
     // Draw the surface directly
-    src_surface->draw(CANVAS_CAST, -sx, -sy, sampling, paint);
+    src_surface->draw(CANVAS_CAST, -sx, -sy, sampling, content_paint);
     CANVAS_CAST->restore();
+    if (layered) {
+      CANVAS_CAST->restore();
+    }
   } else {
     const auto src_rect = SkRect::MakeXYWH(sx, sy, s_width, s_height);
     const auto dst_rect = SkRect::MakeXYWH(dx, dy, d_width, d_height);
@@ -911,24 +966,40 @@ void skiac_canvas_draw_picture_rect(skiac_canvas* c_canvas,
   matrix.setScale(scale_x, scale_y);
   matrix.postTranslate(dx - sx * scale_x, dy - sy * scale_y);
 
+  const auto dst_rect = SkRect::MakeXYWH(dx, dy, dw, dh);
+  const SkPaint* paint = PAINT_CAST;
+
+  // Any image filter goes on an enclosing layer FIRST, so the crop clip below
+  // lands inside it and only crops the picture, never the halo. Hoisting also
+  // removes a second truncation: `drawPicture` with a non-null paint becomes
+  // `saveLayer(mappedCullRect, paint)` (skia/src/core/SkCanvasPriv.cpp:32-45),
+  // and that layer would otherwise open inside the already-installed clip.
+  SkPaint inner_paint;
+  const bool layered =
+      skiac_push_image_filter_layer(canvas, paint, dst_rect, &inner_paint);
+  if (layered) {
+    paint = &inner_paint;
+  }
+
   canvas->save();
   // NOTE: this clip is load-bearing -- `canvas->drawPicture(picture, &matrix,
-  // paint)` below replays the WHOLE picture (skia/src/core/SkCanvasPriv.cpp:32-45),
-  // so the dst rect is the only thing implementing the sx/sy/sw/sh source crop.
-  // But it is installed BEFORE the draw, so it also truncates any drop-shadow
-  // halo carried by `paint`: every non-transparent pixel ends up inside the dst
-  // rect. Chromium issues no clipRect on the image path at all
-  // (canvas_2d_recorder_context.cc:2166-2171); it hoists the filter into a
-  // saveLayer whose bounds are only a content hint that Skia expands through the
-  // filter (canvas_2d_recorder_context.cc:2137-2148,
-  // skia/src/core/SkCanvas.cpp:940-949). Widening this clip is NOT the fix -- it
-  // would let un-cropped source content leak in.
-  canvas->clipRect(SkRect::MakeXYWH(dx, dy, dw, dh), SkClipOp::kIntersect,
-                   true /* antialias */);
+  // paint)` below replays the WHOLE picture, so the dst rect is the only thing
+  // implementing the sx/sy/sw/sh source crop. Widening it is NOT how the halo
+  // is freed -- that would let un-cropped source content leak in. The filter is
+  // hoisted above it instead, which is what Chromium does
+  // (base_rendering_context_2d.cc:1484-1508: saveLayer with the filter, then
+  // clipRect, then drawPicture).
+  canvas->clipRect(dst_rect, SkClipOp::kIntersect, true /* antialias */);
 
   // Optimization: skip paint if it's default (SrcOver blend, full alpha, no
-  // filter) This matches skia-canvas behavior
-  const SkPaint* paint = PAINT_CAST;
+  // filter) This matches skia-canvas behavior.
+  //
+  // LOAD-BEARING once the filter is hoisted: on the shadow pass at globalAlpha
+  // 1 the inner paint is now default, so this elides it to nullptr and the
+  // picture replays with no paint at all -- exactly Blink's paintless
+  // `c->drawPicture(std::move(paint_record))`
+  // (base_rendering_context_2d.cc:1508). The shadow colour comes solely from
+  // the layer's filter, so the elision is correct, not merely an optimization.
   if (paint != nullptr) {
     auto blendMode = paint->asBlendMode();
     if (blendMode.has_value() && blendMode.value() == SkBlendMode::kSrcOver &&
@@ -940,6 +1011,9 @@ void skiac_canvas_draw_picture_rect(skiac_canvas* c_canvas,
   // Pass matrix directly to drawPicture instead of using canvas transforms
   canvas->drawPicture(picture, &matrix, paint);
   canvas->restore();
+  if (layered) {
+    canvas->restore();
+  }
 }
 
 void skiac_canvas_destroy(skiac_canvas* c_canvas) {
