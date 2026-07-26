@@ -1,7 +1,7 @@
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import test from 'ava'
+import test, { type ExecutionContext } from 'ava'
 
 import { createCanvas, loadImage, GlobalFonts, PDFDocument, SvgExportFlag, type SKRSContext2D } from '../index'
 
@@ -21,6 +21,25 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 
 const px = (ctx: ReturnType<ReturnType<typeof createCanvas>['getContext']>, x: number, y: number) =>
   Array.from(ctx!.getImageData(x, y, 1, 1).data)
+
+// Same as `px`, but for values that land on an exact .5 rounding tie, where the
+// premultiplied round trip legitimately lands either side depending on the
+// rasteriser. `globalAlpha = 0.5` over an opaque backdrop is the common case:
+// 0.5 * 0 + 0.5 * 255 = 127.5, which is 126 on aarch64-apple-darwin and 127 on
+// every other CI target. Asserting exact equality there pins a platform, not a
+// behaviour -- the defects these tests guard move the channel by 64 or more.
+const pxNear = (
+  t: ExecutionContext,
+  ctx: ReturnType<ReturnType<typeof createCanvas>['getContext']>,
+  x: number,
+  y: number,
+  expected: number[],
+  tolerance = 1,
+) => {
+  const actual = px(ctx, x, y)
+  const ok = actual.every((v, i) => Math.abs(v - expected[i]) <= tolerance)
+  t.true(ok, `pixel (${x},${y}) was [${actual}], expected [${expected}] +/- ${tolerance}`)
+}
 
 // Foreground at x 10..90, shadow band at x 130..210, probed dead centre at (170, 60).
 function zeroBlurScene({
@@ -368,10 +387,13 @@ for (const useDrawCanvas of [false, true]) {
   // would give 191 instead.
   test(`shadow-offset-escapes-the-destination-rect-${api}`, (t) => {
     const ctx = canvasSourceScene({ background: 'white', shadowBlur: 0, offset: 20, globalAlpha: 0.5, useDrawCanvas })
-    t.deepEqual(px(ctx, 215, 215), [127, 127, 127, 255])
+    // 0.5 alpha over white is 127.5 -- an exact rounding tie, so these two probes
+    // land on 126 or 127 depending on the rasteriser. See `pxNear`. The defect
+    // each one guards is worth 64/255, far outside the +/-1 window.
+    pxNear(t, ctx, 215, 215, [127, 127, 127, 255])
     // Unchanged regions.
     t.deepEqual(px(ctx, 150, 150), [191, 63, 63, 255])
-    t.deepEqual(px(ctx, 110, 110), [255, 126, 126, 255])
+    pxNear(t, ctx, 110, 110, [255, 127, 127, 255])
     t.deepEqual(px(ctx, 230, 230), [255, 255, 255, 255])
   })
 

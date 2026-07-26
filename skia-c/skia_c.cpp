@@ -1117,16 +1117,16 @@ void skiac_paint_set_image_filter(skiac_paint* c_paint,
 // Unlike `setColor` this runs AFTER the shader and after the paint alpha in
 // Skia's blitter pipeline, and unlike an image filter it needs no layer, so
 // SkSVGDevice can emit it as an feFlood/feComposite filter
-// (src/svg/SkSVGDevice.cpp:431-436, :472-505 -- kSrcIn is the ONLY blend mode it
-// accepts, so do not generalise the mode here) and SkPDFDevice folds it back
+// (src/svg/SkSVGDevice.cpp:431-436, :472-505 -- kSrcIn is the ONLY blend mode
+// it accepts, so do not generalise the mode here) and SkPDFDevice folds it back
 // into the paint colour and stays vector (SkPaintPriv::RemoveColorFilter, via
 // src/pdf/SkPDFDevice.cpp:274-277).
 //
 // The colour is sRGB-encoded, matching Chromium's explicit
-// `SkColorSpace::MakeSRGB()`: `SkColorFilters::Blend` maps its argument from the
-// space given here to sRGB for storage, and a null space is read as sRGB
-// (SkBlendModeColorFilter.cpp:60-64, SkColorSpaceXformSteps.cpp `if (!src) src =
-// sk_srgb_singleton()`), so nullptr and MakeSRGB() are the same transform.
+// `SkColorSpace::MakeSRGB()`: `SkColorFilters::Blend` maps its argument from
+// the space given here to sRGB for storage, and a null space is read as sRGB
+// (SkBlendModeColorFilter.cpp:60-64, SkColorSpaceXformSteps.cpp `if (!src) src
+// = sk_srgb_singleton()`), so nullptr and MakeSRGB() are the same transform.
 void skiac_paint_set_src_in_color_filter(skiac_paint* c_paint,
                                          uint8_t r,
                                          uint8_t g,
