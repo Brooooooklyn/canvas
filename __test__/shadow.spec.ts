@@ -682,3 +682,197 @@ for (const shadowBlur of [0, 8]) {
     )
   })
 }
+
+// ------------------------------------- isolation composite arm: one paint per role
+
+// Blink's `CompositedDraw` never lets one paint play both roles: `composite_flags`
+// is a FRESH PaintFlags carrying only `setBlendMode(state.GlobalComposite())` --
+// alpha 1, no shader, no filter -- while the content paint rides on the inner
+// draw with its blend forced to source-over (canvas_2d_recorder_context.h:
+// 921-922, :946-952). Handing the content paint to the layer as well applies
+// globalAlpha (and the shadow's drop-shadow filter) TWICE, because
+// `SkCanvas::drawPicture` with a paint is `saveLayer(cullRect, paint) + playback
+// + restore` (skia/src/core/SkCanvasPriv.cpp:32-45) and the restore paint keeps
+// alpha, colour filter and blend mode (skia/src/core/SkCanvas.cpp:895-906).
+//
+// Every expectation below is the WHATWG compositing formula against an OPAQUE
+// backdrop (alphaB = 1) with alphaS = globalAlpha = 0.5:
+//   source-in         alphaO = alphaS * alphaB       = 0.5   Co = Cs
+//   destination-in    alphaO = alphaB * alphaS       = 0.5   Co = Cb
+//   destination-atop  alphaO = alphaS                = 0.5   Co = Cb
+//   copy              alphaO = alphaS                = 0.5   Co = Cs
+//   source-out        alphaO = alphaS * (1 - alphaB) = 0
+// 0.5 * 255 = 127.5, and the premultiplied round trip lands on 127. A
+// double-applied globalAlpha reads 0.25 -> 63 instead.
+const ISOLATION_ALPHA_EXPECTATIONS: [string, number[]][] = [
+  ['source-in', [255, 0, 0, 127]],
+  ['destination-in', [0, 0, 255, 127]],
+  ['destination-atop', [0, 0, 255, 127]],
+  ['copy', [255, 0, 0, 127]],
+  ['source-out', [0, 0, 0, 0]],
+]
+
+test('isolation-layer-applies-globalAlpha-exactly-once', (t) => {
+  for (const [mode, expected] of ISOLATION_ALPHA_EXPECTATIONS) {
+    const canvas = createCanvas(240, 240)
+    const ctx = canvas.getContext('2d')!
+    ctx.fillStyle = 'blue'
+    ctx.fillRect(0, 0, 240, 240)
+    ctx.globalCompositeOperation = mode as any
+    ctx.globalAlpha = 0.5
+    ctx.fillStyle = 'rgb(255, 0, 0)'
+    ctx.fillRect(60, 60, 60, 60)
+    t.deepEqual(px(ctx, 90, 90), expected, mode)
+    // The layer is whole-canvas, so everything outside the draw must be gone.
+    t.deepEqual(px(ctx, 220, 220), [0, 0, 0, 0], `${mode} outside the draw`)
+  }
+})
+
+// The same statement with a shadow on, which is the combination nothing covered:
+// the shadow pass gets its OWN isolation layer, so its paint is double-applied
+// independently of the content pass's.
+//
+// Content is 60..119 in both axes, shadow offset (+40, +40) so the shadow band is
+// 100..159 and the overlap is 100..119. `shadowColor` is opaque, so the shadow
+// pass's only source alpha is globalAlpha.
+function isolationAlphaShadowScene(mode: string, shadowBlur: number) {
+  const canvas = createCanvas(240, 240)
+  const ctx = canvas.getContext('2d')!
+  ctx.fillStyle = 'blue'
+  ctx.fillRect(0, 0, 240, 240)
+  ctx.globalCompositeOperation = mode as any
+  ctx.globalAlpha = 0.5
+  ctx.shadowColor = 'rgba(0, 255, 0, 1)'
+  ctx.shadowBlur = shadowBlur
+  ctx.shadowOffsetX = 40
+  ctx.shadowOffsetY = 40
+  ctx.fillStyle = 'rgb(255, 0, 0)'
+  ctx.fillRect(60, 60, 60, 60)
+  return ctx
+}
+
+test('isolation-layer-applies-globalAlpha-exactly-once-with-a-shadow', (t) => {
+  // source-in, zero blur. Shadow pass: alphaO = 0.5 * 1 = 0.5 over the band.
+  // Content pass, source-in against that: alphaO = 0.5 * 0.5 = 0.25 -> 63, Co = red.
+  t.deepEqual(px(isolationAlphaShadowScene('source-in', 0), 110, 110), [255, 0, 0, 63])
+
+  // sigma = 20 * 0.5 = 10 and (110, 110) is 10.5 device px inside both edges of
+  // the shadow band, so the shadow's own coverage is Phi(1.05)^2 = 0.7278 and
+  // alphaO = 0.5 * (0.5 * 0.7278) = 0.1820 -> 46.4.
+  const blurred = px(isolationAlphaShadowScene('source-in', 20), 110, 110)
+  t.deepEqual(blurred.slice(0, 3), [255, 0, 0])
+  t.true(Math.abs(blurred[3] - 46) <= 3, `source-in blurred overlap alpha was ${blurred[3]}, expected 46 +/- 3`)
+
+  // copy replaces every pixel with the foreground layer, shadow band included
+  // (canvas_2d_recorder_context.h:830-837), so alphaO is exactly globalAlpha
+  // however the shadow is blurred. Double-applying the shadow paint dropped this
+  // to 31.
+  for (const shadowBlur of [0, 20]) {
+    t.deepEqual(px(isolationAlphaShadowScene('copy', shadowBlur), 90, 90), [255, 0, 0, 127], `copy blur ${shadowBlur}`)
+  }
+})
+
+// `IsFullCanvasCompositeMode` is exactly {kSrcIn, kSrcOut, kDstIn, kDstATop}
+// (canvas_2d_recorder_context.h:998-1005). destination-out is deliberately not in
+// it -- it is listed under `BlendModeSupportsShadowFilter` (h:692-697) and is
+// never isolated, "as the platforms already implement the specification's
+// behavior".
+//
+// Isolating it is observable because `composited_pass` records into a
+// PictureRecorder that sits at IDENTITY with the canvas rect as its cull rect, so
+// that cull rect is in USER space. A draw whose user coordinates fall outside the
+// canvas is then culled even though the CTM puts it on screen. Here the CTM is
+// `translate(-500, 0)` and the rect is at user x 600..699, i.e. device x 100..199,
+// with an opaque black shadow at (+40, 0) covering device x 140..239.
+// destination-out against an opaque backdrop is alphaO = alphaB * (1 - alphaS),
+// so both bands must be punched clean through.
+test('destination-out-is-not-isolated', (t) => {
+  const canvas = createCanvas(300, 300)
+  const ctx = canvas.getContext('2d')!
+  ctx.fillStyle = 'red'
+  ctx.fillRect(0, 0, 300, 300)
+  ctx.globalCompositeOperation = 'destination-out'
+  ctx.translate(-500, 0)
+  ctx.shadowColor = 'rgba(0, 0, 0, 1)'
+  ctx.shadowBlur = 0
+  ctx.shadowOffsetX = 40
+  ctx.fillStyle = 'rgb(0, 0, 255)'
+  ctx.fillRect(600, 50, 100, 100)
+
+  t.deepEqual(px(ctx, 150, 100), [0, 0, 0, 0], 'the content must punch a hole')
+  t.deepEqual(px(ctx, 220, 100), [0, 0, 0, 0], 'the shadow must punch a hole')
+  t.deepEqual(px(ctx, 260, 100), [255, 0, 0, 255], 'right of the shadow band')
+  t.deepEqual(px(ctx, 150, 20), [255, 0, 0, 255], 'above the draw')
+})
+
+// ------------------------------------------------- I3: sigma under a rotating CTM
+
+// GUARD for the column-norm decomposition, which `shadow-blur-sigma-is-rotation-
+// invariant` above cannot see: at scale 1 every quarter turn snaps `transform.a`
+// to exactly 0 (`SkScalarCosSnapToZero`, SkMatrix.cpp:458) or to a negative
+// number, the `scale_x.is_finite() && scale_x > 0` guard then falls back to the
+// unscaled sigma, and that fallback happens to be the right answer. These two
+// shapes have no such luck:
+//   scale(2) . rotate(90deg)  a = 0     -> fallback sigma 10, device sigma 20
+//   rotate(45deg)             a = 0.707 -> sigma 14.14, device sigma 14.14
+// Both must instead read the SIGMA_10_PROFILE, because Chrome maps sigma with a
+// single scalar and blurs in device space (SkBlurMaskFilterImpl.cpp:111-115), so
+// a similarity CTM never changes the device sigma.
+//
+// Device box is [110,190]^2 in every case below and the shadow offset is 200
+// device px, so the blurred edge sits at x = 390 and the profile is read at
+// x = 380 / 390 / 400 / 410.
+function assertSigma10At390(t: any, data: Uint8ClampedArray, label: string) {
+  for (const [x, expected] of SIGMA_10_PROFILE.slice(1)) {
+    const alpha = data[(150 * 600 + (x + 90)) * 4 + 3]
+    t.true(Math.abs(alpha - expected) <= 4, `${label}: alpha at x=${x + 90} was ${alpha}, expected ${expected} +/- 4`)
+  }
+}
+
+test('shadow-blur-sigma-survives-a-uniform-scale-under-rotation', (t) => {
+  for (const theta of [0, Math.PI / 2, Math.PI, (3 * Math.PI) / 2]) {
+    const canvas = createCanvas(600, 300)
+    const ctx = canvas.getContext('2d')!
+    ctx.translate(150, 150)
+    ctx.scale(2, 2)
+    ctx.rotate(theta)
+    ctx.shadowColor = 'black'
+    ctx.shadowBlur = 20
+    ctx.shadowOffsetX = 200
+    ctx.fillStyle = 'red'
+    ctx.fillRect(-20, -20, 40, 40)
+    assertSigma10At390(t, ctx.getImageData(0, 0, 600, 300).data, `scale(2) . rotate(${theta})`)
+  }
+})
+
+// Off-axis rotations, where `transform.a` is positive and simply wrong. The path
+// is pre-rotated by -theta so its DEVICE image is the same [110,190]^2 box as
+// every other case here -- the shape is held fixed so that only the sigma varies.
+test('shadow-blur-sigma-survives-an-off-axis-rotation', (t) => {
+  for (const theta of [Math.PI / 6, Math.PI / 4, Math.PI / 3]) {
+    const canvas = createCanvas(600, 300)
+    const ctx = canvas.getContext('2d')!
+    ctx.translate(150, 150)
+    ctx.rotate(theta)
+    const cos = Math.cos(-theta)
+    const sin = Math.sin(-theta)
+    const corners = (
+      [
+        [-40, -40],
+        [40, -40],
+        [40, 40],
+        [-40, 40],
+      ] as [number, number][]
+    ).map(([x, y]) => [x * cos - y * sin, x * sin + y * cos] as [number, number])
+    ctx.shadowColor = 'black'
+    ctx.shadowBlur = 20
+    ctx.shadowOffsetX = 200
+    ctx.fillStyle = 'red'
+    ctx.beginPath()
+    ctx.moveTo(corners[0][0], corners[0][1])
+    for (const [x, y] of corners.slice(1)) ctx.lineTo(x, y)
+    ctx.closePath()
+    ctx.fill()
+    assertSigma10At390(t, ctx.getImageData(0, 0, 600, 300).data, `rotate(${theta})`)
+  }
+})
