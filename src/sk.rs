@@ -3034,6 +3034,9 @@ impl Paint {
     }
   }
 
+  // Unused since canvas2d shadows were reduced to the single Gaussian inside
+  // `SkImageFilters::DropShadowOnly`; kept as a general-purpose binding.
+  #[allow(dead_code)]
   pub fn set_mask_filter(&mut self, mask_filter: &MaskFilter) {
     unsafe {
       ffi::skiac_paint_set_mask_filter(self.0, mask_filter.0);
@@ -3889,11 +3892,18 @@ impl<'a> From<&'a Transform> for ffi::skiac_transform {
   }
 }
 
+// Kept as a general-purpose binding, not dead weight to delete: a canvas2d
+// shadow must carry exactly one Gaussian and that one lives inside
+// `SkImageFilters::DropShadowOnly`, so nothing in ctx.rs sets a mask filter
+// today. `mod sk` is private (src/lib.rs), so the allow is here to keep this
+// warning-free if the `use crate::sk::*` glob in global_fonts.rs ever goes away.
+#[allow(dead_code)]
 #[repr(transparent)]
 #[derive(Debug)]
 pub struct MaskFilter(*mut ffi::skiac_mask_filter);
 
 impl MaskFilter {
+  #[allow(dead_code)]
   pub fn make_blur(radius: f32) -> Option<Self> {
     let raw_ptr = unsafe { ffi::skiac_mask_filter_make_blur(radius) };
     if raw_ptr.is_null() {

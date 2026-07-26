@@ -33,8 +33,8 @@ use crate::{
   pattern::{CanvasPattern, Pattern},
   sk::{
     AlphaType, Bitmap, BlendMode, ColorSpace, FillType, FontVariantCaps, ImageFilter, LineMetrics,
-    MaskFilter, Matrix, Paint, PaintStyle, Path as SkPath, PathEffect, PathOp,
-    SkEncodedImageFormat, SkWMemoryStream, SkiaDataRef, Surface, SurfaceRef, Transform,
+    Matrix, Paint, PaintStyle, Path as SkPath, PathEffect, PathOp, SkEncodedImageFormat,
+    SkWMemoryStream, SkiaDataRef, Surface, SurfaceRef, Transform,
   },
   state::Context2dRenderingState,
 };
@@ -1150,6 +1150,89 @@ impl Context {
     Ok(paint)
   }
 
+  /// The one and only Gaussian a canvas2d shadow is allowed to carry.
+  ///
+  /// Chromium: sigma is EXACTLY `shadowBlur * 0.5`, in DEVICE space, applied
+  /// EXACTLY ONCE. `ShadowData::BlurRadiusToStdDev`
+  /// (third_party/blink/renderer/core/style/shadow_data.h:76-82) is `radius *
+  /// 0.5f`, reached from `CanvasRenderingContext2DState::ShadowBlurAsSigma`
+  /// (canvas_rendering_context_2d_state.cc:650-652) and pinned by a unit test
+  /// -- `setShadowBlur(2)` asserts `blur_sigma=1`
+  /// (canvas_2d_recorder_context_test.cc:348-361).
+  ///
+  /// `CanvasRenderingContext2DState::GetFlags`
+  /// (canvas_rendering_context_2d_state.cc:849-868) picks EITHER a
+  /// `cc::DrawLooper` (mask-filter blur) OR a `DropShadowPaintFilter`
+  /// (image-filter blur) and explicitly nulls the other in every branch -- the
+  /// two are never stacked.
+  ///
+  /// We always take the image-filter branch, for geometry, text and images
+  /// alike. That is a deliberate divergence in MECHANISM, not in output:
+  /// Chromium uses the looper for solid/gradient fill, stroke and text. For a
+  /// solid fill the two are the same operation at the same sigma. For a
+  /// gradient with varying alpha the looper blurs only the coverage mask and
+  /// multiplies by the UNBLURRED gradient alpha, while the image filter blurs
+  /// the composited source alpha -- which is what Chromium itself does for
+  /// patterns and non-opaque images. It is also the only route we have:
+  /// colourising a shader through the mask-filter path needs an
+  /// `SkColorFilters::Blend(color, kSrcIn)` binding that skia-c does not
+  /// expose, whereas `DropShadowOnly` carries that blend internally
+  /// (SkDropShadowImageFilter.cpp:47-49). Do not "fix" this back.
+  fn shadow_only_image_filter(
+    state: &Context2dRenderingState,
+    dx: f32,
+    dy: f32,
+  ) -> Option<ImageFilter> {
+    let shadow_color = &state.shadow_color;
+    let a = shadow_color.a;
+    let r = shadow_color.r;
+    let g = shadow_color.g;
+    let b = shadow_color.b;
+    // The sigma handed to `SkImageFilters::Blur` is in PARAMETER space, so it
+    // has to be pre-divided by the scale Skia will apply on its way to the
+    // layer. `SkBlurImageFilter` does not override `onGetCTMCapability`, so it
+    // reports `kScaleTranslate` (SkImageFilter_Base.h:225-226); a rotating or
+    // skewing CTM therefore takes `Mapping::decomposeCTM`'s third branch
+    // (SkImageFilterTypes.cpp:272-283), which factors the CTM through
+    // `SkMatrix::decomposeScale` (SkMatrix.cpp:1479-1499):
+    //   sx = SkVector::Length(getScaleX(), getSkewY()) = sqrt(a^2 + b^2)
+    //   sy = SkVector::Length(getSkewX(), getScaleY()) = sqrt(c^2 + d^2)
+    // Those column norms are the exact inverse for any non-perspective affine
+    // CTM. The raw `transform.a` / `transform.d` are not: rotate(90deg) snaps
+    // `a` to exactly 0 (SkMatrix.cpp:458 `SkScalarCosSnapToZero`) so the sigma
+    // becomes +inf, and rotate(180deg) / scale(-1, 1) make it negative. Either
+    // way `SkImageFilters::Blur` returns nullptr (SkBlurImageFilter.cpp:83-88)
+    // and `make_drop_shadow_graph` SILENTLY drops the Blur node while keeping
+    // the colour filter and the translate (SkDropShadowImageFilter.cpp:45-54,
+    // a null input means "the source") -- a shadow with no blur at all.
+    let t = state.transform.get_transform();
+    let scale_x = (t.a * t.a + t.b * t.b).sqrt();
+    let scale_y = (t.c * t.c + t.d * t.d).sqrt();
+    let sigma = state.shadow_blur / 2f32;
+    // sigma == 0 is fine and must not be guarded: `SkImageFilters::Blur`
+    // explicitly allows it ("We allow 0 sigma for X and/or Y",
+    // SkBlurImageFilter.cpp:83-88) and it degenerates to the identity at filter
+    // time, leaving colorize + translate.
+    let sigma_x = if scale_x.is_finite() && scale_x > 0f32 {
+      sigma / scale_x
+    } else {
+      sigma
+    };
+    let sigma_y = if scale_y.is_finite() && scale_y > 0f32 {
+      sigma / scale_y
+    } else {
+      sigma
+    };
+    ImageFilter::make_drop_shadow_only(
+      dx,
+      dy,
+      sigma_x,
+      sigma_y,
+      ((a as u32) << 24) | ((r as u32) << 16) | ((g as u32) << 8) | b as u32,
+      None,
+    )
+  }
+
   fn drop_shadow_paint(state: &Context2dRenderingState, paint: &Paint) -> Option<Paint> {
     let shadow_color = &state.shadow_color;
     let shadow_alpha = shadow_color.a;
@@ -1160,21 +1243,8 @@ impl Context {
       return None;
     }
     let mut drop_shadow_paint = paint.clone();
-    let a = shadow_color.a;
-    let r = shadow_color.r;
-    let g = shadow_color.g;
-    let b = shadow_color.b;
-    let transform = state.transform.get_transform();
-    let sigma_x = state.shadow_blur / (2f32 * transform.scale_x());
-    let sigma_y = state.shadow_blur / (2f32 * transform.scale_y());
-    let shadow_effect = ImageFilter::make_drop_shadow_only(
-      state.shadow_offset_x,
-      state.shadow_offset_y,
-      sigma_x,
-      sigma_y,
-      ((a as u32) << 24) | ((r as u32) << 16) | ((g as u32) << 8) | b as u32,
-      None,
-    )?;
+    let shadow_effect =
+      Self::shadow_only_image_filter(state, state.shadow_offset_x, state.shadow_offset_y)?;
     // Do NOT re-apply `shadow_alpha` here: the drop-shadow filter above already
     // encodes the shadow colour's alpha, and the cloned `paint` already carries
     // the source alpha (globalAlpha). Calling `set_alpha(shadow_alpha)` would
@@ -1202,19 +1272,11 @@ impl Context {
       // No blur, so set the paint color to the shadow color without any blur effects
       drop_shadow_paint.set_color(r, g, b, a);
     } else {
-      let transform = state.transform.get_transform();
-      let sigma_x = state.shadow_blur / (2f32 * transform.scale_x());
-      let sigma_y = state.shadow_blur / (2f32 * transform.scale_y());
-      // If sigma_x and sigma_y are zero, make_drop_shadow_only will return None
-      // So we need to handle that case separately
-      let shadow_effect = ImageFilter::make_drop_shadow_only(
-        0.0,
-        0.0,
-        sigma_x,
-        sigma_y,
-        ((a as u32) << 24) | ((r as u32) << 16) | ((g as u32) << 8) | b as u32,
-        None,
-      )?;
+      // The offset is applied on the canvas by
+      // `apply_shadow_offset_matrix_to_canvas`, in device space (matching
+      // Blink's `kShadowIgnoresTransforms` / `kPostTransformFlag`,
+      // cc/paint/draw_looper.cc:28-40), so the filter itself carries none.
+      let shadow_effect = Self::shadow_only_image_filter(state, 0.0, 0.0)?;
       // Do NOT re-apply `shadow_alpha` here: the drop-shadow filter above is
       // already built with the shadow colour's alpha, and the cloned `paint`
       // already carries the source alpha (fillStyle alpha * globalAlpha). A
@@ -1222,8 +1284,14 @@ impl Context {
       // time, rendering `shadowColor` alpha `a` as `a * a` -- e.g. a 0.3 shadow
       // shows up at ~0.09 opacity. See the linear-scaling regression test.
       drop_shadow_paint.set_image_filter(&shadow_effect);
-      let blur_effect = MaskFilter::make_blur(state.shadow_blur / 2f32)?;
-      drop_shadow_paint.set_mask_filter(&blur_effect);
+      // Deliberately NO MaskFilter. `DropShadowOnly` already contains the
+      // Gaussian (SkDropShadowImageFilter.cpp:46). Adding
+      // `SkMaskFilter::MakeBlur` on top made Skia build two nested layers --
+      // "When the original paint has both an image filter and a mask filter,
+      // this will create two internal layers" (SkCanvasPriv.cpp:175-207) -- and
+      // convolve twice, so geometry and text shadows came out at
+      // `blur/2 * sqrt(2)` while drawImage shadows used `blur/2`. Chromium never
+      // stacks the two (canvas_rendering_context_2d_state.cc:849-868).
     }
     Some(drop_shadow_paint)
   }
