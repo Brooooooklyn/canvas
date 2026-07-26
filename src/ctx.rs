@@ -680,6 +680,8 @@ impl Context {
     Ok(())
   }
 
+  // Draws the content pass, isolating it in a layer for the composite modes
+  // that need the whole canvas as their destination.
   pub fn render_canvas<F>(
     surface_canvas: &mut Canvas,
     paint: &Paint,
@@ -692,22 +694,57 @@ impl Context {
     F: Fn(&mut Canvas, &Paint) -> result::Result<(), SkError>,
   {
     match blend_mode {
+      // The first four are exactly Chromium's `IsFullCanvasCompositeMode`
+      // (canvas_2d_recorder_context.h:998-1005). It deliberately omits
+      // source-atop and destination-out "as the platforms already implement the
+      // specification's behavior", and `BlendModeRequiresCompositedDraw`
+      // (h:711-718) additionally exempts copy/`kSrc`.
+      //
+      // `Source` is kept here anyway, and it is NOT a divergence in effect:
+      // Chromium implements copy as `clear(transparent)` + foreground-only draw
+      // (h:830-837), and a whole-canvas layer restored with kSrc is the same
+      // thing -- both replace every pixel. Removing it was measured to break
+      // that: with copy falling through to the direct arm, a `fillRect` only
+      // overwrites its own geometry and the rest of the canvas survives.
+      // Porting Chromium's shape needs the shadow suppressed as well, and the
+      // shadow pass is issued by our caller's closure, so that has to wait for
+      // the two-pass hoist.
       BlendMode::SourceIn
       | BlendMode::SourceOut
       | BlendMode::DestinationIn
-      | BlendMode::DestinationOut
       | BlendMode::DestinationATop
       | BlendMode::Source => {
-        let mut layer_paint = paint.clone();
-        layer_paint.set_blend_mode(BlendMode::SourceOver);
+        // Blink's `CompositedDraw` (canvas_2d_recorder_context.h:921-964) never
+        // lets one paint play both roles. We port its looper-shaped branch
+        // (h:946-952): `composite_flags` is a fresh PaintFlags carrying only
+        // `setBlendMode(state.GlobalComposite())` -- alpha 1, no shader, no
+        // filter -- while the content paint rides on the inner draw with its
+        // blend forced to source-over (h:949). The filter-shaped branch
+        // (h:929-944) is algebraically the same statement read backwards, since
+        // an image-filter layer moves only the filter and the blender onto the
+        // restore paint and leaves alpha and shader on the content
+        // (skia/src/core/SkCanvasPriv.cpp:238-251); the looper shape is chosen
+        // because it needs no `saveLayer` binding, which skia-c lacks.
+        //
+        // Passing `paint` to both sides applied globalAlpha twice:
+        // `SkCanvas::drawPicture` with a paint is `saveLayer(cullRect, paint) +
+        // playback + restore` (skia/src/core/SkCanvasPriv.cpp:32-45) and the
+        // restore paint keeps alpha, colour filter and blend mode
+        // (skia/src/core/SkCanvas.cpp:895-906). Dropping the colour and shader
+        // from the layer paint costs nothing -- the layer image replaces the
+        // paint's shader (skia/src/core/SkDraw.cpp:72-82).
+        let mut inner_paint = paint.clone();
+        inner_paint.set_blend_mode(BlendMode::SourceOver);
+        let mut composite_paint = Paint::new();
+        composite_paint.set_blend_mode(blend_mode);
         let mut layer = PictureRecorder::new();
         layer.begin_recording(0.0, 0.0, width, height);
         if let Some(canvas) = layer.get_recording_canvas() {
-          f(canvas, &layer_paint)?;
+          f(canvas, &inner_paint)?;
         }
         if let Some(pict) = layer.finish_recording_as_picture() {
           surface_canvas.save();
-          surface_canvas.draw_picture(&pict, &Matrix::identity(), paint);
+          surface_canvas.draw_picture(&pict, &Matrix::identity(), &composite_paint);
           surface_canvas.restore();
         }
         Ok(())
@@ -1443,14 +1480,17 @@ impl Context {
   // that path at all.
   //
   // KNOWN DEFECTS, do not treat this helper as correct:
-  //  * the isolation arm passes `paint` to BOTH the recording and
-  //    `draw_picture`, so alpha and the drop-shadow filter are applied twice
-  //    (skia/src/core/SkCanvas.cpp:2861-2884 -> SkCanvasPriv.cpp:32-45).
-  //    Chromium puts only {blend mode, image filter} on the layer and the alpha
-  //    on the inner draw (canvas_2d_recorder_context.h:931-944).
+  //  * this runs INSIDE the closure `render_canvas` already replays on its own
+  //    recording canvas, and then re-enters its own isolation arm, so an
+  //    isolation mode composites twice. Blink unrolls shadow and foreground
+  //    into two sibling passes on the same canvas, never one inside the other
+  //    (canvas_2d_recorder_context.h:921-964).
   //  * the mode list below omits the shadow-conditional cases Chromium routes
-  //    through CompositedDraw, and includes DestinationOut and Source, which
-  //    Chromium excludes (canvas_2d_recorder_context.h:692-697, :711-727).
+  //    through CompositedDraw -- with shadows on, every mode outside
+  //    source-over / source-atop / destination-out / copy needs it
+  //    (canvas_2d_recorder_context.h:692-697, :719-727).
+  //  * copy draws a shadow here; Chromium draws none, because the foreground
+  //    overwrites it anyway (canvas_2d_recorder_context.h:830-837).
   fn render_shadow_canvas<F>(
     surface_canvas: &mut Canvas,
     paint: &Paint,
@@ -1478,14 +1518,29 @@ impl Context {
     let expanded_height = height + shadow_expansion * 2.0;
 
     match blend_mode {
+      // Same list as `render_canvas`: Chromium's `IsFullCanvasCompositeMode`
+      // (canvas_2d_recorder_context.h:998-1005) plus copy, see the note there.
+      // destination-out is absent on purpose -- Chromium lists it in
+      // `BlendModeSupportsShadowFilter` (h:692-697) and excludes it from
+      // `IsFullCanvasCompositeMode` (h:1001-1002), so it never isolates. It used
+      // to be here, which composited the shadow with kDstOut against an empty
+      // layer and annihilated it: a destination-out shadow punched no hole at all.
       BlendMode::SourceIn
       | BlendMode::SourceOut
       | BlendMode::DestinationIn
-      | BlendMode::DestinationOut
       | BlendMode::DestinationATop
       | BlendMode::Source => {
-        let mut layer_paint = paint.clone();
-        layer_paint.set_blend_mode(BlendMode::SourceOver);
+        // The `CompositedDraw` split, as in `render_canvas`: the layer paint
+        // carries only the composite mode (canvas_2d_recorder_context.h:921-922,
+        // :946-952) and the shadow colour, alpha and drop-shadow filter stay on
+        // the inner draw. Sharing one paint applied both the alpha and the
+        // filter twice, because `draw_picture` with a paint is a saveLayer whose
+        // restore paint keeps alpha and re-applies the filter
+        // (skia/src/core/SkCanvasPriv.cpp:32-45, SkCanvas.cpp:895-906).
+        let mut inner_paint = paint.clone();
+        inner_paint.set_blend_mode(BlendMode::SourceOver);
+        let mut composite_paint = Paint::new();
+        composite_paint.set_blend_mode(blend_mode);
         let mut layer = PictureRecorder::new();
         layer.begin_recording(
           -shadow_expansion,
@@ -1494,11 +1549,11 @@ impl Context {
           expanded_height,
         );
         if let Some(canvas) = layer.get_recording_canvas() {
-          f(canvas, &layer_paint)?;
+          f(canvas, &inner_paint)?;
         }
         if let Some(pict) = layer.finish_recording_as_picture() {
           surface_canvas.save();
-          surface_canvas.draw_picture(&pict, &Matrix::identity(), paint);
+          surface_canvas.draw_picture(&pict, &Matrix::identity(), &composite_paint);
           surface_canvas.restore();
         }
         Ok(())
