@@ -1264,35 +1264,63 @@ impl Context {
       return None;
     }
     let mut drop_shadow_paint = paint.clone();
-    let a = shadow_color.a;
-    let r = shadow_color.r;
-    let g = shadow_color.g;
-    let b = shadow_color.b;
-    if state.shadow_blur == 0f32 {
-      // No blur, so set the paint color to the shadow color without any blur effects
-      drop_shadow_paint.set_color(r, g, b, a);
-    } else {
-      // The offset is applied on the canvas by
-      // `apply_shadow_offset_matrix_to_canvas`, in device space (matching
-      // Blink's `kShadowIgnoresTransforms` / `kPostTransformFlag`,
-      // cc/paint/draw_looper.cc:28-40), so the filter itself carries none.
-      let shadow_effect = Self::shadow_only_image_filter(state, 0.0, 0.0)?;
-      // Do NOT re-apply `shadow_alpha` here: the drop-shadow filter above is
-      // already built with the shadow colour's alpha, and the cloned `paint`
-      // already carries the source alpha (fillStyle alpha * globalAlpha). A
-      // `set_alpha(shadow_alpha)` would multiply the shadow opacity a second
-      // time, rendering `shadowColor` alpha `a` as `a * a` -- e.g. a 0.3 shadow
-      // shows up at ~0.09 opacity. See the linear-scaling regression test.
-      drop_shadow_paint.set_image_filter(&shadow_effect);
-      // Deliberately NO MaskFilter. `DropShadowOnly` already contains the
-      // Gaussian (SkDropShadowImageFilter.cpp:46). Adding
-      // `SkMaskFilter::MakeBlur` on top made Skia build two nested layers --
-      // "When the original paint has both an image filter and a mask filter,
-      // this will create two internal layers" (SkCanvasPriv.cpp:175-207) -- and
-      // convolve twice, so geometry and text shadows came out at
-      // `blur/2 * sqrt(2)` while drawImage shadows used `blur/2`. Chromium never
-      // stacks the two (canvas_rendering_context_2d_state.cc:849-868).
-    }
+    // Zero blur is NOT a special case. Blink's only gate is `ShouldDrawShadows`
+    // -- `(!shadow_color_.IsFullyTransparent()) && (shadow_blur_ ||
+    // !shadow_offset_.IsZero())` (canvas_rendering_context_2d_state.h:458-461),
+    // the two conditions already checked above -- and the sigma is then fed in
+    // unguarded (canvas_rendering_context_2d_state.cc:650-652, :681-690). The
+    // shadow is colourised by an `SkColorFilters::Blend(shadowColor, kSrcIn)` in
+    // BOTH of Blink's shadow paths (cc/paint/draw_looper.cc:33-34,
+    // SkDropShadowImageFilter.cpp:47-49); it is never an `SkPaint::setColor`.
+    //
+    // This used to `set_color(r, g, b, a)` on the clone when `shadow_blur == 0`.
+    // `setColor` cannot displace a shader, so a gradient or pattern fill cast a
+    // displaced copy of ITSELF instead of a shadow, and it overwrote the
+    // `fillStyle` alpha * `globalAlpha` that `fill_paint`/`stroke_paint` had
+    // already folded into the paint, so the shadow rendered at full
+    // `shadowColor.a`. SrcIn instead replaces the source RGB wholesale --
+    // shader included -- and multiplies the source coverage by `shadowColor.a`
+    // exactly once.
+    //
+    // Sigma 0 is fine for Skia: `SkImageFilters::Blur` rejects only non-finite
+    // and negative sigma, "We allow 0 sigma for X and/or Y"
+    // (SkBlurImageFilter.cpp:83-88), and at filter time it returns the child
+    // unmodified (:160-164), so the graph degenerates to precisely
+    // "SrcIn colourise + translate". Chromium itself ships sigma-0
+    // `DropShadowOnly` in production (cc/paint/paint_filter.cc:391-395).
+    //
+    // The offset is applied on the canvas by
+    // `apply_shadow_offset_matrix_to_canvas`, in device space (matching Blink's
+    // `kShadowIgnoresTransforms` / `kPostTransformFlag`,
+    // cc/paint/draw_looper.cc:28-40), so the filter itself carries none.
+    let shadow_effect = Self::shadow_only_image_filter(state, 0.0, 0.0)?;
+    // Do NOT re-apply `shadow_alpha` here: the drop-shadow filter above is
+    // already built with the shadow colour's alpha, and the cloned `paint`
+    // already carries the source alpha (fillStyle alpha * globalAlpha). A
+    // `set_alpha(shadow_alpha)` would multiply the shadow opacity a second time,
+    // rendering `shadowColor` alpha `a` as `a * a` -- e.g. a 0.3 shadow shows up
+    // at ~0.09 opacity. See the linear-scaling regression test.
+    //
+    // KNOWN DIVERGENCE (pre-existing, unchanged here): this REPLACES any
+    // `ctx.filter` that `fill_paint`/`stroke_paint` installed on the clone
+    // (src/ctx.rs:937-938, :1147-1148) instead of chaining it. Blink composes
+    // the two -- `Compose(Compose(fg_filter, shadow_filter), canvas_filter)`,
+    // canvas_2d_recorder_context.h:931-934 -- so `ctx.filter` should still apply
+    // under a shadow. Passing `state.filter.as_ref()` as this filter's input is
+    // the fix; it is a behaviour change on every shadowed draw, so it is tracked
+    // separately.
+    drop_shadow_paint.set_image_filter(&shadow_effect);
+    // Deliberately NO MaskFilter. `DropShadowOnly` already contains the Gaussian
+    // (SkDropShadowImageFilter.cpp:46). Adding `SkMaskFilter::MakeBlur` on top
+    // made Skia build two nested layers -- "When the original paint has both an
+    // image filter and a mask filter, this will create two internal layers"
+    // (SkCanvasPriv.cpp:175-207) -- and convolve twice, so geometry and text
+    // shadows came out at `blur/2 * sqrt(2)` while drawImage shadows used
+    // `blur/2`. Chromium never stacks the two
+    // (canvas_rendering_context_2d_state.cc:849-868). It would also be fatal
+    // here: `SkMaskFilter::MakeBlur` returns nullptr for sigma <= 0
+    // (SkBlurMaskFilterImpl.cpp:598-603), and the `?` would then discard the
+    // whole shadow paint, turning a wrong shadow into no shadow at all.
     Some(drop_shadow_paint)
   }
 
