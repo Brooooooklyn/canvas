@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url'
 
 import test from 'ava'
 
-import { createCanvas, loadImage, GlobalFonts, PDFDocument, SvgExportFlag } from '../index'
+import { createCanvas, loadImage, GlobalFonts, PDFDocument, SvgExportFlag, type SKRSContext2D } from '../index'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -148,6 +148,61 @@ test('shadow-zero-blur-gradient-text-uses-shadowColor', (t) => {
     }
   }
   t.deepEqual(best, [0, 255, 0, 255])
+})
+
+// The STROKE arm of `ShadowSource::is_solid_color` (src/ctx.rs) reads
+// `state.stroke_style`, not `state.fill_style`. Nothing used to notice if it
+// read the wrong one: every gradient/pattern shadow test above paints with
+// `fillStyle`, so pointing the stroke arm at `fill_style` left `fillStyle` at
+// its default solid black, `is_solid_color` answered "yes", and the fold ran
+// under a shader -- `SkPaint::setColor` cannot displace a shader, so the
+// "shadow" came out as a displaced copy of the gradient. That is bug I2,
+// resurrected for strokes only, with all 547 tests still green.
+//
+// Verified by mutation, not by assertion: with the arm changed to
+// `state.fill_style` the build is clean and the rest of the suite stays green,
+// while the gradient probes below read [203, 0, 52] and [50, 0, 205] -- the
+// displaced gradient -- and the pattern one reads [255, 255, 0].
+function strokeShaderScene(makeStyle: (ctx: SKRSContext2D) => SKRSContext2D['strokeStyle']) {
+  const canvas = createCanvas(300, 100)
+  const ctx = canvas.getContext('2d')!
+  ctx.fillStyle = 'white'
+  ctx.fillRect(0, 0, 300, 100)
+  ctx.strokeStyle = makeStyle(ctx)
+  ctx.lineWidth = 20
+  ctx.shadowColor = 'rgb(0, 255, 0)'
+  ctx.shadowBlur = 0
+  ctx.shadowOffsetX = 150
+  ctx.strokeRect(20, 20, 60, 40)
+  return ctx
+}
+
+test('shadow-zero-blur-gradient-STROKE-uses-shadowColor-not-the-gradient', (t) => {
+  const ctx = strokeShaderScene((c) => {
+    const gradient = c.createLinearGradient(0, 0, 100, 0)
+    gradient.addColorStop(0, 'red')
+    gradient.addColorStop(1, 'blue')
+    return gradient
+  })
+  // Both ends of the shadowed stroke: flat shadowColor, no gradient ramp.
+  t.deepEqual(px(ctx, 170, 40), [0, 255, 0, 255])
+  t.deepEqual(px(ctx, 230, 40), [0, 255, 0, 255])
+  // ...and the stroke itself still IS a gradient, so the fold has not leaked
+  // onto the content pass.
+  const left = px(ctx, 20, 40)
+  const right = px(ctx, 80, 40)
+  t.true(left[0] > right[0] && left[2] < right[2], `content is not a red->blue ramp: ${left} ${right}`)
+})
+
+test('shadow-zero-blur-pattern-STROKE-uses-shadowColor-not-the-pattern', (t) => {
+  const tile = createCanvas(8, 8)
+  const tileCtx = tile.getContext('2d')!
+  tileCtx.fillStyle = 'rgb(255, 255, 0)'
+  tileCtx.fillRect(0, 0, 8, 8)
+  const ctx = strokeShaderScene((c) => c.createPattern(tile, 'repeat'))
+  t.deepEqual(px(ctx, 170, 40), [0, 255, 0, 255])
+  t.deepEqual(px(ctx, 230, 40), [0, 255, 0, 255])
+  t.deepEqual(px(ctx, 20, 40), [255, 255, 0, 255])
 })
 
 // The offset is a device-space translate (kPostTransformFlag), so a 2x/0.5x CTM
@@ -700,22 +755,79 @@ test('shadow-zero-blur-does-not-double-apply-an-antialiased-clip', (t) => {
   t.true(totalDelta <= 800, `total delta ${totalDelta}: jitter is <= 141, the double-applied clip is 7170`)
 })
 
-// `ctx.filter` is installed on the paint by fill_paint/stroke_paint. The
-// zero-blur route must not overwrite it, so the shadow is filtered too --
-// Blink composes `Compose(Compose(fg, shadow), canvas_filter)`
-// (canvas_2d_recorder_context.h:931-934). grayscale(blue) = 0.0722 * 255 = 18.
-test('shadow-zero-blur-keeps-ctx-filter', (t) => {
+// `ctx.filter` is the INPUT of the shadow graph, not something applied over its
+// output: Blink builds `Compose(Compose(fg, shadow), canvas_filter)`
+// (canvas_2d_recorder_context.h:931-934) with `fg` always null
+// (canvas_rendering_context_2d_state.cc:836-841), which is
+// `shadow(canvas_filter(source))`. The shadow graph colourises with kSrcIn
+// (SkDropShadowImageFilter.cpp:46-49), so a colour-only `ctx.filter` cannot
+// reach the shadow's colour at all.
+//
+// Every expectation below is Chrome 150.0.7871.184 on the identical scene,
+// whole-canvas `getImageData` diff, and every one of these is byte-exact.
+function filterScene(filter: string, shadowBlur: number, shadowColor = 'rgb(0, 0, 255)') {
   const canvas = createCanvas(300, 200)
   const ctx = canvas.getContext('2d')!
   ctx.fillStyle = 'white'
   ctx.fillRect(0, 0, 300, 200)
-  ctx.filter = 'grayscale(1)'
-  ctx.shadowColor = 'rgba(0, 0, 255, 1)'
-  ctx.shadowBlur = 0
+  ctx.filter = filter
+  ctx.shadowColor = shadowColor
+  ctx.shadowBlur = shadowBlur
   ctx.shadowOffsetX = 60
   ctx.fillStyle = 'red'
   ctx.fillRect(20, 20, 60, 100)
-  t.deepEqual(px(ctx, 110, 70), [18, 18, 18, 255])
+  return ctx
+}
+
+// Chrome: [0, 0, 255]. Applying the filter to the shadow's colour instead --
+// which is what a paint colour or a colour filter under `ctx.filter` gives,
+// since Skia's blitter runs both BEFORE the paint's image filter -- reads
+// [18, 18, 18] (0.0722 * 255, the luma of blue).
+test('shadow-zero-blur-ctx-filter-does-not-recolour-the-shadow', (t) => {
+  t.deepEqual(px(filterScene('grayscale(1)', 0), 110, 70), [0, 0, 255, 255])
+  // ...while the CONTENT is still filtered: grayscale(red) = 0.2126 * 255 = 54.
+  t.deepEqual(px(filterScene('grayscale(1)', 0), 50, 70), [54, 54, 54, 255])
+})
+
+test('shadow-zero-blur-ctx-filter-invert-does-not-recolour-the-shadow', (t) => {
+  // Unchained this reads [255, 255, 0] -- the inverse of the shadow colour.
+  t.deepEqual(px(filterScene('invert(1)', 0), 110, 70), [0, 0, 255, 255])
+  t.deepEqual(px(filterScene('invert(1)', 0), 50, 70), [0, 255, 255, 255])
+})
+
+test('shadow-blurred-ctx-filter-does-not-recolour-the-shadow', (t) => {
+  t.deepEqual(px(filterScene('grayscale(1)', 8), 110, 70), [0, 0, 255, 255])
+  t.deepEqual(px(filterScene('grayscale(1)', 8), 50, 70), [54, 54, 54, 255])
+})
+
+// The other half of the rule, and the reason "drop `ctx.filter` from the shadow"
+// is wrong even though it gets the colour right: a filter that moves the source
+// COVERAGE must still reach the shadow. `opacity(0.5)` halves it, so the shadow
+// composites at 50% over white -- [128, 128, 255], not the opaque [0, 0, 255].
+test('shadow-zero-blur-ctx-filter-opacity-still-reaches-the-shadow', (t) => {
+  t.deepEqual(px(filterScene('opacity(0.5)', 0), 110, 70), [128, 128, 255, 255])
+})
+
+// Same rule with a geometric filter: `blur(3px)` softens the shadow's edge.
+// Sample far enough outside the sharp rect that only a blurred shadow can be
+// there at all -- the un-blurred edge sits at x = 80 + 60 = 140.
+test('shadow-zero-blur-ctx-filter-blur-still-reaches-the-shadow', (t) => {
+  const ctx = filterScene('blur(3px)', 0)
+  // Chrome 150 across the edge at y=70: x=138 [83,83,255], x=140 [143,143,255],
+  // x=142 [198,198,255], x=144 [235,235,255], x=146 [251,251,255]. Ours is
+  // byte-identical on all five; assert bands so a 1/255 AA drift is not a
+  // failure, but keep them tight enough that a SHARP edge (255 at x=138 and
+  // beyond, since the un-blurred shadow stops dead at x=140) cannot pass.
+  for (const [x, expected] of [
+    [138, 83],
+    [140, 143],
+    [142, 198],
+    [144, 235],
+  ] as const) {
+    const [r, , b] = px(ctx, x, 70)
+    t.is(b, 255, `x=${x} must still be blue`)
+    t.true(Math.abs(r - expected) <= 3, `x=${x}: expected ~${expected} (Chrome 150), got ${r}`)
+  }
 })
 
 // ------------------------------------------- isolation composite arm: device-space offsets

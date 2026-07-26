@@ -1388,7 +1388,38 @@ impl Context {
       sigma_x,
       sigma_y,
       ((a as u32) << 24) | ((r as u32) << 16) | ((g as u32) << 8) | b as u32,
-      None,
+      // `ctx.filter` is the INPUT of the shadow graph, never something applied
+      // to its output. Blink builds the shadow layer's filter as
+      // `Compose(Compose(fg_filter, shadow_filter), canvas_filter)`
+      // (canvas_2d_recorder_context.h:931-934), and `fg_filter` is always null
+      // there -- `GetFlags(.., kDrawForegroundOnly, ..)` opens with
+      // `setImageFilter(nullptr)` (canvas_rendering_context_2d_state.cc:836-841).
+      // `Compose(a, b)` is `a(b(x))`, so the whole expression collapses to
+      // `shadow_filter(canvas_filter(source))`: `ctx.filter` runs FIRST, on the
+      // unmodified source, and the drop-shadow graph then blurs and colourises
+      // what comes out. Because `make_drop_shadow_graph` colourises with
+      // `SkColorFilters::Blend(shadowColor, kSrcIn)`
+      // (SkDropShadowImageFilter.cpp:46-49), which discards the input RGB
+      // wholesale, `ctx.filter` can only ever change the shadow's COVERAGE --
+      // never its colour.
+      //
+      // Measured, Chrome 150.0.7871.184, blue shadow, `shadowOffsetX = 60`,
+      // shadow pixel at (110, 70), whole-canvas byte diff against us:
+      //
+      //   scene                     Chrome       chained (this)   unchained
+      //   grayscale(1) blur 0     [0,0,255]      exact            [18,18,18]
+      //   invert(1)    blur 0     [0,0,255]      exact            [255,255,0]
+      //   sepia(1)     blur 0     [0,0,255]      exact            [48,43,33]
+      //   saturate(3)  blur 0     [0,128,255]    exact            [0,164,255]
+      //   opacity(.5)  blur 0     [128,128,255]  max 1/255        max 128/255
+      //   blur(3px)    blur 0     [0,0,255]      exact            max 175/255
+      //   blur(3px)    blur 8     [0,0,255]      exact            mean 0.45
+      //
+      // The last two rows are why "just drop `ctx.filter` from the shadow" is
+      // not the answer even though it gets the colour right: `blur()` and
+      // `opacity()` DO belong on the shadow, because they move the source
+      // coverage that the shadow is cast from.
+      state.filter.as_ref(),
     )
   }
 
@@ -1433,7 +1464,17 @@ impl Context {
     // drawImage(...)` put the shadow 100 device px to the LEFT (measured
     // centroid 197.5 where the geometry path gives 401.5), and `scale(2, 0.5)`
     // doubled a 40px offset to 80.
-    if state.shadow_blur == 0f32 {
+    // `state.filter.is_none()` guards the whole layer-free route. With a
+    // `ctx.filter` in play the shadow HAS to be an image filter, because the
+    // only faithful order is `colourise(ctx.filter(source))` -- see
+    // `shadow_only_image_filter`, which chains it -- and a paint colour or a
+    // colour filter both run BEFORE the paint's image filter in Skia's blitter,
+    // i.e. they can only ever produce `ctx.filter(colourise(source))`. Nothing
+    // is lost by taking the filter route here: `fill_paint`/`stroke_paint`
+    // already put `ctx.filter` on this paint (src/ctx.rs:994-996, :1204-1206),
+    // so the draw was going through a layer either way and the vector backends
+    // had already given up on it.
+    if state.shadow_blur == 0f32 && state.filter.is_none() {
       // No blur, so there is no Gaussian to place and nothing an image filter
       // could add -- Chromium gates its mask filter on `blur_sigma > 0` and
       // otherwise leaves the looper layer with just the colour filter and the
@@ -1458,14 +1499,9 @@ impl Context {
       // Do NOT add a MaskFilter here either: `SkMaskFilter::MakeBlur` returns
       // nullptr for sigma <= 0 (SkBlurMaskFilterImpl.cpp:598-603).
       //
-      // R4: this route deliberately leaves the clone's image filter ALONE, so a
-      // `ctx.filter` installed by `fill_paint`/`stroke_paint`
-      // (src/ctx.rs:936-938, :1146-1148) still applies to the shadow. Skia runs
-      // the colour filter inside the filter's implicit layer and `ctx.filter`
-      // over the result, i.e. `filter(colourise(source))`, which is the order
-      // Blink asks for (`Compose(Compose(fg, shadow), canvas_filter)`,
-      // canvas_2d_recorder_context.h:931-934). Measured: `grayscale(1)` with an
-      // opaque blue shadow gives [18,18,18] = 0.0722 * 255, not raw blue.
+      // The clone's image filter is empty here by construction -- the `is_none`
+      // guard above sent every `ctx.filter` draw down the image-filter route --
+      // so neither branch below has to think about filter ordering.
       if source.is_solid_color(state) {
         // ...but SkSVGDevice cannot express even THIS colour filter faithfully.
         // It writes a kSrcIn Blend as
@@ -1503,20 +1539,43 @@ impl Context {
         //     still hits the broken SVG path and still rasterises in PDF; that
         //     is unavoidable without patching Skia, and it is the rarer case.
         //
-        // `set_color_4f`, not `set_color`: the folded alpha is a PRODUCT of two
-        // 8-bit alphas, and rounding that product back to 8 bits is a real loss.
-        // Measured over a 256 shadow-alpha x 16 paint-alpha sweep of solid fills
-        // and strokes, the 8-bit fold moved ~9% of pixels by 1/255 against the
-        // colour-filter route; in float it is bit-identical on every pixel.
+        // Round the product back to 8 bits and hand it to plain `set_color`.
+        // This used to call a float `setColor(SkColor4f)` through a dedicated
+        // FFI entry point, on the theory that quantising a product of two 8-bit
+        // alphas loses something. It cannot, for any draw that reaches here, and
+        // the reason is structural rather than statistical: `SkBlitter::Choose`
+        // sends a shaderless solid-colour paint to `SkARGB32_*_Blitter`
+        // (SkBlitter.cpp:748-756), whose constructor is
+        // `fPMColor = SkPreMultiplyColor(paint.getColor())` -- an 8-bit
+        // `SkColor` to an 8-bit `SkPMColor` (SkBlitter_ARGB32.cpp:1450-1456).
+        // The float alpha is quantised before the first pixel is written.
+        //
+        // The same line of reasoning says the fold is exactly the kSrcIn colour
+        // filter it replaces: `Choose` runs `SkPaintPriv::RemoveColorFilter` on
+        // its way past (SkBlitter.cpp:695-698), and with no shader that is
+        // `p->setColor(filter->filterColor4f(p->getColor4f(), ...))`
+        // (SkPaintPriv.cpp:161-174) -- Skia performing this very fold itself,
+        // then quantising it the same way. All three spellings converge on one
+        // `SkPMColor`.
+        //
+        // Measured too, on a sweep built so it COULD fail: 3 opaque backdrops
+        // (white, #808080, #131313) x 256 shadow alphas x 16 paint alphas, each
+        // scene an antialiased circle plus a rotated stroked rect, 150,994,944
+        // bytes. Rounded 8-bit vs float, and both against the colour-filter
+        // route: 0 differing bytes, all three ways. The opaque backdrop is what
+        // makes it a real test -- over a TRANSPARENT one the stored alpha is
+        // `round(a * 255)` on both sides and the two folds cannot differ, so a
+        // transparent sweep proves nothing.
+        //
         // `get_alpha()` is lossless here because every writer of this paint's
         // alpha (`multiply_by_alpha` -> `set_color`, `set_alpha`) starts from a
         // u8 in the first place.
         let paint_alpha = drop_shadow_paint.get_alpha() as f32 / 255.0;
-        drop_shadow_paint.set_color_4f(
-          shadow_color.r as f32 / 255.0,
-          shadow_color.g as f32 / 255.0,
-          shadow_color.b as f32 / 255.0,
-          shadow_alpha as f32 / 255.0 * paint_alpha,
+        drop_shadow_paint.set_color(
+          shadow_color.r,
+          shadow_color.g,
+          shadow_color.b,
+          (shadow_alpha as f32 * paint_alpha).round() as u8,
         );
         return Some(drop_shadow_paint);
       }
@@ -1536,15 +1595,11 @@ impl Context {
     // rendering `shadowColor` alpha `a` as `a * a` -- e.g. a 0.3 shadow shows up
     // at ~0.09 opacity. See the linear-scaling regression test.
     //
-    // KNOWN DIVERGENCE, BLURRED SHADOWS ONLY: this REPLACES any `ctx.filter`
-    // that `fill_paint`/`stroke_paint` installed on the clone
-    // (src/ctx.rs:936-938, :1146-1148) instead of chaining it. Blink composes
-    // the two -- `Compose(Compose(fg_filter, shadow_filter), canvas_filter)`,
-    // canvas_2d_recorder_context.h:931-934 -- so `ctx.filter` should still apply
-    // under a shadow. Passing `state.filter.as_ref()` as this filter's input is
-    // the fix; it is a behaviour change on every blurred shadowed draw, so it is
-    // tracked separately. The zero-blur route above does NOT have this problem:
-    // it never touches the image filter, so `ctx.filter` survives there.
+    // This REPLACES the `ctx.filter` that `fill_paint`/`stroke_paint` put on the
+    // clone (src/ctx.rs:994-996, :1204-1206), and that is correct rather than
+    // lossy: `shadow_only_image_filter` has already chained `state.filter` in as
+    // the shadow graph's INPUT, which is where Blink puts it. Installing it in
+    // both places would run `ctx.filter` twice.
     drop_shadow_paint.set_image_filter(&shadow_effect);
     // Deliberately NO MaskFilter. `DropShadowOnly` already contains the Gaussian
     // (SkDropShadowImageFilter.cpp:46). Adding `SkMaskFilter::MakeBlur` on top

@@ -702,8 +702,6 @@ pub mod ffi {
 
     pub fn skiac_paint_set_src_in_color_filter(paint: *mut skiac_paint, r: u8, g: u8, b: u8, a: u8);
 
-    pub fn skiac_paint_set_color_4f(paint: *mut skiac_paint, r: f32, g: f32, b: f32, a: f32);
-
     pub fn skiac_path_create() -> *mut skiac_path;
 
     pub fn skiac_path_from_svg(svg_path: *mut std::os::raw::c_char) -> *mut skiac_path;
@@ -2957,15 +2955,6 @@ impl Paint {
   pub fn set_color(&mut self, r: u8, g: u8, b: u8, a: u8) {
     unsafe {
       ffi::skiac_paint_set_color(self.0, r, g, b, a);
-    }
-  }
-
-  /// `set_color` without the 1/255 quantisation: the components are
-  /// unpremultiplied and already in the destination colour space, exactly what
-  /// `set_color` computes as `n / 255`.
-  pub fn set_color_4f(&mut self, r: f32, g: f32, b: f32, a: f32) {
-    unsafe {
-      ffi::skiac_paint_set_color_4f(self.0, r, g, b, a);
     }
   }
 

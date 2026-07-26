@@ -939,15 +939,6 @@ void skiac_paint_set_color(skiac_paint* c_paint,
                            uint8_t g,
                            uint8_t b,
                            uint8_t a);
-// Unpremultiplied float RGBA, already in the destination colour space -- the
-// same values `skiac_paint_set_color` produces, minus the 1/255 quantisation.
-// Needed where a colour is the product of two other colours (see the zero-blur
-// shadow fold in ctx.rs) and rounding it to 8 bits would drift by 1/255.
-void skiac_paint_set_color_4f(skiac_paint* c_paint,
-                              float r,
-                              float g,
-                              float b,
-                              float a);
 void skiac_paint_set_alpha(skiac_paint* c_paint, uint8_t a);
 uint8_t skiac_paint_get_alpha(skiac_paint* c_paint);
 void skiac_paint_set_anti_alias(skiac_paint* c_paint, bool aa);

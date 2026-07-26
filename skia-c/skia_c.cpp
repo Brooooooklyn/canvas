@@ -1048,16 +1048,6 @@ void skiac_paint_set_color(skiac_paint* c_paint,
   PAINT_CAST->setARGB(a, r, g, b);
 }
 
-void skiac_paint_set_color_4f(skiac_paint* c_paint,
-                              float r,
-                              float g,
-                              float b,
-                              float a) {
-  // nullptr colour space == "these components are already in the destination
-  // space", which is exactly what setARGB/SkColor4f::FromColor assume.
-  PAINT_CAST->setColor(SkColor4f{r, g, b, a}, nullptr);
-}
-
 void skiac_paint_set_alpha(skiac_paint* c_paint, uint8_t a) {
   PAINT_CAST->setAlpha(a);
 }
