@@ -757,8 +757,14 @@ impl Context {
   //   source-out       overlap [0,0,0,0]     -> [255,0,0,255]   (Chrome [255,0,0,255])
   //   destination-atop shadow  [0,0,255,255] -> [0,0,0,0]       (Chrome [0,0,0,0])
   //   copy             shadow  [0,255,0,255] -> [0,0,0,0]       (Chrome [0,0,0,0])
-  // source-in and destination-in render nothing either way, and Chrome agrees --
-  // that is the drawing model, not a defect.
+  // What the foreground composite consumes is the SHADOW BAND, not the draw.
+  // This comment used to say "source-in and destination-in render nothing"; that
+  // overstates it. Re-measured on the same scene -- blue backdrop,
+  // `fillRect(60, 60, 60, 60)`, lime shadow at (+40, +40), so content is 60..119
+  // and shadow 100..159 -- the shadow-only pixel (140, 140) is [0,0,0,0] under
+  // ALL five modes below, while the content/shadow overlap at (110, 110) still
+  // renders: source-in [255,0,0,255], destination-in [0,0,255,255]. That is the
+  // drawing model, not a defect.
   //
   // EVERY other blend mode -- including the default source-over -- draws both
   // passes straight onto `surface_canvas` with the current clip and transform
@@ -1187,17 +1193,58 @@ impl Context {
   /// cc/paint/draw_looper.cc:28-34).
   ///
   /// For blurred shadows we take the image-filter branch for geometry, text and
-  /// images alike. That is a deliberate divergence in MECHANISM, not in output:
-  /// Chromium uses the looper for solid/gradient fill, stroke and text. For a
-  /// solid fill the two are the same operation at the same sigma. For a
-  /// gradient with varying alpha the looper blurs only the coverage mask and
-  /// multiplies by the UNBLURRED gradient alpha, while the image filter blurs
-  /// the composited source alpha -- which is what Chromium itself does for
-  /// patterns and non-opaque images. `DropShadowOnly` carries the same
-  /// `SkColorFilters::Blend(color, kSrcIn)` internally
+  /// images alike, where Chromium uses the looper for solid/gradient fill,
+  /// stroke and text. Colourisation is identical either way: `DropShadowOnly`
+  /// carries the same `SkColorFilters::Blend(color, kSrcIn)` internally
   /// (SkDropShadowImageFilter.cpp:47-49) that `Paint::set_src_in_color_filter`
-  /// installs directly, so the two routes colourise identically; only the
-  /// Gaussian differs.
+  /// installs directly. For a gradient with varying alpha the looper blurs only
+  /// the coverage mask and multiplies by the UNBLURRED gradient alpha, while the
+  /// image filter blurs the composited source alpha -- which is what Chromium
+  /// itself does for patterns and non-opaque images.
+  ///
+  /// ACCEPTED DIVERGENCE, AXIS-ALIGNED RECT FILLS ONLY. This comment used to
+  /// claim "for a solid fill the two are the same operation at the same sigma".
+  /// They are not. Chromium's looper attaches an `SkMaskFilter::MakeBlur`
+  /// (cc/paint/draw_looper.cc:27-30), and a FILLED AXIS-ALIGNED RECT carrying a
+  /// mask filter is special-cased all the way down to an ANALYTIC edge profile:
+  /// `Draw::drawRRectNinePatch` (skia/src/core/SkDraw.cpp:881-901) ->
+  /// `SkMaskFilterBase::filterRects` (SkMaskFilterBase.cpp:235-259) ->
+  /// `SkBlurMaskFilterImpl::filterRectsToNine` (:438) -> `filterRectMask`
+  /// (:124-130) -> `SkBlurMask::BlurRect` (SkBlurMask.cpp:405), which evaluates
+  /// `ComputeBlurProfile` / `gaussianIntegral` (SkBlurMask.cpp:347, :319) in
+  /// closed form.
+  ///
+  /// Note what that kernel actually is. The derivation above it
+  /// (SkBlurMask.cpp:283-317) opens "Convolving a box with itself three times",
+  /// so BOTH routes use the same three-box kernel -- neither is a true Gaussian.
+  /// The difference is DISCRETISATION. The analytic profile is continuous, so
+  /// its std dev is exactly sigma; we run `ThreeBoxApproxPass`
+  /// (SkBlurEngine.cpp:376-420) with an integer window
+  /// `BoxBlurWindow(sigma) = floor(sigma * 3 * sqrt(2*pi) / 4 + 0.5)`
+  /// (SkBlurEngine.h:89-92) whose std dev is `sqrt(3 * (w^2 - 1) / 12)`, and the
+  /// floor makes that land consistently SHORT. (`GaussianPass`, the real kernel,
+  /// is capped at sigma < 2 -- SkBlurEngine.cpp:275 -- i.e. shadowBlur < 4.)
+  ///
+  /// Measured edge sigma on a 240x400 rect, Chrome 150 as the oracle:
+  ///   shadowBlur 10 -> Chrome  5.022   ours  4.450   (window  9 predicts  4.472)
+  ///   shadowBlur 20 -> Chrome 10.055   ours  9.455   (window 19 predicts  9.487)
+  ///   shadowBlur 40 -> Chrome 20.067   ours 19.140   (window 38 predicts 18.993)
+  /// Worst pixel delta 8/255, at shadowBlur 10; 4-5/255 for 20..60.
+  ///
+  /// Narrow rects, glyphs and circles match Chrome EXACTLY, because they never
+  /// reach the analytic path: the ninepatch bails when the rect is small
+  /// relative to the blur (SkBlurMaskFilterImpl.cpp:517-522) and
+  /// `Draw::drawRRectNinePatch` is skipped outright when `SkRRect::transform`
+  /// cannot keep the rect axis-aligned, so everything else falls through
+  /// `filterMask` -> `SkBlurMask::BoxBlur` (SkBlurMask.cpp:107-121) into the
+  /// same discrete three-box passes we use.
+  ///
+  /// We accept this deliberately, to keep ONE blur implementation shared by the
+  /// geometry, text and image paths. Matching Chrome on this one shape means
+  /// reinstating a mask-filter route for axis-aligned rect fills: a second
+  /// Gaussian to keep in sync, gated on shape AND on the CTM being
+  /// axis-aligned, with the double-convolution trap documented at the bottom of
+  /// `shadow_paint` waiting on the other side of it.
   ///
   /// The filter carries NO offset. `make_drop_shadow_graph` implements dx/dy as
   /// an `SkImageFilters::MatrixTransform(SkMatrix::Translate(dx, dy))`
@@ -1240,14 +1287,45 @@ impl Context {
     // `SkMatrix::decomposeScale` (SkMatrix.cpp:1479-1499):
     //   sx = SkVector::Length(getScaleX(), getSkewY()) = sqrt(a^2 + b^2)
     //   sy = SkVector::Length(getSkewX(), getScaleY()) = sqrt(c^2 + d^2)
-    // Those column norms are the exact inverse for any non-perspective affine
-    // CTM. The raw `transform.a` / `transform.d` are not: rotate(90deg) snaps
+    // Those column norms are exactly the factors Skia will re-apply, so for any
+    // non-perspective affine CTM the sigma that reaches LAYER space is the one
+    // that was asked for. The raw `transform.a` / `transform.d` are not: rotate(90deg) snaps
     // `a` to exactly 0 (SkMatrix.cpp:458 `SkScalarCosSnapToZero`) so the sigma
     // becomes +inf, and rotate(180deg) / scale(-1, 1) make it negative. Either
     // way `SkImageFilters::Blur` returns nullptr (SkBlurImageFilter.cpp:83-88)
     // and `make_drop_shadow_graph` SILENTLY drops the Blur node while keeping
     // the colour filter and the translate (SkDropShadowImageFilter.cpp:45-54,
     // a null input means "the source") -- a shadow with no blur at all.
+    //
+    // KNOWN LIMITATION, NON-SIMILARITY CTMs ONLY. Getting layer space right is
+    // not the same as getting DEVICE space right. `decomposeScale` splits the
+    // CTM into `scale * remaining`, and `remaining` is conformal only when the
+    // CTM is a similarity (rotation and/or uniform scale) or an axis-aligned
+    // scale. Combine a non-uniform scale WITH a rotation, or use a skew, and
+    // `remaining` stretches the isotropic layer-space Gaussian into an ellipse
+    // whose axis ratio is the CTM's singular-value spread. Chrome does not have
+    // this problem on the looper route: `computeXformedSigma` maps sigma with
+    // the single scalar `ctm.mapRadius` and blurs in device space
+    // (SkBlurMaskFilterImpl.cpp:111-115), so its kernel stays round.
+    //
+    // Device sigma at shadowBlur = 40, from the 2-D covariance of the kernel so
+    // there is no edge-normal assumption. Chrome 150 as the oracle:
+    //   identity, scale(2,2), scale(2,0.5),
+    //   rotate(30/45/90/180)              ours == Chrome, isotropic, exact
+    //   scale(2,0.5) . rotate(45)         Chrome 18.62 / 18.83   ours 26.00 / 6.51
+    //   skewX(0.5)                        Chrome 18.94 / 18.94   ours 20.79 / 16.95
+    // Re-measured here on a 60x60 fill (same shape both columns, so only the
+    // relative numbers carry over): 19.12 / 19.11 for every similarity CTM
+    // above, 26.27 / 6.54 for scale(2,0.5).rotate(45), 20.97 / 17.10 for
+    // skewX(0.5). 26.27 / 6.54 = 4.02, and scale(2, 0.5)'s singular values are
+    // 2 and 0.5 -- the ellipse IS `remaining`, which is what makes the cause
+    // certain rather than inferred.
+    //
+    // Pure rotation and pure scale are CORRECT and match Chrome digit-for-digit,
+    // and even the two bad rows are far better than the pre-branch behaviour
+    // (77.4 / 18.5 and 29.0 / 24.5 for the same two CTMs). Fixing them properly
+    // means the mask-filter route -- see the doc comment's accepted-divergence
+    // note, which owns that decision.
     let t = state.transform.get_transform();
     let scale_x = (t.a * t.a + t.b * t.b).sqrt();
     let scale_y = (t.c * t.c + t.d * t.d).sqrt();
