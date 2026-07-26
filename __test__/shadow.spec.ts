@@ -468,66 +468,147 @@ test('shadow-setters-discard-invalid-assignments', (t) => {
 // below: the vector backends cannot express an image filter, and the implicit
 // saveLayer applies an antialiased clip twice.
 
-function svgShadowScene(draw: (ctx: any) => void) {
+// SVG_SHADOW_DX/DY are big enough that the shadow never overlaps the content on
+// a 240x200 canvas, so a scene whose content is painted white on white renders
+// the shadow and nothing else.
+const SVG_SHADOW_DX = 100
+const SVG_SHADOW_DY = 60
+
+// Every shape is drawn by ONE function parameterised on colour, so the "shadow"
+// render and the "what the shadow should look like" render cannot drift apart.
+const SVG_SHADOW_SHAPES: [string, RegExp, (ctx: any, color: string) => void][] = [
+  [
+    'fillRect',
+    /<rect /g,
+    (ctx, color) => {
+      ctx.fillStyle = color
+      ctx.fillRect(30, 30, 80, 60)
+    },
+  ],
+  [
+    'strokeRect',
+    /<rect /g,
+    (ctx, color) => {
+      ctx.strokeStyle = color
+      ctx.lineWidth = 4
+      ctx.strokeRect(30, 30, 80, 60)
+    },
+  ],
+  [
+    'fillText',
+    /<text /g,
+    (ctx, color) => {
+      ctx.fillStyle = color
+      ctx.font = '30px Iosevka Slab'
+      ctx.fillText('Hi', 30, 60)
+    },
+  ],
+  [
+    'fill(path)',
+    /<path /g,
+    (ctx, color) => {
+      ctx.fillStyle = color
+      ctx.beginPath()
+      ctx.arc(70, 70, 30, 0, Math.PI * 2)
+      ctx.fill()
+    },
+  ],
+]
+
+function svgScene(draw: (ctx: any) => void) {
   const canvas = createCanvas(240, 200, SvgExportFlag.NoPrettyXML)
-  const ctx = canvas.getContext('2d')!
-  ctx.shadowColor = 'rgba(0, 0, 255, 1)'
-  ctx.shadowBlur = 0
-  ctx.shadowOffsetX = 15
-  ctx.shadowOffsetY = 15
-  draw(ctx)
-  return canvas.getContent().toString('utf8')
+  draw(canvas.getContext('2d')!)
+  return canvas.getContent()
 }
 
-test('shadow-zero-blur-is-emitted-by-the-svg-backend', (t) => {
+// Rasterise an SVG over an opaque white page, so a "shadow" that is really a
+// translucent flood over the bounding box still shows up as different pixels.
+async function rasterizeSvg(svg: Buffer) {
+  const img = await loadImage(svg)
+  const canvas = createCanvas(240, 200)
+  const ctx = canvas.getContext('2d')!
+  ctx.fillStyle = 'white'
+  ctx.fillRect(0, 0, 240, 200)
+  ctx.drawImage(img, 0, 0)
+  return ctx.getImageData(0, 0, 240, 200).data
+}
+
+// The previous version of this test asserted on the emitted markup only -- two
+// elements, a translate, a flood-color -- and every one of those held while the
+// shadow rendered as a solid rectangle over the shape's bounding box, so it
+// could not see the regression it existed to catch. It now RENDERS the SVG and
+// compares it against an independent oracle.
+test('shadow-zero-blur-renders-the-shape-not-its-bounding-box-in-svg', async (t) => {
   GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'iosevka-slab-regular.ttf'))
-  const cases: [string, RegExp, (ctx: any) => void][] = [
-    [
-      'fillRect',
-      /<rect /g,
-      (ctx) => {
-        ctx.fillStyle = 'red'
-        ctx.fillRect(30, 30, 80, 60)
-      },
-    ],
-    [
-      'strokeRect',
-      /<rect /g,
-      (ctx) => {
-        ctx.strokeStyle = 'red'
-        ctx.lineWidth = 4
-        ctx.strokeRect(30, 30, 80, 60)
-      },
-    ],
-    [
-      'fillText',
-      /<text /g,
-      (ctx) => {
-        ctx.fillStyle = 'red'
-        ctx.font = '30px Iosevka Slab'
-        ctx.fillText('Hi', 30, 80)
-      },
-    ],
-    [
-      'fill(path)',
-      /<path /g,
-      (ctx) => {
-        ctx.fillStyle = 'red'
-        ctx.beginPath()
-        ctx.arc(70, 70, 30, 0, Math.PI * 2)
-        ctx.fill()
-      },
-    ],
-  ]
-  for (const [name, element, draw] of cases) {
-    const svg = svgShadowScene(draw)
-    // one element for the shadow pass, one for the content pass
-    t.is(svg.match(element)?.length, 2, `${name}: expected a shadow element and a content element`)
-    t.true(svg.includes('transform="translate(15 15)"'), `${name}: the shadow pass carries the offset`)
-    // SkSVGDevice only understands a kSrcIn colour filter, which it writes out
-    // as feFlood + feComposite (skia/src/svg/SkSVGDevice.cpp:431-436, :472-505)
-    t.true(svg.includes('flood-color="blue"'), `${name}: the shadow is colourised to shadowColor`)
+  for (const [name, element, draw] of SVG_SHADOW_SHAPES) {
+    // The shadow, alone: content in white on a white page is invisible, and the
+    // offset is large enough that it cannot cover the shadow.
+    const shadowed = svgScene((ctx) => {
+      ctx.shadowColor = 'blue'
+      ctx.shadowBlur = 0
+      ctx.shadowOffsetX = SVG_SHADOW_DX
+      ctx.shadowOffsetY = SVG_SHADOW_DY
+      draw(ctx, 'white')
+    })
+    // The oracle: the same shape, in the shadow colour, translated by the same
+    // offset, with no shadow involved at all. A zero-blur shadow is defined to
+    // be exactly this (cc/paint/draw_looper.cc:21-42).
+    const oracle = svgScene((ctx) => {
+      ctx.translate(SVG_SHADOW_DX, SVG_SHADOW_DY)
+      draw(ctx, 'blue')
+    })
+
+    const rendered = await rasterizeSvg(shadowed)
+    const expected = await rasterizeSvg(oracle)
+    let differing = 0
+    for (let i = 0; i < rendered.length; i += 4) {
+      for (let c = 0; c < 4; c++) {
+        if (rendered[i + c] !== expected[i + c]) {
+          differing++
+          break
+        }
+      }
+    }
+    t.is(differing, 0, `${name}: the rendered SVG shadow must be the shape, translated`)
+
+    // Markup shape, as a second and much more specific guard than the old
+    // "there are two elements" assertion. Skia CAN serialise the kSrcIn colour
+    // filter that colourises a shadow, but it writes
+    //   <feFlood .../><feComposite in="flood" operator="in"/>
+    // with no `in2` (skia/src/svg/SkSVGDevice.cpp:495-503). SVG 1.1 11.1.1 says
+    // a missing `in2` on a non-first primitive is the PREVIOUS result -- the
+    // flood -- so the composite floods the whole filter region, which is the
+    // bounding box. For a solid-colour source the blend is folded into the paint
+    // colour instead (src/ctx.rs, `ShadowSource::is_solid_color`), which is what
+    // makes the render above come out right, so no filter may appear here.
+    const markup = shadowed.toString('utf8')
+    t.is(markup.match(element)?.length, 2, `${name}: a shadow element and a content element`)
+    t.false(markup.includes('filter="url(#'), `${name}: no colour filter for a solid-colour shadow`)
+    t.true(/(fill|stroke)="blue"/.test(markup), `${name}: the shadow carries shadowColor as a plain paint attribute`)
+    t.true(
+      markup.includes(`transform="translate(${SVG_SHADOW_DX} ${SVG_SHADOW_DY})"`),
+      `${name}: the shadow pass carries the offset`,
+    )
   }
+})
+
+// A shader-filled shadow cannot be folded into a paint colour, so it keeps the
+// kSrcIn colour filter and still hits the SkSVGDevice bug described above. That
+// is a known, accepted limitation -- pin it so it is a deliberate choice rather
+// than a silent one.
+test('shadow-zero-blur-gradient-fill-still-needs-the-colour-filter-in-svg', (t) => {
+  const markup = svgScene((ctx) => {
+    const gradient = ctx.createLinearGradient(30, 0, 110, 0)
+    gradient.addColorStop(0, 'red')
+    gradient.addColorStop(1, 'lime')
+    ctx.shadowColor = 'blue'
+    ctx.shadowBlur = 0
+    ctx.shadowOffsetX = SVG_SHADOW_DX
+    ctx.shadowOffsetY = SVG_SHADOW_DY
+    ctx.fillStyle = gradient
+    ctx.fillRect(30, 30, 80, 60)
+  }).toString('utf8')
+  t.true(markup.includes('flood-color="blue"'), 'the gradient shadow keeps the kSrcIn colour filter')
 })
 
 test('shadow-zero-blur-keeps-pdf-text-vector', (t) => {

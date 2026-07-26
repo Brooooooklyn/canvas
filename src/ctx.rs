@@ -52,6 +52,40 @@ pub(crate) const MAX_TEXT_WIDTH: f32 = 100_000.0;
 pub(crate) const FILL_STYLE_HIDDEN_NAME: &str = "_fillStyle";
 pub(crate) const STROKE_STYLE_HIDDEN_NAME: &str = "_strokeStyle";
 
+/// Where the draw that is casting the shadow gets its colour from.
+///
+/// `shadow_paint` is handed a finished `Paint` and cannot tell a solid-colour
+/// paint from a gradient/pattern one: `Paint` exposes no "has a shader" query
+/// across the FFI, and even if it did, a `Pattern::Image` whose bitmap failed to
+/// produce a shader (`fill_paint`, `Pattern::Image` arm) leaves the paint
+/// shader-less while still not being a solid-colour draw. The caller always
+/// knows which style it built the paint from, so it says so, and `shadow_paint`
+/// reads the answer off `Context2dRenderingState`, which is authoritative.
+#[derive(Clone, Copy)]
+pub(crate) enum ShadowSource {
+  /// Built by `fill_paint` -- `state.fill_style` decides.
+  Fill,
+  /// Built by `stroke_paint` -- `state.stroke_style` decides.
+  Stroke,
+  /// `drawImage` / `drawCanvas`. Never a solid colour: the source's alpha varies
+  /// per pixel (that is the whole point of an image shadow), so the kSrcIn
+  /// colourisation is not a constant and cannot be folded into a paint colour.
+  Image,
+}
+
+impl ShadowSource {
+  /// True when the source the shadow is cast from is one flat colour with no
+  /// shader, i.e. when `SkColorFilters::Blend(shadowColor, kSrcIn)` reduces to a
+  /// plain paint colour.
+  fn is_solid_color(self, state: &Context2dRenderingState) -> bool {
+    match self {
+      ShadowSource::Fill => matches!(state.fill_style, Pattern::Color(..)),
+      ShadowSource::Stroke => matches!(state.stroke_style, Pattern::Color(..)),
+      ShadowSource::Image => false,
+    }
+  }
+}
+
 // The shadow half of a draw: the paint built by `shadow_paint`, plus the state
 // `render_canvas` needs to size the shadow layer's cull rect.
 struct ShadowPass<'a> {
@@ -480,7 +514,7 @@ impl Context {
     let stroke_paint = self.stroke_paint()?;
 
     // Extract state for shadow rendering to avoid borrow conflicts
-    let shadow_paint = Self::shadow_paint(&self.state, &stroke_paint);
+    let shadow_paint = Self::shadow_paint(&self.state, &stroke_paint, ShadowSource::Stroke);
     let shadow_offset_x = self.state.shadow_offset_x;
     let shadow_offset_y = self.state.shadow_offset_y;
 
@@ -588,6 +622,7 @@ impl Context {
       y,
       max_width,
       &stroke_paint,
+      ShadowSource::Stroke,
       &variations,
     )?;
     Ok(())
@@ -597,7 +632,7 @@ impl Context {
     let fill_paint = self.fill_paint()?;
 
     // Extract state for shadow rendering to avoid borrow conflicts
-    let shadow_paint = Self::shadow_paint(&self.state, &fill_paint);
+    let shadow_paint = Self::shadow_paint(&self.state, &fill_paint, ShadowSource::Fill);
     let shadow_offset_x = self.state.shadow_offset_x;
     let shadow_offset_y = self.state.shadow_offset_y;
 
@@ -639,6 +674,7 @@ impl Context {
       y,
       max_width,
       &fill_paint,
+      ShadowSource::Fill,
       &variations,
     )?;
     Ok(())
@@ -654,7 +690,7 @@ impl Context {
     };
 
     // Extract state for shadow rendering to avoid borrow conflicts
-    let shadow_paint = Self::shadow_paint(&self.state, &stroke_paint);
+    let shadow_paint = Self::shadow_paint(&self.state, &stroke_paint, ShadowSource::Stroke);
     let shadow_offset_x = self.state.shadow_offset_x;
     let shadow_offset_y = self.state.shadow_offset_y;
 
@@ -896,7 +932,7 @@ impl Context {
     };
 
     // Extract state for shadow rendering to avoid borrow conflicts
-    let shadow_paint = Self::shadow_paint(&self.state, &fill_paint);
+    let shadow_paint = Self::shadow_paint(&self.state, &fill_paint, ShadowSource::Fill);
     let shadow_offset_x = self.state.shadow_offset_x;
     let shadow_offset_y = self.state.shadow_offset_y;
 
@@ -1360,7 +1396,11 @@ impl Context {
   /// used to be a second, image-only builder here; the two differed only in
   /// baking the offset into the filter, and once that moved to the canvas they
   /// were the same function.
-  fn shadow_paint(state: &Context2dRenderingState, paint: &Paint) -> Option<Paint> {
+  fn shadow_paint(
+    state: &Context2dRenderingState,
+    paint: &Paint,
+    source: ShadowSource,
+  ) -> Option<Paint> {
     let shadow_color = &state.shadow_color;
     let shadow_alpha = shadow_color.a;
     if shadow_alpha == 0 {
@@ -1375,17 +1415,14 @@ impl Context {
     // its shadow paths (cc/paint/draw_looper.cc:33-34,
     // SkDropShadowImageFilter.cpp:47-49); it is never an `SkPaint::setColor`.
     //
-    // This used to `set_color(r, g, b, a)` on the clone when `shadow_blur == 0`.
-    // `setColor` cannot displace a shader, so a gradient or pattern fill cast a
-    // displaced copy of ITSELF instead of a shadow, and it overwrote the
-    // `fillStyle` alpha * `globalAlpha` that `fill_paint`/`stroke_paint` had
-    // already folded into the paint, so the shadow rendered at full
-    // `shadowColor.a`. SrcIn instead replaces the source RGB wholesale --
-    // shader included, because Skia's blitter runs the colour filter AFTER the
-    // shader and after the paint alpha (SkRasterPipelineBlitter.cpp: shader
-    // stages, then `scale_1_float` with the paint alpha, then the colour
-    // filter) -- and multiplies the source coverage by `shadowColor.a` exactly
-    // once.
+    // SrcIn replaces the source RGB wholesale -- shader included, because Skia's
+    // blitter runs the colour filter AFTER the shader and after the paint alpha
+    // (SkRasterPipelineBlitter.cpp: shader stages, then `scale_1_float` with the
+    // paint alpha, then the colour filter) -- and multiplies the source coverage
+    // by `shadowColor.a` exactly once. The zero-blur route below folds that
+    // blend into the paint colour when, and only when, the source is a solid
+    // colour, because the two are then algebraically identical and the vector
+    // backends handle a paint colour far better than a colour filter; see there.
     //
     // The offset is applied on the canvas by
     // `apply_shadow_offset_matrix_to_canvas`, in device space (matching Blink's
@@ -1405,9 +1442,11 @@ impl Context {
       // cost three things:
       //   * SkSVGDevice cannot express an image filter and DROPPED the shadow
       //     draw whole, so an offset-only shadow disappeared from every SVG
-      //     export. A kSrcIn colour filter it can express, as an
-      //     feFlood + feComposite (src/svg/SkSVGDevice.cpp:431-436, :472-505),
-      //     and kSrcIn is the only blend mode it accepts.
+      //     export. Without a layer the shadow is an ordinary draw, and for the
+      //     solid-colour case below it comes out as a plain `fill=`/`stroke=`
+      //     attribute. (SkSVGDevice's own rendering of a kSrcIn colour filter is
+      //     broken -- see the fold below -- so we make sure it never sees one
+      //     unless a shader forces it.)
       //   * SkPDFDevice rasterised the layer into an image XObject, so text
       //     under a shadow stopped being real text. A colour filter is folded
       //     back into the paint colour and stays vector
@@ -1427,6 +1466,60 @@ impl Context {
       // Blink asks for (`Compose(Compose(fg, shadow), canvas_filter)`,
       // canvas_2d_recorder_context.h:931-934). Measured: `grayscale(1)` with an
       // opaque blue shadow gives [18,18,18] = 0.0722 * 255, not raw blue.
+      if source.is_solid_color(state) {
+        // ...but SkSVGDevice cannot express even THIS colour filter faithfully.
+        // It writes a kSrcIn Blend as
+        //   <feFlood flood-color=... result="flood"/>
+        //   <feComposite in="flood" operator="in"/>
+        // with NO `in2` (src/svg/SkSVGDevice.cpp:495-503). Per SVG 1.1 11.1.1 a
+        // non-first primitive's missing `in2` defaults to the PREVIOUS result,
+        // here the flood itself, so the composite degenerates to flood-in-flood
+        // and paints the whole filter region -- which is the bounding box
+        // (`x/y/width/height = 0%/0%/100%/100%`, SkSVGDevice.cpp:478-481).
+        // Measured in Chrome: `fillRect` survives because its shadow IS its
+        // bbox, but `strokeRect` became a filled box, `fillText` a solid slab
+        // behind the glyphs and `fill(arc)` a square.
+        //
+        // So do what `SkPaintPriv::RemoveColorFilter` does for PDF and fold the
+        // blend into the paint colour instead. Against a solid-colour source
+        // kSrcIn is exactly `rgb = shadowColor.rgb`, `alpha = shadowColor.a *
+        // src.a`, so raster is algebraically unchanged, and SkSVGDevice emits a
+        // plain `fill=`/`stroke=` attribute with no filter at all.
+        //
+        // TWO conditions, and both matter -- `main` had neither and that was bug
+        // I2:
+        //   * `* paint_alpha`. `paint` already carries `fillStyle`/`strokeStyle`
+        //     alpha * `globalAlpha`, folded in by `fill_paint`/`stroke_paint`
+        //     (`multiply_by_alpha`). `main` passed the RAW `shadowColor.a` and
+        //     so drew every zero-blur shadow fully opaque no matter the
+        //     `globalAlpha`.
+        //   * solid colours ONLY. `setColor` cannot displace a shader, so
+        //     folding under a gradient or a pattern left the shader in place and
+        //     the "shadow" came out as a displaced copy of the gradient. Those
+        //     keep the colour filter below, which Skia's blitter runs AFTER the
+        //     shader and after the paint alpha (SkRasterPipelineBlitter.cpp:
+        //     shader stages, then `scale_1_float` with the paint alpha, then the
+        //     colour filter). The cost is that a shader-filled zero-blur shadow
+        //     still hits the broken SVG path and still rasterises in PDF; that
+        //     is unavoidable without patching Skia, and it is the rarer case.
+        //
+        // `set_color_4f`, not `set_color`: the folded alpha is a PRODUCT of two
+        // 8-bit alphas, and rounding that product back to 8 bits is a real loss.
+        // Measured over a 256 shadow-alpha x 16 paint-alpha sweep of solid fills
+        // and strokes, the 8-bit fold moved ~9% of pixels by 1/255 against the
+        // colour-filter route; in float it is bit-identical on every pixel.
+        // `get_alpha()` is lossless here because every writer of this paint's
+        // alpha (`multiply_by_alpha` -> `set_color`, `set_alpha`) starts from a
+        // u8 in the first place.
+        let paint_alpha = drop_shadow_paint.get_alpha() as f32 / 255.0;
+        drop_shadow_paint.set_color_4f(
+          shadow_color.r as f32 / 255.0,
+          shadow_color.g as f32 / 255.0,
+          shadow_color.b as f32 / 255.0,
+          shadow_alpha as f32 / 255.0 * paint_alpha,
+        );
+        return Some(drop_shadow_paint);
+      }
       drop_shadow_paint.set_src_in_color_filter(
         shadow_color.r,
         shadow_color.g,
@@ -1483,7 +1576,7 @@ impl Context {
     paint.set_alpha((self.state.global_alpha * 255.0).round() as u8);
 
     // Extract state for shadow rendering to avoid borrow conflicts
-    let shadow_paint = Self::shadow_paint(&self.state, &paint);
+    let shadow_paint = Self::shadow_paint(&self.state, &paint, ShadowSource::Image);
     let shadow_offset_x = self.state.shadow_offset_x;
     let shadow_offset_y = self.state.shadow_offset_y;
     let image_smoothing_enabled = self.state.image_smoothing_enabled;
@@ -1568,7 +1661,7 @@ impl Context {
     paint.set_alpha((self.state.global_alpha * 255.0).round() as u8);
 
     // Extract state for shadow rendering to avoid borrow conflicts
-    let shadow_paint = Self::shadow_paint(&self.state, &paint);
+    let shadow_paint = Self::shadow_paint(&self.state, &paint, ShadowSource::Image);
     let shadow_offset_x = self.state.shadow_offset_x;
     let shadow_offset_y = self.state.shadow_offset_y;
 
@@ -1615,12 +1708,15 @@ impl Context {
     y: f32,
     max_width: f32,
     paint: &Paint,
+    // `fillText` and `strokeText` share this body but read different styles;
+    // `shadow_paint` needs to know which one to consult.
+    source: ShadowSource,
     variations: &[crate::sk::FontVariation],
   ) -> result::Result<(), SkError> {
     let font = get_font()?;
 
     // Extract all state values to avoid borrow conflicts with with_render_canvas
-    let shadow_paint = Self::shadow_paint(&self.state, paint);
+    let shadow_paint = Self::shadow_paint(&self.state, paint, source);
     let width = self.width as f32;
     let shadow_offset_x = self.state.shadow_offset_x;
     let shadow_offset_y = self.state.shadow_offset_y;
