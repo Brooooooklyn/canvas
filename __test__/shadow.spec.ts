@@ -340,8 +340,12 @@ for (const useDrawCanvas of [false, true]) {
     }
     t.deepEqual(px(ctx, 150, 150), [255, 0, 0, 255])
 
-    // The sharpest signature of the defect: the bbox used to be exactly the dst
-    // rect [100,100,199,199]. The unclipped reference is [86,86,233,233].
+    // The sharpest signature of the defect: with the filter under the dst clip
+    // the bbox is exactly the dst rect plus the offset, [100,100,209,209], with
+    // NOTHING outside it -- the alpha steps 0 -> 255 at x = 100. Unclipped it is
+    // [86,86,233,233], a Gaussian tail reading 1,1,2,3,4 at x = 86..90. Both
+    // bounds below are the midpoint of the two, so the tail has ~7px to retreat
+    // and the clip ~7px to leak before either verdict changes.
     let minX = 400
     let minY = 400
     let maxX = -1
@@ -356,8 +360,8 @@ for (const useDrawCanvas of [false, true]) {
         }
       }
     }
-    t.true(minX <= 90 && minY <= 90, `shadow bbox top-left ${minX},${minY} did not escape the destination rect`)
-    t.true(maxX >= 228 && maxY >= 228, `shadow bbox bottom-right ${maxX},${maxY} did not escape the destination rect`)
+    t.true(minX <= 93 && minY <= 93, `shadow bbox top-left ${minX},${minY} (want <= 93, clipped is 100)`)
+    t.true(maxX >= 221 && maxY >= 221, `shadow bbox bottom-right ${maxX},${maxY} (want >= 221, clipped is 209)`)
   })
 
   // Colour anchors, not just alpha.
@@ -667,11 +671,33 @@ test('shadow-zero-blur-does-not-double-apply-an-antialiased-clip', (t) => {
   }
   const shadowed = render(true)
   const byHand = render(false)
-  let differing = 0
-  for (let i = 0; i < shadowed.length; i++) {
-    if (shadowed[i] !== byHand[i]) differing++
+  let differingPixels = 0
+  let totalDelta = 0
+  for (let p = 0; p < shadowed.length; p += 4) {
+    let delta = 0
+    for (let c = 0; c < 4; c++) delta += Math.abs(shadowed[p + c] - byHand[p + c])
+    if (delta > 0) {
+      differingPixels++
+      totalDelta += delta
+    }
   }
-  t.is(differing, 0)
+  // NOT `=== 0`, even though this scene measures exactly 0 on arm64. The two
+  // renders reach the same geometry by different matrix arithmetic -- Skia
+  // inverts the CTM in f32 inside `apply_shadow_offset_matrix_to_canvas`, the
+  // by-hand arm multiplies it in f64 in JS -- so the shadow rect's own AA edges
+  // are free to disagree by an ulp, and aarch64 (FMA contraction) and x86-64
+  // SSE2 do not have to round that the same way. Sweeping this scene over 60
+  // clip angles and 6 offsets on the fixed build: at most 12 differing pixels,
+  // 141 total delta, and those are bidirectional (some lighter, some darker) and
+  // sit on the rect's edges, not on the clip boundary.
+  //
+  // The defect this guards is not subtle at that scale. With the shadow drawn
+  // through an image filter (i.e. inside a saveLayer, so the rotated clip is
+  // antialiased twice) the very same scene measures 336 differing pixels and
+  // 7170 total delta -- a uniform darkening along the clip edge. Both bounds
+  // below sit ~5x above the observed f32 jitter and ~5x below the defect.
+  t.true(differingPixels <= 60, `${differingPixels} differing pixels: jitter is <= 12, the double-applied clip is 336`)
+  t.true(totalDelta <= 800, `total delta ${totalDelta}: jitter is <= 141, the double-applied clip is 7170`)
 })
 
 // `ctx.filter` is installed on the paint by fill_paint/stroke_paint. The
@@ -703,7 +729,14 @@ test('shadow-zero-blur-keeps-ctx-filter', (t) => {
 // and is replayed under the real CTM, so a shadow offset applied off that
 // canvas's own CTM came out scaled and rotated. Expected values are Chrome
 // 150.0.7871.184 measurements of the identical scene.
-function isolationShadowRun(setup: (ctx: any) => void, shadowBlur: number) {
+//
+// Returns the alpha of the surviving band along device y = 100, one entry per
+// device x. Probing named columns rather than hunting for a threshold crossing
+// matters at `shadowBlur = 8`: the band's left edge is then a ~20px Gaussian
+// ramp climbing 53 -> 72 -> 93 -> 116 -> 139 -> 162, so "the first column over
+// 120" sits 5/255 from flipping to its neighbour, while a column in the middle
+// of the plateau is 255 and a column outside the ramp is 0.
+function isolationShadowRow(setup: (ctx: any) => void, shadowBlur: number) {
   const canvas = createCanvas(300, 200)
   const ctx = canvas.getContext('2d')!
   ctx.fillStyle = 'blue'
@@ -718,49 +751,59 @@ function isolationShadowRun(setup: (ctx: any) => void, shadowBlur: number) {
   ctx.fillRect(10, 40, 60, 30)
 
   const data = ctx.getImageData(0, 0, 300, 200).data
-  let first = -1
-  let last = -1
+  const row: number[] = []
   for (let x = 0; x < 300; x++) {
     const i = (100 * 300 + x) * 4
-    if (data[i] > 120 && data[i + 3] > 120) {
-      if (first < 0) first = x
-      last = x
-    }
+    // only the red content survives `source-in`; the blue backdrop reads as gone
+    row.push(data[i] > 120 ? data[i + 3] : 0)
   }
-  return [first, last]
+  return row
 }
+
+// Every probe below is >= 10 device px from the nearest ramp, so a sub-pixel
+// shift cannot move it: the measured values are a flat 255 or a flat 0 at both
+// blur radii, and the wrong-space rendering puts the opposite extreme there.
+const OPAQUE = 250
+const CLEAR = 20
 
 for (const shadowBlur of [0, 8]) {
   test(`shadow-offset-is-device-space-on-the-isolation-arm-blur-${shadowBlur}`, (t) => {
     // Content is device x 20..139. Chrome puts the shadow 40 DEVICE px right of
-    // it, so the overlap starts at 60; a user-space offset would double it to 80
+    // it, so the overlap is 60..139; a user-space offset would double it to 80
     // and start the overlap at 100.
-    t.deepEqual(
-      isolationShadowRun((ctx) => ctx.scale(2, 2), shadowBlur),
-      [60, 139],
-    )
+    //             probe:      35        80
+    //   device space (want):   0       255      overlap 60..139
+    //   user space (bug):      0         0      overlap 100..139
+    //   offset dropped:      255       255      overlap 20..139
+    const scaled = isolationShadowRow((ctx) => ctx.scale(2, 2), shadowBlur)
+    t.true(scaled[80] >= OPAQUE, `x=80 must be inside the overlap, got alpha ${scaled[80]}`)
+    t.true(scaled[35] <= CLEAR, `x=35 is left of the overlap, got alpha ${scaled[35]}`)
 
     // Content is device x 120..179 with the axes flipped. Device-space: the
     // shadow moves RIGHT regardless, overlap 160..179. A user-space offset
     // rotates with the CTM and moves it left instead, giving 120..139.
-    t.deepEqual(
-      isolationShadowRun((ctx) => {
-        ctx.translate(150, 100)
-        ctx.rotate(Math.PI)
-        ctx.translate(-40, -55)
-      }, shadowBlur),
-      [160, 179],
-    )
+    //             probe:     130       175
+    //   device space (want):   0       255
+    //   user space (bug):    255         0
+    const flipped = isolationShadowRow((ctx) => {
+      ctx.translate(150, 100)
+      ctx.rotate(Math.PI)
+      ctx.translate(-40, -55)
+    }, shadowBlur)
+    t.true(flipped[175] >= OPAQUE, `x=175 must be inside the overlap, got alpha ${flipped[175]}`)
+    t.true(flipped[130] <= CLEAR, `x=130 is where a user-space offset would put it, got alpha ${flipped[130]}`)
 
     // A rotation the offset must not follow: at 0.5 rad the shadow clears the
-    // content entirely, so nothing survives. A rotated offset leaves an overlap.
-    t.deepEqual(
-      isolationShadowRun((ctx) => {
-        ctx.translate(40, 20)
-        ctx.rotate(0.5)
-      }, shadowBlur),
-      [-1, -1],
-    )
+    // content entirely, so nothing solid survives. A rotated offset leaves a
+    // fully opaque overlap at x 53..75. The bound is the geometric mean of the
+    // two measurements -- at blur 8 the correct render still leaves a 57/255
+    // tail of the Gaussian here, and the bug reads 255.
+    const rotated = isolationShadowRow((ctx) => {
+      ctx.translate(40, 20)
+      ctx.rotate(0.5)
+    }, shadowBlur)
+    const peak = Math.max(...rotated)
+    t.true(peak < 120, `nothing solid may survive, peak alpha ${peak} (blur tail is <= 57, the bug is 255)`)
   })
 }
 
@@ -840,9 +883,15 @@ test('isolation-layer-applies-globalAlpha-exactly-once-with-a-shadow', (t) => {
   // sigma = 20 * 0.5 = 10 and (110, 110) is 10.5 device px inside both edges of
   // the shadow band, so the shadow's own coverage is Phi(1.05)^2 = 0.7278 and
   // alphaO = 0.5 * (0.5 * 0.7278) = 0.1820 -> 46.4.
+  //
+  // +/- 6, not +/- 3: this probe sits on the corner of two blurred edges, where
+  // the alpha climbs ~1.5/255 per device px, so a tolerance under the local
+  // gradient would be sensitive to a sub-pixel shift as well as to the algebra.
+  // It costs nothing -- the measurement is 47, and double-applying the paint
+  // reads 9.
   const blurred = px(isolationAlphaShadowScene('source-in', 20), 110, 110)
   t.deepEqual(blurred.slice(0, 3), [255, 0, 0])
-  t.true(Math.abs(blurred[3] - 46) <= 3, `source-in blurred overlap alpha was ${blurred[3]}, expected 46 +/- 3`)
+  t.true(Math.abs(blurred[3] - 46) <= 6, `source-in blurred overlap alpha was ${blurred[3]}, expected 46 +/- 6`)
 
   // copy replaces every pixel with the foreground layer, shadow band included
   // (canvas_2d_recorder_context.h:830-837), so alphaO is exactly globalAlpha
