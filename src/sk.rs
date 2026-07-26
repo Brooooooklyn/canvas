@@ -700,6 +700,8 @@ pub mod ffi {
       image_filter: *mut skiac_image_filter,
     );
 
+    pub fn skiac_paint_set_src_in_color_filter(paint: *mut skiac_paint, r: u8, g: u8, b: u8, a: u8);
+
     pub fn skiac_path_create() -> *mut skiac_path;
 
     pub fn skiac_path_from_svg(svg_path: *mut std::os::raw::c_char) -> *mut skiac_path;
@@ -3046,6 +3048,16 @@ impl Paint {
   pub fn set_image_filter(&mut self, image_filter: &ImageFilter) {
     unsafe {
       ffi::skiac_paint_set_image_filter(self.0, image_filter.0);
+    }
+  }
+
+  /// Installs `SkColorFilters::Blend(colour, kSrcIn)` -- Chromium's shadow
+  /// colouriser (cc/paint/draw_looper.cc:33-34). Replaces the source RGB
+  /// (shader included) and multiplies the source coverage by `a`, without a
+  /// layer, so vector devices can still express the draw.
+  pub fn set_src_in_color_filter(&mut self, r: u8, g: u8, b: u8, a: u8) {
+    unsafe {
+      ffi::skiac_paint_set_src_in_color_filter(self.0, r, g, b, a);
     }
   }
 }

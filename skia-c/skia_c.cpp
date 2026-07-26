@@ -1109,6 +1109,34 @@ void skiac_paint_set_image_filter(skiac_paint* c_paint,
   PAINT_CAST->setImageFilter(imageFilter);
 }
 
+// Colourise a draw the way Chromium's shadow looper does: an
+// `SkColorFilters::Blend(colour, kSrcIn)` sitting on the paint, so the source
+// RGB -- shader included -- is replaced wholesale while the source coverage is
+// merely multiplied by the colour's alpha (cc/paint/draw_looper.cc:33-34).
+//
+// Unlike `setColor` this runs AFTER the shader and after the paint alpha in
+// Skia's blitter pipeline, and unlike an image filter it needs no layer, so
+// SkSVGDevice can emit it as an feFlood/feComposite filter
+// (src/svg/SkSVGDevice.cpp:431-436, :472-505 -- kSrcIn is the ONLY blend mode it
+// accepts, so do not generalise the mode here) and SkPDFDevice folds it back
+// into the paint colour and stays vector (SkPaintPriv::RemoveColorFilter, via
+// src/pdf/SkPDFDevice.cpp:274-277).
+//
+// The colour is sRGB-encoded, matching Chromium's explicit
+// `SkColorSpace::MakeSRGB()`: `SkColorFilters::Blend` maps its argument from the
+// space given here to sRGB for storage, and a null space is read as sRGB
+// (SkBlendModeColorFilter.cpp:60-64, SkColorSpaceXformSteps.cpp `if (!src) src =
+// sk_srgb_singleton()`), so nullptr and MakeSRGB() are the same transform.
+void skiac_paint_set_src_in_color_filter(skiac_paint* c_paint,
+                                         uint8_t r,
+                                         uint8_t g,
+                                         uint8_t b,
+                                         uint8_t a) {
+  PAINT_CAST->setColorFilter(
+      SkColorFilters::Blend(SkColor4f::FromColor(SkColorSetARGB(a, r, g, b)),
+                            nullptr, SkBlendMode::kSrcIn));
+}
+
 void skiac_paint_set_style(skiac_paint* c_paint, int style) {
   PAINT_CAST->setStyle((SkPaint::Style)style);
 }

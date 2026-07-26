@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url'
 
 import test from 'ava'
 
-import { createCanvas, loadImage, GlobalFonts } from '../index'
+import { createCanvas, loadImage, GlobalFonts, PDFDocument, SvgExportFlag } from '../index'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -457,4 +457,156 @@ test('shadow-setters-discard-invalid-assignments', (t) => {
   ctx.shadowOffsetY = 9
   ctx.shadowOffsetY = -Infinity
   t.is(ctx.shadowOffsetY, 9)
+})
+
+// ---------------------------------------------------------------- zero blur is layer-free
+
+// A zero-blur shadow is colourised by an `SkColorFilters::Blend(shadowColor,
+// kSrcIn)` and nothing else, exactly as Chromium's looper does when
+// `blur_sigma == 0` (cc/paint/draw_looper.cc:28-42). Routing it through an
+// SkImageFilter instead is observable three ways, and all three are asserted
+// below: the vector backends cannot express an image filter, and the implicit
+// saveLayer applies an antialiased clip twice.
+
+function svgShadowScene(draw: (ctx: any) => void) {
+  const canvas = createCanvas(240, 200, SvgExportFlag.NoPrettyXML)
+  const ctx = canvas.getContext('2d')!
+  ctx.shadowColor = 'rgba(0, 0, 255, 1)'
+  ctx.shadowBlur = 0
+  ctx.shadowOffsetX = 15
+  ctx.shadowOffsetY = 15
+  draw(ctx)
+  return canvas.getContent().toString('utf8')
+}
+
+test('shadow-zero-blur-is-emitted-by-the-svg-backend', (t) => {
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'iosevka-slab-regular.ttf'))
+  const cases: [string, RegExp, (ctx: any) => void][] = [
+    [
+      'fillRect',
+      /<rect /g,
+      (ctx) => {
+        ctx.fillStyle = 'red'
+        ctx.fillRect(30, 30, 80, 60)
+      },
+    ],
+    [
+      'strokeRect',
+      /<rect /g,
+      (ctx) => {
+        ctx.strokeStyle = 'red'
+        ctx.lineWidth = 4
+        ctx.strokeRect(30, 30, 80, 60)
+      },
+    ],
+    [
+      'fillText',
+      /<text /g,
+      (ctx) => {
+        ctx.fillStyle = 'red'
+        ctx.font = '30px Iosevka Slab'
+        ctx.fillText('Hi', 30, 80)
+      },
+    ],
+    [
+      'fill(path)',
+      /<path /g,
+      (ctx) => {
+        ctx.fillStyle = 'red'
+        ctx.beginPath()
+        ctx.arc(70, 70, 30, 0, Math.PI * 2)
+        ctx.fill()
+      },
+    ],
+  ]
+  for (const [name, element, draw] of cases) {
+    const svg = svgShadowScene(draw)
+    // one element for the shadow pass, one for the content pass
+    t.is(svg.match(element)?.length, 2, `${name}: expected a shadow element and a content element`)
+    t.true(svg.includes('transform="translate(15 15)"'), `${name}: the shadow pass carries the offset`)
+    // SkSVGDevice only understands a kSrcIn colour filter, which it writes out
+    // as feFlood + feComposite (skia/src/svg/SkSVGDevice.cpp:431-436, :472-505)
+    t.true(svg.includes('flood-color="blue"'), `${name}: the shadow is colourised to shadowColor`)
+  }
+})
+
+test('shadow-zero-blur-keeps-pdf-text-vector', (t) => {
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'iosevka-slab-regular.ttf'))
+  const doc = new PDFDocument()
+  const ctx = doc.beginPage(240, 200)
+  ctx.shadowColor = 'rgba(0, 0, 255, 1)'
+  ctx.shadowBlur = 0
+  ctx.shadowOffsetX = 15
+  ctx.shadowOffsetY = 15
+  ctx.fillStyle = 'red'
+  ctx.font = '30px Iosevka Slab'
+  ctx.fillText('Hi', 30, 80)
+  doc.endPage()
+  const pdf = doc.close().toString('latin1')
+  // An image filter forces SkPDFDevice onto a raster device
+  // (skia/src/pdf/SkPDFDevice.cpp:305-315); a colour filter is folded into the
+  // paint colour instead (:274-277) and the glyphs stay real text.
+  t.false(/\/Subtype\s*\/Image/.test(pdf), 'the shadowed text must not be rasterised')
+  t.true(/\/Type\s*\/Font/.test(pdf))
+})
+
+// The shadow pass must be exactly "the same draw, translated in device space,
+// in shadowColor" -- no layer. A saveLayer would antialias the clip edge once
+// inside the layer and once again when the layer is composited.
+test('shadow-zero-blur-does-not-double-apply-an-antialiased-clip', (t) => {
+  const render = (withShadow: boolean) => {
+    const canvas = createCanvas(400, 400)
+    const ctx = canvas.getContext('2d')!
+    ctx.fillStyle = 'white'
+    ctx.fillRect(0, 0, 400, 400)
+    ctx.translate(100, 100)
+    ctx.rotate(0.5)
+    ctx.beginPath()
+    ctx.rect(-40, -40, 200, 200)
+    ctx.clip()
+    if (withShadow) {
+      ctx.shadowColor = 'rgb(0, 0, 0)'
+      ctx.shadowBlur = 0
+      ctx.shadowOffsetX = 60
+      ctx.fillStyle = 'red'
+      ctx.fillRect(0, 0, 100, 100)
+    } else {
+      ctx.save()
+      const m = ctx.getTransform()
+      // the same device-space post-translate the shadow pass applies
+      ctx.setTransform(1, 0, 0, 1, 60, 0)
+      ctx.transform(m.a, m.b, m.c, m.d, m.e, m.f)
+      ctx.fillStyle = 'black'
+      ctx.fillRect(0, 0, 100, 100)
+      ctx.restore()
+      ctx.fillStyle = 'red'
+      ctx.fillRect(0, 0, 100, 100)
+    }
+    return ctx.getImageData(0, 0, 400, 400).data
+  }
+  const shadowed = render(true)
+  const byHand = render(false)
+  let differing = 0
+  for (let i = 0; i < shadowed.length; i++) {
+    if (shadowed[i] !== byHand[i]) differing++
+  }
+  t.is(differing, 0)
+})
+
+// `ctx.filter` is installed on the paint by fill_paint/stroke_paint. The
+// zero-blur route must not overwrite it, so the shadow is filtered too --
+// Blink composes `Compose(Compose(fg, shadow), canvas_filter)`
+// (canvas_2d_recorder_context.h:931-934). grayscale(blue) = 0.0722 * 255 = 18.
+test('shadow-zero-blur-keeps-ctx-filter', (t) => {
+  const canvas = createCanvas(300, 200)
+  const ctx = canvas.getContext('2d')!
+  ctx.fillStyle = 'white'
+  ctx.fillRect(0, 0, 300, 200)
+  ctx.filter = 'grayscale(1)'
+  ctx.shadowColor = 'rgba(0, 0, 255, 1)'
+  ctx.shadowBlur = 0
+  ctx.shadowOffsetX = 60
+  ctx.fillStyle = 'red'
+  ctx.fillRect(20, 20, 60, 100)
+  t.deepEqual(px(ctx, 110, 70), [18, 18, 18, 255])
 })
