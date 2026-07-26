@@ -1045,7 +1045,11 @@ impl Context {
       ((a as u32) << 24) | ((r as u32) << 16) | ((g as u32) << 8) | b as u32,
       None,
     )?;
-    drop_shadow_paint.set_alpha(shadow_alpha);
+    // Do NOT re-apply `shadow_alpha` here: the drop-shadow filter above already
+    // encodes the shadow colour's alpha, and the cloned `paint` already carries
+    // the source alpha (globalAlpha). Calling `set_alpha(shadow_alpha)` would
+    // multiply the shadow opacity a second time, so `shadowColor` alpha `a`
+    // renders as `a * a`. See the linear-scaling regression test.
     drop_shadow_paint.set_image_filter(&shadow_effect);
     Some(drop_shadow_paint)
   }
@@ -1081,7 +1085,12 @@ impl Context {
         ((a as u32) << 24) | ((r as u32) << 16) | ((g as u32) << 8) | b as u32,
         None,
       )?;
-      drop_shadow_paint.set_alpha(shadow_alpha);
+      // Do NOT re-apply `shadow_alpha` here: the drop-shadow filter above is
+      // already built with the shadow colour's alpha, and the cloned `paint`
+      // already carries the source alpha (fillStyle alpha * globalAlpha). A
+      // `set_alpha(shadow_alpha)` would multiply the shadow opacity a second
+      // time, rendering `shadowColor` alpha `a` as `a * a` -- e.g. a 0.3 shadow
+      // shows up at ~0.09 opacity. See the linear-scaling regression test.
       drop_shadow_paint.set_image_filter(&shadow_effect);
       let blur_effect = MaskFilter::make_blur(state.shadow_blur / 2f32)?;
       drop_shadow_paint.set_mask_filter(&blur_effect);
