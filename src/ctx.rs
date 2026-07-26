@@ -52,6 +52,16 @@ pub(crate) const MAX_TEXT_WIDTH: f32 = 100_000.0;
 pub(crate) const FILL_STYLE_HIDDEN_NAME: &str = "_fillStyle";
 pub(crate) const STROKE_STYLE_HIDDEN_NAME: &str = "_strokeStyle";
 
+// The shadow half of a draw: the paint built by `shadow_blur_paint` /
+// `drop_shadow_paint`, plus the state `render_canvas` needs to size the shadow
+// layer's cull rect.
+struct ShadowPass<'a> {
+  paint: &'a Paint,
+  offset_x: f32,
+  offset_y: f32,
+  blur: f32,
+}
+
 pub struct Context {
   pub(crate) surface: Surface,
   pub(crate) page_recorder: Option<RefCell<PageRecorder>>, // Deferred rendering recorder (RefCell for interior mutability)
@@ -182,15 +192,40 @@ impl Context {
   where
     F: Fn(&mut Canvas, &Paint) -> result::Result<(), SkError>,
   {
+    self.with_shadowed_render_canvas(paint, None, |_, _| Ok(()), f)
+  }
+
+  /// Same, for the draws that also have a shadow pass. The two passes must be
+  /// handed to `render_canvas` together so that it -- and only it -- decides
+  /// whether an isolation layer is needed; see the comment there.
+  fn with_shadowed_render_canvas<S, F>(
+    &mut self,
+    paint: &Paint,
+    shadow_paint: Option<&Paint>,
+    shadow_f: S,
+    f: F,
+  ) -> result::Result<(), SkError>
+  where
+    S: Fn(&mut Canvas, &Paint) -> result::Result<(), SkError>,
+    F: Fn(&mut Canvas, &Paint) -> result::Result<(), SkError>,
+  {
     let blend_mode = self.state.global_composite_operation;
     let width = self.width as f32;
     let height = self.height as f32;
+    let shadow = shadow_paint.map(|paint| ShadowPass {
+      paint,
+      offset_x: self.state.shadow_offset_x,
+      offset_y: self.state.shadow_offset_y,
+      blur: self.state.shadow_blur,
+    });
 
     if let Some(ref recorder) = self.page_recorder {
       let mut rec = recorder.borrow_mut();
       if let Some(canvas) = rec.get_recording_canvas() {
         // Use the recording canvas for deferred mode
-        return Self::render_canvas(canvas, paint, blend_mode, width, height, f);
+        return Self::render_canvas(
+          canvas, paint, blend_mode, width, height, shadow, shadow_f, f,
+        );
       }
     }
     // Direct mode - use surface canvas
@@ -200,6 +235,8 @@ impl Context {
       blend_mode,
       width,
       height,
+      shadow,
+      shadow_f,
       f,
     )
   }
@@ -440,42 +477,28 @@ impl Context {
 
     // Extract state for shadow rendering to avoid borrow conflicts
     let shadow_paint = Self::shadow_blur_paint(&self.state, &stroke_paint);
-    let global_composite_operation = self.state.global_composite_operation;
-    let width = self.width as f32;
-    let height = self.height as f32;
     let shadow_offset_x = self.state.shadow_offset_x;
     let shadow_offset_y = self.state.shadow_offset_y;
-    let shadow_blur = self.state.shadow_blur;
 
-    self.with_render_canvas(&stroke_paint, |canvas, paint| {
-      if let Some(shadow_paint) = &shadow_paint {
-        // Shadow pass; see render_shadow_canvas. Bounds are only expanded for the
-        // isolation blend modes -- source-over draws straight to the surface canvas.
-        Self::render_shadow_canvas(
-          canvas,
-          shadow_paint,
-          global_composite_operation,
-          width,
-          height,
+    self.with_shadowed_render_canvas(
+      &stroke_paint,
+      shadow_paint.as_ref(),
+      |shadow_canvas, shadow_paint| {
+        shadow_canvas.save();
+        Self::apply_shadow_offset_matrix_to_canvas(
+          shadow_canvas,
           shadow_offset_x,
           shadow_offset_y,
-          shadow_blur,
-          |shadow_canvas, shadow_paint| {
-            shadow_canvas.save();
-            Self::apply_shadow_offset_matrix_to_canvas(
-              shadow_canvas,
-              shadow_offset_x,
-              shadow_offset_y,
-            )?;
-            shadow_canvas.draw_rect(x, y, w, h, shadow_paint);
-            shadow_canvas.restore();
-            Ok(())
-          },
         )?;
-      };
-      canvas.draw_rect(x, y, w, h, paint);
-      Ok(())
-    })?;
+        shadow_canvas.draw_rect(x, y, w, h, shadow_paint);
+        shadow_canvas.restore();
+        Ok(())
+      },
+      |canvas, paint| {
+        canvas.draw_rect(x, y, w, h, paint);
+        Ok(())
+      },
+    )?;
     Ok(())
   }
 
@@ -570,43 +593,28 @@ impl Context {
 
     // Extract state for shadow rendering to avoid borrow conflicts
     let shadow_paint = Self::shadow_blur_paint(&self.state, &fill_paint);
-    let global_composite_operation = self.state.global_composite_operation;
-    let width = self.width as f32;
-    let height = self.height as f32;
     let shadow_offset_x = self.state.shadow_offset_x;
     let shadow_offset_y = self.state.shadow_offset_y;
-    let shadow_blur = self.state.shadow_blur;
 
-    self.with_render_canvas(&fill_paint, |canvas, paint| {
-      if let Some(shadow_paint) = &shadow_paint {
-        // Shadow pass; see render_shadow_canvas. Bounds are only expanded for the
-        // isolation blend modes -- source-over draws straight to the surface canvas.
-        Self::render_shadow_canvas(
-          canvas,
-          shadow_paint,
-          global_composite_operation,
-          width,
-          height,
+    self.with_shadowed_render_canvas(
+      &fill_paint,
+      shadow_paint.as_ref(),
+      |shadow_canvas, shadow_paint| {
+        shadow_canvas.save();
+        Self::apply_shadow_offset_matrix_to_canvas(
+          shadow_canvas,
           shadow_offset_x,
           shadow_offset_y,
-          shadow_blur,
-          |shadow_canvas, shadow_paint| {
-            shadow_canvas.save();
-            Self::apply_shadow_offset_matrix_to_canvas(
-              shadow_canvas,
-              shadow_offset_x,
-              shadow_offset_y,
-            )?;
-            shadow_canvas.draw_rect(x, y, w, h, shadow_paint);
-            shadow_canvas.restore();
-            Ok(())
-          },
         )?;
-      };
-
-      canvas.draw_rect(x, y, w, h, paint);
-      Ok(())
-    })?;
+        shadow_canvas.draw_rect(x, y, w, h, shadow_paint);
+        shadow_canvas.restore();
+        Ok(())
+      },
+      |canvas, paint| {
+        canvas.draw_rect(x, y, w, h, paint);
+        Ok(())
+      },
+    )?;
     Ok(())
   }
 
@@ -641,56 +649,130 @@ impl Context {
 
     // Extract state for shadow rendering to avoid borrow conflicts
     let shadow_paint = Self::shadow_blur_paint(&self.state, &stroke_paint);
-    let global_composite_operation = self.state.global_composite_operation;
-    let width = self.width as f32;
-    let height = self.height as f32;
     let shadow_offset_x = self.state.shadow_offset_x;
     let shadow_offset_y = self.state.shadow_offset_y;
-    let shadow_blur = self.state.shadow_blur;
 
-    self.with_render_canvas(&stroke_paint, |canvas, paint| {
-      if let Some(shadow_paint) = &shadow_paint {
-        // Shadow pass; see render_shadow_canvas. Bounds are only expanded for the
-        // isolation blend modes -- source-over draws straight to the surface canvas.
-        Self::render_shadow_canvas(
-          canvas,
-          shadow_paint,
-          global_composite_operation,
-          width,
-          height,
+    self.with_shadowed_render_canvas(
+      &stroke_paint,
+      shadow_paint.as_ref(),
+      |shadow_canvas, shadow_paint| {
+        shadow_canvas.save();
+        Self::apply_shadow_offset_matrix_to_canvas(
+          shadow_canvas,
           shadow_offset_x,
           shadow_offset_y,
-          shadow_blur,
-          |shadow_canvas, shadow_paint| {
-            shadow_canvas.save();
-            Self::apply_shadow_offset_matrix_to_canvas(
-              shadow_canvas,
-              shadow_offset_x,
-              shadow_offset_y,
-            )?;
-            shadow_canvas.draw_path(&path_to_draw, shadow_paint);
-            shadow_canvas.restore();
-            Ok(())
-          },
         )?;
-      }
-      canvas.draw_path(&path_to_draw, paint);
-      Ok(())
-    })?;
+        shadow_canvas.draw_path(&path_to_draw, shadow_paint);
+        shadow_canvas.restore();
+        Ok(())
+      },
+      |canvas, paint| {
+        canvas.draw_path(&path_to_draw, paint);
+        Ok(())
+      },
+    )?;
     Ok(())
   }
 
-  // Draws the content pass, isolating it in a layer for the composite modes
-  // that need the whole canvas as their destination.
-  pub fn render_canvas<F>(
+  // One `CompositedDraw` pass: record the draw into a picture, then replay it
+  // through a layer that carries only the composite mode.
+  //
+  // Blink's `composite_flags` is a fresh PaintFlags with nothing on it but
+  // `setBlendMode(state.GlobalComposite())` -- alpha 1, no shader, no filter --
+  // while the content paint rides on the inner draw with its blend forced to
+  // source-over (canvas_2d_recorder_context.h:921-922, :948-951, :957-962).
+  // Handing one paint to both sides applied globalAlpha twice:
+  // `SkCanvas::drawPicture` with a paint is `saveLayer(cullRect, paint) +
+  // playback + restore` (skia/src/core/SkCanvasPriv.cpp:32-45) and the restore
+  // paint keeps alpha, colour filter and blend mode
+  // (skia/src/core/SkCanvas.cpp:895-906). Dropping the colour and shader from the
+  // layer paint costs nothing -- the layer image replaces the paint's shader
+  // (skia/src/core/SkDraw.cpp:72-82).
+  //
+  // Blink's filter-shaped branch (h:929-944) is the same statement read
+  // backwards, since an image-filter layer moves only the filter and the blender
+  // onto the restore paint and leaves alpha and shader on the content
+  // (skia/src/core/SkCanvasPriv.cpp:238-251); the looper shape is chosen because
+  // it needs no `saveLayer` binding, which skia-c lacks.
+  fn composited_pass<F>(
     surface_canvas: &mut Canvas,
     paint: &Paint,
     blend_mode: BlendMode,
+    left: f32,
+    top: f32,
     width: f32,
     height: f32,
     f: F,
   ) -> result::Result<(), SkError>
   where
+    F: Fn(&mut Canvas, &Paint) -> result::Result<(), SkError>,
+  {
+    let mut inner_paint = paint.clone();
+    inner_paint.set_blend_mode(BlendMode::SourceOver);
+    let mut composite_paint = Paint::new();
+    composite_paint.set_blend_mode(blend_mode);
+    let mut layer = PictureRecorder::new();
+    layer.begin_recording(left, top, width, height);
+    if let Some(canvas) = layer.get_recording_canvas() {
+      f(canvas, &inner_paint)?;
+    }
+    if let Some(pict) = layer.finish_recording_as_picture() {
+      surface_canvas.save();
+      surface_canvas.draw_picture(&pict, &Matrix::identity(), &composite_paint);
+      surface_canvas.restore();
+    }
+    Ok(())
+  }
+
+  // Draws the shadow pass and then the content pass, giving each its OWN
+  // isolation layer for the composite modes that need the whole canvas as their
+  // destination.
+  //
+  // This mirrors Blink's `CompositedDraw`
+  // (canvas_2d_recorder_context.h:896-965): for a shadowed draw it "unroll[s]
+  // into two independently composited passes" (h:924) -- `saveLayer` + shadow +
+  // `restore`, then `saveLayer` + foreground + `restore` -- both layers carrying
+  // `state.GlobalComposite()` and both inner draws forced to source-over. The two
+  // layers are SIBLINGS on the same canvas. That is the WHATWG drawing model
+  // taken literally, composite(composite(background, shadow), foreground), and it
+  // is why a source-in / destination-in shadow legitimately renders almost
+  // nothing and a copy shadow renders nothing at all: the foreground composite
+  // consumes the shadow composite's output (canvas_2d_recorder_context.cc:
+  // 591-596). Do not "fix" that back into one shared layer.
+  //
+  // The shadow pass used to be issued from inside the caller's closure, i.e.
+  // from inside this function's own recording canvas, where it re-entered the
+  // isolation arm and built its layer NESTED in this one. The shadow was
+  // therefore composited against the still-empty outer layer instead of against
+  // the real backdrop, and the union was composited a second time. Measured on a
+  // blue backdrop with a red rect and an offset green shadow, before -> after,
+  // against Chrome 150 as the oracle:
+  //   source-out       overlap [0,0,0,0]     -> [255,0,0,255]   (Chrome [255,0,0,255])
+  //   destination-atop shadow  [0,0,255,255] -> [0,0,0,0]       (Chrome [0,0,0,0])
+  //   copy             shadow  [0,255,0,255] -> [0,0,0,0]       (Chrome [0,0,0,0])
+  // source-in and destination-in render nothing either way, and Chrome agrees --
+  // that is the drawing model, not a defect.
+  //
+  // EVERY other blend mode -- including the default source-over -- draws both
+  // passes straight onto `surface_canvas` with the current clip and transform
+  // intact; no layer and no bounds expansion happen on that path at all.
+  //
+  // KNOWN DEFECT, do not treat this helper as correct: the mode list below omits
+  // the shadow-conditional cases Chromium routes through CompositedDraw. With
+  // shadows on, every mode outside source-over / source-atop / destination-out /
+  // copy needs it (canvas_2d_recorder_context.h:692-697, :719-727).
+  fn render_canvas<S, F>(
+    surface_canvas: &mut Canvas,
+    paint: &Paint,
+    blend_mode: BlendMode,
+    width: f32,
+    height: f32,
+    shadow: Option<ShadowPass<'_>>,
+    shadow_f: S,
+    f: F,
+  ) -> result::Result<(), SkError>
+  where
+    S: Fn(&mut Canvas, &Paint) -> result::Result<(), SkError>,
     F: Fn(&mut Canvas, &Paint) -> result::Result<(), SkError>,
   {
     match blend_mode {
@@ -703,53 +785,74 @@ impl Context {
       // `Source` is kept here anyway, and it is NOT a divergence in effect:
       // Chromium implements copy as `clear(transparent)` + foreground-only draw
       // (h:830-837), and a whole-canvas layer restored with kSrc is the same
-      // thing -- both replace every pixel. Removing it was measured to break
-      // that: with copy falling through to the direct arm, a `fillRect` only
-      // overwrites its own geometry and the rest of the canvas survives.
-      // Porting Chromium's shape needs the shadow suppressed as well, and the
-      // shadow pass is issued by our caller's closure, so that has to wait for
-      // the two-pass hoist.
+      // thing -- both replace every pixel, and the foreground layer wipes the
+      // shadow layer exactly as Chromium says it would (cc:591-596). Removing it
+      // was measured to break that: with copy falling through to the direct arm,
+      // a `fillRect` only overwrites its own geometry and the rest of the canvas
+      // survives.
       BlendMode::SourceIn
       | BlendMode::SourceOut
       | BlendMode::DestinationIn
       | BlendMode::DestinationATop
       | BlendMode::Source => {
-        // Blink's `CompositedDraw` (canvas_2d_recorder_context.h:921-964) never
-        // lets one paint play both roles. We port its looper-shaped branch
-        // (h:946-952): `composite_flags` is a fresh PaintFlags carrying only
-        // `setBlendMode(state.GlobalComposite())` -- alpha 1, no shader, no
-        // filter -- while the content paint rides on the inner draw with its
-        // blend forced to source-over (h:949). The filter-shaped branch
-        // (h:929-944) is algebraically the same statement read backwards, since
-        // an image-filter layer moves only the filter and the blender onto the
-        // restore paint and leaves alpha and shader on the content
-        // (skia/src/core/SkCanvasPriv.cpp:238-251); the looper shape is chosen
-        // because it needs no `saveLayer` binding, which skia-c lacks.
-        //
-        // Passing `paint` to both sides applied globalAlpha twice:
-        // `SkCanvas::drawPicture` with a paint is `saveLayer(cullRect, paint) +
-        // playback + restore` (skia/src/core/SkCanvasPriv.cpp:32-45) and the
-        // restore paint keeps alpha, colour filter and blend mode
-        // (skia/src/core/SkCanvas.cpp:895-906). Dropping the colour and shader
-        // from the layer paint costs nothing -- the layer image replaces the
-        // paint's shader (skia/src/core/SkDraw.cpp:72-82).
-        let mut inner_paint = paint.clone();
-        inner_paint.set_blend_mode(BlendMode::SourceOver);
-        let mut composite_paint = Paint::new();
-        composite_paint.set_blend_mode(blend_mode);
-        let mut layer = PictureRecorder::new();
-        layer.begin_recording(0.0, 0.0, width, height);
-        if let Some(canvas) = layer.get_recording_canvas() {
-          f(canvas, &inner_paint)?;
+        if let Some(shadow) = shadow {
+          // The shadow layer is the one place the halo can escape the canvas
+          // rect, so its cull rect is expanded. FIXME: this under-covers. Skia
+          // bounds a Gaussian at 3 * sigma
+          // (skia/src/effects/imagefilters/SkBlurImageFilter.cpp:64-69) and sigma
+          // is `shadow_blur / 2` (see shadow_blur_paint), so the halo needs
+          // `1.5 * shadow_blur + |dx| + |dy|`, not `shadow_blur + |dx| + |dy|`.
+          // The `.max(shadow_blur * 2.0)` term only rescues the zero-offset case:
+          // blur=4, dx=100, dy=0 yields 104 where 106 is required.
+          let expansion = (shadow.blur.abs() + shadow.offset_x.abs() + shadow.offset_y.abs())
+            .max(shadow.blur * 2.0);
+          Self::composited_pass(
+            surface_canvas,
+            shadow.paint,
+            blend_mode,
+            -expansion,
+            -expansion,
+            width + expansion * 2.0,
+            height + expansion * 2.0,
+            shadow_f,
+          )?;
         }
-        if let Some(pict) = layer.finish_recording_as_picture() {
-          surface_canvas.save();
-          surface_canvas.draw_picture(&pict, &Matrix::identity(), &composite_paint);
-          surface_canvas.restore();
-        }
-        Ok(())
+        Self::composited_pass(
+          surface_canvas,
+          paint,
+          blend_mode,
+          0.0,
+          0.0,
+          width,
+          height,
+          f,
+        )
       }
       _ => {
+        if let Some(shadow) = shadow {
+          // The save/restore/save + set_transform sequence below is inert: the
+          // first `restore()` pops the `save()` above it, and `set_transform`
+          // re-installs the identical CTM (skiac_canvas_set_transform is an
+          // absolute SkCanvas::setMatrix, skia-c/skia_c.cpp:342-345). Neither the
+          // clip nor the transform changes. Contrary to the comments this
+          // replaces, the clip is NOT removed -- measured: with a clip on x<100
+          // and an offset-only shadow crossing it, pixel (110,100) stays
+          // [255,255,255,255].
+          //
+          // Preserving the clip is correct and must stay: Chromium's
+          // CompositedDraw resets only the matrix and never touches the clip
+          // (canvas_2d_recorder_context.h:919-964), so a shadow is clipped like
+          // any other draw. Do NOT "fix" this into a real clip removal.
+          surface_canvas.save();
+          let current_transform = surface_canvas.get_transform_matrix().clone();
+
+          surface_canvas.restore();
+          surface_canvas.save();
+          surface_canvas.set_transform(&current_transform);
+
+          shadow_f(surface_canvas, shadow.paint)?;
+          surface_canvas.restore();
+        }
         f(surface_canvas, paint)?;
         Ok(())
       }
@@ -774,42 +877,28 @@ impl Context {
 
     // Extract state for shadow rendering to avoid borrow conflicts
     let shadow_paint = Self::shadow_blur_paint(&self.state, &fill_paint);
-    let global_composite_operation = self.state.global_composite_operation;
-    let width = self.width as f32;
-    let height = self.height as f32;
     let shadow_offset_x = self.state.shadow_offset_x;
     let shadow_offset_y = self.state.shadow_offset_y;
-    let shadow_blur = self.state.shadow_blur;
 
-    self.with_render_canvas(&fill_paint, |canvas, paint| {
-      if let Some(shadow_paint) = &shadow_paint {
-        // Shadow pass; see render_shadow_canvas. Bounds are only expanded for the
-        // isolation blend modes -- source-over draws straight to the surface canvas.
-        Self::render_shadow_canvas(
-          canvas,
-          shadow_paint,
-          global_composite_operation,
-          width,
-          height,
+    self.with_shadowed_render_canvas(
+      &fill_paint,
+      shadow_paint.as_ref(),
+      |shadow_canvas, shadow_paint| {
+        shadow_canvas.save();
+        Self::apply_shadow_offset_matrix_to_canvas(
+          shadow_canvas,
           shadow_offset_x,
           shadow_offset_y,
-          shadow_blur,
-          |shadow_canvas, shadow_paint| {
-            shadow_canvas.save();
-            Self::apply_shadow_offset_matrix_to_canvas(
-              shadow_canvas,
-              shadow_offset_x,
-              shadow_offset_y,
-            )?;
-            shadow_canvas.draw_path(&path_to_draw, shadow_paint);
-            shadow_canvas.restore();
-            Ok(())
-          },
         )?;
-      }
-      canvas.draw_path(&path_to_draw, paint);
-      Ok(())
-    })?;
+        shadow_canvas.draw_path(&path_to_draw, shadow_paint);
+        shadow_canvas.restore();
+        Ok(())
+      },
+      |canvas, paint| {
+        canvas.draw_path(&path_to_draw, paint);
+        Ok(())
+      },
+    )?;
     Ok(())
   }
 
@@ -1156,63 +1245,47 @@ impl Context {
 
     // Extract state for shadow rendering to avoid borrow conflicts
     let drop_shadow_paint = Self::drop_shadow_paint(&self.state, &paint);
-    let global_composite_operation = self.state.global_composite_operation;
-    let width = self.width as f32;
-    let height = self.height as f32;
-    let shadow_offset_x = self.state.shadow_offset_x;
-    let shadow_offset_y = self.state.shadow_offset_y;
-    let shadow_blur = self.state.shadow_blur;
     let image_smoothing_enabled = self.state.image_smoothing_enabled;
     let image_smoothing_quality = self.state.image_smoothing_quality;
 
-    self.with_render_canvas(&paint, |canvas: &mut Canvas, paint| {
-      if let Some(drop_shadow_paint) = &drop_shadow_paint {
-        // Shadow pass; see render_shadow_canvas. Bounds are only expanded for the
-        // isolation blend modes -- source-over draws straight to the surface canvas.
-        Self::render_shadow_canvas(
-          canvas,
-          drop_shadow_paint,
-          global_composite_operation,
-          width,
-          height,
-          shadow_offset_x,
-          shadow_offset_y,
-          shadow_blur,
-          |shadow_canvas, shadow_paint| {
-            shadow_canvas.draw_image(
-              bitmap,
-              sx,
-              sy,
-              s_width,
-              s_height,
-              dx,
-              dy,
-              d_width,
-              d_height,
-              image_smoothing_enabled,
-              image_smoothing_quality,
-              shadow_paint,
-            );
-            Ok(())
-          },
-        )?;
-      }
-      canvas.draw_image(
-        bitmap,
-        sx,
-        sy,
-        s_width,
-        s_height,
-        dx,
-        dy,
-        d_width,
-        d_height,
-        image_smoothing_enabled,
-        image_smoothing_quality,
-        paint,
-      );
-      Ok(())
-    })?;
+    self.with_shadowed_render_canvas(
+      &paint,
+      drop_shadow_paint.as_ref(),
+      |shadow_canvas: &mut Canvas, shadow_paint| {
+        shadow_canvas.draw_image(
+          bitmap,
+          sx,
+          sy,
+          s_width,
+          s_height,
+          dx,
+          dy,
+          d_width,
+          d_height,
+          image_smoothing_enabled,
+          image_smoothing_quality,
+          shadow_paint,
+        );
+        Ok(())
+      },
+      |canvas: &mut Canvas, paint| {
+        canvas.draw_image(
+          bitmap,
+          sx,
+          sy,
+          s_width,
+          s_height,
+          dx,
+          dy,
+          d_width,
+          d_height,
+          image_smoothing_enabled,
+          image_smoothing_quality,
+          paint,
+        );
+        Ok(())
+      },
+    )?;
     Ok(())
   }
 
@@ -1247,48 +1320,32 @@ impl Context {
 
     // Extract state for shadow rendering to avoid borrow conflicts
     let drop_shadow_paint = Self::drop_shadow_paint(&self.state, &paint);
-    let global_composite_operation = self.state.global_composite_operation;
-    let width = self.width as f32;
-    let height = self.height as f32;
-    let shadow_offset_x = self.state.shadow_offset_x;
-    let shadow_offset_y = self.state.shadow_offset_y;
-    let shadow_blur = self.state.shadow_blur;
 
-    self.with_render_canvas(&paint, |canvas: &mut Canvas, paint| {
-      if let Some(drop_shadow_paint) = &drop_shadow_paint {
-        // Shadow pass; see render_shadow_canvas. Bounds are only expanded for the
-        // isolation blend modes -- source-over draws straight to the surface canvas.
-        Self::render_shadow_canvas(
-          canvas,
-          drop_shadow_paint,
-          global_composite_operation,
-          width,
-          height,
-          shadow_offset_x,
-          shadow_offset_y,
-          shadow_blur,
-          |shadow_canvas, shadow_paint| {
-            shadow_canvas.draw_picture_rect(
-              picture,
-              sx,
-              sy,
-              s_width,
-              s_height,
-              dx,
-              dy,
-              d_width,
-              d_height,
-              shadow_paint,
-            );
-            Ok(())
-          },
-        )?;
-      }
-      canvas.draw_picture_rect(
-        picture, sx, sy, s_width, s_height, dx, dy, d_width, d_height, paint,
-      );
-      Ok(())
-    })?;
+    self.with_shadowed_render_canvas(
+      &paint,
+      drop_shadow_paint.as_ref(),
+      |shadow_canvas: &mut Canvas, shadow_paint| {
+        shadow_canvas.draw_picture_rect(
+          picture,
+          sx,
+          sy,
+          s_width,
+          s_height,
+          dx,
+          dy,
+          d_width,
+          d_height,
+          shadow_paint,
+        );
+        Ok(())
+      },
+      |canvas: &mut Canvas, paint| {
+        canvas.draw_picture_rect(
+          picture, sx, sy, s_width, s_height, dx, dy, d_width, d_height, paint,
+        );
+        Ok(())
+      },
+    )?;
     Ok(())
   }
 
@@ -1305,12 +1362,9 @@ impl Context {
 
     // Extract all state values to avoid borrow conflicts with with_render_canvas
     let shadow_paint = Self::shadow_blur_paint(&self.state, paint);
-    let global_composite_operation = self.state.global_composite_operation;
     let width = self.width as f32;
-    let height = self.height as f32;
     let shadow_offset_x = self.state.shadow_offset_x;
     let shadow_offset_y = self.state.shadow_offset_y;
-    let shadow_blur = self.state.shadow_blur;
     let font_weight = self.state.font_style.weight;
     let font_stretch = self.state.font_stretch;
     let font_stretch_percentage = font_stretch.to_width_percentage();
@@ -1327,83 +1381,73 @@ impl Context {
     let lang = self.state.lang.clone();
     let text_rendering = self.state.text_rendering;
 
-    self.with_render_canvas(paint, |canvas, paint| {
-      if let Some(shadow_paint) = &shadow_paint {
-        // Shadow pass; see render_shadow_canvas. Bounds are only expanded for the
-        // isolation blend modes -- source-over draws straight to the surface canvas.
-        Self::render_shadow_canvas(
-          canvas,
-          shadow_paint,
-          global_composite_operation,
-          width,
-          height,
+    self.with_shadowed_render_canvas(
+      paint,
+      shadow_paint.as_ref(),
+      |shadow_canvas, shadow_paint| {
+        shadow_canvas.save();
+        Self::apply_shadow_offset_matrix_to_canvas(
+          shadow_canvas,
           shadow_offset_x,
           shadow_offset_y,
-          shadow_blur,
-          |shadow_canvas, shadow_paint| {
-            shadow_canvas.save();
-            Self::apply_shadow_offset_matrix_to_canvas(
-              shadow_canvas,
-              shadow_offset_x,
-              shadow_offset_y,
-            )?;
-            shadow_canvas.draw_text(
-              text,
-              x,
-              y,
-              max_width,
-              width,
-              font_weight,
-              font_stretch as i32,
-              font_stretch_percentage,
-              font_style_style,
-              &font,
-              font_size,
-              &font_family,
-              text_baseline,
-              text_align,
-              text_direction,
-              letter_spacing,
-              word_spacing,
-              shadow_paint,
-              variations,
-              font_kerning,
-              font_variant_caps,
-              &lang,
-              text_rendering,
-            )?;
-            shadow_canvas.restore();
-            Ok(())
-          },
         )?;
-      }
-      canvas.draw_text(
-        text,
-        x,
-        y,
-        max_width,
-        width,
-        font_weight,
-        font_stretch as i32,
-        font_stretch_percentage,
-        font_style_style,
-        &font,
-        font_size,
-        &font_family,
-        text_baseline,
-        text_align,
-        text_direction,
-        letter_spacing,
-        word_spacing,
-        paint,
-        variations,
-        font_kerning,
-        font_variant_caps,
-        &lang,
-        text_rendering,
-      )?;
-      Ok(())
-    })?;
+        shadow_canvas.draw_text(
+          text,
+          x,
+          y,
+          max_width,
+          width,
+          font_weight,
+          font_stretch as i32,
+          font_stretch_percentage,
+          font_style_style,
+          &font,
+          font_size,
+          &font_family,
+          text_baseline,
+          text_align,
+          text_direction,
+          letter_spacing,
+          word_spacing,
+          shadow_paint,
+          variations,
+          font_kerning,
+          font_variant_caps,
+          &lang,
+          text_rendering,
+        )?;
+        shadow_canvas.restore();
+        Ok(())
+      },
+      |canvas, paint| {
+        canvas.draw_text(
+          text,
+          x,
+          y,
+          max_width,
+          width,
+          font_weight,
+          font_stretch as i32,
+          font_stretch_percentage,
+          font_style_style,
+          &font,
+          font_size,
+          &font_family,
+          text_baseline,
+          text_align,
+          text_direction,
+          letter_spacing,
+          word_spacing,
+          paint,
+          variations,
+          font_kerning,
+          font_variant_caps,
+          &lang,
+          text_rendering,
+        )?;
+        Ok(())
+      },
+    )?;
     Ok(())
   }
 
@@ -1468,121 +1512,6 @@ impl Context {
       * 255.0)
       .round() as u8;
     result
-  }
-
-  // Draws the shadow pass.
-  //
-  // For the isolation blend modes the shadow is recorded into a picture whose
-  // cull rect is expanded by `shadow_expansion` -- expanded, but still short of
-  // 3 sigma for offset shadows, see the FIXME below. EVERY other blend mode --
-  // including the default source-over -- draws straight onto `surface_canvas`
-  // with the current clip and transform intact; no bounds expansion happens on
-  // that path at all.
-  //
-  // KNOWN DEFECTS, do not treat this helper as correct:
-  //  * this runs INSIDE the closure `render_canvas` already replays on its own
-  //    recording canvas, and then re-enters its own isolation arm, so an
-  //    isolation mode composites twice. Blink unrolls shadow and foreground
-  //    into two sibling passes on the same canvas, never one inside the other
-  //    (canvas_2d_recorder_context.h:921-964).
-  //  * the mode list below omits the shadow-conditional cases Chromium routes
-  //    through CompositedDraw -- with shadows on, every mode outside
-  //    source-over / source-atop / destination-out / copy needs it
-  //    (canvas_2d_recorder_context.h:692-697, :719-727).
-  //  * copy draws a shadow here; Chromium draws none, because the foreground
-  //    overwrites it anyway (canvas_2d_recorder_context.h:830-837).
-  fn render_shadow_canvas<F>(
-    surface_canvas: &mut Canvas,
-    paint: &Paint,
-    blend_mode: BlendMode,
-    width: f32,
-    height: f32,
-    shadow_offset_x: f32,
-    shadow_offset_y: f32,
-    shadow_blur: f32,
-    f: F,
-  ) -> result::Result<(), SkError>
-  where
-    F: Fn(&mut Canvas, &Paint) -> result::Result<(), SkError>,
-  {
-    // Calculate expanded bounds to accommodate shadows
-    // FIXME: this under-covers. Skia bounds a Gaussian at 3 * sigma
-    // (skia/src/effects/imagefilters/SkBlurImageFilter.cpp:64-69) and sigma is
-    // `shadow_blur / 2` (see shadow_blur_paint), so the halo needs
-    // `1.5 * shadow_blur + |dx| + |dy|`, not `shadow_blur + |dx| + |dy|`. The
-    // `.max(shadow_blur * 2.0)` term only rescues the zero-offset case:
-    // blur=4, dx=100, dy=0 yields 104 where 106 is required.
-    let shadow_expansion =
-      (shadow_blur.abs() + shadow_offset_x.abs() + shadow_offset_y.abs()).max(shadow_blur * 2.0);
-    let expanded_width = width + shadow_expansion * 2.0;
-    let expanded_height = height + shadow_expansion * 2.0;
-
-    match blend_mode {
-      // Same list as `render_canvas`: Chromium's `IsFullCanvasCompositeMode`
-      // (canvas_2d_recorder_context.h:998-1005) plus copy, see the note there.
-      // destination-out is absent on purpose -- Chromium lists it in
-      // `BlendModeSupportsShadowFilter` (h:692-697) and excludes it from
-      // `IsFullCanvasCompositeMode` (h:1001-1002), so it never isolates. It used
-      // to be here, which composited the shadow with kDstOut against an empty
-      // layer and annihilated it: a destination-out shadow punched no hole at all.
-      BlendMode::SourceIn
-      | BlendMode::SourceOut
-      | BlendMode::DestinationIn
-      | BlendMode::DestinationATop
-      | BlendMode::Source => {
-        // The `CompositedDraw` split, as in `render_canvas`: the layer paint
-        // carries only the composite mode (canvas_2d_recorder_context.h:921-922,
-        // :946-952) and the shadow colour, alpha and drop-shadow filter stay on
-        // the inner draw. Sharing one paint applied both the alpha and the
-        // filter twice, because `draw_picture` with a paint is a saveLayer whose
-        // restore paint keeps alpha and re-applies the filter
-        // (skia/src/core/SkCanvasPriv.cpp:32-45, SkCanvas.cpp:895-906).
-        let mut inner_paint = paint.clone();
-        inner_paint.set_blend_mode(BlendMode::SourceOver);
-        let mut composite_paint = Paint::new();
-        composite_paint.set_blend_mode(blend_mode);
-        let mut layer = PictureRecorder::new();
-        layer.begin_recording(
-          -shadow_expansion,
-          -shadow_expansion,
-          expanded_width,
-          expanded_height,
-        );
-        if let Some(canvas) = layer.get_recording_canvas() {
-          f(canvas, &inner_paint)?;
-        }
-        if let Some(pict) = layer.finish_recording_as_picture() {
-          surface_canvas.save();
-          surface_canvas.draw_picture(&pict, &Matrix::identity(), &composite_paint);
-          surface_canvas.restore();
-        }
-        Ok(())
-      }
-      _ => {
-        // The save/restore/save + set_transform sequence below is inert: the
-        // first `restore()` pops the `save()` above it, and `set_transform`
-        // re-installs the identical CTM (skiac_canvas_set_transform is an
-        // absolute SkCanvas::setMatrix, skia-c/skia_c.cpp:342-345). Neither the
-        // clip nor the transform changes. Contrary to the comments this replaces,
-        // the clip is NOT removed -- measured: with a clip on x<100 and an
-        // offset-only shadow crossing it, pixel (110,100) stays [255,255,255,255].
-        //
-        // Preserving the clip is correct and must stay: Chromium's CompositedDraw
-        // resets only the matrix and never touches the clip
-        // (canvas_2d_recorder_context.h:919-964), so a shadow is clipped like any
-        // other draw. Do NOT "fix" this into a real clip removal.
-        surface_canvas.save();
-        let current_transform = surface_canvas.get_transform_matrix().clone();
-
-        surface_canvas.restore();
-        surface_canvas.save();
-        surface_canvas.set_transform(&current_transform);
-
-        f(surface_canvas, paint)?;
-        surface_canvas.restore();
-        Ok(())
-      }
-    }
   }
 
   pub fn annotate_link_url(&self, left: f64, top: f64, right: f64, bottom: f64, url: String) {
