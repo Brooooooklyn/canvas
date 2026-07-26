@@ -610,3 +610,75 @@ test('shadow-zero-blur-keeps-ctx-filter', (t) => {
   ctx.fillRect(20, 20, 60, 100)
   t.deepEqual(px(ctx, 110, 70), [18, 18, 18, 255])
 })
+
+// ------------------------------------------- isolation composite arm: device-space offsets
+
+// `source-in` over an opaque backdrop unrolls into two independently composited
+// passes (canvas_2d_recorder_context.h:924), so the surviving backdrop is
+// exactly `shadow AND content` -- which makes its left edge a direct readout of
+// the space the shadowOffset was applied in.
+//
+// The shadow pass records into a PictureRecorder whose canvas sits at identity
+// and is replayed under the real CTM, so a shadow offset applied off that
+// canvas's own CTM came out scaled and rotated. Expected values are Chrome
+// 150.0.7871.184 measurements of the identical scene.
+function isolationShadowRun(setup: (ctx: any) => void, shadowBlur: number) {
+  const canvas = createCanvas(300, 200)
+  const ctx = canvas.getContext('2d')!
+  ctx.fillStyle = 'blue'
+  ctx.fillRect(0, 0, 300, 200)
+  ctx.globalCompositeOperation = 'source-in'
+  setup(ctx)
+  ctx.shadowColor = 'rgba(0, 200, 0, 1)'
+  ctx.shadowBlur = shadowBlur
+  ctx.shadowOffsetX = 40
+  ctx.shadowOffsetY = 0
+  ctx.fillStyle = 'red'
+  ctx.fillRect(10, 40, 60, 30)
+
+  const data = ctx.getImageData(0, 0, 300, 200).data
+  let first = -1
+  let last = -1
+  for (let x = 0; x < 300; x++) {
+    const i = (100 * 300 + x) * 4
+    if (data[i] > 120 && data[i + 3] > 120) {
+      if (first < 0) first = x
+      last = x
+    }
+  }
+  return [first, last]
+}
+
+for (const shadowBlur of [0, 8]) {
+  test(`shadow-offset-is-device-space-on-the-isolation-arm-blur-${shadowBlur}`, (t) => {
+    // Content is device x 20..139. Chrome puts the shadow 40 DEVICE px right of
+    // it, so the overlap starts at 60; a user-space offset would double it to 80
+    // and start the overlap at 100.
+    t.deepEqual(
+      isolationShadowRun((ctx) => ctx.scale(2, 2), shadowBlur),
+      [60, 139],
+    )
+
+    // Content is device x 120..179 with the axes flipped. Device-space: the
+    // shadow moves RIGHT regardless, overlap 160..179. A user-space offset
+    // rotates with the CTM and moves it left instead, giving 120..139.
+    t.deepEqual(
+      isolationShadowRun((ctx) => {
+        ctx.translate(150, 100)
+        ctx.rotate(Math.PI)
+        ctx.translate(-40, -55)
+      }, shadowBlur),
+      [160, 179],
+    )
+
+    // A rotation the offset must not follow: at 0.5 rad the shadow clears the
+    // content entirely, so nothing survives. A rotated offset leaves an overlap.
+    t.deepEqual(
+      isolationShadowRun((ctx) => {
+        ctx.translate(40, 20)
+        ctx.rotate(0.5)
+      }, shadowBlur),
+      [-1, -1],
+    )
+  })
+}

@@ -191,12 +191,17 @@ impl Context {
   where
     F: Fn(&mut Canvas, &Paint) -> result::Result<(), SkError>,
   {
-    self.with_shadowed_render_canvas(paint, None, |_, _| Ok(()), f)
+    self.with_shadowed_render_canvas(paint, None, |_, _, _| Ok(()), f)
   }
 
   /// Same, for the draws that also have a shadow pass. The two passes must be
   /// handed to `render_canvas` together so that it -- and only it -- decides
   /// whether an isolation layer is needed; see the comment there.
+  ///
+  /// The shadow closure is handed the user->DEVICE matrix as its third argument
+  /// because it cannot read one off the canvas it is given: on the isolation arm
+  /// that canvas is a picture recorder sitting at identity. Pass it straight to
+  /// `apply_shadow_offset_matrix_to_canvas`.
   fn with_shadowed_render_canvas<S, F>(
     &mut self,
     paint: &Paint,
@@ -205,7 +210,7 @@ impl Context {
     f: F,
   ) -> result::Result<(), SkError>
   where
-    S: Fn(&mut Canvas, &Paint) -> result::Result<(), SkError>,
+    S: Fn(&mut Canvas, &Paint, &Matrix) -> result::Result<(), SkError>,
     F: Fn(&mut Canvas, &Paint) -> result::Result<(), SkError>,
   {
     let blend_mode = self.state.global_composite_operation;
@@ -482,10 +487,11 @@ impl Context {
     self.with_shadowed_render_canvas(
       &stroke_paint,
       shadow_paint.as_ref(),
-      |shadow_canvas, shadow_paint| {
+      |shadow_canvas, shadow_paint, device_ctm| {
         shadow_canvas.save();
         Self::apply_shadow_offset_matrix_to_canvas(
           shadow_canvas,
+          device_ctm,
           shadow_offset_x,
           shadow_offset_y,
         )?;
@@ -598,10 +604,11 @@ impl Context {
     self.with_shadowed_render_canvas(
       &fill_paint,
       shadow_paint.as_ref(),
-      |shadow_canvas, shadow_paint| {
+      |shadow_canvas, shadow_paint, device_ctm| {
         shadow_canvas.save();
         Self::apply_shadow_offset_matrix_to_canvas(
           shadow_canvas,
+          device_ctm,
           shadow_offset_x,
           shadow_offset_y,
         )?;
@@ -654,10 +661,11 @@ impl Context {
     self.with_shadowed_render_canvas(
       &stroke_paint,
       shadow_paint.as_ref(),
-      |shadow_canvas, shadow_paint| {
+      |shadow_canvas, shadow_paint, device_ctm| {
         shadow_canvas.save();
         Self::apply_shadow_offset_matrix_to_canvas(
           shadow_canvas,
+          device_ctm,
           shadow_offset_x,
           shadow_offset_y,
         )?;
@@ -771,7 +779,7 @@ impl Context {
     f: F,
   ) -> result::Result<(), SkError>
   where
-    S: Fn(&mut Canvas, &Paint) -> result::Result<(), SkError>,
+    S: Fn(&mut Canvas, &Paint, &Matrix) -> result::Result<(), SkError>,
     F: Fn(&mut Canvas, &Paint) -> result::Result<(), SkError>,
   {
     match blend_mode {
@@ -805,6 +813,12 @@ impl Context {
           // blur=4, dx=100, dy=0 yields 104 where 106 is required.
           let expansion = (shadow.blur.abs() + shadow.offset_x.abs() + shadow.offset_y.abs())
             .max(shadow.blur * 2.0);
+          // The recording canvas `composited_pass` hands the closure sits at
+          // IDENTITY -- the CTM below is applied later, at `draw_picture`
+          // replay. So the closure cannot read the device matrix off the canvas
+          // it is drawing into; it has to be given this one, or the device-space
+          // shadow offset gets scaled and rotated by the replay.
+          let device_ctm = surface_canvas.get_transform_matrix();
           Self::composited_pass(
             surface_canvas,
             shadow.paint,
@@ -813,7 +827,7 @@ impl Context {
             -expansion,
             width + expansion * 2.0,
             height + expansion * 2.0,
-            shadow_f,
+            |canvas, paint| shadow_f(canvas, paint, &device_ctm),
           )?;
         }
         Self::composited_pass(
@@ -849,7 +863,8 @@ impl Context {
           surface_canvas.save();
           surface_canvas.set_transform(&current_transform);
 
-          shadow_f(surface_canvas, shadow.paint)?;
+          // Here the canvas IS the device, so its own CTM is the device matrix.
+          shadow_f(surface_canvas, shadow.paint, &current_transform)?;
           surface_canvas.restore();
         }
         f(surface_canvas, paint)?;
@@ -882,10 +897,11 @@ impl Context {
     self.with_shadowed_render_canvas(
       &fill_paint,
       shadow_paint.as_ref(),
-      |shadow_canvas, shadow_paint| {
+      |shadow_canvas, shadow_paint, device_ctm| {
         shadow_canvas.save();
         Self::apply_shadow_offset_matrix_to_canvas(
           shadow_canvas,
+          device_ctm,
           shadow_offset_x,
           shadow_offset_y,
         )?;
@@ -1194,7 +1210,21 @@ impl Context {
   /// (cc/paint/draw_looper.cc:37-40), and the image-filter path runs its shadow
   /// `saveLayer` inside a `ScopedResetCtm`
   /// (canvas_2d_recorder_context.cc:545-565). Every caller therefore translates
-  /// the canvas with `apply_shadow_offset_matrix_to_canvas` instead.
+  /// the canvas with `apply_shadow_offset_matrix_to_canvas` instead, handing it
+  /// the user->DEVICE matrix explicitly.
+  ///
+  /// "Explicitly" is the load-bearing word and this comment used to omit it,
+  /// which made it false for exactly one arm. `apply_shadow_offset_matrix_to_canvas`
+  /// used to read the CTM off the canvas it was given, and on the isolation
+  /// composite modes that canvas is a `PictureRecorder`'s, sitting at identity
+  /// (`composited_pass`) -- so the device-space sandwich collapsed to a plain
+  /// translate in PICTURE space and the real CTM, applied at `draw_picture`
+  /// replay, scaled and rotated it right back into local space. Measured against
+  /// Chrome 150 with `source-in`, an opaque backdrop, `fillRect(10, 40, 60, 30)`
+  /// and `shadowOffsetX = 40` (surviving red at y=100 marks the shadow's left
+  /// edge): `scale(2, 2)` gave x=100..139 against Chrome's 60..139, and
+  /// `rotate(180)` gave 120..139 against Chrome's 160..179. Both are exact now.
+  /// The direct arm was always right, because there the canvas IS the device.
   fn shadow_only_image_filter(state: &Context2dRenderingState) -> Option<ImageFilter> {
     let shadow_color = &state.shadow_color;
     let a = shadow_color.a;
@@ -1384,10 +1414,11 @@ impl Context {
     self.with_shadowed_render_canvas(
       &paint,
       shadow_paint.as_ref(),
-      |shadow_canvas: &mut Canvas, shadow_paint| {
+      |shadow_canvas: &mut Canvas, shadow_paint, device_ctm| {
         shadow_canvas.save();
         Self::apply_shadow_offset_matrix_to_canvas(
           shadow_canvas,
+          device_ctm,
           shadow_offset_x,
           shadow_offset_y,
         )?;
@@ -1466,10 +1497,11 @@ impl Context {
     self.with_shadowed_render_canvas(
       &paint,
       shadow_paint.as_ref(),
-      |shadow_canvas: &mut Canvas, shadow_paint| {
+      |shadow_canvas: &mut Canvas, shadow_paint, device_ctm| {
         shadow_canvas.save();
         Self::apply_shadow_offset_matrix_to_canvas(
           shadow_canvas,
+          device_ctm,
           shadow_offset_x,
           shadow_offset_y,
         )?;
@@ -1533,10 +1565,11 @@ impl Context {
     self.with_shadowed_render_canvas(
       paint,
       shadow_paint.as_ref(),
-      |shadow_canvas, shadow_paint| {
+      |shadow_canvas, shadow_paint, device_ctm| {
         shadow_canvas.save();
         Self::apply_shadow_offset_matrix_to_canvas(
           shadow_canvas,
+          device_ctm,
           shadow_offset_x,
           shadow_offset_y,
         )?;
@@ -1631,29 +1664,47 @@ impl Context {
     Ok(line_metrics)
   }
 
+  /// Post-translate `canvas` by a DEVICE-space `(shadow_offset_x,
+  /// shadow_offset_y)`.
+  ///
+  /// shadowOffsetX/Y are device-space in Chromium, on every path: the looper
+  /// carries `kPostTransformFlag` and does
+  /// `setMatrix(getLocalToDevice().postTranslate(dx, dy))`
+  /// (cc/paint/draw_looper.cc:37-40), and the image-filter path draws its
+  /// shadow inside a `ScopedResetCtm` (canvas_2d_recorder_context.cc:545-565).
+  ///
+  /// `device_ctm` is `M`, the user->DEVICE matrix of the canvas the draw
+  /// ultimately lands on -- which is NOT always `canvas`'s own CTM. On the
+  /// isolation composite arm `canvas` is a `PictureRecorder`'s recording canvas
+  /// sitting at identity while `M` is installed on the surface canvas and only
+  /// applied at `draw_picture` replay. Reading the CTM off `canvas` there (which
+  /// this used to do) collapsed the sandwich below to a bare `concat(T)` in
+  /// picture space, so replay scaled and rotated what has to be a device-space
+  /// vector: `source-in` + `scale(2, 2)` + `shadowOffsetX = 40` put the shadow
+  /// 80 device px right of the content instead of 40, and `rotate(180)` mirrored
+  /// it.
+  ///
+  /// With `X` = `canvas`'s own CTM and `R` = whatever is concatenated between
+  /// `canvas` and the device (`M = R * X`), `concat(M^-1) . concat(T) . concat(M)`
+  /// leaves `canvas` at `X * M^-1 * T * M`, and the device sees
+  /// `R * X * M^-1 * T * M = T * M`. That is the post-translate, for any `R`:
+  /// the linear part of the device CTM is untouched (so the sigma correction in
+  /// `shadow_only_image_filter` still holds) and only the translation moves.
+  /// For the direct arm `R` is the identity and the sandwich is exactly the
+  /// `T * M` it always was.
   fn apply_shadow_offset_matrix_to_canvas(
     canvas: &mut Canvas,
+    device_ctm: &Matrix,
     shadow_offset_x: f32,
     shadow_offset_y: f32,
   ) -> result::Result<(), SkError> {
-    // shadowOffsetX/Y are DEVICE-space in Chromium, on every path: the looper
-    // carries `kPostTransformFlag` and does
-    // `setMatrix(getLocalToDevice().postTranslate(dx, dy))`
-    // (cc/paint/draw_looper.cc:37-40), and the image-filter path draws its
-    // shadow inside a `ScopedResetCtm` (canvas_2d_recorder_context.cc:545-565).
-    // `concat(M^-1) . concat(T) . concat(M)` leaves the canvas at `T * M`, which
-    // is that same post-translate: the linear part of the CTM is untouched (so
-    // the sigma correction in `shadow_only_image_filter` still holds) and only
-    // the translation moves.
-    let current_transform = canvas.get_transform_matrix().clone();
-
-    // Invert the current transform to get back to device coordinates
-    if let Some(inverted) = current_transform.invert() {
+    // Invert the device transform to get back to device coordinates
+    if let Some(inverted) = device_ctm.invert() {
       canvas.concat(&inverted);
       // Apply shadow offset in device coordinates
       canvas.concat(&Matrix::translated(shadow_offset_x, shadow_offset_y));
-      // Re-apply the original transform
-      canvas.concat(&current_transform);
+      // Re-apply the device transform
+      canvas.concat(device_ctm);
     } else {
       // If the transform is not invertible, fall back to simple translation
       canvas.concat(&Matrix::translated(shadow_offset_x, shadow_offset_y));
