@@ -449,7 +449,8 @@ impl Context {
 
     self.with_render_canvas(&stroke_paint, |canvas, paint| {
       if let Some(shadow_paint) = &shadow_paint {
-        // Use the special shadow rendering that allows shadows to extend beyond canvas bounds
+        // Shadow pass; see render_shadow_canvas. Bounds are only expanded for the
+        // isolation blend modes -- source-over draws straight to the surface canvas.
         Self::render_shadow_canvas(
           canvas,
           shadow_paint,
@@ -578,7 +579,8 @@ impl Context {
 
     self.with_render_canvas(&fill_paint, |canvas, paint| {
       if let Some(shadow_paint) = &shadow_paint {
-        // Use the special shadow rendering that allows shadows to extend beyond canvas bounds
+        // Shadow pass; see render_shadow_canvas. Bounds are only expanded for the
+        // isolation blend modes -- source-over draws straight to the surface canvas.
         Self::render_shadow_canvas(
           canvas,
           shadow_paint,
@@ -648,7 +650,8 @@ impl Context {
 
     self.with_render_canvas(&stroke_paint, |canvas, paint| {
       if let Some(shadow_paint) = &shadow_paint {
-        // Use the special shadow rendering that allows shadows to extend beyond canvas bounds
+        // Shadow pass; see render_shadow_canvas. Bounds are only expanded for the
+        // isolation blend modes -- source-over draws straight to the surface canvas.
         Self::render_shadow_canvas(
           canvas,
           shadow_paint,
@@ -743,7 +746,8 @@ impl Context {
 
     self.with_render_canvas(&fill_paint, |canvas, paint| {
       if let Some(shadow_paint) = &shadow_paint {
-        // Use the special shadow rendering that allows shadows to extend beyond canvas bounds
+        // Shadow pass; see render_shadow_canvas. Bounds are only expanded for the
+        // isolation blend modes -- source-over draws straight to the surface canvas.
         Self::render_shadow_canvas(
           canvas,
           shadow_paint,
@@ -1126,7 +1130,8 @@ impl Context {
 
     self.with_render_canvas(&paint, |canvas: &mut Canvas, paint| {
       if let Some(drop_shadow_paint) = &drop_shadow_paint {
-        // Use the special shadow rendering that allows shadows to extend beyond canvas bounds
+        // Shadow pass; see render_shadow_canvas. Bounds are only expanded for the
+        // isolation blend modes -- source-over draws straight to the surface canvas.
         Self::render_shadow_canvas(
           canvas,
           drop_shadow_paint,
@@ -1214,7 +1219,8 @@ impl Context {
 
     self.with_render_canvas(&paint, |canvas: &mut Canvas, paint| {
       if let Some(drop_shadow_paint) = &drop_shadow_paint {
-        // Use the special shadow rendering that allows shadows to extend beyond canvas bounds
+        // Shadow pass; see render_shadow_canvas. Bounds are only expanded for the
+        // isolation blend modes -- source-over draws straight to the surface canvas.
         Self::render_shadow_canvas(
           canvas,
           drop_shadow_paint,
@@ -1286,7 +1292,8 @@ impl Context {
 
     self.with_render_canvas(paint, |canvas, paint| {
       if let Some(shadow_paint) = &shadow_paint {
-        // Use the special shadow rendering that allows shadows to extend beyond canvas bounds
+        // Shadow pass; see render_shadow_canvas. Bounds are only expanded for the
+        // isolation blend modes -- source-over draws straight to the surface canvas.
         Self::render_shadow_canvas(
           canvas,
           shadow_paint,
@@ -1426,7 +1433,24 @@ impl Context {
     result
   }
 
-  // Helper function to render shadows without canvas bounds clipping
+  // Draws the shadow pass.
+  //
+  // For the isolation blend modes the shadow is recorded into a picture whose
+  // cull rect is expanded by `shadow_expansion` -- expanded, but still short of
+  // 3 sigma for offset shadows, see the FIXME below. EVERY other blend mode --
+  // including the default source-over -- draws straight onto `surface_canvas`
+  // with the current clip and transform intact; no bounds expansion happens on
+  // that path at all.
+  //
+  // KNOWN DEFECTS, do not treat this helper as correct:
+  //  * the isolation arm passes `paint` to BOTH the recording and
+  //    `draw_picture`, so alpha and the drop-shadow filter are applied twice
+  //    (skia/src/core/SkCanvas.cpp:2861-2884 -> SkCanvasPriv.cpp:32-45).
+  //    Chromium puts only {blend mode, image filter} on the layer and the alpha
+  //    on the inner draw (canvas_2d_recorder_context.h:931-944).
+  //  * the mode list below omits the shadow-conditional cases Chromium routes
+  //    through CompositedDraw, and includes DestinationOut and Source, which
+  //    Chromium excludes (canvas_2d_recorder_context.h:692-697, :711-727).
   fn render_shadow_canvas<F>(
     surface_canvas: &mut Canvas,
     paint: &Paint,
@@ -1442,6 +1466,12 @@ impl Context {
     F: Fn(&mut Canvas, &Paint) -> result::Result<(), SkError>,
   {
     // Calculate expanded bounds to accommodate shadows
+    // FIXME: this under-covers. Skia bounds a Gaussian at 3 * sigma
+    // (skia/src/effects/imagefilters/SkBlurImageFilter.cpp:64-69) and sigma is
+    // `shadow_blur / 2` (see shadow_blur_paint), so the halo needs
+    // `1.5 * shadow_blur + |dx| + |dy|`, not `shadow_blur + |dx| + |dy|`. The
+    // `.max(shadow_blur * 2.0)` term only rescues the zero-offset case:
+    // blur=4, dx=100, dy=0 yields 104 where 106 is required.
     let shadow_expansion =
       (shadow_blur.abs() + shadow_offset_x.abs() + shadow_offset_y.abs()).max(shadow_blur * 2.0);
     let expanded_width = width + shadow_expansion * 2.0;
@@ -1474,12 +1504,21 @@ impl Context {
         Ok(())
       }
       _ => {
-        // For regular blend modes, temporarily disable clipping for shadows
+        // The save/restore/save + set_transform sequence below is inert: the
+        // first `restore()` pops the `save()` above it, and `set_transform`
+        // re-installs the identical CTM (skiac_canvas_set_transform is an
+        // absolute SkCanvas::setMatrix, skia-c/skia_c.cpp:342-345). Neither the
+        // clip nor the transform changes. Contrary to the comments this replaces,
+        // the clip is NOT removed -- measured: with a clip on x<100 and an
+        // offset-only shadow crossing it, pixel (110,100) stays [255,255,255,255].
+        //
+        // Preserving the clip is correct and must stay: Chromium's CompositedDraw
+        // resets only the matrix and never touches the clip
+        // (canvas_2d_recorder_context.h:919-964), so a shadow is clipped like any
+        // other draw. Do NOT "fix" this into a real clip removal.
         surface_canvas.save();
-        // Get current transform to restore it later
         let current_transform = surface_canvas.get_transform_matrix().clone();
 
-        // Remove any existing clip bounds temporarily
         surface_canvas.restore();
         surface_canvas.save();
         surface_canvas.set_transform(&current_transform);

@@ -400,6 +400,17 @@ void skiac_canvas_draw_image(skiac_canvas* c_canvas,
     CANVAS_CAST->save();
     // Translate to the destination position
     CANVAS_CAST->translate(dx, dy);
+    // NOTE: this clip is the ONLY thing implementing the sx/sy/s_width/s_height
+    // source crop, because SkSurface::draw paints the whole source surface
+    // (skia/src/image/SkSurface_Raster.cpp:106-109). But it is installed BEFORE
+    // the draw, so it also truncates any drop-shadow halo carried by `paint`:
+    // every non-transparent pixel ends up inside the dst rect. Chromium issues
+    // no clipRect on the image path at all
+    // (canvas_2d_recorder_context.cc:2166-2171); it hoists the filter into a
+    // saveLayer whose bounds are only a content hint that Skia expands through
+    // the filter (canvas_2d_recorder_context.cc:2137-2148,
+    // skia/src/core/SkCanvas.cpp:940-949). Widening this clip is NOT the fix --
+    // it would let un-cropped source content leak in.
     CANVAS_CAST->clipRect(SkRect::MakeWH(d_width, d_height));
     // Scale using the ratio of destination size to source surface size
     CANVAS_CAST->scale(d_width / s_width, d_height / s_height);
@@ -901,6 +912,17 @@ void skiac_canvas_draw_picture_rect(skiac_canvas* c_canvas,
   matrix.postTranslate(dx - sx * scale_x, dy - sy * scale_y);
 
   canvas->save();
+  // NOTE: this clip is load-bearing -- `canvas->drawPicture(picture, &matrix,
+  // paint)` below replays the WHOLE picture (skia/src/core/SkCanvasPriv.cpp:32-45),
+  // so the dst rect is the only thing implementing the sx/sy/sw/sh source crop.
+  // But it is installed BEFORE the draw, so it also truncates any drop-shadow
+  // halo carried by `paint`: every non-transparent pixel ends up inside the dst
+  // rect. Chromium issues no clipRect on the image path at all
+  // (canvas_2d_recorder_context.cc:2166-2171); it hoists the filter into a
+  // saveLayer whose bounds are only a content hint that Skia expands through the
+  // filter (canvas_2d_recorder_context.cc:2137-2148,
+  // skia/src/core/SkCanvas.cpp:940-949). Widening this clip is NOT the fix -- it
+  // would let un-cropped source content leak in.
   canvas->clipRect(SkRect::MakeXYWH(dx, dy, dw, dh), SkClipOp::kIntersect,
                    true /* antialias */);
 
