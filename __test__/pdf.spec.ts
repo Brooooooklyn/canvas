@@ -293,3 +293,64 @@ test('a spatial ctx.filter keeps its device-space layer', (t) => {
   const pdf = doc.close()
   t.true(countPdfImages(pdf) > 0, 'a blur has to go through the filter layer')
 })
+
+// The pair above rescued the CONTENT pass only. The SHADOW pass picked its
+// route from `shadow_takes_image_filter`, which read a bare
+// `state.filter.is_some()` and so kept `composited_filter_layer` even for a
+// filter that needs no device space -- and `SkPDFDevice::createDevice` answers a
+// layer paint carrying an image filter with a RASTER device, so a page that has
+// both a colour-only `ctx.filter` and a zero-blur shadow came back with
+// `/Subtype /Image` XObjects. Measured, 240x200, `shadowOffsetX = 40`, bytes /
+// images: `main` (2cd4e1a) 818/0, before 1468/2, after 818/0.
+for (const filter of ['grayscale(1)', 'opacity(0.5)', 'sepia(1)', 'invert(1)', 'brightness(0.5)', 'saturate(2)']) {
+  test(`a colour-only ctx.filter with a shadow must not rasterise the page (${filter})`, (t) => {
+    const { doc } = t.context
+    const ctx = doc.beginPage(240, 200)
+    ctx.filter = filter
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.8)'
+    ctx.shadowOffsetX = 40
+    ctx.fillStyle = 'blue'
+    ctx.fillRect(40, 40, 80, 60)
+    ctx.strokeStyle = 'red'
+    ctx.lineWidth = 6
+    ctx.strokeRect(40, 120, 80, 60)
+    doc.endPage()
+
+    const pdf = doc.close()
+    t.is(countPdfImages(pdf), 0, 'the shadowed page must stay vector')
+  })
+}
+
+// Text is the case the raster device costs the most: a rasterised shadow layer
+// stops the glyphs under it being real text.
+test('a colour-only ctx.filter with a text shadow keeps the page vector', (t) => {
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts-dir', 'iosevka-curly-regular.woff2'), 'i-curly')
+  const { doc } = t.context
+  const ctx = doc.beginPage(240, 200)
+  ctx.filter = 'grayscale(1)'
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.8)'
+  ctx.shadowOffsetX = 40
+  ctx.fillStyle = 'blue'
+  ctx.font = '30px i-curly'
+  ctx.fillText('napi-rs', 40, 100)
+  doc.endPage()
+
+  const pdf = doc.close()
+  t.is(countPdfImages(pdf), 0, 'a shadowed text page must stay vector')
+})
+
+// And the other direction, with a shadow this time: a spatial `ctx.filter` still
+// needs the layer, so the page still rasterises. `main` did the same.
+test('a spatial ctx.filter with a shadow keeps its device-space layer', (t) => {
+  const doc = new PDFDocument()
+  const ctx = doc.beginPage(240, 200)
+  ctx.filter = 'blur(3px)'
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.8)'
+  ctx.shadowOffsetX = 40
+  ctx.fillStyle = 'blue'
+  ctx.fillRect(40, 40, 80, 60)
+  doc.endPage()
+
+  const pdf = doc.close()
+  t.true(countPdfImages(pdf) > 0, 'a blur has to go through the filter layer')
+})

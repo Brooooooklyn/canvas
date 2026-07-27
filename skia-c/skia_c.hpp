@@ -9,6 +9,7 @@
 #include <include/core/SkBlurTypes.h>
 #include <include/core/SkCanvas.h>
 #include <include/core/SkColorFilter.h>
+#include <include/core/SkColorSpace.h>
 #include <include/core/SkData.h>
 #include <include/core/SkDrawable.h>
 #include <include/core/SkFontMgr.h>
@@ -942,6 +943,7 @@ void skiac_paint_set_color(skiac_paint* c_paint,
                            uint8_t a);
 void skiac_paint_set_alpha(skiac_paint* c_paint, uint8_t a);
 uint8_t skiac_paint_get_alpha(skiac_paint* c_paint);
+uint32_t skiac_paint_get_color(skiac_paint* c_paint);
 void skiac_paint_set_anti_alias(skiac_paint* c_paint, bool aa);
 void skiac_paint_set_blend_mode(skiac_paint* c_paint, int blend_mode);
 int skiac_paint_get_blend_mode(skiac_paint* c_paint);
@@ -1161,6 +1163,8 @@ skiac_image_filter* skiac_image_filter_from_argb(
     const uint8_t table_b[256],
     skiac_image_filter* c_image_filter);
 bool skiac_image_filter_is_a_color_filter(skiac_image_filter* c_image_filter);
+uint32_t skiac_image_filter_filter_color(skiac_image_filter* c_image_filter,
+                                         uint32_t color);
 void skiac_image_filter_destroy(skiac_image_filter* c_image_filter);
 
 // SkImage (for PageCache)

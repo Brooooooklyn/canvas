@@ -108,3 +108,138 @@ test('ctx.filter without a shadow must not swallow text', (t) => {
   const svg = canvas.getContent().toString('utf8')
   t.true((svg.match(/<path/g) ?? []).length > 0, `fillText must survive: ${svg}`)
 })
+
+// Every `ctx.filter` Skia can answer with `asAColorFilter`, i.e. every one this
+// backend takes off the layer. `blur()` and `drop-shadow()` are deliberately
+// absent; they keep the layer and are guarded separately below.
+const COLOUR_ONLY_FILTERS = ['grayscale(1)', 'opacity(0.5)', 'sepia(1)', 'invert(1)', 'brightness(0.5)', 'saturate(2)']
+
+// REGRESSION GUARD, do not weaken to a snapshot.
+//
+// The rescue above was applied to the CONTENT pass only. The SHADOW pass chose
+// its route through `shadow_takes_image_filter`, which read a bare
+// `state.filter.is_some()` with no idea which backend it was on, so a
+// colour-only `ctx.filter` still sent the shadow onto `composited_filter_layer`
+// -- the same `NoPixelsDevice` that swallowed the content, so the shadow
+// element vanished while the content element survived. Measured at 200x200 with
+// `shadowOffsetX = 40`: 2 elements without a filter, 1 with `grayscale(1)`, 2
+// again on `main` (2cd4e1a).
+for (const filter of COLOUR_ONLY_FILTERS) {
+  test(`a colour-only ctx.filter must not swallow the shadow (${filter})`, (t) => {
+    const { canvas } = t.context
+    const ctx = canvas.getContext('2d')
+    ctx.filter = filter
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.8)'
+    ctx.shadowOffsetX = 40
+    ctx.fillStyle = 'blue'
+    ctx.fillRect(40, 40, 80, 60)
+    ctx.strokeStyle = 'red'
+    ctx.lineWidth = 6
+    ctx.strokeRect(200, 40, 80, 60)
+    ctx.beginPath()
+    ctx.moveTo(400, 40)
+    ctx.lineTo(500, 40)
+    ctx.lineTo(450, 140)
+    ctx.closePath()
+    ctx.fill()
+
+    const svg = canvas.getContent().toString('utf8')
+    // A shadow element AND a content element for each of the three draws.
+    t.is((svg.match(/<rect/g) ?? []).length, 4, `fillRect and strokeRect each need a shadow: ${svg}`)
+    t.is((svg.match(/<path/g) ?? []).length, 2, `fill(path) needs a shadow: ${svg}`)
+    // The offset is the canvas translate, which is what `canvas_shadow_offset`
+    // still owes on the layer-free route -- exactly three of them, one per
+    // shadow, never zero and never doubled.
+    t.is(
+      (svg.match(/transform="translate\(40 0\)"/g) ?? []).length,
+      3,
+      `each shadow is the offset draw and nothing else is: ${svg}`,
+    )
+  })
+}
+
+test('a colour-only ctx.filter must not swallow a text shadow', (t) => {
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts-dir', 'iosevka-curly-regular.woff2'), 'i-curly')
+  const { canvas } = t.context
+  const ctx = canvas.getContext('2d')
+  ctx.filter = 'grayscale(1)'
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.8)'
+  ctx.shadowOffsetX = 40
+  ctx.fillStyle = 'blue'
+  ctx.font = '50px i-curly'
+  ctx.fillText('napi-rs', 50, 300)
+
+  const svg = canvas.getContent().toString('utf8')
+  t.is((svg.match(/transform="translate\(40 0\)"/g) ?? []).length, 1, `the text shadow must survive: ${svg}`)
+})
+
+// Only the ALPHA a colour filter leaves on the source can reach a shadow:
+// `SkColorFilters::Blend(shadowColor, kSrcIn)` is `(shadowColor.rgb,
+// shadowColor.a * src.a)`, so it throws the filtered RGB away. `shadow_paint`
+// folds that one number in, in Blink's order -- `colourise(ctx.filter(source))`
+// -- and putting `ctx.filter` back on the shadow paint would invert the order
+// and tint the shadow instead. `shadowColor` alpha 0.8:
+//   grayscale(1)   0.8 * 1    black stays black
+//   opacity(0.5)   0.8 * 0.5
+for (const [filter, opacity] of [
+  ['grayscale(1)', '0.80000001'],
+  ['sepia(1)', '0.80000001'],
+  ['invert(1)', '0.80000001'],
+  ['opacity(0.5)', '0.40000001'],
+] as const) {
+  test(`a colour-only ctx.filter reaches the shadow through its alpha only (${filter})`, (t) => {
+    const { canvas } = t.context
+    const ctx = canvas.getContext('2d')
+    ctx.filter = filter
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.8)'
+    ctx.shadowOffsetX = 40
+    ctx.fillStyle = 'blue'
+    ctx.fillRect(40, 40, 80, 60)
+
+    const svg = canvas.getContent().toString('utf8')
+    t.true(
+      svg.includes(`<rect fill-opacity="${opacity}" transform="translate(40 0)"`),
+      `the shadow keeps shadowColor and takes only the filter's alpha: ${svg}`,
+    )
+  })
+}
+
+// "Colour-only" is Skia's answer, not a list of filter names, and a CHAIN can
+// be colour-only too: `SkImageFilters::ColorFilter` collapses adjacent
+// colour-filter nodes into one, so `asAColorFilter`'s `getInput(0) == nullptr`
+// still holds. Do not re-scope the fix to single filters.
+test('a colour-only ctx.filter CHAIN also keeps its shadow', (t) => {
+  const { canvas } = t.context
+  const ctx = canvas.getContext('2d')
+  ctx.filter = 'opacity(0.5) grayscale(1)'
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.8)'
+  ctx.shadowOffsetX = 40
+  ctx.fillStyle = 'blue'
+  ctx.fillRect(40, 40, 80, 60)
+
+  const svg = canvas.getContent().toString('utf8')
+  t.true(
+    svg.includes('<rect fill-opacity="0.40000001" transform="translate(40 0)"'),
+    `the collapsed chain still folds its alpha into the shadow: ${svg}`,
+  )
+})
+
+// The other direction. A spatial filter has a length, that length is device
+// space, and only `composited_filter_layer` can give it one -- so it keeps the
+// layer, and on SVG that costs the whole draw. `main` lost these too; they are
+// not owed a rescue and must not quietly acquire one. A chain is judged by the
+// same rule: one spatial member is enough.
+for (const filter of ['blur(3px)', 'drop-shadow(5px 5px 3px black)', 'blur(2px) grayscale(1)']) {
+  test(`a spatial ctx.filter keeps its device-space layer (${filter})`, (t) => {
+    const { canvas } = t.context
+    const ctx = canvas.getContext('2d')
+    ctx.filter = filter
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.8)'
+    ctx.shadowOffsetX = 40
+    ctx.fillStyle = 'blue'
+    ctx.fillRect(40, 40, 80, 60)
+
+    const svg = canvas.getContent().toString('utf8')
+    t.is((svg.match(/<rect/g) ?? []).length, 0, `a spatial filter is unrepresentable here: ${svg}`)
+  })
+}

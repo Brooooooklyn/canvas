@@ -1051,6 +1051,16 @@ uint8_t skiac_paint_get_alpha(skiac_paint* c_paint) {
   return PAINT_CAST->getAlpha();
 }
 
+// The paint's 8-bit sRGB `SkColor`, alpha included.
+//
+// Lossless for every paint this binding builds: `skiac_paint_set_color` is an
+// 8-bit `setARGB` and `skiac_paint_set_alpha` an 8-bit `setAlpha`, so the
+// float `SkColor4f` behind `getColor()` only ever holds values that came in as
+// bytes.
+uint32_t skiac_paint_get_color(skiac_paint* c_paint) {
+  return PAINT_CAST->getColor();
+}
+
 void skiac_paint_set_anti_alias(skiac_paint* c_paint, bool aa) {
   PAINT_CAST->setAntiAlias(aa);
 }
@@ -2005,6 +2015,38 @@ bool skiac_image_filter_is_a_color_filter(skiac_image_filter* c_image_filter) {
   }
   SkSafeUnref(color_filter);
   return true;
+}
+
+// Evaluate a colour-only image filter on ONE colour.
+//
+// This is the fold Skia itself performs whenever a colour filter meets a
+// shaderless paint: `SkPaintPriv::RemoveColorFilter` is
+// `p->setColor(filter->filterColor4f(p->getColor4f(), ...))`
+// (src/core/SkPaintPriv.cpp:161-174), run on the way past `SkBlitter::Choose`
+// (src/core/SkBlitter.cpp:695-698) and again by SkPDFDevice to keep such a
+// draw vector (src/pdf/SkPDFDevice.cpp:274-277). `Context::shadow_paint` needs
+// the same answer one step EARLIER than any of those, because the shadow's own
+// colourisation has to run after `ctx.filter`, not before it -- see there.
+//
+// `color` is returned untouched when the filter is not replaceable by a colour
+// filter, i.e. exactly when `skiac_image_filter_is_a_color_filter` is false.
+// There is no single colour to evaluate then: a spatial filter's output at a
+// point depends on its neighbours.
+//
+// In and out are 8-bit sRGB `SkColor`, like every other colour crossing this
+// boundary, and `filterColor4f` is told so explicitly rather than left to
+// infer it from nulls.
+uint32_t skiac_image_filter_filter_color(skiac_image_filter* c_image_filter,
+                                         uint32_t color) {
+  SkColorFilter* color_filter = nullptr;
+  if (!IMAGE_FILTER_CAST->asAColorFilter(&color_filter)) {
+    return color;
+  }
+  sk_sp<SkColorFilter> owned(color_filter);
+  auto srgb = SkColorSpace::MakeSRGB();
+  return owned
+      ->filterColor4f(SkColor4f::FromColor(color), srgb.get(), srgb.get())
+      .toSkColor();
 }
 
 void skiac_image_filter_ref(skiac_image_filter* c_image_filter) {

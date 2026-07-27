@@ -704,6 +704,8 @@ pub mod ffi {
 
     pub fn skiac_paint_set_src_in_color_filter(paint: *mut skiac_paint, r: u8, g: u8, b: u8, a: u8);
 
+    pub fn skiac_paint_get_color(paint: *mut skiac_paint) -> u32;
+
     pub fn skiac_path_create() -> *mut skiac_path;
 
     pub fn skiac_path_from_svg(svg_path: *mut std::os::raw::c_char) -> *mut skiac_path;
@@ -975,6 +977,11 @@ pub mod ffi {
     ) -> *mut skiac_image_filter;
 
     pub fn skiac_image_filter_is_a_color_filter(image_filter: *mut skiac_image_filter) -> bool;
+
+    pub fn skiac_image_filter_filter_color(
+      image_filter: *mut skiac_image_filter,
+      color: u32,
+    ) -> u32;
 
     pub fn skiac_image_filter_ref(image_filter: *mut skiac_image_filter);
 
@@ -3077,6 +3084,15 @@ impl Paint {
       ffi::skiac_paint_set_src_in_color_filter(self.0, r, g, b, a);
     }
   }
+
+  /// The paint's colour as an 8-bit sRGB ARGB word, alpha in the top byte.
+  ///
+  /// Lossless for every paint built here: `set_color` and `set_alpha` are both
+  /// 8-bit setters, so the float `SkColor4f` Skia stores never holds anything
+  /// that did not arrive as a byte.
+  pub fn get_color(&self) -> u32 {
+    unsafe { ffi::skiac_paint_get_color(self.0) }
+  }
 }
 
 impl Default for Paint {
@@ -3985,6 +4001,19 @@ impl ImageFilter {
     // dereference.
     debug_assert!(!self.0.is_null(), "ImageFilter must never hold null");
     !unsafe { ffi::skiac_image_filter_is_a_color_filter(self.0) }
+  }
+
+  /// The colour this filter turns `color` into, both 8-bit sRGB ARGB.
+  ///
+  /// Only a filter with `needs_device_space_layer() == false` has an answer --
+  /// a spatial filter's output at a point depends on its neighbours -- and for
+  /// any other filter this hands `color` straight back. It is the same fold
+  /// Skia performs itself for a shaderless paint (`SkPaintPriv::RemoveColorFilter`,
+  /// src/core/SkPaintPriv.cpp:161-174); `Context::shadow_paint` needs it one
+  /// step earlier, before its own colourisation.
+  pub fn filter_color(&self, color: u32) -> u32 {
+    debug_assert!(!self.0.is_null(), "ImageFilter must never hold null");
+    unsafe { ffi::skiac_image_filter_filter_color(self.0, color) }
   }
 
   pub fn make_drop_shadow_only(

@@ -386,8 +386,17 @@ impl Context {
     // 4200-scene raster matrix the two agree to <=3/255 everywhere except
     // `ctx.filter = 'invert(1)'` on `fillText` / `strokeText`, where glyph edges
     // moved by up to 99/255. The raster path is byte-identical to before.
+    //
+    // The predicate is `filter_takes_layer`, shared with the SHADOW pass. It
+    // must be: the two passes of one draw have to agree on where `ctx.filter`
+    // lives, and when this rescue first landed they did not -- the content came
+    // off the layer while `shadow_takes_image_filter` still read a bare
+    // `state.filter.is_some()` and sent the shadow onto it. `content_filter` is
+    // either `None` or a clone of `state.filter` (`with_render_canvas` /
+    // `with_shadowed_render_canvas`), so asking about `state.filter` here is
+    // asking about this very filter.
     let filtered_paint = content_filter.as_ref().and_then(|filter| {
-      (self.page_recorder.is_none() && !filter.needs_device_space_layer()).then(|| {
+      (!self.filter_takes_layer()).then(|| {
         let mut filtered_paint = paint.clone();
         filtered_paint.set_image_filter(filter);
         filtered_paint
@@ -674,10 +683,9 @@ impl Context {
     let stroke_paint = self.stroke_paint()?;
 
     // Extract state for shadow rendering to avoid borrow conflicts
-    let shadow_paint = Self::shadow_paint(&self.state, &stroke_paint, ShadowSource::Stroke);
+    let shadow_paint = self.shadow_paint(&stroke_paint, ShadowSource::Stroke);
     // Zero on the image-filter route, where the filter's dx/dy already carry it.
-    let (shadow_offset_x, shadow_offset_y) =
-      Self::canvas_shadow_offset(&self.state, ShadowSource::Stroke);
+    let (shadow_offset_x, shadow_offset_y) = self.canvas_shadow_offset(ShadowSource::Stroke);
 
     self.with_shadowed_render_canvas(
       &stroke_paint,
@@ -793,10 +801,9 @@ impl Context {
     let fill_paint = self.fill_paint()?;
 
     // Extract state for shadow rendering to avoid borrow conflicts
-    let shadow_paint = Self::shadow_paint(&self.state, &fill_paint, ShadowSource::Fill);
+    let shadow_paint = self.shadow_paint(&fill_paint, ShadowSource::Fill);
     // Zero on the image-filter route, where the filter's dx/dy already carry it.
-    let (shadow_offset_x, shadow_offset_y) =
-      Self::canvas_shadow_offset(&self.state, ShadowSource::Fill);
+    let (shadow_offset_x, shadow_offset_y) = self.canvas_shadow_offset(ShadowSource::Fill);
 
     self.with_shadowed_render_canvas(
       &fill_paint,
@@ -852,10 +859,9 @@ impl Context {
     };
 
     // Extract state for shadow rendering to avoid borrow conflicts
-    let shadow_paint = Self::shadow_paint(&self.state, &stroke_paint, ShadowSource::Stroke);
+    let shadow_paint = self.shadow_paint(&stroke_paint, ShadowSource::Stroke);
     // Zero on the image-filter route, where the filter's dx/dy already carry it.
-    let (shadow_offset_x, shadow_offset_y) =
-      Self::canvas_shadow_offset(&self.state, ShadowSource::Stroke);
+    let (shadow_offset_x, shadow_offset_y) = self.canvas_shadow_offset(ShadowSource::Stroke);
 
     self.with_shadowed_render_canvas(
       &stroke_paint,
@@ -1221,10 +1227,9 @@ impl Context {
     };
 
     // Extract state for shadow rendering to avoid borrow conflicts
-    let shadow_paint = Self::shadow_paint(&self.state, &fill_paint, ShadowSource::Fill);
+    let shadow_paint = self.shadow_paint(&fill_paint, ShadowSource::Fill);
     // Zero on the image-filter route, where the filter's dx/dy already carry it.
-    let (shadow_offset_x, shadow_offset_y) =
-      Self::canvas_shadow_offset(&self.state, ShadowSource::Fill);
+    let (shadow_offset_x, shadow_offset_y) = self.canvas_shadow_offset(ShadowSource::Fill);
 
     self.with_shadowed_render_canvas(
       &fill_paint,
@@ -1738,6 +1743,29 @@ impl Context {
     )
   }
 
+  /// Does `ctx.filter` still ride `composited_filter_layer`?
+  ///
+  /// The exact negation of `render_passes`'s content-pass rescue, and the one
+  /// place that question is answered, so the CONTENT and SHADOW passes of a
+  /// draw cannot disagree about where the filter lives. `render_passes` reads
+  /// it too; the long comment there is the one to read for why the layer is
+  /// dropped at all.
+  ///
+  /// Two disjuncts, and only the second is about the filter itself:
+  ///   * `page_recorder.is_some()` is the RASTER canvas, where the layer costs
+  ///     nothing, is what Blink emits, and is not byte-identical to folding --
+  ///     see `render_passes`.
+  ///   * `needs_device_space_layer()` is `!SkImageFilter::asAColorFilter`: a
+  ///     filter with a spatial parameter has a length, that length is device
+  ///     space, and only the layer can give it one.
+  fn filter_takes_layer(&self) -> bool {
+    self
+      .state
+      .filter
+      .as_ref()
+      .is_some_and(|filter| self.page_recorder.is_some() || filter.needs_device_space_layer())
+  }
+
   /// Does this shadow render through an image filter, or through a paint the
   /// draw carries directly?
   ///
@@ -1754,8 +1782,37 @@ impl Context {
   /// (canvas_rendering_context_2d_state.cc:850, :861), and a blur has to,
   /// because the looper's alternative -- an `SkMaskFilter` -- is one binding
   /// skia-c does not have and would be a second Gaussian to keep in sync.
-  fn shadow_takes_image_filter(state: &Context2dRenderingState, source: ShadowSource) -> bool {
-    source.forces_shadow_image_filter() || state.filter.is_some() || state.shadow_blur != 0f32
+  ///
+  /// The middle disjunct is `filter_takes_layer`, NOT `state.filter.is_some()`.
+  /// It used to be the latter, and that was the whole of this defect: Blink's
+  /// reason for putting a filtered shadow on the `DropShadowPaintFilter` is
+  /// that the layer is where its `ctx.filter` lives, so on a backend that has
+  /// already taken the filter OFF the layer the premise is gone and the route
+  /// buys nothing but a layer the device cannot make. Measured, 200x200,
+  /// `shadowColor = rgba(0,0,0,0.8)`, `shadowOffsetX = 40`, SVG bytes /
+  /// drawn elements, `main` (2cd4e1a) vs this branch:
+  ///
+  /// ```text
+  ///   ctx.filter        fillRect          strokeRect        fillText
+  ///                 main  before after  main before after  main  before after
+  ///   (none)        314/2  314/2 314/2  437/2 437/2 437/2  7924/2 7924/2 7924/2
+  ///   grayscale(1)  314/2  214/1 314/2  437/2 268/1 437/2  7924/2 4019/1 7924/2
+  ///   opacity(0.5)  314/2  214/1 314/2  437/2 268/1 437/2  7924/2 4019/1 7924/2
+  ///   sepia(1)      314/2  214/1 314/2  437/2 268/1 437/2  7924/2 4019/1 7924/2
+  ///   invert(1)     314/2  214/1 314/2  437/2 268/1 437/2  7924/2 4019/1 7924/2
+  ///   brightness(.5)314/2  214/1 314/2  437/2 268/1 437/2  7924/2 4019/1 7924/2
+  ///   saturate(2)   314/2  214/1 314/2  437/2 268/1 437/2  7924/2 4019/1 7924/2
+  ///   blur(3px)     150/0  150/0 150/0  150/0 150/0 150/0   150/0  150/0  150/0
+  ///   drop-shadow() 150/0  150/0 150/0  150/0 150/0 150/0   150/0  150/0  150/0
+  /// ```
+  ///
+  /// The `1` in the `before` column is the CONTENT rect alone: the shadow rect
+  /// was gone. `blur()` and `drop-shadow()` stay on the layer and stay lost,
+  /// exactly as on `main` -- they are the disjunct that is still true.
+  fn shadow_takes_image_filter(&self, source: ShadowSource) -> bool {
+    source.forces_shadow_image_filter()
+      || self.filter_takes_layer()
+      || self.state.shadow_blur != 0f32
   }
 
   /// The device-space translate the CANVAS still owes the shadow.
@@ -1779,11 +1836,11 @@ impl Context {
   /// ```
   ///
   /// At `shadowBlur = 6` the same scene moved 4826 px, max 15.
-  fn canvas_shadow_offset(state: &Context2dRenderingState, source: ShadowSource) -> (f32, f32) {
-    if Self::shadow_takes_image_filter(state, source) {
+  fn canvas_shadow_offset(&self, source: ShadowSource) -> (f32, f32) {
+    if self.shadow_takes_image_filter(source) {
       (0f32, 0f32)
     } else {
-      (state.shadow_offset_x, state.shadow_offset_y)
+      (self.state.shadow_offset_x, self.state.shadow_offset_y)
     }
   }
 
@@ -1792,11 +1849,8 @@ impl Context {
   /// baking the offset into the filter, and they are one function again now
   /// that the identity-CTM layer makes those dx/dy device-space for every
   /// source.
-  fn shadow_paint(
-    state: &Context2dRenderingState,
-    paint: &Paint,
-    source: ShadowSource,
-  ) -> Option<ShadowDraw> {
+  fn shadow_paint(&self, paint: &Paint, source: ShadowSource) -> Option<ShadowDraw> {
+    let state = &self.state;
     let shadow_color = &state.shadow_color;
     let shadow_alpha = shadow_color.a;
     if shadow_alpha == 0 {
@@ -1827,16 +1881,24 @@ impl Context {
     // cc/paint/draw_looper.cc:28-40). `shadow_takes_image_filter` is the shared
     // predicate; do not inline this condition anywhere else.
     //
-    // `state.filter.is_none()` guards the whole layer-free route. With a
-    // `ctx.filter` in play the shadow HAS to be an image filter, because the
-    // only faithful order is `colourise(ctx.filter(source))` -- see
+    // `filter_takes_layer` guards the whole layer-free route. Wherever
+    // `ctx.filter` is still ON the layer the shadow HAS to be an image filter,
+    // because the only faithful order is `colourise(ctx.filter(source))` -- see
     // `shadow_only_image_filter`, which chains it -- and a paint colour or a
     // colour filter both run BEFORE the paint's image filter in Skia's blitter,
-    // i.e. they can only ever produce `ctx.filter(colourise(source))`. Nothing
-    // is lost by taking the filter route here: the foreground draw is already
-    // going through `composited_filter_layer`'s layer whenever `ctx.filter` is
-    // set, so the vector backends had given up on it either way.
-    if !Self::shadow_takes_image_filter(state, source) {
+    // i.e. they can only ever produce `ctx.filter(colourise(source))`. Putting
+    // the filter back on this paint would be that wrong order and nothing else:
+    // `SkCanvasPriv::ImageToColorFilter` composes it as
+    // `imgCF->makeComposed(paintCF)`, "result = this(inner(...))"
+    // (src/core/SkCanvasPriv.cpp:163-168, include/core/SkColorFilter.h:58-64).
+    // Measured on a blue shadow at `shadowOffsetX = 60`, probe (110, 70):
+    // Chrome 150.0.7871.184 [0,0,255], that order [18,18,18] -- grayscale of
+    // the shadow colour rather than of the source.
+    //
+    // Where the filter has been folded OFF the layer, `state.filter` is still
+    // `Some` inside this branch, and it is exactly the colour-only case. The
+    // two arms below fold it in the right order themselves; see each.
+    if !self.shadow_takes_image_filter(source) {
       // No blur, so there is no Gaussian to place and nothing an image filter
       // could add -- Chromium gates its mask filter on `blur_sigma > 0` and
       // otherwise leaves the looper layer with just the colour filter and the
@@ -1861,9 +1923,20 @@ impl Context {
       // Do NOT add a MaskFilter here either: `SkMaskFilter::MakeBlur` returns
       // nullptr for sigma <= 0 (SkBlurMaskFilterImpl.cpp:598-603).
       //
-      // The clone's image filter is empty here by construction -- the `is_none`
-      // guard above sent every `ctx.filter` draw down the image-filter route --
-      // so neither branch below has to think about filter ordering.
+      // The clone's image filter slot is empty here by construction --
+      // `fill_paint` / `stroke_paint` never install `ctx.filter`, and
+      // `render_passes` puts it on a paint of its OWN for the content pass --
+      // so neither branch below inherits a filter it has to think about.
+      //
+      // What `ctx.filter` can still do to a shadow, once it is colour-only, is
+      // bounded to one number. `Blend(shadowColor, kSrcIn)` is
+      // `(shadowColor.rgb, shadowColor.a * src.a)`: it discards the source RGB
+      // wholesale, so the RGB half of any colour filter is unobservable in the
+      // result, and only the ALPHA the filter leaves on the source survives.
+      // That is why the fold below is a single alpha and not a filter chain,
+      // and it is the same thing `shadow_only_image_filter`'s chained route
+      // computes the slow way.
+      let colour_only_filter = state.filter.as_ref();
       if source.is_solid_color(state) {
         // ...but SkSVGDevice cannot express even THIS colour filter faithfully.
         // It writes a kSrcIn Blend as
@@ -1932,7 +2005,32 @@ impl Context {
         // `get_alpha()` is lossless here because every writer of this paint's
         // alpha (`multiply_by_alpha` -> `set_color`, `set_alpha`) starts from a
         // u8 in the first place.
-        let paint_alpha = drop_shadow_paint.get_alpha() as f32 / 255.0;
+        //
+        // A colour-only `ctx.filter` folded off the layer goes in HERE, before
+        // the shadow colour displaces the source, which is the only spelling
+        // that gets Blink's `colourise(ctx.filter(source))` order right on a
+        // paint. `filter_color` is `SkColorFilter::filterColor4f`, i.e. the
+        // same evaluation Skia runs on a shaderless paint itself
+        // (`SkPaintPriv::RemoveColorFilter`), and only its alpha is read --
+        // kSrcIn throws the filtered RGB away. For a single CSS filter that is
+        // either the identity (grayscale / sepia / saturate / brightness /
+        // hue-rotate leave the `SkColorMatrix` alpha row at `[0, 0, 0, 1, 0]`;
+        // invert / contrast pass `TableARGB` a null alpha table) or
+        // `opacity()`'s scale -- but this is NOT special-cased on the filter
+        // list, and must not be. `asAColorFilter` needs `getInput(0) ==
+        // nullptr` (SkImageFilter.cpp:123), yet a chain of two colour filters
+        // still satisfies it: `SkImageFilters::ColorFilter` collapses adjacent
+        // colour-filter nodes at construction, `cf = cf->makeComposed(inputCF);
+        // input = input->getInput(0)`
+        // (SkColorFilterImageFilter.cpp:76-84). Measured, `fillRect` with an
+        // offset shadow: `grayscale(1) sepia(1)` comes out at 0.8, `opacity(0.5)
+        // grayscale(1)` at 0.4, and `blur(2px) grayscale(1)` keeps the layer.
+        // `filterColor4f` answers for all of them without being told which.
+        let source_color = match colour_only_filter {
+          Some(filter) => filter.filter_color(drop_shadow_paint.get_color()),
+          None => drop_shadow_paint.get_color(),
+        };
+        let paint_alpha = (source_color >> 24) as f32 / 255.0;
         drop_shadow_paint.set_color(
           shadow_color.r,
           shadow_color.g,
@@ -1944,6 +2042,19 @@ impl Context {
           filter: None,
         });
       }
+      // A shader source. `ctx.filter` is DROPPED here rather than composed in,
+      // and that is deliberate: `SkColorFilter::makeComposed` would put the
+      // right answer on the paint, but `SkSVGDevice` recognises exactly one
+      // colour filter -- a single kSrcIn `Blend`, via `asAColorMode`
+      // (src/svg/SkSVGDevice.cpp:431-436, :472-505) -- and silently emits NO
+      // filter for anything else. Composing would therefore turn a gradient's
+      // shadow into an undimmed displaced copy of the gradient, where leaving
+      // the filter off leaves the flood that at least carries the shadow
+      // colour. What is lost is the alpha half of an alpha-changing filter,
+      // i.e. `opacity()` and a contrast/invert with an alpha table, under a
+      // gradient or pattern shadow, on SVG and PDF only: the shadow comes out
+      // as opaque as an unfiltered one. `main` (2cd4e1a) did the same, and
+      // before this change the whole draw was gone.
       drop_shadow_paint.set_src_in_color_filter(
         shadow_color.r,
         shadow_color.g,
@@ -2005,10 +2116,9 @@ impl Context {
     paint.set_alpha((self.state.global_alpha * 255.0).round() as u8);
 
     // Extract state for shadow rendering to avoid borrow conflicts
-    let shadow_paint = Self::shadow_paint(&self.state, &paint, ShadowSource::Image);
+    let shadow_paint = self.shadow_paint(&paint, ShadowSource::Image);
     // Zero on the image-filter route, where the filter's dx/dy already carry it.
-    let (shadow_offset_x, shadow_offset_y) =
-      Self::canvas_shadow_offset(&self.state, ShadowSource::Image);
+    let (shadow_offset_x, shadow_offset_y) = self.canvas_shadow_offset(ShadowSource::Image);
     let image_smoothing_enabled = self.state.image_smoothing_enabled;
     let image_smoothing_quality = self.state.image_smoothing_quality;
 
@@ -2091,10 +2201,9 @@ impl Context {
     paint.set_alpha((self.state.global_alpha * 255.0).round() as u8);
 
     // Extract state for shadow rendering to avoid borrow conflicts
-    let shadow_paint = Self::shadow_paint(&self.state, &paint, ShadowSource::Image);
+    let shadow_paint = self.shadow_paint(&paint, ShadowSource::Image);
     // Zero on the image-filter route, where the filter's dx/dy already carry it.
-    let (shadow_offset_x, shadow_offset_y) =
-      Self::canvas_shadow_offset(&self.state, ShadowSource::Image);
+    let (shadow_offset_x, shadow_offset_y) = self.canvas_shadow_offset(ShadowSource::Image);
 
     self.with_shadowed_render_canvas(
       &paint,
@@ -2147,10 +2256,10 @@ impl Context {
     let font = get_font()?;
 
     // Extract all state values to avoid borrow conflicts with with_render_canvas
-    let shadow_paint = Self::shadow_paint(&self.state, paint, source);
+    let shadow_paint = self.shadow_paint(paint, source);
     let width = self.width as f32;
     // Zero on the image-filter route, where the filter's dx/dy already carry it.
-    let (shadow_offset_x, shadow_offset_y) = Self::canvas_shadow_offset(&self.state, source);
+    let (shadow_offset_x, shadow_offset_y) = self.canvas_shadow_offset(source);
     let font_weight = self.state.font_style.weight;
     let font_stretch = self.state.font_stretch;
     let font_stretch_percentage = font_stretch.to_width_percentage();
