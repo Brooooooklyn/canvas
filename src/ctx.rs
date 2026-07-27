@@ -111,6 +111,43 @@ impl ShadowSource {
   }
 }
 
+/// What a draw lays down on the device: a glyph run, or anything else.
+///
+/// `ShadowSource` cannot answer this -- `fillText` and `fillRect` are both
+/// `ShadowSource::Fill`, and they differ in the style they read, not in the
+/// coverage they emit -- and `render_passes` is handed no `ShadowSource` at all.
+/// So the answer travels beside it, stated by every draw site, and both passes
+/// of one draw get the same one. `draw_text` is the only `Glyphs`; see
+/// `filter_takes_layer`, which is the only reader.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DrawContent {
+  /// Rects, paths, images -- everything `SkPDFDevice` renders through
+  /// `drawRect` / `drawPath` / `drawImageRect`.
+  Geometry,
+  /// A glyph run: `SkPDFDevice::onDrawGlyphRunList` (src/pdf/SkPDFDevice.cpp:
+  /// 1106-1112).
+  Glyphs,
+}
+
+/// Which Skia device the `Context`'s surface is backed by.
+///
+/// `page_recorder.is_some()` used to stand in for "raster", and NOTHING stood in
+/// for the difference between the two vector backends -- both set
+/// `page_recorder: None` and only `stream` happened to tell them apart. That
+/// difference is load-bearing now (`filter_takes_layer`), so it is stated by the
+/// constructor rather than inferred from a field that means something else.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Backend {
+  /// `Context::new`: an ordinary pixel surface, drawn through `PageRecorder`.
+  /// The only backend with `page_recorder: Some`.
+  Raster,
+  /// `Context::new_svg`: `SkSVGDevice`.
+  Svg,
+  /// `Context::new_from_surface`: `SkPDFDevice`, one per
+  /// `PDFDocument::beginPage` (src/lib.rs:1013).
+  Pdf,
+}
+
 /// The shadow half of a draw, as `shadow_paint` builds it.
 ///
 /// `paint` draws the shadow's SOURCE and carries no image filter. `filter`,
@@ -137,6 +174,9 @@ struct ShadowPass<'a> {
 pub struct Context {
   pub(crate) surface: Surface,
   pub(crate) page_recorder: Option<RefCell<PageRecorder>>, // Deferred rendering recorder (RefCell for interior mutability)
+  /// Which device `surface` is over. Set once, by the constructor, and never
+  /// mutated; see `Backend`.
+  pub(crate) backend: Backend,
   path: SkPath,
   pub alpha: bool,
   pub(crate) states: Vec<Context2dRenderingState>,
@@ -165,6 +205,7 @@ impl Context {
     Ok(Context {
       surface,
       page_recorder: None, // SVG uses direct rendering
+      backend: Backend::Svg,
       alpha: true,
       path: SkPath::new(),
       states: vec![],
@@ -182,6 +223,7 @@ impl Context {
     Ok(Context {
       surface,
       page_recorder: Some(RefCell::new(PageRecorder::new(width as f32, height as f32))), // Enable deferred rendering
+      backend: Backend::Raster,
       alpha: true,
       path: SkPath::new(),
       states: vec![],
@@ -198,6 +240,7 @@ impl Context {
     Context {
       surface,
       page_recorder: None, // PDF uses direct rendering
+      backend: Backend::Pdf,
       alpha: true,
       path: SkPath::new(),
       states: vec![],
@@ -275,7 +318,17 @@ impl Context {
   where
     F: Fn(&mut Canvas, &Paint) -> result::Result<(), SkError>,
   {
-    self.render_passes(paint, None, None, |_, _, _| Ok(()), f)
+    // `DrawContent` only ever qualifies a filter, and the `None` above says
+    // there is none, so the value is inert here. `clearRect` draws a rect
+    // anyway.
+    self.render_passes(
+      paint,
+      DrawContent::Geometry,
+      None,
+      None,
+      |_, _, _| Ok(()),
+      f,
+    )
   }
 
   /// The draws that also have a shadow pass, and that `ctx.filter` applies to.
@@ -295,9 +348,15 @@ impl Context {
   /// SVG / PDF backends a layer image filter is unrepresentable, so a filter
   /// with no spatial component goes back on the content paint. Read the comment
   /// there before assuming the content paint is filter-free.
+  ///
+  /// `content` says whether this draw emits a glyph run. It is the only thing
+  /// that qualifies that exception -- PDF text is held back from it -- and it
+  /// has to be passed rather than inferred, because a `fillText` and a
+  /// `fillRect` are the same `ShadowSource`. See `filter_takes_layer`.
   fn with_shadowed_render_canvas<S, F>(
     &mut self,
     paint: &Paint,
+    content: DrawContent,
     shadow: Option<&ShadowDraw>,
     shadow_f: S,
     f: F,
@@ -307,7 +366,7 @@ impl Context {
     F: Fn(&mut Canvas, &Paint) -> result::Result<(), SkError>,
   {
     let content_filter = self.state.filter.clone();
-    self.render_passes(paint, content_filter, shadow, shadow_f, f)
+    self.render_passes(paint, content, content_filter, shadow, shadow_f, f)
   }
 
   /// Shared body of the two above.
@@ -320,6 +379,7 @@ impl Context {
   fn render_passes<S, F>(
     &mut self,
     paint: &Paint,
+    content: DrawContent,
     content_filter: Option<ImageFilter>,
     shadow: Option<&ShadowDraw>,
     shadow_f: S,
@@ -387,6 +447,10 @@ impl Context {
     // `ctx.filter = 'invert(1)'` on `fillText` / `strokeText`, where glyph edges
     // moved by up to 99/255. The raster path is byte-identical to before.
     //
+    // Also NOT done for a GLYPH RUN on PDF, which is why `content` is threaded
+    // down here at all. That one cell is a deliberate defect -- see the third
+    // disjunct of `filter_takes_layer`, which is the only place it is decided.
+    //
     // The predicate is `filter_takes_layer`, shared with the SHADOW pass. It
     // must be: the two passes of one draw have to agree on where `ctx.filter`
     // lives, and when this rescue first landed they did not -- the content came
@@ -394,9 +458,10 @@ impl Context {
     // `state.filter.is_some()` and sent the shadow onto it. `content_filter` is
     // either `None` or a clone of `state.filter` (`with_render_canvas` /
     // `with_shadowed_render_canvas`), so asking about `state.filter` here is
-    // asking about this very filter.
+    // asking about this very filter, and `content` is the same `DrawContent`
+    // the shadow pass's `shadow_paint` / `canvas_shadow_offset` were given.
     let filtered_paint = content_filter.as_ref().and_then(|filter| {
-      (!self.filter_takes_layer()).then(|| {
+      (!self.filter_takes_layer(content)).then(|| {
         let mut filtered_paint = paint.clone();
         filtered_paint.set_image_filter(filter);
         filtered_paint
@@ -683,12 +748,15 @@ impl Context {
     let stroke_paint = self.stroke_paint()?;
 
     // Extract state for shadow rendering to avoid borrow conflicts
-    let shadow_paint = self.shadow_paint(&stroke_paint, ShadowSource::Stroke);
+    let shadow_paint =
+      self.shadow_paint(&stroke_paint, ShadowSource::Stroke, DrawContent::Geometry);
     // Zero on the image-filter route, where the filter's dx/dy already carry it.
-    let (shadow_offset_x, shadow_offset_y) = self.canvas_shadow_offset(ShadowSource::Stroke);
+    let (shadow_offset_x, shadow_offset_y) =
+      self.canvas_shadow_offset(ShadowSource::Stroke, DrawContent::Geometry);
 
     self.with_shadowed_render_canvas(
       &stroke_paint,
+      DrawContent::Geometry,
       shadow_paint.as_ref(),
       |shadow_canvas, shadow_paint, device_ctm| {
         shadow_canvas.save();
@@ -801,12 +869,14 @@ impl Context {
     let fill_paint = self.fill_paint()?;
 
     // Extract state for shadow rendering to avoid borrow conflicts
-    let shadow_paint = self.shadow_paint(&fill_paint, ShadowSource::Fill);
+    let shadow_paint = self.shadow_paint(&fill_paint, ShadowSource::Fill, DrawContent::Geometry);
     // Zero on the image-filter route, where the filter's dx/dy already carry it.
-    let (shadow_offset_x, shadow_offset_y) = self.canvas_shadow_offset(ShadowSource::Fill);
+    let (shadow_offset_x, shadow_offset_y) =
+      self.canvas_shadow_offset(ShadowSource::Fill, DrawContent::Geometry);
 
     self.with_shadowed_render_canvas(
       &fill_paint,
+      DrawContent::Geometry,
       shadow_paint.as_ref(),
       |shadow_canvas, shadow_paint, device_ctm| {
         shadow_canvas.save();
@@ -859,12 +929,15 @@ impl Context {
     };
 
     // Extract state for shadow rendering to avoid borrow conflicts
-    let shadow_paint = self.shadow_paint(&stroke_paint, ShadowSource::Stroke);
+    let shadow_paint =
+      self.shadow_paint(&stroke_paint, ShadowSource::Stroke, DrawContent::Geometry);
     // Zero on the image-filter route, where the filter's dx/dy already carry it.
-    let (shadow_offset_x, shadow_offset_y) = self.canvas_shadow_offset(ShadowSource::Stroke);
+    let (shadow_offset_x, shadow_offset_y) =
+      self.canvas_shadow_offset(ShadowSource::Stroke, DrawContent::Geometry);
 
     self.with_shadowed_render_canvas(
       &stroke_paint,
+      DrawContent::Geometry,
       shadow_paint.as_ref(),
       |shadow_canvas, shadow_paint, device_ctm| {
         shadow_canvas.save();
@@ -1227,12 +1300,14 @@ impl Context {
     };
 
     // Extract state for shadow rendering to avoid borrow conflicts
-    let shadow_paint = self.shadow_paint(&fill_paint, ShadowSource::Fill);
+    let shadow_paint = self.shadow_paint(&fill_paint, ShadowSource::Fill, DrawContent::Geometry);
     // Zero on the image-filter route, where the filter's dx/dy already carry it.
-    let (shadow_offset_x, shadow_offset_y) = self.canvas_shadow_offset(ShadowSource::Fill);
+    let (shadow_offset_x, shadow_offset_y) =
+      self.canvas_shadow_offset(ShadowSource::Fill, DrawContent::Geometry);
 
     self.with_shadowed_render_canvas(
       &fill_paint,
+      DrawContent::Geometry,
       shadow_paint.as_ref(),
       |shadow_canvas, shadow_paint, device_ctm| {
         shadow_canvas.save();
@@ -1751,19 +1826,66 @@ impl Context {
   /// it too; the long comment there is the one to read for why the layer is
   /// dropped at all.
   ///
-  /// Two disjuncts, and only the second is about the filter itself:
-  ///   * `page_recorder.is_some()` is the RASTER canvas, where the layer costs
-  ///     nothing, is what Blink emits, and is not byte-identical to folding --
-  ///     see `render_passes`.
+  /// Three disjuncts, and only the second is about the filter itself:
+  ///   * `Backend::Raster` is the raster canvas, where the layer costs nothing,
+  ///     is what Blink emits, and is not byte-identical to folding -- see
+  ///     `render_passes`. (This used to read `page_recorder.is_some()`. Same
+  ///     set: `Context::new` is the only constructor that builds a recorder and
+  ///     the only one that says `Raster`.)
   ///   * `needs_device_space_layer()` is `!SkImageFilter::asAColorFilter`: a
   ///     filter with a spatial parameter has a length, that length is device
   ///     space, and only the layer can give it one.
-  fn filter_takes_layer(&self) -> bool {
-    self
-      .state
-      .filter
-      .as_ref()
-      .is_some_and(|filter| self.page_recorder.is_some() || filter.needs_device_space_layer())
+  ///   * `Backend::Pdf` + `DrawContent::Glyphs` is a KNOWN DEFECT, kept because
+  ///     the alternative crashes. PDF text under a colour-only `ctx.filter`
+  ///     therefore rasterises, exactly as `main` (2cd4e1a) does; it is the one
+  ///     cell of e816c47 / 6a4c942 that is given back.
+  ///
+  /// That third disjunct, at length. Taking the rescue puts the colour filter on
+  /// the CONTENT paint, and on `windows-11-arm` runners a PDF glyph run drawn
+  /// through such a paint faults with `0xC0000005` (ACCESS_VIOLATION) -- ava
+  /// reports `__test__\pdf.spec.ts exited with a non-zero exit code:
+  /// 3221225477`. Localised on CI with per-test stderr markers to exactly one
+  /// scene, and it is the glyph run that separates it from its neighbours:
+  ///
+  /// ```text
+  ///   PDF, windows-11-arm, colour-only ctx.filter + zero-blur shadow
+  ///     fillRect / strokeRect, all 6 colour-only filters   PASS
+  ///     fillText                                           CRASH
+  ///   SVG, same runner, same Rust arm, 21 tests inc. text  PASS
+  /// ```
+  ///
+  /// Intermittent -- node@22 got through the same test once -- and not
+  /// reproducible on macOS arm64 even against a debug build with `debug_assert!`
+  /// and `SkASSERT` live (601 tests, 0 failures). The Rust arm is exonerated by
+  /// the SVG row: it is the same predicate, the same fold, the same paint.
+  ///
+  /// A glyph run is the ONE draw whose colour filter reaches the strike
+  /// machinery instead of only the blitter. `SkPDFDevice::internalDrawGlyphRun`
+  /// hands `SkPDFStrike::Make` the RAW `runPaint` (src/pdf/SkPDFDevice.cpp:948),
+  /// not the `clean_paint` copy that `SkPaintPriv::RemoveColorFilter` has
+  /// already emptied and `SkASSERT`ed empty (:265-279). That paint becomes
+  /// `pathPaint` / `imagePaint` for `SkStrikeSpec::MakeWithNoDevice`
+  /// (src/pdf/SkPDFFont.cpp:178-209), so it reaches
+  /// `rec->setLuminanceColor(SkPaintPriv::ComputeLuminanceColor(paint))`
+  /// (src/core/SkScalerContext.cpp:1202) and thence `just_a_color`, which
+  /// evaluates it as `paint.getColorFilter()->filterColor4f(c, cs, cs)` with
+  /// `SkColorSpace* cs = nullptr` twice over -- the site's own comment is "TODO:
+  /// This colorspace is meaningless" (src/core/SkPaintPriv.cpp:135-146). Every
+  /// other draw type reaches none of that. Which of those steps faults is NOT
+  /// established, so this is not a diagnosis; it is why the glyph cell is the
+  /// one that is singled out rather than the whole PDF backend.
+  ///
+  /// Scoped to `Backend::Pdf` alone. SVG has no strike cache and no
+  /// `SkPDFStrike`, its text tests pass on the same runner, and it is where the
+  /// rescue buys the most -- `SkSVGDevice` DROPS a layer draw whole rather than
+  /// rasterising it. Scoped to glyphs alone: PDF fills, strokes, paths and
+  /// images keep the rescue and keep e816c47's vector pages.
+  fn filter_takes_layer(&self, content: DrawContent) -> bool {
+    self.state.filter.as_ref().is_some_and(|filter| {
+      self.backend == Backend::Raster
+        || filter.needs_device_space_layer()
+        || (self.backend == Backend::Pdf && content == DrawContent::Glyphs)
+    })
   }
 
   /// Does this shadow render through an image filter, or through a paint the
@@ -1809,9 +1931,9 @@ impl Context {
   /// The `1` in the `before` column is the CONTENT rect alone: the shadow rect
   /// was gone. `blur()` and `drop-shadow()` stay on the layer and stay lost,
   /// exactly as on `main` -- they are the disjunct that is still true.
-  fn shadow_takes_image_filter(&self, source: ShadowSource) -> bool {
+  fn shadow_takes_image_filter(&self, source: ShadowSource, content: DrawContent) -> bool {
     source.forces_shadow_image_filter()
-      || self.filter_takes_layer()
+      || self.filter_takes_layer(content)
       || self.state.shadow_blur != 0f32
   }
 
@@ -1836,8 +1958,8 @@ impl Context {
   /// ```
   ///
   /// At `shadowBlur = 6` the same scene moved 4826 px, max 15.
-  fn canvas_shadow_offset(&self, source: ShadowSource) -> (f32, f32) {
-    if self.shadow_takes_image_filter(source) {
+  fn canvas_shadow_offset(&self, source: ShadowSource, content: DrawContent) -> (f32, f32) {
+    if self.shadow_takes_image_filter(source, content) {
       (0f32, 0f32)
     } else {
       (self.state.shadow_offset_x, self.state.shadow_offset_y)
@@ -1849,7 +1971,12 @@ impl Context {
   /// baking the offset into the filter, and they are one function again now
   /// that the identity-CTM layer makes those dx/dy device-space for every
   /// source.
-  fn shadow_paint(&self, paint: &Paint, source: ShadowSource) -> Option<ShadowDraw> {
+  fn shadow_paint(
+    &self,
+    paint: &Paint,
+    source: ShadowSource,
+    content: DrawContent,
+  ) -> Option<ShadowDraw> {
     let state = &self.state;
     let shadow_color = &state.shadow_color;
     let shadow_alpha = shadow_color.a;
@@ -1898,7 +2025,7 @@ impl Context {
     // Where the filter has been folded OFF the layer, `state.filter` is still
     // `Some` inside this branch, and it is exactly the colour-only case. The
     // two arms below fold it in the right order themselves; see each.
-    if !self.shadow_takes_image_filter(source) {
+    if !self.shadow_takes_image_filter(source, content) {
       // No blur, so there is no Gaussian to place and nothing an image filter
       // could add -- Chromium gates its mask filter on `blur_sigma > 0` and
       // otherwise leaves the looper layer with just the colour filter and the
@@ -2116,14 +2243,16 @@ impl Context {
     paint.set_alpha((self.state.global_alpha * 255.0).round() as u8);
 
     // Extract state for shadow rendering to avoid borrow conflicts
-    let shadow_paint = self.shadow_paint(&paint, ShadowSource::Image);
+    let shadow_paint = self.shadow_paint(&paint, ShadowSource::Image, DrawContent::Geometry);
     // Zero on the image-filter route, where the filter's dx/dy already carry it.
-    let (shadow_offset_x, shadow_offset_y) = self.canvas_shadow_offset(ShadowSource::Image);
+    let (shadow_offset_x, shadow_offset_y) =
+      self.canvas_shadow_offset(ShadowSource::Image, DrawContent::Geometry);
     let image_smoothing_enabled = self.state.image_smoothing_enabled;
     let image_smoothing_quality = self.state.image_smoothing_quality;
 
     self.with_shadowed_render_canvas(
       &paint,
+      DrawContent::Geometry,
       shadow_paint.as_ref(),
       |shadow_canvas: &mut Canvas, shadow_paint, device_ctm| {
         shadow_canvas.save();
@@ -2201,12 +2330,14 @@ impl Context {
     paint.set_alpha((self.state.global_alpha * 255.0).round() as u8);
 
     // Extract state for shadow rendering to avoid borrow conflicts
-    let shadow_paint = self.shadow_paint(&paint, ShadowSource::Image);
+    let shadow_paint = self.shadow_paint(&paint, ShadowSource::Image, DrawContent::Geometry);
     // Zero on the image-filter route, where the filter's dx/dy already carry it.
-    let (shadow_offset_x, shadow_offset_y) = self.canvas_shadow_offset(ShadowSource::Image);
+    let (shadow_offset_x, shadow_offset_y) =
+      self.canvas_shadow_offset(ShadowSource::Image, DrawContent::Geometry);
 
     self.with_shadowed_render_canvas(
       &paint,
+      DrawContent::Geometry,
       shadow_paint.as_ref(),
       |shadow_canvas: &mut Canvas, shadow_paint, device_ctm| {
         shadow_canvas.save();
@@ -2256,10 +2387,14 @@ impl Context {
     let font = get_font()?;
 
     // Extract all state values to avoid borrow conflicts with with_render_canvas
-    let shadow_paint = self.shadow_paint(paint, source);
+    // The one `DrawContent::Glyphs` in the file. It is what keeps a colour-only
+    // `ctx.filter` ON the layer for PDF text; see `filter_takes_layer`. All
+    // three readers below are handed the same value, so the content pass and
+    // the shadow pass cannot disagree about where the filter lives.
+    let shadow_paint = self.shadow_paint(paint, source, DrawContent::Glyphs);
     let width = self.width as f32;
     // Zero on the image-filter route, where the filter's dx/dy already carry it.
-    let (shadow_offset_x, shadow_offset_y) = self.canvas_shadow_offset(source);
+    let (shadow_offset_x, shadow_offset_y) = self.canvas_shadow_offset(source, DrawContent::Glyphs);
     let font_weight = self.state.font_style.weight;
     let font_stretch = self.state.font_stretch;
     let font_stretch_percentage = font_stretch.to_width_percentage();
@@ -2278,6 +2413,7 @@ impl Context {
 
     self.with_shadowed_render_canvas(
       paint,
+      DrawContent::Glyphs,
       shadow_paint.as_ref(),
       |shadow_canvas, shadow_paint, device_ctm| {
         shadow_canvas.save();

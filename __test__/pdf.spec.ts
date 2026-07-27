@@ -12,24 +12,11 @@ const test = ava as TestFn<{
   doc: PDFDocument
 }>
 
-// TEMPORARY, to be removed once the Windows ARM64 crash is located.
-// `__test__\pdf.spec.ts exited with a non-zero exit code: 3221225477`
-// (0xC0000005, ACCESS_VIOLATION) on `windows-11-arm` only, on both node@22 and
-// node@24, and not reproducible on macOS arm64 even against a debug build with
-// `debug_assert!` and `SkASSERT` live. ava buffers a file's test results and
-// discards them when its worker dies, so the run log names no test -- but it
-// forwards worker stderr as it arrives, so these markers survive the crash and
-// the last `start` without a matching `end` is the test that faulted.
 test.beforeEach((t) => {
-  process.stderr.write(`[PDFMARK] start ${t.title}\n`)
   t.context.doc = new PDFDocument()
 })
 
-test.afterEach.always((t) => {
-  process.stderr.write(`[PDFMARK] end   ${t.title}\n`)
-})
-
-test.serial('should create a basic PDF document', (t) => {
+test('should create a basic PDF document', (t) => {
   const { doc } = t.context
   const ctx = doc.beginPage(612, 792) // Letter size in points
 
@@ -45,7 +32,7 @@ test.serial('should create a basic PDF document', (t) => {
   t.is(pdfBuffer.toString('utf8', 0, 5), '%PDF-')
 })
 
-test.serial('should create PDF with metadata', (t) => {
+test('should create PDF with metadata', (t) => {
   const doc = new PDFDocument({
     title: 'Test Document',
     author: 'Test Author',
@@ -71,7 +58,7 @@ test.serial('should create PDF with metadata', (t) => {
   t.true(pdfContent.includes('Test Author'))
 })
 
-test.serial('should create multi-page PDF', (t) => {
+test('should create multi-page PDF', (t) => {
   const { doc } = t.context
 
   // Page 1
@@ -108,7 +95,7 @@ test.serial('should create multi-page PDF', (t) => {
   t.true(pdfContent.includes('/Type /Page'))
 })
 
-test.serial('should draw various shapes on PDF', (t) => {
+test('should draw various shapes on PDF', (t) => {
   const { doc } = t.context
   const ctx = doc.beginPage(800, 600)
 
@@ -155,7 +142,7 @@ test.serial('should draw various shapes on PDF', (t) => {
   t.is(pdfBuffer.toString('utf8', 0, 5), '%PDF-')
 })
 
-test.serial('should render text on PDF', async (t) => {
+test('should render text on PDF', async (t) => {
   GlobalFonts.registerFromPath(join(__dirname, 'fonts-dir', 'iosevka-curly-regular.woff2'), 'i-curly')
   const { doc } = t.context
   const ctx = doc.beginPage(612, 792)
@@ -182,7 +169,7 @@ test.serial('should render text on PDF', async (t) => {
   await writeFile(join(__dirname, 'pdf', 'text.pdf'), pdfBuffer)
 })
 
-test.serial('should support gradients on PDF', async (t) => {
+test('should support gradients on PDF', async (t) => {
   const { doc } = t.context
   const ctx = doc.beginPage(400, 400)
 
@@ -209,7 +196,7 @@ test.serial('should support gradients on PDF', async (t) => {
   await writeFile(join(__dirname, 'pdf', 'gradients.pdf'), pdfBuffer)
 })
 
-test.serial('should support different page sizes', async (t) => {
+test('should support different page sizes', async (t) => {
   const { doc } = t.context
 
   // A4 size (210mm x 297mm = 595pt x 842pt)
@@ -238,7 +225,7 @@ test.serial('should support different page sizes', async (t) => {
   await writeFile(join(__dirname, 'pdf', 'multi-page.pdf'), pdfBuffer)
 })
 
-test.serial('should support PDF/A and compression settings', (t) => {
+test('should support PDF/A and compression settings', (t) => {
   const doc = new PDFDocument({
     title: 'Compressed PDF',
     pdfa: true,
@@ -258,7 +245,7 @@ test.serial('should support PDF/A and compression settings', (t) => {
   t.is(pdfBuffer.toString('utf8', 0, 5), '%PDF-')
 })
 
-test.serial('should handle empty PDF document', (t) => {
+test('should handle empty PDF document', (t) => {
   const { doc } = t.context
   const pdfBuffer = doc.close()
 
@@ -279,7 +266,7 @@ function countPdfImages(pdf: Buffer): number {
 // page comes back carrying `/Subtype /Image` XObjects. A filter with no spatial
 // component has no reason to be on a layer at all; it stays on the content paint
 // on this backend and the page stays vector.
-test.serial('a colour-only ctx.filter must not rasterise the page', (t) => {
+test('a colour-only ctx.filter must not rasterise the page', (t) => {
   const { doc } = t.context
   const ctx = doc.beginPage(240, 200)
   ctx.filter = 'grayscale(1)'
@@ -295,7 +282,7 @@ test.serial('a colour-only ctx.filter must not rasterise the page', (t) => {
 // spatial component: `blur()` HAS a length, that length is device-space, and the
 // only way to give it device space is the layer. Rasterising is the price, and
 // it is what `main` did here too.
-test.serial('a spatial ctx.filter keeps its device-space layer', (t) => {
+test('a spatial ctx.filter keeps its device-space layer', (t) => {
   const doc = new PDFDocument()
   const ctx = doc.beginPage(240, 200)
   ctx.filter = 'blur(3px)'
@@ -316,7 +303,7 @@ test.serial('a spatial ctx.filter keeps its device-space layer', (t) => {
 // `/Subtype /Image` XObjects. Measured, 240x200, `shadowOffsetX = 40`, bytes /
 // images: `main` (2cd4e1a) 818/0, before 1468/2, after 818/0.
 for (const filter of ['grayscale(1)', 'opacity(0.5)', 'sepia(1)', 'invert(1)', 'brightness(0.5)', 'saturate(2)']) {
-  test.serial(`a colour-only ctx.filter with a shadow must not rasterise the page (${filter})`, (t) => {
+  test(`a colour-only ctx.filter with a shadow must not rasterise the page (${filter})`, (t) => {
     const { doc } = t.context
     const ctx = doc.beginPage(240, 200)
     ctx.filter = filter
@@ -334,9 +321,26 @@ for (const filter of ['grayscale(1)', 'opacity(0.5)', 'sepia(1)', 'invert(1)', '
   })
 }
 
-// Text is the case the raster device costs the most: a rasterised shadow layer
-// stops the glyphs under it being real text.
-test.serial('a colour-only ctx.filter with a text shadow keeps the page vector', (t) => {
+// KNOWN LIMITATION, deliberately pinned -- this is not a win, it is the one cell
+// the rescue above gives back.
+//
+// Taking the rescue puts the colour filter on the CONTENT paint, and on
+// `windows-11-arm` runners a PDF glyph run drawn through such a paint faults
+// with 0xC0000005 (ACCESS_VIOLATION): ava reported `__test__\pdf.spec.ts exited
+// with a non-zero exit code: 3221225477`, localised with per-test stderr markers
+// to exactly this scene -- fillRect and strokeRect under all six colour-only
+// filters passed on the same runner, the fillText variant crashed, and the SVG
+// text tests, which take the identical Rust arm, all passed. A glyph run is the
+// one draw whose colour filter reaches SkPDFDevice's strike machinery rather
+// than only the blitter: `internalDrawGlyphRun` hands `SkPDFStrike::Make` the
+// raw `runPaint` (src/pdf/SkPDFDevice.cpp:948), not the `clean_paint` copy
+// `SkPaintPriv::RemoveColorFilter` has emptied (:265-279).
+//
+// So `filter_takes_layer` keeps the layer for PDF glyphs, and PDF text under a
+// colour-only `ctx.filter` rasterises again, exactly as `main` (2cd4e1a) does.
+// Measured over a 648-scene matrix, all 216 PDF text rows are byte-identical to
+// the no-rescue predicate. SVG keeps its text rescue; see svg-canvas.spec.ts.
+test('a colour-only ctx.filter with a text shadow rasterises the page on PDF', (t) => {
   GlobalFonts.registerFromPath(join(__dirname, 'fonts-dir', 'iosevka-curly-regular.woff2'), 'i-curly')
   const { doc } = t.context
   const ctx = doc.beginPage(240, 200)
@@ -349,12 +353,42 @@ test.serial('a colour-only ctx.filter with a text shadow keeps the page vector',
   doc.endPage()
 
   const pdf = doc.close()
-  t.is(countPdfImages(pdf), 0, 'a shadowed text page must stay vector')
+  t.true(countPdfImages(pdf) > 0, 'PDF glyphs keep the layer, so the page rasterises')
 })
+
+// The split itself, pinned from both sides in one test so neither half can flip
+// silently: the SAME scene, the same filter, the same shadow, differing only in
+// whether the draw emits a glyph run. `fillRect` keeps e816c47's vector page;
+// `fillText` takes the layer and rasterises.
+for (const filter of ['grayscale(1)', 'opacity(0.5)', 'invert(1)']) {
+  test(`only GLYPHS lose the colour-only rescue on PDF (${filter})`, (t) => {
+    GlobalFonts.registerFromPath(join(__dirname, 'fonts-dir', 'iosevka-curly-regular.woff2'), 'i-curly')
+
+    const scene = (draw: (ctx: ReturnType<PDFDocument['beginPage']>) => void) => {
+      const doc = new PDFDocument()
+      const ctx = doc.beginPage(240, 200)
+      ctx.filter = filter
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.8)'
+      ctx.shadowOffsetX = 40
+      ctx.fillStyle = 'blue'
+      ctx.font = '30px i-curly'
+      draw(ctx)
+      doc.endPage()
+      return countPdfImages(doc.close())
+    }
+
+    t.is(
+      scene((ctx) => ctx.fillRect(40, 40, 80, 60)),
+      0,
+      'geometry keeps the rescue and stays vector',
+    )
+    t.true(scene((ctx) => ctx.fillText('napi-rs', 40, 100)) > 0, 'glyphs keep the layer and rasterise')
+  })
+}
 
 // And the other direction, with a shadow this time: a spatial `ctx.filter` still
 // needs the layer, so the page still rasterises. `main` did the same.
-test.serial('a spatial ctx.filter with a shadow keeps its device-space layer', (t) => {
+test('a spatial ctx.filter with a shadow keeps its device-space layer', (t) => {
   const doc = new PDFDocument()
   const ctx = doc.beginPage(240, 200)
   ctx.filter = 'blur(3px)'
