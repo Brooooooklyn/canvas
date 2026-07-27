@@ -3977,17 +3977,13 @@ impl ImageFilter {
   /// uses to skip the implicit layer for a paint-carried image filter
   /// (`SkCanvasPriv::ImageToColorFilter`, src/core/SkCanvasPriv.cpp:157-160).
   pub fn needs_device_space_layer(&self) -> bool {
-    // `css_filters_to_image_filter` seeds its fold with a NULL `ImageFilter`
-    // and, for an empty filter list, returns that seed -- so `ctx.filter = ''`
-    // really does put a null pointer here. A filter that does not exist has no
-    // spatial component either, so answer it here rather than crossing the FFI
-    // and calling a method on a null `SkImageFilter*`. (Installing that same
-    // null on a paint still crashes, exactly as it does on the layer paint
-    // without this branch -- a separate, pre-existing defect this does not
-    // touch.)
-    if self.0.is_null() {
-      return false;
-    }
+    // An `ImageFilter` never holds null: every constructor below null-checks
+    // what Skia handed back, and `css_filters_to_image_filter` represents "no
+    // filter" as `None` rather than as a null seed. It used to seed its fold
+    // with `ImageFilter(ptr::null_mut())`, which put a null right here for
+    // `ctx.filter = ''`; that is fixed at the source now, so this can just
+    // dereference.
+    debug_assert!(!self.0.is_null(), "ImageFilter must never hold null");
     !unsafe { ffi::skiac_image_filter_is_a_color_filter(self.0) }
   }
 

@@ -1287,16 +1287,64 @@ impl Context {
     Ok(paint)
   }
 
+  /// `ctx.filter`. Blink's setter is
+  /// `Canvas2DRecorderContext::setFilter`
+  /// (canvas_2d_recorder_context.cc:1332-1350): it runs the whole string
+  /// through `CSSParser::ParseSingleValue(CSSPropertyID::kFilter, ...)` and,
+  /// when that yields null or a CSS-wide keyword, `return`s -- WITHOUT touching
+  /// the state. An unparseable `ctx.filter` is a silent no-op: it does not
+  /// throw, and it does not reset the filter to `none`. The getter then hands
+  /// back the raw string it stored, unnormalised (`UnparsedCSSFilter()`,
+  /// :1308-1315), and starts at `"none"`
+  /// (canvas_rendering_context_2d_state.cc:73, :155).
+  ///
+  /// Three things count as unparseable there, and all three must count here:
+  ///
+  /// * the empty string, rejected before tokenising at all
+  ///   (css_parser.cc:326-328);
+  /// * a string that yields no filter, `list->length() == 0`
+  ///   (css_parsing_utils.cc:4044-4046) -- this is what `'   '` and `'garbage'`
+  ///   hit;
+  /// * anything with tokens left over, `!value || !stream.AtEnd()`
+  ///   (css_property_parser.cc:118-120).
+  ///
+  /// That last gate is what makes a `<filter-value-list>` ALL-OR-NOTHING.
+  /// `ConsumeFilterFunctionList` is itself greedy and merely `break`s at the
+  /// first junk token, but it does not release that iteration's
+  /// `CSSParserSavePoint` (css_parsing_utils.cc:4032-4043), so the junk stays
+  /// in the stream and the whole declaration is rejected one level up.
+  /// Measured in Chrome 150: `ctx.filter = 'blur(3px)'` then
+  /// `ctx.filter = 'blur(3px) notafilter(1)'` reads back `'blur(3px)'` and
+  /// still renders blurred -- the valid prefix is NOT kept.
+  ///
+  /// We had none of this. `css_filter` never returns `Err`, so the old
+  /// `map_err(...)?` was dead and every input took the store branch:
+  /// `''`, `'   '` and `'garbage'` all parsed to an empty filter list, which
+  /// `css_filters_to_image_filter` turned into `Some(ImageFilter(null))` (see
+  /// the note there), and the next draw dereferenced it -- a hard SIGSEGV.
   pub fn set_filter(&mut self, filter_str: &str) -> result::Result<(), SkError> {
-    if filter_str.trim() == "none" {
-      self.state.filters_string = "none".to_owned();
-      self.state.filter = None;
-    } else {
-      let (_, filters) =
-        css_filter(filter_str).map_err(|e| SkError::StringToFillRuleError(format!("{e}")))?;
-      self.state.filter = css_filters_to_image_filter(filters);
+    if filter_str.trim().eq_ignore_ascii_case("none") {
+      // `none` is an ident, so Blink matches it case-insensitively, and the
+      // getter still replays whatever case was assigned.
       self.state.filters_string = filter_str.to_owned();
+      self.state.filter = None;
+      return Ok(());
     }
+    // `css_filter` is the same shape of greedy parser as
+    // `ConsumeFilterFunctionList` -- it stops at the first token it cannot read
+    // and hands the rest back rather than failing -- so the leftover input is
+    // the `stream.AtEnd()` gate here.
+    let Ok((rest, filters)) = css_filter(filter_str) else {
+      return Ok(());
+    };
+    if filters.is_empty() || !rest.trim().is_empty() {
+      return Ok(());
+    }
+    // Parsed clean, so the assignment lands even if it builds no filter at all:
+    // `drop-shadow(0 0 transparent)` is a legal value that simply draws
+    // nothing, and Blink stores it like any other.
+    self.state.filter = css_filters_to_image_filter(filters);
+    self.state.filters_string = filter_str.to_owned();
     Ok(())
   }
 

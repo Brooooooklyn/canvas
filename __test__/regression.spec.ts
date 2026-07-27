@@ -1371,3 +1371,95 @@ test('duplicated color stops behave the same on radial and conic gradients', (t)
   t.is(pureRed, (size * size) / 2, 'half the conic sweep is pure red')
   t.is(pureBlue, (size * size) / 2, 'the other half is pure blue')
 })
+
+test('an unparseable ctx.filter must not crash the process on the next draw', (t) => {
+  // `ctx.filter = ''` on its own was harmless; the SIGSEGV landed on the next
+  // DRAW. `css_filter('')` parses to an EMPTY filter list, and
+  // `css_filters_to_image_filter` used to seed its fold with
+  // `ImageFilter(ptr::null_mut())` -- for an empty list the fold closure never
+  // runs, so it handed that null seed straight back as `Some(ImageFilter(null))`.
+  // The setter stored it and the draw passed it to
+  // `skiac_paint_set_image_filter`, which dereferenced it. `'   '` and
+  // `'garbage'` parse to an empty list too and crashed identically. If this
+  // regresses, the whole ava worker dies rather than this assertion failing.
+  for (const bad of ['', '   ', 'garbage', 'not-a-filter(1)', 'inherit', 'initial', 'unset', 'revert']) {
+    const canvas = createCanvas(50, 50)
+    const ctx = canvas.getContext('2d')
+    ctx.filter = bad
+    ctx.fillStyle = 'red'
+    ctx.fillRect(10, 10, 30, 30)
+    const data = canvas.data()
+    // Unfiltered: the rect is solid red and nothing bleeds outside it.
+    const inside = (25 * 50 + 25) * 4
+    t.deepEqual(
+      [data[inside], data[inside + 1], data[inside + 2], data[inside + 3]],
+      [255, 0, 0, 255],
+      `ctx.filter = ${JSON.stringify(bad)} should draw an unfiltered red rect`,
+    )
+    t.is(data[(25 * 50 + 9) * 4 + 3], 0, `ctx.filter = ${JSON.stringify(bad)} should not blur the edge`)
+  }
+})
+
+test('an unparseable ctx.filter is discarded and the previous filter survives', (t) => {
+  // Blink's setter parses with `CSSParser::ParseSingleValue(kFilter, ...)` and
+  // plain `return`s when that yields null, leaving the state untouched
+  // (canvas_2d_recorder_context.cc:1332-1350). So an invalid assignment neither
+  // throws nor resets to `none`. `''` is rejected before tokenising
+  // (css_parser.cc:326-328); `'   '` and `'garbage'` produce `list->length() == 0`
+  // (css_parsing_utils.cc:4044-4046); the CSS-wide keywords are rejected by the
+  // setter's own `IsCSSWideKeyword()` arm. Verified against Chrome 150.
+  const ctx = createCanvas(50, 50).getContext('2d')
+
+  t.is(ctx.filter, 'none', 'the initial value is "none"')
+
+  ctx.filter = 'blur(3px)'
+  t.is(ctx.filter, 'blur(3px)')
+  for (const bad of ['', '   ', 'garbage', 'inherit', 'initial', 'unset', 'revert', 'none garbage']) {
+    ctx.filter = bad
+    t.is(ctx.filter, 'blur(3px)', `ctx.filter = ${JSON.stringify(bad)} should be ignored`)
+  }
+
+  // ...and an invalid assignment from the default state leaves "none" in place,
+  // rather than echoing the junk back as the old setter did.
+  const fresh = createCanvas(50, 50).getContext('2d')
+  fresh.filter = 'garbage'
+  t.is(fresh.filter, 'none')
+
+  // `none` is a real value that clears the filter, and the getter replays the
+  // raw string, unnormalised, exactly as `UnparsedCSSFilter()` does.
+  ctx.filter = 'none'
+  t.is(ctx.filter, 'none')
+  ctx.filter = 'blur(3px)'
+  ctx.filter = 'NONE'
+  t.is(ctx.filter, 'NONE', '`none` is an ident, so it is matched case-insensitively')
+})
+
+test('a partially invalid ctx.filter list is rejected whole, not truncated to its valid prefix', (t) => {
+  // `ConsumeFilterFunctionList` is greedy and merely `break`s at the first junk
+  // token, but it does not release that iteration's `CSSParserSavePoint`
+  // (css_parsing_utils.cc:4032-4043), so the junk stays in the stream and
+  // `!stream.AtEnd()` rejects the whole declaration
+  // (css_property_parser.cc:118-120). Our parser is greedy in the same way, so
+  // it used to KEEP the `blur(3px)` prefix. Chrome 150 does not.
+  const measure = (filter: string) => {
+    const canvas = createCanvas(50, 50)
+    const ctx = canvas.getContext('2d')
+    ctx.filter = filter
+    ctx.fillStyle = 'red'
+    ctx.fillRect(10, 10, 30, 30)
+    // One pixel outside the rect: nonzero alpha means a blur is still active.
+    return { filter: ctx.filter, edgeAlpha: canvas.data()[(25 * 50 + 9) * 4 + 3] }
+  }
+
+  const blurred = measure('blur(3px)')
+  t.true(blurred.edgeAlpha > 0, 'the control really does blur past the rect edge')
+
+  const partial = measure('blur(3px) notafilter(1)')
+  t.is(partial.filter, 'none', 'the whole list is rejected, so the default value stands')
+  t.is(partial.edgeAlpha, 0, 'the blur(3px) prefix must not survive')
+
+  // A fully valid multi-function list still works.
+  const both = measure('blur(3px) grayscale(50%)')
+  t.is(both.filter, 'blur(3px) grayscale(50%)')
+  t.true(both.edgeAlpha > 0)
+})
