@@ -1156,3 +1156,276 @@ test('shadow-blur-sigma-survives-an-off-axis-rotation', (t) => {
     assertSigma10At390(t, ctx.getImageData(0, 0, 600, 300).data, `rotate(${theta})`)
   }
 })
+
+// ----------------------------------------------------- ctx.filter is device-space
+//
+// HTML 4.12.5.1.20: "Filter coordinates are not affected by the current
+// transformation matrix. The current transformation matrix affects only the
+// input to the filter. Filters are applied in the output bitmap's coordinate
+// space."
+//
+// Blink implements that by opening the shadow / `ctx.filter` layer with the CTM
+// reset to identity and restoring the CTM INSIDE it
+// (canvas_2d_recorder_context.h:919-963, .cc:2137-2145), so no filter parameter
+// ever meets the CTM. We do the same, in `Context::composited_filter_layer`.
+//
+// Every scene below paints the SAME DEVICE-SPACE rect under two different CTMs,
+// so the band's edge is at device x = 220 in both and only the filter width can
+// move. Measured against Chrome 150.0.7871.184: the 10-90% edge width is 8.27 px
+// for `blur(3px)` alone and 13.56 px for `blur(3px)` chained into `shadowBlur =
+// 8`, at BOTH transforms. With the filter left on the content paint instead --
+// i.e. in parameter space, where `Mapping::decomposeCTM` scales it by the CTM --
+// `scale(2, 2)` gave 14.44 and 17.83 respectively, and the whole 420x220 canvas
+// differed from Chrome by 25272 px / max 73 and 29458 px / max 59.
+//
+// The tolerance below is 0.5 px against a defect that moves the width by 6.2 px
+// (75%), and the identity column is asserted with the same number, so a change
+// that scaled BOTH columns equally would still fail.
+
+const FILTER_W = 420
+const FILTER_H = 220
+
+// 10-90% width of the band's falling right edge along y = 100, plus the 50%
+// crossing. Sub-pixel, by linear interpolation between pixel centres.
+function edgeProfile(ctx: SKRSContext2D, x0 = 170, x1 = 270, y = 100) {
+  const d = ctx.getImageData(x0, y, x1 - x0, 1).data
+  // white backdrop, black band -> darkness = 1 - G/255
+  const p: number[] = []
+  for (let i = 0; i < x1 - x0; i++) p.push(1 - d[i * 4 + 1] / 255)
+  const cross = (level: number) => {
+    for (let i = 1; i < p.length; i++) {
+      if (p[i - 1] >= level && p[i] < level) {
+        return x0 + i - 1 + (p[i - 1] - level) / (p[i - 1] - p[i])
+      }
+    }
+    return NaN
+  }
+  return { width: cross(0.1) - cross(0.9), x50: cross(0.5) }
+}
+
+function ctmScene(scale: number, draw: (ctx: SKRSContext2D, scale: number) => void) {
+  const canvas = createCanvas(FILTER_W, FILTER_H)
+  const ctx = canvas.getContext('2d')!
+  ctx.fillStyle = 'white'
+  ctx.fillRect(0, 0, FILTER_W, FILTER_H)
+  ctx.scale(scale, scale)
+  draw(ctx, scale)
+  return ctx
+}
+
+// Device rect x 20..120, y 20..200; the shadow band is x 120..220.
+const shadowBandScene = (shadowBlur: number) => (ctx: SKRSContext2D, scale: number) => {
+  ctx.shadowColor = 'black'
+  ctx.shadowBlur = shadowBlur
+  ctx.shadowOffsetX = 100
+  ctx.filter = 'blur(3px)'
+  ctx.fillStyle = 'red'
+  ctx.fillRect(20 / scale, 20 / scale, 100 / scale, 180 / scale)
+}
+
+function assertDeviceSpaceFilter(t: ExecutionContext, label: string, expected: number, scenes: SKRSContext2D[]) {
+  for (const [i, ctx] of scenes.entries()) {
+    const { width, x50 } = edgeProfile(ctx)
+    t.true(
+      Math.abs(width - expected) <= 0.5,
+      `${label} CTM#${i}: 10-90 filter edge width was ${width.toFixed(2)}, expected ${expected} +/- 0.5 (Chrome 150)`,
+    )
+    // The 50% crossing pins the OFFSET, so a failure above can only be a width.
+    t.true(Math.abs(x50 - 219.5) <= 0.5, `${label} CTM#${i}: 50% crossing was ${x50.toFixed(2)}, expected 219.50`)
+  }
+}
+
+test('ctx-filter-blur-width-is-device-space-on-the-zero-blur-shadow-route', (t) => {
+  assertDeviceSpaceFilter(t, 'shadowBlur=0', 8.27, [ctmScene(1, shadowBandScene(0)), ctmScene(2, shadowBandScene(0))])
+})
+
+test('ctx-filter-blur-width-is-device-space-on-the-blurred-shadow-route', (t) => {
+  assertDeviceSpaceFilter(t, 'shadowBlur=8', 13.56, [ctmScene(1, shadowBandScene(8)), ctmScene(2, shadowBandScene(8))])
+})
+
+// No shadow at all: `ctx.filter` alone, on the foreground layer.
+test('ctx-filter-blur-width-is-device-space-with-no-shadow', (t) => {
+  const scene = (ctx: SKRSContext2D, scale: number) => {
+    ctx.filter = 'blur(3px)'
+    ctx.fillStyle = 'black'
+    ctx.fillRect(120 / scale, 20 / scale, 100 / scale, 180 / scale)
+  }
+  assertDeviceSpaceFilter(t, 'no shadow', 8.27, [ctmScene(1, scene), ctmScene(2, scene)])
+})
+
+// The image path takes its own layer, so it needs its own guard.
+test('ctx-filter-blur-width-is-device-space-on-drawImage', async (t) => {
+  const opaque = createCanvas(100, 180)
+  const og = opaque.getContext('2d')!
+  og.fillStyle = 'black'
+  og.fillRect(0, 0, 100, 180)
+  const img = await loadImage(opaque.toBuffer('image/png'))
+  const scene = (ctx: SKRSContext2D, scale: number) => {
+    ctx.imageSmoothingEnabled = false
+    ctx.filter = 'blur(3px)'
+    ctx.drawImage(img, 120 / scale, 20 / scale, 100 / scale, 180 / scale)
+  }
+  assertDeviceSpaceFilter(t, 'drawImage', 8.27, [ctmScene(1, scene), ctmScene(2, scene)])
+})
+
+// shadowBlur alone must NOT move -- it was already device-space and this proves
+// the layer did not disturb it. Chrome is 10.54 at both CTMs; we read 10.92,
+// the documented analytic-vs-discrete rect-blur divergence (see
+// `shadow_only_image_filter`), which is why this asserts our own number.
+test('shadowBlur-alone-is-unchanged-by-the-device-space-filter-layer', (t) => {
+  const scene = (ctx: SKRSContext2D, scale: number) => {
+    ctx.shadowColor = 'black'
+    ctx.shadowBlur = 8
+    ctx.shadowOffsetX = 100
+    ctx.fillStyle = 'red'
+    ctx.fillRect(20 / scale, 20 / scale, 100 / scale, 180 / scale)
+  }
+  assertDeviceSpaceFilter(t, 'shadowBlur only', 10.92, [ctmScene(1, scene), ctmScene(2, scene)])
+})
+
+// ------------------------------------ fractional shadow offsets on image sources
+//
+// Skia implements `DropShadowOnly`'s dx/dy as
+// `MatrixTransform(Translate(dx, dy), SkFilterMode::kLinear)`
+// (SkDropShadowImageFilter.cpp:50-53), and that `kLinear` is load-bearing --
+// "kLinear filtering is needed to hide nearest-neighbor sampling artifacts from
+// fractional offsets applied post-blur". Applying the offset as a canvas
+// translate instead has no such resample, so a half-covered destination pixel
+// came out fully covered.
+//
+// 200x200 source, left half opaque red and right half transparent, drawn at
+// (0, 10) with `imageSmoothingEnabled = false`. `shadowOffsetX = 100.5` puts the
+// shadow's right edge on x = 200.5, so the probe at x = 200 is exactly half
+// covered: Chrome 150.0.7871.184 reads [127,127,255]. As a canvas translate it
+// read [0,0,255] -- 200 px differ over the canvas, max delta 127.
+
+const HALF_OPAQUE_W = 420
+const HALF_OPAQUE_H = 220
+
+async function halfOpaqueImage() {
+  const src = createCanvas(200, 200)
+  const g = src.getContext('2d')!
+  g.fillStyle = 'red'
+  g.fillRect(0, 0, 100, 200)
+  return loadImage(src.toBuffer('image/png'))
+}
+
+function imageShadowScene(
+  img: Awaited<ReturnType<typeof loadImage>>,
+  shadowBlur: number,
+  offsetX: number,
+  transform?: (ctx: SKRSContext2D) => void,
+) {
+  const canvas = createCanvas(HALF_OPAQUE_W, HALF_OPAQUE_H)
+  const ctx = canvas.getContext('2d')!
+  ctx.fillStyle = 'white'
+  ctx.fillRect(0, 0, HALF_OPAQUE_W, HALF_OPAQUE_H)
+  ctx.imageSmoothingEnabled = false
+  ctx.shadowColor = 'blue'
+  ctx.shadowBlur = shadowBlur
+  ctx.shadowOffsetX = offsetX
+  ctx.shadowOffsetY = 0
+  if (transform) transform(ctx)
+  ctx.drawImage(img, 0, 10)
+  return ctx
+}
+
+test('image-shadow-fractional-offset-keeps-its-half-coverage', async (t) => {
+  const img = await halfOpaqueImage()
+  const ctx = imageShadowScene(img, 0, 100.5)
+  // Half-covered edge pixel. Was [0,0,255,255] when the offset was a translate.
+  pxNear(t, ctx, 200, 100, [127, 127, 255, 255])
+  // ...and the fully covered interior is untouched, so this is a resample and
+  // not an opacity change.
+  t.deepEqual(px(ctx, 150, 100), [0, 0, 255, 255])
+  // The foreground still lands exactly where it did.
+  t.deepEqual(px(ctx, 50, 100), [255, 0, 0, 255])
+})
+
+test('image-shadow-fractional-offset-keeps-its-half-coverage-when-blurred', async (t) => {
+  const img = await halfOpaqueImage()
+  const ctx = imageShadowScene(img, 6, 100.5)
+  // Was [112,112,255,255]; Chrome reads [127,127,255].
+  pxNear(t, ctx, 200, 100, [127, 127, 255, 255])
+})
+
+// An INTEGER offset must be untouched by the resample -- kLinear on a whole-pixel
+// translate samples texel centres exactly.
+test('image-shadow-integer-offset-is-unmoved-by-the-resample', async (t) => {
+  const img = await halfOpaqueImage()
+  const ctx = imageShadowScene(img, 0, 100)
+  // Shadow band is x 100..199 inclusive; 200 is past its right edge.
+  t.deepEqual(px(ctx, 199, 100), [0, 0, 255, 255])
+  t.deepEqual(px(ctx, 200, 100), [255, 255, 255, 255])
+})
+
+// The dx/dy above are DEVICE-space vectors, and they are only device-space
+// because `composited_filter_layer` opens the shadow layer at the identity CTM.
+// Put them on a filter whose layer sits at the draw's own CTM -- which is what
+// `main` did -- and a rotation sends the shadow the other way: measured 24000 px
+// wrong, max delta 255, on this very scene.
+//
+// translate(210, 110) . rotate(PI) maps the image's local (-100..100, -100..100)
+// onto device (110..310, 10..210) mirrored, so the opaque half is device
+// x 210..310 and a +60 DEVICE-space shadow offset puts its shadow at x 270..370.
+test('image-shadow-offset-stays-device-space-under-a-rotation', async (t) => {
+  const img = await halfOpaqueImage()
+  const canvas = createCanvas(HALF_OPAQUE_W, HALF_OPAQUE_H)
+  const ctx = canvas.getContext('2d')!
+  ctx.fillStyle = 'white'
+  ctx.fillRect(0, 0, HALF_OPAQUE_W, HALF_OPAQUE_H)
+  ctx.imageSmoothingEnabled = false
+  ctx.shadowColor = 'blue'
+  ctx.shadowBlur = 0
+  ctx.shadowOffsetX = 60
+  ctx.shadowOffsetY = 0
+  ctx.translate(210, 110)
+  ctx.rotate(Math.PI)
+  ctx.drawImage(img, -100, -100)
+  // Shadow to the RIGHT of the mirrored image, in device space.
+  t.deepEqual(px(ctx, 340, 100), [0, 0, 255, 255])
+  // A local-space offset would have gone LEFT instead, into this pixel.
+  t.deepEqual(px(ctx, 180, 100), [255, 255, 255, 255])
+  // The image itself is unmoved.
+  t.deepEqual(px(ctx, 250, 100), [255, 0, 0, 255])
+})
+
+// Same invariant under a non-uniform scale, where a local-space offset would be
+// stretched: scale(2, 0.5) doubled a 40 px offset to 80.
+test('image-shadow-offset-stays-device-space-under-a-non-uniform-scale', async (t) => {
+  const img = await halfOpaqueImage()
+  const canvas = createCanvas(HALF_OPAQUE_W, HALF_OPAQUE_H)
+  const ctx = canvas.getContext('2d')!
+  ctx.fillStyle = 'white'
+  ctx.fillRect(0, 0, HALF_OPAQUE_W, HALF_OPAQUE_H)
+  ctx.imageSmoothingEnabled = false
+  ctx.shadowColor = 'blue'
+  ctx.shadowBlur = 0
+  ctx.shadowOffsetX = 40
+  ctx.shadowOffsetY = 0
+  ctx.scale(2, 0.5)
+  ctx.drawImage(img, 0, 20)
+  // Opaque half is device x 0..199; its shadow is x 40..239. At x = 260 a
+  // doubled (local-space) 80 px offset would still be painting.
+  t.deepEqual(px(ctx, 230, 60), [0, 0, 255, 255])
+  t.deepEqual(px(ctx, 260, 60), [255, 255, 255, 255])
+})
+
+// `ctx.filter` must not attach to clearRect. Blink's `clearRect` never enters
+// `DrawInternal` / `CompositedDraw` -- it is a bare `drawRect` with
+// `SkBlendMode::kClear` -- so no filter, shadow or composite layer applies. The
+// hazard is specific and not cosmetic: the filter layer takes its blend from the
+// content paint, and a kClear layer restores by clearing its whole bounds, so
+// clearing a 60x60 rect wiped the entire canvas.
+test('ctx-filter-does-not-attach-to-clearRect', (t) => {
+  const canvas = createCanvas(200, 100)
+  const ctx = canvas.getContext('2d')!
+  ctx.fillStyle = 'red'
+  ctx.fillRect(0, 0, 200, 100)
+  ctx.filter = 'blur(3px)'
+  ctx.clearRect(50, 20, 60, 60)
+  t.deepEqual(px(ctx, 80, 50), [0, 0, 0, 0], 'inside the cleared rect')
+  t.deepEqual(px(ctx, 10, 50), [255, 0, 0, 255], 'left of the cleared rect')
+  t.deepEqual(px(ctx, 180, 50), [255, 0, 0, 255], 'right of the cleared rect')
+  t.deepEqual(px(ctx, 100, 5), [255, 0, 0, 255], 'above the cleared rect')
+})

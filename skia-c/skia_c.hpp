@@ -888,6 +888,7 @@ void skiac_canvas_clip_rect(skiac_canvas* c_canvas,
                             float h);
 void skiac_canvas_clip_path(skiac_canvas* c_canvas, skiac_path* c_path);
 void skiac_canvas_save(skiac_canvas* c_canvas);
+void skiac_canvas_save_layer(skiac_canvas* c_canvas, skiac_paint* c_paint);
 void skiac_canvas_restore(skiac_canvas* c_canvas);
 void skiac_canvas_reset(skiac_canvas* c_canvas);
 void skiac_canvas_write_pixels(skiac_canvas* c_canvas,

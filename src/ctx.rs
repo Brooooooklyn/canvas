@@ -84,12 +84,51 @@ impl ShadowSource {
       ShadowSource::Image => false,
     }
   }
+
+  /// True when this source forces the drop-shadow IMAGE FILTER even at zero
+  /// blur, i.e. when Blink's `GetFlags` would answer `kNonOpaqueImage`
+  /// (canvas_rendering_context_2d_state.cc:849-864: `image_type ==
+  /// kNonOpaqueImage || css_filter_value_` picks the `DropShadowPaintFilter`,
+  /// everything else the looper).
+  ///
+  /// Blink's fork is on the SOURCE, not on the blur, and that difference is the
+  /// whole of defect 2's zero-blur arm: only the filter route can resample a
+  /// fractional offset, because only it implements the offset as
+  /// `MatrixTransform(Translate(dx, dy), SkFilterMode::kLinear)`
+  /// (SkDropShadowImageFilter.cpp:50-53).
+  ///
+  /// We answer for `drawImage` / `drawCanvas` as a whole, where Blink asks
+  /// specifically whether the decoded image has alpha. The extra case is an
+  /// OPAQUE image at a fractional offset, which Blink sends to the looper and we
+  /// send to the filter. Measured identical: the looper draws the image into a
+  /// fractional dst rect, whose antialiased edges give exactly the half coverage
+  /// the filter's kLinear resample produces, and the interior is one flat colour
+  /// either way. `image-opaque-frac` (200x200 opaque PNG, `shadowOffsetX =
+  /// 100.5`, `shadowBlur = 0`) is byte-exact against Chrome 150.0.7871.184 on
+  /// both routes.
+  fn forces_shadow_image_filter(self) -> bool {
+    matches!(self, ShadowSource::Image)
+  }
 }
 
-// The shadow half of a draw: the paint built by `shadow_paint`, plus the state
-// `render_canvas` needs to size the shadow layer's cull rect.
+/// The shadow half of a draw, as `shadow_paint` builds it.
+///
+/// `paint` draws the shadow's SOURCE and carries no image filter. `filter`,
+/// when present, is the drop-shadow graph, and it belongs on a layer of its own
+/// -- never on `paint`. That split is the whole point: Blink hands its shadow
+/// filter to `saveLayer` and the source flags to the draw
+/// (canvas_2d_recorder_context.h:941-944), because the two need DIFFERENT
+/// matrices. See `Context::composited_filter_layer`.
+pub(crate) struct ShadowDraw {
+  paint: Paint,
+  filter: Option<ImageFilter>,
+}
+
+// The same thing borrowed, plus the state `render_canvas` needs to size the
+// shadow layer's cull rect.
 struct ShadowPass<'a> {
   paint: &'a Paint,
+  filter: Option<&'a ImageFilter>,
   offset_x: f32,
   offset_y: f32,
   blur: f32,
@@ -221,25 +260,63 @@ impl Context {
   /// Execute a rendering operation on the appropriate canvas (recording or direct)
   /// For deferred mode, operations are recorded to the PageRecorder
   /// For direct mode (SVG, PDF), operations go directly to the surface
+  ///
+  /// NOT a filtered draw: `ctx.filter` is deliberately withheld. `clearRect` is
+  /// this function's only caller, and it is not a drawing operation Blink puts
+  /// through `DrawInternal` / `CompositedDraw` at all -- `BaseRenderingContext2D::
+  /// clearRect` issues a bare `drawRect` with `SkBlendMode::kClear`, so no
+  /// filter, no shadow and no composite layer can attach to it. Handing the
+  /// filter down here is not merely redundant, it is destructive: the layer paint
+  /// takes its blend from the content paint, so a kClear layer restores by
+  /// clearing its whole bounds. Measured with `ctx.filter = 'blur(3px)'` and
+  /// `clearRect(50, 20, 60, 60)` on a 200x100 red canvas: every pixel came back
+  /// [0,0,0,0] instead of just the 60x60 rect.
   fn with_render_canvas<F>(&mut self, paint: &Paint, f: F) -> result::Result<(), SkError>
   where
     F: Fn(&mut Canvas, &Paint) -> result::Result<(), SkError>,
   {
-    self.with_shadowed_render_canvas(paint, None, |_, _, _| Ok(()), f)
+    self.render_passes(paint, None, None, |_, _, _| Ok(()), f)
   }
 
-  /// Same, for the draws that also have a shadow pass. The two passes must be
-  /// handed to `render_canvas` together so that it -- and only it -- decides
-  /// whether an isolation layer is needed; see the comment there.
+  /// The draws that also have a shadow pass, and that `ctx.filter` applies to.
+  /// The two passes must be handed to `render_canvas` together so that it -- and
+  /// only it -- decides whether an isolation layer is needed; see the comment
+  /// there.
   ///
-  /// The shadow closure is handed the user->DEVICE matrix as its third argument
-  /// because it cannot read one off the canvas it is given: on the isolation arm
-  /// that canvas is a picture recorder sitting at identity. Pass it straight to
-  /// `apply_shadow_offset_matrix_to_canvas`.
+  /// `ctx.filter` is hoisted onto each pass's layer rather than left on the
+  /// content paint; `fill_paint` / `stroke_paint` deliberately no longer install
+  /// it. Blink does the same -- `composite_flags.setImageFilter(canvas_filter)`
+  /// then `saveLayer(composite_flags)` (canvas_2d_recorder_context.h:956-957),
+  /// while the foreground flags come from `GetFlags(.., kDrawForegroundOnly, ..)`
+  /// which opens with `setImageFilter(nullptr)`
+  /// (canvas_rendering_context_2d_state.cc:836-841).
   fn with_shadowed_render_canvas<S, F>(
     &mut self,
     paint: &Paint,
-    shadow_paint: Option<&Paint>,
+    shadow: Option<&ShadowDraw>,
+    shadow_f: S,
+    f: F,
+  ) -> result::Result<(), SkError>
+  where
+    S: Fn(&mut Canvas, &Paint, &Matrix) -> result::Result<(), SkError>,
+    F: Fn(&mut Canvas, &Paint) -> result::Result<(), SkError>,
+  {
+    let content_filter = self.state.filter.clone();
+    self.render_passes(paint, content_filter, shadow, shadow_f, f)
+  }
+
+  /// Shared body of the two above.
+  ///
+  /// The shadow closure is handed the user->DEVICE matrix as its third argument
+  /// because it cannot read one off the canvas it is given: on the isolation arm
+  /// that canvas is a picture recorder sitting at identity, and inside a filter
+  /// layer it sits at whatever `composited_filter_layer` re-installed. Pass it
+  /// straight to `apply_shadow_offset_matrix_to_canvas`.
+  fn render_passes<S, F>(
+    &mut self,
+    paint: &Paint,
+    content_filter: Option<ImageFilter>,
+    shadow: Option<&ShadowDraw>,
     shadow_f: S,
     f: F,
   ) -> result::Result<(), SkError>
@@ -250,8 +327,9 @@ impl Context {
     let blend_mode = self.state.global_composite_operation;
     let width = self.width as f32;
     let height = self.height as f32;
-    let shadow = shadow_paint.map(|paint| ShadowPass {
-      paint,
+    let shadow = shadow.map(|shadow| ShadowPass {
+      paint: &shadow.paint,
+      filter: shadow.filter.as_ref(),
       offset_x: self.state.shadow_offset_x,
       offset_y: self.state.shadow_offset_y,
       blur: self.state.shadow_blur,
@@ -262,7 +340,15 @@ impl Context {
       if let Some(canvas) = rec.get_recording_canvas() {
         // Use the recording canvas for deferred mode
         return Self::render_canvas(
-          canvas, paint, blend_mode, width, height, shadow, shadow_f, f,
+          canvas,
+          paint,
+          content_filter.as_ref(),
+          blend_mode,
+          width,
+          height,
+          shadow,
+          shadow_f,
+          f,
         );
       }
     }
@@ -270,6 +356,7 @@ impl Context {
     Self::render_canvas(
       &mut self.surface.canvas,
       paint,
+      content_filter.as_ref(),
       blend_mode,
       width,
       height,
@@ -515,8 +602,9 @@ impl Context {
 
     // Extract state for shadow rendering to avoid borrow conflicts
     let shadow_paint = Self::shadow_paint(&self.state, &stroke_paint, ShadowSource::Stroke);
-    let shadow_offset_x = self.state.shadow_offset_x;
-    let shadow_offset_y = self.state.shadow_offset_y;
+    // Zero on the image-filter route, where the filter's dx/dy already carry it.
+    let (shadow_offset_x, shadow_offset_y) =
+      Self::canvas_shadow_offset(&self.state, ShadowSource::Stroke);
 
     self.with_shadowed_render_canvas(
       &stroke_paint,
@@ -633,8 +721,9 @@ impl Context {
 
     // Extract state for shadow rendering to avoid borrow conflicts
     let shadow_paint = Self::shadow_paint(&self.state, &fill_paint, ShadowSource::Fill);
-    let shadow_offset_x = self.state.shadow_offset_x;
-    let shadow_offset_y = self.state.shadow_offset_y;
+    // Zero on the image-filter route, where the filter's dx/dy already carry it.
+    let (shadow_offset_x, shadow_offset_y) =
+      Self::canvas_shadow_offset(&self.state, ShadowSource::Fill);
 
     self.with_shadowed_render_canvas(
       &fill_paint,
@@ -691,8 +780,9 @@ impl Context {
 
     // Extract state for shadow rendering to avoid borrow conflicts
     let shadow_paint = Self::shadow_paint(&self.state, &stroke_paint, ShadowSource::Stroke);
-    let shadow_offset_x = self.state.shadow_offset_x;
-    let shadow_offset_y = self.state.shadow_offset_y;
+    // Zero on the image-filter route, where the filter's dx/dy already carry it.
+    let (shadow_offset_x, shadow_offset_y) =
+      Self::canvas_shadow_offset(&self.state, ShadowSource::Stroke);
 
     self.with_shadowed_render_canvas(
       &stroke_paint,
@@ -767,6 +857,105 @@ impl Context {
     Ok(())
   }
 
+  /// Runs one pass inside its own image-filter layer, with the layer opened at
+  /// the DEVICE identity and the CTM restored INSIDE it.
+  ///
+  /// This is Blink's `CompositedDraw` (canvas_2d_recorder_context.h:919-963)
+  /// spelled with `concat` instead of `setMatrix`, exactly as Blink itself
+  /// spells it in `DrawImageInternal` (canvas_2d_recorder_context.cc:2137-2145):
+  ///
+  /// ```text
+  ///   Blink, absolute (h)          Blink, relative (cc)      here
+  ///   ctm = getLocalToDevice()     ctm = getLocalToDevice()   device_ctm
+  ///   setMatrix(SkM44())           save(); concat(inv_ctm)    save(); concat(inv)
+  ///   saveLayer(flags)             saveLayer(bounds, flags)   save_layer(layer)
+  ///   setMatrix(ctm)               concat(ctm)                concat(device_ctm)
+  ///   draw_func(c, fg_flags)       drawImageRect(image_flags) f(canvas, inner)
+  /// ```
+  ///
+  /// Why it has to be `concat` and not `set_transform`: the canvas handed to
+  /// this function is not always the device. On the isolation arm it is a
+  /// `PictureRecorder`'s, sitting at identity while the real CTM `M` is applied
+  /// later at `draw_picture` replay. With `X` the canvas's own CTM and `R` the
+  /// matrix concatenated between it and the device (`M = R * X`),
+  /// `concat(M^-1)` leaves the canvas at `X * M^-1` and the DEVICE at
+  /// `R * X * M^-1 = I` -- for any `R`. The following `concat(M)` puts the
+  /// device back at `M` for the content. `set_transform(identity)` would only
+  /// work on the direct arm.
+  ///
+  /// What this buys, and why nothing else does. Every canvas2d filter length is
+  /// a DEVICE-space length: HTML 4.12.5.1.20 says "Filter coordinates are not
+  /// affected by the current transformation matrix ... Filters are applied in
+  /// the output bitmap's coordinate space", and Blink implements that literally
+  /// -- `DropShadowPaintFilter(shadow_offset.x(), shadow_offset.y(), sigma,
+  /// sigma, ...)` takes the raw setter values with no matrix anywhere
+  /// (canvas_rendering_context_2d_state.cc:681-705), and `ctx.filter` resolves
+  /// through a `Filter(1.0f)` whose `ApplyHorizontalScale` is the identity
+  /// (filter.cc:39-50, :65-75). Leaving the filter on the draw's own paint
+  /// gives the opposite: Skia opens that layer implicitly at the draw's CTM and
+  /// `Mapping::decomposeCTM` scales every parameter by it
+  /// (SkImageFilterTypes.cpp:272-283). Measured on HEAD before this layer
+  /// existed, same DEVICE-space rect, `ctx.filter = 'blur(3px)'`, 10-90% edge
+  /// width of the shadow band against Chrome 150.0.7871.184:
+  ///
+  /// ```text
+  ///   scene                       Chrome   before   after
+  ///   solid fill, shadowBlur 0    8.27     8.27     8.27    identity CTM
+  ///   solid fill, shadowBlur 0    8.27     14.44    8.27    scale(2, 2)
+  ///   solid fill, shadowBlur 8    13.56    17.83    13.56   scale(2, 2)
+  ///   plain fill, no shadow       8.27     14.44    8.27    scale(2, 2)
+  ///   drawImage, no shadow        8.27     14.44    8.27    scale(2, 2)
+  ///   strokeRect, no shadow       8.27     14.44    8.27    scale(2, 2)
+  /// ```
+  ///
+  /// The 50% crossing sits at 219.50 in every column, before and after, so it
+  /// was only ever the filter WIDTH that moved -- a scaled parameter, not a
+  /// misplaced draw.
+  ///
+  /// The layer paint carries ONLY the blend mode and the filter; the content
+  /// keeps colour, alpha and shader and composites source-over into the
+  /// transparent layer, so nothing is applied twice
+  /// (canvas_2d_recorder_context.h:935-942, :958-962). Reading the blend off
+  /// the incoming paint is what makes this correct on both arms at once: on the
+  /// isolation arm `composited_pass` has already forced it to source-over and
+  /// put the real `globalCompositeOperation` on the enclosing composite paint.
+  fn composited_filter_layer<F>(
+    canvas: &mut Canvas,
+    device_ctm: &Matrix,
+    filter: Option<&ImageFilter>,
+    paint: &Paint,
+    f: F,
+  ) -> result::Result<(), SkError>
+  where
+    F: Fn(&mut Canvas, &Paint) -> result::Result<(), SkError>,
+  {
+    let Some(filter) = filter else {
+      return f(canvas, paint);
+    };
+    let mut layer_paint = Paint::new();
+    layer_paint.set_blend_mode(paint.get_blend_mode());
+    layer_paint.set_image_filter(filter);
+    let mut inner_paint = paint.clone();
+    inner_paint.set_blend_mode(BlendMode::SourceOver);
+
+    canvas.save();
+    // A singular CTM cannot be inverted, and there is then no device space to
+    // reset to. The draw is degenerate either way; take the layer unreset
+    // rather than dropping the filter.
+    let inverted = device_ctm.invert();
+    if let Some(ref inverted) = inverted {
+      canvas.concat(inverted);
+    }
+    canvas.save_layer(&layer_paint);
+    if inverted.is_some() {
+      canvas.concat(device_ctm);
+    }
+    let result = f(canvas, &inner_paint);
+    canvas.restore();
+    canvas.restore();
+    result
+  }
+
   // Draws the shadow pass and then the content pass, giving each its OWN
   // isolation layer for the composite modes that need the whole canvas as their
   // destination.
@@ -813,6 +1002,7 @@ impl Context {
   fn render_canvas<S, F>(
     surface_canvas: &mut Canvas,
     paint: &Paint,
+    content_filter: Option<&ImageFilter>,
     blend_mode: BlendMode,
     width: f32,
     height: f32,
@@ -857,9 +1047,12 @@ impl Context {
             .max(shadow.blur * 2.0);
           // The recording canvas `composited_pass` hands the closure sits at
           // IDENTITY -- the CTM below is applied later, at `draw_picture`
-          // replay. So the closure cannot read the device matrix off the canvas
-          // it is drawing into; it has to be given this one, or the device-space
-          // shadow offset gets scaled and rotated by the replay.
+          // replay. So neither the closure nor `composited_filter_layer` can
+          // read the device matrix off the canvas being drawn into; both have to
+          // be given this one, or the device-space shadow offset gets scaled and
+          // rotated by the replay and the filter layer opens in PICTURE space
+          // (which the replay then scales, i.e. exactly the bug the layer is
+          // there to prevent).
           let device_ctm = surface_canvas.get_transform_matrix();
           Self::composited_pass(
             surface_canvas,
@@ -869,9 +1062,18 @@ impl Context {
             -expansion,
             width + expansion * 2.0,
             height + expansion * 2.0,
-            |canvas, paint| shadow_f(canvas, paint, &device_ctm),
+            |canvas, paint| {
+              Self::composited_filter_layer(
+                canvas,
+                &device_ctm,
+                shadow.filter,
+                paint,
+                |canvas, paint| shadow_f(canvas, paint, &device_ctm),
+              )
+            },
           )?;
         }
+        let device_ctm = surface_canvas.get_transform_matrix();
         Self::composited_pass(
           surface_canvas,
           paint,
@@ -880,7 +1082,9 @@ impl Context {
           0.0,
           width,
           height,
-          f,
+          |canvas, paint| {
+            Self::composited_filter_layer(canvas, &device_ctm, content_filter, paint, &f)
+          },
         )
       }
       _ => {
@@ -906,11 +1110,23 @@ impl Context {
           surface_canvas.set_transform(&current_transform);
 
           // Here the canvas IS the device, so its own CTM is the device matrix.
-          shadow_f(surface_canvas, shadow.paint, &current_transform)?;
+          Self::composited_filter_layer(
+            surface_canvas,
+            &current_transform,
+            shadow.filter,
+            shadow.paint,
+            |canvas, paint| shadow_f(canvas, paint, &current_transform),
+          )?;
           surface_canvas.restore();
         }
-        f(surface_canvas, paint)?;
-        Ok(())
+        let current_transform = surface_canvas.get_transform_matrix();
+        Self::composited_filter_layer(
+          surface_canvas,
+          &current_transform,
+          content_filter,
+          paint,
+          &f,
+        )
       }
     }
   }
@@ -933,8 +1149,9 @@ impl Context {
 
     // Extract state for shadow rendering to avoid borrow conflicts
     let shadow_paint = Self::shadow_paint(&self.state, &fill_paint, ShadowSource::Fill);
-    let shadow_offset_x = self.state.shadow_offset_x;
-    let shadow_offset_y = self.state.shadow_offset_y;
+    // Zero on the image-filter route, where the filter's dx/dy already carry it.
+    let (shadow_offset_x, shadow_offset_y) =
+      Self::canvas_shadow_offset(&self.state, ShadowSource::Fill);
 
     self.with_shadowed_render_canvas(
       &fill_paint,
@@ -991,9 +1208,9 @@ impl Context {
       .ok_or_else(|| SkError::Generic("Make line dash path effect failed".to_string()))?;
       paint.set_path_effect(&path_effect);
     }
-    if let Some(f) = &self.state.filter {
-      paint.set_image_filter(f);
-    }
+    // Deliberately NO `set_image_filter(state.filter)`. `ctx.filter` is a
+    // device-space effect and rides on `composited_filter_layer`'s layer, not
+    // on the content paint; see the note in `with_shadowed_render_canvas`.
     Ok(paint)
   }
 
@@ -1201,9 +1418,9 @@ impl Context {
       .ok_or_else(|| SkError::Generic("Make line dash path effect failed".to_string()))?;
       paint.set_path_effect(&path_effect);
     }
-    if let Some(f) = &self.state.filter {
-      paint.set_image_filter(f);
-    }
+    // Deliberately NO `set_image_filter(state.filter)`. `ctx.filter` is a
+    // device-space effect and rides on `composited_filter_layer`'s layer, not
+    // on the content paint; see the note in `with_shadowed_render_canvas`.
     Ok(paint)
   }
 
@@ -1282,111 +1499,88 @@ impl Context {
   /// axis-aligned, with the double-convolution trap documented at the bottom of
   /// `shadow_paint` waiting on the other side of it.
   ///
-  /// The filter carries NO offset. `make_drop_shadow_graph` implements dx/dy as
-  /// an `SkImageFilters::MatrixTransform(SkMatrix::Translate(dx, dy))`
-  /// (SkDropShadowImageFilter.cpp:52-54) whose matrix is a
-  /// `skif::ParameterSpace<SkMatrix>` run through `mapping().paramToLayer()`
-  /// (SkMatrixTransformImageFilter.cpp:71, :151), i.e. a LOCAL-space offset that
-  /// the CTM rotates and scales. Chromium's offsets are device-space in every
-  /// path -- `kPostTransformFlag` makes the looper
-  /// `setMatrix(getLocalToDevice().postTranslate(dx, dy))`
-  /// (cc/paint/draw_looper.cc:37-40), and the image-filter path runs its shadow
-  /// `saveLayer` inside a `ScopedResetCtm`
-  /// (canvas_2d_recorder_context.cc:545-565). Every caller therefore translates
-  /// the canvas with `apply_shadow_offset_matrix_to_canvas` instead, handing it
-  /// the user->DEVICE matrix explicitly.
+  /// dx/dy and sigma both go in RAW, in device pixels, exactly as Blink builds
+  /// them: `DropShadowPaintFilter(shadow_offset_.x(), shadow_offset_.y(), sigma,
+  /// sigma, ...)` with no matrix anywhere in sight
+  /// (canvas_rendering_context_2d_state.cc:681-705 -- the filters are even
+  /// CACHED on the state object and invalidated only by
+  /// `ShadowParameterChanged()`, so they *cannot* depend on the CTM).
   ///
-  /// "Explicitly" is the load-bearing word and this comment used to omit it,
-  /// which made it false for exactly one arm. `apply_shadow_offset_matrix_to_canvas`
-  /// used to read the CTM off the canvas it was given, and on the isolation
-  /// composite modes that canvas is a `PictureRecorder`'s, sitting at identity
-  /// (`composited_pass`) -- so the device-space sandwich collapsed to a plain
-  /// translate in PICTURE space and the real CTM, applied at `draw_picture`
-  /// replay, scaled and rotated it right back into local space. Measured against
-  /// Chrome 150 with `source-in`, an opaque backdrop, `fillRect(10, 40, 60, 30)`
-  /// and `shadowOffsetX = 40` (surviving red at y=100 marks the shadow's left
-  /// edge): `scale(2, 2)` gave x=100..139 against Chrome's 60..139, and
-  /// `rotate(180)` gave 120..139 against Chrome's 160..179. Both are exact now.
-  /// The direct arm was always right, because there the canvas IS the device.
+  /// That is only true because `composited_filter_layer` opens this filter's
+  /// layer at the device identity. Read that function before touching either
+  /// number. Skia's parameter space is the layer's space, so with the layer at
+  /// identity, parameter space IS device space and both readings coincide:
+  ///   * `make_drop_shadow_graph` implements dx/dy as an
+  ///     `SkImageFilters::MatrixTransform(SkMatrix::Translate(dx, dy))`
+  ///     (SkDropShadowImageFilter.cpp:52-54) whose matrix is a
+  ///     `skif::ParameterSpace<SkMatrix>` run through `mapping().paramToLayer()`
+  ///     (SkMatrixTransformImageFilter.cpp:71, :151);
+  ///   * `SkImageFilters::Blur`'s sigma goes through the same mapping.
+  ///
+  /// Without the identity layer both are LOCAL-space quantities that the CTM
+  /// rotates and scales, and this builder had to compensate -- it used to
+  /// pre-divide sigma by the CTM's column norms, and the offset had to be kept
+  /// off the filter entirely and applied as a canvas translate. Measured on
+  /// `main`, which had dx/dy on the filter WITHOUT the identity layer:
+  /// `translate(300, 200); rotate(PI); shadowOffsetX = 100; drawImage(...)` put
+  /// the shadow 100 device px to the LEFT (centroid 197.5 where the geometry
+  /// path gives 401.5), and `scale(2, 0.5)` doubled a 40 px offset to 80. The
+  /// dx/dy below are safe ONLY under the layer.
+  ///
+  /// Dropping the sigma pre-division also retired a documented limitation. The
+  /// old code divided by `sqrt(a^2+b^2)` / `sqrt(c^2+d^2)`, the column norms
+  /// `SkMatrix::decomposeScale` (SkMatrix.cpp:1479-1499) re-applies, which is
+  /// exact only when the CTM's `remaining` factor is conformal -- i.e. for a
+  /// similarity or an axis-aligned scale. Combine a non-uniform scale with a
+  /// rotation, or skew, and the isotropic layer-space Gaussian was stretched
+  /// into an ellipse. Blurring in device space has no such factor. Whole-canvas
+  /// byte diff against Chrome 150.0.7871.184, `shadowBlur = 20`, 420x220:
+  ///
+  /// ```text
+  ///   scene                                     before          after
+  ///   setTransform(1, 0, 0.5, 1, 0, 0)          7783px max 20   1085px max 6
+  ///   scale(2, 0.5) . rotate(PI/4)             10193px max 62   1541px max 8
+  /// ```
+  ///
+  /// The offset does NOT ride here on the routes that build no filter at all --
+  /// zero blur with no `ctx.filter`, where `shadow_paint` colourises with a
+  /// paint colour or an `SkColorFilter` instead. Those keep the device-space
+  /// canvas translate, which is the same split Blink makes: its looper carries
+  /// `kPostTransformFlag` and does
+  /// `setMatrix(getLocalToDevice().postTranslate(dx, dy))`
+  /// (cc/paint/draw_looper.cc:37-40), and `GetFlags` picks EITHER the looper OR
+  /// the `DropShadowPaintFilter`, never both
+  /// (canvas_rendering_context_2d_state.cc:849-868). `shadow_takes_image_filter`
+  /// is the one predicate both sides read, so the offset is applied exactly
+  /// once.
   fn shadow_only_image_filter(state: &Context2dRenderingState) -> Option<ImageFilter> {
     let shadow_color = &state.shadow_color;
     let a = shadow_color.a;
     let r = shadow_color.r;
     let g = shadow_color.g;
     let b = shadow_color.b;
-    // The sigma handed to `SkImageFilters::Blur` is in PARAMETER space, so it
-    // has to be pre-divided by the scale Skia will apply on its way to the
-    // layer. `SkBlurImageFilter` does not override `onGetCTMCapability`, so it
-    // reports `kScaleTranslate` (SkImageFilter_Base.h:225-226); a rotating or
-    // skewing CTM therefore takes `Mapping::decomposeCTM`'s third branch
-    // (SkImageFilterTypes.cpp:272-283), which factors the CTM through
-    // `SkMatrix::decomposeScale` (SkMatrix.cpp:1479-1499):
-    //   sx = SkVector::Length(getScaleX(), getSkewY()) = sqrt(a^2 + b^2)
-    //   sy = SkVector::Length(getSkewX(), getScaleY()) = sqrt(c^2 + d^2)
-    // Those column norms are exactly the factors Skia will re-apply, so for any
-    // non-perspective affine CTM the sigma that reaches LAYER space is the one
-    // that was asked for. The raw `transform.a` / `transform.d` are not: rotate(90deg) snaps
-    // `a` to exactly 0 (SkMatrix.cpp:458 `SkScalarCosSnapToZero`) so the sigma
-    // becomes +inf, and rotate(180deg) / scale(-1, 1) make it negative. Either
-    // way `SkImageFilters::Blur` returns nullptr (SkBlurImageFilter.cpp:83-88)
-    // and `make_drop_shadow_graph` SILENTLY drops the Blur node while keeping
-    // the colour filter and the translate (SkDropShadowImageFilter.cpp:45-54,
-    // a null input means "the source") -- a shadow with no blur at all.
+    // Chromium: sigma is `shadowBlur * 0.5` and nothing else
+    // (canvas_rendering_context_2d_state.cc:650-652 -> shadow_data.h:76-82).
+    // No CTM correction: `composited_filter_layer` has already made this
+    // filter's parameter space the device's, so the number below is the device
+    // sigma. `SkBlurImageFilter` reports `kScaleTranslate`
+    // (SkImageFilter_Base.h:225-226) and `Mapping::decomposeCTM`
+    // (SkImageFilterTypes.cpp:272-283) would otherwise scale it by the CTM's
+    // column norms -- see the doc comment for what that cost under skew.
     //
-    // KNOWN LIMITATION, NON-SIMILARITY CTMs ONLY. Getting layer space right is
-    // not the same as getting DEVICE space right. `decomposeScale` splits the
-    // CTM into `scale * remaining`, and `remaining` is conformal only when the
-    // CTM is a similarity (rotation and/or uniform scale) or an axis-aligned
-    // scale. Combine a non-uniform scale WITH a rotation, or use a skew, and
-    // `remaining` stretches the isotropic layer-space Gaussian into an ellipse
-    // whose axis ratio is the CTM's singular-value spread. Chrome does not have
-    // this problem on the looper route: `computeXformedSigma` maps sigma with
-    // the single scalar `ctm.mapRadius` and blurs in device space
-    // (SkBlurMaskFilterImpl.cpp:111-115), so its kernel stays round.
-    //
-    // Device sigma at shadowBlur = 40, from the 2-D covariance of the kernel so
-    // there is no edge-normal assumption. Chrome 150 as the oracle:
-    //   identity, scale(2,2), scale(2,0.5),
-    //   rotate(30/45/90/180)              ours == Chrome, isotropic, exact
-    //   scale(2,0.5) . rotate(45)         Chrome 18.62 / 18.83   ours 26.00 / 6.51
-    //   skewX(0.5)                        Chrome 18.94 / 18.94   ours 20.79 / 16.95
-    // Re-measured here on a 60x60 fill (same shape both columns, so only the
-    // relative numbers carry over): 19.12 / 19.11 for every similarity CTM
-    // above, 26.27 / 6.54 for scale(2,0.5).rotate(45), 20.97 / 17.10 for
-    // skewX(0.5). 26.27 / 6.54 = 4.02, and scale(2, 0.5)'s singular values are
-    // 2 and 0.5 -- the ellipse IS `remaining`, which is what makes the cause
-    // certain rather than inferred.
-    //
-    // Pure rotation and pure scale are CORRECT and match Chrome digit-for-digit,
-    // and even the two bad rows are far better than the pre-branch behaviour
-    // (77.4 / 18.5 and 29.0 / 24.5 for the same two CTMs). Fixing them properly
-    // means the mask-filter route -- see the doc comment's accepted-divergence
-    // note, which owns that decision.
-    let t = state.transform.get_transform();
-    let scale_x = (t.a * t.a + t.b * t.b).sqrt();
-    let scale_y = (t.c * t.c + t.d * t.d).sqrt();
-    let sigma = state.shadow_blur / 2f32;
     // sigma == 0 is fine and must not be guarded: `SkImageFilters::Blur`
     // explicitly allows it ("We allow 0 sigma for X and/or Y",
     // SkBlurImageFilter.cpp:83-88) and it degenerates to the identity at filter
     // time, leaving colorize + translate.
-    let sigma_x = if scale_x.is_finite() && scale_x > 0f32 {
-      sigma / scale_x
-    } else {
-      sigma
-    };
-    let sigma_y = if scale_y.is_finite() && scale_y > 0f32 {
-      sigma / scale_y
-    } else {
-      sigma
-    };
+    let sigma = state.shadow_blur / 2f32;
     ImageFilter::make_drop_shadow_only(
-      // dx, dy: see the doc comment -- the offset is a canvas translate, not a
-      // filter parameter.
-      0f32,
-      0f32,
-      sigma_x,
-      sigma_y,
+      // Device-space, straight from the setters, exactly as Blink builds them.
+      // Safe ONLY under `composited_filter_layer`'s identity layer; see the doc
+      // comment, which measures what happens without it.
+      state.shadow_offset_x,
+      state.shadow_offset_y,
+      sigma,
+      sigma,
       ((a as u32) << 24) | ((r as u32) << 16) | ((g as u32) << 8) | b as u32,
       // `ctx.filter` is the INPUT of the shadow graph, never something applied
       // to its output. Blink builds the shadow layer's filter as
@@ -1423,15 +1617,65 @@ impl Context {
     )
   }
 
+  /// Does this shadow render through an image filter, or through a paint the
+  /// draw carries directly?
+  ///
+  /// The SINGLE source of truth for a fork Blink also makes: `GetFlags` picks
+  /// EITHER a `cc::DrawLooper` OR a `DropShadowPaintFilter` and nulls the other
+  /// in every branch (canvas_rendering_context_2d_state.cc:849-868). Two things
+  /// read it and they must agree, or the offset is applied twice or not at all:
+  /// `shadow_paint` below, to choose the colourisation, and
+  /// `canvas_shadow_offset`, to decide whether the offset is still owed a canvas
+  /// translate.
+  ///
+  /// The three disjuncts are Blink's, in Blink's order: a non-opaque image
+  /// source or a `ctx.filter` take the `DropShadowPaintFilter`
+  /// (canvas_rendering_context_2d_state.cc:850, :861), and a blur has to,
+  /// because the looper's alternative -- an `SkMaskFilter` -- is one binding
+  /// skia-c does not have and would be a second Gaussian to keep in sync.
+  fn shadow_takes_image_filter(state: &Context2dRenderingState, source: ShadowSource) -> bool {
+    source.forces_shadow_image_filter() || state.filter.is_some() || state.shadow_blur != 0f32
+  }
+
+  /// The device-space translate the CANVAS still owes the shadow.
+  ///
+  /// Zero on the image-filter route, where `shadow_only_image_filter` has
+  /// already put `shadowOffsetX/Y` into the filter's dx/dy -- which is both what
+  /// Blink does (canvas_rendering_context_2d_state.cc:686-688) and, for image
+  /// sources, materially better than a translate. Skia implements those dx/dy as
+  /// `MatrixTransform(Translate(dx, dy), SkFilterMode::kLinear)`
+  /// (SkDropShadowImageFilter.cpp:50-53), and the `kLinear` is deliberate:
+  /// "kLinear filtering is needed to hide nearest-neighbor sampling artifacts
+  /// from fractional offsets applied post-blur". A canvas translate has no such
+  /// resample, so a fractional offset on a non-opaque image lost the partial
+  /// coverage entirely. Measured, 200x200 half-opaque PNG, `shadowOffsetX =
+  /// 100.5`, `shadowBlur = 0`, `imageSmoothingEnabled = false`, probe (200,100):
+  ///
+  /// ```text
+  ///   Chrome 150.0.7871.184   [127,127,255]   half coverage
+  ///   canvas translate        [0,0,255]       200 px differ, max delta 127
+  ///   filter dx/dy (this)     [127,127,255]   byte-exact
+  /// ```
+  ///
+  /// At `shadowBlur = 6` the same scene moved 4826 px, max 15.
+  fn canvas_shadow_offset(state: &Context2dRenderingState, source: ShadowSource) -> (f32, f32) {
+    if Self::shadow_takes_image_filter(state, source) {
+      (0f32, 0f32)
+    } else {
+      (state.shadow_offset_x, state.shadow_offset_y)
+    }
+  }
+
   /// The shadow half of every draw -- geometry, text and images alike. There
   /// used to be a second, image-only builder here; the two differed only in
-  /// baking the offset into the filter, and once that moved to the canvas they
-  /// were the same function.
+  /// baking the offset into the filter, and they are one function again now
+  /// that the identity-CTM layer makes those dx/dy device-space for every
+  /// source.
   fn shadow_paint(
     state: &Context2dRenderingState,
     paint: &Paint,
     source: ShadowSource,
-  ) -> Option<Paint> {
+  ) -> Option<ShadowDraw> {
     let shadow_color = &state.shadow_color;
     let shadow_alpha = shadow_color.a;
     if shadow_alpha == 0 {
@@ -1455,26 +1699,23 @@ impl Context {
     // colour, because the two are then algebraically identical and the vector
     // backends handle a paint colour far better than a colour filter; see there.
     //
-    // The offset is applied on the canvas by
-    // `apply_shadow_offset_matrix_to_canvas`, in device space (matching Blink's
-    // `kShadowIgnoresTransforms` / `kPostTransformFlag`,
-    // cc/paint/draw_looper.cc:28-40), so neither route carries one. The image
-    // path used to bake it into the filter's dx/dy instead, where it is a
-    // local-space vector: `translate(300, 200); rotate(PI); shadowOffsetX = 100;
-    // drawImage(...)` put the shadow 100 device px to the LEFT (measured
-    // centroid 197.5 where the geometry path gives 401.5), and `scale(2, 0.5)`
-    // doubled a 40px offset to 80.
+    // Both branches below build NO image filter, so they take no layer, so
+    // `canvas_shadow_offset` still hands the caller the full offset and
+    // `apply_shadow_offset_matrix_to_canvas` applies it in device space -- which
+    // is Blink's looper (`kShadowIgnoresTransforms` / `kPostTransformFlag`,
+    // cc/paint/draw_looper.cc:28-40). `shadow_takes_image_filter` is the shared
+    // predicate; do not inline this condition anywhere else.
+    //
     // `state.filter.is_none()` guards the whole layer-free route. With a
     // `ctx.filter` in play the shadow HAS to be an image filter, because the
     // only faithful order is `colourise(ctx.filter(source))` -- see
     // `shadow_only_image_filter`, which chains it -- and a paint colour or a
     // colour filter both run BEFORE the paint's image filter in Skia's blitter,
     // i.e. they can only ever produce `ctx.filter(colourise(source))`. Nothing
-    // is lost by taking the filter route here: `fill_paint`/`stroke_paint`
-    // already put `ctx.filter` on this paint (src/ctx.rs:994-996, :1204-1206),
-    // so the draw was going through a layer either way and the vector backends
-    // had already given up on it.
-    if state.shadow_blur == 0f32 && state.filter.is_none() {
+    // is lost by taking the filter route here: the foreground draw is already
+    // going through `composited_filter_layer`'s layer whenever `ctx.filter` is
+    // set, so the vector backends had given up on it either way.
+    if !Self::shadow_takes_image_filter(state, source) {
       // No blur, so there is no Gaussian to place and nothing an image filter
       // could add -- Chromium gates its mask filter on `blur_sigma > 0` and
       // otherwise leaves the looper layer with just the colour filter and the
@@ -1577,7 +1818,10 @@ impl Context {
           shadow_color.b,
           (shadow_alpha as f32 * paint_alpha).round() as u8,
         );
-        return Some(drop_shadow_paint);
+        return Some(ShadowDraw {
+          paint: drop_shadow_paint,
+          filter: None,
+        });
       }
       drop_shadow_paint.set_src_in_color_filter(
         shadow_color.r,
@@ -1585,7 +1829,10 @@ impl Context {
         shadow_color.b,
         shadow_alpha,
       );
-      return Some(drop_shadow_paint);
+      return Some(ShadowDraw {
+        paint: drop_shadow_paint,
+        filter: None,
+      });
     }
     let shadow_effect = Self::shadow_only_image_filter(state)?;
     // Do NOT re-apply `shadow_alpha` here: the drop-shadow filter above is
@@ -1595,12 +1842,15 @@ impl Context {
     // rendering `shadowColor` alpha `a` as `a * a` -- e.g. a 0.3 shadow shows up
     // at ~0.09 opacity. See the linear-scaling regression test.
     //
-    // This REPLACES the `ctx.filter` that `fill_paint`/`stroke_paint` put on the
-    // clone (src/ctx.rs:994-996, :1204-1206), and that is correct rather than
-    // lossy: `shadow_only_image_filter` has already chained `state.filter` in as
-    // the shadow graph's INPUT, which is where Blink puts it. Installing it in
-    // both places would run `ctx.filter` twice.
-    drop_shadow_paint.set_image_filter(&shadow_effect);
+    // The graph is returned SEPARATELY and never installed on `drop_shadow_paint`.
+    // `composited_filter_layer` puts it on a layer opened at the device identity;
+    // left on the paint it would be Skia's implicit layer at the draw's own CTM,
+    // and every parameter in it -- dx, dy and both sigmas -- would be scaled by
+    // that CTM. `state.filter` is already chained in as the graph's INPUT, which
+    // is where Blink puts it (canvas_2d_recorder_context.h:931-934), so it must
+    // not be re-installed anywhere either; that is why `fill_paint` /
+    // `stroke_paint` no longer add it to the paint this clones.
+    //
     // Deliberately NO MaskFilter. `DropShadowOnly` already contains the Gaussian
     // (SkDropShadowImageFilter.cpp:46). Adding `SkMaskFilter::MakeBlur` on top
     // made Skia build two nested layers -- "When the original paint has both an
@@ -1612,7 +1862,10 @@ impl Context {
     // here: `SkMaskFilter::MakeBlur` returns nullptr for sigma <= 0
     // (SkBlurMaskFilterImpl.cpp:598-603), and the `?` would then discard the
     // whole shadow paint, turning a wrong shadow into no shadow at all.
-    Some(drop_shadow_paint)
+    Some(ShadowDraw {
+      paint: drop_shadow_paint,
+      filter: Some(shadow_effect),
+    })
   }
 
   pub(crate) fn draw_image(
@@ -1632,8 +1885,9 @@ impl Context {
 
     // Extract state for shadow rendering to avoid borrow conflicts
     let shadow_paint = Self::shadow_paint(&self.state, &paint, ShadowSource::Image);
-    let shadow_offset_x = self.state.shadow_offset_x;
-    let shadow_offset_y = self.state.shadow_offset_y;
+    // Zero on the image-filter route, where the filter's dx/dy already carry it.
+    let (shadow_offset_x, shadow_offset_y) =
+      Self::canvas_shadow_offset(&self.state, ShadowSource::Image);
     let image_smoothing_enabled = self.state.image_smoothing_enabled;
     let image_smoothing_quality = self.state.image_smoothing_quality;
 
@@ -1717,8 +1971,9 @@ impl Context {
 
     // Extract state for shadow rendering to avoid borrow conflicts
     let shadow_paint = Self::shadow_paint(&self.state, &paint, ShadowSource::Image);
-    let shadow_offset_x = self.state.shadow_offset_x;
-    let shadow_offset_y = self.state.shadow_offset_y;
+    // Zero on the image-filter route, where the filter's dx/dy already carry it.
+    let (shadow_offset_x, shadow_offset_y) =
+      Self::canvas_shadow_offset(&self.state, ShadowSource::Image);
 
     self.with_shadowed_render_canvas(
       &paint,
@@ -1773,8 +2028,8 @@ impl Context {
     // Extract all state values to avoid borrow conflicts with with_render_canvas
     let shadow_paint = Self::shadow_paint(&self.state, paint, source);
     let width = self.width as f32;
-    let shadow_offset_x = self.state.shadow_offset_x;
-    let shadow_offset_y = self.state.shadow_offset_y;
+    // Zero on the image-filter route, where the filter's dx/dy already carry it.
+    let (shadow_offset_x, shadow_offset_y) = Self::canvas_shadow_offset(&self.state, source);
     let font_weight = self.state.font_style.weight;
     let font_stretch = self.state.font_stretch;
     let font_stretch_percentage = font_stretch.to_width_percentage();
@@ -1902,6 +2157,15 @@ impl Context {
   /// (cc/paint/draw_looper.cc:37-40), and the image-filter path draws its
   /// shadow inside a `ScopedResetCtm` (canvas_2d_recorder_context.cc:545-565).
   ///
+  /// This implements the LOOPER half of that, and only that half. It is reached
+  /// with a non-zero offset only when `canvas_shadow_offset` says the shadow
+  /// builds no image filter -- zero blur, no `ctx.filter`, a non-image source.
+  /// Every other shadow gets its offset from `DropShadowOnly`'s dx/dy instead,
+  /// under `composited_filter_layer`'s identity layer, which is Blink's other
+  /// half. The two are mutually exclusive by construction: `canvas_shadow_offset`
+  /// hands this function `(0, 0)` on the filter route, so the offset is applied
+  /// exactly once whichever route a draw takes.
+  ///
   /// `device_ctm` is `M`, the user->DEVICE matrix of the canvas the draw
   /// ultimately lands on -- which is NOT always `canvas`'s own CTM. On the
   /// isolation composite arm `canvas` is a `PictureRecorder`'s recording canvas
@@ -1917,10 +2181,10 @@ impl Context {
   /// `canvas` and the device (`M = R * X`), `concat(M^-1) . concat(T) . concat(M)`
   /// leaves `canvas` at `X * M^-1 * T * M`, and the device sees
   /// `R * X * M^-1 * T * M = T * M`. That is the post-translate, for any `R`:
-  /// the linear part of the device CTM is untouched (so the sigma correction in
-  /// `shadow_only_image_filter` still holds) and only the translation moves.
-  /// For the direct arm `R` is the identity and the sandwich is exactly the
-  /// `T * M` it always was.
+  /// the linear part of the device CTM is untouched and only the translation
+  /// moves. For the direct arm `R` is the identity and the sandwich is exactly
+  /// the `T * M` it always was. `composited_filter_layer` uses the same algebra
+  /// with `T` dropped, to land the device at the identity instead.
   fn apply_shadow_offset_matrix_to_canvas(
     canvas: &mut Canvas,
     device_ctm: &Matrix,

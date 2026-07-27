@@ -592,6 +592,8 @@ pub mod ffi {
 
     pub fn skiac_canvas_save(canvas: *mut skiac_canvas);
 
+    pub fn skiac_canvas_save_layer(canvas: *mut skiac_canvas, paint: *mut skiac_paint);
+
     pub fn skiac_canvas_restore(canvas: *mut skiac_canvas);
 
     pub fn skiac_canvas_reset(canvas: *mut skiac_canvas);
@@ -2789,6 +2791,19 @@ impl Canvas {
   pub fn save(&mut self) {
     unsafe {
       ffi::skiac_canvas_save(self.0);
+    }
+  }
+
+  /// `SkCanvas::saveLayer(nullptr, paint)` -- an isolation layer carrying only
+  /// `paint`'s blend mode and image filter. Owes one `restore()`.
+  ///
+  /// Only `Context::composited_filter_layer` should call this; it is what makes
+  /// a canvas2d filter parameter a device-space length. See
+  /// `skiac_canvas_save_layer` (skia-c/skia_c.cpp) for why an explicit layer is
+  /// the only way to express that.
+  pub fn save_layer(&mut self, paint: &Paint) {
+    unsafe {
+      ffi::skiac_canvas_save_layer(self.0, paint.0);
     }
   }
 
