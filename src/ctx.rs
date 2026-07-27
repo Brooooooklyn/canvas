@@ -1344,13 +1344,14 @@ impl Context {
   /// (canvas_rendering_context_2d_state.cc:650-652). Reached only for a blurred
   /// shadow; `shadow_paint` sends `shadowBlur == 0` down the colour-filter route.
   ///
-  /// ACCEPTED DIVERGENCE, every shape: Skia's raster blur runs a true Gaussian
-  /// only below sigma 2 (SkBlurEngine.cpp:275) and a three-box pass above it,
-  /// off an integer window (:388) -- so the effective sigma snaps to a
-  /// staircase, +9% to -13% off `shadowBlur / 2`, sign depending on where the
-  /// request falls in the step. Chrome is GPU-backed and downscales into a true
-  /// Gaussian instead, so it tracks the ideal. Nothing to fix here: the sigma
-  /// this passes is already correct.
+  /// ACCEPTED DIVERGENCE, every shape: on an 8888 surface Skia's raster engine
+  /// routes to the three-box pass above sigma 2 (SkBlurEngine.cpp:1281, :275)
+  /// and derives its window as an integer (:388), so the effective sigma snaps
+  /// to a staircase -- +9% to -13% off `shadowBlur / 2`, sign depending on where
+  /// the request lands in a step. Measured against Chrome 150 over 55 radii:
+  /// Chrome is smooth to within 3% on BOTH its accelerated and its software
+  /// canvas, so this is ours alone, not a CPU-vs-GPU artefact. The sigma passed
+  /// here is already correct; the lever is Skia's algorithm choice, not this.
   ///
   /// dx/dy and sigma go in raw, in device pixels, as Blink builds them -- safe
   /// ONLY because `composited_filter_layer` opens this filter's layer at the
