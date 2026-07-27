@@ -974,6 +974,8 @@ pub mod ffi {
       c_image_filter: *mut skiac_image_filter,
     ) -> *mut skiac_image_filter;
 
+    pub fn skiac_image_filter_is_a_color_filter(image_filter: *mut skiac_image_filter) -> bool;
+
     pub fn skiac_image_filter_ref(image_filter: *mut skiac_image_filter);
 
     pub fn skiac_image_filter_destroy(image_filter: *mut skiac_image_filter);
@@ -3961,6 +3963,34 @@ impl Clone for ImageFilter {
 }
 
 impl ImageFilter {
+  /// Does this filter have a spatial component, i.e. can the coordinate space
+  /// it is evaluated in change what it does?
+  ///
+  /// Only then is `Context::composited_filter_layer`'s device-space layer worth
+  /// anything; `Context::render_passes` is what asks, and the comment there is
+  /// the one to read. The question is answered by
+  /// `SkImageFilter::asAColorFilter`, documented as "returns true ... if this
+  /// imagefilter can be completely replaced by the returned colorfilter, i.e.
+  /// the two effects will affect drawing in the same way"
+  /// (include/core/SkImageFilter.h:71-76) -- a colour filter has no coordinates
+  /// at all, so no matrix can reach it. It is the same predicate Skia itself
+  /// uses to skip the implicit layer for a paint-carried image filter
+  /// (`SkCanvasPriv::ImageToColorFilter`, src/core/SkCanvasPriv.cpp:157-160).
+  pub fn needs_device_space_layer(&self) -> bool {
+    // `css_filters_to_image_filter` seeds its fold with a NULL `ImageFilter`
+    // and, for an empty filter list, returns that seed -- so `ctx.filter = ''`
+    // really does put a null pointer here. A filter that does not exist has no
+    // spatial component either, so answer it here rather than crossing the FFI
+    // and calling a method on a null `SkImageFilter*`. (Installing that same
+    // null on a paint still crashes, exactly as it does on the layer paint
+    // without this branch -- a separate, pre-existing defect this does not
+    // touch.)
+    if self.0.is_null() {
+      return false;
+    }
+    !unsafe { ffi::skiac_image_filter_is_a_color_filter(self.0) }
+  }
+
   pub fn make_drop_shadow_only(
     dx: f32,
     dy: f32,

@@ -252,3 +252,44 @@ test('should handle empty PDF document', (t) => {
   t.true(pdfBuffer instanceof Buffer)
   t.true(pdfBuffer.length == 0)
 })
+
+function countPdfImages(pdf: Buffer): number {
+  return (pdf.toString('latin1').match(/\/Subtype \/Image/g) ?? []).length
+}
+
+// REGRESSION GUARD, paired with the SVG ones in svg-canvas.spec.ts.
+//
+// `ctx.filter` on an explicit `saveLayer` costs the PDF backend its vector-ness:
+// `SkPDFDevice::createDevice` answers a layer paint that carries an image filter
+// with a raster device -- "PDF does not support image filters, so render them on
+// CPU ... at 'screen' resolution (100dpi), not printer resolution" -- and the
+// page comes back carrying `/Subtype /Image` XObjects. A filter with no spatial
+// component has no reason to be on a layer at all; it stays on the content paint
+// on this backend and the page stays vector.
+test('a colour-only ctx.filter must not rasterise the page', (t) => {
+  const { doc } = t.context
+  const ctx = doc.beginPage(240, 200)
+  ctx.filter = 'grayscale(1)'
+  ctx.fillStyle = 'blue'
+  ctx.fillRect(40, 40, 80, 60)
+  doc.endPage()
+
+  const pdf = doc.close()
+  t.is(countPdfImages(pdf), 0, 'the page must stay vector')
+})
+
+// The other direction, and the reason the fix is scoped to filters with no
+// spatial component: `blur()` HAS a length, that length is device-space, and the
+// only way to give it device space is the layer. Rasterising is the price, and
+// it is what `main` did here too.
+test('a spatial ctx.filter keeps its device-space layer', (t) => {
+  const doc = new PDFDocument()
+  const ctx = doc.beginPage(240, 200)
+  ctx.filter = 'blur(3px)'
+  ctx.fillStyle = 'blue'
+  ctx.fillRect(40, 40, 80, 60)
+  doc.endPage()
+
+  const pdf = doc.close()
+  t.true(countPdfImages(pdf) > 0, 'a blur has to go through the filter layer')
+})

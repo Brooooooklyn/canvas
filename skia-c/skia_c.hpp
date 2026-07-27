@@ -1160,6 +1160,7 @@ skiac_image_filter* skiac_image_filter_from_argb(
     const uint8_t table_g[256],
     const uint8_t table_b[256],
     skiac_image_filter* c_image_filter);
+bool skiac_image_filter_is_a_color_filter(skiac_image_filter* c_image_filter);
 void skiac_image_filter_destroy(skiac_image_filter* c_image_filter);
 
 // SkImage (for PageCache)

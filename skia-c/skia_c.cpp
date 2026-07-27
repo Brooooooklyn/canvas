@@ -407,13 +407,17 @@ void skiac_canvas_draw_image(skiac_canvas* c_canvas,
     // content leak in.
     //
     // INVARIANT, and it is what keeps a shadow or a `ctx.filter` from being
-    // truncated here: `paint` never carries an image filter. `Context::
-    // composited_filter_layer` has already hoisted it onto an enclosing layer
-    // before this call, so the clip below lands INSIDE that layer and can only
-    // ever crop the image, never the halo. That is Chromium's rule too --
-    // canvas_2d_recorder_context.cc:2137-2148 opens the filter layer first and
-    // :2172-2178 / base_rendering_context_2d.cc:1484-1508 clip after it. Put a
-    // filter back on this paint and you reintroduce the truncation.
+    // truncated here: `paint` carries no image filter that could grow the
+    // draw's bounds. `Context::composited_filter_layer` has already hoisted any
+    // such filter onto an enclosing layer before this call, so the clip below
+    // lands INSIDE that layer and can only ever crop the image, never the halo.
+    // (`Context::render_passes` does leave a filter here on the SVG / PDF
+    // backends, but only one Skia will fold into the colour-filter slot, and a
+    // colour filter has no halo for this clip to reach.) That is Chromium's
+    // rule too -- canvas_2d_recorder_context.cc:2137-2148 opens the filter
+    // layer first and :2172-2178 / base_rendering_context_2d.cc:1484-1508 clip
+    // after it. Put a filter back on this paint and you reintroduce the
+    // truncation.
     CANVAS_CAST->clipRect(SkRect::MakeWH(d_width, d_height));
     // Scale using the ratio of destination size to source surface size
     CANVAS_CAST->scale(d_width / s_width, d_height / s_height);
@@ -949,10 +953,13 @@ void skiac_canvas_draw_picture_rect(skiac_canvas* c_canvas,
   // implementing the sx/sy/sw/sh source crop. Widening it is NOT how a filter
   // halo is freed -- that would let un-cropped source content leak in.
   //
-  // INVARIANT: `paint` never carries an image filter. `Context::
-  // composited_filter_layer` has already hoisted it onto an enclosing layer, so
-  // this clip is issued INSIDE that layer and crops only the picture, never the
-  // halo -- which is Chromium's rule (base_rendering_context_2d.cc:1484-1508:
+  // INVARIANT: `paint` carries no image filter that could grow the draw's
+  // bounds. `Context::composited_filter_layer` has already hoisted any such
+  // filter onto an enclosing layer, so this clip is issued INSIDE that layer
+  // and crops only the picture, never the halo. (`Context::render_passes` does
+  // leave a filter here on the SVG / PDF backends, but only one Skia will fold
+  // into the colour-filter slot, and a colour filter has no halo for this clip
+  // to reach.) That is Chromium's rule (base_rendering_context_2d.cc:1484-1508:
   // saveLayer with the filter, then clipRect, then drawPicture). It also keeps
   // a second truncation away: `drawPicture` with a non-null paint becomes
   // `saveLayer(mappedCullRect, paint)` (skia/src/core/SkCanvasPriv.cpp:32-45),
@@ -1965,6 +1972,39 @@ skiac_image_filter* skiac_image_filter_from_argb(
   } else {
     return nullptr;
   }
+}
+
+// Would Skia replace this image filter by a plain colour filter?
+//
+// `SkImageFilter::asAColorFilter` is documented as "returns true ... if this
+// imagefilter can be completely replaced by the returned colorfilter, i.e. the
+// two effects will affect drawing in the same way"
+// (include/core/SkImageFilter.h:71-76). It is the exact predicate
+// `SkCanvasPriv::ImageToColorFilter` uses (src/core/SkCanvasPriv.cpp:157-160)
+// to drop a paint's image filter into the colour-filter slot and skip the
+// implicit layer entirely -- "src-over blending against transparent black is a
+// no-op, so skipping the layer and drawing the output of the color filter-image
+// filter with the original blender is valid" (:140-142).
+//
+// `Context::composited_filter_layer` asks this before opening its own layer.
+// Such a filter has NO spatial parameter, so no coordinate space -- device or
+// parameter -- can change what it does, and the layer whose only purpose is to
+// give the filter device space is pure loss on the vector backends: SkSVGDevice
+// cannot make a layer device at all (SkDevice::createDevice returns nullptr,
+// src/core/SkDevice.h:323, and SkCanvas then substitutes an SkNoPixelsDevice
+// that discards every draw, src/core/SkCanvas.cpp:1038-1046), and SkPDFDevice
+// rasterises one (src/pdf/SkPDFDevice.cpp:302-315).
+//
+// The out parameter is not optional: `asAColorFilter` asserts on a null pointer
+// (src/core/SkImageFilter.cpp:119) and hands back a ref'd colour filter that
+// has to be released.
+bool skiac_image_filter_is_a_color_filter(skiac_image_filter* c_image_filter) {
+  SkColorFilter* color_filter = nullptr;
+  if (!IMAGE_FILTER_CAST->asAColorFilter(&color_filter)) {
+    return false;
+  }
+  SkSafeUnref(color_filter);
+  return true;
 }
 
 void skiac_image_filter_ref(skiac_image_filter* c_image_filter) {

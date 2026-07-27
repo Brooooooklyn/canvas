@@ -290,6 +290,11 @@ impl Context {
   /// while the foreground flags come from `GetFlags(.., kDrawForegroundOnly, ..)`
   /// which opens with `setImageFilter(nullptr)`
   /// (canvas_rendering_context_2d_state.cc:836-841).
+  ///
+  /// One documented exception, and `render_passes` is where it is taken: on the
+  /// SVG / PDF backends a layer image filter is unrepresentable, so a filter
+  /// with no spatial component goes back on the content paint. Read the comment
+  /// there before assuming the content paint is filter-free.
   fn with_shadowed_render_canvas<S, F>(
     &mut self,
     paint: &Paint,
@@ -327,6 +332,74 @@ impl Context {
     let blend_mode = self.state.global_composite_operation;
     let width = self.width as f32;
     let height = self.height as f32;
+
+    // `composited_filter_layer`'s layer exists to hand the filter DEVICE space.
+    // On the vector backends it cannot do that -- it destroys the draw instead.
+    // `SkSVGDevice` has no `createDevice` override, so it inherits the base
+    // `return nullptr` (skia/src/core/SkDevice.h:323) and `SkCanvas` substitutes
+    // "an explicit NoPixelsDevice ... squashing draw calls that target something
+    // that doesn't exist" (skia/src/core/SkCanvas.cpp:1038-1046): the content
+    // vanishes. `SkPDFDevice::createDevice` returns a raster device instead --
+    // "PDF does not support image filters, so render them on CPU ... at 'screen'
+    // resolution (100dpi), not printer resolution" (skia/src/pdf/SkPDFDevice.cpp:
+    // 302-315) -- so the page stops being vector.
+    //
+    // For a filter with no spatial component the layer was never buying anything
+    // anyway: a colour filter has no coordinates for a matrix to reach, so no
+    // space -- device, layer or parameter -- can change what it does. Hand it to
+    // the CONTENT paint there and Skia will do exactly what it does for any
+    // paint-carried image filter it recognises as a colour filter:
+    // `SkCanvasPriv::ImageToColorFilter` (skia/src/core/SkCanvasPriv.cpp:133-173)
+    // moves it into the paint's colour-filter slot and opens NO layer at all,
+    // because "src-over blending against transparent black is a no-op, so
+    // skipping the layer and drawing the output of the color filter-image filter
+    // with the original blender is valid" (:140-142).
+    // `ImageFilter::needs_device_space_layer` is the negation of
+    // `SkImageFilter::asAColorFilter`, the very predicate that function gates on,
+    // so the two agree by construction.
+    //
+    // Measured, 240x200, one shape, no shadow, `main` (2cd4e1a) vs this branch:
+    //
+    // ```text
+    //   ctx.filter                 SVG bytes / shape?      PDF bytes / images
+    //                              main   before   after   main  before  after
+    //   grayscale(1)               214 y  150 n    214 y    723/0  1896/2  723/0
+    //   grayscale(1), scale(2,2)   237 y  150 n    237 y    734/0  1896/2  734/0
+    //   grayscale(1), rotate(.3)   273 y  150 n    273 y    753/0  1896/2  753/0
+    //   opacity(0.5)               214 y  150 n    214 y    701/0  1896/2  701/0
+    //   blur(3px)                  150 n  150 n    150 n   1814/2  2376/2 2376/2
+    //   drop-shadow(5px 5px 3px)   150 n  150 n    150 n   1527/2  2001/2 2001/2
+    // ```
+    //
+    // Every colour-only filter is back to `main` byte for byte; `blur()` and
+    // `drop-shadow()` are left on the layer, where `main` had already lost them
+    // (Skia builds its own implicit layer for a spatial filter on a paint, and
+    // SkSVGDevice discards that one too), so nothing there is owed a rescue and
+    // the PDF keeps this branch's device-space filter widths.
+    //
+    // Deliberately NOT done on the raster backends, where the layer costs
+    // nothing and is what Blink emits -- `ShouldUseCompositedDraw` returns true
+    // on `StateHasFilter()` alone, at every CTM, with no colour-filter fast path
+    // (canvas_2d_recorder_context.h:582-597, :919-964). Folding a colour filter
+    // into the paint moves it BEFORE coverage, and glyph coverage is gamma-
+    // corrected against the paint colour, so it is not a no-op for text: over a
+    // 4200-scene raster matrix the two agree to <=3/255 everywhere except
+    // `ctx.filter = 'invert(1)'` on `fillText` / `strokeText`, where glyph edges
+    // moved by up to 99/255. The raster path is byte-identical to before.
+    let filtered_paint = content_filter.as_ref().and_then(|filter| {
+      (self.page_recorder.is_none() && !filter.needs_device_space_layer()).then(|| {
+        let mut filtered_paint = paint.clone();
+        filtered_paint.set_image_filter(filter);
+        filtered_paint
+      })
+    });
+    let content_filter = if filtered_paint.is_some() {
+      None
+    } else {
+      content_filter
+    };
+    let paint = filtered_paint.as_ref().unwrap_or(paint);
+
     let shadow = shadow.map(|shadow| ShadowPass {
       paint: &shadow.paint,
       filter: shadow.filter.as_ref(),
