@@ -78,15 +78,9 @@ impl Gradient {
         &mut conic_gradient.base.colors,
       ),
     };
-    // https://html.spec.whatwg.org/multipage/canvas.html#dom-canvasgradient-addcolorstop
-    // "If multiple stops are added at the same offset on a gradient, they must be placed in the
-    // order added, with the first one closest to the start of the gradient, and each subsequent
-    // one infinitesimally further along."
-    //
-    // So a new stop belongs *after* every existing stop that shares its offset, i.e. at the upper
-    // bound of `offset`. That is what Blink gets for free from the `std::stable_sort` over a
-    // strict `a.stop < b.stop` comparator in `Gradient::SortStopsIfNecessary`
-    // (third_party/blink/renderer/platform/graphics/gradient.cc).
+    // Stops sharing an offset must keep insertion order (HTML spec,
+    // dom-canvasgradient-addcolorstop), so a new stop belongs at the UPPER bound
+    // of `offset` -- what Blink gets from a `stable_sort` over a strict `<`.
     if stops.last().map(|l| l <= &offset).unwrap_or(true) {
       stops.push(offset);
       colors.push(color);
@@ -246,10 +240,8 @@ fn test_add_color_stop() {
   }
 }
 
-/// https://html.spec.whatwg.org/multipage/canvas.html#dom-canvasgradient-addcolorstop
-/// "If multiple stops are added at the same offset on a gradient, they must be placed in the order
-/// added, with the first one closest to the start of the gradient, and each subsequent one
-/// infinitesimally further along."
+/// Pins the HTML spec's rule that stops sharing an offset keep insertion order
+/// (dom-canvasgradient-addcolorstop).
 #[test]
 fn test_add_color_stop_duplicated_offsets_keep_insertion_order() {
   let red = Color::from_rgba(255, 0, 0, 255);
@@ -293,8 +285,8 @@ fn test_add_color_stop_duplicated_offsets_keep_insertion_order() {
   assert_eq!(positions, vec![0.0, 0.0, 1.0, 1.0]);
   assert_eq!(colors, vec![red, green, blue, black]);
 
-  // Out-of-order insertion mixed with duplicates: the sort is stable, so equal offsets stay in
-  // the order they were added even when they arrive through the O(n) insertion path.
+  // Out-of-order insertion mixed with duplicates: equal offsets keep insertion
+  // order even through the O(n) insertion path.
   let mut g = Gradient::create_conic_gradient(16.0, 16.0, 16.0);
   g.add_color_stop(1.0, black);
   g.add_color_stop(0.5, red);

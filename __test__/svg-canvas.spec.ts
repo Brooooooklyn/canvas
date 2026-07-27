@@ -53,14 +53,11 @@ test('should be able to export text', (t) => {
 
 // REGRESSION GUARD, do not weaken to a snapshot.
 //
-// `ctx.filter` used to be hoisted onto an explicit `saveLayer` image filter for
-// every draw, shadowed or not, so that its lengths would be device-space. The
-// SVG backend cannot make a layer device -- `SkSVGDevice` inherits
-// `SkDevice::createDevice`'s `return nullptr` and `SkCanvas` then substitutes
-// "an explicit NoPixelsDevice ... squashing draw calls that target something
-// that doesn't exist" -- so every filtered draw was DISCARDED and the export
-// came back as a bare 148-byte `<svg/>`. A filter with no spatial component is
-// left on the content paint on this backend now; see `Context::render_passes`.
+// `SkSVGDevice` cannot make a layer device -- `SkCanvas` substitutes a
+// `NoPixelsDevice` that squashes every draw -- so a `ctx.filter` hoisted onto an
+// explicit `saveLayer` discards the whole draw and the export comes back as a
+// bare 148-byte `<svg/>`. A colour-only filter is left on the content paint on
+// this backend; see `Context::render_passes`.
 test('ctx.filter without a shadow must not swallow the drawing', (t) => {
   const { canvas } = t.context
   const ctx = canvas.getContext('2d')
@@ -116,14 +113,11 @@ const COLOUR_ONLY_FILTERS = ['grayscale(1)', 'opacity(0.5)', 'sepia(1)', 'invert
 
 // REGRESSION GUARD, do not weaken to a snapshot.
 //
-// The rescue above was applied to the CONTENT pass only. The SHADOW pass chose
-// its route through `shadow_takes_image_filter`, which read a bare
-// `state.filter.is_some()` with no idea which backend it was on, so a
-// colour-only `ctx.filter` still sent the shadow onto `composited_filter_layer`
-// -- the same `NoPixelsDevice` that swallowed the content, so the shadow
-// element vanished while the content element survived. Measured at 200x200 with
-// `shadowOffsetX = 40`: 2 elements without a filter, 1 with `grayscale(1)`, 2
-// again on `main` (2cd4e1a).
+// The guard above pins the CONTENT pass; this pins the SHADOW pass, which picks
+// its route through `shadow_takes_image_filter`. That predicate must consult
+// `filter_takes_layer` too, or a colour-only `ctx.filter` sends the shadow onto
+// the same `NoPixelsDevice` and the shadow element vanishes while the content
+// element survives.
 for (const filter of COLOUR_ONLY_FILTERS) {
   test(`a colour-only ctx.filter must not swallow the shadow (${filter})`, (t) => {
     const { canvas } = t.context
@@ -173,14 +167,11 @@ test('a colour-only ctx.filter must not swallow a text shadow', (t) => {
   t.is((svg.match(/transform="translate\(40 0\)"/g) ?? []).length, 1, `the text shadow must survive: ${svg}`)
 })
 
-// Only the ALPHA a colour filter leaves on the source can reach a shadow:
-// `SkColorFilters::Blend(shadowColor, kSrcIn)` is `(shadowColor.rgb,
-// shadowColor.a * src.a)`, so it throws the filtered RGB away. `shadow_paint`
-// folds that one number in, in Blink's order -- `colourise(ctx.filter(source))`
-// -- and putting `ctx.filter` back on the shadow paint would invert the order
-// and tint the shadow instead. `shadowColor` alpha 0.8:
-//   grayscale(1)   0.8 * 1    black stays black
-//   opacity(0.5)   0.8 * 0.5
+// Only the ALPHA a colour filter leaves on the source can reach a shadow, since
+// kSrcIn throws the filtered RGB away. `shadow_paint` folds that one number in,
+// in Blink's `colourise(ctx.filter(source))` order; putting `ctx.filter` back on
+// the shadow paint would invert the order and tint the shadow instead. With
+// `shadowColor` alpha 0.8: grayscale(1) leaves 0.8, opacity(0.5) leaves 0.4.
 for (const [filter, opacity] of [
   ['grayscale(1)', '0.80000001'],
   ['sepia(1)', '0.80000001'],
@@ -224,11 +215,9 @@ test('a colour-only ctx.filter CHAIN also keeps its shadow', (t) => {
   )
 })
 
-// The other direction. A spatial filter has a length, that length is device
-// space, and only `composited_filter_layer` can give it one -- so it keeps the
-// layer, and on SVG that costs the whole draw. `main` lost these too; they are
-// not owed a rescue and must not quietly acquire one. A chain is judged by the
-// same rule: one spatial member is enough.
+// The other direction. A spatial filter keeps the layer, and on SVG that costs
+// the whole draw. These are not owed a rescue and must not quietly acquire one.
+// A chain is judged by the same rule: one spatial member is enough.
 for (const filter of ['blur(3px)', 'drop-shadow(5px 5px 3px black)', 'blur(2px) grayscale(1)']) {
   test(`a spatial ctx.filter keeps its device-space layer (${filter})`, (t) => {
     const { canvas } = t.context

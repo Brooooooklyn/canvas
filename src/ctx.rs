@@ -52,31 +52,23 @@ pub(crate) const MAX_TEXT_WIDTH: f32 = 100_000.0;
 pub(crate) const FILL_STYLE_HIDDEN_NAME: &str = "_fillStyle";
 pub(crate) const STROKE_STYLE_HIDDEN_NAME: &str = "_strokeStyle";
 
-/// Where the draw that is casting the shadow gets its colour from.
-///
-/// `shadow_paint` is handed a finished `Paint` and cannot tell a solid-colour
-/// paint from a gradient/pattern one: `Paint` exposes no "has a shader" query
-/// across the FFI, and even if it did, a `Pattern::Image` whose bitmap failed to
-/// produce a shader (`fill_paint`, `Pattern::Image` arm) leaves the paint
-/// shader-less while still not being a solid-colour draw. The caller always
-/// knows which style it built the paint from, so it says so, and `shadow_paint`
-/// reads the answer off `Context2dRenderingState`, which is authoritative.
+/// Where the draw casting the shadow gets its colour from. `shadow_paint` is
+/// handed a finished `Paint`, which exposes no "has a shader" query across the
+/// FFI, so the caller states which style it built the paint from.
 #[derive(Clone, Copy)]
 pub(crate) enum ShadowSource {
   /// Built by `fill_paint` -- `state.fill_style` decides.
   Fill,
   /// Built by `stroke_paint` -- `state.stroke_style` decides.
   Stroke,
-  /// `drawImage` / `drawCanvas`. Never a solid colour: the source's alpha varies
-  /// per pixel (that is the whole point of an image shadow), so the kSrcIn
-  /// colourisation is not a constant and cannot be folded into a paint colour.
+  /// `drawImage` / `drawCanvas`. Never a solid colour: the source alpha varies
+  /// per pixel, so the kSrcIn colourisation is not a constant.
   Image,
 }
 
 impl ShadowSource {
-  /// True when the source the shadow is cast from is one flat colour with no
-  /// shader, i.e. when `SkColorFilters::Blend(shadowColor, kSrcIn)` reduces to a
-  /// plain paint colour.
+  /// True when the shadow's source is one flat colour with no shader, i.e. when
+  /// `SkColorFilters::Blend(shadowColor, kSrcIn)` reduces to a paint colour.
   fn is_solid_color(self, state: &Context2dRenderingState) -> bool {
     match self {
       ShadowSource::Fill => matches!(state.fill_style, Pattern::Color(..)),
@@ -85,84 +77,47 @@ impl ShadowSource {
     }
   }
 
-  /// True when this source forces the drop-shadow IMAGE FILTER even at zero
-  /// blur, i.e. when Blink's `GetFlags` would answer `kNonOpaqueImage`
-  /// (canvas_rendering_context_2d_state.cc:849-864: `image_type ==
-  /// kNonOpaqueImage || css_filter_value_` picks the `DropShadowPaintFilter`,
-  /// everything else the looper).
-  ///
-  /// Blink's fork is on the SOURCE, not on the blur, and that difference is the
-  /// whole of defect 2's zero-blur arm: only the filter route can resample a
-  /// fractional offset, because only it implements the offset as
-  /// `MatrixTransform(Translate(dx, dy), SkFilterMode::kLinear)`
-  /// (SkDropShadowImageFilter.cpp:50-53).
-  ///
-  /// We answer for `drawImage` / `drawCanvas` as a whole, where Blink asks
-  /// specifically whether the decoded image has alpha. The extra case is an
-  /// OPAQUE image at a fractional offset, which Blink sends to the looper and we
-  /// send to the filter. Measured identical: the looper draws the image into a
-  /// fractional dst rect, whose antialiased edges give exactly the half coverage
-  /// the filter's kLinear resample produces, and the interior is one flat colour
-  /// either way. `image-opaque-frac` (200x200 opaque PNG, `shadowOffsetX =
-  /// 100.5`, `shadowBlur = 0`) is byte-exact against Chrome 150.0.7871.184 on
-  /// both routes.
+  /// True when this source forces the drop-shadow image filter even at zero
+  /// blur, matching Blink's `kNonOpaqueImage` fork
+  /// (canvas_rendering_context_2d_state.cc:849-864): only that route resamples a
+  /// fractional offset.
   fn forces_shadow_image_filter(self) -> bool {
     matches!(self, ShadowSource::Image)
   }
 }
 
-/// What a draw lays down on the device: a glyph run, or anything else.
-///
-/// `ShadowSource` cannot answer this -- `fillText` and `fillRect` are both
-/// `ShadowSource::Fill`, and they differ in the style they read, not in the
-/// coverage they emit -- and `render_passes` is handed no `ShadowSource` at all.
-/// So the answer travels beside it, stated by every draw site, and both passes
-/// of one draw get the same one. `draw_text` is the only `Glyphs`; see
-/// `filter_takes_layer`, which is the only reader.
+/// What a draw lays down on the device. Stated by every draw site, since
+/// `ShadowSource` cannot answer it (`fillText` and `fillRect` are both `Fill`).
+/// `filter_takes_layer` is the only reader; `draw_text` is the only `Glyphs`.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum DrawContent {
-  /// Rects, paths, images -- everything `SkPDFDevice` renders through
-  /// `drawRect` / `drawPath` / `drawImageRect`.
   Geometry,
-  /// A glyph run: `SkPDFDevice::onDrawGlyphRunList` (src/pdf/SkPDFDevice.cpp:
-  /// 1106-1112).
   Glyphs,
 }
 
-/// Which Skia device the `Context`'s surface is backed by.
-///
-/// `page_recorder.is_some()` used to stand in for "raster", and NOTHING stood in
-/// for the difference between the two vector backends -- both set
-/// `page_recorder: None` and only `stream` happened to tell them apart. That
-/// difference is load-bearing now (`filter_takes_layer`), so it is stated by the
-/// constructor rather than inferred from a field that means something else.
+/// Which Skia device the `Context`'s surface is backed by. Stated by the
+/// constructor, because the two vector backends differ in `filter_takes_layer`
+/// and no other field distinguishes them.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Backend {
-  /// `Context::new`: an ordinary pixel surface, drawn through `PageRecorder`.
-  /// The only backend with `page_recorder: Some`.
+  /// `Context::new`. The only backend with `page_recorder: Some`.
   Raster,
   /// `Context::new_svg`: `SkSVGDevice`.
   Svg,
-  /// `Context::new_from_surface`: `SkPDFDevice`, one per
-  /// `PDFDocument::beginPage` (src/lib.rs:1013).
+  /// `Context::new_from_surface`: `SkPDFDevice`, one per page.
   Pdf,
 }
 
-/// The shadow half of a draw, as `shadow_paint` builds it.
-///
-/// `paint` draws the shadow's SOURCE and carries no image filter. `filter`,
-/// when present, is the drop-shadow graph, and it belongs on a layer of its own
-/// -- never on `paint`. That split is the whole point: Blink hands its shadow
-/// filter to `saveLayer` and the source flags to the draw
-/// (canvas_2d_recorder_context.h:941-944), because the two need DIFFERENT
-/// matrices. See `Context::composited_filter_layer`.
+/// The shadow half of a draw, as `shadow_paint` builds it. `paint` draws the
+/// shadow's source and must carry no image filter; `filter`, when present, is
+/// the drop-shadow graph and belongs on a layer of its own, because the two need
+/// different matrices. See `Context::composited_filter_layer`.
 pub(crate) struct ShadowDraw {
   paint: Paint,
   filter: Option<ImageFilter>,
 }
 
-// The same thing borrowed, plus the state `render_canvas` needs to size the
-// shadow layer's cull rect.
+// The same, borrowed, plus what `render_canvas` needs to size the shadow layer.
 struct ShadowPass<'a> {
   paint: &'a Paint,
   filter: Option<&'a ImageFilter>,
@@ -174,8 +129,7 @@ struct ShadowPass<'a> {
 pub struct Context {
   pub(crate) surface: Surface,
   pub(crate) page_recorder: Option<RefCell<PageRecorder>>, // Deferred rendering recorder (RefCell for interior mutability)
-  /// Which device `surface` is over. Set once, by the constructor, and never
-  /// mutated; see `Backend`.
+  /// Which device `surface` is over. Set once by the constructor.
   pub(crate) backend: Backend,
   path: SkPath,
   pub alpha: bool,
@@ -304,23 +258,16 @@ impl Context {
   /// For deferred mode, operations are recorded to the PageRecorder
   /// For direct mode (SVG, PDF), operations go directly to the surface
   ///
-  /// NOT a filtered draw: `ctx.filter` is deliberately withheld. `clearRect` is
-  /// this function's only caller, and it is not a drawing operation Blink puts
-  /// through `DrawInternal` / `CompositedDraw` at all -- `BaseRenderingContext2D::
-  /// clearRect` issues a bare `drawRect` with `SkBlendMode::kClear`, so no
-  /// filter, no shadow and no composite layer can attach to it. Handing the
-  /// filter down here is not merely redundant, it is destructive: the layer paint
-  /// takes its blend from the content paint, so a kClear layer restores by
-  /// clearing its whole bounds. Measured with `ctx.filter = 'blur(3px)'` and
-  /// `clearRect(50, 20, 60, 60)` on a 200x100 red canvas: every pixel came back
-  /// [0,0,0,0] instead of just the 60x60 rect.
+  /// NOT a filtered draw: `ctx.filter` is deliberately withheld. The only caller
+  /// is `clearRect`, and handing the filter down would be destructive rather
+  /// than redundant -- a kClear layer restores by clearing its whole bounds,
+  /// wiping the canvas instead of the requested rect.
   fn with_render_canvas<F>(&mut self, paint: &Paint, f: F) -> result::Result<(), SkError>
   where
     F: Fn(&mut Canvas, &Paint) -> result::Result<(), SkError>,
   {
-    // `DrawContent` only ever qualifies a filter, and the `None` above says
-    // there is none, so the value is inert here. `clearRect` draws a rect
-    // anyway.
+    // `DrawContent` only qualifies a filter, and there is none here, so it is
+    // inert.
     self.render_passes(
       paint,
       DrawContent::Geometry,
@@ -332,27 +279,11 @@ impl Context {
   }
 
   /// The draws that also have a shadow pass, and that `ctx.filter` applies to.
-  /// The two passes must be handed to `render_canvas` together so that it -- and
-  /// only it -- decides whether an isolation layer is needed; see the comment
-  /// there.
-  ///
-  /// `ctx.filter` is hoisted onto each pass's layer rather than left on the
-  /// content paint; `fill_paint` / `stroke_paint` deliberately no longer install
-  /// it. Blink does the same -- `composite_flags.setImageFilter(canvas_filter)`
-  /// then `saveLayer(composite_flags)` (canvas_2d_recorder_context.h:956-957),
-  /// while the foreground flags come from `GetFlags(.., kDrawForegroundOnly, ..)`
-  /// which opens with `setImageFilter(nullptr)`
-  /// (canvas_rendering_context_2d_state.cc:836-841).
-  ///
-  /// One documented exception, and `render_passes` is where it is taken: on the
-  /// SVG / PDF backends a layer image filter is unrepresentable, so a filter
-  /// with no spatial component goes back on the content paint. Read the comment
-  /// there before assuming the content paint is filter-free.
-  ///
-  /// `content` says whether this draw emits a glyph run. It is the only thing
-  /// that qualifies that exception -- PDF text is held back from it -- and it
-  /// has to be passed rather than inferred, because a `fillText` and a
-  /// `fillRect` are the same `ShadowSource`. See `filter_takes_layer`.
+  /// Both passes must be handed to `render_canvas` together so that it -- and
+  /// only it -- decides whether an isolation layer is needed. `ctx.filter` is
+  /// hoisted onto each pass's layer rather than left on the content paint, as
+  /// Blink does (canvas_2d_recorder_context.h:956-957), except for the one
+  /// vector-backend exception `render_passes` takes.
   fn with_shadowed_render_canvas<S, F>(
     &mut self,
     paint: &Paint,
@@ -369,13 +300,10 @@ impl Context {
     self.render_passes(paint, content, content_filter, shadow, shadow_f, f)
   }
 
-  /// Shared body of the two above.
-  ///
-  /// The shadow closure is handed the user->DEVICE matrix as its third argument
-  /// because it cannot read one off the canvas it is given: on the isolation arm
-  /// that canvas is a picture recorder sitting at identity, and inside a filter
-  /// layer it sits at whatever `composited_filter_layer` re-installed. Pass it
-  /// straight to `apply_shadow_offset_matrix_to_canvas`.
+  /// Shared body of the two above. The shadow closure is handed the user->device
+  /// matrix as its third argument because it cannot read one off the canvas it
+  /// is given -- that canvas may be a recorder at identity, or sit inside a
+  /// filter layer. Pass it straight to `apply_shadow_offset_matrix_to_canvas`.
   fn render_passes<S, F>(
     &mut self,
     paint: &Paint,
@@ -393,73 +321,17 @@ impl Context {
     let width = self.width as f32;
     let height = self.height as f32;
 
-    // `composited_filter_layer`'s layer exists to hand the filter DEVICE space.
-    // On the vector backends it cannot do that -- it destroys the draw instead.
-    // `SkSVGDevice` has no `createDevice` override, so it inherits the base
-    // `return nullptr` (skia/src/core/SkDevice.h:323) and `SkCanvas` substitutes
-    // "an explicit NoPixelsDevice ... squashing draw calls that target something
-    // that doesn't exist" (skia/src/core/SkCanvas.cpp:1038-1046): the content
-    // vanishes. `SkPDFDevice::createDevice` returns a raster device instead --
-    // "PDF does not support image filters, so render them on CPU ... at 'screen'
-    // resolution (100dpi), not printer resolution" (skia/src/pdf/SkPDFDevice.cpp:
-    // 302-315) -- so the page stops being vector.
+    // The vector-backend rescue. `composited_filter_layer`'s layer exists to
+    // hand the filter device space, but on SVG / PDF it destroys the draw --
+    // SkSVGDevice cannot make a layer device and the content vanishes,
+    // SkPDFDevice rasterises it and the page stops being vector. A colour-only
+    // filter never needed the layer, so it goes back on the content paint, which
+    // Skia folds into the colour-filter slot with no layer at all.
     //
-    // For a filter with no spatial component the layer was never buying anything
-    // anyway: a colour filter has no coordinates for a matrix to reach, so no
-    // space -- device, layer or parameter -- can change what it does. Hand it to
-    // the CONTENT paint there and Skia will do exactly what it does for any
-    // paint-carried image filter it recognises as a colour filter:
-    // `SkCanvasPriv::ImageToColorFilter` (skia/src/core/SkCanvasPriv.cpp:133-173)
-    // moves it into the paint's colour-filter slot and opens NO layer at all,
-    // because "src-over blending against transparent black is a no-op, so
-    // skipping the layer and drawing the output of the color filter-image filter
-    // with the original blender is valid" (:140-142).
-    // `ImageFilter::needs_device_space_layer` is the negation of
-    // `SkImageFilter::asAColorFilter`, the very predicate that function gates on,
-    // so the two agree by construction.
-    //
-    // Measured, 240x200, one shape, no shadow, `main` (2cd4e1a) vs this branch:
-    //
-    // ```text
-    //   ctx.filter                 SVG bytes / shape?      PDF bytes / images
-    //                              main   before   after   main  before  after
-    //   grayscale(1)               214 y  150 n    214 y    723/0  1896/2  723/0
-    //   grayscale(1), scale(2,2)   237 y  150 n    237 y    734/0  1896/2  734/0
-    //   grayscale(1), rotate(.3)   273 y  150 n    273 y    753/0  1896/2  753/0
-    //   opacity(0.5)               214 y  150 n    214 y    701/0  1896/2  701/0
-    //   blur(3px)                  150 n  150 n    150 n   1814/2  2376/2 2376/2
-    //   drop-shadow(5px 5px 3px)   150 n  150 n    150 n   1527/2  2001/2 2001/2
-    // ```
-    //
-    // Every colour-only filter is back to `main` byte for byte; `blur()` and
-    // `drop-shadow()` are left on the layer, where `main` had already lost them
-    // (Skia builds its own implicit layer for a spatial filter on a paint, and
-    // SkSVGDevice discards that one too), so nothing there is owed a rescue and
-    // the PDF keeps this branch's device-space filter widths.
-    //
-    // Deliberately NOT done on the raster backends, where the layer costs
-    // nothing and is what Blink emits -- `ShouldUseCompositedDraw` returns true
-    // on `StateHasFilter()` alone, at every CTM, with no colour-filter fast path
-    // (canvas_2d_recorder_context.h:582-597, :919-964). Folding a colour filter
-    // into the paint moves it BEFORE coverage, and glyph coverage is gamma-
-    // corrected against the paint colour, so it is not a no-op for text: over a
-    // 4200-scene raster matrix the two agree to <=3/255 everywhere except
-    // `ctx.filter = 'invert(1)'` on `fillText` / `strokeText`, where glyph edges
-    // moved by up to 99/255. The raster path is byte-identical to before.
-    //
-    // Also NOT done for a GLYPH RUN on PDF, which is why `content` is threaded
-    // down here at all. That one cell is a deliberate defect -- see the third
-    // disjunct of `filter_takes_layer`, which is the only place it is decided.
-    //
-    // The predicate is `filter_takes_layer`, shared with the SHADOW pass. It
-    // must be: the two passes of one draw have to agree on where `ctx.filter`
-    // lives, and when this rescue first landed they did not -- the content came
-    // off the layer while `shadow_takes_image_filter` still read a bare
-    // `state.filter.is_some()` and sent the shadow onto it. `content_filter` is
-    // either `None` or a clone of `state.filter` (`with_render_canvas` /
-    // `with_shadowed_render_canvas`), so asking about `state.filter` here is
-    // asking about this very filter, and `content` is the same `DrawContent`
-    // the shadow pass's `shadow_paint` / `canvas_shadow_offset` were given.
+    // Deliberately NOT done on raster, where the layer is free and folding is
+    // not a no-op for text, nor for a glyph run on PDF -- the only reason
+    // `content` is threaded down here. `filter_takes_layer` decides, and is
+    // shared with the shadow pass: both must agree on where the filter lives.
     let filtered_paint = content_filter.as_ref().and_then(|filter| {
       (!self.filter_takes_layer(content)).then(|| {
         let mut filtered_paint = paint.clone();
@@ -960,25 +832,10 @@ impl Context {
   }
 
   // One `CompositedDraw` pass: record the draw into a picture, then replay it
-  // through a layer that carries only the composite mode.
-  //
-  // Blink's `composite_flags` is a fresh PaintFlags with nothing on it but
-  // `setBlendMode(state.GlobalComposite())` -- alpha 1, no shader, no filter --
-  // while the content paint rides on the inner draw with its blend forced to
-  // source-over (canvas_2d_recorder_context.h:921-922, :948-951, :957-962).
-  // Handing one paint to both sides applied globalAlpha twice:
-  // `SkCanvas::drawPicture` with a paint is `saveLayer(cullRect, paint) +
-  // playback + restore` (skia/src/core/SkCanvasPriv.cpp:32-45) and the restore
-  // paint keeps alpha, colour filter and blend mode
-  // (skia/src/core/SkCanvas.cpp:895-906). Dropping the colour and shader from the
-  // layer paint costs nothing -- the layer image replaces the paint's shader
-  // (skia/src/core/SkDraw.cpp:72-82).
-  //
-  // Blink's filter-shaped branch (h:929-944) is the same statement read
-  // backwards, since an image-filter layer moves only the filter and the blender
-  // onto the restore paint and leaves alpha and shader on the content
-  // (skia/src/core/SkCanvasPriv.cpp:238-251); the looper shape is chosen because
-  // it needs no `saveLayer` binding, which skia-c lacks.
+  // through a layer that carries only the composite mode. The split of paints is
+  // load-bearing -- handing one paint to both sides applies globalAlpha twice,
+  // since `drawPicture` with a paint is a `saveLayer` whose restore paint keeps
+  // alpha, colour filter and blend (canvas_2d_recorder_context.h:948-962).
   fn composited_pass<F>(
     surface_canvas: &mut Canvas,
     paint: &Paint,
@@ -1009,68 +866,17 @@ impl Context {
     Ok(())
   }
 
-  /// Runs one pass inside its own image-filter layer, with the layer opened at
-  /// the DEVICE identity and the CTM restored INSIDE it.
+  /// Runs one pass inside its own image-filter layer, opened at the device
+  /// identity with the CTM restored inside it -- Blink's `CompositedDraw`
+  /// (canvas_2d_recorder_context.h:919-963) spelled with `concat`. The layer is
+  /// what makes filter lengths device-space, as HTML 4.12.5.1.20 requires; a
+  /// filter left on the draw's own paint gets scaled by the draw's CTM instead.
+  /// It has to be `concat`, not `set_transform`, because the canvas handed here
+  /// is not always the device -- on the isolation arm it is a recorder's,
+  /// sitting at identity while the real CTM is applied at replay.
   ///
-  /// This is Blink's `CompositedDraw` (canvas_2d_recorder_context.h:919-963)
-  /// spelled with `concat` instead of `setMatrix`, exactly as Blink itself
-  /// spells it in `DrawImageInternal` (canvas_2d_recorder_context.cc:2137-2145):
-  ///
-  /// ```text
-  ///   Blink, absolute (h)          Blink, relative (cc)      here
-  ///   ctm = getLocalToDevice()     ctm = getLocalToDevice()   device_ctm
-  ///   setMatrix(SkM44())           save(); concat(inv_ctm)    save(); concat(inv)
-  ///   saveLayer(flags)             saveLayer(bounds, flags)   save_layer(layer)
-  ///   setMatrix(ctm)               concat(ctm)                concat(device_ctm)
-  ///   draw_func(c, fg_flags)       drawImageRect(image_flags) f(canvas, inner)
-  /// ```
-  ///
-  /// Why it has to be `concat` and not `set_transform`: the canvas handed to
-  /// this function is not always the device. On the isolation arm it is a
-  /// `PictureRecorder`'s, sitting at identity while the real CTM `M` is applied
-  /// later at `draw_picture` replay. With `X` the canvas's own CTM and `R` the
-  /// matrix concatenated between it and the device (`M = R * X`),
-  /// `concat(M^-1)` leaves the canvas at `X * M^-1` and the DEVICE at
-  /// `R * X * M^-1 = I` -- for any `R`. The following `concat(M)` puts the
-  /// device back at `M` for the content. `set_transform(identity)` would only
-  /// work on the direct arm.
-  ///
-  /// What this buys, and why nothing else does. Every canvas2d filter length is
-  /// a DEVICE-space length: HTML 4.12.5.1.20 says "Filter coordinates are not
-  /// affected by the current transformation matrix ... Filters are applied in
-  /// the output bitmap's coordinate space", and Blink implements that literally
-  /// -- `DropShadowPaintFilter(shadow_offset.x(), shadow_offset.y(), sigma,
-  /// sigma, ...)` takes the raw setter values with no matrix anywhere
-  /// (canvas_rendering_context_2d_state.cc:681-705), and `ctx.filter` resolves
-  /// through a `Filter(1.0f)` whose `ApplyHorizontalScale` is the identity
-  /// (filter.cc:39-50, :65-75). Leaving the filter on the draw's own paint
-  /// gives the opposite: Skia opens that layer implicitly at the draw's CTM and
-  /// `Mapping::decomposeCTM` scales every parameter by it
-  /// (SkImageFilterTypes.cpp:272-283). Measured on HEAD before this layer
-  /// existed, same DEVICE-space rect, `ctx.filter = 'blur(3px)'`, 10-90% edge
-  /// width of the shadow band against Chrome 150.0.7871.184:
-  ///
-  /// ```text
-  ///   scene                       Chrome   before   after
-  ///   solid fill, shadowBlur 0    8.27     8.27     8.27    identity CTM
-  ///   solid fill, shadowBlur 0    8.27     14.44    8.27    scale(2, 2)
-  ///   solid fill, shadowBlur 8    13.56    17.83    13.56   scale(2, 2)
-  ///   plain fill, no shadow       8.27     14.44    8.27    scale(2, 2)
-  ///   drawImage, no shadow        8.27     14.44    8.27    scale(2, 2)
-  ///   strokeRect, no shadow       8.27     14.44    8.27    scale(2, 2)
-  /// ```
-  ///
-  /// The 50% crossing sits at 219.50 in every column, before and after, so it
-  /// was only ever the filter WIDTH that moved -- a scaled parameter, not a
-  /// misplaced draw.
-  ///
-  /// The layer paint carries ONLY the blend mode and the filter; the content
-  /// keeps colour, alpha and shader and composites source-over into the
-  /// transparent layer, so nothing is applied twice
-  /// (canvas_2d_recorder_context.h:935-942, :958-962). Reading the blend off
-  /// the incoming paint is what makes this correct on both arms at once: on the
-  /// isolation arm `composited_pass` has already forced it to source-over and
-  /// put the real `globalCompositeOperation` on the enclosing composite paint.
+  /// The layer paint carries only the blend mode and the filter; the content
+  /// keeps colour, alpha and shader, so nothing is applied twice.
   fn composited_filter_layer<F>(
     canvas: &mut Canvas,
     device_ctm: &Matrix,
@@ -1091,9 +897,8 @@ impl Context {
     inner_paint.set_blend_mode(BlendMode::SourceOver);
 
     canvas.save();
-    // A singular CTM cannot be inverted, and there is then no device space to
-    // reset to. The draw is degenerate either way; take the layer unreset
-    // rather than dropping the filter.
+    // A singular CTM has no device space to reset to. The draw is degenerate
+    // either way; take the layer unreset rather than dropping the filter.
     let inverted = device_ctm.invert();
     if let Some(ref inverted) = inverted {
       canvas.concat(inverted);
@@ -1110,47 +915,15 @@ impl Context {
 
   // Draws the shadow pass and then the content pass, giving each its OWN
   // isolation layer for the composite modes that need the whole canvas as their
-  // destination.
+  // destination -- Blink's `CompositedDraw`
+  // (canvas_2d_recorder_context.h:896-965). The two layers are SIBLINGS, which
+  // is composite(composite(background, shadow), foreground) taken literally, and
+  // is why the shadow band of a source-in or copy draw legitimately disappears.
+  // Do not merge them into one layer, and do not nest the shadow pass inside the
+  // content one -- it would composite against the empty layer, not the backdrop.
   //
-  // This mirrors Blink's `CompositedDraw`
-  // (canvas_2d_recorder_context.h:896-965): for a shadowed draw it "unroll[s]
-  // into two independently composited passes" (h:924) -- `saveLayer` + shadow +
-  // `restore`, then `saveLayer` + foreground + `restore` -- both layers carrying
-  // `state.GlobalComposite()` and both inner draws forced to source-over. The two
-  // layers are SIBLINGS on the same canvas. That is the WHATWG drawing model
-  // taken literally, composite(composite(background, shadow), foreground), and it
-  // is why a source-in / destination-in shadow legitimately renders almost
-  // nothing and a copy shadow renders nothing at all: the foreground composite
-  // consumes the shadow composite's output (canvas_2d_recorder_context.cc:
-  // 591-596). Do not "fix" that back into one shared layer.
-  //
-  // The shadow pass used to be issued from inside the caller's closure, i.e.
-  // from inside this function's own recording canvas, where it re-entered the
-  // isolation arm and built its layer NESTED in this one. The shadow was
-  // therefore composited against the still-empty outer layer instead of against
-  // the real backdrop, and the union was composited a second time. Measured on a
-  // blue backdrop with a red rect and an offset green shadow, before -> after,
-  // against Chrome 150 as the oracle:
-  //   source-out       overlap [0,0,0,0]     -> [255,0,0,255]   (Chrome [255,0,0,255])
-  //   destination-atop shadow  [0,0,255,255] -> [0,0,0,0]       (Chrome [0,0,0,0])
-  //   copy             shadow  [0,255,0,255] -> [0,0,0,0]       (Chrome [0,0,0,0])
-  // What the foreground composite consumes is the SHADOW BAND, not the draw.
-  // This comment used to say "source-in and destination-in render nothing"; that
-  // overstates it. Re-measured on the same scene -- blue backdrop,
-  // `fillRect(60, 60, 60, 60)`, lime shadow at (+40, +40), so content is 60..119
-  // and shadow 100..159 -- the shadow-only pixel (140, 140) is [0,0,0,0] under
-  // ALL five modes below, while the content/shadow overlap at (110, 110) still
-  // renders: source-in [255,0,0,255], destination-in [0,0,255,255]. That is the
-  // drawing model, not a defect.
-  //
-  // EVERY other blend mode -- including the default source-over -- draws both
-  // passes straight onto `surface_canvas` with the current clip and transform
-  // intact; no layer and no bounds expansion happen on that path at all.
-  //
-  // KNOWN DEFECT, do not treat this helper as correct: the mode list below omits
-  // the shadow-conditional cases Chromium routes through CompositedDraw. With
-  // shadows on, every mode outside source-over / source-atop / destination-out /
-  // copy needs it (canvas_2d_recorder_context.h:692-697, :719-727).
+  // KNOWN DEFECT: the mode list below omits the shadow-conditional cases
+  // Chromium routes through CompositedDraw (h:692-697, :719-727).
   fn render_canvas<S, F>(
     surface_canvas: &mut Canvas,
     paint: &Paint,
@@ -1167,20 +940,12 @@ impl Context {
     F: Fn(&mut Canvas, &Paint) -> result::Result<(), SkError>,
   {
     match blend_mode {
-      // The first four are exactly Chromium's `IsFullCanvasCompositeMode`
-      // (canvas_2d_recorder_context.h:998-1005). It deliberately omits
-      // source-atop and destination-out "as the platforms already implement the
-      // specification's behavior", and `BlendModeRequiresCompositedDraw`
-      // (h:711-718) additionally exempts copy/`kSrc`.
-      //
-      // `Source` is kept here anyway, and it is NOT a divergence in effect:
-      // Chromium implements copy as `clear(transparent)` + foreground-only draw
-      // (h:830-837), and a whole-canvas layer restored with kSrc is the same
-      // thing -- both replace every pixel, and the foreground layer wipes the
-      // shadow layer exactly as Chromium says it would (cc:591-596). Removing it
-      // was measured to break that: with copy falling through to the direct arm,
-      // a `fillRect` only overwrites its own geometry and the rest of the canvas
-      // survives.
+      // The first four are Chromium's `IsFullCanvasCompositeMode`
+      // (canvas_2d_recorder_context.h:998-1005), which exempts copy/`kSrc`.
+      // `Source` is kept anyway and is not a divergence in effect: a
+      // whole-canvas layer restored with kSrc replaces every pixel, like
+      // Chromium's `clear(transparent)` + foreground draw. Drop it and a
+      // `fillRect` overwrites only its own geometry.
       BlendMode::SourceIn
       | BlendMode::SourceOut
       | BlendMode::DestinationIn
@@ -1189,22 +954,13 @@ impl Context {
         if let Some(shadow) = shadow {
           // The shadow layer is the one place the halo can escape the canvas
           // rect, so its cull rect is expanded. FIXME: this under-covers. Skia
-          // bounds a Gaussian at 3 * sigma
-          // (skia/src/effects/imagefilters/SkBlurImageFilter.cpp:64-69) and sigma
-          // is `shadow_blur / 2` (see shadow_paint), so the halo needs
-          // `1.5 * shadow_blur + |dx| + |dy|`, not `shadow_blur + |dx| + |dy|`.
-          // The `.max(shadow_blur * 2.0)` term only rescues the zero-offset case:
-          // blur=4, dx=100, dy=0 yields 104 where 106 is required.
+          // bounds a Gaussian at 3 * sigma and sigma is `blur / 2`, so the halo
+          // needs `1.5 * blur + |dx| + |dy|`.
           let expansion = (shadow.blur.abs() + shadow.offset_x.abs() + shadow.offset_y.abs())
             .max(shadow.blur * 2.0);
           // The recording canvas `composited_pass` hands the closure sits at
-          // IDENTITY -- the CTM below is applied later, at `draw_picture`
-          // replay. So neither the closure nor `composited_filter_layer` can
-          // read the device matrix off the canvas being drawn into; both have to
-          // be given this one, or the device-space shadow offset gets scaled and
-          // rotated by the replay and the filter layer opens in PICTURE space
-          // (which the replay then scales, i.e. exactly the bug the layer is
-          // there to prevent).
+          // identity -- the CTM is applied at replay -- so neither the closure
+          // nor `composited_filter_layer` can read the device matrix off it.
           let device_ctm = surface_canvas.get_transform_matrix();
           Self::composited_pass(
             surface_canvas,
@@ -1241,19 +997,11 @@ impl Context {
       }
       _ => {
         if let Some(shadow) = shadow {
-          // The save/restore/save + set_transform sequence below is inert: the
-          // first `restore()` pops the `save()` above it, and `set_transform`
-          // re-installs the identical CTM (skiac_canvas_set_transform is an
-          // absolute SkCanvas::setMatrix, skia-c/skia_c.cpp:342-345). Neither the
-          // clip nor the transform changes. Contrary to the comments this
-          // replaces, the clip is NOT removed -- measured: with a clip on x<100
-          // and an offset-only shadow crossing it, pixel (110,100) stays
-          // [255,255,255,255].
-          //
-          // Preserving the clip is correct and must stay: Chromium's
-          // CompositedDraw resets only the matrix and never touches the clip
+          // The save/restore/save + set_transform sequence below is inert: it
+          // re-installs the identical CTM and leaves the clip alone. Keeping the
+          // clip is correct -- Chromium's CompositedDraw resets only the matrix
           // (canvas_2d_recorder_context.h:919-964), so a shadow is clipped like
-          // any other draw. Do NOT "fix" this into a real clip removal.
+          // any other draw. Do NOT turn this into a real clip removal.
           surface_canvas.save();
           let current_transform = surface_canvas.get_transform_matrix().clone();
 
@@ -1361,59 +1109,27 @@ impl Context {
       .ok_or_else(|| SkError::Generic("Make line dash path effect failed".to_string()))?;
       paint.set_path_effect(&path_effect);
     }
-    // Deliberately NO `set_image_filter(state.filter)`. `ctx.filter` is a
-    // device-space effect and rides on `composited_filter_layer`'s layer, not
-    // on the content paint; see the note in `with_shadowed_render_canvas`.
+    // Deliberately NO `set_image_filter(state.filter)`: `ctx.filter` is a
+    // device-space effect and rides on `composited_filter_layer`'s layer.
     Ok(paint)
   }
 
-  /// `ctx.filter`. Blink's setter is
-  /// `Canvas2DRecorderContext::setFilter`
-  /// (canvas_2d_recorder_context.cc:1332-1350): it runs the whole string
-  /// through `CSSParser::ParseSingleValue(CSSPropertyID::kFilter, ...)` and,
-  /// when that yields null or a CSS-wide keyword, `return`s -- WITHOUT touching
-  /// the state. An unparseable `ctx.filter` is a silent no-op: it does not
-  /// throw, and it does not reset the filter to `none`. The getter then hands
-  /// back the raw string it stored, unnormalised (`UnparsedCSSFilter()`,
-  /// :1308-1315), and starts at `"none"`
-  /// (canvas_rendering_context_2d_state.cc:73, :155).
-  ///
-  /// Three things count as unparseable there, and all three must count here:
-  ///
-  /// * the empty string, rejected before tokenising at all
-  ///   (css_parser.cc:326-328);
-  /// * a string that yields no filter, `list->length() == 0`
-  ///   (css_parsing_utils.cc:4044-4046) -- this is what `'   '` and `'garbage'`
-  ///   hit;
-  /// * anything with tokens left over, `!value || !stream.AtEnd()`
-  ///   (css_property_parser.cc:118-120).
-  ///
-  /// That last gate is what makes a `<filter-value-list>` ALL-OR-NOTHING.
-  /// `ConsumeFilterFunctionList` is itself greedy and merely `break`s at the
-  /// first junk token, but it does not release that iteration's
-  /// `CSSParserSavePoint` (css_parsing_utils.cc:4032-4043), so the junk stays
-  /// in the stream and the whole declaration is rejected one level up.
-  /// Measured in Chrome 150: `ctx.filter = 'blur(3px)'` then
-  /// `ctx.filter = 'blur(3px) notafilter(1)'` reads back `'blur(3px)'` and
-  /// still renders blurred -- the valid prefix is NOT kept.
-  ///
-  /// We had none of this. `css_filter` never returns `Err`, so the old
-  /// `map_err(...)?` was dead and every input took the store branch:
-  /// `''`, `'   '` and `'garbage'` all parsed to an empty filter list, which
-  /// `css_filters_to_image_filter` turned into `Some(ImageFilter(null))` (see
-  /// the note there), and the next draw dereferenced it -- a hard SIGSEGV.
+  /// `ctx.filter`. An unparseable value is a silent no-op in Blink
+  /// (canvas_2d_recorder_context.cc:1332-1350): it neither throws nor resets the
+  /// filter to `none`, and the getter replays the raw string unnormalised. Three
+  /// inputs count as unparseable and all three must be rejected here: the empty
+  /// string, one that yields no filter, and one with tokens left over -- that
+  /// last makes a `<filter-value-list>` all-or-nothing, keeping no valid prefix.
   pub fn set_filter(&mut self, filter_str: &str) -> result::Result<(), SkError> {
     if filter_str.trim().eq_ignore_ascii_case("none") {
-      // `none` is an ident, so Blink matches it case-insensitively, and the
-      // getter still replays whatever case was assigned.
+      // An ident, so Blink matches it case-insensitively, but the getter still
+      // replays whatever case was assigned.
       self.state.filters_string = filter_str.to_owned();
       self.state.filter = None;
       return Ok(());
     }
-    // `css_filter` is the same shape of greedy parser as
-    // `ConsumeFilterFunctionList` -- it stops at the first token it cannot read
-    // and hands the rest back rather than failing -- so the leftover input is
-    // the `stream.AtEnd()` gate here.
+    // `css_filter` is greedy and never fails: it stops at the first token it
+    // cannot read and hands the rest back, so leftover input is the reject gate.
     let Ok((rest, filters)) = css_filter(filter_str) else {
       return Ok(());
     };
@@ -1421,8 +1137,7 @@ impl Context {
       return Ok(());
     }
     // Parsed clean, so the assignment lands even if it builds no filter at all:
-    // `drop-shadow(0 0 transparent)` is a legal value that simply draws
-    // nothing, and Blink stores it like any other.
+    // `drop-shadow(0 0 transparent)` is legal and simply draws nothing.
     self.state.filter = css_filters_to_image_filter(filters);
     self.state.filters_string = filter_str.to_owned();
     Ok(())
@@ -1619,267 +1334,70 @@ impl Context {
       .ok_or_else(|| SkError::Generic("Make line dash path effect failed".to_string()))?;
       paint.set_path_effect(&path_effect);
     }
-    // Deliberately NO `set_image_filter(state.filter)`. `ctx.filter` is a
-    // device-space effect and rides on `composited_filter_layer`'s layer, not
-    // on the content paint; see the note in `with_shadowed_render_canvas`.
+    // Deliberately NO `set_image_filter(state.filter)`: `ctx.filter` is a
+    // device-space effect and rides on `composited_filter_layer`'s layer.
     Ok(paint)
   }
 
-  /// The one and only Gaussian a canvas2d shadow is allowed to carry.
+  /// The one and only Gaussian a canvas2d shadow is allowed to carry. Sigma is
+  /// exactly `shadowBlur * 0.5`, in device space, applied exactly once
+  /// (canvas_rendering_context_2d_state.cc:650-652). Reached only for a blurred
+  /// shadow; `shadow_paint` sends `shadowBlur == 0` down the colour-filter route.
   ///
-  /// Chromium: sigma is EXACTLY `shadowBlur * 0.5`, in DEVICE space, applied
-  /// EXACTLY ONCE. `ShadowData::BlurRadiusToStdDev`
-  /// (third_party/blink/renderer/core/style/shadow_data.h:76-82) is `radius *
-  /// 0.5f`, reached from `CanvasRenderingContext2DState::ShadowBlurAsSigma`
-  /// (canvas_rendering_context_2d_state.cc:650-652) and pinned by a unit test
-  /// -- `setShadowBlur(2)` asserts `blur_sigma=1`
-  /// (canvas_2d_recorder_context_test.cc:348-361).
+  /// ACCEPTED DIVERGENCE, axis-aligned rect fills only: Chromium reaches those
+  /// through the looper's `SkMaskFilter`, which Skia special-cases down to a
+  /// closed-form analytic edge profile, while this route runs the discrete
+  /// three-box pass and lands consistently short (worst delta 8/255). Every
+  /// other shape matches Chrome exactly. Accepted to keep one blur shared by the
+  /// geometry, text and image paths.
   ///
-  /// `CanvasRenderingContext2DState::GetFlags`
-  /// (canvas_rendering_context_2d_state.cc:849-868) picks EITHER a
-  /// `cc::DrawLooper` (mask-filter blur) OR a `DropShadowPaintFilter`
-  /// (image-filter blur) and explicitly nulls the other in every branch -- the
-  /// two are never stacked.
-  ///
-  /// This builder is reached only for a BLURRED shadow; `shadow_paint` sends
-  /// `shadowBlur == 0` down the colour-filter route instead, exactly as the
-  /// looper does (`blur_sigma > 0` gates the mask filter,
-  /// cc/paint/draw_looper.cc:28-34).
-  ///
-  /// For blurred shadows we take the image-filter branch for geometry, text and
-  /// images alike, where Chromium uses the looper for solid/gradient fill,
-  /// stroke and text. Colourisation is identical either way: `DropShadowOnly`
-  /// carries the same `SkColorFilters::Blend(color, kSrcIn)` internally
-  /// (SkDropShadowImageFilter.cpp:47-49) that `Paint::set_src_in_color_filter`
-  /// installs directly. For a gradient with varying alpha the looper blurs only
-  /// the coverage mask and multiplies by the UNBLURRED gradient alpha, while the
-  /// image filter blurs the composited source alpha -- which is what Chromium
-  /// itself does for patterns and non-opaque images.
-  ///
-  /// ACCEPTED DIVERGENCE, AXIS-ALIGNED RECT FILLS ONLY. This comment used to
-  /// claim "for a solid fill the two are the same operation at the same sigma".
-  /// They are not. Chromium's looper attaches an `SkMaskFilter::MakeBlur`
-  /// (cc/paint/draw_looper.cc:27-30), and a FILLED AXIS-ALIGNED RECT carrying a
-  /// mask filter is special-cased all the way down to an ANALYTIC edge profile:
-  /// `Draw::drawRRectNinePatch` (skia/src/core/SkDraw.cpp:881-901) ->
-  /// `SkMaskFilterBase::filterRects` (SkMaskFilterBase.cpp:235-259) ->
-  /// `SkBlurMaskFilterImpl::filterRectsToNine` (:438) -> `filterRectMask`
-  /// (:124-130) -> `SkBlurMask::BlurRect` (SkBlurMask.cpp:405), which evaluates
-  /// `ComputeBlurProfile` / `gaussianIntegral` (SkBlurMask.cpp:347, :319) in
-  /// closed form.
-  ///
-  /// Note what that kernel actually is. The derivation above it
-  /// (SkBlurMask.cpp:283-317) opens "Convolving a box with itself three times",
-  /// so BOTH routes use the same three-box kernel -- neither is a true Gaussian.
-  /// The difference is DISCRETISATION. The analytic profile is continuous, so
-  /// its std dev is exactly sigma; we run `ThreeBoxApproxPass`
-  /// (SkBlurEngine.cpp:376-420) with an integer window
-  /// `BoxBlurWindow(sigma) = floor(sigma * 3 * sqrt(2*pi) / 4 + 0.5)`
-  /// (SkBlurEngine.h:89-92) whose std dev is `sqrt(3 * (w^2 - 1) / 12)`, and the
-  /// floor makes that land consistently SHORT. (`GaussianPass`, the real kernel,
-  /// is capped at sigma < 2 -- SkBlurEngine.cpp:275 -- i.e. shadowBlur < 4.)
-  ///
-  /// Measured edge sigma on a 240x400 rect, Chrome 150 as the oracle:
-  ///   shadowBlur 10 -> Chrome  5.022   ours  4.450   (window  9 predicts  4.472)
-  ///   shadowBlur 20 -> Chrome 10.055   ours  9.455   (window 19 predicts  9.487)
-  ///   shadowBlur 40 -> Chrome 20.067   ours 19.140   (window 38 predicts 18.993)
-  /// Worst pixel delta 8/255, at shadowBlur 10; 4-5/255 for 20..60.
-  ///
-  /// Narrow rects, glyphs and circles match Chrome EXACTLY, because they never
-  /// reach the analytic path: the ninepatch bails when the rect is small
-  /// relative to the blur (SkBlurMaskFilterImpl.cpp:517-522) and
-  /// `Draw::drawRRectNinePatch` is skipped outright when `SkRRect::transform`
-  /// cannot keep the rect axis-aligned, so everything else falls through
-  /// `filterMask` -> `SkBlurMask::BoxBlur` (SkBlurMask.cpp:107-121) into the
-  /// same discrete three-box passes we use.
-  ///
-  /// We accept this deliberately, to keep ONE blur implementation shared by the
-  /// geometry, text and image paths. Matching Chrome on this one shape means
-  /// reinstating a mask-filter route for axis-aligned rect fills: a second
-  /// Gaussian to keep in sync, gated on shape AND on the CTM being
-  /// axis-aligned, with the double-convolution trap documented at the bottom of
-  /// `shadow_paint` waiting on the other side of it.
-  ///
-  /// dx/dy and sigma both go in RAW, in device pixels, exactly as Blink builds
-  /// them: `DropShadowPaintFilter(shadow_offset_.x(), shadow_offset_.y(), sigma,
-  /// sigma, ...)` with no matrix anywhere in sight
-  /// (canvas_rendering_context_2d_state.cc:681-705 -- the filters are even
-  /// CACHED on the state object and invalidated only by
-  /// `ShadowParameterChanged()`, so they *cannot* depend on the CTM).
-  ///
-  /// That is only true because `composited_filter_layer` opens this filter's
-  /// layer at the device identity. Read that function before touching either
-  /// number. Skia's parameter space is the layer's space, so with the layer at
-  /// identity, parameter space IS device space and both readings coincide:
-  ///   * `make_drop_shadow_graph` implements dx/dy as an
-  ///     `SkImageFilters::MatrixTransform(SkMatrix::Translate(dx, dy))`
-  ///     (SkDropShadowImageFilter.cpp:52-54) whose matrix is a
-  ///     `skif::ParameterSpace<SkMatrix>` run through `mapping().paramToLayer()`
-  ///     (SkMatrixTransformImageFilter.cpp:71, :151);
-  ///   * `SkImageFilters::Blur`'s sigma goes through the same mapping.
-  ///
-  /// Without the identity layer both are LOCAL-space quantities that the CTM
-  /// rotates and scales, and this builder had to compensate -- it used to
-  /// pre-divide sigma by the CTM's column norms, and the offset had to be kept
-  /// off the filter entirely and applied as a canvas translate. Measured on
-  /// `main`, which had dx/dy on the filter WITHOUT the identity layer:
-  /// `translate(300, 200); rotate(PI); shadowOffsetX = 100; drawImage(...)` put
-  /// the shadow 100 device px to the LEFT (centroid 197.5 where the geometry
-  /// path gives 401.5), and `scale(2, 0.5)` doubled a 40 px offset to 80. The
-  /// dx/dy below are safe ONLY under the layer.
-  ///
-  /// Dropping the sigma pre-division also retired a documented limitation. The
-  /// old code divided by `sqrt(a^2+b^2)` / `sqrt(c^2+d^2)`, the column norms
-  /// `SkMatrix::decomposeScale` (SkMatrix.cpp:1479-1499) re-applies, which is
-  /// exact only when the CTM's `remaining` factor is conformal -- i.e. for a
-  /// similarity or an axis-aligned scale. Combine a non-uniform scale with a
-  /// rotation, or skew, and the isotropic layer-space Gaussian was stretched
-  /// into an ellipse. Blurring in device space has no such factor. Whole-canvas
-  /// byte diff against Chrome 150.0.7871.184, `shadowBlur = 20`, 420x220:
-  ///
-  /// ```text
-  ///   scene                                     before          after
-  ///   setTransform(1, 0, 0.5, 1, 0, 0)          7783px max 20   1085px max 6
-  ///   scale(2, 0.5) . rotate(PI/4)             10193px max 62   1541px max 8
-  /// ```
-  ///
-  /// The offset does NOT ride here on the routes that build no filter at all --
-  /// zero blur with no `ctx.filter`, where `shadow_paint` colourises with a
-  /// paint colour or an `SkColorFilter` instead. Those keep the device-space
-  /// canvas translate, which is the same split Blink makes: its looper carries
-  /// `kPostTransformFlag` and does
-  /// `setMatrix(getLocalToDevice().postTranslate(dx, dy))`
-  /// (cc/paint/draw_looper.cc:37-40), and `GetFlags` picks EITHER the looper OR
-  /// the `DropShadowPaintFilter`, never both
-  /// (canvas_rendering_context_2d_state.cc:849-868). `shadow_takes_image_filter`
-  /// is the one predicate both sides read, so the offset is applied exactly
-  /// once.
+  /// dx/dy and sigma go in raw, in device pixels, as Blink builds them -- safe
+  /// ONLY because `composited_filter_layer` opens this filter's layer at the
+  /// device identity. `shadow_takes_image_filter` decides between this and the
+  /// canvas translate, so the offset is applied exactly once.
   fn shadow_only_image_filter(state: &Context2dRenderingState) -> Option<ImageFilter> {
     let shadow_color = &state.shadow_color;
     let a = shadow_color.a;
     let r = shadow_color.r;
     let g = shadow_color.g;
     let b = shadow_color.b;
-    // Chromium: sigma is `shadowBlur * 0.5` and nothing else
-    // (canvas_rendering_context_2d_state.cc:650-652 -> shadow_data.h:76-82).
     // No CTM correction: `composited_filter_layer` has already made this
-    // filter's parameter space the device's, so the number below is the device
-    // sigma. `SkBlurImageFilter` reports `kScaleTranslate`
-    // (SkImageFilter_Base.h:225-226) and `Mapping::decomposeCTM`
-    // (SkImageFilterTypes.cpp:272-283) would otherwise scale it by the CTM's
-    // column norms -- see the doc comment for what that cost under skew.
-    //
-    // sigma == 0 is fine and must not be guarded: `SkImageFilters::Blur`
-    // explicitly allows it ("We allow 0 sigma for X and/or Y",
-    // SkBlurImageFilter.cpp:83-88) and it degenerates to the identity at filter
-    // time, leaving colorize + translate.
+    // filter's parameter space the device's. sigma == 0 must not be guarded --
+    // `SkImageFilters::Blur` allows it and degenerates to the identity, leaving
+    // colorize + translate.
     let sigma = state.shadow_blur / 2f32;
     ImageFilter::make_drop_shadow_only(
-      // Device-space, straight from the setters, exactly as Blink builds them.
-      // Safe ONLY under `composited_filter_layer`'s identity layer; see the doc
-      // comment, which measures what happens without it.
+      // Device-space, straight from the setters. Safe ONLY under
+      // `composited_filter_layer`'s identity layer.
       state.shadow_offset_x,
       state.shadow_offset_y,
       sigma,
       sigma,
       ((a as u32) << 24) | ((r as u32) << 16) | ((g as u32) << 8) | b as u32,
-      // `ctx.filter` is the INPUT of the shadow graph, never something applied
-      // to its output. Blink builds the shadow layer's filter as
-      // `Compose(Compose(fg_filter, shadow_filter), canvas_filter)`
-      // (canvas_2d_recorder_context.h:931-934), and `fg_filter` is always null
-      // there -- `GetFlags(.., kDrawForegroundOnly, ..)` opens with
-      // `setImageFilter(nullptr)` (canvas_rendering_context_2d_state.cc:836-841).
-      // `Compose(a, b)` is `a(b(x))`, so the whole expression collapses to
-      // `shadow_filter(canvas_filter(source))`: `ctx.filter` runs FIRST, on the
-      // unmodified source, and the drop-shadow graph then blurs and colourises
-      // what comes out. Because `make_drop_shadow_graph` colourises with
-      // `SkColorFilters::Blend(shadowColor, kSrcIn)`
-      // (SkDropShadowImageFilter.cpp:46-49), which discards the input RGB
-      // wholesale, `ctx.filter` can only ever change the shadow's COVERAGE --
-      // never its colour.
-      //
-      // Measured, Chrome 150.0.7871.184, blue shadow, `shadowOffsetX = 60`,
-      // shadow pixel at (110, 70), whole-canvas byte diff against us:
-      //
-      //   scene                     Chrome       chained (this)   unchained
-      //   grayscale(1) blur 0     [0,0,255]      exact            [18,18,18]
-      //   invert(1)    blur 0     [0,0,255]      exact            [255,255,0]
-      //   sepia(1)     blur 0     [0,0,255]      exact            [48,43,33]
-      //   saturate(3)  blur 0     [0,128,255]    exact            [0,164,255]
-      //   opacity(.5)  blur 0     [128,128,255]  max 1/255        max 128/255
-      //   blur(3px)    blur 0     [0,0,255]      exact            max 175/255
-      //   blur(3px)    blur 8     [0,0,255]      exact            mean 0.45
-      //
-      // The last two rows are why "just drop `ctx.filter` from the shadow" is
-      // not the answer even though it gets the colour right: `blur()` and
-      // `opacity()` DO belong on the shadow, because they move the source
-      // coverage that the shadow is cast from.
+      // `ctx.filter` is the INPUT of the shadow graph, never applied to its
+      // output: Blink composes `shadow_filter(canvas_filter(source))`
+      // (canvas_2d_recorder_context.h:931-934). Since the graph colourises with
+      // kSrcIn, `ctx.filter` can only change the shadow's coverage, never its
+      // colour -- but dropping it is still wrong, because `blur()` and
+      // `opacity()` move the coverage the shadow is cast from.
       state.filter.as_ref(),
     )
   }
 
-  /// Does `ctx.filter` still ride `composited_filter_layer`?
+  /// Does `ctx.filter` still ride `composited_filter_layer`? The exact negation
+  /// of `render_passes`'s content-pass rescue, and the one place that question
+  /// is answered, so the content and shadow passes cannot disagree.
   ///
-  /// The exact negation of `render_passes`'s content-pass rescue, and the one
-  /// place that question is answered, so the CONTENT and SHADOW passes of a
-  /// draw cannot disagree about where the filter lives. `render_passes` reads
-  /// it too; the long comment there is the one to read for why the layer is
-  /// dropped at all.
-  ///
-  /// Three disjuncts, and only the second is about the filter itself:
-  ///   * `Backend::Raster` is the raster canvas, where the layer costs nothing,
-  ///     is what Blink emits, and is not byte-identical to folding -- see
-  ///     `render_passes`. (This used to read `page_recorder.is_some()`. Same
-  ///     set: `Context::new` is the only constructor that builds a recorder and
-  ///     the only one that says `Raster`.)
+  ///   * `Backend::Raster`, where the layer costs nothing, is what Blink emits,
+  ///     and is not byte-identical to folding -- see `render_passes`.
   ///   * `needs_device_space_layer()` is `!SkImageFilter::asAColorFilter`: a
-  ///     filter with a spatial parameter has a length, that length is device
-  ///     space, and only the layer can give it one.
+  ///     spatial parameter is a length, and that length is device space.
   ///   * `Backend::Pdf` + `DrawContent::Glyphs` is a KNOWN DEFECT, kept because
-  ///     the alternative crashes. PDF text under a colour-only `ctx.filter`
-  ///     therefore rasterises, exactly as `main` (2cd4e1a) does; it is the one
-  ///     cell of e816c47 / 6a4c942 that is given back.
-  ///
-  /// That third disjunct, at length. Taking the rescue puts the colour filter on
-  /// the CONTENT paint, and on `windows-11-arm` runners a PDF glyph run drawn
-  /// through such a paint faults with `0xC0000005` (ACCESS_VIOLATION) -- ava
-  /// reports `__test__\pdf.spec.ts exited with a non-zero exit code:
-  /// 3221225477`. Localised on CI with per-test stderr markers to exactly one
-  /// scene, and it is the glyph run that separates it from its neighbours:
-  ///
-  /// ```text
-  ///   PDF, windows-11-arm, colour-only ctx.filter + zero-blur shadow
-  ///     fillRect / strokeRect, all 6 colour-only filters   PASS
-  ///     fillText                                           CRASH
-  ///   SVG, same runner, same Rust arm, 21 tests inc. text  PASS
-  /// ```
-  ///
-  /// Intermittent -- node@22 got through the same test once -- and not
-  /// reproducible on macOS arm64 even against a debug build with `debug_assert!`
-  /// and `SkASSERT` live (601 tests, 0 failures). The Rust arm is exonerated by
-  /// the SVG row: it is the same predicate, the same fold, the same paint.
-  ///
-  /// A glyph run is the ONE draw whose colour filter reaches the strike
-  /// machinery instead of only the blitter. `SkPDFDevice::internalDrawGlyphRun`
-  /// hands `SkPDFStrike::Make` the RAW `runPaint` (src/pdf/SkPDFDevice.cpp:948),
-  /// not the `clean_paint` copy that `SkPaintPriv::RemoveColorFilter` has
-  /// already emptied and `SkASSERT`ed empty (:265-279). That paint becomes
-  /// `pathPaint` / `imagePaint` for `SkStrikeSpec::MakeWithNoDevice`
-  /// (src/pdf/SkPDFFont.cpp:178-209), so it reaches
-  /// `rec->setLuminanceColor(SkPaintPriv::ComputeLuminanceColor(paint))`
-  /// (src/core/SkScalerContext.cpp:1202) and thence `just_a_color`, which
-  /// evaluates it as `paint.getColorFilter()->filterColor4f(c, cs, cs)` with
-  /// `SkColorSpace* cs = nullptr` twice over -- the site's own comment is "TODO:
-  /// This colorspace is meaningless" (src/core/SkPaintPriv.cpp:135-146). Every
-  /// other draw type reaches none of that. Which of those steps faults is NOT
-  /// established, so this is not a diagnosis; it is why the glyph cell is the
-  /// one that is singled out rather than the whole PDF backend.
-  ///
-  /// Scoped to `Backend::Pdf` alone. SVG has no strike cache and no
-  /// `SkPDFStrike`, its text tests pass on the same runner, and it is where the
-  /// rescue buys the most -- `SkSVGDevice` DROPS a layer draw whole rather than
-  /// rasterising it. Scoped to glyphs alone: PDF fills, strokes, paths and
-  /// images keep the rescue and keep e816c47's vector pages.
+  ///     the alternative crashes: on `windows-11-arm` a PDF glyph run drawn
+  ///     through a colour-filtered paint faults with `0xC0000005`. A glyph run
+  ///     is the one draw whose colour filter reaches the strike machinery, not
+  ///     just the blitter. Which step faults is not established, hence the
+  ///     narrow scope: SVG text and every other PDF draw keep the rescue.
   fn filter_takes_layer(&self, content: DrawContent) -> bool {
     self.state.filter.as_ref().is_some_and(|filter| {
       self.backend == Backend::Raster
@@ -1889,48 +1407,14 @@ impl Context {
   }
 
   /// Does this shadow render through an image filter, or through a paint the
-  /// draw carries directly?
+  /// draw carries directly? The single source of truth for a fork Blink also
+  /// makes (canvas_rendering_context_2d_state.cc:849-868). Two callers read it
+  /// and must agree, or the offset is applied twice or not at all.
   ///
-  /// The SINGLE source of truth for a fork Blink also makes: `GetFlags` picks
-  /// EITHER a `cc::DrawLooper` OR a `DropShadowPaintFilter` and nulls the other
-  /// in every branch (canvas_rendering_context_2d_state.cc:849-868). Two things
-  /// read it and they must agree, or the offset is applied twice or not at all:
-  /// `shadow_paint` below, to choose the colourisation, and
-  /// `canvas_shadow_offset`, to decide whether the offset is still owed a canvas
-  /// translate.
-  ///
-  /// The three disjuncts are Blink's, in Blink's order: a non-opaque image
-  /// source or a `ctx.filter` take the `DropShadowPaintFilter`
-  /// (canvas_rendering_context_2d_state.cc:850, :861), and a blur has to,
-  /// because the looper's alternative -- an `SkMaskFilter` -- is one binding
-  /// skia-c does not have and would be a second Gaussian to keep in sync.
-  ///
-  /// The middle disjunct is `filter_takes_layer`, NOT `state.filter.is_some()`.
-  /// It used to be the latter, and that was the whole of this defect: Blink's
-  /// reason for putting a filtered shadow on the `DropShadowPaintFilter` is
-  /// that the layer is where its `ctx.filter` lives, so on a backend that has
-  /// already taken the filter OFF the layer the premise is gone and the route
-  /// buys nothing but a layer the device cannot make. Measured, 200x200,
-  /// `shadowColor = rgba(0,0,0,0.8)`, `shadowOffsetX = 40`, SVG bytes /
-  /// drawn elements, `main` (2cd4e1a) vs this branch:
-  ///
-  /// ```text
-  ///   ctx.filter        fillRect          strokeRect        fillText
-  ///                 main  before after  main before after  main  before after
-  ///   (none)        314/2  314/2 314/2  437/2 437/2 437/2  7924/2 7924/2 7924/2
-  ///   grayscale(1)  314/2  214/1 314/2  437/2 268/1 437/2  7924/2 4019/1 7924/2
-  ///   opacity(0.5)  314/2  214/1 314/2  437/2 268/1 437/2  7924/2 4019/1 7924/2
-  ///   sepia(1)      314/2  214/1 314/2  437/2 268/1 437/2  7924/2 4019/1 7924/2
-  ///   invert(1)     314/2  214/1 314/2  437/2 268/1 437/2  7924/2 4019/1 7924/2
-  ///   brightness(.5)314/2  214/1 314/2  437/2 268/1 437/2  7924/2 4019/1 7924/2
-  ///   saturate(2)   314/2  214/1 314/2  437/2 268/1 437/2  7924/2 4019/1 7924/2
-  ///   blur(3px)     150/0  150/0 150/0  150/0 150/0 150/0   150/0  150/0  150/0
-  ///   drop-shadow() 150/0  150/0 150/0  150/0 150/0 150/0   150/0  150/0  150/0
-  /// ```
-  ///
-  /// The `1` in the `before` column is the CONTENT rect alone: the shadow rect
-  /// was gone. `blur()` and `drop-shadow()` stay on the layer and stay lost,
-  /// exactly as on `main` -- they are the disjunct that is still true.
+  /// The middle disjunct is `filter_takes_layer`, NOT `state.filter.is_some()`:
+  /// Blink puts a filtered shadow on the image filter because the layer is where
+  /// its `ctx.filter` lives, so on a backend that has taken the filter off the
+  /// layer the route buys nothing but a layer the device cannot make.
   fn shadow_takes_image_filter(&self, source: ShadowSource, content: DrawContent) -> bool {
     source.forces_shadow_image_filter()
       || self.filter_takes_layer(content)
@@ -1940,24 +1424,10 @@ impl Context {
   /// The device-space translate the CANVAS still owes the shadow.
   ///
   /// Zero on the image-filter route, where `shadow_only_image_filter` has
-  /// already put `shadowOffsetX/Y` into the filter's dx/dy -- which is both what
-  /// Blink does (canvas_rendering_context_2d_state.cc:686-688) and, for image
-  /// sources, materially better than a translate. Skia implements those dx/dy as
-  /// `MatrixTransform(Translate(dx, dy), SkFilterMode::kLinear)`
-  /// (SkDropShadowImageFilter.cpp:50-53), and the `kLinear` is deliberate:
-  /// "kLinear filtering is needed to hide nearest-neighbor sampling artifacts
-  /// from fractional offsets applied post-blur". A canvas translate has no such
-  /// resample, so a fractional offset on a non-opaque image lost the partial
-  /// coverage entirely. Measured, 200x200 half-opaque PNG, `shadowOffsetX =
-  /// 100.5`, `shadowBlur = 0`, `imageSmoothingEnabled = false`, probe (200,100):
-  ///
-  /// ```text
-  ///   Chrome 150.0.7871.184   [127,127,255]   half coverage
-  ///   canvas translate        [0,0,255]       200 px differ, max delta 127
-  ///   filter dx/dy (this)     [127,127,255]   byte-exact
-  /// ```
-  ///
-  /// At `shadowBlur = 6` the same scene moved 4826 px, max 15.
+  /// already put `shadowOffsetX/Y` into the filter's dx/dy, as Blink does. Skia
+  /// implements those as `MatrixTransform(Translate(dx, dy), kLinear)`, and the
+  /// resample is the point: a canvas translate has none, so a fractional offset
+  /// on a non-opaque image loses the partial coverage entirely.
   fn canvas_shadow_offset(&self, source: ShadowSource, content: DrawContent) -> (f32, f32) {
     if self.shadow_takes_image_filter(source, content) {
       (0f32, 0f32)
@@ -1966,11 +1436,7 @@ impl Context {
     }
   }
 
-  /// The shadow half of every draw -- geometry, text and images alike. There
-  /// used to be a second, image-only builder here; the two differed only in
-  /// baking the offset into the filter, and they are one function again now
-  /// that the identity-CTM layer makes those dx/dy device-space for every
-  /// source.
+  /// The shadow half of every draw -- geometry, text and images alike.
   fn shadow_paint(
     &self,
     paint: &Paint,
@@ -1987,172 +1453,57 @@ impl Context {
       return None;
     }
     let mut drop_shadow_paint = paint.clone();
-    // Whatever the blur, the colourisation is the SAME operation: an
-    // `SkColorFilters::Blend(shadowColor, kSrcIn)`. Blink installs it in BOTH of
-    // its shadow paths (cc/paint/draw_looper.cc:33-34,
-    // SkDropShadowImageFilter.cpp:47-49); it is never an `SkPaint::setColor`.
+    // Whatever the blur, the colourisation is the same operation: an
+    // `SkColorFilters::Blend(shadowColor, kSrcIn)`, which Blink installs in both
+    // of its shadow paths and never spells as `SkPaint::setColor`.
     //
-    // SrcIn replaces the source RGB wholesale -- shader included, because Skia's
-    // blitter runs the colour filter AFTER the shader and after the paint alpha
-    // (SkRasterPipelineBlitter.cpp: shader stages, then `scale_1_float` with the
-    // paint alpha, then the colour filter) -- and multiplies the source coverage
-    // by `shadowColor.a` exactly once. The zero-blur route below folds that
-    // blend into the paint colour when, and only when, the source is a solid
-    // colour, because the two are then algebraically identical and the vector
-    // backends handle a paint colour far better than a colour filter; see there.
-    //
-    // Both branches below build NO image filter, so they take no layer, so
-    // `canvas_shadow_offset` still hands the caller the full offset and
-    // `apply_shadow_offset_matrix_to_canvas` applies it in device space -- which
-    // is Blink's looper (`kShadowIgnoresTransforms` / `kPostTransformFlag`,
-    // cc/paint/draw_looper.cc:28-40). `shadow_takes_image_filter` is the shared
-    // predicate; do not inline this condition anywhere else.
-    //
-    // `filter_takes_layer` guards the whole layer-free route. Wherever
-    // `ctx.filter` is still ON the layer the shadow HAS to be an image filter,
-    // because the only faithful order is `colourise(ctx.filter(source))` -- see
-    // `shadow_only_image_filter`, which chains it -- and a paint colour or a
-    // colour filter both run BEFORE the paint's image filter in Skia's blitter,
-    // i.e. they can only ever produce `ctx.filter(colourise(source))`. Putting
-    // the filter back on this paint would be that wrong order and nothing else:
-    // `SkCanvasPriv::ImageToColorFilter` composes it as
-    // `imgCF->makeComposed(paintCF)`, "result = this(inner(...))"
-    // (src/core/SkCanvasPriv.cpp:163-168, include/core/SkColorFilter.h:58-64).
-    // Measured on a blue shadow at `shadowOffsetX = 60`, probe (110, 70):
-    // Chrome 150.0.7871.184 [0,0,255], that order [18,18,18] -- grayscale of
-    // the shadow colour rather than of the source.
-    //
-    // Where the filter has been folded OFF the layer, `state.filter` is still
-    // `Some` inside this branch, and it is exactly the colour-only case. The
-    // two arms below fold it in the right order themselves; see each.
+    // Both branches below build NO image filter, so they take no layer and
+    // `canvas_shadow_offset` still owes the caller the full offset.
+    // `shadow_takes_image_filter` is the shared predicate; do not inline this
+    // condition anywhere else. It is what keeps this route away from a
+    // `ctx.filter` still on the layer, where the shadow HAS to be an image
+    // filter: the only faithful order is `colourise(ctx.filter(source))`, and a
+    // paint colour or colour filter runs BEFORE the paint's image filter.
     if !self.shadow_takes_image_filter(source, content) {
       // No blur, so there is no Gaussian to place and nothing an image filter
-      // could add -- Chromium gates its mask filter on `blur_sigma > 0` and
-      // otherwise leaves the looper layer with just the colour filter and the
-      // post-transform offset (cc/paint/draw_looper.cc:28-42). Matching that
-      // shape is not cosmetic; the image filter forced a `saveLayer` and that
-      // cost three things:
-      //   * SkSVGDevice cannot express an image filter and DROPPED the shadow
-      //     draw whole, so an offset-only shadow disappeared from every SVG
-      //     export. Without a layer the shadow is an ordinary draw, and for the
-      //     solid-colour case below it comes out as a plain `fill=`/`stroke=`
-      //     attribute. (SkSVGDevice's own rendering of a kSrcIn colour filter is
-      //     broken -- see the fold below -- so we make sure it never sees one
-      //     unless a shader forces it.)
-      //   * SkPDFDevice rasterised the layer into an image XObject, so text
-      //     under a shadow stopped being real text. A colour filter is folded
-      //     back into the paint colour and stays vector
-      //     (`SkPaintPriv::RemoveColorFilter`, src/pdf/SkPDFDevice.cpp:274-277).
-      //   * The layer applied the antialiased clip TWICE -- once to the draw
-      //     inside the layer and once to the layer's own restore -- so a
-      //     rotated clip edge darkened by up to 24/255 against a shadow that
-      //     had matched Chrome exactly.
-      // Do NOT add a MaskFilter here either: `SkMaskFilter::MakeBlur` returns
-      // nullptr for sigma <= 0 (SkBlurMaskFilterImpl.cpp:598-603).
+      // could add -- Chromium likewise gates its mask filter on
+      // `blur_sigma > 0`. Matching that shape is not cosmetic: the image filter
+      // forced a `saveLayer`, which SkSVGDevice drops whole (the shadow vanished
+      // from every SVG export), SkPDFDevice rasterises (text stopped being
+      // text), and which applied the antialiased clip twice. Do NOT add a
+      // MaskFilter either: `SkMaskFilter::MakeBlur` is nullptr for sigma <= 0.
       //
-      // The clone's image filter slot is empty here by construction --
-      // `fill_paint` / `stroke_paint` never install `ctx.filter`, and
-      // `render_passes` puts it on a paint of its OWN for the content pass --
-      // so neither branch below inherits a filter it has to think about.
-      //
-      // What `ctx.filter` can still do to a shadow, once it is colour-only, is
-      // bounded to one number. `Blend(shadowColor, kSrcIn)` is
-      // `(shadowColor.rgb, shadowColor.a * src.a)`: it discards the source RGB
-      // wholesale, so the RGB half of any colour filter is unobservable in the
-      // result, and only the ALPHA the filter leaves on the source survives.
-      // That is why the fold below is a single alpha and not a filter chain,
-      // and it is the same thing `shadow_only_image_filter`'s chained route
-      // computes the slow way.
+      // Once colour-only, all `ctx.filter` can do to a shadow is change one
+      // number: kSrcIn discards the source RGB, so only the alpha it leaves on
+      // the source survives. Hence a single alpha, not a filter chain.
       let colour_only_filter = state.filter.as_ref();
       if source.is_solid_color(state) {
-        // ...but SkSVGDevice cannot express even THIS colour filter faithfully.
-        // It writes a kSrcIn Blend as
-        //   <feFlood flood-color=... result="flood"/>
-        //   <feComposite in="flood" operator="in"/>
-        // with NO `in2` (src/svg/SkSVGDevice.cpp:495-503). Per SVG 1.1 11.1.1 a
-        // non-first primitive's missing `in2` defaults to the PREVIOUS result,
-        // here the flood itself, so the composite degenerates to flood-in-flood
-        // and paints the whole filter region -- which is the bounding box
-        // (`x/y/width/height = 0%/0%/100%/100%`, SkSVGDevice.cpp:478-481).
-        // Measured in Chrome: `fillRect` survives because its shadow IS its
-        // bbox, but `strokeRect` became a filled box, `fillText` a solid slab
-        // behind the glyphs and `fill(arc)` a square.
+        // ...but SkSVGDevice cannot express even THIS colour filter faithfully:
+        // it writes a kSrcIn Blend as an feFlood plus an feComposite with no
+        // `in2` (src/svg/SkSVGDevice.cpp:495-503), which per SVG 1.1 11.1.1
+        // defaults to the flood itself, so the composite floods the whole
+        // bounding box -- a `strokeRect` shadow came out a filled box. So fold
+        // the blend into the paint colour, as `SkPaintPriv::RemoveColorFilter`
+        // does for PDF; against a solid-colour source that is algebraically the
+        // same, and SkSVGDevice emits a plain `fill=` with no filter. Rounding
+        // back to 8 bits loses nothing, since the blitter would quantise to
+        // `SkPMColor` before the first pixel anyway.
         //
-        // So do what `SkPaintPriv::RemoveColorFilter` does for PDF and fold the
-        // blend into the paint colour instead. Against a solid-colour source
-        // kSrcIn is exactly `rgb = shadowColor.rgb`, `alpha = shadowColor.a *
-        // src.a`, so raster is algebraically unchanged, and SkSVGDevice emits a
-        // plain `fill=`/`stroke=` attribute with no filter at all.
-        //
-        // TWO conditions, and both matter -- `main` had neither and that was bug
-        // I2:
-        //   * `* paint_alpha`. `paint` already carries `fillStyle`/`strokeStyle`
-        //     alpha * `globalAlpha`, folded in by `fill_paint`/`stroke_paint`
-        //     (`multiply_by_alpha`). `main` passed the RAW `shadowColor.a` and
-        //     so drew every zero-blur shadow fully opaque no matter the
-        //     `globalAlpha`.
+        // Two conditions, both load-bearing:
+        //   * `* paint_alpha`: `paint` already carries style alpha *
+        //     `globalAlpha`, so the raw `shadowColor.a` would draw every
+        //     zero-blur shadow fully opaque.
         //   * solid colours ONLY. `setColor` cannot displace a shader, so
-        //     folding under a gradient or a pattern left the shader in place and
-        //     the "shadow" came out as a displaced copy of the gradient. Those
-        //     keep the colour filter below, which Skia's blitter runs AFTER the
-        //     shader and after the paint alpha (SkRasterPipelineBlitter.cpp:
-        //     shader stages, then `scale_1_float` with the paint alpha, then the
-        //     colour filter). The cost is that a shader-filled zero-blur shadow
-        //     still hits the broken SVG path and still rasterises in PDF; that
-        //     is unavoidable without patching Skia, and it is the rarer case.
+        //     folding under a gradient would leave the shader in place and the
+        //     "shadow" would be a displaced copy of it. Those keep the colour
+        //     filter below, at the cost of the broken SVG path.
         //
-        // Round the product back to 8 bits and hand it to plain `set_color`.
-        // This used to call a float `setColor(SkColor4f)` through a dedicated
-        // FFI entry point, on the theory that quantising a product of two 8-bit
-        // alphas loses something. It cannot, for any draw that reaches here, and
-        // the reason is structural rather than statistical: `SkBlitter::Choose`
-        // sends a shaderless solid-colour paint to `SkARGB32_*_Blitter`
-        // (SkBlitter.cpp:748-756), whose constructor is
-        // `fPMColor = SkPreMultiplyColor(paint.getColor())` -- an 8-bit
-        // `SkColor` to an 8-bit `SkPMColor` (SkBlitter_ARGB32.cpp:1450-1456).
-        // The float alpha is quantised before the first pixel is written.
-        //
-        // The same line of reasoning says the fold is exactly the kSrcIn colour
-        // filter it replaces: `Choose` runs `SkPaintPriv::RemoveColorFilter` on
-        // its way past (SkBlitter.cpp:695-698), and with no shader that is
-        // `p->setColor(filter->filterColor4f(p->getColor4f(), ...))`
-        // (SkPaintPriv.cpp:161-174) -- Skia performing this very fold itself,
-        // then quantising it the same way. All three spellings converge on one
-        // `SkPMColor`.
-        //
-        // Measured too, on a sweep built so it COULD fail: 3 opaque backdrops
-        // (white, #808080, #131313) x 256 shadow alphas x 16 paint alphas, each
-        // scene an antialiased circle plus a rotated stroked rect, 150,994,944
-        // bytes. Rounded 8-bit vs float, and both against the colour-filter
-        // route: 0 differing bytes, all three ways. The opaque backdrop is what
-        // makes it a real test -- over a TRANSPARENT one the stored alpha is
-        // `round(a * 255)` on both sides and the two folds cannot differ, so a
-        // transparent sweep proves nothing.
-        //
-        // `get_alpha()` is lossless here because every writer of this paint's
-        // alpha (`multiply_by_alpha` -> `set_color`, `set_alpha`) starts from a
-        // u8 in the first place.
-        //
-        // A colour-only `ctx.filter` folded off the layer goes in HERE, before
-        // the shadow colour displaces the source, which is the only spelling
-        // that gets Blink's `colourise(ctx.filter(source))` order right on a
-        // paint. `filter_color` is `SkColorFilter::filterColor4f`, i.e. the
-        // same evaluation Skia runs on a shaderless paint itself
-        // (`SkPaintPriv::RemoveColorFilter`), and only its alpha is read --
-        // kSrcIn throws the filtered RGB away. For a single CSS filter that is
-        // either the identity (grayscale / sepia / saturate / brightness /
-        // hue-rotate leave the `SkColorMatrix` alpha row at `[0, 0, 0, 1, 0]`;
-        // invert / contrast pass `TableARGB` a null alpha table) or
-        // `opacity()`'s scale -- but this is NOT special-cased on the filter
-        // list, and must not be. `asAColorFilter` needs `getInput(0) ==
-        // nullptr` (SkImageFilter.cpp:123), yet a chain of two colour filters
-        // still satisfies it: `SkImageFilters::ColorFilter` collapses adjacent
-        // colour-filter nodes at construction, `cf = cf->makeComposed(inputCF);
-        // input = input->getInput(0)`
-        // (SkColorFilterImageFilter.cpp:76-84). Measured, `fillRect` with an
-        // offset shadow: `grayscale(1) sepia(1)` comes out at 0.8, `opacity(0.5)
-        // grayscale(1)` at 0.4, and `blur(2px) grayscale(1)` keeps the layer.
-        // `filterColor4f` answers for all of them without being told which.
+        // A colour-only `ctx.filter` goes in HERE, before the shadow colour
+        // displaces the source -- the only spelling on a paint that gets Blink's
+        // `colourise(ctx.filter(source))` order right. Only the alpha is read,
+        // since kSrcIn throws the filtered RGB away. Deliberately NOT
+        // special-cased on the filter list: `SkImageFilters::ColorFilter`
+        // collapses chained colour filters, so `filterColor4f` answers for all.
         let source_color = match colour_only_filter {
           Some(filter) => filter.filter_color(drop_shadow_paint.get_color()),
           None => drop_shadow_paint.get_color(),
@@ -2169,19 +1520,12 @@ impl Context {
           filter: None,
         });
       }
-      // A shader source. `ctx.filter` is DROPPED here rather than composed in,
-      // and that is deliberate: `SkColorFilter::makeComposed` would put the
-      // right answer on the paint, but `SkSVGDevice` recognises exactly one
-      // colour filter -- a single kSrcIn `Blend`, via `asAColorMode`
-      // (src/svg/SkSVGDevice.cpp:431-436, :472-505) -- and silently emits NO
-      // filter for anything else. Composing would therefore turn a gradient's
-      // shadow into an undimmed displaced copy of the gradient, where leaving
-      // the filter off leaves the flood that at least carries the shadow
-      // colour. What is lost is the alpha half of an alpha-changing filter,
-      // i.e. `opacity()` and a contrast/invert with an alpha table, under a
-      // gradient or pattern shadow, on SVG and PDF only: the shadow comes out
-      // as opaque as an unfiltered one. `main` (2cd4e1a) did the same, and
-      // before this change the whole draw was gone.
+      // A shader source. `ctx.filter` is deliberately DROPPED rather than
+      // composed in: `SkSVGDevice` recognises exactly one colour filter, a
+      // single kSrcIn `Blend` (src/svg/SkSVGDevice.cpp:431-436), and silently
+      // emits none for anything else, so composing would turn a gradient's
+      // shadow into an undimmed displaced copy of the gradient. The cost is the
+      // alpha half of an alpha-changing filter, on SVG and PDF only.
       drop_shadow_paint.set_src_in_color_filter(
         shadow_color.r,
         shadow_color.g,
@@ -2194,33 +1538,19 @@ impl Context {
       });
     }
     let shadow_effect = Self::shadow_only_image_filter(state)?;
-    // Do NOT re-apply `shadow_alpha` here: the drop-shadow filter above is
-    // already built with the shadow colour's alpha, and the cloned `paint`
-    // already carries the source alpha (fillStyle alpha * globalAlpha). A
-    // `set_alpha(shadow_alpha)` would multiply the shadow opacity a second time,
-    // rendering `shadowColor` alpha `a` as `a * a` -- e.g. a 0.3 shadow shows up
-    // at ~0.09 opacity. See the linear-scaling regression test.
+    // Do NOT re-apply `shadow_alpha` here: the filter already carries the shadow
+    // colour's alpha and the cloned `paint` carries the source alpha, so a
+    // `set_alpha` would render `shadowColor` alpha `a` as `a * a`.
     //
-    // The graph is returned SEPARATELY and never installed on `drop_shadow_paint`.
-    // `composited_filter_layer` puts it on a layer opened at the device identity;
-    // left on the paint it would be Skia's implicit layer at the draw's own CTM,
-    // and every parameter in it -- dx, dy and both sigmas -- would be scaled by
-    // that CTM. `state.filter` is already chained in as the graph's INPUT, which
-    // is where Blink puts it (canvas_2d_recorder_context.h:931-934), so it must
-    // not be re-installed anywhere either; that is why `fill_paint` /
-    // `stroke_paint` no longer add it to the paint this clones.
+    // The graph is returned SEPARATELY and never installed on
+    // `drop_shadow_paint`: `composited_filter_layer` puts it on a layer opened
+    // at the device identity, whereas on the paint it would ride Skia's implicit
+    // layer at the draw's own CTM, scaling dx, dy and both sigmas.
     //
-    // Deliberately NO MaskFilter. `DropShadowOnly` already contains the Gaussian
-    // (SkDropShadowImageFilter.cpp:46). Adding `SkMaskFilter::MakeBlur` on top
-    // made Skia build two nested layers -- "When the original paint has both an
-    // image filter and a mask filter, this will create two internal layers"
-    // (SkCanvasPriv.cpp:175-207) -- and convolve twice, so geometry and text
-    // shadows came out at `blur/2 * sqrt(2)` while drawImage shadows used
-    // `blur/2`. Chromium never stacks the two
-    // (canvas_rendering_context_2d_state.cc:849-868). It would also be fatal
-    // here: `SkMaskFilter::MakeBlur` returns nullptr for sigma <= 0
-    // (SkBlurMaskFilterImpl.cpp:598-603), and the `?` would then discard the
-    // whole shadow paint, turning a wrong shadow into no shadow at all.
+    // Deliberately NO MaskFilter. `DropShadowOnly` already contains the
+    // Gaussian, and stacking one makes Skia nest two layers and convolve twice.
+    // It would also be fatal: `SkMaskFilter::MakeBlur` is nullptr for sigma <= 0
+    // and the `?` would discard the whole shadow paint.
     Some(ShadowDraw {
       paint: drop_shadow_paint,
       filter: Some(shadow_effect),
@@ -2387,10 +1717,9 @@ impl Context {
     let font = get_font()?;
 
     // Extract all state values to avoid borrow conflicts with with_render_canvas
-    // The one `DrawContent::Glyphs` in the file. It is what keeps a colour-only
-    // `ctx.filter` ON the layer for PDF text; see `filter_takes_layer`. All
-    // three readers below are handed the same value, so the content pass and
-    // the shadow pass cannot disagree about where the filter lives.
+    // The one `DrawContent::Glyphs` in the file, which keeps a colour-only
+    // `ctx.filter` on the layer for PDF text; see `filter_takes_layer`. All
+    // three readers below get the same value, so the passes cannot disagree.
     let shadow_paint = self.shadow_paint(paint, source, DrawContent::Glyphs);
     let width = self.width as f32;
     // Zero on the image-filter route, where the filter's dx/dy already carry it.
@@ -2515,42 +1844,14 @@ impl Context {
   }
 
   /// Post-translate `canvas` by a DEVICE-space `(shadow_offset_x,
-  /// shadow_offset_y)`.
+  /// shadow_offset_y)`, the looper half of Chromium's two shadow-offset paths
+  /// (cc/paint/draw_looper.cc:37-40). Reached with a non-zero offset only when
+  /// `canvas_shadow_offset` says the shadow builds no image filter.
   ///
-  /// shadowOffsetX/Y are device-space in Chromium, on every path: the looper
-  /// carries `kPostTransformFlag` and does
-  /// `setMatrix(getLocalToDevice().postTranslate(dx, dy))`
-  /// (cc/paint/draw_looper.cc:37-40), and the image-filter path draws its
-  /// shadow inside a `ScopedResetCtm` (canvas_2d_recorder_context.cc:545-565).
-  ///
-  /// This implements the LOOPER half of that, and only that half. It is reached
-  /// with a non-zero offset only when `canvas_shadow_offset` says the shadow
-  /// builds no image filter -- zero blur, no `ctx.filter`, a non-image source.
-  /// Every other shadow gets its offset from `DropShadowOnly`'s dx/dy instead,
-  /// under `composited_filter_layer`'s identity layer, which is Blink's other
-  /// half. The two are mutually exclusive by construction: `canvas_shadow_offset`
-  /// hands this function `(0, 0)` on the filter route, so the offset is applied
-  /// exactly once whichever route a draw takes.
-  ///
-  /// `device_ctm` is `M`, the user->DEVICE matrix of the canvas the draw
-  /// ultimately lands on -- which is NOT always `canvas`'s own CTM. On the
-  /// isolation composite arm `canvas` is a `PictureRecorder`'s recording canvas
-  /// sitting at identity while `M` is installed on the surface canvas and only
-  /// applied at `draw_picture` replay. Reading the CTM off `canvas` there (which
-  /// this used to do) collapsed the sandwich below to a bare `concat(T)` in
-  /// picture space, so replay scaled and rotated what has to be a device-space
-  /// vector: `source-in` + `scale(2, 2)` + `shadowOffsetX = 40` put the shadow
-  /// 80 device px right of the content instead of 40, and `rotate(180)` mirrored
-  /// it.
-  ///
-  /// With `X` = `canvas`'s own CTM and `R` = whatever is concatenated between
-  /// `canvas` and the device (`M = R * X`), `concat(M^-1) . concat(T) . concat(M)`
-  /// leaves `canvas` at `X * M^-1 * T * M`, and the device sees
-  /// `R * X * M^-1 * T * M = T * M`. That is the post-translate, for any `R`:
-  /// the linear part of the device CTM is untouched and only the translation
-  /// moves. For the direct arm `R` is the identity and the sandwich is exactly
-  /// the `T * M` it always was. `composited_filter_layer` uses the same algebra
-  /// with `T` dropped, to land the device at the identity instead.
+  /// `device_ctm` is the user->device matrix of the canvas the draw ultimately
+  /// lands on, which is NOT always `canvas`'s own CTM -- on the isolation arm
+  /// `canvas` is a recorder's, sitting at identity. The sandwich below leaves
+  /// the device at `T * M` whatever matrix sits in between.
   fn apply_shadow_offset_matrix_to_canvas(
     canvas: &mut Canvas,
     device_ctm: &Matrix,
@@ -2916,12 +2217,9 @@ impl CanvasRenderingContext2D {
   #[napi(setter, return_if_invalid)]
   pub fn set_shadow_blur(&mut self, blur: f64) {
     // Blink discards a non-finite or negative assignment and keeps the previous
-    // value (canvas_2d_recorder_context.cc:1202-1207). Storing it instead is not
-    // inert: the value becomes the sigma, `SkImageFilters::Blur` rejects
-    // non-finite and negative sigma (SkBlurImageFilter.cpp:83-88) and
-    // `make_drop_shadow_graph` then silently drops the Blur node
-    // (SkDropShadowImageFilter.cpp:45-54), so `shadowBlur = -5` or `= NaN`
-    // quietly turned every later shadow into a hard-edged one.
+    // value (canvas_2d_recorder_context.cc:1202-1207). Storing it is not inert:
+    // it becomes the sigma, `SkImageFilters::Blur` rejects it, and the Blur node
+    // is silently dropped -- turning every later shadow hard-edged.
     if !blur.is_finite() || blur < 0.0 {
       return;
     }
@@ -4273,10 +3571,9 @@ impl Task for ContextData {
   }
 }
 
-/// Blink's `ClampTo<float>` (platform/wtf/math_extras.h:314-322 -> :192-206):
-/// a finite double outside the float range saturates at +/-FLT_MAX. A plain
-/// `as f32` would overflow it to an infinity instead, which every downstream
-/// Skia filter then rejects.
+/// Blink's `ClampTo<float>`: a finite double outside the float range saturates
+/// at +/-FLT_MAX. A plain `as f32` would overflow to infinity instead, which
+/// every downstream Skia filter rejects.
 fn clamp_to_f32(value: f64) -> f32 {
   value.clamp(f32::MIN as f64, f32::MAX as f64) as f32
 }

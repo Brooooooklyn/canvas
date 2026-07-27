@@ -2803,13 +2803,9 @@ impl Canvas {
     }
   }
 
-  /// `SkCanvas::saveLayer(nullptr, paint)` -- an isolation layer carrying only
-  /// `paint`'s blend mode and image filter. Owes one `restore()`.
-  ///
-  /// Only `Context::composited_filter_layer` should call this; it is what makes
-  /// a canvas2d filter parameter a device-space length. See
-  /// `skiac_canvas_save_layer` (skia-c/skia_c.cpp) for why an explicit layer is
-  /// the only way to express that.
+  /// `SkCanvas::saveLayer(nullptr, paint)`, carrying only `paint`'s blend mode
+  /// and image filter. Owes one `restore()`. Only
+  /// `Context::composited_filter_layer` should call it.
   pub fn save_layer(&mut self, paint: &Paint) {
     unsafe {
       ffi::skiac_canvas_save_layer(self.0, paint.0);
@@ -3060,8 +3056,8 @@ impl Paint {
     }
   }
 
-  // Unused since canvas2d shadows were reduced to the single Gaussian inside
-  // `SkImageFilters::DropShadowOnly`; kept as a general-purpose binding.
+  // Unused: a canvas2d shadow carries exactly one Gaussian, inside
+  // `SkImageFilters::DropShadowOnly`. Kept as a general-purpose binding.
   #[allow(dead_code)]
   pub fn set_mask_filter(&mut self, mask_filter: &MaskFilter) {
     unsafe {
@@ -3076,9 +3072,8 @@ impl Paint {
   }
 
   /// Installs `SkColorFilters::Blend(colour, kSrcIn)` -- Chromium's shadow
-  /// colouriser (cc/paint/draw_looper.cc:33-34). Replaces the source RGB
-  /// (shader included) and multiplies the source coverage by `a`, without a
-  /// layer, so vector devices can still express the draw.
+  /// colouriser (cc/paint/draw_looper.cc:33-34). Replaces the source RGB, shader
+  /// included, without a layer, so vector devices can still express the draw.
   pub fn set_src_in_color_filter(&mut self, r: u8, g: u8, b: u8, a: u8) {
     unsafe {
       ffi::skiac_paint_set_src_in_color_filter(self.0, r, g, b, a);
@@ -3086,10 +3081,7 @@ impl Paint {
   }
 
   /// The paint's colour as an 8-bit sRGB ARGB word, alpha in the top byte.
-  ///
-  /// Lossless for every paint built here: `set_color` and `set_alpha` are both
-  /// 8-bit setters, so the float `SkColor4f` Skia stores never holds anything
-  /// that did not arrive as a byte.
+  /// Lossless here: `set_color` and `set_alpha` are both 8-bit setters.
   pub fn get_color(&self) -> u32 {
     unsafe { ffi::skiac_paint_get_color(self.0) }
   }
@@ -3937,11 +3929,8 @@ impl<'a> From<&'a Transform> for ffi::skiac_transform {
   }
 }
 
-// Kept as a general-purpose binding, not dead weight to delete: a canvas2d
-// shadow must carry exactly one Gaussian and that one lives inside
-// `SkImageFilters::DropShadowOnly`, so nothing in ctx.rs sets a mask filter
-// today. `mod sk` is private (src/lib.rs), so the allow is here to keep this
-// warning-free if the `use crate::sk::*` glob in global_fonts.rs ever goes away.
+// Unused for the same reason as `Paint::set_mask_filter`; kept as a
+// general-purpose binding. `mod sk` is private, hence the allow.
 #[allow(dead_code)]
 #[repr(transparent)]
 #[derive(Debug)]
@@ -3979,38 +3968,19 @@ impl Clone for ImageFilter {
 }
 
 impl ImageFilter {
-  /// Does this filter have a spatial component, i.e. can the coordinate space
-  /// it is evaluated in change what it does?
-  ///
-  /// Only then is `Context::composited_filter_layer`'s device-space layer worth
-  /// anything; `Context::render_passes` is what asks, and the comment there is
-  /// the one to read. The question is answered by
-  /// `SkImageFilter::asAColorFilter`, documented as "returns true ... if this
-  /// imagefilter can be completely replaced by the returned colorfilter, i.e.
-  /// the two effects will affect drawing in the same way"
-  /// (include/core/SkImageFilter.h:71-76) -- a colour filter has no coordinates
-  /// at all, so no matrix can reach it. It is the same predicate Skia itself
-  /// uses to skip the implicit layer for a paint-carried image filter
-  /// (`SkCanvasPriv::ImageToColorFilter`, src/core/SkCanvasPriv.cpp:157-160).
+  /// Does this filter have a spatial component, i.e. can the coordinate space it
+  /// is evaluated in change what it does? Only then is
+  /// `Context::composited_filter_layer`'s device-space layer worth anything.
   pub fn needs_device_space_layer(&self) -> bool {
-    // An `ImageFilter` never holds null: every constructor below null-checks
-    // what Skia handed back, and `css_filters_to_image_filter` represents "no
-    // filter" as `None` rather than as a null seed. It used to seed its fold
-    // with `ImageFilter(ptr::null_mut())`, which put a null right here for
-    // `ctx.filter = ''`; that is fixed at the source now, so this can just
-    // dereference.
+    // An `ImageFilter` never holds null: every constructor null-checks what Skia
+    // returned, and "no filter" is spelled `None`.
     debug_assert!(!self.0.is_null(), "ImageFilter must never hold null");
     !unsafe { ffi::skiac_image_filter_is_a_color_filter(self.0) }
   }
 
-  /// The colour this filter turns `color` into, both 8-bit sRGB ARGB.
-  ///
-  /// Only a filter with `needs_device_space_layer() == false` has an answer --
-  /// a spatial filter's output at a point depends on its neighbours -- and for
-  /// any other filter this hands `color` straight back. It is the same fold
-  /// Skia performs itself for a shaderless paint (`SkPaintPriv::RemoveColorFilter`,
-  /// src/core/SkPaintPriv.cpp:161-174); `Context::shadow_paint` needs it one
-  /// step earlier, before its own colourisation.
+  /// The colour this filter turns `color` into, both 8-bit sRGB ARGB. Only a
+  /// filter with `needs_device_space_layer() == false` has an answer; any other
+  /// hands `color` straight back.
   pub fn filter_color(&self, color: u32) -> u32 {
     debug_assert!(!self.0.is_null(), "ImageFilter must never hold null");
     unsafe { ffi::skiac_image_filter_filter_color(self.0, color) }

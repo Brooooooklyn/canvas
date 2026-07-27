@@ -9,25 +9,20 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 
 // Pixel-probe tests, deliberately not snapshots: every expected value below is
 // derived from Chromium's own shadow algebra, so it cannot drift with font
-// rendering or anti-aliasing the way a byte-compared PNG does.
-//
-// Chromium references used throughout:
-//   sigma = shadowBlur * 0.5             blink/renderer/core/style/shadow_data.h:76-82
-//   SrcIn colourise, blur only if sigma>0  cc/paint/draw_looper.cc:21-42
-//   offsets are device-space             cc/paint/draw_looper.cc:37-40 (kPostTransformFlag)
-//   looper XOR image filter, never both  canvas_rendering_context_2d_state.cc:849-868
-//   drawImage hoists the filter above the dst clip
-//                                        canvas_2d_recorder_context.cc:2118-2148
+// rendering or anti-aliasing the way a byte-compared PNG does. The rules being
+// pinned are sigma = shadowBlur * 0.5, kSrcIn colourisation with a blur only
+// when sigma > 0, device-space offsets, and looper XOR image filter but never
+// both (cc/paint/draw_looper.cc:21-42,
+// canvas_rendering_context_2d_state.cc:849-868).
 
 const px = (ctx: ReturnType<ReturnType<typeof createCanvas>['getContext']>, x: number, y: number) =>
   Array.from(ctx!.getImageData(x, y, 1, 1).data)
 
-// Same as `px`, but for values that land on an exact .5 rounding tie, where the
+// Same as `px`, but for values on an exact .5 rounding tie, where the
 // premultiplied round trip legitimately lands either side depending on the
-// rasteriser. `globalAlpha = 0.5` over an opaque backdrop is the common case:
-// 0.5 * 0 + 0.5 * 255 = 127.5, which is 126 on aarch64-apple-darwin and 127 on
-// every other CI target. Asserting exact equality there pins a platform, not a
-// behaviour -- the defects these tests guard move the channel by 64 or more.
+// rasteriser (127.5 is 126 on aarch64-apple-darwin, 127 elsewhere). Asserting
+// equality there pins a platform, not a behaviour; the defects these tests guard
+// move the channel by 64 or more.
 const pxNear = (
   t: ExecutionContext,
   ctx: ReturnType<ReturnType<typeof createCanvas>['getContext']>,
@@ -169,19 +164,11 @@ test('shadow-zero-blur-gradient-text-uses-shadowColor', (t) => {
   t.deepEqual(best, [0, 255, 0, 255])
 })
 
-// The STROKE arm of `ShadowSource::is_solid_color` (src/ctx.rs) reads
-// `state.stroke_style`, not `state.fill_style`. Nothing used to notice if it
-// read the wrong one: every gradient/pattern shadow test above paints with
-// `fillStyle`, so pointing the stroke arm at `fill_style` left `fillStyle` at
-// its default solid black, `is_solid_color` answered "yes", and the fold ran
-// under a shader -- `SkPaint::setColor` cannot displace a shader, so the
-// "shadow" came out as a displaced copy of the gradient. That is bug I2,
-// resurrected for strokes only, with all 547 tests still green.
-//
-// Verified by mutation, not by assertion: with the arm changed to
-// `state.fill_style` the build is clean and the rest of the suite stays green,
-// while the gradient probes below read [203, 0, 52] and [50, 0, 205] -- the
-// displaced gradient -- and the pattern one reads [255, 255, 0].
+// Pins that the STROKE arm of `ShadowSource::is_solid_color` (src/ctx.rs) reads
+// `state.stroke_style` and not `state.fill_style`. No other shader-shadow test
+// would notice: they all paint with `fillStyle`, so the wrong arm would read the
+// default solid black, answer "yes", and fold under a shader -- leaving the
+// "shadow" a displaced copy of the gradient.
 function strokeShaderScene(makeStyle: (ctx: SKRSContext2D) => SKRSContext2D['strokeStyle']) {
   const canvas = createCanvas(300, 100)
   const ctx = canvas.getContext('2d')!
@@ -312,11 +299,9 @@ test('shadow-blur-geometry-matches-image', async (t) => {
   t.true(maxDelta <= 4, `geometry and image shadows differ by ${maxDelta} at x=${maxDeltaX}`)
 })
 
-// Shadows are not affected by the CTM (canvas_2d_recorder_context.cc:1161-1165).
-// Every quarter turn maps the square onto the same device box, and the sigma is
-// unmapped through the CTM's column norms, so all four must share one profile.
-// Using the raw `transform.a` instead sends rotate(90deg) to sigma=+inf and
-// rotate(180deg) to a negative sigma, both of which silently drop the blur.
+// Shadow sigma is not affected by the CTM
+// (canvas_2d_recorder_context.cc:1161-1165). Every quarter turn maps the square
+// onto the same device box, so all four must share one edge profile.
 test('shadow-blur-sigma-is-rotation-invariant', (t) => {
   for (const theta of [0, Math.PI / 2, Math.PI, (3 * Math.PI) / 2]) {
     const canvas = createCanvas(600, 300)
@@ -397,14 +382,9 @@ for (const useDrawCanvas of [false, true]) {
     t.deepEqual(px(ctx, 230, 230), [255, 255, 255, 255])
   })
 
-  // Regression: at the DEFAULT globalAlpha of 1 a zero-blur shadow paint carries
-  // no image filter, and for image sources its colour lives in a kSrcIn colour
-  // filter. `skiac_canvas_draw_picture_rect`'s default-paint elision did not
-  // inspect the colour filter, so it dropped the entire shadow paint and the
-  // picture replayed unpainted -- rendering the shadow as a displaced copy of
-  // the SOURCE ([255,0,0,255] instead of [0,0,0,255]). `drawImage` has no such
-  // elision and was always correct, so the two APIs disagreed. The test above
-  // could not catch it because globalAlpha 0.5 stops the predicate firing.
+  // Pins `skiac_canvas_draw_picture_rect`'s default-paint elision against a
+  // shadow paint whose colour lives in a kSrcIn colour filter. The test above
+  // cannot catch it: globalAlpha 0.5 stops the elision predicate firing.
   test(`shadow-zero-blur-uses-shadowColor-at-default-globalAlpha-${api}`, (t) => {
     const ctx = canvasSourceScene({ background: 'white', shadowBlur: 0, offset: 20, useDrawCanvas })
     // Shadow band only, clear of the red foreground: opaque black shadow.
@@ -433,12 +413,9 @@ for (const useDrawCanvas of [false, true]) {
     }
     t.deepEqual(px(ctx, 150, 150), [255, 0, 0, 255])
 
-    // The sharpest signature of the defect: with the filter under the dst clip
-    // the bbox is exactly the dst rect plus the offset, [100,100,209,209], with
-    // NOTHING outside it -- the alpha steps 0 -> 255 at x = 100. Unclipped it is
-    // [86,86,233,233], a Gaussian tail reading 1,1,2,3,4 at x = 86..90. Both
-    // bounds below are the midpoint of the two, so the tail has ~7px to retreat
-    // and the clip ~7px to leak before either verdict changes.
+    // With the filter under the dst clip the shadow's bbox is exactly the dst
+    // rect plus the offset, [100,100,209,209]; unclipped it is [86,86,233,233].
+    // Both bounds below are the midpoint, leaving ~7px of slack either way.
     let minX = 400
     let minY = 400
     let maxX = -1
@@ -559,11 +536,9 @@ test('shadow-setters-discard-invalid-assignments', (t) => {
 // ---------------------------------------------------------------- zero blur is layer-free
 
 // A zero-blur shadow is colourised by an `SkColorFilters::Blend(shadowColor,
-// kSrcIn)` and nothing else, exactly as Chromium's looper does when
-// `blur_sigma == 0` (cc/paint/draw_looper.cc:28-42). Routing it through an
-// SkImageFilter instead is observable three ways, and all three are asserted
-// below: the vector backends cannot express an image filter, and the implicit
-// saveLayer applies an antialiased clip twice.
+// kSrcIn)` and nothing else, as Chromium's looper does when `blur_sigma == 0`
+// (cc/paint/draw_looper.cc:28-42). Routing it through an SkImageFilter instead
+// is observable three ways, all asserted below.
 
 // SVG_SHADOW_DX/DY are big enough that the shadow never overlaps the content on
 // a 240x200 canvas, so a scene whose content is painted white on white renders
@@ -630,11 +605,9 @@ async function rasterizeSvg(svg: Buffer) {
   return ctx.getImageData(0, 0, 240, 200).data
 }
 
-// The previous version of this test asserted on the emitted markup only -- two
-// elements, a translate, a flood-color -- and every one of those held while the
-// shadow rendered as a solid rectangle over the shape's bounding box, so it
-// could not see the regression it existed to catch. It now RENDERS the SVG and
-// compares it against an independent oracle.
+// Renders the SVG against an independent oracle rather than asserting on the
+// markup alone: a shadow that renders as a solid rectangle over the shape's
+// bounding box still emits exactly the right elements.
 test('shadow-zero-blur-renders-the-shape-not-its-bounding-box-in-svg', async (t) => {
   GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'iosevka-slab-regular.ttf'))
   for (const [name, element, draw] of SVG_SHADOW_SHAPES) {
@@ -668,16 +641,11 @@ test('shadow-zero-blur-renders-the-shape-not-its-bounding-box-in-svg', async (t)
     }
     t.is(differing, 0, `${name}: the rendered SVG shadow must be the shape, translated`)
 
-    // Markup shape, as a second and much more specific guard than the old
-    // "there are two elements" assertion. Skia CAN serialise the kSrcIn colour
-    // filter that colourises a shadow, but it writes
-    //   <feFlood .../><feComposite in="flood" operator="in"/>
-    // with no `in2` (skia/src/svg/SkSVGDevice.cpp:495-503). SVG 1.1 11.1.1 says
-    // a missing `in2` on a non-first primitive is the PREVIOUS result -- the
-    // flood -- so the composite floods the whole filter region, which is the
-    // bounding box. For a solid-colour source the blend is folded into the paint
-    // colour instead (src/ctx.rs, `ShadowSource::is_solid_color`), which is what
-    // makes the render above come out right, so no filter may appear here.
+    // Markup shape. Skia CAN serialise the kSrcIn colour filter, but it writes
+    // an feFlood plus an feComposite with no `in2`
+    // (skia/src/svg/SkSVGDevice.cpp:495-503), which floods the whole bounding
+    // box. A solid-colour source folds the blend into the paint colour instead,
+    // so no filter may appear here at all.
     const markup = shadowed.toString('utf8')
     t.is(markup.match(element)?.length, 2, `${name}: a shadow element and a content element`)
     t.false(markup.includes('filter="url(#'), `${name}: no colour filter for a solid-colour shadow`)
@@ -774,35 +742,19 @@ test('shadow-zero-blur-does-not-double-apply-an-antialiased-clip', (t) => {
       totalDelta += delta
     }
   }
-  // NOT `=== 0`, even though this scene measures exactly 0 on arm64. The two
-  // renders reach the same geometry by different matrix arithmetic -- Skia
-  // inverts the CTM in f32 inside `apply_shadow_offset_matrix_to_canvas`, the
-  // by-hand arm multiplies it in f64 in JS -- so the shadow rect's own AA edges
-  // are free to disagree by an ulp, and aarch64 (FMA contraction) and x86-64
-  // SSE2 do not have to round that the same way. Sweeping this scene over 60
-  // clip angles and 6 offsets on the fixed build: at most 12 differing pixels,
-  // 141 total delta, and those are bidirectional (some lighter, some darker) and
-  // sit on the rect's edges, not on the clip boundary.
-  //
-  // The defect this guards is not subtle at that scale. With the shadow drawn
-  // through an image filter (i.e. inside a saveLayer, so the rotated clip is
-  // antialiased twice) the very same scene measures 336 differing pixels and
-  // 7170 total delta -- a uniform darkening along the clip edge. Both bounds
-  // below sit ~5x above the observed f32 jitter and ~5x below the defect.
+  // NOT `=== 0`: the two renders reach the same geometry by different matrix
+  // arithmetic (Skia inverts the CTM in f32, the by-hand arm multiplies in f64),
+  // so AA edges may disagree by an ulp. Both bounds sit ~5x above the observed
+  // jitter and ~5x below the defect they guard.
   t.true(differingPixels <= 60, `${differingPixels} differing pixels: jitter is <= 12, the double-applied clip is 336`)
   t.true(totalDelta <= 800, `total delta ${totalDelta}: jitter is <= 141, the double-applied clip is 7170`)
 })
 
-// `ctx.filter` is the INPUT of the shadow graph, not something applied over its
-// output: Blink builds `Compose(Compose(fg, shadow), canvas_filter)`
-// (canvas_2d_recorder_context.h:931-934) with `fg` always null
-// (canvas_rendering_context_2d_state.cc:836-841), which is
-// `shadow(canvas_filter(source))`. The shadow graph colourises with kSrcIn
-// (SkDropShadowImageFilter.cpp:46-49), so a colour-only `ctx.filter` cannot
-// reach the shadow's colour at all.
-//
-// Every expectation below is Chrome 150.0.7871.184 on the identical scene,
-// whole-canvas `getImageData` diff, and every one of these is byte-exact.
+// Pins that `ctx.filter` is the INPUT of the shadow graph, not something
+// applied over its output: Blink composes `shadow(canvas_filter(source))`
+// (canvas_2d_recorder_context.h:931-934), and since the graph colourises with
+// kSrcIn a colour-only filter cannot reach the shadow's colour at all. Every
+// expectation below is a byte-exact Chrome 150 measurement of the same scene.
 function filterScene(filter: string, shadowBlur: number, shadowColor = 'rgb(0, 0, 255)') {
   const canvas = createCanvas(300, 200)
   const ctx = canvas.getContext('2d')!
@@ -851,11 +803,8 @@ test('shadow-zero-blur-ctx-filter-opacity-still-reaches-the-shadow', (t) => {
 // there at all -- the un-blurred edge sits at x = 80 + 60 = 140.
 test('shadow-zero-blur-ctx-filter-blur-still-reaches-the-shadow', (t) => {
   const ctx = filterScene('blur(3px)', 0)
-  // Chrome 150 across the edge at y=70: x=138 [83,83,255], x=140 [143,143,255],
-  // x=142 [198,198,255], x=144 [235,235,255], x=146 [251,251,255]. Ours is
-  // byte-identical on all five; assert bands so a 1/255 AA drift is not a
-  // failure, but keep them tight enough that a SHARP edge (255 at x=138 and
-  // beyond, since the un-blurred shadow stops dead at x=140) cannot pass.
+  // Byte-identical to Chrome 150 across the edge; the bands allow a 1/255 AA
+  // drift but stay tight enough that a SHARP edge cannot pass.
   for (const [x, expected] of [
     [138, 83],
     [140, 143],
@@ -872,20 +821,14 @@ test('shadow-zero-blur-ctx-filter-blur-still-reaches-the-shadow', (t) => {
 
 // `source-in` over an opaque backdrop unrolls into two independently composited
 // passes (canvas_2d_recorder_context.h:924), so the surviving backdrop is
-// exactly `shadow AND content` -- which makes its left edge a direct readout of
-// the space the shadowOffset was applied in.
-//
-// The shadow pass records into a PictureRecorder whose canvas sits at identity
-// and is replayed under the real CTM, so a shadow offset applied off that
-// canvas's own CTM came out scaled and rotated. Expected values are Chrome
-// 150.0.7871.184 measurements of the identical scene.
+// exactly `shadow AND content` -- making its left edge a direct readout of the
+// space the shadowOffset was applied in. On this arm the shadow pass records
+// into a PictureRecorder at identity and is replayed under the real CTM, so an
+// offset read off that canvas's own CTM comes out scaled and rotated.
 //
 // Returns the alpha of the surviving band along device y = 100, one entry per
-// device x. Probing named columns rather than hunting for a threshold crossing
-// matters at `shadowBlur = 8`: the band's left edge is then a ~20px Gaussian
-// ramp climbing 53 -> 72 -> 93 -> 116 -> 139 -> 162, so "the first column over
-// 120" sits 5/255 from flipping to its neighbour, while a column in the middle
-// of the plateau is 255 and a column outside the ramp is 0.
+// device x. Probe named columns rather than hunting for a threshold crossing:
+// at `shadowBlur = 8` the band's left edge is a ~20px Gaussian ramp.
 function isolationShadowRow(setup: (ctx: any) => void, shadowBlur: number) {
   const canvas = createCanvas(300, 200)
   const ctx = canvas.getContext('2d')!
@@ -959,25 +902,14 @@ for (const shadowBlur of [0, 8]) {
 
 // ------------------------------------- isolation composite arm: one paint per role
 
-// Blink's `CompositedDraw` never lets one paint play both roles: `composite_flags`
-// is a FRESH PaintFlags carrying only `setBlendMode(state.GlobalComposite())` --
-// alpha 1, no shader, no filter -- while the content paint rides on the inner
-// draw with its blend forced to source-over (canvas_2d_recorder_context.h:
-// 921-922, :946-952). Handing the content paint to the layer as well applies
-// globalAlpha (and the shadow's drop-shadow filter) TWICE, because
-// `SkCanvas::drawPicture` with a paint is `saveLayer(cullRect, paint) + playback
-// + restore` (skia/src/core/SkCanvasPriv.cpp:32-45) and the restore paint keeps
-// alpha, colour filter and blend mode (skia/src/core/SkCanvas.cpp:895-906).
+// Pins that one paint never plays both roles in `composited_pass`. Blink's
+// `composite_flags` carries only the blend mode while the content paint rides on
+// the inner draw (canvas_2d_recorder_context.h:921-952); handing the content
+// paint to the layer too applies globalAlpha twice.
 //
-// Every expectation below is the WHATWG compositing formula against an OPAQUE
-// backdrop (alphaB = 1) with alphaS = globalAlpha = 0.5:
-//   source-in         alphaO = alphaS * alphaB       = 0.5   Co = Cs
-//   destination-in    alphaO = alphaB * alphaS       = 0.5   Co = Cb
-//   destination-atop  alphaO = alphaS                = 0.5   Co = Cb
-//   copy              alphaO = alphaS                = 0.5   Co = Cs
-//   source-out        alphaO = alphaS * (1 - alphaB) = 0
-// 0.5 * 255 = 127.5, and the premultiplied round trip lands on 127. A
-// double-applied globalAlpha reads 0.25 -> 63 instead.
+// Every expectation below is the WHATWG compositing formula against an opaque
+// backdrop with alphaS = globalAlpha = 0.5, so alphaO = 0.5 -> 127 (except
+// source-out, which is 0). A double-applied globalAlpha reads 63 instead.
 const ISOLATION_ALPHA_EXPECTATIONS: [string, number[]][] = [
   ['source-in', [255, 0, 0, 127]],
   ['destination-in', [0, 0, 255, 127]],
@@ -1002,13 +934,10 @@ test('isolation-layer-applies-globalAlpha-exactly-once', (t) => {
   }
 })
 
-// The same statement with a shadow on, which is the combination nothing covered:
-// the shadow pass gets its OWN isolation layer, so its paint is double-applied
-// independently of the content pass's.
-//
-// Content is 60..119 in both axes, shadow offset (+40, +40) so the shadow band is
-// 100..159 and the overlap is 100..119. `shadowColor` is opaque, so the shadow
-// pass's only source alpha is globalAlpha.
+// The same statement with a shadow on: the shadow pass gets its OWN isolation
+// layer, so its paint can be double-applied independently of the content pass's.
+// Content is 60..119 in both axes, shadow band 100..159, overlap 100..119;
+// `shadowColor` is opaque, so the shadow pass's only source alpha is globalAlpha.
 function isolationAlphaShadowScene(mode: string, shadowBlur: number) {
   const canvas = createCanvas(240, 240)
   const ctx = canvas.getContext('2d')!
@@ -1031,14 +960,10 @@ test('isolation-layer-applies-globalAlpha-exactly-once-with-a-shadow', (t) => {
   t.deepEqual(px(isolationAlphaShadowScene('source-in', 0), 110, 110), [255, 0, 0, 63])
 
   // sigma = 20 * 0.5 = 10 and (110, 110) is 10.5 device px inside both edges of
-  // the shadow band, so the shadow's own coverage is Phi(1.05)^2 = 0.7278 and
-  // alphaO = 0.5 * (0.5 * 0.7278) = 0.1820 -> 46.4.
-  //
+  // the shadow band, so alphaO = 0.5 * (0.5 * Phi(1.05)^2) = 0.1820 -> 46.4.
   // +/- 6, not +/- 3: this probe sits on the corner of two blurred edges, where
-  // the alpha climbs ~1.5/255 per device px, so a tolerance under the local
-  // gradient would be sensitive to a sub-pixel shift as well as to the algebra.
-  // It costs nothing -- the measurement is 47, and double-applying the paint
-  // reads 9.
+  // a tighter tolerance would be sensitive to a sub-pixel shift. It costs
+  // nothing -- double-applying the paint reads 9.
   const blurred = px(isolationAlphaShadowScene('source-in', 20), 110, 110)
   t.deepEqual(blurred.slice(0, 3), [255, 0, 0])
   t.true(Math.abs(blurred[3] - 46) <= 6, `source-in blurred overlap alpha was ${blurred[3]}, expected 46 +/- 6`)
@@ -1052,20 +977,14 @@ test('isolation-layer-applies-globalAlpha-exactly-once-with-a-shadow', (t) => {
   }
 })
 
-// `IsFullCanvasCompositeMode` is exactly {kSrcIn, kSrcOut, kDstIn, kDstATop}
-// (canvas_2d_recorder_context.h:998-1005). destination-out is deliberately not in
-// it -- it is listed under `BlendModeSupportsShadowFilter` (h:692-697) and is
-// never isolated, "as the platforms already implement the specification's
-// behavior".
-//
+// Pins that destination-out is NOT isolated: it sits outside
+// `IsFullCanvasCompositeMode` (canvas_2d_recorder_context.h:998-1005).
 // Isolating it is observable because `composited_pass` records into a
-// PictureRecorder that sits at IDENTITY with the canvas rect as its cull rect, so
-// that cull rect is in USER space. A draw whose user coordinates fall outside the
-// canvas is then culled even though the CTM puts it on screen. Here the CTM is
-// `translate(-500, 0)` and the rect is at user x 600..699, i.e. device x 100..199,
-// with an opaque black shadow at (+40, 0) covering device x 140..239.
-// destination-out against an opaque backdrop is alphaO = alphaB * (1 - alphaS),
-// so both bands must be punched clean through.
+// PictureRecorder at identity whose cull rect is therefore in USER space, so a
+// draw whose user coordinates fall off-canvas is culled even though the CTM puts
+// it on screen. Here the CTM is `translate(-500, 0)`, the rect is at user
+// x 600..699 (device 100..199) and its shadow covers device x 140..239; both
+// bands must be punched clean through.
 test('destination-out-is-not-isolated', (t) => {
   const canvas = createCanvas(300, 300)
   const ctx = canvas.getContext('2d')!
@@ -1087,21 +1006,15 @@ test('destination-out-is-not-isolated', (t) => {
 
 // ------------------------------------------------- I3: sigma under a rotating CTM
 
-// GUARD for the column-norm decomposition, which `shadow-blur-sigma-is-rotation-
-// invariant` above cannot see: at scale 1 every quarter turn snaps `transform.a`
-// to exactly 0 (`SkScalarCosSnapToZero`, SkMatrix.cpp:458) or to a negative
-// number, the `scale_x.is_finite() && scale_x > 0` guard then falls back to the
-// unscaled sigma, and that fallback happens to be the right answer. These two
-// shapes have no such luck:
+// GUARD that `shadow-blur-sigma-is-rotation-invariant` above cannot give: at
+// scale 1 every quarter turn snaps `transform.a` to 0 or negative, and any
+// column-norm fallback then happens to land on the right answer. These two
+// shapes do not:
 //   scale(2) . rotate(90deg)  a = 0     -> fallback sigma 10, device sigma 20
 //   rotate(45deg)             a = 0.707 -> sigma 14.14, device sigma 14.14
-// Both must instead read the SIGMA_10_PROFILE, because Chrome maps sigma with a
-// single scalar and blurs in device space (SkBlurMaskFilterImpl.cpp:111-115), so
-// a similarity CTM never changes the device sigma.
-//
-// Device box is [110,190]^2 in every case below and the shadow offset is 200
-// device px, so the blurred edge sits at x = 390 and the profile is read at
-// x = 380 / 390 / 400 / 410.
+// Both must read the SIGMA_10_PROFILE, because Chrome blurs in device space and
+// a similarity CTM never changes the device sigma. The device box is [110,190]^2
+// in every case and the offset is 200 device px, so the edge sits at x = 390.
 function assertSigma10At390(t: any, data: Uint8ClampedArray, label: string) {
   for (const [x, expected] of SIGMA_10_PROFILE.slice(1)) {
     const alpha = data[(150 * 600 + (x + 90)) * 4 + 3]
@@ -1160,27 +1073,16 @@ test('shadow-blur-sigma-survives-an-off-axis-rotation', (t) => {
 // ----------------------------------------------------- ctx.filter is device-space
 //
 // HTML 4.12.5.1.20: "Filter coordinates are not affected by the current
-// transformation matrix. The current transformation matrix affects only the
-// input to the filter. Filters are applied in the output bitmap's coordinate
-// space."
-//
-// Blink implements that by opening the shadow / `ctx.filter` layer with the CTM
-// reset to identity and restoring the CTM INSIDE it
-// (canvas_2d_recorder_context.h:919-963, .cc:2137-2145), so no filter parameter
-// ever meets the CTM. We do the same, in `Context::composited_filter_layer`.
+// transformation matrix ... Filters are applied in the output bitmap's
+// coordinate space." Blink implements that by opening the filter layer with the
+// CTM reset to identity (canvas_2d_recorder_context.h:919-963), which is what
+// `Context::composited_filter_layer` does.
 //
 // Every scene below paints the SAME DEVICE-SPACE rect under two different CTMs,
-// so the band's edge is at device x = 220 in both and only the filter width can
-// move. Measured against Chrome 150.0.7871.184: the 10-90% edge width is 8.27 px
-// for `blur(3px)` alone and 13.56 px for `blur(3px)` chained into `shadowBlur =
-// 8`, at BOTH transforms. With the filter left on the content paint instead --
-// i.e. in parameter space, where `Mapping::decomposeCTM` scales it by the CTM --
-// `scale(2, 2)` gave 14.44 and 17.83 respectively, and the whole 420x220 canvas
-// differed from Chrome by 25272 px / max 73 and 29458 px / max 59.
-//
-// The tolerance below is 0.5 px against a defect that moves the width by 6.2 px
-// (75%), and the identity column is asserted with the same number, so a change
-// that scaled BOTH columns equally would still fail.
+// so only the filter width can move. The 10-90% edge width is a Chrome-measured
+// 8.27 px for `blur(3px)` and 13.56 px chained into `shadowBlur = 8`, at BOTH
+// transforms. The 0.5 px tolerance sits against a defect worth 6.2 px, and the
+// identity column uses the same number so a uniform scaling would still fail.
 
 const FILTER_W = 420
 const FILTER_H = 220
@@ -1287,17 +1189,12 @@ test('shadowBlur-alone-is-unchanged-by-the-device-space-filter-layer', (t) => {
 //
 // Skia implements `DropShadowOnly`'s dx/dy as
 // `MatrixTransform(Translate(dx, dy), SkFilterMode::kLinear)`
-// (SkDropShadowImageFilter.cpp:50-53), and that `kLinear` is load-bearing --
-// "kLinear filtering is needed to hide nearest-neighbor sampling artifacts from
-// fractional offsets applied post-blur". Applying the offset as a canvas
-// translate instead has no such resample, so a half-covered destination pixel
-// came out fully covered.
-//
-// 200x200 source, left half opaque red and right half transparent, drawn at
-// (0, 10) with `imageSmoothingEnabled = false`. `shadowOffsetX = 100.5` puts the
-// shadow's right edge on x = 200.5, so the probe at x = 200 is exactly half
-// covered: Chrome 150.0.7871.184 reads [127,127,255]. As a canvas translate it
-// read [0,0,255] -- 200 px differ over the canvas, max delta 127.
+// (SkDropShadowImageFilter.cpp:50-53), and the resample is load-bearing: a
+// canvas translate has none, so a half-covered destination pixel came out fully
+// covered. 200x200 source, left half opaque red, drawn at (0, 10) with
+// `imageSmoothingEnabled = false`; `shadowOffsetX = 100.5` puts the shadow's
+// right edge on x = 200.5, so the probe at x = 200 is exactly half covered and
+// Chrome reads [127,127,255].
 
 const HALF_OPAQUE_W = 420
 const HALF_OPAQUE_H = 220
@@ -1359,15 +1256,12 @@ test('image-shadow-integer-offset-is-unmoved-by-the-resample', async (t) => {
   t.deepEqual(px(ctx, 200, 100), [255, 255, 255, 255])
 })
 
-// The dx/dy above are DEVICE-space vectors, and they are only device-space
-// because `composited_filter_layer` opens the shadow layer at the identity CTM.
-// Put them on a filter whose layer sits at the draw's own CTM -- which is what
-// `main` did -- and a rotation sends the shadow the other way: measured 24000 px
-// wrong, max delta 255, on this very scene.
-//
-// translate(210, 110) . rotate(PI) maps the image's local (-100..100, -100..100)
-// onto device (110..310, 10..210) mirrored, so the opaque half is device
-// x 210..310 and a +60 DEVICE-space shadow offset puts its shadow at x 270..370.
+// The dx/dy above are device-space vectors only because
+// `composited_filter_layer` opens the shadow layer at the identity CTM; on a
+// layer at the draw's own CTM a rotation sends the shadow the other way.
+// translate(210, 110) . rotate(PI) maps the image's local (-100..100) onto
+// device (110..310) mirrored, so the opaque half is device x 210..310 and a +60
+// device-space offset puts its shadow at x 270..370.
 test('image-shadow-offset-stays-device-space-under-a-rotation', async (t) => {
   const img = await halfOpaqueImage()
   const canvas = createCanvas(HALF_OPAQUE_W, HALF_OPAQUE_H)
@@ -1411,12 +1305,10 @@ test('image-shadow-offset-stays-device-space-under-a-non-uniform-scale', async (
   t.deepEqual(px(ctx, 260, 60), [255, 255, 255, 255])
 })
 
-// `ctx.filter` must not attach to clearRect. Blink's `clearRect` never enters
-// `DrawInternal` / `CompositedDraw` -- it is a bare `drawRect` with
-// `SkBlendMode::kClear` -- so no filter, shadow or composite layer applies. The
-// hazard is specific and not cosmetic: the filter layer takes its blend from the
-// content paint, and a kClear layer restores by clearing its whole bounds, so
-// clearing a 60x60 rect wiped the entire canvas.
+// `ctx.filter` must not attach to clearRect: Blink's `clearRect` is a bare
+// kClear `drawRect` with no filter, shadow or composite layer. The hazard is not
+// cosmetic -- a kClear layer restores by clearing its whole bounds, so clearing
+// a 60x60 rect wiped the entire canvas.
 test('ctx-filter-does-not-attach-to-clearRect', (t) => {
   const canvas = createCanvas(200, 100)
   const ctx = canvas.getContext('2d')!

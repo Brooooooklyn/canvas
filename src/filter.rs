@@ -295,22 +295,14 @@ pub fn css_filter(input: &str) -> IResult<&str, Vec<CssFilter>> {
 /// Fold a parsed `<filter-value-list>` into one chained `SkImageFilter`, or
 /// `None` when the list produces no filter at all.
 ///
-/// `None` is the only representation of "no filter" this may return. It used to
-/// seed a `try_fold` with `ImageFilter(ptr::null_mut())`, which is fine as a
-/// *chain terminator* -- every `ImageFilter::make_*` maps a `None` chain to the
-/// same null `SkImageFilter*` -- but is not a valid `ImageFilter`, and for an
-/// EMPTY list the fold closure never runs and handed that null seed straight
-/// back as `Some(ImageFilter(null))`. `Context::set_filter` then stored it, and
-/// the next draw called `skiac_paint_set_image_filter` on it: a null deref, i.e.
-/// a hard SIGSEGV out of plain JS (`ctx.filter = ''` then `ctx.fillRect(...)`).
-/// Threading the chain as an `Option` instead makes an empty list yield `None`
-/// by construction and keeps a null out of every `ImageFilter` value: the
-/// `make_*` constructors already null-check their own return.
+/// `None` is the only representation of "no filter" this may return, and the
+/// chain is threaded as an `Option` so that an empty list yields it by
+/// construction. A null `ImageFilter` here would reach
+/// `skiac_paint_set_image_filter` on the next draw and segfault.
 pub(crate) fn css_filters_to_image_filter(filters: Vec<CssFilter>) -> Option<ImageFilter> {
   let mut chain: Option<ImageFilter> = None;
   for f in filters {
-    // A filter that fails to build takes the whole list with it, exactly as the
-    // old `try_fold` short-circuit did.
+    // A filter that fails to build takes the whole list with it.
     let next = match f {
       CssFilter::Blur(blur) => ImageFilter::make_blur(blur, blur, chain.as_ref()),
       CssFilter::Brightness(brightness) => {
@@ -468,19 +460,16 @@ fn parse_empty() {
 
 #[test]
 fn empty_filter_list_is_no_filter_not_a_null_one() {
-  // The whole point of the `Option` chain: an empty list must produce `None`.
-  // Seeding a fold with `ImageFilter(ptr::null_mut())` produced
-  // `Some(ImageFilter(null))` here, which `Context::set_filter` stored and the
-  // next draw dereferenced.
+  // Pins the `Option` chain: an empty list must produce `None`, not a
+  // `Some(ImageFilter(null))` that the next draw would dereference.
   assert!(css_filters_to_image_filter(vec![]).is_none());
 }
 
 #[test]
 fn leftover_input_is_the_all_or_nothing_gate() {
   // `css_filter` never returns `Err`; anything it cannot read comes back as
-  // leftover input, and `Context::set_filter` uses that leftover as Blink's
-  // `!stream.AtEnd()` gate (css_property_parser.cc:118-120). So every value we
-  // mean to ACCEPT has to leave nothing behind...
+  // leftover input, which `Context::set_filter` uses as Blink's
+  // `!stream.AtEnd()` gate. So every accepted value must leave nothing behind...
   for input in [
     "blur(3px)",
     "blur(3px) grayscale(50%)",
@@ -498,8 +487,8 @@ fn leftover_input_is_the_all_or_nothing_gate() {
     assert!(!filters.is_empty(), "`{input}` should parse to a filter");
   }
 
-  // ...and every value we mean to REJECT has to be visibly rejected, either by
-  // leaving junk behind or by parsing to nothing at all.
+  // ...and every rejected value must be visibly rejected, by leaving junk
+  // behind or by parsing to nothing at all.
   for input in [
     "", "   ", "garbage", "inherit", "initial", "unset", "revert", "none",
   ] {
@@ -511,8 +500,8 @@ fn leftover_input_is_the_all_or_nothing_gate() {
     assert_eq!(rest, input.trim_start(), "`{input}` should be left unread");
   }
 
-  // The interesting one: greedy parsing DOES read the valid prefix, so the
-  // leftover is the only thing that tells the setter to reject the assignment.
+  // Greedy parsing DOES read the valid prefix, so the leftover is the only
+  // thing telling the setter to reject the assignment.
   assert_eq!(
     css_filter("blur(3px) notafilter(1)"),
     Ok(("notafilter(1)", vec![CssFilter::Blur(3.0)]))

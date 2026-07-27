@@ -400,24 +400,8 @@ void skiac_canvas_draw_image(skiac_canvas* c_canvas,
     CANVAS_CAST->save();
     // Translate to the destination position
     CANVAS_CAST->translate(dx, dy);
-    // NOTE: this clip is the ONLY thing implementing the sx/sy/s_width/s_height
-    // source crop, because SkSurface::draw paints the whole source surface
-    // (skia/src/image/SkSurface_Raster.cpp:106-109), so it must stay. Widening
-    // it is NOT how a filter halo is freed -- that would let un-cropped source
-    // content leak in.
-    //
-    // INVARIANT, and it is what keeps a shadow or a `ctx.filter` from being
-    // truncated here: `paint` carries no image filter that could grow the
-    // draw's bounds. `Context::composited_filter_layer` has already hoisted any
-    // such filter onto an enclosing layer before this call, so the clip below
-    // lands INSIDE that layer and can only ever crop the image, never the halo.
-    // (`Context::render_passes` does leave a filter here on the SVG / PDF
-    // backends, but only one Skia will fold into the colour-filter slot, and a
-    // colour filter has no halo for this clip to reach.) That is Chromium's
-    // rule too -- canvas_2d_recorder_context.cc:2137-2148 opens the filter
-    // layer first and :2172-2178 / base_rendering_context_2d.cc:1484-1508 clip
-    // after it. Put a filter back on this paint and you reintroduce the
-    // truncation.
+    // The source crop -- SkSurface::draw paints the whole source surface. It
+    // would truncate a halo, so `paint` must carry no image filter.
     CANVAS_CAST->clipRect(SkRect::MakeWH(d_width, d_height));
     // Scale using the ratio of destination size to source surface size
     CANVAS_CAST->scale(d_width / s_width, d_height / s_height);
@@ -812,28 +796,11 @@ void skiac_canvas_save(skiac_canvas* c_canvas) {
   CANVAS_CAST->save();
 }
 
-// The one primitive `Context::composited_filter_layer` is written in terms of:
-// an explicit layer carrying nothing but a blend mode and an image filter.
-//
-// It exists because a canvas2d filter length is a DEVICE-space length -- HTML
-// 4.12.5.1.20, "Filter coordinates are not affected by the current
-// transformation matrix ... Filters are applied in the output bitmap's
-// coordinate space" -- while an image filter left on a draw's own paint is a
-// PARAMETER-space one, because Skia opens that layer implicitly at the draw's
-// own CTM and `Mapping::decomposeCTM` then scales every filter parameter by it
-// (SkImageFilterTypes.cpp:272-283). Content and filter have to be given
-// DIFFERENT matrices, and that is impossible without an explicit layer: the
-// caller resets the CTM to identity, opens this layer, and restores the CTM
-// inside it, which is precisely Blink's `CompositedDraw`
-// (canvas_2d_recorder_context.h:919-963: `setMatrix(SkM44())`, `saveLayer`,
-// `setMatrix(ctm)`) and its `DrawImageInternal` twin
-// (canvas_2d_recorder_context.cc:2137-2145: `save`, `concat(inv_ctm)`,
-// `saveLayer`, `concat(ctm)`).
-//
-// Null bounds on purpose. Blink's shadow layer is likewise unbounded
-// (`c->saveLayer(shadow_flags)`, h:941) and SkCanvas then sizes the layer from
-// the device clip, so a blur halo or a drop-shadow offset can never be
-// truncated by a bound derived from the un-filtered geometry.
+// Explicit layer for a blend mode plus image filter, mirroring Blink's
+// `CompositedDraw` (canvas_2d_recorder_context.h:919-963): a canvas2d filter
+// length is device-space, so content and filter need different matrices. Null
+// bounds on purpose -- SkCanvas then sizes the layer from the device clip, so
+// no halo is truncated.
 void skiac_canvas_save_layer(skiac_canvas* c_canvas, skiac_paint* c_paint) {
   CANVAS_CAST->saveLayer(nullptr, PAINT_CAST);
 }
@@ -948,55 +915,14 @@ void skiac_canvas_draw_picture_rect(skiac_canvas* c_canvas,
   const SkPaint* paint = PAINT_CAST;
 
   canvas->save();
-  // NOTE: this clip is load-bearing -- `canvas->drawPicture(picture, &matrix,
-  // paint)` below replays the WHOLE picture, so the dst rect is the only thing
-  // implementing the sx/sy/sw/sh source crop. Widening it is NOT how a filter
-  // halo is freed -- that would let un-cropped source content leak in.
-  //
-  // INVARIANT: `paint` carries no image filter that could grow the draw's
-  // bounds. `Context::composited_filter_layer` has already hoisted any such
-  // filter onto an enclosing layer, so this clip is issued INSIDE that layer
-  // and crops only the picture, never the halo. (`Context::render_passes` does
-  // leave a filter here on the SVG / PDF backends, but only one Skia will fold
-  // into the colour-filter slot, and a colour filter has no halo for this clip
-  // to reach.) That is Chromium's rule (base_rendering_context_2d.cc:1484-1508:
-  // saveLayer with the filter, then clipRect, then drawPicture). It also keeps
-  // a second truncation away: `drawPicture` with a non-null paint becomes
-  // `saveLayer(mappedCullRect, paint)` (skia/src/core/SkCanvasPriv.cpp:32-45),
-  // and a filter on THAT layer would open inside the clip installed here.
+  // The source crop -- `drawPicture` replays the whole picture. Like the clip
+  // in `skiac_canvas_draw_image`, `paint` must carry no image filter.
   canvas->clipRect(dst_rect, SkClipOp::kIntersect, true /* antialias */);
 
   // Optimization: skip paint if it's default (SrcOver blend, full alpha, no
-  // filter) This matches skia-canvas behavior.
-  //
-  // LOAD-BEARING once the filter is hoisted: on the BLURRED shadow pass at
-  // globalAlpha 1 the inner paint is now default, so this elides it to nullptr
-  // and the picture replays with no paint at all -- exactly Blink's paintless
-  // `c->drawPicture(std::move(paint_record))`
-  // (base_rendering_context_2d.cc:1508). There the shadow colour comes solely
-  // from the layer's filter, so the elision is correct, not merely an
-  // optimization.
-  //
-  // The colour-filter test guards the other direction. A zero-blur shadow used
-  // to reach here colourised by a kSrcIn `SkColorFilter` on this paint and with
-  // NO image filter, and without the check below a default-globalAlpha
-  // zero-blur `drawCanvas` shadow was elided wholesale and the picture replayed
-  // unpainted
-  // -- rendering the shadow as a displaced copy of the SOURCE. Measured then:
-  // shadow-only pixel [255,0,0,255] for a red source under an opaque black
-  // shadow, where `drawImage` (which has no elision) correctly gave
-  // [0,0,0,255]. That paint can no longer be built -- `ShadowSource::Image`
-  // now forces the image-filter route at every blur
-  // (`ShadowSource::forces_shadow_image_filter`, matching Blink's
-  // `image_type == kNonOpaqueImage` fork, canvas_rendering_context_2d_state.cc:
-  // 849-864), so an image shadow's colour always comes from the layer. The test
-  // stays as the cheap check that it is really so: it costs one load, and if a
-  // colour filter ever does arrive here the elision would silently drop it.
-  //
-  // Shader / mask filter / path effect deliberately are NOT tested: no caller
-  // sets a mask filter, and a gradient shader or dash reaching here does not
-  // leak into the result (verified in pixels), so testing them would only cost
-  // the fast path.
+  // filter) This matches skia-canvas behavior
+  // The colour-filter test must stay: eliding a paint colourised by a kSrcIn
+  // colour filter renders a shadow as a displaced copy of the source.
   if (paint != nullptr) {
     auto blendMode = paint->asBlendMode();
     if (blendMode.has_value() && blendMode.value() == SkBlendMode::kSrcOver &&
@@ -1051,12 +977,6 @@ uint8_t skiac_paint_get_alpha(skiac_paint* c_paint) {
   return PAINT_CAST->getAlpha();
 }
 
-// The paint's 8-bit sRGB `SkColor`, alpha included.
-//
-// Lossless for every paint this binding builds: `skiac_paint_set_color` is an
-// 8-bit `setARGB` and `skiac_paint_set_alpha` an 8-bit `setAlpha`, so the
-// float `SkColor4f` behind `getColor()` only ever holds values that came in as
-// bytes.
 uint32_t skiac_paint_get_color(skiac_paint* c_paint) {
   return PAINT_CAST->getColor();
 }
@@ -1114,24 +1034,9 @@ void skiac_paint_set_image_filter(skiac_paint* c_paint,
   PAINT_CAST->setImageFilter(imageFilter);
 }
 
-// Colourise a draw the way Chromium's shadow looper does: an
-// `SkColorFilters::Blend(colour, kSrcIn)` sitting on the paint, so the source
-// RGB -- shader included -- is replaced wholesale while the source coverage is
-// merely multiplied by the colour's alpha (cc/paint/draw_looper.cc:33-34).
-//
-// Unlike `setColor` this runs AFTER the shader and after the paint alpha in
-// Skia's blitter pipeline, and unlike an image filter it needs no layer, so
-// SkSVGDevice can emit it as an feFlood/feComposite filter
-// (src/svg/SkSVGDevice.cpp:431-436, :472-505 -- kSrcIn is the ONLY blend mode
-// it accepts, so do not generalise the mode here) and SkPDFDevice folds it back
-// into the paint colour and stays vector (SkPaintPriv::RemoveColorFilter, via
-// src/pdf/SkPDFDevice.cpp:274-277).
-//
-// The colour is sRGB-encoded, matching Chromium's explicit
-// `SkColorSpace::MakeSRGB()`: `SkColorFilters::Blend` maps its argument from
-// the space given here to sRGB for storage, and a null space is read as sRGB
-// (SkBlendModeColorFilter.cpp:60-64, SkColorSpaceXformSteps.cpp `if (!src) src
-// = sk_srgb_singleton()`), so nullptr and MakeSRGB() are the same transform.
+// Colourise like Chromium's shadow looper: source RGB (shader included) is
+// replaced, coverage multiplied by the colour's alpha (draw_looper.cc:33-34).
+// kSrcIn is the only mode SkSVGDevice accepts -- do not generalise it.
 void skiac_paint_set_src_in_color_filter(skiac_paint* c_paint,
                                          uint8_t r,
                                          uint8_t g,
@@ -1984,30 +1889,9 @@ skiac_image_filter* skiac_image_filter_from_argb(
   }
 }
 
-// Would Skia replace this image filter by a plain colour filter?
-//
-// `SkImageFilter::asAColorFilter` is documented as "returns true ... if this
-// imagefilter can be completely replaced by the returned colorfilter, i.e. the
-// two effects will affect drawing in the same way"
-// (include/core/SkImageFilter.h:71-76). It is the exact predicate
-// `SkCanvasPriv::ImageToColorFilter` uses (src/core/SkCanvasPriv.cpp:157-160)
-// to drop a paint's image filter into the colour-filter slot and skip the
-// implicit layer entirely -- "src-over blending against transparent black is a
-// no-op, so skipping the layer and drawing the output of the color filter-image
-// filter with the original blender is valid" (:140-142).
-//
-// `Context::composited_filter_layer` asks this before opening its own layer.
-// Such a filter has NO spatial parameter, so no coordinate space -- device or
-// parameter -- can change what it does, and the layer whose only purpose is to
-// give the filter device space is pure loss on the vector backends: SkSVGDevice
-// cannot make a layer device at all (SkDevice::createDevice returns nullptr,
-// src/core/SkDevice.h:323, and SkCanvas then substitutes an SkNoPixelsDevice
-// that discards every draw, src/core/SkCanvas.cpp:1038-1046), and SkPDFDevice
-// rasterises one (src/pdf/SkPDFDevice.cpp:302-315).
-//
-// The out parameter is not optional: `asAColorFilter` asserts on a null pointer
-// (src/core/SkImageFilter.cpp:119) and hands back a ref'd colour filter that
-// has to be released.
+// Would Skia replace this image filter by a plain colour filter
+// (SkImageFilter.h:71-76)? Then it has no spatial parameter and needs no layer.
+// `asAColorFilter` asserts on a null out param and returns a ref to release.
 bool skiac_image_filter_is_a_color_filter(skiac_image_filter* c_image_filter) {
   SkColorFilter* color_filter = nullptr;
   if (!IMAGE_FILTER_CAST->asAColorFilter(&color_filter)) {
@@ -2017,25 +1901,9 @@ bool skiac_image_filter_is_a_color_filter(skiac_image_filter* c_image_filter) {
   return true;
 }
 
-// Evaluate a colour-only image filter on ONE colour.
-//
-// This is the fold Skia itself performs whenever a colour filter meets a
-// shaderless paint: `SkPaintPriv::RemoveColorFilter` is
-// `p->setColor(filter->filterColor4f(p->getColor4f(), ...))`
-// (src/core/SkPaintPriv.cpp:161-174), run on the way past `SkBlitter::Choose`
-// (src/core/SkBlitter.cpp:695-698) and again by SkPDFDevice to keep such a
-// draw vector (src/pdf/SkPDFDevice.cpp:274-277). `Context::shadow_paint` needs
-// the same answer one step EARLIER than any of those, because the shadow's own
-// colourisation has to run after `ctx.filter`, not before it -- see there.
-//
-// `color` is returned untouched when the filter is not replaceable by a colour
-// filter, i.e. exactly when `skiac_image_filter_is_a_color_filter` is false.
-// There is no single colour to evaluate then: a spatial filter's output at a
-// point depends on its neighbours.
-//
-// In and out are 8-bit sRGB `SkColor`, like every other colour crossing this
-// boundary, and `filterColor4f` is told so explicitly rather than left to
-// infer it from nulls.
+// Evaluate a colour-only image filter on one 8-bit sRGB `SkColor` --
+// `Context::shadow_paint` colourises after `ctx.filter`, not before. A spatial
+// filter has no single answer, so `color` comes back untouched.
 uint32_t skiac_image_filter_filter_color(skiac_image_filter* c_image_filter,
                                          uint32_t color) {
   SkColorFilter* color_filter = nullptr;

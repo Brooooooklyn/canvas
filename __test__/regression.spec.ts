@@ -905,13 +905,10 @@ test('shadow opacity should scale linearly with shadowColor alpha', (t) => {
 })
 
 test('shadowOffsetX/Y are device-space on the image path, not local-space', (t) => {
-  // shadowOffsetX/Y are device-space in Blink on EVERY path: the looper carries
-  // kPostTransformFlag and does setMatrix(getLocalToDevice().postTranslate(dx,
-  // dy)) (cc/paint/draw_looper.cc:37-40), and the image-filter path runs its
-  // shadow inside a ScopedResetCtm (canvas_2d_recorder_context.cc:545-565).
-  // drawImage/drawCanvas used to bake the offset into the DropShadowOnly
-  // filter's dx/dy, which is a LOCAL-space vector, so the CTM rotated and
-  // scaled it.
+  // Pins that shadowOffsetX/Y are device-space on every path, as they are in
+  // Blink (cc/paint/draw_looper.cc:37-40 for the looper, a `ScopedResetCtm` for
+  // the image filter). A `DropShadowOnly` dx/dy is a local-space vector unless
+  // its layer is opened at the device identity, so the CTM would rotate it.
   const W = 600
   const H = 400
   // Red foreground, blue shadow, so the two are separable per pixel.
@@ -1009,10 +1006,9 @@ test('a scaled CTM does not scale the image path shadow offset', (t) => {
 test('the shadow setters discard the values Blink rejects', (t) => {
   // setShadowBlur drops a non-finite or negative assignment, setShadowOffsetX/Y
   // a non-finite one, and both keep the previous value
-  // (canvas_2d_recorder_context.cc:1170-1211). Storing them was not inert: the
-  // blur becomes the sigma, and SkImageFilters::Blur rejects a non-finite or
-  // negative sigma (SkBlurImageFilter.cpp:83-88), so make_drop_shadow_graph
-  // silently dropped the Blur node and every later shadow came out hard-edged.
+  // (canvas_2d_recorder_context.cc:1170-1211). Storing them is not inert: the
+  // blur becomes the sigma, `SkImageFilters::Blur` rejects it, and the Blur node
+  // is silently dropped -- leaving every later shadow hard-edged.
   const ctx = createCanvas(10, 10).getContext('2d')
 
   ctx.shadowBlur = 10
@@ -1075,15 +1071,10 @@ test('the shadow setters discard the values Blink rejects', (t) => {
   )
 })
 
-// CanvasGradient.addColorStop must keep stops that share an offset in the order they were added.
-// https://html.spec.whatwg.org/multipage/canvas.html#dom-canvasgradient-addcolorstop
-//   "If multiple stops are added at the same offset on a gradient, they must be placed in the
-//    order added, with the first one closest to the start of the gradient, and each subsequent
-//    one infinitesimally further along."
-// Blink gets that for free from the `std::stable_sort` over a strict `a.stop < b.stop` comparator
-// in Gradient::SortStopsIfNecessary (third_party/blink/renderer/platform/graphics/gradient.cc).
-// Our insertion scan used to break on `val >= offset`, so a later stop at an equal offset was
-// inserted *before* the earlier one — turning a hard step into a mirrored/repeating ramp.
+// CanvasGradient.addColorStop must keep stops that share an offset in the order they were added
+// (https://html.spec.whatwg.org/multipage/canvas.html#dom-canvasgradient-addcolorstop). An
+// insertion scan that breaks on `val >= offset` puts a later equal-offset stop *before* the
+// earlier one, turning a hard step into a mirrored ramp.
 //
 // Every expectation below is the byte-exact getImageData readback from headless
 // Chrome 151.0.7922.34 (playwright chromium-1234) running the identical scene.
@@ -1373,15 +1364,11 @@ test('duplicated color stops behave the same on radial and conic gradients', (t)
 })
 
 test('an unparseable ctx.filter must not crash the process on the next draw', (t) => {
-  // `ctx.filter = ''` on its own was harmless; the SIGSEGV landed on the next
-  // DRAW. `css_filter('')` parses to an EMPTY filter list, and
-  // `css_filters_to_image_filter` used to seed its fold with
-  // `ImageFilter(ptr::null_mut())` -- for an empty list the fold closure never
-  // runs, so it handed that null seed straight back as `Some(ImageFilter(null))`.
-  // The setter stored it and the draw passed it to
-  // `skiac_paint_set_image_filter`, which dereferenced it. `'   '` and
-  // `'garbage'` parse to an empty list too and crashed identically. If this
-  // regresses, the whole ava worker dies rather than this assertion failing.
+  // The SIGSEGV lands on the DRAW, not on the assignment: an empty filter list
+  // that yields `Some(ImageFilter(null))` is stored by the setter and then
+  // dereferenced by `skiac_paint_set_image_filter`. `''`, `'   '` and
+  // `'garbage'` all parse to an empty list. If this regresses, the whole ava
+  // worker dies rather than this assertion failing.
   for (const bad of ['', '   ', 'garbage', 'not-a-filter(1)', 'inherit', 'initial', 'unset', 'revert']) {
     const canvas = createCanvas(50, 50)
     const ctx = canvas.getContext('2d')
@@ -1401,13 +1388,11 @@ test('an unparseable ctx.filter must not crash the process on the next draw', (t
 })
 
 test('an unparseable ctx.filter is discarded and the previous filter survives', (t) => {
-  // Blink's setter parses with `CSSParser::ParseSingleValue(kFilter, ...)` and
-  // plain `return`s when that yields null, leaving the state untouched
-  // (canvas_2d_recorder_context.cc:1332-1350). So an invalid assignment neither
-  // throws nor resets to `none`. `''` is rejected before tokenising
-  // (css_parser.cc:326-328); `'   '` and `'garbage'` produce `list->length() == 0`
-  // (css_parsing_utils.cc:4044-4046); the CSS-wide keywords are rejected by the
-  // setter's own `IsCSSWideKeyword()` arm. Verified against Chrome 150.
+  // Blink's setter plain `return`s when parsing yields null, leaving the state
+  // untouched (canvas_2d_recorder_context.cc:1332-1350), so an invalid
+  // assignment neither throws nor resets to `none`. Every value below --
+  // `''`, whitespace, junk and the CSS-wide keywords -- is rejected by Blink,
+  // verified against Chrome 150.
   const ctx = createCanvas(50, 50).getContext('2d')
 
   t.is(ctx.filter, 'none', 'the initial value is "none"')
@@ -1435,12 +1420,10 @@ test('an unparseable ctx.filter is discarded and the previous filter survives', 
 })
 
 test('a partially invalid ctx.filter list is rejected whole, not truncated to its valid prefix', (t) => {
-  // `ConsumeFilterFunctionList` is greedy and merely `break`s at the first junk
-  // token, but it does not release that iteration's `CSSParserSavePoint`
-  // (css_parsing_utils.cc:4032-4043), so the junk stays in the stream and
-  // `!stream.AtEnd()` rejects the whole declaration
-  // (css_property_parser.cc:118-120). Our parser is greedy in the same way, so
-  // it used to KEEP the `blur(3px)` prefix. Chrome 150 does not.
+  // A `<filter-value-list>` is all-or-nothing: Blink's parser is greedy but the
+  // junk it stops at stays in the stream, and `!stream.AtEnd()` then rejects the
+  // whole declaration (css_property_parser.cc:118-120). Chrome 150 keeps no
+  // valid prefix, so neither may we.
   const measure = (filter: string) => {
     const canvas = createCanvas(50, 50)
     const ctx = canvas.getContext('2d')

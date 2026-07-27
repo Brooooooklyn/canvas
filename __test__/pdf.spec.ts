@@ -260,12 +260,9 @@ function countPdfImages(pdf: Buffer): number {
 // REGRESSION GUARD, paired with the SVG ones in svg-canvas.spec.ts.
 //
 // `ctx.filter` on an explicit `saveLayer` costs the PDF backend its vector-ness:
-// `SkPDFDevice::createDevice` answers a layer paint that carries an image filter
-// with a raster device -- "PDF does not support image filters, so render them on
-// CPU ... at 'screen' resolution (100dpi), not printer resolution" -- and the
-// page comes back carrying `/Subtype /Image` XObjects. A filter with no spatial
-// component has no reason to be on a layer at all; it stays on the content paint
-// on this backend and the page stays vector.
+// `SkPDFDevice::createDevice` answers a layer paint carrying an image filter
+// with a raster device, and the page comes back with `/Subtype /Image` XObjects.
+// A colour-only filter stays on the content paint here and keeps it vector.
 test('a colour-only ctx.filter must not rasterise the page', (t) => {
   const { doc } = t.context
   const ctx = doc.beginPage(240, 200)
@@ -278,10 +275,9 @@ test('a colour-only ctx.filter must not rasterise the page', (t) => {
   t.is(countPdfImages(pdf), 0, 'the page must stay vector')
 })
 
-// The other direction, and the reason the fix is scoped to filters with no
-// spatial component: `blur()` HAS a length, that length is device-space, and the
-// only way to give it device space is the layer. Rasterising is the price, and
-// it is what `main` did here too.
+// The other direction, and why the fix is scoped to colour-only filters:
+// `blur()` has a length, that length is device-space, and only the layer can
+// give it one. Rasterising is the price.
 test('a spatial ctx.filter keeps its device-space layer', (t) => {
   const doc = new PDFDocument()
   const ctx = doc.beginPage(240, 200)
@@ -294,14 +290,10 @@ test('a spatial ctx.filter keeps its device-space layer', (t) => {
   t.true(countPdfImages(pdf) > 0, 'a blur has to go through the filter layer')
 })
 
-// The pair above rescued the CONTENT pass only. The SHADOW pass picked its
-// route from `shadow_takes_image_filter`, which read a bare
-// `state.filter.is_some()` and so kept `composited_filter_layer` even for a
-// filter that needs no device space -- and `SkPDFDevice::createDevice` answers a
-// layer paint carrying an image filter with a RASTER device, so a page that has
-// both a colour-only `ctx.filter` and a zero-blur shadow came back with
-// `/Subtype /Image` XObjects. Measured, 240x200, `shadowOffsetX = 40`, bytes /
-// images: `main` (2cd4e1a) 818/0, before 1468/2, after 818/0.
+// The pair above pins the CONTENT pass; this pins the SHADOW pass, which picks
+// its route from `shadow_takes_image_filter`. That predicate must consult
+// `filter_takes_layer` too, or a page with both a colour-only `ctx.filter` and a
+// zero-blur shadow rasterises through the layer the shadow keeps.
 for (const filter of ['grayscale(1)', 'opacity(0.5)', 'sepia(1)', 'invert(1)', 'brightness(0.5)', 'saturate(2)']) {
   test(`a colour-only ctx.filter with a shadow must not rasterise the page (${filter})`, (t) => {
     const { doc } = t.context
@@ -321,25 +313,13 @@ for (const filter of ['grayscale(1)', 'opacity(0.5)', 'sepia(1)', 'invert(1)', '
   })
 }
 
-// KNOWN LIMITATION, deliberately pinned -- this is not a win, it is the one cell
-// the rescue above gives back.
-//
-// Taking the rescue puts the colour filter on the CONTENT paint, and on
-// `windows-11-arm` runners a PDF glyph run drawn through such a paint faults
-// with 0xC0000005 (ACCESS_VIOLATION): ava reported `__test__\pdf.spec.ts exited
-// with a non-zero exit code: 3221225477`, localised with per-test stderr markers
-// to exactly this scene -- fillRect and strokeRect under all six colour-only
-// filters passed on the same runner, the fillText variant crashed, and the SVG
-// text tests, which take the identical Rust arm, all passed. A glyph run is the
-// one draw whose colour filter reaches SkPDFDevice's strike machinery rather
-// than only the blitter: `internalDrawGlyphRun` hands `SkPDFStrike::Make` the
-// raw `runPaint` (src/pdf/SkPDFDevice.cpp:948), not the `clean_paint` copy
-// `SkPaintPriv::RemoveColorFilter` has emptied (:265-279).
-//
-// So `filter_takes_layer` keeps the layer for PDF glyphs, and PDF text under a
-// colour-only `ctx.filter` rasterises again, exactly as `main` (2cd4e1a) does.
-// Measured over a 648-scene matrix, all 216 PDF text rows are byte-identical to
-// the no-rescue predicate. SVG keeps its text rescue; see svg-canvas.spec.ts.
+// KNOWN LIMITATION, deliberately pinned -- the one cell the rescue above gives
+// back. On `windows-11-arm` a PDF glyph run drawn through a colour-filtered
+// paint faults with 0xC0000005; a glyph run is the one draw whose colour filter
+// reaches SkPDFDevice's strike machinery rather than only the blitter
+// (`internalDrawGlyphRun` passes the raw paint, src/pdf/SkPDFDevice.cpp:948). So
+// `filter_takes_layer` keeps the layer for PDF glyphs and PDF text under a
+// colour-only `ctx.filter` rasterises. SVG keeps its text rescue.
 test('a colour-only ctx.filter with a text shadow rasterises the page on PDF', (t) => {
   GlobalFonts.registerFromPath(join(__dirname, 'fonts-dir', 'iosevka-curly-regular.woff2'), 'i-curly')
   const { doc } = t.context
@@ -356,10 +336,9 @@ test('a colour-only ctx.filter with a text shadow rasterises the page on PDF', (
   t.true(countPdfImages(pdf) > 0, 'PDF glyphs keep the layer, so the page rasterises')
 })
 
-// The split itself, pinned from both sides in one test so neither half can flip
-// silently: the SAME scene, the same filter, the same shadow, differing only in
-// whether the draw emits a glyph run. `fillRect` keeps e816c47's vector page;
-// `fillText` takes the layer and rasterises.
+// The split itself, pinned from both sides so neither half can flip silently:
+// the same scene, filter and shadow, differing only in whether the draw emits a
+// glyph run. `fillRect` stays vector; `fillText` takes the layer.
 for (const filter of ['grayscale(1)', 'opacity(0.5)', 'invert(1)']) {
   test(`only GLYPHS lose the colour-only rescue on PDF (${filter})`, (t) => {
     GlobalFonts.registerFromPath(join(__dirname, 'fonts-dir', 'iosevka-curly-regular.woff2'), 'i-curly')
