@@ -1344,12 +1344,13 @@ impl Context {
   /// (canvas_rendering_context_2d_state.cc:650-652). Reached only for a blurred
   /// shadow; `shadow_paint` sends `shadowBlur == 0` down the colour-filter route.
   ///
-  /// ACCEPTED DIVERGENCE, axis-aligned rect fills only: Chromium reaches those
-  /// through the looper's `SkMaskFilter`, which Skia special-cases down to a
-  /// closed-form analytic edge profile, while this route runs the discrete
-  /// three-box pass and lands consistently short (worst delta 8/255). Every
-  /// other shape matches Chrome exactly. Accepted to keep one blur shared by the
-  /// geometry, text and image paths.
+  /// ACCEPTED DIVERGENCE, every shape: Skia's raster blur runs a true Gaussian
+  /// only below sigma 2 (SkBlurEngine.cpp:275) and a three-box pass above it,
+  /// off an integer window (:388) -- so the effective sigma snaps to a
+  /// staircase, +9% to -13% off `shadowBlur / 2`, sign depending on where the
+  /// request falls in the step. Chrome is GPU-backed and downscales into a true
+  /// Gaussian instead, so it tracks the ideal. Nothing to fix here: the sigma
+  /// this passes is already correct.
   ///
   /// dx/dy and sigma go in raw, in device pixels, as Blink builds them -- safe
   /// ONLY because `composited_filter_layer` opens this filter's layer at the

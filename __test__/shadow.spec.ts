@@ -1171,8 +1171,8 @@ test('ctx-filter-blur-width-is-device-space-on-drawImage', async (t) => {
 })
 
 // shadowBlur alone must NOT move -- it was already device-space and this proves
-// the layer did not disturb it. Chrome is 10.54 at both CTMs; we read 10.92,
-// the documented analytic-vs-discrete rect-blur divergence (see
+// the layer did not disturb it. Chrome 150 measures 10.42 at both CTMs; we read
+// 10.92, Skia's raster box-blur quantisation above sigma 2 (see
 // `shadow_only_image_filter`), which is why this asserts our own number.
 test('shadowBlur-alone-is-unchanged-by-the-device-space-filter-layer', (t) => {
   const scene = (ctx: SKRSContext2D, scale: number) => {
