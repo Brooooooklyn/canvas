@@ -252,3 +252,131 @@ test('should handle empty PDF document', (t) => {
   t.true(pdfBuffer instanceof Buffer)
   t.true(pdfBuffer.length == 0)
 })
+
+function countPdfImages(pdf: Buffer): number {
+  return (pdf.toString('latin1').match(/\/Subtype \/Image/g) ?? []).length
+}
+
+// REGRESSION GUARD, paired with the SVG ones in svg-canvas.spec.ts.
+//
+// `ctx.filter` on an explicit `saveLayer` costs the PDF backend its vector-ness:
+// `SkPDFDevice::createDevice` answers a layer paint carrying an image filter
+// with a raster device, and the page comes back with `/Subtype /Image` XObjects.
+// A colour-only filter stays on the content paint here and keeps it vector.
+test('a colour-only ctx.filter must not rasterise the page', (t) => {
+  const { doc } = t.context
+  const ctx = doc.beginPage(240, 200)
+  ctx.filter = 'grayscale(1)'
+  ctx.fillStyle = 'blue'
+  ctx.fillRect(40, 40, 80, 60)
+  doc.endPage()
+
+  const pdf = doc.close()
+  t.is(countPdfImages(pdf), 0, 'the page must stay vector')
+})
+
+// The other direction, and why the fix is scoped to colour-only filters:
+// `blur()` has a length, that length is device-space, and only the layer can
+// give it one. Rasterising is the price.
+test('a spatial ctx.filter keeps its device-space layer', (t) => {
+  const doc = new PDFDocument()
+  const ctx = doc.beginPage(240, 200)
+  ctx.filter = 'blur(3px)'
+  ctx.fillStyle = 'blue'
+  ctx.fillRect(40, 40, 80, 60)
+  doc.endPage()
+
+  const pdf = doc.close()
+  t.true(countPdfImages(pdf) > 0, 'a blur has to go through the filter layer')
+})
+
+// The pair above pins the CONTENT pass; this pins the SHADOW pass, which picks
+// its route from `shadow_takes_image_filter`. That predicate must consult
+// `filter_takes_layer` too, or a page with both a colour-only `ctx.filter` and a
+// zero-blur shadow rasterises through the layer the shadow keeps.
+for (const filter of ['grayscale(1)', 'opacity(0.5)', 'sepia(1)', 'invert(1)', 'brightness(0.5)', 'saturate(2)']) {
+  test(`a colour-only ctx.filter with a shadow must not rasterise the page (${filter})`, (t) => {
+    const { doc } = t.context
+    const ctx = doc.beginPage(240, 200)
+    ctx.filter = filter
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.8)'
+    ctx.shadowOffsetX = 40
+    ctx.fillStyle = 'blue'
+    ctx.fillRect(40, 40, 80, 60)
+    ctx.strokeStyle = 'red'
+    ctx.lineWidth = 6
+    ctx.strokeRect(40, 120, 80, 60)
+    doc.endPage()
+
+    const pdf = doc.close()
+    t.is(countPdfImages(pdf), 0, 'the shadowed page must stay vector')
+  })
+}
+
+// KNOWN LIMITATION, deliberately pinned -- the one cell the rescue above gives
+// back. On `windows-11-arm` a PDF glyph run drawn through a colour-filtered
+// paint faults with 0xC0000005; a glyph run is the one draw whose colour filter
+// reaches SkPDFDevice's strike machinery rather than only the blitter
+// (`internalDrawGlyphRun` passes the raw paint, src/pdf/SkPDFDevice.cpp:948). So
+// `filter_takes_layer` keeps the layer for PDF glyphs and PDF text under a
+// colour-only `ctx.filter` rasterises. SVG keeps its text rescue.
+test('a colour-only ctx.filter with a text shadow rasterises the page on PDF', (t) => {
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts-dir', 'iosevka-curly-regular.woff2'), 'i-curly')
+  const { doc } = t.context
+  const ctx = doc.beginPage(240, 200)
+  ctx.filter = 'grayscale(1)'
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.8)'
+  ctx.shadowOffsetX = 40
+  ctx.fillStyle = 'blue'
+  ctx.font = '30px i-curly'
+  ctx.fillText('napi-rs', 40, 100)
+  doc.endPage()
+
+  const pdf = doc.close()
+  t.true(countPdfImages(pdf) > 0, 'PDF glyphs keep the layer, so the page rasterises')
+})
+
+// The split itself, pinned from both sides so neither half can flip silently:
+// the same scene, filter and shadow, differing only in whether the draw emits a
+// glyph run. `fillRect` stays vector; `fillText` takes the layer.
+for (const filter of ['grayscale(1)', 'opacity(0.5)', 'invert(1)']) {
+  test(`only GLYPHS lose the colour-only rescue on PDF (${filter})`, (t) => {
+    GlobalFonts.registerFromPath(join(__dirname, 'fonts-dir', 'iosevka-curly-regular.woff2'), 'i-curly')
+
+    const scene = (draw: (ctx: ReturnType<PDFDocument['beginPage']>) => void) => {
+      const doc = new PDFDocument()
+      const ctx = doc.beginPage(240, 200)
+      ctx.filter = filter
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.8)'
+      ctx.shadowOffsetX = 40
+      ctx.fillStyle = 'blue'
+      ctx.font = '30px i-curly'
+      draw(ctx)
+      doc.endPage()
+      return countPdfImages(doc.close())
+    }
+
+    t.is(
+      scene((ctx) => ctx.fillRect(40, 40, 80, 60)),
+      0,
+      'geometry keeps the rescue and stays vector',
+    )
+    t.true(scene((ctx) => ctx.fillText('napi-rs', 40, 100)) > 0, 'glyphs keep the layer and rasterise')
+  })
+}
+
+// And the other direction, with a shadow this time: a spatial `ctx.filter` still
+// needs the layer, so the page still rasterises. `main` did the same.
+test('a spatial ctx.filter with a shadow keeps its device-space layer', (t) => {
+  const doc = new PDFDocument()
+  const ctx = doc.beginPage(240, 200)
+  ctx.filter = 'blur(3px)'
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.8)'
+  ctx.shadowOffsetX = 40
+  ctx.fillStyle = 'blue'
+  ctx.fillRect(40, 40, 80, 60)
+  doc.endPage()
+
+  const pdf = doc.close()
+  t.true(countPdfImages(pdf) > 0, 'a blur has to go through the filter layer')
+})

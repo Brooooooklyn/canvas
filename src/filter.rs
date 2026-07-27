@@ -1,4 +1,4 @@
-use std::{num::ParseFloatError, ptr};
+use std::num::ParseFloatError;
 
 use cssparser::{Parser, ParserInput};
 use cssparser_color::{Color, RgbaLegacy, hsl_to_rgb};
@@ -292,11 +292,19 @@ pub fn css_filter(input: &str) -> IResult<&str, Vec<CssFilter>> {
   Ok((input, filters))
 }
 
+/// Fold a parsed `<filter-value-list>` into one chained `SkImageFilter`, or
+/// `None` when the list produces no filter at all.
+///
+/// `None` is the only representation of "no filter" this may return, and the
+/// chain is threaded as an `Option` so that an empty list yields it by
+/// construction. A null `ImageFilter` here would reach
+/// `skiac_paint_set_image_filter` on the next draw and segfault.
 pub(crate) fn css_filters_to_image_filter(filters: Vec<CssFilter>) -> Option<ImageFilter> {
-  filters
-    .into_iter()
-    .try_fold(ImageFilter(ptr::null_mut()), |image_filter, f| match f {
-      CssFilter::Blur(blur) => ImageFilter::make_blur(blur, blur, Some(&image_filter)),
+  let mut chain: Option<ImageFilter> = None;
+  for f in filters {
+    // A filter that fails to build takes the whole list with it.
+    let next = match f {
+      CssFilter::Blur(blur) => ImageFilter::make_blur(blur, blur, chain.as_ref()),
       CssFilter::Brightness(brightness) => {
         let brightness = brightness.max(0.0);
         ImageFilter::make_image_filter(
@@ -310,7 +318,7 @@ pub(crate) fn css_filters_to_image_filter(filters: Vec<CssFilter>) -> Option<Ima
           0.0,
           brightness,
           1.0,
-          Some(&image_filter),
+          chain.as_ref(),
         )
       }
       CssFilter::Contrast(contrast) => {
@@ -321,7 +329,7 @@ pub(crate) fn css_filters_to_image_filter(filters: Vec<CssFilter>) -> Option<Ima
           *v = (127.0 + amt * (orig - 127.0)) as u8;
         });
         let ramp = Some(&ramp);
-        ImageFilter::from_argb(None, ramp, ramp, ramp, Some(&image_filter))
+        ImageFilter::from_argb(None, ramp, ramp, ramp, chain.as_ref())
       }
       CssFilter::DropShadow(offset_x, offset_y, blur_radius, shadow_color) => {
         let sigma = blur_radius / 2.0;
@@ -340,7 +348,7 @@ pub(crate) fn css_filters_to_image_filter(filters: Vec<CssFilter>) -> Option<Ima
             | ((shadow_color.r as u32) << 16)
             | ((shadow_color.g as u32) << 8)
             | shadow_color.b as u32,
-          Some(&image_filter),
+          chain.as_ref(),
         )
       }
       CssFilter::Grayscale(amt) => {
@@ -356,7 +364,7 @@ pub(crate) fn css_filters_to_image_filter(filters: Vec<CssFilter>) -> Option<Ima
           0.7152 - 0.7152 * amt,
           0.0722 + 0.9278 * amt,
           1.0,
-          Some(&image_filter),
+          chain.as_ref(),
         )
       }
       CssFilter::HueRotate(angle) => {
@@ -373,7 +381,7 @@ pub(crate) fn css_filters_to_image_filter(filters: Vec<CssFilter>) -> Option<Ima
           0.715 - cos * 0.715 + sin * 0.715,
           0.072 + cos * 0.928 + sin * 0.072,
           1.0,
-          Some(&image_filter),
+          chain.as_ref(),
         )
       }
       CssFilter::Invert(amt) => {
@@ -389,7 +397,7 @@ pub(crate) fn css_filters_to_image_filter(filters: Vec<CssFilter>) -> Option<Ima
             *val = (orig * (1.0 - amt) + inv * amt) as u8;
           });
         let ramp = Some(&ramp);
-        ImageFilter::from_argb(None, ramp, ramp, ramp, Some(&image_filter))
+        ImageFilter::from_argb(None, ramp, ramp, ramp, chain.as_ref())
       }
       CssFilter::Opacity(opacity) => {
         let opacity = opacity.clamp(0.0, 1.0);
@@ -404,7 +412,7 @@ pub(crate) fn css_filters_to_image_filter(filters: Vec<CssFilter>) -> Option<Ima
           0.0,
           1.0,
           opacity,
-          Some(&image_filter),
+          chain.as_ref(),
         )
       }
       CssFilter::Saturate(amt) => {
@@ -420,7 +428,7 @@ pub(crate) fn css_filters_to_image_filter(filters: Vec<CssFilter>) -> Option<Ima
           0.7152 - 0.7152 * amt,
           0.0722 + 0.9278 * amt,
           1.0,
-          Some(&image_filter),
+          chain.as_ref(),
         )
       }
       CssFilter::Sepia(amt) => {
@@ -436,15 +444,68 @@ pub(crate) fn css_filters_to_image_filter(filters: Vec<CssFilter>) -> Option<Ima
           0.534 - 0.534 * amt,
           0.131 + 0.869 * amt,
           1.0,
-          Some(&image_filter),
+          chain.as_ref(),
         )
       }
-    })
+    };
+    chain = Some(next?);
+  }
+  chain
 }
 
 #[test]
 fn parse_empty() {
   assert_eq!(css_filter(""), Ok(("", vec![])));
+}
+
+#[test]
+fn empty_filter_list_is_no_filter_not_a_null_one() {
+  // Pins the `Option` chain: an empty list must produce `None`, not a
+  // `Some(ImageFilter(null))` that the next draw would dereference.
+  assert!(css_filters_to_image_filter(vec![]).is_none());
+}
+
+#[test]
+fn leftover_input_is_the_all_or_nothing_gate() {
+  // `css_filter` never returns `Err`; anything it cannot read comes back as
+  // leftover input, which `Context::set_filter` uses as Blink's
+  // `!stream.AtEnd()` gate. So every accepted value must leave nothing behind...
+  for input in [
+    "blur(3px)",
+    "blur(3px) grayscale(50%)",
+    "contrast(175%) brightness(103%)",
+    "drop-shadow(16px 16px 10px black)",
+    "hue-rotate(90deg)",
+    "opacity(20%)",
+    "saturate(200%)",
+    "sepia(100%)",
+    "invert(100%)",
+    " blur(3px) ",
+  ] {
+    let (rest, filters) = css_filter(input).unwrap();
+    assert_eq!(rest.trim(), "", "`{input}` should be consumed whole");
+    assert!(!filters.is_empty(), "`{input}` should parse to a filter");
+  }
+
+  // ...and every rejected value must be visibly rejected, by leaving junk
+  // behind or by parsing to nothing at all.
+  for input in [
+    "", "   ", "garbage", "inherit", "initial", "unset", "revert", "none",
+  ] {
+    let (rest, filters) = css_filter(input).unwrap();
+    assert!(
+      filters.is_empty(),
+      "`{input}` should not parse to any filter"
+    );
+    assert_eq!(rest, input.trim_start(), "`{input}` should be left unread");
+  }
+
+  // Greedy parsing DOES read the valid prefix, so the leftover is the only
+  // thing telling the setter to reject the assignment.
+  assert_eq!(
+    css_filter("blur(3px) notafilter(1)"),
+    Ok(("notafilter(1)", vec![CssFilter::Blur(3.0)]))
+  );
 }
 
 #[test]

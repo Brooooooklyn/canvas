@@ -592,6 +592,8 @@ pub mod ffi {
 
     pub fn skiac_canvas_save(canvas: *mut skiac_canvas);
 
+    pub fn skiac_canvas_save_layer(canvas: *mut skiac_canvas, paint: *mut skiac_paint);
+
     pub fn skiac_canvas_restore(canvas: *mut skiac_canvas);
 
     pub fn skiac_canvas_reset(canvas: *mut skiac_canvas);
@@ -699,6 +701,10 @@ pub mod ffi {
       paint: *mut skiac_paint,
       image_filter: *mut skiac_image_filter,
     );
+
+    pub fn skiac_paint_set_src_in_color_filter(paint: *mut skiac_paint, r: u8, g: u8, b: u8, a: u8);
+
+    pub fn skiac_paint_get_color(paint: *mut skiac_paint) -> u32;
 
     pub fn skiac_path_create() -> *mut skiac_path;
 
@@ -969,6 +975,13 @@ pub mod ffi {
       table_b: *const u8,
       c_image_filter: *mut skiac_image_filter,
     ) -> *mut skiac_image_filter;
+
+    pub fn skiac_image_filter_is_a_color_filter(image_filter: *mut skiac_image_filter) -> bool;
+
+    pub fn skiac_image_filter_filter_color(
+      image_filter: *mut skiac_image_filter,
+      color: u32,
+    ) -> u32;
 
     pub fn skiac_image_filter_ref(image_filter: *mut skiac_image_filter);
 
@@ -2790,6 +2803,15 @@ impl Canvas {
     }
   }
 
+  /// `SkCanvas::saveLayer(nullptr, paint)`, carrying only `paint`'s blend mode
+  /// and image filter. Owes one `restore()`. Only
+  /// `Context::composited_filter_layer` should call it.
+  pub fn save_layer(&mut self, paint: &Paint) {
+    unsafe {
+      ffi::skiac_canvas_save_layer(self.0, paint.0);
+    }
+  }
+
   pub fn restore(&mut self) {
     unsafe {
       ffi::skiac_canvas_restore(self.0);
@@ -3034,6 +3056,9 @@ impl Paint {
     }
   }
 
+  // Unused: a canvas2d shadow carries exactly one Gaussian, inside
+  // `SkImageFilters::DropShadowOnly`. Kept as a general-purpose binding.
+  #[allow(dead_code)]
   pub fn set_mask_filter(&mut self, mask_filter: &MaskFilter) {
     unsafe {
       ffi::skiac_paint_set_mask_filter(self.0, mask_filter.0);
@@ -3044,6 +3069,21 @@ impl Paint {
     unsafe {
       ffi::skiac_paint_set_image_filter(self.0, image_filter.0);
     }
+  }
+
+  /// Installs `SkColorFilters::Blend(colour, kSrcIn)` -- Chromium's shadow
+  /// colouriser (cc/paint/draw_looper.cc:33-34). Replaces the source RGB, shader
+  /// included, without a layer, so vector devices can still express the draw.
+  pub fn set_src_in_color_filter(&mut self, r: u8, g: u8, b: u8, a: u8) {
+    unsafe {
+      ffi::skiac_paint_set_src_in_color_filter(self.0, r, g, b, a);
+    }
+  }
+
+  /// The paint's colour as an 8-bit sRGB ARGB word, alpha in the top byte.
+  /// Lossless here: `set_color` and `set_alpha` are both 8-bit setters.
+  pub fn get_color(&self) -> u32 {
+    unsafe { ffi::skiac_paint_get_color(self.0) }
   }
 }
 
@@ -3889,11 +3929,15 @@ impl<'a> From<&'a Transform> for ffi::skiac_transform {
   }
 }
 
+// Unused for the same reason as `Paint::set_mask_filter`; kept as a
+// general-purpose binding. `mod sk` is private, hence the allow.
+#[allow(dead_code)]
 #[repr(transparent)]
 #[derive(Debug)]
 pub struct MaskFilter(*mut ffi::skiac_mask_filter);
 
 impl MaskFilter {
+  #[allow(dead_code)]
   pub fn make_blur(radius: f32) -> Option<Self> {
     let raw_ptr = unsafe { ffi::skiac_mask_filter_make_blur(radius) };
     if raw_ptr.is_null() {
@@ -3924,6 +3968,24 @@ impl Clone for ImageFilter {
 }
 
 impl ImageFilter {
+  /// Does this filter have a spatial component, i.e. can the coordinate space it
+  /// is evaluated in change what it does? Only then is
+  /// `Context::composited_filter_layer`'s device-space layer worth anything.
+  pub fn needs_device_space_layer(&self) -> bool {
+    // An `ImageFilter` never holds null: every constructor null-checks what Skia
+    // returned, and "no filter" is spelled `None`.
+    debug_assert!(!self.0.is_null(), "ImageFilter must never hold null");
+    !unsafe { ffi::skiac_image_filter_is_a_color_filter(self.0) }
+  }
+
+  /// The colour this filter turns `color` into, both 8-bit sRGB ARGB. Only a
+  /// filter with `needs_device_space_layer() == false` has an answer; any other
+  /// hands `color` straight back.
+  pub fn filter_color(&self, color: u32) -> u32 {
+    debug_assert!(!self.0.is_null(), "ImageFilter must never hold null");
+    unsafe { ffi::skiac_image_filter_filter_color(self.0, color) }
+  }
+
   pub fn make_drop_shadow_only(
     dx: f32,
     dy: f32,

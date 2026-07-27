@@ -78,14 +78,17 @@ impl Gradient {
         &mut conic_gradient.base.colors,
       ),
     };
-    if stops.last().map(|l| l < &offset).unwrap_or(true) {
+    // Stops sharing an offset must keep insertion order (HTML spec,
+    // dom-canvasgradient-addcolorstop), so a new stop belongs at the UPPER bound
+    // of `offset` -- what Blink gets from a `stable_sort` over a strict `<`.
+    if stops.last().map(|l| l <= &offset).unwrap_or(true) {
       stops.push(offset);
       colors.push(color);
     } else {
       let mut index = 0usize;
-      // insert it in sorted order
+      // insert it in sorted order, after any stop already sitting at the same offset
       for (idx, val) in stops.iter().enumerate() {
-        if val >= &offset {
+        if val > &offset {
           break;
         } else {
           index = idx + 1;
@@ -235,4 +238,63 @@ fn test_add_color_stop() {
   } else {
     unreachable!();
   }
+}
+
+/// Pins the HTML spec's rule that stops sharing an offset keep insertion order
+/// (dom-canvasgradient-addcolorstop).
+#[test]
+fn test_add_color_stop_duplicated_offsets_keep_insertion_order() {
+  let red = Color::from_rgba(255, 0, 0, 255);
+  let green = Color::from_rgba(0, 255, 0, 255);
+  let blue = Color::from_rgba(0, 0, 255, 255);
+  let white = Color::from_rgba(255, 255, 255, 255);
+  let black = Color::from_rgba(0, 0, 0, 255);
+
+  let positions_colors = |gradient: Gradient| match gradient {
+    Gradient::Linear(g) => (g.base.positions, g.base.colors),
+    Gradient::Radial(g) => (g.base.positions, g.base.colors),
+    Gradient::Conic(g) => (g.base.positions, g.base.colors),
+  };
+
+  // Two stops at the same offset, appended at the tail.
+  let mut g = Gradient::create_linear_gradient(0.0, 0.0, 20.0, 0.0);
+  g.add_color_stop(0.5, red);
+  g.add_color_stop(0.5, blue);
+  let (positions, colors) = positions_colors(g);
+  assert_eq!(positions, vec![0.5, 0.5]);
+  assert_eq!(colors, vec![red, blue]);
+
+  // A duplicate offset in the middle of an existing run must not jump ahead of it.
+  let mut g = Gradient::create_linear_gradient(0.0, 0.0, 20.0, 0.0);
+  g.add_color_stop(0.0, white);
+  g.add_color_stop(0.5, red);
+  g.add_color_stop(0.5, green);
+  g.add_color_stop(0.5, blue);
+  g.add_color_stop(1.0, black);
+  let (positions, colors) = positions_colors(g);
+  assert_eq!(positions, vec![0.0, 0.5, 0.5, 0.5, 1.0]);
+  assert_eq!(colors, vec![white, red, green, blue, black]);
+
+  // Duplicates at the 0.0 and 1.0 boundaries.
+  let mut g = Gradient::create_radial_gradient(16.0, 16.0, 0.0, 16.0, 16.0, 16.0);
+  g.add_color_stop(0.0, red);
+  g.add_color_stop(0.0, green);
+  g.add_color_stop(1.0, blue);
+  g.add_color_stop(1.0, black);
+  let (positions, colors) = positions_colors(g);
+  assert_eq!(positions, vec![0.0, 0.0, 1.0, 1.0]);
+  assert_eq!(colors, vec![red, green, blue, black]);
+
+  // Out-of-order insertion mixed with duplicates: equal offsets keep insertion
+  // order even through the O(n) insertion path.
+  let mut g = Gradient::create_conic_gradient(16.0, 16.0, 16.0);
+  g.add_color_stop(1.0, black);
+  g.add_color_stop(0.5, red);
+  g.add_color_stop(0.25, green);
+  g.add_color_stop(0.5, blue);
+  g.add_color_stop(0.0, white);
+  g.add_color_stop(0.25, red);
+  let (positions, colors) = positions_colors(g);
+  assert_eq!(positions, vec![0.0, 0.25, 0.25, 0.5, 0.5, 1.0]);
+  assert_eq!(colors, vec![white, green, red, red, blue, black]);
 }

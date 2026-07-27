@@ -9,6 +9,7 @@
 #include <include/core/SkBlurTypes.h>
 #include <include/core/SkCanvas.h>
 #include <include/core/SkColorFilter.h>
+#include <include/core/SkColorSpace.h>
 #include <include/core/SkData.h>
 #include <include/core/SkDrawable.h>
 #include <include/core/SkFontMgr.h>
@@ -888,6 +889,7 @@ void skiac_canvas_clip_rect(skiac_canvas* c_canvas,
                             float h);
 void skiac_canvas_clip_path(skiac_canvas* c_canvas, skiac_path* c_path);
 void skiac_canvas_save(skiac_canvas* c_canvas);
+void skiac_canvas_save_layer(skiac_canvas* c_canvas, skiac_paint* c_paint);
 void skiac_canvas_restore(skiac_canvas* c_canvas);
 void skiac_canvas_reset(skiac_canvas* c_canvas);
 void skiac_canvas_write_pixels(skiac_canvas* c_canvas,
@@ -941,6 +943,7 @@ void skiac_paint_set_color(skiac_paint* c_paint,
                            uint8_t a);
 void skiac_paint_set_alpha(skiac_paint* c_paint, uint8_t a);
 uint8_t skiac_paint_get_alpha(skiac_paint* c_paint);
+uint32_t skiac_paint_get_color(skiac_paint* c_paint);
 void skiac_paint_set_anti_alias(skiac_paint* c_paint, bool aa);
 void skiac_paint_set_blend_mode(skiac_paint* c_paint, int blend_mode);
 int skiac_paint_get_blend_mode(skiac_paint* c_paint);
@@ -959,6 +962,11 @@ void skiac_paint_set_mask_filter(skiac_paint* c_paint,
                                  skiac_mask_filter* c_mask_filter);
 void skiac_paint_set_image_filter(skiac_paint* c_paint,
                                   skiac_image_filter* c_image_filter);
+void skiac_paint_set_src_in_color_filter(skiac_paint* c_paint,
+                                         uint8_t r,
+                                         uint8_t g,
+                                         uint8_t b,
+                                         uint8_t a);
 
 // Path
 skiac_path* skiac_path_create();
@@ -1154,6 +1162,9 @@ skiac_image_filter* skiac_image_filter_from_argb(
     const uint8_t table_g[256],
     const uint8_t table_b[256],
     skiac_image_filter* c_image_filter);
+bool skiac_image_filter_is_a_color_filter(skiac_image_filter* c_image_filter);
+uint32_t skiac_image_filter_filter_color(skiac_image_filter* c_image_filter,
+                                         uint32_t color);
 void skiac_image_filter_destroy(skiac_image_filter* c_image_filter);
 
 // SkImage (for PageCache)

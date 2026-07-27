@@ -632,8 +632,14 @@ jobs:
       - name: Install llvm
         run: brew install llvm
 
+      # `macos-latest` is arm64. Without an explicit target the script falls back
+      # to the host-platform name in `scripts/utils.mjs`, which for darwin is
+      # `lib*-darwin-x64.a` -- so this step used to pull x86_64 Skia onto an
+      # arm64 runner and `ld` silently ignored every object in it. The job still
+      # passed only because `-dead_strip` removed the whole FFI surface: no unit
+      # test reached a `skiac_*` symbol, so nothing had to resolve.
       - name: Download skia binary
-        run: node ./scripts/release-skia-binary.mjs --download
+        run: node ./scripts/release-skia-binary.mjs --download --target=aarch64-apple-darwin
 
       - name: Test
         run: |

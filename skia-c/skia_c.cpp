@@ -400,6 +400,8 @@ void skiac_canvas_draw_image(skiac_canvas* c_canvas,
     CANVAS_CAST->save();
     // Translate to the destination position
     CANVAS_CAST->translate(dx, dy);
+    // The source crop -- SkSurface::draw paints the whole source surface. It
+    // would truncate a halo, so `paint` must carry no image filter.
     CANVAS_CAST->clipRect(SkRect::MakeWH(d_width, d_height));
     // Scale using the ratio of destination size to source surface size
     CANVAS_CAST->scale(d_width / s_width, d_height / s_height);
@@ -794,6 +796,15 @@ void skiac_canvas_save(skiac_canvas* c_canvas) {
   CANVAS_CAST->save();
 }
 
+// Explicit layer for a blend mode plus image filter, mirroring Blink's
+// `CompositedDraw` (canvas_2d_recorder_context.h:919-963): a canvas2d filter
+// length is device-space, so content and filter need different matrices. Null
+// bounds on purpose -- SkCanvas then sizes the layer from the device clip, so
+// no halo is truncated.
+void skiac_canvas_save_layer(skiac_canvas* c_canvas, skiac_paint* c_paint) {
+  CANVAS_CAST->saveLayer(nullptr, PAINT_CAST);
+}
+
 void skiac_canvas_restore(skiac_canvas* c_canvas) {
   CANVAS_CAST->restore();
 }
@@ -900,17 +911,23 @@ void skiac_canvas_draw_picture_rect(skiac_canvas* c_canvas,
   matrix.setScale(scale_x, scale_y);
   matrix.postTranslate(dx - sx * scale_x, dy - sy * scale_y);
 
+  const auto dst_rect = SkRect::MakeXYWH(dx, dy, dw, dh);
+  const SkPaint* paint = PAINT_CAST;
+
   canvas->save();
-  canvas->clipRect(SkRect::MakeXYWH(dx, dy, dw, dh), SkClipOp::kIntersect,
-                   true /* antialias */);
+  // The source crop -- `drawPicture` replays the whole picture. Like the clip
+  // in `skiac_canvas_draw_image`, `paint` must carry no image filter.
+  canvas->clipRect(dst_rect, SkClipOp::kIntersect, true /* antialias */);
 
   // Optimization: skip paint if it's default (SrcOver blend, full alpha, no
   // filter) This matches skia-canvas behavior
-  const SkPaint* paint = PAINT_CAST;
+  // The colour-filter test must stay: eliding a paint colourised by a kSrcIn
+  // colour filter renders a shadow as a displaced copy of the source.
   if (paint != nullptr) {
     auto blendMode = paint->asBlendMode();
     if (blendMode.has_value() && blendMode.value() == SkBlendMode::kSrcOver &&
-        paint->getAlpha() == 255 && paint->getImageFilter() == nullptr) {
+        paint->getAlpha() == 255 && paint->getImageFilter() == nullptr &&
+        paint->getColorFilter() == nullptr) {
       paint = nullptr;  // Skip paint for default case
     }
   }
@@ -958,6 +975,10 @@ void skiac_paint_set_alpha(skiac_paint* c_paint, uint8_t a) {
 
 uint8_t skiac_paint_get_alpha(skiac_paint* c_paint) {
   return PAINT_CAST->getAlpha();
+}
+
+uint32_t skiac_paint_get_color(skiac_paint* c_paint) {
+  return PAINT_CAST->getColor();
 }
 
 void skiac_paint_set_anti_alias(skiac_paint* c_paint, bool aa) {
@@ -1011,6 +1032,19 @@ void skiac_paint_set_image_filter(skiac_paint* c_paint,
   imageFilter->ref();
 
   PAINT_CAST->setImageFilter(imageFilter);
+}
+
+// Colourise like Chromium's shadow looper: source RGB (shader included) is
+// replaced, coverage multiplied by the colour's alpha (draw_looper.cc:33-34).
+// kSrcIn is the only mode SkSVGDevice accepts -- do not generalise it.
+void skiac_paint_set_src_in_color_filter(skiac_paint* c_paint,
+                                         uint8_t r,
+                                         uint8_t g,
+                                         uint8_t b,
+                                         uint8_t a) {
+  PAINT_CAST->setColorFilter(
+      SkColorFilters::Blend(SkColor4f::FromColor(SkColorSetARGB(a, r, g, b)),
+                            nullptr, SkBlendMode::kSrcIn));
 }
 
 void skiac_paint_set_style(skiac_paint* c_paint, int style) {
@@ -1853,6 +1887,34 @@ skiac_image_filter* skiac_image_filter_from_argb(
   } else {
     return nullptr;
   }
+}
+
+// Would Skia replace this image filter by a plain colour filter
+// (SkImageFilter.h:71-76)? Then it has no spatial parameter and needs no layer.
+// `asAColorFilter` asserts on a null out param and returns a ref to release.
+bool skiac_image_filter_is_a_color_filter(skiac_image_filter* c_image_filter) {
+  SkColorFilter* color_filter = nullptr;
+  if (!IMAGE_FILTER_CAST->asAColorFilter(&color_filter)) {
+    return false;
+  }
+  SkSafeUnref(color_filter);
+  return true;
+}
+
+// Evaluate a colour-only image filter on one 8-bit sRGB `SkColor` --
+// `Context::shadow_paint` colourises after `ctx.filter`, not before. A spatial
+// filter has no single answer, so `color` comes back untouched.
+uint32_t skiac_image_filter_filter_color(skiac_image_filter* c_image_filter,
+                                         uint32_t color) {
+  SkColorFilter* color_filter = nullptr;
+  if (!IMAGE_FILTER_CAST->asAColorFilter(&color_filter)) {
+    return color;
+  }
+  sk_sp<SkColorFilter> owned(color_filter);
+  auto srgb = SkColorSpace::MakeSRGB();
+  return owned
+      ->filterColor4f(SkColor4f::FromColor(color), srgb.get(), srgb.get())
+      .toSkColor();
 }
 
 void skiac_image_filter_ref(skiac_image_filter* c_image_filter) {
