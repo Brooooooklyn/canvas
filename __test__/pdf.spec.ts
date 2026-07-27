@@ -12,8 +12,21 @@ const test = ava as TestFn<{
   doc: PDFDocument
 }>
 
+// TEMPORARY, to be removed once the Windows ARM64 crash is located.
+// `__test__\pdf.spec.ts exited with a non-zero exit code: 3221225477`
+// (0xC0000005, ACCESS_VIOLATION) on `windows-11-arm` only, on both node@22 and
+// node@24, and not reproducible on macOS arm64 even against a debug build with
+// `debug_assert!` and `SkASSERT` live. ava buffers a file's test results and
+// discards them when its worker dies, so the run log names no test -- but it
+// forwards worker stderr as it arrives, so these markers survive the crash and
+// the last `start` without a matching `end` is the test that faulted.
 test.beforeEach((t) => {
+  process.stderr.write(`[PDFMARK] start ${t.title}\n`)
   t.context.doc = new PDFDocument()
+})
+
+test.afterEach.always((t) => {
+  process.stderr.write(`[PDFMARK] end   ${t.title}\n`)
 })
 
 test('should create a basic PDF document', (t) => {
