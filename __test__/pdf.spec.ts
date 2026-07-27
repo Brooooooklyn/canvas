@@ -29,7 +29,7 @@ test.afterEach.always((t) => {
   process.stderr.write(`[PDFMARK] end   ${t.title}\n`)
 })
 
-test('should create a basic PDF document', (t) => {
+test.serial('should create a basic PDF document', (t) => {
   const { doc } = t.context
   const ctx = doc.beginPage(612, 792) // Letter size in points
 
@@ -45,7 +45,7 @@ test('should create a basic PDF document', (t) => {
   t.is(pdfBuffer.toString('utf8', 0, 5), '%PDF-')
 })
 
-test('should create PDF with metadata', (t) => {
+test.serial('should create PDF with metadata', (t) => {
   const doc = new PDFDocument({
     title: 'Test Document',
     author: 'Test Author',
@@ -71,7 +71,7 @@ test('should create PDF with metadata', (t) => {
   t.true(pdfContent.includes('Test Author'))
 })
 
-test('should create multi-page PDF', (t) => {
+test.serial('should create multi-page PDF', (t) => {
   const { doc } = t.context
 
   // Page 1
@@ -108,7 +108,7 @@ test('should create multi-page PDF', (t) => {
   t.true(pdfContent.includes('/Type /Page'))
 })
 
-test('should draw various shapes on PDF', (t) => {
+test.serial('should draw various shapes on PDF', (t) => {
   const { doc } = t.context
   const ctx = doc.beginPage(800, 600)
 
@@ -155,7 +155,7 @@ test('should draw various shapes on PDF', (t) => {
   t.is(pdfBuffer.toString('utf8', 0, 5), '%PDF-')
 })
 
-test('should render text on PDF', async (t) => {
+test.serial('should render text on PDF', async (t) => {
   GlobalFonts.registerFromPath(join(__dirname, 'fonts-dir', 'iosevka-curly-regular.woff2'), 'i-curly')
   const { doc } = t.context
   const ctx = doc.beginPage(612, 792)
@@ -182,7 +182,7 @@ test('should render text on PDF', async (t) => {
   await writeFile(join(__dirname, 'pdf', 'text.pdf'), pdfBuffer)
 })
 
-test('should support gradients on PDF', async (t) => {
+test.serial('should support gradients on PDF', async (t) => {
   const { doc } = t.context
   const ctx = doc.beginPage(400, 400)
 
@@ -209,7 +209,7 @@ test('should support gradients on PDF', async (t) => {
   await writeFile(join(__dirname, 'pdf', 'gradients.pdf'), pdfBuffer)
 })
 
-test('should support different page sizes', async (t) => {
+test.serial('should support different page sizes', async (t) => {
   const { doc } = t.context
 
   // A4 size (210mm x 297mm = 595pt x 842pt)
@@ -238,7 +238,7 @@ test('should support different page sizes', async (t) => {
   await writeFile(join(__dirname, 'pdf', 'multi-page.pdf'), pdfBuffer)
 })
 
-test('should support PDF/A and compression settings', (t) => {
+test.serial('should support PDF/A and compression settings', (t) => {
   const doc = new PDFDocument({
     title: 'Compressed PDF',
     pdfa: true,
@@ -258,7 +258,7 @@ test('should support PDF/A and compression settings', (t) => {
   t.is(pdfBuffer.toString('utf8', 0, 5), '%PDF-')
 })
 
-test('should handle empty PDF document', (t) => {
+test.serial('should handle empty PDF document', (t) => {
   const { doc } = t.context
   const pdfBuffer = doc.close()
 
@@ -279,7 +279,7 @@ function countPdfImages(pdf: Buffer): number {
 // page comes back carrying `/Subtype /Image` XObjects. A filter with no spatial
 // component has no reason to be on a layer at all; it stays on the content paint
 // on this backend and the page stays vector.
-test('a colour-only ctx.filter must not rasterise the page', (t) => {
+test.serial('a colour-only ctx.filter must not rasterise the page', (t) => {
   const { doc } = t.context
   const ctx = doc.beginPage(240, 200)
   ctx.filter = 'grayscale(1)'
@@ -295,7 +295,7 @@ test('a colour-only ctx.filter must not rasterise the page', (t) => {
 // spatial component: `blur()` HAS a length, that length is device-space, and the
 // only way to give it device space is the layer. Rasterising is the price, and
 // it is what `main` did here too.
-test('a spatial ctx.filter keeps its device-space layer', (t) => {
+test.serial('a spatial ctx.filter keeps its device-space layer', (t) => {
   const doc = new PDFDocument()
   const ctx = doc.beginPage(240, 200)
   ctx.filter = 'blur(3px)'
@@ -316,7 +316,7 @@ test('a spatial ctx.filter keeps its device-space layer', (t) => {
 // `/Subtype /Image` XObjects. Measured, 240x200, `shadowOffsetX = 40`, bytes /
 // images: `main` (2cd4e1a) 818/0, before 1468/2, after 818/0.
 for (const filter of ['grayscale(1)', 'opacity(0.5)', 'sepia(1)', 'invert(1)', 'brightness(0.5)', 'saturate(2)']) {
-  test(`a colour-only ctx.filter with a shadow must not rasterise the page (${filter})`, (t) => {
+  test.serial(`a colour-only ctx.filter with a shadow must not rasterise the page (${filter})`, (t) => {
     const { doc } = t.context
     const ctx = doc.beginPage(240, 200)
     ctx.filter = filter
@@ -336,7 +336,7 @@ for (const filter of ['grayscale(1)', 'opacity(0.5)', 'sepia(1)', 'invert(1)', '
 
 // Text is the case the raster device costs the most: a rasterised shadow layer
 // stops the glyphs under it being real text.
-test('a colour-only ctx.filter with a text shadow keeps the page vector', (t) => {
+test.serial('a colour-only ctx.filter with a text shadow keeps the page vector', (t) => {
   GlobalFonts.registerFromPath(join(__dirname, 'fonts-dir', 'iosevka-curly-regular.woff2'), 'i-curly')
   const { doc } = t.context
   const ctx = doc.beginPage(240, 200)
@@ -354,7 +354,7 @@ test('a colour-only ctx.filter with a text shadow keeps the page vector', (t) =>
 
 // And the other direction, with a shadow this time: a spatial `ctx.filter` still
 // needs the layer, so the page still rasterises. `main` did the same.
-test('a spatial ctx.filter with a shadow keeps its device-space layer', (t) => {
+test.serial('a spatial ctx.filter with a shadow keeps its device-space layer', (t) => {
   const doc = new PDFDocument()
   const ctx = doc.beginPage(240, 200)
   ctx.filter = 'blur(3px)'
