@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import test from 'ava'
 import PNG from '@jimp/png'
 
-import { createCanvas, loadImage, GlobalFonts, Image, ImageData, DOMMatrix, DOMPoint } from '../index'
+import { createCanvas, loadImage, GlobalFonts, Image, ImageData, DOMMatrix, DOMPoint, SKRSContext2D } from '../index'
 import { snapshotImage } from './image-snapshot'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -117,9 +117,9 @@ test('putImageData should snapshot pixel data when the same ImageData is reused'
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const i = (y * width + x) * 3
-      src[i] = (x * 255 / width) | 0     // R: horizontal gradient
-      src[i + 1] = (y * 255 / height) | 0 // G: vertical gradient
-      src[i + 2] = 128                     // B: constant
+      src[i] = ((x * 255) / width) | 0 // R: horizontal gradient
+      src[i + 1] = ((y * 255) / height) | 0 // G: vertical gradient
+      src[i + 2] = 128 // B: constant
     }
   }
 
@@ -129,7 +129,7 @@ test('putImageData should snapshot pixel data when the same ImageData is reused'
   let srcPos = 0
   for (let i = 0; i < height / CHUNK_HEIGHT; i++) {
     let destPos = 0
-    for (let j = width * CHUNK_HEIGHT; j--;) {
+    for (let j = width * CHUNK_HEIGHT; j--; ) {
       dest[destPos++] = src[srcPos++]
       dest[destPos++] = src[srcPos++]
       dest[destPos++] = src[srcPos++]
@@ -146,8 +146,8 @@ test('putImageData should snapshot pixel data when the same ImageData is reused'
 
   // Verify a pixel in the middle chunk (chunk 2, y=32)
   const midIdx = (32 * width + 50) * 4
-  const expectedR = (50 * 255 / width) | 0
-  const expectedG = (32 * 255 / height) | 0
+  const expectedR = ((50 * 255) / width) | 0
+  const expectedG = ((32 * 255) / height) | 0
   t.is(result.data[midIdx], expectedR, `Pixel (50,32) R should be ${expectedR}`)
   t.is(result.data[midIdx + 1], expectedG, `Pixel (50,32) G should be ${expectedG}`)
   t.is(result.data[midIdx + 2], 128, 'Pixel (50,32) B should be 128')
@@ -165,9 +165,9 @@ test('putImageData should modify the canvas', (t) => {
   // Get image data and modify to green
   const imageData = ctx.getImageData(0, 0, 10, 10)
   for (let i = 0; i < imageData.data.length; i += 4) {
-    imageData.data[i] = 0       // R
+    imageData.data[i] = 0 // R
     imageData.data[i + 1] = 255 // G
-    imageData.data[i + 2] = 0   // B
+    imageData.data[i + 2] = 0 // B
     imageData.data[i + 3] = 255 // A
   }
 
@@ -194,9 +194,9 @@ test('putImageData with dirty rect should modify the canvas', (t) => {
   // Create green image data
   const imageData = ctx.getImageData(0, 0, 20, 20)
   for (let i = 0; i < imageData.data.length; i += 4) {
-    imageData.data[i] = 0       // R
+    imageData.data[i] = 0 // R
     imageData.data[i + 1] = 255 // G
-    imageData.data[i + 2] = 0   // B
+    imageData.data[i + 2] = 0 // B
     imageData.data[i + 3] = 255 // A
   }
 
@@ -556,18 +556,21 @@ test('getImageData with negative x/y should return correct pixels', (t) => {
   t.deepEqual(outOfBounds, [0, 0, 0, 0])
   // Pixel at (5,5) in the ImageData is still outside canvas (-5,-5) — transparent black
   const stillOutside = 4 * (5 * 20 + 5)
-  t.deepEqual([data.data[stillOutside], data.data[stillOutside + 1], data.data[stillOutside + 2], data.data[stillOutside + 3]], [0, 0, 0, 0])
+  t.deepEqual(
+    [data.data[stillOutside], data.data[stillOutside + 1], data.data[stillOutside + 2], data.data[stillOutside + 3]],
+    [0, 0, 0, 0],
+  )
   // Pixel at (10,10) in the ImageData corresponds to canvas (0,0) — should be red
   const insideOffset = 4 * (10 * 20 + 10)
-  t.is(data.data[insideOffset], 255)     // R
-  t.is(data.data[insideOffset + 1], 0)   // G
-  t.is(data.data[insideOffset + 2], 0)   // B
+  t.is(data.data[insideOffset], 255) // R
+  t.is(data.data[insideOffset + 1], 0) // G
+  t.is(data.data[insideOffset + 2], 0) // B
   t.is(data.data[insideOffset + 3], 255) // A
   // Pixel at (19,19) in the ImageData corresponds to canvas (9,9) — should be red
   const cornerOffset = 4 * (19 * 20 + 19)
-  t.is(data.data[cornerOffset], 255)     // R
-  t.is(data.data[cornerOffset + 1], 0)   // G
-  t.is(data.data[cornerOffset + 2], 0)   // B
+  t.is(data.data[cornerOffset], 255) // R
+  t.is(data.data[cornerOffset + 1], 0) // G
+  t.is(data.data[cornerOffset + 2], 0) // B
   t.is(data.data[cornerOffset + 3], 255) // A
 })
 
@@ -585,9 +588,9 @@ test('getImageData with negative width/height should flip the region per spec', 
   t.is(data.data.length, 10 * 10 * 4)
   // Center pixel (5,5) in the ImageData should be green
   const centerOffset = 4 * (5 * 10 + 5)
-  t.is(data.data[centerOffset], 0)       // R
+  t.is(data.data[centerOffset], 0) // R
   t.is(data.data[centerOffset + 1], 128) // G (green is 0,128,0)
-  t.is(data.data[centerOffset + 2], 0)   // B
+  t.is(data.data[centerOffset + 2], 0) // B
   t.is(data.data[centerOffset + 3], 255) // A
 })
 
@@ -1070,4 +1073,301 @@ test('the shadow setters discard the values Blink rejects', (t) => {
     blurred,
     'shadowBlur = -5 must not erase the blur',
   )
+})
+
+// CanvasGradient.addColorStop must keep stops that share an offset in the order they were added.
+// https://html.spec.whatwg.org/multipage/canvas.html#dom-canvasgradient-addcolorstop
+//   "If multiple stops are added at the same offset on a gradient, they must be placed in the
+//    order added, with the first one closest to the start of the gradient, and each subsequent
+//    one infinitesimally further along."
+// Blink gets that for free from the `std::stable_sort` over a strict `a.stop < b.stop` comparator
+// in Gradient::SortStopsIfNecessary (third_party/blink/renderer/platform/graphics/gradient.cc).
+// Our insertion scan used to break on `val >= offset`, so a later stop at an equal offset was
+// inserted *before* the earlier one — turning a hard step into a mirrored/repeating ramp.
+//
+// Every expectation below is the byte-exact getImageData readback from headless
+// Chrome 151.0.7922.34 (playwright chromium-1234) running the identical scene.
+const GRADIENT_ROW_WIDTH = 20
+
+function gradientRow(
+  paint: (ctx: SKRSContext2D, w: number, h: number) => void,
+  w = GRADIENT_ROW_WIDTH,
+  h = 1,
+  row = 0,
+): number[] {
+  const canvas = createCanvas(w, h)
+  const ctx = canvas.getContext('2d')!
+  paint(ctx, w, h)
+  return Array.from(ctx.getImageData(0, row, w, 1).data)
+}
+
+// `tolerance` is 0 where we are byte-identical to Chrome. It is 1 for gradients that contain a
+// real ramp: Chrome and Skia round the interpolated channel differently by at most one ULP, which
+// the duplicate-free control scenes in this file exhibit too.
+function assertRowMatchesChrome(
+  t: { is: (a: unknown, b: unknown, m?: string) => void; true: (v: boolean, m?: string) => void },
+  actual: number[],
+  chrome: number[],
+  tolerance: number,
+  message: string,
+) {
+  t.is(actual.length, chrome.length, `${message}: pixel count`)
+  let max = 0
+  let worst = -1
+  for (let i = 0; i < chrome.length; i++) {
+    const delta = Math.abs(actual[i] - chrome[i])
+    if (delta > max) {
+      max = delta
+      worst = i
+    }
+  }
+  const detail =
+    worst < 0
+      ? ''
+      : ` — worst at px ${Math.floor(worst / 4)} channel ${'rgba'[worst % 4]}: chrome=${chrome[worst]} ours=${actual[worst]}`
+  t.true(max <= tolerance, `${message}: max |chrome - ours| = ${max}, tolerance ${tolerance}${detail}`)
+}
+
+// prettier-ignore
+const RED_10_THEN_TRANSPARENT_10 = [
+  255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255,
+  255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255,
+  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+]
+
+// prettier-ignore
+const RED_10_THEN_BLUE_10 = [
+  255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255,
+  255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255,
+  0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255,
+  0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255,
+]
+
+test('duplicated gradient color stops render a hard step, in the order added', (t) => {
+  // The reported case: one opaque stop and one transparent stop, both at 0.5, nothing else.
+  // Correct: opaque red for the first half, fully transparent for the second.
+  // Before the fix we produced the exact mirror image (max |chrome - ours| = 255).
+  assertRowMatchesChrome(
+    t,
+    gradientRow((ctx, w, h) => {
+      const gradient = ctx.createLinearGradient(0, 0, w, 0)
+      gradient.addColorStop(0.5, 'rgba(255,0,0,1)')
+      gradient.addColorStop(0.5, 'rgba(255,0,0,0)')
+      ctx.fillStyle = gradient
+      ctx.fillRect(0, 0, w, h)
+    }),
+    RED_10_THEN_TRANSPARENT_10,
+    0,
+    'two stops at offset 0.5',
+  )
+
+  // The canonical "hard stop" idiom: red flat to 0.5, then blue flat to 1.
+  // Before the fix the stop order came out red/blue/red/blue and Skia drew the red→blue ramp
+  // twice (max |chrome - ours| = 242).
+  assertRowMatchesChrome(
+    t,
+    gradientRow((ctx, w, h) => {
+      const gradient = ctx.createLinearGradient(0, 0, w, 0)
+      gradient.addColorStop(0, 'rgba(255,0,0,1)')
+      gradient.addColorStop(0.5, 'rgba(255,0,0,1)')
+      gradient.addColorStop(0.5, 'rgba(0,0,255,1)')
+      gradient.addColorStop(1, 'rgba(0,0,255,1)')
+      ctx.fillStyle = gradient
+      ctx.fillRect(0, 0, w, h)
+    }),
+    RED_10_THEN_BLUE_10,
+    0,
+    'red/red/blue/blue hard step',
+  )
+
+  // Three stops at the same offset: only the first (red) and the last (blue) are observable,
+  // the green in between is infinitesimally wide. white→red for the first half, blue→black
+  // for the second.
+  // prettier-ignore
+  const whiteRedBlueBlack = [
+    255, 242, 242, 255, 255, 217, 217, 255, 255, 191, 191, 255, 255, 166, 166, 255, 255, 140, 140, 255,
+    255, 115, 115, 255, 255, 89, 89, 255, 255, 64, 64, 255, 255, 38, 38, 255, 255, 13, 13, 255,
+    0, 0, 242, 255, 0, 0, 217, 255, 0, 0, 191, 255, 0, 0, 166, 255, 0, 0, 140, 255,
+    0, 0, 115, 255, 0, 0, 89, 255, 0, 0, 64, 255, 0, 0, 38, 255, 0, 0, 13, 255,
+  ]
+  assertRowMatchesChrome(
+    t,
+    gradientRow((ctx, w, h) => {
+      const gradient = ctx.createLinearGradient(0, 0, w, 0)
+      gradient.addColorStop(0, '#ffffff')
+      gradient.addColorStop(0.5, '#ff0000')
+      gradient.addColorStop(0.5, '#00ff00')
+      gradient.addColorStop(0.5, '#0000ff')
+      gradient.addColorStop(1, '#000000')
+      ctx.fillStyle = gradient
+      ctx.fillRect(0, 0, w, h)
+    }),
+    whiteRedBlueBlack,
+    0,
+    'three stops at offset 0.5',
+  )
+})
+
+test('duplicated gradient color stops at the 0 and 1 boundaries', (t) => {
+  // Duplicates at offset 0: red is first so it sits at the very start and is only visible under
+  // clamping; the visible ramp starts from blue. Before the fix the two were swapped and the ramp
+  // started from red (max |chrome - ours| = 249).
+  // prettier-ignore
+  const blueToGreen = [
+    0, 6, 248, 255, 0, 19, 236, 255, 0, 32, 223, 255, 0, 45, 211, 255, 0, 57, 197, 255,
+    0, 70, 185, 255, 0, 83, 172, 255, 0, 96, 160, 255, 0, 108, 146, 255, 0, 121, 134, 255,
+    0, 134, 121, 255, 0, 147, 109, 255, 0, 159, 95, 255, 0, 172, 83, 255, 0, 185, 70, 255,
+    0, 198, 58, 255, 0, 210, 44, 255, 0, 223, 32, 255, 0, 236, 19, 255, 0, 249, 7, 255,
+  ]
+  assertRowMatchesChrome(
+    t,
+    gradientRow((ctx, w, h) => {
+      const gradient = ctx.createLinearGradient(0, 0, w, 0)
+      gradient.addColorStop(0, '#ff0000')
+      gradient.addColorStop(0, '#0000ff')
+      gradient.addColorStop(1, '#00ff00')
+      ctx.fillStyle = gradient
+      ctx.fillRect(0, 0, w, h)
+    }),
+    blueToGreen,
+    1,
+    'two stops at offset 0',
+  )
+
+  // Duplicates at offset 1: blue is added first so the ramp ends on blue, and green sits beyond it.
+  // Before the fix the ramp ended on green (max |chrome - ours| = 249).
+  // prettier-ignore
+  const redToBlue = [
+    248, 0, 6, 255, 236, 0, 19, 255, 223, 0, 32, 255, 211, 0, 45, 255, 197, 0, 57, 255,
+    185, 0, 70, 255, 172, 0, 83, 255, 160, 0, 96, 255, 146, 0, 108, 255, 134, 0, 121, 255,
+    121, 0, 134, 255, 109, 0, 147, 255, 95, 0, 159, 255, 83, 0, 172, 255, 70, 0, 185, 255,
+    58, 0, 198, 255, 44, 0, 210, 255, 32, 0, 223, 255, 19, 0, 236, 255, 7, 0, 249, 255,
+  ]
+  assertRowMatchesChrome(
+    t,
+    gradientRow((ctx, w, h) => {
+      const gradient = ctx.createLinearGradient(0, 0, w, 0)
+      gradient.addColorStop(0, '#ff0000')
+      gradient.addColorStop(1, '#0000ff')
+      gradient.addColorStop(1, '#00ff00')
+      ctx.fillStyle = gradient
+      ctx.fillRect(0, 0, w, h)
+    }),
+    redToBlue,
+    1,
+    'two stops at offset 1',
+  )
+
+  // Control: the very same red→blue ramp with no duplicate at all must be untouched by the fix,
+  // and is byte-identical to `redToBlue` above.
+  assertRowMatchesChrome(
+    t,
+    gradientRow((ctx, w, h) => {
+      const gradient = ctx.createLinearGradient(0, 0, w, 0)
+      gradient.addColorStop(0, '#ff0000')
+      gradient.addColorStop(1, '#0000ff')
+      ctx.fillStyle = gradient
+      ctx.fillRect(0, 0, w, h)
+    }),
+    redToBlue,
+    1,
+    'control: red→blue with no duplicate stop',
+  )
+})
+
+test('out-of-order gradient stop insertion mixed with duplicates stays stable', (t) => {
+  // Added as 1/0.5/0.25/0.5/0/0.25, so every stop but the first travels the O(n) insertion path.
+  // Sorted stably that is white@0, yellow@0.25, cyan@0.25, red@0.5, blue@0.5, black@1:
+  // white→yellow, hard step to cyan, cyan→red, hard step to blue, blue→black.
+  // Before the fix each duplicate pair was flipped (max |chrome - ours| = 242).
+  // prettier-ignore
+  const chrome = [
+    255, 255, 229, 255, 255, 255, 179, 255, 255, 255, 127, 255, 255, 255, 77, 255, 255, 255, 25, 255,
+    26, 230, 230, 255, 76, 178, 178, 255, 128, 128, 128, 255, 178, 76, 76, 255, 230, 26, 26, 255,
+    0, 0, 242, 255, 0, 0, 217, 255, 0, 0, 191, 255, 0, 0, 166, 255, 0, 0, 140, 255,
+    0, 0, 115, 255, 0, 0, 89, 255, 0, 0, 64, 255, 0, 0, 38, 255, 0, 0, 13, 255,
+  ]
+  assertRowMatchesChrome(
+    t,
+    gradientRow((ctx, w, h) => {
+      const gradient = ctx.createLinearGradient(0, 0, w, 0)
+      gradient.addColorStop(1, '#000000')
+      gradient.addColorStop(0.5, '#ff0000')
+      gradient.addColorStop(0.25, '#ffff00')
+      gradient.addColorStop(0.5, '#0000ff')
+      gradient.addColorStop(0, '#ffffff')
+      gradient.addColorStop(0.25, '#00ffff')
+      ctx.fillStyle = gradient
+      ctx.fillRect(0, 0, w, h)
+    }),
+    chrome,
+    1,
+    'six stops added out of order, two duplicated offsets',
+  )
+})
+
+test('duplicated color stops behave the same on radial and conic gradients', (t) => {
+  // Radial: a red disc of radius 8 with a hard edge into blue. Row 16 cuts through the centre,
+  // so it reads blue up to x=8, red for 8..24, blue again after.
+  // Before the fix the disc was an inverted double ramp (max |chrome - ours| = 252).
+  // prettier-ignore
+  const radialRow16 = [
+    0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255,
+    0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255,
+    255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255,
+    255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255,
+    255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255,
+    255, 0, 0, 255,
+    0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255,
+    0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255,
+  ]
+  assertRowMatchesChrome(
+    t,
+    gradientRow(
+      (ctx, w, h) => {
+        const gradient = ctx.createRadialGradient(16, 16, 0, 16, 16, 16)
+        gradient.addColorStop(0, '#ff0000')
+        gradient.addColorStop(0.5, '#ff0000')
+        gradient.addColorStop(0.5, '#0000ff')
+        gradient.addColorStop(1, '#0000ff')
+        ctx.fillStyle = gradient
+        ctx.fillRect(0, 0, w, h)
+      },
+      32,
+      32,
+      16,
+    ),
+    radialRow16,
+    0,
+    'radial gradient with a duplicated stop at 0.5',
+  )
+
+  // Conic: our angular origin does not match Chrome's, so instead of comparing against Chrome we
+  // assert the property the bug destroyed — with a duplicated stop the sweep must be a hard step
+  // between two flat colors, with no interpolated pixel anywhere. Before the fix every pixel was
+  // an intermediate blend.
+  const size = 64
+  const canvas = createCanvas(size, size)
+  const ctx = canvas.getContext('2d')!
+  const gradient = ctx.createConicGradient(0, size / 2, size / 2)
+  gradient.addColorStop(0, '#ff0000')
+  gradient.addColorStop(0.5, '#ff0000')
+  gradient.addColorStop(0.5, '#0000ff')
+  gradient.addColorStop(1, '#0000ff')
+  ctx.fillStyle = gradient
+  ctx.fillRect(0, 0, size, size)
+  const data = ctx.getImageData(0, 0, size, size).data
+  let pureRed = 0
+  let pureBlue = 0
+  let blended = 0
+  for (let i = 0; i < data.length; i += 4) {
+    const [r, g, b, a] = [data[i], data[i + 1], data[i + 2], data[i + 3]]
+    if (r === 255 && g === 0 && b === 0 && a === 255) pureRed++
+    else if (r === 0 && g === 0 && b === 255 && a === 255) pureBlue++
+    else blended++
+  }
+  t.is(blended, 0, 'a conic gradient with a duplicated stop must not interpolate anywhere')
+  t.is(pureRed, (size * size) / 2, 'half the conic sweep is pure red')
+  t.is(pureBlue, (size * size) / 2, 'the other half is pure blue')
 })
