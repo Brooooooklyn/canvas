@@ -115,6 +115,11 @@ const GN_ARGS = [
   `skia_use_system_harfbuzz=false`,
   `skia_use_lua=false`,
   `skia_use_piex=false`,
+  // Skia defaults this to `is_clang`, which pulls PartitionAlloc into libskia. Its Linux code
+  // needs glibc (sys/cdefs.h, sys/ifunc.h, AT_HWCAP2), breaking musl and the glibc 2.17 aarch64
+  // sysroot. The PartitionAlloc archives are never uploaded or linked either, so libskia would
+  // ship unresolved raw_ptr/BackupRefPtr symbols.
+  `skia_use_partition_alloc=false`,
   `skia_enable_fontmgr_custom_directory=true`,
   `skia_enable_fontmgr_custom_embedded=false`,
   `skia_enable_fontmgr_custom_empty=true`,
