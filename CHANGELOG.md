@@ -1,3 +1,17 @@
+## [1.0.3](https://github.com/Brooooooklyn/canvas/compare/v1.0.2...v1.0.3) (2026-07-28)
+
+
+### Bug Fixes
+
+* **deps:** update rust crate imagesize to 0.15 ([#1290](https://github.com/Brooooooklyn/canvas/issues/1290)) ([2ad119e](https://github.com/Brooooooklyn/canvas/commit/2ad119ec86db5bca03b9ab207e9cc2c258e52bd8))
+* **deps:** update rust crate infer to 0.22 ([#1294](https://github.com/Brooooooklyn/canvas/issues/1294)) ([dc3377f](https://github.com/Brooooooklyn/canvas/commit/dc3377f5673afe3d843db761cdfaf999f12ac75e))
+* **shadow:** align Canvas2D shadows with Chromium ([#1300](https://github.com/Brooooooklyn/canvas/issues/1300)) ([5646339](https://github.com/Brooooooklyn/canvas/commit/56463391db275fc4288c854eaf821f58ec2c4ef5))
+* **shadow:** apply shadowColor alpha once instead of squaring it ([#1298](https://github.com/Brooooooklyn/canvas/issues/1298)) ([2cd4e1a](https://github.com/Brooooooklyn/canvas/commit/2cd4e1a27a54cd6331fc5a104bca256958c8543c)), closes [#1297](https://github.com/Brooooooklyn/canvas/issues/1297)
+
+
+### Features
+
+* chrome/m151 ([#1302](https://github.com/Brooooooklyn/canvas/issues/1302)) ([9eb7816](https://github.com/Brooooooklyn/canvas/commit/9eb78169dcb1e895f2db9b828780ad1226818f41))
 ## [1.0.2](https://github.com/Brooooooklyn/canvas/compare/v1.0.1...v1.0.2) (2026-06-30)
 
 
