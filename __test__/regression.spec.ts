@@ -966,7 +966,15 @@ test('shadowOffsetX/Y are device-space on the image path, not local-space', (t) 
     const measured = measure(draw)
     // Before the fix this was { minX: 133, maxX: 263, centroidX: 197.5 } -- the
     // shadow 100 device px to the LEFT, mirrored by the rotation.
-    t.deepEqual(measured, oracle, `${name} shadow should match the geometry path, got ${measured.centroidX}`)
+    // Chromium deliberately uses a mask filter for geometry and an image
+    // filter for non-opaque images. Their Gaussian tails differ by a couple of
+    // pixels, so compare placement rather than requiring byte-identical bounds.
+    t.true(
+      Math.abs(measured.centroidX - oracle.centroidX) <= 1 &&
+        Math.abs(measured.minX - oracle.minX) <= 2 &&
+        Math.abs(measured.maxX - oracle.maxX) <= 2,
+      `${name} shadow should match the geometry placement, got ${JSON.stringify(measured)} vs ${JSON.stringify(oracle)}`,
+    )
   }
 })
 
