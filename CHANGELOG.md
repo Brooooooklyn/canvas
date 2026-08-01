@@ -1,3 +1,9 @@
+## [1.0.4](https://github.com/Brooooooklyn/canvas/compare/v1.0.3...v1.0.4) (2026-08-01)
+
+
+### Bug Fixes
+
+* **shadow:** restore blur rendering performance ([#1305](https://github.com/Brooooooklyn/canvas/issues/1305)) ([4dddd0d](https://github.com/Brooooooklyn/canvas/commit/4dddd0d693b961d1dafe6f3f381059b7c4ab547f))
 ## [1.0.3](https://github.com/Brooooooklyn/canvas/compare/v1.0.2...v1.0.3) (2026-07-28)
 
 
