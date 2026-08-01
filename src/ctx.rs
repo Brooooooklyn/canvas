@@ -33,8 +33,8 @@ use crate::{
   pattern::{CanvasPattern, Pattern},
   sk::{
     AlphaType, Bitmap, BlendMode, ColorSpace, FillType, FontVariantCaps, ImageFilter, LineMetrics,
-    Matrix, Paint, PaintStyle, Path as SkPath, PathEffect, PathOp, SkEncodedImageFormat,
-    SkWMemoryStream, SkiaDataRef, Surface, SurfaceRef, Transform,
+    MaskFilter, Matrix, Paint, PaintStyle, Path as SkPath, PathEffect, PathOp,
+    SkEncodedImageFormat, SkWMemoryStream, SkiaDataRef, Surface, SurfaceRef, Transform,
   },
   state::Context2dRenderingState,
 };
@@ -1339,10 +1339,11 @@ impl Context {
     Ok(paint)
   }
 
-  /// The one and only Gaussian a canvas2d shadow is allowed to carry. Sigma is
+  /// The image-filter Gaussian a canvas2d shadow is allowed to carry. Sigma is
   /// exactly `shadowBlur * 0.5`, in device space, applied exactly once
-  /// (canvas_rendering_context_2d_state.cc:650-652). Reached only for a blurred
-  /// shadow; `shadow_paint` sends `shadowBlur == 0` down the colour-filter route.
+  /// (canvas_rendering_context_2d_state.cc:650-652). Ordinary geometry and text
+  /// use the equivalent mask filter; this route is for image sources or a
+  /// shadow whose `ctx.filter` must be composed before colourisation.
   ///
   /// ACCEPTED DIVERGENCE, every shape: on an 8888 surface Skia's raster engine
   /// routes to the three-box pass above sigma 2 (SkBlurEngine.cpp:1281, :275)
@@ -1418,9 +1419,7 @@ impl Context {
   /// its `ctx.filter` lives, so on a backend that has taken the filter off the
   /// layer the route buys nothing but a layer the device cannot make.
   fn shadow_takes_image_filter(&self, source: ShadowSource, content: DrawContent) -> bool {
-    source.forces_shadow_image_filter()
-      || self.filter_takes_layer(content)
-      || self.state.shadow_blur != 0f32
+    source.forces_shadow_image_filter() || self.filter_takes_layer(content)
   }
 
   /// The device-space translate the CANVAS still owes the shadow.
@@ -1460,20 +1459,24 @@ impl Context {
     // of its shadow paths and never spells as `SkPaint::setColor`.
     //
     // Both branches below build NO image filter, so they take no layer and
-    // `canvas_shadow_offset` still owes the caller the full offset.
+    // `canvas_shadow_offset` still owes the caller the full offset. A non-zero
+    // blur rides on a transform-independent mask filter, matching Chromium's
+    // shadow draw-looper path. Besides avoiding a full-canvas image-filter
+    // layer per draw, `respectCTM = false` keeps the blur in device space.
     // `shadow_takes_image_filter` is the shared predicate; do not inline this
     // condition anywhere else. It is what keeps this route away from a
     // `ctx.filter` still on the layer, where the shadow HAS to be an image
     // filter: the only faithful order is `colourise(ctx.filter(source))`, and a
     // paint colour or colour filter runs BEFORE the paint's image filter.
     if !self.shadow_takes_image_filter(source, content) {
-      // No blur, so there is no Gaussian to place and nothing an image filter
-      // could add -- Chromium likewise gates its mask filter on
-      // `blur_sigma > 0`. Matching that shape is not cosmetic: the image filter
-      // forced a `saveLayer`, which SkSVGDevice drops whole (the shadow vanished
-      // from every SVG export), SkPDFDevice rasterises (text stopped being
-      // text), and which applied the antialiased clip twice. Do NOT add a
-      // MaskFilter either: `SkMaskFilter::MakeBlur` is nullptr for sigma <= 0.
+      // Chromium's draw looper adds a mask filter only when sigma is positive.
+      // Our wrapper creates it with `respectCTM = false`, which is the looper's
+      // `kShadowIgnoresTransforms` behavior. At zero blur it would be nullptr,
+      // so leave the paint unfiltered.
+      if state.shadow_blur > 0f32 {
+        let blur_effect = MaskFilter::make_blur(state.shadow_blur / 2f32)?;
+        drop_shadow_paint.set_mask_filter(&blur_effect);
+      }
       //
       // Once colour-only, all `ctx.filter` can do to a shadow is change one
       // number: kSrcIn discards the source RGB, so only the alpha it leaves on
