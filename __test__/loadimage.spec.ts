@@ -5,6 +5,7 @@ import { readFile } from 'node:fs/promises'
 import { URL, pathToFileURL, fileURLToPath } from 'node:url'
 
 import test from 'ava'
+import { crc32 } from '@node-rs/crc32'
 
 import { createCanvas, Image, loadImage } from '../index'
 
@@ -136,17 +137,6 @@ test('loadImage settles on invalid base64 data URL (issue #1255)', async (t) => 
 // Regression tests for https://github.com/Brooooooklyn/canvas/issues/1309
 // Run malformed inputs in child processes so a native crash is reported as a
 // test failure instead of terminating the entire test runner.
-
-function crc32(buffer: Buffer): number {
-  let crc = -1
-  for (const byte of buffer) {
-    crc ^= byte
-    for (let bit = 0; bit < 8; bit++) {
-      crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0)
-    }
-  }
-  return (crc ^ -1) >>> 0
-}
 
 function patchIhdr(png: Buffer, width: number, height: number, colorType?: number): Buffer {
   const result = Buffer.from(png)
