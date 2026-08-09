@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import { join, dirname } from 'node:path'
 import fs from 'node:fs'
 import { readFile } from 'node:fs/promises'
@@ -157,7 +157,48 @@ function patchIhdr(png: Buffer, width: number, height: number, colorType?: numbe
   return result
 }
 
-test('loadImage rejects malformed raster images without terminating the process (issue #1309)', (t) => {
+function runInChildProcess(
+  script: string,
+  args: string[],
+): Promise<{
+  status: number | null
+  signal: NodeJS.Signals | null
+  stdout: string
+  stderr: string
+}> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ['-e', script, ...args], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    let stdout = ''
+    let stderr = ''
+
+    child.stdout.setEncoding('utf8')
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk
+    })
+    child.stderr.setEncoding('utf8')
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk
+    })
+
+    const timer = setTimeout(() => {
+      child.kill()
+      reject(new Error('Child process timed out after 10 seconds'))
+    }, 10_000)
+
+    child.on('error', (error) => {
+      clearTimeout(timer)
+      reject(error)
+    })
+    child.on('close', (status, signal) => {
+      clearTimeout(timer)
+      resolve({ status, signal, stdout, stderr })
+    })
+  })
+}
+
+test('loadImage rejects malformed raster images without terminating the process (issue #1309)', async (t) => {
   const canvas = createCanvas(64, 64)
   const ctx = canvas.getContext('2d')
   ctx.fillStyle = '#345678'
@@ -193,12 +234,8 @@ test('loadImage rejects malformed raster images without terminating the process 
   `
 
   for (const [name, image] of malformedImages) {
-    const child = spawnSync(process.execPath, ['-e', script, entrypoint, image.toString('base64')], {
-      encoding: 'utf8',
-      timeout: 10_000,
-    })
+    const child = await runInChildProcess(script, [entrypoint, image.toString('base64')])
 
-    t.falsy(child.error, `${name}: ${child.error?.message}`)
     t.is(child.signal, null, `${name}: child terminated with ${child.signal}\n${child.stderr}`)
     t.is(child.status, 0, `${name}: child exited with ${child.status}\n${child.stderr}`)
     t.regex(child.stdout, /^rejected: Unsupported image type\n$/, name)
