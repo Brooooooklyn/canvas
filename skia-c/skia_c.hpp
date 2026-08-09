@@ -1183,7 +1183,7 @@ void skiac_canvas_draw_sk_image(skiac_canvas* c_canvas,
 void skiac_sk_data_destroy(skiac_data* c_data);
 
 // Bitmap
-void skiac_bitmap_make_from_buffer(const uint8_t* ptr,
+bool skiac_bitmap_make_from_buffer(const uint8_t* ptr,
                                    size_t size,
                                    skiac_bitmap_info* bitmap_info);
 bool skiac_bitmap_make_from_svg(const uint8_t* data,

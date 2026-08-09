@@ -1024,11 +1024,17 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
           .map_err(|e| Error::new(Status::InvalidArg, format!("Decode data url failed {e}")))?;
         if let Some(kind) = infer::get(&image_binary) {
           if kind.matcher_type() == infer::MatcherType::Image {
-            DecodeStatus::Ok(BitmapInfo {
-              data: Bitmap::from_buffer(image_binary.as_ptr().cast_mut(), image_binary.len()),
-              is_svg: false,
-              decoded_image: None,
-            })
+            if let Some(bitmap) =
+              Bitmap::from_buffer(image_binary.as_ptr().cast_mut(), image_binary.len())
+            {
+              DecodeStatus::Ok(BitmapInfo {
+                data: bitmap,
+                is_svg: false,
+                decoded_image: None,
+              })
+            } else {
+              DecodeStatus::InvalidImage
+            }
           } else {
             DecodeStatus::InvalidImage
           }
@@ -1063,11 +1069,15 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
       false
     } {
       // Other image formats detected by infer (PNG, JPEG, GIF, WebP, etc.)
-      DecodeStatus::Ok(BitmapInfo {
-        data: Bitmap::from_buffer(data_ref.as_ptr().cast_mut(), length),
-        is_svg: false,
-        decoded_image: None,
-      })
+      if let Some(bitmap) = Bitmap::from_buffer(data_ref.as_ptr().cast_mut(), length) {
+        DecodeStatus::Ok(BitmapInfo {
+          data: bitmap,
+          is_svg: false,
+          decoded_image: None,
+        })
+      } else {
+        DecodeStatus::InvalidImage
+      }
     } else if is_svg_image(&data_ref, length) {
       let font = get_font().map_err(SkError::from)?;
       if (self.width - -1.0).abs() > f64::EPSILON && (self.height - -1.0).abs() > f64::EPSILON {
