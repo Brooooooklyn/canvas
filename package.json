@@ -79,7 +79,7 @@
     "@jimp/custom": "^0.22.12",
     "@jimp/jpeg": "^0.22.12",
     "@jimp/png": "^0.22.12",
-    "@napi-rs/cli": "^3.5.0",
+    "@napi-rs/cli": "^3.8.3",
     "@napi-rs/webcodecs": "^1.1.1",
     "@node-rs/crc32": "^1.10.6",
     "@octokit/rest": "^22.0.1",
