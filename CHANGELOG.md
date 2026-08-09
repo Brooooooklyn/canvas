@@ -1,3 +1,10 @@
+## [1.0.5](https://github.com/Brooooooklyn/canvas/compare/v1.0.4...v1.0.5) (2026-08-09)
+
+
+### Bug Fixes
+
+* prefer raster signatures over SVG markers ([#1310](https://github.com/Brooooooklyn/canvas/issues/1310)) ([79c5d30](https://github.com/Brooooooklyn/canvas/commit/79c5d304dc517f7467001c869c088122c548f0c8))
+* reject malformed raster images ([#1311](https://github.com/Brooooooklyn/canvas/issues/1311)) ([f471b85](https://github.com/Brooooooklyn/canvas/commit/f471b857983db3183db4231305d7acc0f8efe4d1))
 ## [1.0.4](https://github.com/Brooooooklyn/canvas/compare/v1.0.3...v1.0.4) (2026-08-01)
 
 
