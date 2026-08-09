@@ -392,8 +392,13 @@ impl Image {
       let buffer_data = buffer.as_ref();
       let length = buffer_data.len();
 
-      // Check if it's SVG (imagesize doesn't support SVG)
-      let is_svg = is_svg_image(buffer_data, length);
+      // Known raster signatures take precedence over the permissive SVG scan.
+      // Raster payloads may legitimately contain the bytes `<svg` in metadata or
+      // compressed data, and the async decoder uses the same raster-first order.
+      let is_raster = libavif::is_avif(buffer_data)
+        || infer::get(buffer_data)
+          .is_some_and(|kind| kind.matcher_type() == infer::MatcherType::Image);
+      let is_svg = !is_raster && is_svg_image(buffer_data, length);
       // Try to extract dimensions from image header using imagesize (fast, no full decode)
       let (img_width, img_height, is_valid_image) = if is_svg {
         // For SVG, we'll get dimensions after decode; for invalid images, we'll error

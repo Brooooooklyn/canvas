@@ -57,6 +57,17 @@ test('should load data uri', async (t) => {
   t.is(img instanceof Image, true)
 })
 
+test('should prefer a PNG signature over an SVG marker in the buffer (issue #1308)', async (t) => {
+  const canvas = createCanvas(64, 64)
+  const png = canvas.toBuffer('image/png')
+  const pngWithSvgMarker = Buffer.concat([png, Buffer.from('<svg xmlns')])
+
+  const img = await loadImage(pngWithSvgMarker)
+
+  t.is(img.width, 64)
+  t.is(img.height, 64)
+})
+
 test('should draw img', async (t) => {
   const img = await loadImage(
     'https://raw.githubusercontent.com/Brooooooklyn/canvas/462fce53afeaee6d6b4ae5d1b407c17e2359ff7e/example/anime-girl.png',
