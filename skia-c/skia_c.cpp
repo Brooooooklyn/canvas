@@ -1,6 +1,7 @@
 #include <assert.h>
 #include <math.h>
 #include <algorithm>
+#include <memory>
 #include <optional>
 #include <vector>
 
@@ -1976,11 +1977,14 @@ void skiac_sk_data_destroy(skiac_data* c_data) {
 
 // Bitmap
 
-void skiac_bitmap_make_from_buffer(const uint8_t* ptr,
+bool skiac_bitmap_make_from_buffer(const uint8_t* ptr,
                                    size_t size,
                                    skiac_bitmap_info* bitmap_info) {
   auto data = SkData::MakeWithoutCopy(reinterpret_cast<const void*>(ptr), size);
   auto codec = SkCodec::MakeFromData(data);
+  if (!codec) {
+    return false;
+  }
   auto info = codec->getInfo();
   // PNG/WebP/GIF codecs report unpremultiplied alpha (required by those
   // formats on disk). Ask the codec to output premultiplied pixels so that
@@ -1991,9 +1995,15 @@ void skiac_bitmap_make_from_buffer(const uint8_t* ptr,
     info = info.makeAlphaType(kPremul_SkAlphaType);
   }
   auto row_bytes = info.minRowBytes();
-  auto bitmap = new SkBitmap();
-  bitmap->allocPixels(info);
-  codec->getPixels(info, bitmap->getPixels(), row_bytes);
+  auto bitmap = std::make_unique<SkBitmap>();
+  if (!bitmap->tryAllocPixels(info)) {
+    return false;
+  }
+  auto result = codec->getPixels(info, bitmap->getPixels(), row_bytes);
+  if (result != SkCodec::kSuccess && result != SkCodec::kIncompleteInput &&
+      result != SkCodec::kErrorInInput) {
+    return false;
+  }
   auto dimension = codec->dimensions();
   auto origin = codec->getOrigin();
   auto width = dimension.width();
@@ -2008,25 +2018,30 @@ void skiac_bitmap_make_from_buffer(const uint8_t* ptr,
       width = height;
       height = dimension.width();
     }
-    auto oriented_bitmap = new SkBitmap();
+    auto oriented_bitmap = std::make_unique<SkBitmap>();
     auto oriented_bitmap_info =
         SkImageInfo::Make(width, height, info.colorType(), info.alphaType());
-    oriented_bitmap->allocPixels(oriented_bitmap_info);
-    auto canvas = new SkCanvas(*oriented_bitmap);
+    if (!oriented_bitmap->tryAllocPixels(oriented_bitmap_info)) {
+      return false;
+    }
+    SkCanvas canvas(*oriented_bitmap);
     auto matrix = SkEncodedOriginToMatrix(origin, width, height);
-    canvas->setMatrix(matrix);
+    canvas.setMatrix(matrix);
     auto image = SkImages::RasterFromBitmap(*bitmap);
-    canvas->drawImage(image, 0, 0);
-    delete canvas;
+    if (!image) {
+      return false;
+    }
+    canvas.drawImage(image, 0, 0);
     oriented_bitmap->setImmutable();
-    bitmap_info->bitmap = reinterpret_cast<skiac_bitmap*>(oriented_bitmap);
-    delete bitmap;
+    bitmap_info->bitmap =
+        reinterpret_cast<skiac_bitmap*>(oriented_bitmap.release());
   } else {
     bitmap->setImmutable();
-    bitmap_info->bitmap = reinterpret_cast<skiac_bitmap*>(bitmap);
+    bitmap_info->bitmap = reinterpret_cast<skiac_bitmap*>(bitmap.release());
   }
   bitmap_info->width = width;
   bitmap_info->height = height;
+  return true;
 }
 
 bool skiac_bitmap_make_from_svg(const uint8_t* data,

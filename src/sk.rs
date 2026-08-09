@@ -1008,7 +1008,11 @@ pub mod ffi {
 
     pub fn skiac_sk_data_destroy(c_data: *mut skiac_data);
 
-    pub fn skiac_bitmap_make_from_buffer(ptr: *mut u8, size: usize, info: *mut skiac_bitmap_info);
+    pub fn skiac_bitmap_make_from_buffer(
+      ptr: *mut u8,
+      size: usize,
+      info: *mut skiac_bitmap_info,
+    ) -> bool;
 
     pub fn skiac_bitmap_make_from_svg(
       data: *const u8,
@@ -4129,7 +4133,7 @@ unsafe impl Send for Bitmap {}
 unsafe impl Sync for Bitmap {}
 
 impl Bitmap {
-  pub fn from_buffer(ptr: *mut u8, size: usize) -> Self {
+  pub fn from_buffer(ptr: *mut u8, size: usize) -> Option<Self> {
     let mut bitmap_info = ffi::skiac_bitmap_info {
       bitmap: ptr::null_mut(),
       width: 0,
@@ -4137,8 +4141,11 @@ impl Bitmap {
       is_canvas: false,
     };
     unsafe {
-      ffi::skiac_bitmap_make_from_buffer(ptr, size, &mut bitmap_info);
-      Bitmap(bitmap_info)
+      if ffi::skiac_bitmap_make_from_buffer(ptr, size, &mut bitmap_info) {
+        Some(Bitmap(bitmap_info))
+      } else {
+        None
+      }
     }
   }
 
