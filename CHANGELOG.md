@@ -1,3 +1,9 @@
+## [1.0.6](https://github.com/Brooooooklyn/canvas/compare/v1.0.5...v1.0.6) (2026-08-13)
+
+
+### Bug Fixes
+
+* keep skia surface alive during async encode ([#1312](https://github.com/Brooooooklyn/canvas/issues/1312)) ([#1314](https://github.com/Brooooooklyn/canvas/issues/1314)) ([6be5aa2](https://github.com/Brooooooklyn/canvas/commit/6be5aa2c664dd077513aa8c89a93531cc568adef))
 ## [1.0.5](https://github.com/Brooooooklyn/canvas/compare/v1.0.4...v1.0.5) (2026-08-09)
 
 
