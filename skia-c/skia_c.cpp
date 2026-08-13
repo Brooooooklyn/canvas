@@ -184,9 +184,18 @@ bool skiac_surface_save(skiac_surface* c_surface, const char* path) {
   return false;
 }
 
+void skiac_surface_ref(skiac_surface* c_surface) {
+  // SkSurface is ref counted.
+  if (c_surface) {
+    SURFACE_CAST->ref();
+  }
+}
+
 void skiac_surface_destroy(skiac_surface* c_surface) {
   // SkSurface is ref counted.
-  SURFACE_CAST->unref();
+  if (c_surface) {
+    SURFACE_CAST->unref();
+  }
 }
 
 skiac_surface* skiac_surface_copy_rgba(skiac_surface* c_surface,

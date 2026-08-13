@@ -418,6 +418,8 @@ pub mod ffi {
 
     pub fn skiac_surface_create_rgba(width: i32, height: i32, cs: u8) -> *mut skiac_surface;
 
+    pub fn skiac_surface_ref(surface: *mut skiac_surface);
+
     pub fn skiac_surface_destroy(surface: *mut skiac_surface);
 
     pub fn skiac_surface_copy_rgba(
@@ -2259,6 +2261,12 @@ impl Surface {
   }
 
   pub(crate) fn reference(&self) -> SurfaceRef {
+    // Take a new refcounted reference; released when the SurfaceRef drops.
+    if !self.ptr.is_null() {
+      unsafe {
+        ffi::skiac_surface_ref(self.ptr);
+      }
+    }
     SurfaceRef(self.ptr)
   }
 
@@ -2409,6 +2417,27 @@ impl SurfaceRef {
 
 unsafe impl Send for SurfaceRef {}
 unsafe impl Sync for SurfaceRef {}
+
+impl Clone for SurfaceRef {
+  fn clone(&self) -> Self {
+    if !self.0.is_null() {
+      unsafe {
+        ffi::skiac_surface_ref(self.0);
+      }
+    }
+    SurfaceRef(self.0)
+  }
+}
+
+impl Drop for SurfaceRef {
+  fn drop(&mut self) {
+    if !self.0.is_null() {
+      unsafe {
+        ffi::skiac_surface_destroy(self.0);
+      }
+    }
+  }
+}
 
 pub struct SurfaceData<'a> {
   slice: &'a [u8],
