@@ -764,6 +764,7 @@ void skiac_surface_create_svg(skiac_svg_surface* c_surface,
                               uint32_t flag,
                               uint8_t cs);
 skiac_surface* skiac_surface_create_rgba(int width, int height, uint8_t cs);
+void skiac_surface_ref(skiac_surface* c_surface);
 void skiac_surface_destroy(skiac_surface* c_surface);
 skiac_surface* skiac_surface_copy_rgba(skiac_surface* c_surface,
                                        uint32_t x,

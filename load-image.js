@@ -134,8 +134,12 @@ async function createImage(src, alt) {
 
   return new Promise((resolve, reject) => {
     image.onload = () => {
-      // Wait for bitmap decode before resolving
-      image.decode().then(() => resolve(image), reject)
+      // Wait for bitmap decode before resolving. SVG sources fire onload
+      // synchronously inside the src setter, where napi >= 3.12 rejects
+      // reentrant &mut borrows of the Image, so decode on a microtask.
+      Promise.resolve()
+        .then(() => image.decode())
+        .then(() => resolve(image), reject)
     }
     image.onerror = (e) => reject(e)
     image.src = src

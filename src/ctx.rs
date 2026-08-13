@@ -1952,6 +1952,54 @@ impl ObjectFinalize for CanvasRenderingContext2D {
   }
 }
 
+/// Source argument for `drawImage`. Wraps the `Either3` conversion so it runs
+/// in the generated callback glue inside the native borrow scope: napi-rs
+/// 3.12+ rejects `FromNapiValue` conversions performed inside a method body,
+/// and the wrapper keeps the custom error message.
+pub struct DrawImageSource<'a>(
+  pub Either3<&'a mut CanvasElement<'a>, &'a mut SVGCanvas<'a>, &'a mut Image>,
+);
+
+impl TypeName for DrawImageSource<'_> {
+  fn type_name() -> &'static str {
+    "CanvasElement | SVGCanvas | Image"
+  }
+
+  fn value_type() -> ValueType {
+    ValueType::Object
+  }
+}
+
+impl ValidateNapiValue for DrawImageSource<'_> {
+  unsafe fn validate(_env: sys::napi_env, _napi_val: sys::napi_value) -> Result<sys::napi_value> {
+    Ok(std::ptr::null_mut())
+  }
+}
+
+impl FromNapiValue for DrawImageSource<'static> {
+  unsafe fn from_napi_value(env: sys::napi_env, napi_val: sys::napi_value) -> Result<Self> {
+    match unsafe {
+      <Either3<&mut CanvasElement, &mut SVGCanvas, &mut Image> as FromNapiValue>::from_napi_value(
+        env, napi_val,
+      )
+    } {
+      Ok(value) => Ok(DrawImageSource(value)),
+      Err(_) => {
+        // Throw the TypeError eagerly: napi >= 3.12 no longer maps the
+        // InvalidArg status to a JS TypeError when synthesizing the error.
+        let _ = Env::from_raw(env).throw_type_error(
+          "Value is not one of these types: `CanvasElement`, `SVGCanvas`, `Image`",
+          Some("InvalidArg"),
+        );
+        Err(Error::new(
+          Status::InvalidArg,
+          "Value is not one of these types: `CanvasElement`, `SVGCanvas`, `Image`".to_string(),
+        ))
+      }
+    }
+  }
+}
+
 #[napi]
 impl CanvasRenderingContext2D {
   #[napi(constructor)]
@@ -2646,7 +2694,7 @@ impl CanvasRenderingContext2D {
   pub fn draw_image(
     &mut self,
     env: &Env,
-    image: Unknown,
+    image: DrawImageSource<'_>,
     sx: Option<f64>,
     sy: Option<f64>,
     s_width: Option<f64>,
@@ -2656,18 +2704,7 @@ impl CanvasRenderingContext2D {
     d_width: Option<f64>,
     d_height: Option<f64>,
   ) -> Result<()> {
-    let Ok(image) = (unsafe {
-      <Either3<&mut CanvasElement, &mut SVGCanvas, &mut Image> as FromNapiValue>::from_napi_value(
-        env.raw(),
-        image.raw(),
-      )
-    }) else {
-      return env.throw_type_error(
-        "Value is not one of these types: `CanvasElement`, `SVGCanvas`, `Image`",
-        Some("InvalidArg"),
-      );
-    };
-    let bitmap = match image {
+    let bitmap = match image.0 {
       Either3::A(canvas) => {
         // Flush the source canvas to render deferred operations before getting bitmap
         canvas.ctx.context.flush();
