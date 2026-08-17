@@ -1452,3 +1452,77 @@ test('a partially invalid ctx.filter list is rejected whole, not truncated to it
   t.is(both.filter, 'blur(3px) grayscale(50%)')
   t.true(both.edgeAlpha > 0)
 })
+
+// https://github.com/Brooooooklyn/canvas/issues/1317
+test('putImageData ignores the current transform even after a getImageData', (t) => {
+  // In deferred mode, getImageData promotes the pending record and re-applies
+  // the canvas state (transform/clip) to the fresh recording. putImageData then
+  // began its pixel record *without finishing* the pending one, so the draw was
+  // appended after the stale state ops and inherited the transform.
+  const makePatch = () => {
+    const patch = new ImageData(new Uint8ClampedArray(32 * 32 * 4), 32, 32)
+    for (let i = 0; i < 32 * 32; i++) {
+      patch.data[i * 4] = 255
+      patch.data[i * 4 + 3] = 255
+    }
+    return patch
+  }
+  // [minX, minY, count] of opaque red pixels
+  const locate = (ctx: SKRSContext2D) => {
+    const { data } = ctx.getImageData(0, 0, 128, 128)
+    let x = Infinity
+    let y = Infinity
+    let n = 0
+    for (let p = 0; p < 128 * 128; p++) {
+      if (data[p * 4] > 200 && data[p * 4 + 3] > 200) {
+        x = Math.min(x, p % 128)
+        y = Math.min(y, (p / 128) | 0)
+        n++
+      }
+    }
+    return [x, y, n]
+  }
+
+  // The reported trigger: non-identity transform, then getImageData.
+  {
+    const ctx = createCanvas(128, 128).getContext('2d')
+    ctx.setTransform(1, 0, 0, 1, 24, 24)
+    ctx.getImageData(0, 0, 1, 1)
+    ctx.putImageData(makePatch(), 10, 10)
+    t.deepEqual(locate(ctx), [10, 10, 1024], 'write must not be offset by the transform')
+  }
+
+  // The whole CTM was applied, not just the translation: a 2x scale turned the
+  // 32x32 patch into a 64x64 block at (20, 20).
+  {
+    const ctx = createCanvas(128, 128).getContext('2d')
+    ctx.setTransform(2, 0, 0, 2, 0, 0)
+    ctx.getImageData(0, 0, 1, 1)
+    ctx.putImageData(makePatch(), 10, 10)
+    t.deepEqual(locate(ctx), [10, 10, 1024], 'write must not be scaled by the transform')
+  }
+
+  // A stale clip leaked the same way: putImageData must ignore it too.
+  {
+    const ctx = createCanvas(128, 128).getContext('2d')
+    ctx.beginPath()
+    ctx.rect(0, 0, 5, 5)
+    ctx.clip()
+    ctx.getImageData(0, 0, 1, 1)
+    ctx.putImageData(makePatch(), 10, 10)
+    t.deepEqual(locate(ctx), [10, 10, 1024], 'write must not be clipped')
+  }
+
+  // Subsequent ordinary draws must still respect the transform (the fix only
+  // isolates the pixel write; it must not drop the state for later layers).
+  {
+    const ctx = createCanvas(128, 128).getContext('2d')
+    ctx.setTransform(1, 0, 0, 1, 24, 24)
+    ctx.getImageData(0, 0, 1, 1)
+    ctx.putImageData(makePatch(), 10, 10)
+    ctx.fillStyle = 'rgb(255,0,0)'
+    ctx.fillRect(6, 6, 32, 32) // under the transform -> lands at (30,30)..(62,62)
+    // union: 1024 (patch) + 1024 (rect) - 144 (12x12 overlap)
+    t.deepEqual(locate(ctx), [10, 10, 1904], 'draws after putImageData keep the transform')
+  }
+})
