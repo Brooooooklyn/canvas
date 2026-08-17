@@ -157,6 +157,16 @@ pub mod ffi {
 
   #[repr(C)]
   #[derive(Copy, Clone, Debug)]
+  pub struct skiac_peek_pixels {
+    pub ptr: *const u8,
+    pub row_bytes: usize,
+    pub width: i32,
+    pub height: i32,
+    pub color_space: u8,
+  }
+
+  #[repr(C)]
+  #[derive(Copy, Clone, Debug)]
   pub struct skiac_sk_data {
     pub ptr: *mut u8,
     pub size: usize,
@@ -449,6 +459,11 @@ pub mod ffi {
       w: i32,
       h: i32,
       color_space: u8,
+    ) -> bool;
+
+    pub fn skiac_surface_peek_premul_rgba(
+      surface: *mut skiac_surface,
+      peek: *mut skiac_peek_pixels,
     ) -> bool;
 
     pub fn skiac_surface_png_data(surface: *mut skiac_surface, data: *mut skiac_sk_data);
@@ -2169,7 +2184,49 @@ impl Surface {
     height: u32,
     color_space: ColorSpace,
   ) -> Option<Vec<u8>> {
-    let mut result = vec![0; (width * height * 4) as usize];
+    // Reject requests whose dimensions or byte length cannot be represented,
+    // instead of letting the length wrap (32-bit targets) and Skia write past
+    // the allocation.
+    let len = width as u64 * height as u64 * 4;
+    if width > i32::MAX as u32 || height > i32::MAX as u32 || len > isize::MAX as u64 {
+      return None;
+    }
+    let len = len as usize;
+
+    // Fast path: fused SIMD unpremultiply straight from the surface pixels,
+    // when the CPU has a supported SIMD implementation (runtime-detected) and
+    // the surface is premultiplied RGBA in the requested color space.
+    if let Some(row_fn) = crate::unpremul::row_fn() {
+      let mut peek = ffi::skiac_peek_pixels {
+        ptr: ptr::null(),
+        row_bytes: 0,
+        width: 0,
+        height: 0,
+        color_space: 0,
+      };
+      if unsafe { ffi::skiac_surface_peek_premul_rgba(self.ptr, &mut peek) }
+        && peek.color_space == color_space as u8
+      {
+        return self.read_pixels_simd(&peek, row_fn, x, y, width, height, len);
+      }
+    }
+
+    // Skia conversion path (color space conversion, non-premultiplied
+    // surfaces, or no supported SIMD on this CPU).
+    // Skia clips the read rect against the surface bounds and only writes the
+    // intersecting region; per the canvas spec, pixels outside the surface
+    // must read as transparent black. Only zero-initialize when the requested
+    // rect is not fully contained in the surface; otherwise every byte is
+    // written by readPixels and the zeroing pass is wasted work.
+    let fully_contained = x >= 0
+      && y >= 0
+      && (x as u32).saturating_add(width) <= self.width()
+      && (y as u32).saturating_add(height) <= self.height();
+    let mut result = if fully_contained {
+      Vec::with_capacity(len)
+    } else {
+      vec![0; len]
+    };
     let status = unsafe {
       ffi::skiac_surface_read_pixels_rect(
         self.ptr,
@@ -2181,7 +2238,85 @@ impl Surface {
         color_space as u8,
       )
     };
-    if status { Some(result) } else { None }
+    if status {
+      // SAFETY: for a fully-contained rect readPixels writes all `len` bytes;
+      // for the clipped case the buffer was zero-initialized above.
+      unsafe { result.set_len(len) };
+      Some(result)
+    } else {
+      None
+    }
+  }
+
+  /// Fused readback + unpremultiply from a peeked premultiplied RGBA surface.
+  /// `len` is the validated `width * height * 4` from [`Self::read_pixels`].
+  #[allow(clippy::too_many_arguments)]
+  fn read_pixels_simd(
+    &self,
+    peek: &ffi::skiac_peek_pixels,
+    row_fn: crate::unpremul::RowFn,
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+    len: usize,
+  ) -> Option<Vec<u8>> {
+    // Clip the requested rect against the surface bounds, same semantics as
+    // SkReadPixelsRec::trim: out-of-surface regions must read as transparent
+    // black (the buffer is zero-initialized below in that case) and a rect
+    // with no intersection fails. 64-bit math because x/y can be i32::MIN.
+    let mut src_x = x as i64;
+    let mut src_y = y as i64;
+    let mut copy_w = width as i64;
+    let mut copy_h = height as i64;
+    let mut dst_off_x = 0i64;
+    let mut dst_off_y = 0i64;
+    if src_x < 0 {
+      dst_off_x = -src_x;
+      copy_w += src_x;
+      src_x = 0;
+    }
+    if src_y < 0 {
+      dst_off_y = -src_y;
+      copy_h += src_y;
+      src_y = 0;
+    }
+    copy_w = copy_w.min(peek.width as i64 - src_x);
+    copy_h = copy_h.min(peek.height as i64 - src_y);
+    if copy_w <= 0 || copy_h <= 0 {
+      return None;
+    }
+    // Only zero-initialize when clipping leaves out-of-surface regions that
+    // must read as transparent black; a fully-contained read writes every
+    // byte and the zeroing pass is wasted work.
+    let fully_contained =
+      dst_off_x == 0 && dst_off_y == 0 && copy_w == width as i64 && copy_h == height as i64;
+    let mut result = if fully_contained {
+      Vec::with_capacity(len)
+    } else {
+      vec![0; len]
+    };
+    let src_stride = peek.row_bytes / 4;
+    let src_base = unsafe {
+      peek
+        .ptr
+        .add(src_y as usize * peek.row_bytes + src_x as usize * 4)
+        .cast::<u32>()
+    };
+    let dst_off = (dst_off_y * width as i64 + dst_off_x) as usize;
+    let dst_base = unsafe { result.as_mut_ptr().cast::<u32>().add(dst_off) };
+    // Derive each row pointer from the base instead of advancing past the
+    // final row, so no out-of-bounds pointer is ever formed.
+    for row in 0..copy_h as usize {
+      let src_row = unsafe { src_base.add(row * src_stride) };
+      let dst_row = unsafe { dst_base.add(row * width as usize) };
+      // SAFETY: both rows point at `copy_w` valid pixels; the freshly
+      // allocated dst never aliases the surface's src.
+      unsafe { row_fn(dst_row, src_row, copy_w as usize) };
+    }
+    // SAFETY: same argument as the Skia path above.
+    unsafe { result.set_len(len) };
+    Some(result)
   }
 
   pub fn data<'env>(&'env self) -> Option<SurfaceData<'env>> {
