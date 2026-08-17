@@ -784,6 +784,17 @@ bool skiac_surface_read_pixels_rect(skiac_surface* c_surface,
                                     int w,
                                     int h,
                                     uint8_t cs);
+// Direct access to a raster surface's pixels. Succeeds only for
+// premultiplied RGBA_8888 surfaces in sRGB (0) or Display P3 (1).
+struct skiac_peek_pixels {
+  const uint8_t* ptr;
+  size_t row_bytes;
+  int width;
+  int height;
+  uint8_t color_space;
+};
+bool skiac_surface_peek_premul_rgba(skiac_surface* c_surface,
+                                    skiac_peek_pixels* peek);
 void skiac_surface_png_data(skiac_surface* c_surface, skiac_sk_data* data);
 void skiac_surface_encode_data(skiac_surface* c_surface,
                                skiac_sk_data* data,

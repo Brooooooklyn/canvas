@@ -246,6 +246,35 @@ void skiac_surface_read_pixels(skiac_surface* c_surface,
   }
 }
 
+bool skiac_surface_peek_premul_rgba(skiac_surface* c_surface,
+                                    skiac_peek_pixels* peek) {
+  SkPixmap pixmap;
+  if (!SURFACE_CAST->peekPixels(&pixmap) ||
+      pixmap.info().colorType() != SkColorType::kRGBA_8888_SkColorType ||
+      pixmap.info().alphaType() != SkAlphaType::kPremul_SkAlphaType) {
+    return false;
+  }
+  uint8_t cs;
+  if (SkColorSpace::Equals(pixmap.info().colorSpace(),
+                           SkColorSpace::MakeSRGB().get())) {
+    cs = 0;
+  } else if (SkColorSpace::Equals(
+                 pixmap.info().colorSpace(),
+                 SkColorSpace::MakeRGB(SkNamedTransferFn::kSRGB,
+                                       SkNamedGamut::kDisplayP3)
+                     .get())) {
+    cs = 1;
+  } else {
+    return false;
+  }
+  peek->ptr = static_cast<const uint8_t*>(pixmap.addr());
+  peek->row_bytes = pixmap.rowBytes();
+  peek->width = pixmap.width();
+  peek->height = pixmap.height();
+  peek->color_space = cs;
+  return true;
+}
+
 bool skiac_surface_read_pixels_rect(skiac_surface* c_surface,
                                     uint8_t* data,
                                     int x,
@@ -257,7 +286,8 @@ bool skiac_surface_read_pixels_rect(skiac_surface* c_surface,
   auto image_info =
       SkImageInfo::Make(w, h, SkColorType::kRGBA_8888_SkColorType,
                         SkAlphaType::kUnpremul_SkAlphaType, color_space);
-  auto result = SURFACE_CAST->readPixels(image_info, data, w * 4, x, y);
+  // size_t math: w * 4 would overflow int for very wide requests.
+  auto result = SURFACE_CAST->readPixels(image_info, data, (size_t)w * 4, x, y);
   return result;
 }
 
