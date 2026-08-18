@@ -1,3 +1,14 @@
+## [1.0.7](https://github.com/Brooooooklyn/canvas/compare/v1.0.6...v1.0.7) (2026-08-18)
+
+
+### Bug Fixes
+
+* putImageData no longer inherits transform/clip after getImageData ([#1320](https://github.com/Brooooooklyn/canvas/issues/1320)) ([8ed2b59](https://github.com/Brooooooklyn/canvas/commit/8ed2b59d17f52dcb2bf6f48acbb99ba93bb859dc))
+
+
+### Performance Improvements
+
+* fast getImageData readback with runtime-dispatched SIMD unpremultiply ([#1319](https://github.com/Brooooooklyn/canvas/issues/1319)) ([196bff9](https://github.com/Brooooooklyn/canvas/commit/196bff9e372135c1fbf3fe915e96cdc5b8a8393f))
 ## [1.0.6](https://github.com/Brooooooklyn/canvas/compare/v1.0.5...v1.0.6) (2026-08-13)
 
 
