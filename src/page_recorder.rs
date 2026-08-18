@@ -258,6 +258,12 @@ impl PageRecorder {
     self.layers.clear();
     self.width = width;
     self.height = height;
+    // Discard the pending recording without finishing it:
+    // finishRecordingAsPicture would optimize and bound every queued op for
+    // a picture that is dropped anyway, and beginning a new recording
+    // without ending the previous one would reuse its SkRecord, leaking its
+    // ops (e.g. a state-restore transform) into the fresh record.
+    self.current = PictureRecorder::new();
     self.current.begin_recording(0.0, 0.0, width, height);
     // Record a clear() command to ensure picture playback clears the target canvas
     // This is necessary because begin_recording may not fully reset canvas state
@@ -317,14 +323,26 @@ impl PageRecorder {
   where
     F: FnOnce(&mut Canvas),
   {
-    // Step 1: Promote current recording if it has changes
+    // Step 1: Always end the current recording before starting the
+    // pixel-data record. SkPictureRecorder reuses the same SkRecord until
+    // finishRecordingAsPicture moves it out, so beginning without ending the
+    // previous recording would append the pixel draw after the state-restore
+    // ops (transform/clip) that resume_recording emitted into it — the draw
+    // would inherit the current transform/clip, which putImageData must
+    // ignore per the HTML spec.
     if self.changed {
       if let Some(picture) = self.current.finish_recording_as_picture() {
         self.layers.push(picture);
         self.cached_picture = None;
       }
-      self.changed = false;
+    } else {
+      // Nothing was drawn: the record holds only resume_recording's
+      // state-restore ops. Discard the recorder instead of finishing it —
+      // finishing would optimize and bound every queued op for a picture
+      // that is dropped anyway.
+      self.current = PictureRecorder::new();
     }
+    self.changed = false;
 
     // Step 2: Fresh recording for pixel data (clean canvas: no clip, identity transform)
     self
