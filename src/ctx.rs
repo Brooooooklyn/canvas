@@ -2,7 +2,6 @@ use std::cell::RefCell;
 use std::f32::consts::PI;
 use std::mem;
 use std::result;
-use std::slice;
 use std::str::FromStr;
 use std::sync::LazyLock;
 
@@ -34,7 +33,7 @@ use crate::{
   sk::{
     AlphaType, Bitmap, BlendMode, ColorSpace, FillType, FontVariantCaps, ImageFilter, LineMetrics,
     MaskFilter, Matrix, Paint, PaintStyle, Path as SkPath, PathEffect, PathOp,
-    SkEncodedImageFormat, SkWMemoryStream, SkiaDataRef, Surface, SurfaceRef, Transform,
+    SkEncodedImageFormat, SkImage, SkWMemoryStream, SkiaDataRef, Surface, Transform,
   },
   state::Context2dRenderingState,
 };
@@ -3496,11 +3495,11 @@ impl From<Transform> for TransformObject {
 }
 
 pub enum ContextData {
-  Png(SurfaceRef),
-  Jpeg(SurfaceRef, u8),
-  Webp(SurfaceRef, u8),
-  Avif(SurfaceRef, Config, u32, u32),
-  Gif(SurfaceRef, GifConfig, u32, u32),
+  Png(SkImage),
+  Jpeg(SkImage, u8),
+  Webp(SkImage, u8),
+  Avif(SkImage, Config, u32, u32),
+  Gif(SkImage, GifConfig, u32, u32),
 }
 
 pub enum ContextOutputData {
@@ -3542,8 +3541,8 @@ impl ContextOutputData {
 #[inline]
 pub(crate) fn encode_surface(data: &ContextData) -> Result<ContextOutputData> {
   match data {
-    ContextData::Png(surface) => surface
-      .png_data()
+    ContextData::Png(image) => image
+      .encode_data(SkEncodedImageFormat::Png, 100)
       .map(ContextOutputData::Skia)
       .ok_or_else(|| {
         Error::new(
@@ -3551,7 +3550,7 @@ pub(crate) fn encode_surface(data: &ContextData) -> Result<ContextOutputData> {
           "Get png data from surface failed".to_string(),
         )
       }),
-    ContextData::Jpeg(surface, quality) => surface
+    ContextData::Jpeg(image, quality) => image
       .encode_data(SkEncodedImageFormat::Jpeg, *quality)
       .map(ContextOutputData::Skia)
       .ok_or_else(|| {
@@ -3560,7 +3559,7 @@ pub(crate) fn encode_surface(data: &ContextData) -> Result<ContextOutputData> {
           "Get jpeg data from surface failed".to_string(),
         )
       }),
-    ContextData::Webp(surface, quality) => surface
+    ContextData::Webp(image, quality) => image
       .encode_data(SkEncodedImageFormat::Webp, *quality)
       .map(ContextOutputData::Skia)
       .ok_or_else(|| {
@@ -3569,29 +3568,32 @@ pub(crate) fn encode_surface(data: &ContextData) -> Result<ContextOutputData> {
           "Get webp data from surface failed".to_string(),
         )
       }),
-    ContextData::Avif(surface, config, width, height) => surface
-      .data()
+    ContextData::Avif(image, config, width, height) => image
+      .read_pixels(AlphaType::Unpremultiplied)
       .ok_or_else(|| {
         Error::new(
           Status::GenericFailure,
           "Get avif data from surface failed".to_string(),
         )
       })
-      .and_then(|(data, size)| {
-        crate::avif::encode(
-          unsafe { slice::from_raw_parts(data, size) },
-          *width,
-          *height,
-          config,
-        )
-        .map(ContextOutputData::Avif)
-        .map_err(|e| Error::new(Status::GenericFailure, format!("{e}")))
+      .and_then(|pixels| {
+        crate::avif::encode(&pixels, *width, *height, config)
+          .map(ContextOutputData::Avif)
+          .map_err(|e| Error::new(Status::GenericFailure, format!("{e}")))
       }),
-    ContextData::Gif(surface, config, width, height) => {
-      crate::gif::encode_surface(surface, *width, *height, config)
-        .map(ContextOutputData::Gif)
-        .map_err(|e| Error::new(Status::GenericFailure, format!("{e}")))
-    }
+    ContextData::Gif(image, config, width, height) => image
+      .read_pixels(AlphaType::Unpremultiplied)
+      .ok_or_else(|| {
+        Error::new(
+          Status::GenericFailure,
+          "Get gif data from surface failed".to_string(),
+        )
+      })
+      .and_then(|pixels| {
+        crate::gif::encode(&pixels, *width, *height, config)
+          .map(ContextOutputData::Gif)
+          .map_err(|e| Error::new(Status::GenericFailure, format!("{e}")))
+      }),
   }
 }
 

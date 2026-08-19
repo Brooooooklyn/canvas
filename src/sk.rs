@@ -1015,6 +1015,20 @@ pub mod ffi {
 
     pub fn skiac_image_get_height(image: *mut skiac_image) -> i32;
 
+    pub fn skiac_image_encode_data(
+      image: *mut skiac_image,
+      data: *mut skiac_sk_data,
+      format: i32,
+      quality: i32,
+    );
+
+    pub fn skiac_image_read_pixels(
+      image: *mut skiac_image,
+      dst: *mut u8,
+      row_bytes: usize,
+      alpha_type: i32,
+    ) -> bool;
+
     pub fn skiac_canvas_draw_sk_image(
       canvas: *mut skiac_canvas,
       image: *mut skiac_image,
@@ -4818,6 +4832,44 @@ impl SkImage {
     unsafe {
       ffi::skiac_canvas_draw_sk_image(canvas.0, self.0, left, top, filter_quality as i32);
     }
+  }
+
+  /// Encode the image into the given format (JPEG/PNG/WebP; quality is ignored for PNG)
+  pub fn encode_data(&self, format: SkEncodedImageFormat, quality: u8) -> Option<SkiaDataRef> {
+    unsafe {
+      let mut data = ffi::skiac_sk_data {
+        ptr: ptr::null_mut(),
+        size: 0,
+        data: ptr::null_mut(),
+      };
+      ffi::skiac_image_encode_data(self.0, &mut data, format as i32, quality as i32);
+
+      if data.ptr.is_null() {
+        None
+      } else {
+        Some(SkiaDataRef(data))
+      }
+    }
+  }
+
+  /// Read the whole image as RGBA_8888 pixels in the image's color space.
+  /// `alpha_type` must be [`AlphaType::Premultiplied`] or [`AlphaType::Unpremultiplied`];
+  /// Skia converts from the image's premultiplied storage when unpremultiplied is requested.
+  pub fn read_pixels(&self, alpha_type: AlphaType) -> Option<Vec<u8>> {
+    let sk_alpha_type = match alpha_type {
+      AlphaType::Premultiplied => 2,   // kPremul_SkAlphaType
+      AlphaType::Unpremultiplied => 3, // kUnpremul_SkAlphaType
+      _ => return None,
+    };
+    let width = self.width() as usize;
+    let height = self.height() as usize;
+    let row_bytes = width.checked_mul(4)?;
+    let size = row_bytes.checked_mul(height)?;
+    let mut pixels = vec![0u8; size];
+    let ok = unsafe {
+      ffi::skiac_image_read_pixels(self.0, pixels.as_mut_ptr(), row_bytes, sk_alpha_type)
+    };
+    if ok { Some(pixels) } else { None }
   }
 }
 
