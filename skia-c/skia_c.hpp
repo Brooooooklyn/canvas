@@ -1185,6 +1185,14 @@ void skiac_image_ref(skiac_image* c_image);
 void skiac_image_destroy(skiac_image* c_image);
 int skiac_image_get_width(skiac_image* c_image);
 int skiac_image_get_height(skiac_image* c_image);
+void skiac_image_encode_data(skiac_image* c_image,
+                             skiac_sk_data* data,
+                             int format,
+                             int quality);
+bool skiac_image_read_pixels(skiac_image* c_image,
+                             uint8_t* dst,
+                             size_t row_bytes,
+                             int alpha_type);
 void skiac_canvas_draw_sk_image(skiac_canvas* c_canvas,
                                 skiac_image* c_image,
                                 float left,

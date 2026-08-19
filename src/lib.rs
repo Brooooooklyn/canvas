@@ -19,7 +19,6 @@ use std::{
 use napi::{
   Property, ScopedTask,
   bindgen_prelude::*,
-  noop_finalize,
   tokio::sync::mpsc::{channel, error::TrySendError},
   tokio_stream::wrappers::ReceiverStream,
 };
@@ -29,7 +28,7 @@ use ctx::{
   STROKE_STYLE_HIDDEN_NAME, SvgExportFlag, encode_surface,
 };
 use font::{FONT_REGEXP, init_font_regexp};
-use sk::{ColorSpace, SkiaDataRef, SurfaceRef};
+use sk::{AlphaType, ColorSpace, SkImage, SkiaDataRef};
 
 use avif::AvifConfig;
 
@@ -253,8 +252,19 @@ impl<'c> CanvasElement<'c> {
     // Flush deferred rendering before encoding
     self.ctx.context.flush();
     let mime = mime.as_str();
+    let image = self
+      .ctx
+      .context
+      .surface
+      .make_image_snapshot()
+      .ok_or_else(|| {
+        Error::new(
+          Status::GenericFailure,
+          "Create image snapshot failed".to_owned(),
+        )
+      })?;
     let context_data = get_data_ref(
-      &self.ctx.context.surface.reference(),
+      &image,
       mime,
       &match quality_or_config {
         Either3::A(q) => Either::A(q),
@@ -296,7 +306,7 @@ impl<'c> CanvasElement<'c> {
   }
 
   #[napi]
-  pub fn data<'env>(&mut self, env: Env) -> Result<BufferSlice<'env>> {
+  pub fn data(&mut self) -> Result<Buffer> {
     // Flush deferred rendering before reading data
     self.ctx.context.flush();
     let ctx2d = &self.ctx.context;
@@ -309,7 +319,9 @@ impl<'c> CanvasElement<'c> {
         "Get png data from surface failed".to_string(),
       )
     })?;
-    unsafe { BufferSlice::from_external(&env, ptr.cast_mut(), size, 0, noop_finalize) }
+    // Copy the pixels: exposing the live surface buffer would let JS writes
+    // bypass Skia's copy-on-write and corrupt in-flight encode snapshots.
+    Ok(unsafe { slice::from_raw_parts(ptr, size) }.to_vec().into())
   }
 
   #[napi(js_name = "toDataURLAsync")]
@@ -346,7 +358,17 @@ impl<'c> CanvasElement<'c> {
   ) -> Result<()> {
     // Flush deferred rendering before encoding
     self.ctx.context.flush();
-    let surface_data = self.ctx.context.surface.reference();
+    let image = self
+      .ctx
+      .context
+      .surface
+      .make_image_snapshot()
+      .ok_or_else(|| {
+        Error::new(
+          Status::GenericFailure,
+          "Create image snapshot failed".to_owned(),
+        )
+      })?;
     let mime = mime.unwrap_or_else(|| MIME_PNG.to_owned());
     let quality_value = quality.unwrap_or(0.92).clamp(0.0, 1.0);
     let quality_or_config = if mime == MIME_AVIF {
@@ -362,7 +384,7 @@ impl<'c> CanvasElement<'c> {
     let callback_ref = Rc::new(callback.create_ref()?);
     let callback_ref_in_catch = callback_ref.clone();
     let async_blob_task = AsyncBlob {
-      surface_ref: surface_data,
+      image,
       mime,
       quality_or_config,
       width,
@@ -387,9 +409,23 @@ impl<'c> CanvasElement<'c> {
   }
 
   #[napi]
-  pub fn convert_to_blob(&mut self, options: Option<ConvertToBlobOptions>) -> AsyncTask<AsyncBlob> {
+  pub fn convert_to_blob(
+    &mut self,
+    options: Option<ConvertToBlobOptions>,
+  ) -> Result<AsyncTask<AsyncBlob>> {
     // Flush deferred rendering before encoding
     self.ctx.context.flush();
+    let image = self
+      .ctx
+      .context
+      .surface
+      .make_image_snapshot()
+      .ok_or_else(|| {
+        Error::new(
+          Status::GenericFailure,
+          "Create image snapshot failed".to_owned(),
+        )
+      })?;
     let options = options.unwrap_or_default();
     let mime = options.mime.unwrap_or_else(|| MIME_PNG.to_owned());
     let quality = options.quality.unwrap_or(0.92).clamp(0.0, 1.0);
@@ -401,13 +437,13 @@ impl<'c> CanvasElement<'c> {
     } else {
       Either::A((quality * 100.0) as u32)
     };
-    AsyncTask::new(AsyncBlob {
-      surface_ref: self.ctx.context.surface.reference(),
+    Ok(AsyncTask::new(AsyncBlob {
+      image,
       mime,
       quality_or_config,
       width: self.ctx.context.width,
       height: self.ctx.context.height,
-    })
+    }))
   }
 
   #[napi]
@@ -481,15 +517,20 @@ impl<'c> CanvasElement<'c> {
       Either3::C(_) => DEFAULT_JPEG_QUALITY,
     };
     let ctx2d = &self.ctx.context;
-    let surface_ref = ctx2d.surface.reference();
+    let image = ctx2d.surface.make_image_snapshot().ok_or_else(|| {
+      Error::new(
+        Status::GenericFailure,
+        "Create image snapshot failed".to_owned(),
+      )
+    })?;
 
     let task = match format_str {
-      "webp" => ContextData::Webp(surface_ref, quality),
-      "jpeg" => ContextData::Jpeg(surface_ref, quality),
-      "png" => ContextData::Png(surface_ref),
+      "webp" => ContextData::Webp(image, quality),
+      "jpeg" => ContextData::Jpeg(image, quality),
+      "png" => ContextData::Png(image),
       "avif" => {
         let cfg = AvifConfig::from(&quality_or_config);
-        ContextData::Avif(surface_ref, cfg.into(), ctx2d.width, ctx2d.height)
+        ContextData::Avif(image, cfg.into(), ctx2d.width, ctx2d.height)
       }
       "gif" => {
         let cfg = gif::GifConfig {
@@ -498,7 +539,7 @@ impl<'c> CanvasElement<'c> {
             _ => None,
           },
         };
-        ContextData::Gif(surface_ref, cfg, ctx2d.width, ctx2d.height)
+        ContextData::Gif(image, cfg, ctx2d.width, ctx2d.height)
       }
       _ => {
         return Err(Error::new(
@@ -517,8 +558,19 @@ impl<'c> CanvasElement<'c> {
     quality_or_config: Either3<f64, AvifConfig, Unknown>,
   ) -> Result<AsyncDataUrl> {
     let mime = mime.unwrap_or(MIME_PNG);
+    let image = self
+      .ctx
+      .context
+      .surface
+      .make_image_snapshot()
+      .ok_or_else(|| {
+        Error::new(
+          Status::GenericFailure,
+          "Create image snapshot failed".to_owned(),
+        )
+      })?;
     Ok(AsyncDataUrl {
-      surface_data: self.ctx.context.surface.reference(),
+      image,
       mime: mime.to_owned(),
       quality_or_config: match quality_or_config {
         Either3::A(q) => Either::A((q * 100.0) as u32),
@@ -537,7 +589,7 @@ pub struct ContextAttr {
 }
 
 fn get_data_ref(
-  surface_ref: &SurfaceRef,
+  image: &SkImage,
   mime: &str,
   quality_or_config: &Either<u32, AvifConfig>,
   width: u32,
@@ -546,24 +598,21 @@ fn get_data_ref(
   let quality = quality_or_config.to_quality(mime);
 
   if let Some(data_ref) = match mime {
-    MIME_WEBP => surface_ref.encode_data(sk::SkEncodedImageFormat::Webp, quality),
-    MIME_JPEG => surface_ref.encode_data(sk::SkEncodedImageFormat::Jpeg, quality),
-    MIME_PNG => surface_ref.png_data(),
+    MIME_WEBP => image.encode_data(sk::SkEncodedImageFormat::Webp, quality),
+    MIME_JPEG => image.encode_data(sk::SkEncodedImageFormat::Jpeg, quality),
+    MIME_PNG => image.encode_data(sk::SkEncodedImageFormat::Png, 100),
     MIME_AVIF => {
-      let (data, size) = surface_ref.data().ok_or_else(|| {
-        Error::new(
-          Status::GenericFailure,
-          "Encode to avif error, failed to get surface pixels".to_owned(),
-        )
-      })?;
+      let pixels = image
+        .read_pixels(AlphaType::Unpremultiplied)
+        .ok_or_else(|| {
+          Error::new(
+            Status::GenericFailure,
+            "Encode to avif error, failed to get surface pixels".to_owned(),
+          )
+        })?;
       let config = AvifConfig::from(quality_or_config).into();
-      let output = avif::encode(
-        unsafe { slice::from_raw_parts(data, size) },
-        width,
-        height,
-        &config,
-      )
-      .map_err(|e| Error::new(Status::GenericFailure, format!("{e}")))?;
+      let output = avif::encode(&pixels, width, height, &config)
+        .map_err(|e| Error::new(Status::GenericFailure, format!("{e}")))?;
       return Ok(ContextOutputData::Avif(output));
     }
     MIME_GIF => {
@@ -573,7 +622,15 @@ fn get_data_ref(
           _ => None,
         },
       };
-      let output = gif::encode_surface(surface_ref, width, height, &config)
+      let pixels = image
+        .read_pixels(AlphaType::Unpremultiplied)
+        .ok_or_else(|| {
+          Error::new(
+            Status::GenericFailure,
+            "Encode to gif error, failed to get surface pixels".to_owned(),
+          )
+        })?;
+      let output = gif::encode(&pixels, width, height, &config)
         .map_err(|e| Error::new(Status::GenericFailure, format!("{e}")))?;
       return Ok(ContextOutputData::Gif(output));
     }
@@ -594,7 +651,7 @@ fn get_data_ref(
 }
 
 pub struct AsyncDataUrl {
-  surface_data: SurfaceRef,
+  image: SkImage,
   quality_or_config: Either<u32, AvifConfig>,
   mime: String,
   width: u32,
@@ -609,7 +666,7 @@ impl Task for AsyncDataUrl {
   fn compute(&mut self) -> Result<Self::Output> {
     let mut output = format!("data:{};base64,", self.mime);
     let surface_data = get_data_ref(
-      &self.surface_data,
+      &self.image,
       &self.mime,
       &self.quality_or_config,
       self.width,
@@ -635,7 +692,7 @@ impl Task for AsyncDataUrl {
 }
 
 pub struct AsyncBlob {
-  surface_ref: SurfaceRef,
+  image: SkImage,
   mime: String,
   quality_or_config: Either<u32, AvifConfig>,
   width: u32,
@@ -649,7 +706,7 @@ impl<'env> ScopedTask<'env> for AsyncBlob {
 
   fn compute(&mut self) -> Result<Self::Output> {
     get_data_ref(
-      &self.surface_ref,
+      &self.image,
       &self.mime,
       &self.quality_or_config,
       self.width,

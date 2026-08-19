@@ -3,7 +3,6 @@ use napi::bindgen_prelude::*;
 use napi_derive::napi;
 
 use crate::error::SkError;
-use crate::sk::SurfaceRef;
 
 /// GIF encoding configuration for single-frame encoding
 #[napi(object)]
@@ -299,19 +298,4 @@ pub(crate) fn encode(
   }
 
   Ok(buffer)
-}
-
-/// Encode a surface reference as a static GIF
-pub(crate) fn encode_surface(
-  surface: &SurfaceRef,
-  width: u32,
-  height: u32,
-  config: &GifConfig,
-) -> std::result::Result<Vec<u8>, SkError> {
-  let (data, size) = surface
-    .data()
-    .ok_or_else(|| SkError::Generic("Failed to get surface pixels for GIF encoding".to_owned()))?;
-
-  let pixels = unsafe { std::slice::from_raw_parts(data, size) };
-  encode(pixels, width, height, config)
 }

@@ -1056,7 +1056,8 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
         avif_image.row_bytes as usize,
         (avif_image.row_bytes * avif_image.height) as usize,
         ColorType::RGBA8888,
-        AlphaType::Premultiplied,
+        // libavif's avifImageYUVToRGB outputs straight (non-premultiplied) alpha.
+        AlphaType::Unpremultiplied,
       );
       DecodeStatus::Ok(BitmapInfo {
         data: bitmap,

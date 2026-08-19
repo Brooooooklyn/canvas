@@ -1998,6 +1998,53 @@ int skiac_image_get_height(skiac_image* c_image) {
   return c_image ? IMAGE_CAST->height() : 0;
 }
 
+// Encodes the image directly; the caller keeps ownership of c_image.
+void skiac_image_encode_data(skiac_image* c_image,
+                             skiac_sk_data* data,
+                             int format,
+                             int quality) {
+  auto image = IMAGE_CAST;
+  sk_sp<SkData> encoded_data;
+  if (format == int(SkEncodedImageFormat::kJPEG)) {
+    SkJpegEncoder::Options options;
+    options.fQuality = quality;
+    encoded_data = SkJpegEncoder::Encode(nullptr, image, options);
+  } else if (format == int(SkEncodedImageFormat::kPNG)) {
+    encoded_data =
+        SkPngEncoder::Encode(nullptr, image, SkPngEncoder::Options());
+  } else if (format == int(SkEncodedImageFormat::kWEBP)) {
+    SkWebpEncoder::Options options;
+    options.fCompression = quality == 100
+                               ? SkWebpEncoder::Compression::kLossless
+                               : SkWebpEncoder::Compression::kLossy;
+    options.fQuality = quality == 100 ? 75 : quality;
+    encoded_data = SkWebpEncoder::Encode(nullptr, image, options);
+  }
+  if (encoded_data) {
+    data->ptr = const_cast<uint8_t*>(encoded_data->bytes());
+    data->size = encoded_data->size();
+    data->data = reinterpret_cast<skiac_data*>(encoded_data.release());
+  }
+}
+
+bool skiac_image_read_pixels(skiac_image* c_image,
+                             uint8_t* dst,
+                             size_t row_bytes,
+                             int alpha_type) {
+  if (!c_image || !dst) {
+    return false;
+  }
+  if (alpha_type != int(kPremul_SkAlphaType) &&
+      alpha_type != int(kUnpremul_SkAlphaType)) {
+    return false;
+  }
+  auto image = IMAGE_CAST;
+  auto info = SkImageInfo::Make(
+      image->width(), image->height(), kRGBA_8888_SkColorType,
+      static_cast<SkAlphaType>(alpha_type), image->refColorSpace());
+  return image->readPixels(nullptr, info, dst, row_bytes, 0, 0);
+}
+
 void skiac_canvas_draw_sk_image(skiac_canvas* c_canvas,
                                 skiac_image* c_image,
                                 float left,
