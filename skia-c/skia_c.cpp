@@ -437,16 +437,24 @@ void skiac_canvas_draw_image(skiac_canvas* c_canvas,
   auto paint = reinterpret_cast<const SkPaint*>(c_paint);
   if (is_canvas) {
     auto src_surface = reinterpret_cast<SkSurface*>(c_bitmap);
+    // Snapshot instead of SkSurface::draw -- on a never-snapshotted surface
+    // SkSurface::draw copies the whole pixel buffer on every call (#1321).
+    // The snapshot shares the pixels; a later write into the source
+    // copies-on-write, which keeps call-time capture semantics.
+    sk_sp<SkImage> snapshot = src_surface->makeImageSnapshot();
+    if (!snapshot) {
+      return;
+    }
     CANVAS_CAST->save();
     // Translate to the destination position
     CANVAS_CAST->translate(dx, dy);
-    // The source crop -- SkSurface::draw paints the whole source surface. It
+    // The source crop -- drawImage paints the whole source snapshot. It
     // would truncate a halo, so `paint` must carry no image filter.
     CANVAS_CAST->clipRect(SkRect::MakeWH(d_width, d_height));
     // Scale using the ratio of destination size to source surface size
     CANVAS_CAST->scale(d_width / s_width, d_height / s_height);
-    // Draw the surface directly
-    src_surface->draw(CANVAS_CAST, -sx, -sy, sampling, paint);
+    // Draw the snapshot directly
+    CANVAS_CAST->drawImage(snapshot.get(), -sx, -sy, sampling, paint);
     CANVAS_CAST->restore();
   } else {
     const auto src_rect = SkRect::MakeXYWH(sx, sy, s_width, s_height);
