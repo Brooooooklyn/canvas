@@ -61,19 +61,25 @@ test('drawImage(canvas) self-blit uses call-time pixels', (t) => {
   const actx = canvas.getContext('2d')
   actx.fillStyle = '#ff0000'
   actx.fillRect(0, 0, 256, 256)
+  actx.fillStyle = '#00ff00'
+  actx.fillRect(0, 0, 32, 32)
 
-  actx.drawImage(canvas, 16, 16)
+  // The green marker square lands at (128, 128); the pixel there was red
+  // before the blit, so a dropped blit fails the first assertion.
+  actx.drawImage(canvas, 128, 128)
 
+  // Overwrite the original marker after the blit: the copy must keep the
+  // call-time green, not the later blue.
   actx.fillStyle = '#0000ff'
-  actx.fillRect(0, 0, 1, 1)
+  actx.fillRect(0, 0, 32, 32)
 
   t.deepEqual(
-    Array.from(actx.getImageData(200, 200, 1, 1).data),
-    [255, 0, 0, 255],
-    'self-blit must copy the red pixels captured at call time',
+    Array.from(actx.getImageData(140, 140, 1, 1).data),
+    [0, 255, 0, 255],
+    'self-blit must copy the green marker captured at call time',
   )
   t.deepEqual(
-    Array.from(actx.getImageData(0, 0, 1, 1).data),
+    Array.from(actx.getImageData(10, 10, 1, 1).data),
     [0, 0, 255, 255],
     'drawing after the self-blit must still land on the surface',
   )
