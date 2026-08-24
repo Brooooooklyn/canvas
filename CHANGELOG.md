@@ -1,3 +1,10 @@
+## [1.0.8](https://github.com/Brooooooklyn/canvas/compare/v1.0.7...v1.0.8) (2026-08-24)
+
+
+### Bug Fixes
+
+* capture call-time snapshot in async encode APIs ([#1313](https://github.com/Brooooooklyn/canvas/issues/1313)) ([#1323](https://github.com/Brooooooklyn/canvas/issues/1323)) ([18c52bf](https://github.com/Brooooooklyn/canvas/commit/18c52bfa7b18ce5a930a366217a13a347fbffecc))
+* snapshot canvas source in drawImage to avoid per-call pixel copy ([#1325](https://github.com/Brooooooklyn/canvas/issues/1325)) ([d98574c](https://github.com/Brooooooklyn/canvas/commit/d98574c79d2260437527c7775c2c384304f4f7fb))
 ## [1.0.7](https://github.com/Brooooooklyn/canvas/compare/v1.0.6...v1.0.7) (2026-08-18)
 
 
