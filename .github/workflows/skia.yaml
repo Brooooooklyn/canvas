@@ -352,6 +352,10 @@ jobs:
           sed -i 's|^deb http://deb.debian.org/debian-security|deb [check-valid-until=no] http://deb.debian.org/debian-security|' /etc/apt/sources.list
           echo "deb [check-valid-until=no] http://security.debian.org/debian-security bullseye-security main" >> /etc/apt/sources.list
           echo "deb [check-valid-until=no] http://snapshot.debian.org/archive/debian-security/20260824T000000Z bullseye-security main" >> /etc/apt/sources.list
+          # apt 2.2 retries zero times by default, which turns a rate-limit or
+          # timeout on any mirror into a failed build. Retry transient errors.
+          # A 404 stays a permanent error, so mirror fallback is still immediate.
+          echo 'Acquire::Retries "3";' > /etc/apt/apt.conf.d/80retries
           apt-get update
           apt-get install -y gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf libatomic1-armhf-cross git build-essential cmake ninja-build wget curl python3
           curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
