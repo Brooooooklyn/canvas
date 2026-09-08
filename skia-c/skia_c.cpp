@@ -542,6 +542,9 @@ void skiac_canvas_get_line_metrics_or_draw_text(
     int variant_caps,
     const char* lang,
     int text_rendering) {
+  // A face or alias registered since the last lookup can change an existing
+  // match, and FontCollection caches matches until told otherwise.
+  c_collection->flushCachesIfDirty();
   auto font_collection = c_collection->collection;
   auto font_style = SkFontStyle(weight, stretch, (SkFontStyle::Slant)slant);
   auto text_direction = (TextDirection)direction;
@@ -2303,6 +2306,9 @@ uint32_t skiac_font_collection_register(
     typeface_id = c_font_collection->assets->registerTypefaceWithTracking(
         typeface_data, typeface);
   }
+  if (typeface_id) {
+    c_font_collection->markCachesDirty();
+  }
   return typeface_id;
 }
 
@@ -2329,6 +2335,9 @@ uint32_t skiac_font_collection_register_from_path(
     typeface_id =
         c_font_collection->assets->registerTypefaceFromPathWithTracking(
             path_str, typeface);
+  }
+  if (typeface_id) {
+    c_font_collection->markCachesDirty();
   }
   return typeface_id;
 }
@@ -2439,6 +2448,7 @@ bool skiac_font_collection_set_alias(skiac_font_collection* c_font_collection,
   // Register the alias - this will shadow any existing font with the same name
   c_font_collection->assets->registerTypeface(std::move(typeface),
                                               SkString(alias));
+  c_font_collection->markCachesDirty();
   return true;
 }
 

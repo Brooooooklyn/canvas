@@ -543,6 +543,10 @@ struct skiac_font_collection {
   std::vector<sk_sp<TypefaceFontProviderCustom>> retired_assets;
   // Track setAlias mappings for rebuild: {family, alias} pairs
   std::set<std::pair<std::string, std::string>> set_aliases;
+  // Set when the dynamic provider gains a face or an alias. FontCollection
+  // memoizes findTypefaces() per {family list, weight, slant}, including
+  // fallback misses, so any such change can invalidate an existing match.
+  bool caches_dirty = false;
 
   skiac_font_collection()
       : collection(sk_make_sp<FontCollection>()),
@@ -554,6 +558,18 @@ struct skiac_font_collection {
     collection->enableFontFallback();
   }
 
+  // Defer invalidation to the next text lookup instead of clearing on every
+  // registration: loadFontsFromDir() registers one face per file, and
+  // clearCaches() also purges the process-wide HarfBuzz face cache.
+  void markCachesDirty() { caches_dirty = true; }
+
+  void flushCachesIfDirty() {
+    if (caches_dirty) {
+      collection->clearCaches();
+      caches_dirty = false;
+    }
+  }
+
   // Rebuild the dynamic font provider with only remaining fonts
   // Since sk_sp is reference-counted, old providers stay alive as long as any
   // typeface from them is still in use. We can safely clear retired_assets.
@@ -563,6 +579,7 @@ struct skiac_font_collection {
 
     // Clear caches before swap
     collection->clearCaches();
+    caches_dirty = false;
 
     // Create new provider
     auto new_assets = sk_make_sp<TypefaceFontProviderCustom>(font_mgr);
