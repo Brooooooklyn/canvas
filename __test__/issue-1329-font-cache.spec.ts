@@ -15,8 +15,11 @@ import { createCanvas, GlobalFonts } from '../index'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const serifPath = join(__dirname, 'fonts', 'SourceSerifPro-Regular.ttf')
 const serifData = readFileSync(serifPath)
-const boldData = readFileSync(join(__dirname, 'fonts', 'SourceHanSerifCN-Bold.ttf'))
 const anchorData = readFileSync(join(__dirname, 'fonts', 'Oswald.ttf'))
+// The only committed face that is neither weight 400 nor monospace, so the only
+// one whose advance width differs from the regular at a different weight.
+// Registered by path because it is 14.6 MB and the path API loads it lazily.
+const boldPath = join(__dirname, 'fonts', 'SourceHanSerifCN-Bold.ttf')
 
 const SAMPLE = 'Andilly (95)'
 
@@ -36,7 +39,7 @@ GlobalFonts.register(anchorData, ANCHOR)
 // Reference widths, each read through a family that is registered up front and
 // never mutated, so no cache entry under test can influence them.
 GlobalFonts.register(serifData, 'Issue1329SerifRef')
-GlobalFonts.register(boldData, 'Issue1329BoldRef')
+GlobalFonts.registerFromPath(boldPath, 'Issue1329BoldRef')
 
 const ANCHOR_WIDTH = measure(`400 60px "${ANCHOR}"`)
 const SERIF_WIDTH = measure(`400 60px "Issue1329SerifRef"`)
@@ -66,7 +69,7 @@ test.serial('registering a family invalidates a lookup cached before it existed'
 test.serial('registering a second weight invalidates the cached first weight', (t) => {
   const family = 'Issue1329Weight'
 
-  GlobalFonts.register(boldData, family)
+  GlobalFonts.registerFromPath(boldPath, family)
 
   // Only the bold face exists, so weight 400 resolves to it and is memoized.
   t.is(measure(`400 60px "${family}"`), BOLD_WIDTH)
@@ -81,7 +84,7 @@ test.serial('registering a second weight invalidates the cached first weight', (
 test.serial('font size is not part of the cache key', (t) => {
   const family = 'Issue1329Size'
 
-  GlobalFonts.register(boldData, family)
+  GlobalFonts.registerFromPath(boldPath, family)
   // Poison at 60px; 30px shares the key because size lives in SkFont, not in
   // the SkFontStyle the key is built from.
   t.is(measure(`400 60px "${family}"`), BOLD_WIDTH)
