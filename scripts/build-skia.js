@@ -332,25 +332,27 @@ if (PLATFORM_NAME === 'win32') {
 // wherever the optimiser does not fold the branch away, and libskia.a ships an undefined
 // hwy::VectorBytes(). macOS bundles tolerate that, but dlopen of the Linux .node fails
 // with "undefined symbol: _ZN3hwy11VectorBytesEv". Compile the missing source.
+// The anchor is a single line because the Windows runners check the submodule out with
+// CRLF endings, which a multi-line needle would never match.
 const HighwayGNPath = path.join(__dirname, '..', 'skia', 'third_party', 'highway', 'BUILD.gn')
-const HIGHWAY_SOURCES_TO_PATCH = `  sources = [
-    "../externals/highway/hwy/aligned_allocator.cc",
-    "../externals/highway/hwy/targets.cc",
-  ]`
-const HIGHWAY_SOURCES_I_WANT = `  sources = [
-    "../externals/highway/hwy/aligned_allocator.cc",
-    "../externals/highway/hwy/per_target.cc",
-    "../externals/highway/hwy/targets.cc",
-  ]`
+const HIGHWAY_SOURCE_TO_PATCH = `"../externals/highway/hwy/targets.cc",`
+const HIGHWAY_SOURCE_ADDED = `"../externals/highway/hwy/per_target.cc",`
 
 const HIGHWAY_GN_CONTENT = readFileSync(HighwayGNPath, 'utf8')
-if (!HIGHWAY_GN_CONTENT.includes(HIGHWAY_SOURCES_TO_PATCH)) {
+if (!HIGHWAY_GN_CONTENT.includes(HIGHWAY_SOURCE_TO_PATCH)) {
   throw new Error(
-    `skia/third_party/highway/BUILD.gn no longer lists the sources this build patches. ` +
+    `skia/third_party/highway/BUILD.gn no longer lists ${HIGHWAY_SOURCE_TO_PATCH}. ` +
       `Re-check whether hwy/per_target.cc is compiled upstream now.`,
   )
 }
-writeFileSync(HighwayGNPath, HIGHWAY_GN_CONTENT.replace(HIGHWAY_SOURCES_TO_PATCH, HIGHWAY_SOURCES_I_WANT))
+const HIGHWAY_GN_EOL = HIGHWAY_GN_CONTENT.includes('\r\n') ? '\r\n' : '\n'
+writeFileSync(
+  HighwayGNPath,
+  HIGHWAY_GN_CONTENT.replace(
+    HIGHWAY_SOURCE_TO_PATCH,
+    `${HIGHWAY_SOURCE_ADDED}${HIGHWAY_GN_EOL}    ${HIGHWAY_SOURCE_TO_PATCH}`,
+  ),
+)
 process.once('beforeExit', () => {
   writeFileSync(HighwayGNPath, HIGHWAY_GN_CONTENT)
 })
