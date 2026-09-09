@@ -201,3 +201,78 @@ PR conventions: the title is `feat: chrome/mNNN`. The head branch is literally
 Stale documentation to distrust: `CONTRIBUTING.md` still says the submodule points at
 `chrome/m138`, describes `.tar.xz` artefacts that do not exist, calls the release a
 draft, and mentions an LLVM 18 workaround that was removed.
+
+## 10. Failure classes found during the m151 to m154 upgrade
+
+Three real breakages, all from upstream changes that landed in m152. Each one is
+worth checking first on the next upgrade.
+
+### `gn gen` dies with `FileNotFoundError` on the musl targets
+
+```
+ERROR at //gn/BUILDCONFIG.gn:100:14: Script returned non-zero exit code.
+FileNotFoundError: [Errno 2] No such file or directory: 'zig cc'
+```
+
+Skia `7e658a67a1` rewrote `gn/is_clang.py` from
+`subprocess.check_output('%s --version' % cc, shell=True)` to
+`subprocess.check_output([cc, '--version'])`. `gn/BUILDCONFIG.gn:97-101` runs that probe
+whenever `cc` is not literally `clang`. The musl targets use `cc="zig cc"`, and the list
+form execs argv[0] verbatim.
+
+`scripts/build-skia.js` now splits a multi-word compiler back into argv. Only the two
+musl targets have a space in `CC`, so the patch is self-scoping.
+
+### `AT_HWCAP2` undeclared on `aarch64-unknown-linux-gnu`
+
+```
+highway/hwy/targets.cc:508:33: error: use of undeclared identifier 'AT_HWCAP2'
+```
+
+The highway roll made `targets.cc` probe the CPU through `getauxval(AT_HWCAP2)`. Highway
+backfills the `HWCAP2_*` bit values it tests but not the auxv key, and glibc added
+`AT_HWCAP2` to `elf.h` only in 2.18. This target builds against a glibc 2.17 sysroot.
+
+Fixed with `-DAT_HWCAP2=26` in `ExtraCflags` for that target. 26 is the fixed Linux uapi
+value, so a newer sysroot redefines it identically.
+
+Watch for this shape in general: a target that builds everywhere except musl and the old
+glibc sysroot usually means new upstream code that assumes a modern glibc.
+
+### The addon builds but will not load: `undefined symbol`
+
+```
+undefined symbol: _ZN3hwy11VectorBytesEv
+```
+
+`skia/third_party/highway/BUILD.gn` still lists the two sources highway had in 2021. The
+roll made `targets.cc:754` call `hwy::VectorBytes()`, which lives in `hwy/per_target.cc` -
+a file nothing compiles. The call sits behind a plain `if (HWY_ARCH_ARM_A64)`, not an
+`#if`, so the reference survives wherever the optimiser keeps the branch.
+
+`scripts/build-skia.js` now adds `hwy/per_target.cc` to that source list.
+
+Two lessons that generalise:
+
+1. A local darwin build and a green `yarn test` do not prove the archives are complete.
+   macOS bundles tolerate undefined symbols; the Linux loader rejects them. Check with
+   `nm -u <addon>.node | grep -v _napi | head` when a milestone rolls a third_party dep.
+2. Skia's `third_party/*/BUILD.gn` wrappers are hand-written source lists. A dependency
+   roll can add a source file that Skia never compiles. The symptom is always a link or
+   load error naming one function.
+
+### Any multi-line patch of a submodule file fails on Windows
+
+The Windows runners check the submodule out with CRLF line endings. A multi-line string
+needle in `scripts/build-skia.js` therefore never matches there, while the same code
+works on Linux and macOS.
+
+Anchor every patch on a single line, or tolerate `\r\n` explicitly. Test by converting
+the target file to CRLF locally and running the build:
+
+```bash
+python3 -c "import io;p='<file>';d=io.open(p,'rb').read();io.open(p,'wb').write(d.replace(b'\n',b'\r\n'))"
+```
+
+This also explains why the dead `skia_c_api_example` strip in section 2 is doubly inert
+on Windows.
