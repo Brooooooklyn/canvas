@@ -14,6 +14,11 @@
       "groupName": "cssparser",
       "matchManagers": ["cargo"],
       "matchPackageNames": ["cssparser", "cssparser-color"]
+    },
+    {
+      "groupName": "Cargo lock file maintenance",
+      "matchManagers": ["cargo"],
+      "matchUpdateTypes": ["lockFileMaintenance"]
     }
   ],
   "lockFileMaintenance": {

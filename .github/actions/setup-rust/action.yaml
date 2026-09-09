@@ -34,5 +34,5 @@ runs:
           ~/.cargo/registry/
           ~/.cargo/git/db/
           ~/.napi-rs
-          target/${{ inputs.target }}
-        key: ${{ steps.rustup-version.outputs.RUST_TOOLCHAIN_VERSION }}-${{ inputs.target }}-cargo-cache
+          target/${{ inputs.targets }}
+        key: ${{ steps.rustup-version.outputs.RUST_TOOLCHAIN_VERSION }}-${{ inputs.targets }}-cargo-cache
