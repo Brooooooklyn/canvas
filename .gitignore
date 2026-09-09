@@ -173,7 +173,8 @@ llvm-project-llvmorg-*
 !.yarn/releases
 !.yarn/sdks
 !.yarn/versions
-.claude
+.claude/*
+!.claude/skills
 
 *.code-workspace
 /example/output.mp4
