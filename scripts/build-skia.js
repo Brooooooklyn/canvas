@@ -46,8 +46,7 @@ const PDF_HARFBUZZ_SUBSET_CRASHING_TARGETS = new Set([
 // binary is x86_64-pc-windows-msvc and is affected by the crash. Match the
 // native host explicitly in addition to the --target= lookup.
 const IS_NATIVE_WIN_X64 = !TARGET_TRIPLE && PLATFORM_NAME === 'win32' && HOST_ARCH === 'x64'
-const PDF_HARFBUZZ_SUBSET_ENABLED =
-  !PDF_HARFBUZZ_SUBSET_CRASHING_TARGETS.has(TARGET_TRIPLE) && !IS_NATIVE_WIN_X64
+const PDF_HARFBUZZ_SUBSET_ENABLED = !PDF_HARFBUZZ_SUBSET_CRASHING_TARGETS.has(TARGET_TRIPLE) && !IS_NATIVE_WIN_X64
 
 function exec(command) {
   console.info(command)
@@ -186,8 +185,16 @@ switch (PLATFORM_NAME) {
 switch (TARGET_TRIPLE) {
   case 'aarch64-unknown-linux-gnu':
     ExtraSkiaBuildFlag += ' target_cpu="arm64" target_os="linux"'
+    // -DAT_HWCAP2=26: the highway roll in Skia m152 taught hwy/targets.cc to probe the
+    // aarch64 CPU through getauxval(AT_HWCAP2). Highway backfills the HWCAP2_* bit values
+    // it reads (targets.cc:502-507) but not the auxv key itself, and glibc only added
+    // AT_HWCAP2 to elf.h in 2.18, so the 2.17 sysroot this target builds against fails
+    // with "use of undeclared identifier 'AT_HWCAP2'". 26 is the fixed Linux uapi value
+    // from linux/auxvec.h, identical to what glibc >= 2.18 defines, so a newer sysroot
+    // would redefine it token-for-token. getauxval returns 0 for a key the kernel does
+    // not supply, which highway reads as "no SVE2", so the probe stays correct.
     ExtraCflags =
-      '"--target=aarch64-unknown-linux-gnu", "--sysroot=/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot", "-I/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot/usr/include", "-march=armv8-a"'
+      '"--target=aarch64-unknown-linux-gnu", "--sysroot=/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot", "-I/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot/usr/include", "-march=armv8-a", "-DAT_HWCAP2=26"'
     ExtraCflagsCC +=
       ', "--target=aarch64-unknown-linux-gnu", "--sysroot=/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot", "-I/usr/lib/llvm-19/include/c++/v1", "-I/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot/usr/include", "-march=armv8-a"'
     ExtraLdFlags =
@@ -314,6 +321,46 @@ if (PLATFORM_NAME === 'win32') {
   writeFileSync(SkLoadICUCppFilePath, patch)
   process.once('beforeExit', () => {
     writeFileSync(SkLoadICUCppFilePath, content)
+  })
+}
+
+// gn/BUILDCONFIG.gn only trusts `cc`/`cxx` named literally clang/clang++; for anything
+// else it shells out to gn/is_clang.py to detect the compiler. Skia commit 7e658a67a1
+// ("Disable partition_alloc on Mac/iOS when using Xcode clang", first shipped in m152)
+// rewrote that probe from
+//   subprocess.check_output('%s --version' % cc, shell=True)
+// to
+//   subprocess.check_output([cc, '--version'])
+// The list form execs argv[0] verbatim, so our musl targets - which build through
+// cc="zig cc" / cxx="zig c++" - make it look for a single binary named `zig cc`, raise
+// FileNotFoundError, and take `gn gen` down with them. Split the multi-word compiler
+// back into argv while we run. This only touches the probe: the toolchain still invokes
+// `zig cc` exactly as before.
+const IsClangPyPath = path.join(__dirname, '..', 'skia', 'gn', 'is_clang.py')
+const IS_CLANG_CODE_TO_PATCH = [
+  `subprocess.check_output([cc, '--version'])`,
+  `subprocess.check_output([cxx, '--version'])`,
+]
+const IS_CLANG_CODE_I_WANT = [
+  `subprocess.check_output(cc.split() + ['--version'])`,
+  `subprocess.check_output(cxx.split() + ['--version'])`,
+]
+
+if (CC.includes(' ') || CXX.includes(' ')) {
+  const isClangContent = readFileSync(IsClangPyPath, 'utf8')
+  let patched = isClangContent
+  IS_CLANG_CODE_TO_PATCH.forEach((codeToPatch, index) => {
+    if (!patched.includes(codeToPatch)) {
+      throw new Error(
+        `skia/gn/is_clang.py does not contain ${JSON.stringify(codeToPatch)} any more. ` +
+          `Re-check the multi-word cc/cxx workaround in scripts/build-skia.js.`,
+      )
+    }
+    patched = patched.replace(codeToPatch, IS_CLANG_CODE_I_WANT[index])
+  })
+  writeFileSync(IsClangPyPath, patched)
+  process.once('beforeExit', () => {
+    writeFileSync(IsClangPyPath, isClangContent)
   })
 }
 
