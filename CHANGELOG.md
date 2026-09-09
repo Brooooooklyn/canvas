@@ -1,3 +1,15 @@
+## [1.0.9](https://github.com/Brooooooklyn/canvas/compare/v1.0.8...v1.0.9) (2026-09-09)
+
+
+### Bug Fixes
+
+* **deps:** update cssparser to 0.38 and cssparser-color to 0.6 ([#1335](https://github.com/Brooooooklyn/canvas/issues/1335)) ([caec867](https://github.com/Brooooooklyn/canvas/commit/caec86730dbb1a87b50235eccfd96bd44d03ed30))
+* invalidate FontCollection typeface cache on font registration ([#1334](https://github.com/Brooooooklyn/canvas/issues/1334)) ([9e4fbec](https://github.com/Brooooooklyn/canvas/commit/9e4fbec27d4ac921667cfc211819e09d182b4957))
+
+
+### Features
+
+* chrome/m154 ([#1337](https://github.com/Brooooooklyn/canvas/issues/1337)) ([c68eea9](https://github.com/Brooooooklyn/canvas/commit/c68eea9be54edc6c6d9bd5a3e9f7081a86daaffe))
 ## [1.0.8](https://github.com/Brooooooklyn/canvas/compare/v1.0.7...v1.0.8) (2026-08-24)
 
 
