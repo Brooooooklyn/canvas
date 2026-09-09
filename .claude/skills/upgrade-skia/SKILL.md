@@ -93,7 +93,9 @@ node scripts/build-skia.js --target=aarch64-apple-darwin 2>&1 | tee /tmp/skia-bu
 ```
 
 Output goes to `skia/out/Static`. `build.rs` reads that path by default, so no copy
-step is needed.
+step is needed. An existing `out/Static` makes the build incremental, so it can finish
+in under a minute. That is normal. Ninja tracks the dependencies; it is not a sign that
+the build was skipped.
 
 Then build the addon and run the tests:
 
@@ -104,6 +106,18 @@ yarn test
 
 Warning: do not skip `cargo clean`. The Rust build links static archives that
 changed underneath it, and a stale `target/` hides link errors.
+
+Now check that the archives are complete:
+
+```bash
+nm -u skia.darwin-arm64.node | grep -v napi
+```
+
+A green macOS test run does not prove this. macOS loads a bundle that still has
+undefined symbols, so the addon builds and every test passes while the same archives
+fail to `dlopen` on Linux. Any leftover symbol from a Skia third_party library, for
+example an `hwy::` or `SkSL` name, means a source file that Skia does not compile. See
+`references/troubleshooting.md` section 10.
 
 ### When a step fails
 
@@ -169,15 +183,29 @@ gh run watch <run-id>
 The matrix has 11 jobs and takes 12 to 19 minutes. The long pole is
 `stable - ubuntu-latest - build skia` or `stable - linux-aarch64-musl - build skia`.
 
-Warning: the release tag appears even when the build fails. Each job uploads its own
-assets, so a red run still leaves a partly filled release. Use two gates:
+Warning: the release tag appears even when the build fails, and the asset count alone
+proves nothing. Each job uploads its own assets, and a later run overwrites only the
+assets its own jobs produce. A run with two red jobs can still show all 111 assets,
+because the missing ones are stale files left by the previous run. This happened during
+the m154 upgrade.
+
+The only gate is 11 green jobs in the run you are watching:
 
 ```bash
 gh run view <run-id> --json jobs --jq '[.jobs[] | {name, conclusion}]'
 gh release view skia-<sha8> --json assets --jq '.assets | length'   # expect 111
 ```
 
-Proceed only when all 11 jobs are green and the asset count is 111.
+Proceed only when all 11 jobs of that single run are green. Then confirm the count is
+111 as a second check.
+
+To wait for a run that a push has not registered yet:
+
+```bash
+until [ "$(gh run list --branch release --workflow 'Build skia' --limit 1 --json headSha --jq '.[0].headSha')" = "$(git rev-parse HEAD)" ]; do sleep 10; done
+RID=$(gh run list --branch release --workflow 'Build skia' --limit 1 --json databaseId --jq '.[0].databaseId')
+gh run watch $RID --interval 30 --exit-status
+```
 
 ### If the build fails
 

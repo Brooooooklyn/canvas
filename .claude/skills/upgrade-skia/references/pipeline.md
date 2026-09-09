@@ -213,7 +213,7 @@ every run. The only cache is cargo and yarn, in
 | `Build skia`, 11 jobs | 12 to 19 minutes |
 | One rebuild cycle after a fix | about 20 minutes |
 | PR `CI`, about 44 checks | 10 to 12 minutes |
-| Rebuild cycles per upgrade, historical | 1 to 3 |
+| Rebuild cycles per upgrade, historical | 1 to 4 (m154 needed 3 fix pushes) |
 
 Log retention is about 90 days. `gh run view <id> --log-failed` returns nothing for
 older runs.

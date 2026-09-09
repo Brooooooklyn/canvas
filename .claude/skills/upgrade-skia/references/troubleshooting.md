@@ -184,6 +184,7 @@ Also re-check the `-std=c++20` flag. It was raised from C++17 in m148.
 
 | PR | Milestone | Files changed |
 |---|---|---|
+| 1337 | m154 | `README.md`, `README-zh.md`, `scripts/build-skia.js`, `skia` (3 build fixes, 4 build rounds) |
 | 1302 | m151 | `README.md`, `README-zh.md`, `scripts/build-skia.js`, `skia` |
 | 1281 | m149 | `README.md`, `README-zh.md`, `skia` (the minimal case) |
 | 1248 | m148 | plus `scripts/build-skia.js`, harfbuzz workaround, C++20 |
