@@ -1,6 +1,6 @@
 use std::num::ParseFloatError;
 
-use cssparser::{Parser, ParserInput};
+use cssparser::Parser;
 use cssparser_color::{Color, RgbaLegacy, hsl_to_rgb};
 use nom::{
   AsChar, Err, IResult, Parser as NomParser,
@@ -217,8 +217,7 @@ fn drop_shadow_parser(input: &str) -> IResult<&str, CssFilter> {
     a: 255,
   };
   let shadow_color = if !shadow_color_str.is_empty() {
-    let mut parser_input = ParserInput::new(shadow_color_str);
-    let mut parser = Parser::new(&mut parser_input);
+    let mut parser = Parser::new(shadow_color_str);
     let color = Color::parse(&mut parser).unwrap_or_else(|_| {
       Color::Rgba(RgbaLegacy {
         red: 0,

@@ -5,7 +5,7 @@ use std::result;
 use std::str::FromStr;
 use std::sync::LazyLock;
 
-use cssparser::{Parser, ParserInput};
+use cssparser::Parser;
 use cssparser_color::{Color as CSSColor, hsl_to_rgb};
 use libavif::AvifData;
 use napi::{JsString, bindgen_prelude::*};
@@ -1187,8 +1187,7 @@ impl Context {
   }
 
   pub fn set_shadow_color(&mut self, shadow_color: String) -> result::Result<(), SkError> {
-    let mut parser_input = ParserInput::new(&shadow_color);
-    let mut parser = Parser::new(&mut parser_input);
+    let mut parser = Parser::new(&shadow_color);
     let color = CSSColor::parse(&mut parser)
       .map_err(|e| SkError::Generic(format!("Parse color [{}] error: {:?}", shadow_color, e)))?;
 
@@ -1199,7 +1198,7 @@ impl Context {
         ));
       }
       CSSColor::Rgba(rgba) => {
-        drop(parser_input);
+        drop(parser);
         self.state.shadow_color_string = shadow_color;
         // Convert RgbaLegacy to RGBA<u8>
         self.state.shadow_color = RGBA {
@@ -1217,7 +1216,7 @@ impl Context {
 
         let (r, g, b) = hsl_to_rgb(h, s, l);
 
-        drop(parser_input);
+        drop(parser);
         self.state.shadow_color_string = shadow_color;
         self.state.shadow_color = RGBA {
           r: (r * 255.0) as u8,

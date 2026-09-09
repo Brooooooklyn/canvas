@@ -1,6 +1,6 @@
 use std::result;
 
-use cssparser::{Parser, ParserInput};
+use cssparser::Parser;
 use cssparser_color::{Color as CSSColor, hsl_to_rgb};
 use napi::bindgen_prelude::*;
 
@@ -169,8 +169,7 @@ impl CanvasGradient {
       return Ok(());
     }
     let color_str = color.as_str();
-    let mut parser_input = ParserInput::new(color_str);
-    let mut parser = Parser::new(&mut parser_input);
+    let mut parser = Parser::new(color_str);
     let color = CSSColor::parse(&mut parser).map_err(|e| {
       Error::new(
         Status::InvalidArg,
