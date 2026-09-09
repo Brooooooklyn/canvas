@@ -324,6 +324,37 @@ if (PLATFORM_NAME === 'win32') {
   })
 }
 
+// skia/third_party/highway/BUILD.gn still lists the two sources highway had when the
+// wrapper was written in 2021. The highway roll in Skia m152 made hwy/targets.cc call
+// hwy::VectorBytes() (targets.cc:754) to tell HWY_SVE_256 and HWY_SVE2_128 apart, and
+// that function lives in hwy/per_target.cc, which nothing compiles. The call sits behind
+// a plain `if (HWY_ARCH_ARM_A64)` rather than an #if, so every target keeps the reference
+// wherever the optimiser does not fold the branch away, and libskia.a ships an undefined
+// hwy::VectorBytes(). macOS bundles tolerate that, but dlopen of the Linux .node fails
+// with "undefined symbol: _ZN3hwy11VectorBytesEv". Compile the missing source.
+const HighwayGNPath = path.join(__dirname, '..', 'skia', 'third_party', 'highway', 'BUILD.gn')
+const HIGHWAY_SOURCES_TO_PATCH = `  sources = [
+    "../externals/highway/hwy/aligned_allocator.cc",
+    "../externals/highway/hwy/targets.cc",
+  ]`
+const HIGHWAY_SOURCES_I_WANT = `  sources = [
+    "../externals/highway/hwy/aligned_allocator.cc",
+    "../externals/highway/hwy/per_target.cc",
+    "../externals/highway/hwy/targets.cc",
+  ]`
+
+const HIGHWAY_GN_CONTENT = readFileSync(HighwayGNPath, 'utf8')
+if (!HIGHWAY_GN_CONTENT.includes(HIGHWAY_SOURCES_TO_PATCH)) {
+  throw new Error(
+    `skia/third_party/highway/BUILD.gn no longer lists the sources this build patches. ` +
+      `Re-check whether hwy/per_target.cc is compiled upstream now.`,
+  )
+}
+writeFileSync(HighwayGNPath, HIGHWAY_GN_CONTENT.replace(HIGHWAY_SOURCES_TO_PATCH, HIGHWAY_SOURCES_I_WANT))
+process.once('beforeExit', () => {
+  writeFileSync(HighwayGNPath, HIGHWAY_GN_CONTENT)
+})
+
 // gn/BUILDCONFIG.gn only trusts `cc`/`cxx` named literally clang/clang++; for anything
 // else it shells out to gn/is_clang.py to detect the compiler. Skia commit 7e658a67a1
 // ("Disable partition_alloc on Mac/iOS when using Xcode clang", first shipped in m152)
