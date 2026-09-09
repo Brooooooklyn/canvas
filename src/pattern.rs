@@ -1,7 +1,7 @@
 use std::result::Result as StdResult;
 use std::sync::{Arc, OnceLock};
 
-use cssparser::{Parser, ParserInput};
+use cssparser::Parser;
 use cssparser_color::{Color as CSSColor, hsl_to_rgb};
 use napi::bindgen_prelude::*;
 use rgb::RGBA;
@@ -39,8 +39,7 @@ impl Default for Pattern {
 
 impl Pattern {
   pub fn from_color(color_str: &str) -> StdResult<Self, SkError> {
-    let mut parser_input = ParserInput::new(color_str);
-    let mut parser = Parser::new(&mut parser_input);
+    let mut parser = Parser::new(color_str);
     let color = CSSColor::parse(&mut parser)
       .map_err(|e| SkError::Generic(format!("Parse color [{color_str}] error: {e:?}")))?;
     match color {

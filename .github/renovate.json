@@ -9,6 +9,11 @@
       "groupName": "rust toolchain",
       "matchManagers": ["custom.regex"],
       "matchDepNames": ["rustc"]
+    },
+    {
+      "groupName": "cssparser",
+      "matchManagers": ["cargo"],
+      "matchPackageNames": ["cssparser", "cssparser-color"]
     }
   ],
   "lockFileMaintenance": {
