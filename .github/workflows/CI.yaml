@@ -80,18 +80,18 @@ jobs:
             build: |
               rustc --print target-cpus
               clang --version
-              yarn build --target x86_64-apple-darwin
+              yarn build --target x86_64-apple-darwin -- --locked
             downloadTarget: ''
           - host: windows-latest
             setup: |
               choco upgrade llvm
-            build: yarn build --target x86_64-pc-windows-msvc
+            build: yarn build --target x86_64-pc-windows-msvc -- --locked
             target: 'x86_64-pc-windows-msvc'
             downloadTarget: ''
           - host: windows-latest
             setup: |
               choco upgrade llvm
-            build: yarn build --target aarch64-pc-windows-msvc
+            build: yarn build --target aarch64-pc-windows-msvc -- --locked
             target: 'aarch64-pc-windows-msvc'
             downloadTarget: 'aarch64-pc-windows-msvc'
           - host: ubuntu-latest
@@ -101,18 +101,18 @@ jobs:
             build: >-
               rustup install &&
               rustup target add x86_64-unknown-linux-gnu &&
-              yarn build --target x86_64-unknown-linux-gnu
+              yarn build --target x86_64-unknown-linux-gnu -- --locked
           - host: ubuntu-latest
             downloadTarget: 'x86_64-unknown-linux-musl'
             target: 'x86_64-unknown-linux-musl'
-            build: yarn build --target x86_64-unknown-linux-musl -x
+            build: yarn build --target x86_64-unknown-linux-musl -x -- --locked
           - host: macos-latest
             downloadTarget: 'aarch64-apple-darwin'
             target: 'aarch64-apple-darwin'
             build: |
               export MACOSX_DEPLOYMENT_TARGET='11.0'
               clang --version
-              yarn build --target aarch64-apple-darwin
+              yarn build --target aarch64-apple-darwin -- --locked
           - host: ubuntu-latest
             downloadTarget: 'aarch64-unknown-linux-gnu'
             target: 'aarch64-unknown-linux-gnu'
@@ -121,11 +121,11 @@ jobs:
               set -e &&
               rustup install &&
               rustup target add aarch64-unknown-linux-gnu &&
-              yarn build --target aarch64-unknown-linux-gnu
+              yarn build --target aarch64-unknown-linux-gnu -- --locked
           - host: ubuntu-24.04-arm
             target: 'aarch64-unknown-linux-musl'
             downloadTarget: 'aarch64-unknown-linux-musl'
-            build: yarn build --target aarch64-unknown-linux-musl -x
+            build: yarn build --target aarch64-unknown-linux-musl -x -- --locked
           - host: ubuntu-latest
             target: 'aarch64-linux-android'
             downloadTarget: 'aarch64-linux-android'
@@ -138,7 +138,7 @@ jobs:
               export CC=aarch64-linux-android24-clang
               export CXX=aarch64-linux-android24-clang++
               export CMAKE_TOOLCHAIN_FILE_aarch64_linux_android="$(pwd)/cmake/android-determine.cmake"
-              yarn build --target aarch64-linux-android
+              yarn build --target aarch64-linux-android -- --locked
           - host: ubuntu-latest
             target: 'riscv64gc-unknown-linux-gnu'
             downloadTarget: 'riscv64gc-unknown-linux-gnu'
@@ -147,7 +147,7 @@ jobs:
               sudo apt-get install gcc-riscv64-linux-gnu g++-riscv64-linux-gnu -y
               export CC=riscv64-linux-gnu-gcc
               export CXX=riscv64-linux-gnu-g++
-              yarn build --target riscv64gc-unknown-linux-gnu
+              yarn build --target riscv64gc-unknown-linux-gnu -- --locked
 
     name: stable - ${{ matrix.settings.target }} - node@24
     runs-on: ${{ matrix.settings.host }}
@@ -202,6 +202,11 @@ jobs:
       - name: 'Build'
         if: ${{ !matrix.settings.docker }}
         run: ${{ matrix.settings.build }}
+        # Keep the `--` before `--locked` intact. On Windows the default shell
+        # is pwsh, where `yarn` resolves to yarn.ps1. PowerShell drops the first
+        # `--` for scripts and keeps it only for native commands, so napi never
+        # sees the separator and rejects `--locked` as an unknown option.
+        shell: bash
 
       - name: Build in docker
         uses: tj-actions/docker-run@v2
@@ -288,7 +293,7 @@ jobs:
       - name: Build
         run: |
           export CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_LINKER=arm-linux-gnueabihf-gcc
-          yarn build --target armv7-unknown-linux-gnueabihf
+          yarn build --target armv7-unknown-linux-gnueabihf -- --locked
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
@@ -692,7 +697,7 @@ jobs:
           node ./scripts/release-skia-binary.mjs --download
 
       - name: 'Build'
-        run: yarn build
+        run: yarn build -- --locked
 
       - name: 'Run benchmark'
         run: yarn bench
