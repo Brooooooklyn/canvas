@@ -1,4 +1,5 @@
 use napi::bindgen_prelude::*;
+use napi::Env;
 
 use crate::sk::{
   FillType as SkFillType, Matrix as SkMatrix, Path as SkPath, PathOp as SkPathOp, SkiaString,
@@ -122,7 +123,10 @@ pub struct Path {
 #[napi]
 impl Path {
   #[napi(constructor)]
-  pub fn new(path: Option<Either3<String, &mut Path, Unknown>>) -> Result<Self> {
+  pub fn new(
+    env: Env,
+    path: Option<Either3<String, &mut Path, Unknown>>,
+  ) -> Result<Self> {
     let inner = match &path {
       Some(Either3::A(path)) => SkPath::from_svg_path(path).ok_or_else(|| {
         Error::new(
@@ -132,13 +136,20 @@ impl Path {
       })?,
       Some(Either3::B(path)) => path.inner.clone(),
       Some(Either3::C(c)) => {
-        return Err(Error::new(
-          Status::InvalidArg,
-          format!(
-            "Create path from provided unknown value failed {}.",
-            c.get_type()?
-          ),
-        ));
+        // Try to unwrap the Unknown value as a Path reference
+        // This handles the case where webpack or other bundlers wrap the Path instance
+        // Use FromNapiValue to try to extract the Path from the Unknown
+        if let Ok(path_ref) = <&Path>::from_napi_value(env.raw(), c.raw()) {
+          path_ref.inner.clone()
+        } else {
+          return Err(Error::new(
+            Status::InvalidArg,
+            format!(
+              "Value is none of these types `String`, `Path`. Got type: {}",
+              c.get_type().unwrap_or_else(|_| "unknown".to_string())
+            ),
+          ));
+        }
       }
       None => SkPath::new(),
     };
