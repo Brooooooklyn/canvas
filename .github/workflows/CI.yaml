@@ -202,6 +202,11 @@ jobs:
       - name: 'Build'
         if: ${{ !matrix.settings.docker }}
         run: ${{ matrix.settings.build }}
+        # Keep the `--` before `--locked` intact. On Windows the default shell
+        # is pwsh, where `yarn` resolves to yarn.ps1. PowerShell drops the first
+        # `--` for scripts and keeps it only for native commands, so napi never
+        # sees the separator and rejects `--locked` as an unknown option.
+        shell: bash
 
       - name: Build in docker
         uses: tj-actions/docker-run@v2
