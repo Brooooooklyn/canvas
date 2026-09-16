@@ -267,7 +267,7 @@ jobs:
       - name: Setup cmake
         uses: jwlawson/actions-setup-cmake@v2
         with:
-          cmake-version: '3.x'
+          cmake-version: '4.x'
 
       - name: Setup node
         uses: actions/setup-node@v7
