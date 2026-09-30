@@ -628,7 +628,7 @@ test('clearing src should release cached file_content and AVIF references (memor
   t.is(image.complete, true, 'image should be loaded')
   t.is(image.width, 300, 'width should be correct')
 
-  // Clear src (should clear file_content and _avif_image_ref)
+  // Clear src (should clear decoded state like file_content)
   image.src = ''
 
   t.is(image.complete, true, 'complete should be true after clearing')

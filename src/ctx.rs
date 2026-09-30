@@ -2500,25 +2500,35 @@ impl CanvasRenderingContext2D {
         };
         let arraybuffer_length = (width * height * 4) as usize;
         let data_buffer = vec![0; arraybuffer_length];
-        let mut data_object = Uint8ClampedSlice::from_data(env, data_buffer)?;
+        let data_object = Uint8ClampedSlice::from_data(env, data_buffer)?;
         let mut instance = ImageData {
           width: width as usize,
           height: height as usize,
           color_space,
-          data: unsafe { data_object.as_mut() }.as_mut_ptr(),
+          data_ref: Some(create_weak_ref(env, data_object.raw())?),
         }
         .into_instance(env)?;
-        instance.set_named_property("data", data_object)?;
+        instance.define_properties(&[Property::new()
+          .with_utf8_name("data")?
+          .with_value(&data_object)
+          .with_property_attributes(PropertyAttributes::Enumerable)])?;
         Ok(instance)
       }
-      Either::B(mut data_object) => {
+      Either::B(data_object) => {
         let input_data_length = data_object.len();
         let width = width_or_height.unsigned_abs();
         let height = match &height_or_settings {
           Some(Either::A(height)) => height.unsigned_abs(),
           _ => (input_data_length as u32) / 4 / width,
         };
-        let data = unsafe { data_object.as_mut() }.as_mut_ptr();
+        // The typed array aliases the caller's buffer, which may be detached
+        // later via transfer; the pixel length is checked on every use.
+        if input_data_length < (width as usize) * (height as usize) * 4 {
+          return Err(Error::new(
+            Status::InvalidArg,
+            "Index or size is negative or greater than the allowed amount".to_owned(),
+          ));
+        }
         let color_space = maybe_settings
           .and_then(|settings| ColorSpace::from_str(&settings.color_space).ok())
           .unwrap_or_default();
@@ -2526,10 +2536,15 @@ impl CanvasRenderingContext2D {
           width: width as usize,
           height: height as usize,
           color_space,
-          data,
+          // Weak ref: the non-configurable `data` property keeps the caller's
+          // array alive for exactly the ImageData's lifetime.
+          data_ref: Some(create_weak_ref(env, data_object.raw())?),
         }
         .into_instance(env)?;
-        instance.set_named_property("data", data_object)?;
+        instance.define_properties(&[Property::new()
+          .with_utf8_name("data")?
+          .with_value(&data_object)
+          .with_property_attributes(PropertyAttributes::Enumerable)])?;
         Ok(instance)
       }
     }
@@ -2585,7 +2600,7 @@ impl CanvasRenderingContext2D {
     input: Either4<&mut Image, &mut ImageData, &mut CanvasElement, &mut SVGCanvas>,
     repetition: Option<String>,
   ) -> Result<ClassInstance<'scope, CanvasPattern>> {
-    CanvasPattern::new(input, repetition)?.into_instance(env)
+    CanvasPattern::new(*env, input, repetition)?.into_instance(env)
   }
 
   #[napi]
@@ -2714,8 +2729,8 @@ impl CanvasRenderingContext2D {
           return Ok(());
         }
         image.regenerate_bitmap_if_need(env)?;
-        if let Some(bitmap) = &mut image.bitmap {
-          BitmapRef::Borrowed(bitmap)
+        if let Some(bitmap) = &image.bitmap {
+          BitmapRef::Borrowed(&bitmap.inner)
         } else {
           return Ok(());
         }
@@ -3194,15 +3209,18 @@ impl CanvasRenderingContext2D {
             "Read pixels from canvas failed".to_string(),
           )
         })?;
-      let mut data_object = Uint8ClampedSlice::from_data(env, image_data)?;
+      let data_object = Uint8ClampedSlice::from_data(env, image_data)?;
       let mut instance = ImageData {
         width: sw as usize,
         height: sh as usize,
         color_space,
-        data: unsafe { data_object.as_mut() }.as_mut_ptr(),
+        data_ref: Some(create_weak_ref(env, data_object.raw())?),
       }
       .into_instance(env)?;
-      instance.set_named_property("data", data_object)?;
+      instance.define_properties(&[Property::new()
+        .with_utf8_name("data")?
+        .with_value(&data_object)
+        .with_property_attributes(PropertyAttributes::Enumerable)])?;
       Ok(instance)
     } else {
       Err(Error::new(
@@ -3226,6 +3244,7 @@ impl CanvasRenderingContext2D {
   #[napi]
   pub fn put_image_data(
     &mut self,
+    env: Env,
     image_data: &ImageData,
     dx: i32,
     dy: i32,
@@ -3233,7 +3252,10 @@ impl CanvasRenderingContext2D {
     dirty_y: Option<f64>,
     dirty_width: Option<f64>,
     dirty_height: Option<f64>,
-  ) {
+  ) -> Result<()> {
+    // Throws if the backing buffer was detached (transferred); `data` is
+    // non-configurable so it cannot be deleted.
+    let data = image_data.resolve_pixels(&env)?;
     if let Some(dirty_x) = dirty_x {
       let mut dirty_x = dirty_x as f32;
       let mut dirty_y = dirty_y.map(|d| d as f32).unwrap_or(0.0);
@@ -3261,7 +3283,7 @@ impl CanvasRenderingContext2D {
         dirty_y = 0f32;
       }
       if dirty_width <= 0f32 || dirty_height <= 0f32 {
-        return;
+        return Ok(());
       }
       // Deferred mode: record via PageRecorder on a fresh layer (no clip/transform)
       // put_image_data uses drawImageRect with kSrc blend (pixel replacement),
@@ -3270,10 +3292,14 @@ impl CanvasRenderingContext2D {
       // JS buffer (required when the same ImageData is reused across calls).
       if let Some(ref recorder) = self.context.page_recorder {
         let dx_f = dx as f32;
+        let width = image_data.width;
+        let height = image_data.height;
         let color_space = image_data.color_space;
         recorder.borrow_mut().put_pixels(|canvas| {
           canvas.put_image_data(
-            image_data,
+            data,
+            width,
+            height,
             dx_f,
             dy as f32,
             dirty_x,
@@ -3284,7 +3310,7 @@ impl CanvasRenderingContext2D {
             true,
           );
         });
-        return;
+        return Ok(());
       }
       // Direct mode (SVG/PDF): write to surface canvas with inverted transform
       // snapshot=false: pixels are consumed immediately, no copy needed.
@@ -3294,7 +3320,9 @@ impl CanvasRenderingContext2D {
         self.context.surface.canvas.concat(&inverted);
       };
       self.context.surface.canvas.put_image_data(
-        image_data,
+        data,
+        image_data.width,
+        image_data.height,
         dx as f32,
         dy as f32,
         dirty_x,
@@ -3313,15 +3341,34 @@ impl CanvasRenderingContext2D {
         let dy_f = dy as f32;
         let w = image_data.width as f32;
         let h = image_data.height as f32;
+        let width = image_data.width;
+        let height = image_data.height;
         let color_space = image_data.color_space;
         recorder.borrow_mut().put_pixels(|canvas| {
-          canvas.put_image_data(image_data, dx_f, dy_f, 0.0, 0.0, w, h, color_space, true);
+          canvas.put_image_data(
+            data,
+            width,
+            height,
+            dx_f,
+            dy_f,
+            0.0,
+            0.0,
+            w,
+            h,
+            color_space,
+            true,
+          );
         });
-        return;
+        return Ok(());
       }
       // Direct mode (SVG/PDF): write pixels directly
-      self.context.surface.canvas.write_pixels(image_data, dx, dy);
+      self
+        .context
+        .surface
+        .canvas
+        .write_pixels(data, image_data.width, image_data.height, dx, dy);
     }
+    Ok(())
   }
 
   #[napi(return_if_invalid)]
@@ -3417,7 +3464,7 @@ impl CanvasRenderingContext2D {
 }
 
 enum BitmapRef<'a> {
-  Borrowed(&'a mut Bitmap),
+  Borrowed(&'a Bitmap),
   Owned(Bitmap),
 }
 

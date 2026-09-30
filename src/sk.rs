@@ -7,11 +7,10 @@ use std::os::raw::c_char;
 use std::ptr;
 use std::slice;
 use std::str::FromStr;
-use std::sync::OnceLock;
+use std::sync::{Arc, Mutex};
 
 use crate::error::SkError;
 use crate::font::{FontStretch, FontStyle};
-use crate::image::ImageData;
 
 #[allow(non_camel_case_types)]
 pub mod ffi {
@@ -2480,6 +2479,7 @@ impl Drop for Surface {
 }
 
 #[repr(transparent)]
+#[derive(Debug)]
 pub struct SurfaceRef(*mut ffi::skiac_surface);
 
 impl SurfaceRef {
@@ -3006,17 +3006,10 @@ impl Canvas {
     }
   }
 
-  pub fn write_pixels(&mut self, image: &ImageData, x: i32, y: i32) {
+  /// `pixels` must point to `width * height * 4` readable bytes.
+  pub fn write_pixels(&mut self, pixels: *const u8, width: usize, height: usize, x: i32, y: i32) {
     unsafe {
-      ffi::skiac_canvas_write_pixels(
-        self.0,
-        image.width as i32,
-        image.height as i32,
-        image.data,
-        image.width * 4,
-        x,
-        y,
-      );
+      ffi::skiac_canvas_write_pixels(self.0, width as i32, height as i32, pixels, width * 4, x, y);
     }
   }
 
@@ -3025,9 +3018,12 @@ impl Canvas {
   /// Works on recording canvases (PictureRecorder).
   /// When `snapshot` is true, the pixel data is copied so the resulting SkImage
   /// is independent of the source buffer (required for deferred/recorded mode).
+  /// `pixels` must point to `width * height * 4` readable bytes.
   pub fn put_image_data(
     &mut self,
-    image: &ImageData,
+    pixels: *const u8,
+    width: usize,
+    height: usize,
     x: f32,
     y: f32,
     dirty_x: f32,
@@ -3040,11 +3036,11 @@ impl Canvas {
     unsafe {
       ffi::skiac_canvas_put_image_data(
         self.0,
-        image.width as i32,
-        image.height as i32,
-        image.data,
-        image.width * 4,
-        image.width * image.height * 4,
+        width as i32,
+        height as i32,
+        pixels,
+        width * 4,
+        width * height * 4,
         x,
         y,
         dirty_x,
@@ -4401,7 +4397,7 @@ impl Bitmap {
     size: usize,
     color_type: ColorType,
     alpha_type: AlphaType,
-  ) -> Self {
+  ) -> Option<Self> {
     let bitmap = unsafe {
       ffi::skiac_bitmap_make_from_image_data(
         ptr,
@@ -4413,12 +4409,15 @@ impl Bitmap {
         alpha_type as i32,
       )
     };
-    Bitmap(ffi::skiac_bitmap_info {
+    if bitmap.is_null() {
+      return None;
+    }
+    Some(Bitmap(ffi::skiac_bitmap_info {
       bitmap,
       width: width as i32,
       height: height as i32,
       is_canvas: false,
-    })
+    }))
   }
 }
 
@@ -4432,15 +4431,84 @@ impl Drop for Bitmap {
   }
 }
 
+/// A `Bitmap` whose pixel allocation is reported to V8's external memory
+/// counter for as long as the last `Arc` owner holds it. The pattern state
+/// stack can outlive the JS `CanvasPattern`, so the accounting is released
+/// here on drop rather than in a finalizer.
+#[derive(Debug)]
+pub struct AccountedBitmap {
+  pub(crate) inner: Bitmap,
+  env: napi::sys::napi_env,
+  bytes: i64,
+}
+
+impl AccountedBitmap {
+  /// The allocation must already exist and `bytes` must already have been
+  /// reported through `Env::adjust_external_memory`.
+  pub(crate) fn new(inner: Bitmap, env: napi::sys::napi_env, bytes: i64) -> Self {
+    Self { inner, env, bytes }
+  }
+}
+
+impl Drop for AccountedBitmap {
+  fn drop(&mut self) {
+    if self.bytes != 0 && !self.env.is_null() {
+      let mut adjusted: i64 = 0;
+      unsafe {
+        napi::sys::napi_adjust_external_memory(self.env, -self.bytes, &mut adjusted);
+      }
+    }
+  }
+}
+
+// Like the other raw-pointer wrappers in this file: every owner lives on the
+// JS main thread, so sharing the `Arc` between `ImagePattern` clones never
+// crosses threads in practice. Node guarantees napi wrap finalizers run
+// before the napi_env is torn down (RefTracker::FinalizeAll inside
+// napi_env__::DeleteMe), so the stored env is still valid when Drop runs.
+unsafe impl Send for AccountedBitmap {}
+unsafe impl Sync for AccountedBitmap {}
+
+/// Shared ownership of the native object an `ImagePattern` samples from.
+/// A pattern cloned onto the `save()`/`restore()` state stack keeps the
+/// backing pixels alive after the JS `CanvasPattern` has been
+/// garbage-collected (https://github.com/Brooooooklyn/canvas/issues/1341).
+#[derive(Debug, Clone)]
+pub enum ImagePatternBacking {
+  /// Pixels reported to V8's external-memory counter; the accounting is
+  /// released when the last owner drops.
+  Bitmap(Arc<AccountedBitmap>),
+  /// Ref-counted cloned surface.
+  Surface(SurfaceRef),
+}
+
+/// Live state shared by every `ImagePattern` clone: the JS `CanvasPattern`,
+/// the current fill/stroke style, and `save()`/`restore()` stack entries.
+/// `CanvasPattern.setTransform` mutates this after the pattern has been
+/// assigned to a style, so it cannot live on a single clone.
+#[derive(Debug)]
+pub(crate) struct ImagePatternShared {
+  pub(crate) transform: Transform,
+  // Cache the shader to avoid creating new ones on every use; cleared when
+  // the transform changes so the next `get_shader` rebuilds it.
+  pub(crate) shader: Option<Shader>,
+}
+
+// Same confinement as `AccountedBitmap` and `ImagePattern` itself (which holds
+// a raw bitmap pointer): every owner lives on the JS main thread, so the
+// `Mutex` never guards real cross-thread access. `Send` makes the `Mutex`
+// both `Send` and `Sync`.
+unsafe impl Send for ImagePatternShared {}
+
 #[derive(Debug)]
 pub struct ImagePattern {
   pub(crate) bitmap: *mut ffi::skiac_bitmap,
   pub(crate) repeat_x: TileMode,
   pub(crate) repeat_y: TileMode,
-  pub(crate) transform: Transform,
   pub(crate) is_canvas: bool,
-  // Cache the shader to avoid creating new ones on every use
-  pub(crate) shader_cache: OnceLock<Option<Shader>>,
+  /// Keeps the object `bitmap` points into alive across clones.
+  pub(crate) backing: Option<ImagePatternBacking>,
+  pub(crate) shared: Arc<Mutex<ImagePatternShared>>,
 }
 
 impl Clone for ImagePattern {
@@ -4449,9 +4517,9 @@ impl Clone for ImagePattern {
       bitmap: self.bitmap,
       repeat_x: self.repeat_x,
       repeat_y: self.repeat_y,
-      transform: self.transform,
       is_canvas: self.is_canvas,
-      shader_cache: OnceLock::new(), // New patterns start with empty cache
+      backing: self.backing.clone(),
+      shared: self.shared.clone(),
     }
   }
 }
@@ -4459,20 +4527,19 @@ impl Clone for ImagePattern {
 impl ImagePattern {
   pub(crate) fn get_shader(&self) -> Option<Shader> {
     // Use cached shader if available, otherwise create and cache it
-    self
-      .shader_cache
-      .get_or_init(|| {
-        Shader::from_bitmap(
-          self.is_canvas,
-          self.bitmap,
-          self.repeat_x,
-          self.repeat_y,
-          1.0 / 3.0,
-          1.0 / 3.0,
-          self.transform,
-        )
-      })
-      .clone()
+    let mut shared = self.shared.lock().unwrap();
+    if shared.shader.is_none() {
+      shared.shader = Shader::from_bitmap(
+        self.is_canvas,
+        self.bitmap,
+        self.repeat_x,
+        self.repeat_y,
+        1.0 / 3.0,
+        1.0 / 3.0,
+        shared.transform,
+      );
+    }
+    shared.shader.clone()
   }
 }
 

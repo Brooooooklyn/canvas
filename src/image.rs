@@ -1,5 +1,6 @@
 use std::cell::Cell;
 use std::rc::Rc;
+use std::sync::Arc;
 use std::{borrow::Cow, ptr, str, str::FromStr};
 
 use base64_simd::STANDARD;
@@ -8,14 +9,97 @@ use napi::{JsString, JsStringUtf8, ScopedTask, bindgen_prelude::*};
 use crate::avif::AvifImage;
 use crate::error::SkError;
 use crate::global_fonts::get_font;
-use crate::sk::{AlphaType, Bitmap, ColorSpace, ColorType};
+use crate::sk::{AccountedBitmap, AlphaType, Bitmap, ColorSpace, ColorType};
 
-#[napi]
+#[napi(custom_finalize)]
 pub struct ImageData {
   pub(crate) width: usize,
   pub(crate) height: usize,
   pub(crate) color_space: ColorSpace,
-  pub(crate) data: *mut u8,
+  // Weak `napi_ref` (created with refcount 0) used to re-resolve the `data`
+  // typed array's backing pointer per use. The array is kept alive by the
+  // non-configurable `data` own property on the JS object — a strong
+  // reference here would root it independently and make `id.data.owner = id`
+  // cycles uncollectable.
+  pub(crate) data_ref: Option<sys::napi_ref>,
+}
+
+/// Create a weak `napi_ref` for `value` (`initial_refcount = 0`).
+/// `ObjectRef` cannot express this: its `unref` is `napi_delete_reference`,
+/// and `create_ref` hardcodes a strong refcount of 1, so we call napi-sys
+/// directly.
+pub(crate) fn create_weak_ref(env: &Env, value: sys::napi_value) -> Result<sys::napi_ref> {
+  let mut ref_ = ptr::null_mut();
+  check_status!(
+    unsafe { sys::napi_create_reference(env.raw(), value, 0, &mut ref_) },
+    "Failed to create weak reference"
+  )?;
+  Ok(ref_)
+}
+
+impl ObjectFinalize for ImageData {
+  fn finalize(self, env: Env) -> Result<()> {
+    if let Some(data_ref) = self.data_ref {
+      check_status!(
+        unsafe { sys::napi_delete_reference(env.raw(), data_ref) },
+        "delete Ref failed"
+      )?;
+    }
+    Ok(())
+  }
+}
+
+impl ImageData {
+  /// Resolve the pinned `data` typed array's backing pointer. Returns an error
+  /// instead of a stale pointer when the buffer has been detached
+  /// (`ArrayBuffer.prototype.transfer`/`postMessage` transfer). The crate only
+  /// enables napi5, so detach is detected via `napi_get_typedarray_info` rather
+  /// than the napi7 `napi_is_detached_arraybuffer`: a detached buffer reports
+  /// length 0 and a null/offset-only data pointer.
+  pub(crate) fn resolve_pixels(&self, env: &Env) -> Result<*mut u8> {
+    let data_ref = self.data_ref.ok_or_else(|| {
+      Error::new(
+        Status::GenericFailure,
+        "ImageData pixel buffer reference is missing".to_owned(),
+      )
+    })?;
+    let mut array = ptr::null_mut();
+    check_status!(
+      unsafe { sys::napi_get_reference_value(env.raw(), data_ref, &mut array) },
+      "Failed to get ImageData reference value"
+    )?;
+    // A null value means the weak referent was collected; surface it the same
+    // way as a detached buffer.
+    if array.is_null() {
+      return Err(Error::new(
+        Status::InvalidArg,
+        "ImageData pixel buffer is detached".to_owned(),
+      ));
+    }
+    let mut length = 0usize;
+    let mut data = ptr::null_mut();
+    check_status!(
+      unsafe {
+        sys::napi_get_typedarray_info(
+          env.raw(),
+          array,
+          ptr::null_mut(),
+          &mut length,
+          &mut data,
+          ptr::null_mut(),
+          ptr::null_mut(),
+        )
+      },
+      "Failed to get ImageData typed array info"
+    )?;
+    if length < self.width * self.height * 4 || (length != 0 && data.is_null()) {
+      return Err(Error::new(
+        Status::InvalidArg,
+        "ImageData pixel buffer is detached".to_owned(),
+      ));
+    }
+    Ok(data.cast())
+  }
 }
 
 #[napi(object)]
@@ -44,20 +128,19 @@ impl ImageData {
           _ => ColorSpace::default(),
         };
         let arraybuffer_length = (width * height * 4) as usize;
-        let mut data_buffer = vec![0; arraybuffer_length];
-        let data_ptr = data_buffer.as_mut_ptr();
+        let data_buffer = vec![0; arraybuffer_length];
         let data_object = Uint8ClampedSlice::from_data(&env, data_buffer)?;
         this.define_properties(&[Property::new()
           .with_utf8_name("data")?
           .with_value(&data_object)
-          .with_property_attributes(
-            PropertyAttributes::Enumerable | PropertyAttributes::Configurable,
-          )])?;
+          // Enumerable only: non-writable/non-configurable so the array is
+          // pinned by ordinary GC tracing for exactly the ImageData's lifetime.
+          .with_property_attributes(PropertyAttributes::Enumerable)])?;
         Ok(ImageData {
           width: width as usize,
           height: height as usize,
           color_space,
-          data: data_ptr,
+          data_ref: Some(create_weak_ref(&env, data_object.raw())?),
         })
       }
       Either4::B(data_object) => {
@@ -76,14 +159,13 @@ impl ImageData {
         }
         // https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D/createImageData
         // An existing ImageData object from which to copy the width and height.
-        let mut cloned_data = Uint8ClampedSlice::from_data(&env, data_object.to_vec())?;
-        let data = unsafe { cloned_data.as_mut() }.as_mut_ptr();
+        let cloned_data = Uint8ClampedSlice::from_data(&env, data_object.to_vec())?;
         this.define_properties(&[Property::new()
           .with_utf8_name("data")?
           .with_value(&cloned_data)
-          .with_property_attributes(
-            PropertyAttributes::Enumerable | PropertyAttributes::Configurable,
-          )])?;
+          // Enumerable only: non-writable/non-configurable so the array is
+          // pinned by ordinary GC tracing for exactly the ImageData's lifetime.
+          .with_property_attributes(PropertyAttributes::Enumerable)])?;
         let color_space = maybe_settings
           .and_then(|settings| ColorSpace::from_str(&settings.color_space).ok())
           .unwrap_or_default();
@@ -91,7 +173,7 @@ impl ImageData {
           width: width as usize,
           height: height as usize,
           color_space,
-          data,
+          data_ref: Some(create_weak_ref(&env, cloned_data.raw())?),
         })
       }
       Either4::C(data_object) => {
@@ -114,14 +196,13 @@ impl ImageData {
           // Convert from 16-bit (0-65535) to 8-bit (0-255)
           u8_data[i] = ((val as u32 * 255 + 32767) / 65535) as u8;
         }
-        let mut cloned_data = Uint8ClampedSlice::from_data(&env, u8_data)?;
-        let data = unsafe { cloned_data.as_mut() }.as_mut_ptr();
+        let cloned_data = Uint8ClampedSlice::from_data(&env, u8_data)?;
         this.define_properties(&[Property::new()
           .with_utf8_name("data")?
           .with_value(&cloned_data)
-          .with_property_attributes(
-            PropertyAttributes::Enumerable | PropertyAttributes::Configurable,
-          )])?;
+          // Enumerable only: non-writable/non-configurable so the array is
+          // pinned by ordinary GC tracing for exactly the ImageData's lifetime.
+          .with_property_attributes(PropertyAttributes::Enumerable)])?;
         let color_space = maybe_settings
           .and_then(|settings| ColorSpace::from_str(&settings.color_space).ok())
           .unwrap_or_default();
@@ -129,7 +210,7 @@ impl ImageData {
           width: width as usize,
           height: height as usize,
           color_space,
-          data,
+          data_ref: Some(create_weak_ref(&env, cloned_data.raw())?),
         })
       }
       Either4::D(data_object) => {
@@ -153,14 +234,13 @@ impl ImageData {
           let clamped = val.clamp(0.0, 1.0);
           u8_data[i] = (clamped * 255.0).round() as u8;
         }
-        let mut cloned_data = Uint8ClampedSlice::from_data(&env, u8_data)?;
-        let data = unsafe { cloned_data.as_mut() }.as_mut_ptr();
+        let cloned_data = Uint8ClampedSlice::from_data(&env, u8_data)?;
         this.define_properties(&[Property::new()
           .with_utf8_name("data")?
           .with_value(&cloned_data)
-          .with_property_attributes(
-            PropertyAttributes::Enumerable | PropertyAttributes::Configurable,
-          )])?;
+          // Enumerable only: non-writable/non-configurable so the array is
+          // pinned by ordinary GC tracing for exactly the ImageData's lifetime.
+          .with_property_attributes(PropertyAttributes::Enumerable)])?;
         let color_space = maybe_settings
           .and_then(|settings| ColorSpace::from_str(&settings.color_space).ok())
           .unwrap_or_default();
@@ -168,7 +248,7 @@ impl ImageData {
           width: width as usize,
           height: height as usize,
           color_space,
-          data,
+          data_ref: Some(create_weak_ref(&env, cloned_data.raw())?),
         })
       }
     }
@@ -187,7 +267,11 @@ impl ImageData {
 
 #[napi(custom_finalize)]
 pub struct Image {
-  pub(crate) bitmap: Option<Bitmap>,
+  /// Shared ownership: `CanvasPattern`s created from this image hold an
+  /// `Arc` clone so the pixels stay alive if the `Image` is GC'd first.
+  /// V8 external-memory accounting is released when the last owner drops,
+  /// not when this `Image` is finalized.
+  pub(crate) bitmap: Option<Arc<AccountedBitmap>>,
   pub(crate) complete: bool,
   pub(crate) alt: String,
   pub(crate) current_src: Option<String>,
@@ -202,10 +286,6 @@ pub struct Image {
   pub(crate) src: Option<Either<Uint8Array, String>>,
   // read data from file path
   file_content: Option<Vec<u8>>,
-  // take ownership of avif image, let it be dropped when image is dropped
-  _avif_image_ref: Option<AvifImage>,
-  // Bytes accounted to V8 via adjust_external_memory for this image
-  accounted_bytes: i64,
   // Generation counter to handle overlapping loads
   load_generation: u64,
 
@@ -214,9 +294,8 @@ pub struct Image {
 
 impl ObjectFinalize for Image {
   fn finalize(self, env: Env) -> Result<()> {
-    if self.accounted_bytes != 0 {
-      env.adjust_external_memory(-self.accounted_bytes)?;
-    }
+    // V8 memory accounting lives inside AccountedBitmap and is released when
+    // the last owner drops — patterns may hold clones past finalization.
     if let Some(decoder_task) = self.decoder_task {
       decoder_task.unref(&env)?;
     }
@@ -247,8 +326,7 @@ impl Image {
       color_space,
       src: None,
       file_content: None,
-      _avif_image_ref: None,
-      accounted_bytes: 0,
+
       load_generation: 0,
       decoder_task: None,
     })
@@ -274,7 +352,7 @@ impl Image {
     if self.natural_width > 0.0 {
       self.natural_width
     } else {
-      self.bitmap.as_ref().map(|b| b.0.width).unwrap_or(0) as f64
+      self.bitmap.as_ref().map(|b| b.inner.0.width).unwrap_or(0) as f64
     }
   }
 
@@ -298,7 +376,7 @@ impl Image {
     if self.natural_height > 0.0 {
       self.natural_height
     } else {
-      self.bitmap.as_ref().map(|b| b.0.height).unwrap_or(0) as f64
+      self.bitmap.as_ref().map(|b| b.inner.0.height).unwrap_or(0) as f64
     }
   }
 
@@ -368,20 +446,14 @@ impl Image {
       self.natural_height = 0.0;
       self.bitmap = None;
       self.file_content = None;
-      self._avif_image_ref = None;
       self.complete = true;
       self.is_svg = false;
       self.need_regenerate_bitmap = false;
+      // The dropped Arc releases its V8 memory accounting on its own.
 
       // Clear decoder_task so decode() returns fresh resolved promise
       if let Some(previous_task) = self.decoder_task.take() {
         previous_task.unref(&env)?;
-      }
-
-      // Clear external memory accounting
-      if self.accounted_bytes != 0 {
-        env.adjust_external_memory(-self.accounted_bytes)?;
-        self.accounted_bytes = 0;
       }
       return Ok(());
     }
@@ -442,8 +514,8 @@ impl Image {
               self.natural_width = bitmap.0.width as f64;
               self.natural_height = bitmap.0.height as f64;
               let new_bytes = (bitmap.0.width as i64) * (bitmap.0.height as i64) * 4;
-              self.adjust_external_memory_if_need(&env, new_bytes)?;
-              self.bitmap = Some(bitmap);
+              env.adjust_external_memory(new_bytes)?;
+              self.bitmap = Some(Arc::new(AccountedBitmap::new(bitmap, env.raw(), new_bytes)));
             } else {
               // Invalid SVG - fire onerror synchronously
               // Clear prior image state to prevent stale data from being drawn
@@ -455,13 +527,8 @@ impl Image {
               self.natural_height = 0.0;
               self.bitmap = None;
               self.file_content = None;
-              self._avif_image_ref = None;
               self.is_svg = false;
               self.need_regenerate_bitmap = false;
-              if self.accounted_bytes != 0 {
-                env.adjust_external_memory(-self.accounted_bytes)?;
-                self.accounted_bytes = 0;
-              }
 
               let onerror = this.get_named_property_unchecked::<Unknown>("onerror")?;
               let error = env.create_error(Error::new(Status::InvalidArg, "Invalid SVG image"))?;
@@ -488,8 +555,8 @@ impl Image {
                 self.width = bitmap.0.width as f64;
                 self.height = bitmap.0.height as f64;
                 let new_bytes = (bitmap.0.width as i64) * (bitmap.0.height as i64) * 4;
-                self.adjust_external_memory_if_need(&env, new_bytes)?;
-                self.bitmap = Some(bitmap);
+                env.adjust_external_memory(new_bytes)?;
+                self.bitmap = Some(Arc::new(AccountedBitmap::new(bitmap, env.raw(), new_bytes)));
               }
               Some(Err(_)) => {
                 // Invalid SVG - fire onerror synchronously
@@ -502,13 +569,8 @@ impl Image {
                 self.natural_height = 0.0;
                 self.bitmap = None;
                 self.file_content = None;
-                self._avif_image_ref = None;
                 self.is_svg = false;
                 self.need_regenerate_bitmap = false;
-                if self.accounted_bytes != 0 {
-                  env.adjust_external_memory(-self.accounted_bytes)?;
-                  self.accounted_bytes = 0;
-                }
 
                 let onerror = this.get_named_property_unchecked::<Unknown>("onerror")?;
                 let error =
@@ -549,14 +611,9 @@ impl Image {
           // Clear previous bitmap and related state to prevent stale renders during async decode.
           // Without this, drawImage could render the old image until the new decode completes.
           self.bitmap = None;
-          self._avif_image_ref = None;
           self.file_content = None;
           self.is_svg = false;
           self.need_regenerate_bitmap = false;
-          if self.accounted_bytes != 0 {
-            env.adjust_external_memory(-self.accounted_bytes)?;
-            self.accounted_bytes = 0;
-          }
 
           let task = BitmapDecoder {
             width: self.width,
@@ -611,14 +668,9 @@ impl Image {
         self.natural_width = 0.0;
         self.natural_height = 0.0;
         self.bitmap = None;
-        self._avif_image_ref = None;
         self.file_content = None;
         self.is_svg = false;
         self.need_regenerate_bitmap = false;
-        if self.accounted_bytes != 0 {
-          env.adjust_external_memory(-self.accounted_bytes)?;
-          self.accounted_bytes = 0;
-        }
 
         let task = BitmapDecoder {
           width: self.width,
@@ -783,13 +835,8 @@ impl Image {
           image.natural_height = 0.0;
           image.bitmap = None;
           image.file_content = None;
-          image._avif_image_ref = None;
           image.is_svg = false;
           image.need_regenerate_bitmap = false;
-          if image.accounted_bytes != 0 {
-            ctx.env.adjust_external_memory(-image.accounted_bytes)?;
-            image.accounted_bytes = 0;
-          }
 
           let onerror = this.get_named_property_unchecked::<Unknown>("onerror")?;
           if onerror.get_type()? == ValueType::Function {
@@ -871,45 +918,42 @@ impl Image {
 
     if let Some(data) = self.file_content.as_deref() {
       let font = get_font().map_err(SkError::from)?;
-      self.bitmap = Bitmap::from_svg_data_with_custom_size(
+      self.bitmap = match Bitmap::from_svg_data_with_custom_size(
         data.as_ptr(),
         data.len(),
         self.width as f32,
         self.height as f32,
         self.color_space,
         &font,
-      );
-      if let Some(bmp) = &self.bitmap {
-        let new_bytes = (bmp.0.width as i64) * (bmp.0.height as i64) * 4;
-        self.adjust_external_memory_if_need(env, new_bytes)?;
-      }
+      ) {
+        Some(bitmap) => {
+          let new_bytes = (bitmap.0.width as i64) * (bitmap.0.height as i64) * 4;
+          env.adjust_external_memory(new_bytes)?;
+          Some(Arc::new(AccountedBitmap::new(bitmap, env.raw(), new_bytes)))
+        }
+        None => None,
+      };
       self.need_regenerate_bitmap = false;
       return Ok(());
     }
     if let Some(data) = self.src.as_ref() {
       let font = get_font().map_err(SkError::from)?;
-      self.bitmap = Bitmap::from_svg_data_with_custom_size(
+      self.bitmap = match Bitmap::from_svg_data_with_custom_size(
         data.as_ref().as_ptr(),
         data.as_ref().len(),
         self.width as f32,
         self.height as f32,
         self.color_space,
         &font,
-      );
-      if let Some(bmp) = &self.bitmap {
-        let new_bytes = (bmp.0.width as i64) * (bmp.0.height as i64) * 4;
-        self.adjust_external_memory_if_need(env, new_bytes)?;
-      }
+      ) {
+        Some(bitmap) => {
+          let new_bytes = (bitmap.0.width as i64) * (bitmap.0.height as i64) * 4;
+          env.adjust_external_memory(new_bytes)?;
+          Some(Arc::new(AccountedBitmap::new(bitmap, env.raw(), new_bytes)))
+        }
+        None => None,
+      };
       self.need_regenerate_bitmap = false;
-    }
-    Ok(())
-  }
-
-  fn adjust_external_memory_if_need(&mut self, env: &Env, new_bytes: i64) -> Result<()> {
-    let delta = new_bytes - self.accounted_bytes;
-    if delta != 0 {
-      env.adjust_external_memory(delta)?;
-      self.accounted_bytes = new_bytes;
     }
     Ok(())
   }
@@ -951,8 +995,6 @@ unsafe impl Send for DecodedBitmap {}
 struct BitmapInfo {
   data: Bitmap,
   is_svg: bool,
-  #[allow(dead_code)]
-  decoded_image: Option<AvifImage>,
 }
 
 enum DecodeStatus {
@@ -1030,7 +1072,6 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
               DecodeStatus::Ok(BitmapInfo {
                 data: bitmap,
                 is_svg: false,
-                decoded_image: None,
               })
             } else {
               DecodeStatus::InvalidImage
@@ -1059,11 +1100,17 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
         // libavif's avifImageYUVToRGB outputs straight (non-premultiplied) alpha.
         AlphaType::Unpremultiplied,
       );
-      DecodeStatus::Ok(BitmapInfo {
-        data: bitmap,
-        is_svg: false,
-        decoded_image: Some(avif_image),
-      })
+      // `from_image_data` copies the pixels into an owned SkBitmap, so the
+      // decoded AVIF buffer is dropped at the end of this arm.
+      match bitmap {
+        Some(bitmap) => DecodeStatus::Ok(BitmapInfo {
+          data: bitmap,
+          is_svg: false,
+        }),
+        // Pixel-copy allocation failed; surface as an invalid image rather
+        // than succeeding with an empty bitmap.
+        None => DecodeStatus::InvalidImage,
+      }
     } else if if let Some(kind) = infer::get(&data_ref) {
       kind.matcher_type() == infer::MatcherType::Image
     } else {
@@ -1074,7 +1121,6 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
         DecodeStatus::Ok(BitmapInfo {
           data: bitmap,
           is_svg: false,
-          decoded_image: None,
         })
       } else {
         DecodeStatus::InvalidImage
@@ -1093,7 +1139,6 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
           DecodeStatus::Ok(BitmapInfo {
             data: bitmap,
             is_svg: true,
-            decoded_image: None,
           })
         } else {
           DecodeStatus::InvalidSvg
@@ -1105,7 +1150,6 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
           DecodeStatus::Ok(BitmapInfo {
             data: bitmap,
             is_svg: true,
-            decoded_image: None,
           })
         } else {
           DecodeStatus::InvalidSvg
@@ -1180,14 +1224,13 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
           None => None,
         };
         self_mut.is_svg = bitmap.is_svg;
-        self_mut.bitmap = Some(bitmap.data);
-        self_mut._avif_image_ref = bitmap.decoded_image;
         let new_bytes = (output.width as i64) * (output.height as i64) * 4;
-        let delta = new_bytes - self_mut.accounted_bytes;
-        if delta != 0 {
-          env.adjust_external_memory(delta)?;
-          self_mut.accounted_bytes = new_bytes;
-        }
+        env.adjust_external_memory(new_bytes)?;
+        self_mut.bitmap = Some(Arc::new(AccountedBitmap::new(
+          bitmap.data,
+          env.raw(),
+          new_bytes,
+        )));
       }
       DecodeStatus::Empty => {
         // ERROR PATH: empty / undecodable input. Surface via onerror so callers
@@ -1198,13 +1241,8 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
         self_mut.natural_width = 0.0;
         self_mut.natural_height = 0.0;
         self_mut.file_content = None;
-        self_mut._avif_image_ref = None;
         self_mut.is_svg = false;
         self_mut.need_regenerate_bitmap = false;
-        if self_mut.accounted_bytes != 0 {
-          env.adjust_external_memory(-self_mut.accounted_bytes)?;
-          self_mut.accounted_bytes = 0;
-        }
         err = Some("Empty image data");
       }
       DecodeStatus::InvalidSvg => {
@@ -1215,13 +1253,8 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
         self_mut.natural_width = 0.0;
         self_mut.natural_height = 0.0;
         self_mut.file_content = None;
-        self_mut._avif_image_ref = None;
         self_mut.is_svg = false;
         self_mut.need_regenerate_bitmap = false;
-        if self_mut.accounted_bytes != 0 {
-          env.adjust_external_memory(-self_mut.accounted_bytes)?;
-          self_mut.accounted_bytes = 0;
-        }
         err = Some("Invalid SVG image");
       }
       DecodeStatus::InvalidImage => {
@@ -1232,13 +1265,8 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
         self_mut.natural_width = 0.0;
         self_mut.natural_height = 0.0;
         self_mut.file_content = None;
-        self_mut._avif_image_ref = None;
         self_mut.is_svg = false;
         self_mut.need_regenerate_bitmap = false;
-        if self_mut.accounted_bytes != 0 {
-          env.adjust_external_memory(-self_mut.accounted_bytes)?;
-          self_mut.accounted_bytes = 0;
-        }
         err = Some("Unsupported image type");
       }
     }
@@ -1288,13 +1316,8 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
     image.natural_height = 0.0;
     image.bitmap = None;
     image.file_content = None;
-    image._avif_image_ref = None;
     image.is_svg = false;
     image.need_regenerate_bitmap = false;
-    if image.accounted_bytes != 0 {
-      env.adjust_external_memory(-image.accounted_bytes)?;
-      image.accounted_bytes = 0;
-    }
 
     if self.fire_events {
       let on_error = this.get_named_property_unchecked::<Unknown>("onerror")?;
