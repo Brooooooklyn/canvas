@@ -2200,7 +2200,16 @@ skiac_bitmap* skiac_bitmap_make_from_image_data(uint8_t* ptr,
   auto bitmap = new SkBitmap();
   const auto info = SkImageInfo::Make((int)width, (int)(height),
                                       (SkColorType)ct, (SkAlphaType)at);
-  bitmap->installPixels(info, ptr, row_bytes);
+  // The caller's buffer is owned by a GC-managed object (ImageData, decoded
+  // image) that may be freed while the bitmap is still referenced. Install an
+  // owned copy instead of aliasing it, and fail rather than hand back a
+  // silently empty bitmap.
+  // https://github.com/Brooooooklyn/canvas/issues/1341
+  if (!bitmap->tryAllocPixels(info) ||
+      !bitmap->writePixels(SkPixmap(info, ptr, row_bytes), 0, 0)) {
+    delete bitmap;
+    return nullptr;
+  }
   return reinterpret_cast<skiac_bitmap*>(bitmap);
 }
 
