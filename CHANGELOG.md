@@ -1,3 +1,15 @@
+## [1.0.10](https://github.com/Brooooooklyn/canvas/compare/v1.0.9...v1.0.10) (2026-10-01)
+
+
+### Bug Fixes
+
+* release deferred recording on reads and cap recorded memory ([#1342](https://github.com/Brooooooklyn/canvas/issues/1342)) ([#1347](https://github.com/Brooooooklyn/canvas/issues/1347)) ([e503ca4](https://github.com/Brooooooklyn/canvas/commit/e503ca49bc2529038ff457717c7f6c613f6dfcf5))
+* use-after-free when ctx.restore() revives a GC'd CanvasPattern ([#1346](https://github.com/Brooooooklyn/canvas/issues/1346)) ([f2af36b](https://github.com/Brooooooklyn/canvas/commit/f2af36b09232b917f5a308c9d8493b64534b5332))
+
+
+### Features
+
+* chrome/m156 ([#1348](https://github.com/Brooooooklyn/canvas/issues/1348)) ([305105b](https://github.com/Brooooooklyn/canvas/commit/305105bb4360796f95e3fd05bdf7a3a968fd1653))
 ## [1.0.9](https://github.com/Brooooooklyn/canvas/compare/v1.0.8...v1.0.9) (2026-09-09)
 
 
