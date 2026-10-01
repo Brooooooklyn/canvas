@@ -132,14 +132,19 @@ impl LottieAnimation {
 
   /// Render current frame to canvas context
   #[napi]
-  pub fn render(&self, ctx: &CanvasRenderingContext2D, dst: Option<LottieRenderRect>) {
-    let canvas = &ctx.context.surface.canvas;
-    let rect = dst.map(|d| skiac_rect {
-      left: d.x as f32,
-      top: d.y as f32,
-      right: (d.x + d.width) as f32,
-      bottom: (d.y + d.height) as f32,
+  pub fn render(&self, ctx: &mut CanvasRenderingContext2D, dst: Option<LottieRenderRect>) {
+    // Skottie draws straight onto the surface. Route through
+    // with_surface_canvas so pending recorded ops flush UNDER this frame
+    // (render must not reorder behind them) and the content generation
+    // advances for the COW'd raster.
+    ctx.context.with_surface_canvas(|canvas| {
+      let rect = dst.map(|d| skiac_rect {
+        left: d.x as f32,
+        top: d.y as f32,
+        right: (d.x + d.width) as f32,
+        bottom: (d.y + d.height) as f32,
+      });
+      self.inner.render(canvas, rect.as_ref());
     });
-    self.inner.render(canvas, rect.as_ref());
   }
 }

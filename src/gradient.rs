@@ -106,6 +106,17 @@ impl Gradient {
   /// [0 -> A, 1 -> B, 2 -> C, 3 -> D, 4 -> E, 5 -> F, 6 -> 0, 7 -> 0, 8 -> 1 ]
   /// [lineargradient.js](skia/modules/canvaskit/htmlcanvas/lineargradient.js)
   /// [radialgradient.js](skia/modules/canvaskit/htmlcanvas/radialgradient.js)
+  /// Rough size of the shader a recorded draw retains: ~32 B per stop
+  /// (position f32, packed color, plus share of the shader object).
+  pub(crate) fn estimated_bytes(&self) -> usize {
+    let stops = match self {
+      Self::Linear(g) => &g.base.colors,
+      Self::Radial(g) => &g.base.colors,
+      Self::Conic(g) => &g.base.colors,
+    };
+    stops.len() * 32 + 256
+  }
+
   pub(crate) fn get_shader(&self, current_transform: Transform) -> result::Result<Shader, SkError> {
     match self {
       Self::Linear(linear_gradient) => Ok(

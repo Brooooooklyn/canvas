@@ -827,6 +827,12 @@ pub mod ffi {
 
     pub fn skiac_path_is_empty(path: *mut skiac_path) -> bool;
 
+    pub fn skiac_path_count_points(path: *mut skiac_path) -> i32;
+
+    pub fn skiac_path_count_verbs(path: *mut skiac_path) -> i32;
+
+    pub fn skiac_path_generation_id(path: *mut skiac_path) -> u32;
+
     pub fn skiac_path_hit_test(path: *mut skiac_path, x: f32, y: f32, kind: i32) -> bool;
 
     pub fn skiac_path_stroke_hit_test(path: *mut skiac_path, x: f32, y: f32, stroke_w: f32)
@@ -1082,6 +1088,8 @@ pub mod ffi {
     pub fn skiac_picture_ref(c_picture: *mut skiac_picture);
     pub fn skiac_picture_destroy(c_picture: *mut skiac_picture);
     pub fn skiac_picture_playback(c_picture: *mut skiac_picture, c_canvas: *mut skiac_canvas);
+    pub fn skiac_picture_approximate_bytes(c_picture: *mut skiac_picture) -> usize;
+    pub fn skiac_picture_unique_id(c_picture: *mut skiac_picture) -> u32;
 
     // SkString
     pub fn skiac_delete_sk_string(c_sk_string: *mut skiac_sk_string);
@@ -3300,6 +3308,24 @@ impl Clone for Path {
 }
 
 impl Path {
+  /// Rough cost of recording this path into an SkPicture: ~16 B per point
+  /// (two f32 coordinates plus record overhead) and ~8 B per verb. Used by
+  /// PageRecorder's byte budget to bound recordings that redraw one large
+  /// path many times (issue #1342).
+  pub fn estimated_bytes(&self) -> usize {
+    let points = unsafe { ffi::skiac_path_count_points(self.0) } as usize;
+    let verbs = unsafe { ffi::skiac_path_count_verbs(self.0) } as usize;
+    points * 16 + verbs * 8
+  }
+
+  /// Identity of the SkPathData this path currently holds
+  /// (SkPath::getGenerationID): globally unique per data version, stable
+  /// while copies share the data. Retention-dedup key for recorded path
+  /// payloads -- see RasterKey::Path.
+  pub fn generation_id(&self) -> u32 {
+    unsafe { ffi::skiac_path_generation_id(self.0) }
+  }
+
   pub fn new() -> Path {
     unsafe { Path(ffi::skiac_path_create()) }
   }
@@ -4438,6 +4464,11 @@ impl Drop for Bitmap {
 #[derive(Debug)]
 pub struct AccountedBitmap {
   pub(crate) inner: Bitmap,
+  /// Unique identity for retained-raster dedup keys. The Bitmap itself is
+  /// immutable, so any decode or regeneration produces a distinct
+  /// AccountedBitmap with a distinct id -- a swapped Image bitmap can never
+  /// alias the stale charge under an old id.
+  pub(crate) resource_id: u64,
   env: napi::sys::napi_env,
   bytes: i64,
 }
@@ -4446,7 +4477,12 @@ impl AccountedBitmap {
   /// The allocation must already exist and `bytes` must already have been
   /// reported through `Env::adjust_external_memory`.
   pub(crate) fn new(inner: Bitmap, env: napi::sys::napi_env, bytes: i64) -> Self {
-    Self { inner, env, bytes }
+    Self {
+      inner,
+      resource_id: crate::page_recorder::next_resource_id(),
+      env,
+      bytes,
+    }
   }
 }
 
@@ -4502,10 +4538,21 @@ unsafe impl Send for ImagePatternShared {}
 
 #[derive(Debug)]
 pub struct ImagePattern {
+  /// Dedup identity of the backing raster this pattern's recorded ops pin.
+  /// Not the pattern's own id: patterns built from an Image clone the same
+  /// Arc<AccountedBitmap> and share its resource_id, so N wrappers over one
+  /// bitmap charge once; per-pattern copies (ImageData, cloned surfaces) get
+  /// a fresh id. The `bitmap` pointer is recyclable after the backing is
+  /// freed and must never serve as a key.
+  pub(crate) accounting_id: u64,
   pub(crate) bitmap: *mut ffi::skiac_bitmap,
   pub(crate) repeat_x: TileMode,
   pub(crate) repeat_y: TileMode,
   pub(crate) is_canvas: bool,
+  /// Bytes the whole backing raster occupies. Stored at construction because
+  /// `bitmap` points at an `SkSurface` (not a `skiac_bitmap`) when `is_canvas`
+  /// is set, so `skiac_bitmap_get_width/height` would read garbage dims on it.
+  pub(crate) backing_bytes: usize,
   /// Keeps the object `bitmap` points into alive across clones.
   pub(crate) backing: Option<ImagePatternBacking>,
   pub(crate) shared: Arc<Mutex<ImagePatternShared>>,
@@ -4514,10 +4561,13 @@ pub struct ImagePattern {
 impl Clone for ImagePattern {
   fn clone(&self) -> Self {
     Self {
+      // Clones share the backing raster, so they share the charge identity.
+      accounting_id: self.accounting_id,
       bitmap: self.bitmap,
       repeat_x: self.repeat_x,
       repeat_y: self.repeat_y,
       is_canvas: self.is_canvas,
+      backing_bytes: self.backing_bytes,
       backing: self.backing.clone(),
       shared: self.shared.clone(),
     }
@@ -4525,6 +4575,12 @@ impl Clone for ImagePattern {
 }
 
 impl ImagePattern {
+  /// Bytes the recorded paint retains through the pattern's bitmap shader:
+  /// the whole backing raster.
+  pub(crate) fn estimated_bytes(&self) -> usize {
+    self.backing_bytes
+  }
+
   pub(crate) fn get_shader(&self) -> Option<Shader> {
     // Use cached shader if available, otherwise create and cache it
     let mut shared = self.shared.lock().unwrap();
@@ -4845,6 +4901,24 @@ impl SkPicture {
     unsafe {
       ffi::skiac_picture_playback(self.0, canvas.0);
     }
+  }
+
+  /// Skia's estimate of the bytes this picture's record retains, including
+  /// nested pictures. drawCanvas records a reference to the source's whole
+  /// record, so the byte budget charges this, not the 256 B base op
+  /// (issue #1342).
+  pub fn approx_bytes_used(&self) -> usize {
+    unsafe { ffi::skiac_picture_approximate_bytes(self.0) }
+  }
+
+  /// Process-unique picture identity: stable across clones and get_picture()
+  /// cache hits, and never recycled after the SkPicture is freed -- a raw
+  /// pointer key can be reused by the next SkPicture allocation once the
+  /// recording drops its retain (or never takes one on an unrolled or
+  /// clip-rejected draw), letting a stale key uncharge a different picture's
+  /// raster.
+  pub(crate) fn unique_id(&self) -> u32 {
+    unsafe { ffi::skiac_picture_unique_id(self.0) }
   }
 }
 
