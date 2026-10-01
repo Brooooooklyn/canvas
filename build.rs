@@ -122,11 +122,13 @@ fn main() {
     "linux" => {
       // `cargo test` links a real binary, not the node-loaded cdylib, so
       // let the node-provided napi_* symbols stay unresolved (tests never
-      // execute those paths). `rustc-link-arg` applies only to binary link
-      // steps -- the crate has none in a plain `cargo build`, and the
-      // shipped cdylib link uses `rustc-cdylib-link-arg` below, so the
-      // release artifact is unaffected.
-      println!("cargo:rustc-link-arg=-Wl,--unresolved-symbols=ignore-in-object-files");
+      // execute those paths). gnu only: musl cross-builds link through
+      // zigcc, which does not implement --unresolved-symbols, and nobody
+      // runs `cargo test` on musl. Shared-object links already tolerate
+      // undefined symbols, so it is a no-op on the cdylib.
+      if compile_target_env == "gnu" {
+        println!("cargo:rustc-link-arg=-Wl,--unresolved-symbols=ignore-in-object-files");
+      }
       if compile_target_env != "musl" {
         println!("cargo:rustc-cdylib-link-arg=-Wl,--allow-multiple-definition");
       }
@@ -194,8 +196,8 @@ fn main() {
       // Test binaries aren't a node-loaded cdylib: give them the same
       // dynamic_lookup the napi-build cdylib setup emits so napi_* symbols
       // (only reached via paths tests never call) resolve at link time.
-      // `rustc-link-arg` applies to binaries only, so the shipped cdylib
-      // link is unaffected.
+      // The flag also reaches the cdylib link, where it matches what napi
+      // modules already use, so the release artifact is unaffected.
       println!("cargo::rustc-link-arg=-Wl,-undefined,dynamic_lookup");
     }
     "android" => {
