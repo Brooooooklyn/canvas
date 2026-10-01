@@ -1173,6 +1173,22 @@ void skiac_picture_playback(skiac_picture* c_picture, skiac_canvas* c_canvas) {
       reinterpret_cast<SkCanvas*>(c_canvas));
 }
 
+size_t skiac_picture_approximate_bytes(skiac_picture* c_picture) {
+  if (c_picture == nullptr) {
+    return 0;
+  }
+  return reinterpret_cast<SkPicture*>(c_picture)->approximateBytesUsed();
+}
+
+// Process-unique, never-recycled picture identity -- safe as a retention
+// dedup key even for draws that end up not retaining the picture object.
+uint32_t skiac_picture_unique_id(skiac_picture* c_picture) {
+  if (c_picture == nullptr) {
+    return 0;
+  }
+  return reinterpret_cast<SkPicture*>(c_picture)->uniqueID();
+}
+
 // SkPictureRecorder
 skiac_picture_recorder* skiac_picture_recorder_create() {
   return reinterpret_cast<skiac_picture_recorder*>(new SkPictureRecorder());
@@ -1518,6 +1534,22 @@ void skiac_path_transform_self(skiac_path* c_path, skiac_matrix* c_matrix) {
 
 bool skiac_path_is_empty(skiac_path* c_path) {
   return c_path->builder.isEmpty();
+}
+
+int skiac_path_count_points(skiac_path* c_path) {
+  return c_path->path().countPoints();
+}
+
+int skiac_path_count_verbs(skiac_path* c_path) {
+  return c_path->path().countVerbs();
+}
+
+// SkPathData uniqueID via SkPath::getGenerationID: globally unique per
+// path-data version, stable while copies share the same data. Any
+// point/verb/conic change allocates fresh SkPathData with a fresh id
+// (fill-type changes do not touch the data). Safe retention-dedup key.
+uint32_t skiac_path_generation_id(skiac_path* c_path) {
+  return c_path->path().getGenerationID();
 }
 
 bool skiac_path_hit_test(skiac_path* c_path, float x, float y, int type) {

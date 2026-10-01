@@ -120,6 +120,15 @@ fn main() {
         .static_crt(true);
     }
     "linux" => {
+      // `cargo test` links a real binary, not the node-loaded cdylib, so
+      // let the node-provided napi_* symbols stay unresolved (tests never
+      // execute those paths). gnu only: musl cross-builds link through
+      // zigcc, which does not implement --unresolved-symbols, and nobody
+      // runs `cargo test` on musl. Shared-object links already tolerate
+      // undefined symbols, so it is a no-op on the cdylib.
+      if compile_target_env == "gnu" {
+        println!("cargo:rustc-link-arg=-Wl,--unresolved-symbols=ignore-in-object-files");
+      }
       if compile_target_env != "musl" {
         println!("cargo:rustc-cdylib-link-arg=-Wl,--allow-multiple-definition");
       }
@@ -184,6 +193,12 @@ fn main() {
       }
       println!("cargo:rustc-link-lib=c++");
       println!("cargo:rustc-link-lib=framework=ApplicationServices");
+      // Test binaries aren't a node-loaded cdylib: give them the same
+      // dynamic_lookup the napi-build cdylib setup emits so napi_* symbols
+      // (only reached via paths tests never call) resolve at link time.
+      // The flag also reaches the cdylib link, where it matches what napi
+      // modules already use, so the release artifact is unaffected.
+      println!("cargo::rustc-link-arg=-Wl,-undefined,dynamic_lookup");
     }
     "android" => {
       build.cpp_set_stdlib("c++").flag("-static");

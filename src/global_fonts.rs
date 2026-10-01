@@ -1,5 +1,6 @@
 use std::fs::read_dir;
 use std::path;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{LazyLock, LockResult, Mutex, MutexGuard, OnceLock, PoisonError};
 
 use crate::sk::*;
@@ -17,6 +18,21 @@ static FONT_DIR: OnceLock<napi::Result<u32>> = OnceLock::new();
 
 pub(crate) static GLOBAL_FONT_COLLECTION: LazyLock<Mutex<FontCollection>> =
   LazyLock::new(|| Mutex::new(FontCollection::new()));
+
+/// Monotonic generation of the global font collection: every registration,
+/// unregister or alias change can move which typeface a font descriptor
+/// resolves to, so it is folded into the draw-side typeface dedup key
+/// (RasterKey::Typeface) -- a same-named draw before and after a register()
+/// pins different typefaces and must not share one charge.
+static FONT_COLLECTION_GENERATION: AtomicU64 = AtomicU64::new(0);
+
+pub(crate) fn font_collection_generation() -> u64 {
+  FONT_COLLECTION_GENERATION.load(Ordering::Relaxed)
+}
+
+fn note_font_collection_mutation() {
+  FONT_COLLECTION_GENERATION.fetch_add(1, Ordering::Relaxed);
+}
 
 #[inline]
 pub(crate) fn get_font<'a>() -> LockResult<MutexGuard<'a, FontCollection>> {
@@ -45,11 +61,13 @@ pub mod global_fonts {
   pub fn register(font_data: &[u8], name_alias: Option<String>) -> Result<Option<FontKey>> {
     let maybe_name_alias = name_alias.filter(|s| !s.is_empty());
     let font = get_font().map_err(into_napi_error)?;
-    Ok(
-      font
-        .register(font_data, maybe_name_alias)
-        .map(|typeface_id| FontKey { typeface_id }),
-    )
+    let result = font
+      .register(font_data, maybe_name_alias)
+      .map(|typeface_id| FontKey { typeface_id });
+    if result.is_some() {
+      super::note_font_collection_mutation();
+    }
+    Ok(result)
   }
 
   /// Register a font from a file path.
@@ -80,11 +98,13 @@ pub mod global_fonts {
   ) -> Result<Option<FontKey>> {
     let maybe_name_alias = name_alias.filter(|s| !s.is_empty());
     let font = get_font().map_err(into_napi_error)?;
-    Ok(
-      font
-        .register_from_path(font_path.as_str(), maybe_name_alias)
-        .map(|typeface_id| FontKey { typeface_id }),
-    )
+    let result = font
+      .register_from_path(font_path.as_str(), maybe_name_alias)
+      .map(|typeface_id| FontKey { typeface_id });
+    if result.is_some() {
+      super::note_font_collection_mutation();
+    }
+    Ok(result)
   }
 
   #[napi]
@@ -110,7 +130,11 @@ pub mod global_fonts {
   #[napi]
   pub fn set_alias(font_name: String, alias: String) -> Result<bool> {
     let font = get_font().map_err(into_napi_error)?;
-    Ok(font.set_alias(font_name.as_str(), alias.as_str()))
+    let result = font.set_alias(font_name.as_str(), alias.as_str());
+    if result {
+      super::note_font_collection_mutation();
+    }
+    Ok(result)
   }
 
   /// Remove a previously registered font from the global font collection.
@@ -118,7 +142,11 @@ pub mod global_fonts {
   #[napi]
   pub fn remove(key: &FontKey) -> Result<bool> {
     let font = get_font().map_err(into_napi_error)?;
-    Ok(font.unregister(key.typeface_id))
+    let result = font.unregister(key.typeface_id);
+    if result {
+      super::note_font_collection_mutation();
+    }
+    Ok(result)
   }
 
   #[napi]
@@ -128,7 +156,11 @@ pub mod global_fonts {
   pub fn remove_batch(font_keys: Vec<&FontKey>) -> Result<u32> {
     let typeface_ids: Vec<u32> = font_keys.iter().map(|k| k.typeface_id).collect();
     let font = get_font().map_err(into_napi_error)?;
-    Ok(font.unregister_batch(&typeface_ids) as u32)
+    let removed = font.unregister_batch(&typeface_ids);
+    if removed > 0 {
+      super::note_font_collection_mutation();
+    }
+    Ok(removed as u32)
   }
 
   #[napi]
@@ -136,7 +168,11 @@ pub mod global_fonts {
   /// Returns the number of fonts removed.
   pub fn remove_all() -> Result<u32> {
     let font = get_font().map_err(into_napi_error)?;
-    Ok(font.unregister_all() as u32)
+    let removed = font.unregister_all();
+    if removed > 0 {
+      super::note_font_collection_mutation();
+    }
+    Ok(removed as u32)
   }
 
   #[napi(object)]
@@ -205,6 +241,14 @@ fn load_fonts_from_dir<P: AsRef<path::Path>>(dir: P) -> napi::Result<u32> {
                   .register_from_path::<String>(p, None)
                   .is_some()
                 {
+                  // Bump while the collection lock is still held and after
+                  // EACH registration: the guard drops between files, so a
+                  // reader on another thread can resolve a family mid-load.
+                  // Deferring the bump to the end of the directory leaves a
+                  // window where a draw picks up the new typeface under the
+                  // previous generation and dedups it into a stale
+                  // RasterKey::Typeface charge.
+                  note_font_collection_mutation();
                   count += 1;
                 }
               }

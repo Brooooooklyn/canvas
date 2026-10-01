@@ -10,6 +10,7 @@ use crate::ctx::TransformObject;
 use crate::error::SkError;
 use crate::gradient::Gradient;
 use crate::image::{Image, ImageData};
+use crate::page_recorder::next_resource_id;
 use crate::sk::{
   AccountedBitmap, AlphaType, Bitmap, ColorType, ImagePattern, ImagePatternBacking,
   ImagePatternShared, TileMode, Transform,
@@ -98,7 +99,7 @@ impl CanvasPattern {
     // (`backing`), so clones pushed onto the `save()`/`restore()` state stack
     // stay valid after the JS `CanvasPattern` is garbage-collected.
     // https://github.com/Brooooooklyn/canvas/issues/1341
-    let (bitmap, backing) = match input {
+    let (bitmap, backing_bytes, backing, accounting_id) = match input {
       Either4::A(image) => {
         let bitmap = image
           .bitmap
@@ -106,7 +107,12 @@ impl CanvasPattern {
           .ok_or_else(|| Error::new(Status::InvalidArg, "Image is not completed.".to_owned()))?;
         (
           bitmap.inner.0.bitmap,
+          bitmap.inner.0.width as usize * bitmap.inner.0.height as usize * 4,
           ImagePatternBacking::Bitmap(bitmap.clone()),
+          // The Arc is cloned from the Image: the backing identity is the
+          // bitmap's own resource_id, so N patterns over one Image charge
+          // once per recording window instead of per wrapper.
+          bitmap.resource_id,
         )
       }
       Either4::B(image_data) => {
@@ -133,11 +139,14 @@ impl CanvasPattern {
         let ptr = bitmap.0.bitmap;
         (
           ptr,
+          image_data_size,
           ImagePatternBacking::Bitmap(Arc::new(AccountedBitmap::new(
             bitmap,
             env.raw(),
             image_data_size as i64,
           ))),
+          // Per-pattern pixel copy: fresh identity.
+          next_resource_id(),
         )
       }
       Either4::C(canvas) => {
@@ -156,12 +165,18 @@ impl CanvasPattern {
               "Failed to clone canvas surface".to_owned(),
             )
           })?;
+        // The bitmap field stores the surface pointer, so the raster size is
+        // read from the surface here -- bitmap accessors would type-confuse.
+        let backing_bytes = cloned_surface.width() as usize * cloned_surface.height() as usize * 4;
         // Get the surface pointer, and hold a ref-counted reference so the
         // pixels stay alive after this `Surface` wrapper is dropped
         let ptr = cloned_surface.get_bitmap_ptr();
         (
           ptr,
+          backing_bytes,
           ImagePatternBacking::Surface(cloned_surface.reference()),
+          // Per-pattern surface clone: fresh identity.
+          next_resource_id(),
         )
       }
       Either4::D(svg_canvas) => {
@@ -178,12 +193,18 @@ impl CanvasPattern {
               "Failed to clone SVG canvas surface".to_owned(),
             )
           })?;
+        // The bitmap field stores the surface pointer, so the raster size is
+        // read from the surface here -- bitmap accessors would type-confuse.
+        let backing_bytes = cloned_surface.width() as usize * cloned_surface.height() as usize * 4;
         // Get the surface pointer, and hold a ref-counted reference so the
         // pixels stay alive after this `Surface` wrapper is dropped
         let ptr = cloned_surface.get_bitmap_ptr();
         (
           ptr,
+          backing_bytes,
           ImagePatternBacking::Surface(cloned_surface.reference()),
+          // Per-pattern surface clone: fresh identity.
+          next_resource_id(),
         )
       }
     };
@@ -205,10 +226,12 @@ impl CanvasPattern {
     };
     Ok(Self {
       inner: Pattern::Image(ImagePattern {
+        accounting_id,
         bitmap,
         repeat_x,
         repeat_y,
         is_canvas,
+        backing_bytes,
         backing: Some(backing),
         shared: Arc::new(Mutex::new(ImagePatternShared {
           transform: Transform::default(),

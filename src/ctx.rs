@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::f32::consts::PI;
 use std::mem;
 use std::result;
@@ -16,7 +16,7 @@ use crate::font::FONT_MEDIUM_PX;
 use crate::font::parse_size_px;
 use crate::gif::GifConfig;
 use crate::global_fonts::get_font;
-use crate::page_recorder::PageRecorder;
+use crate::page_recorder::{PageRecorder, RasterKey, next_resource_id};
 use crate::picture_recorder::PictureRecorder;
 use crate::sk::Canvas;
 use crate::{
@@ -127,6 +127,9 @@ struct ShadowPass<'a> {
 
 pub struct Context {
   pub(crate) surface: Surface,
+  /// Unique identity for retained-raster dedup keys; survives the backing
+  /// SkSurface's lifetime so a recycled pointer can never alias it.
+  pub(crate) resource_id: u64,
   pub(crate) page_recorder: Option<RefCell<PageRecorder>>, // Deferred rendering recorder (RefCell for interior mutability)
   /// Which device `surface` is over. Set once by the constructor.
   pub(crate) backend: Backend,
@@ -138,6 +141,12 @@ pub struct Context {
   pub height: u32,
   pub color_space: ColorSpace,
   pub stream: Option<SkWMemoryStream>,
+  /// Content generation for backends without a recorder (SVG, PDF) and for
+  /// raster writes that bypass it. The raster backend's canonical generation
+  /// lives in PageRecorder::content_version; this only feeds
+  /// Context::content_version when no recorder exists. Cell so `&self`
+  /// surface writers (annotate_*) can still bump it.
+  direct_content_version: Cell<u64>,
 }
 
 impl Context {
@@ -157,6 +166,7 @@ impl Context {
     .ok_or_else(|| Error::from_reason("Create skia svg surface failed".to_owned()))?;
     Ok(Context {
       surface,
+      resource_id: next_resource_id(),
       page_recorder: None, // SVG uses direct rendering
       backend: Backend::Svg,
       alpha: true,
@@ -167,6 +177,7 @@ impl Context {
       height,
       color_space,
       stream: Some(stream),
+      direct_content_version: Cell::new(0),
     })
   }
 
@@ -175,6 +186,7 @@ impl Context {
       .ok_or_else(|| Error::from_reason("Create skia surface failed".to_owned()))?;
     Ok(Context {
       surface,
+      resource_id: next_resource_id(),
       page_recorder: Some(RefCell::new(PageRecorder::new(width as f32, height as f32))), // Enable deferred rendering
       backend: Backend::Raster,
       alpha: true,
@@ -185,6 +197,7 @@ impl Context {
       height,
       color_space,
       stream: None,
+      direct_content_version: Cell::new(0),
     })
   }
 
@@ -192,6 +205,7 @@ impl Context {
   pub(crate) fn new_from_surface(surface: Surface, width: u32, height: u32) -> Self {
     Context {
       surface,
+      resource_id: next_resource_id(),
       page_recorder: None, // PDF uses direct rendering
       backend: Backend::Pdf,
       alpha: true,
@@ -202,6 +216,7 @@ impl Context {
       height,
       color_space: ColorSpace::default(),
       stream: None,
+      direct_content_version: Cell::new(0),
     }
   }
 
@@ -221,6 +236,180 @@ impl Context {
     }
   }
 
+  /// Content generation for retained-raster dedup keys (drawImage canvas
+  /// sources): bumps on every recorded mutation, so each COW snapshot
+  /// generation of a surface draws under a fresh key. Backends without a
+  /// recorder report their direct-write generation instead.
+  pub(crate) fn content_version(&self) -> u64 {
+    self
+      .page_recorder
+      .as_ref()
+      .map(|recorder| recorder.borrow().content_version())
+      .unwrap_or_else(|| self.direct_content_version.get())
+  }
+
+  /// Bump the content generation for a surface write that bypassed the
+  /// recording (Lottie frame render, `alpha: false` base fill, direct-mode
+  /// SVG/PDF ops). The write COWs the surface raster exactly like a recorded
+  /// op does, so an unchanged generation would let a dest dedup key alias
+  /// the new raster under the old charge.
+  pub(crate) fn note_direct_mutation(&self) {
+    if let Some(ref recorder) = self.page_recorder {
+      recorder.borrow_mut().note_direct_mutation();
+    } else {
+      self
+        .direct_content_version
+        .set(self.direct_content_version.get() + 1);
+    }
+  }
+
+  /// Run `f` directly on the surface canvas. Flushes the deferred recording
+  /// first so pending ops land UNDER the direct write, then marks the
+  /// recorder dirty-by-surface-write (the write bypassed the recording, so
+  /// its flushed layers are stale). The rebase is LAZY: no surface snapshot
+  /// is taken here -- the snapshot's raster retention would copy-on-write
+  /// the whole surface on the very next direct write (a lottie frame loop
+  /// paid a full-canvas COW per frame). The snapshot materializes only when
+  /// a read-out actually needs the picture (Context::get_picture). For
+  /// content writers only -- reads (get_bitmap, read_pixels) need the flush
+  /// but not the sync.
+  pub(crate) fn with_surface_canvas<F>(&mut self, f: F)
+  where
+    F: FnOnce(&mut Canvas),
+  {
+    self.flush();
+    f(&mut self.surface.canvas);
+    if let Some(ref recorder) = self.page_recorder {
+      recorder.borrow_mut().note_surface_write();
+    }
+    self.note_direct_mutation();
+  }
+
+  /// Flush the deferred recording once it exceeds MAX_RECORDED_BYTES, bounding
+  /// its memory in pure draw loops that never read back
+  /// (https://github.com/Brooooooklyn/canvas/issues/1342). Mirrors Blink's
+  /// MemoryManagedPaintRecorder::FlushIfRecordingLimitExceeded
+  /// (memory_managed_paint_recorder.cc), which caps recorded op bytes.
+  ///
+  /// Only call at a public-entry-point boundary -- at the top, to bound
+  /// accumulation between ops, and at the bottom, so an op whose own charge
+  /// trips the cap (a single putImageData can pin ~256 MiB of copied pixels)
+  /// consolidates immediately instead of staying pinned while the context
+  /// sits idle. Never inside a shared helper mid-sequence, where
+  /// resume_recording would re-emit state synced for a previous op.
+  fn flush_if_recording_limit_exceeded(&mut self) {
+    let exceeded = self
+      .page_recorder
+      .as_ref()
+      .map(|recorder| recorder.borrow().recording_limit_exceeded())
+      .unwrap_or(false);
+    if exceeded {
+      self.flush();
+    }
+  }
+
+  /// Charge recorded bytes the per-op base estimate cannot see (path point
+  /// data, nested pictures, text length) to the recorder's byte budget.
+  fn account_recorded_bytes(&self, bytes: usize) {
+    if let Some(ref recorder) = self.page_recorder {
+      recorder.borrow_mut().account_recorded_bytes(bytes);
+    }
+  }
+
+  /// Charge bytes that also count toward the recorder's retained-raster tally
+  /// -- payloads a recorded picture pins that approximateBytesUsed cannot see
+  /// (pixel copies, typeface refs). drawCanvas re-charges a source's retained
+  /// raster bytes to the destination, so they must be tracked separately from
+  /// plain record structure.
+  fn account_raster_bytes(&self, bytes: usize) {
+    if let Some(ref recorder) = self.page_recorder {
+      recorder.borrow_mut().account_raster_bytes(bytes);
+    }
+  }
+
+  /// Like account_raster_bytes but deduplicated by resource identity within
+  /// the current recording window: redrawing one source pins one shared
+  /// reference, not a new allocation per op. See RasterKey for the namespaced
+  /// key type.
+  fn account_raster_resource(&self, key: RasterKey, bytes: usize) {
+    if let Some(ref recorder) = self.page_recorder {
+      let mut rec = recorder.borrow_mut();
+      rec.account_raster_resource(key, bytes);
+    }
+  }
+
+  /// Charge the resources one recorded draw retains through its paint and
+  /// pass structure. Called once per recording draw entry point -- it must
+  /// NOT run in `fill_paint`/`stroke_paint` themselves, which non-recording
+  /// callers (measureText's `get_line_metrics`, the `alpha: false` fill in
+  /// `get_context`) also use and must stay side-effect free.
+  ///
+  ///   * An Image pattern's shader pins the whole backing bitmap, a Gradient
+  ///     shader copies its stop arrays.
+  ///   * A non-empty line dash copies the interval array into a fresh
+  ///     PathEffect on every draw.
+  ///   * `ctx.filter` rides the op's saveLayer paint as a chained
+  ///     SkImageFilter, one node per CSS token (filter.rs `make_*` calls all
+  ///     take `chained_filter`). The chain itself is refcounted, so the op
+  ///     retains only a reference; charge `filters_string.len() * 8` as a
+  ///     conservative proxy for the node's serialized size.
+  ///   * An enabled shadow builds a fresh MaskFilter or DropShadowOnly image
+  ///     filter per draw (`shadow_paint`); charge a flat 1 KB under the same
+  ///     predicate `shadow_paint` uses to decide whether a shadow exists.
+  fn account_paint_resources(&self, style: &Pattern) {
+    // Everything below is retained THROUGH the recorded paint while
+    // SkPicture::approximateBytesUsed cannot see the referenced objects, so
+    // it all belongs to the propagated raster tally: an image pattern's
+    // shader pins the whole backing raster, a gradient shader copies its
+    // stop arrays into the fresh SkShader get_shader() builds per draw, and
+    // a dash list is compiled into a fresh SkPathEffect per paint call
+    // (fill_paint/stroke_paint). The fresh-object-per-draw property also
+    // means these three are charged per draw with no dedup key.
+    match style {
+      Pattern::Image(image) => {
+        // Keyed by the backing raster's identity: patterns over the same
+        // Image share its Arc<AccountedBitmap> id and charge once; per-copy
+        // backings get a fresh id at pattern construction. Generation 0 --
+        // the pattern shader pins one captured raster for its lifetime.
+        self.account_raster_resource(
+          RasterKey::Resource {
+            id: image.accounting_id,
+            generation: 0,
+          },
+          image.estimated_bytes(),
+        )
+      }
+      Pattern::Gradient(gradient) => self.account_raster_bytes(gradient.estimated_bytes()),
+      Pattern::Color(..) => {}
+    };
+    // The ctx.filter chain is ONE refcounted ImageFilter stored on the state;
+    // every recorded paint carries a shared ref to the same DAG, so charge it
+    // once per window under its minted id. Generation 0: the chain object is
+    // immutable until set_filter replaces it (which also replaces the id).
+    if self.state.filter.is_some() {
+      self.account_raster_resource(
+        RasterKey::Resource {
+          id: self.state.filter_id,
+          generation: 0,
+        },
+        self.state.filters_string.len() * 8,
+      );
+    }
+    let shadow_bytes = if self.state.shadow_color.a != 0
+      && (self.state.shadow_blur != 0f32
+        || self.state.shadow_offset_x != 0f32
+        || self.state.shadow_offset_y != 0f32)
+    {
+      1024
+    } else {
+      0
+    };
+    // Fresh per draw (shadow_paint builds a fresh DropShadowOnly graph, the
+    // dash list compiles into a fresh SkPathEffect): per-draw charge in the
+    // propagated tally, no dedup.
+    self.account_raster_bytes(shadow_bytes + self.state.line_dash_list.len() * 4);
+  }
+
   /// Execute a canvas state operation on the appropriate canvas (recording or direct)
   /// For deferred mode, operations are recorded to the PageRecorder
   /// For direct mode (SVG, PDF), operations go directly to the surface
@@ -235,7 +424,11 @@ impl Context {
         return;
       }
     }
-    // Direct mode - use surface canvas
+    // Direct mode - use surface canvas. Every caller is a state-only op
+    // (save/restore/transform/clip/reset state); none writes pixels, so the
+    // content generation must not move -- a canvas-source dedup key would
+    // churn on pure state churn. Context::reset() is the one pixel writer
+    // through this funnel and bumps explicitly.
     f(&mut self.surface.canvas);
   }
 
@@ -353,11 +546,23 @@ impl Context {
       blur: self.state.shadow_blur,
     });
 
+    // No recording-limit check here: callers charge the op's payload (path
+    // points, image pixels, paint resources) before reaching render_passes,
+    // so a flush inside this helper would consolidate and zero pending_bytes
+    // BEFORE the op is recorded, erasing its charge. The check lives at the
+    // top of every public recording entry point instead.
+    //
+    // composited_pass records an inner SkPicture per isolation layer (one for
+    // the content pass, another for the shadow pass) which the outer record
+    // pins via drawPicture; their approx_bytes_used is accumulated through
+    // nested_picture_bytes and charged to the recorder once the op lands --
+    // after, not before, since the pictures only exist if the draw succeeds.
+    let mut nested_picture_bytes = 0usize;
     if let Some(ref recorder) = self.page_recorder {
       let mut rec = recorder.borrow_mut();
       if let Some(canvas) = rec.get_recording_canvas() {
         // Use the recording canvas for deferred mode
-        return Self::render_canvas(
+        let result = Self::render_canvas(
           canvas,
           paint,
           content_filter.as_ref(),
@@ -365,13 +570,28 @@ impl Context {
           width,
           height,
           shadow,
+          &mut nested_picture_bytes,
           shadow_f,
           f,
         );
+        // This funnel only serves pixel commits; a recorded draw is a new
+        // content generation for canvas-source dedup keys.
+        rec.note_paint_op();
+        // Drop the RefMut before the charge borrows the recorder. The nested
+        // isolation-layer pictures' bytes DO reach the outer picture's
+        // approximateBytesUsed (SkRecordCanvas::onDrawPicture folds
+        // pic->approximateBytesUsed into fApproxBytesUsedBySubPictures, which
+        // finishRecordingAsPicture bakes in), and drawCanvas separately
+        // charges approx_bytes_used + source_raster_bytes -- so this stays a
+        // plain recorded-byte charge to pending_bytes only. Routing it to
+        // raster_bytes double-counted it on every drawCanvas.
+        drop(rec);
+        self.account_recorded_bytes(nested_picture_bytes);
+        return result;
       }
     }
     // Direct mode - use surface canvas
-    Self::render_canvas(
+    let result = Self::render_canvas(
       &mut self.surface.canvas,
       paint,
       content_filter.as_ref(),
@@ -379,9 +599,12 @@ impl Context {
       width,
       height,
       shadow,
+      &mut nested_picture_bytes,
       shadow_f,
       f,
-    )
+    );
+    self.note_direct_mutation();
+    result
   }
 
   pub fn arc(
@@ -439,6 +662,7 @@ impl Context {
   }
 
   pub fn clip(&mut self, path: Option<&mut SkPath>, fill_rule: FillType) {
+    self.flush_if_recording_limit_exceeded();
     let clip_path = match path {
       Some(p) => {
         p.set_fill_type(fill_rule);
@@ -468,12 +692,21 @@ impl Context {
 
     // Pass the raw path to Skia. Skia's clipPath() is cumulative and applies the
     // current canvas CTM, so it correctly handles nested clips at different transforms.
+    // The recorded op pins a COW-shared SkPathData; charge it once per data
+    // version and propagate it through the retained tally (RasterKey::Path).
+    self.account_raster_resource(
+      RasterKey::Path {
+        data_id: clip_path.generation_id(),
+      },
+      clip_path.estimated_bytes(),
+    );
     self.with_canvas_state(|canvas| {
       canvas.set_clip_path(&clip_path);
     });
 
     self.state.clip_path = Some(device_clip);
     self.sync_clip_to_recorder();
+    self.flush_if_recording_limit_exceeded();
   }
 
   pub fn clear_rect(
@@ -483,6 +716,16 @@ impl Context {
     width: f32,
     height: f32,
   ) -> result::Result<(), SkError> {
+    // A deterministically empty sorted span paints nothing: clearRect's own
+    // draw goes through the plain arm of render_canvas (blend_mode stays
+    // SourceOver -- only the paint is kClear), drawRect sorts its rect, and a
+    // collapsed finite span covers no pixels either recorded or replayed.
+    // Skipping keeps the op out of the recording so it cannot bump the
+    // canvas-source dedup generation; the clip-level non-finite cases must
+    // still record, since only a finite collapse is provably empty.
+    if Self::sorted_span_empty(x, width) || Self::sorted_span_empty(y, height) {
+      return Ok(());
+    }
     // Optimization: If clearing the entire canvas with identity transform, reset the page recorder
     // This prevents memory growth in game loops that clear each frame
     // Only apply optimization if:
@@ -510,6 +753,7 @@ impl Context {
     }
 
     // Partial clear - record as a clear operation
+    self.flush_if_recording_limit_exceeded();
     let mut paint = Paint::new();
     paint.set_style(PaintStyle::Fill);
     paint.set_color(0, 0, 0, 0);
@@ -519,6 +763,7 @@ impl Context {
       canvas.draw_rect(x, y, width, height, paint);
       Ok(())
     })?;
+    self.flush_if_recording_limit_exceeded();
     Ok(())
   }
 
@@ -535,6 +780,7 @@ impl Context {
   }
 
   pub fn save(&mut self) {
+    self.flush_if_recording_limit_exceeded();
     self.with_canvas_state(|canvas| {
       canvas.save();
     });
@@ -546,10 +792,12 @@ impl Context {
     if let Some(ref recorder) = self.page_recorder {
       recorder.borrow_mut().increment_save();
     }
+    self.flush_if_recording_limit_exceeded();
   }
 
   pub fn restore(&mut self) {
     if let Some(s) = self.states.pop() {
+      self.flush_if_recording_limit_exceeded();
       self.path.transform_self(&self.state.transform);
       self.with_canvas_state(|canvas| {
         canvas.restore();
@@ -586,6 +834,7 @@ impl Context {
       if let Some(ref recorder) = self.page_recorder {
         recorder.borrow_mut().decrement_save();
       }
+      self.flush_if_recording_limit_exceeded();
     }
   }
 
@@ -595,6 +844,12 @@ impl Context {
       canvas.clear();
       canvas.reset();
     });
+    // The clear above wrote pixels directly on direct backends (the funnel
+    // itself no longer bumps); in deferred mode recorder.reset() advances
+    // the generation instead.
+    if self.page_recorder.is_none() {
+      self.note_direct_mutation();
+    }
 
     // Reset the page recorder if in deferred mode
     if let Some(ref recorder) = self.page_recorder {
@@ -616,7 +871,11 @@ impl Context {
   }
 
   pub fn stroke_rect(&mut self, x: f32, y: f32, w: f32, h: f32) -> result::Result<(), SkError> {
+    self.flush_if_recording_limit_exceeded();
+    // Paint construction is fallible (dash PathEffect, gradient shader); the
+    // resource charge must land only once the op can actually record.
     let stroke_paint = self.stroke_paint()?;
+    self.account_paint_resources(&self.state.stroke_style);
 
     // Extract state for shadow rendering to avoid borrow conflicts
     let shadow_paint =
@@ -646,10 +905,12 @@ impl Context {
         Ok(())
       },
     )?;
+    self.flush_if_recording_limit_exceeded();
     Ok(())
   }
 
   pub fn translate(&mut self, x: f32, y: f32) {
+    self.flush_if_recording_limit_exceeded();
     let inverse = Matrix::translated(-x, -y);
     self.path.transform_self(&inverse);
     self.state.transform.pre_translate(x, y);
@@ -658,9 +919,11 @@ impl Context {
       canvas.set_transform(&transform);
     });
     self.sync_transform_to_recorder();
+    self.flush_if_recording_limit_exceeded();
   }
 
   pub fn transform(&mut self, ts: Matrix) -> result::Result<(), SkError> {
+    self.flush_if_recording_limit_exceeded();
     if let Some(inverse) = ts.invert() {
       self.path.transform_self(&inverse);
     }
@@ -670,10 +933,12 @@ impl Context {
       canvas.set_transform(&transform);
     });
     self.sync_transform_to_recorder();
+    self.flush_if_recording_limit_exceeded();
     Ok(())
   }
 
   pub fn rotate(&mut self, angle: f32) {
+    self.flush_if_recording_limit_exceeded();
     let degrees = angle / PI * 180f32;
     let inverse = Matrix::rotated(-angle, 0.0, 0.0);
     self.path.transform_self(&inverse);
@@ -683,9 +948,11 @@ impl Context {
       canvas.set_transform(&transform);
     });
     self.sync_transform_to_recorder();
+    self.flush_if_recording_limit_exceeded();
   }
 
   pub fn scale(&mut self, x: f32, y: f32) {
+    self.flush_if_recording_limit_exceeded();
     if x != 0.0 && y != 0.0 {
       let mut inverse = Matrix::identity();
       inverse.pre_scale(1f32 / x, 1f32 / y);
@@ -697,22 +964,27 @@ impl Context {
       canvas.set_transform(&transform);
     });
     self.sync_transform_to_recorder();
+    self.flush_if_recording_limit_exceeded();
   }
 
   pub fn set_transform(&mut self, ts: Matrix) {
+    self.flush_if_recording_limit_exceeded();
     self.state.transform = ts.clone();
     self.with_canvas_state(|canvas| {
       canvas.set_transform(&ts);
     });
     self.sync_transform_to_recorder();
+    self.flush_if_recording_limit_exceeded();
   }
 
   pub fn reset_transform(&mut self) {
+    self.flush_if_recording_limit_exceeded();
     self.state.transform = Matrix::identity();
     self.with_canvas_state(|canvas| {
       canvas.reset_transform();
     });
     self.sync_transform_to_recorder();
+    self.flush_if_recording_limit_exceeded();
   }
 
   pub fn stroke_text(
@@ -722,6 +994,7 @@ impl Context {
     y: f32,
     max_width: f32,
   ) -> result::Result<(), SkError> {
+    self.flush_if_recording_limit_exceeded();
     let stroke_paint = self.stroke_paint()?;
     let variations = self.state.font_variations.clone();
     self.draw_text(
@@ -737,10 +1010,26 @@ impl Context {
   }
 
   pub fn fill_rect(&mut self, x: f32, y: f32, w: f32, h: f32) -> result::Result<(), SkError> {
+    self.flush_if_recording_limit_exceeded();
     let fill_paint = self.fill_paint()?;
 
     // Extract state for shadow rendering to avoid borrow conflicts
     let shadow_paint = self.shadow_paint(&fill_paint, ShadowSource::Fill, DrawContent::Geometry);
+
+    // A rect with no fillable area cannot paint a pixel (Skia checks
+    // fillable() on the sorted rect in onDrawRect's internalQuickReject;
+    // SkRecordCanvas records it anyway, but only coverage-bearing ops can
+    // ever produce output). Skip before account_paint_resources so a
+    // zero-area fillRect cannot pin/charge an image-pattern raster
+    // (issue #1342): sorted endpoints because drawRect calls makeSorted(),
+    // so negative w/h still draws and must NOT be skipped.
+    if !(Self::sorted_span_fillable(x, w) && Self::sorted_span_fillable(y, h))
+      && self.empty_geometry_is_skippable(shadow_paint.is_some())
+    {
+      return Ok(());
+    }
+
+    self.account_paint_resources(&self.state.fill_style);
     // Zero on the image-filter route, where the filter's dx/dy already carry it.
     let (shadow_offset_x, shadow_offset_y) =
       self.canvas_shadow_offset(ShadowSource::Fill, DrawContent::Geometry);
@@ -766,6 +1055,7 @@ impl Context {
         Ok(())
       },
     )?;
+    self.flush_if_recording_limit_exceeded();
     Ok(())
   }
 
@@ -776,6 +1066,7 @@ impl Context {
     y: f32,
     max_width: f32,
   ) -> result::Result<(), SkError> {
+    self.flush_if_recording_limit_exceeded();
     let fill_paint = self.fill_paint()?;
     let variations = self.state.font_variations.clone();
     self.draw_text(
@@ -791,6 +1082,7 @@ impl Context {
   }
 
   pub fn stroke(&mut self, path: Option<&mut SkPath>) -> Result<()> {
+    self.flush_if_recording_limit_exceeded();
     let stroke_paint = self.stroke_paint()?;
 
     // Clone the path to avoid borrow conflicts with with_render_canvas
@@ -802,10 +1094,34 @@ impl Context {
     // Extract state for shadow rendering to avoid borrow conflicts
     let shadow_paint =
       self.shadow_paint(&stroke_paint, ShadowSource::Stroke, DrawContent::Geometry);
+
+    // A path with no verbs has no geometry at all: stroke caps need a
+    // moveTo'd point to mark, so a verb-less stroke paints nothing in
+    // Skia regardless of width, cap or dash. Skip before the paint charge
+    // (issue #1342). Bounds alone cannot drive this: SkPath::getBounds()
+    // returns the finite {0,0,0,0} for empty AND non-finite paths, so a
+    // degenerate-bounds check would also swallow moveTo-only paths whose
+    // caps CAN paint -- is_empty() is the only deterministic predicate.
+    if path_to_draw.is_empty() && self.empty_geometry_is_skippable(shadow_paint.is_some()) {
+      return Ok(());
+    }
+
+    self.account_paint_resources(&self.state.stroke_style);
     // Zero on the image-filter route, where the filter's dx/dy already carry it.
     let (shadow_offset_x, shadow_offset_y) =
       self.canvas_shadow_offset(ShadowSource::Stroke, DrawContent::Geometry);
 
+    // The recorded op pins the path's SkPathData (COW-shared with
+    // path_to_draw); charge its byte payload once per data version and let
+    // it propagate through the retained tally (RasterKey::Path) -- the same
+    // data drawn N times pins ~1x, not Nx, and a drawCanvas destination
+    // inherits the charge.
+    self.account_raster_resource(
+      RasterKey::Path {
+        data_id: path_to_draw.generation_id(),
+      },
+      path_to_draw.estimated_bytes(),
+    );
     self.with_shadowed_render_canvas(
       &stroke_paint,
       DrawContent::Geometry,
@@ -827,6 +1143,7 @@ impl Context {
         Ok(())
       },
     )?;
+    self.flush_if_recording_limit_exceeded();
     Ok(())
   }
 
@@ -843,6 +1160,7 @@ impl Context {
     top: f32,
     width: f32,
     height: f32,
+    nested_picture_bytes: &mut usize,
     f: F,
   ) -> result::Result<(), SkError>
   where
@@ -858,6 +1176,11 @@ impl Context {
       f(canvas, &inner_paint)?;
     }
     if let Some(pict) = layer.finish_recording_as_picture() {
+      // The replayed drawPicture retains this inner picture inside the
+      // recorded op; the byte budget needs its measured size, which only a
+      // finished picture can answer. Accumulated here because the charge
+      // must land on Context's recorder -- `Self` helpers see none.
+      *nested_picture_bytes += pict.approx_bytes_used();
       surface_canvas.save();
       surface_canvas.draw_picture(&pict, &Matrix::identity(), &composite_paint);
       surface_canvas.restore();
@@ -931,6 +1254,7 @@ impl Context {
     width: f32,
     height: f32,
     shadow: Option<ShadowPass<'_>>,
+    nested_picture_bytes: &mut usize,
     shadow_f: S,
     f: F,
   ) -> result::Result<(), SkError>
@@ -969,6 +1293,7 @@ impl Context {
             -expansion,
             width + expansion * 2.0,
             height + expansion * 2.0,
+            nested_picture_bytes,
             |canvas, paint| {
               Self::composited_filter_layer(
                 canvas,
@@ -989,6 +1314,7 @@ impl Context {
           0.0,
           width,
           height,
+          nested_picture_bytes,
           |canvas, paint| {
             Self::composited_filter_layer(canvas, &device_ctm, content_filter, paint, &f)
           },
@@ -1035,9 +1361,12 @@ impl Context {
     path: Option<&mut SkPath>,
     fill_rule: FillType,
   ) -> result::Result<(), SkError> {
+    self.flush_if_recording_limit_exceeded();
     let fill_paint = self.fill_paint()?;
 
-    // Clone the path and set fill type to avoid borrow conflicts with with_render_canvas
+    // Clone the path and set fill type to avoid borrow conflicts with with_render_canvas.
+    // set_fill_type must happen BEFORE any early return: for a caller-supplied
+    // Path object it mutates the caller's object, an observable side effect.
     let path_to_draw = if let Some(p) = path {
       p.set_fill_type(fill_rule);
       p.clone()
@@ -1048,10 +1377,39 @@ impl Context {
 
     // Extract state for shadow rendering to avoid borrow conflicts
     let shadow_paint = self.shadow_paint(&fill_paint, ShadowSource::Fill, DrawContent::Geometry);
+
+    // A fill whose path bounds are empty or non-finite cannot paint a pixel:
+    // an empty path (no verbs) bounds to the non-finite empty rect, and an
+    // all-moveTo path bounds to a degenerate rect -- both drop in
+    // onDrawPath's finite/internalQuickReject checks on the device, and
+    // cover zero area wherever they are recorded. Inverse fill types never
+    // reach here (set_fill_type normalises to the parsed rule), so the
+    // paint-the-clip branch SkCanvas takes for them cannot apply. Skip
+    // before account_paint_resources so filling an empty path cannot
+    // pin/charge a pattern raster (issue #1342).
+    let (pl, pt, pr, pb) = path_to_draw.get_bounds();
+    if !(pl.is_finite() && pt.is_finite() && pr.is_finite() && pb.is_finite() && pr > pl && pb > pt)
+      && self.empty_geometry_is_skippable(shadow_paint.is_some())
+    {
+      return Ok(());
+    }
+
+    self.account_paint_resources(&self.state.fill_style);
     // Zero on the image-filter route, where the filter's dx/dy already carry it.
     let (shadow_offset_x, shadow_offset_y) =
       self.canvas_shadow_offset(ShadowSource::Fill, DrawContent::Geometry);
 
+    // The recorded op pins the path's SkPathData (COW-shared with
+    // path_to_draw); charge its byte payload once per data version and let
+    // it propagate through the retained tally (RasterKey::Path) -- the same
+    // data drawn N times pins ~1x, not Nx, and a drawCanvas destination
+    // inherits the charge.
+    self.account_raster_resource(
+      RasterKey::Path {
+        data_id: path_to_draw.generation_id(),
+      },
+      path_to_draw.estimated_bytes(),
+    );
     self.with_shadowed_render_canvas(
       &fill_paint,
       DrawContent::Geometry,
@@ -1073,6 +1431,7 @@ impl Context {
         Ok(())
       },
     )?;
+    self.flush_if_recording_limit_exceeded();
     Ok(())
   }
 
@@ -1125,6 +1484,7 @@ impl Context {
       // replays whatever case was assigned.
       self.state.filters_string = filter_str.to_owned();
       self.state.filter = None;
+      self.state.filter_id = 0;
       return Ok(());
     }
     // `css_filter` is greedy and never fails: it stops at the first token it
@@ -1136,9 +1496,12 @@ impl Context {
       return Ok(());
     }
     // Parsed clean, so the assignment lands even if it builds no filter at all:
-    // `drop-shadow(0 0 transparent)` is legal and simply draws nothing.
+    // `drop-shadow(0 0 transparent)` is legal and simply draws nothing. The id
+    // advances with the stored chain so a reused ImageFilter dedups under one
+    // accounting identity and a fresh chain re-charges under a new one.
     self.state.filter = css_filters_to_image_filter(filters);
     self.state.filters_string = filter_str.to_owned();
+    self.state.filter_id = next_resource_id();
     Ok(())
   }
 
@@ -1283,14 +1646,17 @@ impl Context {
     h: f32,
     color_type: ColorSpace,
   ) -> Option<Vec<u8>> {
-    // Use RecordingSurface for deferred mode - enables incremental rendering
-    if let Some(ref recorder) = self.page_recorder {
-      return recorder
-        .borrow_mut()
-        .get_pixels(x as i32, y as i32, w as u32, h as u32, color_type);
+    if self.page_recorder.is_some() {
+      // Flush the deferred recording before reading pixels, as Blink's
+      // getImageData runs FinalizeFrame -> FlushCanvas ->
+      // ReleaseMainRecording (base_rendering_context_2d.cc). Without it the
+      // recording grows unbounded across getImageData calls
+      // (https://github.com/Brooooooklyn/canvas/issues/1342). flush() also
+      // consolidates the layers into a single snapshot picture, so a read
+      // leaves the recorder holding only an O(canvas_size) snapshot.
+      self.flush();
     }
 
-    // Direct mode - read from main surface
     self
       .surface
       .read_pixels(x as i32, y as i32, w as u32, h as u32, color_type)
@@ -1560,9 +1926,88 @@ impl Context {
     })
   }
 
+  /// Skia's `fillable` (SkCanvas.cpp) for one axis of SkRect::MakeXYWH(x,_,
+  /// w,_): the rect can draw something only if its f32-computed width is
+  /// finite and positive. Computing `x + w` first (not `w` alone) preserves
+  /// the rounding edge collapse -- x so large that x + w == x makes the
+  /// rect empty in native code too.
+  fn rect_fillable(x: f32, w: f32) -> bool {
+    let width = (x + w) - x;
+    width.is_finite() && width > 0.0
+  }
+
+  /// `rect_fillable` for callers whose rect Skia sorts before use: drawRect
+  /// runs `r.makeSorted()` (SkCanvas.cpp), so a negative width or height
+  /// still paints. Sorting the two f32 endpoints first mirrors that: a
+  /// negative `w` flips to a positive span, while edge collapse (x + w == x)
+  /// and non-finite endpoints still fail.
+  fn sorted_span_fillable(x: f32, w: f32) -> bool {
+    let edge = x + w;
+    let lo = x.min(edge);
+    let hi = x.max(edge);
+    lo.is_finite() && hi.is_finite() && hi > lo
+  }
+
+  /// Whether the sorted span [x, x + w] is DETERMINISTICALLY empty -- the
+  /// only case where a clipRect built from it removes all output.
+  /// SkCanvas::clipRect ignores a non-finite rect entirely (SkCanvas.cpp:
+  /// `if (!rect.isFinite()) return`), so an endpoint overflowing f32 or a
+  /// NaN leaves the clip untouched instead of emptying it; the draw must
+  /// proceed and let the CTM decide. Only a finite, collapsed span is empty.
+  fn sorted_span_empty(x: f32, w: f32) -> bool {
+    let edge = x + w;
+    let lo = x.min(edge);
+    let hi = x.max(edge);
+    lo.is_finite() && hi.is_finite() && hi == lo
+  }
+
+  /// Whether a draw whose own geometry provably paints nothing may be
+  /// skipped whole. drawRect/drawPath DO reach the record canvas
+  /// (SkRecordCanvas::onDraw* appends unconditionally -- the fillable()
+  /// checks live in SkCanvas::onDraw*), so skipping is only about not
+  /// charging paint resources for zero-coverage geometry. What stays
+  /// un-skippable are the wrapper ops our draw path can still emit around
+  /// the empty draw, because their restore writes the device even with no
+  /// content inside:
+  ///   * composited_pass modes replay an inner picture through a
+  ///     saveLayer/drawPicture(paint) -- a kSrc restore replaces the whole
+  ///     canvas even for an empty picture;
+  ///   * a `ctx.filter` wraps the draw in a filtered saveLayer -- its
+  ///     restore also composites (kClear can clear the canvas);
+  ///   * a shadow pass records an extra draw whose blend mode is the
+  ///     paint's (kClear shadow restore would clear); `has_shadow` is the
+  ///     caller's `shadow_paint(...)` result.
+  ///
+  /// Under none of those, every emitted op is coverage-limited and a
+  /// zero-area geometry paints nothing on the record or at playback.
+  /// Dashes get the same gate: a path effect makes
+  /// `SkPaint::canComputeFastBounds` fail, which disables even the
+  /// device-side reject, so stay conservative.
+  fn empty_geometry_is_skippable(&self, has_shadow: bool) -> bool {
+    !matches!(
+      self.state.global_composite_operation,
+      BlendMode::Source
+        | BlendMode::SourceIn
+        | BlendMode::SourceOut
+        | BlendMode::DestinationIn
+        | BlendMode::DestinationATop
+        | BlendMode::Clear
+    ) && self.state.filter.is_none()
+      && self.state.line_dash_list.is_empty()
+      && !has_shadow
+  }
+
+  /// `raster_key` dedups the retained-raster charge for this op: the caller
+  /// pairs the source's resource id with a content generation (a canvas
+  /// source's `content_version()`, or a fresh nonce for sources with no
+  /// recorder). A canvas-backed bitmap's pointer is the stable `SkSurface*`
+  /// (skiac_surface_get_bitmap), but each recorded drawImage pins a fresh
+  /// makeImageSnapshot -- mutating the source afterwards copy-on-writes a
+  /// new raster that the id alone cannot distinguish, hence the generation.
   pub(crate) fn draw_image(
     &mut self,
     bitmap: &Bitmap,
+    raster_key: RasterKey,
     sx: f32,
     sy: f32,
     s_width: f32,
@@ -1572,7 +2017,41 @@ impl Context {
     d_width: f32,
     d_height: f32,
   ) -> Result<()> {
+    self.flush_if_recording_limit_exceeded();
+    // Preflight the conditions under which skiac_canvas_draw_image records
+    // NOTHING that retains the source raster (SkCanvas.cpp
+    // internalQuickReject/fillable), before paint construction and
+    // accounting. The bitmap arm drops the draw unless `fillable` holds for
+    // BOTH raw rects -- finite, strictly-positive spans (its MakeXYWH can
+    // collapse to an empty width under f32 rounding). The canvas arm only
+    // skips a deterministically-empty sorted dst clip; every condition that
+    // depends on the ambient CTM is left to the native path.
+    if bitmap.0.is_canvas {
+      // The clip the C++ builds is MakeWH(d_width, d_height) applied AFTER
+      // translate(dx, dy) (skia_c.cpp: skiac_canvas_draw_image), and
+      // clipRect runs makeSorted() while IGNORING non-finite rects: only a
+      // finite collapsed span (dw == 0 or dh == 0) empties it. A negative
+      // dw/dh paints mirrored; a non-finite endpoint leaves the clip open.
+      // The C++ applies translate THEN scale to the ambient CTM -- there is
+      // no standalone `dx - sx*scale_x` term, so overflow in that derived
+      // expression says nothing about the composed result and must not
+      // gate. Non-finite scale/translate DO still void the draw, but only
+      // once composed with the ambient matrix, which is CTM-dependent and
+      // deliberately left to the native path (a missed skip costs a
+      // bounded charge; a wrong skip drops pixels).
+      if Self::sorted_span_empty(0.0, d_width) || Self::sorted_span_empty(0.0, d_height) {
+        return Ok(());
+      }
+    } else if !(Self::rect_fillable(sx, s_width)
+      && Self::rect_fillable(sy, s_height)
+      && Self::rect_fillable(dx, d_width)
+      && Self::rect_fillable(dy, d_height))
+    {
+      return Ok(());
+    }
+
     let mut paint: Paint = self.fill_paint()?;
+    self.account_paint_resources(&self.state.fill_style);
     paint.set_alpha((self.state.global_alpha * 255.0).round() as u8);
 
     // Extract state for shadow rendering to avoid borrow conflicts
@@ -1583,6 +2062,16 @@ impl Context {
     let image_smoothing_enabled = self.state.image_smoothing_enabled;
     let image_smoothing_quality = self.state.image_smoothing_quality;
 
+    // The recorded op pins a reference to the source pixels; charge its full
+    // raster size so large drawImage sources trip the recording limit. The
+    // raster tally keeps it visible to drawCanvas accounting: a recorded
+    // drawImage inside a source picture carries this payload along. Keyed on
+    // raster_key -- re-drawing one UNCHANGED source retains one shared
+    // backing, not N.
+    self.account_raster_resource(
+      raster_key,
+      (bitmap.0.width as usize) * (bitmap.0.height as usize) * 4,
+    );
     self.with_shadowed_render_canvas(
       &paint,
       DrawContent::Geometry,
@@ -1630,26 +2119,49 @@ impl Context {
         Ok(())
       },
     )?;
+    self.flush_if_recording_limit_exceeded();
     Ok(())
   }
 
-  /// Get a composite picture of all recorded operations (for drawCanvas)
+  /// Whether the recorder has an unrebased direct surface write. See
+  /// PageRecorder::surface_dirty.
+  fn recorder_surface_dirty(&self) -> bool {
+    self
+      .page_recorder
+      .as_ref()
+      .is_some_and(|recorder| recorder.borrow().surface_dirty())
+  }
+
+  /// Get a composite picture of all recorded operations (for drawCanvas).
+  /// While a direct surface write is unrebased (surface_dirty) the layers
+  /// alone are incomplete, so the recorder is first rebased on a surface
+  /// snapshot: flush() plays pending post-write ops onto the surface, then
+  /// one draw(snapshot) picture makes the composite complete again. That
+  /// snapshot is taken only here -- per read-out, not per write -- so a
+  /// write-only loop never pays it.
   pub fn get_picture(&mut self) -> Option<crate::sk::SkPicture> {
-    if let Some(ref recorder) = self.page_recorder {
-      recorder.borrow_mut().get_picture()
-    } else {
-      // For non-deferred mode, we can't get a picture
-      // The caller should use get_bitmap instead
-      None
+    if self.recorder_surface_dirty() {
+      self.flush();
+      if self.recorder_surface_dirty()
+        && let Some(snapshot) = self.surface.make_image_snapshot()
+        && let Some(ref recorder) = self.page_recorder
+      {
+        recorder.borrow_mut().consolidate_with_snapshot(snapshot);
+      }
     }
+    self.page_recorder.as_ref()?.borrow_mut().get_picture()
   }
 
   /// Draw another canvas, preserving vector graphics when possible.
   /// When the source has a SkPicture, this avoids rasterization.
   /// Shadow rendering requires additional FFI calls when enabled.
+  /// `source_raster_bytes` is the source recorder's retained_raster_bytes:
+  /// approx_bytes_used below cannot see the pixels/typefaces a source picture
+  /// references, so the caller reads the source's tally and hands it in.
   pub(crate) fn draw_canvas(
     &mut self,
     picture: &crate::sk::SkPicture,
+    source_raster_bytes: usize,
     sx: f32,
     sy: f32,
     s_width: f32,
@@ -1659,7 +2171,33 @@ impl Context {
     d_width: f32,
     d_height: f32,
   ) -> Result<()> {
+    self.flush_if_recording_limit_exceeded();
+    // Preflight only the conditions under which skiac_canvas_draw_picture_rect
+    // provably records NOTHING under every CTM, before paint construction and
+    // accounting. Rust cannot replicate the helper's floating-point
+    // evaluation -- release builds contract `dx - sx * scale_x` into fma,
+    // rounding differently than separate Rust mul+sub -- so NOTHING computed
+    // from composed terms may gate:
+    //   * `sw == 0 || sh == 0` -- the helper's own early return (skia_c.cpp),
+    //     an exact bit-level test.
+    //   * a deterministically empty dst clip -- clipRect(MakeXYWH(dx,dy,
+    //     dw,dh)) runs makeSorted() while IGNORING non-finite rects
+    //     (SkCanvas.cpp: `if (!rect.isFinite()) return`), so a NEGATIVE dw
+    //     or dh sorts to a normal span and still paints mirrored, and an
+    //     endpoint that overflows f32 leaves the clip untouched for the CTM
+    //     to rescale through. Only a finite collapsed span (dw == 0,
+    //     dh == 0, or x + w rounding back to x in f32 -- computed on the
+    //     same f32 operands the helper receives) is empty.
+    if s_width == 0.0
+      || s_height == 0.0
+      || Self::sorted_span_empty(dx, d_width)
+      || Self::sorted_span_empty(dy, d_height)
+    {
+      return Ok(());
+    }
+
     let mut paint: Paint = self.fill_paint()?;
+    self.account_paint_resources(&self.state.fill_style);
     paint.set_alpha((self.state.global_alpha * 255.0).round() as u8);
 
     // Extract state for shadow rendering to avoid borrow conflicts
@@ -1668,6 +2206,26 @@ impl Context {
     let (shadow_offset_x, shadow_offset_y) =
       self.canvas_shadow_offset(ShadowSource::Image, DrawContent::Geometry);
 
+    // The recorded drawPicture op pins a reference to the source canvas's
+    // whole composite record; charge its real size, not the 256 B base op,
+    // plus the retained raster payload approx_bytes_used cannot see. The
+    // raster charge is keyed on the picture's process-unique id --
+    // get_picture() returns the same cached SkPicture while the source's
+    // layers are unchanged, so repeated draws of an unchanged source charge
+    // its payload once; a regenerated picture gets a new key and pays again,
+    // matching the new reference the op retains.
+    self.account_recorded_bytes(picture.approx_bytes_used());
+    // Keyed on uniqueID(), not the SkPicture pointer: SkCanvas unrolls
+    // pictures of <= 1 op (kMaxPictureOpsToUnrollInsteadOfRef) and skips
+    // clip-rejected draws, so a recorded op does not always retain the
+    // picture object while its raster payload lives on -- a freed pointer
+    // can be recycled by the next picture, aliasing the stale key.
+    self.account_raster_resource(
+      RasterKey::Picture {
+        uid: picture.unique_id() as u64,
+      },
+      source_raster_bytes,
+    );
     self.with_shadowed_render_canvas(
       &paint,
       DrawContent::Geometry,
@@ -1702,6 +2260,7 @@ impl Context {
         Ok(())
       },
     )?;
+    self.flush_if_recording_limit_exceeded();
     Ok(())
   }
 
@@ -1743,6 +2302,54 @@ impl Context {
     let lang = self.state.lang.clone();
     let text_rendering = self.state.text_rendering;
 
+    // Canvas::draw_text converts text, family, and lang with CString::new,
+    // which fails on interior NUL. Check here so the charges below never
+    // commit for a draw that cannot record (same SkError::NulError the
+    // conversion would produce).
+    if text.contains('\0') || font_family.contains('\0') || lang.contains('\0') {
+      return Err(SkError::NulError);
+    }
+
+    // Everything fallible (get_font, the NUL preflight) is behind us, so the
+    // paint-resource charge can land here -- the same position fill/stroke
+    // use, after their fallible paint builds. `source` already says which
+    // style `paint` was built from.
+    match source {
+      ShadowSource::Fill => self.account_paint_resources(&self.state.fill_style),
+      ShadowSource::Stroke => self.account_paint_resources(&self.state.stroke_style),
+      ShadowSource::Image => unreachable!("draw_text is only reached via fill/stroke"),
+    }
+
+    // The recorded op retains an SkTextBlob: ~2 B/glyph id plus ~8 B/glyph
+    // position and per-run overhead. UTF-8 length is a lower bound on the
+    // glyph count, so len() * 16 is the conservative per-glyph bound.
+    self.account_recorded_bytes(text.len().saturating_mul(16));
+    // The blob also keeps the run's SkFont/SkTypeface alive, whose backing
+    // font file can be megabytes -- and approx_bytes_used cannot see it.
+    // There is no size query on a typeface, so charge a flat 1 MiB, but ONCE
+    // per resolved-face descriptor per window: every blob built from the same
+    // descriptor refs the same typeface, so billing per draw would charge one
+    // pinned face N times and flush a text loop every ~32 ops. The key hashes
+    // the inputs that pick the face plus the font-collection generation --
+    // registering or removing a face re-resolves the same descriptor to a
+    // different typeface that must re-charge. It goes to the raster tally
+    // because the payload crosses to a drawCanvas destination with the
+    // source picture.
+    let typeface_key = {
+      let mut hasher = std::collections::hash_map::DefaultHasher::new();
+      use std::hash::{Hash, Hasher};
+      font_family.hash(&mut hasher);
+      font_weight.hash(&mut hasher);
+      std::mem::discriminant(&font_stretch).hash(&mut hasher);
+      font_stretch_percentage.to_bits().hash(&mut hasher);
+      for v in variations {
+        v.tag.hash(&mut hasher);
+        v.value.to_bits().hash(&mut hasher);
+      }
+      crate::global_fonts::font_collection_generation().hash(&mut hasher);
+      hasher.finish()
+    };
+    self.account_raster_resource(RasterKey::Typeface { key: typeface_key }, 1024 * 1024);
     self.with_shadowed_render_canvas(
       paint,
       DrawContent::Glyphs,
@@ -1812,6 +2419,9 @@ impl Context {
         Ok(())
       },
     )?;
+    // End-of-op boundary: the callers return this directly, so the
+    // post-check covers both fillText and strokeText.
+    self.flush_if_recording_limit_exceeded();
     Ok(())
   }
 
@@ -1888,12 +2498,17 @@ impl Context {
     self
       .surface
       .annotate_link_url(left as f32, top as f32, right as f32, bottom as f32, &url);
+    // A no-op on raster (SkAnnotate* only emits on the PDF device), but the
+    // bump keeps the version correct if a direct backend ever draws as a
+    // drawImage source.
+    self.note_direct_mutation();
   }
 
   pub fn annotate_named_destination(&self, x: f64, y: f64, name: String) {
     self
       .surface
       .annotate_named_destination(x as f32, y as f32, &name);
+    self.note_direct_mutation();
   }
 
   pub fn annotate_link_to_destination(
@@ -1911,6 +2526,7 @@ impl Context {
       bottom as f32,
       &name,
     );
+    self.note_direct_mutation();
   }
 }
 
@@ -2717,20 +3333,51 @@ impl CanvasRenderingContext2D {
     d_width: Option<f64>,
     d_height: Option<f64>,
   ) -> Result<()> {
-    let bitmap = match image.0 {
+    // raster_key dedups the retained-raster charge inside draw_image:
+    // (resource identity, content generation). A canvas source is keyed by
+    // its Context's resource_id -- a monotonic id, not the SkSurface*, which
+    // is freed with the canvas and recycled -- plus its content_version: a
+    // mutation (recorded op, direct surface write, surface replacement in
+    // get_content) COWs a new raster and must re-charge. An Image source is
+    // keyed by its current AccountedBitmap's own resource_id: every decode,
+    // src reset, and regenerate_bitmap_if_need constructs a fresh
+    // AccountedBitmap, so a swapped bitmap can never alias the stale charge.
+    let (bitmap, raster_key) = match image.0 {
       Either3::A(canvas) => {
         // Flush the source canvas to render deferred operations before getting bitmap
         canvas.ctx.context.flush();
-        BitmapRef::Owned(canvas.ctx.context.surface.get_bitmap())
+        let bitmap = BitmapRef::Owned(canvas.ctx.context.surface.get_bitmap());
+        (
+          bitmap,
+          RasterKey::Resource {
+            id: canvas.ctx.context.resource_id,
+            generation: canvas.ctx.context.content_version(),
+          },
+        )
       }
-      Either3::B(svg) => BitmapRef::Owned(svg.ctx.context.surface.get_bitmap()),
+      Either3::B(svg) => {
+        let bitmap = BitmapRef::Owned(svg.ctx.context.surface.get_bitmap());
+        (
+          bitmap,
+          RasterKey::Resource {
+            id: svg.ctx.context.resource_id,
+            generation: svg.ctx.context.content_version(),
+          },
+        )
+      }
       Either3::C(image) => {
         if !image.complete {
           return Ok(());
         }
         image.regenerate_bitmap_if_need(env)?;
         if let Some(bitmap) = &image.bitmap {
-          BitmapRef::Borrowed(&bitmap.inner)
+          (
+            BitmapRef::Borrowed(&bitmap.inner),
+            RasterKey::Resource {
+              id: bitmap.resource_id,
+              generation: 0,
+            },
+          )
         } else {
           return Ok(());
         }
@@ -2781,7 +3428,7 @@ impl CanvasRenderingContext2D {
         _ => return Ok(()),
       };
     self.context.draw_image(
-      bitmap_ref, sx, sy, s_width, s_height, dx, dy, d_width, d_height,
+      bitmap_ref, raster_key, sx, sy, s_width, s_height, dx, dy, d_width, d_height,
     )?;
     Ok(())
   }
@@ -2802,9 +3449,17 @@ impl CanvasRenderingContext2D {
     d_width: Option<f64>,
     d_height: Option<f64>,
   ) -> Result<()> {
+    // The budget check must run BEFORE get_picture()/the charge below: the
+    // picture captures the source's retained recording, and a flush after
+    // charging would erase that charge (issue #1342, review round 3).
+    self.context.flush_if_recording_limit_exceeded();
     let source_width = canvas.width as f32;
     let source_height = canvas.height as f32;
 
+    // Flush-check the SOURCE too: get_picture() only promotes its pending
+    // recording to a layer, so without this a source used exclusively through
+    // drawCanvas never consolidates and keeps its recording pinned forever.
+    canvas.ctx.context.flush_if_recording_limit_exceeded();
     // Get picture from source canvas (preserves vector graphics)
     // Note: We need mutable access to the source context to get the picture
     // This is safe because we have exclusive access to the CanvasElement
@@ -2813,7 +3468,9 @@ impl CanvasRenderingContext2D {
     let picture = if let Some(pic) = picture {
       pic
     } else {
-      // Fallback to bitmap if picture not available (e.g., SVG canvas or no deferred rendering)
+      // Fallback to bitmap if picture not available (e.g., SVG canvas or no deferred rendering).
+      // Flush first so the bitmap reads the surface's complete content.
+      canvas.ctx.context.flush();
       let bitmap = canvas.ctx.as_ref().context.surface.get_bitmap();
       let (sx, sy, s_width, s_height, dx, dy, d_width, d_height) =
         match (sx, sy, s_width, s_height, dx, dy, d_width, d_height) {
@@ -2859,7 +3516,19 @@ impl CanvasRenderingContext2D {
           _ => return Ok(()),
         };
       return self.context.draw_image(
-        &bitmap, sx, sy, s_width, s_height, dx, dy, d_width, d_height,
+        &bitmap,
+        RasterKey::Resource {
+          id: canvas.ctx.context.resource_id,
+          generation: canvas.ctx.context.content_version(),
+        },
+        sx,
+        sy,
+        s_width,
+        s_height,
+        dx,
+        dy,
+        d_width,
+        d_height,
       );
     };
 
@@ -2908,8 +3577,30 @@ impl CanvasRenderingContext2D {
         _ => return Ok(()),
       };
 
+    // approx_bytes_used (charged inside Context::draw_canvas) excludes the
+    // payloads a picture references -- putImageData/drawImage bitmaps, image
+    // patterns, typefaces, and a consolidated snapshot layer inside the
+    // source record. The source recorder tallies exactly those in
+    // raster_bytes; it is handed to draw_canvas rather than charged here so
+    // it lands AFTER draw_canvas's fallible paint construction.
+    let source_raster_bytes = canvas
+      .ctx
+      .context
+      .page_recorder
+      .as_ref()
+      .map(|recorder| recorder.borrow().retained_raster_bytes())
+      .unwrap_or(0);
     self.context.draw_canvas(
-      &picture, sx, sy, s_width, s_height, dx, dy, d_width, d_height,
+      &picture,
+      source_raster_bytes,
+      sx,
+      sy,
+      s_width,
+      s_height,
+      dx,
+      dy,
+      d_width,
+      d_height,
     )?;
     Ok(())
   }
@@ -3285,17 +3976,36 @@ impl CanvasRenderingContext2D {
       if dirty_width <= 0f32 || dirty_height <= 0f32 {
         return Ok(());
       }
+      // drawImageRect records nothing unless `fillable` holds for BOTH the
+      // src and dst rects the C++ builds (skia_c.cpp:
+      // skiac_canvas_put_image_data, SkCanvas.cpp fillable). The clamp above
+      // only catches <= 0; NaN, infinity, and f32 edge collapse (e.g.
+      // dirtyX=16777216, dirtyWidth=1: 16777216+1 rounds back to 16777216)
+      // also produce empty rects -- charge nothing and skip the pixel copy
+      // for a draw Skia deterministically rejects.
+      if !(Context::rect_fillable(dirty_x, dirty_width)
+        && Context::rect_fillable(dirty_y, dirty_height)
+        && Context::rect_fillable(dx as f32 + dirty_x, dirty_width)
+        && Context::rect_fillable(dy as f32 + dirty_y, dirty_height))
+      {
+        return Ok(());
+      }
       // Deferred mode: record via PageRecorder on a fresh layer (no clip/transform)
       // put_image_data uses drawImageRect with kSrc blend (pixel replacement),
       // which IS recordable by PictureRecorder unlike SkCanvas::writePixels.
       // snapshot=true: copy pixel data so the SkPicture is independent of the
       // JS buffer (required when the same ImageData is reused across calls).
+      // The budget check runs BEFORE the pixel charge lands in put_pixels,
+      // so a flush cannot erase this op's charge.
+      self.context.flush_if_recording_limit_exceeded();
       if let Some(ref recorder) = self.context.page_recorder {
         let dx_f = dx as f32;
         let width = image_data.width;
         let height = image_data.height;
         let color_space = image_data.color_space;
-        recorder.borrow_mut().put_pixels(|canvas| {
+        // The recorded op pins a copy of the whole ImageData buffer.
+        let pixel_bytes = width * height * 4;
+        recorder.borrow_mut().put_pixels(pixel_bytes, |canvas| {
           canvas.put_image_data(
             data,
             width,
@@ -3310,6 +4020,10 @@ impl CanvasRenderingContext2D {
             true,
           );
         });
+        // The charge may have tripped the cap on its own (a single
+        // putImageData can pin a multi-hundred-MB pixel copy); consolidate
+        // now so it is not retained while the context sits idle.
+        self.context.flush_if_recording_limit_exceeded();
         return Ok(());
       }
       // Direct mode (SVG/PDF): write to surface canvas with inverted transform
@@ -3333,9 +4047,11 @@ impl CanvasRenderingContext2D {
         false,
       );
       self.context.surface.canvas.restore();
+      self.context.note_direct_mutation();
     } else {
       // Deferred mode: use put_image_data with full image dimensions
       // because write_pixels (SkCanvas::writePixels) is NOT recordable by PictureRecorder
+      self.context.flush_if_recording_limit_exceeded();
       if let Some(ref recorder) = self.context.page_recorder {
         let dx_f = dx as f32;
         let dy_f = dy as f32;
@@ -3344,7 +4060,9 @@ impl CanvasRenderingContext2D {
         let width = image_data.width;
         let height = image_data.height;
         let color_space = image_data.color_space;
-        recorder.borrow_mut().put_pixels(|canvas| {
+        // The recorded op pins a copy of the whole ImageData buffer.
+        let pixel_bytes = width * height * 4;
+        recorder.borrow_mut().put_pixels(pixel_bytes, |canvas| {
           canvas.put_image_data(
             data,
             width,
@@ -3359,6 +4077,7 @@ impl CanvasRenderingContext2D {
             true,
           );
         });
+        self.context.flush_if_recording_limit_exceeded();
         return Ok(());
       }
       // Direct mode (SVG/PDF): write pixels directly
@@ -3367,6 +4086,7 @@ impl CanvasRenderingContext2D {
         .surface
         .canvas
         .write_pixels(data, image_data.width, image_data.height, dx, dy);
+      self.context.note_direct_mutation();
     }
     Ok(())
   }
@@ -3758,6 +4478,613 @@ fn parse_font_variation_settings(settings: &str) -> (String, Vec<crate::sk::Font
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  fn raster_ctx(width: u32, height: u32) -> Context {
+    Context::new(width, height, ColorSpace::default()).expect("raster context")
+  }
+
+  fn pending(ctx: &Context) -> usize {
+    ctx.page_recorder.as_ref().unwrap().borrow().pending_bytes()
+  }
+
+  fn raster_bytes(ctx: &Context) -> usize {
+    ctx
+      .page_recorder
+      .as_ref()
+      .unwrap()
+      .borrow()
+      .retained_raster_bytes()
+  }
+
+  fn retained(ctx: &Context) -> usize {
+    ctx
+      .page_recorder
+      .as_ref()
+      .unwrap()
+      .borrow()
+      .retained_raster_count()
+  }
+
+  fn layers(ctx: &Context) -> usize {
+    ctx.page_recorder.as_ref().unwrap().borrow().layer_count()
+  }
+
+  fn consolidations(ctx: &Context) -> u64 {
+    ctx
+      .page_recorder
+      .as_ref()
+      .unwrap()
+      .borrow()
+      .consolidations()
+  }
+
+  fn set_recording_limit(ctx: &Context, bytes: usize) {
+    ctx
+      .page_recorder
+      .as_ref()
+      .unwrap()
+      .borrow_mut()
+      .set_recording_limit(bytes);
+  }
+
+  /// The dedup key draw_image wrappers build for a canvas source:
+  /// (resource_id, content_version).
+  fn canvas_source_key(src: &Context) -> RasterKey {
+    RasterKey::Resource {
+      id: src.resource_id,
+      generation: src.content_version(),
+    }
+  }
+
+  /// Unpremultiplied RGBA pixels (one color) for put_image_data / bitmaps.
+  fn rgba_pixels(width: usize, height: usize, rgba: [u8; 4]) -> Vec<u8> {
+    let mut pixels = vec![0u8; width * height * 4];
+    for px in pixels.as_chunks_mut::<4>().0 {
+      *px = rgba;
+    }
+    pixels
+  }
+
+  /// A non-canvas bitmap over a copy of `pixels` (is_canvas = false arm).
+  fn test_bitmap(width: usize, height: usize, rgba: [u8; 4]) -> Bitmap {
+    let mut pixels = rgba_pixels(width, height, rgba);
+    Bitmap::from_image_data(
+      pixels.as_mut_ptr(),
+      width,
+      height,
+      width * 4,
+      width * height * 4,
+      crate::sk::ColorType::RGBA8888,
+      AlphaType::Unpremultiplied,
+    )
+    .expect("bitmap")
+  }
+
+  /// Read a single surface pixel through the deferred flush path.
+  fn pixel_at(ctx: &mut Context, x: f32, y: f32) -> [u8; 4] {
+    let data = ctx
+      .get_image_data(x, y, 1.0, 1.0, ColorSpace::default())
+      .expect("pixels");
+    [data[0], data[1], data[2], data[3]]
+  }
+
+  // The deferred recording must consolidate once charged bytes pass the cap:
+  // a pure draw loop over a shrunken limit consolidates repeatedly while
+  // pending stays bounded and the generation counts only pixel ops.
+  #[test]
+  fn recording_limit_trips_consolidation_in_a_draw_loop() {
+    let mut ctx = raster_ctx(32, 32);
+    set_recording_limit(&ctx, 8 * 1024);
+    for _ in 0..200 {
+      ctx.fill_rect(0.0, 0.0, 8.0, 8.0).unwrap();
+    }
+    assert!(consolidations(&ctx) >= 1);
+    // A flush can carry one fresh op plus one promoted-layer charge past the
+    // cap, so bound pending at twice the window.
+    assert!(pending(&ctx) < 2 * 8 * 1024);
+    assert_eq!(ctx.content_version(), 200);
+  }
+
+  // A read must flush pending layers onto the surface and consolidate them
+  // into the O(canvas) snapshot layer.
+  #[test]
+  fn get_image_data_flushes_and_consolidates_layers() {
+    let mut ctx = raster_ctx(32, 32);
+    ctx.fill_rect(0.0, 0.0, 16.0, 16.0).unwrap();
+    let pixels = rgba_pixels(8, 8, [0, 0, 255, 255]);
+    ctx
+      .page_recorder
+      .as_ref()
+      .unwrap()
+      .borrow_mut()
+      .put_pixels(8 * 8 * 4, |canvas| {
+        canvas.put_image_data(
+          pixels.as_ptr(),
+          8,
+          8,
+          20.0,
+          20.0,
+          0.0,
+          0.0,
+          8.0,
+          8.0,
+          ColorSpace::default(),
+          true,
+        );
+      });
+    assert!(layers(&ctx) >= 1);
+    assert!(pending(&ctx) > 0);
+
+    // The put layer plus the recorded fill: >1 layer, so the read's flush
+    // consolidates unconditionally.
+    assert_eq!(pixel_at(&mut ctx, 21.0, 21.0), [0, 0, 255, 255]);
+    assert!(consolidations(&ctx) >= 1);
+    assert_eq!(pending(&ctx), 0);
+    assert_eq!(layers(&ctx), 1);
+    assert_eq!(raster_bytes(&ctx), 32 * 32 * 4);
+  }
+
+  // drawImage's retained-raster charge is keyed on (source id, generation):
+  // an unchanged source charges once, state-only ops between draws keep the
+  // dedup, a pixel mutation re-charges under the new generation, a zero-area
+  // clear does not mutate, and a real one does.
+  #[test]
+  fn draw_image_dedups_by_source_content_generation() {
+    let mut src = raster_ctx(16, 16);
+    src.state.fill_style = Pattern::from_color("#ff0000").unwrap();
+    src.fill_rect(0.0, 0.0, 16.0, 16.0).unwrap();
+    let mut dest = raster_ctx(16, 16);
+    let bitmap = src.surface.get_bitmap();
+
+    dest
+      .draw_image(
+        &bitmap,
+        canvas_source_key(&src),
+        0.0,
+        0.0,
+        16.0,
+        16.0,
+        0.0,
+        0.0,
+        16.0,
+        16.0,
+      )
+      .unwrap();
+    assert_eq!(retained(&dest), 1);
+    assert_eq!(raster_bytes(&dest), 16 * 16 * 4);
+
+    // Same key, second draw: still one charge.
+    dest
+      .draw_image(
+        &bitmap,
+        canvas_source_key(&src),
+        0.0,
+        0.0,
+        16.0,
+        16.0,
+        0.0,
+        0.0,
+        16.0,
+        16.0,
+      )
+      .unwrap();
+    assert_eq!(retained(&dest), 1);
+    assert_eq!(raster_bytes(&dest), 16 * 16 * 4);
+
+    // State-only churn on the source does not bump its generation.
+    src.save();
+    src.translate(4.0, 4.0);
+    src.restore();
+    dest
+      .draw_image(
+        &bitmap,
+        canvas_source_key(&src),
+        0.0,
+        0.0,
+        16.0,
+        16.0,
+        0.0,
+        0.0,
+        16.0,
+        16.0,
+      )
+      .unwrap();
+    assert_eq!(retained(&dest), 1);
+    assert_eq!(raster_bytes(&dest), 16 * 16 * 4);
+
+    // A deterministically empty clearRect paints nothing and must not bump.
+    let version = src.content_version();
+    src.clear_rect(0.0, 0.0, 0.0, 0.0).unwrap();
+    assert_eq!(src.content_version(), version);
+    dest
+      .draw_image(
+        &bitmap,
+        canvas_source_key(&src),
+        0.0,
+        0.0,
+        16.0,
+        16.0,
+        0.0,
+        0.0,
+        16.0,
+        16.0,
+      )
+      .unwrap();
+    assert_eq!(retained(&dest), 1);
+
+    // A real mutation COWs a fresh raster and re-charges under the new
+    // generation.
+    src.fill_rect(0.0, 0.0, 4.0, 4.0).unwrap();
+    dest
+      .draw_image(
+        &bitmap,
+        canvas_source_key(&src),
+        0.0,
+        0.0,
+        16.0,
+        16.0,
+        0.0,
+        0.0,
+        16.0,
+        16.0,
+      )
+      .unwrap();
+    assert_eq!(retained(&dest), 2);
+    assert_eq!(raster_bytes(&dest), 16 * 16 * 4 * 2);
+  }
+
+  // Ops that provably paint nothing record nothing: no bytes, no generation
+  // bump, no retained payloads.
+  #[test]
+  fn deterministically_empty_ops_leave_the_recording_untouched() {
+    let mut ctx = raster_ctx(32, 32);
+    ctx.fill_rect(0.0, 0.0, 32.0, 32.0).unwrap();
+    let pending0 = pending(&ctx);
+    let raster0 = raster_bytes(&ctx);
+    let retained0 = retained(&ctx);
+    let version0 = ctx.content_version();
+
+    ctx.fill_rect(0.0, 0.0, 0.0, 8.0).unwrap();
+    ctx.fill_rect(0.0, 0.0, 8.0, 0.0).unwrap();
+    // f32 edge collapse: 16777216 + 1 rounds back to 16777216.
+    ctx.fill_rect(16777216.0, 0.0, 1.0, 8.0).unwrap();
+    ctx.fill_rect(f32::NAN, 0.0, 8.0, 8.0).unwrap();
+    ctx.fill_rect(0.0, 0.0, 8.0, f32::INFINITY).unwrap();
+    ctx.clear_rect(0.0, 0.0, 0.0, 0.0).unwrap();
+
+    // Empty path: no verbs at all, then degenerate moveTo-only bounds.
+    ctx.begin_path();
+    ctx.fill(None, FillType::Winding).unwrap();
+    ctx.begin_path();
+    ctx.path.move_to(4.0, 4.0);
+    ctx.fill(None, FillType::Winding).unwrap();
+    ctx.begin_path();
+    ctx.stroke(None).unwrap();
+
+    // Zero source/dest rect draws (canvas-backed and raw-bitmap arms).
+    let mut src = raster_ctx(8, 8);
+    let src_bitmap = src.surface.get_bitmap();
+    let key = canvas_source_key(&src);
+    ctx
+      .draw_image(&src_bitmap, key, 0.0, 0.0, 8.0, 8.0, 0.0, 0.0, 0.0, 8.0)
+      .unwrap();
+    let bitmap = test_bitmap(8, 8, [255, 0, 0, 255]);
+    ctx
+      .draw_image(&bitmap, key, 0.0, 0.0, 8.0, 8.0, 0.0, 0.0, 8.0, 0.0)
+      .unwrap();
+    let picture = src.get_picture();
+    if let Some(picture) = picture {
+      ctx
+        .draw_canvas(&picture, 0, 0.0, 0.0, 0.0, 8.0, 0.0, 0.0, 8.0, 8.0)
+        .unwrap();
+      ctx
+        .draw_canvas(&picture, 0, 0.0, 0.0, 8.0, 8.0, 0.0, 0.0, 8.0, 0.0)
+        .unwrap();
+    }
+
+    // The dirty-rect predicates the putImageData wrapper gates on.
+    assert!(!Context::rect_fillable(f32::NAN, 8.0));
+    assert!(!Context::rect_fillable(16777216.0, 1.0));
+    assert!(!Context::rect_fillable(0.0, f32::INFINITY));
+    assert!(Context::rect_fillable(0.0, 8.0));
+
+    assert_eq!(pending(&ctx), pending0);
+    assert_eq!(raster_bytes(&ctx), raster0);
+    assert_eq!(retained(&ctx), retained0);
+    assert_eq!(ctx.content_version(), version0);
+  }
+
+  // A drawCanvas destination is charged the source recorder's retained
+  // raster bytes -- the payload approx_bytes_used cannot see -- keyed on the
+  // picture's uniqueID so an unchanged source charges once and a mutated one
+  // (fresh picture) re-charges.
+  #[test]
+  fn draw_canvas_charges_dest_with_source_raster_bytes() {
+    let mut src = raster_ctx(16, 16);
+    let pixels = rgba_pixels(4, 4, [255, 0, 0, 255]);
+    src
+      .page_recorder
+      .as_ref()
+      .unwrap()
+      .borrow_mut()
+      .put_pixels(4 * 4 * 4, |canvas| {
+        canvas.put_image_data(
+          pixels.as_ptr(),
+          4,
+          4,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          4.0,
+          4.0,
+          ColorSpace::default(),
+          true,
+        );
+      });
+    let source_raster_bytes = src
+      .page_recorder
+      .as_ref()
+      .unwrap()
+      .borrow()
+      .retained_raster_bytes();
+    assert_eq!(source_raster_bytes, 4 * 4 * 4);
+
+    let mut dest = raster_ctx(16, 16);
+    let pending0 = pending(&dest);
+    let picture = src.get_picture().expect("source picture");
+    dest
+      .draw_canvas(
+        &picture,
+        source_raster_bytes,
+        0.0,
+        0.0,
+        16.0,
+        16.0,
+        0.0,
+        0.0,
+        16.0,
+        16.0,
+      )
+      .unwrap();
+    assert!(pending(&dest) >= pending0 + source_raster_bytes);
+    assert_eq!(raster_bytes(&dest), source_raster_bytes);
+    assert_eq!(retained(&dest), 1);
+
+    // Unchanged source -> same cached picture uid -> no second charge.
+    let picture = src.get_picture().expect("source picture");
+    dest
+      .draw_canvas(
+        &picture,
+        source_raster_bytes,
+        0.0,
+        0.0,
+        16.0,
+        16.0,
+        0.0,
+        0.0,
+        16.0,
+        16.0,
+      )
+      .unwrap();
+    assert_eq!(retained(&dest), 1);
+    assert_eq!(raster_bytes(&dest), source_raster_bytes);
+
+    // Mutated source -> regenerated picture uid -> re-charged.
+    src.fill_rect(0.0, 0.0, 4.0, 4.0).unwrap();
+    let source_raster_bytes = src
+      .page_recorder
+      .as_ref()
+      .unwrap()
+      .borrow()
+      .retained_raster_bytes();
+    let picture = src.get_picture().expect("source picture");
+    dest
+      .draw_canvas(
+        &picture,
+        source_raster_bytes,
+        0.0,
+        0.0,
+        16.0,
+        16.0,
+        0.0,
+        0.0,
+        16.0,
+        16.0,
+      )
+      .unwrap();
+    assert_eq!(retained(&dest), 2);
+    assert_eq!(raster_bytes(&dest), source_raster_bytes * 2);
+  }
+
+  // Round-18 regression: dx = f32::MAX with dw = 1e38 makes the C++ helper's
+  // `dx - sx * scale_x` term land on an fma/fused-rounding boundary. The Rust
+  // preflight must not skip what native code decides, so the op is recorded
+  // (charged) regardless of which way the fused arithmetic rounds.
+  #[test]
+  fn draw_canvas_records_through_fused_arithmetic_boundary() {
+    let mut src = raster_ctx(8, 8);
+    src.state.fill_style = Pattern::from_color("#ff0000").unwrap();
+    src.fill_rect(0.0, 0.0, 8.0, 8.0).unwrap();
+    let picture = src.get_picture().expect("source picture");
+
+    let mut ctx = raster_ctx(32, 32);
+    ctx.set_transform(Matrix::new(-1e-30, 0.0, 0.0, 1.0, 0.0, 0.0));
+    let pending0 = pending(&ctx);
+    let version0 = ctx.content_version();
+    ctx
+      .draw_canvas(
+        &picture,
+        0,
+        0.0,
+        0.0,
+        1e10,
+        10.0,
+        3.4028235e38,
+        0.0,
+        1e38,
+        10.0,
+      )
+      .unwrap();
+    assert!(pending(&ctx) >= pending0 + 256);
+    assert_eq!(ctx.content_version(), version0 + 1);
+  }
+
+  // A put_pixels layer stays a layer under later recorded ops and replays
+  // beneath them on flush.
+  #[test]
+  fn put_pixels_layer_orders_under_later_recorded_ops() {
+    let mut ctx = raster_ctx(8, 8);
+    let pixels = rgba_pixels(4, 4, [0, 0, 255, 255]);
+    ctx
+      .page_recorder
+      .as_ref()
+      .unwrap()
+      .borrow_mut()
+      .put_pixels(4 * 4 * 4, |canvas| {
+        canvas.put_image_data(
+          pixels.as_ptr(),
+          4,
+          4,
+          1.0,
+          1.0,
+          0.0,
+          0.0,
+          4.0,
+          4.0,
+          ColorSpace::default(),
+          true,
+        );
+      });
+    assert_eq!(layers(&ctx), 1);
+    assert_eq!(raster_bytes(&ctx), 4 * 4 * 4);
+    assert_eq!(ctx.content_version(), 1);
+
+    ctx.state.fill_style = Pattern::from_color("#00ff00").unwrap();
+    ctx.fill_rect(2.0, 2.0, 2.0, 2.0).unwrap();
+    assert_eq!(ctx.content_version(), 2);
+    assert_eq!(pixel_at(&mut ctx, 1.0, 1.0), [0, 0, 255, 255]);
+    assert_eq!(pixel_at(&mut ctx, 2.0, 2.0), [0, 255, 0, 255]);
+  }
+
+  // with_surface_canvas flushes pending ops under the direct write, marks
+  // the layers stale (no rebase snapshot yet) and bumps the generation;
+  // get_picture then materializes the rebase.
+  #[test]
+  fn direct_surface_write_marks_layers_stale_until_get_picture() {
+    let mut ctx = raster_ctx(16, 16);
+    ctx.state.fill_style = Pattern::from_color("#ff0000").unwrap();
+    ctx.fill_rect(0.0, 0.0, 16.0, 16.0).unwrap();
+    let version0 = ctx.content_version();
+
+    ctx.with_surface_canvas(|canvas| canvas.clear());
+    assert!(ctx.recorder_surface_dirty());
+    assert_eq!(layers(&ctx), 0);
+    assert_eq!(pending(&ctx), 0);
+    assert_eq!(ctx.content_version(), version0 + 1);
+
+    assert!(ctx.get_picture().is_some());
+    assert!(!ctx.recorder_surface_dirty());
+    assert_eq!(layers(&ctx), 1);
+    assert_eq!(raster_bytes(&ctx), 16 * 16 * 4);
+    assert_eq!(consolidations(&ctx), 1);
+  }
+
+  // The ctx.filter DAG is one refcounted ImageFilter per state: repeated
+  // draws under it charge its proxy bytes once per window.
+  #[test]
+  fn filter_chain_charges_once_per_window() {
+    let mut ctx = raster_ctx(32, 32);
+    ctx.set_filter("blur(2px) brightness(0.5)").unwrap();
+    for _ in 0..3 {
+      ctx.fill_rect(0.0, 0.0, 8.0, 8.0).unwrap();
+    }
+    assert_eq!(retained(&ctx), 1);
+    assert_eq!(raster_bytes(&ctx), "blur(2px) brightness(0.5)".len() * 8);
+  }
+
+  // Every recorded text blob refs the same resolved face, so the flat 1 MiB
+  // typeface charge dedups per descriptor per window. Registered test font
+  // keeps the result host-independent.
+  #[test]
+  fn fill_text_dedups_the_typeface_charge() {
+    {
+      let fonts = get_font().unwrap();
+      fonts.register_from_path::<String>("__test__/fonts/Lato-Regular.ttf", None);
+    }
+    let mut ctx = raster_ctx(64, 64);
+    ctx.set_font("16px Lato".to_owned()).unwrap();
+    for _ in 0..3 {
+      ctx.fill_text("hello", 0.0, 16.0, MAX_TEXT_WIDTH).unwrap();
+    }
+    assert_eq!(retained(&ctx), 1);
+    assert_eq!(raster_bytes(&ctx), 1024 * 1024);
+
+    // A text draw that cannot record (interior NUL) commits no charge.
+    let pending0 = pending(&ctx);
+    let version0 = ctx.content_version();
+    assert!(ctx.fill_text("a\0b", 0.0, 16.0, MAX_TEXT_WIDTH).is_err());
+    assert_eq!(pending(&ctx), pending0);
+    assert_eq!(ctx.content_version(), version0);
+  }
+
+  // measureText's line-metrics path builds paints but must leave the
+  // recorder untouched -- it is a read, not a draw.
+  #[test]
+  fn measure_text_path_does_not_charge_the_recording() {
+    let mut ctx = raster_ctx(64, 64);
+    ctx.fill_rect(0.0, 0.0, 8.0, 8.0).unwrap();
+    let pending0 = pending(&ctx);
+    let raster0 = raster_bytes(&ctx);
+    let version0 = ctx.content_version();
+    ctx.get_line_metrics("measure me").unwrap();
+    assert_eq!(pending(&ctx), pending0);
+    assert_eq!(raster_bytes(&ctx), raster0);
+    assert_eq!(ctx.content_version(), version0);
+  }
+
+  // Consolidated layers re-emit the tracked save stack, clip and transform:
+  // ops recorded after a mid-state consolidation land exactly where they
+  // would without the flush.
+  #[test]
+  fn flush_mid_state_restores_save_clip_and_transform() {
+    let mut ctx = raster_ctx(32, 32);
+    set_recording_limit(&ctx, 64);
+    ctx.save();
+    ctx.translate(8.0, 8.0);
+    ctx.begin_path();
+    ctx.rect(4.0, 4.0, 8.0, 8.0);
+    ctx.clip(None, FillType::Winding);
+    // The first fill lands the recording past the shrunken cap; the second
+    // op's pre-check flushes and consolidates mid-state.
+    ctx.state.fill_style = Pattern::from_color("#ff0000").unwrap();
+    ctx.fill_rect(0.0, 0.0, 32.0, 32.0).unwrap();
+    assert!(consolidations(&ctx) >= 1);
+    ctx.fill_rect(0.0, 0.0, 32.0, 32.0).unwrap();
+    ctx.restore();
+
+    // Translated [12,20) clip over a full-canvas fill: inside is the fill,
+    // outside is transparent.
+    assert_eq!(pixel_at(&mut ctx, 13.0, 13.0), [255, 0, 0, 255]);
+    assert_eq!(pixel_at(&mut ctx, 24.0, 24.0), [0, 0, 0, 0]);
+  }
+
+  // Context::reset zeroes every accounting counter and bumps the generation
+  // exactly once (a mutation that bypasses the dedup window).
+  #[test]
+  fn context_reset_zeroes_accounting_and_bumps_version() {
+    let mut ctx = raster_ctx(16, 16);
+    ctx.fill_rect(0.0, 0.0, 16.0, 16.0).unwrap();
+    assert!(pending(&ctx) > 0);
+    let version0 = ctx.content_version();
+
+    ctx.reset();
+    assert_eq!(pending(&ctx), 0);
+    assert_eq!(layers(&ctx), 0);
+    assert_eq!(raster_bytes(&ctx), 0);
+    assert_eq!(retained(&ctx), 0);
+    assert_eq!(ctx.content_version(), version0 + 1);
+  }
 
   #[test]
   fn test_parse_font_variation_settings_normal() {

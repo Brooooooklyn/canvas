@@ -48,6 +48,11 @@ pub struct Context2dRenderingState {
   pub transform: Matrix,
   pub filter: Option<ImageFilter>,
   pub filters_string: String,
+  /// Accounting identity for `filter`: the parsed chain is ONE refcounted
+  /// ImageFilter shared by every paint the state clones into, so its retained
+  /// charge must key on a stable id rather than bill per draw. Minted by
+  /// set_filter each time a parsed chain is stored; 0 means none.
+  pub filter_id: u64,
   pub global_composite_operation: BlendMode,
   pub clip_path: Option<SkPath>,
 }
@@ -90,6 +95,7 @@ impl Default for Context2dRenderingState {
       transform: Matrix::identity(),
       filter: None,
       filters_string: "none".to_owned(),
+      filter_id: 0,
       global_composite_operation: BlendMode::default(),
       clip_path: None,
     }

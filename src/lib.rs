@@ -199,13 +199,13 @@ impl<'c> CanvasElement<'c> {
       let mut fill_paint = context_2d.fill_paint()?;
       fill_paint.set_color(255, 255, 255, 255);
       context_2d.alpha = false;
-      context_2d.surface.draw_rect(
-        0f32,
-        0f32,
-        self.width as f32,
-        self.height as f32,
-        &fill_paint,
-      );
+      let (width, height) = (self.width as f32, self.height as f32);
+      // The base fill bypasses the deferred recording, so it must flush
+      // pending ops under it and bump the content version
+      // (Context::with_surface_canvas).
+      context_2d.with_surface_canvas(|canvas| {
+        canvas.draw_rect(0f32, 0f32, width, height, &fill_paint);
+      });
     }
     let color_space = attrs
       .and_then(|a| a.color_space)
@@ -841,13 +841,13 @@ impl<'scope> SVGCanvas<'scope> {
       let mut fill_paint = context_2d.fill_paint()?;
       fill_paint.set_color(255, 255, 255, 255);
       context_2d.alpha = false;
-      context_2d.surface.draw_rect(
-        0f32,
-        0f32,
-        self.width as f32,
-        self.height as f32,
-        &fill_paint,
-      );
+      let (width, height) = (self.width as f32, self.height as f32);
+      // The base fill bypasses the deferred recording, so it must flush
+      // pending ops under it and bump the content version
+      // (Context::with_surface_canvas).
+      context_2d.with_surface_canvas(|canvas| {
+        canvas.draw_rect(0f32, 0f32, width, height, &fill_paint);
+      });
     }
     let color_space = attrs
       .and_then(|a| a.color_space)
@@ -882,6 +882,10 @@ impl<'scope> SVGCanvas<'scope> {
     .ok_or_else(|| Error::new(Status::GenericFailure, "Failed to create surface"))?;
     self.ctx.context.surface = surface;
     self.ctx.context.stream = Some(stream);
+    // The backing surface was replaced: bump the content version so drawImage
+    // dedup keys for this source cannot alias the new raster under the
+    // pre-replacement charge.
+    self.ctx.context.note_direct_mutation();
     unsafe {
       BufferSlice::from_external(&env, svg_data.0.ptr, svg_data.0.size, svg_data, |_, d| {
         mem::drop(d)
