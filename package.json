@@ -31,7 +31,9 @@
     "js-binding.js",
     "load-image.js",
     "node-canvas.js",
-    "node-canvas.d.ts"
+    "node-canvas.d.ts",
+    "Cargo.toml",
+    "Cargo.lock"
   ],
   "napi": {
     "binaryName": "skia",
