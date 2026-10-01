@@ -51,6 +51,7 @@ pub(crate) enum RasterKey {
 /// callers charge estimates: a base 256 B/op (~265 B/op measured in
 /// https://github.com/Brooooooklyn/canvas/issues/1342) plus per-payload
 /// estimates for paths, bitmaps, text and putImageData.
+/// Default for `PageRecorder::recording_limit`; tests may shrink it.
 const MAX_RECORDED_BYTES: usize = 32 * 1024 * 1024;
 
 /// Base per-recorded-op byte estimate; ~265 B/op was measured in issue #1342.
@@ -101,6 +102,13 @@ pub struct PageRecorder {
   current_transform: Option<Matrix>, // Transform to restore after layer promotion
   current_clip: Option<SkPath>,      // Clip path to restore after layer promotion
   save_count: usize,                 // Track save stack depth to restore after layer promotion
+  // Byte cap that trips flush_if_recording_limit_exceeded. A field rather
+  // than MAX_RECORDED_BYTES so tests can shrink it and exercise the flush
+  // path in a handful of ops instead of filling 32 MiB.
+  recording_limit: usize,
+  // Lifetime consolidation count (consolidate_with_snapshot completions) --
+  // the observable "a flush collapsed the recording" signal for tests.
+  consolidations: u64,
 }
 
 impl PageRecorder {
@@ -125,6 +133,8 @@ impl PageRecorder {
       current_transform: None,
       current_clip: None,
       save_count: 0,
+      recording_limit: MAX_RECORDED_BYTES,
+      consolidations: 0,
     }
   }
 
@@ -303,6 +313,7 @@ impl PageRecorder {
       self.retained_rasters.clear();
       // The snapshot rebase makes `layers` a complete picture again.
       self.surface_dirty = false;
+      self.consolidations += 1;
     }
   }
 
@@ -493,10 +504,47 @@ impl PageRecorder {
     self.surface_dirty
   }
 
-  /// Whether the pending recording has grown past MAX_RECORDED_BYTES and
+  /// Whether the pending recording has grown past the configured limit and
   /// should be flushed. See Context::flush_if_recording_limit_exceeded.
   pub fn recording_limit_exceeded(&self) -> bool {
-    self.pending_bytes >= MAX_RECORDED_BYTES
+    self.pending_bytes >= self.recording_limit
+  }
+
+  /// Override the byte cap that trips the recording flush. Test-only hook:
+  /// a small limit exercises the flush path deterministically without
+  /// accumulating 32 MiB of ops. `reset()` deliberately leaves it alone --
+  /// a small limit is a property of the test, not of the recorded content
+  /// reset() discards.
+  #[cfg(test)]
+  pub(crate) fn set_recording_limit(&mut self, bytes: usize) {
+    self.recording_limit = bytes;
+  }
+
+  /// Estimated bytes charged to the pending recording since the last
+  /// consolidation or reset. Test-only introspection.
+  #[cfg(test)]
+  pub(crate) fn pending_bytes(&self) -> usize {
+    self.pending_bytes
+  }
+
+  /// Number of recorded layers awaiting consolidation. Test-only
+  /// introspection.
+  #[cfg(test)]
+  pub(crate) fn layer_count(&self) -> usize {
+    self.layers.len()
+  }
+
+  /// Distinct raster/payload identities charged in the current window.
+  /// Test-only introspection.
+  #[cfg(test)]
+  pub(crate) fn retained_raster_count(&self) -> usize {
+    self.retained_rasters.len()
+  }
+
+  /// Successful consolidations since construction. Test-only introspection.
+  #[cfg(test)]
+  pub(crate) fn consolidations(&self) -> u64 {
+    self.consolidations
   }
 
   /// Bytes of approx_bytes_used-invisible payload this recorder's pictures
@@ -507,5 +555,253 @@ impl PageRecorder {
   /// purpose -- the destination's drawPicture charge covers those.
   pub fn retained_raster_bytes(&self) -> usize {
     self.raster_bytes
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::sk::{ColorSpace, Surface};
+
+  /// Opaque-white RGBA pixels for put_pixels draws.
+  fn white_pixels(width: usize, height: usize) -> Vec<u8> {
+    let mut pixels = vec![0u8; width * height * 4];
+    for px in pixels.as_chunks_mut::<4>().0 {
+      *px = [255, 255, 255, 255];
+    }
+    pixels
+  }
+
+  /// A raster surface snapshot for consolidate_with_snapshot.
+  fn snapshot_of(width: u32, height: u32) -> SkImage {
+    Surface::new_rgba_premultiplied(width, height, ColorSpace::default())
+      .and_then(|surface| surface.make_image_snapshot())
+      .expect("snapshot")
+  }
+
+  /// Record `count` state ops (canvas access only -- no pixels committed).
+  fn record_state_ops(recorder: &mut PageRecorder, count: usize) {
+    for _ in 0..count {
+      let _ = recorder.get_recording_canvas().unwrap();
+    }
+  }
+
+  // Every recorded op -- including state-only save/translate/clip -- pays the
+  // base op charge through get_recording_canvas; only ops that can alter
+  // pixels advance the content generation.
+  #[test]
+  fn recorded_ops_charge_base_bytes_but_only_paints_bump_version() {
+    let mut recorder = PageRecorder::new(64.0, 64.0);
+    record_state_ops(&mut recorder, 4);
+    assert_eq!(recorder.pending_bytes(), 4 * BYTES_PER_RECORDED_OP);
+    assert_eq!(recorder.content_version(), 0);
+    recorder.note_paint_op();
+    assert_eq!(recorder.content_version(), 1);
+    recorder.note_direct_mutation();
+    assert_eq!(recorder.content_version(), 2);
+  }
+
+  // put_pixels bumps the generation once, pins the pixel payload in
+  // raster_bytes and promotes the pixel draw to a layer.
+  #[test]
+  fn put_pixels_bumps_version_and_pins_pixel_bytes() {
+    let mut recorder = PageRecorder::new(8.0, 8.0);
+    let pixels = white_pixels(8, 8);
+    recorder.put_pixels(8 * 8 * 4, |canvas| {
+      canvas.put_image_data(
+        pixels.as_ptr(),
+        8,
+        8,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        8.0,
+        8.0,
+        ColorSpace::default(),
+        true,
+      );
+    });
+    assert_eq!(recorder.content_version(), 1);
+    assert_eq!(recorder.layer_count(), 1);
+    assert_eq!(recorder.retained_raster_bytes(), 8 * 8 * 4);
+    assert_eq!(
+      recorder.pending_bytes(),
+      8 * 8 * 4 + BYTES_PER_PICTURE_LAYER
+    );
+  }
+
+  // One retained key is charged once per recording window; a new generation
+  // (source mutated), a different namespace (picture uid vs resource id) and
+  // a fresh window (post-consolidate) each re-charge. Zero-byte resources are
+  // skipped entirely.
+  #[test]
+  fn raster_resource_charges_once_per_key_per_window() {
+    let mut recorder = PageRecorder::new(8.0, 8.0);
+    let key = RasterKey::Resource {
+      id: 1,
+      generation: 0,
+    };
+    recorder.account_raster_resource(key, 100);
+    recorder.account_raster_resource(key, 100);
+    assert_eq!(recorder.retained_raster_count(), 1);
+    assert_eq!(recorder.retained_raster_bytes(), 100);
+
+    recorder.account_raster_resource(
+      RasterKey::Resource {
+        id: 1,
+        generation: 1,
+      },
+      50,
+    );
+    recorder.account_raster_resource(RasterKey::Picture { uid: 1 }, 70);
+    assert_eq!(recorder.retained_raster_count(), 3);
+    assert_eq!(recorder.retained_raster_bytes(), 220);
+
+    recorder.account_raster_resource(
+      RasterKey::Resource {
+        id: 2,
+        generation: 0,
+      },
+      0,
+    );
+    assert_eq!(recorder.retained_raster_count(), 3);
+
+    // Consolidation releases the layers that pinned the keys, so the same
+    // identity re-charges in the next window.
+    recorder.consolidate_with_snapshot(snapshot_of(8, 8));
+    assert_eq!(recorder.retained_raster_count(), 0);
+    recorder.account_raster_resource(key, 100);
+    assert_eq!(recorder.retained_raster_count(), 1);
+    assert_eq!(recorder.retained_raster_bytes(), 8 * 8 * 4 + 100);
+  }
+
+  // Consolidation replaces all layers with the snapshot picture, clears the
+  // dedup set and leaves pending at zero with raster_bytes = w*h*4.
+  #[test]
+  fn consolidate_with_snapshot_collapses_the_recording() {
+    let mut recorder = PageRecorder::new(16.0, 16.0);
+    let pixels = white_pixels(16, 16);
+    recorder.put_pixels(16 * 16 * 4, |canvas| {
+      canvas.put_image_data(
+        pixels.as_ptr(),
+        16,
+        16,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        16.0,
+        16.0,
+        ColorSpace::default(),
+        true,
+      );
+    });
+    // A second paint leaves pending record bytes promote_layer can finalize.
+    let canvas = recorder.get_recording_canvas().unwrap();
+    canvas.clear();
+    recorder.note_paint_op();
+    assert_eq!(recorder.layer_count(), 1);
+    assert!(recorder.pending_bytes() > 0);
+
+    recorder.consolidate_with_snapshot(snapshot_of(16, 16));
+    assert_eq!(recorder.pending_bytes(), 0);
+    assert_eq!(recorder.layer_count(), 1);
+    assert_eq!(recorder.retained_raster_bytes(), 16 * 16 * 4);
+    assert_eq!(recorder.retained_raster_count(), 0);
+    assert!(!recorder.surface_dirty());
+    assert_eq!(recorder.consolidations(), 1);
+  }
+
+  // A direct surface write drops the flushed layers without a snapshot and
+  // marks the composite incomplete (get_picture -> None) until a rebase
+  // consolidates the post-write surface raster back in.
+  #[test]
+  fn note_surface_write_marks_layers_stale_until_rebased() {
+    let mut recorder = PageRecorder::new(16.0, 16.0);
+    let pixels = white_pixels(16, 16);
+    recorder.put_pixels(16 * 16 * 4, |canvas| {
+      canvas.put_image_data(
+        pixels.as_ptr(),
+        16,
+        16,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        16.0,
+        16.0,
+        ColorSpace::default(),
+        true,
+      );
+    });
+    assert!(recorder.layer_count() > 0);
+
+    recorder.note_surface_write();
+    assert!(recorder.surface_dirty());
+    assert_eq!(recorder.layer_count(), 0);
+    assert_eq!(recorder.pending_bytes(), 0);
+    assert_eq!(recorder.retained_raster_bytes(), 0);
+    assert_eq!(recorder.retained_raster_count(), 0);
+    assert!(recorder.get_picture().is_none());
+
+    // Context::get_picture performs this rebase itself; the recorder half is
+    // that consolidation clears the dirty flag and re-pins the raster.
+    recorder.consolidate_with_snapshot(snapshot_of(16, 16));
+    assert!(!recorder.surface_dirty());
+    assert_eq!(recorder.retained_raster_bytes(), 16 * 16 * 4);
+  }
+
+  // reset() zeroes every accounting counter and bumps the generation, but
+  // deliberately keeps a shrunken recording_limit -- it is test
+  // configuration, not recorded content.
+  #[test]
+  fn reset_zeroes_accounting_and_keeps_the_limit() {
+    let mut recorder = PageRecorder::new(16.0, 16.0);
+    recorder.set_recording_limit(300);
+    let pixels = white_pixels(16, 16);
+    recorder.put_pixels(16 * 16 * 4, |canvas| {
+      canvas.put_image_data(
+        pixels.as_ptr(),
+        16,
+        16,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        16.0,
+        16.0,
+        ColorSpace::default(),
+        true,
+      );
+    });
+    let version = recorder.content_version();
+    assert!(recorder.pending_bytes() > 0);
+
+    recorder.reset(16.0, 16.0);
+    assert_eq!(recorder.pending_bytes(), 0);
+    assert_eq!(recorder.layer_count(), 0);
+    assert_eq!(recorder.retained_raster_bytes(), 0);
+    assert_eq!(recorder.retained_raster_count(), 0);
+    assert_eq!(recorder.content_version(), version + 1);
+
+    // The shrunken limit survives reset.
+    recorder.account_raster_bytes(400);
+    assert!(recorder.recording_limit_exceeded());
+  }
+
+  // should_consolidate needs >1 layer, or one layer over the byte cap.
+  #[test]
+  fn should_consolidate_gates_on_layers_and_cap() {
+    let mut recorder = PageRecorder::new(8.0, 8.0);
+    assert!(!recorder.should_consolidate());
+    recorder.put_pixels(4, |canvas| {
+      canvas.clear();
+    });
+    assert!(!recorder.should_consolidate());
+    recorder.put_pixels(4, |canvas| {
+      canvas.clear();
+    });
+    assert!(recorder.should_consolidate());
   }
 }

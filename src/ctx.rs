@@ -4479,6 +4479,613 @@ fn parse_font_variation_settings(settings: &str) -> (String, Vec<crate::sk::Font
 mod tests {
   use super::*;
 
+  fn raster_ctx(width: u32, height: u32) -> Context {
+    Context::new(width, height, ColorSpace::default()).expect("raster context")
+  }
+
+  fn pending(ctx: &Context) -> usize {
+    ctx.page_recorder.as_ref().unwrap().borrow().pending_bytes()
+  }
+
+  fn raster_bytes(ctx: &Context) -> usize {
+    ctx
+      .page_recorder
+      .as_ref()
+      .unwrap()
+      .borrow()
+      .retained_raster_bytes()
+  }
+
+  fn retained(ctx: &Context) -> usize {
+    ctx
+      .page_recorder
+      .as_ref()
+      .unwrap()
+      .borrow()
+      .retained_raster_count()
+  }
+
+  fn layers(ctx: &Context) -> usize {
+    ctx.page_recorder.as_ref().unwrap().borrow().layer_count()
+  }
+
+  fn consolidations(ctx: &Context) -> u64 {
+    ctx
+      .page_recorder
+      .as_ref()
+      .unwrap()
+      .borrow()
+      .consolidations()
+  }
+
+  fn set_recording_limit(ctx: &Context, bytes: usize) {
+    ctx
+      .page_recorder
+      .as_ref()
+      .unwrap()
+      .borrow_mut()
+      .set_recording_limit(bytes);
+  }
+
+  /// The dedup key draw_image wrappers build for a canvas source:
+  /// (resource_id, content_version).
+  fn canvas_source_key(src: &Context) -> RasterKey {
+    RasterKey::Resource {
+      id: src.resource_id,
+      generation: src.content_version(),
+    }
+  }
+
+  /// Unpremultiplied RGBA pixels (one color) for put_image_data / bitmaps.
+  fn rgba_pixels(width: usize, height: usize, rgba: [u8; 4]) -> Vec<u8> {
+    let mut pixels = vec![0u8; width * height * 4];
+    for px in pixels.as_chunks_mut::<4>().0 {
+      *px = rgba;
+    }
+    pixels
+  }
+
+  /// A non-canvas bitmap over a copy of `pixels` (is_canvas = false arm).
+  fn test_bitmap(width: usize, height: usize, rgba: [u8; 4]) -> Bitmap {
+    let mut pixels = rgba_pixels(width, height, rgba);
+    Bitmap::from_image_data(
+      pixels.as_mut_ptr(),
+      width,
+      height,
+      width * 4,
+      width * height * 4,
+      crate::sk::ColorType::RGBA8888,
+      AlphaType::Unpremultiplied,
+    )
+    .expect("bitmap")
+  }
+
+  /// Read a single surface pixel through the deferred flush path.
+  fn pixel_at(ctx: &mut Context, x: f32, y: f32) -> [u8; 4] {
+    let data = ctx
+      .get_image_data(x, y, 1.0, 1.0, ColorSpace::default())
+      .expect("pixels");
+    [data[0], data[1], data[2], data[3]]
+  }
+
+  // The deferred recording must consolidate once charged bytes pass the cap:
+  // a pure draw loop over a shrunken limit consolidates repeatedly while
+  // pending stays bounded and the generation counts only pixel ops.
+  #[test]
+  fn recording_limit_trips_consolidation_in_a_draw_loop() {
+    let mut ctx = raster_ctx(32, 32);
+    set_recording_limit(&ctx, 8 * 1024);
+    for _ in 0..200 {
+      ctx.fill_rect(0.0, 0.0, 8.0, 8.0).unwrap();
+    }
+    assert!(consolidations(&ctx) >= 1);
+    // A flush can carry one fresh op plus one promoted-layer charge past the
+    // cap, so bound pending at twice the window.
+    assert!(pending(&ctx) < 2 * 8 * 1024);
+    assert_eq!(ctx.content_version(), 200);
+  }
+
+  // A read must flush pending layers onto the surface and consolidate them
+  // into the O(canvas) snapshot layer.
+  #[test]
+  fn get_image_data_flushes_and_consolidates_layers() {
+    let mut ctx = raster_ctx(32, 32);
+    ctx.fill_rect(0.0, 0.0, 16.0, 16.0).unwrap();
+    let pixels = rgba_pixels(8, 8, [0, 0, 255, 255]);
+    ctx
+      .page_recorder
+      .as_ref()
+      .unwrap()
+      .borrow_mut()
+      .put_pixels(8 * 8 * 4, |canvas| {
+        canvas.put_image_data(
+          pixels.as_ptr(),
+          8,
+          8,
+          20.0,
+          20.0,
+          0.0,
+          0.0,
+          8.0,
+          8.0,
+          ColorSpace::default(),
+          true,
+        );
+      });
+    assert!(layers(&ctx) >= 1);
+    assert!(pending(&ctx) > 0);
+
+    // The put layer plus the recorded fill: >1 layer, so the read's flush
+    // consolidates unconditionally.
+    assert_eq!(pixel_at(&mut ctx, 21.0, 21.0), [0, 0, 255, 255]);
+    assert!(consolidations(&ctx) >= 1);
+    assert_eq!(pending(&ctx), 0);
+    assert_eq!(layers(&ctx), 1);
+    assert_eq!(raster_bytes(&ctx), 32 * 32 * 4);
+  }
+
+  // drawImage's retained-raster charge is keyed on (source id, generation):
+  // an unchanged source charges once, state-only ops between draws keep the
+  // dedup, a pixel mutation re-charges under the new generation, a zero-area
+  // clear does not mutate, and a real one does.
+  #[test]
+  fn draw_image_dedups_by_source_content_generation() {
+    let mut src = raster_ctx(16, 16);
+    src.state.fill_style = Pattern::from_color("#ff0000").unwrap();
+    src.fill_rect(0.0, 0.0, 16.0, 16.0).unwrap();
+    let mut dest = raster_ctx(16, 16);
+    let bitmap = src.surface.get_bitmap();
+
+    dest
+      .draw_image(
+        &bitmap,
+        canvas_source_key(&src),
+        0.0,
+        0.0,
+        16.0,
+        16.0,
+        0.0,
+        0.0,
+        16.0,
+        16.0,
+      )
+      .unwrap();
+    assert_eq!(retained(&dest), 1);
+    assert_eq!(raster_bytes(&dest), 16 * 16 * 4);
+
+    // Same key, second draw: still one charge.
+    dest
+      .draw_image(
+        &bitmap,
+        canvas_source_key(&src),
+        0.0,
+        0.0,
+        16.0,
+        16.0,
+        0.0,
+        0.0,
+        16.0,
+        16.0,
+      )
+      .unwrap();
+    assert_eq!(retained(&dest), 1);
+    assert_eq!(raster_bytes(&dest), 16 * 16 * 4);
+
+    // State-only churn on the source does not bump its generation.
+    src.save();
+    src.translate(4.0, 4.0);
+    src.restore();
+    dest
+      .draw_image(
+        &bitmap,
+        canvas_source_key(&src),
+        0.0,
+        0.0,
+        16.0,
+        16.0,
+        0.0,
+        0.0,
+        16.0,
+        16.0,
+      )
+      .unwrap();
+    assert_eq!(retained(&dest), 1);
+    assert_eq!(raster_bytes(&dest), 16 * 16 * 4);
+
+    // A deterministically empty clearRect paints nothing and must not bump.
+    let version = src.content_version();
+    src.clear_rect(0.0, 0.0, 0.0, 0.0).unwrap();
+    assert_eq!(src.content_version(), version);
+    dest
+      .draw_image(
+        &bitmap,
+        canvas_source_key(&src),
+        0.0,
+        0.0,
+        16.0,
+        16.0,
+        0.0,
+        0.0,
+        16.0,
+        16.0,
+      )
+      .unwrap();
+    assert_eq!(retained(&dest), 1);
+
+    // A real mutation COWs a fresh raster and re-charges under the new
+    // generation.
+    src.fill_rect(0.0, 0.0, 4.0, 4.0).unwrap();
+    dest
+      .draw_image(
+        &bitmap,
+        canvas_source_key(&src),
+        0.0,
+        0.0,
+        16.0,
+        16.0,
+        0.0,
+        0.0,
+        16.0,
+        16.0,
+      )
+      .unwrap();
+    assert_eq!(retained(&dest), 2);
+    assert_eq!(raster_bytes(&dest), 16 * 16 * 4 * 2);
+  }
+
+  // Ops that provably paint nothing record nothing: no bytes, no generation
+  // bump, no retained payloads.
+  #[test]
+  fn deterministically_empty_ops_leave_the_recording_untouched() {
+    let mut ctx = raster_ctx(32, 32);
+    ctx.fill_rect(0.0, 0.0, 32.0, 32.0).unwrap();
+    let pending0 = pending(&ctx);
+    let raster0 = raster_bytes(&ctx);
+    let retained0 = retained(&ctx);
+    let version0 = ctx.content_version();
+
+    ctx.fill_rect(0.0, 0.0, 0.0, 8.0).unwrap();
+    ctx.fill_rect(0.0, 0.0, 8.0, 0.0).unwrap();
+    // f32 edge collapse: 16777216 + 1 rounds back to 16777216.
+    ctx.fill_rect(16777216.0, 0.0, 1.0, 8.0).unwrap();
+    ctx.fill_rect(f32::NAN, 0.0, 8.0, 8.0).unwrap();
+    ctx.fill_rect(0.0, 0.0, 8.0, f32::INFINITY).unwrap();
+    ctx.clear_rect(0.0, 0.0, 0.0, 0.0).unwrap();
+
+    // Empty path: no verbs at all, then degenerate moveTo-only bounds.
+    ctx.begin_path();
+    ctx.fill(None, FillType::Winding).unwrap();
+    ctx.begin_path();
+    ctx.path.move_to(4.0, 4.0);
+    ctx.fill(None, FillType::Winding).unwrap();
+    ctx.begin_path();
+    ctx.stroke(None).unwrap();
+
+    // Zero source/dest rect draws (canvas-backed and raw-bitmap arms).
+    let mut src = raster_ctx(8, 8);
+    let src_bitmap = src.surface.get_bitmap();
+    let key = canvas_source_key(&src);
+    ctx
+      .draw_image(&src_bitmap, key, 0.0, 0.0, 8.0, 8.0, 0.0, 0.0, 0.0, 8.0)
+      .unwrap();
+    let bitmap = test_bitmap(8, 8, [255, 0, 0, 255]);
+    ctx
+      .draw_image(&bitmap, key, 0.0, 0.0, 8.0, 8.0, 0.0, 0.0, 8.0, 0.0)
+      .unwrap();
+    let picture = src.get_picture();
+    if let Some(picture) = picture {
+      ctx
+        .draw_canvas(&picture, 0, 0.0, 0.0, 0.0, 8.0, 0.0, 0.0, 8.0, 8.0)
+        .unwrap();
+      ctx
+        .draw_canvas(&picture, 0, 0.0, 0.0, 8.0, 8.0, 0.0, 0.0, 8.0, 0.0)
+        .unwrap();
+    }
+
+    // The dirty-rect predicates the putImageData wrapper gates on.
+    assert!(!Context::rect_fillable(f32::NAN, 8.0));
+    assert!(!Context::rect_fillable(16777216.0, 1.0));
+    assert!(!Context::rect_fillable(0.0, f32::INFINITY));
+    assert!(Context::rect_fillable(0.0, 8.0));
+
+    assert_eq!(pending(&ctx), pending0);
+    assert_eq!(raster_bytes(&ctx), raster0);
+    assert_eq!(retained(&ctx), retained0);
+    assert_eq!(ctx.content_version(), version0);
+  }
+
+  // A drawCanvas destination is charged the source recorder's retained
+  // raster bytes -- the payload approx_bytes_used cannot see -- keyed on the
+  // picture's uniqueID so an unchanged source charges once and a mutated one
+  // (fresh picture) re-charges.
+  #[test]
+  fn draw_canvas_charges_dest_with_source_raster_bytes() {
+    let mut src = raster_ctx(16, 16);
+    let pixels = rgba_pixels(4, 4, [255, 0, 0, 255]);
+    src
+      .page_recorder
+      .as_ref()
+      .unwrap()
+      .borrow_mut()
+      .put_pixels(4 * 4 * 4, |canvas| {
+        canvas.put_image_data(
+          pixels.as_ptr(),
+          4,
+          4,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          4.0,
+          4.0,
+          ColorSpace::default(),
+          true,
+        );
+      });
+    let source_raster_bytes = src
+      .page_recorder
+      .as_ref()
+      .unwrap()
+      .borrow()
+      .retained_raster_bytes();
+    assert_eq!(source_raster_bytes, 4 * 4 * 4);
+
+    let mut dest = raster_ctx(16, 16);
+    let pending0 = pending(&dest);
+    let picture = src.get_picture().expect("source picture");
+    dest
+      .draw_canvas(
+        &picture,
+        source_raster_bytes,
+        0.0,
+        0.0,
+        16.0,
+        16.0,
+        0.0,
+        0.0,
+        16.0,
+        16.0,
+      )
+      .unwrap();
+    assert!(pending(&dest) >= pending0 + source_raster_bytes);
+    assert_eq!(raster_bytes(&dest), source_raster_bytes);
+    assert_eq!(retained(&dest), 1);
+
+    // Unchanged source -> same cached picture uid -> no second charge.
+    let picture = src.get_picture().expect("source picture");
+    dest
+      .draw_canvas(
+        &picture,
+        source_raster_bytes,
+        0.0,
+        0.0,
+        16.0,
+        16.0,
+        0.0,
+        0.0,
+        16.0,
+        16.0,
+      )
+      .unwrap();
+    assert_eq!(retained(&dest), 1);
+    assert_eq!(raster_bytes(&dest), source_raster_bytes);
+
+    // Mutated source -> regenerated picture uid -> re-charged.
+    src.fill_rect(0.0, 0.0, 4.0, 4.0).unwrap();
+    let source_raster_bytes = src
+      .page_recorder
+      .as_ref()
+      .unwrap()
+      .borrow()
+      .retained_raster_bytes();
+    let picture = src.get_picture().expect("source picture");
+    dest
+      .draw_canvas(
+        &picture,
+        source_raster_bytes,
+        0.0,
+        0.0,
+        16.0,
+        16.0,
+        0.0,
+        0.0,
+        16.0,
+        16.0,
+      )
+      .unwrap();
+    assert_eq!(retained(&dest), 2);
+    assert_eq!(raster_bytes(&dest), source_raster_bytes * 2);
+  }
+
+  // Round-18 regression: dx = f32::MAX with dw = 1e38 makes the C++ helper's
+  // `dx - sx * scale_x` term land on an fma/fused-rounding boundary. The Rust
+  // preflight must not skip what native code decides, so the op is recorded
+  // (charged) regardless of which way the fused arithmetic rounds.
+  #[test]
+  fn draw_canvas_records_through_fused_arithmetic_boundary() {
+    let mut src = raster_ctx(8, 8);
+    src.state.fill_style = Pattern::from_color("#ff0000").unwrap();
+    src.fill_rect(0.0, 0.0, 8.0, 8.0).unwrap();
+    let picture = src.get_picture().expect("source picture");
+
+    let mut ctx = raster_ctx(32, 32);
+    ctx.set_transform(Matrix::new(-1e-30, 0.0, 0.0, 1.0, 0.0, 0.0));
+    let pending0 = pending(&ctx);
+    let version0 = ctx.content_version();
+    ctx
+      .draw_canvas(
+        &picture,
+        0,
+        0.0,
+        0.0,
+        1e10,
+        10.0,
+        3.4028235e38,
+        0.0,
+        1e38,
+        10.0,
+      )
+      .unwrap();
+    assert!(pending(&ctx) >= pending0 + 256);
+    assert_eq!(ctx.content_version(), version0 + 1);
+  }
+
+  // A put_pixels layer stays a layer under later recorded ops and replays
+  // beneath them on flush.
+  #[test]
+  fn put_pixels_layer_orders_under_later_recorded_ops() {
+    let mut ctx = raster_ctx(8, 8);
+    let pixels = rgba_pixels(4, 4, [0, 0, 255, 255]);
+    ctx
+      .page_recorder
+      .as_ref()
+      .unwrap()
+      .borrow_mut()
+      .put_pixels(4 * 4 * 4, |canvas| {
+        canvas.put_image_data(
+          pixels.as_ptr(),
+          4,
+          4,
+          1.0,
+          1.0,
+          0.0,
+          0.0,
+          4.0,
+          4.0,
+          ColorSpace::default(),
+          true,
+        );
+      });
+    assert_eq!(layers(&ctx), 1);
+    assert_eq!(raster_bytes(&ctx), 4 * 4 * 4);
+    assert_eq!(ctx.content_version(), 1);
+
+    ctx.state.fill_style = Pattern::from_color("#00ff00").unwrap();
+    ctx.fill_rect(2.0, 2.0, 2.0, 2.0).unwrap();
+    assert_eq!(ctx.content_version(), 2);
+    assert_eq!(pixel_at(&mut ctx, 1.0, 1.0), [0, 0, 255, 255]);
+    assert_eq!(pixel_at(&mut ctx, 2.0, 2.0), [0, 255, 0, 255]);
+  }
+
+  // with_surface_canvas flushes pending ops under the direct write, marks
+  // the layers stale (no rebase snapshot yet) and bumps the generation;
+  // get_picture then materializes the rebase.
+  #[test]
+  fn direct_surface_write_marks_layers_stale_until_get_picture() {
+    let mut ctx = raster_ctx(16, 16);
+    ctx.state.fill_style = Pattern::from_color("#ff0000").unwrap();
+    ctx.fill_rect(0.0, 0.0, 16.0, 16.0).unwrap();
+    let version0 = ctx.content_version();
+
+    ctx.with_surface_canvas(|canvas| canvas.clear());
+    assert!(ctx.recorder_surface_dirty());
+    assert_eq!(layers(&ctx), 0);
+    assert_eq!(pending(&ctx), 0);
+    assert_eq!(ctx.content_version(), version0 + 1);
+
+    assert!(ctx.get_picture().is_some());
+    assert!(!ctx.recorder_surface_dirty());
+    assert_eq!(layers(&ctx), 1);
+    assert_eq!(raster_bytes(&ctx), 16 * 16 * 4);
+    assert_eq!(consolidations(&ctx), 1);
+  }
+
+  // The ctx.filter DAG is one refcounted ImageFilter per state: repeated
+  // draws under it charge its proxy bytes once per window.
+  #[test]
+  fn filter_chain_charges_once_per_window() {
+    let mut ctx = raster_ctx(32, 32);
+    ctx.set_filter("blur(2px) brightness(0.5)").unwrap();
+    for _ in 0..3 {
+      ctx.fill_rect(0.0, 0.0, 8.0, 8.0).unwrap();
+    }
+    assert_eq!(retained(&ctx), 1);
+    assert_eq!(raster_bytes(&ctx), "blur(2px) brightness(0.5)".len() * 8);
+  }
+
+  // Every recorded text blob refs the same resolved face, so the flat 1 MiB
+  // typeface charge dedups per descriptor per window. Registered test font
+  // keeps the result host-independent.
+  #[test]
+  fn fill_text_dedups_the_typeface_charge() {
+    {
+      let fonts = get_font().unwrap();
+      fonts.register_from_path::<String>("__test__/fonts/Lato-Regular.ttf", None);
+    }
+    let mut ctx = raster_ctx(64, 64);
+    ctx.set_font("16px Lato".to_owned()).unwrap();
+    for _ in 0..3 {
+      ctx.fill_text("hello", 0.0, 16.0, MAX_TEXT_WIDTH).unwrap();
+    }
+    assert_eq!(retained(&ctx), 1);
+    assert_eq!(raster_bytes(&ctx), 1024 * 1024);
+
+    // A text draw that cannot record (interior NUL) commits no charge.
+    let pending0 = pending(&ctx);
+    let version0 = ctx.content_version();
+    assert!(ctx.fill_text("a\0b", 0.0, 16.0, MAX_TEXT_WIDTH).is_err());
+    assert_eq!(pending(&ctx), pending0);
+    assert_eq!(ctx.content_version(), version0);
+  }
+
+  // measureText's line-metrics path builds paints but must leave the
+  // recorder untouched -- it is a read, not a draw.
+  #[test]
+  fn measure_text_path_does_not_charge_the_recording() {
+    let mut ctx = raster_ctx(64, 64);
+    ctx.fill_rect(0.0, 0.0, 8.0, 8.0).unwrap();
+    let pending0 = pending(&ctx);
+    let raster0 = raster_bytes(&ctx);
+    let version0 = ctx.content_version();
+    ctx.get_line_metrics("measure me").unwrap();
+    assert_eq!(pending(&ctx), pending0);
+    assert_eq!(raster_bytes(&ctx), raster0);
+    assert_eq!(ctx.content_version(), version0);
+  }
+
+  // Consolidated layers re-emit the tracked save stack, clip and transform:
+  // ops recorded after a mid-state consolidation land exactly where they
+  // would without the flush.
+  #[test]
+  fn flush_mid_state_restores_save_clip_and_transform() {
+    let mut ctx = raster_ctx(32, 32);
+    set_recording_limit(&ctx, 64);
+    ctx.save();
+    ctx.translate(8.0, 8.0);
+    ctx.begin_path();
+    ctx.rect(4.0, 4.0, 8.0, 8.0);
+    ctx.clip(None, FillType::Winding);
+    // The first fill lands the recording past the shrunken cap; the second
+    // op's pre-check flushes and consolidates mid-state.
+    ctx.state.fill_style = Pattern::from_color("#ff0000").unwrap();
+    ctx.fill_rect(0.0, 0.0, 32.0, 32.0).unwrap();
+    assert!(consolidations(&ctx) >= 1);
+    ctx.fill_rect(0.0, 0.0, 32.0, 32.0).unwrap();
+    ctx.restore();
+
+    // Translated [12,20) clip over a full-canvas fill: inside is the fill,
+    // outside is transparent.
+    assert_eq!(pixel_at(&mut ctx, 13.0, 13.0), [255, 0, 0, 255]);
+    assert_eq!(pixel_at(&mut ctx, 24.0, 24.0), [0, 0, 0, 0]);
+  }
+
+  // Context::reset zeroes every accounting counter and bumps the generation
+  // exactly once (a mutation that bypasses the dedup window).
+  #[test]
+  fn context_reset_zeroes_accounting_and_bumps_version() {
+    let mut ctx = raster_ctx(16, 16);
+    ctx.fill_rect(0.0, 0.0, 16.0, 16.0).unwrap();
+    assert!(pending(&ctx) > 0);
+    let version0 = ctx.content_version();
+
+    ctx.reset();
+    assert_eq!(pending(&ctx), 0);
+    assert_eq!(layers(&ctx), 0);
+    assert_eq!(raster_bytes(&ctx), 0);
+    assert_eq!(retained(&ctx), 0);
+    assert_eq!(ctx.content_version(), version0 + 1);
+  }
+
   #[test]
   fn test_parse_font_variation_settings_normal() {
     let (settings, variations) = parse_font_variation_settings("normal");
