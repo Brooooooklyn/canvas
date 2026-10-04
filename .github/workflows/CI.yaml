@@ -742,6 +742,9 @@ jobs:
       - name: Download ICU for Windows
         run: node ./scripts/release-skia-binary.mjs --download-icu
 
+      - name: Generate SBOMs
+        run: node ./scripts/generate-sbom.mjs --all
+
       - name: List packages
         run: ls -R ./npm
         shell: bash

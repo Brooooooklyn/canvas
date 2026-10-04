@@ -9,7 +9,8 @@
   ],
   "main": "skia.darwin-x64.node",
   "files": [
-    "skia.darwin-x64.node"
+    "skia.darwin-x64.node",
+    "sbom.cdx.json"
   ],
   "description": "Canvas for Node.js with skia backend",
   "keywords": [

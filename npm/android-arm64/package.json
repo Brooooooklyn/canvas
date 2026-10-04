@@ -9,7 +9,8 @@
   ],
   "main": "skia.android-arm64.node",
   "files": [
-    "skia.android-arm64.node"
+    "skia.android-arm64.node",
+    "sbom.cdx.json"
   ],
   "description": "Canvas for Node.js with skia backend",
   "keywords": [
