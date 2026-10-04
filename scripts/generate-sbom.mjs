@@ -71,12 +71,19 @@ const SKIA_LIBS = [
     licenseExpression: 'BSD-3-Clause AND IJG AND Zlib',
   },
   {
+    name: 'libpng',
+    depsPath: 'third_party/externals/libpng',
+    gnAny: ['skia_use_libpng_decode', 'skia_use_libpng_encode'],
+    license: 'libpng-2.0',
+  },
+  {
     name: 'libwebp',
     depsPath: 'third_party/externals/libwebp',
     gnAny: ['skia_use_libwebp_decode', 'skia_use_libwebp_encode'],
     license: 'BSD-3-Clause',
   },
   { name: 'wuffs', depsPath: 'third_party/externals/wuffs', gnAll: ['skia_use_wuffs'], license: 'Apache-2.0' },
+  { name: 'zlib', depsPath: 'third_party/externals/zlib', gnAll: ['skia_use_zlib'], license: 'Zlib' },
 ]
 
 function parseArgs(argv) {
@@ -149,12 +156,21 @@ function parseSkiaDeps() {
 // Evaluate the skia_use_*/skia_enable_* GN args declared in scripts/build-skia.js.
 // Args are template literals like `skia_use_icu=true` or
 // `skia_use_libjxl_decode=${!TARGET_TRIPLE.startsWith('riscv64')}` — evaluate the
-// ${...} against the target triple for the platform being generated.
+// ${...} against the target triple for the platform being generated. Args that
+// build-skia.js does not set keep their declare_args() default from
+// skia/gn/skia.gni (e.g. skia_use_libpng_* and skia_use_zlib default to true);
+// only literal true/false defaults are read, expression defaults stay unset.
 function parseGnArgs(targetTriple) {
   const source = readFileSync(join(REPO_ROOT, 'scripts', 'build-skia.js'), 'utf8')
   const arrayMatch = source.match(/const GN_ARGS = \[([\s\S]*?)\n\]/)
   if (!arrayMatch) throw new Error('Could not locate GN_ARGS in scripts/build-skia.js')
   const gn = {}
+  const gniSource = readFileSync(join(REPO_ROOT, 'skia', 'gn', 'skia.gni'), 'utf8')
+  for (const block of gniSource.matchAll(/declare_args\(\)\s*\{([\s\S]*?)\n\}/g)) {
+    for (const m of block[1].matchAll(/^\s*(\w+)\s*=\s*(true|false)\s*(?:#.*)?$/gm)) {
+      gn[m[1]] = m[2] === 'true'
+    }
+  }
   // Interpolations in GN_ARGS may reference TARGET_TRIPLE or
   // PDF_HARFBUZZ_SUBSET_ENABLED; mirror the latter's computation from
   // scripts/build-skia.js (musl + win-x64 targets disable harfbuzz subsetting).
