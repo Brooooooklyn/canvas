@@ -708,6 +708,7 @@ jobs:
     permissions:
       contents: write
       id-token: write
+      attestations: write
     needs:
       - test-linux-x64-gnu-binding
       - test-linux-x64-musl-binding
@@ -742,6 +743,88 @@ jobs:
       - name: Download ICU for Windows
         run: node ./scripts/release-skia-binary.mjs --download-icu
 
+      - name: Generate SBOMs
+        run: node ./scripts/generate-sbom.mjs --all
+
+      # actions/attest takes a single predicate per invocation — one step per
+      # platform binds skia.<platform>.node to its own sbom.cdx.json.
+      - name: Attest android-arm64
+        uses: actions/attest@v4
+        with:
+          subject-path: npm/android-arm64/skia.android-arm64.node
+          predicate-path: npm/android-arm64/sbom.cdx.json
+          predicate-type: https://cyclonedx.org/bom
+
+      - name: Attest darwin-arm64
+        uses: actions/attest@v4
+        with:
+          subject-path: npm/darwin-arm64/skia.darwin-arm64.node
+          predicate-path: npm/darwin-arm64/sbom.cdx.json
+          predicate-type: https://cyclonedx.org/bom
+
+      - name: Attest darwin-x64
+        uses: actions/attest@v4
+        with:
+          subject-path: npm/darwin-x64/skia.darwin-x64.node
+          predicate-path: npm/darwin-x64/sbom.cdx.json
+          predicate-type: https://cyclonedx.org/bom
+
+      - name: Attest linux-arm-gnueabihf
+        uses: actions/attest@v4
+        with:
+          subject-path: npm/linux-arm-gnueabihf/skia.linux-arm-gnueabihf.node
+          predicate-path: npm/linux-arm-gnueabihf/sbom.cdx.json
+          predicate-type: https://cyclonedx.org/bom
+
+      - name: Attest linux-arm64-gnu
+        uses: actions/attest@v4
+        with:
+          subject-path: npm/linux-arm64-gnu/skia.linux-arm64-gnu.node
+          predicate-path: npm/linux-arm64-gnu/sbom.cdx.json
+          predicate-type: https://cyclonedx.org/bom
+
+      - name: Attest linux-arm64-musl
+        uses: actions/attest@v4
+        with:
+          subject-path: npm/linux-arm64-musl/skia.linux-arm64-musl.node
+          predicate-path: npm/linux-arm64-musl/sbom.cdx.json
+          predicate-type: https://cyclonedx.org/bom
+
+      - name: Attest linux-riscv64-gnu
+        uses: actions/attest@v4
+        with:
+          subject-path: npm/linux-riscv64-gnu/skia.linux-riscv64-gnu.node
+          predicate-path: npm/linux-riscv64-gnu/sbom.cdx.json
+          predicate-type: https://cyclonedx.org/bom
+
+      - name: Attest linux-x64-gnu
+        uses: actions/attest@v4
+        with:
+          subject-path: npm/linux-x64-gnu/skia.linux-x64-gnu.node
+          predicate-path: npm/linux-x64-gnu/sbom.cdx.json
+          predicate-type: https://cyclonedx.org/bom
+
+      - name: Attest linux-x64-musl
+        uses: actions/attest@v4
+        with:
+          subject-path: npm/linux-x64-musl/skia.linux-x64-musl.node
+          predicate-path: npm/linux-x64-musl/sbom.cdx.json
+          predicate-type: https://cyclonedx.org/bom
+
+      - name: Attest win32-arm64-msvc
+        uses: actions/attest@v4
+        with:
+          subject-path: npm/win32-arm64-msvc/skia.win32-arm64-msvc.node
+          predicate-path: npm/win32-arm64-msvc/sbom.cdx.json
+          predicate-type: https://cyclonedx.org/bom
+
+      - name: Attest win32-x64-msvc
+        uses: actions/attest@v4
+        with:
+          subject-path: npm/win32-x64-msvc/skia.win32-x64-msvc.node
+          predicate-path: npm/win32-x64-msvc/sbom.cdx.json
+          predicate-type: https://cyclonedx.org/bom
+
       - name: List packages
         run: ls -R ./npm
         shell: bash
@@ -760,3 +843,25 @@ jobs:
           fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # 'napi prepublish' (Publish's prepublishOnly hook) creates the v<version>
+      # release with the .node assets; attach the SBOMs to that same release.
+      - name: Upload SBOMs to GitHub release
+        run: |
+          if ! git log -1 --pretty=%B | grep -q "^[0-9]\+\.[0-9]\+\.[0-9]\+";
+          then
+            echo "Not a release, skipping SBOM upload"
+            exit 0
+          fi
+          if ! compgen -G "sbom/sbom-*.cdx.json" > /dev/null; then
+            echo "::warning::no sbom/sbom-*.cdx.json files found, skipping upload"
+            exit 0
+          fi
+          TAG="v$(node -p 'require("./package.json").version')"
+          if ! gh release view "$TAG" > /dev/null 2>&1; then
+            echo "::warning::release $TAG not found, skipping SBOM upload"
+            exit 0
+          fi
+          gh release upload "$TAG" sbom/sbom-*.cdx.json --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

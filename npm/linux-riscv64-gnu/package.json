@@ -9,7 +9,8 @@
   ],
   "main": "skia.linux-riscv64-gnu.node",
   "files": [
-    "skia.linux-riscv64-gnu.node"
+    "skia.linux-riscv64-gnu.node",
+    "sbom.cdx.json"
   ],
   "description": "Canvas for Node.js with skia backend",
   "keywords": [

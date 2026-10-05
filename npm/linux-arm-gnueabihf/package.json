@@ -9,7 +9,8 @@
   ],
   "main": "skia.linux-arm-gnueabihf.node",
   "files": [
-    "skia.linux-arm-gnueabihf.node"
+    "skia.linux-arm-gnueabihf.node",
+    "sbom.cdx.json"
   ],
   "description": "Canvas for Node.js with skia backend",
   "keywords": [

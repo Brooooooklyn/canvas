@@ -109,6 +109,7 @@
     "pretty-bytes": "^7.1.0",
     "semver": "^7.7.3",
     "skia-canvas": "^3.0.8",
+    "smol-toml": "^1.9.0",
     "table": "^6.9.0",
     "tinybench": "^6.0.0",
     "typescript": "^7.0.0"

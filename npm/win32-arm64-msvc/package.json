@@ -10,7 +10,8 @@
   "main": "skia.win32-arm64-msvc.node",
   "files": [
     "skia.win32-arm64-msvc.node",
-    "icudtl.dat"
+    "icudtl.dat",
+    "sbom.cdx.json"
   ],
   "description": "Canvas for Node.js with skia backend",
   "keywords": [

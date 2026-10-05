@@ -9,7 +9,8 @@
   ],
   "main": "skia.linux-x64-musl.node",
   "files": [
-    "skia.linux-x64-musl.node"
+    "skia.linux-x64-musl.node",
+    "sbom.cdx.json"
   ],
   "description": "Canvas for Node.js with skia backend",
   "keywords": [
