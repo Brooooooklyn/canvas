@@ -17,9 +17,7 @@ if (TARGET && TARGET.startsWith('--target=')) {
   TARGET_TRIPLE = TARGET.replace('--target=', '')
 }
 
-// GN args are computed in scripts/skia-gn-args.cjs — shared with
-// scripts/generate-sbom.mjs, which evaluates the same args per platform to
-// decide which vendored third-party libs go into the CycloneDX SBOM.
+// GN args are computed in scripts/skia-gn-args.cjs (shared with generate-sbom.mjs).
 const {
   gnArgs: GN_ARGS,
   cc: CC,
@@ -67,16 +65,10 @@ if (PLATFORM_NAME === 'win32') {
   })
 }
 
-// skia/third_party/highway/BUILD.gn still lists the two sources highway had when the
-// wrapper was written in 2021. The highway roll in Skia m152 made hwy/targets.cc call
-// hwy::VectorBytes() (targets.cc:754) to tell HWY_SVE_256 and HWY_SVE2_128 apart, and
-// that function lives in hwy/per_target.cc, which nothing compiles. The call sits behind
-// a plain `if (HWY_ARCH_ARM_A64)` rather than an #if, so every target keeps the reference
-// wherever the optimiser does not fold the branch away, and libskia.a ships an undefined
-// hwy::VectorBytes(). macOS bundles tolerate that, but dlopen of the Linux .node fails
-// with "undefined symbol: _ZN3hwy11VectorBytesEv". Compile the missing source.
-// The anchor is a single line because the Windows runners check the submodule out with
-// CRLF endings, which a multi-line needle would never match.
+// Skia m152's hwy/targets.cc calls hwy::VectorBytes(), which lives in
+// hwy/per_target.cc — a source BUILD.gn never compiles, leaving an undefined
+// symbol that breaks dlopen of the Linux .node. Add it to BUILD.gn.
+// (Single-line anchor: Windows runners check the submodule out with CRLF.)
 const HighwayGNPath = path.join(__dirname, '..', 'skia', 'third_party', 'highway', 'BUILD.gn')
 const HIGHWAY_SOURCE_TO_PATCH = `"../externals/highway/hwy/targets.cc",`
 const HIGHWAY_SOURCE_ADDED = `"../externals/highway/hwy/per_target.cc",`
@@ -100,18 +92,10 @@ process.once('beforeExit', () => {
   writeFileSync(HighwayGNPath, HIGHWAY_GN_CONTENT)
 })
 
-// gn/BUILDCONFIG.gn only trusts `cc`/`cxx` named literally clang/clang++; for anything
-// else it shells out to gn/is_clang.py to detect the compiler. Skia commit 7e658a67a1
-// ("Disable partition_alloc on Mac/iOS when using Xcode clang", first shipped in m152)
-// rewrote that probe from
-//   subprocess.check_output('%s --version' % cc, shell=True)
-// to
-//   subprocess.check_output([cc, '--version'])
-// The list form execs argv[0] verbatim, so our musl targets - which build through
-// cc="zig cc" / cxx="zig c++" - make it look for a single binary named `zig cc`, raise
-// FileNotFoundError, and take `gn gen` down with them. Split the multi-word compiler
-// back into argv while we run. This only touches the probe: the toolchain still invokes
-// `zig cc` exactly as before.
+// Skia m152 (commit 7e658a67a) rewrote is_clang.py's probe to
+// `check_output([cc, '--version'])`, which execs argv[0] verbatim — our musl
+// cc="zig cc" becomes a nonexistent single binary. Patch it to split on
+// spaces while we run; the toolchain still invokes `zig cc` as before.
 const IsClangPyPath = path.join(__dirname, '..', 'skia', 'gn', 'is_clang.py')
 const IS_CLANG_CODE_TO_PATCH = [
   `subprocess.check_output([cc, '--version'])`,

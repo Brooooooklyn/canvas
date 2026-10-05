@@ -746,9 +746,8 @@ jobs:
       - name: Generate SBOMs
         run: node ./scripts/generate-sbom.mjs --all
 
-      # One step per platform: actions/attest takes a single predicate per
-      # invocation, so each skia.<platform>.node subject gets its own CycloneDX
-      # predicate from the matching npm/<dir>/sbom.cdx.json.
+      # actions/attest takes a single predicate per invocation — one step per
+      # platform binds skia.<platform>.node to its own sbom.cdx.json.
       - name: Attest android-arm64
         uses: actions/attest@v4
         with:
@@ -845,9 +844,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # 'napi prepublish' (the npm prepublishOnly hook of the Publish step)
-      # creates the v<version> release and uploads the .node assets; attach the
-      # standalone SBOMs generated above to that same release.
+      # 'napi prepublish' (Publish's prepublishOnly hook) creates the v<version>
+      # release with the .node assets; attach the SBOMs to that same release.
       - name: Upload SBOMs to GitHub release
         run: |
           if ! git log -1 --pretty=%B | grep -q "^[0-9]\+\.[0-9]\+\.[0-9]\+";

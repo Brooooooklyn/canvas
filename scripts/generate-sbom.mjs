@@ -1,16 +1,9 @@
-// Generates CycloneDX 1.6 SBOMs (sbom.cdx.json) for the platform npm packages.
-// Sources of truth:
-//   - Cargo.lock                  -> resolved Rust crates statically linked into the .node binary
-//   - skia/DEPS                   -> vendored third-party C/C++ libraries pinned to commits
-//   - scripts/skia-gn-args.cjs    -> the same evaluated GN args build-skia.js passes to `gn gen`
+// Generates CycloneDX 1.6 SBOMs for the platform npm packages.
+// Sources: Cargo.lock (Rust crates), skia/DEPS (vendored C++ commits),
+// scripts/skia-gn-args.cjs (the GN args the real build uses).
 //
-// Usage:
-//   node ./scripts/generate-sbom.mjs --dir npm/linux-x64-gnu --out /tmp/sbom.cdx.json
-//   node ./scripts/generate-sbom.mjs --all
-//
-// --all iterates npm/*/ and writes:
-//   npm/<platform>/sbom.cdx.json            (shipped inside the npm tarball via package.json "files")
-//   sbom/sbom-<platform>.cdx.json           (repo root, for release-asset attachment)
+//   node ./scripts/generate-sbom.mjs --dir npm/linux-x64-gnu [--out path]
+//   node ./scripts/generate-sbom.mjs --all    # npm/*/sbom.cdx.json + sbom/sbom-*.cdx.json
 
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
@@ -41,11 +34,10 @@ const PLATFORM_TRIPLES = {
   'win32-x64-msvc': 'x86_64-pc-windows-msvc',
 }
 
-// npm/<platform> directory name -> the build host simulated for buildGnArgs.
-// Mirrors how skia.yaml actually invokes build-skia.js: win32 builds run on
-// windows-latest, darwin on macos-latest (arm64), everything else on Linux.
-// Native x64 builds pass NO --target (targetTriple ''), so their entries map
-// to '' — buildGnArgs throws on triples build-skia.js is never invoked with.
+// Build host simulated per platform, mirroring skia.yaml's runners (win32 on
+// windows-latest, darwin on macos-latest arm64, rest on Linux). Native x64
+// builds pass no --target, so they map to targetTriple '' — buildGnArgs
+// throws on triples build-skia.js is never invoked with.
 const PLATFORM_BUILD_HOSTS = {
   'darwin-arm64': { platformName: 'darwin', hostArch: 'arm64', hostLibc: null },
   'darwin-x64': { platformName: 'darwin', hostArch: 'arm64', hostLibc: null },
@@ -54,11 +46,9 @@ const PLATFORM_BUILD_HOSTS = {
   'win32-x64-msvc': { platformName: 'win32', hostArch: 'x64', hostLibc: null, native: true },
 }
 
-// Vendored Skia third-party libs enabled by the GN args computed in
-// scripts/skia-gn-args.cjs. `gnAll` requires every key to be enabled, `gnAny`
-// requires at least one, `gnDefault` is the fallback for args build-skia.js
-// never sets (they keep their skia.gni declare_args() default). `depsPath` is
-// the key in skia/DEPS that pins repo+commit.
+// Vendored Skia libs keyed on the GN args from skia-gn-args.cjs: gnAll/gnAny
+// gate enablement, gnDefault is the fallback for args the build never sets
+// (skia.gni defaults), depsPath is the skia/DEPS pin.
 const SKIA_LIBS = [
   { name: 'expat', depsPath: 'third_party/externals/expat', gnAll: ['skia_use_expat'], license: 'MIT' },
   { name: 'freetype', depsPath: 'third_party/externals/freetype', gnAll: ['skia_use_freetype'], license: 'FTL' },
@@ -135,9 +125,8 @@ function parseCargoLock(lockPath) {
     .map((p) => ({ name: p.name, version: p.version, source: p.source ?? null, checksum: p.checksum ?? null }))
 }
 
-// Best-effort license lookup via `cargo metadata` (reads the local registry cache or
-// manifest files). Returns {} when cargo or the dependency cache is unavailable —
-// crates in Cargo.lock are still listed, just without a license field.
+// Best-effort crate licenses via `cargo metadata`; degrades to {} (crates
+// still listed, license omitted) when cargo or the registry cache is absent.
 function cargoMetadataLicenses() {
   try {
     const json = execFileSync('cargo', ['metadata', '--locked', '--format-version', '1'], {
@@ -170,12 +159,9 @@ function parseSkiaDeps() {
   return deps
 }
 
-// Evaluate the skia_use_*/skia_enable_* GN args for a target by calling the same
-// buildGnArgs the real build uses, with the platform's build host simulated.
-// Native builds (native: true) pass targetTriple '' — exactly like skia.yaml
-// invokes build-skia.js without --target. Returns a Map<name, value> of the
-// args build-skia.js actually passes to `gn gen`; args it never sets keep
-// their skia.gni defaults (see `gnDefault` in SKIA_LIBS).
+// Evaluates the skia_use_* args for a platform via the same buildGnArgs the
+// real build uses (native builds pass targetTriple '', matching skia.yaml).
+// Returns Map<name, value>; unset args keep skia.gni defaults (see gnDefault).
 function gnArgsFor(platformName, targetTriple) {
   const host = PLATFORM_BUILD_HOSTS[platformName] ?? { platformName: 'linux', hostArch: 'x64', hostLibc: 'glibc' }
   return buildGnArgs({
@@ -187,7 +173,7 @@ function gnArgsFor(platformName, targetTriple) {
   }).args
 }
 
-// 'true'/'false' string -> boolean; unset args fall back to their gni default.
+// 'true'/'false' -> bool; unset arg falls back to its gni default.
 function gnEnabled(gn, key, fallback = false) {
   const value = gn.get(key)
   return value === undefined ? fallback : value === 'true'
@@ -220,7 +206,7 @@ function generateBom(platformDir, platformName) {
   const packageJsonPath = join(platformDir, 'package.json')
   const pkg = JSON.parse(readFileSync(packageJsonPath, 'utf8'))
   const targetTriple = PLATFORM_TRIPLES[platformName] ?? ''
-  // purl: pkg:npm/<urlencoded-scope>/<name>@<version> — the scope/name slash stays literal
+  // purl: pkg:npm/<urlencoded-scope>/<name>@<version>
   const [pkgScope, ...pkgNameParts] = pkg.name.split('/')
   const metadataPurl = `pkg:npm/${encodeURIComponent(pkgScope)}${
     pkgNameParts.length ? `/${pkgNameParts.map(encodeURIComponent).join('/')}` : ''

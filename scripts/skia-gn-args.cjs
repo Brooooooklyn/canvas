@@ -1,48 +1,22 @@
-// Computes the GN args for building Skia. Shared between build-skia.js (which
-// passes them to `gn gen`) and generate-sbom.mjs (which evaluates the same args
-// per platform to decide which vendored third-party libs are enabled) — so the
-// SBOM reads the real GN configuration instead of re-parsing this file.
-//
-// Keep the arg list identical to what build-skia.js produces for the same build
-// context; when you add or change a GN arg here it changes both the build and
-// the SBOM.
+// GN args for building Skia, shared by build-skia.js (`gn gen`) and
+// generate-sbom.mjs (deciding which vendored libs are enabled per platform).
+// Changes here affect both the build and the SBOM.
 
 const { execSync } = require('node:child_process')
 
-// Skia m148 (commit e179431b2b, "[pdf] Allow table based font subsetting")
-// introduced a new path in src/pdf/SkPDFSubsetFont.cpp::subset_harfbuzz that
-// wraps woff/woff2 typefaces through hb_face_create_for_tables +
-// hb_face_set_get_table_tags_func (HB_VERSION_ATLEAST(10,0,0)) and then calls
-// hb_subset_or_fail. For woff/woff2 fonts hb_face_count on the raw blob
-// returns 0 (HarfBuzz cannot parse woff2 natively), so execution always falls
-// through to the table-based path, and hb_subset_or_fail segfaults inside the
-// HarfBuzz 13.1.0 subset module on the targets listed below. glibc linux,
-// darwin, aarch64-pc-windows-msvc, android, and riscv64 are unaffected, so
-// this is very likely a toolchain/ABI interaction in the static-linked musl
-// and MSVC x64 builds rather than a pure logic bug. There is no upstream fix
-// as of HarfBuzz 14.1.0 and no revert of the Skia commit.
-//
-// Workaround: disable skia_pdf_subset_harfbuzz on the affected targets. The
-// flag is declared in skia/gn/skia.gni:158 and gates both the harfbuzz subset
-// dependency and the SK_PDF_USE_HARFBUZZ_SUBSET define at skia/BUILD.gn:1255.
-// With it off, SkPDFSubsetFont compiles as the #else branch and returns null,
-// which SkPDFFont.cpp:474-478 handles gracefully: "If subsetting fails, fall
-// back to original font data." TrueType fonts on these targets are embedded
-// whole instead of subsetted (slightly larger PDFs) and woff/woff2 fonts go
-// through the pre-m148 Type3 fallback. All other targets keep full subsetting.
+// Skia m148 (commit e179431b2b) added a table-based hb_subset_or_fail path in
+// SkPDFSubsetFont.cpp that segfaults on the targets below (no upstream fix as
+// of HarfBuzz 14.1.0). Disabling skia_pdf_subset_harfbuzz makes Skia fall back
+// to pre-m148 behavior (whole-font embedding / Type3 for woff/woff2).
 const PDF_HARFBUZZ_SUBSET_CRASHING_TARGETS = new Set([
   'x86_64-pc-windows-msvc',
   'x86_64-unknown-linux-musl',
   'aarch64-unknown-linux-musl',
 ])
 
-// context mirrors the build host of a GN invocation:
-//   targetTriple — the --target= value ('' for a native build)
-//   platformName — os.platform() of the build host ('linux' | 'darwin' | 'win32')
-//   hostArch     — os.arch() of the build host
-//   hostLibc     — 'glibc' | 'musl' | null (build host libc)
-//   env          — for ANDROID_NDK_LATEST_HOME
-// Returns { gnArgs: string[], args: Map<name, evaluated-value>, cc, cxx, extraSkiaBuildFlag }
+// context mirrors the build host: targetTriple is the --target= value ('' for
+// native), the rest describe the build machine.
+// Returns { gnArgs, args: Map<name, value>, cc, cxx }
 function buildGnArgs({
   targetTriple = '',
   platformName = process.platform,
@@ -50,10 +24,9 @@ function buildGnArgs({
   hostLibc = null,
   env = process.env,
 } = {}) {
-  // Windows-latest in skia.yaml invokes build-skia.js with no --target= flag
-  // (native x64 host build), so targetTriple is empty even though the resulting
-  // binary is x86_64-pc-windows-msvc and is affected by the crash. Match the
-  // native host explicitly in addition to the --target= lookup.
+  // skia.yaml's windows-latest job passes no --target (native x64 build), so
+  // targetTriple is empty even though the binary is x86_64-pc-windows-msvc
+  // and is affected by the crash — match the native host too.
   const IS_NATIVE_WIN_X64 = !targetTriple && platformName === 'win32' && hostArch === 'x64'
   const PDF_HARFBUZZ_SUBSET_ENABLED = !PDF_HARFBUZZ_SUBSET_CRASHING_TARGETS.has(targetTriple) && !IS_NATIVE_WIN_X64
 
@@ -81,7 +54,7 @@ function buildGnArgs({
     `skia_enable_tools=false`,
     `skia_enable_svg=true`,
     `skia_enable_skparagraph=true`,
-    // See PDF_HARFBUZZ_SUBSET_CRASHING_TARGETS above for the crash details.
+    // See PDF_HARFBUZZ_SUBSET_CRASHING_TARGETS above.
     `skia_pdf_subset_harfbuzz=${PDF_HARFBUZZ_SUBSET_ENABLED}`,
     `skia_use_expat=true`,
     `skia_use_system_expat=false`,
@@ -109,10 +82,8 @@ function buildGnArgs({
     `skia_use_system_harfbuzz=false`,
     `skia_use_lua=false`,
     `skia_use_piex=false`,
-    // Skia defaults this to `is_clang`, which pulls PartitionAlloc into libskia. Its Linux code
-    // needs glibc (sys/cdefs.h, sys/ifunc.h, AT_HWCAP2), breaking musl and the glibc 2.17 aarch64
-    // sysroot. The PartitionAlloc archives are never uploaded or linked either, so libskia would
-    // ship unresolved raw_ptr/BackupRefPtr symbols.
+    // Defaults to is_clang, pulling PartitionAlloc into libskia; its Linux code
+    // needs glibc, breaking musl and the glibc 2.17 aarch64 sysroot.
     `skia_use_partition_alloc=false`,
     `skia_enable_fontmgr_custom_directory=true`,
     `skia_enable_fontmgr_custom_embedded=false`,
@@ -180,14 +151,9 @@ function buildGnArgs({
   switch (targetTriple) {
     case 'aarch64-unknown-linux-gnu':
       extraSkiaBuildFlag += ' target_cpu="arm64" target_os="linux"'
-      // -DAT_HWCAP2=26: the highway roll in Skia m152 taught hwy/targets.cc to probe the
-      // aarch64 CPU through getauxval(AT_HWCAP2). Highway backfills the HWCAP2_* bit values
-      // it reads (targets.cc:502-507) but not the auxv key itself, and glibc only added
-      // AT_HWCAP2 to elf.h in 2.18, so the 2.17 sysroot this target builds against fails
-      // with "use of undeclared identifier 'AT_HWCAP2'". 26 is the fixed Linux uapi value
-      // from linux/auxvec.h, identical to what glibc >= 2.18 defines, so a newer sysroot
-      // would redefine it token-for-token. getauxval returns 0 for a key the kernel does
-      // not supply, which highway reads as "no SVE2", so the probe stays correct.
+      // AT_HWCAP2 was added to glibc's elf.h in 2.18; the 2.17 sysroot used for
+      // this target lacks it, breaking Skia m152's hwy getauxval probe. 26 is
+      // the fixed uapi value; getauxval still returns 0 ("no SVE2").
       extraCflags =
         '"--target=aarch64-unknown-linux-gnu", "--sysroot=/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot", "-I/usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot/usr/include", "-march=armv8-a", "-DAT_HWCAP2=26"'
       extraCflagsCC +=
