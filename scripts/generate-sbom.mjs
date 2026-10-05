@@ -1,9 +1,8 @@
 // Generates CycloneDX 1.6 SBOMs (sbom.cdx.json) for the platform npm packages.
 // Sources of truth:
-//   - Cargo.lock          -> resolved Rust crates statically linked into the .node binary
-//   - skia/DEPS           -> vendored third-party C/C++ libraries pinned to commits
-//   - scripts/build-skia.js -> GN args that decide which vendored libs are enabled per target
-// No external dependencies; Cargo.lock is parsed with a minimal [[package]] block parser.
+//   - Cargo.lock                  -> resolved Rust crates statically linked into the .node binary
+//   - skia/DEPS                   -> vendored third-party C/C++ libraries pinned to commits
+//   - scripts/skia-gn-args.cjs    -> the same evaluated GN args build-skia.js passes to `gn gen`
 //
 // Usage:
 //   node ./scripts/generate-sbom.mjs --dir npm/linux-x64-gnu --out /tmp/sbom.cdx.json
@@ -16,8 +15,14 @@
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+
+import { parse as parseToml } from 'smol-toml'
+
+const require = createRequire(import.meta.url)
+const { buildGnArgs } = require('./skia-gn-args.cjs')
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -36,10 +41,24 @@ const PLATFORM_TRIPLES = {
   'win32-x64-msvc': 'x86_64-pc-windows-msvc',
 }
 
-// Vendored Skia third-party libs enabled by the GN args in scripts/build-skia.js.
-// `gn` keys are skia_use_* / skia_enable_* args; `gnAll` requires every key to be
-// truthy, `gnAny` requires at least one. `depsPath` is the key in skia/DEPS that
-// pins repo+commit.
+// npm/<platform> directory name -> the build host simulated for buildGnArgs.
+// Mirrors how skia.yaml actually invokes build-skia.js: win32 builds run on
+// windows-latest, darwin on macos-latest (arm64), everything else on Linux.
+// Native x64 builds pass NO --target (targetTriple ''), so their entries map
+// to '' — buildGnArgs throws on triples build-skia.js is never invoked with.
+const PLATFORM_BUILD_HOSTS = {
+  'darwin-arm64': { platformName: 'darwin', hostArch: 'arm64', hostLibc: null },
+  'darwin-x64': { platformName: 'darwin', hostArch: 'arm64', hostLibc: null },
+  'linux-x64-gnu': { platformName: 'linux', hostArch: 'x64', hostLibc: 'glibc', native: true },
+  'linux-x64-musl': { platformName: 'linux', hostArch: 'x64', hostLibc: 'musl' },
+  'win32-x64-msvc': { platformName: 'win32', hostArch: 'x64', hostLibc: null, native: true },
+}
+
+// Vendored Skia third-party libs enabled by the GN args computed in
+// scripts/skia-gn-args.cjs. `gnAll` requires every key to be enabled, `gnAny`
+// requires at least one, `gnDefault` is the fallback for args build-skia.js
+// never sets (they keep their skia.gni declare_args() default). `depsPath` is
+// the key in skia/DEPS that pins repo+commit.
 const SKIA_LIBS = [
   { name: 'expat', depsPath: 'third_party/externals/expat', gnAll: ['skia_use_expat'], license: 'MIT' },
   { name: 'freetype', depsPath: 'third_party/externals/freetype', gnAll: ['skia_use_freetype'], license: 'FTL' },
@@ -74,6 +93,8 @@ const SKIA_LIBS = [
     name: 'libpng',
     depsPath: 'third_party/externals/libpng',
     gnAny: ['skia_use_libpng_decode', 'skia_use_libpng_encode'],
+    // unset in skia-gn-args.cjs; skia.gni defaults these to true
+    gnDefault: true,
     license: 'libpng-2.0',
   },
   {
@@ -83,7 +104,14 @@ const SKIA_LIBS = [
     license: 'BSD-3-Clause',
   },
   { name: 'wuffs', depsPath: 'third_party/externals/wuffs', gnAll: ['skia_use_wuffs'], license: 'Apache-2.0' },
-  { name: 'zlib', depsPath: 'third_party/externals/zlib', gnAll: ['skia_use_zlib'], license: 'Zlib' },
+  {
+    name: 'zlib',
+    depsPath: 'third_party/externals/zlib',
+    gnAll: ['skia_use_zlib'],
+    // unset in skia-gn-args.cjs; skia.gni defaults it to true
+    gnDefault: true,
+    license: 'Zlib',
+  },
 ]
 
 function parseArgs(argv) {
@@ -100,22 +128,11 @@ function parseArgs(argv) {
   return args
 }
 
-// Minimal TOML parse of Cargo.lock [[package]] blocks: name, version, source, checksum.
 function parseCargoLock(lockPath) {
-  const content = readFileSync(lockPath, 'utf8')
-  const packages = []
-  for (const block of content.split('[[package]]').slice(1)) {
-    const get = (key) => {
-      const match = block.match(new RegExp(`^${key}\\s*=\\s*"([^"]*)"`, 'm'))
-      return match ? match[1] : null
-    }
-    const name = get('name')
-    const version = get('version')
-    if (name && version) {
-      packages.push({ name, version, source: get('source'), checksum: get('checksum') })
-    }
-  }
-  return packages
+  const parsed = parseToml(readFileSync(lockPath, 'utf8'))
+  return (parsed.package ?? [])
+    .filter((p) => p.name && p.version)
+    .map((p) => ({ name: p.name, version: p.version, source: p.source ?? null, checksum: p.checksum ?? null }))
 }
 
 // Best-effort license lookup via `cargo metadata` (reads the local registry cache or
@@ -153,45 +170,27 @@ function parseSkiaDeps() {
   return deps
 }
 
-// Evaluate the skia_use_*/skia_enable_* GN args declared in scripts/build-skia.js.
-// Args are template literals like `skia_use_icu=true` or
-// `skia_use_libjxl_decode=${!TARGET_TRIPLE.startsWith('riscv64')}` — evaluate the
-// ${...} against the target triple for the platform being generated. Args that
-// build-skia.js does not set keep their declare_args() default from
-// skia/gn/skia.gni (e.g. skia_use_libpng_* and skia_use_zlib default to true);
-// only literal true/false defaults are read, expression defaults stay unset.
-function parseGnArgs(targetTriple) {
-  const source = readFileSync(join(REPO_ROOT, 'scripts', 'build-skia.js'), 'utf8')
-  const arrayMatch = source.match(/const GN_ARGS = \[([\s\S]*?)\n\]/)
-  if (!arrayMatch) throw new Error('Could not locate GN_ARGS in scripts/build-skia.js')
-  const gn = {}
-  const gniSource = readFileSync(join(REPO_ROOT, 'skia', 'gn', 'skia.gni'), 'utf8')
-  for (const block of gniSource.matchAll(/declare_args\(\)\s*\{([\s\S]*?)\n\}/g)) {
-    for (const m of block[1].matchAll(/^\s*(\w+)\s*=\s*(true|false)\s*(?:#.*)?$/gm)) {
-      gn[m[1]] = m[2] === 'true'
-    }
-  }
-  // Interpolations in GN_ARGS may reference TARGET_TRIPLE or
-  // PDF_HARFBUZZ_SUBSET_ENABLED; mirror the latter's computation from
-  // scripts/build-skia.js (musl + win-x64 targets disable harfbuzz subsetting).
-  const pdfHarfbuzzSubsetEnabled = !new Set([
-    'x86_64-pc-windows-msvc',
-    'x86_64-unknown-linux-musl',
-    'aarch64-unknown-linux-musl',
-  ]).has(targetTriple)
-  const lineRe = /`(\w+)=([^`]*)`/g
-  for (const match of arrayMatch[1].matchAll(lineRe)) {
-    const [, key, rawValue] = match
-    let value = rawValue
-    if (value.includes('${')) {
-      value = new Function('TARGET_TRIPLE', 'PDF_HARFBUZZ_SUBSET_ENABLED', `return \`${value}\``)(
-        targetTriple,
-        pdfHarfbuzzSubsetEnabled,
-      )
-    }
-    gn[key] = value === 'true' ? true : value === 'false' ? false : value
-  }
-  return gn
+// Evaluate the skia_use_*/skia_enable_* GN args for a target by calling the same
+// buildGnArgs the real build uses, with the platform's build host simulated.
+// Native builds (native: true) pass targetTriple '' — exactly like skia.yaml
+// invokes build-skia.js without --target. Returns a Map<name, value> of the
+// args build-skia.js actually passes to `gn gen`; args it never sets keep
+// their skia.gni defaults (see `gnDefault` in SKIA_LIBS).
+function gnArgsFor(platformName, targetTriple) {
+  const host = PLATFORM_BUILD_HOSTS[platformName] ?? { platformName: 'linux', hostArch: 'x64', hostLibc: 'glibc' }
+  return buildGnArgs({
+    targetTriple: host.native ? '' : targetTriple,
+    platformName: host.platformName,
+    hostArch: host.hostArch,
+    hostLibc: host.hostLibc ?? 'glibc',
+    env: { ...process.env, ANDROID_NDK_LATEST_HOME: process.env.ANDROID_NDK_LATEST_HOME ?? '/opt/ndk' },
+  }).args
+}
+
+// 'true'/'false' string -> boolean; unset args fall back to their gni default.
+function gnEnabled(gn, key, fallback = false) {
+  const value = gn.get(key)
+  return value === undefined ? fallback : value === 'true'
 }
 
 function licenseEntry({ license, licenseExpression }) {
@@ -229,7 +228,7 @@ function generateBom(platformDir, platformName) {
 
   const crates = parseCargoLock(join(REPO_ROOT, 'Cargo.lock'))
   const crateLicenses = cargoMetadataLicenses()
-  const gn = parseGnArgs(targetTriple)
+  const gn = gnArgsFor(platformName, targetTriple)
   const skiaDeps = parseSkiaDeps()
 
   const components = []
@@ -270,8 +269,8 @@ function generateBom(platformDir, platformName) {
 
   for (const lib of SKIA_LIBS) {
     const enabled =
-      (lib.gnAll?.every((key) => gn[key] === true) ?? true) &&
-      (lib.gnAny === undefined || lib.gnAny.some((key) => gn[key] === true))
+      (lib.gnAll?.every((key) => gnEnabled(gn, key, lib.gnDefault ?? false)) ?? true) &&
+      (lib.gnAny === undefined || lib.gnAny.some((key) => gnEnabled(gn, key, lib.gnDefault ?? false)))
     if (!enabled) continue
     const pinned = skiaDeps[lib.depsPath]
     if (!pinned) {
