@@ -333,19 +333,16 @@ function generateBom(platformDir, platformName) {
   }
 }
 
-function main() {
-  const args = parseArgs(process.argv.slice(2))
+const args = parseArgs(process.argv.slice(2))
 
-  if (args.dir) {
-    const dir = args.dir
-    const platformName = dir.replace(/\/+$/, '').split('/').pop()
-    const out = args.out ?? join(dir, 'sbom.cdx.json')
-    const bom = generateBom(dir, platformName)
-    writeFileSync(out, `${JSON.stringify(bom, null, 2)}\n`)
-    console.info(`Wrote ${out} (${bom.components.length} components)`)
-    return
-  }
-
+if (args.dir) {
+  const dir = args.dir
+  const platformName = dir.replace(/\/+$/, '').split('/').pop()
+  const out = args.out ?? join(dir, 'sbom.cdx.json')
+  const bom = generateBom(dir, platformName)
+  writeFileSync(out, `${JSON.stringify(bom, null, 2)}\n`)
+  console.info(`Wrote ${out} (${bom.components.length} components)`)
+} else {
   const npmDir = join(REPO_ROOT, 'npm')
   const sbomDir = join(REPO_ROOT, 'sbom')
   mkdirSync(sbomDir, { recursive: true })
@@ -361,5 +358,3 @@ function main() {
     console.info(`Wrote ${inPackage} and ${standalone} (${bom.components.length} components)`)
   }
 }
-
-main()
