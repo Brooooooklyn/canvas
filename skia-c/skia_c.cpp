@@ -1268,8 +1268,10 @@ void skiac_path_swap(skiac_path* c_path, skiac_path* other_path) {
 void skiac_add_path(skiac_path* c_path,
                     skiac_path* other_path,
                     skiac_matrix* c_matrix) {
+  // Path2D.addPath adds the other path's subpaths as they are; kExtend would
+  // turn its first moveTo into a lineTo from the current contour.
   c_path->builder.addPath(other_path->path(), *MATRIX_CAST,
-                          SkPath::AddPathMode::kExtend_AddPathMode);
+                          SkPath::AddPathMode::kAppend_AddPathMode);
   c_path->invalidate();
 }
 
