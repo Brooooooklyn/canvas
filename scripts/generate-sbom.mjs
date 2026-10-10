@@ -4,6 +4,7 @@
 //
 //   node ./scripts/generate-sbom.mjs --dir npm/linux-x64-gnu [--out path]
 //   node ./scripts/generate-sbom.mjs --all    # npm/*/sbom.cdx.json + sbom/sbom-*.cdx.json
+//                                           # + sbom/sbom-all.cdx.json (merged, for CI attestation)
 
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
@@ -331,6 +332,7 @@ if (args.dir) {
   const npmDir = join(REPO_ROOT, 'npm')
   const sbomDir = join(REPO_ROOT, 'sbom')
   mkdirSync(sbomDir, { recursive: true })
+  const boms = []
   for (const platformName of readdirSync(npmDir).sort()) {
     const platformDir = join(npmDir, platformName)
     if (!existsSync(join(platformDir, 'package.json'))) continue
@@ -341,5 +343,75 @@ if (args.dir) {
     writeFileSync(inPackage, json)
     writeFileSync(standalone, json)
     console.info(`Wrote ${inPackage} and ${standalone} (${bom.components.length} components)`)
+    boms.push(bom)
+  }
+  const merged = mergeBoms(boms)
+  const mergedOut = join(sbomDir, 'sbom-all.cdx.json')
+  writeFileSync(mergedOut, `${JSON.stringify(merged, null, 2)}\n`)
+  console.info(`Wrote ${mergedOut} (${merged.components.length} components)`)
+}
+
+// One CycloneDX document covering every platform package, rooted at
+// @napi-rs/canvas. CI attests all skia.*.node binaries against it in a single
+// actions/attest call, which accepts only one predicate per invocation.
+function mergeBoms(boms) {
+  const rootPkg = JSON.parse(readFileSync(join(REPO_ROOT, 'package.json'), 'utf8'))
+  const rootPurl = `pkg:npm/${encodeURIComponent('@napi-rs')}/${encodeURIComponent('canvas')}@${rootPkg.version}`
+
+  const seen = new Map()
+  const components = []
+  for (const bom of boms) {
+    for (const component of bom.components ?? []) {
+      const ref = component['bom-ref']
+      const serialized = JSON.stringify(component)
+      const key = ref ?? serialized
+      if (seen.has(key)) {
+        if (ref !== undefined && seen.get(key) !== serialized) {
+          console.warn(`warn: bom-ref ${ref} has divergent content across platform SBOMs, keeping first`)
+        }
+        continue
+      }
+      seen.set(key, serialized)
+      components.push(component)
+    }
+  }
+
+  const platformRefs = boms.map((bom) => bom.metadata?.component?.['bom-ref']).filter(Boolean)
+  const dependencies = [{ ref: rootPurl, dependsOn: platformRefs }]
+  for (const bom of boms) {
+    for (const dep of bom.dependencies ?? []) {
+      dependencies.push(dep)
+    }
+  }
+
+  return {
+    $schema: 'http://cyclonedx.org/schema/bom-1.6.schema.json',
+    bomFormat: 'CycloneDX',
+    specVersion: '1.6',
+    serialNumber: `urn:uuid:${uuidv5(`${rootPkg.name}@${rootPkg.version} sbom-all`)}`,
+    version: 1,
+    metadata: {
+      timestamp: new Date().toISOString(),
+      tools: {
+        components: [
+          {
+            type: 'application',
+            name: 'generate-sbom.mjs',
+            group: '@napi-rs/canvas',
+            version: rootPkg.version,
+          },
+        ],
+      },
+      component: {
+        type: 'application',
+        'bom-ref': rootPurl,
+        name: rootPkg.name,
+        version: rootPkg.version,
+        purl: rootPurl,
+        licenses: rootPkg.license ? [{ license: { id: rootPkg.license } }] : [],
+      },
+    },
+    components,
+    dependencies,
   }
 }
