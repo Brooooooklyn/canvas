@@ -1,3 +1,14 @@
+## [1.0.11](https://github.com/Brooooooklyn/canvas/compare/v1.0.10...v1.0.11) (2026-10-10)
+
+
+### Bug Fixes
+
+* start a new subpath for each Path2D.addPath call ([#1353](https://github.com/Brooooooklyn/canvas/issues/1353)) ([363cbd6](https://github.com/Brooooooklyn/canvas/commit/363cbd6ebe5c95e8774b0262a3b11350bcd8f81f))
+
+
+### Features
+
+* emit CycloneDX SBOMs for platform packages ([#1351](https://github.com/Brooooooklyn/canvas/issues/1351)) ([22d9b29](https://github.com/Brooooooklyn/canvas/commit/22d9b29e10c756b018c6b441edd1b93a2fbd672d))
 ## [1.0.10](https://github.com/Brooooooklyn/canvas/compare/v1.0.9...v1.0.10) (2026-10-01)
 
 
