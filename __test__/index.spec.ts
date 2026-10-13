@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url'
 
 import ava, { TestFn } from 'ava'
 
-import { createCanvas, Path2D, Canvas, SKRSContext2D, DOMMatrix, loadImage } from '../index'
+import { createCanvas, Path2D, Canvas, SKRSContext2D, DOMMatrix, loadImage, ImageData } from '../index'
 
 import { snapshotImage } from './image-snapshot'
 
@@ -18,6 +18,34 @@ test.beforeEach((t) => {
   const canvas = createCanvas(1024, 768)
   t.context.canvas = canvas
   t.context.ctx = canvas.getContext('2d')!
+})
+
+test('display-p3 context uses a display-p3 backing surface', (t) => {
+  const canvas = createCanvas(2, 2)
+  const ctx = canvas.getContext('2d', { colorSpace: 'display-p3' })
+  ctx.fillStyle = 'rgb(32,128,223)'
+  ctx.fillRect(0, 0, 1, 1)
+  t.deepEqual([...ctx.getImageData(0, 0, 1, 1).data], [31, 128, 223, 255])
+  t.deepEqual([...canvas.data().subarray(0, 4)], [63, 126, 216, 255])
+  ctx.putImageData(new ImageData(new Uint8ClampedArray([32, 128, 223, 255]), 1, 1, { colorSpace: 'display-p3' }), 0, 0)
+  t.deepEqual([...canvas.data().subarray(0, 4)], [32, 128, 223, 255])
+  t.is(canvas.getContext('2d'), ctx)
+  t.deepEqual([...canvas.data().subarray(0, 4)], [32, 128, 223, 255])
+  ctx.fillStyle = 'rgb(32,128,223)'
+  ctx.fillRect(0, 0, 1, 1)
+  t.deepEqual([...ctx.getImageData(0, 0, 1, 1).data], [31, 128, 223, 255])
+})
+
+test('display-p3 context preserves its color space after resize', (t) => {
+  const canvas = createCanvas(2, 2)
+  const ctx = canvas.getContext('2d', { colorSpace: 'display-p3' })
+  for (const dimension of ['width', 'height'] as const) {
+    canvas[dimension] = 3
+    t.is(canvas.getContext('2d'), ctx)
+    ctx.fillStyle = 'rgb(32,128,223)'
+    ctx.fillRect(0, 0, 1, 1)
+    t.deepEqual([...ctx.getImageData(0, 0, 1, 1).data], [31, 128, 223, 255])
+  }
 })
 
 test('pattern snapshots preserve integer texels after canvas mutation', (t) => {
