@@ -1080,8 +1080,7 @@ pub mod ffi {
       c_bitmap: *mut skiac_bitmap,
       repeat_x: i32,
       repeat_y: i32,
-      b: f32,
-      c: f32,
+      quality: i32,
       ts: skiac_transform,
     ) -> *mut skiac_shader;
 
@@ -3819,8 +3818,7 @@ impl Shader {
     bitmap: *mut ffi::skiac_bitmap,
     repeat_x: TileMode,
     repeat_y: TileMode,
-    b: f32,
-    c: f32,
+    quality: FilterQuality,
     ts: Transform,
   ) -> Option<Shader> {
     unsafe {
@@ -3829,8 +3827,7 @@ impl Shader {
         bitmap,
         repeat_x as i32,
         repeat_y as i32,
-        b,
-        c,
+        quality as i32,
         ts.into(),
       );
       Shader::from_ptr(shader_ptr)
@@ -4533,7 +4530,7 @@ pub(crate) struct ImagePatternShared {
   pub(crate) transform: Transform,
   // Cache the shader to avoid creating new ones on every use; cleared when
   // the transform changes so the next `get_shader` rebuilds it.
-  pub(crate) shader: Option<Shader>,
+  pub(crate) shader: Option<(FilterQuality, Shader)>,
 }
 
 // Same confinement as `AccountedBitmap` and `ImagePattern` itself (which holds
@@ -4587,21 +4584,24 @@ impl ImagePattern {
     self.backing_bytes
   }
 
-  pub(crate) fn get_shader(&self) -> Option<Shader> {
-    // Use cached shader if available, otherwise create and cache it
+  pub(crate) fn get_shader(&self, quality: FilterQuality) -> Option<Shader> {
     let mut shared = self.shared.lock().unwrap();
-    if shared.shader.is_none() {
+    if shared
+      .shader
+      .as_ref()
+      .is_none_or(|(cached, _)| *cached != quality)
+    {
       shared.shader = Shader::from_bitmap(
         self.is_canvas,
         self.bitmap,
         self.repeat_x,
         self.repeat_y,
-        1.0 / 3.0,
-        1.0 / 3.0,
+        quality,
         shared.transform,
-      );
+      )
+      .map(|shader| (quality, shader));
     }
-    shared.shader.clone()
+    shared.shader.as_ref().map(|(_, shader)| shader.clone())
   }
 }
 

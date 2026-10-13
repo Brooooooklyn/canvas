@@ -31,9 +31,9 @@ use crate::{
   path::Path,
   pattern::{CanvasPattern, Pattern},
   sk::{
-    AlphaType, Bitmap, BlendMode, ColorSpace, FillType, FontVariantCaps, ImageFilter, LineMetrics,
-    MaskFilter, Matrix, Paint, PaintStyle, Path as SkPath, PathEffect, PathOp,
-    SkEncodedImageFormat, SkImage, SkWMemoryStream, SkiaDataRef, Surface, Transform,
+    AlphaType, Bitmap, BlendMode, ColorSpace, FillType, FilterQuality, FontVariantCaps,
+    ImageFilter, LineMetrics, MaskFilter, Matrix, Paint, PaintStyle, Path as SkPath, PathEffect,
+    PathOp, SkEncodedImageFormat, SkImage, SkWMemoryStream, SkiaDataRef, Surface, Transform,
   },
   state::Context2dRenderingState,
 };
@@ -1473,7 +1473,11 @@ impl Context {
         paint.set_shader(&shader);
       }
       Pattern::Image(p) => {
-        if let Some(shader) = p.get_shader() {
+        if let Some(shader) = p.get_shader(if last_state.image_smoothing_enabled {
+          last_state.image_smoothing_quality
+        } else {
+          FilterQuality::None
+        }) {
           paint.set_color(0, 0, 0, 255);
           paint.set_alpha_f32(self.image_global_alpha());
           paint.set_shader(&shader);
@@ -1706,7 +1710,11 @@ impl Context {
         paint.set_shader(&shader);
       }
       Pattern::Image(p) => {
-        if let Some(shader) = p.get_shader() {
+        if let Some(shader) = p.get_shader(if last_state.image_smoothing_enabled {
+          last_state.image_smoothing_quality
+        } else {
+          FilterQuality::None
+        }) {
           paint.set_color(0, 0, 0, 255);
           paint.set_alpha_f32(self.image_global_alpha());
           paint.set_shader(&shader);

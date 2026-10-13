@@ -20,6 +20,46 @@ test.beforeEach((t) => {
   t.context.ctx = canvas.getContext('2d')!
 })
 
+test('pattern snapshots preserve integer texels after canvas mutation', (t) => {
+  const source = createCanvas(2, 2)
+  const src = source.getContext('2d')
+  const colors = ['#ff0000', '#00ff00', '#0000ff', '#ffffff']
+  for (let i = 0; i < colors.length; i++) {
+    src.fillStyle = colors[i]
+    src.fillRect(i % 2, Math.floor(i / 2), 1, 1)
+  }
+  const expected = [...src.getImageData(0, 0, 2, 2).data]
+  const ctx = createCanvas(2, 2).getContext('2d')
+  ctx.fillStyle = ctx.createPattern(source, 'repeat')!
+  source.width = 1
+  ctx.fillRect(0, 0, 2, 2)
+  t.deepEqual([...ctx.getImageData(0, 0, 2, 2).data], expected)
+})
+
+test('pattern sampling follows smoothing changes after assignment', (t) => {
+  const source = createCanvas(2, 1)
+  const src = source.getContext('2d')
+  src.fillStyle = '#ff0000'
+  src.fillRect(0, 0, 1, 1)
+  src.fillStyle = '#00ff00'
+  src.fillRect(1, 0, 1, 1)
+  const ctx = createCanvas(4, 1).getContext('2d')
+  const pattern = ctx.createPattern(source, 'repeat')!
+  pattern.setTransform(new DOMMatrix([2, 0, 0, 1, 0, 0]))
+  ctx.fillStyle = pattern
+  ctx.imageSmoothingEnabled = false
+  ctx.fillRect(0, 0, 4, 1)
+  const expected = [255, 0, 0, 255, 255, 0, 0, 255, 0, 255, 0, 255, 0, 255, 0, 255]
+  t.deepEqual([...ctx.getImageData(0, 0, 4, 1).data], expected)
+  ctx.imageSmoothingEnabled = true
+  ctx.imageSmoothingQuality = 'low'
+  ctx.fillRect(0, 0, 4, 1)
+  t.notDeepEqual([...ctx.getImageData(0, 0, 4, 1).data], expected)
+  ctx.imageSmoothingEnabled = false
+  ctx.fillRect(0, 0, 4, 1)
+  t.deepEqual([...ctx.getImageData(0, 0, 4, 1).data], expected)
+})
+
 test('should be able to create Path2D', (t) => {
   t.notThrows(() => new Path2D())
   t.notThrows(

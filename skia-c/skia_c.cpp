@@ -214,8 +214,8 @@ skiac_surface* skiac_surface_copy_rgba(skiac_surface* c_surface,
   SkPaint paint;
   paint.setAlpha(SK_AlphaOPAQUE);
 
-  const auto sampling = SkSamplingOptions(SkCubicResampler::Mitchell());
-  // The original surface draws itself to the copy's canvas.
+  const auto sampling = SkSamplingOptions(SkFilterMode::kNearest);
+  // integer-coordinate snapshots copy texels without filtering their neighbors
   SURFACE_CAST->draw(copy->getCanvas(), -(SkScalar)x, -(SkScalar)y, sampling,
                      &paint);
 
@@ -2264,8 +2264,7 @@ skiac_shader* skiac_bitmap_get_shader(
     skiac_bitmap* c_bitmap,
     int repeat_x,
     int repeat_y,
-    float B,
-    float C,  // See SkSamplingOptions.h for docs.
+    int filter_quality,
     skiac_transform c_ts) {
   const auto ts = conv_from_transform(c_ts);
   SkBitmap bm;
@@ -2283,7 +2282,7 @@ skiac_shader* skiac_bitmap_get_shader(
   }
   auto shader = bitmap
                     ->makeShader((SkTileMode)repeat_x, (SkTileMode)repeat_y,
-                                 SkSamplingOptions({B, C}), &ts)
+                                 SamplingOptionsFromFQ(filter_quality), &ts)
                     .release();
   if (shader) {
     return reinterpret_cast<skiac_shader*>(shader);

@@ -1248,8 +1248,7 @@ skiac_shader* skiac_bitmap_get_shader(
     skiac_bitmap* c_bitmap,
     int repeat_x,
     int repeat_y,
-    float B,
-    float C,  // See SkSamplingOptions.h for docs.
+    int filter_quality,
     skiac_transform c_ts);
 void skiac_bitmap_destroy(skiac_bitmap* c_bitmap);
 
