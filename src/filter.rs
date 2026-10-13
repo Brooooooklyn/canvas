@@ -233,7 +233,7 @@ fn drop_shadow_parser(input: &str) -> IResult<&str, CssFilter> {
           r: rgba.red,
           g: rgba.green,
           b: rgba.blue,
-          a: (rgba.alpha * 255.0) as u8,
+          a: (rgba.alpha * 255.0).round() as u8,
         }
       }
       Color::Hsl(hsl) => {
@@ -248,7 +248,7 @@ fn drop_shadow_parser(input: &str) -> IResult<&str, CssFilter> {
           r: (r * 255.0) as u8,
           g: (g * 255.0) as u8,
           b: (b * 255.0) as u8,
-          a: (a * 255.0) as u8,
+          a: (a * 255.0).round() as u8,
         }
       }
       _ => BLACK,

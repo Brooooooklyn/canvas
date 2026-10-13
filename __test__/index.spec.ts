@@ -45,6 +45,79 @@ test('globalAlpha state should be ok', (t) => {
   t.is(ctx.globalAlpha, 0.2)
 })
 
+test('globalAlpha retains fractional state through save and restore', (t) => {
+  const { ctx } = t.context
+  ctx.globalAlpha = 0.501
+  ctx.save()
+  ctx.globalAlpha = 0.1
+  t.is(ctx.globalAlpha, 0.1)
+  ctx.restore()
+  t.is(ctx.globalAlpha, 0.501)
+  for (const invalid of [NaN, Infinity, -Number.EPSILON, 1 + Number.EPSILON]) {
+    ctx.globalAlpha = invalid
+    t.is(ctx.globalAlpha, 0.501)
+  }
+})
+
+test('globalAlpha draws half opacity without an early byte truncation', (t) => {
+  const canvas = createCanvas(1, 1)
+  const ctx = canvas.getContext('2d')
+  ctx.globalAlpha = 0.5
+  ctx.fillStyle = 'rgb(32, 128, 223)'
+  ctx.fillRect(0, 0, 1, 1)
+  t.deepEqual([...ctx.getImageData(0, 0, 1, 1).data], [32, 128, 223, 128])
+})
+
+test('globalAlpha leaves rounded CSS alpha intact at full opacity', (t) => {
+  for (const { alpha, expected } of [
+    { alpha: 0.1, expected: [29, 128, 226, 26] },
+    { alpha: 0.25, expected: [32, 128, 223, 64] },
+    { alpha: 0.5, expected: [32, 128, 223, 128] },
+    { alpha: 0.9, expected: [32, 128, 223, 230] },
+  ]) {
+    const canvas = createCanvas(1, 1)
+    const ctx = canvas.getContext('2d')
+    ctx.fillStyle = `rgba(32, 128, 223, ${alpha})`
+    ctx.fillRect(0, 0, 1, 1)
+    t.deepEqual([...ctx.getImageData(0, 0, 1, 1).data], expected)
+  }
+})
+
+test('globalAlpha preserves half opacity across native paint sources', async (t) => {
+  const source = createCanvas(4, 4)
+  const sourceContext = source.getContext('2d')
+  sourceContext.fillStyle = 'rgb(32, 128, 223)'
+  sourceContext.fillRect(0, 0, 4, 4)
+  const image = await loadImage(source.toBuffer('image/png'))
+  for (const mode of ['fill', 'stroke', 'gradient', 'pattern', 'image', 'canvas']) {
+    const canvas = createCanvas(4, 4)
+    const ctx = canvas.getContext('2d')
+    ctx.globalAlpha = 0.5
+    ctx.fillStyle = 'rgb(32, 128, 223)'
+    ctx.strokeStyle = ctx.fillStyle
+    if (mode === 'stroke') {
+      ctx.lineWidth = 2
+      ctx.strokeRect(1, 1, 2, 2)
+    } else if (mode === 'gradient') {
+      const gradient = ctx.createLinearGradient(0, 0, 4, 0)
+      gradient.addColorStop(0, 'rgb(32, 128, 223)')
+      gradient.addColorStop(1, 'rgb(32, 128, 223)')
+      ctx.fillStyle = gradient
+      ctx.fillRect(0, 0, 4, 4)
+    } else if (mode === 'pattern') {
+      ctx.fillStyle = ctx.createPattern(source, 'repeat')!
+      ctx.fillRect(0, 0, 4, 4)
+    } else if (mode === 'image') {
+      ctx.drawImage(image, 0, 0)
+    } else if (mode === 'canvas') {
+      ctx.drawImage(source, 0, 0)
+    } else {
+      ctx.fillRect(0, 0, 4, 4)
+    }
+    t.deepEqual([...ctx.getImageData(0, 0, 1, 1).data], [32, 128, 223, 128], mode)
+  }
+})
+
 test('globalCompositeOperation state should be ok', (t) => {
   const { ctx } = t.context
   t.is(ctx.globalCompositeOperation, 'source-over')
