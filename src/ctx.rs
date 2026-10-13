@@ -1471,6 +1471,7 @@ impl Context {
         paint.set_color(0, 0, 0, 255);
         paint.set_alpha_f32(alpha);
         paint.set_shader(&shader);
+        paint.set_dither(true);
       }
       Pattern::Image(p) => {
         if let Some(shader) = p.get_shader(if last_state.image_smoothing_enabled {
@@ -1708,6 +1709,7 @@ impl Context {
         paint.set_color(0, 0, 0, 255);
         paint.set_alpha_f32(global_alpha);
         paint.set_shader(&shader);
+        paint.set_dither(true);
       }
       Pattern::Image(p) => {
         if let Some(shader) = p.get_shader(if last_state.image_smoothing_enabled {

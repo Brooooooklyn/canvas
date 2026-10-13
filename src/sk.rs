@@ -682,6 +682,8 @@ pub mod ffi {
 
     pub fn skiac_paint_set_anti_alias(paint: *mut skiac_paint, aa: bool);
 
+    pub fn skiac_paint_set_dither(paint: *mut skiac_paint, dither: bool);
+
     pub fn skiac_paint_set_blend_mode(paint: *mut skiac_paint, blend_mode: i32);
 
     pub fn skiac_paint_get_blend_mode(paint: *mut skiac_paint) -> i32;
@@ -3188,6 +3190,10 @@ impl Paint {
     unsafe {
       ffi::skiac_paint_set_blend_mode(self.0, blend_mode as i32);
     }
+  }
+
+  pub fn set_dither(&mut self, dither: bool) {
+    unsafe { ffi::skiac_paint_set_dither(self.0, dither) }
   }
 
   pub fn get_blend_mode(&self) -> BlendMode {
