@@ -1435,6 +1435,25 @@ impl Context {
     Ok(())
   }
 
+  /// `globalAlpha` rounded to k/255, for the paints that sample an image:
+  /// drawImage and `Pattern::Image`. Blink rounds the drawImage alpha on purpose
+  /// (canvas_rendering_context_2d_state.cc:334-336, "TODO: Don't quantize the
+  /// alpha to 8-bit"). It keeps a float for patterns, but Chrome's CPU canvas
+  /// draws a repeat pattern with source-over through Skia's legacy blitter,
+  /// which rounds the paint alpha to a byte (SkBlitter.cpp `getAlpha()`).
+  /// Some composite ops (copy, xor, lighter, screen, destination-over),
+  /// repeat-x/y and a transformed no-repeat take the float pipeline there, so
+  /// at exact (k + 0.5)/255 ties such as 0.3 Chrome CPU can be 1 lower; its GPU
+  /// canvas agrees with this rounding. Here it is load-bearing:
+  /// cubic sampling ('high' drawImage, and every pattern) runs Skia's float
+  /// pipeline, where the Mitchell weights can sum to 1 - eps and the store
+  /// rounds ties to even, so a float 0.5 can come out 127 and 0.3 comes out 76.
+  /// f32 maths and `k / 255.0` as Blink does: `set_alpha(k)` multiplies by
+  /// 1/255, which is 1 ulp off for some k.
+  fn image_global_alpha(&self) -> f32 {
+    (self.state.global_alpha as f32 * 255.0).round() / 255.0
+  }
+
   pub fn fill_paint(&self) -> result::Result<Paint, SkError> {
     let last_state = &self.state;
     let current_paint = &last_state.paint;
@@ -1456,7 +1475,7 @@ impl Context {
       Pattern::Image(p) => {
         if let Some(shader) = p.get_shader() {
           paint.set_color(0, 0, 0, 255);
-          paint.set_alpha_f32(alpha);
+          paint.set_alpha_f32(self.image_global_alpha());
           paint.set_shader(&shader);
         }
       }
@@ -1689,7 +1708,7 @@ impl Context {
       Pattern::Image(p) => {
         if let Some(shader) = p.get_shader() {
           paint.set_color(0, 0, 0, 255);
-          paint.set_alpha_f32(current_paint.get_alpha_f32());
+          paint.set_alpha_f32(self.image_global_alpha());
           paint.set_shader(&shader);
         }
       }
@@ -1858,9 +1877,12 @@ impl Context {
         // bounding box -- a `strokeRect` shadow came out a filled box. So fold
         // the blend into the paint colour, as `SkPaintPriv::RemoveColorFilter`
         // does for PDF; against a solid-colour source that is algebraically the
-        // same, and SkSVGDevice emits a plain `fill=` with no filter. Rounding
-        // back to 8 bits loses nothing, since the blitter would quantise to
-        // `SkPMColor` before the first pixel anyway.
+        // same, and SkSVGDevice emits a plain `fill=` with no filter. It rounds
+        // twice, though: `get_color` rounds the float paint alpha to a byte,
+        // and the product with `shadowColor.a` is rounded again. The
+        // image-filter route below does the same, through its 8-bit layer;
+        // Blink's looper shadow takes one float product, so this one can be
+        // 1/255 off it.
         //
         // Two conditions, both load-bearing:
         //   * `* paint_alpha`: `paint` already carries style alpha *
@@ -2056,7 +2078,7 @@ impl Context {
 
     let mut paint: Paint = self.fill_paint()?;
     self.account_paint_resources(&self.state.fill_style);
-    paint.set_alpha_f32(self.state.global_alpha as f32);
+    paint.set_alpha_f32(self.image_global_alpha());
 
     // Extract state for shadow rendering to avoid borrow conflicts
     let shadow_paint = self.shadow_paint(&paint, ShadowSource::Image, DrawContent::Geometry);

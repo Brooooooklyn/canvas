@@ -3272,7 +3272,8 @@ impl Paint {
   }
 
   /// The paint's colour as an 8-bit sRGB ARGB word, alpha in the top byte.
-  /// float alpha is quantized when retrieving this color word.
+  /// Lossy for alpha: `set_alpha_f32` keeps a float, which `SkPaint::getColor`
+  /// rounds to the nearest byte.
   pub fn get_color(&self) -> u32 {
     unsafe { ffi::skiac_paint_get_color(self.0) }
   }
