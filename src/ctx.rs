@@ -1268,7 +1268,11 @@ impl Context {
       // `Source` is kept anyway and is not a divergence in effect: a
       // whole-canvas layer restored with kSrc replaces every pixel, like
       // Chromium's `clear(transparent)` + foreground draw. Drop it and a
-      // `fillRect` overwrites only its own geometry.
+      // `fillRect` overwrites only its own geometry. With a dithered gradient
+      // paint it does differ: the layer starts at the clip's device origin, so
+      // a clip whose origin is not a multiple of 8 shifts the 8x8 dither
+      // phase, while Chromium draws copy directly after the clear
+      // (canvas_2d_recorder_context.h:830-837).
       BlendMode::SourceIn
       | BlendMode::SourceOut
       | BlendMode::DestinationIn
