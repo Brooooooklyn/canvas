@@ -1488,16 +1488,17 @@ impl Context {
 
   /// An image pattern's shader for the current smoothing state. On a raster
   /// canvas an Image source is drawn from Chrome's decode cache, whose level
-  /// depends on the CTM (PaintShader::CreateDecodedImage); PDF and SVG keep the
-  /// original image.
+  /// depends on the CTM (PaintShader::CreateDecodedImage), in the canvas's
+  /// colour space; PDF and SVG keep the original image.
   fn image_pattern_shader(&self, pattern: &ImagePattern) -> Option<Shader> {
     let quality = if self.state.image_smoothing_enabled {
       self.state.image_smoothing_quality
     } else {
       FilterQuality::None
     };
-    let ctm = (self.backend == Backend::Raster).then(|| self.state.transform.get_transform());
-    pattern.get_shader(quality, ctm)
+    let decode = (self.backend == Backend::Raster)
+      .then(|| (self.state.transform.get_transform(), self.color_space));
+    pattern.get_shader(quality, decode)
   }
 
   pub fn fill_paint(&self) -> result::Result<Paint, SkError> {
@@ -2278,6 +2279,7 @@ impl Context {
     let image_smoothing_enabled = self.state.image_smoothing_enabled;
     let image_smoothing_quality = self.state.image_smoothing_quality;
     let decode_cache = image.filter(|_| self.backend == Backend::Raster);
+    let color_space = self.color_space;
     let ctm = self.state.transform.get_transform();
     let vector_device = self.backend != Backend::Raster;
 
@@ -2306,6 +2308,7 @@ impl Context {
         shadow_canvas.draw_image(
           bitmap,
           decode_cache,
+          color_space,
           ctm,
           vector_device,
           sx,
@@ -2327,6 +2330,7 @@ impl Context {
         canvas.draw_image(
           bitmap,
           decode_cache,
+          color_space,
           ctm,
           vector_device,
           sx,
@@ -5047,7 +5051,10 @@ mod tests {
     };
     assert!(
       pattern
-        .get_shader(FilterQuality::Low, Some(Transform::default()))
+        .get_shader(
+          FilterQuality::Low,
+          Some((Transform::default(), ColorSpace::Srgb))
+        )
         .is_some()
     );
     assert_eq!(image.level_bytes(), 64 * 64 * 4);

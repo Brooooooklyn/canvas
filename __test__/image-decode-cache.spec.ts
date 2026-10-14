@@ -207,6 +207,66 @@ test('drawImage of an Image whose target size rounds to 0 draws nothing', async 
   }
 })
 
+// A 16x16 canvas in `colorSpace`, with `fn` drawn on it.
+function drawOn(
+  colorSpace: 'srgb' | 'display-p3',
+  quality: Quality,
+  source: Source,
+  fn: (ctx: SKRSContext2D, source: Source) => void,
+) {
+  const ctx = createCanvas(16, 16).getContext('2d', { colorSpace })
+  if (quality === 'off') {
+    ctx.imageSmoothingEnabled = false
+  } else {
+    ctx.imageSmoothingQuality = quality
+  }
+  fn(ctx, source)
+  return px(ctx, 0, 0, 16, 16)
+}
+
+const down16 = (ctx: SKRSContext2D, s: Source) => ctx.drawImage(s, 0, 0, 10, 10)
+const up16 = (ctx: SKRSContext2D, s: Source) => ctx.drawImage(s, 2, 2, 6, 6, 0.3, 0.6, 14, 14)
+const pattern16 = (sx: number) => (ctx: SKRSContext2D, s: Source) => {
+  const pattern = ctx.createPattern(s as PatternSource, 'repeat')
+  pattern.setTransform(scale(sx, sx, 0.5, 0.25))
+  ctx.fillStyle = pattern
+  ctx.fillRect(0, 0, 16, 16)
+}
+
+// Chrome decodes an Image into the canvas's colour space before it scales it
+// (DoDecodeImage with the key's target colour space), so levels, the original
+// and patterns are sampled in the canvas's space. The Display P3 PNG is 32x32
+// noise encoded by Chrome.
+test('an Image in another colour space is converted before it is scaled', async (t) => {
+  const p3png = Buffer.from(CHROME['asset|p3-noise-32.png'], 'base64')
+  for (const quality of ['low', 'medium', 'high'] as const) {
+    for (const [key, fn] of [
+      ['down', down16],
+      ['up', up16],
+      ['pattern-0.3', pattern16(0.3)],
+      ['pattern-1.5', pattern16(1.5)],
+    ] as const) {
+      t.deepEqual(
+        drawOn('srgb', quality, await loadImage(p3png), fn),
+        chrome(`p3image|srgb|${key}`),
+        `P3 Image on sRGB, ${key} ${quality}`,
+      )
+    }
+    for (const [key, fn] of [
+      ['down', down16],
+      ['up', up16],
+      ['pattern-0.3', pattern16(0.3)],
+    ] as const) {
+      t.deepEqual(
+        drawOn('display-p3', quality, await imageFrom(noise(32, 32, 5)), fn),
+        chrome(`image|p3|${key}`),
+        `sRGB Image on display-p3, ${key} ${quality}`,
+      )
+    }
+  }
+  t.deepEqual(drawOn('srgb', 'off', await loadImage(p3png), pattern16(0.3)), chrome('p3image|srgb|pattern-0.3|off'))
+})
+
 // Chrome draws an SVG Image as vectors, never from the decode cache. We keep
 // sampling the SVG's raster with the smoothing quality, as before: 'high' is
 // cubic and an Image pattern's 'medium' takes a mip level, so neither matches

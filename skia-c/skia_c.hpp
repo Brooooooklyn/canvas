@@ -847,6 +847,7 @@ void skiac_canvas_draw_image(skiac_canvas* c_canvas,
                              skiac_bitmap* c_bitmap,
                              bool is_canvas,
                              skiac_image_levels* c_levels,
+                             uint8_t cs,
                              skiac_transform c_ctm,
                              bool vector_device,
                              float sx,
@@ -1270,7 +1271,8 @@ skiac_shader* skiac_image_make_decoded_pattern_shader(
     int repeat_x,
     int repeat_y,
     int filter_quality,
-    skiac_transform c_ts);
+    skiac_transform c_ts,
+    uint8_t cs);
 void skiac_bitmap_destroy(skiac_bitmap* c_bitmap);
 
 // Image decode-cache levels
