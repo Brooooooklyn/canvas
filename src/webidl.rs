@@ -548,6 +548,54 @@ impl FromNapiValue for Positional {
   }
 }
 
+/// What the argument-count markers wrap: the marker for `n` arguments wraps
+/// `&ARGUMENT_COUNTS[n]`. Only `argument_counts` wraps an object with these
+/// addresses, so no other value is read as a count.
+static ARGUMENT_COUNTS: [u8; 5] = [0, 1, 2, 3, 4];
+
+/// The argument-count markers for 0 to 4 arguments, for index.js only: its
+/// createImageData and createPattern wrappers pass
+/// `markers[Math.min(arguments.length, 4)]` after the positional arguments.
+#[napi(js_name = "_argumentCounts")]
+pub fn argument_counts(env: &Env) -> Result<Vec<Object<'_>>> {
+  ARGUMENT_COUNTS
+    .iter()
+    .map(|count| {
+      let marker = Object::new(env)?;
+      check_status!(unsafe {
+        sys::napi_wrap(
+          env.raw(),
+          marker.raw(),
+          ptr::from_ref(count).cast_mut().cast(),
+          None,
+          ptr::null_mut(),
+          ptr::null_mut(),
+        )
+      })?;
+      Ok(marker)
+    })
+    .collect()
+}
+
+/// The count of an `argument_counts` marker; None for any other value.
+fn argument_count(env: sys::napi_env, value: sys::napi_value) -> Result<Option<u32>> {
+  if type_of(env, value)? != ValueType::Object {
+    return Ok(None);
+  }
+  let mut data = ptr::null_mut();
+  // Fails, without throwing, on an object that nothing wrapped. An object
+  // that another class wrapped has another address.
+  if unsafe { sys::napi_unwrap(env, value, &mut data) } != sys::Status::napi_ok {
+    return Ok(None);
+  }
+  Ok(
+    ARGUMENT_COUNTS
+      .iter()
+      .find(|count| ptr::eq(*count, data.cast::<u8>()))
+      .map(|count| u32::from(*count)),
+  )
+}
+
 /// The arguments of a call with `Positional` parameters.
 pub(crate) struct Arguments {
   env: sys::napi_env,
@@ -558,11 +606,12 @@ pub(crate) struct Arguments {
 impl Arguments {
   /// The `count` values the `Positional` parameters of this call recorded.
   ///
-  /// `argc` is the extra argument after them: index.js passes
-  /// `arguments.length` there. A raw call (the js-binding entrypoint) has
-  /// none. napi pads missing arguments with undefined, so `f(x)` and
-  /// `f(x, undefined)` look the same here, and the count then runs up to the
-  /// last argument that is not undefined.
+  /// `argc` is the argument after them: index.js passes an
+  /// `argument_counts` marker there. A raw call (the js-binding entrypoint)
+  /// has none, and any other value there is an extra argument, ignored.
+  /// napi pads missing arguments with undefined, so without the marker `f(x)`
+  /// and `f(x, undefined)` look the same here, and the count then runs up to
+  /// the last argument that is not undefined.
   pub(crate) fn take(env: sys::napi_env, count: usize, argc: sys::napi_value) -> Result<Self> {
     // Taken before any user code runs, which may make a call of its own.
     let values = POSITIONAL.with(|values| std::mem::take(&mut *values.borrow_mut()));
@@ -581,11 +630,10 @@ impl Arguments {
         len = index as u32 + 1;
       }
     }
-    // From index.js, the arguments at or past argc are undefined, so argc is
-    // never below `len`. A raw call may put any value here; the max keeps a
-    // small number from dropping its real arguments.
-    if type_of(env, argc)? == ValueType::Number {
-      len = len.max(unsafe { u32::from_napi_value(env, argc)? });
+    // From index.js, the arguments at or past the count are undefined, so
+    // the count is never below `len`.
+    if let Some(argc) = argument_count(env, argc)? {
+      len = len.max(argc);
     }
     Ok(Self { env, values, len })
   }
