@@ -4459,9 +4459,10 @@ impl Bitmap {
     unsafe { ffi::skiac_bitmap_set_immutable(self.0.bitmap) }
   }
 
-  /// One immutable image of these pixels for a pattern. It shares the pixels
-  /// of an immutable (decoded) bitmap and copies a mutable one once. It holds
-  /// null when the bitmap has no pixels, and then the pattern paints nothing.
+  /// One immutable image of these pixels, made at a pattern's first paint. It
+  /// shares the pixels of an immutable (decoded) bitmap and copies a mutable
+  /// one. It holds null when the bitmap has no pixels, and then the pattern
+  /// paints nothing.
   pub(crate) fn make_image(&self) -> SkImage {
     SkImage(unsafe { ffi::skiac_bitmap_make_image(self.0.bitmap) })
   }
@@ -4545,9 +4546,13 @@ pub enum ImagePatternBacking {
 #[derive(Debug)]
 pub(crate) struct ImagePatternShared {
   pub(crate) transform: Transform,
+  // The pattern's one image, made from `backing` at the first paint and kept
+  // for the pattern's life, so an SVG or AVIF pattern that is never painted
+  // makes no copy.
+  pub(crate) image: Option<SkImage>,
   // Cache the shader for the last sampling quality; rebuilt when the transform
-  // or the quality changes. Every shader samples the pattern's one image, so a
-  // rebuild copies no pixels.
+  // or the quality changes. Every shader samples `image`, so a rebuild copies
+  // no pixels.
   pub(crate) shader: Option<(FilterQuality, Shader)>,
 }
 
@@ -4562,18 +4567,16 @@ pub struct ImagePattern {
   /// Not the pattern's own id: patterns built from an Image clone the same
   /// Arc<AccountedBitmap> and share its resource_id, so N wrappers over one
   /// bitmap charge once; per-pattern copies (ImageData, cloned surfaces) get
-  /// a fresh id. The `image` pointer is recyclable after the image is
-  /// freed and must never serve as a key.
+  /// a fresh id. The image pointer is recyclable after the image is freed
+  /// and must never serve as a key.
   pub(crate) accounting_id: u64,
-  /// The pixels captured at `createPattern`, made once; every shader samples
-  /// this image.
-  pub(crate) image: SkImage,
   pub(crate) repeat_x: TileMode,
   pub(crate) repeat_y: TileMode,
   pub(crate) is_canvas: bool,
   /// Bytes the whole backing raster occupies.
   pub(crate) backing_bytes: usize,
   /// Keeps the source object and its V8 memory accounting alive across clones.
+  /// The pattern's image is made from it at the first paint.
   pub(crate) backing: Option<ImagePatternBacking>,
   pub(crate) shared: Arc<Mutex<ImagePatternShared>>,
 }
@@ -4583,7 +4586,6 @@ impl Clone for ImagePattern {
     Self {
       // Clones share the backing raster, so they share the charge identity.
       accounting_id: self.accounting_id,
-      image: self.image.clone(),
       repeat_x: self.repeat_x,
       repeat_y: self.repeat_y,
       is_canvas: self.is_canvas,
@@ -4602,14 +4604,16 @@ impl ImagePattern {
   }
 
   pub(crate) fn get_shader(&self, quality: FilterQuality) -> Option<Shader> {
-    let mut shared = self.shared.lock().unwrap();
+    let mut guard = self.shared.lock().unwrap();
+    let shared = &mut *guard;
     if shared
       .shader
       .as_ref()
       .is_none_or(|(cached, _)| *cached != quality)
     {
+      let image = shared.image.get_or_insert_with(|| self.make_image());
       shared.shader = Shader::from_pattern_image(
-        &self.image,
+        image,
         self.is_canvas,
         self.repeat_x,
         self.repeat_y,
@@ -4619,6 +4623,20 @@ impl ImagePattern {
       .map(|shader| (quality, shader));
     }
     shared.shader.as_ref().map(|(_, shader)| shader.clone())
+  }
+
+  /// The image every shader of this pattern samples. A null one (no pixels,
+  /// or a failed snapshot) gives the empty shader, which paints nothing.
+  fn make_image(&self) -> SkImage {
+    match &self.backing {
+      Some(ImagePatternBacking::Bitmap(bitmap)) => bitmap.inner.make_image(),
+      // The cloned surface is never drawn to again, so its snapshot shares the
+      // pixels and never copies them.
+      Some(ImagePatternBacking::Surface(surface)) => surface
+        .make_image_snapshot()
+        .unwrap_or(SkImage(ptr::null_mut())),
+      None => SkImage(ptr::null_mut()),
+    }
   }
 }
 

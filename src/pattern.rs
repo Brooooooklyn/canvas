@@ -13,7 +13,7 @@ use crate::image::{Image, ImageData};
 use crate::page_recorder::next_resource_id;
 use crate::sk::{
   AccountedBitmap, AlphaType, Bitmap, ColorType, ImagePattern, ImagePatternBacking,
-  ImagePatternShared, SkImage, Surface, TileMode, Transform,
+  ImagePatternShared, TileMode, Transform,
 };
 use crate::{CanvasElement, SVGCanvas};
 
@@ -82,15 +82,6 @@ impl Pattern {
   }
 }
 
-fn snapshot(surface: &Surface) -> Result<SkImage> {
-  surface.make_image_snapshot().ok_or_else(|| {
-    Error::new(
-      Status::GenericFailure,
-      "Failed to snapshot canvas surface".to_owned(),
-    )
-  })
-}
-
 #[napi]
 pub struct CanvasPattern {
   pub(crate) inner: Pattern,
@@ -108,14 +99,13 @@ impl CanvasPattern {
     // (`backing`), so clones pushed onto the `save()`/`restore()` state stack
     // stay valid after the JS `CanvasPattern` is garbage-collected.
     // https://github.com/Brooooooklyn/canvas/issues/1341
-    let (image, backing_bytes, backing, accounting_id) = match input {
+    let (backing_bytes, backing, accounting_id) = match input {
       Either4::A(image) => {
         let bitmap = image
           .bitmap
           .as_ref()
           .ok_or_else(|| Error::new(Status::InvalidArg, "Image is not completed.".to_owned()))?;
         (
-          bitmap.inner.make_image(),
           bitmap.inner.0.width as usize * bitmap.inner.0.height as usize * 4,
           ImagePatternBacking::Bitmap(bitmap.clone()),
           // The Arc is cloned from the Image: the backing identity is the
@@ -146,10 +136,10 @@ impl CanvasPattern {
         // long as the last owner holds it.
         env.adjust_external_memory(image_data_size as i64)?;
         // Only this pattern holds the copy and nothing writes to it again, so
-        // the image can share it instead of copying it a second time.
+        // the image made at the first paint shares it instead of copying it a
+        // second time.
         bitmap.set_immutable();
         (
-          bitmap.make_image(),
           image_data_size,
           ImagePatternBacking::Bitmap(Arc::new(AccountedBitmap::new(
             bitmap,
@@ -177,10 +167,7 @@ impl CanvasPattern {
             )
           })?;
         let backing_bytes = cloned_surface.width() as usize * cloned_surface.height() as usize * 4;
-        // The clone is never drawn to again, so its snapshot shares the
-        // pixels and never copies them.
         (
-          snapshot(&cloned_surface)?,
           backing_bytes,
           ImagePatternBacking::Surface(cloned_surface.reference()),
           // Per-pattern surface clone: fresh identity.
@@ -202,10 +189,7 @@ impl CanvasPattern {
             )
           })?;
         let backing_bytes = cloned_surface.width() as usize * cloned_surface.height() as usize * 4;
-        // The clone is never drawn to again, so its snapshot shares the
-        // pixels and never copies them.
         (
-          snapshot(&cloned_surface)?,
           backing_bytes,
           ImagePatternBacking::Surface(cloned_surface.reference()),
           // Per-pattern surface clone: fresh identity.
@@ -232,7 +216,6 @@ impl CanvasPattern {
     Ok(Self {
       inner: Pattern::Image(ImagePattern {
         accounting_id,
-        image,
         repeat_x,
         repeat_y,
         is_canvas,
@@ -240,6 +223,7 @@ impl CanvasPattern {
         backing: Some(backing),
         shared: Arc::new(Mutex::new(ImagePatternShared {
           transform: Transform::default(),
+          image: None,
           shader: None,
         })),
       }),
