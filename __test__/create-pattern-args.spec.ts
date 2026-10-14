@@ -327,3 +327,39 @@ test('the image is converted before the repetition', async (t) => {
   t.true(fromImage !== null)
   t.is(width, 2)
 })
+
+test('createPattern returns null while an Image loads a new src', async (t) => {
+  const ctx = createCanvas(4, 4).getContext('2d')
+  const dataUrl = async (width: number) =>
+    `data:image/png;base64,${Buffer.from(await createCanvas(width, 1).encode('png')).toString('base64')}`
+  const settled = (image: Image) =>
+    new Promise<string>((resolve) => {
+      image.onload = () => resolve('load')
+      image.onerror = () => resolve('error')
+    })
+  const image = new Image()
+  let done = settled(image)
+  image.src = await dataUrl(2)
+  t.is(await done, 'load')
+  t.true(ctx.createPattern(image, 'repeat') !== null)
+  // The old picture is still held while the new src loads, but the image is
+  // not complete, so the result is null (Chrome checks ImageComplete() first).
+  done = settled(image)
+  image.src = await dataUrl(3)
+  t.false(image.complete)
+  t.is(ctx.createPattern(image, 'repeat'), null)
+  t.is(await done, 'load')
+  t.true(ctx.createPattern(image, 'repeat') !== null)
+  // The same while a load that fails is in flight; then the image is broken.
+  done = settled(image)
+  image.src = 'data:image/png;base64,AAAB'
+  t.false(image.complete)
+  t.is(ctx.createPattern(image, 'repeat'), null)
+  t.is(await done, 'error')
+  t.throws(() => ctx.createPattern(image, 'repeat'), {
+    instanceOf: DOMException,
+    name: 'InvalidStateError',
+    code: 11,
+    message: `${CREATE_PATTERN}Source image is in the 'broken' state.`,
+  })
+})

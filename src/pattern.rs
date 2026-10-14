@@ -120,6 +120,12 @@ impl CanvasPattern {
     // https://github.com/Brooooooklyn/canvas/issues/1341
     let (backing_bytes, backing, accounting_id) = match input {
       Either4::A(image) => {
+        // Chrome checks ImageComplete() first (image_element_base.cc:59): a
+        // new src that is still loading gives null, even while the old
+        // picture is still held.
+        if !image.complete {
+          return Ok(None);
+        }
         let Some(bitmap) = image.bitmap.as_ref() else {
           if image.broken {
             return Err(webidl::dom_exception(
