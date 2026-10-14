@@ -459,8 +459,11 @@ impl Context {
     F: Fn(&mut Canvas, &Paint) -> result::Result<(), SkError>,
   {
     // `DrawContent` only qualifies a filter, and there is none here, so it is
-    // inert.
+    // inert. Source-over whatever globalCompositeOperation is: Blink's
+    // clearRect draws its rect straight with GetClearFlags and never reads the
+    // composite op (canvas_2d_recorder_context.cc:1928-1985).
     self.render_passes(
+      BlendMode::SourceOver,
       paint,
       DrawContent::Geometry,
       None,
@@ -489,7 +492,15 @@ impl Context {
     F: Fn(&mut Canvas, &Paint) -> result::Result<(), SkError>,
   {
     let content_filter = self.state.filter.clone();
-    self.render_passes(paint, content, content_filter, shadow, shadow_f, f)
+    self.render_passes(
+      self.state.global_composite_operation,
+      paint,
+      content,
+      content_filter,
+      shadow,
+      shadow_f,
+      f,
+    )
   }
 
   /// Shared body of the two above. The shadow closure is handed the user->device
@@ -498,6 +509,7 @@ impl Context {
   /// filter layer. Pass it straight to `apply_shadow_offset_matrix_to_canvas`.
   fn render_passes<S, F>(
     &mut self,
+    blend_mode: BlendMode,
     paint: &Paint,
     content: DrawContent,
     content_filter: Option<ImageFilter>,
@@ -509,7 +521,6 @@ impl Context {
     S: Fn(&mut Canvas, &Paint, &Matrix) -> result::Result<(), SkError>,
     F: Fn(&mut Canvas, &Paint) -> result::Result<(), SkError>,
   {
-    let blend_mode = self.state.global_composite_operation;
     let width = self.width as f32;
     let height = self.height as f32;
 
