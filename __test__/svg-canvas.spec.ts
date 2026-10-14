@@ -358,22 +358,31 @@ test('SvgCanvas pixels follow save, clip and transform across reads', (t) => {
   )
 })
 
-// The recording is drawn into the pixels once it pins 32 MiB, as a canvas
-// recording is (issue #1342), so an SvgCanvas that is never read cannot pin
-// every image drawn into it. Each 2048x2048 snapshot below is 16 MiB.
-test('SvgCanvas recording is bounded and keeps its state when it is drawn', async (t) => {
-  const { status, signal, stdout, stderr } = await new Promise<{
+// Runs `script` in a child node process with --expose-gc, from the package root.
+const runWithGc = (script: string) =>
+  new Promise<{
     status: number | null
     signal: NodeJS.Signals | null
     stdout: string
     stderr: string
   }>((resolve, reject) => {
-    const child = spawn(
-      process.execPath,
-      [
-        '--expose-gc',
-        '-e',
-        `
+    const child = spawn(process.execPath, ['--expose-gc', '-e', script], {
+      cwd: join(__dirname, '..'),
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    let stdout = ''
+    let stderr = ''
+    child.stdout.setEncoding('utf8').on('data', (chunk) => (stdout += chunk))
+    child.stderr.setEncoding('utf8').on('data', (chunk) => (stderr += chunk))
+    child.on('error', reject)
+    child.on('close', (status, signal) => resolve({ status, signal, stdout, stderr }))
+  })
+
+// The recording is drawn into the pixels once it pins 32 MiB, as a canvas
+// recording is (issue #1342), so an SvgCanvas that is never read cannot pin
+// every image drawn into it. Each 2048x2048 snapshot below is 16 MiB.
+test('SvgCanvas recording is bounded and keeps its state when it is drawn', async (t) => {
+  const { status, signal, stdout, stderr } = await runWithGc(`
 const { createCanvas, SvgExportFlag } = require('./index.js')
 const source = createCanvas(2048, 2048)
 const sourceContext = source.getContext('2d')
@@ -406,23 +415,86 @@ for (const c of [ctx, expected]) {
 const a = ctx.getImageData(0, 0, 96, 64).data
 const b = expected.getImageData(0, 0, 96, 64).data
 console.log(JSON.stringify({ growth, equal: a.every((v, i) => v === b[i]), clipped: b[(33 * 96 + 60) * 4 + 3] === 255 && b[(35 * 96 + 65) * 4 + 3] === 0 }))
-`,
-      ],
-      { cwd: join(__dirname, '..'), stdio: ['ignore', 'pipe', 'pipe'] },
-    )
-    let stdout = ''
-    let stderr = ''
-    child.stdout.setEncoding('utf8').on('data', (chunk) => (stdout += chunk))
-    child.stderr.setEncoding('utf8').on('data', (chunk) => (stderr += chunk))
-    child.on('error', reject)
-    child.on('close', (status, signal) => resolve({ status, signal, stdout, stderr }))
-  })
+`)
   t.is(status, 0, `expected exit 0, got status=${status} signal=${signal}\n${stderr}${stdout}`)
   const { growth, equal, clipped } = JSON.parse(stdout.trim().split('\n').pop()!)
   t.true(clipped, 'the clip cuts the later images')
   t.true(equal, 'the SvgCanvas pixels equal a canvas running the same drawing')
   // Unbounded, the 12 snapshots pin 192 MiB.
   t.true(growth < 96, `12 drawImage calls grew rss by ${growth.toFixed(1)} MB, expected < 96 MB`)
+})
+
+// A pattern's paint pins its image in the recording too, so pattern fills,
+// strokes and text count their image against the same 32 MiB. Each pattern
+// below is a 16 MiB snapshot of a 2048x2048 canvas; the 24 fills pin 384 MiB
+// when only the op itself is counted.
+test('SvgCanvas recording counts the images of pattern paints', async (t) => {
+  const { status, signal, stdout, stderr } = await runWithGc(`
+const { createCanvas, DOMMatrix, SvgExportFlag } = require('./index.js')
+const source = createCanvas(2048, 2048)
+const sourceContext = source.getContext('2d')
+const draw = (ctx, i) => {
+  sourceContext.fillStyle = 'rgb(' + i * 9 + ', 0, 255)'
+  sourceContext.fillRect(0, 0, 2048, 2048)
+  const pattern = ctx.createPattern(source, 'repeat')
+  ctx.fillStyle = pattern
+  ctx.strokeStyle = pattern
+  const x = (i % 8) * 12
+  const y = Math.floor(i / 8) * 16
+  switch (i % 4) {
+    case 0:
+      ctx.fillRect(x, y, 10, 10)
+      break
+    case 1:
+      ctx.lineWidth = 3
+      ctx.beginPath()
+      ctx.moveTo(x, y + 2)
+      ctx.lineTo(x + 10, y + 8)
+      ctx.stroke()
+      break
+    case 2:
+      ctx.font = '16px sans-serif'
+      ctx.fillText('W', x, y + 14)
+      break
+    case 3:
+      pattern.setTransform(new DOMMatrix([2, 0, 0, 2, 1, 1]))
+      ctx.fillRect(x, y, 10, 10)
+      break
+  }
+  ctx.fillStyle = 'black'
+  ctx.strokeStyle = 'black'
+}
+const collect = async () => {
+  for (let k = 0; k < 3; k++) {
+    global.gc()
+    await new Promise((resolve) => setImmediate(resolve))
+  }
+}
+;(async () => {
+  const svg = createCanvas(96, 64, SvgExportFlag.NoPrettyXML)
+  const ctx = svg.getContext('2d')
+  for (let i = 0; i < 4; i++) draw(ctx, i)
+  await collect()
+  const before = process.memoryUsage().rss
+  for (let i = 4; i < 28; i++) {
+    draw(ctx, i)
+    await collect()
+  }
+  const growth = (process.memoryUsage().rss - before) / 1048576
+  const expected = createCanvas(96, 64).getContext('2d')
+  for (let i = 0; i < 28; i++) draw(expected, i)
+  const a = ctx.getImageData(0, 0, 96, 64).data
+  const b = expected.getImageData(0, 0, 96, 64).data
+  console.log(JSON.stringify({ growth, equal: a.every((v, i) => v === b[i]) }))
+})().catch((error) => {
+  console.error(error)
+  process.exit(1)
+})
+`)
+  t.is(status, 0, `expected exit 0, got status=${status} signal=${signal}\n${stderr}${stdout}`)
+  const { growth, equal } = JSON.parse(stdout.trim().split('\n').pop()!)
+  t.true(equal, 'the SvgCanvas pixels equal a canvas running the same drawing')
+  t.true(growth < 64, `24 pattern draws grew rss by ${growth.toFixed(1)} MB, expected < 64 MB`)
 })
 
 // SkSVGDevice drops the matrix of an image shader, so a pattern used to be

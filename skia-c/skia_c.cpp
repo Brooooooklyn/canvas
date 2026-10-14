@@ -312,7 +312,7 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
     } else {
       INHERITED::onDrawPaint(paint);
     }
-    this->didDraw(0);
+    this->didDraw(0, &paint);
   }
 
   void onDrawPoints(PointMode mode,
@@ -339,7 +339,7 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
     } else {
       INHERITED::onDrawPoints(mode, count, pts, paint);
     }
-    this->didDraw(count * sizeof(SkPoint));
+    this->didDraw(count * sizeof(SkPoint), &paint);
   }
 
   void onDrawRect(const SkRect& rect, const SkPaint& paint) override {
@@ -349,7 +349,7 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
     } else {
       INHERITED::onDrawRect(rect, paint);
     }
-    this->didDraw(0);
+    this->didDraw(0, &paint);
   }
 
   void onDrawOval(const SkRect& rect, const SkPaint& paint) override {
@@ -359,7 +359,7 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
     } else {
       INHERITED::onDrawOval(rect, paint);
     }
-    this->didDraw(0);
+    this->didDraw(0, &paint);
   }
 
   void onDrawRRect(const SkRRect& rrect, const SkPaint& paint) override {
@@ -369,7 +369,7 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
     } else {
       INHERITED::onDrawRRect(rrect, paint);
     }
-    this->didDraw(0);
+    this->didDraw(0, &paint);
   }
 
   void onDrawPath(const SkPath& path, const SkPaint& paint) override {
@@ -379,7 +379,7 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
     } else {
       INHERITED::onDrawPath(path, paint);
     }
-    this->didDraw(path.approximateBytesUsed());
+    this->didDraw(path.approximateBytesUsed(), &paint);
   }
 
   void onDrawTextBlob(const SkTextBlob* blob,
@@ -393,7 +393,7 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
     } else {
       INHERITED::onDrawTextBlob(blob, x, y, paint);
     }
-    this->didDraw(0);
+    this->didDraw(0, &paint);
   }
 
   // Played back through this canvas, so the SVG output rewrites the pattern
@@ -407,7 +407,7 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
 
   void onDrawRegion(const SkRegion& region, const SkPaint& paint) override {
     INHERITED::onDrawRegion(region, paint);
-    this->didDraw(0);
+    this->didDraw(0, &paint);
   }
 
   void onDrawArc(const SkRect& rect,
@@ -416,19 +416,19 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
                  bool use_center,
                  const SkPaint& paint) override {
     INHERITED::onDrawArc(rect, start, sweep, use_center, paint);
-    this->didDraw(0);
+    this->didDraw(0, &paint);
   }
 
   void onDrawDRRect(const SkRRect& outer,
                     const SkRRect& inner,
                     const SkPaint& paint) override {
     INHERITED::onDrawDRRect(outer, inner, paint);
-    this->didDraw(0);
+    this->didDraw(0, &paint);
   }
 
   void onDrawBehind(const SkPaint& paint) override {
     INHERITED::onDrawBehind(paint);
-    this->didDraw(0);
+    this->didDraw(0, &paint);
   }
 
   void onDrawImage2(const SkImage* image,
@@ -437,7 +437,7 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
                     const SkSamplingOptions& sampling,
                     const SkPaint* paint) override {
     INHERITED::onDrawImage2(image, left, top, sampling, paint);
-    this->didDraw(this->imageBytes(image));
+    this->didDraw(this->imageBytes(image), paint);
   }
 
   void onDrawImageRect2(const SkImage* image,
@@ -447,7 +447,7 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
                         const SkPaint* paint,
                         SrcRectConstraint constraint) override {
     INHERITED::onDrawImageRect2(image, src, dst, sampling, paint, constraint);
-    this->didDraw(this->imageBytes(image));
+    this->didDraw(this->imageBytes(image), paint);
   }
 
   void onDrawImageLattice2(const SkImage* image,
@@ -456,7 +456,7 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
                            SkFilterMode filter,
                            const SkPaint* paint) override {
     INHERITED::onDrawImageLattice2(image, lattice, dst, filter, paint);
-    this->didDraw(this->imageBytes(image));
+    this->didDraw(this->imageBytes(image), paint);
   }
 
   void onDrawAtlas2(const SkImage* image,
@@ -470,7 +470,7 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
                     const SkPaint* paint) override {
     INHERITED::onDrawAtlas2(image, xform, tex, colors, count, mode, sampling,
                             cull, paint);
-    this->didDraw(this->imageBytes(image));
+    this->didDraw(this->imageBytes(image), paint);
   }
 
   void onDrawEdgeAAImageSet2(const ImageSetEntry set[],
@@ -486,19 +486,19 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
     for (int i = 0; i < count; i++) {
       bytes += this->imageBytes(set[i].fImage.get());
     }
-    this->didDraw(bytes);
+    this->didDraw(bytes, paint);
   }
 
   void onDrawGlyphRunList(const sktext::GlyphRunList& list,
                           const SkPaint& paint) override {
     INHERITED::onDrawGlyphRunList(list, paint);
-    this->didDraw(0);
+    this->didDraw(0, &paint);
   }
 
   void onDrawSlug(const sktext::gpu::Slug* slug,
                   const SkPaint& paint) override {
     INHERITED::onDrawSlug(slug, paint);
-    this->didDraw(0);
+    this->didDraw(0, &paint);
   }
 
   void onDrawPatch(const SkPoint cubics[12],
@@ -507,32 +507,32 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
                    SkBlendMode mode,
                    const SkPaint& paint) override {
     INHERITED::onDrawPatch(cubics, colors, tex, mode, paint);
-    this->didDraw(0);
+    this->didDraw(0, &paint);
   }
 
   void onDrawVerticesObject(const SkVertices* vertices,
                             SkBlendMode mode,
                             const SkPaint& paint) override {
     INHERITED::onDrawVerticesObject(vertices, mode, paint);
-    this->didDraw(vertices->approximateSize());
+    this->didDraw(vertices->approximateSize(), &paint);
   }
 
   void onDrawMesh(const SkMesh& mesh,
                   sk_sp<SkBlender> blender,
                   const SkPaint& paint) override {
     INHERITED::onDrawMesh(mesh, std::move(blender), paint);
-    this->didDraw(0);
+    this->didDraw(0, &paint);
   }
 
   void onDrawShadowRec(const SkPath& path,
                        const SkDrawShadowRec& rec) override {
     INHERITED::onDrawShadowRec(path, rec);
-    this->didDraw(path.approximateBytesUsed());
+    this->didDraw(path.approximateBytesUsed(), nullptr);
   }
 
   void onDrawDrawable(SkDrawable* drawable, const SkMatrix* matrix) override {
     INHERITED::onDrawDrawable(drawable, matrix);
-    this->didDraw(drawable->approximateBytesUsed());
+    this->didDraw(drawable->approximateBytesUsed(), nullptr);
   }
 
   void onDrawEdgeAAQuad(const SkRect& rect,
@@ -541,7 +541,7 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
                         const SkColor4f& color,
                         SkBlendMode mode) override {
     INHERITED::onDrawEdgeAAQuad(rect, clip, aa, color, mode);
-    this->didDraw(0);
+    this->didDraw(0, nullptr);
   }
 
  private:
@@ -637,7 +637,12 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
     return image->imageInfo().computeMinByteSize();
   }
 
-  void didDraw(size_t bytes) {
+  // A recorded op pins `bytes`, and the image its paint samples (a pattern)
+  // like the image of a drawImage.
+  void didDraw(size_t bytes, const SkPaint* paint) {
+    if (paint && paint->getShader()) {
+      bytes += this->imageBytes(paint->getShader()->isAImage(nullptr, nullptr));
+    }
     fPendingDraws = true;
     fPendingBytes += kBytesPerRecordedOp + bytes;
     this->flushIfOverLimit();
