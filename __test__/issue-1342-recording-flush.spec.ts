@@ -483,7 +483,8 @@ test.serial('zero-area and non-finite draws paint nothing', (t) => {
   )
 })
 
-// Negative dims sort to a positive span and still paint (mirrored).
+// Negative dims still paint: fillRect sorts the rect, and drawImage and
+// drawCanvas move the origin (Blink AdjustRectForCanvas) instead of mirroring.
 test.serial('negative dims still paint through fillRect, drawImage and drawCanvas', (t) => {
   const ctx = createCanvas(128, 128).getContext('2d')!
   ctx.fillStyle = '#0f0'
@@ -508,7 +509,7 @@ test.serial('negative dims still paint through fillRect, drawImage and drawCanva
   dest.drawImage(src, 0, 0, 10, 10, 30, 20, -10, -10)
   t.deepEqual(px(dest, 25, 15), [255, 0, 0, 255])
 
-  // drawCanvas goes through draw_picture_rect: same sorted clip.
+  // drawCanvas normalises the same way before draw_picture_rect.
   sctx.fillStyle = '#0f0'
   sctx.fillRect(0, 0, 10, 10)
   dest = createCanvas(64, 64).getContext('2d')

@@ -551,7 +551,10 @@ test('globalAlpha is rounded to 8 bits for high quality drawImage', async (t) =>
   }
 })
 
-test('globalAlpha is rounded to 8 bits for patterns', (t) => {
+// Patterns keep the float globalAlpha (raster-precision.spec.ts); a 'repeat'
+// pattern drawn src-over still lands on a byte, because Skia's legacy blitter
+// rounds the paint alpha itself, as in Chrome's CPU canvas.
+test("repeat pattern globalAlpha lands on a byte like Chrome's legacy blitter", (t) => {
   const source = createCanvas(8, 8)
   const sourceContext = source.getContext('2d')
   sourceContext.fillStyle = 'rgb(32, 128, 223)'
