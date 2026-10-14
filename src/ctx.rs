@@ -51,6 +51,16 @@ pub(crate) const MAX_TEXT_WIDTH: f32 = 100_000.0;
 pub(crate) const FILL_STYLE_HIDDEN_NAME: &str = "_fillStyle";
 pub(crate) const STROKE_STYLE_HIDDEN_NAME: &str = "_strokeStyle";
 
+/// The fillStyle/strokeStyle getters read these hidden JS properties, so every
+/// reset to the default state (ctx.reset(), and a width/height change, which
+/// Chrome runs through the same Reset: html_canvas_element.cc:870-872) must
+/// reset them too.
+pub(crate) fn reset_style_getters(ctx: &mut Object) -> Result<()> {
+  ctx.set_named_property(FILL_STYLE_HIDDEN_NAME, "#000000")?;
+  ctx.set_named_property(STROKE_STYLE_HIDDEN_NAME, "#000000")?;
+  Ok(())
+}
+
 /// Where the draw casting the shadow gets its colour from. `shadow_paint` is
 /// handed a finished `Paint`, which exposes no "has a shader" query across the
 /// FFI, so the caller states which style it built the paint from.
@@ -3340,13 +3350,9 @@ impl CanvasRenderingContext2D {
   }
 
   #[napi]
-  pub fn reset(&mut self, env: Env, mut this: This) -> Result<()> {
+  pub fn reset(&mut self, mut this: This) -> Result<()> {
     self.context.reset();
-    // Reset the hidden fill/stroke style properties to default "#000000"
-    let default_color = env.create_string("#000000")?;
-    this.set(FILL_STYLE_HIDDEN_NAME, default_color)?;
-    this.set(STROKE_STYLE_HIDDEN_NAME, default_color)?;
-    Ok(())
+    reset_style_getters(&mut this)
   }
 
   #[napi(return_if_invalid)]

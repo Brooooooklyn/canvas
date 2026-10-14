@@ -3,7 +3,17 @@ import { fileURLToPath } from 'node:url'
 
 import ava, { TestFn } from 'ava'
 
-import { createCanvas, Path2D, Canvas, SKRSContext2D, DOMMatrix, loadImage, ImageData } from '../index'
+import {
+  createCanvas,
+  Path2D,
+  Canvas,
+  SKRSContext2D,
+  DOMMatrix,
+  loadImage,
+  ImageData,
+  SvgCanvas,
+  SvgExportFlag,
+} from '../index'
 
 import { snapshotImage } from './image-snapshot'
 
@@ -627,6 +637,68 @@ test('strokeStyle state should be ok', (t) => {
   t.is(ctx.strokeStyle, '#000000')
   ctx.strokeStyle = 'hotpink'
   t.is(ctx.strokeStyle, 'hotpink')
+})
+
+// Setting width or height resets the context to its default state, even to
+// the same value. Chrome 155 CPU: both getters return '#000000' afterwards,
+// whether the old style was a string, a gradient or a pattern, and a fillRect
+// paints black.
+test('fillStyle and strokeStyle getters reset when width or height is set', (t) => {
+  const resizes: [string, (canvas: Canvas | SvgCanvas) => void][] = [
+    [
+      'width=width',
+      (canvas) => {
+        const { width } = canvas
+        canvas.width = width
+      },
+    ],
+    ['width=30', (canvas) => (canvas.width = 30)],
+    ['height=25', (canvas) => (canvas.height = 25)],
+  ]
+  const styles: [string, (ctx: SKRSContext2D) => void][] = [
+    [
+      'string',
+      (ctx) => {
+        ctx.fillStyle = '#ff0000'
+        ctx.strokeStyle = 'rgba(0, 255, 0, 0.5)'
+      },
+    ],
+    [
+      'gradient',
+      (ctx) => {
+        const gradient = ctx.createLinearGradient(0, 0, 20, 0)
+        gradient.addColorStop(0, 'red')
+        gradient.addColorStop(1, 'blue')
+        ctx.fillStyle = gradient
+        ctx.strokeStyle = gradient
+      },
+    ],
+    [
+      'pattern',
+      (ctx) => {
+        const pattern = ctx.createPattern(createCanvas(2, 2), 'repeat')
+        ctx.fillStyle = pattern
+        ctx.strokeStyle = pattern
+      },
+    ],
+  ]
+  for (const svg of [false, true]) {
+    for (const [styleName, setStyle] of styles) {
+      for (const [resizeName, resize] of resizes) {
+        const label = `${svg ? 'svg' : 'raster'} ${styleName} ${resizeName}`
+        const canvas = svg ? createCanvas(20, 20, SvgExportFlag.ConvertTextToPaths) : createCanvas(20, 20)
+        const ctx = canvas.getContext('2d')
+        setStyle(ctx)
+        resize(canvas)
+        t.is(ctx.fillStyle, '#000000', label)
+        t.is(ctx.strokeStyle, '#000000', label)
+        if (!svg) {
+          ctx.fillRect(0, 0, 1, 1)
+          t.deepEqual([...ctx.getImageData(0, 0, 1, 1).data], [0, 0, 0, 255], label)
+        }
+      }
+    }
+  }
 })
 
 test('shadowBlur state should be ok', (t) => {
