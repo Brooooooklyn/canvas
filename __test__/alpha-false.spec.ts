@@ -1,10 +1,15 @@
 // alpha:false canvases. Unless a test says otherwise, every expected value was
 // measured in Chrome 155 CPU canvas (--disable-gpu, getContext('2d', { alpha:
 // false, willReadFrequently: true })). Chrome keeps such a canvas in a kOpaque
-// surface cleared to black.
-import test from 'ava'
+// surface cleared to black, and puts alpha back to 255 after the composite
+// modes that can lower it (Blink ResetAlphaIfNeeded,
+// canvas_2d_recorder_context.h:729-752).
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-import { createCanvas, ImageData, loadImage, SvgExportFlag } from '../index'
+import test, { type ExecutionContext } from 'ava'
+
+import { createCanvas, GlobalFonts, ImageData, loadImage, SvgExportFlag } from '../index'
 
 type Ctx = ReturnType<ReturnType<typeof createCanvas>['getContext']>
 
@@ -18,6 +23,14 @@ function opaque(width: number, height: number) {
 function transparent(width: number, height: number) {
   const canvas = createCanvas(width, height)
   return { canvas, ctx: canvas.getContext('2d') }
+}
+
+// alpha:false, filled with rgb(200,100,50).
+function opaqueBackground(width: number, height: number) {
+  const r = opaque(width, height)
+  r.ctx.fillStyle = 'rgb(200,100,50)'
+  r.ctx.fillRect(0, 0, width, height)
+  return r
 }
 
 // Chrome allocates the backing store lazily and reads a never-drawn alpha:false
@@ -155,6 +168,323 @@ test('alpha:false clearRect gives opaque black and ignores composite, alpha, sha
     ctx.fillRect(0, 0, 6, 6)
     t.deepEqual(px(ctx, 0, 0), [128, 128, 128, 255], 'whole canvas')
   }
+})
+
+// [fill, mode, inside the 2x2 draw, outside it] over rgb(200,100,50).
+const COMPOSITE: [string, GlobalCompositeOperation, number[], number[]][] = [
+  ['rgba(0,0,0,0)', 'copy', [0, 0, 0, 255], [0, 0, 0, 255]],
+  ['rgba(0,0,0,0)', 'source-in', [0, 0, 0, 255], [0, 0, 0, 255]],
+  ['rgba(0,0,0,0)', 'destination-in', [0, 0, 0, 255], [0, 0, 0, 255]],
+  ['rgba(0,0,0,0)', 'source-out', [0, 0, 0, 255], [0, 0, 0, 255]],
+  ['rgba(0,0,0,0)', 'destination-out', [200, 100, 50, 255], [200, 100, 50, 255]],
+  ['rgba(0,0,0,0)', 'source-atop', [200, 100, 50, 255], [200, 100, 50, 255]],
+  ['rgba(0,0,0,0)', 'destination-atop', [0, 0, 0, 255], [0, 0, 0, 255]],
+  ['rgba(0,0,0,0)', 'xor', [200, 100, 50, 255], [200, 100, 50, 255]],
+  ['rgba(0,0,0,0)', 'multiply', [200, 100, 50, 255], [200, 100, 50, 255]],
+  ['rgba(0,0,0,0)', 'lighter', [200, 100, 50, 255], [200, 100, 50, 255]],
+  ['rgba(0,0,255,0.5)', 'copy', [0, 0, 128, 255], [0, 0, 0, 255]],
+  ['rgba(0,0,255,0.5)', 'source-in', [0, 0, 128, 255], [0, 0, 0, 255]],
+  ['rgba(0,0,255,0.5)', 'destination-in', [100, 50, 25, 255], [0, 0, 0, 255]],
+  ['rgba(0,0,255,0.5)', 'source-out', [0, 0, 0, 255], [0, 0, 0, 255]],
+  ['rgba(0,0,255,0.5)', 'destination-out', [100, 50, 25, 255], [200, 100, 50, 255]],
+  ['rgba(0,0,255,0.5)', 'source-atop', [100, 50, 153, 255], [200, 100, 50, 255]],
+  ['rgba(0,0,255,0.5)', 'destination-atop', [100, 50, 25, 255], [0, 0, 0, 255]],
+  ['rgba(0,0,255,0.5)', 'xor', [100, 50, 25, 255], [200, 100, 50, 255]],
+  ['rgba(0,0,255,0.5)', 'multiply', [100, 50, 50, 255], [200, 100, 50, 255]],
+  ['rgba(0,0,255,0.5)', 'lighter', [200, 100, 178, 255], [200, 100, 50, 255]],
+]
+
+test('alpha:false keeps alpha at 255 in every composite mode', (t) => {
+  for (const [fill, op, inside, outside] of COMPOSITE) {
+    const { ctx } = opaqueBackground(4, 4)
+    ctx.globalCompositeOperation = op
+    ctx.fillStyle = fill
+    ctx.fillRect(0, 0, 2, 2)
+    t.deepEqual(px(ctx, 0, 0), inside, `${fill} ${op} inside`)
+    t.deepEqual(px(ctx, 3, 3), outside, `${fill} ${op} outside`)
+  }
+  const src = transparent(4, 4)
+  src.ctx.fillStyle = 'rgba(0,255,0,0.5)'
+  src.ctx.fillRect(0, 0, 2, 2)
+  for (const [op, inside, outside] of [
+    ['copy', [0, 128, 0, 255], [0, 0, 0, 255]],
+    ['source-in', [0, 128, 0, 255], [0, 0, 0, 255]],
+    ['destination-in', [100, 50, 25, 255], [0, 0, 0, 255]],
+    ['destination-out', [100, 50, 25, 255], [200, 100, 50, 255]],
+    ['xor', [100, 50, 25, 255], [200, 100, 50, 255]],
+  ] as const) {
+    const { ctx } = opaqueBackground(4, 4)
+    ctx.globalCompositeOperation = op
+    ctx.drawImage(src.canvas, 0, 0)
+    t.deepEqual(px(ctx, 0, 0), [...inside], `drawImage ${op} inside`)
+    t.deepEqual(px(ctx, 3, 3), [...outside], `drawImage ${op} outside`)
+  }
+})
+
+// copy clears the clip to black, not transparent (canvas_2d_recorder_context.h:832).
+test('alpha:false copy and full-canvas modes leave the clip opaque black', (t) => {
+  for (const [op, shape, clipNotShape] of [
+    ['copy', [0, 64, 128, 255], [0, 0, 0, 255]],
+    ['source-in', [0, 64, 128, 255], [0, 0, 0, 255]],
+    ['destination-in', [100, 50, 25, 255], [0, 0, 0, 255]],
+    ['xor', [100, 50, 25, 255], [200, 100, 50, 255]],
+  ] as const) {
+    for (const clip of [false, true]) {
+      const { ctx } = opaqueBackground(40, 40)
+      if (clip) {
+        ctx.beginPath()
+        ctx.rect(4, 4, 30, 30)
+        ctx.clip()
+      }
+      ctx.globalCompositeOperation = op
+      ctx.fillStyle = 'rgba(0,128,255,0.5)'
+      ctx.fillRect(10, 10, 10, 10)
+      const label = `${op}${clip ? ' clip' : ''}`
+      t.deepEqual(px(ctx, 12, 12), [...shape], label)
+      t.deepEqual(px(ctx, 30, 30), [...clipNotShape], label)
+      t.deepEqual(px(ctx, 1, 1), clip || op === 'xor' ? [200, 100, 50, 255] : [0, 0, 0, 255], label)
+    }
+  }
+})
+
+// Alpha exact, colour within 1. Skia's x64 and arm64 pipelines round some of
+// these blends one apart, in Chrome as well: Chrome x64 reads 175,88,44,223
+// where Chrome arm64 reads 175,87,44,223.
+function alphaExactColorNear(
+  t: ExecutionContext,
+  actual: number[][],
+  expected: readonly (readonly number[])[],
+  label: string,
+) {
+  const message = `${label}: ${JSON.stringify(actual)}`
+  t.deepEqual(
+    actual.map((p) => p[3]),
+    expected.map((p) => p[3]),
+    message,
+  )
+  t.true(
+    actual.every((p, i) => [0, 1, 2].every((c) => Math.abs(p[c] - expected[i][c]) <= 1)),
+    message,
+  )
+}
+
+// Outside the composited modes Blink limits the alpha reset to the draw bounds
+// (a rect drawn without anti-aliasing), so an anti-aliased edge pixel outside
+// them keeps its lowered alpha. Strokes use InflateStrokeRect
+// (canvas_2d_recorder_context.cc:2656-2670).
+test('alpha:false resets alpha inside the draw bounds only, like Chrome', (t) => {
+  for (const [op, expected] of [
+    [
+      'copy',
+      [
+        [0, 0, 32, 223],
+        [0, 0, 64, 191],
+        [0, 0, 128, 255],
+        [0, 0, 32, 255],
+        [0, 0, 0, 255],
+      ],
+    ],
+    [
+      'source-in',
+      [
+        [0, 0, 32, 255],
+        [0, 0, 64, 255],
+        [0, 0, 128, 255],
+        [0, 0, 32, 255],
+        [0, 0, 0, 255],
+      ],
+    ],
+    [
+      'destination-out',
+      [
+        [175, 87, 44, 223],
+        [150, 75, 37, 191],
+        [100, 50, 25, 255],
+        [175, 87, 44, 255],
+        [200, 100, 50, 255],
+      ],
+    ],
+    [
+      'xor',
+      [
+        [175, 87, 44, 223],
+        [150, 75, 37, 191],
+        [100, 50, 25, 255],
+        [175, 87, 44, 255],
+        [200, 100, 50, 255],
+      ],
+    ],
+  ] as const) {
+    const { ctx } = opaqueBackground(8, 8)
+    ctx.globalCompositeOperation = op
+    ctx.fillStyle = 'rgba(0,0,255,0.5)'
+    ctx.fillRect(0.5, 0.5, 2, 2)
+    alphaExactColorNear(
+      t,
+      [px(ctx, 0, 0), px(ctx, 1, 0), px(ctx, 1, 1), px(ctx, 2, 2), px(ctx, 3, 3)],
+      expected,
+      `rect ${op}`,
+    )
+  }
+  for (const [op, expected] of [
+    [
+      'copy',
+      [
+        [0, 0, 14, 241],
+        [0, 0, 20, 235],
+        [0, 0, 18, 237],
+        [0, 0, 128, 255],
+      ],
+    ],
+    [
+      'xor',
+      [
+        [189, 95, 47, 241],
+        [184, 92, 46, 235],
+        [186, 93, 46, 237],
+        [100, 50, 25, 255],
+      ],
+    ],
+  ] as const) {
+    const { ctx } = opaqueBackground(8, 8)
+    ctx.globalCompositeOperation = op
+    ctx.fillStyle = 'rgba(0,0,255,0.5)'
+    ctx.beginPath()
+    ctx.arc(4, 4, 2.3, 0, Math.PI * 2)
+    ctx.fill()
+    alphaExactColorNear(t, [px(ctx, 3, 1), px(ctx, 1, 4), px(ctx, 6, 4), px(ctx, 4, 4)], expected, `arc ${op}`)
+  }
+  for (const [join, cap, expected] of [
+    [
+      'round',
+      'butt',
+      [
+        [160, 80, 40, 204],
+        [100, 50, 25, 255],
+        [190, 95, 47, 242],
+      ],
+    ],
+    [
+      'miter',
+      'butt',
+      [
+        [160, 80, 40, 255],
+        [100, 50, 25, 255],
+        [190, 95, 47, 255],
+      ],
+    ],
+    [
+      'bevel',
+      'square',
+      [
+        [160, 80, 40, 255],
+        [100, 50, 25, 255],
+        [190, 95, 47, 242],
+      ],
+    ],
+  ] as const) {
+    const { ctx } = opaqueBackground(8, 8)
+    ctx.globalCompositeOperation = 'xor'
+    ctx.strokeStyle = 'rgba(0,0,255,0.5)'
+    ctx.lineWidth = 1.5
+    ctx.lineJoin = join
+    ctx.lineCap = cap
+    ctx.beginPath()
+    ctx.moveTo(2.2, 2.35)
+    ctx.lineTo(5.6, 2.35)
+    ctx.stroke()
+    alphaExactColorNear(t, [px(ctx, 3, 1), px(ctx, 3, 2), px(ctx, 3, 3)], expected, `stroke ${join} ${cap}`)
+  }
+  for (const [join, expected] of [
+    [
+      'round',
+      [
+        [150, 75, 37, 191],
+        [100, 50, 25, 255],
+        [144, 72, 36, 255],
+      ],
+    ],
+    [
+      'miter',
+      [
+        [159, 80, 40, 255],
+        [100, 50, 25, 255],
+        [144, 72, 36, 255],
+      ],
+    ],
+  ] as const) {
+    const { ctx } = opaqueBackground(8, 8)
+    ctx.globalCompositeOperation = 'xor'
+    ctx.strokeStyle = 'rgba(0,0,255,0.5)'
+    ctx.lineWidth = 1.5
+    ctx.lineJoin = join
+    ctx.strokeRect(2.2, 2.35, 3, 3)
+    alphaExactColorNear(t, [px(ctx, 3, 1), px(ctx, 3, 2), px(ctx, 1, 3)], expected, `strokeRect ${join}`)
+  }
+  {
+    // The bounds rect is drawn under the CTM.
+    const { ctx } = opaqueBackground(8, 8)
+    ctx.translate(0.5, 0.5)
+    ctx.rotate(0.3)
+    ctx.globalCompositeOperation = 'copy'
+    ctx.fillStyle = 'rgba(0,0,255,0.5)'
+    ctx.fillRect(1, 1, 4, 3)
+    alphaExactColorNear(
+      t,
+      [px(ctx, 1, 1), px(ctx, 0, 2), px(ctx, 0, 3), px(ctx, 0, 4), px(ctx, 4, 4), px(ctx, 2, 5), px(ctx, 4, 5)],
+      [
+        [0, 0, 14, 241],
+        [0, 0, 12, 243],
+        [0, 0, 52, 203],
+        [0, 0, 53, 255],
+        [0, 0, 64, 191],
+        [0, 0, 30, 225],
+        [0, 0, 18, 237],
+      ],
+      'rotated copy',
+    )
+  }
+})
+
+// Text bounds are the glyph bounds (base_rendering_context_2d.cc:1019,
+// 1076-1113), so the outermost anti-aliased glyph pixels keep a lowered alpha in
+// Chrome too. Our glyph bounds come from measureText, which rounds the box
+// (Lato 16px ascent: 11 here, 11.464 in Chrome), so the fringe pixels differ
+// and only the shape of the result is pinned: a few pixels, not none and not
+// the whole glyph.
+test('alpha:false text resets alpha inside the glyph bounds only', (t) => {
+  GlobalFonts.registerFromPath(
+    join(fileURLToPath(import.meta.url), '..', 'fonts', 'Lato-Regular.ttf'),
+    'AlphaFalseLato',
+  )
+  for (const op of ['copy', 'xor'] as const) {
+    const { ctx } = opaqueBackground(40, 24)
+    ctx.globalCompositeOperation = op
+    ctx.fillStyle = 'rgba(0,0,255,0.5)'
+    ctx.font = '16px AlphaFalseLato'
+    ctx.fillText('Hg', 4.7, 17.3)
+    const data = ctx.getImageData(0, 0, 40, 24).data
+    let below = 0
+    for (let i = 3; i < data.length; i += 4) {
+      if (data[i] < 255) below++
+    }
+    // Chrome: 4 for copy, 5 for xor. Without the reset about 150 glyph pixels
+    // stay below 255; resetting the whole clip leaves none.
+    t.true(below > 0 && below < 30, `${op}: ${below} pixels below alpha 255`)
+    t.deepEqual(px(ctx, 38, 2), op === 'copy' ? [0, 0, 0, 255] : [200, 100, 50, 255], op)
+  }
+})
+
+// The text bounds are measured with the fill paint, which a zero-length fill
+// gradient cannot build; strokeText must still draw (it does with alpha:true).
+test('alpha:false strokeText draws when the fill gradient is degenerate', (t) => {
+  const { ctx } = opaqueBackground(40, 24)
+  ctx.globalCompositeOperation = 'xor'
+  ctx.fillStyle = ctx.createLinearGradient(0, 0, 0, 0)
+  ctx.strokeStyle = 'rgba(0,0,255,0.5)'
+  ctx.font = '16px sans-serif'
+  t.notThrows(() => ctx.strokeText('Hg', 4, 17))
+  t.deepEqual(px(ctx, 38, 2), [200, 100, 50, 255])
 })
 
 // Blink PutByteArray labels the pixels kOpaque, so the write is a memcpy and
