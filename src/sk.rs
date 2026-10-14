@@ -4732,6 +4732,10 @@ impl ImagePattern {
       .as_ref()
       .is_none_or(|(cached, cached_level, _)| *cached != quality || *cached_level != level)
     {
+      // Drop the old shader first: it may hold the last ref to a level the
+      // new one pushes out of the cache, which the sync below then reports
+      // freed.
+      shared.shader = None;
       shared.shader = match (decode_cache, level) {
         (Some((bitmap, _)), Some((level, color_space))) => {
           // The original image is only made when level 0 samples it.

@@ -5281,6 +5281,61 @@ mod tests {
     assert_eq!(charged(true), expected);
   }
 
+  // A pattern's new shader can push its old level out of the cache, and the
+  // old shader is then the level's last holder: once it is replaced, the
+  // level is reported freed.
+  #[test]
+  fn image_pattern_reports_the_level_its_old_shader_held() {
+    use crate::sk::{ImagePatternBacking, ImagePatternShared, TileMode};
+    use std::ptr;
+    use std::sync::{Arc, Mutex};
+
+    let image = Arc::new(AccountedBitmap::new(
+      test_bitmap(64, 64, [10, 20, 30, 255]),
+      ptr::null_mut(),
+      0,
+    ));
+    let pattern = ImagePattern {
+      accounting_id: image.resource_id,
+      repeat_x: TileMode::Repeat,
+      repeat_y: TileMode::Repeat,
+      is_canvas: false,
+      is_image: true,
+      backing_bytes: 64 * 64 * 4,
+      backing: Some(ImagePatternBacking::Bitmap(image.clone())),
+      shared: Arc::new(Mutex::new(ImagePatternShared {
+        transform: Transform::default(),
+        image: None,
+        shader: None,
+      })),
+    };
+    // On a display-p3 canvas the sRGB image is converted: unscaled, the
+    // pattern samples a converted copy of the whole image.
+    assert!(
+      pattern
+        .get_shader(
+          FilterQuality::Low,
+          Some((Transform::default(), ColorSpace::DisplayP3))
+        )
+        .is_some()
+    );
+    assert_eq!(image.level_bytes(), 64 * 64 * 4);
+    // Halved by the CTM, it samples the 32x32 level. The copy does not fit
+    // beside it, so the cache drops the copy, which the old shader held.
+    assert!(
+      pattern
+        .get_shader(
+          FilterQuality::Low,
+          Some((
+            Transform::new(0.5, 0.0, 0.0, 0.5, 0.0, 0.0),
+            ColorSpace::DisplayP3
+          ))
+        )
+        .is_some()
+    );
+    assert_eq!(image.level_bytes(), 32 * 32 * 4);
+  }
+
   // Ops that provably paint nothing record nothing: no bytes, no generation
   // bump, no retained payloads.
   #[test]
