@@ -88,6 +88,27 @@ test('pattern sampling follows smoothing changes after assignment', (t) => {
   t.deepEqual([...ctx.getImageData(0, 0, 4, 1).data], expected)
 })
 
+// Expected values are Chrome 155's CPU canvas: filtering premultiplied texels
+// keeps the red at full strength next to a transparent texel.
+test('canvas pattern filters premultiplied texels', (t) => {
+  const source = createCanvas(2, 1)
+  const src = source.getContext('2d')
+  src.fillStyle = '#ff0000'
+  src.fillRect(0, 0, 1, 1)
+  const ctx = createCanvas(8, 1).getContext('2d')
+  const pattern = ctx.createPattern(source, 'repeat')!
+  pattern.setTransform(new DOMMatrix([4, 0, 0, 1, 0, 0]))
+  ctx.fillStyle = pattern
+  ctx.fillRect(0, 0, 8, 1)
+  t.deepEqual(
+    [...ctx.getImageData(0, 0, 8, 1).data],
+    [
+      255, 0, 0, 159, 255, 0, 0, 223, 255, 0, 0, 223, 255, 0, 0, 159, 255, 0, 0, 96, 255, 0, 0, 32, 255, 0, 0, 32, 255,
+      0, 0, 96,
+    ],
+  )
+})
+
 test('should be able to create Path2D', (t) => {
   t.notThrows(() => new Path2D())
   t.notThrows(
