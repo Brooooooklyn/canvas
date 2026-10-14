@@ -1066,6 +1066,10 @@ void skiac_paint_set_anti_alias(skiac_paint* c_paint, bool aa) {
   PAINT_CAST->setAntiAlias(aa);
 }
 
+void skiac_paint_set_dither(skiac_paint* c_paint, bool dither) {
+  PAINT_CAST->setDither(dither);
+}
+
 void skiac_paint_set_blend_mode(skiac_paint* c_paint, int blend_mode) {
   PAINT_CAST->setBlendMode((SkBlendMode)blend_mode);
 }

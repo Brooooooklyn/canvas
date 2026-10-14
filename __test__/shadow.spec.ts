@@ -129,13 +129,13 @@ test('shadow-zero-blur-gradient-uses-shadowColor-not-the-gradient', (t) => {
   t.deepEqual(px(ctx, 240, 40), [0, 255, 0, 255])
 })
 
-// 255 * (1 - 0.5) = 127.5, a tie: Chrome gives 128 (it always dithers
-// gradients, which puts the blit on Skia's float pipeline), while this build
-// gives 127 on arm64 and x64. Hence `pxNear`.
+// 255 * (1 - 0.5) = 127.5, a tie. Gradient paints dither as Blink's do
+// (gradient.cc:363-364), and Skia runs its dither stage only on the highp float
+// pipeline, which lands this tie on Chrome's 128 (Chrome 155 CPU).
 test('shadow-zero-blur-gradient-with-globalAlpha', (t) => {
   const ctx = gradientScene(0.5)
-  pxNear(t, ctx, 160, 40, [128, 255, 128, 255])
-  pxNear(t, ctx, 240, 40, [128, 255, 128, 255])
+  t.deepEqual(px(ctx, 160, 40), [128, 255, 128, 255])
+  t.deepEqual(px(ctx, 240, 40), [128, 255, 128, 255])
 })
 
 // Proves the image filter reaches the text path too.

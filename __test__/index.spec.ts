@@ -270,8 +270,102 @@ test('globalAlpha preserves half opacity across native paint sources', async (t)
     } else {
       ctx.fillRect(0, 0, 4, 4)
     }
-    t.deepEqual([...ctx.getImageData(0, 0, 1, 1).data], [32, 128, 223, 128], mode)
+    const expected = mode === 'gradient' ? [32, 128, 221, 128] : [32, 128, 223, 128]
+    t.deepEqual([...ctx.getImageData(0, 0, 1, 1).data], expected, mode)
   }
+})
+
+for (const paint of ['fill', 'stroke'] as const) {
+  test(`gradient ${paint} dithers translucent pixels without changing solid paints`, (t) => {
+    // chrome 149 cpu canvas: constant stops still use gradient dithering.
+    const expected = Array.from({ length: 16 }, (_, i) => [
+      32,
+      128,
+      ((i % 4) + Math.floor(i / 4)) % 2 === 0 ? 221 : 223,
+      128,
+    ]).flat()
+    for (const kind of ['linear', 'radial', 'conic']) {
+      const ctx = createCanvas(4, 4).getContext('2d')
+      const gradient =
+        kind === 'linear'
+          ? ctx.createLinearGradient(0, 0, 4, 0)
+          : kind === 'radial'
+            ? ctx.createRadialGradient(2, 2, 0, 2, 2, 4)
+            : ctx.createConicGradient(0, 2, 2)
+      gradient.addColorStop(0, 'rgb(32, 128, 223)')
+      gradient.addColorStop(1, 'rgb(32, 128, 223)')
+      ctx.globalAlpha = 0.5
+      if (paint === 'fill') {
+        ctx.fillStyle = gradient
+        ctx.fillRect(0, 0, 4, 4)
+      } else {
+        ctx.strokeStyle = gradient
+        ctx.lineWidth = 4
+        ctx.beginPath()
+        ctx.moveTo(0, 2)
+        ctx.lineTo(4, 2)
+        ctx.stroke()
+      }
+      t.deepEqual([...ctx.getImageData(0, 0, 4, 4).data], expected, kind)
+      ctx.clearRect(0, 0, 4, 4)
+      ctx.fillStyle = 'rgb(32, 128, 223)'
+      ctx.fillRect(0, 0, 4, 4)
+      t.deepEqual([...ctx.getImageData(0, 0, 4, 4).data], Array(16).fill([32, 128, 223, 128]).flat(), kind)
+    }
+  })
+}
+
+// drawImage does not use fillStyle, so a gradient fillStyle must not dither it.
+// Chrome 155 CPU: every pixel [32, 128, 223, 128]. Scaled on purpose: a 1:1
+// draw stays exact even with a dithered paint.
+test('drawImage is not dithered by a gradient fillStyle', async (t) => {
+  const source = createCanvas(8, 8)
+  const sourceContext = source.getContext('2d')
+  sourceContext.fillStyle = 'rgb(32, 128, 223)'
+  sourceContext.fillRect(0, 0, 8, 8)
+  const image = await loadImage(source.toBuffer('image/png'))
+  for (const [name, src] of [
+    ['image', image],
+    ['canvas', source],
+  ] as const) {
+    const ctx = createCanvas(16, 16).getContext('2d')
+    const gradient = ctx.createLinearGradient(0, 0, 8, 0)
+    gradient.addColorStop(0, 'red')
+    gradient.addColorStop(1, 'blue')
+    ctx.fillStyle = gradient
+    ctx.globalAlpha = 0.5
+    ctx.drawImage(src, 0, 0, 16, 16)
+    t.deepEqual([...ctx.getImageData(0, 0, 16, 16).data], Array(256).fill([32, 128, 223, 128]).flat(), name)
+  }
+})
+
+// drawCanvas has no Chrome counterpart, so it is held to the drawImage rule:
+// the fillStyle must not change its pixels. The rect is fractional on purpose:
+// an integer 2x drawCanvas stays exact even with a dithered paint.
+test('drawCanvas is not dithered by a gradient fillStyle', (t) => {
+  const source = createCanvas(8, 8)
+  const sourceContext = source.getContext('2d')
+  for (let y = 0; y < 8; y++) {
+    for (let x = 0; x < 8; x++) {
+      sourceContext.fillStyle = `rgb(${x * 30}, ${y * 30}, ${(x + y) * 15})`
+      sourceContext.fillRect(x, y, 1, 1)
+    }
+  }
+  const draw = (useGradient: boolean) => {
+    const ctx = createCanvas(32, 32).getContext('2d')
+    if (useGradient) {
+      const gradient = ctx.createLinearGradient(0, 0, 32, 0)
+      gradient.addColorStop(0, 'red')
+      gradient.addColorStop(1, 'blue')
+      ctx.fillStyle = gradient
+    } else {
+      ctx.fillStyle = 'rgb(9, 9, 9)'
+    }
+    ctx.globalAlpha = 0.5
+    ctx.drawCanvas(source, 0.3, 0.6, 27, 27)
+    return [...ctx.getImageData(0, 0, 32, 32).data]
+  }
+  t.deepEqual(draw(true), draw(false))
 })
 
 // Image and pattern paints take globalAlpha rounded to k/255. Unrounded, 'high'

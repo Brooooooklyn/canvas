@@ -1268,7 +1268,11 @@ impl Context {
       // `Source` is kept anyway and is not a divergence in effect: a
       // whole-canvas layer restored with kSrc replaces every pixel, like
       // Chromium's `clear(transparent)` + foreground draw. Drop it and a
-      // `fillRect` overwrites only its own geometry.
+      // `fillRect` overwrites only its own geometry. With a dithered gradient
+      // paint it does differ: the layer starts at the clip's device origin, so
+      // a clip whose origin is not a multiple of 8 shifts the 8x8 dither
+      // phase, while Chromium draws copy directly after the clear
+      // (canvas_2d_recorder_context.h:830-837).
       BlendMode::SourceIn
       | BlendMode::SourceOut
       | BlendMode::DestinationIn
@@ -1471,6 +1475,7 @@ impl Context {
         paint.set_color(0, 0, 0, 255);
         paint.set_alpha_f32(alpha);
         paint.set_shader(&shader);
+        paint.set_dither(true);
       }
       Pattern::Image(p) => {
         if let Some(shader) = p.get_shader(if last_state.image_smoothing_enabled {
@@ -1708,6 +1713,7 @@ impl Context {
         paint.set_color(0, 0, 0, 255);
         paint.set_alpha_f32(global_alpha);
         paint.set_shader(&shader);
+        paint.set_dither(true);
       }
       Pattern::Image(p) => {
         if let Some(shader) = p.get_shader(if last_state.image_smoothing_enabled {
@@ -2085,6 +2091,11 @@ impl Context {
     }
 
     let mut paint: Paint = self.fill_paint()?;
+    // drawImage does not use fillStyle. In Blink only the fill and stroke
+    // flags get ApplyToFlags (canvas_rendering_context_2d_state.cc:332-333),
+    // which sets a gradient's dither (gradient.cc:364); images are drawn with
+    // image_flags_ (:832). So drop the gradient arm's flag here.
+    paint.set_dither(false);
     self.account_paint_resources(&self.state.fill_style);
     paint.set_alpha_f32(self.image_global_alpha());
 
@@ -2231,6 +2242,9 @@ impl Context {
     }
 
     let mut paint: Paint = self.fill_paint()?;
+    // As in draw_image: an image draw never takes the gradient fillStyle's
+    // dither.
+    paint.set_dither(false);
     self.account_paint_resources(&self.state.fill_style);
     paint.set_alpha_f32(self.state.global_alpha as f32);
 
