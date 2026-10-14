@@ -315,6 +315,27 @@ test('downscaled ImageData pattern blends two mip levels', (t) => {
   }
 })
 
+// The pattern reads the ImageData in its colorSpace and converts it to the
+// canvas, as putImageData does and as Chrome's pattern over
+// createImageBitmap(imageData) does. Expected values are Chrome 155's.
+test('ImageData pattern converts from the ImageData colorSpace', (t) => {
+  const colors = [200, 100, 50, 255, 10, 240, 120, 255, 255, 0, 0, 255, 0, 0, 255, 128]
+  const chrome = {
+    'srgb on srgb': colors,
+    'srgb on display-p3': [187, 105, 62, 255, 110, 236, 133, 255, 234, 51, 35, 255, 0, 0, 245, 128],
+    'display-p3 on srgb': [215, 93, 31, 255, 0, 244, 104, 255, 255, 0, 0, 255, 0, 0, 255, 128],
+    'display-p3 on display-p3': colors,
+  }
+  for (const [name, expected] of Object.entries(chrome)) {
+    const [source, target] = name.split(' on ') as ('srgb' | 'display-p3')[]
+    const imageData = new ImageData(new Uint8ClampedArray(colors), 4, 1, { colorSpace: source })
+    const ctx = createCanvas(4, 1).getContext('2d', { colorSpace: target })
+    ctx.fillStyle = ctx.createPattern(imageData, 'repeat')
+    ctx.fillRect(0, 0, 4, 1)
+    t.deepEqual([...ctx.getImageData(0, 0, 4, 1).data], expected, name)
+  }
+})
+
 // Chrome 155 paints nothing with a canvas or image pattern whose matrix cannot
 // be inverted.
 test('pattern with a singular transform paints nothing', async (t) => {

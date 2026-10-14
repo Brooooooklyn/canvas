@@ -1080,6 +1080,7 @@ pub mod ffi {
       width: usize,
       height: usize,
       row_bytes: usize,
+      cs: u8,
     ) -> *mut skiac_bitmap;
 
     pub fn skiac_bitmap_get_width(c_bitmap: *mut skiac_bitmap) -> usize;
@@ -4473,15 +4474,24 @@ impl Bitmap {
     }))
   }
 
-  /// A premultiplied copy of unpremultiplied RGBA bytes (an ImageData).
+  /// A premultiplied copy of unpremultiplied RGBA bytes (an ImageData) in
+  /// `color_space`.
   pub fn premul_from_image_data(
     ptr: *mut u8,
     width: usize,
     height: usize,
     row_bytes: usize,
+    color_space: ColorSpace,
   ) -> Option<Self> {
-    let bitmap =
-      unsafe { ffi::skiac_bitmap_make_premul_from_image_data(ptr, width, height, row_bytes) };
+    let bitmap = unsafe {
+      ffi::skiac_bitmap_make_premul_from_image_data(
+        ptr,
+        width,
+        height,
+        row_bytes,
+        color_space as u8,
+      )
+    };
     if bitmap.is_null() {
       return None;
     }

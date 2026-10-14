@@ -1255,7 +1255,8 @@ skiac_bitmap* skiac_bitmap_make_from_image_data(uint8_t* ptr,
 skiac_bitmap* skiac_bitmap_make_premul_from_image_data(uint8_t* ptr,
                                                        size_t width,
                                                        size_t height,
-                                                       size_t row_bytes);
+                                                       size_t row_bytes,
+                                                       uint8_t cs);
 size_t skiac_bitmap_get_width(skiac_bitmap* c_bitmap);
 size_t skiac_bitmap_get_height(skiac_bitmap* c_bitmap);
 void skiac_bitmap_set_immutable(skiac_bitmap* c_bitmap);

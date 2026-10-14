@@ -123,12 +123,14 @@ impl CanvasPattern {
         let data = image_data.resolve_pixels(&env)?;
         let image_data_size = image_data.width * image_data.height * 4;
         // Premultiplied like a canvas or an ImageBitmap, so filtering never
-        // pulls transparent black into the color.
+        // pulls transparent black into the color. Drawn from its own color
+        // space, as putImageData draws it.
         let bitmap = Bitmap::premul_from_image_data(
           data,
           image_data.width,
           image_data.height,
           image_data.width * 4,
+          image_data.color_space,
         )
         .ok_or_else(|| {
           Error::new(

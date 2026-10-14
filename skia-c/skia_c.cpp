@@ -2857,14 +2857,20 @@ skiac_bitmap* skiac_bitmap_make_from_image_data(uint8_t* ptr,
 
 // ImageData pattern copy: RGBA unpremul bytes in, premultiplied texels out, as
 // putImageData stores them in a canvas and as createImageBitmap(imageData)
-// does, so filtering never pulls transparent black into the color.
+// does, so filtering never pulls transparent black into the color. A
+// display-p3 ImageData (`cs` 1) is tagged so a draw converts it to the canvas
+// color space, as putImageData and Chrome's pattern over
+// createImageBitmap(imageData) do. An sRGB one stays untagged, which draws the
+// same and keeps the PNG that the SVG output embeds unchanged.
 skiac_bitmap* skiac_bitmap_make_premul_from_image_data(uint8_t* ptr,
                                                        size_t width,
                                                        size_t height,
-                                                       size_t row_bytes) {
+                                                       size_t row_bytes,
+                                                       uint8_t cs) {
   auto bitmap = new SkBitmap();
   const auto src_info = SkImageInfo::Make(
-      (int)width, (int)height, kRGBA_8888_SkColorType, kUnpremul_SkAlphaType);
+      (int)width, (int)height, kRGBA_8888_SkColorType, kUnpremul_SkAlphaType,
+      cs == 0 ? nullptr : COLOR_SPACE_CAST);
   if (!bitmap->tryAllocPixels(src_info.makeAlphaType(kPremul_SkAlphaType)) ||
       !bitmap->writePixels(SkPixmap(src_info, ptr, row_bytes), 0, 0)) {
     delete bitmap;
