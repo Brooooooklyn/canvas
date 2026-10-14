@@ -512,3 +512,67 @@ test("'copy' draws round like Chrome's kSrc blit", (t) => {
   ctx.drawImage(src, 0, 0, 20, 20)
   t.deepEqual(px(ctx, 0, 0, 24, 24), chrome('copy-drawimage|low|ga0.5'))
 })
+
+// A shadow under a pattern fill or stroke sends even 'copy' through Blink's
+// CompositedDraw (ShouldUseDropShadowPaintFilter), which draws the content
+// src-over inside a layer. A solid colour, a gradient, or no shadow keep kSrc.
+test("'copy' with a shadow draws a pattern src-over like Chrome", (t) => {
+  const tile = createCanvas(4, 4)
+  const tctx = tile.getContext('2d')
+  tctx.fillStyle = 'rgba(32,128,223,0.6)'
+  tctx.fillRect(0, 0, 4, 4)
+  tctx.fillStyle = 'rgba(200,20,90,0.35)'
+  tctx.fillRect(0, 0, 2, 2)
+  const draws: Record<string, (ctx: SKRSContext2D) => void> = {
+    'solid-fill': (ctx) => {
+      ctx.fillStyle = 'rgba(32,128,223,0.6)'
+      ctx.fillRect(1, 1, 10, 10)
+    },
+    'gradient-fill': (ctx) => {
+      const gradient = ctx.createLinearGradient(0, 0, 12, 0)
+      gradient.addColorStop(0, 'rgba(32,128,223,0.6)')
+      gradient.addColorStop(1, 'rgba(200,20,90,0.35)')
+      ctx.fillStyle = gradient
+      ctx.fillRect(1, 1, 10, 10)
+    },
+    'pattern-fill': (ctx) => {
+      ctx.fillStyle = ctx.createPattern(tile, 'repeat')
+      ctx.fillRect(1, 1, 10, 10)
+    },
+    'pattern-path': (ctx) => {
+      ctx.fillStyle = ctx.createPattern(tile, 'repeat')
+      ctx.beginPath()
+      ctx.arc(6, 6, 5, 0, 7)
+      ctx.fill()
+    },
+    'pattern-stroke': (ctx) => {
+      ctx.strokeStyle = ctx.createPattern(tile, 'repeat')
+      ctx.lineWidth = 3
+      ctx.strokeRect(2, 2, 8, 8)
+    },
+  }
+  for (const [kind, globalAlpha, shadow] of [
+    ['pattern-fill', 0.3, 'visible'],
+    ['pattern-path', 1, 'visible'],
+    ['pattern-stroke', 0.7, 'blur'],
+    ['pattern-fill', 0.3, 'none'],
+    ['gradient-fill', 0.3, 'visible'],
+    ['solid-fill', 0.7, 'visible'],
+  ] as const) {
+    const ctx = createCanvas(12, 12).getContext('2d')
+    ctx.fillStyle = 'rgb(10,200,30)'
+    ctx.fillRect(0, 0, 12, 12)
+    ctx.globalCompositeOperation = 'copy'
+    ctx.globalAlpha = globalAlpha
+    if (shadow !== 'none') {
+      ctx.shadowColor = 'rgba(255,0,0,0.8)'
+      ctx.shadowOffsetX = 40
+      if (shadow === 'blur') {
+        ctx.shadowBlur = 3
+      }
+    }
+    draws[kind](ctx)
+    const key = `${kind}|ga${globalAlpha}|${shadow}`
+    t.deepEqual(px(ctx, 0, 0, 12, 12), chrome(`copy-shadow|${key}`), key)
+  }
+})

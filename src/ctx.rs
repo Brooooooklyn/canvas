@@ -114,12 +114,18 @@ pub(crate) enum Backend {
 pub(crate) struct ShadowDraw {
   paint: Paint,
   filter: Option<ImageFilter>,
+  /// Blink's `ShouldUseDropShadowPaintFilter` (canvas_2d_recorder_context.h:
+  /// 571-577): a path or rect filled or stroked with a pattern. With a shadow,
+  /// it sends even `copy` through `CompositedDraw`, which draws the content
+  /// src-over inside the layer. See `render_canvas`.
+  pattern_geometry: bool,
 }
 
 // The same, borrowed, plus what `render_canvas` needs to size the shadow layer.
 struct ShadowPass<'a> {
   paint: &'a Paint,
   filter: Option<&'a ImageFilter>,
+  pattern_geometry: bool,
   offset_x: f32,
   offset_y: f32,
   blur: f32,
@@ -541,6 +547,7 @@ impl Context {
     let shadow = shadow.map(|shadow| ShadowPass {
       paint: &shadow.paint,
       filter: shadow.filter.as_ref(),
+      pattern_geometry: shadow.pattern_geometry,
       offset_x: self.state.shadow_offset_x,
       offset_y: self.state.shadow_offset_y,
       blur: self.state.shadow_blur,
@@ -1152,10 +1159,12 @@ impl Context {
   // load-bearing -- handing one paint to both sides applies globalAlpha twice,
   // since `drawPicture` with a paint is a `saveLayer` whose restore paint keeps
   // alpha, colour filter and blend (canvas_2d_recorder_context.h:948-962).
+  // `content_blend` is the blend the draw itself gets inside the layer.
   fn composited_pass<F>(
     surface_canvas: &mut Canvas,
     paint: &Paint,
     blend_mode: BlendMode,
+    content_blend: BlendMode,
     left: f32,
     top: f32,
     width: f32,
@@ -1167,17 +1176,7 @@ impl Context {
     F: Fn(&mut Canvas, &Paint) -> result::Result<(), SkError>,
   {
     let mut inner_paint = paint.clone();
-    // Blink draws the content src-over inside the layer, except for copy, which
-    // it draws with kSrc straight onto the cleared canvas
-    // (canvas_2d_recorder_context.h:830-837). Over this transparent layer the
-    // two give the same pixels in exact maths, but Skia blits src-over with its
-    // legacy 8-bit blitters and kSrc with the raster pipeline, which round
-    // differently, so keep kSrc for copy.
-    inner_paint.set_blend_mode(if matches!(blend_mode, BlendMode::Source) {
-      BlendMode::Source
-    } else {
-      BlendMode::SourceOver
-    });
+    inner_paint.set_blend_mode(content_blend);
     let mut composite_paint = Paint::new();
     composite_paint.set_blend_mode(blend_mode);
     let mut layer = PictureRecorder::new();
@@ -1196,6 +1195,25 @@ impl Context {
       surface_canvas.restore();
     }
     Ok(())
+  }
+
+  /// The blend a `composited_pass` draws its content with. Blink's
+  /// `CompositedDraw` draws it src-over inside the layer
+  /// (canvas_2d_recorder_context.h:942-959). `copy` skips `CompositedDraw` and
+  /// draws with kSrc straight onto the cleared canvas (h:830-837), unless a
+  /// `ctx.filter` (`composited_filter_layer` already draws src-over in its
+  /// layer) or a shadow under a pattern fill or stroke (`pattern_shadow`,
+  /// `ShouldUseDropShadowPaintFilter`, h:582-597) sends it through
+  /// `CompositedDraw` after all. Over this transparent layer src-over and kSrc
+  /// give the same pixels in exact maths, but Skia blits src-over with its
+  /// legacy 8-bit blitters and kSrc with the raster pipeline, which round
+  /// differently.
+  fn layer_content_blend(blend_mode: BlendMode, pattern_shadow: bool) -> BlendMode {
+    if matches!(blend_mode, BlendMode::Source) && !pattern_shadow {
+      BlendMode::Source
+    } else {
+      BlendMode::SourceOver
+    }
   }
 
   /// Runs one pass inside its own image-filter layer, opened at the device
@@ -1288,6 +1306,9 @@ impl Context {
       | BlendMode::DestinationIn
       | BlendMode::DestinationATop
       | BlendMode::Source => {
+        let pattern_shadow = shadow
+          .as_ref()
+          .is_some_and(|shadow| shadow.pattern_geometry);
         if let Some(shadow) = shadow {
           // The shadow layer is the one place the halo can escape the canvas
           // rect, so its cull rect is expanded. FIXME: this under-covers. Skia
@@ -1303,6 +1324,9 @@ impl Context {
             surface_canvas,
             shadow.paint,
             blend_mode,
+            // The content pass below replaces every pixel for copy, so this
+            // one's blend never shows there.
+            Self::layer_content_blend(blend_mode, false),
             -expansion,
             -expansion,
             width + expansion * 2.0,
@@ -1324,6 +1348,7 @@ impl Context {
           surface_canvas,
           paint,
           blend_mode,
+          Self::layer_content_blend(blend_mode, pattern_shadow),
           0.0,
           0.0,
           width,
@@ -1857,6 +1882,14 @@ impl Context {
     if state.shadow_blur == 0f32 && state.shadow_offset_x == 0f32 && state.shadow_offset_y == 0f32 {
       return None;
     }
+    // Text passes kNoImage whatever its style (base_rendering_context_2d.cc),
+    // and drawImage is not a fill or stroke paint.
+    let pattern_geometry = content == DrawContent::Geometry
+      && match source {
+        ShadowSource::Fill => matches!(state.fill_style, Pattern::Image(..)),
+        ShadowSource::Stroke => matches!(state.stroke_style, Pattern::Image(..)),
+        ShadowSource::Image => false,
+      };
     let mut drop_shadow_paint = paint.clone();
     // Whatever the blur, the colourisation is the same operation: an
     // `SkColorFilters::Blend(shadowColor, kSrcIn)`, which Blink installs in both
@@ -1926,6 +1959,7 @@ impl Context {
         return Some(ShadowDraw {
           paint: drop_shadow_paint,
           filter: None,
+          pattern_geometry,
         });
       }
       // A shader source. `ctx.filter` is deliberately DROPPED rather than
@@ -1943,6 +1977,7 @@ impl Context {
       return Some(ShadowDraw {
         paint: drop_shadow_paint,
         filter: None,
+        pattern_geometry,
       });
     }
     let shadow_effect = Self::shadow_only_image_filter(state)?;
@@ -1962,6 +1997,7 @@ impl Context {
     Some(ShadowDraw {
       paint: drop_shadow_paint,
       filter: Some(shadow_effect),
+      pattern_geometry,
     })
   }
 
