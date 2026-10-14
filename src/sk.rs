@@ -7,7 +7,7 @@ use std::os::raw::c_char;
 use std::ptr;
 use std::slice;
 use std::str::FromStr;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::error::SkError;
 use crate::font::{FontStretch, FontStyle};
@@ -4499,9 +4499,10 @@ impl Bitmap {
     unsafe { ffi::skiac_bitmap_set_immutable(self.0.bitmap) }
   }
 
-  /// One immutable image of these pixels, made at a pattern's first paint. It
-  /// shares the pixels: nothing writes to a bitmap after it is made. It holds
-  /// null when the bitmap has no pixels, and then the pattern paints nothing.
+  /// An immutable image of these pixels, made once per `AccountedBitmap` at
+  /// the first paint of a pattern over it. It shares the pixels: nothing
+  /// writes to a bitmap after it is made. It holds null when the bitmap has no
+  /// pixels, and then the pattern paints nothing.
   pub(crate) fn make_image(&self) -> SkImage {
     SkImage(unsafe { ffi::skiac_bitmap_make_image(self.0.bitmap) })
   }
@@ -4531,6 +4532,10 @@ pub struct AccountedBitmap {
   pub(crate) resource_id: u64,
   env: napi::sys::napi_env,
   bytes: i64,
+  /// The one image every pattern over this bitmap samples, made at the first
+  /// paint. Mip levels are cached per image, so the patterns share them, as
+  /// Chrome's decode cache does.
+  image: OnceLock<SkImage>,
 }
 
 impl AccountedBitmap {
@@ -4542,7 +4547,14 @@ impl AccountedBitmap {
       resource_id: crate::page_recorder::next_resource_id(),
       env,
       bytes,
+      image: OnceLock::new(),
     }
+  }
+
+  /// The image of these pixels that patterns sample (`Bitmap::make_image`),
+  /// made once and shared by every pattern over this bitmap.
+  pub(crate) fn image(&self) -> SkImage {
+    self.image.get_or_init(|| self.inner.make_image()).clone()
   }
 }
 
@@ -4667,7 +4679,7 @@ impl ImagePattern {
   /// or a failed snapshot) gives the empty shader, which paints nothing.
   fn make_image(&self) -> SkImage {
     match &self.backing {
-      Some(ImagePatternBacking::Bitmap(bitmap)) => bitmap.inner.make_image(),
+      Some(ImagePatternBacking::Bitmap(bitmap)) => bitmap.image(),
       // The cloned surface is never drawn to again, so its snapshot shares the
       // pixels and never copies them.
       Some(ImagePatternBacking::Surface(surface)) => surface

@@ -461,6 +461,66 @@ const inputs = {
   )
 })
 
+// Mip levels are cached per image, so patterns that share an image share its
+// mip chain, as Chrome's decode cache does. Every pattern over an SVG or AVIF
+// Image used to get its own image of the shared pixels, and a downscaled
+// medium-quality fill built a ~1.4 MB mip chain per pattern of a 1024x1024
+// Image: ~27 MB for the 20 below, where PNG patterns build one.
+test('downscaled patterns over one SVG or AVIF Image share its mip levels', async (t) => {
+  const { status, signal, stdout, stderr } = await runInChildProcess(
+    `
+const { createCanvas, loadImage, DOMMatrix } = require('./index.js')
+const source = createCanvas(1024, 1024)
+const sourceContext = source.getContext('2d')
+sourceContext.fillStyle = '#3a6'
+sourceContext.fillRect(0, 0, 1024, 1024)
+sourceContext.fillStyle = '#a36'
+sourceContext.fillRect(0, 0, 512, 1024)
+const inputs = {
+  svg: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024"><rect width="1024" height="1024" fill="#3a6"/><rect width="512" height="1024" fill="#a36"/></svg>'),
+  avif: source.toBuffer('image/avif'),
+  png: source.toBuffer('image/png'),
+}
+;(async () => {
+  const growth = {}
+  for (const [kind, data] of Object.entries(inputs)) {
+    const image = await loadImage(data)
+    const ctx = createCanvas(64, 64).getContext('2d')
+    ctx.imageSmoothingQuality = 'medium'
+    const keep = []
+    const paint = () => {
+      const pattern = ctx.createPattern(image, 'repeat')
+      pattern.setTransform(new DOMMatrix().scale(0.05, 0.05))
+      keep.push(pattern)
+      ctx.fillStyle = pattern
+      ctx.fillRect(0, 0, 64, 64)
+      ctx.getImageData(0, 0, 1, 1)
+    }
+    paint()
+    global.gc()
+    const before = process.memoryUsage().rss
+    for (let i = 0; i < 20; i++) paint()
+    global.gc()
+    growth[kind] = +((process.memoryUsage().rss - before) / 1048576).toFixed(1)
+    if (keep.length !== 21) throw new Error('patterns were not kept')
+  }
+  console.log(JSON.stringify(growth))
+})().catch((error) => {
+  console.error(error)
+  process.exit(1)
+})
+`,
+    ['--expose-gc'],
+  )
+
+  t.is(status, 0, `expected exit 0, got status=${status} signal=${signal}\n${stderr}${stdout}`)
+  const growth = JSON.parse(stdout.trim().split('\n').pop()!)
+  t.true(
+    growth.svg < 8 && growth.avif < 8 && growth.png < 8,
+    `20 downscaled patterns grew rss by ${JSON.stringify(growth)} MB, expected < 8 MB each`,
+  )
+})
+
 // Sharing the Image's pixels keeps the capture rule: a pattern keeps the
 // bitmap it was made from after the Image gets a new src.
 test('a pattern over an SVG Image keeps its pixels after the Image src changes', async (t) => {
