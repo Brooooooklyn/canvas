@@ -2656,6 +2656,13 @@ pub struct Color4f {
 }
 
 impl Color4f {
+  pub const TRANSPARENT: Self = Self {
+    r: 0.0,
+    g: 0.0,
+    b: 0.0,
+    a: 0.0,
+  };
+
   /// The same arithmetic as SkColor4f::FromColor: `x * (1 / 255.0f)`.
   pub fn from_rgba8(r: u8, g: u8, b: u8, a: u8) -> Self {
     Self {

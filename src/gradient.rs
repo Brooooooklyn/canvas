@@ -110,12 +110,58 @@ impl Gradient {
   /// Rough size of the shader a recorded draw retains: ~32 B per stop
   /// (position f32, float RGBA color, plus share of the shader object).
   pub(crate) fn estimated_bytes(&self) -> usize {
-    let stops = match self {
-      Self::Linear(g) => &g.base.colors,
-      Self::Radial(g) => &g.base.colors,
-      Self::Conic(g) => &g.base.colors,
-    };
-    stops.len() * 32 + 256
+    self.base().colors.len() * 32 + 256
+  }
+
+  fn base(&self) -> &SkGradient {
+    match self {
+      Self::Linear(g) => &g.base,
+      Self::Radial(g) => &g.base,
+      Self::Conic(g) => &g.base,
+    }
+  }
+
+  /// Blink's Gradient::FillSkiaStops (gradient.cc:131-213): a gradient with no
+  /// stops is transparent black, and the first and last stops are copied to 0.0
+  /// and 1.0. So Skia never gets 0 colors (it would fail) or 1 color (it would
+  /// make a solid color shader, which is never dithered).
+  fn skia_stops(base: &SkGradient) -> SkGradient {
+    let mut colors = Vec::with_capacity(base.colors.len() + 2);
+    let mut positions = Vec::with_capacity(base.colors.len() + 2);
+    match (base.positions.first(), base.colors.first()) {
+      (Some(&first_position), Some(&first_color)) => {
+        if first_position > 0.0 {
+          positions.push(0.0);
+          colors.push(first_color);
+        }
+        positions.extend_from_slice(&base.positions);
+        colors.extend_from_slice(&base.colors);
+      }
+      _ => {
+        positions.push(0.0);
+        colors.push(Color4f::TRANSPARENT);
+      }
+    }
+    let (last_position, last_color) = (positions[positions.len() - 1], colors[colors.len() - 1]);
+    if last_position < 1.0 {
+      positions.push(1.0);
+      colors.push(last_color);
+    }
+    SkGradient {
+      colors,
+      positions,
+      tile_mode: base.tile_mode,
+      transform: base.transform,
+    }
+  }
+
+  /// The one color the gradient paints everywhere, if there is one: transparent
+  /// black with no stops, or the color that all its stops share.
+  pub(crate) fn constant_color(&self) -> Option<Color4f> {
+    match self.base().colors.split_first() {
+      None => Some(Color4f::TRANSPARENT),
+      Some((first, rest)) => rest.iter().all(|c| c == first).then_some(*first),
+    }
   }
 
   pub(crate) fn get_shader(&self, current_transform: Transform) -> result::Result<Shader, SkError> {
@@ -124,7 +170,7 @@ impl Gradient {
         Shader::new_linear_gradient(&LinearGradient {
           start_point: linear_gradient.start_point,
           end_point: linear_gradient.end_point,
-          base: linear_gradient.base.clone(),
+          base: Self::skia_stops(&linear_gradient.base),
         })
         .ok_or_else(|| SkError::Generic("Get shader of linear gradient failed".to_owned()))?,
       ),
@@ -134,7 +180,7 @@ impl Gradient {
       Self::Radial(radial_gradient) => {
         // From the spec: "The points in the linear gradient must be transformed
         // as described by the current transformation matrix when rendering."
-        let base = radial_gradient.base.clone();
+        let base = Self::skia_stops(&radial_gradient.base);
         let new_radial_gradient = RadialGradient {
           start: radial_gradient.start,
           end: radial_gradient.end,
@@ -158,12 +204,12 @@ impl Gradient {
         let new_conic_gradient = ConicGradient {
           center: (x, y),
           radius: sr,
-          base: conic_gradient.base.clone(),
+          base: Self::skia_stops(&conic_gradient.base),
         };
 
         Ok(
           Shader::new_conic_gradient(&new_conic_gradient)
-            .ok_or_else(|| SkError::Generic("Get shader of radial gradient failed".to_owned()))?,
+            .ok_or_else(|| SkError::Generic("Get shader of conic gradient failed".to_owned()))?,
         )
       }
     }
@@ -304,4 +350,37 @@ fn test_add_color_stop_duplicated_offsets_keep_insertion_order() {
   let (positions, colors) = positions_colors(g);
   assert_eq!(positions, vec![0.0, 0.25, 0.25, 0.5, 0.5, 1.0]);
   assert_eq!(colors, vec![white, green, red, red, blue, black]);
+}
+
+/// Blink FillSkiaStops: no stops -> transparent black; the first and last stops
+/// are copied to 0.0 and 1.0.
+#[test]
+fn test_skia_stops_pad_like_blink() {
+  let red = Color4f::from_rgba8(255, 0, 0, 255);
+  let blue = Color4f::from_rgba8(0, 0, 255, 255);
+  let stops = |g: &Gradient| {
+    let s = Gradient::skia_stops(g.base());
+    (s.positions, s.colors)
+  };
+
+  let g = Gradient::create_linear_gradient(0.0, 0.0, 20.0, 0.0);
+  assert_eq!(
+    stops(&g),
+    (
+      vec![0.0, 1.0],
+      vec![Color4f::TRANSPARENT, Color4f::TRANSPARENT]
+    )
+  );
+  assert_eq!(g.constant_color(), Some(Color4f::TRANSPARENT));
+
+  let mut g = Gradient::create_radial_gradient(0.0, 0.0, 0.0, 0.0, 0.0, 20.0);
+  g.add_color_stop(0.3, red);
+  assert_eq!(stops(&g), (vec![0.0, 0.3, 1.0], vec![red, red, red]));
+  assert_eq!(g.constant_color(), Some(red));
+
+  let mut g = Gradient::create_conic_gradient(0.0, 0.0, 0.0);
+  g.add_color_stop(0.0, red);
+  g.add_color_stop(1.0, blue);
+  assert_eq!(stops(&g), (vec![0.0, 1.0], vec![red, blue]));
+  assert_eq!(g.constant_color(), None);
 }

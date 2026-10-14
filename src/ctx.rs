@@ -29,7 +29,7 @@ use crate::{
   gradient::{CanvasGradient, Gradient},
   image::*,
   path::Path,
-  pattern::{CanvasPattern, Pattern, hsl_to_rgba8},
+  pattern::{CanvasPattern, Pattern, hsl_to_rgba8, srgb_channel_to_u8},
   sk::{
     AlphaType, Bitmap, BlendMode, ColorSpace, FillType, FilterQuality, FontVariantCaps,
     ImageFilter, LineMetrics, MaskFilter, Matrix, Paint, PaintStyle, Path as SkPath, PathEffect,
@@ -1458,6 +1458,37 @@ impl Context {
     (self.state.global_alpha as f32 * 255.0).round() / 255.0
   }
 
+  /// The shader half of a gradient fillStyle/strokeStyle paint. Blink always
+  /// dithers gradients (gradient.cc ApplyToFlags).
+  fn set_gradient_paint(
+    &self,
+    paint: &mut Paint,
+    gradient: &Gradient,
+    alpha: f32,
+  ) -> result::Result<(), SkError> {
+    // SVG only: SkSVGDevice has no conic gradient and drops the alpha of a
+    // color shader, so a gradient that paints one color everywhere goes out as
+    // a plain paint color.
+    if self.backend == Backend::Svg
+      && let Some(c) = gradient.constant_color()
+    {
+      paint.set_color(
+        srgb_channel_to_u8(c.r),
+        srgb_channel_to_u8(c.g),
+        srgb_channel_to_u8(c.b),
+        255,
+      );
+      paint.set_alpha_f32(c.a * alpha);
+      return Ok(());
+    }
+    let shader = gradient.get_shader(self.state.transform.get_transform())?;
+    paint.set_color(0, 0, 0, 255);
+    paint.set_alpha_f32(alpha);
+    paint.set_shader(&shader);
+    paint.set_dither(true);
+    Ok(())
+  }
+
   pub fn fill_paint(&self) -> result::Result<Paint, SkError> {
     let last_state = &self.state;
     let current_paint = &last_state.paint;
@@ -1469,14 +1500,7 @@ impl Context {
         paint.set_color(c.r, c.g, c.b, c.a);
         paint.set_alpha_f32(c.a as f32 / 255.0 * alpha);
       }
-      Pattern::Gradient(g) => {
-        let current_transform = &last_state.transform;
-        let shader = g.get_shader(current_transform.get_transform())?;
-        paint.set_color(0, 0, 0, 255);
-        paint.set_alpha_f32(alpha);
-        paint.set_shader(&shader);
-        paint.set_dither(true);
-      }
+      Pattern::Gradient(g) => self.set_gradient_paint(&mut paint, g, alpha)?,
       Pattern::Image(p) => {
         if let Some(shader) = p.get_shader(if last_state.image_smoothing_enabled {
           last_state.image_smoothing_quality
@@ -1695,14 +1719,7 @@ impl Context {
         paint.set_color(c.r, c.g, c.b, c.a);
         paint.set_alpha_f32(c.a as f32 / 255.0 * global_alpha);
       }
-      Pattern::Gradient(g) => {
-        let current_transform = &last_state.transform;
-        let shader = g.get_shader(current_transform.get_transform())?;
-        paint.set_color(0, 0, 0, 255);
-        paint.set_alpha_f32(global_alpha);
-        paint.set_shader(&shader);
-        paint.set_dither(true);
-      }
+      Pattern::Gradient(g) => self.set_gradient_paint(&mut paint, g, global_alpha)?,
       Pattern::Image(p) => {
         if let Some(shader) = p.get_shader(if last_state.image_smoothing_enabled {
           last_state.image_smoothing_quality
