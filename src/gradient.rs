@@ -214,6 +214,35 @@ impl Gradient {
   }
 }
 
+/// Whether Blink rounds this hsl() color's alpha to k/255. Only its CSS fast
+/// path does (css_parser_fast_paths.cc:1068-1084, `alpha * (1.0f / 255.0f)`);
+/// every spelling the fast path rejects goes through the full parser, which
+/// keeps the float alpha. This mirrors the alpha half of the fast path: the
+/// string, stripped of HTML spaces, is a lowercase `hsl(` or `hsla(` whose
+/// last argument is a plain number right before the closing `)` (:902-910 and
+/// ParseAlphaValue, :770-830). A percentage, an exponent, a space before `)`
+/// or an uppercase name keeps the float. It does not mirror the hue,
+/// saturation and lightness checks, so e.g. a `none` hue still rounds here.
+fn blink_rounds_hsl_alpha(color: &str) -> bool {
+  const HTML_SPACES: [char; 5] = [' ', '\t', '\n', '\x0c', '\r'];
+  let color = color.trim_matches(HTML_SPACES);
+  let Some(args) = color
+    .strip_prefix("hsl(")
+    .or_else(|| color.strip_prefix("hsla("))
+    .and_then(|args| args.strip_suffix(')'))
+  else {
+    return false;
+  };
+  let alpha = args.rsplit([',', '/']).next().unwrap_or_default();
+  let alpha = alpha.trim_start_matches(HTML_SPACES);
+  let number = alpha.strip_prefix('-').unwrap_or(alpha);
+  let digits = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
+  match number.split_once('.') {
+    None => digits(number),
+    Some((int, frac)) => (int.is_empty() || digits(int)) && digits(frac),
+  }
+}
+
 #[napi]
 pub struct CanvasGradient(pub(crate) Gradient);
 
@@ -245,15 +274,19 @@ impl CanvasGradient {
         rgba.blue,                          // Already u8
         (rgba.alpha * 255.0).round() as u8, // Scale f32 0.0-1.0 to u8 0-255
       ),
-      // Blink keeps an hsl() stop as float sRGB (Color::ToGradientStopSkColor4f),
-      // with the 8-bit alpha of its fast path (css_parser_fast_paths.cc:1071-1083).
+      // Blink keeps an hsl() stop as float sRGB (Color::ToGradientStopSkColor4f).
       CSSColor::Hsl(hsl) => {
         let [r, g, b] = hsl_color_to_srgb(&hsl);
+        let alpha = hsl.alpha.unwrap_or(1.0);
         Color4f {
           r,
           g,
           b,
-          a: unit_from_u8((hsl.alpha.unwrap_or(1.0) * 255.0).round() as u8),
+          a: if blink_rounds_hsl_alpha(color_str) {
+            unit_from_u8((alpha * 255.0).round() as u8)
+          } else {
+            alpha
+          },
         }
       }
       _ => {
@@ -381,4 +414,32 @@ fn test_skia_stops_pad_like_blink() {
   g.add_color_stop(1.0, blue);
   assert_eq!(stops(&g), (vec![0.0, 1.0], vec![red, blue]));
   assert_eq!(g.constant_color(), None);
+}
+
+/// Chrome 155: these hsl() stops get a k/255 alpha (CSS fast path) or keep the
+/// float alpha (full parser).
+#[test]
+fn test_blink_rounds_hsl_alpha() {
+  for rounded in [
+    "hsla(120, 50%, 50%, 0.33)",
+    "hsl(120 50% 50% / 0.33)",
+    "hsl(120 50% 50%/.33)",
+    "  hsla(120, 50%, 50%,0.33)  ",
+    "hsla(120deg, 50%, 50%, 0.33)",
+    "hsla(120, 50%, 50%, -0.5)",
+    "hsla(120, 50%, 50%, 5)",
+  ] {
+    assert!(blink_rounds_hsl_alpha(rounded), "{rounded}");
+  }
+  for float in [
+    "hsl(120 50% 50% / 33%)",
+    "hsla(120, 50%, 50%, 33%)",
+    "HSLA(120, 50%, 50%, 0.33)",
+    "Hsl(120 50% 50% / 0.33)",
+    "hsla(120, 50%, 50%, 0.33 )",
+    "hsla(120, 50%, 50%, 3.3e-1)",
+    "hsla(120, 50%, 50%, 1.)",
+  ] {
+    assert!(!blink_rounds_hsl_alpha(float), "{float}");
+  }
 }

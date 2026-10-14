@@ -196,3 +196,39 @@ test('hsl() gradient stops keep float precision', (t) => {
     t.deepEqual([...ctx.getImageData(0, 0, 2, 1).data], bytes, color)
   }
 })
+
+test('hsl() stop alpha stays a float off the CSS fast path', (t) => {
+  // Two equal stops, 8x1. Blink rounds an hsl() alpha to k/255 only when its CSS fast path
+  // parses the color: a lowercase hsl()/hsla() whose alpha is a plain number right before ')'.
+  // Any other spelling keeps the float alpha, which dithers differently.
+  const rounded = Array(8).fill([64, 191, 64, 84]).flat()
+  // prettier-ignore
+  const float = [
+    64, 191, 64, 84, 64, 191, 64, 84, 64, 191, 64, 84, 64, 194, 64, 84,
+    64, 191, 64, 84, 64, 191, 64, 84, 64, 191, 64, 84, 67, 194, 67, 84,
+  ]
+  const expected: Record<string, number[]> = {
+    'hsla(120, 50%, 50%, 0.33)': rounded,
+    'hsl(120 50% 50%/.33)': rounded,
+    '  hsla(120, 50%, 50%,0.33)  ': rounded,
+    'hsl(120 50% 50% / 33%)': float,
+    'hsla(120, 50%, 50%, 33%)': float,
+    'HSLA(120, 50%, 50%, 0.33)': float,
+    'hsla(120, 50%, 50%, 0.33 )': float,
+    'hsla(120, 50%, 50%, 3.3e-1)': float,
+    // prettier-ignore
+    'hsla(10, 77%, 33%, 70%)': [
+      149, 40, 19, 178, 150, 42, 20, 178, 149, 40, 19, 178, 150, 42, 20, 178,
+      149, 40, 19, 178, 150, 42, 20, 178, 149, 40, 19, 178, 150, 42, 20, 178,
+    ],
+  }
+  for (const [color, bytes] of Object.entries(expected)) {
+    const ctx = createCanvas(8, 1).getContext('2d')
+    const gradient = ctx.createLinearGradient(0, 0, 8, 0)
+    gradient.addColorStop(0, color)
+    gradient.addColorStop(1, color)
+    ctx.fillStyle = gradient
+    ctx.fillRect(0, 0, 8, 1)
+    t.deepEqual([...ctx.getImageData(0, 0, 8, 1).data], bytes, color)
+  }
+})
