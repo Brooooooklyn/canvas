@@ -1901,12 +1901,13 @@ impl Context {
         // bounding box -- a `strokeRect` shadow came out a filled box. So fold
         // the blend into the paint colour, as `SkPaintPriv::RemoveColorFilter`
         // does for PDF; against a solid-colour source that is algebraically the
-        // same, and SkSVGDevice emits a plain `fill=` with no filter. It rounds
-        // twice, though: `get_color` rounds the float paint alpha to a byte,
-        // and the product with `shadowColor.a` is rounded again. The
-        // image-filter route below does the same, through its 8-bit layer;
-        // Blink's looper shadow takes one float product, so this one can be
-        // 1/255 off it.
+        // same, and SkSVGDevice emits a plain `fill=` with no filter. Like
+        // Blink's looper shadow (`SkColorFilters::Blend(shadowColor4f, kSrcIn)`
+        // folded by RemoveColorFilter, draw_looper_builder.cc), the alpha is one
+        // float product, `shadowColor.a * fillStyle.a * globalAlpha`, rounded
+        // once by the blitter. Only a colour-only `ctx.filter` reads the
+        // filtered colour as a byte. The image-filter route below rounds
+        // through its 8-bit layer.
         //
         // Two conditions, both load-bearing:
         //   * `* paint_alpha`: `paint` already carries style alpha *
@@ -1923,17 +1924,12 @@ impl Context {
         // since kSrcIn throws the filtered RGB away. Deliberately NOT
         // special-cased on the filter list: `SkImageFilters::ColorFilter`
         // collapses chained colour filters, so `filterColor4f` answers for all.
-        let source_color = match colour_only_filter {
-          Some(filter) => filter.filter_color(drop_shadow_paint.get_color()),
-          None => drop_shadow_paint.get_color(),
+        let paint_alpha = match colour_only_filter {
+          Some(filter) => (filter.filter_color(drop_shadow_paint.get_color()) >> 24) as f32 / 255.0,
+          None => drop_shadow_paint.get_alpha_f32(),
         };
-        let paint_alpha = (source_color >> 24) as f32 / 255.0;
-        drop_shadow_paint.set_color(
-          shadow_color.r,
-          shadow_color.g,
-          shadow_color.b,
-          (shadow_alpha as f32 * paint_alpha).round() as u8,
-        );
+        drop_shadow_paint.set_color(shadow_color.r, shadow_color.g, shadow_color.b, 255);
+        drop_shadow_paint.set_alpha_f32(shadow_alpha as f32 / 255.0 * paint_alpha);
         return Some(ShadowDraw {
           paint: drop_shadow_paint,
           filter: None,
