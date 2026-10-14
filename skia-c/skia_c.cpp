@@ -760,13 +760,47 @@ skiac_surface* skiac_surface_create_rgba_premultiplied(int width,
       skiac_surface_create(width, height, kPremul_SkAlphaType, cs));
 }
 
+// alpha:false backing store. Blink gives such a canvas a kOpaque resource
+// (canvas_2d_color_params.h GetAlphaType, canvas_resource_provider.cc
+// CreateSkSurface), so putImageData and getImageData copy the bytes as given.
+skiac_surface* skiac_surface_create_rgba_opaque(int width,
+                                                int height,
+                                                uint8_t cs) {
+  return reinterpret_cast<skiac_surface*>(
+      skiac_surface_create(width, height, kOpaque_SkAlphaType, cs));
+}
+
 skiac_surface* skiac_surface_create_rgba(int width, int height, uint8_t cs) {
   return reinterpret_cast<skiac_surface*>(
       skiac_surface_create(width, height, kUnpremul_SkAlphaType, cs));
 }
 
+// Blink encodes canvas output from a kUnpremul readback (image_data_buffer.cc),
+// which is a plain copy for a kOpaque canvas, so an alpha:false canvas still
+// encodes as RGBA with its stored alpha. Skia's PNG encoder would write RGB for
+// a kOpaque image. The view shares the pixels: `image` must outlive it.
+static sk_sp<SkImage> encodable_image(SkImage* image) {
+  SkPixmap pixmap;
+  if (image->alphaType() != kOpaque_SkAlphaType ||
+      !image->peekPixels(&pixmap)) {
+    return sk_ref_sp(image);
+  }
+  return SkImages::RasterFromPixmap(
+      SkPixmap(pixmap.info().makeAlphaType(kUnpremul_SkAlphaType),
+               pixmap.addr(), pixmap.rowBytes()),
+      nullptr, nullptr);
+}
+
+// Blink's JPEG encoder blends its kUnpremul readback on black
+// (image_encoder.cc:51). Skia applies it to kUnpremul input only
+// (SkJpegEncoderImpl.cpp), which here is the view of an alpha:false canvas
+// (encodable_image); premultiplied pixels encode as before.
+static constexpr auto kJpegAlphaOption =
+    SkJpegEncoder::AlphaOption::kBlendOnBlack;
+
 bool skiac_surface_save(skiac_surface* c_surface, const char* path) {
-  auto image = SURFACE_CAST->makeImageSnapshot();
+  auto snapshot = SURFACE_CAST->makeImageSnapshot();
+  auto image = encodable_image(snapshot.get());
   auto data =
       SkPngEncoder::Encode(nullptr, image.get(), SkPngEncoder::Options());
   if (data) {
@@ -803,8 +837,11 @@ skiac_surface* skiac_surface_copy_rgba(skiac_surface* c_surface,
   // x, y, width, height are source rectangle coordinates.
   // Premultiplied like the source canvas: pattern shaders filter the stored
   // texels, and unpremul texels would pull transparent black into the color.
-  auto copy =
-      skiac_surface_create((int)width, (int)height, kPremul_SkAlphaType, cs);
+  // An alpha:false source stays kOpaque, like Blink's snapshot of it.
+  auto alpha_type = SURFACE_CAST->imageInfo().alphaType() == kOpaque_SkAlphaType
+                        ? kOpaque_SkAlphaType
+                        : kPremul_SkAlphaType;
+  auto copy = skiac_surface_create((int)width, (int)height, alpha_type, cs);
   if (!copy) {
     return nullptr;
   }
@@ -890,9 +927,10 @@ bool skiac_surface_read_pixels_rect(skiac_surface* c_surface,
 }
 
 void skiac_surface_png_data(skiac_surface* c_surface, skiac_sk_data* data) {
-  auto image = SURFACE_CAST->makeImageSnapshot().release();
-  auto png_data = SkPngEncoder::Encode(nullptr, image, SkPngEncoder::Options());
-  image->unref();
+  auto snapshot = SURFACE_CAST->makeImageSnapshot();
+  auto image = encodable_image(snapshot.get());
+  auto png_data =
+      SkPngEncoder::Encode(nullptr, image.get(), SkPngEncoder::Options());
   if (png_data) {
     data->ptr = png_data->bytes();
     data->size = png_data->size();
@@ -904,11 +942,14 @@ void skiac_surface_encode_data(skiac_surface* c_surface,
                                skiac_sk_data* data,
                                int format,
                                int quality) {
-  auto image = SURFACE_CAST->makeImageSnapshot().release();
+  auto snapshot = SURFACE_CAST->makeImageSnapshot();
+  auto image_ref = encodable_image(snapshot.get());
+  auto image = image_ref.get();
   sk_sp<SkData> encoded_data;
   if (format == int(SkEncodedImageFormat::kJPEG)) {
     SkJpegEncoder::Options options;
     options.fQuality = quality;
+    options.fAlphaOption = kJpegAlphaOption;
     encoded_data = SkJpegEncoder::Encode(nullptr, image, options);
   } else if (format == int(SkEncodedImageFormat::kPNG)) {
     encoded_data =
@@ -921,7 +962,6 @@ void skiac_surface_encode_data(skiac_surface* c_surface,
     options.fQuality = quality == 100 ? 75 : quality;
     encoded_data = SkWebpEncoder::Encode(nullptr, image, options);
   }
-  image->unref();
   if (encoded_data) {
     data->ptr = const_cast<uint8_t*>(encoded_data->bytes());
     data->size = encoded_data->size();
@@ -938,11 +978,17 @@ bool skiac_surface_encode_stream(skiac_surface* c_surface,
   if (!SURFACE_CAST->peekPixels(&sk_pixmap)) {
     return false;
   }
+  // alpha:false: encode RGBA with the stored alpha, see encodable_image.
+  if (sk_pixmap.alphaType() == kOpaque_SkAlphaType) {
+    sk_pixmap = SkPixmap(sk_pixmap.info().makeAlphaType(kUnpremul_SkAlphaType),
+                         sk_pixmap.addr(), sk_pixmap.rowBytes());
+  }
   SkJavaScriptWStream stream(write_callback, context);
   std::unique_ptr<SkEncoder> encoder;
   if (format == int(SkEncodedImageFormat::kJPEG)) {
     SkJpegEncoder::Options options;
     options.fQuality = quality;
+    options.fAlphaOption = kJpegAlphaOption;
     encoder = SkJpegEncoder::Make(&stream, sk_pixmap, options);
   } else if (format == int(SkEncodedImageFormat::kPNG)) {
     encoder = SkPngEncoder::Make(&stream, sk_pixmap, SkPngEncoder::Options());
@@ -1134,6 +1180,7 @@ void skiac_canvas_get_line_metrics_or_draw_text(
     skiac_paint* c_paint,
     skiac_canvas* c_canvas,
     skiac_line_metrics* c_line_metrics,
+    bool collect_ink,
     const skiac_font_variation* variations,
     int variations_count,
     int kerning,
@@ -1420,6 +1467,35 @@ void skiac_canvas_get_line_metrics_or_draw_text(
     c_line_metrics->font_ascent = -font_metrics.fAscent + offset;
     c_line_metrics->font_descent = font_metrics.fDescent - offset;
     c_line_metrics->alphabetic_baseline = -font_metrics.fAscent + offset;
+    // The ink of every glyph the draw above paints, where it paints it:
+    // visit() walks the text blobs paint() draws, and the origin is the
+    // draw's own, rtl_offset and letter_spacing_offset included. Relative to
+    // x, unscaled. Only the alpha:false reset asks for it; the walk is a
+    // large share of a measure, so measureText skips it.
+    SkScalar ink_left = SK_ScalarInfinity;
+    SkScalar ink_right = SK_ScalarNegativeInfinity;
+    if (collect_ink) {
+      paragraph->visit([&](int, const Paragraph::VisitorInfo* info) {
+        if (!info) {
+          return;
+        }
+        std::vector<SkRect> glyph_bounds(info->count);
+        info->font.getBounds({info->glyphs, static_cast<size_t>(info->count)},
+                             glyph_bounds, PAINT_CAST);
+        for (int i = 0; i < info->count; ++i) {
+          if (glyph_bounds[i].isEmpty()) {
+            continue;
+          }
+          auto glyph_x = info->origin.fX + info->positions[i].fX;
+          ink_left = std::min(ink_left, glyph_x + glyph_bounds[i].fLeft);
+          ink_right = std::max(ink_right, glyph_x + glyph_bounds[i].fRight);
+        }
+      });
+    }
+    auto draw_x = paint_x - rtl_offset + letter_spacing_offset - x;
+    // No ink (only spaces) or not asked for: an empty box at the anchor.
+    c_line_metrics->ink_left = ink_left <= ink_right ? draw_x + ink_left : 0;
+    c_line_metrics->ink_right = ink_left <= ink_right ? draw_x + ink_right : 0;
   }
   delete paragraph;
 }
@@ -1492,11 +1568,17 @@ void skiac_canvas_put_image_data(skiac_canvas* c_canvas,
                                  float dirty_width,
                                  float dirty_height,
                                  uint8_t cs,
-                                 bool snapshot) {
+                                 bool snapshot,
+                                 bool opaque) {
   auto color_space = COLOR_SPACE_CAST;
+  // alpha:false: Blink's PutByteArray labels the pixels kOpaque, so the write
+  // onto the kOpaque canvas is a plain copy, alpha included
+  // (base_rendering_context_2d.cc PutByteArray, skbug 6157).
   auto info =
       SkImageInfo::Make(width, height, SkColorType::kRGBA_8888_SkColorType,
-                        SkAlphaType::kUnpremul_SkAlphaType, color_space);
+                        opaque ? SkAlphaType::kOpaque_SkAlphaType
+                               : SkAlphaType::kUnpremul_SkAlphaType,
+                        color_space);
   auto pixmap = SkPixmap(info, pixels, row_bytes);
   // When snapshot=true (deferred/recorded mode), copy the pixel data so the
   // SkPicture owns an independent snapshot. Without this, reusing and mutating
@@ -2689,11 +2771,13 @@ void skiac_image_encode_data(skiac_image* c_image,
                              skiac_sk_data* data,
                              int format,
                              int quality) {
-  auto image = IMAGE_CAST;
+  auto image_ref = encodable_image(IMAGE_CAST);
+  auto image = image_ref.get();
   sk_sp<SkData> encoded_data;
   if (format == int(SkEncodedImageFormat::kJPEG)) {
     SkJpegEncoder::Options options;
     options.fQuality = quality;
+    options.fAlphaOption = kJpegAlphaOption;
     encoded_data = SkJpegEncoder::Encode(nullptr, image, options);
   } else if (format == int(SkEncodedImageFormat::kPNG)) {
     encoded_data =

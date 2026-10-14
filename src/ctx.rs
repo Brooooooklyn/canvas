@@ -32,7 +32,8 @@ use crate::{
   sk::{
     AlphaType, Bitmap, BlendMode, ColorSpace, FillType, FilterQuality, FontVariantCaps,
     ImageFilter, LineMetrics, MaskFilter, Matrix, Paint, PaintStyle, Path as SkPath, PathEffect,
-    PathOp, SkEncodedImageFormat, SkImage, SkWMemoryStream, SkiaDataRef, Surface, Transform,
+    PathOp, SkEncodedImageFormat, SkImage, SkWMemoryStream, SkiaDataRef, StrokeCap, StrokeJoin,
+    Surface, Transform,
   },
   state::Context2dRenderingState,
   webidl::{self, Positional, ReportedSettings},
@@ -135,6 +136,54 @@ struct ShadowPass<'a> {
   blur: f32,
 }
 
+/// The user-space rect a draw hands Blink's Draw as `bounds`. Only the
+/// alpha:false alpha reset reads it, and only for a draw Blink does not take
+/// through CompositedDraw: Blink limits ResetAlphaIfNeeded to it there
+/// (canvas_2d_recorder_context.h:729-752, 837, 853), and resets the whole clip
+/// after a composited one (h:826-829). `blink_composites` makes that call.
+#[derive(Clone, Copy)]
+pub(crate) struct DrawBounds {
+  left: f32,
+  top: f32,
+  right: f32,
+  bottom: f32,
+}
+
+impl DrawBounds {
+  /// Blink AdjustRectForCanvas: a negative width or height flips the rect.
+  fn rect(x: f32, y: f32, width: f32, height: f32) -> Self {
+    DrawBounds {
+      left: x.min(x + width),
+      top: y.min(y + height),
+      right: x.max(x + width),
+      bottom: y.max(y + height),
+    }
+  }
+
+  /// A path's bounds (Blink: CanvasPath::BoundingRect, for us SkPath's).
+  /// None when they are not finite: then no bounds are passed.
+  fn path(path: &SkPath) -> Option<Self> {
+    let (left, top, right, bottom) = path.get_bounds();
+    (left.is_finite() && top.is_finite() && right.is_finite() && bottom.is_finite()).then_some(
+      DrawBounds {
+        left,
+        top,
+        right,
+        bottom,
+      },
+    )
+  }
+
+  fn outset(self, delta: f32) -> Self {
+    DrawBounds {
+      left: self.left - delta,
+      top: self.top - delta,
+      right: self.right + delta,
+      bottom: self.bottom + delta,
+    }
+  }
+}
+
 pub struct Context {
   pub(crate) surface: Surface,
   /// Unique identity for retained-raster dedup keys; survives the backing
@@ -192,9 +241,27 @@ impl Context {
   }
 
   pub fn new(width: u32, height: u32, color_space: ColorSpace) -> Result<Self> {
-    let surface = Surface::new_rgba_premultiplied(width, height, color_space)
-      .ok_or_else(|| Error::from_reason("Create skia surface failed".to_owned()))?;
-    Ok(Context {
+    Self::new_with_alpha(width, height, color_space, true)
+  }
+
+  /// A raster context. alpha:false gets a kOpaque surface cleared to opaque
+  /// black, as Blink's resource provider does at creation
+  /// (canvas_resource_provider.cc ClearAtCreation, kBlack for kOpaque).
+  /// Chrome allocates it lazily and reads an untouched canvas as zeros; the
+  /// spec, and Chrome's own display, say black from the start.
+  pub fn new_with_alpha(
+    width: u32,
+    height: u32,
+    color_space: ColorSpace,
+    alpha: bool,
+  ) -> Result<Self> {
+    let surface = if alpha {
+      Surface::new_rgba_premultiplied(width, height, color_space)
+    } else {
+      Surface::new_rgba_opaque(width, height, color_space)
+    }
+    .ok_or_else(|| Error::from_reason("Create skia surface failed".to_owned()))?;
+    let mut context = Context {
       surface,
       resource_id: next_resource_id(),
       page_recorder: Some(RefCell::new(PageRecorder::new(width as f32, height as f32))), // Enable deferred rendering
@@ -208,7 +275,34 @@ impl Context {
       color_space,
       stream: None,
       direct_content_version: Cell::new(0),
-    })
+    };
+    if !alpha {
+      context.set_opaque();
+    }
+    Ok(context)
+  }
+
+  /// Make a fresh context alpha:false and paint its opaque black base. The
+  /// base is a direct surface write: with_surface_canvas bumps the content
+  /// version and, on raster, marks the recorded layers stale so drawCanvas
+  /// rebases on the surface. The canvas is clean, so no paint state (or
+  /// anything set through the internal `canvas.ctx`) reaches the base.
+  pub(crate) fn set_opaque(&mut self) {
+    self.alpha = false;
+    if let Some(ref recorder) = self.page_recorder {
+      recorder.borrow_mut().set_opaque();
+    }
+    self.with_surface_canvas(|canvas| canvas.fill(0, 0, 0, 255));
+  }
+
+  /// Clear the surface to the context's base: transparent, or opaque black
+  /// for alpha:false (Blink GetClearFlags).
+  fn clear_surface_to_base(&mut self) {
+    if self.alpha {
+      self.surface.canvas.clear();
+    } else {
+      self.surface.canvas.fill(0, 0, 0, 255);
+    }
   }
 
   // Create a Context from an existing Surface (e.g., from PDFDocument)
@@ -484,12 +578,18 @@ impl Context {
     F: Fn(&mut Canvas, &Paint) -> result::Result<(), SkError>,
   {
     // `DrawContent` only qualifies a filter, and there is none here, so it is
-    // inert.
+    // inert. Source-over whatever globalCompositeOperation is: Blink's
+    // clearRect draws its rect straight with GetClearFlags and never reads the
+    // composite op (canvas_2d_recorder_context.cc:1928-1985).
     self.render_passes(
+      BlendMode::SourceOver,
       paint,
       DrawContent::Geometry,
       None,
+      false,
       None,
+      None,
+      false,
       |_, _, _| Ok(()),
       f,
     )
@@ -501,11 +601,17 @@ impl Context {
   /// hoisted onto each pass's layer rather than left on the content paint, as
   /// Blink does (canvas_2d_recorder_context.h:956-957), except for the one
   /// vector-backend exception `render_passes` takes.
+  ///
+  /// `pattern_style` is Blink's kNonOpaqueImage: a fill or stroke whose style
+  /// is a CanvasPattern. Text and images never pass it
+  /// (base_rendering_context_2d.cc:1113, canvas_2d_recorder_context.cc:2342).
   fn with_shadowed_render_canvas<S, F>(
     &mut self,
     paint: &Paint,
     content: DrawContent,
     shadow: Option<&ShadowDraw>,
+    bounds: Option<DrawBounds>,
+    pattern_style: bool,
     shadow_f: S,
     f: F,
   ) -> result::Result<(), SkError>
@@ -514,19 +620,37 @@ impl Context {
     F: Fn(&mut Canvas, &Paint) -> result::Result<(), SkError>,
   {
     let content_filter = self.state.filter.clone();
-    self.render_passes(paint, content, content_filter, shadow, shadow_f, f)
+    self.render_passes(
+      self.state.global_composite_operation,
+      paint,
+      content,
+      content_filter,
+      self.state.has_filter,
+      shadow,
+      bounds,
+      pattern_style,
+      shadow_f,
+      f,
+    )
   }
 
   /// Shared body of the two above. The shadow closure is handed the user->device
   /// matrix as its third argument because it cannot read one off the canvas it
   /// is given -- that canvas may be a recorder at identity, or sit inside a
   /// filter layer. Pass it straight to `apply_shadow_offset_matrix_to_canvas`.
+  ///
+  /// `has_filter` is Blink's StateHasFilter for the draw: true also when the
+  /// assigned filter built no `content_filter`.
   fn render_passes<S, F>(
     &mut self,
+    blend_mode: BlendMode,
     paint: &Paint,
     content: DrawContent,
     content_filter: Option<ImageFilter>,
+    has_filter: bool,
     shadow: Option<&ShadowDraw>,
+    bounds: Option<DrawBounds>,
+    pattern_style: bool,
     shadow_f: S,
     f: F,
   ) -> result::Result<(), SkError>
@@ -534,7 +658,20 @@ impl Context {
     S: Fn(&mut Canvas, &Paint, &Matrix) -> result::Result<(), SkError>,
     F: Fn(&mut Canvas, &Paint) -> result::Result<(), SkError>,
   {
-    let blend_mode = self.state.global_composite_operation;
+    // Blink's Draw returns before drawing anything when the CTM is singular
+    // (canvas_2d_recorder_context.h:866-868), and so does clearRect (.cc:1940):
+    // copy must not clear the clip for a draw that has no device space.
+    if !self.transform_is_invertible() {
+      return Ok(());
+    }
+    // The alpha:false reset covers the whole clip after a draw Blink
+    // composites, whatever route we take for it.
+    let bounds = if Self::blink_composites(blend_mode, has_filter, shadow.is_some(), pattern_style)
+    {
+      None
+    } else {
+      bounds
+    };
     let width = self.width as f32;
     let height = self.height as f32;
 
@@ -592,6 +729,9 @@ impl Context {
           paint,
           content_filter.as_ref(),
           blend_mode,
+          self.backend,
+          self.alpha,
+          bounds,
           width,
           height,
           shadow,
@@ -621,6 +761,9 @@ impl Context {
       paint,
       content_filter.as_ref(),
       blend_mode,
+      self.backend,
+      self.alpha,
+      bounds,
       width,
       height,
       shadow,
@@ -628,8 +771,119 @@ impl Context {
       shadow_f,
       f,
     );
+    // No alpha reset on SVG (see render_canvas); PDF is never alpha:false.
     self.note_direct_mutation();
     result
+  }
+
+  /// Blink ResetAlphaIfNeeded (canvas_2d_recorder_context.h:699-709,
+  /// 729-752): on an alpha:false canvas a composite mode that can lower the
+  /// destination alpha is followed by an opaque black kDstOver fill, which
+  /// puts alpha back to 255 (the result is composited over black). It is a
+  /// plain rect with no anti-aliasing over the clip, limited to the draw
+  /// `bounds` where the caller passes them; an anti-aliased edge outside
+  /// them keeps its lowered alpha, as in Chrome.
+  fn reset_alpha_if_needed(
+    canvas: &mut Canvas,
+    blend_mode: BlendMode,
+    bounds: Option<DrawBounds>,
+    width: f32,
+    height: f32,
+  ) {
+    if !matches!(
+      blend_mode,
+      BlendMode::Source
+        | BlendMode::SourceIn
+        | BlendMode::DestinationIn
+        | BlendMode::SourceOut
+        | BlendMode::DestinationOut
+        | BlendMode::SourceATop
+        | BlendMode::DestinationATop
+        | BlendMode::Xor
+        | BlendMode::Modulate
+    ) {
+      return;
+    }
+    let mut paint = Paint::new();
+    paint.set_style(PaintStyle::Fill);
+    paint.set_color(0, 0, 0, 255);
+    paint.set_blend_mode(BlendMode::DestinationOver);
+    match bounds {
+      // Drawn under the CTM, as Blink draws the local rect.
+      Some(b) => canvas.draw_rect(b.left, b.top, b.right - b.left, b.bottom - b.top, &paint),
+      // The whole clip (Blink: its local clip bounds).
+      None => {
+        canvas.save();
+        canvas.reset_transform();
+        canvas.draw_rect(0.0, 0.0, width, height, &paint);
+        canvas.restore();
+      }
+    }
+  }
+
+  /// Whether a draw in the current composite mode is followed by the
+  /// alpha:false alpha reset. Only the raster backend does it: SkSVGDevice
+  /// ignores kDstOver and would paint the black rect over the drawing.
+  fn resets_alpha(&self) -> bool {
+    !self.alpha
+      && self.backend == Backend::Raster
+      && matches!(
+        self.state.global_composite_operation,
+        BlendMode::Source
+          | BlendMode::SourceIn
+          | BlendMode::DestinationIn
+          | BlendMode::SourceOut
+          | BlendMode::DestinationOut
+          | BlendMode::SourceATop
+          | BlendMode::DestinationATop
+          | BlendMode::Xor
+          | BlendMode::Modulate
+      )
+  }
+
+  /// Blink's ShouldUseCompositedDraw (canvas_2d_recorder_context.h:582-597,
+  /// 711-727): any `ctx.filter` (StateHasFilter, h:589: one that builds no
+  /// Skia filter counts too), a full-canvas mode, a shadow in a mode
+  /// DropShadowPaintFilter cannot do (copy is handled apart and never is), or
+  /// a shadow on a pattern fill or stroke. Only the alpha:false reset reads
+  /// it: after such a draw Blink resets the whole clip (h:826-829). Our
+  /// routing still differs for the shadow cases (see render_canvas).
+  fn blink_composites(
+    blend_mode: BlendMode,
+    has_filter: bool,
+    has_shadow: bool,
+    pattern_style: bool,
+  ) -> bool {
+    has_filter
+      || matches!(
+        blend_mode,
+        BlendMode::SourceIn
+          | BlendMode::SourceOut
+          | BlendMode::DestinationIn
+          | BlendMode::DestinationATop
+      )
+      || (has_shadow
+        && (pattern_style
+          || !matches!(
+            blend_mode,
+            BlendMode::Source
+              | BlendMode::SourceOver
+              | BlendMode::SourceATop
+              | BlendMode::DestinationOut
+          )))
+  }
+
+  /// Blink InflateStrokeRect (canvas_2d_recorder_context.cc:2656-2670): a
+  /// quick over-estimate of a stroke's extent around its geometry.
+  fn inflate_stroke_bounds(&self, bounds: DrawBounds) -> DrawBounds {
+    let paint = &self.state.paint;
+    let mut delta = paint.get_stroke_width() as f64 / 2.0;
+    if matches!(paint.get_stroke_join(), StrokeJoin::Miter) {
+      delta *= paint.get_stroke_miter() as f64;
+    } else if matches!(paint.get_stroke_cap(), StrokeCap::Square) {
+      delta *= std::f64::consts::SQRT_2;
+    }
+    bounds.outset(delta as f32)
   }
 
   pub fn arc(
@@ -773,7 +1027,7 @@ impl Context {
           .reset(self.width as f32, self.height as f32);
       }
       // Also clear the main surface
-      self.surface.canvas.clear();
+      self.clear_surface_to_base();
       return Ok(());
     }
 
@@ -781,9 +1035,15 @@ impl Context {
     self.flush_if_recording_limit_exceeded();
     let mut paint = Paint::new();
     paint.set_style(PaintStyle::Fill);
-    paint.set_color(0, 0, 0, 0);
     paint.set_stroke_miter(10.0);
-    paint.set_blend_mode(BlendMode::Clear);
+    if self.alpha {
+      paint.set_color(0, 0, 0, 0);
+      paint.set_blend_mode(BlendMode::Clear);
+    } else {
+      // Blink GetClearFlags (canvas_2d_recorder_context.cc:1917-1926):
+      // alpha:false clears by filling opaque black, source-over.
+      paint.set_color(0, 0, 0, 255);
+    }
     self.with_render_canvas(&paint, |canvas, paint| {
       canvas.draw_rect(x, y, width, height, paint);
       Ok(())
@@ -882,7 +1142,15 @@ impl Context {
         .borrow_mut()
         .reset(self.width as f32, self.height as f32);
       // Also clear main surface which accumulates content from flush() calls
-      self.surface.canvas.clear();
+      self.clear_surface_to_base();
+    } else if !self.alpha {
+      // Direct backends (SVG): draw the alpha:false base again. canvas.reset()
+      // is restoreToCount(1), which keeps a matrix or clip set at the root
+      // save level (an SkCanvas cannot drop a clip it has no save to restore),
+      // and SkSVGDevice writes the base as a canvas-sized rect under both. So
+      // after a root translate or clip the base misses part of the canvas, and
+      // earlier content there stays in the SVG.
+      self.surface.canvas.fill(0, 0, 0, 255);
     }
 
     // Clear the current path
@@ -900,6 +1168,9 @@ impl Context {
     // Paint construction is fallible (dash PathEffect, gradient shader); the
     // resource charge must land only once the op can actually record.
     let stroke_paint = self.stroke_paint()?;
+    if self.draws_nothing() {
+      return Ok(());
+    }
     self.account_paint_resources(&self.state.stroke_style);
 
     // Extract state for shadow rendering to avoid borrow conflicts
@@ -909,10 +1180,13 @@ impl Context {
     let (shadow_offset_x, shadow_offset_y) =
       self.canvas_shadow_offset(ShadowSource::Stroke, DrawContent::Geometry);
 
+    let bounds = self.inflate_stroke_bounds(DrawBounds::rect(x, y, w, h));
     self.with_shadowed_render_canvas(
       &stroke_paint,
       DrawContent::Geometry,
       shadow_paint.as_ref(),
+      Some(bounds),
+      matches!(self.state.stroke_style, Pattern::Image(_)),
       |shadow_canvas, shadow_paint, device_ctm| {
         shadow_canvas.save();
         Self::apply_shadow_offset_matrix_to_canvas(
@@ -1053,6 +1327,9 @@ impl Context {
     {
       return Ok(());
     }
+    if self.draws_nothing() {
+      return Ok(());
+    }
 
     self.account_paint_resources(&self.state.fill_style);
     // Zero on the image-filter route, where the filter's dx/dy already carry it.
@@ -1063,6 +1340,8 @@ impl Context {
       &fill_paint,
       DrawContent::Geometry,
       shadow_paint.as_ref(),
+      Some(DrawBounds::rect(x, y, w, h)),
+      matches!(self.state.fill_style, Pattern::Image(_)),
       |shadow_canvas, shadow_paint, device_ctm| {
         shadow_canvas.save();
         Self::apply_shadow_offset_matrix_to_canvas(
@@ -1130,6 +1409,9 @@ impl Context {
     if path_to_draw.is_empty() && self.empty_geometry_is_skippable(shadow_paint.is_some()) {
       return Ok(());
     }
+    if self.draws_nothing() {
+      return Ok(());
+    }
 
     self.account_paint_resources(&self.state.stroke_style);
     // Zero on the image-filter route, where the filter's dx/dy already carry it.
@@ -1147,10 +1429,13 @@ impl Context {
       },
       path_to_draw.estimated_bytes(),
     );
+    let bounds = DrawBounds::path(&path_to_draw).map(|b| self.inflate_stroke_bounds(b));
     self.with_shadowed_render_canvas(
       &stroke_paint,
       DrawContent::Geometry,
       shadow_paint.as_ref(),
+      bounds,
+      matches!(self.state.stroke_style, Pattern::Image(_)),
       |shadow_canvas, shadow_paint, device_ctm| {
         shadow_canvas.save();
         Self::apply_shadow_offset_matrix_to_canvas(
@@ -1265,17 +1550,22 @@ impl Context {
   // destination -- Blink's `CompositedDraw`
   // (canvas_2d_recorder_context.h:896-965). The two layers are SIBLINGS, which
   // is composite(composite(background, shadow), foreground) taken literally, and
-  // is why the shadow band of a source-in or copy draw legitimately disappears.
+  // is why the shadow band of a source-in draw legitimately disappears.
   // Do not merge them into one layer, and do not nest the shadow pass inside the
   // content one -- it would composite against the empty layer, not the backdrop.
   //
   // KNOWN DEFECT: the mode list below omits the shadow-conditional cases
-  // Chromium routes through CompositedDraw (h:692-697, :719-727).
+  // Chromium routes through CompositedDraw (h:692-697, :719-727). The
+  // alpha:false reset already follows Blink for them: `bounds` arrives as
+  // None for every draw `blink_composites` names.
   fn render_canvas<S, F>(
     surface_canvas: &mut Canvas,
     paint: &Paint,
     content_filter: Option<&ImageFilter>,
     blend_mode: BlendMode,
+    backend: Backend,
+    alpha: bool,
+    bounds: Option<DrawBounds>,
     width: f32,
     height: f32,
     shadow: Option<ShadowPass<'_>>,
@@ -1287,17 +1577,35 @@ impl Context {
     S: Fn(&mut Canvas, &Paint, &Matrix) -> result::Result<(), SkError>,
     F: Fn(&mut Canvas, &Paint) -> result::Result<(), SkError>,
   {
+    // alpha:false raster only; see `resets_alpha`.
+    let reset_alpha = !alpha && backend == Backend::Raster;
+    // copy without a layer filter is Blink's DrawInternal kSrc arm
+    // (canvas_2d_recorder_context.h:830-837): clear the clip, then draw the
+    // foreground only (no shadow) straight onto the canvas with the kSrc
+    // paint. No layer, so a dithered gradient keeps its device phase, and an
+    // anti-aliased clip edge is applied by both the clear and the draw, as in
+    // Chrome. PDF and SVG keep the layer below: SkPDFDevice masks a kSrc draw
+    // by the source's alpha, and SkSVGDevice writes clear() as a transparent
+    // rect, so on neither does a clear() remove what was drawn before.
+    if blend_mode == BlendMode::Source && content_filter.is_none() && backend == Backend::Raster {
+      // alpha:false clears to opaque black (h:832).
+      if alpha {
+        surface_canvas.clear();
+      } else {
+        surface_canvas.fill(0, 0, 0, 255);
+      }
+      f(surface_canvas, paint)?;
+      if reset_alpha {
+        Self::reset_alpha_if_needed(surface_canvas, blend_mode, bounds, width, height);
+      }
+      return Ok(());
+    }
     match blend_mode {
       // The first four are Chromium's `IsFullCanvasCompositeMode`
-      // (canvas_2d_recorder_context.h:998-1005), which exempts copy/`kSrc`.
-      // `Source` is kept anyway and is not a divergence in effect: a
-      // whole-canvas layer restored with kSrc replaces every pixel, like
-      // Chromium's `clear(transparent)` + foreground draw. Drop it and a
-      // `fillRect` overwrites only its own geometry. With a dithered gradient
-      // paint it does differ: the layer starts at the clip's device origin, so
-      // a clip whose origin is not a multiple of 8 shifts the 8x8 dither
-      // phase, while Chromium draws copy directly after the clear
-      // (canvas_2d_recorder_context.h:830-837).
+      // (canvas_2d_recorder_context.h:998-1005). copy only gets here with a
+      // `ctx.filter` on the layer (Blink's CompositedDraw for a filtered draw)
+      // or on PDF and SVG; its kSrc restore replaces the whole clip like the
+      // clear above (SkSVGDevice cannot make the layer and drops the draw).
       BlendMode::SourceIn
       | BlendMode::SourceOut
       | BlendMode::DestinationIn
@@ -1347,7 +1655,12 @@ impl Context {
           |canvas, paint| {
             Self::composited_filter_layer(canvas, &device_ctm, content_filter, paint, &f)
           },
-        )
+        )?;
+        // CompositedDraw resets the whole clip (h:829).
+        if reset_alpha {
+          Self::reset_alpha_if_needed(surface_canvas, blend_mode, None, width, height);
+        }
+        Ok(())
       }
       _ => {
         if let Some(shadow) = shadow {
@@ -1380,7 +1693,11 @@ impl Context {
           content_filter,
           paint,
           &f,
-        )
+        )?;
+        if reset_alpha {
+          Self::reset_alpha_if_needed(surface_canvas, blend_mode, bounds, width, height);
+        }
+        Ok(())
       }
     }
   }
@@ -1422,6 +1739,9 @@ impl Context {
     {
       return Ok(());
     }
+    if self.draws_nothing() {
+      return Ok(());
+    }
 
     self.account_paint_resources(&self.state.fill_style);
     // Zero on the image-filter route, where the filter's dx/dy already carry it.
@@ -1443,6 +1763,8 @@ impl Context {
       &fill_paint,
       DrawContent::Geometry,
       shadow_paint.as_ref(),
+      DrawBounds::path(&path_to_draw),
+      matches!(self.state.fill_style, Pattern::Image(_)),
       |shadow_canvas, shadow_paint, device_ctm| {
         shadow_canvas.save();
         Self::apply_shadow_offset_matrix_to_canvas(
@@ -1585,6 +1907,7 @@ impl Context {
       self.state.filters_string = filter_str.to_owned();
       self.state.filter = None;
       self.state.filter_id = 0;
+      self.state.has_filter = false;
       return Ok(());
     }
     // `css_filter` is greedy and never fails: it stops at the first token it
@@ -1602,6 +1925,7 @@ impl Context {
     self.state.filter = css_filters_to_image_filter(filters);
     self.state.filters_string = filter_str.to_owned();
     self.state.filter_id = next_resource_id();
+    self.state.has_filter = true;
     Ok(())
   }
 
@@ -2051,6 +2375,23 @@ impl Context {
     lo.is_finite() && hi.is_finite() && hi == lo
   }
 
+  /// Blink's `IsTransformInvertible`: AffineTransform::IsInvertible checks
+  /// for a finite, non-zero determinant. Skia's own invert() also rejects a
+  /// nearly-zero one, which Chrome still draws with.
+  fn transform_is_invertible(&self) -> bool {
+    let t = self.state.transform.get_transform();
+    let det = t.a as f64 * t.d as f64 - t.b as f64 * t.c as f64;
+    det.is_finite() && det != 0.0
+  }
+
+  /// Blink's Draw returns before anything is drawn when the CTM is singular
+  /// (canvas_2d_recorder_context.h:866-868), and so does render_passes. The
+  /// draw entry points ask here before their first charge, so a draw that
+  /// records nothing charges nothing; anything fallible before it still runs.
+  fn draws_nothing(&self) -> bool {
+    !self.transform_is_invertible()
+  }
+
   /// Whether a draw whose own geometry provably paints nothing may be
   /// skipped whole. drawRect/drawPath DO reach the record canvas
   /// (SkRecordCanvas::onDraw* appends unconditionally -- the fillable()
@@ -2059,11 +2400,13 @@ impl Context {
   /// un-skippable are the wrapper ops our draw path can still emit around
   /// the empty draw, because their restore writes the device even with no
   /// content inside:
-  ///   * composited_pass modes replay an inner picture through a
-  ///     saveLayer/drawPicture(paint) -- a kSrc restore replaces the whole
-  ///     canvas even for an empty picture;
+  ///   * copy clears the clip before it draws, and composited_pass modes
+  ///     replay an inner picture through a saveLayer/drawPicture(paint) whose
+  ///     restore rewrites the whole clip even for an empty picture;
   ///   * a `ctx.filter` wraps the draw in a filtered saveLayer -- its
-  ///     restore also composites (kClear can clear the canvas);
+  ///     restore also composites (kClear can clear the canvas); and on
+  ///     alpha:false any assigned filter, even one that built no Skia filter,
+  ///     is followed by the whole-clip reset (`blink_composites`);
   ///   * a shadow pass records an extra draw whose blend mode is the
   ///     paint's (kClear shadow restore would clear); `has_shadow` is the
   ///     caller's `shadow_paint(...)` result.
@@ -2082,9 +2425,28 @@ impl Context {
         | BlendMode::DestinationIn
         | BlendMode::DestinationATop
         | BlendMode::Clear
-    ) && self.state.filter.is_none()
+    ) && !self.state.has_filter
       && self.state.line_dash_list.is_empty()
       && !has_shadow
+  }
+
+  /// Blink clips the sorted source rect to the image and returns when nothing
+  /// is left (canvas_2d_recorder_context.cc:2310-2316), whatever the composite
+  /// op; copy and the full-canvas modes would otherwise clear the clip. Shared
+  /// by drawImage and drawCanvas, which must agree.
+  pub(crate) fn source_rect_overlaps(
+    sx: f32,
+    sy: f32,
+    s_width: f32,
+    s_height: f32,
+    width: f32,
+    height: f32,
+  ) -> bool {
+    let overlaps = |start: f32, len: f32, size: f32| {
+      let (lo, hi) = (start.min(start + len), start.max(start + len));
+      lo.max(0.0) < hi.min(size)
+    };
+    overlaps(sx, s_width, width) && overlaps(sy, s_height, height)
   }
 
   /// `raster_key` dedups the retained-raster charge for this op: the caller
@@ -2139,8 +2501,21 @@ impl Context {
     {
       return Ok(());
     }
+    if !Self::source_rect_overlaps(
+      sx,
+      sy,
+      s_width,
+      s_height,
+      bitmap.0.width as f32,
+      bitmap.0.height as f32,
+    ) {
+      return Ok(());
+    }
 
     let paint = self.image_paint(self.image_global_alpha());
+    if self.draws_nothing() {
+      return Ok(());
+    }
     self.account_image_paint_resources();
 
     // Extract state for shadow rendering to avoid borrow conflicts
@@ -2161,10 +2536,26 @@ impl Context {
       raster_key,
       (bitmap.0.width as usize) * (bitmap.0.height as usize) * 4,
     );
+    // Blink's bounds are the destination rect after ClipRectsToImageRect
+    // (canvas_2d_recorder_context.cc:1983-2008) cut the source to the image.
+    let bounds = {
+      let src = DrawBounds::rect(sx, sy, s_width, s_height);
+      let dst = DrawBounds::rect(dx, dy, d_width, d_height);
+      let scale_x = (dst.right - dst.left) / (src.right - src.left);
+      let scale_y = (dst.bottom - dst.top) / (src.bottom - src.top);
+      DrawBounds {
+        left: dst.left + (src.left.max(0.0) - src.left) * scale_x,
+        top: dst.top + (src.top.max(0.0) - src.top) * scale_y,
+        right: dst.left + (src.right.min(bitmap.0.width as f32) - src.left) * scale_x,
+        bottom: dst.top + (src.bottom.min(bitmap.0.height as f32) - src.top) * scale_y,
+      }
+    };
     self.with_shadowed_render_canvas(
       &paint,
       DrawContent::Geometry,
       shadow_paint.as_ref(),
+      Some(bounds),
+      false,
       |shadow_canvas: &mut Canvas, shadow_paint, device_ctm| {
         shadow_canvas.save();
         Self::apply_shadow_offset_matrix_to_canvas(
@@ -2286,6 +2677,9 @@ impl Context {
     }
 
     let paint = self.image_paint(self.state.global_alpha as f32);
+    if self.draws_nothing() {
+      return Ok(());
+    }
     self.account_image_paint_resources();
 
     // Extract state for shadow rendering to avoid borrow conflicts
@@ -2318,6 +2712,9 @@ impl Context {
       &paint,
       DrawContent::Geometry,
       shadow_paint.as_ref(),
+      // No Chrome counterpart; the destination rect, as for drawImage.
+      Some(DrawBounds::rect(dx, dy, d_width, d_height)),
+      false,
       |shadow_canvas: &mut Canvas, shadow_paint, device_ctm| {
         shadow_canvas.save();
         Self::apply_shadow_offset_matrix_to_canvas(
@@ -2364,6 +2761,12 @@ impl Context {
     source: ShadowSource,
     variations: &[crate::sk::FontVariation],
   ) -> result::Result<(), SkError> {
+    // Measured before get_font(): measuring takes the same font lock.
+    let bounds = if self.resets_alpha() {
+      self.text_bounds(text, x, y, max_width, source)
+    } else {
+      None
+    };
     let font = get_font()?;
 
     // Extract all state values to avoid borrow conflicts with with_render_canvas
@@ -2398,6 +2801,9 @@ impl Context {
       return Err(SkError::NulError);
     }
 
+    if self.draws_nothing() {
+      return Ok(());
+    }
     // Everything fallible (get_font, the NUL preflight) is behind us, so the
     // paint-resource charge can land here -- the same position fill/stroke
     // use, after their fallible paint builds. `source` already says which
@@ -2442,6 +2848,8 @@ impl Context {
       paint,
       DrawContent::Glyphs,
       shadow_paint.as_ref(),
+      bounds,
+      false,
       |shadow_canvas, shadow_paint, device_ctm| {
         shadow_canvas.save();
         Self::apply_shadow_offset_matrix_to_canvas(
@@ -2513,7 +2921,57 @@ impl Context {
     Ok(())
   }
 
-  fn get_line_metrics(&mut self, text: &str) -> result::Result<LineMetrics, SkError> {
+  /// Blink's text bounds: the glyph bounds at the drawn position, inflated
+  /// for a stroke (base_rendering_context_2d.cc:1016-1080). Only the
+  /// alpha:false reset reads them. Left and right are the ink of the glyphs
+  /// the draw paints, where it paints them (`ink_left` / `ink_right` from
+  /// skia_c.cpp skiac_canvas_get_line_metrics_or_draw_text), so the
+  /// letterSpacing shift applies only where the draw applies it: to LTR text
+  /// that is not cursive. Top and bottom are measureText's.
+  ///
+  /// maxWidth squeezes the text with scale(maxWidth / width, 1) about the
+  /// anchor x, so the box scales toward x. Blink resets its unscaled box under
+  /// the scaled canvas (base_rendering_context_2d.cc:1066-1082), which misses
+  /// part of the squeezed glyphs; that is not copied.
+  ///
+  /// When measuring fails (for example a fill gradient with no shader) the
+  /// reset takes the whole clip: the draw itself reports its own errors.
+  fn text_bounds(
+    &mut self,
+    text: &str,
+    x: f32,
+    y: f32,
+    max_width: f32,
+    source: ShadowSource,
+  ) -> Option<DrawBounds> {
+    let metrics = self.get_line_metrics(text, true).ok()?.0;
+    // The same test and ratio as the draw.
+    let scale = if metrics.width > max_width {
+      max_width / metrics.width
+    } else {
+      1.0
+    };
+    let left = x + scale * metrics.ink_left;
+    let right = x + scale * metrics.ink_right;
+    let bounds = DrawBounds {
+      left: left.min(right),
+      top: y - metrics.ascent,
+      right: left.max(right),
+      bottom: y + metrics.descent,
+    };
+    Some(match source {
+      ShadowSource::Stroke => self.inflate_stroke_bounds(bounds),
+      _ => bounds,
+    })
+  }
+
+  /// `collect_ink` fills `ink_left` / `ink_right`, which costs a walk over
+  /// every drawn glyph; measureText does not read them and passes false.
+  fn get_line_metrics(
+    &mut self,
+    text: &str,
+    collect_ink: bool,
+  ) -> result::Result<LineMetrics, SkError> {
     let state = &self.state;
     let fill_paint = self.fill_paint()?;
     let weight = state.font_style.weight;
@@ -2540,6 +2998,7 @@ impl Context {
       self.state.font_variant_caps,
       &self.state.lang,
       self.state.text_rendering,
+      collect_ink,
     )?);
     Ok(line_metrics)
   }
@@ -3887,6 +4346,10 @@ impl CanvasRenderingContext2D {
         ),
         _ => return Ok(()),
       };
+    // Before any charge, as in draw_image (which the fallback above reaches).
+    if !Context::source_rect_overlaps(sx, sy, s_width, s_height, source_width, source_height) {
+      return Ok(());
+    }
 
     // approx_bytes_used (charged inside Context::draw_canvas) excludes the
     // payloads a picture references -- putImageData/drawImage bitmaps, image
@@ -4072,7 +4535,7 @@ impl CanvasRenderingContext2D {
         width: 0.0,
       });
     }
-    let metrics = self.context.get_line_metrics(text)?;
+    let metrics = self.context.get_line_metrics(text, false)?;
     Ok(TextMetrics {
       actual_bounding_box_ascent: metrics.0.ascent as f64,
       actual_bounding_box_descent: metrics.0.descent as f64,
@@ -4323,6 +4786,7 @@ impl CanvasRenderingContext2D {
         let width = image_data.width;
         let height = image_data.height;
         let color_space = image_data.color_space;
+        let opaque = !self.context.alpha;
         // The recorded op pins a copy of the whole ImageData buffer.
         let pixel_bytes = width * height * 4;
         recorder.borrow_mut().put_pixels(pixel_bytes, |canvas| {
@@ -4338,6 +4802,7 @@ impl CanvasRenderingContext2D {
             dirty_height,
             color_space,
             true,
+            opaque,
           );
         });
         // The charge may have tripped the cap on its own (a single
@@ -4368,6 +4833,7 @@ impl CanvasRenderingContext2D {
         dirty_height,
         image_data.color_space,
         snapshot,
+        !self.context.alpha,
       );
       self.context.surface.canvas.restore();
       self.context.note_direct_mutation();
@@ -4383,6 +4849,7 @@ impl CanvasRenderingContext2D {
         let width = image_data.width;
         let height = image_data.height;
         let color_space = image_data.color_space;
+        let opaque = !self.context.alpha;
         // The recorded op pins a copy of the whole ImageData buffer.
         let pixel_bytes = width * height * 4;
         recorder.borrow_mut().put_pixels(pixel_bytes, |canvas| {
@@ -4398,6 +4865,7 @@ impl CanvasRenderingContext2D {
             h,
             color_space,
             true,
+            opaque,
           );
         });
         self.context.flush_if_recording_limit_exceeded();
@@ -4933,6 +5401,7 @@ mod tests {
           8.0,
           ColorSpace::default(),
           true,
+          false,
         );
       });
     assert!(layers(&ctx) >= 1);
@@ -5232,6 +5701,7 @@ mod tests {
           4.0,
           ColorSpace::default(),
           true,
+          false,
         );
       });
     let source_raster_bytes = src
@@ -5321,7 +5791,10 @@ mod tests {
     let picture = src.get_picture().expect("source picture");
 
     let mut ctx = raster_ctx(32, 32);
-    ctx.set_transform(Matrix::new(-1e-30, 0.0, 0.0, 1.0, 0.0, 0.0));
+    // Skia order (scaleX, skewX, transX, skewY, scaleY, transY): x scaled by
+    // -1e-30. The CTM must stay invertible, or nothing is drawn at all, as in
+    // Blink's Draw.
+    ctx.set_transform(Matrix::new(-1e-30, 0.0, 0.0, 0.0, 1.0, 0.0));
     let pending0 = pending(&ctx);
     let version0 = ctx.content_version();
     ctx
@@ -5366,6 +5839,7 @@ mod tests {
           4.0,
           ColorSpace::default(),
           true,
+          false,
         );
       });
     assert_eq!(layers(&ctx), 1);
@@ -5449,7 +5923,94 @@ mod tests {
     let pending0 = pending(&ctx);
     let raster0 = raster_bytes(&ctx);
     let version0 = ctx.content_version();
-    ctx.get_line_metrics("measure me").unwrap();
+    ctx.get_line_metrics("measure me", false).unwrap();
+    assert_eq!(pending(&ctx), pending0);
+    assert_eq!(raster_bytes(&ctx), raster0);
+    assert_eq!(ctx.content_version(), version0);
+  }
+
+  // measureText never reads the glyph ink, so it must not pay for the walk
+  // that finds it: the ink comes back empty.
+  #[test]
+  fn measure_text_skips_the_ink_walk() {
+    {
+      let fonts = get_font().unwrap();
+      fonts.register_from_path::<String>("__test__/fonts/Lato-Regular.ttf", None);
+    }
+    let mut ctx = raster_ctx(64, 64);
+    ctx.set_font("16px Lato".to_owned()).unwrap();
+    let measured = ctx.get_line_metrics("Hgjy", false).unwrap().0;
+    assert_eq!((measured.ink_left, measured.ink_right), (0.0, 0.0));
+    // The alpha:false reset asks for it and gets the glyphs; the rest of the
+    // metrics are the same either way.
+    let with_ink = ctx.get_line_metrics("Hgjy", true).unwrap().0;
+    assert!(with_ink.ink_right > with_ink.ink_left && with_ink.ink_right > 0.0);
+    let rest = |m: &crate::sk::ffi::skiac_line_metrics| {
+      (
+        m.ascent,
+        m.descent,
+        m.left,
+        m.right,
+        m.width,
+        m.font_ascent,
+        m.font_descent,
+        m.alphabetic_baseline,
+      )
+    };
+    assert_eq!(rest(&with_ink), rest(&measured));
+  }
+
+  // Blink's Draw returns before anything is recorded when the CTM is singular
+  // (canvas_2d_recorder_context.h:866-868), and so do we; such a draw must not
+  // charge the recording for an op it never records. The shadow makes every
+  // draw charge its 1 KiB shadow filter on top of its own payload.
+  #[test]
+  fn singular_transform_draws_charge_nothing() {
+    {
+      let fonts = get_font().unwrap();
+      fonts.register_from_path::<String>("__test__/fonts/Lato-Regular.ttf", None);
+    }
+    let mut src = raster_ctx(8, 8);
+    src.fill_rect(0.0, 0.0, 8.0, 8.0).unwrap();
+    let picture = src.get_picture().expect("source picture");
+    let bitmap = test_bitmap(4, 4, [255, 0, 0, 255]);
+
+    let mut ctx = raster_ctx(16, 16);
+    ctx.set_font("16px Lato".to_owned()).unwrap();
+    ctx.state.shadow_offset_x = 2.0;
+    // Skia order (scaleX, skewX, transX, skewY, scaleY, transY): x scaled by 0.
+    ctx.set_transform(Matrix::new(0.0, 0.0, 0.0, 0.0, 1.0, 0.0));
+    ctx.path.add_rect(1.0, 1.0, 9.0, 9.0);
+    let pending0 = pending(&ctx);
+    let raster0 = raster_bytes(&ctx);
+    let version0 = ctx.content_version();
+    ctx.fill_rect(1.0, 1.0, 8.0, 8.0).unwrap();
+    ctx.stroke_rect(1.0, 1.0, 8.0, 8.0).unwrap();
+    ctx.fill(None, FillType::Winding).unwrap();
+    ctx.stroke(None).unwrap();
+    ctx
+      .draw_image(
+        &bitmap,
+        RasterKey::Resource {
+          id: u64::MAX,
+          generation: 0,
+        },
+        0.0,
+        0.0,
+        4.0,
+        4.0,
+        0.0,
+        0.0,
+        4.0,
+        4.0,
+      )
+      .unwrap();
+    ctx
+      .draw_canvas(&picture, 4096, 0.0, 0.0, 8.0, 8.0, 0.0, 0.0, 8.0, 8.0)
+      .unwrap();
+    ctx.fill_text("hello", 0.0, 12.0, MAX_TEXT_WIDTH).unwrap();
+    ctx.stroke_text("hello", 0.0, 12.0, MAX_TEXT_WIDTH).unwrap();
+    ctx.clear_rect(0.0, 0.0, 4.0, 4.0).unwrap();
     assert_eq!(pending(&ctx), pending0);
     assert_eq!(raster_bytes(&ctx), raster0);
     assert_eq!(ctx.content_version(), version0);

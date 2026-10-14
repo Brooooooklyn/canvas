@@ -53,6 +53,10 @@ pub struct Context2dRenderingState {
   /// charge must key on a stable id rather than bill per draw. Minted by
   /// set_filter each time a parsed chain is stored; 0 means none.
   pub filter_id: u64,
+  /// Blink's StateHasFilter: a filter list was assigned and parsed, whether or
+  /// not it built `filter` (`drop-shadow(0 0 transparent)` builds none). The
+  /// alpha:false reset reads this, not `filter`.
+  pub has_filter: bool,
   pub global_composite_operation: BlendMode,
   pub clip_path: Option<SkPath>,
 }
@@ -96,6 +100,7 @@ impl Default for Context2dRenderingState {
       filter: None,
       filters_string: "none".to_owned(),
       filter_id: 0,
+      has_filter: false,
       global_composite_operation: BlendMode::default(),
       clip_path: None,
     }

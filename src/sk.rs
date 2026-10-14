@@ -195,8 +195,11 @@ pub mod ffi {
     pub font_ascent: f32,
     pub font_descent: f32,
     pub alphabetic_baseline: f32,
-    pub em_height_ascent: f32,
-    pub em_height_descent: f32,
+    /// The drawn glyph ink, left and right of the anchor x, before a maxWidth
+    /// squeeze (negative left of it). Filled only when `collect_ink` asks for
+    /// it (the alpha:false reset); measureText does not, and gets 0 for both.
+    pub ink_left: f32,
+    pub ink_right: f32,
   }
 
   #[repr(C)]
@@ -429,6 +432,8 @@ pub mod ffi {
 
     pub fn skiac_surface_create_rgba(width: i32, height: i32, cs: u8) -> *mut skiac_surface;
 
+    pub fn skiac_surface_create_rgba_opaque(width: i32, height: i32, cs: u8) -> *mut skiac_surface;
+
     pub fn skiac_surface_ref(surface: *mut skiac_surface);
 
     pub fn skiac_surface_destroy(surface: *mut skiac_surface);
@@ -594,6 +599,7 @@ pub mod ffi {
       paint: *mut skiac_paint,
       canvas: *mut skiac_canvas,
       line_metrics: *mut skiac_line_metrics,
+      collect_ink: bool,
       variations: *const skiac_font_variation,
       variations_count: i32,
       kerning: i32,
@@ -641,6 +647,7 @@ pub mod ffi {
       dirty_height: f32,
       color_space: u8,
       snapshot: bool,
+      opaque: bool,
     );
 
     pub fn skiac_canvas_draw_picture(
@@ -2108,6 +2115,17 @@ impl Surface {
     }
   }
 
+  /// alpha:false backing store: kOpaque, like Blink's canvas resource.
+  pub fn new_rgba_opaque(width: u32, height: u32, color_space: ColorSpace) -> Option<Surface> {
+    unsafe {
+      Self::from_ptr(ffi::skiac_surface_create_rgba_opaque(
+        width as i32,
+        height as i32,
+        color_space as u8,
+      ))
+    }
+  }
+
   pub fn new_rgba_premultiplied(
     width: u32,
     height: u32,
@@ -2914,6 +2932,7 @@ impl Canvas {
         paint.0,
         self.0,
         ptr::null_mut(),
+        false,
         variations.as_ptr() as *const ffi::skiac_font_variation,
         variations.len() as i32,
         kerning as i32,
@@ -2946,6 +2965,7 @@ impl Canvas {
     variant_caps: FontVariantCaps,
     lang: &str,
     text_rendering: TextRendering,
+    collect_ink: bool,
   ) -> Result<ffi::skiac_line_metrics, NulError> {
     let c_text = std::ffi::CString::new(text)?;
     let c_font_family = std::ffi::CString::new(font_family)?;
@@ -2981,6 +3001,7 @@ impl Canvas {
         paint.0,
         ptr::null_mut(),
         &mut line_metrics,
+        collect_ink,
         variations.as_ptr() as *const ffi::skiac_font_variation,
         variations.len() as i32,
         kerning as i32,
@@ -3095,6 +3116,7 @@ impl Canvas {
   /// Works on recording canvases (PictureRecorder).
   /// When `snapshot` is true, the pixel data is copied so the resulting SkImage
   /// is independent of the source buffer (required for deferred/recorded mode).
+  /// `opaque` (alpha:false) writes the bytes as given, alpha included.
   /// `pixels` must point to `width * height * 4` readable bytes.
   pub fn put_image_data(
     &mut self,
@@ -3109,6 +3131,7 @@ impl Canvas {
     dirty_height: f32,
     color_space: ColorSpace,
     snapshot: bool,
+    opaque: bool,
   ) {
     unsafe {
       ffi::skiac_canvas_put_image_data(
@@ -3126,6 +3149,7 @@ impl Canvas {
         dirty_height,
         color_space as u8,
         snapshot,
+        opaque,
       )
     }
   }

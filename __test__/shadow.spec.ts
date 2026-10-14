@@ -914,7 +914,9 @@ for (const shadowBlur of [0, 8]) {
 //
 // Every expectation below is the WHATWG compositing formula against an opaque
 // backdrop with alphaS = globalAlpha = 0.5, so alphaO = 0.5 -> 128 (except
-// source-out, which is 0). A double-applied globalAlpha reads 64 instead.
+// source-out, which is 0). A double-applied globalAlpha reads 64 instead. copy
+// takes no layer (it clears the clip and draws with kSrc), but must apply
+// globalAlpha once all the same.
 const ISOLATION_ALPHA_EXPECTATIONS: [string, number[]][] = [
   ['source-in', [255, 0, 0, 128]],
   ['destination-in', [0, 0, 255, 128]],
@@ -973,10 +975,10 @@ test('isolation-layer-applies-globalAlpha-exactly-once-with-a-shadow', (t) => {
   t.deepEqual(blurred.slice(0, 3), [255, 0, 0])
   t.true(Math.abs(blurred[3] - 46) <= 6, `source-in blurred overlap alpha was ${blurred[3]}, expected 46 +/- 6`)
 
-  // copy replaces every pixel with the foreground layer, shadow band included
-  // (canvas_2d_recorder_context.h:830-837), so alphaO is exactly globalAlpha
-  // however the shadow is blurred. Double-applying the shadow paint dropped this
-  // to 31.
+  // copy clears the clip and draws the foreground only, so the shadow band is
+  // gone (canvas_2d_recorder_context.h:830-837) and alphaO is exactly
+  // globalAlpha however the shadow is blurred. Double-applying the shadow paint
+  // dropped this to 31.
   for (const shadowBlur of [0, 20]) {
     t.deepEqual(px(isolationAlphaShadowScene('copy', shadowBlur), 90, 90), [255, 0, 0, 128], `copy blur ${shadowBlur}`)
   }
