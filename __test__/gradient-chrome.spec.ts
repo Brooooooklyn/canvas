@@ -232,3 +232,55 @@ test('hsl() stop alpha stays a float off the CSS fast path', (t) => {
     t.deepEqual([...ctx.getImageData(0, 0, 8, 1).data], bytes, color)
   }
 })
+
+test('hsl() stop alpha is rounded only for spellings the CSS fast path takes', (t) => {
+  // Two equal stops, 8x1, alpha 0.3. Blink's CSS fast path (FastParseColorInternal) rounds it to
+  // 77/255; the full parser keeps 0.3, which dithers to 76. Saturation 0% makes the hue unused.
+  const gray = {
+    rounded: Array(4).fill([126, 126, 126, 77, 129, 129, 129, 77]).flat(),
+    float: Array(4).fill([128, 128, 128, 76, 131, 131, 131, 76]).flat(),
+  }
+  const black = { float: Array(8).fill([0, 0, 0, 76]).flat() }
+  const expected: Record<string, number[]> = {
+    // Fast path: any hue unit in any case, a leading '.' or '-' in the hue, legacy or modern syntax.
+    'hsl(120deg 0% 50% / 0.3)': gray.rounded,
+    'hsl(2RAD 0% 50% / 0.3)': gray.rounded,
+    'hsl(200grad 0% 50% / 0.3)': gray.rounded,
+    'hsl(0.5TuRn 0% 50% / 0.3)': gray.rounded,
+    'hsl(-.5turn 0% 50% / 0.3)': gray.rounded,
+    'hsla(120deg, 0%, 50%, 0.3)': gray.rounded,
+    'hsl(0,0%,50%,0.3)': gray.rounded,
+    'hsl( 0 , 0% , 50% , 0.3)': gray.rounded,
+    'hsla(0 0% 50% / 0.3)': gray.rounded,
+    'hsl(0\t0%\n50%\r/\f0.3)': gray.rounded,
+    'hsl(0 -10% 50% / 0.3)': gray.rounded,
+    // Full parser: none, a '+' sign, an exponent, a percentage with no leading digit, a comment,
+    // a function name not all lowercase.
+    'hsl(none 0% 50% / 0.3)': gray.float,
+    'hsl(0 none 50% / 0.3)': gray.float,
+    'hsl(0 0% none / 0.3)': black.float,
+    'hsl(120 50% none / 0.3)': black.float,
+    'hsl(+120 0% 50% / 0.3)': gray.float,
+    'hsl(1.2e2deg 0% 50% / 0.3)': gray.float,
+    'hsl(0 .0% 50% / 0.3)': gray.float,
+    'hsl(0 +0% 50% / 0.3)': gray.float,
+    'hsl(0 0% 5e1% / 0.3)': gray.float,
+    'hsl(0 /**/ 0% 50% / 0.3)': gray.float,
+    'Hsl(0 0% 50% / 0.3)': gray.float,
+    'HSLA(0, 0%, 50%, 0.3)': gray.float,
+    // prettier-ignore
+    'hsl(none 50% 50% / 0.33)': [
+      191, 64, 64, 84, 191, 64, 64, 84, 191, 64, 64, 84, 194, 64, 64, 84,
+      191, 64, 64, 84, 191, 64, 64, 84, 191, 64, 64, 84, 194, 67, 67, 84,
+    ],
+  }
+  for (const [color, bytes] of Object.entries(expected)) {
+    const ctx = createCanvas(8, 1).getContext('2d')
+    const gradient = ctx.createLinearGradient(0, 0, 8, 0)
+    gradient.addColorStop(0, color)
+    gradient.addColorStop(1, color)
+    ctx.fillStyle = gradient
+    ctx.fillRect(0, 0, 8, 1)
+    t.deepEqual([...ctx.getImageData(0, 0, 8, 1).data], bytes, color)
+  }
+})

@@ -215,31 +215,219 @@ impl Gradient {
 }
 
 /// Whether Blink rounds this hsl() color's alpha to k/255. Only its CSS fast
-/// path does (css_parser_fast_paths.cc:1068-1084, `alpha * (1.0f / 255.0f)`);
+/// path does (css_parser_fast_paths.cc:1069-1083, `alpha * (1.0f / 255.0f)`);
 /// every spelling the fast path rejects goes through the full parser, which
-/// keeps the float alpha. This mirrors the alpha half of the fast path: the
-/// string, stripped of HTML spaces, is a lowercase `hsl(` or `hsla(` whose
-/// last argument is a plain number right before the closing `)` (:902-910 and
-/// ParseAlphaValue, :770-830). A percentage, an exponent, a space before `)`
-/// or an uppercase name keeps the float. It does not mirror the hue,
-/// saturation and lightness checks, so e.g. a `none` hue still rounds here.
+/// keeps the float alpha. This is a port of the hsl() half of
+/// FastParseColorInternal (:990-1086), run on the string that
+/// ParseCanvasColorString hands it: stripped of HTML spaces. The fast path
+/// only accepts ASCII, so working on UTF-8 bytes is safe. One thing is not
+/// ported: Blink also skips the fast path when V8 holds the string as two-byte
+/// (CSSParserFastPaths::ParseColor's Is8Bit check), e.g. a slice of a string
+/// that had a non-Latin-1 character. Node-API does not expose that, so every
+/// string is treated as one-byte here.
 fn blink_rounds_hsl_alpha(color: &str) -> bool {
-  const HTML_SPACES: [char; 5] = [' ', '\t', '\n', '\x0c', '\r'];
-  let color = color.trim_matches(HTML_SPACES);
-  let Some(args) = color
-    .strip_prefix("hsl(")
-    .or_else(|| color.strip_prefix("hsla("))
-    .and_then(|args| args.strip_suffix(')'))
+  use blink_fast_path::*;
+  let chars = color.trim_matches(HTML_SPACES).as_bytes();
+  // MightBeHSLOrHSLA (:902-911): the name is case-sensitive.
+  let Some(current) = chars
+    .strip_prefix(b"hsl(")
+    .or_else(|| chars.strip_prefix(b"hsla("))
   else {
     return false;
   };
-  let alpha = args.rsplit([',', '/']).next().unwrap_or_default();
-  let alpha = alpha.trim_start_matches(HTML_SPACES);
-  let number = alpha.strip_prefix('-').unwrap_or(alpha);
-  let digits = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
-  match number.split_once('.') {
-    None => digits(number),
-    Some((int, frac)) => (int.is_empty() || digits(int)) && digits(frac),
+  let mut current = skip_html_spaces(current);
+  let hue_length = parse_simple_angle(current);
+  if hue_length == 0 {
+    return false;
+  }
+  current = &current[hue_length..];
+  let mut terminator_status = TerminatorStatus::CouldWhitespace;
+  if !skip_to_terminator(&mut current, b',', &mut terminator_status) {
+    return false;
+  }
+  // Saturation and lightness must be percentages.
+  if !parse_percentage(&mut current, b',', &mut terminator_status) {
+    return false;
+  }
+  let mut no_whitespace_check = TerminatorStatus::MustCharacter;
+  let should_have_alpha = if parse_percentage(&mut current, b',', &mut no_whitespace_check) {
+    if terminator_status != TerminatorStatus::MustCharacter {
+      return false;
+    }
+    true
+  } else if parse_percentage(&mut current, b'/', &mut no_whitespace_check) {
+    if terminator_status != TerminatorStatus::MustWhitespace {
+      return false;
+    }
+    true
+  } else if parse_percentage(&mut current, b')', &mut no_whitespace_check) {
+    false
+  } else {
+    return false;
+  };
+  if should_have_alpha {
+    parse_alpha_value(current, b')')
+  } else {
+    current.is_empty()
+  }
+}
+
+/// The pieces of Blink's css_parser_fast_paths.cc that its hsl() fast path
+/// uses, reduced to what they accept: each returns how much it consumes (or
+/// whether it matched), not the parsed value.
+mod blink_fast_path {
+  pub(super) const HTML_SPACES: [char; 5] = [' ', '\t', '\n', '\x0c', '\r'];
+
+  fn is_html_space(c: u8) -> bool {
+    matches!(c, b' ' | b'\t' | b'\n' | b'\x0c' | b'\r')
+  }
+
+  pub(super) fn skip_html_spaces(chars: &[u8]) -> &[u8] {
+    let n = chars.iter().take_while(|&&c| is_html_space(c)).count();
+    &chars[n..]
+  }
+
+  /// FindLengthOfValidDouble (:293-378): digits with at most one '.', which
+  /// must not be the last character. Its SIMD branch can stop before such a
+  /// '.' instead of returning 0, but every caller then fails on that '.', so
+  /// the scalar rule gives the same answers.
+  fn find_length_of_valid_double(chars: &[u8]) -> usize {
+    let mut decimal_mark_seen = false;
+    let mut valid_length = 0;
+    for &c in chars {
+      if c.is_ascii_digit() {
+      } else if !decimal_mark_seen && c == b'.' {
+        decimal_mark_seen = true;
+      } else {
+        break;
+      }
+      valid_length += 1;
+    }
+    if valid_length > 0 && chars[valid_length - 1] == b'.' {
+      return 0;
+    }
+    valid_length
+  }
+
+  /// ParseSimpleAngle (:183-229): an optional '-', a number with no sign or
+  /// exponent, and an optional ASCII-case-insensitive deg, grad, rad or turn.
+  /// Returns the length, or 0 if there is no number.
+  pub(super) fn parse_simple_angle(chars: &[u8]) -> usize {
+    let sign_length = usize::from(chars.first() == Some(&b'-'));
+    let number_length = find_length_of_valid_double(&chars[sign_length..]);
+    if number_length == 0 {
+      return 0;
+    }
+    let number_length = sign_length + number_length;
+    let unit = &chars[number_length..];
+    let unit_length = ["deg", "grad", "rad", "turn"]
+      .into_iter()
+      .find(|u| unit.len() >= u.len() && unit[..u.len()].eq_ignore_ascii_case(u.as_bytes()))
+      .map_or(0, str::len);
+    number_length + unit_length
+  }
+
+  /// ParseFloatWithMaxValue (:576-621): HTML spaces, an optional '-', at
+  /// least one digit, then an optional '.' and digits. Returns the rest.
+  fn parse_float_with_max_value(chars: &[u8]) -> Option<&[u8]> {
+    let current = skip_html_spaces(chars);
+    let current = current.strip_prefix(b"-").unwrap_or(current);
+    let digits = current.iter().take_while(|c| c.is_ascii_digit()).count();
+    if digits == 0 {
+      return None;
+    }
+    let current = &current[digits..];
+    if current.first() == Some(&b'.') {
+      let fraction = find_length_of_valid_double(current);
+      if fraction == 0 {
+        return None;
+      }
+      return Some(&current[fraction..]);
+    }
+    Some(current)
+  }
+
+  /// kMustWhitespaceTerminate, kMustCharacterTerminate and
+  /// kCouldWhitespaceTerminate (:625-639).
+  #[derive(Clone, Copy, PartialEq, Eq)]
+  pub(super) enum TerminatorStatus {
+    MustWhitespace,
+    MustCharacter,
+    CouldWhitespace,
+  }
+
+  /// SkipToTerminator (:643-678).
+  pub(super) fn skip_to_terminator(
+    chars: &mut &[u8],
+    terminator: u8,
+    terminator_status: &mut TerminatorStatus,
+  ) -> bool {
+    let mut current = skip_html_spaces(chars);
+    let skipped_space = current.len() != chars.len();
+    match *terminator_status {
+      TerminatorStatus::CouldWhitespace if current.first() == Some(&terminator) => {
+        *terminator_status = TerminatorStatus::MustCharacter;
+        current = &current[1..];
+      }
+      TerminatorStatus::CouldWhitespace | TerminatorStatus::MustWhitespace => {
+        *terminator_status = TerminatorStatus::MustWhitespace;
+        if !skipped_space {
+          return false;
+        }
+      }
+      TerminatorStatus::MustCharacter => match current.split_first() {
+        Some((&c, rest)) if c == terminator => current = rest,
+        _ => return false,
+      },
+    }
+    *chars = current;
+    true
+  }
+
+  /// ParsePercentage (:727-753): a number, '%', then the terminator.
+  pub(super) fn parse_percentage(
+    chars: &mut &[u8],
+    terminator: u8,
+    terminator_status: &mut TerminatorStatus,
+  ) -> bool {
+    let Some(mut current) =
+      parse_float_with_max_value(chars).and_then(|rest| rest.strip_prefix(b"%"))
+    else {
+      return false;
+    };
+    if !skip_to_terminator(&mut current, terminator, terminator_status) {
+      return false;
+    }
+    *chars = current;
+    true
+  }
+
+  /// IsTenthAlpha (:755-768): "0.X" or ".X".
+  fn is_tenth_alpha(chars: &[u8]) -> bool {
+    matches!(chars, [b'0', b'.', d] | [b'.', d] if d.is_ascii_digit())
+  }
+
+  /// ParseAlphaValue (:770-832): HTML spaces, an optional '-', a number with
+  /// no sign or exponent, then the terminator, which must also be the last
+  /// character, right after a digit.
+  pub(super) fn parse_alpha_value(chars: &[u8], terminator: u8) -> bool {
+    let chars = skip_html_spaces(chars);
+    let chars = chars.strip_prefix(b"-").unwrap_or(chars);
+    let length = chars.len();
+    if length < 2 || chars[length - 1] != terminator || !chars[length - 2].is_ascii_digit() {
+      return false;
+    }
+    let followed_by_terminator = |n: usize| n > 0 && chars.get(n) == Some(&terminator);
+    if !matches!(chars[0], b'0' | b'1' | b'.') {
+      return followed_by_terminator(find_length_of_valid_double(chars));
+    }
+    if length == 2 && chars[0] != b'.' {
+      return true;
+    }
+    if is_tenth_alpha(&chars[..length - 1]) {
+      return true;
+    }
+    followed_by_terminator(find_length_of_valid_double(chars))
   }
 }
 
@@ -417,7 +605,7 @@ fn test_skia_stops_pad_like_blink() {
 }
 
 /// Chrome 155: these hsl() stops get a k/255 alpha (CSS fast path) or keep the
-/// float alpha (full parser).
+/// float alpha (full parser, or no color at all for the invalid ones).
 #[test]
 fn test_blink_rounds_hsl_alpha() {
   for rounded in [
@@ -428,8 +616,50 @@ fn test_blink_rounds_hsl_alpha() {
     "hsla(120deg, 50%, 50%, 0.33)",
     "hsla(120, 50%, 50%, -0.5)",
     "hsla(120, 50%, 50%, 5)",
+    // Hue: a unit in any case, a leading '.' or '-', a fraction, a big number.
+    "hsl(120deg 0% 50% / 0.3)",
+    "hsl(120DEG 0% 50% / 0.3)",
+    "hsl(120Deg 0% 50% / 0.3)",
+    "hsl(2rad 0% 50% / 0.3)",
+    "hsl(2RAD 0% 50% / 0.3)",
+    "hsl(200grad 0% 50% / 0.3)",
+    "hsl(200GRAD 0% 50% / 0.3)",
+    "hsl(0.5turn 0% 50% / 0.3)",
+    "hsl(0.5TuRn 0% 50% / 0.3)",
+    "hsl(.5turn 0% 50% / 0.3)",
+    "hsl(-.5turn 0% 50% / 0.3)",
+    "hsla(120deg, 0%, 50%, 0.3)",
+    "hsla(0.5turn, 0%, 50%, 0.3)",
+    "hsla(2rad,0%,50%,0.3)",
+    "hsl(-120 0% 50% / 0.3)",
+    "hsl(120.5 0% 50% / 0.3)",
+    "hsl(1000000 0% 50% / 0.3)",
+    // Separators: legacy commas or modern spaces and '/', with any HTML spaces.
+    "hsla(0, 0%, 50%, 0.3)",
+    "hsl(0, 0%, 50%, 0.3)",
+    "hsl(0,0%,50%,0.3)",
+    "hsl( 0 , 0% , 50% , 0.3)",
+    "hsla(0 0% 50% / 0.3)",
+    "hsl(0 0% 50%/0.3)",
+    "hsl(0  0%  50%  /  0.3)",
+    "hsl( 0 0% 50% / 0.3)",
+    "hsl(0\t0%\n50%\r/\x0c0.3)",
+    "  hsl(0 0% 50% / 0.3)  ",
+    "\t\nhsl(0 0% 50% / 0.3)\r\x0c",
+    // Saturation and lightness: a fraction, a '-', leading zeros.
+    "hsl(0 0.0% 50.0% / 0.3)",
+    "hsl(0 -10% 50% / 0.3)",
+    "hsl(0 0% 050% / 0.3)",
+    "hsl(0 0% 50.00000001% / 0.3)",
+    // Alpha.
+    "hsl(0 0% 50% / .3)",
+    "hsl(0 0% 50% / 0.30)",
+    "hsl(0 0% 50% / 00.3)",
+    // ParseAlphaValue only needs a ')' right after the number and at the end.
+    "hsl(0 0% 50% / 0.3)1)",
+    "hsl(0 0% 50% / 0.3) 1)",
   ] {
-    assert!(blink_rounds_hsl_alpha(rounded), "{rounded}");
+    assert!(blink_rounds_hsl_alpha(rounded), "{rounded:?}");
   }
   for float in [
     "hsl(120 50% 50% / 33%)",
@@ -439,7 +669,55 @@ fn test_blink_rounds_hsl_alpha() {
     "hsla(120, 50%, 50%, 0.33 )",
     "hsla(120, 50%, 50%, 3.3e-1)",
     "hsla(120, 50%, 50%, 1.)",
+    // none in each position.
+    "hsl(none 0% 50% / 0.3)",
+    "hsla(none 0% 50% / 0.3)",
+    "hsl(0 none 50% / 0.3)",
+    "hsl(0 0% none / 0.3)",
+    "hsl(120 none 50% / 0.3)",
+    "hsl(120 50% none / 0.3)",
+    "hsl(0 0% 50% / none)",
+    "hsl(none 50% 50% / 0.33)",
+    // Hue: a '+', an exponent, calc().
+    "hsl(+120 0% 50% / 0.3)",
+    "hsl(1.2e2 0% 50% / 0.3)",
+    "hsl(1.2e2deg 0% 50% / 0.3)",
+    "hsl(calc(0) 0% 50% / 0.3)",
+    "hsl(calc(120deg) 0% 50% / 0.3)",
+    "hsla(calc(0), 0%, 50%, 0.3)",
+    // Saturation, lightness and alpha: no leading digit, a '+', an exponent,
+    // calc(), no '%'.
+    "hsl(0 .0% 50% / 0.3)",
+    "hsl(0 0% .5e2% / 0.3)",
+    "hsl(0 0% 5e1% / 0.3)",
+    "hsl(0 +0% 50% / 0.3)",
+    "hsl(0 0% +50% / 0.3)",
+    "hsl(0 calc(0%) 50% / 0.3)",
+    "hsl(0 0% calc(50%) / 0.3)",
+    "hsl(0 0% 50% / calc(0.3))",
+    "hsl(0 0 50 / 0.3)",
+    "hsl(0 0% 50% / 0.3 )",
+    "hsl(0 0% 50% / 3e-1)",
+    "hsl(0 0% 50% / +0.3)",
+    "hsl(0 0% 50% / 30%)",
+    // Function name not all lowercase, or escaped.
+    "HSL(0 0% 50% / 0.3)",
+    "Hsl(0 0% 50% / 0.3)",
+    "hSl(0 0% 50% / 0.3)",
+    "HSLA(0, 0%, 50%, 0.3)",
+    "hslA(0, 0%, 50%, 0.3)",
+    "hsl\\61(0, 0%, 50%, 0.3)",
+    // Comments.
+    "hsl(0 /**/ 0% 50% / 0.3)",
+    "hsl(0 0% 50% / 0.3/**/)",
+    "hsl(/**/0 0% 50% / 0.3)",
+    // Mixed separators (invalid in Chrome too).
+    "hsl(none, 0%, 50%, 0.3)",
+    "hsl(0 0%,50%,0.3)",
+    "hsl(0, 0% 50%, 0.3)",
+    "hsl(0, 0%, 50% / 0.3)",
+    "hsl(0 0% 50%, 0.3)",
   ] {
-    assert!(!blink_rounds_hsl_alpha(float), "{float}");
+    assert!(!blink_rounds_hsl_alpha(float), "{float:?}");
   }
 }
