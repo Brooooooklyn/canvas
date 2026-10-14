@@ -4487,9 +4487,8 @@ impl Bitmap {
   }
 
   /// One immutable image of these pixels, made at a pattern's first paint. It
-  /// shares the pixels of an immutable (decoded) bitmap and copies a mutable
-  /// one. It holds null when the bitmap has no pixels, and then the pattern
-  /// paints nothing.
+  /// shares the pixels: nothing writes to a bitmap after it is made. It holds
+  /// null when the bitmap has no pixels, and then the pattern paints nothing.
   pub(crate) fn make_image(&self) -> SkImage {
     SkImage(unsafe { ffi::skiac_bitmap_make_image(self.0.bitmap) })
   }
@@ -4574,8 +4573,7 @@ pub enum ImagePatternBacking {
 pub(crate) struct ImagePatternShared {
   pub(crate) transform: Transform,
   // The pattern's one image, made from `backing` at the first paint and kept
-  // for the pattern's life, so an SVG or AVIF pattern that is never painted
-  // makes no copy.
+  // for the pattern's life. It shares the backing's pixels.
   pub(crate) image: Option<SkImage>,
   // Cache the shader for the last sampling quality; rebuilt when the transform
   // or the quality changes. Every shader samples `image`, so a rebuild copies

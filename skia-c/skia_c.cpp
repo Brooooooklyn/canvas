@@ -2316,13 +2316,37 @@ void skiac_bitmap_set_immutable(skiac_bitmap* c_bitmap) {
   BITMAP_CAST->setImmutable();
 }
 
+// The image a pattern samples; Bitmap::make_image, for ImagePattern, is the
+// only caller. It shares the bitmap's pixels, as Chrome shares one decoded
+// image between all the patterns that use it. Sharing a mutable bitmap is safe
+// because nothing writes to a bitmap after its skiac_bitmap_make_* factory
+// returns: a new src or size makes a new bitmap. An immutable bitmap (decoded
+// by SkCodec: PNG, JPEG, WebP, GIF, ...; an ImageData copy) is shared by
+// RasterFromBitmap. That would copy a mutable one (SVG, AVIF), so it is
+// wrapped instead, and the image holds a ref on its pixel ref. Null when the
+// bitmap has no pixels.
 skiac_image* skiac_bitmap_make_image(skiac_bitmap* c_bitmap) {
-  // An immutable bitmap (decoded by SkCodec: PNG, JPEG, WebP, GIF, ...) shares
-  // its pixels with the image. A mutable one (SVG, AVIF) is copied here once,
-  // so the shaders a pattern rebuilds never copy it again. Null when the bitmap
-  // has no pixels.
-  return reinterpret_cast<skiac_image*>(
-      SkImages::RasterFromBitmap(*BITMAP_CAST).release());
+  if (BITMAP_CAST->isImmutable()) {
+    return reinterpret_cast<skiac_image*>(
+        SkImages::RasterFromBitmap(*BITMAP_CAST).release());
+  }
+  SkPixmap pixmap;
+  if (!BITMAP_CAST->peekPixels(&pixmap)) {
+    return nullptr;
+  }
+  auto pixel_ref = SkSafeRef(BITMAP_CAST->pixelRef());
+  auto image = SkImages::RasterFromPixmap(
+      pixmap,
+      [](const void*, void* ctx) {
+        SkSafeUnref(static_cast<SkPixelRef*>(ctx));
+      },
+      pixel_ref);
+  if (!image) {
+    // RasterFromPixmap calls the release proc only once it made the image.
+    SkSafeUnref(pixel_ref);
+    return nullptr;
+  }
+  return reinterpret_cast<skiac_image*>(image.release());
 }
 
 skiac_shader* skiac_image_make_pattern_shader(skiac_image* c_image,

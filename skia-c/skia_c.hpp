@@ -21,6 +21,7 @@
 #include <include/core/SkPathUtils.h>
 #include <include/core/SkPicture.h>
 #include <include/core/SkPictureRecorder.h>
+#include <include/core/SkPixelRef.h>
 #include <include/core/SkSamplingOptions.h>
 #include <include/core/SkStream.h>
 #include <include/core/SkString.h>
