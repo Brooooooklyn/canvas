@@ -2,8 +2,10 @@
 #include <math.h>
 #include <algorithm>
 #include <atomic>
+#include <list>
 #include <memory>
 #include <optional>
+#include <unordered_map>
 #include <vector>
 
 #ifdef _WIN32
@@ -561,12 +563,33 @@ struct skiac_image_level_bytes : SkNVRefCnt<skiac_image_level_bytes> {
 };
 
 struct skiac_image_levels {
-  struct Level {
+  struct Key {
     SkIRect src;
     SkISize size;
-    sk_sp<SkImage> image;
+    bool operator==(const Key& other) const {
+      return src == other.src && size == other.size;
+    }
   };
-  std::vector<Level> levels;
+  struct KeyHash {
+    size_t operator()(const Key& key) const {
+      // FNV-1a over the six ints.
+      uint64_t hash = 0xcbf29ce484222325ull;
+      for (int32_t value :
+           {key.src.fLeft, key.src.fTop, key.src.fRight, key.src.fBottom,
+            key.size.fWidth, key.size.fHeight}) {
+        hash = (hash ^ static_cast<uint32_t>(value)) * 0x100000001b3ull;
+      }
+      return static_cast<size_t>(hash);
+    }
+  };
+  struct Level {
+    Key key;
+    sk_sp<SkImage> image;
+    size_t bytes;
+  };
+  // Least recently used first, found through `index`.
+  std::list<Level> lru;
+  std::unordered_map<Key, std::list<Level>::iterator, KeyHash> index;
   size_t bytes = 0;
   sk_sp<skiac_image_level_bytes> counter =
       sk_make_sp<skiac_image_level_bytes>();
@@ -734,14 +757,11 @@ static sk_sp<SkImage> FindOrMakeLevel(skiac_image_levels* cache,
                                       const SkPixmap& original,
                                       const SkIRect& src,
                                       SkISize size) {
-  auto& levels = cache->levels;
-  for (auto it = levels.begin(); it != levels.end(); ++it) {
-    if (it->src == src && it->size == size) {
-      auto level = std::move(*it);
-      levels.erase(it);
-      levels.push_back(std::move(level));
-      return levels.back().image;
-    }
+  const skiac_image_levels::Key key{src, size};
+  auto found = cache->index.find(key);
+  if (found != cache->index.end()) {
+    cache->lru.splice(cache->lru.end(), cache->lru, found->second);
+    return found->second->image;
   }
   sk_sp<SkImage> image =
       MakeLevelImage(original, src, size, cache->counter.get());
@@ -750,12 +770,14 @@ static sk_sp<SkImage> FindOrMakeLevel(skiac_image_levels* cache,
   }
   const size_t bytes = image->imageInfo().computeMinByteSize();
   const size_t budget = std::max(original.computeByteSize(), bytes);
-  while (!levels.empty() && cache->bytes + bytes > budget) {
-    cache->bytes -= levels.front().image->imageInfo().computeMinByteSize();
-    levels.erase(levels.begin());
+  while (!cache->lru.empty() && cache->bytes + bytes > budget) {
+    cache->bytes -= cache->lru.front().bytes;
+    cache->index.erase(cache->lru.front().key);
+    cache->lru.pop_front();
   }
   cache->bytes += bytes;
-  levels.push_back({src, size, image});
+  cache->lru.push_back({key, image, bytes});
+  cache->index.emplace(key, std::prev(cache->lru.end()));
   return image;
 }
 
