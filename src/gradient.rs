@@ -195,10 +195,10 @@ impl CanvasGradient {
         ));
       }
       CSSColor::Rgba(rgba) => Color::from_rgba(
-        rgba.red,                   // Already u8
-        rgba.green,                 // Already u8
-        rgba.blue,                  // Already u8
-        (rgba.alpha * 255.0) as u8, // Scale f32 0.0-1.0 to u8 0-255
+        rgba.red,                           // Already u8
+        rgba.green,                         // Already u8
+        rgba.blue,                          // Already u8
+        (rgba.alpha * 255.0).round() as u8, // Scale f32 0.0-1.0 to u8 0-255
       ),
       CSSColor::Hsl(hsl) => {
         let h = hsl.hue.unwrap_or(0.0) / 360.0;
@@ -212,7 +212,7 @@ impl CanvasGradient {
           (r * 255.0) as u8,
           (g * 255.0) as u8,
           (b * 255.0) as u8,
-          (a * 255.0) as u8,
+          (a * 255.0).round() as u8,
         )
       }
       _ => {

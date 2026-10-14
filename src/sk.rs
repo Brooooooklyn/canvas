@@ -677,7 +677,8 @@ pub mod ffi {
 
     pub fn skiac_paint_set_alpha(paint: *mut skiac_paint, a: u8);
 
-    pub fn skiac_paint_get_alpha(paint: *mut skiac_paint) -> u8;
+    pub fn skiac_paint_set_alphaf(paint: *mut skiac_paint, a: f32);
+    pub fn skiac_paint_get_alphaf(paint: *mut skiac_paint) -> f32;
 
     pub fn skiac_paint_set_anti_alias(paint: *mut skiac_paint, aa: bool);
 
@@ -3170,8 +3171,12 @@ impl Paint {
     }
   }
 
-  pub fn get_alpha(&self) -> u8 {
-    unsafe { ffi::skiac_paint_get_alpha(self.0) }
+  pub fn set_alpha_f32(&mut self, a: f32) {
+    unsafe { ffi::skiac_paint_set_alphaf(self.0, a) }
+  }
+
+  pub fn get_alpha_f32(&self) -> f32 {
+    unsafe { ffi::skiac_paint_get_alphaf(self.0) }
   }
 
   pub fn set_anti_alias(&mut self, aa: bool) {
@@ -3267,7 +3272,8 @@ impl Paint {
   }
 
   /// The paint's colour as an 8-bit sRGB ARGB word, alpha in the top byte.
-  /// Lossless here: `set_color` and `set_alpha` are both 8-bit setters.
+  /// Lossy for alpha: `set_alpha_f32` keeps a float, which `SkPaint::getColor`
+  /// rounds to the nearest byte.
   pub fn get_color(&self) -> u32 {
     unsafe { ffi::skiac_paint_get_color(self.0) }
   }

@@ -1024,8 +1024,12 @@ void skiac_paint_set_alpha(skiac_paint* c_paint, uint8_t a) {
   PAINT_CAST->setAlpha(a);
 }
 
-uint8_t skiac_paint_get_alpha(skiac_paint* c_paint) {
-  return PAINT_CAST->getAlpha();
+void skiac_paint_set_alphaf(skiac_paint* c_paint, float a) {
+  PAINT_CAST->setAlphaf(a);
+}
+
+float skiac_paint_get_alphaf(skiac_paint* c_paint) {
+  return PAINT_CAST->getAlphaf();
 }
 
 uint32_t skiac_paint_get_color(skiac_paint* c_paint) {

@@ -1435,26 +1435,47 @@ impl Context {
     Ok(())
   }
 
+  /// `globalAlpha` rounded to k/255, for the paints that sample an image:
+  /// drawImage and `Pattern::Image`. Blink rounds the drawImage alpha on purpose
+  /// (canvas_rendering_context_2d_state.cc:334-336, "TODO: Don't quantize the
+  /// alpha to 8-bit"). It keeps a float for patterns, but Chrome's CPU canvas
+  /// draws a repeat pattern with source-over through Skia's legacy blitter,
+  /// which rounds the paint alpha to a byte (SkBlitter.cpp `getAlpha()`).
+  /// Some composite ops (copy, xor, lighter, screen, destination-over),
+  /// repeat-x/y and a transformed no-repeat take the float pipeline there, so
+  /// at exact (k + 0.5)/255 ties such as 0.3 Chrome CPU can be 1 lower; its GPU
+  /// canvas agrees with this rounding. Here it is load-bearing:
+  /// cubic sampling ('high' drawImage, and every pattern) runs Skia's float
+  /// pipeline, where the Mitchell weights can sum to 1 - eps and the store
+  /// rounds ties to even, so a float 0.5 can come out 127 and 0.3 comes out 76.
+  /// f32 maths and `k / 255.0` as Blink does: `set_alpha(k)` multiplies by
+  /// 1/255, which is 1 ulp off for some k.
+  fn image_global_alpha(&self) -> f32 {
+    (self.state.global_alpha as f32 * 255.0).round() / 255.0
+  }
+
   pub fn fill_paint(&self) -> result::Result<Paint, SkError> {
     let last_state = &self.state;
     let current_paint = &last_state.paint;
     let mut paint = current_paint.clone();
     paint.set_style(PaintStyle::Fill);
-    let alpha = current_paint.get_alpha();
+    let alpha = current_paint.get_alpha_f32();
     match &last_state.fill_style {
       Pattern::Color(c, _) => {
-        let color = Self::multiply_by_alpha(c, alpha);
-        paint.set_color(color.r, color.g, color.b, color.a);
+        paint.set_color(c.r, c.g, c.b, c.a);
+        paint.set_alpha_f32(c.a as f32 / 255.0 * alpha);
       }
       Pattern::Gradient(g) => {
         let current_transform = &last_state.transform;
         let shader = g.get_shader(current_transform.get_transform())?;
-        paint.set_color(0, 0, 0, alpha);
+        paint.set_color(0, 0, 0, 255);
+        paint.set_alpha_f32(alpha);
         paint.set_shader(&shader);
       }
       Pattern::Image(p) => {
         if let Some(shader) = p.get_shader() {
-          paint.set_color(0, 0, 0, alpha);
+          paint.set_color(0, 0, 0, 255);
+          paint.set_alpha_f32(self.image_global_alpha());
           paint.set_shader(&shader);
         }
       }
@@ -1546,7 +1567,7 @@ impl Context {
   }
 
   pub fn get_global_alpha(&self) -> f64 {
-    self.state.paint.get_alpha() as f64 / 255.0
+    self.state.global_alpha
   }
 
   pub fn set_shadow_color(&mut self, shadow_color: String) -> result::Result<(), SkError> {
@@ -1568,7 +1589,7 @@ impl Context {
           r: rgba.red,
           g: rgba.green,
           b: rgba.blue,
-          a: (rgba.alpha * 255.0) as u8,
+          a: (rgba.alpha * 255.0).round() as u8,
         };
       }
       CSSColor::Hsl(hsl) => {
@@ -1585,7 +1606,7 @@ impl Context {
           r: (r * 255.0) as u8,
           g: (g * 255.0) as u8,
           b: (b * 255.0) as u8,
-          a: (a * 255.0) as u8,
+          a: (a * 255.0).round() as u8,
         };
       }
       _ => {
@@ -1671,21 +1692,23 @@ impl Context {
     let current_paint = &last_state.paint;
     let mut paint = current_paint.clone();
     paint.set_style(PaintStyle::Stroke);
-    let global_alpha = current_paint.get_alpha();
+    let global_alpha = current_paint.get_alpha_f32();
     match &last_state.stroke_style {
       Pattern::Color(c, _) => {
-        let color = Self::multiply_by_alpha(c, global_alpha);
-        paint.set_color(color.r, color.g, color.b, color.a);
+        paint.set_color(c.r, c.g, c.b, c.a);
+        paint.set_alpha_f32(c.a as f32 / 255.0 * global_alpha);
       }
       Pattern::Gradient(g) => {
         let current_transform = &last_state.transform;
         let shader = g.get_shader(current_transform.get_transform())?;
-        paint.set_color(0, 0, 0, global_alpha);
+        paint.set_color(0, 0, 0, 255);
+        paint.set_alpha_f32(global_alpha);
         paint.set_shader(&shader);
       }
       Pattern::Image(p) => {
         if let Some(shader) = p.get_shader() {
-          paint.set_color(0, 0, 0, current_paint.get_alpha());
+          paint.set_color(0, 0, 0, 255);
+          paint.set_alpha_f32(self.image_global_alpha());
           paint.set_shader(&shader);
         }
       }
@@ -1854,9 +1877,12 @@ impl Context {
         // bounding box -- a `strokeRect` shadow came out a filled box. So fold
         // the blend into the paint colour, as `SkPaintPriv::RemoveColorFilter`
         // does for PDF; against a solid-colour source that is algebraically the
-        // same, and SkSVGDevice emits a plain `fill=` with no filter. Rounding
-        // back to 8 bits loses nothing, since the blitter would quantise to
-        // `SkPMColor` before the first pixel anyway.
+        // same, and SkSVGDevice emits a plain `fill=` with no filter. It rounds
+        // twice, though: `get_color` rounds the float paint alpha to a byte,
+        // and the product with `shadowColor.a` is rounded again. The
+        // image-filter route below does the same, through its 8-bit layer;
+        // Blink's looper shadow takes one float product, so this one can be
+        // 1/255 off it.
         //
         // Two conditions, both load-bearing:
         //   * `* paint_alpha`: `paint` already carries style alpha *
@@ -2052,7 +2078,7 @@ impl Context {
 
     let mut paint: Paint = self.fill_paint()?;
     self.account_paint_resources(&self.state.fill_style);
-    paint.set_alpha((self.state.global_alpha * 255.0).round() as u8);
+    paint.set_alpha_f32(self.image_global_alpha());
 
     // Extract state for shadow rendering to avoid borrow conflicts
     let shadow_paint = self.shadow_paint(&paint, ShadowSource::Image, DrawContent::Geometry);
@@ -2198,7 +2224,7 @@ impl Context {
 
     let mut paint: Paint = self.fill_paint()?;
     self.account_paint_resources(&self.state.fill_style);
-    paint.set_alpha((self.state.global_alpha * 255.0).round() as u8);
+    paint.set_alpha_f32(self.state.global_alpha as f32);
 
     // Extract state for shadow rendering to avoid borrow conflicts
     let shadow_paint = self.shadow_paint(&paint, ShadowSource::Image, DrawContent::Geometry);
@@ -2485,15 +2511,6 @@ impl Context {
     Ok(())
   }
 
-  // ./skia/modules/canvaskit/color.js
-  fn multiply_by_alpha(color: &RGBA<u8>, global_alpha: u8) -> RGBA<u8> {
-    let mut result = *color;
-    result.a = ((0.0_f32.max((result.a as f32 / 255.0 * (global_alpha as f32 / 255.0)).min(1.0)))
-      * 255.0)
-      .round() as u8;
-    result
-  }
-
   pub fn annotate_link_url(&self, left: f64, top: f64, right: f64, bottom: f64, url: String) {
     self
       .surface
@@ -2651,14 +2668,13 @@ impl CanvasRenderingContext2D {
 
   #[napi(setter, return_if_invalid)]
   pub fn set_global_alpha(&mut self, alpha: f64) {
-    let alpha = alpha as f32;
     if !(0.0..=1.0).contains(&alpha) {
       #[cfg(debug_assertions)]
       eprintln!("Alpha value out of range, expected 0.0 - 1.0, but got : {alpha}");
       return;
     }
     self.context.state.global_alpha = alpha;
-    self.context.state.paint.set_alpha((alpha * 255.0) as u8);
+    self.context.state.paint.set_alpha_f32(alpha as f32);
   }
 
   #[napi(getter)]

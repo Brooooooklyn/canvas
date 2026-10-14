@@ -971,7 +971,8 @@ void skiac_paint_set_color(skiac_paint* c_paint,
                            uint8_t b,
                            uint8_t a);
 void skiac_paint_set_alpha(skiac_paint* c_paint, uint8_t a);
-uint8_t skiac_paint_get_alpha(skiac_paint* c_paint);
+void skiac_paint_set_alphaf(skiac_paint* c_paint, float a);
+float skiac_paint_get_alphaf(skiac_paint* c_paint);
 uint32_t skiac_paint_get_color(skiac_paint* c_paint);
 void skiac_paint_set_anti_alias(skiac_paint* c_paint, bool aa);
 void skiac_paint_set_blend_mode(skiac_paint* c_paint, int blend_mode);

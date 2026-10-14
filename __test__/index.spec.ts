@@ -45,6 +45,165 @@ test('globalAlpha state should be ok', (t) => {
   t.is(ctx.globalAlpha, 0.2)
 })
 
+test('globalAlpha retains fractional state through save and restore', (t) => {
+  const { ctx } = t.context
+  ctx.globalAlpha = 0.501
+  ctx.save()
+  ctx.globalAlpha = 0.1
+  t.is(ctx.globalAlpha, 0.1)
+  ctx.restore()
+  t.is(ctx.globalAlpha, 0.501)
+  for (const invalid of [NaN, Infinity, -Number.EPSILON, 1 + Number.EPSILON]) {
+    ctx.globalAlpha = invalid
+    t.is(ctx.globalAlpha, 0.501)
+  }
+})
+
+test('globalAlpha draws half opacity without an early byte truncation', (t) => {
+  const canvas = createCanvas(1, 1)
+  const ctx = canvas.getContext('2d')
+  ctx.globalAlpha = 0.5
+  ctx.fillStyle = 'rgb(32, 128, 223)'
+  ctx.fillRect(0, 0, 1, 1)
+  t.deepEqual([...ctx.getImageData(0, 0, 1, 1).data], [32, 128, 223, 128])
+})
+
+test('globalAlpha leaves rounded CSS alpha intact at full opacity', (t) => {
+  for (const { alpha, expected } of [
+    { alpha: 0.1, expected: [29, 128, 226, 26] },
+    { alpha: 0.25, expected: [32, 128, 223, 64] },
+    { alpha: 0.5, expected: [32, 128, 223, 128] },
+    { alpha: 0.9, expected: [32, 128, 223, 230] },
+  ]) {
+    const canvas = createCanvas(1, 1)
+    const ctx = canvas.getContext('2d')
+    ctx.fillStyle = `rgba(32, 128, 223, ${alpha})`
+    ctx.fillRect(0, 0, 1, 1)
+    t.deepEqual([...ctx.getImageData(0, 0, 1, 1).data], expected)
+  }
+})
+
+test('globalAlpha preserves half opacity across native paint sources', async (t) => {
+  const source = createCanvas(4, 4)
+  const sourceContext = source.getContext('2d')
+  sourceContext.fillStyle = 'rgb(32, 128, 223)'
+  sourceContext.fillRect(0, 0, 4, 4)
+  const image = await loadImage(source.toBuffer('image/png'))
+  for (const mode of ['fill', 'stroke', 'gradient', 'pattern', 'image', 'canvas']) {
+    const canvas = createCanvas(4, 4)
+    const ctx = canvas.getContext('2d')
+    ctx.globalAlpha = 0.5
+    ctx.fillStyle = 'rgb(32, 128, 223)'
+    ctx.strokeStyle = ctx.fillStyle
+    if (mode === 'stroke') {
+      ctx.lineWidth = 2
+      ctx.strokeRect(1, 1, 2, 2)
+    } else if (mode === 'gradient') {
+      const gradient = ctx.createLinearGradient(0, 0, 4, 0)
+      gradient.addColorStop(0, 'rgb(32, 128, 223)')
+      gradient.addColorStop(1, 'rgb(32, 128, 223)')
+      ctx.fillStyle = gradient
+      ctx.fillRect(0, 0, 4, 4)
+    } else if (mode === 'pattern') {
+      ctx.fillStyle = ctx.createPattern(source, 'repeat')!
+      ctx.fillRect(0, 0, 4, 4)
+    } else if (mode === 'image') {
+      ctx.drawImage(image, 0, 0)
+    } else if (mode === 'canvas') {
+      ctx.drawImage(source, 0, 0)
+    } else {
+      ctx.fillRect(0, 0, 4, 4)
+    }
+    t.deepEqual([...ctx.getImageData(0, 0, 1, 1).data], [32, 128, 223, 128], mode)
+  }
+})
+
+// Image and pattern paints take globalAlpha rounded to k/255. 'high' drawImage
+// and every pattern sample with a cubic filter, which Skia runs in float, and an
+// unrounded 0.5 / 0.3 / 0.7 drifts to 127 / 76 / 178. Expected values are Chrome
+// 155's CPU canvas; where only the alpha is compared, Chrome's 8-bit path gives
+// a different RGB.
+const alphaSet = (ctx: SKRSContext2D, x: number, y: number, w: number, h: number) => [
+  ...new Set(ctx.getImageData(x, y, w, h).data.filter((_, i) => i % 4 === 3)),
+]
+
+test('globalAlpha is rounded to 8 bits for high quality drawImage', async (t) => {
+  const source = createCanvas(8, 8)
+  const sourceContext = source.getContext('2d')
+  sourceContext.fillStyle = 'rgb(32, 128, 223)'
+  sourceContext.fillRect(0, 0, 8, 8)
+  const image = await loadImage(source.toBuffer('image/png'))
+  for (const { alpha, expected } of [
+    { alpha: 0.5, expected: [32, 128, 223, 128] },
+    { alpha: 0.3, expected: [33, 129, 222, 77] },
+    { alpha: 0.7, expected: [31, 128, 224, 179] },
+  ]) {
+    for (const [name, src] of [
+      ['canvas', source],
+      ['image', image],
+    ] as const) {
+      const canvas = createCanvas(24, 24)
+      const ctx = canvas.getContext('2d')
+      ctx.imageSmoothingQuality = 'high'
+      ctx.globalAlpha = alpha
+      ctx.drawImage(src, 1, 1, 20, 20)
+      t.deepEqual(alphaSet(ctx, 2, 2, 18, 18), [expected[3]], `${name} ${alpha}`)
+      if (name === 'canvas') {
+        t.deepEqual([...ctx.getImageData(4, 4, 1, 1).data], expected, `${name} ${alpha}`)
+      }
+    }
+  }
+})
+
+test('globalAlpha is rounded to 8 bits for patterns', (t) => {
+  const source = createCanvas(8, 8)
+  const sourceContext = source.getContext('2d')
+  sourceContext.fillStyle = 'rgb(32, 128, 223)'
+  sourceContext.fillRect(0, 0, 8, 8)
+  for (const { alpha, expected } of [
+    { alpha: 0.5, expected: 128 },
+    { alpha: 0.3, expected: 77 },
+    { alpha: 0.7, expected: 179 },
+  ]) {
+    for (const scale of [1, 2]) {
+      const canvas = createCanvas(16, 16)
+      const ctx = canvas.getContext('2d')
+      ctx.scale(scale, scale)
+      ctx.globalAlpha = alpha
+      ctx.fillStyle = ctx.createPattern(source, 'repeat')!
+      ctx.fillRect(0, 0, 16, 16)
+      t.deepEqual(alphaSet(ctx, 0, 0, 16, 16), [expected], `fill scale ${scale} ${alpha}`)
+    }
+    const canvas = createCanvas(16, 16)
+    const ctx = canvas.getContext('2d')
+    ctx.scale(2, 2)
+    ctx.globalAlpha = alpha
+    ctx.strokeStyle = ctx.createPattern(source, 'repeat')!
+    ctx.lineWidth = 2
+    ctx.strokeRect(2, 2, 4, 4)
+    t.deepEqual(alphaSet(ctx, 2, 2, 12, 4), [expected], `stroke scale 2 ${alpha}`)
+    if (alpha === 0.5) {
+      t.deepEqual([...ctx.getImageData(5, 4, 1, 1).data], [32, 128, 223, 128])
+    }
+  }
+})
+
+test('addColorStop rounds rgba alpha', (t) => {
+  for (const { alpha, expected } of [
+    { alpha: 0.25, expected: [32, 128, 223, 64] },
+    { alpha: 0.5, expected: [32, 128, 223, 128] },
+  ]) {
+    const canvas = createCanvas(16, 4)
+    const ctx = canvas.getContext('2d')
+    const gradient = ctx.createLinearGradient(0, 0, 16, 0)
+    gradient.addColorStop(0, `rgba(32, 128, 223, ${alpha})`)
+    gradient.addColorStop(1, `rgba(32, 128, 223, ${alpha})`)
+    ctx.fillStyle = gradient
+    ctx.fillRect(0, 0, 16, 4)
+    t.deepEqual([...ctx.getImageData(8, 2, 1, 1).data], expected, `${alpha}`)
+  }
+})
+
 test('globalCompositeOperation state should be ok', (t) => {
   const { ctx } = t.context
   t.is(ctx.globalCompositeOperation, 'source-over')

@@ -55,7 +55,7 @@ impl Pattern {
           r: rgba.red,
           g: rgba.green,
           b: rgba.blue,
-          a: (rgba.alpha * 255.0) as u8,
+          a: (rgba.alpha * 255.0).round() as u8,
         },
         color_str.to_owned(),
       )),
@@ -72,7 +72,7 @@ impl Pattern {
             r: (r * 255.0) as u8,
             g: (g * 255.0) as u8,
             b: (b * 255.0) as u8,
-            a: (a * 255.0) as u8,
+            a: (a * 255.0).round() as u8,
           },
           color_str.to_owned(),
         ))
