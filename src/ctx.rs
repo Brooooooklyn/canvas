@@ -2348,6 +2348,25 @@ impl Context {
       && !has_shadow
   }
 
+  /// Blink clips the sorted source rect to the image and returns when nothing
+  /// is left (canvas_2d_recorder_context.cc:2310-2316), whatever the composite
+  /// op; copy and the full-canvas modes would otherwise clear the clip. Shared
+  /// by drawImage and drawCanvas, which must agree.
+  pub(crate) fn source_rect_overlaps(
+    sx: f32,
+    sy: f32,
+    s_width: f32,
+    s_height: f32,
+    width: f32,
+    height: f32,
+  ) -> bool {
+    let overlaps = |start: f32, len: f32, size: f32| {
+      let (lo, hi) = (start.min(start + len), start.max(start + len));
+      lo.max(0.0) < hi.min(size)
+    };
+    overlaps(sx, s_width, width) && overlaps(sy, s_height, height)
+  }
+
   /// `raster_key` dedups the retained-raster charge for this op: the caller
   /// pairs the source's resource id with a content generation (a canvas
   /// source's `content_version()`, or a fresh nonce for sources with no
@@ -2400,16 +2419,14 @@ impl Context {
     {
       return Ok(());
     }
-    // Blink clips the sorted source rect to the image and returns when nothing
-    // is left (canvas_2d_recorder_context.cc:2310-2316), whatever the composite
-    // op; copy and the full-canvas modes would otherwise clear the clip.
-    let overlaps_image = |start: f32, len: f32, size: f32| {
-      let (lo, hi) = (start.min(start + len), start.max(start + len));
-      lo.max(0.0) < hi.min(size)
-    };
-    if !(overlaps_image(sx, s_width, bitmap.0.width as f32)
-      && overlaps_image(sy, s_height, bitmap.0.height as f32))
-    {
+    if !Self::source_rect_overlaps(
+      sx,
+      sy,
+      s_width,
+      s_height,
+      bitmap.0.width as f32,
+      bitmap.0.height as f32,
+    ) {
       return Ok(());
     }
 
@@ -4006,6 +4023,10 @@ impl CanvasRenderingContext2D {
         ),
         _ => return Ok(()),
       };
+    // Before any charge, as in draw_image (which the fallback above reaches).
+    if !Context::source_rect_overlaps(sx, sy, s_width, s_height, source_width, source_height) {
+      return Ok(());
+    }
 
     // approx_bytes_used (charged inside Context::draw_canvas) excludes the
     // payloads a picture references -- putImageData/drawImage bitmaps, image

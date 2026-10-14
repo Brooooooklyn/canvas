@@ -186,3 +186,35 @@ test('drawImage whose source rect misses the image changes nothing', (t) => {
     t.deepEqual(px(ctx, 30, 30), [0, 0, 0, 0], op)
   }
 })
+
+// drawCanvas has no Chrome counterpart; it must agree with drawImage, which
+// returns when the source rect misses the source.
+test('drawCanvas whose source rect misses the source canvas changes nothing', (t) => {
+  const src = createCanvas(8, 8)
+  const sctx = src.getContext('2d')
+  sctx.fillStyle = 'lime'
+  sctx.fillRect(0, 0, 8, 8)
+  for (const op of [...UNBOUNDED_OPS, 'source-over'] as const) {
+    for (const [sx, sy] of [
+      [100, 100],
+      [-10, -10],
+      [8, 0],
+      [0, -5],
+    ]) {
+      const { ctx } = background(40, 40)
+      ctx.globalCompositeOperation = op
+      ctx.drawCanvas(src, sx, sy, 5, 5, 10, 10, 5, 5)
+      t.deepEqual(px(ctx, 12, 12), BG, `${op} ${sx},${sy}`)
+      t.deepEqual(px(ctx, 30, 30), BG, `${op} ${sx},${sy}`)
+    }
+  }
+  // A source rect that overlaps the canvas still draws the overlap.
+  for (const op of ['copy', 'source-in'] as const) {
+    const { ctx } = background(40, 40)
+    ctx.globalCompositeOperation = op
+    ctx.drawCanvas(src, -4, -4, 8, 8, 10, 10, 8, 8)
+    t.deepEqual(px(ctx, 12, 12), [0, 0, 0, 0], op)
+    t.deepEqual(px(ctx, 15, 15), [0, 255, 0, 255], op)
+    t.deepEqual(px(ctx, 30, 30), [0, 0, 0, 0], op)
+  }
+})
