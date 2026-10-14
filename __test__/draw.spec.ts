@@ -608,7 +608,7 @@ test('createPattern-no-transform', async (t) => {
   const image = new Image()
   image.src = imageSrc
   await image.decode()
-  const pattern = ctx.createPattern(image, 'repeat')
+  const pattern = ctx.createPattern(image, 'repeat')!
   ctx.fillStyle = pattern
   ctx.fillRect(0, 0, 300, 300)
   await snapshotImage(t)
@@ -619,7 +619,7 @@ test('createPattern-no-transform-imagedata', async (t) => {
   const imageSrc = await promises.readFile(join(__dirname, 'canvas_createpattern.png'))
   const imageMeta = png.decoders['image/png'](imageSrc)
   const imageData = new ImageData(new Uint8ClampedArray(imageMeta.data), imageMeta.width, imageMeta.height)
-  const pattern = ctx.createPattern(imageData, 'repeat')
+  const pattern = ctx.createPattern(imageData, 'repeat')!
   ctx.fillStyle = pattern
   ctx.fillRect(0, 0, 300, 300)
   await snapshotImage(t)
@@ -631,7 +631,7 @@ test('createPattern-with-transform', async (t) => {
   const image = new Image()
   image.src = imageSrc
   await image.decode()
-  const pattern = ctx.createPattern(image, 'repeat')
+  const pattern = ctx.createPattern(image, 'repeat')!
   const matrix = new DOMMatrix()
   pattern.setTransform(matrix.rotate(-45).scale(1.5))
   ctx.fillStyle = pattern

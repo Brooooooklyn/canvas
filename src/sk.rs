@@ -1384,6 +1384,18 @@ pub enum ColorSpace {
   DisplayP3,
 }
 
+impl ColorSpace {
+  /// The `PredefinedColorSpace` string.
+  pub fn as_str(&self) -> &'static str {
+    match self {
+      Self::Srgb => "srgb",
+      Self::DisplayP3 => "display-p3",
+    }
+  }
+}
+
+// Accepts the non-standard "p3" alias; the web-facing paths use the strict
+// WebIDL enum in webidl.rs.
 impl FromStr for ColorSpace {
   type Err = SkError;
 
