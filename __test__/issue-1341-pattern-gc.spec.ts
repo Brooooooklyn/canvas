@@ -380,7 +380,7 @@ function makeSplitTile() {
 
 test('setTransform after fillStyle assignment takes effect at paint time', (t) => {
   const ctx = createCanvas(64, 64).getContext('2d')!
-  const pattern = ctx.createPattern(makeSplitTile(), 'repeat')
+  const pattern = ctx.createPattern(makeSplitTile(), 'repeat')!
   ctx.fillStyle = pattern
   pattern.setTransform(new DOMMatrix().translate(4, 0))
   ctx.fillRect(0, 0, 64, 64)
@@ -393,7 +393,7 @@ test('setTransform after fillStyle assignment takes effect at paint time', (t) =
 
 test('setTransform between save() and restore() still applies after restore', (t) => {
   const ctx = createCanvas(64, 64).getContext('2d')!
-  const pattern = ctx.createPattern(makeSplitTile(), 'repeat')
+  const pattern = ctx.createPattern(makeSplitTile(), 'repeat')!
   ctx.fillStyle = pattern
   ctx.save()
   pattern.setTransform(new DOMMatrix().translate(4, 0))

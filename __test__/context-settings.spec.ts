@@ -206,7 +206,7 @@ for (const { name, create } of canvases) {
         },
       }),
     )
-    t.is(outer, inner)
+    t.is<unknown, unknown>(outer, inner)
     t.deepEqual(outer.getContextAttributes(), { ...DEFAULTS, colorSpace: 'display-p3' })
     // Also once the context exists.
     const later = create()

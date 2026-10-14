@@ -37,7 +37,7 @@ test('stress: createPattern with canvas source should not crash (bitmap shader f
     patternCtx.fillStyle = `rgb(${i % 256}, ${(i * 7) % 256}, ${(i * 13) % 256})`
     patternCtx.fillRect(0, 0, 32, 32)
 
-    const pattern = ctx.createPattern(patternCanvas, 'repeat')
+    const pattern = ctx.createPattern(patternCanvas, 'repeat')!
     ctx.fillStyle = pattern
     ctx.fillRect(0, 0, 256, 256)
   }
@@ -286,7 +286,7 @@ test('stress: combined interleaved operations should not crash', async (t) => {
 
     const dstCanvas = createCanvas(256, 256)
     const dstCtx = dstCanvas.getContext('2d')!
-    const pattern = dstCtx.createPattern(srcCanvas, 'repeat')
+    const pattern = dstCtx.createPattern(srcCanvas, 'repeat')!
     dstCtx.fillStyle = pattern
     dstCtx.fillRect(0, 0, 256, 256)
 
