@@ -1,6 +1,6 @@
 {
   "name": "@napi-rs/canvas-linux-arm-gnueabihf",
-  "version": "1.0.10",
+  "version": "1.0.11",
   "os": [
     "linux"
   ],
@@ -9,7 +9,8 @@
   ],
   "main": "skia.linux-arm-gnueabihf.node",
   "files": [
-    "skia.linux-arm-gnueabihf.node"
+    "skia.linux-arm-gnueabihf.node",
+    "sbom.cdx.json"
   ],
   "description": "Canvas for Node.js with skia backend",
   "keywords": [
