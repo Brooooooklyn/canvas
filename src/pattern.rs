@@ -11,8 +11,8 @@ use crate::gradient::Gradient;
 use crate::image::{Image, ImageData};
 use crate::page_recorder::next_resource_id;
 use crate::sk::{
-  AccountedBitmap, AlphaType, Bitmap, ColorType, ImagePattern, ImagePatternBacking,
-  ImagePatternShared, TileMode, Transform,
+  AccountedBitmap, Bitmap, ImagePattern, ImagePatternBacking, ImagePatternShared, TileMode,
+  Transform,
 };
 use crate::webidl;
 use crate::{CanvasElement, SVGCanvas};
@@ -144,7 +144,11 @@ impl CanvasPattern {
     // (`backing`), so clones pushed onto the `save()`/`restore()` state stack
     // stay valid after the JS `CanvasPattern` is garbage-collected.
     // https://github.com/Brooooooklyn/canvas/issues/1341
-    let (backing_bytes, backing, accounting_id) = match input {
+    //
+    // `is_canvas` picks the canvas sampling rule (PatternSamplingOptions in
+    // skia_c.cpp). Chrome has no ImageData pattern; its analog, a pattern over
+    // createImageBitmap(imageData), samples like a canvas source.
+    let (backing_bytes, backing, accounting_id, is_canvas) = match input {
       Either4::A(image) => {
         // Chrome checks ImageComplete() first (image_element_base.cc:59): a
         // new src that is still loading gives null, even while the old
@@ -172,19 +176,21 @@ impl CanvasPattern {
           // bitmap's own resource_id, so N patterns over one Image charge
           // once per recording window instead of per wrapper.
           bitmap.resource_id,
+          false,
         )
       }
       Either4::B(image_data) => {
         let data = image_data.resolve_pixels(&env)?;
         let image_data_size = image_data.width * image_data.height * 4;
-        let bitmap = Bitmap::from_image_data(
+        // Premultiplied like a canvas or an ImageBitmap, so filtering never
+        // pulls transparent black into the color. Drawn from its own color
+        // space, as putImageData draws it.
+        let bitmap = Bitmap::premul_from_image_data(
           data,
           image_data.width,
           image_data.height,
           image_data.width * 4,
-          image_data_size,
-          ColorType::RGBA8888,
-          AlphaType::Unpremultiplied,
+          image_data.color_space,
         )
         .ok_or_else(|| {
           Error::new(
@@ -208,6 +214,7 @@ impl CanvasPattern {
           ))),
           // Per-pattern pixel copy: fresh identity.
           next_resource_id(),
+          true,
         )
       }
       Either4::C(canvas) => {
@@ -232,9 +239,12 @@ impl CanvasPattern {
           ImagePatternBacking::Surface(cloned_surface.reference()),
           // Per-pattern surface clone: fresh identity.
           next_resource_id(),
+          true,
         )
       }
       Either4::D(svg_canvas) => {
+        // Draw what the SVG canvas recorded into its raster surface.
+        svg_canvas.ctx.context.flush();
         // Clone the surface to capture its current state and prevent segfaults
         // when the original canvas is resized or destroyed
         let cloned_surface = svg_canvas
@@ -254,10 +264,10 @@ impl CanvasPattern {
           ImagePatternBacking::Surface(cloned_surface.reference()),
           // Per-pattern surface clone: fresh identity.
           next_resource_id(),
+          true,
         )
       }
     };
-    let is_canvas = matches!(backing, ImagePatternBacking::Surface(_));
     Ok(Some(Self {
       inner: Pattern::Image(ImagePattern {
         accounting_id,

@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url'
 
 import ava, { TestFn } from 'ava'
 
-import { createCanvas, Path2D, Canvas, SKRSContext2D, DOMMatrix, loadImage, ImageData } from '../index'
+import { createCanvas, Path2D, Canvas, SKRSContext2D, DOMMatrix, loadImage, ImageData, SvgExportFlag } from '../index'
 
 import { snapshotImage } from './image-snapshot'
 
@@ -256,6 +256,90 @@ test('downscaled image pattern samples one mip level', async (t) => {
       [127, 127, 127, 255, 127, 127, 127, 255, 127, 127, 127, 255, 127, 127, 127, 255],
       quality,
     )
+  }
+})
+
+// Chrome has no ImageData pattern: createPattern(imageData) throws. Its analog,
+// a pattern over createImageBitmap(imageData), samples premultiplied texels the
+// way a canvas source does. Expected values are Chrome 155's CPU canvas with
+// that ImageBitmap in place of the ImageData.
+const imageDataPatternRow = (
+  data: number[],
+  sourceWidth: number,
+  width: number,
+  matrix: number[],
+  quality: SKRSContext2D['imageSmoothingQuality'],
+  repetition: string,
+) => {
+  const source = new ImageData(new Uint8ClampedArray(data), sourceWidth, data.length / 4 / sourceWidth)
+  const ctx = createCanvas(width, 1).getContext('2d')
+  ctx.imageSmoothingQuality = quality
+  const pattern = ctx.createPattern(source, repetition)!
+  pattern.setTransform(new DOMMatrix(matrix))
+  ctx.fillStyle = pattern
+  ctx.fillRect(0, 0, width, 1)
+  return [...ctx.getImageData(0, 0, width, 1).data]
+}
+
+test('ImageData pattern filters premultiplied texels', (t) => {
+  t.deepEqual(
+    imageDataPatternRow([255, 0, 0, 255, 0, 0, 0, 0], 2, 8, [4, 0, 0, 1, 0, 0], 'low', 'repeat'),
+    [
+      255, 0, 0, 159, 255, 0, 0, 223, 255, 0, 0, 223, 255, 0, 0, 159, 255, 0, 0, 96, 255, 0, 0, 32, 255, 0, 0, 32, 255,
+      0, 0, 96,
+    ],
+  )
+})
+
+test('no-repeat ImageData pattern keeps its color next to the transparent edge', (t) => {
+  t.deepEqual(
+    imageDataPatternRow(Array(4).fill([0, 128, 255, 255]).flat(), 2, 6, [2, 0, 0, 2, 0.5, 0], 'low', 'no-repeat'),
+    [0, 128, 255, 96, 0, 128, 255, 191, 0, 128, 255, 191, 0, 128, 255, 191, 0, 128, 255, 96, 0, 0, 0, 0],
+  )
+})
+
+test('downscaled ImageData pattern blends two mip levels', (t) => {
+  const colors = [
+    [255, 0, 0, 255],
+    [0, 255, 0, 255],
+    [0, 0, 255, 255],
+    [255, 255, 255, 255],
+  ]
+  const stripes = Array.from({ length: 16 }, (_, i) => colors[i % 4]).flat()
+  for (const quality of ['medium', 'high'] as const) {
+    t.deepEqual(
+      imageDataPatternRow(stripes, 4, 4, [0.4, 0, 0, 0.4, 0, 0], quality, 'repeat'),
+      [116, 138, 26, 255, 150, 138, 165, 255, 104, 116, 165, 255, 138, 116, 26, 255],
+      quality,
+    )
+  }
+})
+
+// The pattern reads the ImageData in its colorSpace and converts it to the
+// canvas, as putImageData does and as Chrome's pattern over
+// createImageBitmap(imageData) does. Expected values are Chrome 155's. An
+// SvgCanvas reads back what a canvas with its colorSpace holds.
+test('ImageData pattern converts from the ImageData colorSpace', (t) => {
+  const colors = [200, 100, 50, 255, 10, 240, 120, 255, 255, 0, 0, 255, 0, 0, 255, 128]
+  const chrome = {
+    'srgb on srgb': colors,
+    'srgb on display-p3': [187, 105, 62, 255, 110, 236, 133, 255, 234, 51, 35, 255, 0, 0, 245, 128],
+    'display-p3 on srgb': [215, 93, 31, 255, 0, 244, 104, 255, 255, 0, 0, 255, 0, 0, 255, 128],
+    'display-p3 on display-p3': colors,
+  }
+  const canvases = {
+    Canvas: () => createCanvas(4, 1),
+    SvgCanvas: () => createCanvas(4, 1, SvgExportFlag.NoPrettyXML),
+  }
+  for (const [kind, make] of Object.entries(canvases)) {
+    for (const [name, expected] of Object.entries(chrome)) {
+      const [source, target] = name.split(' on ') as ('srgb' | 'display-p3')[]
+      const imageData = new ImageData(new Uint8ClampedArray(colors), 4, 1, { colorSpace: source })
+      const ctx = make().getContext('2d', { colorSpace: target })
+      ctx.fillStyle = ctx.createPattern(imageData, 'repeat')
+      ctx.fillRect(0, 0, 4, 1)
+      t.deepEqual([...ctx.getImageData(0, 0, 4, 1).data], expected, `${kind} ${name}`)
+    }
   }
 })
 

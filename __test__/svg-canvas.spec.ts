@@ -1,9 +1,10 @@
+import { spawn } from 'node:child_process'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import ava, { TestFn } from 'ava'
 
-import { createCanvas, SvgCanvas, SvgExportFlag, GlobalFonts } from '../index'
+import { createCanvas, DOMMatrix, ImageData, SvgCanvas, SvgExportFlag, GlobalFonts, SKRSContext2D } from '../index'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -87,6 +88,28 @@ test('SvgCanvas keeps alpha:false and colorSpace when width or height changes', 
     t.is(ctx.getContextAttributes().colorSpace, 'display-p3', dimension)
     t.is(canvas.getContent().toString('utf8'), fresh(canvas.width, canvas.height), dimension)
   }
+})
+
+// The raster copy of a display-p3 SvgCanvas holds display-p3 pixels, as a
+// display-p3 canvas does, also once a resize or getContent replaces it.
+test('display-p3 SvgCanvas reads back display-p3 pixels', (t) => {
+  const p3 = [10, 240, 120, 255]
+  const draw = (canvas: SvgCanvas) => {
+    const ctx = canvas.getContext('2d')
+    const imageData = new ImageData(new Uint8ClampedArray(p3), 1, 1, { colorSpace: 'display-p3' })
+    ctx.fillStyle = ctx.createPattern(imageData, 'repeat')
+    ctx.fillRect(0, 0, 1, 1)
+    return [...ctx.getImageData(0, 0, 1, 1).data]
+  }
+  const canvas = createCanvas(1, 1, SvgExportFlag.NoPrettyXML)
+  canvas.getContext('2d', { colorSpace: 'display-p3' })
+  t.deepEqual(draw(canvas), p3, 'getContext')
+  canvas.width = 2
+  t.deepEqual(draw(canvas), p3, 'width')
+  canvas.height = 2
+  t.deepEqual(draw(canvas), p3, 'height')
+  canvas.getContent()
+  t.deepEqual(draw(canvas), p3, 'getContent')
 })
 
 // REGRESSION GUARD, do not weaken to a snapshot.
@@ -270,3 +293,350 @@ for (const filter of ['blur(3px)', 'drop-shadow(5px 5px 3px black)', 'blur(2px) 
     t.is((svg.match(/<rect/g) ?? []).length, 0, `a spatial filter is unrepresentable here: ${svg}`)
   })
 }
+
+// An SvgCanvas is a canvas image source: drawImage, createPattern and its own
+// getImageData read what was drawn into it, as they read a canvas (HTML spec: a
+// canvas source uses its current bitmap). They used to read a raster surface
+// that nothing drew into, and returned transparent black.
+const RED = [255, 0, 0, 255]
+const BLUE = [0, 0, 255, 255]
+const CLEAR = [0, 0, 0, 0]
+
+const redBlueSvg = () => {
+  const svg = createCanvas(4, 4, SvgExportFlag.NoPrettyXML)
+  const ctx = svg.getContext('2d')
+  ctx.fillStyle = '#ff0000'
+  ctx.fillRect(0, 0, 2, 4)
+  ctx.fillStyle = '#0000ff'
+  ctx.fillRect(2, 0, 2, 4)
+  return svg
+}
+
+test('SvgCanvas content reaches drawImage, createPattern and getImageData', (t) => {
+  const svg = redBlueSvg()
+  const drawn = createCanvas(8, 4).getContext('2d')
+  drawn.drawImage(svg, 0, 0)
+  t.deepEqual([...drawn.getImageData(0, 0, 8, 1).data], [RED, RED, BLUE, BLUE, CLEAR, CLEAR, CLEAR, CLEAR].flat())
+  const patterned = createCanvas(8, 4).getContext('2d')
+  patterned.fillStyle = patterned.createPattern(svg, 'repeat')
+  patterned.fillRect(0, 0, 8, 4)
+  t.deepEqual([...patterned.getImageData(0, 0, 8, 1).data], [RED, RED, BLUE, BLUE, RED, RED, BLUE, BLUE].flat())
+  t.deepEqual([...svg.getContext('2d').getImageData(0, 0, 4, 1).data], [RED, RED, BLUE, BLUE].flat())
+})
+
+test('reading an SvgCanvas leaves its SVG output unchanged', (t) => {
+  const read = redBlueSvg()
+  read.getContext('2d').getImageData(0, 0, 4, 4)
+  createCanvas(4, 4).getContext('2d').drawImage(read, 0, 0)
+  read.getContext('2d').createPattern(read, 'repeat')
+  t.is(read.getContent().toString('utf8'), redBlueSvg().getContent().toString('utf8'))
+})
+
+// The pixels are drawn from a recording when they are read, and the recording
+// starts again in the current save, clip and transform state. Reads in the
+// middle of nested save()/clip()/transform state must not change what the
+// later drawing gives.
+const nestedDrawing = (ctx: SKRSContext2D, read: () => void) => {
+  ctx.fillStyle = '#ffee00'
+  ctx.fillRect(0, 0, 64, 64)
+  for (let i = 0; i < 4; i++) {
+    ctx.save()
+    ctx.translate(3, 2)
+    ctx.rotate(0.1)
+    ctx.beginPath()
+    ctx.rect(0, 0, 50 - i * 8, 44 - i * 8)
+    ctx.clip()
+    ctx.fillStyle = `hsl(${i * 80}, 80%, 50%)`
+    ctx.fillRect(-10, -10, 80, 80)
+    read()
+  }
+  for (let i = 0; i < 4; i++) {
+    ctx.restore()
+    ctx.strokeStyle = `rgba(0, 0, 0, ${0.3 + i * 0.1})`
+    ctx.lineWidth = 3
+    ctx.strokeRect(4 + i * 6, 4 + i * 6, 30, 30)
+    read()
+  }
+}
+
+test('SvgCanvas pixels follow save, clip and transform across reads', (t) => {
+  const pixels = (read: boolean) => {
+    const svg = createCanvas(64, 64, SvgExportFlag.NoPrettyXML)
+    const ctx = svg.getContext('2d')
+    nestedDrawing(ctx, () => read && ctx.getImageData(0, 0, 1, 1))
+    return ctx.getImageData(0, 0, 64, 64).data
+  }
+  const read = pixels(true)
+  const unread = pixels(false)
+  t.true(
+    read.every((value, i) => value === unread[i]),
+    'reads in the middle change the pixels',
+  )
+  // The yellow background and the hsl(240) fill.
+  t.deepEqual(Array.from(read.subarray(0, 4)), [255, 238, 0, 255])
+  t.true(
+    read.some((value, i) => i % 4 === 2 && value > 200 && read[i - 2] < 100),
+    'the hsl(240) fill is there',
+  )
+})
+
+// Runs `script` in a child node process with --expose-gc, from the package root.
+const runWithGc = (script: string) =>
+  new Promise<{
+    status: number | null
+    signal: NodeJS.Signals | null
+    stdout: string
+    stderr: string
+  }>((resolve, reject) => {
+    const child = spawn(process.execPath, ['--expose-gc', '-e', script], {
+      cwd: join(__dirname, '..'),
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    let stdout = ''
+    let stderr = ''
+    child.stdout.setEncoding('utf8').on('data', (chunk) => (stdout += chunk))
+    child.stderr.setEncoding('utf8').on('data', (chunk) => (stderr += chunk))
+    child.on('error', reject)
+    child.on('close', (status, signal) => resolve({ status, signal, stdout, stderr }))
+  })
+
+// The recording is drawn into the pixels once it pins 32 MiB, as a canvas
+// recording is (issue #1342), so an SvgCanvas that is never read cannot pin
+// every image drawn into it. Each 2048x2048 snapshot below is 16 MiB.
+test('SvgCanvas recording is bounded and keeps its state when it is drawn', async (t) => {
+  const { status, signal, stdout, stderr } = await runWithGc(`
+const { createCanvas, SvgExportFlag } = require('./index.js')
+const source = createCanvas(2048, 2048)
+const sourceContext = source.getContext('2d')
+const draw = (ctx, i) => {
+  sourceContext.fillStyle = 'rgb(' + i * 20 + ', 0, 255)'
+  sourceContext.fillRect(0, 0, 2048, 2048)
+  ctx.drawImage(source, 0, 0, 2048, 2048, i * 6, i * 3, 8, 8)
+}
+const svg = createCanvas(96, 64, SvgExportFlag.NoPrettyXML)
+const ctx = svg.getContext('2d')
+const expected = createCanvas(96, 64).getContext('2d')
+for (const c of [ctx, expected]) {
+  c.save()
+  c.translate(3, 1)
+  c.beginPath()
+  c.rect(0, 0, 60, 40)
+  c.clip()
+}
+global.gc()
+const before = process.memoryUsage().rss
+for (let i = 0; i < 12; i++) draw(ctx, i)
+global.gc()
+const growth = (process.memoryUsage().rss - before) / 1048576
+for (let i = 0; i < 12; i++) draw(expected, i)
+for (const c of [ctx, expected]) {
+  c.restore()
+  c.fillStyle = '#00ff00'
+  c.fillRect(60, 50, 30, 10)
+}
+const a = ctx.getImageData(0, 0, 96, 64).data
+const b = expected.getImageData(0, 0, 96, 64).data
+console.log(JSON.stringify({ growth, equal: a.every((v, i) => v === b[i]), clipped: b[(33 * 96 + 60) * 4 + 3] === 255 && b[(35 * 96 + 65) * 4 + 3] === 0 }))
+`)
+  t.is(status, 0, `expected exit 0, got status=${status} signal=${signal}\n${stderr}${stdout}`)
+  const { growth, equal, clipped } = JSON.parse(stdout.trim().split('\n').pop()!)
+  t.true(clipped, 'the clip cuts the later images')
+  t.true(equal, 'the SvgCanvas pixels equal a canvas running the same drawing')
+  // Unbounded, the 12 snapshots pin 192 MiB.
+  t.true(growth < 96, `12 drawImage calls grew rss by ${growth.toFixed(1)} MB, expected < 96 MB`)
+})
+
+// A pattern's paint pins its image in the recording too, so pattern fills,
+// strokes and text count their image against the same 32 MiB. Each pattern
+// below is a 16 MiB snapshot of a 2048x2048 canvas; the 24 fills pin 384 MiB
+// when only the op itself is counted.
+test('SvgCanvas recording counts the images of pattern paints', async (t) => {
+  const { status, signal, stdout, stderr } = await runWithGc(`
+const { createCanvas, DOMMatrix, SvgExportFlag } = require('./index.js')
+const source = createCanvas(2048, 2048)
+const sourceContext = source.getContext('2d')
+const draw = (ctx, i) => {
+  sourceContext.fillStyle = 'rgb(' + i * 9 + ', 0, 255)'
+  sourceContext.fillRect(0, 0, 2048, 2048)
+  const pattern = ctx.createPattern(source, 'repeat')
+  ctx.fillStyle = pattern
+  ctx.strokeStyle = pattern
+  const x = (i % 8) * 12
+  const y = Math.floor(i / 8) * 16
+  switch (i % 4) {
+    case 0:
+      ctx.fillRect(x, y, 10, 10)
+      break
+    case 1:
+      ctx.lineWidth = 3
+      ctx.beginPath()
+      ctx.moveTo(x, y + 2)
+      ctx.lineTo(x + 10, y + 8)
+      ctx.stroke()
+      break
+    case 2:
+      ctx.font = '16px sans-serif'
+      ctx.fillText('W', x, y + 14)
+      break
+    case 3:
+      pattern.setTransform(new DOMMatrix([2, 0, 0, 2, 1, 1]))
+      ctx.fillRect(x, y, 10, 10)
+      break
+  }
+  ctx.fillStyle = 'black'
+  ctx.strokeStyle = 'black'
+}
+const collect = async () => {
+  for (let k = 0; k < 3; k++) {
+    global.gc()
+    await new Promise((resolve) => setImmediate(resolve))
+  }
+}
+;(async () => {
+  const svg = createCanvas(96, 64, SvgExportFlag.NoPrettyXML)
+  const ctx = svg.getContext('2d')
+  for (let i = 0; i < 4; i++) draw(ctx, i)
+  await collect()
+  const before = process.memoryUsage().rss
+  for (let i = 4; i < 28; i++) {
+    draw(ctx, i)
+    await collect()
+  }
+  const growth = (process.memoryUsage().rss - before) / 1048576
+  const expected = createCanvas(96, 64).getContext('2d')
+  for (let i = 0; i < 28; i++) draw(expected, i)
+  const a = ctx.getImageData(0, 0, 96, 64).data
+  const b = expected.getImageData(0, 0, 96, 64).data
+  console.log(JSON.stringify({ growth, equal: a.every((v, i) => v === b[i]) }))
+})().catch((error) => {
+  console.error(error)
+  process.exit(1)
+})
+`)
+  t.is(status, 0, `expected exit 0, got status=${status} signal=${signal}\n${stderr}${stdout}`)
+  const { growth, equal } = JSON.parse(stdout.trim().split('\n').pop()!)
+  t.true(equal, 'the SvgCanvas pixels equal a canvas running the same drawing')
+  t.true(growth < 64, `24 pattern draws grew rss by ${growth.toFixed(1)} MB, expected < 64 MB`)
+})
+
+// SkSVGDevice drops the matrix of an image shader, so a pattern used to be
+// written as if setTransform() was never called. The patterned element is now
+// drawn under CTM x pattern matrix, with its geometry mapped back into the
+// pattern's space (SVG resolves a userSpaceOnUse pattern in the user space of
+// the element that uses it). Rendered in Chrome 155, the SVG of the scene below
+// moves from a mean max-channel difference of 63.9 to 7.5 against Chrome's own
+// canvas drawing of it; what is left is image smoothing and edge AA.
+const twoColorTile = () => {
+  const tile = createCanvas(4, 4)
+  const ctx = tile.getContext('2d')
+  ctx.fillStyle = '#ff0000'
+  ctx.fillRect(0, 0, 2, 4)
+  ctx.fillStyle = '#0000ff'
+  ctx.fillRect(2, 0, 2, 4)
+  return tile
+}
+
+const patternedSvg = (matrix: DOMMatrix | null, repetition = 'repeat', draw?: (ctx: SKRSContext2D) => void) => {
+  const svg = createCanvas(200, 100, SvgExportFlag.NoPrettyXML)
+  const ctx = svg.getContext('2d')
+  const pattern = ctx.createPattern(twoColorTile(), repetition as 'repeat')
+  if (matrix) {
+    pattern.setTransform(matrix)
+  }
+  ctx.fillStyle = pattern
+  ctx.strokeStyle = pattern
+  if (draw) {
+    draw(ctx)
+  } else {
+    ctx.fillRect(10, 10, 80, 60)
+    ctx.beginPath()
+    ctx.arc(150, 50, 40, 0, Math.PI * 2)
+    ctx.fill()
+  }
+  return { svg, ctx, content: svg.getContent().toString('utf8') }
+}
+
+const patternedElements = (content: string) => content.match(/<[a-z]+ fill="url\(#pattern_\d+\)"[^>]*>/g) ?? []
+
+const pathPoints = (element: string) =>
+  [...element.matchAll(/(-?[\d.]+(?:e-?\d+)?) (-?[\d.]+(?:e-?\d+)?)/g)].map(([, x, y]) => [Number(x), Number(y)])
+
+test('SVG output draws a pattern through its matrix', (t) => {
+  const matrix = new DOMMatrix().translate(7, 5).rotate(20).scale(3, 2)
+  const elements = patternedElements(patternedSvg(matrix).content)
+  t.is(elements.length, 2, elements.join('\n'))
+  for (const element of elements) {
+    t.true(element.startsWith('<path '), element)
+    t.true(element.includes('transform="matrix(2.81908 1.02606 -0.68404 1.87939 7 5)"'), element)
+  }
+  // The rect's corners, mapped back into the canvas space by the matrix.
+  const d = elements[0].slice(elements[0].indexOf(' d="'))
+  const corners = pathPoints(d).map(([x, y]) => matrix.transformPoint({ x, y }))
+  for (const [i, [x, y]] of [
+    [10, 10],
+    [90, 10],
+    [90, 70],
+    [10, 70],
+  ].entries()) {
+    t.true(Math.abs(corners[i].x - x) < 1e-3 && Math.abs(corners[i].y - y) < 1e-3, `${d}: corner ${i}`)
+  }
+})
+
+test('SVG output multiplies the pattern matrix with the transform and strokes before it', (t) => {
+  const { content } = patternedSvg(new DOMMatrix().scale(2, 2), 'repeat', (ctx) => {
+    ctx.scale(2, 1)
+    ctx.lineWidth = 4
+    ctx.strokeRect(10, 10, 30, 30)
+  })
+  const elements = patternedElements(content)
+  t.is(elements.length, 1, content)
+  // The stroke outline in the pattern space: [8, 42] and [12, 38] halved.
+  t.true(
+    elements[0].includes('transform="scale(4 2)" d="M4 4L21 4L21 21L4 21L4 4ZM6 6L6 19L19 19L19 6L6 6Z"'),
+    elements[0],
+  )
+})
+
+test('SVG output draws pattern-filled text as outlines in the pattern space', (t) => {
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts-dir', 'iosevka-curly-regular.woff2'), 'i-curly')
+  const { content } = patternedSvg(new DOMMatrix().scale(2, 2), 'repeat', (ctx) => {
+    ctx.font = '20px i-curly'
+    ctx.fillText('Hi', 50, 40)
+  })
+  const elements = patternedElements(content)
+  t.is(elements.length, 1, content)
+  t.true(elements[0].startsWith('<path fill="url(#pattern_0)" transform="scale(2 2)" d="M'), elements[0])
+  t.false(content.includes('<text'), content)
+})
+
+// HTML spec: a pattern whose matrix cannot be inverted paints transparent
+// black, as Chrome 155's canvas does.
+test('SVG output paints nothing for a pattern with a singular matrix', (t) => {
+  const { ctx, content } = patternedSvg(new DOMMatrix([0, 0, 0, 0, 0, 0]))
+  t.deepEqual(patternedElements(content), [], content)
+  t.false(content.includes('<pattern'), content)
+  t.deepEqual([...new Set(ctx.getImageData(0, 0, 200, 100).data)], [0])
+})
+
+// SkSVGDevice writes a "100%" tile for a no-repeat axis; under the pattern
+// matrix the element is clipped to the image instead, and a shape that misses
+// the image writes nothing.
+test('SVG output clips a no-repeat pattern with a matrix to its image', (t) => {
+  const { content } = patternedSvg(new DOMMatrix().translate(7, 5).rotate(20).scale(3, 2), 'no-repeat')
+  const elements = patternedElements(content)
+  t.is(elements.length, 1, content)
+  t.regex(
+    content,
+    /<clipPath id="cl_[0-9a-f]+"><path d="M11\.256\d* 6\.549\d*L18\.276\d* 9\.104\d*L15\.540\d* 16\.621\d*L8\.519\d* 14\.066\d*L11\.256\d* 6\.549\d*Z"\/><\/clipPath>/,
+  )
+})
+
+// A pattern with no matrix keeps the output SkSVGDevice writes for it.
+test('SVG output of a pattern without a matrix is unchanged', (t) => {
+  for (const matrix of [null, new DOMMatrix()]) {
+    const { content } = patternedSvg(matrix)
+    t.false(content.includes('transform='), content)
+    t.true(content.includes('<svg fill="url(#pattern_0)" x="10" y="10" width="80" height="60">'), content)
+    t.true(content.includes('<path fill="url(#pattern_2)" d="M190 50'), content)
+  }
+})
