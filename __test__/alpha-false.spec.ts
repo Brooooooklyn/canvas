@@ -727,6 +727,37 @@ test('an alpha:false canvas is opaque as a source and when encoded', async (t) =
   t.is((await a.canvas.encode('png'))[25], 6, 'encode PNG color type')
 })
 
+// Blink's JPEG encoder blends the kUnpremul readback on black
+// (image_encoder.cc:51 kBlendOnBlack), so stored alpha below 255 darkens the
+// colour: 200,100,50 at alpha 128 encodes as about 100,50,25. alpha:true
+// stores it premultiplied and gives the same; PNG keeps the alpha.
+test('alpha:false JPEG blends the stored alpha on black, like Chrome', async (t) => {
+  const near = (actual: number[], expected: number[], label: string) =>
+    t.true(
+      actual.every((v, i) => Math.abs(v - expected[i]) <= 2),
+      `${label}: ${JSON.stringify(actual)}`,
+    )
+  const decode = async (data: Buffer | string) => {
+    const d = transparent(8, 8)
+    d.ctx.drawImage(await loadImage(data), 0, 0)
+    return px(d.ctx, 4, 4)
+  }
+  for (const alpha of [false, true]) {
+    const { canvas, ctx } = alpha ? transparent(8, 8) : opaque(8, 8)
+    const bytes = new Uint8ClampedArray(8 * 8 * 4)
+    for (let i = 0; i < bytes.length; i += 4) bytes.set([200, 100, 50, 128], i)
+    ctx.putImageData(new ImageData(bytes, 8, 8), 0, 0)
+    const label = `alpha:${alpha}`
+    near(await decode(canvas.toDataURL('image/jpeg', 1)), [100, 50, 25, 255], `${label} toDataURL`)
+    near(await decode(canvas.toBuffer('image/jpeg', 100)), [100, 50, 25, 255], `${label} toBuffer`)
+    near(await decode(await canvas.encode('jpeg', 100)), [100, 50, 25, 255], `${label} encode`)
+    const chunks: Buffer[] = []
+    for await (const chunk of canvas.encodeStream('jpeg', 100)) chunks.push(chunk)
+    near(await decode(Buffer.concat(chunks)), [100, 50, 25, 255], `${label} encodeStream`)
+    t.deepEqual(await decode(canvas.toBuffer('image/png')), [199, 100, 50, 128], `${label} PNG`)
+  }
+})
+
 // No Chrome counterpart (canvas.ctx is internal); the spec says context
 // creation gives a new opaque black bitmap.
 test('state set through canvas.ctx before getContext does not reach the alpha:false base', (t) => {

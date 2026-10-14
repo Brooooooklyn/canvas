@@ -219,6 +219,13 @@ static sk_sp<SkImage> encodable_image(SkImage* image) {
       nullptr, nullptr);
 }
 
+// Blink's JPEG encoder blends its kUnpremul readback on black
+// (image_encoder.cc:51). Skia applies it to kUnpremul input only
+// (SkJpegEncoderImpl.cpp), which here is the view of an alpha:false canvas
+// (encodable_image); premultiplied pixels encode as before.
+static constexpr auto kJpegAlphaOption =
+    SkJpegEncoder::AlphaOption::kBlendOnBlack;
+
 bool skiac_surface_save(skiac_surface* c_surface, const char* path) {
   auto snapshot = SURFACE_CAST->makeImageSnapshot();
   auto image = encodable_image(snapshot.get());
@@ -370,6 +377,7 @@ void skiac_surface_encode_data(skiac_surface* c_surface,
   if (format == int(SkEncodedImageFormat::kJPEG)) {
     SkJpegEncoder::Options options;
     options.fQuality = quality;
+    options.fAlphaOption = kJpegAlphaOption;
     encoded_data = SkJpegEncoder::Encode(nullptr, image, options);
   } else if (format == int(SkEncodedImageFormat::kPNG)) {
     encoded_data =
@@ -408,6 +416,7 @@ bool skiac_surface_encode_stream(skiac_surface* c_surface,
   if (format == int(SkEncodedImageFormat::kJPEG)) {
     SkJpegEncoder::Options options;
     options.fQuality = quality;
+    options.fAlphaOption = kJpegAlphaOption;
     encoder = SkJpegEncoder::Make(&stream, sk_pixmap, options);
   } else if (format == int(SkEncodedImageFormat::kPNG)) {
     encoder = SkPngEncoder::Make(&stream, sk_pixmap, SkPngEncoder::Options());
@@ -2131,6 +2140,7 @@ void skiac_image_encode_data(skiac_image* c_image,
   if (format == int(SkEncodedImageFormat::kJPEG)) {
     SkJpegEncoder::Options options;
     options.fQuality = quality;
+    options.fAlphaOption = kJpegAlphaOption;
     encoded_data = SkJpegEncoder::Encode(nullptr, image, options);
   } else if (format == int(SkEncodedImageFormat::kPNG)) {
     encoded_data =
