@@ -20,6 +20,162 @@ test.beforeEach((t) => {
   t.context.ctx = canvas.getContext('2d')!
 })
 
+test('pattern snapshots preserve integer texels after canvas mutation', (t) => {
+  const source = createCanvas(2, 2)
+  const src = source.getContext('2d')
+  const colors = ['#ff0000', '#00ff00', '#0000ff', '#ffffff']
+  for (let i = 0; i < colors.length; i++) {
+    src.fillStyle = colors[i]
+    src.fillRect(i % 2, Math.floor(i / 2), 1, 1)
+  }
+  const expected = [...src.getImageData(0, 0, 2, 2).data]
+  const ctx = createCanvas(2, 2).getContext('2d')
+  ctx.fillStyle = ctx.createPattern(source, 'repeat')!
+  source.width = 1
+  ctx.fillRect(0, 0, 2, 2)
+  t.deepEqual([...ctx.getImageData(0, 0, 2, 2).data], expected)
+})
+
+test('pattern sampling follows smoothing changes after assignment', (t) => {
+  const source = createCanvas(2, 1)
+  const src = source.getContext('2d')
+  src.fillStyle = '#ff0000'
+  src.fillRect(0, 0, 1, 1)
+  src.fillStyle = '#00ff00'
+  src.fillRect(1, 0, 1, 1)
+  const ctx = createCanvas(4, 1).getContext('2d')
+  const pattern = ctx.createPattern(source, 'repeat')!
+  pattern.setTransform(new DOMMatrix([2, 0, 0, 1, 0, 0]))
+  ctx.fillStyle = pattern
+  ctx.imageSmoothingEnabled = false
+  ctx.fillRect(0, 0, 4, 1)
+  const expected = [255, 0, 0, 255, 255, 0, 0, 255, 0, 255, 0, 255, 0, 255, 0, 255]
+  t.deepEqual([...ctx.getImageData(0, 0, 4, 1).data], expected)
+  ctx.imageSmoothingEnabled = true
+  ctx.imageSmoothingQuality = 'low'
+  ctx.fillRect(0, 0, 4, 1)
+  // Chrome 155's CPU canvas
+  t.deepEqual(
+    [...ctx.getImageData(0, 0, 4, 1).data],
+    [191, 64, 0, 255, 191, 64, 0, 255, 64, 191, 0, 255, 64, 191, 0, 255],
+  )
+  ctx.imageSmoothingEnabled = false
+  ctx.fillRect(0, 0, 4, 1)
+  t.deepEqual([...ctx.getImageData(0, 0, 4, 1).data], expected)
+})
+
+// Expected values are Chrome 155's CPU canvas: filtering premultiplied texels
+// keeps the red at full strength next to a transparent texel.
+test('canvas pattern filters premultiplied texels', (t) => {
+  const source = createCanvas(2, 1)
+  const src = source.getContext('2d')
+  src.fillStyle = '#ff0000'
+  src.fillRect(0, 0, 1, 1)
+  const ctx = createCanvas(8, 1).getContext('2d')
+  const pattern = ctx.createPattern(source, 'repeat')!
+  pattern.setTransform(new DOMMatrix([4, 0, 0, 1, 0, 0]))
+  ctx.fillStyle = pattern
+  ctx.fillRect(0, 0, 8, 1)
+  t.deepEqual(
+    [...ctx.getImageData(0, 0, 8, 1).data],
+    [
+      255, 0, 0, 159, 255, 0, 0, 223, 255, 0, 0, 223, 255, 0, 0, 159, 255, 0, 0, 96, 255, 0, 0, 32, 255, 0, 0, 32, 255,
+      0, 0, 96,
+    ],
+  )
+})
+
+// Chrome samples patterns linearly at every smoothing quality (never cubic), so
+// an untransformed pattern copies its texels unchanged.
+test('identity pattern keeps texels at every smoothing quality', (t) => {
+  const source = createCanvas(2, 1)
+  const src = source.getContext('2d')
+  src.fillStyle = '#ff00ff'
+  src.fillRect(0, 0, 1, 1)
+  for (const quality of ['low', 'medium', 'high'] as const) {
+    const ctx = createCanvas(2, 1).getContext('2d')
+    ctx.imageSmoothingQuality = quality
+    ctx.fillStyle = ctx.createPattern(source, 'repeat')!
+    ctx.fillRect(0, 0, 2, 1)
+    t.deepEqual([...ctx.getImageData(0, 0, 2, 1).data], [255, 0, 255, 255, 0, 0, 0, 0], quality)
+  }
+})
+
+const stripeCanvas = (size: number) => {
+  const canvas = createCanvas(size, size)
+  const ctx = canvas.getContext('2d')
+  const colors = ['#ff0000', '#00ff00', '#0000ff', '#ffffff']
+  for (let x = 0; x < size; x++) {
+    ctx.fillStyle = colors[x % 4]
+    ctx.fillRect(x, 0, 1, size)
+  }
+  return canvas
+}
+
+const scaledPatternRow = (
+  source: Parameters<SKRSContext2D['createPattern']>[0],
+  scale: number,
+  quality: SKRSContext2D['imageSmoothingQuality'],
+) => {
+  const ctx = createCanvas(4, 1).getContext('2d')
+  ctx.imageSmoothingQuality = quality
+  const pattern = ctx.createPattern(source, 'repeat')!
+  pattern.setTransform(new DOMMatrix([scale, 0, 0, scale, 0, 0]))
+  ctx.fillStyle = pattern
+  ctx.fillRect(0, 0, 4, 1)
+  return [...ctx.getImageData(0, 0, 4, 1).data]
+}
+
+// Expected values are Chrome 155's CPU canvas: a scaled-down canvas pattern
+// blends two mip levels at 'medium' and 'high'.
+test('downscaled canvas pattern blends two mip levels', (t) => {
+  const source = stripeCanvas(4)
+  for (const quality of ['medium', 'high'] as const) {
+    t.deepEqual(
+      scaledPatternRow(source, 0.4, quality),
+      [116, 138, 26, 255, 150, 138, 165, 255, 104, 116, 165, 255, 138, 116, 26, 255],
+      quality,
+    )
+  }
+})
+
+// Expected values are Chrome 155's CPU canvas: a scaled-down Image pattern
+// samples a single mip level at 'medium' and 'high'.
+test('downscaled image pattern samples one mip level', async (t) => {
+  const source = await loadImage(stripeCanvas(8).toBuffer('image/png'))
+  for (const quality of ['medium', 'high'] as const) {
+    t.deepEqual(
+      scaledPatternRow(source, 0.2, quality),
+      [127, 127, 127, 255, 127, 127, 127, 255, 127, 127, 127, 255, 127, 127, 127, 255],
+      quality,
+    )
+  }
+})
+
+// Chrome 155 paints nothing with a canvas or image pattern whose matrix cannot
+// be inverted.
+test('pattern with a singular transform paints nothing', async (t) => {
+  const source = createCanvas(4, 4)
+  const src = source.getContext('2d')
+  src.fillStyle = '#ff0000'
+  src.fillRect(0, 0, 4, 4)
+  const sources = {
+    canvas: source,
+    image: await loadImage(source.toBuffer('image/png')),
+    imageData: src.getImageData(0, 0, 4, 4),
+  }
+  for (const [name, input] of Object.entries(sources)) {
+    const ctx = createCanvas(4, 4).getContext('2d')
+    ctx.fillStyle = '#0000ff'
+    ctx.fillRect(0, 0, 4, 4)
+    const pattern = ctx.createPattern(input, 'repeat')!
+    pattern.setTransform(new DOMMatrix([0, 0, 0, 0, 0, 0]))
+    ctx.fillStyle = pattern
+    ctx.fillRect(0, 0, 4, 4)
+    t.deepEqual([...ctx.getImageData(1, 1, 1, 1).data], [0, 0, 255, 255], name)
+  }
+})
+
 test('should be able to create Path2D', (t) => {
   t.notThrows(() => new Path2D())
   t.notThrows(
@@ -118,11 +274,11 @@ test('globalAlpha preserves half opacity across native paint sources', async (t)
   }
 })
 
-// Image and pattern paints take globalAlpha rounded to k/255. 'high' drawImage
-// and every pattern sample with a cubic filter, which Skia runs in float, and an
-// unrounded 0.5 / 0.3 / 0.7 drifts to 127 / 76 / 178. Expected values are Chrome
-// 155's CPU canvas; where only the alpha is compared, Chrome's 8-bit path gives
-// a different RGB.
+// Image and pattern paints take globalAlpha rounded to k/255. Unrounded, 'high'
+// drawImage and a pattern (smoothing on or off) drift to 76 / 178 for 0.3 /
+// 0.7, and a scaled 'high' drawImage can turn 0.5 into 127. Expected values are
+// Chrome 155's CPU canvas; where only the alpha is compared, Chrome's 8-bit path
+// gives a different RGB.
 const alphaSet = (ctx: SKRSContext2D, x: number, y: number, w: number, h: number) => [
   ...new Set(ctx.getImageData(x, y, w, h).data.filter((_, i) => i % 4 === 3)),
 ]

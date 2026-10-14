@@ -94,6 +94,30 @@ static SkSamplingOptions SamplingOptionsFromFQ(int fq) {
   return SkSamplingOptions(SkFilterMode::kNearest, SkMipmapMode::kNone);
 }
 
+// Chrome samples a pattern through cc PaintShader::GetSkShader, which maps the
+// quality with ScalingOperation::kUnknown (cc/paint/paint_shader.cc and
+// PaintFlags::FilterQualityToSkSamplingOptions in cc/paint/paint_flags.cc):
+// 'medium' and 'high' are both linear with linear mipmaps, never cubic. For an
+// Image source, Chrome's decode cache first scales the image down to one mip
+// level (cc/tiles/software_image_decode_cache_utils.cc) and then samples it
+// linearly (cc/tiles/software_image_decode_cache.cc), which nearest mipmaps
+// model. Chrome picks that level from the target size rounded to whole pixels
+// (cc/tiles/mipmap_util.cc), so for a tiny source it can pick a coarser level.
+static SkSamplingOptions PatternSamplingOptions(int fq, bool is_canvas) {
+  switch (fq) {
+    case 3:
+    case 2:
+      return SkSamplingOptions(
+          SkFilterMode::kLinear,
+          is_canvas ? SkMipmapMode::kLinear : SkMipmapMode::kNearest);
+    case 1:
+      return SkSamplingOptions(SkFilterMode::kLinear, SkMipmapMode::kNone);
+    case 0:
+      break;
+  }
+  return SkSamplingOptions(SkFilterMode::kNearest, SkMipmapMode::kNone);
+}
+
 static SkMatrix conv_from_transform(const skiac_transform& c_ts) {
   return SkMatrix::MakeAll(c_ts.a, c_ts.c, c_ts.e, c_ts.b, c_ts.d, c_ts.f, 0, 0,
                            1);
@@ -205,8 +229,10 @@ skiac_surface* skiac_surface_copy_rgba(skiac_surface* c_surface,
                                        uint32_t height,
                                        uint8_t cs) {
   // x, y, width, height are source rectangle coordinates.
+  // Premultiplied like the source canvas: pattern shaders filter the stored
+  // texels, and unpremul texels would pull transparent black into the color.
   auto copy =
-      skiac_surface_create((int)width, (int)height, kUnpremul_SkAlphaType, cs);
+      skiac_surface_create((int)width, (int)height, kPremul_SkAlphaType, cs);
   if (!copy) {
     return nullptr;
   }
@@ -214,8 +240,8 @@ skiac_surface* skiac_surface_copy_rgba(skiac_surface* c_surface,
   SkPaint paint;
   paint.setAlpha(SK_AlphaOPAQUE);
 
-  const auto sampling = SkSamplingOptions(SkCubicResampler::Mitchell());
-  // The original surface draws itself to the copy's canvas.
+  const auto sampling = SkSamplingOptions(SkFilterMode::kNearest);
+  // integer-coordinate snapshots copy texels without filtering their neighbors
   SURFACE_CAST->draw(copy->getCanvas(), -(SkScalar)x, -(SkScalar)y, sampling,
                      &paint);
 
@@ -2261,36 +2287,31 @@ size_t skiac_bitmap_get_height(skiac_bitmap* c_bitmap) {
   return bitmap->height();
 }
 
-skiac_shader* skiac_bitmap_get_shader(
-    bool is_canvas,
-    skiac_bitmap* c_bitmap,
-    int repeat_x,
-    int repeat_y,
-    float B,
-    float C,  // See SkSamplingOptions.h for docs.
-    skiac_transform c_ts) {
+void skiac_bitmap_set_immutable(skiac_bitmap* c_bitmap) {
+  BITMAP_CAST->setImmutable();
+}
+
+skiac_image* skiac_bitmap_make_image(skiac_bitmap* c_bitmap) {
+  // An immutable bitmap (decoded by SkCodec: PNG, JPEG, WebP, GIF, ...) shares
+  // its pixels with the image. A mutable one (SVG, AVIF) is copied here once,
+  // so the shaders a pattern rebuilds never copy it again. Null when the bitmap
+  // has no pixels.
+  return reinterpret_cast<skiac_image*>(
+      SkImages::RasterFromBitmap(*BITMAP_CAST).release());
+}
+
+skiac_shader* skiac_image_make_pattern_shader(skiac_image* c_image,
+                                              bool is_canvas,
+                                              int repeat_x,
+                                              int repeat_y,
+                                              int filter_quality,
+                                              skiac_transform c_ts) {
   const auto ts = conv_from_transform(c_ts);
-  SkBitmap bm;
-  SkBitmap* bitmap;
-  if (is_canvas) {
-    auto surface = reinterpret_cast<SkSurface*>(c_bitmap);
-    bm.allocPixels(surface->imageInfo());
-    if (surface->readPixels(bm, 0, 0)) {
-      bitmap = &bm;
-    } else {
-      return nullptr;
-    }
-  } else {
-    bitmap = reinterpret_cast<SkBitmap*>(c_bitmap);
-  }
-  auto shader = bitmap
-                    ->makeShader((SkTileMode)repeat_x, (SkTileMode)repeat_y,
-                                 SkSamplingOptions({B, C}), &ts)
-                    .release();
-  if (shader) {
-    return reinterpret_cast<skiac_shader*>(shader);
-  }
-  return nullptr;
+  // A null image gives an empty shader, which paints nothing.
+  auto shader = SkShaders::Image(
+      sk_ref_sp(IMAGE_CAST), (SkTileMode)repeat_x, (SkTileMode)repeat_y,
+      PatternSamplingOptions(filter_quality, is_canvas), &ts);
+  return reinterpret_cast<skiac_shader*>(shader.release());
 }
 
 void skiac_bitmap_destroy(skiac_bitmap* c_bitmap) {

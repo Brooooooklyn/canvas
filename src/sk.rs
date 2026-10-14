@@ -1075,13 +1075,16 @@ pub mod ffi {
 
     pub fn skiac_bitmap_get_height(c_bitmap: *mut skiac_bitmap) -> usize;
 
-    pub fn skiac_bitmap_get_shader(
+    pub fn skiac_bitmap_set_immutable(c_bitmap: *mut skiac_bitmap);
+
+    pub fn skiac_bitmap_make_image(c_bitmap: *mut skiac_bitmap) -> *mut skiac_image;
+
+    pub fn skiac_image_make_pattern_shader(
+      c_image: *mut skiac_image,
       is_canvas: bool,
-      c_bitmap: *mut skiac_bitmap,
       repeat_x: i32,
       repeat_y: i32,
-      b: f32,
-      c: f32,
+      quality: i32,
       ts: skiac_transform,
     ) -> *mut skiac_shader;
 
@@ -2436,12 +2439,6 @@ impl Surface {
     };
     unsafe { ffi::skiac_surface_get_bitmap(self.ptr, &mut bitmap_info) };
     Bitmap(bitmap_info)
-  }
-
-  // Get the surface pointer as a bitmap pointer for patterns
-  // This avoids creating Bitmap wrapper objects that can accumulate
-  pub(crate) fn get_bitmap_ptr(&self) -> *mut ffi::skiac_bitmap {
-    self.ptr as *mut ffi::skiac_bitmap
   }
 
   /// Create an immutable image snapshot of the surface for caching
@@ -3814,23 +3811,21 @@ impl Shader {
     }
   }
 
-  pub fn from_bitmap(
+  pub fn from_pattern_image(
+    image: &SkImage,
     is_canvas: bool,
-    bitmap: *mut ffi::skiac_bitmap,
     repeat_x: TileMode,
     repeat_y: TileMode,
-    b: f32,
-    c: f32,
+    quality: FilterQuality,
     ts: Transform,
   ) -> Option<Shader> {
     unsafe {
-      let shader_ptr = ffi::skiac_bitmap_get_shader(
+      let shader_ptr = ffi::skiac_image_make_pattern_shader(
+        image.0,
         is_canvas,
-        bitmap,
         repeat_x as i32,
         repeat_y as i32,
-        b,
-        c,
+        quality as i32,
         ts.into(),
       );
       Shader::from_ptr(shader_ptr)
@@ -4451,6 +4446,20 @@ impl Bitmap {
       is_canvas: false,
     }))
   }
+
+  /// Marks the pixels read-only, so an image made from them shares them. Only
+  /// for a bitmap that nothing writes to again.
+  pub(crate) fn set_immutable(&self) {
+    unsafe { ffi::skiac_bitmap_set_immutable(self.0.bitmap) }
+  }
+
+  /// One immutable image of these pixels, made at a pattern's first paint. It
+  /// shares the pixels of an immutable (decoded) bitmap and copies a mutable
+  /// one. It holds null when the bitmap has no pixels, and then the pattern
+  /// paints nothing.
+  pub(crate) fn make_image(&self) -> SkImage {
+    SkImage(unsafe { ffi::skiac_bitmap_make_image(self.0.bitmap) })
+  }
 }
 
 impl Drop for Bitmap {
@@ -4531,15 +4540,19 @@ pub enum ImagePatternBacking {
 #[derive(Debug)]
 pub(crate) struct ImagePatternShared {
   pub(crate) transform: Transform,
-  // Cache the shader to avoid creating new ones on every use; cleared when
-  // the transform changes so the next `get_shader` rebuilds it.
-  pub(crate) shader: Option<Shader>,
+  // The pattern's one image, made from `backing` at the first paint and kept
+  // for the pattern's life, so an SVG or AVIF pattern that is never painted
+  // makes no copy.
+  pub(crate) image: Option<SkImage>,
+  // Cache the shader for the last sampling quality; rebuilt when the transform
+  // or the quality changes. Every shader samples `image`, so a rebuild copies
+  // no pixels.
+  pub(crate) shader: Option<(FilterQuality, Shader)>,
 }
 
-// Same confinement as `AccountedBitmap` and `ImagePattern` itself (which holds
-// a raw bitmap pointer): every owner lives on the JS main thread, so the
-// `Mutex` never guards real cross-thread access. `Send` makes the `Mutex`
-// both `Send` and `Sync`.
+// Same confinement as `AccountedBitmap`: every owner lives on the JS main
+// thread, so the `Mutex` never guards real cross-thread access. `Send` makes
+// the `Mutex` both `Send` and `Sync`.
 unsafe impl Send for ImagePatternShared {}
 
 #[derive(Debug)]
@@ -4548,18 +4561,16 @@ pub struct ImagePattern {
   /// Not the pattern's own id: patterns built from an Image clone the same
   /// Arc<AccountedBitmap> and share its resource_id, so N wrappers over one
   /// bitmap charge once; per-pattern copies (ImageData, cloned surfaces) get
-  /// a fresh id. The `bitmap` pointer is recyclable after the backing is
-  /// freed and must never serve as a key.
+  /// a fresh id. The image pointer is recyclable after the image is freed
+  /// and must never serve as a key.
   pub(crate) accounting_id: u64,
-  pub(crate) bitmap: *mut ffi::skiac_bitmap,
   pub(crate) repeat_x: TileMode,
   pub(crate) repeat_y: TileMode,
   pub(crate) is_canvas: bool,
-  /// Bytes the whole backing raster occupies. Stored at construction because
-  /// `bitmap` points at an `SkSurface` (not a `skiac_bitmap`) when `is_canvas`
-  /// is set, so `skiac_bitmap_get_width/height` would read garbage dims on it.
+  /// Bytes the whole backing raster occupies.
   pub(crate) backing_bytes: usize,
-  /// Keeps the object `bitmap` points into alive across clones.
+  /// Keeps the source object and its V8 memory accounting alive across clones.
+  /// The pattern's image is made from it at the first paint.
   pub(crate) backing: Option<ImagePatternBacking>,
   pub(crate) shared: Arc<Mutex<ImagePatternShared>>,
 }
@@ -4569,7 +4580,6 @@ impl Clone for ImagePattern {
     Self {
       // Clones share the backing raster, so they share the charge identity.
       accounting_id: self.accounting_id,
-      bitmap: self.bitmap,
       repeat_x: self.repeat_x,
       repeat_y: self.repeat_y,
       is_canvas: self.is_canvas,
@@ -4587,21 +4597,40 @@ impl ImagePattern {
     self.backing_bytes
   }
 
-  pub(crate) fn get_shader(&self) -> Option<Shader> {
-    // Use cached shader if available, otherwise create and cache it
-    let mut shared = self.shared.lock().unwrap();
-    if shared.shader.is_none() {
-      shared.shader = Shader::from_bitmap(
+  pub(crate) fn get_shader(&self, quality: FilterQuality) -> Option<Shader> {
+    let mut guard = self.shared.lock().unwrap();
+    let shared = &mut *guard;
+    if shared
+      .shader
+      .as_ref()
+      .is_none_or(|(cached, _)| *cached != quality)
+    {
+      let image = shared.image.get_or_insert_with(|| self.make_image());
+      shared.shader = Shader::from_pattern_image(
+        image,
         self.is_canvas,
-        self.bitmap,
         self.repeat_x,
         self.repeat_y,
-        1.0 / 3.0,
-        1.0 / 3.0,
+        quality,
         shared.transform,
-      );
+      )
+      .map(|shader| (quality, shader));
     }
-    shared.shader.clone()
+    shared.shader.as_ref().map(|(_, shader)| shader.clone())
+  }
+
+  /// The image every shader of this pattern samples. A null one (no pixels,
+  /// or a failed snapshot) gives the empty shader, which paints nothing.
+  fn make_image(&self) -> SkImage {
+    match &self.backing {
+      Some(ImagePatternBacking::Bitmap(bitmap)) => bitmap.inner.make_image(),
+      // The cloned surface is never drawn to again, so its snapshot shares the
+      // pixels and never copies them.
+      Some(ImagePatternBacking::Surface(surface)) => surface
+        .make_image_snapshot()
+        .unwrap_or(SkImage(ptr::null_mut())),
+      None => SkImage(ptr::null_mut()),
+    }
   }
 }
 

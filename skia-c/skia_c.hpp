@@ -1243,14 +1243,14 @@ skiac_bitmap* skiac_bitmap_make_from_image_data(uint8_t* ptr,
                                                 int at);
 size_t skiac_bitmap_get_width(skiac_bitmap* c_bitmap);
 size_t skiac_bitmap_get_height(skiac_bitmap* c_bitmap);
-skiac_shader* skiac_bitmap_get_shader(
-    bool is_canvas,
-    skiac_bitmap* c_bitmap,
-    int repeat_x,
-    int repeat_y,
-    float B,
-    float C,  // See SkSamplingOptions.h for docs.
-    skiac_transform c_ts);
+void skiac_bitmap_set_immutable(skiac_bitmap* c_bitmap);
+skiac_image* skiac_bitmap_make_image(skiac_bitmap* c_bitmap);
+skiac_shader* skiac_image_make_pattern_shader(skiac_image* c_image,
+                                              bool is_canvas,
+                                              int repeat_x,
+                                              int repeat_y,
+                                              int filter_quality,
+                                              skiac_transform c_ts);
 void skiac_bitmap_destroy(skiac_bitmap* c_bitmap);
 
 // SkString
