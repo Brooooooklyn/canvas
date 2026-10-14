@@ -885,7 +885,7 @@ pub mod ffi {
     pub fn skiac_shader_make_conic_gradient(
       cx: f32,
       cy: f32,
-      radius: f32,
+      rotation: f32,
       colors: *const super::Color4f,
       positions: *const f32,
       count: i32,
@@ -3735,7 +3735,8 @@ pub struct RadialGradient {
 #[derive(Debug, Clone)]
 pub struct ConicGradient {
   pub center: (f32, f32),
-  pub radius: f32,
+  /// Degrees, Blink's `rotation_`: `Rad2deg(startAngle) + 90`.
+  pub rotation: f32,
   pub base: Gradient,
 }
 
@@ -3806,7 +3807,7 @@ impl Shader {
       Self::from_ptr(ffi::skiac_shader_make_conic_gradient(
         grad.center.0,
         grad.center.1,
-        grad.radius,
+        grad.rotation,
         grad.base.colors.as_ptr(),
         grad.base.positions.as_ptr(),
         grad.base.colors.len() as i32,

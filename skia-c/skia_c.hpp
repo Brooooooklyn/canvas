@@ -1108,7 +1108,7 @@ skiac_shader* skiac_shader_make_radial_gradient(skiac_point start_point,
                                                 skiac_transform c_ts);
 skiac_shader* skiac_shader_make_conic_gradient(float cx,
                                                float cy,
-                                               float radius,
+                                               float rotation,
                                                const float* colors,
                                                const float* positions,
                                                int count,

@@ -1715,7 +1715,7 @@ skiac_shader* skiac_shader_make_radial_gradient(skiac_point c_start_point,
 
 skiac_shader* skiac_shader_make_conic_gradient(SkScalar cx,
                                                SkScalar cy,
-                                               SkScalar radius,
+                                               SkScalar rotation,
                                                const float* colors,
                                                const float* positions,
                                                int count,
@@ -1723,8 +1723,13 @@ skiac_shader* skiac_shader_make_conic_gradient(SkScalar cx,
                                                uint32_t flags,
                                                skiac_transform c_ts) {
   auto ts = conv_from_transform(c_ts);
-  // Skia's sweep gradient angles are relative to the x-axis, not the y-axis.
-  ts.preRotate(radius - 90.0, cx, cy);
+  // Blink ConicGradient::CreateShader (gradient.cc:509-522): Skia's sweep
+  // gradient angles are relative to the x-axis, not the y-axis, and the sweep
+  // always runs from 0 to 360 degrees.
+  const float skia_rotation = rotation - 90;
+  if (skia_rotation) {
+    ts.preRotate(skia_rotation, cx, cy);
+  }
   // `count` unpremultiplied sRGB colors, 4 floats each (sk::Color4f).
   const auto colors4f = reinterpret_cast<const SkColor4f*>(colors);
   SkSpan<const float> posSpan =
@@ -1733,7 +1738,7 @@ skiac_shader* skiac_shader_make_conic_gradient(SkScalar cx,
                                 posSpan, (SkTileMode)tile_mode);
   SkGradient grad(gradColors, SkGradient::Interpolation::FromFlags(flags));
   auto shader =
-      SkShaders::SweepGradient({cx, cy}, radius, 360.0f, grad, &ts).release();
+      SkShaders::SweepGradient({cx, cy}, 0.0f, 360.0f, grad, &ts).release();
 
   if (shader) {
     return reinterpret_cast<skiac_shader*>(shader);

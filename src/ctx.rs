@@ -1481,7 +1481,7 @@ impl Context {
       paint.set_alpha_f32(c.a * alpha);
       return Ok(());
     }
-    let shader = gradient.get_shader(self.state.transform.get_transform())?;
+    let shader = gradient.get_shader()?;
     paint.set_color(0, 0, 0, 255);
     paint.set_alpha_f32(alpha);
     paint.set_shader(&shader);
@@ -3246,11 +3246,11 @@ impl CanvasRenderingContext2D {
   pub fn create_conic_gradient<'scope>(
     &'scope mut self,
     env: &'scope Env,
-    r: f64,
+    start_angle: f64,
     x: f64,
     y: f64,
   ) -> Result<ClassInstance<'scope, CanvasGradient>> {
-    let conic_gradient = Gradient::create_conic_gradient(x as f32, y as f32, r as f32);
+    let conic_gradient = Gradient::create_conic_gradient(x as f32, y as f32, start_angle as f32);
     CanvasGradient(conic_gradient).into_instance(env)
   }
 

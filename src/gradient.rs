@@ -51,10 +51,12 @@ impl Gradient {
     Self::Radial(radial_gradient)
   }
 
-  pub fn create_conic_gradient(x: f32, y: f32, r: f32) -> Self {
+  /// `start_angle` is in radians. Blink stores `Rad2deg(startAngle) + 90`
+  /// (canvas_2d_recorder_context.cc:2424-2426), so angle 0 points along +x.
+  pub fn create_conic_gradient(x: f32, y: f32, start_angle: f32) -> Self {
     Self::Conic(ConicGradient {
       center: (x, y),
-      radius: r,
+      rotation: start_angle * (180.0 / std::f32::consts::PI) + 90.0,
       base: SkGradient {
         colors: Vec::new(),
         positions: Vec::new(),
@@ -164,7 +166,7 @@ impl Gradient {
     }
   }
 
-  pub(crate) fn get_shader(&self, current_transform: Transform) -> result::Result<Shader, SkError> {
+  pub(crate) fn get_shader(&self) -> result::Result<Shader, SkError> {
     match self {
       Self::Linear(linear_gradient) => Ok(
         Shader::new_linear_gradient(&LinearGradient {
@@ -195,15 +197,11 @@ impl Gradient {
         )
       }
       Self::Conic(conic_gradient) => {
-        let (x, y) = conic_gradient.center;
-        let r = conic_gradient.radius;
-        let sx = current_transform.c;
-        let sy = current_transform.b;
-        let scale_factor = (f32::abs(sx) + f32::abs(sy)) / 2f32;
-        let sr = r * scale_factor;
+        // The canvas CTM already applies to the shader, so the angle does not
+        // depend on it.
         let new_conic_gradient = ConicGradient {
-          center: (x, y),
-          radius: sr,
+          center: conic_gradient.center,
+          rotation: conic_gradient.rotation,
           base: Self::skia_stops(&conic_gradient.base),
         };
 

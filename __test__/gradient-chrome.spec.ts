@@ -84,6 +84,44 @@ for (const kind of KINDS) {
   })
 }
 
+// 40x40, stops red / lime / blue / yellow / magenta at 0 / .25 / .5 / .75 / 1, center (20, 20).
+// Angle 0 points along +x and the sweep is clockwise; the CTM scale plays no part.
+const CONIC_EXPECTED: Record<string, Record<'e' | 's' | 'w' | 'n', number[]>> = {
+  '0,id': { e: [250, 4, 0, 255], s: [4, 250, 0, 255], w: [0, 5, 251, 255], n: [255, 251, 4, 255] },
+  '0,rot30': { e: [255, 80, 174, 255], s: [89, 165, 0, 255], w: [0, 90, 166, 255], n: [174, 174, 81, 255] },
+  '0,scale2': { e: [250, 4, 0, 255], s: [4, 250, 0, 255], w: [0, 5, 251, 255], n: [255, 251, 4, 255] },
+  '1,id': { e: [255, 158, 97, 255], s: [166, 88, 0, 255], w: [0, 167, 89, 255], n: [97, 97, 158, 255] },
+  '1,rot30': { e: [255, 243, 12, 255], s: [251, 3, 0, 255], w: [0, 252, 4, 255], n: [12, 12, 243, 255] },
+  '1,scale2': { e: [255, 158, 97, 255], s: [166, 88, 0, 255], w: [0, 167, 89, 255], n: [97, 97, 158, 255] },
+  'halfPi,id': { e: [255, 250, 4, 255], s: [255, 4, 250, 255], w: [5, 251, 0, 255], n: [4, 4, 251, 255] },
+  'halfPi,rot30': { e: [174, 174, 80, 255], s: [255, 89, 165, 255], w: [90, 166, 0, 255], n: [0, 81, 174, 255] },
+  'halfPi,scale2': { e: [255, 250, 4, 255], s: [255, 4, 250, 255], w: [5, 251, 0, 255], n: [4, 4, 251, 255] },
+}
+
+for (const [key, expected] of Object.entries(CONIC_EXPECTED)) {
+  test(`conic gradient start angle matches Chrome (${key})`, (t) => {
+    const [angle, transform] = key.split(',')
+    const ctx = createCanvas(40, 40).getContext('2d')
+    if (transform === 'rot30') {
+      ctx.translate(20, 20)
+      ctx.rotate(Math.PI / 6)
+      ctx.translate(-20, -20)
+    } else if (transform === 'scale2') {
+      ctx.setTransform(2, 0, 0, 2, -20, -20)
+    }
+    const startAngle = angle === 'halfPi' ? Math.PI / 2 : Number(angle)
+    const gradient = ctx.createConicGradient(startAngle, 20, 20)
+    gradient.addColorStop(0, 'rgb(255, 0, 0)')
+    gradient.addColorStop(0.25, 'rgb(0, 255, 0)')
+    gradient.addColorStop(0.5, 'rgb(0, 0, 255)')
+    gradient.addColorStop(0.75, 'rgb(255, 255, 0)')
+    gradient.addColorStop(1, 'rgb(255, 0, 255)')
+    ctx.fillStyle = gradient
+    ctx.fillRect(-40, -40, 120, 120)
+    t.deepEqual({ e: px(ctx, 38, 20), s: px(ctx, 20, 38), w: px(ctx, 1, 20), n: px(ctx, 20, 1) }, expected)
+  })
+}
+
 test('hsl() gradient stops keep float precision', (t) => {
   // Two equal stops: Chrome keeps the float sRGB color and dithers it.
   const expected: Record<string, number[]> = {
