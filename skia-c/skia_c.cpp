@@ -2289,28 +2289,30 @@ size_t skiac_bitmap_get_height(skiac_bitmap* c_bitmap) {
   return bitmap->height();
 }
 
-skiac_shader* skiac_bitmap_get_shader(bool is_canvas,
-                                      skiac_bitmap* c_bitmap,
-                                      int repeat_x,
-                                      int repeat_y,
-                                      int filter_quality,
-                                      skiac_transform c_ts) {
+void skiac_bitmap_set_immutable(skiac_bitmap* c_bitmap) {
+  BITMAP_CAST->setImmutable();
+}
+
+skiac_image* skiac_bitmap_make_image(skiac_bitmap* c_bitmap) {
+  // An immutable bitmap (decoded by SkCodec: PNG, JPEG, WebP, GIF, ...) shares
+  // its pixels with the image. A mutable one (SVG, AVIF) is copied here once,
+  // so the shaders a pattern rebuilds never copy it again. Null when the bitmap
+  // has no pixels.
+  return reinterpret_cast<skiac_image*>(
+      SkImages::RasterFromBitmap(*BITMAP_CAST).release());
+}
+
+skiac_shader* skiac_image_make_pattern_shader(skiac_image* c_image,
+                                              bool is_canvas,
+                                              int repeat_x,
+                                              int repeat_y,
+                                              int filter_quality,
+                                              skiac_transform c_ts) {
   const auto ts = conv_from_transform(c_ts);
-  const auto sampling = PatternSamplingOptions(filter_quality, is_canvas);
-  sk_sp<SkShader> shader;
-  if (is_canvas) {
-    // The pattern's cloned surface is never drawn to again, so every shader
-    // shares its one cached snapshot instead of copying the pixels per build.
-    auto image = reinterpret_cast<SkSurface*>(c_bitmap)->makeImageSnapshot();
-    if (!image) {
-      return nullptr;
-    }
-    shader = image->makeShader((SkTileMode)repeat_x, (SkTileMode)repeat_y,
-                               sampling, &ts);
-  } else {
-    shader = BITMAP_CAST->makeShader((SkTileMode)repeat_x, (SkTileMode)repeat_y,
-                                     sampling, &ts);
-  }
+  // A null image gives an empty shader, which paints nothing.
+  auto shader = SkShaders::Image(
+      sk_ref_sp(IMAGE_CAST), (SkTileMode)repeat_x, (SkTileMode)repeat_y,
+      PatternSamplingOptions(filter_quality, is_canvas), &ts);
   return reinterpret_cast<skiac_shader*>(shader.release());
 }
 

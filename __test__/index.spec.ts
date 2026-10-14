@@ -200,6 +200,30 @@ test('identity pattern keeps texels at every smoothing quality', (t) => {
   }
 })
 
+// Chrome 155 paints nothing with a canvas or image pattern whose matrix cannot
+// be inverted.
+test('pattern with a singular transform paints nothing', async (t) => {
+  const source = createCanvas(4, 4)
+  const src = source.getContext('2d')
+  src.fillStyle = '#ff0000'
+  src.fillRect(0, 0, 4, 4)
+  const sources = {
+    canvas: source,
+    image: await loadImage(source.toBuffer('image/png')),
+    imageData: src.getImageData(0, 0, 4, 4),
+  }
+  for (const [name, input] of Object.entries(sources)) {
+    const ctx = createCanvas(4, 4).getContext('2d')
+    ctx.fillStyle = '#0000ff'
+    ctx.fillRect(0, 0, 4, 4)
+    const pattern = ctx.createPattern(input, 'repeat')!
+    pattern.setTransform(new DOMMatrix([0, 0, 0, 0, 0, 0]))
+    ctx.fillStyle = pattern
+    ctx.fillRect(0, 0, 4, 4)
+    t.deepEqual([...ctx.getImageData(1, 1, 1, 1).data], [0, 0, 255, 255], name)
+  }
+})
+
 test('should be able to create Path2D', (t) => {
   t.notThrows(() => new Path2D())
   t.notThrows(
