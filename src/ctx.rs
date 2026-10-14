@@ -1749,8 +1749,9 @@ impl Context {
   /// shadow whose `ctx.filter` must be composed before colourisation.
   ///
   /// ACCEPTED DIVERGENCE, every shape: on an 8888 surface Skia's raster engine
-  /// routes to the three-box pass above sigma 2 (SkBlurEngine.cpp:1281, :275)
-  /// and derives its window as an integer (:388), so the effective sigma snaps
+  /// routes to the three-box pass (SkBlurEngine.cpp:1281, :275) -- at every
+  /// sigma, as Skia is built with Chrome's SK_AVOID_SLOW_RASTER_PIPELINE_BLURS
+  /// -- and derives its window as an integer (:388), so the effective sigma snaps
   /// to a staircase -- +9% to -13% off `shadowBlur / 2`, sign depending on where
   /// the request lands in a step. Measured against Chrome 150 over 55 radii:
   /// Chrome is smooth to within 3% on BOTH its accelerated and its software
