@@ -798,6 +798,7 @@ pub struct SVGCanvas<'scope> {
   pub height: u32,
   pub(crate) ctx: ClassInstance<'scope, CanvasRenderingContext2D>,
   pub(crate) flag: SvgExportFlag,
+  context_initialized: bool,
 }
 
 #[napi]
@@ -845,6 +846,7 @@ impl<'scope> SVGCanvas<'scope> {
       height,
       flag,
       ctx: ctx.assign_to_this_with_attributes("ctx", PropertyAttributes::Default, &mut this)?,
+      context_initialized: false,
     })
   }
 
@@ -860,6 +862,9 @@ impl<'scope> SVGCanvas<'scope> {
         Status::InvalidArg,
         format!("{context_type} is not supported"),
       ));
+    }
+    if self.context_initialized {
+      return this.get_named_property("ctx");
     }
     let context_2d = &mut self.ctx.context;
     if !attrs.as_ref().and_then(|a| a.alpha).unwrap_or(true) {
@@ -878,6 +883,7 @@ impl<'scope> SVGCanvas<'scope> {
       .and_then(|cs| ColorSpace::from_str(&cs).ok())
       .unwrap_or_default();
     context_2d.color_space = color_space;
+    self.context_initialized = true;
     this.get_named_property("ctx")
   }
 
