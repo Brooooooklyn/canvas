@@ -1124,6 +1124,8 @@ pub mod ffi {
       quality: i32,
       ts: skiac_transform,
       cs: u8,
+      decoded_id: *mut u32,
+      decoded_bytes: *mut usize,
     ) -> *mut skiac_shader;
 
     pub fn skiac_bitmap_destroy(c_bitmap: *mut skiac_bitmap);
@@ -4682,15 +4684,20 @@ pub(crate) struct ImagePatternShared {
   pub(crate) image: Option<SkImage>,
   // Cache the shader for the last sampling quality, decode level and canvas
   // colour space (`None` when the original image is drawn as it is, see
-  // `get_shader`); rebuilt when the transform, the quality, the level or the
-  // colour space changes. Every shader samples `image` or a cached level, so
-  // a rebuild copies no pixels.
-  pub(crate) shader: Option<(FilterQuality, PatternDecode, Shader)>,
+  // `get_shader`), with the copy it samples; rebuilt when the transform, the
+  // quality, the level or the colour space changes. Every shader samples
+  // `image` or a cached level, so a rebuild copies no pixels.
+  pub(crate) shader: Option<(FilterQuality, PatternDecode, Shader, DecodedCopy)>,
 }
 
 /// The decode level and canvas colour space an Image pattern's shader samples
 /// (`skiac_image_pattern_level`), or `None` for the original image as it is.
 pub(crate) type PatternDecode = Option<(i32, ColorSpace)>;
+
+/// The SkImage uniqueID and byte size of the decode copy a shader samples in
+/// place of the original, which a recorded paint keeps; `None` when it samples
+/// the original.
+pub(crate) type DecodedCopy = Option<(u32, usize)>;
 
 // Same confinement as `AccountedBitmap`: every owner lives on the JS main
 // thread, so the `Mutex` never guards real cross-thread access. `Send` makes
@@ -4748,12 +4755,12 @@ impl ImagePattern {
   /// canvas, and `None` on PDF and SVG, which draw the original image. With
   /// it, an Image source is drawn from the decode level Chrome picks for the
   /// pattern under that transform (`skiac_image_pattern_level`), in that
-  /// colour space.
+  /// colour space. Returns the shader and the decode copy it samples.
   pub(crate) fn get_shader(
     &self,
     quality: FilterQuality,
     decode: Option<(Transform, ColorSpace)>,
-  ) -> Option<Shader> {
+  ) -> Option<(Shader, DecodedCopy)> {
     let mut guard = self.shared.lock().unwrap();
     let shared = &mut *guard;
     let decode_cache = match (&self.backing, decode) {
@@ -4777,7 +4784,7 @@ impl ImagePattern {
     if shared
       .shader
       .as_ref()
-      .is_none_or(|(cached, cached_level, _)| *cached != quality || *cached_level != level)
+      .is_none_or(|(cached, cached_level, ..)| *cached != quality || *cached_level != level)
     {
       // Drop the old shader first: it may hold the last ref to a level the
       // new one pushes out of the cache, which the sync below then reports
@@ -4791,6 +4798,8 @@ impl ImagePattern {
           } else {
             ptr::null_mut()
           };
+          let mut decoded_id = 0;
+          let mut decoded_bytes = 0;
           let shader = unsafe {
             Shader::from_ptr(ffi::skiac_image_make_decoded_pattern_shader(
               bitmap.inner.0.bitmap,
@@ -4802,10 +4811,13 @@ impl ImagePattern {
               quality as i32,
               shared.transform.into(),
               color_space as u8,
+              &mut decoded_id,
+              &mut decoded_bytes,
             ))
           };
           bitmap.sync_level_bytes();
-          shader
+          let decoded = (decoded_bytes != 0).then_some((decoded_id, decoded_bytes));
+          shader.map(|shader| (shader, decoded))
         }
         _ => {
           let image = shared.image.get_or_insert_with(|| self.make_image());
@@ -4817,11 +4829,15 @@ impl ImagePattern {
             quality,
             shared.transform,
           )
+          .map(|shader| (shader, None))
         }
       }
-      .map(|shader| (quality, level, shader));
+      .map(|(shader, decoded)| (quality, level, shader, decoded));
     }
-    shared.shader.as_ref().map(|(_, _, shader)| shader.clone())
+    shared
+      .shader
+      .as_ref()
+      .map(|(_, _, shader, decoded)| (shader.clone(), *decoded))
   }
 
   /// The image every shader of this pattern samples. A null one (no pixels,

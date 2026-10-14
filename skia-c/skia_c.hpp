@@ -1275,7 +1275,9 @@ skiac_shader* skiac_image_make_decoded_pattern_shader(
     int repeat_y,
     int filter_quality,
     skiac_transform c_ts,
-    uint8_t cs);
+    uint8_t cs,
+    uint32_t* c_decoded_id,
+    size_t* c_decoded_bytes);
 void skiac_bitmap_destroy(skiac_bitmap* c_bitmap);
 
 // Image decode-cache levels

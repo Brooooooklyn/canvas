@@ -31,10 +31,10 @@ use crate::{
   path::Path,
   pattern::{CanvasPattern, Pattern},
   sk::{
-    AccountedBitmap, AlphaType, Bitmap, BlendMode, ColorSpace, FillType, FilterQuality,
-    FontVariantCaps, ImageFilter, ImagePattern, LineMetrics, MaskFilter, Matrix, Paint, PaintStyle,
-    Path as SkPath, PathEffect, PathOp, Shader, SkEncodedImageFormat, SkImage, SkWMemoryStream,
-    SkiaDataRef, Surface, Transform,
+    AccountedBitmap, AlphaType, Bitmap, BlendMode, ColorSpace, DecodedCopy, FillType,
+    FilterQuality, FontVariantCaps, ImageFilter, ImagePattern, LineMetrics, MaskFilter, Matrix,
+    Paint, PaintStyle, Path as SkPath, PathEffect, PathOp, Shader, SkEncodedImageFormat, SkImage,
+    SkWMemoryStream, SkiaDataRef, Surface, Transform,
   },
   state::Context2dRenderingState,
 };
@@ -390,7 +390,13 @@ impl Context {
             generation: 0,
           },
           image.estimated_bytes(),
-        )
+        );
+        // A decode copy the shader samples in place of the original is held
+        // by the recorded paint, charged once per window like a drawImage
+        // level. The paint was built for this draw, so this is its shader.
+        if let Some((_, Some((uid, bytes)))) = self.image_pattern_shader(image) {
+          self.account_raster_resource(RasterKey::Image { uid }, bytes);
+        }
       }
       Pattern::Gradient(gradient) => self.account_raster_bytes(gradient.estimated_bytes()),
       Pattern::Color(..) => {}
@@ -1497,11 +1503,12 @@ impl Context {
     (self.state.global_alpha as f32 * 255.0).round() / 255.0
   }
 
-  /// An image pattern's shader for the current smoothing state. On a raster
-  /// canvas an Image source is drawn from Chrome's decode cache, whose level
-  /// depends on the CTM (PaintShader::CreateDecodedImage), in the canvas's
-  /// colour space; PDF and SVG keep the original image.
-  fn image_pattern_shader(&self, pattern: &ImagePattern) -> Option<Shader> {
+  /// An image pattern's shader for the current smoothing state, and the
+  /// decode copy it samples. On a raster canvas an Image source is drawn from
+  /// Chrome's decode cache, whose level depends on the CTM
+  /// (PaintShader::CreateDecodedImage), in the canvas's colour space; PDF and
+  /// SVG keep the original image.
+  fn image_pattern_shader(&self, pattern: &ImagePattern) -> Option<(Shader, DecodedCopy)> {
     let quality = if self.state.image_smoothing_enabled {
       self.state.image_smoothing_quality
     } else {
@@ -1532,7 +1539,7 @@ impl Context {
         paint.set_dither(true);
       }
       Pattern::Image(p) => {
-        if let Some(shader) = self.image_pattern_shader(p) {
+        if let Some((shader, _)) = self.image_pattern_shader(p) {
           paint.set_color(0, 0, 0, 255);
           paint.set_alpha_f32(alpha);
           paint.set_shader(&shader);
@@ -1766,7 +1773,7 @@ impl Context {
         paint.set_dither(true);
       }
       Pattern::Image(p) => {
-        if let Some(shader) = self.image_pattern_shader(p) {
+        if let Some((shader, _)) = self.image_pattern_shader(p) {
           paint.set_color(0, 0, 0, 255);
           paint.set_alpha_f32(global_alpha);
           paint.set_shader(&shader);
@@ -5488,6 +5495,81 @@ mod tests {
         .is_some()
     );
     assert_eq!(image.level_bytes(), 32 * 32 * 4);
+  }
+
+  /// An Image-pattern fillStyle over `image`, a 64x64 Image.
+  fn image_pattern_fill(image: &std::sync::Arc<AccountedBitmap>) -> Pattern {
+    use crate::sk::{ImagePatternBacking, ImagePatternShared, TileMode};
+    use std::sync::{Arc, Mutex};
+
+    Pattern::Image(ImagePattern {
+      accounting_id: image.resource_id,
+      repeat_x: TileMode::Repeat,
+      repeat_y: TileMode::Repeat,
+      is_canvas: false,
+      is_image: true,
+      backing_bytes: 64 * 64 * 4,
+      backing: Some(ImagePatternBacking::Bitmap(image.clone())),
+      shared: Arc::new(Mutex::new(ImagePatternShared {
+        transform: Transform::default(),
+        image: None,
+        shader: None,
+      })),
+    })
+  }
+
+  // A recorded fill holds the decode level its Image pattern samples, so each
+  // level counts toward the recording limit. On a display-p3 canvas the cache
+  // cannot keep both the converted copy and the half-size level, so cycling
+  // the CTM between them makes a new one on every fill.
+  #[test]
+  fn image_pattern_decode_levels_count_toward_the_recording_limit() {
+    use std::ptr;
+    use std::sync::Arc;
+
+    const IMAGE: usize = 64 * 64 * 4;
+    const LIMIT: usize = 4 * IMAGE;
+    let image = Arc::new(AccountedBitmap::new(
+      test_bitmap(64, 64, [10, 20, 30, 255]),
+      ptr::null_mut(),
+      0,
+    ));
+    let mut ctx = Context::new(16, 16, ColorSpace::DisplayP3).expect("raster context");
+    set_recording_limit(&ctx, LIMIT);
+    ctx.state.fill_style = image_pattern_fill(&image);
+    for i in 0..64 {
+      let scale = if i % 2 == 0 { 1.0 } else { 0.5 };
+      ctx.set_transform(Matrix::new(scale, 0.0, 0.0, 0.0, scale, 0.0));
+      ctx.fill_rect(0.0, 0.0, 16.0, 16.0).unwrap();
+      assert!(
+        image.level_bytes() as usize <= LIMIT + 2 * IMAGE,
+        "fill {i}: {} bytes of levels alive",
+        image.level_bytes()
+      );
+    }
+    assert!(consolidations(&ctx) >= 1);
+  }
+
+  // A level an Image pattern samples again is the same allocation: it is
+  // charged once per recording window, like a drawImage level.
+  #[test]
+  fn an_image_pattern_level_is_charged_once_per_window() {
+    use std::ptr;
+    use std::sync::Arc;
+
+    let image = Arc::new(AccountedBitmap::new(
+      test_bitmap(64, 64, [10, 20, 30, 255]),
+      ptr::null_mut(),
+      0,
+    ));
+    let mut ctx = raster_ctx(16, 16);
+    ctx.state.fill_style = image_pattern_fill(&image);
+    for scale in [0.5, 0.25, 0.5] {
+      ctx.set_transform(Matrix::new(scale, 0.0, 0.0, 0.0, scale, 0.0));
+      ctx.fill_rect(0.0, 0.0, 16.0, 16.0).unwrap();
+    }
+    // The image, and its 32x32 and 16x16 levels once each.
+    assert_eq!(raster_bytes(&ctx), 64 * 64 * 4 + (32 * 32 + 16 * 16) * 4);
   }
 
   // Ops that provably paint nothing record nothing: no bytes, no generation

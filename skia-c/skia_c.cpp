@@ -2901,7 +2901,9 @@ int skiac_image_pattern_level(int width,
 // scaled copy of `c_bitmap` above it with the pattern matrix scaled back by
 // the same factor (paint_shader.cc:458-465), and the empty shader at -1. A
 // copy converted to `cs` stands in for the original when the image is in
-// another colour space.
+// another colour space. `c_decoded_id` and `c_decoded_bytes` get the uniqueID
+// and byte size of the copy the shader samples, which a recorded paint keeps;
+// the size is 0 when it samples the original.
 skiac_shader* skiac_image_make_decoded_pattern_shader(
     skiac_bitmap* c_bitmap,
     skiac_image* c_image,
@@ -2911,7 +2913,11 @@ skiac_shader* skiac_image_make_decoded_pattern_shader(
     int repeat_y,
     int filter_quality,
     skiac_transform c_ts,
-    uint8_t cs) {
+    uint8_t cs,
+    uint32_t* c_decoded_id,
+    size_t* c_decoded_bytes) {
+  *c_decoded_id = 0;
+  *c_decoded_bytes = 0;
   if (level < 0) {
     return reinterpret_cast<skiac_shader*>(SkShaders::Empty().release());
   }
@@ -2926,6 +2932,10 @@ skiac_shader* skiac_image_make_decoded_pattern_shader(
     const SkIRect src = SkIRect::MakeSize(original.dimensions());
     const SkISize size = CcSizeForLevel(src.size(), level);
     image = FindOrMakeLevel(c_levels, original, src, size, cs);
+    if (image) {
+      *c_decoded_id = image->uniqueID();
+      *c_decoded_bytes = image->imageInfo().computeMinByteSize();
+    }
     const float adjust_x = static_cast<float>(size.width()) / src.width();
     const float adjust_y = static_cast<float>(size.height()) / src.height();
     const float inverse_x = 1.f / adjust_x;
