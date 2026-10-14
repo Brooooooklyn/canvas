@@ -372,6 +372,12 @@ impl Context {
     // a dash list is compiled into a fresh SkPathEffect per paint call
     // (fill_paint/stroke_paint). The fresh-object-per-draw property also
     // means these three are charged per draw with no dedup key.
+    self.account_style_resources(style);
+    self.account_draw_resources();
+  }
+
+  /// The fill or stroke style's share of `account_paint_resources`.
+  fn account_style_resources(&self, style: &Pattern) {
     match style {
       Pattern::Image(image) => {
         // Keyed by the backing raster's identity: patterns over the same
@@ -389,6 +395,11 @@ impl Context {
       Pattern::Gradient(gradient) => self.account_raster_bytes(gradient.estimated_bytes()),
       Pattern::Color(..) => {}
     };
+  }
+
+  /// The share of `account_paint_resources` every draw pays whatever its
+  /// style: the filter chain, the shadow filter and the dash list.
+  fn account_draw_resources(&self) {
     // The ctx.filter chain is ONE refcounted ImageFilter stored on the state;
     // every recorded paint carries a shared ref to the same DAG, so charge it
     // once per window under its minted id. Generation 0: the chain object is
@@ -2267,7 +2278,11 @@ impl Context {
       self.fill_paint()?
     };
     paint.set_dither(false);
-    if !image_pattern_fill {
+    // With no shader the pattern is not charged. The filter, the shadow and
+    // the dash list are charged as for any other fillStyle.
+    if image_pattern_fill {
+      self.account_draw_resources();
+    } else {
       self.account_paint_resources(&self.state.fill_style);
     }
     paint.set_alpha_f32(self.image_global_alpha());
@@ -5205,6 +5220,65 @@ mod tests {
     // A fill does draw the level.
     ctx.fill_rect(0.0, 0.0, 16.0, 16.0).unwrap();
     assert_eq!(image.level_bytes(), 16 * 16 * 4);
+  }
+
+  // drawImage skips only the unused Image-pattern fillStyle: the filter and
+  // the shadow it draws with are charged as under any other fillStyle.
+  #[test]
+  fn draw_image_with_an_image_pattern_fill_charges_its_filter_and_shadow() {
+    use crate::sk::{ImagePatternBacking, ImagePatternShared, TileMode};
+    use std::ptr;
+    use std::sync::{Arc, Mutex};
+
+    let image = Arc::new(AccountedBitmap::new(
+      test_bitmap(64, 64, [10, 20, 30, 255]),
+      ptr::null_mut(),
+      0,
+    ));
+    let charged = |pattern_fill: bool| {
+      let mut ctx = raster_ctx(16, 16);
+      if pattern_fill {
+        ctx.state.fill_style = Pattern::Image(ImagePattern {
+          accounting_id: image.resource_id,
+          repeat_x: TileMode::Repeat,
+          repeat_y: TileMode::Repeat,
+          is_canvas: false,
+          is_image: true,
+          backing_bytes: 64 * 64 * 4,
+          backing: Some(ImagePatternBacking::Bitmap(image.clone())),
+          shared: Arc::new(Mutex::new(ImagePatternShared {
+            transform: Transform::default(),
+            image: None,
+            shader: None,
+          })),
+        });
+      }
+      ctx.set_filter("blur(1px)").unwrap();
+      ctx.set_shadow_color("red".to_owned()).unwrap();
+      ctx.state.shadow_blur = 2.0;
+      let src = raster_ctx(8, 8);
+      let bitmap = src.surface.get_bitmap();
+      ctx
+        .draw_image(
+          &bitmap,
+          None,
+          canvas_source_key(&src),
+          0.0,
+          0.0,
+          8.0,
+          8.0,
+          0.0,
+          0.0,
+          8.0,
+          8.0,
+        )
+        .unwrap();
+      raster_bytes(&ctx)
+    };
+    // The source, the filter chain and the shadow filter.
+    let expected = 8 * 8 * 4 + "blur(1px)".len() * 8 + 1024;
+    assert_eq!(charged(false), expected);
+    assert_eq!(charged(true), expected);
   }
 
   // Ops that provably paint nothing record nothing: no bytes, no generation
