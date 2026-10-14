@@ -20,20 +20,31 @@ test.beforeEach((t) => {
   t.context.ctx = canvas.getContext('2d')!
 })
 
+// Expected values are Chrome 155's CPU canvas. getImageData() and
+// createImageData() default to the context's color space; drawImage into an
+// sRGB canvas reads the pixel back as sRGB.
 test('display-p3 context uses a display-p3 backing surface', (t) => {
   const canvas = createCanvas(2, 2)
   const ctx = canvas.getContext('2d', { colorSpace: 'display-p3' })
   ctx.fillStyle = 'rgb(32,128,223)'
   ctx.fillRect(0, 0, 1, 1)
-  t.deepEqual([...ctx.getImageData(0, 0, 1, 1).data], [31, 128, 223, 255])
+  t.deepEqual([...ctx.getImageData(0, 0, 1, 1).data], [63, 126, 216, 255])
   t.deepEqual([...canvas.data().subarray(0, 4)], [63, 126, 216, 255])
+  const srgb = createCanvas(2, 2).getContext('2d')
+  srgb.drawImage(canvas, 0, 0)
+  t.deepEqual([...srgb.getImageData(0, 0, 1, 1).data], [31, 128, 223, 255])
   ctx.putImageData(new ImageData(new Uint8ClampedArray([32, 128, 223, 255]), 1, 1, { colorSpace: 'display-p3' }), 0, 0)
   t.deepEqual([...canvas.data().subarray(0, 4)], [32, 128, 223, 255])
-  t.is(canvas.getContext('2d'), ctx)
+  // A later getContext returns the same context and ignores its attributes.
+  t.is(canvas.getContext('2d', { colorSpace: 'srgb' }), ctx)
   t.deepEqual([...canvas.data().subarray(0, 4)], [32, 128, 223, 255])
   ctx.fillStyle = 'rgb(32,128,223)'
   ctx.fillRect(0, 0, 1, 1)
-  t.deepEqual([...ctx.getImageData(0, 0, 1, 1).data], [31, 128, 223, 255])
+  t.deepEqual([...canvas.data().subarray(0, 4)], [63, 126, 216, 255])
+  const red = ctx.createImageData(1, 1)
+  red.data.set([255, 0, 0, 255])
+  ctx.putImageData(red, 1, 1)
+  t.deepEqual([...canvas.data().subarray(12, 16)], [255, 0, 0, 255])
 })
 
 test('display-p3 context preserves its color space after resize', (t) => {
@@ -44,7 +55,8 @@ test('display-p3 context preserves its color space after resize', (t) => {
     t.is(canvas.getContext('2d'), ctx)
     ctx.fillStyle = 'rgb(32,128,223)'
     ctx.fillRect(0, 0, 1, 1)
-    t.deepEqual([...ctx.getImageData(0, 0, 1, 1).data], [31, 128, 223, 255])
+    t.deepEqual([...canvas.data().subarray(0, 4)], [63, 126, 216, 255])
+    t.deepEqual([...ctx.getImageData(0, 0, 1, 1).data], [63, 126, 216, 255])
   }
 })
 

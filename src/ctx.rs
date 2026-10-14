@@ -3145,11 +3145,12 @@ impl CanvasRenderingContext2D {
       Either::A(width) => {
         let width = width.unsigned_abs();
         let height = width_or_height.unsigned_abs();
+        // Spec: defaultColorSpace is this context's color space.
         let color_space = match height_or_settings {
           Some(Either::B(settings)) => {
-            ColorSpace::from_str(&settings.color_space).unwrap_or_default()
+            ColorSpace::from_str(&settings.color_space).unwrap_or(self.context.color_space)
           }
-          _ => ColorSpace::default(),
+          _ => self.context.color_space,
         };
         let arraybuffer_length = (width * height * 4) as usize;
         let data_buffer = vec![0; arraybuffer_length];
@@ -3914,9 +3915,10 @@ impl CanvasRenderingContext2D {
       && !height.is_nan()
       && !height.is_infinite()
     {
+      // Spec: defaultColorSpace is this context's color space.
       let color_space = color_space
         .and_then(|cs| cs.parse().ok())
-        .unwrap_or(ColorSpace::Srgb);
+        .unwrap_or(self.context.color_space);
       // Per spec: if sw/sh is negative, flip the origin and use abs value
       let (sx, sw) = if width < 0.0 {
         (x + width, -width)
