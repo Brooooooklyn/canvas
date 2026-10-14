@@ -552,8 +552,10 @@ void ClipRectsToImageRect(const GfxRectF& image, GfxRectF* src, GfxRectF* dst) {
 // StaticBitmapImage::DrawHelper (static_bitmap_image.cc:83-116) do: clip the
 // rects to the image, pick AA on the clipped destination, then drawImageRect
 // with kFast (Image::kDoNotClampImageToSourceRect).
-// `c_ctm` is the context's transform, as the canvas may be a recorder that
-// sits at identity.
+// `c_ctm` is the context's transform. The AA rule and the sampling read it,
+// not the canvas matrix: the canvas may be a recorder that sits at identity
+// (the composited ops), while Blink reads the CTM that CompositedDraw has put
+// back on the paint canvas (canvas_2d_recorder_context.h:919-990).
 void skiac_canvas_draw_image(skiac_canvas* c_canvas,
                              skiac_bitmap* c_bitmap,
                              bool is_canvas,
@@ -584,14 +586,14 @@ void skiac_canvas_draw_image(skiac_canvas* c_canvas,
   if (src.IsEmpty() || dst.IsEmpty()) {
     return;
   }
+  const SkMatrix ctm = conv_from_transform(c_ctm);
   SkPaint paint = c_paint ? *PAINT_CAST : SkPaint();
-  paint.setAntiAlias(
-      ShouldDrawImageAntialiased(CANVAS_CAST->getTotalMatrix(), dst.w, dst.h));
+  paint.setAntiAlias(ShouldDrawImageAntialiased(ctm, dst.w, dst.h));
   const SkRect src_rect = src.ToSkRect();
   const SkRect dst_rect = dst.ToSkRect();
   // DrawImageRectOp::RasterWithFlags (cc/paint/paint_op.cc:1456-1457).
-  const SkM44 matrix = SkM44(conv_from_transform(c_ctm)) *
-                       SkM44(SkMatrix::RectToRect(src_rect, dst_rect));
+  const SkM44 matrix =
+      SkM44(ctm) * SkM44(SkMatrix::RectToRect(src_rect, dst_rect));
   // Snapshot instead of SkSurface::draw -- on a never-snapshotted surface
   // SkSurface::draw copies the whole pixel buffer on every call (#1321).
   // The snapshot shares the pixels; a later write into the source

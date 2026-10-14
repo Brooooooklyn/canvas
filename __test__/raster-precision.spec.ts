@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url'
 
 import test from 'ava'
 
-import { createCanvas, loadImage, DOMMatrix, ImageData, type Canvas, type SKRSContext2D } from '../index'
+import { createCanvas, loadImage, DOMMatrix, ImageData, type Canvas, type Image, type SKRSContext2D } from '../index'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -207,6 +207,60 @@ test('drawImage antialiases rotated edges like Chrome', async (t) => {
     // RGB along the edges differs between Chrome's own arm64 and x64 builds;
     // the coverage does not.
     t.deepEqual(alphaOf(px(ctx, 0, 0, 32, 32)), chrome('rot|alpha'), name)
+  }
+})
+
+// Blink reads the AA rule's matrix off the paint canvas, where CompositedDraw
+// has put the CTM back before draw_func (canvas_2d_recorder_context.h:919-990).
+// Ours records the composited ops into a layer at identity, so the rule must
+// get the context's transform instead. Coverage only: RGB along the edges
+// differs between Chrome's own arm64 and x64 builds.
+test('drawImage antialiases from the context transform under every composite op', async (t) => {
+  const src = grid(8, 8, (i, j) => `rgb(${i * 30},${j * 30},${(i + j) * 15})`)
+  const image = await imageFrom(src)
+  const transforms: Record<string, (ctx: SKRSContext2D, source: Canvas | Image) => void> = {
+    rot: (ctx, source) => {
+      ctx.translate(12, 2)
+      ctx.rotate(Math.PI / 7)
+      ctx.drawImage(source, 0, 0, 14, 14)
+    },
+    skew: (ctx, source) => {
+      ctx.setTransform(1, 0, 0.5, 1, 2, 3)
+      ctx.drawImage(source, 1, 1, 12, 16)
+    },
+    // Under one user pixel wide but 2.4 device pixels: no AA.
+    up: (ctx, source) => {
+      ctx.scale(4, 4)
+      ctx.drawImage(source, 1.1, 1.3, 0.6, 4.2)
+    },
+    // Two user pixels wide but half a device pixel: AA.
+    down: (ctx, source) => {
+      ctx.scale(0.25, 0.25)
+      ctx.drawImage(source, 21, 22, 2, 60)
+    },
+  }
+  for (const [name, source] of [
+    ['canvas', src],
+    ['image', image],
+  ] as const) {
+    for (const [transform, draw] of Object.entries(transforms)) {
+      for (const op of [
+        'source-over',
+        'copy',
+        'source-in',
+        'source-out',
+        'destination-in',
+        'destination-atop',
+      ] as const) {
+        const ctx = createCanvas(24, 24).getContext('2d')
+        ctx.fillStyle = 'rgb(200,120,40)'
+        ctx.fillRect(3, 3, 18, 18)
+        ctx.imageSmoothingEnabled = false
+        ctx.globalCompositeOperation = op
+        draw(ctx, source)
+        t.deepEqual(alphaOf(px(ctx, 0, 0, 24, 24)), chrome(`aa-op|${transform}|${op}`), `${name} ${transform} ${op}`)
+      }
+    }
   }
 })
 
