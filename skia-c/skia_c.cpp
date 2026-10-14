@@ -1,6 +1,7 @@
 #include <assert.h>
 #include <math.h>
 #include <algorithm>
+#include <atomic>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -550,6 +551,15 @@ void ClipRectsToImageRect(const GfxRectF& image, GfxRectF* src, GfxRectF* dst) {
 // used last. Chrome builds a level from the smallest cached decode that is big
 // enough; we always build it from the original, which is what Chrome does on
 // a cold cache.
+//
+// A level the cache drops can still be held by a recorded draw or a pattern
+// shader, so its bytes are counted in `live` until its pixels are freed;
+// `live` is what Rust reports to V8. `bytes` is the cache's own share, which
+// the budget limits.
+struct skiac_image_level_bytes : SkNVRefCnt<skiac_image_level_bytes> {
+  std::atomic<size_t> live{0};
+};
+
 struct skiac_image_levels {
   struct Level {
     SkIRect src;
@@ -558,6 +568,8 @@ struct skiac_image_levels {
   };
   std::vector<Level> levels;
   size_t bytes = 0;
+  sk_sp<skiac_image_level_bytes> counter =
+      sk_make_sp<skiac_image_level_bytes>();
 };
 
 // cc/tiles/mipmap_util.cc ScaleAxisToMipLevel: a level's size rounds up.
@@ -660,20 +672,49 @@ static SkSamplingOptions DecodedSampling(int fq) {
       SkMipmapMode::kNone);
 }
 
+namespace {
+// A level's pixels and the counter they are charged to.
+struct LevelPixels {
+  sk_sp<skiac_image_level_bytes> counter;
+  size_t bytes;
+};
+}  // namespace
+
+static void ReleaseLevelPixels(void* addr, void* context) {
+  sk_free(addr);
+  auto* pixels = static_cast<LevelPixels*>(context);
+  pixels->counter->live.fetch_sub(pixels->bytes, std::memory_order_relaxed);
+  delete pixels;
+}
+
 // GenerateCacheEntryFromCandidate (software_image_decode_cache_utils.cc:
 // 183-270) with the original decode as the candidate: the src subset, scaled
-// to the level size with kMedium (linear, nearest mip) into N32 premul.
+// to the level size with kMedium (linear, nearest mip) into N32 premul. The
+// pixels count in `counter` until they are freed.
 static sk_sp<SkImage> MakeLevelImage(const SkPixmap& original,
                                      const SkIRect& src,
-                                     SkISize size) {
+                                     SkISize size,
+                                     skiac_image_level_bytes* counter) {
   SkPixmap subset;
   if (!original.extractSubset(&subset, src)) {
     return nullptr;
   }
+  const SkImageInfo info = SkImageInfo::Make(
+      size, kN32_SkColorType, kPremul_SkAlphaType, original.refColorSpace());
+  const size_t row_bytes = info.minRowBytes();
+  const size_t bytes = info.computeByteSize(row_bytes);
+  if (SkImageInfo::ByteSizeOverflowed(bytes)) {
+    return nullptr;
+  }
+  void* addr = sk_malloc_canfail(bytes);
+  if (!addr) {
+    return nullptr;
+  }
+  counter->live.fetch_add(bytes, std::memory_order_relaxed);
   SkBitmap level;
-  if (!level.tryAllocPixels(SkImageInfo::Make(size, kN32_SkColorType,
-                                              kPremul_SkAlphaType,
-                                              original.refColorSpace()))) {
+  // On failure installPixels calls the release proc, which uncounts them.
+  if (!level.installPixels(info, addr, row_bytes, ReleaseLevelPixels,
+                           new LevelPixels{sk_ref_sp(counter), bytes})) {
     return nullptr;
   }
   if (!subset.scalePixels(
@@ -687,7 +728,8 @@ static sk_sp<SkImage> MakeLevelImage(const SkPixmap& original,
 
 // The cached level for (src, size), made on a miss. The cache holds at most
 // the original's byte size and drops the least recently used levels first; a
-// recorded draw keeps its own ref to the level it drew.
+// recorded draw keeps its own ref to the level it drew, which stays counted in
+// `live` until it is freed.
 static sk_sp<SkImage> FindOrMakeLevel(skiac_image_levels* cache,
                                       const SkPixmap& original,
                                       const SkIRect& src,
@@ -701,7 +743,8 @@ static sk_sp<SkImage> FindOrMakeLevel(skiac_image_levels* cache,
       return levels.back().image;
     }
   }
-  sk_sp<SkImage> image = MakeLevelImage(original, src, size);
+  sk_sp<SkImage> image =
+      MakeLevelImage(original, src, size, cache->counter.get());
   if (!image) {
     return nullptr;
   }
@@ -774,7 +817,7 @@ void skiac_image_levels_destroy(skiac_image_levels* c_levels) {
 }
 
 size_t skiac_image_levels_bytes(skiac_image_levels* c_levels) {
-  return c_levels->bytes;
+  return c_levels->counter->live.load(std::memory_order_relaxed);
 }
 
 // The rects come in normalised (Blink AdjustRectForCanvas, done by the Rust

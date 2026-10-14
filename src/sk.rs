@@ -4540,7 +4540,8 @@ pub struct AccountedBitmap {
   /// The scaled copies Chrome's decode cache would hold for this image
   /// (`skiac_image_levels`), shared by drawImage and the Image's patterns.
   levels: *mut ffi::skiac_image_levels,
-  /// The levels' bytes, as last reported to V8.
+  /// The bytes of every level whose pixels are still alive, in the cache or
+  /// held by a recorded draw or a shader, as last reported to V8.
   level_bytes: AtomicI64,
 }
 
@@ -4558,14 +4559,15 @@ impl AccountedBitmap {
     }
   }
 
-  /// The levels' bytes, as last reported.
+  /// The live levels' bytes, as last reported.
   #[cfg(test)]
   pub(crate) fn level_bytes(&self) -> i64 {
     self.level_bytes.load(Ordering::Relaxed)
   }
 
-  /// Reports the change in the levels' size to V8, after a draw that may have
-  /// added or dropped one.
+  /// Reports the change in the live levels' size to V8, after a draw that
+  /// may have made one. A level freed since (a recording dropped) is
+  /// reported here too, or when the image is dropped.
   pub(crate) fn sync_level_bytes(&self) {
     let bytes = unsafe { ffi::skiac_image_levels_bytes(self.levels) } as i64;
     let reported = self.level_bytes.swap(bytes, Ordering::Relaxed);

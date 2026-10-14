@@ -5043,13 +5043,6 @@ mod tests {
     draw(&mut ctx, (0.0, 0.0, 256.0, 256.0), 128.0);
     assert_eq!(image.level_bytes(), (64 * 64 + 128 * 128) * 4);
 
-    // The levels of many subsets stay within the image's own size.
-    for i in 0..64 {
-      draw(&mut ctx, (i as f32, i as f32, 128.0, 128.0), 30.0);
-    }
-    assert!(image.level_bytes() <= 256 * 256 * 4);
-    assert!(image.level_bytes() > 128 * 128 * 4);
-
     // PDF and SVG keep the original image.
     let fresh = AccountedBitmap::new(test_bitmap(256, 256, [10, 20, 30, 255]), ptr::null_mut(), 0);
     let mut svg = Context::new_svg(
@@ -5075,6 +5068,58 @@ mod tests {
       )
       .unwrap();
     assert_eq!(fresh.level_bytes(), 0);
+  }
+
+  // The cache keeps an Image's levels within the image's own size, but a level
+  // it drops still counts while a recorded draw holds it: its bytes are
+  // reported until its pixels are freed.
+  #[test]
+  fn image_decode_levels_count_until_their_last_draw_drops() {
+    use std::ptr;
+
+    let image = AccountedBitmap::new(test_bitmap(64, 64, [10, 20, 30, 255]), ptr::null_mut(), 0);
+    let key = RasterKey::Resource {
+      id: image.resource_id,
+      generation: 0,
+    };
+    let draw = |ctx: &mut Context, x: f32, y: f32| {
+      ctx
+        .draw_image(
+          &image.inner,
+          Some(&image),
+          key,
+          x,
+          y,
+          60.0,
+          60.0,
+          0.0,
+          0.0,
+          30.0,
+          30.0,
+        )
+        .unwrap();
+    };
+    const LEVEL: i64 = 30 * 30 * 4;
+    // Each 60x60 subset drawn at 30x30 makes its own 30x30 level. Four fit in
+    // the image's 16384 bytes; the fifth drops the first from the cache, but
+    // the recording still holds all five.
+    let mut ctx = raster_ctx(32, 32);
+    for x in 0..5 {
+      draw(&mut ctx, x as f32, 0.0);
+    }
+    assert_eq!(image.level_bytes(), 5 * LEVEL);
+    // More subsets: every level is still held by the recording.
+    for y in 1..5 {
+      draw(&mut ctx, 0.0, y as f32);
+    }
+    assert_eq!(image.level_bytes(), 9 * LEVEL);
+
+    // With the recording gone only the cached levels are left, at most the
+    // image's own size. A draw of a cached level reports it.
+    drop(ctx);
+    let mut other = raster_ctx(32, 32);
+    draw(&mut other, 0.0, 4.0);
+    assert_eq!(image.level_bytes(), 4 * LEVEL);
   }
 
   // Ops that provably paint nothing record nothing: no bytes, no generation
