@@ -122,6 +122,48 @@ for (const [key, expected] of Object.entries(CONIC_EXPECTED)) {
   })
 }
 
+// Image draws never read fillStyle, so a gradient that cannot become a shader (1e300 overflows
+// f32) must not stop them. Chrome draws the image; drawCanvas has no Chrome counterpart and must
+// match drawImage.
+const UNREPRESENTABLE_GRADIENTS: Record<string, (ctx: Ctx) => ReturnType<Ctx['createLinearGradient']>> = {
+  'linear x1=1e300': (ctx) => ctx.createLinearGradient(0, 0, 1e300, 0),
+  'radial x0=1e300': (ctx) => ctx.createRadialGradient(1e300, 0, 0, 0, 0, 4),
+  'conic startAngle=1e300': (ctx) => ctx.createConicGradient(1e300, 2, 2),
+}
+
+// prettier-ignore
+const RED_2X2_AT_1_1_ON_GREEN = [
+  0, 0, 0, 0,
+  0, 1, 1, 0,
+  0, 1, 1, 0,
+  0, 0, 0, 0,
+].flatMap((red) => (red ? [255, 0, 0, 255] : [0, 128, 0, 255]))
+
+for (const [name, makeGradient] of Object.entries(UNREPRESENTABLE_GRADIENTS)) {
+  test(`drawImage and drawCanvas ignore a ${name} gradient fillStyle`, (t) => {
+    const source = createCanvas(2, 2)
+    const sourceCtx = source.getContext('2d')
+    sourceCtx.fillStyle = 'rgb(255, 0, 0)'
+    sourceCtx.fillRect(0, 0, 2, 2)
+    const draws: Record<string, (ctx: Ctx) => void> = {
+      drawImage: (ctx) => ctx.drawImage(source, 1, 1),
+      'drawImage 9 args': (ctx) => ctx.drawImage(source, 0, 0, 2, 2, 1, 1, 2, 2),
+      drawCanvas: (ctx) => ctx.drawCanvas(source, 1, 1),
+    }
+    for (const [label, draw] of Object.entries(draws)) {
+      const ctx = createCanvas(4, 4).getContext('2d')
+      ctx.fillStyle = 'rgb(0, 128, 0)'
+      ctx.fillRect(0, 0, 4, 4)
+      const gradient = makeGradient(ctx)
+      gradient.addColorStop(0, 'blue')
+      gradient.addColorStop(1, 'yellow')
+      ctx.fillStyle = gradient
+      t.notThrows(() => draw(ctx), label)
+      t.deepEqual([...ctx.getImageData(0, 0, 4, 4).data], RED_2X2_AT_1_1_ON_GREEN, label)
+    }
+  })
+}
+
 test('display-p3 canvas interpolates legacy gradient stops in sRGB', (t) => {
   const canvas = createCanvas(64, 2)
   const ctx = canvas.getContext('2d', { colorSpace: 'display-p3' })
