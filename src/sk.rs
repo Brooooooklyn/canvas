@@ -2644,8 +2644,9 @@ impl DerefMut for SurfaceDataMut<'_> {
   }
 }
 
-/// An unpremultiplied sRGB gradient stop color, laid out as SkColor4f. Blink
-/// hands Skia float stops too (Color::ToGradientStopSkColor4f).
+/// An unpremultiplied sRGB gradient stop color. Blink hands Skia float stops
+/// too (Color::ToGradientStopSkColor4f). The C side is `skiac_color4f`
+/// (skia-c/skia_c.hpp), which skia_c.cpp copies into SkColor4f values.
 #[repr(C)]
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Color4f {
@@ -2654,6 +2655,16 @@ pub struct Color4f {
   pub b: f32,
   pub a: f32,
 }
+
+// The layout skia_c.cpp asserts for `skiac_color4f`.
+const _: () = {
+  assert!(std::mem::size_of::<Color4f>() == 16);
+  assert!(std::mem::align_of::<Color4f>() == 4);
+  assert!(std::mem::offset_of!(Color4f, r) == 0);
+  assert!(std::mem::offset_of!(Color4f, g) == 4);
+  assert!(std::mem::offset_of!(Color4f, b) == 8);
+  assert!(std::mem::offset_of!(Color4f, a) == 12);
+};
 
 impl Color4f {
   pub const TRANSPARENT: Self = Self {

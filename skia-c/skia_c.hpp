@@ -701,6 +701,15 @@ struct skiac_point {
   float y;
 };
 
+// An unpremultiplied RGBA float color: sk::Color4f in src/sk.rs. The gradient
+// functions copy it into SkColor4f values; skia_c.cpp checks both layouts.
+struct skiac_color4f {
+  float r;
+  float g;
+  float b;
+  float a;
+};
+
 struct skiac_surface_data {
   uint8_t* ptr;
   size_t size;
@@ -1090,7 +1099,7 @@ void skiac_path_effect_destroy(skiac_path_effect* c_path_effect);
 
 // Shader
 skiac_shader* skiac_shader_make_linear_gradient(const skiac_point* points,
-                                                const float* colors,
+                                                const skiac_color4f* colors,
                                                 const float* positions,
                                                 int count,
                                                 int tile_mode,
@@ -1100,7 +1109,7 @@ skiac_shader* skiac_shader_make_radial_gradient(skiac_point start_point,
                                                 float start_radius,
                                                 skiac_point end_point,
                                                 float end_radius,
-                                                const float* colors,
+                                                const skiac_color4f* colors,
                                                 const float* positions,
                                                 int count,
                                                 int tile_mode,
@@ -1109,7 +1118,7 @@ skiac_shader* skiac_shader_make_radial_gradient(skiac_point start_point,
 skiac_shader* skiac_shader_make_conic_gradient(float cx,
                                                float cy,
                                                float rotation,
-                                               const float* colors,
+                                               const skiac_color4f* colors,
                                                const float* positions,
                                                int count,
                                                int tile_mode,
