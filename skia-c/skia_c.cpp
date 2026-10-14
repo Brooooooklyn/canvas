@@ -2259,13 +2259,12 @@ size_t skiac_bitmap_get_height(skiac_bitmap* c_bitmap) {
   return bitmap->height();
 }
 
-skiac_shader* skiac_bitmap_get_shader(
-    bool is_canvas,
-    skiac_bitmap* c_bitmap,
-    int repeat_x,
-    int repeat_y,
-    int filter_quality,
-    skiac_transform c_ts) {
+skiac_shader* skiac_bitmap_get_shader(bool is_canvas,
+                                      skiac_bitmap* c_bitmap,
+                                      int repeat_x,
+                                      int repeat_y,
+                                      int filter_quality,
+                                      skiac_transform c_ts) {
   const auto ts = conv_from_transform(c_ts);
   SkBitmap bm;
   SkBitmap* bitmap;
