@@ -7,7 +7,6 @@ use std::sync::LazyLock;
 
 use cssparser::Parser;
 use cssparser_color::Color as CSSColor;
-use libavif::AvifData;
 use napi::{JsString, bindgen_prelude::*};
 use regex::Regex;
 use rgb::RGBA;
@@ -51,6 +50,16 @@ impl From<SkError> for Error {
 pub(crate) const MAX_TEXT_WIDTH: f32 = 100_000.0;
 pub(crate) const FILL_STYLE_HIDDEN_NAME: &str = "_fillStyle";
 pub(crate) const STROKE_STYLE_HIDDEN_NAME: &str = "_strokeStyle";
+
+/// The fillStyle/strokeStyle getters read these hidden JS properties, so every
+/// reset to the default state (ctx.reset(), and a width/height change, which
+/// Chrome runs through the same Reset: html_canvas_element.cc:870-872) must
+/// reset them too.
+pub(crate) fn reset_style_getters(ctx: &mut Object) -> Result<()> {
+  ctx.set_named_property(FILL_STYLE_HIDDEN_NAME, "#000000")?;
+  ctx.set_named_property(STROKE_STYLE_HIDDEN_NAME, "#000000")?;
+  Ok(())
+}
 
 /// Where the draw casting the shadow gets its colour from. `shadow_paint` is
 /// handed a finished `Paint`, which exposes no "has a shader" query across the
@@ -1470,8 +1479,14 @@ impl Context {
   /// 127, because its Mitchell weights can sum to 1 - eps.
   /// f32 maths and `k / 255.0` as Blink does: `set_alpha(k)` multiplies by
   /// 1/255, which is 1 ulp off for some k.
+  /// A PDF page has no raster sampling to match, so it keeps the spec's float,
+  /// as its solid and gradient fills do (`/ca .5`, not `.502`).
   fn image_global_alpha(&self) -> f32 {
-    (self.state.global_alpha as f32 * 255.0).round() / 255.0
+    let alpha = self.state.global_alpha as f32;
+    if self.backend == Backend::Pdf {
+      return alpha;
+    }
+    (alpha * 255.0).round() / 255.0
   }
 
   /// The paint drawImage and drawCanvas draw with: Blink's `image_flags_`
@@ -3588,13 +3603,9 @@ impl CanvasRenderingContext2D {
   }
 
   #[napi]
-  pub fn reset(&mut self, env: Env, mut this: This) -> Result<()> {
+  pub fn reset(&mut self, mut this: This) -> Result<()> {
     self.context.reset();
-    // Reset the hidden fill/stroke style properties to default "#000000"
-    let default_color = env.create_string("#000000")?;
-    this.set(FILL_STYLE_HIDDEN_NAME, default_color)?;
-    this.set(STROKE_STYLE_HIDDEN_NAME, default_color)?;
-    Ok(())
+    reset_style_getters(&mut this)
   }
 
   #[napi(return_if_invalid)]
@@ -4582,7 +4593,7 @@ pub enum ContextData {
 
 pub enum ContextOutputData {
   Skia(SkiaDataRef),
-  Avif(AvifData<'static>),
+  Avif(Vec<u8>),
   Gif(Vec<u8>),
 }
 
@@ -4647,7 +4658,7 @@ pub(crate) fn encode_surface(data: &ContextData) -> Result<ContextOutputData> {
         )
       }),
     ContextData::Avif(image, config, width, height) => image
-      .read_pixels(AlphaType::Unpremultiplied)
+      .read_pixels(AlphaType::Unpremultiplied, image.color_space())
       .ok_or_else(|| {
         Error::new(
           Status::GenericFailure,
@@ -4655,12 +4666,12 @@ pub(crate) fn encode_surface(data: &ContextData) -> Result<ContextOutputData> {
         )
       })
       .and_then(|pixels| {
-        crate::avif::encode(&pixels, *width, *height, config)
+        crate::avif::encode(&pixels, *width, *height, config, image.color_space())
           .map(ContextOutputData::Avif)
           .map_err(|e| Error::new(Status::GenericFailure, format!("{e}")))
       }),
     ContextData::Gif(image, config, width, height) => image
-      .read_pixels(AlphaType::Unpremultiplied)
+      .read_pixels(AlphaType::Unpremultiplied, ColorSpace::Srgb)
       .ok_or_else(|| {
         Error::new(
           Status::GenericFailure,

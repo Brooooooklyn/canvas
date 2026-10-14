@@ -24,7 +24,7 @@ use napi::{
 
 use ctx::{
   CanvasRenderingContext2D, Context, ContextData, ContextOutputData, FILL_STYLE_HIDDEN_NAME,
-  STROKE_STYLE_HIDDEN_NAME, SvgExportFlag, encode_surface,
+  STROKE_STYLE_HIDDEN_NAME, SvgExportFlag, encode_surface, reset_style_getters,
 };
 use font::{FONT_REGEXP, init_font_regexp};
 use sk::{AlphaType, ColorSpace, SkImage, SkiaDataRef};
@@ -112,6 +112,15 @@ fn apply_opaque_base(context_2d: &mut Context, width: u32, height: u32) -> Resul
   Ok(())
 }
 
+// Setting width or height resets the context to its default state (spec "set
+// bitmap dimensions"; Chrome: HTMLCanvasElement::Reset), so the style getters
+// read '#000000' again. The context object is read from the canvas's `ctx`
+// property: the napi_value inside `self.ctx` belongs to the constructor's
+// handle scope and must not be used in a later call.
+fn reset_ctx_style_getters(canvas: &This) -> Result<()> {
+  reset_style_getters(&mut canvas.get_named_property::<Object>("ctx")?)
+}
+
 #[napi]
 impl<'c> CanvasElement<'c> {
   // Setting width or height resets the bitmap but keeps the context's
@@ -171,14 +180,14 @@ impl<'c> CanvasElement<'c> {
   }
 
   #[napi(setter)]
-  pub fn set_width(&mut self, env: Env, width: i32) -> Result<()> {
+  pub fn set_width(&mut self, env: Env, this: This, width: i32) -> Result<()> {
     let width = (if width <= 0 { 350 } else { width }) as u32;
     self.width = width;
     let height = self.height;
     let new_ctx = Self::resized_context(&self.ctx.context, width, height)?;
     let old_ctx = mem::replace(&mut self.ctx.context, new_ctx);
     env.adjust_external_memory((width as i64 - old_ctx.width as i64) * (height as i64) * 4)?;
-    Ok(())
+    reset_ctx_style_getters(&this)
   }
 
   #[napi(getter)]
@@ -187,14 +196,14 @@ impl<'c> CanvasElement<'c> {
   }
 
   #[napi(setter)]
-  pub fn set_height(&mut self, env: Env, height: i32) -> Result<()> {
+  pub fn set_height(&mut self, env: Env, this: This, height: i32) -> Result<()> {
     let height = (if height <= 0 { 150 } else { height }) as u32;
     self.height = height;
     let width = self.width;
     let new_ctx = Self::resized_context(&self.ctx.context, width, height)?;
     let old_ctx = mem::replace(&mut self.ctx.context, new_ctx);
     env.adjust_external_memory((height as i64 - old_ctx.height as i64) * (width as i64) * 4)?;
-    Ok(())
+    reset_ctx_style_getters(&this)
   }
 
   #[napi(getter)]
@@ -621,8 +630,9 @@ fn get_data_ref(
     MIME_JPEG => image.encode_data(sk::SkEncodedImageFormat::Jpeg, quality),
     MIME_PNG => image.encode_data(sk::SkEncodedImageFormat::Png, 100),
     MIME_AVIF => {
+      let color_space = image.color_space();
       let pixels = image
-        .read_pixels(AlphaType::Unpremultiplied)
+        .read_pixels(AlphaType::Unpremultiplied, color_space)
         .ok_or_else(|| {
           Error::new(
             Status::GenericFailure,
@@ -630,7 +640,7 @@ fn get_data_ref(
           )
         })?;
       let config = AvifConfig::from(quality_or_config).into();
-      let output = avif::encode(&pixels, width, height, &config)
+      let output = avif::encode(&pixels, width, height, &config, color_space)
         .map_err(|e| Error::new(Status::GenericFailure, format!("{e}")))?;
       return Ok(ContextOutputData::Avif(output));
     }
@@ -642,7 +652,7 @@ fn get_data_ref(
         },
       };
       let pixels = image
-        .read_pixels(AlphaType::Unpremultiplied)
+        .read_pixels(AlphaType::Unpremultiplied, ColorSpace::Srgb)
         .ok_or_else(|| {
           Error::new(
             Status::GenericFailure,
@@ -696,7 +706,7 @@ impl Task for AsyncDataUrl {
         base64_simd::STANDARD.encode_append(data_ref.slice(), &mut output);
       }
       ContextOutputData::Avif(data_ref) => {
-        base64_simd::STANDARD.encode_append(data_ref.as_ref(), &mut output);
+        base64_simd::STANDARD.encode_append(&data_ref, &mut output);
       }
       ContextOutputData::Gif(data_ref) => {
         base64_simd::STANDARD.encode_append(&data_ref, &mut output);
@@ -741,11 +751,10 @@ impl<'env> ScopedTask<'env> for AsyncBlob {
         })
       },
       ContextOutputData::Avif(data_ref) => unsafe {
-        let data_slice = data_ref.as_slice();
         Uint8ArraySlice::from_external(
           env,
-          data_slice.as_ptr().cast_mut(),
-          data_slice.len(),
+          data_ref.as_ptr().cast_mut(),
+          data_ref.len(),
           data_ref,
           |_, d| mem::drop(d),
         )
@@ -925,14 +934,14 @@ impl<'scope> SVGCanvas<'scope> {
   }
 
   #[napi(setter)]
-  pub fn set_width(&mut self, env: Env, width: i32) -> Result<()> {
+  pub fn set_width(&mut self, env: Env, this: This, width: i32) -> Result<()> {
     let width = (if width <= 0 { 350 } else { width }) as u32;
     self.width = width;
     let height = self.height;
     let new_ctx = self.resized_context(width, height)?;
     let old_ctx = mem::replace(&mut self.ctx.context, new_ctx);
     env.adjust_external_memory((width as i64 - old_ctx.width as i64) * (height as i64) * 4)?;
-    Ok(())
+    reset_ctx_style_getters(&this)
   }
 
   #[napi(getter)]
@@ -941,14 +950,14 @@ impl<'scope> SVGCanvas<'scope> {
   }
 
   #[napi(setter)]
-  pub fn set_height(&mut self, env: Env, height: i32) -> Result<()> {
+  pub fn set_height(&mut self, env: Env, this: This, height: i32) -> Result<()> {
     let height = (if height <= 0 { 150 } else { height }) as u32;
     self.height = height;
     let width = self.width;
     let new_ctx = self.resized_context(width, height)?;
     let old_ctx = mem::replace(&mut self.ctx.context, new_ctx);
     env.adjust_external_memory((width as i64) * (height as i64 - old_ctx.height as i64) * 4)?;
-    Ok(())
+    reset_ctx_style_getters(&this)
   }
 
   #[napi(getter)]
