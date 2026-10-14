@@ -525,6 +525,7 @@ pub mod ffi {
       canvas: *mut skiac_canvas,
       bitmap: *mut skiac_bitmap,
       is_canvas: bool,
+      decode: bool,
       levels: *mut skiac_image_levels,
       cs: u8,
       ctm: skiac_transform,
@@ -2777,14 +2778,15 @@ impl Canvas {
     }
   }
 
-  /// `decode_cache` is the Image `image` belongs to, when Chrome would draw
-  /// it from its decode cache (an Image on a raster canvas), in
-  /// `color_space` (the canvas's). `ctm` is the context's transform: this
-  /// canvas may be a recorder at identity. `vector_device` is true on the PDF
-  /// and SVG backends.
+  /// With `decode` the source is drawn from Chrome's decode cache, in
+  /// `color_space` (the canvas's): an Image on a raster canvas, whose levels
+  /// `decode_cache` keeps, or a canvas source on a raster canvas that is not
+  /// sRGB. `ctm` is the context's transform: this canvas may be a recorder at
+  /// identity. `vector_device` is true on the PDF and SVG backends.
   pub fn draw_image(
     &mut self,
     image: &Bitmap,
+    decode: bool,
     decode_cache: Option<&AccountedBitmap>,
     color_space: ColorSpace,
     ctm: Transform,
@@ -2806,6 +2808,7 @@ impl Canvas {
         self.0,
         image.0.bitmap,
         image.0.is_canvas,
+        decode,
         decode_cache.map_or(ptr::null_mut(), |bitmap| bitmap.levels),
         color_space as u8,
         ctm.into(),

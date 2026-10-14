@@ -267,6 +267,37 @@ test('an Image in another colour space is converted before it is scaled', async 
   t.deepEqual(drawOn('srgb', 'off', await loadImage(p3png), pattern16(0.3)), chrome('p3image|srgb|pattern-0.3|off'))
 })
 
+// On a canvas that is not sRGB, Chrome sends a canvas source through its
+// decode cache too (SoftwareImageDecodeCache::UseCacheForDrawImage): it is
+// converted, drawn from its decode levels, sampled linearly, and a target size
+// that rounds to 0 draws nothing. drawCanvas into such a canvas draws the
+// source's pixels the same way. On an sRGB canvas nothing changes (the tests
+// above).
+test('drawImage of a canvas on a display-p3 canvas draws its decode', (t) => {
+  const source = noise(32, 32, 5)
+  for (const quality of ['low', 'medium', 'high'] as const) {
+    for (const [key, fn] of [
+      ['down', down16],
+      ['up', up16],
+      ['sprite', (ctx: SKRSContext2D, s: Source) => ctx.drawImage(s, 16.3, 8.6, 12, 12, 1.5, 2.25, 13, 11)],
+    ] as const) {
+      t.deepEqual(drawOn('display-p3', quality, source, fn), chrome(`canvas|p3|${key}`), `${key} ${quality}`)
+    }
+    t.deepEqual(
+      drawOn('display-p3', quality, source, (ctx, s) => ctx.drawCanvas(s as Canvas, 0, 0, 10, 10)),
+      chrome('canvas|p3|down'),
+      `drawCanvas ${quality}`,
+    )
+  }
+  for (const quality of QUALITIES) {
+    t.deepEqual(
+      drawOn('display-p3', quality, source, (ctx, s) => ctx.drawImage(s, 1, 1, 3.2, 0.2)),
+      Array.from({ length: 16 * 16 * 4 }, () => 0),
+      `empty target ${quality}`,
+    )
+  }
+})
+
 // Chrome draws an SVG Image as vectors, never from the decode cache. We keep
 // sampling the SVG's raster with the smoothing quality, as before: 'high' is
 // cubic and an Image pattern's 'medium' takes a mip level, so neither matches

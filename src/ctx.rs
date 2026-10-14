@@ -2278,10 +2278,16 @@ impl Context {
       self.canvas_shadow_offset(ShadowSource::Image, DrawContent::Geometry);
     let image_smoothing_enabled = self.state.image_smoothing_enabled;
     let image_smoothing_quality = self.state.image_smoothing_quality;
-    let decode_cache = image.filter(|_| self.backend == Backend::Raster);
+    let raster = self.backend == Backend::Raster;
+    let decode_cache = image.filter(|_| raster);
+    // Chrome draws an Image from its decode cache, and on a canvas that is not
+    // sRGB a canvas source too (SoftwareImageDecodeCache::UseCacheForDrawImage),
+    // whose decode is made for the one draw.
+    let decode = decode_cache.is_some()
+      || (raster && bitmap.0.is_canvas && self.color_space != ColorSpace::Srgb);
     let color_space = self.color_space;
     let ctm = self.state.transform.get_transform();
-    let vector_device = self.backend != Backend::Raster;
+    let vector_device = !raster;
 
     // The recorded op pins a reference to the source pixels; charge its full
     // raster size so large drawImage sources trip the recording limit. The
@@ -2307,6 +2313,7 @@ impl Context {
         )?;
         shadow_canvas.draw_image(
           bitmap,
+          decode,
           decode_cache,
           color_space,
           ctm,
@@ -2329,6 +2336,7 @@ impl Context {
       |canvas: &mut Canvas, paint| {
         canvas.draw_image(
           bitmap,
+          decode,
           decode_cache,
           color_space,
           ctm,
