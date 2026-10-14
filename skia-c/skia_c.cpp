@@ -2284,6 +2284,24 @@ skiac_bitmap* skiac_bitmap_make_from_image_data(uint8_t* ptr,
   return reinterpret_cast<skiac_bitmap*>(bitmap);
 }
 
+// ImageData pattern copy: RGBA unpremul bytes in, premultiplied texels out, as
+// putImageData stores them in a canvas and as createImageBitmap(imageData)
+// does, so filtering never pulls transparent black into the color.
+skiac_bitmap* skiac_bitmap_make_premul_from_image_data(uint8_t* ptr,
+                                                       size_t width,
+                                                       size_t height,
+                                                       size_t row_bytes) {
+  auto bitmap = new SkBitmap();
+  const auto src_info = SkImageInfo::Make(
+      (int)width, (int)height, kRGBA_8888_SkColorType, kUnpremul_SkAlphaType);
+  if (!bitmap->tryAllocPixels(src_info.makeAlphaType(kPremul_SkAlphaType)) ||
+      !bitmap->writePixels(SkPixmap(src_info, ptr, row_bytes), 0, 0)) {
+    delete bitmap;
+    return nullptr;
+  }
+  return reinterpret_cast<skiac_bitmap*>(bitmap);
+}
+
 size_t skiac_bitmap_get_width(skiac_bitmap* c_bitmap) {
   auto bitmap = reinterpret_cast<SkBitmap*>(c_bitmap);
   return bitmap->width();

@@ -1073,6 +1073,13 @@ pub mod ffi {
       alpha_type: i32,
     ) -> *mut skiac_bitmap;
 
+    pub fn skiac_bitmap_make_premul_from_image_data(
+      ptr: *mut u8,
+      width: usize,
+      height: usize,
+      row_bytes: usize,
+    ) -> *mut skiac_bitmap;
+
     pub fn skiac_bitmap_get_width(c_bitmap: *mut skiac_bitmap) -> usize;
 
     pub fn skiac_bitmap_get_height(c_bitmap: *mut skiac_bitmap) -> usize;
@@ -4442,6 +4449,26 @@ impl Bitmap {
         alpha_type as i32,
       )
     };
+    if bitmap.is_null() {
+      return None;
+    }
+    Some(Bitmap(ffi::skiac_bitmap_info {
+      bitmap,
+      width: width as i32,
+      height: height as i32,
+      is_canvas: false,
+    }))
+  }
+
+  /// A premultiplied copy of unpremultiplied RGBA bytes (an ImageData).
+  pub fn premul_from_image_data(
+    ptr: *mut u8,
+    width: usize,
+    height: usize,
+    row_bytes: usize,
+  ) -> Option<Self> {
+    let bitmap =
+      unsafe { ffi::skiac_bitmap_make_premul_from_image_data(ptr, width, height, row_bytes) };
     if bitmap.is_null() {
       return None;
     }
