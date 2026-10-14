@@ -12,6 +12,7 @@ use crate::sk::ColorSpace;
 
 #[derive(Clone, Copy)]
 enum ErrorKind {
+  Error,
   RangeError,
   TypeError,
 }
@@ -25,6 +26,7 @@ fn new_error(env: sys::napi_env, kind: ErrorKind, msg: &str) -> Option<sys::napi
     sys::napi_create_string_utf8(env, msg.as_ptr().cast(), msg.len() as isize, &mut message)
       == sys::Status::napi_ok
       && match kind {
+        ErrorKind::Error => sys::napi_create_error(env, ptr::null_mut(), message, &mut error),
         ErrorKind::RangeError => {
           sys::napi_create_range_error(env, ptr::null_mut(), message, &mut error)
         }
@@ -51,6 +53,70 @@ pub(crate) fn type_error(env: sys::napi_env, msg: &str) -> Error {
 /// Throw a RangeError.
 pub(crate) fn range_error(env: sys::napi_env, msg: &str) -> Error {
   throw(env, new_error(env, ErrorKind::RangeError, msg), msg)
+}
+
+/// The legacy `code` of the DOMException names used here (WebIDL table).
+fn dom_exception_code(name: &str) -> u32 {
+  match name {
+    "InvalidStateError" => 11,
+    "SyntaxError" => 12,
+    _ => 0,
+  }
+}
+
+/// Throw `new DOMException(msg, name)`. Node < 17 has no global
+/// DOMException: throw an Error with the same `name` and `code` instead.
+pub(crate) fn dom_exception(env: sys::napi_env, name: &str, msg: &str) -> Error {
+  let exception = (|| -> Result<sys::napi_value> {
+    let global = Env::from_raw(env).get_global()?;
+    let ctor: Unknown = global.get_named_property("DOMException")?;
+    if ctor.get_type()? != ValueType::Function {
+      return Err(Error::from_reason("no DOMException"));
+    }
+    let args = [
+      unsafe { <&str as ToNapiValue>::to_napi_value(env, msg)? },
+      unsafe { <&str as ToNapiValue>::to_napi_value(env, name)? },
+    ];
+    let mut exception = ptr::null_mut();
+    check_status!(unsafe {
+      sys::napi_new_instance(env, ctor.raw(), args.len(), args.as_ptr(), &mut exception)
+    })?;
+    Ok(exception)
+  })();
+  match exception {
+    Ok(exception) => throw(env, Some(exception), msg),
+    // The DOMException constructor threw: keep that exception.
+    Err(_) if is_exception_pending(env) => Error::new(Status::PendingException, msg.to_owned()),
+    Err(_) => {
+      let error = new_error(env, ErrorKind::Error, msg);
+      if let Some(error) = error {
+        unsafe {
+          let mut value = ptr::null_mut();
+          if sys::napi_create_string_utf8(
+            env,
+            name.as_ptr().cast(),
+            name.len() as isize,
+            &mut value,
+          ) == sys::Status::napi_ok
+          {
+            sys::napi_set_named_property(env, error, c"name".as_ptr(), value);
+          }
+          if sys::napi_create_uint32(env, dom_exception_code(name), &mut value)
+            == sys::Status::napi_ok
+          {
+            sys::napi_set_named_property(env, error, c"code".as_ptr(), value);
+          }
+        }
+      }
+      throw(env, error, msg)
+    }
+  }
+}
+
+fn is_exception_pending(env: sys::napi_env) -> bool {
+  let mut pending = false;
+  unsafe { sys::napi_is_exception_pending(env, &mut pending) };
+  pending
 }
 
 fn type_of(env: sys::napi_env, value: sys::napi_value) -> Result<ValueType> {
@@ -153,6 +219,16 @@ impl Dictionary<'_> {
       )),
     }
   }
+
+  /// `unrestricted double` member: ToNumber.
+  fn number(&self, key: &str) -> Result<Option<f64>> {
+    let Some(v) = member(self.env, self.value, key)? else {
+      return Ok(None);
+    };
+    let mut n = ptr::null_mut();
+    check_status!(unsafe { sys::napi_coerce_to_number(self.env, v, &mut n) })?;
+    Ok(Some(unsafe { f64::from_napi_value(self.env, n)? }))
+  }
 }
 
 /// Every value of Chrome's `PredefinedColorSpace` enum
@@ -192,6 +268,10 @@ pub(crate) const GET_IMAGE_DATA: &str =
 pub(crate) const CANVAS_GET_CONTEXT: &str =
   "Failed to execute 'getContext' on 'HTMLCanvasElement': ";
 pub(crate) const SVG_CANVAS_GET_CONTEXT: &str = "Failed to execute 'getContext' on 'SVGCanvas': ";
+pub(crate) const CREATE_PATTERN: &str =
+  "Failed to execute 'createPattern' on 'CanvasRenderingContext2D': ";
+pub(crate) const PATTERN_SET_TRANSFORM: &str =
+  "Failed to execute 'setTransform' on 'CanvasPattern': ";
 
 /// `ImageDataSettings` (core/html/canvas/image_data_settings.idl).
 #[derive(Clone, Copy, Debug, Default)]
@@ -352,4 +432,55 @@ impl ContextSettings {
     }
     Ok(settings)
   }
+}
+
+/// `DOMMatrix2DInit` converted and fixed up like DOMMatrixReadOnly::fromMatrix2D
+/// (core/geometry/dom_matrix_read_only.cc:179): [m11, m12, m21, m22, m41, m42].
+/// Undefined or null is `{}` (the identity).
+pub(crate) fn dom_matrix_2d_init(
+  env: sys::napi_env,
+  value: Option<sys::napi_value>,
+  prefix: &str,
+) -> Result<[f64; 6]> {
+  const IDENTITY: [f64; 6] = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
+  let Some(value) = present(env, value)? else {
+    return Ok(IDENTITY);
+  };
+  if !is_object(env, value)? {
+    return Err(type_error(
+      env,
+      &format!("{prefix}The provided value is not of type 'DOMMatrix2DInit'."),
+    ));
+  }
+  let dictionary = Dictionary {
+    env,
+    value,
+    prefix,
+    name: "DOMMatrix2DInit",
+  };
+  let mut members = [None; 12];
+  for (slot, key) in members.iter_mut().zip([
+    "a", "b", "c", "d", "e", "f", "m11", "m12", "m21", "m22", "m41", "m42",
+  ]) {
+    *slot = dictionary.number(key)?;
+  }
+  let (short, long) = members.split_at(6);
+  let mut matrix = IDENTITY;
+  for i in 0..6 {
+    // ValidateAndFixup2D: a and m11 (and so on) must agree when both are
+    // given; two NaNs agree.
+    if let (Some(s), Some(l)) = (short[i], long[i])
+      && s != l
+      && !(s.is_nan() && l.is_nan())
+    {
+      return Err(type_error(
+        env,
+        &format!("{prefix}Property mismatch on matrix initialization."),
+      ));
+    }
+    if let Some(v) = long[i].or(short[i]) {
+      matrix[i] = v;
+    }
+  }
+  Ok(matrix)
 }

@@ -294,7 +294,17 @@ interface DOMPointInit {
   z?: number
 }
 interface CanvasPattern {
-  setTransform(transform?: DOMMatrix2DInit): void
+  /** Missing members default to the identity; `a` and `m11` (and so on) must agree when both are given. */
+  setTransform(
+    transform?: Partial<DOMMatrix2DInit> & {
+      m11?: number
+      m12?: number
+      m21?: number
+      m22?: number
+      m41?: number
+      m42?: number
+    },
+  ): void
 }
 
 interface CanvasGradient {
@@ -621,10 +631,11 @@ export interface SKRSContext2D extends CanvasRenderingContext2D {
     dWidth: number,
     dHeight: number,
   ): void
+  /** null when `image` is an Image with no src or one that is still loading. */
   createPattern(
     image: Image | ImageData | Canvas | SvgCanvas,
-    repeat: 'repeat' | 'repeat-x' | 'repeat-y' | 'no-repeat' | null,
-  ): CanvasPattern
+    repeat: 'repeat' | 'repeat-x' | 'repeat-y' | 'no-repeat' | '' | null,
+  ): CanvasPattern | null
   getContextAttributes(): Required<CanvasRenderingContext2DSettings>
   getTransform(): DOMMatrix
 

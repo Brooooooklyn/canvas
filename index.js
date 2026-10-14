@@ -101,6 +101,20 @@ CanvasRenderingContext2D.prototype.getTransform = function getTransform() {
   return new DOMMatrix([a, b, c, d, e, f])
 }
 
+// createPattern(image, repetitionType): as in Chrome, both arguments are
+// required and the repetition is a [LegacyNullToEmptyString] DOMString
+// (canvas_2d_recorder_context.idl), so null is '' and undefined is 'undefined'.
+const _createPattern = CanvasRenderingContext2D.prototype.createPattern
+
+CanvasRenderingContext2D.prototype.createPattern = function createPattern(image, repetition) {
+  if (arguments.length < 2) {
+    throw new TypeError(
+      `Failed to execute 'createPattern' on 'CanvasRenderingContext2D': 2 arguments required, but only ${arguments.length} present.`,
+    )
+  }
+  return _createPattern.call(this, image, repetition === null ? '' : `${repetition}`)
+}
+
 // Workaround for webpack bundling issue with drawImage
 // Store the original drawImage method
 const _drawImage = CanvasRenderingContext2D.prototype.drawImage

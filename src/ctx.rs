@@ -2667,6 +2667,47 @@ impl FromNapiValue for DrawImageSource<'static> {
   }
 }
 
+/// Image argument of `createPattern`, converted in the callback glue like
+/// `DrawImageSource`, with Chrome's TypeError for any other value.
+pub struct PatternSource<'a>(
+  pub Either4<&'a mut Image, &'a mut ImageData, &'a mut CanvasElement<'a>, &'a mut SVGCanvas<'a>>,
+);
+
+impl TypeName for PatternSource<'_> {
+  fn type_name() -> &'static str {
+    "CanvasElement | SVGCanvas | Image | ImageData"
+  }
+
+  fn value_type() -> ValueType {
+    ValueType::Object
+  }
+}
+
+impl ValidateNapiValue for PatternSource<'_> {
+  unsafe fn validate(_env: sys::napi_env, _napi_val: sys::napi_value) -> Result<sys::napi_value> {
+    Ok(std::ptr::null_mut())
+  }
+}
+
+impl FromNapiValue for PatternSource<'static> {
+  unsafe fn from_napi_value(env: sys::napi_env, napi_val: sys::napi_value) -> Result<Self> {
+    match unsafe {
+      <Either4<&mut Image, &mut ImageData, &mut CanvasElement, &mut SVGCanvas> as FromNapiValue>::from_napi_value(
+        env, napi_val,
+      )
+    } {
+      Ok(value) => Ok(PatternSource(value)),
+      Err(_) => Err(webidl::type_error(
+        env,
+        &format!(
+          "{}The provided value is not of type '(CanvasElement or Image or ImageData or SVGCanvas)'.",
+          webidl::CREATE_PATTERN
+        ),
+      )),
+    }
+  }
+}
+
 #[napi]
 impl CanvasRenderingContext2D {
   #[napi(constructor)]
@@ -2734,9 +2775,11 @@ impl CanvasRenderingContext2D {
     self.context.state.image_smoothing_enabled
   }
 
-  #[napi(setter, return_if_invalid)]
-  pub fn set_image_smoothing_enabled(&mut self, enabled: bool) {
-    self.context.state.image_smoothing_enabled = enabled;
+  #[napi(setter)]
+  pub fn set_image_smoothing_enabled(&mut self, enabled: Unknown) -> Result<()> {
+    // WebIDL boolean: ToBoolean, so 0, '', null, undefined and NaN are false.
+    self.context.state.image_smoothing_enabled = enabled.coerce_to_bool()?;
+    Ok(())
   }
 
   #[napi(getter)]
@@ -3296,14 +3339,18 @@ impl CanvasRenderingContext2D {
     CanvasGradient(conic_gradient).into_instance(env)
   }
 
-  #[napi]
+  /// `repetition` arrives as a string: the index.js wrapper checks the
+  /// argument count and converts it ([LegacyNullToEmptyString] DOMString).
+  #[napi(ts_return_type = "CanvasPattern | null")]
   pub fn create_pattern<'scope>(
     &'scope self,
     env: &'scope Env,
-    input: Either4<&mut Image, &mut ImageData, &mut CanvasElement, &mut SVGCanvas>,
-    repetition: Option<String>,
-  ) -> Result<ClassInstance<'scope, CanvasPattern>> {
-    CanvasPattern::new(*env, input, repetition)?.into_instance(env)
+    input: PatternSource<'_>,
+    repetition: String,
+  ) -> Result<Option<ClassInstance<'scope, CanvasPattern>>> {
+    CanvasPattern::create(*env, input.0, &repetition)?
+      .map(|pattern| pattern.into_instance(env))
+      .transpose()
   }
 
   #[napi]

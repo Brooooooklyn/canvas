@@ -6,7 +6,6 @@ use cssparser_color::{Color as CSSColor, hsl_to_rgb};
 use napi::bindgen_prelude::*;
 use rgb::RGBA;
 
-use crate::ctx::TransformObject;
 use crate::error::SkError;
 use crate::gradient::Gradient;
 use crate::image::{Image, ImageData};
@@ -15,6 +14,7 @@ use crate::sk::{
   AccountedBitmap, AlphaType, Bitmap, ColorType, ImagePattern, ImagePatternBacking,
   ImagePatternShared, TileMode, Transform,
 };
+use crate::webidl;
 use crate::{CanvasElement, SVGCanvas};
 
 #[derive(Debug)]
@@ -87,24 +87,52 @@ pub struct CanvasPattern {
   pub(crate) inner: Pattern,
 }
 
-#[napi]
 impl CanvasPattern {
-  #[napi(constructor)]
-  pub fn new(
+  /// createPattern() after the argument conversion. Like Chrome
+  /// (Canvas2DRecorderContext::createPattern), the repetition is checked
+  /// before the image state. `Ok(None)` is a `null` result: an Image with no
+  /// src, or one that has not finished loading.
+  pub(crate) fn create(
     env: Env,
-    input: Either4<&mut Image, &mut ImageData, &mut CanvasElement, &mut SVGCanvas>,
-    repetition: Option<String>,
-  ) -> Result<Self> {
+    input: Either4<&mut Image, &mut ImageData, &mut CanvasElement<'_>, &mut SVGCanvas<'_>>,
+    repetition: &str,
+  ) -> Result<Option<Self>> {
+    // CanvasPattern::ParseRepetitionType: case-sensitive, '' is 'repeat'.
+    let (repeat_x, repeat_y) = match repetition {
+      "" | "repeat" => (TileMode::Repeat, TileMode::Repeat),
+      "repeat-x" => (TileMode::Repeat, TileMode::Decal),
+      "repeat-y" => (TileMode::Decal, TileMode::Repeat),
+      "no-repeat" => (TileMode::Decal, TileMode::Decal),
+      _ => {
+        return Err(webidl::dom_exception(
+          env.raw(),
+          "SyntaxError",
+          &format!(
+            "{}The provided type ('{repetition}') is not one of 'repeat', 'no-repeat', 'repeat-x', or 'repeat-y'.",
+            webidl::CREATE_PATTERN
+          ),
+        ));
+      }
+    };
     // The returned `ImagePattern` keeps shared ownership of the backing pixels
     // (`backing`), so clones pushed onto the `save()`/`restore()` state stack
     // stay valid after the JS `CanvasPattern` is garbage-collected.
     // https://github.com/Brooooooklyn/canvas/issues/1341
     let (backing_bytes, backing, accounting_id) = match input {
       Either4::A(image) => {
-        let bitmap = image
-          .bitmap
-          .as_ref()
-          .ok_or_else(|| Error::new(Status::InvalidArg, "Image is not completed.".to_owned()))?;
+        let Some(bitmap) = image.bitmap.as_ref() else {
+          if image.broken {
+            return Err(webidl::dom_exception(
+              env.raw(),
+              "InvalidStateError",
+              &format!(
+                "{}Source image is in the 'broken' state.",
+                webidl::CREATE_PATTERN
+              ),
+            ));
+          }
+          return Ok(None);
+        };
         (
           bitmap.inner.0.width as usize * bitmap.inner.0.height as usize * 4,
           ImagePatternBacking::Bitmap(bitmap.clone()),
@@ -198,22 +226,7 @@ impl CanvasPattern {
       }
     };
     let is_canvas = matches!(backing, ImagePatternBacking::Surface(_));
-    let (repeat_x, repeat_y) = match repetition {
-      None => (TileMode::Repeat, TileMode::Repeat),
-      Some(repetition) => match repetition.as_str() {
-        "" | "repeat" => (TileMode::Repeat, TileMode::Repeat),
-        "repeat-x" => (TileMode::Repeat, TileMode::Decal),
-        "repeat-y" => (TileMode::Decal, TileMode::Repeat),
-        "no-repeat" => (TileMode::Decal, TileMode::Decal),
-        _ => {
-          return Err(Error::new(
-            Status::InvalidArg,
-            format!("{repetition} is not valid repetition rule"),
-          ));
-        }
-      },
-    };
-    Ok(Self {
+    Ok(Some(Self {
       inner: Pattern::Image(ImagePattern {
         accounting_id,
         repeat_x,
@@ -227,18 +240,38 @@ impl CanvasPattern {
           shader: None,
         })),
       }),
-    })
+    }))
+  }
+}
+
+#[napi]
+impl CanvasPattern {
+  #[napi(constructor)]
+  pub fn new(
+    env: Env,
+    input: Either4<&mut Image, &mut ImageData, &mut CanvasElement, &mut SVGCanvas>,
+    repetition: Option<String>,
+  ) -> Result<Self> {
+    Self::create(env, input, repetition.as_deref().unwrap_or("repeat"))?
+      .ok_or_else(|| Error::new(Status::InvalidArg, "Image is not completed.".to_owned()))
   }
 
+  /// setTransform(optional DOMMatrix2DInit transform = {}).
   #[napi]
-  pub fn set_transform(&mut self, transform: TransformObject) {
+  pub fn set_transform(&mut self, env: &Env, transform: Option<Unknown>) -> Result<()> {
+    let [a, b, c, d, e, f] = webidl::dom_matrix_2d_init(
+      env.raw(),
+      transform.map(|t| t.raw()),
+      webidl::PATTERN_SET_TRANSFORM,
+    )?;
     if let Pattern::Image(image) = &mut self.inner {
       // Clones already assigned to fill/stroke styles (and the save/restore
       // stack) share this state, so the new matrix takes effect at paint time
       // per https://html.spec.whatwg.org/#dom-canvaspattern-settransform
       let mut shared = image.shared.lock().unwrap();
-      shared.transform = transform.into();
+      shared.transform = Transform::new(a as f32, b as f32, c as f32, d as f32, e as f32, f as f32);
       shared.shader = None;
     }
+    Ok(())
   }
 }

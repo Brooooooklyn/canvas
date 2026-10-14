@@ -330,6 +330,8 @@ pub struct Image {
   /// not when this `Image` is finalized.
   pub(crate) bitmap: Option<Arc<AccountedBitmap>>,
   pub(crate) complete: bool,
+  /// The last load failed (onerror fired): the HTML "broken" state.
+  pub(crate) broken: bool,
   pub(crate) alt: String,
   pub(crate) current_src: Option<String>,
   width: f64,
@@ -371,6 +373,7 @@ impl Image {
       .unwrap_or_default();
     Ok(Image {
       complete: true,
+      broken: false,
       bitmap: None,
       alt: "".to_string(),
       current_src: None,
@@ -482,6 +485,7 @@ impl Image {
     // Increment generation FIRST to invalidate all in-flight loads
     // This must happen for BOTH empty and valid src to prevent race conditions
     self.load_generation = self.load_generation.wrapping_add(1);
+    self.broken = false;
 
     // Check if src is empty per HTML spec.
     // The previous `< 5` byte heuristic incorrectly silenced tiny invalid buffers
@@ -578,6 +582,7 @@ impl Image {
               // Clear prior image state to prevent stale data from being drawn
               // Reset width/height to auto (-1.0) so getters return 0 for broken image
               self.complete = true;
+              self.broken = true;
               self.width = -1.0;
               self.height = -1.0;
               self.natural_width = 0.0;
@@ -620,6 +625,7 @@ impl Image {
                 // Clear prior image state to prevent stale data from being drawn
                 // Reset width/height to auto (-1.0) so getters return 0 for broken image
                 self.complete = true;
+                self.broken = true;
                 self.width = -1.0;
                 self.height = -1.0;
                 self.natural_width = 0.0;
@@ -886,6 +892,7 @@ impl Image {
           }
 
           image.complete = true;
+          image.broken = true;
           image.width = -1.0;
           image.height = -1.0;
           image.natural_width = 0.0;
@@ -1328,6 +1335,7 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
       }
     }
 
+    self_mut.broken = err.is_some();
     if let Some(err_str) = err.take() {
       let error = env.create_error(Error::new(Status::InvalidArg, err_str))?;
       if self.fire_events {
@@ -1365,6 +1373,7 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
 
     // Per HTML spec: complete must be true after load finishes, even on error (broken state)
     image.complete = true;
+    image.broken = true;
     // Clear decoded state so all dimension getters return 0 for broken image
     // Reset width/height to auto (-1.0) so getters return 0 (from natural_width/height)
     image.width = -1.0;
