@@ -519,6 +519,7 @@ pub mod ffi {
       bitmap: *mut skiac_bitmap,
       is_canvas: bool,
       ctm: skiac_transform,
+      vector_device: bool,
       sx: f32,
       sy: f32,
       s_width: f32,
@@ -2742,11 +2743,12 @@ impl Canvas {
   }
 
   /// `ctm` is the context's transform: this canvas may be a recorder at
-  /// identity.
+  /// identity. `vector_device` is true on the PDF and SVG backends.
   pub fn draw_image(
     &mut self,
     image: &Bitmap,
     ctm: Transform,
+    vector_device: bool,
     sx: f32,
     sy: f32,
     s_width: f32,
@@ -2765,6 +2767,7 @@ impl Canvas {
         image.0.bitmap,
         image.0.is_canvas,
         ctm.into(),
+        vector_device,
         sx,
         sy,
         s_width,

@@ -2244,6 +2244,7 @@ impl Context {
     let image_smoothing_enabled = self.state.image_smoothing_enabled;
     let image_smoothing_quality = self.state.image_smoothing_quality;
     let ctm = self.state.transform.get_transform();
+    let vector_device = self.backend != Backend::Raster;
 
     // The recorded op pins a reference to the source pixels; charge its full
     // raster size so large drawImage sources trip the recording limit. The
@@ -2270,6 +2271,7 @@ impl Context {
         shadow_canvas.draw_image(
           bitmap,
           ctm,
+          vector_device,
           sx,
           sy,
           s_width,
@@ -2289,6 +2291,7 @@ impl Context {
         canvas.draw_image(
           bitmap,
           ctm,
+          vector_device,
           sx,
           sy,
           s_width,

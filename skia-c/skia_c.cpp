@@ -556,10 +556,12 @@ void ClipRectsToImageRect(const GfxRectF& image, GfxRectF* src, GfxRectF* dst) {
 // not the canvas matrix: the canvas may be a recorder that sits at identity
 // (the composited ops), while Blink reads the CTM that CompositedDraw has put
 // back on the paint canvas (canvas_2d_recorder_context.h:919-990).
+// `vector_device` is true on the PDF and SVG backends.
 void skiac_canvas_draw_image(skiac_canvas* c_canvas,
                              skiac_bitmap* c_bitmap,
                              bool is_canvas,
                              skiac_transform c_ctm,
+                             bool vector_device,
                              float sx,
                              float sy,
                              float s_width,
@@ -605,6 +607,17 @@ void skiac_canvas_draw_image(skiac_canvas* c_canvas,
   }
   const SkSamplingOptions sampling =
       is_canvas ? CcSampling(fq, matrix.asM33()) : SamplingOptionsFromFQ(fq);
+  if (is_canvas && vector_device) {
+    // SkPDFDevice draws a source rect smaller than the image as a subset image
+    // of its own, so a sprite sheet would embed one copy per sprite. Draw the
+    // whole snapshot under a clip instead: every draw shares one image.
+    CANVAS_CAST->save();
+    CANVAS_CAST->clipRect(dst_rect);
+    CANVAS_CAST->concat(SkMatrix::RectToRect(src_rect, dst_rect));
+    CANVAS_CAST->drawImage(image.get(), 0, 0, sampling, &paint);
+    CANVAS_CAST->restore();
+    return;
+  }
   CANVAS_CAST->drawImageRect(image.get(), src_rect, dst_rect, sampling, &paint,
                              SkCanvas::kFast_SrcRectConstraint);
 }
