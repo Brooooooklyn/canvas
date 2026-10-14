@@ -2115,16 +2115,18 @@ impl Context {
     height: f64,
   ) -> (f32, f32, f32, f32) {
     let (x, y, width, height) = Self::normalize_rect_for_canvas(x, y, width, height);
-    // Non-finite values stay non-finite (Blink returns before this), so
-    // `rect_fillable` still rejects them.
-    let clamp = |v: f64| {
-      if v.is_finite() {
-        v.clamp(-f32::MAX as f64, f32::MAX as f64) as f32
-      } else {
-        v as f32
-      }
-    };
+    let clamp = Self::clamp_to_f32;
     (clamp(x), clamp(y), clamp(width), clamp(height))
+  }
+
+  /// Blink ClampTo<float>. Non-finite values stay non-finite (Blink returns
+  /// before this), so `rect_fillable` still rejects them.
+  pub(crate) fn clamp_to_f32(v: f64) -> f32 {
+    if v.is_finite() {
+      v.clamp(-f32::MAX as f64, f32::MAX as f64) as f32
+    } else {
+      v as f32
+    }
   }
 
   /// `rect_fillable` for callers whose rect Skia sorts before use: drawRect
@@ -3762,13 +3764,17 @@ impl CanvasRenderingContext2D {
         ) => (sx, sy, s_width, s_height, dx, dy, d_width, d_height),
         _ => return Ok(()),
       };
-    // Normalised, but without drawImage's clamp to the f32 range: a size past
-    // it stays infinite and the replay draws nothing, as drawImage does with
-    // f32::MAX. A finite f32::MAX would scale the picture into view instead.
+    // Normalised, and the origins clamped to the f32 range as drawImage does,
+    // so a transform that scales the clamped rect back into view draws it.
+    // The sizes are not clamped: a size past the range stays infinite and the
+    // replay draws nothing, as drawImage does with f32::MAX unless a tiny
+    // transform scales it back into view. A finite f32::MAX would make the
+    // replay scale the picture's first column across the canvas instead.
     let (sx, sy, s_width, s_height) = Context::normalize_rect_for_canvas(sx, sy, s_width, s_height);
     let (dx, dy, d_width, d_height) = Context::normalize_rect_for_canvas(dx, dy, d_width, d_height);
-    let (sx, sy, s_width, s_height) = (sx as f32, sy as f32, s_width as f32, s_height as f32);
-    let (dx, dy, d_width, d_height) = (dx as f32, dy as f32, d_width as f32, d_height as f32);
+    let clamp = Context::clamp_to_f32;
+    let (sx, sy, s_width, s_height) = (clamp(sx), clamp(sy), s_width as f32, s_height as f32);
+    let (dx, dy, d_width, d_height) = (clamp(dx), clamp(dy), d_width as f32, d_height as f32);
 
     // approx_bytes_used (charged inside Context::draw_canvas) excludes the
     // payloads a picture references -- putImageData/drawImage bitmaps, image
