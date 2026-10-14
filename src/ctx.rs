@@ -3401,7 +3401,8 @@ impl CanvasRenderingContext2D {
         )
       }
       Either3::B(svg) => {
-        // The raster surface holds what the SVG shows only after a flush.
+        // The raster surface holds what was drawn (as a canvas would draw it)
+        // only after a flush.
         svg.ctx.context.flush();
         let bitmap = BitmapRef::Owned(svg.ctx.context.surface.get_bitmap());
         (

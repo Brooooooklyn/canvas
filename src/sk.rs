@@ -2146,8 +2146,10 @@ impl Surface {
   }
 
   /// On an SVG surface, draw what its canvas recorded into the raster surface
-  /// beside it (skiac_svg_canvas_flush), so the raster holds what the SVG
-  /// shows. Every read of an SVG surface's pixels comes after this.
+  /// beside it (skiac_svg_canvas_flush), so the raster holds what was drawn,
+  /// as a canvas would draw it. It can differ from the SVG output where
+  /// SkSVGDevice drops an effect (layers, blend modes). Every read of an SVG
+  /// surface's pixels comes after this.
   pub(crate) fn flush_svg(&mut self) {
     if self.is_svg && !self.canvas.0.is_null() {
       unsafe { ffi::skiac_svg_canvas_flush(self.canvas.0) };
