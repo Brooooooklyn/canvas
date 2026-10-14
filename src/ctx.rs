@@ -6,7 +6,7 @@ use std::str::FromStr;
 use std::sync::LazyLock;
 
 use cssparser::Parser;
-use cssparser_color::{Color as CSSColor, hsl_to_rgb};
+use cssparser_color::Color as CSSColor;
 use libavif::AvifData;
 use napi::{JsString, bindgen_prelude::*};
 use regex::Regex;
@@ -29,7 +29,7 @@ use crate::{
   gradient::{CanvasGradient, Gradient},
   image::*,
   path::Path,
-  pattern::{CanvasPattern, Pattern},
+  pattern::{CanvasPattern, Pattern, hsl_to_rgba8},
   sk::{
     AlphaType, Bitmap, BlendMode, ColorSpace, FillType, FilterQuality, FontVariantCaps,
     ImageFilter, LineMetrics, MaskFilter, Matrix, Paint, PaintStyle, Path as SkPath, PathEffect,
@@ -1602,21 +1602,9 @@ impl Context {
         };
       }
       CSSColor::Hsl(hsl) => {
-        let h = hsl.hue.unwrap_or(0.0) / 360.0;
-        let s = hsl.saturation.unwrap_or(0.0);
-        let l = hsl.lightness.unwrap_or(0.0);
-        let a = hsl.alpha.unwrap_or(1.0);
-
-        let (r, g, b) = hsl_to_rgb(h, s, l);
-
         drop(parser);
         self.state.shadow_color_string = shadow_color;
-        self.state.shadow_color = RGBA {
-          r: (r * 255.0) as u8,
-          g: (g * 255.0) as u8,
-          b: (b * 255.0) as u8,
-          a: (a * 255.0).round() as u8,
-        };
+        self.state.shadow_color = hsl_to_rgba8(&hsl);
       }
       _ => {
         return Err(SkError::Generic("Unsupported color format".to_owned()));

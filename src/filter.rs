@@ -1,7 +1,7 @@
 use std::num::ParseFloatError;
 
 use cssparser::Parser;
-use cssparser_color::{Color, RgbaLegacy, hsl_to_rgb};
+use cssparser_color::{Color, RgbaLegacy};
 use nom::{
   AsChar, Err, IResult, Parser as NomParser,
   branch::alt,
@@ -14,6 +14,7 @@ use nom::{
 use rgb::RGBA;
 use thiserror::Error;
 
+use crate::pattern::hsl_to_rgba8;
 use crate::sk::{ImageFilter, degrees_to_radians};
 
 #[derive(Error, Debug)]
@@ -206,7 +207,10 @@ fn drop_shadow_parser(input: &str) -> IResult<&str, CssFilter> {
     .parse(offset_y_output)
     .unwrap_or_else(|_: Err<Error<&str>>| (offset_y_output, 0.0f32));
   let blur_radius_output = blur_radius_output.trim();
-  let is_rgb_fn = blur_radius_output.starts_with("rgb(") || blur_radius_output.starts_with("rgba(");
+  // A functional color ends with its own ')', before the one that closes drop-shadow().
+  let is_rgb_fn = ["rgb(", "rgba(", "hsl(", "hsla("]
+    .iter()
+    .any(|f| blur_radius_output.starts_with(f));
   let (shadow_color_output, shadow_color_str) =
     take_until(if is_rgb_fn { "))" } else { ")" })(blur_radius_output)?;
   let shadow_color_str = shadow_color_str.trim();
@@ -236,21 +240,7 @@ fn drop_shadow_parser(input: &str) -> IResult<&str, CssFilter> {
           a: (rgba.alpha * 255.0).round() as u8,
         }
       }
-      Color::Hsl(hsl) => {
-        let h = hsl.hue.unwrap_or(0.0) / 360.0;
-        let s = hsl.saturation.unwrap_or(0.0);
-        let l = hsl.lightness.unwrap_or(0.0);
-        let a = hsl.alpha.unwrap_or(1.0);
-
-        let (r, g, b) = hsl_to_rgb(h, s, l);
-
-        RGBA {
-          r: (r * 255.0) as u8,
-          g: (g * 255.0) as u8,
-          b: (b * 255.0) as u8,
-          a: (a * 255.0).round() as u8,
-        }
-      }
+      Color::Hsl(hsl) => hsl_to_rgba8(&hsl),
       _ => BLACK,
     }
   } else {
@@ -558,6 +548,25 @@ fn drop_shadow_parse() {
     Ok((
       "",
       CssFilter::DropShadow(2.0f32, 2.0f32, 5.0f32, RGBA::new(47, 20, 223, 255))
+    ))
+  );
+
+  // Chrome 155 draws hsl(120, 100%, 25%) as 0,128,0.
+  assert_eq!(
+    css_filter("drop-shadow(4px 0 0 hsl(120, 100%, 25%)) blur(1px)"),
+    Ok((
+      "",
+      vec![
+        CssFilter::DropShadow(4.0f32, 0.0f32, 0.0f32, RGBA::new(0, 128, 0, 255)),
+        CssFilter::Blur(1.0),
+      ]
+    ))
+  );
+  assert_eq!(
+    drop_shadow_parser("drop-shadow(4px 0 0 hsla(0, 100%, 50%, 0.5))"),
+    Ok((
+      "",
+      CssFilter::DropShadow(4.0f32, 0.0f32, 0.0f32, RGBA::new(255, 0, 0, 128))
     ))
   );
 }
