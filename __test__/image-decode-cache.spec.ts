@@ -207,6 +207,24 @@ test('drawImage of an Image whose target size rounds to 0 draws nothing', async 
   }
 })
 
+// Chrome draws an SVG Image as vectors, never from the decode cache. We keep
+// sampling the SVG's raster with the smoothing quality, as before: 'high' is
+// cubic and an Image pattern's 'medium' takes a mip level, so neither matches
+// 'low', as decode levels would.
+test('SVG Images are not drawn from decode levels', async (t) => {
+  const stripes = Array.from(
+    { length: 32 },
+    (_, i) => `<rect x="${i * 2}" width="1" height="64" fill="${['#f00', '#0f0', '#00f'][i % 3]}"/>`,
+  ).join('')
+  const image = await loadImage(
+    Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">${stripes}</svg>`),
+  )
+  const drawn = (quality: Quality) => draw(24, quality, image, (ctx, s) => ctx.drawImage(s, 0, 0, 20, 20))
+  t.notDeepEqual(drawn('high'), drawn('low'))
+  const filled = (quality: Quality) => fillPattern(8, quality, image, (_, p) => p.setTransform(scale(0.3)))
+  t.notDeepEqual(filled('medium'), filled('low'))
+})
+
 // The decode cache is a raster step: SVG (and PDF) output embeds the original
 // image.
 test('SVG export embeds the original Image, not a decode level', async (t) => {

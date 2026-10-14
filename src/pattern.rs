@@ -99,7 +99,9 @@ impl CanvasPattern {
     // (`backing`), so clones pushed onto the `save()`/`restore()` state stack
     // stay valid after the JS `CanvasPattern` is garbage-collected.
     // https://github.com/Brooooooklyn/canvas/issues/1341
-    let is_image = matches!(input, Either4::A(_));
+    // A raster Image goes through Chrome's decode cache; an SVG Image is drawn
+    // as vectors there, so its raster is sampled as it is.
+    let is_image = matches!(&input, Either4::A(image) if !image.is_svg);
     let (backing_bytes, backing, accounting_id) = match input {
       Either4::A(image) => {
         let bitmap = image

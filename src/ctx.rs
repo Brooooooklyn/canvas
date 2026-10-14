@@ -3590,7 +3590,9 @@ impl CanvasRenderingContext2D {
         if let Some(bitmap) = &image.bitmap {
           (
             BitmapRef::Borrowed(&bitmap.inner),
-            Some(bitmap.as_ref()),
+            // Chrome draws an SVG Image as vectors, not from the decode
+            // cache; its raster is sampled as it is.
+            (!image.is_svg).then_some(bitmap.as_ref()),
             RasterKey::Resource {
               id: bitmap.resource_id,
               generation: 0,

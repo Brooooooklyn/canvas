@@ -4649,8 +4649,9 @@ pub struct ImagePattern {
   pub(crate) repeat_x: TileMode,
   pub(crate) repeat_y: TileMode,
   pub(crate) is_canvas: bool,
-  /// The pattern samples an Image element, which Chrome draws from its decode
-  /// cache. Canvas and ImageData sources are drawn as they are.
+  /// The pattern samples a raster Image element, which Chrome draws from its
+  /// decode cache. SVG Images, canvas and ImageData sources are drawn as they
+  /// are.
   pub(crate) is_image: bool,
   /// Bytes the whole backing raster occupies.
   pub(crate) backing_bytes: usize,
