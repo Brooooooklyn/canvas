@@ -164,11 +164,11 @@ interface CanvasPDFAnnotations {
 }
 
 type PredefinedColorSpace = 'display-p3' | 'srgb'
-type ImageDataPixelFormat = 'rgba-float16' | 'rgba-float32' | 'rgba-unorm8'
+/** Only 8-bit storage exists: 'rgba-float16' and 'rgba-float32' throw a TypeError. */
+type ImageDataPixelFormat = 'rgba-unorm8'
 
 interface ImageDataSettings {
   colorSpace?: PredefinedColorSpace
-  /** Only 'rgba-unorm8' storage exists: the float formats are accepted and stored as 8-bit. */
   pixelFormat?: ImageDataPixelFormat
 }
 interface CanvasImageData {

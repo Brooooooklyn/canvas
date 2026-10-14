@@ -306,13 +306,10 @@ impl ImageDataSettings {
     // Members in lexicographic order, as the bindings read them.
     let color_space =
       dictionary.enumeration("colorSpace", "PredefinedColorSpace", PREDEFINED_COLOR_SPACE)?;
-    // Only rgba-unorm8 storage exists here: the float formats are accepted
-    // and stored as 8-bit, as before.
-    dictionary.enumeration(
-      "pixelFormat",
-      "ImageDataPixelFormat",
-      &["rgba-unorm8", "rgba-float16", "rgba-float32"],
-    )?;
+    // Chrome 155 also takes 'rgba-float16' and 'rgba-float32' (Float16Array
+    // and Float32Array data). Storage here is 8-bit only, so they are
+    // rejected like any value outside the enum, not stored as 8-bit.
+    dictionary.enumeration("pixelFormat", "ImageDataPixelFormat", &["rgba-unorm8"])?;
     let color_space = color_space
       .map(|cs| supported_color_space(env, prefix, cs))
       .transpose()?;
