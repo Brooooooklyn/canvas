@@ -14,6 +14,7 @@
 #include <include/core/SkDrawable.h>
 #include <include/core/SkFontMgr.h>
 #include <include/core/SkGraphics.h>
+#include <include/core/SkM44.h>
 #include <include/core/SkMaskFilter.h>
 #include <include/core/SkPaint.h>
 #include <include/core/SkPathBuilder.h>
@@ -844,6 +845,7 @@ void skiac_canvas_draw_color(skiac_canvas* c_canvas,
 void skiac_canvas_draw_image(skiac_canvas* c_canvas,
                              skiac_bitmap* c_bitmap,
                              bool is_canvas,
+                             skiac_transform c_ctm,
                              float sx,
                              float sy,
                              float s_width,

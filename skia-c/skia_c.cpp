@@ -94,6 +94,30 @@ static SkSamplingOptions SamplingOptionsFromFQ(int fq) {
   return SkSamplingOptions(SkFilterMode::kNearest, SkMipmapMode::kNone);
 }
 
+// How Chrome samples an image it draws as it is, with no decode cache step (a
+// canvas source): cc MatrixToScalingOperation (cc/paint/paint_op.cc:134-142)
+// and PaintFlags::FilterQualityToSkSamplingOptions (cc/paint/paint_flags.cc:
+// 178-207). 'high' is cubic only when both axes scale up, and 'medium' blends
+// two mip levels.
+static SkSamplingOptions CcSampling(int fq, const SkMatrix& matrix) {
+  SkSize scale;
+  const bool upscale =
+      matrix.decomposeScale(&scale) && scale.width() > 1 && scale.height() > 1;
+  switch (fq) {
+    case 3:
+      if (upscale) {
+        return SkSamplingOptions(SkCubicResampler::Mitchell());
+      }
+      [[fallthrough]];
+    case 2:
+      return SkSamplingOptions(SkFilterMode::kLinear, SkMipmapMode::kLinear);
+    case 1:
+      return SkSamplingOptions(SkFilterMode::kLinear, SkMipmapMode::kNone);
+    default:
+      return SkSamplingOptions(SkFilterMode::kNearest, SkMipmapMode::kNone);
+  }
+}
+
 // Chrome samples a pattern through cc PaintShader::GetSkShader, which maps the
 // quality with ScalingOperation::kUnknown (cc/paint/paint_shader.cc and
 // PaintFlags::FilterQualityToSkSamplingOptions in cc/paint/paint_flags.cc):
@@ -528,9 +552,12 @@ void ClipRectsToImageRect(const GfxRectF& image, GfxRectF* src, GfxRectF* dst) {
 // StaticBitmapImage::DrawHelper (static_bitmap_image.cc:83-116) do: clip the
 // rects to the image, pick AA on the clipped destination, then drawImageRect
 // with kFast (Image::kDoNotClampImageToSourceRect).
+// `c_ctm` is the context's transform, as the canvas may be a recorder that
+// sits at identity.
 void skiac_canvas_draw_image(skiac_canvas* c_canvas,
                              skiac_bitmap* c_bitmap,
                              bool is_canvas,
+                             skiac_transform c_ctm,
                              float sx,
                              float sy,
                              float s_width,
@@ -543,22 +570,12 @@ void skiac_canvas_draw_image(skiac_canvas* c_canvas,
                              int filter_quality,
                              skiac_paint* c_paint) {
   auto fq = enable_smoothing ? filter_quality : 0;
-  const auto sampling = SamplingOptionsFromFQ(fq);
-  sk_sp<SkImage> image;
-  if (is_canvas) {
-    auto src_surface = reinterpret_cast<SkSurface*>(c_bitmap);
-    // Snapshot instead of SkSurface::draw -- on a never-snapshotted surface
-    // SkSurface::draw copies the whole pixel buffer on every call (#1321).
-    // The snapshot shares the pixels; a later write into the source
-    // copies-on-write, which keeps call-time capture semantics.
-    image = src_surface->makeImageSnapshot();
-  } else {
-    image = SkImages::RasterFromBitmap(*BITMAP_CAST);
-  }
-  if (!image) {
-    return;
-  }
-  const GfxRectF image_rect(0, 0, image->width(), image->height());
+  auto src_surface =
+      is_canvas ? reinterpret_cast<SkSurface*>(c_bitmap) : nullptr;
+  const SkISize image_size =
+      is_canvas ? SkISize::Make(src_surface->width(), src_surface->height())
+                : BITMAP_CAST->dimensions();
+  const GfxRectF image_rect(0, 0, image_size.width(), image_size.height());
   GfxRectF src(sx, sy, s_width, s_height);
   GfxRectF dst(dx, dy, d_width, d_height);
   ClipRectsToImageRect(image_rect, &src, &dst);
@@ -570,8 +587,23 @@ void skiac_canvas_draw_image(skiac_canvas* c_canvas,
   SkPaint paint = c_paint ? *PAINT_CAST : SkPaint();
   paint.setAntiAlias(
       ShouldDrawImageAntialiased(CANVAS_CAST->getTotalMatrix(), dst.w, dst.h));
-  CANVAS_CAST->drawImageRect(image.get(), src.ToSkRect(), dst.ToSkRect(),
-                             sampling, &paint,
+  const SkRect src_rect = src.ToSkRect();
+  const SkRect dst_rect = dst.ToSkRect();
+  // DrawImageRectOp::RasterWithFlags (cc/paint/paint_op.cc:1456-1457).
+  const SkM44 matrix = SkM44(conv_from_transform(c_ctm)) *
+                       SkM44(SkMatrix::RectToRect(src_rect, dst_rect));
+  // Snapshot instead of SkSurface::draw -- on a never-snapshotted surface
+  // SkSurface::draw copies the whole pixel buffer on every call (#1321).
+  // The snapshot shares the pixels; a later write into the source
+  // copies-on-write, which keeps call-time capture semantics.
+  sk_sp<SkImage> image = is_canvas ? src_surface->makeImageSnapshot()
+                                   : SkImages::RasterFromBitmap(*BITMAP_CAST);
+  if (!image) {
+    return;
+  }
+  const SkSamplingOptions sampling =
+      is_canvas ? CcSampling(fq, matrix.asM33()) : SamplingOptionsFromFQ(fq);
+  CANVAS_CAST->drawImageRect(image.get(), src_rect, dst_rect, sampling, &paint,
                              SkCanvas::kFast_SrcRectConstraint);
 }
 
