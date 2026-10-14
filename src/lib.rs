@@ -105,8 +105,8 @@ pub struct CanvasElement<'scope> {
 }
 
 // alpha:false base fill. It is a direct surface write: with_surface_canvas
-// marks the recorded layers stale (drawCanvas rebases on the surface) and
-// bumps the content version.
+// bumps the content version, and on a raster canvas also marks the recorded
+// layers stale (drawCanvas rebases on the surface). SVG has no recorder.
 fn apply_opaque_base(context_2d: &mut Context, width: u32, height: u32) -> Result<()> {
   let mut fill_paint = context_2d.fill_paint()?;
   fill_paint.set_color(255, 255, 255, 255);
@@ -868,15 +868,7 @@ impl<'scope> SVGCanvas<'scope> {
     }
     let context_2d = &mut self.ctx.context;
     if !attrs.as_ref().and_then(|a| a.alpha).unwrap_or(true) {
-      let mut fill_paint = context_2d.fill_paint()?;
-      fill_paint.set_color(255, 255, 255, 255);
-      context_2d.alpha = false;
-      let (width, height) = (self.width as f32, self.height as f32);
-      // The base fill is a direct surface write: with_surface_canvas bumps
-      // the content version (SVG has no recorder).
-      context_2d.with_surface_canvas(|canvas| {
-        canvas.draw_rect(0f32, 0f32, width, height, &fill_paint);
-      });
+      apply_opaque_base(context_2d, self.width, self.height)?;
     }
     let color_space = attrs
       .and_then(|a| a.color_space)
@@ -923,15 +915,26 @@ impl<'scope> SVGCanvas<'scope> {
     }
   }
 
+  // Setting width or height resets the drawing but keeps the context's
+  // settings (alpha, color space). Like get_context, the color space is kept
+  // on the context only; the SVG surface is made as in the constructor.
+  fn resized_context(&self, width: u32, height: u32) -> Result<Context> {
+    let old = &self.ctx.context;
+    let mut context_2d = Context::new_svg(width, height, self.flag.into(), ColorSpace::default())?;
+    context_2d.color_space = old.color_space;
+    if !old.alpha {
+      apply_opaque_base(&mut context_2d, width, height)?;
+    }
+    Ok(context_2d)
+  }
+
   #[napi(setter)]
   pub fn set_width(&mut self, env: Env, width: i32) -> Result<()> {
     let width = (if width <= 0 { 350 } else { width }) as u32;
     self.width = width;
     let height = self.height;
-    let old_ctx = mem::replace(
-      &mut self.ctx.context,
-      Context::new_svg(width, height, self.flag.into(), ColorSpace::default())?,
-    );
+    let new_ctx = self.resized_context(width, height)?;
+    let old_ctx = mem::replace(&mut self.ctx.context, new_ctx);
     env.adjust_external_memory((width as i64 - old_ctx.width as i64) * (height as i64) * 4)?;
     Ok(())
   }
@@ -946,10 +949,8 @@ impl<'scope> SVGCanvas<'scope> {
     let height = (if height <= 0 { 150 } else { height }) as u32;
     self.height = height;
     let width = self.width;
-    let old_ctx = mem::replace(
-      &mut self.ctx.context,
-      Context::new_svg(width, height, self.flag.into(), ColorSpace::default())?,
-    );
+    let new_ctx = self.resized_context(width, height)?;
+    let old_ctx = mem::replace(&mut self.ctx.context, new_ctx);
     env.adjust_external_memory((width as i64) * (height as i64 - old_ctx.height as i64) * 4)?;
     Ok(())
   }
