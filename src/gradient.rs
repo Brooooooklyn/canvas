@@ -1,14 +1,15 @@
 use std::result;
 
 use cssparser::Parser;
-use cssparser_color::{Color as CSSColor, hsl_to_rgb};
+use cssparser_color::Color as CSSColor;
 use napi::bindgen_prelude::*;
 
 use crate::{
   error::SkError,
+  pattern::hsl_color_to_srgb,
   sk::{
-    Color, ConicGradient, Gradient as SkGradient, LinearGradient, RadialGradient, Shader, TileMode,
-    Transform,
+    Color4f, ConicGradient, Gradient as SkGradient, LinearGradient, RadialGradient, Shader,
+    TileMode, Transform, unit_from_u8,
   },
 };
 
@@ -63,7 +64,7 @@ impl Gradient {
     })
   }
 
-  pub fn add_color_stop(&mut self, offset: f32, color: Color) {
+  pub fn add_color_stop(&mut self, offset: f32, color: Color4f) {
     let (stops, colors) = match self {
       Self::Linear(linear_gradient) => (
         &mut linear_gradient.base.positions,
@@ -107,7 +108,7 @@ impl Gradient {
   /// [lineargradient.js](skia/modules/canvaskit/htmlcanvas/lineargradient.js)
   /// [radialgradient.js](skia/modules/canvaskit/htmlcanvas/radialgradient.js)
   /// Rough size of the shader a recorded draw retains: ~32 B per stop
-  /// (position f32, packed color, plus share of the shader object).
+  /// (position f32, float RGBA color, plus share of the shader object).
   pub(crate) fn estimated_bytes(&self) -> usize {
     let stops = match self {
       Self::Linear(g) => &g.base.colors,
@@ -194,26 +195,22 @@ impl CanvasGradient {
           "Gradient stop color should not be `currentcolor` keyword".to_owned(),
         ));
       }
-      CSSColor::Rgba(rgba) => Color::from_rgba(
+      CSSColor::Rgba(rgba) => Color4f::from_rgba8(
         rgba.red,                           // Already u8
         rgba.green,                         // Already u8
         rgba.blue,                          // Already u8
         (rgba.alpha * 255.0).round() as u8, // Scale f32 0.0-1.0 to u8 0-255
       ),
+      // Blink keeps an hsl() stop as float sRGB (Color::ToGradientStopSkColor4f),
+      // with the 8-bit alpha of its fast path (css_parser_fast_paths.cc:1071-1083).
       CSSColor::Hsl(hsl) => {
-        let h = hsl.hue.unwrap_or(0.0) / 360.0;
-        let s = hsl.saturation.unwrap_or(0.0);
-        let l = hsl.lightness.unwrap_or(0.0);
-        let a = hsl.alpha.unwrap_or(1.0);
-
-        let (r, g, b) = hsl_to_rgb(h, s, l);
-
-        Color::from_rgba(
-          (r * 255.0) as u8,
-          (g * 255.0) as u8,
-          (b * 255.0) as u8,
-          (a * 255.0).round() as u8,
-        )
+        let [r, g, b] = hsl_color_to_srgb(&hsl);
+        Color4f {
+          r,
+          g,
+          b,
+          a: unit_from_u8((hsl.alpha.unwrap_or(1.0) * 255.0).round() as u8),
+        }
       }
       _ => {
         return Err(Error::new(
@@ -230,19 +227,19 @@ impl CanvasGradient {
 #[test]
 fn test_add_color_stop() {
   let mut linear_gradient = Gradient::create_linear_gradient(0.0, 0.0, 0.0, 77.0);
-  linear_gradient.add_color_stop(1.0, Color::from_rgba(0, 128, 128, 255));
-  linear_gradient.add_color_stop(0.6, Color::from_rgba(0, 255, 255, 255));
-  linear_gradient.add_color_stop(0.3, Color::from_rgba(176, 199, 45, 255));
-  linear_gradient.add_color_stop(0.0, Color::from_rgba(204, 82, 50, 255));
+  linear_gradient.add_color_stop(1.0, Color4f::from_rgba8(0, 128, 128, 255));
+  linear_gradient.add_color_stop(0.6, Color4f::from_rgba8(0, 255, 255, 255));
+  linear_gradient.add_color_stop(0.3, Color4f::from_rgba8(176, 199, 45, 255));
+  linear_gradient.add_color_stop(0.0, Color4f::from_rgba8(204, 82, 50, 255));
   if let Gradient::Linear(linear_gradient) = linear_gradient {
     assert_eq!(linear_gradient.base.positions, vec![0.0, 0.3, 0.6, 1.0]);
     assert_eq!(
       linear_gradient.base.colors,
       vec![
-        Color::from_rgba(204, 82, 50, 255),
-        Color::from_rgba(176, 199, 45, 255),
-        Color::from_rgba(0, 255, 255, 255),
-        Color::from_rgba(0, 128, 128, 255),
+        Color4f::from_rgba8(204, 82, 50, 255),
+        Color4f::from_rgba8(176, 199, 45, 255),
+        Color4f::from_rgba8(0, 255, 255, 255),
+        Color4f::from_rgba8(0, 128, 128, 255),
       ]
     );
   } else {
@@ -254,11 +251,11 @@ fn test_add_color_stop() {
 /// (dom-canvasgradient-addcolorstop).
 #[test]
 fn test_add_color_stop_duplicated_offsets_keep_insertion_order() {
-  let red = Color::from_rgba(255, 0, 0, 255);
-  let green = Color::from_rgba(0, 255, 0, 255);
-  let blue = Color::from_rgba(0, 0, 255, 255);
-  let white = Color::from_rgba(255, 255, 255, 255);
-  let black = Color::from_rgba(0, 0, 0, 255);
+  let red = Color4f::from_rgba8(255, 0, 0, 255);
+  let green = Color4f::from_rgba8(0, 255, 0, 255);
+  let blue = Color4f::from_rgba8(0, 0, 255, 255);
+  let white = Color4f::from_rgba8(255, 255, 255, 255);
+  let black = Color4f::from_rgba8(0, 0, 0, 255);
 
   let positions_colors = |gradient: Gradient| match gradient {
     Gradient::Linear(g) => (g.base.positions, g.base.colors),

@@ -861,7 +861,7 @@ pub mod ffi {
 
     pub fn skiac_shader_make_linear_gradient(
       points: *const skiac_point,
-      colors: *const super::Color,
+      colors: *const super::Color4f,
       positions: *const f32,
       count: i32,
       tile_mode: i32,
@@ -874,7 +874,7 @@ pub mod ffi {
       start_radius: f32,
       end_point: skiac_point,
       end_radius: f32,
-      colors: *const super::Color,
+      colors: *const super::Color4f,
       positions: *const f32,
       count: i32,
       tile_mode: i32,
@@ -886,7 +886,7 @@ pub mod ffi {
       cx: f32,
       cy: f32,
       radius: f32,
-      colors: *const super::Color,
+      colors: *const super::Color4f,
       positions: *const f32,
       count: i32,
       tile_mode: i32,
@@ -2644,25 +2644,32 @@ impl DerefMut for SurfaceDataMut<'_> {
   }
 }
 
+/// An unpremultiplied sRGB gradient stop color, laid out as SkColor4f. Blink
+/// hands Skia float stops too (Color::ToGradientStopSkColor4f).
 #[repr(C)]
-#[derive(Copy, Clone, Eq, PartialEq, Hash, PartialOrd, Ord)]
-pub struct Color(pub u32);
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct Color4f {
+  pub r: f32,
+  pub g: f32,
+  pub b: f32,
+  pub a: f32,
+}
 
-impl fmt::Debug for Color {
-  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-    f.debug_struct("Color")
-      .field("R", &(((self.0) >> 16) & 0xFF))
-      .field("G", &(((self.0) >> 8) & 0xFF))
-      .field("B", &(self.0 & 0xFF))
-      .field("A", &(((self.0) >> 24) & 0xFF))
-      .finish()
+impl Color4f {
+  /// The same arithmetic as SkColor4f::FromColor: `x * (1 / 255.0f)`.
+  pub fn from_rgba8(r: u8, g: u8, b: u8, a: u8) -> Self {
+    Self {
+      r: unit_from_u8(r),
+      g: unit_from_u8(g),
+      b: unit_from_u8(b),
+      a: unit_from_u8(a),
+    }
   }
 }
 
-impl Color {
-  pub fn from_rgba(r: u8, g: u8, b: u8, a: u8) -> Color {
-    Color(((a as u32) << 24) | ((r as u32) << 16) | ((g as u32) << 8) | (b as u32))
-  }
+pub(crate) fn unit_from_u8(v: u8) -> f32 {
+  const K: f32 = 1.0 / 255.0;
+  v as f32 * K
 }
 
 #[repr(transparent)]
@@ -3696,7 +3703,7 @@ impl Drop for Path {
 
 #[derive(Debug, Clone)]
 pub struct Gradient {
-  pub colors: Vec<Color>,
+  pub colors: Vec<Color4f>,
   pub positions: Vec<f32>,
   pub tile_mode: TileMode,
   pub transform: Transform,
