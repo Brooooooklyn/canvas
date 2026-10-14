@@ -65,6 +65,31 @@ test('alpha:false survives width/height changes', (t) => {
   }
 })
 
+// GIF and AVIF carry no color profile, so the spec converts their pixels to
+// sRGB. The reference is an sRGB canvas that holds the same pixels.
+test('gif and avif output of a display-p3 canvas is converted to sRGB', async (t) => {
+  const p3 = createCanvas(8, 8)
+  const p3Context = p3.getContext('2d', { colorSpace: 'display-p3' })
+  p3Context.fillStyle = 'rgb(32,128,223)'
+  p3Context.fillRect(0, 0, 8, 8)
+  const srgb = createCanvas(8, 8)
+  srgb.getContext('2d').drawImage(p3, 0, 0)
+  const decode = async (data: Buffer) => {
+    const ctx = createCanvas(8, 8).getContext('2d')
+    ctx.drawImage(await loadImage(data), 0, 0)
+    return [...ctx.getImageData(4, 4, 1, 1).data]
+  }
+  const encoders: [string, (canvas: Canvas) => Buffer][] = [
+    ['toBuffer gif', (canvas) => canvas.toBuffer('image/gif')],
+    ['encodeSync gif', (canvas) => canvas.encodeSync('gif')],
+    ['toBuffer avif', (canvas) => canvas.toBuffer('image/avif')],
+    ['encodeSync avif', (canvas) => canvas.encodeSync('avif')],
+  ]
+  for (const [name, encode] of encoders) {
+    t.deepEqual(await decode(encode(p3)), await decode(encode(srgb)), name)
+  }
+})
+
 test('pattern snapshots preserve integer texels after canvas mutation', (t) => {
   const source = createCanvas(2, 2)
   const src = source.getContext('2d')

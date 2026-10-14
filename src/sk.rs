@@ -5006,7 +5006,8 @@ impl SkImage {
     }
   }
 
-  /// Read the whole image as RGBA_8888 pixels in the image's color space.
+  /// Read the whole image as RGBA_8888 pixels converted to sRGB, for the
+  /// encoders that write no color profile (GIF, AVIF).
   /// `alpha_type` must be [`AlphaType::Premultiplied`] or [`AlphaType::Unpremultiplied`];
   /// Skia converts from the image's premultiplied storage when unpremultiplied is requested.
   pub fn read_pixels(&self, alpha_type: AlphaType) -> Option<Vec<u8>> {

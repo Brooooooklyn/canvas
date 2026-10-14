@@ -2114,9 +2114,11 @@ bool skiac_image_read_pixels(skiac_image* c_image,
     return false;
   }
   auto image = IMAGE_CAST;
+  // The GIF and AVIF encoders write no color profile, so the spec wants
+  // their pixels converted to sRGB.
   auto info = SkImageInfo::Make(
       image->width(), image->height(), kRGBA_8888_SkColorType,
-      static_cast<SkAlphaType>(alpha_type), image->refColorSpace());
+      static_cast<SkAlphaType>(alpha_type), SkColorSpace::MakeSRGB());
   return image->readPixels(nullptr, info, dst, row_bytes, 0, 0);
 }
 
