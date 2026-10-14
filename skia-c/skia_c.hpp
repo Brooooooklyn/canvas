@@ -80,6 +80,7 @@ typedef struct skiac_image_filter skiac_image_filter;
 typedef struct skiac_data skiac_data;
 typedef struct skiac_image skiac_image;
 typedef struct skiac_bitmap skiac_bitmap;
+typedef struct skiac_image_levels skiac_image_levels;
 typedef struct skiac_sk_string skiac_sk_string;
 typedef struct skiac_font_metrics skiac_font_metrics;
 typedef struct skiac_typeface skiac_typeface;
@@ -845,6 +846,7 @@ void skiac_canvas_draw_color(skiac_canvas* c_canvas,
 void skiac_canvas_draw_image(skiac_canvas* c_canvas,
                              skiac_bitmap* c_bitmap,
                              bool is_canvas,
+                             skiac_image_levels* c_levels,
                              skiac_transform c_ctm,
                              bool vector_device,
                              float sx,
@@ -1256,6 +1258,11 @@ skiac_shader* skiac_image_make_pattern_shader(skiac_image* c_image,
                                               int filter_quality,
                                               skiac_transform c_ts);
 void skiac_bitmap_destroy(skiac_bitmap* c_bitmap);
+
+// Image decode-cache levels
+skiac_image_levels* skiac_image_levels_create();
+void skiac_image_levels_destroy(skiac_image_levels* c_levels);
+size_t skiac_image_levels_bytes(skiac_image_levels* c_levels);
 
 // SkString
 void skiac_delete_sk_string(skiac_sk_string* c_sk_string);

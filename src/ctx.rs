@@ -31,9 +31,10 @@ use crate::{
   path::Path,
   pattern::{CanvasPattern, Pattern},
   sk::{
-    AlphaType, Bitmap, BlendMode, ColorSpace, FillType, FilterQuality, FontVariantCaps,
-    ImageFilter, LineMetrics, MaskFilter, Matrix, Paint, PaintStyle, Path as SkPath, PathEffect,
-    PathOp, SkEncodedImageFormat, SkImage, SkWMemoryStream, SkiaDataRef, Surface, Transform,
+    AccountedBitmap, AlphaType, Bitmap, BlendMode, ColorSpace, FillType, FilterQuality,
+    FontVariantCaps, ImageFilter, LineMetrics, MaskFilter, Matrix, Paint, PaintStyle,
+    Path as SkPath, PathEffect, PathOp, SkEncodedImageFormat, SkImage, SkWMemoryStream,
+    SkiaDataRef, Surface, Transform,
   },
   state::Context2dRenderingState,
 };
@@ -2197,9 +2198,12 @@ impl Context {
   /// (skiac_surface_get_bitmap), but each recorded drawImage pins a fresh
   /// makeImageSnapshot -- mutating the source afterwards copy-on-writes a
   /// new raster that the id alone cannot distinguish, hence the generation.
+  /// `image` is the Image `bitmap` belongs to, `None` for a canvas source. On
+  /// a raster canvas Chrome draws an Image from its decode cache.
   pub(crate) fn draw_image(
     &mut self,
     bitmap: &Bitmap,
+    image: Option<&AccountedBitmap>,
     raster_key: RasterKey,
     sx: f32,
     sy: f32,
@@ -2256,6 +2260,7 @@ impl Context {
       self.canvas_shadow_offset(ShadowSource::Image, DrawContent::Geometry);
     let image_smoothing_enabled = self.state.image_smoothing_enabled;
     let image_smoothing_quality = self.state.image_smoothing_quality;
+    let decode_cache = image.filter(|_| self.backend == Backend::Raster);
     let ctm = self.state.transform.get_transform();
     let vector_device = self.backend != Backend::Raster;
 
@@ -2269,7 +2274,7 @@ impl Context {
       raster_key,
       (bitmap.0.width as usize) * (bitmap.0.height as usize) * 4,
     );
-    self.with_shadowed_render_canvas(
+    let result = self.with_shadowed_render_canvas(
       &paint,
       DrawContent::Geometry,
       shadow_paint.as_ref(),
@@ -2283,6 +2288,7 @@ impl Context {
         )?;
         shadow_canvas.draw_image(
           bitmap,
+          decode_cache,
           ctm,
           vector_device,
           sx,
@@ -2303,6 +2309,7 @@ impl Context {
       |canvas: &mut Canvas, paint| {
         canvas.draw_image(
           bitmap,
+          decode_cache,
           ctm,
           vector_device,
           sx,
@@ -2319,7 +2326,12 @@ impl Context {
         );
         Ok(())
       },
-    )?;
+    );
+    // The draw may have cached a decode level of the Image.
+    if let Some(image) = decode_cache {
+      image.sync_level_bytes();
+    }
+    result?;
     self.flush_if_recording_limit_exceeded();
     Ok(())
   }
@@ -3539,13 +3551,14 @@ impl CanvasRenderingContext2D {
     // keyed by its current AccountedBitmap's own resource_id: every decode,
     // src reset, and regenerate_bitmap_if_need constructs a fresh
     // AccountedBitmap, so a swapped bitmap can never alias the stale charge.
-    let (bitmap, raster_key) = match image.0 {
+    let (bitmap, decode_cache, raster_key) = match image.0 {
       Either3::A(canvas) => {
         // Flush the source canvas to render deferred operations before getting bitmap
         canvas.ctx.context.flush();
         let bitmap = BitmapRef::Owned(canvas.ctx.context.surface.get_bitmap());
         (
           bitmap,
+          None,
           RasterKey::Resource {
             id: canvas.ctx.context.resource_id,
             generation: canvas.ctx.context.content_version(),
@@ -3556,6 +3569,7 @@ impl CanvasRenderingContext2D {
         let bitmap = BitmapRef::Owned(svg.ctx.context.surface.get_bitmap());
         (
           bitmap,
+          None,
           RasterKey::Resource {
             id: svg.ctx.context.resource_id,
             generation: svg.ctx.context.content_version(),
@@ -3570,6 +3584,7 @@ impl CanvasRenderingContext2D {
         if let Some(bitmap) = &image.bitmap {
           (
             BitmapRef::Borrowed(&bitmap.inner),
+            Some(bitmap.as_ref()),
             RasterKey::Resource {
               id: bitmap.resource_id,
               generation: 0,
@@ -3620,7 +3635,17 @@ impl CanvasRenderingContext2D {
     let (sx, sy, s_width, s_height) = Context::adjust_rect_for_canvas(sx, sy, s_width, s_height);
     let (dx, dy, d_width, d_height) = Context::adjust_rect_for_canvas(dx, dy, d_width, d_height);
     self.context.draw_image(
-      bitmap_ref, raster_key, sx, sy, s_width, s_height, dx, dy, d_width, d_height,
+      bitmap_ref,
+      decode_cache,
+      raster_key,
+      sx,
+      sy,
+      s_width,
+      s_height,
+      dx,
+      dy,
+      d_width,
+      d_height,
     )?;
     Ok(())
   }
@@ -3712,6 +3737,7 @@ impl CanvasRenderingContext2D {
       let (dx, dy, d_width, d_height) = Context::adjust_rect_for_canvas(dx, dy, d_width, d_height);
       return self.context.draw_image(
         &bitmap,
+        None,
         RasterKey::Resource {
           id: canvas.ctx.context.resource_id,
           generation: canvas.ctx.context.content_version(),
@@ -4844,6 +4870,7 @@ mod tests {
     dest
       .draw_image(
         &bitmap,
+        None,
         canvas_source_key(&src),
         0.0,
         0.0,
@@ -4862,6 +4889,7 @@ mod tests {
     dest
       .draw_image(
         &bitmap,
+        None,
         canvas_source_key(&src),
         0.0,
         0.0,
@@ -4883,6 +4911,7 @@ mod tests {
     dest
       .draw_image(
         &bitmap,
+        None,
         canvas_source_key(&src),
         0.0,
         0.0,
@@ -4904,6 +4933,7 @@ mod tests {
     dest
       .draw_image(
         &bitmap,
+        None,
         canvas_source_key(&src),
         0.0,
         0.0,
@@ -4923,6 +4953,7 @@ mod tests {
     dest
       .draw_image(
         &bitmap,
+        None,
         canvas_source_key(&src),
         0.0,
         0.0,
@@ -4936,6 +4967,86 @@ mod tests {
       .unwrap();
     assert_eq!(retained(&dest), 2);
     assert_eq!(raster_bytes(&dest), 16 * 16 * 4 * 2);
+  }
+
+  // An Image's decode levels (Chrome's decode cache) are made once per level,
+  // kept within the image's own size, and not made on PDF or SVG, which draw
+  // the original image.
+  #[test]
+  fn image_decode_levels_are_cached_once_per_level() {
+    use crate::sk::SvgExportFlag;
+    use std::ptr;
+    use std::sync::Arc;
+
+    let image = Arc::new(AccountedBitmap::new(
+      test_bitmap(256, 256, [10, 20, 30, 255]),
+      ptr::null_mut(),
+      0,
+    ));
+    let key = RasterKey::Resource {
+      id: image.resource_id,
+      generation: 0,
+    };
+    let draw = |ctx: &mut Context, src: (f32, f32, f32, f32), size: f32| {
+      ctx
+        .draw_image(
+          &image.inner,
+          Some(&image),
+          key,
+          src.0,
+          src.1,
+          src.2,
+          src.3,
+          0.0,
+          0.0,
+          size,
+          size,
+        )
+        .unwrap();
+    };
+    let mut ctx = raster_ctx(64, 64);
+    // 256 -> 64 picks level 2 (64x64); drawing it again reuses it.
+    draw(&mut ctx, (0.0, 0.0, 256.0, 256.0), 64.0);
+    assert_eq!(image.level_bytes(), 64 * 64 * 4);
+    draw(&mut ctx, (0.0, 0.0, 256.0, 256.0), 64.0);
+    assert_eq!(image.level_bytes(), 64 * 64 * 4);
+
+    // 256 -> 128 picks level 1 (128x128).
+    draw(&mut ctx, (0.0, 0.0, 256.0, 256.0), 128.0);
+    assert_eq!(image.level_bytes(), (64 * 64 + 128 * 128) * 4);
+
+    // The levels of many subsets stay within the image's own size.
+    for i in 0..64 {
+      draw(&mut ctx, (i as f32, i as f32, 128.0, 128.0), 30.0);
+    }
+    assert!(image.level_bytes() <= 256 * 256 * 4);
+    assert!(image.level_bytes() > 128 * 128 * 4);
+
+    // PDF and SVG keep the original image.
+    let fresh = AccountedBitmap::new(test_bitmap(256, 256, [10, 20, 30, 255]), ptr::null_mut(), 0);
+    let mut svg = Context::new_svg(
+      64,
+      64,
+      SvgExportFlag::ConvertTextToPaths,
+      ColorSpace::default(),
+    )
+    .expect("svg context");
+    svg
+      .draw_image(
+        &fresh.inner,
+        Some(&fresh),
+        key,
+        0.0,
+        0.0,
+        256.0,
+        256.0,
+        0.0,
+        0.0,
+        64.0,
+        64.0,
+      )
+      .unwrap();
+    assert_eq!(fresh.level_bytes(), 0);
   }
 
   // Ops that provably paint nothing record nothing: no bytes, no generation
@@ -4971,22 +5082,46 @@ mod tests {
     let src_bitmap = src.surface.get_bitmap();
     let key = canvas_source_key(&src);
     ctx
-      .draw_image(&src_bitmap, key, 0.0, 0.0, 8.0, 8.0, 0.0, 0.0, 0.0, 8.0)
+      .draw_image(
+        &src_bitmap,
+        None,
+        key,
+        0.0,
+        0.0,
+        8.0,
+        8.0,
+        0.0,
+        0.0,
+        0.0,
+        8.0,
+      )
       .unwrap();
     let bitmap = test_bitmap(8, 8, [255, 0, 0, 255]);
     ctx
-      .draw_image(&bitmap, key, 0.0, 0.0, 8.0, 8.0, 0.0, 0.0, 8.0, 0.0)
+      .draw_image(&bitmap, None, key, 0.0, 0.0, 8.0, 8.0, 0.0, 0.0, 8.0, 0.0)
       .unwrap();
     // Source rects that miss the 8x8 image, or only touch its edge: Blink's
     // ClipRectsToImageRect leaves nothing, so the native draw returns early.
     ctx
-      .draw_image(&bitmap, key, 20.0, 0.0, 4.0, 4.0, 0.0, 0.0, 8.0, 8.0)
+      .draw_image(&bitmap, None, key, 20.0, 0.0, 4.0, 4.0, 0.0, 0.0, 8.0, 8.0)
       .unwrap();
     ctx
-      .draw_image(&bitmap, key, 8.0, 0.0, 4.0, 8.0, 0.0, 0.0, 8.0, 8.0)
+      .draw_image(&bitmap, None, key, 8.0, 0.0, 4.0, 8.0, 0.0, 0.0, 8.0, 8.0)
       .unwrap();
     ctx
-      .draw_image(&src_bitmap, key, 0.0, -10.0, 8.0, 4.0, 0.0, 0.0, 8.0, 8.0)
+      .draw_image(
+        &src_bitmap,
+        None,
+        key,
+        0.0,
+        -10.0,
+        8.0,
+        4.0,
+        0.0,
+        0.0,
+        8.0,
+        8.0,
+      )
       .unwrap();
     let picture = src.get_picture();
     if let Some(picture) = picture {

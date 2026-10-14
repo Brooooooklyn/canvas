@@ -7,6 +7,7 @@ use std::os::raw::c_char;
 use std::ptr;
 use std::slice;
 use std::str::FromStr;
+use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use crate::error::SkError;
@@ -102,6 +103,12 @@ pub mod ffi {
   #[repr(C)]
   #[derive(Copy, Clone, Debug)]
   pub struct skiac_bitmap {
+    _unused: [u8; 0],
+  }
+
+  #[repr(C)]
+  #[derive(Copy, Clone, Debug)]
+  pub struct skiac_image_levels {
     _unused: [u8; 0],
   }
 
@@ -518,6 +525,7 @@ pub mod ffi {
       canvas: *mut skiac_canvas,
       bitmap: *mut skiac_bitmap,
       is_canvas: bool,
+      levels: *mut skiac_image_levels,
       ctm: skiac_transform,
       vector_device: bool,
       sx: f32,
@@ -1093,6 +1101,12 @@ pub mod ffi {
     ) -> *mut skiac_shader;
 
     pub fn skiac_bitmap_destroy(c_bitmap: *mut skiac_bitmap);
+
+    pub fn skiac_image_levels_create() -> *mut skiac_image_levels;
+
+    pub fn skiac_image_levels_destroy(c_levels: *mut skiac_image_levels);
+
+    pub fn skiac_image_levels_bytes(c_levels: *mut skiac_image_levels) -> usize;
     pub fn skiac_picture_ref(c_picture: *mut skiac_picture);
     pub fn skiac_picture_destroy(c_picture: *mut skiac_picture);
     pub fn skiac_picture_playback(c_picture: *mut skiac_picture, c_canvas: *mut skiac_canvas);
@@ -2742,11 +2756,14 @@ impl Canvas {
     }
   }
 
-  /// `ctm` is the context's transform: this canvas may be a recorder at
-  /// identity. `vector_device` is true on the PDF and SVG backends.
+  /// `decode_cache` is the Image `image` belongs to, when Chrome would draw
+  /// it from its decode cache (an Image on a raster canvas). `ctm` is the
+  /// context's transform: this canvas may be a recorder at identity.
+  /// `vector_device` is true on the PDF and SVG backends.
   pub fn draw_image(
     &mut self,
     image: &Bitmap,
+    decode_cache: Option<&AccountedBitmap>,
     ctm: Transform,
     vector_device: bool,
     sx: f32,
@@ -2766,6 +2783,7 @@ impl Canvas {
         self.0,
         image.0.bitmap,
         image.0.is_canvas,
+        decode_cache.map_or(ptr::null_mut(), |bitmap| bitmap.levels),
         ctm.into(),
         vector_device,
         sx,
@@ -4500,6 +4518,11 @@ pub struct AccountedBitmap {
   pub(crate) resource_id: u64,
   env: napi::sys::napi_env,
   bytes: i64,
+  /// The scaled copies Chrome's decode cache would hold for this image
+  /// (`skiac_image_levels`).
+  levels: *mut ffi::skiac_image_levels,
+  /// The levels' bytes, as last reported to V8.
+  level_bytes: AtomicI64,
 }
 
 impl AccountedBitmap {
@@ -4511,16 +4534,39 @@ impl AccountedBitmap {
       resource_id: crate::page_recorder::next_resource_id(),
       env,
       bytes,
+      levels: unsafe { ffi::skiac_image_levels_create() },
+      level_bytes: AtomicI64::new(0),
+    }
+  }
+
+  /// The levels' bytes, as last reported.
+  #[cfg(test)]
+  pub(crate) fn level_bytes(&self) -> i64 {
+    self.level_bytes.load(Ordering::Relaxed)
+  }
+
+  /// Reports the change in the levels' size to V8, after a draw that may have
+  /// added or dropped one.
+  pub(crate) fn sync_level_bytes(&self) {
+    let bytes = unsafe { ffi::skiac_image_levels_bytes(self.levels) } as i64;
+    let reported = self.level_bytes.swap(bytes, Ordering::Relaxed);
+    if bytes != reported && !self.env.is_null() {
+      let mut adjusted: i64 = 0;
+      unsafe {
+        napi::sys::napi_adjust_external_memory(self.env, bytes - reported, &mut adjusted);
+      }
     }
   }
 }
 
 impl Drop for AccountedBitmap {
   fn drop(&mut self) {
-    if self.bytes != 0 && !self.env.is_null() {
+    unsafe { ffi::skiac_image_levels_destroy(self.levels) };
+    let bytes = self.bytes + self.level_bytes.load(Ordering::Relaxed);
+    if bytes != 0 && !self.env.is_null() {
       let mut adjusted: i64 = 0;
       unsafe {
-        napi::sys::napi_adjust_external_memory(self.env, -self.bytes, &mut adjusted);
+        napi::sys::napi_adjust_external_memory(self.env, -bytes, &mut adjusted);
       }
     }
   }
