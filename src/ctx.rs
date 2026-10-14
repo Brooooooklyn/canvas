@@ -30,10 +30,10 @@ use crate::{
   path::Path,
   pattern::{CanvasPattern, Pattern, hsl_to_rgba8, srgb_channel_to_u8},
   sk::{
-    AlphaType, Bitmap, BlendMode, ColorSpace, FillType, FilterQuality, FontVariantCaps,
-    ImageFilter, LineMetrics, MaskFilter, Matrix, Paint, PaintStyle, Path as SkPath, PathEffect,
-    PathOp, SkEncodedImageFormat, SkImage, SkWMemoryStream, SkiaDataRef, StrokeCap, StrokeJoin,
-    Surface, Transform,
+    AccountedBitmap, AlphaType, Bitmap, BlendMode, ColorSpace, DecodedCopy, FillType,
+    FilterQuality, FontVariantCaps, ImageFilter, ImagePattern, LineMetrics, MaskFilter, Matrix,
+    Paint, PaintStyle, Path as SkPath, PathEffect, PathOp, Shader, SkEncodedImageFormat, SkImage,
+    SkWMemoryStream, SkiaDataRef, StrokeCap, StrokeJoin, Surface, Transform,
   },
   state::Context2dRenderingState,
   webidl::{self, Positional, ReportedSettings},
@@ -481,6 +481,12 @@ impl Context {
     // a dash list is compiled into a fresh SkPathEffect per paint call
     // (fill_paint/stroke_paint). The fresh-object-per-draw property also
     // means these three are charged per draw with no dedup key.
+    self.account_style_resources(style);
+    self.account_draw_resources();
+  }
+
+  /// The fill or stroke style's share of `account_paint_resources`.
+  fn account_style_resources(&self, style: &Pattern) {
     match style {
       Pattern::Image(image) => {
         // Keyed by the backing raster's identity: patterns over the same
@@ -493,11 +499,23 @@ impl Context {
             generation: 0,
           },
           image.estimated_bytes(),
-        )
+        );
+        // A decode copy the shader samples in place of the original is held
+        // by the recorded paint, charged once per window like a drawImage
+        // level. The paint was built for this draw, so this is its shader.
+        if let Some((_, Some((uid, bytes)))) = self.image_pattern_shader(image) {
+          self.account_raster_resource(RasterKey::Image { uid }, bytes);
+        }
       }
       Pattern::Gradient(gradient) => self.account_raster_bytes(gradient.estimated_bytes()),
       Pattern::Color(..) => {}
     };
+  }
+
+  /// The share of `account_paint_resources` every fill and stroke pays
+  /// whatever its style: the dash list, plus what an image draw also pays
+  /// (`account_image_paint_resources`).
+  fn account_draw_resources(&self) {
     // Fresh per draw (the dash list compiles into a fresh SkPathEffect):
     // per-draw charge in the propagated tally, no dedup.
     self.account_raster_bytes(self.state.line_dash_list.len() * 4);
@@ -1891,6 +1909,22 @@ impl Context {
     Ok(())
   }
 
+  /// An image pattern's shader for the current smoothing state, and the
+  /// decode copy it samples. On a raster canvas an Image source is drawn from
+  /// Chrome's decode cache, whose level depends on the CTM
+  /// (PaintShader::CreateDecodedImage), in the canvas's colour space; PDF and
+  /// SVG keep the original image.
+  fn image_pattern_shader(&self, pattern: &ImagePattern) -> Option<(Shader, DecodedCopy)> {
+    let quality = if self.state.image_smoothing_enabled {
+      self.state.image_smoothing_quality
+    } else {
+      FilterQuality::None
+    };
+    let decode = (self.backend == Backend::Raster)
+      .then(|| (self.state.transform.get_transform(), self.color_space));
+    pattern.get_shader(quality, decode)
+  }
+
   pub fn fill_paint(&self) -> result::Result<Paint, SkError> {
     let last_state = &self.state;
     let current_paint = &last_state.paint;
@@ -1904,11 +1938,7 @@ impl Context {
       }
       Pattern::Gradient(g) => self.set_gradient_paint(&mut paint, g, alpha)?,
       Pattern::Image(p) => {
-        if let Some(shader) = p.get_shader(if last_state.image_smoothing_enabled {
-          last_state.image_smoothing_quality
-        } else {
-          FilterQuality::None
-        }) {
+        if let Some((shader, _)) = self.image_pattern_shader(p) {
           paint.set_color(0, 0, 0, 255);
           paint.set_alpha_f32(alpha);
           paint.set_shader(&shader);
@@ -2124,11 +2154,7 @@ impl Context {
       }
       Pattern::Gradient(g) => self.set_gradient_paint(&mut paint, g, global_alpha)?,
       Pattern::Image(p) => {
-        if let Some(shader) = p.get_shader(if last_state.image_smoothing_enabled {
-          last_state.image_smoothing_quality
-        } else {
-          FilterQuality::None
-        }) {
+        if let Some((shader, _)) = self.image_pattern_shader(p) {
           paint.set_color(0, 0, 0, 255);
           paint.set_alpha_f32(global_alpha);
           paint.set_shader(&shader);
@@ -2616,9 +2642,13 @@ impl Context {
   /// (skiac_surface_get_bitmap), but each recorded drawImage pins a fresh
   /// makeImageSnapshot -- mutating the source afterwards copy-on-writes a
   /// new raster that the id alone cannot distinguish, hence the generation.
+  /// `image` is the Image `bitmap` belongs to, `None` for a canvas source or
+  /// an SVG Image. On a raster canvas Chrome draws an Image from its decode
+  /// cache.
   pub(crate) fn draw_image(
     &mut self,
     bitmap: &Bitmap,
+    image: Option<&AccountedBitmap>,
     raster_key: RasterKey,
     sx: f32,
     sy: f32,
@@ -2682,15 +2712,28 @@ impl Context {
       self.canvas_shadow_offset(ShadowSource::Image, DrawContent::Geometry);
     let image_smoothing_enabled = self.state.image_smoothing_enabled;
     let image_smoothing_quality = self.state.image_smoothing_quality;
+    let raster = self.backend == Backend::Raster;
+    // Known trade-off: the recording keeps the decode level it drew, so
+    // drawCanvas of this canvas replays the level, into PDF and SVG too and at
+    // any scale. Kept: Chrome has no drawCanvas, and its drawImage(canvas)
+    // samples this canvas's pixels, which hold that level's result.
+    let decode_cache = image.filter(|_| raster);
+    // Chrome draws an Image from its decode cache, and on a canvas that is not
+    // sRGB a canvas source too (SoftwareImageDecodeCache::UseCacheForDrawImage),
+    // whose decode is made for the one draw.
+    let decode = decode_cache.is_some()
+      || (raster && bitmap.0.is_canvas && self.color_space != ColorSpace::Srgb);
+    let color_space = self.color_space;
     let ctm = self.state.transform.get_transform();
-    let vector_device = self.backend != Backend::Raster;
+    let vector_device = !raster;
 
     // The recorded op pins a reference to the source pixels; charge its full
     // raster size so large drawImage sources trip the recording limit. The
     // raster tally keeps it visible to drawCanvas accounting: a recorded
     // drawImage inside a source picture carries this payload along. Keyed on
     // raster_key -- re-drawing one UNCHANGED source retains one shared
-    // backing, not N.
+    // backing, not N. A decode drawn in place of the source is a copy the op
+    // pins instead, charged below under its own identity.
     self.account_raster_resource(
       raster_key,
       (bitmap.0.width as usize) * (bitmap.0.height as usize) * 4,
@@ -2709,7 +2752,8 @@ impl Context {
         bottom: dst.top + (src.bottom.min(bitmap.0.height as f32) - src.top) * scale_y,
       }
     };
-    self.with_shadowed_render_canvas(
+    let decoded = RefCell::new(Vec::new());
+    let result = self.with_shadowed_render_canvas(
       &paint,
       DrawContent::Geometry,
       shadow_paint.as_ref(),
@@ -2723,8 +2767,11 @@ impl Context {
           shadow_offset_x,
           shadow_offset_y,
         )?;
-        shadow_canvas.draw_image(
+        let drawn = shadow_canvas.draw_image(
           bitmap,
+          decode,
+          decode_cache,
+          color_space,
           ctm,
           vector_device,
           sx,
@@ -2739,12 +2786,16 @@ impl Context {
           image_smoothing_quality,
           shadow_paint,
         );
+        decoded.borrow_mut().extend(drawn);
         shadow_canvas.restore();
         Ok(())
       },
       |canvas: &mut Canvas, paint| {
-        canvas.draw_image(
+        let drawn = canvas.draw_image(
           bitmap,
+          decode,
+          decode_cache,
+          color_space,
           ctm,
           vector_device,
           sx,
@@ -2759,9 +2810,20 @@ impl Context {
           image_smoothing_quality,
           paint,
         );
+        decoded.borrow_mut().extend(drawn);
         Ok(())
       },
-    )?;
+    );
+    // Once per window for a level the cache keeps, which the shadow pass and
+    // later draws share; per draw for a decode made for one draw.
+    for (uid, bytes) in decoded.into_inner() {
+      self.account_raster_resource(RasterKey::Image { uid }, bytes);
+    }
+    // The draw may have cached a decode level of the Image.
+    if let Some(image) = decode_cache {
+      image.sync_level_bytes();
+    }
+    result?;
     self.flush_if_recording_limit_exceeded();
     Ok(())
   }
@@ -4264,13 +4326,14 @@ impl CanvasRenderingContext2D {
     // keyed by its current AccountedBitmap's own resource_id: every decode,
     // src reset, and regenerate_bitmap_if_need constructs a fresh
     // AccountedBitmap, so a swapped bitmap can never alias the stale charge.
-    let (bitmap, raster_key) = match image.0 {
+    let (bitmap, decode_cache, raster_key) = match image.0 {
       Either3::A(canvas) => {
         // Flush the source canvas to render deferred operations before getting bitmap
         canvas.ctx.context.flush();
         let bitmap = BitmapRef::Owned(canvas.ctx.context.surface.get_bitmap());
         (
           bitmap,
+          None,
           RasterKey::Resource {
             id: canvas.ctx.context.resource_id,
             generation: canvas.ctx.context.content_version(),
@@ -4284,6 +4347,7 @@ impl CanvasRenderingContext2D {
         let bitmap = BitmapRef::Owned(svg.ctx.context.surface.get_bitmap());
         (
           bitmap,
+          None,
           RasterKey::Resource {
             id: svg.ctx.context.resource_id,
             generation: svg.ctx.context.content_version(),
@@ -4298,6 +4362,9 @@ impl CanvasRenderingContext2D {
         if let Some(bitmap) = &image.bitmap {
           (
             BitmapRef::Borrowed(&bitmap.inner),
+            // Chrome draws an SVG Image as vectors, not from the decode
+            // cache; its raster is sampled as it is.
+            (!image.is_svg).then_some(bitmap.as_ref()),
             RasterKey::Resource {
               id: bitmap.resource_id,
               generation: 0,
@@ -4348,7 +4415,17 @@ impl CanvasRenderingContext2D {
     let (sx, sy, s_width, s_height) = Context::adjust_rect_for_canvas(sx, sy, s_width, s_height);
     let (dx, dy, d_width, d_height) = Context::adjust_rect_for_canvas(dx, dy, d_width, d_height);
     self.context.draw_image(
-      bitmap_ref, raster_key, sx, sy, s_width, s_height, dx, dy, d_width, d_height,
+      bitmap_ref,
+      decode_cache,
+      raster_key,
+      sx,
+      sy,
+      s_width,
+      s_height,
+      dx,
+      dy,
+      d_width,
+      d_height,
     )?;
     Ok(())
   }
@@ -4440,6 +4517,7 @@ impl CanvasRenderingContext2D {
       let (dx, dy, d_width, d_height) = Context::adjust_rect_for_canvas(dx, dy, d_width, d_height);
       return self.context.draw_image(
         &bitmap,
+        None,
         RasterKey::Resource {
           id: canvas.ctx.context.resource_id,
           generation: canvas.ctx.context.content_version(),
@@ -5595,6 +5673,7 @@ mod tests {
     dest
       .draw_image(
         &bitmap,
+        None,
         canvas_source_key(&src),
         0.0,
         0.0,
@@ -5613,6 +5692,7 @@ mod tests {
     dest
       .draw_image(
         &bitmap,
+        None,
         canvas_source_key(&src),
         0.0,
         0.0,
@@ -5634,6 +5714,7 @@ mod tests {
     dest
       .draw_image(
         &bitmap,
+        None,
         canvas_source_key(&src),
         0.0,
         0.0,
@@ -5655,6 +5736,7 @@ mod tests {
     dest
       .draw_image(
         &bitmap,
+        None,
         canvas_source_key(&src),
         0.0,
         0.0,
@@ -5674,6 +5756,7 @@ mod tests {
     dest
       .draw_image(
         &bitmap,
+        None,
         canvas_source_key(&src),
         0.0,
         0.0,
@@ -5687,6 +5770,542 @@ mod tests {
       .unwrap();
     assert_eq!(retained(&dest), 2);
     assert_eq!(raster_bytes(&dest), 16 * 16 * 4 * 2);
+  }
+
+  // An Image's decode levels (Chrome's decode cache) are made once per level,
+  // shared with the Image's patterns, kept within the image's own size, and
+  // not made on PDF or SVG, which draw the original image.
+  #[test]
+  fn image_decode_levels_are_cached_once_per_level() {
+    use crate::sk::{ImagePatternBacking, ImagePatternShared, SvgExportFlag, TileMode};
+    use std::ptr;
+    use std::sync::{Arc, Mutex};
+
+    let image = Arc::new(AccountedBitmap::new(
+      test_bitmap(256, 256, [10, 20, 30, 255]),
+      ptr::null_mut(),
+      0,
+    ));
+    let key = RasterKey::Resource {
+      id: image.resource_id,
+      generation: 0,
+    };
+    let draw = |ctx: &mut Context, src: (f32, f32, f32, f32), size: f32| {
+      ctx
+        .draw_image(
+          &image.inner,
+          Some(&image),
+          key,
+          src.0,
+          src.1,
+          src.2,
+          src.3,
+          0.0,
+          0.0,
+          size,
+          size,
+        )
+        .unwrap();
+    };
+    let mut ctx = raster_ctx(64, 64);
+    // 256 -> 64 picks level 2 (64x64); drawing it again reuses it.
+    draw(&mut ctx, (0.0, 0.0, 256.0, 256.0), 64.0);
+    assert_eq!(image.level_bytes(), 64 * 64 * 4);
+    draw(&mut ctx, (0.0, 0.0, 256.0, 256.0), 64.0);
+    assert_eq!(image.level_bytes(), 64 * 64 * 4);
+
+    // A pattern over the Image at the same scale samples the same level.
+    let pattern = ImagePattern {
+      accounting_id: image.resource_id,
+      repeat_x: TileMode::Repeat,
+      repeat_y: TileMode::Repeat,
+      is_canvas: false,
+      is_image: true,
+      backing_bytes: 256 * 256 * 4,
+      backing: Some(ImagePatternBacking::Bitmap(image.clone())),
+      shared: Arc::new(Mutex::new(ImagePatternShared {
+        transform: Transform::new(0.25, 0.0, 0.0, 0.25, 0.0, 0.0),
+        image: None,
+        shader: None,
+      })),
+    };
+    assert!(
+      pattern
+        .get_shader(
+          FilterQuality::Low,
+          Some((Transform::default(), ColorSpace::Srgb))
+        )
+        .is_some()
+    );
+    assert_eq!(image.level_bytes(), 64 * 64 * 4);
+
+    // 256 -> 128 picks level 1 (128x128).
+    draw(&mut ctx, (0.0, 0.0, 256.0, 256.0), 128.0);
+    assert_eq!(image.level_bytes(), (64 * 64 + 128 * 128) * 4);
+
+    // PDF and SVG keep the original image.
+    let fresh = AccountedBitmap::new(test_bitmap(256, 256, [10, 20, 30, 255]), ptr::null_mut(), 0);
+    let mut svg = Context::new_svg(
+      64,
+      64,
+      SvgExportFlag::ConvertTextToPaths,
+      ColorSpace::default(),
+    )
+    .expect("svg context");
+    svg
+      .draw_image(
+        &fresh.inner,
+        Some(&fresh),
+        key,
+        0.0,
+        0.0,
+        256.0,
+        256.0,
+        0.0,
+        0.0,
+        64.0,
+        64.0,
+      )
+      .unwrap();
+    assert_eq!(fresh.level_bytes(), 0);
+  }
+
+  // The cache keeps an Image's levels within the image's own size, but a level
+  // it drops still counts while a recorded draw holds it: its bytes are
+  // reported until its pixels are freed.
+  #[test]
+  fn image_decode_levels_count_until_their_last_draw_drops() {
+    use std::ptr;
+
+    let image = AccountedBitmap::new(test_bitmap(64, 64, [10, 20, 30, 255]), ptr::null_mut(), 0);
+    let key = RasterKey::Resource {
+      id: image.resource_id,
+      generation: 0,
+    };
+    let draw = |ctx: &mut Context, x: f32, y: f32| {
+      ctx
+        .draw_image(
+          &image.inner,
+          Some(&image),
+          key,
+          x,
+          y,
+          60.0,
+          60.0,
+          0.0,
+          0.0,
+          30.0,
+          30.0,
+        )
+        .unwrap();
+    };
+    const LEVEL: i64 = 30 * 30 * 4;
+    // Each 60x60 subset drawn at 30x30 makes its own 30x30 level. Four fit in
+    // the image's 16384 bytes; the fifth drops the first from the cache, but
+    // the recording still holds all five.
+    let mut ctx = raster_ctx(32, 32);
+    for x in 0..5 {
+      draw(&mut ctx, x as f32, 0.0);
+    }
+    assert_eq!(image.level_bytes(), 5 * LEVEL);
+    // More subsets: every level is still held by the recording.
+    for y in 1..5 {
+      draw(&mut ctx, 0.0, y as f32);
+    }
+    assert_eq!(image.level_bytes(), 9 * LEVEL);
+
+    // With the recording gone only the cached levels are left, at most the
+    // image's own size. A draw of a cached level reports it.
+    drop(ctx);
+    let mut other = raster_ctx(32, 32);
+    draw(&mut other, 0.0, 4.0);
+    assert_eq!(image.level_bytes(), 4 * LEVEL);
+  }
+
+  // A recorded draw keeps the decode level it drew after its Image is
+  // dropped. V8 is told the level is freed only when its pixels are.
+  #[test]
+  fn a_recorded_level_stays_reported_after_its_image_drops() {
+    use crate::sk::reported_level_bytes;
+    use std::ptr;
+
+    const LEVEL: i64 = 32 * 32 * 4;
+    let before = reported_level_bytes();
+    let image = AccountedBitmap::new(test_bitmap(64, 64, [10, 20, 30, 255]), ptr::null_mut(), 0);
+    let mut ctx = raster_ctx(32, 32);
+    // 64 -> 32 draws the 32x32 level.
+    ctx
+      .draw_image(
+        &image.inner,
+        Some(&image),
+        RasterKey::Resource {
+          id: image.resource_id,
+          generation: 0,
+        },
+        0.0,
+        0.0,
+        64.0,
+        64.0,
+        0.0,
+        0.0,
+        32.0,
+        32.0,
+      )
+      .unwrap();
+    assert_eq!(reported_level_bytes() - before, LEVEL);
+    // The recording still holds the level.
+    drop(image);
+    assert_eq!(reported_level_bytes() - before, LEVEL);
+    // It is freed with the recording.
+    drop(ctx);
+    assert_eq!(reported_level_bytes() - before, 0);
+  }
+
+  // drawImage does not use fillStyle, so an Image pattern set as fillStyle
+  // makes no decode level of its Image.
+  #[test]
+  fn draw_image_makes_no_level_for_an_image_pattern_fill() {
+    use crate::sk::{ImagePatternBacking, ImagePatternShared, TileMode};
+    use std::ptr;
+    use std::sync::{Arc, Mutex};
+
+    let image = Arc::new(AccountedBitmap::new(
+      test_bitmap(64, 64, [10, 20, 30, 255]),
+      ptr::null_mut(),
+      0,
+    ));
+    let mut ctx = raster_ctx(16, 16);
+    // At this scale a fill would draw the pattern from its 16x16 level.
+    ctx.state.fill_style = Pattern::Image(ImagePattern {
+      accounting_id: image.resource_id,
+      repeat_x: TileMode::Repeat,
+      repeat_y: TileMode::Repeat,
+      is_canvas: false,
+      is_image: true,
+      backing_bytes: 64 * 64 * 4,
+      backing: Some(ImagePatternBacking::Bitmap(image.clone())),
+      shared: Arc::new(Mutex::new(ImagePatternShared {
+        transform: Transform::new(0.25, 0.0, 0.0, 0.25, 0.0, 0.0),
+        image: None,
+        shader: None,
+      })),
+    });
+    let src = raster_ctx(8, 8);
+    let bitmap = src.surface.get_bitmap();
+    ctx
+      .draw_image(
+        &bitmap,
+        None,
+        canvas_source_key(&src),
+        0.0,
+        0.0,
+        8.0,
+        8.0,
+        0.0,
+        0.0,
+        8.0,
+        8.0,
+      )
+      .unwrap();
+    assert_eq!(image.level_bytes(), 0);
+    // A fill does draw the level.
+    ctx.fill_rect(0.0, 0.0, 16.0, 16.0).unwrap();
+    assert_eq!(image.level_bytes(), 16 * 16 * 4);
+  }
+
+  // A recorded draw holds the decode level it drew, so each level counts
+  // toward the recording limit: many distinct source rects trip it, and the
+  // levels alive stay within the limit plus the cache's own share.
+  #[test]
+  fn recorded_decode_levels_count_toward_the_recording_limit() {
+    use std::ptr;
+
+    const IMAGE: usize = 128 * 128 * 4;
+    const LEVEL: usize = 50 * 50 * 4;
+    const LIMIT: usize = 2 * IMAGE;
+    let image = AccountedBitmap::new(test_bitmap(128, 128, [10, 20, 30, 255]), ptr::null_mut(), 0);
+    let key = RasterKey::Resource {
+      id: image.resource_id,
+      generation: 0,
+    };
+    let mut ctx = raster_ctx(64, 64);
+    set_recording_limit(&ctx, LIMIT);
+    // Each 100x100 subset drawn at 50x50 makes its own 50x50 level.
+    for i in 0..64 {
+      ctx
+        .draw_image(
+          &image.inner,
+          Some(&image),
+          key,
+          (i % 8) as f32,
+          (i / 8) as f32,
+          100.0,
+          100.0,
+          0.0,
+          0.0,
+          50.0,
+          50.0,
+        )
+        .unwrap();
+      assert!(
+        image.level_bytes() as usize <= LIMIT + IMAGE + LEVEL,
+        "draw {i}: {} bytes of levels alive",
+        image.level_bytes()
+      );
+    }
+    assert!(consolidations(&ctx) >= 1);
+  }
+
+  // A canvas source on a display-p3 canvas is drawn from a level made for
+  // that one draw, which the recording holds: every draw charges its own.
+  #[test]
+  fn canvas_source_decode_levels_are_charged_per_draw() {
+    let src = raster_ctx(64, 64);
+    let bitmap = src.surface.get_bitmap();
+    let mut ctx = Context::new(32, 32, ColorSpace::DisplayP3).expect("raster context");
+    for _ in 0..3 {
+      ctx
+        .draw_image(
+          &bitmap,
+          None,
+          canvas_source_key(&src),
+          0.0,
+          0.0,
+          64.0,
+          64.0,
+          0.0,
+          0.0,
+          32.0,
+          32.0,
+        )
+        .unwrap();
+    }
+    // The source once, and three 32x32 levels.
+    assert_eq!(raster_bytes(&ctx), 64 * 64 * 4 + 3 * 32 * 32 * 4);
+  }
+
+  // A cached level drawn again, by the shadow pass too, is one allocation:
+  // it is charged once per recording window.
+  #[test]
+  fn a_cached_decode_level_is_charged_once_per_window() {
+    use std::ptr;
+
+    let image = AccountedBitmap::new(test_bitmap(64, 64, [10, 20, 30, 255]), ptr::null_mut(), 0);
+    let key = RasterKey::Resource {
+      id: image.resource_id,
+      generation: 0,
+    };
+    let mut ctx = raster_ctx(32, 32);
+    ctx.set_shadow_color("red".to_owned()).unwrap();
+    ctx.state.shadow_offset_x = 2.0;
+    for _ in 0..2 {
+      ctx
+        .draw_image(
+          &image.inner,
+          Some(&image),
+          key,
+          0.0,
+          0.0,
+          64.0,
+          64.0,
+          0.0,
+          0.0,
+          32.0,
+          32.0,
+        )
+        .unwrap();
+    }
+    // The image and its 32x32 level once, and a shadow filter per draw.
+    assert_eq!(raster_bytes(&ctx), 64 * 64 * 4 + 32 * 32 * 4 + 2 * 1024);
+  }
+
+  // drawImage skips only the unused Image-pattern fillStyle: the filter and
+  // the shadow it draws with are charged as under any other fillStyle.
+  #[test]
+  fn draw_image_with_an_image_pattern_fill_charges_its_filter_and_shadow() {
+    use crate::sk::{ImagePatternBacking, ImagePatternShared, TileMode};
+    use std::ptr;
+    use std::sync::{Arc, Mutex};
+
+    let image = Arc::new(AccountedBitmap::new(
+      test_bitmap(64, 64, [10, 20, 30, 255]),
+      ptr::null_mut(),
+      0,
+    ));
+    let charged = |pattern_fill: bool| {
+      let mut ctx = raster_ctx(16, 16);
+      if pattern_fill {
+        ctx.state.fill_style = Pattern::Image(ImagePattern {
+          accounting_id: image.resource_id,
+          repeat_x: TileMode::Repeat,
+          repeat_y: TileMode::Repeat,
+          is_canvas: false,
+          is_image: true,
+          backing_bytes: 64 * 64 * 4,
+          backing: Some(ImagePatternBacking::Bitmap(image.clone())),
+          shared: Arc::new(Mutex::new(ImagePatternShared {
+            transform: Transform::default(),
+            image: None,
+            shader: None,
+          })),
+        });
+      }
+      ctx.set_filter("blur(1px)").unwrap();
+      ctx.set_shadow_color("red".to_owned()).unwrap();
+      ctx.state.shadow_blur = 2.0;
+      let src = raster_ctx(8, 8);
+      let bitmap = src.surface.get_bitmap();
+      ctx
+        .draw_image(
+          &bitmap,
+          None,
+          canvas_source_key(&src),
+          0.0,
+          0.0,
+          8.0,
+          8.0,
+          0.0,
+          0.0,
+          8.0,
+          8.0,
+        )
+        .unwrap();
+      raster_bytes(&ctx)
+    };
+    // The source, the filter chain and the shadow filter.
+    let expected = 8 * 8 * 4 + "blur(1px)".len() * 8 + 1024;
+    assert_eq!(charged(false), expected);
+    assert_eq!(charged(true), expected);
+  }
+
+  // A pattern's new shader can push its old level out of the cache, and the
+  // old shader is then the level's last holder: once it is replaced, the
+  // level is reported freed.
+  #[test]
+  fn image_pattern_reports_the_level_its_old_shader_held() {
+    use crate::sk::{ImagePatternBacking, ImagePatternShared, TileMode};
+    use std::ptr;
+    use std::sync::{Arc, Mutex};
+
+    let image = Arc::new(AccountedBitmap::new(
+      test_bitmap(64, 64, [10, 20, 30, 255]),
+      ptr::null_mut(),
+      0,
+    ));
+    let pattern = ImagePattern {
+      accounting_id: image.resource_id,
+      repeat_x: TileMode::Repeat,
+      repeat_y: TileMode::Repeat,
+      is_canvas: false,
+      is_image: true,
+      backing_bytes: 64 * 64 * 4,
+      backing: Some(ImagePatternBacking::Bitmap(image.clone())),
+      shared: Arc::new(Mutex::new(ImagePatternShared {
+        transform: Transform::default(),
+        image: None,
+        shader: None,
+      })),
+    };
+    // On a display-p3 canvas the sRGB image is converted: unscaled, the
+    // pattern samples a converted copy of the whole image.
+    assert!(
+      pattern
+        .get_shader(
+          FilterQuality::Low,
+          Some((Transform::default(), ColorSpace::DisplayP3))
+        )
+        .is_some()
+    );
+    assert_eq!(image.level_bytes(), 64 * 64 * 4);
+    // Halved by the CTM, it samples the 32x32 level. The copy does not fit
+    // beside it, so the cache drops the copy, which the old shader held.
+    assert!(
+      pattern
+        .get_shader(
+          FilterQuality::Low,
+          Some((
+            Transform::new(0.5, 0.0, 0.0, 0.5, 0.0, 0.0),
+            ColorSpace::DisplayP3
+          ))
+        )
+        .is_some()
+    );
+    assert_eq!(image.level_bytes(), 32 * 32 * 4);
+  }
+
+  /// An Image-pattern fillStyle over `image`, a 64x64 Image.
+  fn image_pattern_fill(image: &std::sync::Arc<AccountedBitmap>) -> Pattern {
+    use crate::sk::{ImagePatternBacking, ImagePatternShared, TileMode};
+    use std::sync::{Arc, Mutex};
+
+    Pattern::Image(ImagePattern {
+      accounting_id: image.resource_id,
+      repeat_x: TileMode::Repeat,
+      repeat_y: TileMode::Repeat,
+      is_canvas: false,
+      is_image: true,
+      backing_bytes: 64 * 64 * 4,
+      backing: Some(ImagePatternBacking::Bitmap(image.clone())),
+      shared: Arc::new(Mutex::new(ImagePatternShared {
+        transform: Transform::default(),
+        image: None,
+        shader: None,
+      })),
+    })
+  }
+
+  // A recorded fill holds the decode level its Image pattern samples, so each
+  // level counts toward the recording limit. On a display-p3 canvas the cache
+  // cannot keep both the converted copy and the half-size level, so cycling
+  // the CTM between them makes a new one on every fill.
+  #[test]
+  fn image_pattern_decode_levels_count_toward_the_recording_limit() {
+    use std::ptr;
+    use std::sync::Arc;
+
+    const IMAGE: usize = 64 * 64 * 4;
+    const LIMIT: usize = 4 * IMAGE;
+    let image = Arc::new(AccountedBitmap::new(
+      test_bitmap(64, 64, [10, 20, 30, 255]),
+      ptr::null_mut(),
+      0,
+    ));
+    let mut ctx = Context::new(16, 16, ColorSpace::DisplayP3).expect("raster context");
+    set_recording_limit(&ctx, LIMIT);
+    ctx.state.fill_style = image_pattern_fill(&image);
+    for i in 0..64 {
+      let scale = if i % 2 == 0 { 1.0 } else { 0.5 };
+      ctx.set_transform(Matrix::new(scale, 0.0, 0.0, 0.0, scale, 0.0));
+      ctx.fill_rect(0.0, 0.0, 16.0, 16.0).unwrap();
+      assert!(
+        image.level_bytes() as usize <= LIMIT + 2 * IMAGE,
+        "fill {i}: {} bytes of levels alive",
+        image.level_bytes()
+      );
+    }
+    assert!(consolidations(&ctx) >= 1);
+  }
+
+  // A level an Image pattern samples again is the same allocation: it is
+  // charged once per recording window, like a drawImage level.
+  #[test]
+  fn an_image_pattern_level_is_charged_once_per_window() {
+    use std::ptr;
+    use std::sync::Arc;
+
+    let image = Arc::new(AccountedBitmap::new(
+      test_bitmap(64, 64, [10, 20, 30, 255]),
+      ptr::null_mut(),
+      0,
+    ));
+    let mut ctx = raster_ctx(16, 16);
+    ctx.state.fill_style = image_pattern_fill(&image);
+    for scale in [0.5, 0.25, 0.5] {
+      ctx.set_transform(Matrix::new(scale, 0.0, 0.0, 0.0, scale, 0.0));
+      ctx.fill_rect(0.0, 0.0, 16.0, 16.0).unwrap();
+    }
+    // The image, and its 32x32 and 16x16 levels once each.
+    assert_eq!(raster_bytes(&ctx), 64 * 64 * 4 + (32 * 32 + 16 * 16) * 4);
   }
 
   // Ops that provably paint nothing record nothing: no bytes, no generation
@@ -5722,22 +6341,46 @@ mod tests {
     let src_bitmap = src.surface.get_bitmap();
     let key = canvas_source_key(&src);
     ctx
-      .draw_image(&src_bitmap, key, 0.0, 0.0, 8.0, 8.0, 0.0, 0.0, 0.0, 8.0)
+      .draw_image(
+        &src_bitmap,
+        None,
+        key,
+        0.0,
+        0.0,
+        8.0,
+        8.0,
+        0.0,
+        0.0,
+        0.0,
+        8.0,
+      )
       .unwrap();
     let bitmap = test_bitmap(8, 8, [255, 0, 0, 255]);
     ctx
-      .draw_image(&bitmap, key, 0.0, 0.0, 8.0, 8.0, 0.0, 0.0, 8.0, 0.0)
+      .draw_image(&bitmap, None, key, 0.0, 0.0, 8.0, 8.0, 0.0, 0.0, 8.0, 0.0)
       .unwrap();
     // Source rects that miss the 8x8 image, or only touch its edge: Blink's
     // ClipRectsToImageRect leaves nothing, so the native draw returns early.
     ctx
-      .draw_image(&bitmap, key, 20.0, 0.0, 4.0, 4.0, 0.0, 0.0, 8.0, 8.0)
+      .draw_image(&bitmap, None, key, 20.0, 0.0, 4.0, 4.0, 0.0, 0.0, 8.0, 8.0)
       .unwrap();
     ctx
-      .draw_image(&bitmap, key, 8.0, 0.0, 4.0, 8.0, 0.0, 0.0, 8.0, 8.0)
+      .draw_image(&bitmap, None, key, 8.0, 0.0, 4.0, 8.0, 0.0, 0.0, 8.0, 8.0)
       .unwrap();
     ctx
-      .draw_image(&src_bitmap, key, 0.0, -10.0, 8.0, 4.0, 0.0, 0.0, 8.0, 8.0)
+      .draw_image(
+        &src_bitmap,
+        None,
+        key,
+        0.0,
+        -10.0,
+        8.0,
+        4.0,
+        0.0,
+        0.0,
+        8.0,
+        8.0,
+      )
       .unwrap();
     let picture = src.get_picture();
     if let Some(picture) = picture {

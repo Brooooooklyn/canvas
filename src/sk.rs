@@ -7,6 +7,7 @@ use std::os::raw::c_char;
 use std::ptr;
 use std::slice;
 use std::str::FromStr;
+use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::error::SkError;
@@ -102,6 +103,12 @@ pub mod ffi {
   #[repr(C)]
   #[derive(Copy, Clone, Debug)]
   pub struct skiac_bitmap {
+    _unused: [u8; 0],
+  }
+
+  #[repr(C)]
+  #[derive(Copy, Clone, Debug)]
+  pub struct skiac_image_levels {
     _unused: [u8; 0],
   }
 
@@ -296,6 +303,8 @@ pub mod ffi {
 
   pub type SkiacWStreamWriteCallback =
     Option<unsafe extern "C" fn(data: *mut c_void, size: usize, context: *mut c_void)>;
+
+  pub type SkiacLevelRelease = Option<unsafe extern "C" fn(context: *mut c_void, bytes: usize)>;
 
   #[allow(clippy::duplicated_attributes)]
   // https://github.com/rust-lang/rust/issues/96192
@@ -525,6 +534,9 @@ pub mod ffi {
       canvas: *mut skiac_canvas,
       bitmap: *mut skiac_bitmap,
       is_canvas: bool,
+      decode: bool,
+      levels: *mut skiac_image_levels,
+      cs: u8,
       ctm: skiac_transform,
       vector_device: bool,
       sx: f32,
@@ -538,6 +550,8 @@ pub mod ffi {
       enable_smoothing: bool,
       filter_quality: i32,
       paint: *mut skiac_paint,
+      decoded_id: *mut u32,
+      decoded_bytes: *mut usize,
     );
 
     pub fn skiac_canvas_draw_path(
@@ -1120,7 +1134,39 @@ pub mod ffi {
       ts: skiac_transform,
     ) -> *mut skiac_shader;
 
+    pub fn skiac_image_pattern_level(
+      width: i32,
+      height: i32,
+      ts: skiac_transform,
+      ctm: skiac_transform,
+      quality: i32,
+    ) -> i32;
+
+    pub fn skiac_image_make_decoded_pattern_shader(
+      c_bitmap: *mut skiac_bitmap,
+      c_image: *mut skiac_image,
+      c_levels: *mut skiac_image_levels,
+      level: i32,
+      repeat_x: i32,
+      repeat_y: i32,
+      quality: i32,
+      ts: skiac_transform,
+      cs: u8,
+      decoded_id: *mut u32,
+      decoded_bytes: *mut usize,
+    ) -> *mut skiac_shader;
+
     pub fn skiac_bitmap_destroy(c_bitmap: *mut skiac_bitmap);
+
+    pub fn skiac_image_levels_create() -> *mut skiac_image_levels;
+
+    pub fn skiac_image_levels_destroy(
+      c_levels: *mut skiac_image_levels,
+      release: SkiacLevelRelease,
+      release_context: *mut c_void,
+    ) -> usize;
+
+    pub fn skiac_image_levels_bytes(c_levels: *mut skiac_image_levels) -> usize;
     pub fn skiac_picture_ref(c_picture: *mut skiac_picture);
     pub fn skiac_picture_destroy(c_picture: *mut skiac_picture);
     pub fn skiac_picture_playback(c_picture: *mut skiac_picture, c_canvas: *mut skiac_canvas);
@@ -2829,11 +2875,19 @@ impl Canvas {
     }
   }
 
-  /// `ctm` is the context's transform: this canvas may be a recorder at
+  /// With `decode` the source is drawn from Chrome's decode cache, in
+  /// `color_space` (the canvas's): an Image on a raster canvas, whose levels
+  /// `decode_cache` keeps, or a canvas source on a raster canvas that is not
+  /// sRGB. `ctm` is the context's transform: this canvas may be a recorder at
   /// identity. `vector_device` is true on the PDF and SVG backends.
+  /// Returns the decode drawn in place of the source, which a recording
+  /// keeps: its SkImage uniqueID and byte size.
   pub fn draw_image(
     &mut self,
     image: &Bitmap,
+    decode: bool,
+    decode_cache: Option<&AccountedBitmap>,
+    color_space: ColorSpace,
     ctm: Transform,
     vector_device: bool,
     sx: f32,
@@ -2847,12 +2901,17 @@ impl Canvas {
     enable_smoothing: bool,
     quality: FilterQuality,
     paint: &Paint,
-  ) {
+  ) -> Option<(u32, usize)> {
+    let mut decoded_id = 0;
+    let mut decoded_bytes = 0;
     unsafe {
       ffi::skiac_canvas_draw_image(
         self.0,
         image.0.bitmap,
         image.0.is_canvas,
+        decode,
+        decode_cache.map_or(ptr::null_mut(), |bitmap| bitmap.levels),
+        color_space as u8,
         ctm.into(),
         vector_device,
         sx,
@@ -2866,8 +2925,11 @@ impl Canvas {
         enable_smoothing,
         quality as i32,
         paint.0,
+        &mut decoded_id,
+        &mut decoded_bytes,
       );
     }
+    (decoded_bytes != 0).then_some((decoded_id, decoded_bytes))
   }
 
   pub fn draw_path(&mut self, path: &Path, paint: &Paint) {
@@ -4635,6 +4697,14 @@ pub struct AccountedBitmap {
   /// paint. Mip levels are cached per image, so the patterns share them, as
   /// Chrome's decode cache does.
   image: OnceLock<SkImage>,
+  /// The scaled copies Chrome's decode cache would hold for this image
+  /// (`skiac_image_levels`), shared by drawImage and the Image's patterns.
+  levels: *mut ffi::skiac_image_levels,
+  /// The bytes of every level whose pixels are still alive, in the cache or
+  /// held by a recorded draw or a shader, as last reported to V8. Levels that
+  /// outlive this bitmap stay reported until their pixels are freed
+  /// (`release_level_bytes`).
+  level_bytes: AtomicI64,
 }
 
 impl AccountedBitmap {
@@ -4647,7 +4717,24 @@ impl AccountedBitmap {
       env,
       bytes,
       image: OnceLock::new(),
+      levels: unsafe { ffi::skiac_image_levels_create() },
+      level_bytes: AtomicI64::new(0),
     }
+  }
+
+  /// The live levels' bytes, as last reported.
+  #[cfg(test)]
+  pub(crate) fn level_bytes(&self) -> i64 {
+    self.level_bytes.load(Ordering::Relaxed)
+  }
+
+  /// Reports the change in the live levels' size to V8, after a draw that
+  /// may have made one. A level freed since (a recording dropped) is
+  /// reported here too, or when the bitmap is dropped.
+  pub(crate) fn sync_level_bytes(&self) {
+    let bytes = unsafe { ffi::skiac_image_levels_bytes(self.levels) } as i64;
+    let reported = self.level_bytes.swap(bytes, Ordering::Relaxed);
+    report_level_bytes(self.env, bytes - reported);
   }
 
   /// The image of these pixels that patterns sample (`Bitmap::make_image`),
@@ -4659,6 +4746,12 @@ impl AccountedBitmap {
 
 impl Drop for AccountedBitmap {
   fn drop(&mut self) {
+    // A recorded draw or a shader can still hold a level: it stays reported,
+    // and is reported freed with its pixels.
+    let held = unsafe {
+      ffi::skiac_image_levels_destroy(self.levels, Some(release_level_bytes), self.env.cast())
+    } as i64;
+    report_level_bytes(self.env, held - self.level_bytes.load(Ordering::Relaxed));
     if self.bytes != 0 && !self.env.is_null() {
       let mut adjusted: i64 = 0;
       unsafe {
@@ -4668,11 +4761,42 @@ impl Drop for AccountedBitmap {
   }
 }
 
+/// Called as each level that outlived its `AccountedBitmap` is freed.
+unsafe extern "C" fn release_level_bytes(env: *mut c_void, bytes: usize) {
+  report_level_bytes(env.cast(), -(bytes as i64));
+}
+
+/// Reports a change in the bytes of an Image's decode levels to V8.
+fn report_level_bytes(env: napi::sys::napi_env, delta: i64) {
+  #[cfg(test)]
+  REPORTED_LEVEL_BYTES.with(|reported| reported.set(reported.get() + delta));
+  if delta != 0 && !env.is_null() {
+    let mut adjusted: i64 = 0;
+    unsafe {
+      napi::sys::napi_adjust_external_memory(env, delta, &mut adjusted);
+    }
+  }
+}
+
+#[cfg(test)]
+thread_local! {
+  /// The level bytes reported on this thread, with or without an env.
+  static REPORTED_LEVEL_BYTES: std::cell::Cell<i64> = const { std::cell::Cell::new(0) };
+}
+
+/// The level bytes V8 has been told about on this thread.
+#[cfg(test)]
+pub(crate) fn reported_level_bytes() -> i64 {
+  REPORTED_LEVEL_BYTES.with(|reported| reported.get())
+}
+
 // Like the other raw-pointer wrappers in this file: every owner lives on the
 // JS main thread, so sharing the `Arc` between `ImagePattern` clones never
 // crosses threads in practice. Node guarantees napi wrap finalizers run
 // before the napi_env is torn down (RefTracker::FinalizeAll inside
 // napi_env__::DeleteMe), so the stored env is still valid when Drop runs.
+// It is valid in `release_level_bytes` too: a level that outlives the bitmap
+// is held by a recording or a pattern shader, which finalizers free as well.
 unsafe impl Send for AccountedBitmap {}
 unsafe impl Sync for AccountedBitmap {}
 
@@ -4699,11 +4823,22 @@ pub(crate) struct ImagePatternShared {
   // The pattern's one image, made from `backing` at the first paint and kept
   // for the pattern's life. It shares the backing's pixels.
   pub(crate) image: Option<SkImage>,
-  // Cache the shader for the last sampling quality; rebuilt when the transform
-  // or the quality changes. Every shader samples `image`, so a rebuild copies
-  // no pixels.
-  pub(crate) shader: Option<(FilterQuality, Shader)>,
+  // Cache the shader for the last sampling quality, decode level and canvas
+  // colour space (`None` when the original image is drawn as it is, see
+  // `get_shader`), with the copy it samples; rebuilt when the transform, the
+  // quality, the level or the colour space changes. Every shader samples
+  // `image` or a cached level, so a rebuild copies no pixels.
+  pub(crate) shader: Option<(FilterQuality, PatternDecode, Shader, DecodedCopy)>,
 }
+
+/// The decode level and canvas colour space an Image pattern's shader samples
+/// (`skiac_image_pattern_level`), or `None` for the original image as it is.
+pub(crate) type PatternDecode = Option<(i32, ColorSpace)>;
+
+/// The SkImage uniqueID and byte size of the decode copy a shader samples in
+/// place of the original, which a recorded paint keeps; `None` when it samples
+/// the original.
+pub(crate) type DecodedCopy = Option<(u32, usize)>;
 
 // Same confinement as `AccountedBitmap`: every owner lives on the JS main
 // thread, so the `Mutex` never guards real cross-thread access. `Send` makes
@@ -4722,6 +4857,10 @@ pub struct ImagePattern {
   pub(crate) repeat_x: TileMode,
   pub(crate) repeat_y: TileMode,
   pub(crate) is_canvas: bool,
+  /// The pattern samples a raster Image element, which Chrome draws from its
+  /// decode cache. SVG Images, canvas and ImageData sources are drawn as they
+  /// are.
+  pub(crate) is_image: bool,
   /// Bytes the whole backing raster occupies.
   pub(crate) backing_bytes: usize,
   /// Keeps the source object and its V8 memory accounting alive across clones.
@@ -4738,6 +4877,7 @@ impl Clone for ImagePattern {
       repeat_x: self.repeat_x,
       repeat_y: self.repeat_y,
       is_canvas: self.is_canvas,
+      is_image: self.is_image,
       backing_bytes: self.backing_bytes,
       backing: self.backing.clone(),
       shared: self.shared.clone(),
@@ -4752,26 +4892,93 @@ impl ImagePattern {
     self.backing_bytes
   }
 
-  pub(crate) fn get_shader(&self, quality: FilterQuality) -> Option<Shader> {
+  /// `decode` is the context's transform and colour space on a raster
+  /// canvas, and `None` on PDF and SVG, which draw the original image. With
+  /// it, an Image source is drawn from the decode level Chrome picks for the
+  /// pattern under that transform (`skiac_image_pattern_level`), in that
+  /// colour space. Returns the shader and the decode copy it samples.
+  pub(crate) fn get_shader(
+    &self,
+    quality: FilterQuality,
+    decode: Option<(Transform, ColorSpace)>,
+  ) -> Option<(Shader, DecodedCopy)> {
     let mut guard = self.shared.lock().unwrap();
     let shared = &mut *guard;
+    let decode_cache = match (&self.backing, decode) {
+      (Some(ImagePatternBacking::Bitmap(bitmap)), Some(decode)) if self.is_image => {
+        Some((bitmap, decode))
+      }
+      _ => None,
+    };
+    let level = decode_cache.map(|(bitmap, (ctm, color_space))| {
+      let level = unsafe {
+        ffi::skiac_image_pattern_level(
+          bitmap.inner.0.width,
+          bitmap.inner.0.height,
+          shared.transform.into(),
+          ctm.into(),
+          quality as i32,
+        )
+      };
+      (level, color_space)
+    });
     if shared
       .shader
       .as_ref()
-      .is_none_or(|(cached, _)| *cached != quality)
+      .is_none_or(|(cached, cached_level, ..)| *cached != quality || *cached_level != level)
     {
-      let image = shared.image.get_or_insert_with(|| self.make_image());
-      shared.shader = Shader::from_pattern_image(
-        image,
-        self.is_canvas,
-        self.repeat_x,
-        self.repeat_y,
-        quality,
-        shared.transform,
-      )
-      .map(|shader| (quality, shader));
+      // Drop the old shader first: it may hold the last ref to a level the
+      // new one pushes out of the cache, which the sync below then reports
+      // freed.
+      shared.shader = None;
+      shared.shader = match (decode_cache, level) {
+        (Some((bitmap, _)), Some((level, color_space))) => {
+          // The original image is only made when level 0 samples it.
+          let image = if level == 0 {
+            shared.image.get_or_insert_with(|| self.make_image()).0
+          } else {
+            ptr::null_mut()
+          };
+          let mut decoded_id = 0;
+          let mut decoded_bytes = 0;
+          let shader = unsafe {
+            Shader::from_ptr(ffi::skiac_image_make_decoded_pattern_shader(
+              bitmap.inner.0.bitmap,
+              image,
+              bitmap.levels,
+              level,
+              self.repeat_x as i32,
+              self.repeat_y as i32,
+              quality as i32,
+              shared.transform.into(),
+              color_space as u8,
+              &mut decoded_id,
+              &mut decoded_bytes,
+            ))
+          };
+          bitmap.sync_level_bytes();
+          let decoded = (decoded_bytes != 0).then_some((decoded_id, decoded_bytes));
+          shader.map(|shader| (shader, decoded))
+        }
+        _ => {
+          let image = shared.image.get_or_insert_with(|| self.make_image());
+          Shader::from_pattern_image(
+            image,
+            self.is_canvas,
+            self.repeat_x,
+            self.repeat_y,
+            quality,
+            shared.transform,
+          )
+          .map(|shader| (shader, None))
+        }
+      }
+      .map(|(shader, decoded)| (quality, level, shader, decoded));
     }
-    shared.shader.as_ref().map(|(_, shader)| shader.clone())
+    shared
+      .shader
+      .as_ref()
+      .map(|(_, _, shader, decoded)| (shader.clone(), *decoded))
   }
 
   /// The image every shader of this pattern samples. A null one (no pixels,

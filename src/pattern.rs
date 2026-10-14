@@ -148,6 +148,10 @@ impl CanvasPattern {
     // `is_canvas` picks the canvas sampling rule (PatternSamplingOptions in
     // skia_c.cpp). Chrome has no ImageData pattern; its analog, a pattern over
     // createImageBitmap(imageData), samples like a canvas source.
+    //
+    // A raster Image goes through Chrome's decode cache; an SVG Image is drawn
+    // as vectors there, so its raster is sampled as it is.
+    let is_image = matches!(&input, Either4::A(image) if !image.is_svg);
     let (backing_bytes, backing, accounting_id, is_canvas) = match input {
       Either4::A(image) => {
         // Chrome checks ImageComplete() first (image_element_base.cc:59): a
@@ -274,6 +278,7 @@ impl CanvasPattern {
         repeat_x,
         repeat_y,
         is_canvas,
+        is_image,
         backing_bytes,
         backing: Some(backing),
         shared: Arc::new(Mutex::new(ImagePatternShared {
