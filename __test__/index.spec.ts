@@ -227,9 +227,9 @@ for (const paint of ['fill', 'stroke'] as const) {
   })
 }
 
-// Image and pattern paints take globalAlpha rounded to k/255. 'high' drawImage
-// and every pattern sample with a cubic filter, which Skia runs in float, and an
-// unrounded 0.5 / 0.3 / 0.7 drifts to 127 / 76 / 178. Expected values are Chrome
+// Image and pattern paints take globalAlpha rounded to k/255. Unrounded, 'high'
+// drawImage and a pattern at any smoothing quality drift to 76 / 178 for 0.3 /
+// 0.7, and cubic sampling can turn 0.5 into 127. Expected values are Chrome
 // 155's CPU canvas; where only the alpha is compared, Chrome's 8-bit path gives
 // a different RGB.
 const alphaSet = (ctx: SKRSContext2D, x: number, y: number, w: number, h: number) => [
