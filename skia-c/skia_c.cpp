@@ -611,6 +611,10 @@ void skiac_canvas_draw_image(skiac_canvas* c_canvas,
     // SkPDFDevice draws a source rect smaller than the image as a subset image
     // of its own, so a sprite sheet would embed one copy per sprite. Draw the
     // whole snapshot under a clip instead: every draw shares one image.
+    // Trade-off: a PDF viewer filters the crop edge with the pixels past it,
+    // so that edge can differ from an Image source, which gets a subset image.
+    // Canvas sources have always been drawn this way on PDF. The SVG device
+    // draws both sources as clip + whole image anyway.
     CANVAS_CAST->save();
     CANVAS_CAST->clipRect(dst_rect);
     CANVAS_CAST->concat(SkMatrix::RectToRect(src_rect, dst_rect));
