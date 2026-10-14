@@ -205,8 +205,10 @@ skiac_surface* skiac_surface_copy_rgba(skiac_surface* c_surface,
                                        uint32_t height,
                                        uint8_t cs) {
   // x, y, width, height are source rectangle coordinates.
+  // Premultiplied like the source canvas: pattern shaders filter the stored
+  // texels, and unpremul texels would pull transparent black into the color.
   auto copy =
-      skiac_surface_create((int)width, (int)height, kUnpremul_SkAlphaType, cs);
+      skiac_surface_create((int)width, (int)height, kPremul_SkAlphaType, cs);
   if (!copy) {
     return nullptr;
   }
