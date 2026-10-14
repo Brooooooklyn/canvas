@@ -427,6 +427,8 @@ pub mod ffi {
 
     pub fn skiac_surface_create_rgba(width: i32, height: i32, cs: u8) -> *mut skiac_surface;
 
+    pub fn skiac_surface_create_rgba_opaque(width: i32, height: i32, cs: u8) -> *mut skiac_surface;
+
     pub fn skiac_surface_ref(surface: *mut skiac_surface);
 
     pub fn skiac_surface_destroy(surface: *mut skiac_surface);
@@ -2068,6 +2070,17 @@ impl Surface {
   pub fn new_rgba(width: u32, height: u32, color_space: ColorSpace) -> Option<Surface> {
     unsafe {
       Self::from_ptr(ffi::skiac_surface_create_rgba(
+        width as i32,
+        height as i32,
+        color_space as u8,
+      ))
+    }
+  }
+
+  /// alpha:false backing store: kOpaque, like Blink's canvas resource.
+  pub fn new_rgba_opaque(width: u32, height: u32, color_space: ColorSpace) -> Option<Surface> {
+    unsafe {
+      Self::from_ptr(ffi::skiac_surface_create_rgba_opaque(
         width as i32,
         height as i32,
         color_space as u8,

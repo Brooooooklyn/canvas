@@ -109,6 +109,8 @@ pub struct PageRecorder {
   // Lifetime consolidation count (consolidate_with_snapshot completions) --
   // the observable "a flush collapsed the recording" signal for tests.
   consolidations: u64,
+  // alpha:false: reset() clears to opaque black instead of transparent.
+  opaque: bool,
 }
 
 impl PageRecorder {
@@ -135,7 +137,12 @@ impl PageRecorder {
       save_count: 0,
       recording_limit: MAX_RECORDED_BYTES,
       consolidations: 0,
+      opaque: false,
     }
+  }
+
+  pub(crate) fn set_opaque(&mut self) {
+    self.opaque = true;
   }
 
   /// Begin a new recording and restore the current canvas state (save stack, clip, transform).
@@ -332,7 +339,11 @@ impl PageRecorder {
     // Record a clear() command to ensure picture playback clears the target canvas
     // This is necessary because begin_recording may not fully reset canvas state
     if let Some(canvas) = self.current.get_recording_canvas() {
-      canvas.clear();
+      if self.opaque {
+        canvas.fill(0, 0, 0, 255);
+      } else {
+        canvas.clear();
+      }
     }
     self.changed = false;
     // Reset all caches

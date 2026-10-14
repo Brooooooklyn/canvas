@@ -104,30 +104,12 @@ pub struct CanvasElement<'scope> {
   context_initialized: bool,
 }
 
-// alpha:false base fill. It is a direct surface write: with_surface_canvas
-// bumps the content version, and on a raster canvas also marks the recorded
-// layers stale (drawCanvas rebases on the surface). SVG has no recorder.
-fn apply_opaque_base(context_2d: &mut Context, width: u32, height: u32) -> Result<()> {
-  let mut fill_paint = context_2d.fill_paint()?;
-  fill_paint.set_color(255, 255, 255, 255);
-  context_2d.alpha = false;
-  let (width, height) = (width as f32, height as f32);
-  context_2d.with_surface_canvas(|canvas| {
-    canvas.draw_rect(0f32, 0f32, width, height, &fill_paint);
-  });
-  Ok(())
-}
-
 #[napi]
 impl<'c> CanvasElement<'c> {
   // Setting width or height resets the bitmap but keeps the context's
   // settings (alpha, color space).
   fn resized_context(old: &Context, width: u32, height: u32) -> Result<Context> {
-    let mut context_2d = Context::new(width, height, old.color_space)?;
-    if !old.alpha {
-      apply_opaque_base(&mut context_2d, width, height)?;
-    }
-    Ok(context_2d)
+    Context::new_with_alpha(width, height, old.color_space, old.alpha)
   }
 
   fn create_context(
@@ -228,13 +210,13 @@ impl<'c> CanvasElement<'c> {
       .and_then(|a| a.color_space.as_deref())
       .and_then(|cs| ColorSpace::from_str(cs).ok())
       .unwrap_or_default();
+    let alpha = attrs.as_ref().and_then(|a| a.alpha).unwrap_or(true);
     let context_2d = &mut self.ctx.context;
-    // first acquisition fixes the backing surface's color space.
-    if color_space != context_2d.color_space {
-      *context_2d = Context::new(self.width, self.height, color_space)?;
-    }
-    if !attrs.as_ref().and_then(|a| a.alpha).unwrap_or(true) {
-      apply_opaque_base(context_2d, self.width, self.height)?;
+    // The first acquisition fixes the backing surface's color space and
+    // alpha. alpha:false always gets a fresh kOpaque surface, so nothing set
+    // through the internal `canvas.ctx` before this call reaches the base.
+    if color_space != context_2d.color_space || !alpha {
+      *context_2d = Context::new_with_alpha(self.width, self.height, color_space, alpha)?;
     }
     self.context_initialized = true;
     this.get_named_property("ctx")
@@ -868,7 +850,15 @@ impl<'scope> SVGCanvas<'scope> {
     }
     let context_2d = &mut self.ctx.context;
     if !attrs.as_ref().and_then(|a| a.alpha).unwrap_or(true) {
-      apply_opaque_base(context_2d, self.width, self.height)?;
+      // A fresh context: state set through the internal `canvas.ctx`
+      // (matrix, clip, paint) must not reach the base.
+      *context_2d = Context::new_svg(
+        self.width,
+        self.height,
+        self.flag.into(),
+        ColorSpace::default(),
+      )?;
+      context_2d.set_opaque();
     }
     let color_space = attrs
       .and_then(|a| a.color_space)
@@ -904,6 +894,11 @@ impl<'scope> SVGCanvas<'scope> {
     .ok_or_else(|| Error::new(Status::GenericFailure, "Failed to create surface"))?;
     self.ctx.context.surface = surface;
     self.ctx.context.stream = Some(stream);
+    // The next document starts from the alpha:false base again, as a fresh
+    // bitmap would (spec: opaque black).
+    if !self.ctx.context.alpha {
+      self.ctx.context.surface.canvas.fill(0, 0, 0, 255);
+    }
     // The backing surface was replaced: bump the content version so drawImage
     // dedup keys for this source cannot alias the new raster under the
     // pre-replacement charge.
@@ -923,7 +918,7 @@ impl<'scope> SVGCanvas<'scope> {
     let mut context_2d = Context::new_svg(width, height, self.flag.into(), ColorSpace::default())?;
     context_2d.color_space = old.color_space;
     if !old.alpha {
-      apply_opaque_base(&mut context_2d, width, height)?;
+      context_2d.set_opaque();
     }
     Ok(context_2d)
   }

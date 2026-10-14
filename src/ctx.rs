@@ -182,9 +182,27 @@ impl Context {
   }
 
   pub fn new(width: u32, height: u32, color_space: ColorSpace) -> Result<Self> {
-    let surface = Surface::new_rgba_premultiplied(width, height, color_space)
-      .ok_or_else(|| Error::from_reason("Create skia surface failed".to_owned()))?;
-    Ok(Context {
+    Self::new_with_alpha(width, height, color_space, true)
+  }
+
+  /// A raster context. alpha:false gets a kOpaque surface cleared to opaque
+  /// black, as Blink's resource provider does at creation
+  /// (canvas_resource_provider.cc ClearAtCreation, kBlack for kOpaque).
+  /// Chrome allocates it lazily and reads an untouched canvas as zeros; the
+  /// spec, and Chrome's own display, say black from the start.
+  pub fn new_with_alpha(
+    width: u32,
+    height: u32,
+    color_space: ColorSpace,
+    alpha: bool,
+  ) -> Result<Self> {
+    let surface = if alpha {
+      Surface::new_rgba_premultiplied(width, height, color_space)
+    } else {
+      Surface::new_rgba_opaque(width, height, color_space)
+    }
+    .ok_or_else(|| Error::from_reason("Create skia surface failed".to_owned()))?;
+    let mut context = Context {
       surface,
       resource_id: next_resource_id(),
       page_recorder: Some(RefCell::new(PageRecorder::new(width as f32, height as f32))), // Enable deferred rendering
@@ -198,7 +216,34 @@ impl Context {
       color_space,
       stream: None,
       direct_content_version: Cell::new(0),
-    })
+    };
+    if !alpha {
+      context.set_opaque();
+    }
+    Ok(context)
+  }
+
+  /// Make a fresh context alpha:false and paint its opaque black base. The
+  /// base is a direct surface write: with_surface_canvas bumps the content
+  /// version and, on raster, marks the recorded layers stale so drawCanvas
+  /// rebases on the surface. The canvas is clean, so no paint state (or
+  /// anything set through the internal `canvas.ctx`) reaches the base.
+  pub(crate) fn set_opaque(&mut self) {
+    self.alpha = false;
+    if let Some(ref recorder) = self.page_recorder {
+      recorder.borrow_mut().set_opaque();
+    }
+    self.with_surface_canvas(|canvas| canvas.fill(0, 0, 0, 255));
+  }
+
+  /// Clear the surface to the context's base: transparent, or opaque black
+  /// for alpha:false (Blink GetClearFlags).
+  fn clear_surface_to_base(&mut self) {
+    if self.alpha {
+      self.surface.canvas.clear();
+    } else {
+      self.surface.canvas.fill(0, 0, 0, 255);
+    }
   }
 
   // Create a Context from an existing Surface (e.g., from PDFDocument)
@@ -767,7 +812,7 @@ impl Context {
           .reset(self.width as f32, self.height as f32);
       }
       // Also clear the main surface
-      self.surface.canvas.clear();
+      self.clear_surface_to_base();
       return Ok(());
     }
 
@@ -775,9 +820,15 @@ impl Context {
     self.flush_if_recording_limit_exceeded();
     let mut paint = Paint::new();
     paint.set_style(PaintStyle::Fill);
-    paint.set_color(0, 0, 0, 0);
     paint.set_stroke_miter(10.0);
-    paint.set_blend_mode(BlendMode::Clear);
+    if self.alpha {
+      paint.set_color(0, 0, 0, 0);
+      paint.set_blend_mode(BlendMode::Clear);
+    } else {
+      // Blink GetClearFlags (canvas_2d_recorder_context.cc:1917-1926):
+      // alpha:false clears by filling opaque black, source-over.
+      paint.set_color(0, 0, 0, 255);
+    }
     self.with_render_canvas(&paint, |canvas, paint| {
       canvas.draw_rect(x, y, width, height, paint);
       Ok(())
@@ -876,7 +927,11 @@ impl Context {
         .borrow_mut()
         .reset(self.width as f32, self.height as f32);
       // Also clear main surface which accumulates content from flush() calls
-      self.surface.canvas.clear();
+      self.clear_surface_to_base();
+    } else if !self.alpha {
+      // Direct backends (SVG): draw the alpha:false base again once
+      // canvas.reset() has dropped the matrix and clip.
+      self.surface.canvas.fill(0, 0, 0, 255);
     }
 
     // Clear the current path
