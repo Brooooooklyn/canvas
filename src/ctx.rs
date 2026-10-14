@@ -1444,10 +1444,10 @@ impl Context {
   /// Some composite ops (copy, xor, lighter, screen, destination-over),
   /// repeat-x/y and a transformed no-repeat take the float pipeline there, so
   /// at exact (k + 0.5)/255 ties such as 0.3 Chrome CPU can be 1 lower; its GPU
-  /// canvas agrees with this rounding. Here it is load-bearing:
-  /// cubic sampling ('high' drawImage, and every pattern) runs Skia's float
-  /// pipeline, where the Mitchell weights can sum to 1 - eps and the store
-  /// rounds ties to even, so a float 0.5 can come out 127 and 0.3 comes out 76.
+  /// canvas agrees with this rounding. Here it is load-bearing: with a float
+  /// alpha, a pattern at any smoothing quality and a 'high' drawImage give 76
+  /// and 178 for 0.3 and 0.7, and cubic sampling ('high') can also turn 0.5
+  /// into 127, because the Mitchell weights can sum to 1 - eps.
   /// f32 maths and `k / 255.0` as Blink does: `set_alpha(k)` multiplies by
   /// 1/255, which is 1 ulp off for some k.
   fn image_global_alpha(&self) -> f32 {
