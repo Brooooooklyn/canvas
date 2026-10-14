@@ -2844,10 +2844,19 @@ impl Context {
   /// Blink's text bounds: the glyph bounds at the drawn position, inflated
   /// for a stroke (base_rendering_context_2d.cc:1016-1080), here measured as
   /// measureText's actualBoundingBox. Only the alpha:false reset reads them.
-  /// When maxWidth squeezes the text Blink scales the canvas after taking the
-  /// unscaled bounds; that rect is not reproduced, so the reset takes the
-  /// whole clip instead. It also does when measuring fails (for example a
-  /// fill gradient with no shader): the draw itself reports its own errors.
+  /// Two corrections give the box as drawn:
+  ///   * maxWidth squeezes the text with scale(maxWidth / width, 1) about the
+  ///     anchor x (skia_c.cpp skiac_canvas_get_line_metrics_or_draw_text), so
+  ///     the box scales toward x. Blink resets its unscaled box under the
+  ///     scaled canvas (base_rendering_context_2d.cc:1066-1082), which misses
+  ///     part of the squeezed glyphs; that is not copied.
+  ///   * measureText's box leaves out the letterSpacing / 2 shift Skia gives
+  ///     LTR glyphs: its right edge is short by that much, and its left edge
+  ///     by the whole spacing when it is negative. Both are widened by it,
+  ///     which only grows the box where the shift does not apply.
+  ///
+  /// When measuring fails (for example a fill gradient with no shader) the
+  /// reset takes the whole clip: the draw itself reports its own errors.
   fn text_bounds(
     &mut self,
     text: &str,
@@ -2857,13 +2866,19 @@ impl Context {
     source: ShadowSource,
   ) -> Option<DrawBounds> {
     let metrics = self.get_line_metrics(text).ok()?.0;
-    if metrics.width > max_width {
-      return None;
-    }
+    // The same test and ratio as the draw.
+    let scale = if metrics.width > max_width {
+      max_width / metrics.width
+    } else {
+      1.0
+    };
+    let spacing = self.state.letter_spacing;
+    let left = x - scale * (metrics.left + (-spacing).max(0.0));
+    let right = x + scale * (metrics.right + spacing.max(0.0) / 2.0);
     let bounds = DrawBounds {
-      left: x - metrics.left,
+      left: left.min(right),
       top: y - metrics.ascent,
-      right: x + metrics.right,
+      right: left.max(right),
       bottom: y + metrics.descent,
     };
     Some(match source {

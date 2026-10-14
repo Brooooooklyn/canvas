@@ -548,6 +548,8 @@ test('alpha:false resets the whole clip after a draw Blink composites, like Chro
   }
 })
 
+GlobalFonts.registerFromPath(join(fileURLToPath(import.meta.url), '..', 'fonts', 'Lato-Regular.ttf'), 'AlphaFalseLato')
+
 // Text bounds are the glyph bounds (base_rendering_context_2d.cc:1019,
 // 1076-1113), so the outermost anti-aliased glyph pixels keep a lowered alpha in
 // Chrome too. Our glyph bounds come from measureText, which rounds the box
@@ -555,10 +557,6 @@ test('alpha:false resets the whole clip after a draw Blink composites, like Chro
 // and only the shape of the result is pinned: a few pixels, not none and not
 // the whole glyph.
 test('alpha:false text resets alpha inside the glyph bounds only', (t) => {
-  GlobalFonts.registerFromPath(
-    join(fileURLToPath(import.meta.url), '..', 'fonts', 'Lato-Regular.ttf'),
-    'AlphaFalseLato',
-  )
   for (const op of ['copy', 'xor'] as const) {
     const { ctx } = opaqueBackground(40, 24)
     ctx.globalCompositeOperation = op
@@ -574,6 +572,86 @@ test('alpha:false text resets alpha inside the glyph bounds only', (t) => {
     // stay below 255; resetting the whole clip leaves none.
     t.true(below > 0 && below < 30, `${op}: ${below} pixels below alpha 255`)
     t.deepEqual(px(ctx, 38, 2), op === 'copy' ? [0, 0, 0, 255] : [200, 100, 50, 255], op)
+  }
+})
+
+// maxWidth draws the text under scale(maxWidth / width, 1) about its anchor
+// (skia_c.cpp skiac_canvas_get_line_metrics_or_draw_text), and letterSpacing
+// moves the glyphs by a shift measureText's box leaves out, so the reset takes
+// the glyph box as drawn: scaled toward the anchor and widened by that shift.
+// A glyph pixel the reset misses keeps the xor alpha (128 where fully
+// covered); only an anti-aliased fringe may stay below 255, as in Chrome
+// (min 202 for the unsqueezed cases). Chrome resets the unscaled box under the
+// squeezed canvas (base_rendering_context_2d.cc:1066-1082), which misses part
+// of the squeezed glyphs (65 to 155 pixels here, down to alpha 127); we do not
+// copy that. Pixels away from the text keep their alpha, as in Chrome.
+test('alpha:false squeezed or letter-spaced text resets around its drawn glyphs only', (t) => {
+  const cases: [string, (c: Ctx) => void][] = [
+    ['maxWidth', (c) => c.fillText('Hgjy', 10.3, 30.2, 15)],
+    [
+      'maxWidth center',
+      (c) => {
+        c.textAlign = 'center'
+        c.fillText('Hgjy', 30.3, 30.2, 15)
+      },
+    ],
+    [
+      'maxWidth right',
+      (c) => {
+        c.textAlign = 'right'
+        c.fillText('Hgjy', 50.3, 30.2, 15)
+      },
+    ],
+    [
+      'maxWidth strokeText',
+      (c) => {
+        c.lineWidth = 2
+        c.strokeText('Hgjy', 10.3, 30.2, 15)
+      },
+    ],
+    [
+      'letterSpacing',
+      (c) => {
+        c.letterSpacing = '6px'
+        c.fillText('Hgjy', 4.3, 30.2)
+      },
+    ],
+    [
+      'negative letterSpacing',
+      (c) => {
+        c.letterSpacing = '-2px'
+        c.fillText('Hgjy', 10.3, 30.2)
+      },
+    ],
+    [
+      'letterSpacing and maxWidth',
+      (c) => {
+        c.letterSpacing = '6px'
+        c.fillText('Hgjy', 10.3, 30.2, 30)
+      },
+    ],
+  ]
+  const setUp = (c: Ctx) => {
+    c.font = '16px AlphaFalseLato'
+    c.fillStyle = c.strokeStyle = 'rgba(0,0,255,0.5)'
+    c.globalCompositeOperation = 'xor'
+  }
+  for (const [name, draw] of cases) {
+    const { ctx } = opaqueBackground(60, 40)
+    setUp(ctx)
+    draw(ctx)
+    const data = ctx.getImageData(0, 0, 60, 40).data
+    let min = 255
+    for (let i = 3; i < data.length; i += 4) min = Math.min(min, data[i])
+    t.true(min >= 192, `${name}: min alpha ${min}`)
+    const far = lowAlpha(60, 40)
+    setUp(far.ctx)
+    draw(far.ctx)
+    t.deepEqual(
+      [px(far.ctx, 1, 1)[3], px(far.ctx, 58, 38)[3], px(far.ctx, 58, 1)[3]],
+      [128, 128, 128],
+      `${name}: far pixels`,
+    )
   }
 })
 
