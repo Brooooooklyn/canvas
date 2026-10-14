@@ -2292,10 +2292,44 @@ skiac_bitmap* skiac_bitmap_make_from_image_data(uint8_t* ptr,
   return reinterpret_cast<skiac_bitmap*>(bitmap);
 }
 
+// The color space Chrome gives a CICP AVIF (avif_image_decoder.cc GetColorSpace
+// and ui/gfx/color_space.cc GetTransferFunction), or null to leave it untagged.
+// 2 (unspecified) means BT.709 primaries and the sRGB transfer, and Chrome
+// draws the BT.709 family of transfers (1, 6, 14, 15) with the sRGB curve, not
+// the 2.4 gamma that SkColorSpace::MakeCICP uses for them. Chrome cannot decode
+// transfers 9-12, and tone maps PQ (16) and HLG (18), so those stay untagged.
+static sk_sp<SkColorSpace> avif_cicp_color_space(uint16_t primaries,
+                                                 uint16_t transfer) {
+  switch (transfer) {
+    case 1:
+    case 2:
+    case 6:
+    case 14:
+    case 15:
+      transfer = 13;
+      break;
+    case 4:
+    case 5:
+    case 7:
+    case 8:
+    case 13:
+    case 17:
+      break;
+    default:
+      return nullptr;
+  }
+  primaries = primaries == 2 ? 1 : primaries;
+  if (primaries > UINT8_MAX) {
+    return nullptr;
+  }
+  return SkColorSpace::MakeCICP(
+      static_cast<SkNamedPrimaries::CicpId>(primaries),
+      static_cast<SkNamedTransferFn::CicpId>(transfer));
+}
+
 // Tag decoded AVIF pixels with the file's color space, as Chrome's AVIF
 // decoder does (avif_image_decoder.cc:868-914): an ICC profile wins, else the
-// CICP primaries and transfer, where 2 (unspecified) means BT.709 and sRGB.
-// sRGB stays untagged, as before.
+// CICP primaries and transfer. sRGB stays untagged, as before.
 void skiac_bitmap_set_color_space(skiac_bitmap* c_bitmap,
                                   const uint8_t* icc,
                                   size_t icc_len,
@@ -2308,14 +2342,8 @@ void skiac_bitmap_set_color_space(skiac_bitmap* c_bitmap,
       color_space = SkColorSpace::Make(profile);
     }
   }
-  if (!color_space && (primaries != 2 || transfer != 2)) {
-    primaries = primaries == 2 ? 1 : primaries;
-    transfer = transfer == 2 ? 13 : transfer;
-    if (primaries <= UINT8_MAX && transfer <= UINT8_MAX) {
-      color_space = SkColorSpace::MakeCICP(
-          static_cast<SkNamedPrimaries::CicpId>(primaries),
-          static_cast<SkNamedTransferFn::CicpId>(transfer));
-    }
+  if (!color_space) {
+    color_space = avif_cicp_color_space(primaries, transfer);
   }
   if (color_space && !color_space->isSRGB()) {
     BITMAP_CAST->setColorSpace(std::move(color_space));

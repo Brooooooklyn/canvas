@@ -233,6 +233,126 @@ test('avif decode honors the ICC profile or CICP color space', async (t) => {
   }
 })
 
+// The avif-cicp-P-T-M fixtures hold sRGB 128,128,128 | 200,100,50 |
+// 32,128,223 | 255,0,0, encoded by avifenc 1.4.2 (4:4:4, full range) with
+// CICP primaries P, transfer T and matrix M.
+const decodeAvifRow = async (name: string, colorSpace: 'srgb' | 'display-p3') => {
+  const ctx = createCanvas(4, 4).getContext('2d', { colorSpace })
+  ctx.drawImage(await loadImage(join(__dirname, 'fixtures', `${name}.avif`)), 0, 0)
+  const row = [...ctx.getImageData(0, 0, 4, 1).data]
+  return [0, 4, 8, 12].map((i) => row.slice(i, i + 4))
+}
+
+// Chrome draws the BT.709 family of CICP transfers (1 BT.709, 6 SMPTE 170M,
+// 14 and 15 BT.2020) with the sRGB curve (ui/gfx/color_space.cc
+// GetTransferFunction), not with the 2.4 gamma of SkColorSpace::MakeCICP.
+// Expected values are Chrome 155 CPU; ours can round a channel 1 lower.
+test('avif decode draws BT.709-family CICP transfers with the sRGB curve', async (t) => {
+  const bt709Primaries = {
+    srgb: [
+      [128, 128, 128, 255],
+      [200, 100, 50, 255],
+      [31, 128, 223, 255],
+      [255, 0, 0, 255],
+    ],
+    'display-p3': [
+      [128, 128, 128, 255],
+      [187, 105, 62, 255],
+      [63, 126, 216, 255],
+      [234, 51, 35, 255],
+    ],
+  }
+  const bt2020Primaries = {
+    srgb: [
+      [128, 128, 128, 255],
+      [240, 76, 29, 255],
+      [0, 134, 231, 255],
+      [255, 0, 0, 255],
+    ],
+    'display-p3': [
+      [128, 128, 128, 255],
+      [222, 89, 50, 255],
+      [0, 130, 223, 255],
+      [255, 0, 9, 255],
+    ],
+  }
+  const cases = {
+    'avif-cicp-1-1-6': bt709Primaries,
+    // Primaries 2 (unspecified) means BT.709.
+    'avif-cicp-2-1-6': bt709Primaries,
+    // The BT.709 matrix rounds the YUV a little differently.
+    'avif-cicp-1-1-1': {
+      srgb: [
+        [128, 128, 128, 255],
+        [200, 100, 51, 255],
+        [32, 127, 222, 255],
+        [254, 0, 0, 255],
+      ],
+      'display-p3': [
+        [128, 128, 128, 255],
+        [187, 105, 63, 255],
+        [63, 125, 215, 255],
+        [233, 51, 35, 255],
+      ],
+    },
+    'avif-cicp-6-6-6': {
+      srgb: [
+        [128, 128, 128, 255],
+        [196, 102, 49, 255],
+        [49, 129, 223, 255],
+        [248, 36, 0, 255],
+      ],
+      'display-p3': [
+        [128, 128, 128, 255],
+        [183, 107, 61, 255],
+        [72, 128, 217, 255],
+        [228, 62, 34, 255],
+      ],
+    },
+    'avif-cicp-9-14-9': bt2020Primaries,
+    'avif-cicp-9-15-9': bt2020Primaries,
+    // P3 primaries are kept; only the transfer is the sRGB curve.
+    'avif-cicp-12-1-6': {
+      srgb: [
+        [128, 128, 128, 255],
+        [215, 93, 31, 255],
+        [0, 130, 230, 255],
+        [255, 0, 0, 255],
+      ],
+      'display-p3': [
+        [128, 128, 128, 255],
+        [200, 100, 50, 255],
+        [31, 128, 223, 255],
+        [255, 0, 0, 255],
+      ],
+    },
+  }
+  for (const [name, expected] of Object.entries(cases)) {
+    for (const colorSpace of ['srgb', 'display-p3'] as const) {
+      const row = await decodeAvifRow(name, colorSpace)
+      row.forEach((pixel, x) => nearPixel(t, pixel, expected[colorSpace][x], `${name} ${colorSpace} x=${x}`))
+    }
+  }
+})
+
+// Chrome cannot decode CICP transfer 11 (IEC 61966-2-4), and it tone maps PQ
+// (16) and HLG (18) when it draws them into a canvas. We have neither, so
+// these stay untagged (drawn as sRGB), as before AVIF color spaces were
+// honored. These are not Chrome's values (PQ grey 132, HLG grey 99), but are
+// closer to them than Skia's plain BT.709, PQ and HLG curves (121, 181, 137).
+test('avif decode leaves CICP transfers 11, PQ and HLG untagged', async (t) => {
+  const untagged = [
+    [128, 128, 128, 255],
+    [200, 100, 50, 255],
+    [31, 128, 223, 255],
+    [255, 0, 0, 255],
+  ]
+  for (const name of ['avif-cicp-1-11-6', 'avif-cicp-9-16-9', 'avif-cicp-9-18-9']) {
+    const row = await decodeAvifRow(name, 'srgb')
+    row.forEach((pixel, x) => nearPixel(t, pixel, untagged[x], `${name} x=${x}`))
+  }
+})
+
 // drawCanvas has no Chrome counterpart, so it is held to drawImage: a P3
 // gradient drawn into an sRGB canvas must give the same pixels either way.
 test('drawCanvas of a display-p3 source matches drawImage', (t) => {
