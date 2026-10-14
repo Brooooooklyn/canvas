@@ -82,7 +82,11 @@ test('pattern sampling follows smoothing changes after assignment', (t) => {
   ctx.imageSmoothingEnabled = true
   ctx.imageSmoothingQuality = 'low'
   ctx.fillRect(0, 0, 4, 1)
-  t.notDeepEqual([...ctx.getImageData(0, 0, 4, 1).data], expected)
+  // Chrome 155's CPU canvas
+  t.deepEqual(
+    [...ctx.getImageData(0, 0, 4, 1).data],
+    [191, 64, 0, 255, 191, 64, 0, 255, 64, 191, 0, 255, 64, 191, 0, 255],
+  )
   ctx.imageSmoothingEnabled = false
   ctx.fillRect(0, 0, 4, 1)
   t.deepEqual([...ctx.getImageData(0, 0, 4, 1).data], expected)
