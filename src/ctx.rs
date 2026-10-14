@@ -36,6 +36,7 @@ use crate::{
     PathOp, SkEncodedImageFormat, SkImage, SkWMemoryStream, SkiaDataRef, Surface, Transform,
   },
   state::Context2dRenderingState,
+  webidl,
 };
 
 static CSS_SIZE_REGEXP: LazyLock<Regex> =
@@ -3138,22 +3139,48 @@ impl CanvasRenderingContext2D {
   pub fn create_image_data<'scope>(
     &'scope mut self,
     env: &'scope Env,
-    width_or_data: Either<i32, Uint8ClampedSlice<'scope>>,
-    width_or_height: i32,
-    height_or_settings: Option<Either<i32, Settings>>,
-    maybe_settings: Option<Settings>,
+    width_or_data: Either3<&ImageData, Uint8ClampedSlice<'scope>, Unknown<'scope>>,
+    width_or_height: Unknown<'scope>,
+    height_or_settings: Option<Unknown<'scope>>,
+    maybe_settings: Option<Unknown<'scope>>,
   ) -> Result<ClassInstance<'scope, ImageData>> {
+    let raw = env.raw();
+    let settings = |value: Option<Unknown>| {
+      webidl::ImageDataSettings::from_js(raw, value.map(|v| v.raw()), webidl::CREATE_IMAGE_DATA)
+    };
+    if width_or_height.get_type()? == ValueType::Undefined {
+      // createImageData(ImageData imagedata): the same size and color space,
+      // new zeroed data (base_rendering_context_2d.cc:296).
+      return match width_or_data {
+        Either3::A(image_data) => ImageData::new_zeroed(
+          env,
+          image_data.width,
+          image_data.height,
+          image_data.color_space,
+        ),
+        _ => Err(webidl::type_error(
+          raw,
+          &format!(
+            "{}parameter 1 is not of type 'ImageData'.",
+            webidl::CREATE_IMAGE_DATA
+          ),
+        )),
+      };
+    }
     match width_or_data {
-      Either::A(width) => {
-        let width = width.unsigned_abs();
-        let height = width_or_height.unsigned_abs();
+      // Two or more arguments select createImageData(long sw, long sh, ...),
+      // and an ImageData is not a long.
+      Either3::A(_) => Err(webidl::type_error(
+        raw,
+        &format!("{}Value is not of type 'long'.", webidl::CREATE_IMAGE_DATA),
+      )),
+      Either3::C(width) => {
+        let width = unsafe { i32::from_napi_value(raw, width.raw())? }.unsigned_abs();
+        let height = unsafe { i32::from_napi_value(raw, width_or_height.raw())? }.unsigned_abs();
         // Spec: defaultColorSpace is this context's color space.
-        let color_space = match height_or_settings {
-          Some(Either::B(settings)) => {
-            ColorSpace::from_str(&settings.color_space).unwrap_or(self.context.color_space)
-          }
-          _ => self.context.color_space,
-        };
+        let color_space = settings(height_or_settings)?
+          .color_space
+          .unwrap_or(self.context.color_space);
         let arraybuffer_length = (width * height * 4) as usize;
         let data_buffer = vec![0; arraybuffer_length];
         let data_object = Uint8ClampedSlice::from_data(env, data_buffer)?;
@@ -3170,12 +3197,19 @@ impl CanvasRenderingContext2D {
           .with_property_attributes(PropertyAttributes::Enumerable)])?;
         Ok(instance)
       }
-      Either::B(data_object) => {
+      // Non-standard createImageData(Uint8ClampedArray, sw, sh?, settings?).
+      Either3::B(data_object) => {
         let input_data_length = data_object.len();
-        let width = width_or_height.unsigned_abs();
-        let height = match &height_or_settings {
-          Some(Either::A(height)) => height.unsigned_abs(),
-          _ => (input_data_length as u32) / 4 / width,
+        let width = unsafe { i32::from_napi_value(raw, width_or_height.raw())? }.unsigned_abs();
+        let height = match height_or_settings {
+          Some(height) if height.get_type()? == ValueType::Number => {
+            unsafe { i32::from_napi_value(raw, height.raw())? }.unsigned_abs()
+          }
+          // A dictionary here is converted but, as before, not used.
+          other => {
+            settings(other)?;
+            (input_data_length as u32) / 4 / width
+          }
         };
         // The typed array aliases the caller's buffer, which may be detached
         // later via transfer; the pixel length is checked on every use.
@@ -3185,9 +3219,7 @@ impl CanvasRenderingContext2D {
             "Index or size is negative or greater than the allowed amount".to_owned(),
           ));
         }
-        let color_space = maybe_settings
-          .and_then(|settings| ColorSpace::from_str(&settings.color_space).ok())
-          .unwrap_or_default();
+        let color_space = settings(maybe_settings)?.color_space.unwrap_or_default();
         let mut instance = ImageData {
           width: width as usize,
           height: height as usize,
@@ -3920,8 +3952,13 @@ impl CanvasRenderingContext2D {
     y: f64,
     width: f64,
     height: f64,
-    color_space: Option<String>,
+    settings: Option<Unknown<'scope>>,
   ) -> Result<ClassInstance<'scope, ImageData>> {
+    let settings = webidl::ImageDataSettings::from_js(
+      env.raw(),
+      settings.map(|v| v.raw()),
+      webidl::GET_IMAGE_DATA,
+    )?;
     if !x.is_nan()
       && !x.is_infinite()
       && !y.is_nan()
@@ -3932,9 +3969,7 @@ impl CanvasRenderingContext2D {
       && !height.is_infinite()
     {
       // Spec: defaultColorSpace is this context's color space.
-      let color_space = color_space
-        .and_then(|cs| cs.parse().ok())
-        .unwrap_or(self.context.color_space);
+      let color_space = settings.color_space.unwrap_or(self.context.color_space);
       // Per spec: if sw/sh is negative, flip the origin and use abs value
       let (sx, sw) = if width < 0.0 {
         (x + width, -width)

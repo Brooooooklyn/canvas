@@ -156,9 +156,12 @@ interface CanvasPDFAnnotations {
 }
 
 type PredefinedColorSpace = 'display-p3' | 'srgb'
+type ImageDataPixelFormat = 'rgba-float16' | 'rgba-float32' | 'rgba-unorm8'
 
 interface ImageDataSettings {
   colorSpace?: PredefinedColorSpace
+  /** Only 'rgba-unorm8' storage exists: the float formats are accepted and stored as 8-bit. */
+  pixelFormat?: ImageDataPixelFormat
 }
 interface CanvasImageData {
   createImageData(sw: number, sh: number, settings?: ImageDataSettings): ImageData
@@ -489,10 +492,17 @@ export class ImageData {
    * Returns the actual dimensions of the data in the ImageData object, in pixels.
    */
   readonly width: number
+  readonly colorSpace: PredefinedColorSpace
+  /** Always 'rgba-unorm8'. */
+  readonly pixelFormat: ImageDataPixelFormat
 
-  constructor(sw: number, sh: number, attr?: { colorSpace?: ColorSpace })
-  constructor(imageData: ImageData, attr?: { colorSpace?: ColorSpace })
-  constructor(data: Uint8ClampedArray | Uint16Array | Float16Array | Float32Array, sw: number, sh?: number)
+  constructor(sw: number, sh: number, settings?: ImageDataSettings)
+  constructor(
+    data: Uint8ClampedArray | Uint16Array | Float16Array | Float32Array,
+    sw: number,
+    sh?: number,
+    settings?: ImageDataSettings,
+  )
 }
 
 export class Image {

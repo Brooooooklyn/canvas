@@ -54,6 +54,7 @@ mod sk;
 mod state;
 pub mod svg;
 mod unpremul;
+mod webidl;
 
 const MIME_WEBP: &str = "image/webp";
 const MIME_PNG: &str = "image/png";
