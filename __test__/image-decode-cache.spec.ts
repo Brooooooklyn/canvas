@@ -1,9 +1,12 @@
 // Chrome draws an Image element (a lazily decoded image) from its software
-// decode cache (cc/tiles/software_image_decode_cache.cc): the image scaled down
-// to the mip level the draw needs, then sampled linearly at every smoothing
-// quality. Canvas sources skip that step. Expected values are Chrome 155's CPU
-// canvas (--disable-gpu, willReadFrequently: true), each case drawn from a
-// fresh Image so that Chrome's cache is cold. The larger byte arrays live in
+// decode cache (cc/tiles/software_image_decode_cache.cc): the image decoded
+// into the canvas's colour space, scaled down to the mip level the draw needs,
+// then sampled linearly at every smoothing quality. On an sRGB canvas, canvas
+// sources skip that step. Expected values are Chrome 155's CPU canvas
+// (--disable-gpu, willReadFrequently: true), each case drawn from a fresh
+// Image so that Chrome's cache is cold: we match the cold cache only, as
+// Chrome builds a level from the smallest decode it has cached, so with a warm
+// cache its output can depend on earlier draws. The larger byte arrays live in
 // fixtures/chrome-cpu-image-levels.json (base64).
 import { readFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
@@ -108,7 +111,7 @@ const gradient8 = () => grid(8, 8, (x, y) => `rgb(${x * 30},${y * 30},${(x + y) 
 
 // cc MatrixToScalingOperation + FilterQualityToSkSamplingOptions: 'medium'
 // blends two mip levels, and 'high' is cubic only when both axes scale up.
-test('drawImage of a canvas samples like Chrome for each quality', (t) => {
+test('drawImage of a canvas samples like Chrome at medium and high', (t) => {
   const source = gradient64()
   for (const quality of ['medium', 'high'] as const) {
     const data = draw(24, quality, source, (ctx, s) => ctx.drawImage(s, 0, 0, 20, 20))

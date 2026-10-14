@@ -124,9 +124,11 @@ static SkSamplingOptions CcSampling(int fq, const SkMatrix& matrix) {
 // Chrome samples a pattern through cc PaintShader::GetSkShader, which maps the
 // quality with ScalingOperation::kUnknown (cc/paint/paint_shader.cc and
 // PaintFlags::FilterQualityToSkSamplingOptions in cc/paint/paint_flags.cc):
-// 'medium' and 'high' are both linear with linear mipmaps, never cubic. Image
-// sources take the decode cache instead (skiac_image_make_decoded_pattern_
-// shader); an ImageData pattern still samples one nearest mip level here.
+// 'medium' and 'high' are both linear with linear mipmaps, never cubic. A
+// raster Image on a raster canvas takes the decode cache instead
+// (skiac_image_make_decoded_pattern_shader). ImageData and SVG Image patterns,
+// and Image patterns on PDF and SVG, still sample here, with one nearest mip
+// level at 'medium' and 'high'.
 static SkSamplingOptions PatternSamplingOptions(int fq, bool is_canvas) {
   switch (fq) {
     case 3:
@@ -552,7 +554,11 @@ void ClipRectsToImageRect(const GfxRectF& image, GfxRectF* src, GfxRectF* dst) {
 // level the draw needs. This is ours, one per decoded Image: a copy per
 // (source rect, level size, colour space), most recently used last. Chrome
 // builds a level from the smallest cached decode that is big enough; we always
-// build it from the original, which is what Chrome does on a cold cache.
+// build it from the original, which is what Chrome does on a cold cache. We
+// match the cold cache only. Not followed either: on a cold cache Chrome
+// decodes a JPEG whose sides are whole MCUs straight to the level size
+// (libjpeg's k/8 scaling) when the source rect is the whole image; we keep no
+// encoded bytes to do that, and scale the full decode.
 //
 // A level the cache drops can still be held by a recorded draw or a pattern
 // shader, so its bytes are counted in `live` until its pixels are freed;

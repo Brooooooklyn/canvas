@@ -2205,8 +2205,9 @@ impl Context {
   /// (skiac_surface_get_bitmap), but each recorded drawImage pins a fresh
   /// makeImageSnapshot -- mutating the source afterwards copy-on-writes a
   /// new raster that the id alone cannot distinguish, hence the generation.
-  /// `image` is the Image `bitmap` belongs to, `None` for a canvas source. On
-  /// a raster canvas Chrome draws an Image from its decode cache.
+  /// `image` is the Image `bitmap` belongs to, `None` for a canvas source or
+  /// an SVG Image. On a raster canvas Chrome draws an Image from its decode
+  /// cache.
   pub(crate) fn draw_image(
     &mut self,
     bitmap: &Bitmap,
@@ -2279,6 +2280,10 @@ impl Context {
     let image_smoothing_enabled = self.state.image_smoothing_enabled;
     let image_smoothing_quality = self.state.image_smoothing_quality;
     let raster = self.backend == Backend::Raster;
+    // Known trade-off: the recording keeps the decode level it drew, so
+    // drawCanvas of this canvas replays the level, into PDF and SVG too and at
+    // any scale. Kept: Chrome has no drawCanvas, and its drawImage(canvas)
+    // samples this canvas's pixels, which hold that level's result.
     let decode_cache = image.filter(|_| raster);
     // Chrome draws an Image from its decode cache, and on a canvas that is not
     // sRGB a canvas source too (SoftwareImageDecodeCache::UseCacheForDrawImage),
