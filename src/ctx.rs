@@ -561,6 +561,7 @@ impl Context {
       paint,
       DrawContent::Geometry,
       None,
+      false,
       None,
       None,
       false,
@@ -599,6 +600,7 @@ impl Context {
       paint,
       content,
       content_filter,
+      self.state.has_filter,
       shadow,
       bounds,
       pattern_style,
@@ -611,12 +613,16 @@ impl Context {
   /// matrix as its third argument because it cannot read one off the canvas it
   /// is given -- that canvas may be a recorder at identity, or sit inside a
   /// filter layer. Pass it straight to `apply_shadow_offset_matrix_to_canvas`.
+  ///
+  /// `has_filter` is Blink's StateHasFilter for the draw: true also when the
+  /// assigned filter built no `content_filter`.
   fn render_passes<S, F>(
     &mut self,
     blend_mode: BlendMode,
     paint: &Paint,
     content: DrawContent,
     content_filter: Option<ImageFilter>,
+    has_filter: bool,
     shadow: Option<&ShadowDraw>,
     bounds: Option<DrawBounds>,
     pattern_style: bool,
@@ -635,12 +641,8 @@ impl Context {
     }
     // The alpha:false reset covers the whole clip after a draw Blink
     // composites, whatever route we take for it.
-    let bounds = if Self::blink_composites(
-      blend_mode,
-      content_filter.is_some(),
-      shadow.is_some(),
-      pattern_style,
-    ) {
+    let bounds = if Self::blink_composites(blend_mode, has_filter, shadow.is_some(), pattern_style)
+    {
       None
     } else {
       bounds
@@ -815,7 +817,8 @@ impl Context {
   }
 
   /// Blink's ShouldUseCompositedDraw (canvas_2d_recorder_context.h:582-597,
-  /// 711-727): any `ctx.filter`, a full-canvas mode, a shadow in a mode
+  /// 711-727): any `ctx.filter` (StateHasFilter, h:589: one that builds no
+  /// Skia filter counts too), a full-canvas mode, a shadow in a mode
   /// DropShadowPaintFilter cannot do (copy is handled apart and never is), or
   /// a shadow on a pattern fill or stroke. Only the alpha:false reset reads
   /// it: after such a draw Blink resets the whole clip (h:826-829). Our
@@ -1834,6 +1837,7 @@ impl Context {
       self.state.filters_string = filter_str.to_owned();
       self.state.filter = None;
       self.state.filter_id = 0;
+      self.state.has_filter = false;
       return Ok(());
     }
     // `css_filter` is greedy and never fails: it stops at the first token it
@@ -1851,6 +1855,7 @@ impl Context {
     self.state.filter = css_filters_to_image_filter(filters);
     self.state.filters_string = filter_str.to_owned();
     self.state.filter_id = next_resource_id();
+    self.state.has_filter = true;
     Ok(())
   }
 
@@ -2349,7 +2354,9 @@ impl Context {
   ///     replay an inner picture through a saveLayer/drawPicture(paint) whose
   ///     restore rewrites the whole clip even for an empty picture;
   ///   * a `ctx.filter` wraps the draw in a filtered saveLayer -- its
-  ///     restore also composites (kClear can clear the canvas);
+  ///     restore also composites (kClear can clear the canvas); and on
+  ///     alpha:false any assigned filter, even one that built no Skia filter,
+  ///     is followed by the whole-clip reset (`blink_composites`);
   ///   * a shadow pass records an extra draw whose blend mode is the
   ///     paint's (kClear shadow restore would clear); `has_shadow` is the
   ///     caller's `shadow_paint(...)` result.
@@ -2368,7 +2375,7 @@ impl Context {
         | BlendMode::DestinationIn
         | BlendMode::DestinationATop
         | BlendMode::Clear
-    ) && self.state.filter.is_none()
+    ) && !self.state.has_filter
       && self.state.line_dash_list.is_empty()
       && !has_shadow
   }

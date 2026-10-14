@@ -548,6 +548,85 @@ test('alpha:false resets the whole clip after a draw Blink composites, like Chro
   }
 })
 
+// Blink asks whether the state has a filter (StateHasFilter,
+// canvas_2d_recorder_context.h:589), and a filter that adds nothing still is
+// one: a transparent drop-shadow, a drop-shadow with no offset and no blur, or
+// a list that holds one of them. Such a draw resets the whole clip too.
+test('alpha:false resets the whole clip after a draw under a filter that adds nothing, like Chrome', (t) => {
+  const src = transparent(4, 4)
+  src.ctx.fillStyle = 'rgba(0,255,0,0.5)'
+  src.ctx.fillRect(0, 0, 4, 4)
+  const draws: Record<string, (c: Ctx) => void> = {
+    fillRect: (c) => c.fillRect(10, 10, 10, 10),
+    'fillRect 0 wide': (c) => c.fillRect(10, 10, 0, 10),
+    fill: (c) => {
+      c.beginPath()
+      c.arc(15, 15, 5, 0, 7)
+      c.fill()
+    },
+    'fill of an empty path': (c) => {
+      c.beginPath()
+      c.rect(10, 10, 0, 10)
+      c.fill()
+    },
+    stroke: (c) => {
+      c.lineWidth = 2
+      c.beginPath()
+      c.moveTo(10, 15)
+      c.lineTo(20, 15)
+      c.stroke()
+    },
+    strokeRect: (c) => c.strokeRect(10, 10, 10, 10),
+    drawImage: (c) => c.drawImage(src.canvas, 10, 10, 10, 10),
+    fillText: (c) => {
+      c.font = '16px sans-serif'
+      c.fillText('Hg', 10, 22)
+    },
+    strokeText: (c) => {
+      c.font = '16px sans-serif'
+      c.strokeText('Hg', 10, 22)
+    },
+  }
+  const filters = [
+    'drop-shadow(0px 0px transparent)',
+    'drop-shadow(5px 5px 2px transparent)',
+    'drop-shadow(0px 0px red)',
+    'blur(2px) drop-shadow(0 0 transparent)',
+  ]
+  for (const filter of filters) {
+    for (const op of ['xor', 'source-atop', 'destination-out'] as const) {
+      for (const [name, draw] of Object.entries(draws)) {
+        const { ctx } = lowAlpha(30, 30)
+        ctx.fillStyle = ctx.strokeStyle = 'rgba(0,0,255,0.5)'
+        ctx.filter = filter
+        ctx.globalCompositeOperation = op
+        draw(ctx)
+        t.deepEqual([px(ctx, 1, 1)[3], px(ctx, 28, 28)[3]], [255, 255], `${filter} ${op} ${name}`)
+      }
+      // clearRect does not read the filter.
+      const { ctx } = lowAlpha(30, 30)
+      ctx.filter = filter
+      ctx.globalCompositeOperation = op
+      ctx.clearRect(10, 10, 10, 10)
+      t.deepEqual([px(ctx, 1, 1)[3], px(ctx, 28, 28)[3]], [128, 128], `${filter} ${op} clearRect`)
+    }
+    // copy with a filter is a CompositedDraw, so even the anti-aliased edge of
+    // an unaligned rect ends up opaque (21 pixels stay below 255 without one).
+    const { ctx } = opaqueBackground(30, 30)
+    ctx.fillStyle = 'rgba(0,0,255,0.5)'
+    ctx.filter = filter
+    ctx.globalCompositeOperation = 'copy'
+    ctx.translate(0.5, 0.25)
+    ctx.fillRect(10, 10, 10, 10)
+    const data = ctx.getImageData(0, 0, 30, 30).data
+    let below = 0
+    for (let i = 3; i < data.length; i += 4) {
+      if (data[i] < 255) below++
+    }
+    t.is(below, 0, `${filter} copy`)
+  }
+})
+
 GlobalFonts.registerFromPath(join(fileURLToPath(import.meta.url), '..', 'fonts', 'Lato-Regular.ttf'), 'AlphaFalseLato')
 
 // Text bounds are the glyph bounds (base_rendering_context_2d.cc:1019,
