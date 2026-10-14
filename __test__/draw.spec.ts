@@ -1276,6 +1276,19 @@ test('getContextAttributes', (t) => {
   t.is(customAttrs.desynchronized, false)
 })
 
+// Chrome 155: colorSpace is the one the context was created with, also after
+// a resize.
+test('getContextAttributes reports colorSpace', (t) => {
+  t.is(createCanvas(2, 2).getContext('2d').getContextAttributes().colorSpace, 'srgb')
+  for (const colorSpace of ['srgb', 'display-p3'] as const) {
+    const canvas = createCanvas(2, 2)
+    const ctx = canvas.getContext('2d', { colorSpace })
+    t.is(ctx.getContextAttributes().colorSpace, colorSpace)
+    canvas.width = 3
+    t.is(ctx.getContextAttributes().colorSpace, colorSpace)
+  }
+})
+
 test('getImageData', async (t) => {
   const { ctx } = t.context
   ctx.rect(10, 10, 100, 100)

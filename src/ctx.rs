@@ -2571,6 +2571,7 @@ impl Context {
 #[napi(object)]
 pub struct ContextAttributes {
   pub alpha: bool,
+  pub color_space: String,
   pub desynchronized: bool,
 }
 
@@ -3656,6 +3657,11 @@ impl CanvasRenderingContext2D {
   pub fn get_context_attributes(&self) -> ContextAttributes {
     ContextAttributes {
       alpha: self.context.alpha,
+      color_space: match self.context.color_space {
+        ColorSpace::Srgb => "srgb",
+        ColorSpace::DisplayP3 => "display-p3",
+      }
+      .to_owned(),
       desynchronized: false,
     }
   }

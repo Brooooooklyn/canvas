@@ -607,7 +607,7 @@ export interface SKRSContext2D extends CanvasRenderingContext2D {
     image: Image | ImageData | Canvas | SvgCanvas,
     repeat: 'repeat' | 'repeat-x' | 'repeat-y' | 'no-repeat' | null,
   ): CanvasPattern
-  getContextAttributes(): { alpha: boolean; desynchronized: boolean }
+  getContextAttributes(): { alpha: boolean; colorSpace: ColorSpace; desynchronized: boolean }
   getTransform(): DOMMatrix
 
   letterSpacing: string
