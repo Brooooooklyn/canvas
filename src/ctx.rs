@@ -1449,19 +1449,11 @@ impl Context {
     Ok(())
   }
 
-  /// `globalAlpha` rounded to k/255, for the paints that sample an image:
-  /// drawImage and `Pattern::Image`. Blink rounds the drawImage alpha on purpose
-  /// (canvas_rendering_context_2d_state.cc:334-336, "TODO: Don't quantize the
-  /// alpha to 8-bit"). It keeps a float for patterns, but Chrome's CPU canvas
-  /// draws a repeat pattern with source-over through Skia's legacy blitter,
-  /// which rounds the paint alpha to a byte (SkBlitter.cpp `getAlpha()`).
-  /// Some composite ops (copy, xor, lighter, screen, destination-over),
-  /// repeat-x/y and a transformed no-repeat take the float pipeline there, so
-  /// at exact (k + 0.5)/255 ties such as 0.3 Chrome CPU can be 1 lower; its GPU
-  /// canvas agrees with this rounding. Here it is load-bearing: with a float
-  /// alpha, a pattern (smoothing on or off) and a 'high' drawImage give 76 and
-  /// 178 for 0.3 and 0.7, and a scaled 'high' drawImage can also turn 0.5 into
-  /// 127, because its Mitchell weights can sum to 1 - eps.
+  /// `globalAlpha` rounded to k/255, for drawImage only. Blink rounds the
+  /// drawImage alpha on purpose (canvas_rendering_context_2d_state.cc:334-336,
+  /// "TODO: Don't quantize the alpha to 8-bit"). Patterns keep the float
+  /// alpha, as Blink does: where Skia's legacy blitter draws them, it rounds
+  /// the paint alpha to a byte itself (SkBlitter.cpp `getAlpha()`).
   /// f32 maths and `k / 255.0` as Blink does: `set_alpha(k)` multiplies by
   /// 1/255, which is 1 ulp off for some k.
   fn image_global_alpha(&self) -> f32 {
@@ -1494,7 +1486,7 @@ impl Context {
           FilterQuality::None
         }) {
           paint.set_color(0, 0, 0, 255);
-          paint.set_alpha_f32(self.image_global_alpha());
+          paint.set_alpha_f32(alpha);
           paint.set_shader(&shader);
         }
       }
@@ -1732,7 +1724,7 @@ impl Context {
           FilterQuality::None
         }) {
           paint.set_color(0, 0, 0, 255);
-          paint.set_alpha_f32(self.image_global_alpha());
+          paint.set_alpha_f32(global_alpha);
           paint.set_shader(&shader);
         }
       }
