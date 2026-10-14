@@ -98,6 +98,31 @@ test('scaled drawImage at globalAlpha rounds like the legacy blitters', async (t
   }
 })
 
+// cc DrawImageRectOp maps the quality from the draw's matrix
+// (MatrixToScalingOperation): 'medium' blends two mip levels, which Skia never
+// draws through the legacy bilerp, so it must not render like 'low'.
+test('drawImage of a canvas samples like Chrome at every quality', (t) => {
+  const src = noise(8, 8, 7)
+  for (const quality of ['off', 'low', 'medium', 'high'] as const) {
+    // upscale, 1:1 and downscale
+    for (const [dw, dh] of [
+      [11, 10],
+      [7, 7],
+      [4, 3],
+    ]) {
+      const ctx = createCanvas(12, 12).getContext('2d')
+      if (quality === 'off') {
+        ctx.imageSmoothingEnabled = false
+      } else {
+        ctx.imageSmoothingQuality = quality
+      }
+      ctx.drawImage(src, 0.5, 0.5, 7, 7, 0.25, 0.5, dw, dh)
+      const key = `${quality}|${dw}x${dh}`
+      t.deepEqual(px(ctx, 0, 0, 12, 12), chrome(`canvas-quality|${key}`), key)
+    }
+  }
+})
+
 test('blurred shadow mask is blitted like Chrome', (t) => {
   const ctx = createCanvas(16, 8).getContext('2d')
   ctx.globalAlpha = 0.5
