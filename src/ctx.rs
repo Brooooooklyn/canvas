@@ -1167,7 +1167,17 @@ impl Context {
     F: Fn(&mut Canvas, &Paint) -> result::Result<(), SkError>,
   {
     let mut inner_paint = paint.clone();
-    inner_paint.set_blend_mode(BlendMode::SourceOver);
+    // Blink draws the content src-over inside the layer, except for copy, which
+    // it draws with kSrc straight onto the cleared canvas
+    // (canvas_2d_recorder_context.h:830-837). Over this transparent layer the
+    // two give the same pixels in exact maths, but Skia blits src-over with its
+    // legacy 8-bit blitters and kSrc with the raster pipeline, which round
+    // differently, so keep kSrc for copy.
+    inner_paint.set_blend_mode(if matches!(blend_mode, BlendMode::Source) {
+      BlendMode::Source
+    } else {
+      BlendMode::SourceOver
+    });
     let mut composite_paint = Paint::new();
     composite_paint.set_blend_mode(blend_mode);
     let mut layer = PictureRecorder::new();
