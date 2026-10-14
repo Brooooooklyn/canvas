@@ -2670,6 +2670,54 @@ impl FromNapiValue for DrawImageSource<'static> {
 type PatternImage<'a> =
   Either4<&'a mut Image, &'a mut ImageData, &'a mut CanvasElement<'a>, &'a mut SVGCanvas<'a>>;
 
+/// The class of a `createPattern` image, found by the one type check that
+/// WebIDL runs on it.
+#[derive(Clone, Copy)]
+enum PatternImageKind {
+  Image,
+  ImageData,
+  CanvasElement,
+  SVGCanvas,
+}
+
+impl PatternImageKind {
+  /// The instanceof checks that `PatternImage` runs, in its order, without
+  /// the borrow.
+  unsafe fn of(env: sys::napi_env, value: sys::napi_value) -> Option<Self> {
+    unsafe {
+      if <&mut Image as ValidateNapiValue>::validate(env, value).is_ok() {
+        Some(Self::Image)
+      } else if <&mut ImageData as ValidateNapiValue>::validate(env, value).is_ok() {
+        Some(Self::ImageData)
+      } else if <&mut CanvasElement as ValidateNapiValue>::validate(env, value).is_ok() {
+        Some(Self::CanvasElement)
+      } else if <&mut SVGCanvas as ValidateNapiValue>::validate(env, value).is_ok() {
+        Some(Self::SVGCanvas)
+      } else {
+        None
+      }
+    }
+  }
+
+  /// Borrows `value` as this class: unwrap and type tag only. User code ran
+  /// since `of`, and may have changed the prototype or Symbol.hasInstance,
+  /// so the instanceof check is not repeated.
+  unsafe fn borrow(
+    self,
+    env: sys::napi_env,
+    value: sys::napi_value,
+  ) -> Result<PatternImage<'static>> {
+    unsafe {
+      Ok(match self {
+        Self::Image => Either4::A(Image::from_napi_mut_ref(env, value)?),
+        Self::ImageData => Either4::B(ImageData::from_napi_mut_ref(env, value)?),
+        Self::CanvasElement => Either4::C(CanvasElement::from_napi_mut_ref(env, value)?),
+        Self::SVGCanvas => Either4::D(SVGCanvas::from_napi_mut_ref(env, value)?),
+      })
+    }
+  }
+}
+
 /// The arguments of `createPattern`, read from the `arguments` object that
 /// the index.js wrapper passes. Chrome converts the image (a type check)
 /// before the repetition, a [LegacyNullToEmptyString] DOMString
@@ -2704,23 +2752,16 @@ impl FromNapiValue for CreatePatternArgs<'static> {
       )
     };
     let image = args.get(0)?;
-    // The instanceof checks that `PatternImage` runs, without the borrow.
-    let valid = unsafe {
-      <&mut Image as ValidateNapiValue>::validate(env, image).is_ok()
-        || <&mut ImageData as ValidateNapiValue>::validate(env, image).is_ok()
-        || <&mut CanvasElement as ValidateNapiValue>::validate(env, image).is_ok()
-        || <&mut SVGCanvas as ValidateNapiValue>::validate(env, image).is_ok()
-    };
-    if !valid {
+    let Some(kind) = (unsafe { PatternImageKind::of(env, image) }) else {
       return Err(wrong_type());
-    }
+    };
     let repetition = args.get(1)?;
     let repetition = if webidl::type_of(env, repetition)? == ValueType::Null {
       String::new()
     } else {
       webidl::to_js_string(env, repetition)?
     };
-    let image = unsafe { PatternImage::from_napi_value(env, image) }.map_err(|_| wrong_type())?;
+    let image = unsafe { kind.borrow(env, image) }.map_err(|_| wrong_type())?;
     Ok(Self { image, repetition })
   }
 }

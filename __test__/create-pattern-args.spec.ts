@@ -328,6 +328,55 @@ test('the image is converted before the repetition', async (t) => {
   t.is(width, 2)
 })
 
+test('the image is not checked again after the repetition is converted', async (t) => {
+  // Chrome converts the image once, before the repetition. What toString()
+  // does to the image's prototype afterwards does not matter.
+  const ctx = createCanvas(2, 2).getContext('2d')
+  const canvas = source()
+  const fromCanvas = ctx.createPattern(
+    canvas,
+    loose({
+      toString() {
+        Object.setPrototypeOf(canvas, null)
+        return 'repeat'
+      },
+    }),
+  )
+  t.true(fromCanvas !== null)
+  ctx.fillStyle = fromCanvas!
+  ctx.fillRect(0, 0, 2, 2)
+  t.deepEqual(Array.from(ctx.getImageData(0, 0, 1, 1).data), [0, 0, 0, 255])
+  const image = new Image()
+  await loadInto(image, await source().encode('png'))
+  const fromImage = ctx.createPattern(
+    image,
+    loose({
+      toString() {
+        Object.setPrototypeOf(image, null)
+        return 'repeat'
+      },
+    }),
+  )
+  t.true(fromImage !== null)
+  // Nor does a Symbol.hasInstance that toString() installs.
+  const other = source()
+  const CanvasClass = Object.getPrototypeOf(other).constructor
+  try {
+    const fromOther = ctx.createPattern(
+      other,
+      loose({
+        toString() {
+          Object.defineProperty(CanvasClass, Symbol.hasInstance, { value: () => false, configurable: true })
+          return 'repeat'
+        },
+      }),
+    )
+    t.true(fromOther !== null)
+  } finally {
+    delete CanvasClass[Symbol.hasInstance]
+  }
+})
+
 test('createPattern returns null while an Image loads a new src', async (t) => {
   const ctx = createCanvas(4, 4).getContext('2d')
   const dataUrl = async (width: number) =>
