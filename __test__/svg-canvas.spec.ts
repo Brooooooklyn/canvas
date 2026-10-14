@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 
 import ava, { TestFn } from 'ava'
 
-import { createCanvas, SvgCanvas, SvgExportFlag, GlobalFonts, SKRSContext2D } from '../index'
+import { createCanvas, DOMMatrix, SvgCanvas, SvgExportFlag, GlobalFonts, SKRSContext2D } from '../index'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -423,4 +423,126 @@ console.log(JSON.stringify({ growth, equal: a.every((v, i) => v === b[i]), clipp
   t.true(equal, 'the SvgCanvas pixels equal a canvas running the same drawing')
   // Unbounded, the 12 snapshots pin 192 MiB.
   t.true(growth < 96, `12 drawImage calls grew rss by ${growth.toFixed(1)} MB, expected < 96 MB`)
+})
+
+// SkSVGDevice drops the matrix of an image shader, so a pattern used to be
+// written as if setTransform() was never called. The patterned element is now
+// drawn under CTM x pattern matrix, with its geometry mapped back into the
+// pattern's space (SVG resolves a userSpaceOnUse pattern in the user space of
+// the element that uses it). Rendered in Chrome 155, the SVG of the scene below
+// moves from a mean max-channel difference of 63.9 to 7.5 against Chrome's own
+// canvas drawing of it; what is left is image smoothing and edge AA.
+const twoColorTile = () => {
+  const tile = createCanvas(4, 4)
+  const ctx = tile.getContext('2d')
+  ctx.fillStyle = '#ff0000'
+  ctx.fillRect(0, 0, 2, 4)
+  ctx.fillStyle = '#0000ff'
+  ctx.fillRect(2, 0, 2, 4)
+  return tile
+}
+
+const patternedSvg = (matrix: DOMMatrix | null, repetition = 'repeat', draw?: (ctx: SKRSContext2D) => void) => {
+  const svg = createCanvas(200, 100, SvgExportFlag.NoPrettyXML)
+  const ctx = svg.getContext('2d')
+  const pattern = ctx.createPattern(twoColorTile(), repetition as 'repeat')
+  if (matrix) {
+    pattern.setTransform(matrix)
+  }
+  ctx.fillStyle = pattern
+  ctx.strokeStyle = pattern
+  if (draw) {
+    draw(ctx)
+  } else {
+    ctx.fillRect(10, 10, 80, 60)
+    ctx.beginPath()
+    ctx.arc(150, 50, 40, 0, Math.PI * 2)
+    ctx.fill()
+  }
+  return { svg, ctx, content: svg.getContent().toString('utf8') }
+}
+
+const patternedElements = (content: string) => content.match(/<[a-z]+ fill="url\(#pattern_\d+\)"[^>]*>/g) ?? []
+
+const pathPoints = (element: string) =>
+  [...element.matchAll(/(-?[\d.]+(?:e-?\d+)?) (-?[\d.]+(?:e-?\d+)?)/g)].map(([, x, y]) => [Number(x), Number(y)])
+
+test('SVG output draws a pattern through its matrix', (t) => {
+  const matrix = new DOMMatrix().translate(7, 5).rotate(20).scale(3, 2)
+  const elements = patternedElements(patternedSvg(matrix).content)
+  t.is(elements.length, 2, elements.join('\n'))
+  for (const element of elements) {
+    t.true(element.startsWith('<path '), element)
+    t.true(element.includes('transform="matrix(2.81908 1.02606 -0.68404 1.87939 7 5)"'), element)
+  }
+  // The rect's corners, mapped back into the canvas space by the matrix.
+  const d = elements[0].slice(elements[0].indexOf(' d="'))
+  const corners = pathPoints(d).map(([x, y]) => matrix.transformPoint({ x, y }))
+  for (const [i, [x, y]] of [
+    [10, 10],
+    [90, 10],
+    [90, 70],
+    [10, 70],
+  ].entries()) {
+    t.true(Math.abs(corners[i].x - x) < 1e-3 && Math.abs(corners[i].y - y) < 1e-3, `${d}: corner ${i}`)
+  }
+})
+
+test('SVG output multiplies the pattern matrix with the transform and strokes before it', (t) => {
+  const { content } = patternedSvg(new DOMMatrix().scale(2, 2), 'repeat', (ctx) => {
+    ctx.scale(2, 1)
+    ctx.lineWidth = 4
+    ctx.strokeRect(10, 10, 30, 30)
+  })
+  const elements = patternedElements(content)
+  t.is(elements.length, 1, content)
+  // The stroke outline in the pattern space: [8, 42] and [12, 38] halved.
+  t.true(
+    elements[0].includes('transform="scale(4 2)" d="M4 4L21 4L21 21L4 21L4 4ZM6 6L6 19L19 19L19 6L6 6Z"'),
+    elements[0],
+  )
+})
+
+test('SVG output draws pattern-filled text as outlines in the pattern space', (t) => {
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts-dir', 'iosevka-curly-regular.woff2'), 'i-curly')
+  const { content } = patternedSvg(new DOMMatrix().scale(2, 2), 'repeat', (ctx) => {
+    ctx.font = '20px i-curly'
+    ctx.fillText('Hi', 50, 40)
+  })
+  const elements = patternedElements(content)
+  t.is(elements.length, 1, content)
+  t.true(elements[0].startsWith('<path fill="url(#pattern_0)" transform="scale(2 2)" d="M'), elements[0])
+  t.false(content.includes('<text'), content)
+})
+
+// HTML spec: a pattern whose matrix cannot be inverted paints transparent
+// black, as Chrome 155's canvas does.
+test('SVG output paints nothing for a pattern with a singular matrix', (t) => {
+  const { ctx, content } = patternedSvg(new DOMMatrix([0, 0, 0, 0, 0, 0]))
+  t.deepEqual(patternedElements(content), [], content)
+  t.false(content.includes('<pattern'), content)
+  t.deepEqual([...new Set(ctx.getImageData(0, 0, 200, 100).data)], [0])
+})
+
+// SkSVGDevice writes a "100%" tile for a no-repeat axis; under the pattern
+// matrix the element is clipped to the image instead, and a shape that misses
+// the image writes nothing.
+test('SVG output clips a no-repeat pattern with a matrix to its image', (t) => {
+  const { content } = patternedSvg(new DOMMatrix().translate(7, 5).rotate(20).scale(3, 2), 'no-repeat')
+  const elements = patternedElements(content)
+  t.is(elements.length, 1, content)
+  t.regex(
+    content,
+    /<clipPath id="cl_[0-9a-f]+"><path d="M11\.256\d* 6\.549\d*L18\.276\d* 9\.104\d*L15\.540\d* 16\.621\d*L8\.519\d* 14\.066\d*L11\.256\d* 6\.549\d*Z"\/><\/clipPath>/,
+  )
+})
+
+// A pattern with no matrix keeps the output SkSVGDevice writes for it.
+test('SVG output of a pattern without a matrix is unchanged', (t) => {
+  for (const matrix of [null, new DOMMatrix()]) {
+    const { content } = patternedSvg(matrix)
+    t.false(content.includes('transform='), content)
+    t.true(content.includes('<svg fill="url(#pattern_0)" x="10" y="10" width="80" height="60">'), content)
+    t.true(content.includes('<path fill="url(#pattern_2)" d="M190 50'), content)
+  }
 })

@@ -157,13 +157,48 @@ static SkSurface* skiac_surface_create(int width,
   }
 }
 
+// The glyph outlines of a text blob drawn at (x, y), as SkSVGDevice draws text
+// with kConvertTextToPaths_Flag (AddPath in src/svg/SkSVGDevice.cpp).
+static SkPath TextBlobPath(const SkTextBlob* blob, SkScalar x, SkScalar y) {
+  struct Rec {
+    SkPathBuilder* path;
+    SkPoint origin;
+    const SkPoint* position;
+  };
+  sktext::GlyphRunBuilder builder;
+  const auto& list = builder.blobToGlyphRunList(*blob, {x, y});
+  SkPathBuilder path;
+  for (const auto& run : list) {
+    Rec rec{&path, list.origin(), run.positions().data()};
+    run.font().getPaths(
+        run.glyphsIDs(),
+        [](const SkPath* glyph, const SkMatrix& mx, void* ctx) {
+          auto rec = static_cast<Rec*>(ctx);
+          if (glyph) {
+            auto matrix = mx;
+            matrix.postTranslate(rec->position->fX + rec->origin.fX,
+                                 rec->position->fY + rec->origin.fY);
+            rec->path->addPath(*glyph, matrix);
+          }
+          rec->position++;
+        },
+        &rec);
+  }
+  return path.detach();
+}
+
 // The canvas an SVGCanvas context draws into. It sits in front of the
-// SkSVGCanvas, sends every call to it, and records the call too, so drawImage,
-// createPattern and getImageData read the SVGCanvas like a canvas source. The
-// recording is drawn into the raster surface only when the surface is read
-// (skiac_svg_canvas_flush), or when it grows past the PageRecorder cap
-// (src/page_recorder.rs). Drawing an SVG that is never read costs no
-// rasterization.
+// SkSVGCanvas and does two things with every call:
+//
+// - It sends the call to the SVG writer. SkSVGDevice drops the local matrix of
+//   an image shader (addImageShaderResources in src/svg/SkSVGDevice.cpp never
+//   writes a patternTransform), so a draw whose pattern has a non-identity
+//   matrix is rewritten for it, see drawPatternForSvg.
+// - It records the call, so drawImage, createPattern and getImageData read the
+//   SVGCanvas like a canvas source. The recording is drawn into the raster
+//   surface only when the surface is read (skiac_svg_canvas_flush), or when it
+//   grows past the PageRecorder cap (src/page_recorder.rs). Drawing an SVG that
+//   is never read costs no rasterization.
 //
 // Deleting it finishes the SVG document: the SkSVGCanvas destructor writes the
 // closing tags.
@@ -271,7 +306,12 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
   }
 
   void onDrawPaint(const SkPaint& paint) override {
-    INHERITED::onDrawPaint(paint);
+    if (HasPatternMatrix(paint)) {
+      fRecording->drawPaint(paint);
+      this->drawPatternForSvg(SkPath::Rect(this->getLocalClipBounds()), paint);
+    } else {
+      INHERITED::onDrawPaint(paint);
+    }
     this->didDraw(0);
   }
 
@@ -279,27 +319,66 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
                     size_t count,
                     const SkPoint pts[],
                     const SkPaint& paint) override {
-    INHERITED::onDrawPoints(mode, count, pts, paint);
+    if (HasPatternMatrix(paint)) {
+      fRecording->drawPoints(mode, {pts, count}, paint);
+      // As SkSVGDevice::drawPoints builds its path.
+      SkPathBuilder path;
+      for (size_t i = 0; i < count; i++) {
+        if (mode == kPoints_PointMode) {
+          path.moveTo(pts[i]);
+          path.lineTo(pts[i]);
+        } else if (mode == kLines_PointMode && i % 2 == 1) {
+          path.moveTo(pts[i - 1]);
+          path.lineTo(pts[i]);
+        }
+      }
+      if (mode == kPolygon_PointMode && count > 1) {
+        path.addPolygon({pts, count}, false);
+      }
+      this->drawPatternForSvg(path.detach(), paint);
+    } else {
+      INHERITED::onDrawPoints(mode, count, pts, paint);
+    }
     this->didDraw(count * sizeof(SkPoint));
   }
 
   void onDrawRect(const SkRect& rect, const SkPaint& paint) override {
-    INHERITED::onDrawRect(rect, paint);
+    if (HasPatternMatrix(paint)) {
+      fRecording->drawRect(rect, paint);
+      this->drawPatternForSvg(SkPath::Rect(rect), paint);
+    } else {
+      INHERITED::onDrawRect(rect, paint);
+    }
     this->didDraw(0);
   }
 
   void onDrawOval(const SkRect& rect, const SkPaint& paint) override {
-    INHERITED::onDrawOval(rect, paint);
+    if (HasPatternMatrix(paint)) {
+      fRecording->drawOval(rect, paint);
+      this->drawPatternForSvg(SkPath::Oval(rect), paint);
+    } else {
+      INHERITED::onDrawOval(rect, paint);
+    }
     this->didDraw(0);
   }
 
   void onDrawRRect(const SkRRect& rrect, const SkPaint& paint) override {
-    INHERITED::onDrawRRect(rrect, paint);
+    if (HasPatternMatrix(paint)) {
+      fRecording->drawRRect(rrect, paint);
+      this->drawPatternForSvg(SkPath::RRect(rrect), paint);
+    } else {
+      INHERITED::onDrawRRect(rrect, paint);
+    }
     this->didDraw(0);
   }
 
   void onDrawPath(const SkPath& path, const SkPaint& paint) override {
-    INHERITED::onDrawPath(path, paint);
+    if (HasPatternMatrix(paint)) {
+      fRecording->drawPath(path, paint);
+      this->drawPatternForSvg(path, paint);
+    } else {
+      INHERITED::onDrawPath(path, paint);
+    }
     this->didDraw(path.approximateBytesUsed());
   }
 
@@ -307,15 +386,23 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
                       SkScalar x,
                       SkScalar y,
                       const SkPaint& paint) override {
-    INHERITED::onDrawTextBlob(blob, x, y, paint);
+    if (HasPatternMatrix(paint)) {
+      fRecording->drawTextBlob(blob, x, y, paint);
+      // The glyph outlines, so they can be drawn in the pattern's space.
+      this->drawPatternForSvg(TextBlobPath(blob, x, y), paint);
+    } else {
+      INHERITED::onDrawTextBlob(blob, x, y, paint);
+    }
     this->didDraw(0);
   }
 
+  // Played back through this canvas, so the SVG output rewrites the pattern
+  // paints inside the picture too (a composited draw records its paint into
+  // one). SkCanvas::onDrawPicture is what SkSVGCanvas itself does with it.
   void onDrawPicture(const SkPicture* picture,
                      const SkMatrix* matrix,
                      const SkPaint* paint) override {
-    INHERITED::onDrawPicture(picture, matrix, paint);
-    this->didDraw(picture->approximateBytesUsed());
+    SkCanvas::onDrawPicture(picture, matrix, paint);
   }
 
   void onDrawRegion(const SkRegion& region, const SkPaint& paint) override {
@@ -487,6 +574,13 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
     bool layer = false;
   };
 
+  // A pattern whose matrix SkSVGDevice would drop.
+  static bool HasPatternMatrix(const SkPaint& paint) {
+    SkMatrix matrix;
+    auto shader = paint.getShader();
+    return shader && shader->isAImage(&matrix, nullptr) && !matrix.isIdentity();
+  }
+
   Clip& addClip(ClipEdgeStyle edge) {
     auto& clip = fLevels.back().clips.emplace_back();
     clip.matrix = this->getLocalToDevice();
@@ -553,6 +647,62 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
     if (fPendingBytes >= kMaxRecordedBytes) {
       this->flush();
     }
+  }
+
+  // The SVG half of a draw whose pattern has the matrix M. SVG resolves a
+  // userSpaceOnUse pattern in the user space of the element that uses it, so
+  // the element is drawn under CTM * M, with its geometry mapped back by M^-1
+  // and a pattern with no matrix. A stroke is turned into its fill first, so M
+  // does not scale it. A no-repeat axis is clipped to the image, because
+  // SkSVGDevice writes a "100%" tile for it.
+  void drawPatternForSvg(const SkPath& path, const SkPaint& paint) {
+    SkMatrix matrix;
+    SkTileMode tile[2];
+    auto image = paint.getShader()->isAImage(&matrix, tile);
+    SkMatrix inverse;
+    if (!matrix.invert(&inverse)) {
+      // A singular pattern matrix paints transparent black (HTML spec,
+      // CanvasPattern setTransform), so there is nothing to write.
+      return;
+    }
+    SkPaint fill(paint);
+    SkPath geometry = path;
+    if (paint.getStyle() != SkPaint::kFill_Style || paint.getPathEffect()) {
+      SkPathBuilder builder;
+      if (skpathutils::FillPathWithPaint(path, paint, &builder, nullptr,
+                                         this->getTotalMatrix())) {
+        fill.setStyle(SkPaint::kFill_Style);
+      } else {
+        fill.setStyle(SkPaint::kStroke_Style);
+        fill.setStrokeWidth(0);
+      }
+      fill.setPathEffect(nullptr);
+      geometry = builder.detach();
+    }
+    geometry = geometry.makeTransform(inverse);
+    const bool decal =
+        tile[0] == SkTileMode::kDecal || tile[1] == SkTileMode::kDecal;
+    auto bounds = geometry.getBounds();
+    if (tile[0] == SkTileMode::kDecal) {
+      bounds.fLeft = std::max(bounds.fLeft, 0.0f);
+      bounds.fRight = std::min(bounds.fRight, (float)image->width());
+    }
+    if (tile[1] == SkTileMode::kDecal) {
+      bounds.fTop = std::max(bounds.fTop, 0.0f);
+      bounds.fBottom = std::min(bounds.fBottom, (float)image->height());
+    }
+    if (decal && bounds.isEmpty()) {
+      return;
+    }
+    fill.setShader(
+        sk_ref_sp(image)->makeShader(tile[0], tile[1], SkSamplingOptions()));
+    fSvg->save();
+    fSvg->concat(matrix);
+    if (decal) {
+      fSvg->clipRect(bounds, paint.isAntiAlias());
+    }
+    fSvg->drawPath(geometry, fill);
+    fSvg->restore();
   }
 
   std::unique_ptr<SkCanvas> fSvg;
