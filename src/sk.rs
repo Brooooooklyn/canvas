@@ -301,6 +301,8 @@ pub mod ffi {
   pub type SkiacWStreamWriteCallback =
     Option<unsafe extern "C" fn(data: *mut c_void, size: usize, context: *mut c_void)>;
 
+  pub type SkiacLevelRelease = Option<unsafe extern "C" fn(context: *mut c_void, bytes: usize)>;
+
   #[allow(clippy::duplicated_attributes)]
   // https://github.com/rust-lang/rust/issues/96192
   #[cfg_attr(
@@ -1128,7 +1130,11 @@ pub mod ffi {
 
     pub fn skiac_image_levels_create() -> *mut skiac_image_levels;
 
-    pub fn skiac_image_levels_destroy(c_levels: *mut skiac_image_levels);
+    pub fn skiac_image_levels_destroy(
+      c_levels: *mut skiac_image_levels,
+      release: SkiacLevelRelease,
+      release_context: *mut c_void,
+    ) -> usize;
 
     pub fn skiac_image_levels_bytes(c_levels: *mut skiac_image_levels) -> usize;
     pub fn skiac_picture_ref(c_picture: *mut skiac_picture);
@@ -4558,7 +4564,9 @@ pub struct AccountedBitmap {
   /// (`skiac_image_levels`), shared by drawImage and the Image's patterns.
   levels: *mut ffi::skiac_image_levels,
   /// The bytes of every level whose pixels are still alive, in the cache or
-  /// held by a recorded draw or a shader, as last reported to V8.
+  /// held by a recorded draw or a shader, as last reported to V8. Levels that
+  /// outlive this bitmap stay reported until their pixels are freed
+  /// (`release_level_bytes`).
   level_bytes: AtomicI64,
 }
 
@@ -4584,30 +4592,58 @@ impl AccountedBitmap {
 
   /// Reports the change in the live levels' size to V8, after a draw that
   /// may have made one. A level freed since (a recording dropped) is
-  /// reported here too, or when the image is dropped.
+  /// reported here too, or when the bitmap is dropped.
   pub(crate) fn sync_level_bytes(&self) {
     let bytes = unsafe { ffi::skiac_image_levels_bytes(self.levels) } as i64;
     let reported = self.level_bytes.swap(bytes, Ordering::Relaxed);
-    if bytes != reported && !self.env.is_null() {
-      let mut adjusted: i64 = 0;
-      unsafe {
-        napi::sys::napi_adjust_external_memory(self.env, bytes - reported, &mut adjusted);
-      }
-    }
+    report_level_bytes(self.env, bytes - reported);
   }
 }
 
 impl Drop for AccountedBitmap {
   fn drop(&mut self) {
-    unsafe { ffi::skiac_image_levels_destroy(self.levels) };
-    let bytes = self.bytes + self.level_bytes.load(Ordering::Relaxed);
-    if bytes != 0 && !self.env.is_null() {
+    // A recorded draw or a shader can still hold a level: it stays reported,
+    // and is reported freed with its pixels.
+    let held = unsafe {
+      ffi::skiac_image_levels_destroy(self.levels, Some(release_level_bytes), self.env.cast())
+    } as i64;
+    report_level_bytes(self.env, held - self.level_bytes.load(Ordering::Relaxed));
+    if self.bytes != 0 && !self.env.is_null() {
       let mut adjusted: i64 = 0;
       unsafe {
-        napi::sys::napi_adjust_external_memory(self.env, -bytes, &mut adjusted);
+        napi::sys::napi_adjust_external_memory(self.env, -self.bytes, &mut adjusted);
       }
     }
   }
+}
+
+/// Called as each level that outlived its `AccountedBitmap` is freed.
+unsafe extern "C" fn release_level_bytes(env: *mut c_void, bytes: usize) {
+  report_level_bytes(env.cast(), -(bytes as i64));
+}
+
+/// Reports a change in the bytes of an Image's decode levels to V8.
+fn report_level_bytes(env: napi::sys::napi_env, delta: i64) {
+  #[cfg(test)]
+  REPORTED_LEVEL_BYTES.with(|reported| reported.set(reported.get() + delta));
+  if delta != 0 && !env.is_null() {
+    let mut adjusted: i64 = 0;
+    unsafe {
+      napi::sys::napi_adjust_external_memory(env, delta, &mut adjusted);
+    }
+  }
+}
+
+#[cfg(test)]
+thread_local! {
+  /// The level bytes reported on this thread, with or without an env.
+  static REPORTED_LEVEL_BYTES: std::cell::Cell<i64> = const { std::cell::Cell::new(0) };
+}
+
+/// The level bytes V8 has been told about on this thread.
+#[cfg(test)]
+pub(crate) fn reported_level_bytes() -> i64 {
+  REPORTED_LEVEL_BYTES.with(|reported| reported.get())
 }
 
 // Like the other raw-pointer wrappers in this file: every owner lives on the
@@ -4615,6 +4651,8 @@ impl Drop for AccountedBitmap {
 // crosses threads in practice. Node guarantees napi wrap finalizers run
 // before the napi_env is torn down (RefTracker::FinalizeAll inside
 // napi_env__::DeleteMe), so the stored env is still valid when Drop runs.
+// It is valid in `release_level_bytes` too: a level that outlives the bitmap
+// is held by a recording or a pattern shader, which finalizers free as well.
 unsafe impl Send for AccountedBitmap {}
 unsafe impl Sync for AccountedBitmap {}
 

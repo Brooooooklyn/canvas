@@ -5179,6 +5179,45 @@ mod tests {
     assert_eq!(image.level_bytes(), 4 * LEVEL);
   }
 
+  // A recorded draw keeps the decode level it drew after its Image is
+  // dropped. V8 is told the level is freed only when its pixels are.
+  #[test]
+  fn a_recorded_level_stays_reported_after_its_image_drops() {
+    use crate::sk::reported_level_bytes;
+    use std::ptr;
+
+    const LEVEL: i64 = 32 * 32 * 4;
+    let before = reported_level_bytes();
+    let image = AccountedBitmap::new(test_bitmap(64, 64, [10, 20, 30, 255]), ptr::null_mut(), 0);
+    let mut ctx = raster_ctx(32, 32);
+    // 64 -> 32 draws the 32x32 level.
+    ctx
+      .draw_image(
+        &image.inner,
+        Some(&image),
+        RasterKey::Resource {
+          id: image.resource_id,
+          generation: 0,
+        },
+        0.0,
+        0.0,
+        64.0,
+        64.0,
+        0.0,
+        0.0,
+        32.0,
+        32.0,
+      )
+      .unwrap();
+    assert_eq!(reported_level_bytes() - before, LEVEL);
+    // The recording still holds the level.
+    drop(image);
+    assert_eq!(reported_level_bytes() - before, LEVEL);
+    // It is freed with the recording.
+    drop(ctx);
+    assert_eq!(reported_level_bytes() - before, 0);
+  }
+
   // drawImage does not use fillStyle, so an Image pattern set as fillStyle
   // makes no decode level of its Image.
   #[test]

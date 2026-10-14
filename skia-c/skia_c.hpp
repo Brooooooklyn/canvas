@@ -1279,8 +1279,14 @@ skiac_shader* skiac_image_make_decoded_pattern_shader(
 void skiac_bitmap_destroy(skiac_bitmap* c_bitmap);
 
 // Image decode-cache levels
+// Called with the byte size of each level freed after its cache is destroyed.
+typedef void (*skiac_level_release)(void* release_context, size_t bytes);
 skiac_image_levels* skiac_image_levels_create();
-void skiac_image_levels_destroy(skiac_image_levels* c_levels);
+// Destroys the cache. Returns the bytes of the levels a recorded draw or a
+// shader still holds; `release` is called as each of them is freed.
+size_t skiac_image_levels_destroy(skiac_image_levels* c_levels,
+                                  skiac_level_release release,
+                                  void* release_context);
 size_t skiac_image_levels_bytes(skiac_image_levels* c_levels);
 
 // SkString

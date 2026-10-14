@@ -563,9 +563,15 @@ void ClipRectsToImageRect(const GfxRectF& image, GfxRectF* src, GfxRectF* dst) {
 // A level the cache drops can still be held by a recorded draw or a pattern
 // shader, so its bytes are counted in `live` until its pixels are freed;
 // `live` is what Rust reports to V8. `bytes` is the cache's own share, which
-// the budget limits.
+// the budget limits. Each level holds a ref to this counter, so it outlives
+// the cache while a level is alive. Once the cache is destroyed, `release`
+// reports each level freed after it (skiac_image_levels_destroy). Levels are
+// freed where their recordings and shaders drop, on the JS thread, so
+// `release` is set and called on that thread only.
 struct skiac_image_level_bytes : SkNVRefCnt<skiac_image_level_bytes> {
   std::atomic<size_t> live{0};
+  skiac_level_release release = nullptr;
+  void* release_context = nullptr;
 };
 
 struct skiac_image_levels {
@@ -716,7 +722,11 @@ struct LevelPixels {
 static void ReleaseLevelPixels(void* addr, void* context) {
   sk_free(addr);
   auto* pixels = static_cast<LevelPixels*>(context);
-  pixels->counter->live.fetch_sub(pixels->bytes, std::memory_order_relaxed);
+  skiac_image_level_bytes* counter = pixels->counter.get();
+  counter->live.fetch_sub(pixels->bytes, std::memory_order_relaxed);
+  if (counter->release) {
+    counter->release(counter->release_context, pixels->bytes);
+  }
   delete pixels;
 }
 
@@ -915,8 +925,15 @@ skiac_image_levels* skiac_image_levels_create() {
   return new skiac_image_levels();
 }
 
-void skiac_image_levels_destroy(skiac_image_levels* c_levels) {
+size_t skiac_image_levels_destroy(skiac_image_levels* c_levels,
+                                  skiac_level_release release,
+                                  void* release_context) {
+  sk_sp<skiac_image_level_bytes> counter = c_levels->counter;
+  // Frees the levels only the cache holds.
   delete c_levels;
+  counter->release = release;
+  counter->release_context = release_context;
+  return counter->live.load(std::memory_order_relaxed);
 }
 
 size_t skiac_image_levels_bytes(skiac_image_levels* c_levels) {
