@@ -220,9 +220,9 @@ impl<'c> CanvasElement<'c> {
       fill_paint.set_color(255, 255, 255, 255);
       context_2d.alpha = false;
       let (width, height) = (self.width as f32, self.height as f32);
-      // The base fill bypasses the deferred recording, so it must flush
-      // pending ops under it and bump the content version
-      // (Context::with_surface_canvas).
+      // The base fill is a direct surface write: with_surface_canvas marks
+      // the recorded layers stale (drawCanvas rebases on the surface) and
+      // bumps the content version.
       context_2d.with_surface_canvas(|canvas| {
         canvas.draw_rect(0f32, 0f32, width, height, &fill_paint);
       });
@@ -858,9 +858,8 @@ impl<'scope> SVGCanvas<'scope> {
       fill_paint.set_color(255, 255, 255, 255);
       context_2d.alpha = false;
       let (width, height) = (self.width as f32, self.height as f32);
-      // The base fill bypasses the deferred recording, so it must flush
-      // pending ops under it and bump the content version
-      // (Context::with_surface_canvas).
+      // The base fill is a direct surface write: with_surface_canvas bumps
+      // the content version (SVG has no recorder).
       context_2d.with_surface_canvas(|canvas| {
         canvas.draw_rect(0f32, 0f32, width, height, &fill_paint);
       });
