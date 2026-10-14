@@ -11,7 +11,9 @@ use crate::sk::ColorSpace;
 #[napi(object)]
 #[derive(Default, Clone)]
 pub struct AvifConfig {
-  /// 0-100 scale, 100 is lossless
+  /// 0-100 scale, 100 is the best quality. It is near-lossless, not lossless:
+  /// the pixels are converted to 8-bit YUV (BT.601) first, which can change a
+  /// channel by 1, and more with chroma subsampling.
   pub quality: Option<u32>,
   /// 0-100 scale
   pub alpha_quality: Option<u32>,
