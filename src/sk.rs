@@ -541,6 +541,8 @@ pub mod ffi {
       enable_smoothing: bool,
       filter_quality: i32,
       paint: *mut skiac_paint,
+      decoded_id: *mut u32,
+      decoded_bytes: *mut usize,
     );
 
     pub fn skiac_canvas_draw_path(
@@ -2783,6 +2785,8 @@ impl Canvas {
   /// `decode_cache` keeps, or a canvas source on a raster canvas that is not
   /// sRGB. `ctm` is the context's transform: this canvas may be a recorder at
   /// identity. `vector_device` is true on the PDF and SVG backends.
+  /// Returns the decode drawn in place of the source, which a recording
+  /// keeps: its SkImage uniqueID and byte size.
   pub fn draw_image(
     &mut self,
     image: &Bitmap,
@@ -2802,7 +2806,9 @@ impl Canvas {
     enable_smoothing: bool,
     quality: FilterQuality,
     paint: &Paint,
-  ) {
+  ) -> Option<(u32, usize)> {
+    let mut decoded_id = 0;
+    let mut decoded_bytes = 0;
     unsafe {
       ffi::skiac_canvas_draw_image(
         self.0,
@@ -2824,8 +2830,11 @@ impl Canvas {
         enable_smoothing,
         quality as i32,
         paint.0,
+        &mut decoded_id,
+        &mut decoded_bytes,
       );
     }
+    (decoded_bytes != 0).then_some((decoded_id, decoded_bytes))
   }
 
   pub fn draw_path(&mut self, path: &Path, paint: &Paint) {

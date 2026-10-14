@@ -847,24 +847,25 @@ static SkIRect SampledBounds(const SkRect& src,
 // (AdjustSrcRectForScale, paint_op.cc:93-102). `original` is the source's
 // pixels: an Image's `bitmap`, or a canvas's `snapshot`. `levels` is an
 // Image's level cache; a canvas source has none, and its decode is made for
-// the one draw.
-static void DrawDecodedImage(SkCanvas* canvas,
-                             const SkBitmap* bitmap,
-                             const sk_sp<SkImage>& snapshot,
-                             const SkPixmap& original,
-                             skiac_image_levels* levels,
-                             uint8_t cs,
-                             const SkRect& src,
-                             const SkRect& dst,
-                             const SkM44& matrix,
-                             int fq,
-                             const SkPaint& paint) {
+// the one draw. Returns the decode it drew in place of the source, which a
+// recording keeps, or null.
+static sk_sp<SkImage> DrawDecodedImage(SkCanvas* canvas,
+                                       const SkBitmap* bitmap,
+                                       const sk_sp<SkImage>& snapshot,
+                                       const SkPixmap& original,
+                                       skiac_image_levels* levels,
+                                       uint8_t cs,
+                                       const SkRect& src,
+                                       const SkRect& dst,
+                                       const SkM44& matrix,
+                                       int fq,
+                                       const SkPaint& paint) {
   SkIRect int_src;
   src.roundOut(&int_src);
   const CcDecodeKey key =
       CcDecodeKeyFor(original.dimensions(), int_src, matrix, fq);
   if (key.empty) {
-    return;
+    return nullptr;
   }
   sk_sp<SkColorSpace> target = ConversionTarget(original, cs);
   // The part of the source the decode holds, and its size.
@@ -878,7 +879,7 @@ static void DrawDecodedImage(SkCanvas* canvas,
         canvas->drawImageRect(image.get(), src, dst, DecodedSampling(fq),
                               &paint, SkCanvas::kFast_SrcRectConstraint);
       }
-      return;
+      return nullptr;
     }
     // The original in the canvas's colour space: the whole image, as Chrome
     // decodes it, or for a canvas source only the pixels this draw samples.
@@ -892,7 +893,7 @@ static void DrawDecodedImage(SkCanvas* canvas,
              : MakeLevelImage(original, decoded_src, decoded_size,
                               std::move(target), nullptr);
   if (!decoded) {
-    return;
+    return nullptr;
   }
   // One float operation per statement, see GfxRectF.
   const SkRect offset_src = src.makeOffset(-decoded_src.x(), -decoded_src.y());
@@ -907,6 +908,7 @@ static void DrawDecodedImage(SkCanvas* canvas,
   canvas->drawImageRect(
       decoded.get(), SkRect::MakeXYWH(level_x, level_y, level_w, level_h), dst,
       DecodedSampling(fq), &paint, SkCanvas::kFast_SrcRectConstraint);
+  return decoded;
 }
 
 skiac_image_levels* skiac_image_levels_create() {
@@ -935,7 +937,9 @@ size_t skiac_image_levels_bytes(skiac_image_levels* c_levels) {
 // With `decode` the source is drawn from Chrome's decode cache, in the
 // canvas's colour space `cs`: an Image on a raster canvas, whose levels
 // `c_levels` keeps, or a canvas source on a raster canvas that is not sRGB.
-// Everything else is drawn as it is.
+// Everything else is drawn as it is. `c_decoded_id` and `c_decoded_bytes` get
+// the uniqueID and byte size of the decode drawn in place of the source, which
+// a recording keeps; the size is 0 when the source itself was drawn.
 void skiac_canvas_draw_image(skiac_canvas* c_canvas,
                              skiac_bitmap* c_bitmap,
                              bool is_canvas,
@@ -954,7 +958,11 @@ void skiac_canvas_draw_image(skiac_canvas* c_canvas,
                              float d_height,
                              bool enable_smoothing,
                              int filter_quality,
-                             skiac_paint* c_paint) {
+                             skiac_paint* c_paint,
+                             uint32_t* c_decoded_id,
+                             size_t* c_decoded_bytes) {
+  *c_decoded_id = 0;
+  *c_decoded_bytes = 0;
   auto fq = enable_smoothing ? filter_quality : 0;
   auto src_surface =
       is_canvas ? reinterpret_cast<SkSurface*>(c_bitmap) : nullptr;
@@ -988,9 +996,13 @@ void skiac_canvas_draw_image(skiac_canvas* c_canvas,
     SkPixmap original;
     if (is_canvas ? snapshot && snapshot->peekPixels(&original)
                   : BITMAP_CAST->peekPixels(&original)) {
-      DrawDecodedImage(CANVAS_CAST, is_canvas ? nullptr : BITMAP_CAST, snapshot,
-                       original, c_levels, cs, src_rect, dst_rect, matrix, fq,
-                       paint);
+      sk_sp<SkImage> decoded = DrawDecodedImage(
+          CANVAS_CAST, is_canvas ? nullptr : BITMAP_CAST, snapshot, original,
+          c_levels, cs, src_rect, dst_rect, matrix, fq, paint);
+      if (decoded) {
+        *c_decoded_id = decoded->uniqueID();
+        *c_decoded_bytes = decoded->imageInfo().computeMinByteSize();
+      }
     }
     return;
   }

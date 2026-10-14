@@ -2314,11 +2314,13 @@ impl Context {
     // raster tally keeps it visible to drawCanvas accounting: a recorded
     // drawImage inside a source picture carries this payload along. Keyed on
     // raster_key -- re-drawing one UNCHANGED source retains one shared
-    // backing, not N.
+    // backing, not N. A decode drawn in place of the source is a copy the op
+    // pins instead, charged below under its own identity.
     self.account_raster_resource(
       raster_key,
       (bitmap.0.width as usize) * (bitmap.0.height as usize) * 4,
     );
+    let decoded = RefCell::new(Vec::new());
     let result = self.with_shadowed_render_canvas(
       &paint,
       DrawContent::Geometry,
@@ -2331,7 +2333,7 @@ impl Context {
           shadow_offset_x,
           shadow_offset_y,
         )?;
-        shadow_canvas.draw_image(
+        let drawn = shadow_canvas.draw_image(
           bitmap,
           decode,
           decode_cache,
@@ -2350,11 +2352,12 @@ impl Context {
           image_smoothing_quality,
           shadow_paint,
         );
+        decoded.borrow_mut().extend(drawn);
         shadow_canvas.restore();
         Ok(())
       },
       |canvas: &mut Canvas, paint| {
-        canvas.draw_image(
+        let drawn = canvas.draw_image(
           bitmap,
           decode,
           decode_cache,
@@ -2373,9 +2376,15 @@ impl Context {
           image_smoothing_quality,
           paint,
         );
+        decoded.borrow_mut().extend(drawn);
         Ok(())
       },
     );
+    // Once per window for a level the cache keeps, which the shadow pass and
+    // later draws share; per draw for a decode made for one draw.
+    for (uid, bytes) in decoded.into_inner() {
+      self.account_raster_resource(RasterKey::Image { uid }, bytes);
+    }
     // The draw may have cached a decode level of the Image.
     if let Some(image) = decode_cache {
       image.sync_level_bytes();
@@ -5220,6 +5229,112 @@ mod tests {
     // A fill does draw the level.
     ctx.fill_rect(0.0, 0.0, 16.0, 16.0).unwrap();
     assert_eq!(image.level_bytes(), 16 * 16 * 4);
+  }
+
+  // A recorded draw holds the decode level it drew, so each level counts
+  // toward the recording limit: many distinct source rects trip it, and the
+  // levels alive stay within the limit plus the cache's own share.
+  #[test]
+  fn recorded_decode_levels_count_toward_the_recording_limit() {
+    use std::ptr;
+
+    const IMAGE: usize = 128 * 128 * 4;
+    const LEVEL: usize = 50 * 50 * 4;
+    const LIMIT: usize = 2 * IMAGE;
+    let image = AccountedBitmap::new(test_bitmap(128, 128, [10, 20, 30, 255]), ptr::null_mut(), 0);
+    let key = RasterKey::Resource {
+      id: image.resource_id,
+      generation: 0,
+    };
+    let mut ctx = raster_ctx(64, 64);
+    set_recording_limit(&ctx, LIMIT);
+    // Each 100x100 subset drawn at 50x50 makes its own 50x50 level.
+    for i in 0..64 {
+      ctx
+        .draw_image(
+          &image.inner,
+          Some(&image),
+          key,
+          (i % 8) as f32,
+          (i / 8) as f32,
+          100.0,
+          100.0,
+          0.0,
+          0.0,
+          50.0,
+          50.0,
+        )
+        .unwrap();
+      assert!(
+        image.level_bytes() as usize <= LIMIT + IMAGE + LEVEL,
+        "draw {i}: {} bytes of levels alive",
+        image.level_bytes()
+      );
+    }
+    assert!(consolidations(&ctx) >= 1);
+  }
+
+  // A canvas source on a display-p3 canvas is drawn from a level made for
+  // that one draw, which the recording holds: every draw charges its own.
+  #[test]
+  fn canvas_source_decode_levels_are_charged_per_draw() {
+    let src = raster_ctx(64, 64);
+    let bitmap = src.surface.get_bitmap();
+    let mut ctx = Context::new(32, 32, ColorSpace::DisplayP3).expect("raster context");
+    for _ in 0..3 {
+      ctx
+        .draw_image(
+          &bitmap,
+          None,
+          canvas_source_key(&src),
+          0.0,
+          0.0,
+          64.0,
+          64.0,
+          0.0,
+          0.0,
+          32.0,
+          32.0,
+        )
+        .unwrap();
+    }
+    // The source once, and three 32x32 levels.
+    assert_eq!(raster_bytes(&ctx), 64 * 64 * 4 + 3 * 32 * 32 * 4);
+  }
+
+  // A cached level drawn again, by the shadow pass too, is one allocation:
+  // it is charged once per recording window.
+  #[test]
+  fn a_cached_decode_level_is_charged_once_per_window() {
+    use std::ptr;
+
+    let image = AccountedBitmap::new(test_bitmap(64, 64, [10, 20, 30, 255]), ptr::null_mut(), 0);
+    let key = RasterKey::Resource {
+      id: image.resource_id,
+      generation: 0,
+    };
+    let mut ctx = raster_ctx(32, 32);
+    ctx.set_shadow_color("red".to_owned()).unwrap();
+    ctx.state.shadow_offset_x = 2.0;
+    for _ in 0..2 {
+      ctx
+        .draw_image(
+          &image.inner,
+          Some(&image),
+          key,
+          0.0,
+          0.0,
+          64.0,
+          64.0,
+          0.0,
+          0.0,
+          32.0,
+          32.0,
+        )
+        .unwrap();
+    }
+    // The image and its 32x32 level once, and a shadow filter per draw.
+    assert_eq!(raster_bytes(&ctx), 64 * 64 * 4 + 32 * 32 * 4 + 2 * 1024);
   }
 
   // drawImage skips only the unused Image-pattern fillStyle: the filter and

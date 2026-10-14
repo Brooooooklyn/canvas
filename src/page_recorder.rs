@@ -36,6 +36,11 @@ pub(crate) enum RasterKey {
   /// needs its own arm: drawPath/clip ops pin a COW-shared SkPathData, and
   /// distinct-data paths of identical size must not alias each other.
   Path { data_id: u32 },
+  /// SkImage::uniqueID() of a decode a recorded drawImage drew in place of
+  /// its source (Chrome's decode cache), a fourth id space. A level the
+  /// cache keeps is drawn as the same SkImage and charged once; one made
+  /// again, or made for a single draw, is a new allocation with a new id.
+  Image { uid: u32 },
   /// Content hash of the resolved-font descriptor (family/style/variations)
   /// folded with the font-collection generation. Each recorded text op's
   /// blob refs the resolved typeface, and identical descriptors resolve to

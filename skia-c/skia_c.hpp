@@ -861,7 +861,9 @@ void skiac_canvas_draw_image(skiac_canvas* c_canvas,
                              float d_height,
                              bool enable_smoothing,
                              int filter_quality,
-                             skiac_paint* c_paint);
+                             skiac_paint* c_paint,
+                             uint32_t* c_decoded_id,
+                             size_t* c_decoded_bytes);
 void skiac_canvas_draw_path(skiac_canvas* c_canvas,
                             skiac_path* c_path,
                             skiac_paint* c_paint);
