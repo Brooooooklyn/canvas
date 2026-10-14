@@ -1140,6 +1140,9 @@ impl Context {
     // Paint construction is fallible (dash PathEffect, gradient shader); the
     // resource charge must land only once the op can actually record.
     let stroke_paint = self.stroke_paint()?;
+    if self.draws_nothing() {
+      return Ok(());
+    }
     self.account_paint_resources(&self.state.stroke_style);
 
     // Extract state for shadow rendering to avoid borrow conflicts
@@ -1296,6 +1299,9 @@ impl Context {
     {
       return Ok(());
     }
+    if self.draws_nothing() {
+      return Ok(());
+    }
 
     self.account_paint_resources(&self.state.fill_style);
     // Zero on the image-filter route, where the filter's dx/dy already carry it.
@@ -1373,6 +1379,9 @@ impl Context {
     // degenerate-bounds check would also swallow moveTo-only paths whose
     // caps CAN paint -- is_empty() is the only deterministic predicate.
     if path_to_draw.is_empty() && self.empty_geometry_is_skippable(shadow_paint.is_some()) {
+      return Ok(());
+    }
+    if self.draws_nothing() {
       return Ok(());
     }
 
@@ -1700,6 +1709,9 @@ impl Context {
     if !(pl.is_finite() && pt.is_finite() && pr.is_finite() && pb.is_finite() && pr > pl && pb > pt)
       && self.empty_geometry_is_skippable(shadow_paint.is_some())
     {
+      return Ok(());
+    }
+    if self.draws_nothing() {
       return Ok(());
     }
 
@@ -2317,6 +2329,14 @@ impl Context {
     det.is_finite() && det != 0.0
   }
 
+  /// Blink's Draw returns before anything is drawn when the CTM is singular
+  /// (canvas_2d_recorder_context.h:866-868), and so does render_passes. The
+  /// draw entry points ask here before their first charge, so a draw that
+  /// records nothing charges nothing; anything fallible before it still runs.
+  fn draws_nothing(&self) -> bool {
+    !self.transform_is_invertible()
+  }
+
   /// Whether a draw whose own geometry provably paints nothing may be
   /// skipped whole. drawRect/drawPath DO reach the record canvas
   /// (SkRecordCanvas::onDraw* appends unconditionally -- the fillable()
@@ -2441,6 +2461,9 @@ impl Context {
     // which sets a gradient's dither (gradient.cc:364); images are drawn with
     // image_flags_ (:832). So drop the gradient arm's flag here.
     paint.set_dither(false);
+    if self.draws_nothing() {
+      return Ok(());
+    }
     self.account_paint_resources(&self.state.fill_style);
     paint.set_alpha_f32(self.image_global_alpha());
 
@@ -2606,6 +2629,9 @@ impl Context {
     // As in draw_image: an image draw never takes the gradient fillStyle's
     // dither.
     paint.set_dither(false);
+    if self.draws_nothing() {
+      return Ok(());
+    }
     self.account_paint_resources(&self.state.fill_style);
     paint.set_alpha_f32(self.state.global_alpha as f32);
 
@@ -2728,6 +2754,9 @@ impl Context {
       return Err(SkError::NulError);
     }
 
+    if self.draws_nothing() {
+      return Ok(());
+    }
     // Everything fallible (get_font, the NUL preflight) is behind us, so the
     // paint-resource charge can land here -- the same position fill/stroke
     // use, after their fallible paint builds. `source` already says which
@@ -5526,6 +5555,62 @@ mod tests {
     let raster0 = raster_bytes(&ctx);
     let version0 = ctx.content_version();
     ctx.get_line_metrics("measure me").unwrap();
+    assert_eq!(pending(&ctx), pending0);
+    assert_eq!(raster_bytes(&ctx), raster0);
+    assert_eq!(ctx.content_version(), version0);
+  }
+
+  // Blink's Draw returns before anything is recorded when the CTM is singular
+  // (canvas_2d_recorder_context.h:866-868), and so do we; such a draw must not
+  // charge the recording for an op it never records. The shadow makes every
+  // draw charge its 1 KiB shadow filter on top of its own payload.
+  #[test]
+  fn singular_transform_draws_charge_nothing() {
+    {
+      let fonts = get_font().unwrap();
+      fonts.register_from_path::<String>("__test__/fonts/Lato-Regular.ttf", None);
+    }
+    let mut src = raster_ctx(8, 8);
+    src.fill_rect(0.0, 0.0, 8.0, 8.0).unwrap();
+    let picture = src.get_picture().expect("source picture");
+    let bitmap = test_bitmap(4, 4, [255, 0, 0, 255]);
+
+    let mut ctx = raster_ctx(16, 16);
+    ctx.set_font("16px Lato".to_owned()).unwrap();
+    ctx.state.shadow_offset_x = 2.0;
+    // Skia order (scaleX, skewX, transX, skewY, scaleY, transY): x scaled by 0.
+    ctx.set_transform(Matrix::new(0.0, 0.0, 0.0, 0.0, 1.0, 0.0));
+    ctx.path.add_rect(1.0, 1.0, 9.0, 9.0);
+    let pending0 = pending(&ctx);
+    let raster0 = raster_bytes(&ctx);
+    let version0 = ctx.content_version();
+    ctx.fill_rect(1.0, 1.0, 8.0, 8.0).unwrap();
+    ctx.stroke_rect(1.0, 1.0, 8.0, 8.0).unwrap();
+    ctx.fill(None, FillType::Winding).unwrap();
+    ctx.stroke(None).unwrap();
+    ctx
+      .draw_image(
+        &bitmap,
+        RasterKey::Resource {
+          id: u64::MAX,
+          generation: 0,
+        },
+        0.0,
+        0.0,
+        4.0,
+        4.0,
+        0.0,
+        0.0,
+        4.0,
+        4.0,
+      )
+      .unwrap();
+    ctx
+      .draw_canvas(&picture, 4096, 0.0, 0.0, 8.0, 8.0, 0.0, 0.0, 8.0, 8.0)
+      .unwrap();
+    ctx.fill_text("hello", 0.0, 12.0, MAX_TEXT_WIDTH).unwrap();
+    ctx.stroke_text("hello", 0.0, 12.0, MAX_TEXT_WIDTH).unwrap();
+    ctx.clear_rect(0.0, 0.0, 4.0, 4.0).unwrap();
     assert_eq!(pending(&ctx), pending0);
     assert_eq!(raster_bytes(&ctx), raster0);
     assert_eq!(ctx.content_version(), version0);
