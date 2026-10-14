@@ -639,6 +639,7 @@ __metadata:
     pretty-bytes: "npm:^7.1.0"
     semver: "npm:^7.7.3"
     skia-canvas: "npm:^3.0.8"
+    smol-toml: "npm:^1.9.0"
     table: "npm:^6.9.0"
     tinybench: "npm:^6.0.0"
     typescript: "npm:^7.0.0"
@@ -5339,6 +5340,13 @@ __metadata:
     ansi-styles: "npm:^6.2.3"
     is-fullwidth-code-point: "npm:^5.1.0"
   checksum: 10c0/fd97f0e3a48386dbf1cbc2f10134f1e345c161188adb6928856079b4c0117c221a5405a7bff341e1a6e428721c5236353ab26b7d777a4f2f35a8ed2a91d82e7a
+  languageName: node
+  linkType: hard
+
+"smol-toml@npm:^1.9.0":
+  version: 1.9.0
+  resolution: "smol-toml@npm:1.9.0"
+  checksum: 10c0/9a15a7560e15d050961f12cffab502f8b42af9d9e4713218181d10d3bda5e0265c4c81a92d6877e7d4e73145fc44d7fbc7cce997d9317b855fea974fc3bbc238
   languageName: node
   linkType: hard
 

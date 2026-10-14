@@ -708,6 +708,7 @@ jobs:
     permissions:
       contents: write
       id-token: write
+      attestations: write
     needs:
       - test-linux-x64-gnu-binding
       - test-linux-x64-musl-binding
@@ -742,6 +743,32 @@ jobs:
       - name: Download ICU for Windows
         run: node ./scripts/release-skia-binary.mjs --download-icu
 
+      - name: Generate SBOMs
+        run: node ./scripts/generate-sbom.mjs --all
+
+      # Releases are commits whose message is a bare semver — the same check
+      # npm publish uses below. Attestation needs id-token/attestations write
+      # permissions that pull_request runs cannot get, so it must only run on
+      # commits that actually publish.
+      - name: Check if release
+        id: release
+        run: |
+          if git log -1 --pretty=%B | grep -q "^[0-9]\+\.[0-9]\+\.[0-9]\+";
+          then
+            echo "is-release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is-release=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # actions/attest takes one predicate per invocation, so all binaries are
+      # attested in a single call against the merged sbom-all.cdx.json.
+      - name: Attest binaries
+        if: steps.release.outputs.is-release == 'true'
+        uses: actions/attest@v4
+        with:
+          subject-path: npm/*/skia.*.node
+          sbom-path: sbom/sbom-all.cdx.json
+
       - name: List packages
         run: ls -R ./npm
         shell: bash
@@ -760,3 +787,25 @@ jobs:
           fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # 'napi prepublish' (Publish's prepublishOnly hook) creates the v<version>
+      # release with the .node assets; attach the SBOMs to that same release.
+      - name: Upload SBOMs to GitHub release
+        run: |
+          if ! git log -1 --pretty=%B | grep -q "^[0-9]\+\.[0-9]\+\.[0-9]\+";
+          then
+            echo "Not a release, skipping SBOM upload"
+            exit 0
+          fi
+          if ! compgen -G "sbom/sbom-*.cdx.json" > /dev/null; then
+            echo "::warning::no sbom/sbom-*.cdx.json files found, skipping upload"
+            exit 0
+          fi
+          TAG="v$(node -p 'require("./package.json").version')"
+          if ! gh release view "$TAG" > /dev/null 2>&1; then
+            echo "::warning::release $TAG not found, skipping SBOM upload"
+            exit 0
+          fi
+          gh release upload "$TAG" sbom/sbom-*.cdx.json --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

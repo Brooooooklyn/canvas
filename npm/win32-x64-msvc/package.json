@@ -1,6 +1,6 @@
 {
   "name": "@napi-rs/canvas-win32-x64-msvc",
-  "version": "1.0.10",
+  "version": "1.0.11",
   "os": [
     "win32"
   ],
@@ -10,7 +10,8 @@
   "main": "skia.win32-x64-msvc.node",
   "files": [
     "skia.win32-x64-msvc.node",
-    "icudtl.dat"
+    "icudtl.dat",
+    "sbom.cdx.json"
   ],
   "description": "Canvas for Node.js with skia backend",
   "keywords": [
