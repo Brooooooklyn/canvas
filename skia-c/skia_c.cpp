@@ -99,8 +99,8 @@ static SkSamplingOptions SamplingOptionsFromFQ(int fq) {
 // PaintFlags::FilterQualityToSkSamplingOptions in cc/paint/paint_flags.cc):
 // 'medium' and 'high' are both linear with linear mipmaps, never cubic. For an
 // Image source, Chrome's decode cache first scales the image down to one mip
-// level and then samples it linearly
-// (cc/tiles/software_image_decode_cache_utils.cc), which nearest mipmaps
+// level (cc/tiles/software_image_decode_cache_utils.cc) and then samples it
+// linearly (cc/tiles/software_image_decode_cache.cc), which nearest mipmaps
 // model. Chrome picks that level from the target size rounded to whole pixels
 // (cc/tiles/mipmap_util.cc), so for a tiny source it can pick a coarser level.
 static SkSamplingOptions PatternSamplingOptions(int fq, bool is_canvas) {
