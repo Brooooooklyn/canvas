@@ -121,6 +121,16 @@ struct Dictionary<'a> {
 }
 
 impl Dictionary<'_> {
+  /// `boolean` member: ToBoolean.
+  fn boolean(&self, key: &str) -> Result<Option<bool>> {
+    let Some(v) = member(self.env, self.value, key)? else {
+      return Ok(None);
+    };
+    let mut b = ptr::null_mut();
+    check_status!(unsafe { sys::napi_coerce_to_bool(self.env, v, &mut b) })?;
+    Ok(Some(unsafe { bool::from_napi_value(self.env, b)? }))
+  }
+
   /// Enum member: ToString, then an exact, case-sensitive match.
   fn enumeration<'v>(
     &self,
@@ -179,6 +189,9 @@ pub(crate) const CREATE_IMAGE_DATA: &str =
   "Failed to execute 'createImageData' on 'CanvasRenderingContext2D': ";
 pub(crate) const GET_IMAGE_DATA: &str =
   "Failed to execute 'getImageData' on 'CanvasRenderingContext2D': ";
+pub(crate) const CANVAS_GET_CONTEXT: &str =
+  "Failed to execute 'getContext' on 'HTMLCanvasElement': ";
+pub(crate) const SVG_CANVAS_GET_CONTEXT: &str = "Failed to execute 'getContext' on 'SVGCanvas': ";
 
 /// `ImageDataSettings` (core/html/canvas/image_data_settings.idl).
 #[derive(Clone, Copy, Debug, Default)]
@@ -224,5 +237,119 @@ impl ImageDataSettings {
       .map(|cs| supported_color_space(env, prefix, cs))
       .transpose()?;
     Ok(Self { color_space })
+  }
+}
+
+/// `CanvasPixelFormat`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum CanvasPixelFormat {
+  #[default]
+  Unorm8,
+  Float16,
+}
+
+impl CanvasPixelFormat {
+  pub(crate) fn as_str(&self) -> &'static str {
+    match self {
+      Self::Unorm8 => "unorm8",
+      Self::Float16 => "float16",
+    }
+  }
+}
+
+/// getContext() options that change nothing here and are only reported by
+/// getContextAttributes().
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct ReportedSettings {
+  /// Storage stays 8-bit; float16 is only echoed.
+  pub color_type: CanvasPixelFormat,
+  /// Echoed as given, as Chrome does
+  /// (canvas_context_creation_attributes_helpers.cc:33).
+  pub desynchronized: bool,
+  /// Drawing is always on the CPU here.
+  pub will_read_frequently: bool,
+}
+
+/// The getContext() options that Chrome 155 reads
+/// (`CanvasContextCreationAttributesModule`,
+/// modules/canvas/htmlcanvas/canvas_context_creation_attributes_module.idl).
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ContextSettings {
+  pub alpha: bool,
+  pub color_space: ColorSpace,
+  pub reported: ReportedSettings,
+}
+
+impl Default for ContextSettings {
+  fn default() -> Self {
+    Self {
+      alpha: true,
+      color_space: ColorSpace::Srgb,
+      reported: ReportedSettings::default(),
+    }
+  }
+}
+
+impl ContextSettings {
+  /// [PermissiveDictionaryConversion]: a non-object reads as `{}`.
+  pub(crate) fn from_js(
+    env: sys::napi_env,
+    value: Option<sys::napi_value>,
+    prefix: &str,
+  ) -> Result<Self> {
+    let mut settings = Self::default();
+    let Some(value) = value else {
+      return Ok(settings);
+    };
+    if !is_object(env, value)? {
+      return Ok(settings);
+    }
+    let dictionary = Dictionary {
+      env,
+      value,
+      prefix,
+      name: "CanvasContextCreationAttributesModule",
+    };
+    // All members in lexicographic order, the WebGL ones too: their getters
+    // run and an invalid powerPreference throws, also for '2d'.
+    if let Some(alpha) = dictionary.boolean("alpha")? {
+      settings.alpha = alpha;
+    }
+    dictionary.boolean("antialias")?;
+    let color_space =
+      dictionary.enumeration("colorSpace", "PredefinedColorSpace", PREDEFINED_COLOR_SPACE)?;
+    if dictionary.enumeration("colorType", "CanvasPixelFormat", &["unorm8", "float16"])?
+      == Some("float16")
+    {
+      settings.reported.color_type = CanvasPixelFormat::Float16;
+    }
+    dictionary.boolean("depth")?;
+    if let Some(desynchronized) = dictionary.boolean("desynchronized")? {
+      settings.reported.desynchronized = desynchronized;
+    }
+    dictionary.boolean("failIfMajorPerformanceCaveat")?;
+    dictionary.enumeration(
+      "powerPreference",
+      "CanvasPowerPreference",
+      &["default", "low-power", "high-performance"],
+    )?;
+    dictionary.boolean("premultipliedAlpha")?;
+    dictionary.boolean("preserveDrawingBuffer")?;
+    dictionary.boolean("stencil")?;
+    // Chrome 155 types this as enum CanvasWillReadFrequently
+    // {"true", "false", "undefined"}, not boolean: 1, 0 and null throw.
+    settings.reported.will_read_frequently = dictionary.enumeration(
+      "willReadFrequently",
+      "CanvasWillReadFrequently",
+      &["true", "false", "undefined"],
+    )? == Some("true");
+    dictionary.boolean("xrCompatible")?;
+    // ToCanvasContextCreationAttributes checks the color space after the
+    // whole dictionary is read
+    // (canvas_context_creation_attributes_helpers.cc:24).
+    if let Some(color_space) = color_space {
+      settings.color_space = supported_color_space(env, prefix, color_space)?;
+    }
+    Ok(settings)
   }
 }

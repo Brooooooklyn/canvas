@@ -36,7 +36,7 @@ use crate::{
     PathOp, SkEncodedImageFormat, SkImage, SkWMemoryStream, SkiaDataRef, Surface, Transform,
   },
   state::Context2dRenderingState,
-  webidl,
+  webidl::{self, ReportedSettings},
 };
 
 static CSS_SIZE_REGEXP: LazyLock<Regex> =
@@ -2571,10 +2571,20 @@ impl Context {
 }
 
 #[napi(object)]
+pub struct CanvasToneMapping {
+  pub mode: String,
+}
+
+/// getContextAttributes(): `CanvasRenderingContext2DSettings`, with the
+/// fields in Chrome's key order.
+#[napi(object)]
 pub struct ContextAttributes {
   pub alpha: bool,
   pub color_space: String,
+  pub color_type: String,
   pub desynchronized: bool,
+  pub tone_mapping: CanvasToneMapping,
+  pub will_read_frequently: bool,
 }
 
 #[napi]
@@ -2598,6 +2608,8 @@ impl From<SvgExportFlag> for crate::sk::SvgExportFlag {
 #[napi(custom_finalize)]
 pub struct CanvasRenderingContext2D {
   pub(crate) context: Context,
+  /// getContext() options that only getContextAttributes() reports.
+  pub(crate) reported_settings: ReportedSettings,
 }
 
 impl ObjectFinalize for CanvasRenderingContext2D {
@@ -2670,7 +2682,10 @@ impl CanvasRenderingContext2D {
     } else {
       Context::new(width, height, color_space)?
     };
-    Ok(Self { context })
+    Ok(Self {
+      context,
+      reported_settings: ReportedSettings::default(),
+    })
   }
 
   #[napi(getter)]
@@ -3686,16 +3701,20 @@ impl CanvasRenderingContext2D {
     Ok(())
   }
 
+  /// A new object on each call (base_rendering_context_2d.cc:156).
   #[napi]
   pub fn get_context_attributes(&self) -> ContextAttributes {
+    let reported = self.reported_settings;
     ContextAttributes {
       alpha: self.context.alpha,
-      color_space: match self.context.color_space {
-        ColorSpace::Srgb => "srgb",
-        ColorSpace::DisplayP3 => "display-p3",
-      }
-      .to_owned(),
-      desynchronized: false,
+      color_space: self.context.color_space.as_str().to_owned(),
+      color_type: reported.color_type.as_str().to_owned(),
+      desynchronized: reported.desynchronized,
+      // Chrome 155 does not read toneMapping and reports the default.
+      tone_mapping: CanvasToneMapping {
+        mode: "standard".to_owned(),
+      },
+      will_read_frequently: reported.will_read_frequently,
     }
   }
 

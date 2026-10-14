@@ -33,14 +33,22 @@ interface CanvasShadowStyles {
   shadowOffsetX: number
   shadowOffsetY: number
 }
+type CanvasPixelFormat = 'float16' | 'unorm8'
+interface CanvasToneMapping {
+  mode?: 'extended' | 'standard'
+}
 interface CanvasRenderingContext2DSettings {
   alpha?: boolean
   colorSpace?: PredefinedColorSpace
+  /** 'float16' is reported by getContextAttributes(), but the storage stays 8-bit. */
+  colorType?: CanvasPixelFormat
   desynchronized?: boolean
+  /** Not read by getContext() (as in Chrome); getContextAttributes() reports `{ mode: 'standard' }`. */
+  toneMapping?: CanvasToneMapping
   willReadFrequently?: boolean
 }
 interface CanvasSettings {
-  getContextAttributes(): CanvasRenderingContext2DSettings
+  getContextAttributes(): Required<CanvasRenderingContext2DSettings>
 }
 
 interface CanvasRect {
@@ -617,7 +625,7 @@ export interface SKRSContext2D extends CanvasRenderingContext2D {
     image: Image | ImageData | Canvas | SvgCanvas,
     repeat: 'repeat' | 'repeat-x' | 'repeat-y' | 'no-repeat' | null,
   ): CanvasPattern
-  getContextAttributes(): { alpha: boolean; colorSpace: ColorSpace; desynchronized: boolean }
+  getContextAttributes(): Required<CanvasRenderingContext2DSettings>
   getTransform(): DOMMatrix
 
   letterSpacing: string
@@ -626,10 +634,7 @@ export interface SKRSContext2D extends CanvasRenderingContext2D {
 
 export type ColorSpace = 'srgb' | 'display-p3'
 
-export interface ContextAttributes {
-  alpha?: boolean
-  colorSpace?: ColorSpace
-}
+export interface ContextAttributes extends CanvasRenderingContext2DSettings {}
 
 export interface SvgCanvas {
   width: number
