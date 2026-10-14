@@ -577,10 +577,11 @@ test.serial('unfillable dirty-rect putImageData paints nothing', (t) => {
 
 // -- Extreme geometry still records ----------------------------------------
 
-// The drawImage canvas-arm preflight must not gate on a derived term the C++
-// never forms: under a tiny-scale CTM the derived `dx - sx*scale_x` overflows
-// f32 while the composed matrix stays finite, so the draw paints.
-test.serial('drawImage under extreme CTM paints when the composed matrix is finite', (t) => {
+// Chrome 155's CPU canvas paints nothing here: drawImage normalises the
+// negative width (the dst rect starts at -FLT_MAX) and maps the 1-pixel-wide
+// source onto it with drawImageRect, whose src-to-dst scale and translate do
+// not fit in a float. The draw must not throw or record a broken op.
+test.serial('drawImage under extreme CTM paints nothing, like Chrome', (t) => {
   const src = createCanvas(10, 10)
   const sctx = src.getContext('2d')
   sctx.fillStyle = '#f00'
@@ -588,7 +589,16 @@ test.serial('drawImage under extreme CTM paints when the composed matrix is fini
   const ctx = createCanvas(64, 64).getContext('2d')!
   ctx.setTransform(-1e-37, 0, 0, 1, 0, 0)
   ctx.drawImage(src, 9, 0, 1, 10, -3e38, 0, -3e38, 10)
-  t.deepEqual(px(ctx, 45, 5), [255, 0, 0, 255])
+  const data = ctx.getImageData(0, 0, 64, 64).data
+  t.false(
+    data.some((v) => v !== 0),
+    'painted pixels',
+  )
+  // The canvas still takes later draws.
+  ctx.resetTransform()
+  ctx.fillStyle = '#00f'
+  ctx.fillRect(0, 0, 8, 8)
+  t.deepEqual(px(ctx, 4, 4), [0, 0, 255, 255])
 })
 
 // SkCanvas::clipRect IGNORES a non-finite rect, so a dst clip whose endpoint

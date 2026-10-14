@@ -215,6 +215,29 @@ test('drawImage normalises negative sizes instead of mirroring', async (t) => {
   }
 })
 
+// Blink ClipRectsToImageRect: a source rect past the image is cut to it, and
+// the AA rule then sees the cut destination, here under one pixel.
+test('drawImage clips a source rect past the image before choosing AA', async (t) => {
+  const src = grid(8, 8, (i, j) => `rgb(${i * 30},${j * 30},${(i + j) * 15})`)
+  const image = await imageFrom(src)
+  for (const [name, source] of [
+    ['canvas', src],
+    ['image', image],
+  ] as const) {
+    let ctx = createCanvas(32, 32).getContext('2d')
+    ctx.imageSmoothingEnabled = false
+    ctx.drawImage(source, 7.5, 0, 4, 8, 2, 2, 4, 16)
+    t.deepEqual(px(ctx, 2, 2), [211, 0, 104, 127], `${name} half-pixel column`)
+    t.deepEqual(px(ctx, 3, 2), [0, 0, 0, 0], `${name} half-pixel column`)
+
+    ctx = createCanvas(32, 32).getContext('2d')
+    ctx.imageSmoothingEnabled = false
+    ctx.drawImage(source, 0, 7.6, 8, 4, 2, 2, 16, 3)
+    t.deepEqual(px(ctx, 2, 2), [0, 211, 104, 76], `${name} 0.3-pixel row`)
+    t.deepEqual(px(ctx, 2, 3), [0, 0, 0, 0], `${name} 0.3-pixel row`)
+  }
+})
+
 // Blink's draw looper folds shadowColor into the paint with one float product
 // (SkColorFilters::Blend(shadowColor4f, kSrcIn) + RemoveColorFilter):
 // alpha = round(byte(sa) / 255 * byte(fa) / 255 * ga * 255).

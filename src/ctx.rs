@@ -1974,6 +1974,35 @@ impl Context {
     width.is_finite() && width > 0.0
   }
 
+  /// Blink's drawImage rect handling: AdjustRectForCanvas in double, then
+  /// ClampTo<float> (canvas_2d_recorder_context.cc:2244-2253). A negative
+  /// width or height moves the origin; the image is not mirrored.
+  pub(crate) fn adjust_rect_for_canvas(
+    mut x: f64,
+    mut y: f64,
+    mut width: f64,
+    mut height: f64,
+  ) -> (f32, f32, f32, f32) {
+    if width < 0.0 {
+      width = -width;
+      x -= width;
+    }
+    if height < 0.0 {
+      height = -height;
+      y -= height;
+    }
+    // Non-finite values stay non-finite (Blink returns before this), so
+    // `rect_fillable` still rejects them.
+    let clamp = |v: f64| {
+      if v.is_finite() {
+        v.clamp(-f32::MAX as f64, f32::MAX as f64) as f32
+      } else {
+        v as f32
+      }
+    };
+    (clamp(x), clamp(y), clamp(width), clamp(height))
+  }
+
   /// `rect_fillable` for callers whose rect Skia sorts before use: drawRect
   /// runs `r.makeSorted()` (SkCanvas.cpp), so a negative width or height
   /// still paints. Sorting the two f32 endpoints first mirrors that: a
@@ -2057,30 +2086,14 @@ impl Context {
   ) -> Result<()> {
     self.flush_if_recording_limit_exceeded();
     // Preflight the conditions under which skiac_canvas_draw_image records
-    // NOTHING that retains the source raster (SkCanvas.cpp
-    // internalQuickReject/fillable), before paint construction and
-    // accounting. The bitmap arm drops the draw unless `fillable` holds for
-    // BOTH raw rects -- finite, strictly-positive spans (its MakeXYWH can
-    // collapse to an empty width under f32 rounding). The canvas arm only
-    // skips a deterministically-empty sorted dst clip; every condition that
-    // depends on the ambient CTM is left to the native path.
-    if bitmap.0.is_canvas {
-      // The clip the C++ builds is MakeWH(d_width, d_height) applied AFTER
-      // translate(dx, dy) (skia_c.cpp: skiac_canvas_draw_image), and
-      // clipRect runs makeSorted() while IGNORING non-finite rects: only a
-      // finite collapsed span (dw == 0 or dh == 0) empties it. A negative
-      // dw/dh paints mirrored; a non-finite endpoint leaves the clip open.
-      // The C++ applies translate THEN scale to the ambient CTM -- there is
-      // no standalone `dx - sx*scale_x` term, so overflow in that derived
-      // expression says nothing about the composed result and must not
-      // gate. Non-finite scale/translate DO still void the draw, but only
-      // once composed with the ambient matrix, which is CTM-dependent and
-      // deliberately left to the native path (a missed skip costs a
-      // bounded charge; a wrong skip drops pixels).
-      if Self::sorted_span_empty(0.0, d_width) || Self::sorted_span_empty(0.0, d_height) {
-        return Ok(());
-      }
-    } else if !(Self::rect_fillable(sx, s_width)
+    // NOTHING that retains the source raster, before paint construction and
+    // accounting. Both source kinds reach SkCanvas::drawImageRect, which drops
+    // the draw unless `fillable` holds for BOTH rects (SkCanvas.cpp) --
+    // finite, strictly-positive spans (MakeXYWH can collapse to an empty
+    // width under f32 rounding). Callers pass the rects through
+    // `adjust_rect_for_canvas` first, so a negative width or height has
+    // already moved the origin instead.
+    if !(Self::rect_fillable(sx, s_width)
       && Self::rect_fillable(sy, s_height)
       && Self::rect_fillable(dx, d_width)
       && Self::rect_fillable(dy, d_height))
@@ -3422,27 +3435,29 @@ impl CanvasRenderingContext2D {
       }
     };
     let bitmap_ref = bitmap.as_ref();
+    let source_width = bitmap_ref.0.width as f64;
+    let source_height = bitmap_ref.0.height as f64;
     let (sx, sy, s_width, s_height, dx, dy, d_width, d_height) =
       match (sx, sy, s_width, s_height, dx, dy, d_width, d_height) {
         (Some(dx), Some(dy), None, None, None, None, None, None) => (
           0.0,
           0.0,
-          bitmap_ref.0.width as f32,
-          bitmap_ref.0.height as f32,
-          dx as f32,
-          dy as f32,
-          bitmap_ref.0.width as f32,
-          bitmap_ref.0.height as f32,
+          source_width,
+          source_height,
+          dx,
+          dy,
+          source_width,
+          source_height,
         ),
         (Some(dx), Some(dy), Some(d_width), Some(d_height), None, None, None, None) => (
           0.0,
           0.0,
-          bitmap_ref.0.width as f32,
-          bitmap_ref.0.height as f32,
-          dx as f32,
-          dy as f32,
-          d_width as f32,
-          d_height as f32,
+          source_width,
+          source_height,
+          dx,
+          dy,
+          d_width,
+          d_height,
         ),
         (
           Some(sx),
@@ -3453,18 +3468,11 @@ impl CanvasRenderingContext2D {
           Some(dy),
           Some(d_width),
           Some(d_height),
-        ) => (
-          sx as f32,
-          sy as f32,
-          s_width as f32,
-          s_height as f32,
-          dx as f32,
-          dy as f32,
-          d_width as f32,
-          d_height as f32,
-        ),
+        ) => (sx, sy, s_width, s_height, dx, dy, d_width, d_height),
         _ => return Ok(()),
       };
+    let (sx, sy, s_width, s_height) = Context::adjust_rect_for_canvas(sx, sy, s_width, s_height);
+    let (dx, dy, d_width, d_height) = Context::adjust_rect_for_canvas(dx, dy, d_width, d_height);
     self.context.draw_image(
       bitmap_ref, raster_key, sx, sy, s_width, s_height, dx, dy, d_width, d_height,
     )?;
@@ -3519,6 +3527,7 @@ impl CanvasRenderingContext2D {
       // Flush first so the bitmap reads the surface's complete content.
       canvas.ctx.context.flush();
       let bitmap = canvas.ctx.as_ref().context.surface.get_bitmap();
+      let (source_width, source_height) = (source_width as f64, source_height as f64);
       let (sx, sy, s_width, s_height, dx, dy, d_width, d_height) =
         match (sx, sy, s_width, s_height, dx, dy, d_width, d_height) {
           (Some(dx), Some(dy), None, None, None, None, None, None) => (
@@ -3526,8 +3535,8 @@ impl CanvasRenderingContext2D {
             0.0,
             source_width,
             source_height,
-            dx as f32,
-            dy as f32,
+            dx,
+            dy,
             source_width,
             source_height,
           ),
@@ -3536,10 +3545,10 @@ impl CanvasRenderingContext2D {
             0.0,
             source_width,
             source_height,
-            dx as f32,
-            dy as f32,
-            d_width as f32,
-            d_height as f32,
+            dx,
+            dy,
+            d_width,
+            d_height,
           ),
           (
             Some(sx),
@@ -3550,18 +3559,11 @@ impl CanvasRenderingContext2D {
             Some(dy),
             Some(d_width),
             Some(d_height),
-          ) => (
-            sx as f32,
-            sy as f32,
-            s_width as f32,
-            s_height as f32,
-            dx as f32,
-            dy as f32,
-            d_width as f32,
-            d_height as f32,
-          ),
+          ) => (sx, sy, s_width, s_height, dx, dy, d_width, d_height),
           _ => return Ok(()),
         };
+      let (sx, sy, s_width, s_height) = Context::adjust_rect_for_canvas(sx, sy, s_width, s_height);
+      let (dx, dy, d_width, d_height) = Context::adjust_rect_for_canvas(dx, dy, d_width, d_height);
       return self.context.draw_image(
         &bitmap,
         RasterKey::Resource {
