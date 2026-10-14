@@ -94,6 +94,28 @@ static SkSamplingOptions SamplingOptionsFromFQ(int fq) {
   return SkSamplingOptions(SkFilterMode::kNearest, SkMipmapMode::kNone);
 }
 
+// Chrome samples a pattern through cc PaintShader::GetSkShader, which maps the
+// quality with ScalingOperation::kUnknown (cc/paint/paint_shader.cc and
+// PaintFlags::FilterQualityToSkSamplingOptions in cc/paint/paint_flags.cc):
+// 'medium' and 'high' are both linear with linear mipmaps, never cubic. An
+// Image source keeps nearest mipmaps: Chrome's decode cache hands the shader an
+// image already scaled to a mip level
+// (cc/tiles/software_image_decode_cache_utils.cc).
+static SkSamplingOptions PatternSamplingOptions(int fq, bool is_canvas) {
+  switch (fq) {
+    case 3:
+    case 2:
+      return SkSamplingOptions(
+          SkFilterMode::kLinear,
+          is_canvas ? SkMipmapMode::kLinear : SkMipmapMode::kNearest);
+    case 1:
+      return SkSamplingOptions(SkFilterMode::kLinear, SkMipmapMode::kNone);
+    case 0:
+      break;
+  }
+  return SkSamplingOptions(SkFilterMode::kNearest, SkMipmapMode::kNone);
+}
+
 static SkMatrix conv_from_transform(const skiac_transform& c_ts) {
   return SkMatrix::MakeAll(c_ts.a, c_ts.c, c_ts.e, c_ts.b, c_ts.d, c_ts.f, 0, 0,
                            1);
@@ -2272,7 +2294,7 @@ skiac_shader* skiac_bitmap_get_shader(bool is_canvas,
                                       int filter_quality,
                                       skiac_transform c_ts) {
   const auto ts = conv_from_transform(c_ts);
-  const auto sampling = SamplingOptionsFromFQ(filter_quality);
+  const auto sampling = PatternSamplingOptions(filter_quality, is_canvas);
   sk_sp<SkShader> shader;
   if (is_canvas) {
     // The pattern's cloned surface is never drawn to again, so every shader
