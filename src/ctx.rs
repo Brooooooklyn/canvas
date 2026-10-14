@@ -1773,15 +1773,14 @@ impl Context {
   /// use the equivalent mask filter; this route is for image sources or a
   /// shadow whose `ctx.filter` must be composed before colourisation.
   ///
-  /// ACCEPTED DIVERGENCE, every shape: on an 8888 surface Skia's raster engine
-  /// routes to the three-box pass (SkBlurEngine.cpp:1281, :275) -- at every
-  /// sigma, as Skia is built with Chrome's SK_AVOID_SLOW_RASTER_PIPELINE_BLURS
-  /// -- and derives its window as an integer (:388), so the effective sigma snaps
-  /// to a staircase -- +9% to -13% off `shadowBlur / 2`, sign depending on where
-  /// the request lands in a step. Measured against Chrome 150 over 55 radii:
-  /// Chrome is smooth to within 3% on BOTH its accelerated and its software
-  /// canvas, so this is ours alone, not a CPU-vs-GPU artefact. The sigma passed
-  /// here is already correct; the lever is Skia's algorithm choice, not this.
+  /// On an 8888 surface Skia's raster engine routes the blur to the three-box
+  /// pass (SkBlurEngine.cpp:1281, :275) -- at every sigma, as Skia is built
+  /// with Chrome's SK_AVOID_SLOW_RASTER_PIPELINE_BLURS -- and derives its window
+  /// as an integer (:388), so the effective sigma snaps to a staircase -- +9%
+  /// to -13% off `shadowBlur / 2`, sign depending on where the request lands in
+  /// a step. Chrome's CPU canvas is built with the same define and draws the
+  /// same staircase: an image shadow at shadowBlur 0.5 to 24 equals Chrome
+  /// 155's byte for byte. The sigma passed here is already correct.
   ///
   /// dx/dy and sigma go in raw, in device pixels, as Blink builds them -- safe
   /// ONLY because `composited_filter_layer` opens this filter's layer at the
