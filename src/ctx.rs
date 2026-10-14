@@ -2087,15 +2087,14 @@ impl Context {
     is_empty(src) || is_empty(dst)
   }
 
-  /// Blink's drawImage rect handling: AdjustRectForCanvas in double, then
-  /// ClampTo<float> (canvas_2d_recorder_context.cc:2244-2253). A negative
+  /// Blink AdjustRectForCanvas (canvas_2d_recorder_context.h): a negative
   /// width or height moves the origin; the image is not mirrored.
-  pub(crate) fn adjust_rect_for_canvas(
+  pub(crate) fn normalize_rect_for_canvas(
     mut x: f64,
     mut y: f64,
     mut width: f64,
     mut height: f64,
-  ) -> (f32, f32, f32, f32) {
+  ) -> (f64, f64, f64, f64) {
     if width < 0.0 {
       width = -width;
       x -= width;
@@ -2104,6 +2103,18 @@ impl Context {
       height = -height;
       y -= height;
     }
+    (x, y, width, height)
+  }
+
+  /// Blink's drawImage rect handling: AdjustRectForCanvas in double, then
+  /// ClampTo<float> (canvas_2d_recorder_context.cc:2244-2253).
+  pub(crate) fn adjust_rect_for_canvas(
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+  ) -> (f32, f32, f32, f32) {
+    let (x, y, width, height) = Self::normalize_rect_for_canvas(x, y, width, height);
     // Non-finite values stay non-finite (Blink returns before this), so
     // `rect_fillable` still rejects them.
     let clamp = |v: f64| {
@@ -3751,8 +3762,13 @@ impl CanvasRenderingContext2D {
         ) => (sx, sy, s_width, s_height, dx, dy, d_width, d_height),
         _ => return Ok(()),
       };
-    let (sx, sy, s_width, s_height) = Context::adjust_rect_for_canvas(sx, sy, s_width, s_height);
-    let (dx, dy, d_width, d_height) = Context::adjust_rect_for_canvas(dx, dy, d_width, d_height);
+    // Normalised, but without drawImage's clamp to the f32 range: a size past
+    // it stays infinite and the replay draws nothing, as drawImage does with
+    // f32::MAX. A finite f32::MAX would scale the picture into view instead.
+    let (sx, sy, s_width, s_height) = Context::normalize_rect_for_canvas(sx, sy, s_width, s_height);
+    let (dx, dy, d_width, d_height) = Context::normalize_rect_for_canvas(dx, dy, d_width, d_height);
+    let (sx, sy, s_width, s_height) = (sx as f32, sy as f32, s_width as f32, s_height as f32);
+    let (dx, dy, d_width, d_height) = (dx as f32, dy as f32, d_width as f32, d_height as f32);
 
     // approx_bytes_used (charged inside Context::draw_canvas) excludes the
     // payloads a picture references -- putImageData/drawImage bitmaps, image

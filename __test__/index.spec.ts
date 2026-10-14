@@ -144,6 +144,9 @@ test('drawCanvas normalises negative sizes like drawImage', (t) => {
     [30, 20, 10, -10],
     [0, 0, 10, 10, 30, 20, -10, -10],
     [10, 0, -10, 10, 30, 20, 10, 10],
+    // past the f32 range: nothing is drawn
+    [0, 0, 1e39, 10],
+    [0, 0, -1e39, 10],
   ]
   for (const colorSpace of ['srgb', 'display-p3'] as const) {
     for (const a of args) {
