@@ -208,9 +208,12 @@ fn drop_shadow_parser(input: &str) -> IResult<&str, CssFilter> {
     .unwrap_or_else(|_: Err<Error<&str>>| (offset_y_output, 0.0f32));
   let blur_radius_output = blur_radius_output.trim();
   // A functional color ends with its own ')', before the one that closes drop-shadow().
-  let is_rgb_fn = ["rgb(", "rgba(", "hsl(", "hsla("]
-    .iter()
-    .any(|f| blur_radius_output.starts_with(f));
+  // CSS function names are ASCII case-insensitive (`HSL(` and `RGB(` too).
+  let is_rgb_fn = ["rgb(", "rgba(", "hsl(", "hsla("].iter().any(|f| {
+    blur_radius_output
+      .get(..f.len())
+      .is_some_and(|prefix| prefix.eq_ignore_ascii_case(f))
+  });
   let (shadow_color_output, shadow_color_str) =
     take_until(if is_rgb_fn { "))" } else { ")" })(blur_radius_output)?;
   let shadow_color_str = shadow_color_str.trim();
@@ -569,6 +572,26 @@ fn drop_shadow_parse() {
       CssFilter::DropShadow(4.0f32, 0.0f32, 0.0f32, RGBA::new(255, 0, 0, 128))
     ))
   );
+
+  // CSS function names are ASCII case-insensitive; Chrome 155 keeps all of these.
+  for (input, color) in [
+    ("HSL(120, 100%, 25%)", RGBA::new(0, 128, 0, 255)),
+    ("HsLa(0, 100%, 50%, 0.5)", RGBA::new(255, 0, 0, 128)),
+    ("RGB(0, 128, 0)", RGBA::new(0, 128, 0, 255)),
+    ("rGbA(255, 0, 0, 0.5)", RGBA::new(255, 0, 0, 128)),
+  ] {
+    assert_eq!(
+      css_filter(&format!("drop-shadow(4px 0 0 {input}) blur(1px)")),
+      Ok((
+        "",
+        vec![
+          CssFilter::DropShadow(4.0f32, 0.0f32, 0.0f32, color),
+          CssFilter::Blur(1.0),
+        ]
+      )),
+      "{input}"
+    );
+  }
 }
 
 #[test]

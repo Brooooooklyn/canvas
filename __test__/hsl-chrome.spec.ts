@@ -62,3 +62,29 @@ test('drop-shadow() filter accepts hsl() colors', (t) => {
     t.deepEqual([...ctx.getImageData(6, 1, 1, 1).data], shadow, filter)
   }
 })
+
+test('drop-shadow() color function names are case-insensitive', (t) => {
+  // Chrome 155 keeps each filter and draws the shadow at (6, 1); a second shadow lands at (1, 6).
+  const expected: Record<string, { right: number[]; below?: number[] }> = {
+    'drop-shadow(4px 0 0 HSL(120, 100%, 25%))': { right: [0, 128, 0, 255] },
+    'drop-shadow(4px 0 0 HsLa(0, 100%, 50%, 0.5))': { right: [255, 0, 0, 128] },
+    'drop-shadow(4px 0 0 HSL(120 100% 25%))': { right: [0, 128, 0, 255] },
+    'drop-shadow(4px 0 0 RGB(0, 128, 0))': { right: [0, 128, 0, 255] },
+    'drop-shadow(4px 0 0 rGbA(255, 0, 0, 0.5))': { right: [255, 0, 0, 128] },
+    'drop-shadow(4px 0 0 RGB(0 128 0 / 50%))': { right: [0, 128, 0, 128] },
+    'drop-shadow(4px 0 0 HSL(120, 100%, 25%)) drop-shadow(0 4px 0 RGB(0, 0, 255))': {
+      right: [0, 128, 0, 255],
+      below: [0, 0, 255, 255],
+    },
+  }
+  for (const [filter, { right, below = [0, 0, 0, 0] }] of Object.entries(expected)) {
+    const ctx = createCanvas(20, 12).getContext('2d')
+    ctx.filter = filter
+    t.is(ctx.filter, filter)
+    ctx.fillStyle = 'black'
+    ctx.fillRect(0, 0, 4, 4)
+    t.deepEqual([...ctx.getImageData(1, 1, 1, 1).data], [0, 0, 0, 255], filter)
+    t.deepEqual([...ctx.getImageData(6, 1, 1, 1).data], right, filter)
+    t.deepEqual([...ctx.getImageData(1, 6, 1, 1).data], below, filter)
+  }
+})
