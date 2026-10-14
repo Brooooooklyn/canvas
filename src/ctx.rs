@@ -2279,7 +2279,8 @@ impl Context {
     //   * a deterministically empty dst clip -- clipRect(MakeXYWH(dx,dy,
     //     dw,dh)) runs makeSorted() while IGNORING non-finite rects
     //     (SkCanvas.cpp: `if (!rect.isFinite()) return`), so a NEGATIVE dw
-    //     or dh sorts to a normal span and still paints mirrored, and an
+    //     or dh sorts to a normal span and still paints (drawCanvas has
+    //     already normalised them, as drawImage does), and an
     //     endpoint that overflows f32 leaves the clip untouched for the CTM
     //     to rescale through. Only a finite collapsed span (dw == 0,
     //     dh == 0, or x + w rounding back to x in f32 -- computed on the
@@ -3621,7 +3622,9 @@ impl CanvasRenderingContext2D {
       );
     };
 
-    // Parse parameters similar to drawImage
+    // Parse parameters as drawImage does, and as the bitmap arm above: a
+    // negative size moves the origin instead of mirroring.
+    let (source_width, source_height) = (source_width as f64, source_height as f64);
     let (sx, sy, s_width, s_height, dx, dy, d_width, d_height) =
       match (sx, sy, s_width, s_height, dx, dy, d_width, d_height) {
         (Some(dx), Some(dy), None, None, None, None, None, None) => (
@@ -3629,8 +3632,8 @@ impl CanvasRenderingContext2D {
           0.0,
           source_width,
           source_height,
-          dx as f32,
-          dy as f32,
+          dx,
+          dy,
           source_width,
           source_height,
         ),
@@ -3639,10 +3642,10 @@ impl CanvasRenderingContext2D {
           0.0,
           source_width,
           source_height,
-          dx as f32,
-          dy as f32,
-          d_width as f32,
-          d_height as f32,
+          dx,
+          dy,
+          d_width,
+          d_height,
         ),
         (
           Some(sx),
@@ -3653,18 +3656,11 @@ impl CanvasRenderingContext2D {
           Some(dy),
           Some(d_width),
           Some(d_height),
-        ) => (
-          sx as f32,
-          sy as f32,
-          s_width as f32,
-          s_height as f32,
-          dx as f32,
-          dy as f32,
-          d_width as f32,
-          d_height as f32,
-        ),
+        ) => (sx, sy, s_width, s_height, dx, dy, d_width, d_height),
         _ => return Ok(()),
       };
+    let (sx, sy, s_width, s_height) = Context::adjust_rect_for_canvas(sx, sy, s_width, s_height);
+    let (dx, dy, d_width, d_height) = Context::adjust_rect_for_canvas(dx, dy, d_width, d_height);
 
     // approx_bytes_used (charged inside Context::draw_canvas) excludes the
     // payloads a picture references -- putImageData/drawImage bitmaps, image

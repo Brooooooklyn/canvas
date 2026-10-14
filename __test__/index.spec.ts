@@ -127,6 +127,45 @@ test('drawCanvas of a display-p3 source matches drawImage', (t) => {
   t.deepEqual([...viaCanvas.getImageData(128, 0, 1, 1).data], [...viaImage.getImageData(128, 0, 1, 1).data])
 })
 
+// drawCanvas takes a picture replay into a destination in the same colour
+// space and the source bitmap into another one. Both arms treat a negative
+// size as drawImage does (Blink AdjustRectForCanvas): the origin moves, the
+// image is not mirrored.
+test('drawCanvas normalises negative sizes like drawImage', (t) => {
+  // column i is rgb(i * 25, 0, 255 - i * 25)
+  const source = createCanvas(10, 10)
+  const sourceContext = source.getContext('2d')
+  for (let i = 0; i < 10; i++) {
+    sourceContext.fillStyle = `rgb(${i * 25},0,${255 - i * 25})`
+    sourceContext.fillRect(i, 0, 1, 10)
+  }
+  const args: [number, number, number, number, number?, number?, number?, number?][] = [
+    [30, 20, -10, 10],
+    [30, 20, 10, -10],
+    [0, 0, 10, 10, 30, 20, -10, -10],
+    [10, 0, -10, 10, 30, 20, 10, 10],
+  ]
+  for (const colorSpace of ['srgb', 'display-p3'] as const) {
+    for (const a of args) {
+      const viaCanvas = createCanvas(64, 64).getContext('2d', { colorSpace })
+      // @ts-expect-error the 4- and 8-argument forms
+      viaCanvas.drawCanvas(source, ...a)
+      const viaImage = createCanvas(64, 64).getContext('2d', { colorSpace })
+      // @ts-expect-error the 4- and 8-argument forms
+      viaImage.drawImage(source, ...a)
+      t.deepEqual(
+        [...viaCanvas.getImageData(0, 0, 64, 64).data],
+        [...viaImage.getImageData(0, 0, 64, 64).data],
+        `${colorSpace} ${a.join(',')}`,
+      )
+    }
+  }
+  const ctx = createCanvas(64, 64).getContext('2d')
+  ctx.drawCanvas(source, 30, 20, -10, 10)
+  t.deepEqual([...ctx.getImageData(20, 25, 1, 1).data], [0, 0, 255, 255])
+  t.deepEqual([...ctx.getImageData(29, 25, 1, 1).data], [225, 0, 30, 255])
+})
+
 test('pattern snapshots preserve integer texels after canvas mutation', (t) => {
   const source = createCanvas(2, 2)
   const src = source.getContext('2d')
