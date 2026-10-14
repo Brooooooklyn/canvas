@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url'
 
 import ava, { TestFn } from 'ava'
 
-import { createCanvas, Path2D, Canvas, SKRSContext2D, DOMMatrix, loadImage } from '../index'
+import { createCanvas, Path2D, Canvas, SKRSContext2D, DOMMatrix, loadImage, ImageData } from '../index'
 
 import { snapshotImage } from './image-snapshot'
 
@@ -18,6 +18,113 @@ test.beforeEach((t) => {
   const canvas = createCanvas(1024, 768)
   t.context.canvas = canvas
   t.context.ctx = canvas.getContext('2d')!
+})
+
+// Expected values are Chrome 155's CPU canvas. getImageData() and
+// createImageData() default to the context's color space; drawImage into an
+// sRGB canvas reads the pixel back as sRGB.
+test('display-p3 context uses a display-p3 backing surface', (t) => {
+  const canvas = createCanvas(2, 2)
+  const ctx = canvas.getContext('2d', { colorSpace: 'display-p3' })
+  ctx.fillStyle = 'rgb(32,128,223)'
+  ctx.fillRect(0, 0, 1, 1)
+  t.deepEqual([...ctx.getImageData(0, 0, 1, 1).data], [63, 126, 216, 255])
+  t.deepEqual([...canvas.data().subarray(0, 4)], [63, 126, 216, 255])
+  const srgb = createCanvas(2, 2).getContext('2d')
+  srgb.drawImage(canvas, 0, 0)
+  t.deepEqual([...srgb.getImageData(0, 0, 1, 1).data], [31, 128, 223, 255])
+  ctx.putImageData(new ImageData(new Uint8ClampedArray([32, 128, 223, 255]), 1, 1, { colorSpace: 'display-p3' }), 0, 0)
+  t.deepEqual([...canvas.data().subarray(0, 4)], [32, 128, 223, 255])
+  // A later getContext returns the same context and ignores its attributes.
+  t.is(canvas.getContext('2d', { colorSpace: 'srgb' }), ctx)
+  t.deepEqual([...canvas.data().subarray(0, 4)], [32, 128, 223, 255])
+  ctx.fillStyle = 'rgb(32,128,223)'
+  ctx.fillRect(0, 0, 1, 1)
+  t.deepEqual([...canvas.data().subarray(0, 4)], [63, 126, 216, 255])
+  const red = ctx.createImageData(1, 1)
+  red.data.set([255, 0, 0, 255])
+  ctx.putImageData(red, 1, 1)
+  t.deepEqual([...canvas.data().subarray(12, 16)], [255, 0, 0, 255])
+})
+
+test('display-p3 context preserves its color space after resize', (t) => {
+  const canvas = createCanvas(2, 2)
+  const ctx = canvas.getContext('2d', { colorSpace: 'display-p3' })
+  for (const dimension of ['width', 'height'] as const) {
+    canvas[dimension] = 3
+    t.is(canvas.getContext('2d'), ctx)
+    ctx.fillStyle = 'rgb(32,128,223)'
+    ctx.fillRect(0, 0, 1, 1)
+    t.deepEqual([...canvas.data().subarray(0, 4)], [63, 126, 216, 255])
+    t.deepEqual([...ctx.getImageData(0, 0, 1, 1).data], [63, 126, 216, 255])
+  }
+})
+
+// Setting width or height resets the bitmap but keeps alpha:false
+// (Chrome 155: alpha stays false and a half-transparent fill lands opaque).
+test('alpha:false survives width/height changes', (t) => {
+  for (const dimension of ['width', 'height'] as const) {
+    const canvas = createCanvas(4, 4)
+    const ctx = canvas.getContext('2d', { alpha: false })
+    const base = [...ctx.getImageData(0, 0, 1, 1).data]
+    canvas[dimension] = 8
+    t.false(ctx.getContextAttributes().alpha)
+    const pixels = canvas.width * canvas.height
+    t.deepEqual([...ctx.getImageData(0, 0, canvas.width, canvas.height).data], Array(pixels).fill(base).flat())
+    ctx.fillStyle = 'rgba(255,0,0,0.5)'
+    ctx.fillRect(0, 0, 1, 1)
+    t.is(ctx.getImageData(0, 0, 1, 1).data[3], 255)
+  }
+})
+
+// GIF has no color profile, so the spec converts its pixels to sRGB. Chrome
+// 155 gives 31,128,223 for this P3 pixel in sRGB (drawImage into an sRGB
+// canvas, and the P3 PNG round trip). Our AVIF encoder writes no profile, so
+// AVIF is converted too; it is lossy, so it is held to an sRGB canvas that
+// holds the same pixels.
+test('gif and avif output of a display-p3 canvas is converted to sRGB', async (t) => {
+  const p3 = createCanvas(8, 8)
+  const p3Context = p3.getContext('2d', { colorSpace: 'display-p3' })
+  p3Context.fillStyle = 'rgb(32,128,223)'
+  p3Context.fillRect(0, 0, 8, 8)
+  const srgb = createCanvas(8, 8)
+  srgb.getContext('2d').drawImage(p3, 0, 0)
+  const decode = async (data: Buffer) => {
+    const ctx = createCanvas(8, 8).getContext('2d')
+    ctx.drawImage(await loadImage(data), 0, 0)
+    return [...ctx.getImageData(4, 4, 1, 1).data]
+  }
+  const gif: [string, (canvas: Canvas) => Buffer][] = [
+    ['toBuffer gif', (canvas) => canvas.toBuffer('image/gif')],
+    ['encodeSync gif', (canvas) => canvas.encodeSync('gif')],
+  ]
+  for (const [name, encode] of gif) {
+    t.deepEqual(await decode(encode(p3)), [31, 128, 223, 255], name)
+  }
+  const avif: [string, (canvas: Canvas) => Buffer][] = [
+    ['toBuffer avif', (canvas) => canvas.toBuffer('image/avif')],
+    ['encodeSync avif', (canvas) => canvas.encodeSync('avif')],
+  ]
+  for (const [name, encode] of avif) {
+    t.deepEqual(await decode(encode(p3)), await decode(encode(srgb)), name)
+  }
+})
+
+// drawCanvas has no Chrome counterpart, so it is held to drawImage: a P3
+// gradient drawn into an sRGB canvas must give the same pixels either way.
+test('drawCanvas of a display-p3 source matches drawImage', (t) => {
+  const source = createCanvas(256, 1)
+  const sourceContext = source.getContext('2d', { colorSpace: 'display-p3' })
+  const gradient = sourceContext.createLinearGradient(0, 0, 256, 0)
+  gradient.addColorStop(0, '#ff0000')
+  gradient.addColorStop(1, '#0000ff')
+  sourceContext.fillStyle = gradient
+  sourceContext.fillRect(0, 0, 256, 1)
+  const viaCanvas = createCanvas(256, 1).getContext('2d')
+  viaCanvas.drawCanvas(source, 0, 0)
+  const viaImage = createCanvas(256, 1).getContext('2d')
+  viaImage.drawImage(source, 0, 0)
+  t.deepEqual([...viaCanvas.getImageData(128, 0, 1, 1).data], [...viaImage.getImageData(128, 0, 1, 1).data])
 })
 
 test('pattern snapshots preserve integer texels after canvas mutation', (t) => {

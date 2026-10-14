@@ -300,42 +300,44 @@ test.serial('lottie render lands over ops recorded before it', (t) => {
   t.deepEqual(px(ctx, 48, 0), [0, 255, 0, 255])
 })
 
-// getContext('2d', { alpha: false }) paints an opaque base fill straight onto
-// the surface. It must flush pending recorded ops under it (a recorded op
-// issued before the call renders OVER the fill).
-test.serial('alpha:false base fill lands over ops recorded before it', (t) => {
+// Spec (HTML getContext, context mode 2d): a later call returns "the same
+// object as was returned the last time" and does not re-run context creation,
+// so a late { alpha: false } neither repaints the bitmap nor flips the alpha
+// attribute. Chrome 155: same object, pixel stays (255,0,0,255), alpha true.
+test.serial('late getContext({ alpha: false }) returns the same context and is ignored', (t) => {
   const canvas = createCanvas(64, 64)
-  canvas.getContext('2d')!.fillStyle = '#ff0000'
-  canvas.getContext('2d')!.fillRect(0, 0, 64, 64)
-  canvas.getContext('2d', { alpha: false })
-
-  t.deepEqual(
-    Array.from(canvas.getContext('2d')!.getImageData(32, 32, 1, 1).data),
-    [255, 255, 255, 255],
-    'base fill was overwritten by the recorded fill',
-  )
+  const ctx = canvas.getContext('2d')!
+  ctx.fillStyle = '#ff0000'
+  ctx.fillRect(0, 0, 64, 64)
+  t.is(canvas.getContext('2d', { alpha: false }), ctx)
+  t.deepEqual(px(ctx, 32, 32), [255, 0, 0, 255])
+  t.true(ctx.getContextAttributes().alpha)
 })
 
-// A direct surface write bypasses the recording, so get_picture() (the
-// drawCanvas source path) rebases the layers on the post-write surface. The
-// two draw paths must agree.
+// The alpha:false base fill is a direct surface write that bypasses the
+// recording. An op recorded AFTER it lives only in the layers, so drawCanvas
+// (SkPicture replay) must rebase on the post-write surface or it loses the
+// base; drawImage (snapshot) is the reference. drawCanvas runs first as a
+// precaution: with this one recorded layer the order does not matter, but if
+// drawImage's flush consolidated more layers it would rebase the source and
+// hide a missing rebase.
 test.serial('drawCanvas and drawImage agree after alpha:false direct fill', (t) => {
   const src = createCanvas(64, 64)
-  src.getContext('2d')!.fillStyle = '#ff0000'
-  src.getContext('2d')!.fillRect(0, 0, 64, 64)
-  src.getContext('2d', { alpha: false })
-
-  const viaImage = createCanvas(64, 64).getContext('2d')!
-  viaImage.drawImage(src, 0, 0)
-  t.deepEqual(Array.from(viaImage.getImageData(32, 32, 1, 1).data), [255, 255, 255, 255])
+  const sctx = src.getContext('2d', { alpha: false })!
+  sctx.fillStyle = '#ff0000'
+  sctx.fillRect(0, 0, 32, 64)
 
   const viaCanvas = createCanvas(64, 64).getContext('2d')!
   viaCanvas.drawCanvas(src, 0, 0)
-  t.deepEqual(
-    Array.from(viaCanvas.getImageData(32, 32, 1, 1).data),
-    [255, 255, 255, 255],
-    'drawCanvas replayed the stale pre-fill recording',
-  )
+  const viaImage = createCanvas(64, 64).getContext('2d')!
+  viaImage.drawImage(src, 0, 0)
+
+  const base = px(sctx, 48, 32)
+  t.is(base[3], 255, 'alpha:false base must be opaque')
+  t.deepEqual(px(viaImage, 16, 32), [255, 0, 0, 255])
+  t.deepEqual(px(viaImage, 48, 32), base)
+  t.deepEqual(px(viaCanvas, 16, 32), [255, 0, 0, 255], 'drawCanvas lost the op recorded after the base fill')
+  t.deepEqual(px(viaCanvas, 48, 32), base, 'drawCanvas lost the base fill (picture not rebased)')
 })
 
 test.serial('drawCanvas and drawImage agree after a lottie render', (t) => {

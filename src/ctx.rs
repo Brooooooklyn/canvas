@@ -2572,6 +2572,7 @@ impl Context {
 #[napi(object)]
 pub struct ContextAttributes {
   pub alpha: bool,
+  pub color_space: String,
   pub desynchronized: bool,
 }
 
@@ -3146,11 +3147,12 @@ impl CanvasRenderingContext2D {
       Either::A(width) => {
         let width = width.unsigned_abs();
         let height = width_or_height.unsigned_abs();
+        // Spec: defaultColorSpace is this context's color space.
         let color_space = match height_or_settings {
           Some(Either::B(settings)) => {
-            ColorSpace::from_str(&settings.color_space).unwrap_or_default()
+            ColorSpace::from_str(&settings.color_space).unwrap_or(self.context.color_space)
           }
-          _ => ColorSpace::default(),
+          _ => self.context.color_space,
         };
         let arraybuffer_length = (width * height * 4) as usize;
         let data_buffer = vec![0; arraybuffer_length];
@@ -3501,7 +3503,16 @@ impl CanvasRenderingContext2D {
     // Get picture from source canvas (preserves vector graphics)
     // Note: We need mutable access to the source context to get the picture
     // This is safe because we have exclusive access to the CanvasElement
-    let picture = canvas.ctx.context.get_picture();
+    // A raster destination in another color space would replay the source's
+    // ops in its own space (gradients interpolate there), so it takes the
+    // source bitmap, as drawImage does. PDF and SVG keep the vector replay.
+    let picture = if self.context.backend == Backend::Raster
+      && canvas.ctx.context.color_space != self.context.color_space
+    {
+      None
+    } else {
+      canvas.ctx.context.get_picture()
+    };
 
     let picture = if let Some(pic) = picture {
       pic
@@ -3647,6 +3658,11 @@ impl CanvasRenderingContext2D {
   pub fn get_context_attributes(&self) -> ContextAttributes {
     ContextAttributes {
       alpha: self.context.alpha,
+      color_space: match self.context.color_space {
+        ColorSpace::Srgb => "srgb",
+        ColorSpace::DisplayP3 => "display-p3",
+      }
+      .to_owned(),
       desynchronized: false,
     }
   }
@@ -3915,9 +3931,10 @@ impl CanvasRenderingContext2D {
       && !height.is_nan()
       && !height.is_infinite()
     {
+      // Spec: defaultColorSpace is this context's color space.
       let color_space = color_space
         .and_then(|cs| cs.parse().ok())
-        .unwrap_or(ColorSpace::Srgb);
+        .unwrap_or(self.context.color_space);
       // Per spec: if sw/sh is negative, flip the origin and use abs value
       let (sx, sw) = if width < 0.0 {
         (x + width, -width)

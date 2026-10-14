@@ -101,10 +101,35 @@ pub struct CanvasElement<'scope> {
   pub(crate) width: u32,
   pub(crate) height: u32,
   pub(crate) ctx: ClassInstance<'scope, CanvasRenderingContext2D>,
+  context_initialized: bool,
+}
+
+// alpha:false base fill. It is a direct surface write: with_surface_canvas
+// bumps the content version, and on a raster canvas also marks the recorded
+// layers stale (drawCanvas rebases on the surface). SVG has no recorder.
+fn apply_opaque_base(context_2d: &mut Context, width: u32, height: u32) -> Result<()> {
+  let mut fill_paint = context_2d.fill_paint()?;
+  fill_paint.set_color(255, 255, 255, 255);
+  context_2d.alpha = false;
+  let (width, height) = (width as f32, height as f32);
+  context_2d.with_surface_canvas(|canvas| {
+    canvas.draw_rect(0f32, 0f32, width, height, &fill_paint);
+  });
+  Ok(())
 }
 
 #[napi]
 impl<'c> CanvasElement<'c> {
+  // Setting width or height resets the bitmap but keeps the context's
+  // settings (alpha, color space).
+  fn resized_context(old: &Context, width: u32, height: u32) -> Result<Context> {
+    let mut context_2d = Context::new(width, height, old.color_space)?;
+    if !old.alpha {
+      apply_opaque_base(&mut context_2d, width, height)?;
+    }
+    Ok(context_2d)
+  }
+
   fn create_context(
     env: &Env,
     width: u32,
@@ -142,7 +167,12 @@ impl<'c> CanvasElement<'c> {
       .with_property_attributes(
         PropertyAttributes::Default | PropertyAttributes::Writable | PropertyAttributes::Enumerable,
       )])?;
-    Ok(Self { width, height, ctx })
+    Ok(Self {
+      width,
+      height,
+      ctx,
+      context_initialized: false,
+    })
   }
 
   #[napi(setter)]
@@ -150,10 +180,8 @@ impl<'c> CanvasElement<'c> {
     let width = (if width <= 0 { 350 } else { width }) as u32;
     self.width = width;
     let height = self.height;
-    let old_ctx = mem::replace(
-      &mut self.ctx.context,
-      Context::new(width, height, ColorSpace::default())?,
-    );
+    let new_ctx = Self::resized_context(&self.ctx.context, width, height)?;
+    let old_ctx = mem::replace(&mut self.ctx.context, new_ctx);
     env.adjust_external_memory((width as i64 - old_ctx.width as i64) * (height as i64) * 4)?;
     Ok(())
   }
@@ -168,10 +196,8 @@ impl<'c> CanvasElement<'c> {
     let height = (if height <= 0 { 150 } else { height }) as u32;
     self.height = height;
     let width = self.width;
-    let old_ctx = mem::replace(
-      &mut self.ctx.context,
-      Context::new(width, height, ColorSpace::default())?,
-    );
+    let new_ctx = Self::resized_context(&self.ctx.context, width, height)?;
+    let old_ctx = mem::replace(&mut self.ctx.context, new_ctx);
     env.adjust_external_memory((height as i64 - old_ctx.height as i64) * (width as i64) * 4)?;
     Ok(())
   }
@@ -194,24 +220,23 @@ impl<'c> CanvasElement<'c> {
         format!("{context_type} is not supported"),
       ));
     }
-    let context_2d = &mut self.ctx.context;
-    if !attrs.as_ref().and_then(|a| a.alpha).unwrap_or(true) {
-      let mut fill_paint = context_2d.fill_paint()?;
-      fill_paint.set_color(255, 255, 255, 255);
-      context_2d.alpha = false;
-      let (width, height) = (self.width as f32, self.height as f32);
-      // The base fill bypasses the deferred recording, so it must flush
-      // pending ops under it and bump the content version
-      // (Context::with_surface_canvas).
-      context_2d.with_surface_canvas(|canvas| {
-        canvas.draw_rect(0f32, 0f32, width, height, &fill_paint);
-      });
+    if self.context_initialized {
+      return this.get_named_property("ctx");
     }
     let color_space = attrs
-      .and_then(|a| a.color_space)
-      .and_then(|cs| ColorSpace::from_str(&cs).ok())
+      .as_ref()
+      .and_then(|a| a.color_space.as_deref())
+      .and_then(|cs| ColorSpace::from_str(cs).ok())
       .unwrap_or_default();
-    context_2d.color_space = color_space;
+    let context_2d = &mut self.ctx.context;
+    // first acquisition fixes the backing surface's color space.
+    if color_space != context_2d.color_space {
+      *context_2d = Context::new(self.width, self.height, color_space)?;
+    }
+    if !attrs.as_ref().and_then(|a| a.alpha).unwrap_or(true) {
+      apply_opaque_base(context_2d, self.width, self.height)?;
+    }
+    self.context_initialized = true;
     this.get_named_property("ctx")
   }
 
@@ -773,6 +798,7 @@ pub struct SVGCanvas<'scope> {
   pub height: u32,
   pub(crate) ctx: ClassInstance<'scope, CanvasRenderingContext2D>,
   pub(crate) flag: SvgExportFlag,
+  context_initialized: bool,
 }
 
 #[napi]
@@ -820,6 +846,7 @@ impl<'scope> SVGCanvas<'scope> {
       height,
       flag,
       ctx: ctx.assign_to_this_with_attributes("ctx", PropertyAttributes::Default, &mut this)?,
+      context_initialized: false,
     })
   }
 
@@ -836,24 +863,19 @@ impl<'scope> SVGCanvas<'scope> {
         format!("{context_type} is not supported"),
       ));
     }
+    if self.context_initialized {
+      return this.get_named_property("ctx");
+    }
     let context_2d = &mut self.ctx.context;
     if !attrs.as_ref().and_then(|a| a.alpha).unwrap_or(true) {
-      let mut fill_paint = context_2d.fill_paint()?;
-      fill_paint.set_color(255, 255, 255, 255);
-      context_2d.alpha = false;
-      let (width, height) = (self.width as f32, self.height as f32);
-      // The base fill bypasses the deferred recording, so it must flush
-      // pending ops under it and bump the content version
-      // (Context::with_surface_canvas).
-      context_2d.with_surface_canvas(|canvas| {
-        canvas.draw_rect(0f32, 0f32, width, height, &fill_paint);
-      });
+      apply_opaque_base(context_2d, self.width, self.height)?;
     }
     let color_space = attrs
       .and_then(|a| a.color_space)
       .and_then(|cs| ColorSpace::from_str(&cs).ok())
       .unwrap_or_default();
     context_2d.color_space = color_space;
+    self.context_initialized = true;
     this.get_named_property("ctx")
   }
 
@@ -893,15 +915,26 @@ impl<'scope> SVGCanvas<'scope> {
     }
   }
 
+  // Setting width or height resets the drawing but keeps the context's
+  // settings (alpha, color space). Like get_context, the color space is kept
+  // on the context only; the SVG surface is made as in the constructor.
+  fn resized_context(&self, width: u32, height: u32) -> Result<Context> {
+    let old = &self.ctx.context;
+    let mut context_2d = Context::new_svg(width, height, self.flag.into(), ColorSpace::default())?;
+    context_2d.color_space = old.color_space;
+    if !old.alpha {
+      apply_opaque_base(&mut context_2d, width, height)?;
+    }
+    Ok(context_2d)
+  }
+
   #[napi(setter)]
   pub fn set_width(&mut self, env: Env, width: i32) -> Result<()> {
     let width = (if width <= 0 { 350 } else { width }) as u32;
     self.width = width;
     let height = self.height;
-    let old_ctx = mem::replace(
-      &mut self.ctx.context,
-      Context::new_svg(width, height, self.flag.into(), ColorSpace::default())?,
-    );
+    let new_ctx = self.resized_context(width, height)?;
+    let old_ctx = mem::replace(&mut self.ctx.context, new_ctx);
     env.adjust_external_memory((width as i64 - old_ctx.width as i64) * (height as i64) * 4)?;
     Ok(())
   }
@@ -916,10 +949,8 @@ impl<'scope> SVGCanvas<'scope> {
     let height = (if height <= 0 { 150 } else { height }) as u32;
     self.height = height;
     let width = self.width;
-    let old_ctx = mem::replace(
-      &mut self.ctx.context,
-      Context::new_svg(width, height, self.flag.into(), ColorSpace::default())?,
-    );
+    let new_ctx = self.resized_context(width, height)?;
+    let old_ctx = mem::replace(&mut self.ctx.context, new_ctx);
     env.adjust_external_memory((width as i64) * (height as i64 - old_ctx.height as i64) * 4)?;
     Ok(())
   }

@@ -51,6 +51,44 @@ test('should be able to export text', (t) => {
   t.snapshot(canvas.getContent().toString('utf8'))
 })
 
+// Spec getContext: a later call returns the same context and does not apply
+// its attributes again, so a late { alpha: false } paints no base.
+test('SvgCanvas ignores attributes on a later getContext call', (t) => {
+  const draw = (late: boolean) => {
+    const canvas = createCanvas(10, 10, SvgExportFlag.NoPrettyXML)
+    const ctx = canvas.getContext('2d')
+    ctx.fillStyle = '#ff0000'
+    ctx.fillRect(0, 0, 10, 10)
+    if (late) {
+      t.is(canvas.getContext('2d', { alpha: false }), ctx)
+      t.true(ctx.getContextAttributes().alpha)
+    }
+    return canvas.getContent().toString('utf8')
+  }
+  t.is(draw(true), draw(false))
+})
+
+// Spec "set bitmap dimensions" resets the context to its default state, but
+// alpha and colorSpace are creation settings: they stay, and an alpha:false
+// canvas gets its base again. A later getContext cannot restore them.
+test('SvgCanvas keeps alpha:false and colorSpace when width or height changes', (t) => {
+  const fresh = (width: number, height: number) => {
+    const canvas = createCanvas(width, height, SvgExportFlag.NoPrettyXML)
+    canvas.getContext('2d', { alpha: false })
+    return canvas.getContent().toString('utf8')
+  }
+  for (const dimension of ['width', 'height'] as const) {
+    const canvas = createCanvas(10, 10, SvgExportFlag.NoPrettyXML)
+    const ctx = canvas.getContext('2d', { alpha: false, colorSpace: 'display-p3' })
+    ctx.fillStyle = '#ff0000'
+    ctx.fillRect(0, 0, 10, 10)
+    canvas[dimension] = 20
+    t.is(ctx.getContextAttributes().alpha, false, dimension)
+    t.is(ctx.getContextAttributes().colorSpace, 'display-p3', dimension)
+    t.is(canvas.getContent().toString('utf8'), fresh(canvas.width, canvas.height), dimension)
+  }
+})
+
 // REGRESSION GUARD, do not weaken to a snapshot.
 //
 // `SkSVGDevice` cannot make a layer device -- `SkCanvas` substitutes a
