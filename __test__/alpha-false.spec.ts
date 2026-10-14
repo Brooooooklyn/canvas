@@ -4,7 +4,7 @@
 // surface cleared to black.
 import test from 'ava'
 
-import { createCanvas, loadImage, SvgExportFlag } from '../index'
+import { createCanvas, ImageData, loadImage, SvgExportFlag } from '../index'
 
 type Ctx = ReturnType<ReturnType<typeof createCanvas>['getContext']>
 
@@ -155,6 +155,108 @@ test('alpha:false clearRect gives opaque black and ignores composite, alpha, sha
     ctx.fillRect(0, 0, 6, 6)
     t.deepEqual(px(ctx, 0, 0), [128, 128, 128, 255], 'whole canvas')
   }
+})
+
+// Blink PutByteArray labels the pixels kOpaque, so the write is a memcpy and
+// getImageData reads the bytes back as given, alpha included
+// (base_rendering_context_2d.cc:619-643). The spec would ignore the alpha.
+test('alpha:false putImageData stores the bytes as given, like Chrome', async (t) => {
+  const bytes = [10, 20, 30, 0, 10, 20, 30, 128, 10, 20, 30, 255, 200, 100, 50, 1]
+  const { canvas, ctx } = opaque(4, 1)
+  ctx.putImageData(new ImageData(new Uint8ClampedArray(bytes), 4, 1), 0, 0)
+  const row = (c: Ctx) => [0, 1, 2, 3].map((x) => px(c, x, 0))
+  t.deepEqual(row(ctx), [
+    [10, 20, 30, 0],
+    [10, 20, 30, 128],
+    [10, 20, 30, 255],
+    [200, 100, 50, 1],
+  ])
+  const url = canvas.toDataURL('image/png')
+  t.is(Buffer.from(url.split(',')[1], 'base64')[25], 6, 'PNG color type RGBA')
+  const decoded = transparent(4, 1)
+  decoded.ctx.drawImage(await loadImage(url), 0, 0)
+  t.deepEqual(row(decoded.ctx), [
+    [0, 0, 0, 0],
+    [10, 20, 30, 128],
+    [10, 20, 30, 255],
+    [255, 0, 0, 1],
+  ])
+  const drawn = transparent(4, 1)
+  drawn.ctx.drawImage(canvas, 0, 0)
+  t.deepEqual(row(drawn.ctx), [
+    [0, 0, 0, 0],
+    [20, 40, 60, 128],
+    [10, 20, 30, 255],
+    [255, 255, 255, 1],
+  ])
+  // source-over keeps the stored alpha: no reset for it.
+  ctx.fillStyle = 'rgba(255,255,255,0.5)'
+  ctx.fillRect(0, 0, 4, 1)
+  t.deepEqual(row(ctx), [
+    [133, 138, 143, 128],
+    [133, 138, 143, 192],
+    [133, 138, 143, 255],
+    [228, 178, 153, 128],
+  ])
+  const dirty = opaque(4, 1)
+  dirty.ctx.fillStyle = 'red'
+  dirty.ctx.fillRect(0, 0, 4, 1)
+  dirty.ctx.putImageData(
+    new ImageData(new Uint8ClampedArray([10, 20, 30, 0, 10, 20, 30, 0, 10, 20, 30, 0, 10, 20, 30, 0]), 4, 1),
+    0,
+    0,
+    1,
+    0,
+    2,
+    1,
+  )
+  t.deepEqual(row(dirty.ctx), [
+    [255, 0, 0, 255],
+    [10, 20, 30, 0],
+    [10, 20, 30, 0],
+    [255, 0, 0, 255],
+  ])
+})
+
+// The unpremultiplying readback zeroes RGB where alpha is 0, as Skia does; an
+// alpha:false canvas can hold such pixels (see putImageData above). For
+// alpha:true nothing changes: premultiplied pixels with alpha 0 already have
+// RGB 0, and every pixel still reads as Skia's conversion of the stored
+// premultiplied bytes (SkSwizzler_opts.inc), which main 0b502f6 also passes.
+test('alpha:true getImageData still unpremultiplies the stored bytes like Skia', (t) => {
+  const { canvas, ctx } = transparent(64, 64)
+  for (let i = 0; i < 64; i++) {
+    ctx.fillStyle = `rgba(${(i * 37) % 256},${(i * 91) % 256},${(i * 53) % 256},${i / 63})`
+    ctx.beginPath()
+    ctx.arc((i * 13) % 64, (i * 29) % 64, 3 + (i % 9), 0, Math.PI * 2)
+    ctx.fill()
+  }
+  ctx.clearRect(20, 20, 12, 12)
+  const read = ctx.getImageData(0, 0, 64, 64).data
+  const stored = canvas.data()
+  const f = Math.fround
+  const unpremul = (c: number, a: number) => {
+    if (a === 255) return c
+    if (a === 0) return 0
+    const reciprocal = f(1 / f(a * f(1 / 255)))
+    const v = Math.min(f(f(f(c * f(1 / 255)) * reciprocal) * 255), 255)
+    // round half to even
+    const r = Math.round(v)
+    return r - v === 0.5 && r % 2 === 1 ? r - 1 : r
+  }
+  let zeroAlpha = 0
+  for (let i = 0; i < read.length; i += 4) {
+    const a = stored[i + 3]
+    if (a === 0) zeroAlpha++
+    const expected = [unpremul(stored[i], a), unpremul(stored[i + 1], a), unpremul(stored[i + 2], a), a]
+    if (read[i] !== expected[0] || read[i + 1] !== expected[1] || read[i + 2] !== expected[2] || read[i + 3] !== a) {
+      t.fail(
+        `pixel ${i / 4}: read ${Array.from(read.subarray(i, i + 4))}, stored ${Array.from(stored.subarray(i, i + 4))}`,
+      )
+      return
+    }
+  }
+  t.true(zeroAlpha > 0)
 })
 
 test('an alpha:false canvas is opaque as a source and when encoded', async (t) => {

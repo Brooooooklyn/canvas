@@ -631,6 +631,7 @@ mod tests {
         8.0,
         ColorSpace::default(),
         true,
+        false,
       );
     });
     assert_eq!(recorder.content_version(), 1);
@@ -706,6 +707,7 @@ mod tests {
         16.0,
         ColorSpace::default(),
         true,
+        false,
       );
     });
     // A second paint leaves pending record bytes promote_layer can finalize.
@@ -744,6 +746,7 @@ mod tests {
         16.0,
         ColorSpace::default(),
         true,
+        false,
       );
     });
     assert!(recorder.layer_count() > 0);
@@ -784,6 +787,7 @@ mod tests {
         16.0,
         ColorSpace::default(),
         true,
+        false,
       );
     });
     let version = recorder.content_version();

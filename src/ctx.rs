@@ -4160,6 +4160,7 @@ impl CanvasRenderingContext2D {
         let width = image_data.width;
         let height = image_data.height;
         let color_space = image_data.color_space;
+        let opaque = !self.context.alpha;
         // The recorded op pins a copy of the whole ImageData buffer.
         let pixel_bytes = width * height * 4;
         recorder.borrow_mut().put_pixels(pixel_bytes, |canvas| {
@@ -4175,6 +4176,7 @@ impl CanvasRenderingContext2D {
             dirty_height,
             color_space,
             true,
+            opaque,
           );
         });
         // The charge may have tripped the cap on its own (a single
@@ -4202,6 +4204,7 @@ impl CanvasRenderingContext2D {
         dirty_height,
         image_data.color_space,
         false,
+        !self.context.alpha,
       );
       self.context.surface.canvas.restore();
       self.context.note_direct_mutation();
@@ -4217,6 +4220,7 @@ impl CanvasRenderingContext2D {
         let width = image_data.width;
         let height = image_data.height;
         let color_space = image_data.color_space;
+        let opaque = !self.context.alpha;
         // The recorded op pins a copy of the whole ImageData buffer.
         let pixel_bytes = width * height * 4;
         recorder.borrow_mut().put_pixels(pixel_bytes, |canvas| {
@@ -4232,6 +4236,7 @@ impl CanvasRenderingContext2D {
             h,
             color_space,
             true,
+            opaque,
           );
         });
         self.context.flush_if_recording_limit_exceeded();
@@ -4767,6 +4772,7 @@ mod tests {
           8.0,
           ColorSpace::default(),
           true,
+          false,
         );
       });
     assert!(layers(&ctx) >= 1);
@@ -4977,6 +4983,7 @@ mod tests {
           4.0,
           ColorSpace::default(),
           true,
+          false,
         );
       });
     let source_raster_bytes = src
@@ -5114,6 +5121,7 @@ mod tests {
           4.0,
           ColorSpace::default(),
           true,
+          false,
         );
       });
     assert_eq!(layers(&ctx), 1);

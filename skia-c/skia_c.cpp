@@ -957,11 +957,17 @@ void skiac_canvas_put_image_data(skiac_canvas* c_canvas,
                                  float dirty_width,
                                  float dirty_height,
                                  uint8_t cs,
-                                 bool snapshot) {
+                                 bool snapshot,
+                                 bool opaque) {
   auto color_space = COLOR_SPACE_CAST;
+  // alpha:false: Blink's PutByteArray labels the pixels kOpaque, so the write
+  // onto the kOpaque canvas is a plain copy, alpha included
+  // (base_rendering_context_2d.cc PutByteArray, skbug 6157).
   auto info =
       SkImageInfo::Make(width, height, SkColorType::kRGBA_8888_SkColorType,
-                        SkAlphaType::kUnpremul_SkAlphaType, color_space);
+                        opaque ? SkAlphaType::kOpaque_SkAlphaType
+                               : SkAlphaType::kUnpremul_SkAlphaType,
+                        color_space);
   auto pixmap = SkPixmap(info, pixels, row_bytes);
   // When snapshot=true (deferred/recorded mode), copy the pixel data so the
   // SkPicture owns an independent snapshot. Without this, reusing and mutating

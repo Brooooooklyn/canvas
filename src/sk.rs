@@ -641,6 +641,7 @@ pub mod ffi {
       dirty_height: f32,
       color_space: u8,
       snapshot: bool,
+      opaque: bool,
     );
 
     pub fn skiac_canvas_draw_picture(
@@ -3039,6 +3040,7 @@ impl Canvas {
   /// Works on recording canvases (PictureRecorder).
   /// When `snapshot` is true, the pixel data is copied so the resulting SkImage
   /// is independent of the source buffer (required for deferred/recorded mode).
+  /// `opaque` (alpha:false) writes the bytes as given, alpha included.
   /// `pixels` must point to `width * height * 4` readable bytes.
   pub fn put_image_data(
     &mut self,
@@ -3053,6 +3055,7 @@ impl Canvas {
     dirty_height: f32,
     color_space: ColorSpace,
     snapshot: bool,
+    opaque: bool,
   ) {
     unsafe {
       ffi::skiac_canvas_put_image_data(
@@ -3070,6 +3073,7 @@ impl Canvas {
         dirty_height,
         color_space as u8,
         snapshot,
+        opaque,
       )
     }
   }

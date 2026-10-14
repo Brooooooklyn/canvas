@@ -944,7 +944,8 @@ void skiac_canvas_put_image_data(skiac_canvas* c_canvas,
                                  float dirty_width,
                                  float dirty_height,
                                  uint8_t cs,
-                                 bool snapshot);
+                                 bool snapshot,
+                                 bool opaque);
 void skiac_canvas_draw_picture(skiac_canvas* c_canvas,
                                skiac_picture* c_picture,
                                skiac_matrix* c_matrix,
