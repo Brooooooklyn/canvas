@@ -6,6 +6,7 @@
 #include <include/core/SkAnnotation.h>
 #include <include/core/SkBBHFactory.h>
 #include <include/core/SkBitmap.h>
+#include <include/core/SkBlender.h>
 #include <include/core/SkBlurTypes.h>
 #include <include/core/SkCanvas.h>
 #include <include/core/SkColorFilter.h>
@@ -22,11 +23,15 @@
 #include <include/core/SkPicture.h>
 #include <include/core/SkPictureRecorder.h>
 #include <include/core/SkPixelRef.h>
+#include <include/core/SkRRect.h>
+#include <include/core/SkRegion.h>
 #include <include/core/SkSamplingOptions.h>
 #include <include/core/SkStream.h>
 #include <include/core/SkString.h>
 #include <include/core/SkStrokeRec.h>
 #include <include/core/SkSurface.h>
+#include <include/core/SkTextBlob.h>
+#include <include/core/SkVertices.h>
 #include <include/docs/SkPDFDocument.h>
 #include <include/docs/SkPDFJpegHelpers.h>
 #include <include/effects/SkColorMatrix.h>
@@ -40,6 +45,7 @@
 #include <include/encode/SkWebpEncoder.h>
 #include <include/pathops/SkPathOps.h>
 #include <include/svg/SkSVGCanvas.h>
+#include <include/utils/SkNWayCanvas.h>
 #include <include/utils/SkParsePath.h>
 #include <modules/skottie/include/Skottie.h>
 #include <modules/skparagraph/include/FontCollection.h>
@@ -62,6 +68,7 @@
 #include <map>
 #include <set>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include <stdint.h>
@@ -781,6 +788,7 @@ void skiac_surface_create_svg(skiac_svg_surface* c_surface,
                               int alphaType,
                               uint32_t flag,
                               uint8_t cs);
+void skiac_svg_canvas_flush(skiac_canvas* c_canvas);
 skiac_surface* skiac_surface_create_rgba(int width, int height, uint8_t cs);
 void skiac_surface_ref(skiac_surface* c_surface);
 void skiac_surface_destroy(skiac_surface* c_surface);

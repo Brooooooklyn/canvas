@@ -157,6 +157,415 @@ static SkSurface* skiac_surface_create(int width,
   }
 }
 
+// The canvas an SVGCanvas context draws into. It sits in front of the
+// SkSVGCanvas, sends every call to it, and records the call too, so drawImage,
+// createPattern and getImageData read the SVGCanvas like a canvas source. The
+// recording is drawn into the raster surface only when the surface is read
+// (skiac_svg_canvas_flush), or when it grows past the PageRecorder cap
+// (src/page_recorder.rs). Drawing an SVG that is never read costs no
+// rasterization.
+//
+// Deleting it finishes the SVG document: the SkSVGCanvas destructor writes the
+// closing tags.
+class SkiacSvgCanvas final : public SkNWayCanvas {
+ public:
+  SkiacSvgCanvas(int width,
+                 int height,
+                 std::unique_ptr<SkCanvas> svg,
+                 sk_sp<SkSurface> raster)
+      : SkNWayCanvas(width, height),
+        fSvg(std::move(svg)),
+        fRaster(std::move(raster)) {
+    fLevels.emplace_back();
+    this->addCanvas(fSvg.get());
+    this->beginRecording();
+  }
+
+  ~SkiacSvgCanvas() override {
+    this->removeAll();
+    fSvg.reset();
+  }
+
+  // Draws the pending recording into the raster surface. A layer cannot be
+  // split across two recordings, so this waits for its restore; reads never
+  // happen inside a layer.
+  void flush() {
+    if (!fPendingDraws || fLayers > 0) {
+      return;
+    }
+    auto picture = fRecorder.finishRecordingAsPicture();
+    auto canvas = fRaster->getCanvas();
+    const auto count = canvas->save();
+    picture->playback(canvas);
+    canvas->restoreToCount(count);
+    this->beginRecording();
+  }
+
+ protected:
+  void willSave() override {
+    fLevels.back().matrix = this->getLocalToDevice();
+    fLevels.emplace_back();
+    INHERITED::willSave();
+  }
+
+  SaveLayerStrategy getSaveLayerStrategy(const SaveLayerRec& rec) override {
+    fLevels.back().matrix = this->getLocalToDevice();
+    fLevels.emplace_back().layer = true;
+    fLayers++;
+    return INHERITED::getSaveLayerStrategy(rec);
+  }
+
+  void willRestore() override {
+    if (fLevels.back().layer) {
+      fLayers--;
+    }
+    fLevels.pop_back();
+    INHERITED::willRestore();
+  }
+
+  void didRestore() override { this->flushIfOverLimit(); }
+
+  void onClipRect(const SkRect& rect,
+                  SkClipOp op,
+                  ClipEdgeStyle edge) override {
+    auto& clip = this->addClip(edge);
+    clip.rect = rect;
+    clip.op = op;
+    INHERITED::onClipRect(rect, op, edge);
+  }
+
+  void onClipRRect(const SkRRect& rrect,
+                   SkClipOp op,
+                   ClipEdgeStyle edge) override {
+    auto& clip = this->addClip(edge);
+    clip.kind = Clip::Kind::kRRect;
+    clip.rrect = rrect;
+    clip.op = op;
+    INHERITED::onClipRRect(rrect, op, edge);
+  }
+
+  void onClipPath(const SkPath& path,
+                  SkClipOp op,
+                  ClipEdgeStyle edge) override {
+    auto& clip = this->addClip(edge);
+    clip.kind = Clip::Kind::kPath;
+    clip.path = path;
+    clip.op = op;
+    INHERITED::onClipPath(path, op, edge);
+  }
+
+  void onClipShader(sk_sp<SkShader> shader, SkClipOp op) override {
+    auto& clip = this->addClip(kHard_ClipEdgeStyle);
+    clip.kind = Clip::Kind::kShader;
+    clip.shader = shader;
+    clip.op = op;
+    INHERITED::onClipShader(std::move(shader), op);
+  }
+
+  void onClipRegion(const SkRegion& region, SkClipOp op) override {
+    auto& clip = this->addClip(kHard_ClipEdgeStyle);
+    clip.kind = Clip::Kind::kRegion;
+    clip.region = region;
+    clip.op = op;
+    INHERITED::onClipRegion(region, op);
+  }
+
+  void onDrawPaint(const SkPaint& paint) override {
+    INHERITED::onDrawPaint(paint);
+    this->didDraw(0);
+  }
+
+  void onDrawPoints(PointMode mode,
+                    size_t count,
+                    const SkPoint pts[],
+                    const SkPaint& paint) override {
+    INHERITED::onDrawPoints(mode, count, pts, paint);
+    this->didDraw(count * sizeof(SkPoint));
+  }
+
+  void onDrawRect(const SkRect& rect, const SkPaint& paint) override {
+    INHERITED::onDrawRect(rect, paint);
+    this->didDraw(0);
+  }
+
+  void onDrawOval(const SkRect& rect, const SkPaint& paint) override {
+    INHERITED::onDrawOval(rect, paint);
+    this->didDraw(0);
+  }
+
+  void onDrawRRect(const SkRRect& rrect, const SkPaint& paint) override {
+    INHERITED::onDrawRRect(rrect, paint);
+    this->didDraw(0);
+  }
+
+  void onDrawPath(const SkPath& path, const SkPaint& paint) override {
+    INHERITED::onDrawPath(path, paint);
+    this->didDraw(path.approximateBytesUsed());
+  }
+
+  void onDrawTextBlob(const SkTextBlob* blob,
+                      SkScalar x,
+                      SkScalar y,
+                      const SkPaint& paint) override {
+    INHERITED::onDrawTextBlob(blob, x, y, paint);
+    this->didDraw(0);
+  }
+
+  void onDrawPicture(const SkPicture* picture,
+                     const SkMatrix* matrix,
+                     const SkPaint* paint) override {
+    INHERITED::onDrawPicture(picture, matrix, paint);
+    this->didDraw(picture->approximateBytesUsed());
+  }
+
+  void onDrawRegion(const SkRegion& region, const SkPaint& paint) override {
+    INHERITED::onDrawRegion(region, paint);
+    this->didDraw(0);
+  }
+
+  void onDrawArc(const SkRect& rect,
+                 SkScalar start,
+                 SkScalar sweep,
+                 bool use_center,
+                 const SkPaint& paint) override {
+    INHERITED::onDrawArc(rect, start, sweep, use_center, paint);
+    this->didDraw(0);
+  }
+
+  void onDrawDRRect(const SkRRect& outer,
+                    const SkRRect& inner,
+                    const SkPaint& paint) override {
+    INHERITED::onDrawDRRect(outer, inner, paint);
+    this->didDraw(0);
+  }
+
+  void onDrawBehind(const SkPaint& paint) override {
+    INHERITED::onDrawBehind(paint);
+    this->didDraw(0);
+  }
+
+  void onDrawImage2(const SkImage* image,
+                    SkScalar left,
+                    SkScalar top,
+                    const SkSamplingOptions& sampling,
+                    const SkPaint* paint) override {
+    INHERITED::onDrawImage2(image, left, top, sampling, paint);
+    this->didDraw(this->imageBytes(image));
+  }
+
+  void onDrawImageRect2(const SkImage* image,
+                        const SkRect& src,
+                        const SkRect& dst,
+                        const SkSamplingOptions& sampling,
+                        const SkPaint* paint,
+                        SrcRectConstraint constraint) override {
+    INHERITED::onDrawImageRect2(image, src, dst, sampling, paint, constraint);
+    this->didDraw(this->imageBytes(image));
+  }
+
+  void onDrawImageLattice2(const SkImage* image,
+                           const Lattice& lattice,
+                           const SkRect& dst,
+                           SkFilterMode filter,
+                           const SkPaint* paint) override {
+    INHERITED::onDrawImageLattice2(image, lattice, dst, filter, paint);
+    this->didDraw(this->imageBytes(image));
+  }
+
+  void onDrawAtlas2(const SkImage* image,
+                    const SkRSXform xform[],
+                    const SkRect tex[],
+                    const SkColor colors[],
+                    int count,
+                    SkBlendMode mode,
+                    const SkSamplingOptions& sampling,
+                    const SkRect* cull,
+                    const SkPaint* paint) override {
+    INHERITED::onDrawAtlas2(image, xform, tex, colors, count, mode, sampling,
+                            cull, paint);
+    this->didDraw(this->imageBytes(image));
+  }
+
+  void onDrawEdgeAAImageSet2(const ImageSetEntry set[],
+                             int count,
+                             const SkPoint clips[],
+                             const SkMatrix matrices[],
+                             const SkSamplingOptions& sampling,
+                             const SkPaint* paint,
+                             SrcRectConstraint constraint) override {
+    INHERITED::onDrawEdgeAAImageSet2(set, count, clips, matrices, sampling,
+                                     paint, constraint);
+    size_t bytes = 0;
+    for (int i = 0; i < count; i++) {
+      bytes += this->imageBytes(set[i].fImage.get());
+    }
+    this->didDraw(bytes);
+  }
+
+  void onDrawGlyphRunList(const sktext::GlyphRunList& list,
+                          const SkPaint& paint) override {
+    INHERITED::onDrawGlyphRunList(list, paint);
+    this->didDraw(0);
+  }
+
+  void onDrawSlug(const sktext::gpu::Slug* slug,
+                  const SkPaint& paint) override {
+    INHERITED::onDrawSlug(slug, paint);
+    this->didDraw(0);
+  }
+
+  void onDrawPatch(const SkPoint cubics[12],
+                   const SkColor colors[4],
+                   const SkPoint tex[4],
+                   SkBlendMode mode,
+                   const SkPaint& paint) override {
+    INHERITED::onDrawPatch(cubics, colors, tex, mode, paint);
+    this->didDraw(0);
+  }
+
+  void onDrawVerticesObject(const SkVertices* vertices,
+                            SkBlendMode mode,
+                            const SkPaint& paint) override {
+    INHERITED::onDrawVerticesObject(vertices, mode, paint);
+    this->didDraw(vertices->approximateSize());
+  }
+
+  void onDrawMesh(const SkMesh& mesh,
+                  sk_sp<SkBlender> blender,
+                  const SkPaint& paint) override {
+    INHERITED::onDrawMesh(mesh, std::move(blender), paint);
+    this->didDraw(0);
+  }
+
+  void onDrawShadowRec(const SkPath& path,
+                       const SkDrawShadowRec& rec) override {
+    INHERITED::onDrawShadowRec(path, rec);
+    this->didDraw(path.approximateBytesUsed());
+  }
+
+  void onDrawDrawable(SkDrawable* drawable, const SkMatrix* matrix) override {
+    INHERITED::onDrawDrawable(drawable, matrix);
+    this->didDraw(drawable->approximateBytesUsed());
+  }
+
+  void onDrawEdgeAAQuad(const SkRect& rect,
+                        const SkPoint clip[4],
+                        QuadAAFlags aa,
+                        const SkColor4f& color,
+                        SkBlendMode mode) override {
+    INHERITED::onDrawEdgeAAQuad(rect, clip, aa, color, mode);
+    this->didDraw(0);
+  }
+
+ private:
+  using INHERITED = SkNWayCanvas;
+
+  // Recorded-byte cap after which the recording is drawn into the raster
+  // surface: MAX_RECORDED_BYTES and BYTES_PER_RECORDED_OP in
+  // src/page_recorder.rs.
+  static constexpr size_t kMaxRecordedBytes = 32 * 1024 * 1024;
+  static constexpr size_t kBytesPerRecordedOp = 256;
+
+  struct Clip {
+    enum class Kind { kRect, kRRect, kPath, kShader, kRegion };
+    Kind kind = Kind::kRect;
+    SkM44 matrix;
+    SkRect rect;
+    SkRRect rrect;
+    SkPath path;
+    sk_sp<SkShader> shader;
+    SkRegion region;
+    SkClipOp op = SkClipOp::kIntersect;
+    bool aa = false;
+  };
+
+  // One save level: its clips, each with the matrix it was made under, and the
+  // matrix a restore to this level gives back.
+  struct Level {
+    std::vector<Clip> clips;
+    SkM44 matrix;
+    bool layer = false;
+  };
+
+  Clip& addClip(ClipEdgeStyle edge) {
+    auto& clip = fLevels.back().clips.emplace_back();
+    clip.matrix = this->getLocalToDevice();
+    clip.aa = edge == kSoft_ClipEdgeStyle;
+    return clip;
+  }
+
+  // Starts a recording in the current state: every level's clips under the
+  // matrices they were made with, and the matrix each restore gives back.
+  void beginRecording() {
+    if (fRecording) {
+      this->removeCanvas(fRecording);
+    }
+    const auto size = this->getBaseLayerSize();
+    fRecording = fRecorder.beginRecording(SkRect::Make(size));
+    for (size_t i = 0; i < fLevels.size(); i++) {
+      for (const auto& clip : fLevels[i].clips) {
+        fRecording->setMatrix(clip.matrix);
+        switch (clip.kind) {
+          case Clip::Kind::kRect:
+            fRecording->clipRect(clip.rect, clip.op, clip.aa);
+            break;
+          case Clip::Kind::kRRect:
+            fRecording->clipRRect(clip.rrect, clip.op, clip.aa);
+            break;
+          case Clip::Kind::kPath:
+            fRecording->clipPath(clip.path, clip.op, clip.aa);
+            break;
+          case Clip::Kind::kShader:
+            fRecording->clipShader(clip.shader, clip.op);
+            break;
+          case Clip::Kind::kRegion:
+            fRecording->clipRegion(clip.region, clip.op);
+            break;
+        }
+      }
+      if (i + 1 < fLevels.size()) {
+        fRecording->setMatrix(fLevels[i].matrix);
+        fRecording->save();
+      }
+    }
+    fRecording->setMatrix(this->getLocalToDevice());
+    this->addCanvas(fRecording);
+    fPendingDraws = false;
+    fPendingBytes = 0;
+    fRecordedImages.clear();
+  }
+
+  // Bytes of an image the recording pins, once per image per recording.
+  size_t imageBytes(const SkImage* image) {
+    if (!image || !fRecordedImages.insert(image->uniqueID()).second) {
+      return 0;
+    }
+    return image->imageInfo().computeMinByteSize();
+  }
+
+  void didDraw(size_t bytes) {
+    fPendingDraws = true;
+    fPendingBytes += kBytesPerRecordedOp + bytes;
+    this->flushIfOverLimit();
+  }
+
+  void flushIfOverLimit() {
+    if (fPendingBytes >= kMaxRecordedBytes) {
+      this->flush();
+    }
+  }
+
+  std::unique_ptr<SkCanvas> fSvg;
+  sk_sp<SkSurface> fRaster;
+  SkPictureRecorder fRecorder;
+  SkCanvas* fRecording = nullptr;
+  std::vector<Level> fLevels;
+  int fLayers = 0;
+  bool fPendingDraws = false;
+  size_t fPendingBytes = 0;
+  std::unordered_set<uint32_t> fRecordedImages;
+};
+
 void skiac_surface_create_svg(skiac_svg_surface* c_surface,
                               int w,
                               int h,
@@ -178,7 +587,14 @@ void skiac_surface_create_svg(skiac_svg_surface* c_surface,
   }
   c_surface->stream = reinterpret_cast<skiac_w_memory_stream*>(w_stream);
   c_surface->surface = reinterpret_cast<skiac_surface*>(surface);
-  c_surface->canvas = reinterpret_cast<skiac_canvas*>(canvas.release());
+  c_surface->canvas = reinterpret_cast<skiac_canvas*>(
+      new SkiacSvgCanvas(w, h, std::move(canvas), sk_ref_sp(surface)));
+}
+
+// Draws what an SVGCanvas context recorded into its raster surface, before the
+// surface is read. `c_canvas` is the canvas skiac_surface_create_svg made.
+void skiac_svg_canvas_flush(skiac_canvas* c_canvas) {
+  static_cast<SkiacSvgCanvas*>(CANVAS_CAST)->flush();
 }
 
 skiac_surface* skiac_surface_create_rgba_premultiplied(int width,

@@ -425,6 +425,8 @@ pub mod ffi {
       cs: u8,
     );
 
+    pub fn skiac_svg_canvas_flush(canvas: *mut skiac_canvas);
+
     pub fn skiac_surface_create_rgba(width: i32, height: i32, cs: u8) -> *mut skiac_surface;
 
     pub fn skiac_surface_ref(surface: *mut skiac_surface);
@@ -2143,6 +2145,15 @@ impl Surface {
     }
   }
 
+  /// On an SVG surface, draw what its canvas recorded into the raster surface
+  /// beside it (skiac_svg_canvas_flush), so the raster holds what the SVG
+  /// shows. Every read of an SVG surface's pixels comes after this.
+  pub(crate) fn flush_svg(&mut self) {
+    if self.is_svg && !self.canvas.0.is_null() {
+      unsafe { ffi::skiac_svg_canvas_flush(self.canvas.0) };
+    }
+  }
+
   // Create a Surface from a borrowed canvas (e.g., from PDFDocument)
   // The canvas is not owned by this Surface and won't be freed
   pub(crate) fn from_borrowed_canvas(canvas: Canvas) -> Surface {
@@ -2477,7 +2488,7 @@ impl std::ops::DerefMut for Surface {
 
 impl Drop for Surface {
   fn drop(&mut self) {
-    // For SVG surfaces, the canvas was independently allocated via SkSVGCanvas::Make().release()
+    // For SVG surfaces, the canvas is the SkiacSvgCanvas made by skiac_surface_create_svg
     // and is NOT owned by the SkSurface, so we must destroy it separately.
     if self.is_svg && !self.canvas.0.is_null() {
       unsafe {

@@ -571,10 +571,10 @@ export interface SKRSContext2D extends CanvasRenderingContext2D {
    * @param y The y-axis coordinate of the centre of the gradient.
    */
   createConicGradient(startAngle: number, x: number, y: number): CanvasGradient
-  drawImage(image: Image | Canvas, dx: number, dy: number): void
-  drawImage(image: Image | Canvas, dx: number, dy: number, dw: number, dh: number): void
+  drawImage(image: Image | Canvas | SvgCanvas, dx: number, dy: number): void
+  drawImage(image: Image | Canvas | SvgCanvas, dx: number, dy: number, dw: number, dh: number): void
   drawImage(
-    image: Image | Canvas,
+    image: Image | Canvas | SvgCanvas,
     sx: number,
     sy: number,
     sw: number,

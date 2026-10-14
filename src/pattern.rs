@@ -181,6 +181,8 @@ impl CanvasPattern {
         )
       }
       Either4::D(svg_canvas) => {
+        // Draw what the SVG canvas recorded into its raster surface.
+        svg_canvas.ctx.context.flush();
         // Clone the surface to capture its current state and prevent segfaults
         // when the original canvas is resized or destroyed
         let cloned_surface = svg_canvas

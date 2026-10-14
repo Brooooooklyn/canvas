@@ -1,9 +1,10 @@
+import { spawn } from 'node:child_process'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import ava, { TestFn } from 'ava'
 
-import { createCanvas, SvgCanvas, SvgExportFlag, GlobalFonts } from '../index'
+import { createCanvas, SvgCanvas, SvgExportFlag, GlobalFonts, SKRSContext2D } from '../index'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -270,3 +271,156 @@ for (const filter of ['blur(3px)', 'drop-shadow(5px 5px 3px black)', 'blur(2px) 
     t.is((svg.match(/<rect/g) ?? []).length, 0, `a spatial filter is unrepresentable here: ${svg}`)
   })
 }
+
+// An SvgCanvas is a canvas image source: drawImage, createPattern and its own
+// getImageData read what was drawn into it, as they read a canvas (HTML spec: a
+// canvas source uses its current bitmap). They used to read a raster surface
+// that nothing drew into, and returned transparent black.
+const RED = [255, 0, 0, 255]
+const BLUE = [0, 0, 255, 255]
+const CLEAR = [0, 0, 0, 0]
+
+const redBlueSvg = () => {
+  const svg = createCanvas(4, 4, SvgExportFlag.NoPrettyXML)
+  const ctx = svg.getContext('2d')
+  ctx.fillStyle = '#ff0000'
+  ctx.fillRect(0, 0, 2, 4)
+  ctx.fillStyle = '#0000ff'
+  ctx.fillRect(2, 0, 2, 4)
+  return svg
+}
+
+test('SvgCanvas content reaches drawImage, createPattern and getImageData', (t) => {
+  const svg = redBlueSvg()
+  const drawn = createCanvas(8, 4).getContext('2d')
+  drawn.drawImage(svg, 0, 0)
+  t.deepEqual([...drawn.getImageData(0, 0, 8, 1).data], [RED, RED, BLUE, BLUE, CLEAR, CLEAR, CLEAR, CLEAR].flat())
+  const patterned = createCanvas(8, 4).getContext('2d')
+  patterned.fillStyle = patterned.createPattern(svg, 'repeat')
+  patterned.fillRect(0, 0, 8, 4)
+  t.deepEqual([...patterned.getImageData(0, 0, 8, 1).data], [RED, RED, BLUE, BLUE, RED, RED, BLUE, BLUE].flat())
+  t.deepEqual([...svg.getContext('2d').getImageData(0, 0, 4, 1).data], [RED, RED, BLUE, BLUE].flat())
+})
+
+test('reading an SvgCanvas leaves its SVG output unchanged', (t) => {
+  const read = redBlueSvg()
+  read.getContext('2d').getImageData(0, 0, 4, 4)
+  createCanvas(4, 4).getContext('2d').drawImage(read, 0, 0)
+  read.getContext('2d').createPattern(read, 'repeat')
+  t.is(read.getContent().toString('utf8'), redBlueSvg().getContent().toString('utf8'))
+})
+
+// The pixels are drawn from a recording when they are read, and the recording
+// starts again in the current save, clip and transform state. Reads in the
+// middle of nested save()/clip()/transform state must not change what the
+// later drawing gives.
+const nestedDrawing = (ctx: SKRSContext2D, read: () => void) => {
+  ctx.fillStyle = '#ffee00'
+  ctx.fillRect(0, 0, 64, 64)
+  for (let i = 0; i < 4; i++) {
+    ctx.save()
+    ctx.translate(3, 2)
+    ctx.rotate(0.1)
+    ctx.beginPath()
+    ctx.rect(0, 0, 50 - i * 8, 44 - i * 8)
+    ctx.clip()
+    ctx.fillStyle = `hsl(${i * 80}, 80%, 50%)`
+    ctx.fillRect(-10, -10, 80, 80)
+    read()
+  }
+  for (let i = 0; i < 4; i++) {
+    ctx.restore()
+    ctx.strokeStyle = `rgba(0, 0, 0, ${0.3 + i * 0.1})`
+    ctx.lineWidth = 3
+    ctx.strokeRect(4 + i * 6, 4 + i * 6, 30, 30)
+    read()
+  }
+}
+
+test('SvgCanvas pixels follow save, clip and transform across reads', (t) => {
+  const pixels = (read: boolean) => {
+    const svg = createCanvas(64, 64, SvgExportFlag.NoPrettyXML)
+    const ctx = svg.getContext('2d')
+    nestedDrawing(ctx, () => read && ctx.getImageData(0, 0, 1, 1))
+    return ctx.getImageData(0, 0, 64, 64).data
+  }
+  const read = pixels(true)
+  const unread = pixels(false)
+  t.true(
+    read.every((value, i) => value === unread[i]),
+    'reads in the middle change the pixels',
+  )
+  // The yellow background and the hsl(240) fill.
+  t.deepEqual(Array.from(read.subarray(0, 4)), [255, 238, 0, 255])
+  t.true(
+    read.some((value, i) => i % 4 === 2 && value > 200 && read[i - 2] < 100),
+    'the hsl(240) fill is there',
+  )
+})
+
+// The recording is drawn into the pixels once it pins 32 MiB, as a canvas
+// recording is (issue #1342), so an SvgCanvas that is never read cannot pin
+// every image drawn into it. Each 2048x2048 snapshot below is 16 MiB.
+test('SvgCanvas recording is bounded and keeps its state when it is drawn', async (t) => {
+  const { status, signal, stdout, stderr } = await new Promise<{
+    status: number | null
+    signal: NodeJS.Signals | null
+    stdout: string
+    stderr: string
+  }>((resolve, reject) => {
+    const child = spawn(
+      process.execPath,
+      [
+        '--expose-gc',
+        '-e',
+        `
+const { createCanvas, SvgExportFlag } = require('./index.js')
+const source = createCanvas(2048, 2048)
+const sourceContext = source.getContext('2d')
+const draw = (ctx, i) => {
+  sourceContext.fillStyle = 'rgb(' + i * 20 + ', 0, 255)'
+  sourceContext.fillRect(0, 0, 2048, 2048)
+  ctx.drawImage(source, 0, 0, 2048, 2048, i * 6, i * 3, 8, 8)
+}
+const svg = createCanvas(96, 64, SvgExportFlag.NoPrettyXML)
+const ctx = svg.getContext('2d')
+const expected = createCanvas(96, 64).getContext('2d')
+for (const c of [ctx, expected]) {
+  c.save()
+  c.translate(3, 1)
+  c.beginPath()
+  c.rect(0, 0, 60, 40)
+  c.clip()
+}
+global.gc()
+const before = process.memoryUsage().rss
+for (let i = 0; i < 12; i++) draw(ctx, i)
+global.gc()
+const growth = (process.memoryUsage().rss - before) / 1048576
+for (let i = 0; i < 12; i++) draw(expected, i)
+for (const c of [ctx, expected]) {
+  c.restore()
+  c.fillStyle = '#00ff00'
+  c.fillRect(60, 50, 30, 10)
+}
+const a = ctx.getImageData(0, 0, 96, 64).data
+const b = expected.getImageData(0, 0, 96, 64).data
+console.log(JSON.stringify({ growth, equal: a.every((v, i) => v === b[i]), clipped: b[(33 * 96 + 60) * 4 + 3] === 255 && b[(35 * 96 + 65) * 4 + 3] === 0 }))
+`,
+      ],
+      { cwd: join(__dirname, '..'), stdio: ['ignore', 'pipe', 'pipe'] },
+    )
+    let stdout = ''
+    let stderr = ''
+    child.stdout.setEncoding('utf8').on('data', (chunk) => (stdout += chunk))
+    child.stderr.setEncoding('utf8').on('data', (chunk) => (stderr += chunk))
+    child.on('error', reject)
+    child.on('close', (status, signal) => resolve({ status, signal, stdout, stderr }))
+  })
+  t.is(status, 0, `expected exit 0, got status=${status} signal=${signal}\n${stderr}${stdout}`)
+  const { growth, equal, clipped } = JSON.parse(stdout.trim().split('\n').pop()!)
+  t.true(clipped, 'the clip cuts the later images')
+  t.true(equal, 'the SvgCanvas pixels equal a canvas running the same drawing')
+  // Unbounded, the 12 snapshots pin 192 MiB.
+  t.true(growth < 96, `12 drawImage calls grew rss by ${growth.toFixed(1)} MB, expected < 96 MB`)
+})

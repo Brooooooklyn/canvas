@@ -220,8 +220,14 @@ impl Context {
     }
   }
 
-  /// Flush deferred rendering to surface (if deferred mode is enabled)
+  /// Draw the pending recording into the surface: the PageRecorder of a
+  /// raster canvas, or what an SVGCanvas recorded beside its SVG output. Every
+  /// read of the surface pixels comes after this.
   pub fn flush(&mut self) {
+    if self.backend == Backend::Svg {
+      self.surface.flush_svg();
+      return;
+    }
     if let Some(ref recorder) = self.page_recorder {
       let mut rec = recorder.borrow_mut();
       rec.playback_to(&mut self.surface.canvas);
@@ -1676,16 +1682,15 @@ impl Context {
     h: f32,
     color_type: ColorSpace,
   ) -> Option<Vec<u8>> {
-    if self.page_recorder.is_some() {
-      // Flush the deferred recording before reading pixels, as Blink's
-      // getImageData runs FinalizeFrame -> FlushCanvas ->
-      // ReleaseMainRecording (base_rendering_context_2d.cc). Without it the
-      // recording grows unbounded across getImageData calls
-      // (https://github.com/Brooooooklyn/canvas/issues/1342). flush() also
-      // consolidates the layers into a single snapshot picture, so a read
-      // leaves the recorder holding only an O(canvas_size) snapshot.
-      self.flush();
-    }
+    // Flush the deferred recording before reading pixels, as Blink's
+    // getImageData runs FinalizeFrame -> FlushCanvas ->
+    // ReleaseMainRecording (base_rendering_context_2d.cc). Without it the
+    // recording grows unbounded across getImageData calls
+    // (https://github.com/Brooooooklyn/canvas/issues/1342). flush() also
+    // consolidates the layers into a single snapshot picture, so a read
+    // leaves the recorder holding only an O(canvas_size) snapshot. An
+    // SVGCanvas draws its recording into its raster surface here.
+    self.flush();
 
     self
       .surface
@@ -3396,6 +3401,8 @@ impl CanvasRenderingContext2D {
         )
       }
       Either3::B(svg) => {
+        // The raster surface holds what the SVG shows only after a flush.
+        svg.ctx.context.flush();
         let bitmap = BitmapRef::Owned(svg.ctx.context.surface.get_bitmap());
         (
           bitmap,
@@ -4082,7 +4089,10 @@ impl CanvasRenderingContext2D {
         return Ok(());
       }
       // Direct mode (SVG/PDF): write to surface canvas with inverted transform
-      // snapshot=false: pixels are consumed immediately, no copy needed.
+      // snapshot=false: pixels are consumed immediately, no copy needed. The
+      // SVG canvas also records the draw for its raster surface, so it needs
+      // its own copy of the pixels.
+      let snapshot = self.context.backend == Backend::Svg;
       let inverted = self.context.surface.canvas.get_transform_matrix().invert();
       self.context.surface.canvas.save();
       if let Some(inverted) = inverted {
@@ -4099,7 +4109,7 @@ impl CanvasRenderingContext2D {
         dirty_width,
         dirty_height,
         image_data.color_space,
-        false,
+        snapshot,
       );
       self.context.surface.canvas.restore();
       self.context.note_direct_mutation();
