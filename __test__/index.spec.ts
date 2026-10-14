@@ -120,6 +120,42 @@ test('gif and avif output of a display-p3 canvas is converted to sRGB', async (t
   }
 })
 
+// AvifConfig.quality is libavif's 0-100 scale, where 100 is the best. Chrome
+// has no AVIF encoder, so this follows our own API doc.
+test('avif quality: a higher quality gives a bigger and more exact file', async (t) => {
+  const canvas = createCanvas(64, 64)
+  const ctx = canvas.getContext('2d')
+  const gradient = ctx.createLinearGradient(0, 0, 64, 64)
+  gradient.addColorStop(0, '#c86432')
+  gradient.addColorStop(0.5, '#2080df')
+  gradient.addColorStop(1, '#40c040')
+  ctx.fillStyle = gradient
+  ctx.fillRect(0, 0, 64, 64)
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(10, 20, 8, 24)
+  ctx.fillRect(30, 10, 24, 6)
+  const source = ctx.getImageData(0, 0, 64, 64).data
+  const maxError = async (data: Buffer) => {
+    const out = createCanvas(64, 64).getContext('2d')
+    out.drawImage(await loadImage(data), 0, 0)
+    return out.getImageData(0, 0, 64, 64).data.reduce((max, value, i) => Math.max(max, Math.abs(value - source[i])), 0)
+  }
+  const encoders: [string, (quality: number) => Buffer][] = [
+    ['toBuffer', (quality) => canvas.toBuffer('image/avif', { quality })],
+    ['encodeSync', (quality) => canvas.encodeSync('avif', { quality })],
+  ]
+  for (const [name, encode] of encoders) {
+    const low = encode(10)
+    const high = encode(90)
+    t.true(low.length < high.length, `${name}: ${low.length} < ${high.length} bytes`)
+    t.true((await maxError(high)) < (await maxError(low)), name)
+    // Above 100 is the best quality too (256 used to wrap to 0).
+    for (const quality of [100, 255, 256, 1000]) {
+      t.true((await maxError(encode(quality))) <= 1, `${name} ${quality}`)
+    }
+  }
+})
+
 // drawCanvas has no Chrome counterpart, so it is held to drawImage: a P3
 // gradient drawn into an sRGB canvas must give the same pixels either way.
 test('drawCanvas of a display-p3 source matches drawImage', (t) => {

@@ -81,10 +81,11 @@ impl From<AvifConfig> for Config {
   fn from(config: AvifConfig) -> Self {
     Config {
       // See also: https://github.com/kornelski/cavif-rs#usage
-      quality: config.quality.unwrap_or(80) as u8,
+      // Clamp before narrowing to u8, so 256 is the best quality, not 0.
+      quality: config.quality.unwrap_or(80).min(100) as u8,
       // Calculate alphaQuality, this is consistent with cavif.
       // https://github.com/kornelski/cavif-rs/blob/37847b95bb81d4cf90e36b7fab2c7fbbcf95abe2/src/main.rs#L97
-      alpha_quality: config.alpha_quality.unwrap_or(90) as u8,
+      alpha_quality: config.alpha_quality.unwrap_or(90).min(100) as u8,
       // Encoding speed between 1 (best, but slowest) and 10 (fastest, but a blurry mess), the default value is 4.
       // Speeds 1 and 2 are unbelievably slow, but make files ~3-5% smaller.
       // Speeds 7 and above degrade compression significantly, and are not recommended.
@@ -129,8 +130,10 @@ pub(crate) fn encode(
   let rgb = RgbPixels::new(width, height, avif_image).map_err(SkError::PixelsToRgb)?;
   let image = rgb.to_image(config.chroma_subsampling.into());
   let mut encoder = libavif::Encoder::new();
-  encoder.set_quality((63.0 * (1.0 - config.quality as f32 / 100.0)) as u8);
-  encoder.set_alpha_quality((63.0 * (1.0 - config.alpha_quality as f32 / 100.0)) as u8);
+  // libavif 1.x `quality` is already our 0-100 scale (AVIF_QUALITY_BEST is
+  // 100, avif.h); it is not the old 0-63 quantizer, where 0 was the best.
+  encoder.set_quality(config.quality);
+  encoder.set_alpha_quality(config.alpha_quality);
   encoder.set_speed(config.speed);
   encoder.set_max_threads(config.threads);
   encoder.encode(&image).map_err(SkError::EncodeAvifError)
