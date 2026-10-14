@@ -269,10 +269,10 @@ for (const paint of ['fill', 'stroke'] as const) {
 }
 
 // Image and pattern paints take globalAlpha rounded to k/255. Unrounded, 'high'
-// drawImage and a pattern at any smoothing quality drift to 76 / 178 for 0.3 /
-// 0.7, and cubic sampling can turn 0.5 into 127. Expected values are Chrome
-// 155's CPU canvas; where only the alpha is compared, Chrome's 8-bit path gives
-// a different RGB.
+// drawImage and a pattern (smoothing on or off) drift to 76 / 178 for 0.3 /
+// 0.7, and a scaled 'high' drawImage can turn 0.5 into 127. Expected values are
+// Chrome 155's CPU canvas; where only the alpha is compared, Chrome's 8-bit path
+// gives a different RGB.
 const alphaSet = (ctx: SKRSContext2D, x: number, y: number, w: number, h: number) => [
   ...new Set(ctx.getImageData(x, y, w, h).data.filter((_, i) => i % 4 === 3)),
 ]
