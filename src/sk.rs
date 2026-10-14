@@ -4534,8 +4534,9 @@ pub enum ImagePatternBacking {
 #[derive(Debug)]
 pub(crate) struct ImagePatternShared {
   pub(crate) transform: Transform,
-  // Cache the shader to avoid creating new ones on every use; cleared when
-  // the transform changes so the next `get_shader` rebuilds it.
+  // Cache the shader for the last sampling quality; rebuilt when the transform
+  // or the quality changes. Canvas-backed shaders share one snapshot image, so
+  // a rebuild copies no pixels.
   pub(crate) shader: Option<(FilterQuality, Shader)>,
 }
 
