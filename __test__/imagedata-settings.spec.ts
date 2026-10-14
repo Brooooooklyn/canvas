@@ -329,3 +329,82 @@ test('getImageData settings getters may use the same context', (t) => {
   )
   t.deepEqual([...read.data], [255, 0, 0, 255])
 })
+
+test('createImageData picks its overload from the real argument count', (t) => {
+  const ctx = createCanvas(2, 2).getContext('2d')
+  t.throws(() => loose(ctx).createImageData(), {
+    instanceOf: TypeError,
+    message: `${CREATE_IMAGE_DATA}1 argument required, but only 0 present.`,
+  })
+  // An explicit undefined is an argument: two or more select
+  // createImageData([EnforceRange] long sw, [EnforceRange] long sh, ...), and
+  // neither an ImageData nor undefined is a long. sw and sh are converted
+  // before the settings.
+  const source = new ImageData(2, 3)
+  let reads = 0
+  const settings = {
+    get colorSpace() {
+      reads++
+      return 'srgb'
+    },
+  }
+  for (const args of [
+    [source, undefined],
+    [source, undefined, undefined],
+    [source, undefined, settings],
+    [source, 5, settings],
+    [5, undefined],
+    [5, undefined, settings],
+    [undefined, 5],
+  ]) {
+    t.throws(() => loose(ctx).createImageData(...args), {
+      instanceOf: TypeError,
+      message: `${CREATE_IMAGE_DATA}Value is not of type 'long'.`,
+    })
+  }
+  t.is(reads, 0)
+  // One argument is createImageData(imagedata).
+  const copy = ctx.createImageData(source)
+  t.deepEqual([copy.width, copy.height], [2, 3])
+  t.throws(() => loose(ctx).createImageData(undefined), {
+    instanceOf: TypeError,
+    message: `${CREATE_IMAGE_DATA}parameter 1 is not of type 'ImageData'.`,
+  })
+  // Arguments after the settings are ignored.
+  t.is(loose(ctx).createImageData(2, 3, { colorSpace: 'display-p3' }, 'x').colorSpace, 'display-p3')
+  t.is(ctx.createImageData(2, 3, undefined).width, 2)
+})
+
+test('createImageData settings getters may use the same context', (t) => {
+  // The settings are converted before the call runs, as in Chrome.
+  const ctx = createCanvas(2, 2).getContext('2d')
+  const created = ctx.createImageData(
+    1,
+    1,
+    loose({
+      get colorSpace() {
+        ctx.fillRect(0, 0, 1, 1)
+        return 'display-p3'
+      },
+    }),
+  )
+  t.is(created.colorSpace, 'display-p3')
+  const fromAttributes = ctx.createImageData(
+    1,
+    1,
+    loose({
+      get colorSpace() {
+        return ctx.getContextAttributes().colorSpace
+      },
+    }),
+  )
+  t.is(fromAttributes.colorSpace, 'srgb')
+  // The non-standard data form too.
+  const withData = loose(ctx).createImageData(new Uint8ClampedArray(4), 1, 1, {
+    get colorSpace() {
+      ctx.fillRect(0, 0, 1, 1)
+      return 'display-p3'
+    },
+  })
+  t.is(withData.colorSpace, 'display-p3')
+})

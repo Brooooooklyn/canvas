@@ -119,7 +119,7 @@ fn is_exception_pending(env: sys::napi_env) -> bool {
   pending
 }
 
-fn type_of(env: sys::napi_env, value: sys::napi_value) -> Result<ValueType> {
+pub(crate) fn type_of(env: sys::napi_env, value: sys::napi_value) -> Result<ValueType> {
   let mut t = 0;
   check_status!(unsafe { sys::napi_typeof(env, value, &mut t) })?;
   Ok(ValueType::from(t))
@@ -520,5 +520,36 @@ pub struct PatternTransform(pub(crate) [f64; 6]);
 impl FromNapiValue for PatternTransform {
   unsafe fn from_napi_value(env: sys::napi_env, value: sys::napi_value) -> Result<Self> {
     dom_matrix_2d_init(env, Some(value), PATTERN_SET_TRANSFORM).map(Self)
+  }
+}
+
+/// A JS `arguments` object. index.js passes it for the methods whose overload
+/// depends on the real argument count: napi pads missing arguments with
+/// undefined, so `f(x)` and `f(x, undefined)` look the same to native code.
+pub(crate) struct Arguments {
+  env: sys::napi_env,
+  value: sys::napi_value,
+  len: u32,
+}
+
+impl Arguments {
+  pub(crate) fn new(env: sys::napi_env, value: sys::napi_value) -> Result<Self> {
+    let mut length = ptr::null_mut();
+    check_status!(unsafe {
+      sys::napi_get_named_property(env, value, c"length".as_ptr(), &mut length)
+    })?;
+    let len = unsafe { u32::from_napi_value(env, length)? };
+    Ok(Self { env, value, len })
+  }
+
+  pub(crate) fn len(&self) -> u32 {
+    self.len
+  }
+
+  /// Argument `index`; undefined past the end.
+  pub(crate) fn get(&self, index: u32) -> Result<sys::napi_value> {
+    let mut value = ptr::null_mut();
+    check_status!(unsafe { sys::napi_get_element(self.env, self.value, index, &mut value) })?;
+    Ok(value)
   }
 }

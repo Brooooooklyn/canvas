@@ -101,6 +101,16 @@ CanvasRenderingContext2D.prototype.getTransform = function getTransform() {
   return new DOMMatrix([a, b, c, d, e, f])
 }
 
+// createImageData(): WebIDL picks the overload from the argument count, and an
+// explicit undefined counts: createImageData(imagedata, undefined) is the
+// (sw, sh) form. napi pads missing arguments with undefined, so the native
+// method takes the arguments object itself.
+const _createImageData = CanvasRenderingContext2D.prototype.createImageData
+
+CanvasRenderingContext2D.prototype.createImageData = function createImageData() {
+  return _createImageData.call(this, arguments)
+}
+
 // createPattern(image, repetitionType): as in Chrome, both arguments are
 // required and the repetition is a [LegacyNullToEmptyString] DOMString
 // (canvas_2d_recorder_context.idl), so null is '' and undefined is 'undefined'.
