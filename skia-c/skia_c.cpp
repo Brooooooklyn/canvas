@@ -1,6 +1,7 @@
 #include <assert.h>
 #include <math.h>
 #include <algorithm>
+#include <cstddef>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -1656,8 +1657,47 @@ void skiac_path_effect_destroy(skiac_path_effect* c_path_effect) {
 
 // Shader
 
+// sk::Color4f (src/sk.rs), skiac_color4f and SkColor4f all hold r, g, b, a as
+// four floats. The stops are copied field by field, so nothing reads Rust
+// memory as an SkColor4f; the asserts keep the three layouts in step.
+static_assert(sizeof(skiac_color4f) == 16 && alignof(skiac_color4f) == 4,
+              "skiac_color4f must match sk::Color4f in src/sk.rs");
+static_assert(offsetof(skiac_color4f, r) == 0 &&
+                  offsetof(skiac_color4f, g) == 4 &&
+                  offsetof(skiac_color4f, b) == 8 &&
+                  offsetof(skiac_color4f, a) == 12,
+              "skiac_color4f must match sk::Color4f in src/sk.rs");
+static_assert(sizeof(skiac_color4f) == sizeof(SkColor4f) &&
+                  alignof(skiac_color4f) == alignof(SkColor4f),
+              "skiac_color4f must have the size and alignment of SkColor4f");
+static_assert(offsetof(skiac_color4f, r) == offsetof(SkColor4f, fR) &&
+                  offsetof(skiac_color4f, g) == offsetof(SkColor4f, fG) &&
+                  offsetof(skiac_color4f, b) == offsetof(SkColor4f, fB) &&
+                  offsetof(skiac_color4f, a) == offsetof(SkColor4f, fA),
+              "skiac_color4f must have the channel order of SkColor4f");
+
+// `count` unpremultiplied sRGB gradient stop colors.
+static std::vector<SkColor4f> gradient_stop_colors(const skiac_color4f* colors,
+                                                   int count) {
+  std::vector<SkColor4f> colors4f(count);
+  for (int i = 0; i < count; i++) {
+    colors4f[i] = {colors[i].r, colors[i].g, colors[i].b, colors[i].a};
+  }
+  return colors4f;
+}
+
+// Canvas gradient stops are legacy sRGB colors, and Blink interpolates them in
+// sRGB whatever the canvas color space (gradient.cc:305-315 picks kSRGB,
+// :248-250 maps it to SkGradient's kSRGB). kDestination would mix them in
+// display-p3 on a P3 canvas.
+static SkGradient::Interpolation legacy_stop_interpolation(uint32_t flags) {
+  auto interpolation = SkGradient::Interpolation::FromFlags(flags);
+  interpolation.fColorSpace = SkGradient::Interpolation::ColorSpace::kSRGB;
+  return interpolation;
+}
+
 skiac_shader* skiac_shader_make_linear_gradient(const skiac_point* c_points,
-                                                const uint32_t* colors,
+                                                const skiac_color4f* colors,
                                                 const float* positions,
                                                 int count,
                                                 int tile_mode,
@@ -1666,15 +1706,12 @@ skiac_shader* skiac_shader_make_linear_gradient(const skiac_point* c_points,
   const auto points = reinterpret_cast<const SkPoint*>(c_points);
   const auto skia_tile_mode = (SkTileMode)tile_mode;
   const auto ts = conv_from_transform(c_ts);
-  std::vector<SkColor4f> colors4f(count);
-  for (int i = 0; i < count; i++) {
-    colors4f[i] = SkColor4f::FromColor(colors[i]);
-  }
+  const auto colors4f = gradient_stop_colors(colors, count);
   SkSpan<const float> posSpan =
       positions ? SkSpan<const float>(positions, count) : SkSpan<const float>();
   SkGradient::Colors gradColors(SkSpan<const SkColor4f>(colors4f.data(), count),
                                 posSpan, skia_tile_mode);
-  SkGradient grad(gradColors, SkGradient::Interpolation::FromFlags(flags));
+  SkGradient grad(gradColors, legacy_stop_interpolation(flags));
   auto shader = SkShaders::LinearGradient(points, grad, &ts).release();
 
   if (shader) {
@@ -1688,7 +1725,7 @@ skiac_shader* skiac_shader_make_radial_gradient(skiac_point c_start_point,
                                                 float start_radius,
                                                 skiac_point c_end_point,
                                                 float end_radius,
-                                                const uint32_t* colors,
+                                                const skiac_color4f* colors,
                                                 const float* positions,
                                                 int count,
                                                 int tile_mode,
@@ -1696,15 +1733,12 @@ skiac_shader* skiac_shader_make_radial_gradient(skiac_point c_start_point,
                                                 skiac_transform c_ts) {
   const SkPoint startPoint = {c_start_point.x, c_start_point.y};
   const SkPoint endPoint = {c_end_point.x, c_end_point.y};
-  std::vector<SkColor4f> colors4f(count);
-  for (int i = 0; i < count; i++) {
-    colors4f[i] = SkColor4f::FromColor(colors[i]);
-  }
+  const auto colors4f = gradient_stop_colors(colors, count);
   SkSpan<const float> posSpan =
       positions ? SkSpan<const float>(positions, count) : SkSpan<const float>();
   SkGradient::Colors gradColors(SkSpan<const SkColor4f>(colors4f.data(), count),
                                 posSpan, (SkTileMode)tile_mode);
-  SkGradient grad(gradColors, SkGradient::Interpolation::FromFlags(flags));
+  SkGradient grad(gradColors, legacy_stop_interpolation(flags));
   auto shader =
       SkShaders::TwoPointConicalGradient(startPoint, start_radius, endPoint,
                                          end_radius, grad, nullptr)
@@ -1719,27 +1753,29 @@ skiac_shader* skiac_shader_make_radial_gradient(skiac_point c_start_point,
 
 skiac_shader* skiac_shader_make_conic_gradient(SkScalar cx,
                                                SkScalar cy,
-                                               SkScalar radius,
-                                               const uint32_t* colors,
+                                               SkScalar rotation,
+                                               const skiac_color4f* colors,
                                                const float* positions,
                                                int count,
                                                int tile_mode,
                                                uint32_t flags,
                                                skiac_transform c_ts) {
   auto ts = conv_from_transform(c_ts);
-  // Skia's sweep gradient angles are relative to the x-axis, not the y-axis.
-  ts.preRotate(radius - 90.0, cx, cy);
-  std::vector<SkColor4f> colors4f(count);
-  for (int i = 0; i < count; i++) {
-    colors4f[i] = SkColor4f::FromColor(colors[i]);
+  // Blink ConicGradient::CreateShader (gradient.cc:509-522): Skia's sweep
+  // gradient angles are relative to the x-axis, not the y-axis, and the sweep
+  // always runs from 0 to 360 degrees.
+  const float skia_rotation = rotation - 90;
+  if (skia_rotation) {
+    ts.preRotate(skia_rotation, cx, cy);
   }
+  const auto colors4f = gradient_stop_colors(colors, count);
   SkSpan<const float> posSpan =
       positions ? SkSpan<const float>(positions, count) : SkSpan<const float>();
   SkGradient::Colors gradColors(SkSpan<const SkColor4f>(colors4f.data(), count),
                                 posSpan, (SkTileMode)tile_mode);
-  SkGradient grad(gradColors, SkGradient::Interpolation::FromFlags(flags));
+  SkGradient grad(gradColors, legacy_stop_interpolation(flags));
   auto shader =
-      SkShaders::SweepGradient({cx, cy}, radius, 360.0f, grad, &ts).release();
+      SkShaders::SweepGradient({cx, cy}, 0.0f, 360.0f, grad, &ts).release();
 
   if (shader) {
     return reinterpret_cast<skiac_shader*>(shader);

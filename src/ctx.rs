@@ -6,7 +6,7 @@ use std::str::FromStr;
 use std::sync::LazyLock;
 
 use cssparser::Parser;
-use cssparser_color::{Color as CSSColor, hsl_to_rgb};
+use cssparser_color::Color as CSSColor;
 use libavif::AvifData;
 use napi::{JsString, bindgen_prelude::*};
 use regex::Regex;
@@ -29,7 +29,7 @@ use crate::{
   gradient::{CanvasGradient, Gradient},
   image::*,
   path::Path,
-  pattern::{CanvasPattern, Pattern},
+  pattern::{CanvasPattern, Pattern, hsl_to_rgba8, srgb_channel_to_u8},
   sk::{
     AlphaType, Bitmap, BlendMode, ColorSpace, FillType, FilterQuality, FontVariantCaps,
     ImageFilter, LineMetrics, MaskFilter, Matrix, Paint, PaintStyle, Path as SkPath, PathEffect,
@@ -383,6 +383,16 @@ impl Context {
       Pattern::Gradient(gradient) => self.account_raster_bytes(gradient.estimated_bytes()),
       Pattern::Color(..) => {}
     };
+    // Fresh per draw (the dash list compiles into a fresh SkPathEffect):
+    // per-draw charge in the propagated tally, no dedup.
+    self.account_raster_bytes(self.state.line_dash_list.len() * 4);
+    self.account_image_paint_resources();
+  }
+
+  /// The part of `account_paint_resources` an image draw retains. Its paint
+  /// (`image_paint`) carries no fillStyle and no dash, only the `ctx.filter`
+  /// chain and the shadow.
+  fn account_image_paint_resources(&self) {
     // The ctx.filter chain is ONE refcounted ImageFilter stored on the state;
     // every recorded paint carries a shared ref to the same DAG, so charge it
     // once per window under its minted id. Generation 0: the chain object is
@@ -405,10 +415,9 @@ impl Context {
     } else {
       0
     };
-    // Fresh per draw (shadow_paint builds a fresh DropShadowOnly graph, the
-    // dash list compiles into a fresh SkPathEffect): per-draw charge in the
-    // propagated tally, no dedup.
-    self.account_raster_bytes(shadow_bytes + self.state.line_dash_list.len() * 4);
+    // Fresh per draw (shadow_paint builds a fresh DropShadowOnly graph):
+    // per-draw charge in the propagated tally, no dedup.
+    self.account_raster_bytes(shadow_bytes);
   }
 
   /// Execute a canvas state operation on the appropriate canvas (recording or direct)
@@ -1459,6 +1468,52 @@ impl Context {
     (self.state.global_alpha as f32 * 255.0).round() / 255.0
   }
 
+  /// The paint drawImage and drawCanvas draw with: Blink's `image_flags_`
+  /// (canvas_rendering_context_2d_state.cc:170-171 fill style and AA, :335
+  /// alpha, :832 picked for image draws). It never reads fillStyle or the line
+  /// dash, so an unusable fillStyle (a gradient Skia cannot build) cannot stop
+  /// an image draw. Opaque black like a default cc::PaintFlags; the blend mode
+  /// comes from the state paint, and smoothing, `ctx.filter` and the shadow
+  /// are added by the callers.
+  fn image_paint(&self, alpha: f32) -> Paint {
+    let mut paint = self.state.paint.clone();
+    paint.set_style(PaintStyle::Fill);
+    paint.set_color(0, 0, 0, 255);
+    paint.set_alpha_f32(alpha);
+    paint
+  }
+
+  /// The shader half of a gradient fillStyle/strokeStyle paint. Blink always
+  /// dithers gradients (gradient.cc ApplyToFlags).
+  fn set_gradient_paint(
+    &self,
+    paint: &mut Paint,
+    gradient: &Gradient,
+    alpha: f32,
+  ) -> result::Result<(), SkError> {
+    // SVG only: SkSVGDevice has no conic gradient and drops the alpha of a
+    // color shader, so a gradient that paints one color everywhere goes out as
+    // a plain paint color.
+    if self.backend == Backend::Svg
+      && let Some(c) = gradient.constant_color()
+    {
+      paint.set_color(
+        srgb_channel_to_u8(c.r),
+        srgb_channel_to_u8(c.g),
+        srgb_channel_to_u8(c.b),
+        255,
+      );
+      paint.set_alpha_f32(c.a * alpha);
+      return Ok(());
+    }
+    let shader = gradient.get_shader()?;
+    paint.set_color(0, 0, 0, 255);
+    paint.set_alpha_f32(alpha);
+    paint.set_shader(&shader);
+    paint.set_dither(true);
+    Ok(())
+  }
+
   pub fn fill_paint(&self) -> result::Result<Paint, SkError> {
     let last_state = &self.state;
     let current_paint = &last_state.paint;
@@ -1470,14 +1525,7 @@ impl Context {
         paint.set_color(c.r, c.g, c.b, c.a);
         paint.set_alpha_f32(c.a as f32 / 255.0 * alpha);
       }
-      Pattern::Gradient(g) => {
-        let current_transform = &last_state.transform;
-        let shader = g.get_shader(current_transform.get_transform())?;
-        paint.set_color(0, 0, 0, 255);
-        paint.set_alpha_f32(alpha);
-        paint.set_shader(&shader);
-        paint.set_dither(true);
-      }
+      Pattern::Gradient(g) => self.set_gradient_paint(&mut paint, g, alpha)?,
       Pattern::Image(p) => {
         if let Some(shader) = p.get_shader(if last_state.image_smoothing_enabled {
           last_state.image_smoothing_quality
@@ -1603,21 +1651,9 @@ impl Context {
         };
       }
       CSSColor::Hsl(hsl) => {
-        let h = hsl.hue.unwrap_or(0.0) / 360.0;
-        let s = hsl.saturation.unwrap_or(0.0);
-        let l = hsl.lightness.unwrap_or(0.0);
-        let a = hsl.alpha.unwrap_or(1.0);
-
-        let (r, g, b) = hsl_to_rgb(h, s, l);
-
         drop(parser);
         self.state.shadow_color_string = shadow_color;
-        self.state.shadow_color = RGBA {
-          r: (r * 255.0) as u8,
-          g: (g * 255.0) as u8,
-          b: (b * 255.0) as u8,
-          a: (a * 255.0).round() as u8,
-        };
+        self.state.shadow_color = hsl_to_rgba8(&hsl);
       }
       _ => {
         return Err(SkError::Generic("Unsupported color format".to_owned()));
@@ -1708,14 +1744,7 @@ impl Context {
         paint.set_color(c.r, c.g, c.b, c.a);
         paint.set_alpha_f32(c.a as f32 / 255.0 * global_alpha);
       }
-      Pattern::Gradient(g) => {
-        let current_transform = &last_state.transform;
-        let shader = g.get_shader(current_transform.get_transform())?;
-        paint.set_color(0, 0, 0, 255);
-        paint.set_alpha_f32(global_alpha);
-        paint.set_shader(&shader);
-        paint.set_dither(true);
-      }
+      Pattern::Gradient(g) => self.set_gradient_paint(&mut paint, g, global_alpha)?,
       Pattern::Image(p) => {
         if let Some(shader) = p.get_shader(if last_state.image_smoothing_enabled {
           last_state.image_smoothing_quality
@@ -2091,14 +2120,8 @@ impl Context {
       return Ok(());
     }
 
-    let mut paint: Paint = self.fill_paint()?;
-    // drawImage does not use fillStyle. In Blink only the fill and stroke
-    // flags get ApplyToFlags (canvas_rendering_context_2d_state.cc:332-333),
-    // which sets a gradient's dither (gradient.cc:364); images are drawn with
-    // image_flags_ (:832). So drop the gradient arm's flag here.
-    paint.set_dither(false);
-    self.account_paint_resources(&self.state.fill_style);
-    paint.set_alpha_f32(self.image_global_alpha());
+    let paint = self.image_paint(self.image_global_alpha());
+    self.account_image_paint_resources();
 
     // Extract state for shadow rendering to avoid borrow conflicts
     let shadow_paint = self.shadow_paint(&paint, ShadowSource::Image, DrawContent::Geometry);
@@ -2242,12 +2265,8 @@ impl Context {
       return Ok(());
     }
 
-    let mut paint: Paint = self.fill_paint()?;
-    // As in draw_image: an image draw never takes the gradient fillStyle's
-    // dither.
-    paint.set_dither(false);
-    self.account_paint_resources(&self.state.fill_style);
-    paint.set_alpha_f32(self.state.global_alpha as f32);
+    let paint = self.image_paint(self.state.global_alpha as f32);
+    self.account_image_paint_resources();
 
     // Extract state for shadow rendering to avoid borrow conflicts
     let shadow_paint = self.shadow_paint(&paint, ShadowSource::Image, DrawContent::Geometry);
@@ -3460,11 +3479,11 @@ impl CanvasRenderingContext2D {
   pub fn create_conic_gradient<'scope>(
     &'scope mut self,
     env: &'scope Env,
-    r: f64,
+    start_angle: f64,
     x: f64,
     y: f64,
   ) -> Result<ClassInstance<'scope, CanvasGradient>> {
-    let conic_gradient = Gradient::create_conic_gradient(x as f32, y as f32, r as f32);
+    let conic_gradient = Gradient::create_conic_gradient(x as f32, y as f32, start_angle as f32);
     CanvasGradient(conic_gradient).into_instance(env)
   }
 
@@ -5074,6 +5093,95 @@ mod tests {
     assert_eq!(raster_bytes(&ctx), raster0);
     assert_eq!(retained(&ctx), retained0);
     assert_eq!(ctx.content_version(), version0);
+  }
+
+  // Image draws never read fillStyle or the line dash, so they charge neither:
+  // only the source's pixels (drawImage) or picture payload (drawCanvas), plus
+  // the filter and shadow their paint does carry.
+  #[test]
+  fn image_draws_do_not_charge_fill_style_or_dash() {
+    const GRADIENT_BYTES: usize = 1000 * 32 + 256;
+    const DASH_BYTES: usize = 2 * 4;
+    const SHADOW_BYTES: usize = 1024;
+    const FILTER_BYTES: usize = "blur(1px)".len() * 8;
+    let with_unused_state = || {
+      let mut ctx = raster_ctx(16, 16);
+      let mut gradient = Gradient::create_linear_gradient(0.0, 0.0, 16.0, 0.0);
+      for i in 0..1000 {
+        gradient.add_color_stop(
+          i as f32 / 999.0,
+          crate::sk::Color4f::from_rgba8(255, 0, 0, 255),
+        );
+      }
+      assert_eq!(gradient.estimated_bytes(), GRADIENT_BYTES);
+      ctx.state.fill_style = Pattern::Gradient(gradient);
+      ctx.state.line_dash_list = vec![2.0, 3.0];
+      ctx
+    };
+    let with_shadow_and_filter = || {
+      let mut ctx = with_unused_state();
+      ctx.state.shadow_color = RGBA::new(0, 0, 255, 255);
+      ctx.state.shadow_offset_x = 2.0;
+      ctx.set_filter("blur(1px)").unwrap();
+      ctx
+    };
+    let mut src = raster_ctx(16, 16);
+    src.state.fill_style = Pattern::from_color("#ff0000").unwrap();
+    src.fill_rect(0.0, 0.0, 16.0, 16.0).unwrap();
+
+    // Sibling: a fill still charges the gradient, the dash, the shadow and the filter.
+    let mut fill = with_shadow_and_filter();
+    fill.fill_rect(0.0, 0.0, 16.0, 16.0).unwrap();
+    assert_eq!(
+      raster_bytes(&fill),
+      GRADIENT_BYTES + DASH_BYTES + SHADOW_BYTES + FILTER_BYTES
+    );
+
+    let mut dest = with_shadow_and_filter();
+    let bitmap = src.surface.get_bitmap();
+    dest
+      .draw_image(
+        &bitmap,
+        canvas_source_key(&src),
+        0.0,
+        0.0,
+        16.0,
+        16.0,
+        0.0,
+        0.0,
+        16.0,
+        16.0,
+      )
+      .unwrap();
+    assert_eq!(
+      raster_bytes(&dest),
+      16 * 16 * 4 + SHADOW_BYTES + FILTER_BYTES
+    );
+
+    let mut dest = with_unused_state();
+    let bitmap = src.surface.get_bitmap();
+    dest
+      .draw_image(
+        &bitmap,
+        canvas_source_key(&src),
+        0.0,
+        0.0,
+        16.0,
+        16.0,
+        0.0,
+        0.0,
+        16.0,
+        16.0,
+      )
+      .unwrap();
+    assert_eq!(raster_bytes(&dest), 16 * 16 * 4);
+
+    let mut dest = with_unused_state();
+    let picture = src.get_picture().expect("source picture");
+    dest
+      .draw_canvas(&picture, 0, 0.0, 0.0, 16.0, 16.0, 0.0, 0.0, 16.0, 16.0)
+      .unwrap();
+    assert_eq!(raster_bytes(&dest), 0);
   }
 
   // A drawCanvas destination is charged the source recorder's retained

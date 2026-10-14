@@ -861,7 +861,7 @@ pub mod ffi {
 
     pub fn skiac_shader_make_linear_gradient(
       points: *const skiac_point,
-      colors: *const super::Color,
+      colors: *const super::Color4f,
       positions: *const f32,
       count: i32,
       tile_mode: i32,
@@ -874,7 +874,7 @@ pub mod ffi {
       start_radius: f32,
       end_point: skiac_point,
       end_radius: f32,
-      colors: *const super::Color,
+      colors: *const super::Color4f,
       positions: *const f32,
       count: i32,
       tile_mode: i32,
@@ -885,8 +885,8 @@ pub mod ffi {
     pub fn skiac_shader_make_conic_gradient(
       cx: f32,
       cy: f32,
-      radius: f32,
-      colors: *const super::Color,
+      rotation: f32,
+      colors: *const super::Color4f,
       positions: *const f32,
       count: i32,
       tile_mode: i32,
@@ -2656,25 +2656,50 @@ impl DerefMut for SurfaceDataMut<'_> {
   }
 }
 
+/// An unpremultiplied sRGB gradient stop color. Blink hands Skia float stops
+/// too (Color::ToGradientStopSkColor4f). The C side is `skiac_color4f`
+/// (skia-c/skia_c.hpp), which skia_c.cpp copies into SkColor4f values.
 #[repr(C)]
-#[derive(Copy, Clone, Eq, PartialEq, Hash, PartialOrd, Ord)]
-pub struct Color(pub u32);
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct Color4f {
+  pub r: f32,
+  pub g: f32,
+  pub b: f32,
+  pub a: f32,
+}
 
-impl fmt::Debug for Color {
-  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-    f.debug_struct("Color")
-      .field("R", &(((self.0) >> 16) & 0xFF))
-      .field("G", &(((self.0) >> 8) & 0xFF))
-      .field("B", &(self.0 & 0xFF))
-      .field("A", &(((self.0) >> 24) & 0xFF))
-      .finish()
+// The layout skia_c.cpp asserts for `skiac_color4f`.
+const _: () = {
+  assert!(std::mem::size_of::<Color4f>() == 16);
+  assert!(std::mem::align_of::<Color4f>() == 4);
+  assert!(std::mem::offset_of!(Color4f, r) == 0);
+  assert!(std::mem::offset_of!(Color4f, g) == 4);
+  assert!(std::mem::offset_of!(Color4f, b) == 8);
+  assert!(std::mem::offset_of!(Color4f, a) == 12);
+};
+
+impl Color4f {
+  pub const TRANSPARENT: Self = Self {
+    r: 0.0,
+    g: 0.0,
+    b: 0.0,
+    a: 0.0,
+  };
+
+  /// The same arithmetic as SkColor4f::FromColor: `x * (1 / 255.0f)`.
+  pub fn from_rgba8(r: u8, g: u8, b: u8, a: u8) -> Self {
+    Self {
+      r: unit_from_u8(r),
+      g: unit_from_u8(g),
+      b: unit_from_u8(b),
+      a: unit_from_u8(a),
+    }
   }
 }
 
-impl Color {
-  pub fn from_rgba(r: u8, g: u8, b: u8, a: u8) -> Color {
-    Color(((a as u32) << 24) | ((r as u32) << 16) | ((g as u32) << 8) | (b as u32))
-  }
+pub(crate) fn unit_from_u8(v: u8) -> f32 {
+  const K: f32 = 1.0 / 255.0;
+  v as f32 * K
 }
 
 #[repr(transparent)]
@@ -3708,7 +3733,7 @@ impl Drop for Path {
 
 #[derive(Debug, Clone)]
 pub struct Gradient {
-  pub colors: Vec<Color>,
+  pub colors: Vec<Color4f>,
   pub positions: Vec<f32>,
   pub tile_mode: TileMode,
   pub transform: Transform,
@@ -3733,7 +3758,8 @@ pub struct RadialGradient {
 #[derive(Debug, Clone)]
 pub struct ConicGradient {
   pub center: (f32, f32),
-  pub radius: f32,
+  /// Degrees, Blink's `rotation_`: `Rad2deg(startAngle) + 90`.
+  pub rotation: f32,
   pub base: Gradient,
 }
 
@@ -3804,7 +3830,7 @@ impl Shader {
       Self::from_ptr(ffi::skiac_shader_make_conic_gradient(
         grad.center.0,
         grad.center.1,
-        grad.radius,
+        grad.rotation,
         grad.base.colors.as_ptr(),
         grad.base.positions.as_ptr(),
         grad.base.colors.len() as i32,
