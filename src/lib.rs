@@ -866,15 +866,20 @@ impl<'scope> SVGCanvas<'scope> {
     if self.context_initialized {
       return this.get_named_property("ctx");
     }
+    let color_space = attrs
+      .as_ref()
+      .and_then(|a| a.color_space.as_deref())
+      .and_then(|cs| ColorSpace::from_str(cs).ok())
+      .unwrap_or_default();
     let context_2d = &mut self.ctx.context;
+    // The first acquisition fixes the color space of the raster surface that
+    // reads see, as on a CanvasElement. The SVG output does not use it.
+    if color_space != context_2d.color_space {
+      *context_2d = Context::new_svg(self.width, self.height, self.flag.into(), color_space)?;
+    }
     if !attrs.as_ref().and_then(|a| a.alpha).unwrap_or(true) {
       apply_opaque_base(context_2d, self.width, self.height)?;
     }
-    let color_space = attrs
-      .and_then(|a| a.color_space)
-      .and_then(|cs| ColorSpace::from_str(&cs).ok())
-      .unwrap_or_default();
-    context_2d.color_space = color_space;
     self.context_initialized = true;
     this.get_named_property("ctx")
   }
@@ -899,7 +904,7 @@ impl<'scope> SVGCanvas<'scope> {
       self.ctx.context.height,
       self.ctx.context.surface.alpha_type(),
       self.flag.into(),
-      ColorSpace::default(),
+      self.ctx.context.color_space,
     )
     .ok_or_else(|| Error::new(Status::GenericFailure, "Failed to create surface"))?;
     self.ctx.context.surface = surface;
@@ -916,12 +921,10 @@ impl<'scope> SVGCanvas<'scope> {
   }
 
   // Setting width or height resets the drawing but keeps the context's
-  // settings (alpha, color space). Like get_context, the color space is kept
-  // on the context only; the SVG surface is made as in the constructor.
+  // settings (alpha, color space).
   fn resized_context(&self, width: u32, height: u32) -> Result<Context> {
     let old = &self.ctx.context;
-    let mut context_2d = Context::new_svg(width, height, self.flag.into(), ColorSpace::default())?;
-    context_2d.color_space = old.color_space;
+    let mut context_2d = Context::new_svg(width, height, self.flag.into(), old.color_space)?;
     if !old.alpha {
       apply_opaque_base(&mut context_2d, width, height)?;
     }

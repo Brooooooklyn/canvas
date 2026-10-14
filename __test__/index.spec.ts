@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url'
 
 import ava, { TestFn } from 'ava'
 
-import { createCanvas, Path2D, Canvas, SKRSContext2D, DOMMatrix, loadImage, ImageData } from '../index'
+import { createCanvas, Path2D, Canvas, SKRSContext2D, DOMMatrix, loadImage, ImageData, SvgExportFlag } from '../index'
 
 import { snapshotImage } from './image-snapshot'
 
@@ -317,7 +317,8 @@ test('downscaled ImageData pattern blends two mip levels', (t) => {
 
 // The pattern reads the ImageData in its colorSpace and converts it to the
 // canvas, as putImageData does and as Chrome's pattern over
-// createImageBitmap(imageData) does. Expected values are Chrome 155's.
+// createImageBitmap(imageData) does. Expected values are Chrome 155's. An
+// SvgCanvas reads back what a canvas with its colorSpace holds.
 test('ImageData pattern converts from the ImageData colorSpace', (t) => {
   const colors = [200, 100, 50, 255, 10, 240, 120, 255, 255, 0, 0, 255, 0, 0, 255, 128]
   const chrome = {
@@ -326,13 +327,19 @@ test('ImageData pattern converts from the ImageData colorSpace', (t) => {
     'display-p3 on srgb': [215, 93, 31, 255, 0, 244, 104, 255, 255, 0, 0, 255, 0, 0, 255, 128],
     'display-p3 on display-p3': colors,
   }
-  for (const [name, expected] of Object.entries(chrome)) {
-    const [source, target] = name.split(' on ') as ('srgb' | 'display-p3')[]
-    const imageData = new ImageData(new Uint8ClampedArray(colors), 4, 1, { colorSpace: source })
-    const ctx = createCanvas(4, 1).getContext('2d', { colorSpace: target })
-    ctx.fillStyle = ctx.createPattern(imageData, 'repeat')
-    ctx.fillRect(0, 0, 4, 1)
-    t.deepEqual([...ctx.getImageData(0, 0, 4, 1).data], expected, name)
+  const canvases = {
+    Canvas: () => createCanvas(4, 1),
+    SvgCanvas: () => createCanvas(4, 1, SvgExportFlag.NoPrettyXML),
+  }
+  for (const [kind, make] of Object.entries(canvases)) {
+    for (const [name, expected] of Object.entries(chrome)) {
+      const [source, target] = name.split(' on ') as ('srgb' | 'display-p3')[]
+      const imageData = new ImageData(new Uint8ClampedArray(colors), 4, 1, { colorSpace: source })
+      const ctx = make().getContext('2d', { colorSpace: target })
+      ctx.fillStyle = ctx.createPattern(imageData, 'repeat')
+      ctx.fillRect(0, 0, 4, 1)
+      t.deepEqual([...ctx.getImageData(0, 0, 4, 1).data], expected, `${kind} ${name}`)
+    }
   }
 })
 

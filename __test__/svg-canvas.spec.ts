@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 
 import ava, { TestFn } from 'ava'
 
-import { createCanvas, DOMMatrix, SvgCanvas, SvgExportFlag, GlobalFonts, SKRSContext2D } from '../index'
+import { createCanvas, DOMMatrix, ImageData, SvgCanvas, SvgExportFlag, GlobalFonts, SKRSContext2D } from '../index'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -88,6 +88,28 @@ test('SvgCanvas keeps alpha:false and colorSpace when width or height changes', 
     t.is(ctx.getContextAttributes().colorSpace, 'display-p3', dimension)
     t.is(canvas.getContent().toString('utf8'), fresh(canvas.width, canvas.height), dimension)
   }
+})
+
+// The raster copy of a display-p3 SvgCanvas holds display-p3 pixels, as a
+// display-p3 canvas does, also once a resize or getContent replaces it.
+test('display-p3 SvgCanvas reads back display-p3 pixels', (t) => {
+  const p3 = [10, 240, 120, 255]
+  const draw = (canvas: SvgCanvas) => {
+    const ctx = canvas.getContext('2d')
+    const imageData = new ImageData(new Uint8ClampedArray(p3), 1, 1, { colorSpace: 'display-p3' })
+    ctx.fillStyle = ctx.createPattern(imageData, 'repeat')
+    ctx.fillRect(0, 0, 1, 1)
+    return [...ctx.getImageData(0, 0, 1, 1).data]
+  }
+  const canvas = createCanvas(1, 1, SvgExportFlag.NoPrettyXML)
+  canvas.getContext('2d', { colorSpace: 'display-p3' })
+  t.deepEqual(draw(canvas), p3, 'getContext')
+  canvas.width = 2
+  t.deepEqual(draw(canvas), p3, 'width')
+  canvas.height = 2
+  t.deepEqual(draw(canvas), p3, 'height')
+  canvas.getContent()
+  t.deepEqual(draw(canvas), p3, 'getContent')
 })
 
 // REGRESSION GUARD, do not weaken to a snapshot.
