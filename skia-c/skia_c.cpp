@@ -2268,27 +2268,22 @@ skiac_shader* skiac_bitmap_get_shader(bool is_canvas,
                                       int filter_quality,
                                       skiac_transform c_ts) {
   const auto ts = conv_from_transform(c_ts);
-  SkBitmap bm;
-  SkBitmap* bitmap;
+  const auto sampling = SamplingOptionsFromFQ(filter_quality);
+  sk_sp<SkShader> shader;
   if (is_canvas) {
-    auto surface = reinterpret_cast<SkSurface*>(c_bitmap);
-    bm.allocPixels(surface->imageInfo());
-    if (surface->readPixels(bm, 0, 0)) {
-      bitmap = &bm;
-    } else {
+    // The pattern's cloned surface is never drawn to again, so every shader
+    // shares its one cached snapshot instead of copying the pixels per build.
+    auto image = reinterpret_cast<SkSurface*>(c_bitmap)->makeImageSnapshot();
+    if (!image) {
       return nullptr;
     }
+    shader = image->makeShader((SkTileMode)repeat_x, (SkTileMode)repeat_y,
+                               sampling, &ts);
   } else {
-    bitmap = reinterpret_cast<SkBitmap*>(c_bitmap);
+    shader = BITMAP_CAST->makeShader((SkTileMode)repeat_x, (SkTileMode)repeat_y,
+                                     sampling, &ts);
   }
-  auto shader = bitmap
-                    ->makeShader((SkTileMode)repeat_x, (SkTileMode)repeat_y,
-                                 SamplingOptionsFromFQ(filter_quality), &ts)
-                    .release();
-  if (shader) {
-    return reinterpret_cast<skiac_shader*>(shader);
-  }
-  return nullptr;
+  return reinterpret_cast<skiac_shader*>(shader.release());
 }
 
 void skiac_bitmap_destroy(skiac_bitmap* c_bitmap) {
