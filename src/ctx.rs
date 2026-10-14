@@ -2250,13 +2250,24 @@ impl Context {
       return Ok(());
     }
 
-    let mut paint: Paint = self.fill_paint()?;
     // drawImage does not use fillStyle. In Blink only the fill and stroke
     // flags get ApplyToFlags (canvas_rendering_context_2d_state.cc:332-333),
     // which sets a gradient's dither (gradient.cc:364); images are drawn with
-    // image_flags_ (:832). So drop the gradient arm's flag here.
+    // image_flags_ (:832). So drop the gradient arm's flag here. An Image
+    // pattern's shader is not built at all: it would make, and cache, a
+    // decode level of the pattern's Image that nothing draws.
+    let image_pattern_fill = matches!(self.state.fill_style, Pattern::Image(_));
+    let mut paint: Paint = if image_pattern_fill {
+      let mut paint = self.state.paint.clone();
+      paint.set_style(PaintStyle::Fill);
+      paint
+    } else {
+      self.fill_paint()?
+    };
     paint.set_dither(false);
-    self.account_paint_resources(&self.state.fill_style);
+    if !image_pattern_fill {
+      self.account_paint_resources(&self.state.fill_style);
+    }
     paint.set_alpha_f32(self.image_global_alpha());
 
     // Extract state for shadow rendering to avoid borrow conflicts
@@ -5122,6 +5133,58 @@ mod tests {
     let mut other = raster_ctx(32, 32);
     draw(&mut other, 0.0, 4.0);
     assert_eq!(image.level_bytes(), 4 * LEVEL);
+  }
+
+  // drawImage does not use fillStyle, so an Image pattern set as fillStyle
+  // makes no decode level of its Image.
+  #[test]
+  fn draw_image_makes_no_level_for_an_image_pattern_fill() {
+    use crate::sk::{ImagePatternBacking, ImagePatternShared, TileMode};
+    use std::ptr;
+    use std::sync::{Arc, Mutex};
+
+    let image = Arc::new(AccountedBitmap::new(
+      test_bitmap(64, 64, [10, 20, 30, 255]),
+      ptr::null_mut(),
+      0,
+    ));
+    let mut ctx = raster_ctx(16, 16);
+    // At this scale a fill would draw the pattern from its 16x16 level.
+    ctx.state.fill_style = Pattern::Image(ImagePattern {
+      accounting_id: image.resource_id,
+      repeat_x: TileMode::Repeat,
+      repeat_y: TileMode::Repeat,
+      is_canvas: false,
+      is_image: true,
+      backing_bytes: 64 * 64 * 4,
+      backing: Some(ImagePatternBacking::Bitmap(image.clone())),
+      shared: Arc::new(Mutex::new(ImagePatternShared {
+        transform: Transform::new(0.25, 0.0, 0.0, 0.25, 0.0, 0.0),
+        image: None,
+        shader: None,
+      })),
+    });
+    let src = raster_ctx(8, 8);
+    let bitmap = src.surface.get_bitmap();
+    ctx
+      .draw_image(
+        &bitmap,
+        None,
+        canvas_source_key(&src),
+        0.0,
+        0.0,
+        8.0,
+        8.0,
+        0.0,
+        0.0,
+        8.0,
+        8.0,
+      )
+      .unwrap();
+    assert_eq!(image.level_bytes(), 0);
+    // A fill does draw the level.
+    ctx.fill_rect(0.0, 0.0, 16.0, 16.0).unwrap();
+    assert_eq!(image.level_bytes(), 16 * 16 * 4);
   }
 
   // Ops that provably paint nothing record nothing: no bytes, no generation
