@@ -156,6 +156,31 @@ test('avif quality: a higher quality gives a bigger and more exact file', async 
   }
 })
 
+// The fixtures hold P3 255,0,0 (left) and P3 200,100,50 (right), tagged with an
+// ICC profile, with CICP 12/13/6, or with CICP 12/2/6. Chrome 155 CPU honors
+// the ICC profile, else the CICP, where an unspecified (2) transfer means sRGB
+// (avif_image_decoder.cc:868-914). Our YUV to RGB step rounds the red 1 lower
+// than Chrome's, as it does for an sRGB AVIF.
+test('avif decode honors the ICC profile or CICP color space', async (t) => {
+  const near = (actual: number[], expected: number[], label: string) =>
+    t.true(
+      actual.every((value, i) => Math.abs(value - expected[i]) <= 1),
+      `${label}: ${actual} vs ${expected}`,
+    )
+  for (const name of ['avif-p3-icc', 'avif-p3-cicp', 'avif-p3-cicp-transfer-unspecified']) {
+    const image = await loadImage(join(__dirname, 'fixtures', `${name}.avif`))
+    for (const { colorSpace, left, right } of [
+      { colorSpace: 'display-p3', left: [255, 0, 0, 255], right: [200, 100, 50, 255] },
+      { colorSpace: 'srgb', left: [255, 0, 0, 255], right: [215, 93, 31, 255] },
+    ] as const) {
+      const ctx = createCanvas(4, 4).getContext('2d', { colorSpace })
+      ctx.drawImage(image, 0, 0)
+      near([...ctx.getImageData(0, 0, 1, 1).data], left, `${name} ${colorSpace} left`)
+      t.deepEqual([...ctx.getImageData(3, 0, 1, 1).data], right, `${name} ${colorSpace} right`)
+    }
+  }
+})
+
 // drawCanvas has no Chrome counterpart, so it is held to drawImage: a P3
 // gradient drawn into an sRGB canvas must give the same pixels either way.
 test('drawCanvas of a display-p3 source matches drawImage', (t) => {

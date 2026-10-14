@@ -1073,6 +1073,14 @@ pub mod ffi {
       alpha_type: i32,
     ) -> *mut skiac_bitmap;
 
+    pub fn skiac_bitmap_set_color_space(
+      c_bitmap: *mut skiac_bitmap,
+      icc: *const u8,
+      icc_len: usize,
+      primaries: u16,
+      transfer: u16,
+    );
+
     pub fn skiac_bitmap_get_width(c_bitmap: *mut skiac_bitmap) -> usize;
 
     pub fn skiac_bitmap_get_height(c_bitmap: *mut skiac_bitmap) -> usize;
@@ -4451,6 +4459,14 @@ impl Bitmap {
       height: height as i32,
       is_canvas: false,
     }))
+  }
+
+  /// Tags the pixels with a decoded file's color space: the ICC profile when
+  /// it has one, else the CICP primaries and transfer characteristics.
+  pub(crate) fn set_color_space(&mut self, icc: &[u8], primaries: u16, transfer: u16) {
+    unsafe {
+      ffi::skiac_bitmap_set_color_space(self.0.bitmap, icc.as_ptr(), icc.len(), primaries, transfer)
+    }
   }
 
   /// Marks the pixels read-only, so an image made from them shares them. Only

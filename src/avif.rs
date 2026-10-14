@@ -251,9 +251,23 @@ pub struct AvifImage {
   pub height: u32,
   pub row_bytes: u32,
   pub data: *mut u8,
+  /// CICP colour primaries and transfer characteristics; 2 is unspecified.
+  pub color_primaries: u16,
+  pub transfer_characteristics: u16,
 }
 
 impl AvifImage {
+  /// The ICC profile from the file's 'colr' box, empty when there is none.
+  pub fn icc(&self) -> &[u8] {
+    // SAFETY: `image` lives until drop, and libavif owns `icc.data`.
+    let icc = unsafe { &(*self.image).icc };
+    if icc.data.is_null() || icc.size == 0 {
+      &[]
+    } else {
+      unsafe { std::slice::from_raw_parts(icc.data, icc.size) }
+    }
+  }
+
   pub fn decode_from(avif_bytes: &[u8]) -> result::Result<Self, AvifError> {
     let decoder = unsafe { sys::avifDecoderCreate() };
     let image = unsafe { sys::avifImageCreateEmpty() };
@@ -278,6 +292,8 @@ impl AvifImage {
       height: unsafe { (*image).height },
       data: rgb_image.pixels,
       row_bytes: rgb_image.rowBytes,
+      color_primaries: unsafe { (*image).colorPrimaries },
+      transfer_characteristics: unsafe { (*image).transferCharacteristics },
       rgb_image,
     })
   }

@@ -1242,6 +1242,11 @@ skiac_bitmap* skiac_bitmap_make_from_image_data(uint8_t* ptr,
                                                 size_t size,
                                                 int ct,
                                                 int at);
+void skiac_bitmap_set_color_space(skiac_bitmap* c_bitmap,
+                                  const uint8_t* icc,
+                                  size_t icc_len,
+                                  uint16_t primaries,
+                                  uint16_t transfer);
 size_t skiac_bitmap_get_width(skiac_bitmap* c_bitmap);
 size_t skiac_bitmap_get_height(skiac_bitmap* c_bitmap);
 void skiac_bitmap_set_immutable(skiac_bitmap* c_bitmap);

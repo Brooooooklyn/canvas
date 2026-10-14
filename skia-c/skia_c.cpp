@@ -2284,6 +2284,36 @@ skiac_bitmap* skiac_bitmap_make_from_image_data(uint8_t* ptr,
   return reinterpret_cast<skiac_bitmap*>(bitmap);
 }
 
+// Tag decoded AVIF pixels with the file's color space, as Chrome's AVIF
+// decoder does (avif_image_decoder.cc:868-914): an ICC profile wins, else the
+// CICP primaries and transfer, where 2 (unspecified) means BT.709 and sRGB.
+// sRGB stays untagged, as before.
+void skiac_bitmap_set_color_space(skiac_bitmap* c_bitmap,
+                                  const uint8_t* icc,
+                                  size_t icc_len,
+                                  uint16_t primaries,
+                                  uint16_t transfer) {
+  sk_sp<SkColorSpace> color_space;
+  if (icc && icc_len) {
+    skcms_ICCProfile profile;
+    if (skcms_Parse(icc, icc_len, &profile)) {
+      color_space = SkColorSpace::Make(profile);
+    }
+  }
+  if (!color_space && (primaries != 2 || transfer != 2)) {
+    primaries = primaries == 2 ? 1 : primaries;
+    transfer = transfer == 2 ? 13 : transfer;
+    if (primaries <= UINT8_MAX && transfer <= UINT8_MAX) {
+      color_space = SkColorSpace::MakeCICP(
+          static_cast<SkNamedPrimaries::CicpId>(primaries),
+          static_cast<SkNamedTransferFn::CicpId>(transfer));
+    }
+  }
+  if (color_space && !color_space->isSRGB()) {
+    BITMAP_CAST->setColorSpace(std::move(color_space));
+  }
+}
+
 size_t skiac_bitmap_get_width(skiac_bitmap* c_bitmap) {
   auto bitmap = reinterpret_cast<SkBitmap*>(c_bitmap);
   return bitmap->width();

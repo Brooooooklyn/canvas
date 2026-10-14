@@ -1099,7 +1099,17 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
         ColorType::RGBA8888,
         // libavif's avifImageYUVToRGB outputs straight (non-premultiplied) alpha.
         AlphaType::Unpremultiplied,
-      );
+      )
+      .map(|mut bitmap| {
+        // Like the PNG/JPEG/WebP codecs, keep the file's color space, so a
+        // draw converts it to the canvas color space as Chrome does.
+        bitmap.set_color_space(
+          avif_image.icc(),
+          avif_image.color_primaries,
+          avif_image.transfer_characteristics,
+        );
+        bitmap
+      });
       // `from_image_data` copies the pixels into an owned SkBitmap, so the
       // decoded AVIF buffer is dropped at the end of this arm.
       match bitmap {
