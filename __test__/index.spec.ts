@@ -200,6 +200,57 @@ test('identity pattern keeps texels at every smoothing quality', (t) => {
   }
 })
 
+const stripeCanvas = (size: number) => {
+  const canvas = createCanvas(size, size)
+  const ctx = canvas.getContext('2d')
+  const colors = ['#ff0000', '#00ff00', '#0000ff', '#ffffff']
+  for (let x = 0; x < size; x++) {
+    ctx.fillStyle = colors[x % 4]
+    ctx.fillRect(x, 0, 1, size)
+  }
+  return canvas
+}
+
+const scaledPatternRow = (
+  source: Parameters<SKRSContext2D['createPattern']>[0],
+  scale: number,
+  quality: SKRSContext2D['imageSmoothingQuality'],
+) => {
+  const ctx = createCanvas(4, 1).getContext('2d')
+  ctx.imageSmoothingQuality = quality
+  const pattern = ctx.createPattern(source, 'repeat')!
+  pattern.setTransform(new DOMMatrix([scale, 0, 0, scale, 0, 0]))
+  ctx.fillStyle = pattern
+  ctx.fillRect(0, 0, 4, 1)
+  return [...ctx.getImageData(0, 0, 4, 1).data]
+}
+
+// Expected values are Chrome 155's CPU canvas: a scaled-down canvas pattern
+// blends two mip levels at 'medium' and 'high'.
+test('downscaled canvas pattern blends two mip levels', (t) => {
+  const source = stripeCanvas(4)
+  for (const quality of ['medium', 'high'] as const) {
+    t.deepEqual(
+      scaledPatternRow(source, 0.4, quality),
+      [116, 138, 26, 255, 150, 138, 165, 255, 104, 116, 165, 255, 138, 116, 26, 255],
+      quality,
+    )
+  }
+})
+
+// Expected values are Chrome 155's CPU canvas: a scaled-down Image pattern
+// samples a single mip level at 'medium' and 'high'.
+test('downscaled image pattern samples one mip level', async (t) => {
+  const source = await loadImage(stripeCanvas(8).toBuffer('image/png'))
+  for (const quality of ['medium', 'high'] as const) {
+    t.deepEqual(
+      scaledPatternRow(source, 0.2, quality),
+      [127, 127, 127, 255, 127, 127, 127, 255, 127, 127, 127, 255, 127, 127, 127, 255],
+      quality,
+    )
+  }
+})
+
 // Chrome 155 paints nothing with a canvas or image pattern whose matrix cannot
 // be inverted.
 test('pattern with a singular transform paints nothing', async (t) => {
