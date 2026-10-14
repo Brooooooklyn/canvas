@@ -6451,6 +6451,7 @@ mod tests {
     dest
       .draw_image(
         &bitmap,
+        None,
         canvas_source_key(&src),
         0.0,
         0.0,
@@ -6472,6 +6473,7 @@ mod tests {
     dest
       .draw_image(
         &bitmap,
+        None,
         canvas_source_key(&src),
         0.0,
         0.0,
@@ -6809,6 +6811,7 @@ mod tests {
     ctx
       .draw_image(
         &bitmap,
+        None,
         RasterKey::Resource {
           id: u64::MAX,
           generation: 0,
