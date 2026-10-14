@@ -1543,9 +1543,10 @@ impl Context {
     // foreground only (no shadow) straight onto the canvas with the kSrc
     // paint. No layer, so a dithered gradient keeps its device phase, and an
     // anti-aliased clip edge is applied by both the clear and the draw, as in
-    // Chrome. PDF keeps the layer below: SkPDFDevice masks a kSrc draw by the
-    // source's alpha, so a clear() removes nothing there.
-    if blend_mode == BlendMode::Source && content_filter.is_none() && backend != Backend::Pdf {
+    // Chrome. PDF and SVG keep the layer below: SkPDFDevice masks a kSrc draw
+    // by the source's alpha, and SkSVGDevice writes clear() as a transparent
+    // rect, so on neither does a clear() remove what was drawn before.
+    if blend_mode == BlendMode::Source && content_filter.is_none() && backend == Backend::Raster {
       // alpha:false clears to opaque black (h:832).
       if alpha {
         surface_canvas.clear();
@@ -1562,8 +1563,8 @@ impl Context {
       // The first four are Chromium's `IsFullCanvasCompositeMode`
       // (canvas_2d_recorder_context.h:998-1005). copy only gets here with a
       // `ctx.filter` on the layer (Blink's CompositedDraw for a filtered draw)
-      // or on PDF; its kSrc restore replaces the whole clip like the clear
-      // above.
+      // or on PDF and SVG; its kSrc restore replaces the whole clip like the
+      // clear above (SkSVGDevice cannot make the layer and drops the draw).
       BlendMode::SourceIn
       | BlendMode::SourceOut
       | BlendMode::DestinationIn

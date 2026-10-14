@@ -3,7 +3,7 @@
 // arm64; Chrome x64 gives the same bytes.
 import test from 'ava'
 
-import { createCanvas } from '../index'
+import { createCanvas, SvgExportFlag } from '../index'
 
 type Ctx = ReturnType<ReturnType<typeof createCanvas>['getContext']>
 
@@ -216,5 +216,73 @@ test('drawCanvas whose source rect misses the source canvas changes nothing', (t
     t.deepEqual(px(ctx, 12, 12), [0, 0, 0, 0], op)
     t.deepEqual(px(ctx, 15, 15), [0, 255, 0, 255], op)
     t.deepEqual(px(ctx, 30, 30), [0, 0, 0, 0], op)
+  }
+})
+
+// No Chrome counterpart. SkSVGDevice writes clear() as a transparent rect,
+// which hides nothing drawn before it, so SVG keeps copy on the layer route,
+// as PDF does. The output is what it was on 0b502f6 (the layer drops the copy
+// draw: SkSVGDevice cannot make a layer device), apart from the alpha:false
+// base, which is now black.
+test('SvgCanvas copy keeps the layer route', (t) => {
+  const body = (s: string) => s.replace(/^.*?<svg[^>]*>/s, '').replace(/<\/svg>\s*$/, '')
+  const red = '<rect fill="red" width="10" height="10"/>'
+  for (const [name, draw, alphaTrue] of [
+    [
+      'fillRect',
+      (c: Ctx) => {
+        c.fillStyle = 'red'
+        c.fillRect(0, 0, 10, 10)
+        c.globalCompositeOperation = 'copy'
+        c.fillStyle = 'blue'
+        c.fillRect(2, 2, 3, 3)
+      },
+      red,
+    ],
+    [
+      'clip',
+      (c: Ctx) => {
+        c.fillStyle = 'red'
+        c.fillRect(0, 0, 10, 10)
+        c.beginPath()
+        c.rect(1, 1, 6, 6)
+        c.clip()
+        c.globalCompositeOperation = 'copy'
+        c.fillStyle = 'blue'
+        c.fillRect(2, 2, 3, 3)
+      },
+      red,
+    ],
+    [
+      'path',
+      (c: Ctx) => {
+        c.fillStyle = 'red'
+        c.fillRect(0, 0, 10, 10)
+        c.globalCompositeOperation = 'copy'
+        c.fillStyle = 'blue'
+        c.beginPath()
+        c.rect(2, 2, 3, 3)
+        c.fill()
+      },
+      red,
+    ],
+    [
+      'shadow',
+      (c: Ctx) => {
+        c.globalCompositeOperation = 'copy'
+        c.shadowColor = 'lime'
+        c.shadowOffsetX = 3
+        c.fillStyle = 'blue'
+        c.fillRect(2, 2, 3, 3)
+      },
+      '',
+    ],
+  ] as const) {
+    for (const alpha of [true, false]) {
+      const canvas = createCanvas(10, 10, SvgExportFlag.NoPrettyXML)
+      draw(canvas.getContext('2d', { alpha }))
+      const expected = alpha ? alphaTrue : `<rect width="10" height="10"/>${alphaTrue}`
+      t.is(body(canvas.getContent().toString()), expected, `${name} alpha:${alpha}`)
+    }
   }
 })
