@@ -481,3 +481,44 @@ pub(crate) fn dom_matrix_2d_init(
   }
   Ok(matrix)
 }
+
+// Method arguments converted in the napi-rs callback glue. The glue converts
+// every argument before it borrows the receiver, so a dictionary getter may
+// use the same canvas, context or pattern, as in Chrome. Converted in the
+// method body, such a getter would hit napi-rs's borrow check and throw.
+
+/// The getContext() options of a Canvas.
+pub struct CanvasContextOptions(pub(crate) ContextSettings);
+
+impl FromNapiValue for CanvasContextOptions {
+  unsafe fn from_napi_value(env: sys::napi_env, value: sys::napi_value) -> Result<Self> {
+    ContextSettings::from_js(env, Some(value), CANVAS_GET_CONTEXT).map(Self)
+  }
+}
+
+/// The getContext() options of an SVGCanvas.
+pub struct SvgCanvasContextOptions(pub(crate) ContextSettings);
+
+impl FromNapiValue for SvgCanvasContextOptions {
+  unsafe fn from_napi_value(env: sys::napi_env, value: sys::napi_value) -> Result<Self> {
+    ContextSettings::from_js(env, Some(value), SVG_CANVAS_GET_CONTEXT).map(Self)
+  }
+}
+
+/// The settings of getImageData().
+pub struct GetImageDataSettings(pub(crate) ImageDataSettings);
+
+impl FromNapiValue for GetImageDataSettings {
+  unsafe fn from_napi_value(env: sys::napi_env, value: sys::napi_value) -> Result<Self> {
+    ImageDataSettings::from_js(env, Some(value), GET_IMAGE_DATA).map(Self)
+  }
+}
+
+/// The matrix of CanvasPattern.setTransform().
+pub struct PatternTransform(pub(crate) [f64; 6]);
+
+impl FromNapiValue for PatternTransform {
+  unsafe fn from_napi_value(env: sys::napi_env, value: sys::napi_value) -> Result<Self> {
+    dom_matrix_2d_init(env, Some(value), PATTERN_SET_TRANSFORM).map(Self)
+  }
+}

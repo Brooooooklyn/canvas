@@ -205,18 +205,13 @@ impl<'c> CanvasElement<'c> {
   #[napi]
   pub fn get_context<'env>(
     &mut self,
-    env: &Env,
     this: This,
     context_type: String,
-    attrs: Option<Unknown>,
+    // Converted (and may throw) on every call, also once the context exists
+    // (HTMLCanvasElementModule::getContext).
+    attrs: webidl::CanvasContextOptions,
   ) -> Result<Unknown<'env>> {
-    // The options are converted (and may throw) on every call, also once the
-    // context exists (HTMLCanvasElementModule::getContext).
-    let attrs = webidl::ContextSettings::from_js(
-      env.raw(),
-      attrs.map(|a| a.raw()),
-      webidl::CANVAS_GET_CONTEXT,
-    )?;
+    let attrs = attrs.0;
     if context_type != "2d" {
       return Err(Error::new(
         Status::InvalidArg,
@@ -853,17 +848,12 @@ impl<'scope> SVGCanvas<'scope> {
   #[napi]
   pub fn get_context<'env>(
     &'env mut self,
-    env: &Env,
     this: This<'env>,
     context_type: String,
-    attrs: Option<Unknown>,
-  ) -> Result<Unknown<'env>> {
     // Converted on every call, as for Canvas.
-    let attrs = webidl::ContextSettings::from_js(
-      env.raw(),
-      attrs.map(|a| a.raw()),
-      webidl::SVG_CANVAS_GET_CONTEXT,
-    )?;
+    attrs: webidl::SvgCanvasContextOptions,
+  ) -> Result<Unknown<'env>> {
+    let attrs = attrs.0;
     if context_type != "2d" {
       return Err(Error::new(
         Status::InvalidArg,

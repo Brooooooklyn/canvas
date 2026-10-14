@@ -177,3 +177,50 @@ for (const { name, prefix, create } of canvases) {
     t.not(ctx.getContextAttributes().toneMapping, ctx.getContextAttributes().toneMapping)
   })
 }
+
+for (const { name, create } of canvases) {
+  test(`${name}: option getters may use the same canvas`, (t) => {
+    // The options are converted before the call runs, as in Chrome.
+    const resized = create()
+    const ctx = resized.getContext(
+      '2d',
+      loose({
+        get colorSpace() {
+          resized.width = 7
+          return 'display-p3'
+        },
+      }),
+    )
+    t.is(resized.width, 7)
+    t.is(ctx.getContextAttributes().colorSpace, 'display-p3')
+    // A getter that calls getContext() itself: both calls get one context,
+    // set up by the inner call.
+    const nested = create()
+    let inner: unknown
+    const outer = nested.getContext(
+      '2d',
+      loose({
+        get alpha() {
+          inner = nested.getContext('2d', { colorSpace: 'display-p3' })
+          return false
+        },
+      }),
+    )
+    t.is(outer, inner)
+    t.deepEqual(outer.getContextAttributes(), { ...DEFAULTS, colorSpace: 'display-p3' })
+    // Also once the context exists.
+    const later = create()
+    const first = later.getContext('2d')
+    const again = later.getContext(
+      '2d',
+      loose({
+        get alpha() {
+          later.width = 9
+          return true
+        },
+      }),
+    )
+    t.is(again, first)
+    t.is(later.width, 9)
+  })
+}

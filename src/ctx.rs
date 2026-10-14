@@ -4018,13 +4018,9 @@ impl CanvasRenderingContext2D {
     y: f64,
     width: f64,
     height: f64,
-    settings: Option<Unknown<'scope>>,
+    settings: webidl::GetImageDataSettings,
   ) -> Result<ClassInstance<'scope, ImageData>> {
-    let settings = webidl::ImageDataSettings::from_js(
-      env.raw(),
-      settings.map(|v| v.raw()),
-      webidl::GET_IMAGE_DATA,
-    )?;
+    let settings = settings.0;
     if !x.is_nan()
       && !x.is_infinite()
       && !y.is_nan()

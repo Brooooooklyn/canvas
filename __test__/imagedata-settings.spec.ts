@@ -310,3 +310,22 @@ test('the float pixel formats are rejected in every ImageData API', (t) => {
   // The context colorType 'float16' is still accepted and reported.
   t.is(createCanvas(1, 1).getContext('2d', { colorType: 'float16' }).getContextAttributes().colorType, 'float16')
 })
+
+test('getImageData settings getters may use the same context', (t) => {
+  // The settings are converted before the call runs, as in Chrome.
+  const ctx = createCanvas(2, 2).getContext('2d')
+  const read = ctx.getImageData(
+    0,
+    0,
+    1,
+    1,
+    loose({
+      get colorSpace() {
+        ctx.fillStyle = 'red'
+        ctx.fillRect(0, 0, 2, 2)
+        return 'srgb'
+      },
+    }),
+  )
+  t.deepEqual([...read.data], [255, 0, 0, 255])
+})

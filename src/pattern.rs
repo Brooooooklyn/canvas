@@ -258,12 +258,8 @@ impl CanvasPattern {
 
   /// setTransform(optional DOMMatrix2DInit transform = {}).
   #[napi]
-  pub fn set_transform(&mut self, env: &Env, transform: Option<Unknown>) -> Result<()> {
-    let [a, b, c, d, e, f] = webidl::dom_matrix_2d_init(
-      env.raw(),
-      transform.map(|t| t.raw()),
-      webidl::PATTERN_SET_TRANSFORM,
-    )?;
+  pub fn set_transform(&mut self, transform: webidl::PatternTransform) -> Result<()> {
+    let [a, b, c, d, e, f] = transform.0;
     if let Pattern::Image(image) = &mut self.inner {
       // Clones already assigned to fill/stroke styles (and the save/restore
       // stack) share this state, so the new matrix takes effect at paint time

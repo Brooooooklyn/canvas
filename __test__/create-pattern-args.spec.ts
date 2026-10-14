@@ -257,3 +257,26 @@ test('CanvasPattern.setTransform takes a DOMMatrix2DInit', (t) => {
   paint((p) => p.setTransform(new Proxy({}, { get: (_, key) => (seen.push(String(key)), undefined) })))
   t.deepEqual(seen, ['a', 'b', 'c', 'd', 'e', 'f', 'm11', 'm12', 'm21', 'm22', 'm41', 'm42'])
 })
+
+test('CanvasPattern.setTransform getters may use the same pattern', (t) => {
+  const src = createCanvas(2, 1)
+  const srcCtx = src.getContext('2d')
+  srcCtx.fillStyle = 'red'
+  srcCtx.fillRect(0, 0, 1, 1)
+  srcCtx.fillStyle = 'blue'
+  srcCtx.fillRect(1, 0, 1, 1)
+  const ctx = createCanvas(2, 1).getContext('2d')
+  const pattern = ctx.createPattern(src, 'repeat')!
+  // The outer call reads every member first, so its matrix (e = 1) wins.
+  pattern.setTransform(
+    loose({
+      get e() {
+        pattern.setTransform({ e: 5 })
+        return 1
+      },
+    }),
+  )
+  ctx.fillStyle = pattern
+  ctx.fillRect(0, 0, 2, 1)
+  t.deepEqual([...ctx.getImageData(0, 0, 2, 1).data], [0, 0, 255, 255, 255, 0, 0, 255])
+})
