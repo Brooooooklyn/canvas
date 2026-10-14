@@ -102,6 +102,23 @@ test('gif and avif output of a display-p3 canvas is converted to sRGB', async (t
   }
 })
 
+// drawCanvas has no Chrome counterpart, so it is held to drawImage: a P3
+// gradient drawn into an sRGB canvas must give the same pixels either way.
+test('drawCanvas of a display-p3 source matches drawImage', (t) => {
+  const source = createCanvas(256, 1)
+  const sourceContext = source.getContext('2d', { colorSpace: 'display-p3' })
+  const gradient = sourceContext.createLinearGradient(0, 0, 256, 0)
+  gradient.addColorStop(0, '#ff0000')
+  gradient.addColorStop(1, '#0000ff')
+  sourceContext.fillStyle = gradient
+  sourceContext.fillRect(0, 0, 256, 1)
+  const viaCanvas = createCanvas(256, 1).getContext('2d')
+  viaCanvas.drawCanvas(source, 0, 0)
+  const viaImage = createCanvas(256, 1).getContext('2d')
+  viaImage.drawImage(source, 0, 0)
+  t.deepEqual([...viaCanvas.getImageData(128, 0, 1, 1).data], [...viaImage.getImageData(128, 0, 1, 1).data])
+})
+
 test('pattern snapshots preserve integer texels after canvas mutation', (t) => {
   const source = createCanvas(2, 2)
   const src = source.getContext('2d')

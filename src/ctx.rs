@@ -3501,7 +3501,16 @@ impl CanvasRenderingContext2D {
     // Get picture from source canvas (preserves vector graphics)
     // Note: We need mutable access to the source context to get the picture
     // This is safe because we have exclusive access to the CanvasElement
-    let picture = canvas.ctx.context.get_picture();
+    // A raster destination in another color space would replay the source's
+    // ops in its own space (gradients interpolate there), so it takes the
+    // source bitmap, as drawImage does. PDF and SVG keep the vector replay.
+    let picture = if self.context.backend == Backend::Raster
+      && canvas.ctx.context.color_space != self.context.color_space
+    {
+      None
+    } else {
+      canvas.ctx.context.get_picture()
+    };
 
     let picture = if let Some(pic) = picture {
       pic
