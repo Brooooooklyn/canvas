@@ -122,6 +122,22 @@ for (const [key, expected] of Object.entries(CONIC_EXPECTED)) {
   })
 }
 
+test('display-p3 canvas interpolates legacy gradient stops in sRGB', (t) => {
+  const canvas = createCanvas(64, 2)
+  const ctx = canvas.getContext('2d', { colorSpace: 'display-p3' })
+  const gradient = ctx.createLinearGradient(0, 0, 64, 0)
+  gradient.addColorStop(0, '#ff0000')
+  gradient.addColorStop(1, '#0000ff')
+  ctx.fillStyle = gradient
+  ctx.fillRect(0, 0, 64, 2)
+  t.deepEqual(px(ctx, 32, 0), [114, 19, 124, 255], 'display-p3 bytes')
+  const out = createCanvas(64, 2)
+  const outCtx = out.getContext('2d')
+  outCtx.drawImage(canvas, 0, 0)
+  t.deepEqual(px(outCtx, 32, 0), [125, 0, 128, 255], 'drawn into an sRGB canvas')
+  t.deepEqual(px(outCtx, 16, 0), [189, 0, 66, 255], 'drawn into an sRGB canvas')
+})
+
 test('hsl() gradient stops keep float precision', (t) => {
   // Two equal stops: Chrome keeps the float sRGB color and dithers it.
   const expected: Record<string, number[]> = {
