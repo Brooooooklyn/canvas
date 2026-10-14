@@ -521,6 +521,12 @@ impl Context {
     S: Fn(&mut Canvas, &Paint, &Matrix) -> result::Result<(), SkError>,
     F: Fn(&mut Canvas, &Paint) -> result::Result<(), SkError>,
   {
+    // Blink's Draw returns before drawing anything when the CTM is singular
+    // (canvas_2d_recorder_context.h:866-868), and so does clearRect (.cc:1940):
+    // copy must not clear the clip for a draw that has no device space.
+    if !self.transform_is_invertible() {
+      return Ok(());
+    }
     let width = self.width as f32;
     let height = self.height as f32;
 
@@ -578,6 +584,7 @@ impl Context {
           paint,
           content_filter.as_ref(),
           blend_mode,
+          self.backend,
           width,
           height,
           shadow,
@@ -607,6 +614,7 @@ impl Context {
       paint,
       content_filter.as_ref(),
       blend_mode,
+      self.backend,
       width,
       height,
       shadow,
@@ -1251,7 +1259,7 @@ impl Context {
   // destination -- Blink's `CompositedDraw`
   // (canvas_2d_recorder_context.h:896-965). The two layers are SIBLINGS, which
   // is composite(composite(background, shadow), foreground) taken literally, and
-  // is why the shadow band of a source-in or copy draw legitimately disappears.
+  // is why the shadow band of a source-in draw legitimately disappears.
   // Do not merge them into one layer, and do not nest the shadow pass inside the
   // content one -- it would composite against the empty layer, not the backdrop.
   //
@@ -1262,6 +1270,7 @@ impl Context {
     paint: &Paint,
     content_filter: Option<&ImageFilter>,
     blend_mode: BlendMode,
+    backend: Backend,
     width: f32,
     height: f32,
     shadow: Option<ShadowPass<'_>>,
@@ -1273,17 +1282,23 @@ impl Context {
     S: Fn(&mut Canvas, &Paint, &Matrix) -> result::Result<(), SkError>,
     F: Fn(&mut Canvas, &Paint) -> result::Result<(), SkError>,
   {
+    // copy without a layer filter is Blink's DrawInternal kSrc arm
+    // (canvas_2d_recorder_context.h:830-837): clear the clip, then draw the
+    // foreground only (no shadow) straight onto the canvas with the kSrc
+    // paint. No layer, so a dithered gradient keeps its device phase, and an
+    // anti-aliased clip edge is applied by both the clear and the draw, as in
+    // Chrome. PDF keeps the layer below: SkPDFDevice masks a kSrc draw by the
+    // source's alpha, so a clear() removes nothing there.
+    if blend_mode == BlendMode::Source && content_filter.is_none() && backend != Backend::Pdf {
+      surface_canvas.clear();
+      return f(surface_canvas, paint);
+    }
     match blend_mode {
       // The first four are Chromium's `IsFullCanvasCompositeMode`
-      // (canvas_2d_recorder_context.h:998-1005), which exempts copy/`kSrc`.
-      // `Source` is kept anyway and is not a divergence in effect: a
-      // whole-canvas layer restored with kSrc replaces every pixel, like
-      // Chromium's `clear(transparent)` + foreground draw. Drop it and a
-      // `fillRect` overwrites only its own geometry. With a dithered gradient
-      // paint it does differ: the layer starts at the clip's device origin, so
-      // a clip whose origin is not a multiple of 8 shifts the 8x8 dither
-      // phase, while Chromium draws copy directly after the clear
-      // (canvas_2d_recorder_context.h:830-837).
+      // (canvas_2d_recorder_context.h:998-1005). copy only gets here with a
+      // `ctx.filter` on the layer (Blink's CompositedDraw for a filtered draw)
+      // or on PDF; its kSrc restore replaces the whole clip like the clear
+      // above.
       BlendMode::SourceIn
       | BlendMode::SourceOut
       | BlendMode::DestinationIn
@@ -2012,6 +2027,15 @@ impl Context {
     lo.is_finite() && hi.is_finite() && hi == lo
   }
 
+  /// Blink's `IsTransformInvertible`: AffineTransform::IsInvertible checks
+  /// for a finite, non-zero determinant. Skia's own invert() also rejects a
+  /// nearly-zero one, which Chrome still draws with.
+  fn transform_is_invertible(&self) -> bool {
+    let t = self.state.transform.get_transform();
+    let det = t.a as f64 * t.d as f64 - t.b as f64 * t.c as f64;
+    det.is_finite() && det != 0.0
+  }
+
   /// Whether a draw whose own geometry provably paints nothing may be
   /// skipped whole. drawRect/drawPath DO reach the record canvas
   /// (SkRecordCanvas::onDraw* appends unconditionally -- the fillable()
@@ -2020,9 +2044,9 @@ impl Context {
   /// un-skippable are the wrapper ops our draw path can still emit around
   /// the empty draw, because their restore writes the device even with no
   /// content inside:
-  ///   * composited_pass modes replay an inner picture through a
-  ///     saveLayer/drawPicture(paint) -- a kSrc restore replaces the whole
-  ///     canvas even for an empty picture;
+  ///   * copy clears the clip before it draws, and composited_pass modes
+  ///     replay an inner picture through a saveLayer/drawPicture(paint) whose
+  ///     restore rewrites the whole clip even for an empty picture;
   ///   * a `ctx.filter` wraps the draw in a filtered saveLayer -- its
   ///     restore also composites (kClear can clear the canvas);
   ///   * a shadow pass records an extra draw whose blend mode is the
@@ -2097,6 +2121,18 @@ impl Context {
       && Self::rect_fillable(sy, s_height)
       && Self::rect_fillable(dx, d_width)
       && Self::rect_fillable(dy, d_height))
+    {
+      return Ok(());
+    }
+    // Blink clips the sorted source rect to the image and returns when nothing
+    // is left (canvas_2d_recorder_context.cc:2310-2316), whatever the composite
+    // op; copy and the full-canvas modes would otherwise clear the clip.
+    let overlaps_image = |start: f32, len: f32, size: f32| {
+      let (lo, hi) = (start.min(start + len), start.max(start + len));
+      lo.max(0.0) < hi.min(size)
+    };
+    if !(overlaps_image(sx, s_width, bitmap.0.width as f32)
+      && overlaps_image(sy, s_height, bitmap.0.height as f32))
     {
       return Ok(());
     }
@@ -4975,7 +5011,10 @@ mod tests {
     let picture = src.get_picture().expect("source picture");
 
     let mut ctx = raster_ctx(32, 32);
-    ctx.set_transform(Matrix::new(-1e-30, 0.0, 0.0, 1.0, 0.0, 0.0));
+    // Skia order (scaleX, skewX, transX, skewY, scaleY, transY): x scaled by
+    // -1e-30. The CTM must stay invertible, or nothing is drawn at all, as in
+    // Blink's Draw.
+    ctx.set_transform(Matrix::new(-1e-30, 0.0, 0.0, 0.0, 1.0, 0.0));
     let pending0 = pending(&ctx);
     let version0 = ctx.content_version();
     ctx
