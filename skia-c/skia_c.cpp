@@ -121,12 +121,9 @@ static SkSamplingOptions CcSampling(int fq, const SkMatrix& matrix) {
 // Chrome samples a pattern through cc PaintShader::GetSkShader, which maps the
 // quality with ScalingOperation::kUnknown (cc/paint/paint_shader.cc and
 // PaintFlags::FilterQualityToSkSamplingOptions in cc/paint/paint_flags.cc):
-// 'medium' and 'high' are both linear with linear mipmaps, never cubic. For an
-// Image source, Chrome's decode cache first scales the image down to one mip
-// level (cc/tiles/software_image_decode_cache_utils.cc) and then samples it
-// linearly (cc/tiles/software_image_decode_cache.cc), which nearest mipmaps
-// model. Chrome picks that level from the target size rounded to whole pixels
-// (cc/tiles/mipmap_util.cc), so for a tiny source it can pick a coarser level.
+// 'medium' and 'high' are both linear with linear mipmaps, never cubic. Image
+// sources take the decode cache instead (skiac_image_make_decoded_pattern_
+// shader); an ImageData pattern still samples one nearest mip level here.
 static SkSamplingOptions PatternSamplingOptions(int fq, bool is_canvas) {
   switch (fq) {
     case 3:
@@ -2695,6 +2692,61 @@ skiac_shader* skiac_image_make_pattern_shader(skiac_image* c_image,
   auto shader = SkShaders::Image(
       sk_ref_sp(IMAGE_CAST), (SkTileMode)repeat_x, (SkTileMode)repeat_y,
       PatternSamplingOptions(filter_quality, is_canvas), &ts);
+  return reinterpret_cast<skiac_shader*>(shader.release());
+}
+
+// PaintShader::CreateDecodedImage (cc/paint/paint_shader.cc:437-494): the
+// decode level of an Image pattern drawn under `c_ctm`, or -1 when the target
+// size rounds to empty, which draws nothing.
+int skiac_image_pattern_level(int width,
+                              int height,
+                              skiac_transform c_ts,
+                              skiac_transform c_ctm,
+                              int filter_quality) {
+  // Chrome's order: the pattern matrix, then preConcat the CTM.
+  SkMatrix total = conv_from_transform(c_ts);
+  total.preConcat(conv_from_transform(c_ctm));
+  const CcDecodeKey key = CcDecodeKeyFor(SkISize::Make(width, height),
+                                         SkIRect::MakeWH(width, height),
+                                         SkM44(total), filter_quality);
+  return key.empty ? -1 : key.level;
+}
+
+// An Image pattern's shader at a level from skiac_image_pattern_level: the
+// original image (`c_image`) at level 0, the scaled copy of `c_bitmap` above
+// it with the pattern matrix scaled back by the same factor
+// (paint_shader.cc:458-465), and the empty shader at -1.
+skiac_shader* skiac_image_make_decoded_pattern_shader(
+    skiac_bitmap* c_bitmap,
+    skiac_image* c_image,
+    skiac_image_levels* c_levels,
+    int level,
+    int repeat_x,
+    int repeat_y,
+    int filter_quality,
+    skiac_transform c_ts) {
+  if (level < 0) {
+    return reinterpret_cast<skiac_shader*>(SkShaders::Empty().release());
+  }
+  auto ts = conv_from_transform(c_ts);
+  sk_sp<SkImage> image;
+  SkPixmap original;
+  if (level == 0) {
+    image = sk_ref_sp(IMAGE_CAST);
+  } else if (BITMAP_CAST->peekPixels(&original)) {
+    const SkIRect src = SkIRect::MakeSize(original.dimensions());
+    const SkISize size = CcSizeForLevel(src.size(), level);
+    image = FindOrMakeLevel(c_levels, original, src, size);
+    const float adjust_x = static_cast<float>(size.width()) / src.width();
+    const float adjust_y = static_cast<float>(size.height()) / src.height();
+    const float inverse_x = 1.f / adjust_x;
+    const float inverse_y = 1.f / adjust_y;
+    ts.preScale(inverse_x, inverse_y);
+  }
+  // A null image gives an empty shader, which paints nothing.
+  auto shader = SkShaders::Image(std::move(image), (SkTileMode)repeat_x,
+                                 (SkTileMode)repeat_y,
+                                 DecodedSampling(filter_quality), &ts);
   return reinterpret_cast<skiac_shader*>(shader.release());
 }
 

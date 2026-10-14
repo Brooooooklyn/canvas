@@ -99,6 +99,7 @@ impl CanvasPattern {
     // (`backing`), so clones pushed onto the `save()`/`restore()` state stack
     // stay valid after the JS `CanvasPattern` is garbage-collected.
     // https://github.com/Brooooooklyn/canvas/issues/1341
+    let is_image = matches!(input, Either4::A(_));
     let (backing_bytes, backing, accounting_id) = match input {
       Either4::A(image) => {
         let bitmap = image
@@ -219,6 +220,7 @@ impl CanvasPattern {
         repeat_x,
         repeat_y,
         is_canvas,
+        is_image,
         backing_bytes,
         backing: Some(backing),
         shared: Arc::new(Mutex::new(ImagePatternShared {

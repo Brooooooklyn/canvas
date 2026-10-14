@@ -32,8 +32,8 @@ use crate::{
   pattern::{CanvasPattern, Pattern},
   sk::{
     AccountedBitmap, AlphaType, Bitmap, BlendMode, ColorSpace, FillType, FilterQuality,
-    FontVariantCaps, ImageFilter, LineMetrics, MaskFilter, Matrix, Paint, PaintStyle,
-    Path as SkPath, PathEffect, PathOp, SkEncodedImageFormat, SkImage, SkWMemoryStream,
+    FontVariantCaps, ImageFilter, ImagePattern, LineMetrics, MaskFilter, Matrix, Paint, PaintStyle,
+    Path as SkPath, PathEffect, PathOp, Shader, SkEncodedImageFormat, SkImage, SkWMemoryStream,
     SkiaDataRef, Surface, Transform,
   },
   state::Context2dRenderingState,
@@ -1486,6 +1486,20 @@ impl Context {
     (self.state.global_alpha as f32 * 255.0).round() / 255.0
   }
 
+  /// An image pattern's shader for the current smoothing state. On a raster
+  /// canvas an Image source is drawn from Chrome's decode cache, whose level
+  /// depends on the CTM (PaintShader::CreateDecodedImage); PDF and SVG keep the
+  /// original image.
+  fn image_pattern_shader(&self, pattern: &ImagePattern) -> Option<Shader> {
+    let quality = if self.state.image_smoothing_enabled {
+      self.state.image_smoothing_quality
+    } else {
+      FilterQuality::None
+    };
+    let ctm = (self.backend == Backend::Raster).then(|| self.state.transform.get_transform());
+    pattern.get_shader(quality, ctm)
+  }
+
   pub fn fill_paint(&self) -> result::Result<Paint, SkError> {
     let last_state = &self.state;
     let current_paint = &last_state.paint;
@@ -1506,11 +1520,7 @@ impl Context {
         paint.set_dither(true);
       }
       Pattern::Image(p) => {
-        if let Some(shader) = p.get_shader(if last_state.image_smoothing_enabled {
-          last_state.image_smoothing_quality
-        } else {
-          FilterQuality::None
-        }) {
+        if let Some(shader) = self.image_pattern_shader(p) {
           paint.set_color(0, 0, 0, 255);
           paint.set_alpha_f32(alpha);
           paint.set_shader(&shader);
@@ -1744,11 +1754,7 @@ impl Context {
         paint.set_dither(true);
       }
       Pattern::Image(p) => {
-        if let Some(shader) = p.get_shader(if last_state.image_smoothing_enabled {
-          last_state.image_smoothing_quality
-        } else {
-          FilterQuality::None
-        }) {
+        if let Some(shader) = self.image_pattern_shader(p) {
           paint.set_color(0, 0, 0, 255);
           paint.set_alpha_f32(global_alpha);
           paint.set_shader(&shader);
@@ -4970,13 +4976,13 @@ mod tests {
   }
 
   // An Image's decode levels (Chrome's decode cache) are made once per level,
-  // kept within the image's own size, and not made on PDF or SVG, which draw
-  // the original image.
+  // shared with the Image's patterns, kept within the image's own size, and
+  // not made on PDF or SVG, which draw the original image.
   #[test]
   fn image_decode_levels_are_cached_once_per_level() {
-    use crate::sk::SvgExportFlag;
+    use crate::sk::{ImagePatternBacking, ImagePatternShared, SvgExportFlag, TileMode};
     use std::ptr;
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
 
     let image = Arc::new(AccountedBitmap::new(
       test_bitmap(256, 256, [10, 20, 30, 255]),
@@ -5009,6 +5015,28 @@ mod tests {
     draw(&mut ctx, (0.0, 0.0, 256.0, 256.0), 64.0);
     assert_eq!(image.level_bytes(), 64 * 64 * 4);
     draw(&mut ctx, (0.0, 0.0, 256.0, 256.0), 64.0);
+    assert_eq!(image.level_bytes(), 64 * 64 * 4);
+
+    // A pattern over the Image at the same scale samples the same level.
+    let pattern = ImagePattern {
+      accounting_id: image.resource_id,
+      repeat_x: TileMode::Repeat,
+      repeat_y: TileMode::Repeat,
+      is_canvas: false,
+      is_image: true,
+      backing_bytes: 256 * 256 * 4,
+      backing: Some(ImagePatternBacking::Bitmap(image.clone())),
+      shared: Arc::new(Mutex::new(ImagePatternShared {
+        transform: Transform::new(0.25, 0.0, 0.0, 0.25, 0.0, 0.0),
+        image: None,
+        shader: None,
+      })),
+    };
+    assert!(
+      pattern
+        .get_shader(FilterQuality::Low, Some(Transform::default()))
+        .is_some()
+    );
     assert_eq!(image.level_bytes(), 64 * 64 * 4);
 
     // 256 -> 128 picks level 1 (128x128).

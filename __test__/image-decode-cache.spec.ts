@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url'
 
 import test from 'ava'
 
-import { createCanvas, loadImage, ImageData, SvgExportFlag, type Canvas, type SKRSContext2D } from '../index'
+import { createCanvas, loadImage, DOMMatrix, ImageData, SvgExportFlag, type Canvas, type SKRSContext2D } from '../index'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -78,6 +78,30 @@ function draw(size: number, quality: Quality, source: Source, fn: (ctx: SKRSCont
   fn(ctx, source)
   return px(ctx, 0, 0, size, size)
 }
+
+type PatternSource = Parameters<SKRSContext2D['createPattern']>[0]
+
+function fillPattern(
+  size: number,
+  quality: Quality,
+  source: PatternSource,
+  setup: (ctx: SKRSContext2D, pattern: ReturnType<SKRSContext2D['createPattern']>) => void,
+  repetition = 'repeat',
+) {
+  const ctx = createCanvas(size, size).getContext('2d')
+  if (quality === 'off') {
+    ctx.imageSmoothingEnabled = false
+  } else {
+    ctx.imageSmoothingQuality = quality
+  }
+  const pattern = ctx.createPattern(source, repetition)
+  setup(ctx, pattern)
+  ctx.fillStyle = pattern
+  ctx.fillRect(0, 0, size, size)
+  return px(ctx, 0, 0, size, size)
+}
+
+const scale = (sx: number, sy = sx, e = 0, f = 0) => new DOMMatrix([sx, 0, 0, sy, e, f])
 
 const gradient64 = () => grid(64, 64, (x, y) => `rgb(${(x * 4) & 255},${(y * 4) & 255},${((x ^ y) * 4) & 255})`)
 const gradient8 = () => grid(8, 8, (x, y) => `rgb(${x * 30},${y * 30},${(x + y) * 15})`)
@@ -208,4 +232,104 @@ test('SVG export embeds the original Image, not a decode level', async (t) => {
     embedded((ctx) => ctx.drawImage(image, 0, 0, 16, 16)),
     ['64x64'],
   )
+  t.deepEqual(
+    embedded((ctx) => {
+      const pattern = ctx.createPattern(image, 'repeat')
+      pattern.setTransform(scale(0.25))
+      ctx.fillStyle = pattern
+      ctx.fillRect(0, 0, 40, 40)
+    }),
+    ['64x64'],
+  )
+})
+
+const stripes = () => grid(8, 8, (x) => ['#ff0000', '#00ff00', '#0000ff', '#ffffff'][x % 4])
+
+test('Image pattern whose target size rounds to 0 draws nothing', async (t) => {
+  const source = grid(2, 2, (x, y) => ['#ff0000', '#00ff00', '#0000ff', '#ffffff'][y * 2 + x])
+  const image = await imageFrom(source)
+  for (const quality of QUALITIES) {
+    t.deepEqual(
+      fillPattern(8, quality, image, (_, p) => p.setTransform(scale(0.2))),
+      Array.from({ length: 8 * 8 * 4 }, () => 0),
+      quality,
+    )
+    t.deepEqual(
+      fillPattern(8, quality, source, (_, p) => p.setTransform(scale(0.2))),
+      chrome(`pattern|canvas|empty-target|${quality}`),
+      `canvas ${quality}`,
+    )
+  }
+})
+
+test('downscaled Image pattern samples its decode level at every quality', async (t) => {
+  const image = await imageFrom(stripes())
+  for (const quality of ['low', 'medium', 'high'] as const) {
+    t.deepEqual(
+      fillPattern(4, quality, image, (_, p) => p.setTransform(scale(0.3))),
+      Array.from({ length: 16 }, () => [127, 127, 127, 255]).flat(),
+      quality,
+    )
+  }
+})
+
+test('upscaled Image pattern is the same at low, medium and high', async (t) => {
+  const image = await imageFrom(noise(5, 5, 3))
+  for (const quality of ['low', 'medium', 'high'] as const) {
+    t.deepEqual(
+      fillPattern(16, quality, image, (_, p) => p.setTransform(scale(3, 3, 0.3, 0.7))),
+      chrome('pattern|up-3'),
+      quality,
+    )
+  }
+})
+
+// cc multiplies the pattern matrix by the CTM in that order
+// (PaintShader::CreateDecodedImage): under a rotation the level is not the one
+// the composed transform would give.
+test('Image pattern picks its level from the pattern matrix and the CTM', async (t) => {
+  const image33 = await imageFrom(noise(33, 33, 11))
+  const image64 = await imageFrom(noise(64, 64, 7))
+  for (const quality of ['low', 'medium', 'high'] as const) {
+    t.deepEqual(
+      fillPattern(16, quality, image33, (ctx) => ctx.scale(0.3, 0.3)),
+      chrome('pattern|ctm-scale'),
+      quality,
+    )
+    t.deepEqual(
+      fillPattern(16, quality, image64, (ctx, p) => {
+        ctx.translate(16, 0)
+        ctx.rotate(Math.PI / 2)
+        ctx.scale(0.25, 0.6)
+        p.setTransform(scale(2, 0.5))
+      }),
+      chromeForArch('pattern|ctm-rot90'),
+      quality,
+    )
+    t.deepEqual(
+      fillPattern(16, quality, image33, (_, p) => p.setTransform(scale(0.3, 0.4, 1.5, 2.25)), 'no-repeat'),
+      chrome('pattern|no-repeat'),
+      quality,
+    )
+  }
+})
+
+test('Image pattern levels match Chrome across sizes', async (t) => {
+  for (const [w, h] of [
+    [3, 3],
+    [7, 7],
+    [17, 17],
+    [33, 33],
+    [40, 7],
+    [5, 13],
+  ]) {
+    const image = await imageFrom(noise(w, h, w * 100 + h))
+    for (const s of [0.6, 0.35, 0.26, 0.15, 0.07]) {
+      t.deepEqual(
+        fillPattern(8, 'medium', image, (_, p) => p.setTransform(scale(s))),
+        chrome(`pattern|grid|${w}x${h}|${s}`),
+        `${w}x${h} at ${s}`,
+      )
+    }
+  }
 })

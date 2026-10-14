@@ -1100,6 +1100,25 @@ pub mod ffi {
       ts: skiac_transform,
     ) -> *mut skiac_shader;
 
+    pub fn skiac_image_pattern_level(
+      width: i32,
+      height: i32,
+      ts: skiac_transform,
+      ctm: skiac_transform,
+      quality: i32,
+    ) -> i32;
+
+    pub fn skiac_image_make_decoded_pattern_shader(
+      c_bitmap: *mut skiac_bitmap,
+      c_image: *mut skiac_image,
+      c_levels: *mut skiac_image_levels,
+      level: i32,
+      repeat_x: i32,
+      repeat_y: i32,
+      quality: i32,
+      ts: skiac_transform,
+    ) -> *mut skiac_shader;
+
     pub fn skiac_bitmap_destroy(c_bitmap: *mut skiac_bitmap);
 
     pub fn skiac_image_levels_create() -> *mut skiac_image_levels;
@@ -4519,7 +4538,7 @@ pub struct AccountedBitmap {
   env: napi::sys::napi_env,
   bytes: i64,
   /// The scaled copies Chrome's decode cache would hold for this image
-  /// (`skiac_image_levels`).
+  /// (`skiac_image_levels`), shared by drawImage and the Image's patterns.
   levels: *mut ffi::skiac_image_levels,
   /// The levels' bytes, as last reported to V8.
   level_bytes: AtomicI64,
@@ -4604,10 +4623,11 @@ pub(crate) struct ImagePatternShared {
   // for the pattern's life, so an SVG or AVIF pattern that is never painted
   // makes no copy.
   pub(crate) image: Option<SkImage>,
-  // Cache the shader for the last sampling quality; rebuilt when the transform
-  // or the quality changes. Every shader samples `image`, so a rebuild copies
-  // no pixels.
-  pub(crate) shader: Option<(FilterQuality, Shader)>,
+  // Cache the shader for the last sampling quality and decode level (`None`
+  // when the original image is drawn as it is, see `get_shader`); rebuilt
+  // when the transform, the quality or the level changes. Every shader
+  // samples `image` or a cached level, so a rebuild copies no pixels.
+  pub(crate) shader: Option<(FilterQuality, Option<i32>, Shader)>,
 }
 
 // Same confinement as `AccountedBitmap`: every owner lives on the JS main
@@ -4627,6 +4647,9 @@ pub struct ImagePattern {
   pub(crate) repeat_x: TileMode,
   pub(crate) repeat_y: TileMode,
   pub(crate) is_canvas: bool,
+  /// The pattern samples an Image element, which Chrome draws from its decode
+  /// cache. Canvas and ImageData sources are drawn as they are.
+  pub(crate) is_image: bool,
   /// Bytes the whole backing raster occupies.
   pub(crate) backing_bytes: usize,
   /// Keeps the source object and its V8 memory accounting alive across clones.
@@ -4643,6 +4666,7 @@ impl Clone for ImagePattern {
       repeat_x: self.repeat_x,
       repeat_y: self.repeat_y,
       is_canvas: self.is_canvas,
+      is_image: self.is_image,
       backing_bytes: self.backing_bytes,
       backing: self.backing.clone(),
       shared: self.shared.clone(),
@@ -4657,26 +4681,75 @@ impl ImagePattern {
     self.backing_bytes
   }
 
-  pub(crate) fn get_shader(&self, quality: FilterQuality) -> Option<Shader> {
+  /// `ctm` is the context's transform on a raster canvas, and `None` on PDF
+  /// and SVG, which draw the original image. With it, an Image source is drawn
+  /// from the decode level Chrome picks for the pattern under that transform
+  /// (`skiac_image_pattern_level`).
+  pub(crate) fn get_shader(
+    &self,
+    quality: FilterQuality,
+    ctm: Option<Transform>,
+  ) -> Option<Shader> {
     let mut guard = self.shared.lock().unwrap();
     let shared = &mut *guard;
+    let decode_cache = match (&self.backing, ctm) {
+      (Some(ImagePatternBacking::Bitmap(bitmap)), Some(ctm)) if self.is_image => {
+        Some((bitmap, ctm))
+      }
+      _ => None,
+    };
+    let level = decode_cache.map(|(bitmap, ctm)| unsafe {
+      ffi::skiac_image_pattern_level(
+        bitmap.inner.0.width,
+        bitmap.inner.0.height,
+        shared.transform.into(),
+        ctm.into(),
+        quality as i32,
+      )
+    });
     if shared
       .shader
       .as_ref()
-      .is_none_or(|(cached, _)| *cached != quality)
+      .is_none_or(|(cached, cached_level, _)| *cached != quality || *cached_level != level)
     {
-      let image = shared.image.get_or_insert_with(|| self.make_image());
-      shared.shader = Shader::from_pattern_image(
-        image,
-        self.is_canvas,
-        self.repeat_x,
-        self.repeat_y,
-        quality,
-        shared.transform,
-      )
-      .map(|shader| (quality, shader));
+      shared.shader = match (decode_cache, level) {
+        (Some((bitmap, _)), Some(level)) => {
+          // The original image is only made when level 0 samples it.
+          let image = if level == 0 {
+            shared.image.get_or_insert_with(|| self.make_image()).0
+          } else {
+            ptr::null_mut()
+          };
+          let shader = unsafe {
+            Shader::from_ptr(ffi::skiac_image_make_decoded_pattern_shader(
+              bitmap.inner.0.bitmap,
+              image,
+              bitmap.levels,
+              level,
+              self.repeat_x as i32,
+              self.repeat_y as i32,
+              quality as i32,
+              shared.transform.into(),
+            ))
+          };
+          bitmap.sync_level_bytes();
+          shader
+        }
+        _ => {
+          let image = shared.image.get_or_insert_with(|| self.make_image());
+          Shader::from_pattern_image(
+            image,
+            self.is_canvas,
+            self.repeat_x,
+            self.repeat_y,
+            quality,
+            shared.transform,
+          )
+        }
+      }
+      .map(|shader| (quality, level, shader));
     }
-    shared.shader.as_ref().map(|(_, shader)| shader.clone())
+    shared.shader.as_ref().map(|(_, _, shader)| shader.clone())
   }
 
   /// The image every shader of this pattern samples. A null one (no pixels,
