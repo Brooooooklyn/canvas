@@ -1035,7 +1035,10 @@ pub mod ffi {
       dst: *mut u8,
       row_bytes: usize,
       alpha_type: i32,
+      cs: u8,
     ) -> bool;
+
+    pub fn skiac_image_color_space(image: *mut skiac_image) -> u8;
 
     pub fn skiac_canvas_draw_sk_image(
       canvas: *mut skiac_canvas,
@@ -5050,11 +5053,21 @@ impl SkImage {
     }
   }
 
-  /// Read the whole image as RGBA_8888 pixels converted to sRGB, for the
-  /// encoders that write no color profile (GIF, AVIF).
+  /// The image's color space: display-p3, else sRGB (the canvas color spaces).
+  pub fn color_space(&self) -> ColorSpace {
+    if unsafe { ffi::skiac_image_color_space(self.0) } == ColorSpace::DisplayP3 as u8 {
+      ColorSpace::DisplayP3
+    } else {
+      ColorSpace::Srgb
+    }
+  }
+
+  /// Read the whole image as RGBA_8888 pixels converted to `color_space`: sRGB
+  /// for GIF, which has no color profile, and the image's own color space for
+  /// AVIF, which carries it as CICP.
   /// `alpha_type` must be [`AlphaType::Premultiplied`] or [`AlphaType::Unpremultiplied`];
   /// Skia converts from the image's premultiplied storage when unpremultiplied is requested.
-  pub fn read_pixels(&self, alpha_type: AlphaType) -> Option<Vec<u8>> {
+  pub fn read_pixels(&self, alpha_type: AlphaType, color_space: ColorSpace) -> Option<Vec<u8>> {
     let sk_alpha_type = match alpha_type {
       AlphaType::Premultiplied => 2,   // kPremul_SkAlphaType
       AlphaType::Unpremultiplied => 3, // kUnpremul_SkAlphaType
@@ -5066,7 +5079,13 @@ impl SkImage {
     let size = row_bytes.checked_mul(height)?;
     let mut pixels = vec![0u8; size];
     let ok = unsafe {
-      ffi::skiac_image_read_pixels(self.0, pixels.as_mut_ptr(), row_bytes, sk_alpha_type)
+      ffi::skiac_image_read_pixels(
+        self.0,
+        pixels.as_mut_ptr(),
+        row_bytes,
+        sk_alpha_type,
+        color_space as u8,
+      )
     };
     if ok { Some(pixels) } else { None }
   }

@@ -2109,7 +2109,8 @@ void skiac_image_encode_data(skiac_image* c_image,
 bool skiac_image_read_pixels(skiac_image* c_image,
                              uint8_t* dst,
                              size_t row_bytes,
-                             int alpha_type) {
+                             int alpha_type,
+                             uint8_t cs) {
   if (!c_image || !dst) {
     return false;
   }
@@ -2119,12 +2120,19 @@ bool skiac_image_read_pixels(skiac_image* c_image,
   }
   auto image = IMAGE_CAST;
   // GIF has no color profile, so the spec wants its pixels converted to
-  // sRGB. AVIF supports one, but our AVIF encoder writes none, so it is
-  // converted too. Tagging AVIF with the canvas color space is a follow-up.
-  auto info = SkImageInfo::Make(
-      image->width(), image->height(), kRGBA_8888_SkColorType,
-      static_cast<SkAlphaType>(alpha_type), SkColorSpace::MakeSRGB());
+  // sRGB (cs 0). AVIF carries the canvas color space as CICP, so it reads
+  // the pixels in the image's own color space.
+  auto info =
+      SkImageInfo::Make(image->width(), image->height(), kRGBA_8888_SkColorType,
+                        static_cast<SkAlphaType>(alpha_type), COLOR_SPACE_CAST);
   return image->readPixels(nullptr, info, dst, row_bytes, 0, 0);
+}
+
+// 1 when the image is display-p3, else 0 (sRGB): the two canvas color spaces.
+uint8_t skiac_image_color_space(skiac_image* c_image) {
+  auto p3 =
+      SkColorSpace::MakeRGB(SkNamedTransferFn::kSRGB, SkNamedGamut::kDisplayP3);
+  return SkColorSpace::Equals(IMAGE_CAST->colorSpace(), p3.get()) ? 1 : 0;
 }
 
 void skiac_canvas_draw_sk_image(skiac_canvas* c_canvas,

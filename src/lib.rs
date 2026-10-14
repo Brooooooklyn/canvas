@@ -636,8 +636,9 @@ fn get_data_ref(
     MIME_JPEG => image.encode_data(sk::SkEncodedImageFormat::Jpeg, quality),
     MIME_PNG => image.encode_data(sk::SkEncodedImageFormat::Png, 100),
     MIME_AVIF => {
+      let color_space = image.color_space();
       let pixels = image
-        .read_pixels(AlphaType::Unpremultiplied)
+        .read_pixels(AlphaType::Unpremultiplied, color_space)
         .ok_or_else(|| {
           Error::new(
             Status::GenericFailure,
@@ -645,7 +646,7 @@ fn get_data_ref(
           )
         })?;
       let config = AvifConfig::from(quality_or_config).into();
-      let output = avif::encode(&pixels, width, height, &config)
+      let output = avif::encode(&pixels, width, height, &config, color_space)
         .map_err(|e| Error::new(Status::GenericFailure, format!("{e}")))?;
       return Ok(ContextOutputData::Avif(output));
     }
@@ -657,7 +658,7 @@ fn get_data_ref(
         },
       };
       let pixels = image
-        .read_pixels(AlphaType::Unpremultiplied)
+        .read_pixels(AlphaType::Unpremultiplied, ColorSpace::Srgb)
         .ok_or_else(|| {
           Error::new(
             Status::GenericFailure,
@@ -711,7 +712,7 @@ impl Task for AsyncDataUrl {
         base64_simd::STANDARD.encode_append(data_ref.slice(), &mut output);
       }
       ContextOutputData::Avif(data_ref) => {
-        base64_simd::STANDARD.encode_append(data_ref.as_ref(), &mut output);
+        base64_simd::STANDARD.encode_append(&data_ref, &mut output);
       }
       ContextOutputData::Gif(data_ref) => {
         base64_simd::STANDARD.encode_append(&data_ref, &mut output);
@@ -756,11 +757,10 @@ impl<'env> ScopedTask<'env> for AsyncBlob {
         })
       },
       ContextOutputData::Avif(data_ref) => unsafe {
-        let data_slice = data_ref.as_slice();
         Uint8ArraySlice::from_external(
           env,
-          data_slice.as_ptr().cast_mut(),
-          data_slice.len(),
+          data_ref.as_ptr().cast_mut(),
+          data_ref.len(),
           data_ref,
           |_, d| mem::drop(d),
         )

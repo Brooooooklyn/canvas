@@ -7,7 +7,6 @@ use std::sync::LazyLock;
 
 use cssparser::Parser;
 use cssparser_color::{Color as CSSColor, hsl_to_rgb};
-use libavif::AvifData;
 use napi::{JsString, bindgen_prelude::*};
 use regex::Regex;
 use rgb::RGBA;
@@ -4331,7 +4330,7 @@ pub enum ContextData {
 
 pub enum ContextOutputData {
   Skia(SkiaDataRef),
-  Avif(AvifData<'static>),
+  Avif(Vec<u8>),
   Gif(Vec<u8>),
 }
 
@@ -4396,7 +4395,7 @@ pub(crate) fn encode_surface(data: &ContextData) -> Result<ContextOutputData> {
         )
       }),
     ContextData::Avif(image, config, width, height) => image
-      .read_pixels(AlphaType::Unpremultiplied)
+      .read_pixels(AlphaType::Unpremultiplied, image.color_space())
       .ok_or_else(|| {
         Error::new(
           Status::GenericFailure,
@@ -4404,12 +4403,12 @@ pub(crate) fn encode_surface(data: &ContextData) -> Result<ContextOutputData> {
         )
       })
       .and_then(|pixels| {
-        crate::avif::encode(&pixels, *width, *height, config)
+        crate::avif::encode(&pixels, *width, *height, config, image.color_space())
           .map(ContextOutputData::Avif)
           .map_err(|e| Error::new(Status::GenericFailure, format!("{e}")))
       }),
     ContextData::Gif(image, config, width, height) => image
-      .read_pixels(AlphaType::Unpremultiplied)
+      .read_pixels(AlphaType::Unpremultiplied, ColorSpace::Srgb)
       .ok_or_else(|| {
         Error::new(
           Status::GenericFailure,

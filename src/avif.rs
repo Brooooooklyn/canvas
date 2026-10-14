@@ -1,11 +1,12 @@
-use std::result;
+use std::{ptr, result, slice};
 
-use libavif::{AvifData, RgbPixels, YuvFormat};
+use libavif::YuvFormat;
 use libavif_sys as sys;
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 
 use crate::error::SkError;
+use crate::sk::ColorSpace;
 
 #[napi(object)]
 #[derive(Default, Clone)]
@@ -121,22 +122,100 @@ impl From<&Either<u32, AvifConfig>> for AvifConfig {
   }
 }
 
+/// Frees the libavif objects of [`encode`] on every return path.
+struct EncodeGuard {
+  image: *mut sys::avifImage,
+  encoder: *mut sys::avifEncoder,
+  output: sys::avifRWData,
+}
+
+impl Drop for EncodeGuard {
+  fn drop(&mut self) {
+    unsafe {
+      sys::avifRWDataFree(&mut self.output);
+      if !self.encoder.is_null() {
+        sys::avifEncoderDestroy(self.encoder);
+      }
+      if !self.image.is_null() {
+        sys::avifImageDestroy(self.image);
+      }
+    }
+  }
+}
+
+fn avif_result(code: sys::avifResult) -> result::Result<(), SkError> {
+  if code == sys::AVIF_RESULT_OK {
+    Ok(())
+  } else {
+    Err(SkError::EncodeAvifError(libavif::Error::Code(code)))
+  }
+}
+
+/// Encodes unpremultiplied RGBA pixels that are in `color_space`.
 pub(crate) fn encode(
   avif_image: &[u8],
   width: u32,
   height: u32,
   config: &Config,
-) -> result::Result<AvifData<'static>, SkError> {
-  let rgb = RgbPixels::new(width, height, avif_image).map_err(SkError::PixelsToRgb)?;
-  let image = rgb.to_image(config.chroma_subsampling.into());
-  let mut encoder = libavif::Encoder::new();
-  // libavif 1.x `quality` is already our 0-100 scale (AVIF_QUALITY_BEST is
-  // 100, avif.h); it is not the old 0-63 quantizer, where 0 was the best.
-  encoder.set_quality(config.quality);
-  encoder.set_alpha_quality(config.alpha_quality);
-  encoder.set_speed(config.speed);
-  encoder.set_max_threads(config.threads);
-  encoder.encode(&image).map_err(SkError::EncodeAvifError)
+  color_space: ColorSpace,
+) -> result::Result<Vec<u8>, SkError> {
+  if avif_image.len() != width as usize * height as usize * 4 {
+    return Err(SkError::PixelsToRgb(libavif::Error::UnsupportedImageType));
+  }
+  let yuv_format: YuvFormat = config.chroma_subsampling.into();
+  let mut guard = EncodeGuard {
+    image: unsafe { sys::avifImageCreate(width, height, 8, yuv_format as u32) },
+    encoder: ptr::null_mut(),
+    output: sys::avifRWData::default(),
+  };
+  if guard.image.is_null() {
+    return Err(SkError::Generic("avifImageCreate failed".to_owned()));
+  }
+  unsafe {
+    let image = &mut *guard.image;
+    // The spec: an image type that supports a color profile must carry the
+    // bitmap's color space. AVIF does it with CICP (the 'nclx' colr box).
+    // Display P3 is SMPTE EG 432-1 primaries with the sRGB transfer. BT.601
+    // is the matrix libavif used for the unspecified value we wrote before,
+    // so the YUV planes do not change.
+    image.colorPrimaries = match color_space {
+      ColorSpace::Srgb => sys::AVIF_COLOR_PRIMARIES_BT709,
+      ColorSpace::DisplayP3 => sys::AVIF_COLOR_PRIMARIES_SMPTE432,
+    } as u16;
+    image.transferCharacteristics = sys::AVIF_TRANSFER_CHARACTERISTICS_SRGB as u16;
+    image.matrixCoefficients = sys::AVIF_MATRIX_COEFFICIENTS_BT601 as u16;
+    image.yuvRange = sys::AVIF_RANGE_FULL;
+    let mut rgb = sys::avifRGBImage::default();
+    sys::avifRGBImageSetDefaults(&mut rgb, image);
+    rgb.format = sys::AVIF_RGB_FORMAT_RGBA;
+    rgb.chromaDownsampling = sys::AVIF_CHROMA_DOWNSAMPLING_BEST_QUALITY;
+    // libavif only reads the RGB pixels here.
+    rgb.pixels = avif_image.as_ptr().cast_mut();
+    rgb.rowBytes = width * 4;
+    avif_result(sys::avifImageAllocatePlanes(image, sys::AVIF_PLANES_YUV))?;
+    avif_result(sys::avifImageRGBToYUV(image, &rgb))?;
+
+    guard.encoder = sys::avifEncoderCreate();
+    if guard.encoder.is_null() {
+      return Err(SkError::Generic("avifEncoderCreate failed".to_owned()));
+    }
+    let encoder = &mut *guard.encoder;
+    // libavif 1.x `quality` is already our 0-100 scale (AVIF_QUALITY_BEST is
+    // 100, avif.h); it is not the old 0-63 quantizer, where 0 was the best.
+    encoder.quality = config.quality.min(100).into();
+    encoder.qualityAlpha = config.alpha_quality.min(100).into();
+    encoder.speed = config.speed.min(10).into();
+    encoder.maxThreads = config.threads.max(1) as i32;
+    avif_result(sys::avifEncoderWrite(
+      guard.encoder,
+      guard.image,
+      &mut guard.output,
+    ))?;
+    if guard.output.data.is_null() {
+      return Ok(Vec::new());
+    }
+    Ok(slice::from_raw_parts(guard.output.data, guard.output.size).to_vec())
+  }
 }
 
 /// Enum representing AVIF error codes
@@ -264,7 +343,7 @@ impl AvifImage {
     if icc.data.is_null() || icc.size == 0 {
       &[]
     } else {
-      unsafe { std::slice::from_raw_parts(icc.data, icc.size) }
+      unsafe { slice::from_raw_parts(icc.data, icc.size) }
     }
   }
 

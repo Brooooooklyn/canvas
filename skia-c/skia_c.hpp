@@ -1214,7 +1214,9 @@ void skiac_image_encode_data(skiac_image* c_image,
 bool skiac_image_read_pixels(skiac_image* c_image,
                              uint8_t* dst,
                              size_t row_bytes,
-                             int alpha_type);
+                             int alpha_type,
+                             uint8_t cs);
+uint8_t skiac_image_color_space(skiac_image* c_image);
 void skiac_canvas_draw_sk_image(skiac_canvas* c_canvas,
                                 skiac_image* c_image,
                                 float left,

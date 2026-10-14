@@ -1,7 +1,7 @@
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import ava, { TestFn } from 'ava'
+import ava, { ExecutionContext, TestFn } from 'ava'
 
 import {
   createCanvas,
@@ -89,34 +89,91 @@ test('alpha:false survives width/height changes', (t) => {
 
 // GIF has no color profile, so the spec converts its pixels to sRGB. Chrome
 // 155 gives 31,128,223 for this P3 pixel in sRGB (drawImage into an sRGB
-// canvas, and the P3 PNG round trip). Our AVIF encoder writes no profile, so
-// AVIF is converted too; it is lossy, so it is held to an sRGB canvas that
-// holds the same pixels.
-test('gif and avif output of a display-p3 canvas is converted to sRGB', async (t) => {
+// canvas, and the P3 PNG round trip).
+test('gif output of a display-p3 canvas is converted to sRGB', async (t) => {
   const p3 = createCanvas(8, 8)
   const p3Context = p3.getContext('2d', { colorSpace: 'display-p3' })
   p3Context.fillStyle = 'rgb(32,128,223)'
   p3Context.fillRect(0, 0, 8, 8)
-  const srgb = createCanvas(8, 8)
-  srgb.getContext('2d').drawImage(p3, 0, 0)
   const decode = async (data: Buffer) => {
     const ctx = createCanvas(8, 8).getContext('2d')
     ctx.drawImage(await loadImage(data), 0, 0)
     return [...ctx.getImageData(4, 4, 1, 1).data]
   }
-  const gif: [string, (canvas: Canvas) => Buffer][] = [
-    ['toBuffer gif', (canvas) => canvas.toBuffer('image/gif')],
-    ['encodeSync gif', (canvas) => canvas.encodeSync('gif')],
-  ]
-  for (const [name, encode] of gif) {
-    t.deepEqual(await decode(encode(p3)), [31, 128, 223, 255], name)
+  t.deepEqual(await decode(p3.toBuffer('image/gif')), [31, 128, 223, 255], 'toBuffer')
+  t.deepEqual(await decode(p3.encodeSync('gif')), [31, 128, 223, 255], 'encodeSync')
+})
+
+// Our YUV to RGB step for AVIF can round a channel 1 lower than Chrome's.
+const nearPixel = (t: ExecutionContext, actual: number[], expected: readonly number[], label: string) =>
+  t.true(
+    actual.every((value, i) => Math.abs(value - expected[i]) <= 1),
+    `${label}: ${actual} vs ${expected}`,
+  )
+
+// The spec: a format that supports a color profile must carry the bitmap's
+// color space. AVIF does this with CICP (an 'nclx' colr box), so the pixels
+// of a P3 canvas stay P3, tagged primaries 12 (P3), transfer 13 (sRGB),
+// matrix 6 (BT.601) and full range; an sRGB canvas is tagged 1/13/6. Chrome
+// has no AVIF encoder; the pixels are what Chrome 155 CPU decodes from these
+// files, apart from the 1 lower red (Chrome 255, 234).
+test('avif output keeps the canvas color space and tags it as CICP', async (t) => {
+  const colr = (data: Buffer) => {
+    const at = data.indexOf('colrnclx')
+    return [data.readUInt16BE(at + 8), data.readUInt16BE(at + 10), data.readUInt16BE(at + 12), data[at + 14] >> 7]
   }
-  const avif: [string, (canvas: Canvas) => Buffer][] = [
-    ['toBuffer avif', (canvas) => canvas.toBuffer('image/avif')],
-    ['encodeSync avif', (canvas) => canvas.encodeSync('avif')],
-  ]
-  for (const [name, encode] of avif) {
-    t.deepEqual(await decode(encode(p3)), await decode(encode(srgb)), name)
+  for (const { source, cicp, decoded } of [
+    {
+      source: 'display-p3',
+      cicp: [12, 13, 6, 1],
+      decoded: {
+        'display-p3': [
+          [255, 0, 0, 255],
+          [31, 128, 223, 255],
+        ],
+        srgb: [
+          [255, 0, 0, 255],
+          [0, 130, 230, 255],
+        ],
+      },
+    },
+    {
+      source: 'srgb',
+      cicp: [1, 13, 6, 1],
+      decoded: {
+        'display-p3': [
+          [234, 51, 35, 255],
+          [63, 126, 216, 255],
+        ],
+        srgb: [
+          [255, 0, 0, 255],
+          [31, 128, 223, 255],
+        ],
+      },
+    },
+  ] as const) {
+    const canvas = createCanvas(4, 4)
+    const ctx = canvas.getContext('2d', { colorSpace: source })
+    const imageData = ctx.createImageData(4, 4)
+    for (let i = 0; i < 16; i++) {
+      imageData.data.set(i % 4 < 2 ? [255, 0, 0, 255] : [32, 128, 223, 255], i * 4)
+    }
+    ctx.putImageData(imageData, 0, 0)
+    for (const [name, data] of [
+      ['toBuffer', canvas.toBuffer('image/avif', { quality: 100 })],
+      ['encodeSync', canvas.encodeSync('avif', { quality: 100 })],
+    ] as const) {
+      t.deepEqual(colr(data), cicp, `${source} ${name}`)
+      const image = await loadImage(data)
+      for (const colorSpace of ['display-p3', 'srgb'] as const) {
+        const label = `${source} ${name} into ${colorSpace}`
+        const out = createCanvas(4, 4).getContext('2d', { colorSpace })
+        out.drawImage(image, 0, 0)
+        const [left, right] = decoded[colorSpace]
+        nearPixel(t, [...out.getImageData(0, 0, 1, 1).data], left, `${label} left`)
+        t.deepEqual([...out.getImageData(3, 0, 1, 1).data], right, `${label} right`)
+      }
+    }
   }
 })
 
@@ -159,14 +216,9 @@ test('avif quality: a higher quality gives a bigger and more exact file', async 
 // The fixtures hold P3 255,0,0 (left) and P3 200,100,50 (right), tagged with an
 // ICC profile, with CICP 12/13/6, or with CICP 12/2/6. Chrome 155 CPU honors
 // the ICC profile, else the CICP, where an unspecified (2) transfer means sRGB
-// (avif_image_decoder.cc:868-914). Our YUV to RGB step rounds the red 1 lower
-// than Chrome's, as it does for an sRGB AVIF.
+// (avif_image_decoder.cc:868-914). Our red is 1 lower (nearPixel), as it is
+// for an sRGB AVIF.
 test('avif decode honors the ICC profile or CICP color space', async (t) => {
-  const near = (actual: number[], expected: number[], label: string) =>
-    t.true(
-      actual.every((value, i) => Math.abs(value - expected[i]) <= 1),
-      `${label}: ${actual} vs ${expected}`,
-    )
   for (const name of ['avif-p3-icc', 'avif-p3-cicp', 'avif-p3-cicp-transfer-unspecified']) {
     const image = await loadImage(join(__dirname, 'fixtures', `${name}.avif`))
     for (const { colorSpace, left, right } of [
@@ -175,7 +227,7 @@ test('avif decode honors the ICC profile or CICP color space', async (t) => {
     ] as const) {
       const ctx = createCanvas(4, 4).getContext('2d', { colorSpace })
       ctx.drawImage(image, 0, 0)
-      near([...ctx.getImageData(0, 0, 1, 1).data], left, `${name} ${colorSpace} left`)
+      nearPixel(t, [...ctx.getImageData(0, 0, 1, 1).data], left, `${name} ${colorSpace} left`)
       t.deepEqual([...ctx.getImageData(3, 0, 1, 1).data], right, `${name} ${colorSpace} right`)
     }
   }
