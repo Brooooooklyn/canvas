@@ -1463,8 +1463,14 @@ impl Context {
   /// 127, because its Mitchell weights can sum to 1 - eps.
   /// f32 maths and `k / 255.0` as Blink does: `set_alpha(k)` multiplies by
   /// 1/255, which is 1 ulp off for some k.
+  /// A PDF page has no raster sampling to match, so it keeps the spec's float,
+  /// as its solid and gradient fills do (`/ca .5`, not `.502`).
   fn image_global_alpha(&self) -> f32 {
-    (self.state.global_alpha as f32 * 255.0).round() / 255.0
+    let alpha = self.state.global_alpha as f32;
+    if self.backend == Backend::Pdf {
+      return alpha;
+    }
+    (alpha * 255.0).round() / 255.0
   }
 
   pub fn fill_paint(&self) -> result::Result<Paint, SkError> {
