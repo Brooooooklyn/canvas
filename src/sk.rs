@@ -195,8 +195,10 @@ pub mod ffi {
     pub font_ascent: f32,
     pub font_descent: f32,
     pub alphabetic_baseline: f32,
-    pub em_height_ascent: f32,
-    pub em_height_descent: f32,
+    /// The drawn glyph ink, left and right of the anchor x, before a maxWidth
+    /// squeeze (negative left of it). Only the alpha:false reset reads them.
+    pub ink_left: f32,
+    pub ink_right: f32,
   }
 
   #[repr(C)]

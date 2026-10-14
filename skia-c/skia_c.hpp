@@ -678,6 +678,10 @@ struct skiac_line_metrics {
   float font_ascent;
   float font_descent;
   float alphabetic_baseline;
+  // The drawn glyph ink, left and right of the anchor x, before a maxWidth
+  // squeeze. Only the alpha:false reset reads them; measureText does not.
+  float ink_left;
+  float ink_right;
 };
 
 struct skiac_rect {

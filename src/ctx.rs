@@ -2882,18 +2882,17 @@ impl Context {
   }
 
   /// Blink's text bounds: the glyph bounds at the drawn position, inflated
-  /// for a stroke (base_rendering_context_2d.cc:1016-1080), here measured as
-  /// measureText's actualBoundingBox. Only the alpha:false reset reads them.
-  /// Two corrections give the box as drawn:
-  ///   * maxWidth squeezes the text with scale(maxWidth / width, 1) about the
-  ///     anchor x (skia_c.cpp skiac_canvas_get_line_metrics_or_draw_text), so
-  ///     the box scales toward x. Blink resets its unscaled box under the
-  ///     scaled canvas (base_rendering_context_2d.cc:1066-1082), which misses
-  ///     part of the squeezed glyphs; that is not copied.
-  ///   * measureText's box leaves out the letterSpacing / 2 shift Skia gives
-  ///     LTR glyphs: its right edge is short by that much, and its left edge
-  ///     by the whole spacing when it is negative. Both are widened by it,
-  ///     which only grows the box where the shift does not apply.
+  /// for a stroke (base_rendering_context_2d.cc:1016-1080). Only the
+  /// alpha:false reset reads them. Left and right are the ink of the glyphs
+  /// the draw paints, where it paints them (`ink_left` / `ink_right` from
+  /// skia_c.cpp skiac_canvas_get_line_metrics_or_draw_text), so the
+  /// letterSpacing shift applies only where the draw applies it: to LTR text
+  /// that is not cursive. Top and bottom are measureText's.
+  ///
+  /// maxWidth squeezes the text with scale(maxWidth / width, 1) about the
+  /// anchor x, so the box scales toward x. Blink resets its unscaled box under
+  /// the scaled canvas (base_rendering_context_2d.cc:1066-1082), which misses
+  /// part of the squeezed glyphs; that is not copied.
   ///
   /// When measuring fails (for example a fill gradient with no shader) the
   /// reset takes the whole clip: the draw itself reports its own errors.
@@ -2912,9 +2911,8 @@ impl Context {
     } else {
       1.0
     };
-    let spacing = self.state.letter_spacing;
-    let left = x - scale * (metrics.left + (-spacing).max(0.0));
-    let right = x + scale * (metrics.right + spacing.max(0.0) / 2.0);
+    let left = x + scale * metrics.ink_left;
+    let right = x + scale * metrics.ink_right;
     let bounds = DrawBounds {
       left: left.min(right),
       top: y - metrics.ascent,

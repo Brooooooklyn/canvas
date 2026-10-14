@@ -657,7 +657,7 @@ test('alpha:false text resets alpha inside the glyph bounds only', (t) => {
 // maxWidth draws the text under scale(maxWidth / width, 1) about its anchor
 // (skia_c.cpp skiac_canvas_get_line_metrics_or_draw_text), and letterSpacing
 // moves the glyphs by a shift measureText's box leaves out, so the reset takes
-// the glyph box as drawn: scaled toward the anchor and widened by that shift.
+// the glyph box as drawn: the ink of the drawn glyphs, scaled toward the anchor.
 // A glyph pixel the reset misses keeps the xor alpha (128 where fully
 // covered); only an anti-aliased fringe may stay below 255, as in Chrome
 // (min 202 for the unsqueezed cases). Chrome resets the unscaled box under the
@@ -731,6 +731,86 @@ test('alpha:false squeezed or letter-spaced text resets around its drawn glyphs 
       [128, 128, 128],
       `${name}: far pixels`,
     )
+  }
+})
+
+GlobalFonts.registerFromPath(
+  join(fileURLToPath(import.meta.url), '..', 'fonts', 'Harmattan-Regular.ttf'),
+  'AlphaFalseArabic',
+)
+
+// letterSpacing moves LTR glyphs by half the spacing, but not RTL ones nor
+// cursive ones such as Arabic, which take no spacing inside a word (skia_c.cpp
+// letter_spacing_offset). The reset follows the glyphs as drawn. The expected
+// columns are the first and last ones Chrome resets; Chrome also draws one
+// Arabic word with no spacing, so both draw the same glyphs here. Our box may
+// reach an anti-aliased column further on either side.
+test('alpha:false letter-spaced RTL and cursive text resets around its drawn glyphs', (t) => {
+  type Case = { font: string; text: string; dir: CanvasDirection; align?: CanvasTextAlign; x: number }
+  const arabic = (dir: CanvasDirection, x: number, align?: CanvasTextAlign): Case => ({
+    font: '30px AlphaFalseArabic',
+    text: 'مرحبا',
+    dir,
+    align,
+    x,
+  })
+  const latin = (dir: CanvasDirection, x: number, align?: CanvasTextAlign): Case => ({
+    font: '30px AlphaFalseLato',
+    text: 'Hgjy',
+    dir,
+    align,
+    x,
+  })
+  // [case, letterSpacing, first and last column Chrome resets]
+  const cases: [Case, string, [number, number]][] = [
+    [arabic('ltr', 10), '40px', [11, 57]],
+    [arabic('ltr', 10), '-4px', [11, 57]],
+    [arabic('ltr', 130, 'center'), '40px', [107, 153]],
+    [arabic('ltr', 130, 'center'), '-4px', [107, 153]],
+    [arabic('rtl', 250), '40px', [202, 248]],
+    [arabic('rtl', 250), '-4px', [202, 248]],
+    [arabic('rtl', 10, 'left'), '40px', [11, 57]],
+    [arabic('rtl', 10, 'left'), '-4px', [11, 57]],
+    [latin('rtl', 250), '6px', [168, 243]],
+    [latin('rtl', 250), '-2px', [200, 251]],
+    [latin('rtl', 10, 'left'), '6px', [13, 88]],
+    [latin('rtl', 10, 'left'), '-2px', [13, 64]],
+    [latin('ltr', 10), '6px', [13, 88]],
+    [latin('ltr', 10), '-2px', [13, 64]],
+  ]
+  const setUp = (c: Ctx, k: Case, spacing: string) => {
+    c.font = k.font
+    c.direction = k.dir
+    if (k.align) c.textAlign = k.align
+    c.letterSpacing = spacing
+    c.fillStyle = 'rgba(0,0,255,0.5)'
+    c.globalCompositeOperation = 'xor'
+  }
+  for (const [k, spacing, [first, last]] of cases) {
+    const name = `${k.text} ${k.dir} ${k.align ?? 'start'} ${spacing}`
+    const far = lowAlpha(260, 60)
+    setUp(far.ctx, k, spacing)
+    far.ctx.fillText(k.text, k.x, 40)
+    const data = far.ctx.getImageData(0, 0, 260, 60).data
+    let x0 = 260
+    let x1 = -1
+    for (let i = 3; i < data.length; i += 4) {
+      if (data[i] !== 255) continue
+      const x = ((i - 3) / 4) % 260
+      x0 = Math.min(x0, x)
+      x1 = Math.max(x1, x)
+    }
+    t.true(
+      Math.abs(x0 - first) <= 2 && Math.abs(x1 - last) <= 2,
+      `${name}: reset columns ${x0}..${x1}, Chrome ${first}..${last}`,
+    )
+    const { ctx } = opaqueBackground(260, 60)
+    setUp(ctx, k, spacing)
+    ctx.fillText(k.text, k.x, 40)
+    const drawn = ctx.getImageData(0, 0, 260, 60).data
+    let min = 255
+    for (let i = 3; i < drawn.length; i += 4) min = Math.min(min, drawn[i])
+    t.true(min >= 192, `${name}: min alpha ${min}`)
   }
 })
 

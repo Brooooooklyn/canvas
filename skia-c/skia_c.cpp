@@ -894,6 +894,32 @@ void skiac_canvas_get_line_metrics_or_draw_text(
     c_line_metrics->font_ascent = -font_metrics.fAscent + offset;
     c_line_metrics->font_descent = font_metrics.fDescent - offset;
     c_line_metrics->alphabetic_baseline = -font_metrics.fAscent + offset;
+    // The ink of every glyph the draw above paints, where it paints it:
+    // visit() walks the text blobs paint() draws, and the origin is the
+    // draw's own, rtl_offset and letter_spacing_offset included. Relative to
+    // x, unscaled.
+    SkScalar ink_left = SK_ScalarInfinity;
+    SkScalar ink_right = SK_ScalarNegativeInfinity;
+    paragraph->visit([&](int, const Paragraph::VisitorInfo* info) {
+      if (!info) {
+        return;
+      }
+      std::vector<SkRect> glyph_bounds(info->count);
+      info->font.getBounds({info->glyphs, static_cast<size_t>(info->count)},
+                           glyph_bounds, PAINT_CAST);
+      for (int i = 0; i < info->count; ++i) {
+        if (glyph_bounds[i].isEmpty()) {
+          continue;
+        }
+        auto glyph_x = info->origin.fX + info->positions[i].fX;
+        ink_left = std::min(ink_left, glyph_x + glyph_bounds[i].fLeft);
+        ink_right = std::max(ink_right, glyph_x + glyph_bounds[i].fRight);
+      }
+    });
+    auto draw_x = paint_x - rtl_offset + letter_spacing_offset - x;
+    // No ink (only spaces): an empty box at the anchor.
+    c_line_metrics->ink_left = ink_left <= ink_right ? draw_x + ink_left : 0;
+    c_line_metrics->ink_right = ink_left <= ink_right ? draw_x + ink_right : 0;
   }
   delete paragraph;
 }
