@@ -41,6 +41,11 @@ fn main() {
   let mut build = cc::Build::new();
 
   build.cpp(true).file("skia-c/skia_c.cpp");
+  // Skia is built with SK_R32_SHIFT=0 (scripts/skia-gn-args.cjs): kN32 is
+  // RGBA, like our surfaces, so the legacy blitters can draw on them. The value
+  // shapes inline code in Skia's headers, so skia-c must use the same one;
+  // SkTypes.h would pick 16 (BGRA) on Windows.
+  build.define("SK_R32_SHIFT", "0");
 
   if compile_target.as_str() == "aarch64-linux-android" {
     let nkd_home = env::var("ANDROID_NDK_LATEST_HOME").unwrap();

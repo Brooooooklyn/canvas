@@ -1,6 +1,6 @@
 ---
 name: upgrade-skia
-description: Upgrade the vendored Skia submodule to a new Chrome milestone (chrome/mNNN) end to end - bump the submodule, build and test locally, bump the README version badges, push the `release` branch, wait for the "Build skia" matrix to publish the prebuilt binaries, then open the PR to main and watch its CI. Use this skill whenever the user mentions upgrading or bumping Skia, a new chrome/m milestone, the `release` branch, the "Build skia" workflow, or the `skia-<sha>` release tags - even if they only say "update skia" or give a bare milestone number.
+description: Upgrade the vendored Skia submodule to a new Chrome milestone (chrome/mNNN) end to end - bump the submodule, build and test locally, bump the README version badges, push the `release` branch, wait for the "Build skia" matrix to publish the prebuilt binaries, then open the PR to main and watch its CI. Use this skill whenever the user mentions upgrading or bumping Skia, a new chrome/m milestone, the `release` branch, the "Build skia" workflow, or the `skia-<sha>-<args>` release tags - even if they only say "update skia" or give a bare milestone number.
 ---
 
 # Upgrade Skia
@@ -8,22 +8,24 @@ description: Upgrade the vendored Skia submodule to a new Chrome milestone (chro
 ## Why the order matters
 
 The prebuilt Skia libraries live in a GitHub release. The tag is derived from the
-submodule commit, in `scripts/utils.mjs`:
+submodule commit and from the GN args file, in `scripts/utils.mjs`:
 
 ```js
-export const TAG = `skia-${SHORT_HASH}`   // first 8 hex chars of the skia submodule SHA
+export const TAG = skiaReleaseTag(FULL_HASH, readFileSync(join(dirname, 'skia-gn-args.cjs'), 'utf8'))
+// skia-<first 8 hex of the skia submodule SHA>-<first 8 hex of sha256(scripts/skia-gn-args.cjs)>
 ```
 
-Every CI job downloads its static libraries from that tag. A new submodule commit
-means a new tag with zero assets. So PR CI cannot pass until the binaries exist.
-Only a push to the `release` branch builds them.
+Every CI job downloads its static libraries from that tag. A new submodule commit,
+or any edit to `scripts/skia-gn-args.cjs` (a comment too), means a new tag with zero
+assets. So PR CI cannot pass until the binaries exist. Only a push to the `release`
+branch builds them.
 
 ```
-  bump submodule  ->  new SHA  ->  new tag skia-<sha8>  ->  no assets yet
+  bump submodule  ->  new SHA  ->  new tag skia-<sha8>-<args8>  ->  no assets yet
                                               |
         push branch `release`  ------>  workflow "Build skia" (11 jobs)
                                               |
-                                    111 assets uploaded to skia-<sha8>
+                                    111 assets uploaded to skia-<sha8>-<args8>
                                               |
                             now, and only now, open the PR release -> main
                                               |
@@ -78,7 +80,7 @@ the tag. A stray prefix produces a broken tag such as `skia-+7219df0`.
 Compute the tag you will wait for later:
 
 ```bash
-echo "skia-$(git -C skia rev-parse HEAD | cut -c1-8)"
+node -e "import('./scripts/utils.mjs').then((m) => console.log(m.TAG))"
 ```
 
 ## Phase 3 - build and test locally
@@ -193,7 +195,7 @@ The only gate is 11 green jobs in the run you are watching:
 
 ```bash
 gh run view <run-id> --json jobs --jq '[.jobs[] | {name, conclusion}]'
-gh release view skia-<sha8> --json assets --jq '.assets | length'   # expect 111
+gh release view <tag> --json assets --jq '.assets | length'   # expect 111
 ```
 
 Proceed only when all 11 jobs of that single run are green. Then confirm the count is

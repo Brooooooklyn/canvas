@@ -125,12 +125,18 @@ pub(crate) enum Backend {
 pub(crate) struct ShadowDraw {
   paint: Paint,
   filter: Option<ImageFilter>,
+  /// Blink's `ShouldUseDropShadowPaintFilter` (canvas_2d_recorder_context.h:
+  /// 571-577): a path or rect filled or stroked with a pattern. With a shadow,
+  /// it sends even `copy` through `CompositedDraw`, which draws the content
+  /// src-over inside the layer. See `render_canvas`.
+  pattern_geometry: bool,
 }
 
 // The same, borrowed, plus what `render_canvas` needs to size the shadow layer.
 struct ShadowPass<'a> {
   paint: &'a Paint,
   filter: Option<&'a ImageFilter>,
+  pattern_geometry: bool,
   offset_x: f32,
   offset_y: f32,
   blur: f32,
@@ -703,6 +709,7 @@ impl Context {
     let shadow = shadow.map(|shadow| ShadowPass {
       paint: &shadow.paint,
       filter: shadow.filter.as_ref(),
+      pattern_geometry: shadow.pattern_geometry,
       offset_x: self.state.shadow_offset_x,
       offset_y: self.state.shadow_offset_y,
       blur: self.state.shadow_blur,
@@ -1462,10 +1469,12 @@ impl Context {
   // load-bearing -- handing one paint to both sides applies globalAlpha twice,
   // since `drawPicture` with a paint is a `saveLayer` whose restore paint keeps
   // alpha, colour filter and blend (canvas_2d_recorder_context.h:948-962).
+  // `content_blend` is the blend the draw itself gets inside the layer.
   fn composited_pass<F>(
     surface_canvas: &mut Canvas,
     paint: &Paint,
     blend_mode: BlendMode,
+    content_blend: BlendMode,
     left: f32,
     top: f32,
     width: f32,
@@ -1477,7 +1486,7 @@ impl Context {
     F: Fn(&mut Canvas, &Paint) -> result::Result<(), SkError>,
   {
     let mut inner_paint = paint.clone();
-    inner_paint.set_blend_mode(BlendMode::SourceOver);
+    inner_paint.set_blend_mode(content_blend);
     let mut composite_paint = Paint::new();
     composite_paint.set_blend_mode(blend_mode);
     let mut layer = PictureRecorder::new();
@@ -1496,6 +1505,25 @@ impl Context {
       surface_canvas.restore();
     }
     Ok(())
+  }
+
+  /// The blend a `composited_pass` draws its content with. Blink's
+  /// `CompositedDraw` draws it src-over inside the layer
+  /// (canvas_2d_recorder_context.h:942-959). `copy` skips `CompositedDraw` and
+  /// draws with kSrc straight onto the cleared canvas (h:830-837), unless a
+  /// `ctx.filter` (`composited_filter_layer` already draws src-over in its
+  /// layer) or a shadow under a pattern fill or stroke (`pattern_shadow`,
+  /// `ShouldUseDropShadowPaintFilter`, h:582-597) sends it through
+  /// `CompositedDraw` after all. Over this transparent layer src-over and kSrc
+  /// give the same pixels in exact maths, but Skia blits src-over with its
+  /// legacy 8-bit blitters and kSrc with the raster pipeline, which round
+  /// differently.
+  fn layer_content_blend(blend_mode: BlendMode, pattern_shadow: bool) -> BlendMode {
+    if matches!(blend_mode, BlendMode::Source) && !pattern_shadow {
+      BlendMode::Source
+    } else {
+      BlendMode::SourceOver
+    }
   }
 
   /// Runs one pass inside its own image-filter layer, opened at the device
@@ -1611,6 +1639,9 @@ impl Context {
       | BlendMode::DestinationIn
       | BlendMode::DestinationATop
       | BlendMode::Source => {
+        let pattern_shadow = shadow
+          .as_ref()
+          .is_some_and(|shadow| shadow.pattern_geometry);
         if let Some(shadow) = shadow {
           // The shadow layer is the one place the halo can escape the canvas
           // rect, so its cull rect is expanded. FIXME: this under-covers. Skia
@@ -1626,6 +1657,9 @@ impl Context {
             surface_canvas,
             shadow.paint,
             blend_mode,
+            // The content pass below replaces every pixel for copy, so this
+            // one's blend never shows there.
+            Self::layer_content_blend(blend_mode, false),
             -expansion,
             -expansion,
             width + expansion * 2.0,
@@ -1647,6 +1681,7 @@ impl Context {
           surface_canvas,
           paint,
           blend_mode,
+          Self::layer_content_blend(blend_mode, pattern_shadow),
           0.0,
           0.0,
           width,
@@ -1786,19 +1821,11 @@ impl Context {
     Ok(())
   }
 
-  /// `globalAlpha` rounded to k/255, for the paints that sample an image:
-  /// drawImage and `Pattern::Image`. Blink rounds the drawImage alpha on purpose
-  /// (canvas_rendering_context_2d_state.cc:334-336, "TODO: Don't quantize the
-  /// alpha to 8-bit"). It keeps a float for patterns, but Chrome's CPU canvas
-  /// draws a repeat pattern with source-over through Skia's legacy blitter,
-  /// which rounds the paint alpha to a byte (SkBlitter.cpp `getAlpha()`).
-  /// Some composite ops (copy, xor, lighter, screen, destination-over),
-  /// repeat-x/y and a transformed no-repeat take the float pipeline there, so
-  /// at exact (k + 0.5)/255 ties such as 0.3 Chrome CPU can be 1 lower; its GPU
-  /// canvas agrees with this rounding. Here it is load-bearing: with a float
-  /// alpha, a pattern (smoothing on or off) and a 'high' drawImage give 76 and
-  /// 178 for 0.3 and 0.7, and a scaled 'high' drawImage can also turn 0.5 into
-  /// 127, because its Mitchell weights can sum to 1 - eps.
+  /// `globalAlpha` rounded to k/255, for drawImage only. Blink rounds the
+  /// drawImage alpha on purpose (canvas_rendering_context_2d_state.cc:334-336,
+  /// "TODO: Don't quantize the alpha to 8-bit"). Patterns keep the float
+  /// alpha, as Blink does: where Skia's legacy blitter draws them, it rounds
+  /// the paint alpha to a byte itself (SkBlitter.cpp `getAlpha()`).
   /// f32 maths and `k / 255.0` as Blink does: `set_alpha(k)` multiplies by
   /// 1/255, which is 1 ulp off for some k.
   /// A PDF page has no raster sampling to match, so it keeps the spec's float,
@@ -1876,7 +1903,7 @@ impl Context {
           FilterQuality::None
         }) {
           paint.set_color(0, 0, 0, 255);
-          paint.set_alpha_f32(self.image_global_alpha());
+          paint.set_alpha_f32(alpha);
           paint.set_shader(&shader);
         }
       }
@@ -2096,7 +2123,7 @@ impl Context {
           FilterQuality::None
         }) {
           paint.set_color(0, 0, 0, 255);
-          paint.set_alpha_f32(self.image_global_alpha());
+          paint.set_alpha_f32(global_alpha);
           paint.set_shader(&shader);
         }
       }
@@ -2120,14 +2147,14 @@ impl Context {
   /// use the equivalent mask filter; this route is for image sources or a
   /// shadow whose `ctx.filter` must be composed before colourisation.
   ///
-  /// ACCEPTED DIVERGENCE, every shape: on an 8888 surface Skia's raster engine
-  /// routes to the three-box pass above sigma 2 (SkBlurEngine.cpp:1281, :275)
-  /// and derives its window as an integer (:388), so the effective sigma snaps
-  /// to a staircase -- +9% to -13% off `shadowBlur / 2`, sign depending on where
-  /// the request lands in a step. Measured against Chrome 150 over 55 radii:
-  /// Chrome is smooth to within 3% on BOTH its accelerated and its software
-  /// canvas, so this is ours alone, not a CPU-vs-GPU artefact. The sigma passed
-  /// here is already correct; the lever is Skia's algorithm choice, not this.
+  /// On an 8888 surface Skia's raster engine routes the blur to the three-box
+  /// pass (SkBlurEngine.cpp:1281, :275) -- at every sigma, as Skia is built
+  /// with Chrome's SK_AVOID_SLOW_RASTER_PIPELINE_BLURS -- and derives its window
+  /// as an integer (:388), so the effective sigma snaps to a staircase -- +9%
+  /// to -13% off `shadowBlur / 2`, sign depending on where the request lands in
+  /// a step. Chrome's CPU canvas is built with the same define and draws the
+  /// same staircase: an image shadow at shadowBlur 0.5 to 24 equals Chrome
+  /// 155's byte for byte. The sigma passed here is already correct.
   ///
   /// dx/dy and sigma go in raw, in device pixels, as Blink builds them -- safe
   /// ONLY because `composited_filter_layer` opens this filter's layer at the
@@ -2228,6 +2255,14 @@ impl Context {
     if state.shadow_blur == 0f32 && state.shadow_offset_x == 0f32 && state.shadow_offset_y == 0f32 {
       return None;
     }
+    // Text passes kNoImage whatever its style (base_rendering_context_2d.cc),
+    // and drawImage is not a fill or stroke paint.
+    let pattern_geometry = content == DrawContent::Geometry
+      && match source {
+        ShadowSource::Fill => matches!(state.fill_style, Pattern::Image(..)),
+        ShadowSource::Stroke => matches!(state.stroke_style, Pattern::Image(..)),
+        ShadowSource::Image => false,
+      };
     let mut drop_shadow_paint = paint.clone();
     // Whatever the blur, the colourisation is the same operation: an
     // `SkColorFilters::Blend(shadowColor, kSrcIn)`, which Blink installs in both
@@ -2265,12 +2300,13 @@ impl Context {
         // bounding box -- a `strokeRect` shadow came out a filled box. So fold
         // the blend into the paint colour, as `SkPaintPriv::RemoveColorFilter`
         // does for PDF; against a solid-colour source that is algebraically the
-        // same, and SkSVGDevice emits a plain `fill=` with no filter. It rounds
-        // twice, though: `get_color` rounds the float paint alpha to a byte,
-        // and the product with `shadowColor.a` is rounded again. The
-        // image-filter route below does the same, through its 8-bit layer;
-        // Blink's looper shadow takes one float product, so this one can be
-        // 1/255 off it.
+        // same, and SkSVGDevice emits a plain `fill=` with no filter. Like
+        // Blink's looper shadow (`SkColorFilters::Blend(shadowColor4f, kSrcIn)`
+        // folded by RemoveColorFilter, draw_looper_builder.cc), the alpha is one
+        // float product, `shadowColor.a * fillStyle.a * globalAlpha`, rounded
+        // once by the blitter. Only a colour-only `ctx.filter` reads the
+        // filtered colour as a byte. The image-filter route below rounds
+        // through its 8-bit layer.
         //
         // Two conditions, both load-bearing:
         //   * `* paint_alpha`: `paint` already carries style alpha *
@@ -2287,20 +2323,16 @@ impl Context {
         // since kSrcIn throws the filtered RGB away. Deliberately NOT
         // special-cased on the filter list: `SkImageFilters::ColorFilter`
         // collapses chained colour filters, so `filterColor4f` answers for all.
-        let source_color = match colour_only_filter {
-          Some(filter) => filter.filter_color(drop_shadow_paint.get_color()),
-          None => drop_shadow_paint.get_color(),
+        let paint_alpha = match colour_only_filter {
+          Some(filter) => (filter.filter_color(drop_shadow_paint.get_color()) >> 24) as f32 / 255.0,
+          None => drop_shadow_paint.get_alpha_f32(),
         };
-        let paint_alpha = (source_color >> 24) as f32 / 255.0;
-        drop_shadow_paint.set_color(
-          shadow_color.r,
-          shadow_color.g,
-          shadow_color.b,
-          (shadow_alpha as f32 * paint_alpha).round() as u8,
-        );
+        drop_shadow_paint.set_color(shadow_color.r, shadow_color.g, shadow_color.b, 255);
+        drop_shadow_paint.set_alpha_f32(shadow_alpha as f32 / 255.0 * paint_alpha);
         return Some(ShadowDraw {
           paint: drop_shadow_paint,
           filter: None,
+          pattern_geometry,
         });
       }
       // A shader source. `ctx.filter` is deliberately DROPPED rather than
@@ -2318,6 +2350,7 @@ impl Context {
       return Some(ShadowDraw {
         paint: drop_shadow_paint,
         filter: None,
+        pattern_geometry,
       });
     }
     let shadow_effect = Self::shadow_only_image_filter(state)?;
@@ -2337,6 +2370,7 @@ impl Context {
     Some(ShadowDraw {
       paint: drop_shadow_paint,
       filter: Some(shadow_effect),
+      pattern_geometry,
     })
   }
 
@@ -2348,6 +2382,125 @@ impl Context {
   fn rect_fillable(x: f32, w: f32) -> bool {
     let width = (x + w) - x;
     width.is_finite() && width > 0.0
+  }
+
+  /// Whether `skiac_canvas_draw_image` returns before drawing because the
+  /// source rect misses the image: Blink's ClipRectsToImageRect, then
+  /// DrawHelper's second Intersect, in gfx::RectF maths
+  /// (canvas_2d_recorder_context.cc:1989-2010, static_bitmap_image.cc:89-93).
+  /// The same f32 steps as the C++ `GfxRectF`, one operation per statement
+  /// there and no fused maths here, so both sides get the same bits.
+  fn image_rects_clip_empty(
+    image_width: f32,
+    image_height: f32,
+    sx: f32,
+    sy: f32,
+    s_width: f32,
+    s_height: f32,
+    dx: f32,
+    dy: f32,
+    d_width: f32,
+    d_height: f32,
+  ) -> bool {
+    #[derive(Clone, Copy)]
+    struct RectF {
+      x: f32,
+      y: f32,
+      w: f32,
+      h: f32,
+    }
+    // std::max and std::min, signed zeros included.
+    let max = |a: f32, b: f32| if a < b { b } else { a };
+    let min = |a: f32, b: f32| if b < a { b } else { a };
+    let clamp_size = |s: f32| if s > 8.0 * f32::EPSILON { s } else { 0.0 };
+    let rect = |x: f32, y: f32, w: f32, h: f32| RectF {
+      x,
+      y,
+      w: clamp_size(w),
+      h: clamp_size(h),
+    };
+    let is_empty = |r: RectF| r.w == 0.0 || r.h == 0.0;
+    let intersect = |a: RectF, b: RectF| {
+      if is_empty(a) || is_empty(b) {
+        return rect(0.0, 0.0, 0.0, 0.0);
+      }
+      let rx = max(a.x, b.x);
+      let ry = max(a.y, b.y);
+      let rr = min(a.x + a.w, b.x + b.w);
+      let rb = min(a.y + a.h, b.y + b.h);
+      if rx >= rr || ry >= rb {
+        return rect(0.0, 0.0, 0.0, 0.0);
+      }
+      rect(rx, ry, rr - rx, rb - ry)
+    };
+    let image = rect(0.0, 0.0, image_width, image_height);
+    let mut src = rect(sx, sy, s_width, s_height);
+    let mut dst = rect(dx, dy, d_width, d_height);
+    if !(src.x >= image.x
+      && src.x + src.w <= image.x + image.w
+      && src.y >= image.y
+      && src.y + src.h <= image.y + image.h)
+    {
+      let scale_x = dst.w / src.w;
+      let scale_y = dst.h / src.h;
+      let scaled_src_x = src.x * scale_x;
+      let scaled_src_y = src.y * scale_y;
+      let offset_x = dst.x - scaled_src_x;
+      let offset_y = dst.y - scaled_src_y;
+      src = intersect(src, image);
+      let scaled_x = src.x * scale_x;
+      let scaled_y = src.y * scale_y;
+      dst = rect(
+        scaled_x + offset_x,
+        scaled_y + offset_y,
+        src.w * scale_x,
+        src.h * scale_y,
+      );
+    }
+    src = intersect(src, image);
+    is_empty(src) || is_empty(dst)
+  }
+
+  /// Blink AdjustRectForCanvas (canvas_2d_recorder_context.h): a negative
+  /// width or height moves the origin; the image is not mirrored.
+  pub(crate) fn normalize_rect_for_canvas(
+    mut x: f64,
+    mut y: f64,
+    mut width: f64,
+    mut height: f64,
+  ) -> (f64, f64, f64, f64) {
+    if width < 0.0 {
+      width = -width;
+      x -= width;
+    }
+    if height < 0.0 {
+      height = -height;
+      y -= height;
+    }
+    (x, y, width, height)
+  }
+
+  /// Blink's drawImage rect handling: AdjustRectForCanvas in double, then
+  /// ClampTo<float> (canvas_2d_recorder_context.cc:2244-2253).
+  pub(crate) fn adjust_rect_for_canvas(
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+  ) -> (f32, f32, f32, f32) {
+    let (x, y, width, height) = Self::normalize_rect_for_canvas(x, y, width, height);
+    let clamp = Self::clamp_to_f32;
+    (clamp(x), clamp(y), clamp(width), clamp(height))
+  }
+
+  /// Blink ClampTo<float>. Non-finite values stay non-finite (Blink returns
+  /// before this), so `rect_fillable` still rejects them.
+  pub(crate) fn clamp_to_f32(v: f64) -> f32 {
+    if v.is_finite() {
+      v.clamp(-f32::MAX as f64, f32::MAX as f64) as f32
+    } else {
+      v as f32
+    }
   }
 
   /// `rect_fillable` for callers whose rect Skia sorts before use: drawRect
@@ -2471,33 +2624,30 @@ impl Context {
   ) -> Result<()> {
     self.flush_if_recording_limit_exceeded();
     // Preflight the conditions under which skiac_canvas_draw_image records
-    // NOTHING that retains the source raster (SkCanvas.cpp
-    // internalQuickReject/fillable), before paint construction and
-    // accounting. The bitmap arm drops the draw unless `fillable` holds for
-    // BOTH raw rects -- finite, strictly-positive spans (its MakeXYWH can
-    // collapse to an empty width under f32 rounding). The canvas arm only
-    // skips a deterministically-empty sorted dst clip; every condition that
-    // depends on the ambient CTM is left to the native path.
-    if bitmap.0.is_canvas {
-      // The clip the C++ builds is MakeWH(d_width, d_height) applied AFTER
-      // translate(dx, dy) (skia_c.cpp: skiac_canvas_draw_image), and
-      // clipRect runs makeSorted() while IGNORING non-finite rects: only a
-      // finite collapsed span (dw == 0 or dh == 0) empties it. A negative
-      // dw/dh paints mirrored; a non-finite endpoint leaves the clip open.
-      // The C++ applies translate THEN scale to the ambient CTM -- there is
-      // no standalone `dx - sx*scale_x` term, so overflow in that derived
-      // expression says nothing about the composed result and must not
-      // gate. Non-finite scale/translate DO still void the draw, but only
-      // once composed with the ambient matrix, which is CTM-dependent and
-      // deliberately left to the native path (a missed skip costs a
-      // bounded charge; a wrong skip drops pixels).
-      if Self::sorted_span_empty(0.0, d_width) || Self::sorted_span_empty(0.0, d_height) {
-        return Ok(());
-      }
-    } else if !(Self::rect_fillable(sx, s_width)
+    // NOTHING that retains the source raster, before paint construction and
+    // accounting. Both source kinds reach SkCanvas::drawImageRect, which drops
+    // the draw unless `fillable` holds for BOTH rects (SkCanvas.cpp) --
+    // finite, strictly-positive spans (MakeXYWH can collapse to an empty
+    // width under f32 rounding). Callers pass the rects through
+    // `adjust_rect_for_canvas` first, so a negative width or height has
+    // already moved the origin instead. The native draw also returns before
+    // drawImageRect when the source rect misses the image.
+    if !(Self::rect_fillable(sx, s_width)
       && Self::rect_fillable(sy, s_height)
       && Self::rect_fillable(dx, d_width)
       && Self::rect_fillable(dy, d_height))
+      || Self::image_rects_clip_empty(
+        bitmap.0.width as f32,
+        bitmap.0.height as f32,
+        sx,
+        sy,
+        s_width,
+        s_height,
+        dx,
+        dy,
+        d_width,
+        d_height,
+      )
     {
       return Ok(());
     }
@@ -2525,6 +2675,8 @@ impl Context {
       self.canvas_shadow_offset(ShadowSource::Image, DrawContent::Geometry);
     let image_smoothing_enabled = self.state.image_smoothing_enabled;
     let image_smoothing_quality = self.state.image_smoothing_quality;
+    let ctm = self.state.transform.get_transform();
+    let vector_device = self.backend != Backend::Raster;
 
     // The recorded op pins a reference to the source pixels; charge its full
     // raster size so large drawImage sources trip the recording limit. The
@@ -2566,6 +2718,8 @@ impl Context {
         )?;
         shadow_canvas.draw_image(
           bitmap,
+          ctm,
+          vector_device,
           sx,
           sy,
           s_width,
@@ -2584,6 +2738,8 @@ impl Context {
       |canvas: &mut Canvas, paint| {
         canvas.draw_image(
           bitmap,
+          ctm,
+          vector_device,
           sx,
           sy,
           s_width,
@@ -2663,7 +2819,8 @@ impl Context {
     //   * a deterministically empty dst clip -- clipRect(MakeXYWH(dx,dy,
     //     dw,dh)) runs makeSorted() while IGNORING non-finite rects
     //     (SkCanvas.cpp: `if (!rect.isFinite()) return`), so a NEGATIVE dw
-    //     or dh sorts to a normal span and still paints mirrored, and an
+    //     or dh sorts to a normal span and still paints (drawCanvas has
+    //     already normalised them, as drawImage does), and an
     //     endpoint that overflows f32 leaves the clip untouched for the CTM
     //     to rescale through. Only a finite collapsed span (dw == 0,
     //     dh == 0, or x + w rounding back to x in f32 -- computed on the
@@ -4145,27 +4302,29 @@ impl CanvasRenderingContext2D {
       }
     };
     let bitmap_ref = bitmap.as_ref();
+    let source_width = bitmap_ref.0.width as f64;
+    let source_height = bitmap_ref.0.height as f64;
     let (sx, sy, s_width, s_height, dx, dy, d_width, d_height) =
       match (sx, sy, s_width, s_height, dx, dy, d_width, d_height) {
         (Some(dx), Some(dy), None, None, None, None, None, None) => (
           0.0,
           0.0,
-          bitmap_ref.0.width as f32,
-          bitmap_ref.0.height as f32,
-          dx as f32,
-          dy as f32,
-          bitmap_ref.0.width as f32,
-          bitmap_ref.0.height as f32,
+          source_width,
+          source_height,
+          dx,
+          dy,
+          source_width,
+          source_height,
         ),
         (Some(dx), Some(dy), Some(d_width), Some(d_height), None, None, None, None) => (
           0.0,
           0.0,
-          bitmap_ref.0.width as f32,
-          bitmap_ref.0.height as f32,
-          dx as f32,
-          dy as f32,
-          d_width as f32,
-          d_height as f32,
+          source_width,
+          source_height,
+          dx,
+          dy,
+          d_width,
+          d_height,
         ),
         (
           Some(sx),
@@ -4176,18 +4335,11 @@ impl CanvasRenderingContext2D {
           Some(dy),
           Some(d_width),
           Some(d_height),
-        ) => (
-          sx as f32,
-          sy as f32,
-          s_width as f32,
-          s_height as f32,
-          dx as f32,
-          dy as f32,
-          d_width as f32,
-          d_height as f32,
-        ),
+        ) => (sx, sy, s_width, s_height, dx, dy, d_width, d_height),
         _ => return Ok(()),
       };
+    let (sx, sy, s_width, s_height) = Context::adjust_rect_for_canvas(sx, sy, s_width, s_height);
+    let (dx, dy, d_width, d_height) = Context::adjust_rect_for_canvas(dx, dy, d_width, d_height);
     self.context.draw_image(
       bitmap_ref, raster_key, sx, sy, s_width, s_height, dx, dy, d_width, d_height,
     )?;
@@ -4242,6 +4394,7 @@ impl CanvasRenderingContext2D {
       // Flush first so the bitmap reads the surface's complete content.
       canvas.ctx.context.flush();
       let bitmap = canvas.ctx.as_ref().context.surface.get_bitmap();
+      let (source_width, source_height) = (source_width as f64, source_height as f64);
       let (sx, sy, s_width, s_height, dx, dy, d_width, d_height) =
         match (sx, sy, s_width, s_height, dx, dy, d_width, d_height) {
           (Some(dx), Some(dy), None, None, None, None, None, None) => (
@@ -4249,8 +4402,8 @@ impl CanvasRenderingContext2D {
             0.0,
             source_width,
             source_height,
-            dx as f32,
-            dy as f32,
+            dx,
+            dy,
             source_width,
             source_height,
           ),
@@ -4259,10 +4412,10 @@ impl CanvasRenderingContext2D {
             0.0,
             source_width,
             source_height,
-            dx as f32,
-            dy as f32,
-            d_width as f32,
-            d_height as f32,
+            dx,
+            dy,
+            d_width,
+            d_height,
           ),
           (
             Some(sx),
@@ -4273,18 +4426,11 @@ impl CanvasRenderingContext2D {
             Some(dy),
             Some(d_width),
             Some(d_height),
-          ) => (
-            sx as f32,
-            sy as f32,
-            s_width as f32,
-            s_height as f32,
-            dx as f32,
-            dy as f32,
-            d_width as f32,
-            d_height as f32,
-          ),
+          ) => (sx, sy, s_width, s_height, dx, dy, d_width, d_height),
           _ => return Ok(()),
         };
+      let (sx, sy, s_width, s_height) = Context::adjust_rect_for_canvas(sx, sy, s_width, s_height);
+      let (dx, dy, d_width, d_height) = Context::adjust_rect_for_canvas(dx, dy, d_width, d_height);
       return self.context.draw_image(
         &bitmap,
         RasterKey::Resource {
@@ -4302,7 +4448,9 @@ impl CanvasRenderingContext2D {
       );
     };
 
-    // Parse parameters similar to drawImage
+    // Parse parameters as drawImage does, and as the bitmap arm above: a
+    // negative size moves the origin instead of mirroring.
+    let (source_width, source_height) = (source_width as f64, source_height as f64);
     let (sx, sy, s_width, s_height, dx, dy, d_width, d_height) =
       match (sx, sy, s_width, s_height, dx, dy, d_width, d_height) {
         (Some(dx), Some(dy), None, None, None, None, None, None) => (
@@ -4310,8 +4458,8 @@ impl CanvasRenderingContext2D {
           0.0,
           source_width,
           source_height,
-          dx as f32,
-          dy as f32,
+          dx,
+          dy,
           source_width,
           source_height,
         ),
@@ -4320,10 +4468,10 @@ impl CanvasRenderingContext2D {
           0.0,
           source_width,
           source_height,
-          dx as f32,
-          dy as f32,
-          d_width as f32,
-          d_height as f32,
+          dx,
+          dy,
+          d_width,
+          d_height,
         ),
         (
           Some(sx),
@@ -4334,20 +4482,29 @@ impl CanvasRenderingContext2D {
           Some(dy),
           Some(d_width),
           Some(d_height),
-        ) => (
-          sx as f32,
-          sy as f32,
-          s_width as f32,
-          s_height as f32,
-          dx as f32,
-          dy as f32,
-          d_width as f32,
-          d_height as f32,
-        ),
+        ) => (sx, sy, s_width, s_height, dx, dy, d_width, d_height),
         _ => return Ok(()),
       };
+    // Normalised, and the origins clamped to the f32 range as drawImage does,
+    // so a transform that scales the clamped rect back into view draws it.
+    // The sizes are not clamped: a size past the range stays infinite and the
+    // replay draws nothing, as drawImage does with f32::MAX unless a tiny
+    // transform scales it back into view. A finite f32::MAX would make the
+    // replay scale the picture's first column across the canvas instead.
+    let (sx, sy, s_width, s_height) = Context::normalize_rect_for_canvas(sx, sy, s_width, s_height);
+    let (dx, dy, d_width, d_height) = Context::normalize_rect_for_canvas(dx, dy, d_width, d_height);
+    let clamp = Context::clamp_to_f32;
+    let (sx, sy, s_width, s_height) = (clamp(sx), clamp(sy), s_width as f32, s_height as f32);
+    let (dx, dy, d_width, d_height) = (clamp(dx), clamp(dy), d_width as f32, d_height as f32);
     // Before any charge, as in draw_image (which the fallback above reaches).
-    if !Context::source_rect_overlaps(sx, sy, s_width, s_height, source_width, source_height) {
+    if !Context::source_rect_overlaps(
+      sx,
+      sy,
+      s_width,
+      s_height,
+      source_width as f32,
+      source_height as f32,
+    ) {
       return Ok(());
     }
 
@@ -5563,6 +5720,17 @@ mod tests {
     let bitmap = test_bitmap(8, 8, [255, 0, 0, 255]);
     ctx
       .draw_image(&bitmap, key, 0.0, 0.0, 8.0, 8.0, 0.0, 0.0, 8.0, 0.0)
+      .unwrap();
+    // Source rects that miss the 8x8 image, or only touch its edge: Blink's
+    // ClipRectsToImageRect leaves nothing, so the native draw returns early.
+    ctx
+      .draw_image(&bitmap, key, 20.0, 0.0, 4.0, 4.0, 0.0, 0.0, 8.0, 8.0)
+      .unwrap();
+    ctx
+      .draw_image(&bitmap, key, 8.0, 0.0, 4.0, 8.0, 0.0, 0.0, 8.0, 8.0)
+      .unwrap();
+    ctx
+      .draw_image(&src_bitmap, key, 0.0, -10.0, 8.0, 4.0, 0.0, 0.0, 8.0, 8.0)
       .unwrap();
     let picture = src.get_picture();
     if let Some(picture) = picture {

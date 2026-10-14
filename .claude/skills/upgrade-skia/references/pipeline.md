@@ -58,13 +58,21 @@ export const REPO = 'canvas'
 const [FULL_HASH] =
   process.env.NODE_ENV === 'ava' ? ['000000'] : execSync(`git submodule status skia`).toString('utf8').trim().split(' ')
 
-const SHORT_HASH = FULL_HASH.substring(0, 8)
-export const TAG = `skia-${SHORT_HASH}`
+export function skiaReleaseTag(submoduleHash, gnArgsSource) {
+  const gnArgsHash = createHash('sha256').update(gnArgsSource.replace(/\r\n/g, '\n')).digest('hex').substring(0, 8)
+  return `skia-${submoduleHash.substring(0, 8)}-${gnArgsHash}`
+}
+
+export const TAG = skiaReleaseTag(FULL_HASH, readFileSync(join(dirname, 'skia-gn-args.cjs'), 'utf8'))
 ```
 
 Consequences:
 
-- The tag is fully determined by the submodule SHA. You can compute it before you push.
+- The tag is fully determined by the submodule SHA and the content of
+  `scripts/skia-gn-args.cjs` (line endings folded to LF). You can compute it before you
+  push: `node -e "import('./scripts/utils.mjs').then((m) => console.log(m.TAG))"`.
+- Any edit to `scripts/skia-gn-args.cjs`, even a comment, moves the tag. Such a PR
+  needs a `release` branch run first, like a submodule bump.
 - `git submodule status` prefixes the SHA with `+` when the checkout differs from the
   index, and `-` when the submodule is not initialized. Both poison the tag. Stage the
   submodule with `git add skia` right after the reset.
@@ -140,7 +148,7 @@ The release object is created by whichever job finishes first, even in a failed 
 Assets are uploaded per job and overwrite same named assets. So:
 
 ```bash
-gh release view skia-<sha8> --json assets --jq '.assets | length'   # must be 111
+gh release view <tag> --json assets --jq '.assets | length'   # must be 111
 ```
 
 An older release with 61 or 55 assets is from a smaller matrix. Do not use those

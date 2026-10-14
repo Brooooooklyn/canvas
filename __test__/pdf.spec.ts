@@ -437,3 +437,27 @@ test('a spatial ctx.filter with a shadow keeps its device-space layer', (t) => {
   const pdf = doc.close()
   t.true(countPdfImages(pdf) > 0, 'a blur has to go through the filter layer')
 })
+
+// A sprite sheet: one canvas source drawn through many source rects. On the
+// raster backend drawImage uses drawImageRect, but SkPDFDevice turns each
+// distinct source rect into its own subset image. The page keeps one image
+// XObject for the whole sheet, drawn under a clip per sprite.
+test('canvas sprites share one image XObject', (t) => {
+  const sheet = createCanvas(256, 256)
+  const sheetContext = sheet.getContext('2d')
+  for (let y = 0; y < 256; y += 8) {
+    for (let x = 0; x < 256; x += 8) {
+      sheetContext.fillStyle = `rgb(${x},${y},${(x * y) & 255})`
+      sheetContext.fillRect(x, y, 8, 8)
+    }
+  }
+  const { doc } = t.context
+  const ctx = doc.beginPage(400, 400)
+  for (let k = 0; k < 64; k++) {
+    const col = k % 8
+    const row = Math.floor(k / 8)
+    ctx.drawImage(sheet, col * 32, row * 32, 32, 32, col * 48, row * 48, 40, 40)
+  }
+  doc.endPage()
+  t.is(countPdfImages(doc.close()), 1)
+})
