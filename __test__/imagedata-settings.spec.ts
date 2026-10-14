@@ -372,6 +372,7 @@ test('createImageData picks its overload from the real argument count', (t) => {
   })
   // Arguments after the settings are ignored.
   t.is(loose(ctx).createImageData(2, 3, { colorSpace: 'display-p3' }, 'x').colorSpace, 'display-p3')
+  t.is(loose(ctx).createImageData(2, 3, undefined, undefined, 0).width, 2)
   t.is(ctx.createImageData(2, 3, undefined).width, 2)
 })
 

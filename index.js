@@ -103,24 +103,23 @@ CanvasRenderingContext2D.prototype.getTransform = function getTransform() {
 
 // createImageData(): WebIDL picks the overload from the argument count, and an
 // explicit undefined counts: createImageData(imagedata, undefined) is the
-// (sw, sh) form. napi pads missing arguments with undefined, so the native
-// method takes the arguments object itself.
+// (sw, sh) form. napi pads missing arguments with undefined, so the wrapper
+// passes the real count after the 4 positional arguments.
 const _createImageData = CanvasRenderingContext2D.prototype.createImageData
 
 CanvasRenderingContext2D.prototype.createImageData = function createImageData() {
-  return _createImageData.call(this, arguments)
+  return _createImageData.call(this, arguments[0], arguments[1], arguments[2], arguments[3], arguments.length)
 }
 
 // createPattern(image, repetitionType): as in Chrome, both arguments are
 // required, and the image is converted before the repetition, a
 // [LegacyNullToEmptyString] DOMString (canvas_2d_recorder_context.idl), so
-// null is '' and undefined is 'undefined'. The native method takes the
-// arguments object, to see the argument count and keep that order.
+// null is '' and undefined is 'undefined'. The wrapper passes the real
+// argument count after them.
 const _createPattern = CanvasRenderingContext2D.prototype.createPattern
 
-// oxlint-disable-next-line no-unused-vars
 CanvasRenderingContext2D.prototype.createPattern = function createPattern(image, repetition) {
-  return _createPattern.call(this, arguments)
+  return _createPattern.call(this, image, repetition, arguments.length)
 }
 
 // Workaround for webpack bundling issue with drawImage

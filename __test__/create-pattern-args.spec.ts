@@ -52,6 +52,7 @@ test('an invalid repetition is a DOMException SyntaxError', (t) => {
   }
   // Extra arguments are ignored.
   t.true(loose(ctx).createPattern(src, 'repeat', 'x') !== null)
+  t.true(loose(ctx).createPattern(src, 'repeat', 1) !== null)
 })
 
 test('createPattern needs 2 arguments', (t) => {

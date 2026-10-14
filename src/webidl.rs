@@ -4,7 +4,7 @@
 //! Each helper throws the JS exception itself and returns an `Err` with
 //! `Status::PendingException`; napi-rs then keeps the pending exception.
 
-use std::ptr;
+use std::{cell::RefCell, ptr};
 
 use napi::{bindgen_prelude::*, sys};
 
@@ -523,33 +523,86 @@ impl FromNapiValue for PatternTransform {
   }
 }
 
-/// A JS `arguments` object. index.js passes it for the methods whose overload
-/// depends on the real argument count: napi pads missing arguments with
-/// undefined, so `f(x)` and `f(x, undefined)` look the same to native code.
+thread_local! {
+  /// The values recorded by the `Positional` parameters of the call being
+  /// converted.
+  static POSITIONAL: RefCell<Vec<sys::napi_value>> = const { RefCell::new(Vec::new()) };
+}
+
+/// A positional parameter of a method whose last parameter converts all of
+/// its arguments together (createImageData, createPattern): the overload, and
+/// which arguments are converted, depend on the real argument count and on
+/// the earlier arguments.
+///
+/// napi-rs converts the parameters one by one, in order, and then borrows the
+/// receiver. This one only records its value. The last parameter takes the
+/// recorded values with [`Arguments::take`] and converts them, so the user
+/// code that runs (ToString, dictionary getters) runs before that borrow and
+/// may use the receiver.
+pub struct Positional;
+
+impl FromNapiValue for Positional {
+  unsafe fn from_napi_value(_env: sys::napi_env, value: sys::napi_value) -> Result<Self> {
+    POSITIONAL.with(|values| values.borrow_mut().push(value));
+    Ok(Self)
+  }
+}
+
+/// The arguments of a call with `Positional` parameters.
 pub(crate) struct Arguments {
   env: sys::napi_env,
-  value: sys::napi_value,
+  values: Vec<sys::napi_value>,
   len: u32,
 }
 
 impl Arguments {
-  pub(crate) fn new(env: sys::napi_env, value: sys::napi_value) -> Result<Self> {
-    let mut length = ptr::null_mut();
-    check_status!(unsafe {
-      sys::napi_get_named_property(env, value, c"length".as_ptr(), &mut length)
-    })?;
-    let len = unsafe { u32::from_napi_value(env, length)? };
-    Ok(Self { env, value, len })
+  /// The `count` values the `Positional` parameters of this call recorded.
+  ///
+  /// `argc` is the extra argument after them: index.js passes
+  /// `arguments.length` there. A raw call (the js-binding entrypoint) has
+  /// none. napi pads missing arguments with undefined, so `f(x)` and
+  /// `f(x, undefined)` look the same here, and the count then runs up to the
+  /// last argument that is not undefined.
+  pub(crate) fn take(env: sys::napi_env, count: usize, argc: sys::napi_value) -> Result<Self> {
+    // Taken before any user code runs, which may make a call of its own.
+    let values = POSITIONAL.with(|values| std::mem::take(&mut *values.borrow_mut()));
+    if values.len() != count {
+      return Err(Error::new(
+        Status::GenericFailure,
+        format!(
+          "Expected {count} positional arguments, got {}",
+          values.len()
+        ),
+      ));
+    }
+    let mut len = 0;
+    for (index, value) in values.iter().enumerate() {
+      if type_of(env, *value)? != ValueType::Undefined {
+        len = index as u32 + 1;
+      }
+    }
+    // From index.js, the arguments at or past argc are undefined, so argc is
+    // never below `len`. A raw call may put any value here; the max keeps a
+    // small number from dropping its real arguments.
+    if type_of(env, argc)? == ValueType::Number {
+      len = len.max(unsafe { u32::from_napi_value(env, argc)? });
+    }
+    Ok(Self { env, values, len })
   }
 
   pub(crate) fn len(&self) -> u32 {
     self.len
   }
 
-  /// Argument `index`; undefined past the end.
+  /// Argument `index`; undefined past the recorded ones.
   pub(crate) fn get(&self, index: u32) -> Result<sys::napi_value> {
-    let mut value = ptr::null_mut();
-    check_status!(unsafe { sys::napi_get_element(self.env, self.value, index, &mut value) })?;
-    Ok(value)
+    match self.values.get(index as usize) {
+      Some(value) => Ok(*value),
+      None => {
+        let mut value = ptr::null_mut();
+        check_status!(unsafe { sys::napi_get_undefined(self.env, &mut value) })?;
+        Ok(value)
+      }
+    }
   }
 }

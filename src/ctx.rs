@@ -36,7 +36,7 @@ use crate::{
     PathOp, SkEncodedImageFormat, SkImage, SkWMemoryStream, SkiaDataRef, Surface, Transform,
   },
   state::Context2dRenderingState,
-  webidl::{self, ReportedSettings},
+  webidl::{self, Positional, ReportedSettings},
 };
 
 static CSS_SIZE_REGEXP: LazyLock<Regex> =
@@ -2718,10 +2718,11 @@ impl PatternImageKind {
   }
 }
 
-/// The arguments of `createPattern`, read from the `arguments` object that
-/// the index.js wrapper passes. Chrome converts the image (a type check)
-/// before the repetition, a [LegacyNullToEmptyString] DOMString
-/// (canvas_2d_recorder_context.idl:47) whose ToString may run user code.
+/// The arguments of `createPattern`, its last parameter: it gets the
+/// argument count and converts the `Positional` arguments before it. Chrome
+/// converts the image (a type check) before the repetition, a
+/// [LegacyNullToEmptyString] DOMString (canvas_2d_recorder_context.idl:47)
+/// whose ToString may run user code.
 /// The image is borrowed only after that, so the user code may use it, and
 /// all of it happens before napi-rs borrows the context.
 pub struct CreatePatternArgs<'a> {
@@ -2730,8 +2731,8 @@ pub struct CreatePatternArgs<'a> {
 }
 
 impl FromNapiValue for CreatePatternArgs<'static> {
-  unsafe fn from_napi_value(env: sys::napi_env, arguments: sys::napi_value) -> Result<Self> {
-    let args = webidl::Arguments::new(env, arguments)?;
+  unsafe fn from_napi_value(env: sys::napi_env, argc: sys::napi_value) -> Result<Self> {
+    let args = webidl::Arguments::take(env, 2, argc)?;
     if args.len() < 2 {
       return Err(webidl::type_error(
         env,
@@ -2766,9 +2767,10 @@ impl FromNapiValue for CreatePatternArgs<'static> {
   }
 }
 
-/// The arguments of `createImageData`, read from the `arguments` object that
-/// the index.js wrapper passes: WebIDL picks the overload from the argument
-/// count, and an explicit undefined counts (base_rendering_context_2d.idl:25).
+/// The arguments of `createImageData`, its last parameter: it gets the
+/// argument count and converts the `Positional` arguments before it. WebIDL
+/// picks the overload from the argument count, and an explicit undefined
+/// counts (base_rendering_context_2d.idl:25).
 /// They are converted in the callback glue, before napi-rs borrows the
 /// context, so a settings getter may use it.
 pub enum CreateImageDataArgs<'a> {
@@ -2795,8 +2797,8 @@ pub enum CreateImageDataArgs<'a> {
 }
 
 impl FromNapiValue for CreateImageDataArgs<'static> {
-  unsafe fn from_napi_value(env: sys::napi_env, arguments: sys::napi_value) -> Result<Self> {
-    let args = webidl::Arguments::new(env, arguments)?;
+  unsafe fn from_napi_value(env: sys::napi_env, argc: sys::napi_value) -> Result<Self> {
+    let args = webidl::Arguments::take(env, 4, argc)?;
     let type_error =
       |msg: &str| webidl::type_error(env, &format!("{}{msg}", webidl::CREATE_IMAGE_DATA));
     let settings = |value: sys::napi_value| {
@@ -3357,11 +3359,17 @@ impl CanvasRenderingContext2D {
     self.context.close_path();
   }
 
-  /// The index.js wrapper passes its `arguments` object.
+  /// createImageData(imagedata) or (sw, sh, settings?), and the non-standard
+  /// (data, sw, sh?, settings?). The index.js wrapper passes the argument
+  /// count after the 4 positional arguments; see `webidl::Arguments::take`.
   #[napi]
   pub fn create_image_data<'scope>(
     &'scope mut self,
     env: &'scope Env,
+    _arg0: Positional,
+    _arg1: Positional,
+    _arg2: Positional,
+    _arg3: Positional,
     args: CreateImageDataArgs<'scope>,
   ) -> Result<ClassInstance<'scope, ImageData>> {
     match args {
@@ -3460,11 +3468,14 @@ impl CanvasRenderingContext2D {
     CanvasGradient(conic_gradient).into_instance(env)
   }
 
-  /// The index.js wrapper passes its `arguments` object.
+  /// createPattern(image, repetition). The index.js wrapper passes the
+  /// argument count after them; see `webidl::Arguments::take`.
   #[napi(ts_return_type = "CanvasPattern | null")]
   pub fn create_pattern<'scope>(
     &'scope self,
     env: &'scope Env,
+    _image: Positional,
+    _repetition: Positional,
     args: CreatePatternArgs<'_>,
   ) -> Result<Option<ClassInstance<'scope, CanvasPattern>>> {
     CanvasPattern::create(*env, args.image, &args.repetition)?
