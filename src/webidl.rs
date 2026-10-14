@@ -142,7 +142,7 @@ fn is_object(env: sys::napi_env, value: sys::napi_value) -> Result<bool> {
 }
 
 /// ToString(value); runs toString()/valueOf() and may throw.
-fn to_js_string(env: sys::napi_env, value: sys::napi_value) -> Result<String> {
+pub(crate) fn to_js_string(env: sys::napi_env, value: sys::napi_value) -> Result<String> {
   let mut s = ptr::null_mut();
   check_status!(unsafe { sys::napi_coerce_to_string(env, value, &mut s) })?;
   unsafe { String::from_napi_value(env, s) }

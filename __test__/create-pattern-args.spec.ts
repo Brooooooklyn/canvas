@@ -280,3 +280,50 @@ test('CanvasPattern.setTransform getters may use the same pattern', (t) => {
   ctx.fillRect(0, 0, 2, 1)
   t.deepEqual([...ctx.getImageData(0, 0, 2, 1).data], [0, 0, 255, 255, 255, 0, 0, 255])
 })
+
+test('the image is converted before the repetition', async (t) => {
+  const ctx = createCanvas(4, 4).getContext('2d')
+  let calls = 0
+  const throwing = loose({
+    toString() {
+      calls++
+      throw new Error('sentinel')
+    },
+  })
+  for (const image of [null, undefined, {}, 5, 'x']) {
+    const error = t.throws(() => ctx.createPattern(loose(image), throwing), { instanceOf: TypeError })
+    t.true(error?.message.startsWith(`${CREATE_PATTERN}The provided value is not of type '(`), error?.message)
+  }
+  t.is(calls, 0)
+  // With an image of a valid type, the repetition is converted once.
+  t.throws(() => ctx.createPattern(source(), throwing), { instanceOf: Error, message: 'sentinel' })
+  t.is(calls, 1)
+  // Its toString() may use the image and the context.
+  const canvas = source()
+  const fromCanvas = ctx.createPattern(
+    canvas,
+    loose({
+      toString() {
+        canvas.width = 3
+        ctx.fillRect(0, 0, 1, 1)
+        return 'no-repeat'
+      },
+    }),
+  )
+  t.true(fromCanvas !== null)
+  t.is(canvas.width, 3)
+  const image = new Image()
+  await loadInto(image, await source().encode('png'))
+  let width = 0
+  const fromImage = ctx.createPattern(
+    image,
+    loose({
+      toString() {
+        width = image.width
+        return 'repeat'
+      },
+    }),
+  )
+  t.true(fromImage !== null)
+  t.is(width, 2)
+})

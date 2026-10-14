@@ -2667,44 +2667,61 @@ impl FromNapiValue for DrawImageSource<'static> {
   }
 }
 
-/// Image argument of `createPattern`, converted in the callback glue like
-/// `DrawImageSource`, with Chrome's TypeError for any other value.
-pub struct PatternSource<'a>(
-  pub Either4<&'a mut Image, &'a mut ImageData, &'a mut CanvasElement<'a>, &'a mut SVGCanvas<'a>>,
-);
+type PatternImage<'a> =
+  Either4<&'a mut Image, &'a mut ImageData, &'a mut CanvasElement<'a>, &'a mut SVGCanvas<'a>>;
 
-impl TypeName for PatternSource<'_> {
-  fn type_name() -> &'static str {
-    "CanvasElement | SVGCanvas | Image | ImageData"
-  }
-
-  fn value_type() -> ValueType {
-    ValueType::Object
-  }
+/// The arguments of `createPattern`, read from the `arguments` object that
+/// the index.js wrapper passes. Chrome converts the image (a type check)
+/// before the repetition, a [LegacyNullToEmptyString] DOMString
+/// (canvas_2d_recorder_context.idl:47) whose ToString may run user code.
+/// The image is borrowed only after that, so the user code may use it, and
+/// all of it happens before napi-rs borrows the context.
+pub struct CreatePatternArgs<'a> {
+  pub image: PatternImage<'a>,
+  pub repetition: String,
 }
 
-impl ValidateNapiValue for PatternSource<'_> {
-  unsafe fn validate(_env: sys::napi_env, _napi_val: sys::napi_value) -> Result<sys::napi_value> {
-    Ok(std::ptr::null_mut())
-  }
-}
-
-impl FromNapiValue for PatternSource<'static> {
-  unsafe fn from_napi_value(env: sys::napi_env, napi_val: sys::napi_value) -> Result<Self> {
-    match unsafe {
-      <Either4<&mut Image, &mut ImageData, &mut CanvasElement, &mut SVGCanvas> as FromNapiValue>::from_napi_value(
-        env, napi_val,
-      )
-    } {
-      Ok(value) => Ok(PatternSource(value)),
-      Err(_) => Err(webidl::type_error(
+impl FromNapiValue for CreatePatternArgs<'static> {
+  unsafe fn from_napi_value(env: sys::napi_env, arguments: sys::napi_value) -> Result<Self> {
+    let args = webidl::Arguments::new(env, arguments)?;
+    if args.len() < 2 {
+      return Err(webidl::type_error(
+        env,
+        &format!(
+          "{}2 arguments required, but only {} present.",
+          webidl::CREATE_PATTERN,
+          args.len()
+        ),
+      ));
+    }
+    let wrong_type = || {
+      webidl::type_error(
         env,
         &format!(
           "{}The provided value is not of type '(CanvasElement or Image or ImageData or SVGCanvas)'.",
           webidl::CREATE_PATTERN
         ),
-      )),
+      )
+    };
+    let image = args.get(0)?;
+    // The instanceof checks that `PatternImage` runs, without the borrow.
+    let valid = unsafe {
+      <&mut Image as ValidateNapiValue>::validate(env, image).is_ok()
+        || <&mut ImageData as ValidateNapiValue>::validate(env, image).is_ok()
+        || <&mut CanvasElement as ValidateNapiValue>::validate(env, image).is_ok()
+        || <&mut SVGCanvas as ValidateNapiValue>::validate(env, image).is_ok()
+    };
+    if !valid {
+      return Err(wrong_type());
     }
+    let repetition = args.get(1)?;
+    let repetition = if webidl::type_of(env, repetition)? == ValueType::Null {
+      String::new()
+    } else {
+      webidl::to_js_string(env, repetition)?
+    };
+    let image = unsafe { PatternImage::from_napi_value(env, image) }.map_err(|_| wrong_type())?;
+    Ok(Self { image, repetition })
   }
 }
 
@@ -3402,16 +3419,14 @@ impl CanvasRenderingContext2D {
     CanvasGradient(conic_gradient).into_instance(env)
   }
 
-  /// `repetition` arrives as a string: the index.js wrapper checks the
-  /// argument count and converts it ([LegacyNullToEmptyString] DOMString).
+  /// The index.js wrapper passes its `arguments` object.
   #[napi(ts_return_type = "CanvasPattern | null")]
   pub fn create_pattern<'scope>(
     &'scope self,
     env: &'scope Env,
-    input: PatternSource<'_>,
-    repetition: String,
+    args: CreatePatternArgs<'_>,
   ) -> Result<Option<ClassInstance<'scope, CanvasPattern>>> {
-    CanvasPattern::create(*env, input.0, &repetition)?
+    CanvasPattern::create(*env, args.image, &args.repetition)?
       .map(|pattern| pattern.into_instance(env))
       .transpose()
   }
