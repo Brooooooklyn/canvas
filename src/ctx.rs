@@ -1116,8 +1116,12 @@ impl Context {
       // Also clear main surface which accumulates content from flush() calls
       self.clear_surface_to_base();
     } else if !self.alpha {
-      // Direct backends (SVG): draw the alpha:false base again once
-      // canvas.reset() has dropped the matrix and clip.
+      // Direct backends (SVG): draw the alpha:false base again. canvas.reset()
+      // is restoreToCount(1), which keeps a matrix or clip set at the root
+      // save level (an SkCanvas cannot drop a clip it has no save to restore),
+      // and SkSVGDevice writes the base as a canvas-sized rect under both. So
+      // after a root translate or clip the base misses part of the canvas, and
+      // earlier content there stays in the SVG.
       self.surface.canvas.fill(0, 0, 0, 255);
     }
 
