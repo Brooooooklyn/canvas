@@ -446,6 +446,108 @@ test('alpha:false resets alpha inside the draw bounds only, like Chrome', (t) =>
   }
 })
 
+// alpha:false with every pixel stored as 200,100,50 at alpha 128 (putImageData
+// keeps the bytes as given), so a far pixel shows whether the reset ran there.
+function lowAlpha(width: number, height: number) {
+  const r = opaque(width, height)
+  const bytes = new Uint8ClampedArray(width * height * 4)
+  for (let i = 0; i < bytes.length; i += 4) bytes.set([200, 100, 50, 128], i)
+  r.ctx.putImageData(new ImageData(bytes, width, height), 0, 0)
+  return r
+}
+
+// Blink takes CompositedDraw, and then resets the whole clip, when
+// ShouldUseCompositedDraw holds (canvas_2d_recorder_context.h:582-597,
+// 826-829): any ctx.filter, a shadow in a mode DropShadowPaintFilter cannot
+// do (all but source-over, source-atop, destination-out; copy is handled
+// apart), or a shadow on a pattern fill or stroke (kNonOpaqueImage; text and
+// images never pass it). Every other draw resets its bounds only.
+test('alpha:false resets the whole clip after a draw Blink composites, like Chrome', (t) => {
+  const src = transparent(4, 4)
+  src.ctx.fillStyle = 'rgba(0,255,0,0.5)'
+  src.ctx.fillRect(0, 0, 4, 4)
+  const draws = {
+    fillRect: (c: Ctx) => c.fillRect(10, 10, 10, 10),
+    fill: (c: Ctx) => {
+      c.beginPath()
+      c.arc(15, 15, 5, 0, 7)
+      c.fill()
+    },
+    stroke: (c: Ctx) => {
+      c.lineWidth = 2
+      c.beginPath()
+      c.moveTo(10, 15)
+      c.lineTo(20, 15)
+      c.stroke()
+    },
+    drawImage: (c: Ctx) => c.drawImage(src.canvas, 10, 10, 10, 10),
+    fillText: (c: Ctx) => {
+      c.font = '16px sans-serif'
+      c.fillText('Hg', 10, 22)
+    },
+  }
+  type Setup = {
+    op: GlobalCompositeOperation
+    filter?: string
+    shadow?: boolean
+    pattern?: 'fillStyle' | 'strokeStyle'
+  }
+  // [state, draw, far-pixel alpha in Chrome]
+  const cases: [Setup, keyof typeof draws, number][] = [
+    [{ op: 'xor', filter: 'blur(2px)' }, 'fillRect', 255],
+    [{ op: 'destination-out', filter: 'opacity(50%)' }, 'fill', 255],
+    [{ op: 'xor', filter: 'blur(2px)' }, 'drawImage', 255],
+    [{ op: 'xor', filter: 'blur(2px)' }, 'fillText', 255],
+    [{ op: 'xor' }, 'fillRect', 128],
+    [{ op: 'xor', shadow: true }, 'fillRect', 255],
+    [{ op: 'xor', shadow: true }, 'drawImage', 255],
+    [{ op: 'xor', shadow: true }, 'fillText', 255],
+    [{ op: 'destination-out', shadow: true }, 'fillRect', 128],
+    [{ op: 'source-atop', shadow: true }, 'fillRect', 128],
+    [{ op: 'destination-out', shadow: true, pattern: 'fillStyle' }, 'fillRect', 255],
+    [{ op: 'source-atop', shadow: true, pattern: 'fillStyle' }, 'fill', 255],
+    [{ op: 'destination-out', shadow: true, pattern: 'strokeStyle' }, 'stroke', 255],
+    [{ op: 'destination-out', shadow: true, pattern: 'fillStyle' }, 'fillText', 128],
+    [{ op: 'destination-out', shadow: true, pattern: 'fillStyle' }, 'drawImage', 128],
+    [{ op: 'destination-out', shadow: true, pattern: 'strokeStyle' }, 'fillRect', 128],
+    [{ op: 'xor', pattern: 'fillStyle' }, 'fillRect', 128],
+  ]
+  for (const [setup, draw, farAlpha] of cases) {
+    const { ctx } = lowAlpha(30, 30)
+    ctx.fillStyle = ctx.strokeStyle = 'rgba(0,0,255,0.5)'
+    if (setup.pattern) ctx[setup.pattern] = ctx.createPattern(src.canvas, 'repeat')!
+    if (setup.filter) ctx.filter = setup.filter
+    if (setup.shadow) {
+      ctx.shadowColor = 'rgba(255,0,0,0.5)'
+      ctx.shadowOffsetX = 7
+    }
+    ctx.globalCompositeOperation = setup.op
+    draws[draw](ctx)
+    t.deepEqual([px(ctx, 1, 1)[3], px(ctx, 28, 28)[3]], [farAlpha, farAlpha], `${JSON.stringify(setup)} ${draw}`)
+  }
+  // copy draws straight (Blink's kSrc arm) and resets its bounds, so the
+  // anti-aliased edge of an unaligned rect keeps a lowered alpha; a pattern
+  // with a shadow makes it a CompositedDraw, which resets the whole clip.
+  for (const [withPattern, below] of [
+    [false, 21],
+    [true, 0],
+  ] as const) {
+    const { ctx } = opaqueBackground(30, 30)
+    ctx.fillStyle = withPattern ? ctx.createPattern(src.canvas, 'repeat')! : 'rgba(0,0,255,0.5)'
+    ctx.shadowColor = 'rgba(255,0,0,0.5)'
+    ctx.shadowOffsetX = 7
+    ctx.globalCompositeOperation = 'copy'
+    ctx.translate(0.5, 0.25)
+    ctx.fillRect(10, 10, 10, 10)
+    const data = ctx.getImageData(0, 0, 30, 30).data
+    let count = 0
+    for (let i = 3; i < data.length; i += 4) {
+      if (data[i] < 255) count++
+    }
+    t.is(count, below, `copy with a shadow${withPattern ? ' and a pattern' : ''}`)
+  }
+})
+
 // Text bounds are the glyph bounds (base_rendering_context_2d.cc:1019,
 // 1076-1113), so the outermost anti-aliased glyph pixels keep a lowered alpha in
 // Chrome too. Our glyph bounds come from measureText, which rounds the box

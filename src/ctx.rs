@@ -127,8 +127,10 @@ struct ShadowPass<'a> {
 }
 
 /// The user-space rect a draw hands Blink's Draw as `bounds`. Only the
-/// alpha:false alpha reset reads it: outside the composited modes Blink limits
-/// ResetAlphaIfNeeded to it (canvas_2d_recorder_context.h:729-752, 837, 853).
+/// alpha:false alpha reset reads it, and only for a draw Blink does not take
+/// through CompositedDraw: Blink limits ResetAlphaIfNeeded to it there
+/// (canvas_2d_recorder_context.h:729-752, 837, 853), and resets the whole clip
+/// after a composited one (h:826-829). `blink_composites` makes that call.
 #[derive(Clone, Copy)]
 pub(crate) struct DrawBounds {
   left: f32,
@@ -561,6 +563,7 @@ impl Context {
       None,
       None,
       None,
+      false,
       |_, _, _| Ok(()),
       f,
     )
@@ -572,12 +575,17 @@ impl Context {
   /// hoisted onto each pass's layer rather than left on the content paint, as
   /// Blink does (canvas_2d_recorder_context.h:956-957), except for the one
   /// vector-backend exception `render_passes` takes.
+  ///
+  /// `pattern_style` is Blink's kNonOpaqueImage: a fill or stroke whose style
+  /// is a CanvasPattern. Text and images never pass it
+  /// (base_rendering_context_2d.cc:1113, canvas_2d_recorder_context.cc:2342).
   fn with_shadowed_render_canvas<S, F>(
     &mut self,
     paint: &Paint,
     content: DrawContent,
     shadow: Option<&ShadowDraw>,
     bounds: Option<DrawBounds>,
+    pattern_style: bool,
     shadow_f: S,
     f: F,
   ) -> result::Result<(), SkError>
@@ -593,6 +601,7 @@ impl Context {
       content_filter,
       shadow,
       bounds,
+      pattern_style,
       shadow_f,
       f,
     )
@@ -610,6 +619,7 @@ impl Context {
     content_filter: Option<ImageFilter>,
     shadow: Option<&ShadowDraw>,
     bounds: Option<DrawBounds>,
+    pattern_style: bool,
     shadow_f: S,
     f: F,
   ) -> result::Result<(), SkError>
@@ -623,6 +633,18 @@ impl Context {
     if !self.transform_is_invertible() {
       return Ok(());
     }
+    // The alpha:false reset covers the whole clip after a draw Blink
+    // composites, whatever route we take for it.
+    let bounds = if Self::blink_composites(
+      blend_mode,
+      content_filter.is_some(),
+      shadow.is_some(),
+      pattern_style,
+    ) {
+      None
+    } else {
+      bounds
+    };
     let width = self.width as f32;
     let height = self.height as f32;
 
@@ -790,6 +812,37 @@ impl Context {
           | BlendMode::Xor
           | BlendMode::Modulate
       )
+  }
+
+  /// Blink's ShouldUseCompositedDraw (canvas_2d_recorder_context.h:582-597,
+  /// 711-727): any `ctx.filter`, a full-canvas mode, a shadow in a mode
+  /// DropShadowPaintFilter cannot do (copy is handled apart and never is), or
+  /// a shadow on a pattern fill or stroke. Only the alpha:false reset reads
+  /// it: after such a draw Blink resets the whole clip (h:826-829). Our
+  /// routing still differs for the shadow cases (see render_canvas).
+  fn blink_composites(
+    blend_mode: BlendMode,
+    has_filter: bool,
+    has_shadow: bool,
+    pattern_style: bool,
+  ) -> bool {
+    has_filter
+      || matches!(
+        blend_mode,
+        BlendMode::SourceIn
+          | BlendMode::SourceOut
+          | BlendMode::DestinationIn
+          | BlendMode::DestinationATop
+      )
+      || (has_shadow
+        && (pattern_style
+          || !matches!(
+            blend_mode,
+            BlendMode::Source
+              | BlendMode::SourceOver
+              | BlendMode::SourceATop
+              | BlendMode::DestinationOut
+          )))
   }
 
   /// Blink InflateStrokeRect (canvas_2d_recorder_context.cc:2656-2670): a
@@ -1098,6 +1151,7 @@ impl Context {
       DrawContent::Geometry,
       shadow_paint.as_ref(),
       Some(bounds),
+      matches!(self.state.stroke_style, Pattern::Image(_)),
       |shadow_canvas, shadow_paint, device_ctm| {
         shadow_canvas.save();
         Self::apply_shadow_offset_matrix_to_canvas(
@@ -1249,6 +1303,7 @@ impl Context {
       DrawContent::Geometry,
       shadow_paint.as_ref(),
       Some(DrawBounds::rect(x, y, w, h)),
+      matches!(self.state.fill_style, Pattern::Image(_)),
       |shadow_canvas, shadow_paint, device_ctm| {
         shadow_canvas.save();
         Self::apply_shadow_offset_matrix_to_canvas(
@@ -1339,6 +1394,7 @@ impl Context {
       DrawContent::Geometry,
       shadow_paint.as_ref(),
       bounds,
+      matches!(self.state.stroke_style, Pattern::Image(_)),
       |shadow_canvas, shadow_paint, device_ctm| {
         shadow_canvas.save();
         Self::apply_shadow_offset_matrix_to_canvas(
@@ -1458,7 +1514,9 @@ impl Context {
   // content one -- it would composite against the empty layer, not the backdrop.
   //
   // KNOWN DEFECT: the mode list below omits the shadow-conditional cases
-  // Chromium routes through CompositedDraw (h:692-697, :719-727).
+  // Chromium routes through CompositedDraw (h:692-697, :719-727). The
+  // alpha:false reset already follows Blink for them: `bounds` arrives as
+  // None for every draw `blink_composites` names.
   fn render_canvas<S, F>(
     surface_canvas: &mut Canvas,
     paint: &Paint,
@@ -1661,6 +1719,7 @@ impl Context {
       DrawContent::Geometry,
       shadow_paint.as_ref(),
       DrawBounds::path(&path_to_draw),
+      matches!(self.state.fill_style, Pattern::Image(_)),
       |shadow_canvas, shadow_paint, device_ctm| {
         shadow_canvas.save();
         Self::apply_shadow_offset_matrix_to_canvas(
@@ -2400,6 +2459,7 @@ impl Context {
       DrawContent::Geometry,
       shadow_paint.as_ref(),
       Some(bounds),
+      false,
       |shadow_canvas: &mut Canvas, shadow_paint, device_ctm| {
         shadow_canvas.save();
         Self::apply_shadow_offset_matrix_to_canvas(
@@ -2559,6 +2619,7 @@ impl Context {
       shadow_paint.as_ref(),
       // No Chrome counterpart; the destination rect, as for drawImage.
       Some(DrawBounds::rect(dx, dy, d_width, d_height)),
+      false,
       |shadow_canvas: &mut Canvas, shadow_paint, device_ctm| {
         shadow_canvas.save();
         Self::apply_shadow_offset_matrix_to_canvas(
@@ -2690,6 +2751,7 @@ impl Context {
       DrawContent::Glyphs,
       shadow_paint.as_ref(),
       bounds,
+      false,
       |shadow_canvas, shadow_paint, device_ctm| {
         shadow_canvas.save();
         Self::apply_shadow_offset_matrix_to_canvas(
