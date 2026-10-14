@@ -2087,6 +2087,10 @@ impl Context {
     }
 
     let mut paint: Paint = self.fill_paint()?;
+    // drawImage does not use fillStyle. Blink draws images with image_flags_,
+    // and only the fill/stroke flags take a gradient's dither
+    // (gradient.cc:363-364), so drop the gradient arm's flag here.
+    paint.set_dither(false);
     self.account_paint_resources(&self.state.fill_style);
     paint.set_alpha_f32(self.image_global_alpha());
 
@@ -2233,6 +2237,9 @@ impl Context {
     }
 
     let mut paint: Paint = self.fill_paint()?;
+    // As in draw_image: an image draw never takes the gradient fillStyle's
+    // dither.
+    paint.set_dither(false);
     self.account_paint_resources(&self.state.fill_style);
     paint.set_alpha_f32(self.state.global_alpha as f32);
 
