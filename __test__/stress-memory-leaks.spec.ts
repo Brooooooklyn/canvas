@@ -24,7 +24,7 @@ const ITERATIONS = 500
 
 // ============================================================================
 // Fix #1: Canvas-pattern shader bitmap leak (stack-allocated SkBitmap)
-// Exercises: skiac_bitmap_get_shader with is_canvas=true
+// Exercises: skiac_image_make_pattern_shader sampling a canvas snapshot
 // Risk: dangling pointer if SkBitmap scope is wrong
 // ============================================================================
 test('stress: createPattern with canvas source should not crash (bitmap shader fix)', (t) => {
