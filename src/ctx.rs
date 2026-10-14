@@ -2010,6 +2010,83 @@ impl Context {
     width.is_finite() && width > 0.0
   }
 
+  /// Whether `skiac_canvas_draw_image` returns before drawing because the
+  /// source rect misses the image: Blink's ClipRectsToImageRect, then
+  /// DrawHelper's second Intersect, in gfx::RectF maths
+  /// (canvas_2d_recorder_context.cc:1989-2010, static_bitmap_image.cc:89-93).
+  /// The same f32 steps as the C++ `GfxRectF`, one operation per statement
+  /// there and no fused maths here, so both sides get the same bits.
+  fn image_rects_clip_empty(
+    image_width: f32,
+    image_height: f32,
+    sx: f32,
+    sy: f32,
+    s_width: f32,
+    s_height: f32,
+    dx: f32,
+    dy: f32,
+    d_width: f32,
+    d_height: f32,
+  ) -> bool {
+    #[derive(Clone, Copy)]
+    struct RectF {
+      x: f32,
+      y: f32,
+      w: f32,
+      h: f32,
+    }
+    // std::max and std::min, signed zeros included.
+    let max = |a: f32, b: f32| if a < b { b } else { a };
+    let min = |a: f32, b: f32| if b < a { b } else { a };
+    let clamp_size = |s: f32| if s > 8.0 * f32::EPSILON { s } else { 0.0 };
+    let rect = |x: f32, y: f32, w: f32, h: f32| RectF {
+      x,
+      y,
+      w: clamp_size(w),
+      h: clamp_size(h),
+    };
+    let is_empty = |r: RectF| r.w == 0.0 || r.h == 0.0;
+    let intersect = |a: RectF, b: RectF| {
+      if is_empty(a) || is_empty(b) {
+        return rect(0.0, 0.0, 0.0, 0.0);
+      }
+      let rx = max(a.x, b.x);
+      let ry = max(a.y, b.y);
+      let rr = min(a.x + a.w, b.x + b.w);
+      let rb = min(a.y + a.h, b.y + b.h);
+      if rx >= rr || ry >= rb {
+        return rect(0.0, 0.0, 0.0, 0.0);
+      }
+      rect(rx, ry, rr - rx, rb - ry)
+    };
+    let image = rect(0.0, 0.0, image_width, image_height);
+    let mut src = rect(sx, sy, s_width, s_height);
+    let mut dst = rect(dx, dy, d_width, d_height);
+    if !(src.x >= image.x
+      && src.x + src.w <= image.x + image.w
+      && src.y >= image.y
+      && src.y + src.h <= image.y + image.h)
+    {
+      let scale_x = dst.w / src.w;
+      let scale_y = dst.h / src.h;
+      let scaled_src_x = src.x * scale_x;
+      let scaled_src_y = src.y * scale_y;
+      let offset_x = dst.x - scaled_src_x;
+      let offset_y = dst.y - scaled_src_y;
+      src = intersect(src, image);
+      let scaled_x = src.x * scale_x;
+      let scaled_y = src.y * scale_y;
+      dst = rect(
+        scaled_x + offset_x,
+        scaled_y + offset_y,
+        src.w * scale_x,
+        src.h * scale_y,
+      );
+    }
+    src = intersect(src, image);
+    is_empty(src) || is_empty(dst)
+  }
+
   /// Blink's drawImage rect handling: AdjustRectForCanvas in double, then
   /// ClampTo<float> (canvas_2d_recorder_context.cc:2244-2253). A negative
   /// width or height moves the origin; the image is not mirrored.
@@ -2128,11 +2205,24 @@ impl Context {
     // finite, strictly-positive spans (MakeXYWH can collapse to an empty
     // width under f32 rounding). Callers pass the rects through
     // `adjust_rect_for_canvas` first, so a negative width or height has
-    // already moved the origin instead.
+    // already moved the origin instead. The native draw also returns before
+    // drawImageRect when the source rect misses the image.
     if !(Self::rect_fillable(sx, s_width)
       && Self::rect_fillable(sy, s_height)
       && Self::rect_fillable(dx, d_width)
       && Self::rect_fillable(dy, d_height))
+      || Self::image_rects_clip_empty(
+        bitmap.0.width as f32,
+        bitmap.0.height as f32,
+        sx,
+        sy,
+        s_width,
+        s_height,
+        dx,
+        dy,
+        d_width,
+        d_height,
+      )
     {
       return Ok(());
     }
@@ -4861,6 +4951,17 @@ mod tests {
     let bitmap = test_bitmap(8, 8, [255, 0, 0, 255]);
     ctx
       .draw_image(&bitmap, key, 0.0, 0.0, 8.0, 8.0, 0.0, 0.0, 8.0, 0.0)
+      .unwrap();
+    // Source rects that miss the 8x8 image, or only touch its edge: Blink's
+    // ClipRectsToImageRect leaves nothing, so the native draw returns early.
+    ctx
+      .draw_image(&bitmap, key, 20.0, 0.0, 4.0, 4.0, 0.0, 0.0, 8.0, 8.0)
+      .unwrap();
+    ctx
+      .draw_image(&bitmap, key, 8.0, 0.0, 4.0, 8.0, 0.0, 0.0, 8.0, 8.0)
+      .unwrap();
+    ctx
+      .draw_image(&src_bitmap, key, 0.0, -10.0, 8.0, 4.0, 0.0, 0.0, 8.0, 8.0)
       .unwrap();
     let picture = src.get_picture();
     if let Some(picture) = picture {
