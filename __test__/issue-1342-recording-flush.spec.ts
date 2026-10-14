@@ -317,8 +317,10 @@ test.serial('late getContext({ alpha: false }) returns the same context and is i
 // The alpha:false base fill is a direct surface write that bypasses the
 // recording. An op recorded AFTER it lives only in the layers, so drawCanvas
 // (SkPicture replay) must rebase on the post-write surface or it loses the
-// base; drawImage (snapshot) is the reference. drawCanvas runs first so it
-// sees the unrebased (surface_dirty) state.
+// base; drawImage (snapshot) is the reference. drawCanvas runs first as a
+// precaution: with this one recorded layer the order does not matter, but if
+// drawImage's flush consolidated more layers it would rebase the source and
+// hide a missing rebase.
 test.serial('drawCanvas and drawImage agree after alpha:false direct fill', (t) => {
   const src = createCanvas(64, 64)
   const sctx = src.getContext('2d', { alpha: false })!
