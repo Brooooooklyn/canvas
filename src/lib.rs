@@ -104,8 +104,32 @@ pub struct CanvasElement<'scope> {
   context_initialized: bool,
 }
 
+// alpha:false base fill. It is a direct surface write: with_surface_canvas
+// marks the recorded layers stale (drawCanvas rebases on the surface) and
+// bumps the content version.
+fn apply_opaque_base(context_2d: &mut Context, width: u32, height: u32) -> Result<()> {
+  let mut fill_paint = context_2d.fill_paint()?;
+  fill_paint.set_color(255, 255, 255, 255);
+  context_2d.alpha = false;
+  let (width, height) = (width as f32, height as f32);
+  context_2d.with_surface_canvas(|canvas| {
+    canvas.draw_rect(0f32, 0f32, width, height, &fill_paint);
+  });
+  Ok(())
+}
+
 #[napi]
 impl<'c> CanvasElement<'c> {
+  // Setting width or height resets the bitmap but keeps the context's
+  // settings (alpha, color space).
+  fn resized_context(old: &Context, width: u32, height: u32) -> Result<Context> {
+    let mut context_2d = Context::new(width, height, old.color_space)?;
+    if !old.alpha {
+      apply_opaque_base(&mut context_2d, width, height)?;
+    }
+    Ok(context_2d)
+  }
+
   fn create_context(
     env: &Env,
     width: u32,
@@ -156,11 +180,8 @@ impl<'c> CanvasElement<'c> {
     let width = (if width <= 0 { 350 } else { width }) as u32;
     self.width = width;
     let height = self.height;
-    let color_space = self.ctx.context.color_space;
-    let old_ctx = mem::replace(
-      &mut self.ctx.context,
-      Context::new(width, height, color_space)?,
-    );
+    let new_ctx = Self::resized_context(&self.ctx.context, width, height)?;
+    let old_ctx = mem::replace(&mut self.ctx.context, new_ctx);
     env.adjust_external_memory((width as i64 - old_ctx.width as i64) * (height as i64) * 4)?;
     Ok(())
   }
@@ -175,11 +196,8 @@ impl<'c> CanvasElement<'c> {
     let height = (if height <= 0 { 150 } else { height }) as u32;
     self.height = height;
     let width = self.width;
-    let color_space = self.ctx.context.color_space;
-    let old_ctx = mem::replace(
-      &mut self.ctx.context,
-      Context::new(width, height, color_space)?,
-    );
+    let new_ctx = Self::resized_context(&self.ctx.context, width, height)?;
+    let old_ctx = mem::replace(&mut self.ctx.context, new_ctx);
     env.adjust_external_memory((height as i64 - old_ctx.height as i64) * (width as i64) * 4)?;
     Ok(())
   }
@@ -216,16 +234,7 @@ impl<'c> CanvasElement<'c> {
       *context_2d = Context::new(self.width, self.height, color_space)?;
     }
     if !attrs.as_ref().and_then(|a| a.alpha).unwrap_or(true) {
-      let mut fill_paint = context_2d.fill_paint()?;
-      fill_paint.set_color(255, 255, 255, 255);
-      context_2d.alpha = false;
-      let (width, height) = (self.width as f32, self.height as f32);
-      // The base fill is a direct surface write: with_surface_canvas marks
-      // the recorded layers stale (drawCanvas rebases on the surface) and
-      // bumps the content version.
-      context_2d.with_surface_canvas(|canvas| {
-        canvas.draw_rect(0f32, 0f32, width, height, &fill_paint);
-      });
+      apply_opaque_base(context_2d, self.width, self.height)?;
     }
     self.context_initialized = true;
     this.get_named_property("ctx")

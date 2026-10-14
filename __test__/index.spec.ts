@@ -48,6 +48,23 @@ test('display-p3 context preserves its color space after resize', (t) => {
   }
 })
 
+// Setting width or height resets the bitmap but keeps alpha:false
+// (Chrome 155: alpha stays false and a half-transparent fill lands opaque).
+test('alpha:false survives width/height changes', (t) => {
+  for (const dimension of ['width', 'height'] as const) {
+    const canvas = createCanvas(4, 4)
+    const ctx = canvas.getContext('2d', { alpha: false })
+    const base = [...ctx.getImageData(0, 0, 1, 1).data]
+    canvas[dimension] = 8
+    t.false(ctx.getContextAttributes().alpha)
+    const pixels = canvas.width * canvas.height
+    t.deepEqual([...ctx.getImageData(0, 0, canvas.width, canvas.height).data], Array(pixels).fill(base).flat())
+    ctx.fillStyle = 'rgba(255,0,0,0.5)'
+    ctx.fillRect(0, 0, 1, 1)
+    t.is(ctx.getImageData(0, 0, 1, 1).data[3], 255)
+  }
+})
+
 test('pattern snapshots preserve integer texels after canvas mutation', (t) => {
   const source = createCanvas(2, 2)
   const src = source.getContext('2d')
