@@ -109,6 +109,22 @@ test('canvas pattern filters premultiplied texels', (t) => {
   )
 })
 
+// Chrome samples patterns linearly at every smoothing quality (never cubic), so
+// an untransformed pattern copies its texels unchanged.
+test('identity pattern keeps texels at every smoothing quality', (t) => {
+  const source = createCanvas(2, 1)
+  const src = source.getContext('2d')
+  src.fillStyle = '#ff00ff'
+  src.fillRect(0, 0, 1, 1)
+  for (const quality of ['low', 'medium', 'high'] as const) {
+    const ctx = createCanvas(2, 1).getContext('2d')
+    ctx.imageSmoothingQuality = quality
+    ctx.fillStyle = ctx.createPattern(source, 'repeat')!
+    ctx.fillRect(0, 0, 2, 1)
+    t.deepEqual([...ctx.getImageData(0, 0, 2, 1).data], [255, 0, 255, 255, 0, 0, 0, 0], quality)
+  }
+})
+
 test('should be able to create Path2D', (t) => {
   t.notThrows(() => new Path2D())
   t.notThrows(
