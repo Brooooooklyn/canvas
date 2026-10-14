@@ -679,7 +679,8 @@ struct skiac_line_metrics {
   float font_descent;
   float alphabetic_baseline;
   // The drawn glyph ink, left and right of the anchor x, before a maxWidth
-  // squeeze. Only the alpha:false reset reads them; measureText does not.
+  // squeeze. Filled only when collect_ink asks for it (the alpha:false
+  // reset); measureText does not, and gets 0 for both.
   float ink_left;
   float ink_right;
 };
@@ -911,6 +912,7 @@ void skiac_canvas_get_line_metrics_or_draw_text(
     skiac_paint* c_paint,
     skiac_canvas* c_canvas,
     skiac_line_metrics* c_line_metrics,
+    bool collect_ink,
     const skiac_font_variation* variations,
     int variations_count,
     int kerning,

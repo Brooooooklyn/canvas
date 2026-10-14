@@ -2904,7 +2904,7 @@ impl Context {
     max_width: f32,
     source: ShadowSource,
   ) -> Option<DrawBounds> {
-    let metrics = self.get_line_metrics(text).ok()?.0;
+    let metrics = self.get_line_metrics(text, true).ok()?.0;
     // The same test and ratio as the draw.
     let scale = if metrics.width > max_width {
       max_width / metrics.width
@@ -2925,7 +2925,13 @@ impl Context {
     })
   }
 
-  fn get_line_metrics(&mut self, text: &str) -> result::Result<LineMetrics, SkError> {
+  /// `collect_ink` fills `ink_left` / `ink_right`, which costs a walk over
+  /// every drawn glyph; measureText does not read them and passes false.
+  fn get_line_metrics(
+    &mut self,
+    text: &str,
+    collect_ink: bool,
+  ) -> result::Result<LineMetrics, SkError> {
     let state = &self.state;
     let fill_paint = self.fill_paint()?;
     let weight = state.font_style.weight;
@@ -2952,6 +2958,7 @@ impl Context {
       self.state.font_variant_caps,
       &self.state.lang,
       self.state.text_rendering,
+      collect_ink,
     )?);
     Ok(line_metrics)
   }
@@ -4262,7 +4269,7 @@ impl CanvasRenderingContext2D {
         width: 0.0,
       });
     }
-    let metrics = self.context.get_line_metrics(text)?;
+    let metrics = self.context.get_line_metrics(text, false)?;
     Ok(TextMetrics {
       actual_bounding_box_ascent: metrics.0.ascent as f64,
       actual_bounding_box_descent: metrics.0.descent as f64,
@@ -5559,10 +5566,41 @@ mod tests {
     let pending0 = pending(&ctx);
     let raster0 = raster_bytes(&ctx);
     let version0 = ctx.content_version();
-    ctx.get_line_metrics("measure me").unwrap();
+    ctx.get_line_metrics("measure me", false).unwrap();
     assert_eq!(pending(&ctx), pending0);
     assert_eq!(raster_bytes(&ctx), raster0);
     assert_eq!(ctx.content_version(), version0);
+  }
+
+  // measureText never reads the glyph ink, so it must not pay for the walk
+  // that finds it: the ink comes back empty.
+  #[test]
+  fn measure_text_skips_the_ink_walk() {
+    {
+      let fonts = get_font().unwrap();
+      fonts.register_from_path::<String>("__test__/fonts/Lato-Regular.ttf", None);
+    }
+    let mut ctx = raster_ctx(64, 64);
+    ctx.set_font("16px Lato".to_owned()).unwrap();
+    let measured = ctx.get_line_metrics("Hgjy", false).unwrap().0;
+    assert_eq!((measured.ink_left, measured.ink_right), (0.0, 0.0));
+    // The alpha:false reset asks for it and gets the glyphs; the rest of the
+    // metrics are the same either way.
+    let with_ink = ctx.get_line_metrics("Hgjy", true).unwrap().0;
+    assert!(with_ink.ink_right > with_ink.ink_left && with_ink.ink_right > 0.0);
+    let rest = |m: &crate::sk::ffi::skiac_line_metrics| {
+      (
+        m.ascent,
+        m.descent,
+        m.left,
+        m.right,
+        m.width,
+        m.font_ascent,
+        m.font_descent,
+        m.alphabetic_baseline,
+      )
+    };
+    assert_eq!(rest(&with_ink), rest(&measured));
   }
 
   // Blink's Draw returns before anything is recorded when the CTM is singular

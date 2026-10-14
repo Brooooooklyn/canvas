@@ -196,7 +196,8 @@ pub mod ffi {
     pub font_descent: f32,
     pub alphabetic_baseline: f32,
     /// The drawn glyph ink, left and right of the anchor x, before a maxWidth
-    /// squeeze (negative left of it). Only the alpha:false reset reads them.
+    /// squeeze (negative left of it). Filled only when `collect_ink` asks for
+    /// it (the alpha:false reset); measureText does not, and gets 0 for both.
     pub ink_left: f32,
     pub ink_right: f32,
   }
@@ -596,6 +597,7 @@ pub mod ffi {
       paint: *mut skiac_paint,
       canvas: *mut skiac_canvas,
       line_metrics: *mut skiac_line_metrics,
+      collect_ink: bool,
       variations: *const skiac_font_variation,
       variations_count: i32,
       kerning: i32,
@@ -2861,6 +2863,7 @@ impl Canvas {
         paint.0,
         self.0,
         ptr::null_mut(),
+        false,
         variations.as_ptr() as *const ffi::skiac_font_variation,
         variations.len() as i32,
         kerning as i32,
@@ -2893,6 +2896,7 @@ impl Canvas {
     variant_caps: FontVariantCaps,
     lang: &str,
     text_rendering: TextRendering,
+    collect_ink: bool,
   ) -> Result<ffi::skiac_line_metrics, NulError> {
     let c_text = std::ffi::CString::new(text)?;
     let c_font_family = std::ffi::CString::new(font_family)?;
@@ -2928,6 +2932,7 @@ impl Canvas {
         paint.0,
         ptr::null_mut(),
         &mut line_metrics,
+        collect_ink,
         variations.as_ptr() as *const ffi::skiac_font_variation,
         variations.len() as i32,
         kerning as i32,
