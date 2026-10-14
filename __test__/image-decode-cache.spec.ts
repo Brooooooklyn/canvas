@@ -262,6 +262,51 @@ test('Image pattern whose target size rounds to 0 draws nothing', async (t) => {
   }
 })
 
+// The empty pattern still paints, as transparent black: Chrome keeps the
+// composite, so on a filled canvas 'copy' and 'destination-in' clear it and
+// 'source-over' leaves it as it is, with a filter or a shadow too.
+test('Image pattern whose target size rounds to 0 composites as transparent black', async (t) => {
+  const image = await imageFrom(grid(2, 2, (x, y) => ['#ff0000', '#00ff00', '#0000ff', '#ffffff'][y * 2 + x]))
+  const filled = Array.from({ length: 8 * 8 }, (_, i) => (i < 8 * 6 ? [20, 40, 200, 255] : [0, 0, 0, 0])).flat()
+  const cleared = Array.from({ length: 8 * 8 * 4 }, () => 0)
+  for (const quality of QUALITIES) {
+    for (const [op, expected] of [
+      ['source-over', filled],
+      ['copy', cleared],
+      ['destination-in', cleared],
+    ] as const) {
+      for (const [name, setup] of [
+        ['plain', () => {}],
+        ['filter', (ctx: SKRSContext2D) => (ctx.filter = 'blur(1px)')],
+        [
+          'shadow',
+          (ctx: SKRSContext2D) => {
+            ctx.shadowColor = 'red'
+            ctx.shadowOffsetX = 2
+            ctx.shadowOffsetY = 2
+          },
+        ],
+      ] as const) {
+        const ctx = createCanvas(8, 8).getContext('2d')
+        ctx.fillStyle = 'rgb(20,40,200)'
+        ctx.fillRect(0, 0, 8, 6)
+        if (quality === 'off') {
+          ctx.imageSmoothingEnabled = false
+        } else {
+          ctx.imageSmoothingQuality = quality
+        }
+        const pattern = ctx.createPattern(image, 'repeat')
+        pattern.setTransform(scale(0.2))
+        ctx.globalCompositeOperation = op
+        setup(ctx)
+        ctx.fillStyle = pattern
+        ctx.fillRect(1, 1, 5, 5)
+        t.deepEqual(px(ctx, 0, 0, 8, 8), expected, `${op} ${name} ${quality}`)
+      }
+    }
+  }
+})
+
 test('downscaled Image pattern samples its decode level at every quality', async (t) => {
   const image = await imageFrom(stripes())
   for (const quality of ['low', 'medium', 'high'] as const) {
