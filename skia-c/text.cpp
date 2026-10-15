@@ -36,6 +36,79 @@ bool StartsWithLanguage(std::string_view lang, std::string_view language) {
          lang[language.size()] == '_';
 }
 
+// A text blob of the laid out line, drawn at `origin` from the paint origin.
+struct LineRun {
+  sk_sp<SkTextBlob> blob;
+  SkPoint origin;
+};
+
+// The text blobs Paragraph::paint draws and where, without its clips.
+class BlobRecorder final : public ParagraphPainter {
+ public:
+  explicit BlobRecorder(std::vector<LineRun>* runs) : runs_(runs) {}
+
+  // Whether the paint drew nothing but text blobs (canvas text sets no
+  // background, shadow or decoration).
+  bool only_blobs() const { return only_blobs_; }
+
+  void drawTextBlob(const sk_sp<SkTextBlob>& blob,
+                    SkScalar x,
+                    SkScalar y,
+                    const SkPaintOrID&) override {
+    if (blob) {
+      runs_->push_back({blob, {x, y}});
+    }
+  }
+  void drawTextShadow(const sk_sp<SkTextBlob>&,
+                      SkScalar,
+                      SkScalar,
+                      SkColor,
+                      SkScalar) override {
+    only_blobs_ = false;
+  }
+  void drawRect(const SkRect&, const SkPaintOrID&) override {
+    only_blobs_ = false;
+  }
+  void drawFilledRect(const SkRect&, const DecorationStyle&) override {
+    only_blobs_ = false;
+  }
+  void drawPath(const SkPath&, const DecorationStyle&) override {
+    only_blobs_ = false;
+  }
+  void drawLine(SkScalar,
+                SkScalar,
+                SkScalar,
+                SkScalar,
+                const DecorationStyle&) override {
+    only_blobs_ = false;
+  }
+  void clipRect(const SkRect&) override {}
+  void translate(SkScalar, SkScalar) override { only_blobs_ = false; }
+  void save() override {}
+  void restore() override {}
+
+ private:
+  std::vector<LineRun>* runs_;
+  bool only_blobs_ = true;
+};
+
+// The text blobs of the laid out line where Blink draws them
+// (LineRunShifts), unclipped: Blink draws canvas text with no clip
+// (BaseRenderingContext2D::DrawTextInternal). TextLine clips a blob that
+// ends past the line's advance, which only happens once a run before it
+// sits too far right. False when the paint drew more than text blobs.
+bool CollectLineRuns(ParagraphImpl* paragraph, std::vector<LineRun>* runs) {
+  BlobRecorder recorder(runs);
+  paragraph->paint(&recorder, 0, 0);
+  const std::vector<float> shifts = LineRunShifts(paragraph);
+  if (shifts.size() == runs->size()) {
+    for (size_t i = 0; i < shifts.size(); ++i) {
+      (*runs)[i].origin.fX += shifts[i];
+    }
+  }
+  return recorder.only_blobs();
+}
+
 // Lays out `request` and either paints it on `canvas` at (x, y), squeezed to
 // `max_width`, or fills `line_metrics` for an anchor at (0, 0).
 void MeasureOrDraw(skiac_font_collection* c_collection,
@@ -349,6 +422,8 @@ void MeasureOrDraw(skiac_font_collection* c_collection,
     paint_x = x;
   }
 
+  std::vector<LineRun> runs;
+  const bool only_blobs = CollectLineRuns(paragraph.get(), &runs);
   if (canvas) {
     auto need_scale = line_width > max_width;
     float ratio = need_scale ? max_width / line_width : 1.0f;
@@ -360,46 +435,57 @@ void MeasureOrDraw(skiac_font_collection* c_collection,
     float final_x = need_scale ? (paint_x + (1 - ratio) * offset_x) / ratio -
                                      rtl_offset + letter_spacing_offset
                                : paint_x - rtl_offset + letter_spacing_offset;
-    paragraph->paint(canvas, final_x, y + baseline_y - line_baseline);
+    const float final_y = y + baseline_y - line_baseline;
+    if (only_blobs) {
+      // TextLine::TextBlobRecord::paint's sums, with the caller's paint.
+      for (const LineRun& run : runs) {
+        canvas->drawTextBlob(run.blob, final_x + run.origin.fX,
+                             final_y + run.origin.fY, *paint);
+      }
+    } else {
+      paragraph->paint(canvas, final_x, final_y);
+    }
     if (need_scale) {
       canvas->restore();
     }
     return;
   }
   // TextMetrics::MeasureRuns: the union of the ink of every glyph, where the
-  // draw above paints it (visit() walks the text blobs paint() draws), and
-  // skips empty ones. SkFontGetBoundsForGlyphs rounds the boxes out only
-  // without subpixel positioning, which Chrome Linux turns on
-  // (WebFontRenderStyle::ApplyToSkFont) like skparagraph's run fonts. Up to
-  // 256 px SkFont::getBounds gives whole pixels anyway (mask boxes); above
-  // it, a 64 px path strike's boxes scaled up, with fractions.
+  // draw above paints it, and skips empty ones. SkFontGetBoundsForGlyphs
+  // rounds the boxes out only without subpixel positioning, which Chrome
+  // Linux turns on (WebFontRenderStyle::ApplyToSkFont) like skparagraph's
+  // run fonts. Up to 256 px SkFont::getBounds gives whole pixels anyway
+  // (mask boxes); above it, a 64 px path strike's boxes scaled up, with
+  // fractions.
   bool has_ink = false;
   SkRect ink = SkRect::MakeEmpty();
-  paragraph->visit([&](int, const Paragraph::VisitorInfo* info) {
-    if (!info) {
-      return;
-    }
-    std::vector<SkRect> glyph_bounds(info->count);
-    info->font.getBounds({info->glyphs, static_cast<size_t>(info->count)},
+  std::vector<SkRect> glyph_bounds;
+  for (const LineRun& line_run : runs) {
+    SkTextBlob::Iter blob_runs(*line_run.blob);
+    SkTextBlob::Iter::ExperimentalRun run;
+    while (blob_runs.experimentalNext(&run)) {
+      glyph_bounds.resize(run.count);
+      run.font.getBounds({run.glyphs, static_cast<size_t>(run.count)},
                          glyph_bounds, nullptr);
-    for (int i = 0; i < info->count; ++i) {
-      if (glyph_bounds[i].isEmpty()) {
-        continue;
-      }
-      SkRect glyph = info->font.isSubpixel()
-                         ? glyph_bounds[i]
-                         : SkRect::Make(glyph_bounds[i].roundOut());
-      // y relative to the alphabetic baseline.
-      glyph.offset(info->origin.fX + info->positions[i].fX,
-                   info->origin.fY + info->positions[i].fY - line_baseline);
-      if (has_ink) {
-        ink.join(glyph);
-      } else {
-        ink = glyph;
-        has_ink = true;
+      for (int i = 0; i < run.count; ++i) {
+        if (glyph_bounds[i].isEmpty()) {
+          continue;
+        }
+        SkRect glyph = run.font.isSubpixel()
+                           ? glyph_bounds[i]
+                           : SkRect::Make(glyph_bounds[i].roundOut());
+        // y relative to the alphabetic baseline.
+        glyph.offset(line_run.origin.fX + run.positions[i].fX,
+                     line_run.origin.fY + run.positions[i].fY - line_baseline);
+        if (has_ink) {
+          ink.join(glyph);
+        } else {
+          ink = glyph;
+          has_ink = true;
+        }
       }
     }
-  });
+  }
   // x relative to the text's left edge: the draw's origin is draw_x from the
   // anchor, and the text's left edge offset_x left of it (Blink's
   // text_align_dx).
@@ -439,6 +525,69 @@ void MeasureOrDraw(skiac_font_collection* c_collection,
 }
 
 }  // namespace
+
+std::vector<float> LineRunShifts(ParagraphImpl* paragraph) {
+  std::vector<float> shifts;
+  // One run has no run before it.
+  if (paragraph->lines().size() != 1 || paragraph->runs().size() < 2) {
+    return shifts;
+  }
+  // Without a glyph that advances less than nothing, no piece is narrower
+  // than 0 and TextLine's x is Blink's.
+  bool backwards = false;
+  for (const Run& run : paragraph->runs()) {
+    for (size_t i = 0; i < run.size() && !backwards; ++i) {
+      backwards = run.posX(i + 1) < run.posX(i);
+    }
+  }
+  if (!backwards) {
+    return shifts;
+  }
+  const TextLine& line = paragraph->lines()[0];
+  bool moved = false;
+  // Where the next run starts, from the line's start: Blink's x and
+  // TextLine's (run_offset).
+  float blink_offset = 0;
+  // TextLine::ensureTextBlobCachePopulated's walk: one text blob per call
+  // of the style visitor, an empty one for an empty glyph range.
+  line.iterateThroughVisualRuns(false, [&](const Run* run, SkScalar run_offset,
+                                           TextRange text_range,
+                                           SkScalar* run_width) {
+    if (run->placeholderStyle() != nullptr) {
+      *run_width = run->advance().fX;
+      blink_offset += run->advance().fX;
+      return true;
+    }
+    float blink_in_run = 0;
+    float line_in_run = 0;
+    *run_width = line.iterateThroughSingleRunByStyles(
+        TextLine::TextAdjustment::GlyphCluster, run, run_offset, text_range,
+        StyleType::kForeground,
+        [&](TextRange, const TextStyle&, const TextLine::ClipContext& context) {
+          if (context.size > 0) {
+            const float shift =
+                (blink_offset + blink_in_run) - (run_offset + line_in_run);
+            moved = moved || shift != 0;
+            shifts.push_back(shift);
+          }
+          // The clip starts where TextLine puts the glyphs and is as
+          // wide as their advances, cut at the line's advance and at 0
+          // (TextLine::measureTextInsideOneRun).
+          const float advance = context.run->calculateWidth(
+              context.pos, context.pos + context.size, false);
+          blink_in_run += (advance + context.clip.fLeft) - context.clip.fLeft;
+          line_in_run += context.clip.width();
+        });
+    // A piece without height gets no blob and no visitor call; it
+    // advances like TextLine counts it.
+    blink_offset += blink_in_run + (*run_width - line_in_run);
+    return true;
+  });
+  if (!moved) {
+    shifts.clear();
+  }
+  return shifts;
+}
 
 extern "C" {
 
