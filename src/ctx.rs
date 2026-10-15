@@ -54,6 +54,8 @@ impl From<SkError> for Error {
 pub(crate) const MAX_TEXT_WIDTH: f32 = 100_000.0;
 pub(crate) const FILL_STYLE_HIDDEN_NAME: &str = "_fillStyle";
 pub(crate) const STROKE_STYLE_HIDDEN_NAME: &str = "_strokeStyle";
+/// Where the canvas classes keep a context's canvas, for the `canvas` getter.
+pub(crate) const CANVAS_HIDDEN_NAME: &str = "_canvas";
 
 /// The fillStyle/strokeStyle getters read these hidden JS properties, so every
 /// reset to the default state (ctx.reset(), and a width/height change, which
@@ -4047,6 +4049,12 @@ impl CanvasRenderingContext2D {
         .paint
         .set_stroke_width(clamp_to_f32(width));
     }
+  }
+
+  /// The canvas: a read-only prototype getter, as in browsers.
+  #[napi(getter)]
+  pub fn get_canvas<'env>(&'env self, this: This<'env>) -> Result<Unknown<'env>> {
+    this.get_named_property_unchecked(CANVAS_HIDDEN_NAME)
   }
 
   #[napi(getter)]

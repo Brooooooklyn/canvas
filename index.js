@@ -5,6 +5,8 @@ const {
   clearAllCache,
   CanvasRenderingContext2D,
   CanvasElement,
+  CanvasGradient,
+  CanvasPattern,
   SVGCanvas,
   Path: Path2D,
   ImageData,
@@ -56,6 +58,22 @@ for (const name of [
   const descriptor = Object.getOwnPropertyDescriptor(TextMetrics.prototype, name)
   delete TextMetrics.prototype[name]
   Object.defineProperty(TextMetrics.prototype, name, descriptor)
+}
+
+// Chrome's Symbol.toStringTag, an own property of each prototype. The
+// canvas and Image classes take their HTML element names; SVGCanvas has no
+// counterpart and no tag.
+for (const [Class, tag] of [
+  [CanvasRenderingContext2D, 'CanvasRenderingContext2D'],
+  [CanvasGradient, 'CanvasGradient'],
+  [CanvasPattern, 'CanvasPattern'],
+  [Path2D, 'Path2D'],
+  [ImageData, 'ImageData'],
+  [TextMetrics, 'TextMetrics'],
+  [CanvasElement, 'HTMLCanvasElement'],
+  [Image, 'HTMLImageElement'],
+]) {
+  Object.defineProperty(Class.prototype, Symbol.toStringTag, { value: tag, configurable: true })
 }
 
 const SvgExportFlag = {
