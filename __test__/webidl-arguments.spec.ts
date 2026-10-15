@@ -1,6 +1,6 @@
 // Argument count checks and WebIDL conversion of method arguments.
-// Expected values and messages were measured in Chrome 155 (--disable-gpu;
-// pixel reads on a willReadFrequently canvas), the same on arm64 and x64.
+// Expected values and messages were measured in Chrome 155 on arm64 macOS
+// (--disable-gpu; pixel reads on a willReadFrequently canvas).
 import test from 'ava'
 
 import { createCanvas, Path2D } from '../index'
@@ -442,4 +442,179 @@ test("fill, clip, stroke, isPointInPath and isPointInStroke have Chrome's length
       message: `${execute(method)}${required(2, 1)}`,
     })
   }
+})
+
+// [method, required argument count]
+const PATH_ARITY: [string, number][] = [
+  ['moveTo', 2],
+  ['lineTo', 2],
+  ['quadraticCurveTo', 4],
+  ['bezierCurveTo', 6],
+  ['arcTo', 5],
+  ['rect', 4],
+  ['roundRect', 4],
+  ['arc', 5],
+  ['ellipse', 7],
+]
+
+test('Path2D methods throw TypeError for too few arguments', (t) => {
+  for (const [method, count] of PATH_ARITY) {
+    const error = t.throws(() => loose(new Path2D())[method](...Array(count - 1).fill(1)), {
+      instanceOf: TypeError,
+      message: `${execute(method, 'Path2D')}${required(count, count - 1)}`,
+    })
+    t.is(String(error.stack).split('\n')[0], `TypeError: ${required(count, count - 1)}`)
+    t.deepEqual(Object.keys(error), ['message'])
+  }
+  t.throws(() => loose(new Path2D()).moveTo(), {
+    instanceOf: TypeError,
+    message: `${execute('moveTo', 'Path2D')}${required(2, 0)}`,
+  })
+  // The count is checked before any argument is converted.
+  const log: number[] = []
+  const value = (n: number) => ({
+    valueOf() {
+      log.push(n)
+      return n
+    },
+  })
+  t.throws(() => loose(new Path2D()).rect(value(1), value(2), value(3)), { instanceOf: TypeError })
+  t.deepEqual(log, [])
+  // A foreign receiver throws 'Illegal invocation' first.
+  for (const args of [[1, 2], [1]]) {
+    t.throws(() => Path2D.prototype.moveTo.call({}, ...args), { instanceOf: TypeError, message: 'Illegal invocation' })
+  }
+})
+
+test("Path2D methods have Chrome's length", (t) => {
+  const path = loose(new Path2D())
+  t.deepEqual(
+    PATH_ARITY.map(([method]) => path[method].length),
+    PATH_ARITY.map(([, count]) => count),
+  )
+})
+
+test('Path2D methods convert arguments with ToNumber', (t) => {
+  const fillAlpha = (build: (path: any) => void) => {
+    const ctx = createCanvas(10, 10).getContext('2d')
+    const path = new Path2D()
+    build(path)
+    ctx.fill(path)
+    return ctx.getImageData(5, 5, 1, 1).data[3]
+  }
+  const builds: ((path: any) => void)[] = [
+    (p) => {
+      p.moveTo('0', '0')
+      p.lineTo('10', '0')
+      p.lineTo('10', '10')
+      p.lineTo('0', '10')
+    },
+    (p) => p.rect('0', '0', '10', '10'),
+    (p) => p.arc('5', '5', '4', '0', '7'),
+    (p) => p.ellipse('5', '5', '4', '4', '0', '0', '7'),
+    (p) => {
+      p.moveTo(0, 0)
+      p.quadraticCurveTo('10', '0', '10', '10')
+      p.lineTo(0, 10)
+    },
+    (p) => {
+      p.moveTo(0, 0)
+      p.bezierCurveTo('10', '0', '10', '0', '10', '10')
+      p.lineTo(0, 10)
+    },
+    (p) => {
+      p.moveTo(0, 0)
+      p.arcTo('10', '0', '10', '10', '1')
+      p.lineTo(10, 10)
+      p.lineTo(0, 10)
+    },
+    (p) => p.roundRect('0', '0', '10', '10'),
+    (p) => p.rect([0], null, { valueOf: () => 10 }, '10'),
+  ]
+  t.deepEqual(
+    builds.map((build) => fillAlpha(build)),
+    builds.map(() => 255),
+  )
+
+  const log: (number | string)[] = []
+  const value = (n: number) => ({
+    valueOf() {
+      log.push(n)
+      return n
+    },
+  })
+  // anticlockwise is a boolean: ToBoolean runs no user code.
+  loose(new Path2D()).ellipse(
+    value(1),
+    value(2),
+    value(3),
+    value(4),
+    value(5),
+    value(6),
+    value(7),
+    loose({
+      valueOf() {
+        log.push('anticlockwise')
+        return 1
+      },
+    }),
+  )
+  t.deepEqual(log.splice(0), [1, 2, 3, 4, 5, 6, 7])
+
+  const symbol = 'Cannot convert a Symbol value to a number'
+  const error = t.throws(() => loose(new Path2D()).arc(Symbol(), 0, 1, 0, 1), {
+    instanceOf: TypeError,
+    message: `${execute('arc', 'Path2D')}${symbol}`,
+  })
+  t.is(String(error.stack).split('\n')[0], `TypeError: ${symbol}`)
+  t.deepEqual(Object.keys(error), ['message'])
+  t.throws(() => loose(new Path2D()).bezierCurveTo(value(1), value(2), Symbol(), value(4), value(5), value(6)), {
+    instanceOf: TypeError,
+    message: `${execute('bezierCurveTo', 'Path2D')}${symbol}`,
+  })
+  t.deepEqual(log.splice(0), [1, 2])
+  t.throws(() => loose(new Path2D()).lineTo(1n, 0), {
+    instanceOf: TypeError,
+    message: `${execute('lineTo', 'Path2D')}Cannot convert a BigInt value to a number`,
+  })
+  // undefined is NaN: no exception.
+  const path = loose(new Path2D())
+  t.notThrows(() => path.arc(undefined, undefined, undefined, undefined, undefined))
+  t.notThrows(() => path.ellipse(undefined, undefined, undefined, undefined, undefined, undefined, undefined))
+  t.notThrows(() => path.arcTo(undefined, undefined, undefined, undefined, undefined))
+  t.notThrows(() => path.moveTo(undefined, undefined))
+})
+
+test('Path2D arc and ellipse convert anticlockwise with ToBoolean', (t) => {
+  // A pie from 0 to PI/2: clockwise covers (7, 7), anticlockwise (3, 3).
+  const pie = (method: 'arc' | 'ellipse', anticlockwise: unknown) => {
+    const ctx = createCanvas(10, 10).getContext('2d')
+    const path = loose(new Path2D())
+    path.moveTo(5, 5)
+    if (method === 'arc') {
+      path.arc(5, 5, 4, 0, Math.PI / 2, anticlockwise)
+    } else {
+      path.ellipse(5, 5, 4, 4, 0, 0, Math.PI / 2, anticlockwise)
+    }
+    ctx.fill(path)
+    return [ctx.getImageData(3, 3, 1, 1).data[3], ctx.getImageData(7, 7, 1, 1).data[3]]
+  }
+  const clockwise = [0, 255]
+  const counter = [255, 0]
+  for (const [value, expected] of [
+    [undefined, clockwise],
+    [false, clockwise],
+    [true, counter],
+    ['', clockwise],
+    ['x', counter],
+    [0, clockwise],
+    [1, counter],
+    [{}, counter],
+    [null, clockwise],
+    [NaN, clockwise],
+  ] as const) {
+    t.deepEqual(pie('arc', value), expected, String(value))
+  }
+  t.deepEqual(pie('ellipse', 'x'), counter)
+  t.deepEqual(pie('ellipse', 0), clockwise)
 })
