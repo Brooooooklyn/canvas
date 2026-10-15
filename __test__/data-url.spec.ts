@@ -20,6 +20,9 @@ const avif = base64('avif-chrome/m1-full-420-d8.avif')
 const svg =
   '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="10"><rect width="20" height="10" fill="red"/></svg>'
 const svgHash = svg.replace('fill="red"', 'fill="#00f"')
+// No width or height: the natural size is the viewBox ratio against 300x150.
+const svgNoSize =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="red"/></svg>'
 const svgBase64 = Buffer.from(svg).toString('base64')
 
 const cases: Record<string, string> = {
@@ -28,6 +31,7 @@ const cases: Record<string, string> = {
   svgPct: 'data:image/svg+xml,' + encodeURIComponent(svg),
   svgPlain: 'data:image/svg+xml,' + svg,
   svgCharset: 'data:image/svg+xml;charset=utf-8;base64,' + svgBase64,
+  svgNoSize: 'data:image/svg+xml;base64,' + Buffer.from(svgNoSize).toString('base64'),
   svgUpperMime: 'data:IMAGE/SVG+XML;base64,' + svgBase64,
   svgMimeSpaces: 'data: image/svg+xml ;base64,' + svgBase64,
   svgBase64Space: 'data:image/svg+xml; base64,' + svgBase64,
@@ -89,6 +93,7 @@ const chrome: Record<string, { natural: number[]; px: number[] } | null> = {
   svgPct: { natural: [20, 10], px: [255, 0, 0, 255] },
   svgPlain: { natural: [20, 10], px: [255, 0, 0, 255] },
   svgCharset: { natural: [20, 10], px: [255, 0, 0, 255] },
+  svgNoSize: { natural: [150, 150], px: [255, 0, 0, 255] },
   svgUpperMime: { natural: [20, 10], px: [255, 0, 0, 255] },
   svgMimeSpaces: { natural: [20, 10], px: [255, 0, 0, 255] },
   svgBase64Space: { natural: [20, 10], px: [255, 0, 0, 255] },

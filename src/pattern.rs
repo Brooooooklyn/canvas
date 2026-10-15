@@ -73,6 +73,7 @@ impl CanvasPattern {
     env: Env,
     input: Either4<&mut Image, &mut ImageData, &mut CanvasElement<'_>, &mut SVGCanvas<'_>>,
     repetition: &str,
+    default_object_size: (f32, f32),
   ) -> Result<Option<Self>> {
     // ToCanvasImageSource comes first: a canvas source with a 0 side throws.
     let source_size = match &input {
@@ -109,7 +110,7 @@ impl CanvasPattern {
     //
     // A raster Image goes through Chrome's decode cache; an SVG Image is drawn
     // as vectors there, so its raster is sampled as it is.
-    let is_image = matches!(&input, Either4::A(image) if !image.is_svg);
+    let is_image = matches!(&input, Either4::A(image) if !image.is_svg());
     let (backing_bytes, backing, accounting_id, is_canvas) = match input {
       Either4::A(image) => {
         // Chrome checks ImageComplete() first (image_element_base.cc:59): a
@@ -118,28 +119,46 @@ impl CanvasPattern {
         if !image.complete {
           return Ok(None);
         }
-        let Some(bitmap) = image.bitmap.as_ref() else {
-          if image.broken {
-            return Err(webidl::dom_exception(
-              env.raw(),
-              "InvalidStateError",
-              &format!(
-                "{}Source image is in the 'broken' state.",
-                webidl::CREATE_PATTERN
-              ),
-            ));
+        if let Some(svg) = image.svg.as_mut() {
+          // The tile is the image at its concrete size against the canvas
+          // size; null when that rounds to empty (kZeroSizeImageSourceStatus).
+          let Some(raster) = svg.pattern_raster(&env, default_object_size)? else {
+            return Ok(None);
+          };
+          match raster {
+            Some(raster) => (
+              raster.inner.0.width as usize * raster.inner.0.height as usize * 4,
+              ImagePatternBacking::Bitmap(raster.clone()),
+              raster.resource_id,
+              false,
+            ),
+            // Too large to raster: it paints nothing.
+            None => transparent_backing(image.color_space)?,
           }
-          return Ok(None);
-        };
-        (
-          bitmap.inner.0.width as usize * bitmap.inner.0.height as usize * 4,
-          ImagePatternBacking::Bitmap(bitmap.clone()),
-          // The Arc is cloned from the Image: the backing identity is the
-          // bitmap's own resource_id, so N patterns over one Image charge
-          // once per recording window instead of per wrapper.
-          bitmap.resource_id,
-          false,
-        )
+        } else {
+          let Some(bitmap) = image.bitmap.as_ref() else {
+            if image.broken {
+              return Err(webidl::dom_exception(
+                env.raw(),
+                "InvalidStateError",
+                &format!(
+                  "{}Source image is in the 'broken' state.",
+                  webidl::CREATE_PATTERN
+                ),
+              ));
+            }
+            return Ok(None);
+          };
+          (
+            bitmap.inner.0.width as usize * bitmap.inner.0.height as usize * 4,
+            ImagePatternBacking::Bitmap(bitmap.clone()),
+            // The Arc is cloned from the Image: the backing identity is the
+            // bitmap's own resource_id, so N patterns over one Image charge
+            // once per recording window instead of per wrapper.
+            bitmap.resource_id,
+            false,
+          )
+        }
       }
       Either4::B(image_data) => {
         let data = image_data.resolve_pixels(&env)?;
@@ -284,8 +303,14 @@ impl CanvasPattern {
     input: Either4<&mut Image, &mut ImageData, &mut CanvasElement, &mut SVGCanvas>,
     repetition: Option<String>,
   ) -> Result<Self> {
-    Self::create(env, input, repetition.as_deref().unwrap_or("repeat"))?
-      .ok_or_else(|| Error::new(Status::InvalidArg, "Image is not completed.".to_owned()))
+    // No canvas: an SVG Image takes the default canvas size, 300x150.
+    Self::create(
+      env,
+      input,
+      repetition.as_deref().unwrap_or("repeat"),
+      (300.0, 150.0),
+    )?
+    .ok_or_else(|| Error::new(Status::InvalidArg, "Image is not completed.".to_owned()))
   }
 
   /// setTransform(optional DOMMatrix2DInit transform = {}).

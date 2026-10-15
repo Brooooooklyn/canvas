@@ -108,6 +108,12 @@ pub mod ffi {
 
   #[repr(C)]
   #[derive(Copy, Clone, Debug)]
+  pub struct skiac_svg_document {
+    _unused: [u8; 0],
+  }
+
+  #[repr(C)]
+  #[derive(Copy, Clone, Debug)]
   pub struct skiac_image_levels {
     _unused: [u8; 0],
   }
@@ -1126,14 +1132,44 @@ pub mod ffi {
       info: *mut skiac_bitmap_info,
     ) -> bool;
 
-    pub fn skiac_bitmap_make_from_svg(
+    pub fn skiac_svg_document_make(
       data: *const u8,
-      size: usize,
-      width: f32,
-      height: f32,
-      info: *mut skiac_bitmap_info,
+      length: usize,
       font_collection: *mut skiac_font_collection,
+    ) -> *mut skiac_svg_document;
+
+    pub fn skiac_svg_document_attribute(
+      document: *mut skiac_svg_document,
+      index: i32,
+      ptr: *mut *const c_char,
+      length: *mut usize,
+    ) -> bool;
+
+    pub fn skiac_svg_document_render(
+      document: *mut skiac_svg_document,
+      layout_width: f32,
+      layout_height: f32,
+      view_width: f32,
+      view_height: f32,
+      sx: f32,
+      sy: f32,
+      tx: f32,
+      ty: f32,
+      clip_left: f32,
+      clip_top: f32,
+      clip_right: f32,
+      clip_bottom: f32,
+      width: i32,
+      height: i32,
       cs: u8,
+      info: *mut skiac_bitmap_info,
+    ) -> bool;
+
+    pub fn skiac_svg_document_destroy(document: *mut skiac_svg_document);
+
+    pub fn skiac_font_collection_default_font_metrics(
+      font_collection: *mut skiac_font_collection,
+      metrics: *mut f32,
     ) -> bool;
 
     pub fn skiac_bitmap_make_from_image_data(
@@ -4739,72 +4775,6 @@ impl Bitmap {
     }
   }
 
-  pub fn from_svg_data(
-    data: *const u8,
-    size: usize,
-    color_space: ColorSpace,
-    fc: &FontCollection,
-  ) -> Option<Result<Self, crate::error::SkError>> {
-    let mut bitmap_info = ffi::skiac_bitmap_info {
-      bitmap: ptr::null_mut(),
-      width: 0,
-      height: 0,
-      is_canvas: false,
-    };
-    unsafe {
-      let is_valid = ffi::skiac_bitmap_make_from_svg(
-        data,
-        size,
-        -1.0,
-        -1.0,
-        &mut bitmap_info,
-        fc.0,
-        color_space as u8,
-      );
-
-      if !is_valid {
-        return Some(Err(crate::error::SkError::InvalidSvg));
-      }
-
-      if bitmap_info.bitmap.is_null() {
-        return None;
-      }
-      Some(Ok(Bitmap(bitmap_info)))
-    }
-  }
-
-  pub fn from_svg_data_with_custom_size(
-    data: *const u8,
-    size: usize,
-    width: f32,
-    height: f32,
-    color_space: ColorSpace,
-    fc: &FontCollection,
-  ) -> Option<Self> {
-    let mut bitmap_info = ffi::skiac_bitmap_info {
-      bitmap: ptr::null_mut(),
-      width: 0,
-      height: 0,
-      is_canvas: false,
-    };
-    unsafe {
-      ffi::skiac_bitmap_make_from_svg(
-        data,
-        size,
-        width,
-        height,
-        &mut bitmap_info,
-        fc.0,
-        color_space as u8,
-      );
-
-      if bitmap_info.bitmap.is_null() {
-        return None;
-      }
-      Some(Bitmap(bitmap_info))
-    }
-  }
-
   pub fn from_image_data(
     ptr: *mut u8,
     width: usize,
@@ -4918,6 +4888,96 @@ impl Drop for Bitmap {
         ffi::skiac_bitmap_destroy(self.0.bitmap);
       }
     }
+  }
+}
+
+/// A parsed SVG image (Skia's SVG DOM) and the raw root attributes that give
+/// its natural size.
+pub struct SvgDocument(*mut ffi::skiac_svg_document);
+
+// Built on a decode thread, then used only by the JS thread that owns the
+// Image.
+unsafe impl Send for SvgDocument {}
+
+/// The root attributes `SvgDocument::attribute` reads, in the order the C
+/// side stores them.
+#[derive(Clone, Copy)]
+pub enum SvgRootAttribute {
+  Width = 0,
+  Height = 1,
+  ViewBox = 2,
+  PreserveAspectRatio = 3,
+}
+
+impl SvgDocument {
+  /// None when the bytes are not an SVG document Skia can use.
+  pub fn parse(data: &[u8], fc: &FontCollection) -> Option<Self> {
+    let document = unsafe { ffi::skiac_svg_document_make(data.as_ptr(), data.len(), fc.0) };
+    (!document.is_null()).then_some(SvgDocument(document))
+  }
+
+  /// The attribute of the root element as written, if present.
+  pub fn attribute(&self, attribute: SvgRootAttribute) -> Option<String> {
+    let mut ptr: *const c_char = ptr::null();
+    let mut length = 0usize;
+    unsafe {
+      if !ffi::skiac_svg_document_attribute(self.0, attribute as i32, &mut ptr, &mut length) {
+        return None;
+      }
+      let bytes = slice::from_raw_parts(ptr.cast::<u8>(), length);
+      Some(String::from_utf8_lossy(bytes).into_owned())
+    }
+  }
+
+  /// A `width` x `height` raster of the document laid out at `layout`,
+  /// clipped to `view`, mapped by `[sx 0 tx; 0 sy ty]` and clipped to `clip`
+  /// (left, top, right, bottom) in raster pixels. None when the raster cannot
+  /// be allocated.
+  #[allow(clippy::too_many_arguments)]
+  pub fn render(
+    &mut self,
+    layout: (f32, f32),
+    view: (f32, f32),
+    [sx, sy, tx, ty]: [f32; 4],
+    [left, top, right, bottom]: [f32; 4],
+    width: i32,
+    height: i32,
+    color_space: ColorSpace,
+  ) -> Option<Bitmap> {
+    let mut bitmap_info = ffi::skiac_bitmap_info {
+      bitmap: ptr::null_mut(),
+      width: 0,
+      height: 0,
+      is_canvas: false,
+    };
+    let rendered = unsafe {
+      ffi::skiac_svg_document_render(
+        self.0,
+        layout.0,
+        layout.1,
+        view.0,
+        view.1,
+        sx,
+        sy,
+        tx,
+        ty,
+        left,
+        top,
+        right,
+        bottom,
+        width,
+        height,
+        color_space as u8,
+        &mut bitmap_info,
+      )
+    };
+    (rendered && !bitmap_info.bitmap.is_null()).then_some(Bitmap(bitmap_info))
+  }
+}
+
+impl Drop for SvgDocument {
+  fn drop(&mut self) {
+    unsafe { ffi::skiac_svg_document_destroy(self.0) }
   }
 }
 
@@ -5317,6 +5377,14 @@ unsafe impl Send for FontCollection {}
 unsafe impl Sync for FontCollection {}
 
 impl FontCollection {
+  /// The x-height, '0' advance, cap height and line spacing of Chrome's
+  /// default font at 16px, or None when that font is not installed.
+  pub fn default_font_metrics(&self) -> Option<[f32; 4]> {
+    let mut metrics = [0f32; 4];
+    unsafe { ffi::skiac_font_collection_default_font_metrics(self.0, metrics.as_mut_ptr()) }
+      .then_some(metrics)
+  }
+
   pub fn new() -> FontCollection {
     unsafe {
       let c_font_collection = ffi::skiac_font_collection_create();

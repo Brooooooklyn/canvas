@@ -7,9 +7,8 @@ use napi::{JsString, JsStringUtf8, ScopedTask, bindgen_prelude::*};
 
 use crate::avif::AvifImage;
 use crate::data_url;
-use crate::error::SkError;
-use crate::global_fonts::get_font;
 use crate::sk::{AccountedBitmap, AlphaType, Bitmap, ColorSpace, ColorType, try_zeroed_bytes};
+use crate::svg_image::SvgImage;
 use crate::webidl;
 
 #[napi(custom_finalize)]
@@ -717,12 +716,11 @@ pub struct Image {
   // Natural dimensions - extracted from image header, available before full decode
   natural_width: f64,
   natural_height: f64,
-  pub(crate) need_regenerate_bitmap: bool,
-  pub(crate) is_svg: bool,
+  /// An SVG image: its document and sizing. Chrome draws it at the size of
+  /// each use instead of from one bitmap.
+  pub(crate) svg: Option<SvgImage>,
   pub(crate) color_space: ColorSpace,
   pub(crate) src: Option<Either<Uint8Array, String>>,
-  // read data from file path
-  file_content: Option<Vec<u8>>,
   // Generation counter to handle overlapping loads
   load_generation: u64,
   /// Bumped when src changes to another value: a pending decode() then
@@ -820,11 +818,9 @@ impl Image {
       height,
       natural_width: 0.0,
       natural_height: 0.0,
-      need_regenerate_bitmap: false,
-      is_svg: false,
+      svg: None,
       color_space,
       src: None,
-      file_content: None,
 
       load_generation: 0,
       decode_epoch: Rc::new(Cell::new(0)),
@@ -840,10 +836,7 @@ impl Image {
   #[napi(setter)]
   pub fn set_width(&mut self, width: webidl::UnsignedLong<webidl::ImageSetWidth>) {
     let width = f64::from(image_dimension(width.0));
-    if (width - self.width).abs() > f64::EPSILON {
-      self.width = width;
-      self.need_regenerate_bitmap = true;
-    }
+    self.width = width;
   }
 
   #[napi(getter)]
@@ -865,10 +858,7 @@ impl Image {
   #[napi(setter)]
   pub fn set_height(&mut self, height: webidl::UnsignedLong<webidl::ImageSetHeight>) {
     let height = f64::from(image_dimension(height.0));
-    if (height - self.height).abs() > f64::EPSILON {
-      self.height = height;
-      self.need_regenerate_bitmap = true;
-    }
+    self.height = height;
   }
 
   #[napi(getter)]
@@ -965,10 +955,8 @@ impl Image {
       self.natural_width = 0.0;
       self.natural_height = 0.0;
       self.bitmap = None;
-      self.file_content = None;
       self.complete = true;
-      self.is_svg = false;
-      self.need_regenerate_bitmap = false;
+      self.svg = None;
       // The dropped Arc releases its V8 memory accounting on its own.
 
       // Clear decoder_task so decode() returns fresh resolved promise
@@ -1020,25 +1008,11 @@ impl Image {
           }
         }
 
-        // For SVG, we need to decode synchronously to get dimensions
+        // An SVG is parsed now; its natural size comes from its root.
         if is_svg {
-          let font = get_font().map_err(SkError::from)?;
-          if (self.width - -1.0).abs() > f64::EPSILON && (self.height - -1.0).abs() > f64::EPSILON {
-            if let Some(bitmap) = Bitmap::from_svg_data_with_custom_size(
-              buffer_data.as_ptr(),
-              length,
-              self.width as f32,
-              self.height as f32,
-              self.color_space,
-              &font,
-            ) {
-              self.is_svg = true;
-              self.natural_width = bitmap.0.width as f64;
-              self.natural_height = bitmap.0.height as f64;
-              let new_bytes = (bitmap.0.width as i64) * (bitmap.0.height as i64) * 4;
-              env.adjust_external_memory(new_bytes)?;
-              self.bitmap = Some(Arc::new(AccountedBitmap::new(bitmap, env.raw(), new_bytes)));
-            } else {
+          match SvgImage::parse(buffer_data, self.color_space)? {
+            Some(svg) => self.set_svg(svg),
+            None => {
               // Invalid SVG - fire onerror synchronously
               // Clear prior image state to prevent stale data from being drawn
               // Reset width/height to auto (-1.0) so getters return 0 for broken image
@@ -1049,9 +1023,7 @@ impl Image {
               self.natural_width = 0.0;
               self.natural_height = 0.0;
               self.bitmap = None;
-              self.file_content = None;
-              self.is_svg = false;
-              self.need_regenerate_bitmap = false;
+              self.svg = None;
 
               let error = env.create_error(Error::new(Status::InvalidArg, "Invalid SVG image"))?;
               fire_error(&env, *this, error)?;
@@ -1063,51 +1035,6 @@ impl Image {
                 previous_task.unref(&env)?;
               }
               return Ok(());
-            }
-          } else {
-            // SVG without explicit dimensions - use default decode
-            match Bitmap::from_svg_data(buffer_data.as_ptr(), length, self.color_space, &font) {
-              Some(Ok(bitmap)) => {
-                self.is_svg = true;
-                self.natural_width = bitmap.0.width as f64;
-                self.natural_height = bitmap.0.height as f64;
-                self.width = bitmap.0.width as f64;
-                self.height = bitmap.0.height as f64;
-                let new_bytes = (bitmap.0.width as i64) * (bitmap.0.height as i64) * 4;
-                env.adjust_external_memory(new_bytes)?;
-                self.bitmap = Some(Arc::new(AccountedBitmap::new(bitmap, env.raw(), new_bytes)));
-              }
-              Some(Err(_)) => {
-                // Invalid SVG - fire onerror synchronously
-                // Clear prior image state to prevent stale data from being drawn
-                // Reset width/height to auto (-1.0) so getters return 0 for broken image
-                self.complete = true;
-                self.broken = true;
-                self.width = -1.0;
-                self.height = -1.0;
-                self.natural_width = 0.0;
-                self.natural_height = 0.0;
-                self.bitmap = None;
-                self.file_content = None;
-                self.is_svg = false;
-                self.need_regenerate_bitmap = false;
-
-                let error =
-                  env.create_error(Error::new(Status::InvalidArg, "Invalid SVG image"))?;
-                fire_error(&env, *this, error)?;
-                if let Some(previous_task) = self.decoder_task.replace(
-                  PromiseRaw::resolve(&env, error)?
-                    .coerce_to_object()?
-                    .create_ref()?,
-                ) {
-                  previous_task.unref(&env)?;
-                }
-                return Ok(());
-              }
-              None => {
-                // SVG has no dimensions - valid but empty, still fire onload
-                self.is_svg = true;
-              }
             }
           }
         }
@@ -1127,9 +1054,7 @@ impl Image {
           // Clear previous bitmap and related state to prevent stale renders during async decode.
           // Without this, drawImage could render the old image until the new decode completes.
           self.bitmap = None;
-          self.file_content = None;
-          self.is_svg = false;
-          self.need_regenerate_bitmap = false;
+          self.svg = None;
 
           let task = BitmapDecoder {
             width: self.width,
@@ -1184,9 +1109,7 @@ impl Image {
         self.natural_width = 0.0;
         self.natural_height = 0.0;
         self.bitmap = None;
-        self.file_content = None;
-        self.is_svg = false;
-        self.need_regenerate_bitmap = false;
+        self.svg = None;
 
         let task = BitmapDecoder {
           width: self.width,
@@ -1351,9 +1274,7 @@ impl Image {
           image.natural_width = 0.0;
           image.natural_height = 0.0;
           image.bitmap = None;
-          image.file_content = None;
-          image.is_svg = false;
-          image.need_regenerate_bitmap = false;
+          image.svg = None;
 
           let error_msg: String = ctx
             .value
@@ -1431,51 +1352,24 @@ impl Image {
       .coerce_to_object()
   }
 
-  pub(crate) fn regenerate_bitmap_if_need(&mut self, env: &Env) -> Result<()> {
-    if !self.need_regenerate_bitmap || !self.is_svg || self.src.is_none() {
-      return Ok(());
+  /// The Image now shows `svg`: its natural size comes from the SVG, and
+  /// `width`/`height` without an attribute take it.
+  fn set_svg(&mut self, svg: SvgImage) {
+    let (natural_width, natural_height) = svg.sizing.natural();
+    self.natural_width = natural_width as f64;
+    self.natural_height = natural_height as f64;
+    if (self.width - -1.0).abs() < f64::EPSILON {
+      self.width = self.natural_width;
     }
+    if (self.height - -1.0).abs() < f64::EPSILON {
+      self.height = self.natural_height;
+    }
+    self.bitmap = None;
+    self.svg = Some(svg);
+  }
 
-    if let Some(data) = self.file_content.as_deref() {
-      let font = get_font().map_err(SkError::from)?;
-      self.bitmap = match Bitmap::from_svg_data_with_custom_size(
-        data.as_ptr(),
-        data.len(),
-        self.width as f32,
-        self.height as f32,
-        self.color_space,
-        &font,
-      ) {
-        Some(bitmap) => {
-          let new_bytes = (bitmap.0.width as i64) * (bitmap.0.height as i64) * 4;
-          env.adjust_external_memory(new_bytes)?;
-          Some(Arc::new(AccountedBitmap::new(bitmap, env.raw(), new_bytes)))
-        }
-        None => None,
-      };
-      self.need_regenerate_bitmap = false;
-      return Ok(());
-    }
-    if let Some(data) = self.src.as_ref() {
-      let font = get_font().map_err(SkError::from)?;
-      self.bitmap = match Bitmap::from_svg_data_with_custom_size(
-        data.as_ref().as_ptr(),
-        data.as_ref().len(),
-        self.width as f32,
-        self.height as f32,
-        self.color_space,
-        &font,
-      ) {
-        Some(bitmap) => {
-          let new_bytes = (bitmap.0.width as i64) * (bitmap.0.height as i64) * 4;
-          env.adjust_external_memory(new_bytes)?;
-          Some(Arc::new(AccountedBitmap::new(bitmap, env.raw(), new_bytes)))
-        }
-        None => None,
-      };
-      self.need_regenerate_bitmap = false;
-    }
-    Ok(())
+  pub(crate) fn is_svg(&self) -> bool {
+    self.svg.is_some()
   }
 }
 
@@ -1514,11 +1408,11 @@ unsafe impl Send for DecodedBitmap {}
 
 struct BitmapInfo {
   data: Bitmap,
-  is_svg: bool,
 }
 
 enum DecodeStatus {
   Ok(BitmapInfo),
+  Svg(SvgImage),
   Empty,
   InvalidSvg,
   InvalidImage,
@@ -1631,10 +1525,7 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
       // `from_image_data` copies the pixels into an owned SkBitmap, so the
       // decoded AVIF buffer is dropped at the end of this arm.
       match bitmap {
-        Some(bitmap) => DecodeStatus::Ok(BitmapInfo {
-          data: bitmap,
-          is_svg: false,
-        }),
+        Some(bitmap) => DecodeStatus::Ok(BitmapInfo { data: bitmap }),
         // A color space Chrome cannot use, or a failed pixel copy: an
         // invalid image rather than an empty bitmap.
         None => DecodeStatus::InvalidImage,
@@ -1644,44 +1535,14 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
     {
       // Other image formats detected by infer (PNG, JPEG, GIF, WebP, etc.)
       if let Some(bitmap) = Bitmap::from_buffer(data_ref.as_ptr().cast_mut(), length) {
-        DecodeStatus::Ok(BitmapInfo {
-          data: bitmap,
-          is_svg: false,
-        })
+        DecodeStatus::Ok(BitmapInfo { data: bitmap })
       } else {
         DecodeStatus::InvalidImage
       }
     } else if !raster_only && (svg_only || is_svg_image(&data_ref, length)) {
-      let font = get_font().map_err(SkError::from)?;
-      if (self.width - -1.0).abs() > f64::EPSILON && (self.height - -1.0).abs() > f64::EPSILON {
-        if let Some(bitmap) = Bitmap::from_svg_data_with_custom_size(
-          data_ref.as_ptr(),
-          length,
-          self.width as f32,
-          self.height as f32,
-          self.color_space,
-          &font,
-        ) {
-          DecodeStatus::Ok(BitmapInfo {
-            data: bitmap,
-            is_svg: true,
-          })
-        } else {
-          DecodeStatus::InvalidSvg
-        }
-      } else if let Some(bitmap) =
-        Bitmap::from_svg_data(data_ref.as_ptr(), length, self.color_space, &font)
-      {
-        if let Ok(bitmap) = bitmap {
-          DecodeStatus::Ok(BitmapInfo {
-            data: bitmap,
-            is_svg: true,
-          })
-        } else {
-          DecodeStatus::InvalidSvg
-        }
-      } else {
-        DecodeStatus::Empty
+      match SvgImage::parse(&data_ref, self.color_space)? {
+        Some(svg) => DecodeStatus::Svg(svg),
+        None => DecodeStatus::InvalidSvg,
       }
     } else {
       DecodeStatus::InvalidImage
@@ -1726,30 +1587,28 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
 
     let mut err: Option<&str> = None;
 
+    // The source that loaded becomes src and currentSrc; an HTTP URL load
+    // keeps its URL rather than the downloaded bytes.
+    let mut commit_src = |image: &mut Image| {
+      image.src = self.data.take();
+      if let Some(url) = self.original_url.take() {
+        image.src = Some(Either::B(url));
+      }
+      image.current_src = match &image.src {
+        Some(Either::A(_)) => Some("[Buffer]".to_string()),
+        Some(Either::B(s)) => Some(s.clone()),
+        None => None,
+      };
+    };
     match output.bitmap {
       DecodeStatus::Ok(bitmap) => {
-        // SUCCESS PATH: set dimensions, bitmap, currentSrc, file_content
+        // SUCCESS PATH: set dimensions, bitmap, currentSrc
         self_mut.width = output.width;
         self_mut.height = output.height;
         self_mut.natural_width = output.width;
         self_mut.natural_height = output.height;
-
-        if let Some(data) = self.file_content.take() {
-          self_mut.file_content = Some(data);
-        }
-
-        self_mut.src = self.data.take();
-        // If this was an HTTP URL load, override src with the original URL
-        if let Some(url) = self.original_url.take() {
-          self_mut.src = Some(Either::B(url));
-        }
-        // Update current_src based on what was actually loaded
-        self_mut.current_src = match &self_mut.src {
-          Some(Either::A(_)) => Some("[Buffer]".to_string()),
-          Some(Either::B(s)) => Some(s.clone()),
-          None => None,
-        };
-        self_mut.is_svg = bitmap.is_svg;
+        commit_src(self_mut);
+        self_mut.svg = None;
         let new_bytes = (output.width as i64) * (output.height as i64) * 4;
         env.adjust_external_memory(new_bytes)?;
         self_mut.bitmap = Some(Arc::new(AccountedBitmap::new(
@@ -1757,6 +1616,10 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
           env.raw(),
           new_bytes,
         )));
+      }
+      DecodeStatus::Svg(svg) => {
+        commit_src(self_mut);
+        self_mut.set_svg(svg);
       }
       DecodeStatus::Empty => {
         // ERROR PATH: empty / undecodable input. Surface via onerror so callers
@@ -1766,9 +1629,7 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
         self_mut.height = -1.0;
         self_mut.natural_width = 0.0;
         self_mut.natural_height = 0.0;
-        self_mut.file_content = None;
-        self_mut.is_svg = false;
-        self_mut.need_regenerate_bitmap = false;
+        self_mut.svg = None;
         err = Some("Empty image data");
       }
       DecodeStatus::InvalidSvg => {
@@ -1778,9 +1639,7 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
         self_mut.height = -1.0;
         self_mut.natural_width = 0.0;
         self_mut.natural_height = 0.0;
-        self_mut.file_content = None;
-        self_mut.is_svg = false;
-        self_mut.need_regenerate_bitmap = false;
+        self_mut.svg = None;
         err = Some("Invalid SVG image");
       }
       DecodeStatus::InvalidImage => {
@@ -1790,9 +1649,7 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
         self_mut.height = -1.0;
         self_mut.natural_width = 0.0;
         self_mut.natural_height = 0.0;
-        self_mut.file_content = None;
-        self_mut.is_svg = false;
-        self_mut.need_regenerate_bitmap = false;
+        self_mut.svg = None;
         err = Some("Unsupported image type");
       }
     }
@@ -1839,9 +1696,7 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
     image.natural_width = 0.0;
     image.natural_height = 0.0;
     image.bitmap = None;
-    image.file_content = None;
-    image.is_svg = false;
-    image.need_regenerate_bitmap = false;
+    image.svg = None;
 
     if self.fire_events {
       fire_error(

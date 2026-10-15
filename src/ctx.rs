@@ -5164,7 +5164,9 @@ impl CanvasRenderingContext2D {
     _repetition: Positional,
     args: CreatePatternArgs<'_>,
   ) -> Result<Option<ClassInstance<'scope, CanvasPattern>>> {
-    CanvasPattern::create(*env, args.image, &args.repetition)?
+    // The canvas is the default object size of an SVG Image.
+    let canvas_size = (self.context.width as f32, self.context.height as f32);
+    CanvasPattern::create(*env, args.image, &args.repetition, canvas_size)?
       .map(|pattern| pattern.into_instance(env))
       .transpose()
   }
@@ -5369,13 +5371,36 @@ impl CanvasRenderingContext2D {
         if !image.complete {
           return Ok(());
         }
-        image.regenerate_bitmap_if_need(env)?;
+        if let Some(svg) = image.svg.as_mut() {
+          // Chrome draws an SVG Image as vectors sized by this canvas: here a
+          // raster of it made for this draw, sampled as it is.
+          let ctm = self.context.state.transform.get_transform();
+          let canvas_size = (self.context.width, self.context.height);
+          let Some(draw) = svg.plan_draw(env, &args.numbers, canvas_size, &ctm)? else {
+            return Ok(());
+          };
+          let (dx, dy, d_width, d_height) = draw.dst;
+          return self.context.draw_image(
+            &draw.raster.inner,
+            None,
+            RasterKey::Resource {
+              id: draw.raster.resource_id,
+              generation: 0,
+            },
+            0.0,
+            0.0,
+            draw.raster.inner.0.width as f32,
+            draw.raster.inner.0.height as f32,
+            dx,
+            dy,
+            d_width,
+            d_height,
+          );
+        }
         if let Some(bitmap) = &image.bitmap {
           (
             BitmapRef::Borrowed(&bitmap.inner),
-            // Chrome draws an SVG Image as vectors, not from the decode
-            // cache; its raster is sampled as it is.
-            (!image.is_svg).then_some(bitmap.as_ref()),
+            Some(bitmap.as_ref()),
             RasterKey::Resource {
               id: bitmap.resource_id,
               generation: 0,
