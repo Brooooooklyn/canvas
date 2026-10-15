@@ -497,13 +497,15 @@ pub mod ffi {
       surface: *mut skiac_surface,
       data: *mut skiac_sk_data,
       format: i32,
-      quality: i32,
+      quality: f32,
+      lossless: bool,
     );
 
     pub fn skiac_surface_encode_stream(
       surface: *mut skiac_surface,
       format: i32,
-      quality: i32,
+      quality: f32,
+      lossless: bool,
       write_callback: SkiacWStreamWriteCallback,
       context: *mut c_void,
     ) -> bool;
@@ -1093,7 +1095,9 @@ pub mod ffi {
       image: *mut skiac_image,
       data: *mut skiac_sk_data,
       format: i32,
-      quality: i32,
+      quality: f32,
+      lossless: bool,
+      crop_to_max_dimension: bool,
     );
 
     pub fn skiac_image_read_pixels(
@@ -2592,7 +2596,8 @@ impl Surface {
   pub fn encode_stream(
     &self,
     format: SkEncodedImageFormat,
-    quality: u8,
+    quality: f32,
+    lossless: bool,
     write_callback: ffi::SkiacWStreamWriteCallback,
     context: *mut c_void,
   ) -> bool {
@@ -2600,7 +2605,8 @@ impl Surface {
       ffi::skiac_surface_encode_stream(
         self.ptr,
         format as i32,
-        quality as i32,
+        quality,
+        lossless,
         write_callback,
         context,
       )
@@ -2706,14 +2712,19 @@ impl SurfaceRef {
     }
   }
 
-  pub fn encode_data(&self, format: SkEncodedImageFormat, quality: u8) -> Option<SkiaDataRef> {
+  pub fn encode_data(
+    &self,
+    format: SkEncodedImageFormat,
+    quality: f32,
+    lossless: bool,
+  ) -> Option<SkiaDataRef> {
     unsafe {
       let mut data = ffi::skiac_sk_data {
         ptr: ptr::null_mut(),
         size: 0,
         data: ptr::null_mut(),
       };
-      ffi::skiac_surface_encode_data(self.0, &mut data, format as i32, quality as i32);
+      ffi::skiac_surface_encode_data(self.0, &mut data, format as i32, quality, lossless);
 
       if data.ptr.is_null() {
         None
@@ -5631,15 +5642,30 @@ impl SkImage {
     }
   }
 
-  /// Encode the image into the given format (JPEG/PNG/WebP; quality is ignored for PNG)
-  pub fn encode_data(&self, format: SkEncodedImageFormat, quality: u8) -> Option<SkiaDataRef> {
+  /// Encode the image into the given format (JPEG/PNG/WebP; quality is
+  /// ignored for PNG, and for a lossless WebP). `crop_to_max_dimension`:
+  /// encode the top-left part the encoder can hold.
+  pub fn encode_data(
+    &self,
+    format: SkEncodedImageFormat,
+    quality: f32,
+    lossless: bool,
+    crop_to_max_dimension: bool,
+  ) -> Option<SkiaDataRef> {
     unsafe {
       let mut data = ffi::skiac_sk_data {
         ptr: ptr::null_mut(),
         size: 0,
         data: ptr::null_mut(),
       };
-      ffi::skiac_image_encode_data(self.0, &mut data, format as i32, quality as i32);
+      ffi::skiac_image_encode_data(
+        self.0,
+        &mut data,
+        format as i32,
+        quality,
+        lossless,
+        crop_to_max_dimension,
+      );
 
       if data.ptr.is_null() {
         None

@@ -116,7 +116,7 @@ test('convertToBlob with image/gif MIME type', async (t) => {
   ctx.fillStyle = 'cyan'
   ctx.fillRect(0, 0, 50, 50)
 
-  const blob = await canvas.convertToBlob({ mime: 'image/gif' })
+  const blob = await canvas.convertToBlob({ type: 'image/gif' })
   t.truthy(blob)
   t.true(blob instanceof Blob)
   t.true(blob.size > 0)
