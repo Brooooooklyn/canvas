@@ -539,6 +539,79 @@ test('over-limit canvas: these ops lose the context and reset the state', (t) =>
   }
 })
 
+// Whether the context keeps `value` in an array of its own, where the
+// fillStyle and strokeStyle getters find their gradients and patterns.
+const holds = (ctx: Ctx, value: unknown) =>
+  Reflect.ownKeys(ctx).some((key) => {
+    const own = Object.getOwnPropertyDescriptor(ctx, key)!.value
+    return Array.isArray(own) && own.includes(value)
+  })
+
+test('over-limit canvas: losing the context drops the style objects', (t) => {
+  // LoseContext runs ResetInternal, which drops the states and their styles
+  // (canvas_rendering_context_2d.cc). restore() does nothing on a lost
+  // context, so nothing later would drop them.
+  for (const [name, op, lost] of LOST_CONTEXT_OPS) {
+    const canvas = createCanvas(10, 10)
+    const ctx = canvas.getContext('2d')
+    canvas.width = 2 ** 30
+    const gradient = ctx.createLinearGradient(0, 0, 1, 1)
+    ctx.strokeStyle = gradient
+    op(ctx)
+    // reset() drops them without a loss.
+    t.is(holds(ctx, gradient), !lost && name !== 'reset', name)
+  }
+})
+
+test('a lost context lets its gradient and pattern be collected', (t) => {
+  // As Chrome 155 does (measured with WeakRefs). A child process, for
+  // --expose-gc. [name, width, height, op after the styles are set]
+  const script = `
+const { readFileSync } = require('node:fs')
+const { createCanvas, LottieAnimation } = require('./index.js')
+const animation = LottieAnimation.loadFromData(readFileSync('example/flat-lottie.json', 'utf-8'))
+const cases = [
+  ['fillRect', 2 ** 30, 1, (ctx) => ctx.fillRect(0, 0, 1, 1)],
+  ['save', 2 ** 30, 1, (ctx) => { ctx.save(); ctx.fillStyle = 'red' }],
+  ['fill', 2 ** 30, 1, (ctx) => { ctx.rect(0, 0, 1, 1); ctx.fill() }],
+  ['render', 2 ** 30, 1, (ctx) => animation.render(ctx)],
+  ['control', 20, 20, (ctx) => ctx.fillRect(0, 0, 1, 1)],
+]
+// Only WeakRefs leave this function.
+const styles = (ctx) => {
+  const pattern = ctx.createPattern(createCanvas(8, 8), 'repeat')
+  const gradient = ctx.createLinearGradient(0, 0, 10, 0)
+  ctx.fillStyle = pattern
+  ctx.strokeStyle = gradient
+  return [new WeakRef(pattern), new WeakRef(gradient)]
+}
+const results = cases.map(([name, width, height, op]) => {
+  const ctx = createCanvas(width, height).getContext('2d')
+  const refs = styles(ctx)
+  op(ctx)
+  return [name, ctx, refs]
+})
+;(async () => {
+  for (let i = 0; i < 10; i++) {
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    global.gc()
+  }
+  const alive = results.map(([name, ctx, refs]) => [name, ctx.isContextLost(), ...refs.map((ref) => ref.deref() !== undefined)])
+  console.log(JSON.stringify(alive))
+})()
+`
+  const child = spawnSync(process.execPath, ['--expose-gc', '-e', script], { cwd: ROOT, encoding: 'utf8' })
+  t.is(child.status, 0, child.stderr)
+  // [name, lost, pattern alive, gradient alive]
+  t.deepEqual(JSON.parse(child.stdout), [
+    ['fillRect', true, false, false],
+    ['save', true, false, false],
+    ['fill', true, false, false],
+    ['render', true, false, false],
+    ['control', false, true, true],
+  ])
+})
+
 test('over-limit canvas: save() itself loses the state', (t) => {
   const ctx = createCanvas(2 ** 30, 1).getContext('2d')
   ctx.fillStyle = 'blue'
