@@ -110,7 +110,13 @@ interface CanvasPath {
   moveTo(x: number, y: number): void
   quadraticCurveTo(cpx: number, cpy: number, x: number, y: number): void
   rect(x: number, y: number, w: number, h: number): void
-  roundRect(x: number, y: number, w: number, h: number, radii?: number | DOMPointInit | (number | DOMPointInit)[]): void
+  roundRect(
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    radii?: number | DOMPointInit | Iterable<number | DOMPointInit>,
+  ): void
 }
 
 type ImageSmoothingQuality = 'high' | 'low' | 'medium'
@@ -561,7 +567,13 @@ export class Path2D {
   moveTo(x: number, y: number): void
   quadraticCurveTo(cpx: number, cpy: number, x: number, y: number): void
   rect(x: number, y: number, w: number, h: number): void
-  roundRect(x: number, y: number, w: number, h: number, radii?: number | number[]): void
+  roundRect(
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    radii?: number | DOMPointInit | Iterable<number | DOMPointInit>,
+  ): void
 
   // PathKit methods
   op(path: Path2D, operation: PathOp): Path2D

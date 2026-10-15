@@ -321,18 +321,24 @@ impl Path {
   #[napi]
   pub fn round_rect(
     &mut self,
+    env: &Env,
     x: Double<webidl::PathRoundRect>,
     y: Double<webidl::PathRoundRect>,
     width: Double<webidl::PathRoundRect>,
     height: Double<webidl::PathRoundRect>,
-    radii: Either3<f64, Vec<f64>, Undefined>,
-  ) {
-    if let (Some([x, y, width, height]), Some(radii)) = (
-      num::saturated_f32s([x.0, y.0, width.0, height.0]),
-      round_rect_radii(radii),
-    ) {
+    radii: webidl::RoundRectRadii<webidl::PathRoundRect>,
+  ) -> Result<()> {
+    // A Path2D has no matrix: always invertible.
+    if let Some(([x, y, width, height], radii)) = check_round_rect(
+      env.raw(),
+      <webidl::PathRoundRect as webidl::Site>::PREFIX,
+      true,
+      [x.0, y.0, width.0, height.0],
+      &radii.0,
+    )? {
       self.inner.round_rect(x, y, width, height, &radii);
     }
+    Ok(())
   }
 
   #[napi]
@@ -448,23 +454,74 @@ impl Path {
   }
 }
 
-/// The radii of roundRect(), as (rx, ry) pairs. Each given radius goes
-/// through the path rule in the order given (Blink canvas_path.cc:597-628):
-/// None when one is outside the float range. At most four are used.
-pub(crate) fn round_rect_radii(
-  radii: Either3<f64, Vec<f64>, Undefined>,
-) -> Option<Vec<(f32, f32)>> {
-  let list = match radii {
-    Either3::A(radius) => vec![radius],
-    Either3::B(list) => list,
-    Either3::C(_) => vec![0.0],
+/// The rect [x, y, width, height] and the (rx, ry) radii roundRect() adds.
+pub(crate) type RoundRectArgs = ([f32; 4], Vec<(f32, f32)>);
+
+/// The checks of Blink's CanvasPath::roundRect (canvas_path.cc:565-628), in
+/// its order: the radius count (a RangeError), then the matrix (`invertible`),
+/// then the rect, then each radius in turn. Ok(None) when nothing is added:
+/// a singular matrix, or a value outside the float range, which also ends the
+/// checks. Else the rect and the radii as (rx, ry) pairs.
+pub(crate) fn check_round_rect(
+  env: sys::napi_env,
+  prefix: &str,
+  invertible: bool,
+  rect: [f64; 4],
+  radii: &[webidl::Radius],
+) -> Result<Option<RoundRectArgs>> {
+  if radii.is_empty() || radii.len() > 4 {
+    return Err(webidl::context_range_error(
+      env,
+      prefix,
+      &format!(
+        "{} radii provided. Between one and four radii are necessary.",
+        radii.len()
+      ),
+    ));
+  }
+  if !invertible {
+    return Ok(None);
+  }
+  let Some(rect) = num::saturated_f32s(rect) else {
+    return Ok(None);
   };
-  let list = if list.is_empty() { vec![0.0] } else { list };
-  list
-    .iter()
-    .take(4)
-    .map(|radius| num::saturated_f32(*radius).map(|r| (r, r)))
-    .collect()
+  let negative = |what: &str, value: f32| {
+    Err(webidl::context_range_error(
+      env,
+      prefix,
+      &format!(
+        "{what} value {} is negative.",
+        webidl::number_to_string(f64::from(value))
+      ),
+    ))
+  };
+  let mut out = Vec::with_capacity(radii.len());
+  for radius in radii {
+    match *radius {
+      webidl::Radius::Point(x, y) => {
+        let Some([x, y]) = num::saturated_f32s([x, y]) else {
+          return Ok(None);
+        };
+        if x < 0.0 {
+          return negative("X-radius", x);
+        }
+        if y < 0.0 {
+          return negative("Y-radius", y);
+        }
+        out.push((x, y));
+      }
+      webidl::Radius::Number(r) => {
+        let Some(r) = num::saturated_f32(r) else {
+          return Ok(None);
+        };
+        if r < 0.0 {
+          return negative("Radius", r);
+        }
+        out.push((r, r));
+      }
+    }
+  }
+  Ok(Some((rect, out)))
 }
 
 impl ToNapiValue for SkiaString {
