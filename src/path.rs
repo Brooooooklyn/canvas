@@ -151,16 +151,16 @@ impl Path {
       return;
     }
     let matrix = SkMatrix::new(a as f32, c as f32, e as f32, b as f32, d as f32, f as f32);
-    // The path is read now, after the matrix getters ran, as in Chrome. It
-    // may be this path.
-    if std::ptr::eq(path.0, self) {
-      let source = self.inner.clone();
-      self.inner.add_path(&source, &matrix);
-    } else {
-      // SAFETY: a live Path2D other than the receiver (AddPathSource).
-      let source = unsafe { &*path.0 };
-      self.inner.add_path(&source.inner, &matrix);
-    }
+    self.add_path_with(path, &matrix);
+  }
+
+  /// addPath(path) without a transform, or with an undefined or null one,
+  /// which is `{}`: the identity, so there is no matrix to read. index.js
+  /// calls it for those, and takes it off the prototype. As a method, it
+  /// still checks the receiver ('Illegal invocation') before the path.
+  #[napi(js_name = "_addPathWithoutTransform")]
+  pub fn add_path_without_transform(&mut self, path: AddPathSource) {
+    self.add_path_with(path, &SkMatrix::identity());
   }
 
   #[napi]
@@ -453,6 +453,21 @@ impl Path {
       y as f32,
       fill_type.unwrap_or(FillType::Winding).into(),
     )
+  }
+}
+
+impl Path {
+  /// Adds `path` mapped by `matrix`. The path is read now, after the matrix
+  /// getters ran, as in Chrome. It may be this path.
+  fn add_path_with(&mut self, path: AddPathSource, matrix: &SkMatrix) {
+    if std::ptr::eq(path.0, self) {
+      let source = self.inner.clone();
+      self.inner.add_path(&source, matrix);
+    } else {
+      // SAFETY: a live Path2D other than the receiver (AddPathSource).
+      let source = unsafe { &*path.0 };
+      self.inner.add_path(&source.inner, matrix);
+    }
   }
 }
 

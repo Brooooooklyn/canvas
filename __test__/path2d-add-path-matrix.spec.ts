@@ -330,6 +330,75 @@ test('addPath checks the receiver and the path before it reads the matrix', (t) 
   t.is(log.join(), '')
 })
 
+test('addPath without a transform checks the receiver, then the path', (t) => {
+  for (const args of [[{}], [{}, undefined], [{}, null], [new Path2D()], [new Path2D(), undefined]]) {
+    t.throws(() => (Path2D.prototype.addPath as any).call({}, ...args), {
+      instanceOf: TypeError,
+      message: 'Illegal invocation',
+    })
+  }
+  const notPath = typeError("parameter 1 is not of type 'Path2D'.")
+  t.deepEqual(
+    run((p) => (p.addPath as any)(5, undefined)),
+    notPath,
+  )
+  t.deepEqual(
+    run((p) => (p.addPath as any)(null, null)),
+    notPath,
+  )
+})
+
+test('addPath without a transform adds the path as it is', (t) => {
+  // q = rect(3, 4, 10, 10) on a 60x60 canvas, then fill(p).
+  const fill = (f: (p: Path2D, q: Path2D) => void) => {
+    const ctx = createCanvas(60, 60).getContext('2d')
+    const p = new Path2D()
+    const q = new Path2D()
+    q.rect(3, 4, 10, 10)
+    f(p, q)
+    ctx.fill(p)
+    return ink(ctx)
+  }
+  const square = { box: [3, 4, 12, 13], sum: 25500 }
+  t.deepEqual(
+    fill((p, q) => p.addPath(q)),
+    square,
+  )
+  t.deepEqual(
+    fill((p, q) => p.addPath(q, undefined)),
+    square,
+  )
+  t.deepEqual(
+    fill((p, q) => (p.addPath as any)(q, null)),
+    square,
+  )
+  t.deepEqual(
+    fill((p, q) => (p.addPath as any)(q, undefined, 5)),
+    square,
+  )
+  // Its own subpaths, after the open one of the receiver.
+  t.deepEqual(
+    fill((p, q) => {
+      p.moveTo(40, 40)
+      p.lineTo(50, 40)
+      p.lineTo(50, 50)
+      p.addPath(q)
+    }),
+    { box: [3, 4, 49, 49], sum: 38354 },
+  )
+  for (const transform of [[], [undefined]]) {
+    t.deepEqual(
+      fill((p) => {
+        p.rect(20, 20, 5, 5)
+        ;(p.addPath as any)(p, ...transform)
+      }),
+      { box: [20, 20, 24, 24], sum: 6375 },
+    )
+  }
+  // The native method for it is not on the prototype, as in Chrome.
+  t.false('_addPathWithoutTransform' in Path2D.prototype)
+})
+
 test('addPath errors keep the bare text in the stack, as Chrome', (t) => {
   const p = new Path2D()
   const q = new Path2D()
