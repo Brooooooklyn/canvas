@@ -102,6 +102,69 @@ CanvasRenderingContext2D.prototype.getTransform = function getTransform() {
   return new DOMMatrix([a, b, c, d, e, f])
 }
 
+// Chrome checks the receiver ('Illegal invocation'), then the argument count,
+// before it converts any argument. `brand` is a native method of the class: a
+// call on another receiver throws 'Illegal invocation'. As Blink's binding
+// errors, the stack keeps the bare message and `message` gets the prefix, as
+// an enumerable own property.
+function argumentCountError(brand, self, method, iface, required, present) {
+  brand.call(self)
+  const message = `${required} argument${required === 1 ? '' : 's'} required, but only ${present} present.`
+  const error = new TypeError(message)
+  void error.stack
+  Object.defineProperty(error, 'message', {
+    value: `Failed to execute '${method}' on '${iface}': ${message}`,
+    writable: true,
+    enumerable: true,
+    configurable: true,
+  })
+  throw error
+}
+
+// Wraps `proto[method]` with Chrome's argument count check; the wrapper's
+// `length` is the required argument count, as Chrome's Function.length.
+// napi pads missing arguments with undefined, so the native method cannot
+// tell f(1) from f(1, undefined); an explicit undefined counts in Chrome.
+function requireArguments(proto, brand, iface, method, required) {
+  const native = proto[method]
+  const wrapper = {
+    [method]() {
+      if (arguments.length < required) {
+        argumentCountError(brand, this, method, iface, required, arguments.length)
+      }
+      return native.apply(this, arguments)
+    },
+  }[method]
+  Object.defineProperty(wrapper, 'length', { value: required })
+  proto[method] = wrapper
+}
+
+const ctxBrand = CanvasRenderingContext2D.prototype.getContextAttributes
+for (const [method, required] of [
+  ['arc', 5],
+  ['arcTo', 5],
+  ['bezierCurveTo', 6],
+  ['clearRect', 4],
+  ['ellipse', 7],
+  ['fillRect', 4],
+  ['fillText', 3],
+  ['lineTo', 2],
+  ['measureText', 1],
+  ['moveTo', 2],
+  ['quadraticCurveTo', 4],
+  ['rect', 4],
+  ['rotate', 1],
+  ['roundRect', 4],
+  ['scale', 2],
+  ['setLineDash', 1],
+  ['strokeRect', 4],
+  ['strokeText', 3],
+  ['transform', 6],
+  ['translate', 2],
+]) {
+  requireArguments(CanvasRenderingContext2D.prototype, ctxBrand, 'CanvasRenderingContext2D', method, required)
+}
+
 // The argument-count markers for 0 to 4 arguments. napi pads missing
 // arguments with undefined, so the createImageData and createPattern wrappers
 // pass the real count after the positional arguments, as one of these

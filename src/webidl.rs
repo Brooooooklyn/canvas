@@ -222,6 +222,25 @@ sites! {
   SetFontVariantCaps: set "fontVariantCaps" on "CanvasRenderingContext2D";
   SetTextRendering: set "textRendering" on "CanvasRenderingContext2D";
   SetLang: set "lang" on "CanvasRenderingContext2D";
+  CtxArc: execute "arc" on "CanvasRenderingContext2D";
+  CtxArcTo: execute "arcTo" on "CanvasRenderingContext2D";
+  CtxBezierCurveTo: execute "bezierCurveTo" on "CanvasRenderingContext2D";
+  CtxQuadraticCurveTo: execute "quadraticCurveTo" on "CanvasRenderingContext2D";
+  CtxClearRect: execute "clearRect" on "CanvasRenderingContext2D";
+  CtxRect: execute "rect" on "CanvasRenderingContext2D";
+  CtxRoundRect: execute "roundRect" on "CanvasRenderingContext2D";
+  CtxRotate: execute "rotate" on "CanvasRenderingContext2D";
+  CtxScale: execute "scale" on "CanvasRenderingContext2D";
+  CtxEllipse: execute "ellipse" on "CanvasRenderingContext2D";
+  CtxLineTo: execute "lineTo" on "CanvasRenderingContext2D";
+  CtxMeasureText: execute "measureText" on "CanvasRenderingContext2D";
+  CtxMoveTo: execute "moveTo" on "CanvasRenderingContext2D";
+  CtxFillRect: execute "fillRect" on "CanvasRenderingContext2D";
+  CtxFillText: execute "fillText" on "CanvasRenderingContext2D";
+  CtxStrokeRect: execute "strokeRect" on "CanvasRenderingContext2D";
+  CtxStrokeText: execute "strokeText" on "CanvasRenderingContext2D";
+  CtxTranslate: execute "translate" on "CanvasRenderingContext2D";
+  CtxTransform: execute "transform" on "CanvasRenderingContext2D";
 }
 
 /// `napi_bigint`; napi6 (and so `ValueType::BigInt`) is off in this build.
@@ -456,6 +475,32 @@ pub struct Double<S>(pub f64, PhantomData<S>);
 impl<S: Site> FromNapiValue for Double<S> {
   unsafe fn from_napi_value(env: sys::napi_env, value: sys::napi_value) -> Result<Self> {
     to_number(env, value, S::PREFIX).map(|v| Self(v, PhantomData))
+  }
+}
+
+/// An `optional unrestricted double` argument with no default: None when it
+/// is undefined (or missing), else ToNumber.
+pub struct OptionalDouble<S>(pub Option<f64>, PhantomData<S>);
+
+impl<S: Site> FromNapiValue for OptionalDouble<S> {
+  unsafe fn from_napi_value(env: sys::napi_env, value: sys::napi_value) -> Result<Self> {
+    if raw_type_of(env, value)? == sys::ValueType::napi_undefined {
+      return Ok(Self(None, PhantomData));
+    }
+    to_number(env, value, S::PREFIX).map(|v| Self(Some(v), PhantomData))
+  }
+}
+
+/// A WebIDL `boolean` argument: ToBoolean, which never throws. A missing
+/// argument is undefined, so false, the default of every optional boolean
+/// here.
+pub struct Boolean(pub bool);
+
+impl FromNapiValue for Boolean {
+  unsafe fn from_napi_value(env: sys::napi_env, value: sys::napi_value) -> Result<Self> {
+    let mut result = ptr::null_mut();
+    check_status!(unsafe { sys::napi_coerce_to_bool(env, value, &mut result) })?;
+    Ok(Self(unsafe { bool::from_napi_value(env, result)? }))
   }
 }
 

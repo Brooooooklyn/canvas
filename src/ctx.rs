@@ -39,7 +39,7 @@ use crate::{
     Transform,
   },
   state::Context2dRenderingState,
-  webidl::{self, Positional, ReportedSettings},
+  webidl::{self, Double, Positional, ReportedSettings},
 };
 
 static CSS_SIZE_REGEXP: LazyLock<Regex> =
@@ -4109,33 +4109,36 @@ impl CanvasRenderingContext2D {
   #[napi]
   pub fn arc(
     &mut self,
-    x: f64,
-    y: f64,
-    radius: f64,
-    start_angle: f64,
-    end_angle: f64,
-    anticlockwise: Option<bool>,
+    x: Double<webidl::CtxArc>,
+    y: Double<webidl::CtxArc>,
+    radius: Double<webidl::CtxArc>,
+    start_angle: Double<webidl::CtxArc>,
+    end_angle: Double<webidl::CtxArc>,
+    anticlockwise: webidl::Boolean,
   ) {
     // Path methods drop a call with a value outside the float range
     // (Blink canvas_path.cc: saturated_cast<float>, then isfinite).
     let Some([x, y, radius, start_angle, end_angle]) =
-      num::saturated_f32s([x, y, radius, start_angle, end_angle])
+      num::saturated_f32s([x.0, y.0, radius.0, start_angle.0, end_angle.0])
     else {
       return;
     };
-    self.context.arc(
-      x,
-      y,
-      radius,
-      start_angle,
-      end_angle,
-      anticlockwise.unwrap_or(false),
-    );
+    self
+      .context
+      .arc(x, y, radius, start_angle, end_angle, anticlockwise.0);
   }
 
   #[napi]
-  pub fn arc_to(&mut self, x1: f64, y1: f64, x2: f64, y2: f64, radius: f64) {
-    let Some([x1, y1, x2, y2, radius]) = num::saturated_f32s([x1, y1, x2, y2, radius]) else {
+  pub fn arc_to(
+    &mut self,
+    x1: Double<webidl::CtxArcTo>,
+    y1: Double<webidl::CtxArcTo>,
+    x2: Double<webidl::CtxArcTo>,
+    y2: Double<webidl::CtxArcTo>,
+    radius: Double<webidl::CtxArcTo>,
+  ) {
+    let Some([x1, y1, x2, y2, radius]) = num::saturated_f32s([x1.0, y1.0, x2.0, y2.0, radius.0])
+    else {
       return;
     };
     self.context.arc_to(x1, y1, x2, y2, radius);
@@ -4147,8 +4150,17 @@ impl CanvasRenderingContext2D {
   }
 
   #[napi]
-  pub fn bezier_curve_to(&mut self, cp1x: f64, cp1y: f64, cp2x: f64, cp2y: f64, x: f64, y: f64) {
-    let Some([cp1x, cp1y, cp2x, cp2y, x, y]) = num::saturated_f32s([cp1x, cp1y, cp2x, cp2y, x, y])
+  pub fn bezier_curve_to(
+    &mut self,
+    cp1x: Double<webidl::CtxBezierCurveTo>,
+    cp1y: Double<webidl::CtxBezierCurveTo>,
+    cp2x: Double<webidl::CtxBezierCurveTo>,
+    cp2y: Double<webidl::CtxBezierCurveTo>,
+    x: Double<webidl::CtxBezierCurveTo>,
+    y: Double<webidl::CtxBezierCurveTo>,
+  ) {
+    let Some([cp1x, cp1y, cp2x, cp2y, x, y]) =
+      num::saturated_f32s([cp1x.0, cp1y.0, cp2x.0, cp2y.0, x.0, y.0])
     else {
       return;
     };
@@ -4156,8 +4168,14 @@ impl CanvasRenderingContext2D {
   }
 
   #[napi]
-  pub fn quadratic_curve_to(&mut self, cpx: f64, cpy: f64, x: f64, y: f64) {
-    let Some([cpx, cpy, x, y]) = num::saturated_f32s([cpx, cpy, x, y]) else {
+  pub fn quadratic_curve_to(
+    &mut self,
+    cpx: Double<webidl::CtxQuadraticCurveTo>,
+    cpy: Double<webidl::CtxQuadraticCurveTo>,
+    x: Double<webidl::CtxQuadraticCurveTo>,
+    y: Double<webidl::CtxQuadraticCurveTo>,
+  ) {
+    let Some([cpx, cpy, x, y]) = num::saturated_f32s([cpx.0, cpy.0, x.0, y.0]) else {
       return;
     };
     self.context.quadratic_curve_to(cpx, cpy, x, y);
@@ -4185,10 +4203,16 @@ impl CanvasRenderingContext2D {
   }
 
   #[napi]
-  pub fn clear_rect(&mut self, x: f64, y: f64, width: f64, height: f64) -> Result<()> {
+  pub fn clear_rect(
+    &mut self,
+    x: Double<webidl::CtxClearRect>,
+    y: Double<webidl::CtxClearRect>,
+    width: Double<webidl::CtxClearRect>,
+    height: Double<webidl::CtxClearRect>,
+  ) -> Result<()> {
     // ValidateRectForCanvas: a non-finite or empty (0 x 0) rect clears
     // nothing; then ClampTo<float> (canvas_2d_recorder_context.cc:1928).
-    let Some([x, y, width, height]) = num::clamped_f32s([x, y, width, height]) else {
+    let Some([x, y, width, height]) = num::clamped_f32s([x.0, y.0, width.0, height.0]) else {
       return Ok(());
     };
     if width == 0.0 && height == 0.0 {
@@ -4324,8 +4348,14 @@ impl CanvasRenderingContext2D {
   }
 
   #[napi]
-  pub fn rect(&mut self, x: f64, y: f64, width: f64, height: f64) {
-    let Some([x, y, width, height]) = num::saturated_f32s([x, y, width, height]) else {
+  pub fn rect(
+    &mut self,
+    x: Double<webidl::CtxRect>,
+    y: Double<webidl::CtxRect>,
+    width: Double<webidl::CtxRect>,
+    height: Double<webidl::CtxRect>,
+  ) {
+    let Some([x, y, width, height]) = num::saturated_f32s([x.0, y.0, width.0, height.0]) else {
       return;
     };
     self.context.rect(x, y, width, height);
@@ -4334,13 +4364,13 @@ impl CanvasRenderingContext2D {
   #[napi]
   pub fn round_rect(
     &mut self,
-    x: f64,
-    y: f64,
-    width: f64,
-    height: f64,
+    x: Double<webidl::CtxRoundRect>,
+    y: Double<webidl::CtxRoundRect>,
+    width: Double<webidl::CtxRoundRect>,
+    height: Double<webidl::CtxRoundRect>,
     radii: Either3<f64, Vec<f64>, Undefined>,
   ) {
-    let Some([x, y, width, height]) = num::saturated_f32s([x, y, width, height]) else {
+    let Some([x, y, width, height]) = num::saturated_f32s([x.0, y.0, width.0, height.0]) else {
       return;
     };
     let Some(radii_array) = round_rect_radii(radii) else {
@@ -4387,18 +4417,18 @@ impl CanvasRenderingContext2D {
     reset_style_getters(&mut this)
   }
 
-  #[napi(return_if_invalid)]
-  pub fn rotate(&mut self, angle: f64) {
+  #[napi]
+  pub fn rotate(&mut self, angle: Double<webidl::CtxRotate>) {
     // A non-finite transform argument makes the call a no-op
     // (canvas_2d_recorder_context.cc:1354-1482).
-    if angle.is_finite() {
-      self.context.rotate(angle);
+    if angle.0.is_finite() {
+      self.context.rotate(angle.0);
     }
   }
 
-  #[napi(return_if_invalid)]
-  pub fn scale(&mut self, x: f64, y: f64) {
-    if let Some([x, y]) = num::clamped_f32s([x, y]) {
+  #[napi]
+  pub fn scale(&mut self, x: Double<webidl::CtxScale>, y: Double<webidl::CtxScale>) {
+    if let Some([x, y]) = num::clamped_f32s([x.0, y.0]) {
       self.context.scale(x, y);
     }
   }
@@ -4828,21 +4858,27 @@ impl CanvasRenderingContext2D {
     }
   }
 
-  #[napi(return_if_invalid)]
+  #[napi]
   pub fn ellipse(
     &mut self,
-    x: f64,
-    y: f64,
-    radius_x: f64,
-    radius_y: f64,
-    rotation: f64,
-    start_angle: f64,
-    end_angle: f64,
-    anticlockwise: Option<bool>,
+    x: Double<webidl::CtxEllipse>,
+    y: Double<webidl::CtxEllipse>,
+    radius_x: Double<webidl::CtxEllipse>,
+    radius_y: Double<webidl::CtxEllipse>,
+    rotation: Double<webidl::CtxEllipse>,
+    start_angle: Double<webidl::CtxEllipse>,
+    end_angle: Double<webidl::CtxEllipse>,
+    anticlockwise: webidl::Boolean,
   ) {
-    let Some([x, y, radius_x, radius_y, rotation, start_angle, end_angle]) =
-      num::saturated_f32s([x, y, radius_x, radius_y, rotation, start_angle, end_angle])
-    else {
+    let Some([x, y, radius_x, radius_y, rotation, start_angle, end_angle]) = num::saturated_f32s([
+      x.0,
+      y.0,
+      radius_x.0,
+      radius_y.0,
+      rotation.0,
+      start_angle.0,
+      end_angle.0,
+    ]) else {
       return;
     };
     self.context.ellipse(
@@ -4853,21 +4889,23 @@ impl CanvasRenderingContext2D {
       rotation,
       start_angle,
       end_angle,
-      anticlockwise.unwrap_or(false),
+      anticlockwise.0,
     );
   }
 
-  #[napi(return_if_invalid)]
-  pub fn line_to(&mut self, x: f64, y: f64) {
-    if let Some([x, y]) = num::saturated_f32s([x, y]) {
+  #[napi]
+  pub fn line_to(&mut self, x: Double<webidl::CtxLineTo>, y: Double<webidl::CtxLineTo>) {
+    if let Some([x, y]) = num::saturated_f32s([x.0, y.0]) {
       self.context.path.line_to(x, y);
     }
   }
 
   #[napi]
-  pub fn measure_text(&mut self, text: Unknown) -> Result<TextMetrics> {
-    let text = text.coerce_to_string()?.into_utf8()?;
-    let text = text.as_str()?;
+  pub fn measure_text(
+    &mut self,
+    text: webidl::DomString<webidl::CtxMeasureText>,
+  ) -> Result<TextMetrics> {
+    let text = text.0.as_str();
     if text.is_empty() {
       return Ok(TextMetrics {
         actual_bounding_box_ascent: 0.0,
@@ -4897,15 +4935,22 @@ impl CanvasRenderingContext2D {
     })
   }
 
-  #[napi(return_if_invalid)]
-  pub fn move_to(&mut self, x: f64, y: f64) {
-    if let Some([x, y]) = num::saturated_f32s([x, y]) {
+  #[napi]
+  pub fn move_to(&mut self, x: Double<webidl::CtxMoveTo>, y: Double<webidl::CtxMoveTo>) {
+    if let Some([x, y]) = num::saturated_f32s([x.0, y.0]) {
       self.context.path.move_to(x, y);
     }
   }
 
-  #[napi(return_if_invalid)]
-  pub fn fill_rect(&mut self, x: f64, y: f64, width: f64, height: f64) -> Result<()> {
+  #[napi]
+  pub fn fill_rect(
+    &mut self,
+    x: Double<webidl::CtxFillRect>,
+    y: Double<webidl::CtxFillRect>,
+    width: Double<webidl::CtxFillRect>,
+    height: Double<webidl::CtxFillRect>,
+  ) -> Result<()> {
+    let (x, y, width, height) = (x.0, y.0, width.0, height.0);
     if !x.is_nan()
       && !x.is_infinite()
       && !y.is_nan()
@@ -4922,10 +4967,16 @@ impl CanvasRenderingContext2D {
     Ok(())
   }
 
-  #[napi(return_if_invalid)]
-  pub fn fill_text(&mut self, text: Unknown, x: f64, y: f64, max_width: Option<f64>) -> Result<()> {
-    let text = text.coerce_to_string()?.into_utf8()?;
-    let text = text.as_str()?;
+  #[napi]
+  pub fn fill_text(
+    &mut self,
+    text: webidl::DomString<webidl::CtxFillText>,
+    x: Double<webidl::CtxFillText>,
+    y: Double<webidl::CtxFillText>,
+    max_width: webidl::OptionalDouble<webidl::CtxFillText>,
+  ) -> Result<()> {
+    let (x, y, max_width) = (x.0, y.0, max_width.0);
+    let text = text.0.as_str();
     if text.is_empty() {
       return Ok(());
     }
@@ -4946,8 +4997,15 @@ impl CanvasRenderingContext2D {
     Ok(())
   }
 
-  #[napi(return_if_invalid)]
-  pub fn stroke_rect(&mut self, x: f64, y: f64, width: f64, height: f64) -> Result<()> {
+  #[napi]
+  pub fn stroke_rect(
+    &mut self,
+    x: Double<webidl::CtxStrokeRect>,
+    y: Double<webidl::CtxStrokeRect>,
+    width: Double<webidl::CtxStrokeRect>,
+    height: Double<webidl::CtxStrokeRect>,
+  ) -> Result<()> {
+    let (x, y, width, height) = (x.0, y.0, width.0, height.0);
     if !x.is_nan()
       && !x.is_infinite()
       && !y.is_nan()
@@ -4964,16 +5022,16 @@ impl CanvasRenderingContext2D {
     Ok(())
   }
 
-  #[napi(return_if_invalid)]
+  #[napi]
   pub fn stroke_text(
     &mut self,
-    text: Unknown,
-    x: f64,
-    y: f64,
-    max_width: Option<f64>,
+    text: webidl::DomString<webidl::CtxStrokeText>,
+    x: Double<webidl::CtxStrokeText>,
+    y: Double<webidl::CtxStrokeText>,
+    max_width: webidl::OptionalDouble<webidl::CtxStrokeText>,
   ) -> Result<()> {
-    let text = text.coerce_to_string()?.into_utf8()?;
-    let text = text.as_str()?;
+    let (x, y, max_width) = (x.0, y.0, max_width.0);
+    let text = text.0.as_str();
     if text.is_empty() {
       return Ok(());
     }
@@ -5282,16 +5340,24 @@ impl CanvasRenderingContext2D {
     self.context.reset_transform();
   }
 
-  #[napi(return_if_invalid)]
-  pub fn translate(&mut self, x: f64, y: f64) {
-    if let Some([x, y]) = num::clamped_f32s([x, y]) {
+  #[napi]
+  pub fn translate(&mut self, x: Double<webidl::CtxTranslate>, y: Double<webidl::CtxTranslate>) {
+    if let Some([x, y]) = num::clamped_f32s([x.0, y.0]) {
       self.context.translate(x, y);
     }
   }
 
-  #[napi(return_if_invalid)]
-  pub fn transform(&mut self, a: f64, b: f64, c: f64, d: f64, e: f64, f: f64) -> Result<()> {
-    let Some([a, b, c, d, e, f]) = num::clamped_f32s([a, b, c, d, e, f]) else {
+  #[napi]
+  pub fn transform(
+    &mut self,
+    a: Double<webidl::CtxTransform>,
+    b: Double<webidl::CtxTransform>,
+    c: Double<webidl::CtxTransform>,
+    d: Double<webidl::CtxTransform>,
+    e: Double<webidl::CtxTransform>,
+    f: Double<webidl::CtxTransform>,
+  ) -> Result<()> {
+    let Some([a, b, c, d, e, f]) = num::clamped_f32s([a.0, b.0, c.0, d.0, e.0, f.0]) else {
       return Ok(());
     };
     self.context.transform(Matrix::new(a, c, e, b, d, f))?;
