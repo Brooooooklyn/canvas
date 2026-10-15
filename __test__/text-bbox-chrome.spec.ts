@@ -6,10 +6,11 @@
 // edge (TextMetrics::MeasureRuns and Update). A letter spacing other than 0
 // turns the optional ligatures off.
 //
-// Two engine differences are left out: Chrome reads Harmattan's glyph boxes
-// through Fontations (one pixel taller here) and rasterizes one NKo column
-// differently.
+// On Windows, which keeps FreeType, two engine differences are left out:
+// Chrome reads Harmattan's glyph boxes through Fontations (FreeType's are
+// one pixel taller) and rasterizes one NKo column differently.
 import { readFileSync } from 'node:fs'
+import { release } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -31,7 +32,14 @@ interface Fixture {
   alphaReset: Record<'copy' | 'xor', [number, number, number][]>
 }
 
-const FIXTURE: Fixture = JSON.parse(readFileSync(join(__dirname, 'fixtures', 'text-fonts', 'text-bbox.json'), 'utf8'))
+// Chrome on macOS reads the fonts through CoreText: its own rows there.
+const RAW = JSON.parse(readFileSync(join(__dirname, 'fixtures', 'text-fonts', 'text-bbox.json'), 'utf8'))
+const FIXTURE: Fixture =
+  process.platform === 'darwin' ? { ...RAW, ...RAW.darwin, alphaReset: RAW.darwin.alphaReset[process.arch] } : RAW
+
+// Chrome's macOS rows were measured on macOS 27. CoreText ships with the OS,
+// so on another macOS version the painted pixels are not compared.
+const PIXEL_PINS = process.platform !== 'darwin' || Number.parseInt(release(), 10) === 27
 
 const FONTS: Record<string, string> = {
   LatoT: 'Lato-Regular.ttf',
@@ -56,6 +64,7 @@ const FIELDS = [
 type Ctx = ReturnType<ReturnType<typeof createCanvas>['getContext']>
 
 function inkBox(ctx: Ctx, width: number, height: number) {
+  if (!PIXEL_PINS) return null
   const data = ctx.getImageData(0, 0, width, height).data
   let top = -1
   let bottom = -1
@@ -90,7 +99,11 @@ function differences(key: string, row: Row, measured: TextMetrics, box: string |
   return out
 }
 
+// macOS and Linux draw with Chrome's scalers (CoreText and Fontations).
+const FREETYPE = process.platform !== 'darwin' && process.platform !== 'linux'
+
 function engineGaps(family: string) {
+  if (!FREETYPE) return []
   if (family === 'HarmattanT') return ['actualBoundingBoxAscent', 'ink']
   if (family === 'NKoT') return ['ink']
   return []
@@ -206,8 +219,9 @@ test('kerning, ligatures and letter spacing pick the shaping like Chrome', (t) =
 
 // The alpha:false reset takes the measured glyph box: with the ink of every
 // run in it, only anti-aliased pixels at its right edge stay below 255
-// (Chrome: one, at x 244).
-test('the alpha:false reset covers the ink of every run', (t) => {
+// (Chrome on Linux: one, at x 244). On macOS the box has fractional edges
+// (left -3.48 here), so its other edges show too.
+;(PIXEL_PINS ? test : test.skip)('the alpha:false reset covers the ink of every run', (t) => {
   for (const op of ['copy', 'xor'] as const) {
     const ctx = createCanvas(300, 70).getContext('2d', { alpha: false })
     ctx.fillStyle = 'rgb(200,100,50)'
@@ -220,7 +234,11 @@ test('the alpha:false reset covers the ink of every run', (t) => {
     const data = ctx.getImageData(0, 0, 300, 70).data
     const below: number[][] = []
     for (let i = 3; i < data.length; i += 4) {
-      if (data[i] < 255) below.push([((i - 3) / 4) % 300, Math.floor((i - 3) / 1200)])
+      if (data[i] < 255) below.push([((i - 3) / 4) % 300, Math.floor((i - 3) / 1200), data[i]])
+    }
+    if (process.platform === 'darwin') {
+      t.deepEqual(below, FIXTURE.alphaReset[op], op)
+      continue
     }
     t.true(below.length > 0 && below.length < 5, `${op}: ${JSON.stringify(below)}`)
     t.true(
