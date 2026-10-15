@@ -198,6 +198,45 @@ test('setTransform conversion errors name setTransform and the member', (t) => {
   t.is(log.join(), 'a,b')
 })
 
+// Objects whose @@toPrimitive is not callable, and V8's own text for each:
+// the engine names the object in its own way (#<Foo>, [object Array], the
+// source of a function...).
+function notCallableToPrimitive(): [() => unknown, string][] {
+  class Foo {}
+  const fn = function bar() {}
+  const make = (object: any, toPrimitive: unknown) => () => {
+    object[Symbol.toPrimitive] = toPrimitive
+    return object
+  }
+  const text = (returned: string, object: string) =>
+    `'${returned}' returned for property 'Symbol(Symbol.toPrimitive)' of object '${object}' is not a function`
+  return [
+    [make(new Foo(), 5), text('5', '#<Foo>')],
+    [make([], 5), text('5', '[object Array]')],
+    [make(fn, 5), text('5', Function.prototype.toString.call(fn))],
+    [make(Object.create(null), 5), text('5', '[object Object]')],
+    [make({}, [1, 2]), text('[object Array]', '#<Object>')],
+  ]
+}
+
+test("setTransform conversion errors keep the engine's text, as Chrome", (t) => {
+  const ctx = createCanvas(4, 4).getContext('2d')
+  for (const [value, text] of notCallableToPrimitive()) {
+    const cases: [unknown[], string][] = [
+      [[value(), 0, 0, 1, 0, 0], ''],
+      [[1, 0, value(), 1, 0, 0], ''],
+      [[{ b: value() }], "Failed to read the 'b' property from 'DOMMatrix2DInit': "],
+      [[{ m24: value() }], "Failed to read the 'm24' property from 'DOMMatrixInit': "],
+    ]
+    for (const [args, member] of cases) {
+      const error = t.throws(() => (ctx.setTransform as any)(...args), { instanceOf: TypeError })!
+      t.is(error.message, PREFIX + member + text)
+      t.is(String(error.stack).split('\n')[0], `TypeError: ${text}`)
+      t.deepEqual(Object.keys(error), ['message'])
+    }
+  }
+})
+
 test('setTransform reads all members before checking them', (t) => {
   const log: string[] = []
   const proxy = new Proxy(

@@ -25,9 +25,10 @@ const {
   TextMetrics,
   _argumentCounts,
   _imageDataConstructor,
+  _toNumber: toNumber,
 } = require('./js-binding')
 
-const { DOMPoint, DOMMatrix, DOMRect, _toNumber: toNumber } = require('./geometry')
+const { DOMPoint, DOMMatrix, DOMRect } = require('./geometry')
 
 const loadImage = require('./load-image')
 
@@ -353,12 +354,11 @@ function contextTypeError(prefix, message) {
 }
 
 // An `unrestricted double` member of a matrix dictionary; undefined when it
-// is absent. A conversion error names the member, as in Chrome.
+// is absent. The native ToNumber keeps the engine's texts, and the error
+// names the member, as in Chrome.
 function matrixMember(value, key, dictionary, prefix) {
   if (typeof value === 'number' || value === undefined) return value
-  return toNumber(value, (message) =>
-    contextTypeError(`${prefix}Failed to read the '${key}' property from '${dictionary}': `, message),
-  )
+  return toNumber(value, `${prefix}Failed to read the '${key}' property from '${dictionary}': `)
 }
 
 // a and m11 (and so on) disagree: both given and not equal. Two NaNs agree.
@@ -469,7 +469,7 @@ CanvasRenderingContext2D.prototype.setTransform = function setTransform() {
     let a = arguments[0]
     if (typeof a !== 'number') {
       ctxReceiver.call(this)
-      a = toNumber(a, (message) => contextTypeError(SET_TRANSFORM, message))
+      a = toNumber(a, SET_TRANSFORM)
     }
     return _setTransform.call(this, a, arguments[1], arguments[2], arguments[3], arguments[4], arguments[5])
   }
