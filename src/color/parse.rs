@@ -1195,15 +1195,13 @@ pub(crate) fn consume_color(p: &mut Parser<'_>, ctx: &ResolveContext) -> Option<
   ColorParser { ctx }.consume_color(p, 0)
 }
 
-/// The color of a drop-shadow() in an OffscreenCanvas filter: one whole
-/// `<color>`; a color that depends on currentcolor is black
+/// The color slot of a drop-shadow() in an OffscreenCanvas filter, read from
+/// `p` (the parser is left where it was when no color is there): a color
+/// that depends on currentcolor is black
 /// (style_builder_converter.cc:2708-2722).
-pub(crate) fn parse_filter_color(s: &str) -> Option<Color> {
-  with_parser(s, |p| {
-    let color = consume_color(p, &ResolveContext::FILTER)?;
-    p.is_exhausted().then_some(())?;
-    Some(color.absolute().unwrap_or(Color::BLACK))
-  })
+pub(crate) fn consume_filter_color(p: &mut Parser<'_>) -> Option<Color> {
+  let color = consume_color(p, &ResolveContext::FILTER)?;
+  Some(color.absolute().unwrap_or(Color::BLACK))
 }
 
 #[cfg(test)]
@@ -1309,7 +1307,13 @@ mod tests {
 
   #[test]
   fn filter_colors_resolve_currentcolor_to_black() {
-    let px = |s: &str| parse_filter_color(s).map(|c| c.serialize_as_canvas_color());
+    let px = |s: &str| {
+      with_parser(s, |p| {
+        let color = consume_filter_color(p)?;
+        p.is_exhausted().then_some(color)
+      })
+      .map(|c| c.serialize_as_canvas_color())
+    };
     assert_eq!(
       px("color-mix(in srgb, currentcolor, red)").as_deref(),
       Some("#000000")
