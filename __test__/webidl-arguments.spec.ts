@@ -291,6 +291,37 @@ test('method arguments throw a prefixed TypeError for Symbol and BigInt', (t) =>
   t.deepEqual(log, [1, 2, 'TypeError'])
 })
 
+test('a non-callable Symbol.toPrimitive argument is read once', (t) => {
+  const NOT_A_FUNCTION =
+    "'5' returned for property 'Symbol(Symbol.toPrimitive)' of object '#<Object>' is not a function"
+  const source = createCanvas(1, 1)
+  const calls: [string, (ctx: any, value: unknown) => void][] = [
+    ['fillRect', (ctx, value) => ctx.fillRect(value, 0, 1, 1)],
+    ['fill', (ctx, value) => ctx.fill(value)],
+    ['isPointInPath', (ctx, value) => ctx.isPointInPath(value, 0)],
+    ['drawImage', (ctx, value) => ctx.drawImage(source, value, 0)],
+  ]
+  for (const [method, call] of calls) {
+    // Its getter returns 5 (not callable) on the first read and throws on
+    // any later read.
+    let reads = 0
+    const value = {
+      get [Symbol.toPrimitive]() {
+        reads++
+        if (reads === 1) return 5
+        throw new RangeError('Symbol.toPrimitive read again')
+      },
+    }
+    // Chrome 155 reads it once and throws the engine's TypeError.
+    const error = t.throws(() => call(context(4, 4), value), {
+      instanceOf: TypeError,
+      message: execute(method) + NOT_A_FUNCTION,
+    })
+    t.is(reads, 1, method)
+    t.is(String(error.stack).split('\n')[0], `TypeError: ${NOT_A_FUNCTION}`)
+  }
+})
+
 test('method arguments run valueOf before they borrow the context', (t) => {
   const ctx = context(4, 4)
   ctx.globalAlpha = 0.3

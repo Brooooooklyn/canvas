@@ -410,6 +410,87 @@ fn well_known_symbol(env: sys::napi_env, name: &std::ffi::CStr) -> Result<sys::n
   Ok(value)
 }
 
+/// The get trap of a [`relay`]: the `value` of its handler, `this`.
+unsafe extern "C" fn relay_get(
+  env: sys::napi_env,
+  info: sys::napi_callback_info,
+) -> sys::napi_value {
+  let mut handler = ptr::null_mut();
+  let mut value = ptr::null_mut();
+  unsafe {
+    if sys::napi_get_cb_info(
+      env,
+      info,
+      ptr::null_mut(),
+      ptr::null_mut(),
+      &mut handler,
+      ptr::null_mut(),
+    ) == sys::Status::napi_ok
+    {
+      sys::napi_get_named_property(env, handler, c"value".as_ptr(), &mut value);
+    }
+  }
+  value
+}
+
+/// `new Proxy(target, { get: () => value })`, built without user code (the
+/// handler members are defined, not set). When `value` is the non-callable
+/// Symbol.toPrimitive of `target`, the engine's ToPrimitive of it throws the
+/// TypeError it throws for `target`, without a second read.
+///
+/// Two differences remain. V8 names a Proxy in the message by its target:
+/// the V8 of Node 24 names it as it names the target; a newer V8 (Chrome
+/// 155's) falls back to the class name of the Proxy, Object, when the target
+/// has no constructor name to show, so an Array or a Date reads
+/// '[object Object]' there, not '[object Array]' or '[object Date]'. And the
+/// get trap's invariant check gets the own property descriptor of `target`,
+/// which runs its getOwnPropertyDescriptor trap when `target` is a Proxy.
+fn relay(
+  env: sys::napi_env,
+  target: sys::napi_value,
+  value: sys::napi_value,
+) -> Result<sys::napi_value> {
+  let mut global = ptr::null_mut();
+  let mut proxy = ptr::null_mut();
+  let mut get = ptr::null_mut();
+  let mut handler = ptr::null_mut();
+  let mut relay = ptr::null_mut();
+  check_status!(unsafe { sys::napi_get_global(env, &mut global) })?;
+  check_status!(unsafe {
+    sys::napi_get_named_property(env, global, c"Proxy".as_ptr(), &mut proxy)
+  })?;
+  check_status!(unsafe {
+    sys::napi_create_function(
+      env,
+      c"get".as_ptr(),
+      3,
+      Some(relay_get),
+      ptr::null_mut(),
+      &mut get,
+    )
+  })?;
+  check_status!(unsafe { sys::napi_create_object(env, &mut handler) })?;
+  let member = |utf8name: &std::ffi::CStr, value| sys::napi_property_descriptor {
+    utf8name: utf8name.as_ptr(),
+    name: ptr::null_mut(),
+    method: None,
+    getter: None,
+    setter: None,
+    value,
+    attributes: sys::PropertyAttributes::default,
+    data: ptr::null_mut(),
+  };
+  let members = [member(c"get", get), member(c"value", value)];
+  check_status!(unsafe {
+    sys::napi_define_properties(env, handler, members.len(), members.as_ptr())
+  })?;
+  let args = [target, handler];
+  check_status!(unsafe {
+    sys::napi_new_instance(env, proxy, args.len(), args.as_ptr(), &mut relay)
+  })?;
+  Ok(relay)
+}
+
 /// ToPrimitive (ECMA-262 7.1.1) of an object or function, step by step, so
 /// that an exception from user code passes as it is and only the engine's own
 /// failures get `prefix`.
@@ -440,12 +521,15 @@ fn to_primitive(
     }
     _ => {
       // Not callable: let the engine throw its own TypeError, then add the
-      // prefix to it.
+      // prefix to it. The engine's ToPrimitive would read
+      // Symbol.toPrimitive of `value` again (Chrome reads it once), so it
+      // runs on a relay that returns the value read above.
+      let target = relay(env, value, exotic).unwrap_or(value);
       let mut result = ptr::null_mut();
       let status = unsafe {
         match hint {
-          Hint::Number => sys::napi_coerce_to_number(env, value, &mut result),
-          Hint::String => sys::napi_coerce_to_string(env, value, &mut result),
+          Hint::Number => sys::napi_coerce_to_number(env, target, &mut result),
+          Hint::String => sys::napi_coerce_to_string(env, target, &mut result),
         }
       };
       if status != sys::Status::napi_ok && is_exception_pending(env) {
