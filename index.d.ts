@@ -538,7 +538,9 @@ export class Image {
   // if it's a string, it can be a file path, a data URL, a remote URL, or a SVG string
   src: Uint8Array | string
   onload?(): void
-  onerror?(err: Error): void
+  /** Called with an Event of type 'error', as in browsers. */
+  onerror?(event: Event): void
+  /** Rejects with an EncodingError DOMException when the image cannot be decoded. */
   decode(): Promise<void>
 }
 
