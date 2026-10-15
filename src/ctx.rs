@@ -10,7 +10,7 @@ use napi::bindgen_prelude::*;
 use regex::Regex;
 
 use crate::font::FONT_MEDIUM_PX;
-use crate::font::parse_size_px;
+use crate::font::{FontParseContext, parse_canvas_font, parse_size_px};
 use crate::global_fonts::get_font;
 use crate::page_recorder::{PageRecorder, RasterKey, next_resource_id};
 use crate::sk::Canvas;
@@ -19,7 +19,6 @@ use crate::{
   color::{self, Color},
   error::SkError,
   filter::{FontReads, FontUnits, css_filters_to_image_filter, filter_lengths, parse_filter},
-  font::Font,
   gradient::{CanvasGradient, Gradient, SharedGradient},
   image::*,
   num,
@@ -2424,11 +2423,11 @@ impl Context {
           text,
           &font,
           state.font_style.size,
-          state.font_style.weight,
+          state.font_style.legacy_weight(),
           state.font_stretch as i32,
           state.font_stretch.to_width_percentage(),
-          state.font_style.style,
-          &state.font_style.family,
+          state.font_style.legacy_slant(),
+          &state.font_style.legacy_family_list(),
           crate::sk::TextBaseline::Alphabetic,
           crate::sk::TextAlign::Left,
           crate::sk::TextDirection::Ltr,
@@ -2466,11 +2465,11 @@ impl Context {
         .and_then(|font| {
           font.ideographic_advance(
             state.font_style.size,
-            state.font_style.weight,
+            state.font_style.legacy_weight(),
             state.font_stretch as i32,
             state.font_stretch.to_width_percentage(),
-            state.font_style.style,
-            &state.font_style.family,
+            state.font_style.legacy_slant(),
+            &state.font_style.legacy_family_list(),
             &state.font_variations,
           )
         })
@@ -2479,20 +2478,28 @@ impl Context {
     units
   }
 
-  pub fn get_font(&self) -> &str {
-    &self.state.font
+  /// Blink's computed form of the font (BaseRenderingContext2D::font()).
+  pub fn get_font(&self) -> String {
+    crate::font::serialize_canvas_font(
+      &self.state.font_style,
+      self.state.font_variant_caps == FontVariantCaps::SmallCaps,
+    )
   }
 
-  pub fn set_font(&mut self, font: String) -> result::Result<(), SkError> {
-    self.state.font_style = Font::new(&font)?;
-    // Apply CSS font-variant-css2 to fontVariantCaps state.
-    // In font shorthand, it only supports `<font-variant-css2>= normal | small-caps`
-    // Spec: https://drafts.csswg.org/css-fonts/#font-prop
-    self.state.font_variant_caps = match self.state.font_style.variant {
-      crate::font::FontVariant::SmallCaps => FontVariantCaps::SmallCaps,
-      crate::font::FontVariant::Normal => FontVariantCaps::Normal,
+  /// An invalid value is an error and changes nothing. A valid one replaces
+  /// the whole font description, so fontStretch and fontVariantCaps take the
+  /// shorthand's values (or normal); kerning, spacing and textRendering stay.
+  pub fn set_font(&mut self, font: &str) -> result::Result<(), SkError> {
+    let parsed = parse_canvas_font(font, &FontParseContext::default())
+      .ok_or_else(|| SkError::InvalidFontStyle(font.to_owned()))?;
+    self.state.font_stretch = parsed.stretch;
+    self.state.font_stretch_raw = parsed.stretch.as_str().to_owned();
+    self.state.font_variant_caps = if parsed.small_caps {
+      FontVariantCaps::SmallCaps
+    } else {
+      FontVariantCaps::Normal
     };
-    self.state.font = font;
+    self.state.font_style = parsed;
     Ok(())
   }
 
@@ -3806,12 +3813,12 @@ impl Context {
     let width = self.width as f32;
     // Zero on the image-filter route, where the filter's dx/dy already carry it.
     let (shadow_offset_x, shadow_offset_y) = self.canvas_shadow_offset(source, DrawContent::Glyphs);
-    let font_weight = self.state.font_style.weight;
+    let font_weight = self.state.font_style.legacy_weight();
     let font_stretch = self.state.font_stretch;
     let font_stretch_percentage = font_stretch.to_width_percentage();
-    let font_style_style = self.state.font_style.style;
+    let font_style_style = self.state.font_style.legacy_slant();
     let font_size = self.state.font_style.size;
-    let font_family = self.state.font_style.family.clone();
+    let font_family = self.state.font_style.legacy_family_list();
     let text_baseline = self.state.text_baseline;
     let text_align = self.state.text_align;
     let text_direction = self.state.text_direction;
@@ -4004,9 +4011,10 @@ impl Context {
   ) -> result::Result<LineMetrics, SkError> {
     let state = &self.state;
     let fill_paint = self.fill_paint()?;
-    let weight = state.font_style.weight;
+    let weight = state.font_style.legacy_weight();
     let stretch = state.font_stretch;
-    let slant = state.font_style.style;
+    let slant = state.font_style.legacy_slant();
+    let family = state.font_style.legacy_family_list();
     let font = get_font()?;
     let line_metrics = LineMetrics(self.surface.canvas.get_line_metrics(
       text,
@@ -4016,7 +4024,7 @@ impl Context {
       stretch as i32,
       stretch.to_width_percentage(),
       slant,
-      &state.font_style.family,
+      &family,
       state.text_baseline,
       state.text_align,
       state.text_direction,
@@ -4926,7 +4934,7 @@ impl CanvasRenderingContext2D {
 
   #[napi(getter)]
   pub fn get_font(&self) -> String {
-    self.context.get_font().to_owned()
+    self.context.get_font()
   }
 
   #[napi(getter)]
@@ -4949,7 +4957,7 @@ impl CanvasRenderingContext2D {
       return;
     }
     // An invalid font is ignored (base_rendering_context_2d.cc setFont).
-    let _ = self.context.set_font(font.0);
+    let _ = self.context.set_font(&font.0);
   }
 
   #[napi(getter)]
@@ -8498,7 +8506,7 @@ mod tests {
       fonts.register_from_path::<String>("__test__/fonts/Lato-Regular.ttf", None);
     }
     let mut ctx = raster_ctx(64, 64);
-    ctx.set_font("16px Lato".to_owned()).unwrap();
+    ctx.set_font("16px Lato").unwrap();
     for _ in 0..3 {
       ctx.fill_text("hello", 0.0, 16.0, MAX_TEXT_WIDTH).unwrap();
     }
@@ -8537,7 +8545,7 @@ mod tests {
       fonts.register_from_path::<String>("__test__/fonts/Lato-Regular.ttf", None);
     }
     let mut ctx = raster_ctx(64, 64);
-    ctx.set_font("16px Lato".to_owned()).unwrap();
+    ctx.set_font("16px Lato").unwrap();
     let measured = ctx.get_line_metrics("Hgjy", false).unwrap().0;
     assert_eq!((measured.ink_left, measured.ink_right), (0.0, 0.0));
     // The alpha:false reset asks for it and gets the glyphs; the rest of the
@@ -8575,7 +8583,7 @@ mod tests {
     let bitmap = test_bitmap(4, 4, [255, 0, 0, 255]);
 
     let mut ctx = raster_ctx(16, 16);
-    ctx.set_font("16px Lato".to_owned()).unwrap();
+    ctx.set_font("16px Lato").unwrap();
     ctx.state.shadow_color = Color::BLACK;
     ctx.state.shadow_offset_x = 2.0;
     // Skia order (scaleX, skewX, transX, skewY, scaleY, transY): x scaled by 0.
