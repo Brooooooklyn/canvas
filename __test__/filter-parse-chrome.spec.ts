@@ -5,9 +5,14 @@
 // Every expected value was measured in Chrome 155 CPU canvas (--disable-gpu,
 // willReadFrequently) on an OffscreenCanvas in a standards-mode page, and is
 // equal on arm64 and x64, except where a test says otherwise.
+import { join, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
 import test from 'ava'
 
-import { createCanvas } from '../index'
+import { GlobalFonts, createCanvas } from '../index'
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
 
 type Ctx = ReturnType<ReturnType<typeof createCanvas>['getContext']>
 
@@ -558,4 +563,69 @@ test('ch in ctx.filter is the advance of "0" in ctx.font', (t) => {
       font,
     )
   }
+})
+
+// Chrome 155 OffscreenCanvas resolves a drop-shadow() color with the
+// filter's own lengths, so ex, ch, cap and their root forms come from the
+// canvas font when the filter is set (filter_operation_resolver.cc:285-297,
+// style_builder_converter.cc:2721-2724); ic is 1em, em and rem 16px, lh 0.
+// Lato is the registered test font (a FontFace in the Chrome probe).
+test('font-relative units in a drop-shadow() color use the canvas font', (t) => {
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'Lato-Regular.ttf'), 'Lato')
+  // The shadow pixel of a 20x20 blue rect.
+  const shadowPixel = (filter: string, font: string, fontAfter?: string) => {
+    const ctx = createCanvas(100, 40).getContext('2d')
+    ctx.font = font
+    ctx.filter = filter
+    if (fontAfter) ctx.font = fontAfter
+    t.is(ctx.filter, filter)
+    ctx.fillStyle = 'rgb(0 0 255)'
+    ctx.fillRect(10, 10, 20, 20)
+    return px(ctx, 40, 20)
+  }
+  const red = (r: number) => [r, 0, 0, 255]
+  const color = (c: string) => `drop-shadow(20px 0 0 ${c})`
+  const cases: [string, number[]][] = [
+    [color('rgb(calc(10ch / 1px) 0 0)'), red(116)],
+    [color('rgb(calc(10cap / 1px) 0 0)'), red(143)],
+    [color('rgb(calc(10ic / 1px) 0 0)'), red(160)],
+    [color('rgb(calc(10rch / 1px) 0 0)'), red(116)],
+    [color('rgb(calc(10rcap / 1px) 0 0)'), red(143)],
+    [color('rgb(calc(10em / 1px) 0 0)'), red(160)],
+    [color('rgb(calc(10lh / 1px) 0 0)'), red(0)],
+    ['drop-shadow(rgb(calc(10ch / 1px) 0 0) 20px 0 0)', red(116)],
+    [color('rgb(calc(calc(5ch / 1px) * 2) 0 0)'), red(116)],
+    [color('rgb(calc((1ch + 1cap) / 1px * 4) 0 0)'), red(104)],
+    [color('color-mix(in srgb, rgb(calc(10ch / 1px) 0 0), rgb(0 calc(10cap / 1px) 0))'), [58, 72, 0, 255]],
+    [color('rgb(from rgb(0 0 0) calc(10ch / 1px) g b)'), red(116)],
+    [color('rgb(calc(10\\63 h / 1px) 0 0)'), red(116)],
+  ]
+  for (const [filter, want] of cases) {
+    t.deepEqual(shadowPixel(filter, '20px Lato'), want, filter)
+  }
+  t.deepEqual(shadowPixel(color('rgb(calc(10ch / 1px) 0 0)'), '40px Lato'), red(232))
+  // Read when the filter is set, not when it draws.
+  t.deepEqual(shadowPixel(color('rgb(calc(10ch / 1px) 0 0)'), '20px Lato', '40px Lato'), red(116))
+
+  // ex is the x-height. On macOS Blink and we both read it off the "x" glyph
+  // (our measureText's actualBoundingBoxAscent), where we round it: 10px for
+  // 20px Lato and 21px for 40px, Chrome 10.13px and 20.26px, so Chrome draws
+  // 101 and 203 where we draw 100 and 210 (decisions.md 08-Q4: our font
+  // metrics). Elsewhere it is the font's x-height.
+  const ex = (font: string) => shadowPixel(color('rgb(calc(10ex / 1px) 0 0)'), font)
+  const exAfter = shadowPixel(color('rgb(calc(10ex / 1px) 0 0)'), '20px Lato', '40px Lato')
+  const rex = shadowPixel(color('rgb(calc(10rex / 1px) 0 0)'), '20px Lato')
+  if (process.platform === 'darwin') {
+    const xTop = (font: string) => {
+      const ctx = createCanvas(4, 4).getContext('2d')
+      ctx.font = font
+      return Math.round(10 * ctx.measureText('x').actualBoundingBoxAscent)
+    }
+    t.deepEqual(ex('20px Lato'), red(xTop('20px Lato')))
+    t.deepEqual(ex('40px Lato'), red(xTop('40px Lato')))
+  }
+  t.true(ex('20px Lato')[0] > 90, 'ex is the x-height')
+  t.true(ex('40px Lato')[0] > ex('20px Lato')[0])
+  t.deepEqual(exAfter, ex('20px Lato'))
+  t.deepEqual(rex, ex('20px Lato'))
 })
