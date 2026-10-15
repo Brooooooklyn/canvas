@@ -68,6 +68,7 @@
 #include <algorithm>
 #include <cstring>
 #include <map>
+#include <memory>
 #include <set>
 #include <string>
 #include <unordered_set>
@@ -546,6 +547,13 @@ struct skiac_svg_surface {
   skiac_canvas* canvas;
 };
 
+// text.cpp: the laid out lines of recent requests and other text work,
+// kept by the font collection.
+struct TextCaches;
+struct TextCachesDeleter {
+  void operator()(TextCaches* caches) const;
+};
+
 struct skiac_font_collection {
   sk_sp<FontCollection> collection;
   sk_sp<SkFontMgr> font_mgr;
@@ -579,6 +587,9 @@ struct skiac_font_collection {
   // drops the caches past kMaxFontArguments.
   static constexpr size_t kMaxFontArguments = 256;
   std::unordered_set<size_t> font_arguments;
+  // text.cpp: the resolved families, primary font metrics and laid out lines
+  // of recent requests; dropped with the match caches.
+  std::unique_ptr<TextCaches, TextCachesDeleter> text_caches;
 
   skiac_font_collection()
       : collection(sk_make_sp<FontCollection>()),
@@ -604,6 +615,7 @@ struct skiac_font_collection {
       space_in_lookups.clear();
       caps_features.clear();
       font_arguments.clear();
+      text_caches.reset();
       caches_dirty = false;
     }
   }
@@ -615,6 +627,7 @@ struct skiac_font_collection {
       collection->clearCaches();
       space_in_lookups.clear();
       caps_features.clear();
+      text_caches.reset();
       font_arguments = {hash};
     }
   }
@@ -631,6 +644,7 @@ struct skiac_font_collection {
     space_in_lookups.clear();
     caps_features.clear();
     font_arguments.clear();
+    text_caches.reset();
     caches_dirty = false;
     ++families_generation;
 
