@@ -1963,17 +1963,23 @@ static SkIRect SampledBounds(const SkRect& src,
 // Image's level cache; a canvas source has none, and its decode is made for
 // the one draw. Returns the decode it drew in place of the source, which a
 // recording keeps, or null.
-static sk_sp<SkImage> DrawDecodedImage(SkCanvas* canvas,
-                                       const SkBitmap* bitmap,
-                                       const sk_sp<SkImage>& snapshot,
-                                       const SkPixmap& original,
-                                       skiac_image_levels* levels,
-                                       uint8_t cs,
-                                       const SkRect& src,
-                                       const SkRect& dst,
-                                       const SkM44& matrix,
-                                       int fq,
-                                       const SkPaint& paint) {
+// `constraint`: kFast for canvas drawImage
+// (Image::kDoNotClampImageToSourceRect), kStrict for an SVG <image>
+// (GraphicsContext::DrawImage clamps).
+}  // extern "C"
+
+sk_sp<SkImage> DrawDecodedImage(SkCanvas* canvas,
+                                const SkBitmap* bitmap,
+                                const sk_sp<SkImage>& snapshot,
+                                const SkPixmap& original,
+                                skiac_image_levels* levels,
+                                uint8_t cs,
+                                const SkRect& src,
+                                const SkRect& dst,
+                                const SkM44& matrix,
+                                int fq,
+                                const SkPaint& paint,
+                                SkCanvas::SrcRectConstraint constraint) {
   SkIRect int_src;
   src.roundOut(&int_src);
   const CcDecodeKey key =
@@ -1993,7 +1999,7 @@ static sk_sp<SkImage> DrawDecodedImage(SkCanvas* canvas,
           snapshot ? snapshot : SkImages::RasterFromBitmap(*bitmap);
       if (image) {
         canvas->drawImageRect(image.get(), src, dst, DecodedSampling(fq),
-                              &paint, SkCanvas::kFast_SrcRectConstraint);
+                              &paint, constraint);
       }
       return nullptr;
     }
@@ -2021,11 +2027,13 @@ static sk_sp<SkImage> DrawDecodedImage(SkCanvas* canvas,
   const float level_y = offset_src.y() * adjust_y;
   const float level_w = offset_src.width() * adjust_x;
   const float level_h = offset_src.height() * adjust_y;
-  canvas->drawImageRect(
-      decoded.get(), SkRect::MakeXYWH(level_x, level_y, level_w, level_h), dst,
-      DecodedSampling(fq), &paint, SkCanvas::kFast_SrcRectConstraint);
+  canvas->drawImageRect(decoded.get(),
+                        SkRect::MakeXYWH(level_x, level_y, level_w, level_h),
+                        dst, DecodedSampling(fq), &paint, constraint);
   return decoded;
 }
+
+extern "C" {
 
 skiac_image_levels* skiac_image_levels_create() {
   return new skiac_image_levels();
