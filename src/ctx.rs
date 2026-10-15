@@ -4110,6 +4110,12 @@ impl CanvasRenderingContext2D {
 
   #[napi(setter)]
   pub fn set_font(&mut self, font: webidl::DomString<webidl::SetFont>) {
+    // A number is not a font (it has no family), and Chrome keeps the font;
+    // the font parser here would take it as a size. str::parse::<f64> takes
+    // every form ToString gives a Number ("5", "1e+21", "NaN", "Infinity").
+    if font.0.parse::<f64>().is_ok() {
+      return;
+    }
     // An invalid font is ignored (base_rendering_context_2d.cc setFont).
     let _ = self.context.set_font(font.0);
   }
