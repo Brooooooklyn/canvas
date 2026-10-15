@@ -239,23 +239,45 @@ for (const [method, required] of [
 // js-binding call) is an extra argument.
 const ARGUMENT_COUNTS = _argumentCounts()
 
+// What the wrappers below pass after their `n` positional arguments, for a
+// call with `count` (1 to `n`) of them, the last one `last`. Without a marker
+// the native method counts up to the last argument that is not undefined:
+// that is `count` unless `last` is an explicit undefined, and only then is
+// the marker passed (reading a marker is slower than reading undefined).
+function argumentCount(count, last) {
+  return last === undefined ? ARGUMENT_COUNTS[count] : undefined
+}
+
 // fill(), clip(), stroke(), isPointInPath() and isPointInStroke(): WebIDL
 // picks the overload from the argument count (canvas_2d_recorder_context.idl),
 // and an explicit undefined counts: fill(path, undefined) is the nonzero
 // fill of path, fill(undefined, 'evenodd') a TypeError.
 const _fill = CanvasRenderingContext2D.prototype.fill
 CanvasRenderingContext2D.prototype.fill = function fill() {
-  return _fill.call(this, arguments[0], arguments[1], ARGUMENT_COUNTS[Math.min(arguments.length, 2)])
+  const count = Math.min(arguments.length, 2)
+  return _fill.call(
+    this,
+    arguments[0],
+    arguments[1],
+    count === 0 ? undefined : argumentCount(count, arguments[count - 1]),
+  )
 }
 
 const _clip = CanvasRenderingContext2D.prototype.clip
 CanvasRenderingContext2D.prototype.clip = function clip() {
-  return _clip.call(this, arguments[0], arguments[1], ARGUMENT_COUNTS[Math.min(arguments.length, 2)])
+  const count = Math.min(arguments.length, 2)
+  return _clip.call(
+    this,
+    arguments[0],
+    arguments[1],
+    count === 0 ? undefined : argumentCount(count, arguments[count - 1]),
+  )
 }
 
 const _stroke = CanvasRenderingContext2D.prototype.stroke
 CanvasRenderingContext2D.prototype.stroke = function stroke() {
-  return _stroke.call(this, arguments[0], ARGUMENT_COUNTS[Math.min(arguments.length, 1)])
+  const count = Math.min(arguments.length, 1)
+  return _stroke.call(this, arguments[0], count === 0 ? undefined : argumentCount(count, arguments[count - 1]))
 }
 
 const _isPointInPath = CanvasRenderingContext2D.prototype.isPointInPath
@@ -263,13 +285,14 @@ CanvasRenderingContext2D.prototype.isPointInPath = function isPointInPath() {
   if (arguments.length < 2) {
     argumentCountError(ctxBrand, this, 'isPointInPath', 'CanvasRenderingContext2D', 2, arguments.length)
   }
+  const count = Math.min(arguments.length, 4)
   return _isPointInPath.call(
     this,
     arguments[0],
     arguments[1],
     arguments[2],
     arguments[3],
-    ARGUMENT_COUNTS[Math.min(arguments.length, 4)],
+    argumentCount(count, arguments[count - 1]),
   )
 }
 Object.defineProperty(CanvasRenderingContext2D.prototype.isPointInPath, 'length', { value: 2 })
@@ -279,12 +302,13 @@ CanvasRenderingContext2D.prototype.isPointInStroke = function isPointInStroke() 
   if (arguments.length < 2) {
     argumentCountError(ctxBrand, this, 'isPointInStroke', 'CanvasRenderingContext2D', 2, arguments.length)
   }
+  const count = Math.min(arguments.length, 3)
   return _isPointInStroke.call(
     this,
     arguments[0],
     arguments[1],
     arguments[2],
-    ARGUMENT_COUNTS[Math.min(arguments.length, 3)],
+    argumentCount(count, arguments[count - 1]),
   )
 }
 Object.defineProperty(CanvasRenderingContext2D.prototype.isPointInStroke, 'length', { value: 2 })
@@ -349,6 +373,7 @@ CanvasRenderingContext2D.prototype.drawImage = function drawImage() {
   }
 
   // Call the original drawImage with the potentially corrected image
+  const count = Math.min(arguments.length, 9)
   return _drawImage.call(
     this,
     image,
@@ -360,7 +385,7 @@ CanvasRenderingContext2D.prototype.drawImage = function drawImage() {
     arguments[6],
     arguments[7],
     arguments[8],
-    ARGUMENT_COUNTS[Math.min(arguments.length, 9)],
+    argumentCount(count, arguments[count - 1]),
   )
 }
 Object.defineProperty(CanvasRenderingContext2D.prototype.drawImage, 'length', { value: 3 })
