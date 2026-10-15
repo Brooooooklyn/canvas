@@ -986,6 +986,10 @@ impl Context {
         // This funnel only serves pixel commits; a recorded draw is a new
         // content generation for canvas-source dedup keys.
         rec.note_paint_op();
+        // A composite mode, or clearRect's kClear paint.
+        if blend_mode != BlendMode::SourceOver || paint.get_blend_mode() != BlendMode::SourceOver {
+          rec.note_non_source_over_op();
+        }
         return result;
       }
     }
@@ -3387,10 +3391,12 @@ impl Context {
   /// references, so the caller reads the source's tally and hands it in.
   /// `opaque_source` is the source canvas's size when it is alpha:false
   /// (Chrome's kOpaqueImage for drawImage of it), None otherwise.
+  /// `source_needs_isolation` is the source recorder's `needs_isolation`.
   pub(crate) fn draw_canvas(
     &mut self,
     picture: &crate::sk::SkPicture,
     opaque_source: Option<(f32, f32)>,
+    source_needs_isolation: bool,
     source_raster_bytes: usize,
     sx: f32,
     sy: f32,
@@ -3446,6 +3452,13 @@ impl Context {
     // destination rect (SkBitmapDevice::drawImageRect). A picture replay would
     // lose the blur: the layer drawPicture makes for the paint drops the mask
     // filter.
+    // drawImage(canvas) draws the source's pixels, so the source's own copy,
+    // clears and full-canvas modes must not reach this canvas: replay inside a
+    // layer. A source of plain source-over draws gives the same pixels
+    // without one, at a fraction of the cost. SkSVGDevice cannot make a layer
+    // and would drop the content, so SVG keeps the plain replay (no Chrome
+    // counterpart).
+    let isolate = source_needs_isolation && self.backend != Backend::Svg;
     let shadow_rect = opaque_source
       .filter(|_| !self.shadow_takes_image_filter(source, DrawContent::Geometry))
       .map(|(width, height)| {
@@ -3512,6 +3525,7 @@ impl Context {
             d_width,
             d_height,
             shadow_paint,
+            isolate,
           );
         }
         shadow_canvas.restore();
@@ -3519,7 +3533,7 @@ impl Context {
       },
       |canvas: &mut Canvas, paint| {
         canvas.draw_picture_rect(
-          picture, sx, sy, s_width, s_height, dx, dy, d_width, d_height, paint,
+          picture, sx, sy, s_width, s_height, dx, dy, d_width, d_height, paint, isolate,
         );
         Ok(())
       },
@@ -5654,9 +5668,16 @@ impl CanvasRenderingContext2D {
       .unwrap_or(0);
     let opaque_source =
       (!canvas.ctx.context.alpha).then_some((source_width as f32, source_height as f32));
+    let source_needs_isolation = canvas
+      .ctx
+      .context
+      .page_recorder
+      .as_ref()
+      .is_some_and(|recorder| recorder.borrow().needs_isolation());
     self.context.draw_canvas(
       &picture,
       opaque_source,
+      source_needs_isolation,
       source_raster_bytes,
       sx,
       sy,
@@ -7827,10 +7848,14 @@ mod tests {
     let picture = src.get_picture();
     if let Some(picture) = picture {
       ctx
-        .draw_canvas(&picture, None, 0, 0.0, 0.0, 0.0, 8.0, 0.0, 0.0, 8.0, 8.0)
+        .draw_canvas(
+          &picture, None, false, 0, 0.0, 0.0, 0.0, 8.0, 0.0, 0.0, 8.0, 8.0,
+        )
         .unwrap();
       ctx
-        .draw_canvas(&picture, None, 0, 0.0, 0.0, 8.0, 8.0, 0.0, 0.0, 8.0, 0.0)
+        .draw_canvas(
+          &picture, None, false, 0, 0.0, 0.0, 8.0, 8.0, 0.0, 0.0, 8.0, 0.0,
+        )
         .unwrap();
     }
 
@@ -7930,7 +7955,7 @@ mod tests {
     let picture = src.get_picture().expect("source picture");
     dest
       .draw_canvas(
-        &picture, None, 0, 0.0, 0.0, 16.0, 16.0, 0.0, 0.0, 16.0, 16.0,
+        &picture, None, false, 0, 0.0, 0.0, 16.0, 16.0, 0.0, 0.0, 16.0, 16.0,
       )
       .unwrap();
     assert_eq!(raster_bytes(&dest), 0);
@@ -7980,6 +8005,7 @@ mod tests {
       .draw_canvas(
         &picture,
         None,
+        false,
         source_raster_bytes,
         0.0,
         0.0,
@@ -8001,6 +8027,7 @@ mod tests {
       .draw_canvas(
         &picture,
         None,
+        false,
         source_raster_bytes,
         0.0,
         0.0,
@@ -8028,6 +8055,7 @@ mod tests {
       .draw_canvas(
         &picture,
         None,
+        false,
         source_raster_bytes,
         0.0,
         0.0,
@@ -8065,6 +8093,7 @@ mod tests {
       .draw_canvas(
         &picture,
         None,
+        false,
         0,
         0.0,
         0.0,
@@ -8273,7 +8302,9 @@ mod tests {
       )
       .unwrap();
     ctx
-      .draw_canvas(&picture, None, 4096, 0.0, 0.0, 8.0, 8.0, 0.0, 0.0, 8.0, 8.0)
+      .draw_canvas(
+        &picture, None, false, 4096, 0.0, 0.0, 8.0, 8.0, 0.0, 0.0, 8.0, 8.0,
+      )
       .unwrap();
     ctx.fill_text("hello", 0.0, 12.0, MAX_TEXT_WIDTH).unwrap();
     ctx.stroke_text("hello", 0.0, 12.0, MAX_TEXT_WIDTH).unwrap();

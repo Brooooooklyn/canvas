@@ -119,6 +119,12 @@ pub struct PageRecorder {
   consolidations: u64,
   // alpha:false: reset() clears to opaque black instead of transparent.
   opaque: bool,
+  // The recording holds an op that is not a plain source-over draw (a clear,
+  // a putImageData kSrc write, another composite mode). Replayed straight
+  // onto another canvas such an op reaches that canvas's pixels, so
+  // drawCanvas replays the picture inside a layer. A snapshot rebase clears
+  // it: the snapshot is drawn source-over.
+  needs_isolation: bool,
 }
 
 /// One level of the context's save stack, for resume_recording.
@@ -153,6 +159,7 @@ impl PageRecorder {
       recording_limit: MAX_RECORDED_BYTES,
       consolidations: 0,
       opaque: false,
+      needs_isolation: false,
     }
   }
 
@@ -355,6 +362,7 @@ impl PageRecorder {
       self.retained_rasters.clear();
       // The snapshot rebase makes `layers` a complete picture again.
       self.surface_dirty = false;
+      self.needs_isolation = false;
       self.consolidations += 1;
     }
   }
@@ -380,6 +388,7 @@ impl PageRecorder {
         canvas.clear();
       }
     }
+    self.needs_isolation = true;
     self.changed = false;
     // Reset all caches
     self.depth = 0;
@@ -453,6 +462,8 @@ impl PageRecorder {
     // Step 4: Start new recording and restore state
     self.resume_recording();
     self.content_version += 1;
+    // The pixels are drawn with kSrc.
+    self.needs_isolation = true;
     self.account_raster_bytes(pixel_bytes);
   }
 
@@ -485,6 +496,17 @@ impl PageRecorder {
   /// Direct surface writes use note_direct_mutation instead.
   pub(crate) fn note_paint_op(&mut self) {
     self.content_version += 1;
+  }
+
+  /// A recorded op that is not a plain source-over draw. See
+  /// `needs_isolation`.
+  pub(crate) fn note_non_source_over_op(&mut self) {
+    self.needs_isolation = true;
+  }
+
+  /// Whether drawCanvas must replay this recording inside a layer.
+  pub(crate) fn needs_isolation(&self) -> bool {
+    self.needs_isolation
   }
 
   /// Charge recorded bytes that the per-op base estimate cannot see, e.g. a
