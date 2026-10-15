@@ -1,6 +1,6 @@
 use std::{cell::RefCell, rc::Rc};
 
-use cssparser::Parser;
+use cssparser::{Parser, Token};
 use cssparser_color::Color as CSSColor;
 use napi::bindgen_prelude::*;
 
@@ -10,6 +10,7 @@ use crate::{
     Color4f, ConicGradient, Gradient as SkGradient, LinearGradient, RadialGradient, Shader,
     TileMode, Transform, unit_from_u8,
   },
+  webidl::{self, Positional, Site},
 };
 
 #[derive(Debug, Clone)]
@@ -482,54 +483,133 @@ impl CanvasGradient {
   }
 }
 
+/// The arguments of addColorStop(double offset, DOMString color), its last
+/// parameter: it gets the argument count and converts the `Positional`
+/// arguments before it, in order, before napi-rs borrows the gradient, so
+/// valueOf and toString may use it, as in Chrome.
+pub struct AddColorStopArgs {
+  offset: f64,
+  color: String,
+}
+
+impl FromNapiValue for AddColorStopArgs {
+  unsafe fn from_napi_value(env: sys::napi_env, argc: sys::napi_value) -> Result<Self> {
+    let prefix = webidl::GradientAddColorStop::PREFIX;
+    let args = webidl::Arguments::take(env, 2, argc)?;
+    if args.len() < 2 {
+      return Err(webidl::context_type_error(
+        env,
+        prefix,
+        &format!("2 arguments required, but only {} present.", args.len()),
+      ));
+    }
+    let offset = webidl::to_restricted_double(env, args.get(0)?, prefix)?;
+    let color = webidl::to_dom_string(env, args.get(1)?, prefix)?;
+    Ok(Self { offset, color })
+  }
+}
+
+/// A gradient stop color.
+enum StopColor {
+  Color(Color4f),
+  /// A CSS Color 4 form that Chrome accepts and that is not converted yet.
+  Unsupported,
+}
+
+/// A stop color as Blink's ParseCanvasColorString takes it
+/// (canvas_style.cc:61-123): the string without its leading and trailing
+/// HTML spaces; `currentcolor` in any case is opaque black (no element, so
+/// Chrome's OffscreenCanvas answer); a named color must be the whole string
+/// (Color::SetNamedColor takes no comment or escape); anything else must be
+/// one CSS color with nothing after it. None: Blink throws a SyntaxError.
+fn parse_stop_color(color: &str) -> Option<StopColor> {
+  let stripped = color.trim_matches(blink_fast_path::HTML_SPACES);
+  if stripped.eq_ignore_ascii_case("currentcolor") {
+    return Some(StopColor::Color(Color4f::from_rgba8(0, 0, 0, 255)));
+  }
+  let mut parser = Parser::new(stripped);
+  // A leading identifier is a named color: Color::SetNamedColor matches the
+  // bare name only.
+  let starts_with_ident = {
+    let state = parser.state();
+    let ident = matches!(parser.next(), Ok(Token::Ident(_)));
+    parser.reset(&state);
+    ident
+  };
+  if starts_with_ident && !stripped.bytes().all(|b| b.is_ascii_alphabetic()) {
+    return None;
+  }
+  let parsed = CSSColor::parse(&mut parser).ok()?;
+  parser.expect_exhausted().ok()?;
+  Some(StopColor::Color(match parsed {
+    CSSColor::CurrentColor => Color4f::from_rgba8(0, 0, 0, 255),
+    CSSColor::Rgba(rgba) => Color4f::from_rgba8(
+      rgba.red,
+      rgba.green,
+      rgba.blue,
+      (rgba.alpha * 255.0).round() as u8,
+    ),
+    // Blink keeps an hsl() stop as float sRGB (Color::ToGradientStopSkColor4f).
+    CSSColor::Hsl(hsl) => {
+      let [r, g, b] = hsl_color_to_srgb(&hsl);
+      let alpha = hsl.alpha.unwrap_or(1.0);
+      Color4f {
+        r,
+        g,
+        b,
+        a: if blink_rounds_hsl_alpha(color) {
+          unit_from_u8((alpha * 255.0).round() as u8)
+        } else {
+          alpha
+        },
+      }
+    }
+    _ => return Some(StopColor::Unsupported),
+  }))
+}
+
 #[napi]
 impl CanvasGradient {
+  /// addColorStop(offset, color). The index.js wrapper passes the argument
+  /// count after them; see `webidl::Arguments::take`.
   #[napi]
-  pub fn add_color_stop(&mut self, index: f64, color: String) -> Result<()> {
-    if color.is_empty() {
-      return Ok(());
+  pub fn add_color_stop(
+    &mut self,
+    env: &Env,
+    _offset: Positional,
+    _color: Positional,
+    args: AddColorStopArgs,
+  ) -> Result<()> {
+    let prefix = webidl::GradientAddColorStop::PREFIX;
+    let AddColorStopArgs { offset, color } = args;
+    // canvas_gradient.cc:137-158: the range, then the color.
+    if !(0.0..=1.0).contains(&offset) {
+      return Err(webidl::dom_exception(
+        env.raw(),
+        "IndexSizeError",
+        &format!(
+          "{prefix}The provided value ({}) is outside the range (0.0, 1.0).",
+          webidl::number_to_string(offset)
+        ),
+      ));
     }
-    let color_str = color.as_str();
-    let mut parser = Parser::new(color_str);
-    let color = CSSColor::parse(&mut parser).map_err(|e| {
-      Error::new(
-        Status::InvalidArg,
-        format!("Parse color [{color_str}] error: {e:?}"),
-      )
-    })?;
-    let skia_color = match color {
-      // Without an element, currentcolor is opaque black (Chrome's
-      // OffscreenCanvas answer).
-      CSSColor::CurrentColor => Color4f::from_rgba8(0, 0, 0, 255),
-      CSSColor::Rgba(rgba) => Color4f::from_rgba8(
-        rgba.red,                           // Already u8
-        rgba.green,                         // Already u8
-        rgba.blue,                          // Already u8
-        (rgba.alpha * 255.0).round() as u8, // Scale f32 0.0-1.0 to u8 0-255
-      ),
-      // Blink keeps an hsl() stop as float sRGB (Color::ToGradientStopSkColor4f).
-      CSSColor::Hsl(hsl) => {
-        let [r, g, b] = hsl_color_to_srgb(&hsl);
-        let alpha = hsl.alpha.unwrap_or(1.0);
-        Color4f {
-          r,
-          g,
-          b,
-          a: if blink_rounds_hsl_alpha(color_str) {
-            unit_from_u8((alpha * 255.0).round() as u8)
-          } else {
-            alpha
-          },
-        }
-      }
-      _ => {
+    let stop = match parse_stop_color(&color) {
+      Some(StopColor::Color(stop)) => stop,
+      Some(StopColor::Unsupported) => {
         return Err(Error::new(
           Status::InvalidArg,
           "Unsupported color format".to_owned(),
         ));
       }
+      None => {
+        return Err(webidl::dom_exception(
+          env.raw(),
+          "SyntaxError",
+          &format!("{prefix}The value provided ('{color}') could not be parsed as a color."),
+        ));
+      }
     };
-    self.0.borrow_mut().add_color_stop(index as f32, skia_color);
+    self.0.borrow_mut().add_color_stop(offset as f32, stop);
     Ok(())
   }
 }

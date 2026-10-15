@@ -111,3 +111,55 @@ test('one gradient shared by two contexts is live in both', (t) => {
     rgba(['239,0,15,255 207,0,48,255 175,0,79,255 144,0,112,255 111,0,143,255 80,0,176,255 48,0,207,255 16,0,240,255']),
   )
 })
+
+// The offset and color convert before the stop is stored: user code that draws with (and adds
+// stops to) the same gradient meanwhile sees the stops it has at that moment.
+test('drawing from inside the argument conversion of addColorStop', (t) => {
+  const ctx = createCanvas(4, 1).getContext('2d')
+  const g = ctx.createLinearGradient(0, 0, 4, 0)
+  g.addColorStop(0, 'rgb(255, 0, 0)')
+  ctx.fillStyle = g
+  const offset = {
+    valueOf() {
+      ctx.fillRect(0, 0, 4, 1)
+      g.addColorStop(0.5, 'rgb(0, 255, 0)')
+      return 1
+    },
+  }
+  const color = {
+    toString() {
+      ctx.fillRect(0, 0, 2, 1)
+      return 'rgb(0, 0, 255)'
+    },
+  }
+  g.addColorStop(offset as unknown as number, color as unknown as string)
+  t.deepEqual(all(ctx, 4, 1), rgba(['191,63,0,255 64,192,0,255 255,0,0,255 255,0,0,255']))
+  ctx.clearRect(0, 0, 4, 1)
+  ctx.fillRect(0, 0, 4, 1)
+  t.deepEqual(all(ctx, 4, 1), rgba(['191,63,0,255 64,192,0,255 0,191,63,255 0,64,192,255']))
+})
+
+// User code in the conversion may also make the gradient the style and draw with it.
+test('assigning and drawing the gradient from inside the conversion of addColorStop', (t) => {
+  const ctx = createCanvas(4, 1).getContext('2d')
+  const g = ctx.createLinearGradient(0, 0, 4, 0)
+  g.addColorStop(0, {
+    toString() {
+      ctx.strokeStyle = g
+      ctx.fillStyle = g
+      ctx.fillRect(0, 0, 4, 1)
+      return 'red'
+    },
+  } as unknown as string)
+  g.addColorStop(
+    {
+      valueOf() {
+        ctx.fillRect(0, 0, 4, 1)
+        return 1
+      },
+    } as unknown as number,
+    'blue',
+  )
+  ctx.fillRect(3, 0, 1, 1)
+  t.deepEqual(all(ctx, 4, 1), rgba(['255,0,0,255 255,0,0,255 255,0,0,255 32,0,224,255']))
+})
