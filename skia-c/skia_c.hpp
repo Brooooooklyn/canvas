@@ -687,6 +687,11 @@ struct skiac_line_metrics {
   float font_ascent;
   float font_descent;
   float alphabetic_baseline;
+  // The drawn glyph ink, left and right of the anchor x, before a maxWidth
+  // squeeze. Filled only when collect_ink asks for it (the alpha:false
+  // reset); measureText does not, and gets 0 for both.
+  float ink_left;
+  float ink_right;
 };
 
 struct skiac_rect {
@@ -800,6 +805,9 @@ void skiac_surface_create_svg(skiac_svg_surface* c_surface,
                               uint8_t cs);
 void skiac_svg_canvas_flush(skiac_canvas* c_canvas);
 skiac_surface* skiac_surface_create_rgba(int width, int height, uint8_t cs);
+skiac_surface* skiac_surface_create_rgba_opaque(int width,
+                                                int height,
+                                                uint8_t cs);
 void skiac_surface_ref(skiac_surface* c_surface);
 void skiac_surface_destroy(skiac_surface* c_surface);
 skiac_surface* skiac_surface_copy_rgba(skiac_surface* c_surface,
@@ -923,6 +931,7 @@ void skiac_canvas_get_line_metrics_or_draw_text(
     skiac_paint* c_paint,
     skiac_canvas* c_canvas,
     skiac_line_metrics* c_line_metrics,
+    bool collect_ink,
     const skiac_font_variation* variations,
     int variations_count,
     int kerning,
@@ -960,7 +969,8 @@ void skiac_canvas_put_image_data(skiac_canvas* c_canvas,
                                  float dirty_width,
                                  float dirty_height,
                                  uint8_t cs,
-                                 bool snapshot);
+                                 bool snapshot,
+                                 bool opaque);
 void skiac_canvas_draw_picture(skiac_canvas* c_canvas,
                                skiac_picture* c_picture,
                                skiac_matrix* c_matrix,
