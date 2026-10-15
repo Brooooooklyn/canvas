@@ -882,9 +882,23 @@ test('font, letterSpacing, wordSpacing and filter convert with ToString', (t) =>
 test('font, textAlign, textBaseline and shadowColor do not throw on invalid values', (t) => {
   const ctx = loose(context())
   ctx.font = '12px serif'
-  // ctx.font = 5 is left out: the font parser takes the unitless '5' as a
-  // size (the font shorthand item); Chrome ignores it.
-  for (const value of ['bogus', '', null, 'inherit', 'initial', 'var(--x) serif']) {
+  // A number, or a string that is one, is not a font: Chrome 155 keeps the
+  // font.
+  for (const value of [
+    'bogus',
+    '',
+    null,
+    'inherit',
+    'initial',
+    'var(--x) serif',
+    5,
+    0,
+    400,
+    1e21,
+    { toString: () => '5' },
+    '5',
+    '0',
+  ]) {
     t.notThrows(() => {
       ctx.font = value
     })
