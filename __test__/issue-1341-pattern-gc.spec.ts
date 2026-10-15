@@ -333,23 +333,23 @@ console.log('finished without crash')
   t.true(stdout.includes('finished without crash'), `unexpected output:\n${stdout}`)
 })
 
-// createImageData(typedArray) borrows the caller's buffer zero-copy; after the
-// buffer is detached (transfer) the ImageData must throw, not dereference.
+// new ImageData(typedArray) keeps the caller's buffer, as Chrome does; after
+// the buffer is detached (transfer) the ImageData must throw, not dereference.
 test('putImageData on detached ImageData throws instead of crashing', async (t) => {
   const { status, signal, stdout, stderr } = await runInChildProcess(
     `
-const { createCanvas } = require('./index.js')
+const { createCanvas, ImageData } = require('./index.js')
 const ctx = createCanvas(256, 256).getContext('2d')
 const ab = new ArrayBuffer(16 * 16 * 4)
 const ta = new Uint8ClampedArray(ab)
 ta.fill(255)
-const imageData = ctx.createImageData(ta, 16, 16)
+const imageData = new ImageData(ta, 16, 16)
 ab.transfer()
 let threw = false
 try {
   ctx.putImageData(imageData, 0, 0)
 } catch (e) {
-  threw = true
+  threw = e.name === 'InvalidStateError'
 }
 if (!threw) {
   console.error('putImageData did not throw')

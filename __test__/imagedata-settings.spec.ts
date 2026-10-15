@@ -259,23 +259,33 @@ test('createImageData(imagedata) copies size and colorSpace, not data', (t) => {
   }
 })
 
-// Not in Chrome; kept as it was. The array is used as is, not copied.
-test('the non-standard createImageData(Uint8ClampedArray, sw, sh?, settings?) form still works', (t) => {
+// There is no createImageData(Uint8ClampedArray, sw, sh?, settings?): the
+// array is ToNumber'd as sw, as in Chrome. createimagedata-args.spec.ts has
+// the full table.
+test('createImageData has no typed array form', (t) => {
   const ctx = createCanvas(1, 1).getContext('2d', { colorSpace: 'display-p3' })
   const data = new Uint8ClampedArray([1, 2, 3, 4, 5, 6, 7, 8])
-  const withHeight = loose(ctx).createImageData(data, 1, 2)
-  t.is(withHeight.data, data)
-  t.is(withHeight.width, 1)
-  t.is(withHeight.height, 2)
-  t.is(withHeight.colorSpace, 'srgb')
-  const derived = loose(ctx).createImageData(data, 2)
-  t.is(derived.width, 2)
-  t.is(derived.height, 1)
-  t.is(loose(ctx).createImageData(data, 2, 1, { colorSpace: 'display-p3' }).colorSpace, 'display-p3')
-  t.throws(() => loose(ctx).createImageData(data, 2, 1, { colorSpace: 'bogus' }), {
-    instanceOf: TypeError,
-    message: invalidEnum(CREATE_IMAGE_DATA, 'bogus'),
-  })
+  for (const args of [
+    [data, 1, 2],
+    [data, 2],
+    [data, 2, 1, { colorSpace: 'display-p3' }],
+  ]) {
+    t.throws(() => loose(ctx).createImageData(...args), {
+      instanceOf: TypeError,
+      message: `${CREATE_IMAGE_DATA}Value is not of type 'long'.`,
+    })
+  }
+  // The settings are not read when sw is not a long.
+  let reads = 0
+  t.throws(() =>
+    loose(ctx).createImageData(data, 2, 1, {
+      get colorSpace() {
+        reads++
+        return 'bogus'
+      },
+    }),
+  )
+  t.is(reads, 0)
 })
 
 // Chrome 155 stores these formats as Float16Array / Float32Array. Storage here
@@ -293,7 +303,6 @@ test('the float pixel formats are rejected in every ImageData API', (t) => {
     t.throws(() => new ImageData(new Uint8ClampedArray(4), 1, 1, settings), error(CONSTRUCT))
     t.throws(() => new ImageData(new Float32Array(4), 1, 1, settings), error(CONSTRUCT))
     t.throws(() => ctx.createImageData(1, 1, settings), error(CREATE_IMAGE_DATA))
-    t.throws(() => loose(ctx).createImageData(new Uint8ClampedArray(4), 1, 1, settings), error(CREATE_IMAGE_DATA))
     t.throws(() => ctx.getImageData(0, 0, 1, 1, settings), error(GET_IMAGE_DATA))
   }
   const unorm8 = { pixelFormat: 'rgba-unorm8' as const }
@@ -301,7 +310,6 @@ test('the float pixel formats are rejected in every ImageData API', (t) => {
     new ImageData(1, 1, unorm8),
     new ImageData(new Uint8ClampedArray(4), 1, 1, unorm8),
     ctx.createImageData(1, 1, unorm8),
-    loose(ctx).createImageData(new Uint8ClampedArray(4), 1, 1, unorm8),
     ctx.getImageData(0, 0, 1, 1, unorm8),
   ]) {
     t.is(imageData.pixelFormat, 'rgba-unorm8')
@@ -400,12 +408,4 @@ test('createImageData settings getters may use the same context', (t) => {
     }),
   )
   t.is(fromAttributes.colorSpace, 'srgb')
-  // The non-standard data form too.
-  const withData = loose(ctx).createImageData(new Uint8ClampedArray(4), 1, 1, {
-    get colorSpace() {
-      ctx.fillRect(0, 0, 1, 1)
-      return 'display-p3'
-    },
-  })
-  t.is(withData.colorSpace, 'display-p3')
 })
