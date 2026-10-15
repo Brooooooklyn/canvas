@@ -76,7 +76,8 @@ fn style_objects<'a>(ctx: &Object<'a>) -> Result<Option<Object<'a>>> {
 /// Drops the saved style objects from `length` on: after restore() popped the
 /// states that set them, or with `0` when the state stack starts over (reset()
 /// and a width or height change, which Chrome runs through the same Reset:
-/// html_canvas_element.cc).
+/// html_canvas_element.cc; and a lost context, see
+/// `CanvasRenderingContext2D::drop_style_objects_if_lost`).
 pub(crate) fn truncate_style_objects(ctx: &Object, length: u32) -> Result<()> {
   if let Some(mut objects) = style_objects(ctx)?
     && objects.get_array_length_unchecked()? > length
@@ -3619,6 +3620,32 @@ impl ObjectFinalize for CanvasRenderingContext2D {
   }
 }
 
+impl CanvasRenderingContext2D {
+  /// `Context::paint_canvas` for an op on `this`, the context object: when
+  /// the op loses the context, its style objects go too
+  /// (`drop_style_objects_if_lost`).
+  pub(crate) fn paint_canvas(&mut self, this: &Object) -> Result<bool> {
+    let was_lost = self.context.context_lost;
+    let paint = self.context.paint_canvas();
+    self.drop_style_objects_if_lost(was_lost, this)?;
+    Ok(paint)
+  }
+
+  /// After an op that may lose the context (`was_lost`: whether it was lost
+  /// before the op): if the op lost it, drop the gradient and pattern objects
+  /// of `this`, the context object. Blink's LoseContext runs ResetInternal,
+  /// which drops the states and their styles
+  /// (canvas_rendering_context_2d.cc:300-304). `Context::lose_context` cannot
+  /// reach the JS array, and restore() does nothing on a lost context, so no
+  /// later restore drops them.
+  fn drop_style_objects_if_lost(&self, was_lost: bool, this: &Object) -> Result<()> {
+    if !was_lost && self.context.context_lost {
+      truncate_style_objects(this, 0)?;
+    }
+    Ok(())
+  }
+}
+
 /// A fillStyle or strokeStyle value, converted like Chrome's
 /// ExtractV8CanvasStyle (v8_canvas_style.cc): a string, then a CanvasPattern,
 /// then a CanvasGradient, else ToString. The class is chosen by its
@@ -4715,22 +4742,25 @@ impl CanvasRenderingContext2D {
   #[napi]
   pub fn clip(
     &mut self,
+    this: This,
     _path_or_rule: Positional,
     _rule: Positional,
     args: FillArgs<webidl::CtxClip>,
-  ) {
+  ) -> Result<()> {
     // ClipInternal takes the bitmap first (canvas_2d_recorder_context.cc:1824).
-    if !self.context.paint_canvas() {
-      return;
+    if !self.paint_canvas(&this)? {
+      return Ok(());
     }
     self
       .context
       .clip(args.path.map(|p| &mut p.inner), args.rule);
+    Ok(())
   }
 
   #[napi]
   pub fn clear_rect(
     &mut self,
+    this: This,
     x: Double<webidl::CtxClearRect>,
     y: Double<webidl::CtxClearRect>,
     width: Double<webidl::CtxClearRect>,
@@ -4741,7 +4771,7 @@ impl CanvasRenderingContext2D {
     let Some([x, y, width, height]) = num::clamped_f32s([x.0, y.0, width.0, height.0]) else {
       return Ok(());
     };
-    if (width == 0.0 && height == 0.0) || !self.context.paint_canvas() {
+    if (width == 0.0 && height == 0.0) || !self.paint_canvas(&this)? {
       return Ok(());
     }
     self.context.clear_rect(x, y, width, height)?;
@@ -4898,26 +4928,32 @@ impl CanvasRenderingContext2D {
   #[napi]
   pub fn fill(
     &mut self,
+    this: This,
     _path_or_rule: Positional,
     _rule: Positional,
     args: FillArgs<webidl::CtxFill>,
   ) -> Result<()> {
-    self
+    // Context::fill takes the bitmap once the path reaches the draw.
+    let was_lost = self.context.context_lost;
+    let filled = self
       .context
-      .fill(args.path.map(|p| &mut p.inner), args.rule)?;
+      .fill(args.path.map(|p| &mut p.inner), args.rule);
+    self.drop_style_objects_if_lost(was_lost, &this)?;
+    filled?;
     Ok(())
   }
 
   #[napi]
-  pub fn save(&mut self) {
+  pub fn save(&mut self, this: This) -> Result<()> {
     // A lost context saves nothing; then save() takes the bitmap, which may
     // lose the context, and pushes the state anyway
     // (canvas_2d_recorder_context.cc:395-416).
     if self.context.context_lost {
-      return;
+      return Ok(());
     }
-    self.context.paint_canvas();
+    self.paint_canvas(&this)?;
     self.context.save();
+    Ok(())
   }
 
   #[napi(return_if_invalid)]
@@ -4941,25 +4977,32 @@ impl CanvasRenderingContext2D {
   }
 
   #[napi]
-  pub fn rotate(&mut self, angle: Double<webidl::CtxRotate>) {
+  pub fn rotate(&mut self, this: This, angle: Double<webidl::CtxRotate>) -> Result<()> {
     // The transforms take the bitmap first, then a non-finite argument makes
     // the call a no-op (canvas_2d_recorder_context.cc:1354-1482).
-    if !self.context.paint_canvas() {
-      return;
+    if !self.paint_canvas(&this)? {
+      return Ok(());
     }
     if angle.0.is_finite() {
       self.context.rotate(angle.0);
     }
+    Ok(())
   }
 
   #[napi]
-  pub fn scale(&mut self, x: Double<webidl::CtxScale>, y: Double<webidl::CtxScale>) {
-    if !self.context.paint_canvas() {
-      return;
+  pub fn scale(
+    &mut self,
+    this: This,
+    x: Double<webidl::CtxScale>,
+    y: Double<webidl::CtxScale>,
+  ) -> Result<()> {
+    if !self.paint_canvas(&this)? {
+      return Ok(());
     }
     if let Some([x, y]) = num::clamped_f32s([x.0, y.0]) {
       self.context.scale(x, y);
     }
+    Ok(())
   }
 
   /// drawImage(image, dx, dy), (image, dx, dy, dw, dh) or (image, sx, sy,
@@ -4969,6 +5012,7 @@ impl CanvasRenderingContext2D {
   pub fn draw_image(
     &mut self,
     env: &Env,
+    this: This,
     _image: Positional,
     _arg1: Positional,
     _arg2: Positional,
@@ -4991,7 +5035,7 @@ impl CanvasRenderingContext2D {
       <webidl::CtxDrawImage as webidl::Site>::PREFIX,
     )?;
     // Then the bitmap of this canvas (canvas_2d_recorder_context.cc:2228).
-    if !self.context.paint_canvas() {
+    if !self.paint_canvas(&this)? {
       return Ok(());
     }
     // Chrome returns on a non-finite number before it looks at the image,
@@ -5128,6 +5172,7 @@ impl CanvasRenderingContext2D {
   pub fn draw_canvas(
     &mut self,
     env: &Env,
+    this: This,
     canvas: &mut CanvasElement,
     sx: Option<f64>,
     sy: Option<f64>,
@@ -5145,7 +5190,7 @@ impl CanvasRenderingContext2D {
       Some((canvas.width, canvas.height)),
       <webidl::CtxDrawImage as webidl::Site>::PREFIX,
     )?;
-    if !self.context.paint_canvas() || !canvas.ctx.context.has_pixels() {
+    if !self.paint_canvas(&this)? || !canvas.ctx.context.has_pixels() {
       return Ok(());
     }
     // The budget check must run BEFORE get_picture()/the charge below: the
@@ -5346,26 +5391,27 @@ impl CanvasRenderingContext2D {
   #[napi]
   pub fn is_point_in_path(
     &mut self,
+    this: This,
     _arg0: Positional,
     _arg1: Positional,
     _arg2: Positional,
     _arg3: Positional,
     args: IsPointInPathArgs,
-  ) -> bool {
+  ) -> Result<bool> {
     // IsPointInPathInternal takes the bitmap first, then returns false under
     // a singular CTM, else maps the point through the double inverse
     // (canvas_2d_recorder_context.cc:1852-1870).
-    if !self.context.paint_canvas() {
-      return false;
+    if !self.paint_canvas(&this)? {
+      return Ok(false);
     }
     if !self.context.transform_is_invertible() {
-      return false;
+      return Ok(false);
     }
     let (x, y) = blink_inverse_map(&self.context.state.transform, args.x as f32, args.y as f32);
-    match args.path {
+    Ok(match args.path {
       Some(path) => path.inner.hit_test(x, y, args.rule),
       None => self.context.path.hit_test(x, y, args.rule),
-    }
+    })
   }
 
   /// isPointInStroke(x, y) or (path, x, y). The index.js wrapper passes the
@@ -5373,25 +5419,26 @@ impl CanvasRenderingContext2D {
   #[napi]
   pub fn is_point_in_stroke(
     &mut self,
+    this: This,
     _arg0: Positional,
     _arg1: Positional,
     _arg2: Positional,
     args: IsPointInStrokeArgs,
-  ) -> bool {
+  ) -> Result<bool> {
     // As isPointInPath: the bitmap, then the CTM
     // (canvas_2d_recorder_context.cc:1887-1913).
-    if !self.context.paint_canvas() {
-      return false;
+    if !self.paint_canvas(&this)? {
+      return Ok(false);
     }
     if !self.context.transform_is_invertible() {
-      return false;
+      return Ok(false);
     }
     let stroke_w = self.context.get_stroke_width();
     let (x, y) = blink_inverse_map(&self.context.state.transform, args.x as f32, args.y as f32);
-    match args.path {
+    Ok(match args.path {
       Some(path) => path.inner.stroke_hit_test(x, y, stroke_w),
       None => self.context.path.stroke_hit_test(x, y, stroke_w),
-    }
+    })
   }
 
   #[napi]
@@ -5487,6 +5534,7 @@ impl CanvasRenderingContext2D {
   #[napi]
   pub fn fill_rect(
     &mut self,
+    this: This,
     x: Double<webidl::CtxFillRect>,
     y: Double<webidl::CtxFillRect>,
     width: Double<webidl::CtxFillRect>,
@@ -5505,7 +5553,7 @@ impl CanvasRenderingContext2D {
       // ValidateRectForCanvas, then the bitmap (canvas_2d_recorder_context.cc:
       // 1726). A 0 x 0 rect returns first in Chrome; here it keeps its own
       // path, which draws on the stand-in surface without pixels.
-      if (width != 0.0 || height != 0.0) && !self.context.paint_canvas() {
+      if (width != 0.0 || height != 0.0) && !self.paint_canvas(&this)? {
         return Ok(());
       }
       self
@@ -5518,6 +5566,7 @@ impl CanvasRenderingContext2D {
   #[napi]
   pub fn fill_text(
     &mut self,
+    this: This,
     text: webidl::DomString<webidl::CtxFillText>,
     x: Double<webidl::CtxFillText>,
     y: Double<webidl::CtxFillText>,
@@ -5525,7 +5574,7 @@ impl CanvasRenderingContext2D {
   ) -> Result<()> {
     // DrawTextInternal takes the bitmap first, even for an empty text
     // (base_rendering_context_2d.cc:1019).
-    if !self.context.paint_canvas() {
+    if !self.paint_canvas(&this)? {
       return Ok(());
     }
     let (x, y, max_width) = (x.0, y.0, max_width.0);
@@ -5547,14 +5596,18 @@ impl CanvasRenderingContext2D {
   /// stroke() or stroke(path). The index.js wrapper passes the argument
   /// count after it; see `webidl::Arguments::take`.
   #[napi]
-  pub fn stroke(&mut self, _path: Positional, args: StrokeArgs) -> Result<()> {
-    self.context.stroke(args.path.map(|p| &mut p.inner))?;
-    Ok(())
+  pub fn stroke(&mut self, this: This, _path: Positional, args: StrokeArgs) -> Result<()> {
+    // As fill: Context::stroke takes the bitmap.
+    let was_lost = self.context.context_lost;
+    let stroked = self.context.stroke(args.path.map(|p| &mut p.inner));
+    self.drop_style_objects_if_lost(was_lost, &this)?;
+    stroked
   }
 
   #[napi]
   pub fn stroke_rect(
     &mut self,
+    this: This,
     x: Double<webidl::CtxStrokeRect>,
     y: Double<webidl::CtxStrokeRect>,
     width: Double<webidl::CtxStrokeRect>,
@@ -5571,7 +5624,7 @@ impl CanvasRenderingContext2D {
       && !height.is_infinite()
     {
       // As fillRect (canvas_2d_recorder_context.cc:1789).
-      if (width != 0.0 || height != 0.0) && !self.context.paint_canvas() {
+      if (width != 0.0 || height != 0.0) && !self.paint_canvas(&this)? {
         return Ok(());
       }
       self
@@ -5584,12 +5637,13 @@ impl CanvasRenderingContext2D {
   #[napi]
   pub fn stroke_text(
     &mut self,
+    this: This,
     text: webidl::DomString<webidl::CtxStrokeText>,
     x: Double<webidl::CtxStrokeText>,
     y: Double<webidl::CtxStrokeText>,
     max_width: webidl::OptionalDouble<webidl::CtxStrokeText>,
   ) -> Result<()> {
-    if !self.context.paint_canvas() {
+    if !self.paint_canvas(&this)? {
       return Ok(());
     }
     let (x, y, max_width) = (x.0, y.0, max_width.0);
@@ -5710,6 +5764,7 @@ impl CanvasRenderingContext2D {
   pub fn put_image_data(
     &mut self,
     env: Env,
+    this: This,
     _image_data: Positional,
     _dx: Positional,
     _dy: Positional,
@@ -5748,7 +5803,7 @@ impl CanvasRenderingContext2D {
         _ => e,
       })?;
     // Then a canvas without pixels returns (base_rendering_context_2d.cc:557).
-    if !self.context.paint_canvas() {
+    if !self.paint_canvas(&this)? {
       return Ok(());
     }
     if let Some([dirty_x, dirty_y, dirty_width, dirty_height]) = dirty {
@@ -5927,26 +5982,34 @@ impl CanvasRenderingContext2D {
   }
 
   #[napi]
-  pub fn reset_transform(&mut self) {
-    if !self.context.paint_canvas() {
-      return;
+  pub fn reset_transform(&mut self, this: This) -> Result<()> {
+    if !self.paint_canvas(&this)? {
+      return Ok(());
     }
     self.context.reset_transform();
+    Ok(())
   }
 
   #[napi]
-  pub fn translate(&mut self, x: Double<webidl::CtxTranslate>, y: Double<webidl::CtxTranslate>) {
-    if !self.context.paint_canvas() {
-      return;
+  pub fn translate(
+    &mut self,
+    this: This,
+    x: Double<webidl::CtxTranslate>,
+    y: Double<webidl::CtxTranslate>,
+  ) -> Result<()> {
+    if !self.paint_canvas(&this)? {
+      return Ok(());
     }
     if let Some([x, y]) = num::clamped_f32s([x.0, y.0]) {
       self.context.translate(x, y);
     }
+    Ok(())
   }
 
   #[napi]
   pub fn transform(
     &mut self,
+    this: This,
     a: Double<webidl::CtxTransform>,
     b: Double<webidl::CtxTransform>,
     c: Double<webidl::CtxTransform>,
@@ -5954,7 +6017,7 @@ impl CanvasRenderingContext2D {
     e: Double<webidl::CtxTransform>,
     f: Double<webidl::CtxTransform>,
   ) -> Result<()> {
-    if !self.context.paint_canvas() {
+    if !self.paint_canvas(&this)? {
       return Ok(());
     }
     let Some([a, b, c, d, e, f]) = num::clamped_f32s([a.0, b.0, c.0, d.0, e.0, f.0]) else {
@@ -5976,21 +6039,23 @@ impl CanvasRenderingContext2D {
   #[napi]
   pub fn set_transform(
     &mut self,
+    this: This,
     a: webidl::SetTransformA,
     b: Double<webidl::CtxSetTransform>,
     c: Double<webidl::CtxSetTransform>,
     d: Double<webidl::CtxSetTransform>,
     e: Double<webidl::CtxSetTransform>,
     f: Double<webidl::CtxSetTransform>,
-  ) {
+  ) -> Result<()> {
     if let Some([a, b, c, d, e, f]) = num::clamped_f32s(a.0.with([b.0, c.0, d.0, e.0, f.0])) {
       // setTransform checks its numbers, then resetTransform and transform
       // take the bitmap (canvas_2d_recorder_context.cc:1528-1541).
-      if !self.context.paint_canvas() {
-        return;
+      if !self.paint_canvas(&this)? {
+        return Ok(());
       }
       self.context.set_transform(Matrix::new(a, c, e, b, d, f));
     }
+    Ok(())
   }
 
   /// Annotate a rectangular region with a clickable URL link (for PDF documents)

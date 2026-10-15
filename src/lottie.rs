@@ -19,6 +19,24 @@ pub struct LottieRenderRect {
   pub height: f64,
 }
 
+/// The `ctx` argument of `render`: converted as a `&mut
+/// CanvasRenderingContext2D` argument is (the same error for a value that is
+/// not a context, and the same guard against a second borrow while render
+/// runs), plus the context object, which holds the style objects.
+pub struct RenderContext {
+  ctx: &'static mut CanvasRenderingContext2D,
+  object: Object<'static>,
+}
+
+impl FromNapiValue for RenderContext {
+  unsafe fn from_napi_value(env: sys::napi_env, value: sys::napi_value) -> Result<Self> {
+    Ok(Self {
+      ctx: unsafe { CanvasRenderingContext2D::from_napi_mut_ref(env, value) }?,
+      object: unsafe { Object::from_napi_value(env, value) }?,
+    })
+  }
+}
+
 /// Lottie animation loaded from JSON
 #[napi]
 pub struct LottieAnimation {
@@ -132,12 +150,14 @@ impl LottieAnimation {
 
   /// Render current frame to canvas context
   #[napi]
-  pub fn render(&self, ctx: &mut CanvasRenderingContext2D, dst: Option<LottieRenderRect>) {
+  pub fn render(&self, ctx: RenderContext, dst: Option<LottieRenderRect>) -> Result<()> {
+    let RenderContext { ctx, object } = ctx;
     // A frame is a draw: like the context's own draws, it takes the bitmap
     // first, so it draws nothing on a canvas without pixels and loses the
-    // context of an over-limit canvas (`Context::paint_canvas`).
-    if !ctx.context.paint_canvas() {
-      return;
+    // context of an over-limit canvas, with its style objects
+    // (`CanvasRenderingContext2D::paint_canvas`).
+    if !ctx.paint_canvas(&object)? {
+      return Ok(());
     }
     // Skottie draws straight onto the surface. Route through
     // with_surface_canvas so pending recorded ops flush UNDER this frame
@@ -152,5 +172,6 @@ impl LottieAnimation {
       });
       self.inner.render(canvas, rect.as_ref());
     });
+    Ok(())
   }
 }
