@@ -165,11 +165,11 @@ test('createImageData validates sizes in context error mode', (t) => {
     result(() => ctx.createImageData(new ImageData(3, 2))),
     ok(3, 2),
   )
-  // The non-standard createImageData(data, sw) has no Chrome counterpart; a
-  // zero width throws like createImageData(0, sh) instead of dividing by zero.
+  // There is no createImageData(data, sw): the array is ToNumber'd as sw,
+  // and '0,0,0,0' is NaN.
   t.deepEqual(
     result(() => loose(ctx).createImageData(u8(4), 0)),
-    indexSize(CREATE + WIDTH_ZERO),
+    typeError(CREATE + "Value is not of type 'long'."),
   )
 })
 
