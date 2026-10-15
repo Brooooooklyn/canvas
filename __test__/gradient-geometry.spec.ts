@@ -2,7 +2,7 @@
 // measured on arm64 and on x64 (Rosetta); both gave the same values.
 import test from 'ava'
 
-import { createCanvas } from '../index'
+import { createCanvas, SvgExportFlag } from '../index'
 
 type Ctx = ReturnType<ReturnType<typeof createCanvas>['getContext']>
 type G = ReturnType<Ctx['createLinearGradient']>
@@ -203,4 +203,233 @@ test('huge gradient coordinates under a tiny scale', (t) => {
       '128,100,0,255 127,100,0,255 128,100,0,255 127,100,0,255',
     ]),
   )
+})
+
+// Blink kDisallow (gradient.cc): linear p0 == p1, or radial p0 == p1 and r0 == r1 after the f32
+// clamp, is an empty shader: the draw (and its shadow) paints nothing, like a gradient with no stops.
+const DEGENERATE: Record<string, (c: Ctx) => G> = {
+  'linear (2,2)-(2,2)': (c) => c.createLinearGradient(2, 2, 2, 2),
+  'linear (0,0)-(-0,0)': (c) => c.createLinearGradient(0, 0, -0, 0),
+  'linear x1=2+1e-7 (equal as float)': (c) => c.createLinearGradient(2, 2, 2 + 1e-7, 2),
+  'linear 1e39-2e39 (both clamp to FLT_MAX)': (c) => c.createLinearGradient(1e39, 0, 2e39, 0),
+  'radial equal circles r=1': (c) => c.createRadialGradient(2, 2, 1, 2, 2, 1),
+  'radial equal circles r=0': (c) => c.createRadialGradient(2, 2, 0, 2, 2, 0),
+  'radial radii 1e33 and 2e33 (both clamp)': (c) => c.createRadialGradient(2, 2, 1e33, 2, 2, 2e33),
+  'radial equal as float': (c) => c.createRadialGradient(2, 2, 1, 2 + 1e-7, 2, 1 + 1e-8),
+  'radial r1=1+1e-7 (not equal as float)': (c) => c.createRadialGradient(2, 2, 1, 2, 2, 1 + 1e-7),
+}
+const DEGENERATE_EXPECTED: Record<string, { before: number[]; copy: number[] }> = {
+  'linear (2,2)-(2,2)': {
+    before: rgba([
+      '0,128,0,255 0,128,0,255 0,128,0,255 0,128,0,255',
+      '0,128,0,255 0,128,0,255 0,128,0,255 0,128,0,255',
+      '0,128,0,255 0,128,0,255 0,128,0,255 0,128,0,255',
+      '0,128,0,255 0,128,0,255 0,128,0,255 0,128,0,255',
+    ]),
+    copy: rgba([
+      '0,0,0,0 0,0,0,0 0,0,0,0 0,0,0,0',
+      '0,0,0,0 0,0,0,0 0,0,0,0 0,0,0,0',
+      '0,0,0,0 0,0,0,0 0,0,0,0 0,0,0,0',
+      '0,0,0,0 0,0,0,0 0,0,0,0 0,0,0,0',
+    ]),
+  },
+  'linear (0,0)-(-0,0)': {
+    before: rgba([
+      '0,128,0,255 0,128,0,255 0,128,0,255 0,128,0,255',
+      '0,128,0,255 0,128,0,255 0,128,0,255 0,128,0,255',
+      '0,128,0,255 0,128,0,255 0,128,0,255 0,128,0,255',
+      '0,128,0,255 0,128,0,255 0,128,0,255 0,128,0,255',
+    ]),
+    copy: rgba([
+      '0,0,0,0 0,0,0,0 0,0,0,0 0,0,0,0',
+      '0,0,0,0 0,0,0,0 0,0,0,0 0,0,0,0',
+      '0,0,0,0 0,0,0,0 0,0,0,0 0,0,0,0',
+      '0,0,0,0 0,0,0,0 0,0,0,0 0,0,0,0',
+    ]),
+  },
+  'linear x1=2+1e-7 (equal as float)': {
+    before: rgba([
+      '0,128,0,255 0,128,0,255 0,128,0,255 0,128,0,255',
+      '0,128,0,255 0,128,0,255 0,128,0,255 0,128,0,255',
+      '0,128,0,255 0,128,0,255 0,128,0,255 0,128,0,255',
+      '0,128,0,255 0,128,0,255 0,128,0,255 0,128,0,255',
+    ]),
+    copy: rgba([
+      '0,0,0,0 0,0,0,0 0,0,0,0 0,0,0,0',
+      '0,0,0,0 0,0,0,0 0,0,0,0 0,0,0,0',
+      '0,0,0,0 0,0,0,0 0,0,0,0 0,0,0,0',
+      '0,0,0,0 0,0,0,0 0,0,0,0 0,0,0,0',
+    ]),
+  },
+  'linear 1e39-2e39 (both clamp to FLT_MAX)': {
+    before: rgba([
+      '0,128,0,255 0,128,0,255 0,128,0,255 0,128,0,255',
+      '0,128,0,255 0,128,0,255 0,128,0,255 0,128,0,255',
+      '0,128,0,255 0,128,0,255 0,128,0,255 0,128,0,255',
+      '0,128,0,255 0,128,0,255 0,128,0,255 0,128,0,255',
+    ]),
+    copy: rgba([
+      '0,0,0,0 0,0,0,0 0,0,0,0 0,0,0,0',
+      '0,0,0,0 0,0,0,0 0,0,0,0 0,0,0,0',
+      '0,0,0,0 0,0,0,0 0,0,0,0 0,0,0,0',
+      '0,0,0,0 0,0,0,0 0,0,0,0 0,0,0,0',
+    ]),
+  },
+  'radial equal circles r=1': {
+    before: rgba([
+      '0,128,0,255 0,128,0,255 0,128,0,255 0,128,0,255',
+      '0,128,0,255 0,128,0,255 0,128,0,255 0,128,0,255',
+      '0,128,0,255 0,128,0,255 0,128,0,255 0,128,0,255',
+      '0,128,0,255 0,128,0,255 0,128,0,255 0,128,0,255',
+    ]),
+    copy: rgba([
+      '0,0,0,0 0,0,0,0 0,0,0,0 0,0,0,0',
+      '0,0,0,0 0,0,0,0 0,0,0,0 0,0,0,0',
+      '0,0,0,0 0,0,0,0 0,0,0,0 0,0,0,0',
+      '0,0,0,0 0,0,0,0 0,0,0,0 0,0,0,0',
+    ]),
+  },
+  'radial equal circles r=0': {
+    before: rgba([
+      '0,128,0,255 0,128,0,255 0,128,0,255 0,128,0,255',
+      '0,128,0,255 0,128,0,255 0,128,0,255 0,128,0,255',
+      '0,128,0,255 0,128,0,255 0,128,0,255 0,128,0,255',
+      '0,128,0,255 0,128,0,255 0,128,0,255 0,128,0,255',
+    ]),
+    copy: rgba([
+      '0,0,0,0 0,0,0,0 0,0,0,0 0,0,0,0',
+      '0,0,0,0 0,0,0,0 0,0,0,0 0,0,0,0',
+      '0,0,0,0 0,0,0,0 0,0,0,0 0,0,0,0',
+      '0,0,0,0 0,0,0,0 0,0,0,0 0,0,0,0',
+    ]),
+  },
+  'radial radii 1e33 and 2e33 (both clamp)': {
+    before: rgba([
+      '0,128,0,255 0,128,0,255 0,128,0,255 0,128,0,255',
+      '0,128,0,255 0,128,0,255 0,128,0,255 0,128,0,255',
+      '0,128,0,255 0,128,0,255 0,128,0,255 0,128,0,255',
+      '0,128,0,255 0,128,0,255 0,128,0,255 0,128,0,255',
+    ]),
+    copy: rgba([
+      '0,0,0,0 0,0,0,0 0,0,0,0 0,0,0,0',
+      '0,0,0,0 0,0,0,0 0,0,0,0 0,0,0,0',
+      '0,0,0,0 0,0,0,0 0,0,0,0 0,0,0,0',
+      '0,0,0,0 0,0,0,0 0,0,0,0 0,0,0,0',
+    ]),
+  },
+  'radial equal as float': {
+    before: rgba([
+      '0,128,0,255 0,128,0,255 0,128,0,255 0,128,0,255',
+      '0,128,0,255 0,128,0,255 0,128,0,255 0,128,0,255',
+      '0,128,0,255 0,128,0,255 0,128,0,255 0,128,0,255',
+      '0,128,0,255 0,128,0,255 0,128,0,255 0,128,0,255',
+    ]),
+    copy: rgba([
+      '0,0,0,0 0,0,0,0 0,0,0,0 0,0,0,0',
+      '0,0,0,0 0,0,0,0 0,0,0,0 0,0,0,0',
+      '0,0,0,0 0,0,0,0 0,0,0,0 0,0,0,0',
+      '0,0,0,0 0,0,0,0 0,0,0,0 0,0,0,0',
+    ]),
+  },
+  'radial r1=1+1e-7 (not equal as float)': {
+    before: rgba([
+      '0,0,255,255 32,0,223,255 64,0,191,255 191,0,64,255',
+      '0,0,255,255 255,0,0,255 255,0,0,255 127,0,128,255',
+      '0,0,255,255 255,0,0,255 255,0,0,255 127,0,128,255',
+      '0,96,64,255 32,48,128,255 64,32,128,255 96,48,64,255',
+    ]),
+    copy: rgba([
+      '0,0,0,0 0,0,0,0 0,0,0,0 0,0,0,0',
+      '0,0,0,0 255,0,0,255 255,0,0,255 0,0,0,0',
+      '0,0,0,0 255,0,0,255 255,0,0,255 0,0,0,0',
+      '0,0,0,0 0,0,0,0 0,0,0,0 0,0,0,0',
+    ]),
+  },
+}
+
+for (const [name, make] of Object.entries(DEGENERATE)) {
+  test(`degenerate gradient: ${name}`, (t) => {
+    const ctx = createCanvas(4, 4).getContext('2d')
+    ctx.fillStyle = 'rgb(0, 128, 0)'
+    ctx.fillRect(0, 0, 4, 4)
+    const g = redBlue(make(ctx))
+    ctx.fillStyle = g
+    ctx.strokeStyle = g
+    ctx.shadowColor = 'rgb(255, 0, 0)'
+    ctx.shadowOffsetX = 1
+    ctx.fillRect(0, 0, 3, 3)
+    ctx.strokeRect(1, 1, 2, 2)
+    const before = all(ctx, 4, 4)
+    ctx.shadowColor = 'rgba(0, 0, 0, 0)'
+    ctx.globalCompositeOperation = 'copy'
+    ctx.fillRect(1, 1, 2, 2)
+    t.deepEqual({ before, copy: all(ctx, 4, 4) }, DEGENERATE_EXPECTED[name])
+  })
+}
+
+// Nearly degenerate still paints (Skia's own handling of tiny gradients).
+const NEAR: Record<string, (c: Ctx) => G> = {
+  'linear x1=2.00001': (c) => c.createLinearGradient(2, 2, 2.00001, 2),
+  'radial r1=1.00001': (c) => c.createRadialGradient(2, 2, 1, 2, 2, 1.00001),
+  'radial x1=2.00001': (c) => c.createRadialGradient(2, 2, 1, 2.00001, 2, 1),
+}
+const NEAR_EXPECTED: Record<string, number[]> = {
+  'linear x1=2.00001': rgba([
+    '0,0,255,255 0,0,255,255 0,0,255,255 0,0,255,255',
+    '0,0,255,255 0,0,255,255 0,0,255,255 0,0,255,255',
+    '0,0,255,255 0,0,255,255 0,0,255,255 0,0,255,255',
+    '0,0,255,255 0,0,255,255 0,0,255,255 0,0,255,255',
+  ]),
+  'radial r1=1.00001': rgba([
+    '0,0,255,255 0,0,255,255 0,0,255,255 0,0,255,255',
+    '0,0,255,255 255,0,0,255 255,0,0,255 0,0,255,255',
+    '0,0,255,255 255,0,0,255 255,0,0,255 0,0,255,255',
+    '0,0,255,255 0,0,255,255 0,0,255,255 0,0,255,255',
+  ]),
+  'radial x1=2.00001': rgba([
+    '0,0,255,255 0,0,255,255 0,0,255,255 0,0,255,255',
+    '0,0,255,255 255,0,0,255 255,0,0,255 0,0,255,255',
+    '0,0,255,255 255,0,0,255 255,0,0,255 0,0,255,255',
+    '0,0,255,255 0,0,255,255 0,0,255,255 0,0,255,255',
+  ]),
+}
+
+for (const [name, make] of Object.entries(NEAR)) {
+  test(`nearly degenerate gradient paints: ${name}`, (t) => {
+    const ctx = createCanvas(4, 4).getContext('2d')
+    ctx.fillStyle = 'rgb(0, 128, 0)'
+    ctx.fillRect(0, 0, 4, 4)
+    ctx.fillStyle = redBlue(make(ctx))
+    ctx.fillRect(0, 0, 4, 4)
+    t.deepEqual(all(ctx, 4, 4), NEAR_EXPECTED[name])
+  })
+}
+
+// A degenerate gradient paints no text either, and with destination-out it clears nothing.
+test('a degenerate gradient paints no text and keeps the destination under destination-out', (t) => {
+  const ctx = createCanvas(16, 16).getContext('2d')
+  ctx.fillStyle = 'rgb(0, 128, 0)'
+  ctx.fillRect(0, 0, 16, 16)
+  ctx.fillStyle = redBlue(ctx.createLinearGradient(3, 3, 3, 3))
+  ctx.font = '16px sans-serif'
+  ctx.fillText('MW', 0, 14)
+  t.is(all(ctx, 16, 16).filter((v, i) => i % 4 === 0 && v !== 0).length, 0)
+  ctx.scale(2, 2)
+  ctx.globalCompositeOperation = 'destination-out'
+  ctx.fillRect(0, 0, 8, 8)
+  t.deepEqual(px(ctx, 5, 5), [0, 128, 0, 255])
+})
+
+// SVG has no Chrome counterpart: the SVG must look like Chrome's raster, which paints nothing.
+test('svg export of a degenerate gradient draws nothing', (t) => {
+  for (const make of [
+    (c: Ctx) => c.createLinearGradient(5, 5, 5, 5),
+    (c: Ctx) => c.createRadialGradient(20, 20, 5, 20, 20, 5),
+  ]) {
+    const svg = createCanvas(40, 40, SvgExportFlag.NoPrettyXML)
+    const ctx = svg.getContext('2d') as unknown as Ctx
+    ctx.fillStyle = redBlue(make(ctx))
+    ctx.fillRect(0, 0, 40, 40)
+    t.notRegex(svg.getContent().toString('utf8'), /<rect|<path/)
+  }
 })
