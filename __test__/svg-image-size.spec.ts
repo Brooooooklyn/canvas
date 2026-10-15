@@ -794,6 +794,52 @@ test('a large rotated or skewed svg draw keeps its edges sharp like Chrome', asy
   }
 })
 
+// Under a skew that keeps the columns of the image vertical, a lean of up to
+// 0.3 rasters it at the column spacing, which keeps vertical edges on device
+// pixels; a bigger lean at the length of the axis, since at the spacing a
+// line thinner than a raster pixel came out up to 100 darker. 300x150 canvas,
+// a 1000x1000 SVG with a vertical <line> at x = 510.5, its center drawn at the
+// canvas center; the alpha at x = 150..161 of rows 0, 75 and 149 (the same on
+// each), measured in Chrome 155. Through a bigger skew the raster blurs the
+// line a little: each alpha within 32 of Chrome's and their sum within 20.
+const skewedLines: [string, [number, number, number, number], number, number[], number][] = [
+  ['setTransform(1, 0.3, 0, 1, 0, 0), width 1.5', [1, 0.3, 0, 1], 1.5, [0, 0, 0, 0, 0, 0, 0, 0, 0, 64, 255, 64], 0],
+  [
+    'setTransform(0.6, 0.4, 0, 0.9, 0, 0), width 1.5',
+    [0.6, 0.4, 0, 0.9],
+    1.5,
+    [0, 0, 0, 0, 0, 39, 191, 0, 0, 0, 0, 0],
+    32,
+  ],
+  ['setTransform(0.6, 0.4, 0, 0.9, 0, 0), width 1', [0.6, 0.4, 0, 0.9], 1, [0, 0, 0, 0, 0, 43, 172, 0, 0, 0, 0, 0], 32],
+]
+
+test('a skewed svg draw keeps thin lines about as dark as Chrome', async (t) => {
+  for (const [name, [a, b, c, d], width, chrome, tolerance] of skewedLines) {
+    const image = await loaded(
+      svg(
+        'width="1000" height="1000"',
+        `<line x1="510.5" y1="100" x2="510.5" y2="900" stroke="#000" stroke-width="${width}"/>`,
+      ),
+    )
+    const ctx = createCanvas(300, 150).getContext('2d')
+    ctx.setTransform(a, b, c, d, 0, 0)
+    const det = a * d - b * c
+    ctx.drawImage(image, (d * 150 - c * 75) / det - 500, (a * 75 - b * 150) / det - 500)
+    const data = ctx.getImageData(0, 0, 300, 150).data
+    const sum = (values: number[]) => values.reduce((total, value) => total + value, 0)
+    const sumTolerance = tolerance ? 20 : 0
+    for (const y of [0, 75, 149]) {
+      const alpha = chrome.map((_, i) => data[(y * 300 + 150 + i) * 4 + 3])
+      t.true(
+        alpha.every((value, i) => Math.abs(value - chrome[i]) <= tolerance) &&
+          Math.abs(sum(alpha) - sum(chrome)) <= sumTolerance,
+        `${name}, y = ${y}: ${alpha} (Chrome ${chrome})`,
+      )
+    }
+  }
+})
+
 // That part is the canvas plus 256 px, grown in 256 px steps only for a
 // shadow or filter that reaches further. A shadow or filter that reaches less
 // keeps the raster of the draw without one, so an animated small shadow or
