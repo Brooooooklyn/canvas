@@ -1,6 +1,6 @@
 use napi::bindgen_prelude::*;
 
-use crate::ctx::check_radius;
+use crate::ctx::{check_radius, is_path2d, not_path2d};
 use crate::num;
 use crate::sk::{
   FillType as SkFillType, Matrix as SkMatrix, Path as SkPath, PathOp as SkPathOp, SkiaString,
@@ -148,17 +148,26 @@ impl Path {
     Ok(Path { inner })
   }
 
+  /// addPath(path, transform = {}) (Blink path_2d.h:80-91). The index.js
+  /// wrapper checks the argument count.
   #[napi]
-  pub fn add_path(&mut self, sub_path: &Path, matrix: Option<Matrix>) {
-    let transform = match matrix {
-      // A non-finite matrix adds nothing (Blink path_2d.h addPath).
-      Some(m) if ![m.a, m.b, m.c, m.d, m.e, m.f].iter().all(|v| v.is_finite()) => return,
-      Some(m) => SkMatrix::new(
-        m.a as f32, m.c as f32, m.e as f32, m.b as f32, m.d as f32, m.f as f32,
-      ),
-      None => SkMatrix::identity(),
-    };
-    self.inner.add_path(&sub_path.inner, &transform);
+  pub fn add_path(&mut self, path: AddPathSource, transform: AddPathTransform) {
+    let [a, b, c, d, e, f] = transform.0;
+    // A non-finite matrix adds nothing.
+    if ![a, b, c, d, e, f].iter().all(|v| v.is_finite()) {
+      return;
+    }
+    let matrix = SkMatrix::new(a as f32, c as f32, e as f32, b as f32, d as f32, f as f32);
+    // The path is read now, after the matrix getters ran, as in Chrome. It
+    // may be this path.
+    if std::ptr::eq(path.0, self) {
+      let source = self.inner.clone();
+      self.inner.add_path(&source, &matrix);
+    } else {
+      // SAFETY: a live Path2D other than the receiver (AddPathSource).
+      let source = unsafe { &*path.0 };
+      self.inner.add_path(&source.inner, &matrix);
+    }
   }
 
   #[napi]
@@ -451,6 +460,35 @@ impl Path {
       y as f32,
       fill_type.unwrap_or(FillType::Winding).into(),
     )
+  }
+}
+
+/// The `path` argument of addPath(): a Path2D, else "parameter 1 is not of
+/// type 'Path2D'.", before the matrix is converted. Kept as a pointer: the
+/// method reads the path only after the matrix getters ran, and it may be the
+/// receiver, which the method borrows mutably.
+pub struct AddPathSource(*const Path);
+
+impl FromNapiValue for AddPathSource {
+  unsafe fn from_napi_value(env: sys::napi_env, value: sys::napi_value) -> Result<Self> {
+    let prefix = <webidl::PathAddPath as webidl::Site>::PREFIX;
+    if !is_path2d(env, value) {
+      return Err(not_path2d(env, prefix));
+    }
+    let mut data = std::ptr::null_mut();
+    check_status!(unsafe { sys::napi_unwrap(env, value, &mut data) })?;
+    Ok(Self(data.cast()))
+  }
+}
+
+/// The `transform` argument of addPath(): `optional DOMMatrix2DInit
+/// transform = {}`, as [m11, m12, m21, m22, m41, m42].
+pub struct AddPathTransform([f64; 6]);
+
+impl FromNapiValue for AddPathTransform {
+  unsafe fn from_napi_value(env: sys::napi_env, value: sys::napi_value) -> Result<Self> {
+    let prefix = <webidl::PathAddPath as webidl::Site>::PREFIX;
+    webidl::dom_matrix_2d_init(env, Some(value), prefix).map(Self)
   }
 }
 

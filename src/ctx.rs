@@ -3470,7 +3470,7 @@ impl<S: webidl::Site> FromNapiValue for CanvasStyleArg<'static, S> {
 /// and is not checked further: Chrome's wrapper type check runs no user code
 /// (Path2D[Symbol.hasInstance]), and a failed instanceof check costs the
 /// formatted message of a napi-rs error.
-fn is_path2d(env: sys::napi_env, value: sys::napi_value) -> bool {
+pub(crate) fn is_path2d(env: sys::napi_env, value: sys::napi_value) -> bool {
   matches!(webidl::type_of(env, value), Ok(ValueType::Object))
     && unsafe { <&Path as ValidateNapiValue>::validate(env, value) }.is_ok()
     && has_native_object(env, value)
@@ -3482,7 +3482,7 @@ fn has_native_object(env: sys::napi_env, value: sys::napi_value) -> bool {
   unsafe { sys::napi_unwrap(env, value, &mut data) == sys::Status::napi_ok && !data.is_null() }
 }
 
-fn not_path2d(env: sys::napi_env, prefix: &str) -> Error {
+pub(crate) fn not_path2d(env: sys::napi_env, prefix: &str) -> Error {
   webidl::context_type_error(env, prefix, "parameter 1 is not of type 'Path2D'.")
 }
 

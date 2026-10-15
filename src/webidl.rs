@@ -275,6 +275,7 @@ sites! {
   PathEllipse: execute "ellipse" on "Path2D";
   PathRect: execute "rect" on "Path2D";
   PathRoundRect: execute "roundRect" on "Path2D";
+  PathAddPath: execute "addPath" on "Path2D";
   CanvasGetContext: execute "getContext" on "HTMLCanvasElement";
   SvgCanvasGetContext: execute "getContext" on "SVGCanvas";
   CanvasSetWidth: set "width" on "HTMLCanvasElement";
