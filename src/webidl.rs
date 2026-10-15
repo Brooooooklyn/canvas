@@ -5,7 +5,7 @@
 //! `Status::PendingException`; napi-rs then keeps the pending exception.
 
 use std::{
-  cell::{RefCell, UnsafeCell},
+  cell::{Cell, RefCell, UnsafeCell},
   marker::PhantomData,
   ptr,
 };
@@ -1347,40 +1347,138 @@ fn is_es_iterable_object(env: sys::napi_env, value: sys::napi_value, prefix: &st
 const MAX_RADII_SEQUENCE_LENGTH: u32 =
   (crate::image::MAX_DATA_BYTES / std::mem::size_of::<u32>()) as u32;
 
-/// The `radii` argument of roundRect(). Blink declares two overloads
-/// (canvas_path.idl:16-17): `sequence<(unrestricted double or DOMPointInit)>
-/// radii`, and `optional (unrestricted double or DOMPointInit) radii = 0`.
-/// Overload resolution picks the sequence for an Array, or for another
-/// object whose @@iterator is callable ([`is_es_iterable_object`]), and the
-/// sequence is then converted as any `sequence<T>` ([`sequence`]: an Array
-/// by index, never with its @@iterator; another iterable with its
-/// @@iterator, read a second time). Undefined is the default 0; anything
-/// else is one radius. Converted in the callback glue, so a getter may use
-/// the receiver, as in Chrome.
-pub struct RoundRectRadii<S>(pub(crate) Vec<Radius>, PhantomData<S>);
+/// The roundRect() coordinates that are not numbers, recorded by
+/// [`RoundRectCoordinate`] for [`RoundRectRadii`], the last parameter of
+/// the same call: bit `I` of `mask` is set when coordinate `I` is in
+/// `values[I]`. They are argument values of that call, alive until it
+/// returns.
+struct PendingCoordinates {
+  mask: Cell<u8>,
+  values: Cell<[sys::napi_value; 4]>,
+}
 
-impl<S: Site> FromNapiValue for RoundRectRadii<S> {
+thread_local! {
+  static PENDING_COORDINATES: PendingCoordinates = const {
+    PendingCoordinates {
+      mask: Cell::new(0),
+      values: Cell::new([ptr::null_mut(); 4]),
+    }
+  };
+}
+
+/// x, y, w or h of roundRect() (`I`: 0 to 3), an `unrestricted double`.
+/// Chrome picks the roundRect overload from the radii before it converts
+/// these, and the pick may run user code ([`RoundRectRadii`]). napi-rs
+/// converts the parameters in order, so this keeps a number, which runs no
+/// user code, and leaves any other value (None here) to [`RoundRectRadii`],
+/// which converts it after the pick.
+pub struct RoundRectCoordinate<const I: usize>(pub(crate) Option<f64>);
+
+impl<const I: usize> FromNapiValue for RoundRectCoordinate<I> {
   unsafe fn from_napi_value(env: sys::napi_env, value: sys::napi_value) -> Result<Self> {
     let mut number = 0.0;
     if unsafe { sys::napi_get_value_double(env, value, &mut number) } == sys::Status::napi_ok {
-      return Ok(Self(vec![Radius::Number(number)], PhantomData));
+      return Ok(Self(Some(number)));
     }
-    let radii = match raw_type_of(env, value)? {
-      sys::ValueType::napi_undefined => vec![Radius::Number(0.0)],
-      sys::ValueType::napi_object | sys::ValueType::napi_function => {
-        let mut is_array = false;
-        check_status!(unsafe { sys::napi_is_array(env, value, &mut is_array) })?;
-        if is_array || is_es_iterable_object(env, value, S::PREFIX)? {
-          sequence(env, value, S::PREFIX, MAX_RADII_SEQUENCE_LENGTH, |item| {
-            radius(env, item, S::PREFIX)
-          })?
-        } else {
-          vec![radius(env, value, S::PREFIX)?]
+    PENDING_COORDINATES.with(|pending| {
+      let mut values = pending.values.get();
+      values[I] = value;
+      pending.values.set(values);
+      pending.mask.set(pending.mask.get() | 1 << I);
+    });
+    Ok(Self(None))
+  }
+}
+
+/// Which roundRect overload the radii pick.
+enum RoundRectOverload {
+  /// `sequence<(unrestricted double or DOMPointInit)> radii`.
+  Sequence,
+  /// `optional (unrestricted double or DOMPointInit) radii = 0`.
+  One,
+  /// The same, with a number: the radii, or the default 0 for undefined.
+  Number(f64),
+}
+
+/// The `radii` argument of roundRect(), and the coordinates that
+/// [`RoundRectCoordinate`] left to convert. Blink declares two overloads
+/// (canvas_path.idl:16-17): `sequence<(unrestricted double or DOMPointInit)>
+/// radii`, and `optional (unrestricted double or DOMPointInit) radii = 0`.
+/// Overload resolution (bind_gen/interface.py:1075-1292) looks only at the
+/// radii, before any argument is converted: undefined picks the default 0;
+/// an Array, or another object whose @@iterator is callable
+/// ([`is_es_iterable_object`], one read, which may throw), the sequence;
+/// anything else one radius. Then x, y, w and h are converted, and then the
+/// radii: a sequence as any `sequence<T>` ([`sequence`]: an Array by index,
+/// never with its @@iterator; another iterable with its @@iterator, read a
+/// second time). Converted in the callback glue, so a getter may use the
+/// receiver, as in Chrome.
+pub struct RoundRectRadii<S> {
+  pub(crate) radii: Vec<Radius>,
+  /// The coordinates converted here, by index; only those that
+  /// [`RoundRectCoordinate`] recorded are set.
+  coordinates: [f64; 4],
+  site: PhantomData<S>,
+}
+
+impl<S> RoundRectRadii<S> {
+  /// x, y, w and h, from what their [`RoundRectCoordinate`] took.
+  pub(crate) fn rect(&self, taken: [Option<f64>; 4]) -> [f64; 4] {
+    std::array::from_fn(|index| taken[index].unwrap_or(self.coordinates[index]))
+  }
+}
+
+impl<S: Site> FromNapiValue for RoundRectRadii<S> {
+  unsafe fn from_napi_value(env: sys::napi_env, value: sys::napi_value) -> Result<Self> {
+    // Taken before any user code runs, which may make a call of its own.
+    let (mask, pending) = PENDING_COORDINATES.with(|pending| match pending.mask.get() {
+      0 => (0, [ptr::null_mut(); 4]),
+      mask => {
+        pending.mask.set(0);
+        (mask, pending.values.get())
+      }
+    });
+    let mut number = 0.0;
+    let overload =
+      if unsafe { sys::napi_get_value_double(env, value, &mut number) } == sys::Status::napi_ok {
+        RoundRectOverload::Number(number)
+      } else {
+        match raw_type_of(env, value)? {
+          sys::ValueType::napi_undefined => RoundRectOverload::Number(0.0),
+          sys::ValueType::napi_object | sys::ValueType::napi_function => {
+            let mut is_array = false;
+            check_status!(unsafe { sys::napi_is_array(env, value, &mut is_array) })?;
+            if is_array || is_es_iterable_object(env, value, S::PREFIX)? {
+              RoundRectOverload::Sequence
+            } else {
+              RoundRectOverload::One
+            }
+          }
+          _ => RoundRectOverload::One,
+        }
+      };
+    let mut coordinates = [0.0; 4];
+    if mask != 0 {
+      for (index, coordinate) in coordinates.iter_mut().enumerate() {
+        if mask & 1 << index != 0 {
+          *coordinate = to_number(env, pending[index], S::PREFIX)?;
         }
       }
-      _ => vec![radius(env, value, S::PREFIX)?],
+    }
+    let radii = match overload {
+      RoundRectOverload::Sequence => {
+        sequence(env, value, S::PREFIX, MAX_RADII_SEQUENCE_LENGTH, |item| {
+          radius(env, item, S::PREFIX)
+        })?
+      }
+      RoundRectOverload::One => vec![radius(env, value, S::PREFIX)?],
+      RoundRectOverload::Number(number) => vec![Radius::Number(number)],
     };
-    Ok(Self(radii, PhantomData))
+    Ok(Self {
+      radii,
+      coordinates,
+      site: PhantomData,
+    })
   }
 }
 

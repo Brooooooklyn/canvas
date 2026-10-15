@@ -4649,18 +4649,18 @@ impl CanvasRenderingContext2D {
   pub fn round_rect(
     &mut self,
     env: &Env,
-    x: Double<webidl::CtxRoundRect>,
-    y: Double<webidl::CtxRoundRect>,
-    width: Double<webidl::CtxRoundRect>,
-    height: Double<webidl::CtxRoundRect>,
+    x: webidl::RoundRectCoordinate<0>,
+    y: webidl::RoundRectCoordinate<1>,
+    width: webidl::RoundRectCoordinate<2>,
+    height: webidl::RoundRectCoordinate<3>,
     radii: webidl::RoundRectRadii<webidl::CtxRoundRect>,
   ) -> Result<()> {
     if let Some(([x, y, width, height], radii)) = check_round_rect(
       env.raw(),
       <webidl::CtxRoundRect as webidl::Site>::PREFIX,
       self.context.transform_is_invertible(),
-      [x.0, y.0, width.0, height.0],
-      &radii.0,
+      radii.rect([x.0, y.0, width.0, height.0]),
+      &radii.radii,
     )? {
       self.context.round_rect(x, y, width, height, &radii);
     }

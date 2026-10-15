@@ -815,6 +815,220 @@ test('roundRect steps an iterator like Chrome and never calls its return()', (t)
   t.is(log.join(), 'A.w,A.x,A.y,A.z,B.w,B.x,B.y,B.z')
 })
 
+// Chrome picks the roundRect overload from the radii (IsArray, then one
+// @@iterator read) before it converts x, y, w and h (overload resolution in
+// bind_gen/interface.py), and converts the radii after them.
+test('roundRect picks its overload from the radii before it converts x, y, w and h', (t) => {
+  const log: string[] = []
+  const logged = (name: string, value: number) => ({
+    valueOf() {
+      log.push(name)
+      return value
+    },
+  })
+  const xywh = () => [logged('x', 2), logged('y', 2), logged('w', 60), logged('h', 44)]
+  /** `target` with a logged @@iterator getter that returns `method`. */
+  const iterator = <T extends object>(target: T, method: unknown) =>
+    Object.defineProperty(target, Symbol.iterator, {
+      get() {
+        log.push('@@iterator')
+        return method
+      },
+    })
+  const values = (...items: unknown[]) =>
+    function* () {
+      log.push('iterate')
+      yield* items
+    }
+  const logGets = <T extends object>(name: string, target: T) =>
+    new Proxy(target, {
+      get(target, key, receiver) {
+        log.push(name + '.' + String(key))
+        return Reflect.get(target, key, receiver)
+      },
+    })
+  /** A function is an object: a DOMPointInit when not iterable. */
+  const pointFunction = () => Object.assign(function () {}, { x: 7 })
+  /** roundRect(...args()) on a 64x48 context, or on a Path2D filled there. */
+  const run = (args: () => unknown[], onPath: boolean) => {
+    log.length = 0
+    const ctx = createCanvas(64, 48).getContext('2d')
+    const path = new Path2D()
+    const error = thrown(() => ((onPath ? path : ctx).roundRect as any)(...args()))
+    if (onPath) ctx.fill(path)
+    else ctx.fill()
+    return { error, ...ink(ctx), log: log.join(' ') }
+  }
+  const drawn = (sum: number, order: string) => ({ error: null, box: [2, 2, 61, 45], sum, log: order })
+  const cases: [string, () => unknown[], (prefix: string) => ReturnType<typeof run>][] = [
+    [
+      'an iterable',
+      () => [...xywh(), iterator({}, values(logGets('r', { x: 5, y: 9 }), 7))],
+      () => drawn(662017, '@@iterator x y w h @@iterator iterate r.w r.x r.y r.z'),
+    ],
+    [
+      'a DOMPointInit',
+      () => [...xywh(), logGets('r', { x: 6, y: 9 })],
+      () => drawn(660063, 'r.Symbol(Symbol.iterator) x y w h r.w r.x r.y r.z'),
+    ],
+    ['@@iterator null', () => [...xywh(), iterator({ x: 6, y: 9 }, null)], () => drawn(660063, '@@iterator x y w h')],
+    [
+      'a function',
+      () => [...xywh(), iterator(logGets('r', pointFunction()), undefined)],
+      () => drawn(673200, 'r.Symbol(Symbol.iterator) @@iterator x y w h r.w r.x r.y r.z'),
+    ],
+    [
+      'a Proxy of an Array',
+      () => [...xywh(), logGets('r', [5, 10])],
+      () =>
+        drawn(658116, 'r.Symbol(Symbol.iterator) x y w h r.Symbol(Symbol.iterator) r.length r.0 r.length r.1 r.length'),
+    ],
+    [
+      'a typed array',
+      () => [...xywh(), iterator(new Float64Array([5, 8]), Float64Array.prototype.values)],
+      () => drawn(662984, '@@iterator x y w h @@iterator'),
+    ],
+    // An Array is picked without user code.
+    [
+      'an Array',
+      () => [...xywh(), [logged('r', 5), logGets('s', { x: 4 })]],
+      () => drawn(673200, 'x y w h s.w s.x s.y s.z'),
+    ],
+    [
+      'numbers but y and h',
+      () => [2, logged('y', 2), 60, logged('h', 44), iterator({}, values(5))],
+      () => drawn(667345, '@@iterator y h @@iterator iterate'),
+    ],
+    // What the overload pick throws comes first.
+    [
+      'a throwing @@iterator getter',
+      () => [
+        ...xywh(),
+        Object.defineProperty({}, Symbol.iterator, {
+          get() {
+            log.push('@@iterator')
+            throw new Error('@@iterator getter')
+          },
+        }),
+      ],
+      () => ({ error: { name: 'Error', message: '@@iterator getter' }, box: null, sum: 0, log: '@@iterator' }),
+    ],
+    [
+      'a non-callable @@iterator after a Symbol x',
+      () => [Symbol('x'), 2, 60, 44, iterator({}, 5)],
+      (prefix) => ({
+        error: { name: 'TypeError', message: prefix + '@@iterator must be a function' },
+        box: null,
+        sum: 0,
+        log: '@@iterator',
+      }),
+    ],
+    [
+      'a non-callable @@iterator after a throwing w',
+      () => [
+        2,
+        2,
+        {
+          valueOf() {
+            log.push('w')
+            throw new Error('w')
+          },
+        },
+        44,
+        iterator({}, 'not callable'),
+      ],
+      (prefix) => ({
+        error: { name: 'TypeError', message: prefix + '@@iterator must be a function' },
+        box: null,
+        sum: 0,
+        log: '@@iterator',
+      }),
+    ],
+    [
+      'an iterable after a Symbol x',
+      () => [Symbol('x'), 2, 60, 44, iterator({}, values(5))],
+      (prefix) => ({
+        error: { name: 'TypeError', message: prefix + 'Cannot convert a Symbol value to a number' },
+        box: null,
+        sum: 0,
+        log: '@@iterator',
+      }),
+    ],
+    [
+      'a DOMPointInit after a BigInt h',
+      () => [2, 2, 60, 1n, iterator({ x: 5 }, undefined)],
+      (prefix) => ({
+        error: { name: 'TypeError', message: prefix + 'Cannot convert a BigInt value to a number' },
+        box: null,
+        sum: 0,
+        log: '@@iterator',
+      }),
+    ],
+  ]
+  for (const [name, args, expected] of cases) {
+    t.deepEqual(run(args, false), expected(C), name)
+    t.deepEqual(run(args, true), expected(P), name + ' on a Path2D')
+  }
+  // Calls made while the arguments are converted run in full.
+  for (const onPath of [false, true]) {
+    log.length = 0
+    const ctx = createCanvas(64, 48).getContext('2d')
+    const target = onPath ? new Path2D() : ctx
+    const inner = () =>
+      target.roundRect(logged('ix', 40) as any, 30, 10, logged('ih', 10) as any, iterator({}, values(2)))
+    target.roundRect(
+      {
+        valueOf() {
+          log.push('x')
+          inner()
+          return 2
+        },
+      } as any,
+      2,
+      logged('w', 20) as any,
+      20,
+      iterator(
+        {},
+        values({
+          get x() {
+            log.push('r.x')
+            inner()
+            return 3
+          },
+        }),
+      ),
+    )
+    if (onPath) ctx.fill(target as Path2D)
+    else ctx.fill()
+    t.deepEqual(
+      { ...ink(ctx), log: log.join(' ') },
+      {
+        box: [2, 2, 49, 39],
+        sum: 126495,
+        log: '@@iterator x @@iterator ix ih @@iterator iterate w @@iterator iterate r.x @@iterator ix ih @@iterator iterate',
+      },
+    )
+    log.length = 0
+    const ctx2 = createCanvas(64, 48).getContext('2d')
+    const target2 = onPath ? new Path2D() : ctx2
+    let reads = 0
+    const radii = Object.defineProperty({}, Symbol.iterator, {
+      get() {
+        log.push('@@iterator' + reads)
+        if (reads++ === 0) target2.roundRect(logged('ix', 40) as any, 30, logged('iw', 10) as any, 10, 2)
+        return values(4)
+      },
+    })
+    target2.roundRect(logged('x', 2) as any, 2, 20, logged('h', 20) as any, radii)
+    if (onPath) ctx2.fill(target2 as Path2D)
+    else ctx2.fill()
+    t.deepEqual(
+      { ...ink(ctx2), log: log.join(' ') },
+      { box: [2, 2, 49, 39], sum: 123445, log: '@@iterator0 ix iw x h @@iterator1 iterate' },
+    )
+  }
+})
+
 test('CanvasPattern.setTransform names the DOMMatrix2DInit member that fails to convert', (t) => {
   const ctx = createCanvas(10, 10).getContext('2d')
   const pattern = ctx.createPattern(createCanvas(2, 2), 'repeat')!
