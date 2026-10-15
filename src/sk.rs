@@ -1312,6 +1312,15 @@ pub mod ffi {
 
     pub fn skiac_bitmap_orient(bitmap_info: *mut skiac_bitmap_info, origin: i32) -> bool;
 
+    pub fn skiac_bitmap_is_high_bit_depth(ptr: *const u8, size: usize) -> bool;
+
+    pub fn skiac_bitmap_make_high_bit_depth(
+      ptr: *const u8,
+      size: usize,
+      cs: u8,
+      bitmap_info: *mut skiac_bitmap_info,
+    ) -> bool;
+
     pub fn skiac_bitmap_source_is_opaque(c_bitmap: *mut skiac_bitmap, is_canvas: bool) -> bool;
 
     pub fn skiac_bitmap_source_bytes_per_pixel(c_bitmap: *mut skiac_bitmap, is_canvas: bool)
@@ -5021,6 +5030,33 @@ impl Bitmap {
     }
   }
 
+  /// Whether `data`, an encoded image, has more than 8 bits a channel (a
+  /// 16-bit PNG): Chrome draws it on a float16 canvas from a half-float
+  /// decode.
+  pub fn is_high_bit_depth(data: &[u8]) -> bool {
+    unsafe { ffi::skiac_bitmap_is_high_bit_depth(data.as_ptr(), data.len()) }
+  }
+
+  /// The premultiplied half-float decode of a high-bit-depth image for a
+  /// float16 canvas in `color_space`.
+  pub fn high_bit_depth(data: &[u8], color_space: ColorSpace) -> Option<Self> {
+    let mut bitmap_info = ffi::skiac_bitmap_info {
+      bitmap: ptr::null_mut(),
+      width: 0,
+      height: 0,
+      is_canvas: false,
+    };
+    unsafe {
+      ffi::skiac_bitmap_make_high_bit_depth(
+        data.as_ptr(),
+        data.len(),
+        color_space as u8,
+        &mut bitmap_info,
+      )
+    }
+    .then_some(Bitmap(bitmap_info))
+  }
+
   pub fn from_image_data(
     ptr: *mut u8,
     width: usize,
@@ -5262,6 +5298,16 @@ pub struct AccountedBitmap {
   /// outlive this bitmap stay reported until their pixels are freed
   /// (`release_level_bytes`).
   level_bytes: AtomicI64,
+  /// Set for a high-bit-depth image.
+  high_bit_depth: Option<HighBitDepth>,
+}
+
+/// A high-bit-depth image's encoded bytes, and its half-float decodes for
+/// float16 canvases, made on first use: one per canvas colour space.
+#[derive(Debug)]
+struct HighBitDepth {
+  encoded: Vec<u8>,
+  decodes: Mutex<[Option<Arc<AccountedBitmap>>; 2]>,
 }
 
 impl AccountedBitmap {
@@ -5276,7 +5322,37 @@ impl AccountedBitmap {
       image: OnceLock::new(),
       levels: unsafe { ffi::skiac_image_levels_create() },
       level_bytes: AtomicI64::new(0),
+      high_bit_depth: None,
     }
+  }
+
+  /// Keeps `encoded`, the image these pixels are the 8-bit decode of, when it
+  /// has more than 8 bits a channel. Its bytes must already be in `bytes`.
+  pub(crate) fn with_high_bit_depth(mut self, encoded: Vec<u8>) -> Self {
+    self.high_bit_depth = Some(HighBitDepth {
+      encoded,
+      decodes: Mutex::new([None, None]),
+    });
+    self
+  }
+
+  /// What a float16 canvas in `color_space` draws in place of these pixels:
+  /// the half-float decode of a high-bit-depth image, made on first use and
+  /// reported to V8. None for any other image, or when it cannot be decoded.
+  pub(crate) fn float16_decode(&self, color_space: ColorSpace) -> Option<Arc<AccountedBitmap>> {
+    let high_bit_depth = self.high_bit_depth.as_ref()?;
+    let mut decodes = high_bit_depth.decodes.lock().unwrap();
+    let slot = &mut decodes[color_space as usize];
+    if slot.is_none() {
+      let bitmap = Bitmap::high_bit_depth(&high_bit_depth.encoded, color_space)?;
+      let bytes = i64::from(bitmap.0.width) * i64::from(bitmap.0.height) * 8;
+      if !self.env.is_null() {
+        let mut adjusted: i64 = 0;
+        unsafe { napi::sys::napi_adjust_external_memory(self.env, bytes, &mut adjusted) };
+      }
+      *slot = Some(Arc::new(AccountedBitmap::new(bitmap, self.env, bytes)));
+    }
+    slot.clone()
   }
 
   /// The live levels' bytes, as last reported.
@@ -5389,8 +5465,10 @@ pub(crate) struct ImagePatternShared {
 }
 
 /// The decode level and canvas colour space an Image pattern's shader samples
-/// (`skiac_image_pattern_level`), or `None` for the original image as it is.
-pub(crate) type PatternDecode = Option<(i32, ColorSpace)>;
+/// (`skiac_image_pattern_level`), and whether it samples the half-float
+/// decode of a high-bit-depth image, or `None` for the original image as it
+/// is.
+pub(crate) type PatternDecode = Option<(i32, ColorSpace, bool)>;
 
 /// The SkImage uniqueID and byte size of the decode copy a shader samples in
 /// place of the original, which a recorded paint keeps; `None` when it samples
@@ -5449,15 +5527,16 @@ impl ImagePattern {
     self.backing_bytes
   }
 
-  /// `decode` is the context's transform and colour space on a raster
-  /// canvas, and `None` on PDF and SVG, which draw the original image. With
-  /// it, an Image source is drawn from the decode level Chrome picks for the
-  /// pattern under that transform (`skiac_image_pattern_level`), in that
-  /// colour space. Returns the shader and the decode copy it samples.
+  /// `decode` is the context's transform, colour space and pixel format on a
+  /// raster canvas, and `None` on PDF and SVG, which draw the original image.
+  /// With it, an Image source is drawn from the decode level Chrome picks for
+  /// the pattern under that transform (`skiac_image_pattern_level`), in that
+  /// colour space, from the half-float decode of a high-bit-depth image on a
+  /// float16 canvas. Returns the shader and the decode copy it samples.
   pub(crate) fn get_shader(
     &self,
     quality: FilterQuality,
-    decode: Option<(Transform, ColorSpace)>,
+    decode: Option<(Transform, ColorSpace, CanvasPixelFormat)>,
   ) -> Option<(Shader, DecodedCopy)> {
     let mut guard = self.shared.lock().unwrap();
     let shared = &mut *guard;
@@ -5466,7 +5545,7 @@ impl ImagePattern {
     // software_image_decode_cache.cc:538-560): a canvas, ImageData or SVG
     // Image pattern there is drawn from a level made for the draw, converted
     // to the canvas's colour space. On sRGB it is drawn as it is.
-    if let Some((ctm, color_space)) = decode
+    if let Some((ctm, color_space, _)) = decode
       && !self.is_image
       && color_space != ColorSpace::Srgb
     {
@@ -5484,7 +5563,7 @@ impl ImagePattern {
           )
         }
       };
-      let level = Some((level, color_space));
+      let level = Some((level, color_space, false));
       if shared
         .shader
         .as_ref()
@@ -5498,7 +5577,7 @@ impl ImagePattern {
             ptr::null_mut(),
             image,
             ptr::null_mut(),
-            level.map_or(-1, |(level, _)| level),
+            level.map_or(-1, |(level, ..)| level),
             self.repeat_x as i32,
             self.repeat_y as i32,
             quality as i32,
@@ -5516,24 +5595,38 @@ impl ImagePattern {
         .as_ref()
         .map(|(_, _, shader, decoded)| (shader.clone(), *decoded));
     }
+    // A float16 canvas samples a high-bit-depth image's half-float decode,
+    // as drawImage does.
     let decode_cache = match (&self.backing, decode) {
-      (Some(ImagePatternBacking::Bitmap(bitmap)), Some(decode)) if self.is_image => {
-        Some((bitmap, decode))
+      (Some(ImagePatternBacking::Bitmap(bitmap)), Some((ctm, color_space, pixel_format)))
+        if self.is_image =>
+      {
+        let float16 = (pixel_format == CanvasPixelFormat::Float16)
+          .then(|| bitmap.float16_decode(color_space))
+          .flatten();
+        let half_float = float16.is_some();
+        Some((
+          float16.unwrap_or_else(|| bitmap.clone()),
+          (ctm, color_space),
+          half_float,
+        ))
       }
       _ => None,
     };
-    let level = decode_cache.map(|(bitmap, (ctm, color_space))| {
-      let level = unsafe {
-        ffi::skiac_image_pattern_level(
-          bitmap.inner.0.width,
-          bitmap.inner.0.height,
-          shared.transform.into(),
-          ctm.into(),
-          quality as i32,
-        )
-      };
-      (level, color_space)
-    });
+    let level = decode_cache
+      .as_ref()
+      .map(|(bitmap, (ctm, color_space), half_float)| {
+        let level = unsafe {
+          ffi::skiac_image_pattern_level(
+            bitmap.inner.0.width,
+            bitmap.inner.0.height,
+            shared.transform.into(),
+            (*ctm).into(),
+            quality as i32,
+          )
+        };
+        (level, *color_space, *half_float)
+      });
     if shared
       .shader
       .as_ref()
@@ -5544,12 +5637,17 @@ impl ImagePattern {
       // freed.
       shared.shader = None;
       shared.shader = match (decode_cache, level) {
-        (Some((bitmap, _)), Some((level, color_space))) => {
-          // The original image is only made when level 0 samples it.
-          let image = if level == 0 {
-            shared.image.get_or_insert_with(|| self.make_image()).0
-          } else {
+        (Some((bitmap, _, half_float)), Some((level, color_space, _))) => {
+          // The original image is only made when level 0 samples it. The
+          // half-float decode keeps its own.
+          let half_float_image;
+          let image = if level != 0 {
             ptr::null_mut()
+          } else if half_float {
+            half_float_image = bitmap.image();
+            half_float_image.0
+          } else {
+            shared.image.get_or_insert_with(|| self.make_image()).0
           };
           let mut decoded_id = 0;
           let mut decoded_bytes = 0;

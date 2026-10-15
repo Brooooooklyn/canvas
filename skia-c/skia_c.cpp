@@ -1841,23 +1841,26 @@ static bool IsFloat(const SkPixmap& pixmap) {
 // GenerateCacheEntryFromCandidate (software_image_decode_cache_utils.cc:
 // 183-270) with the original decode as the candidate: the src subset, in
 // `target` when it is set (DoDecodeImage), scaled to the level size with
-// kMedium (linear, nearest mip) into N32 premul. With `counter` the pixels
-// count in it until they are freed.
+// kMedium (linear, nearest mip) into `level_ct` premul: N32, or F16 for the
+// half-float decode of a high-bit-depth image (the F16 decode cache). With
+// `counter` the pixels count in it until they are freed.
 static sk_sp<SkImage> MakeLevelImage(const SkPixmap& original,
                                      const SkIRect& src,
                                      SkISize size,
                                      sk_sp<SkColorSpace> target,
-                                     skiac_image_level_bytes* counter) {
+                                     skiac_image_level_bytes* counter,
+                                     SkColorType level_ct = kN32_SkColorType) {
   SkPixmap subset;
   if (!original.extractSubset(&subset, src)) {
     return nullptr;
   }
-  // The scale starts from the N32 decode: copy to it first when the pixels
-  // are in another colour space or type.
+  // The scale starts from the decode: copy to it first when the pixels are
+  // in another colour space or type.
   SkBitmap converted;
-  if ((target || IsFloat(original)) && size != src.size()) {
+  if ((target || (IsFloat(original) && level_ct != kRGBA_F16_SkColorType)) &&
+      size != src.size()) {
     if (!converted.tryAllocPixels(
-            SkImageInfo::Make(src.size(), kN32_SkColorType, kPremul_SkAlphaType,
+            SkImageInfo::Make(src.size(), level_ct, kPremul_SkAlphaType,
                               target ? target : original.refColorSpace())) ||
         !subset.readPixels(converted.pixmap())) {
       return nullptr;
@@ -1865,7 +1868,7 @@ static sk_sp<SkImage> MakeLevelImage(const SkPixmap& original,
     subset = converted.pixmap();
   }
   const SkImageInfo info =
-      SkImageInfo::Make(size, kN32_SkColorType, kPremul_SkAlphaType,
+      SkImageInfo::Make(size, level_ct, kPremul_SkAlphaType,
                         target ? target : original.refColorSpace());
   SkBitmap level;
   if (counter) {
@@ -1914,8 +1917,11 @@ static sk_sp<SkImage> FindOrMakeLevel(skiac_image_levels* cache,
     cache->lru.splice(cache->lru.end(), cache->lru, found->second);
     return found->second->image;
   }
-  sk_sp<SkImage> image = MakeLevelImage(original, src, size, std::move(target),
-                                        cache->counter.get());
+  // An Image's original is float only as the half-float decode of a
+  // high-bit-depth image, whose levels stay half floats.
+  sk_sp<SkImage> image = MakeLevelImage(
+      original, src, size, std::move(target), cache->counter.get(),
+      IsFloat(original) ? kRGBA_F16_SkColorType : kN32_SkColorType);
   if (!image) {
     return nullptr;
   }
@@ -3831,6 +3837,80 @@ bool skiac_bitmap_make_from_buffer(const uint8_t* ptr,
   auto origin = codec->getOrigin();
   // https://github.com/chromium/chromium/blob/126.0.6423.1/third_party/blink/renderer/platform/graphics/image.cc#L124
   // need to create a new bitmap with the correct orientation
+  if (origin != SkEncodedOrigin::kTopLeft_SkEncodedOrigin) {
+    bitmap = orient_bitmap(*bitmap, origin);
+    if (!bitmap) {
+      return false;
+    }
+  }
+  bitmap->setImmutable();
+  bitmap_info->width = bitmap->width();
+  bitmap_info->height = bitmap->height();
+  bitmap_info->bitmap = reinterpret_cast<skiac_bitmap*>(bitmap.release());
+  return true;
+}
+
+// Whether the encoded image has more than 8 bits a channel (a 16-bit PNG):
+// Chrome draws such an image on a float16 canvas from a half-float decode
+// (CanvasImageProvider::GetRasterContent, canvas_resource_provider.cc:
+// 2075-2085; SkiaImageDecoderBase::ImageIsHighBitDepth).
+bool skiac_bitmap_is_high_bit_depth(const uint8_t* ptr, size_t size) {
+  auto codec = SkCodec::MakeFromData(
+      SkData::MakeWithoutCopy(reinterpret_cast<const void*>(ptr), size));
+  return codec && codec->hasHighBitDepthEncodedData();
+}
+
+// The half-float decode of a high-bit-depth image for a float16 canvas in
+// colour space `cs`, premultiplied. Blink decodes the pixels without a colour
+// transform and tags them with the image's colour space
+// (SkiaImageDecoderBase::Decode); DecodingImageGenerator::GetPixels then
+// converts them to the canvas's colour space from an unpremultiplied decode
+// (decoding_image_generator.cc:193-221).
+bool skiac_bitmap_make_high_bit_depth(const uint8_t* ptr,
+                                      size_t size,
+                                      uint8_t cs,
+                                      skiac_bitmap_info* bitmap_info) {
+  auto codec = SkCodec::MakeFromData(
+      SkData::MakeWithoutCopy(reinterpret_cast<const void*>(ptr), size));
+  if (!codec || !codec->hasHighBitDepthEncodedData()) {
+    return false;
+  }
+  const SkImageInfo codec_info = codec->getInfo();
+  sk_sp<SkColorSpace> image_cs = codec_info.refColorSpace();
+  if (!image_cs) {
+    image_cs = SkColorSpace::MakeSRGB();
+  }
+  auto target = COLOR_SPACE_CAST;
+  const bool xform = !SkColorSpace::Equals(image_cs.get(), target.get());
+  const bool opaque = codec_info.alphaType() == kOpaque_SkAlphaType;
+  const SkAlphaType alpha_type = opaque  ? kOpaque_SkAlphaType
+                                 : xform ? kUnpremul_SkAlphaType
+                                         : kPremul_SkAlphaType;
+  const SkImageInfo info = codec_info.makeColorType(kRGBA_F16_SkColorType)
+                               .makeAlphaType(alpha_type)
+                               .makeColorSpace(image_cs);
+  auto bitmap = std::make_unique<SkBitmap>();
+  if (!bitmap->tryAllocPixels(info)) {
+    return false;
+  }
+  const auto result = codec->getPixels(info.makeColorSpace(nullptr),
+                                       bitmap->getPixels(), bitmap->rowBytes());
+  if (result != SkCodec::kSuccess && result != SkCodec::kIncompleteInput &&
+      result != SkCodec::kErrorInInput) {
+    return false;
+  }
+  if (xform) {
+    auto converted = std::make_unique<SkBitmap>();
+    if (!converted->tryAllocPixels(info.makeAlphaType(opaque
+                                                          ? kOpaque_SkAlphaType
+                                                          : kPremul_SkAlphaType)
+                                       .makeColorSpace(target)) ||
+        !bitmap->readPixels(converted->pixmap())) {
+      return false;
+    }
+    bitmap = std::move(converted);
+  }
+  auto origin = codec->getOrigin();
   if (origin != SkEncodedOrigin::kTopLeft_SkEncodedOrigin) {
     bitmap = orient_bitmap(*bitmap, origin);
     if (!bitmap) {
