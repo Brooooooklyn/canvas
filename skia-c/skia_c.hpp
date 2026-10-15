@@ -1403,6 +1403,17 @@ bool skiac_font_collection_set_alias(skiac_font_collection* c_font_collection,
                                      const char* family,
                                      const char* alias);
 void skiac_font_collection_destroy(skiac_font_collection* c_font_collection);
+bool skiac_font_collection_ideographic_advance(
+    skiac_font_collection* c_collection,
+    float font_size,
+    int weight,
+    int stretch,
+    float stretch_width,
+    int slant,
+    const char* font_family,
+    const skiac_font_variation* variations,
+    int variations_count,
+    float* advance);
 
 // Variable Fonts
 int skiac_typeface_get_variation_design_position(
