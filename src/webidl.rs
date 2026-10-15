@@ -247,6 +247,15 @@ sites! {
   CtxIsPointInPath: execute "isPointInPath" on "CanvasRenderingContext2D";
   CtxIsPointInStroke: execute "isPointInStroke" on "CanvasRenderingContext2D";
   CtxDrawImage: execute "drawImage" on "CanvasRenderingContext2D";
+  PathMoveTo: execute "moveTo" on "Path2D";
+  PathLineTo: execute "lineTo" on "Path2D";
+  PathBezierCurveTo: execute "bezierCurveTo" on "Path2D";
+  PathQuadraticCurveTo: execute "quadraticCurveTo" on "Path2D";
+  PathArc: execute "arc" on "Path2D";
+  PathArcTo: execute "arcTo" on "Path2D";
+  PathEllipse: execute "ellipse" on "Path2D";
+  PathRect: execute "rect" on "Path2D";
+  PathRoundRect: execute "roundRect" on "Path2D";
 }
 
 /// `napi_bigint`; napi6 (and so `ValueType::BigInt`) is off in this build.

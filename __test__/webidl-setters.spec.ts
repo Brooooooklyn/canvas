@@ -1,6 +1,6 @@
 // WebIDL conversion of the CanvasRenderingContext2D attribute setters.
-// Expected values and messages were measured in Chrome 155 (--disable-gpu;
-// pixel reads on a willReadFrequently canvas), the same on arm64 and x64.
+// Expected values and messages were measured in Chrome 155 on arm64 macOS
+// (--disable-gpu; pixel reads on a willReadFrequently canvas).
 import test from 'ava'
 
 import { createCanvas } from '../index'
