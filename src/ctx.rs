@@ -3641,10 +3641,13 @@ impl CanvasRenderingContext2D {
     self.context.get_miter_limit()
   }
 
-  #[napi(setter, return_if_invalid)]
-  pub fn set_miter_limit(&mut self, miter_limit: f64) {
-    if !miter_limit.is_nan() && !miter_limit.is_infinite() {
-      self.context.set_miter_limit(miter_limit as f32);
+  #[napi(setter)]
+  pub fn set_miter_limit(&mut self, miter_limit: webidl::Double<webidl::SetMiterLimit>) {
+    // Blink keeps the old value unless the new one is finite and > 0
+    // (canvas_2d_recorder_context.cc:1150).
+    let miter_limit = miter_limit.0;
+    if miter_limit.is_finite() && miter_limit > 0.0 {
+      self.context.set_miter_limit(clamp_to_f32(miter_limit));
     }
   }
 
@@ -3653,8 +3656,9 @@ impl CanvasRenderingContext2D {
     self.context.get_global_alpha()
   }
 
-  #[napi(setter, return_if_invalid)]
-  pub fn set_global_alpha(&mut self, alpha: f64) {
+  #[napi(setter)]
+  pub fn set_global_alpha(&mut self, alpha: webidl::Double<webidl::SetGlobalAlpha>) {
+    let alpha = alpha.0;
     if !(0.0..=1.0).contains(&alpha) {
       #[cfg(debug_assertions)]
       eprintln!("Alpha value out of range, expected 0.0 - 1.0, but got : {alpha}");
@@ -3729,9 +3733,12 @@ impl CanvasRenderingContext2D {
     self.context.state.line_dash_offset as f64
   }
 
-  #[napi(setter, return_if_invalid)]
-  pub fn set_line_dash_offset(&mut self, offset: f64) {
-    self.context.state.line_dash_offset = offset as f32;
+  #[napi(setter)]
+  pub fn set_line_dash_offset(&mut self, offset: webidl::Double<webidl::SetLineDashOffset>) {
+    // A non-finite offset is ignored (canvas_2d_recorder_context.cc:1253).
+    if offset.0.is_finite() {
+      self.context.state.line_dash_offset = clamp_to_f32(offset.0);
+    }
   }
 
   #[napi(getter)]
@@ -3757,9 +3764,18 @@ impl CanvasRenderingContext2D {
     self.context.state.paint.get_stroke_width() as f64
   }
 
-  #[napi(setter, return_if_invalid)]
-  pub fn set_line_width(&mut self, width: f64) {
-    self.context.state.paint.set_stroke_width(width as f32);
+  #[napi(setter)]
+  pub fn set_line_width(&mut self, width: webidl::Double<webidl::SetLineWidth>) {
+    // Blink keeps the old width unless the new one is finite and > 0
+    // (canvas_2d_recorder_context.cc:1103).
+    let width = width.0;
+    if width.is_finite() && width > 0.0 {
+      self
+        .context
+        .state
+        .paint
+        .set_stroke_width(clamp_to_f32(width));
+    }
   }
 
   #[napi(getter)]
@@ -3886,8 +3902,9 @@ impl CanvasRenderingContext2D {
     self.context.state.shadow_blur as f64
   }
 
-  #[napi(setter, return_if_invalid)]
-  pub fn set_shadow_blur(&mut self, blur: f64) {
+  #[napi(setter)]
+  pub fn set_shadow_blur(&mut self, blur: webidl::Double<webidl::SetShadowBlur>) {
+    let blur = blur.0;
     // Blink discards a non-finite or negative assignment and keeps the previous
     // value (canvas_2d_recorder_context.cc:1202-1207). Storing it is not inert:
     // it becomes the sigma, `SkImageFilters::Blur` rejects it, and the Blur node
@@ -3914,8 +3931,9 @@ impl CanvasRenderingContext2D {
     self.context.state.shadow_offset_x as f64
   }
 
-  #[napi(setter, return_if_invalid)]
-  pub fn set_shadow_offset_x(&mut self, offset_x: f64) {
+  #[napi(setter)]
+  pub fn set_shadow_offset_x(&mut self, offset_x: webidl::Double<webidl::SetShadowOffsetX>) {
+    let offset_x = offset_x.0;
     // Same rule as `set_shadow_blur`, minus the sign test: Blink drops only
     // non-finite offsets (canvas_2d_recorder_context.cc:1170-1179) -- a negative
     // offset is meaningful, it casts the shadow left/up.
@@ -3930,8 +3948,9 @@ impl CanvasRenderingContext2D {
     self.context.state.shadow_offset_y as f64
   }
 
-  #[napi(setter, return_if_invalid)]
-  pub fn set_shadow_offset_y(&mut self, offset_y: f64) {
+  #[napi(setter)]
+  pub fn set_shadow_offset_y(&mut self, offset_y: webidl::Double<webidl::SetShadowOffsetY>) {
+    let offset_y = offset_y.0;
     // canvas_2d_recorder_context.cc:1186-1195, see `set_shadow_offset_x`.
     if !offset_y.is_finite() {
       return;

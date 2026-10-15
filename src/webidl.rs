@@ -4,7 +4,7 @@
 //! Each helper throws the JS exception itself and returns an `Err` with
 //! `Status::PendingException`; napi-rs then keeps the pending exception.
 
-use std::{cell::RefCell, ptr};
+use std::{cell::RefCell, marker::PhantomData, ptr};
 
 use napi::{bindgen_prelude::*, sys};
 
@@ -165,6 +165,274 @@ fn member(
     ValueType::Undefined => None,
     _ => Some(value),
   })
+}
+
+/// Where a conversion runs: the prefix Chrome puts on the message of a
+/// conversion error that the engine itself throws.
+pub trait Site {
+  const PREFIX: &'static str;
+}
+
+/// Zero-sized [`Site`] types: `Name: set "attr" on "Interface";` gives
+/// "Failed to set the 'attr' property on 'Interface': ", and
+/// `Name: execute "op" on "Interface";` gives
+/// "Failed to execute 'op' on 'Interface': ".
+macro_rules! sites {
+  ($($name:ident: $kind:ident $member:literal on $interface:literal;)*) => {
+    $(
+      pub struct $name;
+      impl Site for $name {
+        const PREFIX: &'static str = sites!(@prefix $kind $member $interface);
+      }
+    )*
+  };
+  (@prefix set $member:literal $interface:literal) => {
+    concat!("Failed to set the '", $member, "' property on '", $interface, "': ")
+  };
+  (@prefix execute $member:literal $interface:literal) => {
+    concat!("Failed to execute '", $member, "' on '", $interface, "': ")
+  };
+}
+
+sites! {
+  SetGlobalAlpha: set "globalAlpha" on "CanvasRenderingContext2D";
+  SetLineWidth: set "lineWidth" on "CanvasRenderingContext2D";
+  SetMiterLimit: set "miterLimit" on "CanvasRenderingContext2D";
+  SetShadowBlur: set "shadowBlur" on "CanvasRenderingContext2D";
+  SetShadowOffsetX: set "shadowOffsetX" on "CanvasRenderingContext2D";
+  SetShadowOffsetY: set "shadowOffsetY" on "CanvasRenderingContext2D";
+  SetLineDashOffset: set "lineDashOffset" on "CanvasRenderingContext2D";
+}
+
+/// `napi_bigint`; napi6 (and so `ValueType::BigInt`) is off in this build.
+const NAPI_BIGINT: i32 = 9;
+
+fn raw_type_of(env: sys::napi_env, value: sys::napi_value) -> Result<i32> {
+  let mut t = 0;
+  check_status!(unsafe { sys::napi_typeof(env, value, &mut t) })?;
+  Ok(t)
+}
+
+/// Sets `message` as Blink's ApplyContextToException does: CreateDataProperty,
+/// so it becomes a writable, enumerable and configurable own data property.
+/// V8 formats `stack` on its first read; it is read first, so that it keeps
+/// the message the error was created with, as in Chrome.
+fn set_message(env: sys::napi_env, error: sys::napi_value, message: &str) {
+  let mut value = ptr::null_mut();
+  unsafe {
+    sys::napi_get_named_property(env, error, c"stack".as_ptr(), &mut value);
+    if sys::napi_create_string_utf8(
+      env,
+      message.as_ptr().cast(),
+      message.len() as isize,
+      &mut value,
+    ) != sys::Status::napi_ok
+    {
+      return;
+    }
+    let property = sys::napi_property_descriptor {
+      utf8name: c"message".as_ptr(),
+      name: ptr::null_mut(),
+      method: None,
+      getter: None,
+      setter: None,
+      value,
+      attributes: sys::PropertyAttributes::writable
+        | sys::PropertyAttributes::enumerable
+        | sys::PropertyAttributes::configurable,
+      data: ptr::null_mut(),
+    };
+    sys::napi_define_properties(env, error, 1, &property);
+  }
+}
+
+/// A conversion error that the engine itself throws, as Blink reports it: a
+/// TypeError created with `msg`, then its message set to `prefix` + `msg`
+/// (v8_binding_for_core.cc ApplyContextToException), so `stack` keeps the
+/// bare `msg`. An error thrown by user code (valueOf, toString, an iterator)
+/// is passed on as it is.
+fn conversion_error(env: sys::napi_env, prefix: &str, msg: &str) -> Error {
+  let error = new_error(env, ErrorKind::TypeError, msg);
+  if let Some(error) = error {
+    set_message(env, error, &format!("{prefix}{msg}"));
+  }
+  throw(env, error, msg)
+}
+
+/// The engine's own exception, now pending, with `prefix` added to its
+/// message.
+fn prefix_pending_exception(env: sys::napi_env, prefix: &str) -> Error {
+  let mut exception = ptr::null_mut();
+  if unsafe { sys::napi_get_and_clear_last_exception(env, &mut exception) } != sys::Status::napi_ok
+  {
+    return Error::new(Status::PendingException, prefix.to_owned());
+  }
+  if let Ok(ValueType::Object) = type_of(env, exception) {
+    let message = (|| -> Result<String> {
+      let mut message = ptr::null_mut();
+      check_status!(unsafe {
+        sys::napi_get_named_property(env, exception, c"message".as_ptr(), &mut message)
+      })?;
+      to_js_string(env, message)
+    })();
+    if let Ok(message) = message {
+      set_message(env, exception, &format!("{prefix}{message}"));
+    }
+  }
+  unsafe { sys::napi_throw(env, exception) };
+  Error::new(Status::PendingException, prefix.to_owned())
+}
+
+#[derive(Clone, Copy)]
+enum Hint {
+  Number,
+}
+
+fn get_property(
+  env: sys::napi_env,
+  object: sys::napi_value,
+  key: sys::napi_value,
+) -> Result<sys::napi_value> {
+  let mut value = ptr::null_mut();
+  check_status!(unsafe { sys::napi_get_property(env, object, key, &mut value) })?;
+  Ok(value)
+}
+
+fn call(
+  env: sys::napi_env,
+  this: sys::napi_value,
+  function: sys::napi_value,
+  args: &[sys::napi_value],
+) -> Result<sys::napi_value> {
+  let mut result = ptr::null_mut();
+  check_status!(unsafe {
+    sys::napi_call_function(env, this, function, args.len(), args.as_ptr(), &mut result)
+  })?;
+  Ok(result)
+}
+
+fn is_callable(env: sys::napi_env, value: sys::napi_value) -> Result<bool> {
+  Ok(raw_type_of(env, value)? == sys::ValueType::napi_function)
+}
+
+/// The well-known symbol `Symbol.<name>`.
+fn well_known_symbol(env: sys::napi_env, name: &std::ffi::CStr) -> Result<sys::napi_value> {
+  let mut global = ptr::null_mut();
+  let mut symbol = ptr::null_mut();
+  let mut value = ptr::null_mut();
+  check_status!(unsafe { sys::napi_get_global(env, &mut global) })?;
+  check_status!(unsafe {
+    sys::napi_get_named_property(env, global, c"Symbol".as_ptr(), &mut symbol)
+  })?;
+  check_status!(unsafe { sys::napi_get_named_property(env, symbol, name.as_ptr(), &mut value) })?;
+  Ok(value)
+}
+
+/// ToPrimitive (ECMA-262 7.1.1) of an object or function, step by step, so
+/// that an exception from user code passes as it is and only the engine's own
+/// failures get `prefix`.
+fn to_primitive(
+  env: sys::napi_env,
+  value: sys::napi_value,
+  hint: Hint,
+  prefix: &str,
+) -> Result<sys::napi_value> {
+  let exotic = get_property(env, value, well_known_symbol(env, c"toPrimitive")?)?;
+  match raw_type_of(env, exotic)? {
+    sys::ValueType::napi_undefined | sys::ValueType::napi_null => {}
+    sys::ValueType::napi_function => {
+      let hint = match hint {
+        Hint::Number => "number",
+      };
+      let hint = unsafe { <&str as ToNapiValue>::to_napi_value(env, hint)? };
+      let result = call(env, value, exotic, &[hint])?;
+      if is_object(env, result)? {
+        return Err(conversion_error(
+          env,
+          prefix,
+          "Cannot convert object to primitive value",
+        ));
+      }
+      return Ok(result);
+    }
+    _ => {
+      // Not callable: let the engine throw its own TypeError, then add the
+      // prefix to it.
+      let mut result = ptr::null_mut();
+      let status = unsafe {
+        match hint {
+          Hint::Number => sys::napi_coerce_to_number(env, value, &mut result),
+        }
+      };
+      if status != sys::Status::napi_ok && is_exception_pending(env) {
+        return Err(prefix_pending_exception(env, prefix));
+      }
+      check_status!(status)?;
+      return Ok(result);
+    }
+  }
+  // OrdinaryToPrimitive.
+  let names: [&std::ffi::CStr; 2] = match hint {
+    Hint::Number => [c"valueOf", c"toString"],
+  };
+  for name in names {
+    let mut method = ptr::null_mut();
+    check_status!(unsafe { sys::napi_get_named_property(env, value, name.as_ptr(), &mut method) })?;
+    if is_callable(env, method)? {
+      let result = call(env, value, method, &[])?;
+      if !is_object(env, result)? {
+        return Ok(result);
+      }
+    }
+  }
+  Err(conversion_error(
+    env,
+    prefix,
+    "Cannot convert object to primitive value",
+  ))
+}
+
+/// WebIDL `unrestricted double`: ToNumber. Errors from user code pass as
+/// they are; the engine's own ones get `prefix`.
+pub(crate) fn to_number(env: sys::napi_env, value: sys::napi_value, prefix: &str) -> Result<f64> {
+  let mut number = 0.0;
+  if unsafe { sys::napi_get_value_double(env, value, &mut number) } == sys::Status::napi_ok {
+    return Ok(number);
+  }
+  match raw_type_of(env, value)? {
+    sys::ValueType::napi_symbol => Err(conversion_error(
+      env,
+      prefix,
+      "Cannot convert a Symbol value to a number",
+    )),
+    NAPI_BIGINT => Err(conversion_error(
+      env,
+      prefix,
+      "Cannot convert a BigInt value to a number",
+    )),
+    sys::ValueType::napi_object | sys::ValueType::napi_function => {
+      let primitive = to_primitive(env, value, Hint::Number, prefix)?;
+      to_number(env, primitive, prefix)
+    }
+    // undefined, null, boolean, string: cannot throw.
+    _ => {
+      let mut result = ptr::null_mut();
+      check_status!(unsafe { sys::napi_coerce_to_number(env, value, &mut result) })?;
+      check_status!(unsafe { sys::napi_get_value_double(env, result, &mut number) })?;
+      Ok(number)
+    }
+  }
+}
+
+/// A WebIDL `unrestricted double` argument or attribute value, converted in
+/// the callback glue, before napi-rs borrows the receiver: valueOf may use
+/// the receiver, as in Chrome.
+pub struct Double<S>(pub f64, PhantomData<S>);
+
+impl<S: Site> FromNapiValue for Double<S> {
+  unsafe fn from_napi_value(env: sys::napi_env, value: sys::napi_value) -> Result<Self> {
+    to_number(env, value, S::PREFIX).map(|v| Self(v, PhantomData))
+  }
 }
 
 /// WebIDL `unsigned long` (ToNumber, then ToUint32: NaN and infinities are
