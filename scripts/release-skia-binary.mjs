@@ -6,7 +6,7 @@ import { parse, join } from 'node:path'
 import { Octokit } from '@octokit/rest'
 import { green } from 'colorette'
 
-import { libPath, TAG, OWNER, REPO, dirname } from './utils.mjs'
+import { downloadFile, libPath, TAG, OWNER, REPO, dirname } from './utils.mjs'
 
 const PLATFORM_NAME = platform()
 
@@ -18,7 +18,18 @@ if (TARGET && TARGET.startsWith('--target=')) {
   TARGET_TRIPLE = TARGET.replace('--target=', '')
 }
 
-const LIB = ['skia', 'skparagraph', 'skshaper', 'svg', 'skunicode_core', 'skunicode_icu', 'skottie', 'skresources', 'sksg', 'jsonreader']
+const LIB = [
+  'skia',
+  'skparagraph',
+  'skshaper',
+  'svg',
+  'skunicode_core',
+  'skunicode_icu',
+  'skottie',
+  'skresources',
+  'sksg',
+  'jsonreader',
+]
 const ICU_DAT = 'icudtl.dat'
 
 const CLIENT = new Octokit({
@@ -120,9 +131,7 @@ async function download() {
   for (const lib of LIB) {
     const { downloadUrl, binary } = libPath(lib, PLATFORM_NAME, TARGET_TRIPLE)
     console.info(`downloading ${downloadUrl} to ${binary}`)
-    execSync(`curl -J -L -H "Accept: application/octet-stream" ${downloadUrl} -o ${binary}`, {
-      stdio: 'inherit',
-    })
+    downloadFile(downloadUrl, binary)
   }
   if (PLATFORM_NAME === 'win32') {
     await downloadIcu()
@@ -133,9 +142,7 @@ async function download() {
 
 function downloadIcu() {
   const downloadUrl = `https://github.com/${OWNER}/${REPO}/releases/download/${TAG}/${ICU_DAT}`
-  execSync(`curl -J -L -H "Accept: application/octet-stream" ${downloadUrl} -o ${ICU_DAT}`, {
-    stdio: 'inherit',
-  })
+  downloadFile(downloadUrl, ICU_DAT)
   copyFileSync(join(dirname, '..', ICU_DAT), join(dirname, '..', 'npm', 'win32-x64-msvc', ICU_DAT))
   copyFileSync(join(dirname, '..', ICU_DAT), join(dirname, '..', 'npm', 'win32-arm64-msvc', ICU_DAT))
   return Promise.resolve(null)
