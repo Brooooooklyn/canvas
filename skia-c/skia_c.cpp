@@ -3605,52 +3605,179 @@ bool skiac_bitmap_orient(skiac_bitmap_info* bitmap_info, int origin) {
   return true;
 }
 
-bool skiac_bitmap_make_from_svg(const uint8_t* data,
-                                size_t length,
-                                float width,
-                                float height,
-                                skiac_bitmap_info* bitmap_info,
-                                skiac_font_collection* c_collection,
-                                uint8_t cs) {
-  auto color_space = COLOR_SPACE_CAST;
+// An SVG image: the parsed document plus the raw width, height, viewBox and
+// preserveAspectRatio of its root, which give its natural size. Chrome reads
+// them as CSS and SVG values (svg_svg_element.cc IntrinsicWidth), so they are
+// handed to Rust as written instead of as Skia parsed them.
+struct skiac_svg_document {
+  sk_sp<SkSVGDOM> dom;
+  SkString attributes[4];
+  bool present[4] = {false, false, false, false};
+};
+
+skiac_svg_document* skiac_svg_document_make(
+    const uint8_t* data,
+    size_t length,
+    skiac_font_collection* c_collection) {
+  SkMemoryStream xml_stream(data, length, false);
+  SkDOM xml;
+  auto xml_root = xml.build(xml_stream);
+  if (!xml_root) {
+    return nullptr;
+  }
   SkMemoryStream svg_stream(data, length, false);
-  auto svg_dom =
+  auto dom =
       SkSVGDOM::Builder().setFontManager(c_collection->assets).make(svg_stream);
-  if (!svg_dom) {
+  if (!dom) {
+    return nullptr;
+  }
+  auto document = new skiac_svg_document();
+  document->dom = std::move(dom);
+  static const char* names[] = {"width", "height", "viewBox",
+                                "preserveAspectRatio"};
+  for (int i = 0; i < 4; i++) {
+    if (auto value = xml.findAttr(xml_root, names[i])) {
+      document->attributes[i].set(value);
+      document->present[i] = true;
+    }
+  }
+  return document;
+}
+
+bool skiac_svg_document_attribute(skiac_svg_document* document,
+                                  int index,
+                                  const char** ptr,
+                                  size_t* length) {
+  if (index < 0 || index > 3 || !document->present[index]) {
     return false;
   }
-  auto svg_root = svg_dom->getRoot();
-  auto svg_container_size =
-      svg_root->intrinsicSize(SkSVGLengthContext(SkSize::Make(0, 0)));
-  if (svg_container_size.isZero()) {
-    auto view_box = svg_root->getViewBox();
-    if (!view_box) {
-      return true;
-    }
-    svg_container_size = SkSize::Make(view_box->width(), view_box->height());
-    if (svg_container_size.isEmpty()) {
-      return true;
-    }
-    svg_dom->setContainerSize(svg_container_size);
+  *ptr = document->attributes[index].c_str();
+  *length = document->attributes[index].size();
+  return true;
+}
+
+// Renders the document as Chrome paints an SVG image for a container
+// (svg_image.cc PaintRecordForCurrentFrame): the root is laid out at the
+// container size `layout` (length_utils.cc ComputeReplacedSize), shown
+// stretched over the view, the rounded container size, which clips it
+// (anti-aliased). `[sx 0 tx; 0 sy ty]` maps that view into the new
+// `width` x `height` raster, which is also clipped (aliased) to `clip`.
+bool skiac_svg_document_render(skiac_svg_document* document,
+                               float layout_width,
+                               float layout_height,
+                               float view_width,
+                               float view_height,
+                               float sx,
+                               float sy,
+                               float tx,
+                               float ty,
+                               float clip_left,
+                               float clip_top,
+                               float clip_right,
+                               float clip_bottom,
+                               int width,
+                               int height,
+                               uint8_t cs,
+                               skiac_bitmap_info* bitmap_info) {
+  auto color_space = COLOR_SPACE_CAST;
+  auto info = SkImageInfo::Make(width, height, kRGBA_8888_SkColorType,
+                                kPremul_SkAlphaType, color_space);
+  auto bitmap = std::make_unique<SkBitmap>();
+  if (width <= 0 || height <= 0 || !bitmap->tryAllocPixels(info)) {
+    return false;
   }
-  auto image_w = svg_container_size.width();
-  auto image_h = svg_container_size.height();
-  if (width > 0 && height > 0) {
-    svg_root->setTransform(SkMatrix::Scale(width / image_w, height / image_h));
-    image_w = width;
-    image_h = height;
+  bitmap->eraseColor(SK_ColorTRANSPARENT);
+  {
+    SkCanvas canvas(*bitmap);
+    canvas.clipRect(
+        SkRect::MakeLTRB(clip_left, clip_top, clip_right, clip_bottom));
+    canvas.concat(SkMatrix::MakeAll(sx, 0, tx, 0, sy, ty, 0, 0, 1));
+    canvas.clipRect(SkRect::MakeWH(view_width, view_height), true);
+    canvas.scale(view_width / layout_width, view_height / layout_height);
+    auto root = document->dom->getRoot();
+    root->setWidth(SkSVGLength(100, SkSVGLength::Unit::kPercentage));
+    root->setHeight(SkSVGLength(100, SkSVGLength::Unit::kPercentage));
+    document->dom->setContainerSize(SkSize::Make(layout_width, layout_height));
+    document->dom->render(&canvas);
   }
-  auto imageinfo =
-      SkImageInfo::Make(image_w, image_h, kRGBA_8888_SkColorType,
-                        SkAlphaType::kPremul_SkAlphaType, color_space);
-  auto bitmap = new SkBitmap();
-  bitmap->allocPixels(imageinfo);
-  auto sk_svg_canvas = new SkCanvas(*bitmap);
-  svg_dom->render(sk_svg_canvas);
-  delete sk_svg_canvas;
-  bitmap_info->bitmap = reinterpret_cast<skiac_bitmap*>(bitmap);
-  bitmap_info->width = imageinfo.width();
-  bitmap_info->height = imageinfo.height();
+  bitmap_info->width = width;
+  bitmap_info->height = height;
+  bitmap_info->bitmap = reinterpret_cast<skiac_bitmap*>(bitmap.release());
+  return true;
+}
+
+void skiac_svg_document_destroy(skiac_svg_document* document) {
+  delete document;
+}
+
+// The font-relative units of an SVG image root, for Chrome's default font at
+// 16px: the "standard" family (Times on macOS, Times New Roman elsewhere,
+// chrome/app/resources/locale_settings_*.grd). `metrics` gets the x-height,
+// the advance of '0', the cap height and the line spacing; false when no such
+// font is installed.
+bool skiac_font_collection_default_font_metrics(
+    skiac_font_collection* c_collection,
+    float* metrics) {
+#ifdef __APPLE__
+  static const char* families[] = {"Times", "Times New Roman"};
+#else
+  static const char* families[] = {"Times New Roman", "Liberation Serif",
+                                   "Tinos"};
+#endif
+  sk_sp<SkTypeface> typeface;
+  for (auto family : families) {
+    typeface =
+        c_collection->font_mgr->matchFamilyStyle(family, SkFontStyle::Normal());
+    if (typeface) {
+      break;
+    }
+  }
+  if (!typeface) {
+    return false;
+  }
+  // Unhinted, as CoreText and DirectWrite measure.
+  SkFont font(typeface, 16);
+  font.setHinting(SkFontHinting::kNone);
+  font.setSubpixel(true);
+  font.setLinearMetrics(true);
+  SkFontMetrics font_metrics;
+  font.getMetrics(&font_metrics);
+  // font_metrics.cc AscentDescentWithHacks, with its macOS ascent hack.
+  float ascent = SkScalarRoundToScalar(-font_metrics.fAscent);
+  float descent = SkScalarRoundToScalar(font_metrics.fDescent);
+#ifdef __APPLE__
+  SkString family;
+  typeface->getFamilyName(&family);
+  if (family.equals("Times") || family.equals("Helvetica") ||
+      family.equals("Courier")) {
+    ascent += floorf(((ascent + descent) * 0.15f) + 0.5f);
+  }
+#endif
+  // simple_font_data.cc PlatformInit: the OS/2 x-height, or on Apple the top
+  // of the 'x' glyph outline (skia_text_metrics.cc SkFontGetBoundsForGlyph);
+  // 0.56 of the ascent when the font has none.
+  float x_height =
+      font_metrics.fXHeight > 0 ? font_metrics.fXHeight : ascent * 0.56f;
+#ifdef __APPLE__
+  if (font_metrics.fXHeight > 0) {
+    if (auto x_glyph = font.unicharToGlyph('x')) {
+      if (auto path = font.getPath(x_glyph)) {
+        x_height = -path->getBounds().fTop;
+      }
+    }
+  }
+#endif
+  float zero_advance = 8;
+  if (auto zero_glyph = font.unicharToGlyph('0')) {
+    font.getWidths({&zero_glyph, 1}, {&zero_advance, 1});
+  }
+  float cap_height = font_metrics.fCapHeight;
+  float line_spacing =
+      lroundf(ascent) + lroundf(descent) + lroundf(font_metrics.fLeading);
+  metrics[0] = x_height;
+  metrics[1] = zero_advance;
+  metrics[2] = cap_height;
+  metrics[3] = line_spacing;
   return true;
 }
 

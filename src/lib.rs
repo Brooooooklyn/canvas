@@ -60,7 +60,9 @@ pub mod picture_recorder;
 mod sk;
 mod state;
 pub mod svg;
+mod svg_image;
 mod svg_path;
+mod svg_size;
 mod unpremul;
 mod webidl;
 

@@ -64,6 +64,7 @@
 #include <src/core/SkFontDescriptor.h>
 #include <src/ports/SkFontMgr_custom.h>
 #include <src/text/GlyphRun.h>
+#include <src/xml/SkDOM.h>
 #include <src/xml/SkXMLWriter.h>
 #include <algorithm>
 #include <cstring>
@@ -102,6 +103,7 @@ typedef struct skiac_drawable skiac_drawable;
 typedef struct skiac_encoder skiac_encoder;
 typedef struct skiac_document skiac_document;
 typedef struct skiac_skottie_animation skiac_skottie_animation;
+typedef struct skiac_svg_document skiac_svg_document;
 
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
 #define SK_FONT_FILE_PREFIX "C:/Windows/Fonts"
@@ -1287,13 +1289,35 @@ void skiac_sk_data_destroy(skiac_data* c_data);
 bool skiac_bitmap_make_from_buffer(const uint8_t* ptr,
                                    size_t size,
                                    skiac_bitmap_info* bitmap_info);
-bool skiac_bitmap_make_from_svg(const uint8_t* data,
-                                size_t length,
-                                float width,
-                                float height,
-                                skiac_bitmap_info* bitmap_info,
-                                skiac_font_collection* c_collection,
-                                uint8_t cs);
+skiac_svg_document* skiac_svg_document_make(
+    const uint8_t* data,
+    size_t length,
+    skiac_font_collection* c_collection);
+bool skiac_svg_document_attribute(skiac_svg_document* document,
+                                  int index,
+                                  const char** ptr,
+                                  size_t* length);
+bool skiac_svg_document_render(skiac_svg_document* document,
+                               float layout_width,
+                               float layout_height,
+                               float view_width,
+                               float view_height,
+                               float sx,
+                               float sy,
+                               float tx,
+                               float ty,
+                               float clip_left,
+                               float clip_top,
+                               float clip_right,
+                               float clip_bottom,
+                               int width,
+                               int height,
+                               uint8_t cs,
+                               skiac_bitmap_info* bitmap_info);
+void skiac_svg_document_destroy(skiac_svg_document* document);
+bool skiac_font_collection_default_font_metrics(
+    skiac_font_collection* c_collection,
+    float* metrics);
 skiac_bitmap* skiac_bitmap_make_from_image_data(uint8_t* ptr,
                                                 size_t width,
                                                 size_t height,
