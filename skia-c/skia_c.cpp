@@ -3753,6 +3753,7 @@ skiac_svg_document* skiac_svg_document_make(
     return nullptr;
   }
   SkMemoryStream svg_stream(data, length, false);
+  c_collection->prepareLookup();
   auto dom =
       SkSVGDOM::Builder().setFontManager(c_collection->assets).make(svg_stream);
   if (!dom) {
@@ -3864,6 +3865,11 @@ bool skiac_font_collection_default_font_metrics(
   static const char* families[] = {"Times New Roman", "Liberation Serif",
                                    "Tinos"};
 #endif
+  // No installed fonts on macOS until loadSystemFonts turns CoreText's on
+  // (DISABLE_SYSTEM_FONTS_LOAD).
+  if (!c_collection->font_mgr) {
+    return false;
+  }
   sk_sp<SkTypeface> typeface;
   for (auto family : families) {
     typeface =
@@ -4250,6 +4256,7 @@ skiac_font_collection* skiac_font_collection_create() {
 
 uint32_t skiac_font_collection_get_default_fonts_count(
     skiac_font_collection* c_font_collection) {
+  c_font_collection->prepareLookup();
   return c_font_collection->assets->countFamilies();
 }
 
@@ -4259,6 +4266,7 @@ void skiac_font_collection_get_family(
     skiac_string* c_string,
     void* on_get_style_rust,
     skiac_on_match_font_style on_match_font_style) {
+  c_font_collection->prepareLookup();
   auto name = new SkString();
   c_font_collection->assets->getFamilyName(i, name);
   auto font_style_set = c_font_collection->assets->matchFamily(name->c_str());
@@ -4281,8 +4289,10 @@ uint32_t skiac_font_collection_register(
     const uint8_t* font,
     size_t length,
     const char* name_alias) {
+  // Installed fonts register first, as loadSystemFonts does elsewhere.
+  c_font_collection->prepareLookup();
   auto typeface_data = SkData::MakeWithCopy(font, length);
-  auto typeface = c_font_collection->font_mgr->makeFromData(typeface_data);
+  auto typeface = MakeCanvasTypeface(typeface_data);
   if (!typeface) {
     return 0;
   }
@@ -4305,10 +4315,12 @@ uint32_t skiac_font_collection_register_from_path(
     skiac_font_collection* c_font_collection,
     const char* font_path,
     const char* name_alias) {
+  // Installed fonts register first, as loadSystemFonts does elsewhere.
+  c_font_collection->prepareLookup();
   // Use lazy loading - don't load entire file into memory
   // System fonts are always on disk, so we just need to track the path for
   // rebuild
-  auto typeface = c_font_collection->font_mgr->makeFromFile(font_path);
+  auto typeface = MakeCanvasTypefaceFromFile(font_path);
   if (!typeface) {
     return 0;
   }
@@ -4395,6 +4407,8 @@ size_t skiac_font_collection_unregister_batch(
 
 size_t skiac_font_collection_unregister_all(
     skiac_font_collection* c_font_collection) {
+  // The installed fonts loadSystemFonts turned on go too, as if registered.
+  c_font_collection->prepareLookup();
   size_t removed_count = c_font_collection->assets->removeAllTypefaces();
   if (removed_count > 0) {
     // Clear all set_aliases since all fonts are removed
@@ -4407,6 +4421,7 @@ size_t skiac_font_collection_unregister_all(
 bool skiac_font_collection_set_alias(skiac_font_collection* c_font_collection,
                                      const char* family,
                                      const char* alias) {
+  c_font_collection->prepareLookup();
   auto style = SkFontStyle();
   auto typeface = c_font_collection->assets->matchFamilyStyle(family, style);
 
@@ -4441,6 +4456,26 @@ bool skiac_font_collection_set_alias(skiac_font_collection* c_font_collection,
   return true;
 }
 
+void skiac_font_collection_enable_installed_fonts(
+    skiac_font_collection* c_font_collection) {
+#if defined(__APPLE__)
+  c_font_collection->enableInstalledFonts();
+#else
+  (void)c_font_collection;
+#endif
+}
+
+uint32_t skiac_font_collection_load_installed_fonts(
+    skiac_font_collection* c_font_collection) {
+#if defined(__APPLE__)
+  c_font_collection->enableInstalledFonts();
+  return c_font_collection->registerInstalledFonts();
+#else
+  (void)c_font_collection;
+  return 0;
+#endif
+}
+
 void skiac_font_collection_destroy(skiac_font_collection* c_font_collection) {
   delete c_font_collection;
 }
@@ -4458,6 +4493,7 @@ int skiac_typeface_get_variation_design_position(
     return 0;
   }
 
+  c_font_collection->prepareLookup();
   auto font_style = SkFontStyle(weight, width, (SkFontStyle::Slant)slant);
   auto typeface =
       c_font_collection->assets->matchFamilyStyle(family_name, font_style);
@@ -4514,6 +4550,7 @@ bool skiac_font_has_variations(skiac_font_collection* c_font_collection,
     return false;
   }
 
+  c_font_collection->prepareLookup();
   auto font_style = SkFontStyle(weight, width, (SkFontStyle::Slant)slant);
   auto typeface =
       c_font_collection->assets->matchFamilyStyle(family_name, font_style);
@@ -4551,6 +4588,7 @@ void skiac_svg_text_to_path(const uint8_t* data,
                             skiac_sk_data* output_data) {
   SkMemoryStream svg_stream(data, length, false);
   SkDynamicMemoryWStream w_stream;
+  c_collection->prepareLookup();
   auto svg_dom =
       SkSVGDOM::Builder().setFontManager(c_collection->assets).make(svg_stream);
   auto svg_root = svg_dom->getRoot();

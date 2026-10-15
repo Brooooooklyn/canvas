@@ -18,6 +18,7 @@ fn main() {
   println!("cargo:rerun-if-changed=skia-c/text_styles.cpp");
   println!("cargo:rerun-if-changed=skia-c/text_caps.cpp");
   println!("cargo:rerun-if-changed=skia-c/icu_api.h");
+  println!("cargo:rerun-if-changed=skia-c/font_scalers.cpp");
   println!("cargo:rerun-if-changed=skia-c/libskia.flags");
 
   let compile_target = env::var("TARGET").expect("TARGET");
@@ -249,6 +250,7 @@ fn main() {
     .file("skia-c/text_words.cpp")
     .file("skia-c/text_styles.cpp")
     .file("skia-c/text_caps.cpp")
+    .file("skia-c/font_scalers.cpp")
     .include("./skia-c")
     .include(skia_path)
     // https://github.com/rust-lang/rust/pull/93901#issuecomment-1119360260
