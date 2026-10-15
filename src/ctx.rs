@@ -5366,9 +5366,31 @@ impl CanvasRenderingContext2D {
     dirty_width: Option<f64>,
     dirty_height: Option<f64>,
   ) -> Result<()> {
-    // Throws if the backing buffer was detached (transferred); `data` is
-    // non-configurable so it cannot be deleted.
-    let data = image_data.resolve_pixels(&env)?;
+    // base_rendering_context_2d.cc putImageData: a dirty area that overflows
+    // an int returns before the detach check.
+    if let (Some(w), Some(h)) = (dirty_width, dirty_height)
+      && (w.trunc() as i64)
+        .checked_mul(h.trunc() as i64)
+        .and_then(|area| i32::try_from(area).ok())
+        .is_none()
+    {
+      return Ok(());
+    }
+    // A detached (transferred) data buffer is an InvalidStateError; `data`
+    // is non-configurable so it cannot be deleted.
+    let data = image_data
+      .resolve_pixels(&env)
+      .map_err(|e| match e.status {
+        Status::InvalidArg => webidl::dom_exception(
+          env.raw(),
+          "InvalidStateError",
+          &format!(
+            "{}The source data has been detached.",
+            webidl::PUT_IMAGE_DATA
+          ),
+        ),
+        _ => e,
+      })?;
     if let Some(dirty_x) = dirty_x {
       let mut dirty_x = dirty_x as f32;
       let mut dirty_y = dirty_y.map(|d| d as f32).unwrap_or(0.0);
