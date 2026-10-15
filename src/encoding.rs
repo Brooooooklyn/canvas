@@ -375,10 +375,10 @@ impl<S: EncodeSite> FromNapiValue for EncodeType<S> {
   }
 }
 
-/// `any quality` of toDataURL and toBlob: only a JS number counts, without
-/// any conversion (HTMLCanvasElement::toDataURL, html_canvas_element.cc:
-/// 1401-1405). For the AVIF type of toDataURL, an object is this library's
-/// AvifConfig.
+/// `any quality` of toDataURL: only a JS number counts, without any
+/// conversion (HTMLCanvasElement::toDataURL, html_canvas_element.cc:
+/// 1401-1405). For the AVIF type, an object is this library's AvifConfig.
+/// toBlob takes `BlobQuality`.
 pub struct EncodeQuality {
   pub(crate) quality: Option<f64>,
   pub(crate) avif: Option<AvifConfig>,
@@ -401,6 +401,21 @@ impl FromNapiValue for EncodeQuality {
         avif: None,
       },
     })
+  }
+}
+
+/// `any quality` of toBlob: only a JS number counts, and nothing else is
+/// read (HTMLCanvasElement::toBlob, html_canvas_element.cc:1517-1520). Unlike
+/// `EncodeQuality`, an object is not an AvifConfig here.
+pub struct BlobQuality(pub(crate) Option<f64>);
+
+impl FromNapiValue for BlobQuality {
+  unsafe fn from_napi_value(env: sys::napi_env, value: sys::napi_value) -> Result<Self> {
+    REQUESTED_TYPE.with(|requested| requested.set(ImageType::Png));
+    Ok(Self(match webidl::type_of(env, value)? {
+      ValueType::Number => Some(unsafe { f64::from_napi_value(env, value)? }),
+      _ => None,
+    }))
   }
 }
 
