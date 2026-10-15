@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url'
 
 import test from 'ava'
 
-import { createCanvas, SvgExportFlag } from '../index'
+import { createCanvas, ImageData, SvgExportFlag } from '../index'
 
 type Ctx = ReturnType<ReturnType<typeof createCanvas>['getContext']>
 
@@ -431,4 +431,173 @@ test('a zero-size SvgCanvas draws nothing', (t) => {
   const svg = canvas.getContent().toString()
   t.true(svg.includes('width="0"'), svg)
   t.false(svg.includes('<rect'), svg)
+})
+
+// Chrome loses the context of an over-limit canvas the first time an op
+// asks for the bitmap (LoseContext(kInvalidCanvasSize), which resets the
+// state: canvas_rendering_context_2d.cc). [op, lost, lineWidth after]: the
+// state had lineWidth 7.
+const LOST_CONTEXT_OPS: [string, (ctx: Ctx) => unknown, boolean, number][] = [
+  ['none', () => {}, false, 7],
+  ['fillRect', (ctx) => ctx.fillRect(0, 0, 1, 1), true, 1],
+  ['fillRect 0 x 0', (ctx) => ctx.fillRect(0, 0, 0, 0), false, 7],
+  ['fillRect NaN', (ctx) => ctx.fillRect(NaN, 0, 1, 1), false, 7],
+  ['strokeRect', (ctx) => ctx.strokeRect(0, 0, 1, 1), true, 1],
+  ['save', (ctx) => ctx.save(), true, 1],
+  ['restore', (ctx) => ctx.restore(), false, 7],
+  ['translate', (ctx) => ctx.translate(1, 1), true, 1],
+  ['translate NaN', (ctx) => ctx.translate(NaN, 1), true, 1],
+  ['scale', (ctx) => ctx.scale(2, 2), true, 1],
+  ['rotate', (ctx) => ctx.rotate(1), true, 1],
+  ['transform', (ctx) => ctx.transform(1, 0, 0, 1, 1, 1), true, 1],
+  ['setTransform', (ctx) => ctx.setTransform(1, 0, 0, 1, 2, 2), true, 1],
+  ['setTransform NaN', (ctx) => ctx.setTransform(NaN, 0, 0, 1, 2, 2), false, 7],
+  ['resetTransform', (ctx) => ctx.resetTransform(), true, 1],
+  ['getTransform', (ctx) => ctx.getTransform(), false, 7],
+  [
+    'clip',
+    (ctx) => {
+      ctx.rect(0, 0, 1, 1)
+      ctx.clip()
+    },
+    true,
+    1,
+  ],
+  ['beginPath', (ctx) => ctx.beginPath(), false, 7],
+  ['rect', (ctx) => ctx.rect(0, 0, 1, 1), false, 7],
+  [
+    'fillStyle',
+    (ctx) => {
+      ctx.fillStyle = 'red'
+    },
+    false,
+    7,
+  ],
+  ['fill of an empty path', (ctx) => ctx.fill(), false, 7],
+  [
+    'fill',
+    (ctx) => {
+      ctx.rect(0, 0, 1, 1)
+      ctx.fill()
+    },
+    true,
+    1,
+  ],
+  ['stroke of an empty path', (ctx) => ctx.stroke(), false, 7],
+  [
+    'stroke',
+    (ctx) => {
+      ctx.rect(0, 0, 1, 1)
+      ctx.stroke()
+    },
+    true,
+    1,
+  ],
+  ['clearRect', (ctx) => ctx.clearRect(0, 0, 1, 1), true, 1],
+  ['fillText', (ctx) => ctx.fillText('a', 0, 5), true, 1],
+  ['fillText of an empty text', (ctx) => ctx.fillText('', 0, 5), true, 1],
+  ['strokeText', (ctx) => ctx.strokeText('a', 0, 5), true, 1],
+  ['measureText', (ctx) => ctx.measureText('a'), false, 7],
+  ['putImageData', (ctx) => ctx.putImageData(new ImageData(1, 1), 0, 0), true, 1],
+  ['getImageData', (ctx) => ctx.getImageData(0, 0, 1, 1), false, 7],
+  ['drawImage', (ctx) => ctx.drawImage(createCanvas(2, 2), 0, 0), true, 1],
+  ['drawImage NaN', (ctx) => ctx.drawImage(createCanvas(2, 2), NaN, 0), true, 1],
+  ['isPointInPath', (ctx) => ctx.isPointInPath(0, 0), true, 1],
+  ['isPointInStroke', (ctx) => ctx.isPointInStroke(0, 0), true, 1],
+  ['reset', (ctx) => ctx.reset(), false, 1],
+  ['toDataURL', (ctx) => loose(ctx).canvas.toDataURL(), false, 7],
+  ['createPattern', (ctx) => ctx.createPattern(createCanvas(2, 2), 'repeat'), false, 7],
+  ['getContextAttributes', (ctx) => ctx.getContextAttributes(), false, 7],
+  ['setLineDash', (ctx) => ctx.setLineDash([1, 2]), false, 7],
+  ['createImageData', (ctx) => ctx.createImageData(1, 1), false, 7],
+]
+
+test('over-limit canvas: these ops lose the context and reset the state', (t) => {
+  for (const [name, op, lost, lineWidth] of LOST_CONTEXT_OPS) {
+    const canvas = createCanvas(10, 10)
+    const ctx = canvas.getContext('2d')
+    canvas.width = 2 ** 30
+    ctx.lineWidth = 7
+    op(ctx)
+    t.deepEqual([ctx.isContextLost(), ctx.lineWidth], [lost, lineWidth], name)
+  }
+})
+
+test('over-limit canvas: save() itself loses the state', (t) => {
+  const ctx = createCanvas(2 ** 30, 1).getContext('2d')
+  ctx.fillStyle = 'blue'
+  ctx.save()
+  ctx.translate(3, 4)
+  t.is(ctx.getTransform().e, 0)
+  t.is(ctx.fillStyle, '#000000')
+  t.true(ctx.isContextLost())
+})
+
+test('lost context: setters work, save/restore and transforms do nothing', (t) => {
+  const canvas = createCanvas(10, 10)
+  const ctx = canvas.getContext('2d')
+  canvas.width = 2 ** 30
+  ctx.fillRect(0, 0, 1, 1)
+  t.true(ctx.isContextLost())
+  ctx.fillStyle = 'red'
+  ctx.lineWidth = 5
+  t.deepEqual([ctx.fillStyle, ctx.lineWidth], ['#ff0000', 5])
+  ctx.translate(3, 3)
+  t.is(ctx.getTransform().e, 0)
+  ctx.fillStyle = 'red'
+  ctx.save()
+  ctx.fillStyle = 'blue'
+  ctx.restore()
+  t.is(ctx.fillStyle, '#0000ff')
+  ctx.setLineDash([1, 2])
+  t.deepEqual(ctx.getLineDash(), [1, 2])
+  t.is(ctx.createImageData(2, 2).width, 2)
+  // reset() resets the state but keeps the context lost.
+  ctx.reset()
+  t.deepEqual([ctx.isContextLost(), ctx.fillStyle], [true, '#000000'])
+  // So does a size without pixels.
+  canvas.width = 0
+  t.true(ctx.isContextLost())
+  canvas.width = 100000
+  t.true(ctx.isContextLost())
+})
+
+test('a zero-size canvas never loses its context', (t) => {
+  const canvas = createCanvas(10, 10)
+  const ctx = canvas.getContext('2d')
+  canvas.width = 0
+  ctx.lineWidth = 7
+  ctx.fillRect(0, 0, 1, 1)
+  ctx.translate(2, 2)
+  t.deepEqual([ctx.isContextLost(), ctx.lineWidth, ctx.getTransform().e], [false, 7, 0])
+})
+
+test('back to a valid size after an over-limit size', async (t) => {
+  // Chrome restores a lost context two tasks after the resize; here it is
+  // restored at the resize. Only the cases that agree are pinned.
+  for (const touch of [
+    () => {},
+    (ctx: Ctx) => ctx.getImageData(0, 0, 1, 1),
+    (ctx: Ctx) => loose(ctx).canvas.toDataURL(),
+  ]) {
+    const canvas = createCanvas(10, 10)
+    const ctx = canvas.getContext('2d')
+    canvas.width = 2 ** 30
+    touch(ctx)
+    canvas.width = 10
+    ctx.fillRect(0, 0, 4, 4)
+    t.deepEqual([ctx.isContextLost(), px(ctx)], [false, [0, 0, 0, 255]])
+  }
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 0))
+  const canvas = createCanvas(10, 10)
+  const ctx = canvas.getContext('2d')
+  canvas.width = 2 ** 30
+  ctx.fillRect(0, 0, 1, 1)
+  t.true(ctx.isContextLost())
+  for (let i = 0; i < 4; i++) await tick()
+  canvas.width = 10
+  await tick()
+  await tick()
+  ctx.fillRect(0, 0, 4, 4)
+  t.deepEqual([ctx.isContextLost(), px(ctx)], [false, [0, 0, 0, 255]])
 })
