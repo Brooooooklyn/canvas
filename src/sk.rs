@@ -209,8 +209,8 @@ pub mod ffi {
     pub font_descent: f32,
     pub alphabetic_baseline: f32,
     /// The drawn glyph ink, left and right of the anchor x, before a maxWidth
-    /// squeeze (negative left of it). Filled only when `collect_ink` asks for
-    /// it (the alpha:false reset); measureText does not, and gets 0 for both.
+    /// squeeze (negative left of it): `-left` and `right`, for the
+    /// alpha:false reset.
     pub ink_left: f32,
     pub ink_right: f32,
     /// Blink's TextMetrics baselines, relative to the textBaseline.
@@ -665,7 +665,6 @@ pub mod ffi {
       font_collection: *mut skiac_font_collection,
       request: *const skiac_text_request,
       paint: *mut skiac_paint,
-      collect_ink: bool,
       line_metrics: *mut skiac_line_metrics,
     );
 
@@ -3286,25 +3285,16 @@ impl Canvas {
     });
   }
 
-  /// `collect_ink` fills `ink_left` / `ink_right`, which costs a walk over
-  /// every drawn glyph.
   pub fn get_line_metrics(
     &self,
     text: &str,
     settings: &TextSettings,
     font_collection: &FontCollection,
     paint: &Paint,
-    collect_ink: bool,
   ) -> ffi::skiac_line_metrics {
     let mut line_metrics = ffi::skiac_line_metrics::default();
     settings.with_request(text, |request| unsafe {
-      ffi::skiac_text_measure(
-        font_collection.0,
-        request,
-        paint.0,
-        collect_ink,
-        &mut line_metrics,
-      );
+      ffi::skiac_text_measure(font_collection.0, request, paint.0, &mut line_metrics);
     });
     line_metrics
   }
