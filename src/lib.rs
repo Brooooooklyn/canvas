@@ -7,6 +7,10 @@
 extern crate napi_derive;
 #[macro_use]
 extern crate serde_derive;
+// The Rust half of Skia's Fontations scaler, which skia-c's
+// libskiac_fontations calls into (build.rs). Named so that it gets linked.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+extern crate skia_fontations;
 
 use std::{
   ffi::{CString, c_void},
