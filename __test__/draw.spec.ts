@@ -1374,10 +1374,13 @@ test('measureText', (t) => {
   const { ctx } = t.context
   ctx.font = '50px Iosevka Slab'
   const metrics = ctx.measureText('@napi-rs/canvas')
-  t.is(metrics.actualBoundingBoxLeft, -3)
-  t.is(metrics.actualBoundingBoxAscent, 42)
-  t.is(metrics.actualBoundingBoxDescent, 10)
-  t.true(Math.abs(metrics.actualBoundingBoxRight - 372) < 0.001)
+  // Chrome 155: whole-pixel glyph boxes on Linux, CoreText outlines on macOS.
+  const [left, ascent, descent, right] =
+    process.platform === 'darwin' ? [-3.45, 41.15, 10.25, 371.6] : [-3, 42, 10, 372]
+  t.true(Math.abs(metrics.actualBoundingBoxLeft - left) < 0.001)
+  t.true(Math.abs(metrics.actualBoundingBoxAscent - ascent) < 0.001)
+  t.true(Math.abs(metrics.actualBoundingBoxDescent - descent) < 0.001)
+  t.true(Math.abs(metrics.actualBoundingBoxRight - right) < 0.001)
   t.notThrows(() => {
     ctx.measureText('\u200b')
   })
@@ -1387,7 +1390,8 @@ test('measureText with empty string keeps the font metrics', (t) => {
   const { ctx } = t.context
   ctx.font = '50px Iosevka Slab'
   // TextMetrics is a class with prototype getters: compare its fields.
-  // Chrome 155 Linux; emHeight* with ExtendedTextMetrics on macOS.
+  // Chrome 155 (fontBoundingBoxDescent: CoreText's on macOS); emHeight* with
+  // ExtendedTextMetrics on macOS.
   const metrics = ctx.measureText('')
   const fields = [
     'actualBoundingBoxAscent',
@@ -1407,7 +1411,7 @@ test('measureText with empty string keeps the font metrics', (t) => {
     actualBoundingBoxLeft: 0,
     actualBoundingBoxRight: 0,
     fontBoundingBoxAscent: 49,
-    fontBoundingBoxDescent: 14,
+    fontBoundingBoxDescent: process.platform === 'darwin' ? 10 : 14,
     alphabeticBaseline: -0,
     emHeightAscent: 39.078125,
     emHeightDescent: 10.921875,

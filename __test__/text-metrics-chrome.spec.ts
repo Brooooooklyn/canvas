@@ -6,10 +6,10 @@
 // and alphabetic (TextMetrics::GetFontBaseline). The glyphs are painted with
 // their alphabetic baseline that far below y.
 //
-// macOS Chrome reads ascent and descent through CoreText, which differs by a
-// pixel for some fonts; these rows are the Linux ones on every platform.
+// On macOS the tables under "darwin" are Chrome's on macOS, which reads the
+// fonts through CoreText; other platforms check the Linux rows.
 import { copyFileSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { release, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -34,9 +34,12 @@ interface Fixture {
   em: Record<string, Row>
 }
 
-const FIXTURE: Fixture = JSON.parse(
-  readFileSync(join(__dirname, 'fixtures', 'text-fonts', 'text-metrics.json'), 'utf8'),
-)
+const RAW = JSON.parse(readFileSync(join(__dirname, 'fixtures', 'text-fonts', 'text-metrics.json'), 'utf8'))
+const FIXTURE: Fixture = process.platform === 'darwin' ? { ...RAW, ...RAW.darwin } : RAW
+
+// Chrome's macOS rows were measured on macOS 27. CoreText ships with the OS,
+// so on another macOS version the painted pixels are not compared.
+const PIXEL_PINS = process.platform !== 'darwin' || Number.parseInt(release(), 10) === 27
 
 for (const [family, file] of Object.entries(FIXTURE.fonts)) {
   GlobalFonts.registerFromPath(join(__dirname, 'fonts', file), family)
@@ -102,13 +105,15 @@ test('the font metrics and baselines follow textBaseline like Chrome', (t) => {
 })
 
 test('the glyph box moves with textBaseline like Chrome', (t) => {
-  // Every run's glyphs count (HanT's "中文Hg" is two runs). Chrome reads
-  // Harmattan's 13px glyph boxes through Fontations, one pixel taller.
+  // Every run's glyphs count (HanT's "中文Hg" is two runs). On Windows,
+  // which keeps FreeType, Harmattan's 13px glyph boxes are one pixel taller
+  // than Chrome's (Fontations).
+  const freetype = process.platform !== 'darwin' && process.platform !== 'linux'
   const out = mismatches(
     FIXTURE.baselines,
     [...X_FIELDS, ...INK_FIELDS],
     sized((family) => SAMPLE[family] ?? 'Hg'),
-  ).filter((line) => !/^HarmattanT 13 \w+ actualBoundingBoxAscent:/.test(line))
+  ).filter((line) => !freetype || !/^HarmattanT 13 \w+ actualBoundingBoxAscent:/.test(line))
   t.deepEqual(out, [])
 })
 
@@ -216,7 +221,7 @@ function inkBox(data: Uint8ClampedArray, width: number, height: number) {
   return [left, top, right, bottom]
 }
 
-test('fillText paints the glyphs at the textBaseline like Chrome', (t) => {
+;(PIXEL_PINS ? test : test.skip)('fillText paints the glyphs at the textBaseline like Chrome', (t) => {
   const actual: Record<string, Row> = {}
   for (const key of Object.keys(FIXTURE.ink)) {
     const ctx = createCanvas(200, 160).getContext('2d')
