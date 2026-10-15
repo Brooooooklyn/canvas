@@ -349,9 +349,12 @@ void MeasureOrDraw(skiac_font_collection* c_collection,
     return;
   }
   // TextMetrics::MeasureRuns: the union of the ink of every glyph, where the
-  // draw above paints it (visit() walks the text blobs paint() draws). Blink
-  // reads whole-pixel glyph boxes on Linux (SkFontGetBoundsForGlyphs rounds
-  // them out when subpixel positioning is off) and skips empty ones.
+  // draw above paints it (visit() walks the text blobs paint() draws), and
+  // skips empty ones. SkFontGetBoundsForGlyphs rounds the boxes out only
+  // without subpixel positioning, which Chrome Linux turns on
+  // (WebFontRenderStyle::ApplyToSkFont) like skparagraph's run fonts. Up to
+  // 256 px SkFont::getBounds gives whole pixels anyway (mask boxes); above
+  // it, a 64 px path strike's boxes scaled up, with fractions.
   bool has_ink = false;
   SkRect ink = SkRect::MakeEmpty();
   paragraph->visit([&](int, const Paragraph::VisitorInfo* info) {
@@ -365,7 +368,9 @@ void MeasureOrDraw(skiac_font_collection* c_collection,
       if (glyph_bounds[i].isEmpty()) {
         continue;
       }
-      SkRect glyph = SkRect::Make(glyph_bounds[i].roundOut());
+      SkRect glyph = info->font.isSubpixel()
+                         ? glyph_bounds[i]
+                         : SkRect::Make(glyph_bounds[i].roundOut());
       // y relative to the alphabetic baseline.
       glyph.offset(info->origin.fX + info->positions[i].fX,
                    info->origin.fY + info->positions[i].fY - line_baseline);
