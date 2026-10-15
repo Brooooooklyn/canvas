@@ -5,7 +5,7 @@
 // values.
 import test from 'ava'
 
-import { createCanvas, Path2D } from '../index'
+import { createCanvas, DOMPoint, Path2D } from '../index'
 
 type Ctx = ReturnType<ReturnType<typeof createCanvas>['getContext']>
 
@@ -146,4 +146,349 @@ test('roundRect large radius and negative size', (t) => {
   t.deepEqual(scene([5, 5, 30, 20, 100], 'stroke'), { box: [3, 3, 36, 26], sum: 65011 })
   t.deepEqual(scene([35, 35, -30, -30, 5], 'fill'), { box: [5, 5, 34, 34], sum: 223645 })
   t.deepEqual(scene([35, 35, -30, -30, 5], 'stroke'), { box: [3, 3, 36, 36], sum: 83936 })
+})
+
+const C = "Failed to execute 'roundRect' on 'CanvasRenderingContext2D': "
+const P = "Failed to execute 'roundRect' on 'Path2D': "
+
+/** The error `f` throws, as { name, message }; null when it returns. */
+function thrown(f: () => unknown) {
+  try {
+    f()
+    return null
+  } catch (e: any) {
+    return { name: e.name, message: e.message }
+  }
+}
+
+/** roundRect(...args) on a 60x60 context: the error, and the ink of a fill after it. */
+function attempt(args: any[], before?: (ctx: Ctx) => void) {
+  const ctx = createCanvas(60, 60).getContext('2d')
+  before?.(ctx)
+  const error = thrown(() => (ctx.roundRect as any)(...args))
+  ctx.resetTransform()
+  ctx.fill()
+  return { error, ...ink(ctx) }
+}
+
+test('roundRect radii take numbers, DOMPointInit and iterables of them', (t) => {
+  const box = [5, 5, 44, 44]
+  t.deepEqual(fill([5, 5, 30, 30, [{ x: 10, y: 4 }, 2]]), { box: [5, 5, 34, 34], sum: 224194 })
+  t.deepEqual(fillPath2D([5, 5, 30, 30, [{ x: 10, y: 4 }, 2]]), { box: [5, 5, 34, 34], sum: 224194 })
+  t.deepEqual(fill([5, 5, 40, 30, { x: 15, y: 6 }]), { box: [5, 5, 44, 34], sum: 285119 })
+  t.deepEqual(fill([5, 5, 40, 30, [{ x: 15, y: 6 }]]), { box: [5, 5, 44, 34], sum: 285119 })
+  t.deepEqual(fill([5, 5, 40, 40, [{ x: 10, y: 4 }, 2, { x: 3, y: 12 }, 8]]), { box, sum: 399554 })
+  t.deepEqual(fill([5, 5, 40, 40, [{ x: 10, y: 4 }, { x: 2, y: 12 }, 8]]), { box, sum: 399103 })
+  t.deepEqual(fill([5, 5, 40, 40, new DOMPoint(10, 5)]), { box, sum: 396130 })
+  t.deepEqual(fill([5, 45, 40, -40, [{ x: 20, y: 6 }, 0, 0, 0]]), { box, sum: 401092 })
+  t.deepEqual(fill([45, 5, -40, 40, [{ x: 20, y: 6 }, 0, { x: 4, y: 18 }, 0]]), { box, sum: 396961 })
+  // Radii too large for the side are scaled down together.
+  t.deepEqual(
+    fill([
+      5,
+      5,
+      40,
+      30,
+      [
+        { x: 30, y: 25 },
+        { x: 30, y: 4 },
+      ],
+    ]),
+    { box: [5, 5, 45, 34], sum: 262527 },
+  )
+  // A missing member is 0; null and undefined are {} in the union, and an
+  // array-like without @@iterator is a DOMPointInit too.
+  for (const radii of [[{}], { x: 10 }, null, undefined, -0, { length: 2, 0: 10, 1: 5 }]) {
+    t.deepEqual(fill([5, 5, 40, 40, radii]), { box, sum: 408000 }, String(radii))
+  }
+  t.deepEqual(fill([5, 5, 40, 40]), { box, sum: 408000 })
+  t.deepEqual(fill([5, 5, 40, 40, [null, 10]]), { box, sum: 395859 })
+  t.deepEqual(fill([5, 5, 40, 40, [undefined, 10]]), { box, sum: 395859 })
+  // ToNumber for anything else that is not an object.
+  t.deepEqual(fill([5, 5, 40, 40, '10']), { box, sum: 383708 })
+  t.deepEqual(fill([5, 5, 40, 40, ['10', '5']]), { box, sum: 392913 })
+  // A String object is iterable: ['7'].
+  t.deepEqual(fill([5, 5, 40, 40, new String('7')]), { box, sum: 396552 })
+  // @@iterator null is no iterator: the object is a DOMPointInit; so is a function.
+  t.deepEqual(fill([5, 5, 40, 40, { [Symbol.iterator]: null, x: 10, y: 10 }]), { box, sum: 383708 })
+  t.deepEqual(fill([5, 5, 40, 40, Object.assign(() => {}, { x: 10, y: 10 })]), { box, sum: 383708 })
+  t.deepEqual(
+    fill([
+      5,
+      5,
+      40,
+      40,
+      {
+        *[Symbol.iterator]() {
+          yield 10
+          yield { x: 5, y: 2 }
+        },
+      },
+    ]),
+    { box, sum: 394904 },
+  )
+  t.deepEqual(
+    draw((ctx) => {
+      ctx.beginPath()
+      ctx.roundRect(5, 45, 40, -40, [{ x: 12, y: 4 }, 6])
+      ctx.setLineDash([5, 3])
+      ctx.lineWidth = 2
+      ctx.stroke()
+    }),
+    { box: [4, 4, 45, 45], sum: 48571 },
+  )
+  const ctx = createCanvas(60, 60).getContext('2d')
+  ctx.roundRect(5, 5, 40, 40, [{ x: 20, y: 4 }, 0])
+  t.deepEqual([ctx.isPointInPath(7, 7), ctx.isPointInPath(7, 9.5), ctx.isPointInPath(43, 7)], [false, true, true])
+})
+
+test('roundRect throws RangeError for negative radii and a bad radius count', (t) => {
+  const range = (message: string) => ({ name: 'RangeError', message })
+  const cases: [any, string][] = [
+    [-1, 'Radius value -1 is negative.'],
+    [-0.5, 'Radius value -0.5 is negative.'],
+    [-0.1, 'Radius value -0.1 is negative.'],
+    [-1e-7, 'Radius value -1.00000e-7 is negative.'],
+    [-123456789, 'Radius value -1.23457e+8 is negative.'],
+    [-1e21, 'Radius value -1.00000e+21 is negative.'],
+    [-3.4e38, 'Radius value -3.40000e+38 is negative.'],
+    [-1.5, 'Radius value -1.5 is negative.'],
+    // The message shows the float value.
+    [-0.30000001, 'Radius value -0.3 is negative.'],
+    [-16777217, 'Radius value -1.67772e+7 is negative.'],
+    [-1e-45, 'Radius value -1.40130e-45 is negative.'],
+    [[-1, NaN], 'Radius value -1 is negative.'],
+    [{ x: -0.1 }, 'X-radius value -0.1 is negative.'],
+    [{ x: -1, y: 4 }, 'X-radius value -1 is negative.'],
+    [{ x: 1, y: -4 }, 'Y-radius value -4 is negative.'],
+    [{ y: -1e21 }, 'Y-radius value -1.00000e+21 is negative.'],
+    [[], '0 radii provided. Between one and four radii are necessary.'],
+    [[1, 2, 3, 4, 5], '5 radii provided. Between one and four radii are necessary.'],
+    [[{}, {}, {}, {}, {}, {}], '6 radii provided. Between one and four radii are necessary.'],
+  ]
+  for (const [radii, message] of cases) {
+    t.deepEqual(attempt([5, 5, 40, 40, radii]), { error: range(C + message), box: null, sum: 0 }, message)
+  }
+  // A flat rect checks its radii too.
+  t.deepEqual(attempt([5, 5, 0, 40, -1]).error, range(C + 'Radius value -1 is negative.'))
+  t.deepEqual(
+    thrown(() => new Path2D().roundRect(0, 0, 5, 5, [])),
+    range(P + '0 radii provided. Between one and four radii are necessary.'),
+  )
+  t.deepEqual(
+    thrown(() => new Path2D().roundRect(0, 0, 5, 5, -2)),
+    range(P + 'Radius value -2 is negative.'),
+  )
+  t.deepEqual(
+    thrown(() => new Path2D().roundRect(0, 0, 5, 5, [{ x: 1, y: -2 }])),
+    range(P + 'Y-radius value -2 is negative.'),
+  )
+})
+
+test('roundRect RangeErrors keep the bare message in the stack', (t) => {
+  // Chrome throws them from the binding: the message gets the prefix, the
+  // stack keeps the bare message.
+  const ctx = createCanvas(10, 10).getContext('2d')
+  const path = new Path2D()
+  for (const [f, prefix, msg] of [
+    [() => ctx.roundRect(0, 0, 10, 10, []), C, '0 radii provided. Between one and four radii are necessary.'],
+    [
+      () => ctx.roundRect(0, 0, 10, 10, [1, 2, 3, 4, 5]),
+      C,
+      '5 radii provided. Between one and four radii are necessary.',
+    ],
+    [() => ctx.roundRect(0, 0, 10, 10, -1), C, 'Radius value -1 is negative.'],
+    [() => ctx.roundRect(0, 0, 10, 10, [{ x: -1, y: 1 }]), C, 'X-radius value -1 is negative.'],
+    [() => path.roundRect(0, 0, 10, 10, -2), P, 'Radius value -2 is negative.'],
+    [() => path.roundRect(0, 0, 10, 10, []), P, '0 radii provided. Between one and four radii are necessary.'],
+  ] as [() => void, string, string][]) {
+    const error = t.throws(f, { instanceOf: RangeError, message: prefix + msg })
+    t.is(String(error?.stack).split('\n')[0], `RangeError: ${msg}`)
+  }
+})
+
+test('roundRect checks the count, then the matrix and the rect, then each radius in turn', (t) => {
+  const nothing = { error: null, box: null, sum: 0 }
+  const count = (n: number) => ({
+    error: { name: 'RangeError', message: C + n + ' radii provided. Between one and four radii are necessary.' },
+    box: null,
+    sum: 0,
+  })
+  const singular = (ctx: Ctx) => ctx.scale(0, 1)
+  t.deepEqual(attempt([NaN, 0, 5, 5, []]), count(0))
+  t.deepEqual(attempt([0, 0, 5, 5, []], singular), count(0))
+  t.deepEqual(attempt([5, 5, 40, 40, [1, 2, 3, 4, 5]], singular), count(5))
+  // Then nothing is added, and nothing thrown, under a singular matrix, for a
+  // rect outside the float range, or at the first radius that is not finite.
+  t.deepEqual(attempt([5, 5, 40, 40, -1], singular), nothing)
+  t.deepEqual(attempt([NaN, 5, 40, 40, -1]), nothing)
+  t.deepEqual(attempt([5, 5, 1e39, 40, -1]), nothing)
+  for (const radii of [
+    NaN,
+    [Infinity, 2],
+    [NaN, -1],
+    { x: NaN, y: 4 },
+    [{ x: Infinity, y: 4 }],
+    { x: Infinity, y: -1 },
+    { x: -1, y: NaN },
+    { x: 1e39, y: 1 },
+    // Just above FLT_MAX: outside the float range, although it rounds to FLT_MAX.
+    3.4028235e38,
+    -1e39,
+  ]) {
+    t.deepEqual(attempt([5, 5, 40, 40, radii]), nothing, JSON.stringify(radii))
+  }
+  const ctx = createCanvas(10, 10).getContext('2d')
+  ctx.roundRect(1e300, 0, 5, 5, 1)
+  t.false(ctx.isPointInPath(1, 1))
+  ctx.beginPath()
+  ;(ctx.roundRect as any)(0, 0, 10, 10, true)
+  t.false(ctx.isPointInPath(0.2, 0.2))
+})
+
+test('roundRect converts radii like WebIDL', (t) => {
+  const type = (prefix: string, message: string) => ({ name: 'TypeError', message: prefix + message })
+  const roundRect = (radii: any) => thrown(() => createCanvas(10, 10).getContext('2d').roundRect(0, 0, 5, 5, radii))
+  t.deepEqual(roundRect(Symbol()), type(C, 'Cannot convert a Symbol value to a number'))
+  t.deepEqual(roundRect([Symbol()]), type(C, 'Cannot convert a Symbol value to a number'))
+  t.deepEqual(roundRect(1n), type(C, 'Cannot convert a BigInt value to a number'))
+  // Every radius is converted before any is checked.
+  t.deepEqual(roundRect([-1, Symbol()]), type(C, 'Cannot convert a Symbol value to a number'))
+  const member = (key: string) =>
+    `Failed to read the '${key}' property from 'DOMPointInit': Cannot convert a Symbol value to a number`
+  t.deepEqual(roundRect({ x: Symbol() }), type(C, member('x')))
+  t.deepEqual(roundRect({ w: Symbol() }), type(C, member('w')))
+  t.deepEqual(roundRect({ x: { valueOf: () => Symbol() } }), type(C, member('x')))
+  t.deepEqual(roundRect({ [Symbol.iterator]: 5 }), type(C, '@@iterator must be a function'))
+  t.deepEqual(
+    thrown(() => new Path2D().roundRect(0, 0, 5, 5, { [Symbol.iterator]: 5 } as any)),
+    type(P, '@@iterator must be a function'),
+  )
+  t.deepEqual(roundRect({ [Symbol.iterator]: () => 5 }), type(C, 'Iterator object must be an object.'))
+  t.deepEqual(
+    roundRect({ [Symbol.iterator]: () => ({ next: () => 5 }) }),
+    type(C, 'Expected iterator.next() to return an Object.'),
+  )
+  t.deepEqual(roundRect({ [Symbol.iterator]: () => ({ next: 5 }) }), type(C, 'Expected next() function on iterator.'))
+  t.deepEqual(roundRect({ [Symbol.iterator]: () => ({}) }), type(C, 'Expected next() function on iterator.'))
+  // An error from user code passes as it is.
+  const error = new RangeError('it')
+  const ctx = createCanvas(10, 10).getContext('2d')
+  t.is(
+    t.throws(() =>
+      ctx.roundRect(0, 0, 5, 5, {
+        [Symbol.iterator]() {
+          throw error
+        },
+      } as any),
+    ),
+    error,
+  )
+})
+
+test('roundRect reads radii in order', (t) => {
+  const ctx = createCanvas(60, 60).getContext('2d')
+  const log: string[] = []
+  const point = (name: string) =>
+    new Proxy(
+      {},
+      {
+        get(_, key) {
+          if (typeof key === 'string') log.push(name + '.' + key)
+          return key === 'x' ? 2 : undefined
+        },
+      },
+    )
+  ctx.roundRect(1, 1, 20, 20, [point('A'), point('B')])
+  t.is(log.join(), 'A.w,A.x,A.y,A.z,B.w,B.x,B.y,B.z')
+  log.length = 0
+  t.throws(() => ctx.roundRect(1, 1, 20, 20, [point('A'), -1, point('B')]), { name: 'RangeError' })
+  t.is(log.join(), 'A.w,A.x,A.y,A.z,B.w,B.x,B.y,B.z')
+  // Each value is converted as soon as the iterator gives it.
+  log.length = 0
+  ctx.roundRect(0, 0, 20, 20, {
+    *[Symbol.iterator]() {
+      log.push('n1')
+      yield point('A')
+      log.push('n2')
+      yield point('B')
+      log.push('n3')
+    },
+  } as any)
+  t.is(log.join(), 'n1,A.w,A.x,A.y,A.z,n2,B.w,B.x,B.y,B.z,n3')
+  log.length = 0
+  t.throws(
+    () =>
+      ctx.roundRect(0, 0, 20, 20, {
+        *[Symbol.iterator]() {
+          log.push('n1')
+          yield Symbol()
+          log.push('n2')
+          yield 3
+        },
+      } as any),
+    { name: 'TypeError', message: C + 'Cannot convert a Symbol value to a number' },
+  )
+  t.is(log.join(), 'n1')
+  // A failed conversion does not call return().
+  log.length = 0
+  let i = 0
+  const iterator = {
+    next() {
+      log.push('next')
+      return i++ < 1 ? { value: Symbol(), done: false } : { done: true }
+    },
+    return() {
+      log.push('return')
+      return {}
+    },
+  }
+  t.throws(() => ctx.roundRect(0, 0, 20, 20, { [Symbol.iterator]: () => iterator } as any), { name: 'TypeError' })
+  t.is(log.join(), 'next')
+  // next is read once; each step reads value, then done.
+  log.length = 0
+  let step = 0
+  const counted = {
+    get next() {
+      log.push('next')
+      return () => {
+        log.push('step')
+        const done = step++ >= 1
+        return {
+          get done() {
+            log.push('done')
+            return done
+          },
+          get value() {
+            log.push('value')
+            return 4
+          },
+        }
+      }
+    },
+  }
+  t.deepEqual(
+    draw((ctx) => {
+      ctx.beginPath()
+      ctx.roundRect(5, 5, 40, 40, { [Symbol.iterator]: () => counted } as any)
+      ctx.fill()
+    }),
+    { box: [5, 5, 44, 44], sum: 404980 },
+  )
+  t.is(log.join(), 'next,step,value,done,step,value,done')
+})
+
+test('CanvasPattern.setTransform names the DOMMatrix2DInit member that fails to convert', (t) => {
+  const ctx = createCanvas(10, 10).getContext('2d')
+  const pattern = ctx.createPattern(createCanvas(2, 2), 'repeat')!
+  const prefix =
+    "Failed to execute 'setTransform' on 'CanvasPattern': Failed to read the 'a' property from 'DOMMatrix2DInit': "
+  t.throws(() => pattern.setTransform({ a: Symbol() as any }), {
+    instanceOf: TypeError,
+    message: prefix + 'Cannot convert a Symbol value to a number',
+  })
+  t.throws(() => pattern.setTransform({ a: 1n as any }), {
+    instanceOf: TypeError,
+    message: prefix + 'Cannot convert a BigInt value to a number',
+  })
 })

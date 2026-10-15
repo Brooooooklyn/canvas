@@ -1260,14 +1260,145 @@ impl Dictionary<'_> {
     }
   }
 
-  /// `unrestricted double` member: ToNumber.
+  /// `unrestricted double` member: ToNumber. The engine's own errors name
+  /// the member, as in Chrome: "Failed to read the 'x' property from
+  /// 'DOMPointInit': Cannot convert a Symbol value to a number".
   fn number(&self, key: &str) -> Result<Option<f64>> {
     let Some(v) = member(self.env, self.value, key)? else {
       return Ok(None);
     };
-    let mut n = ptr::null_mut();
-    check_status!(unsafe { sys::napi_coerce_to_number(self.env, v, &mut n) })?;
-    Ok(Some(unsafe { f64::from_napi_value(self.env, n)? }))
+    let prefix = format!(
+      "{}Failed to read the '{key}' property from '{}': ",
+      self.prefix, self.name
+    );
+    to_number(self.env, v, &prefix).map(Some)
+  }
+}
+
+/// Iterates `iterable` with its @@iterator `method` like Blink's
+/// ScriptIterator (bindings/core/v8/script_iterator.cc): `next` is read once,
+/// each step reads `value` and then `done`, and `convert` runs on each value
+/// before the next step. Nothing calls return() when a conversion throws.
+fn iterate<T>(
+  env: sys::napi_env,
+  iterable: sys::napi_value,
+  method: sys::napi_value,
+  prefix: &str,
+  mut convert: impl FnMut(sys::napi_value) -> Result<T>,
+) -> Result<Vec<T>> {
+  let iterator = call(env, iterable, method, &[])?;
+  if !is_object(env, iterator)? {
+    return Err(context_type_error(
+      env,
+      prefix,
+      "Iterator object must be an object.",
+    ));
+  }
+  let mut next = ptr::null_mut();
+  check_status!(unsafe {
+    sys::napi_get_named_property(env, iterator, c"next".as_ptr(), &mut next)
+  })?;
+  if !is_callable(env, next)? {
+    return Err(context_type_error(
+      env,
+      prefix,
+      "Expected next() function on iterator.",
+    ));
+  }
+  let mut values = Vec::new();
+  loop {
+    let result = call(env, iterator, next, &[])?;
+    if !is_object(env, result)? {
+      return Err(context_type_error(
+        env,
+        prefix,
+        "Expected iterator.next() to return an Object.",
+      ));
+    }
+    let mut value = ptr::null_mut();
+    check_status!(unsafe {
+      sys::napi_get_named_property(env, result, c"value".as_ptr(), &mut value)
+    })?;
+    let mut done = ptr::null_mut();
+    check_status!(unsafe {
+      sys::napi_get_named_property(env, result, c"done".as_ptr(), &mut done)
+    })?;
+    let mut done_bool = ptr::null_mut();
+    check_status!(unsafe { sys::napi_coerce_to_bool(env, done, &mut done_bool) })?;
+    if unsafe { bool::from_napi_value(env, done_bool)? } {
+      return Ok(values);
+    }
+    values.push(convert(value)?);
+  }
+}
+
+/// One radius of roundRect(): WebIDL `(unrestricted double or DOMPointInit)`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum Radius {
+  Number(f64),
+  /// The x and y of a DOMPointInit.
+  Point(f64, f64),
+}
+
+/// `(unrestricted double or DOMPointInit)`: undefined, null and any object
+/// are a DOMPointInit (every member read, in order: w, x, y, z); anything
+/// else goes through ToNumber.
+fn radius(env: sys::napi_env, value: sys::napi_value, prefix: &str) -> Result<Radius> {
+  match raw_type_of(env, value)? {
+    sys::ValueType::napi_undefined | sys::ValueType::napi_null => Ok(Radius::Point(0.0, 0.0)),
+    sys::ValueType::napi_object | sys::ValueType::napi_function => {
+      let dictionary = Dictionary {
+        env,
+        value,
+        prefix,
+        name: "DOMPointInit",
+      };
+      dictionary.number("w")?;
+      let x = dictionary.number("x")?;
+      let y = dictionary.number("y")?;
+      dictionary.number("z")?;
+      Ok(Radius::Point(x.unwrap_or(0.0), y.unwrap_or(0.0)))
+    }
+    _ => to_number(env, value, prefix).map(Radius::Number),
+  }
+}
+
+/// The `radii` argument of roundRect(): `optional (unrestricted double or
+/// DOMPointInit or sequence<(unrestricted double or DOMPointInit)>) radii = 0`.
+/// An object with @@iterator is a sequence (read through the iterator, no
+/// array fast path), any other object a DOMPointInit. Converted in the
+/// callback glue, so a getter may use the receiver, as in Chrome.
+pub struct RoundRectRadii<S>(pub(crate) Vec<Radius>, PhantomData<S>);
+
+impl<S: Site> FromNapiValue for RoundRectRadii<S> {
+  unsafe fn from_napi_value(env: sys::napi_env, value: sys::napi_value) -> Result<Self> {
+    let radii = match raw_type_of(env, value)? {
+      sys::ValueType::napi_undefined => vec![Radius::Number(0.0)],
+      sys::ValueType::napi_object | sys::ValueType::napi_function => {
+        let method = match intrinsic(env, c"iterator")? {
+          Some(key) => get_property(env, value, key)?,
+          // Not readable when the addon was registered: as if undefined.
+          None => undefined(env)?,
+        };
+        match raw_type_of(env, method)? {
+          sys::ValueType::napi_undefined | sys::ValueType::napi_null => {
+            vec![radius(env, value, S::PREFIX)?]
+          }
+          sys::ValueType::napi_function => iterate(env, value, method, S::PREFIX, |item| {
+            radius(env, item, S::PREFIX)
+          })?,
+          _ => {
+            return Err(context_type_error(
+              env,
+              S::PREFIX,
+              "@@iterator must be a function",
+            ));
+          }
+        }
+      }
+      _ => vec![radius(env, value, S::PREFIX)?],
+    };
+    Ok(Self(radii, PhantomData))
   }
 }
 

@@ -29,7 +29,7 @@ use crate::{
   gradient::{CanvasGradient, Gradient},
   image::*,
   num,
-  path::{Path, round_rect_radii},
+  path::{Path, check_round_rect},
   pattern::{CanvasPattern, Pattern, hsl_to_rgba8, srgb_channel_to_u8},
   sk::{
     AccountedBitmap, AlphaType, Bitmap, BlendMode, ColorSpace, DecodedCopy, FillType,
@@ -4645,19 +4645,23 @@ impl CanvasRenderingContext2D {
   #[napi]
   pub fn round_rect(
     &mut self,
+    env: &Env,
     x: Double<webidl::CtxRoundRect>,
     y: Double<webidl::CtxRoundRect>,
     width: Double<webidl::CtxRoundRect>,
     height: Double<webidl::CtxRoundRect>,
-    radii: Either3<f64, Vec<f64>, Undefined>,
-  ) {
-    let Some([x, y, width, height]) = num::saturated_f32s([x.0, y.0, width.0, height.0]) else {
-      return;
-    };
-    let Some(radii) = round_rect_radii(radii) else {
-      return;
-    };
-    self.context.round_rect(x, y, width, height, &radii);
+    radii: webidl::RoundRectRadii<webidl::CtxRoundRect>,
+  ) -> Result<()> {
+    if let Some(([x, y, width, height], radii)) = check_round_rect(
+      env.raw(),
+      <webidl::CtxRoundRect as webidl::Site>::PREFIX,
+      self.context.transform_is_invertible(),
+      [x.0, y.0, width.0, height.0],
+      &radii.0,
+    )? {
+      self.context.round_rect(x, y, width, height, &radii);
+    }
+    Ok(())
   }
 
   /// fill(fillRule?) or fill(path, fillRule?). The index.js wrapper passes
