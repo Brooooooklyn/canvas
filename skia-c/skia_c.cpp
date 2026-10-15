@@ -17,6 +17,13 @@
 #endif
 
 #include "skia_c.hpp"
+
+// libskia is built with SK_RELEASE; a debug skia-c would see other class
+// layouts in the shared Skia headers (see build.rs).
+#if defined(SK_DEBUG) || !defined(SK_RELEASE)
+#error "skia-c must be built with SK_RELEASE like libskia (see build.rs)"
+#endif
+
 #define SURFACE_CAST reinterpret_cast<SkSurface*>(c_surface)
 #define CANVAS_CAST reinterpret_cast<SkCanvas*>(c_canvas)
 #define PAINT_CAST reinterpret_cast<SkPaint*>(c_paint)
