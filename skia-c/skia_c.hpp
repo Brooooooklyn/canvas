@@ -808,6 +808,50 @@ struct skiac_font_variation {
   float value;   // Value for this axis
 };
 
+// One family of the canvas font (font.rs FamilyName). `name` is UTF-8 and
+// not NUL-terminated; a generic family has no name.
+struct skiac_text_family {
+  const char* name;
+  size_t name_len;
+  // 0 named, 1 serif, 2 sans-serif, 3 cursive, 4 fantasy, 5 monospace,
+  // 6 system-ui, 7 -webkit-body, 8 math.
+  int generic;
+};
+
+// The text and the canvas text settings of one measureText, fillText or
+// strokeText (text.cpp).
+struct skiac_text_request {
+  // UTF-8, not NUL-terminated: a U+0000 in the text is text.
+  const char* text;
+  size_t text_len;
+  const skiac_text_family* families;
+  size_t family_count;
+  float size;
+  // CSS font-weight, 1..1000 in quarter steps.
+  float weight;
+  // Degrees, 14 for italic and plain oblique.
+  float slope;
+  // The font-style keyword: SkFontStyle::Slant values.
+  int style;
+  // SkFontStyle::Width values (font.rs FontStretch).
+  int stretch;
+  // The fontStretch percentage, 100 for normal.
+  float stretch_pct;
+  int baseline;
+  int align;
+  int direction;
+  float letter_spacing;
+  float word_spacing;
+  const skiac_font_variation* variations;
+  int variations_count;
+  int kerning;
+  int variant_caps;
+  // The lang attribute, not NUL-terminated; empty or "inherit" for none.
+  const char* lang;
+  size_t lang_len;
+  int text_rendering;
+};
+
 extern "C" {
 void skiac_clear_all_cache();
 // Surface
@@ -935,35 +979,23 @@ void skiac_canvas_draw_surface_rect(skiac_canvas* c_canvas,
                                     float dw,
                                     float dh,
                                     int filter_quality);
-void skiac_canvas_get_line_metrics_or_draw_text(
-    const char* text,
-    size_t text_len,
-    float max_width,
-    float x,
-    float y,
-    float canvas_width,
+// Text (text.cpp)
+void skiac_text_measure(skiac_font_collection* c_collection,
+                        const skiac_text_request* request,
+                        skiac_paint* c_paint,
+                        bool collect_ink,
+                        skiac_line_metrics* c_line_metrics);
+void skiac_text_draw(skiac_canvas* c_canvas,
+                     skiac_font_collection* c_collection,
+                     const skiac_text_request* request,
+                     skiac_paint* c_paint,
+                     float x,
+                     float y,
+                     float max_width);
+bool skiac_font_collection_ideographic_advance(
     skiac_font_collection* c_collection,
-    float font_size,
-    int weight,
-    int stretch,
-    float stretch_width,
-    int slant,
-    const char* font_family,
-    int baseline,
-    int align,
-    int direction,
-    float letter_spacing,
-    float world_spacing,
-    skiac_paint* c_paint,
-    skiac_canvas* c_canvas,
-    skiac_line_metrics* c_line_metrics,
-    bool collect_ink,
-    const skiac_font_variation* variations,
-    int variations_count,
-    int kerning,
-    int variant_caps,
-    const char* lang,
-    int text_rendering);
+    const skiac_text_request* request,
+    float* advance);
 void skiac_canvas_reset_transform(skiac_canvas* c_canvas);
 bool skiac_canvas_get_device_clip_bounds(skiac_canvas* c_canvas, int32_t* ltrb);
 void skiac_canvas_clip_rect(skiac_canvas* c_canvas,
@@ -1443,17 +1475,6 @@ bool skiac_font_collection_set_alias(skiac_font_collection* c_font_collection,
                                      const char* family,
                                      const char* alias);
 void skiac_font_collection_destroy(skiac_font_collection* c_font_collection);
-bool skiac_font_collection_ideographic_advance(
-    skiac_font_collection* c_collection,
-    float font_size,
-    int weight,
-    int stretch,
-    float stretch_width,
-    int slant,
-    const char* font_family,
-    const skiac_font_variation* variations,
-    int variations_count,
-    float* advance);
 
 // Variable Fonts
 int skiac_typeface_get_variation_design_position(

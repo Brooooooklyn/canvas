@@ -684,14 +684,14 @@ test.serial('fillText with the registered Lato font paints', (t) => {
   )
 })
 
-// A text draw that cannot record (interior NUL in the text CString) must
-// leave the recording untouched: the following draw still renders.
-test.serial('NUL-rejected fillText leaves the canvas usable', (t) => {
+// A U+0000 in the text is text, like in Chrome: the draw records and the
+// following draw still renders.
+test.serial('fillText with a NUL draws and leaves the canvas usable', (t) => {
   const ctx = createCanvas(64, 64).getContext('2d')!
   ctx.font = '16px Lato'
   const nulText = 'a\0b'
-  t.throws(() => ctx.fillText(nulText, 0, 16))
-  t.throws(() => ctx.strokeText(nulText, 0, 16))
+  t.notThrows(() => ctx.fillText(nulText, 0, 16))
+  t.notThrows(() => ctx.strokeText(nulText, 0, 16))
   ctx.fillStyle = '#ff0000'
   ctx.fillRect(0, 0, 64, 64)
   t.deepEqual(px(ctx, 32, 32), [255, 0, 0, 255])
