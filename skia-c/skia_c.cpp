@@ -1829,6 +1829,15 @@ static sk_sp<SkColorSpace> ConversionTarget(const SkPixmap& original,
   return SkColorSpace::Equals(source.get(), target.get()) ? nullptr : target;
 }
 
+// Float pixels: a float16 canvas's, or a float ImageData pattern's. Chrome
+// decodes them to N32 like every image that is not HDR
+// (SoftwareImageDecodeCache::GetColorTypeForPaintImage,
+// software_image_decode_cache.cc:737-752), which rounds them.
+static bool IsFloat(const SkPixmap& pixmap) {
+  return pixmap.colorType() == kRGBA_F16_SkColorType ||
+         pixmap.colorType() == kRGBA_F32_SkColorType;
+}
+
 // GenerateCacheEntryFromCandidate (software_image_decode_cache_utils.cc:
 // 183-270) with the original decode as the candidate: the src subset, in
 // `target` when it is set (DoDecodeImage), scaled to the level size with
@@ -1843,10 +1852,13 @@ static sk_sp<SkImage> MakeLevelImage(const SkPixmap& original,
   if (!original.extractSubset(&subset, src)) {
     return nullptr;
   }
+  // The scale starts from the N32 decode: copy to it first when the pixels
+  // are in another colour space or type.
   SkBitmap converted;
-  if (target && size != src.size()) {
-    if (!converted.tryAllocPixels(SkImageInfo::Make(
-            src.size(), kN32_SkColorType, kPremul_SkAlphaType, target)) ||
+  if ((target || IsFloat(original)) && size != src.size()) {
+    if (!converted.tryAllocPixels(
+            SkImageInfo::Make(src.size(), kN32_SkColorType, kPremul_SkAlphaType,
+                              target ? target : original.refColorSpace())) ||
         !subset.readPixels(converted.pixmap())) {
       return nullptr;
     }
@@ -1968,7 +1980,9 @@ static sk_sp<SkImage> DrawDecodedImage(SkCanvas* canvas,
   SkIRect decoded_src = key.src;
   SkISize decoded_size = key.size;
   if (key.level == 0) {
-    if (!target) {
+    // A float16 canvas source draws from its N32 decode even when it is in
+    // the canvas's colour space.
+    if (!target && (levels || !IsFloat(original))) {
       sk_sp<SkImage> image =
           snapshot ? snapshot : SkImages::RasterFromBitmap(*bitmap);
       if (image) {
@@ -4332,7 +4346,8 @@ skiac_shader* skiac_image_make_decoded_pattern_shader(
                               : c_image && IMAGE_CAST->peekPixels(&original);
   if (!has_pixels) {
     // A null image gives an empty shader below.
-  } else if (level == 0 && !ConversionTarget(original, cs)) {
+  } else if (level == 0 && !ConversionTarget(original, cs) &&
+             (c_levels || !IsFloat(original))) {
     image = sk_ref_sp(IMAGE_CAST);
   } else {
     const SkIRect src = SkIRect::MakeSize(original.dimensions());

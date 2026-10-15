@@ -667,3 +667,83 @@ test('SVGCanvas getContext colorType float16 has a float16 raster', (t) => {
   for (let i = 0; i < 100; i++) c.fillRect(0, 0, 1, 1)
   chromeEqual(t, px(c, 0, 0, 'rgba-float32'), 'P1-100-fills', { pick: (pin) => pin.float16.transparent.f32 })
 })
+
+// Chrome draws a canvas source on a canvas that is not sRGB from an N32 decode
+// (SoftwareImageDecodeCache: F16 only for high-bit-depth images), also when the
+// source is float16 and in the canvas's own color space.
+test('float16 canvas sources on display-p3 canvases go through the 8-bit decode', (t) => {
+  const filled = (o: object) => {
+    const c = canvas(1, 1)
+    fills(c.getContext('2d', loose(o)))
+    return c
+  }
+  const X1: Record<string, unknown> = {}
+  for (const [sk, so] of Object.entries({ f16: F16, f16p3: F16P3, u8p3: { colorSpace: 'display-p3' } })) {
+    const src = filled(so)
+    for (const [dk, dopts] of Object.entries({ u8: {}, f16: F16, f16p3: F16P3, u8p3: { colorSpace: 'display-p3' } })) {
+      const c = ctx(1, 1, dopts)
+      c.drawImage(src, 0, 0)
+      X1[sk + '->' + dk] = px(c, 0, 0, 'rgba-float32')
+    }
+  }
+  chromeEqual(t, X1, 'X1-f16src-to-dest-variants')
+
+  const grid = (o: object) => {
+    const c = canvas(8, 8)
+    const s = c.getContext('2d', loose(o))
+    for (let y = 0; y < 8; y++) {
+      for (let x = 0; x < 8; x++) {
+        s.fillStyle = `rgba(${x * 30},${y * 30},128,${0.1 + 0.1 * ((x + y) % 9)})`
+        s.fillRect(x, y, 1, 1)
+      }
+    }
+    return c
+  }
+  const X16: Record<string, unknown> = {}
+  for (const [sk, so] of Object.entries({ f16: F16, f16p3: F16P3 })) {
+    const src = grid(so)
+    for (const [dk, dopts] of Object.entries({ f16p3: F16P3, u8p3: { colorSpace: 'display-p3' } })) {
+      for (const q of ['low', 'medium', 'high'] as const) {
+        const c = ctx(4, 4, dopts)
+        c.imageSmoothingQuality = q
+        c.drawImage(src, 0, 0, 3, 3)
+        X16[sk + '->' + dk + '-' + q] = px(c, 1, 1, 'rgba-float32')
+      }
+      const c = ctx(8, 8, dopts)
+      c.drawImage(src, 0, 0)
+      X16[sk + '->' + dk + '-1x'] = px(c, 3, 2, 'rgba-float32')
+    }
+  }
+  chromeEqual(t, X16, 'X16-f16-canvas-source-scaled-on-p3')
+
+  const x17src = canvas(2, 2)
+  fills(x17src.getContext('2d', F16))
+  const X17: Record<string, unknown> = {}
+  for (const [dk, dopts] of Object.entries({ f16p3: F16P3, u8p3: { colorSpace: 'display-p3' } })) {
+    const c = ctx(2, 2, dopts)
+    c.fillStyle = c.createPattern(x17src, 'repeat')!
+    c.fillRect(0, 0, 2, 2)
+    X17[dk] = px(c, 1, 1, 'rgba-float32')
+  }
+  chromeEqual(t, X17, 'X17-f16-pattern-on-p3')
+
+  const X18: Record<string, unknown> = {}
+  for (const [sk, so] of Object.entries({ f16p3: F16P3, f16: F16 })) {
+    const src = canvas(2, 2)
+    fills(src.getContext('2d', loose(so)))
+    for (const [dk, dopts] of Object.entries({ f16p3: F16P3, u8p3: { colorSpace: 'display-p3' }, f16: F16, u8: {} })) {
+      const c = ctx(2, 2, dopts)
+      c.fillStyle = c.createPattern(src, 'repeat')!
+      c.fillRect(0, 0, 2, 2)
+      X18[sk + '->' + dk] = px(c, 1, 1, 'rgba-float32')
+      const sc = ctx(4, 4, dopts)
+      const p = sc.createPattern(src, 'repeat')!
+      p.setTransform({ a: 0.5, d: 0.5 })
+      sc.imageSmoothingQuality = 'medium'
+      sc.fillStyle = p
+      sc.fillRect(0, 0, 4, 4)
+      X18[sk + '->' + dk + '-half'] = px(sc, 1, 1, 'rgba-float32')
+    }
+  }
+  chromeEqual(t, X18, 'X18-f16p3-pattern-on-p3')
+})
