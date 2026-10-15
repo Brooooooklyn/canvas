@@ -6,17 +6,24 @@
 // 65535, and the area is at most 32768 * 8192. Node-only APIs have no Chrome
 // counterpart: they follow the layer's decisions (noted per test).
 import { spawnSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import test from 'ava'
 
-import { createCanvas, ImageData, SvgExportFlag } from '../index'
+import { createCanvas, ImageData, LottieAnimation, SvgExportFlag } from '../index'
 
 type Ctx = ReturnType<ReturnType<typeof createCanvas>['getContext']>
 
 const px = (ctx: Ctx, x = 0, y = 0) => Array.from(ctx.getImageData(x, y, 1, 1).data)
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
+
+// LottieAnimation (no Chrome counterpart) renders a frame as a draw.
+const animation = LottieAnimation.loadFromData(readFileSync(join(ROOT, 'example/flat-lottie.json'), 'utf-8'))
+const FRAME = { x: 0, y: 0, width: 64, height: 64 }
 
 const OVER_LIMIT: [number, number][] = [
   [2 ** 30, 1],
@@ -192,7 +199,7 @@ test('external memory stays balanced across sizes without pixels', (t) => {
     setTimeout(() => { gc(); console.log('ok') }, 20)
   `
   const child = spawnSync(process.execPath, ['--expose-gc', '-e', script], {
-    cwd: join(dirname(fileURLToPath(import.meta.url)), '..'),
+    cwd: ROOT,
     encoding: 'utf8',
   })
   t.is(child.status, 0, child.stderr)
@@ -518,6 +525,7 @@ const LOST_CONTEXT_OPS: [string, (ctx: Ctx) => unknown, boolean, number][] = [
   ['getContextAttributes', (ctx) => ctx.getContextAttributes(), false, 7],
   ['setLineDash', (ctx) => ctx.setLineDash([1, 2]), false, 7],
   ['createImageData', (ctx) => ctx.createImageData(1, 1), false, 7],
+  ['LottieAnimation.render', (ctx) => animation.render(ctx, FRAME), true, 1],
 ]
 
 test('over-limit canvas: these ops lose the context and reset the state', (t) => {
@@ -568,6 +576,26 @@ test('lost context: setters work, save/restore and transforms do nothing', (t) =
   t.true(ctx.isContextLost())
   canvas.width = 100000
   t.true(ctx.isContextLost())
+})
+
+test('LottieAnimation.render takes the bitmap first, like a draw', (t) => {
+  // Created over the limit: the first frame loses the context.
+  const ctx = createCanvas(2 ** 30, 1).getContext('2d')
+  ctx.lineWidth = 7
+  animation.render(ctx, FRAME)
+  t.deepEqual([ctx.isContextLost(), ctx.lineWidth], [true, 1])
+  // A lost context: render does nothing, and the context stays lost.
+  ctx.lineWidth = 5
+  animation.render(ctx)
+  t.deepEqual([ctx.isContextLost(), ctx.lineWidth], [true, 5])
+  // A zero-size canvas has no bitmap either, but keeps its context and state.
+  for (const [width, height] of ZERO) {
+    const canvas = createCanvas(width, height)
+    const zeroCtx = canvas.getContext('2d')
+    zeroCtx.lineWidth = 7
+    animation.render(zeroCtx, FRAME)
+    t.deepEqual([zeroCtx.isContextLost(), zeroCtx.lineWidth, canvas.toDataURL()], [false, 7, 'data:,'])
+  }
 })
 
 test('a zero-size canvas never loses its context', (t) => {
