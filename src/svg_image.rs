@@ -19,7 +19,8 @@ const CACHED_RASTERS: usize = 4;
 /// only the part its output on the canvas reads.
 const RASTER_BUDGET: f32 = 4096.0 * 4096.0;
 
-/// Device pixels kept around that part when a draw is cut down to it.
+/// Device pixels kept around the canvas when a draw is cut down to it, and
+/// the step that part grows by for a shadow or filter that reaches further.
 const RASTER_MARGIN: f32 = 256.0;
 
 /// How a raster is made: the document laid out at `layout`, clipped to
@@ -305,14 +306,19 @@ impl SvgImage {
         clip[3].ceil(),
       ];
       if (window[2] - window[0]) * (window[3] - window[1]) > RASTER_BUDGET {
-        // Only the part the draw reads: the canvas, and what its shadow and
-        // filter reach for. A reach that cannot be bounded takes scaled_draw.
+        // Only the part the draw reads: the canvas and RASTER_MARGIN around
+        // it, grown in RASTER_MARGIN steps on each side where its shadow and
+        // filter reach further. A nearer reach keeps the part, and so the
+        // cached raster, of the draw without one, and a changing reach makes
+        // a new raster only when it crosses a step. A reach that cannot be
+        // bounded takes scaled_draw.
         let [left, top, right, bottom] = source_bounds?;
+        let margin = |reach: f32| (reach / RASTER_MARGIN).ceil().max(1.0) * RASTER_MARGIN;
         window = [
-          window[0].max(left - RASTER_MARGIN),
-          window[1].max(top - RASTER_MARGIN),
-          window[2].min(right + RASTER_MARGIN),
-          window[3].min(bottom + RASTER_MARGIN),
+          window[0].max(-margin(-left)),
+          window[1].max(-margin(-top)),
+          window[2].min(canvas.0 + margin(right - canvas.0)),
+          window[3].min(canvas.1 + margin(bottom - canvas.1)),
         ];
       }
       let raster_width = window[2] - window[0];
