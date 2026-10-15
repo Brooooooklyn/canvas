@@ -694,6 +694,7 @@ pub mod ffi {
       dw: f32,
       dh: f32,
       paint: *mut skiac_paint,
+      isolate: bool,
     );
 
     pub fn skiac_canvas_destroy(canvas: *mut skiac_canvas);
@@ -3341,7 +3342,8 @@ impl Canvas {
   }
 
   /// Optimized: draws picture with source/dest rects in a single FFI call
-  /// Combines save/clip/transform/draw/restore operations
+  /// Combines save/clip/transform/draw/restore operations. `isolate` replays
+  /// the picture inside a layer, so its own blend modes and clears stay in it.
   #[inline]
   pub fn draw_picture_rect(
     &mut self,
@@ -3355,10 +3357,11 @@ impl Canvas {
     dw: f32,
     dh: f32,
     paint: &Paint,
+    isolate: bool,
   ) {
     unsafe {
       ffi::skiac_canvas_draw_picture_rect(
-        self.0, picture.0, sx, sy, sw, sh, dx, dy, dw, dh, paint.0,
+        self.0, picture.0, sx, sy, sw, sh, dx, dy, dw, dh, paint.0, isolate,
       );
     }
   }

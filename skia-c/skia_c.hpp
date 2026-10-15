@@ -1004,7 +1004,8 @@ void skiac_canvas_draw_picture_rect(skiac_canvas* c_canvas,
                                     float dy,
                                     float dw,
                                     float dh,
-                                    skiac_paint* c_paint);
+                                    skiac_paint* c_paint,
+                                    bool isolate);
 void skiac_canvas_destroy(skiac_canvas* c_canvas);
 
 // Paint

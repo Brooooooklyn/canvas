@@ -2355,7 +2355,8 @@ void skiac_canvas_draw_picture_rect(skiac_canvas* c_canvas,
                                     float dy,
                                     float dw,
                                     float dh,
-                                    skiac_paint* c_paint) {
+                                    skiac_paint* c_paint,
+                                    bool isolate) {
   if (c_canvas == nullptr || c_picture == nullptr) {
     return;
   }
@@ -2380,6 +2381,35 @@ void skiac_canvas_draw_picture_rect(skiac_canvas* c_canvas,
 
   const auto dst_rect = SkRect::MakeXYWH(dx, dy, dw, dh);
   const SkPaint* paint = PAINT_CAST;
+
+  if (isolate) {
+    // drawImage of a canvas draws its pixels: the source's own copy, clears
+    // and full-canvas modes composite inside a layer the size of the
+    // destination, never onto it. `paint` goes on the layer.
+    const SkMatrix ctm = canvas->getTotalMatrix();
+    const SkRect device = ctm.mapRect(dst_rect.makeSorted());
+    canvas->save();
+    canvas->resetMatrix();
+    if (device.isFinite()) {
+      SkIRect bounds = device.roundOut();
+      // The raster pipeline dithers on the layer's own device x/y (an 8x8
+      // matrix): an origin on a multiple of 8 keeps a gradient's dither the
+      // same as drawn straight onto the canvas.
+      bounds.fLeft &= ~7;
+      bounds.fTop &= ~7;
+      const SkRect layer_bounds = SkRect::Make(bounds);
+      canvas->saveLayer(&layer_bounds, paint);
+    } else {
+      // A destination past the f32 range: the clip bounds.
+      canvas->saveLayer(nullptr, paint);
+    }
+    canvas->setMatrix(ctm);
+    canvas->clipRect(dst_rect, SkClipOp::kIntersect, true /* antialias */);
+    canvas->drawPicture(picture, &matrix, nullptr);
+    canvas->restore();
+    canvas->restore();
+    return;
+  }
 
   canvas->save();
   // The source crop -- `drawPicture` replays the whole picture. The clip
