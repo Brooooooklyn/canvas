@@ -3853,6 +3853,60 @@ impl FromNapiValue for CreateImageDataArgs {
   }
 }
 
+/// The arguments of `putImageData`, its last parameter: (imagedata, dx, dy)
+/// or (imagedata, dx, dy, dirtyX, dirtyY, dirtyWidth, dirtyHeight), with
+/// [EnforceRange] long numbers (base_rendering_context_2d.idl). WebIDL picks
+/// the overload from the argument count and checks the image data before it
+/// converts the numbers. The image data is borrowed after their user code.
+pub struct PutImageDataArgs {
+  image_data: &'static ImageData,
+  dx: i32,
+  dy: i32,
+  /// dirtyX, dirtyY, dirtyWidth and dirtyHeight.
+  dirty: Option<[i32; 4]>,
+}
+
+impl FromNapiValue for PutImageDataArgs {
+  unsafe fn from_napi_value(env: sys::napi_env, argc: sys::napi_value) -> Result<Self> {
+    let args = webidl::Arguments::take(env, 7, argc)?;
+    let prefix = webidl::PUT_IMAGE_DATA;
+    let count = match args.len() {
+      count @ 0..=2 => {
+        return Err(webidl::context_type_error(
+          env,
+          prefix,
+          &format!("3 arguments required, but only {count} present."),
+        ));
+      }
+      count @ (3 | 7) => count,
+      _ => {
+        return Err(webidl::context_type_error(
+          env,
+          prefix,
+          "Overload resolution failed.",
+        ));
+      }
+    };
+    let not_image_data =
+      || webidl::context_type_error(env, prefix, "parameter 1 is not of type 'ImageData'.");
+    let image_data = args.get(0)?;
+    if unsafe { <&ImageData as ValidateNapiValue>::validate(env, image_data) }.is_err() {
+      return Err(not_image_data());
+    }
+    let numbers = (1..count)
+      .map(|index| webidl::enforce_range_long(env, args.get(index)?, prefix))
+      .collect::<Result<Vec<_>>>()?;
+    let image_data =
+      unsafe { ImageData::from_napi_ref(env, image_data) }.map_err(|_| not_image_data())?;
+    Ok(Self {
+      image_data,
+      dx: numbers[0],
+      dy: numbers[1],
+      dirty: (count == 7).then(|| [numbers[2], numbers[3], numbers[4], numbers[5]]),
+    })
+  }
+}
+
 #[napi]
 impl CanvasRenderingContext2D {
   #[napi(constructor)]
@@ -5297,25 +5351,32 @@ impl CanvasRenderingContext2D {
       .collect()
   }
 
+  /// putImageData(imagedata, dx, dy) or (imagedata, dx, dy, dirtyX, dirtyY,
+  /// dirtyWidth, dirtyHeight). The index.js wrapper passes the argument
+  /// count after them; see `webidl::Arguments::take`.
   #[napi]
   pub fn put_image_data(
     &mut self,
     env: Env,
-    image_data: &ImageData,
-    dx: i32,
-    dy: i32,
-    dirty_x: Option<f64>,
-    dirty_y: Option<f64>,
-    dirty_width: Option<f64>,
-    dirty_height: Option<f64>,
+    _image_data: Positional,
+    _dx: Positional,
+    _dy: Positional,
+    _dirty_x: Positional,
+    _dirty_y: Positional,
+    _dirty_width: Positional,
+    _dirty_height: Positional,
+    args: PutImageDataArgs,
   ) -> Result<()> {
+    let PutImageDataArgs {
+      image_data,
+      dx,
+      dy,
+      dirty,
+    } = args;
     // base_rendering_context_2d.cc putImageData: a dirty area that overflows
     // an int returns before the detach check.
-    if let (Some(w), Some(h)) = (dirty_width, dirty_height)
-      && (w.trunc() as i64)
-        .checked_mul(h.trunc() as i64)
-        .and_then(|area| i32::try_from(area).ok())
-        .is_none()
+    if let Some([_, _, w, h]) = dirty
+      && w.checked_mul(h).is_none()
     {
       return Ok(());
     }
@@ -5334,15 +5395,11 @@ impl CanvasRenderingContext2D {
         ),
         _ => e,
       })?;
-    if let Some(dirty_x) = dirty_x {
+    if let Some([dirty_x, dirty_y, dirty_width, dirty_height]) = dirty {
       let mut dirty_x = dirty_x as f32;
-      let mut dirty_y = dirty_y.map(|d| d as f32).unwrap_or(0.0);
-      let mut dirty_width = dirty_width
-        .map(|d| d as f32)
-        .unwrap_or(image_data.width as f32);
-      let mut dirty_height = dirty_height
-        .map(|d| d as f32)
-        .unwrap_or(image_data.height as f32);
+      let mut dirty_y = dirty_y as f32;
+      let mut dirty_width = dirty_width as f32;
+      let mut dirty_height = dirty_height as f32;
       // as per https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-putimagedata
       if dirty_width < 0f32 {
         dirty_x += dirty_width;
