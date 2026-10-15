@@ -428,9 +428,17 @@ test('a zero-size SvgCanvas draws nothing', (t) => {
   const ctx = canvas.getContext('2d')
   t.notThrows(() => ctx.fillRect(0, 0, 10, 10))
   t.deepEqual(px(ctx), [0, 0, 0, 0])
+  // Also the draws that return before they ask for the bitmap, which 'copy'
+  // would otherwise send to the SVG.
+  ctx.globalCompositeOperation = 'copy'
+  ctx.fillRect(0, 0, 0, 0)
+  ctx.strokeRect(0, 0, 0, 0)
+  ctx.fill()
+  ctx.stroke()
   const svg = canvas.getContent().toString()
   t.true(svg.includes('width="0"'), svg)
   t.false(svg.includes('<rect'), svg)
+  t.false(svg.includes('<path'), svg)
 })
 
 // Chrome loses the context of an over-limit canvas the first time an op
