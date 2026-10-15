@@ -8,7 +8,7 @@ use std::ptr;
 use std::slice;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicI64, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, Weak};
 
 use crate::error::SkError;
 use crate::font::{ComputedFont, FamilyName, FontStretch, FontStyle};
@@ -5303,11 +5303,15 @@ pub struct AccountedBitmap {
 }
 
 /// A high-bit-depth image's encoded bytes, and its half-float decodes for
-/// float16 canvases, made on first use: one per canvas colour space.
+/// float16 canvases, made on first use: one per canvas colour space. The
+/// decode cache (`decode_cache`) keeps the decodes alive, with a draw or a
+/// pattern that uses one; the image only points to them. A decode the cache
+/// gave up is made again from the encoded bytes, which the image keeps for
+/// that (as Chrome keeps an image's encoded data).
 #[derive(Debug)]
 struct HighBitDepth {
   encoded: Vec<u8>,
-  decodes: Mutex<[Option<Arc<AccountedBitmap>>; 2]>,
+  decodes: Mutex<[Weak<AccountedBitmap>; 2]>,
 }
 
 impl AccountedBitmap {
@@ -5331,28 +5335,43 @@ impl AccountedBitmap {
   pub(crate) fn with_high_bit_depth(mut self, encoded: Vec<u8>) -> Self {
     self.high_bit_depth = Some(HighBitDepth {
       encoded,
-      decodes: Mutex::new([None, None]),
+      decodes: Mutex::new([Weak::new(), Weak::new()]),
     });
     self
   }
 
   /// What a float16 canvas in `color_space` draws in place of these pixels:
-  /// the half-float decode of a high-bit-depth image, made on first use and
-  /// reported to V8. None for any other image, or when it cannot be decoded.
+  /// the half-float decode of a high-bit-depth image, reported to V8 while it
+  /// lives. It is made when nothing holds it, and kept in the decode cache as
+  /// its most recently used entry. None for any other image, or when it
+  /// cannot be decoded.
   pub(crate) fn float16_decode(&self, color_space: ColorSpace) -> Option<Arc<AccountedBitmap>> {
     let high_bit_depth = self.high_bit_depth.as_ref()?;
-    let mut decodes = high_bit_depth.decodes.lock().unwrap();
-    let slot = &mut decodes[color_space as usize];
-    if slot.is_none() {
-      let bitmap = Bitmap::high_bit_depth(&high_bit_depth.encoded, color_space)?;
-      let bytes = i64::from(bitmap.0.width) * i64::from(bitmap.0.height) * 8;
-      if !self.env.is_null() {
-        let mut adjusted: i64 = 0;
-        unsafe { napi::sys::napi_adjust_external_memory(self.env, bytes, &mut adjusted) };
+    let decode = {
+      let mut decodes = high_bit_depth.decodes.lock().unwrap();
+      let slot = &mut decodes[color_space as usize];
+      match slot.upgrade() {
+        Some(decode) => decode,
+        None => {
+          let bitmap = Bitmap::high_bit_depth(&high_bit_depth.encoded, color_space)?;
+          let bytes = i64::from(bitmap.0.width) * i64::from(bitmap.0.height) * 8;
+          if !self.env.is_null() {
+            let mut adjusted: i64 = 0;
+            unsafe { napi::sys::napi_adjust_external_memory(self.env, bytes, &mut adjusted) };
+          }
+          let decode = Arc::new(AccountedBitmap::new(bitmap, self.env, bytes));
+          *slot = Arc::downgrade(&decode);
+          decode
+        }
       }
-      *slot = Some(Arc::new(AccountedBitmap::new(bitmap, self.env, bytes)));
-    }
-    slot.clone()
+    };
+    crate::decode_cache::keep(
+      self.env,
+      (self.resource_id, color_space),
+      decode.bytes as usize,
+      &decode,
+    );
+    Some(decode)
   }
 
   /// The live levels' bytes, as last reported.
@@ -5379,6 +5398,10 @@ impl AccountedBitmap {
 
 impl Drop for AccountedBitmap {
   fn drop(&mut self) {
+    // Nothing draws this image's half-float decodes again.
+    if self.high_bit_depth.is_some() {
+      crate::decode_cache::forget(self.env, self.resource_id);
+    }
     // A recorded draw or a shader can still hold a level: it stays reported,
     // and is reported freed with its pixels.
     let held = unsafe {
@@ -5430,6 +5453,9 @@ pub(crate) fn reported_level_bytes() -> i64 {
 // napi_env__::DeleteMe), so the stored env is still valid when Drop runs.
 // It is valid in `release_level_bytes` too: a level that outlives the bitmap
 // is held by a recording or a pattern shader, which finalizers free as well.
+// The decode cache's static holds half-float decodes of every env, but only
+// the env's own thread adds or drops them, and its cleanup hook drops the
+// rest before the env is torn down (`decode_cache`).
 unsafe impl Send for AccountedBitmap {}
 unsafe impl Sync for AccountedBitmap {}
 
@@ -5461,8 +5487,20 @@ pub(crate) struct ImagePatternShared {
   // `get_shader`), with the copy it samples; rebuilt when the transform, the
   // quality, the level or the colour space changes. Every shader samples
   // `image` or a cached level, so a rebuild copies no pixels.
-  pub(crate) shader: Option<(FilterQuality, PatternDecode, Shader, DecodedCopy)>,
+  pub(crate) shader: Option<PatternShader>,
 }
+
+/// A pattern's cached shader: the sampling quality, decode and copy it was
+/// made for, and the half-float decode it samples, which it keeps so that
+/// the decode's pixels stay reported to V8 after the decode cache gives it
+/// up.
+pub(crate) type PatternShader = (
+  FilterQuality,
+  PatternDecode,
+  Shader,
+  DecodedCopy,
+  Option<Arc<AccountedBitmap>>,
+);
 
 /// The decode level and canvas colour space an Image pattern's shader samples
 /// (`skiac_image_pattern_level`), and whether it samples the half-float
@@ -5588,12 +5626,12 @@ impl ImagePattern {
           ))
         };
         let decoded = (decoded_bytes != 0).then_some((decoded_id, decoded_bytes));
-        shared.shader = shader.map(|shader| (quality, level, shader, decoded));
+        shared.shader = shader.map(|shader| (quality, level, shader, decoded, None));
       }
       return shared
         .shader
         .as_ref()
-        .map(|(_, _, shader, decoded)| (shader.clone(), *decoded));
+        .map(|(_, _, shader, decoded, _)| (shader.clone(), *decoded));
     }
     // A float16 canvas samples a high-bit-depth image's half-float decode,
     // as drawImage does.
@@ -5668,7 +5706,7 @@ impl ImagePattern {
           };
           bitmap.sync_level_bytes();
           let decoded = (decoded_bytes != 0).then_some((decoded_id, decoded_bytes));
-          shader.map(|shader| (shader, decoded))
+          shader.map(|shader| (shader, decoded, half_float.then_some(bitmap)))
         }
         _ => {
           let image = shared.image.get_or_insert_with(|| self.make_image());
@@ -5680,15 +5718,15 @@ impl ImagePattern {
             quality,
             shared.transform,
           )
-          .map(|shader| (shader, None))
+          .map(|shader| (shader, None, None))
         }
       }
-      .map(|(shader, decoded)| (quality, level, shader, decoded));
+      .map(|(shader, decoded, half_float)| (quality, level, shader, decoded, half_float));
     }
     shared
       .shader
       .as_ref()
-      .map(|(_, _, shader, decoded)| (shader.clone(), *decoded))
+      .map(|(_, _, shader, decoded, _)| (shader.clone(), *decoded))
   }
 
   /// The image every shader of this pattern samples. A null one (no pixels,

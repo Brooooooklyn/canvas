@@ -46,6 +46,7 @@ mod color;
 mod css_math;
 mod ctx;
 mod data_url;
+mod decode_cache;
 mod encoding;
 mod error;
 mod filter;
