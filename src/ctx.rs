@@ -27,7 +27,8 @@ use crate::{
   font::Font,
   gradient::{CanvasGradient, Gradient},
   image::*,
-  path::Path,
+  num,
+  path::{Path, round_rect_radii},
   pattern::{CanvasPattern, Pattern, hsl_to_rgba8, srgb_channel_to_u8},
   sk::{
     AccountedBitmap, AlphaType, Bitmap, BlendMode, ColorSpace, DecodedCopy, FillType,
@@ -1261,10 +1262,13 @@ impl Context {
     Ok(())
   }
 
-  pub fn rotate(&mut self, angle: f32) {
+  /// `angle` in radians, finite.
+  pub fn rotate(&mut self, angle: f64) {
     self.flush_if_recording_limit_exceeded();
-    let degrees = angle / PI * 180f32;
-    let inverse = Matrix::rotated(-angle, 0.0, 0.0);
+    // Blink paints with ClampTo<float>(angle * (180.0 / kPiFloat)) degrees
+    // (canvas_2d_recorder_context.cc:1384-1408); in f32 it overflows.
+    let degrees = Self::clamp_to_f32(angle * (180.0 / PI as f64));
+    let inverse = Matrix::rotated(-Self::clamp_to_f32(angle), 0.0, 0.0);
     self.path.transform_self(&inverse);
     self.state.transform.pre_rotate(degrees);
     let transform = self.state.transform.clone();
@@ -4008,21 +4012,29 @@ impl CanvasRenderingContext2D {
     end_angle: f64,
     anticlockwise: Option<bool>,
   ) {
+    // Path methods drop a call with a value outside the float range
+    // (Blink canvas_path.cc: saturated_cast<float>, then isfinite).
+    let Some([x, y, radius, start_angle, end_angle]) =
+      num::saturated_f32s([x, y, radius, start_angle, end_angle])
+    else {
+      return;
+    };
     self.context.arc(
-      x as f32,
-      y as f32,
-      radius as f32,
-      start_angle as f32,
-      end_angle as f32,
+      x,
+      y,
+      radius,
+      start_angle,
+      end_angle,
       anticlockwise.unwrap_or(false),
     );
   }
 
   #[napi]
   pub fn arc_to(&mut self, x1: f64, y1: f64, x2: f64, y2: f64, radius: f64) {
-    self
-      .context
-      .arc_to(x1 as f32, y1 as f32, x2 as f32, y2 as f32, radius as f32);
+    let Some([x1, y1, x2, y2, radius]) = num::saturated_f32s([x1, y1, x2, y2, radius]) else {
+      return;
+    };
+    self.context.arc_to(x1, y1, x2, y2, radius);
   }
 
   #[napi]
@@ -4032,21 +4044,19 @@ impl CanvasRenderingContext2D {
 
   #[napi]
   pub fn bezier_curve_to(&mut self, cp1x: f64, cp1y: f64, cp2x: f64, cp2y: f64, x: f64, y: f64) {
-    self.context.bezier_curve_to(
-      cp1x as f32,
-      cp1y as f32,
-      cp2x as f32,
-      cp2y as f32,
-      x as f32,
-      y as f32,
-    );
+    let Some([cp1x, cp1y, cp2x, cp2y, x, y]) = num::saturated_f32s([cp1x, cp1y, cp2x, cp2y, x, y])
+    else {
+      return;
+    };
+    self.context.bezier_curve_to(cp1x, cp1y, cp2x, cp2y, x, y);
   }
 
   #[napi]
   pub fn quadratic_curve_to(&mut self, cpx: f64, cpy: f64, x: f64, y: f64) {
-    self
-      .context
-      .quadratic_curve_to(cpx as f32, cpy as f32, x as f32, y as f32);
+    let Some([cpx, cpy, x, y]) = num::saturated_f32s([cpx, cpy, x, y]) else {
+      return;
+    };
+    self.context.quadratic_curve_to(cpx, cpy, x, y);
   }
 
   #[napi]
@@ -4209,9 +4219,10 @@ impl CanvasRenderingContext2D {
 
   #[napi]
   pub fn rect(&mut self, x: f64, y: f64, width: f64, height: f64) {
-    self
-      .context
-      .rect(x as f32, y as f32, width as f32, height as f32);
+    let Some([x, y, width, height]) = num::saturated_f32s([x, y, width, height]) else {
+      return;
+    };
+    self.context.rect(x, y, width, height);
   }
 
   #[napi]
@@ -4223,36 +4234,13 @@ impl CanvasRenderingContext2D {
     height: f64,
     radii: Either3<f64, Vec<f64>, Undefined>,
   ) {
-    // https://github.com/chromium/chromium/blob/111.0.5520.1/third_party/blink/renderer/modules/canvas/canvas2d/canvas_path.cc#L579
-    let radii_array: [f32; 4] = match radii {
-      Either3::A(radii) => [radii as f32; 4],
-      Either3::B(radii_vec) => match radii_vec.len() {
-        0 => [0f32; 4],
-        1 => [radii_vec[0] as f32; 4],
-        2 => [
-          radii_vec[0] as f32,
-          radii_vec[1] as f32,
-          radii_vec[0] as f32,
-          radii_vec[1] as f32,
-        ],
-        3 => [
-          radii_vec[0] as f32,
-          radii_vec[1] as f32,
-          radii_vec[1] as f32,
-          radii_vec[2] as f32,
-        ],
-        _ => [
-          radii_vec[0] as f32,
-          radii_vec[1] as f32,
-          radii_vec[2] as f32,
-          radii_vec[3] as f32,
-        ],
-      },
-      Either3::C(_) => [0f32; 4],
+    let Some([x, y, width, height]) = num::saturated_f32s([x, y, width, height]) else {
+      return;
     };
-    self
-      .context
-      .round_rect(x as f32, y as f32, width as f32, height as f32, radii_array);
+    let Some(radii_array) = round_rect_radii(radii) else {
+      return;
+    };
+    self.context.round_rect(x, y, width, height, radii_array);
   }
 
   #[napi]
@@ -4295,12 +4283,18 @@ impl CanvasRenderingContext2D {
 
   #[napi(return_if_invalid)]
   pub fn rotate(&mut self, angle: f64) {
-    self.context.rotate(angle as f32);
+    // A non-finite transform argument makes the call a no-op
+    // (canvas_2d_recorder_context.cc:1354-1482).
+    if angle.is_finite() {
+      self.context.rotate(angle);
+    }
   }
 
   #[napi(return_if_invalid)]
   pub fn scale(&mut self, x: f64, y: f64) {
-    self.context.scale(x as f32, y as f32);
+    if let Some([x, y]) = num::clamped_f32s([x, y]) {
+      self.context.scale(x, y);
+    }
   }
 
   #[napi]
@@ -4740,22 +4734,27 @@ impl CanvasRenderingContext2D {
     end_angle: f64,
     anticlockwise: Option<bool>,
   ) {
+    let Some([x, y, radius_x, radius_y, rotation, start_angle, end_angle]) =
+      num::saturated_f32s([x, y, radius_x, radius_y, rotation, start_angle, end_angle])
+    else {
+      return;
+    };
     self.context.ellipse(
-      x as f32,
-      y as f32,
-      radius_x as f32,
-      radius_y as f32,
-      rotation as f32,
-      start_angle as f32,
-      end_angle as f32,
+      x,
+      y,
+      radius_x,
+      radius_y,
+      rotation,
+      start_angle,
+      end_angle,
       anticlockwise.unwrap_or(false),
     );
   }
 
   #[napi(return_if_invalid)]
   pub fn line_to(&mut self, x: f64, y: f64) {
-    if !x.is_nan() && !x.is_infinite() && !y.is_nan() && !y.is_infinite() {
-      self.context.path.line_to(x as f32, y as f32);
+    if let Some([x, y]) = num::saturated_f32s([x, y]) {
+      self.context.path.line_to(x, y);
     }
   }
 
@@ -4794,8 +4793,8 @@ impl CanvasRenderingContext2D {
 
   #[napi(return_if_invalid)]
   pub fn move_to(&mut self, x: f64, y: f64) {
-    if !x.is_nan() && !x.is_infinite() && !y.is_nan() && !y.is_infinite() {
-      self.context.path.move_to(x as f32, y as f32);
+    if let Some([x, y]) = num::saturated_f32s([x, y]) {
+      self.context.path.move_to(x, y);
     }
   }
 
@@ -5149,13 +5148,17 @@ impl CanvasRenderingContext2D {
 
   #[napi(return_if_invalid)]
   pub fn translate(&mut self, x: f64, y: f64) {
-    self.context.translate(x as f32, y as f32);
+    if let Some([x, y]) = num::clamped_f32s([x, y]) {
+      self.context.translate(x, y);
+    }
   }
 
   #[napi(return_if_invalid)]
   pub fn transform(&mut self, a: f64, b: f64, c: f64, d: f64, e: f64, f: f64) -> Result<()> {
-    let ts = Matrix::new(a as f32, c as f32, e as f32, b as f32, d as f32, f as f32);
-    self.context.transform(ts)?;
+    let Some([a, b, c, d, e, f]) = num::clamped_f32s([a, b, c, d, e, f]) else {
+      return Ok(());
+    };
+    self.context.transform(Matrix::new(a, c, e, b, d, f))?;
     Ok(())
   }
 
@@ -5174,15 +5177,12 @@ impl CanvasRenderingContext2D {
     e: Option<f64>,
     f: Option<f64>,
   ) -> Option<()> {
-    let ts = match a_or_transform {
-      Either::A(a) => Transform::new(
-        a as f32, c? as f32, e? as f32, b? as f32, d? as f32, f? as f32,
-      ),
-      Either::B(transform) => transform.into_context_transform(),
+    let (a, b, c, d, e, f) = match a_or_transform {
+      Either::A(a) => (a, b?, c?, d?, e?, f?),
+      Either::B(m) => (m.a, m.b, m.c, m.d, m.e, m.f),
     };
-    self
-      .context
-      .set_transform(Matrix::new(ts.a, ts.b, ts.c, ts.d, ts.e, ts.f));
+    let [a, b, c, d, e, f] = num::clamped_f32s([a, b, c, d, e, f])?;
+    self.context.set_transform(Matrix::new(a, c, e, b, d, f));
     None
   }
 
@@ -5252,19 +5252,6 @@ pub struct TransformObject {
   pub d: f64,
   pub e: f64,
   pub f: f64,
-}
-
-impl TransformObject {
-  pub(crate) fn into_context_transform(self) -> Transform {
-    Transform::new(
-      self.a as f32,
-      self.c as f32,
-      self.e as f32,
-      self.b as f32,
-      self.d as f32,
-      self.f as f32,
-    )
-  }
 }
 
 impl From<TransformObject> for Transform {

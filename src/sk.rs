@@ -3577,9 +3577,22 @@ impl Path {
     let bottom = y + radius_y;
     let mut rotated = Matrix::identity();
     rotated.pre_translate(x, y);
-    rotated.pre_rotate(radians_to_degrees(rotation));
+    let degrees = radians_to_degrees(rotation);
+    if degrees.is_finite() {
+      rotated.pre_rotate(degrees);
+    } else {
+      // |rotation| above ~5.9e36 overflows the f32 degrees. Rotate by the
+      // radians in double like Blink (AffineTransform::RotateRadians).
+      let (sin, cos) = (rotation as f64).sin_cos();
+      let (sin, cos) = (sin as f32, cos as f32);
+      rotated.pre_concat(&Matrix::new(cos, -sin, 0.0, sin, cos, 0.0));
+    }
     rotated.pre_translate(-x, -y);
-    let unrotated = rotated.invert().unwrap();
+    // Not invertible only for a non-finite center or rotation, which the
+    // callers drop first; never panic on it.
+    let Some(unrotated) = rotated.invert() else {
+      return;
+    };
 
     self.transform_self(&unrotated);
 

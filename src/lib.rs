@@ -44,6 +44,7 @@ pub mod global_fonts;
 mod gradient;
 mod image;
 pub mod lottie;
+mod num;
 mod page_recorder;
 pub mod path;
 mod pattern;
