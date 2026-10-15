@@ -284,8 +284,27 @@ for (const [n, x0, size, border] of [
   })
 }
 
-// The most pixels a conic raster has inside its 1 pixel border: 4096 * 4096 (64 MiB N32).
+// The most pixels a conic raster image has, its border included: 4096 * 4096 (64 MiB N32).
 const BUDGET = 4096 * 4096
+
+// The longest side of a PNG that Skia's encoder writes: libpng's default user limit
+// (PNG_USER_WIDTH_MAX and PNG_USER_HEIGHT_MAX).
+const PNG_SIDE = 1_000_000
+
+// Runs `code` in a child process at the package root (maxRSS, or memory-heavy draws).
+const runChild = (code: string) =>
+  new Promise<{ status: number | null; stdout: string; stderr: string }>((resolve, reject) => {
+    const child = spawn(process.execPath, ['-e', code], {
+      cwd: join(dirname(fileURLToPath(import.meta.url)), '..'),
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    let stdout = ''
+    let stderr = ''
+    child.stdout.setEncoding('utf8').on('data', (chunk) => (stdout += chunk))
+    child.stderr.setEncoding('utf8').on('data', (chunk) => (stderr += chunk))
+    child.on('error', reject)
+    child.on('close', (status) => resolve({ status, stdout, stderr }))
+  })
 
 // What an SVG renderer shows at canvas pixel (x, y) for the first conic draw: its pattern image under
 // the path's transform, sampled bilinearly (how Chrome upscales it). Transparent outside the image,
@@ -355,7 +374,7 @@ for (const n of [4097, 8192]) {
     const images = patternImages(text)
     t.is(images.length, 1)
     const { width, height } = images[0]
-    t.true((width - 2) * (height - 2) <= BUDGET, `${width}x${height}`)
+    t.true(width * height <= BUDGET, `${width}x${height}`)
     t.regex(text, new RegExp(`<pattern [^>]* width="${width}" height="${height}"`))
     t.regex(text, /<path fill="url\(#pattern_0\)"[^>]* d="M/)
     // Image pixel 1 + i covers canvas pixels k * i to k * (i + 1); the border lies outside the canvas.
@@ -363,7 +382,7 @@ for (const n of [4097, 8192]) {
     t.deepEqual([b, c, d, e, f], [0, 0, k, -k, -k])
     t.true(Number.isInteger(k) && k >= 2, `k = ${k}`)
     t.deepEqual([width - 2, height - 2], [Math.ceil(n / k), Math.ceil(n / k)])
-    t.true(Math.ceil(n / (k - 1)) ** 2 > BUDGET, `k - 1 = ${k - 1} fits too`)
+    t.true((Math.ceil(n / (k - 1)) + 2) ** 2 > BUDGET, `k - 1 = ${k - 1} fits too`)
     // Clipped to the image inside the border, not to the bordered image.
     const clips = [...text.matchAll(/<clipPath[^>]*>([\s\S]*?)<\/clipPath>/g)].map((m) => m[1])
     t.is(clips.length, 1)
@@ -384,13 +403,7 @@ for (const n of [4097, 8192]) {
 // Every fill gets its own image within the budget, and the memory does not follow the canvas size
 // (1:1, each fill held a 256 MiB raster and its PNG encoder). maxRSS in a child process.
 test('svg export of 10 conic fills on an 8192x8192 canvas keeps each raster within the budget', async (t) => {
-  const { status, stdout, stderr } = await new Promise<{ status: number | null; stdout: string; stderr: string }>(
-    (resolve, reject) => {
-      const child = spawn(
-        process.execPath,
-        [
-          '-e',
-          `
+  const { status, stdout, stderr } = await runChild(`
 const { createCanvas, SvgExportFlag } = require('./index.js')
 const n = 8192
 const svg = createCanvas(n, n, SvgExportFlag.NoPrettyXML)
@@ -410,26 +423,53 @@ for (let i = content.indexOf('<image '); i !== -1; i = content.indexOf('<image '
   images.push([Number(head.match(/ width="(\\d+)"/)[1]), Number(head.match(/ height="(\\d+)"/)[1])])
 }
 console.log(JSON.stringify({ growth, images }))
-`,
-        ],
-        { cwd: join(dirname(fileURLToPath(import.meta.url)), '..'), stdio: ['ignore', 'pipe', 'pipe'] },
-      )
-      let stdout = ''
-      let stderr = ''
-      child.stdout.setEncoding('utf8').on('data', (chunk) => (stdout += chunk))
-      child.stderr.setEncoding('utf8').on('data', (chunk) => (stderr += chunk))
-      child.on('error', reject)
-      child.on('close', (status) => resolve({ status, stdout, stderr }))
-    },
-  )
+`)
   t.is(status, 0, stderr)
   const { growth, images } = JSON.parse(stdout.trim().split('\n').pop()!)
   t.is(images.length, 10)
   for (const [width, height] of images) {
-    t.true((width - 2) * (height - 2) <= BUDGET, `${width}x${height}`)
+    t.true(width * height <= BUDGET, `${width}x${height}`)
   }
   t.true(growth < 256, `10 fills grew maxRSS by ${growth.toFixed(1)} MB, expected < 256 MB`)
 })
+
+// SkSVGDevice encodes the image as a PNG, which fails for a side over PNG_SIDE; the path was then
+// written with no fill, so the conic fill came out black (from a canvas width of about 2,000,000 at
+// k = 2). Each image side, border included, stays within PNG_SIDE, and the border counts in the
+// budget: a 1 pixel high strip had an image of 3 rows, about 3 times the budget. maxRSS in a child
+// process, one per canvas.
+for (const [w, h] of [
+  [2000010, 10],
+  [20000000, 1],
+]) {
+  test(`svg export of a conic gradient on a ${w}x${h} canvas keeps its image within the PNG side limit`, async (t) => {
+    const { status, stdout, stderr } = await runChild(`
+const { createCanvas, SvgExportFlag } = require('./index.js')
+const svg = createCanvas(${w}, ${h}, SvgExportFlag.NoPrettyXML)
+const ctx = svg.getContext('2d')
+const g = ctx.createConicGradient(0.3, ${w} / 2, ${h} / 2)
+g.addColorStop(0, 'red')
+g.addColorStop(0.5, 'lime')
+g.addColorStop(1, 'blue')
+ctx.fillStyle = g
+const before = process.resourceUsage().maxRSS
+ctx.fillRect(0, 0, ${w}, ${h})
+const text = svg.getContent().toString('latin1')
+const growth = (process.resourceUsage().maxRSS - before) / 1024
+const images = [...text.matchAll(/<image [^>]*width="(\\d+)" height="(\\d+)"/g)].map((m) => [Number(m[1]), Number(m[2])])
+const path = text.match(/<path [^>]*/)[0]
+console.log(JSON.stringify({ growth, images, path }))
+`)
+    t.is(status, 0, stderr)
+    t.notRegex(stderr, /libpng/)
+    const { growth, images, path } = JSON.parse(stdout.trim().split('\n').pop()!)
+    t.is(images.length, 1)
+    const [[width, height]] = images
+    t.true(width <= PNG_SIDE && height <= PNG_SIDE && width * height <= BUDGET, `${width}x${height}`)
+    t.regex(path, /^<path fill="url\(#pattern_0\)"/)
+    t.true(growth < 64, `the fill grew maxRSS by ${growth.toFixed(1)} MB, expected < 64 MB`)
+  })
+}
 
 // The image covers only the device bounds of the draw inside the clip; a draw past the budget is
 // scaled, not skipped. One canvas and one getContent(): the backing store of such a canvas is only
@@ -448,7 +488,7 @@ test('svg export of a conic gradient on a huge canvas rasterizes only the clippe
   const text = svg.getContent().toString('utf8')
   t.is(text.match(/<pattern/g)?.length, 2)
   const [scaled, clipped] = patternImages(text)
-  t.true((scaled.width - 2) * (scaled.height - 2) <= BUDGET, `${scaled.width}x${scaled.height}`)
+  t.true(scaled.width * scaled.height <= BUDGET, `${scaled.width}x${scaled.height}`)
   t.true(
     Math.abs((scaled.width - 2) / (scaled.height - 2) - 32768 / 8193) < 0.01,
     `${scaled.width}x${scaled.height} keeps the aspect ratio`,

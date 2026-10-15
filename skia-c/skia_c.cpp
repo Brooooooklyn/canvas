@@ -689,9 +689,17 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
     }
   }
 
-  // The most pixels rasterizeSweep draws at one image pixel each: 4096 * 4096,
-  // a 64 MiB N32 image. Past it, an image pixel covers k x k device pixels.
+  // The most pixels a conic raster image has, its border included: 4096 *
+  // 4096, a 64 MiB N32 image. Past it, an image pixel covers k x k device
+  // pixels.
   static constexpr int64_t kMaxSweepPixels = 4096 * 4096;
+
+  // The longest side of a conic raster image, its border included. Skia
+  // encodes it as a PNG with libpng, whose default user limits reject a wider
+  // or higher image (PNG_USER_WIDTH_MAX and PNG_USER_HEIGHT_MAX in
+  // third_party/externals/libpng/scripts/pnglibconf.h.prebuilt); SkSVGDevice
+  // then writes no pattern and fills the path with the paint color, black.
+  static constexpr int64_t kMaxSweepSide = 1000000;
 
   // The largest pattern tile Chrome draws at one pixel per device pixel. It
   // draws an SVG pattern through an SkPictureShader (cc/paint/paint_shader.cc),
@@ -730,19 +738,28 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
     return grid;
   }
 
+  // Whether the image of `grid`, border included, fits kMaxSweepPixels and
+  // kMaxSweepSide.
+  static bool SweepGridFits(const SweepGrid& grid) {
+    const int64_t width = grid.width + 2 * grid.border;
+    const int64_t height = grid.height + 2 * grid.border;
+    return width <= kMaxSweepSide && height <= kMaxSweepSide &&
+           width * height <= kMaxSweepPixels;
+  }
+
   // `paint` with its conic gradient replaced by an image of what the raster
   // canvas paints with it, globalAlpha included, over the device bounds of the
-  // draw inside the clip: one image pixel per device pixel, or, for bounds over
-  // kMaxSweepPixels, at most kMaxSweepPixels image pixels. The image is the
-  // pattern tile (repeat), not the viewport (a "100%" decal tile): in Chrome
-  // the transparent rest of a viewport tile larger than kMaxExactTilePixels
-  // faded the image's edges. An image Chrome does not draw exactly (larger
-  // than kMaxExactTilePixels, or scaled) has a border of 1 image pixel of the
-  // same gradient, so that resampling it does not mix its edges with the
-  // other side of the tile. The image's matrix maps its pixels back to local
-  // space, and `clip` is the part of the image inside the border. False:
-  // nothing to draw (nothing visible, a singular matrix or no memory for the
-  // image).
+  // draw inside the clip: one image pixel per device pixel, or k x k device
+  // pixels per image pixel for bounds that do not fit kMaxSweepPixels or
+  // kMaxSweepSide. The image is the pattern tile (repeat), not the viewport (a
+  // "100%" decal tile): in Chrome the transparent rest of a viewport tile
+  // larger than kMaxExactTilePixels faded the image's edges. An image Chrome
+  // does not draw exactly (larger than kMaxExactTilePixels, or scaled) has a
+  // border of 1 image pixel of the same gradient, so that resampling it does
+  // not mix its edges with the other side of the tile. The image's matrix maps
+  // its pixels back to local space, and `clip` is the part of the image inside
+  // the border. False: nothing to draw (nothing visible, a singular matrix or
+  // no memory for the image).
   bool rasterizeSweep(const SkPath& path,
                       const SkPaint& paint,
                       SkPaint* out,
@@ -766,24 +783,23 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
       return false;
     }
     SweepGrid grid = MakeSweepGrid(device, 1, 0);
-    if (grid.width * grid.height > kMaxExactTilePixels) {
-      // The smallest whole k that fits kMaxSweepPixels: SkSVGDevice writes the
-      // element transform with 6 significant digits (svg_transform), which
-      // only a whole k keeps exact. The SVG renderer scales the image back up,
-      // bilinear in Chrome.
-      const auto fits = [](const SweepGrid& grid) {
-        return grid.width * grid.height <= kMaxSweepPixels;
-      };
-      // At least the square root of the area ratio, rounded down so that
-      // rounding noise cannot skip the smallest k.
+    if (grid.width * grid.height > kMaxExactTilePixels ||
+        !SweepGridFits(grid)) {
+      // The smallest whole k that fits: SkSVGDevice writes the element
+      // transform with 6 significant digits (svg_transform), which only a
+      // whole k keeps exact. The SVG renderer scales the image back up,
+      // bilinear in Chrome. No k below the square root of the area ratio or
+      // below the longest side over kMaxSweepSide fits; both are rounded down
+      // so that rounding noise cannot skip the smallest k.
       const int64_t w = device.width64();
       const int64_t h = device.height64();
-      int64_t k = std::max<int64_t>(
-          1, static_cast<int64_t>(
-                 std::sqrt(static_cast<double>(w * h) /
-                           static_cast<double>(kMaxSweepPixels))));
+      int64_t k = std::max<int64_t>({1,
+                                     static_cast<int64_t>(std::sqrt(
+                                         static_cast<double>(w * h) /
+                                         static_cast<double>(kMaxSweepPixels))),
+                                     std::max(w, h) / kMaxSweepSide});
       grid = MakeSweepGrid(device, k, 1);
-      while (!fits(grid)) {
+      while (!SweepGridFits(grid)) {
         grid = MakeSweepGrid(device, ++k, 1);
       }
     }
