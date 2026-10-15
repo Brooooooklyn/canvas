@@ -335,19 +335,20 @@ test('avif decode draws BT.709-family CICP transfers with the sRGB curve', async
   }
 })
 
-// Chrome cannot decode CICP transfer 11 (IEC 61966-2-4), and it tone maps PQ
-// (16) and HLG (18) when it draws them into a canvas. We have neither, so
+// Chrome cannot decode CICP transfer 11 (IEC 61966-2-4): onerror. It tone
+// maps PQ (16) and HLG (18) when it draws them into a canvas. We cannot, so
 // these stay untagged (drawn as sRGB), as before AVIF color spaces were
 // honored. These are not Chrome's values (PQ grey 132, HLG grey 99), but are
 // closer to them than Skia's plain BT.709, PQ and HLG curves (121, 181, 137).
-test('avif decode leaves CICP transfers 11, PQ and HLG untagged', async (t) => {
+test('avif decode fails CICP transfer 11 and leaves PQ and HLG untagged', async (t) => {
+  await t.throwsAsync(loadImage(join(__dirname, 'fixtures', 'avif-cicp-1-11-6.avif')))
   const untagged = [
     [128, 128, 128, 255],
     [200, 100, 50, 255],
     [31, 128, 223, 255],
     [255, 0, 0, 255],
   ]
-  for (const name of ['avif-cicp-1-11-6', 'avif-cicp-9-16-9', 'avif-cicp-9-18-9']) {
+  for (const name of ['avif-cicp-9-16-9', 'avif-cicp-9-18-9']) {
     const row = await decodeAvifRow(name, 'srgb')
     row.forEach((pixel, x) => nearPixel(t, pixel, untagged[x], `${name} x=${x}`))
   }

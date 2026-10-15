@@ -357,9 +357,25 @@ pub struct AvifImage {
   /// RGBA, premultiplied, converted from YUV as Chrome does
   /// ([`crate::avif_yuv`]).
   pub data: Vec<u8>,
-  /// CICP colour primaries and transfer characteristics; 2 is unspecified.
+  /// CICP colour primaries, transfer characteristics and matrix
+  /// coefficients; 2 is unspecified.
   pub color_primaries: u16,
   pub transfer_characteristics: u16,
+  pub matrix_coefficients: u16,
+  /// 4:0:0 (grayscale).
+  pub is_mono: bool,
+  /// The SkEncodedOrigin of the 'irot' and 'imir' properties (1 is none).
+  pub origin: i32,
+}
+
+/// Chrome's kAxisAngleToOrientation (avif_image_decoder.cc:897-938): the
+/// EXIF-style origin for an anti-clockwise rotation of `angle` * 90 degrees
+/// then a mirror on `axis` (-1 none, 0 top-bottom, 1 left-right).
+fn origin(angle: u8, axis: i8) -> i32 {
+  // SkEncodedOrigin: 1 TopLeft, 2 TopRight, 3 BottomRight, 4 BottomLeft,
+  // 5 LeftTop, 6 RightTop, 7 RightBottom, 8 LeftBottom.
+  const AXIS_ANGLE_TO_ORIGIN: [[i32; 4]; 3] = [[1, 8, 3, 6], [4, 5, 2, 7], [2, 7, 4, 5]];
+  AXIS_ANGLE_TO_ORIGIN[(axis + 1) as usize][angle as usize]
 }
 
 impl AvifImage {
@@ -405,6 +421,9 @@ impl AvifImage {
       data: Vec::new(),
       color_primaries: 2,
       transfer_characteristics: 2,
+      matrix_coefficients: 2,
+      is_mono: false,
+      origin: 1,
     };
     if this.image.is_null() {
       return Err(AvifError::Known(AvifErrorCode::OutOfMemory));
@@ -432,6 +451,21 @@ impl AvifImage {
     this.row_bytes = image.width * 4;
     this.color_primaries = image.colorPrimaries;
     this.transfer_characteristics = image.transferCharacteristics;
+    this.matrix_coefficients = image.matrixCoefficients;
+    this.is_mono = image.yuvFormat == sys::AVIF_PIXEL_FORMAT_YUV400;
+    // libavif keeps irot.angle within 0-3 and imir.axis within 0-1
+    // (read.c avifParseImageRotationProperty / avifParseImageMirrorProperty).
+    let angle = if image.transformFlags & sys::AVIF_TRANSFORM_IROT != 0 {
+      image.irot.angle & 3
+    } else {
+      0
+    };
+    let axis = if image.transformFlags & sys::AVIF_TRANSFORM_IMIR != 0 {
+      (image.imir.axis & 1) as i8
+    } else {
+      -1
+    };
+    this.origin = origin(angle, axis);
     Ok(this)
   }
 }
