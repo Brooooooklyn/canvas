@@ -276,6 +276,13 @@ sites! {
   PathRoundRect: execute "roundRect" on "Path2D";
   CanvasGetContext: execute "getContext" on "HTMLCanvasElement";
   SvgCanvasGetContext: execute "getContext" on "SVGCanvas";
+  CanvasSetWidth: set "width" on "HTMLCanvasElement";
+  CanvasSetHeight: set "height" on "HTMLCanvasElement";
+  SvgCanvasSetWidth: set "width" on "SVGCanvas";
+  SvgCanvasSetHeight: set "height" on "SVGCanvas";
+  ImageSetWidth: set "width" on "HTMLImageElement";
+  ImageSetHeight: set "height" on "HTMLImageElement";
+  ImageSetAlt: set "alt" on "HTMLImageElement";
 }
 
 /// `napi_bigint`; napi6 (and so `ValueType::BigInt`) is off in this build.
@@ -722,11 +729,27 @@ impl<S: Site> FromNapiValue for DoubleSequence<S> {
 pub(crate) fn to_unsigned_long(env: sys::napi_env, value: sys::napi_value) -> Result<u32> {
   let mut number = ptr::null_mut();
   check_status!(unsafe { sys::napi_coerce_to_number(env, value, &mut number) })?;
-  let x = unsafe { f64::from_napi_value(env, number)? };
+  Ok(to_uint32(unsafe { f64::from_napi_value(env, number)? }))
+}
+
+/// ToUint32 of a number: NaN and infinities are 0, the rest is truncated
+/// modulo 2^32.
+fn to_uint32(x: f64) -> u32 {
   if !x.is_finite() {
-    return Ok(0);
+    return 0;
   }
-  Ok(x.trunc().rem_euclid(4_294_967_296.0) as u32)
+  x.trunc().rem_euclid(4_294_967_296.0) as u32
+}
+
+/// A WebIDL `unsigned long` argument or attribute value: ToNumber, then
+/// ToUint32. Errors from user code pass as they are; the engine's own ones
+/// (Symbol, BigInt) get the prefix of `S`.
+pub struct UnsignedLong<S>(pub u32, PhantomData<S>);
+
+impl<S: Site> FromNapiValue for UnsignedLong<S> {
+  unsafe fn from_napi_value(env: sys::napi_env, value: sys::napi_value) -> Result<Self> {
+    to_number(env, value, S::PREFIX).map(|x| Self(to_uint32(x), PhantomData))
+  }
 }
 
 /// One dictionary being converted, for the error messages.

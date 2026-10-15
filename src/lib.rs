@@ -99,6 +99,27 @@ pub struct CanvasElement<'scope> {
   context_initialized: bool,
 }
 
+/// The width a canvas takes for a `width` attribute value (already ToUint32):
+/// HTML's reflection of a non-negative `unsigned long` gives the default 300
+/// for a value above 2147483647. 0 keeps the 350 fallback: a canvas without
+/// pixels is not supported.
+fn canvas_width(width: u32) -> u32 {
+  match width {
+    0 => 350,
+    width if width > i32::MAX as u32 => 300,
+    width => width,
+  }
+}
+
+/// As `canvas_width`, for `height`: the default is 150.
+fn canvas_height(height: u32) -> u32 {
+  if height == 0 || height > i32::MAX as u32 {
+    150
+  } else {
+    height
+  }
+}
+
 // Setting width or height resets the context to its default state (spec "set
 // bitmap dimensions"; Chrome: HTMLCanvasElement::Reset), so the style getters
 // read '#000000' again. The context object is read from the canvas's `ctx`
@@ -163,8 +184,13 @@ impl<'c> CanvasElement<'c> {
   }
 
   #[napi(setter)]
-  pub fn set_width(&mut self, env: Env, this: This, width: i32) -> Result<()> {
-    let width = (if width <= 0 { 350 } else { width }) as u32;
+  pub fn set_width(
+    &mut self,
+    env: Env,
+    this: This,
+    width: webidl::UnsignedLong<webidl::CanvasSetWidth>,
+  ) -> Result<()> {
+    let width = canvas_width(width.0);
     self.width = width;
     let height = self.height;
     let new_ctx = Self::resized_context(&self.ctx.context, width, height)?;
@@ -179,8 +205,13 @@ impl<'c> CanvasElement<'c> {
   }
 
   #[napi(setter)]
-  pub fn set_height(&mut self, env: Env, this: This, height: i32) -> Result<()> {
-    let height = (if height <= 0 { 150 } else { height }) as u32;
+  pub fn set_height(
+    &mut self,
+    env: Env,
+    this: This,
+    height: webidl::UnsignedLong<webidl::CanvasSetHeight>,
+  ) -> Result<()> {
+    let height = canvas_height(height.0);
     self.height = height;
     let width = self.width;
     let new_ctx = Self::resized_context(&self.ctx.context, width, height)?;
@@ -924,8 +955,13 @@ impl<'scope> SVGCanvas<'scope> {
   }
 
   #[napi(setter)]
-  pub fn set_width(&mut self, env: Env, this: This, width: i32) -> Result<()> {
-    let width = (if width <= 0 { 350 } else { width }) as u32;
+  pub fn set_width(
+    &mut self,
+    env: Env,
+    this: This,
+    width: webidl::UnsignedLong<webidl::SvgCanvasSetWidth>,
+  ) -> Result<()> {
+    let width = canvas_width(width.0);
     self.width = width;
     let height = self.height;
     let new_ctx = self.resized_context(width, height)?;
@@ -940,8 +976,13 @@ impl<'scope> SVGCanvas<'scope> {
   }
 
   #[napi(setter)]
-  pub fn set_height(&mut self, env: Env, this: This, height: i32) -> Result<()> {
-    let height = (if height <= 0 { 150 } else { height }) as u32;
+  pub fn set_height(
+    &mut self,
+    env: Env,
+    this: This,
+    height: webidl::UnsignedLong<webidl::SvgCanvasSetHeight>,
+  ) -> Result<()> {
+    let height = canvas_height(height.0);
     self.height = height;
     let width = self.width;
     let new_ctx = self.resized_context(width, height)?;
