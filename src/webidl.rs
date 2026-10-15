@@ -735,6 +735,41 @@ pub(crate) fn to_unsigned_long(
   to_number(env, value, prefix).map(to_uint32)
 }
 
+/// WebIDL `[EnforceRange] long` (v8_binding_for_core.cc EnforceRange):
+/// ToNumber, then a TypeError for NaN, an infinity, or a value outside the
+/// long range once truncated. Errors from user code pass as they are; the
+/// engine's own ones get `prefix`.
+pub(crate) fn enforce_range_long(
+  env: sys::napi_env,
+  value: sys::napi_value,
+  prefix: &str,
+) -> Result<i32> {
+  let x = to_number(env, value, prefix)?;
+  if x.is_nan() {
+    return Err(context_type_error(
+      env,
+      prefix,
+      "Value is not of type 'long'.",
+    ));
+  }
+  if x.is_infinite() {
+    return Err(context_type_error(
+      env,
+      prefix,
+      "Value is infinite and not of type 'long'.",
+    ));
+  }
+  let x = x.trunc();
+  if x < f64::from(i32::MIN) || x > f64::from(i32::MAX) {
+    return Err(context_type_error(
+      env,
+      prefix,
+      "Value is outside the 'long' value range.",
+    ));
+  }
+  Ok(x as i32)
+}
+
 /// ToUint32 of a number: NaN and infinities are 0, the rest is truncated
 /// modulo 2^32.
 fn to_uint32(x: f64) -> u32 {

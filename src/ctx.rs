@@ -3766,10 +3766,11 @@ impl FromNapiValue for CreatePatternArgs<'static> {
 /// The arguments of `createImageData`, its last parameter: it gets the
 /// argument count and converts the `Positional` arguments before it. WebIDL
 /// picks the overload from the argument count, and an explicit undefined
-/// counts (base_rendering_context_2d.idl:25).
+/// counts (base_rendering_context_2d.idl:25). There is no typed array form:
+/// with two or more arguments, a typed array is ToNumber'd as sw.
 /// They are converted in the callback glue, before napi-rs borrows the
-/// context, so a settings getter may use it.
-pub enum CreateImageDataArgs<'a> {
+/// context, so a valueOf or a settings getter may use it.
+pub enum CreateImageDataArgs {
   /// createImageData(ImageData imagedata).
   ImageData {
     width: usize,
@@ -3783,102 +3784,48 @@ pub enum CreateImageDataArgs<'a> {
     height: u32,
     settings: webidl::ImageDataSettings,
   },
-  /// Non-standard createImageData(Uint8ClampedArray data, sw, sh?, settings?).
-  Data {
-    data: Uint8ClampedSlice<'a>,
-    width: u32,
-    height: u32,
-    color_space: Option<ColorSpace>,
-  },
 }
 
-impl FromNapiValue for CreateImageDataArgs<'static> {
+impl FromNapiValue for CreateImageDataArgs {
   unsafe fn from_napi_value(env: sys::napi_env, argc: sys::napi_value) -> Result<Self> {
     let args = webidl::Arguments::take(env, 4, argc)?;
-    let type_error =
-      |msg: &str| webidl::type_error(env, &format!("{}{msg}", webidl::CREATE_IMAGE_DATA));
-    let settings = |value: sys::napi_value| {
-      webidl::ImageDataSettings::from_js(env, Some(value), webidl::CREATE_IMAGE_DATA)
-    };
-    // `long` as before, except that undefined is not a long.
-    let long = |value: sys::napi_value| -> Result<u32> {
-      if webidl::type_of(env, value)? == ValueType::Undefined {
-        return Err(type_error("Value is not of type 'long'."));
-      }
-      Ok(unsafe { i32::from_napi_value(env, value)? }.unsigned_abs())
-    };
+    let prefix = webidl::CREATE_IMAGE_DATA;
     if args.len() == 0 {
-      return Err(type_error("1 argument required, but only 0 present."));
+      return Err(webidl::context_type_error(
+        env,
+        prefix,
+        "1 argument required, but only 0 present.",
+      ));
     }
-    let first = unsafe {
-      Either3::<&ImageData, Uint8ClampedSlice, Unknown>::from_napi_value(env, args.get(0)?)?
-    };
+    let first = args.get(0)?;
     if args.len() == 1 {
       // The same size and color space, new zeroed data
       // (base_rendering_context_2d.cc:296).
-      return match first {
-        Either3::A(image_data) => Ok(Self::ImageData {
+      if unsafe { <&ImageData as ValidateNapiValue>::validate(env, first) }.is_ok()
+        && let Ok(image_data) = unsafe { ImageData::from_napi_ref(env, first) }
+      {
+        return Ok(Self::ImageData {
           width: image_data.width,
           height: image_data.height,
           color_space: image_data.color_space,
-        }),
-        _ => Err(type_error("parameter 1 is not of type 'ImageData'.")),
-      };
-    }
-    match first {
-      // Two or more arguments select (long sw, long sh, ...), and an
-      // ImageData is not a long.
-      Either3::A(_) => Err(type_error("Value is not of type 'long'.")),
-      Either3::C(width) => {
-        let width = long(width.raw())?;
-        let height = long(args.get(1)?)?;
-        let settings = settings(args.get(2)?)?;
-        Ok(Self::Size {
-          width,
-          height,
-          settings,
-        })
+        });
       }
-      Either3::B(data) => {
-        let input_data_length = data.len();
-        let width = long(args.get(1)?)?;
-        if width == 0 {
-          // The width check of createImageData(sw, sh); the height below
-          // divides by the width.
-          return Err(webidl::dom_exception(
-            env,
-            "IndexSizeError",
-            &format!(
-              "{}The source width is zero or not a number.",
-              webidl::CREATE_IMAGE_DATA
-            ),
-          ));
-        }
-        let height = args.get(2)?;
-        let height = if webidl::type_of(env, height)? == ValueType::Number {
-          unsafe { i32::from_napi_value(env, height)? }.unsigned_abs()
-        } else {
-          // A dictionary here is converted but, as before, not used.
-          settings(height)?;
-          (input_data_length as u32) / 4 / width
-        };
-        // The typed array aliases the caller's buffer, which may be detached
-        // later via transfer; the pixel length is checked on every use.
-        if input_data_length < (width as usize) * (height as usize) * 4 {
-          return Err(Error::new(
-            Status::InvalidArg,
-            "Index or size is negative or greater than the allowed amount".to_owned(),
-          ));
-        }
-        let color_space = settings(args.get(3)?)?.color_space(env, webidl::CREATE_IMAGE_DATA)?;
-        Ok(Self::Data {
-          data,
-          width,
-          height,
-          color_space,
-        })
-      }
+      return Err(webidl::context_type_error(
+        env,
+        prefix,
+        "parameter 1 is not of type 'ImageData'.",
+      ));
     }
+    // std::abs of each (base_rendering_context_2d.cc:312).
+    let long = |value| webidl::enforce_range_long(env, value, prefix).map(i32::unsigned_abs);
+    let width = long(first)?;
+    let height = long(args.get(1)?)?;
+    let settings = webidl::ImageDataSettings::from_js(env, Some(args.get(2)?), prefix)?;
+    Ok(Self::Size {
+      width,
+      height,
+      settings,
+    })
   }
 }
 
@@ -4453,9 +4400,9 @@ impl CanvasRenderingContext2D {
     self.context.close_path();
   }
 
-  /// createImageData(imagedata) or (sw, sh, settings?), and the non-standard
-  /// (data, sw, sh?, settings?). The index.js wrapper passes the argument
-  /// count after the 4 positional arguments; see `webidl::Arguments::take`.
+  /// createImageData(imagedata) or (sw, sh, settings?). The index.js wrapper
+  /// passes the argument count after the 4 positional arguments; see
+  /// `webidl::Arguments::take`.
   #[napi]
   pub fn create_image_data<'scope>(
     &'scope mut self,
@@ -4464,7 +4411,7 @@ impl CanvasRenderingContext2D {
     _arg1: Positional,
     _arg2: Positional,
     _arg3: Positional,
-    args: CreateImageDataArgs<'scope>,
+    args: CreateImageDataArgs,
   ) -> Result<ClassInstance<'scope, ImageData>> {
     match args {
       CreateImageDataArgs::ImageData {
@@ -4490,27 +4437,6 @@ impl CanvasRenderingContext2D {
           .color_space(env.raw(), prefix)?
           .unwrap_or(self.context.color_space);
         ImageData::new_zeroed(env, width as usize, height as usize, color_space)
-      }
-      CreateImageDataArgs::Data {
-        data: data_object,
-        width,
-        height,
-        color_space,
-      } => {
-        let mut instance = ImageData {
-          width: width as usize,
-          height: height as usize,
-          color_space: color_space.unwrap_or_default(),
-          // Weak ref: the non-configurable `data` property keeps the caller's
-          // array alive for exactly the ImageData's lifetime.
-          data_ref: Some(create_weak_ref(env, data_object.raw())?),
-        }
-        .into_instance(env)?;
-        instance.define_properties(&[Property::new()
-          .with_utf8_name("data")?
-          .with_value(&data_object)
-          .with_property_attributes(PropertyAttributes::Enumerable)])?;
-        Ok(instance)
       }
     }
   }
