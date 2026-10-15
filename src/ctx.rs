@@ -1353,11 +1353,10 @@ impl Context {
   pub fn reset_transform(&mut self) {
     self.flush_if_recording_limit_exceeded();
     // The path keeps its device position (canvas_2d_recorder_context.cc:1515).
-    // An empty path has nothing to map, and an identity map changes nothing.
-    if !self.path.is_empty()
-      && self.transform_is_invertible()
-      && !self.state.transform.get_transform().is_identity()
-    {
+    // An identity map changes nothing, and an empty path has nothing to map.
+    // The matrix is read once: each read is an FFI call.
+    let t = self.state.transform.get_transform();
+    if !t.is_identity() && !self.path.is_empty() && is_invertible(&t) {
       self.path.transform_self(&self.state.transform);
     }
     self.state.transform = Matrix::identity();
@@ -5982,7 +5981,11 @@ fn clamp_to_f32(value: f64) -> f32 {
 /// determinant, computed in double. From f32 entries a non-zero determinant
 /// is never subnormal in double, so finite and non-zero is the same test.
 fn matrix_is_invertible(m: &Matrix) -> bool {
-  let t = m.get_transform();
+  is_invertible(&m.get_transform())
+}
+
+/// [`matrix_is_invertible`] of values already read.
+fn is_invertible(t: &Transform) -> bool {
   let det = t.a as f64 * t.d as f64 - t.b as f64 * t.c as f64;
   det.is_finite() && det != 0.0
 }
