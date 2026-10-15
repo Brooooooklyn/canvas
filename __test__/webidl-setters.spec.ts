@@ -394,3 +394,231 @@ test('lineDashOffset ignores non-finite values and clamps to the float range', (
   t.deepEqual(dashedStroke([4, 2], NaN), { sum: 24480, dash: [4, 2], offset: 0 })
   t.deepEqual(dashedStroke([4, 2], Infinity), { sum: 24480, dash: [4, 2], offset: 0 })
 })
+
+// [attribute, a valid value set first, another valid value, invalid values
+// that keep the first one]. Enum attributes ignore a value outside the enum,
+// case-sensitive, after ToString.
+const ENUM_ATTRS: [string, string, string, unknown[]][] = [
+  ['textAlign', 'left', 'center', ['CENTER', 'middle', 'justify', '', null, undefined, 5, true]],
+  ['textBaseline', 'bottom', 'top', ['TOP', 'center', '', null, undefined, 5, true]],
+  ['direction', 'ltr', 'rtl', ['RTL', 'auto', '', null, undefined, 5, true]],
+  ['fontKerning', 'normal', 'none', ['NONE', 'off', '', null, undefined, 5, true]],
+  ['fontStretch', 'expanded', 'condensed', ['CONDENSED', '50%', '100%', 'wider', '', null, undefined, 5, true]],
+  ['fontVariantCaps', 'unicase', 'small-caps', ['SMALL-CAPS', 'smallcaps', '', null, undefined, 5, true]],
+  ['textRendering', 'geometricPrecision', 'optimizeSpeed', ['optimizespeed', 'fast', '', null, undefined, 5, true]],
+  ['imageSmoothingQuality', 'medium', 'high', ['HIGH', 'best', 'Low', '', null, undefined, 5, true]],
+  [
+    'globalCompositeOperation',
+    'xor',
+    'multiply',
+    [
+      'MULTIPLY',
+      'bogus',
+      'destination',
+      'source',
+      'modulate',
+      'plus-lighter',
+      'plus-darker',
+      'darker',
+      ' multiply',
+      'multiply ',
+      '',
+      null,
+      undefined,
+      5,
+      true,
+    ],
+  ],
+  ['lineCap', 'square', 'round', ['ROUND', 'Round', 'bogus', '', null, undefined, 5, true]],
+  ['lineJoin', 'miter', 'bevel', ['BEVEL', 'Bevel', 'bogus', '', null, undefined, 5, true]],
+]
+
+test('enum setters ignore invalid values and convert objects', (t) => {
+  for (const [attr, first, valid, invalid] of ENUM_ATTRS) {
+    for (const value of invalid) {
+      const ctx = loose(context())
+      ctx[attr] = first
+      t.notThrows(() => {
+        ctx[attr] = value
+      })
+      t.is(ctx[attr], first, `${attr} = ${String(value)}`)
+    }
+    for (const value of [valid, { toString: () => valid }, [valid]]) {
+      const ctx = loose(context())
+      ctx[attr] = first
+      ctx[attr] = value
+      t.is(ctx[attr], valid, `${attr} = ${String(value)}`)
+    }
+  }
+})
+
+test('lang is a DOMString', (t) => {
+  const cases: [unknown, string][] = [
+    [null, 'null'],
+    [undefined, 'undefined'],
+    [5, '5'],
+    [true, 'true'],
+    ['EN', 'EN'],
+    [{ toString: () => 'en' }, 'en'],
+    [['en'], 'en'],
+  ]
+  for (const [value, expected] of cases) {
+    const ctx = loose(context())
+    ctx.lang = value
+    t.is(ctx.lang, expected)
+  }
+})
+
+test('font, letterSpacing, wordSpacing and filter convert with ToString', (t) => {
+  const ctx = loose(context())
+  ctx.font = { toString: () => '12px serif' }
+  t.is(ctx.font, '12px serif')
+  ctx.letterSpacing = ['2px']
+  t.is(ctx.letterSpacing, '2px')
+  ctx.wordSpacing = { toString: () => '3px' }
+  t.is(ctx.wordSpacing, '3px')
+  ctx.filter = { toString: () => 'blur(2px)' }
+  t.is(ctx.filter, 'blur(2px)')
+  for (const value of [null, undefined, 5, 'bogus']) {
+    ctx.filter = value
+    t.is(ctx.filter, 'blur(2px)')
+  }
+})
+
+test('font, textAlign, textBaseline and shadowColor do not throw on invalid values', (t) => {
+  const ctx = loose(context())
+  ctx.font = '12px serif'
+  // ctx.font = 5 is left out: the font parser takes the unitless '5' as a
+  // size (the font shorthand item); Chrome ignores it.
+  for (const value of ['bogus', '', null, 'inherit', 'initial', 'var(--x) serif']) {
+    t.notThrows(() => {
+      ctx.font = value
+    })
+    t.is(ctx.font, '12px serif', String(value))
+  }
+  ctx.textAlign = 'center'
+  t.notThrows(() => {
+    ctx.textAlign = 'CENTER'
+  })
+  t.is(ctx.textAlign, 'center')
+  ctx.textBaseline = 'top'
+  t.notThrows(() => {
+    ctx.textBaseline = 'bogus'
+  })
+  t.is(ctx.textBaseline, 'top')
+  ctx.shadowColor = '#ff0000'
+  for (const value of ['bogus', '', 'notacolor', null, 5]) {
+    t.notThrows(() => {
+      ctx.shadowColor = value
+    })
+    t.is(ctx.shadowColor, '#ff0000', String(value))
+  }
+})
+
+test('string setters throw a prefixed TypeError for Symbol', (t) => {
+  for (const attr of ['lineCap', 'textAlign', 'font', 'fillStyle', 'strokeStyle', 'shadowColor', 'filter', 'lang']) {
+    const ctx = loose(context())
+    const error = t.throws(
+      () => {
+        ctx[attr] = Symbol('s')
+      },
+      { instanceOf: TypeError, message: `${setterPrefix(attr)}Cannot convert a Symbol value to a string` },
+    )
+    t.is(String(error.stack).split('\n')[0], 'TypeError: Cannot convert a Symbol value to a string')
+  }
+})
+
+const pixel = (ctx: ReturnType<typeof context>, x: number, y: number) => Array.from(ctx.getImageData(x, y, 1, 1).data)
+
+test('currentcolor paints opaque black', (t) => {
+  for (const value of ['currentcolor', 'CurrentColor']) {
+    const ctx = createCanvas(4, 4).getContext('2d')
+    ctx.fillStyle = 'red'
+    ctx.fillStyle = value
+    ctx.fillRect(0, 0, 4, 4)
+    t.deepEqual(pixel(ctx, 1, 1), [0, 0, 0, 255], value)
+  }
+  {
+    const ctx = createCanvas(4, 4).getContext('2d')
+    ctx.strokeStyle = 'red'
+    ctx.strokeStyle = 'currentcolor'
+    ctx.lineWidth = 4
+    ctx.strokeRect(0, 0, 4, 4)
+    t.deepEqual(pixel(ctx, 0, 0), [0, 0, 0, 255])
+  }
+  {
+    const ctx = createCanvas(4, 4).getContext('2d')
+    ctx.shadowColor = 'red'
+    t.notThrows(() => {
+      ctx.shadowColor = 'currentcolor'
+    })
+    ctx.shadowOffsetX = 2
+    ctx.fillStyle = '#00f'
+    ctx.fillRect(0, 0, 2, 4)
+    t.deepEqual(pixel(ctx, 3, 1), [0, 0, 0, 255])
+  }
+  {
+    const ctx = createCanvas(4, 4).getContext('2d')
+    const gradient = ctx.createLinearGradient(0, 0, 4, 0)
+    t.notThrows(() => {
+      gradient.addColorStop(0, 'currentcolor')
+      gradient.addColorStop(1, 'currentcolor')
+    })
+    ctx.fillStyle = gradient
+    ctx.fillRect(0, 0, 4, 4)
+    t.deepEqual(pixel(ctx, 1, 1), [0, 0, 0, 255])
+  }
+})
+
+test('fillStyle converts values that are not a style with ToString', (t) => {
+  const cases: [unknown, number[]][] = [
+    [5, [0, 255, 0, 255]],
+    [null, [0, 255, 0, 255]],
+    [undefined, [0, 255, 0, 255]],
+    [true, [0, 255, 0, 255]],
+    [{}, [0, 255, 0, 255]],
+    [{ toString: () => 'red' }, [255, 0, 0, 255]],
+    [['blue'], [0, 0, 255, 255]],
+  ]
+  for (const [value, expected] of cases) {
+    const ctx = loose(context())
+    ctx.fillStyle = '#00ff00'
+    ctx.fillStyle = value
+    ctx.fillRect(0, 0, 4, 4)
+    t.deepEqual(pixel(ctx, 1, 1), expected, String(value))
+  }
+  const ctx = loose(context())
+  ctx.fillStyle = '#00ff00'
+  // An object that passes instanceof but wraps no gradient: ToString, then
+  // an invalid color, so the assignment is ignored.
+  const fake = Object.create(Object.getPrototypeOf(ctx.createLinearGradient(0, 0, 1, 1)))
+  t.notThrows(() => {
+    ctx.fillStyle = fake
+  })
+  t.is(ctx.fillStyle, '#00ff00')
+  // A gradient or pattern is kept as the object.
+  const gradient = ctx.createLinearGradient(0, 0, 1, 1)
+  ctx.fillStyle = gradient
+  t.is(ctx.fillStyle, gradient)
+  const pattern = ctx.createPattern(createCanvas(2, 2), 'repeat')
+  ctx.strokeStyle = pattern
+  t.is(ctx.strokeStyle, pattern)
+})
+
+test('string setters run toString before they borrow the context', (t) => {
+  const ctx = loose(context())
+  ctx.textAlign = {
+    toString() {
+      return ctx.textBaseline === 'alphabetic' ? 'center' : 'left'
+    },
+  }
+  t.is(ctx.textAlign, 'center')
+  ctx.globalAlpha = 0.3
+  ctx.fillStyle = {
+    toString() {
+      ctx.fillRect(0, 0, 1, 1)
+      return 'red'
+    },
+  }
+  t.deepEqual(pixel(ctx, 0, 0), [0, 0, 0, 77])
+})

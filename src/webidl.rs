@@ -203,6 +203,25 @@ sites! {
   SetShadowOffsetY: set "shadowOffsetY" on "CanvasRenderingContext2D";
   SetLineDashOffset: set "lineDashOffset" on "CanvasRenderingContext2D";
   CtxSetLineDash: execute "setLineDash" on "CanvasRenderingContext2D";
+  SetGlobalCompositeOperation: set "globalCompositeOperation" on "CanvasRenderingContext2D";
+  SetImageSmoothingQuality: set "imageSmoothingQuality" on "CanvasRenderingContext2D";
+  SetLineCap: set "lineCap" on "CanvasRenderingContext2D";
+  SetLineJoin: set "lineJoin" on "CanvasRenderingContext2D";
+  SetFillStyle: set "fillStyle" on "CanvasRenderingContext2D";
+  SetStrokeStyle: set "strokeStyle" on "CanvasRenderingContext2D";
+  SetFilter: set "filter" on "CanvasRenderingContext2D";
+  SetFont: set "font" on "CanvasRenderingContext2D";
+  SetDirection: set "direction" on "CanvasRenderingContext2D";
+  SetLetterSpacing: set "letterSpacing" on "CanvasRenderingContext2D";
+  SetWordSpacing: set "wordSpacing" on "CanvasRenderingContext2D";
+  SetShadowColor: set "shadowColor" on "CanvasRenderingContext2D";
+  SetTextAlign: set "textAlign" on "CanvasRenderingContext2D";
+  SetTextBaseline: set "textBaseline" on "CanvasRenderingContext2D";
+  SetFontStretch: set "fontStretch" on "CanvasRenderingContext2D";
+  SetFontKerning: set "fontKerning" on "CanvasRenderingContext2D";
+  SetFontVariantCaps: set "fontVariantCaps" on "CanvasRenderingContext2D";
+  SetTextRendering: set "textRendering" on "CanvasRenderingContext2D";
+  SetLang: set "lang" on "CanvasRenderingContext2D";
 }
 
 /// `napi_bigint`; napi6 (and so `ValueType::BigInt`) is off in this build.
@@ -287,6 +306,7 @@ fn prefix_pending_exception(env: sys::napi_env, prefix: &str) -> Error {
 #[derive(Clone, Copy)]
 enum Hint {
   Number,
+  String,
 }
 
 fn get_property(
@@ -344,6 +364,7 @@ fn to_primitive(
     sys::ValueType::napi_function => {
       let hint = match hint {
         Hint::Number => "number",
+        Hint::String => "string",
       };
       let hint = unsafe { <&str as ToNapiValue>::to_napi_value(env, hint)? };
       let result = call(env, value, exotic, &[hint])?;
@@ -363,6 +384,7 @@ fn to_primitive(
       let status = unsafe {
         match hint {
           Hint::Number => sys::napi_coerce_to_number(env, value, &mut result),
+          Hint::String => sys::napi_coerce_to_string(env, value, &mut result),
         }
       };
       if status != sys::Status::napi_ok && is_exception_pending(env) {
@@ -375,6 +397,7 @@ fn to_primitive(
   // OrdinaryToPrimitive.
   let names: [&std::ffi::CStr; 2] = match hint {
     Hint::Number => [c"valueOf", c"toString"],
+    Hint::String => [c"toString", c"valueOf"],
   };
   for name in names {
     let mut method = ptr::null_mut();
@@ -433,6 +456,40 @@ pub struct Double<S>(pub f64, PhantomData<S>);
 impl<S: Site> FromNapiValue for Double<S> {
   unsafe fn from_napi_value(env: sys::napi_env, value: sys::napi_value) -> Result<Self> {
     to_number(env, value, S::PREFIX).map(|v| Self(v, PhantomData))
+  }
+}
+
+/// WebIDL `DOMString`: ToString. Errors from user code pass as they are; the
+/// engine's own ones get `prefix`.
+pub(crate) fn to_dom_string(
+  env: sys::napi_env,
+  value: sys::napi_value,
+  prefix: &str,
+) -> Result<String> {
+  match raw_type_of(env, value)? {
+    sys::ValueType::napi_string => unsafe { String::from_napi_value(env, value) },
+    sys::ValueType::napi_symbol => Err(context_type_error(
+      env,
+      prefix,
+      "Cannot convert a Symbol value to a string",
+    )),
+    sys::ValueType::napi_object | sys::ValueType::napi_function => {
+      let primitive = to_primitive(env, value, Hint::String, prefix)?;
+      to_dom_string(env, primitive, prefix)
+    }
+    // undefined, null, boolean, number, bigint: cannot throw.
+    _ => to_js_string(env, value),
+  }
+}
+
+/// A WebIDL `DOMString` argument or attribute value, converted in the
+/// callback glue, before napi-rs borrows the receiver: toString may use the
+/// receiver, as in Chrome.
+pub struct DomString<S>(pub String, PhantomData<S>);
+
+impl<S: Site> FromNapiValue for DomString<S> {
+  unsafe fn from_napi_value(env: sys::napi_env, value: sys::napi_value) -> Result<Self> {
+    to_dom_string(env, value, S::PREFIX).map(|v| Self(v, PhantomData))
   }
 }
 
