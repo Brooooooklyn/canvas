@@ -403,6 +403,149 @@ fn check_not_shared(
   Ok(())
 }
 
+/// The `ImageData` constructor index.js exports: a native function, so that it
+/// sees `new.target` and the real argument count, which the class
+/// constructor napi-rs makes cannot (v8_image_data.cc ConstructorCallback).
+/// `construct(args, argc, newTarget)` builds the class with the 4 arguments
+/// and a count marker.
+#[napi(js_name = "_imageDataConstructor")]
+pub fn image_data_constructor<'env>(
+  env: &'env Env,
+  construct: Unknown<'env>,
+) -> Result<Unknown<'env>> {
+  let raw = env.raw();
+  let mut reference = ptr::null_mut();
+  check_status!(unsafe { sys::napi_create_reference(raw, construct.raw(), 1, &mut reference) })?;
+  let mut function = ptr::null_mut();
+  check_status!(unsafe {
+    sys::napi_create_function(
+      raw,
+      c"ImageData".as_ptr(),
+      9,
+      Some(construct_image_data),
+      reference.cast(),
+      &mut function,
+    )
+  })?;
+  check_status!(unsafe {
+    sys::napi_add_finalizer(
+      raw,
+      function,
+      reference.cast(),
+      Some(delete_reference),
+      ptr::null_mut(),
+      ptr::null_mut(),
+    )
+  })?;
+  Ok(unsafe { Unknown::from_raw_unchecked(raw, function) })
+}
+
+unsafe extern "C" fn delete_reference(
+  env: sys::napi_env,
+  reference: *mut std::ffi::c_void,
+  _hint: *mut std::ffi::c_void,
+) {
+  unsafe { sys::napi_delete_reference(env, reference.cast()) };
+}
+
+unsafe extern "C" fn construct_image_data(
+  env: sys::napi_env,
+  info: sys::napi_callback_info,
+) -> sys::napi_value {
+  match construct_image_data_checked(env, info) {
+    Ok(value) => value,
+    Err(error) => {
+      unsafe { JsError::from(error).throw_into(env) };
+      ptr::null_mut()
+    }
+  }
+}
+
+fn construct_image_data_checked(
+  env: sys::napi_env,
+  info: sys::napi_callback_info,
+) -> Result<sys::napi_value> {
+  let prefix = webidl::IMAGE_DATA_CONSTRUCTOR;
+  let mut argc = 4;
+  let mut argv = [ptr::null_mut(); 4];
+  let mut reference = ptr::null_mut();
+  check_status!(unsafe {
+    sys::napi_get_cb_info(
+      env,
+      info,
+      &mut argc,
+      argv.as_mut_ptr(),
+      ptr::null_mut(),
+      &mut reference,
+    )
+  })?;
+  let mut new_target = ptr::null_mut();
+  check_status!(unsafe { sys::napi_get_new_target(env, info, &mut new_target) })?;
+  if new_target.is_null() {
+    return Err(webidl::context_type_error(
+      env,
+      prefix,
+      "Please use the 'new' operator, this DOM object constructor cannot be called as a function.",
+    ));
+  }
+  if argc < 2 {
+    return Err(webidl::context_type_error(
+      env,
+      prefix,
+      &format!("2 arguments required, but only {argc} present."),
+    ));
+  }
+  let is_undefined =
+    |value| webidl::type_of(env, value).map(|value_type| value_type == ValueType::Undefined);
+  // Chrome's NonUndefinedArgumentLength looks at every argument; the class
+  // gets only 4. When one after them is not undefined, sh is present: pass
+  // 0, which converts as undefined does.
+  if argc > 4 && is_undefined(argv[2])? && is_undefined(argv[3])? {
+    let mut all = vec![ptr::null_mut(); argc];
+    let mut all_argc = argc;
+    check_status!(unsafe {
+      sys::napi_get_cb_info(
+        env,
+        info,
+        &mut all_argc,
+        all.as_mut_ptr(),
+        ptr::null_mut(),
+        ptr::null_mut(),
+      )
+    })?;
+    let mut present = false;
+    for value in &all[4..] {
+      present |= !is_undefined(*value)?;
+    }
+    if present {
+      check_status!(unsafe { sys::napi_create_uint32(env, 0, &mut argv[2]) })?;
+    }
+  }
+  let mut construct = ptr::null_mut();
+  check_status!(unsafe { sys::napi_get_reference_value(env, reference.cast(), &mut construct) })?;
+  let mut args = ptr::null_mut();
+  check_status!(unsafe { sys::napi_create_array_with_length(env, 4, &mut args) })?;
+  for (index, value) in argv.iter().enumerate() {
+    check_status!(unsafe { sys::napi_set_element(env, args, index as u32, *value) })?;
+  }
+  let mut count = ptr::null_mut();
+  check_status!(unsafe { sys::napi_create_uint32(env, argc as u32, &mut count) })?;
+  let mut undefined = ptr::null_mut();
+  check_status!(unsafe { sys::napi_get_undefined(env, &mut undefined) })?;
+  let mut result = ptr::null_mut();
+  check_status!(unsafe {
+    sys::napi_call_function(
+      env,
+      undefined,
+      construct,
+      3,
+      [args, count, new_target].as_ptr(),
+      &mut result,
+    )
+  })?;
+  Ok(result)
+}
+
 #[napi]
 impl ImageData {
   /// `new ImageData(sw, sh, settings?)` or `new ImageData(data, sw, sh?,
