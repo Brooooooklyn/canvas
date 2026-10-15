@@ -1153,6 +1153,8 @@ pub mod ffi {
       transfer: u16,
     );
 
+    pub fn skiac_bitmap_source_is_opaque(c_bitmap: *mut skiac_bitmap, is_canvas: bool) -> bool;
+
     pub fn skiac_bitmap_get_width(c_bitmap: *mut skiac_bitmap) -> usize;
 
     pub fn skiac_bitmap_get_height(c_bitmap: *mut skiac_bitmap) -> usize;
@@ -4693,6 +4695,12 @@ unsafe impl Send for Bitmap {}
 unsafe impl Sync for Bitmap {}
 
 impl Bitmap {
+  /// Chrome's `IsOpaque()` for a drawImage source: decoded without alpha, or
+  /// an alpha:false canvas.
+  pub fn is_opaque_source(&self) -> bool {
+    unsafe { ffi::skiac_bitmap_source_is_opaque(self.0.bitmap, self.0.is_canvas) }
+  }
+
   pub fn from_buffer(ptr: *mut u8, size: usize) -> Option<Self> {
     let mut bitmap_info = ffi::skiac_bitmap_info {
       bitmap: ptr::null_mut(),

@@ -1322,6 +1322,7 @@ void skiac_bitmap_set_color_space(skiac_bitmap* c_bitmap,
                                   size_t icc_len,
                                   uint16_t primaries,
                                   uint16_t transfer);
+bool skiac_bitmap_source_is_opaque(skiac_bitmap* c_bitmap, bool is_canvas);
 size_t skiac_bitmap_get_width(skiac_bitmap* c_bitmap);
 size_t skiac_bitmap_get_height(skiac_bitmap* c_bitmap);
 void skiac_bitmap_set_immutable(skiac_bitmap* c_bitmap);
