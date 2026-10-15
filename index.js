@@ -165,11 +165,11 @@ for (const [method, required] of [
   requireArguments(CanvasRenderingContext2D.prototype, ctxBrand, 'CanvasRenderingContext2D', method, required)
 }
 
-// The argument-count markers for 0 to 4 arguments. napi pads missing
-// arguments with undefined, so the createImageData and createPattern wrappers
-// pass the real count after the positional arguments, as one of these
-// markers: the native methods read a count only from a marker, and any other
-// value there (from a raw js-binding call) is an extra argument.
+// The argument-count markers for 0 to 9 arguments. napi pads missing
+// arguments with undefined, so the wrappers below pass the real count after
+// the positional arguments, as one of these markers: the native methods read
+// a count only from a marker, and any other value there (from a raw
+// js-binding call) is an extra argument.
 const ARGUMENT_COUNTS = _argumentCounts()
 
 // fill(), clip(), stroke(), isPointInPath() and isPointInStroke(): WebIDL
@@ -237,8 +237,13 @@ CanvasRenderingContext2D.prototype.createPattern = function createPattern(image,
 // Store the original drawImage method
 const _drawImage = CanvasRenderingContext2D.prototype.drawImage
 
-// Override drawImage to ensure proper type recognition in bundled environments
-CanvasRenderingContext2D.prototype.drawImage = function drawImage(image, ...args) {
+// Override drawImage to ensure proper type recognition in bundled environments.
+// As in Chrome, it needs 3 arguments; the native method picks the overload
+// from the argument count (3, 5 or 9).
+CanvasRenderingContext2D.prototype.drawImage = function drawImage(image, dx, dy) {
+  if (arguments.length < 3) {
+    argumentCountError(ctxBrand, this, 'drawImage', 'CanvasRenderingContext2D', 3, arguments.length)
+  }
   // If the image is a Canvas-like object but not recognized due to bundling,
   // we need to ensure it's properly identified
   if (image && typeof image === 'object') {
@@ -261,7 +266,19 @@ CanvasRenderingContext2D.prototype.drawImage = function drawImage(image, ...args
   }
 
   // Call the original drawImage with the potentially corrected image
-  return _drawImage.apply(this, [image, ...args])
+  return _drawImage.call(
+    this,
+    image,
+    dx,
+    dy,
+    arguments[3],
+    arguments[4],
+    arguments[5],
+    arguments[6],
+    arguments[7],
+    arguments[8],
+    ARGUMENT_COUNTS[Math.min(arguments.length, 9)],
+  )
 }
 
 function createCanvas(width, height, flag) {

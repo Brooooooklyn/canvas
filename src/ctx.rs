@@ -3409,9 +3409,12 @@ impl<S: webidl::Site> FromNapiValue for CanvasStyleArg<'static, S> {
 /// `Object.create(Path2D.prototype)` has none). The borrow itself comes after
 /// the other arguments ran their user code.
 fn is_path2d(env: sys::napi_env, value: sys::napi_value) -> bool {
-  if unsafe { <&Path as ValidateNapiValue>::validate(env, value) }.is_err() {
-    return false;
-  }
+  unsafe { <&Path as ValidateNapiValue>::validate(env, value) }.is_ok()
+    && has_native_object(env, value)
+}
+
+/// Whether a native object is wrapped in `value`, of any class.
+fn has_native_object(env: sys::napi_env, value: sys::napi_value) -> bool {
   let mut data = std::ptr::null_mut();
   unsafe { sys::napi_unwrap(env, value, &mut data) == sys::Status::napi_ok && !data.is_null() }
 }
@@ -3562,51 +3565,99 @@ impl FromNapiValue for IsPointInStrokeArgs {
   }
 }
 
-/// Source argument for `drawImage`. Wraps the `Either3` conversion so it runs
-/// in the generated callback glue inside the native borrow scope: napi-rs
-/// 3.12+ rejects `FromNapiValue` conversions performed inside a method body,
-/// and the wrapper keeps the custom error message.
-pub struct DrawImageSource<'a>(
-  pub Either3<&'a mut CanvasElement<'a>, &'a mut SVGCanvas<'a>, &'a mut Image>,
-);
-
-impl TypeName for DrawImageSource<'_> {
-  fn type_name() -> &'static str {
-    "CanvasElement | SVGCanvas | Image"
-  }
-
-  fn value_type() -> ValueType {
-    ValueType::Object
-  }
+/// The class of a drawImage image, found by the type check of its WebIDL
+/// union: the instanceof check of the class, and a native object behind it
+/// (an object made with `Object.create(Image.prototype)` has none and is not
+/// an image).
+#[derive(Clone, Copy)]
+enum DrawImageKind {
+  CanvasElement,
+  SVGCanvas,
+  Image,
 }
 
-impl ValidateNapiValue for DrawImageSource<'_> {
-  unsafe fn validate(_env: sys::napi_env, _napi_val: sys::napi_value) -> Result<sys::napi_value> {
-    Ok(std::ptr::null_mut())
-  }
-}
-
-impl FromNapiValue for DrawImageSource<'static> {
-  unsafe fn from_napi_value(env: sys::napi_env, napi_val: sys::napi_value) -> Result<Self> {
-    match unsafe {
-      <Either3<&mut CanvasElement, &mut SVGCanvas, &mut Image> as FromNapiValue>::from_napi_value(
-        env, napi_val,
-      )
-    } {
-      Ok(value) => Ok(DrawImageSource(value)),
-      Err(_) => {
-        // Throw the TypeError eagerly: napi >= 3.12 no longer maps the
-        // InvalidArg status to a JS TypeError when synthesizing the error.
-        let _ = Env::from_raw(env).throw_type_error(
-          "Value is not one of these types: `CanvasElement`, `SVGCanvas`, `Image`",
-          Some("InvalidArg"),
-        );
-        Err(Error::new(
-          Status::InvalidArg,
-          "Value is not one of these types: `CanvasElement`, `SVGCanvas`, `Image`".to_string(),
-        ))
+impl DrawImageKind {
+  unsafe fn of(env: sys::napi_env, value: sys::napi_value) -> Option<Self> {
+    let kind = unsafe {
+      if <&mut CanvasElement as ValidateNapiValue>::validate(env, value).is_ok() {
+        Self::CanvasElement
+      } else if <&mut SVGCanvas as ValidateNapiValue>::validate(env, value).is_ok() {
+        Self::SVGCanvas
+      } else if <&mut Image as ValidateNapiValue>::validate(env, value).is_ok() {
+        Self::Image
+      } else {
+        return None;
       }
+    };
+    has_native_object(env, value).then_some(kind)
+  }
+
+  /// Borrows `value` as this class. User code ran since `of`, and may have
+  /// changed the prototype or Symbol.hasInstance, so the instanceof check is
+  /// not repeated.
+  unsafe fn borrow(self, env: sys::napi_env, value: sys::napi_value) -> Result<DrawImageSource> {
+    unsafe {
+      Ok(match self {
+        Self::CanvasElement => Either3::A(CanvasElement::from_napi_mut_ref(env, value)?),
+        Self::SVGCanvas => Either3::B(SVGCanvas::from_napi_mut_ref(env, value)?),
+        Self::Image => Either3::C(Image::from_napi_mut_ref(env, value)?),
+      })
     }
+  }
+}
+
+type DrawImageSource =
+  Either3<&'static mut CanvasElement<'static>, &'static mut SVGCanvas<'static>, &'static mut Image>;
+
+/// The arguments of `drawImage`, its last parameter: (image, dx, dy),
+/// (image, dx, dy, dw, dh) or (image, sx, sy, sw, sh, dx, dy, dw, dh).
+/// WebIDL picks the overload from the argument count, and fails for any
+/// other count before it converts anything
+/// (canvas_2d_recorder_context.idl). The image is type checked before the
+/// numbers run their user code, and borrowed after it.
+pub struct DrawImageArgs {
+  image: DrawImageSource,
+  /// The 2, 4 or 8 numbers after the image.
+  numbers: Vec<f64>,
+}
+
+impl FromNapiValue for DrawImageArgs {
+  unsafe fn from_napi_value(env: sys::napi_env, argc: sys::napi_value) -> Result<Self> {
+    let args = webidl::Arguments::take(env, 9, argc)?;
+    let prefix = <webidl::CtxDrawImage as webidl::Site>::PREFIX;
+    let count = match args.len() {
+      count @ 0..=2 => {
+        return Err(webidl::context_type_error(
+          env,
+          prefix,
+          &format!("3 arguments required, but only {count} present."),
+        ));
+      }
+      count @ (3 | 5 | 9) => count,
+      _ => {
+        return Err(webidl::context_type_error(
+          env,
+          prefix,
+          "Overload resolution failed.",
+        ));
+      }
+    };
+    let not_an_image = || {
+      webidl::context_type_error(
+        env,
+        prefix,
+        "The provided value is not of type '(CanvasElement or Image or SVGCanvas)'.",
+      )
+    };
+    let image = args.get(0)?;
+    let Some(kind) = (unsafe { DrawImageKind::of(env, image) }) else {
+      return Err(not_an_image());
+    };
+    let numbers = (1..count)
+      .map(|index| webidl::to_number(env, args.get(index)?, prefix))
+      .collect::<Result<Vec<_>>>()?;
+    let image = unsafe { kind.borrow(env, image) }.map_err(|_| not_an_image())?;
+    Ok(Self { image, numbers })
   }
 }
 
@@ -4577,20 +4628,42 @@ impl CanvasRenderingContext2D {
     }
   }
 
+  /// drawImage(image, dx, dy), (image, dx, dy, dw, dh) or (image, sx, sy,
+  /// sw, sh, dx, dy, dw, dh). The index.js wrapper passes the argument count
+  /// after them; see `webidl::Arguments::take`.
   #[napi]
   pub fn draw_image(
     &mut self,
     env: &Env,
-    image: DrawImageSource<'_>,
-    sx: Option<f64>,
-    sy: Option<f64>,
-    s_width: Option<f64>,
-    s_height: Option<f64>,
-    dx: Option<f64>,
-    dy: Option<f64>,
-    d_width: Option<f64>,
-    d_height: Option<f64>,
+    _image: Positional,
+    _arg1: Positional,
+    _arg2: Positional,
+    _arg3: Positional,
+    _arg4: Positional,
+    _arg5: Positional,
+    _arg6: Positional,
+    _arg7: Positional,
+    _arg8: Positional,
+    args: DrawImageArgs,
   ) -> Result<()> {
+    // Chrome returns on a non-finite number before it looks at the image,
+    // then throws for a broken image (canvas_2d_recorder_context.cc
+    // DrawImage). The source size of the 3 and 5 argument forms is finite.
+    if !args.numbers.iter().all(|n| n.is_finite()) {
+      return Ok(());
+    }
+    if let Either3::C(image) = &args.image
+      && image.broken
+    {
+      return Err(webidl::dom_exception(
+        env.raw(),
+        "InvalidStateError",
+        &format!(
+          "{}The HTMLImageElement provided is in the 'broken' state.",
+          <webidl::CtxDrawImage as webidl::Site>::PREFIX
+        ),
+      ));
+    }
     // raster_key dedups the retained-raster charge inside draw_image:
     // (resource identity, content generation). A canvas source is keyed by
     // its Context's resource_id -- a monotonic id, not the SkSurface*, which
@@ -4600,7 +4673,7 @@ impl CanvasRenderingContext2D {
     // keyed by its current AccountedBitmap's own resource_id: every decode,
     // src reset, and regenerate_bitmap_if_need constructs a fresh
     // AccountedBitmap, so a swapped bitmap can never alias the stale charge.
-    let (bitmap, decode_cache, raster_key) = match image.0 {
+    let (bitmap, decode_cache, raster_key) = match args.image {
       Either3::A(canvas) => {
         // Flush the source canvas to render deferred operations before getting bitmap
         canvas.ctx.context.flush();
@@ -4652,40 +4725,32 @@ impl CanvasRenderingContext2D {
     let bitmap_ref = bitmap.as_ref();
     let source_width = bitmap_ref.0.width as f64;
     let source_height = bitmap_ref.0.height as f64;
-    let (sx, sy, s_width, s_height, dx, dy, d_width, d_height) =
-      match (sx, sy, s_width, s_height, dx, dy, d_width, d_height) {
-        (Some(dx), Some(dy), None, None, None, None, None, None) => (
-          0.0,
-          0.0,
-          source_width,
-          source_height,
-          dx,
-          dy,
-          source_width,
-          source_height,
-        ),
-        (Some(dx), Some(dy), Some(d_width), Some(d_height), None, None, None, None) => (
-          0.0,
-          0.0,
-          source_width,
-          source_height,
-          dx,
-          dy,
-          d_width,
-          d_height,
-        ),
-        (
-          Some(sx),
-          Some(sy),
-          Some(s_width),
-          Some(s_height),
-          Some(dx),
-          Some(dy),
-          Some(d_width),
-          Some(d_height),
-        ) => (sx, sy, s_width, s_height, dx, dy, d_width, d_height),
-        _ => return Ok(()),
-      };
+    let (sx, sy, s_width, s_height, dx, dy, d_width, d_height) = match args.numbers[..] {
+      [dx, dy] => (
+        0.0,
+        0.0,
+        source_width,
+        source_height,
+        dx,
+        dy,
+        source_width,
+        source_height,
+      ),
+      [dx, dy, d_width, d_height] => (
+        0.0,
+        0.0,
+        source_width,
+        source_height,
+        dx,
+        dy,
+        d_width,
+        d_height,
+      ),
+      [sx, sy, s_width, s_height, dx, dy, d_width, d_height] => {
+        (sx, sy, s_width, s_height, dx, dy, d_width, d_height)
+      }
+      _ => return Ok(()),
+    };
     let (sx, sy, s_width, s_height) = Context::adjust_rect_for_canvas(sx, sy, s_width, s_height);
     let (dx, dy, d_width, d_height) = Context::adjust_rect_for_canvas(dx, dy, d_width, d_height);
     self.context.draw_image(

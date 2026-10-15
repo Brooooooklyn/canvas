@@ -246,6 +246,7 @@ sites! {
   CtxStroke: execute "stroke" on "CanvasRenderingContext2D";
   CtxIsPointInPath: execute "isPointInPath" on "CanvasRenderingContext2D";
   CtxIsPointInStroke: execute "isPointInStroke" on "CanvasRenderingContext2D";
+  CtxDrawImage: execute "drawImage" on "CanvasRenderingContext2D";
 }
 
 /// `napi_bigint`; napi6 (and so `ValueType::BigInt`) is off in this build.
@@ -1014,11 +1015,12 @@ impl FromNapiValue for Positional {
 /// What the argument-count markers wrap: the marker for `n` arguments wraps
 /// `&ARGUMENT_COUNTS[n]`. Only `argument_counts` wraps an object with these
 /// addresses, so no other value is read as a count.
-static ARGUMENT_COUNTS: [u8; 5] = [0, 1, 2, 3, 4];
+static ARGUMENT_COUNTS: [u8; 10] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
 
-/// The argument-count markers for 0 to 4 arguments, for index.js only: its
-/// createImageData and createPattern wrappers pass
-/// `markers[Math.min(arguments.length, 4)]` after the positional arguments.
+/// The argument-count markers for 0 to 9 arguments, for index.js only: its
+/// wrappers (createImageData, createPattern, drawImage, ...) pass
+/// `markers[Math.min(arguments.length, n)]` after the `n` positional
+/// arguments.
 #[napi(js_name = "_argumentCounts")]
 pub fn argument_counts(env: &Env) -> Result<Vec<Object<'_>>> {
   ARGUMENT_COUNTS
