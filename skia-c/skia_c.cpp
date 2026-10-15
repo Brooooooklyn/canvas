@@ -1,9 +1,12 @@
 #include <assert.h>
 #include <math.h>
 #include <algorithm>
+#include <atomic>
 #include <cstddef>
+#include <list>
 #include <memory>
 #include <optional>
+#include <unordered_map>
 #include <vector>
 
 #ifdef _WIN32
@@ -122,12 +125,11 @@ static SkSamplingOptions CcSampling(int fq, const SkMatrix& matrix) {
 // Chrome samples a pattern through cc PaintShader::GetSkShader, which maps the
 // quality with ScalingOperation::kUnknown (cc/paint/paint_shader.cc and
 // PaintFlags::FilterQualityToSkSamplingOptions in cc/paint/paint_flags.cc):
-// 'medium' and 'high' are both linear with linear mipmaps, never cubic. For an
-// Image source, Chrome's decode cache first scales the image down to one mip
-// level (cc/tiles/software_image_decode_cache_utils.cc) and then samples it
-// linearly (cc/tiles/software_image_decode_cache.cc), which nearest mipmaps
-// model. Chrome picks that level from the target size rounded to whole pixels
-// (cc/tiles/mipmap_util.cc), so for a tiny source it can pick a coarser level.
+// 'medium' and 'high' are both linear with linear mipmaps, never cubic. A
+// raster Image on a raster canvas takes the decode cache instead
+// (skiac_image_make_decoded_pattern_shader). ImageData and SVG Image patterns,
+// and Image patterns on PDF and SVG, still sample here, with one nearest mip
+// level at 'medium' and 'high'.
 static SkSamplingOptions PatternSamplingOptions(int fq, bool is_canvas) {
   switch (fq) {
     case 3:
@@ -1164,6 +1166,398 @@ void ClipRectsToImageRect(const GfxRectF& image, GfxRectF* src, GfxRectF* dst) {
 }
 }  // namespace
 
+// Chrome draws an Image element (a lazily decoded image) from its software
+// decode cache (cc/tiles/software_image_decode_cache.cc), which holds the
+// image decoded into the canvas's colour space and scaled down to the mip
+// level the draw needs. This is ours, one per decoded Image: a copy per
+// (source rect, level size, colour space), most recently used last. Chrome
+// builds a level from the smallest cached decode that is big enough; we always
+// build it from the original, which is what Chrome does on a cold cache. We
+// match the cold cache only. Not followed either: on a cold cache Chrome
+// decodes a JPEG whose sides are whole MCUs straight to the level size
+// (libjpeg's k/8 scaling) when the source rect is the whole image; we keep no
+// encoded bytes to do that, and scale the full decode.
+//
+// A level the cache drops can still be held by a recorded draw or a pattern
+// shader, so its bytes are counted in `live` until its pixels are freed;
+// `live` is what Rust reports to V8. `bytes` is the cache's own share, which
+// the budget limits. Each level holds a ref to this counter, so it outlives
+// the cache while a level is alive. Once the cache is destroyed, `release`
+// reports each level freed after it (skiac_image_levels_destroy). Levels are
+// freed where their recordings and shaders drop, on the JS thread, so
+// `release` is set and called on that thread only.
+struct skiac_image_level_bytes : SkNVRefCnt<skiac_image_level_bytes> {
+  std::atomic<size_t> live{0};
+  skiac_level_release release = nullptr;
+  void* release_context = nullptr;
+};
+
+struct skiac_image_levels {
+  struct Key {
+    SkIRect src;
+    SkISize size;
+    // The canvas colour space the level was converted to (`cs`, as in
+    // COLOR_SPACE_CAST), or kNoConversion.
+    int32_t cs;
+    bool operator==(const Key& other) const {
+      return src == other.src && size == other.size && cs == other.cs;
+    }
+  };
+  static constexpr int32_t kNoConversion = -1;
+  struct KeyHash {
+    size_t operator()(const Key& key) const {
+      // FNV-1a over the seven ints.
+      uint64_t hash = 0xcbf29ce484222325ull;
+      for (int32_t value :
+           {key.src.fLeft, key.src.fTop, key.src.fRight, key.src.fBottom,
+            key.size.fWidth, key.size.fHeight, key.cs}) {
+        hash = (hash ^ static_cast<uint32_t>(value)) * 0x100000001b3ull;
+      }
+      return static_cast<size_t>(hash);
+    }
+  };
+  struct Level {
+    Key key;
+    sk_sp<SkImage> image;
+    size_t bytes;
+  };
+  // Least recently used first, found through `index`.
+  std::list<Level> lru;
+  std::unordered_map<Key, std::list<Level>::iterator, KeyHash> index;
+  size_t bytes = 0;
+  sk_sp<skiac_image_level_bytes> counter =
+      sk_make_sp<skiac_image_level_bytes>();
+};
+
+// cc/tiles/mipmap_util.cc ScaleAxisToMipLevel: a level's size rounds up.
+static int CcScaleAxisToMipLevel(int axis_base_size, int mip_level) {
+  if (mip_level == 0) {
+    return axis_base_size;
+  }
+  // base::CheckedNumeric gives INT_MAX on overflow.
+  const int64_t base_size =
+      std::min<int64_t>(int64_t{axis_base_size} + (int64_t{1} << mip_level) - 1,
+                        std::numeric_limits<int>::max());
+  return std::max(1, static_cast<int>(base_size >> mip_level));
+}
+
+static SkISize CcSizeForLevel(SkISize src, int mip_level) {
+  return SkISize::Make(CcScaleAxisToMipLevel(src.width(), mip_level),
+                       CcScaleAxisToMipLevel(src.height(), mip_level));
+}
+
+// MipMapUtil::GetLevelForSize (cc/tiles/mipmap_util.cc:36-67): the last level
+// whose next one is not smaller than the target on either axis.
+static int CcGetLevelForSize(SkISize src, SkISize target) {
+  int next_mip_height = src.height();
+  int next_mip_width = src.width();
+  for (int mip_level = 0;; mip_level++) {
+    const int mip_height = next_mip_height;
+    const int mip_width = next_mip_width;
+    next_mip_height = CcScaleAxisToMipLevel(src.height(), mip_level + 1);
+    next_mip_width = CcScaleAxisToMipLevel(src.width(), mip_level + 1);
+    if (next_mip_height < target.height() || next_mip_width < target.width()) {
+      return mip_level;
+    }
+    if (mip_height == 1 && mip_width == 1) {
+      return mip_level;
+    }
+  }
+}
+
+namespace {
+// The decode Chrome draws an Image element from.
+struct CcDecodeKey {
+  // The target size rounds to 0 on an axis. The decode fails and Chrome draws
+  // nothing, whatever the quality (DecodeImageIfNecessary).
+  bool empty = false;
+  // 0: the original image. Above 0: `src` scaled to `size`.
+  int level = 0;
+  SkIRect src = SkIRect::MakeEmpty();
+  SkISize size = SkISize::MakeEmpty();
+};
+}  // namespace
+
+// SoftwareImageDecodeCacheUtils::CacheKey::FromDrawImage
+// (cc/tiles/software_image_decode_cache_utils.cc:287-363). Not followed: the
+// kSubrectOriginal key for images of 4096 px or more, which draws a copy of
+// the source rect instead of the original.
+static CcDecodeKey CcDecodeKeyFor(SkISize image,
+                                  const SkIRect& draw_src,
+                                  const SkM44& matrix,
+                                  int fq) {
+  CcDecodeKey key;
+  // DrawImage's ExtractScale (cc/paint/draw_image.cc:14-26).
+  SkSize scale = SkSize::Make(matrix.rc(0, 0), matrix.rc(1, 1));
+  bool decomposable = true;
+  const SkMatrix matrix33 = matrix.asM33();
+  if (matrix33.getType() & SkMatrix::kAffine_Mask) {
+    if (!matrix33.decomposeScale(&scale)) {
+      scale.set(1, 1);
+      decomposable = false;
+    }
+  }
+  // GetSrcRect (software_image_decode_cache_utils.cc:40-49).
+  key.src = draw_src;
+  if (!key.src.intersect(SkIRect::MakeSize(image))) {
+    key.src.setEmpty();
+  }
+  const float target_width = key.src.width() * scale.width();
+  const float target_height = key.src.height() * scale.height();
+  const SkISize target =
+      SkISize::Make(SkScalarRoundToInt(std::abs(target_width)),
+                    SkScalarRoundToInt(std::abs(target_height)));
+  if (target.isEmpty()) {
+    key.empty = true;
+    return key;
+  }
+  const int mip_level = CcGetLevelForSize(key.src.size(), target);
+  // 'off', level 0 or a perspective matrix: the original image.
+  if (fq == 0 || mip_level == 0 || !decomposable) {
+    return key;
+  }
+  key.level = mip_level;
+  key.size = CcSizeForLevel(key.src.size(), mip_level);
+  return key;
+}
+
+// The decode is sampled linearly, or nearest for 'off'
+// (GetDecodedFilterQuality, software_image_decode_cache.cc:145-149).
+static SkSamplingOptions DecodedSampling(int fq) {
+  return SkSamplingOptions(
+      fq == 0 ? SkFilterMode::kNearest : SkFilterMode::kLinear,
+      SkMipmapMode::kNone);
+}
+
+namespace {
+// A level's pixels and the counter they are charged to.
+struct LevelPixels {
+  sk_sp<skiac_image_level_bytes> counter;
+  size_t bytes;
+};
+}  // namespace
+
+static void ReleaseLevelPixels(void* addr, void* context) {
+  sk_free(addr);
+  auto* pixels = static_cast<LevelPixels*>(context);
+  skiac_image_level_bytes* counter = pixels->counter.get();
+  counter->live.fetch_sub(pixels->bytes, std::memory_order_relaxed);
+  if (counter->release) {
+    counter->release(counter->release_context, pixels->bytes);
+  }
+  delete pixels;
+}
+
+// Chrome decodes into the canvas's colour space (`cs`) before it scales
+// (DoDecodeImage with the key's target_color_params), and an untagged image
+// is sRGB. The colour space `original` has to be converted to, or null.
+static sk_sp<SkColorSpace> ConversionTarget(const SkPixmap& original,
+                                            uint8_t cs) {
+  sk_sp<SkColorSpace> target = COLOR_SPACE_CAST;
+  sk_sp<SkColorSpace> source = original.refColorSpace();
+  if (!source) {
+    source = SkColorSpace::MakeSRGB();
+  }
+  return SkColorSpace::Equals(source.get(), target.get()) ? nullptr : target;
+}
+
+// GenerateCacheEntryFromCandidate (software_image_decode_cache_utils.cc:
+// 183-270) with the original decode as the candidate: the src subset, in
+// `target` when it is set (DoDecodeImage), scaled to the level size with
+// kMedium (linear, nearest mip) into N32 premul. With `counter` the pixels
+// count in it until they are freed.
+static sk_sp<SkImage> MakeLevelImage(const SkPixmap& original,
+                                     const SkIRect& src,
+                                     SkISize size,
+                                     sk_sp<SkColorSpace> target,
+                                     skiac_image_level_bytes* counter) {
+  SkPixmap subset;
+  if (!original.extractSubset(&subset, src)) {
+    return nullptr;
+  }
+  SkBitmap converted;
+  if (target && size != src.size()) {
+    if (!converted.tryAllocPixels(SkImageInfo::Make(
+            src.size(), kN32_SkColorType, kPremul_SkAlphaType, target)) ||
+        !subset.readPixels(converted.pixmap())) {
+      return nullptr;
+    }
+    subset = converted.pixmap();
+  }
+  const SkImageInfo info =
+      SkImageInfo::Make(size, kN32_SkColorType, kPremul_SkAlphaType,
+                        target ? target : original.refColorSpace());
+  SkBitmap level;
+  if (counter) {
+    const size_t row_bytes = info.minRowBytes();
+    const size_t bytes = info.computeByteSize(row_bytes);
+    if (SkImageInfo::ByteSizeOverflowed(bytes)) {
+      return nullptr;
+    }
+    void* addr = sk_malloc_canfail(bytes);
+    if (!addr) {
+      return nullptr;
+    }
+    counter->live.fetch_add(bytes, std::memory_order_relaxed);
+    // On failure installPixels calls the release proc, which uncounts them.
+    if (!level.installPixels(info, addr, row_bytes, ReleaseLevelPixels,
+                             new LevelPixels{sk_ref_sp(counter), bytes})) {
+      return nullptr;
+    }
+  } else if (!level.tryAllocPixels(info)) {
+    return nullptr;
+  }
+  // Same size: scalePixels copies, converting to the level's colour space.
+  if (!subset.scalePixels(
+          level.pixmap(),
+          SkSamplingOptions(SkFilterMode::kLinear, SkMipmapMode::kNearest))) {
+    return nullptr;
+  }
+  level.setImmutable();
+  return SkImages::RasterFromBitmap(level);
+}
+
+// The cached level for (src, size) on a canvas in colour space `cs`, made on
+// a miss. The cache holds at most the original's byte size and drops the least
+// recently used levels first; a recorded draw keeps its own ref to the level
+// it drew, which stays counted in `live` until it is freed.
+static sk_sp<SkImage> FindOrMakeLevel(skiac_image_levels* cache,
+                                      const SkPixmap& original,
+                                      const SkIRect& src,
+                                      SkISize size,
+                                      uint8_t cs) {
+  sk_sp<SkColorSpace> target = ConversionTarget(original, cs);
+  const skiac_image_levels::Key key{
+      src, size, target ? cs : skiac_image_levels::kNoConversion};
+  auto found = cache->index.find(key);
+  if (found != cache->index.end()) {
+    cache->lru.splice(cache->lru.end(), cache->lru, found->second);
+    return found->second->image;
+  }
+  sk_sp<SkImage> image = MakeLevelImage(original, src, size, std::move(target),
+                                        cache->counter.get());
+  if (!image) {
+    return nullptr;
+  }
+  const size_t bytes = image->imageInfo().computeMinByteSize();
+  const size_t budget = std::max(original.computeByteSize(), bytes);
+  while (!cache->lru.empty() && cache->bytes + bytes > budget) {
+    cache->bytes -= cache->lru.front().bytes;
+    cache->index.erase(cache->lru.front().key);
+    cache->lru.pop_front();
+  }
+  cache->bytes += bytes;
+  cache->lru.push_back({key, image, bytes});
+  cache->index.emplace(key, std::prev(cache->lru.end()));
+  return image;
+}
+
+// The pixels of `image` a draw of `src` under `matrix` (source to device) can
+// sample: the device pixels it touches, mapped back, and one more for the
+// filter.
+static SkIRect SampledBounds(const SkRect& src,
+                             const SkMatrix& matrix,
+                             SkISize image) {
+  const SkIRect all = SkIRect::MakeSize(image);
+  SkMatrix inverse;
+  if (!matrix.invert(&inverse)) {
+    return all;
+  }
+  const SkRect device = matrix.mapRect(src).makeOutset(1, 1);
+  SkIRect bounds = inverse.mapRect(device).makeOutset(1, 1).roundOut();
+  return bounds.intersect(all) ? bounds : all;
+}
+
+// DrawImageRectOp::RasterWithFlags for a source Chrome draws from its decode
+// cache (cc/paint/paint_op.cc:1455-1485): draw the decode of the rounded-out
+// src, in the canvas's colour space `cs`. A level is a copy of the src subset,
+// so the src rect moves to its origin and scales with it
+// (AdjustSrcRectForScale, paint_op.cc:93-102). `original` is the source's
+// pixels: an Image's `bitmap`, or a canvas's `snapshot`. `levels` is an
+// Image's level cache; a canvas source has none, and its decode is made for
+// the one draw. Returns the decode it drew in place of the source, which a
+// recording keeps, or null.
+static sk_sp<SkImage> DrawDecodedImage(SkCanvas* canvas,
+                                       const SkBitmap* bitmap,
+                                       const sk_sp<SkImage>& snapshot,
+                                       const SkPixmap& original,
+                                       skiac_image_levels* levels,
+                                       uint8_t cs,
+                                       const SkRect& src,
+                                       const SkRect& dst,
+                                       const SkM44& matrix,
+                                       int fq,
+                                       const SkPaint& paint) {
+  SkIRect int_src;
+  src.roundOut(&int_src);
+  const CcDecodeKey key =
+      CcDecodeKeyFor(original.dimensions(), int_src, matrix, fq);
+  if (key.empty) {
+    return nullptr;
+  }
+  sk_sp<SkColorSpace> target = ConversionTarget(original, cs);
+  // The part of the source the decode holds, and its size.
+  SkIRect decoded_src = key.src;
+  SkISize decoded_size = key.size;
+  if (key.level == 0) {
+    if (!target) {
+      sk_sp<SkImage> image =
+          snapshot ? snapshot : SkImages::RasterFromBitmap(*bitmap);
+      if (image) {
+        canvas->drawImageRect(image.get(), src, dst, DecodedSampling(fq),
+                              &paint, SkCanvas::kFast_SrcRectConstraint);
+      }
+      return nullptr;
+    }
+    // The original in the canvas's colour space: the whole image, as Chrome
+    // decodes it, or for a canvas source only the pixels this draw samples.
+    decoded_src =
+        levels ? SkIRect::MakeSize(original.dimensions())
+               : SampledBounds(src, matrix.asM33(), original.dimensions());
+    decoded_size = decoded_src.size();
+  }
+  sk_sp<SkImage> decoded =
+      levels ? FindOrMakeLevel(levels, original, decoded_src, decoded_size, cs)
+             : MakeLevelImage(original, decoded_src, decoded_size,
+                              std::move(target), nullptr);
+  if (!decoded) {
+    return nullptr;
+  }
+  // One float operation per statement, see GfxRectF.
+  const SkRect offset_src = src.makeOffset(-decoded_src.x(), -decoded_src.y());
+  const float adjust_x =
+      static_cast<float>(decoded_size.width()) / decoded_src.width();
+  const float adjust_y =
+      static_cast<float>(decoded_size.height()) / decoded_src.height();
+  const float level_x = offset_src.x() * adjust_x;
+  const float level_y = offset_src.y() * adjust_y;
+  const float level_w = offset_src.width() * adjust_x;
+  const float level_h = offset_src.height() * adjust_y;
+  canvas->drawImageRect(
+      decoded.get(), SkRect::MakeXYWH(level_x, level_y, level_w, level_h), dst,
+      DecodedSampling(fq), &paint, SkCanvas::kFast_SrcRectConstraint);
+  return decoded;
+}
+
+skiac_image_levels* skiac_image_levels_create() {
+  return new skiac_image_levels();
+}
+
+size_t skiac_image_levels_destroy(skiac_image_levels* c_levels,
+                                  skiac_level_release release,
+                                  void* release_context) {
+  sk_sp<skiac_image_level_bytes> counter = c_levels->counter;
+  // Frees the levels only the cache holds.
+  delete c_levels;
+  counter->release = release;
+  counter->release_context = release_context;
+  return counter->live.load(std::memory_order_relaxed);
+}
+
+size_t skiac_image_levels_bytes(skiac_image_levels* c_levels) {
+  return c_levels->counter->live.load(std::memory_order_relaxed);
+}
+
 // The rects come in normalised (Blink AdjustRectForCanvas, done by the Rust
 // caller). Canvas and Image sources are drawn alike, as Blink's
 // drawImage (canvas_2d_recorder_context.cc:2312-2316) and
@@ -1175,9 +1569,18 @@ void ClipRectsToImageRect(const GfxRectF& image, GfxRectF* src, GfxRectF* dst) {
 // (the composited ops), while Blink reads the CTM that CompositedDraw has put
 // back on the paint canvas (canvas_2d_recorder_context.h:919-990).
 // `vector_device` is true on the PDF and SVG backends.
+// With `decode` the source is drawn from Chrome's decode cache, in the
+// canvas's colour space `cs`: an Image on a raster canvas, whose levels
+// `c_levels` keeps, or a canvas source on a raster canvas that is not sRGB.
+// Everything else is drawn as it is. `c_decoded_id` and `c_decoded_bytes` get
+// the uniqueID and byte size of the decode drawn in place of the source, which
+// a recording keeps; the size is 0 when the source itself was drawn.
 void skiac_canvas_draw_image(skiac_canvas* c_canvas,
                              skiac_bitmap* c_bitmap,
                              bool is_canvas,
+                             bool decode,
+                             skiac_image_levels* c_levels,
+                             uint8_t cs,
                              skiac_transform c_ctm,
                              bool vector_device,
                              float sx,
@@ -1190,7 +1593,11 @@ void skiac_canvas_draw_image(skiac_canvas* c_canvas,
                              float d_height,
                              bool enable_smoothing,
                              int filter_quality,
-                             skiac_paint* c_paint) {
+                             skiac_paint* c_paint,
+                             uint32_t* c_decoded_id,
+                             size_t* c_decoded_bytes) {
+  *c_decoded_id = 0;
+  *c_decoded_bytes = 0;
   auto fq = enable_smoothing ? filter_quality : 0;
   auto src_surface =
       is_canvas ? reinterpret_cast<SkSurface*>(c_bitmap) : nullptr;
@@ -1218,7 +1625,23 @@ void skiac_canvas_draw_image(skiac_canvas* c_canvas,
   // SkSurface::draw copies the whole pixel buffer on every call (#1321).
   // The snapshot shares the pixels; a later write into the source
   // copies-on-write, which keeps call-time capture semantics.
-  sk_sp<SkImage> image = is_canvas ? src_surface->makeImageSnapshot()
+  sk_sp<SkImage> snapshot =
+      is_canvas ? src_surface->makeImageSnapshot() : nullptr;
+  if (decode) {
+    SkPixmap original;
+    if (is_canvas ? snapshot && snapshot->peekPixels(&original)
+                  : BITMAP_CAST->peekPixels(&original)) {
+      sk_sp<SkImage> decoded = DrawDecodedImage(
+          CANVAS_CAST, is_canvas ? nullptr : BITMAP_CAST, snapshot, original,
+          c_levels, cs, src_rect, dst_rect, matrix, fq, paint);
+      if (decoded) {
+        *c_decoded_id = decoded->uniqueID();
+        *c_decoded_bytes = decoded->imageInfo().computeMinByteSize();
+      }
+    }
+    return;
+  }
+  sk_sp<SkImage> image = is_canvas ? std::move(snapshot)
                                    : SkImages::RasterFromBitmap(*BITMAP_CAST);
   if (!image) {
     return;
@@ -3258,6 +3681,76 @@ skiac_shader* skiac_image_make_pattern_shader(skiac_image* c_image,
   auto shader = SkShaders::Image(
       sk_ref_sp(IMAGE_CAST), (SkTileMode)repeat_x, (SkTileMode)repeat_y,
       PatternSamplingOptions(filter_quality, is_canvas), &ts);
+  return reinterpret_cast<skiac_shader*>(shader.release());
+}
+
+// PaintShader::CreateDecodedImage (cc/paint/paint_shader.cc:437-494): the
+// decode level of an Image pattern drawn under `c_ctm`, or -1 when the target
+// size rounds to empty, which draws nothing.
+int skiac_image_pattern_level(int width,
+                              int height,
+                              skiac_transform c_ts,
+                              skiac_transform c_ctm,
+                              int filter_quality) {
+  // Chrome's order: the pattern matrix, then preConcat the CTM.
+  SkMatrix total = conv_from_transform(c_ts);
+  total.preConcat(conv_from_transform(c_ctm));
+  const CcDecodeKey key = CcDecodeKeyFor(SkISize::Make(width, height),
+                                         SkIRect::MakeWH(width, height),
+                                         SkM44(total), filter_quality);
+  return key.empty ? -1 : key.level;
+}
+
+// An Image pattern's shader at a level from skiac_image_pattern_level, on a
+// canvas in colour space `cs`: the original image (`c_image`) at level 0, the
+// scaled copy of `c_bitmap` above it with the pattern matrix scaled back by
+// the same factor (paint_shader.cc:458-465), and the empty shader at -1. A
+// copy converted to `cs` stands in for the original when the image is in
+// another colour space. `c_decoded_id` and `c_decoded_bytes` get the uniqueID
+// and byte size of the copy the shader samples, which a recorded paint keeps;
+// the size is 0 when it samples the original.
+skiac_shader* skiac_image_make_decoded_pattern_shader(
+    skiac_bitmap* c_bitmap,
+    skiac_image* c_image,
+    skiac_image_levels* c_levels,
+    int level,
+    int repeat_x,
+    int repeat_y,
+    int filter_quality,
+    skiac_transform c_ts,
+    uint8_t cs,
+    uint32_t* c_decoded_id,
+    size_t* c_decoded_bytes) {
+  *c_decoded_id = 0;
+  *c_decoded_bytes = 0;
+  if (level < 0) {
+    return reinterpret_cast<skiac_shader*>(SkShaders::Empty().release());
+  }
+  auto ts = conv_from_transform(c_ts);
+  sk_sp<SkImage> image;
+  SkPixmap original;
+  if (!BITMAP_CAST->peekPixels(&original)) {
+    // A null image gives an empty shader below.
+  } else if (level == 0 && !ConversionTarget(original, cs)) {
+    image = sk_ref_sp(IMAGE_CAST);
+  } else {
+    const SkIRect src = SkIRect::MakeSize(original.dimensions());
+    const SkISize size = CcSizeForLevel(src.size(), level);
+    image = FindOrMakeLevel(c_levels, original, src, size, cs);
+    if (image) {
+      *c_decoded_id = image->uniqueID();
+      *c_decoded_bytes = image->imageInfo().computeMinByteSize();
+    }
+    const float adjust_x = static_cast<float>(size.width()) / src.width();
+    const float adjust_y = static_cast<float>(size.height()) / src.height();
+    const float inverse_x = 1.f / adjust_x;
+    const float inverse_y = 1.f / adjust_y;
+    ts.preScale(inverse_x, inverse_y);
+  }
+  // A null image gives an empty shader, which paints nothing.
+  auto shader = SkShaders::Image(std::move(image), (SkTileMode)repeat_x,
+                                 (SkTileMode)repeat_y,
+                                 DecodedSampling(filter_quality), &ts);
   return reinterpret_cast<skiac_shader*>(shader.release());
 }
 
