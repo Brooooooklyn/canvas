@@ -40,3 +40,17 @@ test('avif threads above 64 do not throw', async (t) => {
     t.deepEqual([image.width, image.height], [64, 64], `threads ${threads}`)
   }
 })
+
+// A number is the AVIF quality: 0-100 for the Node methods, 0-1 for
+// toDataURL (rounded to a percentage as for JPEG). It used to be ignored.
+test('avif numeric quality is honored', async (t) => {
+  const canvas = sampleCanvas()
+  t.true(canvas.toBuffer('image/avif', 10).length < canvas.toBuffer('image/avif', 90).length)
+  const q50 = canvas.toBuffer('image/avif', { quality: 50 })
+  t.deepEqual(canvas.toBuffer('image/avif', 50), q50, 'toBuffer')
+  t.deepEqual(canvas.encodeSync('avif', 50), q50, 'encodeSync')
+  t.deepEqual(await canvas.encode('avif', 50), q50, 'encode')
+  t.deepEqual(Buffer.from(canvas.toDataURL('image/avif', 0.5).split(',')[1], 'base64'), q50, 'toDataURL')
+  // Above 100 is 100.
+  t.deepEqual(canvas.toBuffer('image/avif', 1000), canvas.toBuffer('image/avif', 100))
+})

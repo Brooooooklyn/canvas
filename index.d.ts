@@ -870,8 +870,11 @@ export enum ChromaSubsampling {
   Yuv400 = 3,
 }
 
+/** OffscreenCanvas ImageEncodeOptions. */
 export interface ConvertToBlobOptions {
-  mime?: string
+  /** Default 'image/png'; ASCII case-insensitive, and an unknown type is PNG. */
+  type?: string
+  /** 0 to 1 for JPEG, WebP (1 is lossless), AVIF and GIF. Default 1. */
   quality?: number
 }
 
@@ -892,17 +895,17 @@ export class Canvas {
   getContext(contextType: '2d', contextAttributes?: ContextAttributes): SKRSContext2D
   encodeSync(format: 'webp' | 'jpeg', quality?: number): Buffer
   encodeSync(format: 'png'): Buffer
-  encodeSync(format: 'avif', cfg?: AvifConfig): Buffer
+  encodeSync(format: 'avif', cfg?: AvifConfig | number): Buffer
   encodeSync(format: 'gif', quality?: number): Buffer
   encode(format: 'webp' | 'jpeg', quality?: number): Promise<Buffer>
   encode(format: 'png'): Promise<Buffer>
-  encode(format: 'avif', cfg?: AvifConfig): Promise<Buffer>
+  encode(format: 'avif', cfg?: AvifConfig | number): Promise<Buffer>
   encode(format: 'gif', quality?: number): Promise<Buffer>
   encodeStream(format: 'webp' | 'jpeg', quality?: number): ReadableStream<Buffer>
   encodeStream(format: 'png'): ReadableStream<Buffer>
   toBuffer(mime: 'image/png'): Buffer
   toBuffer(mime: 'image/jpeg' | 'image/webp', quality?: number): Buffer
-  toBuffer(mime: 'image/avif', cfg?: AvifConfig): Buffer
+  toBuffer(mime: 'image/avif', cfg?: AvifConfig | number): Buffer
   toBuffer(mime: 'image/gif', quality?: number): Buffer
   // raw pixels
   data(): Buffer
@@ -910,15 +913,21 @@ export class Canvas {
   toDataURL(mime: 'image/jpeg' | 'image/webp', quality?: number): string
   toDataURL(mime: 'image/gif', quality?: number): string
   toDataURL(mime?: 'image/jpeg' | 'image/webp' | 'image/png' | 'image/gif', quality?: number): string
-  toDataURL(mime?: 'image/avif', cfg?: AvifConfig): string
+  toDataURL(mime?: 'image/avif', cfg?: AvifConfig | number): string
+  /**
+   * As in browsers: the type is ASCII case-insensitive and an unknown one is
+   * PNG; the quality counts when it is a number from 0 to 1.
+   */
+  toDataURL(type?: string, quality?: any): string
 
   toDataURLAsync(mime?: 'image/png'): Promise<string>
   toDataURLAsync(mime: 'image/jpeg' | 'image/webp', quality?: number): Promise<string>
   toDataURLAsync(mime: 'image/gif', quality?: number): Promise<string>
   toDataURLAsync(mime?: 'image/jpeg' | 'image/webp' | 'image/png' | 'image/gif', quality?: number): Promise<string>
-  toDataURLAsync(mime?: 'image/avif', cfg?: AvifConfig): Promise<string>
+  toDataURLAsync(mime?: 'image/avif', cfg?: AvifConfig | number): Promise<string>
+  toDataURLAsync(type?: string, quality?: any): Promise<string>
 
-  toBlob(callback: (blob: Blob | null) => void, mime?: string, quality?: number): void
+  toBlob(callback: (blob: Blob | null) => void, type?: string, quality?: any): void
   convertToBlob(options?: ConvertToBlobOptions): Promise<Blob>
 }
 

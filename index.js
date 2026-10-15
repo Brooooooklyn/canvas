@@ -105,23 +105,40 @@ if (!('has' in GlobalFonts)) {
 
 const _toBlob = CanvasElement.prototype.toBlob
 const _convertToBlob = CanvasElement.prototype.convertToBlob
+// A native method of CanvasElement for the receiver check: with no arguments
+// it has no side effects.
+const canvasBrand = CanvasElement.prototype.getContext
 if ('Blob' in globalThis) {
-  CanvasElement.prototype.toBlob = function toBlob(callback, mimeType, quality) {
-    _toBlob.call(
-      this,
-      function (/** @type {Uint8Array | null} */ imageBuffer) {
-        // null: no pixels, or the encoding failed.
-        callback(imageBuffer === null ? null : new Blob([imageBuffer.buffer], { type: mimeType }))
+  // toBlob(callback, type, quality), as Chrome: the receiver, the argument
+  // count and the callback are checked first, then the native method converts
+  // the type and encodes. The callback gets the Blob, or null without pixels
+  // or when the encoder fails, from a task. A throw in it is an uncaught
+  // exception, as in Chrome (window.onerror).
+  CanvasElement.prototype.toBlob = function toBlob(callback) {
+    if (arguments.length < 1) {
+      argumentCountError(canvasBrand, this, 'toBlob', 'HTMLCanvasElement', 1, 0)
+    }
+    if (typeof callback !== 'function') {
+      bindingTypeError(canvasBrand, this, 'toBlob', 'HTMLCanvasElement', "parameter 1 is not of type 'Function'.")
+    }
+    _toBlob.call(this, arguments[1], arguments[2]).then(
+      (result) => {
+        const blob = result === null ? null : new Blob([result.data], { type: result.type })
+        queueMicrotask(() => callback(blob))
       },
-      mimeType,
-      quality,
+      () => queueMicrotask(() => callback(null)),
     )
   }
-  CanvasElement.prototype.convertToBlob = function convertToBlob(options) {
-    return _convertToBlob.call(this, options).then((/** @type {Uint8Array} */ imageBuffer) => {
-      const blob = new Blob([imageBuffer.buffer], { type: options?.mime || 'image/png' })
-      return blob
-    })
+  // convertToBlob(options): Chrome's OffscreenCanvas method. An options error
+  // rejects the promise, as a WebIDL conversion error of a promise method.
+  CanvasElement.prototype.convertToBlob = function convertToBlob() {
+    let pending
+    try {
+      pending = _convertToBlob.call(this, arguments[0])
+    } catch (error) {
+      return Promise.reject(error)
+    }
+    return pending.then((result) => new Blob([result.data], { type: result.type }))
   }
 } else {
   // oxlint-disable-next-line no-unused-vars
@@ -154,6 +171,21 @@ CanvasRenderingContext2D.prototype.getTransform = function getTransform() {
 function argumentCountError(brand, self, method, iface, required, present) {
   brand.call(self)
   const message = `${required} argument${required === 1 ? '' : 's'} required, but only ${present} present.`
+  const error = new TypeError(message)
+  void error.stack
+  Object.defineProperty(error, 'message', {
+    value: `Failed to execute '${method}' on '${iface}': ${message}`,
+    writable: true,
+    enumerable: true,
+    configurable: true,
+  })
+  throw error
+}
+
+// A TypeError as Blink's bindings throw it after the receiver check, with the
+// message formatted as argumentCountError does.
+function bindingTypeError(brand, self, method, iface, message) {
+  brand.call(self)
   const error = new TypeError(message)
   void error.stack
   Object.defineProperty(error, 'message', {
