@@ -4,7 +4,7 @@
 // canvas with its own class name.
 import test from 'ava'
 
-import { createCanvas, SvgExportFlag } from '../index'
+import { createCanvas, Image, SvgExportFlag } from '../index'
 
 // Untyped access for arguments the typings reject on purpose.
 const loose = <T>(value: T) => value as any
@@ -108,4 +108,162 @@ test('getContext still converts the options for an unsupported id', (t) => {
     instanceOf: TypeError,
     message: `${GET_CONTEXT}Failed to read the 'colorSpace' property from 'CanvasContextCreationAttributesModule': The provided value 'bogus' is not a valid enum value of type PredefinedColorSpace.`,
   })
+})
+
+// [value, width, height]. Chrome gives 0 x 0 for 0, null, NaN, 'abc' and
+// the infinities; a canvas without pixels is not supported here, so those
+// keep the 350 x 150 fallback and are not pinned.
+const CANVAS_SIZES: [unknown, number, number][] = [
+  ['7', 7, 7],
+  [1.9, 1, 1],
+  [4294967297, 1, 1],
+  [true, 1, 1],
+  [{ valueOf: () => 9 }, 9, 9],
+  ['0x10', 16, 16],
+  [[5], 5, 5],
+  [-1, 300, 150],
+]
+
+test('canvas width and height convert with ToNumber and ToUint32', (t) => {
+  for (const make of [() => createCanvas(4, 4), () => createCanvas(4, 4, SvgExportFlag.NoPrettyXML)]) {
+    for (const [value, width, height] of CANVAS_SIZES) {
+      const a = loose(make())
+      a.width = value
+      const b = loose(make())
+      b.height = value
+      t.deepEqual([a.width, b.height], [width, height], String(value))
+    }
+    // Above 2147483647 is the default.
+    const big = loose(make())
+    big.width = 2147483648
+    t.is(big.width, 300)
+  }
+})
+
+test('canvas width and height throw a prefixed TypeError for Symbol and BigInt', (t) => {
+  const canvas = loose(createCanvas(4, 4))
+  t.throws(
+    () => {
+      canvas.width = Symbol()
+    },
+    {
+      instanceOf: TypeError,
+      message: "Failed to set the 'width' property on 'HTMLCanvasElement': Cannot convert a Symbol value to a number",
+    },
+  )
+  t.throws(
+    () => {
+      canvas.width = 3n
+    },
+    {
+      instanceOf: TypeError,
+      message: "Failed to set the 'width' property on 'HTMLCanvasElement': Cannot convert a BigInt value to a number",
+    },
+  )
+  t.is(canvas.width, 4)
+  const svg = loose(createCanvas(4, 4, SvgExportFlag.NoPrettyXML))
+  t.throws(
+    () => {
+      svg.height = Symbol()
+    },
+    {
+      instanceOf: TypeError,
+      message: "Failed to set the 'height' property on 'SVGCanvas': Cannot convert a Symbol value to a number",
+    },
+  )
+})
+
+// A 2x2 PNG.
+const RED_PNG =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAEklEQVR4nGP4z8DwnwEJMGBwAKUwA/0ghlmZAAAAAElFTkSuQmCC'
+
+const loadedImage = async () => {
+  const image = new Image()
+  await new Promise<void>((resolve, reject) => {
+    image.onload = () => resolve()
+    image.onerror = (error) => reject(error)
+    image.src = RED_PNG
+  })
+  return image
+}
+
+// [value, width or height]: Chrome's values for a loaded image and for one
+// without src.
+const IMAGE_SIZES: [unknown, number][] = [
+  ['50', 50],
+  [-1, 0],
+  [1.9, 1],
+  [{ valueOf: () => 7 }, 7],
+  [NaN, 0],
+  [Infinity, 0],
+  [2147483648, 0],
+  [2147483647, 2147483647],
+  [0, 0],
+  [null, 0],
+  [undefined, 0],
+  [true, 1],
+  [-0.5, 0],
+  [4294967297, 1],
+  ['0x10', 16],
+  [[5], 5],
+]
+
+test('Image width and height are WebIDL unsigned long', async (t) => {
+  for (const [value, expected] of IMAGE_SIZES) {
+    for (const image of [loose(await loadedImage()), loose(new Image())]) {
+      image.width = value
+      t.is(image.width, expected, `width ${String(value)}`)
+    }
+    for (const image of [loose(await loadedImage()), loose(new Image())]) {
+      image.height = value
+      t.is(image.height, expected, `height ${String(value)}`)
+    }
+  }
+  // The natural size does not change.
+  const image = loose(await loadedImage())
+  image.height = 50
+  t.is(image.naturalHeight, 2)
+
+  const fresh = loose(new Image())
+  t.throws(
+    () => {
+      fresh.width = Symbol()
+    },
+    {
+      instanceOf: TypeError,
+      message: "Failed to set the 'width' property on 'HTMLImageElement': Cannot convert a Symbol value to a number",
+    },
+  )
+  t.throws(
+    () => {
+      fresh.height = 1n
+    },
+    {
+      instanceOf: TypeError,
+      message: "Failed to set the 'height' property on 'HTMLImageElement': Cannot convert a BigInt value to a number",
+    },
+  )
+})
+
+test('Image alt is a DOMString', (t) => {
+  const image = loose(new Image())
+  for (const [value, expected] of [
+    [5, '5'],
+    [null, 'null'],
+    [undefined, 'undefined'],
+    [{ toString: () => 'x' }, 'x'],
+    [true, 'true'],
+  ] as const) {
+    image.alt = value
+    t.is(image.alt, expected)
+  }
+  t.throws(
+    () => {
+      image.alt = Symbol()
+    },
+    {
+      instanceOf: TypeError,
+      message: "Failed to set the 'alt' property on 'HTMLImageElement': Cannot convert a Symbol value to a string",
+    },
+  )
 })
