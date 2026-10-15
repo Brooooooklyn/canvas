@@ -47,6 +47,15 @@ struct PrimaryFontMetrics {
 bool IsSystemTypeface(skiac_font_collection* c_collection,
                       SkTypeface* typeface);
 
+// FontMetrics::AscentDescentWithHacks for `font` (MetricsFont); `typeface`
+// is the face before font arguments, which tells a system font from a web
+// font.
+void AscentDescentWithHacks(skiac_font_collection* c_collection,
+                            const SkFont& font,
+                            SkTypeface* typeface,
+                            float* ascent,
+                            float* descent);
+
 // `typeface` at `size` px; `base_typeface` is the same face before font
 // arguments, which tells a system font from a web font.
 PrimaryFontMetrics MeasurePrimaryFont(skiac_font_collection* c_collection,
