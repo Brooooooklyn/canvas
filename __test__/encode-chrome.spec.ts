@@ -186,6 +186,47 @@ test('toBlob type and quality like Chrome', async (t) => {
   t.false(called)
 })
 
+// Chrome reads toBlob's quality only when it is a number
+// (html_canvas_element.cc:1517-1520): an object is never read, so a getter
+// or a Proxy trap never runs, and the encode is the default one. This holds
+// for AVIF too; only toDataURL takes an AvifConfig.
+test('toBlob never reads an object quality, like Chrome', async (t) => {
+  const canvas = patternCanvas()
+  for (const type of ['image/avif', 'image/jpeg', 'image/webp']) {
+    const expected = await blob(canvas, type)
+    t.is(expected!.type, type)
+    const reads: string[] = []
+    const getters = {
+      get quality() {
+        reads.push('quality')
+        throw new Error('boom-quality')
+      },
+      get speed() {
+        reads.push('speed')
+        throw new Error('boom-speed')
+      },
+    }
+    const traps = Object.fromEntries(
+      ['get', 'has', 'ownKeys', 'getOwnPropertyDescriptor', 'getPrototypeOf'].map((trap) => [
+        trap,
+        (...args: any[]) => {
+          reads.push(`proxy ${trap}`)
+          return (Reflect as any)[trap](...args)
+        },
+      ]),
+    )
+    const proxy = new Proxy({ quality: 10 }, traps)
+    for (const [label, quality] of [
+      ['throwing getters', getters],
+      ['Proxy', proxy],
+      ['plain object', { quality: 10, speed: 0 }],
+    ] as const) {
+      t.deepEqual(await blob(canvas, type, quality), expected, `${type} ${label}`)
+    }
+    t.deepEqual(reads, [], type)
+  }
+})
+
 test('toBlob argument errors like Chrome', (t) => {
   const canvas = patternCanvas()
   t.is(canvas.toBlob.length, 1)
