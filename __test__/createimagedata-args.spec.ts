@@ -131,6 +131,71 @@ test('createImageData reads a typed array argument as a number, like Chrome', (t
   )
 })
 
+test('createImageData has no typed array form, even for huge sizes', (t) => {
+  // The removed createImageData(data, sw, sh) form took these sizes as they
+  // are. As sw, '' (an empty array) is 0, a one-element array is its element,
+  // and '0,0,0,0' is NaN; nothing is allocated before an error.
+  const u8c = (values: number[] | number) => new Uint8ClampedArray(values as any)
+  const OUTSIDE = "Value is outside the 'long' value range."
+  const NOT_SETTINGS = "The provided value is not of type 'ImageDataSettings'."
+  const rangeError = (msg: string) => ({ ctor: 'RangeError', name: 'RangeError', code: undefined, msg: CREATE + msg })
+  const cases: [string, (ctx: any) => ImageData, object][] = [
+    ['u8c(0), 2 ** 31, 2 ** 31', (c) => c.createImageData(u8c(0), 2 ** 31, 2 ** 31), typeError(OUTSIDE)],
+    ['u8c(0), 2 ** 31', (c) => c.createImageData(u8c(0), 2 ** 31), typeError(OUTSIDE)],
+    ['u8c(4), 2 ** 31, 2 ** 31', (c) => c.createImageData(u8c(4), 2 ** 31, 2 ** 31), typeError(NOT_LONG)],
+    ['u8c(0), 65536, 65536', (c) => c.createImageData(u8c(0), 65536, 65536), typeError(NOT_SETTINGS)],
+    [
+      'u8c(0), -(2 ** 31), -(2 ** 31)',
+      (c) => c.createImageData(u8c(0), -(2 ** 31), -(2 ** 31)),
+      typeError(NOT_SETTINGS),
+    ],
+    [
+      'u8c([255]), u8c([255]), 2 ** 31',
+      (c) => c.createImageData(u8c([255]), u8c([255]), 2 ** 31),
+      typeError(NOT_SETTINGS),
+    ],
+    [
+      'u8c(0), 65536, undefined',
+      (c) => c.createImageData(u8c(0), 65536, undefined),
+      indexSize('The source width is zero or not a number.'),
+    ],
+    [
+      'u8c(0), 2 ** 31 - 1',
+      (c) => c.createImageData(u8c(0), 2 ** 31 - 1),
+      indexSize('The source width is zero or not a number.'),
+    ],
+    [
+      'u8c([255]), -(2 ** 31)',
+      (c) => c.createImageData(u8c([255]), -(2 ** 31)),
+      indexSize('The requested image size exceeds the supported range.'),
+    ],
+    // 4 * 255 * (2 ** 31 - 1) does not fit in 32 bits.
+    [
+      'u8c([255]), 2 ** 31 - 1',
+      (c) => c.createImageData(u8c([255]), 2 ** 31 - 1),
+      rangeError('Out of memory at ImageData creation.'),
+    ],
+    // 4 * 16 * 2 ** 25 bytes is over Chrome's limit.
+    [
+      'u8c([16]), 2 ** 25',
+      (c) => c.createImageData(u8c([16]), 2 ** 25),
+      rangeError('Out of memory at ImageData creation'),
+    ],
+    [
+      'u8c([16]), 2 ** 25, {}',
+      (c) => c.createImageData(u8c([16]), 2 ** 25, {}),
+      rangeError('Out of memory at ImageData creation'),
+    ],
+  ]
+  for (const [label, fn, expected] of cases) {
+    t.deepEqual(
+      result(() => fn(ctx2d())),
+      expected,
+      `createImageData(${label})`,
+    )
+  }
+})
+
 test('createImageData converts sw, then sh, then the settings', (t) => {
   const log: string[] = []
   const c = ctx2d()

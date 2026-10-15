@@ -74,6 +74,30 @@ run('createPattern(canvas)', () => ctx.createPattern(source))
   })
 })
 
+test('the raw js-binding createImageData has no typed array form for huge sizes', (t) => {
+  // Without a trailing undefined, the raw method counts as index.js does:
+  // the values Chrome gives.
+  const out = runRaw(`
+run('createImageData(u8c(0), 2 ** 31, 2 ** 31)', () => size(ctx.createImageData(new Uint8ClampedArray(0), 2 ** 31, 2 ** 31)))
+run('createImageData(u8c(0), 65536, 65536)', () => size(ctx.createImageData(new Uint8ClampedArray(0), 65536, 65536)))
+run('createImageData(u8c([16]), 2 ** 25)', () => size(ctx.createImageData(new Uint8ClampedArray([16]), 2 ** 25)))
+`)
+  t.deepEqual(out, {
+    'createImageData(u8c(0), 2 ** 31, 2 ** 31)': {
+      error: 'TypeError',
+      message: `${CREATE_IMAGE_DATA}Value is outside the 'long' value range.`,
+    },
+    'createImageData(u8c(0), 65536, 65536)': {
+      error: 'TypeError',
+      message: `${CREATE_IMAGE_DATA}The provided value is not of type 'ImageDataSettings'.`,
+    },
+    'createImageData(u8c([16]), 2 ** 25)': {
+      error: 'RangeError',
+      message: `${CREATE_IMAGE_DATA}Out of memory at ImageData creation`,
+    },
+  })
+})
+
 test('the raw js-binding ImageData class takes positional arguments', (t) => {
   // index.js exports a native function that checks new and the real argument
   // count; the class itself only sees padded arguments.
