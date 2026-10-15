@@ -399,6 +399,8 @@ fn check_not_shared(
 /// constructor napi-rs makes cannot (v8_image_data.cc ConstructorCallback).
 /// `construct(args, argc, newTarget)` builds the class with the 4 arguments
 /// and a count marker.
+// Only JS calls it: the lib test build registers no napi exports.
+#[cfg_attr(test, allow(dead_code))]
 #[napi(js_name = "_imageDataConstructor")]
 pub fn image_data_constructor<'env>(
   env: &'env Env,
