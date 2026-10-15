@@ -33,14 +33,22 @@ interface CanvasShadowStyles {
   shadowOffsetX: number
   shadowOffsetY: number
 }
+type CanvasPixelFormat = 'float16' | 'unorm8'
+interface CanvasToneMapping {
+  mode?: 'extended' | 'standard'
+}
 interface CanvasRenderingContext2DSettings {
   alpha?: boolean
   colorSpace?: PredefinedColorSpace
+  /** 'float16' is reported by getContextAttributes(), but the storage stays 8-bit. */
+  colorType?: CanvasPixelFormat
   desynchronized?: boolean
+  /** Not read by getContext() (as in Chrome); getContextAttributes() reports `{ mode: 'standard' }`. */
+  toneMapping?: CanvasToneMapping
   willReadFrequently?: boolean
 }
 interface CanvasSettings {
-  getContextAttributes(): CanvasRenderingContext2DSettings
+  getContextAttributes(): Required<CanvasRenderingContext2DSettings>
 }
 
 interface CanvasRect {
@@ -156,9 +164,12 @@ interface CanvasPDFAnnotations {
 }
 
 type PredefinedColorSpace = 'display-p3' | 'srgb'
+/** Only 8-bit storage exists: 'rgba-float16' and 'rgba-float32' throw a TypeError. */
+type ImageDataPixelFormat = 'rgba-unorm8'
 
 interface ImageDataSettings {
   colorSpace?: PredefinedColorSpace
+  pixelFormat?: ImageDataPixelFormat
 }
 interface CanvasImageData {
   createImageData(sw: number, sh: number, settings?: ImageDataSettings): ImageData
@@ -283,7 +294,17 @@ interface DOMPointInit {
   z?: number
 }
 interface CanvasPattern {
-  setTransform(transform?: DOMMatrix2DInit): void
+  /** Missing members default to the identity; `a` and `m11` (and so on) must agree when both are given. */
+  setTransform(
+    transform?: Partial<DOMMatrix2DInit> & {
+      m11?: number
+      m12?: number
+      m21?: number
+      m22?: number
+      m41?: number
+      m42?: number
+    },
+  ): void
 }
 
 interface CanvasGradient {
@@ -489,10 +510,17 @@ export class ImageData {
    * Returns the actual dimensions of the data in the ImageData object, in pixels.
    */
   readonly width: number
+  readonly colorSpace: PredefinedColorSpace
+  /** Always 'rgba-unorm8'. */
+  readonly pixelFormat: ImageDataPixelFormat
 
-  constructor(sw: number, sh: number, attr?: { colorSpace?: ColorSpace })
-  constructor(imageData: ImageData, attr?: { colorSpace?: ColorSpace })
-  constructor(data: Uint8ClampedArray | Uint16Array | Float16Array | Float32Array, sw: number, sh?: number)
+  constructor(sw: number, sh: number, settings?: ImageDataSettings)
+  constructor(
+    data: Uint8ClampedArray | Uint16Array | Float16Array | Float32Array,
+    sw: number,
+    sh?: number,
+    settings?: ImageDataSettings,
+  )
 }
 
 export class Image {
@@ -571,10 +599,10 @@ export interface SKRSContext2D extends CanvasRenderingContext2D {
    * @param y The y-axis coordinate of the centre of the gradient.
    */
   createConicGradient(startAngle: number, x: number, y: number): CanvasGradient
-  drawImage(image: Image | Canvas, dx: number, dy: number): void
-  drawImage(image: Image | Canvas, dx: number, dy: number, dw: number, dh: number): void
+  drawImage(image: Image | Canvas | SvgCanvas, dx: number, dy: number): void
+  drawImage(image: Image | Canvas | SvgCanvas, dx: number, dy: number, dw: number, dh: number): void
   drawImage(
-    image: Image | Canvas,
+    image: Image | Canvas | SvgCanvas,
     sx: number,
     sy: number,
     sw: number,
@@ -603,11 +631,12 @@ export interface SKRSContext2D extends CanvasRenderingContext2D {
     dWidth: number,
     dHeight: number,
   ): void
+  /** null when `image` is an Image with no src or one that is still loading. */
   createPattern(
     image: Image | ImageData | Canvas | SvgCanvas,
-    repeat: 'repeat' | 'repeat-x' | 'repeat-y' | 'no-repeat' | null,
-  ): CanvasPattern
-  getContextAttributes(): { alpha: boolean; colorSpace: ColorSpace; desynchronized: boolean }
+    repeat: 'repeat' | 'repeat-x' | 'repeat-y' | 'no-repeat' | '' | null,
+  ): CanvasPattern | null
+  getContextAttributes(): Required<CanvasRenderingContext2DSettings>
   getTransform(): DOMMatrix
 
   letterSpacing: string
@@ -616,10 +645,7 @@ export interface SKRSContext2D extends CanvasRenderingContext2D {
 
 export type ColorSpace = 'srgb' | 'display-p3'
 
-export interface ContextAttributes {
-  alpha?: boolean
-  colorSpace?: ColorSpace
-}
+export interface ContextAttributes extends CanvasRenderingContext2DSettings {}
 
 export interface SvgCanvas {
   width: number

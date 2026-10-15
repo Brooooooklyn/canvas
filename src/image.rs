@@ -10,6 +10,7 @@ use crate::avif::AvifImage;
 use crate::error::SkError;
 use crate::global_fonts::get_font;
 use crate::sk::{AccountedBitmap, AlphaType, Bitmap, ColorSpace, ColorType};
+use crate::webidl;
 
 #[napi(custom_finalize)]
 pub struct ImageData {
@@ -102,9 +103,37 @@ impl ImageData {
   }
 }
 
-#[napi(object)]
-pub struct Settings {
-  pub color_space: String,
+impl ImageData {
+  /// A zero-filled ImageData, as createImageData(imagedata) returns.
+  pub(crate) fn new_zeroed<'a>(
+    env: &'a Env,
+    width: usize,
+    height: usize,
+    color_space: ColorSpace,
+  ) -> Result<ClassInstance<'a, ImageData>> {
+    let Some(length) = width.checked_mul(height).and_then(|v| v.checked_mul(4)) else {
+      return Err(webidl::range_error(
+        env.raw(),
+        &format!(
+          "{}Out of memory at ImageData creation.",
+          webidl::CREATE_IMAGE_DATA
+        ),
+      ));
+    };
+    let data_object = Uint8ClampedSlice::from_data(env, vec![0; length])?;
+    let mut instance = ImageData {
+      width,
+      height,
+      color_space,
+      data_ref: Some(create_weak_ref(env, data_object.raw())?),
+    }
+    .into_instance(env)?;
+    instance.define_properties(&[Property::new()
+      .with_utf8_name("data")?
+      .with_value(&data_object)
+      .with_property_attributes(PropertyAttributes::Enumerable)])?;
+    Ok(instance)
+  }
 }
 
 #[napi]
@@ -115,18 +144,37 @@ impl ImageData {
     mut this: This,
     width_or_data: Either4<u32, Uint8ClampedArray, Uint16Array, Float32Array>,
     width_or_height: u32,
-    height_or_settings: Option<Either<u32, Settings>>,
-    maybe_settings: Option<Settings>,
+    // `settings` after (sw, sh); `sh` after (data, sw).
+    height_or_settings: Unknown,
+    maybe_settings: Unknown,
   ) -> Result<Self> {
+    let raw = env.raw();
+    // The data forms: a present 3rd argument is `unsigned long sh`, so a
+    // dictionary or null there is height 0. Chrome drops trailing undefined
+    // arguments, so an undefined `sh` is missing only when no settings follow.
+    let data_height = || -> Result<Option<u32>> {
+      if is_undefined(&height_or_settings)? && is_undefined(&maybe_settings)? {
+        return Ok(None);
+      }
+      webidl::to_unsigned_long(raw, height_or_settings.raw()).map(Some)
+    };
+    let data_settings = || {
+      webidl::ImageDataSettings::from_js(
+        raw,
+        Some(maybe_settings.raw()),
+        webidl::IMAGE_DATA_CONSTRUCTOR,
+      )
+    };
     match width_or_data {
       Either4::A(width) => {
         let height = width_or_height;
-        let color_space = match height_or_settings {
-          Some(Either::B(settings)) => {
-            ColorSpace::from_str(&settings.color_space).unwrap_or_default()
-          }
-          _ => ColorSpace::default(),
-        };
+        let color_space = webidl::ImageDataSettings::from_js(
+          raw,
+          Some(height_or_settings.raw()),
+          webidl::IMAGE_DATA_CONSTRUCTOR,
+        )?
+        .color_space
+        .unwrap_or_default();
         let arraybuffer_length = (width * height * 4) as usize;
         let data_buffer = vec![0; arraybuffer_length];
         let data_object = Uint8ClampedSlice::from_data(&env, data_buffer)?;
@@ -147,10 +195,11 @@ impl ImageData {
         // Uint8ClampedArray - each pixel takes 4 bytes
         let input_data_length = data_object.len();
         let width = width_or_height;
-        let height = match &height_or_settings {
-          Some(Either::A(height)) => *height,
-          _ => (input_data_length as u32) / 4 / width,
+        let height = match data_height()? {
+          Some(height) => height,
+          None => (input_data_length as u32) / 4 / width,
         };
+        let color_space = data_settings()?.color_space.unwrap_or_default();
         if height * width * 4 != data_object.len() as u32 {
           return Err(Error::new(
             Status::InvalidArg,
@@ -166,9 +215,6 @@ impl ImageData {
           // Enumerable only: non-writable/non-configurable so the array is
           // pinned by ordinary GC tracing for exactly the ImageData's lifetime.
           .with_property_attributes(PropertyAttributes::Enumerable)])?;
-        let color_space = maybe_settings
-          .and_then(|settings| ColorSpace::from_str(&settings.color_space).ok())
-          .unwrap_or_default();
         Ok(ImageData {
           width: width as usize,
           height: height as usize,
@@ -180,10 +226,11 @@ impl ImageData {
         // Uint16Array - each pixel takes 4 elements (RGBA), 2 bytes per element
         let input_data_length = data_object.len();
         let width = width_or_height;
-        let height = match &height_or_settings {
-          Some(Either::A(height)) => *height,
-          _ => (input_data_length as u32) / 4 / width,
+        let height = match data_height()? {
+          Some(height) => height,
+          None => (input_data_length as u32) / 4 / width,
         };
+        let color_space = data_settings()?.color_space.unwrap_or_default();
         if height * width * 4 != data_object.len() as u32 {
           return Err(Error::new(
             Status::InvalidArg,
@@ -203,9 +250,6 @@ impl ImageData {
           // Enumerable only: non-writable/non-configurable so the array is
           // pinned by ordinary GC tracing for exactly the ImageData's lifetime.
           .with_property_attributes(PropertyAttributes::Enumerable)])?;
-        let color_space = maybe_settings
-          .and_then(|settings| ColorSpace::from_str(&settings.color_space).ok())
-          .unwrap_or_default();
         Ok(ImageData {
           width: width as usize,
           height: height as usize,
@@ -217,10 +261,11 @@ impl ImageData {
         // Float32Array - each pixel takes 4 elements (RGBA), 4 bytes per element
         let input_data_length = data_object.len();
         let width = width_or_height;
-        let height = match &height_or_settings {
-          Some(Either::A(height)) => *height,
-          _ => (input_data_length as u32) / 4 / width,
+        let height = match data_height()? {
+          Some(height) => height,
+          None => (input_data_length as u32) / 4 / width,
         };
+        let color_space = data_settings()?.color_space.unwrap_or_default();
         if height * width * 4 != data_object.len() as u32 {
           return Err(Error::new(
             Status::InvalidArg,
@@ -241,9 +286,6 @@ impl ImageData {
           // Enumerable only: non-writable/non-configurable so the array is
           // pinned by ordinary GC tracing for exactly the ImageData's lifetime.
           .with_property_attributes(PropertyAttributes::Enumerable)])?;
-        let color_space = maybe_settings
-          .and_then(|settings| ColorSpace::from_str(&settings.color_space).ok())
-          .unwrap_or_default();
         Ok(ImageData {
           width: width as usize,
           height: height as usize,
@@ -263,6 +305,21 @@ impl ImageData {
   pub fn get_height(&self) -> u32 {
     self.height as u32
   }
+
+  #[napi(getter, ts_return_type = "PredefinedColorSpace")]
+  pub fn get_color_space(&self) -> &'static str {
+    self.color_space.as_str()
+  }
+
+  /// Storage is always 8-bit RGBA here.
+  #[napi(getter, ts_return_type = "ImageDataPixelFormat")]
+  pub fn get_pixel_format(&self) -> &'static str {
+    "rgba-unorm8"
+  }
+}
+
+fn is_undefined(value: &Unknown) -> Result<bool> {
+  Ok(value.get_type()? == ValueType::Undefined)
 }
 
 #[napi(custom_finalize)]
@@ -273,6 +330,8 @@ pub struct Image {
   /// not when this `Image` is finalized.
   pub(crate) bitmap: Option<Arc<AccountedBitmap>>,
   pub(crate) complete: bool,
+  /// The last load failed (onerror fired): the HTML "broken" state.
+  pub(crate) broken: bool,
   pub(crate) alt: String,
   pub(crate) current_src: Option<String>,
   width: f64,
@@ -314,6 +373,7 @@ impl Image {
       .unwrap_or_default();
     Ok(Image {
       complete: true,
+      broken: false,
       bitmap: None,
       alt: "".to_string(),
       current_src: None,
@@ -425,6 +485,7 @@ impl Image {
     // Increment generation FIRST to invalidate all in-flight loads
     // This must happen for BOTH empty and valid src to prevent race conditions
     self.load_generation = self.load_generation.wrapping_add(1);
+    self.broken = false;
 
     // Check if src is empty per HTML spec.
     // The previous `< 5` byte heuristic incorrectly silenced tiny invalid buffers
@@ -521,6 +582,7 @@ impl Image {
               // Clear prior image state to prevent stale data from being drawn
               // Reset width/height to auto (-1.0) so getters return 0 for broken image
               self.complete = true;
+              self.broken = true;
               self.width = -1.0;
               self.height = -1.0;
               self.natural_width = 0.0;
@@ -563,6 +625,7 @@ impl Image {
                 // Clear prior image state to prevent stale data from being drawn
                 // Reset width/height to auto (-1.0) so getters return 0 for broken image
                 self.complete = true;
+                self.broken = true;
                 self.width = -1.0;
                 self.height = -1.0;
                 self.natural_width = 0.0;
@@ -829,6 +892,7 @@ impl Image {
           }
 
           image.complete = true;
+          image.broken = true;
           image.width = -1.0;
           image.height = -1.0;
           image.natural_width = 0.0;
@@ -1281,6 +1345,7 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
       }
     }
 
+    self_mut.broken = err.is_some();
     if let Some(err_str) = err.take() {
       let error = env.create_error(Error::new(Status::InvalidArg, err_str))?;
       if self.fire_events {
@@ -1318,6 +1383,7 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
 
     // Per HTML spec: complete must be true after load finishes, even on error (broken state)
     image.complete = true;
+    image.broken = true;
     // Clear decoded state so all dimension getters return 0 for broken image
     // Reset width/height to auto (-1.0) so getters return 0 (from natural_width/height)
     image.width = -1.0;

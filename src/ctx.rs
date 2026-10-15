@@ -6,7 +6,7 @@ use std::str::FromStr;
 use std::sync::LazyLock;
 
 use cssparser::Parser;
-use cssparser_color::{Color as CSSColor, hsl_to_rgb};
+use cssparser_color::Color as CSSColor;
 use napi::{JsString, bindgen_prelude::*};
 use regex::Regex;
 use rgb::RGBA;
@@ -28,13 +28,14 @@ use crate::{
   gradient::{CanvasGradient, Gradient},
   image::*,
   path::Path,
-  pattern::{CanvasPattern, Pattern},
+  pattern::{CanvasPattern, Pattern, hsl_to_rgba8, srgb_channel_to_u8},
   sk::{
     AlphaType, Bitmap, BlendMode, ColorSpace, FillType, FilterQuality, FontVariantCaps,
     ImageFilter, LineMetrics, MaskFilter, Matrix, Paint, PaintStyle, Path as SkPath, PathEffect,
     PathOp, SkEncodedImageFormat, SkImage, SkWMemoryStream, SkiaDataRef, Surface, Transform,
   },
   state::Context2dRenderingState,
+  webidl::{self, Positional, ReportedSettings},
 };
 
 static CSS_SIZE_REGEXP: LazyLock<Regex> =
@@ -229,8 +230,14 @@ impl Context {
     }
   }
 
-  /// Flush deferred rendering to surface (if deferred mode is enabled)
+  /// Draw the pending recording into the surface: the PageRecorder of a
+  /// raster canvas, or what an SVGCanvas recorded beside its SVG output. Every
+  /// read of the surface pixels comes after this.
   pub fn flush(&mut self) {
+    if self.backend == Backend::Svg {
+      self.surface.flush_svg();
+      return;
+    }
     if let Some(ref recorder) = self.page_recorder {
       let mut rec = recorder.borrow_mut();
       rec.playback_to(&mut self.surface.canvas);
@@ -391,6 +398,16 @@ impl Context {
       Pattern::Gradient(gradient) => self.account_raster_bytes(gradient.estimated_bytes()),
       Pattern::Color(..) => {}
     };
+    // Fresh per draw (the dash list compiles into a fresh SkPathEffect):
+    // per-draw charge in the propagated tally, no dedup.
+    self.account_raster_bytes(self.state.line_dash_list.len() * 4);
+    self.account_image_paint_resources();
+  }
+
+  /// The part of `account_paint_resources` an image draw retains. Its paint
+  /// (`image_paint`) carries no fillStyle and no dash, only the `ctx.filter`
+  /// chain and the shadow.
+  fn account_image_paint_resources(&self) {
     // The ctx.filter chain is ONE refcounted ImageFilter stored on the state;
     // every recorded paint carries a shared ref to the same DAG, so charge it
     // once per window under its minted id. Generation 0: the chain object is
@@ -413,10 +430,9 @@ impl Context {
     } else {
       0
     };
-    // Fresh per draw (shadow_paint builds a fresh DropShadowOnly graph, the
-    // dash list compiles into a fresh SkPathEffect): per-draw charge in the
-    // propagated tally, no dedup.
-    self.account_raster_bytes(shadow_bytes + self.state.line_dash_list.len() * 4);
+    // Fresh per draw (shadow_paint builds a fresh DropShadowOnly graph):
+    // per-draw charge in the propagated tally, no dedup.
+    self.account_raster_bytes(shadow_bytes);
   }
 
   /// Execute a canvas state operation on the appropriate canvas (recording or direct)
@@ -1473,6 +1489,52 @@ impl Context {
     (alpha * 255.0).round() / 255.0
   }
 
+  /// The paint drawImage and drawCanvas draw with: Blink's `image_flags_`
+  /// (canvas_rendering_context_2d_state.cc:170-171 fill style and AA, :335
+  /// alpha, :832 picked for image draws). It never reads fillStyle or the line
+  /// dash, so an unusable fillStyle (a gradient Skia cannot build) cannot stop
+  /// an image draw. Opaque black like a default cc::PaintFlags; the blend mode
+  /// comes from the state paint, and smoothing, `ctx.filter` and the shadow
+  /// are added by the callers.
+  fn image_paint(&self, alpha: f32) -> Paint {
+    let mut paint = self.state.paint.clone();
+    paint.set_style(PaintStyle::Fill);
+    paint.set_color(0, 0, 0, 255);
+    paint.set_alpha_f32(alpha);
+    paint
+  }
+
+  /// The shader half of a gradient fillStyle/strokeStyle paint. Blink always
+  /// dithers gradients (gradient.cc ApplyToFlags).
+  fn set_gradient_paint(
+    &self,
+    paint: &mut Paint,
+    gradient: &Gradient,
+    alpha: f32,
+  ) -> result::Result<(), SkError> {
+    // SVG only: SkSVGDevice has no conic gradient and drops the alpha of a
+    // color shader, so a gradient that paints one color everywhere goes out as
+    // a plain paint color.
+    if self.backend == Backend::Svg
+      && let Some(c) = gradient.constant_color()
+    {
+      paint.set_color(
+        srgb_channel_to_u8(c.r),
+        srgb_channel_to_u8(c.g),
+        srgb_channel_to_u8(c.b),
+        255,
+      );
+      paint.set_alpha_f32(c.a * alpha);
+      return Ok(());
+    }
+    let shader = gradient.get_shader()?;
+    paint.set_color(0, 0, 0, 255);
+    paint.set_alpha_f32(alpha);
+    paint.set_shader(&shader);
+    paint.set_dither(true);
+    Ok(())
+  }
+
   pub fn fill_paint(&self) -> result::Result<Paint, SkError> {
     let last_state = &self.state;
     let current_paint = &last_state.paint;
@@ -1484,14 +1546,7 @@ impl Context {
         paint.set_color(c.r, c.g, c.b, c.a);
         paint.set_alpha_f32(c.a as f32 / 255.0 * alpha);
       }
-      Pattern::Gradient(g) => {
-        let current_transform = &last_state.transform;
-        let shader = g.get_shader(current_transform.get_transform())?;
-        paint.set_color(0, 0, 0, 255);
-        paint.set_alpha_f32(alpha);
-        paint.set_shader(&shader);
-        paint.set_dither(true);
-      }
+      Pattern::Gradient(g) => self.set_gradient_paint(&mut paint, g, alpha)?,
       Pattern::Image(p) => {
         if let Some(shader) = p.get_shader(if last_state.image_smoothing_enabled {
           last_state.image_smoothing_quality
@@ -1617,21 +1672,9 @@ impl Context {
         };
       }
       CSSColor::Hsl(hsl) => {
-        let h = hsl.hue.unwrap_or(0.0) / 360.0;
-        let s = hsl.saturation.unwrap_or(0.0);
-        let l = hsl.lightness.unwrap_or(0.0);
-        let a = hsl.alpha.unwrap_or(1.0);
-
-        let (r, g, b) = hsl_to_rgb(h, s, l);
-
         drop(parser);
         self.state.shadow_color_string = shadow_color;
-        self.state.shadow_color = RGBA {
-          r: (r * 255.0) as u8,
-          g: (g * 255.0) as u8,
-          b: (b * 255.0) as u8,
-          a: (a * 255.0).round() as u8,
-        };
+        self.state.shadow_color = hsl_to_rgba8(&hsl);
       }
       _ => {
         return Err(SkError::Generic("Unsupported color format".to_owned()));
@@ -1691,16 +1734,15 @@ impl Context {
     h: f32,
     color_type: ColorSpace,
   ) -> Option<Vec<u8>> {
-    if self.page_recorder.is_some() {
-      // Flush the deferred recording before reading pixels, as Blink's
-      // getImageData runs FinalizeFrame -> FlushCanvas ->
-      // ReleaseMainRecording (base_rendering_context_2d.cc). Without it the
-      // recording grows unbounded across getImageData calls
-      // (https://github.com/Brooooooklyn/canvas/issues/1342). flush() also
-      // consolidates the layers into a single snapshot picture, so a read
-      // leaves the recorder holding only an O(canvas_size) snapshot.
-      self.flush();
-    }
+    // Flush the deferred recording before reading pixels, as Blink's
+    // getImageData runs FinalizeFrame -> FlushCanvas ->
+    // ReleaseMainRecording (base_rendering_context_2d.cc). Without it the
+    // recording grows unbounded across getImageData calls
+    // (https://github.com/Brooooooklyn/canvas/issues/1342). flush() also
+    // consolidates the layers into a single snapshot picture, so a read
+    // leaves the recorder holding only an O(canvas_size) snapshot. An
+    // SVGCanvas draws its recording into its raster surface here.
+    self.flush();
 
     self
       .surface
@@ -1722,14 +1764,7 @@ impl Context {
         paint.set_color(c.r, c.g, c.b, c.a);
         paint.set_alpha_f32(c.a as f32 / 255.0 * global_alpha);
       }
-      Pattern::Gradient(g) => {
-        let current_transform = &last_state.transform;
-        let shader = g.get_shader(current_transform.get_transform())?;
-        paint.set_color(0, 0, 0, 255);
-        paint.set_alpha_f32(global_alpha);
-        paint.set_shader(&shader);
-        paint.set_dither(true);
-      }
+      Pattern::Gradient(g) => self.set_gradient_paint(&mut paint, g, global_alpha)?,
       Pattern::Image(p) => {
         if let Some(shader) = p.get_shader(if last_state.image_smoothing_enabled {
           last_state.image_smoothing_quality
@@ -2105,14 +2140,8 @@ impl Context {
       return Ok(());
     }
 
-    let mut paint: Paint = self.fill_paint()?;
-    // drawImage does not use fillStyle. In Blink only the fill and stroke
-    // flags get ApplyToFlags (canvas_rendering_context_2d_state.cc:332-333),
-    // which sets a gradient's dither (gradient.cc:364); images are drawn with
-    // image_flags_ (:832). So drop the gradient arm's flag here.
-    paint.set_dither(false);
-    self.account_paint_resources(&self.state.fill_style);
-    paint.set_alpha_f32(self.image_global_alpha());
+    let paint = self.image_paint(self.image_global_alpha());
+    self.account_image_paint_resources();
 
     // Extract state for shadow rendering to avoid borrow conflicts
     let shadow_paint = self.shadow_paint(&paint, ShadowSource::Image, DrawContent::Geometry);
@@ -2256,12 +2285,8 @@ impl Context {
       return Ok(());
     }
 
-    let mut paint: Paint = self.fill_paint()?;
-    // As in draw_image: an image draw never takes the gradient fillStyle's
-    // dither.
-    paint.set_dither(false);
-    self.account_paint_resources(&self.state.fill_style);
-    paint.set_alpha_f32(self.state.global_alpha as f32);
+    let paint = self.image_paint(self.state.global_alpha as f32);
+    self.account_image_paint_resources();
 
     // Extract state for shadow rendering to avoid borrow conflicts
     let shadow_paint = self.shadow_paint(&paint, ShadowSource::Image, DrawContent::Geometry);
@@ -2585,10 +2610,20 @@ impl Context {
 }
 
 #[napi(object)]
+pub struct CanvasToneMapping {
+  pub mode: String,
+}
+
+/// getContextAttributes(): `CanvasRenderingContext2DSettings`, with the
+/// fields in Chrome's key order.
+#[napi(object)]
 pub struct ContextAttributes {
   pub alpha: bool,
   pub color_space: String,
+  pub color_type: String,
   pub desynchronized: bool,
+  pub tone_mapping: CanvasToneMapping,
+  pub will_read_frequently: bool,
 }
 
 #[napi]
@@ -2612,6 +2647,8 @@ impl From<SvgExportFlag> for crate::sk::SvgExportFlag {
 #[napi(custom_finalize)]
 pub struct CanvasRenderingContext2D {
   pub(crate) context: Context,
+  /// getContext() options that only getContextAttributes() reports.
+  pub(crate) reported_settings: ReportedSettings,
 }
 
 impl ObjectFinalize for CanvasRenderingContext2D {
@@ -2669,6 +2706,213 @@ impl FromNapiValue for DrawImageSource<'static> {
   }
 }
 
+type PatternImage<'a> =
+  Either4<&'a mut Image, &'a mut ImageData, &'a mut CanvasElement<'a>, &'a mut SVGCanvas<'a>>;
+
+/// The class of a `createPattern` image, found by the one type check that
+/// WebIDL runs on it.
+#[derive(Clone, Copy)]
+enum PatternImageKind {
+  Image,
+  ImageData,
+  CanvasElement,
+  SVGCanvas,
+}
+
+impl PatternImageKind {
+  /// The instanceof checks that `PatternImage` runs, in its order, without
+  /// the borrow.
+  unsafe fn of(env: sys::napi_env, value: sys::napi_value) -> Option<Self> {
+    unsafe {
+      if <&mut Image as ValidateNapiValue>::validate(env, value).is_ok() {
+        Some(Self::Image)
+      } else if <&mut ImageData as ValidateNapiValue>::validate(env, value).is_ok() {
+        Some(Self::ImageData)
+      } else if <&mut CanvasElement as ValidateNapiValue>::validate(env, value).is_ok() {
+        Some(Self::CanvasElement)
+      } else if <&mut SVGCanvas as ValidateNapiValue>::validate(env, value).is_ok() {
+        Some(Self::SVGCanvas)
+      } else {
+        None
+      }
+    }
+  }
+
+  /// Borrows `value` as this class: unwrap and type tag only. User code ran
+  /// since `of`, and may have changed the prototype or Symbol.hasInstance,
+  /// so the instanceof check is not repeated.
+  unsafe fn borrow(
+    self,
+    env: sys::napi_env,
+    value: sys::napi_value,
+  ) -> Result<PatternImage<'static>> {
+    unsafe {
+      Ok(match self {
+        Self::Image => Either4::A(Image::from_napi_mut_ref(env, value)?),
+        Self::ImageData => Either4::B(ImageData::from_napi_mut_ref(env, value)?),
+        Self::CanvasElement => Either4::C(CanvasElement::from_napi_mut_ref(env, value)?),
+        Self::SVGCanvas => Either4::D(SVGCanvas::from_napi_mut_ref(env, value)?),
+      })
+    }
+  }
+}
+
+/// The arguments of `createPattern`, its last parameter: it gets the
+/// argument count and converts the `Positional` arguments before it. Chrome
+/// converts the image (a type check) before the repetition, a
+/// [LegacyNullToEmptyString] DOMString (canvas_2d_recorder_context.idl:47)
+/// whose ToString may run user code.
+/// The image is borrowed only after that, so the user code may use it, and
+/// all of it happens before napi-rs borrows the context.
+pub struct CreatePatternArgs<'a> {
+  pub image: PatternImage<'a>,
+  pub repetition: String,
+}
+
+impl FromNapiValue for CreatePatternArgs<'static> {
+  unsafe fn from_napi_value(env: sys::napi_env, argc: sys::napi_value) -> Result<Self> {
+    let args = webidl::Arguments::take(env, 2, argc)?;
+    if args.len() < 2 {
+      return Err(webidl::type_error(
+        env,
+        &format!(
+          "{}2 arguments required, but only {} present.",
+          webidl::CREATE_PATTERN,
+          args.len()
+        ),
+      ));
+    }
+    let wrong_type = || {
+      webidl::type_error(
+        env,
+        &format!(
+          "{}The provided value is not of type '(CanvasElement or Image or ImageData or SVGCanvas)'.",
+          webidl::CREATE_PATTERN
+        ),
+      )
+    };
+    let image = args.get(0)?;
+    let Some(kind) = (unsafe { PatternImageKind::of(env, image) }) else {
+      return Err(wrong_type());
+    };
+    let repetition = args.get(1)?;
+    let repetition = if webidl::type_of(env, repetition)? == ValueType::Null {
+      String::new()
+    } else {
+      webidl::to_js_string(env, repetition)?
+    };
+    let image = unsafe { kind.borrow(env, image) }.map_err(|_| wrong_type())?;
+    Ok(Self { image, repetition })
+  }
+}
+
+/// The arguments of `createImageData`, its last parameter: it gets the
+/// argument count and converts the `Positional` arguments before it. WebIDL
+/// picks the overload from the argument count, and an explicit undefined
+/// counts (base_rendering_context_2d.idl:25).
+/// They are converted in the callback glue, before napi-rs borrows the
+/// context, so a settings getter may use it.
+pub enum CreateImageDataArgs<'a> {
+  /// createImageData(ImageData imagedata).
+  ImageData {
+    width: usize,
+    height: usize,
+    color_space: ColorSpace,
+  },
+  /// createImageData([EnforceRange] long sw, [EnforceRange] long sh,
+  /// optional ImageDataSettings settings).
+  Size {
+    width: u32,
+    height: u32,
+    color_space: Option<ColorSpace>,
+  },
+  /// Non-standard createImageData(Uint8ClampedArray data, sw, sh?, settings?).
+  Data {
+    data: Uint8ClampedSlice<'a>,
+    width: u32,
+    height: u32,
+    color_space: Option<ColorSpace>,
+  },
+}
+
+impl FromNapiValue for CreateImageDataArgs<'static> {
+  unsafe fn from_napi_value(env: sys::napi_env, argc: sys::napi_value) -> Result<Self> {
+    let args = webidl::Arguments::take(env, 4, argc)?;
+    let type_error =
+      |msg: &str| webidl::type_error(env, &format!("{}{msg}", webidl::CREATE_IMAGE_DATA));
+    let settings = |value: sys::napi_value| {
+      webidl::ImageDataSettings::from_js(env, Some(value), webidl::CREATE_IMAGE_DATA)
+    };
+    // `long` as before, except that undefined is not a long.
+    let long = |value: sys::napi_value| -> Result<u32> {
+      if webidl::type_of(env, value)? == ValueType::Undefined {
+        return Err(type_error("Value is not of type 'long'."));
+      }
+      Ok(unsafe { i32::from_napi_value(env, value)? }.unsigned_abs())
+    };
+    if args.len() == 0 {
+      return Err(type_error("1 argument required, but only 0 present."));
+    }
+    let first = unsafe {
+      Either3::<&ImageData, Uint8ClampedSlice, Unknown>::from_napi_value(env, args.get(0)?)?
+    };
+    if args.len() == 1 {
+      // The same size and color space, new zeroed data
+      // (base_rendering_context_2d.cc:296).
+      return match first {
+        Either3::A(image_data) => Ok(Self::ImageData {
+          width: image_data.width,
+          height: image_data.height,
+          color_space: image_data.color_space,
+        }),
+        _ => Err(type_error("parameter 1 is not of type 'ImageData'.")),
+      };
+    }
+    match first {
+      // Two or more arguments select (long sw, long sh, ...), and an
+      // ImageData is not a long.
+      Either3::A(_) => Err(type_error("Value is not of type 'long'.")),
+      Either3::C(width) => {
+        let width = long(width.raw())?;
+        let height = long(args.get(1)?)?;
+        let color_space = settings(args.get(2)?)?.color_space;
+        Ok(Self::Size {
+          width,
+          height,
+          color_space,
+        })
+      }
+      Either3::B(data) => {
+        let input_data_length = data.len();
+        let width = long(args.get(1)?)?;
+        let height = args.get(2)?;
+        let height = if webidl::type_of(env, height)? == ValueType::Number {
+          unsafe { i32::from_napi_value(env, height)? }.unsigned_abs()
+        } else {
+          // A dictionary here is converted but, as before, not used.
+          settings(height)?;
+          (input_data_length as u32) / 4 / width
+        };
+        // The typed array aliases the caller's buffer, which may be detached
+        // later via transfer; the pixel length is checked on every use.
+        if input_data_length < (width as usize) * (height as usize) * 4 {
+          return Err(Error::new(
+            Status::InvalidArg,
+            "Index or size is negative or greater than the allowed amount".to_owned(),
+          ));
+        }
+        let color_space = settings(args.get(3)?)?.color_space;
+        Ok(Self::Data {
+          data,
+          width,
+          height,
+          color_space,
+        })
+      }
+    }
+  }
+}
+
 #[napi]
 impl CanvasRenderingContext2D {
   #[napi(constructor)]
@@ -2684,7 +2928,10 @@ impl CanvasRenderingContext2D {
     } else {
       Context::new(width, height, color_space)?
     };
-    Ok(Self { context })
+    Ok(Self {
+      context,
+      reported_settings: ReportedSettings::default(),
+    })
   }
 
   #[napi(getter)]
@@ -2733,9 +2980,11 @@ impl CanvasRenderingContext2D {
     self.context.state.image_smoothing_enabled
   }
 
-  #[napi(setter, return_if_invalid)]
-  pub fn set_image_smoothing_enabled(&mut self, enabled: bool) {
-    self.context.state.image_smoothing_enabled = enabled;
+  #[napi(setter)]
+  pub fn set_image_smoothing_enabled(&mut self, enabled: Unknown) -> Result<()> {
+    // WebIDL boolean: ToBoolean, so 0, '', null, undefined and NaN are false.
+    self.context.state.image_smoothing_enabled = enabled.coerce_to_bool()?;
+    Ok(())
   }
 
   #[napi(getter)]
@@ -3149,26 +3398,32 @@ impl CanvasRenderingContext2D {
     self.context.close_path();
   }
 
+  /// createImageData(imagedata) or (sw, sh, settings?), and the non-standard
+  /// (data, sw, sh?, settings?). The index.js wrapper passes the argument
+  /// count after the 4 positional arguments; see `webidl::Arguments::take`.
   #[napi]
   pub fn create_image_data<'scope>(
     &'scope mut self,
     env: &'scope Env,
-    width_or_data: Either<i32, Uint8ClampedSlice<'scope>>,
-    width_or_height: i32,
-    height_or_settings: Option<Either<i32, Settings>>,
-    maybe_settings: Option<Settings>,
+    _arg0: Positional,
+    _arg1: Positional,
+    _arg2: Positional,
+    _arg3: Positional,
+    args: CreateImageDataArgs<'scope>,
   ) -> Result<ClassInstance<'scope, ImageData>> {
-    match width_or_data {
-      Either::A(width) => {
-        let width = width.unsigned_abs();
-        let height = width_or_height.unsigned_abs();
+    match args {
+      CreateImageDataArgs::ImageData {
+        width,
+        height,
+        color_space,
+      } => ImageData::new_zeroed(env, width, height, color_space),
+      CreateImageDataArgs::Size {
+        width,
+        height,
+        color_space,
+      } => {
         // Spec: defaultColorSpace is this context's color space.
-        let color_space = match height_or_settings {
-          Some(Either::B(settings)) => {
-            ColorSpace::from_str(&settings.color_space).unwrap_or(self.context.color_space)
-          }
-          _ => self.context.color_space,
-        };
+        let color_space = color_space.unwrap_or(self.context.color_space);
         let arraybuffer_length = (width * height * 4) as usize;
         let data_buffer = vec![0; arraybuffer_length];
         let data_object = Uint8ClampedSlice::from_data(env, data_buffer)?;
@@ -3185,28 +3440,16 @@ impl CanvasRenderingContext2D {
           .with_property_attributes(PropertyAttributes::Enumerable)])?;
         Ok(instance)
       }
-      Either::B(data_object) => {
-        let input_data_length = data_object.len();
-        let width = width_or_height.unsigned_abs();
-        let height = match &height_or_settings {
-          Some(Either::A(height)) => height.unsigned_abs(),
-          _ => (input_data_length as u32) / 4 / width,
-        };
-        // The typed array aliases the caller's buffer, which may be detached
-        // later via transfer; the pixel length is checked on every use.
-        if input_data_length < (width as usize) * (height as usize) * 4 {
-          return Err(Error::new(
-            Status::InvalidArg,
-            "Index or size is negative or greater than the allowed amount".to_owned(),
-          ));
-        }
-        let color_space = maybe_settings
-          .and_then(|settings| ColorSpace::from_str(&settings.color_space).ok())
-          .unwrap_or_default();
+      CreateImageDataArgs::Data {
+        data: data_object,
+        width,
+        height,
+        color_space,
+      } => {
         let mut instance = ImageData {
           width: width as usize,
           height: height as usize,
-          color_space,
+          color_space: color_space.unwrap_or_default(),
           // Weak ref: the non-configurable `data` property keeps the caller's
           // array alive for exactly the ImageData's lifetime.
           data_ref: Some(create_weak_ref(env, data_object.raw())?),
@@ -3256,22 +3499,27 @@ impl CanvasRenderingContext2D {
   pub fn create_conic_gradient<'scope>(
     &'scope mut self,
     env: &'scope Env,
-    r: f64,
+    start_angle: f64,
     x: f64,
     y: f64,
   ) -> Result<ClassInstance<'scope, CanvasGradient>> {
-    let conic_gradient = Gradient::create_conic_gradient(x as f32, y as f32, r as f32);
+    let conic_gradient = Gradient::create_conic_gradient(x as f32, y as f32, start_angle as f32);
     CanvasGradient(conic_gradient).into_instance(env)
   }
 
-  #[napi]
+  /// createPattern(image, repetition). The index.js wrapper passes the
+  /// argument count after them; see `webidl::Arguments::take`.
+  #[napi(ts_return_type = "CanvasPattern | null")]
   pub fn create_pattern<'scope>(
     &'scope self,
     env: &'scope Env,
-    input: Either4<&mut Image, &mut ImageData, &mut CanvasElement, &mut SVGCanvas>,
-    repetition: Option<String>,
-  ) -> Result<ClassInstance<'scope, CanvasPattern>> {
-    CanvasPattern::new(*env, input, repetition)?.into_instance(env)
+    _image: Positional,
+    _repetition: Positional,
+    args: CreatePatternArgs<'_>,
+  ) -> Result<Option<ClassInstance<'scope, CanvasPattern>>> {
+    CanvasPattern::create(*env, args.image, &args.repetition)?
+      .map(|pattern| pattern.into_instance(env))
+      .transpose()
   }
 
   #[napi]
@@ -3407,6 +3655,9 @@ impl CanvasRenderingContext2D {
         )
       }
       Either3::B(svg) => {
+        // The raster surface holds what was drawn (as a canvas would draw it)
+        // only after a flush.
+        svg.ctx.context.flush();
         let bitmap = BitmapRef::Owned(svg.ctx.context.surface.get_bitmap());
         (
           bitmap,
@@ -3665,16 +3916,20 @@ impl CanvasRenderingContext2D {
     Ok(())
   }
 
+  /// A new object on each call (base_rendering_context_2d.cc:156).
   #[napi]
   pub fn get_context_attributes(&self) -> ContextAttributes {
+    let reported = self.reported_settings;
     ContextAttributes {
       alpha: self.context.alpha,
-      color_space: match self.context.color_space {
-        ColorSpace::Srgb => "srgb",
-        ColorSpace::DisplayP3 => "display-p3",
-      }
-      .to_owned(),
-      desynchronized: false,
+      color_space: self.context.color_space.as_str().to_owned(),
+      color_type: reported.color_type.as_str().to_owned(),
+      desynchronized: reported.desynchronized,
+      // Chrome 155 does not read toneMapping and reports the default.
+      tone_mapping: CanvasToneMapping {
+        mode: "standard".to_owned(),
+      },
+      will_read_frequently: reported.will_read_frequently,
     }
   }
 
@@ -3931,8 +4186,9 @@ impl CanvasRenderingContext2D {
     y: f64,
     width: f64,
     height: f64,
-    color_space: Option<String>,
+    settings: webidl::GetImageDataSettings,
   ) -> Result<ClassInstance<'scope, ImageData>> {
+    let settings = settings.0;
     if !x.is_nan()
       && !x.is_infinite()
       && !y.is_nan()
@@ -3943,9 +4199,7 @@ impl CanvasRenderingContext2D {
       && !height.is_infinite()
     {
       // Spec: defaultColorSpace is this context's color space.
-      let color_space = color_space
-        .and_then(|cs| cs.parse().ok())
-        .unwrap_or(self.context.color_space);
+      let color_space = settings.color_space.unwrap_or(self.context.color_space);
       // Per spec: if sw/sh is negative, flip the origin and use abs value
       let (sx, sw) = if width < 0.0 {
         (x + width, -width)
@@ -4093,7 +4347,10 @@ impl CanvasRenderingContext2D {
         return Ok(());
       }
       // Direct mode (SVG/PDF): write to surface canvas with inverted transform
-      // snapshot=false: pixels are consumed immediately, no copy needed.
+      // snapshot=false: pixels are consumed immediately, no copy needed. The
+      // SVG canvas also records the draw for its raster surface, so it needs
+      // its own copy of the pixels.
+      let snapshot = self.context.backend == Backend::Svg;
       let inverted = self.context.surface.canvas.get_transform_matrix().invert();
       self.context.surface.canvas.save();
       if let Some(inverted) = inverted {
@@ -4110,7 +4367,7 @@ impl CanvasRenderingContext2D {
         dirty_width,
         dirty_height,
         image_data.color_space,
-        false,
+        snapshot,
       );
       self.context.surface.canvas.restore();
       self.context.note_direct_mutation();
@@ -4858,6 +5115,95 @@ mod tests {
     assert_eq!(raster_bytes(&ctx), raster0);
     assert_eq!(retained(&ctx), retained0);
     assert_eq!(ctx.content_version(), version0);
+  }
+
+  // Image draws never read fillStyle or the line dash, so they charge neither:
+  // only the source's pixels (drawImage) or picture payload (drawCanvas), plus
+  // the filter and shadow their paint does carry.
+  #[test]
+  fn image_draws_do_not_charge_fill_style_or_dash() {
+    const GRADIENT_BYTES: usize = 1000 * 32 + 256;
+    const DASH_BYTES: usize = 2 * 4;
+    const SHADOW_BYTES: usize = 1024;
+    const FILTER_BYTES: usize = "blur(1px)".len() * 8;
+    let with_unused_state = || {
+      let mut ctx = raster_ctx(16, 16);
+      let mut gradient = Gradient::create_linear_gradient(0.0, 0.0, 16.0, 0.0);
+      for i in 0..1000 {
+        gradient.add_color_stop(
+          i as f32 / 999.0,
+          crate::sk::Color4f::from_rgba8(255, 0, 0, 255),
+        );
+      }
+      assert_eq!(gradient.estimated_bytes(), GRADIENT_BYTES);
+      ctx.state.fill_style = Pattern::Gradient(gradient);
+      ctx.state.line_dash_list = vec![2.0, 3.0];
+      ctx
+    };
+    let with_shadow_and_filter = || {
+      let mut ctx = with_unused_state();
+      ctx.state.shadow_color = RGBA::new(0, 0, 255, 255);
+      ctx.state.shadow_offset_x = 2.0;
+      ctx.set_filter("blur(1px)").unwrap();
+      ctx
+    };
+    let mut src = raster_ctx(16, 16);
+    src.state.fill_style = Pattern::from_color("#ff0000").unwrap();
+    src.fill_rect(0.0, 0.0, 16.0, 16.0).unwrap();
+
+    // Sibling: a fill still charges the gradient, the dash, the shadow and the filter.
+    let mut fill = with_shadow_and_filter();
+    fill.fill_rect(0.0, 0.0, 16.0, 16.0).unwrap();
+    assert_eq!(
+      raster_bytes(&fill),
+      GRADIENT_BYTES + DASH_BYTES + SHADOW_BYTES + FILTER_BYTES
+    );
+
+    let mut dest = with_shadow_and_filter();
+    let bitmap = src.surface.get_bitmap();
+    dest
+      .draw_image(
+        &bitmap,
+        canvas_source_key(&src),
+        0.0,
+        0.0,
+        16.0,
+        16.0,
+        0.0,
+        0.0,
+        16.0,
+        16.0,
+      )
+      .unwrap();
+    assert_eq!(
+      raster_bytes(&dest),
+      16 * 16 * 4 + SHADOW_BYTES + FILTER_BYTES
+    );
+
+    let mut dest = with_unused_state();
+    let bitmap = src.surface.get_bitmap();
+    dest
+      .draw_image(
+        &bitmap,
+        canvas_source_key(&src),
+        0.0,
+        0.0,
+        16.0,
+        16.0,
+        0.0,
+        0.0,
+        16.0,
+        16.0,
+      )
+      .unwrap();
+    assert_eq!(raster_bytes(&dest), 16 * 16 * 4);
+
+    let mut dest = with_unused_state();
+    let picture = src.get_picture().expect("source picture");
+    dest
+      .draw_canvas(&picture, 0, 0.0, 0.0, 16.0, 16.0, 0.0, 0.0, 16.0, 16.0)
+      .unwrap();
+    assert_eq!(raster_bytes(&dest), 0);
   }
 
   // A drawCanvas destination is charged the source recorder's retained

@@ -6,6 +6,7 @@
 #include <include/core/SkAnnotation.h>
 #include <include/core/SkBBHFactory.h>
 #include <include/core/SkBitmap.h>
+#include <include/core/SkBlender.h>
 #include <include/core/SkBlurTypes.h>
 #include <include/core/SkCanvas.h>
 #include <include/core/SkColorFilter.h>
@@ -21,11 +22,16 @@
 #include <include/core/SkPathUtils.h>
 #include <include/core/SkPicture.h>
 #include <include/core/SkPictureRecorder.h>
+#include <include/core/SkPixelRef.h>
+#include <include/core/SkRRect.h>
+#include <include/core/SkRegion.h>
 #include <include/core/SkSamplingOptions.h>
 #include <include/core/SkStream.h>
 #include <include/core/SkString.h>
 #include <include/core/SkStrokeRec.h>
 #include <include/core/SkSurface.h>
+#include <include/core/SkTextBlob.h>
+#include <include/core/SkVertices.h>
 #include <include/docs/SkPDFDocument.h>
 #include <include/docs/SkPDFJpegHelpers.h>
 #include <include/effects/SkColorMatrix.h>
@@ -39,6 +45,7 @@
 #include <include/encode/SkWebpEncoder.h>
 #include <include/pathops/SkPathOps.h>
 #include <include/svg/SkSVGCanvas.h>
+#include <include/utils/SkNWayCanvas.h>
 #include <include/utils/SkParsePath.h>
 #include <modules/skottie/include/Skottie.h>
 #include <modules/skparagraph/include/FontCollection.h>
@@ -55,12 +62,14 @@
 #include <modules/svg/include/SkSVGSVG.h>
 #include <src/core/SkFontDescriptor.h>
 #include <src/ports/SkFontMgr_custom.h>
+#include <src/text/GlyphRun.h>
 #include <src/xml/SkXMLWriter.h>
 #include <algorithm>
 #include <cstring>
 #include <map>
 #include <set>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include <stdint.h>
@@ -701,6 +710,15 @@ struct skiac_point {
   float y;
 };
 
+// An unpremultiplied RGBA float color: sk::Color4f in src/sk.rs. The gradient
+// functions copy it into SkColor4f values; skia_c.cpp checks both layouts.
+struct skiac_color4f {
+  float r;
+  float g;
+  float b;
+  float a;
+};
+
 struct skiac_surface_data {
   uint8_t* ptr;
   size_t size;
@@ -780,6 +798,7 @@ void skiac_surface_create_svg(skiac_svg_surface* c_surface,
                               int alphaType,
                               uint32_t flag,
                               uint8_t cs);
+void skiac_svg_canvas_flush(skiac_canvas* c_canvas);
 skiac_surface* skiac_surface_create_rgba(int width, int height, uint8_t cs);
 void skiac_surface_ref(skiac_surface* c_surface);
 void skiac_surface_destroy(skiac_surface* c_surface);
@@ -1090,7 +1109,7 @@ void skiac_path_effect_destroy(skiac_path_effect* c_path_effect);
 
 // Shader
 skiac_shader* skiac_shader_make_linear_gradient(const skiac_point* points,
-                                                const uint32_t* colors,
+                                                const skiac_color4f* colors,
                                                 const float* positions,
                                                 int count,
                                                 int tile_mode,
@@ -1100,7 +1119,7 @@ skiac_shader* skiac_shader_make_radial_gradient(skiac_point start_point,
                                                 float start_radius,
                                                 skiac_point end_point,
                                                 float end_radius,
-                                                const uint32_t* colors,
+                                                const skiac_color4f* colors,
                                                 const float* positions,
                                                 int count,
                                                 int tile_mode,
@@ -1108,8 +1127,8 @@ skiac_shader* skiac_shader_make_radial_gradient(skiac_point start_point,
                                                 skiac_transform c_ts);
 skiac_shader* skiac_shader_make_conic_gradient(float cx,
                                                float cy,
-                                               float radius,
-                                               const uint32_t* colors,
+                                               float rotation,
+                                               const skiac_color4f* colors,
                                                const float* positions,
                                                int count,
                                                int tile_mode,
@@ -1244,6 +1263,11 @@ skiac_bitmap* skiac_bitmap_make_from_image_data(uint8_t* ptr,
                                                 size_t size,
                                                 int ct,
                                                 int at);
+skiac_bitmap* skiac_bitmap_make_premul_from_image_data(uint8_t* ptr,
+                                                       size_t width,
+                                                       size_t height,
+                                                       size_t row_bytes,
+                                                       uint8_t cs);
 void skiac_bitmap_set_color_space(skiac_bitmap* c_bitmap,
                                   const uint8_t* icc,
                                   size_t icc_len,

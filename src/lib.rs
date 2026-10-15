@@ -13,7 +13,6 @@ use std::{
   mem,
   rc::Rc,
   slice,
-  str::FromStr,
 };
 
 use napi::{
@@ -54,6 +53,7 @@ mod sk;
 mod state;
 pub mod svg;
 mod unpremul;
+mod webidl;
 
 const MIME_WEBP: &str = "image/webp";
 const MIME_PNG: &str = "image/png";
@@ -88,12 +88,6 @@ impl Default for ConvertToBlobOptions {
       quality: None,
     }
   }
-}
-
-#[napi(object)]
-pub struct CanvasRenderingContext2DAttributes {
-  pub alpha: Option<bool>,
-  pub color_space: Option<String>,
 }
 
 #[napi]
@@ -146,6 +140,7 @@ impl<'c> CanvasElement<'c> {
   ) -> Result<ClassInstance<'_, CanvasRenderingContext2D>> {
     let ctx = CanvasRenderingContext2D {
       context: Context::new(width, height, ColorSpace::default())?,
+      reported_settings: Default::default(),
     }
     .into_instance(env)?;
     ctx.as_object(env).define_properties(&[
@@ -221,8 +216,11 @@ impl<'c> CanvasElement<'c> {
     &mut self,
     this: This,
     context_type: String,
-    attrs: Option<CanvasRenderingContext2DAttributes>,
+    // Converted (and may throw) on every call, also once the context exists
+    // (HTMLCanvasElementModule::getContext).
+    attrs: webidl::CanvasContextOptions,
   ) -> Result<Unknown<'env>> {
+    let attrs = attrs.0;
     if context_type != "2d" {
       return Err(Error::new(
         Status::InvalidArg,
@@ -232,17 +230,13 @@ impl<'c> CanvasElement<'c> {
     if self.context_initialized {
       return this.get_named_property("ctx");
     }
-    let color_space = attrs
-      .as_ref()
-      .and_then(|a| a.color_space.as_deref())
-      .and_then(|cs| ColorSpace::from_str(cs).ok())
-      .unwrap_or_default();
+    self.ctx.reported_settings = attrs.reported;
     let context_2d = &mut self.ctx.context;
     // first acquisition fixes the backing surface's color space.
-    if color_space != context_2d.color_space {
-      *context_2d = Context::new(self.width, self.height, color_space)?;
+    if attrs.color_space != context_2d.color_space {
+      *context_2d = Context::new(self.width, self.height, attrs.color_space)?;
     }
-    if !attrs.as_ref().and_then(|a| a.alpha).unwrap_or(true) {
+    if !attrs.alpha {
       apply_opaque_base(context_2d, self.width, self.height)?;
     }
     self.context_initialized = true;
@@ -826,6 +820,7 @@ impl<'scope> SVGCanvas<'scope> {
     let ctx = CanvasRenderingContext2D::into_instance(
       CanvasRenderingContext2D {
         context: Context::new_svg(width, height, flag.into(), ColorSpace::default())?,
+        reported_settings: Default::default(),
       },
       env,
     )?;
@@ -864,8 +859,10 @@ impl<'scope> SVGCanvas<'scope> {
     &'env mut self,
     this: This<'env>,
     context_type: String,
-    attrs: Option<CanvasRenderingContext2DAttributes>,
+    // Converted on every call, as for Canvas.
+    attrs: webidl::SvgCanvasContextOptions,
   ) -> Result<Unknown<'env>> {
+    let attrs = attrs.0;
     if context_type != "2d" {
       return Err(Error::new(
         Status::InvalidArg,
@@ -875,15 +872,16 @@ impl<'scope> SVGCanvas<'scope> {
     if self.context_initialized {
       return this.get_named_property("ctx");
     }
+    self.ctx.reported_settings = attrs.reported;
     let context_2d = &mut self.ctx.context;
-    if !attrs.as_ref().and_then(|a| a.alpha).unwrap_or(true) {
+    // The first acquisition fixes the color space of the raster surface that
+    // reads see, as on a CanvasElement. The SVG output does not use it.
+    if attrs.color_space != context_2d.color_space {
+      *context_2d = Context::new_svg(self.width, self.height, self.flag.into(), attrs.color_space)?;
+    }
+    if !attrs.alpha {
       apply_opaque_base(context_2d, self.width, self.height)?;
     }
-    let color_space = attrs
-      .and_then(|a| a.color_space)
-      .and_then(|cs| ColorSpace::from_str(&cs).ok())
-      .unwrap_or_default();
-    context_2d.color_space = color_space;
     self.context_initialized = true;
     this.get_named_property("ctx")
   }
@@ -908,7 +906,7 @@ impl<'scope> SVGCanvas<'scope> {
       self.ctx.context.height,
       self.ctx.context.surface.alpha_type(),
       self.flag.into(),
-      ColorSpace::default(),
+      self.ctx.context.color_space,
     )
     .ok_or_else(|| Error::new(Status::GenericFailure, "Failed to create surface"))?;
     self.ctx.context.surface = surface;
@@ -925,12 +923,10 @@ impl<'scope> SVGCanvas<'scope> {
   }
 
   // Setting width or height resets the drawing but keeps the context's
-  // settings (alpha, color space). Like get_context, the color space is kept
-  // on the context only; the SVG surface is made as in the constructor.
+  // settings (alpha, color space).
   fn resized_context(&self, width: u32, height: u32) -> Result<Context> {
     let old = &self.ctx.context;
-    let mut context_2d = Context::new_svg(width, height, self.flag.into(), ColorSpace::default())?;
-    context_2d.color_space = old.color_space;
+    let mut context_2d = Context::new_svg(width, height, self.flag.into(), old.color_space)?;
     if !old.alpha {
       apply_opaque_base(&mut context_2d, width, height)?;
     }
@@ -1116,7 +1112,10 @@ impl PDFDocument {
 
     env.adjust_external_memory((width as i64) * (height as i64) * 4)?;
 
-    Ok(CanvasRenderingContext2D { context })
+    Ok(CanvasRenderingContext2D {
+      context,
+      reported_settings: Default::default(),
+    })
   }
 
   #[napi]
