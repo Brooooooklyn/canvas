@@ -9,7 +9,7 @@
 #include <string_view>
 #include <vector>
 
-#include "skia_c.hpp"
+#include "text.hpp"
 
 #if defined(SK_DEBUG) || !defined(SK_RELEASE)
 #error "skia-c must be built with SK_RELEASE like libskia (see build.rs)"
@@ -65,30 +65,6 @@ void EmHeight(const SkFont& font,
   *em_descent = 0;
 }
 
-// The CSS keyword of skiac_text_family::generic.
-const char* GenericFamilyName(int generic) {
-  switch (generic) {
-    case 1:
-      return "serif";
-    case 2:
-      return "sans-serif";
-    case 3:
-      return "cursive";
-    case 4:
-      return "fantasy";
-    case 5:
-      return "monospace";
-    case 6:
-      return "system-ui";
-    case 7:
-      return "-webkit-body";
-    case 8:
-      return "math";
-    default:
-      return "";
-  }
-}
-
 bool StartsWithLanguage(std::string_view lang, std::string_view language) {
   if (lang.size() < language.size()) {
     return false;
@@ -127,16 +103,7 @@ void MeasureOrDraw(skiac_font_collection* c_collection,
   auto text_direction = static_cast<TextDirection>(request.direction);
   const float letter_spacing = request.letter_spacing;
   TextStyle text_style;
-  std::vector<SkString> families_vec;
-  for (size_t i = 0; i < request.family_count; ++i) {
-    const auto& family = request.families[i];
-    if (family.generic) {
-      families_vec.emplace_back(GenericFamilyName(family.generic));
-    } else if (family.name_len > 0) {
-      families_vec.emplace_back(family.name, family.name_len);
-    }
-  }
-  text_style.setFontFamilies(families_vec);
+  text_style.setFontFamilies(ResolveFontFamilies(c_collection, request));
   text_style.setFontSize(request.size);
   text_style.setWordSpacing(request.word_spacing);
   text_style.setLetterSpacing(letter_spacing);
