@@ -74,6 +74,34 @@ run('createPattern(canvas)', () => ctx.createPattern(source))
   })
 })
 
+test('the raw js-binding ImageData class takes positional arguments', (t) => {
+  // index.js exports a native function that checks new and the real argument
+  // count; the class itself only sees padded arguments.
+  const out = runRaw(`
+run('new ImageData(1)', () => size(new ImageData(1)))
+run('new ImageData(1, 1, {}, undefined)', () => size(new ImageData(1, 1, {}, undefined)))
+run('new ImageData(data, 1).data', () => {
+  const a = new Uint8ClampedArray(4)
+  return new ImageData(a, 1).data === a
+})
+run('new ImageData(u16, 1, 1, {})', () => size(new ImageData(new Uint16Array(4), 1, 1, {})))
+`)
+  t.deepEqual(out, {
+    'new ImageData(1)': {
+      error: 'TypeError',
+      message: "Failed to construct 'ImageData': 2 arguments required, but only 1 present.",
+    },
+    // Without the argument count that index.js passes, a trailing undefined
+    // counts as a missing argument.
+    'new ImageData(1, 1, {}, undefined)': [1, 1, 4, 'srgb'],
+    'new ImageData(data, 1).data': true,
+    'new ImageData(u16, 1, 1, {})': {
+      error: 'TypeError',
+      message: "Failed to construct 'ImageData': Overload resolution failed.",
+    },
+  })
+})
+
 // Values for the argument after the positional ones: createImageData's 5th
 // and createPattern's 3rd.
 const EXTRA = [0, 2, 'x', {}]
