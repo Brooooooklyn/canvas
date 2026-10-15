@@ -147,7 +147,9 @@ static SkSurface* skiac_surface_create(int width,
   auto color_space = COLOR_SPACE_CAST;
   auto info = SkImageInfo::Make(width, height, kRGBA_8888_SkColorType,
                                 alphaType, color_space);
-  auto surface = SkSurfaces::Raster(info);
+  // Text drawn on the surface uses Chrome's text gamma and contrast.
+  const SkSurfaceProps props = CanvasSurfaceProps();
+  auto surface = SkSurfaces::Raster(info, &props);
   if (surface) {
     // The surface ref count will equal one after the pointer is returned.
     return surface.release();

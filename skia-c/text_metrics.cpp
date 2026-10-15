@@ -8,6 +8,7 @@
 #include <optional>
 
 #include "text.hpp"
+#include "text_raster.hpp"
 
 #if defined(SK_DEBUG) || !defined(SK_RELEASE)
 #error "skia-c must be built with SK_RELEASE like libskia (see build.rs)"
@@ -109,6 +110,9 @@ bool IsSystemTypeface(skiac_font_collection* c_collection,
     return true;
   }
   // The installed fonts the collection scanned itself (asset manager).
+  if (!c_collection->font_mgr) {
+    return false;
+  }
   SkString family;
   typeface->getFamilyName(&family);
   sk_sp<SkTypeface> installed = c_collection->font_mgr->matchFamilyStyle(
@@ -123,6 +127,38 @@ hb_face_t* CreateHbFace(SkTypeface* typeface) {
   });
 }
 
+void AscentDescentWithHacks(skiac_font_collection* c_collection,
+                            const SkFont& font,
+                            SkTypeface* typeface,
+                            float* ascent,
+                            float* descent) {
+  SkFontMetrics font_metrics;
+  font.getMetrics(&font_metrics);
+  // No VDMX (only for full or normal hinting with FreeType) and no descent
+  // borrow (only with subpixel positioning, off for Linux Chrome). FontCache
+  // asks for subpixel_ascent_descent for the canvas only for system fonts,
+  // never a web font.
+  const float raw_ascent = -font_metrics.fAscent;
+  const float raw_descent = font_metrics.fDescent;
+  if ((raw_ascent < 3 || raw_ascent + raw_descent < 2) &&
+      IsSystemTypeface(c_collection, typeface)) {
+    *ascent = raw_ascent;
+    *descent = raw_descent;
+  } else {
+    *ascent = SkScalarRoundToScalar(raw_ascent);
+    *descent = SkScalarRoundToScalar(raw_descent);
+  }
+#if defined(__APPLE__)
+  // Blink's macOS ascent hack for Times, Helvetica and Courier (+15%).
+  SkString family;
+  font.getTypeface()->getFamilyName(&family);
+  if (family.equals("Times") || family.equals("Helvetica") ||
+      family.equals("Courier")) {
+    *ascent += floorf((*ascent + *descent) * 0.15f + 0.5f);
+  }
+#endif
+}
+
 PrimaryFontMetrics MeasurePrimaryFont(skiac_font_collection* c_collection,
                                       SkTypeface* typeface,
                                       SkTypeface* base_typeface,
@@ -132,39 +168,14 @@ PrimaryFontMetrics MeasurePrimaryFont(skiac_font_collection* c_collection,
   if (!typeface || !(size > 0)) {
     return metrics;
   }
-  SkFont font(sk_ref_sp(typeface), size);
-  font.setEdging(SkFont::Edging::kAntiAlias);
-  font.setHinting(SkFontHinting::kSlight);
-  font.setSubpixel(true);
+  const SkFont font = MetricsFont(sk_ref_sp(typeface), size);
+  AscentDescentWithHacks(c_collection, font,
+                         base_typeface ? base_typeface : typeface,
+                         &metrics.ascent, &metrics.descent);
   SkFontMetrics font_metrics;
   font.getMetrics(&font_metrics);
   metrics.x_height = font_metrics.fXHeight;
   metrics.cap_height = font_metrics.fCapHeight;
-
-  // FontMetrics::AscentDescentWithHacks. No VDMX (only for full or normal
-  // hinting) and no descent borrow (only with subpixel positioning, off for
-  // Linux Chrome). FontCache asks for subpixel_ascent_descent for the canvas
-  // only for system fonts, never a web font.
-  const float raw_ascent = -font_metrics.fAscent;
-  const float raw_descent = font_metrics.fDescent;
-  if ((raw_ascent < 3 || raw_ascent + raw_descent < 2) &&
-      IsSystemTypeface(c_collection,
-                       base_typeface ? base_typeface : typeface)) {
-    metrics.ascent = raw_ascent;
-    metrics.descent = raw_descent;
-  } else {
-    metrics.ascent = SkScalarRoundToScalar(raw_ascent);
-    metrics.descent = SkScalarRoundToScalar(raw_descent);
-  }
-#if defined(__APPLE__)
-  // Blink's macOS ascent hack for Times, Helvetica and Courier (+15%).
-  SkString family;
-  typeface->getFamilyName(&family);
-  if (family.equals("Times") || family.equals("Helvetica") ||
-      family.equals("Courier")) {
-    metrics.ascent += floorf((metrics.ascent + metrics.descent) * 0.15f + 0.5f);
-  }
-#endif
 
   // SimpleFontData::ComputeNormalizedTypoAscentAndDescent.
   float typo_ascender;

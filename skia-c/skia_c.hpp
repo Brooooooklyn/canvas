@@ -130,6 +130,8 @@ sk_sp<SkTypeface> MakeCanvasTypefaceFromFile(const char* path);
 // Every font CoreText lists, by name.
 sk_sp<SkFontMgr> MakeCoreTextFontManager();
 #endif
+// text_raster.cpp: the text gamma and contrast of Chrome's canvas surfaces.
+SkSurfaceProps CanvasSurfaceProps();
 
 enum class CssBaseline {
   Top,
@@ -1017,6 +1019,9 @@ struct skiac_text_request {
   const char* lang;
   size_t lang_len;
   int text_rendering;
+  // The draw may get LCD glyph masks (macOS): an alpha:false raster canvas,
+  // source-over, no filter layer. text_raster.cpp checks the size and matrix.
+  bool lcd_text;
 };
 
 extern "C" {

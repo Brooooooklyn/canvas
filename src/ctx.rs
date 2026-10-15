@@ -3575,6 +3575,7 @@ impl Context {
       variant_caps: state.font_variant_caps,
       lang: state.lang.clone(),
       text_rendering: state.text_rendering,
+      lcd_text: false,
     }
   }
 
@@ -3608,7 +3609,15 @@ impl Context {
     let shadow_paint = self.shadow_paint(paint, source, DrawContent::Glyphs);
     // Zero on the image-filter route, where the filter's dx/dy already carry it.
     let (shadow_offset_x, shadow_offset_y) = self.canvas_shadow_offset(source, DrawContent::Glyphs);
-    let settings = self.text_settings();
+    let mut settings = self.text_settings();
+    // Chrome gives an opaque canvas LCD text (canvas_resource_provider.cc
+    // can_use_lcd_text); a layer or another blend mode drops it
+    // (SkCanvas.cpp internalSaveLayer, SkGlyphRunPainter.cpp
+    // drawForBitmapDevice). A shadow is a DrawLooper, not a layer.
+    settings.lcd_text = !self.alpha
+      && self.backend == Backend::Raster
+      && self.state.global_composite_operation == BlendMode::SourceOver
+      && !self.state.has_filter;
 
     if self.draws_nothing() {
       return Ok(());
