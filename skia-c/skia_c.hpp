@@ -1124,7 +1124,7 @@ void skiac_path_round_rect(skiac_path* c_path,
                            SkScalar y,
                            SkScalar width,
                            SkScalar height,
-                           SkScalar* radii,
+                           const SkScalar* radii,
                            bool clockwise);
 
 // PathEffect
