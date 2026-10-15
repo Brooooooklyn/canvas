@@ -172,7 +172,9 @@ void MeasureOrDraw(skiac_font_collection* c_collection,
   // attributes as one (OneLineShaper::iterateThroughFontStyles), so every
   // word gets a block whose half leading differs from its neighbours'. Half
   // leading only acts with a height override, which canvas text never sets.
-  const std::string_view text(request.text, request.text_len);
+  std::string prepared;
+  const std::string_view text = PrepareCanvasText(
+      std::string_view(request.text, request.text_len), &prepared);
   std::vector<std::pair<size_t, size_t>> words;
   if (CanShapeWordByWord(c_collection, faces, request)) {
     words = SplitWords(text);

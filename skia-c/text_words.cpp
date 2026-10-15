@@ -5,6 +5,7 @@
 
 #include <array>
 #include <iterator>
+#include <string>
 
 #include <src/core/SkUTF.h>
 #include "icu_api.h"
@@ -101,8 +102,18 @@ bool IsCommonOrInheritedScript(UChar32 c) {
          (script == USCRIPT_COMMON || script == USCRIPT_INHERITED);
 }
 
+// Character::TreatAsZeroWidthSpaceInComplexScriptLegacy without form feed
+// and carriage return (spaces on a canvas): PlainTextNode makes these
+// zero width spaces, which end words. They stay in the text here, where
+// HarfBuzz draws them with no width and the bidi controls keep their
+// effect (Blink runs BiDi on the original text).
+bool IsZeroWidthSpaceLike(UChar32 c) {
+  return c == 0xAD || c == kZeroWidthSpace || c == 0x200E || c == 0x200F ||
+         (c >= 0x202A && c <= 0x202E) || c == 0xFEFF || c == 0xFFFC;
+}
+
 bool IsWordDelimiter(UChar32 c) {
-  return c == kSpace || c == kTab || c == kZeroWidthSpace;
+  return c == kSpace || c == kTab || IsZeroWidthSpaceLike(c);
 }
 
 struct CodePoint {
@@ -168,6 +179,49 @@ bool TableHasSpace(hb_face_t* face, hb_tag_t table, hb_codepoint_t space) {
 }
 
 }  // namespace
+
+std::string_view PrepareCanvasText(std::string_view text,
+                                   std::string* storage) {
+  // U+2028 and U+2029 (E2 80 A8/A9) and U+FFFC (EF BF BC).
+  auto special = [&](size_t i) {
+    const auto c = static_cast<unsigned char>(text[i]);
+    if (c >= 0x09 && c <= 0x0D) {
+      return true;
+    }
+    if (i + 2 >= text.size()) {
+      return false;
+    }
+    const auto c1 = static_cast<unsigned char>(text[i + 1]);
+    const auto c2 = static_cast<unsigned char>(text[i + 2]);
+    return (c == 0xE2 && c1 == 0x80 && (c2 == 0xA8 || c2 == 0xA9)) ||
+           (c == 0xEF && c1 == 0xBF && c2 == 0xBC);
+  };
+  size_t i = 0;
+  while (i < text.size() && !special(i)) {
+    ++i;
+  }
+  if (i == text.size()) {
+    return text;
+  }
+  storage->assign(text.substr(0, i));
+  while (i < text.size()) {
+    if (!special(i)) {
+      storage->push_back(text[i++]);
+    } else if (static_cast<unsigned char>(text[i]) <= 0x0D) {
+      storage->push_back(' ');
+      ++i;
+    } else if (static_cast<unsigned char>(text[i]) == 0xE2) {
+      // HarfBuzzFace draws the line and paragraph separators with the space
+      // glyph; skparagraph would break the line at them.
+      storage->push_back(' ');
+      i += 3;
+    } else {
+      storage->append("\xE2\x80\x8B");  // U+200B
+      i += 3;
+    }
+  }
+  return *storage;
+}
 
 std::vector<std::pair<size_t, size_t>> SplitWords(std::string_view text) {
   std::vector<CodePoint> code_points;
