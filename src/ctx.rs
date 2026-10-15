@@ -33,8 +33,9 @@ use crate::{
   sk::{
     AccountedBitmap, AlphaType, Bitmap, BlendMode, ColorSpace, DecodedCopy, FillType,
     FilterQuality, FontVariantCaps, ImageFilter, ImagePattern, LineMetrics, MaskFilter, Matrix,
-    Paint, PaintStyle, Path as SkPath, PathEffect, PathOp, Shader, SkEncodedImageFormat, SkImage,
-    SkWMemoryStream, SkiaDataRef, StrokeCap, StrokeJoin, Surface, Transform,
+    Paint, PaintStyle, Path as SkPath, PathEffect, PathOp, ReadPixelsError, Shader,
+    SkEncodedImageFormat, SkImage, SkWMemoryStream, SkiaDataRef, StrokeCap, StrokeJoin, Surface,
+    Transform,
   },
   state::Context2dRenderingState,
   webidl::{self, Positional, ReportedSettings},
@@ -2122,10 +2123,10 @@ impl Context {
     &mut self,
     x: f32,
     y: f32,
-    w: f32,
-    h: f32,
+    w: u32,
+    h: u32,
     color_type: ColorSpace,
-  ) -> Option<Vec<u8>> {
+  ) -> result::Result<Vec<u8>, ReadPixelsError> {
     // Flush the deferred recording before reading pixels, as Blink's
     // getImageData runs FinalizeFrame -> FlushCanvas ->
     // ReleaseMainRecording (base_rendering_context_2d.cc). Without it the
@@ -2138,7 +2139,7 @@ impl Context {
 
     self
       .surface
-      .read_pixels(x as i32, y as i32, w as u32, h as u32, color_type)
+      .read_pixels(x as i32, y as i32, w, h, color_type)
   }
 
   pub fn set_line_dash(&mut self, line_dash_list: Vec<f32>) {
@@ -3513,7 +3514,7 @@ pub enum CreateImageDataArgs<'a> {
   Size {
     width: u32,
     height: u32,
-    color_space: Option<ColorSpace>,
+    settings: webidl::ImageDataSettings,
   },
   /// Non-standard createImageData(Uint8ClampedArray data, sw, sh?, settings?).
   Data {
@@ -3564,16 +3565,28 @@ impl FromNapiValue for CreateImageDataArgs<'static> {
       Either3::C(width) => {
         let width = long(width.raw())?;
         let height = long(args.get(1)?)?;
-        let color_space = settings(args.get(2)?)?.color_space;
+        let settings = settings(args.get(2)?)?;
         Ok(Self::Size {
           width,
           height,
-          color_space,
+          settings,
         })
       }
       Either3::B(data) => {
         let input_data_length = data.len();
         let width = long(args.get(1)?)?;
+        if width == 0 {
+          // The width check of createImageData(sw, sh); the height below
+          // divides by the width.
+          return Err(webidl::dom_exception(
+            env,
+            "IndexSizeError",
+            &format!(
+              "{}The source width is zero or not a number.",
+              webidl::CREATE_IMAGE_DATA
+            ),
+          ));
+        }
         let height = args.get(2)?;
         let height = if webidl::type_of(env, height)? == ValueType::Number {
           unsafe { i32::from_napi_value(env, height)? }.unsigned_abs()
@@ -3590,7 +3603,7 @@ impl FromNapiValue for CreateImageDataArgs<'static> {
             "Index or size is negative or greater than the allowed amount".to_owned(),
           ));
         }
-        let color_space = settings(args.get(3)?)?.color_space;
+        let color_space = settings(args.get(3)?)?.color_space(env, webidl::CREATE_IMAGE_DATA)?;
         Ok(Self::Data {
           data,
           width,
@@ -4121,25 +4134,21 @@ impl CanvasRenderingContext2D {
       CreateImageDataArgs::Size {
         width,
         height,
-        color_space,
+        settings,
       } => {
+        let prefix = webidl::CREATE_IMAGE_DATA;
+        validate_size(
+          env.raw(),
+          prefix,
+          width,
+          Some(height),
+          SizeErrors::Context2D,
+        )?;
         // Spec: defaultColorSpace is this context's color space.
-        let color_space = color_space.unwrap_or(self.context.color_space);
-        let arraybuffer_length = (width * height * 4) as usize;
-        let data_buffer = vec![0; arraybuffer_length];
-        let data_object = Uint8ClampedSlice::from_data(env, data_buffer)?;
-        let mut instance = ImageData {
-          width: width as usize,
-          height: height as usize,
-          color_space,
-          data_ref: Some(create_weak_ref(env, data_object.raw())?),
-        }
-        .into_instance(env)?;
-        instance.define_properties(&[Property::new()
-          .with_utf8_name("data")?
-          .with_value(&data_object)
-          .with_property_attributes(PropertyAttributes::Enumerable)])?;
-        Ok(instance)
+        let color_space = settings
+          .color_space(env.raw(), prefix)?
+          .unwrap_or(self.context.color_space);
+        ImageData::new_zeroed(env, width as usize, height as usize, color_space)
       }
       CreateImageDataArgs::Data {
         data: data_object,
@@ -4908,27 +4917,48 @@ impl CanvasRenderingContext2D {
       && !height.is_nan()
       && !height.is_infinite()
     {
+      let raw = env.raw();
+      let prefix = webidl::GET_IMAGE_DATA;
+      // getImageDataInternal (base_rendering_context_2d.cc:353-410) on the
+      // truncated `long` values: the product must fit in an int, and neither
+      // side may be 0.
+      let (sw, sh) = (width.trunc() as i64, height.trunc() as i64);
+      if i32::try_from(sw as i128 * sh as i128).is_err() {
+        return Err(out_of_memory(raw, prefix));
+      }
+      if sw == 0 || sh == 0 {
+        return Err(webidl::dom_exception(
+          raw,
+          "IndexSizeError",
+          &format!(
+            "{prefix}The source {} is 0.",
+            if sw == 0 { "width" } else { "height" }
+          ),
+        ));
+      }
+      // saturated_cast<int>(SafeUnsignedAbs(..)), then ValidateAndCreate.
+      let sw = sw.unsigned_abs().min(i32::MAX as u64) as u32;
+      let sh = sh.unsigned_abs().min(i32::MAX as u64) as u32;
+      let len = validate_size(raw, prefix, sw, Some(sh), SizeErrors::Context2D)?;
       // Spec: defaultColorSpace is this context's color space.
-      let color_space = settings.color_space.unwrap_or(self.context.color_space);
+      let color_space = settings
+        .color_space(raw, prefix)?
+        .unwrap_or(self.context.color_space);
+      if len > MAX_DATA_BYTES {
+        return Err(out_of_memory(raw, prefix));
+      }
       // Per spec: if sw/sh is negative, flip the origin and use abs value
-      let (sx, sw) = if width < 0.0 {
-        (x + width, -width)
-      } else {
-        (x, width)
-      };
-      let (sy, sh) = if height < 0.0 {
-        (y + height, -height)
-      } else {
-        (y, height)
-      };
+      let sx = if width < 0.0 { x + width } else { x };
+      let sy = if height < 0.0 { y + height } else { y };
       let image_data = self
         .context
-        .get_image_data(sx as f32, sy as f32, sw as f32, sh as f32, color_space)
-        .ok_or_else(|| {
-          Error::new(
+        .get_image_data(sx as f32, sy as f32, sw, sh, color_space)
+        .map_err(|e| match e {
+          ReadPixelsError::OutOfMemory => out_of_memory(raw, prefix),
+          ReadPixelsError::Failed => Error::new(
             Status::GenericFailure,
             "Read pixels from canvas failed".to_string(),
-          )
+          ),
         })?;
       let data_object = Uint8ClampedSlice::from_data(env, image_data)?;
       let mut instance = ImageData {
@@ -5589,9 +5619,19 @@ mod tests {
   /// Read a single surface pixel through the deferred flush path.
   fn pixel_at(ctx: &mut Context, x: f32, y: f32) -> [u8; 4] {
     let data = ctx
-      .get_image_data(x, y, 1.0, 1.0, ColorSpace::default())
+      .get_image_data(x, y, 1, 1, ColorSpace::default())
       .expect("pixels");
     [data[0], data[1], data[2], data[3]]
+  }
+
+  // ImageData buffers: a failed allocation is None (a RangeError in JS), not
+  // a process abort.
+  #[test]
+  fn zeroed_pixel_buffers_report_allocation_failure() {
+    assert_eq!(crate::sk::try_zeroed_bytes(8), Some(vec![0; 8]));
+    assert_eq!(crate::sk::try_zeroed_bytes(0), Some(Vec::new()));
+    assert_eq!(crate::sk::try_zeroed_bytes(isize::MAX as usize), None);
+    assert_eq!(crate::sk::try_zeroed_bytes(usize::MAX), None);
   }
 
   // The deferred recording must consolidate once charged bytes pass the cap:
