@@ -1306,11 +1306,14 @@ skiac_bitmap* skiac_bitmap_make_premul_from_image_data(uint8_t* ptr,
                                                        size_t height,
                                                        size_t row_bytes,
                                                        uint8_t cs);
-void skiac_bitmap_set_color_space(skiac_bitmap* c_bitmap,
+bool skiac_bitmap_set_color_space(skiac_bitmap* c_bitmap,
                                   const uint8_t* icc,
                                   size_t icc_len,
                                   uint16_t primaries,
-                                  uint16_t transfer);
+                                  uint16_t transfer,
+                                  uint16_t matrix,
+                                  bool is_mono);
+bool skiac_bitmap_orient(skiac_bitmap_info* bitmap_info, int origin);
 size_t skiac_bitmap_get_width(skiac_bitmap* c_bitmap);
 size_t skiac_bitmap_get_height(skiac_bitmap* c_bitmap);
 void skiac_bitmap_set_immutable(skiac_bitmap* c_bitmap);
