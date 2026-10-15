@@ -480,6 +480,13 @@ impl ObjectFinalize for Image {
   }
 }
 
+/// The value an Image `width` or `height` attribute takes (already
+/// ToUint32): HTML's reflection of an `unsigned long` gives the default 0
+/// for a value above 2147483647.
+fn image_dimension(value: u32) -> u32 {
+  if value > i32::MAX as u32 { 0 } else { value }
+}
+
 #[napi]
 impl Image {
   #[napi(constructor)]
@@ -516,7 +523,8 @@ impl Image {
   }
 
   #[napi(setter)]
-  pub fn set_width(&mut self, width: f64) {
+  pub fn set_width(&mut self, width: webidl::UnsignedLong<webidl::ImageSetWidth>) {
+    let width = f64::from(image_dimension(width.0));
     if (width - self.width).abs() > f64::EPSILON {
       self.width = width;
       self.need_regenerate_bitmap = true;
@@ -540,7 +548,8 @@ impl Image {
   }
 
   #[napi(setter)]
-  pub fn set_height(&mut self, height: f64) {
+  pub fn set_height(&mut self, height: webidl::UnsignedLong<webidl::ImageSetHeight>) {
+    let height = f64::from(image_dimension(height.0));
     if (height - self.height).abs() > f64::EPSILON {
       self.height = height;
       self.need_regenerate_bitmap = true;
@@ -574,8 +583,8 @@ impl Image {
   }
 
   #[napi(setter)]
-  pub fn set_alt(&mut self, alt: String) {
-    self.alt = alt;
+  pub fn set_alt(&mut self, alt: webidl::DomString<webidl::ImageSetAlt>) {
+    self.alt = alt.0;
   }
 
   #[napi(getter)]
