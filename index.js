@@ -20,6 +20,7 @@ const {
   GifEncoder,
   GifDisposal,
   LottieAnimation,
+  _argumentCounts,
 } = require('./js-binding')
 
 const { DOMPoint, DOMMatrix, DOMRect } = require('./geometry')
@@ -99,6 +100,39 @@ CanvasRenderingContext2D.prototype.getTransform = function getTransform() {
   }
   const { a, b, c, d, e, f } = transform
   return new DOMMatrix([a, b, c, d, e, f])
+}
+
+// The argument-count markers for 0 to 4 arguments. napi pads missing
+// arguments with undefined, so the createImageData and createPattern wrappers
+// pass the real count after the positional arguments, as one of these
+// markers: the native methods read a count only from a marker, and any other
+// value there (from a raw js-binding call) is an extra argument.
+const ARGUMENT_COUNTS = _argumentCounts()
+
+// createImageData(): WebIDL picks the overload from the argument count, and an
+// explicit undefined counts: createImageData(imagedata, undefined) is the
+// (sw, sh) form.
+const _createImageData = CanvasRenderingContext2D.prototype.createImageData
+
+CanvasRenderingContext2D.prototype.createImageData = function createImageData() {
+  return _createImageData.call(
+    this,
+    arguments[0],
+    arguments[1],
+    arguments[2],
+    arguments[3],
+    ARGUMENT_COUNTS[Math.min(arguments.length, 4)],
+  )
+}
+
+// createPattern(image, repetitionType): as in Chrome, both arguments are
+// required, and the image is converted before the repetition, a
+// [LegacyNullToEmptyString] DOMString (canvas_2d_recorder_context.idl), so
+// null is '' and undefined is 'undefined'.
+const _createPattern = CanvasRenderingContext2D.prototype.createPattern
+
+CanvasRenderingContext2D.prototype.createPattern = function createPattern(image, repetition) {
+  return _createPattern.call(this, image, repetition, ARGUMENT_COUNTS[Math.min(arguments.length, 4)])
 }
 
 // Workaround for webpack bundling issue with drawImage

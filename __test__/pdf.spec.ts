@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 
 import ava, { TestFn } from 'ava'
 
-import { PDFDocument, GlobalFonts, createCanvas } from '../index'
+import { PDFDocument, GlobalFonts, createCanvas, loadImage, type SKRSContext2D } from '../index'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -251,6 +251,63 @@ test('should handle empty PDF document', (t) => {
 
   t.true(pdfBuffer instanceof Buffer)
   t.true(pdfBuffer.length == 0)
+})
+
+// The spec has no 8-bit step for globalAlpha. The raster backend rounds it to
+// k/255 for drawImage and image patterns, as Chrome's CPU canvas does
+// (index.spec.ts "globalAlpha is rounded to 8 bits ..."). A PDF has no raster
+// sampling to match, so those paints keep the float, like solid and gradient
+// fills (/ca .5, not .502).
+test('drawImage and image patterns keep the exact globalAlpha on PDF', async (t) => {
+  const source = createCanvas(4, 4)
+  const sourceContext = source.getContext('2d')
+  sourceContext.fillStyle = '#ff0000'
+  sourceContext.fillRect(0, 0, 4, 4)
+  const image = await loadImage(source.toBuffer('image/png'))
+  const draws: [string, (ctx: SKRSContext2D) => void][] = [
+    ['color', (ctx) => ctx.fillRect(0, 0, 10, 10)],
+    [
+      'gradient',
+      (ctx) => {
+        const gradient = ctx.createLinearGradient(0, 0, 10, 0)
+        gradient.addColorStop(0, '#ff0000')
+        gradient.addColorStop(1, '#0000ff')
+        ctx.fillStyle = gradient
+        ctx.fillRect(0, 0, 10, 10)
+      },
+    ],
+    [
+      'fill pattern',
+      (ctx) => {
+        ctx.fillStyle = ctx.createPattern(source, 'repeat')
+        ctx.fillRect(0, 0, 10, 10)
+      },
+    ],
+    [
+      'stroke pattern',
+      (ctx) => {
+        ctx.strokeStyle = ctx.createPattern(source, 'repeat')
+        ctx.lineWidth = 4
+        ctx.strokeRect(2, 2, 10, 10)
+      },
+    ],
+    ['drawImage canvas', (ctx) => ctx.drawImage(source, 0, 0)],
+    ['drawImage image', (ctx) => ctx.drawImage(image, 0, 0)],
+  ]
+  for (const alpha of [0.5, 0.3, 0.501]) {
+    for (const [name, draw] of draws) {
+      const doc = new PDFDocument({ compressionLevel: 0 })
+      const ctx = doc.beginPage(20, 20)
+      ctx.globalAlpha = alpha
+      draw(ctx)
+      doc.endPage()
+      const pdf = doc.close().toString('latin1')
+      // An image pattern also writes the /ca 1 of its tile.
+      const opacities = new Set([...pdf.matchAll(/\/(?:ca|CA) ([0-9.]+)/g)].map((match) => Number(match[1])))
+      opacities.delete(1)
+      t.deepEqual([...opacities], [alpha], `${name} ${alpha}`)
+    }
+  }
 })
 
 function countPdfImages(pdf: Buffer): number {

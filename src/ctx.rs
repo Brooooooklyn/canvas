@@ -6,8 +6,7 @@ use std::str::FromStr;
 use std::sync::LazyLock;
 
 use cssparser::Parser;
-use cssparser_color::{Color as CSSColor, hsl_to_rgb};
-use libavif::AvifData;
+use cssparser_color::Color as CSSColor;
 use napi::{JsString, bindgen_prelude::*};
 use regex::Regex;
 use rgb::RGBA;
@@ -29,13 +28,15 @@ use crate::{
   gradient::{CanvasGradient, Gradient},
   image::*,
   path::Path,
-  pattern::{CanvasPattern, Pattern},
+  pattern::{CanvasPattern, Pattern, hsl_to_rgba8, srgb_channel_to_u8},
   sk::{
     AlphaType, Bitmap, BlendMode, ColorSpace, FillType, FilterQuality, FontVariantCaps,
     ImageFilter, LineMetrics, MaskFilter, Matrix, Paint, PaintStyle, Path as SkPath, PathEffect,
-    PathOp, SkEncodedImageFormat, SkImage, SkWMemoryStream, SkiaDataRef, Surface, Transform,
+    PathOp, SkEncodedImageFormat, SkImage, SkWMemoryStream, SkiaDataRef, StrokeCap, StrokeJoin,
+    Surface, Transform,
   },
   state::Context2dRenderingState,
+  webidl::{self, Positional, ReportedSettings},
 };
 
 static CSS_SIZE_REGEXP: LazyLock<Regex> =
@@ -50,6 +51,16 @@ impl From<SkError> for Error {
 pub(crate) const MAX_TEXT_WIDTH: f32 = 100_000.0;
 pub(crate) const FILL_STYLE_HIDDEN_NAME: &str = "_fillStyle";
 pub(crate) const STROKE_STYLE_HIDDEN_NAME: &str = "_strokeStyle";
+
+/// The fillStyle/strokeStyle getters read these hidden JS properties, so every
+/// reset to the default state (ctx.reset(), and a width/height change, which
+/// Chrome runs through the same Reset: html_canvas_element.cc:870-872) must
+/// reset them too.
+pub(crate) fn reset_style_getters(ctx: &mut Object) -> Result<()> {
+  ctx.set_named_property(FILL_STYLE_HIDDEN_NAME, "#000000")?;
+  ctx.set_named_property(STROKE_STYLE_HIDDEN_NAME, "#000000")?;
+  Ok(())
+}
 
 /// Where the draw casting the shadow gets its colour from. `shadow_paint` is
 /// handed a finished `Paint`, which exposes no "has a shader" query across the
@@ -131,6 +142,54 @@ struct ShadowPass<'a> {
   blur: f32,
 }
 
+/// The user-space rect a draw hands Blink's Draw as `bounds`. Only the
+/// alpha:false alpha reset reads it, and only for a draw Blink does not take
+/// through CompositedDraw: Blink limits ResetAlphaIfNeeded to it there
+/// (canvas_2d_recorder_context.h:729-752, 837, 853), and resets the whole clip
+/// after a composited one (h:826-829). `blink_composites` makes that call.
+#[derive(Clone, Copy)]
+pub(crate) struct DrawBounds {
+  left: f32,
+  top: f32,
+  right: f32,
+  bottom: f32,
+}
+
+impl DrawBounds {
+  /// Blink AdjustRectForCanvas: a negative width or height flips the rect.
+  fn rect(x: f32, y: f32, width: f32, height: f32) -> Self {
+    DrawBounds {
+      left: x.min(x + width),
+      top: y.min(y + height),
+      right: x.max(x + width),
+      bottom: y.max(y + height),
+    }
+  }
+
+  /// A path's bounds (Blink: CanvasPath::BoundingRect, for us SkPath's).
+  /// None when they are not finite: then no bounds are passed.
+  fn path(path: &SkPath) -> Option<Self> {
+    let (left, top, right, bottom) = path.get_bounds();
+    (left.is_finite() && top.is_finite() && right.is_finite() && bottom.is_finite()).then_some(
+      DrawBounds {
+        left,
+        top,
+        right,
+        bottom,
+      },
+    )
+  }
+
+  fn outset(self, delta: f32) -> Self {
+    DrawBounds {
+      left: self.left - delta,
+      top: self.top - delta,
+      right: self.right + delta,
+      bottom: self.bottom + delta,
+    }
+  }
+}
+
 pub struct Context {
   pub(crate) surface: Surface,
   /// Unique identity for retained-raster dedup keys; survives the backing
@@ -188,9 +247,27 @@ impl Context {
   }
 
   pub fn new(width: u32, height: u32, color_space: ColorSpace) -> Result<Self> {
-    let surface = Surface::new_rgba_premultiplied(width, height, color_space)
-      .ok_or_else(|| Error::from_reason("Create skia surface failed".to_owned()))?;
-    Ok(Context {
+    Self::new_with_alpha(width, height, color_space, true)
+  }
+
+  /// A raster context. alpha:false gets a kOpaque surface cleared to opaque
+  /// black, as Blink's resource provider does at creation
+  /// (canvas_resource_provider.cc ClearAtCreation, kBlack for kOpaque).
+  /// Chrome allocates it lazily and reads an untouched canvas as zeros; the
+  /// spec, and Chrome's own display, say black from the start.
+  pub fn new_with_alpha(
+    width: u32,
+    height: u32,
+    color_space: ColorSpace,
+    alpha: bool,
+  ) -> Result<Self> {
+    let surface = if alpha {
+      Surface::new_rgba_premultiplied(width, height, color_space)
+    } else {
+      Surface::new_rgba_opaque(width, height, color_space)
+    }
+    .ok_or_else(|| Error::from_reason("Create skia surface failed".to_owned()))?;
+    let mut context = Context {
       surface,
       resource_id: next_resource_id(),
       page_recorder: Some(RefCell::new(PageRecorder::new(width as f32, height as f32))), // Enable deferred rendering
@@ -204,7 +281,34 @@ impl Context {
       color_space,
       stream: None,
       direct_content_version: Cell::new(0),
-    })
+    };
+    if !alpha {
+      context.set_opaque();
+    }
+    Ok(context)
+  }
+
+  /// Make a fresh context alpha:false and paint its opaque black base. The
+  /// base is a direct surface write: with_surface_canvas bumps the content
+  /// version and, on raster, marks the recorded layers stale so drawCanvas
+  /// rebases on the surface. The canvas is clean, so no paint state (or
+  /// anything set through the internal `canvas.ctx`) reaches the base.
+  pub(crate) fn set_opaque(&mut self) {
+    self.alpha = false;
+    if let Some(ref recorder) = self.page_recorder {
+      recorder.borrow_mut().set_opaque();
+    }
+    self.with_surface_canvas(|canvas| canvas.fill(0, 0, 0, 255));
+  }
+
+  /// Clear the surface to the context's base: transparent, or opaque black
+  /// for alpha:false (Blink GetClearFlags).
+  fn clear_surface_to_base(&mut self) {
+    if self.alpha {
+      self.surface.canvas.clear();
+    } else {
+      self.surface.canvas.fill(0, 0, 0, 255);
+    }
   }
 
   // Create a Context from an existing Surface (e.g., from PDFDocument)
@@ -226,8 +330,14 @@ impl Context {
     }
   }
 
-  /// Flush deferred rendering to surface (if deferred mode is enabled)
+  /// Draw the pending recording into the surface: the PageRecorder of a
+  /// raster canvas, or what an SVGCanvas recorded beside its SVG output. Every
+  /// read of the surface pixels comes after this.
   pub fn flush(&mut self) {
+    if self.backend == Backend::Svg {
+      self.surface.flush_svg();
+      return;
+    }
     if let Some(ref recorder) = self.page_recorder {
       let mut rec = recorder.borrow_mut();
       rec.playback_to(&mut self.surface.canvas);
@@ -388,6 +498,16 @@ impl Context {
       Pattern::Gradient(gradient) => self.account_raster_bytes(gradient.estimated_bytes()),
       Pattern::Color(..) => {}
     };
+    // Fresh per draw (the dash list compiles into a fresh SkPathEffect):
+    // per-draw charge in the propagated tally, no dedup.
+    self.account_raster_bytes(self.state.line_dash_list.len() * 4);
+    self.account_image_paint_resources();
+  }
+
+  /// The part of `account_paint_resources` an image draw retains. Its paint
+  /// (`image_paint`) carries no fillStyle and no dash, only the `ctx.filter`
+  /// chain and the shadow.
+  fn account_image_paint_resources(&self) {
     // The ctx.filter chain is ONE refcounted ImageFilter stored on the state;
     // every recorded paint carries a shared ref to the same DAG, so charge it
     // once per window under its minted id. Generation 0: the chain object is
@@ -410,10 +530,9 @@ impl Context {
     } else {
       0
     };
-    // Fresh per draw (shadow_paint builds a fresh DropShadowOnly graph, the
-    // dash list compiles into a fresh SkPathEffect): per-draw charge in the
-    // propagated tally, no dedup.
-    self.account_raster_bytes(shadow_bytes + self.state.line_dash_list.len() * 4);
+    // Fresh per draw (shadow_paint builds a fresh DropShadowOnly graph):
+    // per-draw charge in the propagated tally, no dedup.
+    self.account_raster_bytes(shadow_bytes);
   }
 
   /// Execute a canvas state operation on the appropriate canvas (recording or direct)
@@ -465,12 +584,18 @@ impl Context {
     F: Fn(&mut Canvas, &Paint) -> result::Result<(), SkError>,
   {
     // `DrawContent` only qualifies a filter, and there is none here, so it is
-    // inert.
+    // inert. Source-over whatever globalCompositeOperation is: Blink's
+    // clearRect draws its rect straight with GetClearFlags and never reads the
+    // composite op (canvas_2d_recorder_context.cc:1928-1985).
     self.render_passes(
+      BlendMode::SourceOver,
       paint,
       DrawContent::Geometry,
       None,
+      false,
       None,
+      None,
+      false,
       |_, _, _| Ok(()),
       f,
     )
@@ -482,11 +607,17 @@ impl Context {
   /// hoisted onto each pass's layer rather than left on the content paint, as
   /// Blink does (canvas_2d_recorder_context.h:956-957), except for the one
   /// vector-backend exception `render_passes` takes.
+  ///
+  /// `pattern_style` is Blink's kNonOpaqueImage: a fill or stroke whose style
+  /// is a CanvasPattern. Text and images never pass it
+  /// (base_rendering_context_2d.cc:1113, canvas_2d_recorder_context.cc:2342).
   fn with_shadowed_render_canvas<S, F>(
     &mut self,
     paint: &Paint,
     content: DrawContent,
     shadow: Option<&ShadowDraw>,
+    bounds: Option<DrawBounds>,
+    pattern_style: bool,
     shadow_f: S,
     f: F,
   ) -> result::Result<(), SkError>
@@ -495,19 +626,37 @@ impl Context {
     F: Fn(&mut Canvas, &Paint) -> result::Result<(), SkError>,
   {
     let content_filter = self.state.filter.clone();
-    self.render_passes(paint, content, content_filter, shadow, shadow_f, f)
+    self.render_passes(
+      self.state.global_composite_operation,
+      paint,
+      content,
+      content_filter,
+      self.state.has_filter,
+      shadow,
+      bounds,
+      pattern_style,
+      shadow_f,
+      f,
+    )
   }
 
   /// Shared body of the two above. The shadow closure is handed the user->device
   /// matrix as its third argument because it cannot read one off the canvas it
   /// is given -- that canvas may be a recorder at identity, or sit inside a
   /// filter layer. Pass it straight to `apply_shadow_offset_matrix_to_canvas`.
+  ///
+  /// `has_filter` is Blink's StateHasFilter for the draw: true also when the
+  /// assigned filter built no `content_filter`.
   fn render_passes<S, F>(
     &mut self,
+    blend_mode: BlendMode,
     paint: &Paint,
     content: DrawContent,
     content_filter: Option<ImageFilter>,
+    has_filter: bool,
     shadow: Option<&ShadowDraw>,
+    bounds: Option<DrawBounds>,
+    pattern_style: bool,
     shadow_f: S,
     f: F,
   ) -> result::Result<(), SkError>
@@ -515,7 +664,20 @@ impl Context {
     S: Fn(&mut Canvas, &Paint, &Matrix) -> result::Result<(), SkError>,
     F: Fn(&mut Canvas, &Paint) -> result::Result<(), SkError>,
   {
-    let blend_mode = self.state.global_composite_operation;
+    // Blink's Draw returns before drawing anything when the CTM is singular
+    // (canvas_2d_recorder_context.h:866-868), and so does clearRect (.cc:1940):
+    // copy must not clear the clip for a draw that has no device space.
+    if !self.transform_is_invertible() {
+      return Ok(());
+    }
+    // The alpha:false reset covers the whole clip after a draw Blink
+    // composites, whatever route we take for it.
+    let bounds = if Self::blink_composites(blend_mode, has_filter, shadow.is_some(), pattern_style)
+    {
+      None
+    } else {
+      bounds
+    };
     let width = self.width as f32;
     let height = self.height as f32;
 
@@ -574,6 +736,9 @@ impl Context {
           paint,
           content_filter.as_ref(),
           blend_mode,
+          self.backend,
+          self.alpha,
+          bounds,
           width,
           height,
           shadow,
@@ -603,6 +768,9 @@ impl Context {
       paint,
       content_filter.as_ref(),
       blend_mode,
+      self.backend,
+      self.alpha,
+      bounds,
       width,
       height,
       shadow,
@@ -610,8 +778,119 @@ impl Context {
       shadow_f,
       f,
     );
+    // No alpha reset on SVG (see render_canvas); PDF is never alpha:false.
     self.note_direct_mutation();
     result
+  }
+
+  /// Blink ResetAlphaIfNeeded (canvas_2d_recorder_context.h:699-709,
+  /// 729-752): on an alpha:false canvas a composite mode that can lower the
+  /// destination alpha is followed by an opaque black kDstOver fill, which
+  /// puts alpha back to 255 (the result is composited over black). It is a
+  /// plain rect with no anti-aliasing over the clip, limited to the draw
+  /// `bounds` where the caller passes them; an anti-aliased edge outside
+  /// them keeps its lowered alpha, as in Chrome.
+  fn reset_alpha_if_needed(
+    canvas: &mut Canvas,
+    blend_mode: BlendMode,
+    bounds: Option<DrawBounds>,
+    width: f32,
+    height: f32,
+  ) {
+    if !matches!(
+      blend_mode,
+      BlendMode::Source
+        | BlendMode::SourceIn
+        | BlendMode::DestinationIn
+        | BlendMode::SourceOut
+        | BlendMode::DestinationOut
+        | BlendMode::SourceATop
+        | BlendMode::DestinationATop
+        | BlendMode::Xor
+        | BlendMode::Modulate
+    ) {
+      return;
+    }
+    let mut paint = Paint::new();
+    paint.set_style(PaintStyle::Fill);
+    paint.set_color(0, 0, 0, 255);
+    paint.set_blend_mode(BlendMode::DestinationOver);
+    match bounds {
+      // Drawn under the CTM, as Blink draws the local rect.
+      Some(b) => canvas.draw_rect(b.left, b.top, b.right - b.left, b.bottom - b.top, &paint),
+      // The whole clip (Blink: its local clip bounds).
+      None => {
+        canvas.save();
+        canvas.reset_transform();
+        canvas.draw_rect(0.0, 0.0, width, height, &paint);
+        canvas.restore();
+      }
+    }
+  }
+
+  /// Whether a draw in the current composite mode is followed by the
+  /// alpha:false alpha reset. Only the raster backend does it: SkSVGDevice
+  /// ignores kDstOver and would paint the black rect over the drawing.
+  fn resets_alpha(&self) -> bool {
+    !self.alpha
+      && self.backend == Backend::Raster
+      && matches!(
+        self.state.global_composite_operation,
+        BlendMode::Source
+          | BlendMode::SourceIn
+          | BlendMode::DestinationIn
+          | BlendMode::SourceOut
+          | BlendMode::DestinationOut
+          | BlendMode::SourceATop
+          | BlendMode::DestinationATop
+          | BlendMode::Xor
+          | BlendMode::Modulate
+      )
+  }
+
+  /// Blink's ShouldUseCompositedDraw (canvas_2d_recorder_context.h:582-597,
+  /// 711-727): any `ctx.filter` (StateHasFilter, h:589: one that builds no
+  /// Skia filter counts too), a full-canvas mode, a shadow in a mode
+  /// DropShadowPaintFilter cannot do (copy is handled apart and never is), or
+  /// a shadow on a pattern fill or stroke. Only the alpha:false reset reads
+  /// it: after such a draw Blink resets the whole clip (h:826-829). Our
+  /// routing still differs for the shadow cases (see render_canvas).
+  fn blink_composites(
+    blend_mode: BlendMode,
+    has_filter: bool,
+    has_shadow: bool,
+    pattern_style: bool,
+  ) -> bool {
+    has_filter
+      || matches!(
+        blend_mode,
+        BlendMode::SourceIn
+          | BlendMode::SourceOut
+          | BlendMode::DestinationIn
+          | BlendMode::DestinationATop
+      )
+      || (has_shadow
+        && (pattern_style
+          || !matches!(
+            blend_mode,
+            BlendMode::Source
+              | BlendMode::SourceOver
+              | BlendMode::SourceATop
+              | BlendMode::DestinationOut
+          )))
+  }
+
+  /// Blink InflateStrokeRect (canvas_2d_recorder_context.cc:2656-2670): a
+  /// quick over-estimate of a stroke's extent around its geometry.
+  fn inflate_stroke_bounds(&self, bounds: DrawBounds) -> DrawBounds {
+    let paint = &self.state.paint;
+    let mut delta = paint.get_stroke_width() as f64 / 2.0;
+    if matches!(paint.get_stroke_join(), StrokeJoin::Miter) {
+      delta *= paint.get_stroke_miter() as f64;
+    } else if matches!(paint.get_stroke_cap(), StrokeCap::Square) {
+      delta *= std::f64::consts::SQRT_2;
+    }
+    bounds.outset(delta as f32)
   }
 
   pub fn arc(
@@ -755,7 +1034,7 @@ impl Context {
           .reset(self.width as f32, self.height as f32);
       }
       // Also clear the main surface
-      self.surface.canvas.clear();
+      self.clear_surface_to_base();
       return Ok(());
     }
 
@@ -763,9 +1042,15 @@ impl Context {
     self.flush_if_recording_limit_exceeded();
     let mut paint = Paint::new();
     paint.set_style(PaintStyle::Fill);
-    paint.set_color(0, 0, 0, 0);
     paint.set_stroke_miter(10.0);
-    paint.set_blend_mode(BlendMode::Clear);
+    if self.alpha {
+      paint.set_color(0, 0, 0, 0);
+      paint.set_blend_mode(BlendMode::Clear);
+    } else {
+      // Blink GetClearFlags (canvas_2d_recorder_context.cc:1917-1926):
+      // alpha:false clears by filling opaque black, source-over.
+      paint.set_color(0, 0, 0, 255);
+    }
     self.with_render_canvas(&paint, |canvas, paint| {
       canvas.draw_rect(x, y, width, height, paint);
       Ok(())
@@ -864,7 +1149,15 @@ impl Context {
         .borrow_mut()
         .reset(self.width as f32, self.height as f32);
       // Also clear main surface which accumulates content from flush() calls
-      self.surface.canvas.clear();
+      self.clear_surface_to_base();
+    } else if !self.alpha {
+      // Direct backends (SVG): draw the alpha:false base again. canvas.reset()
+      // is restoreToCount(1), which keeps a matrix or clip set at the root
+      // save level (an SkCanvas cannot drop a clip it has no save to restore),
+      // and SkSVGDevice writes the base as a canvas-sized rect under both. So
+      // after a root translate or clip the base misses part of the canvas, and
+      // earlier content there stays in the SVG.
+      self.surface.canvas.fill(0, 0, 0, 255);
     }
 
     // Clear the current path
@@ -882,6 +1175,9 @@ impl Context {
     // Paint construction is fallible (dash PathEffect, gradient shader); the
     // resource charge must land only once the op can actually record.
     let stroke_paint = self.stroke_paint()?;
+    if self.draws_nothing() {
+      return Ok(());
+    }
     self.account_paint_resources(&self.state.stroke_style);
 
     // Extract state for shadow rendering to avoid borrow conflicts
@@ -891,10 +1187,13 @@ impl Context {
     let (shadow_offset_x, shadow_offset_y) =
       self.canvas_shadow_offset(ShadowSource::Stroke, DrawContent::Geometry);
 
+    let bounds = self.inflate_stroke_bounds(DrawBounds::rect(x, y, w, h));
     self.with_shadowed_render_canvas(
       &stroke_paint,
       DrawContent::Geometry,
       shadow_paint.as_ref(),
+      Some(bounds),
+      matches!(self.state.stroke_style, Pattern::Image(_)),
       |shadow_canvas, shadow_paint, device_ctm| {
         shadow_canvas.save();
         Self::apply_shadow_offset_matrix_to_canvas(
@@ -1035,6 +1334,9 @@ impl Context {
     {
       return Ok(());
     }
+    if self.draws_nothing() {
+      return Ok(());
+    }
 
     self.account_paint_resources(&self.state.fill_style);
     // Zero on the image-filter route, where the filter's dx/dy already carry it.
@@ -1045,6 +1347,8 @@ impl Context {
       &fill_paint,
       DrawContent::Geometry,
       shadow_paint.as_ref(),
+      Some(DrawBounds::rect(x, y, w, h)),
+      matches!(self.state.fill_style, Pattern::Image(_)),
       |shadow_canvas, shadow_paint, device_ctm| {
         shadow_canvas.save();
         Self::apply_shadow_offset_matrix_to_canvas(
@@ -1112,6 +1416,9 @@ impl Context {
     if path_to_draw.is_empty() && self.empty_geometry_is_skippable(shadow_paint.is_some()) {
       return Ok(());
     }
+    if self.draws_nothing() {
+      return Ok(());
+    }
 
     self.account_paint_resources(&self.state.stroke_style);
     // Zero on the image-filter route, where the filter's dx/dy already carry it.
@@ -1129,10 +1436,13 @@ impl Context {
       },
       path_to_draw.estimated_bytes(),
     );
+    let bounds = DrawBounds::path(&path_to_draw).map(|b| self.inflate_stroke_bounds(b));
     self.with_shadowed_render_canvas(
       &stroke_paint,
       DrawContent::Geometry,
       shadow_paint.as_ref(),
+      bounds,
+      matches!(self.state.stroke_style, Pattern::Image(_)),
       |shadow_canvas, shadow_paint, device_ctm| {
         shadow_canvas.save();
         Self::apply_shadow_offset_matrix_to_canvas(
@@ -1268,17 +1578,22 @@ impl Context {
   // destination -- Blink's `CompositedDraw`
   // (canvas_2d_recorder_context.h:896-965). The two layers are SIBLINGS, which
   // is composite(composite(background, shadow), foreground) taken literally, and
-  // is why the shadow band of a source-in or copy draw legitimately disappears.
+  // is why the shadow band of a source-in draw legitimately disappears.
   // Do not merge them into one layer, and do not nest the shadow pass inside the
   // content one -- it would composite against the empty layer, not the backdrop.
   //
   // KNOWN DEFECT: the mode list below omits the shadow-conditional cases
-  // Chromium routes through CompositedDraw (h:692-697, :719-727).
+  // Chromium routes through CompositedDraw (h:692-697, :719-727). The
+  // alpha:false reset already follows Blink for them: `bounds` arrives as
+  // None for every draw `blink_composites` names.
   fn render_canvas<S, F>(
     surface_canvas: &mut Canvas,
     paint: &Paint,
     content_filter: Option<&ImageFilter>,
     blend_mode: BlendMode,
+    backend: Backend,
+    alpha: bool,
+    bounds: Option<DrawBounds>,
     width: f32,
     height: f32,
     shadow: Option<ShadowPass<'_>>,
@@ -1290,17 +1605,35 @@ impl Context {
     S: Fn(&mut Canvas, &Paint, &Matrix) -> result::Result<(), SkError>,
     F: Fn(&mut Canvas, &Paint) -> result::Result<(), SkError>,
   {
+    // alpha:false raster only; see `resets_alpha`.
+    let reset_alpha = !alpha && backend == Backend::Raster;
+    // copy without a layer filter is Blink's DrawInternal kSrc arm
+    // (canvas_2d_recorder_context.h:830-837): clear the clip, then draw the
+    // foreground only (no shadow) straight onto the canvas with the kSrc
+    // paint. No layer, so a dithered gradient keeps its device phase, and an
+    // anti-aliased clip edge is applied by both the clear and the draw, as in
+    // Chrome. PDF and SVG keep the layer below: SkPDFDevice masks a kSrc draw
+    // by the source's alpha, and SkSVGDevice writes clear() as a transparent
+    // rect, so on neither does a clear() remove what was drawn before.
+    if blend_mode == BlendMode::Source && content_filter.is_none() && backend == Backend::Raster {
+      // alpha:false clears to opaque black (h:832).
+      if alpha {
+        surface_canvas.clear();
+      } else {
+        surface_canvas.fill(0, 0, 0, 255);
+      }
+      f(surface_canvas, paint)?;
+      if reset_alpha {
+        Self::reset_alpha_if_needed(surface_canvas, blend_mode, bounds, width, height);
+      }
+      return Ok(());
+    }
     match blend_mode {
       // The first four are Chromium's `IsFullCanvasCompositeMode`
-      // (canvas_2d_recorder_context.h:998-1005), which exempts copy/`kSrc`.
-      // `Source` is kept anyway and is not a divergence in effect: a
-      // whole-canvas layer restored with kSrc replaces every pixel, like
-      // Chromium's `clear(transparent)` + foreground draw. Drop it and a
-      // `fillRect` overwrites only its own geometry. With a dithered gradient
-      // paint it does differ: the layer starts at the clip's device origin, so
-      // a clip whose origin is not a multiple of 8 shifts the 8x8 dither
-      // phase, while Chromium draws copy directly after the clear
-      // (canvas_2d_recorder_context.h:830-837).
+      // (canvas_2d_recorder_context.h:998-1005). copy only gets here with a
+      // `ctx.filter` on the layer (Blink's CompositedDraw for a filtered draw)
+      // or on PDF and SVG; its kSrc restore replaces the whole clip like the
+      // clear above (SkSVGDevice cannot make the layer and drops the draw).
       BlendMode::SourceIn
       | BlendMode::SourceOut
       | BlendMode::DestinationIn
@@ -1357,7 +1690,12 @@ impl Context {
           |canvas, paint| {
             Self::composited_filter_layer(canvas, &device_ctm, content_filter, paint, &f)
           },
-        )
+        )?;
+        // CompositedDraw resets the whole clip (h:829).
+        if reset_alpha {
+          Self::reset_alpha_if_needed(surface_canvas, blend_mode, None, width, height);
+        }
+        Ok(())
       }
       _ => {
         if let Some(shadow) = shadow {
@@ -1390,7 +1728,11 @@ impl Context {
           content_filter,
           paint,
           &f,
-        )
+        )?;
+        if reset_alpha {
+          Self::reset_alpha_if_needed(surface_canvas, blend_mode, bounds, width, height);
+        }
+        Ok(())
       }
     }
   }
@@ -1432,6 +1774,9 @@ impl Context {
     {
       return Ok(());
     }
+    if self.draws_nothing() {
+      return Ok(());
+    }
 
     self.account_paint_resources(&self.state.fill_style);
     // Zero on the image-filter route, where the filter's dx/dy already carry it.
@@ -1453,6 +1798,8 @@ impl Context {
       &fill_paint,
       DrawContent::Geometry,
       shadow_paint.as_ref(),
+      DrawBounds::path(&path_to_draw),
+      matches!(self.state.fill_style, Pattern::Image(_)),
       |shadow_canvas, shadow_paint, device_ctm| {
         shadow_canvas.save();
         Self::apply_shadow_offset_matrix_to_canvas(
@@ -1481,8 +1828,60 @@ impl Context {
   /// the paint alpha to a byte itself (SkBlitter.cpp `getAlpha()`).
   /// f32 maths and `k / 255.0` as Blink does: `set_alpha(k)` multiplies by
   /// 1/255, which is 1 ulp off for some k.
+  /// A PDF page has no raster sampling to match, so it keeps the spec's float,
+  /// as its solid and gradient fills do (`/ca .5`, not `.502`).
   fn image_global_alpha(&self) -> f32 {
-    (self.state.global_alpha as f32 * 255.0).round() / 255.0
+    let alpha = self.state.global_alpha as f32;
+    if self.backend == Backend::Pdf {
+      return alpha;
+    }
+    (alpha * 255.0).round() / 255.0
+  }
+
+  /// The paint drawImage and drawCanvas draw with: Blink's `image_flags_`
+  /// (canvas_rendering_context_2d_state.cc:170-171 fill style and AA, :335
+  /// alpha, :832 picked for image draws). It never reads fillStyle or the line
+  /// dash, so an unusable fillStyle (a gradient Skia cannot build) cannot stop
+  /// an image draw. Opaque black like a default cc::PaintFlags; the blend mode
+  /// comes from the state paint, and smoothing, `ctx.filter` and the shadow
+  /// are added by the callers.
+  fn image_paint(&self, alpha: f32) -> Paint {
+    let mut paint = self.state.paint.clone();
+    paint.set_style(PaintStyle::Fill);
+    paint.set_color(0, 0, 0, 255);
+    paint.set_alpha_f32(alpha);
+    paint
+  }
+
+  /// The shader half of a gradient fillStyle/strokeStyle paint. Blink always
+  /// dithers gradients (gradient.cc ApplyToFlags).
+  fn set_gradient_paint(
+    &self,
+    paint: &mut Paint,
+    gradient: &Gradient,
+    alpha: f32,
+  ) -> result::Result<(), SkError> {
+    // SVG only: SkSVGDevice has no conic gradient and drops the alpha of a
+    // color shader, so a gradient that paints one color everywhere goes out as
+    // a plain paint color.
+    if self.backend == Backend::Svg
+      && let Some(c) = gradient.constant_color()
+    {
+      paint.set_color(
+        srgb_channel_to_u8(c.r),
+        srgb_channel_to_u8(c.g),
+        srgb_channel_to_u8(c.b),
+        255,
+      );
+      paint.set_alpha_f32(c.a * alpha);
+      return Ok(());
+    }
+    let shader = gradient.get_shader()?;
+    paint.set_color(0, 0, 0, 255);
+    paint.set_alpha_f32(alpha);
+    paint.set_shader(&shader);
+    paint.set_dither(true);
+    Ok(())
   }
 
   pub fn fill_paint(&self) -> result::Result<Paint, SkError> {
@@ -1496,14 +1895,7 @@ impl Context {
         paint.set_color(c.r, c.g, c.b, c.a);
         paint.set_alpha_f32(c.a as f32 / 255.0 * alpha);
       }
-      Pattern::Gradient(g) => {
-        let current_transform = &last_state.transform;
-        let shader = g.get_shader(current_transform.get_transform())?;
-        paint.set_color(0, 0, 0, 255);
-        paint.set_alpha_f32(alpha);
-        paint.set_shader(&shader);
-        paint.set_dither(true);
-      }
+      Pattern::Gradient(g) => self.set_gradient_paint(&mut paint, g, alpha)?,
       Pattern::Image(p) => {
         if let Some(shader) = p.get_shader(if last_state.image_smoothing_enabled {
           last_state.image_smoothing_quality
@@ -1542,6 +1934,7 @@ impl Context {
       self.state.filters_string = filter_str.to_owned();
       self.state.filter = None;
       self.state.filter_id = 0;
+      self.state.has_filter = false;
       return Ok(());
     }
     // `css_filter` is greedy and never fails: it stops at the first token it
@@ -1559,6 +1952,7 @@ impl Context {
     self.state.filter = css_filters_to_image_filter(filters);
     self.state.filters_string = filter_str.to_owned();
     self.state.filter_id = next_resource_id();
+    self.state.has_filter = true;
     Ok(())
   }
 
@@ -1629,21 +2023,9 @@ impl Context {
         };
       }
       CSSColor::Hsl(hsl) => {
-        let h = hsl.hue.unwrap_or(0.0) / 360.0;
-        let s = hsl.saturation.unwrap_or(0.0);
-        let l = hsl.lightness.unwrap_or(0.0);
-        let a = hsl.alpha.unwrap_or(1.0);
-
-        let (r, g, b) = hsl_to_rgb(h, s, l);
-
         drop(parser);
         self.state.shadow_color_string = shadow_color;
-        self.state.shadow_color = RGBA {
-          r: (r * 255.0) as u8,
-          g: (g * 255.0) as u8,
-          b: (b * 255.0) as u8,
-          a: (a * 255.0).round() as u8,
-        };
+        self.state.shadow_color = hsl_to_rgba8(&hsl);
       }
       _ => {
         return Err(SkError::Generic("Unsupported color format".to_owned()));
@@ -1703,16 +2085,15 @@ impl Context {
     h: f32,
     color_type: ColorSpace,
   ) -> Option<Vec<u8>> {
-    if self.page_recorder.is_some() {
-      // Flush the deferred recording before reading pixels, as Blink's
-      // getImageData runs FinalizeFrame -> FlushCanvas ->
-      // ReleaseMainRecording (base_rendering_context_2d.cc). Without it the
-      // recording grows unbounded across getImageData calls
-      // (https://github.com/Brooooooklyn/canvas/issues/1342). flush() also
-      // consolidates the layers into a single snapshot picture, so a read
-      // leaves the recorder holding only an O(canvas_size) snapshot.
-      self.flush();
-    }
+    // Flush the deferred recording before reading pixels, as Blink's
+    // getImageData runs FinalizeFrame -> FlushCanvas ->
+    // ReleaseMainRecording (base_rendering_context_2d.cc). Without it the
+    // recording grows unbounded across getImageData calls
+    // (https://github.com/Brooooooklyn/canvas/issues/1342). flush() also
+    // consolidates the layers into a single snapshot picture, so a read
+    // leaves the recorder holding only an O(canvas_size) snapshot. An
+    // SVGCanvas draws its recording into its raster surface here.
+    self.flush();
 
     self
       .surface
@@ -1734,14 +2115,7 @@ impl Context {
         paint.set_color(c.r, c.g, c.b, c.a);
         paint.set_alpha_f32(c.a as f32 / 255.0 * global_alpha);
       }
-      Pattern::Gradient(g) => {
-        let current_transform = &last_state.transform;
-        let shader = g.get_shader(current_transform.get_transform())?;
-        paint.set_color(0, 0, 0, 255);
-        paint.set_alpha_f32(global_alpha);
-        paint.set_shader(&shader);
-        paint.set_dither(true);
-      }
+      Pattern::Gradient(g) => self.set_gradient_paint(&mut paint, g, global_alpha)?,
       Pattern::Image(p) => {
         if let Some(shader) = p.get_shader(if last_state.image_smoothing_enabled {
           last_state.image_smoothing_quality
@@ -2154,6 +2528,23 @@ impl Context {
     lo.is_finite() && hi.is_finite() && hi == lo
   }
 
+  /// Blink's `IsTransformInvertible`: AffineTransform::IsInvertible checks
+  /// for a finite, non-zero determinant. Skia's own invert() also rejects a
+  /// nearly-zero one, which Chrome still draws with.
+  fn transform_is_invertible(&self) -> bool {
+    let t = self.state.transform.get_transform();
+    let det = t.a as f64 * t.d as f64 - t.b as f64 * t.c as f64;
+    det.is_finite() && det != 0.0
+  }
+
+  /// Blink's Draw returns before anything is drawn when the CTM is singular
+  /// (canvas_2d_recorder_context.h:866-868), and so does render_passes. The
+  /// draw entry points ask here before their first charge, so a draw that
+  /// records nothing charges nothing; anything fallible before it still runs.
+  fn draws_nothing(&self) -> bool {
+    !self.transform_is_invertible()
+  }
+
   /// Whether a draw whose own geometry provably paints nothing may be
   /// skipped whole. drawRect/drawPath DO reach the record canvas
   /// (SkRecordCanvas::onDraw* appends unconditionally -- the fillable()
@@ -2162,11 +2553,13 @@ impl Context {
   /// un-skippable are the wrapper ops our draw path can still emit around
   /// the empty draw, because their restore writes the device even with no
   /// content inside:
-  ///   * composited_pass modes replay an inner picture through a
-  ///     saveLayer/drawPicture(paint) -- a kSrc restore replaces the whole
-  ///     canvas even for an empty picture;
+  ///   * copy clears the clip before it draws, and composited_pass modes
+  ///     replay an inner picture through a saveLayer/drawPicture(paint) whose
+  ///     restore rewrites the whole clip even for an empty picture;
   ///   * a `ctx.filter` wraps the draw in a filtered saveLayer -- its
-  ///     restore also composites (kClear can clear the canvas);
+  ///     restore also composites (kClear can clear the canvas); and on
+  ///     alpha:false any assigned filter, even one that built no Skia filter,
+  ///     is followed by the whole-clip reset (`blink_composites`);
   ///   * a shadow pass records an extra draw whose blend mode is the
   ///     paint's (kClear shadow restore would clear); `has_shadow` is the
   ///     caller's `shadow_paint(...)` result.
@@ -2185,9 +2578,28 @@ impl Context {
         | BlendMode::DestinationIn
         | BlendMode::DestinationATop
         | BlendMode::Clear
-    ) && self.state.filter.is_none()
+    ) && !self.state.has_filter
       && self.state.line_dash_list.is_empty()
       && !has_shadow
+  }
+
+  /// Blink clips the sorted source rect to the image and returns when nothing
+  /// is left (canvas_2d_recorder_context.cc:2310-2316), whatever the composite
+  /// op; copy and the full-canvas modes would otherwise clear the clip. Shared
+  /// by drawImage and drawCanvas, which must agree.
+  pub(crate) fn source_rect_overlaps(
+    sx: f32,
+    sy: f32,
+    s_width: f32,
+    s_height: f32,
+    width: f32,
+    height: f32,
+  ) -> bool {
+    let overlaps = |start: f32, len: f32, size: f32| {
+      let (lo, hi) = (start.min(start + len), start.max(start + len));
+      lo.max(0.0) < hi.min(size)
+    };
+    overlaps(sx, s_width, width) && overlaps(sy, s_height, height)
   }
 
   /// `raster_key` dedups the retained-raster charge for this op: the caller
@@ -2239,15 +2651,22 @@ impl Context {
     {
       return Ok(());
     }
+    if !Self::source_rect_overlaps(
+      sx,
+      sy,
+      s_width,
+      s_height,
+      bitmap.0.width as f32,
+      bitmap.0.height as f32,
+    ) {
+      return Ok(());
+    }
 
-    let mut paint: Paint = self.fill_paint()?;
-    // drawImage does not use fillStyle. In Blink only the fill and stroke
-    // flags get ApplyToFlags (canvas_rendering_context_2d_state.cc:332-333),
-    // which sets a gradient's dither (gradient.cc:364); images are drawn with
-    // image_flags_ (:832). So drop the gradient arm's flag here.
-    paint.set_dither(false);
-    self.account_paint_resources(&self.state.fill_style);
-    paint.set_alpha_f32(self.image_global_alpha());
+    let paint = self.image_paint(self.image_global_alpha());
+    if self.draws_nothing() {
+      return Ok(());
+    }
+    self.account_image_paint_resources();
 
     // Extract state for shadow rendering to avoid borrow conflicts
     let shadow_paint = self.shadow_paint(&paint, ShadowSource::Image, DrawContent::Geometry);
@@ -2269,10 +2688,26 @@ impl Context {
       raster_key,
       (bitmap.0.width as usize) * (bitmap.0.height as usize) * 4,
     );
+    // Blink's bounds are the destination rect after ClipRectsToImageRect
+    // (canvas_2d_recorder_context.cc:1983-2008) cut the source to the image.
+    let bounds = {
+      let src = DrawBounds::rect(sx, sy, s_width, s_height);
+      let dst = DrawBounds::rect(dx, dy, d_width, d_height);
+      let scale_x = (dst.right - dst.left) / (src.right - src.left);
+      let scale_y = (dst.bottom - dst.top) / (src.bottom - src.top);
+      DrawBounds {
+        left: dst.left + (src.left.max(0.0) - src.left) * scale_x,
+        top: dst.top + (src.top.max(0.0) - src.top) * scale_y,
+        right: dst.left + (src.right.min(bitmap.0.width as f32) - src.left) * scale_x,
+        bottom: dst.top + (src.bottom.min(bitmap.0.height as f32) - src.top) * scale_y,
+      }
+    };
     self.with_shadowed_render_canvas(
       &paint,
       DrawContent::Geometry,
       shadow_paint.as_ref(),
+      Some(bounds),
+      false,
       |shadow_canvas: &mut Canvas, shadow_paint, device_ctm| {
         shadow_canvas.save();
         Self::apply_shadow_offset_matrix_to_canvas(
@@ -2398,12 +2833,11 @@ impl Context {
       return Ok(());
     }
 
-    let mut paint: Paint = self.fill_paint()?;
-    // As in draw_image: an image draw never takes the gradient fillStyle's
-    // dither.
-    paint.set_dither(false);
-    self.account_paint_resources(&self.state.fill_style);
-    paint.set_alpha_f32(self.state.global_alpha as f32);
+    let paint = self.image_paint(self.state.global_alpha as f32);
+    if self.draws_nothing() {
+      return Ok(());
+    }
+    self.account_image_paint_resources();
 
     // Extract state for shadow rendering to avoid borrow conflicts
     let shadow_paint = self.shadow_paint(&paint, ShadowSource::Image, DrawContent::Geometry);
@@ -2435,6 +2869,9 @@ impl Context {
       &paint,
       DrawContent::Geometry,
       shadow_paint.as_ref(),
+      // No Chrome counterpart; the destination rect, as for drawImage.
+      Some(DrawBounds::rect(dx, dy, d_width, d_height)),
+      false,
       |shadow_canvas: &mut Canvas, shadow_paint, device_ctm| {
         shadow_canvas.save();
         Self::apply_shadow_offset_matrix_to_canvas(
@@ -2481,6 +2918,12 @@ impl Context {
     source: ShadowSource,
     variations: &[crate::sk::FontVariation],
   ) -> result::Result<(), SkError> {
+    // Measured before get_font(): measuring takes the same font lock.
+    let bounds = if self.resets_alpha() {
+      self.text_bounds(text, x, y, max_width, source)
+    } else {
+      None
+    };
     let font = get_font()?;
 
     // Extract all state values to avoid borrow conflicts with with_render_canvas
@@ -2515,6 +2958,9 @@ impl Context {
       return Err(SkError::NulError);
     }
 
+    if self.draws_nothing() {
+      return Ok(());
+    }
     // Everything fallible (get_font, the NUL preflight) is behind us, so the
     // paint-resource charge can land here -- the same position fill/stroke
     // use, after their fallible paint builds. `source` already says which
@@ -2559,6 +3005,8 @@ impl Context {
       paint,
       DrawContent::Glyphs,
       shadow_paint.as_ref(),
+      bounds,
+      false,
       |shadow_canvas, shadow_paint, device_ctm| {
         shadow_canvas.save();
         Self::apply_shadow_offset_matrix_to_canvas(
@@ -2630,7 +3078,57 @@ impl Context {
     Ok(())
   }
 
-  fn get_line_metrics(&mut self, text: &str) -> result::Result<LineMetrics, SkError> {
+  /// Blink's text bounds: the glyph bounds at the drawn position, inflated
+  /// for a stroke (base_rendering_context_2d.cc:1016-1080). Only the
+  /// alpha:false reset reads them. Left and right are the ink of the glyphs
+  /// the draw paints, where it paints them (`ink_left` / `ink_right` from
+  /// skia_c.cpp skiac_canvas_get_line_metrics_or_draw_text), so the
+  /// letterSpacing shift applies only where the draw applies it: to LTR text
+  /// that is not cursive. Top and bottom are measureText's.
+  ///
+  /// maxWidth squeezes the text with scale(maxWidth / width, 1) about the
+  /// anchor x, so the box scales toward x. Blink resets its unscaled box under
+  /// the scaled canvas (base_rendering_context_2d.cc:1066-1082), which misses
+  /// part of the squeezed glyphs; that is not copied.
+  ///
+  /// When measuring fails (for example a fill gradient with no shader) the
+  /// reset takes the whole clip: the draw itself reports its own errors.
+  fn text_bounds(
+    &mut self,
+    text: &str,
+    x: f32,
+    y: f32,
+    max_width: f32,
+    source: ShadowSource,
+  ) -> Option<DrawBounds> {
+    let metrics = self.get_line_metrics(text, true).ok()?.0;
+    // The same test and ratio as the draw.
+    let scale = if metrics.width > max_width {
+      max_width / metrics.width
+    } else {
+      1.0
+    };
+    let left = x + scale * metrics.ink_left;
+    let right = x + scale * metrics.ink_right;
+    let bounds = DrawBounds {
+      left: left.min(right),
+      top: y - metrics.ascent,
+      right: left.max(right),
+      bottom: y + metrics.descent,
+    };
+    Some(match source {
+      ShadowSource::Stroke => self.inflate_stroke_bounds(bounds),
+      _ => bounds,
+    })
+  }
+
+  /// `collect_ink` fills `ink_left` / `ink_right`, which costs a walk over
+  /// every drawn glyph; measureText does not read them and passes false.
+  fn get_line_metrics(
+    &mut self,
+    text: &str,
+    collect_ink: bool,
+  ) -> result::Result<LineMetrics, SkError> {
     let state = &self.state;
     let fill_paint = self.fill_paint()?;
     let weight = state.font_style.weight;
@@ -2657,6 +3155,7 @@ impl Context {
       self.state.font_variant_caps,
       &self.state.lang,
       self.state.text_rendering,
+      collect_ink,
     )?);
     Ok(line_metrics)
   }
@@ -2727,10 +3226,20 @@ impl Context {
 }
 
 #[napi(object)]
+pub struct CanvasToneMapping {
+  pub mode: String,
+}
+
+/// getContextAttributes(): `CanvasRenderingContext2DSettings`, with the
+/// fields in Chrome's key order.
+#[napi(object)]
 pub struct ContextAttributes {
   pub alpha: bool,
   pub color_space: String,
+  pub color_type: String,
   pub desynchronized: bool,
+  pub tone_mapping: CanvasToneMapping,
+  pub will_read_frequently: bool,
 }
 
 #[napi]
@@ -2754,6 +3263,8 @@ impl From<SvgExportFlag> for crate::sk::SvgExportFlag {
 #[napi(custom_finalize)]
 pub struct CanvasRenderingContext2D {
   pub(crate) context: Context,
+  /// getContext() options that only getContextAttributes() reports.
+  pub(crate) reported_settings: ReportedSettings,
 }
 
 impl ObjectFinalize for CanvasRenderingContext2D {
@@ -2811,6 +3322,213 @@ impl FromNapiValue for DrawImageSource<'static> {
   }
 }
 
+type PatternImage<'a> =
+  Either4<&'a mut Image, &'a mut ImageData, &'a mut CanvasElement<'a>, &'a mut SVGCanvas<'a>>;
+
+/// The class of a `createPattern` image, found by the one type check that
+/// WebIDL runs on it.
+#[derive(Clone, Copy)]
+enum PatternImageKind {
+  Image,
+  ImageData,
+  CanvasElement,
+  SVGCanvas,
+}
+
+impl PatternImageKind {
+  /// The instanceof checks that `PatternImage` runs, in its order, without
+  /// the borrow.
+  unsafe fn of(env: sys::napi_env, value: sys::napi_value) -> Option<Self> {
+    unsafe {
+      if <&mut Image as ValidateNapiValue>::validate(env, value).is_ok() {
+        Some(Self::Image)
+      } else if <&mut ImageData as ValidateNapiValue>::validate(env, value).is_ok() {
+        Some(Self::ImageData)
+      } else if <&mut CanvasElement as ValidateNapiValue>::validate(env, value).is_ok() {
+        Some(Self::CanvasElement)
+      } else if <&mut SVGCanvas as ValidateNapiValue>::validate(env, value).is_ok() {
+        Some(Self::SVGCanvas)
+      } else {
+        None
+      }
+    }
+  }
+
+  /// Borrows `value` as this class: unwrap and type tag only. User code ran
+  /// since `of`, and may have changed the prototype or Symbol.hasInstance,
+  /// so the instanceof check is not repeated.
+  unsafe fn borrow(
+    self,
+    env: sys::napi_env,
+    value: sys::napi_value,
+  ) -> Result<PatternImage<'static>> {
+    unsafe {
+      Ok(match self {
+        Self::Image => Either4::A(Image::from_napi_mut_ref(env, value)?),
+        Self::ImageData => Either4::B(ImageData::from_napi_mut_ref(env, value)?),
+        Self::CanvasElement => Either4::C(CanvasElement::from_napi_mut_ref(env, value)?),
+        Self::SVGCanvas => Either4::D(SVGCanvas::from_napi_mut_ref(env, value)?),
+      })
+    }
+  }
+}
+
+/// The arguments of `createPattern`, its last parameter: it gets the
+/// argument count and converts the `Positional` arguments before it. Chrome
+/// converts the image (a type check) before the repetition, a
+/// [LegacyNullToEmptyString] DOMString (canvas_2d_recorder_context.idl:47)
+/// whose ToString may run user code.
+/// The image is borrowed only after that, so the user code may use it, and
+/// all of it happens before napi-rs borrows the context.
+pub struct CreatePatternArgs<'a> {
+  pub image: PatternImage<'a>,
+  pub repetition: String,
+}
+
+impl FromNapiValue for CreatePatternArgs<'static> {
+  unsafe fn from_napi_value(env: sys::napi_env, argc: sys::napi_value) -> Result<Self> {
+    let args = webidl::Arguments::take(env, 2, argc)?;
+    if args.len() < 2 {
+      return Err(webidl::type_error(
+        env,
+        &format!(
+          "{}2 arguments required, but only {} present.",
+          webidl::CREATE_PATTERN,
+          args.len()
+        ),
+      ));
+    }
+    let wrong_type = || {
+      webidl::type_error(
+        env,
+        &format!(
+          "{}The provided value is not of type '(CanvasElement or Image or ImageData or SVGCanvas)'.",
+          webidl::CREATE_PATTERN
+        ),
+      )
+    };
+    let image = args.get(0)?;
+    let Some(kind) = (unsafe { PatternImageKind::of(env, image) }) else {
+      return Err(wrong_type());
+    };
+    let repetition = args.get(1)?;
+    let repetition = if webidl::type_of(env, repetition)? == ValueType::Null {
+      String::new()
+    } else {
+      webidl::to_js_string(env, repetition)?
+    };
+    let image = unsafe { kind.borrow(env, image) }.map_err(|_| wrong_type())?;
+    Ok(Self { image, repetition })
+  }
+}
+
+/// The arguments of `createImageData`, its last parameter: it gets the
+/// argument count and converts the `Positional` arguments before it. WebIDL
+/// picks the overload from the argument count, and an explicit undefined
+/// counts (base_rendering_context_2d.idl:25).
+/// They are converted in the callback glue, before napi-rs borrows the
+/// context, so a settings getter may use it.
+pub enum CreateImageDataArgs<'a> {
+  /// createImageData(ImageData imagedata).
+  ImageData {
+    width: usize,
+    height: usize,
+    color_space: ColorSpace,
+  },
+  /// createImageData([EnforceRange] long sw, [EnforceRange] long sh,
+  /// optional ImageDataSettings settings).
+  Size {
+    width: u32,
+    height: u32,
+    color_space: Option<ColorSpace>,
+  },
+  /// Non-standard createImageData(Uint8ClampedArray data, sw, sh?, settings?).
+  Data {
+    data: Uint8ClampedSlice<'a>,
+    width: u32,
+    height: u32,
+    color_space: Option<ColorSpace>,
+  },
+}
+
+impl FromNapiValue for CreateImageDataArgs<'static> {
+  unsafe fn from_napi_value(env: sys::napi_env, argc: sys::napi_value) -> Result<Self> {
+    let args = webidl::Arguments::take(env, 4, argc)?;
+    let type_error =
+      |msg: &str| webidl::type_error(env, &format!("{}{msg}", webidl::CREATE_IMAGE_DATA));
+    let settings = |value: sys::napi_value| {
+      webidl::ImageDataSettings::from_js(env, Some(value), webidl::CREATE_IMAGE_DATA)
+    };
+    // `long` as before, except that undefined is not a long.
+    let long = |value: sys::napi_value| -> Result<u32> {
+      if webidl::type_of(env, value)? == ValueType::Undefined {
+        return Err(type_error("Value is not of type 'long'."));
+      }
+      Ok(unsafe { i32::from_napi_value(env, value)? }.unsigned_abs())
+    };
+    if args.len() == 0 {
+      return Err(type_error("1 argument required, but only 0 present."));
+    }
+    let first = unsafe {
+      Either3::<&ImageData, Uint8ClampedSlice, Unknown>::from_napi_value(env, args.get(0)?)?
+    };
+    if args.len() == 1 {
+      // The same size and color space, new zeroed data
+      // (base_rendering_context_2d.cc:296).
+      return match first {
+        Either3::A(image_data) => Ok(Self::ImageData {
+          width: image_data.width,
+          height: image_data.height,
+          color_space: image_data.color_space,
+        }),
+        _ => Err(type_error("parameter 1 is not of type 'ImageData'.")),
+      };
+    }
+    match first {
+      // Two or more arguments select (long sw, long sh, ...), and an
+      // ImageData is not a long.
+      Either3::A(_) => Err(type_error("Value is not of type 'long'.")),
+      Either3::C(width) => {
+        let width = long(width.raw())?;
+        let height = long(args.get(1)?)?;
+        let color_space = settings(args.get(2)?)?.color_space;
+        Ok(Self::Size {
+          width,
+          height,
+          color_space,
+        })
+      }
+      Either3::B(data) => {
+        let input_data_length = data.len();
+        let width = long(args.get(1)?)?;
+        let height = args.get(2)?;
+        let height = if webidl::type_of(env, height)? == ValueType::Number {
+          unsafe { i32::from_napi_value(env, height)? }.unsigned_abs()
+        } else {
+          // A dictionary here is converted but, as before, not used.
+          settings(height)?;
+          (input_data_length as u32) / 4 / width
+        };
+        // The typed array aliases the caller's buffer, which may be detached
+        // later via transfer; the pixel length is checked on every use.
+        if input_data_length < (width as usize) * (height as usize) * 4 {
+          return Err(Error::new(
+            Status::InvalidArg,
+            "Index or size is negative or greater than the allowed amount".to_owned(),
+          ));
+        }
+        let color_space = settings(args.get(3)?)?.color_space;
+        Ok(Self::Data {
+          data,
+          width,
+          height,
+          color_space,
+        })
+      }
+    }
+  }
+}
+
 #[napi]
 impl CanvasRenderingContext2D {
   #[napi(constructor)]
@@ -2826,7 +3544,10 @@ impl CanvasRenderingContext2D {
     } else {
       Context::new(width, height, color_space)?
     };
-    Ok(Self { context })
+    Ok(Self {
+      context,
+      reported_settings: ReportedSettings::default(),
+    })
   }
 
   #[napi(getter)]
@@ -2875,9 +3596,11 @@ impl CanvasRenderingContext2D {
     self.context.state.image_smoothing_enabled
   }
 
-  #[napi(setter, return_if_invalid)]
-  pub fn set_image_smoothing_enabled(&mut self, enabled: bool) {
-    self.context.state.image_smoothing_enabled = enabled;
+  #[napi(setter)]
+  pub fn set_image_smoothing_enabled(&mut self, enabled: Unknown) -> Result<()> {
+    // WebIDL boolean: ToBoolean, so 0, '', null, undefined and NaN are false.
+    self.context.state.image_smoothing_enabled = enabled.coerce_to_bool()?;
+    Ok(())
   }
 
   #[napi(getter)]
@@ -3291,26 +4014,32 @@ impl CanvasRenderingContext2D {
     self.context.close_path();
   }
 
+  /// createImageData(imagedata) or (sw, sh, settings?), and the non-standard
+  /// (data, sw, sh?, settings?). The index.js wrapper passes the argument
+  /// count after the 4 positional arguments; see `webidl::Arguments::take`.
   #[napi]
   pub fn create_image_data<'scope>(
     &'scope mut self,
     env: &'scope Env,
-    width_or_data: Either<i32, Uint8ClampedSlice<'scope>>,
-    width_or_height: i32,
-    height_or_settings: Option<Either<i32, Settings>>,
-    maybe_settings: Option<Settings>,
+    _arg0: Positional,
+    _arg1: Positional,
+    _arg2: Positional,
+    _arg3: Positional,
+    args: CreateImageDataArgs<'scope>,
   ) -> Result<ClassInstance<'scope, ImageData>> {
-    match width_or_data {
-      Either::A(width) => {
-        let width = width.unsigned_abs();
-        let height = width_or_height.unsigned_abs();
+    match args {
+      CreateImageDataArgs::ImageData {
+        width,
+        height,
+        color_space,
+      } => ImageData::new_zeroed(env, width, height, color_space),
+      CreateImageDataArgs::Size {
+        width,
+        height,
+        color_space,
+      } => {
         // Spec: defaultColorSpace is this context's color space.
-        let color_space = match height_or_settings {
-          Some(Either::B(settings)) => {
-            ColorSpace::from_str(&settings.color_space).unwrap_or(self.context.color_space)
-          }
-          _ => self.context.color_space,
-        };
+        let color_space = color_space.unwrap_or(self.context.color_space);
         let arraybuffer_length = (width * height * 4) as usize;
         let data_buffer = vec![0; arraybuffer_length];
         let data_object = Uint8ClampedSlice::from_data(env, data_buffer)?;
@@ -3327,28 +4056,16 @@ impl CanvasRenderingContext2D {
           .with_property_attributes(PropertyAttributes::Enumerable)])?;
         Ok(instance)
       }
-      Either::B(data_object) => {
-        let input_data_length = data_object.len();
-        let width = width_or_height.unsigned_abs();
-        let height = match &height_or_settings {
-          Some(Either::A(height)) => height.unsigned_abs(),
-          _ => (input_data_length as u32) / 4 / width,
-        };
-        // The typed array aliases the caller's buffer, which may be detached
-        // later via transfer; the pixel length is checked on every use.
-        if input_data_length < (width as usize) * (height as usize) * 4 {
-          return Err(Error::new(
-            Status::InvalidArg,
-            "Index or size is negative or greater than the allowed amount".to_owned(),
-          ));
-        }
-        let color_space = maybe_settings
-          .and_then(|settings| ColorSpace::from_str(&settings.color_space).ok())
-          .unwrap_or_default();
+      CreateImageDataArgs::Data {
+        data: data_object,
+        width,
+        height,
+        color_space,
+      } => {
         let mut instance = ImageData {
           width: width as usize,
           height: height as usize,
-          color_space,
+          color_space: color_space.unwrap_or_default(),
           // Weak ref: the non-configurable `data` property keeps the caller's
           // array alive for exactly the ImageData's lifetime.
           data_ref: Some(create_weak_ref(env, data_object.raw())?),
@@ -3398,22 +4115,27 @@ impl CanvasRenderingContext2D {
   pub fn create_conic_gradient<'scope>(
     &'scope mut self,
     env: &'scope Env,
-    r: f64,
+    start_angle: f64,
     x: f64,
     y: f64,
   ) -> Result<ClassInstance<'scope, CanvasGradient>> {
-    let conic_gradient = Gradient::create_conic_gradient(x as f32, y as f32, r as f32);
+    let conic_gradient = Gradient::create_conic_gradient(x as f32, y as f32, start_angle as f32);
     CanvasGradient(conic_gradient).into_instance(env)
   }
 
-  #[napi]
+  /// createPattern(image, repetition). The index.js wrapper passes the
+  /// argument count after them; see `webidl::Arguments::take`.
+  #[napi(ts_return_type = "CanvasPattern | null")]
   pub fn create_pattern<'scope>(
     &'scope self,
     env: &'scope Env,
-    input: Either4<&mut Image, &mut ImageData, &mut CanvasElement, &mut SVGCanvas>,
-    repetition: Option<String>,
-  ) -> Result<ClassInstance<'scope, CanvasPattern>> {
-    CanvasPattern::new(*env, input, repetition)?.into_instance(env)
+    _image: Positional,
+    _repetition: Positional,
+    args: CreatePatternArgs<'_>,
+  ) -> Result<Option<ClassInstance<'scope, CanvasPattern>>> {
+    CanvasPattern::create(*env, args.image, &args.repetition)?
+      .map(|pattern| pattern.into_instance(env))
+      .transpose()
   }
 
   #[napi]
@@ -3497,13 +4219,9 @@ impl CanvasRenderingContext2D {
   }
 
   #[napi]
-  pub fn reset(&mut self, env: Env, mut this: This) -> Result<()> {
+  pub fn reset(&mut self, mut this: This) -> Result<()> {
     self.context.reset();
-    // Reset the hidden fill/stroke style properties to default "#000000"
-    let default_color = env.create_string("#000000")?;
-    this.set(FILL_STYLE_HIDDEN_NAME, default_color)?;
-    this.set(STROKE_STYLE_HIDDEN_NAME, default_color)?;
-    Ok(())
+    reset_style_getters(&mut this)
   }
 
   #[napi(return_if_invalid)]
@@ -3553,6 +4271,9 @@ impl CanvasRenderingContext2D {
         )
       }
       Either3::B(svg) => {
+        // The raster surface holds what was drawn (as a canvas would draw it)
+        // only after a flush.
+        svg.ctx.context.flush();
         let bitmap = BitmapRef::Owned(svg.ctx.context.surface.get_bitmap());
         (
           bitmap,
@@ -3775,6 +4496,17 @@ impl CanvasRenderingContext2D {
     let clamp = Context::clamp_to_f32;
     let (sx, sy, s_width, s_height) = (clamp(sx), clamp(sy), s_width as f32, s_height as f32);
     let (dx, dy, d_width, d_height) = (clamp(dx), clamp(dy), d_width as f32, d_height as f32);
+    // Before any charge, as in draw_image (which the fallback above reaches).
+    if !Context::source_rect_overlaps(
+      sx,
+      sy,
+      s_width,
+      s_height,
+      source_width as f32,
+      source_height as f32,
+    ) {
+      return Ok(());
+    }
 
     // approx_bytes_used (charged inside Context::draw_canvas) excludes the
     // payloads a picture references -- putImageData/drawImage bitmaps, image
@@ -3804,16 +4536,20 @@ impl CanvasRenderingContext2D {
     Ok(())
   }
 
+  /// A new object on each call (base_rendering_context_2d.cc:156).
   #[napi]
   pub fn get_context_attributes(&self) -> ContextAttributes {
+    let reported = self.reported_settings;
     ContextAttributes {
       alpha: self.context.alpha,
-      color_space: match self.context.color_space {
-        ColorSpace::Srgb => "srgb",
-        ColorSpace::DisplayP3 => "display-p3",
-      }
-      .to_owned(),
-      desynchronized: false,
+      color_space: self.context.color_space.as_str().to_owned(),
+      color_type: reported.color_type.as_str().to_owned(),
+      desynchronized: reported.desynchronized,
+      // Chrome 155 does not read toneMapping and reports the default.
+      tone_mapping: CanvasToneMapping {
+        mode: "standard".to_owned(),
+      },
+      will_read_frequently: reported.will_read_frequently,
     }
   }
 
@@ -3956,7 +4692,7 @@ impl CanvasRenderingContext2D {
         width: 0.0,
       });
     }
-    let metrics = self.context.get_line_metrics(text)?;
+    let metrics = self.context.get_line_metrics(text, false)?;
     Ok(TextMetrics {
       actual_bounding_box_ascent: metrics.0.ascent as f64,
       actual_bounding_box_descent: metrics.0.descent as f64,
@@ -4070,8 +4806,9 @@ impl CanvasRenderingContext2D {
     y: f64,
     width: f64,
     height: f64,
-    color_space: Option<String>,
+    settings: webidl::GetImageDataSettings,
   ) -> Result<ClassInstance<'scope, ImageData>> {
+    let settings = settings.0;
     if !x.is_nan()
       && !x.is_infinite()
       && !y.is_nan()
@@ -4082,9 +4819,7 @@ impl CanvasRenderingContext2D {
       && !height.is_infinite()
     {
       // Spec: defaultColorSpace is this context's color space.
-      let color_space = color_space
-        .and_then(|cs| cs.parse().ok())
-        .unwrap_or(self.context.color_space);
+      let color_space = settings.color_space.unwrap_or(self.context.color_space);
       // Per spec: if sw/sh is negative, flip the origin and use abs value
       let (sx, sw) = if width < 0.0 {
         (x + width, -width)
@@ -4208,6 +4943,7 @@ impl CanvasRenderingContext2D {
         let width = image_data.width;
         let height = image_data.height;
         let color_space = image_data.color_space;
+        let opaque = !self.context.alpha;
         // The recorded op pins a copy of the whole ImageData buffer.
         let pixel_bytes = width * height * 4;
         recorder.borrow_mut().put_pixels(pixel_bytes, |canvas| {
@@ -4223,6 +4959,7 @@ impl CanvasRenderingContext2D {
             dirty_height,
             color_space,
             true,
+            opaque,
           );
         });
         // The charge may have tripped the cap on its own (a single
@@ -4232,7 +4969,10 @@ impl CanvasRenderingContext2D {
         return Ok(());
       }
       // Direct mode (SVG/PDF): write to surface canvas with inverted transform
-      // snapshot=false: pixels are consumed immediately, no copy needed.
+      // snapshot=false: pixels are consumed immediately, no copy needed. The
+      // SVG canvas also records the draw for its raster surface, so it needs
+      // its own copy of the pixels.
+      let snapshot = self.context.backend == Backend::Svg;
       let inverted = self.context.surface.canvas.get_transform_matrix().invert();
       self.context.surface.canvas.save();
       if let Some(inverted) = inverted {
@@ -4249,7 +4989,8 @@ impl CanvasRenderingContext2D {
         dirty_width,
         dirty_height,
         image_data.color_space,
-        false,
+        snapshot,
+        !self.context.alpha,
       );
       self.context.surface.canvas.restore();
       self.context.note_direct_mutation();
@@ -4265,6 +5006,7 @@ impl CanvasRenderingContext2D {
         let width = image_data.width;
         let height = image_data.height;
         let color_space = image_data.color_space;
+        let opaque = !self.context.alpha;
         // The recorded op pins a copy of the whole ImageData buffer.
         let pixel_bytes = width * height * 4;
         recorder.borrow_mut().put_pixels(pixel_bytes, |canvas| {
@@ -4280,6 +5022,7 @@ impl CanvasRenderingContext2D {
             h,
             color_space,
             true,
+            opaque,
           );
         });
         self.context.flush_if_recording_limit_exceeded();
@@ -4475,7 +5218,7 @@ pub enum ContextData {
 
 pub enum ContextOutputData {
   Skia(SkiaDataRef),
-  Avif(AvifData<'static>),
+  Avif(Vec<u8>),
   Gif(Vec<u8>),
 }
 
@@ -4540,7 +5283,7 @@ pub(crate) fn encode_surface(data: &ContextData) -> Result<ContextOutputData> {
         )
       }),
     ContextData::Avif(image, config, width, height) => image
-      .read_pixels(AlphaType::Unpremultiplied)
+      .read_pixels(AlphaType::Unpremultiplied, image.color_space())
       .ok_or_else(|| {
         Error::new(
           Status::GenericFailure,
@@ -4548,12 +5291,12 @@ pub(crate) fn encode_surface(data: &ContextData) -> Result<ContextOutputData> {
         )
       })
       .and_then(|pixels| {
-        crate::avif::encode(&pixels, *width, *height, config)
+        crate::avif::encode(&pixels, *width, *height, config, image.color_space())
           .map(ContextOutputData::Avif)
           .map_err(|e| Error::new(Status::GenericFailure, format!("{e}")))
       }),
     ContextData::Gif(image, config, width, height) => image
-      .read_pixels(AlphaType::Unpremultiplied)
+      .read_pixels(AlphaType::Unpremultiplied, ColorSpace::Srgb)
       .ok_or_else(|| {
         Error::new(
           Status::GenericFailure,
@@ -4815,6 +5558,7 @@ mod tests {
           8.0,
           ColorSpace::default(),
           true,
+          false,
         );
       });
     assert!(layers(&ctx) >= 1);
@@ -5010,6 +5754,95 @@ mod tests {
     assert_eq!(ctx.content_version(), version0);
   }
 
+  // Image draws never read fillStyle or the line dash, so they charge neither:
+  // only the source's pixels (drawImage) or picture payload (drawCanvas), plus
+  // the filter and shadow their paint does carry.
+  #[test]
+  fn image_draws_do_not_charge_fill_style_or_dash() {
+    const GRADIENT_BYTES: usize = 1000 * 32 + 256;
+    const DASH_BYTES: usize = 2 * 4;
+    const SHADOW_BYTES: usize = 1024;
+    const FILTER_BYTES: usize = "blur(1px)".len() * 8;
+    let with_unused_state = || {
+      let mut ctx = raster_ctx(16, 16);
+      let mut gradient = Gradient::create_linear_gradient(0.0, 0.0, 16.0, 0.0);
+      for i in 0..1000 {
+        gradient.add_color_stop(
+          i as f32 / 999.0,
+          crate::sk::Color4f::from_rgba8(255, 0, 0, 255),
+        );
+      }
+      assert_eq!(gradient.estimated_bytes(), GRADIENT_BYTES);
+      ctx.state.fill_style = Pattern::Gradient(gradient);
+      ctx.state.line_dash_list = vec![2.0, 3.0];
+      ctx
+    };
+    let with_shadow_and_filter = || {
+      let mut ctx = with_unused_state();
+      ctx.state.shadow_color = RGBA::new(0, 0, 255, 255);
+      ctx.state.shadow_offset_x = 2.0;
+      ctx.set_filter("blur(1px)").unwrap();
+      ctx
+    };
+    let mut src = raster_ctx(16, 16);
+    src.state.fill_style = Pattern::from_color("#ff0000").unwrap();
+    src.fill_rect(0.0, 0.0, 16.0, 16.0).unwrap();
+
+    // Sibling: a fill still charges the gradient, the dash, the shadow and the filter.
+    let mut fill = with_shadow_and_filter();
+    fill.fill_rect(0.0, 0.0, 16.0, 16.0).unwrap();
+    assert_eq!(
+      raster_bytes(&fill),
+      GRADIENT_BYTES + DASH_BYTES + SHADOW_BYTES + FILTER_BYTES
+    );
+
+    let mut dest = with_shadow_and_filter();
+    let bitmap = src.surface.get_bitmap();
+    dest
+      .draw_image(
+        &bitmap,
+        canvas_source_key(&src),
+        0.0,
+        0.0,
+        16.0,
+        16.0,
+        0.0,
+        0.0,
+        16.0,
+        16.0,
+      )
+      .unwrap();
+    assert_eq!(
+      raster_bytes(&dest),
+      16 * 16 * 4 + SHADOW_BYTES + FILTER_BYTES
+    );
+
+    let mut dest = with_unused_state();
+    let bitmap = src.surface.get_bitmap();
+    dest
+      .draw_image(
+        &bitmap,
+        canvas_source_key(&src),
+        0.0,
+        0.0,
+        16.0,
+        16.0,
+        0.0,
+        0.0,
+        16.0,
+        16.0,
+      )
+      .unwrap();
+    assert_eq!(raster_bytes(&dest), 16 * 16 * 4);
+
+    let mut dest = with_unused_state();
+    let picture = src.get_picture().expect("source picture");
+    dest
+      .draw_canvas(&picture, 0, 0.0, 0.0, 16.0, 16.0, 0.0, 0.0, 16.0, 16.0)
+      .unwrap();
+    assert_eq!(raster_bytes(&dest), 0);
+  }
+
   // A drawCanvas destination is charged the source recorder's retained
   // raster bytes -- the payload approx_bytes_used cannot see -- keyed on the
   // picture's uniqueID so an unchanged source charges once and a mutated one
@@ -5036,6 +5869,7 @@ mod tests {
           4.0,
           ColorSpace::default(),
           true,
+          false,
         );
       });
     let source_raster_bytes = src
@@ -5125,7 +5959,10 @@ mod tests {
     let picture = src.get_picture().expect("source picture");
 
     let mut ctx = raster_ctx(32, 32);
-    ctx.set_transform(Matrix::new(-1e-30, 0.0, 0.0, 1.0, 0.0, 0.0));
+    // Skia order (scaleX, skewX, transX, skewY, scaleY, transY): x scaled by
+    // -1e-30. The CTM must stay invertible, or nothing is drawn at all, as in
+    // Blink's Draw.
+    ctx.set_transform(Matrix::new(-1e-30, 0.0, 0.0, 0.0, 1.0, 0.0));
     let pending0 = pending(&ctx);
     let version0 = ctx.content_version();
     ctx
@@ -5170,6 +6007,7 @@ mod tests {
           4.0,
           ColorSpace::default(),
           true,
+          false,
         );
       });
     assert_eq!(layers(&ctx), 1);
@@ -5253,7 +6091,94 @@ mod tests {
     let pending0 = pending(&ctx);
     let raster0 = raster_bytes(&ctx);
     let version0 = ctx.content_version();
-    ctx.get_line_metrics("measure me").unwrap();
+    ctx.get_line_metrics("measure me", false).unwrap();
+    assert_eq!(pending(&ctx), pending0);
+    assert_eq!(raster_bytes(&ctx), raster0);
+    assert_eq!(ctx.content_version(), version0);
+  }
+
+  // measureText never reads the glyph ink, so it must not pay for the walk
+  // that finds it: the ink comes back empty.
+  #[test]
+  fn measure_text_skips_the_ink_walk() {
+    {
+      let fonts = get_font().unwrap();
+      fonts.register_from_path::<String>("__test__/fonts/Lato-Regular.ttf", None);
+    }
+    let mut ctx = raster_ctx(64, 64);
+    ctx.set_font("16px Lato".to_owned()).unwrap();
+    let measured = ctx.get_line_metrics("Hgjy", false).unwrap().0;
+    assert_eq!((measured.ink_left, measured.ink_right), (0.0, 0.0));
+    // The alpha:false reset asks for it and gets the glyphs; the rest of the
+    // metrics are the same either way.
+    let with_ink = ctx.get_line_metrics("Hgjy", true).unwrap().0;
+    assert!(with_ink.ink_right > with_ink.ink_left && with_ink.ink_right > 0.0);
+    let rest = |m: &crate::sk::ffi::skiac_line_metrics| {
+      (
+        m.ascent,
+        m.descent,
+        m.left,
+        m.right,
+        m.width,
+        m.font_ascent,
+        m.font_descent,
+        m.alphabetic_baseline,
+      )
+    };
+    assert_eq!(rest(&with_ink), rest(&measured));
+  }
+
+  // Blink's Draw returns before anything is recorded when the CTM is singular
+  // (canvas_2d_recorder_context.h:866-868), and so do we; such a draw must not
+  // charge the recording for an op it never records. The shadow makes every
+  // draw charge its 1 KiB shadow filter on top of its own payload.
+  #[test]
+  fn singular_transform_draws_charge_nothing() {
+    {
+      let fonts = get_font().unwrap();
+      fonts.register_from_path::<String>("__test__/fonts/Lato-Regular.ttf", None);
+    }
+    let mut src = raster_ctx(8, 8);
+    src.fill_rect(0.0, 0.0, 8.0, 8.0).unwrap();
+    let picture = src.get_picture().expect("source picture");
+    let bitmap = test_bitmap(4, 4, [255, 0, 0, 255]);
+
+    let mut ctx = raster_ctx(16, 16);
+    ctx.set_font("16px Lato".to_owned()).unwrap();
+    ctx.state.shadow_offset_x = 2.0;
+    // Skia order (scaleX, skewX, transX, skewY, scaleY, transY): x scaled by 0.
+    ctx.set_transform(Matrix::new(0.0, 0.0, 0.0, 0.0, 1.0, 0.0));
+    ctx.path.add_rect(1.0, 1.0, 9.0, 9.0);
+    let pending0 = pending(&ctx);
+    let raster0 = raster_bytes(&ctx);
+    let version0 = ctx.content_version();
+    ctx.fill_rect(1.0, 1.0, 8.0, 8.0).unwrap();
+    ctx.stroke_rect(1.0, 1.0, 8.0, 8.0).unwrap();
+    ctx.fill(None, FillType::Winding).unwrap();
+    ctx.stroke(None).unwrap();
+    ctx
+      .draw_image(
+        &bitmap,
+        RasterKey::Resource {
+          id: u64::MAX,
+          generation: 0,
+        },
+        0.0,
+        0.0,
+        4.0,
+        4.0,
+        0.0,
+        0.0,
+        4.0,
+        4.0,
+      )
+      .unwrap();
+    ctx
+      .draw_canvas(&picture, 4096, 0.0, 0.0, 8.0, 8.0, 0.0, 0.0, 8.0, 8.0)
+      .unwrap();
+    ctx.fill_text("hello", 0.0, 12.0, MAX_TEXT_WIDTH).unwrap();
+    ctx.stroke_text("hello", 0.0, 12.0, MAX_TEXT_WIDTH).unwrap();
+    ctx.clear_rect(0.0, 0.0, 4.0, 4.0).unwrap();
     assert_eq!(pending(&ctx), pending0);
     assert_eq!(raster_bytes(&ctx), raster0);
     assert_eq!(ctx.content_version(), version0);

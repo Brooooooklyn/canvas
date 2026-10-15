@@ -435,7 +435,7 @@ test.serial('createPattern fillRect lands', (t) => {
   tctx.fillRect(0, 0, 8, 8)
 
   const ctx = createCanvas(64, 64).getContext('2d')!
-  ctx.fillStyle = ctx.createPattern(tile, 'repeat')
+  ctx.fillStyle = ctx.createPattern(tile, 'repeat')!
   ctx.fillRect(0, 0, 64, 64)
   t.deepEqual(px(ctx, 32, 32), [255, 0, 255, 255])
 })
@@ -654,7 +654,7 @@ test.serial('measureText does not disturb the recording', (t) => {
   const tctx = tile.getContext('2d')!
   tctx.fillStyle = '#00ff00'
   tctx.fillRect(0, 0, 8, 8)
-  ctx.fillStyle = ctx.createPattern(tile, 'repeat')
+  ctx.fillStyle = ctx.createPattern(tile, 'repeat')!
 
   let width = 0
   for (let i = 0; i < 1000; i++) {

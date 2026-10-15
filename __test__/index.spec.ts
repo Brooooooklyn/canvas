@@ -1,9 +1,19 @@
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import ava, { TestFn } from 'ava'
+import ava, { ExecutionContext, TestFn } from 'ava'
 
-import { createCanvas, Path2D, Canvas, SKRSContext2D, DOMMatrix, loadImage, ImageData } from '../index'
+import {
+  createCanvas,
+  Path2D,
+  Canvas,
+  SKRSContext2D,
+  DOMMatrix,
+  loadImage,
+  ImageData,
+  SvgCanvas,
+  SvgExportFlag,
+} from '../index'
 
 import { snapshotImage } from './image-snapshot'
 
@@ -79,34 +89,267 @@ test('alpha:false survives width/height changes', (t) => {
 
 // GIF has no color profile, so the spec converts its pixels to sRGB. Chrome
 // 155 gives 31,128,223 for this P3 pixel in sRGB (drawImage into an sRGB
-// canvas, and the P3 PNG round trip). Our AVIF encoder writes no profile, so
-// AVIF is converted too; it is lossy, so it is held to an sRGB canvas that
-// holds the same pixels.
-test('gif and avif output of a display-p3 canvas is converted to sRGB', async (t) => {
+// canvas, and the P3 PNG round trip).
+test('gif output of a display-p3 canvas is converted to sRGB', async (t) => {
   const p3 = createCanvas(8, 8)
   const p3Context = p3.getContext('2d', { colorSpace: 'display-p3' })
   p3Context.fillStyle = 'rgb(32,128,223)'
   p3Context.fillRect(0, 0, 8, 8)
-  const srgb = createCanvas(8, 8)
-  srgb.getContext('2d').drawImage(p3, 0, 0)
   const decode = async (data: Buffer) => {
     const ctx = createCanvas(8, 8).getContext('2d')
     ctx.drawImage(await loadImage(data), 0, 0)
     return [...ctx.getImageData(4, 4, 1, 1).data]
   }
-  const gif: [string, (canvas: Canvas) => Buffer][] = [
-    ['toBuffer gif', (canvas) => canvas.toBuffer('image/gif')],
-    ['encodeSync gif', (canvas) => canvas.encodeSync('gif')],
-  ]
-  for (const [name, encode] of gif) {
-    t.deepEqual(await decode(encode(p3)), [31, 128, 223, 255], name)
+  t.deepEqual(await decode(p3.toBuffer('image/gif')), [31, 128, 223, 255], 'toBuffer')
+  t.deepEqual(await decode(p3.encodeSync('gif')), [31, 128, 223, 255], 'encodeSync')
+})
+
+// Our YUV to RGB step for AVIF can round a channel 1 lower than Chrome's.
+const nearPixel = (t: ExecutionContext, actual: number[], expected: readonly number[], label: string) =>
+  t.true(
+    actual.every((value, i) => Math.abs(value - expected[i]) <= 1),
+    `${label}: ${actual} vs ${expected}`,
+  )
+
+// The spec: a format that supports a color profile must carry the bitmap's
+// color space. AVIF does this with CICP (an 'nclx' colr box), so the pixels
+// of a P3 canvas stay P3, tagged primaries 12 (P3), transfer 13 (sRGB),
+// matrix 6 (BT.601) and full range; an sRGB canvas is tagged 1/13/6. Chrome
+// has no AVIF encoder; the pixels are what Chrome 155 CPU decodes from these
+// files, apart from the 1 lower red (Chrome 255, 234).
+test('avif output keeps the canvas color space and tags it as CICP', async (t) => {
+  const colr = (data: Buffer) => {
+    const at = data.indexOf('colrnclx')
+    return [data.readUInt16BE(at + 8), data.readUInt16BE(at + 10), data.readUInt16BE(at + 12), data[at + 14] >> 7]
   }
-  const avif: [string, (canvas: Canvas) => Buffer][] = [
-    ['toBuffer avif', (canvas) => canvas.toBuffer('image/avif')],
-    ['encodeSync avif', (canvas) => canvas.encodeSync('avif')],
+  for (const { source, cicp, decoded } of [
+    {
+      source: 'display-p3',
+      cicp: [12, 13, 6, 1],
+      decoded: {
+        'display-p3': [
+          [255, 0, 0, 255],
+          [31, 128, 223, 255],
+        ],
+        srgb: [
+          [255, 0, 0, 255],
+          [0, 130, 230, 255],
+        ],
+      },
+    },
+    {
+      source: 'srgb',
+      cicp: [1, 13, 6, 1],
+      decoded: {
+        'display-p3': [
+          [234, 51, 35, 255],
+          [63, 126, 216, 255],
+        ],
+        srgb: [
+          [255, 0, 0, 255],
+          [31, 128, 223, 255],
+        ],
+      },
+    },
+  ] as const) {
+    const canvas = createCanvas(4, 4)
+    const ctx = canvas.getContext('2d', { colorSpace: source })
+    const imageData = ctx.createImageData(4, 4)
+    for (let i = 0; i < 16; i++) {
+      imageData.data.set(i % 4 < 2 ? [255, 0, 0, 255] : [32, 128, 223, 255], i * 4)
+    }
+    ctx.putImageData(imageData, 0, 0)
+    for (const [name, data] of [
+      ['toBuffer', canvas.toBuffer('image/avif', { quality: 100 })],
+      ['encodeSync', canvas.encodeSync('avif', { quality: 100 })],
+    ] as const) {
+      t.deepEqual(colr(data), cicp, `${source} ${name}`)
+      const image = await loadImage(data)
+      for (const colorSpace of ['display-p3', 'srgb'] as const) {
+        const label = `${source} ${name} into ${colorSpace}`
+        const out = createCanvas(4, 4).getContext('2d', { colorSpace })
+        out.drawImage(image, 0, 0)
+        const [left, right] = decoded[colorSpace]
+        nearPixel(t, [...out.getImageData(0, 0, 1, 1).data], left, `${label} left`)
+        t.deepEqual([...out.getImageData(3, 0, 1, 1).data], right, `${label} right`)
+      }
+    }
+  }
+})
+
+// AvifConfig.quality is libavif's 0-100 scale, where 100 is the best. Chrome
+// has no AVIF encoder, so this follows our own API doc.
+test('avif quality: a higher quality gives a bigger and more exact file', async (t) => {
+  const canvas = createCanvas(64, 64)
+  const ctx = canvas.getContext('2d')
+  const gradient = ctx.createLinearGradient(0, 0, 64, 64)
+  gradient.addColorStop(0, '#c86432')
+  gradient.addColorStop(0.5, '#2080df')
+  gradient.addColorStop(1, '#40c040')
+  ctx.fillStyle = gradient
+  ctx.fillRect(0, 0, 64, 64)
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(10, 20, 8, 24)
+  ctx.fillRect(30, 10, 24, 6)
+  const source = ctx.getImageData(0, 0, 64, 64).data
+  const maxError = async (data: Buffer) => {
+    const out = createCanvas(64, 64).getContext('2d')
+    out.drawImage(await loadImage(data), 0, 0)
+    return out.getImageData(0, 0, 64, 64).data.reduce((max, value, i) => Math.max(max, Math.abs(value - source[i])), 0)
+  }
+  const encoders: [string, (quality: number) => Buffer][] = [
+    ['toBuffer', (quality) => canvas.toBuffer('image/avif', { quality })],
+    ['encodeSync', (quality) => canvas.encodeSync('avif', { quality })],
   ]
-  for (const [name, encode] of avif) {
-    t.deepEqual(await decode(encode(p3)), await decode(encode(srgb)), name)
+  for (const [name, encode] of encoders) {
+    const low = encode(10)
+    const high = encode(90)
+    t.true(low.length < high.length, `${name}: ${low.length} < ${high.length} bytes`)
+    t.true((await maxError(high)) < (await maxError(low)), name)
+    // Above 100 is the best quality too (256 used to wrap to 0).
+    for (const quality of [100, 255, 256, 1000]) {
+      t.true((await maxError(encode(quality))) <= 1, `${name} ${quality}`)
+    }
+  }
+})
+
+// The fixtures hold P3 255,0,0 (left) and P3 200,100,50 (right), tagged with an
+// ICC profile, with CICP 12/13/6, or with CICP 12/2/6. Chrome 155 CPU honors
+// the ICC profile, else the CICP, where an unspecified (2) transfer means sRGB
+// (avif_image_decoder.cc:868-914). Our red is 1 lower (nearPixel), as it is
+// for an sRGB AVIF.
+test('avif decode honors the ICC profile or CICP color space', async (t) => {
+  for (const name of ['avif-p3-icc', 'avif-p3-cicp', 'avif-p3-cicp-transfer-unspecified']) {
+    const image = await loadImage(join(__dirname, 'fixtures', `${name}.avif`))
+    for (const { colorSpace, left, right } of [
+      { colorSpace: 'display-p3', left: [255, 0, 0, 255], right: [200, 100, 50, 255] },
+      { colorSpace: 'srgb', left: [255, 0, 0, 255], right: [215, 93, 31, 255] },
+    ] as const) {
+      const ctx = createCanvas(4, 4).getContext('2d', { colorSpace })
+      ctx.drawImage(image, 0, 0)
+      nearPixel(t, [...ctx.getImageData(0, 0, 1, 1).data], left, `${name} ${colorSpace} left`)
+      t.deepEqual([...ctx.getImageData(3, 0, 1, 1).data], right, `${name} ${colorSpace} right`)
+    }
+  }
+})
+
+// The avif-cicp-P-T-M fixtures hold sRGB 128,128,128 | 200,100,50 |
+// 32,128,223 | 255,0,0, encoded by avifenc 1.4.2 (4:4:4, full range) with
+// CICP primaries P, transfer T and matrix M.
+const decodeAvifRow = async (name: string, colorSpace: 'srgb' | 'display-p3') => {
+  const ctx = createCanvas(4, 4).getContext('2d', { colorSpace })
+  ctx.drawImage(await loadImage(join(__dirname, 'fixtures', `${name}.avif`)), 0, 0)
+  const row = [...ctx.getImageData(0, 0, 4, 1).data]
+  return [0, 4, 8, 12].map((i) => row.slice(i, i + 4))
+}
+
+// Chrome draws the BT.709 family of CICP transfers (1 BT.709, 6 SMPTE 170M,
+// 14 and 15 BT.2020) with the sRGB curve (ui/gfx/color_space.cc
+// GetTransferFunction), not with the 2.4 gamma of SkColorSpace::MakeCICP.
+// Expected values are Chrome 155 CPU; ours can round a channel 1 lower.
+test('avif decode draws BT.709-family CICP transfers with the sRGB curve', async (t) => {
+  const bt709Primaries = {
+    srgb: [
+      [128, 128, 128, 255],
+      [200, 100, 50, 255],
+      [31, 128, 223, 255],
+      [255, 0, 0, 255],
+    ],
+    'display-p3': [
+      [128, 128, 128, 255],
+      [187, 105, 62, 255],
+      [63, 126, 216, 255],
+      [234, 51, 35, 255],
+    ],
+  }
+  const bt2020Primaries = {
+    srgb: [
+      [128, 128, 128, 255],
+      [240, 76, 29, 255],
+      [0, 134, 231, 255],
+      [255, 0, 0, 255],
+    ],
+    'display-p3': [
+      [128, 128, 128, 255],
+      [222, 89, 50, 255],
+      [0, 130, 223, 255],
+      [255, 0, 9, 255],
+    ],
+  }
+  const cases = {
+    'avif-cicp-1-1-6': bt709Primaries,
+    // Primaries 2 (unspecified) means BT.709.
+    'avif-cicp-2-1-6': bt709Primaries,
+    // The BT.709 matrix rounds the YUV a little differently.
+    'avif-cicp-1-1-1': {
+      srgb: [
+        [128, 128, 128, 255],
+        [200, 100, 51, 255],
+        [32, 127, 222, 255],
+        [254, 0, 0, 255],
+      ],
+      'display-p3': [
+        [128, 128, 128, 255],
+        [187, 105, 63, 255],
+        [63, 125, 215, 255],
+        [233, 51, 35, 255],
+      ],
+    },
+    'avif-cicp-6-6-6': {
+      srgb: [
+        [128, 128, 128, 255],
+        [196, 102, 49, 255],
+        [49, 129, 223, 255],
+        [248, 36, 0, 255],
+      ],
+      'display-p3': [
+        [128, 128, 128, 255],
+        [183, 107, 61, 255],
+        [72, 128, 217, 255],
+        [228, 62, 34, 255],
+      ],
+    },
+    'avif-cicp-9-14-9': bt2020Primaries,
+    'avif-cicp-9-15-9': bt2020Primaries,
+    // P3 primaries are kept; only the transfer is the sRGB curve.
+    'avif-cicp-12-1-6': {
+      srgb: [
+        [128, 128, 128, 255],
+        [215, 93, 31, 255],
+        [0, 130, 230, 255],
+        [255, 0, 0, 255],
+      ],
+      'display-p3': [
+        [128, 128, 128, 255],
+        [200, 100, 50, 255],
+        [31, 128, 223, 255],
+        [255, 0, 0, 255],
+      ],
+    },
+  }
+  for (const [name, expected] of Object.entries(cases)) {
+    for (const colorSpace of ['srgb', 'display-p3'] as const) {
+      const row = await decodeAvifRow(name, colorSpace)
+      row.forEach((pixel, x) => nearPixel(t, pixel, expected[colorSpace][x], `${name} ${colorSpace} x=${x}`))
+    }
+  }
+})
+
+// Chrome cannot decode CICP transfer 11 (IEC 61966-2-4), and it tone maps PQ
+// (16) and HLG (18) when it draws them into a canvas. We have neither, so
+// these stay untagged (drawn as sRGB), as before AVIF color spaces were
+// honored. These are not Chrome's values (PQ grey 132, HLG grey 99), but are
+// closer to them than Skia's plain BT.709, PQ and HLG curves (121, 181, 137).
+test('avif decode leaves CICP transfers 11, PQ and HLG untagged', async (t) => {
+  const untagged = [
+    [128, 128, 128, 255],
+    [200, 100, 50, 255],
+    [31, 128, 223, 255],
+    [255, 0, 0, 255],
+  ]
+  for (const name of ['avif-cicp-1-11-6', 'avif-cicp-9-16-9', 'avif-cicp-9-18-9']) {
+    const row = await decodeAvifRow(name, 'srgb')
+    row.forEach((pixel, x) => nearPixel(t, pixel, untagged[x], `${name} x=${x}`))
   }
 })
 
@@ -356,6 +599,90 @@ test('downscaled image pattern samples one mip level', async (t) => {
       [127, 127, 127, 255, 127, 127, 127, 255, 127, 127, 127, 255, 127, 127, 127, 255],
       quality,
     )
+  }
+})
+
+// Chrome has no ImageData pattern: createPattern(imageData) throws. Its analog,
+// a pattern over createImageBitmap(imageData), samples premultiplied texels the
+// way a canvas source does. Expected values are Chrome 155's CPU canvas with
+// that ImageBitmap in place of the ImageData.
+const imageDataPatternRow = (
+  data: number[],
+  sourceWidth: number,
+  width: number,
+  matrix: number[],
+  quality: SKRSContext2D['imageSmoothingQuality'],
+  repetition: string,
+) => {
+  const source = new ImageData(new Uint8ClampedArray(data), sourceWidth, data.length / 4 / sourceWidth)
+  const ctx = createCanvas(width, 1).getContext('2d')
+  ctx.imageSmoothingQuality = quality
+  const pattern = ctx.createPattern(source, repetition)!
+  pattern.setTransform(new DOMMatrix(matrix))
+  ctx.fillStyle = pattern
+  ctx.fillRect(0, 0, width, 1)
+  return [...ctx.getImageData(0, 0, width, 1).data]
+}
+
+test('ImageData pattern filters premultiplied texels', (t) => {
+  t.deepEqual(
+    imageDataPatternRow([255, 0, 0, 255, 0, 0, 0, 0], 2, 8, [4, 0, 0, 1, 0, 0], 'low', 'repeat'),
+    [
+      255, 0, 0, 159, 255, 0, 0, 223, 255, 0, 0, 223, 255, 0, 0, 159, 255, 0, 0, 96, 255, 0, 0, 32, 255, 0, 0, 32, 255,
+      0, 0, 96,
+    ],
+  )
+})
+
+test('no-repeat ImageData pattern keeps its color next to the transparent edge', (t) => {
+  t.deepEqual(
+    imageDataPatternRow(Array(4).fill([0, 128, 255, 255]).flat(), 2, 6, [2, 0, 0, 2, 0.5, 0], 'low', 'no-repeat'),
+    [0, 128, 255, 96, 0, 128, 255, 191, 0, 128, 255, 191, 0, 128, 255, 191, 0, 128, 255, 96, 0, 0, 0, 0],
+  )
+})
+
+test('downscaled ImageData pattern blends two mip levels', (t) => {
+  const colors = [
+    [255, 0, 0, 255],
+    [0, 255, 0, 255],
+    [0, 0, 255, 255],
+    [255, 255, 255, 255],
+  ]
+  const stripes = Array.from({ length: 16 }, (_, i) => colors[i % 4]).flat()
+  for (const quality of ['medium', 'high'] as const) {
+    t.deepEqual(
+      imageDataPatternRow(stripes, 4, 4, [0.4, 0, 0, 0.4, 0, 0], quality, 'repeat'),
+      [116, 138, 26, 255, 150, 138, 165, 255, 104, 116, 165, 255, 138, 116, 26, 255],
+      quality,
+    )
+  }
+})
+
+// The pattern reads the ImageData in its colorSpace and converts it to the
+// canvas, as putImageData does and as Chrome's pattern over
+// createImageBitmap(imageData) does. Expected values are Chrome 155's. An
+// SvgCanvas reads back what a canvas with its colorSpace holds.
+test('ImageData pattern converts from the ImageData colorSpace', (t) => {
+  const colors = [200, 100, 50, 255, 10, 240, 120, 255, 255, 0, 0, 255, 0, 0, 255, 128]
+  const chrome = {
+    'srgb on srgb': colors,
+    'srgb on display-p3': [187, 105, 62, 255, 110, 236, 133, 255, 234, 51, 35, 255, 0, 0, 245, 128],
+    'display-p3 on srgb': [215, 93, 31, 255, 0, 244, 104, 255, 255, 0, 0, 255, 0, 0, 255, 128],
+    'display-p3 on display-p3': colors,
+  }
+  const canvases = {
+    Canvas: () => createCanvas(4, 1),
+    SvgCanvas: () => createCanvas(4, 1, SvgExportFlag.NoPrettyXML),
+  }
+  for (const [kind, make] of Object.entries(canvases)) {
+    for (const [name, expected] of Object.entries(chrome)) {
+      const [source, target] = name.split(' on ') as ('srgb' | 'display-p3')[]
+      const imageData = new ImageData(new Uint8ClampedArray(colors), 4, 1, { colorSpace: source })
+      const ctx = make().getContext('2d', { colorSpace: target })
+      ctx.fillStyle = ctx.createPattern(imageData, 'repeat')
+      ctx.fillRect(0, 0, 4, 1)
+      t.deepEqual([...ctx.getImageData(0, 0, 4, 1).data], expected, `${kind} ${name}`)
+    }
   }
 })
 
@@ -730,6 +1057,68 @@ test('strokeStyle state should be ok', (t) => {
   t.is(ctx.strokeStyle, '#000000')
   ctx.strokeStyle = 'hotpink'
   t.is(ctx.strokeStyle, 'hotpink')
+})
+
+// Setting width or height resets the context to its default state, even to
+// the same value. Chrome 155 CPU: both getters return '#000000' afterwards,
+// whether the old style was a string, a gradient or a pattern, and a fillRect
+// paints black.
+test('fillStyle and strokeStyle getters reset when width or height is set', (t) => {
+  const resizes: [string, (canvas: Canvas | SvgCanvas) => void][] = [
+    [
+      'width=width',
+      (canvas) => {
+        const { width } = canvas
+        canvas.width = width
+      },
+    ],
+    ['width=30', (canvas) => (canvas.width = 30)],
+    ['height=25', (canvas) => (canvas.height = 25)],
+  ]
+  const styles: [string, (ctx: SKRSContext2D) => void][] = [
+    [
+      'string',
+      (ctx) => {
+        ctx.fillStyle = '#ff0000'
+        ctx.strokeStyle = 'rgba(0, 255, 0, 0.5)'
+      },
+    ],
+    [
+      'gradient',
+      (ctx) => {
+        const gradient = ctx.createLinearGradient(0, 0, 20, 0)
+        gradient.addColorStop(0, 'red')
+        gradient.addColorStop(1, 'blue')
+        ctx.fillStyle = gradient
+        ctx.strokeStyle = gradient
+      },
+    ],
+    [
+      'pattern',
+      (ctx) => {
+        const pattern = ctx.createPattern(createCanvas(2, 2), 'repeat')
+        ctx.fillStyle = pattern
+        ctx.strokeStyle = pattern
+      },
+    ],
+  ]
+  for (const svg of [false, true]) {
+    for (const [styleName, setStyle] of styles) {
+      for (const [resizeName, resize] of resizes) {
+        const label = `${svg ? 'svg' : 'raster'} ${styleName} ${resizeName}`
+        const canvas = svg ? createCanvas(20, 20, SvgExportFlag.ConvertTextToPaths) : createCanvas(20, 20)
+        const ctx = canvas.getContext('2d')
+        setStyle(ctx)
+        resize(canvas)
+        t.is(ctx.fillStyle, '#000000', label)
+        t.is(ctx.strokeStyle, '#000000', label)
+        if (!svg) {
+          ctx.fillRect(0, 0, 1, 1)
+          t.deepEqual([...ctx.getImageData(0, 0, 1, 1).data], [0, 0, 0, 255], label)
+        }
+      }
+    }
+  }
 })
 
 test('shadowBlur state should be ok', (t) => {
