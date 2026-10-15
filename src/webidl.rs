@@ -899,6 +899,10 @@ impl<S: Site> FromNapiValue for DomString<S> {
 ///   Next, script_iterator.cc): each step calls next(), then gets `value`,
 ///   then `done`. The iterator is never closed: return() is not called when
 ///   a step or a conversion throws.
+///
+/// Each value read makes handles, freed only when their handle scope
+/// closes, so the values are read in blocks (see [`Blocks`]). `T` must not
+/// hold a handle.
 pub(crate) fn sequence<T>(
   env: sys::napi_env,
   value: sys::napi_value,
@@ -919,9 +923,11 @@ pub(crate) fn sequence<T>(
       ));
     }
     // Blink reserves `length`; a sparse array can be long.
-    let mut values = Vec::with_capacity(length.min(1024) as usize);
+    let mut values = Vec::with_capacity(length.min(SEQUENCE_BLOCK) as usize);
+    let mut blocks = Blocks::new(env);
     let mut index = 0;
     while index < array_length(env, value)? {
+      blocks.next_value()?;
       let mut item = ptr::null_mut();
       check_status!(unsafe { sys::napi_get_element(env, value, index, &mut item) })?;
       values.push(convert(item)?);
@@ -956,7 +962,9 @@ pub(crate) fn sequence<T>(
     return error("Expected next() function on iterator.");
   }
   let mut values = Vec::new();
+  let mut blocks = Blocks::new(env);
   loop {
+    blocks.next_value()?;
     let result = call(env, iterator, next, &[])?;
     if !is_object(env, result)? {
       return error("Expected iterator.next() to return an Object.");
@@ -975,6 +983,66 @@ pub(crate) fn sequence<T>(
       return Ok(values);
     }
     values.push(convert(item)?);
+  }
+}
+
+/// How many values of a sequence one handle scope reads.
+const SEQUENCE_BLOCK: u32 = 1024;
+
+/// A napi handle scope, closed when dropped.
+struct HandleScope {
+  env: sys::napi_env,
+  scope: sys::napi_handle_scope,
+}
+
+impl HandleScope {
+  fn open(env: sys::napi_env) -> Result<Self> {
+    let mut scope = ptr::null_mut();
+    check_status!(unsafe { sys::napi_open_handle_scope(env, &mut scope) })?;
+    Ok(Self { env, scope })
+  }
+}
+
+impl Drop for HandleScope {
+  fn drop(&mut self) {
+    // A pending exception stays pending: napi keeps it in a persistent
+    // handle, not in this scope.
+    unsafe { sys::napi_close_handle_scope(self.env, self.scope) };
+  }
+}
+
+/// The handle scopes of a [`sequence`] conversion: setLineDash of a sparse
+/// array of `MAX_DOUBLE_SEQUENCE_LENGTH` holes would otherwise hold two
+/// handles for each hole, some 4 GB, until the call returns. The first
+/// `SEQUENCE_BLOCK` values are read in the caller's scope, so a short
+/// sequence opens none; each later block of `SEQUENCE_BLOCK` values is read
+/// in a scope of its own, closed when the next one opens or when this is
+/// dropped.
+struct Blocks {
+  env: sys::napi_env,
+  /// The values read so far.
+  read: u64,
+  scope: Option<HandleScope>,
+}
+
+impl Blocks {
+  fn new(env: sys::napi_env) -> Self {
+    Self {
+      env,
+      read: 0,
+      scope: None,
+    }
+  }
+
+  /// Called before each value is read.
+  fn next_value(&mut self) -> Result<()> {
+    if self.read != 0 && self.read % u64::from(SEQUENCE_BLOCK) == 0 {
+      // Scopes close in the reverse order they opened: the old one first.
+      self.scope = None;
+      self.scope = Some(HandleScope::open(self.env)?);
+    }
+    self.read += 1;
+    Ok(())
   }
 }
 
