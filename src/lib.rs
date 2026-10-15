@@ -159,9 +159,10 @@ fn reset_ctx_style_getters(canvas: &This) -> Result<()> {
 #[napi]
 impl<'c> CanvasElement<'c> {
   // Setting width or height resets the bitmap but keeps the context's
-  // settings (alpha, color space).
+  // settings (alpha, color space, color type).
   fn resized_context(old: &Context, width: u32, height: u32) -> Result<Context> {
-    let mut context = Context::new_with_alpha(width, height, old.color_space, old.alpha)?;
+    let mut context =
+      Context::new_with_alpha(width, height, old.color_space, old.alpha, old.pixel_format)?;
     // A lost context stays lost while the size is not valid (Chrome:
     // InitializeResourceProvider fails again). A valid size restores it here
     // at once; Chrome restores it two tasks later, with contextrestored.
@@ -272,12 +273,21 @@ impl<'c> CanvasElement<'c> {
     }
     self.ctx.reported_settings = attrs.reported;
     let context_2d = &mut self.ctx.context;
-    // The first acquisition fixes the backing surface's color space and
-    // alpha. alpha:false always gets a fresh kOpaque surface, so nothing set
-    // through the internal `canvas.ctx` before this call reaches the base.
-    if attrs.color_space != context_2d.color_space || !attrs.alpha {
-      let new_ctx =
-        Context::new_with_alpha(self.width, self.height, attrs.color_space, attrs.alpha)?;
+    // The first acquisition fixes the backing surface's color space, color
+    // type and alpha. alpha:false always gets a fresh kOpaque surface, so
+    // nothing set through the internal `canvas.ctx` before this call reaches
+    // the base.
+    if attrs.color_space != context_2d.color_space
+      || attrs.color_type != context_2d.pixel_format
+      || !attrs.alpha
+    {
+      let new_ctx = Context::new_with_alpha(
+        self.width,
+        self.height,
+        attrs.color_space,
+        attrs.alpha,
+        attrs.color_type,
+      )?;
       replace_context(env, context_2d, new_ctx)?;
       reset_ctx_style_getters(&this)?;
     }
@@ -694,7 +704,13 @@ impl<'scope> SVGCanvas<'scope> {
   ) -> Result<SVGCanvas<'scope>> {
     let width = constructor_size::<webidl::SvgCanvasSetWidth>(env, width, canvas_width)?;
     let height = constructor_size::<webidl::SvgCanvasSetHeight>(env, height, canvas_height)?;
-    let context = Context::new_svg(width, height, flag.into(), ColorSpace::default())?;
+    let context = Context::new_svg(
+      width,
+      height,
+      flag.into(),
+      ColorSpace::default(),
+      Default::default(),
+    )?;
     let bytes = context.surface_bytes();
     let ctx = CanvasRenderingContext2D::into_instance(
       CanvasRenderingContext2D {
@@ -742,12 +758,22 @@ impl<'scope> SVGCanvas<'scope> {
     }
     self.ctx.reported_settings = attrs.reported;
     let context_2d = &mut self.ctx.context;
-    // The first acquisition fixes the color space of the raster surface that
-    // reads see, as on a CanvasElement. The SVG output does not use it.
-    // alpha:false always gets a fresh context: state set through the internal
-    // `canvas.ctx` (matrix, clip, paint) must not reach the base.
-    if attrs.color_space != context_2d.color_space || !attrs.alpha {
-      let new_ctx = Context::new_svg(self.width, self.height, self.flag.into(), attrs.color_space)?;
+    // The first acquisition fixes the color space and color type of the
+    // raster surface that reads see, as on a CanvasElement. The SVG output
+    // does not use them. alpha:false always gets a fresh context: state set
+    // through the internal `canvas.ctx` (matrix, clip, paint) must not reach
+    // the base.
+    if attrs.color_space != context_2d.color_space
+      || attrs.color_type != context_2d.pixel_format
+      || !attrs.alpha
+    {
+      let new_ctx = Context::new_svg(
+        self.width,
+        self.height,
+        self.flag.into(),
+        attrs.color_space,
+        attrs.color_type,
+      )?;
       replace_context(env, context_2d, new_ctx)?;
       reset_ctx_style_getters(&this)?;
     }
@@ -779,6 +805,7 @@ impl<'scope> SVGCanvas<'scope> {
       self.ctx.context.surface.alpha_type(),
       self.flag.into(),
       self.ctx.context.color_space,
+      self.ctx.context.pixel_format,
     )
     .ok_or_else(|| Error::new(Status::GenericFailure, "Failed to create surface"))?;
     self.ctx.context.surface = surface;
@@ -800,10 +827,16 @@ impl<'scope> SVGCanvas<'scope> {
   }
 
   // Setting width or height resets the drawing but keeps the context's
-  // settings (alpha, color space).
+  // settings (alpha, color space, color type).
   fn resized_context(&self, width: u32, height: u32) -> Result<Context> {
     let old = &self.ctx.context;
-    let mut context_2d = Context::new_svg(width, height, self.flag.into(), old.color_space)?;
+    let mut context_2d = Context::new_svg(
+      width,
+      height,
+      self.flag.into(),
+      old.color_space,
+      old.pixel_format,
+    )?;
     if !old.alpha {
       context_2d.set_opaque();
     }

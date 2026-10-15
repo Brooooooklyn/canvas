@@ -139,15 +139,17 @@ void skiac_clear_all_cache() {
 
 // Surface
 
-static SkSurface* skiac_surface_create(int width,
-                                       int height,
-                                       SkAlphaType alphaType,
-                                       uint8_t cs) {
+static SkSurface* skiac_surface_create(
+    int width,
+    int height,
+    SkAlphaType alphaType,
+    uint8_t cs,
+    SkColorType backing_store_color_type = kRGBA_8888_SkColorType) {
   // Init() is idempotent, so can be called more than once with no adverse
   // effect.
   SkGraphics::Init();
   auto color_space = COLOR_SPACE_CAST;
-  auto info = SkImageInfo::Make(width, height, kRGBA_8888_SkColorType,
+  auto info = SkImageInfo::Make(width, height, backing_store_color_type,
                                 alphaType, color_space);
   // Text drawn on the surface uses Chrome's text gamma and contrast.
   const SkSurfaceProps props = CanvasSurfaceProps();
@@ -1110,12 +1112,19 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
   std::unordered_set<uint32_t> fRecordedImages;
 };
 
+// The colour type of a canvas's CanvasPixelFormat: 0 unorm8, 1 float16
+// (Canvas2DColorParams::GetSharedImageFormat, canvas_2d_color_params.cc).
+static SkColorType CanvasColorType(uint8_t pf) {
+  return pf == 1 ? kRGBA_F16_SkColorType : kRGBA_8888_SkColorType;
+}
+
 void skiac_surface_create_svg(skiac_svg_surface* c_surface,
                               int w,
                               int h,
                               int alphaType,
                               uint32_t flag,
-                              uint8_t cs) {
+                              uint8_t cs,
+                              uint8_t pf) {
   auto w_stream = new SkDynamicMemoryWStream();
 
   auto canvas = SkSVGCanvas::Make(SkRect::MakeWH(w, h), w_stream, flag);
@@ -1125,8 +1134,9 @@ void skiac_surface_create_svg(skiac_svg_surface* c_surface,
   }
   // A raster cannot be 0 wide or high: a canvas with a 0 side has no pixels,
   // and its raster is a stand-in that nothing reads (Context::new_svg).
-  auto surface = skiac_surface_create(std::max(w, 1), std::max(h, 1),
-                                      (SkAlphaType)alphaType, cs);
+  auto surface =
+      skiac_surface_create(std::max(w, 1), std::max(h, 1),
+                           (SkAlphaType)alphaType, cs, CanvasColorType(pf));
   if (!surface) {
     canvas.reset();
     delete w_stream;
@@ -1146,9 +1156,10 @@ void skiac_svg_canvas_flush(skiac_canvas* c_canvas) {
 
 skiac_surface* skiac_surface_create_rgba_premultiplied(int width,
                                                        int height,
-                                                       uint8_t cs) {
-  return reinterpret_cast<skiac_surface*>(
-      skiac_surface_create(width, height, kPremul_SkAlphaType, cs));
+                                                       uint8_t cs,
+                                                       uint8_t pf) {
+  return reinterpret_cast<skiac_surface*>(skiac_surface_create(
+      width, height, kPremul_SkAlphaType, cs, CanvasColorType(pf)));
 }
 
 // alpha:false backing store. Blink gives such a canvas a kOpaque resource
@@ -1156,9 +1167,10 @@ skiac_surface* skiac_surface_create_rgba_premultiplied(int width,
 // CreateSkSurface), so putImageData and getImageData copy the bytes as given.
 skiac_surface* skiac_surface_create_rgba_opaque(int width,
                                                 int height,
-                                                uint8_t cs) {
-  return reinterpret_cast<skiac_surface*>(
-      skiac_surface_create(width, height, kOpaque_SkAlphaType, cs));
+                                                uint8_t cs,
+                                                uint8_t pf) {
+  return reinterpret_cast<skiac_surface*>(skiac_surface_create(
+      width, height, kOpaque_SkAlphaType, cs, CanvasColorType(pf)));
 }
 
 skiac_surface* skiac_surface_create_rgba(int width, int height, uint8_t cs) {
@@ -1254,11 +1266,13 @@ skiac_surface* skiac_surface_copy_rgba(skiac_surface* c_surface,
   // x, y, width, height are source rectangle coordinates.
   // Premultiplied like the source canvas: pattern shaders filter the stored
   // texels, and unpremul texels would pull transparent black into the color.
-  // An alpha:false source stays kOpaque, like Blink's snapshot of it.
+  // An alpha:false source stays kOpaque, like Blink's snapshot of it, and a
+  // float16 source stays float16.
   auto alpha_type = SURFACE_CAST->imageInfo().alphaType() == kOpaque_SkAlphaType
                         ? kOpaque_SkAlphaType
                         : kPremul_SkAlphaType;
-  auto copy = skiac_surface_create((int)width, (int)height, alpha_type, cs);
+  auto copy = skiac_surface_create((int)width, (int)height, alpha_type, cs,
+                                   SURFACE_CAST->imageInfo().colorType());
   if (!copy) {
     return nullptr;
   }
@@ -4194,6 +4208,15 @@ bool skiac_bitmap_source_is_opaque(skiac_bitmap* c_bitmap, bool is_canvas) {
            kOpaque_SkAlphaType;
   }
   return BITMAP_CAST->alphaType() == kOpaque_SkAlphaType;
+}
+
+// The bytes per pixel of a drawImage source: 8 for a float16 canvas.
+int skiac_bitmap_source_bytes_per_pixel(skiac_bitmap* c_bitmap,
+                                        bool is_canvas) {
+  if (is_canvas) {
+    return reinterpret_cast<SkSurface*>(c_bitmap)->imageInfo().bytesPerPixel();
+  }
+  return BITMAP_CAST->bytesPerPixel();
 }
 
 size_t skiac_bitmap_get_width(skiac_bitmap* c_bitmap) {

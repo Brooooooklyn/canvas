@@ -40,7 +40,7 @@ interface CanvasToneMapping {
 interface CanvasRenderingContext2DSettings {
   alpha?: boolean
   colorSpace?: PredefinedColorSpace
-  /** 'float16' is reported by getContextAttributes(), but the storage stays 8-bit. */
+  /** 'float16' stores half floats, as Chrome does; `canvas.data()` then gives them premultiplied, 8 bytes a pixel. */
   colorType?: CanvasPixelFormat
   desynchronized?: boolean
   /** Not read by getContext() (as in Chrome); getContextAttributes() reports `{ mode: 'standard' }`. */
@@ -945,7 +945,7 @@ export class Canvas {
   toBuffer(mime: 'image/jpeg' | 'image/webp', quality?: number): Buffer
   toBuffer(mime: 'image/avif', cfg?: AvifConfig | number): Buffer
   toBuffer(mime: 'image/gif', quality?: number): Buffer
-  // raw pixels
+  /** The stored pixels, premultiplied: RGBA bytes, or RGBA half floats (8 bytes a pixel) for colorType 'float16'. */
   data(): Buffer
   toDataURL(mime?: 'image/png'): string
   toDataURL(mime: 'image/jpeg' | 'image/webp', quality?: number): string
