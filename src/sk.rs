@@ -7,7 +7,7 @@ use std::os::raw::c_char;
 use std::ptr;
 use std::slice;
 use std::str::FromStr;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::error::SkError;
 use crate::font::{FontStretch, FontStyle};
@@ -424,6 +424,8 @@ pub mod ffi {
       flag: u32,
       cs: u8,
     );
+
+    pub fn skiac_svg_canvas_flush(canvas: *mut skiac_canvas);
 
     pub fn skiac_surface_create_rgba(width: i32, height: i32, cs: u8) -> *mut skiac_surface;
 
@@ -1071,6 +1073,14 @@ pub mod ffi {
       size: usize,
       color_type: i32,
       alpha_type: i32,
+    ) -> *mut skiac_bitmap;
+
+    pub fn skiac_bitmap_make_premul_from_image_data(
+      ptr: *mut u8,
+      width: usize,
+      height: usize,
+      row_bytes: usize,
+      cs: u8,
     ) -> *mut skiac_bitmap;
 
     pub fn skiac_bitmap_get_width(c_bitmap: *mut skiac_bitmap) -> usize;
@@ -2148,6 +2158,17 @@ impl Surface {
     }
   }
 
+  /// On an SVG surface, draw what its canvas recorded into the raster surface
+  /// beside it (skiac_svg_canvas_flush), so the raster holds what was drawn,
+  /// as a canvas would draw it. It can differ from the SVG output where
+  /// SkSVGDevice drops an effect (layers, blend modes). Every read of an SVG
+  /// surface's pixels comes after this.
+  pub(crate) fn flush_svg(&mut self) {
+    if self.is_svg && !self.canvas.0.is_null() {
+      unsafe { ffi::skiac_svg_canvas_flush(self.canvas.0) };
+    }
+  }
+
   // Create a Surface from a borrowed canvas (e.g., from PDFDocument)
   // The canvas is not owned by this Surface and won't be freed
   pub(crate) fn from_borrowed_canvas(canvas: Canvas) -> Surface {
@@ -2482,7 +2503,7 @@ impl std::ops::DerefMut for Surface {
 
 impl Drop for Surface {
   fn drop(&mut self) {
-    // For SVG surfaces, the canvas was independently allocated via SkSVGCanvas::Make().release()
+    // For SVG surfaces, the canvas is the SkiacSvgCanvas made by skiac_surface_create_svg
     // and is NOT owned by the SkSurface, so we must destroy it separately.
     if self.is_svg && !self.canvas.0.is_null() {
       unsafe {
@@ -4491,16 +4512,45 @@ impl Bitmap {
     }))
   }
 
+  /// A premultiplied copy of unpremultiplied RGBA bytes (an ImageData) in
+  /// `color_space`.
+  pub fn premul_from_image_data(
+    ptr: *mut u8,
+    width: usize,
+    height: usize,
+    row_bytes: usize,
+    color_space: ColorSpace,
+  ) -> Option<Self> {
+    let bitmap = unsafe {
+      ffi::skiac_bitmap_make_premul_from_image_data(
+        ptr,
+        width,
+        height,
+        row_bytes,
+        color_space as u8,
+      )
+    };
+    if bitmap.is_null() {
+      return None;
+    }
+    Some(Bitmap(ffi::skiac_bitmap_info {
+      bitmap,
+      width: width as i32,
+      height: height as i32,
+      is_canvas: false,
+    }))
+  }
+
   /// Marks the pixels read-only, so an image made from them shares them. Only
   /// for a bitmap that nothing writes to again.
   pub(crate) fn set_immutable(&self) {
     unsafe { ffi::skiac_bitmap_set_immutable(self.0.bitmap) }
   }
 
-  /// One immutable image of these pixels, made at a pattern's first paint. It
-  /// shares the pixels of an immutable (decoded) bitmap and copies a mutable
-  /// one. It holds null when the bitmap has no pixels, and then the pattern
-  /// paints nothing.
+  /// An immutable image of these pixels, made once per `AccountedBitmap` at
+  /// the first paint of a pattern over it. It shares the pixels: nothing
+  /// writes to a bitmap after it is made. It holds null when the bitmap has no
+  /// pixels, and then the pattern paints nothing.
   pub(crate) fn make_image(&self) -> SkImage {
     SkImage(unsafe { ffi::skiac_bitmap_make_image(self.0.bitmap) })
   }
@@ -4530,6 +4580,10 @@ pub struct AccountedBitmap {
   pub(crate) resource_id: u64,
   env: napi::sys::napi_env,
   bytes: i64,
+  /// The one image every pattern over this bitmap samples, made at the first
+  /// paint. Mip levels are cached per image, so the patterns share them, as
+  /// Chrome's decode cache does.
+  image: OnceLock<SkImage>,
 }
 
 impl AccountedBitmap {
@@ -4541,7 +4595,14 @@ impl AccountedBitmap {
       resource_id: crate::page_recorder::next_resource_id(),
       env,
       bytes,
+      image: OnceLock::new(),
     }
+  }
+
+  /// The image of these pixels that patterns sample (`Bitmap::make_image`),
+  /// made once and shared by every pattern over this bitmap.
+  pub(crate) fn image(&self) -> SkImage {
+    self.image.get_or_init(|| self.inner.make_image()).clone()
   }
 }
 
@@ -4585,8 +4646,7 @@ pub enum ImagePatternBacking {
 pub(crate) struct ImagePatternShared {
   pub(crate) transform: Transform,
   // The pattern's one image, made from `backing` at the first paint and kept
-  // for the pattern's life, so an SVG or AVIF pattern that is never painted
-  // makes no copy.
+  // for the pattern's life. It shares the backing's pixels.
   pub(crate) image: Option<SkImage>,
   // Cache the shader for the last sampling quality; rebuilt when the transform
   // or the quality changes. Every shader samples `image`, so a rebuild copies
@@ -4667,7 +4727,7 @@ impl ImagePattern {
   /// or a failed snapshot) gives the empty shader, which paints nothing.
   fn make_image(&self) -> SkImage {
     match &self.backing {
-      Some(ImagePatternBacking::Bitmap(bitmap)) => bitmap.inner.make_image(),
+      Some(ImagePatternBacking::Bitmap(bitmap)) => bitmap.image(),
       // The cloned surface is never drawn to again, so its snapshot shares the
       // pixels and never copies them.
       Some(ImagePatternBacking::Surface(surface)) => surface

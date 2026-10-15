@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 
 import test from 'ava'
 
-import { createCanvas, DOMMatrix } from '../index'
+import { createCanvas, DOMMatrix, Image } from '../index'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -404,4 +404,143 @@ test('setTransform between save() and restore() still applies after restore', (t
   const right = ctx.getImageData(4, 0, 1, 1).data
   t.true(left[2] > left[0], `pixel(0,0) should be blue-ish, got ${Array.from(left)}`)
   t.true(right[0] > right[2], `pixel(4,0) should be red-ish, got ${Array.from(right)}`)
+})
+
+// Chrome shares one decoded image between all the patterns that use it. Every
+// pattern over an SVG or AVIF Image used to copy the whole bitmap at its first
+// paint, while V8 and the recording budget were charged for it only once: 20
+// painted patterns over one 1024x1024 Image grew rss by ~80 MB. They now share
+// the Image's pixels, as patterns over PNG/JPEG Images already did.
+test('painted patterns over one SVG or AVIF Image share its pixels', async (t) => {
+  const { status, signal, stdout, stderr } = await runInChildProcess(
+    `
+const { createCanvas, loadImage } = require('./index.js')
+const source = createCanvas(1024, 1024)
+const sourceContext = source.getContext('2d')
+sourceContext.fillStyle = '#3a6'
+sourceContext.fillRect(0, 0, 1024, 1024)
+const inputs = {
+  svg: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024"><rect width="1024" height="1024" fill="#3a6"/></svg>'),
+  avif: source.toBuffer('image/avif'),
+}
+;(async () => {
+  const growth = {}
+  for (const [kind, data] of Object.entries(inputs)) {
+    const image = await loadImage(data)
+    const ctx = createCanvas(64, 64).getContext('2d')
+    const keep = []
+    const paint = () => {
+      const pattern = ctx.createPattern(image, 'repeat')
+      keep.push(pattern)
+      ctx.fillStyle = pattern
+      ctx.fillRect(0, 0, 64, 64)
+      ctx.getImageData(0, 0, 1, 1)
+    }
+    paint()
+    global.gc()
+    const before = process.memoryUsage().rss
+    for (let i = 0; i < 20; i++) paint()
+    global.gc()
+    growth[kind] = +((process.memoryUsage().rss - before) / 1048576).toFixed(1)
+    if (keep.length !== 21) throw new Error('patterns were not kept')
+  }
+  console.log(JSON.stringify(growth))
+})().catch((error) => {
+  console.error(error)
+  process.exit(1)
+})
+`,
+    ['--expose-gc'],
+  )
+
+  t.is(status, 0, `expected exit 0, got status=${status} signal=${signal}\n${stderr}${stdout}`)
+  const growth = JSON.parse(stdout.trim().split('\n').pop()!)
+  t.true(
+    growth.svg < 20 && growth.avif < 20,
+    `20 patterns grew rss by ${JSON.stringify(growth)} MB, expected < 20 MB each`,
+  )
+})
+
+// Mip levels are cached per image, so patterns that share an image share its
+// mip chain, as Chrome's decode cache does. Every pattern over an SVG or AVIF
+// Image used to get its own image of the shared pixels, and a downscaled
+// medium-quality fill built a ~1.4 MB mip chain per pattern of a 1024x1024
+// Image: ~27 MB for the 20 below, where PNG patterns build one.
+test('downscaled patterns over one SVG or AVIF Image share its mip levels', async (t) => {
+  const { status, signal, stdout, stderr } = await runInChildProcess(
+    `
+const { createCanvas, loadImage, DOMMatrix } = require('./index.js')
+const source = createCanvas(1024, 1024)
+const sourceContext = source.getContext('2d')
+sourceContext.fillStyle = '#3a6'
+sourceContext.fillRect(0, 0, 1024, 1024)
+sourceContext.fillStyle = '#a36'
+sourceContext.fillRect(0, 0, 512, 1024)
+const inputs = {
+  svg: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024"><rect width="1024" height="1024" fill="#3a6"/><rect width="512" height="1024" fill="#a36"/></svg>'),
+  avif: source.toBuffer('image/avif'),
+  png: source.toBuffer('image/png'),
+}
+;(async () => {
+  const growth = {}
+  for (const [kind, data] of Object.entries(inputs)) {
+    const image = await loadImage(data)
+    const ctx = createCanvas(64, 64).getContext('2d')
+    ctx.imageSmoothingQuality = 'medium'
+    const keep = []
+    const paint = () => {
+      const pattern = ctx.createPattern(image, 'repeat')
+      pattern.setTransform(new DOMMatrix().scale(0.05, 0.05))
+      keep.push(pattern)
+      ctx.fillStyle = pattern
+      ctx.fillRect(0, 0, 64, 64)
+      ctx.getImageData(0, 0, 1, 1)
+    }
+    paint()
+    global.gc()
+    const before = process.memoryUsage().rss
+    for (let i = 0; i < 20; i++) paint()
+    global.gc()
+    growth[kind] = +((process.memoryUsage().rss - before) / 1048576).toFixed(1)
+    if (keep.length !== 21) throw new Error('patterns were not kept')
+  }
+  console.log(JSON.stringify(growth))
+})().catch((error) => {
+  console.error(error)
+  process.exit(1)
+})
+`,
+    ['--expose-gc'],
+  )
+
+  t.is(status, 0, `expected exit 0, got status=${status} signal=${signal}\n${stderr}${stdout}`)
+  const growth = JSON.parse(stdout.trim().split('\n').pop()!)
+  t.true(
+    growth.svg < 8 && growth.avif < 8 && growth.png < 8,
+    `20 downscaled patterns grew rss by ${JSON.stringify(growth)} MB, expected < 8 MB each`,
+  )
+})
+
+// Sharing the Image's pixels keeps the capture rule: a pattern keeps the
+// bitmap it was made from after the Image gets a new src.
+test('a pattern over an SVG Image keeps its pixels after the Image src changes', async (t) => {
+  const svg = (color: string) =>
+    Buffer.from(
+      `<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><rect width="4" height="4" fill="${color}"/></svg>`,
+    )
+  const image = new Image()
+  image.src = svg('#ff0000')
+  await image.decode()
+  const ctx = createCanvas(4, 4).getContext('2d')!
+  ctx.fillStyle = ctx.createPattern(image, 'repeat')!
+  ctx.fillRect(0, 0, 4, 2)
+  image.src = svg('#0000ff')
+  await image.decode()
+  ctx.fillRect(0, 2, 4, 2)
+  t.deepEqual([...ctx.getImageData(0, 0, 1, 1).data], [255, 0, 0, 255])
+  t.deepEqual([...ctx.getImageData(0, 3, 1, 1).data], [255, 0, 0, 255])
+  const fresh = createCanvas(4, 4).getContext('2d')!
+  fresh.fillStyle = fresh.createPattern(image, 'repeat')!
+  fresh.fillRect(0, 0, 4, 4)
+  t.deepEqual([...fresh.getImageData(0, 0, 1, 1).data], [0, 0, 255, 255])
 })
