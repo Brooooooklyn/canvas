@@ -725,11 +725,14 @@ impl<S: Site> FromNapiValue for DoubleSequence<S> {
 }
 
 /// WebIDL `unsigned long` (ToNumber, then ToUint32: NaN and infinities are
-/// 0, the rest is truncated modulo 2^32). ToNumber may throw.
-pub(crate) fn to_unsigned_long(env: sys::napi_env, value: sys::napi_value) -> Result<u32> {
-  let mut number = ptr::null_mut();
-  check_status!(unsafe { sys::napi_coerce_to_number(env, value, &mut number) })?;
-  Ok(to_uint32(unsafe { f64::from_napi_value(env, number)? }))
+/// 0, the rest is truncated modulo 2^32). Errors from user code pass as they
+/// are; the engine's own ones get `prefix`.
+pub(crate) fn to_unsigned_long(
+  env: sys::napi_env,
+  value: sys::napi_value,
+  prefix: &str,
+) -> Result<u32> {
+  to_number(env, value, prefix).map(to_uint32)
 }
 
 /// ToUint32 of a number: NaN and infinities are 0, the rest is truncated
@@ -1180,22 +1183,19 @@ fn argument_count(env: sys::napi_env, value: sys::napi_value) -> Result<Option<u
   )
 }
 
-/// The arguments of a call with `Positional` parameters.
+/// The arguments of a call with `Positional` parameters, or of the ImageData
+/// constructor.
 pub(crate) struct Arguments {
   env: sys::napi_env,
   values: Vec<sys::napi_value>,
   len: u32,
+  /// Up to the last value that is not undefined.
+  non_undefined: u32,
 }
 
 impl Arguments {
   /// The `count` values the `Positional` parameters of this call recorded.
-  ///
-  /// `argc` is the argument after them: index.js passes an
-  /// `argument_counts` marker there. A raw call (the js-binding entrypoint)
-  /// has none, and any other value there is an extra argument, ignored.
-  /// napi pads missing arguments with undefined, so without the marker `f(x)`
-  /// and `f(x, undefined)` look the same here, and the count then runs up to
-  /// the last argument that is not undefined.
+  /// See [`Self::new`] for `argc`.
   pub(crate) fn take(env: sys::napi_env, count: usize, argc: sys::napi_value) -> Result<Self> {
     // Taken before any user code runs, which may make a call of its own.
     let values = POSITIONAL.with(|values| std::mem::take(&mut *values.borrow_mut()));
@@ -1208,22 +1208,50 @@ impl Arguments {
         ),
       ));
     }
-    let mut len = 0;
+    Self::new(env, values, argc)
+  }
+
+  /// `values` and the argument count.
+  ///
+  /// `argc` is the argument after them: index.js passes an
+  /// `argument_counts` marker there. A raw call (the js-binding entrypoint)
+  /// has none, and any other value there is an extra argument, ignored.
+  /// napi pads missing arguments with undefined, so without the marker `f(x)`
+  /// and `f(x, undefined)` look the same here, and the count then runs up to
+  /// the last argument that is not undefined.
+  pub(crate) fn new(
+    env: sys::napi_env,
+    values: Vec<sys::napi_value>,
+    argc: sys::napi_value,
+  ) -> Result<Self> {
+    let mut non_undefined = 0;
     for (index, value) in values.iter().enumerate() {
       if type_of(env, *value)? != ValueType::Undefined {
-        len = index as u32 + 1;
+        non_undefined = index as u32 + 1;
       }
     }
     // From index.js, the arguments at or past the count are undefined, so
-    // the count is never below `len`.
-    if let Some(argc) = argument_count(env, argc)? {
-      len = len.max(argc);
-    }
-    Ok(Self { env, values, len })
+    // the count is never below `non_undefined`.
+    let len = match argument_count(env, argc)? {
+      Some(argc) => non_undefined.max(argc),
+      None => non_undefined,
+    };
+    Ok(Self {
+      env,
+      values,
+      len,
+      non_undefined,
+    })
   }
 
   pub(crate) fn len(&self) -> u32 {
     self.len
+  }
+
+  /// Blink's NonUndefinedArgumentLength (generated_code_helper.h): the count
+  /// without the trailing undefined arguments.
+  pub(crate) fn non_undefined_len(&self) -> u32 {
+    self.non_undefined
   }
 
   /// Argument `index`; undefined past the recorded ones.
