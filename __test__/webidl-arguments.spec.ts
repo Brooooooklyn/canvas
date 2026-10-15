@@ -462,6 +462,36 @@ test('isPointInStroke overloads', (t) => {
   }
 })
 
+test('a primitive first argument is not checked against Path2D[Symbol.hasInstance]', (t) => {
+  // Chrome 155 picks the overload with a wrapper type check, which runs no
+  // user code; a primitive is never a Path2D.
+  const seen: string[] = []
+  Object.defineProperty(Path2D, Symbol.hasInstance, {
+    value(value: unknown) {
+      seen.push(value === null ? 'null' : typeof value)
+      return Function.prototype[Symbol.hasInstance].call(this, value)
+    },
+    configurable: true,
+  })
+  try {
+    const ctx = loose(ruleContext())
+    t.is(ctx.isPointInPath(5, 5, undefined), true)
+    t.is(ctx.isPointInPath(5, 5, 'evenodd'), false)
+    ctx.fill('evenodd')
+    ctx.fill(undefined)
+    ctx.clip('nonzero')
+    t.throws(() => ctx.fill(null), { instanceOf: TypeError, message: `${execute('fill')}${ENUM_ERROR('null')}` })
+    t.throws(() => ctx.stroke(5), { instanceOf: TypeError, message: `${execute('stroke')}${NOT_PATH}` })
+    t.throws(() => ctx.isPointInStroke(5, 5, undefined), {
+      instanceOf: TypeError,
+      message: `${execute('isPointInStroke')}${NOT_PATH}`,
+    })
+  } finally {
+    delete (Path2D as any)[Symbol.hasInstance]
+  }
+  t.deepEqual(seen, [])
+})
+
 test("fill, clip, stroke, isPointInPath and isPointInStroke have Chrome's length", (t) => {
   const ctx = ruleContext()
   t.deepEqual(
