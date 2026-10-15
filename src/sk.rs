@@ -1,6 +1,6 @@
 use std::convert::TryFrom;
 use std::f32::consts::PI;
-use std::ffi::{CStr, CString, NulError, c_void};
+use std::ffi::{CStr, CString, c_void};
 use std::fmt::{self, Display};
 use std::ops::{Deref, DerefMut};
 use std::os::raw::c_char;
@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::error::SkError;
-use crate::font::{FontStretch, FontStyle};
+use crate::font::{ComputedFont, FamilyName, FontStretch, FontStyle};
 
 #[allow(non_camel_case_types)]
 pub mod ffi {
@@ -250,6 +250,45 @@ pub mod ffi {
   pub struct skiac_font_variation {
     pub tag: u32,
     pub value: f32,
+  }
+
+  /// One family of the canvas font; `generic` is 0 for a named family, else
+  /// `GenericFamily as i32`.
+  #[repr(C)]
+  #[derive(Debug, Clone, Copy)]
+  pub struct skiac_text_family {
+    pub name: *const c_char,
+    pub name_len: usize,
+    pub generic: i32,
+  }
+
+  /// skia_c.hpp skiac_text_request: the text (not NUL-terminated) and the
+  /// canvas text settings.
+  #[repr(C)]
+  #[derive(Debug, Clone, Copy)]
+  pub struct skiac_text_request {
+    pub text: *const c_char,
+    pub text_len: usize,
+    pub families: *const skiac_text_family,
+    pub family_count: usize,
+    pub size: f32,
+    pub weight: f32,
+    pub slope: f32,
+    pub style: i32,
+    pub stretch: i32,
+    pub stretch_pct: f32,
+    pub baseline: i32,
+    pub align: i32,
+    pub direction: i32,
+    pub letter_spacing: f32,
+    pub word_spacing: f32,
+    pub variations: *const skiac_font_variation,
+    pub variations_count: i32,
+    pub kerning: i32,
+    pub variant_caps: i32,
+    pub lang: *const c_char,
+    pub lang_len: usize,
+    pub text_rendering: i32,
   }
 
   #[repr(C)]
@@ -599,35 +638,22 @@ pub mod ffi {
       filter_quality: i32,
     );
 
-    pub fn skiac_canvas_get_line_metrics_or_draw_text(
-      text: *const c_char,
-      text_len: usize,
-      max_width: f32,
+    pub fn skiac_text_measure(
+      font_collection: *mut skiac_font_collection,
+      request: *const skiac_text_request,
+      paint: *mut skiac_paint,
+      collect_ink: bool,
+      line_metrics: *mut skiac_line_metrics,
+    );
+
+    pub fn skiac_text_draw(
+      canvas: *mut skiac_canvas,
+      font_collection: *mut skiac_font_collection,
+      request: *const skiac_text_request,
+      paint: *mut skiac_paint,
       x: f32,
       y: f32,
-      canvas_width: f32,
-      font_collection: *mut skiac_font_collection,
-      font_size: f32,
-      weight: i32,
-      width: i32,
-      stretch_width: f32,
-      slant: i32,
-      font_family: *const c_char,
-      baseline: i32,
-      align: i32,
-      direction: i32,
-      letter_spacing: f32,
-      word_spacing: f32,
-      paint: *mut skiac_paint,
-      canvas: *mut skiac_canvas,
-      line_metrics: *mut skiac_line_metrics,
-      collect_ink: bool,
-      variations: *const skiac_font_variation,
-      variations_count: i32,
-      kerning: i32,
-      variant_caps: i32,
-      lang: *const c_char,
-      text_rendering: i32,
+      max_width: f32,
     );
 
     pub fn skiac_canvas_reset_transform(canvas: *mut skiac_canvas);
@@ -2847,6 +2873,102 @@ pub struct FontVariation {
   pub value: f32,
 }
 
+/// The canvas text settings one fillText, strokeText or measureText uses.
+#[derive(Debug, Clone)]
+pub struct TextSettings {
+  pub font: ComputedFont,
+  pub stretch: FontStretch,
+  pub baseline: TextBaseline,
+  pub align: TextAlign,
+  pub direction: TextDirection,
+  pub letter_spacing: f32,
+  pub word_spacing: f32,
+  pub variations: Vec<FontVariation>,
+  pub kerning: FontKerning,
+  pub variant_caps: FontVariantCaps,
+  pub lang: String,
+  pub text_rendering: TextRendering,
+}
+
+impl TextSettings {
+  /// Calls `f` with the skia-c request for `text`, which borrows `text` and
+  /// `self` and holds no NUL-terminated strings.
+  fn with_request<R>(&self, text: &str, f: impl FnOnce(&ffi::skiac_text_request) -> R) -> R {
+    let families: Vec<ffi::skiac_text_family> = self
+      .font
+      .families
+      .iter()
+      .map(|family| match family {
+        FamilyName::Generic(generic) => ffi::skiac_text_family {
+          name: ptr::null(),
+          name_len: 0,
+          generic: *generic as i32,
+        },
+        FamilyName::Named(name) => ffi::skiac_text_family {
+          name: name.as_ptr().cast(),
+          name_len: name.len(),
+          generic: 0,
+        },
+      })
+      .collect();
+    let request = ffi::skiac_text_request {
+      text: text.as_ptr().cast(),
+      text_len: text.len(),
+      families: families.as_ptr(),
+      family_count: families.len(),
+      size: self.font.size,
+      weight: self.font.weight,
+      slope: self.font.slope,
+      style: self.font.style as i32,
+      stretch: self.stretch as i32,
+      stretch_pct: self.stretch.to_width_percentage(),
+      baseline: self.baseline as i32,
+      align: self.align as i32,
+      direction: self.direction.as_sk_direction(),
+      letter_spacing: self.letter_spacing,
+      word_spacing: self.word_spacing,
+      variations: self.variations.as_ptr().cast(),
+      variations_count: self.variations.len() as i32,
+      kerning: self.kerning as i32,
+      variant_caps: self.variant_caps as i32,
+      lang: self.lang.as_ptr().cast(),
+      lang_len: self.lang.len(),
+      text_rendering: self.text_rendering as i32,
+    };
+    f(&request)
+  }
+
+  /// A hash of the settings that pick the typeface: the families, weight,
+  /// slope, stretch and variations. Not the size.
+  pub fn typeface_key(&self) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    for family in &self.font.families {
+      match family {
+        FamilyName::Generic(generic) => (*generic as i32).hash(&mut hasher),
+        FamilyName::Named(name) => {
+          0i32.hash(&mut hasher);
+          name.hash(&mut hasher);
+        }
+      }
+    }
+    self.font.weight.to_bits().hash(&mut hasher);
+    self.font.slope.to_bits().hash(&mut hasher);
+    (self.font.style as i32).hash(&mut hasher);
+    (self.stretch as i32).hash(&mut hasher);
+    self
+      .stretch
+      .to_width_percentage()
+      .to_bits()
+      .hash(&mut hasher);
+    for v in &self.variations {
+      v.tag.hash(&mut hasher);
+      v.value.to_bits().hash(&mut hasher);
+    }
+    hasher.finish()
+  }
+}
+
 impl Canvas {
   pub fn clear(&mut self) {
     unsafe {
@@ -2985,140 +3107,39 @@ impl Canvas {
   pub fn draw_text(
     &mut self,
     text: &str,
+    settings: &TextSettings,
+    font_collection: &FontCollection,
+    paint: &Paint,
     x: f32,
     y: f32,
     max_width: f32,
-    canvas_width: f32,
-    weight: u32,
-    stretch: i32,
-    stretch_width: f32,
-    slant: FontStyle,
-    font_collection: &FontCollection,
-    font_size: f32,
-    font_family: &str,
-    baseline: TextBaseline,
-    align: TextAlign,
-    direction: TextDirection,
-    letter_spacing: f32,
-    word_spacing: f32,
-    paint: &Paint,
-    variations: &[FontVariation],
-    kerning: FontKerning,
-    variant_caps: FontVariantCaps,
-    lang: &str,
-    text_rendering: TextRendering,
-  ) -> Result<(), NulError> {
-    let c_text = std::ffi::CString::new(text)?;
-    let c_font_family = std::ffi::CString::new(font_family)?;
-    // Convert lang to C string, or null if empty/"inherit"
-    let c_lang = if lang.is_empty() || lang == "inherit" {
-      None
-    } else {
-      Some(std::ffi::CString::new(lang)?)
-    };
-
-    unsafe {
-      ffi::skiac_canvas_get_line_metrics_or_draw_text(
-        c_text.as_ptr(),
-        text.len(),
-        max_width,
-        x,
-        y,
-        canvas_width,
-        font_collection.0,
-        font_size,
-        weight as i32,
-        stretch,
-        stretch_width,
-        slant as i32,
-        c_font_family.as_ptr(),
-        baseline as i32,
-        align as i32,
-        direction.as_sk_direction(),
-        letter_spacing,
-        word_spacing,
-        paint.0,
-        self.0,
-        ptr::null_mut(),
-        false,
-        variations.as_ptr() as *const ffi::skiac_font_variation,
-        variations.len() as i32,
-        kerning as i32,
-        variant_caps as i32,
-        c_lang.as_ref().map_or(ptr::null(), |s| s.as_ptr()),
-        text_rendering as i32,
-      );
-    };
-    Ok(())
+  ) {
+    settings.with_request(text, |request| unsafe {
+      ffi::skiac_text_draw(self.0, font_collection.0, request, paint.0, x, y, max_width);
+    });
   }
 
+  /// `collect_ink` fills `ink_left` / `ink_right`, which costs a walk over
+  /// every drawn glyph.
   pub fn get_line_metrics(
     &self,
     text: &str,
+    settings: &TextSettings,
     font_collection: &FontCollection,
-    font_size: f32,
-    weight: u32,
-    stretch: i32,
-    stretch_width: f32,
-    slant: FontStyle,
-    font_family: &str,
-    baseline: TextBaseline,
-    align: TextAlign,
-    direction: TextDirection,
-    letter_spacing: f32,
-    word_spacing: f32,
     paint: &Paint,
-    variations: &[FontVariation],
-    kerning: FontKerning,
-    variant_caps: FontVariantCaps,
-    lang: &str,
-    text_rendering: TextRendering,
     collect_ink: bool,
-  ) -> Result<ffi::skiac_line_metrics, NulError> {
-    let c_text = std::ffi::CString::new(text)?;
-    let c_font_family = std::ffi::CString::new(font_family)?;
-    // Convert lang to C string, or null if empty/"inherit"
-    let c_lang = if lang.is_empty() || lang == "inherit" {
-      None
-    } else {
-      Some(std::ffi::CString::new(lang)?)
-    };
-
+  ) -> ffi::skiac_line_metrics {
     let mut line_metrics = ffi::skiac_line_metrics::default();
-
-    unsafe {
-      ffi::skiac_canvas_get_line_metrics_or_draw_text(
-        c_text.as_ptr(),
-        text.len(),
-        0.0,
-        0.0,
-        0.0,
-        0.0,
+    settings.with_request(text, |request| unsafe {
+      ffi::skiac_text_measure(
         font_collection.0,
-        font_size,
-        weight as i32,
-        stretch,
-        stretch_width,
-        slant as i32,
-        c_font_family.as_ptr(),
-        baseline as i32,
-        align as i32,
-        direction.as_sk_direction(),
-        letter_spacing,
-        word_spacing,
+        request,
         paint.0,
-        ptr::null_mut(),
-        &mut line_metrics,
         collect_ink,
-        variations.as_ptr() as *const ffi::skiac_font_variation,
-        variations.len() as i32,
-        kerning as i32,
-        variant_caps as i32,
-        c_lang.as_ref().map_or(ptr::null(), |s| s.as_ptr()),
-        text_rendering as i32,
+        &mut line_metrics,
       );
-    }
-    Ok(line_metrics)
+    });
+    line_metrics
   }
 
   pub fn draw_surface(
