@@ -470,6 +470,15 @@ impl PageRecorder {
     self.current.get_recording_canvas()
   }
 
+  /// The recording canvas's device clip bounds (None inside: an empty clip),
+  /// read without counting an op. None: there is no recording canvas.
+  pub(crate) fn device_clip_bounds(&mut self) -> Option<Option<[i32; 4]>> {
+    self
+      .current
+      .get_recording_canvas()
+      .map(|canvas| canvas.device_clip_bounds())
+  }
+
   /// Bump the content generation for a recorded op that can alter pixels --
   /// the draw funnels (render_passes) call this once the op is committed.
   /// State-only records (save/restore/transform/clip) must not reach here.

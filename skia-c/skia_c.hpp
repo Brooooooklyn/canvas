@@ -956,6 +956,7 @@ void skiac_canvas_get_line_metrics_or_draw_text(
     const char* lang,
     int text_rendering);
 void skiac_canvas_reset_transform(skiac_canvas* c_canvas);
+bool skiac_canvas_get_device_clip_bounds(skiac_canvas* c_canvas, int32_t* ltrb);
 void skiac_canvas_clip_rect(skiac_canvas* c_canvas,
                             float x,
                             float y,
@@ -1159,6 +1160,7 @@ skiac_shader* skiac_shader_make_linear_gradient(const skiac_point* points,
                                                 int count,
                                                 int tile_mode,
                                                 uint32_t flags,
+                                                int interpolation_space,
                                                 skiac_transform c_ts);
 skiac_shader* skiac_shader_make_radial_gradient(skiac_point start_point,
                                                 float start_radius,
@@ -1169,6 +1171,7 @@ skiac_shader* skiac_shader_make_radial_gradient(skiac_point start_point,
                                                 int count,
                                                 int tile_mode,
                                                 uint32_t flags,
+                                                int interpolation_space,
                                                 skiac_transform c_ts);
 skiac_shader* skiac_shader_make_conic_gradient(float cx,
                                                float cy,
@@ -1178,6 +1181,7 @@ skiac_shader* skiac_shader_make_conic_gradient(float cx,
                                                int count,
                                                int tile_mode,
                                                uint32_t flags,
+                                               int interpolation_space,
                                                skiac_transform c_ts);
 skiac_shader* skiac_shader_make_from_surface_image(skiac_surface* c_surface,
                                                    skiac_transform c_ts,

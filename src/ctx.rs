@@ -25,7 +25,7 @@ use crate::{
   filter::css_filter,
   filter::css_filters_to_image_filter,
   font::Font,
-  gradient::{CanvasGradient, Gradient},
+  gradient::{CanvasGradient, Gradient, SharedGradient},
   image::*,
   num,
   path::{Path, check_round_rect},
@@ -256,8 +256,9 @@ struct ShadowPass<'a> {
   blur: f32,
 }
 
-/// The user-space rect a draw hands Blink's Draw as `bounds`. Only the
-/// alpha:false alpha reset reads it, and only for a draw Blink does not take
+/// The user-space rect a draw hands Blink's Draw as `bounds`. The gradient
+/// interpolation latch reads it (`dirty_rect_meets_clip`), and so does the
+/// alpha:false alpha reset, only for a draw Blink does not take
 /// through CompositedDraw: Blink limits ResetAlphaIfNeeded to it there
 /// (canvas_2d_recorder_context.h:729-752, 837, 853), and resets the whole clip
 /// after a composited one (h:826-829). `blink_composites` makes that call.
@@ -1438,6 +1439,19 @@ impl Context {
       self.canvas_shadow_offset(ShadowSource::Stroke, DrawContent::Geometry);
 
     let bounds = self.inflate_stroke_bounds(DrawBounds::rect(x, y, w, h));
+    // strokeRect validates the rect and its inflated bounds before Draw
+    // (canvas_2d_recorder_context.cc:1785-1807).
+    let valid = |b: &DrawBounds| {
+      [b.left, b.top, b.right, b.bottom]
+        .iter()
+        .all(|v| v.is_finite())
+        && (b.right - b.left != 0.0 || b.bottom - b.top != 0.0)
+    };
+    if (w != 0.0 || h != 0.0) && valid(&bounds) {
+      self.latch_gradient_interpolation(ShadowSource::Stroke, shadow_paint.is_some(), |_| {
+        Some(bounds)
+      });
+    }
     self.with_shadowed_render_canvas(
       &stroke_paint,
       DrawContent::Geometry,
@@ -1606,6 +1620,13 @@ impl Context {
 
     // Extract state for shadow rendering to avoid borrow conflicts
     let shadow_paint = self.shadow_paint(&fill_paint, ShadowSource::Fill, DrawContent::Geometry);
+    // fillRect's ValidateRectForCanvas: a 0 x 0 rect never reaches Draw
+    // (canvas_2d_recorder_context.cc:1722).
+    if w != 0.0 || h != 0.0 {
+      self.latch_gradient_interpolation(ShadowSource::Fill, shadow_paint.is_some(), |_| {
+        Some(DrawBounds::rect(x, y, w, h))
+      });
+    }
 
     // A rect with no fillable area cannot paint a pixel (Skia checks
     // fillable() on the sorted rect in onDrawRect's internalQuickReject;
@@ -1693,6 +1714,11 @@ impl Context {
     // Extract state for shadow rendering to avoid borrow conflicts
     let shadow_paint =
       self.shadow_paint(&stroke_paint, ShadowSource::Stroke, DrawContent::Geometry);
+    if Self::path_reaches_draw(&path_to_draw, true) {
+      self.latch_gradient_interpolation(ShadowSource::Stroke, shadow_paint.is_some(), |ctx| {
+        DrawBounds::path(&path_to_draw).map(|b| ctx.inflate_stroke_bounds(b))
+      });
+    }
 
     // A path with no verbs has no geometry at all: stroke caps need a
     // moveTo'd point to mark, so a verb-less stroke paints nothing in
@@ -2056,6 +2082,11 @@ impl Context {
 
     // Extract state for shadow rendering to avoid borrow conflicts
     let shadow_paint = self.shadow_paint(&fill_paint, ShadowSource::Fill, DrawContent::Geometry);
+    if Self::path_reaches_draw(&path_to_draw, false) {
+      self.latch_gradient_interpolation(ShadowSource::Fill, shadow_paint.is_some(), |_| {
+        DrawBounds::path(&path_to_draw)
+      });
+    }
 
     // A fill whose path bounds are empty or non-finite cannot paint a pixel:
     // an empty path (no verbs) bounds to the non-finite empty rect, and an
@@ -2841,6 +2872,123 @@ impl Context {
     !self.transform_is_invertible()
   }
 
+  /// The device clip bounds of the canvas the draws go to, None when the
+  /// clip is empty.
+  fn device_clip_bounds(&mut self) -> Option<[i32; 4]> {
+    if let Some(ref recorder) = self.page_recorder
+      && let Some(bounds) = recorder.borrow_mut().device_clip_bounds()
+    {
+      return bounds;
+    }
+    self.surface.canvas.device_clip_bounds()
+  }
+
+  /// Blink fixes a gradient style's interpolation space the first time a
+  /// draw gets its paint flags (Gradient::CreateShaderInternal,
+  /// gradient.cc:305-315). Only a draw that gets through Draw does
+  /// (canvas_2d_recorder_context.h:791-877): an invertible CTM, a non-empty
+  /// clip, and, unless the draw is composited or `copy`, device bounds that
+  /// meet the clip (ComputeDirtyRect). globalAlpha plays no part. `bounds`
+  /// gives the local bounds Blink passes to Draw, None when they are not
+  /// finite (then they always meet the clip).
+  fn latch_gradient_interpolation(
+    &mut self,
+    source: ShadowSource,
+    has_shadow: bool,
+    bounds: impl FnOnce(&mut Self) -> Option<DrawBounds>,
+  ) {
+    let Some(gradient) = self.unlatched_gradient(source) else {
+      return;
+    };
+    if !self.transform_is_invertible() {
+      return;
+    }
+    let Some(clip) = self.device_clip_bounds() else {
+      return;
+    };
+    let blend_mode = self.state.global_composite_operation;
+    let reaches_flags = blend_mode == BlendMode::Source
+      || Self::blink_composites(blend_mode, self.state.has_filter, has_shadow, false)
+      || bounds(self).is_none_or(|bounds| self.dirty_rect_meets_clip(bounds, clip));
+    if reaches_flags {
+      gradient.borrow().latch_interpolation();
+    }
+  }
+
+  /// The fill or stroke style, if it is a gradient whose interpolation space
+  /// is not fixed yet.
+  fn unlatched_gradient(&self, source: ShadowSource) -> Option<SharedGradient> {
+    let style = match source {
+      ShadowSource::Fill => &self.state.fill_style,
+      ShadowSource::Stroke => &self.state.stroke_style,
+      ShadowSource::Image => return None,
+    };
+    match style {
+      Pattern::Gradient(g) if !g.borrow().interpolation_latched() => Some(Rc::clone(g)),
+      _ => None,
+    }
+  }
+
+  fn gradient_latch_pending(&self, source: ShadowSource) -> bool {
+    self.unlatched_gradient(source).is_some()
+  }
+
+  /// Blink's ComputeDirtyRect (canvas_2d_recorder_context.h:983-1004): the
+  /// local bounds through the CTM, joined with the shadow's when the shadow
+  /// color is not transparent, rounded out, against the clip bounds. The
+  /// rects follow gfx::RectF, whose sizes are 0 up to 8 * FLT_EPSILON
+  /// (ui/gfx/geometry/size_f.h) and whose Union skips an empty side.
+  fn dirty_rect_meets_clip(&self, bounds: DrawBounds, clip: [i32; 4]) -> bool {
+    const TRIVIAL: f32 = 8.0 * f32::EPSILON;
+    let size = |v: f32| if v > TRIVIAL { v } else { 0.0 };
+    let is_empty = |r: &[f32; 4]| r[2] == 0.0 || r[3] == 0.0;
+    let (mut left, mut top, mut right, mut bottom) = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
+    for (x, y) in [
+      (bounds.left, bounds.top),
+      (bounds.right, bounds.top),
+      (bounds.left, bounds.bottom),
+      (bounds.right, bounds.bottom),
+    ] {
+      let (x, y) = self.state.transform.map_points(x, y);
+      left = left.min(x);
+      top = top.min(y);
+      right = right.max(x);
+      bottom = bottom.max(y);
+    }
+    // x, y, width, height.
+    let mut rect = [left, top, size(right - left), size(bottom - top)];
+    if !self.state.shadow_color.is_fully_transparent() {
+      let blur = self.state.shadow_blur;
+      let shadow = [
+        rect[0] + self.state.shadow_offset_x - blur,
+        rect[1] + self.state.shadow_offset_y - blur,
+        size(rect[2] + 2.0 * blur),
+        size(rect[3] + 2.0 * blur),
+      ];
+      if is_empty(&rect) {
+        rect = shadow;
+      } else if !is_empty(&shadow) {
+        let l = rect[0].min(shadow[0]);
+        let t = rect[1].min(shadow[1]);
+        let r = (rect[0] + rect[2]).max(shadow[0] + shadow[2]);
+        let b = (rect[1] + rect[3]).max(shadow[1] + shadow[3]);
+        rect = [l, t, size(r - l), size(b - t)];
+      }
+    }
+    // SkRect::roundOut, saturating, then SkIRect::intersect.
+    let dirty = [
+      rect[0].floor() as i64,
+      rect[1].floor() as i64,
+      (rect[0] + rect[2]).ceil() as i64,
+      (rect[1] + rect[3]).ceil() as i64,
+    ];
+    let l = dirty[0].max(clip[0] as i64);
+    let t = dirty[1].max(clip[1] as i64);
+    let r = dirty[2].min(clip[2] as i64);
+    let b = dirty[3].min(clip[3] as i64);
+    l < r && t < b
+  }
+
   /// Whether Blink's DrawPathInternal gets as far as Draw, which takes the
   /// bitmap (`paint_canvas`): not for an empty path or NaN bounds, nor, for a
   /// stroke, for bounds of zero size (canvas_2d_recorder_context.cc:1579-1603).
@@ -3262,8 +3410,13 @@ impl Context {
     variations: &[crate::sk::FontVariation],
   ) -> result::Result<(), SkError> {
     // Measured before get_font(): measuring takes the same font lock.
-    let bounds = if self.resets_alpha() {
+    let text_bounds = if self.resets_alpha() || self.gradient_latch_pending(source) {
       self.text_bounds(text, x, y, max_width, source)
+    } else {
+      None
+    };
+    let bounds = if self.resets_alpha() {
+      text_bounds
     } else {
       None
     };
@@ -3304,6 +3457,7 @@ impl Context {
     if self.draws_nothing() {
       return Ok(());
     }
+    self.latch_gradient_interpolation(source, shadow_paint.is_some(), |_| text_bounds);
     // Everything fallible (get_font, the NUL preflight) is behind us, so the
     // paint-resource charge can land here -- the same position fill/stroke
     // use, after their fallible paint builds. `source` already says which
@@ -7503,10 +7657,7 @@ mod tests {
       let mut ctx = raster_ctx(16, 16);
       let mut gradient = Gradient::create_linear_gradient(0.0, 0.0, 16.0, 0.0);
       for i in 0..1000 {
-        gradient.add_color_stop(
-          i as f32 / 999.0,
-          crate::sk::Color4f::from_rgba8(255, 0, 0, 255),
-        );
+        gradient.add_color_stop(i as f32 / 999.0, Color::from_rgb(255, 0, 0));
       }
       assert_eq!(gradient.estimated_bytes(), GRADIENT_BYTES);
       ctx.state.fill_style = Pattern::Gradient(Rc::new(RefCell::new(gradient)));
