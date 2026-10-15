@@ -21,16 +21,17 @@ const FONT_SELECTION_STEP: f64 = 4.0;
 /// kItalicSlopeValue.
 pub const ITALIC_SLOPE: f32 = 14.0;
 
+/// The discriminants are skia_c.hpp skiac_text_family::generic.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GenericFamily {
-  Serif,
-  SansSerif,
-  Cursive,
-  Fantasy,
-  Monospace,
-  SystemUi,
-  WebkitBody,
-  Math,
+  Serif = 1,
+  SansSerif = 2,
+  Cursive = 3,
+  Fantasy = 4,
+  Monospace = 5,
+  SystemUi = 6,
+  WebkitBody = 7,
+  Math = 8,
 }
 
 impl GenericFamily {
@@ -70,12 +71,13 @@ pub enum FamilyName {
   Named(String),
 }
 
-/// The `font-style` keyword that set the slope (face matching only).
+/// The `font-style` keyword that set the slope (face matching only). The
+/// discriminants are SkFontStyle::Slant's.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StyleKeyword {
-  Normal,
-  Italic,
-  Oblique,
+  Normal = 0,
+  Italic = 1,
+  Oblique = 2,
 }
 
 /// Blink's FontDescription fields that the canvas font shorthand sets.
@@ -106,35 +108,6 @@ impl Default for ComputedFont {
       size: 10.0,
       families: vec![FamilyName::Generic(GenericFamily::SansSerif)],
     }
-  }
-}
-
-impl ComputedFont {
-  /// The text FFI's integer weight.
-  pub(crate) fn legacy_weight(&self) -> u32 {
-    self.weight.round() as u32
-  }
-
-  /// The text FFI's slant.
-  pub(crate) fn legacy_slant(&self) -> FontStyle {
-    match self.style {
-      StyleKeyword::Italic => FontStyle::Italic,
-      StyleKeyword::Oblique => FontStyle::Oblique,
-      StyleKeyword::Normal => FontStyle::Normal,
-    }
-  }
-
-  /// The text FFI's comma-separated family list.
-  pub(crate) fn legacy_family_list(&self) -> String {
-    self
-      .families
-      .iter()
-      .map(|f| match f {
-        FamilyName::Generic(g) => g.as_str(),
-        FamilyName::Named(name) => name.as_str(),
-      })
-      .collect::<Vec<_>>()
-      .join(",")
   }
 }
 
