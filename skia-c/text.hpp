@@ -68,6 +68,12 @@ void FillFontMetrics(const PrimaryFontMetrics& metrics,
 // destroys it.
 hb_face_t* CreateHbFace(SkTypeface* typeface);
 
+// The canvas text preparation (PlainTextNode::NormalizeSpacesAndMaybeBidi
+// for a canvas): U+0009 to U+000D are spaces, U+2028 and U+2029 draw as
+// spaces and U+FFFC as a zero width space. Returns `text` itself, or the
+// prepared copy in `storage`.
+std::string_view PrepareCanvasText(std::string_view text, std::string* storage);
+
 // Blink's PlainTextNode::SegmentWord: the [start, end) byte ranges of the
 // words HarfBuzz shapes one by one (text_words.cpp).
 std::vector<std::pair<size_t, size_t>> SplitWords(std::string_view text);
