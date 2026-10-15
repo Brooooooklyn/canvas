@@ -1123,7 +1123,7 @@ impl Context {
     self.path.add_rect(x, y, width, height);
   }
 
-  pub fn round_rect(&mut self, x: f32, y: f32, width: f32, height: f32, radii: [f32; 4]) {
+  pub fn round_rect(&mut self, x: f32, y: f32, width: f32, height: f32, radii: &[(f32, f32)]) {
     if !self.transform_is_invertible() {
       return;
     }
@@ -4654,10 +4654,10 @@ impl CanvasRenderingContext2D {
     let Some([x, y, width, height]) = num::saturated_f32s([x.0, y.0, width.0, height.0]) else {
       return;
     };
-    let Some(radii_array) = round_rect_radii(radii) else {
+    let Some(radii) = round_rect_radii(radii) else {
       return;
     };
-    self.context.round_rect(x, y, width, height, radii_array);
+    self.context.round_rect(x, y, width, height, &radii);
   }
 
   /// fill(fillRule?) or fill(path, fillRule?). The index.js wrapper passes
