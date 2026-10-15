@@ -98,6 +98,69 @@ for (const [i, x] of ${JSON.stringify(EXTRA)}.entries()) {
   t.deepEqual(out, expected)
 })
 
+test('only a marker from _argumentCounts() is read as an argument count', (t) => {
+  // The markers that index.js passes are plain objects. Native code reads a
+  // marker's count from the address napi_wrap stored in it, which script
+  // cannot reach: it never reads another value there as a count, and
+  // nothing script does to a marker changes its count.
+  const out = runRaw(`
+const binding = require('./js-binding.js')
+const { types } = require('node:util')
+const markers = binding._argumentCounts()
+run('markers', () => markers.map((m) => [typeof m, types.isExternal(m)]))
+// createImageData(imagedata, undefined) is the (sw, sh) form with a count
+// of 2, the (imagedata) form with a count of 1.
+const withCount = (x) => size(ctx.createImageData(new ImageData(2, 3), undefined, undefined, undefined, x))
+run('marker 1', () => withCount(markers[1]))
+run('marker 2', () => withCount(markers[2]))
+run('marker 2 of another call', () => withCount(binding._argumentCounts()[2]))
+const traps = []
+const TRAPS = ['get', 'has', 'getOwnPropertyDescriptor', 'getPrototypeOf', 'ownKeys']
+const handler = Object.fromEntries(TRAPS.map((trap) => [trap, (...args) => (traps.push(trap), Reflect[trap](...args))]))
+const others = {
+  'Object.create(marker 2)': () => Object.create(markers[2]),
+  'Proxy of marker 2': () => new Proxy(markers[2], handler),
+  'copy of marker 2': () => ({ ...markers[2] }),
+  'structuredClone(marker 2)': () => structuredClone(markers[2]),
+  '[marker 2]': () => [markers[2]],
+  ImageData: () => new ImageData(2, 2),
+  canvas: () => source,
+  context: () => ctx,
+  2: () => 2,
+}
+for (const [name, make] of Object.entries(others)) run(name, () => withCount(make()))
+run('traps', () => traps)
+run('changed marker 1', () => {
+  const marker = markers[1]
+  Object.setPrototypeOf(marker, markers[2])
+  Object.defineProperty(marker, 'valueOf', { value: () => 2 })
+  Object.freeze(marker)
+  return withCount(marker)
+})
+`)
+  const counted2 = { error: 'TypeError', message: `${CREATE_IMAGE_DATA}Value is not of type 'long'.` }
+  const counted1 = [2, 3, 24, 'srgb']
+  t.deepEqual(out, {
+    markers: Array.from({ length: 10 }, () => ['object', false]),
+    'marker 1': counted1,
+    'marker 2': counted2,
+    'marker 2 of another call': counted2,
+    // Not a marker: an extra argument, and the count is up to the last
+    // argument that is not undefined.
+    'Object.create(marker 2)': counted1,
+    'Proxy of marker 2': counted1,
+    'copy of marker 2': counted1,
+    'structuredClone(marker 2)': counted1,
+    '[marker 2]': counted1,
+    ImageData: counted1,
+    canvas: counted1,
+    context: counted1,
+    2: counted1,
+    traps: [],
+    'changed marker 1': counted1,
+  })
+})
+
 test('through index.js, the same calls use the real argument count, as in Chrome', (t) => {
   // Measured in Chrome 155: 5 arguments select createImageData(sw, sh, ...),
   // and 3 arguments to createPattern make the repetition 'undefined'.
