@@ -15,6 +15,7 @@ fn main() {
   println!("cargo:rerun-if-changed=skia-c/text_metrics.cpp");
   println!("cargo:rerun-if-changed=skia-c/hb_api.h");
   println!("cargo:rerun-if-changed=skia-c/text_words.cpp");
+  println!("cargo:rerun-if-changed=skia-c/text_styles.cpp");
   println!("cargo:rerun-if-changed=skia-c/icu_api.h");
 
   let compile_target = env::var("TARGET").expect("TARGET");
@@ -53,7 +54,8 @@ fn main() {
     .file("skia-c/text.cpp")
     .file("skia-c/font_families.cpp")
     .file("skia-c/text_metrics.cpp")
-    .file("skia-c/text_words.cpp");
+    .file("skia-c/text_words.cpp")
+    .file("skia-c/text_styles.cpp");
   // Skia is built with SK_R32_SHIFT=0 (scripts/skia-gn-args.cjs): kN32 is
   // RGBA, like our surfaces, so the legacy blitters can draw on them. The value
   // shapes inline code in Skia's headers, so skia-c must use the same one;

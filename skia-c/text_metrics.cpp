@@ -67,21 +67,6 @@ bool TypoAscenderAndDescender(SkTypeface* typeface,
   return true;
 }
 
-// FontCache passes subpixel_ascent_descent for the canvas only for system
-// fonts; a web font (GlobalFonts.register / registerFromPath) never gets it.
-bool IsSystemTypeface(skiac_font_collection* c_collection,
-                      SkTypeface* typeface) {
-  if (c_collection->system_typeface_ids.count(typeface->uniqueID())) {
-    return true;
-  }
-  // The installed fonts the collection scanned itself (asset manager).
-  SkString family;
-  typeface->getFamilyName(&family);
-  sk_sp<SkTypeface> installed = c_collection->font_mgr->matchFamilyStyle(
-      family.c_str(), typeface->fontStyle());
-  return installed && installed->uniqueID() == typeface->uniqueID();
-}
-
 // OpenTypeBaselineMetrics: the BASE table's romn, hang and ideo baselines
 // for the default script and language, in px (HarfBuzz 16.16 units of a font
 // scaled to `size`).
@@ -118,6 +103,19 @@ void ReadBaseTable(SkTypeface* typeface,
 
 }  // namespace
 
+bool IsSystemTypeface(skiac_font_collection* c_collection,
+                      SkTypeface* typeface) {
+  if (c_collection->system_typeface_ids.count(typeface->uniqueID())) {
+    return true;
+  }
+  // The installed fonts the collection scanned itself (asset manager).
+  SkString family;
+  typeface->getFamilyName(&family);
+  sk_sp<SkTypeface> installed = c_collection->font_mgr->matchFamilyStyle(
+      family.c_str(), typeface->fontStyle());
+  return installed && installed->uniqueID() == typeface->uniqueID();
+}
+
 hb_face_t* CreateHbFace(SkTypeface* typeface) {
   typeface->ref();
   return hb_face_create_for_tables(ReferenceTable, typeface, [](void* ptr) {
@@ -145,7 +143,8 @@ PrimaryFontMetrics MeasurePrimaryFont(skiac_font_collection* c_collection,
 
   // FontMetrics::AscentDescentWithHacks. No VDMX (only for full or normal
   // hinting) and no descent borrow (only with subpixel positioning, off for
-  // Linux Chrome).
+  // Linux Chrome). FontCache asks for subpixel_ascent_descent for the canvas
+  // only for system fonts, never a web font.
   const float raw_ascent = -font_metrics.fAscent;
   const float raw_descent = font_metrics.fDescent;
   if ((raw_ascent < 3 || raw_ascent + raw_descent < 2) &&

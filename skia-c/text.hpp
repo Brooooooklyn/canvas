@@ -40,6 +40,12 @@ struct PrimaryFontMetrics {
   float cap_height = 0;
 };
 
+// An installed font (loadSystemFonts, loadFontsFromDir, or one the
+// collection scanned itself) rather than a web font (GlobalFonts.register /
+// registerFromPath).
+bool IsSystemTypeface(skiac_font_collection* c_collection,
+                      SkTypeface* typeface);
+
 // `typeface` at `size` px; `base_typeface` is the same face before font
 // arguments, which tells a system font from a web font.
 PrimaryFontMetrics MeasurePrimaryFont(skiac_font_collection* c_collection,
@@ -72,6 +78,28 @@ std::vector<std::pair<size_t, size_t>> SplitWords(std::string_view text);
 bool CanShapeWordByWord(skiac_font_collection* c_collection,
                         const std::vector<sk_sp<SkTypeface>>& faces,
                         const skiac_text_request& request);
+
+// The variation coordinates for `request` when `faces` (the request's
+// families' faces before font arguments) vary or the request has its own
+// variations, else none: wght, wdth and slnt from the weight, stretch and
+// slope, the request's variations, then opsz at the font size
+// (text_styles.cpp).
+std::vector<SkFontArguments::VariationPosition::Coordinate> FontVariations(
+    const std::vector<sk_sp<SkTypeface>>& faces,
+    const skiac_text_request& request);
+
+// FontPlatformData's synthetic bold (SkFont embolden) and italic (skew).
+struct SyntheticStyle {
+  bool bold;
+  bool italic;
+};
+
+// The synthetic styles of `face` drawing `request`: `base` is the family's
+// face before font arguments, null for a fallback font.
+SyntheticStyle SynthesizeStyle(skiac_font_collection* c_collection,
+                               SkTypeface* face,
+                               SkTypeface* base,
+                               const skiac_text_request& request);
 
 // The px size of one `ex`, `ch`, `cap`, `ic` and `lh` of a font.
 struct skiac_font_units {
