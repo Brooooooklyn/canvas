@@ -20,7 +20,7 @@ use crate::sk::Canvas;
 use crate::{
   CanvasElement, SVGCanvas,
   avif::Config,
-  color::CanvasColor,
+  color::{self, Color},
   error::SkError,
   filter::css_filter,
   filter::css_filters_to_image_filter,
@@ -31,7 +31,7 @@ use crate::{
   path::{Path, check_round_rect},
   pattern::{CanvasPattern, Pattern, srgb_channel_to_u8},
   sk::{
-    AccountedBitmap, AlphaType, Bitmap, BlendMode, ColorSpace, DecodedCopy, FillType,
+    AccountedBitmap, AlphaType, Bitmap, BlendMode, Color4f, ColorSpace, DecodedCopy, FillType,
     FilterQuality, FontVariantCaps, ImageFilter, ImagePattern, LineMetrics, MaskFilter, Matrix,
     Paint, PaintStyle, Path as SkPath, PathEffect, ReadPixelsError, Shader, SkEncodedImageFormat,
     SkImage, SkWMemoryStream, SkiaDataRef, StrokeCap, StrokeJoin, Surface, Transform,
@@ -95,8 +95,8 @@ fn style_getter<'a>(
   slot: Option<u32>,
   offset: u32,
 ) -> Result<Either3<String, Unknown<'a>, Undefined>> {
-  if let Pattern::Color(_, serialized) = style {
-    return Ok(Either3::A(serialized.clone()));
+  if let Pattern::Color(c) = style {
+    return Ok(Either3::A(c.serialize_as_canvas_color()));
   }
   match (slot, style_objects(ctx)?) {
     (Some(slot), Some(objects)) => Ok(Either3::B(objects.get_element(2 * slot + offset)?)),
@@ -745,7 +745,7 @@ impl Context {
         self.state.filters_string.len() * 8,
       );
     }
-    let shadow_bytes = if self.state.shadow_color.a != 0
+    let shadow_bytes = if !self.state.shadow_color.is_fully_transparent()
       && (self.state.shadow_blur != 0f32
         || self.state.shadow_offset_x != 0f32
         || self.state.shadow_offset_y != 0f32)
@@ -2146,6 +2146,16 @@ impl Context {
     paint
   }
 
+  /// A color fillStyle/strokeStyle paint: Blink's
+  /// CanvasStyle::ApplyColorToFlags (canvas_style.h:125-134), `color.SetAlpha(color.Alpha() * global_alpha)`
+  /// then `flags.setColor(color.toSkColor4f())`, a float color the blitter
+  /// rounds once.
+  fn set_color_paint(paint: &mut Paint, color: &Color, global_alpha: f32) {
+    let mut color = *color;
+    color.set_alpha(color.alpha() * global_alpha);
+    paint.set_color4f(color.to_sk_color4f());
+  }
+
   /// The shader half of a gradient fillStyle/strokeStyle paint. Blink always
   /// dithers gradients (gradient.cc ApplyToFlags).
   fn set_gradient_paint(&self, paint: &mut Paint, gradient: &Gradient, alpha: f32) {
@@ -2197,10 +2207,7 @@ impl Context {
     paint.set_style(PaintStyle::Fill);
     let alpha = current_paint.get_alpha_f32();
     match &last_state.fill_style {
-      Pattern::Color(c, _) => {
-        paint.set_color(c.r, c.g, c.b, c.a);
-        paint.set_alpha_f32(c.a as f32 / 255.0 * alpha);
-      }
+      Pattern::Color(c) => Self::set_color_paint(&mut paint, c, alpha),
       Pattern::Gradient(g) => self.set_gradient_paint(&mut paint, &g.borrow(), alpha),
       Pattern::Image(p) => {
         if let Some((shader, _)) = self.image_pattern_shader(p) {
@@ -2297,11 +2304,12 @@ impl Context {
     self.state.global_alpha
   }
 
-  /// shadowColor: the paint color and the serialized getter value.
+  /// shadowColor, as Blink's setShadowColor reads it
+  /// (canvas_2d_recorder_context.cc:1224-1235). An error means the
+  /// assignment is ignored.
   pub fn set_shadow_color(&mut self, shadow_color: String) -> result::Result<(), SkError> {
-    let color = CanvasColor::parse(&shadow_color)?;
-    self.state.shadow_color = color.to_rgba8();
-    self.state.shadow_color_string = color.serialize();
+    self.state.shadow_color = color::parse_canvas_color(&shadow_color, color::Site::Style)
+      .ok_or_else(|| SkError::Generic(format!("Invalid canvas color [{shadow_color}]")))?;
     Ok(())
   }
 
@@ -2414,10 +2422,7 @@ impl Context {
     paint.set_style(PaintStyle::Stroke);
     let global_alpha = current_paint.get_alpha_f32();
     match &last_state.stroke_style {
-      Pattern::Color(c, _) => {
-        paint.set_color(c.r, c.g, c.b, c.a);
-        paint.set_alpha_f32(c.a as f32 / 255.0 * global_alpha);
-      }
+      Pattern::Color(c) => Self::set_color_paint(&mut paint, c, global_alpha),
       Pattern::Gradient(g) => self.set_gradient_paint(&mut paint, &g.borrow(), global_alpha),
       Pattern::Image(p) => {
         if let Some((shader, _)) = self.image_pattern_shader(p) {
@@ -2455,11 +2460,6 @@ impl Context {
   /// device identity. `shadow_takes_image_filter` decides between this and the
   /// canvas translate, so the offset is applied exactly once.
   fn shadow_only_image_filter(state: &Context2dRenderingState) -> Option<ImageFilter> {
-    let shadow_color = &state.shadow_color;
-    let a = shadow_color.a;
-    let r = shadow_color.r;
-    let g = shadow_color.g;
-    let b = shadow_color.b;
     // No CTM correction: `composited_filter_layer` has already made this
     // filter's parameter space the device's. sigma == 0 must not be guarded --
     // `SkImageFilters::Blur` allows it and degenerates to the identity, leaving
@@ -2472,7 +2472,9 @@ impl Context {
       state.shadow_offset_y,
       sigma,
       sigma,
-      ((a as u32) << 24) | ((r as u32) << 16) | ((g as u32) << 8) | b as u32,
+      // DropShadowPaintFilter gets `shadow_color_.toSkColor4f()` and hands
+      // Skia `color_.toSkColor()`, 8 bits (cc/paint/paint_filter.cc:391-395).
+      state.shadow_color.to_sk_color4f().to_sk_color(),
       // `ctx.filter` is the INPUT of the shadow graph, never applied to its
       // output: Blink composes `shadow_filter(canvas_filter(source))`
       // (canvas_2d_recorder_context.h:931-934). Since the graph colourises with
@@ -2541,11 +2543,12 @@ impl Context {
     content: DrawContent,
   ) -> Option<ShadowDraw> {
     let state = &self.state;
-    let shadow_color = &state.shadow_color;
-    let shadow_alpha = shadow_color.a;
-    if shadow_alpha == 0 {
+    // Blink ShouldDrawShadows: a shadow color that is not fully transparent
+    // (canvas_rendering_context_2d_state.h:458-461).
+    if state.shadow_color.is_fully_transparent() {
       return None;
     }
+    let shadow_color = state.shadow_color.to_sk_color4f();
     if state.shadow_blur == 0f32 && state.shadow_offset_x == 0f32 && state.shadow_offset_y == 0f32 {
       return None;
     }
@@ -2621,8 +2624,10 @@ impl Context {
           Some(filter) => (filter.filter_color(drop_shadow_paint.get_color()) >> 24) as f32 / 255.0,
           None => drop_shadow_paint.get_alpha_f32(),
         };
-        drop_shadow_paint.set_color(shadow_color.r, shadow_color.g, shadow_color.b, 255);
-        drop_shadow_paint.set_alpha_f32(shadow_alpha as f32 / 255.0 * paint_alpha);
+        drop_shadow_paint.set_color4f(Color4f {
+          a: shadow_color.a * paint_alpha,
+          ..shadow_color
+        });
         return Some(ShadowDraw {
           paint: drop_shadow_paint,
           filter: None,
@@ -2635,12 +2640,7 @@ impl Context {
       // emits none for anything else, so composing would turn a gradient's
       // shadow into an undimmed displaced copy of the gradient. The cost is the
       // alpha half of an alpha-changing filter, on SVG and PDF only.
-      drop_shadow_paint.set_src_in_color_filter(
-        shadow_color.r,
-        shadow_color.g,
-        shadow_color.b,
-        shadow_alpha,
-      );
+      drop_shadow_paint.set_src_in_color_filter4f(shadow_color);
       return Some(ShadowDraw {
         paint: drop_shadow_paint,
         filter: None,
@@ -4454,7 +4454,7 @@ impl CanvasRenderingContext2D {
 
   #[napi(getter)]
   pub fn get_shadow_color(&self) -> String {
-    self.context.state.shadow_color_string.clone()
+    self.context.state.shadow_color.serialize_as_canvas_color()
   }
 
   #[napi(setter)]
@@ -6453,8 +6453,6 @@ fn parse_font_variation_settings(settings: &str) -> (String, Vec<crate::sk::Font
 
 #[cfg(test)]
 mod tests {
-  use rgb::RGBA;
-
   use super::*;
 
   fn raster_ctx(width: u32, height: u32) -> Context {
@@ -7426,7 +7424,7 @@ mod tests {
     };
     let with_shadow_and_filter = || {
       let mut ctx = with_unused_state();
-      ctx.state.shadow_color = RGBA::new(0, 0, 255, 255);
+      ctx.state.shadow_color = Color::from_rgba32(0xff0000ff);
       ctx.state.shadow_offset_x = 2.0;
       ctx.set_filter("blur(1px)").unwrap();
       ctx
@@ -7794,7 +7792,7 @@ mod tests {
 
     let mut ctx = raster_ctx(16, 16);
     ctx.set_font("16px Lato".to_owned()).unwrap();
-    ctx.state.shadow_color = RGBA::new(0, 0, 0, 255);
+    ctx.state.shadow_color = Color::BLACK;
     ctx.state.shadow_offset_x = 2.0;
     // Skia order (scaleX, skewX, transX, skewY, scaleY, transY): x scaled by 0.
     ctx.set_transform(Matrix::new(0.0, 0.0, 0.0, 0.0, 1.0, 0.0));
