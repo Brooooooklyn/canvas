@@ -18,6 +18,8 @@ fn main() {
   println!("cargo:rerun-if-changed=skia-c/text_styles.cpp");
   println!("cargo:rerun-if-changed=skia-c/text_caps.cpp");
   println!("cargo:rerun-if-changed=skia-c/icu_api.h");
+  println!("cargo:rerun-if-changed=skia-c/text_raster.cpp");
+  println!("cargo:rerun-if-changed=skia-c/text_raster.hpp");
   println!("cargo:rerun-if-changed=skia-c/font_scalers.cpp");
   println!("cargo:rerun-if-changed=skia-c/libskia.flags");
 
@@ -250,6 +252,7 @@ fn main() {
     .file("skia-c/text_words.cpp")
     .file("skia-c/text_styles.cpp")
     .file("skia-c/text_caps.cpp")
+    .file("skia-c/text_raster.cpp")
     .file("skia-c/font_scalers.cpp")
     .include("./skia-c")
     .include(skia_path)
