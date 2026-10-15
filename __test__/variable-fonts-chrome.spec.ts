@@ -212,3 +212,14 @@ test('an installed font follows the installed-font rules, a registered one the w
   t.is(box('600', 'IosevkaWeb'), box('700', 'IosevkaWeb'))
   t.not(box('600', 'IosevkaWeb'), box('normal', 'IosevkaWeb'))
 })
+
+// Our fontVariationSettings (Chrome has none) comes after the axes the font
+// sets, like CSS font-variation-settings (FontCustomPlatformData appends
+// them), so its values win.
+test('fontVariationSettings overrides the axes font-weight and font-stretch set', (t) => {
+  const ctx = createCanvas(10, 10).getContext('2d')
+  ctx.font = '700 40px GothicT'
+  ctx.fontStretch = 'expanded'
+  ctx.fontVariationSettings = "'wght' 100, 'wdth' 100"
+  t.true(Math.abs(ctx.measureText('Hamburg').width - FIXTURE.weights['GothicT 100']) <= 0.01)
+})
