@@ -474,6 +474,15 @@ pub mod ffi {
     link(name = "skiac", kind = "static", modifiers = "+bundle,+whole-archive")
   )]
   #[cfg_attr(target_os = "windows", link(name = "skiac", kind = "static"))]
+  // Skia's Fontations scaler, C++ half (build.rs).
+  #[cfg_attr(
+    any(target_os = "macos", target_os = "linux"),
+    link(
+      name = "skiac_fontations",
+      kind = "static",
+      modifiers = "+bundle,+whole-archive"
+    )
+  )]
   unsafe extern "C" {
 
     pub fn skiac_clear_all_cache();
