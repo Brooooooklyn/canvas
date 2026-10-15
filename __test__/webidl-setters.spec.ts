@@ -192,6 +192,82 @@ test('a non-callable Symbol.toPrimitive throws a prefixed TypeError', (t) => {
   t.true(error.message.startsWith(setterPrefix('lineWidth')), error.message)
 })
 
+// An object of `make()` whose Symbol.toPrimitive getter returns 5 (not
+// callable) on its first read and throws on any later read.
+const toPrimitiveReadOnce = (make: () => object = () => ({})) => {
+  const counts = { reads: 0 }
+  const value = Object.defineProperty(make(), Symbol.toPrimitive, {
+    get() {
+      counts.reads++
+      if (counts.reads === 1) return 5
+      throw new RangeError('Symbol.toPrimitive read again')
+    },
+  })
+  return { value, counts }
+}
+
+const notAFunction = (receiver: string) =>
+  `'5' returned for property 'Symbol(Symbol.toPrimitive)' of object '${receiver}' is not a function`
+
+test('a non-callable Symbol.toPrimitive is read once', (t) => {
+  const targets: [string, (value: unknown) => void][] = [
+    [
+      setterPrefix('lineWidth'),
+      (value) => {
+        loose(context()).lineWidth = value
+      },
+    ],
+    [
+      setterPrefix('font'),
+      (value) => {
+        loose(context()).font = value
+      },
+    ],
+    [
+      setterPrefix('fillStyle'),
+      (value) => {
+        loose(context()).fillStyle = value
+      },
+    ],
+    [
+      "Failed to execute 'setLineDash' on 'CanvasRenderingContext2D': ",
+      (value) => context().setLineDash([loose(value)]),
+    ],
+    [
+      "Failed to set the 'width' property on 'HTMLCanvasElement': ",
+      (value) => {
+        loose(createCanvas(10, 10)).width = value
+      },
+    ],
+  ]
+  for (const [prefix, assign] of targets) {
+    const { value, counts } = toPrimitiveReadOnce()
+    // Chrome 155 reads it once and throws the engine's TypeError.
+    const error = t.throws(() => assign(value), { instanceOf: TypeError, message: prefix + notAFunction('#<Object>') })
+    t.is(counts.reads, 1, prefix)
+    t.is(String(error.stack).split('\n')[0], `TypeError: ${notAFunction('#<Object>')}`)
+  }
+  // The engine names the receiver as Chrome does: by its constructor, or
+  // by the source text of a function.
+  class Foo {}
+  const named = function named() {
+    return 1
+  }
+  for (const [make, receiver] of [
+    [() => new Foo(), '#<Foo>'],
+    [() => named, String(named)],
+  ] as const) {
+    const { value, counts } = toPrimitiveReadOnce(make)
+    t.throws(
+      () => {
+        loose(context()).lineWidth = value
+      },
+      { instanceOf: TypeError, message: setterPrefix('lineWidth') + notAFunction(receiver) },
+    )
+    t.is(counts.reads, 1)
+  }
+})
+
 test('number setters run valueOf before they borrow the context', (t) => {
   const ctx = loose(context())
   ctx.lineWidth = {
