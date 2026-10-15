@@ -1,5 +1,6 @@
 use napi::bindgen_prelude::*;
 
+use crate::ctx::check_radius;
 use crate::num;
 use crate::sk::{
   FillType as SkFillType, Matrix as SkMatrix, Path as SkPath, PathOp as SkPathOp, SkiaString,
@@ -215,42 +216,59 @@ impl Path {
   #[napi]
   pub fn arc(
     &mut self,
+    env: &Env,
     x: Double<webidl::PathArc>,
     y: Double<webidl::PathArc>,
     radius: Double<webidl::PathArc>,
     start_angle: Double<webidl::PathArc>,
     end_angle: Double<webidl::PathArc>,
     anticlockwise: webidl::Boolean,
-  ) {
+  ) -> Result<()> {
     let Some([x, y, radius, start_angle, end_angle]) =
       num::saturated_f32s([x.0, y.0, radius.0, start_angle.0, end_angle.0])
     else {
-      return;
+      return Ok(());
     };
+    check_radius(
+      env.raw(),
+      <webidl::PathArc as webidl::Site>::PREFIX,
+      "radius",
+      radius,
+    )?;
     self
       .inner
       .arc(x, y, radius, start_angle, end_angle, anticlockwise.0);
+    Ok(())
   }
 
   #[napi]
   pub fn arc_to(
     &mut self,
+    env: &Env,
     x1: Double<webidl::PathArcTo>,
     y1: Double<webidl::PathArcTo>,
     x2: Double<webidl::PathArcTo>,
     y2: Double<webidl::PathArcTo>,
     radius: Double<webidl::PathArcTo>,
-  ) {
+  ) -> Result<()> {
     let Some([x1, y1, x2, y2, radius]) = num::saturated_f32s([x1.0, y1.0, x2.0, y2.0, radius.0])
     else {
-      return;
+      return Ok(());
     };
+    check_radius(
+      env.raw(),
+      <webidl::PathArcTo as webidl::Site>::PREFIX,
+      "radius",
+      radius,
+    )?;
     self.inner.arc_to_tangent(x1, y1, x2, y2, radius);
+    Ok(())
   }
 
   #[napi]
   pub fn ellipse(
     &mut self,
+    env: &Env,
     x: Double<webidl::PathEllipse>,
     y: Double<webidl::PathEllipse>,
     radius_x: Double<webidl::PathEllipse>,
@@ -259,7 +277,7 @@ impl Path {
     start_angle: Double<webidl::PathEllipse>,
     end_angle: Double<webidl::PathEllipse>,
     anticlockwise: webidl::Boolean,
-  ) {
+  ) -> Result<()> {
     let Some([x, y, radius_x, radius_y, rotation, start_angle, end_angle]) = num::saturated_f32s([
       x.0,
       y.0,
@@ -269,8 +287,11 @@ impl Path {
       start_angle.0,
       end_angle.0,
     ]) else {
-      return;
+      return Ok(());
     };
+    let prefix = <webidl::PathEllipse as webidl::Site>::PREFIX;
+    check_radius(env.raw(), prefix, "major-axis radius", radius_x)?;
+    check_radius(env.raw(), prefix, "minor-axis radius", radius_y)?;
     self.inner.ellipse(
       x,
       y,
@@ -281,6 +302,7 @@ impl Path {
       end_angle,
       anticlockwise.0,
     );
+    Ok(())
   }
 
   #[napi]
