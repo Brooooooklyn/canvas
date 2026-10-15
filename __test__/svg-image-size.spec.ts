@@ -707,6 +707,93 @@ test('a large svg draw keeps the source its shadow and filter read, like Chrome'
   )
 })
 
+// Rotated or skewed, a draw bigger than 4096x4096 device pixels still
+// rasters the SVG at the device scale, only the part near the canvas. Shrunk
+// to fit 4096x4096 and drawn larger, a hard edge spread over three pixels.
+// 300x150 canvas, a 6000x6000 SVG with one green rect; each row of a case:
+// y, the first x, then the alpha from there, measured in Chrome 155. Chrome
+// draws the vectors through the transform; a raster drawn through it moves
+// an edge pixel by up to 15 (as the draws of smaller SVGs do).
+const transformed: [string, number, number, (ctx: SKRSContext2D) => void, [number, number, number[]][]][] = [
+  // The green ends at x = -300 in user space; its shadow lands at about 100.
+  [
+    'rotate(0.05) and shadowOffsetX 400',
+    5700,
+    -6000,
+    (ctx) => {
+      ctx.rotate(0.05)
+      ctx.shadowColor = 'blue'
+      ctx.shadowOffsetX = 400
+    },
+    [
+      [0, 97, [255, 255, 152, 0, 0]],
+      [75, 93, [255, 255, 216, 0, 0]],
+      [149, 90, [255, 255, 40, 0, 0]],
+    ],
+  ],
+  [
+    'rotate(0.3) and shadowOffsetX 400',
+    5700,
+    -6000,
+    (ctx) => {
+      ctx.rotate(0.3)
+      ctx.shadowColor = 'blue'
+      ctx.shadowOffsetX = 400
+    },
+    [
+      [0, 83, [255, 255, 216, 0, 0]],
+      [75, 60, [255, 255, 152, 0, 0]],
+      [149, 37, [255, 255, 184, 0, 0]],
+    ],
+  ],
+  // The green ends at x = 100 in user space.
+  [
+    'rotate(0.05)',
+    5700,
+    -5600,
+    (ctx) => ctx.rotate(0.05),
+    [
+      [0, 98, [255, 255, 24, 0, 0]],
+      [75, 94, [255, 255, 88, 0, 0]],
+      [149, 90, [255, 255, 168, 0, 0]],
+    ],
+  ],
+  [
+    'setTransform(1, 0.05, 0, 1, 0, 0) and shadowOffsetX 400',
+    5700,
+    -6000,
+    (ctx) => {
+      ctx.setTransform(1, 0.05, 0, 1, 0, 0)
+      ctx.shadowColor = 'blue'
+      ctx.shadowOffsetX = 400
+    },
+    [
+      [0, 98, [255, 255, 0, 0, 0]],
+      [75, 98, [255, 255, 0, 0, 0]],
+      [149, 98, [255, 255, 0, 0, 0]],
+    ],
+  ],
+]
+
+test('a large rotated or skewed svg draw keeps its edges sharp like Chrome', async (t) => {
+  for (const [name, width, x, setup, rows] of transformed) {
+    const image = await loaded(
+      svg('width="6000" height="6000"', `<rect width="${width}" height="6000" fill="#00ff00"/>`),
+    )
+    const ctx = createCanvas(300, 150).getContext('2d')
+    setup(ctx)
+    ctx.drawImage(image, x, -3000)
+    const d = ctx.getImageData(0, 0, 300, 150).data
+    for (const [y, x0, chrome] of rows) {
+      const alpha = chrome.map((_, i) => d[(y * 300 + x0 + i) * 4 + 3])
+      t.true(
+        alpha.every((a, i) => Math.abs(a - chrome[i]) <= 15),
+        `${name}, y = ${y}: ${alpha} (Chrome ${chrome})`,
+      )
+    }
+  }
+})
+
 // That part is the canvas plus 256 px, grown in 256 px steps only for a
 // shadow or filter that reaches further. A shadow or filter that reaches less
 // keeps the raster of the draw without one, so an animated small shadow or

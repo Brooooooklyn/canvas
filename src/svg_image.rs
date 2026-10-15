@@ -288,6 +288,21 @@ impl SvgImage {
     let layout = (layout_floor(width), layout_floor(height));
 
     let Transform { a, b, c, d, e, f } = *ctm;
+    // The device rect a draw too big to raster whole reads: the canvas and
+    // RASTER_MARGIN around it, grown in RASTER_MARGIN steps on each side where
+    // its shadow and filter reach further. A nearer reach keeps the part, and
+    // so the cached raster, of the draw without one, and a changing reach
+    // makes a new raster only when it crosses a step. None when the reach
+    // cannot be bounded.
+    let read = source_bounds.map(|[left, top, right, bottom]| {
+      let margin = |reach: f32| (reach / RASTER_MARGIN).ceil().max(1.0) * RASTER_MARGIN;
+      [
+        -margin(-left),
+        -margin(-top),
+        canvas.0 + margin(right - canvas.0),
+        canvas.1 + margin(bottom - canvas.1),
+      ]
+    });
     // A scale and a translation: draw in device pixels, clipped (aliased) to
     // the destination rect rounded out, like Chrome's vector draw.
     let device_draw = || {
@@ -306,19 +321,14 @@ impl SvgImage {
         clip[3].ceil(),
       ];
       if (window[2] - window[0]) * (window[3] - window[1]) > RASTER_BUDGET {
-        // Only the part the draw reads: the canvas and RASTER_MARGIN around
-        // it, grown in RASTER_MARGIN steps on each side where its shadow and
-        // filter reach further. A nearer reach keeps the part, and so the
-        // cached raster, of the draw without one, and a changing reach makes
-        // a new raster only when it crosses a step. A reach that cannot be
-        // bounded takes scaled_draw.
-        let [left, top, right, bottom] = source_bounds?;
-        let margin = |reach: f32| (reach / RASTER_MARGIN).ceil().max(1.0) * RASTER_MARGIN;
+        // Only the part the draw reads. A reach that cannot be bounded takes
+        // scaled_draw.
+        let read = read?;
         window = [
-          window[0].max(-margin(-left)),
-          window[1].max(-margin(-top)),
-          window[2].min(canvas.0 + margin(right - canvas.0)),
-          window[3].min(canvas.1 + margin(bottom - canvas.1)),
+          window[0].max(read[0]),
+          window[1].max(read[1]),
+          window[2].min(read[2]),
+          window[3].min(read[3]),
         ];
       }
       let raster_width = window[2] - window[0];
@@ -355,17 +365,98 @@ impl SvgImage {
       Some((spec, draw_rect))
     };
     // Rotated, skewed, flipped or too big: a raster at the device scale of
-    // the destination (at most RASTER_BUDGET pixels), drawn through the
-    // transform.
+    // the destination, drawn through the transform.
     let scaled_draw = || {
-      let device_x = (a * a + b * b).sqrt();
-      let device_y = (c * c + d * d).sqrt();
+      // Device pixels per user unit on each axis of the image: the length of
+      // the axis on the device. Under a skew that keeps the columns (rows) of
+      // the image on device columns (rows), their device spacing instead, the
+      // horizontal (vertical) part of the axis, so that they stay on the
+      // device pixel grid. For a scale both are the same number.
+      let device_x = (a * a + if c == 0.0 { 0.0 } else { b * b }).sqrt();
+      let device_y = (if b == 0.0 { 0.0 } else { c * c } + d * d).sqrt();
       let mut raster_width = (dst.w * device_x - 1e-3).ceil().max(1.0);
       let mut raster_height = (dst.h * device_y - 1e-3).ceil().max(1.0);
       let area = raster_width * raster_height;
       if !area.is_finite() {
         return None;
       }
+      // Over RASTER_BUDGET pixels, only the part of the raster that covers
+      // what the draw reads, at most RASTER_BUDGET * 4 pixels like
+      // device_draw's: the device corners of `read` taken back to user
+      // space, in raster pixels, grown out to RASTER_MARGIN steps so that a
+      // draw moved or turned a little keeps the cached raster.
+      let part = || {
+        let read = read?;
+        let (a64, b64, c64, d64) = (a as f64, b as f64, c as f64, d as f64);
+        let det = a64 * d64 - b64 * c64;
+        if det == 0.0 {
+          return None;
+        }
+        let per_unit_x = raster_width as f64 / dst.w as f64;
+        let per_unit_y = raster_height as f64 / dst.h as f64;
+        let mut bounds = [
+          f64::INFINITY,
+          f64::INFINITY,
+          f64::NEG_INFINITY,
+          f64::NEG_INFINITY,
+        ];
+        for (x, y) in [
+          (read[0], read[1]),
+          (read[2], read[1]),
+          (read[0], read[3]),
+          (read[2], read[3]),
+        ] {
+          let (x, y) = (x as f64 - e as f64, y as f64 - f as f64);
+          let raster_x = ((d64 * x - c64 * y) / det - dst.x as f64) * per_unit_x;
+          let raster_y = ((a64 * y - b64 * x) / det - dst.y as f64) * per_unit_y;
+          bounds = [
+            bounds[0].min(raster_x),
+            bounds[1].min(raster_y),
+            bounds[2].max(raster_x),
+            bounds[3].max(raster_y),
+          ];
+        }
+        let step = RASTER_MARGIN as f64;
+        let part = [
+          ((bounds[0] / step).floor() * step).max(0.0),
+          ((bounds[1] / step).floor() * step).max(0.0),
+          ((bounds[2] / step).ceil() * step).min(raster_width as f64),
+          ((bounds[3] / step).ceil() * step).min(raster_height as f64),
+        ];
+        let (width, height) = (part[2] - part[0], part[3] - part[1]);
+        (width >= 1.0 && height >= 1.0 && width * height <= (RASTER_BUDGET * 4.0) as f64)
+          .then_some(part)
+      };
+      if area > RASTER_BUDGET
+        && let Some([left, top, right, bottom]) = part()
+      {
+        let to_raster_x = raster_width / picture_width;
+        let to_raster_y = raster_height / picture_height;
+        let spec = RasterSpec {
+          layout,
+          view,
+          matrix: [
+            to_raster_x,
+            to_raster_y,
+            -src.x * to_raster_x - left as f32,
+            -src.y * to_raster_y - top as f32,
+          ],
+          clip: [0.0, 0.0, (right - left) as f32, (bottom - top) as f32],
+          width: (right - left) as i32,
+          height: (bottom - top) as i32,
+        };
+        let unit_x = dst.w as f64 / raster_width as f64;
+        let unit_y = dst.h as f64 / raster_height as f64;
+        let draw_rect = (
+          (dst.x as f64 + left * unit_x) as f32,
+          (dst.y as f64 + top * unit_y) as f32,
+          ((right - left) * unit_x) as f32,
+          ((bottom - top) * unit_y) as f32,
+        );
+        return Some((spec, draw_rect));
+      }
+      // Otherwise (a reach that cannot be bounded, a part that is empty or
+      // still too big) all of it, at the scale that fits RASTER_BUDGET.
       if area > RASTER_BUDGET {
         let shrink = (RASTER_BUDGET / area).sqrt();
         raster_width = (raster_width * shrink).ceil().max(1.0);
