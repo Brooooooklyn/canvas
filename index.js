@@ -243,13 +243,10 @@ const ARGUMENT_COUNTS = _argumentCounts()
 
 // new ImageData(): Chrome checks `new` and the real argument count before it
 // picks an overload (image_data.idl). The class napi-rs makes sees neither,
-// so a native function checks them and builds the class, with the count
-// after the 4 positional arguments. Instances share the class prototype, so
-// instanceof works for those that createImageData and getImageData return.
-const construct = Reflect.construct
-const ImageData = _imageDataConstructor((args, argc, newTarget) =>
-  construct(NativeImageData, [args[0], args[1], args[2], args[3], ARGUMENT_COUNTS[Math.min(argc, 4)]], newTarget),
-)
+// so a native function checks them and builds the instance itself, from
+// new.target.prototype. Instances share the class prototype, so instanceof
+// works for those that createImageData and getImageData return.
+const ImageData = _imageDataConstructor()
 Object.defineProperty(ImageData, 'length', { value: 2 })
 Object.defineProperty(ImageData, 'prototype', { value: NativeImageData.prototype, writable: false })
 Object.defineProperty(NativeImageData.prototype, 'constructor', {

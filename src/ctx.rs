@@ -3893,9 +3893,11 @@ impl FromNapiValue for PutImageDataArgs {
     if unsafe { <&ImageData as ValidateNapiValue>::validate(env, image_data) }.is_err() {
       return Err(not_image_data());
     }
-    let numbers = (1..count)
-      .map(|index| webidl::enforce_range_long(env, args.get(index)?, prefix))
-      .collect::<Result<Vec<_>>>()?;
+    // dx, dy, then the dirty rectangle.
+    let mut numbers = [0; 6];
+    for (index, number) in (1..count).zip(&mut numbers) {
+      *number = webidl::enforce_range_long(env, args.get(index)?, prefix)?;
+    }
     let image_data =
       unsafe { ImageData::from_napi_ref(env, image_data) }.map_err(|_| not_image_data())?;
     Ok(Self {
