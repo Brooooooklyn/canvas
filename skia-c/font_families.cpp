@@ -561,3 +561,27 @@ bool skiac_font_collection_default_font_units(
                          lroundf(metrics.fLeading));
   return true;
 }
+
+uint32_t skiac_font_collection_register_system_font(
+    skiac_font_collection* c_collection,
+    const char* path) {
+  sk_sp<SkTypeface> typeface = c_collection->font_mgr->makeFromFile(path);
+  if (!typeface) {
+    return 0;
+  }
+  const size_t registered = c_collection->assets->getRegisteredFonts().size();
+  const SkTypefaceID typeface_id = typeface->uniqueID();
+  const uint32_t id =
+      c_collection->assets->registerTypefaceFromPathWithTracking(path,
+                                                                 typeface);
+  if (!id) {
+    return 0;
+  }
+  // A path registered before (by registerFromPath) stays what it was.
+  if (c_collection->assets->getRegisteredFonts().size() > registered) {
+    c_collection->system_font_ids.insert(id);
+    c_collection->system_typeface_ids.insert(typeface_id);
+  }
+  c_collection->markCachesDirty();
+  return id;
+}
