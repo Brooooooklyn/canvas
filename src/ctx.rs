@@ -4082,9 +4082,15 @@ impl CanvasRenderingContext2D {
 
   #[napi]
   pub fn clear_rect(&mut self, x: f64, y: f64, width: f64, height: f64) -> Result<()> {
-    self
-      .context
-      .clear_rect(x as f32, y as f32, width as f32, height as f32)?;
+    // ValidateRectForCanvas: a non-finite or empty (0 x 0) rect clears
+    // nothing; then ClampTo<float> (canvas_2d_recorder_context.cc:1928).
+    let Some([x, y, width, height]) = num::clamped_f32s([x, y, width, height]) else {
+      return Ok(());
+    };
+    if width == 0.0 && height == 0.0 {
+      return Ok(());
+    }
+    self.context.clear_rect(x, y, width, height)?;
     Ok(())
   }
 

@@ -1,5 +1,5 @@
-// Non-finite and float-overflow arguments of path methods, transforms and
-// Path2D.addPath. Every expected value was measured in Chrome 155
+// Non-finite and float-overflow arguments of path methods, transforms,
+// Path2D.addPath and clearRect. Every expected value was measured in Chrome 155
 // CPU canvas (--disable-gpu, getContext('2d', { willReadFrequently: true })) in
 // a standards-mode page; Chrome arm64 and x64 give the same values.
 import test from 'ava'
@@ -22,6 +22,8 @@ function sum(ctx: Ctx) {
   }
   return { a, h: h.toString(16) }
 }
+
+const px = (ctx: Ctx, x: number, y: number) => [...ctx.getImageData(x, y, 1, 1).data]
 
 // getTransform() rounded to 6 significant digits.
 const transformOf = (ctx: Ctx) => {
@@ -285,4 +287,35 @@ test('Path2D.addPath skips a non-finite matrix', (t) => {
     ctx.fill(q)
     t.deepEqual(sum(ctx), { a: 6375, h: '467d1f8' }, `${key}: ${v}`)
   }
+})
+
+test('clearRect ignores non-finite and empty rects', (t) => {
+  // ValidateRectForCanvas (canvas_2d_recorder_context.h:968): all finite and
+  // not 0 x 0. Before, clearRect(0, 0, Infinity, Infinity) cleared the canvas.
+  const scene = (args: number[]) => {
+    const ctx = createCanvas(40, 40).getContext('2d')
+    ctx.fillStyle = 'rgb(200,100,50)'
+    ctx.fillRect(0, 0, 40, 40)
+    loose(ctx).clearRect(...args)
+    return { s: sum(ctx), px: px(ctx, 20, 20) }
+  }
+  const untouched = { s: { a: 408000, h: '38898545' }, px: [200, 100, 50, 255] }
+  for (const args of [
+    [0, 0, Infinity, Infinity],
+    [-Infinity, -Infinity, Infinity, Infinity],
+    [NaN, 0, 40, 40],
+    [0, NaN, 40, 40],
+    [0, 0, NaN, 40],
+    [0, 0, 40, NaN],
+    [0, 0, 0, 0],
+    [5, 5, 0, 20],
+    [5, 5, 20, 0],
+  ]) {
+    t.deepEqual(scene(args), untouched, `clearRect(${args.join(', ')})`)
+  }
+  // A finite overflow clamps to FLT_MAX and clears everything.
+  const cleared = { s: { a: 0, h: 'f4deb1c5' }, px: [0, 0, 0, 0] }
+  t.deepEqual(scene([0, 0, 1e300, 1e300]), cleared)
+  t.deepEqual(scene([0, 0, 40, 40]), cleared)
+  t.deepEqual(scene([10, 10, 10, 10]), { s: { a: 382500, h: '5f7b148d' }, px: [200, 100, 50, 255] })
 })
