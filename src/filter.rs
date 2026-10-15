@@ -13,7 +13,7 @@ use nom::{
 use thiserror::Error;
 
 use crate::color::{self, Color};
-use crate::sk::{ImageFilter, degrees_to_radians};
+use crate::sk::ImageFilter;
 
 #[derive(Error, Debug)]
 pub enum ParseFilterError<'a> {
@@ -277,8 +277,52 @@ pub fn css_filter(input: &str) -> IResult<&str, Vec<CssFilter>> {
   Ok((input, filters))
 }
 
-/// Fold a parsed `<filter-value-list>` into one chained `SkImageFilter`, or
-/// `None` when the list produces no filter at all.
+/// Blink's `ClampToU8` (fe_component_transfer.cc): clamp, then truncate.
+fn clamp_u8(v: f64) -> u8 {
+  v.clamp(0.0, 255.0) as u8
+}
+
+/// Blink's FEComponentTransfer `Table()`: linear steps between the values,
+/// in double.
+fn transfer_table(values: &[f32]) -> [u8; 256] {
+  let n = values.len();
+  core::array::from_fn(|i| {
+    let c = i as f64 / 255.0;
+    let k = (c * (n - 1) as f64) as usize;
+    let v1 = values[k] as f64;
+    let v2 = values[(k + 1).min(n - 1)] as f64;
+    clamp_u8(255.0 * (v1 + (c * (n - 1) as f64 - k as f64) * (v2 - v1)))
+  })
+}
+
+/// Blink's FEComponentTransfer `Linear()`: `slope * i + 255 * intercept` on
+/// the function's float fields, so the sum is a float.
+fn transfer_linear(slope: f32, intercept: f32) -> [u8; 256] {
+  core::array::from_fn(|i| clamp_u8((slope * i as f32 + 255f32 * intercept) as f64))
+}
+
+/// The same transfer table on R, G and B; alpha keeps its identity table.
+fn rgb_transfer(table: &[u8; 256], chain: Option<&ImageFilter>) -> Option<ImageFilter> {
+  ImageFilter::from_argb(None, Some(table), Some(table), Some(table), chain)
+}
+
+/// An RGB colour matrix, alpha kept.
+fn rgb_matrix(m: [f32; 9], chain: Option<&ImageFilter>) -> Option<ImageFilter> {
+  ImageFilter::make_image_filter(
+    m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8], 1.0, chain,
+  )
+}
+
+/// Blink's GrayscaleMatrix / SepiaMatrix (filter_effect_builder.cc): the
+/// entries are `base + scale * (1 - amount)` in double, stored as float.
+fn amount_matrix(amount: f64, base: [f64; 9], scale: [f64; 9]) -> [f32; 9] {
+  let one_minus_amount = (1.0 - amount).clamp(0.0, 1.0);
+  core::array::from_fn(|i| (base[i] + scale[i] * one_minus_amount) as f32)
+}
+
+/// Fold a parsed `<filter-value-list>` into one chained `SkImageFilter` the
+/// way Blink's FilterEffectBuilder builds it, or `None` when the list produces
+/// no filter at all.
 ///
 /// `None` is the only representation of "no filter" this may return, and the
 /// chain is threaded as an `Option` so that an empty list yields it by
@@ -290,150 +334,100 @@ pub(crate) fn css_filters_to_image_filter(filters: Vec<CssFilter>) -> Option<Ima
     // A filter that fails to build takes the whole list with it.
     let next = match f {
       CssFilter::Blur(blur) => ImageFilter::make_blur(blur, blur, chain.as_ref()),
-      CssFilter::Brightness(brightness) => {
-        let brightness = brightness.max(0.0);
-        ImageFilter::make_image_filter(
-          brightness,
-          0.0,
-          0.0,
-          0.0,
-          brightness,
-          0.0,
-          0.0,
-          0.0,
-          brightness,
-          1.0,
-          chain.as_ref(),
-        )
+      CssFilter::Brightness(amount) => {
+        let slope = amount.max(0.0);
+        rgb_transfer(&transfer_linear(slope, 0.0), chain.as_ref())
       }
-      CssFilter::Contrast(contrast) => {
-        let amt = contrast.max(0.0);
-        let mut ramp = [0u8; 256];
-        ramp.iter_mut().take(256).enumerate().for_each(|(i, v)| {
-          let orig = i as f32;
-          *v = (127.0 + amt * (orig - 127.0)) as u8;
-        });
-        let ramp = Some(&ramp);
-        ImageFilter::from_argb(None, ramp, ramp, ramp, chain.as_ref())
+      CssFilter::Contrast(amount) => {
+        let slope = amount.max(0.0);
+        let intercept = (-0.5 * slope as f64 + 0.5) as f32;
+        rgb_transfer(&transfer_linear(slope, intercept), chain.as_ref())
       }
-      CssFilter::DropShadow(offset_x, offset_y, blur_radius, shadow_color) => {
-        let sigma = blur_radius / 2.0;
-        // Blink hands Skia `color.toSkColor4f().toSkColor()`
-        // (cc/paint/paint_filter.cc:391-400).
-        let shadow_color = shadow_color.to_sk_color4f().to_sk_color();
-        if shadow_color >> 24 == 0 {
-          // A transparent shadow adds nothing: skip this node only and keep
-          // the rest of the chain.
-          continue;
-        }
-        if blur_radius == 0f32 && offset_x == 0f32 && offset_y == 0f32 {
-          return None;
-        }
+      // Blink always builds the FEDropShadow, even a transparent or an
+      // all-zero one, and takes the blur as its standard deviation ("stored
+      // in sigma form", filter_effect_builder.cc). Blink hands Skia
+      // `color.toSkColor4f().toSkColor()` (cc/paint/paint_filter.cc:391-400).
+      CssFilter::DropShadow(offset_x, offset_y, std_deviation, shadow_color) => {
         ImageFilter::make_drop_shadow(
           offset_x,
           offset_y,
-          sigma,
-          sigma,
-          shadow_color,
+          std_deviation,
+          std_deviation,
+          shadow_color.to_sk_color4f().to_sk_color(),
           chain.as_ref(),
         )
       }
-      CssFilter::Grayscale(amt) => {
-        let amt = 1.0 - amt.clamp(0.0, 1.0);
-        ImageFilter::make_image_filter(
-          0.2126 + 0.7874 * amt,
-          0.7152 - 0.7152 * amt,
-          0.0722 - 0.0722 * amt,
-          0.2126 - 0.2126 * amt,
-          0.7152 + 0.2848 * amt,
-          0.0722 - 0.0722 * amt,
-          0.2126 - 0.2126 * amt,
-          0.7152 - 0.7152 * amt,
-          0.0722 + 0.9278 * amt,
-          1.0,
-          chain.as_ref(),
-        )
-      }
+      CssFilter::Grayscale(amount) => rgb_matrix(
+        amount_matrix(
+          amount as f64,
+          [
+            0.2126, 0.7152, 0.0722, 0.2126, 0.7152, 0.0722, 0.2126, 0.7152, 0.0722,
+          ],
+          [
+            0.7874, -0.7152, -0.0722, -0.2126, 0.2848, -0.0722, -0.2126, -0.7152, 0.9278,
+          ],
+        ),
+        chain.as_ref(),
+      ),
+      // FEColorMatrix HueRotateMatrix (fe_color_matrix.cc), all float.
       CssFilter::HueRotate(angle) => {
-        let cos = degrees_to_radians(angle).cos();
-        let sin = degrees_to_radians(angle).sin();
-        ImageFilter::make_image_filter(
-          0.213 + cos * 0.787 - sin * 0.213,
-          0.715 - cos * 0.715 - sin * 0.715,
-          0.072 - cos * 0.072 + sin * 0.928,
-          0.213 - cos * 0.213 + sin * 0.143,
-          0.715 + cos * 0.285 + sin * 0.140,
-          0.072 - cos * 0.072 - sin * 0.283,
-          0.213 - cos * 0.213 - sin * 0.787,
-          0.715 - cos * 0.715 + sin * 0.715,
-          0.072 + cos * 0.928 + sin * 0.072,
-          1.0,
+        let radians = angle * (std::f32::consts::PI / 180.0);
+        let (sin, cos) = (radians.sin(), radians.cos());
+        rgb_matrix(
+          [
+            0.213 + cos * 0.787 - sin * 0.213,
+            0.715 - cos * 0.715 - sin * 0.715,
+            0.072 - cos * 0.072 + sin * 0.928,
+            0.213 - cos * 0.213 + sin * 0.143,
+            0.715 + cos * 0.285 + sin * 0.140,
+            0.072 - cos * 0.072 - sin * 0.283,
+            0.213 - cos * 0.213 - sin * 0.787,
+            0.715 - cos * 0.715 + sin * 0.715,
+            0.072 + cos * 0.928 + sin * 0.072,
+          ],
           chain.as_ref(),
         )
       }
-      CssFilter::Invert(amt) => {
-        let amt = amt.clamp(0.0, 1.0);
-        let mut ramp = [0u8; 256];
-        ramp
-          .iter_mut()
-          .take(256)
-          .enumerate()
-          .map(|(i, v)| (i as f32, v))
-          .for_each(|(i, val)| {
-            let (orig, inv) = (i, 255.0 - i);
-            *val = (orig * (1.0 - amt) + inv * amt) as u8;
-          });
-        let ramp = Some(&ramp);
-        ImageFilter::from_argb(None, ramp, ramp, ramp, chain.as_ref())
+      CssFilter::Invert(amount) => {
+        let amount = amount.clamp(0.0, 1.0) as f64;
+        let table = transfer_table(&[amount as f32, (1.0 - amount) as f32]);
+        rgb_transfer(&table, chain.as_ref())
       }
-      CssFilter::Opacity(opacity) => {
-        let opacity = opacity.clamp(0.0, 1.0);
-        ImageFilter::make_image_filter(
-          1.0,
-          0.0,
-          0.0,
-          0.0,
-          1.0,
-          0.0,
-          0.0,
-          0.0,
-          1.0,
-          opacity,
+      // A table on alpha only.
+      CssFilter::Opacity(amount) => {
+        let table = transfer_table(&[0.0, amount.clamp(0.0, 1.0)]);
+        ImageFilter::from_argb(Some(&table), None, None, None, chain.as_ref())
+      }
+      // FEColorMatrix SaturateMatrix (fe_color_matrix.cc), all float.
+      CssFilter::Saturate(amount) => {
+        let s = amount.max(0.0);
+        rgb_matrix(
+          [
+            0.213 + 0.787 * s,
+            0.715 - 0.715 * s,
+            0.072 - 0.072 * s,
+            0.213 - 0.213 * s,
+            0.715 + 0.285 * s,
+            0.072 - 0.072 * s,
+            0.213 - 0.213 * s,
+            0.715 - 0.715 * s,
+            0.072 + 0.928 * s,
+          ],
           chain.as_ref(),
         )
       }
-      CssFilter::Saturate(amt) => {
-        let amt = amt.max(0.0);
-        ImageFilter::make_image_filter(
-          0.2126 + 0.7874 * amt,
-          0.7152 - 0.7152 * amt,
-          0.0722 - 0.0722 * amt,
-          0.2126 - 0.2126 * amt,
-          0.7152 + 0.2848 * amt,
-          0.0722 - 0.0722 * amt,
-          0.2126 - 0.2126 * amt,
-          0.7152 - 0.7152 * amt,
-          0.0722 + 0.9278 * amt,
-          1.0,
-          chain.as_ref(),
-        )
-      }
-      CssFilter::Sepia(amt) => {
-        let amt = 1.0 - amt.clamp(0.0, 1.0);
-        ImageFilter::make_image_filter(
-          0.393 + 0.607 * amt,
-          0.769 - 0.769 * amt,
-          0.189 - 0.189 * amt,
-          0.349 - 0.349 * amt,
-          0.686 + 0.314 * amt,
-          0.168 - 0.168 * amt,
-          0.272 - 0.272 * amt,
-          0.534 - 0.534 * amt,
-          0.131 + 0.869 * amt,
-          1.0,
-          chain.as_ref(),
-        )
-      }
+      CssFilter::Sepia(amount) => rgb_matrix(
+        amount_matrix(
+          amount as f64,
+          [
+            0.393, 0.769, 0.189, 0.349, 0.686, 0.168, 0.272, 0.534, 0.131,
+          ],
+          [
+            0.607, -0.769, -0.189, -0.349, 0.314, -0.168, -0.272, -0.534, 0.869,
+          ],
+        ),
+        chain.as_ref(),
+      ),
     };
     chain = Some(next?);
   }

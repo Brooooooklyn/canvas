@@ -5955,11 +5955,6 @@ pub(crate) fn radians_to_degrees(rad: f32) -> f32 {
 }
 
 #[inline(always)]
-pub(crate) fn degrees_to_radians(degrees: f32) -> f32 {
-  degrees / 180.0 * PI
-}
-
-#[inline(always)]
 fn almost_equal(floata: f32, floatb: f32) -> bool {
   (floata - floatb).abs() < 0.00001
 }
