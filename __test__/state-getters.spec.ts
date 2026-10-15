@@ -3,6 +3,7 @@
 // willReadFrequently canvas in a standards-mode page); arm64 and x64 gave the
 // same results. SvgCanvas and PDF pages have no Chrome counterpart: they
 // follow the same rules (HTML spec).
+import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -251,4 +252,263 @@ test('currentcolor shadow paints opaque black', (t) => {
   ctx.fillRect(0, 0, 2, 4)
   t.is(ctx.shadowColor, '#000000')
   t.deepEqual(px(ctx, 3, 1), [0, 0, 0, 255])
+})
+
+// A Canvas, an SvgCanvas and a PDF page, each with its 2D context.
+const contexts = (): [string, () => { ctx: Ctx; resize?: () => void }][] => [
+  [
+    'canvas',
+    () => {
+      const canvas = createCanvas(20, 20)
+      return { ctx: canvas.getContext('2d'), resize: () => (canvas.width = 20) }
+    },
+  ],
+  [
+    'svg',
+    () => {
+      const canvas = createCanvas(20, 20, SvgExportFlag.ConvertTextToPaths)
+      return { ctx: canvas.getContext('2d'), resize: () => (canvas.height = 20) }
+    },
+  ],
+  ['pdf', () => ({ ctx: new PDFDocument().beginPage(20, 20) })],
+]
+
+test('fillStyle and strokeStyle getters follow save() and restore()', (t) => {
+  const sequence = (ctx: Ctx, prop: (typeof COLOR_PROPS)[number], a: string, b: string) => {
+    ctx[prop] = a
+    ctx.save()
+    ctx[prop] = b
+    const values = [ctx[prop]]
+    ctx.restore()
+    values.push(ctx[prop])
+    ctx.restore()
+    values.push(ctx[prop])
+    return values
+  }
+  for (const [label, make] of contexts()) {
+    t.deepEqual(sequence(make().ctx, 'fillStyle', '#ff0000', '#0000ff'), ['#0000ff', '#ff0000', '#ff0000'], label)
+    t.deepEqual(sequence(make().ctx, 'strokeStyle', '#00ff00', '#123456'), ['#123456', '#00ff00', '#00ff00'], label)
+    t.deepEqual(
+      sequence(make().ctx, 'shadowColor', '#ff0000', 'rgba(0, 0, 255, 0.5)'),
+      ['rgba(0, 0, 255, 0.5)', '#ff0000', '#ff0000'],
+      label,
+    )
+    // Invalid values keep the current one; a toString() object is a string.
+    const { ctx } = make()
+    ctx.fillStyle = 'red'
+    ctx.save()
+    const values = []
+    for (const value of ['notacolor', 5, null, { toString: () => 'blue' }]) {
+      ctx.fillStyle = value as any
+      values.push(ctx.fillStyle)
+    }
+    ctx.restore()
+    values.push(ctx.fillStyle)
+    t.deepEqual(values, ['#ff0000', '#ff0000', '#ff0000', '#0000ff', '#ff0000'], label)
+  }
+})
+
+test('gradient and pattern getters keep identity across save() and restore()', (t) => {
+  for (const [label, make] of contexts()) {
+    const { ctx } = make()
+    const g1 = ctx.createLinearGradient(0, 0, 10, 0)
+    g1.addColorStop(0, 'red')
+    g1.addColorStop(1, 'blue')
+    const g2 = ctx.createRadialGradient(5, 5, 1, 5, 5, 5)
+    const p1 = ctx.createPattern(createCanvas(2, 2), 'repeat')
+    const r: unknown[] = []
+    ctx.fillStyle = g1
+    r.push(ctx.fillStyle === g1)
+    ctx.save()
+    r.push(ctx.fillStyle === g1)
+    ctx.fillStyle = 'red'
+    r.push(ctx.fillStyle)
+    ctx.save()
+    ctx.fillStyle = p1
+    r.push(ctx.fillStyle === p1)
+    ctx.save()
+    ctx.fillStyle = g2
+    r.push(ctx.fillStyle === g2)
+    ctx.restore()
+    r.push(ctx.fillStyle === p1)
+    ctx.restore()
+    r.push(ctx.fillStyle)
+    ctx.restore()
+    r.push(ctx.fillStyle === g1)
+    ctx.restore()
+    r.push(ctx.fillStyle === g1)
+    ctx.strokeStyle = p1
+    ctx.save()
+    ctx.strokeStyle = g2
+    ctx.restore()
+    r.push(ctx.strokeStyle === p1)
+    ctx.fillStyle = g1
+    ctx.fillStyle = g1
+    r.push(ctx.fillStyle === g1)
+    for (let i = 0; i < 5; i++) {
+      ctx.save()
+      ctx.fillStyle = i % 2 ? g2 : p1
+    }
+    for (let i = 0; i < 5; i++) ctx.restore()
+    r.push(ctx.fillStyle === g1)
+    ctx.fillStyle = g2
+    ctx.save()
+    ctx.fillStyle = p1
+    ctx.reset()
+    r.push(ctx.fillStyle, ctx.strokeStyle)
+    ctx.restore()
+    r.push(ctx.fillStyle)
+    t.deepEqual(
+      r,
+      [
+        true,
+        true,
+        '#ff0000',
+        true,
+        true,
+        true,
+        '#ff0000',
+        true,
+        true,
+        true,
+        true,
+        true,
+        '#000000',
+        '#000000',
+        '#000000',
+      ],
+      label,
+    )
+
+    const more: unknown[] = []
+    // The same gradient at two depths, then a color over it.
+    ctx.fillStyle = g1
+    ctx.save()
+    ctx.fillStyle = g1
+    ctx.fillStyle = 'red'
+    ctx.restore()
+    more.push(ctx.fillStyle === g1)
+    // A color over the depth's own gradient, then a gradient one level up.
+    ctx.fillStyle = g2
+    ctx.fillStyle = 'blue'
+    ctx.save()
+    ctx.fillStyle = g1
+    ctx.restore()
+    more.push(ctx.fillStyle)
+    ctx.save()
+    ctx.fillStyle = g1
+    ctx.restore()
+    ctx.save()
+    more.push(ctx.fillStyle)
+    ctx.fillStyle = g2
+    ctx.restore()
+    more.push(ctx.fillStyle)
+    ctx.fillStyle = g1
+    ctx.strokeStyle = g2
+    ctx.save()
+    ctx.fillStyle = g2
+    ctx.strokeStyle = g1
+    ctx.restore()
+    more.push(ctx.fillStyle === g1, ctx.strokeStyle === g2)
+    // Extra restores and an invalid color keep the gradient.
+    ctx.restore()
+    ctx.restore()
+    more.push(ctx.fillStyle === g1)
+    ctx.fillStyle = 'bogus'
+    more.push(ctx.fillStyle === g1)
+    t.deepEqual(more, [true, '#0000ff', '#0000ff', '#0000ff', true, true, true, true], label)
+  }
+})
+
+test('PDF page style defaults', (t) => {
+  const ctx = new PDFDocument().beginPage(20, 20)
+  t.is(ctx.fillStyle, '#000000')
+  t.is(ctx.strokeStyle, '#000000')
+})
+
+test('resize clears the saved styles', (t) => {
+  for (const [label, make] of contexts().slice(0, 2)) {
+    const { ctx, resize } = make()
+    ctx.fillStyle = 'red'
+    ctx.save()
+    ctx.fillStyle = 'blue'
+    resize!()
+    t.is(ctx.fillStyle, '#000000', label)
+    ctx.restore()
+    t.is(ctx.fillStyle, '#000000', label)
+
+    const gradient = ctx.createLinearGradient(0, 0, 1, 1)
+    ctx.fillStyle = gradient
+    ctx.save()
+    ctx.strokeStyle = gradient
+    resize!()
+    t.deepEqual([ctx.fillStyle, ctx.strokeStyle], ['#000000', '#000000'], label)
+    ctx.restore()
+    t.deepEqual([ctx.fillStyle, ctx.strokeStyle], ['#000000', '#000000'], label)
+  }
+})
+
+test('paint follows restore', (t) => {
+  const ctx = createCanvas(4, 4).getContext('2d')
+  ctx.fillStyle = '#ff0000'
+  ctx.save()
+  ctx.fillStyle = '#0000ff'
+  ctx.restore()
+  ctx.fillRect(0, 0, 4, 4)
+  t.deepEqual(px(ctx, 0, 0), [255, 0, 0, 255])
+})
+
+test('saved style objects do not pile up', (t) => {
+  for (const [label, make] of contexts()) {
+    const { ctx } = make()
+    for (let i = 0; i < 1000; i++) {
+      ctx.save()
+      ctx.fillStyle = ctx.createLinearGradient(0, 0, 1, 1)
+      ctx.strokeStyle = ctx.createLinearGradient(0, 0, 1, 1)
+      ctx.restore()
+    }
+    const held = Reflect.ownKeys(ctx)
+      .map((key) => Object.getOwnPropertyDescriptor(ctx, key)!.value)
+      .filter(Array.isArray)
+    t.true(
+      held.every((array) => array.length <= 2),
+      label,
+    )
+  }
+})
+
+// The saved gradient and pattern objects live in the JS heap: a style that
+// refers back to its context does not keep the context alive.
+test('a style that holds its context does not keep it alive', async (t) => {
+  const script = `
+const { createCanvas, SvgExportFlag } = require('./index.js')
+;(async () => {
+  // A plain function: an async function's block scope could keep the last
+  // canvas alive.
+  const make = (svg) => {
+    const canvas = svg ? createCanvas(8, 8, SvgExportFlag.ConvertTextToPaths) : createCanvas(8, 8)
+    const ctx = canvas.getContext('2d')
+    const gradient = ctx.createLinearGradient(0, 0, 8, 0)
+    const pattern = ctx.createPattern(createCanvas(2, 2), 'repeat')
+    gradient.ctx = ctx
+    pattern.canvas = canvas
+    ctx.fillStyle = gradient
+    ctx.save()
+    ctx.strokeStyle = pattern
+    return [new WeakRef(ctx), new WeakRef(canvas)]
+  }
+  const refs = [...make(false), ...make(true)]
+  for (let i = 0; i < 10 && refs.some((ref) => ref.deref()); i++) {
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    global.gc()
+  }
+  console.log(refs.map((ref) => ref.deref() === undefined).join(','))
+})()
+`
+  const child = spawnSync(process.execPath, ['--expose-gc', '-e', script], {
+    cwd: join(dirname(fileURLToPath(import.meta.url)), '..'),
+    encoding: 'utf8',
+  })
+  t.is(child.status, 0, child.stderr)
+  t.is(child.stdout.trim(), 'true,true,true,true')
 })

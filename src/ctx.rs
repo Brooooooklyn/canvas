@@ -49,19 +49,97 @@ impl From<SkError> for Error {
 }
 
 pub(crate) const MAX_TEXT_WIDTH: f32 = 100_000.0;
-pub(crate) const FILL_STYLE_HIDDEN_NAME: &str = "_fillStyle";
-pub(crate) const STROKE_STYLE_HIDDEN_NAME: &str = "_strokeStyle";
 /// Where the canvas classes keep a context's canvas, for the `canvas` getter.
 pub(crate) const CANVAS_HIDDEN_NAME: &str = "_canvas";
 
-/// The fillStyle/strokeStyle getters read these hidden JS properties, so every
-/// reset to the default state (ctx.reset(), and a width/height change, which
-/// Chrome runs through the same Reset: html_canvas_element.cc:870-872) must
-/// reset them too.
-pub(crate) fn reset_style_getters(ctx: &mut Object) -> Result<()> {
-  ctx.set_named_property(FILL_STYLE_HIDDEN_NAME, "#000000")?;
-  ctx.set_named_property(STROKE_STYLE_HIDDEN_NAME, "#000000")?;
+/// The gradient and pattern objects that the fillStyle and strokeStyle getters
+/// return, in a JS array on the context: index 2 * depth for fillStyle and
+/// 2 * depth + 1 for strokeStyle, where depth is the save() depth that set
+/// the object (the state's `fill_style_slot` / `stroke_style_slot`). Like
+/// Chrome's state stack (each state holds its CanvasStyle), the getters follow
+/// save() and restore(). The array lives in the JS heap, so a cycle such as
+/// `gradient.ctx = ctx` stays collectable. Colors need no object: the getter
+/// returns their serialization from the Rust state.
+const STYLE_OBJECTS_NAME: &str = "_styleObjects";
+
+/// The style object array of `ctx`, if it has one.
+fn style_objects<'a>(ctx: &Object<'a>) -> Result<Option<Object<'a>>> {
+  let value: Unknown = ctx.get_named_property(STYLE_OBJECTS_NAME)?;
+  if value.get_type()? != ValueType::Object || !value.is_array()? {
+    return Ok(None);
+  }
+  Ok(Some(unsafe {
+    Object::from_napi_value(value.value().env, value.raw())?
+  }))
+}
+
+/// Drops the saved style objects from `length` on: after restore() popped the
+/// states that set them, or with `0` when the state stack starts over (reset()
+/// and a width or height change, which Chrome runs through the same Reset:
+/// html_canvas_element.cc).
+pub(crate) fn truncate_style_objects(ctx: &Object, length: u32) -> Result<()> {
+  if let Some(mut objects) = style_objects(ctx)?
+    && objects.get_array_length_unchecked()? > length
+  {
+    objects.set_named_property("length", length)?;
+  }
   Ok(())
+}
+
+/// The fillStyle or strokeStyle getter: a color's serialization, or the
+/// gradient or pattern object set at depth `slot` (undefined if it is gone).
+fn style_getter<'a>(
+  ctx: &Object<'a>,
+  style: &Pattern,
+  slot: Option<u32>,
+  offset: u32,
+) -> Result<Either3<String, Unknown<'a>, Undefined>> {
+  if let Pattern::Color(_, serialized) = style {
+    return Ok(Either3::A(serialized.clone()));
+  }
+  match (slot, style_objects(ctx)?) {
+    (Some(slot), Some(objects)) => Ok(Either3::B(objects.get_element(2 * slot + offset)?)),
+    _ => Ok(Either3::C(())),
+  }
+}
+
+/// The fillStyle or strokeStyle setter: stores `style` in `state_slot`'s
+/// state and keeps the getter's object. `depth` is the current save() depth.
+fn set_style(
+  env: &Env,
+  ctx: &mut Object,
+  style: CanvasStyleArg<'_, impl webidl::Site>,
+  depth: u32,
+  offset: u32,
+) -> Result<Option<(Pattern, Option<u32>)>> {
+  let Some(pattern) = style.pattern else {
+    // Not a color: the assignment is ignored.
+    return Ok(None);
+  };
+  let index = 2 * depth + offset;
+  if let Pattern::Color(..) = pattern {
+    // Free an object this depth set before; lower depths keep theirs.
+    if let Some(mut objects) = style_objects(ctx)?
+      && objects.get_array_length_unchecked()? > index
+    {
+      objects.delete_element(index)?;
+    }
+    return Ok(Some((pattern, None)));
+  }
+  let mut objects = match style_objects(ctx)? {
+    Some(objects) => objects,
+    None => {
+      ctx.define_properties(&[Property::new()
+        .with_utf8_name(STYLE_OBJECTS_NAME)?
+        .with_value(&env.create_array(0)?)
+        .with_property_attributes(
+          PropertyAttributes::Writable | PropertyAttributes::Configurable,
+        )])?;
+      style_objects(ctx)?.ok_or_else(|| Error::from_reason("No style object array"))?
+    }
+  };
+  objects.set_element(index, style.value)?;
+  Ok(Some((pattern, Some(depth))))
 }
 
 /// Where the draw casting the shadow gets its colour from. `shadow_paint` is
@@ -3397,7 +3475,7 @@ impl ObjectFinalize for CanvasRenderingContext2D {
 pub struct CanvasStyleArg<'a, S> {
   /// None: the string is not a color, and the assignment is ignored.
   pattern: Option<Pattern>,
-  /// What the getter then returns: the gradient or pattern, or the string.
+  /// The value as given: the gradient or pattern the getter then returns.
   value: Unknown<'a>,
   site: PhantomData<S>,
 }
@@ -3424,13 +3502,7 @@ impl<S: webidl::Site> FromNapiValue for CanvasStyleArg<'static, S> {
       }
     }
     let color = webidl::to_dom_string(env, value, S::PREFIX)?;
-    let pattern = Pattern::from_color(&color).ok();
-    // The getter returns the serialized color, not the string that was set.
-    let serialized = match &pattern {
-      Some(Pattern::Color(_, serialized)) => serialized.clone(),
-      _ => color,
-    };
-    style(pattern, unsafe { String::to_napi_value(env, serialized)? })
+    style(Pattern::from_color(&color).ok(), value)
   }
 }
 
@@ -4110,20 +4182,26 @@ impl CanvasRenderingContext2D {
     this.get_named_property_unchecked(CANVAS_HIDDEN_NAME)
   }
 
-  #[napi(getter)]
-  pub fn get_fill_style<'env>(&'env self, this: This<'env>) -> Result<Unknown<'env>> {
-    this.get_named_property_unchecked(FILL_STYLE_HIDDEN_NAME)
+  #[napi(getter, ts_return_type = "string | CanvasGradient | CanvasPattern")]
+  pub fn get_fill_style<'env>(
+    &'env self,
+    this: This<'env>,
+  ) -> Result<Either3<String, Unknown<'env>, Undefined>> {
+    let state = &self.context.state;
+    style_getter(&this, &state.fill_style, state.fill_style_slot, 0)
   }
 
   #[napi(setter)]
   pub fn set_fill_style(
     &mut self,
+    env: &Env,
     mut this: This,
     fill_style: CanvasStyleArg<'_, webidl::SetFillStyle>,
   ) -> Result<()> {
-    if let Some(pattern) = fill_style.pattern {
+    let depth = self.context.states.len() as u32;
+    if let Some((pattern, slot)) = set_style(env, &mut this, fill_style, depth, 0)? {
       self.context.state.fill_style = pattern;
-      this.set(FILL_STYLE_HIDDEN_NAME, fill_style.value)?;
+      self.context.state.fill_style_slot = slot;
     }
     Ok(())
   }
@@ -4215,20 +4293,26 @@ impl CanvasRenderingContext2D {
     Ok(())
   }
 
-  #[napi(getter)]
-  pub fn get_stroke_style<'env>(&'env self, this: This<'env>) -> Option<Unknown<'env>> {
-    this.get(STROKE_STYLE_HIDDEN_NAME).ok().flatten()
+  #[napi(getter, ts_return_type = "string | CanvasGradient | CanvasPattern")]
+  pub fn get_stroke_style<'env>(
+    &'env self,
+    this: This<'env>,
+  ) -> Result<Either3<String, Unknown<'env>, Undefined>> {
+    let state = &self.context.state;
+    style_getter(&this, &state.stroke_style, state.stroke_style_slot, 1)
   }
 
   #[napi(setter)]
   pub fn set_stroke_style(
     &mut self,
+    env: &Env,
     mut this: This,
     stroke_style: CanvasStyleArg<'_, webidl::SetStrokeStyle>,
   ) -> Result<()> {
-    if let Some(pattern) = stroke_style.pattern {
-      this.set(STROKE_STYLE_HIDDEN_NAME, stroke_style.value)?;
+    let depth = self.context.states.len() as u32;
+    if let Some((pattern, slot)) = set_style(env, &mut this, stroke_style, depth, 1)? {
       self.context.state.stroke_style = pattern;
+      self.context.state.stroke_style_slot = slot;
     }
     Ok(())
   }
@@ -4673,14 +4757,20 @@ impl CanvasRenderingContext2D {
   }
 
   #[napi(return_if_invalid)]
-  pub fn restore(&mut self) {
+  pub fn restore(&mut self, this: This) -> Result<()> {
+    let depth = self.context.states.len();
     self.context.restore();
+    // The popped state's own style objects are unreachable now.
+    if self.context.states.len() < depth {
+      truncate_style_objects(&this, 2 * depth as u32)?;
+    }
+    Ok(())
   }
 
   #[napi]
-  pub fn reset(&mut self, mut this: This) -> Result<()> {
+  pub fn reset(&mut self, this: This) -> Result<()> {
     self.context.reset();
-    reset_style_getters(&mut this)
+    truncate_style_objects(&this, 0)
   }
 
   #[napi]
