@@ -340,6 +340,63 @@ fn data_array_type(env: sys::napi_env, value: sys::napi_value) -> Result<Option<
   })
 }
 
+/// A boolean property of `object`; false when it is not a boolean.
+fn boolean_property(
+  env: sys::napi_env,
+  object: sys::napi_value,
+  key: &std::ffi::CStr,
+) -> Result<bool> {
+  let mut value = ptr::null_mut();
+  check_status!(unsafe { sys::napi_get_named_property(env, object, key.as_ptr(), &mut value) })?;
+  let mut result = false;
+  Ok(unsafe { sys::napi_get_value_bool(env, value, &mut result) } == sys::Status::napi_ok && result)
+}
+
+/// The NotShared<T> conversion of ImageData data
+/// (native_value_traits_buffer_sources.cc, image_data.idl has no
+/// [AllowShared]): a TypeError for a SharedArrayBuffer or a resizable
+/// ArrayBuffer, checked before sw is converted.
+fn check_not_shared(
+  env: sys::napi_env,
+  data: sys::napi_value,
+  array_type: DataArrayType,
+) -> Result<()> {
+  let mut buffer = ptr::null_mut();
+  check_status!(unsafe {
+    sys::napi_get_typedarray_info(
+      env,
+      data,
+      ptr::null_mut(),
+      ptr::null_mut(),
+      ptr::null_mut(),
+      &mut buffer,
+      ptr::null_mut(),
+    )
+  })?;
+  let error = |what: &str| {
+    webidl::context_type_error(
+      env,
+      webidl::IMAGE_DATA_CONSTRUCTOR,
+      &format!(
+        "The provided {} value must not be {what}.",
+        array_type.name()
+      ),
+    )
+  };
+  // V8's IsArrayBuffer(): false for a SharedArrayBuffer, growable or not.
+  let mut is_arraybuffer = false;
+  check_status!(unsafe { sys::napi_is_arraybuffer(env, buffer, &mut is_arraybuffer) })?;
+  if !is_arraybuffer {
+    return Err(error("shared"));
+  }
+  // Blink reads IsResizableByUserJavaScript(), false once the buffer is
+  // detached; JS `resizable` stays true then.
+  if boolean_property(env, buffer, c"resizable")? && !boolean_property(env, buffer, c"detached")? {
+    return Err(error("resizable"));
+  }
+  Ok(())
+}
+
 #[napi]
 impl ImageData {
   /// `new ImageData(sw, sh, settings?)` or `new ImageData(data, sw, sh?,
@@ -419,6 +476,7 @@ impl ImageData {
     let raw = env.raw();
     let prefix = webidl::IMAGE_DATA_CONSTRUCTOR;
     let data = args.get(0)?;
+    check_not_shared(raw, data, array_type)?;
     let width = webidl::to_unsigned_long(raw, args.get(1)?, prefix)?;
     let (height, settings) = if args.non_undefined_len()? <= 2 {
       (None, webidl::ImageDataSettings::default())
@@ -444,31 +502,31 @@ impl ImageData {
       ));
     }
     let mut length = 0usize;
-    let mut pixels = ptr::null_mut();
     check_status!(unsafe {
       sys::napi_get_typedarray_info(
         raw,
         data,
         ptr::null_mut(),
         &mut length,
-        &mut pixels,
+        ptr::null_mut(),
         ptr::null_mut(),
         ptr::null_mut(),
       )
     })?;
     let height = validate_data_length(raw, prefix, width, height, length, 1)?;
-    // SAFETY: the array has `length` bytes at `pixels`, not zero (checked).
-    let copy = unsafe { std::slice::from_raw_parts(pixels.cast::<u8>(), length) }.to_vec();
-    let data_object = Uint8ClampedSlice::from_data(env, copy)?;
+    // The given array is the data, not a copy (image_data.cc:230). As for the
+    // other forms: a weak ref, and a non-configurable `data` property that
+    // keeps the array alive; resolve_pixels checks it on every use, as the
+    // caller may detach its buffer.
     this.define_properties(&[Property::new()
       .with_utf8_name("data")?
-      .with_value(&data_object)
+      .with_value(&unsafe { Unknown::from_raw_unchecked(raw, data) })
       .with_property_attributes(PropertyAttributes::Enumerable)])?;
     Ok(ImageData {
       width: width as usize,
       height: height as usize,
       color_space,
-      data_ref: Some(create_weak_ref(env, data_object.raw())?),
+      data_ref: Some(create_weak_ref(env, data)?),
     })
   }
 
