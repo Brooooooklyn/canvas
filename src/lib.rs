@@ -36,6 +36,7 @@ use avif::AvifConfig;
 static ALLOC: mimalloc_safe::MiMalloc = mimalloc_safe::MiMalloc;
 
 mod avif;
+mod color;
 mod ctx;
 mod error;
 mod filter;

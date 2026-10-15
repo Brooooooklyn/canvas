@@ -1049,14 +1049,14 @@ test('fillStyle state should be ok', (t) => {
   const { ctx } = t.context
   t.is(ctx.fillStyle, '#000000')
   ctx.fillStyle = 'hotpink'
-  t.is(ctx.fillStyle, 'hotpink')
+  t.is(ctx.fillStyle, '#ff69b4')
 })
 
 test('strokeStyle state should be ok', (t) => {
   const { ctx } = t.context
   t.is(ctx.strokeStyle, '#000000')
   ctx.strokeStyle = 'hotpink'
-  t.is(ctx.strokeStyle, 'hotpink')
+  t.is(ctx.strokeStyle, '#ff69b4')
 })
 
 // Setting width or height resets the context to its default state, even to
@@ -1132,7 +1132,7 @@ test('shadowColor state should be ok', (t) => {
   const { ctx } = t.context
   t.is(ctx.shadowColor, 'rgba(0, 0, 0, 0)')
   ctx.shadowColor = 'hotpink'
-  t.is(ctx.shadowColor, 'hotpink')
+  t.is(ctx.shadowColor, '#ff69b4')
 })
 
 test('shadowOffsetX state should be ok', (t) => {
