@@ -1434,8 +1434,9 @@ impl FromNapiValue for Positional {
   }
 }
 
-/// What the argument-count markers wrap: the marker for `n` arguments wraps
-/// `&ARGUMENT_COUNTS[n]`. Only `argument_counts` wraps an object with these
+/// What the argument-count markers point to: the marker for `n` arguments
+/// is an external value with the address of `ARGUMENT_COUNTS[n]`. Script
+/// cannot make an external, and only `argument_counts` makes one with these
 /// addresses, so no other value is read as a count.
 static ARGUMENT_COUNTS: [u8; 10] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
 
@@ -1446,39 +1447,35 @@ static ARGUMENT_COUNTS: [u8; 10] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
 /// last of those arguments is an explicit undefined, and undefined otherwise:
 /// [`Arguments::take`] then finds the same count by itself.
 #[napi(js_name = "_argumentCounts")]
-pub fn argument_counts(env: &Env) -> Result<Vec<Object<'_>>> {
+pub fn argument_counts(env: &Env) -> Result<Vec<Unknown<'_>>> {
   ARGUMENT_COUNTS
     .iter()
     .map(|count| {
-      let marker = Object::new(env)?;
+      let mut marker = ptr::null_mut();
       check_status!(unsafe {
-        sys::napi_wrap(
+        sys::napi_create_external(
           env.raw(),
-          marker.raw(),
           ptr::from_ref(count).cast_mut().cast(),
           None,
           ptr::null_mut(),
-          ptr::null_mut(),
+          &mut marker,
         )
       })?;
-      Ok(marker)
+      unsafe { Unknown::from_napi_value(env.raw(), marker) }
     })
     .collect()
 }
 
 /// The count of an `argument_counts` marker; None for any other value.
 fn argument_count(env: sys::napi_env, value: sys::napi_value) -> Result<Option<u32>> {
-  // Most calls from index.js pass undefined, which this check finds faster
-  // than napi_unwrap.
-  if type_of(env, value)? != ValueType::Object {
+  // Most calls from index.js pass undefined. Reading an external is cheaper
+  // than napi_unwrap of an object.
+  if raw_type_of(env, value)? != sys::ValueType::napi_external {
     return Ok(None);
   }
   let mut data = ptr::null_mut();
-  // Fails, without throwing, on an object that nothing wrapped. An object
-  // that another class wrapped has another address.
-  if unsafe { sys::napi_unwrap(env, value, &mut data) } != sys::Status::napi_ok {
-    return Ok(None);
-  }
+  check_status!(unsafe { sys::napi_get_value_external(env, value, &mut data) })?;
+  // An external of another addon has another address.
   Ok(
     ARGUMENT_COUNTS
       .iter()
