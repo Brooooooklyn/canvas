@@ -22,6 +22,7 @@
 #include <src/core/SkUTF.h>
 
 #include "text.hpp"
+#include "text_raster.hpp"
 
 #if defined(SK_DEBUG) || !defined(SK_RELEASE)
 #error "skia-c must be built with SK_RELEASE like libskia (see build.rs)"
@@ -580,23 +581,33 @@ bool skiac_font_collection_default_font_units(
   if (typefaces.empty() || !typefaces.front()) {
     return false;
   }
-  // The SkFont skparagraph shapes with (TextStyle defaults).
-  SkFont font(typefaces.front(), size);
-  font.setEdging(SkFont::Edging::kAntiAlias);
-  font.setHinting(SkFontHinting::kSlight);
-  font.setSubpixel(true);
+  const SkFont font = MetricsFont(typefaces.front(), size);
   SkFontMetrics metrics;
   font.getMetrics(&metrics);
   units->ex = metrics.fXHeight ? metrics.fXHeight : size / 2;
+#if defined(__APPLE__)
+  // SimpleFontData::PlatformInit: CTFontGetXHeight counts the part of 'x'
+  // below the baseline, so Blink measures the glyph's outline instead.
+  if (metrics.fXHeight) {
+    if (const SkGlyphID x_glyph = font.unicharToGlyph('x')) {
+      const std::optional<SkPath> path = font.getPath(x_glyph);
+      units->ex =
+          -(path ? path->getBounds() : font.getBounds(x_glyph, nullptr)).fTop;
+    }
+  }
+#endif
   units->cap = metrics.fCapHeight;
   SkGlyphID zero = font.unicharToGlyph('0');
   units->ch = zero ? font.getWidth(zero) : size / 2;
   SkGlyphID water = font.unicharToGlyph(0x6C34);
   units->ic = water ? font.getWidth(water) : size;
   // FontMetrics::LineSpacing for line-height: normal.
-  units->lh =
-      static_cast<float>(lroundf(-metrics.fAscent) + lroundf(metrics.fDescent) +
-                         lroundf(metrics.fLeading));
+  float ascent;
+  float descent;
+  AscentDescentWithHacks(c_collection, font, typefaces.front().get(), &ascent,
+                         &descent);
+  units->lh = static_cast<float>(lroundf(ascent) + lroundf(descent) +
+                                 lroundf(metrics.fLeading));
   return true;
 }
 

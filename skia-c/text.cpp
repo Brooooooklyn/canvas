@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "text.hpp"
+#include "text_raster.hpp"
 
 #if defined(SK_DEBUG) || !defined(SK_RELEASE)
 #error "skia-c must be built with SK_RELEASE like libskia (see build.rs)"
@@ -26,43 +27,26 @@
 // collection until it drops its match caches
 // (skiac_font_collection::text_caches).
 struct TextCaches {
-  // A text blob of a laid out line, drawn at `origin` from the paint origin.
-  struct Run {
-    sk_sp<SkTextBlob> blob;
-    SkPoint origin;
-  };
-
   // A laid out line, by the text and every request field the layout reads:
-  // not the paint, the anchor, the max width, textAlign or textBaseline,
-  // which only place it.
+  // not the paint, the anchor, the max width, textAlign, textBaseline or
+  // lcd_text, which only place or draw it.
   struct Line {
     PrimaryFontMetrics primary;
     // No text: only the font metrics.
     bool empty = false;
+    // The width of Blink's advances.
     float line_width = 0;
+    // skparagraph's width, from which it places RTL text.
+    float paragraph_width = 0;
     float layout_width = 0;
     float line_baseline = 0;
     float letter_spacing_offset = 0;
     // The advance of the visually last word, for text without ink.
     float last_word_advance = 0;
-    std::vector<Run> runs;
-    // measureText's ink union from the paint origin, y from the alphabetic
-    // baseline; the first measure fills it in.
-    bool measured = false;
-    bool has_ink = false;
-    SkRect ink = SkRect::MakeEmpty();
-    // `runs` as one text blob, for the draws that put every glyph where the
-    // runs put it (DrawsLikeRuns); the first draw makes it, so a draw takes
-    // the same blobs however often the line was drawn before (an SVG or PDF
-    // canvas writes a text element for each blob run). Its origin is the
-    // first run's, and a glyph's x is its run's offset from the first plus
-    // its x in its run. `frac_bits` is the most binary fraction digits of an
-    // offset or x, `span` twice the largest offset plus the largest x.
-    bool joined = false;
-    sk_sp<SkTextBlob> single;
-    SkPoint single_origin = {0, 0};
-    int frac_bits = 0;
-    double span = 0;
+    // The glyphs where Blink puts them (text_raster.cpp CollectBlinkLine).
+    BlinkLine blink;
+    // The words, byte ranges of the shaped text (MeasureBlinkInk).
+    std::vector<std::pair<size_t, size_t>> words;
     // The bytes the line counts in TextCaches::line_bytes, and its place in
     // TextCaches::lru.
     size_t bytes = 0;
@@ -91,7 +75,6 @@ void TextCachesDeleter::operator()(TextCaches* caches) const {
 
 namespace {
 
-using LineRun = TextCaches::Run;
 using Line = TextCaches::Line;
 
 constexpr float kMaxLayoutWidth = 100000;
@@ -215,203 +198,11 @@ void AppendLineKey(std::string* key, const skiac_text_request& request) {
   put(request.text, request.text_len);
 }
 
-// The text blobs Paragraph::paint draws and where, without its clips.
-// Canvas text sets no background, shadow or decoration, so they are all it
-// draws.
-class BlobRecorder final : public ParagraphPainter {
- public:
-  explicit BlobRecorder(std::vector<LineRun>* runs) : runs_(runs) {}
-
-  void drawTextBlob(const sk_sp<SkTextBlob>& blob,
-                    SkScalar x,
-                    SkScalar y,
-                    const SkPaintOrID&) override {
-    if (blob) {
-      runs_->push_back({blob, {x, y}});
-    }
-  }
-  void drawTextShadow(const sk_sp<SkTextBlob>&,
-                      SkScalar,
-                      SkScalar,
-                      SkColor,
-                      SkScalar) override {}
-  void drawRect(const SkRect&, const SkPaintOrID&) override {}
-  void drawFilledRect(const SkRect&, const DecorationStyle&) override {}
-  void drawPath(const SkPath&, const DecorationStyle&) override {}
-  void drawLine(SkScalar,
-                SkScalar,
-                SkScalar,
-                SkScalar,
-                const DecorationStyle&) override {}
-  void clipRect(const SkRect&) override {}
-  void translate(SkScalar, SkScalar) override {}
-  void save() override {}
-  void restore() override {}
-
- private:
-  std::vector<LineRun>* runs_;
-};
-
-// The text blobs of the laid out line where Blink draws them
-// (LineRunShifts), unclipped: Blink draws canvas text with no clip
-// (BaseRenderingContext2D::DrawTextInternal). TextLine clips a blob that
-// ends past the line's advance, which only happens once a run before it
-// sits too far right.
-void CollectLineRuns(ParagraphImpl* paragraph, std::vector<LineRun>* runs) {
-  BlobRecorder recorder(runs);
-  paragraph->paint(&recorder, 0, 0);
-  const std::vector<float> shifts = LineRunShifts(paragraph);
-  if (shifts.size() == runs->size()) {
-    for (size_t i = 0; i < shifts.size(); ++i) {
-      (*runs)[i].origin.fX += shifts[i];
-    }
-  }
-}
-
-// How many binary digits `value` has after the point.
-int FracBits(double value) {
-  if (value == 0) {
-    return 0;
-  }
-  if (!std::isfinite(value)) {
-    return 1000;
-  }
-  int exponent = 0;
-  // value = mantissa * 2^exponent, mantissa in [0.5, 1): 53 bits.
-  const double mantissa = std::frexp(std::fabs(value), &exponent);
-  uint64_t bits = static_cast<uint64_t>(std::ldexp(mantissa, 53));
-  int trailing = 0;
-  while (bits && !(bits & 1)) {
-    bits >>= 1;
-    ++trailing;
-  }
-  return std::max(0, 53 - exponent - trailing);
-}
-
-// The bytes that text blobs with `runs` blob runs (or blobs) of `glyphs`
-// glyphs in all keep, as malloc counts them: about 128 for a blob run's
-// record, its share of a blob and its slot in Line::runs, and 10 for a
-// glyph's id and position.
-size_t BlobBytes(size_t runs, size_t glyphs) {
-  return 128 * runs + 10 * glyphs;
-}
-
-// Joins the runs of `line` into `line->single` (one blob run for each run
-// of a font) when they share one baseline and every glyph's ink is inside
-// its own blob's bounds: a canvas skips a blob whose bounds miss the clip,
-// and some fonts' glyphs overflow the font's bounding box, which the bounds
-// come from. Returns the bytes `line->single` keeps.
-size_t MakeSingleBlob(Line* line) {
-  const auto& runs = line->runs;
-  if (runs.size() < 2) {
-    return 0;
-  }
-  // The blob runs: consecutive runs of one font.
-  std::vector<std::pair<SkFont, int>> fonts;
-  std::vector<SkRect> glyph_bounds;
-  for (const LineRun& line_run : runs) {
-    if (line_run.origin.fY != runs[0].origin.fY) {
-      return 0;
-    }
-    SkTextBlob::Iter it(*line_run.blob);
-    SkTextBlob::Iter::ExperimentalRun run;
-    while (it.experimentalNext(&run)) {
-      if (fonts.empty() || !(fonts.back().first == run.font)) {
-        fonts.emplace_back(run.font, 0);
-      }
-      fonts.back().second += run.count;
-      glyph_bounds.resize(run.count);
-      run.font.getBounds({run.glyphs, static_cast<size_t>(run.count)},
-                         glyph_bounds, nullptr);
-      for (int g = 0; g < run.count; ++g) {
-        if (glyph_bounds[g].isEmpty()) {
-          continue;
-        }
-        const SkRect ink =
-            glyph_bounds[g]
-                .makeOffset(run.positions[g].fX, run.positions[g].fY)
-                .makeOutset(1, 1);
-        if (!line_run.blob->bounds().contains(ink)) {
-          return 0;
-        }
-      }
-    }
-  }
-  SkTextBlobBuilder builder;
-  const SkScalar first = runs[0].origin.fX;
-  int bits = 0;
-  double max_offset = 0;
-  double max_x = 0;
-  size_t font_index = 0;
-  int left_in_font = 0;
-  SkGlyphID* glyphs = nullptr;
-  SkPoint* points = nullptr;
-  for (const LineRun& line_run : runs) {
-    const SkScalar offset = line_run.origin.fX;
-    bits = std::max(bits, FracBits(offset));
-    max_offset = std::max(max_offset, std::fabs(static_cast<double>(offset)));
-    SkTextBlob::Iter it(*line_run.blob);
-    SkTextBlob::Iter::ExperimentalRun run;
-    while (it.experimentalNext(&run)) {
-      for (int g = 0; g < run.count; ++g) {
-        if (left_in_font == 0) {
-          const auto& buffer = builder.allocRunPos(fonts[font_index].first,
-                                                   fonts[font_index].second);
-          glyphs = buffer.glyphs;
-          points = buffer.points();
-          left_in_font = fonts[font_index].second;
-          ++font_index;
-        }
-        bits = std::max(bits, FracBits(run.positions[g].fX));
-        max_x = std::max(max_x,
-                         std::fabs(static_cast<double>(run.positions[g].fX)));
-        *glyphs++ = run.glyphs[g];
-        *points++ = {(offset - first) + run.positions[g].fX,
-                     run.positions[g].fY};
-        --left_in_font;
-      }
-    }
-  }
-  line->single = builder.make();
-  line->single_origin = runs[0].origin;
-  line->frac_bits = bits;
-  line->span = 2 * max_offset + max_x;
-  size_t glyph_count = 0;
-  for (const auto& font : fonts) {
-    glyph_count += font.second;
-  }
-  return BlobBytes(fonts.size(), glyph_count);
-}
-
-// Whether drawing `line.single` at x on `canvas` with `paint` puts every
-// glyph where drawing `line.runs` puts it. Skia sums a glyph's device x
-// from the canvas translation, the draw origin, its subpixel rounding bias
-// (1/8 or 1/2 px) and the glyph's x (SkGlyphRunPainter.cpp, and a tile's
-// whole-pixel offset on a large bitmap); when every term is a multiple of
-// 2^-q and their magnitudes add up below 2^(24-q), every partial sum is a
-// float, so the two groupings give the same value. y is grouped the same
-// both ways. Glyphs are drawn one at a time either way; image filters, mask
-// filters and path effects are left out to be safe.
-bool DrawsLikeRuns(const Line& line,
-                   const SkCanvas* canvas,
-                   const SkPaint& paint,
-                   SkScalar x) {
-  if (!line.single || paint.getImageFilter() || paint.getMaskFilter() ||
-      paint.getPathEffect() || !paint.isSrcOver()) {
-    return false;
-  }
-  const SkMatrix matrix = canvas->getTotalMatrix();
-  if (!matrix.isTranslate()) {
-    return false;
-  }
-  const double tx = matrix.getTranslateX();
-  const int q = std::max({line.frac_bits, FracBits(x), FracBits(tx), 3});
-  if (q > 23) {
-    return false;
-  }
-  const double total = std::fabs(tx) + std::fabs(static_cast<double>(x)) + 1 +
-                       line.span + canvas->getBaseLayerSize().width();
-  return total < std::ldexp(1.0, 24 - q);
+// The bytes a laid out line keeps for `runs` runs of `glyphs` glyphs and
+// `words` words, as malloc counts them: about 128 for a run's font and
+// vectors, 14 for a glyph's id, position and cluster, 16 for a word.
+size_t LineBytes(size_t runs, size_t glyphs, size_t words) {
+  return 128 * runs + 14 * glyphs + 16 * words;
 }
 
 // Lays out `request` with skparagraph into `line`.
@@ -495,6 +286,9 @@ void LayOutLine(skiac_font_collection* c_collection,
   }
 
   text_style.setTextBaseline(TextBaseline::kAlphabetic);
+  // The OS's Chrome font flags (text_raster.cpp).
+  const TextRasterPolicy policy(request);
+  policy.ApplyToTextStyle(&text_style);
   StrutStyle struct_style;
   struct_style.setLeading(0);
 
@@ -649,14 +443,14 @@ void LayOutLine(skiac_font_collection* c_collection,
   //
   // Note: Using `getRectsForRange()` may cause `measureText.width` to return
   // different values for LTR and RTL layouts.
-  auto line_width = paragraph->getMaxIntrinsicWidth();
+  const float paragraph_width = paragraph->getMaxIntrinsicWidth();
   // RTL text sits at the right edge of the layout width. Lay it out again
   // just wider than the text (no reshaping: one line keeps its runs), so its
   // glyph positions are not floats near kMaxLayoutWidth that lose 1/128 px.
   float layout_width = kMaxLayoutWidth;
   if (text_direction == TextDirection::kRtl &&
-      SkScalarCeilToScalar(line_width) + 1 < kMaxLayoutWidth) {
-    layout_width = SkScalarCeilToScalar(line_width) + 1;
+      SkScalarCeilToScalar(paragraph_width) + 1 < kMaxLayoutWidth) {
+    layout_width = SkScalarCeilToScalar(paragraph_width) + 1;
     paragraph->layout(layout_width);
     if (paragraph->lines().size() != 1) {
       layout_width = kMaxLayoutWidth;
@@ -692,6 +486,10 @@ void LayOutLine(skiac_font_collection* c_collection,
     font.setEmbolden(known->second.bold);
     font.setSkewX(known->second.italic ? -SK_Scalar1 / 4 : 0);
   }
+  // The glyphs where Blink puts them, and the width of Blink's advances.
+  BlinkLine blink = CollectBlinkLine(paragraph.get(), policy,
+                                     text_direction == TextDirection::kRtl);
+  const float line_width = paragraph_width - blink.shift;
   // skparagraph draws the first line's glyphs at floor(baseline + 0.5) below
   // the paint origin (TextLine.cpp, correctedBaseline).
   const SkScalar line_baseline =
@@ -721,6 +519,7 @@ void LayOutLine(skiac_font_collection* c_collection,
   }
 
   line->line_width = line_width;
+  line->paragraph_width = paragraph_width;
   line->layout_width = layout_width;
   line->line_baseline = line_baseline;
   // No glyph has ink: gfx::RectF::Union keeps the last empty word box, a
@@ -732,56 +531,17 @@ void LayOutLine(skiac_font_collection* c_collection,
     const auto& word =
         text_direction == TextDirection::kRtl ? words.front() : words.back();
     line->last_word_advance = 0;
-    for (const auto& run : paragraph->runs()) {
+    const auto& runs = paragraph->runs();
+    for (size_t i = 0; i < runs.size(); ++i) {
+      const Run& run = runs[i];
       if (run.textRange().start >= word.first &&
           run.textRange().end <= word.second) {
-        line->last_word_advance += run.advance().fX;
+        line->last_word_advance += run.advance().fX - blink.run_shifts[i];
       }
     }
   }
-  CollectLineRuns(paragraph.get(), &line->runs);
-}
-
-// TextMetrics::MeasureRuns: the union of the ink of every glyph of `line`,
-// where the draw paints it, and skips empty ones. SkFontGetBoundsForGlyphs
-// rounds the boxes out only without subpixel positioning, which Chrome Linux
-// turns on (WebFontRenderStyle::ApplyToSkFont) like skparagraph's run fonts.
-// Up to 256 px SkFont::getBounds gives whole pixels anyway (mask boxes);
-// above it, a 64 px path strike's boxes scaled up, with fractions.
-void MeasureInk(Line* line) {
-  bool has_ink = false;
-  SkRect ink = SkRect::MakeEmpty();
-  std::vector<SkRect> glyph_bounds;
-  for (const LineRun& line_run : line->runs) {
-    SkTextBlob::Iter blob_runs(*line_run.blob);
-    SkTextBlob::Iter::ExperimentalRun run;
-    while (blob_runs.experimentalNext(&run)) {
-      glyph_bounds.resize(run.count);
-      run.font.getBounds({run.glyphs, static_cast<size_t>(run.count)},
-                         glyph_bounds, nullptr);
-      for (int i = 0; i < run.count; ++i) {
-        if (glyph_bounds[i].isEmpty()) {
-          continue;
-        }
-        SkRect glyph = run.font.isSubpixel()
-                           ? glyph_bounds[i]
-                           : SkRect::Make(glyph_bounds[i].roundOut());
-        // y relative to the alphabetic baseline.
-        glyph.offset(
-            line_run.origin.fX + run.positions[i].fX,
-            line_run.origin.fY + run.positions[i].fY - line->line_baseline);
-        if (has_ink) {
-          ink.join(glyph);
-        } else {
-          ink = glyph;
-          has_ink = true;
-        }
-      }
-    }
-  }
-  line->has_ink = has_ink;
-  line->ink = ink;
-  line->measured = true;
+  line->blink = std::move(blink);
+  line->words = std::move(words);
 }
 
 // The cached layout of `request`, laid out now if there is none.
@@ -804,16 +564,13 @@ Line* FindOrLayOutLine(skiac_font_collection* c_collection,
   // again.
   TextCaches& caches = GetTextCaches(c_collection);
   size_t glyphs = 0;
-  for (const LineRun& run : fresh.runs) {
-    SkTextBlob::Iter it(*run.blob);
-    SkTextBlob::Iter::ExperimentalRun blob_run;
-    while (it.experimentalNext(&blob_run)) {
-      glyphs += blob_run.count;
-    }
+  for (const BlinkRun& run : fresh.blink.runs) {
+    glyphs += run.glyphs.size();
   }
-  // The key, its map node and the Line take about 512 bytes on top; a draw
-  // adds the single blob's (MeasureOrDraw).
-  const size_t bytes = key.size() + 512 + BlobBytes(fresh.runs.size(), glyphs);
+  // The key, its map node and the Line take about 512 bytes on top.
+  const size_t bytes =
+      key.size() + 512 +
+      LineBytes(fresh.blink.runs.size(), glyphs, fresh.words.size());
   while (!caches.lru.empty() && (caches.lines.size() >= kMaxLines ||
                                  (caches.lines.size() >= kMinLines &&
                                   caches.line_bytes + bytes > kMaxLineBytes))) {
@@ -845,6 +602,8 @@ void MeasureOrDraw(skiac_font_collection* c_collection,
   // match, and FontCollection caches matches until told otherwise.
   c_collection->flushCachesIfDirty();
   Line* line = FindOrLayOutLine(c_collection, request);
+  // The OS's Chrome draw font and glyph bounds (text_raster.cpp).
+  const TextRasterPolicy policy(request);
   auto text_direction = static_cast<TextDirection>(request.direction);
   // TextMetrics::GetFontBaseline: the alphabetic baseline sits this far
   // below the textBaseline (base_rendering_context_2d.cc draws at
@@ -860,6 +619,7 @@ void MeasureOrDraw(skiac_font_collection* c_collection,
     return;
   }
   const float line_width = line->line_width;
+  const float paragraph_width = line->paragraph_width;
   const float layout_width = line->layout_width;
   const SkScalar line_baseline = line->line_baseline;
   const float letter_spacing_offset = line->letter_spacing_offset;
@@ -871,7 +631,7 @@ void MeasureOrDraw(skiac_font_collection* c_collection,
   // RTL: Skia lays out text from the layout width's right edge, compensate
   // here. Separated from paint_x to avoid being affected by maxWidth scaling.
   float rtl_offset = (text_direction == TextDirection::kRtl)
-                         ? (layout_width - line_width)
+                         ? (layout_width - paragraph_width)
                          : 0.0f;
 
   // Determine alignment type
@@ -904,51 +664,52 @@ void MeasureOrDraw(skiac_font_collection* c_collection,
     float final_x = need_scale ? (paint_x + (1 - ratio) * offset_x) / ratio -
                                      rtl_offset + letter_spacing_offset
                                : paint_x - rtl_offset + letter_spacing_offset;
-    const float final_y = y + baseline_y - line_baseline;
-    if (!line->joined) {
-      const size_t single_bytes = MakeSingleBlob(line);
-      line->bytes += single_bytes;
-      GetTextCaches(c_collection).line_bytes += single_bytes;
-      line->joined = true;
-    }
-    if (DrawsLikeRuns(*line, canvas, *paint, final_x)) {
-      canvas->drawTextBlob(line->single, final_x + line->single_origin.fX,
-                           final_y + line->single_origin.fY, *paint);
-    } else {
-      // TextLine::TextBlobRecord::paint's sums, with the caller's paint.
-      for (const LineRun& run : line->runs) {
-        canvas->drawTextBlob(run.blob, final_x + run.origin.fX,
-                             final_y + run.origin.fY, *paint);
-      }
+    // Each run with Blink's draw font, unclipped: skparagraph's paint() clips
+    // a run to its line box when a cluster or trailing spaces cut it
+    // (TextLine.cpp TextBlobRecord::paint); Chrome never clips canvas glyphs.
+    const float paint_y = y + baseline_y - line_baseline;
+    const SkMatrix device = canvas->getTotalMatrix();
+    for (const BlinkRun& run : line->blink.runs) {
+      const SkFont font = policy.DrawFont(run.font, &device);
+      SkTextBlobBuilder builder;
+      const auto& buffer = builder.allocRunPos(font, run.glyphs.size());
+      memcpy(buffer.glyphs, run.glyphs.data(),
+             run.glyphs.size() * sizeof(SkGlyphID));
+      memcpy(buffer.points(), run.positions.data(),
+             run.positions.size() * sizeof(SkPoint));
+      canvas->drawTextBlob(builder.make(), final_x + run.origin.fX,
+                           paint_y + run.origin.fY,
+                           policy.DrawPaint(font, *paint));
     }
     if (need_scale) {
       canvas->restore();
     }
     return;
   }
-  if (!line->measured) {
-    MeasureInk(line);
-  }
-  // x relative to the text's left edge: the draw's origin is draw_x from the
-  // anchor, and the text's left edge offset_x left of it (Blink's
-  // text_align_dx).
+  // TextMetrics::MeasureRuns: the union of the ink of every glyph, where the
+  // draw above paints it, from Blink's draw font (SkFontGetBoundsForGlyphs:
+  // outlines on macOS, whole-pixel glyph boxes elsewhere). x is from the
+  // text's left edge: the draw's origin is draw_x from the anchor, and the
+  // text's left edge offset_x left of it (Blink's text_align_dx).
   const float draw_x = paint_x - rtl_offset + letter_spacing_offset - x;
-  SkRect ink = line->ink;
-  if (line->has_ink) {
-    ink.offset(draw_x + offset_x, 0);
-  } else {
-    const float left = line_width - line->last_word_advance;
-    ink = SkRect::MakeLTRB(left, 0, left, 0);
+  BlinkRectF ink = MeasureBlinkInk(line->blink, policy, line->words,
+                                   -(draw_x + offset_x), line_baseline);
+  if (ink.IsEmpty()) {
+    // No glyph has ink: gfx::RectF::Union keeps the last empty word box, a
+    // point on the baseline at the left edge of the visually last word
+    // (the last word for LTR text, the first for RTL), so for "   " the box
+    // sits before the last space. One word is the whole text.
+    ink = {line_width - line->last_word_advance, 0, 0, 0};
   }
   // TextMetrics::Update.
-  c_line_metrics->left = -ink.fLeft + offset_x;
-  c_line_metrics->right = ink.fRight - offset_x;
-  c_line_metrics->ascent = -ink.fTop - baseline_y;
-  c_line_metrics->descent = ink.fBottom + baseline_y;
+  c_line_metrics->left = -ink.x + offset_x;
+  c_line_metrics->right = ink.right() - offset_x;
+  c_line_metrics->ascent = -ink.y - baseline_y;
+  c_line_metrics->descent = ink.bottom() + baseline_y;
   c_line_metrics->width = line_width;
   // Relative to the anchor, for the alpha:false reset.
-  c_line_metrics->ink_left = ink.fLeft - offset_x;
-  c_line_metrics->ink_right = ink.fRight - offset_x;
+  c_line_metrics->ink_left = ink.x - offset_x;
+  c_line_metrics->ink_right = ink.right() - offset_x;
   FillFontMetrics(line->primary, baseline_y, c_line_metrics);
 }
 

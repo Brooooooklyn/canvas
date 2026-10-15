@@ -310,6 +310,7 @@ pub mod ffi {
     pub lang: *const c_char,
     pub lang_len: usize,
     pub text_rendering: i32,
+    pub lcd_text: bool,
   }
 
   #[repr(C)]
@@ -3070,6 +3071,10 @@ pub struct TextSettings {
   pub variant_caps: FontVariantCaps,
   pub lang: String,
   pub text_rendering: TextRendering,
+  /// Whether Chrome's macOS canvas would draw the text from LCD masks: an
+  /// alpha:false raster canvas, a source-over draw and no `ctx.filter` layer.
+  /// skia-c checks the transform and size (text_raster.cpp UsesLcdText).
+  pub lcd_text: bool,
 }
 
 impl TextSettings {
@@ -3116,6 +3121,7 @@ impl TextSettings {
       lang: self.lang.as_ptr().cast(),
       lang_len: self.lang.len(),
       text_rendering: self.text_rendering as i32,
+      lcd_text: self.lcd_text,
     };
     f(&request)
   }
@@ -6259,6 +6265,7 @@ mod text_line_tests {
       variant_caps: FontVariantCaps::default(),
       lang: String::new(),
       text_rendering: TextRendering::default(),
+      lcd_text: false,
     }
   }
 
