@@ -664,8 +664,9 @@ test('ic in ctx.filter is the U+6C34 advance of the first font of ctx.font', (t)
     ctx.fillRect(0, 10, 4, 20)
     const row = ctx.getImageData(0, 20, 160, 1).data
     const x = row.findIndex((v, i) => i % 4 === 0 && v > 0) / 4
+    // Its first three pixels are solid red, as in Chrome.
     t.deepEqual(
-      [...row.slice(x * 4, x * 4 + 12)].filter((_, i) => i % 4 === 0),
+      [0, 1, 2].map((i) => row[(x + i) * 4]),
       [255, 255, 255],
       filter,
     )
