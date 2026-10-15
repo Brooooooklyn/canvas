@@ -333,7 +333,17 @@ fn set_message(env: sys::napi_env, error: sys::napi_value, message: &str) {
 /// ApplyContextToException), so `stack` keeps the bare `msg`. An error thrown
 /// by user code (valueOf, toString, an iterator) is passed on as it is.
 pub(crate) fn context_type_error(env: sys::napi_env, prefix: &str, msg: &str) -> Error {
-  let error = new_error(env, ErrorKind::TypeError, msg);
+  context_error(env, ErrorKind::TypeError, prefix, msg)
+}
+
+/// A RangeError as Chrome throws it from a binding; see
+/// [`context_type_error`].
+pub(crate) fn context_range_error(env: sys::napi_env, prefix: &str, msg: &str) -> Error {
+  context_error(env, ErrorKind::RangeError, prefix, msg)
+}
+
+fn context_error(env: sys::napi_env, kind: ErrorKind, prefix: &str, msg: &str) -> Error {
+  let error = new_error(env, kind, msg);
   if let Some(error) = error {
     set_message(env, error, &format!("{prefix}{msg}"));
   }
@@ -876,62 +886,122 @@ impl<S: Site> FromNapiValue for DomString<S> {
   }
 }
 
-/// A WebIDL `sequence<unrestricted double>` argument: any iterable, read
-/// through its iterator (no array fast path: Array.prototype[Symbol.iterator]
-/// is observable), each value converted with ToNumber in turn.
+/// WebIDL `sequence<T>` (Blink's NativeValueTraits<IDLSequence<T>>,
+/// native_value_traits_impl.h:994-1031), each value converted with
+/// `convert` as it is read:
+///
+/// - an Array is read by index, never with its @@iterator, own or
+///   inherited (CreateIDLSequenceFromV8ArraySlow, :866-972): Get(i) for each
+///   index, the length read again each time, since a conversion may change
+///   it. An array longer than `max_length`, the most values Blink's vector of
+///   T holds, is a RangeError.
+/// - any other object with its iterator (ScriptIterator::FromIterable and
+///   Next, script_iterator.cc): each step calls next(), then gets `value`,
+///   then `done`. The iterator is never closed: return() is not called when
+///   a step or a conversion throws.
+pub(crate) fn sequence<T>(
+  env: sys::napi_env,
+  value: sys::napi_value,
+  prefix: &str,
+  max_length: u32,
+  mut convert: impl FnMut(sys::napi_value) -> Result<T>,
+) -> Result<Vec<T>> {
+  let error = |msg: &str| Err(context_type_error(env, prefix, msg));
+  let mut is_array = false;
+  check_status!(unsafe { sys::napi_is_array(env, value, &mut is_array) })?;
+  if is_array {
+    let length = array_length(env, value)?;
+    if length > max_length {
+      return Err(context_range_error(
+        env,
+        prefix,
+        "Array length exceeds supported limit.",
+      ));
+    }
+    // Blink reserves `length`; a sparse array can be long.
+    let mut values = Vec::with_capacity(length.min(1024) as usize);
+    let mut index = 0;
+    while index < array_length(env, value)? {
+      let mut item = ptr::null_mut();
+      check_status!(unsafe { sys::napi_get_element(env, value, index, &mut item) })?;
+      values.push(convert(item)?);
+      index += 1;
+    }
+    return Ok(values);
+  }
+  if !is_object(env, value)? {
+    return error("The provided value cannot be converted to a sequence.");
+  }
+  let method = match intrinsic(env, c"iterator")? {
+    Some(key) => get_property(env, value, key)?,
+    // Not readable when the addon was registered: as if undefined.
+    None => undefined(env)?,
+  };
+  match raw_type_of(env, method)? {
+    sys::ValueType::napi_function => {}
+    sys::ValueType::napi_undefined | sys::ValueType::napi_null => {
+      return error("The object must have a callable @@iterator property.");
+    }
+    _ => return error("@@iterator must be a callable."),
+  }
+  let iterator = call(env, value, method, &[])?;
+  if !is_object(env, iterator)? {
+    return error("Iterator object must be an object.");
+  }
+  let mut next = ptr::null_mut();
+  check_status!(unsafe {
+    sys::napi_get_named_property(env, iterator, c"next".as_ptr(), &mut next)
+  })?;
+  if !is_callable(env, next)? {
+    return error("Expected next() function on iterator.");
+  }
+  let mut values = Vec::new();
+  loop {
+    let result = call(env, iterator, next, &[])?;
+    if !is_object(env, result)? {
+      return error("Expected iterator.next() to return an Object.");
+    }
+    let mut item = ptr::null_mut();
+    check_status!(unsafe {
+      sys::napi_get_named_property(env, result, c"value".as_ptr(), &mut item)
+    })?;
+    let mut done = ptr::null_mut();
+    check_status!(unsafe {
+      sys::napi_get_named_property(env, result, c"done".as_ptr(), &mut done)
+    })?;
+    let mut done_bool = ptr::null_mut();
+    check_status!(unsafe { sys::napi_coerce_to_bool(env, done, &mut done_bool) })?;
+    if unsafe { bool::from_napi_value(env, done_bool)? } {
+      return Ok(values);
+    }
+    values.push(convert(item)?);
+  }
+}
+
+/// The length of an Array (no user code runs).
+fn array_length(env: sys::napi_env, array: sys::napi_value) -> Result<u32> {
+  let mut length = 0;
+  check_status!(unsafe { sys::napi_get_array_length(env, array, &mut length) })?;
+  Ok(length)
+}
+
+/// A WebIDL `sequence<unrestricted double>` argument (see [`sequence`]),
+/// each value converted with ToNumber in turn.
 pub struct DoubleSequence<S>(pub Vec<f64>, PhantomData<S>);
+
+/// The most values Blink's `Vector<double>` holds:
+/// PartitionAlloc's MaxAllocationSize() (partition_alloc_constants.h:466,
+/// the same 2^31 - 2^21 bytes as ImageData data) / 8
+/// (partition_allocator.h:29, vector.h:1756).
+const MAX_DOUBLE_SEQUENCE_LENGTH: u32 =
+  (crate::image::MAX_DATA_BYTES / std::mem::size_of::<f64>()) as u32;
 
 impl<S: Site> FromNapiValue for DoubleSequence<S> {
   unsafe fn from_napi_value(env: sys::napi_env, value: sys::napi_value) -> Result<Self> {
-    let error = |msg: &str| Err(context_type_error(env, S::PREFIX, msg));
-    if !is_object(env, value)? {
-      return error("The provided value cannot be converted to a sequence.");
-    }
-    let method = match intrinsic(env, c"iterator")? {
-      Some(key) => get_property(env, value, key)?,
-      // Not readable when the addon was registered: as if undefined.
-      None => undefined(env)?,
-    };
-    match raw_type_of(env, method)? {
-      sys::ValueType::napi_function => {}
-      sys::ValueType::napi_undefined | sys::ValueType::napi_null => {
-        return error("The object must have a callable @@iterator property.");
-      }
-      _ => return error("@@iterator must be a callable."),
-    }
-    let iterator = call(env, value, method, &[])?;
-    if !is_object(env, iterator)? {
-      return error("Iterator object must be an object.");
-    }
-    let mut next = ptr::null_mut();
-    check_status!(unsafe {
-      sys::napi_get_named_property(env, iterator, c"next".as_ptr(), &mut next)
-    })?;
-    if !is_callable(env, next)? {
-      return error("Expected next() function on iterator.");
-    }
-    let mut values = Vec::new();
-    loop {
-      let result = call(env, iterator, next, &[])?;
-      if !is_object(env, result)? {
-        return error("Expected iterator.next() to return an Object.");
-      }
-      let mut done = ptr::null_mut();
-      check_status!(unsafe {
-        sys::napi_get_named_property(env, result, c"done".as_ptr(), &mut done)
-      })?;
-      let mut done_bool = ptr::null_mut();
-      check_status!(unsafe { sys::napi_coerce_to_bool(env, done, &mut done_bool) })?;
-      if unsafe { bool::from_napi_value(env, done_bool)? } {
-        break;
-      }
-      let mut item = ptr::null_mut();
-      check_status!(unsafe {
-        sys::napi_get_named_property(env, result, c"value".as_ptr(), &mut item)
-      })?;
-      values.push(to_number(env, item, S::PREFIX)?);
-    }
-    Ok(Self(values, PhantomData))
+    sequence(env, value, S::PREFIX, MAX_DOUBLE_SEQUENCE_LENGTH, |item| {
+      to_number(env, item, S::PREFIX)
+    })
+    .map(|values| Self(values, PhantomData))
   }
 }
 
