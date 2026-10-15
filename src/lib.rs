@@ -13,7 +13,6 @@ use std::{
   mem,
   rc::Rc,
   slice,
-  str::FromStr,
 };
 
 use napi::{
@@ -25,7 +24,7 @@ use napi::{
 
 use ctx::{
   CanvasRenderingContext2D, Context, ContextData, ContextOutputData, FILL_STYLE_HIDDEN_NAME,
-  STROKE_STYLE_HIDDEN_NAME, SvgExportFlag, encode_surface,
+  STROKE_STYLE_HIDDEN_NAME, SvgExportFlag, encode_surface, reset_style_getters,
 };
 use font::{FONT_REGEXP, init_font_regexp};
 use sk::{AlphaType, ColorSpace, SkImage, SkiaDataRef};
@@ -54,6 +53,7 @@ mod sk;
 mod state;
 pub mod svg;
 mod unpremul;
+mod webidl;
 
 const MIME_WEBP: &str = "image/webp";
 const MIME_PNG: &str = "image/png";
@@ -90,18 +90,21 @@ impl Default for ConvertToBlobOptions {
   }
 }
 
-#[napi(object)]
-pub struct CanvasRenderingContext2DAttributes {
-  pub alpha: Option<bool>,
-  pub color_space: Option<String>,
-}
-
 #[napi]
 pub struct CanvasElement<'scope> {
   pub(crate) width: u32,
   pub(crate) height: u32,
   pub(crate) ctx: ClassInstance<'scope, CanvasRenderingContext2D>,
   context_initialized: bool,
+}
+
+// Setting width or height resets the context to its default state (spec "set
+// bitmap dimensions"; Chrome: HTMLCanvasElement::Reset), so the style getters
+// read '#000000' again. The context object is read from the canvas's `ctx`
+// property: the napi_value inside `self.ctx` belongs to the constructor's
+// handle scope and must not be used in a later call.
+fn reset_ctx_style_getters(canvas: &This) -> Result<()> {
+  reset_style_getters(&mut canvas.get_named_property::<Object>("ctx")?)
 }
 
 #[napi]
@@ -119,6 +122,7 @@ impl<'c> CanvasElement<'c> {
   ) -> Result<ClassInstance<'_, CanvasRenderingContext2D>> {
     let ctx = CanvasRenderingContext2D {
       context: Context::new(width, height, ColorSpace::default())?,
+      reported_settings: Default::default(),
     }
     .into_instance(env)?;
     ctx.as_object(env).define_properties(&[
@@ -158,14 +162,14 @@ impl<'c> CanvasElement<'c> {
   }
 
   #[napi(setter)]
-  pub fn set_width(&mut self, env: Env, width: i32) -> Result<()> {
+  pub fn set_width(&mut self, env: Env, this: This, width: i32) -> Result<()> {
     let width = (if width <= 0 { 350 } else { width }) as u32;
     self.width = width;
     let height = self.height;
     let new_ctx = Self::resized_context(&self.ctx.context, width, height)?;
     let old_ctx = mem::replace(&mut self.ctx.context, new_ctx);
     env.adjust_external_memory((width as i64 - old_ctx.width as i64) * (height as i64) * 4)?;
-    Ok(())
+    reset_ctx_style_getters(&this)
   }
 
   #[napi(getter)]
@@ -174,14 +178,14 @@ impl<'c> CanvasElement<'c> {
   }
 
   #[napi(setter)]
-  pub fn set_height(&mut self, env: Env, height: i32) -> Result<()> {
+  pub fn set_height(&mut self, env: Env, this: This, height: i32) -> Result<()> {
     let height = (if height <= 0 { 150 } else { height }) as u32;
     self.height = height;
     let width = self.width;
     let new_ctx = Self::resized_context(&self.ctx.context, width, height)?;
     let old_ctx = mem::replace(&mut self.ctx.context, new_ctx);
     env.adjust_external_memory((height as i64 - old_ctx.height as i64) * (width as i64) * 4)?;
-    Ok(())
+    reset_ctx_style_getters(&this)
   }
 
   #[napi(getter)]
@@ -194,8 +198,11 @@ impl<'c> CanvasElement<'c> {
     &mut self,
     this: This,
     context_type: String,
-    attrs: Option<CanvasRenderingContext2DAttributes>,
+    // Converted (and may throw) on every call, also once the context exists
+    // (HTMLCanvasElementModule::getContext).
+    attrs: webidl::CanvasContextOptions,
   ) -> Result<Unknown<'env>> {
+    let attrs = attrs.0;
     if context_type != "2d" {
       return Err(Error::new(
         Status::InvalidArg,
@@ -205,18 +212,14 @@ impl<'c> CanvasElement<'c> {
     if self.context_initialized {
       return this.get_named_property("ctx");
     }
-    let color_space = attrs
-      .as_ref()
-      .and_then(|a| a.color_space.as_deref())
-      .and_then(|cs| ColorSpace::from_str(cs).ok())
-      .unwrap_or_default();
-    let alpha = attrs.as_ref().and_then(|a| a.alpha).unwrap_or(true);
+    self.ctx.reported_settings = attrs.reported;
     let context_2d = &mut self.ctx.context;
     // The first acquisition fixes the backing surface's color space and
     // alpha. alpha:false always gets a fresh kOpaque surface, so nothing set
     // through the internal `canvas.ctx` before this call reaches the base.
-    if color_space != context_2d.color_space || !alpha {
-      *context_2d = Context::new_with_alpha(self.width, self.height, color_space, alpha)?;
+    if attrs.color_space != context_2d.color_space || !attrs.alpha {
+      *context_2d =
+        Context::new_with_alpha(self.width, self.height, attrs.color_space, attrs.alpha)?;
     }
     self.context_initialized = true;
     this.get_named_property("ctx")
@@ -609,8 +612,9 @@ fn get_data_ref(
     MIME_JPEG => image.encode_data(sk::SkEncodedImageFormat::Jpeg, quality),
     MIME_PNG => image.encode_data(sk::SkEncodedImageFormat::Png, 100),
     MIME_AVIF => {
+      let color_space = image.color_space();
       let pixels = image
-        .read_pixels(AlphaType::Unpremultiplied)
+        .read_pixels(AlphaType::Unpremultiplied, color_space)
         .ok_or_else(|| {
           Error::new(
             Status::GenericFailure,
@@ -618,7 +622,7 @@ fn get_data_ref(
           )
         })?;
       let config = AvifConfig::from(quality_or_config).into();
-      let output = avif::encode(&pixels, width, height, &config)
+      let output = avif::encode(&pixels, width, height, &config, color_space)
         .map_err(|e| Error::new(Status::GenericFailure, format!("{e}")))?;
       return Ok(ContextOutputData::Avif(output));
     }
@@ -630,7 +634,7 @@ fn get_data_ref(
         },
       };
       let pixels = image
-        .read_pixels(AlphaType::Unpremultiplied)
+        .read_pixels(AlphaType::Unpremultiplied, ColorSpace::Srgb)
         .ok_or_else(|| {
           Error::new(
             Status::GenericFailure,
@@ -684,7 +688,7 @@ impl Task for AsyncDataUrl {
         base64_simd::STANDARD.encode_append(data_ref.slice(), &mut output);
       }
       ContextOutputData::Avif(data_ref) => {
-        base64_simd::STANDARD.encode_append(data_ref.as_ref(), &mut output);
+        base64_simd::STANDARD.encode_append(&data_ref, &mut output);
       }
       ContextOutputData::Gif(data_ref) => {
         base64_simd::STANDARD.encode_append(&data_ref, &mut output);
@@ -729,11 +733,10 @@ impl<'env> ScopedTask<'env> for AsyncBlob {
         })
       },
       ContextOutputData::Avif(data_ref) => unsafe {
-        let data_slice = data_ref.as_slice();
         Uint8ArraySlice::from_external(
           env,
-          data_slice.as_ptr().cast_mut(),
-          data_slice.len(),
+          data_ref.as_ptr().cast_mut(),
+          data_ref.len(),
           data_ref,
           |_, d| mem::drop(d),
         )
@@ -799,6 +802,7 @@ impl<'scope> SVGCanvas<'scope> {
     let ctx = CanvasRenderingContext2D::into_instance(
       CanvasRenderingContext2D {
         context: Context::new_svg(width, height, flag.into(), ColorSpace::default())?,
+        reported_settings: Default::default(),
       },
       env,
     )?;
@@ -837,8 +841,10 @@ impl<'scope> SVGCanvas<'scope> {
     &'env mut self,
     this: This<'env>,
     context_type: String,
-    attrs: Option<CanvasRenderingContext2DAttributes>,
+    // Converted on every call, as for Canvas.
+    attrs: webidl::SvgCanvasContextOptions,
   ) -> Result<Unknown<'env>> {
+    let attrs = attrs.0;
     if context_type != "2d" {
       return Err(Error::new(
         Status::InvalidArg,
@@ -848,23 +854,18 @@ impl<'scope> SVGCanvas<'scope> {
     if self.context_initialized {
       return this.get_named_property("ctx");
     }
+    self.ctx.reported_settings = attrs.reported;
     let context_2d = &mut self.ctx.context;
-    if !attrs.as_ref().and_then(|a| a.alpha).unwrap_or(true) {
-      // A fresh context: state set through the internal `canvas.ctx`
-      // (matrix, clip, paint) must not reach the base.
-      *context_2d = Context::new_svg(
-        self.width,
-        self.height,
-        self.flag.into(),
-        ColorSpace::default(),
-      )?;
+    // The first acquisition fixes the color space of the raster surface that
+    // reads see, as on a CanvasElement. The SVG output does not use it.
+    // alpha:false always gets a fresh context: state set through the internal
+    // `canvas.ctx` (matrix, clip, paint) must not reach the base.
+    if attrs.color_space != context_2d.color_space || !attrs.alpha {
+      *context_2d = Context::new_svg(self.width, self.height, self.flag.into(), attrs.color_space)?;
+    }
+    if !attrs.alpha {
       context_2d.set_opaque();
     }
-    let color_space = attrs
-      .and_then(|a| a.color_space)
-      .and_then(|cs| ColorSpace::from_str(&cs).ok())
-      .unwrap_or_default();
-    context_2d.color_space = color_space;
     self.context_initialized = true;
     this.get_named_property("ctx")
   }
@@ -889,7 +890,7 @@ impl<'scope> SVGCanvas<'scope> {
       self.ctx.context.height,
       self.ctx.context.surface.alpha_type(),
       self.flag.into(),
-      ColorSpace::default(),
+      self.ctx.context.color_space,
     )
     .ok_or_else(|| Error::new(Status::GenericFailure, "Failed to create surface"))?;
     self.ctx.context.surface = surface;
@@ -911,12 +912,10 @@ impl<'scope> SVGCanvas<'scope> {
   }
 
   // Setting width or height resets the drawing but keeps the context's
-  // settings (alpha, color space). Like get_context, the color space is kept
-  // on the context only; the SVG surface is made as in the constructor.
+  // settings (alpha, color space).
   fn resized_context(&self, width: u32, height: u32) -> Result<Context> {
     let old = &self.ctx.context;
-    let mut context_2d = Context::new_svg(width, height, self.flag.into(), ColorSpace::default())?;
-    context_2d.color_space = old.color_space;
+    let mut context_2d = Context::new_svg(width, height, self.flag.into(), old.color_space)?;
     if !old.alpha {
       context_2d.set_opaque();
     }
@@ -924,14 +923,14 @@ impl<'scope> SVGCanvas<'scope> {
   }
 
   #[napi(setter)]
-  pub fn set_width(&mut self, env: Env, width: i32) -> Result<()> {
+  pub fn set_width(&mut self, env: Env, this: This, width: i32) -> Result<()> {
     let width = (if width <= 0 { 350 } else { width }) as u32;
     self.width = width;
     let height = self.height;
     let new_ctx = self.resized_context(width, height)?;
     let old_ctx = mem::replace(&mut self.ctx.context, new_ctx);
     env.adjust_external_memory((width as i64 - old_ctx.width as i64) * (height as i64) * 4)?;
-    Ok(())
+    reset_ctx_style_getters(&this)
   }
 
   #[napi(getter)]
@@ -940,14 +939,14 @@ impl<'scope> SVGCanvas<'scope> {
   }
 
   #[napi(setter)]
-  pub fn set_height(&mut self, env: Env, height: i32) -> Result<()> {
+  pub fn set_height(&mut self, env: Env, this: This, height: i32) -> Result<()> {
     let height = (if height <= 0 { 150 } else { height }) as u32;
     self.height = height;
     let width = self.width;
     let new_ctx = self.resized_context(width, height)?;
     let old_ctx = mem::replace(&mut self.ctx.context, new_ctx);
     env.adjust_external_memory((width as i64) * (height as i64 - old_ctx.height as i64) * 4)?;
-    Ok(())
+    reset_ctx_style_getters(&this)
   }
 
   #[napi(getter)]
@@ -1102,7 +1101,10 @@ impl PDFDocument {
 
     env.adjust_external_memory((width as i64) * (height as i64) * 4)?;
 
-    Ok(CanvasRenderingContext2D { context })
+    Ok(CanvasRenderingContext2D {
+      context,
+      reported_settings: Default::default(),
+    })
   }
 
   #[napi]
