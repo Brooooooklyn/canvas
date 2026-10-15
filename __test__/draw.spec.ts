@@ -872,7 +872,7 @@ test('drawImage-throws-TypeError-for-invalid-image-type', (t) => {
     },
     {
       instanceOf: TypeError,
-      message: /Value is not one of these types/,
+      message: /The provided value is not of type '\(CanvasElement or Image or SVGCanvas\)'/,
     },
   )
 
@@ -884,7 +884,7 @@ test('drawImage-throws-TypeError-for-invalid-image-type', (t) => {
     },
     {
       instanceOf: TypeError,
-      message: /Value is not one of these types/,
+      message: /The provided value is not of type '\(CanvasElement or Image or SVGCanvas\)'/,
     },
   )
 
@@ -896,7 +896,7 @@ test('drawImage-throws-TypeError-for-invalid-image-type', (t) => {
     },
     {
       instanceOf: TypeError,
-      message: /Value is not one of these types/,
+      message: /The provided value is not of type '\(CanvasElement or Image or SVGCanvas\)'/,
     },
   )
 
@@ -908,7 +908,7 @@ test('drawImage-throws-TypeError-for-invalid-image-type', (t) => {
     },
     {
       instanceOf: TypeError,
-      message: /Value is not one of these types/,
+      message: /The provided value is not of type '\(CanvasElement or Image or SVGCanvas\)'/,
     },
   )
 
@@ -920,7 +920,7 @@ test('drawImage-throws-TypeError-for-invalid-image-type', (t) => {
     },
     {
       instanceOf: TypeError,
-      message: /Value is not one of these types/,
+      message: /The provided value is not of type '\(CanvasElement or Image or SVGCanvas\)'/,
     },
   )
 })

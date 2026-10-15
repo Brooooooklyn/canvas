@@ -1090,7 +1090,8 @@ test('failed SVG load should clear prior bitmap state (regression fix)', async (
   const ctx = canvas.getContext('2d')
   ctx.fillStyle = 'red'
   ctx.fillRect(0, 0, 100, 100) // Fill with red first
-  ctx.drawImage(image, 0, 0) // Should not change canvas (no bitmap)
+  // As in Chrome, a broken image throws and draws nothing.
+  t.throws(() => ctx.drawImage(image, 0, 0), { name: 'InvalidStateError' })
 
   const imageData = ctx.getImageData(50, 50, 1, 1)
   t.is(imageData.data[0], 255, 'Canvas should still be red (drawImage drew nothing)')
@@ -1130,7 +1131,8 @@ test('failed non-SVG buffer load should clear state and set naturalWidth/Height 
   const ctx = canvas.getContext('2d')
   ctx.fillStyle = 'blue'
   ctx.fillRect(0, 0, 100, 100) // Fill with blue first
-  ctx.drawImage(image, 0, 0) // Should not change canvas (no bitmap)
+  // As in Chrome, a broken image throws and draws nothing.
+  t.throws(() => ctx.drawImage(image, 0, 0), { name: 'InvalidStateError' })
 
   const imageData = ctx.getImageData(50, 50, 1, 1)
   t.is(imageData.data[2], 255, 'Canvas should still be blue (drawImage drew nothing)')
