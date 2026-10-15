@@ -4318,39 +4318,55 @@ impl CanvasRenderingContext2D {
   #[napi]
   pub fn arc(
     &mut self,
+    env: &Env,
     x: Double<webidl::CtxArc>,
     y: Double<webidl::CtxArc>,
     radius: Double<webidl::CtxArc>,
     start_angle: Double<webidl::CtxArc>,
     end_angle: Double<webidl::CtxArc>,
     anticlockwise: webidl::Boolean,
-  ) {
+  ) -> Result<()> {
     // Path methods drop a call with a value outside the float range
     // (Blink canvas_path.cc: saturated_cast<float>, then isfinite).
     let Some([x, y, radius, start_angle, end_angle]) =
       num::saturated_f32s([x.0, y.0, radius.0, start_angle.0, end_angle.0])
     else {
-      return;
+      return Ok(());
     };
+    check_radius(
+      env.raw(),
+      <webidl::CtxArc as webidl::Site>::PREFIX,
+      "radius",
+      radius,
+    )?;
     self
       .context
       .arc(x, y, radius, start_angle, end_angle, anticlockwise.0);
+    Ok(())
   }
 
   #[napi]
   pub fn arc_to(
     &mut self,
+    env: &Env,
     x1: Double<webidl::CtxArcTo>,
     y1: Double<webidl::CtxArcTo>,
     x2: Double<webidl::CtxArcTo>,
     y2: Double<webidl::CtxArcTo>,
     radius: Double<webidl::CtxArcTo>,
-  ) {
+  ) -> Result<()> {
     let Some([x1, y1, x2, y2, radius]) = num::saturated_f32s([x1.0, y1.0, x2.0, y2.0, radius.0])
     else {
-      return;
+      return Ok(());
     };
+    check_radius(
+      env.raw(),
+      <webidl::CtxArcTo as webidl::Site>::PREFIX,
+      "radius",
+      radius,
+    )?;
     self.context.arc_to(x1, y1, x2, y2, radius);
+    Ok(())
   }
 
   #[napi]
@@ -5025,6 +5041,7 @@ impl CanvasRenderingContext2D {
   #[napi]
   pub fn ellipse(
     &mut self,
+    env: &Env,
     x: Double<webidl::CtxEllipse>,
     y: Double<webidl::CtxEllipse>,
     radius_x: Double<webidl::CtxEllipse>,
@@ -5033,7 +5050,7 @@ impl CanvasRenderingContext2D {
     start_angle: Double<webidl::CtxEllipse>,
     end_angle: Double<webidl::CtxEllipse>,
     anticlockwise: webidl::Boolean,
-  ) {
+  ) -> Result<()> {
     let Some([x, y, radius_x, radius_y, rotation, start_angle, end_angle]) = num::saturated_f32s([
       x.0,
       y.0,
@@ -5043,8 +5060,11 @@ impl CanvasRenderingContext2D {
       start_angle.0,
       end_angle.0,
     ]) else {
-      return;
+      return Ok(());
     };
+    let prefix = <webidl::CtxEllipse as webidl::Site>::PREFIX;
+    check_radius(env.raw(), prefix, "major-axis radius", radius_x)?;
+    check_radius(env.raw(), prefix, "minor-axis radius", radius_y)?;
     self.context.ellipse(
       x,
       y,
@@ -5055,6 +5075,7 @@ impl CanvasRenderingContext2D {
       end_angle,
       anticlockwise.0,
     );
+    Ok(())
   }
 
   #[napi]
@@ -5774,6 +5795,29 @@ impl Task for ContextData {
 /// every downstream Skia filter rejects.
 fn clamp_to_f32(value: f64) -> f32 {
   value.clamp(f32::MIN as f64, f32::MAX as f64) as f32
+}
+
+/// Blink's radius check for arc, arcTo and ellipse (canvas_path.cc), after
+/// the finite check: a negative radius throws an IndexSizeError that shows
+/// the float value. `name` is "radius", "major-axis radius" or
+/// "minor-axis radius".
+pub(crate) fn check_radius(
+  env: sys::napi_env,
+  prefix: &str,
+  name: &str,
+  radius: f32,
+) -> Result<()> {
+  if radius < 0.0 {
+    return Err(webidl::dom_exception(
+      env,
+      "IndexSizeError",
+      &format!(
+        "{prefix}The {name} provided ({}) is negative.",
+        webidl::number_to_string(f64::from(radius))
+      ),
+    ));
+  }
+  Ok(())
 }
 
 fn parse_css_size(css_size: &str) -> Option<f32> {

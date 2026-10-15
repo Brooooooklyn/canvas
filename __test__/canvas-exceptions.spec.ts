@@ -254,3 +254,103 @@ test('drawImage of an image without src or still loading does nothing', async (t
   t.notThrows(() => ctx.drawImage(cleared, 0, 0))
   t.deepEqual(pixel(ctx, 0, 0), [0, 0, 0, 0])
 })
+
+const radiusMessage = (method: string, iface: string, name: string, value: string) =>
+  `Failed to execute '${method}' on '${iface}': The ${name} provided (${value}) is negative.`
+
+test('arc, arcTo and ellipse throw IndexSizeError for a negative radius', (t) => {
+  const ctx = context()
+  const error = t.throws(() => ctx.arc(1, 1, -1, 0, 1), { instanceOf: DOMException })
+  const message = radiusMessage('arc', 'CanvasRenderingContext2D', 'radius', '-1')
+  t.is(error.name, 'IndexSizeError')
+  t.is(error.code, 1)
+  t.is(error.message, message)
+  t.is(String(error.stack).split('\n')[0], `IndexSizeError: ${message}`)
+  t.deepEqual(Object.keys(error), [])
+
+  const CTX = 'CanvasRenderingContext2D'
+  for (const [call, method, iface, name, value] of [
+    [() => ctx.arcTo(0, 0, 1, 1, -1), 'arcTo', CTX, 'radius', '-1'],
+    [() => loose(ctx).arcTo(0, 0, 1, 1, '-3'), 'arcTo', CTX, 'radius', '-3'],
+    [() => ctx.ellipse(1, 1, -1, 1, 0, 0, 1), 'ellipse', CTX, 'major-axis radius', '-1'],
+    [() => ctx.ellipse(1, 1, 1, -2, 0, 0, 1), 'ellipse', CTX, 'minor-axis radius', '-2'],
+    [() => ctx.ellipse(1, 1, -1, -2, 0, 0, 1), 'ellipse', CTX, 'major-axis radius', '-1'],
+    [() => new Path2D().arc(1, 1, -1, 0, 1), 'arc', 'Path2D', 'radius', '-1'],
+    [() => new Path2D().arcTo(0, 0, 1, 1, -1), 'arcTo', 'Path2D', 'radius', '-1'],
+    [() => new Path2D().ellipse(1, 1, -1, 1, 0, 0, 1), 'ellipse', 'Path2D', 'major-axis radius', '-1'],
+    [() => new Path2D().ellipse(1, 1, 1, -2, 0, 0, 1), 'ellipse', 'Path2D', 'minor-axis radius', '-2'],
+  ] as const) {
+    t.throws(call, {
+      instanceOf: DOMException,
+      name: 'IndexSizeError',
+      message: radiusMessage(method, iface, name, value),
+    })
+  }
+
+  // Also under a singular transform.
+  const singular = context()
+  singular.setTransform(0, 0, 0, 0, 0, 0)
+  t.throws(() => singular.arc(1, 1, -1, 0, 1), { instanceOf: DOMException, message })
+
+  // The failed call adds nothing to the path.
+  const filled = context()
+  filled.beginPath()
+  filled.rect(0, 0, 10, 10)
+  t.throws(() => filled.arc(5, 5, -1, 0, 7))
+  t.throws(() => filled.ellipse(5, 5, 1, -1, 0, 0, 7))
+  t.throws(() => filled.arcTo(0, 0, 1, 1, -1))
+  filled.fill()
+  const path = new Path2D()
+  path.rect(0, 0, 10, 10)
+  t.throws(() => path.arc(5, 5, -1, 0, 7))
+  const pathTarget = context()
+  pathTarget.fill(path)
+  t.deepEqual([pixel(filled, 5, 5)[3], pixel(pathTarget, 5, 5)[3]], [255, 255])
+})
+
+test('the radius is checked after the finite check', (t) => {
+  const ctx = context()
+  // -1e-300 is -0 as a float; a value beyond the float range is an infinity.
+  for (const radius of [-0, -1e-300, -Infinity, -3.4028235e38, -1e39]) {
+    t.notThrows(() => ctx.arc(1, 1, radius, 0, 1), String(radius))
+    t.notThrows(() => ctx.arcTo(0, 0, 1, 1, radius), String(radius))
+    t.notThrows(() => ctx.ellipse(1, 1, radius, 1, 0, 0, 1), String(radius))
+    t.notThrows(() => new Path2D().arc(1, 1, radius, 0, 1), String(radius))
+  }
+  t.notThrows(() => ctx.arc(NaN, 1, -1, 0, 1))
+  t.notThrows(() => ctx.arcTo(NaN, 0, 1, 1, -1))
+  t.notThrows(() => ctx.ellipse(1, 1, -1, 1, NaN, 0, 1))
+  t.notThrows(() => ctx.ellipse(1, 1, 1, -1, 0, Infinity, 1))
+  t.notThrows(() => new Path2D().arcTo(0, 0, 1, Infinity, -1))
+})
+
+test('the radius text has six significant digits', (t) => {
+  const ctx = context()
+  for (const [radius, text] of [
+    [-1, '-1'],
+    [-2.5, '-2.5'],
+    [-0.1, '-0.1'],
+    [-1.1, '-1.1'],
+    [-0.30000001, '-0.3'],
+    [-0.5, '-0.5'],
+    [-1e10, '-1.00000e+10'],
+    [-123456789, '-1.23457e+8'],
+    [-1e-7, '-1.00000e-7'],
+    [-0.000123456789, '-0.000123457'],
+    [-3.4e38, '-3.40000e+38'],
+    [-1234567, '-1.23457e+6'],
+    [-1234565, '-1.23457e+6'],
+    [-100000, '-100000'],
+    [-1000000, '-1.00000e+6'],
+    [-999999.5, '-1.00000e+6'],
+    [-1.5e-5, '-0.000015'],
+    [-16777217, '-1.67772e+7'],
+    [-1e-40, '-9.99995e-41'],
+    [-3.4028234663852886e38, '-3.40282e+38'],
+  ] as const) {
+    t.throws(() => ctx.arc(1, 1, radius, 0, 1), {
+      instanceOf: DOMException,
+      message: radiusMessage('arc', 'CanvasRenderingContext2D', 'radius', text),
+    })
+  }
+})

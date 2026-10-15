@@ -55,13 +55,31 @@ pub(crate) fn range_error(env: sys::napi_env, msg: &str) -> Error {
   throw(env, new_error(env, ErrorKind::RangeError, msg), msg)
 }
 
-/// The legacy `code` of the DOMException names used here (WebIDL table).
+/// The legacy `code` of a DOMException name (the WebIDL error names
+/// table); 0 for the names without one, such as EncodingError.
 fn dom_exception_code(name: &str) -> u32 {
   match name {
     "IndexSizeError" => 1,
+    "HierarchyRequestError" => 3,
+    "WrongDocumentError" => 4,
+    "InvalidCharacterError" => 5,
+    "NoModificationAllowedError" => 7,
+    "NotFoundError" => 8,
     "NotSupportedError" => 9,
     "InvalidStateError" => 11,
     "SyntaxError" => 12,
+    "InvalidModificationError" => 13,
+    "NamespaceError" => 14,
+    "InvalidAccessError" => 15,
+    "TypeMismatchError" => 17,
+    "SecurityError" => 18,
+    "NetworkError" => 19,
+    "AbortError" => 20,
+    "URLMismatchError" => 21,
+    "QuotaExceededError" => 22,
+    "TimeoutError" => 23,
+    "InvalidNodeTypeError" => 24,
+    "DataCloneError" => 25,
     _ => 0,
   }
 }
@@ -448,6 +466,73 @@ fn to_primitive(
     prefix,
     "Cannot convert object to primitive value",
   ))
+}
+
+/// WTF::String::Number(double), which Blink uses for the numbers in its
+/// messages: ToPrecision(6) of double-conversion's ECMAScript converter
+/// (rounded half up), exponential form when the exponent is below -6 or at
+/// least 6, and trailing zeros cut only without an exponent
+/// (wtf_string.cc, dtoa.cc NumberToFixedPrecisionString).
+pub(crate) fn number_to_string(value: f64) -> String {
+  if value.is_nan() {
+    return "NaN".to_owned();
+  }
+  if value.is_infinite() {
+    return if value > 0.0 { "Infinity" } else { "-Infinity" }.to_owned();
+  }
+  if value == 0.0 {
+    return "0".to_owned();
+  }
+  let sign = if value < 0.0 { "-" } else { "" };
+  // Enough digits to round to six, half up.
+  let exact = format!("{:.40e}", value.abs());
+  let (mantissa, exponent) = exact.split_once('e').unwrap_or((&exact, "0"));
+  let mut exponent: i32 = exponent.parse().unwrap_or(0);
+  let all: Vec<u8> = mantissa
+    .bytes()
+    .filter(u8::is_ascii_digit)
+    .map(|digit| digit - b'0')
+    .collect();
+  let mut digits = all[..6].to_vec();
+  if all[6] >= 5 {
+    let mut index = 5;
+    loop {
+      if digits[index] < 9 {
+        digits[index] += 1;
+        break;
+      }
+      digits[index] = 0;
+      if index == 0 {
+        // 999999.5 -> 1.00000e+6
+        digits.insert(0, 1);
+        digits.pop();
+        exponent += 1;
+        break;
+      }
+      index -= 1;
+    }
+  }
+  let digits: String = digits
+    .iter()
+    .map(|digit| char::from(b'0' + digit))
+    .collect();
+  if !(-6..6).contains(&exponent) {
+    let exponent_sign = if exponent < 0 { '-' } else { '+' };
+    return format!(
+      "{sign}{}.{}e{exponent_sign}{}",
+      &digits[..1],
+      &digits[1..],
+      exponent.abs()
+    );
+  }
+  let fixed = if exponent < 0 {
+    format!("0.{}{digits}", "0".repeat((-exponent - 1) as usize))
+  } else {
+    let (int, fraction) = digits.split_at(exponent as usize + 1);
+    format!("{int}.{fraction}")
+  };
+  let fixed = fixed.trim_end_matches('0').trim_end_matches('.');
+  format!("{sign}{fixed}")
 }
 
 /// WebIDL `unrestricted double`: ToNumber. Errors from user code pass as
@@ -1126,5 +1211,44 @@ impl Arguments {
         Ok(value)
       }
     }
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::number_to_string;
+
+  #[test]
+  fn number_to_string_matches_blink() {
+    // Chrome 155: the radius in "The radius provided (...) is negative." for
+    // arc(1, 1, r, 0, 1); Blink formats the float radius.
+    for (radius, text) in [
+      (-1.0, "-1"),
+      (-2.5, "-2.5"),
+      (-0.1, "-0.1"),
+      (-1.1, "-1.1"),
+      (-0.30000001, "-0.3"),
+      (-0.5, "-0.5"),
+      (-1e10, "-1.00000e+10"),
+      (-123456789.0, "-1.23457e+8"),
+      (-1e-7, "-1.00000e-7"),
+      (-0.000123456789, "-0.000123457"),
+      (-3.4e38, "-3.40000e+38"),
+      (-1234567.0, "-1.23457e+6"),
+      (-1234565.0, "-1.23457e+6"),
+      (-100000.0, "-100000"),
+      (-1000000.0, "-1.00000e+6"),
+      (-999999.5, "-1.00000e+6"),
+      (-1.5e-5, "-0.000015"),
+      (-16777217.0, "-1.67772e+7"),
+      (-1e-40, "-9.99995e-41"),
+      (-3.4028234663852886e38, "-3.40282e+38"),
+    ] {
+      assert_eq!(number_to_string(f64::from(radius as f32)), text, "{radius}");
+    }
+    assert_eq!(number_to_string(f64::NAN), "NaN");
+    assert_eq!(number_to_string(f64::NEG_INFINITY), "-Infinity");
+    assert_eq!(number_to_string(-0.0), "0");
+    assert_eq!(number_to_string(123.0), "123");
   }
 }
