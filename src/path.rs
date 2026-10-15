@@ -324,10 +324,10 @@ impl Path {
   pub fn round_rect(
     &mut self,
     env: &Env,
-    x: Double<webidl::PathRoundRect>,
-    y: Double<webidl::PathRoundRect>,
-    width: Double<webidl::PathRoundRect>,
-    height: Double<webidl::PathRoundRect>,
+    x: webidl::RoundRectCoordinate<0>,
+    y: webidl::RoundRectCoordinate<1>,
+    width: webidl::RoundRectCoordinate<2>,
+    height: webidl::RoundRectCoordinate<3>,
     radii: webidl::RoundRectRadii<webidl::PathRoundRect>,
   ) -> Result<()> {
     // A Path2D has no matrix: always invertible.
@@ -335,8 +335,8 @@ impl Path {
       env.raw(),
       <webidl::PathRoundRect as webidl::Site>::PREFIX,
       true,
-      [x.0, y.0, width.0, height.0],
-      &radii.0,
+      radii.rect([x.0, y.0, width.0, height.0]),
+      &radii.radii,
     )? {
       self.inner.round_rect(x, y, width, height, &radii);
     }
