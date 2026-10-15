@@ -892,8 +892,7 @@ impl Context {
   /// is given -- that canvas may be a recorder at identity, or sit inside a
   /// filter layer. Pass it straight to `apply_shadow_offset_matrix_to_canvas`.
   ///
-  /// `has_filter` is Blink's StateHasFilter for the draw: true also when the
-  /// assigned filter built no `content_filter`.
+  /// `has_filter` is Blink's StateHasFilter for the draw.
   fn render_passes<S, F>(
     &mut self,
     blend_mode: BlendMode,
@@ -1080,8 +1079,8 @@ impl Context {
   }
 
   /// Blink's ShouldUseCompositedDraw (canvas_2d_recorder_context.h:582-597,
-  /// 711-727): any `ctx.filter` (StateHasFilter, h:589: one that builds no
-  /// Skia filter counts too), a full-canvas mode, a shadow in a mode
+  /// 711-727): a `ctx.filter` that built a filter (StateHasFilter, h:589),
+  /// a full-canvas mode, a shadow in a mode
   /// DropShadowPaintFilter cannot do (copy is handled apart and never is), or
   /// a shadow on a pattern fill or stroke. After such a draw Blink resets the
   /// whole clip on alpha:false (h:826-829); on raster `render_canvas` also
@@ -2352,14 +2351,15 @@ impl Context {
     if filters.is_empty() || !rest.trim().is_empty() {
       return Ok(());
     }
-    // Parsed clean, so the assignment lands even if it builds no filter at all:
-    // `drop-shadow(0 0 transparent)` is legal and simply draws nothing. The id
-    // advances with the stored chain so a reused ImageFilter dedups under one
-    // accounting identity and a fresh chain re-charges under a new one.
+    // Parsed clean, so the assignment lands even if it builds no filter at all.
+    // The id advances with the stored chain so a reused ImageFilter dedups
+    // under one accounting identity and a fresh chain re-charges under a new
+    // one. Blink's StateHasFilter is "the resolved filter is not null"
+    // (canvas_2d_recorder_context.h StateHasFilter).
     self.state.filter = css_filters_to_image_filter(filters);
     self.state.filters_string = filter_str.to_owned();
     self.state.filter_id = next_resource_id();
-    self.state.has_filter = true;
+    self.state.has_filter = self.state.filter.is_some();
     Ok(())
   }
 
@@ -3114,8 +3114,8 @@ impl Context {
   ///     clip even for an empty layer;
   ///   * a `ctx.filter` wraps the draw in a filtered saveLayer -- its
   ///     restore also composites (kClear can clear the canvas); and on
-  ///     alpha:false any assigned filter, even one that built no Skia filter,
-  ///     is followed by the whole-clip reset (`blink_composites`);
+  ///     alpha:false a filtered draw is followed by the whole-clip reset
+  ///     (`blink_composites`);
   ///   * a shadow pass records an extra draw whose blend mode is the
   ///     paint's (kClear shadow restore would clear); `has_shadow` is the
   ///     caller's `shadow_paint(...)` result.
