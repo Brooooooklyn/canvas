@@ -53,7 +53,11 @@ run('createPattern(canvas)', () => ctx.createPattern(source))
     'createImageData(2, 3)': [2, 3, 24, 'srgb'],
     'createImageData(2, 3, settings)': [2, 3, 24, 'display-p3'],
     'createImageData(imagedata)': [2, 3, 24, 'srgb'],
-    'createImageData(data, 1)': [1, 2, 8, 'srgb'],
+    // No typed array form: the array is ToNumber'd as sw ('0,0,...' is NaN).
+    'createImageData(data, 1)': {
+      error: 'TypeError',
+      message: `${CREATE_IMAGE_DATA}Value is not of type 'long'.`,
+    },
     'createImageData()': {
       error: 'TypeError',
       message: `${CREATE_IMAGE_DATA}1 argument required, but only 0 present.`,
