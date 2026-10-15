@@ -51,12 +51,13 @@ struct TextCaches {
     bool has_ink = false;
     SkRect ink = SkRect::MakeEmpty();
     // `runs` as one text blob, for the draws that put every glyph where the
-    // runs put it (DrawsLikeRuns); the second draw makes it. Its origin is
-    // the first run's, and a glyph's x is its run's offset from the first
-    // plus its x in its run. `frac_bits` is the most binary fraction digits
-    // of an offset or x, `span` twice the largest offset plus the largest x.
-    // `draws` counts up to 2.
-    int draws = 0;
+    // runs put it (DrawsLikeRuns); the first draw makes it, so a draw takes
+    // the same blobs however often the line was drawn before (an SVG or PDF
+    // canvas writes a text element for each blob run). Its origin is the
+    // first run's, and a glyph's x is its run's offset from the first plus
+    // its x in its run. `frac_bits` is the most binary fraction digits of an
+    // offset or x, `span` twice the largest offset plus the largest x.
+    bool joined = false;
     sk_sp<SkTextBlob> single;
     SkPoint single_origin = {0, 0};
     int frac_bits = 0;
@@ -827,8 +828,9 @@ void MeasureOrDraw(skiac_font_collection* c_collection,
                                      rtl_offset + letter_spacing_offset
                                : paint_x - rtl_offset + letter_spacing_offset;
     const float final_y = y + baseline_y - line_baseline;
-    if (line->draws < 2 && ++line->draws == 2) {
+    if (!line->joined) {
       MakeSingleBlob(line);
+      line->joined = true;
     }
     if (DrawsLikeRuns(*line, canvas, *paint, final_x)) {
       canvas->drawTextBlob(line->single, final_x + line->single_origin.fX,
