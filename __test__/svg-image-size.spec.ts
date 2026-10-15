@@ -795,15 +795,18 @@ test('a large rotated or skewed svg draw keeps its edges sharp like Chrome', asy
 })
 
 // Under a skew that keeps the columns of the image vertical, a lean of up to
-// 0.3 rasters it at the column spacing, which keeps vertical edges on device
-// pixels; a bigger lean at the length of the axis, since at the spacing a
+// 0.3 or a column spacing of at least one device pixel rasters it at the
+// column spacing, which keeps vertical edges on device pixels; a bigger lean
+// with a smaller spacing at the length of the axis, since at the spacing a
 // line thinner than a raster pixel came out up to 100 darker. 300x150 canvas,
 // a 1000x1000 SVG with a vertical <line> at x = 510.5, its center drawn at the
 // canvas center; the alpha at x = 150..161 of rows 0, 75 and 149 (the same on
-// each), measured in Chrome 155. Through a bigger skew the raster blurs the
-// line a little: each alpha within 32 of Chrome's and their sum within 20.
+// each), measured in Chrome 155. Through a bigger skew with a smaller spacing
+// the raster blurs the line a little: each alpha within 32 of Chrome's and
+// their sum within 20.
 const skewedLines: [string, [number, number, number, number], number, number[], number][] = [
   ['setTransform(1, 0.3, 0, 1, 0, 0), width 1.5', [1, 0.3, 0, 1], 1.5, [0, 0, 0, 0, 0, 0, 0, 0, 0, 64, 255, 64], 0],
+  ['setTransform(1, 1, 0, 1, 0, 0), width 1', [1, 1, 0, 1], 1, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 0], 0],
   [
     'setTransform(0.6, 0.4, 0, 0.9, 0, 0), width 1.5',
     [0.6, 0.4, 0, 0.9],
@@ -837,6 +840,39 @@ test('a skewed svg draw keeps thin lines about as dark as Chrome', async (t) => 
         `${name}, y = ${y}: ${alpha} (Chrome ${chrome})`,
       )
     }
+  }
+})
+
+// The same for rows: under setTransform(1, 0, 0.8, 1, 0, 0) the rows of the
+// image stay one device pixel apart, and a raster at that spacing keeps a
+// horizontal edge on a device row. 300x150 canvas, a 1000x1000 SVG with a few
+// shapes, its center drawn at the canvas center; the alpha above and below
+// the top edge of its rect, y = 114 and 115 at x = 110..160, measured in
+// Chrome 155.
+test('a heavily skewed svg draw keeps horizontal edges on device rows like Chrome', async (t) => {
+  const image = await loaded(
+    svg(
+      'width="1000" height="1000"',
+      '<circle cx="380" cy="460" r="40" fill="#ff0000"/>' +
+        '<circle cx="500" cy="520" r="25.5" fill="#0000ff"/>' +
+        '<polygon points="560,420 680,470 600,580" fill="#00ff00"/>' +
+        '<path d="M320 590 L680 410" stroke="#000000" stroke-width="2"/>' +
+        '<rect x="420" y="540" width="60" height="40" fill="#ff8800"/>',
+    ),
+  )
+  const ctx = createCanvas(300, 150).getContext('2d')
+  ctx.setTransform(1, 0, 0.8, 1, 0, 0)
+  ctx.drawImage(image, -410, -425)
+  const data = ctx.getImageData(0, 0, 300, 150).data
+  for (const [y, chrome] of [
+    [114, 0],
+    [115, 255],
+  ]) {
+    const alpha = Array.from({ length: 51 }, (_, i) => data[(y * 300 + 110 + i) * 4 + 3])
+    t.true(
+      alpha.every((value) => value === chrome),
+      `y = ${y}: ${alpha} (Chrome ${chrome} at each)`,
+    )
   }
 })
 
