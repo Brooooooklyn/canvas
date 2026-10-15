@@ -1101,6 +1101,14 @@ void skiac_path_quad_to(skiac_path* c_path,
                         float cpy,
                         float x,
                         float y);
+void skiac_path_arc_to_svg(skiac_path* c_path,
+                           float rx,
+                           float ry,
+                           float x_axis_rotate,
+                           bool large_arc,
+                           bool sweep,
+                           float x,
+                           float y);
 void skiac_path_close(skiac_path* c_path);
 void skiac_path_add_rect(skiac_path* c_path,
                          float l,

@@ -846,6 +846,17 @@ pub mod ffi {
 
     pub fn skiac_path_quad_to(path: *mut skiac_path, cpx: f32, cpy: f32, x: f32, y: f32);
 
+    pub fn skiac_path_arc_to_svg(
+      path: *mut skiac_path,
+      rx: f32,
+      ry: f32,
+      x_axis_rotate: f32,
+      large_arc: bool,
+      sweep: bool,
+      x: f32,
+      y: f32,
+    );
+
     pub fn skiac_path_close(path: *mut skiac_path);
 
     pub fn skiac_path_add_rect(path: *mut skiac_path, l: f32, t: f32, r: f32, b: f32);
@@ -3744,6 +3755,22 @@ impl Path {
     unsafe {
       ffi::skiac_path_close(self.0);
     }
+  }
+
+  /// SVG elliptical arc to (x, y): radii, x-axis rotation in degrees, and
+  /// the large-arc and sweep flags.
+  #[allow(clippy::too_many_arguments)]
+  pub fn svg_arc_to(
+    &mut self,
+    rx: f32,
+    ry: f32,
+    x_axis_rotate: f32,
+    large_arc: bool,
+    sweep: bool,
+    x: f32,
+    y: f32,
+  ) {
+    unsafe { ffi::skiac_path_arc_to_svg(self.0, rx, ry, x_axis_rotate, large_arc, sweep, x, y) }
   }
 
   pub fn add_rect(&mut self, l: f32, t: f32, r: f32, b: f32) {

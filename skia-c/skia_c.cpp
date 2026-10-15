@@ -2777,6 +2777,22 @@ void skiac_path_quad_to(skiac_path* c_path,
   c_path->invalidate();
 }
 
+// SVG elliptical arc, as Blink PathBuilder::ArcTo (path_builder.cc:309-323).
+void skiac_path_arc_to_svg(skiac_path* c_path,
+                           float rx,
+                           float ry,
+                           float x_axis_rotate,
+                           bool large_arc,
+                           bool sweep,
+                           float x,
+                           float y) {
+  c_path->builder.arcTo(
+      SkVector{rx, ry}, x_axis_rotate,
+      large_arc ? SkPathBuilder::kLarge_ArcSize : SkPathBuilder::kSmall_ArcSize,
+      sweep ? SkPathDirection::kCW : SkPathDirection::kCCW, SkPoint{x, y});
+  c_path->invalidate();
+}
+
 void skiac_path_close(skiac_path* c_path) {
   c_path->builder.close();
   c_path->invalidate();
