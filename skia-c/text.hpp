@@ -5,6 +5,7 @@
 #define SKIA_C_TEXT_H
 
 #include <optional>
+#include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -94,6 +95,30 @@ SyntheticStyle SynthesizeStyle(skiac_font_collection* c_collection,
                                SkTypeface* face,
                                SkTypeface* base,
                                const skiac_text_request& request);
+
+// A piece of a word skparagraph shapes on its own for font-variant-caps:
+// its text (case mapped for synthesized small caps), the variant caps whose
+// OpenType features it turns on, and whether it is drawn at the small caps
+// size (text_caps.cpp).
+struct CapsPiece {
+  std::string text;
+  int caps;
+  bool small;
+};
+
+// The pieces of `word` (UTF-8) for request.variant_caps, with `face` the
+// primary font: the word itself with the requested features when the face
+// has them, else its case runs.
+std::vector<CapsPiece> SplitCaps(skiac_font_collection* c_collection,
+                                 SkTypeface* face,
+                                 std::string_view word,
+                                 const skiac_text_request& request);
+
+// Turns on the OpenType features of a variant caps value.
+void AddCapsFeatures(TextStyle* style, int caps);
+
+// The synthesized small caps font size for a font of `size` px.
+float SmallCapsSize(float size);
 
 // The px size of one `ex`, `ch`, `cap`, `ic` and `lh` of a font.
 struct skiac_font_units {

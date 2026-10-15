@@ -1,0 +1,254 @@
+{
+  "note": "Chrome 155.0.8059.79 CPU canvas, Linux x64, fonts loaded with FontFace. Rows are fillText(text, 10, 60) on 700x90 with lang set first (Chrome re-sets the font from its serialization when lang changes, which keeps only small-caps), then font, then fontVariantCaps: [width, actualBoundingBoxLeft, actualBoundingBoxRight, actualBoundingBoxAscent, actualBoundingBoxDescent, painted ink box \"left,top,right,bottom\"]. caps rows draw \"Hello World ß fi 123 Éé\" at 30px; sizes rows \"Small Caps xyz\" with LatoT. misc rows give their draw as [font, fontVariantCaps, text, {lang, letterSpacing, direction}]. widths are measureText(\"abc\") widths per font.",
+  "caps": {
+    "LatoT small-caps": [311.2204, -2, 311.0195, 28, 0, "12,32,320,59"],
+    "LatoT all-small-caps": [265.6699, -1, 265.4689, 19, 0, "11,41,274,59"],
+    "LatoT petite-caps": [311.2204, -2, 311.0195, 28, 0, "12,32,320,59"],
+    "LatoT all-petite-caps": [265.6699, -1, 265.4689, 19, 0, "11,41,274,59"],
+    "LatoT unicase": [258.3516, -1, 257.6315, 23, 0, "11,37,267,59"],
+    "LatoT titling-caps": [303.4221, -2, 302.702, 28, 0, "12,32,312,59"],
+    "OswaldT small-caps": [244.9704, -1, 244.4234, 33, 0, "11,27,254,59"],
+    "OswaldT all-small-caps": [207.3951, -1, 206.8481, 22, 0, "11,38,216,59"],
+    "OswaldT petite-caps": [244.9704, -1, 244.4234, 33, 0, "11,27,254,59"],
+    "OswaldT all-petite-caps": [207.3951, -1, 206.8481, 22, 0, "11,38,216,59"],
+    "OswaldT unicase": [212.1145, -1, 211.4845, 25, 0, "11,35,220,59"],
+    "OswaldT titling-caps": [248.7298, -1, 248.0998, 33, 0, "11,27,257,59"],
+    "SerifProT small-caps": [364.4396, -1, 363.6096, 27, 0, "11,33,373,59"],
+    "SerifProT all-small-caps": [357.0897, -1, 356.2597, 23, 0, "11,37,365,59"],
+    "SerifProT petite-caps": [364.4396, -1, 363.6096, 27, 0, "11,33,373,59"],
+    "SerifProT all-petite-caps": [357.9896, -1, 357.1596, 23, 0, "11,37,366,59"],
+    "SerifProT unicase": [297.9297, -1, 296.6297, 24, 0, "11,36,306,59"],
+    "SerifProT titling-caps": [303.5397, -1, 302.2397, 27, 0, "11,33,312,59"],
+    "GothicT small-caps": [441.2581, -3, 440.218, 27, 0, "13,33,449,59"],
+    "GothicT all-small-caps": [428.8531, -3, 427.8129, 23, 0, "13,37,437,59"],
+    "GothicT petite-caps": [441.1081, -3, 440.068, 27, 0, "13,33,449,59"],
+    "GothicT all-petite-caps": [428.553, -3, 427.5129, 23, 0, "13,37,436,59"],
+    "GothicT unicase": [366.9476, -3, 365.3075, 23, 0, "13,37,374,59"],
+    "GothicT titling-caps": [379.5027, -3, 377.8625, 27, 0, "13,33,387,59"],
+    "RobotoMonoT small-caps": [414.0674, -2, 412.0645, 22, 0, "12,38,421,59"],
+    "RobotoMonoT all-small-caps": [302.4492, -1, 301.8472, 18, 0, "11,42,310,59"],
+    "RobotoMonoT petite-caps": [414.0674, -2, 412.0645, 22, 0, "12,38,421,59"],
+    "RobotoMonoT all-petite-caps": [302.4492, -1, 301.8472, 18, 0, "11,42,310,59"],
+    "RobotoMonoT unicase": [414.0674, -2, 413.0645, 23, 0, "12,37,422,59"],
+    "RobotoMonoT titling-caps": [414.0674, -2, 413.0645, 27, 0, "12,33,422,59"],
+    "IosevkaT small-caps": [301.4993, 0, 300.9993, 30, 0, "10,31,310,59"],
+    "IosevkaT all-small-caps": [251.9989, 0, 251.4989, 20, 0, "10,40,260,59"],
+    "IosevkaT petite-caps": [301.4993, 0, 300.9993, 30, 0, "10,31,310,59"],
+    "IosevkaT all-petite-caps": [251.9989, 0, 251.4989, 20, 0, "10,40,260,59"],
+    "IosevkaT unicase": [295.4993, 0, 294.4993, 23, 0, "10,37,303,59"],
+    "IosevkaT titling-caps": [344.9997, 0, 343.9997, 30, 0, "10,31,353,59"],
+    "VirgilT small-caps": [350.1921, 0, 350.1752, 23, 3, "10,37,359,62"],
+    "VirgilT all-small-caps": [296.7497, 0, 296.7328, 16, 2, "10,44,306,61"],
+    "VirgilT petite-caps": [350.1921, 0, 350.1752, 23, 3, "10,37,359,62"],
+    "VirgilT all-petite-caps": [296.7497, 0, 296.7328, 16, 2, "10,44,306,61"],
+    "VirgilT unicase": [286.4573, 0, 288.9774, 27, 8, "10,33,298,67"],
+    "VirgilT titling-caps": [339.8997, 0, 342.4197, 27, 8, "10,33,351,67"]
+  },
+  "sizes": {
+    "LatoT 9 small-caps": [52.479, 0, 52.735, 7, 0, "10,53,62,59"],
+    "LatoT 9 all-small-caps": [47.6763, 0, 47.9323, 4, 0, "10,56,57,59"],
+    "LatoT 10 small-caps": [60.4252, 0, 61.0572, 7, 0, "10,53,70,59"],
+    "LatoT 10 all-small-caps": [55.6218, 0, 56.2538, 6, 0, "10,54,65,59"],
+    "LatoT 13 small-caps": [77.9169, 0, 78.301, 10, 0, "10,50,87,59"],
+    "LatoT 13 all-small-caps": [71.5126, 0, 71.8968, 7, 0, "10,53,81,59"],
+    "LatoT 15 small-caps": [93.8108, 0, 93.9467, 11, 0, "10,49,103,59"],
+    "LatoT 15 all-small-caps": [87.4073, 0, 87.5432, 8, 0, "10,52,96,59"],
+    "LatoT 20 small-caps": [120.8496, 0, 121.1136, 14, 0, "10,46,130,59"],
+    "LatoT 20 all-small-caps": [111.2436, 0, 111.5076, 10, 0, "10,50,120,59"],
+    "LatoT 25 small-caps": [154.2359, 0, 154.0038, 18, 0, "10,42,163,59"],
+    "LatoT 25 all-small-caps": [143.029, 0, 142.7969, 13, 0, "10,47,152,59"],
+    "LatoT 40 small-caps": [241.6992, -1, 241.2272, 29, 0, "11,31,250,59"],
+    "LatoT 40 all-small-caps": [222.487, 0, 222.0151, 21, 0, "10,39,231,59"],
+    "LatoT 7.5 small-caps": [43.7335, 0, 43.6134, 6, 0, "10,54,53,59"],
+    "LatoT 7.5 all-small-caps": [39.7309, 0, 39.6108, 4, 0, "10,56,49,59"],
+    "LatoT 14.3 small-caps": [86.341, 0, 86.1008, 10, 0, "10,50,95,59"],
+    "LatoT 14.3 all-small-caps": [79.4618, 0, 79.2217, 7, 0, "10,53,89,59"]
+  },
+  "misc": {
+    "OswaldT en i": {
+      "draw": [
+        "40px OswaldT",
+        "small-caps",
+        "i",
+        {
+          "lang": "en"
+        }
+      ],
+      "chrome": [6.944, -1, 6, 24, 0, "11,36,15,59"]
+    },
+    "OswaldT tr i": {
+      "draw": [
+        "40px OswaldT",
+        "small-caps",
+        "i",
+        {
+          "lang": "tr"
+        }
+      ],
+      "chrome": [6.944, -1, 6, 30, 0, "11,30,15,59"]
+    },
+    "OswaldT tr iıIİ": {
+      "draw": [
+        "40px OswaldT",
+        "small-caps",
+        "iıIİ fi",
+        {
+          "lang": "tr"
+        }
+      ],
+      "chrome": [60.7801, -1, 59.8361, 42, 0, "11,18,68,59"]
+    },
+    "OswaldT en iıIİ": {
+      "draw": [
+        "40px OswaldT",
+        "small-caps",
+        "iıIİ fi",
+        {
+          "lang": "en"
+        }
+      ],
+      "chrome": [60.7801, -1, 59.8361, 42, 0, "11,18,68,59"]
+    },
+    "OswaldT az i all": {
+      "draw": [
+        "40px OswaldT",
+        "all-small-caps",
+        "Iiİı",
+        {
+          "lang": "az"
+        }
+      ],
+      "chrome": [27.7761, -1, 26.8321, 30, 0, "11,30,35,59"]
+    },
+    "OswaldT en I all": {
+      "draw": [
+        "40px OswaldT",
+        "all-small-caps",
+        "Iiİı",
+        {
+          "lang": "en"
+        }
+      ],
+      "chrome": [27.7761, -1, 26.8321, 30, 0, "11,30,35,59"]
+    },
+    "LatoT ls small": {
+      "draw": [
+        "30px LatoT",
+        "small-caps",
+        "Hello World",
+        {
+          "letterSpacing": "5px"
+        }
+      ],
+      "chrome": [220.636, -2, 214.8231, 22, 0, "12,38,224,59"]
+    },
+    "LatoT rtl small": {
+      "draw": [
+        "30px LatoT",
+        "small-caps",
+        "Hello World",
+        {
+          "direction": "rtl"
+        }
+      ],
+      "chrome": [165.636, 163.636, -0.8129, 22, 0, "0,45,9,59"]
+    },
+    "LatoT+HanT small": {
+      "draw": ["30px LatoT, HanT", "small-caps", "ab中cd Ef", {}],
+      "chrome": [123.1709, 0, 123.2849, 26, 3, "10,34,132,62"]
+    },
+    "OswaldT tr all": {
+      "draw": [
+        "40px OswaldT",
+        "all-small-caps",
+        "Iiİı",
+        {
+          "lang": "tr"
+        }
+      ],
+      "chrome": [27.7761, -1, 26.8321, 30, 0, "11,30,35,59"]
+    },
+    "OswaldT tr-TR unicase": {
+      "draw": [
+        "40px OswaldT",
+        "unicase",
+        "Iiİı",
+        {
+          "lang": "tr-TR"
+        }
+      ],
+      "chrome": [31.808, -1, 29.8481, 33, 0, "11,27,39,59"]
+    },
+    "OswaldT en marks": {
+      "draw": [
+        "40px OswaldT",
+        "small-caps",
+        "éàB Ab",
+        {
+          "lang": "en"
+        }
+      ],
+      "chrome": [89.6441, -1, 88.972, 33, 0, "11,27,98,59"]
+    },
+    "LatoT el small": {
+      "draw": [
+        "30px LatoT",
+        "small-caps",
+        "office",
+        {
+          "lang": "el"
+        }
+      ],
+      "chrome": [73.5627, 0, 73.3618, 15, 0, "10,45,82,59"]
+    },
+    "SerifProT el small": {
+      "draw": [
+        "30px SerifProT",
+        "all-small-caps",
+        "άλφα Ωμέγα",
+        {
+          "lang": "el"
+        }
+      ],
+      "chrome": [170.9998, 0, 171.3298, 16, 0, "10,44,180,59"]
+    },
+    "SerifProT root small": {
+      "draw": [
+        "30px SerifProT",
+        "all-small-caps",
+        "άλφα Ωμέγα",
+        {
+          "lang": "en"
+        }
+      ],
+      "chrome": [170.9998, 0, 171.3298, 16, 0, "10,44,180,59"]
+    },
+    "OswaldT sharp s": {
+      "draw": [
+        "40px OswaldT",
+        "small-caps",
+        "Straße",
+        {
+          "lang": "de"
+        }
+      ],
+      "chrome": [96.3963, -1, 96.0002, 33, 0, "11,27,105,59"]
+    },
+    "SerifProT greek small": {
+      "draw": ["30px SerifProT", "small-caps", "αβγ ΑΒΓ", {}],
+      "chrome": [112.1999, 0, 111.3999, 21, 0, "10,39,121,59"]
+    },
+    "GothicT 700 small": {
+      "draw": ["700 30px GothicT", "all-small-caps", "Hello", {}],
+      "chrome": [109.2846, -2, 107.7295, 16, 0, "12,44,116,59"]
+    },
+    "LatoT bold small": {
+      "draw": ["bold 30px LatoT", "small-caps", "Hello", {}],
+      "chrome": [72.387, -2, 72.629, 23, 1, "12,37,81,60"]
+    }
+  },
+  "widths": {
+    "small-caps 20px LatoT": 28.1679,
+    "20px LatoT": 30.66
+  }
+}
