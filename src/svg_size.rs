@@ -120,6 +120,11 @@ impl SvgSizing {
     }
   }
 
+  /// The natural width, height and aspect ratio (width, height).
+  pub(crate) fn parts(&self) -> (Option<f32>, Option<f32>, Option<(f32, f32)>) {
+    (self.width, self.height, self.ratio)
+  }
+
   /// naturalWidth and naturalHeight (image_loader.cc
   /// DensityCorrectedNaturalSize): the concrete size against 300x150,
   /// floored to a LayoutUnit, then rounded.

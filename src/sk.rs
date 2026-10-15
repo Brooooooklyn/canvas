@@ -273,6 +273,29 @@ pub mod ffi {
     pub generic: i32,
   }
 
+  /// skia_c.hpp skiac_svg_resource: an image of a prepared SVG document.
+  #[repr(C)]
+  #[derive(Debug, Clone, Copy)]
+  pub struct skiac_svg_resource {
+    pub kind: u8,
+    pub quality: u8,
+    pub data: *const u8,
+    pub length: usize,
+    pub frame_width: i32,
+    pub frame_height: i32,
+    pub root_width: f32,
+    pub root_height: f32,
+  }
+
+  /// skia_c.hpp skiac_svg_font_list: a font-family list of a prepared SVG
+  /// document.
+  #[repr(C)]
+  #[derive(Debug, Clone, Copy)]
+  pub struct skiac_svg_font_list {
+    pub families: *const skiac_text_family,
+    pub count: usize,
+  }
+
   /// text.hpp skiac_font_units.
   #[repr(C)]
   #[derive(Debug, Clone, Copy, Default)]
@@ -1235,11 +1258,24 @@ pub mod ffi {
       info: *mut skiac_bitmap_info,
     ) -> bool;
 
+    #[allow(clippy::too_many_arguments)]
     pub fn skiac_svg_document_make(
       data: *const u8,
       length: usize,
       font_collection: *mut skiac_font_collection,
+      prepared: bool,
+      images: *const skiac_svg_resource,
+      image_count: usize,
+      fonts: *const skiac_svg_font_list,
+      font_count: usize,
     ) -> *mut skiac_svg_document;
+
+    pub fn skiac_svg_image_size(
+      data: *const u8,
+      length: usize,
+      width: *mut i32,
+      height: *mut i32,
+    ) -> bool;
 
     pub fn skiac_svg_document_attribute(
       document: *mut skiac_svg_document,
@@ -5195,11 +5231,97 @@ pub enum SvgRootAttribute {
 impl SvgDocument {
   /// None when the bytes are not an SVG document Skia can use.
   pub fn parse(data: &[u8], fc: &FontCollection) -> Option<Self> {
-    let document = unsafe { ffi::skiac_svg_document_make(data.as_ptr(), data.len(), fc.0) };
+    let document = unsafe {
+      ffi::skiac_svg_document_make(
+        data.as_ptr(),
+        data.len(),
+        fc.0,
+        false,
+        ptr::null(),
+        0,
+        ptr::null(),
+        0,
+      )
+    };
     (!document.is_null()).then_some(SvgDocument(document))
   }
 
-  /// The attribute of the root element as written, if present.
+  /// A document `crate::svg_doc::prepare` wrote, drawn with its images and
+  /// font lists (skia-c/svg_image.cpp). None when Skia cannot use it.
+  pub fn parse_prepared(prepared: &crate::svg_doc::Prepared, fc: &FontCollection) -> Option<Self> {
+    use crate::svg_doc::{Family, Resource};
+    let images: Vec<ffi::skiac_svg_resource> = prepared
+      .resources
+      .iter()
+      .map(|resource| match resource {
+        Resource::Raster { data, quality } => ffi::skiac_svg_resource {
+          kind: 0,
+          quality: *quality,
+          data: data.as_ptr(),
+          length: data.len(),
+          frame_width: 0,
+          frame_height: 0,
+          root_width: 0.0,
+          root_height: 0.0,
+        },
+        Resource::Svg { text, frame, root } => ffi::skiac_svg_resource {
+          kind: 1,
+          quality: 0,
+          data: text.as_ptr(),
+          length: text.len(),
+          frame_width: frame.0,
+          frame_height: frame.1,
+          root_width: root.0,
+          root_height: root.1,
+        },
+      })
+      .collect();
+    let families: Vec<Vec<ffi::skiac_text_family>> = prepared
+      .families
+      .iter()
+      .map(|list| {
+        list
+          .iter()
+          .map(|family| match family {
+            Family::Generic(generic) => ffi::skiac_text_family {
+              name: ptr::null(),
+              name_len: 0,
+              generic: *generic,
+            },
+            Family::Named(name) => ffi::skiac_text_family {
+              name: name.as_ptr().cast(),
+              name_len: name.len(),
+              generic: 0,
+            },
+          })
+          .collect()
+      })
+      .collect();
+    let fonts: Vec<ffi::skiac_svg_font_list> = families
+      .iter()
+      .map(|list| ffi::skiac_svg_font_list {
+        families: list.as_ptr(),
+        count: list.len(),
+      })
+      .collect();
+    // The C side copies what it keeps.
+    let document = unsafe {
+      ffi::skiac_svg_document_make(
+        prepared.svg.as_ptr(),
+        prepared.svg.len(),
+        fc.0,
+        true,
+        images.as_ptr(),
+        images.len(),
+        fonts.as_ptr(),
+        fonts.len(),
+      )
+    };
+    (!document.is_null()).then_some(SvgDocument(document))
+  }
+
+  /// The attribute of the root element as written, if present. None for a
+  /// prepared document (`svg_doc::prepare` gives its root attributes).
   pub fn attribute(&self, attribute: SvgRootAttribute) -> Option<String> {
     let mut ptr: *const c_char = ptr::null();
     let mut length = 0usize;
@@ -5270,6 +5392,15 @@ impl Drop for SvgDocument {
   fn drop(&mut self) {
     unsafe { ffi::skiac_svg_document_destroy(self.0) }
   }
+}
+
+/// The size of an encoded raster as an Image decodes it (EXIF-oriented),
+/// or None when Skia cannot decode it.
+pub fn encoded_image_size(data: &[u8]) -> Option<(u32, u32)> {
+  let (mut width, mut height) = (0i32, 0i32);
+  let known =
+    unsafe { ffi::skiac_svg_image_size(data.as_ptr(), data.len(), &mut width, &mut height) };
+  (known && width > 0 && height > 0).then_some((width as u32, height as u32))
 }
 
 /// A `Bitmap` whose pixel allocation is reported to V8's external memory
