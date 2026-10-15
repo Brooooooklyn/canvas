@@ -385,18 +385,15 @@ fn check_not_shared(
 /// The `ImageData` constructor index.js exports: a native function, so that it
 /// sees `new.target` and the real argument count, which the class
 /// constructor napi-rs makes cannot (v8_image_data.cc ConstructorCallback).
-/// `construct(args, argc, newTarget)` builds the class with the 4 arguments
-/// and a count marker.
+/// It builds the instance itself, in one call from script: called with
+/// `new`, the engine makes `this` from `new.target.prototype` (index.js sets
+/// the prototype of this function to the class prototype), and it is wrapped
+/// as the class constructor wraps its `this`.
 // Only JS calls it: the lib test build registers no napi exports.
 #[cfg_attr(test, allow(dead_code))]
 #[napi(js_name = "_imageDataConstructor")]
-pub fn image_data_constructor<'env>(
-  env: &'env Env,
-  construct: Unknown<'env>,
-) -> Result<Unknown<'env>> {
+pub fn image_data_constructor(env: &Env) -> Result<Unknown<'_>> {
   let raw = env.raw();
-  let mut reference = ptr::null_mut();
-  check_status!(unsafe { sys::napi_create_reference(raw, construct.raw(), 1, &mut reference) })?;
   let mut function = ptr::null_mut();
   check_status!(unsafe {
     sys::napi_create_function(
@@ -404,29 +401,11 @@ pub fn image_data_constructor<'env>(
       c"ImageData".as_ptr(),
       9,
       Some(construct_image_data),
-      reference.cast(),
+      ptr::null_mut(),
       &mut function,
     )
   })?;
-  check_status!(unsafe {
-    sys::napi_add_finalizer(
-      raw,
-      function,
-      reference.cast(),
-      Some(delete_reference),
-      ptr::null_mut(),
-      ptr::null_mut(),
-    )
-  })?;
   Ok(unsafe { Unknown::from_raw_unchecked(raw, function) })
-}
-
-unsafe extern "C" fn delete_reference(
-  env: sys::napi_env,
-  reference: *mut std::ffi::c_void,
-  _hint: *mut std::ffi::c_void,
-) {
-  unsafe { sys::napi_delete_reference(env, reference.cast()) };
 }
 
 unsafe extern "C" fn construct_image_data(
@@ -449,15 +428,15 @@ fn construct_image_data_checked(
   let prefix = webidl::IMAGE_DATA_CONSTRUCTOR;
   let mut argc = 4;
   let mut argv = [ptr::null_mut(); 4];
-  let mut reference = ptr::null_mut();
+  let mut this = ptr::null_mut();
   check_status!(unsafe {
     sys::napi_get_cb_info(
       env,
       info,
       &mut argc,
       argv.as_mut_ptr(),
+      &mut this,
       ptr::null_mut(),
-      &mut reference,
     )
   })?;
   let mut new_target = ptr::null_mut();
@@ -478,9 +457,9 @@ fn construct_image_data_checked(
   }
   let is_undefined =
     |value| webidl::type_of(env, value).map(|value_type| value_type == ValueType::Undefined);
-  // Chrome's NonUndefinedArgumentLength looks at every argument; the class
-  // gets only 4. When one after them is not undefined, sh is present: pass
-  // 0, which converts as undefined does.
+  // Chrome's NonUndefinedArgumentLength looks at every argument; the
+  // conversions get only 4. When one after them is not undefined, sh is
+  // present: pass 0, which converts as undefined does.
   if argc > 4 && is_undefined(argv[2])? && is_undefined(argv[3])? {
     let mut all = vec![ptr::null_mut(); argc];
     let mut all_argc = argc;
@@ -502,38 +481,21 @@ fn construct_image_data_checked(
       check_status!(unsafe { sys::napi_create_uint32(env, 0, &mut argv[2]) })?;
     }
   }
-  let mut construct = ptr::null_mut();
-  check_status!(unsafe { sys::napi_get_reference_value(env, reference.cast(), &mut construct) })?;
-  let mut args = ptr::null_mut();
-  check_status!(unsafe { sys::napi_create_array_with_length(env, 4, &mut args) })?;
-  for (index, value) in argv.iter().enumerate() {
-    check_status!(unsafe { sys::napi_set_element(env, args, index as u32, *value) })?;
-  }
-  let mut count = ptr::null_mut();
-  check_status!(unsafe { sys::napi_create_uint32(env, argc as u32, &mut count) })?;
-  let mut undefined = ptr::null_mut();
-  check_status!(unsafe { sys::napi_get_undefined(env, &mut undefined) })?;
-  let mut result = ptr::null_mut();
-  check_status!(unsafe {
-    sys::napi_call_function(
-      env,
-      undefined,
-      construct,
-      3,
-      [args, count, new_target].as_ptr(),
-      &mut result,
-    )
-  })?;
-  Ok(result)
+  let args = webidl::Arguments::with_len(env, &argv, argc.min(4) as u32)?;
+  let mut this = unsafe { This::from_napi_value(env, this)? };
+  let image_data = ImageData::construct(&Env::from(env), &mut this, &args)?;
+  // What the class constructor glue of napi-rs does with its `this`: wrap
+  // the value and register it, so that the getters, `&ImageData` arguments
+  // and the finalizer find it as they find any other instance.
+  CallbackInfo::<0>::new(env, info, None, false)?
+    .construct::<false, ImageData>("ImageData", image_data)
 }
 
 #[napi]
 impl ImageData {
-  /// `new ImageData(sw, sh, settings?)` or `new ImageData(data, sw, sh?,
-  /// settings?)`, picked as Chrome's binding picks them
-  /// (v8_image_data.cc ConstructorCallback): with data first (a brand check)
-  /// the data form, else the size form, which takes at most 3 arguments.
-  /// `argc` is an argument-count marker; see `webidl::Arguments::new`.
+  /// The class constructor, which the raw js-binding entrypoint exports:
+  /// see [`Self::construct`]. `argc` is an argument-count marker; see
+  /// `webidl::Arguments::new`.
   #[napi(constructor)]
   pub fn new(
     env: Env,
@@ -544,13 +506,21 @@ impl ImageData {
     arg3: Unknown,
     argc: Unknown,
   ) -> Result<Self> {
-    let raw = env.raw();
-    let prefix = webidl::IMAGE_DATA_CONSTRUCTOR;
     let args = webidl::Arguments::new(
-      raw,
+      env.raw(),
       &[arg0.raw(), arg1.raw(), arg2.raw(), arg3.raw()],
       argc.raw(),
     )?;
+    Self::construct(&env, &mut this, &args)
+  }
+
+  /// `new ImageData(sw, sh, settings?)` or `new ImageData(data, sw, sh?,
+  /// settings?)`, picked as Chrome's binding picks them
+  /// (v8_image_data.cc ConstructorCallback): with data first (a brand check)
+  /// the data form, else the size form, which takes at most 3 arguments.
+  fn construct(env: &Env, this: &mut This, args: &webidl::Arguments) -> Result<Self> {
+    let raw = env.raw();
+    let prefix = webidl::IMAGE_DATA_CONSTRUCTOR;
     if args.len() < 2 {
       return Err(webidl::context_type_error(
         raw,
@@ -559,7 +529,7 @@ impl ImageData {
       ));
     }
     if let Some(array_type) = data_array_type(raw, args.get(0)?)? {
-      return Self::from_data(&env, &mut this, array_type, &args);
+      return Self::from_data(env, this, array_type, args);
     }
     if args.len() > 3 {
       return Err(webidl::context_type_error(
@@ -577,7 +547,7 @@ impl ImageData {
     };
     let length = validate_size(raw, prefix, width, Some(height), SizeErrors::Constructor)?;
     let color_space = settings.color_space(raw, prefix)?.unwrap_or_default();
-    let data_object = Uint8ClampedSlice::from_data(&env, alloc_data(raw, prefix, length)?)?;
+    let data_object = Uint8ClampedSlice::from_data(env, alloc_data(raw, prefix, length)?)?;
     this.define_properties(&[Property::new()
       .with_utf8_name("data")?
       .with_value(&data_object)
@@ -588,7 +558,7 @@ impl ImageData {
       width: width as usize,
       height: height as usize,
       color_space,
-      data_ref: Some(create_weak_ref(&env, data_object.raw())?),
+      data_ref: Some(create_weak_ref(env, data_object.raw())?),
     })
   }
 

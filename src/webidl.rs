@@ -1747,6 +1747,21 @@ impl Arguments {
     values: &[sys::napi_value],
     argc: sys::napi_value,
   ) -> Result<Self> {
+    Self::counted(env, Self::copy(values)?, values.len(), argc)
+  }
+
+  /// `values` of a call with `len` arguments, the count a native function
+  /// reads from its callback info.
+  pub(crate) fn with_len(env: sys::napi_env, values: &[sys::napi_value], len: u32) -> Result<Self> {
+    Ok(Self {
+      env,
+      values: Self::copy(values)?,
+      count: values.len(),
+      len,
+    })
+  }
+
+  fn copy(values: &[sys::napi_value]) -> Result<[sys::napi_value; MAX_POSITIONAL]> {
     let mut array = [ptr::null_mut(); MAX_POSITIONAL];
     let Some(slots) = array.get_mut(..values.len()) else {
       return Err(Error::new(
@@ -1758,7 +1773,7 @@ impl Arguments {
       ));
     };
     slots.copy_from_slice(values);
-    Self::counted(env, array, values.len(), argc)
+    Ok(array)
   }
 
   /// The first `count` of `values`, with the argument count of `argc` (see
