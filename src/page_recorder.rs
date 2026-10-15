@@ -515,6 +515,12 @@ impl PageRecorder {
     self.pending_bytes += bytes;
   }
 
+  /// Charge `count` more ops at the base estimate: the ones a draw records
+  /// after the single `get_recording_canvas` call that charged its first.
+  pub(crate) fn account_recorded_ops(&mut self, count: usize) {
+    self.pending_bytes += count * BYTES_PER_RECORDED_OP;
+  }
+
   /// Charge bytes that also retain payload a picture's approximateBytesUsed
   /// cannot see (pixels, typefaces). Those payloads cross to a drawCanvas
   /// destination intact, so they are tallied separately: a source's
@@ -620,6 +626,15 @@ impl PageRecorder {
   #[cfg(test)]
   pub(crate) fn consolidations(&self) -> u64 {
     self.consolidations
+  }
+
+  /// SkPicture::approximateBytesUsed of every layer, the pending recording
+  /// finished into one first: what the charged ops really hold. Test-only
+  /// introspection.
+  #[cfg(test)]
+  pub(crate) fn recorded_bytes(&mut self) -> usize {
+    self.promote_layer();
+    self.layers.iter().map(SkPicture::approx_bytes_used).sum()
   }
 
   /// Bytes of approx_bytes_used-invisible payload this recorder's pictures
