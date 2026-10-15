@@ -210,7 +210,7 @@ test('shadow-zero-blur-pattern-STROKE-uses-shadowColor-not-the-pattern', (t) => 
   const tileCtx = tile.getContext('2d')!
   tileCtx.fillStyle = 'rgb(255, 255, 0)'
   tileCtx.fillRect(0, 0, 8, 8)
-  const ctx = strokeShaderScene((c) => c.createPattern(tile, 'repeat'))
+  const ctx = strokeShaderScene((c) => c.createPattern(tile, 'repeat')!)
   t.deepEqual(px(ctx, 170, 40), [0, 255, 0, 255])
   t.deepEqual(px(ctx, 230, 40), [0, 255, 0, 255])
   t.deepEqual(px(ctx, 20, 40), [255, 255, 0, 255])
