@@ -312,6 +312,9 @@ pub struct Context {
   pub(crate) backend: Backend,
   /// Whether `surface` is the bitmap. Set once by the constructor.
   pub(crate) pixel_state: PixelState,
+  /// Chrome's isContextLost(): an over-limit canvas loses its context the
+  /// first time an op asks for the bitmap (`paint_canvas`).
+  pub(crate) context_lost: bool,
   path: SkPath,
   pub alpha: bool,
   pub(crate) states: Vec<Context2dRenderingState>,
@@ -348,6 +351,7 @@ impl Context {
       resource_id: next_resource_id(),
       page_recorder: None, // SVG uses direct rendering
       backend: Backend::Svg,
+      context_lost: false,
       // SvgCanvas has no Chrome counterpart and no size limit: only a 0 side
       // leaves it without pixels (its raster is then a stand-in, see
       // skiac_surface_create_svg).
@@ -423,6 +427,7 @@ impl Context {
       ))), // Enable deferred rendering
       backend: Backend::Raster,
       pixel_state,
+      context_lost: false,
       alpha: true,
       path: SkPath::new(),
       states: vec![],
@@ -470,6 +475,7 @@ impl Context {
       page_recorder: None, // PDF uses direct rendering
       backend: Backend::Pdf,
       pixel_state: PixelState::Ready,
+      context_lost: false,
       alpha: true,
       path: SkPath::new(),
       states: vec![],
@@ -493,7 +499,29 @@ impl Context {
   /// transform, a clip, a draw). An op that does not ask, and draws anyway,
   /// draws on the stand-in surface, which nothing reads.
   pub(crate) fn paint_canvas(&mut self) -> bool {
-    self.has_pixels()
+    if self.context_lost {
+      return false;
+    }
+    match self.pixel_state {
+      PixelState::Ready => true,
+      // InitializeResourceProvider: an invalid size that is not empty loses
+      // the context (canvas_rendering_context_2d.cc:1347-1352).
+      PixelState::InvalidSize => {
+        self.lose_context();
+        false
+      }
+      PixelState::Empty | PixelState::AllocationFailed => false,
+    }
+  }
+
+  /// Blink's LoseContext, which runs ResetInternal: the state, the state
+  /// stack and the path start over (canvas_rendering_context_2d.cc:300-304).
+  /// The context stays lost until a resize to a valid size.
+  fn lose_context(&mut self) {
+    self.context_lost = true;
+    self.state = Context2dRenderingState::default();
+    self.states.clear();
+    self.path = SkPath::new();
   }
 
   /// The bytes of the pixels, as reported to V8 as external memory: the
@@ -4844,11 +4872,21 @@ impl CanvasRenderingContext2D {
 
   #[napi]
   pub fn save(&mut self) {
+    // A lost context saves nothing; then save() takes the bitmap, which may
+    // lose the context, and pushes the state anyway
+    // (canvas_2d_recorder_context.cc:395-416).
+    if self.context.context_lost {
+      return;
+    }
+    self.context.paint_canvas();
     self.context.save();
   }
 
   #[napi(return_if_invalid)]
   pub fn restore(&mut self, this: This) -> Result<()> {
+    if self.context.context_lost {
+      return Ok(());
+    }
     let depth = self.context.states.len();
     self.context.restore();
     // The popped state's own style objects are unreachable now.
@@ -5394,10 +5432,11 @@ impl CanvasRenderingContext2D {
     })
   }
 
-  /// Always false: a raster, SVG or PDF context is never lost.
+  /// Only an over-limit canvas loses its context; an SVG or PDF context
+  /// never does.
   #[napi]
   pub fn is_context_lost(&self) -> bool {
-    false
+    self.context.context_lost
   }
 
   #[napi]

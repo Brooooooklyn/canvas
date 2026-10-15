@@ -24,7 +24,7 @@ use napi::{
 
 use ctx::{
   CANVAS_HIDDEN_NAME, CanvasRenderingContext2D, Context, ContextData, ContextOutputData,
-  SvgExportFlag, encode_surface, truncate_style_objects,
+  SvgExportFlag, encode_surface, is_valid_image_size, truncate_style_objects,
 };
 use font::{FONT_REGEXP, init_font_regexp};
 use sk::{AlphaType, ColorSpace, SkImage, SkiaDataRef};
@@ -184,7 +184,12 @@ impl<'c> CanvasElement<'c> {
   // Setting width or height resets the bitmap but keeps the context's
   // settings (alpha, color space).
   fn resized_context(old: &Context, width: u32, height: u32) -> Result<Context> {
-    Context::new_with_alpha(width, height, old.color_space, old.alpha)
+    let mut context = Context::new_with_alpha(width, height, old.color_space, old.alpha)?;
+    // A lost context stays lost while the size is not valid (Chrome:
+    // InitializeResourceProvider fails again). A valid size restores it here
+    // at once; Chrome restores it two tasks later, with contextrestored.
+    context.context_lost = old.context_lost && !is_valid_image_size(width, height);
+    Ok(context)
   }
 
   fn create_context(
