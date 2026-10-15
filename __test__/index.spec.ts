@@ -370,6 +370,106 @@ test('drawCanvas of a display-p3 source matches drawImage', (t) => {
   t.deepEqual([...viaCanvas.getImageData(128, 0, 1, 1).data], [...viaImage.getImageData(128, 0, 1, 1).data])
 })
 
+// drawCanvas takes a picture replay into a destination in the same colour
+// space and the source bitmap into another one. Both arms treat a negative
+// size as drawImage does (Blink AdjustRectForCanvas): the origin moves, the
+// image is not mirrored.
+test('drawCanvas normalises negative sizes like drawImage', (t) => {
+  // column i is rgb(i * 25, 0, 255 - i * 25)
+  const source = createCanvas(10, 10)
+  const sourceContext = source.getContext('2d')
+  for (let i = 0; i < 10; i++) {
+    sourceContext.fillStyle = `rgb(${i * 25},0,${255 - i * 25})`
+    sourceContext.fillRect(i, 0, 1, 10)
+  }
+  const args: [number, number, number, number, number?, number?, number?, number?][] = [
+    [30, 20, -10, 10],
+    [30, 20, 10, -10],
+    [0, 0, 10, 10, 30, 20, -10, -10],
+    [10, 0, -10, 10, 30, 20, 10, 10],
+    // past the f32 range: nothing is drawn
+    [0, 0, 1e39, 10],
+    [0, 0, -1e39, 10],
+  ]
+  for (const colorSpace of ['srgb', 'display-p3'] as const) {
+    for (const a of args) {
+      const viaCanvas = createCanvas(64, 64).getContext('2d', { colorSpace })
+      // @ts-expect-error the 4- and 8-argument forms
+      viaCanvas.drawCanvas(source, ...a)
+      const viaImage = createCanvas(64, 64).getContext('2d', { colorSpace })
+      // @ts-expect-error the 4- and 8-argument forms
+      viaImage.drawImage(source, ...a)
+      t.deepEqual(
+        [...viaCanvas.getImageData(0, 0, 64, 64).data],
+        [...viaImage.getImageData(0, 0, 64, 64).data],
+        `${colorSpace} ${a.join(',')}`,
+      )
+    }
+  }
+  const ctx = createCanvas(64, 64).getContext('2d')
+  ctx.drawCanvas(source, 30, 20, -10, 10)
+  t.deepEqual([...ctx.getImageData(20, 25, 1, 1).data], [0, 0, 255, 255])
+  t.deepEqual([...ctx.getImageData(29, 25, 1, 1).data], [225, 0, 30, 255])
+})
+
+// drawImage clamps an origin past the f32 range to it (Blink ClampTo<float>),
+// and a tiny transform can bring that rect back into view. drawCanvas must
+// paint the same area. The picture replays the source's 1px columns scaled
+// by 3.4, so their antialiased seams overlap where drawImage samples one
+// image: only which pixels are painted is compared.
+test('drawCanvas clamps out-of-range origins like drawImage', (t) => {
+  const source = createCanvas(10, 10)
+  const sourceContext = source.getContext('2d')
+  for (let i = 0; i < 10; i++) {
+    sourceContext.fillStyle = `rgb(${i * 25},0,${255 - i * 25})`
+    sourceContext.fillRect(i, 0, 1, 10)
+  }
+  const cases: [number[], number[]][] = [
+    [
+      [1e-37, 0, 0, 1, 40, 0],
+      [-3.5e38, 0, 3.4e38, 10],
+    ],
+    [
+      [1, 0, 0, 1e-37, 0, 40],
+      [0, -3.5e38, 10, 3.4e38],
+    ],
+    // the normalised origin is the one past the range
+    [
+      [1e-37, 0, 0, 1, 40, 0],
+      [-1e38, 0, -2.5e38, 10],
+    ],
+    // a source origin past the range: nothing is drawn
+    [
+      [1, 0, 0, 1, 0, 0],
+      [-3.5e38, 0, 3.4e38, 10, 0, 0, 40, 10],
+    ],
+  ]
+  const painted = (ctx: SKRSContext2D) =>
+    [...ctx.getImageData(0, 0, 64, 64).data].filter((_, i) => i % 4 === 3).map((a) => a > 0)
+  for (const colorSpace of ['srgb', 'display-p3'] as const) {
+    for (const [matrix, a] of cases) {
+      const viaCanvas = createCanvas(64, 64).getContext('2d', { colorSpace })
+      viaCanvas.setTransform(...(matrix as [number, number, number, number, number, number]))
+      // @ts-expect-error the 4- and 8-argument forms
+      viaCanvas.drawCanvas(source, ...a)
+      const viaImage = createCanvas(64, 64).getContext('2d', { colorSpace })
+      viaImage.setTransform(...(matrix as [number, number, number, number, number, number]))
+      // @ts-expect-error the 4- and 8-argument forms
+      viaImage.drawImage(source, ...a)
+      t.deepEqual(painted(viaCanvas), painted(viaImage), `${colorSpace} ${matrix.join(',')} ${a.join(',')}`)
+    }
+  }
+  // Chrome 155's drawImage paints x = 6..39 of row 0 for the first case.
+  const ctx = createCanvas(64, 64).getContext('2d')
+  ctx.setTransform(1e-37, 0, 0, 1, 40, 0)
+  ctx.drawCanvas(source, -3.5e38, 0, 3.4e38, 10)
+  const row = [...ctx.getImageData(0, 0, 64, 1).data].filter((_, i) => i % 4 === 3)
+  t.deepEqual(
+    row.flatMap((v, x) => (v ? [x] : [])),
+    Array.from({ length: 34 }, (_, i) => i + 6),
+  )
+})
+
 test('pattern snapshots preserve integer texels after canvas mutation', (t) => {
   const source = createCanvas(2, 2)
   const src = source.getContext('2d')
@@ -839,7 +939,10 @@ test('globalAlpha is rounded to 8 bits for high quality drawImage', async (t) =>
   }
 })
 
-test('globalAlpha is rounded to 8 bits for patterns', (t) => {
+// Patterns keep the float globalAlpha (raster-precision.spec.ts); a 'repeat'
+// pattern drawn src-over still lands on a byte, because Skia's legacy blitter
+// rounds the paint alpha itself, as in Chrome's CPU canvas.
+test("repeat pattern globalAlpha lands on a byte like Chrome's legacy blitter", (t) => {
   const source = createCanvas(8, 8)
   const sourceContext = source.getContext('2d')
   sourceContext.fillStyle = 'rgb(32, 128, 223)'

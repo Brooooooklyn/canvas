@@ -95,6 +95,30 @@ static SkSamplingOptions SamplingOptionsFromFQ(int fq) {
   return SkSamplingOptions(SkFilterMode::kNearest, SkMipmapMode::kNone);
 }
 
+// How Chrome samples an image it draws as it is, with no decode cache step (a
+// canvas source): cc MatrixToScalingOperation (cc/paint/paint_op.cc:134-142)
+// and PaintFlags::FilterQualityToSkSamplingOptions (cc/paint/paint_flags.cc:
+// 178-207). 'high' is cubic only when both axes scale up, and 'medium' blends
+// two mip levels.
+static SkSamplingOptions CcSampling(int fq, const SkMatrix& matrix) {
+  SkSize scale;
+  const bool upscale =
+      matrix.decomposeScale(&scale) && scale.width() > 1 && scale.height() > 1;
+  switch (fq) {
+    case 3:
+      if (upscale) {
+        return SkSamplingOptions(SkCubicResampler::Mitchell());
+      }
+      [[fallthrough]];
+    case 2:
+      return SkSamplingOptions(SkFilterMode::kLinear, SkMipmapMode::kLinear);
+    case 1:
+      return SkSamplingOptions(SkFilterMode::kLinear, SkMipmapMode::kNone);
+    default:
+      return SkSamplingOptions(SkFilterMode::kNearest, SkMipmapMode::kNone);
+  }
+}
+
 // Chrome samples a pattern through cc PaintShader::GetSkShader, which maps the
 // quality with ScalingOperation::kUnknown (cc/paint/paint_shader.cc and
 // PaintFlags::FilterQualityToSkSamplingOptions in cc/paint/paint_flags.cc):
@@ -1062,9 +1086,100 @@ void skiac_canvas_draw_color(skiac_canvas* c_canvas,
   CANVAS_CAST->drawColor(SkColor4f{r, g, b, a});
 }
 
+// Blink Canvas2DRecorderContext::ShouldDrawImageAntialiased
+// (canvas_2d_recorder_context.cc:2071-2101): drawImage turns AA on only when
+// the CTM does not keep rects axis-aligned, or when the destination is under
+// one device pixel on either axis. The sizes are gfx::RectF ones.
+static bool ShouldDrawImageAntialiased(const SkMatrix& ctm,
+                                       float dst_width,
+                                       float dst_height) {
+  if (!ctm.rectStaysRect()) {
+    return true;
+  }
+  // rectStaysRect: either scale and no skew, or skew and no scale.
+  SkScalar width_expansion, height_expansion;
+  if (ctm.getType() & SkMatrix::kAffine_Mask) {
+    width_expansion = ctm[SkMatrix::kMSkewY];
+    height_expansion = ctm[SkMatrix::kMSkewX];
+  } else {
+    width_expansion = ctm[SkMatrix::kMScaleX];
+    height_expansion = ctm[SkMatrix::kMScaleY];
+  }
+  return dst_width * fabs(width_expansion) < 1 ||
+         dst_height * fabs(height_expansion) < 1;
+}
+
+namespace {
+// gfx::RectF maths, which Blink uses for the drawImage rects: origin and size,
+// where a size at or under 8 * epsilon is 0 (ui/gfx/geometry/size_f.h:106-108).
+// One float operation per statement, as Chromium builds with -ffp-contract=off.
+struct GfxRectF {
+  GfxRectF(float x, float y, float w, float h)
+      : x(x), y(y), w(ClampSize(w)), h(ClampSize(h)) {}
+  static float ClampSize(float s) {
+    return s > 8.f * std::numeric_limits<float>::epsilon() ? s : 0.f;
+  }
+  float right() const { return x + w; }
+  float bottom() const { return y + h; }
+  bool IsEmpty() const { return w == 0 || h == 0; }
+  // RectF::Intersect (ui/gfx/geometry/rect_f.cc:99-116).
+  void Intersect(const GfxRectF& r) {
+    if (IsEmpty() || r.IsEmpty()) {
+      *this = GfxRectF(0, 0, 0, 0);
+      return;
+    }
+    float rx = std::max(x, r.x);
+    float ry = std::max(y, r.y);
+    float rr = std::min(right(), r.right());
+    float rb = std::min(bottom(), r.bottom());
+    if (rx >= rr || ry >= rb) {
+      *this = GfxRectF(0, 0, 0, 0);
+      return;
+    }
+    *this = GfxRectF(rx, ry, rr - rx, rb - ry);
+  }
+  // gfx::RectFToSkRect (ui/gfx/geometry/skia_conversions.cc:62-66).
+  SkRect ToSkRect() const { return SkRect::MakeLTRB(x, y, right(), bottom()); }
+  float x, y, w, h;
+};
+
+// Blink ClipRectsToImageRect (canvas_2d_recorder_context.cc:1989-2010): a
+// source rect past the image is cut to it, and the destination in proportion.
+void ClipRectsToImageRect(const GfxRectF& image, GfxRectF* src, GfxRectF* dst) {
+  if (src->x >= image.x && src->right() <= image.right() && src->y >= image.y &&
+      src->bottom() <= image.bottom()) {
+    return;
+  }
+  const float scale_x = dst->w / src->w;
+  const float scale_y = dst->h / src->h;
+  const float scaled_src_x = src->x * scale_x;
+  const float scaled_src_y = src->y * scale_y;
+  const float offset_x = dst->x - scaled_src_x;
+  const float offset_y = dst->y - scaled_src_y;
+  src->Intersect(image);
+  const float scaled_x = src->x * scale_x;
+  const float scaled_y = src->y * scale_y;
+  *dst = GfxRectF(scaled_x + offset_x, scaled_y + offset_y, src->w * scale_x,
+                  src->h * scale_y);
+}
+}  // namespace
+
+// The rects come in normalised (Blink AdjustRectForCanvas, done by the Rust
+// caller). Canvas and Image sources are drawn alike, as Blink's
+// drawImage (canvas_2d_recorder_context.cc:2312-2316) and
+// StaticBitmapImage::DrawHelper (static_bitmap_image.cc:83-116) do: clip the
+// rects to the image, pick AA on the clipped destination, then drawImageRect
+// with kFast (Image::kDoNotClampImageToSourceRect).
+// `c_ctm` is the context's transform. The AA rule and the sampling read it,
+// not the canvas matrix: the canvas may be a recorder that sits at identity
+// (the composited ops), while Blink reads the CTM that CompositedDraw has put
+// back on the paint canvas (canvas_2d_recorder_context.h:919-990).
+// `vector_device` is true on the PDF and SVG backends.
 void skiac_canvas_draw_image(skiac_canvas* c_canvas,
                              skiac_bitmap* c_bitmap,
                              bool is_canvas,
+                             skiac_transform c_ctm,
+                             bool vector_device,
                              float sx,
                              float sy,
                              float s_width,
@@ -1077,36 +1192,56 @@ void skiac_canvas_draw_image(skiac_canvas* c_canvas,
                              int filter_quality,
                              skiac_paint* c_paint) {
   auto fq = enable_smoothing ? filter_quality : 0;
-  const auto sampling = SamplingOptionsFromFQ(fq);
-  auto paint = reinterpret_cast<const SkPaint*>(c_paint);
-  if (is_canvas) {
-    auto src_surface = reinterpret_cast<SkSurface*>(c_bitmap);
-    // Snapshot instead of SkSurface::draw -- on a never-snapshotted surface
-    // SkSurface::draw copies the whole pixel buffer on every call (#1321).
-    // The snapshot shares the pixels; a later write into the source
-    // copies-on-write, which keeps call-time capture semantics.
-    sk_sp<SkImage> snapshot = src_surface->makeImageSnapshot();
-    if (!snapshot) {
-      return;
-    }
-    CANVAS_CAST->save();
-    // Translate to the destination position
-    CANVAS_CAST->translate(dx, dy);
-    // The source crop -- drawImage paints the whole source snapshot. It
-    // would truncate a halo, so `paint` must carry no image filter.
-    CANVAS_CAST->clipRect(SkRect::MakeWH(d_width, d_height));
-    // Scale using the ratio of destination size to source surface size
-    CANVAS_CAST->scale(d_width / s_width, d_height / s_height);
-    // Draw the snapshot directly
-    CANVAS_CAST->drawImage(snapshot.get(), -sx, -sy, sampling, paint);
-    CANVAS_CAST->restore();
-  } else {
-    const auto src_rect = SkRect::MakeXYWH(sx, sy, s_width, s_height);
-    const auto dst_rect = SkRect::MakeXYWH(dx, dy, d_width, d_height);
-    CANVAS_CAST->drawImageRect(SkImages::RasterFromBitmap(*BITMAP_CAST),
-                               src_rect, dst_rect, sampling, paint,
-                               SkCanvas::kFast_SrcRectConstraint);
+  auto src_surface =
+      is_canvas ? reinterpret_cast<SkSurface*>(c_bitmap) : nullptr;
+  const SkISize image_size =
+      is_canvas ? SkISize::Make(src_surface->width(), src_surface->height())
+                : BITMAP_CAST->dimensions();
+  const GfxRectF image_rect(0, 0, image_size.width(), image_size.height());
+  GfxRectF src(sx, sy, s_width, s_height);
+  GfxRectF dst(dx, dy, d_width, d_height);
+  ClipRectsToImageRect(image_rect, &src, &dst);
+  // DrawHelper intersects once more (static_bitmap_image.cc:89-93).
+  src.Intersect(image_rect);
+  if (src.IsEmpty() || dst.IsEmpty()) {
+    return;
   }
+  const SkMatrix ctm = conv_from_transform(c_ctm);
+  SkPaint paint = c_paint ? *PAINT_CAST : SkPaint();
+  paint.setAntiAlias(ShouldDrawImageAntialiased(ctm, dst.w, dst.h));
+  const SkRect src_rect = src.ToSkRect();
+  const SkRect dst_rect = dst.ToSkRect();
+  // DrawImageRectOp::RasterWithFlags (cc/paint/paint_op.cc:1456-1457).
+  const SkM44 matrix =
+      SkM44(ctm) * SkM44(SkMatrix::RectToRect(src_rect, dst_rect));
+  // Snapshot instead of SkSurface::draw -- on a never-snapshotted surface
+  // SkSurface::draw copies the whole pixel buffer on every call (#1321).
+  // The snapshot shares the pixels; a later write into the source
+  // copies-on-write, which keeps call-time capture semantics.
+  sk_sp<SkImage> image = is_canvas ? src_surface->makeImageSnapshot()
+                                   : SkImages::RasterFromBitmap(*BITMAP_CAST);
+  if (!image) {
+    return;
+  }
+  const SkSamplingOptions sampling =
+      is_canvas ? CcSampling(fq, matrix.asM33()) : SamplingOptionsFromFQ(fq);
+  if (is_canvas && vector_device) {
+    // SkPDFDevice draws a source rect smaller than the image as a subset image
+    // of its own, so a sprite sheet would embed one copy per sprite. Draw the
+    // whole snapshot under a clip instead: every draw shares one image.
+    // Trade-off: a PDF viewer filters the crop edge with the pixels past it,
+    // so that edge can differ from an Image source, which gets a subset image.
+    // Canvas sources have always been drawn this way on PDF. The SVG device
+    // draws both sources as clip + whole image anyway.
+    CANVAS_CAST->save();
+    CANVAS_CAST->clipRect(dst_rect);
+    CANVAS_CAST->concat(SkMatrix::RectToRect(src_rect, dst_rect));
+    CANVAS_CAST->drawImage(image.get(), 0, 0, sampling, &paint);
+    CANVAS_CAST->restore();
+    return;
+  }
+  CANVAS_CAST->drawImageRect(image.get(), src_rect, dst_rect, sampling, &paint,
+                             SkCanvas::kFast_SrcRectConstraint);
 }
 
 void skiac_canvas_draw_path(skiac_canvas* c_canvas,
@@ -1646,8 +1781,8 @@ void skiac_canvas_draw_picture_rect(skiac_canvas* c_canvas,
   const SkPaint* paint = PAINT_CAST;
 
   canvas->save();
-  // The source crop -- `drawPicture` replays the whole picture. Like the clip
-  // in `skiac_canvas_draw_image`, `paint` must carry no image filter.
+  // The source crop -- `drawPicture` replays the whole picture. The clip
+  // would truncate a halo, so `paint` must carry no image filter.
   canvas->clipRect(dst_rect, SkClipOp::kIntersect, true /* antialias */);
 
   // Optimization: skip paint if it's default (SrcOver blend, full alpha, no

@@ -1,4 +1,6 @@
 import { execSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -8,11 +10,23 @@ export const REPO = 'canvas'
 const [FULL_HASH] =
   process.env.NODE_ENV === 'ava' ? ['000000'] : execSync(`git submodule status skia`).toString('utf8').trim().split(' ')
 
-const SHORT_HASH = FULL_HASH.substring(0, 8)
-
 export const dirname = join(fileURLToPath(import.meta.url), '..')
 
-export const TAG = `skia-${SHORT_HASH}`
+/**
+ * The prebuilt Skia libraries depend on the Skia commit and on the GN args
+ * they were built with, so the release tag carries both: a change to
+ * scripts/skia-gn-args.cjs needs new binaries instead of reusing the old ones.
+ * CRLF is folded to LF first, as Windows runners check the repo out with CRLF.
+ * @param {string} submoduleHash `git submodule status skia` hash
+ * @param {string} gnArgsSource content of scripts/skia-gn-args.cjs
+ * @returns {string} `skia-<8 hex of the Skia commit>-<8 hex of the GN args>`
+ */
+export function skiaReleaseTag(submoduleHash, gnArgsSource) {
+  const gnArgsHash = createHash('sha256').update(gnArgsSource.replace(/\r\n/g, '\n')).digest('hex').substring(0, 8)
+  return `skia-${submoduleHash.substring(0, 8)}-${gnArgsHash}`
+}
+
+export const TAG = skiaReleaseTag(FULL_HASH, readFileSync(join(dirname, 'skia-gn-args.cjs'), 'utf8'))
 
 /**
  * @param {string} lib Static lib name
