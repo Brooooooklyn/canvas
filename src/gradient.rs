@@ -154,9 +154,30 @@ impl Gradient {
     }
   }
 
+  /// Blink's `DegenerateHandling::kDisallow` (canvas_gradient.cc:100-135): a
+  /// linear gradient whose points are equal, or a radial gradient whose
+  /// circles are equal, gets `PaintShader::MakeEmpty()` and paints nothing
+  /// (gradient.cc:399-402, 457-463). Exact float compare of the factory's
+  /// ClampTo<float> values; the radii as Blink compares them, after
+  /// ClampFloatGeometry and max(0). A conic gradient is never degenerate
+  /// here: its angles are always 0 and 360 degrees.
+  fn is_degenerate(&self) -> bool {
+    match self {
+      Self::Linear(g) => g.start_point == g.end_point,
+      Self::Radial(g) => {
+        g.start == g.end && skia_radius(g.start_radius) == skia_radius(g.end_radius)
+      }
+      Self::Conic(_) => false,
+    }
+  }
+
   /// The one color the gradient paints everywhere, if there is one: transparent
-  /// black with no stops, or the color that all its stops share.
+  /// black with no stops or a degenerate geometry, or the color that all its
+  /// stops share.
   pub(crate) fn constant_color(&self) -> Option<Color4f> {
+    if self.is_degenerate() {
+      return Some(Color4f::TRANSPARENT);
+    }
     match self.base().colors.split_first() {
       None => Some(Color4f::TRANSPARENT),
       Some((first, rest)) => rest.iter().all(|c| c == first).then_some(*first),
@@ -168,12 +189,28 @@ impl Gradient {
   /// PaintShader::GetSkShader then gives no shader either, and Chrome paints
   /// the paint's color: black at globalAlpha (canvas_style.cc:130-137).
   pub(crate) fn get_shader(&self) -> Option<Shader> {
+    // A degenerate gradient gets no stops: the transparent shader of a
+    // gradient with no stops, which paints exactly like Blink's empty shader
+    // (measured in Chrome 155 under every composite op, shadow and filter).
+    let no_stops = SkGradient {
+      colors: Vec::new(),
+      positions: Vec::new(),
+      tile_mode: TileMode::Clamp,
+      transform: Transform::default(),
+    };
+    let stops = |base: &SkGradient| {
+      Self::skia_stops(if self.is_degenerate() {
+        &no_stops
+      } else {
+        base
+      })
+    };
     match self {
       Self::Linear(g) => Shader::new_linear_gradient(&LinearGradient {
         // Blink ClampNonFiniteToSafeFloat (gradient.cc:404-405).
         start_point: clamp_point(g.start_point),
         end_point: clamp_point(g.end_point),
-        base: Self::skia_stops(&g.base),
+        base: stops(&g.base),
       }),
       // Skia's two-point conical gradient is the canvas radial gradient.
       // Blink clamps the centers like the linear points, and the radii to
@@ -183,14 +220,14 @@ impl Gradient {
         start_radius: skia_radius(g.start_radius),
         end: clamp_point(g.end),
         end_radius: skia_radius(g.end_radius),
-        base: Self::skia_stops(&g.base),
+        base: stops(&g.base),
       }),
       // The canvas CTM already applies to the shader, so the angle does not
       // depend on it. Blink does not clamp the conic center.
       Self::Conic(g) => Shader::new_conic_gradient(&ConicGradient {
         center: g.center,
         rotation: g.rotation,
-        base: Self::skia_stops(&g.base),
+        base: stops(&g.base),
       }),
     }
   }
@@ -714,5 +751,45 @@ fn test_blink_rounds_hsl_alpha() {
     "hsl(0 0% 50%, 0.3)",
   ] {
     assert!(!blink_rounds_hsl_alpha(float), "{float:?}");
+  }
+}
+
+/// Blink kDisallow: equal linear points, or equal radial circles after the
+/// radius clamp, paint nothing; anything else still paints.
+#[test]
+fn test_degenerate_geometry_paints_nothing() {
+  let red = Color4f::from_rgba8(255, 0, 0, 255);
+  let blue = Color4f::from_rgba8(0, 0, 255, 255);
+  let two_stops = |mut g: Gradient| {
+    g.add_color_stop(0.0, red);
+    g.add_color_stop(1.0, blue);
+    g
+  };
+  // The factories pass ClampTo<float> of the JS doubles.
+  for g in [
+    Gradient::create_linear_gradient(2.0, 2.0, 2.0, 2.0),
+    Gradient::create_linear_gradient(0.0, 0.0, -0.0, 0.0),
+    Gradient::create_linear_gradient(2.0, 2.0, (2.0f64 + 1e-7) as f32, 2.0),
+    Gradient::create_linear_gradient(f32::MAX, 0.0, f32::MAX, 0.0),
+    Gradient::create_radial_gradient(2.0, 2.0, 1.0, 2.0, 2.0, 1.0),
+    Gradient::create_radial_gradient(2.0, 2.0, 0.0, 2.0, 2.0, 0.0),
+    // Both radii clamp to FLT_MAX / 1e6.
+    Gradient::create_radial_gradient(2.0, 2.0, 1e33, 2.0, 2.0, 2e33),
+  ] {
+    let g = two_stops(g);
+    assert_eq!(g.constant_color(), Some(Color4f::TRANSPARENT));
+    assert!(g.get_shader().is_some());
+  }
+  for g in [
+    Gradient::create_linear_gradient(2.0, 2.0, 2.00001, 2.0),
+    // Distinct as floats, equal only after ClampFloatGeometry.
+    Gradient::create_linear_gradient(1e34, 0.0, 2e34, 0.0),
+    Gradient::create_radial_gradient(2.0, 2.0, 1.0, 2.0, 2.0, (1.0f64 + 1e-7) as f32),
+    Gradient::create_radial_gradient(2.0, 2.0, 1.0, 2.00001, 2.0, 1.0),
+    Gradient::create_conic_gradient(2.0, 2.0, 0.0),
+  ] {
+    let g = two_stops(g);
+    assert_eq!(g.constant_color(), None);
+    assert!(g.get_shader().is_some());
   }
 }
