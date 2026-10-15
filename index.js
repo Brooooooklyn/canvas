@@ -20,6 +20,7 @@ const {
   GifEncoder,
   GifDisposal,
   LottieAnimation,
+  TextMetrics,
   _argumentCounts,
 } = require('./js-binding')
 
@@ -32,6 +33,29 @@ if (GifEncoder && typeof Symbol.dispose !== 'undefined') {
   GifEncoder.prototype[Symbol.dispose] = function () {
     this.dispose()
   }
+}
+
+// napi-rs defines a class's accessors in name order. Chrome's TextMetrics
+// prototype has them in IDL order (text_metrics.idl), which for...in shows,
+// then the constructor: define them again in that order.
+for (const name of [
+  'width',
+  'actualBoundingBoxLeft',
+  'actualBoundingBoxRight',
+  'fontBoundingBoxAscent',
+  'fontBoundingBoxDescent',
+  'actualBoundingBoxAscent',
+  'actualBoundingBoxDescent',
+  'hangingBaseline',
+  'alphabeticBaseline',
+  'ideographicBaseline',
+  'emHeightAscent',
+  'emHeightDescent',
+  'constructor',
+]) {
+  const descriptor = Object.getOwnPropertyDescriptor(TextMetrics.prototype, name)
+  delete TextMetrics.prototype[name]
+  Object.defineProperty(TextMetrics.prototype, name, descriptor)
 }
 
 const SvgExportFlag = {

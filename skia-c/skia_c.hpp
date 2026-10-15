@@ -694,6 +694,13 @@ struct skiac_line_metrics {
   // reset); measureText does not, and gets 0 for both.
   float ink_left;
   float ink_right;
+  // Blink's TextMetrics baselines, relative to the textBaseline:
+  // hanging = 0.8 * ascent - baseline_y, ideographic = -descent - baseline_y.
+  float hanging_baseline;
+  float ideographic_baseline;
+  // Blink's em box (ExtendedTextMetrics), relative to the textBaseline.
+  float em_height_ascent;
+  float em_height_descent;
 };
 
 struct skiac_rect {
