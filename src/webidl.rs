@@ -1437,10 +1437,19 @@ impl FromNapiValue for Positional {
   }
 }
 
-/// What the argument-count markers point to: the marker for `n` arguments
-/// is an external value with the address of `ARGUMENT_COUNTS[n]`. Script
-/// cannot make an external, and only `argument_counts` makes one with these
-/// addresses, so no other value is read as a count.
+/// What the argument-count markers wrap: the marker for `n` arguments is a
+/// plain object that wraps `&ARGUMENT_COUNTS[n]`. Only `argument_counts`
+/// wraps an object with these addresses, so no other value is read as a
+/// count.
+///
+/// The markers are not napi externals. napi_get_value_external (Node 24,
+/// js_native_api_v8.cc) reads any v8::External as one that napi made, so an
+/// External that another kind of addon passes there would make us read
+/// memory we do not own. And V8 crashes (SIGBUS) when script makes an
+/// External the prototype of an object (`Object.create(marker)`).
+/// napi_unwrap reads only the private key that napi_wrap sets, which script
+/// and other addons cannot set, and the address it returns is only compared,
+/// never read.
 static ARGUMENT_COUNTS: [u8; 10] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
 
 /// The argument-count markers for 0 to 9 arguments, for index.js only: its
@@ -1450,35 +1459,41 @@ static ARGUMENT_COUNTS: [u8; 10] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
 /// last of those arguments is an explicit undefined, and undefined otherwise:
 /// [`Arguments::take`] then finds the same count by itself.
 #[napi(js_name = "_argumentCounts")]
-pub fn argument_counts(env: &Env) -> Result<Vec<Unknown<'_>>> {
+pub fn argument_counts(env: &Env) -> Result<Vec<Object<'_>>> {
   ARGUMENT_COUNTS
     .iter()
     .map(|count| {
-      let mut marker = ptr::null_mut();
+      let marker = Object::new(env)?;
       check_status!(unsafe {
-        sys::napi_create_external(
+        sys::napi_wrap(
           env.raw(),
+          marker.raw(),
           ptr::from_ref(count).cast_mut().cast(),
           None,
           ptr::null_mut(),
-          &mut marker,
+          ptr::null_mut(),
         )
       })?;
-      unsafe { Unknown::from_napi_value(env.raw(), marker) }
+      Ok(marker)
     })
     .collect()
 }
 
 /// The count of an `argument_counts` marker; None for any other value.
 fn argument_count(env: sys::napi_env, value: sys::napi_value) -> Result<Option<u32>> {
-  // Most calls from index.js pass undefined. Reading an external is cheaper
-  // than napi_unwrap of an object.
-  if raw_type_of(env, value)? != sys::ValueType::napi_external {
+  // Most calls from index.js pass undefined, which this check finds faster
+  // than napi_unwrap.
+  if raw_type_of(env, value)? != sys::ValueType::napi_object {
     return Ok(None);
   }
   let mut data = ptr::null_mut();
-  check_status!(unsafe { sys::napi_get_value_external(env, value, &mut data) })?;
-  // An external of another addon has another address.
+  // Fails, without throwing, on an object that nothing wrapped. Private
+  // keys are own properties, and a Proxy has its own: an object made from a
+  // marker is not one. An object that another class or addon wrapped has
+  // another address.
+  if unsafe { sys::napi_unwrap(env, value, &mut data) } != sys::Status::napi_ok {
+    return Ok(None);
+  }
   Ok(
     ARGUMENT_COUNTS
       .iter()
