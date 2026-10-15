@@ -103,23 +103,34 @@ pub struct CanvasElement<'scope> {
 
 /// The width a canvas takes for a `width` attribute value (already ToUint32):
 /// HTML's reflection of a non-negative `unsigned long` gives the default 300
-/// for a value above 2147483647. 0 keeps the 350 fallback: a canvas without
-/// pixels is not supported.
+/// for a value above 2147483647. 0 stays 0: a canvas without pixels.
 fn canvas_width(width: u32) -> u32 {
-  match width {
-    0 => 350,
-    width if width > i32::MAX as u32 => 300,
-    width => width,
-  }
+  if width > i32::MAX as u32 { 300 } else { width }
 }
 
 /// As `canvas_width`, for `height`: the default is 150.
 fn canvas_height(height: u32) -> u32 {
-  if height == 0 || height > i32::MAX as u32 {
+  if height > i32::MAX as u32 {
     150
   } else {
     height
   }
+}
+
+/// A width or height given to a canvas constructor (no Chrome counterpart):
+/// missing (undefined) is the default, as for a `<canvas>` without the
+/// attribute; any other value is converted as the setter converts it, with
+/// the setter's error prefix.
+fn constructor_size<S: webidl::Site>(
+  env: &Env,
+  value: Unknown,
+  size: fn(u32) -> u32,
+) -> Result<u32> {
+  if value.get_type()? == ValueType::Undefined {
+    // `size` gives the default for any value above 2147483647.
+    return Ok(size(u32::MAX));
+  }
+  webidl::to_unsigned_long(env.raw(), value.raw(), S::PREFIX).map(size)
 }
 
 /// What the Node-only encoders throw, or reject with, as an IndexSizeError, on
@@ -193,10 +204,14 @@ impl<'c> CanvasElement<'c> {
   }
 
   #[napi(constructor)]
-  pub fn new<'env>(env: &'env Env, mut this: This<'c>, width: i32, height: i32) -> Result<Self> {
-    // Default fallback of canvas on browser and skia-canvas is 350x150
-    let width = (if width <= 0 { 350 } else { width }) as u32;
-    let height = (if height <= 0 { 150 } else { height }) as u32;
+  pub fn new<'env>(
+    env: &'env Env,
+    mut this: This<'c>,
+    width: Unknown,
+    height: Unknown,
+  ) -> Result<Self> {
+    let width = constructor_size::<webidl::CanvasSetWidth>(env, width, canvas_width)?;
+    let height = constructor_size::<webidl::CanvasSetHeight>(env, height, canvas_height)?;
     let ctx = Self::create_context(env, width, height)?;
     let ctx = ctx.assign_to_this_with_attributes("ctx", PropertyAttributes::Default, &mut this)?;
     let mut ctx_obj = ctx.as_object(env);
@@ -887,13 +902,12 @@ impl<'scope> SVGCanvas<'scope> {
   pub fn new(
     env: &Env,
     mut this: This<'scope>,
-    width: i32,
-    height: i32,
+    width: Unknown,
+    height: Unknown,
     flag: SvgExportFlag,
   ) -> Result<SVGCanvas<'scope>> {
-    // Default fallback of canvas on browser and skia-canvas is 350x150
-    let width = (if width <= 0 { 350 } else { width }) as u32;
-    let height = (if height <= 0 { 150 } else { height }) as u32;
+    let width = constructor_size::<webidl::SvgCanvasSetWidth>(env, width, canvas_width)?;
+    let height = constructor_size::<webidl::SvgCanvasSetHeight>(env, height, canvas_height)?;
     let context = Context::new_svg(width, height, flag.into(), ColorSpace::default())?;
     let bytes = context.surface_bytes();
     let ctx = CanvasRenderingContext2D::into_instance(

@@ -27,12 +27,14 @@ test('[SVG] ctx.canvas should be equal to canvas', (t) => {
   t.is(ctx.canvas, canvas)
 })
 
-test('Canvas size should equal 350x150 when provided non-positive values', (t) => {
+test('Canvas size follows the width/height setter rule', (t) => {
+  // 0 stays 0 (a canvas without pixels); a negative value is above
+  // 2147483647 once converted, so it is the default 300 x 150.
   let canvas = createCanvas(0, 0)
-  t.is(canvas.width, 350)
-  t.is(canvas.height, 150)
+  t.is(canvas.width, 0)
+  t.is(canvas.height, 0)
   canvas = createCanvas(-1, 10)
-  t.is(canvas.width, 350)
+  t.is(canvas.width, 300)
   t.is(canvas.height, 10)
   canvas = createCanvas(10, -10)
   t.is(canvas.height, 150)

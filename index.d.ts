@@ -873,7 +873,8 @@ export interface ConvertToBlobOptions {
 }
 
 export class Canvas {
-  constructor(width: number, height: number, flag?: SvgExportFlag)
+  /** A missing width or height is the default, 300 x 150. */
+  constructor(width?: number, height?: number, flag?: SvgExportFlag)
 
   width: number
   height: number
@@ -918,7 +919,8 @@ export class Canvas {
   convertToBlob(options?: ConvertToBlobOptions): Promise<Blob>
 }
 
-export function createCanvas(width: number, height: number): Canvas
+/** A missing width or height is the default, 300 x 150. */
+export function createCanvas(width?: number, height?: number): Canvas
 
 export function createCanvas(width: number, height: number, svgExportFlag: SvgExportFlag): SvgCanvas
 

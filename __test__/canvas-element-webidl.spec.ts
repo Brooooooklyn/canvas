@@ -110,9 +110,8 @@ test('getContext still converts the options for an unsupported id', (t) => {
   })
 })
 
-// [value, width, height]. Chrome gives 0 x 0 for 0, null, NaN, 'abc' and
-// the infinities; a canvas without pixels is not supported here, so those
-// keep the 350 x 150 fallback and are not pinned.
+// [value, width, height]. The values that give 0 (0, null, NaN, 'abc', the
+// infinities...) are pinned in canvas-size.spec.ts.
 const CANVAS_SIZES: [unknown, number, number][] = [
   ['7', 7, 7],
   [1.9, 1, 1],
