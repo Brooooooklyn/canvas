@@ -5,9 +5,12 @@
 // Every expected value was measured in Chrome 155 CPU canvas (--disable-gpu,
 // willReadFrequently) on an OffscreenCanvas in a standards-mode page, and is
 // equal on arm64 and x64, except where a test says otherwise.
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
 import test from 'ava'
 
-import { createCanvas } from '../index'
+import { createCanvas, GlobalFonts } from '../index'
 
 type Ctx = ReturnType<ReturnType<typeof createCanvas>['getContext']>
 
@@ -557,5 +560,44 @@ test('ch in ctx.filter is the advance of "0" in ctx.font', (t) => {
       at(`${10 * width}px`, () => {}),
       font,
     )
+  }
+})
+
+// Chrome 155 (FontFace-loaded Lato, OffscreenCanvas, arm64 and x64 equal):
+// cap and ch are the cap height and the "0" advance of the primary font, the
+// first family of ctx.font that has a face, at the font size. The value is
+// the ink center of the shadow of a 1px column at x 0. ex is not pinned: on
+// macOS ours reads the top of the "x" glyph from the rounded glyph box
+// (10px), Chrome the exact one (10.13px).
+test('cap and ch in ctx.filter come from the primary font of ctx.font', (t) => {
+  GlobalFonts.registerFromPath(
+    join(fileURLToPath(import.meta.url), '..', 'fonts', 'Lato-Regular.ttf'),
+    'LatoFilterUnits',
+  )
+  const shadowCenter = (font: string, length: string) => {
+    const ctx = createCanvas(400, 4).getContext('2d')
+    ctx.font = font
+    ctx.filter = `drop-shadow(${length} 0 0 red)`
+    ctx.fillStyle = 'blue'
+    ctx.fillRect(0, 0, 1, 4)
+    const data = ctx.getImageData(0, 1, 400, 1).data
+    let sum = 0
+    let weight = 0
+    for (let x = 2; x < 400; x++) {
+      if (data[x * 4] > 0) {
+        sum += (x + 0.5) * data[x * 4 + 3]
+        weight += data[x * 4 + 3]
+      }
+    }
+    return weight ? Math.round((sum / weight) * 1000) / 1000 : null
+  }
+  for (const [font, length, expected] of [
+    ['20px LatoFilterUnits', 'calc(10 * 1cap)', 143.801],
+    ['20px NoSuchFamily, LatoFilterUnits', 'calc(10 * 1cap)', 143.801],
+    ['40px LatoFilterUnits', 'calc(5 * 1cap)', 143.801],
+    ['20px LatoFilterUnits', 'calc(10 * 1ch)', 116.5],
+    ['20px NoSuchFamily, LatoFilterUnits', 'calc(10 * 1ch)', 116.5],
+  ] as const) {
+    t.is(shadowCenter(font, length), expected, `${font} ${length}`)
   }
 })
