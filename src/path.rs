@@ -1,5 +1,6 @@
 use napi::bindgen_prelude::*;
 
+use crate::num;
 use crate::sk::{
   FillType as SkFillType, Matrix as SkMatrix, Path as SkPath, PathOp as SkPathOp, SkiaString,
   StrokeCap as SkStrokeCap, StrokeJoin as SkStrokeJoin,
@@ -147,13 +148,14 @@ impl Path {
 
   #[napi]
   pub fn add_path(&mut self, sub_path: &Path, matrix: Option<Matrix>) {
-    let transform = matrix
-      .map(|m| {
-        SkMatrix::new(
-          m.a as f32, m.c as f32, m.e as f32, m.b as f32, m.d as f32, m.f as f32,
-        )
-      })
-      .unwrap_or_else(SkMatrix::identity);
+    let transform = match matrix {
+      // A non-finite matrix adds nothing (Blink path_2d.h addPath).
+      Some(m) if ![m.a, m.b, m.c, m.d, m.e, m.f].iter().all(|v| v.is_finite()) => return,
+      Some(m) => SkMatrix::new(
+        m.a as f32, m.c as f32, m.e as f32, m.b as f32, m.d as f32, m.f as f32,
+      ),
+      None => SkMatrix::identity(),
+    };
     self.inner.add_path(&sub_path.inner, &transform);
   }
 
@@ -162,33 +164,37 @@ impl Path {
     self.inner.close();
   }
 
+  // Path methods drop a call with a value outside the float range, as the
+  // context does (Blink canvas_path.cc: saturated_cast<float>, then isfinite).
+
   #[napi]
   pub fn move_to(&mut self, x: f64, y: f64) {
-    self.inner.move_to(x as f32, y as f32);
+    if let Some([x, y]) = num::saturated_f32s([x, y]) {
+      self.inner.move_to(x, y);
+    }
   }
 
   #[napi]
   pub fn line_to(&mut self, x: f64, y: f64) {
-    self.inner.line_to(x as f32, y as f32);
+    if let Some([x, y]) = num::saturated_f32s([x, y]) {
+      self.inner.line_to(x, y);
+    }
   }
 
   #[napi]
   pub fn bezier_curve_to(&mut self, cp1x: f64, cp1y: f64, cp2x: f64, cp2y: f64, x: f64, y: f64) {
-    self.inner.cubic_to(
-      cp1x as f32,
-      cp1y as f32,
-      cp2x as f32,
-      cp2y as f32,
-      x as f32,
-      y as f32,
-    );
+    if let Some([cp1x, cp1y, cp2x, cp2y, x, y]) =
+      num::saturated_f32s([cp1x, cp1y, cp2x, cp2y, x, y])
+    {
+      self.inner.cubic_to(cp1x, cp1y, cp2x, cp2y, x, y);
+    }
   }
 
   #[napi]
   pub fn quadratic_curve_to(&mut self, cpx: f64, cpy: f64, x: f64, y: f64) {
-    self
-      .inner
-      .quad_to(cpx as f32, cpy as f32, x as f32, y as f32);
+    if let Some([cpx, cpy, x, y]) = num::saturated_f32s([cpx, cpy, x, y]) {
+      self.inner.quad_to(cpx, cpy, x, y);
+    }
   }
 
   #[napi]
@@ -201,21 +207,25 @@ impl Path {
     end_angle: f64,
     anticlockwise: Option<bool>,
   ) {
-    self.inner.arc(
-      x as f32,
-      y as f32,
-      radius as f32,
-      start_angle as f32,
-      end_angle as f32,
-      anticlockwise.unwrap_or(false),
-    );
+    if let Some([x, y, radius, start_angle, end_angle]) =
+      num::saturated_f32s([x, y, radius, start_angle, end_angle])
+    {
+      self.inner.arc(
+        x,
+        y,
+        radius,
+        start_angle,
+        end_angle,
+        anticlockwise.unwrap_or(false),
+      );
+    }
   }
 
   #[napi]
   pub fn arc_to(&mut self, x1: f64, y1: f64, x2: f64, y2: f64, radius: f64) {
-    self
-      .inner
-      .arc_to_tangent(x1 as f32, y1 as f32, x2 as f32, y2 as f32, radius as f32);
+    if let Some([x1, y1, x2, y2, radius]) = num::saturated_f32s([x1, y1, x2, y2, radius]) {
+      self.inner.arc_to_tangent(x1, y1, x2, y2, radius);
+    }
   }
 
   #[napi]
@@ -230,23 +240,27 @@ impl Path {
     end_angle: f64,
     anticlockwise: Option<bool>,
   ) {
-    self.inner.ellipse(
-      x as f32,
-      y as f32,
-      radius_x as f32,
-      radius_y as f32,
-      rotation as f32,
-      start_angle as f32,
-      end_angle as f32,
-      anticlockwise.unwrap_or(false),
-    );
+    if let Some([x, y, radius_x, radius_y, rotation, start_angle, end_angle]) =
+      num::saturated_f32s([x, y, radius_x, radius_y, rotation, start_angle, end_angle])
+    {
+      self.inner.ellipse(
+        x,
+        y,
+        radius_x,
+        radius_y,
+        rotation,
+        start_angle,
+        end_angle,
+        anticlockwise.unwrap_or(false),
+      );
+    }
   }
 
   #[napi]
   pub fn rect(&mut self, x: f64, y: f64, width: f64, height: f64) {
-    self
-      .inner
-      .add_rect(x as f32, y as f32, width as f32, height as f32);
+    if let Some([x, y, width, height]) = num::saturated_f32s([x, y, width, height]) {
+      self.inner.add_rect(x, y, width, height);
+    }
   }
 
   #[napi]
@@ -258,35 +272,12 @@ impl Path {
     height: f64,
     radii: Either3<f64, Vec<f64>, Undefined>,
   ) {
-    let radii_array: [f32; 4] = match radii {
-      Either3::A(radii) => [radii as f32; 4],
-      Either3::B(radii_vec) => match radii_vec.len() {
-        0 => [0f32; 4],
-        1 => [radii_vec[0] as f32; 4],
-        2 => [
-          radii_vec[0] as f32,
-          radii_vec[1] as f32,
-          radii_vec[0] as f32,
-          radii_vec[1] as f32,
-        ],
-        3 => [
-          radii_vec[0] as f32,
-          radii_vec[1] as f32,
-          radii_vec[1] as f32,
-          radii_vec[2] as f32,
-        ],
-        _ => [
-          radii_vec[0] as f32,
-          radii_vec[1] as f32,
-          radii_vec[2] as f32,
-          radii_vec[3] as f32,
-        ],
-      },
-      Either3::C(_) => [0f32; 4],
-    };
-    self
-      .inner
-      .round_rect(x as f32, y as f32, width as f32, height as f32, radii_array);
+    if let (Some([x, y, width, height]), Some(radii)) = (
+      num::saturated_f32s([x, y, width, height]),
+      round_rect_radii(radii),
+    ) {
+      self.inner.round_rect(x, y, width, height, radii);
+    }
   }
 
   #[napi]
@@ -400,6 +391,33 @@ impl Path {
       fill_type.unwrap_or(FillType::Winding).into(),
     )
   }
+}
+
+/// The four corner radii of roundRect(). Each given radius goes through the
+/// path rule in the order given (Blink canvas_path.cc:597-628): None when one
+/// is outside the float range. Then the 1 to 4 radii expand to the corners.
+pub(crate) fn round_rect_radii(radii: Either3<f64, Vec<f64>, Undefined>) -> Option<[f32; 4]> {
+  let mut r = [0f32; 4];
+  let count = match radii {
+    Either3::A(radius) => {
+      r[0] = num::saturated_f32(radius)?;
+      1
+    }
+    Either3::B(list) => {
+      for (slot, radius) in r.iter_mut().zip(&list) {
+        *slot = num::saturated_f32(*radius)?;
+      }
+      list.len()
+    }
+    Either3::C(_) => 0,
+  };
+  Some(match count {
+    0 => [0.0; 4],
+    1 => [r[0]; 4],
+    2 => [r[0], r[1], r[0], r[1]],
+    3 => [r[0], r[1], r[1], r[2]],
+    _ => r,
+  })
 }
 
 impl ToNapiValue for SkiaString {
