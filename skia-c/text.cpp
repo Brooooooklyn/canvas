@@ -55,6 +55,7 @@ struct TextCaches {
     // the first run's, and a glyph's x is its run's offset from the first
     // plus its x in its run. `frac_bits` is the most binary fraction digits
     // of an offset or x, `span` twice the largest offset plus the largest x.
+    // `draws` counts up to 2.
     int draws = 0;
     sk_sp<SkTextBlob> single;
     SkPoint single_origin = {0, 0};
@@ -64,8 +65,8 @@ struct TextCaches {
 
   // ResolveFontFamilies by the request's family list.
   std::unordered_map<std::string, std::vector<SkString>> families;
-  // MeasurePrimaryFont by typeface, base typeface and size.
-  std::map<std::tuple<SkTypefaceID, SkTypefaceID, float>, PrimaryFontMetrics>
+  // MeasurePrimaryFont by typeface, base typeface and the size's bits.
+  std::map<std::tuple<SkTypefaceID, SkTypefaceID, uint32_t>, PrimaryFontMetrics>
       metrics;
   // The SkUnicode every paragraph shares; skparagraph keeps no state in it.
   sk_sp<SkUnicode> unicode;
@@ -146,9 +147,11 @@ PrimaryFontMetrics CachedPrimaryFont(skiac_font_collection* c_collection,
   if (cache.size() > 1024) {
     cache.clear();
   }
+  uint32_t size_bits;
+  memcpy(&size_bits, &size, sizeof(size_bits));
   const auto key =
       std::make_tuple(typeface ? typeface->uniqueID() : 0,
-                      base_typeface ? base_typeface->uniqueID() : 0, size);
+                      base_typeface ? base_typeface->uniqueID() : 0, size_bits);
   auto found = cache.find(key);
   if (found == cache.end()) {
     found = cache
@@ -824,7 +827,7 @@ void MeasureOrDraw(skiac_font_collection* c_collection,
                                      rtl_offset + letter_spacing_offset
                                : paint_x - rtl_offset + letter_spacing_offset;
     const float final_y = y + baseline_y - line_baseline;
-    if (++line->draws == 2) {
+    if (line->draws < 2 && ++line->draws == 2) {
       MakeSingleBlob(line);
     }
     if (DrawsLikeRuns(*line, canvas, *paint, final_x)) {
