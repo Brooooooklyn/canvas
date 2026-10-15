@@ -1190,10 +1190,27 @@ impl FromNapiValue for PatternTransform {
   }
 }
 
+/// The most `Positional` parameters of a method: drawImage has 9.
+const MAX_POSITIONAL: usize = 9;
+
+/// The values recorded by the `Positional` parameters of a call.
+struct Recorded {
+  values: [sys::napi_value; MAX_POSITIONAL],
+  /// How many were recorded. Past `MAX_POSITIONAL` only the count goes on,
+  /// and [`Arguments::take`] fails.
+  len: usize,
+}
+
 thread_local! {
   /// The values recorded by the `Positional` parameters of the call being
-  /// converted.
-  static POSITIONAL: RefCell<Vec<sys::napi_value>> = const { RefCell::new(Vec::new()) };
+  /// converted. A fixed array: drawImage and isPointInPath record theirs on
+  /// every call, and a Vec would allocate each time.
+  static POSITIONAL: RefCell<Recorded> = const {
+    RefCell::new(Recorded {
+      values: [ptr::null_mut(); MAX_POSITIONAL],
+      len: 0,
+    })
+  };
 }
 
 /// A positional parameter of a method whose last parameter converts all of
@@ -1210,7 +1227,12 @@ pub struct Positional;
 
 impl FromNapiValue for Positional {
   unsafe fn from_napi_value(_env: sys::napi_env, value: sys::napi_value) -> Result<Self> {
-    POSITIONAL.with(|values| values.borrow_mut().push(value));
+    POSITIONAL.with_borrow_mut(|recorded| {
+      if let Some(slot) = recorded.values.get_mut(recorded.len) {
+        *slot = value;
+      }
+      recorded.len += 1;
+    });
     Ok(Self)
   }
 }
@@ -1221,9 +1243,11 @@ impl FromNapiValue for Positional {
 static ARGUMENT_COUNTS: [u8; 10] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
 
 /// The argument-count markers for 0 to 9 arguments, for index.js only: its
-/// wrappers (createImageData, createPattern, drawImage, ...) pass
-/// `markers[Math.min(arguments.length, n)]` after the `n` positional
-/// arguments.
+/// wrappers pass `markers[Math.min(arguments.length, n)]` after the `n`
+/// positional arguments. The wrappers of the hot methods (fill, clip,
+/// stroke, isPointInPath, isPointInStroke, drawImage) pass it only when the
+/// last of those arguments is an explicit undefined, and undefined otherwise:
+/// [`Arguments::take`] then finds the same count by itself.
 #[napi(js_name = "_argumentCounts")]
 pub fn argument_counts(env: &Env) -> Result<Vec<Object<'_>>> {
   ARGUMENT_COUNTS
@@ -1247,6 +1271,8 @@ pub fn argument_counts(env: &Env) -> Result<Vec<Object<'_>>> {
 
 /// The count of an `argument_counts` marker; None for any other value.
 fn argument_count(env: sys::napi_env, value: sys::napi_value) -> Result<Option<u32>> {
+  // Most calls from index.js pass undefined, which this check finds faster
+  // than napi_unwrap.
   if type_of(env, value)? != ValueType::Object {
     return Ok(None);
   }
@@ -1267,7 +1293,9 @@ fn argument_count(env: sys::napi_env, value: sys::napi_value) -> Result<Option<u
 /// The arguments of a call with `Positional` parameters.
 pub(crate) struct Arguments {
   env: sys::napi_env,
-  values: Vec<sys::napi_value>,
+  values: [sys::napi_value; MAX_POSITIONAL],
+  /// How many of `values` the call recorded.
+  count: usize,
   len: u32,
 }
 
@@ -1275,35 +1303,39 @@ impl Arguments {
   /// The `count` values the `Positional` parameters of this call recorded.
   ///
   /// `argc` is the argument after them: index.js passes an
-  /// `argument_counts` marker there. A raw call (the js-binding entrypoint)
+  /// `argument_counts` marker there, or undefined when the count is the last
+  /// argument that is not undefined. A raw call (the js-binding entrypoint)
   /// has none, and any other value there is an extra argument, ignored.
   /// napi pads missing arguments with undefined, so without the marker `f(x)`
   /// and `f(x, undefined)` look the same here, and the count then runs up to
   /// the last argument that is not undefined.
   pub(crate) fn take(env: sys::napi_env, count: usize, argc: sys::napi_value) -> Result<Self> {
     // Taken before any user code runs, which may make a call of its own.
-    let values = POSITIONAL.with(|values| std::mem::take(&mut *values.borrow_mut()));
-    if values.len() != count {
+    let (values, recorded) =
+      POSITIONAL.with_borrow_mut(|recorded| (recorded.values, std::mem::take(&mut recorded.len)));
+    if recorded != count || count > MAX_POSITIONAL {
       return Err(Error::new(
         Status::GenericFailure,
-        format!(
-          "Expected {count} positional arguments, got {}",
-          values.len()
-        ),
+        format!("Expected {count} positional arguments, got {recorded}"),
       ));
     }
-    let mut len = 0;
-    for (index, value) in values.iter().enumerate() {
-      if type_of(env, *value)? != ValueType::Undefined {
-        len = index as u32 + 1;
+    // The count is the marker's (0 without one), raised to the last argument
+    // that is not undefined. Only an argument at or past the marker's count
+    // can raise it (from index.js none does), so only those are looked at,
+    // from the last one.
+    let mut len = argument_count(env, argc)?.unwrap_or(0);
+    for index in (len.min(count as u32)..count as u32).rev() {
+      if type_of(env, values[index as usize])? != ValueType::Undefined {
+        len = index + 1;
+        break;
       }
     }
-    // From index.js, the arguments at or past the count are undefined, so
-    // the count is never below `len`.
-    if let Some(argc) = argument_count(env, argc)? {
-      len = len.max(argc);
-    }
-    Ok(Self { env, values, len })
+    Ok(Self {
+      env,
+      values,
+      count,
+      len,
+    })
   }
 
   pub(crate) fn len(&self) -> u32 {
@@ -1312,7 +1344,7 @@ impl Arguments {
 
   /// Argument `index`; undefined past the recorded ones.
   pub(crate) fn get(&self, index: u32) -> Result<sys::napi_value> {
-    match self.values.get(index as usize) {
+    match self.values[..self.count].get(index as usize) {
       Some(value) => Ok(*value),
       None => {
         let mut value = ptr::null_mut();
