@@ -1269,6 +1269,11 @@ impl Dictionary<'_> {
     let Some(v) = member(self.env, self.value, key)? else {
       return Ok(None);
     };
+    // A number needs no conversion, so no error prefix either.
+    let mut number = 0.0;
+    if unsafe { sys::napi_get_value_double(self.env, v, &mut number) } == sys::Status::napi_ok {
+      return Ok(Some(number));
+    }
     let prefix = format!(
       "{}Failed to read the '{key}' property from '{}': ",
       self.prefix, self.name
