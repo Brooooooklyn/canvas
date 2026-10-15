@@ -221,6 +221,135 @@ test('setTransform reads all members before checking them', (t) => {
   )
 })
 
+const MEMBERS = 'a,b,c,d,e,f,m11,m12,m21,m22,m41,m42,is2D,m13,m14,m23,m24,m31,m32,m33,m34,m43,m44'
+const MISMATCH = 'Property mismatch on matrix initialization.'
+const IS_3D = 'The is2D member is set to true but the input matrix is a 3d matrix.'
+
+test('setTransform reads a DOMMatrix member by member, as any other dictionary', (t) => {
+  const base = () => new DOMMatrix([2, 0, 0, 2, 3, 4])
+  const own = (m: DOMMatrix, key: string, value: unknown) => Object.defineProperty(m, key, { value })
+  // An own property hides the getter: a (99) and m11 (2) disagree.
+  t.deepEqual(setTransform(own(base(), 'a', 99)), typeError(MISMATCH))
+  t.deepEqual(setTransform(own(base(), 'm11', 5)), typeError(MISMATCH))
+  // is2D (true, from the getter) against an own m33, and an own is2D on a 3D matrix.
+  t.deepEqual(setTransform(own(base(), 'm33', 99)), typeError(IS_3D))
+  const matrix3D = new DOMMatrix([2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 2, 0, 3, 4, 0, 1])
+  t.deepEqual(setTransform(matrix3D), ok([2, 0, 0, 2, 3, 4]))
+  t.deepEqual(setTransform(own(matrix3D, 'is2D', true)), typeError(IS_3D))
+  // A patched DOMMatrix.prototype getter (getTransform() would use it too).
+  for (const key of ['a', 'm11']) {
+    const descriptor = Object.getOwnPropertyDescriptor(DOMMatrix.prototype, key)!
+    Object.defineProperty(DOMMatrix.prototype, key, { ...descriptor, get: () => 7 })
+    try {
+      const ctx = createCanvas(4, 4).getContext('2d')
+      t.throws(() => ctx.setTransform(base()), { instanceOf: TypeError, message: PREFIX + MISMATCH }, key)
+    } finally {
+      Object.defineProperty(DOMMatrix.prototype, key, descriptor)
+    }
+  }
+  // Every member is read through its getter, in Chrome's order.
+  const log: string[] = []
+  const saved = MEMBERS.split(',').map((key) => {
+    const descriptor = Object.getOwnPropertyDescriptor(DOMMatrix.prototype, key)!
+    Object.defineProperty(DOMMatrix.prototype, key, {
+      ...descriptor,
+      get() {
+        log.push(key)
+        return descriptor.get!.call(this)
+      },
+    })
+    return [key, descriptor] as const
+  })
+  try {
+    const ctx = createCanvas(4, 4).getContext('2d')
+    ctx.setTransform(base())
+    t.is(log.join(), MEMBERS)
+  } finally {
+    for (const [key, descriptor] of saved) Object.defineProperty(DOMMatrix.prototype, key, descriptor)
+  }
+})
+
+test('setTransform reads a Proxy through its get trap only', (t) => {
+  // A Proxy that claims DOMMatrix.prototype is still a dictionary.
+  const spoof = new Proxy({ a: 2, d: 2, e: 3, f: 4, m11: 5 }, { getPrototypeOf: () => DOMMatrix.prototype })
+  t.deepEqual(setTransform(spoof), typeError(MISMATCH))
+  // Chrome never asks for the prototype.
+  const log: string[] = []
+  const proxy = new Proxy(
+    { a: 2, d: 2 },
+    {
+      getPrototypeOf() {
+        log.push('getPrototypeOf')
+        throw new Error('trap')
+      },
+      get(target, key, receiver) {
+        if (typeof key === 'string') log.push(key)
+        return Reflect.get(target, key, receiver)
+      },
+    },
+  )
+  t.deepEqual(setTransform(proxy), ok([2, 0, 0, 2, 0, 0]))
+  t.is(log.join(), MEMBERS)
+})
+
+test('setTransform checks the receiver before it reads any argument', (t) => {
+  const proto = Object.getPrototypeOf(createCanvas(1, 1).getContext('2d'))
+  const log: string[] = []
+  const dict = {
+    get a() {
+      log.push('a')
+      return 1
+    },
+  }
+  const number = {
+    valueOf() {
+      log.push('valueOf')
+      return 1
+    },
+  }
+  t.throws(() => proto.setTransform.call({}, dict), { instanceOf: TypeError, message: 'Illegal invocation' })
+  t.throws(() => proto.setTransform.call({}, 5), { instanceOf: TypeError, message: 'Illegal invocation' })
+  t.throws(() => proto.setTransform.call({}, number, 0, 0, 1, 0, 0), {
+    instanceOf: TypeError,
+    message: 'Illegal invocation',
+  })
+  t.throws(() => proto.setTransform.call({}, Symbol(), 0, 0, 1, 0, 0), {
+    instanceOf: TypeError,
+    message: 'Illegal invocation',
+  })
+  t.is(log.join(), '')
+})
+
+test('setTransform errors keep the bare text in the stack, as Chrome', (t) => {
+  const ctx = createCanvas(4, 4).getContext('2d')
+  const cases: [unknown[], string, string][] = [
+    [[{ a: 1, m11: 2 }], MISMATCH, MISMATCH],
+    [[{ is2D: true, m33: 2 }], IS_3D, IS_3D],
+    [[5], "The provided value is not of type 'DOMMatrixInit'.", "The provided value is not of type 'DOMMatrixInit'."],
+    [
+      [{ a: Symbol() }],
+      'Cannot convert a Symbol value to a number',
+      "Failed to read the 'a' property from 'DOMMatrix2DInit': Cannot convert a Symbol value to a number",
+    ],
+    [
+      [Symbol(), 0, 0, 1, 0, 0],
+      'Cannot convert a Symbol value to a number',
+      'Cannot convert a Symbol value to a number',
+    ],
+    [
+      [{ valueOf: () => Symbol() }, 0, 0, 1, 0, 0],
+      'Cannot convert a Symbol value to a number',
+      'Cannot convert a Symbol value to a number',
+    ],
+  ]
+  for (const [args, bare, message] of cases) {
+    const error = t.throws(() => (ctx.setTransform as any)(...args), { instanceOf: TypeError })!
+    t.is(String(error.stack).split('\n')[0], `TypeError: ${bare}`)
+    t.is(error.message, PREFIX + message)
+    t.deepEqual(Object.keys(error), ['message'])
+  }
+})
+
 test("setTransform has Chrome's length and name", (t) => {
   const proto = Object.getPrototypeOf(createCanvas(1, 1).getContext('2d'))
   t.is(proto.setTransform.length, 0)

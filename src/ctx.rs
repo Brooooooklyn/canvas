@@ -5652,22 +5652,21 @@ impl CanvasRenderingContext2D {
     self.context.state.transform.get_transform().into()
   }
 
-  /// setTransform(a, b, c, d, e, f) or setTransform(transform?). The index.js
-  /// wrapper passes the argument count after them; see
-  /// `webidl::Arguments::take`. A non-finite value makes it a no-op
-  /// (canvas_2d_recorder_context.cc:1528-1552).
+  /// setTransform(a, b, c, d, e, f). index.js picks the overload and reads
+  /// setTransform(transform?)'s DOMMatrixInit itself, so it always passes six
+  /// numbers; see `webidl::MatrixArg` for a raw call. A non-finite value
+  /// makes it a no-op (canvas_2d_recorder_context.cc:1528-1552).
   #[napi]
   pub fn set_transform(
     &mut self,
-    _a: webidl::Positional,
-    _b: webidl::Positional,
-    _c: webidl::Positional,
-    _d: webidl::Positional,
-    _e: webidl::Positional,
-    _f: webidl::Positional,
-    args: webidl::SetTransformArgs,
+    a: webidl::SetTransformA,
+    b: Double<webidl::CtxSetTransform>,
+    c: Double<webidl::CtxSetTransform>,
+    d: Double<webidl::CtxSetTransform>,
+    e: Double<webidl::CtxSetTransform>,
+    f: Double<webidl::CtxSetTransform>,
   ) {
-    if let Some([a, b, c, d, e, f]) = num::clamped_f32s(args.0) {
+    if let Some([a, b, c, d, e, f]) = num::clamped_f32s(a.0.with([b.0, c.0, d.0, e.0, f.0])) {
       self.context.set_transform(Matrix::new(a, c, e, b, d, f));
     }
   }

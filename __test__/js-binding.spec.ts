@@ -293,3 +293,44 @@ test('through index.js, the same calls use the real argument count, as in Chrome
     name: 'SyntaxError',
   })
 })
+
+test('the raw js-binding setTransform and addPath also take a matrix dictionary', (t) => {
+  // index.js reads the dictionary itself and passes six numbers. A raw call
+  // may pass the dictionary in place of the first number.
+  const out = runRaw(`
+const { Path } = require('./js-binding.js')
+const matrix = () => { const m = ctx.getTransform(); return [m.a, m.b, m.c, m.d, m.e, m.f] }
+run('setTransform(1, 2, 3, 4, 5, 6)', () => (ctx.setTransform(1, 2, 3, 4, 5, 6), matrix()))
+run('setTransform({ a: 2, d: 3, e: 4 })', () => (ctx.setTransform({ a: 2, d: 3, e: 4 }), matrix()))
+run('setTransform(getTransform())', () => {
+  ctx.setTransform(1, 0, 0, 2, 3, 4)
+  const m = ctx.getTransform()
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
+  ctx.setTransform(m)
+  return matrix()
+})
+run('setTransform({ a: 1, m11: 2 })', () => ctx.setTransform({ a: 1, m11: 2 }))
+const square = new Path()
+square.rect(0, 0, 1, 1)
+const bounds = (...args) => { const p = new Path(); p.addPath(square, ...args); return p.computeTightBounds() }
+run('addPath(path)', () => bounds())
+run('addPath(path, { e: 5, f: 6 })', () => bounds({ e: 5, f: 6 }))
+run('addPath(path, { a: 1, m11: 2 })', () => bounds({ a: 1, m11: 2 }))
+`)
+  t.deepEqual(out, {
+    'setTransform(1, 2, 3, 4, 5, 6)': [1, 2, 3, 4, 5, 6],
+    'setTransform({ a: 2, d: 3, e: 4 })': [2, 0, 0, 3, 4, 0],
+    'setTransform(getTransform())': [1, 0, 0, 2, 3, 4],
+    'setTransform({ a: 1, m11: 2 })': {
+      error: 'TypeError',
+      message:
+        "Failed to execute 'setTransform' on 'CanvasRenderingContext2D': Property mismatch on matrix initialization.",
+    },
+    'addPath(path)': [0, 0, 1, 1],
+    'addPath(path, { e: 5, f: 6 })': [5, 6, 6, 7],
+    'addPath(path, { a: 1, m11: 2 })': {
+      error: 'TypeError',
+      message: "Failed to execute 'addPath' on 'Path2D': Property mismatch on matrix initialization.",
+    },
+  })
+})

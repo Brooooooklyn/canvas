@@ -131,11 +131,21 @@ impl Path {
     }
   }
 
-  /// addPath(path, transform = {}) (Blink path_2d.h:80-91). The index.js
-  /// wrapper checks the argument count.
+  /// addPath(path, transform = {}) (Blink path_2d.h:80-91). index.js checks
+  /// the argument count and the path, reads the DOMMatrix2DInit itself and
+  /// passes it as six numbers; see `webidl::MatrixArg` for a raw call.
   #[napi]
-  pub fn add_path(&mut self, path: AddPathSource, transform: AddPathTransform) {
-    let [a, b, c, d, e, f] = transform.0;
+  pub fn add_path(
+    &mut self,
+    path: AddPathSource,
+    a: webidl::AddPathA,
+    b: Double<webidl::PathAddPath>,
+    c: Double<webidl::PathAddPath>,
+    d: Double<webidl::PathAddPath>,
+    e: Double<webidl::PathAddPath>,
+    f: Double<webidl::PathAddPath>,
+  ) {
+    let [a, b, c, d, e, f] = a.0.with([b.0, c.0, d.0, e.0, f.0]);
     // A non-finite matrix adds nothing.
     if ![a, b, c, d, e, f].iter().all(|v| v.is_finite()) {
       return;
@@ -481,17 +491,6 @@ impl FromNapiValue for AddPathSource {
     let mut data = std::ptr::null_mut();
     check_status!(unsafe { sys::napi_unwrap(env, value, &mut data) })?;
     Ok(Self(data.cast()))
-  }
-}
-
-/// The `transform` argument of addPath(): `optional DOMMatrix2DInit
-/// transform = {}`, as [m11, m12, m21, m22, m41, m42].
-pub struct AddPathTransform([f64; 6]);
-
-impl FromNapiValue for AddPathTransform {
-  unsafe fn from_napi_value(env: sys::napi_env, value: sys::napi_value) -> Result<Self> {
-    let prefix = <webidl::PathAddPath as webidl::Site>::PREFIX;
-    webidl::dom_matrix_2d_init(env, Some(value), prefix).map(Self)
   }
 }
 

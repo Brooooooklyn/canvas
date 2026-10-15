@@ -1775,24 +1775,63 @@ impl FromNapiValue for GetImageDataSettings {
   }
 }
 
-/// The arguments of CanvasRenderingContext2D.setTransform(), as [a, b, c, d,
-/// e, f]: six numbers when there are six or more arguments, else `optional
-/// DOMMatrixInit transform = {}` (canvas_2d_recorder_context.idl:28-29).
-/// Comes after six `Positional` parameters and the argument-count marker.
-pub struct SetTransformArgs(pub(crate) [f64; 6]);
+/// The first matrix argument of a method that index.js calls with the six
+/// numbers of a matrix (setTransform, addPath), after it read the matrix
+/// dictionary itself. A raw js-binding call may pass the dictionary there
+/// instead: undefined, null or an object is read as one, and the numbers
+/// after it are ignored.
+pub(crate) enum MatrixArg {
+  Number(f64),
+  Matrix([f64; 6]),
+}
 
-impl FromNapiValue for SetTransformArgs {
-  unsafe fn from_napi_value(env: sys::napi_env, argc: sys::napi_value) -> Result<Self> {
-    let args = Arguments::take(env, 6, argc)?;
-    let prefix = CtxSetTransform::PREFIX;
-    if args.len() >= 6 {
-      let mut matrix = [0.0; 6];
-      for (index, value) in (0..).zip(matrix.iter_mut()) {
-        *value = to_number(env, args.get(index)?, prefix)?;
-      }
-      return Ok(Self(matrix));
+impl MatrixArg {
+  fn from_js(
+    env: sys::napi_env,
+    value: sys::napi_value,
+    prefix: &str,
+    dictionary: fn(sys::napi_env, Option<sys::napi_value>, &str) -> Result<[f64; 6]>,
+  ) -> Result<Self> {
+    let mut number = 0.0;
+    if unsafe { sys::napi_get_value_double(env, value, &mut number) } == sys::Status::napi_ok {
+      return Ok(Self::Number(number));
     }
-    dom_matrix_init_2d_part(env, Some(args.get(0)?), prefix).map(Self)
+    match raw_type_of(env, value)? {
+      sys::ValueType::napi_undefined
+      | sys::ValueType::napi_null
+      | sys::ValueType::napi_object
+      | sys::ValueType::napi_function => dictionary(env, Some(value), prefix).map(Self::Matrix),
+      _ => to_number(env, value, prefix).map(Self::Number),
+    }
+  }
+
+  /// [a, b, c, d, e, f], given the five numbers after this one.
+  pub(crate) fn with(self, [b, c, d, e, f]: [f64; 5]) -> [f64; 6] {
+    match self {
+      Self::Number(a) => [a, b, c, d, e, f],
+      Self::Matrix(matrix) => matrix,
+    }
+  }
+}
+
+/// The first argument of CanvasRenderingContext2D.setTransform(a, b, c, d,
+/// e, f); see [`MatrixArg`]. A raw call's dictionary is a DOMMatrixInit.
+pub struct SetTransformA(pub(crate) MatrixArg);
+
+impl FromNapiValue for SetTransformA {
+  unsafe fn from_napi_value(env: sys::napi_env, value: sys::napi_value) -> Result<Self> {
+    MatrixArg::from_js(env, value, CtxSetTransform::PREFIX, dom_matrix_init_2d_part).map(Self)
+  }
+}
+
+/// The first matrix argument of Path2D.addPath(path, a, b, c, d, e, f); see
+/// [`MatrixArg`]. A raw call's dictionary is a DOMMatrix2DInit, and a
+/// missing one the identity.
+pub struct AddPathA(pub(crate) MatrixArg);
+
+impl FromNapiValue for AddPathA {
+  unsafe fn from_napi_value(env: sys::napi_env, value: sys::napi_value) -> Result<Self> {
+    MatrixArg::from_js(env, value, PathAddPath::PREFIX, dom_matrix_2d_init).map(Self)
   }
 }
 
