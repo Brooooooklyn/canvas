@@ -8,7 +8,7 @@ use std::{cell::RefCell, marker::PhantomData, ptr};
 
 use napi::{bindgen_prelude::*, sys};
 
-use crate::sk::ColorSpace;
+use crate::sk::{ColorSpace, FillType};
 
 #[derive(Clone, Copy)]
 enum ErrorKind {
@@ -241,6 +241,11 @@ sites! {
   CtxStrokeText: execute "strokeText" on "CanvasRenderingContext2D";
   CtxTranslate: execute "translate" on "CanvasRenderingContext2D";
   CtxTransform: execute "transform" on "CanvasRenderingContext2D";
+  CtxFill: execute "fill" on "CanvasRenderingContext2D";
+  CtxClip: execute "clip" on "CanvasRenderingContext2D";
+  CtxStroke: execute "stroke" on "CanvasRenderingContext2D";
+  CtxIsPointInPath: execute "isPointInPath" on "CanvasRenderingContext2D";
+  CtxIsPointInStroke: execute "isPointInStroke" on "CanvasRenderingContext2D";
 }
 
 /// `napi_bigint`; napi6 (and so `ValueType::BigInt`) is off in this build.
@@ -524,6 +529,28 @@ pub(crate) fn to_dom_string(
     }
     // undefined, null, boolean, number, bigint: cannot throw.
     _ => to_js_string(env, value),
+  }
+}
+
+/// An `optional CanvasFillRule fillRule = "nonzero"` argument: undefined is
+/// the default; anything else is converted with ToString and must be one of
+/// the enum values, case-sensitive.
+pub(crate) fn fill_rule(
+  env: sys::napi_env,
+  value: sys::napi_value,
+  prefix: &str,
+) -> Result<FillType> {
+  if raw_type_of(env, value)? == sys::ValueType::napi_undefined {
+    return Ok(FillType::Winding);
+  }
+  match to_dom_string(env, value, prefix)?.as_str() {
+    "nonzero" => Ok(FillType::Winding),
+    "evenodd" => Ok(FillType::EvenOdd),
+    other => Err(context_type_error(
+      env,
+      prefix,
+      &format!("The provided value '{other}' is not a valid enum value of type CanvasFillRule."),
+    )),
   }
 }
 
