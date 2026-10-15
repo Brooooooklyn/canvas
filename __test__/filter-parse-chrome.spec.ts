@@ -504,9 +504,13 @@ test('drop-shadow without a color or with currentcolor is black', (t) => {
   t.deepEqual(scene('drop-shadow(2px 2px currentcolor)'), edge([0, 0, 0, 255]))
 })
 
-test('viewport and line-height units resolve to 0', (t) => {
+test('viewport, container and line-height units resolve to 0', (t) => {
+  for (const unit of ['vw', 'vmin', 'svh', 'cqw', 'lh', 'rlh']) {
+    const filter = `drop-shadow(calc(1${unit} + 2px) 2px red)`
+    t.deepEqual(scene(filter), edge([255, 0, 0, 255]), filter)
+  }
+  t.deepEqual(scene('drop-shadow(2px 2px calc(1vw) red)'), edge([255, 0, 0, 255]))
   t.deepEqual(scene('blur(1vw)'), PLAIN)
-  t.deepEqual(scene('blur(1vmin)'), PLAIN)
   t.deepEqual(scene('blur(1lh)'), PLAIN)
 })
 
