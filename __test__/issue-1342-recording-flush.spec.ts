@@ -556,11 +556,15 @@ test.serial('unfillable dirty-rect putImageData paints nothing', (t) => {
   ctx.putImageData(imageData, 0, 0, 16777216, 0, 1, 8)
   // Same collapse on the destination side: dx + dirtyX overflows.
   ctx.putImageData(imageData, 16777216, 0, 0, 0, 1, 8)
-  // NaN and +/-inf make src/dst rects non-finite or empty.
-  ctx.putImageData(imageData, 0, 0, NaN, 0, 8, 8)
-  ctx.putImageData(imageData, 0, 0, Infinity, 0, 8, 8)
-  ctx.putImageData(imageData, 0, 0, 0, 0, -Infinity, 8)
-  ctx.putImageData(imageData, 0, 0, 0, 0, 8, NaN)
+  // NaN and +/-inf are not [EnforceRange] long values: a TypeError, as in
+  // Chrome 155.
+  const put = "Failed to execute 'putImageData' on 'CanvasRenderingContext2D': "
+  const notLong = { instanceOf: TypeError, message: `${put}Value is not of type 'long'.` }
+  const infinite = { instanceOf: TypeError, message: `${put}Value is infinite and not of type 'long'.` }
+  t.throws(() => ctx.putImageData(imageData, 0, 0, NaN, 0, 8, 8), notLong)
+  t.throws(() => ctx.putImageData(imageData, 0, 0, Infinity, 0, 8, 8), infinite)
+  t.throws(() => ctx.putImageData(imageData, 0, 0, 0, 0, -Infinity, 8), infinite)
+  t.throws(() => ctx.putImageData(imageData, 0, 0, 0, 0, 8, NaN), notLong)
   // Negative dirty spans normalize per spec but end empty -> nothing paints.
   ctx.putImageData(imageData, 10, 10, 0, 0, -4, 8)
   ctx.putImageData(imageData, 20, 20, 0, 0, 8, -4)

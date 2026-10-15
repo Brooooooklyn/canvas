@@ -191,6 +191,7 @@ for (const [method, required] of [
   ['ellipse', 7],
   ['fillRect', 4],
   ['fillText', 3],
+  ['getImageData', 4],
   ['lineTo', 2],
   ['measureText', 1],
   ['moveTo', 2],
@@ -355,6 +356,30 @@ CanvasRenderingContext2D.prototype.createImageData = function createImageData() 
     ARGUMENT_COUNTS[Math.min(arguments.length, 4)],
   )
 }
+Object.defineProperty(CanvasRenderingContext2D.prototype.createImageData, 'length', { value: 1 })
+
+// putImageData(imagedata, dx, dy) or (imagedata, dx, dy, dirtyX, dirtyY,
+// dirtyWidth, dirtyHeight): as in Chrome, it needs 3 arguments; the native
+// method picks the overload from the argument count (3 or 7).
+const _putImageData = CanvasRenderingContext2D.prototype.putImageData
+
+CanvasRenderingContext2D.prototype.putImageData = function putImageData() {
+  if (arguments.length < 3) {
+    argumentCountError(ctxBrand, this, 'putImageData', 'CanvasRenderingContext2D', 3, arguments.length)
+  }
+  return _putImageData.call(
+    this,
+    arguments[0],
+    arguments[1],
+    arguments[2],
+    arguments[3],
+    arguments[4],
+    arguments[5],
+    arguments[6],
+    ARGUMENT_COUNTS[Math.min(arguments.length, 7)],
+  )
+}
+Object.defineProperty(CanvasRenderingContext2D.prototype.putImageData, 'length', { value: 3 })
 
 // createPattern(image, repetitionType): as in Chrome, both arguments are
 // required, and the image is converted before the repetition, a
