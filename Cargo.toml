@@ -12,7 +12,6 @@ crate-type = ["cdylib"]
 anyhow          = "1"
 base64-simd     = "0.8"
 cssparser       = "0.38"
-cssparser-color = "0.6"
 gif             = "0.14"
 imagesize       = { version = "0.15", default-features = false, features = ["png", "jpeg", "gif", "webp", "heif"] }
 infer           = "0.22"
@@ -23,7 +22,6 @@ napi-derive     = { version = "3.1", default-features = false }
 nom             = "8"
 num_cpus        = "1"
 regex           = "1"
-rgb             = "0.8"
 serde           = "1"
 serde_derive    = "1"
 serde_json      = "1"

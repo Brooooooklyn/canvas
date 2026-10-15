@@ -40,12 +40,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72f5acc6cb2ba439de613abc23857ec3d78374d8ed5ac84e9d11336e87da8649"
 
 [[package]]
-name = "bytemuck"
-version = "1.25.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "95832e849adfb21180ccb6826a99da14e5d266ae5c2e668e1602cf234f153797"
-
-[[package]]
 name = "canvas"
 version = "0.1.0"
 dependencies = [
@@ -53,7 +47,6 @@ dependencies = [
  "base64-simd",
  "cc",
  "cssparser",
- "cssparser-color",
  "gif",
  "imagesize",
  "infer",
@@ -66,7 +59,6 @@ dependencies = [
  "nom",
  "num_cpus",
  "regex",
- "rgb",
  "serde",
  "serde_derive",
  "serde_json",
@@ -135,15 +127,6 @@ dependencies = [
  "itoa",
  "phf",
  "smallvec",
-]
-
-[[package]]
-name = "cssparser-color"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cc0e59e8bcc238f0f9b9f29f4d649e5c192dbf277999d0c23d1a312af3fb7a3e"
-dependencies = [
- "cssparser",
 ]
 
 [[package]]
@@ -595,15 +578,6 @@ name = "regex-syntax"
 version = "0.8.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
-
-[[package]]
-name = "rgb"
-version = "0.8.53"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "47b34b781b31e5d73e9fbc8689c70551fd1ade9a19e3e28cfec8580a79290cc4"
-dependencies = [
- "bytemuck",
-]
 
 [[package]]
 name = "rustc-hash"
