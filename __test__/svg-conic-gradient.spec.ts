@@ -541,16 +541,218 @@ const text = svg.getContent().toString('latin1')
 const growth = (process.resourceUsage().maxRSS - before) / 1024
 const images = [...text.matchAll(/<image [^>]*width="(\\d+)" height="(\\d+)"/g)].map((m) => [Number(m[1]), Number(m[2])])
 const path = text.match(/<path [^>]*/)[0]
-console.log(JSON.stringify({ growth, images, path }))
+const clip = text.match(/<clipPath[^>]*><rect ([^>]*?)\\/>/)[1]
+console.log(JSON.stringify({ growth, images, path, clip }))
 `)
     t.is(status, 0, stderr)
     t.notRegex(stderr, /libpng/)
-    const { growth, images, path } = JSON.parse(stdout.trim().split('\n').pop()!)
+    const { growth, images, path, clip } = JSON.parse(stdout.trim().split('\n').pop()!)
     t.is(images.length, 1)
     const [[width, height]] = images
     t.true(width <= PNG_SIDE && height <= PNG_SIDE && width * height <= BUDGET, `${width}x${height}`)
     t.regex(path, /^<path fill="url\(#pattern_0\)"/)
     t.true(growth < 64, `the fill grew maxRSS by ${growth.toFixed(1)} MB, expected < 64 MB`)
+    // The clip covers the canvas and ends on whole image pixels from the image's origin. SkMatrix maps
+    // it from image pixels as k * x + origin in floats, and past 2^24 a float holds no odd number: the
+    // 20000000 wide clip ended at 21 * 952382 - 21 = 20000001, written as 20000000.
+    const [kx, , , ky, e, f] = patternPathTransform(path)
+    const attr = (name: string) => Number(clip.match(new RegExp(`(?:^| )${name}="([-\\d.e+]+)"`))?.[1] ?? 0)
+    for (const [from, to, origin, k, size] of [
+      [attr('x'), attr('x') + attr('width'), e, kx, w],
+      [attr('y'), attr('y') + attr('height'), f, ky, h],
+    ]) {
+      t.true(from <= 0 && to >= size, `clip ${from} to ${to}`)
+      t.true(Number.isInteger((from - origin) / k) && Number.isInteger((to - origin) / k), `clip ${from} to ${to}`)
+    }
+  })
+}
+
+// SkSVGDevice writes the element transform with 6 significant digits ("%g") and the clip rect with 8
+// ("%.8g"), both as floats. The transform holds the origin of the conic raster image in canvas
+// pixels, so past 1,000,000 the export puts the origin on a number they write exactly. An origin of
+// 1234568 was written as 1.23457e+06, the fill 2 pixels off; one of 19999992 as 2e+07, 8 pixels off,
+// and the clip, written exactly, left 4 of the 10 columns. Chrome 155 cannot show the 20000100 wide
+// case: it draws no SVG shape from about 2^23 on (a plain <rect x="8388607"> draws nothing).
+// Far from 0 the raster canvas, Chrome's too, changes with the canvas translation (the gradient's
+// matrix is in floats): over translations of 0 to 4096 pixels, Chrome's pixels at these points
+// changed by up to 1 at 1234560 and 14 at 20000000. The image is drawn under another translation
+// than the one each point was measured with, so the SVG is within that of Chrome (3 when the image
+// is scaled up).
+// [canvas size, rect, conic center, canvas pixels per image pixel, tolerance, then [x, y, r, g, b, a]
+// measured in Chrome 155 (a raster canvas moved to the point by a multiple of 8)]
+const FAR_CASES = [
+  [
+    [2000010, 10],
+    [1234569.5, 2, 400, 6],
+    [1234650, -20],
+    1,
+    1,
+    [
+      [1234569, 5, 0, 98, 155, 128],
+      [1234570, 5, 0, 99, 156, 255],
+      [1234571, 3, 0, 96, 159, 255],
+      [1234600, 5, 0, 126, 129, 255],
+      [1234630, 7, 0, 203, 52, 255],
+      [1234645, 3, 17, 238, 0, 255],
+      [1234650, 5, 52, 203, 0, 255],
+      [1234655, 7, 81, 174, 0, 255],
+      [1234670, 4, 161, 93, 0, 255],
+      [1234690, 6, 209, 45, 0, 255],
+      [1234800, 5, 255, 21, 234, 255],
+      [1234968, 5, 255, 36, 219, 255],
+      [1234969, 5, 255, 36, 219, 128],
+      [1234970, 5, 0, 0, 0, 0],
+    ],
+  ],
+  [
+    [20000100, 10],
+    [20000001, 0, 10, 10],
+    [20000006, -20],
+    1,
+    14,
+    [
+      [19999999, 5, 0, 0, 0, 0],
+      [20000000, 0, 4, 250, 0, 255],
+      [20000000, 9, 16, 239, 0, 255],
+      [20000003, 5, 32, 223, 0, 255],
+      [20000006, 5, 51, 205, 0, 255],
+      [20000008, 2, 67, 187, 0, 255],
+      [20000009, 0, 77, 178, 0, 255],
+      [20000009, 9, 66, 188, 0, 255],
+      [20000010, 5, 0, 0, 0, 0],
+    ],
+  ],
+  [
+    [10, 2000010],
+    [2, 1234569.5, 6, 400],
+    [-20, 1234650],
+    1,
+    1,
+    [
+      [5, 1234569, 255, 253, 0, 128],
+      [5, 1234570, 255, 254, 2, 255],
+      [3, 1234571, 253, 253, 1, 255],
+      [5, 1234600, 255, 227, 29, 255],
+      [7, 1234630, 255, 149, 107, 255],
+      [3, 1234645, 255, 80, 175, 255],
+      [5, 1234650, 255, 46, 210, 255],
+      [7, 1234655, 255, 17, 238, 255],
+      [4, 1234670, 190, 64, 0, 255],
+      [6, 1234690, 142, 112, 0, 255],
+      [5, 1234800, 76, 179, 0, 255],
+      [5, 1234968, 62, 194, 0, 255],
+      [5, 1234969, 62, 193, 0, 128],
+      [5, 1234970, 0, 0, 0, 0],
+    ],
+  ],
+  [
+    [2000010, 10],
+    [1234577.5, 1, 500000, 8],
+    [1234650, -20],
+    1,
+    1,
+    [
+      [1234577, 5, 0, 104, 151, 128],
+      [1234578, 5, 0, 104, 151, 255],
+      [1234580, 2, 0, 99, 155, 255],
+      [1234600, 5, 0, 126, 129, 255],
+      [1234630, 7, 0, 203, 52, 255],
+      [1234645, 3, 17, 238, 0, 255],
+      [1234650, 5, 52, 203, 0, 255],
+      [1234660, 6, 109, 145, 0, 255],
+      [1234690, 4, 215, 39, 0, 255],
+      [1234800, 5, 255, 21, 234, 255],
+      [1734576, 5, 255, 49, 206, 255],
+      [1734577, 5, 255, 48, 205, 128],
+      [1734578, 5, 0, 0, 0, 0],
+    ],
+  ],
+  [
+    [3000000, 10],
+    [1234567.5, 1, 1700000, 8],
+    [1234640, -20],
+    2,
+    3,
+    [
+      [1234567, 5, 0, 104, 151, 128],
+      [1234568, 5, 0, 104, 151, 255],
+      [1234570, 5, 0, 106, 149, 255],
+      [1234590, 3, 0, 121, 134, 255],
+      [1234610, 6, 0, 167, 87, 255],
+      [1234630, 5, 0, 246, 9, 255],
+      [1234640, 4, 51, 203, 0, 255],
+      [1234650, 6, 109, 145, 0, 255],
+      [1234670, 5, 191, 65, 0, 255],
+      [1234690, 3, 233, 22, 0, 255],
+      [1234780, 5, 255, 20, 236, 255],
+      [2934566, 5, 255, 49, 207, 255],
+      [2934567, 5, 255, 48, 207, 128],
+      [2934568, 5, 0, 0, 0, 0],
+    ],
+  ],
+] as [number[], number[], number[], number, number, number[][]][]
+
+for (const [[w, h], [x, y, width, height], [cx, cy], k, tolerance, pixels] of FAR_CASES) {
+  test(`svg export of a conic gradient ${width}x${height} at ${x},${y} on a ${w}x${h} canvas writes the image origin exactly`, async (t) => {
+    const draw = (ctx: Ctx) => {
+      ctx.fillStyle = stops(ctx.createConicGradient(0.3, cx, cy))
+      ctx.fillRect(x, y, width, height)
+    }
+    const svg = createCanvas(w, h, SvgExportFlag.NoPrettyXML)
+    draw(svg.getContext('2d') as unknown as Ctx)
+    const text = svg.getContent().toString('utf8')
+    const images = patternImages(text)
+    t.is(images.length, 1)
+    const [a, b, c, d, e, f] = patternPathTransform(text)
+    t.deepEqual([a, b, c, d], [k, 0, 0, k])
+    // Whole canvas pixels; at one image pixel per canvas pixel a multiple of 8, Skia's dither period.
+    t.true(Number.isInteger(e) && Number.isInteger(f), `image at ${e},${f}`)
+    if (k === 1) {
+      t.true(e % 8 === 0 && f % 8 === 0, `image at ${e},${f}`)
+    }
+    // Under the transform, the path is the rect (in floats, as the canvas has it).
+    const d0 = text.match(/<path fill="url\(#pattern_0\)"[^>]* d="([^"]+)"/)![1]
+    const coords = d0.match(/-?[\d.]+(?:e[-+]?\d+)?/g)!.map(Number)
+    const xs = coords.filter((_, i) => i % 2 === 0).map((v) => a * v + e)
+    const ys = coords.filter((_, i) => i % 2 === 1).map((v) => d * v + f)
+    const [fx, fy] = [Math.fround(x), Math.fround(y)]
+    t.deepEqual(
+      [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)],
+      [fx, fy, Math.fround(fx + width), Math.fround(fy + height)],
+    )
+    // The clip covers every canvas pixel the rect touches, in whole image pixels of the image.
+    const clips = [...text.matchAll(/<clipPath[^>]*>([\s\S]*?)<\/clipPath>/g)].map((m) => m[1])
+    t.is(clips.length, 1)
+    const attr = (name: string) => Number(clips[0].match(new RegExp(` ${name}="([-\\d.e+]+)"`))?.[1] ?? 0)
+    const [x0, y0, x1, y1] = [attr('x'), attr('y'), attr('x') + attr('width'), attr('y') + attr('height')]
+    t.true(
+      x0 <= Math.floor(fx) && y0 <= Math.floor(fy) && x1 >= Math.ceil(fx + width) && y1 >= Math.ceil(fy + height),
+      `clip ${x0},${y0} to ${x1},${y1}`,
+    )
+    for (const [from, to, origin, size] of [
+      [x0, x1, e, images[0].width],
+      [y0, y1, f, images[0].height],
+    ]) {
+      t.true(Number.isInteger((from - origin) / k) && Number.isInteger((to - origin) / k), `clip ${from} to ${to}`)
+      t.true(from >= origin && to <= origin + k * size, `clip ${from} to ${to} in the image at ${origin}`)
+    }
+    // At the points inside the rect, the SVG shows Chrome's raster canvas (the points are away from the
+    // seam and the center). Our raster canvas, here a canvas of the 8 x 8 dither cell of the point,
+    // equals it at every point.
+    const shown = await renderFirstPattern(text)
+    for (const [px, py, ...rgba] of pixels) {
+      const raster = createCanvas(8, 8).getContext('2d')
+      raster.translate(-(px & ~7), -(py & ~7))
+      draw(raster)
+      t.deepEqual([...raster.getImageData(px & 7, py & 7, 1, 1).data], rgba, `raster ${px},${py}`)
+      if (rgba[3] === 255) {
+        const pixel = shown(px, py)
+        t.true(
+          pixel.every((v, i) => Math.abs(v - rgba[i]) <= tolerance),
+          `${px},${py}: svg ${pixel} vs Chrome ${rgba}`,
+        )
+      }
+    }
   })
 }
 

@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <list>
 #include <memory>
+#include <numeric>
 #include <optional>
 #include <unordered_map>
 #include <vector>
@@ -707,57 +708,161 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
   // (kMaxTileArea, src/shaders/SkPictureShader.cpp).
   static constexpr int64_t kMaxExactTilePixels = 2048 * 2048;
 
-  // Where a conic raster image lies: it covers the device rect `cover` in
-  // image pixels of kx x ky device pixels, `width` x `height` of them, inside a
-  // border of `border` image pixels on each side.
-  struct SweepGrid {
-    SkIRect cover;
-    int64_t kx;
-    int64_t ky;
-    int64_t width;
-    int64_t height;
-    int border;
+  // One axis of a conic raster image: image pixel i covers the device pixels
+  // origin + k * i to origin + k * (i + 1). Of its `size` pixels, the `length`
+  // pixels from `start` on cover the draw, and the rest is a border.
+  struct SweepAxis {
+    int64_t k;
+    int64_t origin;
+    int64_t start;
+    int64_t length;
+    int64_t size;
   };
 
-  // The grid of `device` at k device pixels per image pixel (no more than a
-  // side). At one image pixel per device pixel, the image, border included,
-  // starts at a multiple of 8: Skia dithers with an 8x8 pattern placed by the
-  // device position, so the image dithers like the raster canvas.
+  struct SweepGrid {
+    SweepAxis x;
+    SweepAxis y;
+  };
+
+  // The step of the whole numbers around `v` that SkSVGDevice writes exactly
+  // with `digits` significant digits. It writes floats (24 bits), the element
+  // transform with "%g", 6 digits (svg_transform in src/svg/SkSVGDevice.cpp),
+  // and the clip rect with "%.8g", 8 digits (SkStrAppendScalar in
+  // src/core/SkString.cpp). Below 1,000,000 the step is 1.
+  static int64_t WrittenStep(int64_t v, int digits) {
+    const int64_t a = v < 0 ? -v : v;
+    int64_t limit = 1;
+    for (int i = 0; i < digits; i++) {
+      limit *= 10;
+    }
+    int64_t decimal = 1;
+    for (int64_t rest = a; rest >= limit; rest /= 10) {
+      decimal *= 10;
+    }
+    int64_t binary = 1;
+    for (int64_t rest = a; rest >= (int64_t{1} << 24); rest /= 2) {
+      binary *= 2;
+    }
+    return std::lcm(decimal, binary);
+  }
+
+  static bool IsWritten(int64_t v, int digits) {
+    return v % WrittenStep(v, digits) == 0;
+  }
+
+  // Whether the whole number `v` is a float.
+  static bool IsFloat(int64_t v) {
+    return static_cast<int64_t>(static_cast<float>(v)) == v;
+  }
+
+  // The largest multiple of `align` at most `v` that SkSVGDevice writes
+  // exactly with `digits` significant digits.
+  static int64_t FloorWritten(int64_t v, int64_t align, int digits) {
+    for (;;) {
+      const int64_t step = std::lcm(align, WrittenStep(v, digits));
+      const int64_t floor = v - ((v % step) + step) % step;
+      if (floor == v) {
+        return v;
+      }
+      v = floor;
+    }
+  }
+
+  // The axis of an image that covers the device pixels n0 to n1 at k device
+  // pixels per image pixel (no more than n1 - n0), with a border of at least
+  // `border` image pixels on each side.
+  //
+  // The SVG gives the origin in the element transform, and the part of the
+  // image that covers the draw as the clip rect, which SkMatrix maps to device
+  // pixels as k * x + origin in floats (mapRect). So the origin, the ends of
+  // that part and its length are numbers that SkSVGDevice writes exactly
+  // (WrittenStep), and k times each end in image pixels is a float. Otherwise
+  // the SVG moves the fill or crops it: an origin of 1234568 was written as
+  // 1.23457e+06, 2 pixels off. Below 1,000,000 every whole number is written
+  // exactly, so there the numbers are the ones the rest of this comment gives.
+  // Past it, the origin moves down to the next number written exactly, and the
+  // image gets the pixels in between; the border and the length grow by the
+  // fewest pixels that put the ends of the clip on such numbers. If that fails
+  // (past 2^24 a float holds no odd number, and an odd origin or start of the
+  // clip reaches no even end by an even distance), all of them move to steps
+  // that hold every number of the axis.
+  //
+  // At one image pixel per device pixel, the origin is a multiple of 8: Skia
+  // dithers with an 8x8 pattern placed by the device position, so the image
+  // dithers like the raster canvas.
   //
   // No image side is 1 pixel: SkImageShader tiles a 1 pixel side with clamp,
   // not repeat (optimize, src/shaders/SkImageShader.cpp), and SkSVGDevice
   // writes a clamp side as a viewport ("100%") tile. A border makes a side at
   // least 3 pixels; without one, a 1 pixel side (a clip strip) gets a second
-  // pixel of the gradient, outside the clip. Such a side starts at a multiple
-  // of 8, so adding 2 does not overflow.
-  static SweepGrid MakeSweepGrid(const SkIRect& device, int64_t k, int border) {
-    SweepGrid grid;
-    grid.cover = device;
-    if (k == 1) {
-      grid.cover.fLeft = ((device.fLeft - border) & ~7) + border;
-      grid.cover.fTop = ((device.fTop - border) & ~7) + border;
-      if (border == 0 && grid.cover.width64() == 1) {
-        grid.cover.fRight = grid.cover.fLeft + 2;
+  // pixel of the gradient, outside the clip.
+  static SweepAxis MakeSweepAxis(int64_t n0,
+                                 int64_t n1,
+                                 int64_t k,
+                                 int border) {
+    SweepAxis axis;
+    axis.k = std::min(k, n1 - n0);
+    const int64_t align = k == 1 ? 8 : 1;
+    // A bound on the size of every number of the axis, and the steps that
+    // hold them all up to it: the clip starts and ends fewer than `step` image
+    // pixels (of k device pixels) outside n0 to n1, and the origin is fewer
+    // than `origin_step` device pixels further out. For a canvas we accept,
+    // `step` is at most 320 and `origin_step` 8000.
+    const int64_t bound =
+        std::max(n0 < 0 ? -n0 : n0, n1) + axis.k * 8192 + (int64_t{1} << 20);
+    const int64_t step = WrittenStep(bound, 8);
+    const int64_t origin_step = std::lcm(align, WrittenStep(bound, 6));
+    auto finish = [&](int64_t length) {
+      axis.length = length;
+      axis.size = axis.start + length + border;
+      return axis;
+    };
+    const int64_t min_length = border == 0 ? 2 : 1;
+    axis.origin = FloorWritten(n0 - axis.k * border, align, 6);
+    for (axis.start = border; axis.start < border + step; axis.start++) {
+      const int64_t begin = axis.origin + axis.k * axis.start;
+      if (begin > n0) {
+        break;
       }
-      if (border == 0 && grid.cover.height64() == 1) {
-        grid.cover.fBottom = grid.cover.fTop + 2;
+      if (!IsWritten(begin, 8)) {
+        continue;
       }
+      const int64_t need =
+          std::max((n1 - begin + axis.k - 1) / axis.k, min_length);
+      for (int64_t length = need; length < need + step; length++) {
+        if (IsWritten(begin + axis.k * length, 8) &&
+            IsWritten(axis.k * length, 8) &&
+            IsFloat(axis.k * (axis.start + length))) {
+          return finish(length);
+        }
+      }
+      break;
     }
-    grid.kx = std::min(k, grid.cover.width64());
-    grid.ky = std::min(k, grid.cover.height64());
-    grid.width = (grid.cover.width64() + grid.kx - 1) / grid.kx;
-    grid.height = (grid.cover.height64() + grid.ky - 1) / grid.ky;
-    grid.border = border;
-    return grid;
+    // Steps for the whole axis: the origin, k * start and k * length are
+    // multiples of `step` (which divides `origin_step`), so the ends of the
+    // clip, in device pixels and times k in image pixels, are too.
+    const int64_t unit = step / std::gcd(axis.k, step);
+    axis.start = (border + unit - 1) / unit * unit;
+    const int64_t origin = n0 - axis.k * axis.start;
+    axis.origin = origin - ((origin % origin_step) + origin_step) % origin_step;
+    const int64_t begin = axis.origin + axis.k * axis.start;
+    const int64_t need =
+        std::max((n1 - begin + axis.k - 1) / axis.k, min_length);
+    return finish((need + unit - 1) / unit * unit);
+  }
+
+  // The grid of `device` at k device pixels per image pixel (no more than a
+  // side), see MakeSweepAxis.
+  static SweepGrid MakeSweepGrid(const SkIRect& device, int64_t k, int border) {
+    return {MakeSweepAxis(device.fLeft, device.fRight, k, border),
+            MakeSweepAxis(device.fTop, device.fBottom, k, border)};
   }
 
   // Whether the image of `grid`, border included, fits kMaxSweepPixels and
   // kMaxSweepSide.
   static bool SweepGridFits(const SweepGrid& grid) {
-    const int64_t width = grid.width + 2 * grid.border;
-    const int64_t height = grid.height + 2 * grid.border;
-    return width <= kMaxSweepSide && height <= kMaxSweepSide &&
-           width * height <= kMaxSweepPixels;
+    return grid.x.size <= kMaxSweepSide && grid.y.size <= kMaxSweepSide &&
+           grid.x.size * grid.y.size <= kMaxSweepPixels;
   }
 
   // `paint` with its conic gradient replaced by an image of what the raster
@@ -765,12 +870,12 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
   // draw inside the clip: one image pixel per device pixel, or k x k device
   // pixels per image pixel for bounds that do not fit kMaxSweepPixels or
   // kMaxSweepSide. The image is the pattern tile (repeat, and no side of 1
-  // pixel, see MakeSweepGrid), not the viewport (a "100%" decal tile): in
+  // pixel, see MakeSweepAxis), not the viewport (a "100%" decal tile): in
   // Chrome the transparent rest of a viewport tile larger than
   // kMaxExactTilePixels faded the image's edges. An image Chrome does not
   // draw exactly (larger than kMaxExactTilePixels, or scaled) has a border of
-  // 1 image pixel of the same gradient, so that resampling it does not mix
-  // its edges with the other side of the tile. The image's matrix maps
+  // at least 1 image pixel of the same gradient, so that resampling it does
+  // not mix its edges with the other side of the tile. The image's matrix maps
   // its pixels back to local space, and `clip` is the part of the image inside
   // the border. False: nothing to draw (nothing visible, a singular matrix or
   // no memory for the image).
@@ -797,7 +902,7 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
       return false;
     }
     SweepGrid grid = MakeSweepGrid(device, 1, 0);
-    if (grid.width * grid.height > kMaxExactTilePixels ||
+    if (grid.x.size * grid.y.size > kMaxExactTilePixels ||
         !SweepGridFits(grid)) {
       // The smallest whole k that fits: SkSVGDevice writes the element
       // transform with 6 significant digits (svg_transform), which only a
@@ -817,17 +922,21 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
         grid = MakeSweepGrid(device, ++k, 1);
       }
     }
-    const int border = grid.border;
+    const SweepAxis& x = grid.x;
+    const SweepAxis& y = grid.y;
+    // The device position of the image pixel at (start, start).
+    const int64_t left = x.origin + x.k * x.start;
+    const int64_t top = y.origin + y.k * y.start;
     auto surface = SkSurfaces::Raster(SkImageInfo::MakeN32Premul(
-        static_cast<int>(grid.width + 2 * border),
-        static_cast<int>(grid.height + 2 * border), SkColorSpace::MakeSRGB()));
+        static_cast<int>(x.size), static_cast<int>(y.size),
+        SkColorSpace::MakeSRGB()));
     if (!surface) {
       return false;
     }
     auto canvas = surface->getCanvas();
-    canvas->translate(border, border);
-    canvas->scale(1.0f / grid.kx, 1.0f / grid.ky);
-    canvas->translate(-grid.cover.fLeft, -grid.cover.fTop);
+    canvas->translate(x.start, y.start);
+    canvas->scale(1.0f / x.k, 1.0f / y.k);
+    canvas->translate(-left, -top);
     canvas->concat(ctm);
     SkPaint fill;
     fill.setShader(paint.refShader());
@@ -836,10 +945,10 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
     fill.setBlendMode(SkBlendMode::kSrc);
     canvas->drawPaint(fill);
     SkMatrix matrix = inverse;
-    matrix.preTranslate(grid.cover.fLeft, grid.cover.fTop);
-    matrix.preScale(grid.kx, grid.ky);
-    matrix.preTranslate(-border, -border);
-    *clip = SkRect::MakeXYWH(border, border, grid.width, grid.height);
+    matrix.preTranslate(left, top);
+    matrix.preScale(x.k, y.k);
+    matrix.preTranslate(-x.start, -y.start);
+    *clip = SkRect::MakeXYWH(x.start, y.start, x.length, y.length);
     *out = paint;
     // The alpha is in the image.
     out->setAlphaf(1);
