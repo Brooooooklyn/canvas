@@ -3879,7 +3879,7 @@ impl Context {
   /// for a stroke (base_rendering_context_2d.cc:1016-1080). Only the
   /// alpha:false reset reads them. Left and right are the ink of the glyphs
   /// the draw paints, where it paints them (`ink_left` / `ink_right` from
-  /// skia_c.cpp skiac_canvas_get_line_metrics_or_draw_text), so the
+  /// skia-c/text.cpp MeasureOrDraw), so the
   /// letterSpacing shift applies only where the draw applies it: to LTR text
   /// that is not cursive. Top and bottom are measureText's.
   ///
@@ -5991,14 +5991,8 @@ impl CanvasRenderingContext2D {
     &mut self,
     text: webidl::DomString<webidl::CtxMeasureText>,
   ) -> Result<TextMetrics> {
-    let text = text.0.as_str();
-    // The empty string keeps every field 0 (Chrome still reports the font's
-    // metrics there).
-    let metrics = if text.is_empty() {
-      Default::default()
-    } else {
-      self.context.get_line_metrics(text, false)?.0
-    };
+    // The empty string still reports the font's metrics, like Chrome.
+    let metrics = self.context.get_line_metrics(text.0.as_str(), false)?.0;
     Ok(TextMetrics {
       width: metrics.width as f64,
       actual_bounding_box_left: metrics.left as f64,

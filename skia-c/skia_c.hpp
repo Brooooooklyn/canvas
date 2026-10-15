@@ -568,6 +568,11 @@ struct skiac_font_collection {
   std::set<std::string> folded_registered_families;
   uint64_t families_generation = 1;
   uint64_t folded_families_generation = 0;
+  // Fonts loadSystemFonts / loadFontsFromDir registered (font_families.cpp
+  // skiac_font_collection_register_system_font): Blink keeps tiny system
+  // fonts' ascent and descent unrounded, never a web font's.
+  std::set<uint32_t> system_font_ids;
+  std::set<SkTypefaceID> system_typeface_ids;
 
   skiac_font_collection()
       : collection(sk_make_sp<FontCollection>()),
@@ -610,6 +615,8 @@ struct skiac_font_collection {
     auto new_assets = sk_make_sp<TypefaceFontProviderCustom>(font_mgr);
 
     // Re-register all remaining fonts, preserving original IDs
+    std::set<uint32_t> kept_system_font_ids;
+    system_typeface_ids.clear();
     for (const auto& [id, font_info] : old_fonts) {
       sk_sp<SkTypeface> typeface;
 
@@ -622,10 +629,15 @@ struct skiac_font_collection {
       }
 
       if (typeface) {
+        if (system_font_ids.count(id)) {
+          kept_system_font_ids.insert(id);
+          system_typeface_ids.insert(typeface->uniqueID());
+        }
         new_assets->registerTypefaceWithId(id, font_info.data, font_info.path,
                                            typeface, font_info.aliases);
       }
     }
+    system_font_ids = std::move(kept_system_font_ids);
 
     // Replay setAlias mappings
     // These aliases intentionally shadow/override existing family names
@@ -715,8 +727,8 @@ struct skiac_line_metrics {
   // Blink's em box (ExtendedTextMetrics), relative to the textBaseline.
   float em_height_ascent;
   float em_height_descent;
-  // SkFontMetrics fXHeight and fCapHeight of the first run's font (0 when
-  // the font does not say).
+  // SkFontMetrics fXHeight and fCapHeight of the primary font (0 when the
+  // font does not say).
   float x_height;
   float cap_height;
 };

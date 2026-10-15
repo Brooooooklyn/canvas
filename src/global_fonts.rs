@@ -276,10 +276,7 @@ fn load_fonts_from_dir<P: AsRef<path::Path>>(dir: P) -> napi::Result<u32> {
             | Some("woff") => {
               if let Some(p) = p.into_os_string().to_str() {
                 let font_collection = get_font().map_err(into_napi_error)?;
-                if font_collection
-                  .register_from_path::<String>(p, None)
-                  .is_some()
-                {
+                if font_collection.register_system_font(p).is_some() {
                   // Bump while the collection lock is still held and after
                   // EACH registration: the guard drops between files, so a
                   // reader on another thread can resolve a family mid-load.
