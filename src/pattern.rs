@@ -2,9 +2,7 @@ use std::rc::Rc;
 use std::result::Result as StdResult;
 use std::sync::{Arc, Mutex};
 
-use cssparser_color::Hsl;
 use napi::bindgen_prelude::*;
-use rgb::RGBA;
 
 use crate::color::{self, Color};
 use crate::ctx::zero_size_source_check;
@@ -19,47 +17,10 @@ use crate::sk::{
 use crate::webidl;
 use crate::{CanvasElement, SVGCanvas};
 
-/// Blink's gfx::HSLToSRGB (ui/gfx/color_conversions.cc:296-309): the CSS Color 4
-/// formula in f32, with the `fmod` done in f64 as in C++. `h` is in degrees,
-/// `s` and `l` in [0, 1].
-pub(crate) fn hsl_to_srgb(h: f32, s: f32, l: f32) -> [f32; 3] {
-  if s == 0.0 {
-    return [l, l, l];
-  }
-  let channel = |n: f32| {
-    let k = ((n + h / 30.0) as f64 % 12.0) as f32;
-    let a = s * l.min(1.0 - l);
-    l - a * (k - 3.0).min(9.0 - k).clamp(-1.0, 1.0)
-  };
-  [channel(0.0), channel(8.0), channel(4.0)]
-}
-
-/// The unrounded sRGB of an hsl() color, as Blink keeps it (Color::FromHSLA).
-pub(crate) fn hsl_color_to_srgb(hsl: &Hsl) -> [f32; 3] {
-  hsl_to_srgb(
-    hsl.hue.unwrap_or(0.0),
-    hsl.saturation.unwrap_or(0.0),
-    hsl.lightness.unwrap_or(0.0),
-  )
-}
-
 /// A float color channel as Chrome's CPU canvas draws it: Skia's Sk4f_toL32,
 /// `v * 255 + 0.5` pinned to [0, 255] and truncated (src/core/SkSwizzlePriv.h).
 pub(crate) fn srgb_channel_to_u8(v: f32) -> u8 {
   (v * 255.0 + 0.5).clamp(0.0, 255.0) as u8
-}
-
-/// The 8-bit paint color of an hsl() fillStyle, strokeStyle, shadowColor or
-/// drop-shadow() color. Blink keeps the float sRGB in the paint and the CPU
-/// blitter rounds it with Sk4f_toL32.
-pub(crate) fn hsl_to_rgba8(hsl: &Hsl) -> RGBA<u8> {
-  let [r, g, b] = hsl_color_to_srgb(hsl);
-  RGBA {
-    r: srgb_channel_to_u8(r),
-    g: srgb_channel_to_u8(g),
-    b: srgb_channel_to_u8(b),
-    a: (hsl.alpha.unwrap_or(1.0) * 255.0).round() as u8,
-  }
 }
 
 #[derive(Debug)]
