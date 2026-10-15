@@ -2,6 +2,7 @@ use std::cell::{Cell, RefCell};
 use std::f32::consts::PI;
 use std::marker::PhantomData;
 use std::mem;
+use std::rc::Rc;
 use std::result;
 use std::str::FromStr;
 use std::sync::LazyLock;
@@ -719,7 +720,7 @@ impl Context {
           self.account_raster_resource(RasterKey::Image { uid }, bytes);
         }
       }
-      Pattern::Gradient(gradient) => self.account_raster_bytes(gradient.estimated_bytes()),
+      Pattern::Gradient(gradient) => self.account_raster_bytes(gradient.borrow().estimated_bytes()),
       Pattern::Color(..) => {}
     };
   }
@@ -2210,7 +2211,7 @@ impl Context {
         paint.set_color(c.r, c.g, c.b, c.a);
         paint.set_alpha_f32(c.a as f32 / 255.0 * alpha);
       }
-      Pattern::Gradient(g) => self.set_gradient_paint(&mut paint, g, alpha),
+      Pattern::Gradient(g) => self.set_gradient_paint(&mut paint, &g.borrow(), alpha),
       Pattern::Image(p) => {
         if let Some((shader, _)) = self.image_pattern_shader(p) {
           paint.set_color(0, 0, 0, 255);
@@ -2427,7 +2428,7 @@ impl Context {
         paint.set_color(c.r, c.g, c.b, c.a);
         paint.set_alpha_f32(c.a as f32 / 255.0 * global_alpha);
       }
-      Pattern::Gradient(g) => self.set_gradient_paint(&mut paint, g, global_alpha),
+      Pattern::Gradient(g) => self.set_gradient_paint(&mut paint, &g.borrow(), global_alpha),
       Pattern::Image(p) => {
         if let Some((shader, _)) = self.image_pattern_shader(p) {
           paint.set_color(0, 0, 0, 255);
@@ -3680,7 +3681,7 @@ impl<S: webidl::Site> FromNapiValue for CanvasStyleArg<'static, S> {
       if unsafe { <&CanvasGradient as ValidateNapiValue>::validate(env, value) }.is_ok()
         && let Ok(gradient) = unsafe { CanvasGradient::from_napi_ref(env, value) }
       {
-        return style(Some(Pattern::Gradient(gradient.0.clone())), value);
+        return style(Some(Pattern::Gradient(Rc::clone(&gradient.0))), value);
       }
     }
     let color = webidl::to_dom_string(env, value, S::PREFIX)?;
@@ -4843,7 +4844,7 @@ impl CanvasRenderingContext2D {
     // Blink ClampTo<float> (canvas_2d_recorder_context.cc:2366-2372).
     let [x0, y0, x1, y1] = [x0, y0, x1, y1].map(clamp_to_f32);
     let linear_gradient = Gradient::create_linear_gradient(x0, y0, x1, y1);
-    CanvasGradient(linear_gradient).into_instance(env)
+    CanvasGradient::new(linear_gradient).into_instance(env)
   }
 
   #[napi]
@@ -4859,7 +4860,7 @@ impl CanvasRenderingContext2D {
   ) -> Result<ClassInstance<'scope, CanvasGradient>> {
     let [x0, y0, r0, x1, y1, r1] = [x0, y0, r0, x1, y1, r1].map(clamp_to_f32);
     let radial_gradient = Gradient::create_radial_gradient(x0, y0, r0, x1, y1, r1);
-    CanvasGradient(radial_gradient).into_instance(env)
+    CanvasGradient::new(radial_gradient).into_instance(env)
   }
 
   #[napi]
@@ -4872,7 +4873,7 @@ impl CanvasRenderingContext2D {
   ) -> Result<ClassInstance<'scope, CanvasGradient>> {
     let [start_angle, x, y] = [start_angle, x, y].map(clamp_to_f32);
     let conic_gradient = Gradient::create_conic_gradient(x, y, start_angle);
-    CanvasGradient(conic_gradient).into_instance(env)
+    CanvasGradient::new(conic_gradient).into_instance(env)
   }
 
   /// createPattern(image, repetition). The index.js wrapper passes the
@@ -7556,7 +7557,7 @@ mod tests {
         );
       }
       assert_eq!(gradient.estimated_bytes(), GRADIENT_BYTES);
-      ctx.state.fill_style = Pattern::Gradient(gradient);
+      ctx.state.fill_style = Pattern::Gradient(Rc::new(RefCell::new(gradient)));
       ctx.state.line_dash_list = vec![2.0, 3.0];
       ctx
     };
