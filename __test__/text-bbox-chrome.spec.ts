@@ -30,6 +30,7 @@ interface Fixture {
   emptyUnion: Record<string, Row>
   large: Record<string, Row>
   zeroWidth: Record<string, Row>
+  negativeSpacing: Record<string, Row>
   alphaReset: Record<'copy' | 'xor', [number, number, number][]>
 }
 
@@ -178,6 +179,13 @@ function spacedRows(rows: Record<string, Row>) {
 // moved by half a letter spacing.
 test('zero width spaces get no letter spacing like Chrome', (t) => {
   t.deepEqual(spacedRows(FIXTURE.zeroWidth), [])
+})
+
+// A word piece whose spacing outweighs its advance (a space with a large
+// negative wordSpacing or letterSpacing) moves the words after it left, and
+// nothing is clipped.
+test('words after a negative-width piece sit where Chrome draws them', (t) => {
+  t.deepEqual(spacedRows(FIXTURE.negativeSpacing), [])
 })
 
 // Above 256px Skia measures glyphs on a scaled path strike, so the boxes
