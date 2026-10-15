@@ -219,8 +219,8 @@ pub mod ffi {
     /// Blink's em box (ExtendedTextMetrics), relative to the textBaseline.
     pub em_height_ascent: f32,
     pub em_height_descent: f32,
-    /// SkFontMetrics fXHeight and fCapHeight of the first run's font (0 when
-    /// the font does not say).
+    /// SkFontMetrics fXHeight and fCapHeight of the primary font (0 when the
+    /// font does not say).
     pub x_height: f32,
     pub cap_height: f32,
   }
@@ -1326,6 +1326,11 @@ pub mod ffi {
       c_font_collection: *mut skiac_font_collection,
       font_path: *const c_char,
       maybe_name_alias: *const c_char,
+    ) -> u32;
+
+    pub fn skiac_font_collection_register_system_font(
+      c_font_collection: *mut skiac_font_collection,
+      font_path: *const c_char,
     ) -> u32;
 
     pub fn skiac_font_collection_unregister(
@@ -5505,6 +5510,14 @@ impl FontCollection {
       }
     }
     result
+  }
+
+  /// Registers an installed font (loadSystemFonts / loadFontsFromDir). Like
+  /// Chrome's system fonts, tiny sizes keep fractional ascent and descent.
+  pub fn register_system_font(&self, font_path: &str) -> Option<u32> {
+    let fp = CString::new(font_path).ok()?;
+    let id = unsafe { ffi::skiac_font_collection_register_system_font(self.0, fp.as_ptr()) };
+    (id > 0).then_some(id)
   }
 
   pub fn register_from_path<S: AsRef<str>>(

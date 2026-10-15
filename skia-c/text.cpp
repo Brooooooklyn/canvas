@@ -18,53 +18,6 @@
 namespace {
 
 constexpr float kMaxLayoutWidth = 100000;
-constexpr float kHangingAsPercentOfAscent = 80;
-
-// Blink's em box (SimpleFontData::TrySetNormalizedTypoAscentAndDescent): the
-// ascent:descent ratio scaled to the font size, in LayoutUnits (1/64 px,
-// rounded half away from zero).
-bool NormalizedEmHeight(float font_size,
-                        float ascent,
-                        float descent,
-                        float* em_ascent,
-                        float* em_descent) {
-  const float height = ascent + descent;
-  if (height <= 0 || ascent < 0 || ascent > height) {
-    return false;
-  }
-  auto layout_unit = [](float value) { return roundf(value * 64) / 64; };
-  *em_ascent = layout_unit(font_size * ascent / height);
-  *em_descent = layout_unit(font_size) - *em_ascent;
-  return true;
-}
-
-// Blink's SimpleFontData::NormalizedTypoAscentAndDescent: the OS/2
-// sTypoAscender and sTypoDescender (offset 68) when the ascender is
-// positive, else the font's ascent and descent.
-void EmHeight(const SkFont& font,
-              const SkFontMetrics& font_metrics,
-              float* em_ascent,
-              float* em_descent) {
-  uint8_t os2[4];
-  SkTypeface* typeface = font.getTypeface();
-  if (typeface && typeface->getTableData(SkSetFourByteTag('O', 'S', '/', '2'),
-                                         68, sizeof(os2), os2) == sizeof(os2)) {
-    float typo_ascender = static_cast<int16_t>((os2[0] << 8) | os2[1]);
-    float typo_descender = -static_cast<int16_t>((os2[2] << 8) | os2[3]);
-    if (typo_ascender > 0 &&
-        NormalizedEmHeight(font.getSize(), typo_ascender, typo_descender,
-                           em_ascent, em_descent)) {
-      return;
-    }
-  }
-  if (NormalizedEmHeight(font.getSize(), -font_metrics.fAscent,
-                         font_metrics.fDescent, em_ascent, em_descent)) {
-    return;
-  }
-  *em_ascent = 0;
-  *em_descent = 0;
-}
-
 bool StartsWithLanguage(std::string_view lang, std::string_view language) {
   if (lang.size() < language.size()) {
     return false;
@@ -209,6 +162,43 @@ void MeasureOrDraw(skiac_font_collection* c_collection,
   paragraph_style.setTextStyle(text_style);
   paragraph_style.setTextDirection(text_direction);
   paragraph_style.setStrutStyle(struct_style);
+  // FontFallbackList::PrimaryFont: the first family's face gives the font
+  // metrics and the textBaseline offset, whichever font draws the text.
+  sk_sp<SkTypeface> primary;
+  sk_sp<SkTypeface> primary_base;
+  {
+    auto faces =
+        font_collection->findTypefaces(text_style.getFontFamilies(), font_style,
+                                       text_style.getFontArguments());
+    if (!faces.empty()) {
+      primary = faces.front();
+    }
+    if (text_style.getFontArguments()) {
+      auto base_faces = font_collection->findTypefaces(
+          text_style.getFontFamilies(), font_style);
+      if (!base_faces.empty()) {
+        primary_base = base_faces.front();
+      }
+    }
+  }
+  const PrimaryFontMetrics primary_metrics = MeasurePrimaryFont(
+      c_collection, primary.get(), primary_base.get(), request.size);
+  // TextMetrics::GetFontBaseline: the alphabetic baseline sits this far
+  // below the textBaseline (base_rendering_context_2d.cc draws at
+  // y + baseline_y).
+  const float baseline_y = FontBaseline(request.baseline, primary_metrics);
+
+  if (request.text_len == 0) {
+    // Nothing to lay out or draw; measureText keeps the font metrics.
+    if (!canvas) {
+      *c_line_metrics = {};
+      FillFontMetrics(primary_metrics, baseline_y, c_line_metrics);
+      c_line_metrics->ascent = -baseline_y;
+      c_line_metrics->descent = baseline_y;
+    }
+    return;
+  }
+
   ParagraphBuilderImpl builder(paragraph_style, font_collection,
                                SkUnicodes::ICU::Make());
   builder.addText(request.text, request.text_len);
@@ -220,8 +210,6 @@ void MeasureOrDraw(skiac_font_collection* c_collection,
   auto line_metrics = metrics_vec[0];
   auto run = paragraph->run(0);
   auto font = run.font();
-  SkFontMetrics font_metrics;
-  font.getMetrics(&font_metrics);
   std::vector<SkRect> bounds(request.text_len);
   auto glyphs = run.glyphs();
   auto glyphs_size = glyphs.size();
@@ -257,41 +245,12 @@ void MeasureOrDraw(skiac_font_collection* c_collection,
       ascent = char_top;
     }
   }
-  auto alphabetic_baseline = paragraph->getAlphabeticBaseline();
-  auto css_baseline = static_cast<CssBaseline>(request.baseline);
-  SkScalar baseline_offset = 0;
-  // https://github.com/chromium/chromium/blob/104.0.5092.1/third_party/blink/renderer/core/html/canvas/text_metrics.cc#L21-L25
-  // According to
-  // http://wiki.apache.org/xmlgraphics-fop/LineLayout/AlignmentHandling
-  // "FOP (Formatting Objects Processor) puts the hanging baseline at 80% of
-  // the ascender height". Shared by the Hanging case and hangingBaseline, so
-  // hangingBaseline is exactly 0 at 'hanging'.
-  SkScalar hanging_offset =
-      -alphabetic_baseline -
-      font_metrics.fAscent * kHangingAsPercentOfAscent / 100.0;
-  switch (css_baseline) {
-    case CssBaseline::Top:
-      baseline_offset = -alphabetic_baseline - font_metrics.fAscent -
-                        font_metrics.fUnderlinePosition -
-                        font_metrics.fUnderlineThickness;
-      break;
-    case CssBaseline::Hanging:
-      baseline_offset = hanging_offset;
-      break;
-    case CssBaseline::Middle:
-      baseline_offset = -paragraph->getHeight() / 2;
-      break;
-    case CssBaseline::Alphabetic:
-      baseline_offset = -alphabetic_baseline;
-      break;
-    case CssBaseline::Ideographic:
-      baseline_offset = -paragraph->getIdeographicBaseline();
-      break;
-    case CssBaseline::Bottom:
-      baseline_offset = -alphabetic_baseline + font_metrics.fStrikeoutPosition +
-                        font_metrics.fStrikeoutThickness;
-      break;
-  };
+  // skparagraph draws the first line's glyphs at floor(baseline + 0.5) below
+  // the paint origin (TextLine.cpp, correctedBaseline).
+  const SkScalar line_baseline =
+      paragraph->lines().empty()
+          ? 0
+          : SkScalarFloorToScalar(paragraph->lines()[0].baseline() + 0.5f);
 
   auto line_center = line_width / 2.0f;
   float paint_x;
@@ -349,36 +308,22 @@ void MeasureOrDraw(skiac_font_collection* c_collection,
     float final_x = need_scale ? (paint_x + (1 - ratio) * offset_x) / ratio -
                                      rtl_offset + letter_spacing_offset
                                : paint_x - rtl_offset + letter_spacing_offset;
-    paragraph->paint(canvas, final_x, y + baseline_offset);
+    paragraph->paint(canvas, final_x, y + baseline_y - line_baseline);
     if (need_scale) {
       canvas->restore();
     }
     return;
   }
-  auto offset = -baseline_offset - alphabetic_baseline;
   float metrics_paint_x = paint_x + letter_spacing_offset;
-  c_line_metrics->ascent = -ascent + offset;
-  c_line_metrics->descent = descent - offset;
+  // Glyph bounds are relative to the alphabetic baseline (y down).
+  c_line_metrics->ascent = -ascent - baseline_y;
+  c_line_metrics->descent = descent + baseline_y;
   c_line_metrics->left =
       -metrics_paint_x + line_metrics.fLeft - first_char_bounds.fLeft;
   c_line_metrics->right =
       metrics_paint_x + last_char_pos_x + last_char_bounds.fRight;
   c_line_metrics->width = line_width;
-  c_line_metrics->font_ascent = -font_metrics.fAscent + offset;
-  c_line_metrics->font_descent = font_metrics.fDescent - offset;
-  // Blink (text_metrics.cc), with offset = -baseline_y:
-  // alphabetic = -baseline_y, hanging = 0.8 * ascent - baseline_y,
-  // ideographic = -descent - baseline_y.
-  c_line_metrics->alphabetic_baseline = offset;
-  c_line_metrics->hanging_baseline = hanging_offset - baseline_offset;
-  c_line_metrics->ideographic_baseline = -c_line_metrics->font_descent;
-  float em_ascent;
-  float em_descent;
-  EmHeight(font, font_metrics, &em_ascent, &em_descent);
-  c_line_metrics->em_height_ascent = em_ascent + offset;
-  c_line_metrics->em_height_descent = em_descent - offset;
-  c_line_metrics->x_height = font_metrics.fXHeight;
-  c_line_metrics->cap_height = font_metrics.fCapHeight;
+  FillFontMetrics(primary_metrics, baseline_y, c_line_metrics);
   // The ink of every glyph the draw above paints, where it paints it:
   // visit() walks the text blobs paint() draws, and the origin is the
   // draw's own, rtl_offset and letter_spacing_offset included. Relative to
