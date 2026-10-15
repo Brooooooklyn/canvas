@@ -390,6 +390,19 @@ test('getImageData long conversion and int overflow errors', (t) => {
   }
   const zero = t.throws(() => ctx.getImageData(0, 0, 0, 1))
   t.is(String(zero?.stack).split('\n')[0], `IndexSizeError: ${GET}The source width is 0.`)
+  // So do the RangeErrors.
+  for (const [args, msg] of [
+    [[2 ** 31 - 1, 0, 1, 1], 'Out of memory at ImageData creation'],
+    [[0, 0, -2147483648, -2147483648], 'Out of memory at ImageData creation'],
+    [[-(2 ** 31), 0, -1, 1], 'Out of memory at ImageData creation'],
+    [[0, 0, -(2 ** 31), 1], 'Out of memory at ImageData creation.'],
+  ] as [number[], string][]) {
+    const e = t.throws(() => ctx.getImageData(args[0], args[1], args[2], args[3]), {
+      instanceOf: RangeError,
+      message: GET + msg,
+    })
+    t.is(String(e?.stack).split('\n')[0], `RangeError: ${msg}`)
+  }
 })
 
 test('getImageData on an SVG canvas reads its raster mirror the same way', (t) => {
