@@ -29,7 +29,6 @@ use encoding::{
   ImageEncodeOptions, ImageType, ToBlobSite, ToDataUrlAsyncSite, ToDataUrlSite, encode_image,
   encode_surface, node_encode_error,
 };
-use font::{FONT_REGEXP, init_font_regexp};
 use sk::{ColorSpace, SkImage, SkiaDataRef};
 
 use avif::AvifConfig;
@@ -66,12 +65,6 @@ mod svg_path;
 mod svg_size;
 mod unpremul;
 mod webidl;
-
-#[napi_derive::module_init]
-fn init() {
-  // pre init font regexp
-  FONT_REGEXP.get_or_init(init_font_regexp);
-}
 
 #[napi]
 pub struct CanvasElement<'scope> {
