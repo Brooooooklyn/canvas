@@ -1196,6 +1196,8 @@ pub(crate) const CREATE_IMAGE_DATA: &str =
   "Failed to execute 'createImageData' on 'CanvasRenderingContext2D': ";
 pub(crate) const GET_IMAGE_DATA: &str =
   "Failed to execute 'getImageData' on 'CanvasRenderingContext2D': ";
+pub(crate) const PUT_IMAGE_DATA: &str =
+  "Failed to execute 'putImageData' on 'CanvasRenderingContext2D': ";
 pub(crate) const CANVAS_GET_CONTEXT: &str =
   "Failed to execute 'getContext' on 'HTMLCanvasElement': ";
 pub(crate) const SVG_CANVAS_GET_CONTEXT: &str = "Failed to execute 'getContext' on 'SVGCanvas': ";
