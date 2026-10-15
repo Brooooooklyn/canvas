@@ -1605,18 +1605,18 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
       }
     } else if libavif::is_avif(data_ref.as_ref()) {
       // Check AVIF first - infer::get() may not recognize AVIF format
-      let avif_image = AvifImage::decode_from(data_ref.as_ref())
+      let mut avif_image = AvifImage::decode_from(data_ref.as_ref())
         .map_err(|e| Error::new(Status::InvalidArg, format!("Decode avif image failed {e}")))?;
 
       let bitmap = Bitmap::from_image_data(
-        avif_image.data,
+        avif_image.data.as_mut_ptr(),
         avif_image.width as usize,
         avif_image.height as usize,
         avif_image.row_bytes as usize,
-        (avif_image.row_bytes * avif_image.height) as usize,
+        avif_image.data.len(),
         ColorType::RGBA8888,
-        // libavif's avifImageYUVToRGB outputs straight (non-premultiplied) alpha.
-        AlphaType::Unpremultiplied,
+        // Premultiplied by the YUV conversion, as Chrome's decoder does.
+        AlphaType::Premultiplied,
       )
       .map(|mut bitmap| {
         // Like the PNG/JPEG/WebP codecs, keep the file's color space, so a

@@ -38,6 +38,7 @@ use avif::AvifConfig;
 static ALLOC: mimalloc_safe::MiMalloc = mimalloc_safe::MiMalloc;
 
 mod avif;
+mod avif_yuv;
 mod color;
 mod ctx;
 mod encoding;
