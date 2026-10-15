@@ -191,23 +191,33 @@ void MeasureOrDraw(skiac_font_collection* c_collection,
     size_t end;
     int caps;
     bool small;
+    // A zero width space word: no letter spacing.
+    bool zero_width;
   };
   std::vector<Piece> pieces;
   std::string_view shaped = text;
   std::string caps_text;
+  // Without letter spacing there is nothing to leave out (and one word
+  // stays one text block).
+  auto zero_width = [&](const std::pair<size_t, size_t>& word) {
+    return letter_spacing != 0 && IsZeroWidthSpaceWord(text.substr(
+                                      word.first, word.second - word.first));
+  };
   if (request.variant_caps == 0) {
-    for (const auto& [start, end] : words) {
-      pieces.push_back({start, end, 0, false});
+    for (const auto& word : words) {
+      pieces.push_back({word.first, word.second, 0, false, zero_width(word)});
     }
   } else {
     for (auto& word : words) {
+      const bool word_zero_width = zero_width(word);
       const size_t word_start = caps_text.size();
       for (const CapsPiece& piece : SplitCaps(
                c_collection, primary,
                text.substr(word.first, word.second - word.first), request)) {
         const size_t start = caps_text.size();
         caps_text += piece.text;
-        pieces.push_back({start, caps_text.size(), piece.caps, piece.small});
+        pieces.push_back({start, caps_text.size(), piece.caps, piece.small,
+                          word_zero_width});
       }
       word = {word_start, caps_text.size()};
     }
@@ -215,7 +225,8 @@ void MeasureOrDraw(skiac_font_collection* c_collection,
   }
   ParagraphBuilderImpl builder(paragraph_style, font_collection,
                                SkUnicodes::ICU::Make());
-  if (pieces.size() == 1 && pieces[0].caps == 0 && !pieces[0].small) {
+  if (pieces.size() == 1 && pieces[0].caps == 0 && !pieces[0].small &&
+      !pieces[0].zero_width) {
     builder.addText(shaped.data(), shaped.size());
   } else {
     for (size_t i = 0; i < pieces.size(); ++i) {
@@ -224,6 +235,9 @@ void MeasureOrDraw(skiac_font_collection* c_collection,
       AddCapsFeatures(&piece_style, pieces[i].caps);
       if (pieces[i].small) {
         piece_style.setFontSize(SmallCapsSize(request.size));
+      }
+      if (pieces[i].zero_width) {
+        piece_style.setLetterSpacing(0);
       }
       builder.pushStyle(piece_style);
       builder.addText(shaped.data() + pieces[i].start,
@@ -295,22 +309,26 @@ void MeasureOrDraw(skiac_font_collection* c_collection,
                          ? (layout_width - line_width)
                          : 0.0f;
 
-  // LTR: Skia adds letter_spacing/2 before first char, compensate here.
+  // LTR: TextLine moves the line right by the half letter spacing of its
+  // first cluster that is not in a cursive script (a Flutter rule); Blink
+  // does not, compensate here. That cluster has none when it is a zero
+  // width space, and cursive scripts get no letter spacing.
   // Separated from paint_x to avoid being affected by maxWidth scaling.
-  //
-  // However, Cursive Scripts do not allow gaps between their letters for either
-  // justification or letter-spacing.
-  // Cursive scripts are included:
-  // Arabic, Hanifi Rohingya, Mandaic, Mongolian, N’Ko, Phags Pa, Syriac
   //
   // CSS Spec: https://www.w3.org/TR/css-text-3/#cursive-tracking
   // Blink CL: https://chromium-review.googlesource.com/c/chromium/src/+/6399436
   // Skia CL: https://skia-review.googlesource.com/c/skia/+/1099477
-  float letter_spacing_offset =
-      (text_direction == TextDirection::kLtr && !paragraph->runs().empty() &&
-       !paragraph->run(0).isCursiveScript())
-          ? -letter_spacing / 2
-          : 0.0f;
+  float letter_spacing_offset = 0.0f;
+  if (text_direction == TextDirection::kLtr && !paragraph->lines().empty()) {
+    const ClusterRange clusters = paragraph->lines()[0].clustersWithSpaces();
+    for (ClusterIndex i = clusters.start; i < clusters.end; ++i) {
+      const Cluster& cluster = paragraph->cluster(i);
+      if (!cluster.run().isPlaceholder() && !cluster.run().isCursiveScript()) {
+        letter_spacing_offset = -cluster.getHalfLetterSpacing();
+        break;
+      }
+    }
+  }
 
   // Determine alignment type
   auto text_align = static_cast<TextAlign>(request.align);
