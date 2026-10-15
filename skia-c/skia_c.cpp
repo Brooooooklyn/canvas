@@ -4346,7 +4346,9 @@ int skiac_image_pattern_level(int width,
 // copy converted to `cs` stands in for the original when the image is in
 // another colour space. `c_decoded_id` and `c_decoded_bytes` get the uniqueID
 // and byte size of the copy the shader samples, which a recorded paint keeps;
-// the size is 0 when it samples the original.
+// the size is 0 when it samples the original. A canvas, ImageData or SVG
+// Image pattern passes no `c_bitmap` and no `c_levels`: its pixels are read
+// from `c_image`, and a level is made for this shader only.
 skiac_shader* skiac_image_make_decoded_pattern_shader(
     skiac_bitmap* c_bitmap,
     skiac_image* c_image,
@@ -4367,14 +4369,20 @@ skiac_shader* skiac_image_make_decoded_pattern_shader(
   auto ts = conv_from_transform(c_ts);
   sk_sp<SkImage> image;
   SkPixmap original;
-  if (!BITMAP_CAST->peekPixels(&original)) {
+  const bool has_pixels = c_bitmap
+                              ? BITMAP_CAST->peekPixels(&original)
+                              : c_image && IMAGE_CAST->peekPixels(&original);
+  if (!has_pixels) {
     // A null image gives an empty shader below.
   } else if (level == 0 && !ConversionTarget(original, cs)) {
     image = sk_ref_sp(IMAGE_CAST);
   } else {
     const SkIRect src = SkIRect::MakeSize(original.dimensions());
     const SkISize size = CcSizeForLevel(src.size(), level);
-    image = FindOrMakeLevel(c_levels, original, src, size, cs);
+    // Without a level cache the decode is made for this shader only.
+    image = c_levels ? FindOrMakeLevel(c_levels, original, src, size, cs)
+                     : MakeLevelImage(original, src, size,
+                                      ConversionTarget(original, cs), nullptr);
     if (image) {
       *c_decoded_id = image->uniqueID();
       *c_decoded_bytes = image->imageInfo().computeMinByteSize();
