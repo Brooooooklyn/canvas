@@ -12,9 +12,9 @@ use crate::color::token;
 pub const FONT_MEDIUM_PX: f32 = 16.0;
 
 /// The canvas default font is `10px sans-serif` (canvas_font_cache.cc).
-const PARENT_FONT_SIZE: f64 = 10.0;
+pub(crate) const PARENT_FONT_SIZE: f64 = 10.0;
 /// The root element's font size, for `rem`.
-const ROOT_FONT_SIZE: f64 = 16.0;
+pub(crate) const ROOT_FONT_SIZE: f64 = 16.0;
 /// font_size_functions.h kMaximumAllowedFontSize.
 const MAX_FONT_SIZE: f32 = 10000.0;
 /// FontSelectionValue keeps a quarter step (font_selection_types.h).
@@ -123,21 +123,23 @@ pub struct FontRelativeUnits {
 }
 
 impl FontRelativeUnits {
-  /// Blink's fallbacks for a font of `size` px without the metrics
-  /// (simple_font_data.cc: x-height 0.56 ascent, ch 0.5em, ic 1em).
+  /// Blink's values for a font of `size` px without font data
+  /// (css_to_length_conversion_data.cc: ex and ch 0.5em, ic 1em, cap and lh
+  /// 0).
   pub fn fallback(size: f64) -> Self {
     FontRelativeUnits {
       ex: size * 0.5,
       ch: size * 0.5,
-      cap: size * 0.7,
+      cap: 0.0,
       ic: size,
-      lh: (size * 1.2).round(),
+      lh: 0.0,
     }
   }
 }
 
 /// The parent of a canvas font: the 10px default font, and the root element's
-/// 16px font for root-relative units. Both use the standard font's metrics.
+/// 16px font for root-relative units. Both are the font of the default style
+/// (global_fonts::font_parse_context).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FontParseContext {
   pub parent: FontRelativeUnits,

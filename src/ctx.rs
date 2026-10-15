@@ -13,7 +13,7 @@ use regex::Regex;
 use rgb::RGBA;
 
 use crate::font::FONT_MEDIUM_PX;
-use crate::font::{FontParseContext, parse_canvas_font, parse_size_px};
+use crate::font::{parse_canvas_font, parse_size_px};
 use crate::gif::GifConfig;
 use crate::global_fonts::get_font;
 use crate::page_recorder::{PageRecorder, RasterKey, next_resource_id};
@@ -2003,7 +2003,7 @@ impl Context {
   /// the whole font description, so fontStretch and fontVariantCaps take the
   /// shorthand's values (or normal); kerning, spacing and textRendering stay.
   pub fn set_font(&mut self, font: &str) -> result::Result<(), SkError> {
-    let parsed = parse_canvas_font(font, &FontParseContext::default())
+    let parsed = parse_canvas_font(font, &crate::global_fonts::font_parse_context())
       .ok_or_else(|| SkError::InvalidFontStyle(font.to_owned()))?;
     self.state.font_stretch = parsed.stretch;
     self.state.font_stretch_raw = parsed.stretch.as_str().to_owned();
