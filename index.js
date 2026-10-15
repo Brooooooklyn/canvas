@@ -259,20 +259,35 @@ CanvasRenderingContext2D.prototype.stroke = function stroke() {
 }
 
 const _isPointInPath = CanvasRenderingContext2D.prototype.isPointInPath
-CanvasRenderingContext2D.prototype.isPointInPath = function isPointInPath(x, y) {
+CanvasRenderingContext2D.prototype.isPointInPath = function isPointInPath() {
   if (arguments.length < 2) {
     argumentCountError(ctxBrand, this, 'isPointInPath', 'CanvasRenderingContext2D', 2, arguments.length)
   }
-  return _isPointInPath.call(this, x, y, arguments[2], arguments[3], ARGUMENT_COUNTS[Math.min(arguments.length, 4)])
+  return _isPointInPath.call(
+    this,
+    arguments[0],
+    arguments[1],
+    arguments[2],
+    arguments[3],
+    ARGUMENT_COUNTS[Math.min(arguments.length, 4)],
+  )
 }
+Object.defineProperty(CanvasRenderingContext2D.prototype.isPointInPath, 'length', { value: 2 })
 
 const _isPointInStroke = CanvasRenderingContext2D.prototype.isPointInStroke
-CanvasRenderingContext2D.prototype.isPointInStroke = function isPointInStroke(x, y) {
+CanvasRenderingContext2D.prototype.isPointInStroke = function isPointInStroke() {
   if (arguments.length < 2) {
     argumentCountError(ctxBrand, this, 'isPointInStroke', 'CanvasRenderingContext2D', 2, arguments.length)
   }
-  return _isPointInStroke.call(this, x, y, arguments[2], ARGUMENT_COUNTS[Math.min(arguments.length, 3)])
+  return _isPointInStroke.call(
+    this,
+    arguments[0],
+    arguments[1],
+    arguments[2],
+    ARGUMENT_COUNTS[Math.min(arguments.length, 3)],
+  )
 }
+Object.defineProperty(CanvasRenderingContext2D.prototype.isPointInStroke, 'length', { value: 2 })
 
 // createImageData(): WebIDL picks the overload from the argument count, and an
 // explicit undefined counts: createImageData(imagedata, undefined) is the
@@ -307,10 +322,11 @@ const _drawImage = CanvasRenderingContext2D.prototype.drawImage
 // Override drawImage to ensure proper type recognition in bundled environments.
 // As in Chrome, it needs 3 arguments; the native method picks the overload
 // from the argument count (3, 5 or 9).
-CanvasRenderingContext2D.prototype.drawImage = function drawImage(image, dx, dy) {
+CanvasRenderingContext2D.prototype.drawImage = function drawImage() {
   if (arguments.length < 3) {
     argumentCountError(ctxBrand, this, 'drawImage', 'CanvasRenderingContext2D', 3, arguments.length)
   }
+  let image = arguments[0]
   // If the image is a Canvas-like object but not recognized due to bundling,
   // we need to ensure it's properly identified
   if (image && typeof image === 'object') {
@@ -336,8 +352,8 @@ CanvasRenderingContext2D.prototype.drawImage = function drawImage(image, dx, dy)
   return _drawImage.call(
     this,
     image,
-    dx,
-    dy,
+    arguments[1],
+    arguments[2],
     arguments[3],
     arguments[4],
     arguments[5],
@@ -347,6 +363,7 @@ CanvasRenderingContext2D.prototype.drawImage = function drawImage(image, dx, dy)
     ARGUMENT_COUNTS[Math.min(arguments.length, 9)],
   )
 }
+Object.defineProperty(CanvasRenderingContext2D.prototype.drawImage, 'length', { value: 3 })
 
 function createCanvas(width, height, flag) {
   const isSvgBackend = typeof flag !== 'undefined'
