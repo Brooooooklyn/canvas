@@ -15,7 +15,6 @@ use crate::font::parse_size_px;
 use crate::gif::GifConfig;
 use crate::global_fonts::get_font;
 use crate::page_recorder::{PageRecorder, RasterKey, next_resource_id};
-use crate::picture_recorder::PictureRecorder;
 use crate::sk::Canvas;
 use crate::{
   CanvasElement, SVGCanvas,
@@ -245,14 +244,11 @@ pub(crate) struct ShadowDraw {
   pattern_geometry: bool,
 }
 
-// The same, borrowed, plus what `render_canvas` needs to size the shadow layer.
+// The same, borrowed.
 struct ShadowPass<'a> {
   paint: &'a Paint,
   filter: Option<&'a ImageFilter>,
   pattern_geometry: bool,
-  offset_x: f32,
-  offset_y: f32,
-  blur: f32,
 }
 
 /// The user-space rect a draw hands Blink's Draw as `bounds`. The gradient
@@ -928,9 +924,6 @@ impl Context {
       paint: &shadow.paint,
       filter: shadow.filter.as_ref(),
       pattern_geometry: shadow.pattern_geometry,
-      offset_x: self.state.shadow_offset_x,
-      offset_y: self.state.shadow_offset_y,
-      blur: self.state.shadow_blur,
     });
 
     // No recording-limit check here: callers charge the op's payload (path
@@ -938,13 +931,6 @@ impl Context {
     // so a flush inside this helper would consolidate and zero pending_bytes
     // BEFORE the op is recorded, erasing its charge. The check lives at the
     // top of every public recording entry point instead.
-    //
-    // composited_pass records an inner SkPicture per isolation layer (one for
-    // the content pass, another for the shadow pass) which the outer record
-    // pins via drawPicture; their approx_bytes_used is accumulated through
-    // nested_picture_bytes and charged to the recorder once the op lands --
-    // after, not before, since the pictures only exist if the draw succeeds.
-    let mut nested_picture_bytes = 0usize;
     if let Some(ref recorder) = self.page_recorder {
       let mut rec = recorder.borrow_mut();
       if let Some(canvas) = rec.get_recording_canvas() {
@@ -960,23 +946,12 @@ impl Context {
           width,
           height,
           shadow,
-          &mut nested_picture_bytes,
           shadow_f,
           f,
         );
         // This funnel only serves pixel commits; a recorded draw is a new
         // content generation for canvas-source dedup keys.
         rec.note_paint_op();
-        // Drop the RefMut before the charge borrows the recorder. The nested
-        // isolation-layer pictures' bytes DO reach the outer picture's
-        // approximateBytesUsed (SkRecordCanvas::onDrawPicture folds
-        // pic->approximateBytesUsed into fApproxBytesUsedBySubPictures, which
-        // finishRecordingAsPicture bakes in), and drawCanvas separately
-        // charges approx_bytes_used + source_raster_bytes -- so this stays a
-        // plain recorded-byte charge to pending_bytes only. Routing it to
-        // raster_bytes double-counted it on every drawCanvas.
-        drop(rec);
-        self.account_recorded_bytes(nested_picture_bytes);
         return result;
       }
     }
@@ -992,7 +967,6 @@ impl Context {
       width,
       height,
       shadow,
-      &mut nested_picture_bytes,
       shadow_f,
       f,
     );
@@ -1774,50 +1748,47 @@ impl Context {
     Ok(())
   }
 
-  // One `CompositedDraw` pass: record the draw into a picture, then replay it
-  // through a layer that carries only the composite mode. The split of paints is
-  // load-bearing -- handing one paint to both sides applies globalAlpha twice,
-  // since `drawPicture` with a paint is a `saveLayer` whose restore paint keeps
-  // alpha, colour filter and blend (canvas_2d_recorder_context.h:948-962).
-  // `content_blend` is the blend the draw itself gets inside the layer.
-  fn composited_pass<F>(
-    surface_canvas: &mut Canvas,
-    paint: &Paint,
+  /// One `CompositedDraw` pass (canvas_2d_recorder_context.h:919-963): a
+  /// layer with no bounds, opened at the device identity, whose restore paint
+  /// carries only the composite mode and `filter`; the draw runs inside it
+  /// under `device_ctm` with `content_blend`. No bounds means the layer is the
+  /// whole clip, so a draw whose user-space rect misses the canvas still
+  /// composites (source-in clears the canvas outside the draw, as in Chrome).
+  /// The split of paints is load-bearing: one paint on both sides would apply
+  /// globalAlpha twice.
+  ///
+  /// `set_transform` is exact here also inside a recording: SkRecordDraw
+  /// plays a SetM44 relative to the playback's initial matrix.
+  fn composited_layer<F>(
+    canvas: &mut Canvas,
+    device_ctm: &Matrix,
     blend_mode: BlendMode,
+    filter: Option<&ImageFilter>,
+    paint: &Paint,
     content_blend: BlendMode,
-    left: f32,
-    top: f32,
-    width: f32,
-    height: f32,
-    nested_picture_bytes: &mut usize,
     f: F,
   ) -> result::Result<(), SkError>
   where
     F: Fn(&mut Canvas, &Paint) -> result::Result<(), SkError>,
   {
+    let mut layer_paint = Paint::new();
+    layer_paint.set_blend_mode(blend_mode);
+    if let Some(filter) = filter {
+      layer_paint.set_image_filter(filter);
+    }
     let mut inner_paint = paint.clone();
     inner_paint.set_blend_mode(content_blend);
-    let mut composite_paint = Paint::new();
-    composite_paint.set_blend_mode(blend_mode);
-    let mut layer = PictureRecorder::new();
-    layer.begin_recording(left, top, width, height);
-    if let Some(canvas) = layer.get_recording_canvas() {
-      f(canvas, &inner_paint)?;
-    }
-    if let Some(pict) = layer.finish_recording_as_picture() {
-      // The replayed drawPicture retains this inner picture inside the
-      // recorded op; the byte budget needs its measured size, which only a
-      // finished picture can answer. Accumulated here because the charge
-      // must land on Context's recorder -- `Self` helpers see none.
-      *nested_picture_bytes += pict.approx_bytes_used();
-      surface_canvas.save();
-      surface_canvas.draw_picture(&pict, &Matrix::identity(), &composite_paint);
-      surface_canvas.restore();
-    }
-    Ok(())
+    canvas.save();
+    canvas.set_transform(&Matrix::identity());
+    canvas.save_layer(&layer_paint);
+    canvas.set_transform(device_ctm);
+    let result = f(canvas, &inner_paint);
+    canvas.restore();
+    canvas.restore();
+    result
   }
 
-  /// The blend a `composited_pass` draws its content with. Blink's
+  /// The blend a `composited_layer` draws its content with. Blink's
   /// `CompositedDraw` draws it src-over inside the layer
   /// (canvas_2d_recorder_context.h:942-959). `copy` skips `CompositedDraw` and
   /// draws with kSrc straight onto the cleared canvas (h:830-837), unless a
@@ -1841,9 +1812,6 @@ impl Context {
   /// (canvas_2d_recorder_context.h:919-963) spelled with `concat`. The layer is
   /// what makes filter lengths device-space, as HTML 4.12.5.1.20 requires; a
   /// filter left on the draw's own paint gets scaled by the draw's CTM instead.
-  /// It has to be `concat`, not `set_transform`, because the canvas handed here
-  /// is not always the device -- on the isolation arm it is a recorder's,
-  /// sitting at identity while the real CTM is applied at replay.
   ///
   /// The layer paint carries only the blend mode and the filter; the content
   /// keeps colour, alpha and shader, so nothing is applied twice.
@@ -1907,7 +1875,6 @@ impl Context {
     width: f32,
     height: f32,
     shadow: Option<ShadowPass<'_>>,
-    nested_picture_bytes: &mut usize,
     shadow_f: S,
     f: F,
   ) -> result::Result<(), SkError>
@@ -1959,29 +1926,17 @@ impl Context {
       | BlendMode::DestinationIn
       | BlendMode::DestinationATop
       | BlendMode::Source => {
+        let device_ctm = surface_canvas.get_transform_matrix();
         if let Some(shadow) = shadow {
-          // The shadow layer is the one place the halo can escape the canvas
-          // rect, so its cull rect is expanded. FIXME: this under-covers. Skia
-          // bounds a Gaussian at 3 * sigma and sigma is `blur / 2`, so the halo
-          // needs `1.5 * blur + |dx| + |dy|`.
-          let expansion = (shadow.blur.abs() + shadow.offset_x.abs() + shadow.offset_y.abs())
-            .max(shadow.blur * 2.0);
-          // The recording canvas `composited_pass` hands the closure sits at
-          // identity -- the CTM is applied at replay -- so neither the closure
-          // nor `composited_filter_layer` can read the device matrix off it.
-          let device_ctm = surface_canvas.get_transform_matrix();
-          Self::composited_pass(
+          Self::composited_layer(
             surface_canvas,
-            shadow.paint,
+            &device_ctm,
             blend_mode,
+            None,
+            shadow.paint,
             // The content pass below replaces every pixel for copy, so this
             // one's blend never shows there.
             Self::layer_content_blend(blend_mode, false),
-            -expansion,
-            -expansion,
-            width + expansion * 2.0,
-            height + expansion * 2.0,
-            nested_picture_bytes,
             |canvas, paint| {
               Self::composited_filter_layer(
                 canvas,
@@ -1993,17 +1948,13 @@ impl Context {
             },
           )?;
         }
-        let device_ctm = surface_canvas.get_transform_matrix();
-        Self::composited_pass(
+        Self::composited_layer(
           surface_canvas,
-          paint,
+          &device_ctm,
           blend_mode,
+          None,
+          paint,
           Self::layer_content_blend(blend_mode, pattern_shadow),
-          0.0,
-          0.0,
-          width,
-          height,
-          nested_picture_bytes,
           |canvas, paint| {
             Self::composited_filter_layer(canvas, &device_ctm, content_filter, paint, &f)
           },
@@ -3004,9 +2955,9 @@ impl Context {
   /// un-skippable are the wrapper ops our draw path can still emit around
   /// the empty draw, because their restore writes the device even with no
   /// content inside:
-  ///   * copy clears the clip before it draws, and composited_pass modes
-  ///     replay an inner picture through a saveLayer/drawPicture(paint) whose
-  ///     restore rewrites the whole clip even for an empty picture;
+  ///   * copy clears the clip before it draws, and the full-canvas modes
+  ///     draw through a `composited_layer` whose restore rewrites the whole
+  ///     clip even for an empty layer;
   ///   * a `ctx.filter` wraps the draw in a filtered saveLayer -- its
   ///     restore also composites (kClear can clear the canvas); and on
   ///     alpha:false any assigned filter, even one that built no Skia filter,
