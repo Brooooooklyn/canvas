@@ -91,6 +91,11 @@ test('drawImage needs 3, 5 or 9 arguments', (t) => {
   // A 10th argument is ignored, not converted.
   t.notThrows(() => ctx.drawImage(source, 0, 0, 2, 2, 4, 4, 2, 2, Symbol()))
   t.deepEqual(pixel(ctx, 5, 5), [0, 0, 255, 255])
+  // An explicit undefined counts: 4 arguments, and a NaN height in 5.
+  assertBindingError(t, () => ctx.drawImage(source, 0, 0, undefined), OVERLOAD)
+  const nan = context()
+  t.notThrows(() => nan.drawImage(source, 0, 0, 4, undefined))
+  t.deepEqual(pixel(nan, 1, 1), [0, 0, 0, 0])
 })
 
 test('drawImage rejects a value that is not an image', (t) => {

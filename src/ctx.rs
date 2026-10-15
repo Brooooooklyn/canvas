@@ -3619,8 +3619,9 @@ type DrawImageSource =
 /// numbers run their user code, and borrowed after it.
 pub struct DrawImageArgs {
   image: DrawImageSource,
-  /// The 2, 4 or 8 numbers after the image.
-  numbers: Vec<f64>,
+  /// The 2, 4 or 8 numbers after the image, in `numbers[..len]`.
+  numbers: [f64; 8],
+  len: usize,
 }
 
 impl FromNapiValue for DrawImageArgs {
@@ -3655,11 +3656,16 @@ impl FromNapiValue for DrawImageArgs {
     let Some(kind) = (unsafe { DrawImageKind::of(env, image) }) else {
       return Err(not_an_image());
     };
-    let numbers = (1..count)
-      .map(|index| webidl::to_number(env, args.get(index)?, prefix))
-      .collect::<Result<Vec<_>>>()?;
+    let mut numbers = [0.0; 8];
+    for (number, index) in numbers.iter_mut().zip(1..count) {
+      *number = webidl::to_number(env, args.get(index)?, prefix)?;
+    }
     let image = unsafe { kind.borrow(env, image) }.map_err(|_| not_an_image())?;
-    Ok(Self { image, numbers })
+    Ok(Self {
+      image,
+      numbers,
+      len: count as usize - 1,
+    })
   }
 }
 
@@ -4673,7 +4679,7 @@ impl CanvasRenderingContext2D {
     // Chrome returns on a non-finite number before it looks at the image,
     // then throws for a broken image (canvas_2d_recorder_context.cc
     // DrawImage). The source size of the 3 and 5 argument forms is finite.
-    if !args.numbers.iter().all(|n| n.is_finite()) {
+    if !args.numbers[..args.len].iter().all(|n| n.is_finite()) {
       return Ok(());
     }
     if let Either3::C(image) = &args.image
@@ -4749,7 +4755,7 @@ impl CanvasRenderingContext2D {
     let bitmap_ref = bitmap.as_ref();
     let source_width = bitmap_ref.0.width as f64;
     let source_height = bitmap_ref.0.height as f64;
-    let (sx, sy, s_width, s_height, dx, dy, d_width, d_height) = match args.numbers[..] {
+    let (sx, sy, s_width, s_height, dx, dy, d_width, d_height) = match args.numbers[..args.len] {
       [dx, dy] => (
         0.0,
         0.0,

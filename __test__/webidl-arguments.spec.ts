@@ -453,6 +453,7 @@ test('isPointInStroke overloads', (t) => {
   for (const args of [
     [{}, 0, 5],
     [0, 5, 7],
+    [0, 5, undefined],
   ]) {
     t.throws(() => ctx.isPointInStroke(...args), {
       instanceOf: TypeError,
