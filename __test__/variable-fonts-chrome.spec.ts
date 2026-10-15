@@ -7,7 +7,7 @@
 // bold when the weight is more than 200 above the face's, and italic only
 // for `italic` and plain `oblique` (FontCache::CreateFontPlatformData).
 import { copyFileSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { release, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -30,9 +30,13 @@ interface Fixture {
   systemFaces: Record<string, string[]>
 }
 
-const FIXTURE: Fixture = JSON.parse(
-  readFileSync(join(__dirname, 'fixtures', 'text-fonts', 'variable-fonts.json'), 'utf8'),
-)
+// Chrome on macOS reads the fonts through CoreText: its own rows there.
+const RAW = JSON.parse(readFileSync(join(__dirname, 'fixtures', 'text-fonts', 'variable-fonts.json'), 'utf8'))
+const FIXTURE: Fixture = process.platform === 'darwin' ? { ...RAW, ...RAW.darwin } : RAW
+
+// Chrome's macOS rows were measured on macOS 27. CoreText ships with the OS,
+// so on another macOS version the painted pixels are not compared.
+const PIXEL_PINS = process.platform !== 'darwin' || Number.parseInt(release(), 10) === 27
 
 const FONTS: Record<string, string> = {
   OswaldT: 'Oswald.ttf',
@@ -100,7 +104,9 @@ function rowMismatches(table: Record<string, Row>) {
   for (const [font, expected] of Object.entries(table)) {
     const actual = draw(font)
     const same = expected.every((value, i) =>
-      typeof value === 'string' ? value === actual[i] : Math.abs((actual[i] as number) - value) <= (i ? 1e-3 : 0.01),
+      typeof value === 'string'
+        ? !PIXEL_PINS || value === actual[i]
+        : Math.abs((actual[i] as number) - value) <= (i ? 1e-3 : 0.01),
     )
     if (!same) out.push(`${font}: ${JSON.stringify(actual)} (Chrome ${JSON.stringify(expected)})`)
   }
