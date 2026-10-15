@@ -1434,6 +1434,7 @@ fn supported_color_space(env: sys::napi_env, prefix: &str, value: &str) -> Resul
 }
 
 pub(crate) const IMAGE_DATA_CONSTRUCTOR: &str = "Failed to construct 'ImageData': ";
+pub(crate) const PATH2D_CONSTRUCTOR: &str = "Failed to construct 'Path2D': ";
 pub(crate) const CREATE_IMAGE_DATA: &str =
   "Failed to execute 'createImageData' on 'CanvasRenderingContext2D': ";
 pub(crate) const GET_IMAGE_DATA: &str =

@@ -125,27 +125,10 @@ pub struct Path {
 #[napi]
 impl Path {
   #[napi(constructor)]
-  pub fn new(path: Option<Either3<String, &mut Path, Unknown>>) -> Result<Self> {
-    let inner = match &path {
-      Some(Either3::A(path)) => SkPath::from_svg_path(path).ok_or_else(|| {
-        Error::new(
-          Status::InvalidArg,
-          "Create path from provided path string failed.".to_owned(),
-        )
-      })?,
-      Some(Either3::B(path)) => path.inner.clone(),
-      Some(Either3::C(c)) => {
-        return Err(Error::new(
-          Status::InvalidArg,
-          format!(
-            "Create path from provided unknown value failed {}.",
-            c.get_type()?
-          ),
-        ));
-      }
-      None => SkPath::new(),
-    };
-    Ok(Path { inner })
+  pub fn new(path: Option<PathInit>) -> Self {
+    Path {
+      inner: path.map_or_else(SkPath::new, |path| path.0),
+    }
   }
 
   /// addPath(path, transform = {}) (Blink path_2d.h:80-91). The index.js
@@ -460,6 +443,26 @@ impl Path {
       y as f32,
       fill_type.unwrap_or(FillType::Winding).into(),
     )
+  }
+}
+
+/// The argument of new Path2D(): `optional (Path2D or DOMString) path`
+/// (path_2d.h:58-68). A Path2D is copied. Anything else goes through
+/// ToString and is parsed as SVG path data, keeping the segments before the
+/// first error (path_2d.h:109-112): a bad string does not throw.
+pub struct PathInit(SkPath);
+
+impl FromNapiValue for PathInit {
+  unsafe fn from_napi_value(env: sys::napi_env, value: sys::napi_value) -> Result<Self> {
+    if is_path2d(env, value) {
+      let mut data = std::ptr::null_mut();
+      check_status!(unsafe { sys::napi_unwrap(env, value, &mut data) })?;
+      // SAFETY: is_path2d; only read, before any receiver exists.
+      let source = unsafe { &*data.cast::<Path>() };
+      return Ok(Self(source.inner.clone()));
+    }
+    let data = webidl::to_dom_string(env, value, webidl::PATH2D_CONSTRUCTOR)?;
+    Ok(Self(crate::svg_path::build_path_from_string(&data)))
   }
 }
 
