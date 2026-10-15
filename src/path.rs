@@ -331,7 +331,7 @@ impl Path {
       num::saturated_f32s([x.0, y.0, width.0, height.0]),
       round_rect_radii(radii),
     ) {
-      self.inner.round_rect(x, y, width, height, radii);
+      self.inner.round_rect(x, y, width, height, &radii);
     }
   }
 
@@ -448,31 +448,23 @@ impl Path {
   }
 }
 
-/// The four corner radii of roundRect(). Each given radius goes through the
-/// path rule in the order given (Blink canvas_path.cc:597-628): None when one
-/// is outside the float range. Then the 1 to 4 radii expand to the corners.
-pub(crate) fn round_rect_radii(radii: Either3<f64, Vec<f64>, Undefined>) -> Option<[f32; 4]> {
-  let mut r = [0f32; 4];
-  let count = match radii {
-    Either3::A(radius) => {
-      r[0] = num::saturated_f32(radius)?;
-      1
-    }
-    Either3::B(list) => {
-      for (slot, radius) in r.iter_mut().zip(&list) {
-        *slot = num::saturated_f32(*radius)?;
-      }
-      list.len()
-    }
-    Either3::C(_) => 0,
+/// The radii of roundRect(), as (rx, ry) pairs. Each given radius goes
+/// through the path rule in the order given (Blink canvas_path.cc:597-628):
+/// None when one is outside the float range. At most four are used.
+pub(crate) fn round_rect_radii(
+  radii: Either3<f64, Vec<f64>, Undefined>,
+) -> Option<Vec<(f32, f32)>> {
+  let list = match radii {
+    Either3::A(radius) => vec![radius],
+    Either3::B(list) => list,
+    Either3::C(_) => vec![0.0],
   };
-  Some(match count {
-    0 => [0.0; 4],
-    1 => [r[0]; 4],
-    2 => [r[0], r[1], r[0], r[1]],
-    3 => [r[0], r[1], r[1], r[2]],
-    _ => r,
-  })
+  let list = if list.is_empty() { vec![0.0] } else { list };
+  list
+    .iter()
+    .take(4)
+    .map(|radius| num::saturated_f32(*radius).map(|r| (r, r)))
+    .collect()
 }
 
 impl ToNapiValue for SkiaString {
