@@ -1364,6 +1364,14 @@ pub mod ffi {
 
     pub fn skiac_font_collection_destroy(c_font_collection: *mut skiac_font_collection);
 
+    pub fn skiac_font_collection_enable_installed_fonts(
+      c_font_collection: *mut skiac_font_collection,
+    );
+
+    pub fn skiac_font_collection_load_installed_fonts(
+      c_font_collection: *mut skiac_font_collection,
+    ) -> u32;
+
     pub fn skiac_font_collection_default_font_units(
       c_font_collection: *mut skiac_font_collection,
       size: f32,
@@ -5565,6 +5573,19 @@ impl FontCollection {
 
   pub fn unregister_all(&self) -> usize {
     unsafe { ffi::skiac_font_collection_unregister_all(self.0) }
+  }
+
+  /// macOS: resolves CoreText's installed fonts by name from now on and
+  /// registers them at the first font lookup or registration. Elsewhere a
+  /// no-op.
+  pub fn enable_installed_fonts(&self) {
+    unsafe { ffi::skiac_font_collection_enable_installed_fonts(self.0) }
+  }
+
+  /// macOS: `enable_installed_fonts`, then registers the installed fonts now.
+  /// Returns how many faces that registered. Elsewhere 0.
+  pub fn load_installed_fonts(&self) -> u32 {
+    unsafe { ffi::skiac_font_collection_load_installed_fonts(self.0) }
   }
 
   /// The px size of `ex`, `ch`, `cap`, `ic` and `lh` of the font the canvas

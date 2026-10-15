@@ -499,15 +499,14 @@ class Canvas {
 }
 
 if (!process.env.DISABLE_SYSTEM_FONTS_LOAD) {
-  GlobalFonts.loadSystemFonts()
+  // macOS: CoreText's installed fonts, user fonts included, listed at the
+  // first font lookup.
+  GlobalFonts.enableSystemFonts()
   const platformName = platform()
   const homedirPath = homedir()
   switch (platformName) {
     case 'win32':
       GlobalFonts.loadFontsFromDir(join(homedirPath, 'AppData', 'Local', 'Microsoft', 'Windows', 'Fonts'))
-      break
-    case 'darwin':
-      GlobalFonts.loadFontsFromDir(join(homedirPath, 'Library', 'Fonts'))
       break
     case 'linux':
       GlobalFonts.loadFontsFromDir(join('usr', 'local', 'share', 'fonts'))
