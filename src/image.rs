@@ -278,134 +278,198 @@ impl ImageData {
   }
 }
 
+/// The types of ImageData data (image_data.idl `ImageDataArray`).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum DataArrayType {
+  Uint8Clamped,
+  Float16,
+  Float32,
+}
+
+impl DataArrayType {
+  fn name(self) -> &'static str {
+    match self {
+      Self::Uint8Clamped => "Uint8ClampedArray",
+      Self::Float16 => "Float16Array",
+      Self::Float32 => "Float32Array",
+    }
+  }
+
+  fn pixel_format(self) -> &'static str {
+    match self {
+      Self::Uint8Clamped => "rgba-unorm8",
+      Self::Float16 => "rgba-float16",
+      Self::Float32 => "rgba-float32",
+    }
+  }
+}
+
+/// `napi_float16_array` (js_native_api_types.h, Node 24.18 and later).
+const NAPI_FLOAT16_ARRAY: sys::napi_typedarray_type = 11;
+
+/// The data type of `value`, if it is ImageData data: V8's
+/// IsUint8ClampedArray(), IsFloat16Array() or IsFloat32Array(), brand checks
+/// that hold for subclasses and arrays from other realms, and that no
+/// toStringTag can fake.
+fn data_array_type(env: sys::napi_env, value: sys::napi_value) -> Result<Option<DataArrayType>> {
+  let mut is_typedarray = false;
+  check_status!(unsafe { sys::napi_is_typedarray(env, value, &mut is_typedarray) })?;
+  if !is_typedarray {
+    return Ok(None);
+  }
+  let mut array_type = -1;
+  check_status!(unsafe {
+    sys::napi_get_typedarray_info(
+      env,
+      value,
+      &mut array_type,
+      ptr::null_mut(),
+      ptr::null_mut(),
+      ptr::null_mut(),
+      ptr::null_mut(),
+    )
+  })?;
+  Ok(match array_type {
+    sys::TypedarrayType::uint8_clamped_array => Some(DataArrayType::Uint8Clamped),
+    sys::TypedarrayType::float32_array => Some(DataArrayType::Float32),
+    NAPI_FLOAT16_ARRAY => Some(DataArrayType::Float16),
+    // Node before 24.18 leaves the type unset for a Float16Array, the only
+    // TypedArray kind it has no napi type for.
+    -1 => Some(DataArrayType::Float16),
+    _ => None,
+  })
+}
+
 #[napi]
 impl ImageData {
+  /// `new ImageData(sw, sh, settings?)` or `new ImageData(data, sw, sh?,
+  /// settings?)`, picked as Chrome's binding picks them
+  /// (v8_image_data.cc ConstructorCallback): with data first (a brand check)
+  /// the data form, else the size form, which takes at most 3 arguments.
+  /// `argc` is an argument-count marker; see `webidl::Arguments::new`.
   #[napi(constructor)]
   pub fn new(
     env: Env,
     mut this: This,
-    width_or_data: Either4<u32, Uint8ClampedArray, Uint16Array, Float32Array>,
-    width_or_height: u32,
-    // `settings` after (sw, sh); `sh` after (data, sw).
-    height_or_settings: Unknown,
-    maybe_settings: Unknown,
+    arg0: Unknown,
+    arg1: Unknown,
+    arg2: Unknown,
+    arg3: Unknown,
+    argc: Unknown,
   ) -> Result<Self> {
     let raw = env.raw();
     let prefix = webidl::IMAGE_DATA_CONSTRUCTOR;
-    // The data forms: a present 3rd argument is `unsigned long sh`, so a
-    // dictionary or null there is height 0. Chrome drops trailing undefined
-    // arguments, so an undefined `sh` is missing only when no settings follow.
-    let data_height = || -> Result<Option<u32>> {
-      if is_undefined(&height_or_settings)? && is_undefined(&maybe_settings)? {
-        return Ok(None);
-      }
-      webidl::to_unsigned_long(raw, height_or_settings.raw()).map(Some)
-    };
-    // The checks of the data forms, for `bytes` bytes of `element_size`-byte
-    // elements: the size, the color space, then the data length. Returns the
-    // height and the color space.
-    let validate_data_form = |bytes: usize, element_size: usize| -> Result<(u32, ColorSpace)> {
-      let width = width_or_height;
-      let height = data_height()?;
-      let settings = webidl::ImageDataSettings::from_js(raw, Some(maybe_settings.raw()), prefix)?;
-      validate_size(raw, prefix, width, height, SizeErrors::Constructor)?;
-      let color_space = settings.color_space(raw, prefix)?.unwrap_or_default();
-      let height = validate_data_length(raw, prefix, width, height, bytes, element_size)?;
-      Ok((height, color_space))
-    };
-    match width_or_data {
-      Either4::A(width) => {
-        let height = width_or_height;
-        let settings =
-          webidl::ImageDataSettings::from_js(raw, Some(height_or_settings.raw()), prefix)?;
-        let arraybuffer_length =
-          validate_size(raw, prefix, width, Some(height), SizeErrors::Constructor)?;
-        let color_space = settings.color_space(raw, prefix)?.unwrap_or_default();
-        let data_buffer = alloc_data(raw, prefix, arraybuffer_length)?;
-        let data_object = Uint8ClampedSlice::from_data(&env, data_buffer)?;
-        this.define_properties(&[Property::new()
-          .with_utf8_name("data")?
-          .with_value(&data_object)
-          // Enumerable only: non-writable/non-configurable so the array is
-          // pinned by ordinary GC tracing for exactly the ImageData's lifetime.
-          .with_property_attributes(PropertyAttributes::Enumerable)])?;
-        Ok(ImageData {
-          width: width as usize,
-          height: height as usize,
-          color_space,
-          data_ref: Some(create_weak_ref(&env, data_object.raw())?),
-        })
-      }
-      Either4::B(data_object) => {
-        // Uint8ClampedArray - each pixel takes 4 bytes
-        let width = width_or_height;
-        let (height, color_space) = validate_data_form(data_object.len(), 1)?;
-        // https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D/createImageData
-        // An existing ImageData object from which to copy the width and height.
-        let cloned_data = Uint8ClampedSlice::from_data(&env, data_object.to_vec())?;
-        this.define_properties(&[Property::new()
-          .with_utf8_name("data")?
-          .with_value(&cloned_data)
-          // Enumerable only: non-writable/non-configurable so the array is
-          // pinned by ordinary GC tracing for exactly the ImageData's lifetime.
-          .with_property_attributes(PropertyAttributes::Enumerable)])?;
-        Ok(ImageData {
-          width: width as usize,
-          height: height as usize,
-          color_space,
-          data_ref: Some(create_weak_ref(&env, cloned_data.raw())?),
-        })
-      }
-      Either4::C(data_object) => {
-        // Uint16Array - each pixel takes 4 elements (RGBA), 2 bytes per element
-        let width = width_or_height;
-        let (height, color_space) = validate_data_form(data_object.len() * 2, 2)?;
-        // Convert Uint16Array to Uint8ClampedArray
-        let mut u8_data = vec![0u8; width as usize * height as usize * 4];
-        for (i, &val) in data_object.as_ref().iter().enumerate() {
-          // Convert from 16-bit (0-65535) to 8-bit (0-255)
-          u8_data[i] = ((val as u32 * 255 + 32767) / 65535) as u8;
-        }
-        let cloned_data = Uint8ClampedSlice::from_data(&env, u8_data)?;
-        this.define_properties(&[Property::new()
-          .with_utf8_name("data")?
-          .with_value(&cloned_data)
-          // Enumerable only: non-writable/non-configurable so the array is
-          // pinned by ordinary GC tracing for exactly the ImageData's lifetime.
-          .with_property_attributes(PropertyAttributes::Enumerable)])?;
-        Ok(ImageData {
-          width: width as usize,
-          height: height as usize,
-          color_space,
-          data_ref: Some(create_weak_ref(&env, cloned_data.raw())?),
-        })
-      }
-      Either4::D(data_object) => {
-        // Float32Array - each pixel takes 4 elements (RGBA), 4 bytes per element
-        let width = width_or_height;
-        let (height, color_space) = validate_data_form(data_object.len() * 4, 4)?;
-        // Convert Float32Array to Uint8ClampedArray
-        let mut u8_data = vec![0u8; width as usize * height as usize * 4];
-        for (i, &val) in data_object.as_ref().iter().enumerate() {
-          // Clamp float values to [0.0, 1.0] and convert to 8-bit (0-255)
-          let clamped = val.clamp(0.0, 1.0);
-          u8_data[i] = (clamped * 255.0).round() as u8;
-        }
-        let cloned_data = Uint8ClampedSlice::from_data(&env, u8_data)?;
-        this.define_properties(&[Property::new()
-          .with_utf8_name("data")?
-          .with_value(&cloned_data)
-          // Enumerable only: non-writable/non-configurable so the array is
-          // pinned by ordinary GC tracing for exactly the ImageData's lifetime.
-          .with_property_attributes(PropertyAttributes::Enumerable)])?;
-        Ok(ImageData {
-          width: width as usize,
-          height: height as usize,
-          color_space,
-          data_ref: Some(create_weak_ref(&env, cloned_data.raw())?),
-        })
-      }
+    let args = webidl::Arguments::new(
+      raw,
+      &[arg0.raw(), arg1.raw(), arg2.raw(), arg3.raw()],
+      argc.raw(),
+    )?;
+    if args.len() < 2 {
+      return Err(webidl::context_type_error(
+        raw,
+        prefix,
+        &format!("2 arguments required, but only {} present.", args.len()),
+      ));
     }
+    if let Some(array_type) = data_array_type(raw, args.get(0)?)? {
+      return Self::from_data(&env, &mut this, array_type, &args);
+    }
+    if args.len() > 3 {
+      return Err(webidl::context_type_error(
+        raw,
+        prefix,
+        "Overload resolution failed.",
+      ));
+    }
+    let width = webidl::to_unsigned_long(raw, args.get(0)?, prefix)?;
+    let height = webidl::to_unsigned_long(raw, args.get(1)?, prefix)?;
+    let settings = if args.len() == 3 {
+      webidl::ImageDataSettings::from_js(raw, Some(args.get(2)?), prefix)?
+    } else {
+      webidl::ImageDataSettings::default()
+    };
+    let length = validate_size(raw, prefix, width, Some(height), SizeErrors::Constructor)?;
+    let color_space = settings.color_space(raw, prefix)?.unwrap_or_default();
+    let data_object = Uint8ClampedSlice::from_data(&env, alloc_data(raw, prefix, length)?)?;
+    this.define_properties(&[Property::new()
+      .with_utf8_name("data")?
+      .with_value(&data_object)
+      // Enumerable only: non-writable/non-configurable so the array is
+      // pinned by ordinary GC tracing for exactly the ImageData's lifetime.
+      .with_property_attributes(PropertyAttributes::Enumerable)])?;
+    Ok(ImageData {
+      width: width as usize,
+      height: height as usize,
+      color_space,
+      data_ref: Some(create_weak_ref(&env, data_object.raw())?),
+    })
+  }
+
+  /// `new ImageData(data, sw, sh?, settings?)`: the data, sw, then sh and the
+  /// settings only when an argument after sw is not undefined
+  /// (v8_image_data.cc, NonUndefinedArgumentLength). Then the checks of
+  /// ImageData::ValidateAndCreate: size, color space, data type against the
+  /// pixel format, data length.
+  fn from_data(
+    env: &Env,
+    this: &mut This,
+    array_type: DataArrayType,
+    args: &webidl::Arguments,
+  ) -> Result<Self> {
+    let raw = env.raw();
+    let prefix = webidl::IMAGE_DATA_CONSTRUCTOR;
+    let data = args.get(0)?;
+    let width = webidl::to_unsigned_long(raw, args.get(1)?, prefix)?;
+    let (height, settings) = if args.non_undefined_len()? <= 2 {
+      (None, webidl::ImageDataSettings::default())
+    } else {
+      // An undefined sh is 0 here.
+      let height = webidl::to_unsigned_long(raw, args.get(2)?, prefix)?;
+      let settings = webidl::ImageDataSettings::from_js(raw, Some(args.get(3)?), prefix)?;
+      (Some(height), settings)
+    };
+    validate_size(raw, prefix, width, height, SizeErrors::Constructor)?;
+    let color_space = settings.color_space(raw, prefix)?.unwrap_or_default();
+    // Storage is 8-bit only, so the pixel format is always rgba-unorm8
+    // (image_data.cc:139-171).
+    if array_type != DataArrayType::Uint8Clamped {
+      return Err(webidl::dom_exception(
+        raw,
+        "InvalidStateError",
+        &format!(
+          "{prefix}{} must use {} pixelFormat.",
+          array_type.name(),
+          array_type.pixel_format()
+        ),
+      ));
+    }
+    let mut length = 0usize;
+    let mut pixels = ptr::null_mut();
+    check_status!(unsafe {
+      sys::napi_get_typedarray_info(
+        raw,
+        data,
+        ptr::null_mut(),
+        &mut length,
+        &mut pixels,
+        ptr::null_mut(),
+        ptr::null_mut(),
+      )
+    })?;
+    let height = validate_data_length(raw, prefix, width, height, length, 1)?;
+    // SAFETY: the array has `length` bytes at `pixels`, not zero (checked).
+    let copy = unsafe { std::slice::from_raw_parts(pixels.cast::<u8>(), length) }.to_vec();
+    let data_object = Uint8ClampedSlice::from_data(env, copy)?;
+    this.define_properties(&[Property::new()
+      .with_utf8_name("data")?
+      .with_value(&data_object)
+      .with_property_attributes(PropertyAttributes::Enumerable)])?;
+    Ok(ImageData {
+      width: width as usize,
+      height: height as usize,
+      color_space,
+      data_ref: Some(create_weak_ref(env, data_object.raw())?),
+    })
   }
 
   #[napi(getter)]
@@ -428,10 +492,6 @@ impl ImageData {
   pub fn get_pixel_format(&self) -> &'static str {
     "rgba-unorm8"
   }
-}
-
-fn is_undefined(value: &Unknown) -> Result<bool> {
-  Ok(value.get_type()? == ValueType::Undefined)
 }
 
 #[napi(custom_finalize)]

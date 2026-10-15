@@ -1081,11 +1081,14 @@ impl<S: Site> FromNapiValue for DoubleSequence<S> {
 }
 
 /// WebIDL `unsigned long` (ToNumber, then ToUint32: NaN and infinities are
-/// 0, the rest is truncated modulo 2^32). ToNumber may throw.
-pub(crate) fn to_unsigned_long(env: sys::napi_env, value: sys::napi_value) -> Result<u32> {
-  let mut number = ptr::null_mut();
-  check_status!(unsafe { sys::napi_coerce_to_number(env, value, &mut number) })?;
-  Ok(to_uint32(unsafe { f64::from_napi_value(env, number)? }))
+/// 0, the rest is truncated modulo 2^32). Errors from user code pass as they
+/// are; the engine's own ones get `prefix`.
+pub(crate) fn to_unsigned_long(
+  env: sys::napi_env,
+  value: sys::napi_value,
+  prefix: &str,
+) -> Result<u32> {
+  to_number(env, value, prefix).map(to_uint32)
 }
 
 /// ToUint32 of a number: NaN and infinities are 0, the rest is truncated
@@ -1593,7 +1596,8 @@ fn argument_count(env: sys::napi_env, value: sys::napi_value) -> Option<u32> {
   (count < ARGUMENT_COUNT_MARKERS).then_some(count as u32)
 }
 
-/// The arguments of a call with `Positional` parameters.
+/// The arguments of a call with `Positional` parameters, or of the ImageData
+/// constructor.
 pub(crate) struct Arguments {
   env: sys::napi_env,
   values: [sys::napi_value; MAX_POSITIONAL],
@@ -1604,14 +1608,7 @@ pub(crate) struct Arguments {
 
 impl Arguments {
   /// The `count` values the `Positional` parameters of this call recorded.
-  ///
-  /// `argc` is the argument after them: index.js passes an
-  /// `argument_counts` marker there, or undefined when the count is the last
-  /// argument that is not undefined. A raw call (the js-binding entrypoint)
-  /// has none, and any other value there is an extra argument, ignored.
-  /// napi pads missing arguments with undefined, so without the marker `f(x)`
-  /// and `f(x, undefined)` look the same here, and the count then runs up to
-  /// the last argument that is not undefined.
+  /// See [`Self::new`] for `argc`.
   pub(crate) fn take(env: sys::napi_env, count: usize, argc: sys::napi_value) -> Result<Self> {
     // Taken before any user code runs, which may make a call of its own.
     let (values, recorded) =
@@ -1622,6 +1619,45 @@ impl Arguments {
         format!("Expected {count} positional arguments, got {recorded}"),
       ));
     }
+    Self::counted(env, values, count, argc)
+  }
+
+  /// `values` and the argument count.
+  ///
+  /// `argc` is the argument after them: index.js passes an
+  /// `argument_counts` marker there, or undefined when the count is the last
+  /// argument that is not undefined. A raw call (the js-binding entrypoint)
+  /// has none, and any other value there is an extra argument, ignored.
+  /// napi pads missing arguments with undefined, so without the marker `f(x)`
+  /// and `f(x, undefined)` look the same here, and the count then runs up to
+  /// the last argument that is not undefined.
+  pub(crate) fn new(
+    env: sys::napi_env,
+    values: &[sys::napi_value],
+    argc: sys::napi_value,
+  ) -> Result<Self> {
+    let mut array = [ptr::null_mut(); MAX_POSITIONAL];
+    let Some(slots) = array.get_mut(..values.len()) else {
+      return Err(Error::new(
+        Status::GenericFailure,
+        format!(
+          "Expected at most {MAX_POSITIONAL} arguments, got {}",
+          values.len()
+        ),
+      ));
+    };
+    slots.copy_from_slice(values);
+    Self::counted(env, array, values.len(), argc)
+  }
+
+  /// The first `count` of `values`, with the argument count of `argc` (see
+  /// [`Self::new`]).
+  fn counted(
+    env: sys::napi_env,
+    values: [sys::napi_value; MAX_POSITIONAL],
+    count: usize,
+    argc: sys::napi_value,
+  ) -> Result<Self> {
     // The count is the marker's (0 without one), raised to the last argument
     // that is not undefined. Only an argument at or past the marker's count
     // can raise it (from index.js none does), so only those are looked at,
@@ -1643,6 +1679,17 @@ impl Arguments {
 
   pub(crate) fn len(&self) -> u32 {
     self.len
+  }
+
+  /// Blink's NonUndefinedArgumentLength (generated_code_helper.h): the count
+  /// without the trailing undefined arguments.
+  pub(crate) fn non_undefined_len(&self) -> Result<u32> {
+    for index in (0..self.count).rev() {
+      if type_of(self.env, self.values[index])? != ValueType::Undefined {
+        return Ok(index as u32 + 1);
+      }
+    }
+    Ok(0)
   }
 
   /// Argument `index`; undefined past the recorded ones.
