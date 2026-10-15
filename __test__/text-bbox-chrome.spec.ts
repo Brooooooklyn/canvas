@@ -28,6 +28,7 @@ interface Fixture {
   words: Record<string, number>
   wordShape: Record<string, number>
   emptyUnion: Record<string, Row>
+  large: Record<string, Row>
   alphaReset: Record<'copy' | 'xor', [number, number, number][]>
 }
 
@@ -38,6 +39,7 @@ const FONTS: Record<string, string> = {
   HanT: 'SourceHanSerifCN-Bold.ttf',
   SerifProT: 'SourceSerifPro-Regular.ttf',
   IosevkaT: 'iosevka-slab-regular.ttf',
+  OswaldT: 'Oswald.ttf',
   HarmattanT: 'Harmattan-Regular.ttf',
   NKoT: 'NotoSansNKo-Regular.ttf',
 }
@@ -146,6 +148,21 @@ test('text without ink keeps the box of its last word like Chrome', (t) => {
     ctx.font = '20px LatoT'
     ctx.direction = direction as CanvasDirection
     ctx.textAlign = align as CanvasTextAlign
+    out.push(...differences(key, row, ctx.measureText(JSON.parse(text)), null, []))
+  }
+  t.deepEqual(out, [])
+})
+
+// Above 256px Skia measures glyphs on a scaled path strike, so the boxes
+// have fractions. Blink keeps them: subpixel positioning is on (Chrome
+// Linux's WebFontRenderStyle), so SkFontGetBoundsForGlyphs does not round
+// them out.
+test('glyph boxes above 256px keep their fractions like Chrome', (t) => {
+  const out: string[] = []
+  const ctx = createCanvas(10, 10).getContext('2d')
+  for (const [key, row] of Object.entries(FIXTURE.large)) {
+    const [, font, text] = /^(\S+ \w+) (".*")$/.exec(key)!
+    ctx.font = font
     out.push(...differences(key, row, ctx.measureText(JSON.parse(text)), null, []))
   }
   t.deepEqual(out, [])

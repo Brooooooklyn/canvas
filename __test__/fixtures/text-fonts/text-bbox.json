@@ -1,5 +1,5 @@
 {
-  "note": "Chrome 155.0.8059.79 CPU canvas, Linux x64, fonts loaded with FontFace. Box rows are [width, actualBoundingBoxLeft, actualBoundingBoxRight, actualBoundingBoxAscent, actualBoundingBoxDescent, painted ink box \"left,top,right,bottom\"]: rtl rows draw at (200, 50) on 400x80 at 30px, spacing rows at (60, 50) on 400x80 at 30px, fallbackRuns rows at (20, 55) on 500x80 at 40px. words and wordShape are widths; emptyUnion rows have no ink box (20px LatoT, no draw). alphaReset: 40px \"LatoT, HanT\" fillText(\"Defaul中 text\", 10.3, 50.2) on an alpha:false 300x70 canvas filled rgb(200,100,50), then rgba(0,0,255,0.5) with copy or xor: the [x, y, alpha] pixels left below 255.",
+  "note": "Chrome 155.0.8059.79 CPU canvas, Linux x64, fonts loaded with FontFace. Box rows are [width, actualBoundingBoxLeft, actualBoundingBoxRight, actualBoundingBoxAscent, actualBoundingBoxDescent, painted ink box \"left,top,right,bottom\"]: rtl rows draw at (200, 50) on 400x80 at 30px, spacing rows at (60, 50) on 400x80 at 30px, fallbackRuns rows at (20, 55) on 500x80 at 40px. words and wordShape are widths; emptyUnion rows have no ink box (20px LatoT, no draw). large rows are box rows without an ink box (measureText only) above 256px, where glyph boxes keep their fractions. alphaReset: 40px \"LatoT, HanT\" fillText(\"Defaul中 text\", 10.3, 50.2) on an alpha:false 300x70 canvas filled rgb(200,100,50), then rgba(0,0,255,0.5) with copy or xor: the [x, y, alpha] pixels left below 255.",
   "rtl": {
     "LatoT \"Hgjy\" ltr left": [60.9904, -2, 61.6303, 23, 5, "202,27,260,54"],
     "LatoT \"Hgjy\" ltr right": [60.9904, 58.9904, 0.6399, 23, 5, "141,27,199,54"],
@@ -187,6 +187,32 @@
     "rtl left2 \"　 \"": [23.86, -3.86, 3.86, 0, 0],
     "rtl left2 \"　　 \"": [43.86, -3.86, 3.86, 0, 0],
     "rtl left2 \" 　　\"": [43.86, -40, 40, 0, 0]
+  },
+  "large": {
+    "257px LatoT \"Hg\"": [325.6197, -20.0781, 322.7924, 184.7188, 48.1875],
+    "257px LatoT \"jy\"": [196.8624, 8.0313, 197.7937, 188.7344, 48.1875],
+    "300px LatoT \"Hg\"": [380.1008, -23.4375, 376.8004, 215.625, 56.25],
+    "300px LatoT \"jy\"": [229.8004, 9.375, 230.8876, 220.3125, 56.25],
+    "600px LatoT \"Hg\"": [760.2015, -46.875, 753.6009, 431.25, 112.5],
+    "600px LatoT \"jy\"": [459.6009, 18.75, 461.7753, 440.625, 112.5],
+    "257px SerifProT \"Hg\"": [330.7584, -8.0313, 326.1326, 172.6719, 64.25],
+    "257px SerifProT \"jy\"": [202.7726, 24.0938, 203.7045, 188.7344, 64.25],
+    "300px SerifProT \"Hg\"": [386.0993, -9.375, 380.6996, 201.5625, 75],
+    "300px SerifProT \"jy\"": [236.6996, 28.125, 237.7874, 220.3125, 75],
+    "600px SerifProT \"Hg\"": [772.1987, -18.75, 761.3992, 403.125, 150],
+    "600px SerifProT \"jy\"": [473.3991, 56.25, 475.5747, 440.625, 150],
+    "257px IosevkaT \"Hg\"": [256.9995, -4.0156, 252.9841, 192.75, 56.2188],
+    "257px IosevkaT \"jy\"": [256.9995, -4.0156, 252.9841, 192.75, 56.2188],
+    "300px IosevkaT \"Hg\"": [299.9994, -4.6875, 295.3122, 225, 65.625],
+    "300px IosevkaT \"jy\"": [299.9994, -4.6875, 295.3122, 225, 65.625],
+    "600px IosevkaT \"Hg\"": [599.9988, -9.375, 590.6244, 450, 131.25],
+    "600px IosevkaT \"jy\"": [599.9988, -9.375, 590.6244, 450, 131.25],
+    "257px OswaldT \"Hg\"": [257.5136, -16.0625, 260.6299, 208.8125, 48.1875],
+    "257px OswaldT \"jy\"": [159.8537, 8.0313, 159.5005, 200.7813, 40.1563],
+    "300px OswaldT \"Hg\"": [300.5995, -18.75, 304.2372, 243.75, 56.25],
+    "300px OswaldT \"jy\"": [186.5996, 9.375, 186.1874, 234.375, 46.875],
+    "600px OswaldT \"Hg\"": [601.199, -37.5, 608.4745, 487.5, 112.5],
+    "600px OswaldT \"jy\"": [373.1993, 18.75, 372.3747, 468.75, 93.75]
   },
   "alphaReset": {
     "copy": [[244, 48, 249]],
