@@ -15,10 +15,10 @@ export const TAG = skiaReleaseTag(FULL_HASH, readFileSync(join(dirname, 'skia-gn
 // skia-<first 8 hex of the skia submodule SHA>-<first 8 hex of sha256(scripts/skia-gn-args.cjs)>
 ```
 
-Every CI job downloads its static libraries from that tag. A new submodule commit,
-or any edit to `scripts/skia-gn-args.cjs` (a comment too), means a new tag with zero
-assets. So PR CI cannot pass until the binaries exist. Only a push to the `release`
-branch builds them.
+Every CI job downloads its static libraries from that tag. A new submodule
+commit, or any edit to `scripts/skia-gn-args.cjs` (a comment too), means a new
+tag with zero assets. So PR CI cannot pass until the binaries exist. Only a push
+to the `release` branch builds them.
 
 ```
   bump submodule  ->  new SHA  ->  new tag skia-<sha8>-<args8>  ->  no assets yet
