@@ -3134,7 +3134,7 @@ impl Context {
     max_width: f32,
     source: ShadowSource,
   ) -> Option<DrawBounds> {
-    let metrics = self.get_line_metrics(text, true).ok()?.0;
+    let metrics = self.get_line_metrics(text).ok()?.0;
     // The same test and ratio as the draw.
     let scale = if metrics.width > max_width {
       max_width / metrics.width
@@ -3155,13 +3155,7 @@ impl Context {
     })
   }
 
-  /// `collect_ink` fills `ink_left` / `ink_right`, which costs a walk over
-  /// every drawn glyph; measureText does not read them and passes false.
-  fn get_line_metrics(
-    &mut self,
-    text: &str,
-    collect_ink: bool,
-  ) -> result::Result<LineMetrics, SkError> {
+  fn get_line_metrics(&mut self, text: &str) -> result::Result<LineMetrics, SkError> {
     let fill_paint = self.fill_paint()?;
     let settings = self.text_settings();
     let font = get_font()?;
@@ -3170,7 +3164,6 @@ impl Context {
       &settings,
       &font,
       &fill_paint,
-      collect_ink,
     )))
   }
 
@@ -5022,7 +5015,7 @@ impl CanvasRenderingContext2D {
     text: webidl::DomString<webidl::CtxMeasureText>,
   ) -> Result<TextMetrics> {
     // The empty string still reports the font's metrics, like Chrome.
-    let metrics = self.context.get_line_metrics(text.0.as_str(), false)?.0;
+    let metrics = self.context.get_line_metrics(text.0.as_str())?.0;
     Ok(TextMetrics {
       width: metrics.width as f64,
       actual_bounding_box_left: metrics.left as f64,
@@ -7156,41 +7149,25 @@ mod tests {
     let pending0 = pending(&ctx);
     let raster0 = raster_bytes(&ctx);
     let version0 = ctx.content_version();
-    ctx.get_line_metrics("measure me", false).unwrap();
+    ctx.get_line_metrics("measure me").unwrap();
     assert_eq!(pending(&ctx), pending0);
     assert_eq!(raster_bytes(&ctx), raster0);
     assert_eq!(ctx.content_version(), version0);
   }
 
-  // measureText never reads the glyph ink, so it must not pay for the walk
-  // that finds it: the ink comes back empty.
+  // The alpha:false reset and measureText read the same glyph box: the ink
+  // of every drawn glyph, relative to the anchor.
   #[test]
-  fn measure_text_skips_the_ink_walk() {
+  fn text_bounds_are_the_measured_ink() {
     {
       let fonts = get_font().unwrap();
       fonts.register_from_path::<String>("__test__/fonts/Lato-Regular.ttf", None);
     }
     let mut ctx = raster_ctx(64, 64);
     ctx.set_font("16px Lato").unwrap();
-    let measured = ctx.get_line_metrics("Hgjy", false).unwrap().0;
-    assert_eq!((measured.ink_left, measured.ink_right), (0.0, 0.0));
-    // The alpha:false reset asks for it and gets the glyphs; the rest of the
-    // metrics are the same either way.
-    let with_ink = ctx.get_line_metrics("Hgjy", true).unwrap().0;
-    assert!(with_ink.ink_right > with_ink.ink_left && with_ink.ink_right > 0.0);
-    let rest = |m: &crate::sk::ffi::skiac_line_metrics| {
-      (
-        m.ascent,
-        m.descent,
-        m.left,
-        m.right,
-        m.width,
-        m.font_ascent,
-        m.font_descent,
-        m.alphabetic_baseline,
-      )
-    };
-    assert_eq!(rest(&with_ink), rest(&measured));
+    let m = ctx.get_line_metrics("Hgjy").unwrap().0;
+    assert!(m.ink_right > m.ink_left && m.ink_right > 0.0);
+    assert_eq!((m.ink_left, m.ink_right), (-m.left, m.right));
   }
 
   // Blink's Draw returns before anything is recorded when the CTM is singular
