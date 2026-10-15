@@ -3,6 +3,7 @@
 import { execFileSync } from 'node:child_process'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { isDeepStrictEqual } from 'node:util'
 
 import test from 'ava'
 
@@ -12,6 +13,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 
 const CREATE_IMAGE_DATA = "Failed to execute 'createImageData' on 'CanvasRenderingContext2D': "
 const CREATE_PATTERN = "Failed to execute 'createPattern' on 'CanvasRenderingContext2D': "
+const FILL = "Failed to execute 'fill' on 'CanvasRenderingContext2D': "
 
 // index.js patches the shared prototypes once it is loaded, so the raw
 // binding is tested in a fresh process that never loads index.js.
@@ -99,10 +101,10 @@ for (const [i, x] of ${JSON.stringify(EXTRA)}.entries()) {
 })
 
 test('only a marker from _argumentCounts() is read as an argument count', (t) => {
-  // The markers that index.js passes are plain objects. Native code reads a
-  // marker's count from the address napi_wrap stored in it, which script
-  // cannot reach: it never reads another value there as a count, and
-  // nothing script does to a marker changes its count.
+  // The markers that index.js passes are objects: ArrayBuffers over memory
+  // of the addon. Native code reads a marker's count from where its data
+  // starts, which script cannot choose: it never reads another value there
+  // as a count, and nothing script does to a marker gives it another count.
   const out = runRaw(`
 const binding = require('./js-binding.js')
 const { types } = require('node:util')
@@ -127,20 +129,43 @@ const others = {
   canvas: () => source,
   context: () => ctx,
   2: () => 2,
+  'slice of marker 2': () => markers[2].slice(0),
+  'Uint8Array of marker 2': () => new Uint8Array(markers[2]),
+  'DataView of marker 2': () => new DataView(markers[2]),
+  ArrayBuffer: () => new ArrayBuffer(1),
+  SharedArrayBuffer: () => new SharedArrayBuffer(1),
+  Buffer: () => Buffer.alloc(1),
+  'ArrayBuffer of a Buffer': () => Buffer.alloc(1).buffer,
+  function: () => () => 2,
+  symbol: () => Symbol('2'),
 }
 for (const [name, make] of Object.entries(others)) run(name, () => withCount(make()))
 run('traps', () => traps)
 run('changed marker 1', () => {
   const marker = markers[1]
+  new Uint8Array(marker)[0] = 2
   Object.setPrototypeOf(marker, markers[2])
   Object.defineProperty(marker, 'valueOf', { value: () => 2 })
   Object.freeze(marker)
   return withCount(marker)
 })
+// transfer() to another length copies; to the same length it may move the
+// memory, and the count with it.
+run('marker 2 transferred to length 2', () => withCount(binding._argumentCounts()[2].transfer(2)))
+const moved = binding._argumentCounts()[2]
+run('marker 2 transferred to length 1', () => withCount(moved.transfer()))
+run('marker 2 after its transfer', () => withCount(moved))
+// A marker has no native object behind it: with the prototype of Path2D it
+// still is not a Path2D.
+run('marker 2 with the prototype of Path2D', () => {
+  ctx.fill(Object.setPrototypeOf(binding._argumentCounts()[2], binding.Path.prototype))
+})
 `)
   const counted2 = { error: 'TypeError', message: `${CREATE_IMAGE_DATA}Value is not of type 'long'.` }
   const counted1 = [2, 3, 24, 'srgb']
-  t.deepEqual(out, {
+  const { 'marker 2 transferred to length 1': moved, ...rest } = out
+  t.true([counted1, counted2].some((count) => isDeepStrictEqual(moved, count)))
+  t.deepEqual(rest, {
     markers: Array.from({ length: 10 }, () => ['object', false]),
     'marker 1': counted1,
     'marker 2': counted2,
@@ -156,8 +181,23 @@ run('changed marker 1', () => {
     canvas: counted1,
     context: counted1,
     2: counted1,
+    'slice of marker 2': counted1,
+    'Uint8Array of marker 2': counted1,
+    'DataView of marker 2': counted1,
+    ArrayBuffer: counted1,
+    SharedArrayBuffer: counted1,
+    Buffer: counted1,
+    'ArrayBuffer of a Buffer': counted1,
+    function: counted1,
+    symbol: counted1,
     traps: [],
     'changed marker 1': counted1,
+    'marker 2 transferred to length 2': counted1,
+    'marker 2 after its transfer': counted1,
+    'marker 2 with the prototype of Path2D': {
+      error: 'TypeError',
+      message: `${FILL}The provided value '[object Object]' is not a valid enum value of type CanvasFillRule.`,
+    },
   })
 })
 
