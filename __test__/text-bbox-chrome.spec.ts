@@ -29,6 +29,7 @@ interface Fixture {
   wordShape: Record<string, number>
   emptyUnion: Record<string, Row>
   large: Record<string, Row>
+  zeroWidth: Record<string, Row>
   alphaReset: Record<'copy' | 'xor', [number, number, number][]>
 }
 
@@ -151,6 +152,32 @@ test('text without ink keeps the box of its last word like Chrome', (t) => {
     out.push(...differences(key, row, ctx.measureText(JSON.parse(text)), null, []))
   }
   t.deepEqual(out, [])
+})
+
+// Draws and measures each row's text at (300, 80) with the row's font,
+// direction, textAlign, letterSpacing and wordSpacing.
+function spacedRows(rows: Record<string, Row>) {
+  const out: string[] = []
+  for (const [key, row] of Object.entries(rows)) {
+    const [, font, text, direction, align, ls, ws] = /^(.*?) (".*") (ltr|rtl) (\w+) ls(\S+) ws(\S+)$/.exec(key)!
+    const ctx = createCanvas(600, 120).getContext('2d')
+    ctx.font = font
+    ctx.direction = direction as CanvasDirection
+    ctx.textAlign = align as CanvasTextAlign
+    ctx.letterSpacing = ls
+    ctx.wordSpacing = ws
+    ctx.fillText(JSON.parse(text), 300, 80)
+    out.push(...differences(key, row, ctx.measureText(JSON.parse(text)), inkBox(ctx, 600, 120), []))
+  }
+  return out
+}
+
+// The zero width spaces that end words (soft hyphen, U+200B, bidi marks,
+// U+FEFF, U+FFFC) get no letter spacing (ShapeResultSpacing skips
+// Character::TreatAsZeroWidthSpace), and text that starts with one is not
+// moved by half a letter spacing.
+test('zero width spaces get no letter spacing like Chrome', (t) => {
+  t.deepEqual(spacedRows(FIXTURE.zeroWidth), [])
 })
 
 // Above 256px Skia measures glyphs on a scaled path strike, so the boxes

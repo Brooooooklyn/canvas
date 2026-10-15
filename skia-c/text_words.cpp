@@ -246,6 +246,13 @@ std::vector<std::pair<size_t, size_t>> SplitWords(std::string_view text) {
   return words;
 }
 
+bool IsZeroWidthSpaceWord(std::string_view word) {
+  const char* ptr = word.data();
+  const char* const end = word.data() + word.size();
+  const SkUnichar c = SkUTF::NextUTF8(&ptr, end);
+  return c >= 0 && ptr == end && IsZeroWidthSpaceLike(c);
+}
+
 bool CanShapeWordByWord(skiac_font_collection* c_collection,
                         const std::vector<sk_sp<SkTypeface>>& faces,
                         const skiac_text_request& request) {

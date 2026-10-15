@@ -72,6 +72,12 @@ std::string_view PrepareCanvasText(std::string_view text, std::string* storage);
 // words HarfBuzz shapes one by one (text_words.cpp).
 std::vector<std::pair<size_t, size_t>> SplitWords(std::string_view text);
 
+// Whether `word` is one of the zero width spaces that end words (the soft
+// hyphen, U+200B, the bidi marks and controls, U+FEFF, U+FFFC): Blink gives
+// them no letter spacing (ShapeResultSpacing skips
+// Character::TreatAsZeroWidthSpace).
+bool IsZeroWidthSpaceWord(std::string_view word);
+
 // FontFallbackList::CanShapeWordByWord: false when the request turns on
 // kerning or ligatures and the first family with a space glyph has the
 // space in a GPOS (kerning) or GSUB (ligatures) lookup. `faces` are the
