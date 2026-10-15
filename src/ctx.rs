@@ -1,7 +1,6 @@
 use std::cell::{Cell, RefCell};
 use std::f32::consts::PI;
 use std::marker::PhantomData;
-use std::mem;
 use std::result;
 use std::str::FromStr;
 use std::sync::LazyLock;
@@ -11,14 +10,12 @@ use regex::Regex;
 
 use crate::font::FONT_MEDIUM_PX;
 use crate::font::parse_size_px;
-use crate::gif::GifConfig;
 use crate::global_fonts::get_font;
 use crate::page_recorder::{PageRecorder, RasterKey, next_resource_id};
 use crate::picture_recorder::PictureRecorder;
 use crate::sk::Canvas;
 use crate::{
   CanvasElement, SVGCanvas,
-  avif::Config,
   color::CanvasColor,
   error::SkError,
   filter::css_filter,
@@ -32,8 +29,8 @@ use crate::{
   sk::{
     AccountedBitmap, AlphaType, Bitmap, BlendMode, ColorSpace, DecodedCopy, FillType,
     FilterQuality, FontVariantCaps, ImageFilter, ImagePattern, LineMetrics, MaskFilter, Matrix,
-    Paint, PaintStyle, Path as SkPath, PathEffect, ReadPixelsError, Shader, SkEncodedImageFormat,
-    SkImage, SkWMemoryStream, SkiaDataRef, StrokeCap, StrokeJoin, Surface, Transform,
+    Paint, PaintStyle, Path as SkPath, PathEffect, ReadPixelsError, Shader, SkWMemoryStream,
+    StrokeCap, StrokeJoin, Surface, Transform,
   },
   state::Context2dRenderingState,
   webidl::{self, Double, Positional, ReportedSettings},
@@ -6131,127 +6128,6 @@ impl From<Transform> for TransformObject {
       e: value.e as f64,
       f: value.f as f64,
     }
-  }
-}
-
-pub enum ContextData {
-  Png(SkImage),
-  Jpeg(SkImage, u8),
-  Webp(SkImage, u8),
-  Avif(SkImage, Config, u32, u32),
-  Gif(SkImage, GifConfig, u32, u32),
-}
-
-pub enum ContextOutputData {
-  Skia(SkiaDataRef),
-  Avif(Vec<u8>),
-  Gif(Vec<u8>),
-}
-
-impl ContextOutputData {
-  pub(crate) fn into_buffer_slice<'a>(self, env: Env) -> Result<BufferSlice<'a>> {
-    match self {
-      ContextOutputData::Skia(output) => unsafe {
-        BufferSlice::from_external(&env, output.0.ptr, output.0.size, output, |_, data_ref| {
-          mem::drop(data_ref)
-        })
-      },
-      ContextOutputData::Avif(output) => unsafe {
-        BufferSlice::from_external(
-          &env,
-          output.as_ptr().cast_mut(),
-          output.len(),
-          output,
-          |_, data_ref| mem::drop(data_ref),
-        )
-      },
-      ContextOutputData::Gif(output) => unsafe {
-        BufferSlice::from_external(
-          &env,
-          output.as_ptr().cast_mut(),
-          output.len(),
-          output,
-          |_, data_ref| mem::drop(data_ref),
-        )
-      },
-    }
-  }
-}
-
-#[inline]
-pub(crate) fn encode_surface(data: &ContextData) -> Result<ContextOutputData> {
-  match data {
-    ContextData::Png(image) => image
-      .encode_data(SkEncodedImageFormat::Png, 100)
-      .map(ContextOutputData::Skia)
-      .ok_or_else(|| {
-        Error::new(
-          Status::GenericFailure,
-          "Get png data from surface failed".to_string(),
-        )
-      }),
-    ContextData::Jpeg(image, quality) => image
-      .encode_data(SkEncodedImageFormat::Jpeg, *quality)
-      .map(ContextOutputData::Skia)
-      .ok_or_else(|| {
-        Error::new(
-          Status::GenericFailure,
-          "Get jpeg data from surface failed".to_string(),
-        )
-      }),
-    ContextData::Webp(image, quality) => image
-      .encode_data(SkEncodedImageFormat::Webp, *quality)
-      .map(ContextOutputData::Skia)
-      .ok_or_else(|| {
-        Error::new(
-          Status::GenericFailure,
-          "Get webp data from surface failed".to_string(),
-        )
-      }),
-    ContextData::Avif(image, config, width, height) => image
-      .read_pixels(AlphaType::Unpremultiplied, image.color_space())
-      .ok_or_else(|| {
-        Error::new(
-          Status::GenericFailure,
-          "Get avif data from surface failed".to_string(),
-        )
-      })
-      .and_then(|pixels| {
-        crate::avif::encode(&pixels, *width, *height, config, image.color_space())
-          .map(ContextOutputData::Avif)
-          .map_err(|e| Error::new(Status::GenericFailure, format!("{e}")))
-      }),
-    ContextData::Gif(image, config, width, height) => image
-      .read_pixels(AlphaType::Unpremultiplied, ColorSpace::Srgb)
-      .ok_or_else(|| {
-        Error::new(
-          Status::GenericFailure,
-          "Get gif data from surface failed".to_string(),
-        )
-      })
-      .and_then(|pixels| {
-        crate::gif::encode(&pixels, *width, *height, config)
-          .map(ContextOutputData::Gif)
-          .map_err(|e| Error::new(Status::GenericFailure, format!("{e}")))
-      }),
-  }
-}
-
-unsafe impl Send for ContextOutputData {}
-unsafe impl Sync for ContextOutputData {}
-
-impl Task for ContextData {
-  type Output = ContextOutputData;
-  type JsValue = Buffer;
-
-  fn compute(&mut self) -> Result<Self::Output> {
-    encode_surface(self)
-  }
-
-  fn resolve(&mut self, env: Env, output_data: Self::Output) -> Result<Self::JsValue> {
-    output_data
-      .into_buffer_slice(env)
-      .and_then(|slice| slice.into_buffer(&env))
   }
 }
 

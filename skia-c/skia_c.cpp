@@ -891,6 +891,20 @@ static SkJpegEncoder::Options jpeg_options(int quality) {
   return options;
 }
 
+// Blink ImageEncoder::ComputeWebpOptions (image_encoder.cc:116-131): lossless
+// uses effort 75; a lossy quality is passed as the float it is.
+static SkWebpEncoder::Options webp_options(float quality, bool lossless) {
+  SkWebpEncoder::Options options;
+  if (lossless) {
+    options.fCompression = SkWebpEncoder::Compression::kLossless;
+    options.fQuality = 75.0f;
+  } else {
+    options.fCompression = SkWebpEncoder::Compression::kLossy;
+    options.fQuality = quality;
+  }
+  return options;
+}
+
 bool skiac_surface_save(skiac_surface* c_surface, const char* path) {
   auto snapshot = SURFACE_CAST->makeImageSnapshot();
   auto image = encodable_image(snapshot.get());
@@ -1034,34 +1048,17 @@ void skiac_surface_png_data(skiac_surface* c_surface, skiac_sk_data* data) {
 void skiac_surface_encode_data(skiac_surface* c_surface,
                                skiac_sk_data* data,
                                int format,
-                               int quality) {
+                               float quality,
+                               bool lossless) {
   auto snapshot = SURFACE_CAST->makeImageSnapshot();
-  auto image_ref = encodable_image(snapshot.get());
-  auto image = image_ref.get();
-  sk_sp<SkData> encoded_data;
-  if (format == int(SkEncodedImageFormat::kJPEG)) {
-    encoded_data = SkJpegEncoder::Encode(nullptr, image, jpeg_options(quality));
-  } else if (format == int(SkEncodedImageFormat::kPNG)) {
-    encoded_data =
-        SkPngEncoder::Encode(nullptr, image, SkPngEncoder::Options());
-  } else if (format == int(SkEncodedImageFormat::kWEBP)) {
-    SkWebpEncoder::Options options;
-    options.fCompression = quality == 100
-                               ? SkWebpEncoder::Compression::kLossless
-                               : SkWebpEncoder::Compression::kLossy;
-    options.fQuality = quality == 100 ? 75 : quality;
-    encoded_data = SkWebpEncoder::Encode(nullptr, image, options);
-  }
-  if (encoded_data) {
-    data->ptr = const_cast<uint8_t*>(encoded_data->bytes());
-    data->size = encoded_data->size();
-    data->data = reinterpret_cast<skiac_data*>(encoded_data.release());
-  }
+  skiac_image_encode_data(reinterpret_cast<skiac_image*>(snapshot.get()), data,
+                          format, quality, lossless, false);
 }
 
 bool skiac_surface_encode_stream(skiac_surface* c_surface,
                                  int format,
-                                 int quality,
+                                 float quality,
+                                 bool lossless,
                                  write_callback_t write_callback,
                                  void* context) {
   SkPixmap sk_pixmap;
@@ -1076,16 +1073,13 @@ bool skiac_surface_encode_stream(skiac_surface* c_surface,
   SkJavaScriptWStream stream(write_callback, context);
   std::unique_ptr<SkEncoder> encoder;
   if (format == int(SkEncodedImageFormat::kJPEG)) {
-    encoder = SkJpegEncoder::Make(&stream, sk_pixmap, jpeg_options(quality));
+    encoder = SkJpegEncoder::Make(&stream, sk_pixmap,
+                                  jpeg_options(static_cast<int>(quality)));
   } else if (format == int(SkEncodedImageFormat::kPNG)) {
     encoder = SkPngEncoder::Make(&stream, sk_pixmap, SkPngEncoder::Options());
   } else if (format == int(SkEncodedImageFormat::kWEBP)) {
-    SkWebpEncoder::Options options;
-    options.fCompression = quality == 100
-                               ? SkWebpEncoder::Compression::kLossless
-                               : SkWebpEncoder::Compression::kLossy;
-    options.fQuality = quality == 100 ? 75 : quality;
-    return SkWebpEncoder::Encode(&stream, sk_pixmap, options);
+    return SkWebpEncoder::Encode(&stream, sk_pixmap,
+                                 webp_options(quality, lossless));
   }
   if (encoder) {
     return encoder->encodeRows(sk_pixmap.height());
@@ -3418,25 +3412,51 @@ int skiac_image_get_height(skiac_image* c_image) {
 }
 
 // Encodes the image directly; the caller keeps ownership of c_image.
+// `crop_to_max_dimension`: toBlob and convertToBlob encode the top-left part
+// that the encoder can hold, as Blink's CanvasAsyncBlobCreator does
+// (canvas_async_blob_creator.cc:199-209, ImageEncoder::MaxDimension).
 void skiac_image_encode_data(skiac_image* c_image,
                              skiac_sk_data* data,
                              int format,
-                             int quality) {
+                             float quality,
+                             bool lossless,
+                             bool crop_to_max_dimension) {
   auto image_ref = encodable_image(IMAGE_CAST);
   auto image = image_ref.get();
+  int max_dimension = format == int(SkEncodedImageFormat::kJPEG)   ? 65500
+                      : format == int(SkEncodedImageFormat::kWEBP) ? 16383
+                                                                   : 65535;
+  SkPixmap pixmap;
   sk_sp<SkData> encoded_data;
-  if (format == int(SkEncodedImageFormat::kJPEG)) {
-    encoded_data = SkJpegEncoder::Encode(nullptr, image, jpeg_options(quality));
+  if (crop_to_max_dimension &&
+      std::max(image->width(), image->height()) > max_dimension &&
+      image->peekPixels(&pixmap)) {
+    pixmap.reset(pixmap.info().makeWH(std::min(pixmap.width(), max_dimension),
+                                      std::min(pixmap.height(), max_dimension)),
+                 pixmap.addr(), pixmap.rowBytes());
+    SkDynamicMemoryWStream stream;
+    bool ok = false;
+    if (format == int(SkEncodedImageFormat::kJPEG)) {
+      ok = SkJpegEncoder::Encode(&stream, pixmap,
+                                 jpeg_options(static_cast<int>(quality)));
+    } else if (format == int(SkEncodedImageFormat::kPNG)) {
+      ok = SkPngEncoder::Encode(&stream, pixmap, SkPngEncoder::Options());
+    } else if (format == int(SkEncodedImageFormat::kWEBP)) {
+      ok = SkWebpEncoder::Encode(&stream, pixmap,
+                                 webp_options(quality, lossless));
+    }
+    if (ok) {
+      encoded_data = stream.detachAsData();
+    }
+  } else if (format == int(SkEncodedImageFormat::kJPEG)) {
+    encoded_data = SkJpegEncoder::Encode(
+        nullptr, image, jpeg_options(static_cast<int>(quality)));
   } else if (format == int(SkEncodedImageFormat::kPNG)) {
     encoded_data =
         SkPngEncoder::Encode(nullptr, image, SkPngEncoder::Options());
   } else if (format == int(SkEncodedImageFormat::kWEBP)) {
-    SkWebpEncoder::Options options;
-    options.fCompression = quality == 100
-                               ? SkWebpEncoder::Compression::kLossless
-                               : SkWebpEncoder::Compression::kLossy;
-    options.fQuality = quality == 100 ? 75 : quality;
-    encoded_data = SkWebpEncoder::Encode(nullptr, image, options);
+    encoded_data =
+        SkWebpEncoder::Encode(nullptr, image, webp_options(quality, lossless));
   }
   if (encoded_data) {
     data->ptr = const_cast<uint8_t*>(encoded_data->bytes());
