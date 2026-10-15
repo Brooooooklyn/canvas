@@ -2,6 +2,7 @@
 #include <math.h>
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <cstddef>
 #include <list>
 #include <memory>
@@ -682,22 +683,28 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
       return;
     }
     SkPaint image_paint;
-    if (this->rasterizeSweep(path, paint, &image_paint)) {
-      this->drawPatternForSvg(path, image_paint, /*clip_to_image=*/true);
+    SkRect image_clip;
+    if (this->rasterizeSweep(path, paint, &image_paint, &image_clip)) {
+      this->drawPatternForSvg(path, image_paint, &image_clip);
     }
   }
 
-  // The most pixels rasterizeSweep allocates: Chrome's largest canvas,
-  // 32768 * 8192 pixels (IsValidImageSize, canvas_rendering_context_host.cc).
-  static constexpr int64_t kMaxSweepPixels = 32768 * 8192;
+  // The most device pixels rasterizeSweep draws at one image pixel each:
+  // 4096 * 4096, a 64 MiB N32 image. Past it, an image pixel covers k x k
+  // device pixels.
+  static constexpr int64_t kMaxSweepPixels = 4096 * 4096;
 
   // `paint` with its conic gradient replaced by an image of what the raster
-  // canvas paints with it, globalAlpha included, at one image pixel per
-  // device pixel, over the device bounds of the draw inside the clip. The
-  // image's matrix maps its pixels back to local space. False: nothing to
-  // draw (nothing visible, a singular matrix, bounds over kMaxSweepPixels or
-  // no memory for them).
-  bool rasterizeSweep(const SkPath& path, const SkPaint& paint, SkPaint* out) {
+  // canvas paints with it, globalAlpha included, over the device bounds of the
+  // draw inside the clip: one image pixel per device pixel, or, for bounds over
+  // kMaxSweepPixels, at most kMaxSweepPixels image pixels in a border of 1
+  // image pixel. The image's matrix maps its pixels back to local space, and
+  // `clip` is the part of the image inside the border. False: nothing to draw
+  // (nothing visible, a singular matrix or no memory for the image).
+  bool rasterizeSweep(const SkPath& path,
+                      const SkPaint& paint,
+                      SkPaint* out,
+                      SkRect* clip) {
     const SkMatrix ctm = this->getTotalMatrix();
     SkMatrix inverse;
     if (!ctm.invert(&inverse)) {
@@ -716,20 +723,58 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
     if (!device.intersect(this->getDeviceClipBounds())) {
       return false;
     }
-    // Skia dithers with an 8x8 pattern placed by the device position, so the
-    // image starts at a multiple of 8 to dither like the raster canvas.
-    device.fLeft &= ~7;
-    device.fTop &= ~7;
-    if (static_cast<int64_t>(device.width()) * device.height() >
-        kMaxSweepPixels) {
-      return false;
+    const int64_t w = device.width();
+    const int64_t h = device.height();
+    // Device pixels per image pixel on each axis.
+    int64_t kx = 1;
+    int64_t ky = 1;
+    int border = 0;
+    SkTileMode tile = SkTileMode::kDecal;
+    if (w * h <= kMaxSweepPixels) {
+      // Skia dithers with an 8x8 pattern placed by the device position, so the
+      // image starts at a multiple of 8 to dither like the raster canvas.
+      device.fLeft &= ~7;
+      device.fTop &= ~7;
+    } else {
+      // The smallest whole k that fits kMaxSweepPixels (no more than a side):
+      // SkSVGDevice writes the element transform with 6 significant digits
+      // (svg_transform), which only a whole k keeps exact. The SVG renderer
+      // scales the image back up, bilinear in Chrome; the border of the same
+      // gradient keeps that from mixing the edges with the outside of the
+      // image. The pattern tile is the image (repeat), not the viewport (a
+      // "100%" decal tile): Chrome draws an SVG pattern through an
+      // SkPictureShader (cc/paint/paint_shader.cc), which rasterizes a tile
+      // of more than 2048 * 2048 device pixels at that many (kMaxTileArea),
+      // and the transparent rest of a viewport tile then fades the image's
+      // edges.
+      const auto fits = [w, h](int64_t k) {
+        const int64_t x = std::min(k, w);
+        const int64_t y = std::min(k, h);
+        return ((w + x - 1) / x) * ((h + y - 1) / y) <= kMaxSweepPixels;
+      };
+      // At least the square root of the area ratio, rounded down so that
+      // rounding noise cannot skip the smallest k.
+      int64_t k = static_cast<int64_t>(std::sqrt(
+          static_cast<double>(w * h) / static_cast<double>(kMaxSweepPixels)));
+      while (!fits(k)) {
+        k++;
+      }
+      kx = std::min(k, w);
+      ky = std::min(k, h);
+      border = 1;
+      tile = SkTileMode::kRepeat;
     }
+    // The image size inside its border.
+    const int width = static_cast<int>((device.width() + kx - 1) / kx);
+    const int height = static_cast<int>((device.height() + ky - 1) / ky);
     auto surface = SkSurfaces::Raster(SkImageInfo::MakeN32Premul(
-        device.width(), device.height(), SkColorSpace::MakeSRGB()));
+        width + 2 * border, height + 2 * border, SkColorSpace::MakeSRGB()));
     if (!surface) {
       return false;
     }
     auto canvas = surface->getCanvas();
+    canvas->translate(border, border);
+    canvas->scale(1.0f / kx, 1.0f / ky);
     canvas->translate(-device.fLeft, -device.fTop);
     canvas->concat(ctm);
     SkPaint fill;
@@ -740,11 +785,14 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
     canvas->drawPaint(fill);
     SkMatrix matrix = inverse;
     matrix.preTranslate(device.fLeft, device.fTop);
+    matrix.preScale(kx, ky);
+    matrix.preTranslate(-border, -border);
+    *clip = SkRect::MakeXYWH(border, border, width, height);
     *out = paint;
     // The alpha is in the image.
     out->setAlphaf(1);
     out->setShader(surface->makeImageSnapshot()->makeShader(
-        SkTileMode::kDecal, SkTileMode::kDecal, SkSamplingOptions(), &matrix));
+        tile, tile, SkSamplingOptions(), &matrix));
     return true;
   }
 
@@ -826,13 +874,14 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
   // the element is drawn under CTM * M, with its geometry mapped back by M^-1
   // and a pattern with no matrix. A stroke is turned into its fill first, so M
   // does not scale it. A no-repeat axis is clipped to the image, because
-  // SkSVGDevice writes a "100%" tile for it. `clip_to_image`: a rasterized
-  // conic gradient, which already covers the draw and its antialiased edges
-  // in whole device pixels; it is clipped to the image only, since a clip at
-  // the geometry bounds would antialias those edges a second time.
+  // SkSVGDevice writes a "100%" tile for it. `image_clip`: a rasterized conic
+  // gradient, which already covers the draw and its antialiased edges in whole
+  // device pixels; it is clipped to that rect of the image only (the image
+  // without its border, whatever the tile mode), since a clip at the geometry
+  // bounds would antialias those edges a second time.
   void drawPatternForSvg(const SkPath& path,
                          const SkPaint& paint,
-                         bool clip_to_image = false) {
+                         const SkRect* image_clip = nullptr) {
     SkMatrix matrix;
     SkTileMode tile[2];
     auto image = paint.getShader()->isAImage(&matrix, tile);
@@ -859,9 +908,10 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
     geometry = geometry.makeTransform(inverse);
     const bool decal =
         tile[0] == SkTileMode::kDecal || tile[1] == SkTileMode::kDecal;
+    const bool clip = decal || image_clip;
     auto bounds = geometry.getBounds();
-    if (clip_to_image) {
-      bounds = SkRect::Make(image->bounds());
+    if (image_clip) {
+      bounds = *image_clip;
     }
     if (tile[0] == SkTileMode::kDecal) {
       bounds.fLeft = std::max(bounds.fLeft, 0.0f);
@@ -871,14 +921,14 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
       bounds.fTop = std::max(bounds.fTop, 0.0f);
       bounds.fBottom = std::min(bounds.fBottom, (float)image->height());
     }
-    if (decal && bounds.isEmpty()) {
+    if (clip && bounds.isEmpty()) {
       return;
     }
     fill.setShader(
         sk_ref_sp(image)->makeShader(tile[0], tile[1], SkSamplingOptions()));
     fSvg->save();
     fSvg->concat(matrix);
-    if (decal) {
+    if (clip) {
       fSvg->clipRect(bounds, paint.isAntiAlias());
     }
     fSvg->drawPath(geometry, fill);

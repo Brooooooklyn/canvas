@@ -2,10 +2,15 @@
 // conic gradient (SkSVGDevice drops a sweep shader to its black paint color), so the export
 // rasterizes the conic fill into a pattern image, one image pixel per canvas pixel, with the
 // globalAlpha in it. The pattern pixels must equal the raster canvas, which matches Chrome 155
-// (arm64 and x64) at these points.
+// (arm64 and x64) at these points. Past 4096 * 4096 canvas pixels the image is scaled down to fit
+// that many pixels.
+import { spawn } from 'node:child_process'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
 import test from 'ava'
 
-import { createCanvas, loadImage, SvgExportFlag } from '../index'
+import { createCanvas, DOMMatrix, loadImage, SvgExportFlag } from '../index'
 
 type Ctx = ReturnType<ReturnType<typeof createCanvas>['getContext']>
 type G = ReturnType<Ctx['createLinearGradient']>
@@ -174,23 +179,195 @@ test('svg export of a conic gradient keeps globalAlpha in the image', async (t) 
   }
 })
 
-// The image covers only the device bounds of the draw inside the clip, and the draw is skipped
-// past 32768 * 8192 pixels (Chrome's largest canvas). One canvas and one getContent(): the backing
-// store of such a canvas is only touched lazily.
+// The most pixels a conic raster has inside its 1 pixel border: 4096 * 4096 (64 MiB N32).
+const BUDGET = 4096 * 4096
+
+// The pattern images of an SVG, in order.
+const patternImages = (text: string) =>
+  [...text.matchAll(/<image [^>]*width="(\d+)" height="(\d+)" xlink:href="data:image\/png;base64,([^"]+)"/g)].map(
+    (m) => ({ width: Number(m[1]), height: Number(m[2]), base64: m[3] }),
+  )
+
+// The transform [a, b, c, d, e, f] of the first path filled with a pattern.
+const patternPathTransform = (text: string) => {
+  const [, kind, args] = text.match(/<path fill="url\(#pattern_\d+\)"(?: transform="(\w+)\(([^)]*)\)")?/)!
+  const n = (args ?? '').split(' ').map(Number)
+  return kind === 'matrix'
+    ? n
+    : kind === 'translate'
+      ? [1, 0, 0, 1, n[0], n[1]]
+      : kind === 'scale'
+        ? [n[0], 0, 0, n[1], 0, 0]
+        : [1, 0, 0, 1, 0, 0]
+}
+
+// What an SVG renderer shows at canvas pixel (x, y) for the first conic draw: its pattern image under
+// the path's transform, sampled bilinearly (how Chrome upscales it). Transparent outside the image,
+// where the SVG repeats the tile: without the border the edges fade.
+const renderFirstPattern = async (text: string) => {
+  const image = await loadImage(Buffer.from(patternImages(text)[0].base64, 'base64'))
+  const [a, b, c, d, e, f] = patternPathTransform(text)
+  return (x: number, y: number) => {
+    const ctx = createCanvas(1, 1).getContext('2d')
+    const pattern = ctx.createPattern(image, 'no-repeat')!
+    pattern.setTransform(new DOMMatrix([a, b, c, d, e - x, f - y]))
+    ctx.fillStyle = pattern
+    ctx.fillRect(0, 0, 1, 1)
+    return [...ctx.getImageData(0, 0, 1, 1).data]
+  }
+}
+
+// The raster canvas pixel (x, y) of a full conic fill on an n x n canvas, from a 1 x 1 canvas moved to
+// (x, y) (equal to the n x n canvas at these points: they are multiples of 8, Skia's dither period, or
+// edges, where the dither does not change the value).
+const rasterConicAt = (n: number, x: number, y: number) => {
+  const ctx = createCanvas(1, 1).getContext('2d')
+  ctx.translate(-x, -y)
+  ctx.fillStyle = stops(ctx.createConicGradient(0, n / 2, n / 2))
+  ctx.fillRect(0, 0, n, n)
+  return [...ctx.getImageData(0, 0, 1, 1).data]
+}
+
+// [x, y, r, g, b, a] of a full conic fill measured in Chrome's raster canvas: four points about 50 px
+// from the center off the seam (3 levels per px, so a misplaced image shows), then the four edges.
+const LARGE_CHROME_PIXELS: Record<number, number[][]> = {
+  4097: [
+    [2000, 2032, 52, 52, 202, 255],
+    [2064, 2000, 255, 202, 52, 255],
+    [2032, 2096, 0, 202, 52, 255],
+    [2088, 2088, 127, 127, 0, 255],
+    [0, 1024, 75, 75, 179, 255],
+    [4096, 1024, 255, 75, 179, 255],
+    [1024, 4096, 0, 179, 75, 255],
+    [1024, 0, 179, 179, 75, 255],
+  ],
+  8192: [
+    [4048, 4080, 51, 51, 203, 255],
+    [4112, 4048, 255, 200, 54, 255],
+    [4080, 4144, 0, 204, 50, 255],
+    [4136, 4136, 127, 127, 0, 255],
+    [0, 2048, 75, 75, 179, 255],
+    [8191, 2048, 255, 75, 179, 255],
+    [2048, 8191, 0, 179, 75, 255],
+    [2048, 0, 179, 179, 75, 255],
+  ],
+}
+
+// Past the budget each image pixel covers k x k canvas pixels, k the smallest whole number that fits
+// (SkSVGDevice writes the transform with 6 significant digits, exact for a whole k), with a 1 image
+// pixel border of the same gradient so the upscale does not mix the edges with the outside. The
+// pattern tile is the image: Chrome rasterizes a pattern tile larger than 2048 * 2048 device pixels
+// at that many pixels, so the transparent rest of a viewport-sized tile faded the edges. Away from
+// the seam the result stays within 3 of Chrome's raster, and the edges keep their full alpha.
+for (const n of [4097, 8192]) {
+  test(`svg export of a conic gradient on a ${n}x${n} canvas scales the raster to 4096 * 4096 pixels`, async (t) => {
+    const svg = createCanvas(n, n, SvgExportFlag.NoPrettyXML)
+    const ctx = svg.getContext('2d') as unknown as Ctx
+    ctx.fillStyle = stops(ctx.createConicGradient(0, n / 2, n / 2))
+    ctx.fillRect(0, 0, n, n)
+    const text = svg.getContent().toString('utf8')
+    const images = patternImages(text)
+    t.is(images.length, 1)
+    const { width, height } = images[0]
+    t.true((width - 2) * (height - 2) <= BUDGET, `${width}x${height}`)
+    t.regex(text, new RegExp(`<pattern [^>]* width="${width}" height="${height}"`))
+    t.regex(text, /<path fill="url\(#pattern_0\)"[^>]* d="M/)
+    // Image pixel 1 + i covers canvas pixels k * i to k * (i + 1); the border lies outside the canvas.
+    const [k, b, c, d, e, f] = patternPathTransform(text)
+    t.deepEqual([b, c, d, e, f], [0, 0, k, -k, -k])
+    t.true(Number.isInteger(k) && k >= 2, `k = ${k}`)
+    t.deepEqual([width - 2, height - 2], [Math.ceil(n / k), Math.ceil(n / k)])
+    t.true(Math.ceil(n / (k - 1)) ** 2 > BUDGET, `k - 1 = ${k - 1} fits too`)
+    // Clipped to the image inside the border, not to the bordered image.
+    const clips = [...text.matchAll(/<clipPath[^>]*>([\s\S]*?)<\/clipPath>/g)].map((m) => m[1])
+    t.is(clips.length, 1)
+    const attr = (name: string) => Number(clips[0].match(new RegExp(` ${name}="([-\\d.]+)"`))?.[1] ?? 0)
+    t.deepEqual([attr('x'), attr('y'), attr('width'), attr('height')], [0, 0, k * (width - 2), k * (height - 2)])
+    const shown = await renderFirstPattern(text)
+    for (const [x, y, ...rgba] of LARGE_CHROME_PIXELS[n]) {
+      t.deepEqual(rasterConicAt(n, x, y), rgba, `raster ${x},${y}`)
+      const pixel = shown(x, y)
+      t.true(
+        pixel.every((v, i) => Math.abs(v - rgba[i]) <= 3),
+        `${x},${y}: svg ${pixel} vs raster ${rgba}`,
+      )
+    }
+  })
+}
+
+// Every fill gets its own image within the budget, and the memory does not follow the canvas size
+// (1:1, each fill held a 256 MiB raster and its PNG encoder). maxRSS in a child process.
+test('svg export of 10 conic fills on an 8192x8192 canvas keeps each raster within the budget', async (t) => {
+  const { status, stdout, stderr } = await new Promise<{ status: number | null; stdout: string; stderr: string }>(
+    (resolve, reject) => {
+      const child = spawn(
+        process.execPath,
+        [
+          '-e',
+          `
+const { createCanvas, SvgExportFlag } = require('./index.js')
+const n = 8192
+const svg = createCanvas(n, n, SvgExportFlag.NoPrettyXML)
+const ctx = svg.getContext('2d')
+const g = ctx.createConicGradient(0.3, n / 2, n / 2)
+g.addColorStop(0, 'red')
+g.addColorStop(0.5, 'lime')
+g.addColorStop(1, 'blue')
+ctx.fillStyle = g
+const before = process.resourceUsage().maxRSS
+for (let i = 0; i < 10; i++) ctx.fillRect(0, 0, n, n)
+const content = svg.getContent()
+const growth = (process.resourceUsage().maxRSS - before) / 1024
+const images = []
+for (let i = content.indexOf('<image '); i !== -1; i = content.indexOf('<image ', i + 1)) {
+  const head = content.subarray(i, i + 200).toString('latin1')
+  images.push([Number(head.match(/ width="(\\d+)"/)[1]), Number(head.match(/ height="(\\d+)"/)[1])])
+}
+console.log(JSON.stringify({ growth, images }))
+`,
+        ],
+        { cwd: join(dirname(fileURLToPath(import.meta.url)), '..'), stdio: ['ignore', 'pipe', 'pipe'] },
+      )
+      let stdout = ''
+      let stderr = ''
+      child.stdout.setEncoding('utf8').on('data', (chunk) => (stdout += chunk))
+      child.stderr.setEncoding('utf8').on('data', (chunk) => (stderr += chunk))
+      child.on('error', reject)
+      child.on('close', (status) => resolve({ status, stdout, stderr }))
+    },
+  )
+  t.is(status, 0, stderr)
+  const { growth, images } = JSON.parse(stdout.trim().split('\n').pop()!)
+  t.is(images.length, 10)
+  for (const [width, height] of images) {
+    t.true((width - 2) * (height - 2) <= BUDGET, `${width}x${height}`)
+  }
+  t.true(growth < 256, `10 fills grew maxRSS by ${growth.toFixed(1)} MB, expected < 256 MB`)
+})
+
+// The image covers only the device bounds of the draw inside the clip; a draw past the budget is
+// scaled, not skipped. One canvas and one getContent(): the backing store of such a canvas is only
+// touched lazily.
 test('svg export of a conic gradient on a huge canvas rasterizes only the clipped bounds', (t) => {
   const svg = createCanvas(32768, 8193, SvgExportFlag.NoPrettyXML)
   const ctx = svg.getContext('2d') as unknown as Ctx
   ctx.fillStyle = redBlue(ctx.createConicGradient(0, 20, 20))
-  // Skipped: 32768 x 8193 pixels.
+  // Scaled: 32768 x 8193 pixels.
   ctx.fillRect(0, 0, 32768, 8193)
   ctx.beginPath()
   ctx.rect(0, 0, 30, 20)
   ctx.clip()
-  // Drawn: a 30 x 20 image.
+  // 1:1: a 30 x 20 image.
   ctx.fillRect(0, 0, 32768, 8193)
   const text = svg.getContent().toString('utf8')
-  t.is(text.match(/<pattern/g)?.length, 1)
-  t.regex(text, /<image[^>]* width="30" height="20"/)
+  t.is(text.match(/<pattern/g)?.length, 2)
+  const [scaled, clipped] = patternImages(text)
+  t.true((scaled.width - 2) * (scaled.height - 2) <= BUDGET, `${scaled.width}x${scaled.height}`)
+  t.true(
+    Math.abs((scaled.width - 2) / (scaled.height - 2) - 32768 / 8193) < 0.01,
+    `${scaled.width}x${scaled.height} keeps the aspect ratio`,
+  )
+  t.deepEqual([clipped.width, clipped.height], [30, 20])
   t.notRegex(text.replace(/<clipPath[\s\S]*?<\/clipPath>/g, ''), /<rect/)
 })
 
