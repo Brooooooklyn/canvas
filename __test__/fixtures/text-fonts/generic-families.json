@@ -1,0 +1,166 @@
+{
+  "note": "Chrome 155 CPU canvas, <!doctype html> page. generic: measureText(\"Hamburgefonstiv a b\").width at 20px, font = \"20px \" + key. darwin = macOS arm64 = x64 (desktop font settings: monospace is Menlo, chrome/app/resources/locale_settings_mac.grd; headless Chrome uses Courier); system-ui and fantasy are left out on darwin (CoreText tracking for SF, one Papyrus face in the TTC). linux = Linux x64 headless with DejaVu Sans, Sans Mono and Serif only. fold: measureText(\"Hamburg\").width with Lato registered as LatoT, ÄLatoT, StraßeT and KelvinT (Kelvin sign).",
+  "generic": {
+    "darwin": {
+      "sans-serif": 184.541,
+      "serif": 168.4961,
+      "monospace": 228.7793,
+      "cursive": 173.2324,
+      "math": 177.5799,
+      "-webkit-body": 168.4961,
+      "Nonexistent": 168.4961,
+      "LatoT": 182.2599,
+      "sans-serif, LatoT": 184.541,
+      "cursive, LatoT": 173.2324,
+      "math, LatoT": 177.5799,
+      "serif, LatoT": 168.4961,
+      "monospace, LatoT": 228.7793,
+      "Nonexistent, LatoT": 182.2599,
+      "sans": 168.4961,
+      "Sans": 168.4961,
+      "SERIF": 168.4961,
+      "\"serif\"": 168.4961,
+      "\"sans-serif\"": 168.4961,
+      "\"monospace\"": 168.4961,
+      "Monospace": 228.7793,
+      "\"Monospace\"": 168.4961,
+      "Arial": 184.541,
+      "Helvetica": 184.541,
+      "Times": 168.4961,
+      "Courier": 228.0371,
+      "Courier New": 228.0371,
+      "DejaVu Sans": 168.4961,
+      "dejavu sans": 168.4961,
+      "DejaVu Serif": 168.4961,
+      "latot": 182.2599,
+      "emoji": 168.4961,
+      "ui-monospace": 168.4961,
+      "ui-serif": 168.4961,
+      "fangsong": 168.4961,
+      "Times New Roman": 168.4863,
+      "Apple Chancery": 173.2324,
+      "STIX Two Math": 177.5799,
+      "Menlo": 228.7793
+    },
+    "linux": {
+      "sans-serif": 210.293,
+      "serif": 213.9746,
+      "monospace": 228.7793,
+      "cursive": 210.293,
+      "fantasy": 210.293,
+      "system-ui": 210.293,
+      "math": 210.293,
+      "-webkit-body": 210.293,
+      "Nonexistent": 210.293,
+      "LatoT": 182.2598,
+      "sans-serif, LatoT": 182.2598,
+      "cursive, LatoT": 182.2598,
+      "fantasy, LatoT": 182.2598,
+      "math, LatoT": 182.2598,
+      "system-ui, LatoT": 210.293,
+      "serif, LatoT": 213.9746,
+      "monospace, LatoT": 228.7793,
+      "Nonexistent, LatoT": 182.2598,
+      "sans": 210.293,
+      "Sans": 210.293,
+      "SERIF": 213.9746,
+      "\"serif\"": 213.9746,
+      "\"sans-serif\"": 210.293,
+      "\"monospace\"": 228.7793,
+      "Monospace": 228.7793,
+      "\"Monospace\"": 228.7793,
+      "Arial": 210.293,
+      "Helvetica": 210.293,
+      "Times": 210.293,
+      "Courier": 210.293,
+      "Courier New": 210.293,
+      "DejaVu Sans": 210.293,
+      "dejavu sans": 210.293,
+      "DejaVu Serif": 213.9746,
+      "latot": 182.2598,
+      "emoji": 210.293,
+      "ui-monospace": 210.293,
+      "ui-serif": 210.293,
+      "fangsong": 210.293
+    }
+  },
+  "defaultFont": {
+    "darwin": 92.2705078125,
+    "linux": 105.146484375
+  },
+  "fold": {
+    "20px LatoT": {
+      "darwin": 82.26,
+      "linux": 82.2599
+    },
+    "20px latot": {
+      "darwin": 82.26,
+      "linux": 82.2599
+    },
+    "20px LATOT": {
+      "darwin": 82.26,
+      "linux": 82.2599
+    },
+    "20px \"latot\"": {
+      "darwin": 82.26,
+      "linux": 82.2599
+    },
+    "20px lAtOt": {
+      "darwin": 82.26,
+      "linux": 82.2599
+    },
+    "20px ÄLatoT": {
+      "darwin": 82.26,
+      "linux": 82.2599
+    },
+    "20px älatot": {
+      "darwin": 82.26,
+      "linux": 82.2599
+    },
+    "20px ÄLATOT": {
+      "darwin": 82.26,
+      "linux": 82.2599
+    },
+    "20px StraßeT": {
+      "darwin": 82.26,
+      "linux": 82.2599
+    },
+    "20px STRASSET": {
+      "darwin": 75.1855,
+      "linux": 92.7148
+    },
+    "20px STRAẞET": {
+      "darwin": 82.26,
+      "linux": 82.2599
+    },
+    "20px straßet": {
+      "darwin": 82.26,
+      "linux": 82.2599
+    },
+    "20px KelvinT": {
+      "darwin": 82.26,
+      "linux": 82.2599
+    },
+    "20px kelvinT": {
+      "darwin": 82.26,
+      "linux": 82.2599
+    },
+    "20px KELVINT": {
+      "darwin": 82.26,
+      "linux": 82.2599
+    },
+    "20px \"LatoT \"": {
+      "darwin": 75.1855,
+      "linux": 92.7148
+    },
+    "20px Lato T": {
+      "darwin": 75.1855,
+      "linux": 92.7148
+    },
+    "20px Nonexistent": {
+      "darwin": 75.1855,
+      "linux": 92.7148
+    }
+  },
+  "linuxFamilies": ["DejaVu Sans", "DejaVu Sans Mono", "DejaVu Serif"]
+}

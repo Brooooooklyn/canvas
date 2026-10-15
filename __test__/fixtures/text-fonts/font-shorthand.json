@@ -1,5 +1,5 @@
 {
-  "note": "Chrome 155 CPU canvas (detached <canvas> in a <!doctype html> page), macOS arm64 = macOS x64 = Linux x64 unless split by OS. null = invalid: the getter keeps the start font. viewport rows are OffscreenCanvas (no viewport). fontRelative rows depend on the standard font (macOS: Times through CoreText; Linux: DejaVu Serif).",
+  "note": "Chrome 155 CPU canvas (detached <canvas> in a <!doctype html> page), macOS arm64 = macOS x64 = Linux x64 unless split by OS. null = invalid: the getter keeps the start font. viewport rows are OffscreenCanvas (no viewport). fontRelative rows depend on the font of the default canvas style (macOS: Times through CoreText; Linux: DejaVu Sans, the fontconfig default).",
   "start": "11px monospace",
   "cases": [
     ["bold 12px serif", "bold 12px serif"],
