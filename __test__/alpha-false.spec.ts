@@ -4,6 +4,7 @@
 // surface cleared to black, and puts alpha back to 255 after the composite
 // modes that can lower it (Blink ResetAlphaIfNeeded,
 // canvas_2d_recorder_context.h:729-752).
+import { release } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -629,11 +630,15 @@ test('alpha:false resets the whole clip after a draw under a filter that adds no
 
 GlobalFonts.registerFromPath(join(fileURLToPath(import.meta.url), '..', 'fonts', 'Lato-Regular.ttf'), 'AlphaFalseLato')
 
+// Chrome's macOS values were measured on macOS 27. CoreText ships with the OS,
+// so on another macOS version the fringe pixels are not compared.
+const PIXEL_PINS = process.platform !== 'darwin' || Number.parseInt(release(), 10) === 27
+
 // Text bounds are the glyph bounds (base_rendering_context_2d.cc:1019,
 // 1076-1113). On Linux Chrome hints the box to whole pixels (Lato 16px
 // ascent 11), which covers every glyph pixel: none stays below 255. macOS
 // Chrome reads an unhinted box (ascent 11.464) and leaves 4 (copy) or 5 (xor)
-// fringe pixels.
+// fringe pixels (copy: 5 in Chrome x64).
 test('alpha:false text resets alpha inside the glyph bounds only', (t) => {
   for (const op of ['copy', 'xor'] as const) {
     const { ctx } = opaqueBackground(40, 24)
@@ -647,10 +652,30 @@ test('alpha:false text resets alpha inside the glyph bounds only', (t) => {
       if (data[i] < 255) below++
     }
     // Without the reset about 150 glyph pixels stay below 255.
-    t.is(below, 0, `${op}: ${below} pixels below alpha 255`)
+    const fringe = process.platform !== 'darwin' ? 0 : op === 'copy' && process.arch === 'arm64' ? 4 : 5
+    if (PIXEL_PINS) t.is(below, fringe, `${op}: ${below} pixels below alpha 255`)
     t.deepEqual(px(ctx, 38, 2), op === 'copy' ? [0, 0, 0, 255] : [200, 100, 50, 255], op)
   }
 })
+
+// The pixels below alpha 255 that are not on the edge of the drawn glyphs
+// (the box of the pixels the draw changed on an rgb(200,100,50) canvas).
+function belowInsideGlyphs(data: Uint8ClampedArray, width: number, height: number) {
+  let [x0, y0, x1, y1] = [width, height, -1, -1]
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i] === 200 && data[i + 1] === 100 && data[i + 2] === 50 && data[i + 3] === 255) continue
+    const x = (i / 4) % width
+    const y = Math.floor(i / 4 / width)
+    ;[x0, y0, x1, y1] = [Math.min(x0, x), Math.min(y0, y), Math.max(x1, x), Math.max(y1, y)]
+  }
+  const out: number[][] = []
+  for (let i = 3; i < data.length; i += 4) {
+    const x = ((i - 3) / 4) % width
+    const y = Math.floor((i - 3) / 4 / width)
+    if (data[i] < 255 && x > x0 && x < x1 && y > y0 && y < y1) out.push([x, y, data[i]])
+  }
+  return out
+}
 
 // maxWidth draws the text under scale(maxWidth / width, 1) about its anchor
 // (skia-c/text.cpp MeasureOrDraw), and letterSpacing
@@ -661,7 +686,9 @@ test('alpha:false text resets alpha inside the glyph bounds only', (t) => {
 // (min 202 for the unsqueezed cases). Chrome resets the unscaled box under the
 // squeezed canvas (base_rendering_context_2d.cc:1066-1082), which misses part
 // of the squeezed glyphs (65 to 155 pixels here, down to alpha 127); we do not
-// copy that. Pixels away from the text keep their alpha, as in Chrome.
+// copy that. Pixels away from the text keep their alpha, as in Chrome. The
+// macOS box has fractional edges, so its fringe goes lower than 192 (175):
+// there the pixels below 255 must sit on the edge of the drawn glyphs.
 test('alpha:false squeezed or letter-spaced text resets around its drawn glyphs only', (t) => {
   const cases: [string, (c: Ctx) => void][] = [
     ['maxWidth', (c) => c.fillText('Hgjy', 10.3, 30.2, 15)],
@@ -720,7 +747,11 @@ test('alpha:false squeezed or letter-spaced text resets around its drawn glyphs 
     const data = ctx.getImageData(0, 0, 60, 40).data
     let min = 255
     for (let i = 3; i < data.length; i += 4) min = Math.min(min, data[i])
-    t.true(min >= 192, `${name}: min alpha ${min}`)
+    if (process.platform === 'darwin') {
+      t.deepEqual(belowInsideGlyphs(data, 60, 40), [], name)
+    } else {
+      t.true(min >= 192, `${name}: min alpha ${min}`)
+    }
     const far = lowAlpha(60, 40)
     setUp(far.ctx)
     draw(far.ctx)
@@ -742,7 +773,9 @@ GlobalFonts.registerFromPath(
 // letter_spacing_offset). The reset follows the glyphs as drawn. The expected
 // columns are the first and last ones Chrome resets; Chrome also draws one
 // Arabic word with no spacing, so both draw the same glyphs here. Our box may
-// reach an anti-aliased column further on either side.
+// reach an anti-aliased column further on either side. On macOS the box has
+// fractional edges and its fringe goes below 192: the last number is Chrome
+// macOS's lowest alpha.
 test('alpha:false letter-spaced RTL and cursive text resets around its drawn glyphs', (t) => {
   type Case = { font: string; text: string; dir: CanvasDirection; align?: CanvasTextAlign; x: number }
   const arabic = (dir: CanvasDirection, x: number, align?: CanvasTextAlign): Case => ({
@@ -759,22 +792,22 @@ test('alpha:false letter-spaced RTL and cursive text resets around its drawn gly
     align,
     x,
   })
-  // [case, letterSpacing, first and last column Chrome resets]
-  const cases: [Case, string, [number, number]][] = [
-    [arabic('ltr', 10), '40px', [11, 57]],
-    [arabic('ltr', 10), '-4px', [11, 57]],
-    [arabic('ltr', 130, 'center'), '40px', [107, 153]],
-    [arabic('ltr', 130, 'center'), '-4px', [107, 153]],
-    [arabic('rtl', 250), '40px', [202, 248]],
-    [arabic('rtl', 250), '-4px', [202, 248]],
-    [arabic('rtl', 10, 'left'), '40px', [11, 57]],
-    [arabic('rtl', 10, 'left'), '-4px', [11, 57]],
-    [latin('rtl', 250), '6px', [168, 243]],
-    [latin('rtl', 250), '-2px', [200, 251]],
-    [latin('rtl', 10, 'left'), '6px', [13, 88]],
-    [latin('rtl', 10, 'left'), '-2px', [13, 64]],
-    [latin('ltr', 10), '6px', [13, 88]],
-    [latin('ltr', 10), '-2px', [13, 64]],
+  // [case, letterSpacing, first and last column Chrome resets, Chrome macOS min alpha]
+  const cases: [Case, string, [number, number], number][] = [
+    [arabic('ltr', 10), '40px', [11, 57], 230],
+    [arabic('ltr', 10), '-4px', [11, 57], 230],
+    [arabic('ltr', 130, 'center'), '40px', [107, 153], 178],
+    [arabic('ltr', 130, 'center'), '-4px', [107, 153], 178],
+    [arabic('rtl', 250), '40px', [202, 248], 230],
+    [arabic('rtl', 250), '-4px', [202, 248], 230],
+    [arabic('rtl', 10, 'left'), '40px', [11, 57], 230],
+    [arabic('rtl', 10, 'left'), '-4px', [11, 57], 230],
+    [latin('rtl', 250), '6px', [168, 243], 187],
+    [latin('rtl', 250), '-2px', [200, 251], 187],
+    [latin('rtl', 10, 'left'), '6px', [13, 88], 187],
+    [latin('rtl', 10, 'left'), '-2px', [13, 64], 187],
+    [latin('ltr', 10), '6px', [13, 88], 187],
+    [latin('ltr', 10), '-2px', [13, 64], 187],
   ]
   const setUp = (c: Ctx, k: Case, spacing: string) => {
     c.font = k.font
@@ -784,7 +817,7 @@ test('alpha:false letter-spaced RTL and cursive text resets around its drawn gly
     c.fillStyle = 'rgba(0,0,255,0.5)'
     c.globalCompositeOperation = 'xor'
   }
-  for (const [k, spacing, [first, last]] of cases) {
+  for (const [k, spacing, [first, last], macMin] of cases) {
     const name = `${k.text} ${k.dir} ${k.align ?? 'start'} ${spacing}`
     const far = lowAlpha(260, 60)
     setUp(far.ctx, k, spacing)
@@ -808,7 +841,11 @@ test('alpha:false letter-spaced RTL and cursive text resets around its drawn gly
     const drawn = ctx.getImageData(0, 0, 260, 60).data
     let min = 255
     for (let i = 3; i < drawn.length; i += 4) min = Math.min(min, drawn[i])
-    t.true(min >= 192, `${name}: min alpha ${min}`)
+    if (process.platform === 'darwin') {
+      if (PIXEL_PINS) t.is(min, macMin, `${name}: min alpha`)
+    } else {
+      t.true(min >= 192, `${name}: min alpha ${min}`)
+    }
   }
 })
 
