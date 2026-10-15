@@ -2334,8 +2334,13 @@ impl Context {
     } else {
       FilterQuality::None
     };
-    let decode = (self.backend == Backend::Raster)
-      .then(|| (self.state.transform.get_transform(), self.color_space));
+    let decode = (self.backend == Backend::Raster).then(|| {
+      (
+        self.state.transform.get_transform(),
+        self.color_space,
+        self.pixel_format,
+      )
+    });
     pattern.get_shader(quality, decode)
   }
 
@@ -5602,6 +5607,7 @@ impl CanvasRenderingContext2D {
     // keyed by its current AccountedBitmap's own resource_id: every decode,
     // src reset, and regenerate_bitmap_if_need constructs a fresh
     // AccountedBitmap, so a swapped bitmap can never alias the stale charge.
+    let float16_decode: Option<std::sync::Arc<AccountedBitmap>>;
     let (bitmap, decode_cache, raster_key) = match args.image {
       // A canvas source without pixels draws nothing
       // (HTMLCanvasElement::GetSourceImageForCanvasInternal: not paintable).
@@ -5678,7 +5684,18 @@ impl CanvasRenderingContext2D {
             d_height,
           );
         }
-        if let Some(bitmap) = &image.bitmap {
+        // A raster float16 canvas draws a high-bit-depth image from its
+        // half-float decode (CanvasImageProvider::GetRasterContent,
+        // canvas_resource_provider.cc:2075-2085).
+        float16_decode = image
+          .bitmap
+          .as_ref()
+          .filter(|_| {
+            self.context.backend == Backend::Raster
+              && self.context.pixel_format == CanvasPixelFormat::Float16
+          })
+          .and_then(|bitmap| bitmap.float16_decode(self.context.color_space));
+        if let Some(bitmap) = float16_decode.as_ref().or(image.bitmap.as_ref()) {
           (
             BitmapRef::Borrowed(&bitmap.inner),
             Some(bitmap.as_ref()),
@@ -7640,7 +7657,11 @@ mod tests {
       pattern
         .get_shader(
           FilterQuality::Low,
-          Some((Transform::default(), ColorSpace::Srgb))
+          Some((
+            Transform::default(),
+            ColorSpace::Srgb,
+            CanvasPixelFormat::Unorm8
+          ))
         )
         .is_some()
     );
@@ -8020,7 +8041,11 @@ mod tests {
       pattern
         .get_shader(
           FilterQuality::Low,
-          Some((Transform::default(), ColorSpace::DisplayP3))
+          Some((
+            Transform::default(),
+            ColorSpace::DisplayP3,
+            CanvasPixelFormat::Unorm8
+          ))
         )
         .is_some()
     );
@@ -8033,7 +8058,8 @@ mod tests {
           FilterQuality::Low,
           Some((
             Transform::new(0.5, 0.0, 0.0, 0.5, 0.0, 0.0),
-            ColorSpace::DisplayP3
+            ColorSpace::DisplayP3,
+            CanvasPixelFormat::Unorm8
           ))
         )
         .is_some()

@@ -1652,6 +1652,11 @@ bool skiac_bitmap_set_color_space(skiac_bitmap* c_bitmap,
                                   uint16_t matrix,
                                   bool is_mono);
 bool skiac_bitmap_orient(skiac_bitmap_info* bitmap_info, int origin);
+bool skiac_bitmap_is_high_bit_depth(const uint8_t* ptr, size_t size);
+bool skiac_bitmap_make_high_bit_depth(const uint8_t* ptr,
+                                      size_t size,
+                                      uint8_t cs,
+                                      skiac_bitmap_info* bitmap_info);
 bool skiac_bitmap_source_is_opaque(skiac_bitmap* c_bitmap, bool is_canvas);
 int skiac_bitmap_source_bytes_per_pixel(skiac_bitmap* c_bitmap, bool is_canvas);
 size_t skiac_bitmap_get_width(skiac_bitmap* c_bitmap);

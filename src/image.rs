@@ -1612,6 +1612,9 @@ unsafe impl Send for DecodedBitmap {}
 
 struct BitmapInfo {
   data: Bitmap,
+  /// The encoded image, kept when it has more than 8 bits a channel: a
+  /// float16 canvas draws its half-float decode.
+  high_bit_depth: Option<Vec<u8>>,
 }
 
 enum DecodeStatus {
@@ -1729,7 +1732,10 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
       // `from_image_data` copies the pixels into an owned SkBitmap, so the
       // decoded AVIF buffer is dropped at the end of this arm.
       match bitmap {
-        Some(bitmap) => DecodeStatus::Ok(BitmapInfo { data: bitmap }),
+        Some(bitmap) => DecodeStatus::Ok(BitmapInfo {
+          data: bitmap,
+          high_bit_depth: None,
+        }),
         // A color space Chrome cannot use, or a failed pixel copy: an
         // invalid image rather than an empty bitmap.
         None => DecodeStatus::InvalidImage,
@@ -1739,7 +1745,10 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
     {
       // Other image formats detected by infer (PNG, JPEG, GIF, WebP, etc.)
       if let Some(bitmap) = Bitmap::from_buffer(data_ref.as_ptr().cast_mut(), length) {
-        DecodeStatus::Ok(BitmapInfo { data: bitmap })
+        DecodeStatus::Ok(BitmapInfo {
+          data: bitmap,
+          high_bit_depth: Bitmap::is_high_bit_depth(&data_ref).then(|| data_ref.to_vec()),
+        })
       } else {
         DecodeStatus::InvalidImage
       }
@@ -1813,13 +1822,14 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
         self_mut.natural_height = output.height;
         commit_src(self_mut);
         self_mut.svg = None;
-        let new_bytes = (output.width as i64) * (output.height as i64) * 4;
+        let encoded_bytes = bitmap.high_bit_depth.as_ref().map_or(0, Vec::len) as i64;
+        let new_bytes = (output.width as i64) * (output.height as i64) * 4 + encoded_bytes;
         env.adjust_external_memory(new_bytes)?;
-        self_mut.bitmap = Some(Arc::new(AccountedBitmap::new(
-          bitmap.data,
-          env.raw(),
-          new_bytes,
-        )));
+        let mut accounted = AccountedBitmap::new(bitmap.data, env.raw(), new_bytes);
+        if let Some(encoded) = bitmap.high_bit_depth {
+          accounted = accounted.with_high_bit_depth(encoded);
+        }
+        self_mut.bitmap = Some(Arc::new(accounted));
       }
       DecodeStatus::Svg(svg) => {
         commit_src(self_mut);
