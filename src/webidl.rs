@@ -1036,7 +1036,7 @@ impl Blocks {
 
   /// Called before each value is read.
   fn next_value(&mut self) -> Result<()> {
-    if self.read != 0 && self.read % u64::from(SEQUENCE_BLOCK) == 0 {
+    if self.read != 0 && self.read.is_multiple_of(u64::from(SEQUENCE_BLOCK)) {
       // Scopes close in the reverse order they opened: the old one first.
       self.scope = None;
       self.scope = Some(HandleScope::open(self.env)?);
