@@ -1639,12 +1639,51 @@ pub(crate) const CREATE_PATTERN: &str =
 pub(crate) const PATTERN_SET_TRANSFORM: &str =
   "Failed to execute 'setTransform' on 'CanvasPattern': ";
 
+/// `ImageDataPixelFormat` (core/html/canvas/image_data_settings.idl): the
+/// colour type of an ImageData's data (image_data.cc:120-133). The values are
+/// what the C functions take as `pf`.
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ImageDataPixelFormat {
+  /// Uint8ClampedArray data, kRGBA_8888.
+  #[default]
+  Unorm8 = 0,
+  /// Float16Array data, kRGBA_F16.
+  Float16 = 1,
+  /// Float32Array data, kRGBA_F32.
+  Float32 = 2,
+}
+
+impl ImageDataPixelFormat {
+  const VALUES: [&'static str; 3] = ["rgba-unorm8", "rgba-float16", "rgba-float32"];
+
+  pub(crate) fn as_str(self) -> &'static str {
+    Self::VALUES[self as usize]
+  }
+
+  /// The bytes of one channel.
+  pub(crate) fn element_size(self) -> usize {
+    match self {
+      Self::Unorm8 => 1,
+      Self::Float16 => 2,
+      Self::Float32 => 4,
+    }
+  }
+
+  /// The bytes of one RGBA pixel.
+  pub(crate) fn bytes_per_pixel(self) -> usize {
+    4 * self.element_size()
+  }
+}
+
 /// `ImageDataSettings` (core/html/canvas/image_data_settings.idl).
 #[derive(Clone, Copy, Debug, Default)]
 pub struct ImageDataSettings {
   /// The colorSpace member, a value of the enum. Whether it is supported is
   /// checked later, by [`Self::color_space`].
   color_space: Option<&'static str>,
+  /// The pixelFormat member, "rgba-unorm8" by default.
+  pub(crate) pixel_format: ImageDataPixelFormat,
 }
 
 impl ImageDataSettings {
@@ -1672,11 +1711,19 @@ impl ImageDataSettings {
     // Members in lexicographic order, as the bindings read them.
     let color_space =
       dictionary.enumeration("colorSpace", "PredefinedColorSpace", PREDEFINED_COLOR_SPACE)?;
-    // Chrome 155 also takes 'rgba-float16' and 'rgba-float32' (Float16Array
-    // and Float32Array data). Storage here is 8-bit only, so they are
-    // rejected like any value outside the enum, not stored as 8-bit.
-    dictionary.enumeration("pixelFormat", "ImageDataPixelFormat", &["rgba-unorm8"])?;
-    Ok(Self { color_space })
+    let pixel_format = match dictionary.enumeration(
+      "pixelFormat",
+      "ImageDataPixelFormat",
+      &ImageDataPixelFormat::VALUES,
+    )? {
+      Some("rgba-float16") => ImageDataPixelFormat::Float16,
+      Some("rgba-float32") => ImageDataPixelFormat::Float32,
+      _ => ImageDataPixelFormat::Unorm8,
+    };
+    Ok(Self {
+      color_space,
+      pixel_format,
+    })
   }
 
   /// The color space; None: the caller's default (the context color space, or

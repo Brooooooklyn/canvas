@@ -288,22 +288,24 @@ test('createImageData has no typed array form', (t) => {
   t.is(reads, 0)
 })
 
-// Chrome 155 stores these formats as Float16Array / Float32Array. Storage here
-// is 8-bit only, so they are rejected like any other value outside the enum,
-// instead of silently giving 8-bit data.
-test('the float pixel formats are rejected in every ImageData API', (t) => {
+// Chrome 155 stores these formats as Float16Array / Float32Array (the values
+// are in imagedata-float.spec.ts). Node 22 has no Float16Array: rgba-float16
+// is a NotSupportedError there.
+test('the float pixel formats are accepted in every ImageData API', (t) => {
   const ctx = createCanvas(2, 2).getContext('2d')
-  for (const pixelFormat of ['rgba-float16', 'rgba-float32']) {
+  const formats: [string, string][] = [['rgba-float32', '[object Float32Array]']]
+  if (typeof (globalThis as any).Float16Array === 'function') formats.push(['rgba-float16', '[object Float16Array]'])
+  for (const [pixelFormat, type] of formats) {
     const settings = loose({ pixelFormat })
-    const error = (prefix: string) => ({
-      instanceOf: TypeError,
-      message: `${prefix}Failed to read the 'pixelFormat' property from 'ImageDataSettings': The provided value '${pixelFormat}' is not a valid enum value of type ImageDataPixelFormat.`,
-    })
-    t.throws(() => new ImageData(1, 1, settings), error(CONSTRUCT))
-    t.throws(() => new ImageData(new Uint8ClampedArray(4), 1, 1, settings), error(CONSTRUCT))
-    t.throws(() => new ImageData(new Float32Array(4), 1, 1, settings), error(CONSTRUCT))
-    t.throws(() => ctx.createImageData(1, 1, settings), error(CREATE_IMAGE_DATA))
-    t.throws(() => ctx.getImageData(0, 0, 1, 1, settings), error(GET_IMAGE_DATA))
+    for (const imageData of [
+      new ImageData(1, 1, settings),
+      ctx.createImageData(1, 1, settings),
+      ctx.getImageData(0, 0, 1, 1, settings),
+    ]) {
+      t.is(imageData.pixelFormat, pixelFormat)
+      t.is(Object.prototype.toString.call(imageData.data), type)
+      t.is(imageData.data.length, 4)
+    }
   }
   const unorm8 = { pixelFormat: 'rgba-unorm8' as const }
   for (const imageData of [
@@ -315,7 +317,6 @@ test('the float pixel formats are rejected in every ImageData API', (t) => {
     t.is(imageData.pixelFormat, 'rgba-unorm8')
     t.true(imageData.data instanceof Uint8ClampedArray)
   }
-  // The context colorType 'float16' is still accepted and reported.
   t.is(createCanvas(1, 1).getContext('2d', { colorType: 'float16' }).getContextAttributes().colorType, 'float16')
 })
 

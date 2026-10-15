@@ -12,6 +12,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::error::SkError;
 use crate::font::{ComputedFont, FamilyName, FontStretch, FontStyle};
+use crate::webidl::ImageDataPixelFormat;
 
 #[allow(non_camel_case_types)]
 pub mod ffi {
@@ -550,6 +551,43 @@ pub mod ffi {
       w: i32,
       h: i32,
       color_space: u8,
+    ) -> bool;
+
+    pub fn skiac_surface_read_pixels_format(
+      surface: *mut skiac_surface,
+      data: *mut u8,
+      row_bytes: usize,
+      x: i32,
+      y: i32,
+      w: i32,
+      h: i32,
+      color_space: u8,
+      pixel_format: u8,
+    ) -> bool;
+
+    pub fn skiac_canvas_write_pixels_format(
+      canvas: *mut skiac_canvas,
+      pixels: *const u8,
+      w: i32,
+      h: i32,
+      color_space: u8,
+      pixel_format: u8,
+      opaque: bool,
+      sx: i32,
+      sy: i32,
+      sw: i32,
+      sh: i32,
+      dx: i32,
+      dy: i32,
+    ) -> bool;
+
+    pub fn skiac_image_data_to_unorm8(
+      pixels: *const u8,
+      w: i32,
+      h: i32,
+      color_space: u8,
+      pixel_format: u8,
+      out: *mut u8,
     ) -> bool;
 
     pub fn skiac_surface_peek_premul_rgba(
@@ -1251,6 +1289,7 @@ pub mod ffi {
       height: usize,
       row_bytes: usize,
       cs: u8,
+      pixel_format: u8,
     ) -> *mut skiac_bitmap;
 
     pub fn skiac_bitmap_set_color_space(
@@ -2596,6 +2635,37 @@ impl Surface {
     }
   }
 
+  /// Reads the (x, y, width, height) rect into `out` as an ImageData of
+  /// `pixel_format` holds it: unpremultiplied, in `color_space`. `out` holds
+  /// the whole rect, zeroed: what lies outside the surface stays zero. False
+  /// when the rect misses the surface.
+  pub fn read_pixels_format(
+    &self,
+    out: &mut [u8],
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+    color_space: ColorSpace,
+    pixel_format: ImageDataPixelFormat,
+  ) -> bool {
+    let row_bytes = width as usize * pixel_format.bytes_per_pixel();
+    assert!(out.len() >= row_bytes * height as usize);
+    unsafe {
+      ffi::skiac_surface_read_pixels_format(
+        self.ptr,
+        out.as_mut_ptr(),
+        row_bytes,
+        x,
+        y,
+        width as i32,
+        height as i32,
+        color_space as u8,
+        pixel_format as u8,
+      )
+    }
+  }
+
   /// Fused readback + unpremultiply from a peeked premultiplied RGBA surface.
   /// `len` is the validated `width * height * 4` from [`Self::read_pixels`].
   #[allow(clippy::too_many_arguments)]
@@ -3423,6 +3493,42 @@ impl Canvas {
   pub fn write_pixels(&mut self, pixels: *const u8, width: usize, height: usize, x: i32, y: i32) {
     unsafe {
       ffi::skiac_canvas_write_pixels(self.0, width as i32, height as i32, pixels, width * 4, x, y);
+    }
+  }
+
+  /// putImageData on a raster canvas, as Blink writes it: the `src` part (x,
+  /// y, width, height) of a `width` x `height` ImageData of `pixel_format` in
+  /// `color_space`, at (dx, dy), converted first when the canvas stores
+  /// another number of bytes per pixel. False when that conversion cannot
+  /// allocate. `pixels` must point to the whole ImageData.
+  pub fn write_pixels_format(
+    &mut self,
+    pixels: *const u8,
+    width: usize,
+    height: usize,
+    color_space: ColorSpace,
+    pixel_format: ImageDataPixelFormat,
+    opaque: bool,
+    [sx, sy, sw, sh]: [i32; 4],
+    dx: i32,
+    dy: i32,
+  ) -> bool {
+    unsafe {
+      ffi::skiac_canvas_write_pixels_format(
+        self.0,
+        pixels,
+        width as i32,
+        height as i32,
+        color_space as u8,
+        pixel_format as u8,
+        opaque,
+        sx,
+        sy,
+        sw,
+        sh,
+        dx,
+        dy,
+      )
     }
   }
 
@@ -4834,6 +4940,30 @@ impl Drop for ImageFilter {
   }
 }
 
+/// A float ImageData's pixels as rgba-unorm8 bytes in the same colour space,
+/// or None when they cannot be allocated. `pixels` must point to `width` x
+/// `height` pixels of `pixel_format`.
+pub fn image_data_to_unorm8(
+  pixels: *const u8,
+  width: usize,
+  height: usize,
+  color_space: ColorSpace,
+  pixel_format: ImageDataPixelFormat,
+) -> Option<Vec<u8>> {
+  let mut out = try_zeroed_bytes(width.checked_mul(height)?.checked_mul(4)?)?;
+  unsafe {
+    ffi::skiac_image_data_to_unorm8(
+      pixels,
+      width as i32,
+      height as i32,
+      color_space as u8,
+      pixel_format as u8,
+      out.as_mut_ptr(),
+    )
+  }
+  .then_some(out)
+}
+
 #[repr(transparent)]
 #[derive(Debug)]
 pub struct Bitmap(pub(crate) ffi::skiac_bitmap_info);
@@ -4895,22 +5025,23 @@ impl Bitmap {
     }))
   }
 
-  /// A premultiplied copy of unpremultiplied RGBA bytes (an ImageData) in
-  /// `color_space`.
+  /// A premultiplied copy of the unpremultiplied pixels of an ImageData in
+  /// `color_space`, in the colour type of `pixel_format`.
   pub fn premul_from_image_data(
     ptr: *mut u8,
     width: usize,
     height: usize,
-    row_bytes: usize,
     color_space: ColorSpace,
+    pixel_format: ImageDataPixelFormat,
   ) -> Option<Self> {
     let bitmap = unsafe {
       ffi::skiac_bitmap_make_premul_from_image_data(
         ptr,
         width,
         height,
-        row_bytes,
+        width * pixel_format.bytes_per_pixel(),
         color_space as u8,
+        pixel_format as u8,
       )
     };
     if bitmap.is_null() {
