@@ -50,11 +50,6 @@ pub(crate) fn type_error(env: sys::napi_env, msg: &str) -> Error {
   throw(env, new_error(env, ErrorKind::TypeError, msg), msg)
 }
 
-/// Throw a RangeError.
-pub(crate) fn range_error(env: sys::napi_env, msg: &str) -> Error {
-  throw(env, new_error(env, ErrorKind::RangeError, msg), msg)
-}
-
 /// The legacy `code` of a DOMException name (the WebIDL error names
 /// table); 0 for the names without one, such as EncodingError.
 fn dom_exception_code(name: &str) -> u32 {
@@ -334,7 +329,18 @@ fn set_message(env: sys::napi_env, error: sys::napi_value, message: &str) {
 /// ApplyContextToException), so `stack` keeps the bare `msg`. An error thrown
 /// by user code (valueOf, toString, an iterator) is passed on as it is.
 pub(crate) fn context_type_error(env: sys::napi_env, prefix: &str, msg: &str) -> Error {
-  let error = new_error(env, ErrorKind::TypeError, msg);
+  context_error(env, ErrorKind::TypeError, prefix, msg)
+}
+
+/// A RangeError as Chrome throws it from a binding, such as "Out of memory
+/// at ImageData creation": `stack` keeps the bare `msg`, as in
+/// [`context_type_error`].
+pub(crate) fn context_range_error(env: sys::napi_env, prefix: &str, msg: &str) -> Error {
+  context_error(env, ErrorKind::RangeError, prefix, msg)
+}
+
+fn context_error(env: sys::napi_env, kind: ErrorKind, prefix: &str, msg: &str) -> Error {
+  let error = new_error(env, kind, msg);
   if let Some(error) = error {
     set_message(env, error, &format!("{prefix}{msg}"));
   }

@@ -192,6 +192,12 @@ test('createImageData binding errors keep the bare message in the stack', (t) =>
     const error = t.throws(fn, { instanceOf: TypeError, message: CREATE + msg })
     t.is(String(error?.stack).split('\n')[0], `TypeError: ${msg}`)
   }
+  // 4 * 65536 * 65536 does not fit in an unsigned int.
+  const tooBig = t.throws(() => c.createImageData(65536, 65536), {
+    instanceOf: RangeError,
+    message: `${CREATE}Out of memory at ImageData creation.`,
+  })
+  t.is(String(tooBig?.stack).split('\n')[0], 'RangeError: Out of memory at ImageData creation.')
 })
 
 test('createImageData(imagedata) still copies only the size and color space', (t) => {

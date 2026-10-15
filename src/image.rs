@@ -138,7 +138,7 @@ fn index_size_error(env: sys::napi_env, prefix: &str, msg: &str) -> Error {
 /// RangeError "Out of memory at ImageData creation" (no period), the error of
 /// a failed allocation and of getImageData's int overflow checks.
 pub(crate) fn out_of_memory(env: sys::napi_env, prefix: &str) -> Error {
-  webidl::range_error(env, &format!("{prefix}Out of memory at ImageData creation"))
+  webidl::context_range_error(env, prefix, "Out of memory at ImageData creation")
 }
 
 /// The size steps of ImageData::ValidateAndCreate (image_data.cc:55-110).
@@ -180,10 +180,9 @@ pub(crate) fn validate_size(
     Some(len) => Ok(len as usize),
     None => Err(match errors {
       SizeErrors::Constructor => index_size_error(env, prefix, SIZE_EXCEEDS),
-      SizeErrors::Context2D => webidl::range_error(
-        env,
-        &format!("{prefix}Out of memory at ImageData creation."),
-      ),
+      SizeErrors::Context2D => {
+        webidl::context_range_error(env, prefix, "Out of memory at ImageData creation.")
+      }
     }),
   }
 }
@@ -259,12 +258,10 @@ impl ImageData {
     color_space: ColorSpace,
   ) -> Result<ClassInstance<'a, ImageData>> {
     let Some(length) = width.checked_mul(height).and_then(|v| v.checked_mul(4)) else {
-      return Err(webidl::range_error(
+      return Err(webidl::context_range_error(
         env.raw(),
-        &format!(
-          "{}Out of memory at ImageData creation.",
-          webidl::CREATE_IMAGE_DATA
-        ),
+        webidl::CREATE_IMAGE_DATA,
+        "Out of memory at ImageData creation.",
       ));
     };
     let data = alloc_data(env.raw(), webidl::CREATE_IMAGE_DATA, length)?;
