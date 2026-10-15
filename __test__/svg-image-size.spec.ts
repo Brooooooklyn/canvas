@@ -707,6 +707,79 @@ test('a large svg draw keeps the source its shadow and filter read, like Chrome'
   )
 })
 
+// That part is the canvas plus 256 px, grown in 256 px steps only for a
+// shadow or filter that reaches further. A shadow or filter that reaches less
+// keeps the raster of the draw without one, so an animated small shadow or
+// blur reuses the cached raster instead of rastering the SVG again each
+// frame. The pixels show which raster was drawn: the firefox logo covers the
+// canvas opaquely, so the shadows are hidden, and a raster cut at another
+// origin differs in a few gradient values (Chrome is within 1 of both).
+test('a large svg draw keeps its raster for a shadow or filter that reaches less than 256 px', async (t) => {
+  const image = await loaded(readFileSync(join(DIR, 'fixtures/firefox-logo.svg')))
+  const draw = (setup: (ctx: SKRSContext2D) => void) => {
+    const ctx = createCanvas(300, 150).getContext('2d')
+    setup(ctx)
+    ctx.drawImage(image, -3000, -2000, 6000, 5000)
+    return ctx.getImageData(0, 0, 300, 150).data
+  }
+  const plain = draw(() => {})
+  const cases: [string, (ctx: SKRSContext2D) => void][] = [
+    [
+      'shadowOffsetX 3',
+      (ctx) => {
+        ctx.shadowColor = 'blue'
+        ctx.shadowOffsetX = 3
+      },
+    ],
+    [
+      'shadowOffsetY 7',
+      (ctx) => {
+        ctx.shadowColor = 'blue'
+        ctx.shadowOffsetY = 7
+      },
+    ],
+    [
+      'shadowOffsetX -5 and shadowBlur 10',
+      (ctx) => {
+        ctx.shadowColor = 'blue'
+        ctx.shadowOffsetX = -5
+        ctx.shadowBlur = 10
+      },
+    ],
+    [
+      'shadowOffset 200, 100 and shadowBlur 20',
+      (ctx) => {
+        ctx.shadowColor = 'blue'
+        ctx.shadowOffsetX = 200
+        ctx.shadowOffsetY = 100
+        ctx.shadowBlur = 20
+      },
+    ],
+    [
+      'drop-shadow(3px 0 0 blue)',
+      (ctx) => {
+        ctx.filter = 'drop-shadow(3px 0 0 blue)'
+      },
+    ],
+    [
+      'drop-shadow(50px 20px 4px blue)',
+      (ctx) => {
+        ctx.filter = 'drop-shadow(50px 20px 4px blue)'
+      },
+    ],
+  ]
+  for (const [name, setup] of cases) {
+    const d = draw(setup)
+    let changed = 0
+    for (let i = 0; i < d.length; i++) {
+      if (d[i] !== plain[i]) {
+        changed++
+      }
+    }
+    t.is(changed, 0, name)
+  }
+})
+
 // img.width and img.height are the attributes; Chrome does not draw an SVG
 // at that size.
 test('img.width does not change what drawImage draws for an svg', async (t) => {
