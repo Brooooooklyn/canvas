@@ -114,9 +114,9 @@ const nearPixel = (t: ExecutionContext, actual: number[], expected: readonly num
 // The spec: a format that supports a color profile must carry the bitmap's
 // color space. AVIF does this with CICP (an 'nclx' colr box), so the pixels
 // of a P3 canvas stay P3, tagged primaries 12 (P3), transfer 13 (sRGB),
-// matrix 6 (BT.601) and full range; an sRGB canvas is tagged 1/13/6. Chrome
-// has no AVIF encoder; the pixels are what Chrome 155 CPU decodes from these
-// files, apart from the 1 lower red (Chrome 255, 234).
+// matrix 0 (identity: quality 100 is lossless) and full range; an sRGB canvas
+// is tagged 1/13/0. Chrome has no AVIF encoder; the pixels are what Chrome 155
+// CPU decodes from these files.
 test('avif output keeps the canvas color space and tags it as CICP', async (t) => {
   const colr = (data: Buffer) => {
     const at = data.indexOf('colrnclx')
@@ -125,11 +125,11 @@ test('avif output keeps the canvas color space and tags it as CICP', async (t) =
   for (const { source, cicp, decoded } of [
     {
       source: 'display-p3',
-      cicp: [12, 13, 6, 1],
+      cicp: [12, 13, 0, 1],
       decoded: {
         'display-p3': [
           [255, 0, 0, 255],
-          [31, 128, 223, 255],
+          [32, 128, 223, 255],
         ],
         srgb: [
           [255, 0, 0, 255],
@@ -139,7 +139,7 @@ test('avif output keeps the canvas color space and tags it as CICP', async (t) =
     },
     {
       source: 'srgb',
-      cicp: [1, 13, 6, 1],
+      cicp: [1, 13, 0, 1],
       decoded: {
         'display-p3': [
           [234, 51, 35, 255],
@@ -147,7 +147,7 @@ test('avif output keeps the canvas color space and tags it as CICP', async (t) =
         ],
         srgb: [
           [255, 0, 0, 255],
-          [31, 128, 223, 255],
+          [32, 128, 223, 255],
         ],
       },
     },
@@ -170,7 +170,7 @@ test('avif output keeps the canvas color space and tags it as CICP', async (t) =
         const out = createCanvas(4, 4).getContext('2d', { colorSpace })
         out.drawImage(image, 0, 0)
         const [left, right] = decoded[colorSpace]
-        nearPixel(t, [...out.getImageData(0, 0, 1, 1).data], left, `${label} left`)
+        t.deepEqual([...out.getImageData(0, 0, 1, 1).data], left, `${label} left`)
         t.deepEqual([...out.getImageData(3, 0, 1, 1).data], right, `${label} right`)
       }
     }
