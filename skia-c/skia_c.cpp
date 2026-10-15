@@ -2507,6 +2507,93 @@ void skiac_paint_set_src_in_color_filter(skiac_paint* c_paint,
                             nullptr, SkBlendMode::kSrcIn));
 }
 
+uint32_t skiac_color4f_to_sk_color(skiac_color4f color) {
+  return SkColor4f{color.r, color.g, color.b, color.a}.toSkColor();
+}
+
+// Blink's GetSkColorSpaceParams (color.cc:166-224): the gamut matrix and
+// transfer function of a predefined color space. `space` follows
+// src/color/convert.rs Predefined.
+bool skiac_color_space_params(int space, float* matrix, float* transfer_fn) {
+  skcms_Matrix3x3 m;
+  skcms_TransferFunction t;
+  switch (space) {
+    case 0:  // srgb
+      m = SkNamedGamut::kSRGB;
+      t = SkNamedTransferFn::kSRGB;
+      break;
+    case 1:  // srgb-linear
+      m = SkNamedGamut::kSRGB;
+      t = SkNamedTransferFn::kLinear;
+      break;
+    case 2:  // display-p3
+      m = SkNamedGamut::kDisplayP3;
+      t = SkNamedTransferFn::kSRGB;
+      break;
+    case 3:  // display-p3-linear
+      m = SkNamedGamut::kDisplayP3;
+      t = SkNamedTransferFn::kLinear;
+      break;
+    case 4:  // a98-rgb
+      m = SkNamedGamut::kAdobeRGB;
+      t = SkNamedTransferFn::k2Dot2;
+      break;
+    case 5:  // prophoto-rgb
+      if (!SkNamedPrimaries::kProPhotoRGB.toXYZD50(&m)) {
+        return false;
+      }
+      t = SkNamedTransferFn::kProPhotoRGB;
+      break;
+    case 6:  // rec2020
+      m = SkNamedGamut::kRec2020;
+      t = SkNamedTransferFn::kRec2020;
+      break;
+    case 7:  // xyz-d50
+      m = SkNamedGamut::kXYZ;
+      t = SkNamedTransferFn::kLinear;
+      break;
+    case 8:  // xyz-d65
+      if (!skcms_AdaptToXYZD50(0.3127f, 0.3290f, &m)) {
+        return false;
+      }
+      t = SkNamedTransferFn::kLinear;
+      break;
+    default:
+      return false;
+  }
+  memcpy(matrix, &m.vals[0][0], sizeof(float) * 9);
+  memcpy(transfer_fn, &t, sizeof(float) * 7);
+  return true;
+}
+
+bool skiac_skcms_matrix3x3_invert(const float* matrix, float* inverse) {
+  skcms_Matrix3x3 m;
+  skcms_Matrix3x3 inv;
+  memcpy(&m.vals[0][0], matrix, sizeof(float) * 9);
+  if (!skcms_Matrix3x3_invert(&m, &inv)) {
+    return false;
+  }
+  memcpy(inverse, &inv.vals[0][0], sizeof(float) * 9);
+  return true;
+}
+
+float skiac_skcms_transfer_fn_eval(const float* transfer_fn, float x) {
+  skcms_TransferFunction t;
+  memcpy(&t, transfer_fn, sizeof(float) * 7);
+  return skcms_TransferFunction_eval(&t, x);
+}
+
+bool skiac_skcms_transfer_fn_invert(const float* transfer_fn, float* inverse) {
+  skcms_TransferFunction t;
+  skcms_TransferFunction inv;
+  memcpy(&t, transfer_fn, sizeof(float) * 7);
+  if (!skcms_TransferFunction_invert(&t, &inv)) {
+    return false;
+  }
+  memcpy(inverse, &inv, sizeof(float) * 7);
+  return true;
+}
+
 void skiac_paint_set_style(skiac_paint* c_paint, int style) {
   PAINT_CAST->setStyle((SkPaint::Style)style);
 }
