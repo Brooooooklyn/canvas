@@ -7,7 +7,6 @@
 #include <algorithm>
 #include <optional>
 
-#include "hb_api.h"
 #include "text.hpp"
 
 #if defined(SK_DEBUG) || !defined(SK_RELEASE)
@@ -17,6 +16,22 @@
 namespace {
 
 constexpr float kHangingAsPercentOfAscent = 80;
+
+hb_blob_t* ReferenceTable(hb_face_t*, hb_tag_t tag, void* user_data) {
+  if (!tag) {
+    return nullptr;
+  }
+  auto* typeface = static_cast<SkTypeface*>(user_data);
+  sk_sp<SkData> data = typeface->copyTableData(tag);
+  if (!data) {
+    return nullptr;
+  }
+  SkData* table = data.release();
+  return hb_blob_create(static_cast<const char*>(table->data()),
+                        static_cast<unsigned int>(table->size()),
+                        HB_MEMORY_MODE_READONLY, table,
+                        [](void* ptr) { static_cast<SkData*>(ptr)->unref(); });
+}
 
 // LayoutUnit::FromFloatRound: 1/64 px, rounded half away from zero.
 float LayoutUnitRound(float value) {
@@ -67,22 +82,6 @@ bool IsSystemTypeface(skiac_font_collection* c_collection,
   return installed && installed->uniqueID() == typeface->uniqueID();
 }
 
-hb_blob_t* ReferenceTable(hb_face_t*, hb_tag_t tag, void* user_data) {
-  if (!tag) {
-    return nullptr;
-  }
-  auto* typeface = static_cast<SkTypeface*>(user_data);
-  sk_sp<SkData> data = typeface->copyTableData(tag);
-  if (!data) {
-    return nullptr;
-  }
-  SkData* table = data.release();
-  return hb_blob_create(static_cast<const char*>(table->data()),
-                        static_cast<unsigned int>(table->size()),
-                        HB_MEMORY_MODE_READONLY, table,
-                        [](void* ptr) { static_cast<SkData*>(ptr)->unref(); });
-}
-
 // OpenTypeBaselineMetrics: the BASE table's romn, hang and ideo baselines
 // for the default script and language, in px (HarfBuzz 16.16 units of a font
 // scaled to `size`).
@@ -92,10 +91,7 @@ void ReadBaseTable(SkTypeface* typeface,
   if (!typeface->getTableSize(SkSetFourByteTag('B', 'A', 'S', 'E'))) {
     return;
   }
-  typeface->ref();
-  hb_face_t* face = hb_face_create_for_tables(
-      ReferenceTable, typeface,
-      [](void* ptr) { static_cast<SkTypeface*>(ptr)->unref(); });
+  hb_face_t* face = CreateHbFace(typeface);
   hb_font_t* font = hb_font_create(face);
   // SkiaScalarToHarfBuzzPosition.
   const double scaled = static_cast<double>(size) * (1 << 16);
@@ -121,6 +117,13 @@ void ReadBaseTable(SkTypeface* typeface,
 }
 
 }  // namespace
+
+hb_face_t* CreateHbFace(SkTypeface* typeface) {
+  typeface->ref();
+  return hb_face_create_for_tables(ReferenceTable, typeface, [](void* ptr) {
+    static_cast<SkTypeface*>(ptr)->unref();
+  });
+}
 
 PrimaryFontMetrics MeasurePrimaryFont(skiac_font_collection* c_collection,
                                       SkTypeface* typeface,

@@ -1,12 +1,15 @@
 // Shared by the canvas text files (text.cpp, font_families.cpp,
-// text_metrics.cpp).
+// text_metrics.cpp, text_words.cpp).
 
 #ifndef SKIA_C_TEXT_H
 #define SKIA_C_TEXT_H
 
 #include <optional>
+#include <string_view>
+#include <utility>
 #include <vector>
 
+#include "hb_api.h"
 #include "skia_c.hpp"
 
 // The families skparagraph should use for `request`, like Blink's
@@ -53,6 +56,22 @@ float FontBaseline(int baseline, const PrimaryFontMetrics& metrics);
 void FillFontMetrics(const PrimaryFontMetrics& metrics,
                      float baseline_y,
                      skiac_line_metrics* out);
+
+// A HarfBuzz face reading `typeface`'s tables (it keeps a ref). The caller
+// destroys it.
+hb_face_t* CreateHbFace(SkTypeface* typeface);
+
+// Blink's PlainTextNode::SegmentWord: the [start, end) byte ranges of the
+// words HarfBuzz shapes one by one (text_words.cpp).
+std::vector<std::pair<size_t, size_t>> SplitWords(std::string_view text);
+
+// FontFallbackList::CanShapeWordByWord: false when the request turns on
+// kerning or ligatures and the first family with a space glyph has the
+// space in a GPOS (kerning) or GSUB (ligatures) lookup. `faces` are the
+// request's families' faces, in order.
+bool CanShapeWordByWord(skiac_font_collection* c_collection,
+                        const std::vector<sk_sp<SkTypeface>>& faces,
+                        const skiac_text_request& request);
 
 // The px size of one `ex`, `ch`, `cap`, `ic` and `lh` of a font.
 struct skiac_font_units {

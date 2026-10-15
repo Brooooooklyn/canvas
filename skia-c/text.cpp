@@ -44,8 +44,7 @@ void MeasureOrDraw(skiac_font_collection* c_collection,
                    float x,
                    float y,
                    float max_width,
-                   skiac_line_metrics* c_line_metrics,
-                   bool collect_ink) {
+                   skiac_line_metrics* c_line_metrics) {
   // A face or alias registered since the last lookup can change an existing
   // match, and FontCollection caches matches until told otherwise.
   c_collection->flushCachesIfDirty();
@@ -153,6 +152,15 @@ void MeasureOrDraw(skiac_font_collection* c_collection,
     text_style.addFontFeature(SkString("calt"), 0);
   }
 
+  // Blink turns the optional ligatures off for any non-zero letter spacing
+  // (FontFeatureRange::FromFontDescription); skparagraph only drops `liga`,
+  // and only for positive spacing.
+  if (letter_spacing != 0) {
+    text_style.addFontFeature(SkString("liga"), 0);
+    text_style.addFontFeature(SkString("clig"), 0);
+    text_style.addFontFeature(SkString("calt"), 0);
+  }
+
   text_style.setForegroundColor(*paint);
   text_style.setTextBaseline(TextBaseline::kAlphabetic);
   StrutStyle struct_style;
@@ -162,14 +170,16 @@ void MeasureOrDraw(skiac_font_collection* c_collection,
   paragraph_style.setTextStyle(text_style);
   paragraph_style.setTextDirection(text_direction);
   paragraph_style.setStrutStyle(struct_style);
+  // Blink sums the HarfBuzz advances; skparagraph would round the width to
+  // 1/100 px (a Flutter rule).
+  paragraph_style.setApplyRoundingHack(false);
   // FontFallbackList::PrimaryFont: the first family's face gives the font
   // metrics and the textBaseline offset, whichever font draws the text.
+  const std::vector<sk_sp<SkTypeface>> faces = font_collection->findTypefaces(
+      text_style.getFontFamilies(), font_style, text_style.getFontArguments());
   sk_sp<SkTypeface> primary;
   sk_sp<SkTypeface> primary_base;
   {
-    auto faces =
-        font_collection->findTypefaces(text_style.getFontFamilies(), font_style,
-                                       text_style.getFontArguments());
     if (!faces.empty()) {
       primary = faces.front();
     }
@@ -199,22 +209,33 @@ void MeasureOrDraw(skiac_font_collection* c_collection,
     return;
   }
 
+  // PlainTextNode shapes word by word: kerning and ligatures never cross a
+  // space. skparagraph shapes each run of style blocks that share the font
+  // attributes as one (OneLineShaper::iterateThroughFontStyles), so every
+  // word gets a block whose half leading differs from its neighbours'. Half
+  // leading only acts with a height override, which canvas text never sets.
+  const std::string_view text(request.text, request.text_len);
+  std::vector<std::pair<size_t, size_t>> words;
+  if (CanShapeWordByWord(c_collection, faces, request)) {
+    words = SplitWords(text);
+  }
   ParagraphBuilderImpl builder(paragraph_style, font_collection,
                                SkUnicodes::ICU::Make());
-  builder.addText(request.text, request.text_len);
+  if (words.size() <= 1) {
+    builder.addText(request.text, request.text_len);
+  } else {
+    TextStyle word_style = text_style;
+    for (size_t i = 0; i < words.size(); ++i) {
+      word_style.setHalfLeading(i % 2 == 1);
+      builder.pushStyle(word_style);
+      builder.addText(request.text + words[i].first,
+                      words[i].second - words[i].first);
+      builder.pop();
+    }
+  }
   std::unique_ptr<ParagraphImpl> paragraph(
       static_cast<ParagraphImpl*>(builder.Build().release()));
   paragraph->layout(kMaxLayoutWidth);
-  std::vector<LineMetrics> metrics_vec;
-  paragraph->getLineMetrics(metrics_vec);
-  auto line_metrics = metrics_vec[0];
-  auto run = paragraph->run(0);
-  auto font = run.font();
-  std::vector<SkRect> bounds(request.text_len);
-  auto glyphs = run.glyphs();
-  auto glyphs_size = glyphs.size();
-  font.getBounds(glyphs, bounds, paint);
-
   // line_metrics.fWidth doesn't contain the suffix spaces
   // run.calculateWidth will return 0 if font is rendering as fallback
   //
@@ -228,21 +249,17 @@ void MeasureOrDraw(skiac_font_collection* c_collection,
   // Note: Using `getRectsForRange()` may cause `measureText.width` to return
   // different values for LTR and RTL layouts.
   auto line_width = paragraph->getMaxIntrinsicWidth();
-  auto first_char_bounds = bounds[0];
-  auto descent = first_char_bounds.fBottom;
-  auto ascent = first_char_bounds.fTop;
-  auto last_char_bounds = bounds[glyphs_size - 1];
-  auto last_char_pos_x = run.positionX(glyphs_size - 1);
-
-  for (size_t i = 1; i <= glyphs_size - 1; ++i) {
-    auto char_bounds = bounds[i];
-    auto char_bottom = char_bounds.fBottom;
-    if (char_bottom > descent) {
-      descent = char_bottom;
-    }
-    auto char_top = char_bounds.fTop;
-    if (char_top < ascent) {
-      ascent = char_top;
+  // RTL text sits at the right edge of the layout width. Lay it out again
+  // just wider than the text (no reshaping: one line keeps its runs), so its
+  // glyph positions are not floats near kMaxLayoutWidth that lose 1/128 px.
+  float layout_width = kMaxLayoutWidth;
+  if (text_direction == TextDirection::kRtl &&
+      SkScalarCeilToScalar(line_width) + 1 < kMaxLayoutWidth) {
+    layout_width = SkScalarCeilToScalar(line_width) + 1;
+    paragraph->layout(layout_width);
+    if (paragraph->lines().size() != 1) {
+      layout_width = kMaxLayoutWidth;
+      paragraph->layout(layout_width);
     }
   }
   // skparagraph draws the first line's glyphs at floor(baseline + 0.5) below
@@ -256,10 +273,10 @@ void MeasureOrDraw(skiac_font_collection* c_collection,
   float paint_x;
   float offset_x = 0.0f;
 
-  // RTL: Skia lays out text from kMaxLayoutWidth right edge, compensate here.
-  // Separated from paint_x to avoid being affected by maxWidth scaling.
+  // RTL: Skia lays out text from the layout width's right edge, compensate
+  // here. Separated from paint_x to avoid being affected by maxWidth scaling.
   float rtl_offset = (text_direction == TextDirection::kRtl)
-                         ? (kMaxLayoutWidth - line_width)
+                         ? (layout_width - line_width)
                          : 0.0f;
 
   // LTR: Skia adds letter_spacing/2 before first char, compensate here.
@@ -274,7 +291,8 @@ void MeasureOrDraw(skiac_font_collection* c_collection,
   // Blink CL: https://chromium-review.googlesource.com/c/chromium/src/+/6399436
   // Skia CL: https://skia-review.googlesource.com/c/skia/+/1099477
   float letter_spacing_offset =
-      (text_direction == TextDirection::kLtr && !run.isCursiveScript())
+      (text_direction == TextDirection::kLtr && !paragraph->runs().empty() &&
+       !paragraph->run(0).isCursiveScript())
           ? -letter_spacing / 2
           : 0.0f;
 
@@ -314,45 +332,71 @@ void MeasureOrDraw(skiac_font_collection* c_collection,
     }
     return;
   }
-  float metrics_paint_x = paint_x + letter_spacing_offset;
-  // Glyph bounds are relative to the alphabetic baseline (y down).
-  c_line_metrics->ascent = -ascent - baseline_y;
-  c_line_metrics->descent = descent + baseline_y;
-  c_line_metrics->left =
-      -metrics_paint_x + line_metrics.fLeft - first_char_bounds.fLeft;
-  c_line_metrics->right =
-      metrics_paint_x + last_char_pos_x + last_char_bounds.fRight;
-  c_line_metrics->width = line_width;
-  FillFontMetrics(primary_metrics, baseline_y, c_line_metrics);
-  // The ink of every glyph the draw above paints, where it paints it:
-  // visit() walks the text blobs paint() draws, and the origin is the
-  // draw's own, rtl_offset and letter_spacing_offset included. Relative to
-  // x, unscaled. Only the alpha:false reset asks for it; the walk is a
-  // large share of a measure, so measureText skips it.
-  SkScalar ink_left = SK_ScalarInfinity;
-  SkScalar ink_right = SK_ScalarNegativeInfinity;
-  if (collect_ink) {
-    paragraph->visit([&](int, const Paragraph::VisitorInfo* info) {
-      if (!info) {
-        return;
+  // TextMetrics::MeasureRuns: the union of the ink of every glyph, where the
+  // draw above paints it (visit() walks the text blobs paint() draws). Blink
+  // reads whole-pixel glyph boxes on Linux (SkFontGetBoundsForGlyphs rounds
+  // them out when subpixel positioning is off) and skips empty ones.
+  bool has_ink = false;
+  SkRect ink = SkRect::MakeEmpty();
+  paragraph->visit([&](int, const Paragraph::VisitorInfo* info) {
+    if (!info) {
+      return;
+    }
+    std::vector<SkRect> glyph_bounds(info->count);
+    info->font.getBounds({info->glyphs, static_cast<size_t>(info->count)},
+                         glyph_bounds, nullptr);
+    for (int i = 0; i < info->count; ++i) {
+      if (glyph_bounds[i].isEmpty()) {
+        continue;
       }
-      std::vector<SkRect> glyph_bounds(info->count);
-      info->font.getBounds({info->glyphs, static_cast<size_t>(info->count)},
-                           glyph_bounds, paint);
-      for (int i = 0; i < info->count; ++i) {
-        if (glyph_bounds[i].isEmpty()) {
-          continue;
+      SkRect glyph = SkRect::Make(glyph_bounds[i].roundOut());
+      // y relative to the alphabetic baseline.
+      glyph.offset(info->origin.fX + info->positions[i].fX,
+                   info->origin.fY + info->positions[i].fY - line_baseline);
+      if (has_ink) {
+        ink.join(glyph);
+      } else {
+        ink = glyph;
+        has_ink = true;
+      }
+    }
+  });
+  // x relative to the text's left edge: the draw's origin is draw_x from the
+  // anchor, and the text's left edge offset_x left of it (Blink's
+  // text_align_dx).
+  const float draw_x = paint_x - rtl_offset + letter_spacing_offset - x;
+  if (has_ink) {
+    ink.offset(draw_x + offset_x, 0);
+  } else {
+    // No glyph has ink: gfx::RectF::Union keeps the last empty word box, a
+    // point on the baseline at the left edge of the visually last word
+    // (the last word for LTR text, the first for RTL), so for "   " the box
+    // sits before the last space. Without words the text is one item.
+    float last_word_advance = line_width;
+    if (words.size() > 1) {
+      const auto& word =
+          text_direction == TextDirection::kRtl ? words.front() : words.back();
+      last_word_advance = 0;
+      for (const auto& run : paragraph->runs()) {
+        if (run.textRange().start >= word.first &&
+            run.textRange().end <= word.second) {
+          last_word_advance += run.advance().fX;
         }
-        auto glyph_x = info->origin.fX + info->positions[i].fX;
-        ink_left = std::min(ink_left, glyph_x + glyph_bounds[i].fLeft);
-        ink_right = std::max(ink_right, glyph_x + glyph_bounds[i].fRight);
       }
-    });
+    }
+    const float left = line_width - last_word_advance;
+    ink = SkRect::MakeLTRB(left, 0, left, 0);
   }
-  auto draw_x = paint_x - rtl_offset + letter_spacing_offset - x;
-  // No ink (only spaces) or not asked for: an empty box at the anchor.
-  c_line_metrics->ink_left = ink_left <= ink_right ? draw_x + ink_left : 0;
-  c_line_metrics->ink_right = ink_left <= ink_right ? draw_x + ink_right : 0;
+  // TextMetrics::Update.
+  c_line_metrics->left = -ink.fLeft + offset_x;
+  c_line_metrics->right = ink.fRight - offset_x;
+  c_line_metrics->ascent = -ink.fTop - baseline_y;
+  c_line_metrics->descent = ink.fBottom + baseline_y;
+  c_line_metrics->width = line_width;
+  // Relative to the anchor, for the alpha:false reset.
+  c_line_metrics->ink_left = ink.fLeft - offset_x;
+  c_line_metrics->ink_right = ink.fRight - offset_x;
+  FillFontMetrics(primary_metrics, baseline_y, c_line_metrics);
 }
 
 }  // namespace
@@ -362,10 +406,9 @@ extern "C" {
 void skiac_text_measure(skiac_font_collection* c_collection,
                         const skiac_text_request* request,
                         skiac_paint* c_paint,
-                        bool collect_ink,
                         skiac_line_metrics* c_line_metrics) {
   MeasureOrDraw(c_collection, *request, reinterpret_cast<SkPaint*>(c_paint),
-                nullptr, 0, 0, 0, c_line_metrics, collect_ink);
+                nullptr, 0, 0, 0, c_line_metrics);
 }
 
 void skiac_text_draw(skiac_canvas* c_canvas,
@@ -376,8 +419,8 @@ void skiac_text_draw(skiac_canvas* c_canvas,
                      float y,
                      float max_width) {
   MeasureOrDraw(c_collection, *request, reinterpret_cast<SkPaint*>(c_paint),
-                reinterpret_cast<SkCanvas*>(c_canvas), x, y, max_width, nullptr,
-                false);
+                reinterpret_cast<SkCanvas*>(c_canvas), x, y, max_width,
+                nullptr);
 }
 
 }  // extern "C"

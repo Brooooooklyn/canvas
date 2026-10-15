@@ -102,18 +102,14 @@ test('the font metrics and baselines follow textBaseline like Chrome', (t) => {
 })
 
 test('the glyph box moves with textBaseline like Chrome', (t) => {
-  // Latin text in one font: one run, so the box is the run's glyphs.
-  const latin = Object.fromEntries(
-    Object.entries(FIXTURE.baselines).filter(([key]) => !/^(HanT|HarmattanT) /.test(key)),
-  )
-  t.deepEqual(
-    mismatches(
-      latin,
-      INK_FIELDS,
-      sized(() => 'Hg'),
-    ),
-    [],
-  )
+  // Every run's glyphs count (HanT's "中文Hg" is two runs). Chrome reads
+  // Harmattan's 13px glyph boxes through Fontations, one pixel taller.
+  const out = mismatches(
+    FIXTURE.baselines,
+    [...X_FIELDS, ...INK_FIELDS],
+    sized((family) => SAMPLE[family] ?? 'Hg'),
+  ).filter((line) => !/^HarmattanT 13 \w+ actualBoundingBoxAscent:/.test(line))
+  t.deepEqual(out, [])
 })
 
 test('tiny web fonts round the ascent and descent like Chrome', (t) => {

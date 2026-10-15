@@ -572,6 +572,9 @@ struct skiac_font_collection {
   // fonts' ascent and descent unrounded, never a web font's.
   std::set<uint32_t> system_font_ids;
   std::set<SkTypefaceID> system_typeface_ids;
+  // text_words.cpp CanShapeWordByWord: whether a face's GPOS / GSUB lookups
+  // touch the space glyph, per typeface (cleared with the match caches).
+  std::map<SkTypefaceID, uint8_t> space_in_lookups;
 
   skiac_font_collection()
       : collection(sk_make_sp<FontCollection>()),
@@ -594,6 +597,7 @@ struct skiac_font_collection {
   void flushCachesIfDirty() {
     if (caches_dirty) {
       collection->clearCaches();
+      space_in_lookups.clear();
       caches_dirty = false;
     }
   }
@@ -607,6 +611,7 @@ struct skiac_font_collection {
 
     // Clear caches before swap
     collection->clearCaches();
+    space_in_lookups.clear();
     caches_dirty = false;
     ++families_generation;
 
@@ -715,8 +720,7 @@ struct skiac_line_metrics {
   float font_descent;
   float alphabetic_baseline;
   // The drawn glyph ink, left and right of the anchor x, before a maxWidth
-  // squeeze. Filled only when collect_ink asks for it (the alpha:false
-  // reset); measureText does not, and gets 0 for both.
+  // squeeze (the alpha:false reset): -left and right.
   float ink_left;
   float ink_right;
   // Blink's TextMetrics baselines, relative to the textBaseline:
@@ -1004,7 +1008,6 @@ void skiac_canvas_draw_surface_rect(skiac_canvas* c_canvas,
 void skiac_text_measure(skiac_font_collection* c_collection,
                         const skiac_text_request* request,
                         skiac_paint* c_paint,
-                        bool collect_ink,
                         skiac_line_metrics* c_line_metrics);
 void skiac_text_draw(skiac_canvas* c_canvas,
                      skiac_font_collection* c_collection,
