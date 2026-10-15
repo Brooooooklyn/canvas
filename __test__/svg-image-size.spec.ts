@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -536,5 +537,51 @@ test('img.width does not change what drawImage draws for an svg', async (t) => {
     image.height = 100
     t.deepEqual([image.width, image.height, image.naturalWidth, image.naturalHeight], [100, 100, ...natural], file)
     t.deepEqual(count(), [n, max], `${file} with width 100`)
+  }
+})
+
+// The createPattern tile of a 20000x20000 SVG is a 1.6 GB raster, as in
+// Chrome, which rasters the whole tile. Its pages come from calloc and stay
+// untouched where the SVG draws nothing; clearing them again made all 1.6 GB
+// resident (+1527 MB maxRSS on macOS arm64, about +2 MB without it). Run in a
+// child so the raster does not stay in the test process. A 32-bit process
+// cannot allocate it (the pattern is then transparent). The memory bound is
+// for calloc that maps fresh zero pages for a block this large, as macOS
+// does and glibc and musl do; Windows is not measured.
+test('createPattern of a large sparse svg does not touch the whole tile', (t) => {
+  if (process.arch !== 'arm64' && process.arch !== 'x64') {
+    t.pass('64-bit only')
+    return
+  }
+  const script = `
+const { createCanvas, Image } = require('./index.js')
+const image = new Image()
+image.src = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="20000" height="20000"><rect width="10" height="10" fill="red"/></svg>')
+const ctx = createCanvas(300, 150).getContext('2d')
+const before = process.resourceUsage().maxRSS
+ctx.fillStyle = ctx.createPattern(image, 'repeat')
+ctx.fillRect(0, 0, 300, 150)
+const d = ctx.getImageData(0, 0, 300, 150).data
+const growth = (process.resourceUsage().maxRSS - before) / 1024
+let red = 0
+let other = 0
+for (let i = 0; i < d.length; i += 4) {
+  const x = (i / 4) % 300
+  const y = Math.floor(i / 4 / 300)
+  const px = d.slice(i, i + 4).join()
+  if (x < 10 && y < 10 && px === '255,0,0,255') red++
+  else if (px !== '0,0,0,0') other++
+}
+process.stdout.write(JSON.stringify({ growth, red, other }))
+`
+  const { status, signal, stdout, stderr } = spawnSync(process.execPath, ['-e', script], {
+    cwd: join(DIR, '..'),
+    encoding: 'utf8',
+  })
+  t.is(status, 0, `status=${status} signal=${signal}\n${stderr}`)
+  const { growth, red, other } = JSON.parse(stdout)
+  t.deepEqual([red, other], [100, 0])
+  if (process.platform !== 'win32') {
+    t.true(growth < 256, `maxRSS grew by ${growth} MB`)
   }
 })

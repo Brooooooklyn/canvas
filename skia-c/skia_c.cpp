@@ -3683,10 +3683,12 @@ bool skiac_svg_document_render(skiac_svg_document* document,
   auto info = SkImageInfo::Make(width, height, kRGBA_8888_SkColorType,
                                 kPremul_SkAlphaType, color_space);
   auto bitmap = std::make_unique<SkBitmap>();
+  // tryAllocPixels zeroes the pixels (SkMallocPixelRef::MakeAllocate,
+  // sk_calloc_canfail): no clear, which would make every page of a large,
+  // mostly empty raster resident.
   if (width <= 0 || height <= 0 || !bitmap->tryAllocPixels(info)) {
     return false;
   }
-  bitmap->eraseColor(SK_ColorTRANSPARENT);
   {
     SkCanvas canvas(*bitmap);
     canvas.clipRect(
