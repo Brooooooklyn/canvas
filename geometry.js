@@ -26,20 +26,17 @@ class DOMPoint {
     )
   }
 
+  // matrixTransform(optional DOMMatrixInit matrix = {})
   matrixTransform(matrix) {
-    if ((matrix.is2D || matrix instanceof SVGMatrix) && this.z === 0 && this.w === 1) {
-      return new DOMPoint(
-        this.x * matrix.a + this.y * matrix.c + matrix.e,
-        this.x * matrix.b + this.y * matrix.d + matrix.f,
-        0,
-        1,
-      )
+    const { values: m, is2D } = matrixFromInit(matrix, MATRIX_TRANSFORM)
+    if (is2D && this.z === 0 && this.w === 1) {
+      return new DOMPoint(this.x * m[M11] + this.y * m[M21] + m[M41], this.x * m[M12] + this.y * m[M22] + m[M42], 0, 1)
     } else {
       return new DOMPoint(
-        this.x * matrix.m11 + this.y * matrix.m21 + this.z * matrix.m31 + this.w * matrix.m41,
-        this.x * matrix.m12 + this.y * matrix.m22 + this.z * matrix.m32 + this.w * matrix.m42,
-        this.x * matrix.m13 + this.y * matrix.m23 + this.z * matrix.m33 + this.w * matrix.m43,
-        this.x * matrix.m14 + this.y * matrix.m24 + this.z * matrix.m34 + this.w * matrix.m44,
+        this.x * m[M11] + this.y * m[M21] + this.z * m[M31] + this.w * m[M41],
+        this.x * m[M12] + this.y * m[M22] + this.z * m[M32] + this.w * m[M42],
+        this.x * m[M13] + this.y * m[M23] + this.z * m[M33] + this.w * m[M43],
+        this.x * m[M14] + this.y * m[M24] + this.z * m[M34] + this.w * m[M44],
       )
     }
   }
@@ -209,6 +206,152 @@ const newInstance = (values) => {
   instance[VALUES] = values
 
   return instance
+}
+
+// DOMMatrixInit dictionaries (Geometry Interfaces 1: "validate and fixup",
+// "create a DOMMatrix from the dictionary"), with Chrome's errors.
+//
+//   matrixFromInit(init, prefix)
+//     DOMMatrix          -> its values and is2D
+//     undefined / null   -> {}
+//     other non-object   -> TypeError "not of type 'DOMMatrixInit'"
+//     object             -> read members (toMatrixInit), validate and fix up
+
+const FROM_MATRIX = "Failed to execute 'fromMatrix' on 'DOMMatrix': "
+const MULTIPLY = "Failed to execute 'multiply' on 'DOMMatrixReadOnly': "
+const MULTIPLY_SELF = "Failed to execute 'multiplySelf' on 'DOMMatrix': "
+const PRE_MULTIPLY_SELF = "Failed to execute 'preMultiplySelf' on 'DOMMatrix': "
+const MATRIX_TRANSFORM = "Failed to execute 'matrixTransform' on 'DOMPointReadOnly': "
+
+// The members in the order Chrome reads them: the inherited dictionary's
+// first, each dictionary's in lexicographic order.
+const MATRIX_2D_INIT_MEMBERS = ['a', 'b', 'c', 'd', 'e', 'f', 'm11', 'm12', 'm21', 'm22', 'm41', 'm42']
+const MATRIX_INIT_MEMBERS = ['m13', 'm14', 'm23', 'm24', 'm31', 'm32', 'm33', 'm34', 'm43', 'm44']
+// [alias, member, default]: validate and fixup (2D).
+const MATRIX_2D_ALIASES = [
+  ['a', 'm11', 1],
+  ['b', 'm12', 0],
+  ['c', 'm21', 0],
+  ['d', 'm22', 1],
+  ['e', 'm41', 0],
+  ['f', 'm42', 0],
+]
+
+const isObject = (value) => value !== null && (typeof value === 'object' || typeof value === 'function')
+
+// ECMAScript ToNumber, written out so that the errors it throws itself can
+// get Chrome's context (`fail`), while the errors thrown by user code
+// (valueOf, toString, @@toPrimitive) pass through unchanged, as in Chrome.
+// V8's messages; an object in a message is shown as #<Object>.
+function toNumber(value, fail) {
+  if (!isObject(value)) {
+    if (typeof value === 'bigint') throw fail('Cannot convert a BigInt value to a number')
+    if (typeof value === 'symbol') throw fail('Cannot convert a Symbol value to a number')
+    return +value
+  }
+  const toPrimitive = value[Symbol.toPrimitive]
+  if (toPrimitive !== undefined && toPrimitive !== null) {
+    if (typeof toPrimitive !== 'function') {
+      const shown = isObject(toPrimitive) ? '#<Object>' : String(toPrimitive)
+      throw fail(
+        `'${shown}' returned for property 'Symbol(Symbol.toPrimitive)' of object '#<Object>' is not a function`,
+      )
+    }
+    const primitive = toPrimitive.call(value, 'number')
+    if (isObject(primitive)) throw fail('Cannot convert object to primitive value')
+    return toNumber(primitive, fail)
+  }
+  for (const name of ['valueOf', 'toString']) {
+    const method = value[name]
+    if (typeof method === 'function') {
+      const primitive = method.call(value)
+      if (!isObject(primitive)) return toNumber(primitive, fail)
+    }
+  }
+  throw fail('Cannot convert object to primitive value')
+}
+
+// WebIDL conversion to a DOMMatrixInit: the present members only.
+function toMatrixInit(init, prefix) {
+  const dict = Object.create(null)
+  if (init === undefined || init === null) return dict
+  if (!isObject(init)) throw new TypeError(`${prefix}The provided value is not of type 'DOMMatrixInit'.`)
+  const read = (key, dictionary) => {
+    const value = init[key]
+    if (value !== undefined) {
+      dict[key] = toNumber(
+        value,
+        (msg) => new TypeError(`${prefix}Failed to read the '${key}' property from '${dictionary}': ${msg}`),
+      )
+    }
+  }
+  for (const key of MATRIX_2D_INIT_MEMBERS) read(key, 'DOMMatrix2DInit')
+  const is2D = init.is2D
+  if (is2D !== undefined) dict.is2D = Boolean(is2D)
+  for (const key of MATRIX_INIT_MEMBERS) read(key, 'DOMMatrixInit')
+  return dict
+}
+
+const sameValueZero = (x, y) => x === y || (x !== x && y !== y)
+
+// { values, is2D } of the matrix `init` describes. `values` may be the
+// DOMMatrix's own array: read it, do not write it.
+function matrixFromInit(init, prefix) {
+  if (init instanceof DOMMatrix && init[VALUES] instanceof Float64Array) {
+    return { values: init[VALUES], is2D: init[IS_2D] }
+  }
+  const dict = toMatrixInit(init, prefix)
+  // validate and fixup (2D)
+  for (const [alias, member] of MATRIX_2D_ALIASES) {
+    if (alias in dict && member in dict && !sameValueZero(dict[alias], dict[member])) {
+      throw new TypeError(`${prefix}Property mismatch on matrix initialization.`)
+    }
+  }
+  for (const [alias, member, defaultValue] of MATRIX_2D_ALIASES) {
+    if (!(member in dict)) dict[member] = alias in dict ? dict[alias] : defaultValue
+  }
+  // validate and fixup: the members default to the identity.
+  const value = (key) => (key in dict ? dict[key] : key === 'm33' || key === 'm44' ? 1 : 0)
+  const is3D =
+    ['m13', 'm14', 'm23', 'm24', 'm31', 'm32', 'm34', 'm43'].some((key) => value(key) !== 0) ||
+    value('m33') !== 1 ||
+    value('m44') !== 1
+  if (dict.is2D === true && is3D) {
+    throw new TypeError(`${prefix}The is2D member is set to true but the input matrix is a 3d matrix.`)
+  }
+  const is2D = dict.is2D === undefined ? !is3D : dict.is2D
+  const { m11, m12, m21, m22, m41, m42 } = dict
+  const values = is2D
+    ? [m11, m12, 0, 0, m21, m22, 0, 0, 0, 0, 1, 0, m41, m42, 0, 1]
+    : [
+        m11,
+        m12,
+        value('m13'),
+        value('m14'),
+        m21,
+        m22,
+        value('m23'),
+        value('m24'),
+        value('m31'),
+        value('m32'),
+        value('m33'),
+        value('m34'),
+        m41,
+        m42,
+        value('m43'),
+        value('m44'),
+      ]
+  return { values: new Float64Array(values), is2D }
+}
+
+// `target` times (post) or after (pre) the matrix `other` describes.
+function multiplyByInit(target, other, prefix, post) {
+  const { values, is2D } = matrixFromInit(other, prefix)
+  target[VALUES] = post ? multiply(values, target[VALUES]) : multiply(target[VALUES], values)
+  if (!is2D) {
+    target[IS_2D] = false
+  }
+  return target
 }
 
 const multiply = (first, second) => {
@@ -391,14 +534,13 @@ class DOMMatrix {
     )
   }
 
+  // fromMatrix(optional DOMMatrixInit other = {})
   static fromMatrix(init) {
-    if (init instanceof DOMMatrix) {
-      return new DOMMatrix(init[VALUES])
-    } else if (init instanceof SVGMatrix) {
-      return new DOMMatrix([init.a, init.b, init.c, init.d, init.e, init.f])
-    } else {
-      throw new TypeError('Expected DOMMatrix')
-    }
+    const { values, is2D } = matrixFromInit(init, FROM_MATRIX)
+    const matrix = new DOMMatrix()
+    matrix[VALUES] = new Float64Array(values)
+    matrix[IS_2D] = is2D
+    return matrix
   }
 
   static fromFloat32Array(init) {
@@ -513,28 +655,19 @@ class DOMMatrix {
     }
   }
 
+  // multiply, multiplySelf, preMultiplySelf(optional DOMMatrixInit other = {})
   multiply(other) {
-    return newInstance(this[VALUES]).multiplySelf(other)
+    const result = newInstance(this[VALUES])
+    result[IS_2D] = this[IS_2D]
+    return multiplyByInit(result, other, MULTIPLY, true)
   }
 
   multiplySelf(other) {
-    this[VALUES] = multiply(other[VALUES], this[VALUES])
-
-    if (!other.is2D) {
-      this[IS_2D] = false
-    }
-
-    return this
+    return multiplyByInit(this, other, MULTIPLY_SELF, true)
   }
 
   preMultiplySelf(other) {
-    this[VALUES] = multiply(this[VALUES], other[VALUES])
-
-    if (!other.is2D) {
-      this[IS_2D] = false
-    }
-
-    return this
+    return multiplyByInit(this, other, PRE_MULTIPLY_SELF, false)
   }
 
   translate(tx, ty, tz) {
