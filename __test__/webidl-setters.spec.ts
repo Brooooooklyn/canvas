@@ -420,6 +420,324 @@ test('setLineDash throws for a value that is not a sequence', (t) => {
   )
 })
 
+// setLineDash(make(log)) from [5, 6]: what `log` recorded, the error (and
+// the first line of its stack) and the dash list after it. `restore` runs
+// right after setLineDash, before anything else reads an array.
+const dashSteps = (make: (log: string[]) => unknown, restore = () => {}) => {
+  const log: string[] = []
+  const ctx = dashContext()
+  let err = null
+  let stack0 = null
+  try {
+    ctx.setLineDash(loose(make(log)))
+  } catch (e: any) {
+    err = `${e.constructor.name}: ${e.message}`
+    stack0 = String(e.stack).split('\n')[0]
+  } finally {
+    restore()
+  }
+  return { log: log.join(' | '), err, stack0, dash: ctx.getLineDash() }
+}
+
+const tracedNumber = (log: string[], name: string, value: number) => ({
+  valueOf() {
+    log.push(`valueOf ${name}`)
+    return value
+  },
+})
+
+test('setLineDash reads an array by index, not with its iterator', (t) => {
+  // Chrome 155 (CreateIDLSequenceFromV8Array): Get(i) for each index, the
+  // length read again each time, each value converted as it is read.
+  const ok = (log: string, dash: number[]) => ({ log, err: null, stack0: null, dash })
+  t.deepEqual(
+    dashSteps((log) => {
+      const dashes = [4, 5]
+      Object.defineProperty(dashes, Symbol.iterator, {
+        value() {
+          log.push('own @@iterator')
+          return [7, 8][Symbol.iterator]()
+        },
+      })
+      return dashes
+    }),
+    ok('', [4, 5]),
+  )
+  const arrayIterator = Array.prototype[Symbol.iterator]
+  t.deepEqual(
+    dashSteps(
+      (log) => {
+        Array.prototype[Symbol.iterator] = function () {
+          log.push('proto @@iterator')
+          return arrayIterator.call(this)
+        }
+        return [9, 10]
+      },
+      () => {
+        Array.prototype[Symbol.iterator] = arrayIterator
+      },
+    ),
+    ok('', [9, 10]),
+  )
+  t.deepEqual(
+    dashSteps(
+      (log) => {
+        Object.defineProperty(Array.prototype, 1, {
+          get() {
+            log.push('proto get 1')
+            return 7
+          },
+          configurable: true,
+        })
+        // oxlint-disable-next-line no-sparse-arrays
+        return [1, , 3]
+      },
+      () => {
+        delete (Array.prototype as any)[1]
+      },
+    ),
+    ok('proto get 1', [1, 7, 3, 1, 7, 3]),
+  )
+  // A hole is undefined, NaN: the list is ignored.
+  t.deepEqual(
+    // oxlint-disable-next-line no-sparse-arrays
+    dashSteps(() => [1, , 3]),
+    ok('', [5, 6]),
+  )
+  t.deepEqual(
+    dashSteps((log) => {
+      const dashes: unknown[] = []
+      for (const [index, value] of [3, 4].entries()) {
+        Object.defineProperty(dashes, index, {
+          get() {
+            log.push(`get ${index}`)
+            return tracedNumber(log, String(index), value)
+          },
+          enumerable: true,
+        })
+      }
+      return dashes
+    }),
+    ok('get 0 | valueOf 0 | get 1 | valueOf 1', [3, 4]),
+  )
+  t.deepEqual(
+    dashSteps((log) => {
+      const dashes: unknown[] = [1]
+      dashes.push({
+        valueOf() {
+          log.push('push')
+          dashes.push(9)
+          return 2
+        },
+      })
+      return dashes
+    }),
+    ok('push', [1, 2, 9, 1, 2, 9]),
+  )
+  t.deepEqual(
+    dashSteps((log) => {
+      const dashes: unknown[] = [1]
+      dashes.push(
+        {
+          valueOf() {
+            log.push('shrink')
+            dashes.length = 2
+            return 2
+          },
+        },
+        3,
+        4,
+      )
+      return dashes
+    }),
+    ok('shrink', [1, 2]),
+  )
+  t.deepEqual(
+    dashSteps((log) => {
+      const dashes = [1, 2]
+      Object.defineProperty(dashes, 1, {
+        get() {
+          log.push('get 1')
+          throw new RangeError('index 1')
+        },
+      })
+      return dashes
+    }),
+    { log: 'get 1', err: 'RangeError: index 1', stack0: 'RangeError: index 1', dash: [5, 6] },
+  )
+  t.deepEqual(
+    dashSteps((log) => [tracedNumber(log, '0', 1), Symbol('s'), tracedNumber(log, '2', 3)]),
+    {
+      log: 'valueOf 0',
+      err: `TypeError: ${SET_LINE_DASH}Cannot convert a Symbol value to a number`,
+      stack0: 'TypeError: Cannot convert a Symbol value to a number',
+      dash: [5, 6],
+    },
+  )
+  class Dashes extends Array {}
+  t.deepEqual(
+    dashSteps(() => Dashes.of(2, 3)),
+    ok('', [2, 3]),
+  )
+  // A Proxy is not an Array: it is read with its iterator.
+  t.deepEqual(
+    dashSteps(
+      (log) =>
+        new Proxy([2, 3], {
+          get(target, key, receiver) {
+            log.push(`get ${String(key)}`)
+            return Reflect.get(target, key, receiver)
+          },
+        }),
+    ),
+    ok('get Symbol(Symbol.iterator) | get length | get 0 | get length | get 1 | get length', [2, 3]),
+  )
+})
+
+test('setLineDash throws a RangeError for an array longer than Chrome takes', (t) => {
+  // Blink's Vector<double> holds at most MaxAllocationSize() / 8 =
+  // (2^31 - 2^21) / 8 = 268173312 values.
+  for (const length of [268173313, 2 ** 32 - 1]) {
+    t.deepEqual(
+      dashSteps(() => {
+        const dashes: number[] = []
+        dashes.length = length
+        return dashes
+      }),
+      {
+        log: '',
+        err: `RangeError: ${SET_LINE_DASH}Array length exceeds supported limit.`,
+        stack0: 'RangeError: Array length exceeds supported limit.',
+        dash: [5, 6],
+      },
+      String(length),
+    )
+  }
+})
+
+// An iterable whose next() returns steps[i](log) on its i-th call; logs the
+// iterator protocol and whether return() is called.
+const loggedIterable = (log: string[], steps: ((log: string[]) => unknown)[]) => {
+  let i = 0
+  return {
+    [Symbol.iterator]() {
+      log.push('@@iterator')
+      return {
+        next() {
+          log.push('next')
+          return steps[i++](log)
+        },
+        return() {
+          log.push('return')
+          return {}
+        },
+      }
+    },
+  }
+}
+
+// An iterator result whose value and done getters log their reads.
+const tracedResult = (log: string[], value: unknown, done: boolean | (() => never)) => ({
+  get value() {
+    log.push('get value')
+    return value
+  },
+  get done() {
+    log.push('get done')
+    return typeof done === 'function' ? done() : done
+  },
+})
+
+test('setLineDash reads value before done and never closes the iterator', (t) => {
+  // Chrome 155 (ScriptIterator::Next): next(), Get value, Get done, also on
+  // the last step; an abrupt completion does not call return().
+  t.deepEqual(
+    dashSteps((log) => loggedIterable(log, [(l) => tracedResult(l, 2, false), (l) => tracedResult(l, 'last', true)])),
+    {
+      log: '@@iterator | next | get value | get done | next | get value | get done',
+      err: null,
+      stack0: null,
+      dash: [2, 2],
+    },
+  )
+  t.deepEqual(
+    dashSteps((log) =>
+      loggedIterable(log, [
+        (l) =>
+          tracedResult(l, 1, () => {
+            throw new Error('done boom')
+          }),
+      ]),
+    ),
+    {
+      log: '@@iterator | next | get value | get done',
+      err: 'Error: done boom',
+      stack0: 'Error: done boom',
+      dash: [5, 6],
+    },
+  )
+  t.deepEqual(
+    dashSteps((log) =>
+      loggedIterable(log, [
+        (l) => ({
+          get value() {
+            l.push('get value')
+            throw new Error('value boom')
+          },
+          get done() {
+            l.push('get done')
+            return false
+          },
+        }),
+      ]),
+    ),
+    { log: '@@iterator | next | get value', err: 'Error: value boom', stack0: 'Error: value boom', dash: [5, 6] },
+  )
+  t.deepEqual(
+    dashSteps((log) =>
+      loggedIterable(log, [() => ({ value: 1, done: false }), () => ({ value: Symbol('s'), done: false })]),
+    ),
+    {
+      log: '@@iterator | next | next',
+      err: `TypeError: ${SET_LINE_DASH}Cannot convert a Symbol value to a number`,
+      stack0: 'TypeError: Cannot convert a Symbol value to a number',
+      dash: [5, 6],
+    },
+  )
+  t.deepEqual(
+    dashSteps((log) =>
+      loggedIterable(log, [
+        () => ({ value: 1, done: false }),
+        () => {
+          throw new Error('next boom')
+        },
+      ]),
+    ),
+    { log: '@@iterator | next | next', err: 'Error: next boom', stack0: 'Error: next boom', dash: [5, 6] },
+  )
+  // A generator is not closed either: its finally block does not run.
+  t.deepEqual(
+    dashSteps((log) => ({
+      *[Symbol.iterator]() {
+        try {
+          log.push('gen start')
+          yield 1
+          yield Symbol('s')
+          yield 3
+        } finally {
+          log.push('gen finally')
+        }
+      },
+    })),
+    {
+      log: 'gen start',
+      err: `TypeError: ${SET_LINE_DASH}Cannot convert a Symbol value to a number`,
+      stack0: 'TypeError: Cannot convert a Symbol value to a number',
+      dash: [5, 6],
+    },
+  )
+})
+
 test('setLineDash converts before it borrows the context', (t) => {
   const ctx = dashContext()
   ctx.setLineDash(
