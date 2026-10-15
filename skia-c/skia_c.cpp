@@ -689,18 +689,60 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
     }
   }
 
-  // The most device pixels rasterizeSweep draws at one image pixel each:
-  // 4096 * 4096, a 64 MiB N32 image. Past it, an image pixel covers k x k
-  // device pixels.
+  // The most pixels rasterizeSweep draws at one image pixel each: 4096 * 4096,
+  // a 64 MiB N32 image. Past it, an image pixel covers k x k device pixels.
   static constexpr int64_t kMaxSweepPixels = 4096 * 4096;
+
+  // The largest pattern tile Chrome draws at one pixel per device pixel. It
+  // draws an SVG pattern through an SkPictureShader (cc/paint/paint_shader.cc),
+  // which rasterizes a larger tile at 2048 * 2048 pixels and scales that up
+  // (kMaxTileArea, src/shaders/SkPictureShader.cpp).
+  static constexpr int64_t kMaxExactTilePixels = 2048 * 2048;
+
+  // Where a conic raster image lies: it covers the device rect `cover` in
+  // image pixels of kx x ky device pixels, `width` x `height` of them, inside a
+  // border of `border` image pixels on each side.
+  struct SweepGrid {
+    SkIRect cover;
+    int64_t kx;
+    int64_t ky;
+    int64_t width;
+    int64_t height;
+    int border;
+  };
+
+  // The grid of `device` at k device pixels per image pixel (no more than a
+  // side). At one image pixel per device pixel, the image, border included,
+  // starts at a multiple of 8: Skia dithers with an 8x8 pattern placed by the
+  // device position, so the image dithers like the raster canvas.
+  static SweepGrid MakeSweepGrid(const SkIRect& device, int64_t k, int border) {
+    SweepGrid grid;
+    grid.cover = device;
+    if (k == 1) {
+      grid.cover.fLeft = ((device.fLeft - border) & ~7) + border;
+      grid.cover.fTop = ((device.fTop - border) & ~7) + border;
+    }
+    grid.kx = std::min(k, grid.cover.width64());
+    grid.ky = std::min(k, grid.cover.height64());
+    grid.width = (grid.cover.width64() + grid.kx - 1) / grid.kx;
+    grid.height = (grid.cover.height64() + grid.ky - 1) / grid.ky;
+    grid.border = border;
+    return grid;
+  }
 
   // `paint` with its conic gradient replaced by an image of what the raster
   // canvas paints with it, globalAlpha included, over the device bounds of the
   // draw inside the clip: one image pixel per device pixel, or, for bounds over
-  // kMaxSweepPixels, at most kMaxSweepPixels image pixels in a border of 1
-  // image pixel. The image's matrix maps its pixels back to local space, and
-  // `clip` is the part of the image inside the border. False: nothing to draw
-  // (nothing visible, a singular matrix or no memory for the image).
+  // kMaxSweepPixels, at most kMaxSweepPixels image pixels. The image is the
+  // pattern tile (repeat), not the viewport (a "100%" decal tile): in Chrome
+  // the transparent rest of a viewport tile larger than kMaxExactTilePixels
+  // faded the image's edges. An image Chrome does not draw exactly (larger
+  // than kMaxExactTilePixels, or scaled) has a border of 1 image pixel of the
+  // same gradient, so that resampling it does not mix its edges with the
+  // other side of the tile. The image's matrix maps its pixels back to local
+  // space, and `clip` is the part of the image inside the border. False:
+  // nothing to draw (nothing visible, a singular matrix or no memory for the
+  // image).
   bool rasterizeSweep(const SkPath& path,
                       const SkPaint& paint,
                       SkPaint* out,
@@ -723,59 +765,39 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
     if (!device.intersect(this->getDeviceClipBounds())) {
       return false;
     }
-    const int64_t w = device.width();
-    const int64_t h = device.height();
-    // Device pixels per image pixel on each axis.
-    int64_t kx = 1;
-    int64_t ky = 1;
-    int border = 0;
-    SkTileMode tile = SkTileMode::kDecal;
-    if (w * h <= kMaxSweepPixels) {
-      // Skia dithers with an 8x8 pattern placed by the device position, so the
-      // image starts at a multiple of 8 to dither like the raster canvas.
-      device.fLeft &= ~7;
-      device.fTop &= ~7;
-    } else {
-      // The smallest whole k that fits kMaxSweepPixels (no more than a side):
-      // SkSVGDevice writes the element transform with 6 significant digits
-      // (svg_transform), which only a whole k keeps exact. The SVG renderer
-      // scales the image back up, bilinear in Chrome; the border of the same
-      // gradient keeps that from mixing the edges with the outside of the
-      // image. The pattern tile is the image (repeat), not the viewport (a
-      // "100%" decal tile): Chrome draws an SVG pattern through an
-      // SkPictureShader (cc/paint/paint_shader.cc), which rasterizes a tile
-      // of more than 2048 * 2048 device pixels at that many (kMaxTileArea),
-      // and the transparent rest of a viewport tile then fades the image's
-      // edges.
-      const auto fits = [w, h](int64_t k) {
-        const int64_t x = std::min(k, w);
-        const int64_t y = std::min(k, h);
-        return ((w + x - 1) / x) * ((h + y - 1) / y) <= kMaxSweepPixels;
+    SweepGrid grid = MakeSweepGrid(device, 1, 0);
+    if (grid.width * grid.height > kMaxExactTilePixels) {
+      // The smallest whole k that fits kMaxSweepPixels: SkSVGDevice writes the
+      // element transform with 6 significant digits (svg_transform), which
+      // only a whole k keeps exact. The SVG renderer scales the image back up,
+      // bilinear in Chrome.
+      const auto fits = [](const SweepGrid& grid) {
+        return grid.width * grid.height <= kMaxSweepPixels;
       };
       // At least the square root of the area ratio, rounded down so that
       // rounding noise cannot skip the smallest k.
-      int64_t k = static_cast<int64_t>(std::sqrt(
-          static_cast<double>(w * h) / static_cast<double>(kMaxSweepPixels)));
-      while (!fits(k)) {
-        k++;
+      const int64_t w = device.width64();
+      const int64_t h = device.height64();
+      int64_t k = std::max<int64_t>(
+          1, static_cast<int64_t>(
+                 std::sqrt(static_cast<double>(w * h) /
+                           static_cast<double>(kMaxSweepPixels))));
+      grid = MakeSweepGrid(device, k, 1);
+      while (!fits(grid)) {
+        grid = MakeSweepGrid(device, ++k, 1);
       }
-      kx = std::min(k, w);
-      ky = std::min(k, h);
-      border = 1;
-      tile = SkTileMode::kRepeat;
     }
-    // The image size inside its border.
-    const int width = static_cast<int>((device.width() + kx - 1) / kx);
-    const int height = static_cast<int>((device.height() + ky - 1) / ky);
+    const int border = grid.border;
     auto surface = SkSurfaces::Raster(SkImageInfo::MakeN32Premul(
-        width + 2 * border, height + 2 * border, SkColorSpace::MakeSRGB()));
+        static_cast<int>(grid.width + 2 * border),
+        static_cast<int>(grid.height + 2 * border), SkColorSpace::MakeSRGB()));
     if (!surface) {
       return false;
     }
     auto canvas = surface->getCanvas();
     canvas->translate(border, border);
-    canvas->scale(1.0f / kx, 1.0f / ky);
-    canvas->translate(-device.fLeft, -device.fTop);
+    canvas->scale(1.0f / grid.kx, 1.0f / grid.ky);
+    canvas->translate(-grid.cover.fLeft, -grid.cover.fTop);
     canvas->concat(ctm);
     SkPaint fill;
     fill.setShader(paint.refShader());
@@ -784,15 +806,16 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
     fill.setBlendMode(SkBlendMode::kSrc);
     canvas->drawPaint(fill);
     SkMatrix matrix = inverse;
-    matrix.preTranslate(device.fLeft, device.fTop);
-    matrix.preScale(kx, ky);
+    matrix.preTranslate(grid.cover.fLeft, grid.cover.fTop);
+    matrix.preScale(grid.kx, grid.ky);
     matrix.preTranslate(-border, -border);
-    *clip = SkRect::MakeXYWH(border, border, width, height);
+    *clip = SkRect::MakeXYWH(border, border, grid.width, grid.height);
     *out = paint;
     // The alpha is in the image.
     out->setAlphaf(1);
     out->setShader(surface->makeImageSnapshot()->makeShader(
-        tile, tile, SkSamplingOptions(), &matrix));
+        SkTileMode::kRepeat, SkTileMode::kRepeat, SkSamplingOptions(),
+        &matrix));
     return true;
   }
 
