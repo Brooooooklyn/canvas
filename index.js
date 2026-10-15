@@ -482,8 +482,13 @@ CanvasRenderingContext2D.prototype.setTransform = function setTransform() {
 // addPath(path, transform = {}): Chrome checks the receiver, the argument
 // count and the path, then reads the DOMMatrix2DInit, read above. The native
 // method takes six numbers after the path; anything else there is a
-// DOMMatrix2DInit, which only a raw js-binding call passes.
+// DOMMatrix2DInit, which only a raw js-binding call passes. Without a
+// transform (undefined or null is `{}`), a native method that takes only the
+// path adds it as it is; Chrome's Path2D has no such method, so it comes off
+// the prototype.
 const _addPath = Path2D.prototype.addPath
+const _addPathWithoutTransform = Path2D.prototype._addPathWithoutTransform
+delete Path2D.prototype._addPathWithoutTransform
 const ADD_PATH = "Failed to execute 'addPath' on 'Path2D': "
 Path2D.prototype.addPath = function addPath() {
   if (arguments.length < 1) {
@@ -492,7 +497,7 @@ Path2D.prototype.addPath = function addPath() {
   const path = arguments[0]
   const transform = arguments[1]
   if (transform === undefined || transform === null) {
-    return _addPath.call(this, path, 1, 0, 0, 1, 0, 0)
+    return _addPathWithoutTransform.call(this, path)
   }
   pathBrand.call(this)
   try {
