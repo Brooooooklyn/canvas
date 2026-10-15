@@ -1,7 +1,6 @@
 use std::num::ParseFloatError;
 
-use cssparser::Parser;
-use cssparser_color::{Color, RgbaLegacy};
+use cssparser::{Parser, Token};
 use nom::{
   AsChar, Err, IResult, Parser as NomParser,
   branch::alt,
@@ -11,10 +10,9 @@ use nom::{
   error::Error,
   number::complete::float,
 };
-use rgb::RGBA;
 use thiserror::Error;
 
-use crate::pattern::hsl_to_rgba8;
+use crate::color::{self, Color};
 use crate::sk::{ImageFilter, degrees_to_radians};
 
 #[derive(Error, Debug)]
@@ -39,12 +37,12 @@ impl From<ParseFloatError> for ParseFilterError<'_> {
   }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum CssFilter {
   Blur(f32),
   Brightness(f32),
   Contrast(f32),
-  DropShadow(f32, f32, f32, RGBA<u8>),
+  DropShadow(f32, f32, f32, Color),
   Grayscale(f32),
   HueRotate(f32),
   Invert(f32),
@@ -206,58 +204,53 @@ fn drop_shadow_parser(input: &str) -> IResult<&str, CssFilter> {
   let (blur_radius_output, blur_radius) = map_res(take_till(|ch| ch == ' ' || ch == ')'), pixel)
     .parse(offset_y_output)
     .unwrap_or_else(|_: Err<Error<&str>>| (offset_y_output, 0.0f32));
-  let blur_radius_output = blur_radius_output.trim();
-  // A functional color ends with its own ')', before the one that closes drop-shadow().
-  // CSS function names are ASCII case-insensitive (`HSL(` and `RGB(` too).
-  let is_rgb_fn = ["rgb(", "rgba(", "hsl(", "hsla("].iter().any(|f| {
-    blur_radius_output
-      .get(..f.len())
-      .is_some_and(|prefix| prefix.eq_ignore_ascii_case(f))
-  });
-  let (shadow_color_output, shadow_color_str) =
-    take_until(if is_rgb_fn { "))" } else { ")" })(blur_radius_output)?;
-  let shadow_color_str = shadow_color_str.trim();
-  static BLACK: RGBA<u8> = RGBA {
-    r: 0,
-    g: 0,
-    b: 0,
-    a: 255,
-  };
-  let shadow_color = if !shadow_color_str.is_empty() {
-    let mut parser = Parser::new(shadow_color_str);
-    let color = Color::parse(&mut parser).unwrap_or_else(|_| {
-      Color::Rgba(RgbaLegacy {
-        red: 0,
-        green: 0,
-        blue: 0,
-        alpha: 1.0,
-      })
-    });
-    match color {
-      Color::Rgba(rgba) => {
-        // Convert RgbaLegacy to RGBA<u8>
-        RGBA {
-          r: rgba.red,
-          g: rgba.green,
-          b: rgba.blue,
-          a: (rgba.alpha * 255.0).round() as u8,
-        }
-      }
-      Color::Hsl(hsl) => hsl_to_rgba8(&hsl),
-      _ => BLACK,
-    }
-  } else {
-    BLACK
-  };
-  let (mut drop_shadow_output, _) = char(')')(shadow_color_output.trim())?;
-  if is_rgb_fn {
-    let (trimmed_drop_shadow_output, _) = char(')')(drop_shadow_output)?;
-    drop_shadow_output = trimmed_drop_shadow_output;
-  }
+  let (drop_shadow_output, shadow_color) = drop_shadow_color(blur_radius_output.trim())
+    .ok_or_else(|| Err::Error(Error::new(input, nom::error::ErrorKind::Verify)))?;
   Ok((
     drop_shadow_output.trim(),
     CssFilter::DropShadow(offset_x, offset_y, blur_radius, shadow_color),
   ))
+}
+
+/// The color slot of drop-shadow() and what follows its `)`: CSS tokens up to
+/// the `)` that closes drop-shadow(), skipping nested blocks (color-mix(),
+/// calc() ...); the end of input closes every open block. No color is
+/// currentcolor, black in a canvas filter (whitespace and comments are not a
+/// color). A color Blink cannot read makes
+/// the whole filter invalid (`drop-shadow(1px 1px inherit)` gives `none`).
+fn drop_shadow_color(input: &str) -> Option<(&str, Color)> {
+  let mut parser = Parser::new(input);
+  parser.set_nested_block_limit(0);
+  let start = parser.position();
+  let (color_end, rest_start) = loop {
+    let before = parser.position();
+    let opens_block = match parser.next_including_whitespace_and_comments() {
+      Ok(Token::CloseParenthesis) => break (before, parser.position()),
+      Ok(token) => matches!(
+        token,
+        Token::Function(_)
+          | Token::ParenthesisBlock
+          | Token::SquareBracketBlock
+          | Token::CurlyBracketBlock
+      ),
+      Err(_) => break (parser.position(), parser.position()),
+    };
+    if opens_block {
+      // Skip the whole block now, so the next `before` is after it.
+      let _ = parser.parse_nested_block(|block| {
+        while block.next_including_whitespace_and_comments().is_ok() {}
+        Ok::<_, cssparser::ParseError<()>>(())
+      });
+    }
+  };
+  let color_str = parser.slice(start..color_end);
+  let rest = &input[rest_start.byte_index()..];
+  let color = if Parser::new(color_str).is_exhausted() {
+    Color::BLACK
+  } else {
+    color::parse_filter_color(color_str)?
+  };
+  Some((rest, color))
 }
 
 pub fn css_filter(input: &str) -> IResult<&str, Vec<CssFilter>> {
@@ -325,8 +318,13 @@ pub(crate) fn css_filters_to_image_filter(filters: Vec<CssFilter>) -> Option<Ima
       }
       CssFilter::DropShadow(offset_x, offset_y, blur_radius, shadow_color) => {
         let sigma = blur_radius / 2.0;
-        if shadow_color.a == 0 {
-          return None;
+        // Blink hands Skia `color.toSkColor4f().toSkColor()`
+        // (cc/paint/paint_filter.cc:391-400).
+        let shadow_color = shadow_color.to_sk_color4f().to_sk_color();
+        if shadow_color >> 24 == 0 {
+          // A transparent shadow adds nothing: skip this node only and keep
+          // the rest of the chain.
+          continue;
         }
         if blur_radius == 0f32 && offset_x == 0f32 && offset_y == 0f32 {
           return None;
@@ -336,10 +334,7 @@ pub(crate) fn css_filters_to_image_filter(filters: Vec<CssFilter>) -> Option<Ima
           offset_y,
           sigma,
           sigma,
-          ((shadow_color.a as u32) << 24)
-            | ((shadow_color.r as u32) << 16)
-            | ((shadow_color.g as u32) << 8)
-            | shadow_color.b as u32,
+          shadow_color,
           chain.as_ref(),
         )
       }
@@ -521,76 +516,109 @@ fn parse_blur() {
   );
 }
 
+/// The parsed filters with each drop-shadow() color as Skia gets it, ARGB.
+#[cfg(test)]
+fn with_argb(filters: Vec<CssFilter>) -> Vec<(CssFilter, u32)> {
+  filters
+    .into_iter()
+    .map(|f| match f {
+      CssFilter::DropShadow(x, y, blur, c) => (
+        CssFilter::DropShadow(x, y, blur, Color::BLACK),
+        c.to_sk_color4f().to_sk_color(),
+      ),
+      f => (f, 0),
+    })
+    .collect()
+}
+
+#[cfg(test)]
+fn shadow(x: f32, y: f32, blur: f32, argb: u32) -> (CssFilter, u32) {
+  (CssFilter::DropShadow(x, y, blur, Color::BLACK), argb)
+}
+
 #[test]
 fn drop_shadow_parse() {
+  fn parse(s: &str) -> (&str, Vec<(CssFilter, u32)>) {
+    let (rest, filters) = css_filter(s).unwrap();
+    (rest, with_argb(filters))
+  }
   assert_eq!(
-    drop_shadow_parser("drop-shadow(2px 2px)"),
-    Ok((
-      "",
-      CssFilter::DropShadow(2.0f32, 2.0f32, 0.0f32, RGBA::new(0, 0, 0, 255))
-    ))
+    parse("drop-shadow(2px 2px)"),
+    ("", vec![shadow(2.0, 2.0, 0.0, 0xff000000)])
   );
   assert_eq!(
-    drop_shadow_parser("drop-shadow(2px 2px 5px)"),
-    Ok((
-      "",
-      CssFilter::DropShadow(2.0f32, 2.0f32, 5.0f32, RGBA::new(0, 0, 0, 255))
-    ))
+    parse("drop-shadow(2px 2px 5px)"),
+    ("", vec![shadow(2.0, 2.0, 5.0, 0xff000000)])
   );
-
   assert_eq!(
-    drop_shadow_parser("drop-shadow(2px 2px 5px #2F14DF)"),
-    Ok((
-      "",
-      CssFilter::DropShadow(2.0f32, 2.0f32, 5.0f32, RGBA::new(47, 20, 223, 255))
-    ))
+    parse("drop-shadow(2px 2px 5px #2F14DF)"),
+    ("", vec![shadow(2.0, 2.0, 5.0, 0xff2f14df)])
   );
-
   assert_eq!(
-    drop_shadow_parser("drop-shadow(2px 2px 5px rgba(47, 20, 223, 255))"),
-    Ok((
-      "",
-      CssFilter::DropShadow(2.0f32, 2.0f32, 5.0f32, RGBA::new(47, 20, 223, 255))
-    ))
+    parse("drop-shadow(2px 2px 5px rgba(47, 20, 223, 255))"),
+    ("", vec![shadow(2.0, 2.0, 5.0, 0xff2f14df)])
   );
 
   // Chrome 155 draws hsl(120, 100%, 25%) as 0,128,0.
   assert_eq!(
-    css_filter("drop-shadow(4px 0 0 hsl(120, 100%, 25%)) blur(1px)"),
-    Ok((
+    parse("drop-shadow(4px 0 0 hsl(120, 100%, 25%)) blur(1px)"),
+    (
       "",
-      vec![
-        CssFilter::DropShadow(4.0f32, 0.0f32, 0.0f32, RGBA::new(0, 128, 0, 255)),
-        CssFilter::Blur(1.0),
-      ]
-    ))
+      vec![shadow(4.0, 0.0, 0.0, 0xff008000), (CssFilter::Blur(1.0), 0)]
+    )
   );
   assert_eq!(
-    drop_shadow_parser("drop-shadow(4px 0 0 hsla(0, 100%, 50%, 0.5))"),
-    Ok((
-      "",
-      CssFilter::DropShadow(4.0f32, 0.0f32, 0.0f32, RGBA::new(255, 0, 0, 128))
-    ))
+    parse("drop-shadow(4px 0 0 hsla(0, 100%, 50%, 0.5))"),
+    ("", vec![shadow(4.0, 0.0, 0.0, 0x80ff0000)])
   );
 
   // CSS function names are ASCII case-insensitive; Chrome 155 keeps all of these.
   for (input, color) in [
-    ("HSL(120, 100%, 25%)", RGBA::new(0, 128, 0, 255)),
-    ("HsLa(0, 100%, 50%, 0.5)", RGBA::new(255, 0, 0, 128)),
-    ("RGB(0, 128, 0)", RGBA::new(0, 128, 0, 255)),
-    ("rGbA(255, 0, 0, 0.5)", RGBA::new(255, 0, 0, 128)),
+    ("HSL(120, 100%, 25%)", 0xff008000),
+    ("HsLa(0, 100%, 50%, 0.5)", 0x80ff0000),
+    ("RGB(0, 128, 0)", 0xff008000),
+    ("rGbA(255, 0, 0, 0.5)", 0x80ff0000),
   ] {
     assert_eq!(
-      css_filter(&format!("drop-shadow(4px 0 0 {input}) blur(1px)")),
-      Ok((
+      parse(&format!("drop-shadow(4px 0 0 {input}) blur(1px)")),
+      (
         "",
-        vec![
-          CssFilter::DropShadow(4.0f32, 0.0f32, 0.0f32, color),
-          CssFilter::Blur(1.0),
-        ]
-      )),
+        vec![shadow(4.0, 0.0, 0.0, color), (CssFilter::Blur(1.0), 0)]
+      ),
       "{input}"
     );
+  }
+
+  // The color slot is CSS: nested functions, comments, and the end of input
+  // closing the open blocks (Chrome 155 keeps each of these filters).
+  for (input, color) in [
+    (
+      "drop-shadow(20px 0 0 color-mix(in srgb, red, blue))",
+      0xff800080,
+    ),
+    (
+      "drop-shadow(20px 0 0 rgb(from red r g calc(b + 255)))",
+      0xffff00ff,
+    ),
+    ("drop-shadow(20px 0 0 /**/red)", 0xffff0000),
+    ("drop-shadow(20px 0 0 rgb(1 2 3)", 0xff010203),
+    ("drop-shadow(20px 0 0 rgb(1 2 3", 0xff010203),
+    ("drop-shadow(20px 0 0 /**/)", 0xff000000),
+    ("drop-shadow(20px 0 0 currentcolor)", 0xff000000),
+  ] {
+    assert_eq!(
+      parse(input),
+      ("", vec![shadow(20.0, 0.0, 0.0, color)]),
+      "{input}"
+    );
+  }
+  // A color it cannot read rejects the whole filter: nothing is parsed.
+  for input in [
+    "drop-shadow(20px 0 0 red x)",
+    "drop-shadow(20px 0 0 inherit)",
+    "drop-shadow(20px 0 0 violetred)",
+  ] {
+    assert_eq!(css_filter(input), Ok((input, vec![])), "{input}");
   }
 }
 
@@ -612,41 +640,36 @@ fn composite_parse() {
     ))
   );
 
-  assert_eq!(
-    css_filter("drop-shadow(2px 2px 5px rgba(47, 20, 223, 255)) brightness(2) blur(1.5rem)"),
-    Ok((
-      "",
+  let shadow = shadow(2.0, 2.0, 5.0, 0xff2f14df);
+  for (input, expected) in [
+    (
+      "drop-shadow(2px 2px 5px rgba(47, 20, 223, 255)) brightness(2) blur(1.5rem)",
       vec![
-        CssFilter::DropShadow(2.0f32, 2.0f32, 5.0f32, RGBA::new(47, 20, 223, 255)),
-        CssFilter::Brightness(2.0f32),
-        CssFilter::Blur(24.0)
-      ]
-    ))
-  );
-
-  assert_eq!(
-    css_filter("brightness(2) drop-shadow(2px 2px 5px rgba(47, 20, 223, 255)) blur(1.5rem)"),
-    Ok((
-      "",
+        shadow.clone(),
+        (CssFilter::Brightness(2.0f32), 0),
+        (CssFilter::Blur(24.0), 0),
+      ],
+    ),
+    (
+      "brightness(2) drop-shadow(2px 2px 5px rgba(47, 20, 223, 255)) blur(1.5rem)",
       vec![
-        CssFilter::Brightness(2.0f32),
-        CssFilter::DropShadow(2.0f32, 2.0f32, 5.0f32, RGBA::new(47, 20, 223, 255)),
-        CssFilter::Blur(24.0)
-      ]
-    ))
-  );
-
-  assert_eq!(
-    css_filter("brightness(2) blur(1.5rem) drop-shadow(2px 2px 5px rgba(47, 20, 223, 255))"),
-    Ok((
-      "",
+        (CssFilter::Brightness(2.0f32), 0),
+        shadow.clone(),
+        (CssFilter::Blur(24.0), 0),
+      ],
+    ),
+    (
+      "brightness(2) blur(1.5rem) drop-shadow(2px 2px 5px rgba(47, 20, 223, 255))",
       vec![
-        CssFilter::Brightness(2.0f32),
-        CssFilter::Blur(24.0),
-        CssFilter::DropShadow(2.0f32, 2.0f32, 5.0f32, RGBA::new(47, 20, 223, 255)),
-      ]
-    ))
-  );
+        (CssFilter::Brightness(2.0f32), 0),
+        (CssFilter::Blur(24.0), 0),
+        shadow.clone(),
+      ],
+    ),
+  ] {
+    let (rest, filters) = css_filter(input).unwrap();
+    assert_eq!((rest, with_argb(filters)), ("", expected), "{input}");
+  }
 }
 
 #[test]
