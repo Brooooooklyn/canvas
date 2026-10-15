@@ -24,8 +24,8 @@ const RASTER_BUDGET: f32 = 4096.0 * 4096.0;
 const RASTER_MARGIN: f32 = 256.0;
 
 /// The largest lean of an image axis, |b| / |a| or |c| / |d|, under which a
-/// skewed draw still rasters that axis at its device spacing when that
-/// spacing is under one device pixel.
+/// skewed draw still rasters that axis at its device spacing when |a| or |d|
+/// is under one device pixel.
 const SMALL_SKEW: f32 = 0.3;
 
 /// How a raster is made: the document laid out at `layout`, clipped to
@@ -377,15 +377,21 @@ impl SvgImage {
       // the image on device columns (rows), their device spacing instead, the
       // horizontal (vertical) part of the axis, so that they stay on the
       // device pixel grid: under a small lean, where it is at most 4.2% less
-      // than the length, and under any lean when it is at least one device
-      // pixel, where the length blurred lines and edges that Chrome draws
-      // sharp by up to 89 alpha. A bigger lean with a spacing under one pixel
-      // keeps the length: at the spacing a stroke thinner than a raster pixel
-      // turns into a hairline (as does the fill SkSVG draws for a <line>),
-      // and thin lines came out up to 133 alpha darker than Chrome's. For a
-      // scale both are the same number.
-      let columns = c == 0.0 && (b.abs() <= SMALL_SKEW * a.abs() || a.abs() >= 1.0);
-      let rows = b == 0.0 && (c.abs() <= SMALL_SKEW * d.abs() || d.abs() >= 1.0);
+      // than the length, and under any lean when |a| and |d| are both at
+      // least one device pixel, where the length blurred lines and edges that
+      // Chrome draws sharp by up to 89 alpha. A bigger lean with |a| or |d|
+      // under one pixel keeps the length. Skia draws a stroke as a hairline
+      // when its width is at most one pixel on both axes of the raster, so
+      // with either axis under a pixel the spacing, shorter than the length,
+      // turns a thin stroke into a hairline (as does the fill SkSVG draws for
+      // a <line>): thin lines came out up to 133 alpha darker than Chrome's
+      // with a spacing under one pixel, and a 0.5 wide <path> up to 49
+      // lighter with a spacing of 2 and |d| = 0.5. For a scale both are the
+      // same number.
+      let columns =
+        c == 0.0 && (b.abs() <= SMALL_SKEW * a.abs() || (a.abs() >= 1.0 && d.abs() >= 1.0));
+      let rows =
+        b == 0.0 && (c.abs() <= SMALL_SKEW * d.abs() || (a.abs() >= 1.0 && d.abs() >= 1.0));
       let device_x = (a * a + if columns { 0.0 } else { b * b }).sqrt();
       let device_y = (if rows { 0.0 } else { c * c } + d * d).sqrt();
       let mut raster_width = (dst.w * device_x - 1e-3).ceil().max(1.0);
