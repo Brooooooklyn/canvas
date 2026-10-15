@@ -1738,12 +1738,15 @@ impl ImageDataSettings {
   }
 }
 
-/// `CanvasPixelFormat`.
+/// `CanvasPixelFormat`: the colour type of the canvas's pixels, kRGBA_8888
+/// or kRGBA_F16 (canvas_2d_color_params.cc). The values are what the C
+/// functions take as `pf`.
+#[repr(u8)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(crate) enum CanvasPixelFormat {
+pub enum CanvasPixelFormat {
   #[default]
-  Unorm8,
-  Float16,
+  Unorm8 = 0,
+  Float16 = 1,
 }
 
 impl CanvasPixelFormat {
@@ -1753,14 +1756,19 @@ impl CanvasPixelFormat {
       Self::Float16 => "float16",
     }
   }
+
+  pub(crate) fn bytes_per_pixel(self) -> usize {
+    match self {
+      Self::Unorm8 => 4,
+      Self::Float16 => 8,
+    }
+  }
 }
 
 /// getContext() options that change nothing here and are only reported by
 /// getContextAttributes().
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct ReportedSettings {
-  /// Storage stays 8-bit; float16 is only echoed.
-  pub color_type: CanvasPixelFormat,
   /// Echoed as given, as Chrome does
   /// (canvas_context_creation_attributes_helpers.cc:33).
   pub desynchronized: bool,
@@ -1775,6 +1783,7 @@ pub(crate) struct ReportedSettings {
 pub(crate) struct ContextSettings {
   pub alpha: bool,
   pub color_space: ColorSpace,
+  pub color_type: CanvasPixelFormat,
   pub reported: ReportedSettings,
 }
 
@@ -1783,6 +1792,7 @@ impl Default for ContextSettings {
     Self {
       alpha: true,
       color_space: ColorSpace::Srgb,
+      color_type: CanvasPixelFormat::Unorm8,
       reported: ReportedSettings::default(),
     }
   }
@@ -1819,7 +1829,7 @@ impl ContextSettings {
     if dictionary.enumeration("colorType", "CanvasPixelFormat", &["unorm8", "float16"])?
       == Some("float16")
     {
-      settings.reported.color_type = CanvasPixelFormat::Float16;
+      settings.color_type = CanvasPixelFormat::Float16;
     }
     dictionary.boolean("depth")?;
     if let Some(desynchronized) = dictionary.boolean("desynchronized")? {

@@ -31,7 +31,7 @@ use crate::{
     StrokeCap, StrokeJoin, Surface, TextSettings, Transform,
   },
   state::Context2dRenderingState,
-  webidl::{self, Double, ImageDataPixelFormat, Positional, ReportedSettings},
+  webidl::{self, CanvasPixelFormat, Double, ImageDataPixelFormat, Positional, ReportedSettings},
 };
 
 static CSS_SIZE_REGEXP: LazyLock<Regex> =
@@ -362,6 +362,8 @@ pub struct Context {
   pub width: u32,
   pub height: u32,
   pub color_space: ColorSpace,
+  /// getContext's colorType: the colour type of the surface's pixels.
+  pub(crate) pixel_format: CanvasPixelFormat,
   pub stream: Option<SkWMemoryStream>,
   /// Content generation for backends without a recorder (SVG, PDF) and for
   /// raster writes that bypass it. The raster backend's canonical generation
@@ -377,6 +379,7 @@ impl Context {
     height: u32,
     svg_export_flag: crate::sk::SvgExportFlag,
     color_space: ColorSpace,
+    pixel_format: CanvasPixelFormat,
   ) -> Result<Self> {
     let (surface, stream) = Surface::new_svg(
       width,
@@ -384,6 +387,7 @@ impl Context {
       AlphaType::Premultiplied,
       svg_export_flag,
       color_space,
+      pixel_format,
     )
     .ok_or_else(|| Error::from_reason("Create skia svg surface failed".to_owned()))?;
     Ok(Context {
@@ -407,13 +411,14 @@ impl Context {
       width,
       height,
       color_space,
+      pixel_format,
       stream: Some(stream),
       direct_content_version: Cell::new(0),
     })
   }
 
   pub fn new(width: u32, height: u32, color_space: ColorSpace) -> Result<Self> {
-    Self::new_with_alpha(width, height, color_space, true)
+    Self::new_with_alpha(width, height, color_space, true, CanvasPixelFormat::Unorm8)
   }
 
   /// A raster context. alpha:false gets a kOpaque surface cleared to opaque
@@ -426,12 +431,13 @@ impl Context {
     height: u32,
     color_space: ColorSpace,
     alpha: bool,
+    pixel_format: CanvasPixelFormat,
   ) -> Result<Self> {
     let new_surface = |width, height| {
       if alpha {
-        Surface::new_rgba_premultiplied(width, height, color_space)
+        Surface::new_rgba_premultiplied(width, height, color_space, pixel_format)
       } else {
-        Surface::new_rgba_opaque(width, height, color_space)
+        Surface::new_rgba_opaque(width, height, color_space, pixel_format)
       }
     };
     let mut pixel_state = if width == 0 || height == 0 {
@@ -458,13 +464,12 @@ impl Context {
         1,
       ),
     };
+    let mut recorder = PageRecorder::new(recorder_width as f32, recorder_height as f32);
+    recorder.bytes_per_pixel = pixel_format.bytes_per_pixel();
     let mut context = Context {
       surface,
       resource_id: next_resource_id(),
-      page_recorder: Some(RefCell::new(PageRecorder::new(
-        recorder_width as f32,
-        recorder_height as f32,
-      ))), // Enable deferred rendering
+      page_recorder: Some(RefCell::new(recorder)), // Enable deferred rendering
       backend: Backend::Raster,
       pixel_state,
       context_lost: false,
@@ -475,6 +480,7 @@ impl Context {
       width,
       height,
       color_space,
+      pixel_format,
       stream: None,
       direct_content_version: Cell::new(0),
     };
@@ -523,6 +529,7 @@ impl Context {
       width,
       height,
       color_space: ColorSpace::default(),
+      pixel_format: CanvasPixelFormat::Unorm8,
       stream: None,
       direct_content_version: Cell::new(0),
     }
@@ -565,14 +572,15 @@ impl Context {
   }
 
   /// The bytes of the pixels, as reported to V8 as external memory: the
-  /// surface's (the 1x1 stand-in when the canvas has no pixels), or the
-  /// page size of a PDF page, whose surface the document owns.
+  /// surface's (the 1x1 stand-in when the canvas has no pixels), 8 per pixel
+  /// for float16, or the page size of a PDF page, whose surface the document
+  /// owns.
   pub(crate) fn surface_bytes(&self) -> i64 {
     let (width, height) = match self.backend {
       Backend::Pdf => (self.width, self.height),
       Backend::Raster | Backend::Svg => (self.surface.width(), self.surface.height()),
     };
-    i64::from(width) * i64::from(height) * 4
+    i64::from(width) * i64::from(height) * self.pixel_format.bytes_per_pixel() as i64
   }
 
   /// Draw the pending recording into the surface: the PageRecorder of a
@@ -3532,7 +3540,7 @@ impl Context {
     // pins instead, charged below under its own identity.
     self.account_raster_resource(
       raster_key,
-      (bitmap.0.width as usize) * (bitmap.0.height as usize) * 4,
+      (bitmap.0.width as usize) * (bitmap.0.height as usize) * bitmap.bytes_per_pixel(),
     );
     // Blink's bounds are the destination rect after ClipRectsToImageRect
     // (canvas_2d_recorder_context.cc:1983-2008) cut the source to the image.
@@ -4701,7 +4709,7 @@ impl CanvasRenderingContext2D {
   ) -> Result<Self> {
     let color_space = ColorSpace::from_str(&color_space)?;
     let context = if let Some(flag) = flag {
-      Context::new_svg(width, height, flag.into(), color_space)?
+      Context::new_svg(width, height, flag.into(), color_space, Default::default())?
     } else {
       Context::new(width, height, color_space)?
     };
@@ -5773,11 +5781,13 @@ impl CanvasRenderingContext2D {
     // Get picture from source canvas (preserves vector graphics)
     // Note: We need mutable access to the source context to get the picture
     // This is safe because we have exclusive access to the CanvasElement
-    // A raster destination in another color space would replay the source's
-    // ops in its own space (gradients interpolate there), so it takes the
-    // source bitmap, as drawImage does. PDF and SVG keep the vector replay.
+    // A raster destination in another color space or pixel format would
+    // replay the source's ops in its own (gradients interpolate there, and a
+    // float16 canvas keeps what unorm8 rounds), so it takes the source
+    // bitmap, as drawImage does. PDF and SVG keep the vector replay.
     let picture = if self.context.backend == Backend::Raster
-      && canvas.ctx.context.color_space != self.context.color_space
+      && (canvas.ctx.context.color_space != self.context.color_space
+        || canvas.ctx.context.pixel_format != self.context.pixel_format)
     {
       None
     } else {
@@ -5951,7 +5961,7 @@ impl CanvasRenderingContext2D {
     ContextAttributes {
       alpha: self.context.alpha,
       color_space: self.context.color_space.as_str().to_owned(),
-      color_type: reported.color_type.as_str().to_owned(),
+      color_type: self.context.pixel_format.as_str().to_owned(),
       desynchronized: reported.desynchronized,
       // Chrome 155 does not read toneMapping and reports the default.
       tone_mapping: CanvasToneMapping {
@@ -6392,12 +6402,15 @@ impl CanvasRenderingContext2D {
         "Out of memory in putImageData",
       )
     };
-    // Float data: a raster canvas writes it as Blink does. The SVG and PDF
-    // backends draw it as rgba-unorm8 data, below.
+    // Float data, or any data on a float16 canvas: a raster canvas writes it
+    // as Blink does. The SVG and PDF backends draw float data as rgba-unorm8
+    // data, below.
     let unorm8;
-    let data = if image_data.pixel_format == ImageDataPixelFormat::Unorm8 {
-      data
-    } else if self.context.backend == Backend::Raster {
+    let raster = self.context.backend == Backend::Raster;
+    let data = if raster
+      && (image_data.pixel_format != ImageDataPixelFormat::Unorm8
+        || self.context.pixel_format != CanvasPixelFormat::Unorm8)
+    {
       if !self
         .context
         .put_image_data_pixels(image_data, data, [dx, dy], dirty)
@@ -6405,6 +6418,8 @@ impl CanvasRenderingContext2D {
         return Err(out_of_memory());
       }
       return Ok(());
+    } else if image_data.pixel_format == ImageDataPixelFormat::Unorm8 {
+      data
     } else {
       unorm8 = crate::sk::image_data_to_unorm8(
         data,
@@ -7251,7 +7266,14 @@ mod tests {
 
   /// fillRect `draws` times, each at a new place, on a 64x64 context.
   fn fill_rects(alpha: bool, setup: &dyn Fn(&mut Context), draws: usize) -> Context {
-    let mut ctx = Context::new_with_alpha(64, 64, ColorSpace::default(), alpha).unwrap();
+    let mut ctx = Context::new_with_alpha(
+      64,
+      64,
+      ColorSpace::default(),
+      alpha,
+      CanvasPixelFormat::Unorm8,
+    )
+    .unwrap();
     setup(&mut ctx);
     for i in 0..draws {
       let (x, y) = ((i * 13 % 56) as f32, (i * 7 % 56) as f32);
@@ -7635,6 +7657,7 @@ mod tests {
       64,
       SvgExportFlag::ConvertTextToPaths,
       ColorSpace::default(),
+      Default::default(),
     )
     .expect("svg context");
     svg

@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::error::SkError;
 use crate::font::{ComputedFont, FamilyName, FontStretch, FontStyle};
-use crate::webidl::ImageDataPixelFormat;
+use crate::webidl::{CanvasPixelFormat, ImageDataPixelFormat};
 
 #[allow(non_camel_case_types)]
 pub mod ffi {
@@ -503,6 +503,7 @@ pub mod ffi {
       width: i32,
       height: i32,
       cs: u8,
+      pixel_format: u8,
     ) -> *mut skiac_surface;
 
     pub fn skiac_surface_create_svg(
@@ -512,13 +513,19 @@ pub mod ffi {
       alphaType: i32,
       flag: u32,
       cs: u8,
+      pixel_format: u8,
     );
 
     pub fn skiac_svg_canvas_flush(canvas: *mut skiac_canvas);
 
     pub fn skiac_surface_create_rgba(width: i32, height: i32, cs: u8) -> *mut skiac_surface;
 
-    pub fn skiac_surface_create_rgba_opaque(width: i32, height: i32, cs: u8) -> *mut skiac_surface;
+    pub fn skiac_surface_create_rgba_opaque(
+      width: i32,
+      height: i32,
+      cs: u8,
+      pixel_format: u8,
+    ) -> *mut skiac_surface;
 
     pub fn skiac_surface_ref(surface: *mut skiac_surface);
 
@@ -1305,6 +1312,9 @@ pub mod ffi {
     pub fn skiac_bitmap_orient(bitmap_info: *mut skiac_bitmap_info, origin: i32) -> bool;
 
     pub fn skiac_bitmap_source_is_opaque(c_bitmap: *mut skiac_bitmap, is_canvas: bool) -> bool;
+
+    pub fn skiac_bitmap_source_bytes_per_pixel(c_bitmap: *mut skiac_bitmap, is_canvas: bool)
+    -> i32;
 
     pub fn skiac_bitmap_get_width(c_bitmap: *mut skiac_bitmap) -> usize;
 
@@ -2403,12 +2413,18 @@ impl Surface {
   }
 
   /// alpha:false backing store: kOpaque, like Blink's canvas resource.
-  pub fn new_rgba_opaque(width: u32, height: u32, color_space: ColorSpace) -> Option<Surface> {
+  pub fn new_rgba_opaque(
+    width: u32,
+    height: u32,
+    color_space: ColorSpace,
+    pixel_format: CanvasPixelFormat,
+  ) -> Option<Surface> {
     unsafe {
       Self::from_ptr(ffi::skiac_surface_create_rgba_opaque(
         width as i32,
         height as i32,
         color_space as u8,
+        pixel_format as u8,
       ))
     }
   }
@@ -2417,22 +2433,26 @@ impl Surface {
     width: u32,
     height: u32,
     color_space: ColorSpace,
+    pixel_format: CanvasPixelFormat,
   ) -> Option<Surface> {
     unsafe {
       Self::from_ptr(ffi::skiac_surface_create_rgba_premultiplied(
         width as i32,
         height as i32,
         color_space as u8,
+        pixel_format as u8,
       ))
     }
   }
 
+  /// An SVG surface, with a raster surface of `pixel_format` beside it.
   pub fn new_svg(
     width: u32,
     height: u32,
     alpha_type: AlphaType,
     flag: SvgExportFlag,
     color_space: ColorSpace,
+    pixel_format: CanvasPixelFormat,
   ) -> Option<(Surface, SkWMemoryStream)> {
     let mut svg_surface = ffi::skiac_svg_surface {
       stream: ptr::null_mut(),
@@ -2447,6 +2467,7 @@ impl Surface {
         alpha_type as i32,
         flag as u32,
         color_space as u8,
+        pixel_format as u8,
       );
     };
     if svg_surface.surface.is_null() {
@@ -4976,6 +4997,11 @@ impl Bitmap {
   /// an alpha:false canvas.
   pub fn is_opaque_source(&self) -> bool {
     unsafe { ffi::skiac_bitmap_source_is_opaque(self.0.bitmap, self.0.is_canvas) }
+  }
+
+  /// The bytes of one pixel of a drawImage source: 8 for a float16 canvas.
+  pub fn bytes_per_pixel(&self) -> usize {
+    unsafe { ffi::skiac_bitmap_source_bytes_per_pixel(self.0.bitmap, self.0.is_canvas) as usize }
   }
 
   pub fn from_buffer(ptr: *mut u8, size: usize) -> Option<Self> {

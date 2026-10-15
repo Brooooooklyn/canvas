@@ -224,7 +224,11 @@ impl CanvasPattern {
               "Failed to clone canvas surface".to_owned(),
             )
           })?;
-        let backing_bytes = cloned_surface.width() as usize * cloned_surface.height() as usize * 4;
+        // The clone keeps the source's colour type: 8 bytes a pixel for
+        // float16.
+        let backing_bytes = cloned_surface.width() as usize
+          * cloned_surface.height() as usize
+          * canvas.ctx.context.pixel_format.bytes_per_pixel();
         (
           backing_bytes,
           ImagePatternBacking::Surface(cloned_surface.reference()),
@@ -249,7 +253,9 @@ impl CanvasPattern {
               "Failed to clone SVG canvas surface".to_owned(),
             )
           })?;
-        let backing_bytes = cloned_surface.width() as usize * cloned_surface.height() as usize * 4;
+        let backing_bytes = cloned_surface.width() as usize
+          * cloned_surface.height() as usize
+          * svg_canvas.ctx.context.pixel_format.bytes_per_pixel();
         (
           backing_bytes,
           ImagePatternBacking::Surface(cloned_surface.reference()),
@@ -281,12 +287,13 @@ impl CanvasPattern {
 /// The backing of a pattern over a canvas without pixels: one transparent
 /// pixel, as `create` returns it for a canvas source.
 fn transparent_backing(color_space: ColorSpace) -> Result<(usize, ImagePatternBacking, u64, bool)> {
-  let mut surface = Surface::new_rgba_premultiplied(1, 1, color_space).ok_or_else(|| {
-    Error::new(
-      Status::GenericFailure,
-      "Failed to create pattern surface".to_owned(),
-    )
-  })?;
+  let mut surface = Surface::new_rgba_premultiplied(1, 1, color_space, Default::default())
+    .ok_or_else(|| {
+      Error::new(
+        Status::GenericFailure,
+        "Failed to create pattern surface".to_owned(),
+      )
+    })?;
   surface.canvas.clear();
   Ok((
     4,
