@@ -2716,7 +2716,8 @@ void skiac_image_encode_data(skiac_image* c_image,
 bool skiac_image_read_pixels(skiac_image* c_image,
                              uint8_t* dst,
                              size_t row_bytes,
-                             int alpha_type) {
+                             int alpha_type,
+                             uint8_t cs) {
   if (!c_image || !dst) {
     return false;
   }
@@ -2726,12 +2727,19 @@ bool skiac_image_read_pixels(skiac_image* c_image,
   }
   auto image = IMAGE_CAST;
   // GIF has no color profile, so the spec wants its pixels converted to
-  // sRGB. AVIF supports one, but our AVIF encoder writes none, so it is
-  // converted too. Tagging AVIF with the canvas color space is a follow-up.
-  auto info = SkImageInfo::Make(
-      image->width(), image->height(), kRGBA_8888_SkColorType,
-      static_cast<SkAlphaType>(alpha_type), SkColorSpace::MakeSRGB());
+  // sRGB (cs 0). AVIF carries the canvas color space as CICP, so it reads
+  // the pixels in the image's own color space.
+  auto info =
+      SkImageInfo::Make(image->width(), image->height(), kRGBA_8888_SkColorType,
+                        static_cast<SkAlphaType>(alpha_type), COLOR_SPACE_CAST);
   return image->readPixels(nullptr, info, dst, row_bytes, 0, 0);
+}
+
+// 1 when the image is display-p3, else 0 (sRGB): the two canvas color spaces.
+uint8_t skiac_image_color_space(skiac_image* c_image) {
+  auto p3 =
+      SkColorSpace::MakeRGB(SkNamedTransferFn::kSRGB, SkNamedGamut::kDisplayP3);
+  return SkColorSpace::Equals(IMAGE_CAST->colorSpace(), p3.get()) ? 1 : 0;
 }
 
 void skiac_canvas_draw_sk_image(skiac_canvas* c_canvas,
@@ -2913,6 +2921,64 @@ skiac_bitmap* skiac_bitmap_make_premul_from_image_data(uint8_t* ptr,
     return nullptr;
   }
   return reinterpret_cast<skiac_bitmap*>(bitmap);
+}
+
+// The color space Chrome gives a CICP AVIF (avif_image_decoder.cc GetColorSpace
+// and ui/gfx/color_space.cc GetTransferFunction), or null to leave it untagged.
+// 2 (unspecified) means BT.709 primaries and the sRGB transfer, and Chrome
+// draws the BT.709 family of transfers (1, 6, 14, 15) with the sRGB curve, not
+// the 2.4 gamma that SkColorSpace::MakeCICP uses for them. Chrome cannot decode
+// transfers 9-12, and tone maps PQ (16) and HLG (18), so those stay untagged.
+static sk_sp<SkColorSpace> avif_cicp_color_space(uint16_t primaries,
+                                                 uint16_t transfer) {
+  switch (transfer) {
+    case 1:
+    case 2:
+    case 6:
+    case 14:
+    case 15:
+      transfer = 13;
+      break;
+    case 4:
+    case 5:
+    case 7:
+    case 8:
+    case 13:
+    case 17:
+      break;
+    default:
+      return nullptr;
+  }
+  primaries = primaries == 2 ? 1 : primaries;
+  if (primaries > UINT8_MAX) {
+    return nullptr;
+  }
+  return SkColorSpace::MakeCICP(
+      static_cast<SkNamedPrimaries::CicpId>(primaries),
+      static_cast<SkNamedTransferFn::CicpId>(transfer));
+}
+
+// Tag decoded AVIF pixels with the file's color space, as Chrome's AVIF
+// decoder does (avif_image_decoder.cc:868-914): an ICC profile wins, else the
+// CICP primaries and transfer. sRGB stays untagged, as before.
+void skiac_bitmap_set_color_space(skiac_bitmap* c_bitmap,
+                                  const uint8_t* icc,
+                                  size_t icc_len,
+                                  uint16_t primaries,
+                                  uint16_t transfer) {
+  sk_sp<SkColorSpace> color_space;
+  if (icc && icc_len) {
+    skcms_ICCProfile profile;
+    if (skcms_Parse(icc, icc_len, &profile)) {
+      color_space = SkColorSpace::Make(profile);
+    }
+  }
+  if (!color_space) {
+    color_space = avif_cicp_color_space(primaries, transfer);
+  }
+  if (color_space && !color_space->isSRGB()) {
+    BITMAP_CAST->setColorSpace(std::move(color_space));
+  }
 }
 
 size_t skiac_bitmap_get_width(skiac_bitmap* c_bitmap) {

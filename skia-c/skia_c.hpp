@@ -1233,7 +1233,9 @@ void skiac_image_encode_data(skiac_image* c_image,
 bool skiac_image_read_pixels(skiac_image* c_image,
                              uint8_t* dst,
                              size_t row_bytes,
-                             int alpha_type);
+                             int alpha_type,
+                             uint8_t cs);
+uint8_t skiac_image_color_space(skiac_image* c_image);
 void skiac_canvas_draw_sk_image(skiac_canvas* c_canvas,
                                 skiac_image* c_image,
                                 float left,
@@ -1266,6 +1268,11 @@ skiac_bitmap* skiac_bitmap_make_premul_from_image_data(uint8_t* ptr,
                                                        size_t height,
                                                        size_t row_bytes,
                                                        uint8_t cs);
+void skiac_bitmap_set_color_space(skiac_bitmap* c_bitmap,
+                                  const uint8_t* icc,
+                                  size_t icc_len,
+                                  uint16_t primaries,
+                                  uint16_t transfer);
 size_t skiac_bitmap_get_width(skiac_bitmap* c_bitmap);
 size_t skiac_bitmap_get_height(skiac_bitmap* c_bitmap);
 void skiac_bitmap_set_immutable(skiac_bitmap* c_bitmap);
