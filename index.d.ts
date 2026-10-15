@@ -650,6 +650,14 @@ export interface ContextAttributes extends CanvasRenderingContext2DSettings {}
 export interface SvgCanvas {
   width: number
   height: number
+  /**
+   * Returns null for an id other than '2d', as browsers do for an unsupported id.
+   * Declared before the '2d' overload, so `ReturnType` still gives the context.
+   */
+  getContext<T extends string>(
+    contextType: T extends '2d' ? never : T,
+    contextAttributes?: ContextAttributes,
+  ): SKRSContext2D | null
   getContext(contextType: '2d', contextAttributes?: ContextAttributes): SKRSContext2D
 
   getContent(): Buffer
@@ -839,6 +847,14 @@ export class Canvas {
 
   width: number
   height: number
+  /**
+   * Returns null for an id other than '2d', as browsers do for an unsupported id.
+   * Declared before the '2d' overload, so `ReturnType` still gives the context.
+   */
+  getContext<T extends string>(
+    contextType: T extends '2d' ? never : T,
+    contextAttributes?: ContextAttributes,
+  ): SKRSContext2D | null
   getContext(contextType: '2d', contextAttributes?: ContextAttributes): SKRSContext2D
   encodeSync(format: 'webp' | 'jpeg', quality?: number): Buffer
   encodeSync(format: 'png'): Buffer

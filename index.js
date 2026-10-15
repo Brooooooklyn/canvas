@@ -165,6 +165,16 @@ for (const [method, required] of [
   requireArguments(CanvasRenderingContext2D.prototype, ctxBrand, 'CanvasRenderingContext2D', method, required)
 }
 
+// getContext(contextId, options): Chrome needs the id. The native method is
+// its own brand: with no arguments it converts undefined to 'undefined' and
+// returns null, without side effects.
+for (const [Class, iface] of [
+  [CanvasElement, 'HTMLCanvasElement'],
+  [SVGCanvas, 'SVGCanvas'],
+]) {
+  requireArguments(Class.prototype, Class.prototype.getContext, iface, 'getContext', 1)
+}
+
 const pathBrand = Path2D.prototype.getFillType
 for (const [method, required] of [
   ['arc', 5],
