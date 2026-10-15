@@ -274,6 +274,8 @@ sites! {
   PathEllipse: execute "ellipse" on "Path2D";
   PathRect: execute "rect" on "Path2D";
   PathRoundRect: execute "roundRect" on "Path2D";
+  CanvasGetContext: execute "getContext" on "HTMLCanvasElement";
+  SvgCanvasGetContext: execute "getContext" on "SVGCanvas";
 }
 
 /// `napi_bigint`; napi6 (and so `ValueType::BigInt`) is off in this build.

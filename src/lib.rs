@@ -194,24 +194,25 @@ impl<'c> CanvasElement<'c> {
     self.height
   }
 
+  /// getContext(contextId, options): the 2d context, or null for any other
+  /// id, as Chrome does for an id it does not know
+  /// (html_canvas_element.cc). The index.js wrapper checks the argument
+  /// count.
   #[napi]
   pub fn get_context<'env>(
     &mut self,
     this: This,
-    context_type: String,
+    context_type: webidl::DomString<webidl::CanvasGetContext>,
     // Converted (and may throw) on every call, also once the context exists
-    // (HTMLCanvasElementModule::getContext).
+    // and for an unsupported id (HTMLCanvasElementModule::getContext).
     attrs: webidl::CanvasContextOptions,
-  ) -> Result<Unknown<'env>> {
+  ) -> Result<Option<Unknown<'env>>> {
     let attrs = attrs.0;
-    if context_type != "2d" {
-      return Err(Error::new(
-        Status::InvalidArg,
-        format!("{context_type} is not supported"),
-      ));
+    if context_type.0 != "2d" {
+      return Ok(None);
     }
     if self.context_initialized {
-      return this.get_named_property("ctx");
+      return this.get_named_property("ctx").map(Some);
     }
     self.ctx.reported_settings = attrs.reported;
     let context_2d = &mut self.ctx.context;
@@ -223,7 +224,7 @@ impl<'c> CanvasElement<'c> {
         Context::new_with_alpha(self.width, self.height, attrs.color_space, attrs.alpha)?;
     }
     self.context_initialized = true;
-    this.get_named_property("ctx")
+    this.get_named_property("ctx").map(Some)
   }
 
   #[napi]
@@ -837,23 +838,22 @@ impl<'scope> SVGCanvas<'scope> {
     })
   }
 
+  /// getContext(contextId, options): the 2d context, or null for any other
+  /// id, as for Canvas.
   #[napi]
   pub fn get_context<'env>(
     &'env mut self,
     this: This<'env>,
-    context_type: String,
+    context_type: webidl::DomString<webidl::SvgCanvasGetContext>,
     // Converted on every call, as for Canvas.
     attrs: webidl::SvgCanvasContextOptions,
-  ) -> Result<Unknown<'env>> {
+  ) -> Result<Option<Unknown<'env>>> {
     let attrs = attrs.0;
-    if context_type != "2d" {
-      return Err(Error::new(
-        Status::InvalidArg,
-        format!("{context_type} is not supported"),
-      ));
+    if context_type.0 != "2d" {
+      return Ok(None);
     }
     if self.context_initialized {
-      return this.get_named_property("ctx");
+      return this.get_named_property("ctx").map(Some);
     }
     self.ctx.reported_settings = attrs.reported;
     let context_2d = &mut self.ctx.context;
@@ -868,7 +868,7 @@ impl<'scope> SVGCanvas<'scope> {
       context_2d.set_opaque();
     }
     self.context_initialized = true;
-    this.get_named_property("ctx")
+    this.get_named_property("ctx").map(Some)
   }
 
   #[napi]
