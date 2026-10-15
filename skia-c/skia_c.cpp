@@ -1267,6 +1267,18 @@ static sk_sp<SkImage> encodable_image(SkImage* image) {
 static constexpr auto kJpegAlphaOption =
     SkJpegEncoder::AlphaOption::kBlendOnBlack;
 
+// Blink ImageEncoder::Encode (image_encoder.cc:52-54): quality 100 keeps the
+// chroma at full resolution (4:4:4); every other quality is 4:2:0.
+static SkJpegEncoder::Options jpeg_options(int quality) {
+  SkJpegEncoder::Options options;
+  options.fQuality = quality;
+  options.fAlphaOption = kJpegAlphaOption;
+  if (quality == 100) {
+    options.fDownsample = SkJpegEncoder::Downsample::k444;
+  }
+  return options;
+}
+
 bool skiac_surface_save(skiac_surface* c_surface, const char* path) {
   auto snapshot = SURFACE_CAST->makeImageSnapshot();
   auto image = encodable_image(snapshot.get());
@@ -1416,10 +1428,7 @@ void skiac_surface_encode_data(skiac_surface* c_surface,
   auto image = image_ref.get();
   sk_sp<SkData> encoded_data;
   if (format == int(SkEncodedImageFormat::kJPEG)) {
-    SkJpegEncoder::Options options;
-    options.fQuality = quality;
-    options.fAlphaOption = kJpegAlphaOption;
-    encoded_data = SkJpegEncoder::Encode(nullptr, image, options);
+    encoded_data = SkJpegEncoder::Encode(nullptr, image, jpeg_options(quality));
   } else if (format == int(SkEncodedImageFormat::kPNG)) {
     encoded_data =
         SkPngEncoder::Encode(nullptr, image, SkPngEncoder::Options());
@@ -1455,10 +1464,7 @@ bool skiac_surface_encode_stream(skiac_surface* c_surface,
   SkJavaScriptWStream stream(write_callback, context);
   std::unique_ptr<SkEncoder> encoder;
   if (format == int(SkEncodedImageFormat::kJPEG)) {
-    SkJpegEncoder::Options options;
-    options.fQuality = quality;
-    options.fAlphaOption = kJpegAlphaOption;
-    encoder = SkJpegEncoder::Make(&stream, sk_pixmap, options);
+    encoder = SkJpegEncoder::Make(&stream, sk_pixmap, jpeg_options(quality));
   } else if (format == int(SkEncodedImageFormat::kPNG)) {
     encoder = SkPngEncoder::Make(&stream, sk_pixmap, SkPngEncoder::Options());
   } else if (format == int(SkEncodedImageFormat::kWEBP)) {
@@ -3963,10 +3969,7 @@ void skiac_image_encode_data(skiac_image* c_image,
   auto image = image_ref.get();
   sk_sp<SkData> encoded_data;
   if (format == int(SkEncodedImageFormat::kJPEG)) {
-    SkJpegEncoder::Options options;
-    options.fQuality = quality;
-    options.fAlphaOption = kJpegAlphaOption;
-    encoded_data = SkJpegEncoder::Encode(nullptr, image, options);
+    encoded_data = SkJpegEncoder::Encode(nullptr, image, jpeg_options(quality));
   } else if (format == int(SkEncodedImageFormat::kPNG)) {
     encoded_data =
         SkPngEncoder::Encode(nullptr, image, SkPngEncoder::Options());
@@ -4074,8 +4077,9 @@ bool skiac_bitmap_make_from_buffer(const uint8_t* ptr,
       height = dimension.width();
     }
     auto oriented_bitmap = std::make_unique<SkBitmap>();
-    auto oriented_bitmap_info =
-        SkImageInfo::Make(width, height, info.colorType(), info.alphaType());
+    // Keep the codec's color space (the ICC profile): the oriented copy is
+    // drawn pixel for pixel, so only the size changes.
+    auto oriented_bitmap_info = info.makeWH(width, height);
     if (!oriented_bitmap->tryAllocPixels(oriented_bitmap_info)) {
       return false;
     }
