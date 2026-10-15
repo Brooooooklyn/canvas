@@ -5431,8 +5431,9 @@ impl FontCollection {
   }
 
   /// The advance of U+6C34 in the primary face of this font (the first
-  /// family of `font_family` that exists), or None when that face has no
-  /// such glyph. Blink's ideographic advance, for the ic unit.
+  /// family of `font_family` that exists), or None when no family exists or
+  /// that face has no such glyph. Blink's ideographic advance, for the ic
+  /// unit.
   pub fn ideographic_advance(
     &self,
     font_size: f32,

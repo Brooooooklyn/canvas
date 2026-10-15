@@ -636,8 +636,11 @@ test('font-relative units in a drop-shadow() color use the canvas font', (t) => 
 // of the list that exists, whether or not it has the glyph; when it has none,
 // ic and ric are em and rem, 16px (FontSizes::Ic and Ric,
 // css_to_length_conversion_data.cc:139-167; font_fallback_list.cc:88-195).
-// HYXiXingKaiW and Source Han Serif CN have U+6C34 one em wide, Lato has
-// none. All three are FontFaces in the Chrome probe.
+// When no family of the list exists, the primary font is the standard font
+// (webkit-standard, font_fallback_list.cc:181-194), which has no U+6C34 in
+// the probe, so ic is 16px for the default font too. HYXiXingKaiW and
+// Source Han Serif CN have U+6C34 one em wide, Lato has none. All three are
+// FontFaces in the Chrome probe.
 test('ic in ctx.filter is the U+6C34 advance of the first font of ctx.font', (t) => {
   const fonts = join(__dirname, 'fonts')
   GlobalFonts.registerFromPath(join(fonts, 'Lato-Regular.ttf'), 'Lato')
@@ -645,7 +648,8 @@ test('ic in ctx.filter is the U+6C34 advance of the first font of ctx.font', (t)
   GlobalFonts.registerFromPath(join(fonts, 'SourceHanSerifCN-Bold.ttf'), 'Source Han Serif CN')
   const setUp = (filter: string, font: string, fontAfter?: string) => {
     const ctx = createCanvas(160, 40).getContext('2d')
-    ctx.font = font
+    // '' keeps the default font.
+    if (font) ctx.font = font
     ctx.filter = filter
     if (fontAfter) ctx.font = fontAfter
     t.is(ctx.filter, filter)
@@ -691,6 +695,12 @@ test('ic in ctx.filter is the U+6C34 advance of the first font of ctx.font', (t)
     // A family that does not exist is skipped.
     ['20px NoSuchFontXyz, HYXiXingKaiW', 200],
     ['20px NoSuchFontXyz, Lato', 160],
+    // No family exists: 16px, whatever the size. The default font is 10px
+    // sans-serif, which Chrome maps to a font without U+6C34.
+    ['', 160],
+    ['10px sans-serif', 160],
+    ['20px NoSuchFontXyz', 160],
+    ['40px NoSuchFontXyz, NoSuchFontAbc', 160],
   ]
   for (const [font, r] of colors) {
     t.deepEqual(shadowPixel(color('ic'), font), red(r), font)
@@ -721,6 +731,8 @@ test('ic in ctx.filter is the U+6C34 advance of the first font of ctx.font', (t)
     ['drop-shadow(1ic 0 0 red)', '20px Lato', 16],
     ['drop-shadow(1ic 0 0 red)', '20px Lato, HYXiXingKaiW', 16],
     ['drop-shadow(1ic 0 0 red)', '20px NoSuchFontXyz, HYXiXingKaiW', 20],
+    ['drop-shadow(1ic 0 0 red)', '', 16],
+    ['drop-shadow(1ic 0 0 red)', '40px NoSuchFontXyz', 16],
     ['blur(calc(1ic - 20px)) drop-shadow(1ic 0 0 red)', kai, 20],
     ['drop-shadow(1ic 0 0 red)', kai, 20, '40px HYXiXingKaiW'],
     ['drop-shadow(1ic 0 0 red)', '20px Lato', 16, '40px HYXiXingKaiW'],

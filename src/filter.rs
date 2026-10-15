@@ -152,8 +152,8 @@ pub(crate) struct FontUnits {
   /// The advance of "0".
   pub(crate) zero_width: f64,
   pub(crate) cap_height: f64,
-  /// The advance of U+6C34 in the primary font, or None when that font has
-  /// no such glyph (then ic is 1em).
+  /// The advance of U+6C34 in the primary font, or None when no family of
+  /// the font exists or that font has no such glyph (then ic is 1em).
   pub(crate) ideographic_advance: Option<f64>,
 }
 

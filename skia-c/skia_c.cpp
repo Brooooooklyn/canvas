@@ -4619,8 +4619,11 @@ void skiac_font_collection_destroy(skiac_font_collection* c_font_collection) {
 // a unicode-range face is skipped), and SimpleFontData::IdeographicInlineSize,
 // the unshaped advance of that glyph (simple_font_data.cc:437-474). Our
 // primary face is the first that text layout tries: findTypefaces() with the
-// same families, style and variations, the default family when none exists.
-// False when that face has no such glyph; ic is then 1em.
+// same families, style and variations. When no family exists, Blink takes
+// the standard font (webkit-standard, then the last-resort font,
+// font_fallback_list.cc:181-194), which has no U+6C34 in a default setup,
+// not the face findTypefaces() falls back to (the first registered family).
+// False when no family exists or the face has no such glyph; ic is then 1em.
 bool skiac_font_collection_ideographic_advance(
     skiac_font_collection* c_collection,
     float font_size,
@@ -4636,6 +4639,22 @@ bool skiac_font_collection_ideographic_advance(
   skia_private::TArray<SkString> families;
   SkStrSplit(font_family, ",", &families);
   std::vector<SkString> families_vec(families.begin(), families.end());
+  // A family exists when a manager findTypefaces() asks has it: the dynamic,
+  // asset and fallback managers (FontCollection::getFontManagerOrder).
+  const sk_sp<SkFontMgr> managers[] = {
+      c_collection->assets, c_collection->font_mgr,
+      c_collection->collection->getFallbackManager()};
+  auto exists = [&managers](const SkString& family) {
+    for (const auto& manager : managers) {
+      if (manager && manager->matchFamily(family.c_str())->count() > 0) {
+        return true;
+      }
+    }
+    return false;
+  };
+  if (std::none_of(families_vec.begin(), families_vec.end(), exists)) {
+    return false;
+  }
   std::vector<SkFontArguments::VariationPosition::Coordinate> coords;
   for (int i = 0; i < variations_count; i++) {
     coords.push_back({variations[i].tag, variations[i].value});
