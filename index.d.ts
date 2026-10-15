@@ -131,7 +131,17 @@ interface CanvasTransform {
   rotate(angle: number): void
   scale(x: number, y: number): void
   setTransform(a: number, b: number, c: number, d: number, e: number, f: number): void
-  setTransform(transform?: DOMMatrix2DInit): void
+  /** Missing members default to the identity; `a` and `m11` (and so on) must agree when both are given. */
+  setTransform(
+    transform?: Partial<DOMMatrixInit> & {
+      m11?: number
+      m12?: number
+      m21?: number
+      m22?: number
+      m41?: number
+      m42?: number
+    },
+  ): void
   transform(a: number, b: number, c: number, d: number, e: number, f: number): void
   translate(x: number, y: number): void
 }
