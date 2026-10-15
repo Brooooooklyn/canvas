@@ -11,8 +11,9 @@
 import { readFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { isDeepStrictEqual } from 'node:util'
 
-import test from 'ava'
+import test, { type ExecutionContext } from 'ava'
 
 import { createCanvas, loadImage, DOMMatrix, ImageData, SvgExportFlag, type Canvas, type SKRSContext2D } from '../index'
 
@@ -29,6 +30,19 @@ function chrome(key: string): number[] {
 // Rotated draws differ between Chrome's own arm64 and x64 builds.
 function chromeForArch(key: string): number[] {
   return chrome(`${key}|${process.arch === 'arm64' ? 'arm64' : 'x64'}`)
+}
+
+// On x64 a rotated draw runs in Skia's raster pipeline, and Chrome's output
+// there depends on the CPU: on AVX2+FMA CPUs SkOpts swaps in the ml3/ml4
+// stages, whose mad() is a fused multiply-add. `x64` is Chrome 155 without
+// AVX (x64 under Rosetta), `x64-fma` the same Chrome on an AVX2+FMA CPU.
+// We pass when we match Chrome on either CPU.
+function chromeForCpu(key: string): number[][] {
+  return process.arch === 'arm64' ? [chrome(`${key}|arm64`)] : [chrome(`${key}|x64`), chrome(`${key}|x64-fma`)]
+}
+
+function deepEqualOneOf(t: ExecutionContext, actual: number[], expected: number[][], message: string) {
+  t.deepEqual(actual, expected.find((e) => isDeepStrictEqual(actual, e)) ?? expected[0], message)
 }
 
 const QUALITIES = ['off', 'low', 'medium', 'high'] as const
@@ -453,14 +467,15 @@ test('Image pattern picks its level from the pattern matrix and the CTM', async 
       chrome('pattern|ctm-scale'),
       quality,
     )
-    t.deepEqual(
+    deepEqualOneOf(
+      t,
       fillPattern(16, quality, image64, (ctx, p) => {
         ctx.translate(16, 0)
         ctx.rotate(Math.PI / 2)
         ctx.scale(0.25, 0.6)
         p.setTransform(scale(2, 0.5))
       }),
-      chromeForArch('pattern|ctm-rot90'),
+      chromeForCpu('pattern|ctm-rot90'),
       quality,
     )
     t.deepEqual(
