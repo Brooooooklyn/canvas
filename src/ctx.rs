@@ -3410,8 +3410,13 @@ impl<S: webidl::Site> FromNapiValue for CanvasStyleArg<'static, S> {
 /// and a native Path behind it (an object made with
 /// `Object.create(Path2D.prototype)` has none). The borrow itself comes after
 /// the other arguments ran their user code.
+///
+/// A primitive is never a Path2D, and is not checked further: Chrome's
+/// wrapper type check runs no user code (Path2D[Symbol.hasInstance]), and
+/// a failed instanceof check costs the formatted message of a napi-rs error.
 fn is_path2d(env: sys::napi_env, value: sys::napi_value) -> bool {
-  unsafe { <&Path as ValidateNapiValue>::validate(env, value) }.is_ok()
+  matches!(webidl::type_of(env, value), Ok(ValueType::Object))
+    && unsafe { <&Path as ValidateNapiValue>::validate(env, value) }.is_ok()
     && has_native_object(env, value)
 }
 
