@@ -1,160 +1,190 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{
+  cell::{Cell, RefCell},
+  rc::Rc,
+};
 
-use cssparser::{Parser, Token};
-use cssparser_color::Color as CSSColor;
 use napi::bindgen_prelude::*;
 
 use crate::{
-  pattern::hsl_color_to_srgb,
+  color::{self, Color, ColorSpace},
   sk::{
-    Color4f, ConicGradient, Gradient as SkGradient, LinearGradient, RadialGradient, Shader,
-    TileMode, Transform, unit_from_u8,
+    Color4f, ConicGradient, Gradient as SkGradient, GradientInterpolation, LinearGradient,
+    RadialGradient, Shader, TileMode, Transform,
   },
   webidl::{self, Positional, Site},
 };
 
+#[derive(Debug, Clone, Copy)]
+enum Geometry {
+  Linear {
+    start: (f32, f32),
+    end: (f32, f32),
+  },
+  Radial {
+    start: (f32, f32),
+    start_radius: f32,
+    end: (f32, f32),
+    end_radius: f32,
+  },
+  /// `rotation` in degrees: Blink stores `Rad2deg(startAngle) + 90`
+  /// (canvas_2d_recorder_context.cc:2424-2426), so angle 0 points along +x.
+  Conic {
+    center: (f32, f32),
+    rotation: f32,
+  },
+}
+
+/// Blink's Gradient (platform/graphics/gradient.cc) as a canvas uses it.
 #[derive(Debug, Clone)]
-pub enum Gradient {
-  Linear(LinearGradient),
-  Radial(RadialGradient),
-  Conic(ConicGradient),
+pub struct Gradient {
+  geometry: Geometry,
+  /// Sorted by offset; stops sharing an offset keep insertion order.
+  stops: Vec<(f32, Color)>,
+  /// Blink's `color_space_interpolation_space_`: unset until a draw first
+  /// builds the shader (gradient.cc:305-315), then fixed for good, even when
+  /// later stops would pick another space.
+  interpolation: Cell<Option<GradientInterpolation>>,
 }
 
 impl Gradient {
+  fn new(geometry: Geometry) -> Self {
+    Self {
+      geometry,
+      stops: Vec::new(),
+      interpolation: Cell::new(None),
+    }
+  }
+
   pub fn create_linear_gradient(x0: f32, y0: f32, x1: f32, y1: f32) -> Self {
-    let linear_gradient = LinearGradient {
-      start_point: (x0, y0),
-      end_point: (x1, y1),
-      base: SkGradient {
-        colors: Vec::new(),
-        positions: Vec::new(),
-        tile_mode: TileMode::Clamp,
-        transform: Transform::default(),
-      },
-    };
-    Self::Linear(linear_gradient)
+    Self::new(Geometry::Linear {
+      start: (x0, y0),
+      end: (x1, y1),
+    })
   }
 
   pub fn create_radial_gradient(x0: f32, y0: f32, r0: f32, x1: f32, y1: f32, r1: f32) -> Self {
-    let radial_gradient = RadialGradient {
+    Self::new(Geometry::Radial {
       start: (x0, y0),
       start_radius: r0,
       end: (x1, y1),
       end_radius: r1,
-      base: SkGradient {
-        colors: Vec::new(),
-        positions: Vec::new(),
-        tile_mode: TileMode::Clamp,
-        transform: Transform::default(),
-      },
-    };
-    Self::Radial(radial_gradient)
-  }
-
-  /// `start_angle` is in radians. Blink stores `Rad2deg(startAngle) + 90`
-  /// (canvas_2d_recorder_context.cc:2424-2426), so angle 0 points along +x.
-  pub fn create_conic_gradient(x: f32, y: f32, start_angle: f32) -> Self {
-    Self::Conic(ConicGradient {
-      center: (x, y),
-      rotation: start_angle * (180.0 / std::f32::consts::PI) + 90.0,
-      base: SkGradient {
-        colors: Vec::new(),
-        positions: Vec::new(),
-        tile_mode: TileMode::Clamp,
-        transform: Transform::default(),
-      },
     })
   }
 
-  pub fn add_color_stop(&mut self, offset: f32, color: Color4f) {
-    let (stops, colors) = match self {
-      Self::Linear(linear_gradient) => (
-        &mut linear_gradient.base.positions,
-        &mut linear_gradient.base.colors,
-      ),
-      Self::Radial(radial_gradient) => (
-        &mut radial_gradient.base.positions,
-        &mut radial_gradient.base.colors,
-      ),
-      Self::Conic(conic_gradient) => (
-        &mut conic_gradient.base.positions,
-        &mut conic_gradient.base.colors,
-      ),
-    };
+  /// `start_angle` is in radians.
+  pub fn create_conic_gradient(x: f32, y: f32, start_angle: f32) -> Self {
+    Self::new(Geometry::Conic {
+      center: (x, y),
+      rotation: start_angle * (180.0 / std::f32::consts::PI) + 90.0,
+    })
+  }
+
+  pub fn add_color_stop(&mut self, offset: f32, color: Color) {
     // Stops sharing an offset must keep insertion order (HTML spec,
     // dom-canvasgradient-addcolorstop), so a new stop belongs at the UPPER bound
     // of `offset` -- what Blink gets from a `stable_sort` over a strict `<`.
-    if stops.last().map(|l| l <= &offset).unwrap_or(true) {
-      stops.push(offset);
-      colors.push(color);
-    } else {
-      let mut index = 0usize;
-      // insert it in sorted order, after any stop already sitting at the same offset
-      for (idx, val) in stops.iter().enumerate() {
-        if val > &offset {
-          break;
-        } else {
-          index = idx + 1;
-        }
-      }
-      stops.insert(index, offset);
-      colors.insert(index, color);
-    }
+    let index = self.stops.partition_point(|&(o, _)| o <= offset);
+    self.stops.insert(index, (offset, color));
   }
 
-  /// Transform is [3 x 3] matrix, but stored in 2d array:
-  /// | A B C |
-  /// | D E F |
-  /// | 0 0 1 |
-  /// [0 -> A, 1 -> B, 2 -> C, 3 -> D, 4 -> E, 5 -> F, 6 -> 0, 7 -> 0, 8 -> 1 ]
-  /// [lineargradient.js](skia/modules/canvaskit/htmlcanvas/lineargradient.js)
-  /// [radialgradient.js](skia/modules/canvaskit/htmlcanvas/radialgradient.js)
   /// Rough size of the shader a recorded draw retains: ~32 B per stop
   /// (position f32, float RGBA color, plus share of the shader object).
   pub(crate) fn estimated_bytes(&self) -> usize {
-    self.base().colors.len() * 32 + 256
+    self.stops.len() * 32 + 256
   }
 
-  fn base(&self) -> &SkGradient {
-    match self {
-      Self::Linear(g) => &g.base,
-      Self::Radial(g) => &g.base,
-      Self::Conic(g) => &g.base,
-    }
+  /// The space the stops are mixed in: the latched one, else what
+  /// CreateShaderInternal would latch now (gradient.cc:305-315): sRGB, unless
+  /// a stop's GetColorInterpolationSpace is not srgb-legacy, which makes it
+  /// Oklab (color.cc:1253-1262).
+  fn interpolation(&self) -> GradientInterpolation {
+    self.interpolation.get().unwrap_or_else(|| {
+      if self
+        .stops
+        .iter()
+        .any(|(_, c)| c.interpolation_space() != ColorSpace::SrgbLegacy)
+      {
+        GradientInterpolation::Oklab
+      } else {
+        GradientInterpolation::Srgb
+      }
+    })
+  }
+
+  /// Fix the interpolation space, as Blink's first CreateShaderInternal does.
+  /// The context calls this only for a draw that reaches `state.GetFlags()`.
+  pub(crate) fn latch_interpolation(&self) {
+    self.interpolation.set(Some(self.interpolation()));
+  }
+
+  pub(crate) fn interpolation_latched(&self) -> bool {
+    self.interpolation.get().is_some()
   }
 
   /// Blink's Gradient::FillSkiaStops (gradient.cc:131-213): a gradient with no
-  /// stops is transparent black, and the first and last stops are copied to 0.0
-  /// and 1.0. So Skia never gets 0 colors (it would fail) or 1 color (it would
-  /// make a solid color shader, which is never dithered).
-  fn skia_stops(base: &SkGradient) -> SkGradient {
-    let mut colors = Vec::with_capacity(base.colors.len() + 2);
-    let mut positions = Vec::with_capacity(base.colors.len() + 2);
-    match (base.positions.first(), base.colors.first()) {
-      (Some(&first_position), Some(&first_color)) => {
-        if first_position > 0.0 {
-          positions.push(0.0);
-          colors.push(first_color);
-        }
-        positions.extend_from_slice(&base.positions);
-        colors.extend_from_slice(&base.colors);
-      }
-      _ => {
+  /// stops is transparent black, and the first and last stops are copied to
+  /// 0.0 and 1.0. So Skia never gets 0 colors (it would fail) or 1 color (it
+  /// would make a solid color shader, which is never dithered). A stop with
+  /// `none` parameters in the interpolation space takes them from each
+  /// neighbor, as two stops at its offset.
+  fn skia_stops(&self, interpolation: GradientInterpolation) -> (Vec<Color4f>, Vec<f32>) {
+    let space = match interpolation {
+      GradientInterpolation::Srgb => ColorSpace::Srgb,
+      GradientInterpolation::Oklab => ColorSpace::Oklab,
+    };
+    let stops = &self.stops;
+    let mut colors = Vec::with_capacity(stops.len() + 2);
+    let mut positions = Vec::with_capacity(stops.len() + 2);
+    match stops.first() {
+      None => {
         positions.push(0.0);
         colors.push(Color4f::TRANSPARENT);
       }
+      Some(&(offset, first)) if offset > 0.0 => {
+        positions.push(0.0);
+        colors.push(first.to_sk_color4f());
+      }
+      Some(_) => {}
     }
-    let (last_position, last_color) = (positions[positions.len() - 1], colors[colors.len() - 1]);
-    if last_position < 1.0 {
+    for (i, &(offset, stop)) in stops.iter().enumerate() {
+      let mut color = stop;
+      color.convert_to_color_space_for_interpolation(space);
+      let offset = clamp_float_geometry(offset);
+      if !color.has_none() {
+        positions.push(offset);
+        colors.push(color.to_sk_color4f());
+        continue;
+      }
+      if stops.len() == 1 {
+        positions.push(offset);
+        let all_none = Color::from_color_space(color.space(), None, None, None, Some(1.0));
+        colors.push(resolve_stop_color_with_missing_params(
+          &color, &all_none, space,
+        ));
+        break;
+      }
+      if i != 0 {
+        positions.push(offset);
+        colors.push(resolve_stop_color_with_missing_params(
+          &color,
+          &stops[i - 1].1,
+          space,
+        ));
+      }
+      if i != stops.len() - 1 {
+        positions.push(offset);
+        colors.push(resolve_stop_color_with_missing_params(
+          &color,
+          &stops[i + 1].1,
+          space,
+        ));
+      }
+    }
+    if positions[positions.len() - 1] < 1.0 {
       positions.push(1.0);
-      colors.push(last_color);
+      colors.push(colors[colors.len() - 1]);
     }
-    SkGradient {
-      colors,
-      positions,
-      tile_mode: base.tile_mode,
-      transform: base.transform,
-    }
+    (colors, positions)
   }
 
   /// Blink's `DegenerateHandling::kDisallow` (canvas_gradient.cc:100-135): a
@@ -165,26 +195,45 @@ impl Gradient {
   /// ClampFloatGeometry and max(0). A conic gradient is never degenerate
   /// here: its angles are always 0 and 360 degrees.
   fn is_degenerate(&self) -> bool {
-    match self {
-      Self::Linear(g) => g.start_point == g.end_point,
-      Self::Radial(g) => {
-        g.start == g.end && skia_radius(g.start_radius) == skia_radius(g.end_radius)
-      }
-      Self::Conic(_) => false,
+    match self.geometry {
+      Geometry::Linear { start, end } => start == end,
+      Geometry::Radial {
+        start,
+        start_radius,
+        end,
+        end_radius,
+      } => start == end && skia_radius(start_radius) == skia_radius(end_radius),
+      Geometry::Conic { .. } => false,
+    }
+  }
+
+  /// Like `skia_stops`, but a degenerate gradient gets none: the transparent
+  /// shader of a gradient with no stops, which paints exactly like Blink's
+  /// empty shader (measured in Chrome 155 under every composite op, shadow and
+  /// filter).
+  fn shader_stops(&self) -> SkGradient {
+    let interpolation = self.interpolation();
+    let (colors, positions) = if self.is_degenerate() {
+      Self::new(self.geometry).skia_stops(interpolation)
+    } else {
+      self.skia_stops(interpolation)
+    };
+    SkGradient {
+      colors,
+      positions,
+      tile_mode: TileMode::Clamp,
+      transform: Transform::default(),
+      interpolation,
     }
   }
 
   /// The one color the gradient paints everywhere, if there is one: transparent
   /// black with no stops or a degenerate geometry, or the color that all its
-  /// stops share.
+  /// Skia stops share.
   pub(crate) fn constant_color(&self) -> Option<Color4f> {
-    if self.is_degenerate() {
-      return Some(Color4f::TRANSPARENT);
-    }
-    match self.base().colors.split_first() {
-      None => Some(Color4f::TRANSPARENT),
-      Some((first, rest)) => rest.iter().all(|c| c == first).then_some(*first),
-    }
+    let base = self.shader_stops();
+    let (first, rest) = base.colors.split_first()?;
+    rest.iter().all(|c| c == first).then_some(*first)
   }
 
   /// The Skia shader, or None when Skia cannot build one (for example a conic
@@ -192,48 +241,67 @@ impl Gradient {
   /// PaintShader::GetSkShader then gives no shader either, and Chrome paints
   /// the paint's color: black at globalAlpha (canvas_style.cc:130-137).
   pub(crate) fn get_shader(&self) -> Option<Shader> {
-    // A degenerate gradient gets no stops: the transparent shader of a
-    // gradient with no stops, which paints exactly like Blink's empty shader
-    // (measured in Chrome 155 under every composite op, shadow and filter).
-    let no_stops = SkGradient {
-      colors: Vec::new(),
-      positions: Vec::new(),
-      tile_mode: TileMode::Clamp,
-      transform: Transform::default(),
-    };
-    let stops = |base: &SkGradient| {
-      Self::skia_stops(if self.is_degenerate() {
-        &no_stops
-      } else {
-        base
-      })
-    };
-    match self {
-      Self::Linear(g) => Shader::new_linear_gradient(&LinearGradient {
+    let base = self.shader_stops();
+    match self.geometry {
+      Geometry::Linear { start, end } => Shader::new_linear_gradient(&LinearGradient {
         // Blink ClampNonFiniteToSafeFloat (gradient.cc:404-405).
-        start_point: clamp_point(g.start_point),
-        end_point: clamp_point(g.end_point),
-        base: stops(&g.base),
+        start_point: clamp_point(start),
+        end_point: clamp_point(end),
+        base,
       }),
       // Skia's two-point conical gradient is the canvas radial gradient.
       // Blink clamps the centers like the linear points, and the radii to
       // max(ClampFloatGeometry(r), 0) (gradient.cc:453-459).
-      Self::Radial(g) => Shader::new_radial_gradient(&RadialGradient {
-        start: clamp_point(g.start),
-        start_radius: skia_radius(g.start_radius),
-        end: clamp_point(g.end),
-        end_radius: skia_radius(g.end_radius),
-        base: stops(&g.base),
+      Geometry::Radial {
+        start,
+        start_radius,
+        end,
+        end_radius,
+      } => Shader::new_radial_gradient(&RadialGradient {
+        start: clamp_point(start),
+        start_radius: skia_radius(start_radius),
+        end: clamp_point(end),
+        end_radius: skia_radius(end_radius),
+        base,
       }),
       // The canvas CTM already applies to the shader, so the angle does not
       // depend on it. Blink does not clamp the conic center.
-      Self::Conic(g) => Shader::new_conic_gradient(&ConicGradient {
-        center: g.center,
-        rotation: g.rotation,
-        base: stops(&g.base),
+      Geometry::Conic { center, rotation } => Shader::new_conic_gradient(&ConicGradient {
+        center,
+        rotation,
+        base,
       }),
     }
   }
+}
+
+/// Blink's ResolveStopColorWithMissingParams (gradient.cc:96-124): `color`,
+/// already in `space`, takes each `none` parameter (and a `none` alpha) from
+/// `neighbor` converted to `space`.
+fn resolve_stop_color_with_missing_params(
+  color: &Color,
+  neighbor: &Color,
+  space: ColorSpace,
+) -> Color4f {
+  let mut converted = *neighbor;
+  converted.convert_to_color_space_for_interpolation(space);
+  let [p0, p1, p2] = color.params();
+  let [n0, n1, n2] = converted.params();
+  let pick =
+    |i: usize, own: f32, theirs: f32| Some(if color.param_is_none(i) { theirs } else { own });
+  let alpha = if color.alpha_is_none() {
+    converted.alpha()
+  } else {
+    color.alpha()
+  };
+  Color::from_color_space(
+    space,
+    pick(0, p0, n0),
+    pick(1, p1, n1),
+    pick(2, p2, n2),
+    Some(alpha),
+  )
+  .to_sk_color4f()
 }
 
 /// gfx::ClampFloatGeometry (ui/gfx/geometry/clamp_float_geometry.h): NaN is
@@ -250,223 +318,6 @@ fn clamp_point((x, y): (f32, f32)) -> (f32, f32) {
 /// The radius Blink gives Skia: max(ClampFloatGeometry(r), 0).
 fn skia_radius(r: f32) -> f32 {
   clamp_float_geometry(r).max(0.0)
-}
-
-/// Whether Blink rounds this hsl() color's alpha to k/255. Only its CSS fast
-/// path does (css_parser_fast_paths.cc:1069-1083, `alpha * (1.0f / 255.0f)`);
-/// every spelling the fast path rejects goes through the full parser, which
-/// keeps the float alpha. This is a port of the hsl() half of
-/// FastParseColorInternal (:990-1086), run on the string that
-/// ParseCanvasColorString hands it: stripped of HTML spaces. The fast path
-/// only accepts ASCII, so working on UTF-8 bytes is safe. One thing is not
-/// ported: Blink also skips the fast path when V8 holds the string as two-byte
-/// (CSSParserFastPaths::ParseColor's Is8Bit check), e.g. a slice of a string
-/// that had a non-Latin-1 character. Node-API does not expose that, so every
-/// string is treated as one-byte here.
-pub(crate) fn blink_rounds_hsl_alpha(color: &str) -> bool {
-  use blink_fast_path::*;
-  let chars = color.trim_matches(HTML_SPACES).as_bytes();
-  // MightBeHSLOrHSLA (:902-911): the name is case-sensitive.
-  let Some(current) = chars
-    .strip_prefix(b"hsl(")
-    .or_else(|| chars.strip_prefix(b"hsla("))
-  else {
-    return false;
-  };
-  let mut current = skip_html_spaces(current);
-  let hue_length = parse_simple_angle(current);
-  if hue_length == 0 {
-    return false;
-  }
-  current = &current[hue_length..];
-  let mut terminator_status = TerminatorStatus::CouldWhitespace;
-  if !skip_to_terminator(&mut current, b',', &mut terminator_status) {
-    return false;
-  }
-  // Saturation and lightness must be percentages.
-  if !parse_percentage(&mut current, b',', &mut terminator_status) {
-    return false;
-  }
-  let mut no_whitespace_check = TerminatorStatus::MustCharacter;
-  let should_have_alpha = if parse_percentage(&mut current, b',', &mut no_whitespace_check) {
-    if terminator_status != TerminatorStatus::MustCharacter {
-      return false;
-    }
-    true
-  } else if parse_percentage(&mut current, b'/', &mut no_whitespace_check) {
-    if terminator_status != TerminatorStatus::MustWhitespace {
-      return false;
-    }
-    true
-  } else if parse_percentage(&mut current, b')', &mut no_whitespace_check) {
-    false
-  } else {
-    return false;
-  };
-  if should_have_alpha {
-    parse_alpha_value(current, b')')
-  } else {
-    current.is_empty()
-  }
-}
-
-/// The pieces of Blink's css_parser_fast_paths.cc that its hsl() fast path
-/// uses, reduced to what they accept: each returns how much it consumes (or
-/// whether it matched), not the parsed value.
-pub(crate) mod blink_fast_path {
-  pub(crate) const HTML_SPACES: [char; 5] = [' ', '\t', '\n', '\x0c', '\r'];
-
-  fn is_html_space(c: u8) -> bool {
-    matches!(c, b' ' | b'\t' | b'\n' | b'\x0c' | b'\r')
-  }
-
-  pub(super) fn skip_html_spaces(chars: &[u8]) -> &[u8] {
-    let n = chars.iter().take_while(|&&c| is_html_space(c)).count();
-    &chars[n..]
-  }
-
-  /// FindLengthOfValidDouble (:293-378): digits with at most one '.', which
-  /// must not be the last character. Its SIMD branch can stop before such a
-  /// '.' instead of returning 0, but every caller then fails on that '.', so
-  /// the scalar rule gives the same answers.
-  fn find_length_of_valid_double(chars: &[u8]) -> usize {
-    let mut decimal_mark_seen = false;
-    let mut valid_length = 0;
-    for &c in chars {
-      if c.is_ascii_digit() {
-      } else if !decimal_mark_seen && c == b'.' {
-        decimal_mark_seen = true;
-      } else {
-        break;
-      }
-      valid_length += 1;
-    }
-    if valid_length > 0 && chars[valid_length - 1] == b'.' {
-      return 0;
-    }
-    valid_length
-  }
-
-  /// ParseSimpleAngle (:183-229): an optional '-', a number with no sign or
-  /// exponent, and an optional ASCII-case-insensitive deg, grad, rad or turn.
-  /// Returns the length, or 0 if there is no number.
-  pub(super) fn parse_simple_angle(chars: &[u8]) -> usize {
-    let sign_length = usize::from(chars.first() == Some(&b'-'));
-    let number_length = find_length_of_valid_double(&chars[sign_length..]);
-    if number_length == 0 {
-      return 0;
-    }
-    let number_length = sign_length + number_length;
-    let unit = &chars[number_length..];
-    let unit_length = ["deg", "grad", "rad", "turn"]
-      .into_iter()
-      .find(|u| unit.len() >= u.len() && unit[..u.len()].eq_ignore_ascii_case(u.as_bytes()))
-      .map_or(0, str::len);
-    number_length + unit_length
-  }
-
-  /// ParseFloatWithMaxValue (:576-621): HTML spaces, an optional '-', at
-  /// least one digit, then an optional '.' and digits. Returns the rest.
-  pub(crate) fn parse_float_with_max_value(chars: &[u8]) -> Option<&[u8]> {
-    let current = skip_html_spaces(chars);
-    let current = current.strip_prefix(b"-").unwrap_or(current);
-    let digits = current.iter().take_while(|c| c.is_ascii_digit()).count();
-    if digits == 0 {
-      return None;
-    }
-    let current = &current[digits..];
-    if current.first() == Some(&b'.') {
-      let fraction = find_length_of_valid_double(current);
-      if fraction == 0 {
-        return None;
-      }
-      return Some(&current[fraction..]);
-    }
-    Some(current)
-  }
-
-  /// kMustWhitespaceTerminate, kMustCharacterTerminate and
-  /// kCouldWhitespaceTerminate (:625-639).
-  #[derive(Clone, Copy, PartialEq, Eq)]
-  pub(crate) enum TerminatorStatus {
-    MustWhitespace,
-    MustCharacter,
-    CouldWhitespace,
-  }
-
-  /// SkipToTerminator (:643-678).
-  pub(crate) fn skip_to_terminator(
-    chars: &mut &[u8],
-    terminator: u8,
-    terminator_status: &mut TerminatorStatus,
-  ) -> bool {
-    let mut current = skip_html_spaces(chars);
-    let skipped_space = current.len() != chars.len();
-    match *terminator_status {
-      TerminatorStatus::CouldWhitespace if current.first() == Some(&terminator) => {
-        *terminator_status = TerminatorStatus::MustCharacter;
-        current = &current[1..];
-      }
-      TerminatorStatus::CouldWhitespace | TerminatorStatus::MustWhitespace => {
-        *terminator_status = TerminatorStatus::MustWhitespace;
-        if !skipped_space {
-          return false;
-        }
-      }
-      TerminatorStatus::MustCharacter => match current.split_first() {
-        Some((&c, rest)) if c == terminator => current = rest,
-        _ => return false,
-      },
-    }
-    *chars = current;
-    true
-  }
-
-  /// ParsePercentage (:727-753): a number, '%', then the terminator.
-  pub(super) fn parse_percentage(
-    chars: &mut &[u8],
-    terminator: u8,
-    terminator_status: &mut TerminatorStatus,
-  ) -> bool {
-    let Some(mut current) =
-      parse_float_with_max_value(chars).and_then(|rest| rest.strip_prefix(b"%"))
-    else {
-      return false;
-    };
-    if !skip_to_terminator(&mut current, terminator, terminator_status) {
-      return false;
-    }
-    *chars = current;
-    true
-  }
-
-  /// IsTenthAlpha (:755-768): "0.X" or ".X".
-  fn is_tenth_alpha(chars: &[u8]) -> bool {
-    matches!(chars, [b'0', b'.', d] | [b'.', d] if d.is_ascii_digit())
-  }
-
-  /// ParseAlphaValue (:770-832): HTML spaces, an optional '-', a number with
-  /// no sign or exponent, then the terminator, which must also be the last
-  /// character, right after a digit.
-  pub(crate) fn parse_alpha_value(chars: &[u8], terminator: u8) -> bool {
-    let chars = skip_html_spaces(chars);
-    let chars = chars.strip_prefix(b"-").unwrap_or(chars);
-    let length = chars.len();
-    if length < 2 || chars[length - 1] != terminator || !chars[length - 2].is_ascii_digit() {
-      return false;
-    }
-    let followed_by_terminator = |n: usize| n > 0 && chars.get(n) == Some(&terminator);
-    if !matches!(chars[0], b'0' | b'1' | b'.') {
-      return followed_by_terminator(find_length_of_valid_double(chars));
-    }
-    if length == 2 && chars[0] != b'.' {
-      return true;
-    }
-    if is_tenth_alpha(&chars[..length - 1]) {
-      return true;
-    }
-    followed_by_terminator(find_length_of_valid_double(chars))
-  }
 }
 
 /// A gradient is live: stops added after it became a fillStyle or
@@ -509,65 +360,6 @@ impl FromNapiValue for AddColorStopArgs {
   }
 }
 
-/// A gradient stop color.
-enum StopColor {
-  Color(Color4f),
-  /// A CSS Color 4 form that Chrome accepts and that is not converted yet.
-  Unsupported,
-}
-
-/// A stop color as Blink's ParseCanvasColorString takes it
-/// (canvas_style.cc:61-123): the string without its leading and trailing
-/// HTML spaces; `currentcolor` in any case is opaque black (no element, so
-/// Chrome's OffscreenCanvas answer); a named color must be the whole string
-/// (Color::SetNamedColor takes no comment or escape); anything else must be
-/// one CSS color with nothing after it. None: Blink throws a SyntaxError.
-fn parse_stop_color(color: &str) -> Option<StopColor> {
-  let stripped = color.trim_matches(blink_fast_path::HTML_SPACES);
-  if stripped.eq_ignore_ascii_case("currentcolor") {
-    return Some(StopColor::Color(Color4f::from_rgba8(0, 0, 0, 255)));
-  }
-  let mut parser = Parser::new(stripped);
-  // A leading identifier is a named color: Color::SetNamedColor matches the
-  // bare name only.
-  let starts_with_ident = {
-    let state = parser.state();
-    let ident = matches!(parser.next(), Ok(Token::Ident(_)));
-    parser.reset(&state);
-    ident
-  };
-  if starts_with_ident && !stripped.bytes().all(|b| b.is_ascii_alphabetic()) {
-    return None;
-  }
-  let parsed = CSSColor::parse(&mut parser).ok()?;
-  parser.expect_exhausted().ok()?;
-  Some(StopColor::Color(match parsed {
-    CSSColor::CurrentColor => Color4f::from_rgba8(0, 0, 0, 255),
-    CSSColor::Rgba(rgba) => Color4f::from_rgba8(
-      rgba.red,
-      rgba.green,
-      rgba.blue,
-      (rgba.alpha * 255.0).round() as u8,
-    ),
-    // Blink keeps an hsl() stop as float sRGB (Color::ToGradientStopSkColor4f).
-    CSSColor::Hsl(hsl) => {
-      let [r, g, b] = hsl_color_to_srgb(&hsl);
-      let alpha = hsl.alpha.unwrap_or(1.0);
-      Color4f {
-        r,
-        g,
-        b,
-        a: if blink_rounds_hsl_alpha(color) {
-          unit_from_u8((alpha * 255.0).round() as u8)
-        } else {
-          alpha
-        },
-      }
-    }
-    _ => return Some(StopColor::Unsupported),
-  }))
-}
-
 #[napi]
 impl CanvasGradient {
   /// addColorStop(offset, color). The index.js wrapper passes the argument
@@ -593,296 +385,224 @@ impl CanvasGradient {
         ),
       ));
     }
-    let stop = match parse_stop_color(&color) {
-      Some(StopColor::Color(stop)) => stop,
-      Some(StopColor::Unsupported) => {
-        return Err(Error::new(
-          Status::InvalidArg,
-          "Unsupported color format".to_owned(),
-        ));
-      }
-      None => {
-        return Err(webidl::dom_exception(
-          env.raw(),
-          "SyntaxError",
-          &format!("{prefix}The value provided ('{color}') could not be parsed as a color."),
-        ));
-      }
+    let Some(stop) = color::parse_canvas_color(&color, color::Site::GradientStop) else {
+      return Err(webidl::dom_exception(
+        env.raw(),
+        "SyntaxError",
+        &format!("{prefix}The value provided ('{color}') could not be parsed as a color."),
+      ));
     };
     self.0.borrow_mut().add_color_stop(offset as f32, stop);
     Ok(())
   }
 }
 
-#[test]
-fn test_add_color_stop() {
-  let mut linear_gradient = Gradient::create_linear_gradient(0.0, 0.0, 0.0, 77.0);
-  linear_gradient.add_color_stop(1.0, Color4f::from_rgba8(0, 128, 128, 255));
-  linear_gradient.add_color_stop(0.6, Color4f::from_rgba8(0, 255, 255, 255));
-  linear_gradient.add_color_stop(0.3, Color4f::from_rgba8(176, 199, 45, 255));
-  linear_gradient.add_color_stop(0.0, Color4f::from_rgba8(204, 82, 50, 255));
-  if let Gradient::Linear(linear_gradient) = linear_gradient {
-    assert_eq!(linear_gradient.base.positions, vec![0.0, 0.3, 0.6, 1.0]);
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  fn rgb(r: i32, g: i32, b: i32) -> Color {
+    Color::from_rgb(r, g, b)
+  }
+
+  fn offsets(g: &Gradient) -> Vec<f32> {
+    g.stops.iter().map(|&(o, _)| o).collect()
+  }
+
+  fn colors(g: &Gradient) -> Vec<u32> {
+    g.stops.iter().map(|(_, c)| c.rgb()).collect()
+  }
+
+  #[test]
+  fn test_add_color_stop() {
+    let mut g = Gradient::create_linear_gradient(0.0, 0.0, 0.0, 77.0);
+    g.add_color_stop(1.0, rgb(0, 128, 128));
+    g.add_color_stop(0.6, rgb(0, 255, 255));
+    g.add_color_stop(0.3, rgb(176, 199, 45));
+    g.add_color_stop(0.0, rgb(204, 82, 50));
+    assert_eq!(offsets(&g), vec![0.0, 0.3, 0.6, 1.0]);
     assert_eq!(
-      linear_gradient.base.colors,
-      vec![
-        Color4f::from_rgba8(204, 82, 50, 255),
-        Color4f::from_rgba8(176, 199, 45, 255),
-        Color4f::from_rgba8(0, 255, 255, 255),
-        Color4f::from_rgba8(0, 128, 128, 255),
-      ]
+      colors(&g),
+      vec![0xffcc5232, 0xffb0c72d, 0xff00ffff, 0xff008080]
     );
-  } else {
-    unreachable!();
   }
-}
 
-/// Pins the HTML spec's rule that stops sharing an offset keep insertion order
-/// (dom-canvasgradient-addcolorstop).
-#[test]
-fn test_add_color_stop_duplicated_offsets_keep_insertion_order() {
-  let red = Color4f::from_rgba8(255, 0, 0, 255);
-  let green = Color4f::from_rgba8(0, 255, 0, 255);
-  let blue = Color4f::from_rgba8(0, 0, 255, 255);
-  let white = Color4f::from_rgba8(255, 255, 255, 255);
-  let black = Color4f::from_rgba8(0, 0, 0, 255);
+  /// Pins the HTML spec's rule that stops sharing an offset keep insertion
+  /// order (dom-canvasgradient-addcolorstop).
+  #[test]
+  fn test_add_color_stop_duplicated_offsets_keep_insertion_order() {
+    let red = rgb(255, 0, 0);
+    let green = rgb(0, 255, 0);
+    let blue = rgb(0, 0, 255);
+    let white = rgb(255, 255, 255);
+    let black = rgb(0, 0, 0);
+    let (r, gr, b, w, k) = (red.rgb(), green.rgb(), blue.rgb(), white.rgb(), black.rgb());
 
-  let positions_colors = |gradient: Gradient| match gradient {
-    Gradient::Linear(g) => (g.base.positions, g.base.colors),
-    Gradient::Radial(g) => (g.base.positions, g.base.colors),
-    Gradient::Conic(g) => (g.base.positions, g.base.colors),
-  };
+    // Two stops at the same offset, appended at the tail.
+    let mut g = Gradient::create_linear_gradient(0.0, 0.0, 20.0, 0.0);
+    g.add_color_stop(0.5, red);
+    g.add_color_stop(0.5, blue);
+    assert_eq!(offsets(&g), vec![0.5, 0.5]);
+    assert_eq!(colors(&g), vec![r, b]);
 
-  // Two stops at the same offset, appended at the tail.
-  let mut g = Gradient::create_linear_gradient(0.0, 0.0, 20.0, 0.0);
-  g.add_color_stop(0.5, red);
-  g.add_color_stop(0.5, blue);
-  let (positions, colors) = positions_colors(g);
-  assert_eq!(positions, vec![0.5, 0.5]);
-  assert_eq!(colors, vec![red, blue]);
+    // A duplicate offset in the middle of an existing run must not jump ahead of it.
+    let mut g = Gradient::create_linear_gradient(0.0, 0.0, 20.0, 0.0);
+    g.add_color_stop(0.0, white);
+    g.add_color_stop(0.5, red);
+    g.add_color_stop(0.5, green);
+    g.add_color_stop(0.5, blue);
+    g.add_color_stop(1.0, black);
+    assert_eq!(offsets(&g), vec![0.0, 0.5, 0.5, 0.5, 1.0]);
+    assert_eq!(colors(&g), vec![w, r, gr, b, k]);
 
-  // A duplicate offset in the middle of an existing run must not jump ahead of it.
-  let mut g = Gradient::create_linear_gradient(0.0, 0.0, 20.0, 0.0);
-  g.add_color_stop(0.0, white);
-  g.add_color_stop(0.5, red);
-  g.add_color_stop(0.5, green);
-  g.add_color_stop(0.5, blue);
-  g.add_color_stop(1.0, black);
-  let (positions, colors) = positions_colors(g);
-  assert_eq!(positions, vec![0.0, 0.5, 0.5, 0.5, 1.0]);
-  assert_eq!(colors, vec![white, red, green, blue, black]);
+    // Duplicates at the 0.0 and 1.0 boundaries.
+    let mut g = Gradient::create_radial_gradient(16.0, 16.0, 0.0, 16.0, 16.0, 16.0);
+    g.add_color_stop(0.0, red);
+    g.add_color_stop(0.0, green);
+    g.add_color_stop(1.0, blue);
+    g.add_color_stop(1.0, black);
+    assert_eq!(offsets(&g), vec![0.0, 0.0, 1.0, 1.0]);
+    assert_eq!(colors(&g), vec![r, gr, b, k]);
 
-  // Duplicates at the 0.0 and 1.0 boundaries.
-  let mut g = Gradient::create_radial_gradient(16.0, 16.0, 0.0, 16.0, 16.0, 16.0);
-  g.add_color_stop(0.0, red);
-  g.add_color_stop(0.0, green);
-  g.add_color_stop(1.0, blue);
-  g.add_color_stop(1.0, black);
-  let (positions, colors) = positions_colors(g);
-  assert_eq!(positions, vec![0.0, 0.0, 1.0, 1.0]);
-  assert_eq!(colors, vec![red, green, blue, black]);
-
-  // Out-of-order insertion mixed with duplicates: equal offsets keep insertion
-  // order even through the O(n) insertion path.
-  let mut g = Gradient::create_conic_gradient(16.0, 16.0, 16.0);
-  g.add_color_stop(1.0, black);
-  g.add_color_stop(0.5, red);
-  g.add_color_stop(0.25, green);
-  g.add_color_stop(0.5, blue);
-  g.add_color_stop(0.0, white);
-  g.add_color_stop(0.25, red);
-  let (positions, colors) = positions_colors(g);
-  assert_eq!(positions, vec![0.0, 0.25, 0.25, 0.5, 0.5, 1.0]);
-  assert_eq!(colors, vec![white, green, red, red, blue, black]);
-}
-
-/// Blink FillSkiaStops: no stops -> transparent black; the first and last stops
-/// are copied to 0.0 and 1.0.
-#[test]
-fn test_skia_stops_pad_like_blink() {
-  let red = Color4f::from_rgba8(255, 0, 0, 255);
-  let blue = Color4f::from_rgba8(0, 0, 255, 255);
-  let stops = |g: &Gradient| {
-    let s = Gradient::skia_stops(g.base());
-    (s.positions, s.colors)
-  };
-
-  let g = Gradient::create_linear_gradient(0.0, 0.0, 20.0, 0.0);
-  assert_eq!(
-    stops(&g),
-    (
-      vec![0.0, 1.0],
-      vec![Color4f::TRANSPARENT, Color4f::TRANSPARENT]
-    )
-  );
-  assert_eq!(g.constant_color(), Some(Color4f::TRANSPARENT));
-
-  let mut g = Gradient::create_radial_gradient(0.0, 0.0, 0.0, 0.0, 0.0, 20.0);
-  g.add_color_stop(0.3, red);
-  assert_eq!(stops(&g), (vec![0.0, 0.3, 1.0], vec![red, red, red]));
-  assert_eq!(g.constant_color(), Some(red));
-
-  let mut g = Gradient::create_conic_gradient(0.0, 0.0, 0.0);
-  g.add_color_stop(0.0, red);
-  g.add_color_stop(1.0, blue);
-  assert_eq!(stops(&g), (vec![0.0, 1.0], vec![red, blue]));
-  assert_eq!(g.constant_color(), None);
-}
-
-/// Chrome 155: these hsl() stops get a k/255 alpha (CSS fast path) or keep the
-/// float alpha (full parser, or no color at all for the invalid ones).
-#[test]
-fn test_blink_rounds_hsl_alpha() {
-  for rounded in [
-    "hsla(120, 50%, 50%, 0.33)",
-    "hsl(120 50% 50% / 0.33)",
-    "hsl(120 50% 50%/.33)",
-    "  hsla(120, 50%, 50%,0.33)  ",
-    "hsla(120deg, 50%, 50%, 0.33)",
-    "hsla(120, 50%, 50%, -0.5)",
-    "hsla(120, 50%, 50%, 5)",
-    // Hue: a unit in any case, a leading '.' or '-', a fraction, a big number.
-    "hsl(120deg 0% 50% / 0.3)",
-    "hsl(120DEG 0% 50% / 0.3)",
-    "hsl(120Deg 0% 50% / 0.3)",
-    "hsl(2rad 0% 50% / 0.3)",
-    "hsl(2RAD 0% 50% / 0.3)",
-    "hsl(200grad 0% 50% / 0.3)",
-    "hsl(200GRAD 0% 50% / 0.3)",
-    "hsl(0.5turn 0% 50% / 0.3)",
-    "hsl(0.5TuRn 0% 50% / 0.3)",
-    "hsl(.5turn 0% 50% / 0.3)",
-    "hsl(-.5turn 0% 50% / 0.3)",
-    "hsla(120deg, 0%, 50%, 0.3)",
-    "hsla(0.5turn, 0%, 50%, 0.3)",
-    "hsla(2rad,0%,50%,0.3)",
-    "hsl(-120 0% 50% / 0.3)",
-    "hsl(120.5 0% 50% / 0.3)",
-    "hsl(1000000 0% 50% / 0.3)",
-    // Separators: legacy commas or modern spaces and '/', with any HTML spaces.
-    "hsla(0, 0%, 50%, 0.3)",
-    "hsl(0, 0%, 50%, 0.3)",
-    "hsl(0,0%,50%,0.3)",
-    "hsl( 0 , 0% , 50% , 0.3)",
-    "hsla(0 0% 50% / 0.3)",
-    "hsl(0 0% 50%/0.3)",
-    "hsl(0  0%  50%  /  0.3)",
-    "hsl( 0 0% 50% / 0.3)",
-    "hsl(0\t0%\n50%\r/\x0c0.3)",
-    "  hsl(0 0% 50% / 0.3)  ",
-    "\t\nhsl(0 0% 50% / 0.3)\r\x0c",
-    // Saturation and lightness: a fraction, a '-', leading zeros.
-    "hsl(0 0.0% 50.0% / 0.3)",
-    "hsl(0 -10% 50% / 0.3)",
-    "hsl(0 0% 050% / 0.3)",
-    "hsl(0 0% 50.00000001% / 0.3)",
-    // Alpha.
-    "hsl(0 0% 50% / .3)",
-    "hsl(0 0% 50% / 0.30)",
-    "hsl(0 0% 50% / 00.3)",
-    // ParseAlphaValue only needs a ')' right after the number and at the end.
-    "hsl(0 0% 50% / 0.3)1)",
-    "hsl(0 0% 50% / 0.3) 1)",
-  ] {
-    assert!(blink_rounds_hsl_alpha(rounded), "{rounded:?}");
+    // Out-of-order insertion mixed with duplicates.
+    let mut g = Gradient::create_conic_gradient(16.0, 16.0, 16.0);
+    g.add_color_stop(1.0, black);
+    g.add_color_stop(0.5, red);
+    g.add_color_stop(0.25, green);
+    g.add_color_stop(0.5, blue);
+    g.add_color_stop(0.0, white);
+    g.add_color_stop(0.25, red);
+    assert_eq!(offsets(&g), vec![0.0, 0.25, 0.25, 0.5, 0.5, 1.0]);
+    assert_eq!(colors(&g), vec![w, gr, r, r, b, k]);
   }
-  for float in [
-    "hsl(120 50% 50% / 33%)",
-    "hsla(120, 50%, 50%, 33%)",
-    "HSLA(120, 50%, 50%, 0.33)",
-    "Hsl(120 50% 50% / 0.33)",
-    "hsla(120, 50%, 50%, 0.33 )",
-    "hsla(120, 50%, 50%, 3.3e-1)",
-    "hsla(120, 50%, 50%, 1.)",
-    // none in each position.
-    "hsl(none 0% 50% / 0.3)",
-    "hsla(none 0% 50% / 0.3)",
-    "hsl(0 none 50% / 0.3)",
-    "hsl(0 0% none / 0.3)",
-    "hsl(120 none 50% / 0.3)",
-    "hsl(120 50% none / 0.3)",
-    "hsl(0 0% 50% / none)",
-    "hsl(none 50% 50% / 0.33)",
-    // Hue: a '+', an exponent, calc().
-    "hsl(+120 0% 50% / 0.3)",
-    "hsl(1.2e2 0% 50% / 0.3)",
-    "hsl(1.2e2deg 0% 50% / 0.3)",
-    "hsl(calc(0) 0% 50% / 0.3)",
-    "hsl(calc(120deg) 0% 50% / 0.3)",
-    "hsla(calc(0), 0%, 50%, 0.3)",
-    // Saturation, lightness and alpha: no leading digit, a '+', an exponent,
-    // calc(), no '%'.
-    "hsl(0 .0% 50% / 0.3)",
-    "hsl(0 0% .5e2% / 0.3)",
-    "hsl(0 0% 5e1% / 0.3)",
-    "hsl(0 +0% 50% / 0.3)",
-    "hsl(0 0% +50% / 0.3)",
-    "hsl(0 calc(0%) 50% / 0.3)",
-    "hsl(0 0% calc(50%) / 0.3)",
-    "hsl(0 0% 50% / calc(0.3))",
-    "hsl(0 0 50 / 0.3)",
-    "hsl(0 0% 50% / 0.3 )",
-    "hsl(0 0% 50% / 3e-1)",
-    "hsl(0 0% 50% / +0.3)",
-    "hsl(0 0% 50% / 30%)",
-    // Function name not all lowercase, or escaped.
-    "HSL(0 0% 50% / 0.3)",
-    "Hsl(0 0% 50% / 0.3)",
-    "hSl(0 0% 50% / 0.3)",
-    "HSLA(0, 0%, 50%, 0.3)",
-    "hslA(0, 0%, 50%, 0.3)",
-    "hsl\\61(0, 0%, 50%, 0.3)",
-    // Comments.
-    "hsl(0 /**/ 0% 50% / 0.3)",
-    "hsl(0 0% 50% / 0.3/**/)",
-    "hsl(/**/0 0% 50% / 0.3)",
-    // Mixed separators (invalid in Chrome too).
-    "hsl(none, 0%, 50%, 0.3)",
-    "hsl(0 0%,50%,0.3)",
-    "hsl(0, 0% 50%, 0.3)",
-    "hsl(0, 0%, 50% / 0.3)",
-    "hsl(0 0% 50%, 0.3)",
-  ] {
-    assert!(!blink_rounds_hsl_alpha(float), "{float:?}");
-  }
-}
 
-/// Blink kDisallow: equal linear points, or equal radial circles after the
-/// radius clamp, paint nothing; anything else still paints.
-#[test]
-fn test_degenerate_geometry_paints_nothing() {
-  let red = Color4f::from_rgba8(255, 0, 0, 255);
-  let blue = Color4f::from_rgba8(0, 0, 255, 255);
-  let two_stops = |mut g: Gradient| {
+  /// Blink FillSkiaStops: no stops -> transparent black; the first and last
+  /// stops are copied to 0.0 and 1.0.
+  #[test]
+  fn test_skia_stops_pad_like_blink() {
+    let red = rgb(255, 0, 0);
+    let blue = rgb(0, 0, 255);
+    let red4f = Color4f {
+      r: 1.0,
+      g: 0.0,
+      b: 0.0,
+      a: 1.0,
+    };
+    let blue4f = Color4f {
+      r: 0.0,
+      g: 0.0,
+      b: 1.0,
+      a: 1.0,
+    };
+    let stops = |g: &Gradient| {
+      let (c, p) = g.skia_stops(g.interpolation());
+      (p, c)
+    };
+
+    let g = Gradient::create_linear_gradient(0.0, 0.0, 20.0, 0.0);
+    assert_eq!(
+      stops(&g),
+      (
+        vec![0.0, 1.0],
+        vec![Color4f::TRANSPARENT, Color4f::TRANSPARENT]
+      )
+    );
+    assert_eq!(g.constant_color(), Some(Color4f::TRANSPARENT));
+
+    let mut g = Gradient::create_radial_gradient(0.0, 0.0, 0.0, 0.0, 0.0, 20.0);
+    g.add_color_stop(0.3, red);
+    assert_eq!(stops(&g), (vec![0.0, 0.3, 1.0], vec![red4f, red4f, red4f]));
+    assert_eq!(g.constant_color(), Some(red4f));
+
+    let mut g = Gradient::create_conic_gradient(0.0, 0.0, 0.0);
     g.add_color_stop(0.0, red);
     g.add_color_stop(1.0, blue);
-    g
-  };
-  // The factories pass ClampTo<float> of the JS doubles.
-  for g in [
-    Gradient::create_linear_gradient(2.0, 2.0, 2.0, 2.0),
-    Gradient::create_linear_gradient(0.0, 0.0, -0.0, 0.0),
-    Gradient::create_linear_gradient(2.0, 2.0, (2.0f64 + 1e-7) as f32, 2.0),
-    Gradient::create_linear_gradient(f32::MAX, 0.0, f32::MAX, 0.0),
-    Gradient::create_radial_gradient(2.0, 2.0, 1.0, 2.0, 2.0, 1.0),
-    Gradient::create_radial_gradient(2.0, 2.0, 0.0, 2.0, 2.0, 0.0),
-    // Both radii clamp to FLT_MAX / 1e6.
-    Gradient::create_radial_gradient(2.0, 2.0, 1e33, 2.0, 2.0, 2e33),
-  ] {
-    let g = two_stops(g);
-    assert_eq!(g.constant_color(), Some(Color4f::TRANSPARENT));
-    assert!(g.get_shader().is_some());
-  }
-  for g in [
-    Gradient::create_linear_gradient(2.0, 2.0, 2.00001, 2.0),
-    // Distinct as floats, equal only after ClampFloatGeometry.
-    Gradient::create_linear_gradient(1e34, 0.0, 2e34, 0.0),
-    Gradient::create_radial_gradient(2.0, 2.0, 1.0, 2.0, 2.0, (1.0f64 + 1e-7) as f32),
-    Gradient::create_radial_gradient(2.0, 2.0, 1.0, 2.00001, 2.0, 1.0),
-    Gradient::create_conic_gradient(2.0, 2.0, 0.0),
-  ] {
-    let g = two_stops(g);
+    assert_eq!(stops(&g), (vec![0.0, 1.0], vec![red4f, blue4f]));
     assert_eq!(g.constant_color(), None);
-    assert!(g.get_shader().is_some());
+  }
+
+  /// gradient.cc:156-201: a stop with a `none` parameter in the interpolation
+  /// space is split in two at its offset, each half taking the parameter from
+  /// one neighbor; a lone stop takes 0 (and alpha 1).
+  #[test]
+  fn test_none_stops_take_neighbor_params() {
+    let parse = |s: &str| color::parse_canvas_color(s, color::Site::GradientStop).unwrap();
+    let mut g = Gradient::create_linear_gradient(0.0, 0.0, 20.0, 0.0);
+    g.add_color_stop(0.0, parse("oklab(0.2 0 0)"));
+    g.add_color_stop(0.5, parse("oklab(none 0 0)"));
+    g.add_color_stop(1.0, parse("oklab(0.8 0 0)"));
+    assert_eq!(g.interpolation(), GradientInterpolation::Oklab);
+    let (c, p) = g.skia_stops(g.interpolation());
+    assert_eq!(p, vec![0.0, 0.5, 0.5, 1.0]);
+    let gray = |l: &str| parse(&format!("oklab({l} 0 0)")).to_sk_color4f();
+    assert_eq!(c, vec![gray("0.2"), gray("0.2"), gray("0.8"), gray("0.8")]);
+
+    let mut g = Gradient::create_linear_gradient(0.0, 0.0, 20.0, 0.0);
+    g.add_color_stop(0.5, parse("oklab(none 0 0 / none)"));
+    let (c, p) = g.skia_stops(g.interpolation());
+    assert_eq!(p, vec![0.0, 0.5, 1.0]);
+    let black = parse("oklab(0 0 0)").to_sk_color4f();
+    // The 0.0 pad copies the stop as written: `none` alpha is 0.
+    assert_eq!(c[0].a, 0.0);
+    assert_eq!(c[1..], [black, black]);
+  }
+
+  /// gradient.cc:305-315: the space is fixed at the first latch.
+  #[test]
+  fn test_interpolation_latches() {
+    let parse = |s: &str| color::parse_canvas_color(s, color::Site::GradientStop).unwrap();
+    let mut g = Gradient::create_linear_gradient(0.0, 0.0, 20.0, 0.0);
+    g.add_color_stop(0.0, parse("red"));
+    assert_eq!(g.interpolation(), GradientInterpolation::Srgb);
+    g.latch_interpolation();
+    g.add_color_stop(1.0, parse("oklch(0.6 0.15 140)"));
+    assert_eq!(g.interpolation(), GradientInterpolation::Srgb);
+    // Unlatched, the same stops pick Oklab.
+    let mut fresh = Gradient::create_linear_gradient(0.0, 0.0, 20.0, 0.0);
+    fresh.add_color_stop(0.0, parse("red"));
+    fresh.add_color_stop(1.0, parse("oklch(0.6 0.15 140)"));
+    assert_eq!(fresh.interpolation(), GradientInterpolation::Oklab);
+    // A legacy color with `none` is not srgb-legacy for interpolation.
+    let mut g = Gradient::create_linear_gradient(0.0, 0.0, 20.0, 0.0);
+    g.add_color_stop(0.0, parse("rgb(none 0 0)"));
+    assert_eq!(g.interpolation(), GradientInterpolation::Oklab);
+  }
+
+  /// Blink kDisallow: equal linear points, or equal radial circles after the
+  /// radius clamp, paint nothing; anything else still paints.
+  #[test]
+  fn test_degenerate_geometry_paints_nothing() {
+    let two_stops = |mut g: Gradient| {
+      g.add_color_stop(0.0, rgb(255, 0, 0));
+      g.add_color_stop(1.0, rgb(0, 0, 255));
+      g
+    };
+    // The factories pass ClampTo<float> of the JS doubles.
+    for g in [
+      Gradient::create_linear_gradient(2.0, 2.0, 2.0, 2.0),
+      Gradient::create_linear_gradient(0.0, 0.0, -0.0, 0.0),
+      Gradient::create_linear_gradient(2.0, 2.0, (2.0f64 + 1e-7) as f32, 2.0),
+      Gradient::create_linear_gradient(f32::MAX, 0.0, f32::MAX, 0.0),
+      Gradient::create_radial_gradient(2.0, 2.0, 1.0, 2.0, 2.0, 1.0),
+      Gradient::create_radial_gradient(2.0, 2.0, 0.0, 2.0, 2.0, 0.0),
+      // Both radii clamp to FLT_MAX / 1e6.
+      Gradient::create_radial_gradient(2.0, 2.0, 1e33, 2.0, 2.0, 2e33),
+    ] {
+      let g = two_stops(g);
+      assert_eq!(g.constant_color(), Some(Color4f::TRANSPARENT));
+      assert!(g.get_shader().is_some());
+    }
+    for g in [
+      Gradient::create_linear_gradient(2.0, 2.0, 2.00001, 2.0),
+      // Distinct as floats, equal only after ClampFloatGeometry.
+      Gradient::create_linear_gradient(1e34, 0.0, 2e34, 0.0),
+      Gradient::create_radial_gradient(2.0, 2.0, 1.0, 2.0, 2.0, (1.0f64 + 1e-7) as f32),
+      Gradient::create_radial_gradient(2.0, 2.0, 1.0, 2.00001, 2.0, 1.0),
+      Gradient::create_conic_gradient(2.0, 2.0, 0.0),
+    ] {
+      let g = two_stops(g);
+      assert_eq!(g.constant_color(), None);
+      assert!(g.get_shader().is_some());
+    }
   }
 }
