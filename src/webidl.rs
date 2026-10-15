@@ -370,6 +370,12 @@ enum Hint {
   String,
 }
 
+fn undefined(env: sys::napi_env) -> Result<sys::napi_value> {
+  let mut value = ptr::null_mut();
+  check_status!(unsafe { sys::napi_get_undefined(env, &mut value) })?;
+  Ok(value)
+}
+
 fn get_property(
   env: sys::napi_env,
   object: sys::napi_value,
@@ -397,17 +403,133 @@ fn is_callable(env: sys::napi_env, value: sys::napi_value) -> Result<bool> {
   Ok(raw_type_of(env, value)? == sys::ValueType::napi_function)
 }
 
-/// The well-known symbol `Symbol.<name>`.
-fn well_known_symbol(env: sys::napi_env, name: &std::ffi::CStr) -> Result<sys::napi_value> {
+/// The intrinsics of a realm that the conversions use: Symbol.toPrimitive,
+/// Symbol.iterator and Proxy, read once, when the addon is registered in the
+/// environment of the realm. Chrome uses those of its realm, so a script
+/// that replaces globalThis.Symbol or globalThis.Proxy later changes no
+/// conversion. A worker thread has an environment and a realm of its own,
+/// and an environment stays on its thread.
+struct RealmIntrinsics {
+  env: sys::napi_env,
+  /// An object with the own data properties toPrimitive, iterator and
+  /// Proxy, each undefined when it could not be read. An object, because
+  /// napi_create_reference takes a symbol only from Node-API 10 on.
+  holder: sys::napi_ref,
+}
+
+thread_local! {
+  /// The intrinsics of the environments of this thread.
+  static REALM_INTRINSICS: RefCell<Vec<RealmIntrinsics>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Reads the intrinsics of the realm of `env` (see [`RealmIntrinsics`]).
+/// napi-rs runs this once for each environment that registers the addon,
+/// before any script can use it. Best effort: an intrinsic that cannot be
+/// read then (a global replaced before the addon was loaded) stays
+/// undefined, and does not fail the load.
+// napi-rs registers the hook only outside `cargo test`.
+#[cfg_attr(test, allow(dead_code))]
+#[napi(module_exports)]
+pub fn capture_realm_intrinsics(_exports: Object, env: Env) -> Result<()> {
+  let env = env.raw();
+  let read = |object: sys::napi_value, name: &std::ffi::CStr, kind: i32| {
+    let mut value = ptr::null_mut();
+    let status = unsafe { sys::napi_get_named_property(env, object, name.as_ptr(), &mut value) };
+    if status != sys::Status::napi_ok {
+      let mut exception = ptr::null_mut();
+      unsafe { sys::napi_get_and_clear_last_exception(env, &mut exception) };
+      return None;
+    }
+    (raw_type_of(env, value).ok()? == kind).then_some(value)
+  };
   let mut global = ptr::null_mut();
-  let mut symbol = ptr::null_mut();
-  let mut value = ptr::null_mut();
+  let mut undefined = ptr::null_mut();
+  let mut holder = ptr::null_mut();
   check_status!(unsafe { sys::napi_get_global(env, &mut global) })?;
+  check_status!(unsafe { sys::napi_get_undefined(env, &mut undefined) })?;
+  check_status!(unsafe { sys::napi_create_object(env, &mut holder) })?;
+  let symbol = read(global, c"Symbol", sys::ValueType::napi_function);
+  let well_known = |name| symbol.and_then(|symbol| read(symbol, name, sys::ValueType::napi_symbol));
+  let member =
+    |utf8name: &std::ffi::CStr, value: Option<sys::napi_value>| sys::napi_property_descriptor {
+      utf8name: utf8name.as_ptr(),
+      name: ptr::null_mut(),
+      method: None,
+      getter: None,
+      setter: None,
+      value: value.unwrap_or(undefined),
+      attributes: sys::PropertyAttributes::default,
+      data: ptr::null_mut(),
+    };
+  let members = [
+    member(c"toPrimitive", well_known(c"toPrimitive")),
+    member(c"iterator", well_known(c"iterator")),
+    member(
+      c"Proxy",
+      read(global, c"Proxy", sys::ValueType::napi_function),
+    ),
+  ];
   check_status!(unsafe {
-    sys::napi_get_named_property(env, global, c"Symbol".as_ptr(), &mut symbol)
+    sys::napi_define_properties(env, holder, members.len(), members.as_ptr())
   })?;
-  check_status!(unsafe { sys::napi_get_named_property(env, symbol, name.as_ptr(), &mut value) })?;
-  Ok(value)
+  let mut reference = ptr::null_mut();
+  check_status!(unsafe { sys::napi_create_reference(env, holder, 1, &mut reference) })?;
+  let replaced = REALM_INTRINSICS.with_borrow_mut(|list| {
+    let replaced = list
+      .iter()
+      .position(|intrinsics| intrinsics.env == env)
+      .map(|index| list.swap_remove(index));
+    list.push(RealmIntrinsics {
+      env,
+      holder: reference,
+    });
+    replaced
+  });
+  match replaced {
+    // Node gives each registration an environment of its own, so this does
+    // not happen; the cleanup hook of the first one is still there.
+    Some(old) => {
+      unsafe { sys::napi_delete_reference(env, old.holder) };
+    }
+    None => {
+      // Removes the entry when the environment ends, so that a later
+      // environment at the same address does not find it. Node deletes the
+      // reference itself then.
+      unsafe { sys::napi_add_env_cleanup_hook(env, Some(forget_realm_intrinsics), env.cast()) };
+    }
+  }
+  Ok(())
+}
+
+#[cfg_attr(test, allow(dead_code))]
+unsafe extern "C" fn forget_realm_intrinsics(env: *mut std::ffi::c_void) {
+  let _ = REALM_INTRINSICS.try_with(|list| {
+    list
+      .borrow_mut()
+      .retain(|intrinsics| intrinsics.env.cast() != env)
+  });
+}
+
+/// The intrinsic `name` (toPrimitive, iterator or Proxy) of the realm of
+/// `env`; None when it could not be read at registration.
+fn intrinsic(env: sys::napi_env, name: &std::ffi::CStr) -> Result<Option<sys::napi_value>> {
+  let Some(reference) = REALM_INTRINSICS.with_borrow(|list| {
+    list
+      .iter()
+      .find(|intrinsics| intrinsics.env == env)
+      .map(|intrinsics| intrinsics.holder)
+  }) else {
+    return Ok(None);
+  };
+  let mut holder = ptr::null_mut();
+  check_status!(unsafe { sys::napi_get_reference_value(env, reference, &mut holder) })?;
+  if holder.is_null() {
+    return Ok(None);
+  }
+  // An own data property of the holder: no user code runs.
+  let mut value = ptr::null_mut();
+  check_status!(unsafe { sys::napi_get_named_property(env, holder, name.as_ptr(), &mut value) })?;
+  Ok((raw_type_of(env, value)? != sys::ValueType::napi_undefined).then_some(value))
 }
 
 /// The get trap of a [`relay`]: the `value` of its handler, `this`.
@@ -450,15 +572,12 @@ fn relay(
   target: sys::napi_value,
   value: sys::napi_value,
 ) -> Result<sys::napi_value> {
-  let mut global = ptr::null_mut();
-  let mut proxy = ptr::null_mut();
+  let Some(proxy) = intrinsic(env, c"Proxy")? else {
+    return Err(Error::from_reason("no Proxy"));
+  };
   let mut get = ptr::null_mut();
   let mut handler = ptr::null_mut();
   let mut relay = ptr::null_mut();
-  check_status!(unsafe { sys::napi_get_global(env, &mut global) })?;
-  check_status!(unsafe {
-    sys::napi_get_named_property(env, global, c"Proxy".as_ptr(), &mut proxy)
-  })?;
   check_status!(unsafe {
     sys::napi_create_function(
       env,
@@ -500,7 +619,11 @@ fn to_primitive(
   hint: Hint,
   prefix: &str,
 ) -> Result<sys::napi_value> {
-  let exotic = get_property(env, value, well_known_symbol(env, c"toPrimitive")?)?;
+  let exotic = match intrinsic(env, c"toPrimitive")? {
+    Some(key) => get_property(env, value, key)?,
+    // Not readable when the addon was registered: as if undefined.
+    None => undefined(env)?,
+  };
   match raw_type_of(env, exotic)? {
     sys::ValueType::napi_undefined | sys::ValueType::napi_null => {}
     sys::ValueType::napi_function => {
@@ -764,7 +887,11 @@ impl<S: Site> FromNapiValue for DoubleSequence<S> {
     if !is_object(env, value)? {
       return error("The provided value cannot be converted to a sequence.");
     }
-    let method = get_property(env, value, well_known_symbol(env, c"iterator")?)?;
+    let method = match intrinsic(env, c"iterator")? {
+      Some(key) => get_property(env, value, key)?,
+      // Not readable when the addon was registered: as if undefined.
+      None => undefined(env)?,
+    };
     match raw_type_of(env, method)? {
       sys::ValueType::napi_function => {}
       sys::ValueType::napi_undefined | sys::ValueType::napi_null => {
