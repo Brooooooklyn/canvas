@@ -1247,6 +1247,11 @@ pub mod ffi {
       maybe_name_alias: *const c_char,
     ) -> u32;
 
+    pub fn skiac_font_collection_register_system_font(
+      c_font_collection: *mut skiac_font_collection,
+      font_path: *const c_char,
+    ) -> u32;
+
     pub fn skiac_font_collection_unregister(
       c_font_collection: *mut skiac_font_collection,
       typeface_id: u32,
@@ -5191,6 +5196,14 @@ impl FontCollection {
       }
     }
     result
+  }
+
+  /// Registers an installed font (loadSystemFonts / loadFontsFromDir). Like
+  /// Chrome's system fonts, tiny sizes keep fractional ascent and descent.
+  pub fn register_system_font(&self, font_path: &str) -> Option<u32> {
+    let fp = CString::new(font_path).ok()?;
+    let id = unsafe { ffi::skiac_font_collection_register_system_font(self.0, fp.as_ptr()) };
+    (id > 0).then_some(id)
   }
 
   pub fn register_from_path<S: AsRef<str>>(

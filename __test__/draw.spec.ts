@@ -1383,10 +1383,11 @@ test('measureText', (t) => {
   })
 })
 
-test('measureText with empty string should not throw', (t) => {
+test('measureText with empty string keeps the font metrics', (t) => {
   const { ctx } = t.context
   ctx.font = '50px Iosevka Slab'
   // TextMetrics is a class with prototype getters: compare its fields.
+  // Chrome 155 Linux; emHeight* with ExtendedTextMetrics on macOS.
   const metrics = ctx.measureText('')
   const fields = [
     'actualBoundingBoxAscent',
@@ -1401,15 +1402,15 @@ test('measureText with empty string should not throw', (t) => {
     'width',
   ] as const
   t.deepEqual(Object.fromEntries(fields.map((field) => [field, metrics[field]])), {
-    actualBoundingBoxAscent: 0,
+    actualBoundingBoxAscent: -0,
     actualBoundingBoxDescent: 0,
     actualBoundingBoxLeft: 0,
     actualBoundingBoxRight: 0,
-    fontBoundingBoxAscent: 0,
-    fontBoundingBoxDescent: 0,
-    alphabeticBaseline: 0,
-    emHeightAscent: 0,
-    emHeightDescent: 0,
+    fontBoundingBoxAscent: 49,
+    fontBoundingBoxDescent: 14,
+    alphabeticBaseline: -0,
+    emHeightAscent: 39.078125,
+    emHeightDescent: 10.921875,
     width: 0,
   })
 })
