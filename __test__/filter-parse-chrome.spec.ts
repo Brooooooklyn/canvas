@@ -568,8 +568,9 @@ test('ch in ctx.filter is the advance of "0" in ctx.font', (t) => {
 // Chrome 155 OffscreenCanvas resolves a drop-shadow() color with the
 // filter's own lengths, so ex, ch, cap and their root forms come from the
 // canvas font when the filter is set (filter_operation_resolver.cc:285-297,
-// style_builder_converter.cc:2721-2724); ic is 1em, em and rem 16px, lh 0.
-// Lato is the registered test font (a FontFace in the Chrome probe).
+// style_builder_converter.cc:2721-2724); ic is 1em for Lato, which has no
+// U+6C34, em and rem 16px, lh 0. Lato is the registered test font (a
+// FontFace in the Chrome probe).
 test('font-relative units in a drop-shadow() color use the canvas font', (t) => {
   GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'Lato-Regular.ttf'), 'Lato')
   // The shadow pixel of a 20x20 blue rect.
@@ -628,4 +629,123 @@ test('font-relative units in a drop-shadow() color use the canvas font', (t) => 
   t.true(ex('40px Lato')[0] > ex('20px Lato')[0])
   t.deepEqual(exAfter, ex('20px Lato'))
   t.deepEqual(rex, ex('20px Lato'))
+})
+
+// Chrome 155 OffscreenCanvas: ic and ric are the advance of U+6C34 in the
+// primary font of ctx.font when the filter is set. That is the first family
+// of the list that exists, whether or not it has the glyph; when it has none,
+// ic and ric are em and rem, 16px (FontSizes::Ic and Ric,
+// css_to_length_conversion_data.cc:139-167; font_fallback_list.cc:88-195).
+// HYXiXingKaiW and Source Han Serif CN have U+6C34 one em wide, Lato has
+// none. All three are FontFaces in the Chrome probe.
+test('ic in ctx.filter is the U+6C34 advance of the first font of ctx.font', (t) => {
+  const fonts = join(__dirname, 'fonts')
+  GlobalFonts.registerFromPath(join(fonts, 'Lato-Regular.ttf'), 'Lato')
+  GlobalFonts.registerFromPath(join(fonts, 'HYXiXingKaiW.ttf'), 'HYXiXingKaiW')
+  GlobalFonts.registerFromPath(join(fonts, 'SourceHanSerifCN-Bold.ttf'), 'Source Han Serif CN')
+  const setUp = (filter: string, font: string, fontAfter?: string) => {
+    const ctx = createCanvas(160, 40).getContext('2d')
+    ctx.font = font
+    ctx.filter = filter
+    if (fontAfter) ctx.font = fontAfter
+    t.is(ctx.filter, filter)
+    ctx.fillStyle = 'rgb(0 0 255)'
+    return ctx
+  }
+  // The shadow pixel of a 20x20 blue rect, 20px to the right.
+  const shadowPixel = (filter: string, font: string, fontAfter?: string) => {
+    const ctx = setUp(filter, font, fontAfter)
+    ctx.fillRect(10, 10, 20, 20)
+    return px(ctx, 40, 20)
+  }
+  // Where the shadow of a 4px wide rect at x = 0 starts.
+  const shadowStart = (filter: string, font: string, fontAfter?: string) => {
+    const ctx = setUp(filter, font, fontAfter)
+    ctx.fillRect(0, 10, 4, 20)
+    const row = ctx.getImageData(0, 20, 160, 1).data
+    const x = row.findIndex((v, i) => i % 4 === 0 && v > 0) / 4
+    t.deepEqual(
+      [...row.slice(x * 4, x * 4 + 12)].filter((_, i) => i % 4 === 0),
+      [255, 255, 255],
+      filter,
+    )
+    return x
+  }
+  const red = (r: number) => [r, 0, 0, 255]
+  const color = (unit: string) => `drop-shadow(20px 0 0 rgb(calc(10${unit} / 1px) 0 0))`
+  const colors: [string, number][] = [
+    ['20px HYXiXingKaiW', 200],
+    ['40px HYXiXingKaiW', 255],
+    ['13.5px HYXiXingKaiW', 135],
+    ['bold 20px HYXiXingKaiW', 200],
+    ['italic 20px HYXiXingKaiW', 200],
+    ['20px "Source Han Serif CN"', 200],
+    ['40px "Source Han Serif CN"', 255],
+    ['bold 20px "Source Han Serif CN"', 200],
+    ['20px Lato', 160],
+    ['40px Lato', 160],
+    // The first family exists and has no U+6C34: the next one is not read.
+    ['20px Lato, HYXiXingKaiW', 160],
+    ['20px HYXiXingKaiW, Lato', 200],
+    // A family that does not exist is skipped.
+    ['20px NoSuchFontXyz, HYXiXingKaiW', 200],
+    ['20px NoSuchFontXyz, Lato', 160],
+  ]
+  for (const [font, r] of colors) {
+    t.deepEqual(shadowPixel(color('ic'), font), red(r), font)
+    t.deepEqual(shadowPixel(color('ric'), font), red(r), font)
+  }
+  // Read when the filter is set, not when it draws.
+  t.deepEqual(shadowPixel(color('ic'), '20px HYXiXingKaiW', '40px HYXiXingKaiW'), red(200))
+  t.deepEqual(shadowPixel(color('ic'), '20px HYXiXingKaiW', '20px Lato'), red(200))
+  t.deepEqual(shadowPixel(color('ic'), '20px Lato', '20px HYXiXingKaiW'), red(160))
+  const kai = '20px HYXiXingKaiW'
+  const shadow = (c: string) => `drop-shadow(20px 0 0 ${c})`
+  t.deepEqual(shadowPixel(shadow('rgb(calc(10ic / 1px) calc(5ric / 1px) 0)'), kai), [200, 100, 0, 255])
+  t.deepEqual(shadowPixel(shadow('rgb(calc((1ic + 1em) / 1px * 4) 0 0)'), kai), red(144))
+  // Unhinted: exactly 1em, 13.5px at 13.5px.
+  t.deepEqual(shadowPixel(shadow('rgb(calc((1ic - 13px) / 1px * 500) 0 0)'), '13.5px HYXiXingKaiW'), red(250))
+  t.deepEqual(shadowPixel(shadow('rgb(calc((1ic - 19.9px) / 1px * 1000) 0 0)'), kai), red(100))
+  t.deepEqual(shadowPixel(shadow('rgb(calc((20.1px - 1ic) / 1px * 1000) 0 0)'), kai), red(100))
+  t.deepEqual(shadowPixel(shadow('rgb(calc((1ic - 15.9px) / 1px * 1000) 0 0)'), '20px Lato'), red(100))
+  t.deepEqual(shadowPixel(shadow('rgb(calc((16.1px - 1ic) / 1px * 1000) 0 0)'), '20px Lato'), red(100))
+
+  // ic as a length.
+  const starts: [string, string, number, string?][] = [
+    ['drop-shadow(1ic 0 0 red)', kai, 20],
+    ['drop-shadow(1ic 0 0 red)', '40px HYXiXingKaiW', 40],
+    ['drop-shadow(0.5ric 0 0 red)', '40px HYXiXingKaiW', 20],
+    ['drop-shadow(2ic 0 0 red)', '20px "Source Han Serif CN"', 40],
+    ['drop-shadow(calc(1ic + 1ric) 0 0 red)', kai, 40],
+    ['drop-shadow(1ic 0 0 red)', '20px Lato', 16],
+    ['drop-shadow(1ic 0 0 red)', '20px Lato, HYXiXingKaiW', 16],
+    ['drop-shadow(1ic 0 0 red)', '20px NoSuchFontXyz, HYXiXingKaiW', 20],
+    ['blur(calc(1ic - 20px)) drop-shadow(1ic 0 0 red)', kai, 20],
+    ['drop-shadow(1ic 0 0 red)', kai, 20, '40px HYXiXingKaiW'],
+    ['drop-shadow(1ic 0 0 red)', '20px Lato', 16, '40px HYXiXingKaiW'],
+  ]
+  for (const [filter, font, x, fontAfter] of starts) {
+    t.is(shadowStart(filter, font, fontAfter), x, `${font} ${filter}`)
+  }
+
+  // macOS system fonts, measured on this Mac's Chrome 155. Apple SD Gothic
+  // Neo's U+6C34 is 0.865em wide.
+  if (process.platform === 'darwin') {
+    for (const [font, r] of [
+      ['20px "Hiragino Sans"', 200],
+      ['40px "Hiragino Sans"', 255],
+      ['20px "Hiragino Sans GB"', 200],
+      ['20px "Apple SD Gothic Neo"', 173],
+      ['20px Lato, "Hiragino Sans"', 160],
+      ['20px "Hiragino Sans", Lato', 200],
+      ['20px NoSuchFontXyz, "Hiragino Sans"', 200],
+    ] as const) {
+      t.deepEqual(shadowPixel(color('ic'), font), red(r), font)
+      t.deepEqual(shadowPixel(color('ric'), font), red(r), font)
+    }
+    t.deepEqual(shadowPixel(shadow('rgb(calc((1ic - 17px) / 1px * 500) 0 0)'), '20px "Apple SD Gothic Neo"'), red(150))
+    t.is(shadowStart('drop-shadow(1ic 0 0 red)', '20px "Hiragino Sans"'), 20)
+    t.is(shadowStart('drop-shadow(1ic 0 0 red)', '20px "Apple SD Gothic Neo"'), 17)
+    t.is(shadowStart('drop-shadow(1ic 0 0 red)', '40px "Apple SD Gothic Neo"'), 34)
+  }
 })

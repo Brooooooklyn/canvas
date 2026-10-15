@@ -91,8 +91,8 @@ enum FilterFunction {
     std_deviation: Option<Arg>,
     /// Resolved as it was parsed, against the lengths `parse_filter` got.
     color: Color,
-    /// The color has a font-metric unit, at any depth.
-    color_reads_font: bool,
+    /// The font-metric units the color has, at any depth.
+    color_reads: FontReads,
   },
 }
 
@@ -100,13 +100,45 @@ enum FilterFunction {
 #[derive(Clone, Debug)]
 pub(crate) struct ParsedFilter(Vec<FilterFunction>);
 
-/// The units a canvas filter reads from the canvas font: Blink's FontSizes
-/// with `font_for_filter_` (css_to_length_conversion_data.cc:101-195).
-fn is_font_metric_unit(unit: Unit) -> bool {
-  matches!(
-    unit,
-    Unit::Ex | Unit::Rex | Unit::Ch | Unit::Rch | Unit::Ic | Unit::Ric | Unit::Cap | Unit::Rcap
-  )
+/// What a filter reads from the canvas font, so that set_filter measures
+/// only that: the units of Blink's FontSizes with `font_for_filter_`
+/// (css_to_length_conversion_data.cc:101-195).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct FontReads {
+  /// ex, ch, cap and their root forms: the "x" and "0" glyphs.
+  pub(crate) glyphs: bool,
+  /// ic and ric: the U+6C34 glyph.
+  pub(crate) ideographic: bool,
+}
+
+impl FontReads {
+  fn of_unit(unit: Unit) -> Self {
+    Self {
+      glyphs: matches!(
+        unit,
+        Unit::Ex | Unit::Rex | Unit::Ch | Unit::Rch | Unit::Cap | Unit::Rcap
+      ),
+      ideographic: matches!(unit, Unit::Ic | Unit::Ric),
+    }
+  }
+
+  fn of_arg(arg: &Arg) -> Self {
+    Self {
+      glyphs: arg.any_unit(&|u| Self::of_unit(u).glyphs),
+      ideographic: arg.any_unit(&|u| Self::of_unit(u).ideographic),
+    }
+  }
+
+  fn union(self, other: Self) -> Self {
+    Self {
+      glyphs: self.glyphs || other.glyphs,
+      ideographic: self.ideographic || other.ideographic,
+    }
+  }
+
+  pub(crate) fn any(self) -> bool {
+    self.glyphs || self.ideographic
+  }
 }
 
 /// kOffScreenCanvasEmFontSize / kOffScreenCanvasRemFontSize.
@@ -120,14 +152,18 @@ pub(crate) struct FontUnits {
   /// The advance of "0".
   pub(crate) zero_width: f64,
   pub(crate) cap_height: f64,
+  /// The advance of U+6C34 in the primary font, or None when that font has
+  /// no such glyph (then ic is 1em).
+  pub(crate) ideographic_advance: Option<f64>,
 }
 
 /// CSSToLengthConversionData of CreateOffscreenFilterOperations: em and rem
 /// 16px, no viewport, no container, no line height (lh is 0), and the
-/// canvas font for ex, ch and cap. `ic` is 1em: Blink measures it on the
-/// first font of the family list that has U+6C34, which we do not look for.
+/// canvas font for ex, ch, cap and ic. FontSizes::Ic and Ric fall back to
+/// em and rem, both 16px here (css_to_length_conversion_data.cc:139-167).
 pub(crate) fn filter_lengths(font: FontUnits) -> Lengths {
   let ex = font.x_height.unwrap_or(OFFSCREEN_EM / 2.0);
+  let ic = font.ideographic_advance.unwrap_or(OFFSCREEN_EM);
   Lengths {
     em: OFFSCREEN_EM,
     rem: OFFSCREEN_EM,
@@ -135,8 +171,8 @@ pub(crate) fn filter_lengths(font: FontUnits) -> Lengths {
     rex: ex,
     ch: font.zero_width,
     rch: font.zero_width,
-    ic: OFFSCREEN_EM,
-    ric: OFFSCREEN_EM,
+    ic,
+    ric: ic,
     cap: font.cap_height,
     rcap: font.cap_height,
     lh: 0.0,
@@ -249,40 +285,40 @@ fn consume_angle(p: &mut Parser<'_>) -> Option<Arg> {
   .or_else(|| consume_math(p, false, Category::Angle))
 }
 
-/// Whether a dimension anywhere in `p`, inside functions and blocks too, has
-/// a font-metric unit. Reads `p` to its end.
-fn has_font_metric_unit(p: &mut Parser<'_>) -> bool {
-  let mut found = false;
+/// The font-metric units of the dimensions anywhere in `p`, inside functions
+/// and blocks too. Reads `p` to its end.
+fn font_reads_of_tokens(p: &mut Parser<'_>) -> FontReads {
+  let mut reads = FontReads::default();
   while let Some((token, source)) = css_math::next_token(p) {
     match token {
       Token::Dimension { .. } => {
-        found |= matches!(
-          css_math::numeric_token(&token, source),
-          Some((_, Some(unit))) if is_font_metric_unit(unit)
-        );
+        if let Some((_, Some(unit))) = css_math::numeric_token(&token, source) {
+          reads = reads.union(FontReads::of_unit(unit));
+        }
       }
       Token::Function(_)
       | Token::ParenthesisBlock
       | Token::SquareBracketBlock
       | Token::CurlyBracketBlock => {
-        found |= nested(p, |q| Some(has_font_metric_unit(q))).unwrap_or(false);
+        let nested_reads = nested(p, |q| Some(font_reads_of_tokens(q)));
+        reads = reads.union(nested_reads.unwrap_or_default());
       }
       _ => {}
     }
   }
-  found
+  reads
 }
 
 /// A drop-shadow() `<color>` read from `p`, resolved against `lengths`, and
-/// whether it has a font-metric unit (then `lengths` must have the font's).
-fn consume_shadow_color(p: &mut Parser<'_>, lengths: &Lengths) -> Option<(Color, bool)> {
+/// the font-metric units it has (then `lengths` must have the font's).
+fn consume_shadow_color(p: &mut Parser<'_>, lengths: &Lengths) -> Option<(Color, FontReads)> {
   let start = p.position();
   let color = color::consume_filter_color(p, lengths)?;
   // The color's own tokens, read again. The color parser's limits bound
   // their nesting.
   let mut tokens = Parser::new(p.slice_from(start));
   tokens.set_nested_block_limit(0);
-  Some((color, has_font_metric_unit(&mut tokens)))
+  Some((color, font_reads_of_tokens(&mut tokens)))
 }
 
 /// ParseSingleShadow with inset and spread forbidden: a color before or
@@ -300,13 +336,13 @@ fn consume_drop_shadow(p: &mut Parser<'_>, lengths: &Lengths) -> Option<FilterFu
   }
   // No color is currentcolor, black in a canvas filter (product decision:
   // OffscreenCanvas behaviour, no taint).
-  let (color, color_reads_font) = color.unwrap_or((Color::BLACK, false));
+  let (color, color_reads) = color.unwrap_or((Color::BLACK, FontReads::default()));
   Some(FilterFunction::DropShadow {
     x,
     y,
     std_deviation,
     color,
-    color_reads_font,
+    color_reads,
   })
 }
 
@@ -485,26 +521,32 @@ impl Arg {
 }
 
 impl ParsedFilter {
-  /// Whether resolving reads the canvas font (ex, ch, ic, cap and their
-  /// root forms), so the caller measures it only then. A drop-shadow() color
-  /// that does was resolved while it parsed, so it needs a parse with the
+  /// What resolving reads from the canvas font (ex, ch, ic, cap and their
+  /// root forms), so the caller measures only that. A drop-shadow() color
+  /// that reads it was resolved while it parsed, so it needs a parse with the
   /// font's lengths.
-  pub(crate) fn uses_font_metrics(&self) -> bool {
-    let font = &is_font_metric_unit;
-    let uses = |arg: &Option<Arg>| arg.as_ref().is_some_and(|a| a.any_unit(font));
-    self.0.iter().any(|f| match f {
-      FilterFunction::Url => false,
-      FilterFunction::Blur(arg)
-      | FilterFunction::Amount(_, arg)
-      | FilterFunction::HueRotate(arg) => uses(arg),
-      FilterFunction::DropShadow {
-        x,
-        y,
-        std_deviation,
-        color_reads_font,
-        ..
-      } => *color_reads_font || x.any_unit(font) || y.any_unit(font) || uses(std_deviation),
-    })
+  pub(crate) fn font_reads(&self) -> FontReads {
+    let of = |arg: &Option<Arg>| arg.as_ref().map(FontReads::of_arg).unwrap_or_default();
+    self
+      .0
+      .iter()
+      .map(|f| match f {
+        FilterFunction::Url => FontReads::default(),
+        FilterFunction::Blur(arg)
+        | FilterFunction::Amount(_, arg)
+        | FilterFunction::HueRotate(arg) => of(arg),
+        FilterFunction::DropShadow {
+          x,
+          y,
+          std_deviation,
+          color_reads,
+          ..
+        } => color_reads
+          .union(FontReads::of_arg(x))
+          .union(FontReads::of_arg(y))
+          .union(of(std_deviation)),
+      })
+      .fold(FontReads::default(), FontReads::union)
   }
 
   /// CreateOffscreenFilterOperations: url() items are skipped.
@@ -721,13 +763,14 @@ pub(crate) fn css_filters_to_image_filter(filters: Vec<CssFilter>) -> Option<Ima
 mod tests {
   use super::*;
 
-  /// The lengths of a 10px font whose x-height is 5, "0" 6 wide and cap
-  /// height 7.
+  /// The lengths of a 10px font whose x-height is 5, "0" 6 wide, cap
+  /// height 7 and U+6C34 9 wide.
   fn lengths() -> Lengths {
     filter_lengths(FontUnits {
       x_height: Some(5.0),
       zero_width: 6.0,
       cap_height: 7.0,
+      ideographic_advance: Some(9.0),
     })
   }
 
@@ -831,7 +874,8 @@ mod tests {
     assert_eq!(one("blur(2ex)"), CssFilter::Blur(10.0));
     assert_eq!(one("blur(2ch)"), CssFilter::Blur(12.0));
     assert_eq!(one("blur(1cap)"), CssFilter::Blur(7.0));
-    assert_eq!(one("blur(1ic)"), CssFilter::Blur(16.0));
+    assert_eq!(one("blur(1ic)"), CssFilter::Blur(9.0));
+    assert_eq!(one("blur(2ric)"), CssFilter::Blur(18.0));
     assert_eq!(one("blur(1lh)"), CssFilter::Blur(0.0));
     assert_eq!(one("grayscale()"), CssFilter::Grayscale(1.0));
     assert_eq!(one("grayscale(2)"), CssFilter::Grayscale(1.0));
@@ -904,36 +948,75 @@ mod tests {
 
   #[test]
   fn font_metric_units_are_flagged() {
-    for (input, uses) in [
-      ("blur(1px)", false),
-      ("blur(1em)", false),
-      ("blur(1ex)", true),
-      ("drop-shadow(calc(1px + 1ch) 0)", true),
-      ("drop-shadow(0 0 1rcap)", true),
-      ("opacity(1) url(#x)", false),
+    const NONE: FontReads = FontReads {
+      glyphs: false,
+      ideographic: false,
+    };
+    const GLYPHS: FontReads = FontReads {
+      glyphs: true,
+      ideographic: false,
+    };
+    const IC: FontReads = FontReads {
+      glyphs: false,
+      ideographic: true,
+    };
+    const BOTH: FontReads = FontReads {
+      glyphs: true,
+      ideographic: true,
+    };
+    for (input, reads) in [
+      ("blur(1px)", NONE),
+      ("blur(1em)", NONE),
+      ("blur(1ex)", GLYPHS),
+      ("blur(1ic)", IC),
+      ("hue-rotate(0) blur(calc(1ric + 1px))", IC),
+      ("drop-shadow(calc(1px + 1ch) 0)", GLYPHS),
+      ("drop-shadow(0 0 1rcap)", GLYPHS),
+      ("drop-shadow(1ic 1ex)", BOTH),
+      ("blur(1ic) drop-shadow(0 0 1rch)", BOTH),
+      ("opacity(1) url(#x)", NONE),
       // A drop-shadow() color, at any depth, before or after the lengths.
-      ("drop-shadow(1px 1px rgb(calc(1ex / 1px) 0 0))", true),
-      ("drop-shadow(rgb(calc(1ric / 1px) 0 0) 1px 1px)", true),
+      ("drop-shadow(1px 1px rgb(calc(1ex / 1px) 0 0))", GLYPHS),
+      ("drop-shadow(rgb(calc(1ric / 1px) 0 0) 1px 1px)", IC),
+      (
+        "drop-shadow(1px 1px rgb(calc(1ic / 1px) calc(1ch / 1px) 0))",
+        BOTH,
+      ),
       (
         "drop-shadow(1px 1px color-mix(in srgb, rgb(0 calc((1px + 1cap) / 1px) 0), red))",
-        true,
+        GLYPHS,
+      ),
+      (
+        "drop-shadow(1px 1px color-mix(in srgb, rgb(0 calc((1px + 1IC) / 1px) 0), red))",
+        IC,
       ),
       (
         "drop-shadow(1px 1px rgb(from red calc(1rch / 1px) g b))",
-        true,
+        GLYPHS,
       ),
-      ("drop-shadow(1px 1px rgb(calc(1\\63 h / 1px) 0 0))", true),
-      ("drop-shadow(1px 1px rgb(calc(1em / 1px) 0 0))", false),
-      ("drop-shadow(rgb(calc(1lh / 1px) 0 0) 1px 1ch)", true),
-      ("drop-shadow(rgb(calc(1lh / 1px) 0 0) 1px 1px)", false),
+      ("drop-shadow(1px 1px rgb(calc(1\\63 h / 1px) 0 0))", GLYPHS),
+      ("drop-shadow(1px 1px rgb(calc(1\\69 c / 1px) 0 0))", IC),
+      ("drop-shadow(1px 1px rgb(calc(1em / 1px) 0 0))", NONE),
+      ("drop-shadow(rgb(calc(1lh / 1px) 0 0) 1px 1ch)", GLYPHS),
+      ("drop-shadow(rgb(calc(1lh / 1px) 0 0) 1px 1px)", NONE),
+      ("drop-shadow(rgb(calc(1ric / 1px) 0 0) 1px 1ch)", BOTH),
     ] {
-      assert_eq!(parse(input).unwrap().uses_font_metrics(), uses, "{input}");
+      let got = parse(input).unwrap().font_reads();
+      assert_eq!(got, reads, "{input}");
+      assert_eq!(got.any(), reads != NONE, "{input}");
     }
-    // A font without an x-height: ex is 0.5em.
+    // A font without an x-height: ex is 0.5em. A primary font without
+    // U+6C34: ic and ric are em and rem, 16px.
     let lengths = filter_lengths(FontUnits::default());
     assert_eq!(
-      parse("blur(1ex)").unwrap().resolve(&lengths),
-      vec![CssFilter::Blur(8.0)]
+      parse("blur(1ex) blur(1ic) blur(1ric)")
+        .unwrap()
+        .resolve(&lengths),
+      vec![
+        CssFilter::Blur(8.0),
+        CssFilter::Blur(16.0),
+        CssFilter::Blur(16.0)
+      ]
     );
   }
 
@@ -956,7 +1039,11 @@ mod tests {
       ),
       (
         "drop-shadow(20px 0 0 rgb(calc(10ic / 1px) 0 0))",
-        0xffa00000,
+        0xff5a0000,
+      ),
+      (
+        "drop-shadow(20px 0 0 rgb(calc(10ric / 1px) 0 0))",
+        0xff5a0000,
       ),
       (
         "drop-shadow(rgb(calc(10rch / 1px) 0 0) 20px 0 0)",

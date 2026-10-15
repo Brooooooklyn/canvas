@@ -4612,6 +4612,62 @@ void skiac_font_collection_destroy(skiac_font_collection* c_font_collection) {
   delete c_font_collection;
 }
 
+// The advance of U+6C34 in the primary face of a font, for the ic unit:
+// Blink's FontSizes::Ic (css_to_length_conversion_data.cc:139-152) reads
+// Font::PrimaryFontWithCjkWater(), the first font of the family list that
+// exists, whether or not it has the glyph (font_fallback_list.cc:88-195; only
+// a unicode-range face is skipped), and SimpleFontData::IdeographicInlineSize,
+// the unshaped advance of that glyph (simple_font_data.cc:437-474). Our
+// primary face is the first that text layout tries: findTypefaces() with the
+// same families, style and variations, the default family when none exists.
+// False when that face has no such glyph; ic is then 1em.
+bool skiac_font_collection_ideographic_advance(
+    skiac_font_collection* c_collection,
+    float font_size,
+    int weight,
+    int stretch,
+    float stretch_width,
+    int slant,
+    const char* font_family,
+    const skiac_font_variation* variations,
+    int variations_count,
+    float* advance) {
+  c_collection->flushCachesIfDirty();
+  skia_private::TArray<SkString> families;
+  SkStrSplit(font_family, ",", &families);
+  std::vector<SkString> families_vec(families.begin(), families.end());
+  std::vector<SkFontArguments::VariationPosition::Coordinate> coords;
+  for (int i = 0; i < variations_count; i++) {
+    coords.push_back({variations[i].tag, variations[i].value});
+  }
+  if (stretch_width != 100.0f) {
+    coords.push_back({SkSetFourByteTag('w', 'd', 't', 'h'), stretch_width});
+  }
+  std::optional<FontArguments> font_args;
+  if (!coords.empty()) {
+    SkFontArguments args;
+    args.setVariationDesignPosition(
+        {coords.data(), static_cast<int>(coords.size())});
+    font_args.emplace(args);
+  }
+  auto typefaces = c_collection->collection->findTypefaces(
+      families_vec, SkFontStyle(weight, stretch, (SkFontStyle::Slant)slant),
+      font_args);
+  if (typefaces.empty()) {
+    return false;
+  }
+  SkFont font(typefaces[0], font_size);
+  // Blink's font has subpixel positioning, so the advance is unhinted.
+  font.setSubpixel(true);
+  font.setLinearMetrics(true);
+  auto glyph = font.unicharToGlyph(0x6C34);
+  if (glyph == 0) {
+    return false;
+  }
+  *advance = font.getWidth(glyph);
+  return true;
+}
+
 // Variable Fonts
 int skiac_typeface_get_variation_design_position(
     skiac_font_collection* c_font_collection,

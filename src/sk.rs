@@ -1270,6 +1270,19 @@ pub mod ffi {
 
     pub fn skiac_font_collection_destroy(c_font_collection: *mut skiac_font_collection);
 
+    pub fn skiac_font_collection_ideographic_advance(
+      c_collection: *mut skiac_font_collection,
+      font_size: f32,
+      weight: i32,
+      stretch: i32,
+      stretch_width: f32,
+      slant: i32,
+      font_family: *const c_char,
+      variations: *const skiac_font_variation,
+      variations_count: i32,
+      advance: *mut f32,
+    ) -> bool;
+
     // Variable Fonts
     pub fn skiac_typeface_get_variation_design_position(
       c_font_collection: *mut skiac_font_collection,
@@ -5415,6 +5428,38 @@ impl FontCollection {
     let family = CString::new(family).unwrap();
     let alias_name = CString::new(alias_name).unwrap();
     unsafe { ffi::skiac_font_collection_set_alias(self.0, family.as_ptr(), alias_name.as_ptr()) }
+  }
+
+  /// The advance of U+6C34 in the primary face of this font (the first
+  /// family of `font_family` that exists), or None when that face has no
+  /// such glyph. Blink's ideographic advance, for the ic unit.
+  pub fn ideographic_advance(
+    &self,
+    font_size: f32,
+    weight: u32,
+    stretch: i32,
+    stretch_width: f32,
+    slant: FontStyle,
+    font_family: &str,
+    variations: &[FontVariation],
+  ) -> Option<f32> {
+    let c_font_family = CString::new(font_family).ok()?;
+    let mut advance = 0.0;
+    unsafe {
+      ffi::skiac_font_collection_ideographic_advance(
+        self.0,
+        font_size,
+        weight as i32,
+        stretch,
+        stretch_width,
+        slant as i32,
+        c_font_family.as_ptr(),
+        variations.as_ptr() as *const ffi::skiac_font_variation,
+        variations.len() as i32,
+        &mut advance,
+      )
+    }
+    .then_some(advance)
   }
 
   pub fn get_variation_axes(

@@ -21,7 +21,7 @@ use crate::{
   avif::Config,
   color::{self, Color},
   error::SkError,
-  filter::{FontUnits, css_filters_to_image_filter, filter_lengths, parse_filter},
+  filter::{FontReads, FontUnits, css_filters_to_image_filter, filter_lengths, parse_filter},
   font::Font,
   gradient::{CanvasGradient, Gradient, SharedGradient},
   image::*,
@@ -2379,8 +2379,9 @@ impl Context {
     let Some(mut parsed) = parse_filter(filter_str, &lengths) else {
       return Ok(());
     };
-    if parsed.uses_font_metrics() {
-      lengths = filter_lengths(self.filter_font_units());
+    let reads = parsed.font_reads();
+    if reads.any() {
+      lengths = filter_lengths(self.filter_font_units(reads));
       // A drop-shadow() color resolved while it parsed: parse again, with the
       // font's lengths.
       if let Some(reparsed) = parse_filter(filter_str, &lengths) {
@@ -2402,12 +2403,13 @@ impl Context {
     Ok(())
   }
 
-  /// The canvas font's x-height, "0" advance and cap height for the
-  /// font-metric units of a filter (Blink's FontSizes::Ex, Ch and Cap,
-  /// css_to_length_conversion_data.cc:101-195). On Apple platforms Blink
-  /// takes the x-height from the top of the "x" glyph, elsewhere from the
-  /// font's own value; a font without one gives None.
-  fn filter_font_units(&mut self) -> FontUnits {
+  /// The canvas font's x-height, "0" advance, cap height and U+6C34 advance
+  /// for the font-metric units of a filter (Blink's FontSizes::Ex, Ch, Cap
+  /// and Ic, css_to_length_conversion_data.cc:101-195), each measured only
+  /// when `reads` asks for it. On Apple platforms Blink takes the x-height
+  /// from the top of the "x" glyph, elsewhere from the font's own value; a
+  /// font without one gives None.
+  fn filter_font_units(&mut self, reads: FontReads) -> FontUnits {
     let measure = |ctx: &mut Self, text: &str| {
       let state = &ctx.state;
       let paint = Paint::default();
@@ -2439,21 +2441,39 @@ impl Context {
         )
         .ok()
     };
-    let x = measure(self, "x").unwrap_or_default();
-    let zero = measure(self, "0").unwrap_or_default();
-    let x_height = if x.x_height == 0.0 {
-      None
-    } else if cfg!(target_vendor = "apple") {
-      // `ascent` is actualBoundingBoxAscent at the alphabetic baseline.
-      Some(x.ascent as f64)
-    } else {
-      Some(x.x_height as f64)
-    };
-    FontUnits {
-      x_height,
-      zero_width: zero.width as f64,
-      cap_height: x.cap_height as f64,
+    let mut units = FontUnits::default();
+    if reads.glyphs {
+      let x = measure(self, "x").unwrap_or_default();
+      let zero = measure(self, "0").unwrap_or_default();
+      units.x_height = if x.x_height == 0.0 {
+        None
+      } else if cfg!(target_vendor = "apple") {
+        // `ascent` is actualBoundingBoxAscent at the alphabetic baseline.
+        Some(x.ascent as f64)
+      } else {
+        Some(x.x_height as f64)
+      };
+      units.zero_width = zero.width as f64;
+      units.cap_height = x.cap_height as f64;
     }
+    if reads.ideographic {
+      let state = &self.state;
+      units.ideographic_advance = get_font()
+        .ok()
+        .and_then(|font| {
+          font.ideographic_advance(
+            state.font_style.size,
+            state.font_style.weight,
+            state.font_stretch as i32,
+            state.font_stretch.to_width_percentage(),
+            state.font_style.style,
+            &state.font_style.family,
+            &state.font_variations,
+          )
+        })
+        .map(f64::from);
+    }
+    units
   }
 
   pub fn get_font(&self) -> &str {
