@@ -351,6 +351,7 @@ impl<'c> CanvasElement<'c> {
       self.ctx.context.width,
       self.ctx.context.height,
       false,
+      false,
     )
     .map_err(|detail| node_encode_error(ty, detail, true))?
     .into_buffer_slice(env)
@@ -620,7 +621,7 @@ impl Task for AsyncDataUrl {
     let Some(image) = &self.image else {
       return Ok("data:,".to_owned());
     };
-    let Ok(data) = encode_image(image, &self.encoding, self.width, self.height, false) else {
+    let Ok(data) = encode_image(image, &self.encoding, self.width, self.height, false, true) else {
       return Ok("data:,".to_owned());
     };
     let mut output = format!("data:{};base64,", self.encoding.image_type().mime());
@@ -660,7 +661,7 @@ impl<'env> ScopedTask<'env> for AsyncBlob {
     let Some(image) = &self.image else {
       return Ok(None);
     };
-    Ok(encode_image(image, &self.encoding, self.width, self.height, true).ok())
+    Ok(encode_image(image, &self.encoding, self.width, self.height, true, false).ok())
   }
 
   fn resolve(&mut self, env: &'env Env, output: Self::Output) -> Result<Self::JsValue> {
