@@ -41,6 +41,7 @@ mod avif;
 mod avif_yuv;
 mod color;
 mod ctx;
+mod data_url;
 mod encoding;
 mod error;
 mod filter;

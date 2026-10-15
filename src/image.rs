@@ -3,10 +3,10 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::{borrow::Cow, ptr, str, str::FromStr};
 
-use base64_simd::STANDARD;
 use napi::{JsString, JsStringUtf8, ScopedTask, bindgen_prelude::*};
 
 use crate::avif::AvifImage;
+use crate::data_url;
 use crate::error::SkError;
 use crate::global_fonts::get_font;
 use crate::sk::{AccountedBitmap, AlphaType, Bitmap, ColorSpace, ColorType, try_zeroed_bytes};
@@ -990,7 +990,9 @@ impl Image {
       let is_raster = libavif::is_avif(buffer_data)
         || infer::get(buffer_data)
           .is_some_and(|kind| kind.matcher_type() == infer::MatcherType::Image);
-      let is_svg = !is_raster && is_svg_image(buffer_data, length);
+      // A data: URL in a Buffer is parsed (and decoded) by the async path.
+      let is_svg =
+        !is_raster && !data_url::is_data_url(buffer_data) && is_svg_image(buffer_data, length);
       // Try to extract dimensions from image header using imagesize (fast, no full decode)
       let (img_width, img_height, is_valid_image) = if is_svg {
         // For SVG, we'll get dimensions after decode; for invalid images, we'll error
@@ -1547,7 +1549,7 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
     let data_ref = match self.data.as_ref() {
       Some(Either::A(data)) => Cow::Borrowed(data.as_ref()),
       Some(Either::B(path_or_svg)) => {
-        if path_or_svg.starts_with("data:") {
+        if data_url::is_data_url(path_or_svg.as_bytes()) {
           Cow::Borrowed(path_or_svg.as_bytes())
         } else {
           match std::fs::read(path_or_svg) {
@@ -1572,38 +1574,27 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
         });
       }
     };
+    // A data: URL (a string, or bytes) holds the image in its body. Chrome
+    // decodes it as SVG only when its MIME type is image/svg+xml; any other
+    // type is sniffed as a raster image, so an SVG body fails there.
+    let (data_ref, svg_only, raster_only) = match data_url::parse(&data_ref) {
+      None => (data_ref, false, false),
+      Some(Err(())) => {
+        return Ok(DecodedBitmap {
+          bitmap: DecodeStatus::InvalidImage,
+          width: self.width,
+          height: self.height,
+        });
+      }
+      Some(Ok(url)) => {
+        let svg = url.essence == "image/svg+xml";
+        (Cow::Owned(url.body), svg, !svg)
+      }
+    };
     let length = data_ref.len();
     let mut width = self.width;
     let mut height = self.height;
-    let bitmap = if data_ref.as_ref().starts_with(b"data:") {
-      let data_str = str::from_utf8(&data_ref)
-        .map_err(|e| Error::new(Status::InvalidArg, format!("Decode data url failed {e}")))?;
-      if let Some(base64_str) = data_str.split(',').next_back() {
-        let image_binary = STANDARD
-          .decode_to_vec(base64_str)
-          .map_err(|e| Error::new(Status::InvalidArg, format!("Decode data url failed {e}")))?;
-        if let Some(kind) = infer::get(&image_binary) {
-          if kind.matcher_type() == infer::MatcherType::Image {
-            if let Some(bitmap) =
-              Bitmap::from_buffer(image_binary.as_ptr().cast_mut(), image_binary.len())
-            {
-              DecodeStatus::Ok(BitmapInfo {
-                data: bitmap,
-                is_svg: false,
-              })
-            } else {
-              DecodeStatus::InvalidImage
-            }
-          } else {
-            DecodeStatus::InvalidImage
-          }
-        } else {
-          DecodeStatus::InvalidImage
-        }
-      } else {
-        DecodeStatus::Empty
-      }
-    } else if libavif::is_avif(data_ref.as_ref()) {
+    let bitmap = if !svg_only && libavif::is_avif(data_ref.as_ref()) {
       // Check AVIF first - infer::get() may not recognize AVIF format
       let mut avif_image = AvifImage::decode_from(data_ref.as_ref())
         .map_err(|e| Error::new(Status::InvalidArg, format!("Decode avif image failed {e}")))?;
@@ -1643,11 +1634,9 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
         // invalid image rather than an empty bitmap.
         None => DecodeStatus::InvalidImage,
       }
-    } else if if let Some(kind) = infer::get(&data_ref) {
-      kind.matcher_type() == infer::MatcherType::Image
-    } else {
-      false
-    } {
+    } else if !svg_only
+      && infer::get(&data_ref).is_some_and(|kind| kind.matcher_type() == infer::MatcherType::Image)
+    {
       // Other image formats detected by infer (PNG, JPEG, GIF, WebP, etc.)
       if let Some(bitmap) = Bitmap::from_buffer(data_ref.as_ptr().cast_mut(), length) {
         DecodeStatus::Ok(BitmapInfo {
@@ -1657,7 +1646,7 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
       } else {
         DecodeStatus::InvalidImage
       }
-    } else if is_svg_image(&data_ref, length) {
+    } else if !raster_only && (svg_only || is_svg_image(&data_ref, length)) {
       let font = get_font().map_err(SkError::from)?;
       if (self.width - -1.0).abs() > f64::EPSILON && (self.height - -1.0).abs() > f64::EPSILON {
         if let Some(bitmap) = Bitmap::from_svg_data_with_custom_size(
