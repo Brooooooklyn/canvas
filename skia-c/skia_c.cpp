@@ -4221,6 +4221,16 @@ void skiac_bitmap_set_color_space(skiac_bitmap* c_bitmap,
   }
 }
 
+// Chrome's CanvasImageSource::IsOpaque for a drawImage source: an image whose
+// decoder reports no alpha (JPEG, RGB PNG), or an alpha:false canvas.
+bool skiac_bitmap_source_is_opaque(skiac_bitmap* c_bitmap, bool is_canvas) {
+  if (is_canvas) {
+    return reinterpret_cast<SkSurface*>(c_bitmap)->imageInfo().alphaType() ==
+           kOpaque_SkAlphaType;
+  }
+  return BITMAP_CAST->alphaType() == kOpaque_SkAlphaType;
+}
+
 size_t skiac_bitmap_get_width(skiac_bitmap* c_bitmap) {
   auto bitmap = reinterpret_cast<SkBitmap*>(c_bitmap);
   return bitmap->width();

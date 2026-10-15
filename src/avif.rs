@@ -349,6 +349,13 @@ impl AvifImage {
     }
   }
 
+  /// Whether the file has an alpha plane. Without one Chrome's frame is
+  /// opaque, and drawImage shadows it through the draw looper.
+  pub fn has_alpha(&self) -> bool {
+    // SAFETY: `image` lives until drop.
+    !unsafe { (*self.image).alphaPlane }.is_null()
+  }
+
   pub fn decode_from(avif_bytes: &[u8]) -> result::Result<Self, AvifError> {
     let decoder = unsafe { sys::avifDecoderCreate() };
     let image = unsafe { sys::avifImageCreateEmpty() };
