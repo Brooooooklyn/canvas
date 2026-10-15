@@ -2,8 +2,8 @@
 // conic gradient (SkSVGDevice drops a sweep shader to its black paint color), so the export
 // rasterizes the conic fill into a pattern image, one image pixel per canvas pixel, with the
 // globalAlpha in it. The pattern pixels must equal the raster canvas, which matches Chrome 155
-// (arm64 and x64) at these points. Past 4096 * 4096 canvas pixels the image is scaled down to fit
-// that many pixels.
+// (arm64 and x64) at these points. An image of more than 2048 * 2048 pixels has a border of 1
+// pixel, and past 4096 * 4096 pixels the image is scaled down to fit that many pixels.
 import { spawn } from 'node:child_process'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -76,17 +76,40 @@ const CHROME_PIXELS: Record<string, number[][]> = {
   ],
 }
 
-// The SVG of `draw`, and its pattern image decoded, placed at (x, y) in canvas pixels.
+// The pattern images of an SVG, in order.
+const patternImages = (text: string) =>
+  [...text.matchAll(/<image [^>]*width="(\d+)" height="(\d+)" xlink:href="data:image\/png;base64,([^"]+)"/g)].map(
+    (m) => ({ width: Number(m[1]), height: Number(m[2]), base64: m[3] }),
+  )
+
+// The transform [a, b, c, d, e, f] of the first path filled with a pattern.
+const patternPathTransform = (text: string) => {
+  const [, kind, args] = text.match(/<path fill="url\(#pattern_\d+\)"(?: transform="(\w+)\(([^)]*)\)")?/)!
+  const n = (args ?? '').split(' ').map(Number)
+  return kind === 'matrix'
+    ? n
+    : kind === 'translate'
+      ? [1, 0, 0, 1, n[0], n[1]]
+      : kind === 'scale'
+        ? [n[0], 0, 0, n[1], 0, 0]
+        : [1, 0, 0, 1, 0, 0]
+}
+
+// The SVG of `draw`, and its pattern image decoded, placed at (x, y) in canvas pixels: one image
+// pixel per canvas pixel, so the transform only moves it by whole pixels (up to float noise, which a
+// rotated CTM leaves in it).
 const exportSvg = async (draw: (ctx: Ctx) => void) => {
   const svg = createCanvas(40, 40, SvgExportFlag.NoPrettyXML)
   draw(svg.getContext('2d') as unknown as Ctx)
   const text = svg.getContent().toString('utf8')
-  const [, x, y] = text.match(/transform="translate\(([-\d.]+) ([-\d.]+)\)"/) ?? ['', '0', '0']
+  const [, , , , e, f] = patternPathTransform(text)
+  const x = Math.round(e)
+  const y = Math.round(f)
   const image = await loadImage(Buffer.from(text.match(/base64,([^"]+)"/)![1], 'base64'))
   const decoded = createCanvas(image.width, image.height).getContext('2d')
   decoded.drawImage(image, 0, 0)
-  const at = (px: number, py: number) => [...decoded.getImageData(px - Number(x), py - Number(y), 1, 1).data]
-  return { text, image, x: Number(x), y: Number(y), at }
+  const at = (px: number, py: number) => [...decoded.getImageData(px - x, py - y, 1, 1).data]
+  return { text, image, x, y, at }
 }
 
 for (const [name, draw] of Object.entries(DRAWS)) {
@@ -179,27 +202,90 @@ test('svg export of a conic gradient keeps globalAlpha in the image', async (t) 
   }
 })
 
+// The pattern tile is the image at any canvas size, not the viewport. Chrome draws an SVG pattern
+// through an SkPictureShader, which rasterizes a tile of more than 2048 * 2048 device pixels at that
+// many pixels: with a viewport ("100%") tile, a 300 x 300 fill on a 6000 x 6000 canvas came out
+// with alpha 193 instead of 255 on its last column in Chrome; on a 2000 x 2000 canvas it was exact.
+// The image starts at a multiple of 8, Skia's dither period, so its pixels equal the raster canvas.
+// An image larger than 2048 * 2048 pixels, which Chrome resamples, has a border of 1 pixel of the
+// same gradient so that its edges do not mix with the other side of the tile.
+// [canvas size, rect x and y, rect size, image border]
+for (const [n, x0, size, border] of [
+  [40, 13, 20, 0],
+  [2000, 1000, 300, 0],
+  [6000, 1000, 300, 0],
+  [6000, 1003, 3000, 1],
+]) {
+  test(`svg export of a conic gradient ${size}x${size} on a ${n}x${n} canvas tiles its pattern with the image`, async (t) => {
+    const draw = (ctx: Ctx) => {
+      ctx.fillStyle = stops(ctx.createConicGradient(0.4, x0 + size / 2, x0 + size / 2))
+      ctx.fillRect(x0, x0, size, size)
+    }
+    const svg = createCanvas(n, n, SvgExportFlag.NoPrettyXML)
+    draw(svg.getContext('2d') as unknown as Ctx)
+    const text = svg.getContent().toString('utf8')
+    const images = patternImages(text)
+    t.is(images.length, 1)
+    const { width, height, base64 } = images[0]
+    t.regex(text, new RegExp(`<pattern [^>]* width="${width}" height="${height}"`))
+    t.notRegex(text, /"100%"/)
+    // One image pixel per canvas pixel, from a multiple of 8 to the antialiased edge of the draw (one
+    // pixel out), in its border.
+    const [a, b, c, d, e, f] = patternPathTransform(text)
+    t.deepEqual([a, b, c, d], [1, 0, 0, 1])
+    t.true(Number.isInteger(e / 8) && Number.isInteger(f / 8), `image at ${e},${f}`)
+    for (const origin of [e, f]) {
+      t.true(origin + border <= x0 - 1 && origin + border > x0 - 1 - 8, `image at ${e},${f}`)
+    }
+    t.deepEqual([e + width - border, f + height - border], [x0 + size + 1, x0 + size + 1])
+    // Clipped to the image inside its border.
+    const clips = [...text.matchAll(/<clipPath[^>]*>([\s\S]*?)<\/clipPath>/g)].map((m) => m[1])
+    t.is(clips.length, 1)
+    const attr = (name: string) => Number(clips[0].match(new RegExp(` ${name}="([-\\d.]+)"`))?.[1] ?? 0)
+    t.deepEqual(['x', 'y', 'width', 'height'].map(attr), [
+      e + border,
+      f + border,
+      width - 2 * border,
+      height - 2 * border,
+    ])
+    const image = await loadImage(Buffer.from(base64, 'base64'))
+    const decoded = createCanvas(width, height).getContext('2d')
+    decoded.drawImage(image, 0, 0)
+    const at = (px: number, py: number) => [...decoded.getImageData(px - e, py - f, 1, 1).data]
+    // The image pixels equal the raster canvas, here a canvas of the 8 x 8 dither cell of (px, py).
+    const last = x0 + size - 1
+    for (const [px, py] of [
+      [x0, x0],
+      [last, x0],
+      [x0, last],
+      [last, last],
+      [x0 + 3, x0 + size / 2],
+      [x0 + size / 2, last - 2],
+      [x0 + size / 4, x0 + size / 5],
+    ]) {
+      const raster = createCanvas(8, 8).getContext('2d')
+      raster.translate(-(px & ~7), -(py & ~7))
+      draw(raster)
+      const want = [...raster.getImageData(px & 7, py & 7, 1, 1).data]
+      t.is(want[3], 255, `${px},${py}`)
+      t.deepEqual(at(px, py), want, `${px},${py}`)
+    }
+    // The border is the gradient too.
+    if (border) {
+      for (const [px, py] of [
+        [e, f + height / 2],
+        [e + width - 1, f + height / 2],
+        [e + width / 2, f],
+        [e + width / 2, f + height - 1],
+      ]) {
+        t.is(at(Math.floor(px), Math.floor(py))[3], 255, `${px},${py}`)
+      }
+    }
+  })
+}
+
 // The most pixels a conic raster has inside its 1 pixel border: 4096 * 4096 (64 MiB N32).
 const BUDGET = 4096 * 4096
-
-// The pattern images of an SVG, in order.
-const patternImages = (text: string) =>
-  [...text.matchAll(/<image [^>]*width="(\d+)" height="(\d+)" xlink:href="data:image\/png;base64,([^"]+)"/g)].map(
-    (m) => ({ width: Number(m[1]), height: Number(m[2]), base64: m[3] }),
-  )
-
-// The transform [a, b, c, d, e, f] of the first path filled with a pattern.
-const patternPathTransform = (text: string) => {
-  const [, kind, args] = text.match(/<path fill="url\(#pattern_\d+\)"(?: transform="(\w+)\(([^)]*)\)")?/)!
-  const n = (args ?? '').split(' ').map(Number)
-  return kind === 'matrix'
-    ? n
-    : kind === 'translate'
-      ? [1, 0, 0, 1, n[0], n[1]]
-      : kind === 'scale'
-        ? [n[0], 0, 0, n[1], 0, 0]
-        : [1, 0, 0, 1, 0, 0]
-}
 
 // What an SVG renderer shows at canvas pixel (x, y) for the first conic draw: its pattern image under
 // the path's transform, sampled bilinearly (how Chrome upscales it). Transparent outside the image,
