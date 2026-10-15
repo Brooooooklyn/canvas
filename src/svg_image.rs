@@ -8,8 +8,9 @@ use std::sync::Arc;
 
 use napi::Env;
 
-use crate::global_fonts::get_font;
+use crate::global_fonts::{font_collection_generation, get_font};
 use crate::sk::{AccountedBitmap, ColorSpace, SvgDocument, SvgRootAttribute, Transform};
+use crate::svg_doc::{self, PrepareError};
 use crate::svg_size::{FontUnits, SvgSizing, layout_floor};
 
 /// Rasters an SVG Image keeps for later draws.
@@ -40,7 +41,9 @@ pub(crate) struct SvgImage {
   document: SvgDocument,
   pub(crate) sizing: SvgSizing,
   color_space: ColorSpace,
-  rasters: Vec<(RasterSpec, Arc<AccountedBitmap>)>,
+  /// With the font collection generation each was drawn in: a font
+  /// registered later can change its text.
+  rasters: Vec<(RasterSpec, u64, Arc<AccountedBitmap>)>,
 }
 
 /// What drawImage draws for an SVG Image: all of `raster` into `dst`
@@ -120,22 +123,44 @@ fn clip_rects_to_image_rect(image: RectF, src: &mut RectF, dst: &mut RectF) {
 }
 
 impl SvgImage {
-  /// None when `data` is not an SVG document.
+  /// None when `data` is not an SVG document (the image fails to load).
   pub(crate) fn parse(data: &[u8], color_space: ColorSpace) -> napi::Result<Option<Self>> {
-    let font = get_font().map_err(crate::error::SkError::from)?;
-    let Some(document) = SvgDocument::parse(data, &font) else {
-      return Ok(None);
+    let units = {
+      let font = get_font().map_err(crate::error::SkError::from)?;
+      FontUnits::from_metrics(font.default_font_metrics())
     };
-    let units = FontUnits::from_metrics(font.default_font_metrics());
+    // Read the way Blink reads it, once per src (crate::svg_doc).
+    let prepared = match svg_doc::prepare(data, &units) {
+      Ok(prepared) => Some(prepared),
+      // Deeper than Chrome's XML parser takes: onerror.
+      Err(PrepareError::TooDeep) => return Ok(None),
+      // Left to SkSVGDOM as it is.
+      Err(PrepareError::Unsupported) => None,
+    };
+    let font = get_font().map_err(crate::error::SkError::from)?;
+    let (document, sizing) = match prepared {
+      Some((prepared, root)) => {
+        let Some(document) = SvgDocument::parse_prepared(&prepared, &font) else {
+          return Ok(None);
+        };
+        (document, root.sizing(&units))
+      }
+      None => {
+        let Some(document) = SvgDocument::parse(data, &font) else {
+          return Ok(None);
+        };
+        let attribute = |name| document.attribute(name);
+        let sizing = SvgSizing::from_attributes(
+          attribute(SvgRootAttribute::Width).as_deref(),
+          attribute(SvgRootAttribute::Height).as_deref(),
+          attribute(SvgRootAttribute::ViewBox).as_deref(),
+          attribute(SvgRootAttribute::PreserveAspectRatio).as_deref(),
+          &units,
+        );
+        (document, sizing)
+      }
+    };
     drop(font);
-    let attribute = |name| document.attribute(name);
-    let sizing = SvgSizing::from_attributes(
-      attribute(SvgRootAttribute::Width).as_deref(),
-      attribute(SvgRootAttribute::Height).as_deref(),
-      attribute(SvgRootAttribute::ViewBox).as_deref(),
-      attribute(SvgRootAttribute::PreserveAspectRatio).as_deref(),
-      &units,
-    );
     Ok(Some(SvgImage {
       document,
       sizing,
@@ -153,13 +178,20 @@ impl SvgImage {
 
   /// The raster for `spec`, from the cache or made now.
   fn raster(&mut self, env: &Env, spec: RasterSpec) -> napi::Result<Option<Arc<AccountedBitmap>>> {
-    if let Some(index) = self.rasters.iter().position(|(cached, _)| *cached == spec) {
+    let fonts = font_collection_generation();
+    if let Some(index) = self
+      .rasters
+      .iter()
+      .position(|(cached, generation, _)| *cached == spec && *generation == fonts)
+    {
       let entry = self.rasters.remove(index);
-      let raster = entry.1.clone();
+      let raster = entry.2.clone();
       self.rasters.push(entry);
       return Ok(Some(raster));
     }
-    let Some(bitmap) = self.document.render(
+    // The document's font lists resolve in the font collection as they draw.
+    let font = get_font().map_err(crate::error::SkError::from)?;
+    let bitmap = self.document.render(
       spec.layout,
       spec.view,
       spec.matrix,
@@ -167,7 +199,9 @@ impl SvgImage {
       spec.width,
       spec.height,
       self.color_space,
-    ) else {
+    );
+    drop(font);
+    let Some(bitmap) = bitmap else {
       return Ok(None);
     };
     let bytes = spec.width as i64 * spec.height as i64 * 4;
@@ -176,7 +210,7 @@ impl SvgImage {
     if self.rasters.len() == CACHED_RASTERS {
       self.rasters.remove(0);
     }
-    self.rasters.push((spec, raster.clone()));
+    self.rasters.push((spec, fonts, raster.clone()));
     Ok(Some(raster))
   }
 

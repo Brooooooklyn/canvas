@@ -21,6 +21,8 @@ fn main() {
   println!("cargo:rerun-if-changed=skia-c/text_raster.cpp");
   println!("cargo:rerun-if-changed=skia-c/text_raster.hpp");
   println!("cargo:rerun-if-changed=skia-c/font_scalers.cpp");
+  println!("cargo:rerun-if-changed=skia-c/svg_image.cpp");
+  println!("cargo:rerun-if-changed=skia-c/svg_image.hpp");
   println!("cargo:rerun-if-changed=skia-c/libskia.flags");
 
   let compile_target = env::var("TARGET").expect("TARGET");
@@ -254,6 +256,7 @@ fn main() {
     .file("skia-c/text_caps.cpp")
     .file("skia-c/text_raster.cpp")
     .file("skia-c/font_scalers.cpp")
+    .file("skia-c/svg_image.cpp")
     .include("./skia-c")
     .include(skia_path)
     // https://github.com/rust-lang/rust/pull/93901#issuecomment-1119360260
