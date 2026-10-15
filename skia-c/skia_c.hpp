@@ -142,6 +142,22 @@ SkFontStyle CoreTextFontStyle(SkTypeface* face);
 #endif
 // text_raster.cpp: the text gamma and contrast of Chrome's canvas surfaces.
 SkSurfaceProps CanvasSurfaceProps();
+// skia_c.cpp: draws `src` of a raster as Chrome draws an image from its
+// decode cache (DrawImageRectOp::RasterWithFlags). Returns the decode it drew
+// in place of the source, or null.
+sk_sp<SkImage> DrawDecodedImage(
+    SkCanvas* canvas,
+    const SkBitmap* bitmap,
+    const sk_sp<SkImage>& snapshot,
+    const SkPixmap& original,
+    skiac_image_levels* levels,
+    uint8_t cs,
+    const SkRect& src,
+    const SkRect& dst,
+    const SkM44& matrix,
+    int fq,
+    const SkPaint& paint,
+    SkCanvas::SrcRectConstraint constraint = SkCanvas::kFast_SrcRectConstraint);
 
 enum class CssBaseline {
   Top,
