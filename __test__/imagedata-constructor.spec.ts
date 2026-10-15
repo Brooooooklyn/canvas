@@ -195,3 +195,23 @@ test("ImageData is a native constructor shaped like Chrome's", (t) => {
     [true, false, '[object Object]'],
   )
 })
+
+test('new ImageData reads new.target.prototype once, as Chrome does', (t) => {
+  const log: string[] = []
+  const counted = (prototype?: object) =>
+    new Proxy(function F() {}, {
+      get(target, key, receiver) {
+        log.push(String(key))
+        return key === 'prototype' && prototype ? prototype : Reflect.get(target, key, receiver)
+      },
+    })
+  const id = Reflect.construct(ImageData, [1, 1], counted(ImageData.prototype))
+  t.deepEqual([id instanceof ImageData, id.width, log], [true, 1, ['prototype']])
+  // The engine reads it to make `this`, before the argument count check.
+  log.length = 0
+  t.throws(() => Reflect.construct(ImageData, [1], counted()), {
+    instanceOf: TypeError,
+    message: CONSTRUCT + required(1),
+  })
+  t.deepEqual(log, ['prototype'])
+})
