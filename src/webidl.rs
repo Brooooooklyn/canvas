@@ -202,6 +202,7 @@ sites! {
   SetShadowOffsetX: set "shadowOffsetX" on "CanvasRenderingContext2D";
   SetShadowOffsetY: set "shadowOffsetY" on "CanvasRenderingContext2D";
   SetLineDashOffset: set "lineDashOffset" on "CanvasRenderingContext2D";
+  CtxSetLineDash: execute "setLineDash" on "CanvasRenderingContext2D";
 }
 
 /// `napi_bigint`; napi6 (and so `ValueType::BigInt`) is off in this build.
@@ -246,12 +247,12 @@ fn set_message(env: sys::napi_env, error: sys::napi_value, message: &str) {
   }
 }
 
-/// A conversion error that the engine itself throws, as Blink reports it: a
-/// TypeError created with `msg`, then its message set to `prefix` + `msg`
-/// (v8_binding_for_core.cc ApplyContextToException), so `stack` keeps the
-/// bare `msg`. An error thrown by user code (valueOf, toString, an iterator)
-/// is passed on as it is.
-fn conversion_error(env: sys::napi_env, prefix: &str, msg: &str) -> Error {
+/// A TypeError as Chrome throws it from a binding (a conversion failure, an
+/// argument count, an invalid enum value...): created with `msg`, then its
+/// message set to `prefix` + `msg` (v8_binding_for_core.cc
+/// ApplyContextToException), so `stack` keeps the bare `msg`. An error thrown
+/// by user code (valueOf, toString, an iterator) is passed on as it is.
+pub(crate) fn context_type_error(env: sys::napi_env, prefix: &str, msg: &str) -> Error {
   let error = new_error(env, ErrorKind::TypeError, msg);
   if let Some(error) = error {
     set_message(env, error, &format!("{prefix}{msg}"));
@@ -347,7 +348,7 @@ fn to_primitive(
       let hint = unsafe { <&str as ToNapiValue>::to_napi_value(env, hint)? };
       let result = call(env, value, exotic, &[hint])?;
       if is_object(env, result)? {
-        return Err(conversion_error(
+        return Err(context_type_error(
           env,
           prefix,
           "Cannot convert object to primitive value",
@@ -385,7 +386,7 @@ fn to_primitive(
       }
     }
   }
-  Err(conversion_error(
+  Err(context_type_error(
     env,
     prefix,
     "Cannot convert object to primitive value",
@@ -400,12 +401,12 @@ pub(crate) fn to_number(env: sys::napi_env, value: sys::napi_value, prefix: &str
     return Ok(number);
   }
   match raw_type_of(env, value)? {
-    sys::ValueType::napi_symbol => Err(conversion_error(
+    sys::ValueType::napi_symbol => Err(context_type_error(
       env,
       prefix,
       "Cannot convert a Symbol value to a number",
     )),
-    NAPI_BIGINT => Err(conversion_error(
+    NAPI_BIGINT => Err(context_type_error(
       env,
       prefix,
       "Cannot convert a BigInt value to a number",
@@ -432,6 +433,61 @@ pub struct Double<S>(pub f64, PhantomData<S>);
 impl<S: Site> FromNapiValue for Double<S> {
   unsafe fn from_napi_value(env: sys::napi_env, value: sys::napi_value) -> Result<Self> {
     to_number(env, value, S::PREFIX).map(|v| Self(v, PhantomData))
+  }
+}
+
+/// A WebIDL `sequence<unrestricted double>` argument: any iterable, read
+/// through its iterator (no array fast path: Array.prototype[Symbol.iterator]
+/// is observable), each value converted with ToNumber in turn.
+pub struct DoubleSequence<S>(pub Vec<f64>, PhantomData<S>);
+
+impl<S: Site> FromNapiValue for DoubleSequence<S> {
+  unsafe fn from_napi_value(env: sys::napi_env, value: sys::napi_value) -> Result<Self> {
+    let error = |msg: &str| Err(context_type_error(env, S::PREFIX, msg));
+    if !is_object(env, value)? {
+      return error("The provided value cannot be converted to a sequence.");
+    }
+    let method = get_property(env, value, well_known_symbol(env, c"iterator")?)?;
+    match raw_type_of(env, method)? {
+      sys::ValueType::napi_function => {}
+      sys::ValueType::napi_undefined | sys::ValueType::napi_null => {
+        return error("The object must have a callable @@iterator property.");
+      }
+      _ => return error("@@iterator must be a callable."),
+    }
+    let iterator = call(env, value, method, &[])?;
+    if !is_object(env, iterator)? {
+      return error("Iterator object must be an object.");
+    }
+    let mut next = ptr::null_mut();
+    check_status!(unsafe {
+      sys::napi_get_named_property(env, iterator, c"next".as_ptr(), &mut next)
+    })?;
+    if !is_callable(env, next)? {
+      return error("Expected next() function on iterator.");
+    }
+    let mut values = Vec::new();
+    loop {
+      let result = call(env, iterator, next, &[])?;
+      if !is_object(env, result)? {
+        return error("Expected iterator.next() to return an Object.");
+      }
+      let mut done = ptr::null_mut();
+      check_status!(unsafe {
+        sys::napi_get_named_property(env, result, c"done".as_ptr(), &mut done)
+      })?;
+      let mut done_bool = ptr::null_mut();
+      check_status!(unsafe { sys::napi_coerce_to_bool(env, done, &mut done_bool) })?;
+      if unsafe { bool::from_napi_value(env, done_bool)? } {
+        break;
+      }
+      let mut item = ptr::null_mut();
+      check_status!(unsafe {
+        sys::napi_get_named_property(env, result, c"value".as_ptr(), &mut item)
+      })?;
+      values.push(to_number(env, item, S::PREFIX)?);
+    }
+    Ok(Self(values, PhantomData))
   }
 }
 

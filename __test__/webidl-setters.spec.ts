@@ -224,3 +224,173 @@ test('lineWidth 0 or Infinity keeps the old stroke width', (t) => {
     t.deepEqual(column, [0, 127, 255, 255, 127, 0], `lineWidth = ${width}`)
   }
 })
+
+const SET_LINE_DASH = "Failed to execute 'setLineDash' on 'CanvasRenderingContext2D': "
+
+const dashContext = () => {
+  const ctx = context()
+  ctx.setLineDash([5, 6])
+  return ctx
+}
+
+test('setLineDash converts each entry with ToNumber', (t) => {
+  const cases: [unknown[], number[]][] = [
+    [
+      ['1', '2'],
+      [1, 2],
+    ],
+    [
+      [true, false],
+      [1, 0],
+    ],
+    [
+      [[3], [4]],
+      [3, 4],
+    ],
+    [[{ valueOf: () => 7 }], [7, 7]],
+    [
+      [0.1, 0.2],
+      [0.10000000149011612, 0.20000000298023224],
+    ],
+    [
+      [1e39, 1],
+      [FLT_MAX, 1],
+    ],
+  ]
+  for (const [input, expected] of cases) {
+    const ctx = dashContext()
+    ctx.setLineDash(loose(input))
+    t.deepEqual(ctx.getLineDash(), expected, JSON.stringify(input))
+  }
+  const ctx = dashContext()
+  ctx.setLineDash([-0, 1])
+  t.true(Object.is(ctx.getLineDash()[0], -0))
+})
+
+test('setLineDash accepts any iterable', (t) => {
+  const cases: [Iterable<number>, number[]][] = [
+    [new Set([3, 4]), [3, 4]],
+    [new Float32Array([3, 4]), [3, 4]],
+    [
+      [1, 2, 3],
+      [1, 2, 3, 1, 2, 3],
+    ],
+    [
+      [0, 0],
+      [0, 0],
+    ],
+    [[], []],
+  ]
+  for (const [input, expected] of cases) {
+    const ctx = dashContext()
+    ctx.setLineDash(loose(input))
+    t.deepEqual(ctx.getLineDash(), expected)
+  }
+})
+
+test('setLineDash ignores a list with a negative or non-finite entry', (t) => {
+  for (const input of [
+    [1, -1],
+    [1, NaN],
+    [1, Infinity],
+    [1, 'a'],
+    [2, -1e300],
+  ]) {
+    const ctx = dashContext()
+    ctx.setLineDash(loose(input))
+    t.deepEqual(ctx.getLineDash(), [5, 6], JSON.stringify(input))
+    ctx.lineWidth = 2
+    ctx.beginPath()
+    ctx.moveTo(0, 5)
+    ctx.lineTo(10, 5)
+    t.notThrows(() => ctx.stroke())
+  }
+})
+
+test('setLineDash throws for a value that is not a sequence', (t) => {
+  const cases: [unknown, string][] = [
+    [5, 'The provided value cannot be converted to a sequence.'],
+    ['12', 'The provided value cannot be converted to a sequence.'],
+    [null, 'The provided value cannot be converted to a sequence.'],
+    [undefined, 'The provided value cannot be converted to a sequence.'],
+    [{}, 'The object must have a callable @@iterator property.'],
+    [{ length: 2, 0: 1, 1: 2 }, 'The object must have a callable @@iterator property.'],
+    [{ [Symbol.iterator]: 5 }, '@@iterator must be a callable.'],
+    [{ [Symbol.iterator]: () => 5 }, 'Iterator object must be an object.'],
+    [{ [Symbol.iterator]: () => ({ next: () => 5 }) }, 'Expected iterator.next() to return an Object.'],
+    [{ [Symbol.iterator]: () => ({ next: 5 }) }, 'Expected next() function on iterator.'],
+    [[Symbol('s')], 'Cannot convert a Symbol value to a number'],
+  ]
+  for (const [input, message] of cases) {
+    const ctx = dashContext()
+    const error = t.throws(() => ctx.setLineDash(loose(input)), {
+      instanceOf: TypeError,
+      message: `${SET_LINE_DASH}${message}`,
+    })
+    t.is(String(error.stack).split('\n')[0], `TypeError: ${message}`)
+    t.deepEqual(ctx.getLineDash(), [5, 6])
+  }
+  const ctx = dashContext()
+  t.throws(
+    () =>
+      ctx.setLineDash(
+        loose({
+          [Symbol.iterator]() {
+            throw new RangeError('it')
+          },
+        }),
+      ),
+    { instanceOf: RangeError, message: 'it' },
+  )
+})
+
+test('setLineDash converts before it borrows the context', (t) => {
+  const ctx = dashContext()
+  ctx.setLineDash(
+    loose([
+      {
+        valueOf() {
+          ctx.setLineDash([9, 9])
+          return 2
+        },
+      },
+      3,
+    ]),
+  )
+  t.deepEqual(ctx.getLineDash(), [2, 3])
+})
+
+// Alpha sum of a 4px wide stroke (2,20)->(38,20) on a 40x40 canvas.
+const dashedStroke = (dash: number[] | null, offset?: number, cap?: 'round') => {
+  const ctx = createCanvas(40, 40).getContext('2d')
+  ctx.lineWidth = 4
+  if (cap) ctx.lineCap = cap
+  if (dash) ctx.setLineDash(dash)
+  if (offset !== undefined) ctx.lineDashOffset = offset
+  ctx.beginPath()
+  ctx.moveTo(2, 20)
+  ctx.lineTo(38, 20)
+  ctx.stroke()
+  const data = ctx.getImageData(0, 0, 40, 40).data
+  let sum = 0
+  for (let i = 3; i < data.length; i += 4) sum += data[i]
+  // fillRect must not throw whatever the dash state.
+  ctx.fillRect(0, 30, 4, 4)
+  return { sum, dash: ctx.getLineDash(), offset: ctx.lineDashOffset }
+}
+
+test('a dash list Skia cannot dash strokes solid', (t) => {
+  t.deepEqual(dashedStroke(null), { sum: 36720, dash: [], offset: 0 })
+  t.deepEqual(dashedStroke([0, 0]), { sum: 36720, dash: [0, 0], offset: 0 })
+  t.deepEqual(dashedStroke([0]), { sum: 36720, dash: [0, 0], offset: 0 })
+  t.deepEqual(dashedStroke([FLT_MAX, FLT_MAX]), { sum: 36720, dash: [FLT_MAX, FLT_MAX], offset: 0 })
+  t.deepEqual(dashedStroke([1e300, 1e300]), { sum: 36720, dash: [FLT_MAX, FLT_MAX], offset: 0 })
+  t.is(dashedStroke([0, 0], undefined, 'round').sum, 39812)
+})
+
+test('lineDashOffset ignores non-finite values and clamps to the float range', (t) => {
+  t.deepEqual(dashedStroke([4, 2]), { sum: 24480, dash: [4, 2], offset: 0 })
+  t.deepEqual(dashedStroke([4, 2], 1e300), { sum: 24480, dash: [4, 2], offset: FLT_MAX })
+  t.deepEqual(dashedStroke([4, 2], NaN), { sum: 24480, dash: [4, 2], offset: 0 })
+  t.deepEqual(dashedStroke([4, 2], Infinity), { sum: 24480, dash: [4, 2], offset: 0 })
+})
