@@ -258,6 +258,7 @@ sites! {
   CtxStrokeText: execute "strokeText" on "CanvasRenderingContext2D";
   CtxTranslate: execute "translate" on "CanvasRenderingContext2D";
   CtxTransform: execute "transform" on "CanvasRenderingContext2D";
+  CtxSetTransform: execute "setTransform" on "CanvasRenderingContext2D";
   CtxFill: execute "fill" on "CanvasRenderingContext2D";
   CtxClip: execute "clip" on "CanvasRenderingContext2D";
   CtxStroke: execute "stroke" on "CanvasRenderingContext2D";
@@ -1612,24 +1613,33 @@ impl ContextSettings {
   }
 }
 
-/// `DOMMatrix2DInit` converted and fixed up like DOMMatrixReadOnly::fromMatrix2D
-/// (core/geometry/dom_matrix_read_only.cc:179): [m11, m12, m21, m22, m41, m42].
-/// Undefined or null is `{}` (the identity).
-pub(crate) fn dom_matrix_2d_init(
+/// A matrix dictionary argument: None when it is undefined or null (`{}`), a
+/// TypeError naming `type_name` when it is not an object.
+fn matrix_dictionary(
   env: sys::napi_env,
   value: Option<sys::napi_value>,
   prefix: &str,
-) -> Result<[f64; 6]> {
-  const IDENTITY: [f64; 6] = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
+  type_name: &str,
+) -> Result<Option<sys::napi_value>> {
   let Some(value) = present(env, value)? else {
-    return Ok(IDENTITY);
+    return Ok(None);
   };
   if !is_object(env, value)? {
     return Err(type_error(
       env,
-      &format!("{prefix}The provided value is not of type 'DOMMatrix2DInit'."),
+      &format!("{prefix}The provided value is not of type '{type_name}'."),
     ));
   }
+  Ok(Some(value))
+}
+
+/// The DOMMatrix2DInit members, in the order WebIDL reads them: a..f, then
+/// m11, m12, m21, m22, m41, m42.
+fn matrix_2d_members(
+  env: sys::napi_env,
+  value: sys::napi_value,
+  prefix: &str,
+) -> Result<[Option<f64>; 12]> {
   let dictionary = Dictionary {
     env,
     value,
@@ -1642,11 +1652,16 @@ pub(crate) fn dom_matrix_2d_init(
   ]) {
     *slot = dictionary.number(key)?;
   }
+  Ok(members)
+}
+
+/// ValidateAndFixup2D (dom_matrix_read_only.cc:48-76): a and m11 (and so on)
+/// must agree when both are given, two NaNs agree; then [m11, m12, m21, m22,
+/// m41, m42], each from the m-member, else its alias, else the identity.
+fn fixup_2d(env: sys::napi_env, prefix: &str, members: [Option<f64>; 12]) -> Result<[f64; 6]> {
   let (short, long) = members.split_at(6);
-  let mut matrix = IDENTITY;
+  let mut matrix = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
   for i in 0..6 {
-    // ValidateAndFixup2D: a and m11 (and so on) must agree when both are
-    // given; two NaNs agree.
     if let (Some(s), Some(l)) = (short[i], long[i])
       && s != l
       && !(s.is_nan() && l.is_nan())
@@ -1659,6 +1674,69 @@ pub(crate) fn dom_matrix_2d_init(
     if let Some(v) = long[i].or(short[i]) {
       matrix[i] = v;
     }
+  }
+  Ok(matrix)
+}
+
+/// `DOMMatrix2DInit` converted and fixed up like DOMMatrixReadOnly::fromMatrix2D
+/// (core/geometry/dom_matrix_read_only.cc:179): [m11, m12, m21, m22, m41, m42].
+/// Undefined or null is `{}` (the identity).
+pub(crate) fn dom_matrix_2d_init(
+  env: sys::napi_env,
+  value: Option<sys::napi_value>,
+  prefix: &str,
+) -> Result<[f64; 6]> {
+  match matrix_dictionary(env, value, prefix, "DOMMatrix2DInit")? {
+    Some(value) => fixup_2d(env, prefix, matrix_2d_members(env, value, prefix)?),
+    None => Ok([1.0, 0.0, 0.0, 1.0, 0.0, 0.0]),
+  }
+}
+
+/// `DOMMatrixInit` converted and checked like DOMMatrixReadOnly::fromMatrix
+/// (dom_matrix_read_only.cc:78-103, 192-213), for its 2D part only: [m11,
+/// m12, m21, m22, m41, m42]. Every member is read, the 3D ones after is2D;
+/// they only matter to the is2D check. Undefined or null is `{}`.
+pub(crate) fn dom_matrix_init_2d_part(
+  env: sys::napi_env,
+  value: Option<sys::napi_value>,
+  prefix: &str,
+) -> Result<[f64; 6]> {
+  let Some(value) = matrix_dictionary(env, value, prefix, "DOMMatrixInit")? else {
+    return Ok([1.0, 0.0, 0.0, 1.0, 0.0, 0.0]);
+  };
+  let members = matrix_2d_members(env, value, prefix)?;
+  let dictionary = Dictionary {
+    env,
+    value,
+    prefix,
+    name: "DOMMatrixInit",
+  };
+  let is_2d = dictionary.boolean("is2D")?;
+  // m13, m14, m23, m24, m31, m32, m33, m34, m43, m44 and their identity
+  // values. C++ truthiness: NaN is not 0, so it makes the matrix 3D.
+  let mut is_3d = false;
+  for (key, identity) in [
+    ("m13", 0.0),
+    ("m14", 0.0),
+    ("m23", 0.0),
+    ("m24", 0.0),
+    ("m31", 0.0),
+    ("m32", 0.0),
+    ("m33", 1.0),
+    ("m34", 0.0),
+    ("m43", 0.0),
+    ("m44", 1.0),
+  ] {
+    if let Some(v) = dictionary.number(key)? {
+      is_3d |= v != identity;
+    }
+  }
+  let matrix = fixup_2d(env, prefix, members)?;
+  if is_2d == Some(true) && is_3d {
+    return Err(type_error(
+      env,
+      &format!("{prefix}The is2D member is set to true but the input matrix is a 3d matrix."),
+    ));
   }
   Ok(matrix)
 }
@@ -1692,6 +1770,27 @@ pub struct GetImageDataSettings(pub(crate) ImageDataSettings);
 impl FromNapiValue for GetImageDataSettings {
   unsafe fn from_napi_value(env: sys::napi_env, value: sys::napi_value) -> Result<Self> {
     ImageDataSettings::from_js(env, Some(value), GET_IMAGE_DATA).map(Self)
+  }
+}
+
+/// The arguments of CanvasRenderingContext2D.setTransform(), as [a, b, c, d,
+/// e, f]: six numbers when there are six or more arguments, else `optional
+/// DOMMatrixInit transform = {}` (canvas_2d_recorder_context.idl:28-29).
+/// Comes after six `Positional` parameters and the argument-count marker.
+pub struct SetTransformArgs(pub(crate) [f64; 6]);
+
+impl FromNapiValue for SetTransformArgs {
+  unsafe fn from_napi_value(env: sys::napi_env, argc: sys::napi_value) -> Result<Self> {
+    let args = Arguments::take(env, 6, argc)?;
+    let prefix = CtxSetTransform::PREFIX;
+    if args.len() >= 6 {
+      let mut matrix = [0.0; 6];
+      for (index, value) in (0..).zip(matrix.iter_mut()) {
+        *value = to_number(env, args.get(index)?, prefix)?;
+      }
+      return Ok(Self(matrix));
+    }
+    dom_matrix_init_2d_part(env, Some(args.get(0)?), prefix).map(Self)
   }
 }
 

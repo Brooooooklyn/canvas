@@ -5652,23 +5652,24 @@ impl CanvasRenderingContext2D {
     self.context.state.transform.get_transform().into()
   }
 
+  /// setTransform(a, b, c, d, e, f) or setTransform(transform?). The index.js
+  /// wrapper passes the argument count after them; see
+  /// `webidl::Arguments::take`. A non-finite value makes it a no-op
+  /// (canvas_2d_recorder_context.cc:1528-1552).
   #[napi]
   pub fn set_transform(
     &mut self,
-    a_or_transform: Either<f64, TransformObject>,
-    b: Option<f64>,
-    c: Option<f64>,
-    d: Option<f64>,
-    e: Option<f64>,
-    f: Option<f64>,
-  ) -> Option<()> {
-    let (a, b, c, d, e, f) = match a_or_transform {
-      Either::A(a) => (a, b?, c?, d?, e?, f?),
-      Either::B(m) => (m.a, m.b, m.c, m.d, m.e, m.f),
-    };
-    let [a, b, c, d, e, f] = num::clamped_f32s([a, b, c, d, e, f])?;
-    self.context.set_transform(Matrix::new(a, c, e, b, d, f));
-    None
+    _a: webidl::Positional,
+    _b: webidl::Positional,
+    _c: webidl::Positional,
+    _d: webidl::Positional,
+    _e: webidl::Positional,
+    _f: webidl::Positional,
+    args: webidl::SetTransformArgs,
+  ) {
+    if let Some([a, b, c, d, e, f]) = num::clamped_f32s(args.0) {
+      self.context.set_transform(Matrix::new(a, c, e, b, d, f));
+    }
   }
 
   /// Annotate a rectangular region with a clickable URL link (for PDF documents)
