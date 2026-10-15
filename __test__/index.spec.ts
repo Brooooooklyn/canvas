@@ -104,7 +104,8 @@ test('gif output of a display-p3 canvas is converted to sRGB', async (t) => {
   t.deepEqual(await decode(p3.encodeSync('gif')), [31, 128, 223, 255], 'encodeSync')
 })
 
-// Our YUV to RGB step for AVIF can round a channel 1 lower than Chrome's.
+// AVIF stores YUV, so a decoded channel can be 1 off the RGB the file was
+// made from.
 const nearPixel = (t: ExecutionContext, actual: number[], expected: readonly number[], label: string) =>
   t.true(
     actual.every((value, i) => Math.abs(value - expected[i]) <= 1),
@@ -216,8 +217,7 @@ test('avif quality: a higher quality gives a bigger and more exact file', async 
 // The fixtures hold P3 255,0,0 (left) and P3 200,100,50 (right), tagged with an
 // ICC profile, with CICP 12/13/6, or with CICP 12/2/6. Chrome 155 CPU honors
 // the ICC profile, else the CICP, where an unspecified (2) transfer means sRGB
-// (avif_image_decoder.cc:868-914). Our red is 1 lower (nearPixel), as it is
-// for an sRGB AVIF.
+// (avif_image_decoder.cc:868-914).
 test('avif decode honors the ICC profile or CICP color space', async (t) => {
   for (const name of ['avif-p3-icc', 'avif-p3-cicp', 'avif-p3-cicp-transfer-unspecified']) {
     const image = await loadImage(join(__dirname, 'fixtures', `${name}.avif`))
@@ -227,7 +227,7 @@ test('avif decode honors the ICC profile or CICP color space', async (t) => {
     ] as const) {
       const ctx = createCanvas(4, 4).getContext('2d', { colorSpace })
       ctx.drawImage(image, 0, 0)
-      nearPixel(t, [...ctx.getImageData(0, 0, 1, 1).data], left, `${name} ${colorSpace} left`)
+      t.deepEqual([...ctx.getImageData(0, 0, 1, 1).data], left, `${name} ${colorSpace} left`)
       t.deepEqual([...ctx.getImageData(3, 0, 1, 1).data], right, `${name} ${colorSpace} right`)
     }
   }
@@ -246,7 +246,7 @@ const decodeAvifRow = async (name: string, colorSpace: 'srgb' | 'display-p3') =>
 // Chrome draws the BT.709 family of CICP transfers (1 BT.709, 6 SMPTE 170M,
 // 14 and 15 BT.2020) with the sRGB curve (ui/gfx/color_space.cc
 // GetTransferFunction), not with the 2.4 gamma of SkColorSpace::MakeCICP.
-// Expected values are Chrome 155 CPU; ours can round a channel 1 lower.
+// Expected values are Chrome 155 CPU.
 test('avif decode draws BT.709-family CICP transfers with the sRGB curve', async (t) => {
   const bt709Primaries = {
     srgb: [
@@ -330,7 +330,7 @@ test('avif decode draws BT.709-family CICP transfers with the sRGB curve', async
   for (const [name, expected] of Object.entries(cases)) {
     for (const colorSpace of ['srgb', 'display-p3'] as const) {
       const row = await decodeAvifRow(name, colorSpace)
-      row.forEach((pixel, x) => nearPixel(t, pixel, expected[colorSpace][x], `${name} ${colorSpace} x=${x}`))
+      t.deepEqual(row, expected[colorSpace], `${name} ${colorSpace}`)
     }
   }
 })

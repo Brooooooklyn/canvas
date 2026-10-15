@@ -5,6 +5,7 @@ use libavif_sys as sys;
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 
+use crate::avif_yuv;
 use crate::error::SkError;
 use crate::sk::ColorSpace;
 
@@ -350,11 +351,12 @@ impl AvifError {
 
 pub struct AvifImage {
   image: *mut sys::avifImage,
-  rgb_image: sys::avifRGBImage,
   pub width: u32,
   pub height: u32,
   pub row_bytes: u32,
-  pub data: *mut u8,
+  /// RGBA, premultiplied, converted from YUV as Chrome does
+  /// ([`crate::avif_yuv`]).
+  pub data: Vec<u8>,
   /// CICP colour primaries and transfer characteristics; 2 is unspecified.
   pub color_primaries: u16,
   pub transfer_characteristics: u16,
@@ -393,15 +395,14 @@ impl AvifImage {
     if decoder.0.is_null() {
       return Err(AvifError::Known(AvifErrorCode::OutOfMemory));
     }
-    // From here on `this` owns the image and the RGB pixels: Drop frees them,
-    // also when a step below fails.
+    // From here on `this` owns the image: Drop frees it, also when a step
+    // below fails.
     let mut this = Self {
       image: unsafe { sys::avifImageCreateEmpty() },
-      rgb_image: sys::avifRGBImage::default(),
       width: 0,
       height: 0,
       row_bytes: 0,
-      data: ptr::null_mut(),
+      data: Vec::new(),
       color_primaries: 2,
       transfer_characteristics: 2,
     };
@@ -415,32 +416,105 @@ impl AvifImage {
         avif_bytes.as_ptr(),
         avif_bytes.len(),
       ))?;
-      sys::avifRGBImageSetDefaults(&mut this.rgb_image, this.image);
-      this.rgb_image.format = sys::AVIF_RGB_FORMAT_RGBA;
-      this.rgb_image.depth = 8;
-      AvifError::from_code(sys::avifRGBImageAllocatePixels(&mut this.rgb_image))?;
-      AvifError::from_code(sys::avifImageYUVToRGB(this.image, &mut this.rgb_image))?;
-      let image = &*this.image;
-      this.width = image.width;
-      this.height = image.height;
-      this.data = this.rgb_image.pixels;
-      this.row_bytes = this.rgb_image.rowBytes;
-      this.color_primaries = image.colorPrimaries;
-      this.transfer_characteristics = image.transferCharacteristics;
     }
+    // SAFETY: libavif filled the image; its planes live until drop.
+    let image = unsafe { &*this.image };
+    this.data =
+      avif_yuv::yuv_to_premultiplied_rgba(&unsafe { yuv_view(image) }?).map_err(|error| {
+        AvifError::Known(match error {
+          avif_yuv::YuvError::NotImplemented => AvifErrorCode::NotImplemented,
+          avif_yuv::YuvError::ReformatFailed => AvifErrorCode::ReformatFailed,
+          avif_yuv::YuvError::OutOfMemory => AvifErrorCode::OutOfMemory,
+        })
+      })?;
+    this.width = image.width;
+    this.height = image.height;
+    this.row_bytes = image.width * 4;
+    this.color_primaries = image.colorPrimaries;
+    this.transfer_characteristics = image.transferCharacteristics;
     Ok(this)
   }
 }
 
+/// Borrows the planes of a decoded libavif image.
+///
+/// # Safety
+/// The plane pointers and row bytes must be libavif's for this image.
+unsafe fn yuv_view(image: &sys::avifImage) -> result::Result<avif_yuv::YuvImage<'_>, AvifError> {
+  let format = match image.yuvFormat {
+    sys::AVIF_PIXEL_FORMAT_YUV444 => avif_yuv::PixelFormat::Yuv444,
+    sys::AVIF_PIXEL_FORMAT_YUV422 => avif_yuv::PixelFormat::Yuv422,
+    sys::AVIF_PIXEL_FORMAT_YUV420 => avif_yuv::PixelFormat::Yuv420,
+    sys::AVIF_PIXEL_FORMAT_YUV400 => avif_yuv::PixelFormat::Yuv400,
+    _ => return Err(AvifError::Known(AvifErrorCode::ReformatFailed)),
+  };
+  let (width, height) = (image.width as usize, image.height as usize);
+  if width == 0 || height == 0 || image.yuvPlanes[0].is_null() {
+    return Err(AvifError::Known(AvifErrorCode::ReformatFailed));
+  }
+  let sample_bytes = if image.depth > 8 { 2 } else { 1 };
+  let plane = |data: *mut u8, row_bytes: u32, plane_width: usize, plane_height: usize| {
+    let row_bytes = row_bytes as usize;
+    if data.is_null() || row_bytes < plane_width * sample_bytes {
+      return None;
+    }
+    // SAFETY: libavif allocates `row_bytes` for each row of the plane.
+    Some(avif_yuv::Plane {
+      data: unsafe { slice::from_raw_parts(data, row_bytes * plane_height) },
+      row_bytes,
+    })
+  };
+  let (shift_x, shift_y) = match format {
+    avif_yuv::PixelFormat::Yuv420 => (1, 1),
+    avif_yuv::PixelFormat::Yuv422 => (1, 0),
+    _ => (0, 0),
+  };
+  let (chroma_width, chroma_height) = ((width + shift_x) >> shift_x, (height + shift_y) >> shift_y);
+  let y = plane(image.yuvPlanes[0], image.yuvRowBytes[0], width, height)
+    .ok_or(AvifError::Known(AvifErrorCode::ReformatFailed))?;
+  let (u, v) = if format == avif_yuv::PixelFormat::Yuv400 {
+    (None, None)
+  } else {
+    (
+      plane(
+        image.yuvPlanes[1],
+        image.yuvRowBytes[1],
+        chroma_width,
+        chroma_height,
+      ),
+      plane(
+        image.yuvPlanes[2],
+        image.yuvRowBytes[2],
+        chroma_width,
+        chroma_height,
+      ),
+    )
+  };
+  if format != avif_yuv::PixelFormat::Yuv400 && (u.is_none() || v.is_none()) {
+    return Err(AvifError::Known(AvifErrorCode::ReformatFailed));
+  }
+  Ok(avif_yuv::YuvImage {
+    width,
+    height,
+    depth: image.depth,
+    format,
+    full_range: image.yuvRange == sys::AVIF_RANGE_FULL,
+    chroma_sample_position: image.yuvChromaSamplePosition,
+    color_primaries: image.colorPrimaries,
+    matrix_coefficients: image.matrixCoefficients,
+    alpha_premultiplied: image.alphaPremultiplied != 0,
+    y,
+    u,
+    v,
+    a: plane(image.alphaPlane, image.alphaRowBytes, width, height),
+  })
+}
+
 impl Drop for AvifImage {
   fn drop(&mut self) {
-    unsafe {
-      // A failed decode_from leaves null pixels (which this accepts), or a
-      // null image.
-      sys::avifRGBImageFreePixels(&mut self.rgb_image);
-      if !self.image.is_null() {
-        sys::avifImageDestroy(self.image);
-      }
+    // A failed decode_from can leave a null image.
+    if !self.image.is_null() {
+      unsafe { sys::avifImageDestroy(self.image) };
     }
   }
 }
