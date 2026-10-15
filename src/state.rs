@@ -71,8 +71,10 @@ impl Default for Context2dRenderingState {
       shadow_offset_x: 0f32,
       shadow_offset_y: 0f32,
       shadow_blur: 0f32,
-      shadow_color: RGBA::new(0, 0, 0, 255),
-      shadow_color_string: "#000000".to_owned(),
+      // Transparent black, as the spec says and Chrome does
+      // (canvas_rendering_context_2d_state.cc: shadow_color_(Color::kTransparent)).
+      shadow_color: RGBA::new(0, 0, 0, 0),
+      shadow_color_string: "rgba(0, 0, 0, 0)".to_owned(),
       // 0.0 ~ 1.0
       global_alpha: 1.0,
       // A float specifying the amount of the line dash offset. The default value is 0.0.
