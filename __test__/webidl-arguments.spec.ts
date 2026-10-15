@@ -3,7 +3,7 @@
 // pixel reads on a willReadFrequently canvas), the same on arm64 and x64.
 import test from 'ava'
 
-import { createCanvas } from '../index'
+import { createCanvas, Path2D } from '../index'
 
 // Untyped access for arguments the typings reject on purpose.
 const loose = <T>(value: T) => value as any
@@ -308,4 +308,138 @@ test('method arguments run valueOf before they borrow the context', (t) => {
     1,
   )
   t.deepEqual(pixel(ctx, 1, 1), [0, 0, 255, 77])
+})
+
+const ENUM_ERROR = (value: string) => `The provided value '${value}' is not a valid enum value of type CanvasFillRule.`
+const NOT_PATH = "parameter 1 is not of type 'Path2D'."
+
+// A path whose center (5, 5) is inside for nonzero and outside for evenodd.
+const ruleContext = () => {
+  const ctx = createCanvas(10, 10).getContext('2d')
+  ctx.fillStyle = '#f00'
+  ctx.beginPath()
+  ctx.rect(0, 0, 10, 10)
+  ctx.rect(2, 2, 6, 6)
+  return ctx
+}
+const rulePath = () => {
+  const path = new Path2D()
+  path.rect(0, 0, 10, 10)
+  path.rect(2, 2, 6, 6)
+  return path
+}
+const centerAlpha = (ctx: ReturnType<typeof ruleContext>) => ctx.getImageData(5, 5, 1, 1).data[3]
+
+// [arguments, alpha at the center or an error message]
+const FILL_RULE_CASES: [() => unknown[], number | string][] = [
+  [() => [], 255],
+  [() => ['nonzero'], 255],
+  [() => ['evenodd'], 0],
+  [() => ['bogus'], ENUM_ERROR('bogus')],
+  [() => ['EVENODD'], ENUM_ERROR('EVENODD')],
+  [() => [undefined], 255],
+  [() => [null], ENUM_ERROR('null')],
+  [() => [5], ENUM_ERROR('5')],
+  [() => [{ toString: () => 'evenodd' }], 0],
+  [() => [{}], ENUM_ERROR('[object Object]')],
+  [() => [undefined, 'evenodd'], NOT_PATH],
+  [() => ['evenodd', undefined], NOT_PATH],
+  [() => ['evenodd', 'bogus'], NOT_PATH],
+  [() => [{}, 'evenodd'], NOT_PATH],
+  [() => [null, 'evenodd'], NOT_PATH],
+  [() => [rulePath()], 255],
+  [() => [rulePath(), 'evenodd'], 0],
+  [() => [rulePath(), 'bogus'], ENUM_ERROR('bogus')],
+  [() => [rulePath(), undefined], 255],
+  [() => [rulePath(), null], ENUM_ERROR('null')],
+  [() => [rulePath(), 'evenodd', 'extra'], 0],
+]
+
+test('fill and clip take a CanvasFillRule and an optional Path2D', (t) => {
+  for (const method of ['fill', 'clip'] as const) {
+    for (const [args, expected] of FILL_RULE_CASES) {
+      const ctx = ruleContext()
+      const call = () => {
+        loose(ctx)[method](...args())
+        if (method === 'clip') ctx.fillRect(0, 0, 10, 10)
+        return centerAlpha(ctx)
+      }
+      if (typeof expected === 'number') {
+        t.is(call(), expected, `${method}(${args().map(String)})`)
+      } else {
+        const error = t.throws(call, { instanceOf: TypeError, message: `${execute(method)}${expected}` })
+        t.is(String(error.stack).split('\n')[0], `TypeError: ${expected}`)
+      }
+    }
+  }
+})
+
+test('stroke with an argument needs a Path2D', (t) => {
+  for (const value of [{}, null, undefined, 5]) {
+    const ctx = ruleContext()
+    t.throws(() => ctx.stroke(loose(value)), {
+      instanceOf: TypeError,
+      message: `${execute('stroke')}${NOT_PATH}`,
+    })
+  }
+  const ctx = ruleContext()
+  ctx.lineWidth = 2
+  t.notThrows(() => ctx.stroke(rulePath()))
+})
+
+test('isPointInPath overloads', (t) => {
+  const ctx = loose(ruleContext())
+  const ipp = execute('isPointInPath')
+  t.is(ctx.isPointInPath(5, 5), true)
+  t.is(ctx.isPointInPath(5, 5, 'evenodd'), false)
+  t.is(ctx.isPointInPath(5, 5, undefined), true)
+  t.is(ctx.isPointInPath(rulePath(), 5, 5), true)
+  t.is(ctx.isPointInPath(rulePath(), 5, 5, 'evenodd'), false)
+  t.is(ctx.isPointInPath(rulePath(), 5), false)
+  t.is(ctx.isPointInPath(rulePath(), 5, undefined), false)
+  t.is(ctx.isPointInPath('5', '5', 'evenodd'), false)
+  t.is(ctx.isPointInPath(NaN, 5), false)
+  t.is(ctx.isPointInPath(Infinity, 5), false)
+  for (const [args, message] of [
+    [[5, 5, 'bogus'], ENUM_ERROR('bogus')],
+    [[5, 5, null], ENUM_ERROR('null')],
+    [[rulePath(), 5, 5, 'bogus'], ENUM_ERROR('bogus')],
+    [[{}, 5, 5], ENUM_ERROR('5')],
+    [[null, 5, 5], ENUM_ERROR('5')],
+    [[5, 5, 5, 'evenodd'], NOT_PATH],
+  ] as const) {
+    t.throws(() => ctx.isPointInPath(...args), { instanceOf: TypeError, message: `${ipp}${message}` })
+  }
+})
+
+test('isPointInStroke overloads', (t) => {
+  const ctx = loose(ruleContext())
+  ctx.lineWidth = 2
+  t.is(ctx.isPointInStroke(0, 5), true)
+  t.is(ctx.isPointInStroke(rulePath(), 0, 5), true)
+  t.is(ctx.isPointInStroke(rulePath(), 0), false)
+  t.is(ctx.isPointInStroke(NaN, 5), false)
+  for (const args of [
+    [{}, 0, 5],
+    [0, 5, 7],
+  ]) {
+    t.throws(() => ctx.isPointInStroke(...args), {
+      instanceOf: TypeError,
+      message: `${execute('isPointInStroke')}${NOT_PATH}`,
+    })
+  }
+})
+
+test("fill, clip, stroke, isPointInPath and isPointInStroke have Chrome's length", (t) => {
+  const ctx = ruleContext()
+  t.deepEqual(
+    [ctx.fill.length, ctx.clip.length, ctx.stroke.length, ctx.isPointInPath.length, ctx.isPointInStroke.length],
+    [0, 0, 0, 2, 2],
+  )
+  for (const method of ['isPointInPath', 'isPointInStroke']) {
+    t.throws(() => loose(ctx)[method](1), {
+      instanceOf: TypeError,
+      message: `${execute(method)}${required(2, 1)}`,
+    })
+  }
 })

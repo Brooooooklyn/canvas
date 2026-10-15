@@ -172,6 +172,41 @@ for (const [method, required] of [
 // value there (from a raw js-binding call) is an extra argument.
 const ARGUMENT_COUNTS = _argumentCounts()
 
+// fill(), clip(), stroke(), isPointInPath() and isPointInStroke(): WebIDL
+// picks the overload from the argument count (canvas_2d_recorder_context.idl),
+// and an explicit undefined counts: fill(path, undefined) is the nonzero
+// fill of path, fill(undefined, 'evenodd') a TypeError.
+const _fill = CanvasRenderingContext2D.prototype.fill
+CanvasRenderingContext2D.prototype.fill = function fill() {
+  return _fill.call(this, arguments[0], arguments[1], ARGUMENT_COUNTS[Math.min(arguments.length, 2)])
+}
+
+const _clip = CanvasRenderingContext2D.prototype.clip
+CanvasRenderingContext2D.prototype.clip = function clip() {
+  return _clip.call(this, arguments[0], arguments[1], ARGUMENT_COUNTS[Math.min(arguments.length, 2)])
+}
+
+const _stroke = CanvasRenderingContext2D.prototype.stroke
+CanvasRenderingContext2D.prototype.stroke = function stroke() {
+  return _stroke.call(this, arguments[0], ARGUMENT_COUNTS[Math.min(arguments.length, 1)])
+}
+
+const _isPointInPath = CanvasRenderingContext2D.prototype.isPointInPath
+CanvasRenderingContext2D.prototype.isPointInPath = function isPointInPath(x, y) {
+  if (arguments.length < 2) {
+    argumentCountError(ctxBrand, this, 'isPointInPath', 'CanvasRenderingContext2D', 2, arguments.length)
+  }
+  return _isPointInPath.call(this, x, y, arguments[2], arguments[3], ARGUMENT_COUNTS[Math.min(arguments.length, 4)])
+}
+
+const _isPointInStroke = CanvasRenderingContext2D.prototype.isPointInStroke
+CanvasRenderingContext2D.prototype.isPointInStroke = function isPointInStroke(x, y) {
+  if (arguments.length < 2) {
+    argumentCountError(ctxBrand, this, 'isPointInStroke', 'CanvasRenderingContext2D', 2, arguments.length)
+  }
+  return _isPointInStroke.call(this, x, y, arguments[2], ARGUMENT_COUNTS[Math.min(arguments.length, 3)])
+}
+
 // createImageData(): WebIDL picks the overload from the argument count, and an
 // explicit undefined counts: createImageData(imagedata, undefined) is the
 // (sw, sh) form.
