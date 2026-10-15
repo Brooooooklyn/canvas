@@ -857,10 +857,12 @@ void skiac_surface_png_data(skiac_surface* c_surface, skiac_sk_data* data);
 void skiac_surface_encode_data(skiac_surface* c_surface,
                                skiac_sk_data* data,
                                int format,
-                               int quality);
+                               float quality,
+                               bool lossless);
 bool skiac_surface_encode_stream(skiac_surface* c_surface,
                                  int format,
-                                 int quality,
+                                 float quality,
+                                 bool lossless,
                                  write_callback_t write_callback,
                                  void* context);
 int skiac_surface_get_alpha_type(skiac_surface* c_surface);
@@ -1283,7 +1285,9 @@ int skiac_image_get_height(skiac_image* c_image);
 void skiac_image_encode_data(skiac_image* c_image,
                              skiac_sk_data* data,
                              int format,
-                             int quality);
+                             float quality,
+                             bool lossless,
+                             bool crop_to_max_dimension);
 bool skiac_image_read_pixels(skiac_image* c_image,
                              uint8_t* dst,
                              size_t row_bytes,

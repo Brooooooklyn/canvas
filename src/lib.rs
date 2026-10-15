@@ -10,9 +10,7 @@ extern crate serde_derive;
 
 use std::{
   ffi::{CString, c_void},
-  mem,
-  rc::Rc,
-  slice,
+  mem, slice,
 };
 
 use napi::{
@@ -23,11 +21,16 @@ use napi::{
 };
 
 use ctx::{
-  CANVAS_HIDDEN_NAME, CanvasRenderingContext2D, Context, ContextData, ContextOutputData,
-  SvgExportFlag, encode_surface, is_valid_image_size, truncate_style_objects,
+  CANVAS_HIDDEN_NAME, CanvasRenderingContext2D, Context, SvgExportFlag, is_valid_image_size,
+  truncate_style_objects,
+};
+use encoding::{
+  ContextData, ContextOutputData, EncodeQuality, EncodeType, Encoding, ImageEncodeOptions,
+  ImageType, ToBlobSite, ToDataUrlAsyncSite, ToDataUrlSite, encode_image, encode_surface,
+  node_encode_error,
 };
 use font::{FONT_REGEXP, init_font_regexp};
-use sk::{AlphaType, ColorSpace, SkImage, SkiaDataRef};
+use sk::{ColorSpace, SkImage, SkiaDataRef};
 
 use avif::AvifConfig;
 
@@ -38,6 +41,7 @@ mod avif;
 mod color;
 mod css_math;
 mod ctx;
+mod encoding;
 mod error;
 mod filter;
 mod font;
@@ -59,39 +63,10 @@ mod svg_path;
 mod unpremul;
 mod webidl;
 
-const MIME_WEBP: &str = "image/webp";
-const MIME_PNG: &str = "image/png";
-const MIME_JPEG: &str = "image/jpeg";
-const MIME_AVIF: &str = "image/avif";
-const MIME_GIF: &str = "image/gif";
-
-// Consistent with the default value of JPEG quality in Blink
-// https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/platform/image-encoders/image_encoder.cc;l=85;drc=81c6f843fdfd8ef660d733289a7a32abe68e247a
-const DEFAULT_JPEG_QUALITY: u8 = 92;
-
-// Consistent with the default value of WebP quality in Blink
-// https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/platform/image-encoders/image_encoder.cc;l=100;drc=81c6f843fdfd8ef660d733289a7a32abe68e247a
-const DEFAULT_WEBP_QUALITY: u8 = 80;
-
 #[napi_derive::module_init]
 fn init() {
   // pre init font regexp
   FONT_REGEXP.get_or_init(init_font_regexp);
-}
-
-#[napi(object, object_to_js = false)]
-pub struct ConvertToBlobOptions {
-  pub mime: Option<String>,
-  pub quality: Option<f64>,
-}
-
-impl Default for ConvertToBlobOptions {
-  fn default() -> Self {
-    Self {
-      mime: Some(MIME_PNG.to_owned()),
-      quality: None,
-    }
-  }
 }
 
 #[napi]
@@ -364,58 +339,19 @@ impl<'c> CanvasElement<'c> {
     }
     // Flush deferred rendering before encoding
     self.ctx.context.flush();
-    let mime = mime.as_str();
-    let image = self
-      .ctx
-      .context
-      .surface
-      .make_image_snapshot()
-      .ok_or_else(|| {
-        Error::new(
-          Status::GenericFailure,
-          "Create image snapshot failed".to_owned(),
-        )
-      })?;
-    let context_data = get_data_ref(
+    let ty = ImageType::from_mime(&mime)
+      .ok_or_else(|| Error::new(Status::InvalidArg, format!("{mime} is not valid mime")))?;
+    let image = self.snapshot()?.ok_or_else(|| no_pixels_error(&env))?;
+    let encoding = node_encoding(ty, quality_or_config, true);
+    encode_image(
       &image,
-      mime,
-      &match quality_or_config {
-        Either3::A(q) => Either::A(q),
-        Either3::B(s) => Either::B(s),
-        Either3::C(_) => Either::A(DEFAULT_JPEG_QUALITY as u32),
-      },
+      &encoding,
       self.ctx.context.width,
       self.ctx.context.height,
-    )?;
-    match context_data {
-      ContextOutputData::Skia(data_ref) => unsafe {
-        BufferSlice::from_external(
-          &env,
-          data_ref.0.ptr,
-          data_ref.0.size,
-          data_ref,
-          |_, data: SkiaDataRef| mem::drop(data),
-        )
-      },
-      ContextOutputData::Avif(output) => unsafe {
-        BufferSlice::from_external(
-          &env,
-          output.as_ptr().cast_mut(),
-          output.len(),
-          output,
-          |_, data| mem::drop(data),
-        )
-      },
-      ContextOutputData::Gif(output) => unsafe {
-        BufferSlice::from_external(
-          &env,
-          output.as_ptr().cast_mut(),
-          output.len(),
-          output,
-          |_, data| mem::drop(data),
-        )
-      },
-    }
+      false,
+    )
+    .map_err(|detail| node_encode_error(ty, detail, true))?
+    .into_buffer_slice(env)
   }
 
   #[napi]
@@ -448,110 +384,69 @@ impl<'c> CanvasElement<'c> {
   #[napi(js_name = "toDataURLAsync")]
   pub fn to_data_url_async(
     &mut self,
-    mime: Option<String>,
-    quality_or_config: Either3<f64, AvifConfig, Unknown>,
+    mime: EncodeType<ToDataUrlAsyncSite>,
+    quality: EncodeQuality,
   ) -> Result<AsyncTask<AsyncDataUrl>> {
     // Flush deferred rendering before encoding
     self.ctx.context.flush();
-    Ok(AsyncTask::new(
-      self.to_data_url_inner(mime.as_deref(), quality_or_config)?,
-    ))
+    Ok(AsyncTask::new(self.to_data_url_inner(mime.0, quality)?))
   }
 
+  /// toDataURL(type, quality): the type is converted to a string and picked
+  /// as Chrome picks it (an unknown type is PNG); the quality counts only
+  /// when it is a number in [0, 1]. A failed encode is "data:,".
   #[napi(js_name = "toDataURL")]
   pub fn to_data_url(
     &mut self,
-    mime: Option<String>,
-    quality_or_config: Either3<f64, AvifConfig, Unknown>,
+    mime: EncodeType<ToDataUrlSite>,
+    quality: EncodeQuality,
   ) -> Result<String> {
     // Flush deferred rendering before encoding
     self.ctx.context.flush();
-    Task::compute(&mut self.to_data_url_inner(mime.as_deref(), quality_or_config)?)
+    Task::compute(&mut self.to_data_url_inner(mime.0, quality)?)
   }
 
-  #[napi]
+  /// toBlob(type, quality) without the callback: index.js checks the
+  /// callback, calls this, and makes the Blob. Resolves { data, type }, or
+  /// null when the canvas has no pixels or the encoder fails (Chrome calls
+  /// back null then).
+  #[napi(ts_return_type = "Promise<{ data: Uint8Array; type: string } | null>")]
   pub fn to_blob(
     &mut self,
-    env: &Env,
-    callback: Function<Either<Uint8ArraySlice, Null>, Unknown>,
-    mime: Option<String>,
-    quality: Option<f64>,
-  ) -> Result<()> {
+    mime: EncodeType<ToBlobSite>,
+    quality: EncodeQuality,
+  ) -> Result<AsyncTask<AsyncBlob>> {
     // Flush deferred rendering before encoding
     self.ctx.context.flush();
-    // Without pixels the callback gets null, from a task, as in Chrome
-    // (HTMLCanvasElement::toBlob, html_canvas_element.cc:1505-1512).
-    let image = self.snapshot()?;
-    let mime = mime.unwrap_or_else(|| MIME_PNG.to_owned());
-    let quality_value = quality.unwrap_or(0.92).clamp(0.0, 1.0);
-    let quality_or_config = if mime == MIME_AVIF {
-      Either::B(AvifConfig {
-        quality: Some((quality_value * 100.0) as u32),
-        ..Default::default()
-      })
-    } else {
-      Either::A((quality_value * 100.0) as u32)
-    };
-    let width = self.ctx.context.width;
-    let height = self.ctx.context.height;
-    let callback_ref = Rc::new(callback.create_ref()?);
-    let callback_ref_in_catch = callback_ref.clone();
-    let async_blob_task = AsyncBlob {
-      image,
-      mime,
-      quality_or_config,
-      width,
-      height,
-    };
-
-    env
-      .spawn(async_blob_task)?
-      .promise_object()
-      .then(move |ctx| {
-        let callback = callback_ref.borrow_back(&ctx.env)?;
-        callback.call(Either::A(ctx.value))?;
-        Ok(())
-      })?
-      // `move`: the closure runs after this call returns, so it must own the
-      // reference (borrowing the local read freed stack memory).
-      .catch(move |ctx: CallbackContext<Unknown>| {
-        let callback = callback_ref_in_catch.borrow_back(&ctx.env)?;
-        callback.call(Either::B(Null))?;
-        Ok(())
-      })?;
-
-    Ok(())
+    Ok(AsyncTask::new(AsyncBlob {
+      image: self.snapshot()?,
+      encoding: Encoding::web(mime.0, quality.quality, None),
+      width: self.ctx.context.width,
+      height: self.ctx.context.height,
+      reject_on_failure: false,
+    }))
   }
 
-  #[napi]
+  /// OffscreenCanvas.convertToBlob(options): ImageEncodeOptions `type`
+  /// (default "image/png") and `quality` (default 1.0). Resolves { data,
+  /// type }; index.js makes the Blob.
+  #[napi(ts_return_type = "Promise<{ data: Uint8Array; type: string }>")]
   pub fn convert_to_blob<'env>(
     &mut self,
     env: &'env Env,
-    options: Option<ConvertToBlobOptions>,
+    options: ImageEncodeOptions,
   ) -> Result<Either<AsyncTask<AsyncBlob>, Unknown<'env>>> {
     if !self.ctx.context.has_pixels() {
       return rejected_with_index_size_error(env, CONVERT_TO_BLOB_NO_PIXELS).map(Either::B);
     }
     // Flush deferred rendering before encoding
     self.ctx.context.flush();
-    let image = self.snapshot()?;
-    let options = options.unwrap_or_default();
-    let mime = options.mime.unwrap_or_else(|| MIME_PNG.to_owned());
-    let quality = options.quality.unwrap_or(0.92).clamp(0.0, 1.0);
-    let quality_or_config = if mime == MIME_AVIF {
-      Either::B(AvifConfig {
-        quality: Some((quality * 100.0) as u32),
-        ..Default::default()
-      })
-    } else {
-      Either::A((quality * 100.0) as u32)
-    };
     Ok(Either::A(AsyncTask::new(AsyncBlob {
-      image,
-      mime,
-      quality_or_config,
+      image: self.snapshot()?,
+      encoding: Encoding::web(options.ty, Some(options.quality), None),
       width: self.ctx.context.width,
       height: self.ctx.context.height,
+      reject_on_failure: true,
     })))
   }
 
@@ -560,18 +455,21 @@ impl<'c> CanvasElement<'c> {
     &'env mut self,
     env: &Env,
     mime: Option<String>,
-    quality: Option<u8>,
+    quality: Option<u32>,
   ) -> Result<ReadableStream<'env, BufferSlice<'env>>> {
     if !self.ctx.context.has_pixels() {
       return Err(no_pixels_error(env));
     }
     // Flush deferred rendering before encoding
     self.ctx.context.flush();
-    let mime = match mime.as_deref() {
-      Some("webp") => sk::SkEncodedImageFormat::Webp,
-      Some("jpeg") => sk::SkEncodedImageFormat::Jpeg,
-      Some("png") | None => sk::SkEncodedImageFormat::Png,
+    let ty = match mime.as_deref() {
+      Some("webp") => ImageType::Webp,
+      Some("jpeg") => ImageType::Jpeg,
+      Some("png") | None => ImageType::Png,
       _ => return Err(Error::new(Status::InvalidArg, "Invalid mime")),
+    };
+    let Some((format, quality, lossless)) = Encoding::node(ty, quality).skia() else {
+      unreachable!("png, jpeg and webp are Skia encoders");
     };
     let (tx, rx) = channel(1024);
     let callback = |buffer: &[u8]| match tx.try_send(Ok(buffer.to_vec())) {
@@ -580,7 +478,7 @@ impl<'c> CanvasElement<'c> {
         eprintln!("encode_image_stream_callback: channel is full");
       }
     };
-    if !self.encode_image_inner(mime, quality.unwrap_or(DEFAULT_JPEG_QUALITY), callback) {
+    if !self.encode_image_inner(format, quality, lossless, callback) {
       return Err(Error::new(
         Status::GenericFailure,
         "Encode image stream failed",
@@ -592,14 +490,16 @@ impl<'c> CanvasElement<'c> {
   // let the compiler infer the type of the callback
   fn encode_image_inner<F: Fn(&[u8])>(
     &self,
-    mime: sk::SkEncodedImageFormat,
-    quality: u8,
+    format: sk::SkEncodedImageFormat,
+    quality: f32,
+    lossless: bool,
     callback: F,
   ) -> bool {
     let ptr = Box::into_raw(Box::new(callback));
     let result = self.ctx.context.surface.encode_stream(
-      mime,
+      format,
       quality,
+      lossless,
       Some(encode_image_stream_callback::<F>),
       ptr.cast(),
     );
@@ -645,66 +545,52 @@ impl<'c> CanvasElement<'c> {
     format: String,
     quality_or_config: Either3<u32, AvifConfig, Unknown>,
   ) -> Result<ContextData> {
-    let format_str = format.as_str();
-    let quality = match &quality_or_config {
-      Either3::A(q) => (*q) as u8,
-      Either3::B(s) => s.quality.map(|q| q as u8).unwrap_or(DEFAULT_JPEG_QUALITY),
-      Either3::C(_) => DEFAULT_JPEG_QUALITY,
-    };
-    let ctx2d = &self.ctx.context;
-    let image = ctx2d.surface.make_image_snapshot().ok_or_else(|| {
+    let ty = ImageType::from_format(&format)
+      .ok_or_else(|| Error::new(Status::InvalidArg, format!("{format} is not valid format")))?;
+    let image = self.snapshot()?.ok_or_else(|| {
       Error::new(
         Status::GenericFailure,
         "Create image snapshot failed".to_owned(),
       )
     })?;
-
-    let task = match format_str {
-      "webp" => ContextData::Webp(image, quality),
-      "jpeg" => ContextData::Jpeg(image, quality),
-      "png" => ContextData::Png(image),
-      "avif" => {
-        let cfg = AvifConfig::from(&quality_or_config);
-        ContextData::Avif(image, cfg.into(), ctx2d.width, ctx2d.height)
-      }
-      "gif" => {
-        let cfg = gif::GifConfig {
-          quality: match &quality_or_config {
-            Either3::A(q) => Some(*q),
-            _ => None,
-          },
-        };
-        ContextData::Gif(image, cfg, ctx2d.width, ctx2d.height)
-      }
-      _ => {
-        return Err(Error::new(
-          Status::InvalidArg,
-          format!("{format_str} is not valid format"),
-        ));
-      }
-    };
-
-    Ok(task)
-  }
-
-  fn to_data_url_inner(
-    &self,
-    mime: Option<&str>,
-    quality_or_config: Either3<f64, AvifConfig, Unknown>,
-  ) -> Result<AsyncDataUrl> {
-    let mime = mime.unwrap_or(MIME_PNG);
-    let image = self.snapshot()?;
-    Ok(AsyncDataUrl {
+    Ok(ContextData {
       image,
-      mime: mime.to_owned(),
-      quality_or_config: match quality_or_config {
-        Either3::A(q) => Either::A((q * 100.0) as u32),
-        Either3::B(s) => Either::B(s),
-        Either3::C(_) => Either::A(DEFAULT_JPEG_QUALITY as u32),
-      },
+      encoding: node_encoding(ty, quality_or_config, false),
       width: self.ctx.context.width,
       height: self.ctx.context.height,
     })
+  }
+
+  fn to_data_url_inner(&self, ty: ImageType, quality: EncodeQuality) -> Result<AsyncDataUrl> {
+    Ok(AsyncDataUrl {
+      image: self.snapshot()?,
+      encoding: Encoding::web(ty, quality.quality, quality.avif),
+      width: self.ctx.context.width,
+      height: self.ctx.context.height,
+    })
+  }
+}
+
+/// The encoding of a Node method (toBuffer, or encode/encodeSync): a number
+/// is the 0-100 quality (a larger one is 100), an AvifConfig the AVIF
+/// settings. Without either, the defaults each method has always used.
+fn node_encoding(
+  ty: ImageType,
+  quality_or_config: Either3<u32, AvifConfig, Unknown>,
+  to_buffer: bool,
+) -> Encoding {
+  match quality_or_config {
+    Either3::A(quality) => Encoding::node(ty, Some(quality)),
+    Either3::B(config) => match ty {
+      ImageType::Avif => Encoding::Avif(config),
+      // toBuffer has used Blink's default WebP quality for an AvifConfig.
+      ImageType::Webp if to_buffer => Encoding::node(ty, Some(80)),
+      ImageType::Jpeg | ImageType::Webp if !to_buffer => Encoding::node(ty, config.quality),
+      _ => Encoding::node(ty, None),
+    },
+    // toBuffer('image/gif') has passed 92 as the GIF quality.
+    Either3::C(_) if to_buffer && ty == ImageType::Gif => Encoding::node(ty, Some(92)),
+    Either3::C(_) => Encoding::node(ty, None),
   }
 }
 
@@ -713,74 +599,10 @@ pub struct ContextAttr {
   pub alpha: Option<bool>,
 }
 
-fn get_data_ref(
-  image: &SkImage,
-  mime: &str,
-  quality_or_config: &Either<u32, AvifConfig>,
-  width: u32,
-  height: u32,
-) -> Result<ContextOutputData> {
-  let quality = quality_or_config.to_quality(mime);
-
-  if let Some(data_ref) = match mime {
-    MIME_WEBP => image.encode_data(sk::SkEncodedImageFormat::Webp, quality),
-    MIME_JPEG => image.encode_data(sk::SkEncodedImageFormat::Jpeg, quality),
-    MIME_PNG => image.encode_data(sk::SkEncodedImageFormat::Png, 100),
-    MIME_AVIF => {
-      let color_space = image.color_space();
-      let pixels = image
-        .read_pixels(AlphaType::Unpremultiplied, color_space)
-        .ok_or_else(|| {
-          Error::new(
-            Status::GenericFailure,
-            "Encode to avif error, failed to get surface pixels".to_owned(),
-          )
-        })?;
-      let config = AvifConfig::from(quality_or_config).into();
-      let output = avif::encode(&pixels, width, height, &config, color_space)
-        .map_err(|e| Error::new(Status::GenericFailure, format!("{e}")))?;
-      return Ok(ContextOutputData::Avif(output));
-    }
-    MIME_GIF => {
-      let config = gif::GifConfig {
-        quality: match quality_or_config {
-          Either::A(q) => Some(*q),
-          _ => None,
-        },
-      };
-      let pixels = image
-        .read_pixels(AlphaType::Unpremultiplied, ColorSpace::Srgb)
-        .ok_or_else(|| {
-          Error::new(
-            Status::GenericFailure,
-            "Encode to gif error, failed to get surface pixels".to_owned(),
-          )
-        })?;
-      let output = gif::encode(&pixels, width, height, &config)
-        .map_err(|e| Error::new(Status::GenericFailure, format!("{e}")))?;
-      return Ok(ContextOutputData::Gif(output));
-    }
-    _ => {
-      return Err(Error::new(
-        Status::InvalidArg,
-        format!("{mime} is not valid mime"),
-      ));
-    }
-  } {
-    Ok(ContextOutputData::Skia(data_ref))
-  } else {
-    Err(Error::new(
-      Status::InvalidArg,
-      format!("encode {mime} output failed"),
-    ))
-  }
-}
-
 pub struct AsyncDataUrl {
   /// None: the canvas has no pixels.
   image: Option<SkImage>,
-  quality_or_config: Either<u32, AvifConfig>,
-  mime: String,
+  encoding: Encoding,
   width: u32,
   height: u32,
 }
@@ -790,30 +612,17 @@ impl Task for AsyncDataUrl {
   type Output = String;
   type JsValue = String;
 
+  /// No pixels or a failed encode give "data:,"
+  /// (HTMLCanvasElement::ToDataURLInternal, html_canvas_element.cc:1329-1384).
   fn compute(&mut self) -> Result<Self::Output> {
-    // HTMLCanvasElement::ToDataURLInternal (html_canvas_element.cc:1417).
     let Some(image) = &self.image else {
       return Ok("data:,".to_owned());
     };
-    let mut output = format!("data:{};base64,", self.mime);
-    let surface_data = get_data_ref(
-      image,
-      &self.mime,
-      &self.quality_or_config,
-      self.width,
-      self.height,
-    )?;
-    match surface_data {
-      ContextOutputData::Skia(data_ref) => {
-        base64_simd::STANDARD.encode_append(data_ref.slice(), &mut output);
-      }
-      ContextOutputData::Avif(data_ref) => {
-        base64_simd::STANDARD.encode_append(&data_ref, &mut output);
-      }
-      ContextOutputData::Gif(data_ref) => {
-        base64_simd::STANDARD.encode_append(&data_ref, &mut output);
-      }
-    }
+    let Ok(data) = encode_image(image, &self.encoding, self.width, self.height, false) else {
+      return Ok("data:,".to_owned());
+    };
+    let mut output = format!("data:{};base64,", self.encoding.image_type().mime());
+    base64_simd::STANDARD.encode_append(data.as_slice(), &mut output);
     Ok(output)
   }
 
@@ -823,82 +632,52 @@ impl Task for AsyncDataUrl {
 }
 
 pub struct AsyncBlob {
-  /// None: the canvas has no pixels, and the task fails (toBlob then calls
-  /// back null).
+  /// None: the canvas has no pixels.
   image: Option<SkImage>,
-  mime: String,
-  quality_or_config: Either<u32, AvifConfig>,
+  encoding: Encoding,
   width: u32,
   height: u32,
+  /// convertToBlob rejects a failed encode; toBlob resolves null.
+  reject_on_failure: bool,
+}
+
+#[napi(object, object_from_js = false)]
+pub struct BlobData<'env> {
+  pub data: Uint8ArraySlice<'env>,
+  /// The type of the encoded image (blob.type).
+  #[napi(js_name = "type")]
+  pub mime: String,
 }
 
 #[napi]
 impl<'env> ScopedTask<'env> for AsyncBlob {
-  type Output = ContextOutputData;
-  type JsValue = Uint8ArraySlice<'env>;
+  type Output = Option<ContextOutputData>;
+  type JsValue = Either<BlobData<'env>, Null>;
 
   fn compute(&mut self) -> Result<Self::Output> {
     let Some(image) = &self.image else {
-      return Err(Error::from_reason(NO_PIXELS));
+      return Ok(None);
     };
-    get_data_ref(
-      image,
-      &self.mime,
-      &self.quality_or_config,
-      self.width,
-      self.height,
-    )
+    Ok(encode_image(image, &self.encoding, self.width, self.height, true).ok())
   }
 
   fn resolve(&mut self, env: &'env Env, output: Self::Output) -> Result<Self::JsValue> {
-    match output {
-      ContextOutputData::Skia(data_ref) => unsafe {
-        Uint8ArraySlice::from_external(env, data_ref.0.ptr, data_ref.0.size, data_ref, |_, d| {
-          mem::drop(d)
-        })
-      },
-      ContextOutputData::Avif(data_ref) => unsafe {
-        Uint8ArraySlice::from_external(
-          env,
-          data_ref.as_ptr().cast_mut(),
-          data_ref.len(),
-          data_ref,
-          |_, d| mem::drop(d),
-        )
-      },
-      ContextOutputData::Gif(data_ref) => unsafe {
-        Uint8ArraySlice::from_external(
-          env,
-          data_ref.as_ptr().cast_mut(),
-          data_ref.len(),
-          data_ref,
-          |_, d| mem::drop(d),
-        )
-      },
-    }
-  }
-}
-
-trait ToQuality {
-  fn to_quality(&self, mime: &str) -> u8;
-}
-
-impl ToQuality for &Either<u32, AvifConfig> {
-  fn to_quality(&self, mime_or_format: &str) -> u8 {
-    if let Either::A(q) = &self {
-      *q as u8
-    } else {
-      match mime_or_format {
-        MIME_WEBP | "webp" => DEFAULT_WEBP_QUALITY,
-        _ => DEFAULT_JPEG_QUALITY, // https://developer.mozilla.org/en-US/docs/Web/API/HTMLCanvasElement/toDataURL
+    let Some(output) = output else {
+      // CanvasAsyncBlobCreator::CreateNullAndReturnResult
+      // (canvas_async_blob_creator.cc:458-480).
+      if self.reject_on_failure {
+        return Err(webidl::dom_exception(
+          env.raw(),
+          "EncodingError",
+          "Encoding of the source image has failed.",
+        ));
       }
-    }
-  }
-}
-
-impl ToQuality for Either<u32, AvifConfig> {
-  fn to_quality(&self, mime: &str) -> u8 {
-    ToQuality::to_quality(&self, mime)
+      return Ok(Either::B(Null));
+    };
+    Ok(Either::A(BlobData {
+      data: output.into_uint8_array_slice(env)?,
+      mime: self.encoding.image_type().mime().to_owned(),
+    }))
   }
 }
 
