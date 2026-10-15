@@ -702,9 +702,12 @@ export interface AvifConfig {
   quality?: number
   /** 0-100 scale */
   alphaQuality?: number
-  /** rav1e preset 1 (slow) 10 (fast but crappy), default is 4 */
+  /**
+   * aom encoder speed from 0 (slowest, smallest file) to 10 (fastest);
+   * larger values are 10. Default 5.
+   */
   speed?: number
-  /** How many threads should be used (0 = match core count) */
+  /** How many threads to use: 0 or unset is one per CPU core; at most 64. */
   threads?: number
   /** set to '4:2:0' to use chroma subsampling, default '4:4:4' */
   chromaSubsampling?: ChromaSubsampling

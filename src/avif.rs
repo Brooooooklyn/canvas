@@ -17,9 +17,10 @@ pub struct AvifConfig {
   pub quality: Option<u32>,
   /// 0-100 scale
   pub alpha_quality: Option<u32>,
-  /// rav1e preset 1 (slow) 10 (fast but crappy), default is 4
+  /// aom encoder speed from 0 (slowest, smallest file) to 10 (fastest);
+  /// larger values are 10. Default 5.
   pub speed: Option<u32>,
-  /// How many threads should be used (0 = match core count)
+  /// How many threads to use: 0 or unset is one per CPU core; at most 64.
   pub threads: Option<u32>,
   /// set to '4:2:0' to use chroma subsampling, default '4:4:4'
   pub chroma_subsampling: Option<ChromaSubsampling>,
@@ -89,14 +90,16 @@ impl From<AvifConfig> for Config {
       // Calculate alphaQuality, this is consistent with cavif.
       // https://github.com/kornelski/cavif-rs/blob/37847b95bb81d4cf90e36b7fab2c7fbbcf95abe2/src/main.rs#L97
       alpha_quality: config.alpha_quality.unwrap_or(90).min(100) as u8,
-      // Encoding speed between 1 (best, but slowest) and 10 (fastest, but a blurry mess), the default value is 4.
-      // Speeds 1 and 2 are unbelievably slow, but make files ~3-5% smaller.
-      // Speeds 7 and above degrade compression significantly, and are not recommended.
-      speed: config.speed.unwrap_or(5) as u8,
-      threads: config
-        .threads
-        .map(|n| n as usize)
-        .unwrap_or_else(num_cpus::get),
+      // aom speed 0 (slowest) to 10 (fastest). Clamp before narrowing to u8,
+      // so 256 is the fastest speed, not 0.
+      speed: config.speed.unwrap_or(5).min(10) as u8,
+      // 0 or unset: one thread per core. aom takes 1 to 64 threads
+      // (MAX_NUM_THREADS); more fails the encode.
+      threads: match config.threads {
+        None | Some(0) => num_cpus::get(),
+        Some(n) => n as usize,
+      }
+      .clamp(1, 64),
       chroma_subsampling: config
         .chroma_subsampling
         .unwrap_or(ChromaSubsampling::Yuv444),
@@ -207,7 +210,7 @@ pub(crate) fn encode(
     encoder.quality = config.quality.min(100).into();
     encoder.qualityAlpha = config.alpha_quality.min(100).into();
     encoder.speed = config.speed.min(10).into();
-    encoder.maxThreads = config.threads.max(1) as i32;
+    encoder.maxThreads = config.threads as i32;
     avif_result(sys::avifEncoderWrite(
       guard.encoder,
       guard.image,
