@@ -1386,7 +1386,21 @@ test('measureText', (t) => {
 test('measureText with empty string should not throw', (t) => {
   const { ctx } = t.context
   ctx.font = '50px Iosevka Slab'
-  t.deepEqual(ctx.measureText(''), {
+  // TextMetrics is a class with prototype getters: compare its fields.
+  const metrics = ctx.measureText('')
+  const fields = [
+    'actualBoundingBoxAscent',
+    'actualBoundingBoxDescent',
+    'actualBoundingBoxLeft',
+    'actualBoundingBoxRight',
+    'fontBoundingBoxAscent',
+    'fontBoundingBoxDescent',
+    'alphabeticBaseline',
+    'emHeightAscent',
+    'emHeightDescent',
+    'width',
+  ] as const
+  t.deepEqual(Object.fromEntries(fields.map((field) => [field, metrics[field]])), {
     actualBoundingBoxAscent: 0,
     actualBoundingBoxDescent: 0,
     actualBoundingBoxLeft: 0,

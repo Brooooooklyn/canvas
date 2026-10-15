@@ -207,6 +207,12 @@ pub mod ffi {
     /// it (the alpha:false reset); measureText does not, and gets 0 for both.
     pub ink_left: f32,
     pub ink_right: f32,
+    /// Blink's TextMetrics baselines, relative to the textBaseline.
+    pub hanging_baseline: f32,
+    pub ideographic_baseline: f32,
+    /// Blink's em box (ExtendedTextMetrics), relative to the textBaseline.
+    pub em_height_ascent: f32,
+    pub em_height_descent: f32,
   }
 
   #[repr(C)]

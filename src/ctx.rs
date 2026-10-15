@@ -5096,33 +5096,33 @@ impl CanvasRenderingContext2D {
     text: webidl::DomString<webidl::CtxMeasureText>,
   ) -> Result<TextMetrics> {
     let text = text.0.as_str();
-    if text.is_empty() {
-      return Ok(TextMetrics {
-        actual_bounding_box_ascent: 0.0,
-        actual_bounding_box_descent: 0.0,
-        actual_bounding_box_left: 0.0,
-        actual_bounding_box_right: 0.0,
-        font_bounding_box_ascent: 0.0,
-        font_bounding_box_descent: 0.0,
-        alphabetic_baseline: 0.0,
-        em_height_ascent: 0.0,
-        em_height_descent: 0.0,
-        width: 0.0,
-      });
-    }
-    let metrics = self.context.get_line_metrics(text, false)?;
+    // The empty string keeps every field 0 (Chrome still reports the font's
+    // metrics there).
+    let metrics = if text.is_empty() {
+      Default::default()
+    } else {
+      self.context.get_line_metrics(text, false)?.0
+    };
     Ok(TextMetrics {
-      actual_bounding_box_ascent: metrics.0.ascent as f64,
-      actual_bounding_box_descent: metrics.0.descent as f64,
-      actual_bounding_box_left: metrics.0.left as f64,
-      actual_bounding_box_right: metrics.0.right as f64,
-      font_bounding_box_ascent: metrics.0.font_ascent as f64,
-      font_bounding_box_descent: metrics.0.font_descent as f64,
-      alphabetic_baseline: metrics.0.alphabetic_baseline as f64,
-      em_height_ascent: metrics.0.font_ascent as f64,
-      em_height_descent: metrics.0.font_descent as f64,
-      width: metrics.0.width as f64,
+      width: metrics.width as f64,
+      actual_bounding_box_left: metrics.left as f64,
+      actual_bounding_box_right: metrics.right as f64,
+      font_bounding_box_ascent: metrics.font_ascent as f64,
+      font_bounding_box_descent: metrics.font_descent as f64,
+      actual_bounding_box_ascent: metrics.ascent as f64,
+      actual_bounding_box_descent: metrics.descent as f64,
+      hanging_baseline: metrics.hanging_baseline as f64,
+      alphabetic_baseline: metrics.alphabetic_baseline as f64,
+      ideographic_baseline: metrics.ideographic_baseline as f64,
+      em_height_ascent: metrics.em_height_ascent as f64,
+      em_height_descent: metrics.em_height_descent as f64,
     })
+  }
+
+  /// Always false: a raster, SVG or PDF context is never lost.
+  #[napi]
+  pub fn is_context_lost(&self) -> bool {
+    false
   }
 
   #[napi]
@@ -5621,18 +5621,99 @@ impl AsRef<Bitmap> for BitmapRef<'_> {
   }
 }
 
-#[napi(object)]
+/// A measureText() result. As in browsers it is a class whose fields are
+/// read-only getters on the prototype (text_metrics.idl), so the object has
+/// no own properties, and scripts cannot construct one.
+#[napi]
 pub struct TextMetrics {
-  pub actual_bounding_box_ascent: f64,
-  pub actual_bounding_box_descent: f64,
-  pub actual_bounding_box_left: f64,
-  pub actual_bounding_box_right: f64,
-  pub font_bounding_box_ascent: f64,
-  pub font_bounding_box_descent: f64,
-  pub alphabetic_baseline: f64,
-  pub em_height_ascent: f64,
-  pub em_height_descent: f64,
-  pub width: f64,
+  width: f64,
+  actual_bounding_box_left: f64,
+  actual_bounding_box_right: f64,
+  font_bounding_box_ascent: f64,
+  font_bounding_box_descent: f64,
+  actual_bounding_box_ascent: f64,
+  actual_bounding_box_descent: f64,
+  hanging_baseline: f64,
+  alphabetic_baseline: f64,
+  ideographic_baseline: f64,
+  em_height_ascent: f64,
+  em_height_descent: f64,
+}
+
+/// The getters, in Blink's order (text_metrics.idl); emHeightAscent and
+/// emHeightDescent (behind ExtendedTextMetrics in Chrome) come last.
+#[napi]
+impl TextMetrics {
+  /// Only measureText() makes one; napi-rs skips this for the objects it
+  /// returns.
+  #[napi(constructor)]
+  pub fn new(env: &Env) -> Result<Self> {
+    Err(webidl::context_type_error(
+      env.raw(),
+      "Failed to construct 'TextMetrics': ",
+      "Illegal constructor",
+    ))
+  }
+
+  #[napi(getter)]
+  pub fn get_width(&self) -> f64 {
+    self.width
+  }
+
+  #[napi(getter)]
+  pub fn get_actual_bounding_box_left(&self) -> f64 {
+    self.actual_bounding_box_left
+  }
+
+  #[napi(getter)]
+  pub fn get_actual_bounding_box_right(&self) -> f64 {
+    self.actual_bounding_box_right
+  }
+
+  #[napi(getter)]
+  pub fn get_font_bounding_box_ascent(&self) -> f64 {
+    self.font_bounding_box_ascent
+  }
+
+  #[napi(getter)]
+  pub fn get_font_bounding_box_descent(&self) -> f64 {
+    self.font_bounding_box_descent
+  }
+
+  #[napi(getter)]
+  pub fn get_actual_bounding_box_ascent(&self) -> f64 {
+    self.actual_bounding_box_ascent
+  }
+
+  #[napi(getter)]
+  pub fn get_actual_bounding_box_descent(&self) -> f64 {
+    self.actual_bounding_box_descent
+  }
+
+  #[napi(getter)]
+  pub fn get_hanging_baseline(&self) -> f64 {
+    self.hanging_baseline
+  }
+
+  #[napi(getter)]
+  pub fn get_alphabetic_baseline(&self) -> f64 {
+    self.alphabetic_baseline
+  }
+
+  #[napi(getter)]
+  pub fn get_ideographic_baseline(&self) -> f64 {
+    self.ideographic_baseline
+  }
+
+  #[napi(getter)]
+  pub fn get_em_height_ascent(&self) -> f64 {
+    self.em_height_ascent
+  }
+
+  #[napi(getter)]
+  pub fn get_em_height_descent(&self) -> f64 {
+    self.em_height_descent
+  }
 }
 
 #[napi(object)]
