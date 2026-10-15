@@ -125,18 +125,14 @@ test('svg-transparent-background', async (t) => {
   const w = 1000
   const h = 1000
 
-  // resize SVG
-  image.width = w / 2
-  image.height = h / 2
-
-  // create a canvas of the same size as the image
   const canvas = createCanvas(w, h)
   const ctx = canvas.getContext('2d')
 
-  // fill the canvas with the image
+  // draw the SVG at half the canvas size (as in Chrome, img.width and
+  // img.height do not size the draw)
   ctx.fillStyle = 'pink'
   ctx.fillRect(0, 0, w, h)
-  ctx.drawImage(image, 250, 250)
+  ctx.drawImage(image, 250, 250, w / 2, h / 2)
 
   await snapshotImage(t, { canvas })
 })

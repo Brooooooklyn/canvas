@@ -715,11 +715,12 @@ test('draw-non-string-text', async (t) => {
 test('scale-svg-image', async (t) => {
   GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'iosevka-slab-regular.ttf'))
   const image = await loadImage(join(__dirname, 'image-og.svg'))
-  image.width = image.naturalWidth * 2
-  image.height = image.naturalHeight * 2
-  const canvas = createCanvas(image.width, image.height)
+  // Twice the size of the viewBox (1088x615). As in Chrome, the size is given
+  // to drawImage: img.width and img.height do not size the draw.
+  const [width, height] = [1088 * 2, 615 * 2]
+  const canvas = createCanvas(width, height)
   const ctx = canvas.getContext('2d')
-  ctx.drawImage(image, 0, 0)
+  ctx.drawImage(image, 0, 0, width, height)
   await snapshotImage(t, { ctx, canvas })
 })
 
