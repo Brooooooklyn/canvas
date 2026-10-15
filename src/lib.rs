@@ -27,7 +27,6 @@ use ctx::{
   FILL_STYLE_HIDDEN_NAME, STROKE_STYLE_HIDDEN_NAME, SvgExportFlag, encode_surface,
   reset_style_getters,
 };
-use font::{FONT_REGEXP, init_font_regexp};
 use sk::{AlphaType, ColorSpace, SkImage, SkiaDataRef};
 
 use avif::AvifConfig;
@@ -36,6 +35,7 @@ use avif::AvifConfig;
 static ALLOC: mimalloc_safe::MiMalloc = mimalloc_safe::MiMalloc;
 
 mod avif;
+mod color;
 mod ctx;
 mod error;
 mod filter;
@@ -70,12 +70,6 @@ const DEFAULT_JPEG_QUALITY: u8 = 92;
 // Consistent with the default value of WebP quality in Blink
 // https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/platform/image-encoders/image_encoder.cc;l=100;drc=81c6f843fdfd8ef660d733289a7a32abe68e247a
 const DEFAULT_WEBP_QUALITY: u8 = 80;
-
-#[napi_derive::module_init]
-fn init() {
-  // pre init font regexp
-  FONT_REGEXP.get_or_init(init_font_regexp);
-}
 
 #[napi(object, object_to_js = false)]
 pub struct ConvertToBlobOptions {

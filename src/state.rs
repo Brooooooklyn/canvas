@@ -3,7 +3,7 @@ use rgb::RGBA;
 use crate::sk::{BlendMode, ImageFilter, Matrix, Path as SkPath};
 
 use super::{
-  font::{Font, FontStretch},
+  font::{ComputedFont, FontStretch},
   pattern::Pattern,
   sk::{
     FilterQuality, FontKerning, FontVariantCaps, Paint, TextAlign, TextBaseline, TextDirection,
@@ -28,8 +28,7 @@ pub struct Context2dRenderingState {
   pub image_smoothing_enabled: bool,
   pub image_smoothing_quality: FilterQuality,
   pub paint: Paint,
-  pub font: String,
-  pub font_style: Font,
+  pub font_style: ComputedFont,
   pub font_variation_settings: String,
   pub font_variations: Vec<FontVariation>,
   pub text_align: TextAlign,
@@ -79,8 +78,7 @@ impl Default for Context2dRenderingState {
       image_smoothing_enabled: true,
       image_smoothing_quality: FilterQuality::default(),
       paint: Paint::default(),
-      font: "10px sans-serif".to_owned(),
-      font_style: Font::default(),
+      font_style: ComputedFont::default(),
       font_variation_settings: "normal".to_owned(),
       font_variations: vec![],
       text_align: TextAlign::default(),
