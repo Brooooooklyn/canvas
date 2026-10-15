@@ -62,28 +62,19 @@ void MeasureOrDraw(skiac_font_collection* c_collection,
   text_style.setHeight(1);
   text_style.setFontStyle(font_style);
 
-  std::vector<SkFontArguments::VariationPosition::Coordinate> coords;
-
-  // Apply variable font variations if provided
-  if (request.variations && request.variations_count > 0) {
-    coords.reserve(request.variations_count + 1);
-    for (int i = 0; i < request.variations_count; i++) {
-      coords.push_back(
-          {request.variations[i].tag, request.variations[i].value});
-    }
-  }
-
-  // Apply font stretch as 'wdth' variation for variable fonts
-  if (request.stretch_pct != 100.0f) {
-    coords.push_back(
-        {SkSetFourByteTag('w', 'd', 't', 'h'), request.stretch_pct});
-  }
-
+  // The families' faces, and the instances at the request's axes that draw
+  // the text (FontCustomPlatformData::GetFontPlatformData).
+  const std::vector<sk_sp<SkTypeface>> base_faces =
+      font_collection->findTypefaces(text_style.getFontFamilies(), font_style);
+  const std::vector<SkFontArguments::VariationPosition::Coordinate> coords =
+      FontVariations(base_faces, request);
   if (!coords.empty()) {
     SkFontArguments font_args;
     font_args.setVariationDesignPosition(
         {coords.data(), static_cast<int>(coords.size())});
     text_style.setFontArguments(std::make_optional(font_args));
+    c_collection->noteFontArguments(
+        std::hash<FontArguments>()(*text_style.getFontArguments()));
   }
 
   // Apply font kerning feature
@@ -173,26 +164,20 @@ void MeasureOrDraw(skiac_font_collection* c_collection,
   // Blink sums the HarfBuzz advances; skparagraph would round the width to
   // 1/100 px (a Flutter rule).
   paragraph_style.setApplyRoundingHack(false);
+  // Blink synthesizes bold and italic per face (SynthesizeStyle below).
+  paragraph_style.setFakeMissingFontStyles(false);
   // FontFallbackList::PrimaryFont: the first family's face gives the font
   // metrics and the textBaseline offset, whichever font draws the text.
-  const std::vector<sk_sp<SkTypeface>> faces = font_collection->findTypefaces(
-      text_style.getFontFamilies(), font_style, text_style.getFontArguments());
-  sk_sp<SkTypeface> primary;
-  sk_sp<SkTypeface> primary_base;
-  {
-    if (!faces.empty()) {
-      primary = faces.front();
-    }
-    if (text_style.getFontArguments()) {
-      auto base_faces = font_collection->findTypefaces(
-          text_style.getFontFamilies(), font_style);
-      if (!base_faces.empty()) {
-        primary_base = base_faces.front();
-      }
-    }
-  }
-  const PrimaryFontMetrics primary_metrics = MeasurePrimaryFont(
-      c_collection, primary.get(), primary_base.get(), request.size);
+  const std::vector<sk_sp<SkTypeface>> faces =
+      coords.empty() ? base_faces
+                     : font_collection->findTypefaces(
+                           text_style.getFontFamilies(), font_style,
+                           text_style.getFontArguments());
+  SkTypeface* primary = faces.empty() ? nullptr : faces.front().get();
+  SkTypeface* primary_base =
+      base_faces.empty() ? nullptr : base_faces.front().get();
+  const PrimaryFontMetrics primary_metrics =
+      MeasurePrimaryFont(c_collection, primary, primary_base, request.size);
   // TextMetrics::GetFontBaseline: the alphabetic baseline sits this far
   // below the textBaseline (base_rendering_context_2d.cc draws at
   // y + baseline_y).
@@ -261,6 +246,24 @@ void MeasureOrDraw(skiac_font_collection* c_collection,
       layout_width = kMaxLayoutWidth;
       paragraph->layout(layout_width);
     }
+  }
+  // FontPlatformData::SetupSkFont: the synthetic styles of the face that
+  // draws each run. They change the glyphs, not the advances. `faces` holds
+  // a clone of each of `base_faces`, in order.
+  for (Run& run : paragraph->runs()) {
+    auto& font = const_cast<SkFont&>(run.font());
+    SkTypeface* base = nullptr;
+    for (size_t i = 0; i < faces.size(); ++i) {
+      if (faces[i]->uniqueID() == font.getTypeface()->uniqueID()) {
+        base = faces.size() == base_faces.size() ? base_faces[i].get()
+                                                 : faces[i].get();
+        break;
+      }
+    }
+    const SyntheticStyle synthetic =
+        SynthesizeStyle(c_collection, font.getTypeface(), base, request);
+    font.setEmbolden(synthetic.bold);
+    font.setSkewX(synthetic.italic ? -SK_Scalar1 / 4 : 0);
   }
   // skparagraph draws the first line's glyphs at floor(baseline + 0.5) below
   // the paint origin (TextLine.cpp, correctedBaseline).
