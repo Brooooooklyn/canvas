@@ -1,11 +1,8 @@
-use std::result;
-
 use cssparser::Parser;
 use cssparser_color::Color as CSSColor;
 use napi::bindgen_prelude::*;
 
 use crate::{
-  error::SkError,
   pattern::hsl_color_to_srgb,
   sk::{
     Color4f, ConicGradient, Gradient as SkGradient, LinearGradient, RadialGradient, Shader,
@@ -166,52 +163,53 @@ impl Gradient {
     }
   }
 
-  pub(crate) fn get_shader(&self) -> result::Result<Shader, SkError> {
+  /// The Skia shader, or None when Skia cannot build one (for example a conic
+  /// gradient whose start angle in degrees overflows f32). cc's
+  /// PaintShader::GetSkShader then gives no shader either, and Chrome paints
+  /// the paint's color: black at globalAlpha (canvas_style.cc:130-137).
+  pub(crate) fn get_shader(&self) -> Option<Shader> {
     match self {
-      Self::Linear(linear_gradient) => Ok(
-        Shader::new_linear_gradient(&LinearGradient {
-          start_point: linear_gradient.start_point,
-          end_point: linear_gradient.end_point,
-          base: Self::skia_stops(&linear_gradient.base),
-        })
-        .ok_or_else(|| SkError::Generic("Get shader of linear gradient failed".to_owned()))?,
-      ),
-      // Note, Skia has a different notion of a "radial" gradient.
-      // Skia has a twoPointConical gradient that is the same as the
-      // canvas's RadialGradient.
-      Self::Radial(radial_gradient) => {
-        // From the spec: "The points in the linear gradient must be transformed
-        // as described by the current transformation matrix when rendering."
-        let base = Self::skia_stops(&radial_gradient.base);
-        let new_radial_gradient = RadialGradient {
-          start: radial_gradient.start,
-          end: radial_gradient.end,
-          start_radius: radial_gradient.start_radius,
-          end_radius: radial_gradient.end_radius,
-          base,
-        };
-
-        Ok(
-          Shader::new_radial_gradient(&new_radial_gradient)
-            .ok_or_else(|| SkError::Generic("Get shader of radial gradient failed".to_owned()))?,
-        )
-      }
-      Self::Conic(conic_gradient) => {
-        // The canvas CTM already applies to the shader, so the angle does not
-        // depend on it.
-        let new_conic_gradient = ConicGradient {
-          center: conic_gradient.center,
-          rotation: conic_gradient.rotation,
-          base: Self::skia_stops(&conic_gradient.base),
-        };
-
-        Ok(
-          Shader::new_conic_gradient(&new_conic_gradient)
-            .ok_or_else(|| SkError::Generic("Get shader of conic gradient failed".to_owned()))?,
-        )
-      }
+      Self::Linear(g) => Shader::new_linear_gradient(&LinearGradient {
+        // Blink ClampNonFiniteToSafeFloat (gradient.cc:404-405).
+        start_point: clamp_point(g.start_point),
+        end_point: clamp_point(g.end_point),
+        base: Self::skia_stops(&g.base),
+      }),
+      // Skia's two-point conical gradient is the canvas radial gradient.
+      // Blink clamps the centers like the linear points, and the radii to
+      // max(ClampFloatGeometry(r), 0) (gradient.cc:453-459).
+      Self::Radial(g) => Shader::new_radial_gradient(&RadialGradient {
+        start: clamp_point(g.start),
+        start_radius: skia_radius(g.start_radius),
+        end: clamp_point(g.end),
+        end_radius: skia_radius(g.end_radius),
+        base: Self::skia_stops(&g.base),
+      }),
+      // The canvas CTM already applies to the shader, so the angle does not
+      // depend on it. Blink does not clamp the conic center.
+      Self::Conic(g) => Shader::new_conic_gradient(&ConicGradient {
+        center: g.center,
+        rotation: g.rotation,
+        base: Self::skia_stops(&g.base),
+      }),
     }
   }
+}
+
+/// gfx::ClampFloatGeometry (ui/gfx/geometry/clamp_float_geometry.h): NaN is
+/// 0, and the value saturates at +-FLT_MAX / 1e6.
+fn clamp_float_geometry(v: f32) -> f32 {
+  const MAX: f32 = f32::MAX / 1e6;
+  if v.is_nan() { 0.0 } else { v.clamp(-MAX, MAX) }
+}
+
+fn clamp_point((x, y): (f32, f32)) -> (f32, f32) {
+  (clamp_float_geometry(x), clamp_float_geometry(y))
+}
+
+/// The radius Blink gives Skia: max(ClampFloatGeometry(r), 0).
+fn skia_radius(r: f32) -> f32 {
+  clamp_float_geometry(r).max(0.0)
 }
 
 /// Whether Blink rounds this hsl() color's alpha to k/255. Only its CSS fast
