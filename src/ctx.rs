@@ -1950,12 +1950,7 @@ impl Context {
         }
       }
     };
-    if !last_state.line_dash_list.is_empty() {
-      let path_effect = PathEffect::new_dash_path(
-        last_state.line_dash_list.as_slice(),
-        last_state.line_dash_offset,
-      )
-      .ok_or_else(|| SkError::Generic("Make line dash path effect failed".to_string()))?;
+    if let Some(path_effect) = self.line_dash_path_effect() {
       paint.set_path_effect(&path_effect);
     }
     // Deliberately NO `set_image_filter(state.filter)`: `ctx.filter` is a
@@ -2146,6 +2141,18 @@ impl Context {
     self.state.line_dash_list = line_dash_list;
   }
 
+  /// The dash of the current line dash list. A list with no non-zero entry
+  /// strokes solid (canvas_rendering_context_2d_state.cc UpdateLineDash), and
+  /// so does one Skia cannot dash (the intervals sum to 0 or overflow), as a
+  /// null dash effect does in Chrome.
+  fn line_dash_path_effect(&self) -> Option<PathEffect> {
+    let state = &self.state;
+    if !state.line_dash_list.iter().any(|dash| *dash != 0.0) {
+      return None;
+    }
+    PathEffect::new_dash_path(state.line_dash_list.as_slice(), state.line_dash_offset)
+  }
+
   fn stroke_paint(&self) -> result::Result<Paint, SkError> {
     let last_state = &self.state;
     let current_paint = &last_state.paint;
@@ -2166,12 +2173,7 @@ impl Context {
         }
       }
     };
-    if !last_state.line_dash_list.is_empty() {
-      let path_effect = PathEffect::new_dash_path(
-        last_state.line_dash_list.as_slice(),
-        last_state.line_dash_offset,
-      )
-      .ok_or_else(|| SkError::Generic("Make line dash path effect failed".to_string()))?;
+    if let Some(path_effect) = self.line_dash_path_effect() {
       paint.set_path_effect(&path_effect);
     }
     // Deliberately NO `set_image_filter(state.filter)`: `ctx.filter` is a
@@ -5180,8 +5182,17 @@ impl CanvasRenderingContext2D {
     Ok(())
   }
 
-  #[napi(return_if_invalid)]
-  pub fn set_line_dash(&mut self, dash_list: Vec<f64>) {
+  #[napi]
+  pub fn set_line_dash(&mut self, dash_list: webidl::DoubleSequence<webidl::CtxSetLineDash>) {
+    let dash_list = dash_list.0;
+    // A list with a negative or non-finite entry is ignored
+    // (canvas_2d_recorder_context.cc:1237 LineDashSequenceIsValid).
+    if !dash_list
+      .iter()
+      .all(|dash| dash.is_finite() && *dash >= 0.0)
+    {
+      return;
+    }
     let len = dash_list.len();
     let is_odd = len & 1 != 0;
     let mut line_dash_list = if is_odd {
@@ -5190,9 +5201,9 @@ impl CanvasRenderingContext2D {
       vec![0f32; len]
     };
     for (idx, dash) in dash_list.iter().enumerate() {
-      line_dash_list[idx] = *dash as f32;
+      line_dash_list[idx] = clamp_to_f32(*dash);
       if is_odd {
-        line_dash_list[idx + len] = *dash as f32;
+        line_dash_list[idx + len] = clamp_to_f32(*dash);
       }
     }
     self.context.set_line_dash(line_dash_list);
