@@ -1130,7 +1130,7 @@ test('shadowBlur state should be ok', (t) => {
 
 test('shadowColor state should be ok', (t) => {
   const { ctx } = t.context
-  t.is(ctx.shadowColor, '#000000')
+  t.is(ctx.shadowColor, 'rgba(0, 0, 0, 0)')
   ctx.shadowColor = 'hotpink'
   t.is(ctx.shadowColor, 'hotpink')
 })

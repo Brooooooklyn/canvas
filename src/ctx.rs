@@ -7411,6 +7411,7 @@ mod tests {
 
     let mut ctx = raster_ctx(16, 16);
     ctx.set_font("16px Lato".to_owned()).unwrap();
+    ctx.state.shadow_color = RGBA::new(0, 0, 0, 255);
     ctx.state.shadow_offset_x = 2.0;
     // Skia order (scaleX, skewX, transX, skewY, scaleY, transY): x scaled by 0.
     ctx.set_transform(Matrix::new(0.0, 0.0, 0.0, 0.0, 1.0, 0.0));
