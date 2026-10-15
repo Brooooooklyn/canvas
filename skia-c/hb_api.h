@@ -1,8 +1,8 @@
 // The HarfBuzz C API the text code calls. HarfBuzz is linked from libskia
 // (skia_use_harfbuzz, bundled, unversioned symbols), but its headers are not
 // part of the Skia checkout the addon builds against, so the few declarations
-// needed live here, copied from hb-common.h, hb-blob.h, hb-face.h, hb-font.h
-// and hb-ot-layout.h.
+// needed live here, copied from hb-common.h, hb-blob.h, hb-face.h, hb-font.h,
+// hb-set.h and hb-ot-layout.h.
 
 #ifndef SKIA_C_HB_API_H
 #define SKIA_C_HB_API_H
@@ -14,7 +14,9 @@ extern "C" {
 typedef int hb_bool_t;
 typedef uint32_t hb_tag_t;
 typedef int32_t hb_position_t;
+typedef uint32_t hb_codepoint_t;
 typedef struct hb_blob_t hb_blob_t;
+typedef struct hb_set_t hb_set_t;
 typedef struct hb_face_t hb_face_t;
 typedef struct hb_font_t hb_font_t;
 typedef void (*hb_destroy_func_t)(void* user_data);
@@ -52,6 +54,8 @@ typedef enum {
       SKIAC_HB_TAG('i', 'd', 'e', 'o'),
 } hb_ot_layout_baseline_tag_t;
 
+#define HB_OT_TAG_GSUB SKIAC_HB_TAG('G', 'S', 'U', 'B')
+#define HB_OT_TAG_GPOS SKIAC_HB_TAG('G', 'P', 'O', 'S')
 #define HB_OT_TAG_DEFAULT_SCRIPT SKIAC_HB_TAG('D', 'F', 'L', 'T')
 #define HB_OT_TAG_DEFAULT_LANGUAGE SKIAC_HB_TAG('d', 'f', 'l', 't')
 
@@ -73,6 +77,20 @@ hb_bool_t hb_ot_layout_get_baseline(hb_font_t* font,
                                     hb_tag_t script_tag,
                                     hb_tag_t language_tag,
                                     hb_position_t* coord);
+hb_set_t* hb_set_create(void);
+void hb_set_destroy(hb_set_t* set);
+hb_bool_t hb_set_has(const hb_set_t* set, hb_codepoint_t codepoint);
+hb_bool_t hb_ot_layout_has_substitution(hb_face_t* face);
+hb_bool_t hb_ot_layout_has_positioning(hb_face_t* face);
+unsigned int hb_ot_layout_table_get_lookup_count(hb_face_t* face,
+                                                 hb_tag_t table_tag);
+void hb_ot_layout_lookup_collect_glyphs(hb_face_t* face,
+                                        hb_tag_t table_tag,
+                                        unsigned int lookup_index,
+                                        hb_set_t* glyphs_before,
+                                        hb_set_t* glyphs_input,
+                                        hb_set_t* glyphs_after,
+                                        hb_set_t* glyphs_output);
 
 }  // extern "C"
 
