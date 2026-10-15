@@ -1160,7 +1160,11 @@ pub mod ffi {
       icc_len: usize,
       primaries: u16,
       transfer: u16,
-    );
+      matrix: u16,
+      is_mono: bool,
+    ) -> bool;
+
+    pub fn skiac_bitmap_orient(bitmap_info: *mut skiac_bitmap_info, origin: i32) -> bool;
 
     pub fn skiac_bitmap_source_is_opaque(c_bitmap: *mut skiac_bitmap, is_canvas: bool) -> bool;
 
@@ -4861,12 +4865,35 @@ impl Bitmap {
     }))
   }
 
-  /// Tags the pixels with a decoded file's color space: the ICC profile when
-  /// it has one, else the CICP primaries and transfer characteristics.
-  pub(crate) fn set_color_space(&mut self, icc: &[u8], primaries: u16, transfer: u16) {
+  /// Tags the pixels with a decoded AVIF's color space, as Chrome does: the
+  /// ICC profile when it has one, else the CICP. False when Chrome fails the
+  /// decode (an ICC profile it cannot use, CICP transfers 9 to 12).
+  pub(crate) fn set_avif_color_space(
+    &mut self,
+    icc: &[u8],
+    primaries: u16,
+    transfer: u16,
+    matrix: u16,
+    is_mono: bool,
+  ) -> bool {
     unsafe {
-      ffi::skiac_bitmap_set_color_space(self.0.bitmap, icc.as_ptr(), icc.len(), primaries, transfer)
+      ffi::skiac_bitmap_set_color_space(
+        self.0.bitmap,
+        icc.as_ptr(),
+        icc.len(),
+        primaries,
+        transfer,
+        matrix,
+        is_mono,
+      )
     }
+  }
+
+  /// Replaces the pixels with their copy in `origin` (an SkEncodedOrigin, 1
+  /// is as is); the size swaps for 90 and 270 degrees. False when the copy
+  /// cannot be made.
+  pub(crate) fn orient(&mut self, origin: i32) -> bool {
+    unsafe { ffi::skiac_bitmap_orient(&mut self.0, origin) }
   }
 
   /// Marks the pixels read-only, so an image made from them shares them. Only

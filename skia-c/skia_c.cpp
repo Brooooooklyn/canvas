@@ -3763,6 +3763,32 @@ void skiac_sk_data_destroy(skiac_data* c_data) {
 
 // Bitmap
 
+// The copy of `bitmap` that Chrome draws for an encoded origin (EXIF, or AVIF
+// irot/imir): Blink's image.cc applies the origin when it draws. The copy
+// keeps the color space (the ICC profile) and is drawn pixel for pixel, so
+// only the size changes (it swaps for 90 and 270 degrees). Null when it
+// cannot allocate.
+static std::unique_ptr<SkBitmap> orient_bitmap(const SkBitmap& bitmap,
+                                               SkEncodedOrigin origin) {
+  auto width = bitmap.width();
+  auto height = bitmap.height();
+  if (SkEncodedOriginSwapsWidthHeight(origin)) {
+    std::swap(width, height);
+  }
+  auto oriented = std::make_unique<SkBitmap>();
+  if (!oriented->tryAllocPixels(bitmap.info().makeWH(width, height))) {
+    return nullptr;
+  }
+  SkCanvas canvas(*oriented);
+  canvas.setMatrix(SkEncodedOriginToMatrix(origin, width, height));
+  auto image = SkImages::RasterFromBitmap(bitmap);
+  if (!image) {
+    return nullptr;
+  }
+  canvas.drawImage(image, 0, 0);
+  return oriented;
+}
+
 bool skiac_bitmap_make_from_buffer(const uint8_t* ptr,
                                    size_t size,
                                    skiac_bitmap_info* bitmap_info) {
@@ -3790,44 +3816,43 @@ bool skiac_bitmap_make_from_buffer(const uint8_t* ptr,
       result != SkCodec::kErrorInInput) {
     return false;
   }
-  auto dimension = codec->dimensions();
   auto origin = codec->getOrigin();
-  auto width = dimension.width();
-  auto height = dimension.height();
   // https://github.com/chromium/chromium/blob/126.0.6423.1/third_party/blink/renderer/platform/graphics/image.cc#L124
   // need to create a new bitmap with the correct orientation
   if (origin != SkEncodedOrigin::kTopLeft_SkEncodedOrigin) {
-    if (origin == SkEncodedOrigin::kLeftTop_SkEncodedOrigin ||
-        origin == SkEncodedOrigin::kRightTop_SkEncodedOrigin ||
-        origin == SkEncodedOrigin::kRightBottom_SkEncodedOrigin ||
-        origin == SkEncodedOrigin::kLeftBottom_SkEncodedOrigin) {
-      width = height;
-      height = dimension.width();
-    }
-    auto oriented_bitmap = std::make_unique<SkBitmap>();
-    // Keep the codec's color space (the ICC profile): the oriented copy is
-    // drawn pixel for pixel, so only the size changes.
-    auto oriented_bitmap_info = info.makeWH(width, height);
-    if (!oriented_bitmap->tryAllocPixels(oriented_bitmap_info)) {
+    bitmap = orient_bitmap(*bitmap, origin);
+    if (!bitmap) {
       return false;
     }
-    SkCanvas canvas(*oriented_bitmap);
-    auto matrix = SkEncodedOriginToMatrix(origin, width, height);
-    canvas.setMatrix(matrix);
-    auto image = SkImages::RasterFromBitmap(*bitmap);
-    if (!image) {
-      return false;
-    }
-    canvas.drawImage(image, 0, 0);
-    oriented_bitmap->setImmutable();
-    bitmap_info->bitmap =
-        reinterpret_cast<skiac_bitmap*>(oriented_bitmap.release());
-  } else {
-    bitmap->setImmutable();
-    bitmap_info->bitmap = reinterpret_cast<skiac_bitmap*>(bitmap.release());
   }
-  bitmap_info->width = width;
-  bitmap_info->height = height;
+  bitmap->setImmutable();
+  bitmap_info->width = bitmap->width();
+  bitmap_info->height = bitmap->height();
+  bitmap_info->bitmap = reinterpret_cast<skiac_bitmap*>(bitmap.release());
+  return true;
+}
+
+// The AVIF irot/imir orientation (see AvifImage::origin): the bitmap is
+// replaced by its oriented copy, so the natural size swaps for 90 and 270
+// degrees.
+bool skiac_bitmap_orient(skiac_bitmap_info* bitmap_info, int origin) {
+  auto encoded_origin = static_cast<SkEncodedOrigin>(origin);
+  if (encoded_origin < kTopLeft_SkEncodedOrigin ||
+      encoded_origin > kLast_SkEncodedOrigin) {
+    return false;
+  }
+  if (encoded_origin == kTopLeft_SkEncodedOrigin) {
+    return true;
+  }
+  auto bitmap = reinterpret_cast<SkBitmap*>(bitmap_info->bitmap);
+  auto oriented = orient_bitmap(*bitmap, encoded_origin);
+  if (!oriented) {
+    return false;
+  }
+  delete bitmap;
+  bitmap_info->width = oriented->width();
+  bitmap_info->height = oriented->height();
+  bitmap_info->bitmap = reinterpret_cast<skiac_bitmap*>(oriented.release());
   return true;
 }
 
@@ -3962,27 +3987,87 @@ static sk_sp<SkColorSpace> avif_cicp_color_space(uint16_t primaries,
       static_cast<SkNamedTransferFn::CicpId>(transfer));
 }
 
+// media::VideoColorSpace::IsSpecified (video_color_space.cc:210-281) for
+// CICP values without "unspecified" (2): the IDs Chrome knows. Matrix 10 and
+// matrices above 11 are not among them.
+static bool video_color_space_is_specified(uint16_t primaries,
+                                           uint16_t transfer,
+                                           uint16_t matrix) {
+  const bool primaries_ok =
+      primaries == 1 || (primaries >= 4 && primaries <= 12) || primaries == 22;
+  const bool transfer_ok = transfer == 1 || (transfer >= 4 && transfer <= 18);
+  const bool matrix_ok =
+      matrix <= 11 && matrix != 2 && matrix != 3 && matrix != 10;
+  return primaries_ok && transfer_ok && matrix_ok;
+}
+
 // Tag decoded AVIF pixels with the file's color space, as Chrome's AVIF
-// decoder does (avif_image_decoder.cc:868-914): an ICC profile wins, else the
-// CICP primaries and transfer. sRGB stays untagged, as before.
-void skiac_bitmap_set_color_space(skiac_bitmap* c_bitmap,
+// decoder does (avif_image_decoder.cc:852-895 and GetColorSpace at :60-117).
+// False when Chrome fails the decode (onerror). The CICP values are
+// CrabbyAvif's: a value it does not know is 2 (unspecified).
+//  - An ICC profile wins. It must parse and describe RGB (or gray for a 4:0:0
+//    image), as skia::ColorProfile::IsRGB/IsGray check.
+//  - Else, when primaries or transfer are given, the CICP with Chrome's
+//    defaults (primaries 1, transfer 13 (sRGB), matrix 6). A combination
+//    media::VideoColorSpace does not know (for example matrix 12) is drawn
+//    as sRGB (gfx::ColorSpace::CreateJpeg/CreateREC709). Chrome cannot make
+//    an SkColorSpace for transfers 9 to 12, and fails the decode.
+// sRGB stays untagged, as before.
+bool skiac_bitmap_set_color_space(skiac_bitmap* c_bitmap,
                                   const uint8_t* icc,
                                   size_t icc_len,
                                   uint16_t primaries,
-                                  uint16_t transfer) {
+                                  uint16_t transfer,
+                                  uint16_t matrix,
+                                  bool is_mono) {
   sk_sp<SkColorSpace> color_space;
   if (icc && icc_len) {
     skcms_ICCProfile profile;
-    if (skcms_Parse(icc, icc_len, &profile)) {
-      color_space = SkColorSpace::Make(profile);
+    if (!skcms_Parse(icc, icc_len, &profile)) {
+      return false;
     }
-  }
-  if (!color_space) {
-    color_space = avif_cicp_color_space(primaries, transfer);
+    if (profile.data_color_space != skcms_Signature_RGB &&
+        !(is_mono && profile.data_color_space == skcms_Signature_Gray)) {
+      return false;
+    }
+    // skia::ColorProfile::ComputeSkColorSpace (color_profile.cc:48-87): a
+    // transfer Skia cannot use becomes the sRGB curve, keeping the gamut; no
+    // gamut at all is sRGB.
+    color_space = SkColorSpace::Make(profile);
+    if (!color_space && profile.has_toXYZD50) {
+      skcms_ICCProfile with_srgb = profile;
+      skcms_SetTransferFunction(&with_srgb, skcms_sRGB_TransferFunction());
+      color_space = SkColorSpace::Make(with_srgb);
+    }
+  } else {
+    // CrabbyAvif's ColorPrimaries, TransferCharacteristics and
+    // MatrixCoefficients from u16.
+    if (!(primaries <= 2 || (primaries >= 4 && primaries <= 12) ||
+          primaries == 22)) {
+      primaries = 2;
+    }
+    if (transfer > 18) {
+      transfer = 2;
+    }
+    if (!(matrix <= 14 || matrix == 16 || matrix == 17)) {
+      matrix = 2;
+    }
+    if (primaries != 2 || transfer != 2) {
+      primaries = primaries == 2 ? 1 : primaries;
+      transfer = transfer == 2 ? 13 : transfer;
+      matrix = (is_mono || matrix == 2) ? 6 : matrix;
+      if (video_color_space_is_specified(primaries, transfer, matrix)) {
+        if (transfer >= 9 && transfer <= 12) {
+          return false;
+        }
+        color_space = avif_cicp_color_space(primaries, transfer);
+      }
+    }
   }
   if (color_space && !color_space->isSRGB()) {
     BITMAP_CAST->setColorSpace(std::move(color_space));
   }
+  return true;
 }
 
 // Chrome's CanvasImageSource::IsOpaque for a drawImage source: an image whose
