@@ -738,6 +738,68 @@ test('setLineDash reads value before done and never closes the iterator', (t) =>
   )
 })
 
+test('setLineDash converts a long sequence entry by entry', (t) => {
+  // More entries than the 1024 that a sequence conversion reads in one
+  // handle scope (src/webidl.rs `sequence`): the order, the values and the
+  // errors are the same in every block.
+  const length = 5000
+  const dashes = Array.from({ length }, (_, i) => (i % 7) + 1)
+  const traced = (log: string[]) => dashes.map((dash, i) => tracedNumber(log, String(i), dash))
+  const expectedLog = dashes.map((_, i) => `valueOf ${i}`).join(' | ')
+  t.deepEqual(dashSteps(traced), { log: expectedLog, err: null, stack0: null, dash: dashes })
+  t.deepEqual(
+    dashSteps((log) => ({
+      *[Symbol.iterator]() {
+        yield* traced(log)
+      },
+    })),
+    { log: expectedLog, err: null, stack0: null, dash: dashes },
+  )
+  for (const at of [1023, 1024, 1025, 2048, length - 1]) {
+    const boom = (log: string[]) => {
+      const entries: unknown[] = traced(log)
+      entries[at] = {
+        valueOf() {
+          throw new Error(`boom ${at}`)
+        },
+      }
+      return entries
+    }
+    const before = dashes
+      .slice(0, at)
+      .map((_, i) => `valueOf ${i}`)
+      .join(' | ')
+    t.deepEqual(dashSteps(boom), { log: before, err: `Error: boom ${at}`, stack0: `Error: boom ${at}`, dash: [5, 6] })
+    const symbol = (log: string[]) => {
+      const entries: unknown[] = traced(log)
+      entries[at] = Symbol('s')
+      return entries
+    }
+    t.deepEqual(dashSteps(symbol), {
+      log: before,
+      err: `TypeError: ${SET_LINE_DASH}Cannot convert a Symbol value to a number`,
+      stack0: 'TypeError: Cannot convert a Symbol value to a number',
+      dash: [5, 6],
+    })
+    t.deepEqual(
+      dashSteps((log) => ({
+        *[Symbol.iterator]() {
+          yield* boom(log)
+        },
+      })),
+      { log: before, err: `Error: boom ${at}`, stack0: `Error: boom ${at}`, dash: [5, 6] },
+    )
+  }
+  // A hole reads as undefined, NaN: the list is ignored.
+  const sparse: number[] = []
+  sparse.length = 100_000
+  sparse[50_000] = 1
+  t.deepEqual(
+    dashSteps(() => sparse),
+    { log: '', err: null, stack0: null, dash: [5, 6] },
+  )
+})
+
 test('setLineDash converts before it borrows the context', (t) => {
   const ctx = dashContext()
   ctx.setLineDash(
