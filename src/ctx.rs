@@ -3404,6 +3404,164 @@ impl<S: webidl::Site> FromNapiValue for CanvasStyleArg<'static, S> {
   }
 }
 
+/// Whether `value` is a Path2D for overload resolution: its instanceof check
+/// and a native Path behind it (an object made with
+/// `Object.create(Path2D.prototype)` has none). The borrow itself comes after
+/// the other arguments ran their user code.
+fn is_path2d(env: sys::napi_env, value: sys::napi_value) -> bool {
+  if unsafe { <&Path as ValidateNapiValue>::validate(env, value) }.is_err() {
+    return false;
+  }
+  let mut data = std::ptr::null_mut();
+  unsafe { sys::napi_unwrap(env, value, &mut data) == sys::Status::napi_ok && !data.is_null() }
+}
+
+fn not_path2d(env: sys::napi_env, prefix: &str) -> Error {
+  webidl::context_type_error(env, prefix, "parameter 1 is not of type 'Path2D'.")
+}
+
+/// Borrows a value that passed `is_path2d`.
+fn borrow_path(
+  env: sys::napi_env,
+  value: Option<sys::napi_value>,
+  prefix: &str,
+) -> Result<Option<&'static mut Path>> {
+  value
+    .map(|value| {
+      unsafe { Path::from_napi_mut_ref(env, value) }.map_err(|_| not_path2d(env, prefix))
+    })
+    .transpose()
+}
+
+/// The arguments of fill() or clip(), their last parameter: (optional
+/// CanvasFillRule) or (Path2D, optional CanvasFillRule). WebIDL picks the
+/// overload from the argument count and, for one argument, from whether it
+/// is a Path2D (canvas_2d_recorder_context.idl).
+pub struct FillArgs<S> {
+  path: Option<&'static mut Path>,
+  rule: FillType,
+  site: PhantomData<S>,
+}
+
+impl<S: webidl::Site> FromNapiValue for FillArgs<S> {
+  unsafe fn from_napi_value(env: sys::napi_env, argc: sys::napi_value) -> Result<Self> {
+    let args = webidl::Arguments::take(env, 2, argc)?;
+    let first = args.get(0)?;
+    let (path, rule) = match args.len() {
+      0 => (None, FillType::Winding),
+      1 if is_path2d(env, first) => (Some(first), FillType::Winding),
+      1 => (None, webidl::fill_rule(env, first, S::PREFIX)?),
+      _ => {
+        if !is_path2d(env, first) {
+          return Err(not_path2d(env, S::PREFIX));
+        }
+        (
+          Some(first),
+          webidl::fill_rule(env, args.get(1)?, S::PREFIX)?,
+        )
+      }
+    };
+    Ok(Self {
+      path: borrow_path(env, path, S::PREFIX)?,
+      rule,
+      site: PhantomData,
+    })
+  }
+}
+
+/// The argument of stroke(): none, or a Path2D.
+pub struct StrokeArgs {
+  path: Option<&'static mut Path>,
+}
+
+impl FromNapiValue for StrokeArgs {
+  unsafe fn from_napi_value(env: sys::napi_env, argc: sys::napi_value) -> Result<Self> {
+    let args = webidl::Arguments::take(env, 1, argc)?;
+    let prefix = <webidl::CtxStroke as webidl::Site>::PREFIX;
+    let path = if args.len() == 0 {
+      None
+    } else {
+      let path = args.get(0)?;
+      if !is_path2d(env, path) {
+        return Err(not_path2d(env, prefix));
+      }
+      Some(path)
+    };
+    Ok(Self {
+      path: borrow_path(env, path, prefix)?,
+    })
+  }
+}
+
+/// The arguments of isPointInPath(): (x, y, optional CanvasFillRule) or
+/// (Path2D, x, y, optional CanvasFillRule). Three arguments pick the Path2D
+/// form only when the first one is a Path2D.
+pub struct IsPointInPathArgs {
+  path: Option<&'static mut Path>,
+  x: f64,
+  y: f64,
+  rule: FillType,
+}
+
+impl FromNapiValue for IsPointInPathArgs {
+  unsafe fn from_napi_value(env: sys::napi_env, argc: sys::napi_value) -> Result<Self> {
+    let args = webidl::Arguments::take(env, 4, argc)?;
+    let prefix = <webidl::CtxIsPointInPath as webidl::Site>::PREFIX;
+    let first = args.get(0)?;
+    let with_path = match args.len() {
+      0..=2 => false,
+      3 => is_path2d(env, first),
+      _ => {
+        if !is_path2d(env, first) {
+          return Err(not_path2d(env, prefix));
+        }
+        true
+      }
+    };
+    let offset = u32::from(with_path);
+    let x = webidl::to_number(env, args.get(offset)?, prefix)?;
+    let y = webidl::to_number(env, args.get(offset + 1)?, prefix)?;
+    let rule = if args.len() > 2 + offset {
+      webidl::fill_rule(env, args.get(2 + offset)?, prefix)?
+    } else {
+      FillType::Winding
+    };
+    Ok(Self {
+      path: borrow_path(env, with_path.then_some(first), prefix)?,
+      x,
+      y,
+      rule,
+    })
+  }
+}
+
+/// The arguments of isPointInStroke(): (x, y) or (Path2D, x, y).
+pub struct IsPointInStrokeArgs {
+  path: Option<&'static mut Path>,
+  x: f64,
+  y: f64,
+}
+
+impl FromNapiValue for IsPointInStrokeArgs {
+  unsafe fn from_napi_value(env: sys::napi_env, argc: sys::napi_value) -> Result<Self> {
+    let args = webidl::Arguments::take(env, 3, argc)?;
+    let prefix = <webidl::CtxIsPointInStroke as webidl::Site>::PREFIX;
+    let first = args.get(0)?;
+    let with_path = args.len() > 2;
+    if with_path && !is_path2d(env, first) {
+      return Err(not_path2d(env, prefix));
+    }
+    let offset = u32::from(with_path);
+    let x = webidl::to_number(env, args.get(offset)?, prefix)?;
+    let y = webidl::to_number(env, args.get(offset + 1)?, prefix)?;
+    Ok(Self {
+      path: borrow_path(env, with_path.then_some(first), prefix)?,
+      x,
+      y,
+    })
+  }
+}
+
 /// Source argument for `drawImage`. Wraps the `Either3` conversion so it runs
 /// in the generated callback glue inside the native borrow scope: napi-rs
 /// 3.12+ rejects `FromNapiValue` conversions performed inside a method body,
@@ -4181,25 +4339,18 @@ impl CanvasRenderingContext2D {
     self.context.quadratic_curve_to(cpx, cpy, x, y);
   }
 
+  /// clip(fillRule?) or clip(path, fillRule?). The index.js wrapper passes
+  /// the argument count after them; see `webidl::Arguments::take`.
   #[napi]
   pub fn clip(
     &mut self,
-    rule_or_path: Option<Either<String, &mut Path>>,
-    maybe_rule: Option<String>,
+    _path_or_rule: Positional,
+    _rule: Positional,
+    args: FillArgs<webidl::CtxClip>,
   ) {
-    let rule = rule_or_path
-      .as_ref()
-      .and_then(|e| match e {
-        Either::A(s) => FillType::from_str(s).ok(),
-        Either::B(_) => None,
-      })
-      .or_else(|| maybe_rule.and_then(|s| FillType::from_str(&s).ok()))
-      .unwrap_or(FillType::Winding);
-    let path = rule_or_path.and_then(|e| match e {
-      Either::A(_) => None,
-      Either::B(p) => Some(p),
-    });
-    self.context.clip(path.map(|p| &mut p.inner), rule);
+    self
+      .context
+      .clip(args.path.map(|p| &mut p.inner), args.rule);
   }
 
   #[napi]
@@ -4384,25 +4535,18 @@ impl CanvasRenderingContext2D {
     self.context.round_rect(x, y, width, height, radii_array);
   }
 
+  /// fill(fillRule?) or fill(path, fillRule?). The index.js wrapper passes
+  /// the argument count after them; see `webidl::Arguments::take`.
   #[napi]
   pub fn fill(
     &mut self,
-    rule_or_path: Option<Either<String, &mut Path>>,
-    maybe_rule: Option<String>,
+    _path_or_rule: Positional,
+    _rule: Positional,
+    args: FillArgs<webidl::CtxFill>,
   ) -> Result<()> {
-    let rule = rule_or_path
-      .as_ref()
-      .and_then(|e| match e {
-        Either::A(s) => FillType::from_str(s).ok(),
-        Either::B(_) => None,
-      })
-      .or_else(|| maybe_rule.and_then(|s| FillType::from_str(&s).ok()))
-      .unwrap_or(FillType::Winding);
-    let path = rule_or_path.and_then(|e| match e {
-      Either::A(_) => None,
-      Either::B(p) => Some(p),
-    });
-    self.context.fill(path.map(|p| &mut p.inner), rule)?;
+    self
+      .context
+      .fill(args.path.map(|p| &mut p.inner), args.rule)?;
     Ok(())
   }
 
@@ -4773,93 +4917,48 @@ impl CanvasRenderingContext2D {
     }
   }
 
+  /// isPointInPath(x, y, fillRule?) or (path, x, y, fillRule?). The
+  /// index.js wrapper passes the argument count after them; see
+  /// `webidl::Arguments::take`.
   #[napi]
   pub fn is_point_in_path(
     &self,
-    x_or_path: Either<f64, &Path>,
-    x_or_y: f64,
-    y_or_fill_rule: Option<Either<f64, String>>,
-    maybe_fill_rule: Option<String>,
-  ) -> Result<bool> {
-    let inverted = self.context.state.transform.invert();
-    match x_or_path {
-      Either::A(x) => {
-        let mut x = x as f32;
-        let mut y = x_or_y as f32;
-        let fill_rule = y_or_fill_rule
-          .and_then(|v| match v {
-            Either::B(rule) => rule.parse().ok(),
-            _ => None,
-          })
-          .unwrap_or(FillType::Winding);
-        if let Some(inverted) = inverted {
-          let (mapped_x, mapped_y) = inverted.map_points(x, y);
-          x = mapped_x;
-          y = mapped_y;
-        }
-        Ok(self.context.path.hit_test(x, y, fill_rule))
-      }
-      Either::B(path) => {
-        let mut x = x_or_y as f32;
-        let mut y = match y_or_fill_rule {
-          Some(Either::A(y)) => y as f32,
-          _ => {
-            return Err(Error::new(
-              Status::InvalidArg,
-              "The y-axis coordinate of the point to check is missing".to_owned(),
-            ));
-          }
-        };
-        let fill_rule = maybe_fill_rule
-          .and_then(|s| s.parse().ok())
-          .unwrap_or(FillType::Winding);
-        if let Some(inverted) = inverted {
-          let (mapped_x, mapped_y) = inverted.map_points(x, y);
-          x = mapped_x;
-          y = mapped_y;
-        }
-        Ok(path.inner.hit_test(x, y, fill_rule))
-      }
+    _arg0: Positional,
+    _arg1: Positional,
+    _arg2: Positional,
+    _arg3: Positional,
+    args: IsPointInPathArgs,
+  ) -> bool {
+    let mut x = args.x as f32;
+    let mut y = args.y as f32;
+    if let Some(inverted) = self.context.state.transform.invert() {
+      (x, y) = inverted.map_points(x, y);
+    }
+    match args.path {
+      Some(path) => path.inner.hit_test(x, y, args.rule),
+      None => self.context.path.hit_test(x, y, args.rule),
     }
   }
 
+  /// isPointInStroke(x, y) or (path, x, y). The index.js wrapper passes the
+  /// argument count after them; see `webidl::Arguments::take`.
   #[napi]
   pub fn is_point_in_stroke(
     &self,
-    x_or_path: Either<f64, &Path>,
-    x_or_y: f64,
-    maybe_y: Option<f64>,
-  ) -> Result<bool> {
+    _arg0: Positional,
+    _arg1: Positional,
+    _arg2: Positional,
+    args: IsPointInStrokeArgs,
+  ) -> bool {
     let stroke_w = self.context.get_stroke_width();
-    let inverted = self.context.state.transform.invert();
-    match x_or_path {
-      Either::A(x) => {
-        let mut x = x as f32;
-        let mut y = x_or_y as f32;
-        if let Some(inverted) = inverted {
-          let (mapped_x, mapped_y) = inverted.map_points(x, y);
-          x = mapped_x;
-          y = mapped_y;
-        }
-        Ok(self.context.path.stroke_hit_test(x, y, stroke_w))
-      }
-      Either::B(path) => {
-        let mut x = x_or_y as f32;
-        if let Some(y) = maybe_y {
-          let mut y = y as f32;
-          if let Some(inverted) = inverted {
-            let (mapped_x, mapped_y) = inverted.map_points(x, y);
-            x = mapped_x;
-            y = mapped_y;
-          }
-          Ok(path.inner.stroke_hit_test(x, y, stroke_w))
-        } else {
-          Err(Error::new(
-            Status::InvalidArg,
-            "The y-axis coordinate of the point to check is missing".to_owned(),
-          ))
-        }
-      }
+    let mut x = args.x as f32;
+    let mut y = args.y as f32;
+    if let Some(inverted) = self.context.state.transform.invert() {
+      (x, y) = inverted.map_points(x, y);
+    }
+    match args.path {
+      Some(path) => path.inner.stroke_hit_test(x, y, stroke_w),
+      None => self.context.path.stroke_hit_test(x, y, stroke_w),
     }
   }
 
@@ -4996,9 +5095,11 @@ impl CanvasRenderingContext2D {
     Ok(())
   }
 
+  /// stroke() or stroke(path). The index.js wrapper passes the argument
+  /// count after it; see `webidl::Arguments::take`.
   #[napi]
-  pub fn stroke(&mut self, path: Option<&mut Path>) -> Result<()> {
-    self.context.stroke(path.map(|p| &mut p.inner))?;
+  pub fn stroke(&mut self, _path: Positional, args: StrokeArgs) -> Result<()> {
+    self.context.stroke(args.path.map(|p| &mut p.inner))?;
     Ok(())
   }
 
