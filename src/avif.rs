@@ -357,41 +357,67 @@ impl AvifImage {
   }
 
   pub fn decode_from(avif_bytes: &[u8]) -> result::Result<Self, AvifError> {
-    let decoder = unsafe { sys::avifDecoderCreate() };
-    let image = unsafe { sys::avifImageCreateEmpty() };
-    AvifError::from_code(unsafe {
-      sys::avifDecoderReadMemory(decoder, image, avif_bytes.as_ptr(), avif_bytes.len())
-    })?;
-
-    unsafe {
-      sys::avifDecoderDestroy(decoder);
+    /// Destroys the decoder on every return path.
+    struct DecoderGuard(*mut sys::avifDecoder);
+    impl Drop for DecoderGuard {
+      fn drop(&mut self) {
+        if !self.0.is_null() {
+          unsafe { sys::avifDecoderDestroy(self.0) };
+        }
+      }
     }
-    let mut rgb_image = sys::avifRGBImage::default();
-    unsafe {
-      sys::avifRGBImageSetDefaults(&mut rgb_image, image);
-      rgb_image.format = sys::AVIF_RGB_FORMAT_RGBA;
-      rgb_image.depth = 8;
-      AvifError::from_code(sys::avifRGBImageAllocatePixels(&mut rgb_image))?;
-      AvifError::from_code(sys::avifImageYUVToRGB(image, &mut rgb_image))?;
+    let decoder = DecoderGuard(unsafe { sys::avifDecoderCreate() });
+    if decoder.0.is_null() {
+      return Err(AvifError::Known(AvifErrorCode::OutOfMemory));
+    }
+    // From here on `this` owns the image and the RGB pixels: Drop frees them,
+    // also when a step below fails.
+    let mut this = Self {
+      image: unsafe { sys::avifImageCreateEmpty() },
+      rgb_image: sys::avifRGBImage::default(),
+      width: 0,
+      height: 0,
+      row_bytes: 0,
+      data: ptr::null_mut(),
+      color_primaries: 2,
+      transfer_characteristics: 2,
     };
-    Ok(Self {
-      image,
-      width: unsafe { (*image).width },
-      height: unsafe { (*image).height },
-      data: rgb_image.pixels,
-      row_bytes: rgb_image.rowBytes,
-      color_primaries: unsafe { (*image).colorPrimaries },
-      transfer_characteristics: unsafe { (*image).transferCharacteristics },
-      rgb_image,
-    })
+    if this.image.is_null() {
+      return Err(AvifError::Known(AvifErrorCode::OutOfMemory));
+    }
+    unsafe {
+      AvifError::from_code(sys::avifDecoderReadMemory(
+        decoder.0,
+        this.image,
+        avif_bytes.as_ptr(),
+        avif_bytes.len(),
+      ))?;
+      sys::avifRGBImageSetDefaults(&mut this.rgb_image, this.image);
+      this.rgb_image.format = sys::AVIF_RGB_FORMAT_RGBA;
+      this.rgb_image.depth = 8;
+      AvifError::from_code(sys::avifRGBImageAllocatePixels(&mut this.rgb_image))?;
+      AvifError::from_code(sys::avifImageYUVToRGB(this.image, &mut this.rgb_image))?;
+      let image = &*this.image;
+      this.width = image.width;
+      this.height = image.height;
+      this.data = this.rgb_image.pixels;
+      this.row_bytes = this.rgb_image.rowBytes;
+      this.color_primaries = image.colorPrimaries;
+      this.transfer_characteristics = image.transferCharacteristics;
+    }
+    Ok(this)
   }
 }
 
 impl Drop for AvifImage {
   fn drop(&mut self) {
     unsafe {
+      // A failed decode_from leaves null pixels (which this accepts), or a
+      // null image.
       sys::avifRGBImageFreePixels(&mut self.rgb_image);
-      sys::avifImageDestroy(self.image);
+      if !self.image.is_null() {
+        sys::avifImageDestroy(self.image);
+      }
     }
   }
 }
