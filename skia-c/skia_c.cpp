@@ -1465,7 +1465,7 @@ void skiac_surface_encode_data(skiac_surface* c_surface,
                                bool lossless) {
   auto snapshot = SURFACE_CAST->makeImageSnapshot();
   skiac_image_encode_data(reinterpret_cast<skiac_image*>(snapshot.get()), data,
-                          format, quality, lossless, false);
+                          format, quality, lossless, false, false);
 }
 
 bool skiac_surface_encode_stream(skiac_surface* c_surface,
@@ -3661,13 +3661,30 @@ int skiac_image_get_height(skiac_image* c_image) {
 // `crop_to_max_dimension`: toBlob and convertToBlob encode the top-left part
 // that the encoder can hold, as Blink's CanvasAsyncBlobCreator does
 // (canvas_async_blob_creator.cc:199-209, ImageEncoder::MaxDimension).
+// `unpremul_readback`: toDataURL encodes an unpremultiplied readback of the
+// pixels in their own colour type (ImageDataBuffer, image_data_buffer.cc:
+// 66-90), which a float16 canvas rounds differently from the encoder's own
+// unpremultiply. 8-bit images keep the encoder's.
 void skiac_image_encode_data(skiac_image* c_image,
                              skiac_sk_data* data,
                              int format,
                              float quality,
                              bool lossless,
-                             bool crop_to_max_dimension) {
+                             bool crop_to_max_dimension,
+                             bool unpremul_readback) {
   auto image_ref = encodable_image(IMAGE_CAST);
+  if (unpremul_readback && image_ref->alphaType() == kPremul_SkAlphaType &&
+      image_ref->colorType() != kRGBA_8888_SkColorType &&
+      image_ref->colorType() != kBGRA_8888_SkColorType) {
+    SkBitmap readback;
+    if (!readback.tryAllocPixels(
+            image_ref->imageInfo().makeAlphaType(kUnpremul_SkAlphaType)) ||
+        !image_ref->readPixels(nullptr, readback.pixmap(), 0, 0)) {
+      return;
+    }
+    readback.setImmutable();
+    image_ref = SkImages::RasterFromBitmap(readback);
+  }
   auto image = image_ref.get();
   int max_dimension = format == int(SkEncodedImageFormat::kJPEG)   ? 65500
                       : format == int(SkEncodedImageFormat::kWEBP) ? 16383

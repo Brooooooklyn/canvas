@@ -251,6 +251,8 @@ impl ContextOutputData {
 /// Encodes `image`. `crop_to_max_dimension`: toBlob and convertToBlob encode
 /// the top-left part that the encoder can hold, as Blink's
 /// CanvasAsyncBlobCreator does (canvas_async_blob_creator.cc:199-209).
+/// `unpremul_readback`: toDataURL encodes an unpremultiplied readback of a
+/// float16 canvas (ImageDataBuffer, image_data_buffer.cc:66-90).
 /// Err holds the failure detail: None for a Skia encoder that gave nothing,
 /// Some(message) for AVIF and GIF.
 pub(crate) fn encode_image(
@@ -259,10 +261,17 @@ pub(crate) fn encode_image(
   width: u32,
   height: u32,
   crop_to_max_dimension: bool,
+  unpremul_readback: bool,
 ) -> std::result::Result<ContextOutputData, Option<String>> {
   if let Some((format, quality, lossless)) = encoding.skia() {
     return image
-      .encode_data(format, quality, lossless, crop_to_max_dimension)
+      .encode_data(
+        format,
+        quality,
+        lossless,
+        crop_to_max_dimension,
+        unpremul_readback,
+      )
       .map(ContextOutputData::Skia)
       .ok_or(None);
   }
@@ -314,8 +323,15 @@ pub struct ContextData {
 
 #[inline]
 pub(crate) fn encode_surface(data: &ContextData) -> Result<ContextOutputData> {
-  encode_image(&data.image, &data.encoding, data.width, data.height, false)
-    .map_err(|detail| node_encode_error(data.encoding.image_type(), detail, false))
+  encode_image(
+    &data.image,
+    &data.encoding,
+    data.width,
+    data.height,
+    false,
+    false,
+  )
+  .map_err(|detail| node_encode_error(data.encoding.image_type(), detail, false))
 }
 
 impl Task for ContextData {
