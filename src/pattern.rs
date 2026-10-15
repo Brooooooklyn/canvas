@@ -6,13 +6,14 @@ use napi::bindgen_prelude::*;
 use rgb::RGBA;
 
 use crate::color::CanvasColor;
+use crate::ctx::zero_size_source_check;
 use crate::error::SkError;
 use crate::gradient::Gradient;
 use crate::image::{Image, ImageData};
 use crate::page_recorder::next_resource_id;
 use crate::sk::{
-  AccountedBitmap, Bitmap, ImagePattern, ImagePatternBacking, ImagePatternShared, TileMode,
-  Transform,
+  AccountedBitmap, Bitmap, ColorSpace, ImagePattern, ImagePatternBacking, ImagePatternShared,
+  Surface, TileMode, Transform,
 };
 use crate::webidl;
 use crate::{CanvasElement, SVGCanvas};
@@ -109,6 +110,13 @@ impl CanvasPattern {
     input: Either4<&mut Image, &mut ImageData, &mut CanvasElement<'_>, &mut SVGCanvas<'_>>,
     repetition: &str,
   ) -> Result<Option<Self>> {
+    // ToCanvasImageSource comes first: a canvas source with a 0 side throws.
+    let source_size = match &input {
+      Either4::C(canvas) => Some((canvas.width, canvas.height)),
+      Either4::D(svg) => Some((svg.width, svg.height)),
+      _ => None,
+    };
+    zero_size_source_check(&env, source_size, webidl::CREATE_PATTERN)?;
     // CanvasPattern::ParseRepetitionType: case-sensitive, '' is 'repeat'.
     let (repeat_x, repeat_y) = match repetition {
       "" | "repeat" => (TileMode::Repeat, TileMode::Repeat),
@@ -207,6 +215,15 @@ impl CanvasPattern {
           true,
         )
       }
+      // A canvas source without pixels gives an empty image, which paints
+      // transparent black (Canvas2DRecorderContext::createPattern,
+      // kInvalidSourceImageStatus): a transparent 1x1 surface here.
+      Either4::C(canvas) if !canvas.ctx.context.has_pixels() => {
+        transparent_backing(canvas.ctx.context.color_space)?
+      }
+      Either4::D(svg_canvas) if !svg_canvas.ctx.context.has_pixels() => {
+        transparent_backing(svg_canvas.ctx.context.color_space)?
+      }
       Either4::C(canvas) => {
         // Flush deferred rendering before accessing the surface
         canvas.ctx.context.flush();
@@ -275,6 +292,24 @@ impl CanvasPattern {
       }),
     }))
   }
+}
+
+/// The backing of a pattern over a canvas without pixels: one transparent
+/// pixel, as `create` returns it for a canvas source.
+fn transparent_backing(color_space: ColorSpace) -> Result<(usize, ImagePatternBacking, u64, bool)> {
+  let mut surface = Surface::new_rgba_premultiplied(1, 1, color_space).ok_or_else(|| {
+    Error::new(
+      Status::GenericFailure,
+      "Failed to create pattern surface".to_owned(),
+    )
+  })?;
+  surface.canvas.clear();
+  Ok((
+    4,
+    ImagePatternBacking::Surface(surface.reference()),
+    next_resource_id(),
+    true,
+  ))
 }
 
 #[napi]

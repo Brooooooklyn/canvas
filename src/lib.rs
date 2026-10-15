@@ -122,6 +122,43 @@ fn canvas_height(height: u32) -> u32 {
   }
 }
 
+/// What the Node-only encoders throw, or reject with, as an IndexSizeError, on
+/// a canvas without pixels (no Chrome counterpart).
+const NO_PIXELS: &str = "The canvas has no pixels.";
+
+/// convertToBlob() on a canvas without pixels: Chrome's OffscreenCanvas
+/// IndexSizeError (offscreen_canvas.cc:551-555, with the binding's prefix).
+const CONVERT_TO_BLOB_NO_PIXELS: &str = "Failed to execute 'convertToBlob' on 'OffscreenCanvas': The size of the OffscreenCanvas is zero.";
+
+fn no_pixels_error(env: &Env) -> Error {
+  webidl::dom_exception(env.raw(), "IndexSizeError", NO_PIXELS)
+}
+
+/// A promise rejected with an IndexSizeError: what the async encoders give
+/// on a canvas without pixels. `dom_exception` throws the error; it is taken
+/// back from the pending exception.
+fn rejected_with_index_size_error<'env>(env: &'env Env, message: &str) -> Result<Unknown<'env>> {
+  let _ = webidl::dom_exception(env.raw(), "IndexSizeError", message);
+  let raw = env.raw();
+  let mut exception = std::ptr::null_mut();
+  check_status!(unsafe { sys::napi_get_and_clear_last_exception(raw, &mut exception) })?;
+  let mut deferred = std::ptr::null_mut();
+  let mut promise = std::ptr::null_mut();
+  check_status!(unsafe { sys::napi_create_promise(raw, &mut deferred, &mut promise) })?;
+  check_status!(unsafe { sys::napi_reject_deferred(raw, deferred, exception) })?;
+  Ok(unsafe { Unknown::from_raw_unchecked(raw, promise) })
+}
+
+/// Puts `new` in place of a canvas's Context, and reports the change in
+/// pixel bytes to V8: every add and subtract uses `surface_bytes`, so they
+/// match also for a canvas without pixels.
+fn replace_context(env: &Env, context: &mut Context, new: Context) -> Result<()> {
+  let delta = new.surface_bytes() - context.surface_bytes();
+  *context = new;
+  env.adjust_external_memory(delta)?;
+  Ok(())
+}
+
 // Setting width or height resets the context to its default state (spec "set
 // bitmap dimensions"; Chrome: HTMLCanvasElement::Reset), so the saved style
 // objects go. The context object is read from the canvas's `ctx` property:
@@ -144,12 +181,14 @@ impl<'c> CanvasElement<'c> {
     width: u32,
     height: u32,
   ) -> Result<ClassInstance<'_, CanvasRenderingContext2D>> {
+    let context = Context::new(width, height, ColorSpace::default())?;
+    let bytes = context.surface_bytes();
     let ctx = CanvasRenderingContext2D {
-      context: Context::new(width, height, ColorSpace::default())?,
+      context,
       reported_settings: Default::default(),
     }
     .into_instance(env)?;
-    env.adjust_external_memory((width * height * 4) as i64)?;
+    env.adjust_external_memory(bytes)?;
     Ok(ctx)
   }
 
@@ -183,11 +222,9 @@ impl<'c> CanvasElement<'c> {
     width: webidl::UnsignedLong<webidl::CanvasSetWidth>,
   ) -> Result<()> {
     let width = canvas_width(width.0);
+    let new_ctx = Self::resized_context(&self.ctx.context, width, self.height)?;
+    replace_context(&env, &mut self.ctx.context, new_ctx)?;
     self.width = width;
-    let height = self.height;
-    let new_ctx = Self::resized_context(&self.ctx.context, width, height)?;
-    let old_ctx = mem::replace(&mut self.ctx.context, new_ctx);
-    env.adjust_external_memory((width as i64 - old_ctx.width as i64) * (height as i64) * 4)?;
     reset_ctx_style_getters(&this)
   }
 
@@ -204,11 +241,9 @@ impl<'c> CanvasElement<'c> {
     height: webidl::UnsignedLong<webidl::CanvasSetHeight>,
   ) -> Result<()> {
     let height = canvas_height(height.0);
+    let new_ctx = Self::resized_context(&self.ctx.context, self.width, height)?;
+    replace_context(&env, &mut self.ctx.context, new_ctx)?;
     self.height = height;
-    let width = self.width;
-    let new_ctx = Self::resized_context(&self.ctx.context, width, height)?;
-    let old_ctx = mem::replace(&mut self.ctx.context, new_ctx);
-    env.adjust_external_memory((height as i64 - old_ctx.height as i64) * (width as i64) * 4)?;
     reset_ctx_style_getters(&this)
   }
 
@@ -224,6 +259,7 @@ impl<'c> CanvasElement<'c> {
   #[napi]
   pub fn get_context<'env>(
     &mut self,
+    env: &Env,
     this: This,
     context_type: webidl::DomString<webidl::CanvasGetContext>,
     // Converted (and may throw) on every call, also once the context exists
@@ -243,8 +279,9 @@ impl<'c> CanvasElement<'c> {
     // alpha. alpha:false always gets a fresh kOpaque surface, so nothing set
     // through the internal `canvas.ctx` before this call reaches the base.
     if attrs.color_space != context_2d.color_space || !attrs.alpha {
-      *context_2d =
+      let new_ctx =
         Context::new_with_alpha(self.width, self.height, attrs.color_space, attrs.alpha)?;
+      replace_context(env, context_2d, new_ctx)?;
       reset_ctx_style_getters(&this)?;
     }
     self.context_initialized = true;
@@ -252,16 +289,20 @@ impl<'c> CanvasElement<'c> {
   }
 
   #[napi]
-  pub fn encode(
+  pub fn encode<'env>(
     &mut self,
+    env: &'env Env,
     format: String,
     quality_or_config: Either3<u32, AvifConfig, Unknown>,
-  ) -> Result<AsyncTask<ContextData>> {
+  ) -> Result<Either<AsyncTask<ContextData>, Unknown<'env>>> {
+    if !self.ctx.context.has_pixels() {
+      return rejected_with_index_size_error(env, NO_PIXELS).map(Either::B);
+    }
     // Flush deferred rendering before encoding
     self.ctx.context.flush();
-    Ok(AsyncTask::new(
+    Ok(Either::A(AsyncTask::new(
       self.encode_inner(format, quality_or_config)?,
-    ))
+    )))
   }
 
   #[napi]
@@ -271,6 +312,9 @@ impl<'c> CanvasElement<'c> {
     format: String,
     quality_or_config: Either3<u32, AvifConfig, Unknown>,
   ) -> Result<BufferSlice<'env>> {
+    if !self.ctx.context.has_pixels() {
+      return Err(no_pixels_error(&env));
+    }
     // Flush deferred rendering before encoding
     self.ctx.context.flush();
     let data = self.encode_inner(format, quality_or_config)?;
@@ -285,6 +329,9 @@ impl<'c> CanvasElement<'c> {
     mime: String,
     quality_or_config: Either3<u32, AvifConfig, Unknown>,
   ) -> Result<BufferSlice<'env>> {
+    if !self.ctx.context.has_pixels() {
+      return Err(no_pixels_error(&env));
+    }
     // Flush deferred rendering before encoding
     self.ctx.context.flush();
     let mime = mime.as_str();
@@ -342,7 +389,15 @@ impl<'c> CanvasElement<'c> {
   }
 
   #[napi]
-  pub fn data(&mut self) -> Result<Buffer> {
+  pub fn data(&mut self, env: &Env) -> Result<Buffer> {
+    // A 0 side has no pixels to give: an empty buffer. Any other canvas
+    // without pixels has some it cannot give.
+    if self.width == 0 || self.height == 0 {
+      return Ok(Vec::new().into());
+    }
+    if !self.ctx.context.has_pixels() {
+      return Err(no_pixels_error(env));
+    }
     // Flush deferred rendering before reading data
     self.ctx.context.flush();
     let ctx2d = &self.ctx.context;
@@ -394,17 +449,9 @@ impl<'c> CanvasElement<'c> {
   ) -> Result<()> {
     // Flush deferred rendering before encoding
     self.ctx.context.flush();
-    let image = self
-      .ctx
-      .context
-      .surface
-      .make_image_snapshot()
-      .ok_or_else(|| {
-        Error::new(
-          Status::GenericFailure,
-          "Create image snapshot failed".to_owned(),
-        )
-      })?;
+    // Without pixels the callback gets null, from a task, as in Chrome
+    // (HTMLCanvasElement::toBlob, html_canvas_element.cc:1505-1512).
+    let image = self.snapshot()?;
     let mime = mime.unwrap_or_else(|| MIME_PNG.to_owned());
     let quality_value = quality.unwrap_or(0.92).clamp(0.0, 1.0);
     let quality_or_config = if mime == MIME_AVIF {
@@ -435,7 +482,9 @@ impl<'c> CanvasElement<'c> {
         callback.call(Either::A(ctx.value))?;
         Ok(())
       })?
-      .catch(|ctx: CallbackContext<Unknown>| {
+      // `move`: the closure runs after this call returns, so it must own the
+      // reference (borrowing the local read freed stack memory).
+      .catch(move |ctx: CallbackContext<Unknown>| {
         let callback = callback_ref_in_catch.borrow_back(&ctx.env)?;
         callback.call(Either::B(Null))?;
         Ok(())
@@ -445,23 +494,17 @@ impl<'c> CanvasElement<'c> {
   }
 
   #[napi]
-  pub fn convert_to_blob(
+  pub fn convert_to_blob<'env>(
     &mut self,
+    env: &'env Env,
     options: Option<ConvertToBlobOptions>,
-  ) -> Result<AsyncTask<AsyncBlob>> {
+  ) -> Result<Either<AsyncTask<AsyncBlob>, Unknown<'env>>> {
+    if !self.ctx.context.has_pixels() {
+      return rejected_with_index_size_error(env, CONVERT_TO_BLOB_NO_PIXELS).map(Either::B);
+    }
     // Flush deferred rendering before encoding
     self.ctx.context.flush();
-    let image = self
-      .ctx
-      .context
-      .surface
-      .make_image_snapshot()
-      .ok_or_else(|| {
-        Error::new(
-          Status::GenericFailure,
-          "Create image snapshot failed".to_owned(),
-        )
-      })?;
+    let image = self.snapshot()?;
     let options = options.unwrap_or_default();
     let mime = options.mime.unwrap_or_else(|| MIME_PNG.to_owned());
     let quality = options.quality.unwrap_or(0.92).clamp(0.0, 1.0);
@@ -473,13 +516,13 @@ impl<'c> CanvasElement<'c> {
     } else {
       Either::A((quality * 100.0) as u32)
     };
-    Ok(AsyncTask::new(AsyncBlob {
+    Ok(Either::A(AsyncTask::new(AsyncBlob {
       image,
       mime,
       quality_or_config,
       width: self.ctx.context.width,
       height: self.ctx.context.height,
-    }))
+    })))
   }
 
   #[napi]
@@ -489,6 +532,9 @@ impl<'c> CanvasElement<'c> {
     mime: Option<String>,
     quality: Option<u8>,
   ) -> Result<ReadableStream<'env, BufferSlice<'env>>> {
+    if !self.ctx.context.has_pixels() {
+      return Err(no_pixels_error(env));
+    }
     // Flush deferred rendering before encoding
     self.ctx.context.flush();
     let mime = match mime.as_deref() {
@@ -534,11 +580,34 @@ impl<'c> CanvasElement<'c> {
   }
 
   #[napi]
-  pub fn save_png(&mut self, path: String) {
+  pub fn save_png(&mut self, env: &Env, path: String) -> Result<()> {
+    if !self.ctx.context.has_pixels() {
+      return Err(no_pixels_error(env));
+    }
     // Flush deferred rendering before saving
     self.ctx.context.flush();
     let ctx2d = &self.ctx.context;
     ctx2d.surface.save_png(&path);
+    Ok(())
+  }
+
+  /// The pixels for an encoder, or None when the canvas has none.
+  fn snapshot(&self) -> Result<Option<SkImage>> {
+    if !self.ctx.context.has_pixels() {
+      return Ok(None);
+    }
+    self
+      .ctx
+      .context
+      .surface
+      .make_image_snapshot()
+      .map(Some)
+      .ok_or_else(|| {
+        Error::new(
+          Status::GenericFailure,
+          "Create image snapshot failed".to_owned(),
+        )
+      })
   }
 
   fn encode_inner(
@@ -594,17 +663,7 @@ impl<'c> CanvasElement<'c> {
     quality_or_config: Either3<f64, AvifConfig, Unknown>,
   ) -> Result<AsyncDataUrl> {
     let mime = mime.unwrap_or(MIME_PNG);
-    let image = self
-      .ctx
-      .context
-      .surface
-      .make_image_snapshot()
-      .ok_or_else(|| {
-        Error::new(
-          Status::GenericFailure,
-          "Create image snapshot failed".to_owned(),
-        )
-      })?;
+    let image = self.snapshot()?;
     Ok(AsyncDataUrl {
       image,
       mime: mime.to_owned(),
@@ -688,7 +747,8 @@ fn get_data_ref(
 }
 
 pub struct AsyncDataUrl {
-  image: SkImage,
+  /// None: the canvas has no pixels.
+  image: Option<SkImage>,
   quality_or_config: Either<u32, AvifConfig>,
   mime: String,
   width: u32,
@@ -701,9 +761,13 @@ impl Task for AsyncDataUrl {
   type JsValue = String;
 
   fn compute(&mut self) -> Result<Self::Output> {
+    // HTMLCanvasElement::ToDataURLInternal (html_canvas_element.cc:1417).
+    let Some(image) = &self.image else {
+      return Ok("data:,".to_owned());
+    };
     let mut output = format!("data:{};base64,", self.mime);
     let surface_data = get_data_ref(
-      &self.image,
+      image,
       &self.mime,
       &self.quality_or_config,
       self.width,
@@ -729,7 +793,9 @@ impl Task for AsyncDataUrl {
 }
 
 pub struct AsyncBlob {
-  image: SkImage,
+  /// None: the canvas has no pixels, and the task fails (toBlob then calls
+  /// back null).
+  image: Option<SkImage>,
   mime: String,
   quality_or_config: Either<u32, AvifConfig>,
   width: u32,
@@ -742,8 +808,11 @@ impl<'env> ScopedTask<'env> for AsyncBlob {
   type JsValue = Uint8ArraySlice<'env>;
 
   fn compute(&mut self) -> Result<Self::Output> {
+    let Some(image) = &self.image else {
+      return Err(Error::from_reason(NO_PIXELS));
+    };
     get_data_ref(
-      &self.image,
+      image,
       &self.mime,
       &self.quality_or_config,
       self.width,
@@ -825,9 +894,11 @@ impl<'scope> SVGCanvas<'scope> {
     // Default fallback of canvas on browser and skia-canvas is 350x150
     let width = (if width <= 0 { 350 } else { width }) as u32;
     let height = (if height <= 0 { 150 } else { height }) as u32;
+    let context = Context::new_svg(width, height, flag.into(), ColorSpace::default())?;
+    let bytes = context.surface_bytes();
     let ctx = CanvasRenderingContext2D::into_instance(
       CanvasRenderingContext2D {
-        context: Context::new_svg(width, height, flag.into(), ColorSpace::default())?,
+        context,
         reported_settings: Default::default(),
       },
       env,
@@ -840,7 +911,7 @@ impl<'scope> SVGCanvas<'scope> {
         .with_value(&this)
         .with_property_attributes(PropertyAttributes::Default),
     ])?;
-    env.adjust_external_memory((width * height * 4) as i64)?;
+    env.adjust_external_memory(bytes)?;
 
     Ok(Self {
       width,
@@ -856,6 +927,7 @@ impl<'scope> SVGCanvas<'scope> {
   #[napi]
   pub fn get_context<'env>(
     &'env mut self,
+    env: &Env,
     this: This<'env>,
     context_type: webidl::DomString<webidl::SvgCanvasGetContext>,
     // Converted on every call, as for Canvas.
@@ -875,7 +947,8 @@ impl<'scope> SVGCanvas<'scope> {
     // alpha:false always gets a fresh context: state set through the internal
     // `canvas.ctx` (matrix, clip, paint) must not reach the base.
     if attrs.color_space != context_2d.color_space || !attrs.alpha {
-      *context_2d = Context::new_svg(self.width, self.height, self.flag.into(), attrs.color_space)?;
+      let new_ctx = Context::new_svg(self.width, self.height, self.flag.into(), attrs.color_space)?;
+      replace_context(env, context_2d, new_ctx)?;
       reset_ctx_style_getters(&this)?;
     }
     if !attrs.alpha {
@@ -945,11 +1018,9 @@ impl<'scope> SVGCanvas<'scope> {
     width: webidl::UnsignedLong<webidl::SvgCanvasSetWidth>,
   ) -> Result<()> {
     let width = canvas_width(width.0);
+    let new_ctx = self.resized_context(width, self.height)?;
+    replace_context(&env, &mut self.ctx.context, new_ctx)?;
     self.width = width;
-    let height = self.height;
-    let new_ctx = self.resized_context(width, height)?;
-    let old_ctx = mem::replace(&mut self.ctx.context, new_ctx);
-    env.adjust_external_memory((width as i64 - old_ctx.width as i64) * (height as i64) * 4)?;
     reset_ctx_style_getters(&this)
   }
 
@@ -966,11 +1037,9 @@ impl<'scope> SVGCanvas<'scope> {
     height: webidl::UnsignedLong<webidl::SvgCanvasSetHeight>,
   ) -> Result<()> {
     let height = canvas_height(height.0);
+    let new_ctx = self.resized_context(self.width, height)?;
+    replace_context(&env, &mut self.ctx.context, new_ctx)?;
     self.height = height;
-    let width = self.width;
-    let new_ctx = self.resized_context(width, height)?;
-    let old_ctx = mem::replace(&mut self.ctx.context, new_ctx);
-    env.adjust_external_memory((width as i64) * (height as i64 - old_ctx.height as i64) * 4)?;
     reset_ctx_style_getters(&this)
   }
 
@@ -1124,7 +1193,7 @@ impl PDFDocument {
     let surface = sk::Surface::from_borrowed_canvas(canvas);
     let context = Context::new_from_surface(surface, width as u32, height as u32);
 
-    env.adjust_external_memory((width as i64) * (height as i64) * 4)?;
+    env.adjust_external_memory(context.surface_bytes())?;
 
     Ok(CanvasRenderingContext2D {
       context,
