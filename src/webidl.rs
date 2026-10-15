@@ -1282,63 +1282,6 @@ impl Dictionary<'_> {
   }
 }
 
-/// Iterates `iterable` with its @@iterator `method` like Blink's
-/// ScriptIterator (bindings/core/v8/script_iterator.cc): `next` is read once,
-/// each step reads `value` and then `done`, and `convert` runs on each value
-/// before the next step. Nothing calls return() when a conversion throws.
-fn iterate<T>(
-  env: sys::napi_env,
-  iterable: sys::napi_value,
-  method: sys::napi_value,
-  prefix: &str,
-  mut convert: impl FnMut(sys::napi_value) -> Result<T>,
-) -> Result<Vec<T>> {
-  let iterator = call(env, iterable, method, &[])?;
-  if !is_object(env, iterator)? {
-    return Err(context_type_error(
-      env,
-      prefix,
-      "Iterator object must be an object.",
-    ));
-  }
-  let mut next = ptr::null_mut();
-  check_status!(unsafe {
-    sys::napi_get_named_property(env, iterator, c"next".as_ptr(), &mut next)
-  })?;
-  if !is_callable(env, next)? {
-    return Err(context_type_error(
-      env,
-      prefix,
-      "Expected next() function on iterator.",
-    ));
-  }
-  let mut values = Vec::new();
-  loop {
-    let result = call(env, iterator, next, &[])?;
-    if !is_object(env, result)? {
-      return Err(context_type_error(
-        env,
-        prefix,
-        "Expected iterator.next() to return an Object.",
-      ));
-    }
-    let mut value = ptr::null_mut();
-    check_status!(unsafe {
-      sys::napi_get_named_property(env, result, c"value".as_ptr(), &mut value)
-    })?;
-    let mut done = ptr::null_mut();
-    check_status!(unsafe {
-      sys::napi_get_named_property(env, result, c"done".as_ptr(), &mut done)
-    })?;
-    let mut done_bool = ptr::null_mut();
-    check_status!(unsafe { sys::napi_coerce_to_bool(env, done, &mut done_bool) })?;
-    if unsafe { bool::from_napi_value(env, done_bool)? } {
-      return Ok(values);
-    }
-    values.push(convert(value)?);
-  }
-}
-
 /// One radius of roundRect(): WebIDL `(unrestricted double or DOMPointInit)`.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum Radius {
@@ -1351,6 +1294,11 @@ pub(crate) enum Radius {
 /// are a DOMPointInit (every member read, in order: w, x, y, z); anything
 /// else goes through ToNumber.
 fn radius(env: sys::napi_env, value: sys::napi_value, prefix: &str) -> Result<Radius> {
+  // A number needs no conversion.
+  let mut number = 0.0;
+  if unsafe { sys::napi_get_value_double(env, value, &mut number) } == sys::Status::napi_ok {
+    return Ok(Radius::Number(number));
+  }
   match raw_type_of(env, value)? {
     sys::ValueType::napi_undefined | sys::ValueType::napi_null => Ok(Radius::Point(0.0, 0.0)),
     sys::ValueType::napi_object | sys::ValueType::napi_function => {
@@ -1370,37 +1318,64 @@ fn radius(env: sys::napi_env, value: sys::napi_value, prefix: &str) -> Result<Ra
   }
 }
 
-/// The `radii` argument of roundRect(): `optional (unrestricted double or
-/// DOMPointInit or sequence<(unrestricted double or DOMPointInit)>) radii = 0`.
-/// An object with @@iterator is a sequence (read through the iterator, no
-/// array fast path), any other object a DOMPointInit. Converted in the
-/// callback glue, so a getter may use the receiver, as in Chrome.
+/// Blink's bindings::IsEsIterableObject (generated_code_helper.cc:256-284),
+/// which overload resolution runs on an object that is not an Array
+/// (bind_gen/interface.py:1246-1249): Get @@iterator once; undefined or null
+/// is not iterable, any other value that is not callable a TypeError.
+fn is_es_iterable_object(env: sys::napi_env, value: sys::napi_value, prefix: &str) -> Result<bool> {
+  let method = match intrinsic(env, c"iterator")? {
+    Some(key) => get_property(env, value, key)?,
+    // Not readable when the addon was registered: as if undefined.
+    None => return Ok(false),
+  };
+  match raw_type_of(env, method)? {
+    sys::ValueType::napi_function => Ok(true),
+    sys::ValueType::napi_undefined | sys::ValueType::napi_null => Ok(false),
+    _ => Err(context_type_error(
+      env,
+      prefix,
+      "@@iterator must be a function",
+    )),
+  }
+}
+
+/// The most radii Blink's HeapVector of union Members holds:
+/// PartitionAlloc's MaxAllocationSize() (the same 2^31 - 2^21 bytes as
+/// ImageData data) / 4, the size of a Member with pointer compression
+/// (heap_allocator_impl.h:61-67, partition_allocator.h:28-30). Measured in
+/// Chrome 155: 536346624.
+const MAX_RADII_SEQUENCE_LENGTH: u32 =
+  (crate::image::MAX_DATA_BYTES / std::mem::size_of::<u32>()) as u32;
+
+/// The `radii` argument of roundRect(). Blink declares two overloads
+/// (canvas_path.idl:16-17): `sequence<(unrestricted double or DOMPointInit)>
+/// radii`, and `optional (unrestricted double or DOMPointInit) radii = 0`.
+/// Overload resolution picks the sequence for an Array, or for another
+/// object whose @@iterator is callable ([`is_es_iterable_object`]), and the
+/// sequence is then converted as any `sequence<T>` ([`sequence`]: an Array
+/// by index, never with its @@iterator; another iterable with its
+/// @@iterator, read a second time). Undefined is the default 0; anything
+/// else is one radius. Converted in the callback glue, so a getter may use
+/// the receiver, as in Chrome.
 pub struct RoundRectRadii<S>(pub(crate) Vec<Radius>, PhantomData<S>);
 
 impl<S: Site> FromNapiValue for RoundRectRadii<S> {
   unsafe fn from_napi_value(env: sys::napi_env, value: sys::napi_value) -> Result<Self> {
+    let mut number = 0.0;
+    if unsafe { sys::napi_get_value_double(env, value, &mut number) } == sys::Status::napi_ok {
+      return Ok(Self(vec![Radius::Number(number)], PhantomData));
+    }
     let radii = match raw_type_of(env, value)? {
       sys::ValueType::napi_undefined => vec![Radius::Number(0.0)],
       sys::ValueType::napi_object | sys::ValueType::napi_function => {
-        let method = match intrinsic(env, c"iterator")? {
-          Some(key) => get_property(env, value, key)?,
-          // Not readable when the addon was registered: as if undefined.
-          None => undefined(env)?,
-        };
-        match raw_type_of(env, method)? {
-          sys::ValueType::napi_undefined | sys::ValueType::napi_null => {
-            vec![radius(env, value, S::PREFIX)?]
-          }
-          sys::ValueType::napi_function => iterate(env, value, method, S::PREFIX, |item| {
+        let mut is_array = false;
+        check_status!(unsafe { sys::napi_is_array(env, value, &mut is_array) })?;
+        if is_array || is_es_iterable_object(env, value, S::PREFIX)? {
+          sequence(env, value, S::PREFIX, MAX_RADII_SEQUENCE_LENGTH, |item| {
             radius(env, item, S::PREFIX)
-          })?,
-          _ => {
-            return Err(context_type_error(
-              env,
-              S::PREFIX,
-              "@@iterator must be a function",
-            ));
-          }
+          })?
+        } else {
+          vec![radius(env, value, S::PREFIX)?]
         }
       }
       _ => vec![radius(env, value, S::PREFIX)?],

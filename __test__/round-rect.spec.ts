@@ -478,6 +478,343 @@ test('roundRect reads radii in order', (t) => {
   t.is(log.join(), 'next,step,value,done,step,value,done')
 })
 
+// Chrome picks the sequence overload of roundRect for an Array, or for an
+// object whose @@iterator is callable (Blink canvas_path.idl, overload
+// resolution in bind_gen/interface.py), then converts it as
+// NativeValueTraits<IDLSequence> does (native_value_traits_impl.h).
+
+/**
+ * roundRect(5, 5, 40, 40, radii) on a 60x60 context, or on a Path2D filled
+ * there: the error, and the ink. No spread: it would call
+ * Array.prototype[Symbol.iterator], which some tests patch.
+ */
+function radiiResult(radii: unknown, onPath = false) {
+  const ctx = createCanvas(60, 60).getContext('2d')
+  const path = new Path2D()
+  const error = thrown(() => (onPath ? path : ctx).roundRect(5, 5, 40, 40, radii as any))
+  if (onPath) ctx.fill(path)
+  else ctx.fill()
+  return { error, ...ink(ctx) }
+}
+const ok = (sum: number) => ({ error: null, box: [5, 5, 44, 44], sum })
+const failed = (name: string, message: string) => ({ error: { name, message }, box: null, sum: 0 })
+
+test('roundRect reads an Array by index, never with its @@iterator', (t) => {
+  // [10, 5]
+  const tenFive = ok(392913)
+  const log: string[] = []
+  const values = Array.prototype.values
+  let patched
+  Array.prototype[Symbol.iterator] = function (this: unknown[]) {
+    log.push('Array.prototype[@@iterator]')
+    return values.call(this)
+  }
+  try {
+    patched = [radiiResult([10, 5]), radiiResult([10, 5], true)]
+  } finally {
+    Array.prototype[Symbol.iterator] = values
+  }
+  t.deepEqual(patched, [tenFive, tenFive])
+  const descriptor = Object.getOwnPropertyDescriptor(Array.prototype, Symbol.iterator)!
+  Object.defineProperty(Array.prototype, Symbol.iterator, {
+    configurable: true,
+    get() {
+      log.push('get Array.prototype[@@iterator]')
+      return values
+    },
+  })
+  try {
+    patched = radiiResult([10, 5])
+  } finally {
+    Object.defineProperty(Array.prototype, Symbol.iterator, descriptor)
+  }
+  t.deepEqual(patched, tenFive)
+  t.is(log.join(), '')
+  // An own @@iterator, even one that is not callable.
+  const own = [10, 5]
+  Object.defineProperty(own, Symbol.iterator, {
+    get() {
+      log.push('get own @@iterator')
+      return function* () {
+        yield 3
+      }
+    },
+  })
+  t.deepEqual(radiiResult(own), tenFive)
+  t.deepEqual(radiiResult(Object.assign([10, 5], { [Symbol.iterator]: 5 })), tenFive)
+  class Sub extends Array {
+    *[Symbol.iterator]() {
+      log.push('Sub[@@iterator]')
+      yield 3
+    }
+  }
+  const sub = new Sub(2)
+  sub[0] = 10
+  sub[1] = 5
+  t.deepEqual(radiiResult(sub), tenFive)
+  t.is(log.join(), '')
+  // A hole is undefined, a DOMPointInit; [[Get]] finds an index on the
+  // prototype chain.
+  const holey = (length: number, items: Record<number, unknown>) => Object.assign([], items, { length })
+  t.deepEqual(radiiResult(holey(2, { 1: 10 })), ok(395859))
+  t.deepEqual(radiiResult(holey(1, {})), ok(408000))
+  t.deepEqual(radiiResult(holey(3, { 1: 10 })), ok(395859))
+  Object.defineProperty(Array.prototype, 0, {
+    configurable: true,
+    get() {
+      log.push('Array.prototype[0]')
+      return 10
+    },
+    // Writes, such as log.push() on an empty log, stay own data properties.
+    set(value) {
+      Object.defineProperty(this, 0, { value, writable: true, enumerable: true, configurable: true })
+    },
+  })
+  try {
+    patched = radiiResult(holey(2, { 1: 5 }))
+  } finally {
+    delete (Array.prototype as any)[0]
+  }
+  t.deepEqual(patched, tenFive)
+  t.is(log.join(), 'Array.prototype[0]')
+})
+
+test('roundRect reads the length of an Array again after each radius', (t) => {
+  const log: string[] = []
+  const getters = [0, 0, 0]
+  for (let i = 0; i < 3; i++) {
+    Object.defineProperty(getters, i, {
+      get() {
+        log.push('get' + i)
+        return [10, 5, 2][i]
+      },
+    })
+  }
+  t.deepEqual(radiiResult(getters), ok(398730))
+  t.is(log.join(), 'get0,get1,get2')
+  log.length = 0
+  const grows = [1, 2]
+  Object.defineProperty(grows, 0, {
+    get() {
+      log.push('get0')
+      grows.push(3)
+      return 4
+    },
+  })
+  t.deepEqual(radiiResult(grows), ok(406302))
+  t.is(log.join(), 'get0')
+  const shrinks: unknown[] = [
+    {
+      get x() {
+        shrinks.length = 1
+        return 4
+      },
+    },
+    7,
+    8,
+  ]
+  t.deepEqual(radiiResult(shrinks), ok(408000))
+  const pastFour = [1, 2, 3, 4]
+  Object.defineProperty(pastFour, 3, {
+    get() {
+      pastFour.push(5)
+      return 4
+    },
+  })
+  t.deepEqual(
+    radiiResult(pastFour),
+    failed('RangeError', C + '5 radii provided. Between one and four radii are necessary.'),
+  )
+  // An error from an index getter passes as it is.
+  const error = new Error('get1')
+  const throwing = [1, 2]
+  Object.defineProperty(throwing, 1, {
+    get() {
+      throw error
+    },
+  })
+  t.is(
+    t.throws(() => createCanvas(10, 10).getContext('2d').roundRect(0, 0, 5, 5, throwing)),
+    error,
+  )
+})
+
+test('roundRect takes an Array of at most 536346624 radii, like Chrome', (t) => {
+  // Blink's HeapVector of 4-byte Members holds MaxAllocationSize / 4 values.
+  // A getter at index 0 that throws shows whether the length passed.
+  const sparse = (length: number) => {
+    const array: unknown[] = []
+    array.length = length
+    Object.defineProperty(array, 0, {
+      get() {
+        throw new Error('read 0')
+      },
+    })
+    return array
+  }
+  const ctx = createCanvas(10, 10).getContext('2d')
+  const path = new Path2D()
+  for (const [f, prefix] of [
+    [(radii: any) => ctx.roundRect(0, 0, 5, 5, radii), C],
+    [(radii: any) => path.roundRect(0, 0, 5, 5, radii), P],
+  ] as [(radii: any) => void, string][]) {
+    t.throws(() => f(sparse(536346624)), { instanceOf: Error, message: 'read 0' })
+    for (const length of [536346625, 2 ** 32 - 1]) {
+      const error = t.throws(() => f(sparse(length)), {
+        instanceOf: RangeError,
+        message: prefix + 'Array length exceeds supported limit.',
+      })
+      t.is(String(error?.stack).split('\n')[0], 'RangeError: Array length exceeds supported limit.')
+    }
+  }
+})
+
+test('roundRect reads @@iterator of any other iterable twice, like Chrome', (t) => {
+  const tenFive = ok(392913)
+  t.deepEqual(radiiResult(new Set([10, 5])), tenFive)
+  t.deepEqual(
+    radiiResult(
+      (function* () {
+        yield 10
+        yield 5
+      })(),
+    ),
+    tenFive,
+  )
+  t.deepEqual(radiiResult(new Float64Array([10, 5])), tenFive)
+  t.deepEqual(radiiResult(new Set([10, 5]), true), tenFive)
+  // Once to pick the overload, once to convert the sequence.
+  const log: string[] = []
+  const keys = (target: object) =>
+    new Proxy(target, {
+      get(target, key, receiver) {
+        log.push(String(key))
+        return Reflect.get(target, key, receiver)
+      },
+    })
+  // A Proxy of an Array is not an Array.
+  t.deepEqual(radiiResult(keys([10, 5])), tenFive)
+  t.is(log.join(), 'Symbol(Symbol.iterator),Symbol(Symbol.iterator),length,0,length,1,length')
+  // The two reads may differ.
+  let reads = 0
+  const changing = (first: unknown, second: unknown) => {
+    reads = 0
+    return {
+      x: 10,
+      y: 10,
+      get [Symbol.iterator]() {
+        return reads++ === 0 ? first : second
+      },
+    }
+  }
+  function* ten() {
+    yield 10
+  }
+  t.deepEqual(radiiResult(changing(ten, ten)), ok(383708))
+  t.is(reads, 2)
+  t.deepEqual(
+    radiiResult(changing(ten, undefined)),
+    failed('TypeError', C + 'The object must have a callable @@iterator property.'),
+  )
+  t.is(reads, 2)
+  t.deepEqual(radiiResult(changing(ten, 5)), failed('TypeError', C + '@@iterator must be a callable.'))
+  t.is(reads, 2)
+  // Not iterable at the first read: a DOMPointInit.
+  t.deepEqual(radiiResult(changing(undefined, ten)), ok(383708))
+  t.is(reads, 1)
+  // A non-callable @@iterator at the first read throws its own message.
+  t.deepEqual(radiiResult(changing(5, ten)), failed('TypeError', C + '@@iterator must be a function'))
+  t.is(reads, 1)
+})
+
+test('roundRect steps an iterator like Chrome and never calls its return()', (t) => {
+  const log: string[] = []
+  /** An iterable of `values`; each result object logs its reads, return() throws. */
+  const iterable = (values: unknown[]) => {
+    let i = 0
+    const iterator = {
+      next() {
+        log.push('next')
+        const done = i >= values.length
+        return new Proxy(
+          { value: done ? 'end' : values[i++], done },
+          {
+            get(target, key, receiver) {
+              log.push(String(key))
+              return Reflect.get(target, key, receiver)
+            },
+          },
+        )
+      },
+      return() {
+        log.push('return')
+        throw new Error('return()')
+      },
+    }
+    return { [Symbol.iterator]: () => iterator }
+  }
+  t.deepEqual(radiiResult(iterable([10, 5])), ok(392913))
+  t.is(log.join(), 'next,value,done,next,value,done,next,value,done')
+  log.length = 0
+  t.deepEqual(
+    radiiResult(iterable([10, Symbol(), 5])),
+    failed('TypeError', C + 'Cannot convert a Symbol value to a number'),
+  )
+  t.is(log.join(), 'next,value,done,next,value,done')
+  log.length = 0
+  const error = new Error('x')
+  t.is(
+    t.throws(() =>
+      createCanvas(10, 10)
+        .getContext('2d')
+        .roundRect(
+          0,
+          0,
+          5,
+          5,
+          iterable([
+            {
+              get x() {
+                throw error
+              },
+            },
+          ]) as any,
+        ),
+    ),
+    error,
+  )
+  t.is(log.join(), 'next,value,done')
+  log.length = 0
+  t.deepEqual(
+    radiiResult(iterable([1, 2, 3, 4, 5, 6])),
+    failed('RangeError', C + '6 radii provided. Between one and four radii are necessary.'),
+  )
+  t.is(log.filter((step) => step === 'next' || step === 'return').join(), 'next,next,next,next,next,next,next')
+  log.length = 0
+  t.deepEqual(
+    radiiResult(iterable([])),
+    failed('RangeError', C + '0 radii provided. Between one and four radii are necessary.'),
+  )
+  t.deepEqual(radiiResult(new Set([10, -1])), failed('RangeError', C + 'Radius value -1 is negative.'))
+  // DOMPointInit radii read their members in order: w, x, y, z.
+  const point = (name: string, x: number, y: number) =>
+    new Proxy(
+      { x, y },
+      {
+        get(target, key, receiver) {
+          log.push(name + '.' + String(key))
+          return Reflect.get(target, key, receiver)
+        },
+      },
+    )
+  log.length = 0
+  t.deepEqual(radiiResult([point('A', 10, 4), 2, point('B', 3, 12)]), ok(402971))
+  t.is(log.join(), 'A.w,A.x,A.y,A.z,B.w,B.x,B.y,B.z')
+  log.length = 0
+  t.deepEqual(radiiResult(new Set([point('A', 10, 4), 2, point('B', 3, 12)])), ok(402971))
+  t.is(log.join(), 'A.w,A.x,A.y,A.z,B.w,B.x,B.y,B.z')
+})
+
 test('CanvasPattern.setTransform names the DOMMatrix2DInit member that fails to convert', (t) => {
   const ctx = createCanvas(10, 10).getContext('2d')
   const pattern = ctx.createPattern(createCanvas(2, 2), 'repeat')!
