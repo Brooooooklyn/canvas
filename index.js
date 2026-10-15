@@ -309,6 +309,36 @@ CanvasRenderingContext2D.prototype.isPointInStroke = function isPointInStroke() 
 }
 Object.defineProperty(CanvasRenderingContext2D.prototype.isPointInStroke, 'length', { value: 2 })
 
+// setTransform(): six or more arguments are six numbers, fewer a DOMMatrixInit
+// (canvas_2d_recorder_context.idl), and an explicit undefined counts. A
+// DOMMatrix (as from getTransform()) skips the native dictionary read: its
+// a..f and m11..m42 agree and its 3D members never contradict is2D, so its
+// a..f are what the read would give, and reading them has no side effect. A
+// subclass may override a getter, so only a plain DOMMatrix takes this path.
+const _setTransform = CanvasRenderingContext2D.prototype.setTransform
+CanvasRenderingContext2D.prototype.setTransform = function setTransform() {
+  const transform = arguments[0]
+  if (
+    arguments.length < 6 &&
+    transform !== null &&
+    typeof transform === 'object' &&
+    Object.getPrototypeOf(transform) === DOMMatrix.prototype
+  ) {
+    const { a, b, c, d, e, f } = transform
+    return _setTransform.call(this, a, b, c, d, e, f, ARGUMENT_COUNTS[6])
+  }
+  return _setTransform.call(
+    this,
+    transform,
+    arguments[1],
+    arguments[2],
+    arguments[3],
+    arguments[4],
+    arguments[5],
+    ARGUMENT_COUNTS[Math.min(arguments.length, 6)],
+  )
+}
+
 // createImageData(): WebIDL picks the overload from the argument count, and an
 // explicit undefined counts: createImageData(imagedata, undefined) is the
 // (sw, sh) form.
