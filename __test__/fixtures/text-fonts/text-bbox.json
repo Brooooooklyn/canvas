@@ -1,5 +1,5 @@
 {
-  "note": "Chrome 155.0.8059.79 CPU canvas, Linux x64, fonts loaded with FontFace. Box rows are [width, actualBoundingBoxLeft, actualBoundingBoxRight, actualBoundingBoxAscent, actualBoundingBoxDescent, painted ink box \"left,top,right,bottom\"]: rtl rows draw at (200, 50) on 400x80 at 30px, spacing rows at (60, 50) on 400x80 at 30px, fallbackRuns rows at (20, 55) on 500x80 at 40px. words and wordShape are widths; emptyUnion rows have no ink box (20px LatoT, no draw). large rows are box rows without an ink box (measureText only) above 256px, where glyph boxes keep their fractions. zeroWidth rows draw black at (300, 80) on 600x120 with the row's font, direction, textAlign, letterSpacing and wordSpacing. alphaReset: 40px \"LatoT, HanT\" fillText(\"Defaul中 text\", 10.3, 50.2) on an alpha:false 300x70 canvas filled rgb(200,100,50), then rgba(0,0,255,0.5) with copy or xor: the [x, y, alpha] pixels left below 255.",
+  "note": "Chrome 155.0.8059.79 CPU canvas, Linux x64, fonts loaded with FontFace. Box rows are [width, actualBoundingBoxLeft, actualBoundingBoxRight, actualBoundingBoxAscent, actualBoundingBoxDescent, painted ink box \"left,top,right,bottom\"]: rtl rows draw at (200, 50) on 400x80 at 30px, spacing rows at (60, 50) on 400x80 at 30px, fallbackRuns rows at (20, 55) on 500x80 at 40px. words and wordShape are widths; emptyUnion rows have no ink box (20px LatoT, no draw). large rows are box rows without an ink box (measureText only) above 256px, where glyph boxes keep their fractions. zeroWidth and negativeSpacing rows draw black at (300, 80) on 600x120 with the row's font, direction, textAlign, letterSpacing and wordSpacing. alphaReset: 40px \"LatoT, HanT\" fillText(\"Defaul中 text\", 10.3, 50.2) on an alpha:false 300x70 canvas filled rgb(200,100,50), then rgba(0,0,255,0.5) with copy or xor: the [x, y, alpha] pixels left below 255.",
   "rtl": {
     "LatoT \"Hgjy\" ltr left": [60.9904, -2, 61.6303, 23, 5, "202,27,260,54"],
     "LatoT \"Hgjy\" ltr right": [60.9904, 58.9904, 0.6399, 23, 5, "141,27,199,54"],
@@ -232,6 +232,21 @@
     "40px LatoT \"\u200b\" ltr left ls6px ws0px": [0, 0, 0, 0, 0, "600,-1,-1,-1"],
     "40px LatoT \"a\u200b\" ltr left ls6px ws0px": [26.28, -1, 18, 21, 0, "301,59,317,79"],
     "small-caps 40px LatoT \"Ab\u200bcd\" ltr left ls4px ws0px": [101.5797, 0, 96.4958, 29, 0, "300,51,396,79"]
+  },
+  "negativeSpacing": {
+    "48px LatoT \"Hello world\" ltr left ls0px ws-20px": [223.8873, -4, 221.0554, 36, 0, "304,44,520,79"],
+    "48px LatoT \"Hello world\" ltr left ls-14px ws0px": [89.8873, -4, 101.0554, 36, 0, "304,44,400,79"],
+    "48px LatoT \"a b c d\" ltr left ls0px ws-20px": [68.2076, -2, 65.3757, 36, 0, "302,44,364,79"],
+    "48px LatoT \"a b c d\" ltr center ls0px ws-20px": [68.2076, 32.1038, 31.2719, 36, 0, "268,44,330,79"],
+    "48px LatoT \"a b c d\" ltr right ls0px ws-20px": [68.2076, 66.2076, -2.8319, 36, 0, "233,44,296,79"],
+    "48px LatoT \"a b c d\" rtl left ls0px ws-20px": [68.2076, -2, 65.3757, 36, 0, "302,44,364,79"],
+    "48px LatoT \"a b c d\" rtl start ls0px ws-20px": [68.2076, 66.2076, -2.8319, 36, 0, "233,44,296,79"],
+    "16px LatoT \"Hello world\" ltr left ls0px ws-5px": [76.295, -1, 75.3511, 11, 0, "301,69,374,79"],
+    "16px LatoT \"Hello world\" ltr left ls-5px ws0px": [26.295, -1, 30.3511, 11, 0, "301,69,329,79"],
+    "48px LatoT, HanT \"ab 中文 cd\" ltr left ls0px ws-20px": [174.9437, -2, 172.1117, 41, 5, "302,39,471,84"],
+    "48px LatoT, HanT \"ab 中文 cd\" ltr left ls-12px ws0px": [118.9437, -2, 128.1117, 41, 5, "302,39,427,84"],
+    "40px HarmattanT \"abc سلام def\" ltr left ls0px ws-15px": [139.1797, -1, 140.2031, 24, 11, "301,56,439,90"],
+    "40px HarmattanT \"abc سلام def\" rtl left ls0px ws-15px": [139.1797, -1, 138.2383, 24, 11, "301,56,437,90"]
   },
   "alphaReset": {
     "copy": [[244, 48, 249]],
