@@ -21,8 +21,7 @@ use crate::{
   avif::Config,
   color::{self, Color},
   error::SkError,
-  filter::css_filter,
-  filter::css_filters_to_image_filter,
+  filter::{FontUnits, css_filters_to_image_filter, filter_lengths, parse_filter},
   font::Font,
   gradient::{CanvasGradient, Gradient, SharedGradient},
   image::*,
@@ -2321,40 +2320,87 @@ impl Context {
     Ok(paint)
   }
 
-  /// `ctx.filter`. An unparseable value is a silent no-op in Blink
-  /// (canvas_2d_recorder_context.cc:1332-1350): it neither throws nor resets the
-  /// filter to `none`, and the getter replays the raw string unnormalised. Three
-  /// inputs count as unparseable and all three must be rejected here: the empty
-  /// string, one that yields no filter, and one with tokens left over -- that
-  /// last makes a `<filter-value-list>` all-or-nothing, keeping no valid prefix.
+  /// `ctx.filter`. A value Blink cannot parse is a silent no-op
+  /// (canvas_2d_recorder_context.cc:1317-1352): it neither throws nor resets
+  /// the filter to `none`, and the getter replays the raw string unnormalised.
+  /// Lengths resolve now, against the font of this moment (Blink snapshots it
+  /// with SnapshotStateForFilter).
   pub fn set_filter(&mut self, filter_str: &str) -> result::Result<(), SkError> {
-    if filter_str.trim().eq_ignore_ascii_case("none") {
-      // An ident, so Blink matches it case-insensitively, but the getter still
-      // replays whatever case was assigned.
-      self.state.filters_string = filter_str.to_owned();
-      self.state.filter = None;
-      self.state.filter_id = 0;
-      self.state.has_filter = false;
-      return Ok(());
-    }
-    // `css_filter` is greedy and never fails: it stops at the first token it
-    // cannot read and hands the rest back, so leftover input is the reject gate.
-    let Ok((rest, filters)) = css_filter(filter_str) else {
+    let Some(parsed) = parse_filter(filter_str) else {
       return Ok(());
     };
-    if filters.is_empty() || !rest.trim().is_empty() {
-      return Ok(());
-    }
-    // Parsed clean, so the assignment lands even if it builds no filter at all.
+    let font = if parsed.uses_font_metrics() {
+      self.filter_font_units()
+    } else {
+      FontUnits::default()
+    };
     // The id advances with the stored chain so a reused ImageFilter dedups
     // under one accounting identity and a fresh chain re-charges under a new
-    // one. Blink's StateHasFilter is "the resolved filter is not null"
-    // (canvas_2d_recorder_context.h StateHasFilter).
-    self.state.filter = css_filters_to_image_filter(filters);
+    // one. `none` and a list of url()s build no filter. Blink's StateHasFilter
+    // is "the resolved filter is not null" (canvas_2d_recorder_context.h).
+    self.state.filter = css_filters_to_image_filter(parsed.resolve(&filter_lengths(font)));
     self.state.filters_string = filter_str.to_owned();
-    self.state.filter_id = next_resource_id();
+    self.state.filter_id = if self.state.filter.is_some() {
+      next_resource_id()
+    } else {
+      0
+    };
     self.state.has_filter = self.state.filter.is_some();
     Ok(())
+  }
+
+  /// The canvas font's x-height, "0" advance and cap height for the
+  /// font-metric units of a filter (Blink's FontSizes::Ex, Ch and Cap,
+  /// css_to_length_conversion_data.cc:101-195). On Apple platforms Blink
+  /// takes the x-height from the top of the "x" glyph, elsewhere from the
+  /// font's own value; a font without one gives None.
+  fn filter_font_units(&mut self) -> FontUnits {
+    let measure = |ctx: &mut Self, text: &str| {
+      let state = &ctx.state;
+      let paint = Paint::default();
+      let font = get_font().ok()?;
+      ctx
+        .surface
+        .canvas
+        .get_line_metrics(
+          text,
+          &font,
+          state.font_style.size,
+          state.font_style.weight,
+          state.font_stretch as i32,
+          state.font_stretch.to_width_percentage(),
+          state.font_style.style,
+          &state.font_style.family,
+          crate::sk::TextBaseline::Alphabetic,
+          crate::sk::TextAlign::Left,
+          crate::sk::TextDirection::Ltr,
+          0.0,
+          0.0,
+          &paint,
+          &state.font_variations,
+          crate::sk::FontKerning::Auto,
+          FontVariantCaps::Normal,
+          "",
+          crate::sk::TextRendering::Auto,
+          false,
+        )
+        .ok()
+    };
+    let x = measure(self, "x").unwrap_or_default();
+    let zero = measure(self, "0").unwrap_or_default();
+    let x_height = if x.x_height == 0.0 {
+      None
+    } else if cfg!(target_vendor = "apple") {
+      // `ascent` is actualBoundingBoxAscent at the alphabetic baseline.
+      Some(x.ascent as f64)
+    } else {
+      Some(x.x_height as f64)
+    };
+    FontUnits {
+      x_height,
+      zero_width: zero.width as f64,
+      cap_height: x.cap_height as f64,
+    }
   }
 
   pub fn get_font(&self) -> &str {
