@@ -8,8 +8,6 @@ use crate::sk::*;
 
 #[cfg(target_os = "windows")]
 const FONT_PATH: &str = "C:/Windows/Fonts";
-#[cfg(target_os = "macos")]
-const FONT_PATH: &str = "/System/Library/Fonts/";
 #[cfg(target_os = "linux")]
 const FONT_PATH: &str = "/usr/share/fonts/";
 #[cfg(target_os = "android")]
@@ -94,7 +92,7 @@ pub struct FontKey {
 pub mod global_fonts {
   use napi::bindgen_prelude::*;
 
-  use super::{FONT_DIR, FONT_PATH, FontKey, get_font, into_napi_error};
+  use super::{FONT_DIR, FontKey, get_font, into_napi_error};
 
   #[napi]
   pub fn register(font_data: &[u8], name_alias: Option<String>) -> Result<Option<FontKey>> {
@@ -152,13 +150,31 @@ pub mod global_fonts {
     Ok(serde_json::to_vec(&font.get_families())?.into())
   }
 
+  /// Registers the installed fonts and returns how many. On macOS they are
+  /// the faces CoreText lists (Chrome's font set there), user fonts included.
   #[napi]
   pub fn load_system_fonts() -> Result<u32> {
     FONT_DIR
-      .get_or_init(move || super::load_fonts_from_dir(FONT_PATH))
+      .get_or_init(super::load_system_fonts)
       .as_ref()
       .map(|s| *s)
       .map_err(|e| Error::new(e.status, e.reason.clone()))
+  }
+
+  /// What index.js runs at startup. macOS lists the installed fonts at the
+  /// first font lookup instead, as listing them takes about 150 ms;
+  /// elsewhere this is `loadSystemFonts`.
+  #[napi]
+  pub fn enable_system_fonts() -> Result<()> {
+    #[cfg(target_os = "macos")]
+    {
+      let font = get_font().map_err(into_napi_error)?;
+      font.enable_installed_fonts();
+      super::note_font_collection_mutation();
+      Ok(())
+    }
+    #[cfg(not(target_os = "macos"))]
+    load_system_fonts().map(|_| ())
   }
 
   #[napi]
@@ -254,6 +270,19 @@ pub mod global_fonts {
     let font = get_font().map_err(into_napi_error)?;
     Ok(font.has_variations(&family_name, weight, width, slant))
   }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn load_system_fonts() -> napi::Result<u32> {
+  load_fonts_from_dir(FONT_PATH)
+}
+
+#[cfg(target_os = "macos")]
+fn load_system_fonts() -> napi::Result<u32> {
+  let font_collection = get_font().map_err(into_napi_error)?;
+  let count = font_collection.load_installed_fonts();
+  note_font_collection_mutation();
+  Ok(count)
 }
 
 fn load_fonts_from_dir<P: AsRef<path::Path>>(dir: P) -> napi::Result<u32> {

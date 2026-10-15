@@ -195,6 +195,11 @@ class FamilyResolver {
     if (!name.empty() && Find(name, out)) {
       return true;
     }
+#if defined(__APPLE__)
+    if (MatchCoreText(name, out)) {
+      return true;
+    }
+#endif
 #if !defined(__APPLE__) && !defined(_WIN32)
     if (FindFontconfig(name, out)) {
       return true;
@@ -208,6 +213,39 @@ class FamilyResolver {
     }
     return false;
   }
+
+#if defined(__APPLE__)
+  // font_matcher_mac.mm MatchFontFamily: CoreText also matches families it
+  // does not list (Times and Courier on macOS 27), in any case. Never a dot
+  // name (font_cache_mac.mm IsSystemFontName) or LastResort.
+  bool MatchCoreText(std::string_view name, std::string* out) const {
+    const sk_sp<SkFontMgr>& manager = c_collection_->font_mgr;
+    if (!manager || name.empty() || name.front() == '.' ||
+        EqualsIgnoringAsciiCase(name, "LastResort")) {
+      return false;
+    }
+    std::string key = Fold(name);
+    auto& matches = c_collection_->coretext_families;
+    auto it = matches.find(key);
+    if (it == matches.end()) {
+      std::string family;
+      sk_sp<SkFontStyleSet> set =
+          manager->matchFamily(std::string(name).c_str());
+      if (sk_sp<SkTypeface> face =
+              set && set->count() > 0 ? set->createTypeface(0) : nullptr) {
+        SkString face_family;
+        face->getFamilyName(&face_family);
+        family.assign(face_family.c_str(), face_family.size());
+      }
+      it = matches.emplace(std::move(key), std::move(family)).first;
+    }
+    if (it->second.empty()) {
+      return false;
+    }
+    *out = it->second;
+    return true;
+  }
+#endif
 
   bool FindFirst(const std::vector<const char*>& names,
                  std::string* out) const {
@@ -565,7 +603,9 @@ bool skiac_font_collection_default_font_units(
 uint32_t skiac_font_collection_register_system_font(
     skiac_font_collection* c_collection,
     const char* path) {
-  sk_sp<SkTypeface> typeface = c_collection->font_mgr->makeFromFile(path);
+  // Installed fonts register first, as loadSystemFonts does elsewhere.
+  c_collection->prepareLookup();
+  sk_sp<SkTypeface> typeface = MakeCanvasTypefaceFromFile(path);
   if (!typeface) {
     return 0;
   }
