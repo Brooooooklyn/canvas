@@ -13,32 +13,6 @@ mod serialize;
 pub(crate) use model::{Color, ColorSpace};
 pub(crate) use parse::{Site, parse_canvas_color, parse_filter_color};
 
-/// The interface the canvas styles used before they kept a `Color`; it goes
-/// away when they paint float colors.
-pub(crate) struct CanvasColor(Color);
-
-impl CanvasColor {
-  pub(crate) fn parse(source: &str) -> Result<Self, crate::error::SkError> {
-    parse_canvas_color(source, Site::Style)
-      .map(Self)
-      .ok_or_else(|| crate::error::SkError::Generic(format!("Invalid canvas color [{source}]")))
-  }
-
-  pub(crate) fn to_rgba8(&self) -> rgb::RGBA<u8> {
-    let argb = self.0.rgb();
-    rgb::RGBA::new(
-      (argb >> 16) as u8,
-      (argb >> 8) as u8,
-      argb as u8,
-      (argb >> 24) as u8,
-    )
-  }
-
-  pub(crate) fn serialize(&self) -> String {
-    self.0.serialize_as_canvas_color()
-  }
-}
-
 #[cfg(test)]
 mod tests {
   use super::*;

@@ -6,7 +6,7 @@ use cssparser_color::Hsl;
 use napi::bindgen_prelude::*;
 use rgb::RGBA;
 
-use crate::color::CanvasColor;
+use crate::color::{self, Color};
 use crate::ctx::zero_size_source_check;
 use crate::error::SkError;
 use crate::gradient::SharedGradient;
@@ -64,9 +64,9 @@ pub(crate) fn hsl_to_rgba8(hsl: &Hsl) -> RGBA<u8> {
 
 #[derive(Debug)]
 pub enum Pattern {
-  /// The paint color and its serialization.
-  #[allow(dead_code)]
-  Color(RGBA<u8>, String),
+  /// Blink's CanvasStyle color (canvas_style.h): the parsed Color, painted as
+  /// a float color and serialized by the getter.
+  Color(Color),
   Gradient(SharedGradient),
   Image(ImagePattern),
 }
@@ -74,7 +74,7 @@ pub enum Pattern {
 impl Clone for Pattern {
   fn clone(&self) -> Self {
     match self {
-      Pattern::Color(rgba, s) => Pattern::Color(*rgba, s.clone()),
+      Pattern::Color(c) => Pattern::Color(*c),
       // The same live gradient (save() and restore() keep it).
       Pattern::Gradient(g) => Pattern::Gradient(Rc::clone(g)),
       Pattern::Image(img) => Pattern::Image(img.clone()),
@@ -84,16 +84,17 @@ impl Clone for Pattern {
 
 impl Default for Pattern {
   fn default() -> Self {
-    Self::Color(RGBA::new(0, 0, 0, 255), "#000000".to_owned())
+    Self::Color(Color::BLACK)
   }
 }
 
 impl Pattern {
-  /// A fillStyle or strokeStyle color: the paint color and what the getter
-  /// returns (Chrome's serialization, not the string that was set).
+  /// A fillStyle or strokeStyle color, as Blink's ParseCanvasColorString reads
+  /// it (canvas_style.cc:61-123). An error means the assignment is ignored.
   pub fn from_color(color_str: &str) -> StdResult<Self, SkError> {
-    let color = CanvasColor::parse(color_str)?;
-    Ok(Pattern::Color(color.to_rgba8(), color.serialize()))
+    color::parse_canvas_color(color_str, color::Site::Style)
+      .map(Pattern::Color)
+      .ok_or_else(|| SkError::Generic(format!("Invalid canvas color [{color_str}]")))
   }
 }
 

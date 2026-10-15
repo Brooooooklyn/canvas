@@ -754,6 +754,10 @@ pub mod ffi {
 
     pub fn skiac_paint_set_src_in_color_filter(paint: *mut skiac_paint, r: u8, g: u8, b: u8, a: u8);
 
+    pub fn skiac_paint_set_color4f(paint: *mut skiac_paint, color: super::Color4f);
+
+    pub fn skiac_paint_set_src_in_color_filter4f(paint: *mut skiac_paint, color: super::Color4f);
+
     pub fn skiac_color4f_to_sk_color(color: super::Color4f) -> u32;
 
     pub fn skiac_color_space_params(space: i32, matrix: *mut f32, transfer_fn: *mut f32) -> bool;
@@ -3419,6 +3423,14 @@ impl Paint {
     }
   }
 
+  /// `SkPaint::setColor4f(color, sRGB)`: Blink's float paint color
+  /// (CanvasStyle::ApplyColorToFlags, canvas_style.h:125-134).
+  pub fn set_color4f(&mut self, color: Color4f) {
+    unsafe {
+      ffi::skiac_paint_set_color4f(self.0, color);
+    }
+  }
+
   pub fn set_alpha(&mut self, a: u8) {
     unsafe {
       ffi::skiac_paint_set_alpha(self.0, a);
@@ -3526,6 +3538,14 @@ impl Paint {
   pub fn set_src_in_color_filter(&mut self, r: u8, g: u8, b: u8, a: u8) {
     unsafe {
       ffi::skiac_paint_set_src_in_color_filter(self.0, r, g, b, a);
+    }
+  }
+
+  /// The float form of `set_src_in_color_filter`: Chromium's looper passes the
+  /// shadow's SkColor4f (draw_looper.cc:33-34).
+  pub fn set_src_in_color_filter4f(&mut self, color: Color4f) {
+    unsafe {
+      ffi::skiac_paint_set_src_in_color_filter4f(self.0, color);
     }
   }
 

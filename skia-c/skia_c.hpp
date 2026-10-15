@@ -1044,6 +1044,9 @@ void skiac_paint_set_src_in_color_filter(skiac_paint* c_paint,
                                          uint8_t g,
                                          uint8_t b,
                                          uint8_t a);
+void skiac_paint_set_color4f(skiac_paint* c_paint, skiac_color4f color);
+void skiac_paint_set_src_in_color_filter4f(skiac_paint* c_paint,
+                                           skiac_color4f color);
 
 // Color conversions: the skcms math Blink's Color uses (color.cc).
 uint32_t skiac_color4f_to_sk_color(skiac_color4f color);

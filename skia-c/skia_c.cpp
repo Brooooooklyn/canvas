@@ -2799,6 +2799,21 @@ void skiac_paint_set_src_in_color_filter(skiac_paint* c_paint,
                             nullptr, SkBlendMode::kSrcIn));
 }
 
+// The float shadow color of Chromium's looper: Blend(color, sRGB, kSrcIn)
+// (cc/paint/draw_looper.cc:33-34).
+void skiac_paint_set_src_in_color_filter4f(skiac_paint* c_paint,
+                                           skiac_color4f color) {
+  PAINT_CAST->setColorFilter(
+      SkColorFilters::Blend({color.r, color.g, color.b, color.a},
+                            SkColorSpace::MakeSRGB(), SkBlendMode::kSrcIn));
+}
+
+// CanvasStyle::ApplyColorToFlags: flags.setColor(color.toSkColor4f())
+// (canvas_style.h:125-134), an unclamped sRGB float color.
+void skiac_paint_set_color4f(skiac_paint* c_paint, skiac_color4f color) {
+  PAINT_CAST->setColor4f({color.r, color.g, color.b, color.a}, nullptr);
+}
+
 uint32_t skiac_color4f_to_sk_color(skiac_color4f color) {
   return SkColor4f{color.r, color.g, color.b, color.a}.toSkColor();
 }
