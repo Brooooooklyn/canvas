@@ -2131,8 +2131,8 @@ impl Context {
 
   pub fn get_image_data(
     &mut self,
-    x: f32,
-    y: f32,
+    x: i32,
+    y: i32,
     w: u32,
     h: u32,
     color_type: ColorSpace,
@@ -2147,9 +2147,21 @@ impl Context {
     // SVGCanvas draws its recording into its raster surface here.
     self.flush();
 
-    self
-      .surface
-      .read_pixels(x as i32, y as i32, w, h, color_type)
+    // A rect that misses the canvas reads as transparent black, in any color
+    // space (getImageDataInternal: the pixels outside are zero).
+    let (left, top) = (i64::from(x), i64::from(y));
+    if left >= i64::from(self.surface.width())
+      || top >= i64::from(self.surface.height())
+      || left + i64::from(w) <= 0
+      || top + i64::from(h) <= 0
+    {
+      return (w as usize)
+        .checked_mul(h as usize)
+        .and_then(|n| n.checked_mul(4))
+        .and_then(crate::sk::try_zeroed_bytes)
+        .ok_or(ReadPixelsError::OutOfMemory);
+    }
+    self.surface.read_pixels(x, y, w, h, color_type)
   }
 
   pub fn set_line_dash(&mut self, line_dash_list: Vec<f32>) {
@@ -5171,84 +5183,87 @@ impl CanvasRenderingContext2D {
   pub fn get_image_data<'scope>(
     &'scope mut self,
     env: &'scope Env,
-    x: f64,
-    y: f64,
-    width: f64,
-    height: f64,
+    sx: webidl::EnforceRangeLong<webidl::CtxGetImageData>,
+    sy: webidl::EnforceRangeLong<webidl::CtxGetImageData>,
+    sw: webidl::EnforceRangeLong<webidl::CtxGetImageData>,
+    sh: webidl::EnforceRangeLong<webidl::CtxGetImageData>,
     settings: webidl::GetImageDataSettings,
   ) -> Result<ClassInstance<'scope, ImageData>> {
-    let settings = settings.0;
-    if !x.is_nan()
-      && !x.is_infinite()
-      && !y.is_nan()
-      && !y.is_infinite()
-      && !width.is_nan()
-      && !width.is_infinite()
-      && !height.is_nan()
-      && !height.is_infinite()
-    {
-      let raw = env.raw();
-      let prefix = webidl::GET_IMAGE_DATA;
-      // getImageDataInternal (base_rendering_context_2d.cc:353-410) on the
-      // truncated `long` values: the product must fit in an int, and neither
-      // side may be 0.
-      let (sw, sh) = (width.trunc() as i64, height.trunc() as i64);
-      if i32::try_from(sw as i128 * sh as i128).is_err() {
-        return Err(out_of_memory(raw, prefix));
-      }
-      if sw == 0 || sh == 0 {
-        return Err(webidl::dom_exception(
-          raw,
-          "IndexSizeError",
-          &format!(
-            "{prefix}The source {} is 0.",
-            if sw == 0 { "width" } else { "height" }
-          ),
-        ));
-      }
-      // saturated_cast<int>(SafeUnsignedAbs(..)), then ValidateAndCreate.
-      let sw = sw.unsigned_abs().min(i32::MAX as u64) as u32;
-      let sh = sh.unsigned_abs().min(i32::MAX as u64) as u32;
-      let len = validate_size(raw, prefix, sw, Some(sh), SizeErrors::Context2D)?;
-      // Spec: defaultColorSpace is this context's color space.
-      let color_space = settings
-        .color_space(raw, prefix)?
-        .unwrap_or(self.context.color_space);
-      if len > MAX_DATA_BYTES {
-        return Err(out_of_memory(raw, prefix));
-      }
-      // Per spec: if sw/sh is negative, flip the origin and use abs value
-      let sx = if width < 0.0 { x + width } else { x };
-      let sy = if height < 0.0 { y + height } else { y };
-      let image_data = self
-        .context
-        .get_image_data(sx as f32, sy as f32, sw, sh, color_space)
-        .map_err(|e| match e {
-          ReadPixelsError::OutOfMemory => out_of_memory(raw, prefix),
-          ReadPixelsError::Failed => Error::new(
-            Status::GenericFailure,
-            "Read pixels from canvas failed".to_string(),
-          ),
-        })?;
-      let data_object = Uint8ClampedSlice::from_data(env, image_data)?;
-      let mut instance = ImageData {
-        width: sw as usize,
-        height: sh as usize,
-        color_space,
-        data_ref: Some(create_weak_ref(env, data_object.raw())?),
-      }
-      .into_instance(env)?;
-      instance.define_properties(&[Property::new()
-        .with_utf8_name("data")?
-        .with_value(&data_object)
-        .with_property_attributes(PropertyAttributes::Enumerable)])?;
-      Ok(instance)
-    } else {
-      Err(Error::new(
-        Status::InvalidArg,
-        "The x, y, width, and height arguments must be finite numbers".to_owned(),
-      ))
+    let raw = env.raw();
+    let prefix = webidl::GET_IMAGE_DATA;
+    // A PDF page has no pixels to read (its surface is null).
+    if self.context.backend == Backend::Pdf {
+      return Err(webidl::dom_exception(
+        raw,
+        "NotSupportedError",
+        "getImageData() is not supported on a PDF page",
+      ));
     }
+    let settings = settings.0;
+    let (sx, sy, sw, sh) = (sx.0, sy.0, sw.0, sh.0);
+    // getImageDataInternal (base_rendering_context_2d.cc) on the `long`
+    // values: the product must fit in an int, and neither side may be 0.
+    if sw.checked_mul(sh).is_none() {
+      return Err(out_of_memory(raw, prefix));
+    }
+    if sw == 0 || sh == 0 {
+      return Err(webidl::dom_exception(
+        raw,
+        "IndexSizeError",
+        &format!(
+          "{prefix}The source {} is 0.",
+          if sw == 0 { "width" } else { "height" }
+        ),
+      ));
+    }
+    // A negative size flips the origin: sx += sw, then
+    // sw = saturated_cast<int>(SafeUnsignedAbs(sw)), each with CheckAdd.
+    let flip = |origin: i32, size: i32| -> Option<(i32, i32)> {
+      if size >= 0 {
+        return Some((origin, size));
+      }
+      let origin = origin.checked_add(size)?;
+      Some((origin, size.unsigned_abs().min(i32::MAX as u32) as i32))
+    };
+    let Some(((x, w), (y, h))) = flip(sx, sw).zip(flip(sy, sh)) else {
+      return Err(out_of_memory(raw, prefix));
+    };
+    if x.checked_add(w).is_none() || y.checked_add(h).is_none() {
+      return Err(out_of_memory(raw, prefix));
+    }
+    let (sw, sh) = (w as u32, h as u32);
+    // ImageData::ValidateAndCreate.
+    let len = validate_size(raw, prefix, sw, Some(sh), SizeErrors::Context2D)?;
+    // Spec: defaultColorSpace is this context's color space.
+    let color_space = settings
+      .color_space(raw, prefix)?
+      .unwrap_or(self.context.color_space);
+    if len > MAX_DATA_BYTES {
+      return Err(out_of_memory(raw, prefix));
+    }
+    let image_data = self
+      .context
+      .get_image_data(x, y, sw, sh, color_space)
+      .map_err(|e| match e {
+        ReadPixelsError::OutOfMemory => out_of_memory(raw, prefix),
+        ReadPixelsError::Failed => Error::new(
+          Status::GenericFailure,
+          "Read pixels from canvas failed".to_string(),
+        ),
+      })?;
+    let data_object = Uint8ClampedSlice::from_data(env, image_data)?;
+    let mut instance = ImageData {
+      width: sw as usize,
+      height: sh as usize,
+      color_space,
+      data_ref: Some(create_weak_ref(env, data_object.raw())?),
+    }
+    .into_instance(env)?;
+    instance.define_properties(&[Property::new()
+      .with_utf8_name("data")?
+      .with_value(&data_object)
+      .with_property_attributes(PropertyAttributes::Enumerable)])?;
+    Ok(instance)
   }
 
   #[napi]
@@ -6032,7 +6047,7 @@ mod tests {
   /// Read a single surface pixel through the deferred flush path.
   fn pixel_at(ctx: &mut Context, x: f32, y: f32) -> [u8; 4] {
     let data = ctx
-      .get_image_data(x, y, 1, 1, ColorSpace::default())
+      .get_image_data(x as i32, y as i32, 1, 1, ColorSpace::default())
       .expect("pixels");
     [data[0], data[1], data[2], data[3]]
   }

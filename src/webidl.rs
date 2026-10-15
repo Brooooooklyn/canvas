@@ -265,6 +265,7 @@ sites! {
   CtxIsPointInPath: execute "isPointInPath" on "CanvasRenderingContext2D";
   CtxIsPointInStroke: execute "isPointInStroke" on "CanvasRenderingContext2D";
   CtxDrawImage: execute "drawImage" on "CanvasRenderingContext2D";
+  CtxGetImageData: execute "getImageData" on "CanvasRenderingContext2D";
   PathMoveTo: execute "moveTo" on "Path2D";
   PathLineTo: execute "lineTo" on "Path2D";
   PathBezierCurveTo: execute "bezierCurveTo" on "Path2D";
@@ -768,6 +769,15 @@ pub(crate) fn enforce_range_long(
     ));
   }
   Ok(x as i32)
+}
+
+/// An `[EnforceRange] long` argument: see [`enforce_range_long`].
+pub struct EnforceRangeLong<S>(pub i32, PhantomData<S>);
+
+impl<S: Site> FromNapiValue for EnforceRangeLong<S> {
+  unsafe fn from_napi_value(env: sys::napi_env, value: sys::napi_value) -> Result<Self> {
+    enforce_range_long(env, value, S::PREFIX).map(|x| Self(x, PhantomData))
+  }
 }
 
 /// ToUint32 of a number: NaN and infinities are 0, the rest is truncated
