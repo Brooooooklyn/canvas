@@ -592,7 +592,7 @@ export interface StrokeOptions {
 }
 
 export interface SKRSContext2D extends CanvasRenderingContext2D {
-  canvas: Canvas
+  readonly canvas: Canvas
   /**
    * @param startAngle The angle at which to begin the gradient, in radians. Angle measurements start vertically above the centre and move around clockwise.
    * @param x The x-axis coordinate of the centre of the gradient.

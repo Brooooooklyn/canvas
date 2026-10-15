@@ -23,8 +23,9 @@ use napi::{
 };
 
 use ctx::{
-  CanvasRenderingContext2D, Context, ContextData, ContextOutputData, FILL_STYLE_HIDDEN_NAME,
-  STROKE_STYLE_HIDDEN_NAME, SvgExportFlag, encode_surface, reset_style_getters,
+  CANVAS_HIDDEN_NAME, CanvasRenderingContext2D, Context, ContextData, ContextOutputData,
+  FILL_STYLE_HIDDEN_NAME, STROKE_STYLE_HIDDEN_NAME, SvgExportFlag, encode_surface,
+  reset_style_getters,
 };
 use font::{FONT_REGEXP, init_font_regexp};
 use sk::{AlphaType, ColorSpace, SkImage, SkiaDataRef};
@@ -169,12 +170,12 @@ impl<'c> CanvasElement<'c> {
     let ctx = Self::create_context(env, width, height)?;
     let ctx = ctx.assign_to_this_with_attributes("ctx", PropertyAttributes::Default, &mut this)?;
     let mut ctx_obj = ctx.as_object(env);
+    // For the read-only `canvas` getter: not writable, enumerable or
+    // configurable.
     ctx_obj.define_properties(&[Property::new()
-      .with_utf8_name("canvas")?
+      .with_utf8_name(CANVAS_HIDDEN_NAME)?
       .with_value(&this)
-      .with_property_attributes(
-        PropertyAttributes::Default | PropertyAttributes::Writable | PropertyAttributes::Enumerable,
-      )])?;
+      .with_property_attributes(PropertyAttributes::Default)])?;
     Ok(Self {
       width,
       height,
@@ -849,14 +850,11 @@ impl<'scope> SVGCanvas<'scope> {
         .with_utf8_name(STROKE_STYLE_HIDDEN_NAME)?
         .with_value(&env.create_string("#000000")?)
         .with_property_attributes(PropertyAttributes::Writable | PropertyAttributes::Configurable),
+      // For the read-only `canvas` getter, as on a Canvas.
       Property::new()
-        .with_utf8_name("canvas")?
+        .with_utf8_name(CANVAS_HIDDEN_NAME)?
         .with_value(&this)
-        .with_property_attributes(
-          PropertyAttributes::Default
-            | PropertyAttributes::Writable
-            | PropertyAttributes::Enumerable,
-        ),
+        .with_property_attributes(PropertyAttributes::Default),
     ])?;
     env.adjust_external_memory((width * height * 4) as i64)?;
 
