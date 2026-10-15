@@ -133,6 +133,12 @@ impl LottieAnimation {
   /// Render current frame to canvas context
   #[napi]
   pub fn render(&self, ctx: &mut CanvasRenderingContext2D, dst: Option<LottieRenderRect>) {
+    // A frame is a draw: like the context's own draws, it takes the bitmap
+    // first, so it draws nothing on a canvas without pixels and loses the
+    // context of an over-limit canvas (`Context::paint_canvas`).
+    if !ctx.context.paint_canvas() {
+      return;
+    }
     // Skottie draws straight onto the surface. Route through
     // with_surface_canvas so pending recorded ops flush UNDER this frame
     // (render must not reorder behind them) and the content generation
