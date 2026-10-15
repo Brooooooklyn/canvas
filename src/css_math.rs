@@ -761,6 +761,17 @@ impl Node {
     }
   }
 
+  /// Whether a literal anywhere in the expression has a unit `f` accepts
+  /// (callers use it to skip work, such as measuring a font, that only some
+  /// units need).
+  pub(crate) fn any_unit(&self, f: &impl Fn(Unit) -> bool) -> bool {
+    match self {
+      Node::Literal(l) => f(l.unit),
+      Node::Channel(_) | Node::ClampNone => false,
+      Node::Op(op) => op.operands.iter().any(|operand| operand.any_unit(f)),
+    }
+  }
+
   fn is_op(&self) -> bool {
     matches!(self, Node::Op(_))
   }

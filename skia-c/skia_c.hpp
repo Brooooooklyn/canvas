@@ -702,6 +702,10 @@ struct skiac_line_metrics {
   // Blink's em box (ExtendedTextMetrics), relative to the textBaseline.
   float em_height_ascent;
   float em_height_descent;
+  // SkFontMetrics fXHeight and fCapHeight of the first run's font (0 when
+  // the font does not say).
+  float x_height;
+  float cap_height;
 };
 
 struct skiac_rect {

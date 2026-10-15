@@ -2188,6 +2188,8 @@ void skiac_canvas_get_line_metrics_or_draw_text(
     EmHeight(font, font_metrics, &em_ascent, &em_descent);
     c_line_metrics->em_height_ascent = em_ascent + offset;
     c_line_metrics->em_height_descent = em_descent - offset;
+    c_line_metrics->x_height = font_metrics.fXHeight;
+    c_line_metrics->cap_height = font_metrics.fCapHeight;
     // The ink of every glyph the draw above paints, where it paints it:
     // visit() walks the text blobs paint() draws, and the origin is the
     // draw's own, rtl_offset and letter_spacing_offset included. Relative to

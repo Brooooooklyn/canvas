@@ -213,6 +213,10 @@ pub mod ffi {
     /// Blink's em box (ExtendedTextMetrics), relative to the textBaseline.
     pub em_height_ascent: f32,
     pub em_height_descent: f32,
+    /// SkFontMetrics fXHeight and fCapHeight of the first run's font (0 when
+    /// the font does not say).
+    pub x_height: f32,
+    pub cap_height: f32,
   }
 
   #[repr(C)]
