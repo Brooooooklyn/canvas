@@ -795,9 +795,9 @@ test('a large rotated or skewed svg draw keeps its edges sharp like Chrome', asy
 })
 
 // Under a skew that keeps the columns of the image vertical, a lean of up to
-// 0.3 or a column spacing of at least one device pixel rasters it at the
-// column spacing, which keeps vertical edges on device pixels; a bigger lean
-// with a smaller spacing at the length of the axis, since at the spacing a
+// 0.3 or |a| and |d| both at least one device pixel rasters it at the column
+// spacing, which keeps vertical edges on device pixels; a bigger lean with a
+// smaller spacing at the length of the axis, since at the spacing a
 // line thinner than a raster pixel came out up to 100 darker. 300x150 canvas,
 // a 1000x1000 SVG with a vertical <line> at x = 510.5, its center drawn at the
 // canvas center; the alpha at x = 150..161 of rows 0, 75 and 149 (the same on
@@ -872,6 +872,32 @@ test('a heavily skewed svg draw keeps horizontal edges on device rows like Chrom
     t.true(
       alpha.every((value) => value === chrome),
       `y = ${y}: ${alpha} (Chrome ${chrome} at each)`,
+    )
+  }
+})
+
+// A column spacing of at least one pixel with rows under one pixel apart keeps
+// the length of the axis: under setTransform(2, 1.5, 0, 0.5, 0, 0) a raster at
+// the spacing (2 by 0.5 pixels per unit) draws a 0.5 wide stroke as a hairline,
+// 79 and 80 where Chrome draws 128 and 128. 300x150 canvas, a 1000x1000 SVG
+// with a vertical <path> at x = 510.5, its center drawn at the canvas center;
+// the alpha at x = 165..176 of rows 0, 75 and 149 (the same on each), measured
+// in Chrome 155: each within 24 of Chrome's and their sum within 10.
+test('a heavily skewed svg draw with rows under one pixel apart keeps a thin stroke like Chrome', async (t) => {
+  const image = await loaded(
+    svg('width="1000" height="1000"', '<path d="M510.5 100 V900" stroke="#000" stroke-width="0.5"/>'),
+  )
+  const ctx = createCanvas(300, 150).getContext('2d')
+  ctx.setTransform(2, 1.5, 0, 0.5, 0, 0)
+  ctx.drawImage(image, -425, -575)
+  const data = ctx.getImageData(0, 0, 300, 150).data
+  const chrome = [0, 0, 0, 0, 0, 128, 128, 0, 0, 0, 0, 0]
+  const sum = (values: number[]) => values.reduce((total, value) => total + value, 0)
+  for (const y of [0, 75, 149]) {
+    const alpha = chrome.map((_, i) => data[(y * 300 + 165 + i) * 4 + 3])
+    t.true(
+      alpha.every((value, i) => Math.abs(value - chrome[i]) <= 24) && Math.abs(sum(alpha) - sum(chrome)) <= 10,
+      `y = ${y}: ${alpha} (Chrome ${chrome})`,
     )
   }
 })
