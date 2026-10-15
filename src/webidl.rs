@@ -415,16 +415,19 @@ fn is_callable(env: sys::napi_env, value: sys::napi_value) -> Result<bool> {
 }
 
 /// The intrinsics of a realm that the conversions use: Symbol.toPrimitive,
-/// Symbol.iterator and Proxy, read once, when the addon is registered in the
-/// environment of the realm. Chrome uses those of its realm, so a script
-/// that replaces globalThis.Symbol or globalThis.Proxy later changes no
-/// conversion. A worker thread has an environment and a realm of its own,
-/// and an environment stays on its thread.
+/// Symbol.iterator and Proxy, and the getters `resizable` and `detached` of
+/// ArrayBuffer.prototype, read once, when the addon is registered in the
+/// environment of the realm. Chrome uses those of its realm, or reads the
+/// state itself, so a script that replaces globalThis.Symbol,
+/// globalThis.Proxy or an ArrayBuffer getter later changes no conversion. A
+/// worker thread has an environment and a realm of its own, and an
+/// environment stays on its thread.
 struct RealmIntrinsics {
   env: sys::napi_env,
-  /// An object with the own data properties toPrimitive, iterator and
-  /// Proxy, each undefined when it could not be read. An object, because
-  /// napi_create_reference takes a symbol only from Node-API 10 on.
+  /// An object with the own data properties toPrimitive, iterator, Proxy,
+  /// arrayBufferResizable and arrayBufferDetached, each undefined when it
+  /// could not be read. An object, because napi_create_reference takes a
+  /// symbol only from Node-API 10 on.
   holder: sys::napi_ref,
 }
 
@@ -472,6 +475,47 @@ pub fn capture_realm_intrinsics(_exports: Object, env: Env) -> Result<()> {
       attributes: sys::PropertyAttributes::default,
       data: ptr::null_mut(),
     };
+  // The getters of %ArrayBuffer.prototype%, the prototype of an ArrayBuffer
+  // the engine makes (globalThis.ArrayBuffer may be another one).
+  let mut buffer = ptr::null_mut();
+  let mut prototype = ptr::null_mut();
+  let prototype = (unsafe { sys::napi_create_arraybuffer(env, 0, ptr::null_mut(), &mut buffer) }
+    == sys::Status::napi_ok
+    && unsafe { sys::napi_get_prototype(env, buffer, &mut prototype) } == sys::Status::napi_ok)
+    .then_some(prototype);
+  let object = read(global, c"Object", sys::ValueType::napi_function);
+  let describe = object.and_then(|object| {
+    read(
+      object,
+      c"getOwnPropertyDescriptor",
+      sys::ValueType::napi_function,
+    )
+  });
+  let array_buffer_getter = |name: &std::ffi::CStr| {
+    let (prototype, object, describe) = (prototype?, object?, describe?);
+    let mut key = ptr::null_mut();
+    let mut descriptor = ptr::null_mut();
+    let described = unsafe {
+      sys::napi_create_string_utf8(env, name.as_ptr(), name.to_bytes().len() as isize, &mut key)
+        == sys::Status::napi_ok
+        && sys::napi_call_function(
+          env,
+          object,
+          describe,
+          2,
+          [prototype, key].as_ptr(),
+          &mut descriptor,
+        ) == sys::Status::napi_ok
+    };
+    if !described {
+      let mut exception = ptr::null_mut();
+      unsafe { sys::napi_get_and_clear_last_exception(env, &mut exception) };
+      return None;
+    }
+    (raw_type_of(env, descriptor).ok()? == sys::ValueType::napi_object)
+      .then(|| read(descriptor, c"get", sys::ValueType::napi_function))
+      .flatten()
+  };
   let members = [
     member(c"toPrimitive", well_known(c"toPrimitive")),
     member(c"iterator", well_known(c"iterator")),
@@ -479,6 +523,8 @@ pub fn capture_realm_intrinsics(_exports: Object, env: Env) -> Result<()> {
       c"Proxy",
       read(global, c"Proxy", sys::ValueType::napi_function),
     ),
+    member(c"arrayBufferResizable", array_buffer_getter(c"resizable")),
+    member(c"arrayBufferDetached", array_buffer_getter(c"detached")),
   ];
   check_status!(unsafe {
     sys::napi_define_properties(env, holder, members.len(), members.as_ptr())
@@ -521,8 +567,8 @@ unsafe extern "C" fn forget_realm_intrinsics(env: *mut std::ffi::c_void) {
   });
 }
 
-/// The intrinsic `name` (toPrimitive, iterator or Proxy) of the realm of
-/// `env`; None when it could not be read at registration.
+/// The intrinsic `name` (a member of [`RealmIntrinsics::holder`]) of the
+/// realm of `env`; None when it could not be read at registration.
 fn intrinsic(env: sys::napi_env, name: &std::ffi::CStr) -> Result<Option<sys::napi_value>> {
   let Some(reference) = REALM_INTRINSICS.with_borrow(|list| {
     list
@@ -541,6 +587,28 @@ fn intrinsic(env: sys::napi_env, name: &std::ffi::CStr) -> Result<Option<sys::na
   let mut value = ptr::null_mut();
   check_status!(unsafe { sys::napi_get_named_property(env, holder, name.as_ptr(), &mut value) })?;
   Ok((raw_type_of(env, value)? != sys::ValueType::napi_undefined).then_some(value))
+}
+
+/// Blink's IsResizableByUserJavaScript() of `buffer`, an ArrayBuffer that
+/// is not shared: resizable and not detached. Calls the built-in getters
+/// `resizable` and `detached` of the realm (see [`RealmIntrinsics`]) with
+/// the buffer as receiver: they read its internal state, so no own
+/// property, prototype, Proxy or later patched getter changes the answer,
+/// and no script runs. Not resizable without the `resizable` getter (a Node
+/// with no resizable buffers); not detached without the `detached` one.
+pub(crate) fn is_resizable_by_script(env: sys::napi_env, buffer: sys::napi_value) -> Result<bool> {
+  let flag = |name: &std::ffi::CStr| -> Result<bool> {
+    let Some(getter) = intrinsic(env, name)? else {
+      return Ok(false);
+    };
+    let value = call(env, buffer, getter, &[])?;
+    let mut result = false;
+    Ok(
+      unsafe { sys::napi_get_value_bool(env, value, &mut result) } == sys::Status::napi_ok
+        && result,
+    )
+  };
+  Ok(flag(c"arrayBufferResizable")? && !flag(c"arrayBufferDetached")?)
 }
 
 /// The get trap of a [`relay`]: the `value` of its handler, `this`.

@@ -3,6 +3,9 @@
 // (no [AllowShared] in image_data.idl). Expected values were measured in
 // Chrome 155 (--disable-gpu, arm64 = x64).
 import { createRequire } from 'node:module'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { Worker } from 'node:worker_threads'
 
 import test from 'ava'
 
@@ -216,6 +219,292 @@ test('new ImageData rejects shared and resizable buffers', (t) => {
   // A binding error: the stack keeps the bare message, as in Chrome.
   const error = t.throws(() => new ImageData(new Uint8ClampedArray(new SharedArrayBuffer(4)), 1))
   t.is(String(error?.stack).split('\n')[0], `TypeError: ${SHARED}`)
+})
+
+// new ImageData over buffers whose resizable and detached properties lie.
+// Blink reads the state of the buffer itself (IsResizableByUserJavaScript),
+// so no property, getter, prototype or Proxy changes the result, and no
+// script runs. Plain JavaScript: a worker runs its source text too. `realm`
+// gives the globals of another realm, or null.
+function checkBufferState(ImageData: any, realm: () => any) {
+  const run = (fn: () => any) => {
+    try {
+      const value = fn()
+      return value && typeof value === 'object' && 'width' in value ? 'ok' : `value ${String(value)}`
+    } catch (e: any) {
+      return `${e.constructor.name} ${e.name}: ${e.message}`
+    }
+  }
+  const resizable = () => new ArrayBuffer(16, { maxByteLength: 64 })
+  // Replaces the getter `key` of ArrayBuffer.prototype while `fn` runs.
+  const patched = (key: string, get: (this: ArrayBuffer) => unknown, fn: () => unknown) => {
+    const saved = Object.getOwnPropertyDescriptor(ArrayBuffer.prototype, key)!
+    Object.defineProperty(ArrayBuffer.prototype, key, { get, configurable: true })
+    try {
+      return fn()
+    } finally {
+      Object.defineProperty(ArrayBuffer.prototype, key, saved)
+    }
+  }
+  const out: Record<string, unknown> = {}
+  // An own property, a prototype that shadows, a patched getter.
+  out.ownFalse = run(() => {
+    const ab = resizable()
+    Object.defineProperty(ab, 'resizable', { value: false })
+    return new ImageData(new Uint8ClampedArray(ab), 2, 2)
+  })
+  out.ownFalseFixedView = run(() => {
+    const ab = resizable()
+    Object.defineProperty(ab, 'resizable', { value: false })
+    return new ImageData(new Uint8ClampedArray(ab, 0, 16), 2)
+  })
+  out.ownFalseFloat32 = run(() => {
+    const ab = new ArrayBuffer(64, { maxByteLength: 128 })
+    Object.defineProperty(ab, 'resizable', { value: false })
+    return new ImageData(new Float32Array(ab), 2, 2)
+  })
+  out.prototypeFalse = run(() => {
+    const ab = resizable()
+    Object.setPrototypeOf(ab, Object.create(ArrayBuffer.prototype, { resizable: { value: false } }))
+    return new ImageData(new Uint8ClampedArray(ab), 2, 2)
+  })
+  out.patchedResizableFalse = patched(
+    'resizable',
+    () => false,
+    () => run(() => new ImageData(new Uint8ClampedArray(resizable()), 2, 2)),
+  )
+  out.patchedDetachedTrue = patched(
+    'detached',
+    () => true,
+    () => run(() => new ImageData(new Uint8ClampedArray(resizable()), 2, 2)),
+  )
+  out.fixedOwnTrue = run(() => {
+    const ab = new ArrayBuffer(16)
+    Object.defineProperty(ab, 'resizable', { value: true })
+    const u = new Uint8ClampedArray(ab)
+    return new ImageData(u, 2, 2).data === u ? 'same data' : 'other data'
+  })
+  out.fixedPatchedTrue = patched(
+    'resizable',
+    () => true,
+    () => run(() => new ImageData(new Uint8ClampedArray(new ArrayBuffer(16)), 2, 2)),
+  )
+  // Getters that throw.
+  out.fixedOwnThrows = run(() => {
+    const ab = new ArrayBuffer(16)
+    for (const key of ['resizable', 'detached']) {
+      Object.defineProperty(ab, key, {
+        get() {
+          throw new Error(`${key} getter ran`)
+        },
+      })
+    }
+    return new ImageData(new Uint8ClampedArray(ab), 2, 2)
+  })
+  class ThrowingBuffer extends ArrayBuffer {
+    get resizable(): boolean {
+      throw new Error('subclass resizable getter ran')
+    }
+    get detached(): boolean {
+      throw new Error('subclass detached getter ran')
+    }
+  }
+  out.subclassThrows = [
+    run(() => new ImageData(new Uint8ClampedArray(new ThrowingBuffer(16)), 2, 2)),
+    run(() => new ImageData(new Uint8ClampedArray(new ThrowingBuffer(16, { maxByteLength: 64 })), 2, 2)),
+  ]
+  // No getter runs: own ones, or patched ones that call the real getter.
+  const calls: string[] = []
+  const counted = resizable()
+  Object.defineProperty(counted, 'resizable', {
+    get() {
+      calls.push('own resizable')
+      return true
+    },
+  })
+  Object.defineProperty(counted, 'detached', {
+    get() {
+      calls.push('own detached')
+      return false
+    },
+  })
+  out.ownCounted = run(() => new ImageData(new Uint8ClampedArray(counted), 2, 2))
+  const real: [string, PropertyDescriptor][] = ['resizable', 'detached'].map((key) => [
+    key,
+    Object.getOwnPropertyDescriptor(ArrayBuffer.prototype, key)!,
+  ])
+  try {
+    for (const [key, descriptor] of real) {
+      Object.defineProperty(ArrayBuffer.prototype, key, {
+        get() {
+          calls.push(key)
+          return Reflect.apply(descriptor.get!, this, [])
+        },
+        configurable: true,
+      })
+    }
+    const ab = resizable()
+    const view = new Uint8ClampedArray(ab)
+    ab.transfer()
+    out.patchedCounted = [
+      run(() => new ImageData(new Uint8ClampedArray(new ArrayBuffer(16)), 2, 2)),
+      run(() => new ImageData(new Uint8ClampedArray(resizable()), 2, 2)),
+      run(() => new ImageData(view, 2, 2)),
+    ]
+  } finally {
+    for (const [key, descriptor] of real) {
+      Object.defineProperty(ArrayBuffer.prototype, key, descriptor)
+    }
+  }
+  out.calls = calls
+  // A detached buffer is not resizable, whatever its properties say.
+  out.detachedOwnFalse = run(() => {
+    const ab = resizable()
+    const view = new Uint8ClampedArray(ab)
+    ab.transfer()
+    Object.defineProperty(ab, 'detached', { value: false })
+    return new ImageData(view, 2, 2)
+  })
+  // Getters that would detach or shrink the buffer do not run.
+  const transferred = resizable()
+  Object.defineProperty(transferred, 'resizable', {
+    get() {
+      transferred.transfer()
+      return true
+    },
+  })
+  out.getterTransfers = [run(() => new ImageData(new Uint8ClampedArray(transferred), 2, 2)), transferred.detached]
+  const shrunk = resizable()
+  Object.defineProperty(shrunk, 'resizable', {
+    get() {
+      ArrayBuffer.prototype.resize.call(shrunk, 8)
+      return false
+    },
+  })
+  out.getterShrinks = [run(() => new ImageData(new Uint8ClampedArray(shrunk), 2, 2)), shrunk.byteLength]
+  // A Proxy in the prototype chain, and a Proxy of a typed array (not one).
+  const traps: string[] = []
+  const lying = (value: boolean) =>
+    new Proxy(ArrayBuffer.prototype, {
+      get(target, key, receiver) {
+        if (typeof key === 'string') traps.push(key)
+        return key === 'resizable' ? value : Reflect.get(target, key, receiver)
+      },
+    })
+  out.proxyPrototype = [
+    run(() => new ImageData(new Uint8ClampedArray(Object.setPrototypeOf(resizable(), lying(false))), 2, 2)),
+    run(() => new ImageData(new Uint8ClampedArray(Object.setPrototypeOf(new ArrayBuffer(16), lying(true))), 2, 2)),
+  ]
+  out.traps = traps
+  // The size form: ToNumber of the Proxy fails in %TypedArray%.prototype.join,
+  // whose message names the receiver differently in each V8.
+  out.proxyOfView = run(() => new ImageData(new Proxy(new Uint8ClampedArray(resizable()), {}), 2, 2)).replace(
+    / receiver .*/,
+    ' receiver',
+  )
+  // Shared buffers never reach the getters.
+  const sharedCalls: string[] = []
+  const growable = new SharedArrayBuffer(16, { maxByteLength: 64 })
+  for (const key of ['growable', 'resizable', 'detached']) {
+    Object.defineProperty(growable, key, {
+      get() {
+        sharedCalls.push(key)
+        return false
+      },
+    })
+  }
+  out.shared = [
+    run(() => new ImageData(new Uint8ClampedArray(growable), 2, 2)),
+    run(
+      () =>
+        new ImageData(
+          new Uint8ClampedArray(Object.setPrototypeOf(new SharedArrayBuffer(16), ArrayBuffer.prototype)),
+          2,
+          2,
+        ),
+    ),
+    sharedCalls,
+  ]
+  // Buffers of another realm, whose ArrayBuffer.prototype may lie too.
+  const other = realm()
+  out.otherRealm = other && [
+    run(() => new ImageData(new other.Uint8ClampedArray(new other.ArrayBuffer(16, { maxByteLength: 64 })), 2, 2)),
+    run(() => {
+      other.Object.defineProperty(other.ArrayBuffer.prototype, 'resizable', { get: () => false, configurable: true })
+      const ab = new other.ArrayBuffer(16, { maxByteLength: 64 })
+      Object.defineProperty(ab, 'resizable', { value: false })
+      return new ImageData(new other.Uint8ClampedArray(ab), 2, 2)
+    }),
+    run(() => {
+      const u = new other.Uint8ClampedArray(new other.ArrayBuffer(16))
+      return new ImageData(u, 2, 2).data === u ? 'same data' : 'other data'
+    }),
+    run(() => {
+      const ab = new other.ArrayBuffer(16, { maxByteLength: 64 })
+      const view = new other.Uint8ClampedArray(ab)
+      ab.transfer()
+      return new ImageData(view, 2, 2)
+    }),
+  ]
+  return out
+}
+
+// Chrome 155: a page (other realm: a same-origin iframe) and a dedicated
+// worker give the same values.
+const RESIZABLE =
+  "TypeError TypeError: Failed to construct 'ImageData': The provided Uint8ClampedArray value must not be resizable."
+const SHARED_ERROR =
+  "TypeError TypeError: Failed to construct 'ImageData': The provided Uint8ClampedArray value must not be shared."
+const ZERO = "DOMException InvalidStateError: Failed to construct 'ImageData': The input data has zero elements."
+const CHROME_BUFFER_STATE = {
+  ownFalse: RESIZABLE,
+  ownFalseFixedView: RESIZABLE,
+  ownFalseFloat32:
+    "TypeError TypeError: Failed to construct 'ImageData': The provided Float32Array value must not be resizable.",
+  prototypeFalse: RESIZABLE,
+  patchedResizableFalse: RESIZABLE,
+  patchedDetachedTrue: RESIZABLE,
+  fixedOwnTrue: 'value same data',
+  fixedPatchedTrue: 'ok',
+  fixedOwnThrows: 'ok',
+  subclassThrows: ['ok', RESIZABLE],
+  ownCounted: RESIZABLE,
+  patchedCounted: ['ok', RESIZABLE, ZERO],
+  calls: [],
+  detachedOwnFalse: ZERO,
+  getterTransfers: [RESIZABLE, false],
+  getterShrinks: [RESIZABLE, 16],
+  proxyPrototype: [RESIZABLE, 'ok'],
+  traps: [],
+  proxyOfView: 'TypeError TypeError: Method %TypedArray%.prototype.join called on incompatible receiver',
+  shared: [SHARED_ERROR, SHARED_ERROR, []],
+  otherRealm: [RESIZABLE, RESIZABLE, 'value same data', ZERO],
+}
+
+const root = join(dirname(fileURLToPath(import.meta.url)), '..')
+
+test('new ImageData reads whether the buffer is resizable from the buffer, not its properties', async (t) => {
+  const vm = createRequire(import.meta.url)('node:vm')
+  t.deepEqual(
+    checkBufferState(ImageData, () => vm.runInNewContext('globalThis')),
+    CHROME_BUFFER_STATE,
+  )
+  // A worker has its own realm and its own ArrayBuffer.prototype.
+  const inWorker = await new Promise((resolve, reject) => {
+    const worker = new Worker(
+      `
+        const { parentPort } = require('node:worker_threads')
+        const { ImageData } = require(${JSON.stringify(join(root, 'index.js'))})
+        const checkBufferState = ${checkBufferState.toString()}
+        parentPort.postMessage(checkBufferState(ImageData, () => null))
+      `,
+      { eval: true },
+    )
+    worker.once('message', resolve)
+    worker.once('error', reject)
+    worker.once('exit', (code) => code !== 0 && reject(new Error(`worker exit ${code}`)))
+  })
+  t.deepEqual(inWorker, { ...CHROME_BUFFER_STATE, otherRealm: null })
 })
 
 test('putImageData throws InvalidStateError once the data buffer is detached', (t) => {

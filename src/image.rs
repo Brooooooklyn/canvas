@@ -343,18 +343,6 @@ fn data_array_type(env: sys::napi_env, value: sys::napi_value) -> Result<Option<
   })
 }
 
-/// A boolean property of `object`; false when it is not a boolean.
-fn boolean_property(
-  env: sys::napi_env,
-  object: sys::napi_value,
-  key: &std::ffi::CStr,
-) -> Result<bool> {
-  let mut value = ptr::null_mut();
-  check_status!(unsafe { sys::napi_get_named_property(env, object, key.as_ptr(), &mut value) })?;
-  let mut result = false;
-  Ok(unsafe { sys::napi_get_value_bool(env, value, &mut result) } == sys::Status::napi_ok && result)
-}
-
 /// The NotShared<T> conversion of ImageData data
 /// (native_value_traits_buffer_sources.cc, image_data.idl has no
 /// [AllowShared]): a TypeError for a SharedArrayBuffer or a resizable
@@ -392,9 +380,9 @@ fn check_not_shared(
   if !is_arraybuffer {
     return Err(error("shared"));
   }
-  // Blink reads IsResizableByUserJavaScript(), false once the buffer is
-  // detached; JS `resizable` stays true then.
-  if boolean_property(env, buffer, c"resizable")? && !boolean_property(env, buffer, c"detached")? {
+  // The buffer's own state, as Blink reads it: false once it is detached,
+  // while JS `resizable` stays true then.
+  if webidl::is_resizable_by_script(env, buffer)? {
     return Err(error("resizable"));
   }
   Ok(())
