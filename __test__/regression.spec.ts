@@ -650,8 +650,8 @@ test('canvas-pattern-1010', async (t) => {
   const tmpCtx = tmpCanvas.getContext('2d')
   const image = await loadImage(join(__dirname, 'javascript.png'))
   tmpCtx.drawImage(image, 0, 0)
-  const pattern = ctx.createPattern(image, 'repeat')
-  const pattern2 = ctx.createPattern(tmpCanvas, 'repeat')
+  const pattern = ctx.createPattern(image, 'repeat')!
+  const pattern2 = ctx.createPattern(tmpCanvas, 'repeat')!
   ctx.fillStyle = pattern
   ctx.fillRect(0, 0, 512 / 2, 512)
 
