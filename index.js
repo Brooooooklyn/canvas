@@ -188,6 +188,9 @@ for (const [method, required] of [
   ['arcTo', 5],
   ['bezierCurveTo', 6],
   ['clearRect', 4],
+  ['createConicGradient', 3],
+  ['createLinearGradient', 4],
+  ['createRadialGradient', 6],
   ['ellipse', 7],
   ['fillRect', 4],
   ['fillText', 3],
@@ -388,6 +391,14 @@ const _createPattern = CanvasRenderingContext2D.prototype.createPattern
 
 CanvasRenderingContext2D.prototype.createPattern = function createPattern(image, repetition) {
   return _createPattern.call(this, image, repetition, ARGUMENT_COUNTS[Math.min(arguments.length, 4)])
+}
+
+// addColorStop(offset, color): both arguments are required. CanvasGradient
+// has no other native method to check the receiver first, so the native
+// method itself reads the real count from the marker after them.
+const _addColorStop = CanvasGradient.prototype.addColorStop
+CanvasGradient.prototype.addColorStop = function addColorStop(offset, color) {
+  return _addColorStop.call(this, offset, color, ARGUMENT_COUNTS[Math.min(arguments.length, 2)])
 }
 
 // Workaround for webpack bundling issue with drawImage

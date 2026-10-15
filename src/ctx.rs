@@ -4758,17 +4758,19 @@ impl CanvasRenderingContext2D {
     }
   }
 
+  /// createLinearGradient(double x0, double y0, double x1, double y1); the
+  /// index.js wrapper checks the argument count.
   #[napi]
   pub fn create_linear_gradient<'scope>(
     &'scope mut self,
     env: &'scope Env,
-    x0: f64,
-    y0: f64,
-    x1: f64,
-    y1: f64,
+    x0: webidl::RestrictedDouble<webidl::CtxCreateLinearGradient>,
+    y0: webidl::RestrictedDouble<webidl::CtxCreateLinearGradient>,
+    x1: webidl::RestrictedDouble<webidl::CtxCreateLinearGradient>,
+    y1: webidl::RestrictedDouble<webidl::CtxCreateLinearGradient>,
   ) -> Result<ClassInstance<'scope, CanvasGradient>> {
     // Blink ClampTo<float> (canvas_2d_recorder_context.cc:2366-2372).
-    let [x0, y0, x1, y1] = [x0, y0, x1, y1].map(clamp_to_f32);
+    let [x0, y0, x1, y1] = [x0.0, y0.0, x1.0, y1.0].map(clamp_to_f32);
     let linear_gradient = Gradient::create_linear_gradient(x0, y0, x1, y1);
     CanvasGradient::new(linear_gradient).into_instance(env)
   }
@@ -4777,13 +4779,27 @@ impl CanvasRenderingContext2D {
   pub fn create_radial_gradient<'scope>(
     &'scope mut self,
     env: &'scope Env,
-    x0: f64,
-    y0: f64,
-    r0: f64,
-    x1: f64,
-    y1: f64,
-    r1: f64,
+    x0: webidl::RestrictedDouble<webidl::CtxCreateRadialGradient>,
+    y0: webidl::RestrictedDouble<webidl::CtxCreateRadialGradient>,
+    r0: webidl::RestrictedDouble<webidl::CtxCreateRadialGradient>,
+    x1: webidl::RestrictedDouble<webidl::CtxCreateRadialGradient>,
+    y1: webidl::RestrictedDouble<webidl::CtxCreateRadialGradient>,
+    r1: webidl::RestrictedDouble<webidl::CtxCreateRadialGradient>,
   ) -> Result<ClassInstance<'scope, CanvasGradient>> {
+    let [x0, y0, r0, x1, y1, r1] = [x0.0, y0.0, r0.0, x1.0, y1.0, r1.0];
+    // canvas_2d_recorder_context.cc:2376-2392, on the doubles, after the
+    // bindings converted every argument.
+    if r0 < 0.0 || r1 < 0.0 {
+      return Err(webidl::dom_exception(
+        env.raw(),
+        "IndexSizeError",
+        &format!(
+          "{}The {} provided is less than 0.",
+          <webidl::CtxCreateRadialGradient as webidl::Site>::PREFIX,
+          if r0 < 0.0 { "r0" } else { "r1" }
+        ),
+      ));
+    }
     let [x0, y0, r0, x1, y1, r1] = [x0, y0, r0, x1, y1, r1].map(clamp_to_f32);
     let radial_gradient = Gradient::create_radial_gradient(x0, y0, r0, x1, y1, r1);
     CanvasGradient::new(radial_gradient).into_instance(env)
@@ -4793,11 +4809,11 @@ impl CanvasRenderingContext2D {
   pub fn create_conic_gradient<'scope>(
     &'scope mut self,
     env: &'scope Env,
-    start_angle: f64,
-    x: f64,
-    y: f64,
+    start_angle: webidl::RestrictedDouble<webidl::CtxCreateConicGradient>,
+    x: webidl::RestrictedDouble<webidl::CtxCreateConicGradient>,
+    y: webidl::RestrictedDouble<webidl::CtxCreateConicGradient>,
   ) -> Result<ClassInstance<'scope, CanvasGradient>> {
-    let [start_angle, x, y] = [start_angle, x, y].map(clamp_to_f32);
+    let [start_angle, x, y] = [start_angle.0, x.0, y.0].map(clamp_to_f32);
     let conic_gradient = Gradient::create_conic_gradient(x, y, start_angle);
     CanvasGradient::new(conic_gradient).into_instance(env)
   }
