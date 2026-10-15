@@ -165,6 +165,21 @@ for (const [method, required] of [
   requireArguments(CanvasRenderingContext2D.prototype, ctxBrand, 'CanvasRenderingContext2D', method, required)
 }
 
+const pathBrand = Path2D.prototype.getFillType
+for (const [method, required] of [
+  ['arc', 5],
+  ['arcTo', 5],
+  ['bezierCurveTo', 6],
+  ['ellipse', 7],
+  ['lineTo', 2],
+  ['moveTo', 2],
+  ['quadraticCurveTo', 4],
+  ['rect', 4],
+  ['roundRect', 4],
+]) {
+  requireArguments(Path2D.prototype, pathBrand, 'Path2D', method, required)
+}
+
 // The argument-count markers for 0 to 9 arguments. napi pads missing
 // arguments with undefined, so the wrappers below pass the real count after
 // the positional arguments, as one of these markers: the native methods read
