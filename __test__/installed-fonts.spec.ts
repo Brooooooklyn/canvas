@@ -114,6 +114,33 @@ macTest('DISABLE_SYSTEM_FONTS_LOAD leaves only the registered fonts until loadSy
   t.true(out.helveticaAfter > 0)
 })
 
+// The font-relative sizes of an SVG image come from Chrome's default font,
+// Times on macOS (svg-image-size.spec.ts). With no installed font they fall
+// back to the CSS answer: 1ex is 0.5em.
+const SVG_PROBE = `
+const { Image, GlobalFonts } = require('./index.js')
+const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="2ex" height="20"></svg>'
+const width = async () => {
+  const image = new Image()
+  const loaded = await new Promise((resolve) => {
+    image.onload = () => resolve(true)
+    image.onerror = () => resolve(false)
+    image.src = Buffer.from(svg)
+  })
+  return loaded ? image.naturalWidth : 'error'
+}
+;(async () => {
+  const out = { before: await width() }
+  GlobalFonts.loadSystemFonts()
+  out.after = await width()
+  console.log(JSON.stringify(out))
+})()
+`
+
+macTest('an SVG image sized in ex loads before loadSystemFonts with DISABLE_SYSTEM_FONTS_LOAD', (t) => {
+  t.deepEqual(run(SVG_PROBE, { DISABLE_SYSTEM_FONTS_LOAD: '1' }), { before: 16, after: 14 })
+})
+
 macTest('the installed fonts are listed at the first font lookup', (t) => {
   const out = run(PROBE)
   t.true(out.families > 0)
