@@ -54,6 +54,28 @@ typedef enum {
       SKIAC_HB_TAG('i', 'd', 'e', 'o'),
 } hb_ot_layout_baseline_tag_t;
 
+// hb_script_t and the AAT enums are int-sized enums of tags or numbers.
+typedef uint32_t hb_script_t;
+typedef const struct hb_language_impl_t* hb_language_t;
+typedef unsigned int hb_ot_name_id_t;
+typedef int hb_aat_layout_feature_type_t;
+typedef int hb_aat_layout_feature_selector_t;
+typedef struct hb_aat_layout_feature_selector_info_t {
+  hb_ot_name_id_t name_id;
+  hb_aat_layout_feature_selector_t enable;
+  hb_aat_layout_feature_selector_t disable;
+  unsigned int reserved;
+} hb_aat_layout_feature_selector_info_t;
+
+#define HB_LANGUAGE_INVALID ((hb_language_t)0)
+#define HB_OT_LAYOUT_DEFAULT_LANGUAGE_INDEX 0xFFFFu
+#define HB_AAT_LAYOUT_FEATURE_TYPE_LETTER_CASE 3
+#define HB_AAT_LAYOUT_FEATURE_TYPE_LOWER_CASE 37
+#define HB_AAT_LAYOUT_FEATURE_TYPE_UPPER_CASE 38
+#define HB_AAT_LAYOUT_FEATURE_SELECTOR_SMALL_CAPS 3
+#define HB_AAT_LAYOUT_FEATURE_SELECTOR_LOWER_CASE_SMALL_CAPS 1
+#define HB_AAT_LAYOUT_FEATURE_SELECTOR_UPPER_CASE_SMALL_CAPS 1
+
 #define HB_OT_TAG_GSUB SKIAC_HB_TAG('G', 'S', 'U', 'B')
 #define HB_OT_TAG_GPOS SKIAC_HB_TAG('G', 'P', 'O', 'S')
 #define HB_OT_TAG_DEFAULT_SCRIPT SKIAC_HB_TAG('D', 'F', 'L', 'T')
@@ -91,6 +113,37 @@ void hb_ot_layout_lookup_collect_glyphs(hb_face_t* face,
                                         hb_set_t* glyphs_input,
                                         hb_set_t* glyphs_after,
                                         hb_set_t* glyphs_output);
+hb_script_t hb_script_from_string(const char* str, int len);
+void hb_ot_tags_from_script_and_language(hb_script_t script,
+                                         hb_language_t language,
+                                         unsigned int* script_count,
+                                         hb_tag_t* script_tags,
+                                         unsigned int* language_count,
+                                         hb_tag_t* language_tags);
+hb_bool_t hb_ot_layout_table_select_script(hb_face_t* face,
+                                           hb_tag_t table_tag,
+                                           unsigned int script_count,
+                                           const hb_tag_t* script_tags,
+                                           unsigned int* script_index,
+                                           hb_tag_t* chosen_script);
+hb_bool_t hb_ot_layout_language_find_feature(hb_face_t* face,
+                                             hb_tag_t table_tag,
+                                             unsigned int script_index,
+                                             unsigned int language_index,
+                                             hb_tag_t feature_tag,
+                                             unsigned int* feature_index);
+unsigned int hb_aat_layout_get_feature_types(
+    hb_face_t* face,
+    unsigned int start_offset,
+    unsigned int* feature_count,
+    hb_aat_layout_feature_type_t* features);
+unsigned int hb_aat_layout_feature_type_get_selector_infos(
+    hb_face_t* face,
+    hb_aat_layout_feature_type_t feature_type,
+    unsigned int start_offset,
+    unsigned int* selector_count,
+    hb_aat_layout_feature_selector_info_t* selectors,
+    unsigned int* default_index);
 
 }  // extern "C"
 

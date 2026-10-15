@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <memory>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -83,34 +84,6 @@ void MeasureOrDraw(skiac_font_collection* c_collection,
     text_style.addFontFeature(SkString("kern"), 0);
   } else if (request.kerning == 2) {
     text_style.addFontFeature(SkString("kern"), 1);
-  }
-
-  // Apply font variant caps features
-  // variant_caps: 0=normal, 1=small-caps, 2=all-small-caps, 3=petite-caps,
-  // 4=all-petite-caps, 5=unicase, 6=titling-caps
-  switch (request.variant_caps) {
-    case 1:
-      text_style.addFontFeature(SkString("smcp"), 1);
-      break;
-    case 2:
-      text_style.addFontFeature(SkString("smcp"), 1);
-      text_style.addFontFeature(SkString("c2sc"), 1);
-      break;
-    case 3:
-      text_style.addFontFeature(SkString("pcap"), 1);
-      break;
-    case 4:
-      text_style.addFontFeature(SkString("pcap"), 1);
-      text_style.addFontFeature(SkString("c2pc"), 1);
-      break;
-    case 5:
-      text_style.addFontFeature(SkString("unic"), 1);
-      break;
-    case 6:
-      text_style.addFontFeature(SkString("titl"), 1);
-      break;
-    default:
-      break;
   }
 
   // Apply language/locale for language-specific glyph variants
@@ -204,17 +177,55 @@ void MeasureOrDraw(skiac_font_collection* c_collection,
   if (CanShapeWordByWord(c_collection, faces, request)) {
     words = SplitWords(text);
   }
+  if (words.empty()) {
+    words.emplace_back(0, text.size());
+  }
+  // The pieces shaped on their own: the words, and for font-variant-caps
+  // their case runs (HarfBuzzShaper::ShapeSegment). `shaped` is the text
+  // skparagraph lays out, case mapped for synthesized small caps; `words`
+  // move to it.
+  struct Piece {
+    size_t start;
+    size_t end;
+    int caps;
+    bool small;
+  };
+  std::vector<Piece> pieces;
+  std::string_view shaped = text;
+  std::string caps_text;
+  if (request.variant_caps == 0) {
+    for (const auto& [start, end] : words) {
+      pieces.push_back({start, end, 0, false});
+    }
+  } else {
+    for (auto& word : words) {
+      const size_t word_start = caps_text.size();
+      for (const CapsPiece& piece : SplitCaps(
+               c_collection, primary,
+               text.substr(word.first, word.second - word.first), request)) {
+        const size_t start = caps_text.size();
+        caps_text += piece.text;
+        pieces.push_back({start, caps_text.size(), piece.caps, piece.small});
+      }
+      word = {word_start, caps_text.size()};
+    }
+    shaped = caps_text;
+  }
   ParagraphBuilderImpl builder(paragraph_style, font_collection,
                                SkUnicodes::ICU::Make());
-  if (words.size() <= 1) {
-    builder.addText(request.text, request.text_len);
+  if (pieces.size() == 1 && pieces[0].caps == 0 && !pieces[0].small) {
+    builder.addText(shaped.data(), shaped.size());
   } else {
-    TextStyle word_style = text_style;
-    for (size_t i = 0; i < words.size(); ++i) {
-      word_style.setHalfLeading(i % 2 == 1);
-      builder.pushStyle(word_style);
-      builder.addText(request.text + words[i].first,
-                      words[i].second - words[i].first);
+    for (size_t i = 0; i < pieces.size(); ++i) {
+      TextStyle piece_style = text_style;
+      piece_style.setHalfLeading(i % 2 == 1);
+      AddCapsFeatures(&piece_style, pieces[i].caps);
+      if (pieces[i].small) {
+        piece_style.setFontSize(SmallCapsSize(request.size));
+      }
+      builder.pushStyle(piece_style);
+      builder.addText(shaped.data() + pieces[i].start,
+                      pieces[i].end - pieces[i].start);
       builder.pop();
     }
   }
@@ -374,7 +385,7 @@ void MeasureOrDraw(skiac_font_collection* c_collection,
     // No glyph has ink: gfx::RectF::Union keeps the last empty word box, a
     // point on the baseline at the left edge of the visually last word
     // (the last word for LTR text, the first for RTL), so for "   " the box
-    // sits before the last space. Without words the text is one item.
+    // sits before the last space. One word is the whole text.
     float last_word_advance = line_width;
     if (words.size() > 1) {
       const auto& word =

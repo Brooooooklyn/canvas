@@ -575,6 +575,8 @@ struct skiac_font_collection {
   // text_words.cpp CanShapeWordByWord: whether a face's GPOS / GSUB lookups
   // touch the space glyph, per typeface (cleared with the match caches).
   std::map<SkTypefaceID, uint8_t> space_in_lookups;
+  // text_caps.cpp: the OpenType caps features of a face for a script.
+  std::map<std::pair<SkTypefaceID, uint32_t>, uint8_t> caps_features;
   // FontCollection keeps a clone of every face for every list of font
   // arguments it was asked for; text.cpp counts the lists (by hash) and
   // drops the caches past kMaxFontArguments.
@@ -603,6 +605,7 @@ struct skiac_font_collection {
     if (caches_dirty) {
       collection->clearCaches();
       space_in_lookups.clear();
+      caps_features.clear();
       font_arguments.clear();
       caches_dirty = false;
     }
@@ -614,6 +617,7 @@ struct skiac_font_collection {
         font_arguments.size() > kMaxFontArguments) {
       collection->clearCaches();
       space_in_lookups.clear();
+      caps_features.clear();
       font_arguments = {hash};
     }
   }
@@ -628,6 +632,7 @@ struct skiac_font_collection {
     // Clear caches before swap
     collection->clearCaches();
     space_in_lookups.clear();
+    caps_features.clear();
     font_arguments.clear();
     caches_dirty = false;
     ++families_generation;
