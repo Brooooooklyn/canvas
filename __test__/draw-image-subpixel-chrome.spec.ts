@@ -42,7 +42,7 @@ function draw(
   const data = ctx.getImageData(0, 0, 8, 8).data
   const out = []
   for (let i = 0; i < 64; i++) {
-    if (data[i * 4 + 3]) out.push(`${i % 8},${i >> 3}:${[...data.slice(i * 4, i * 4 + 4)].join('/')}`)
+    if (data[i * 4 + 3]) out.push(`${i % 8},${i >> 3}:${data.slice(i * 4, i * 4 + 4).join('/')}`)
   }
   return out.join(' ')
 }
