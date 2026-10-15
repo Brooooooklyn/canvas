@@ -1104,6 +1104,36 @@ bool skiac_surface_read_pixels_rect(skiac_surface* c_surface,
                                     int w,
                                     int h,
                                     uint8_t cs);
+// getImageData / putImageData of an ImageData pixel format: 0 rgba-unorm8,
+// 1 rgba-float16, 2 rgba-float32.
+bool skiac_surface_read_pixels_format(skiac_surface* c_surface,
+                                      uint8_t* data,
+                                      size_t row_bytes,
+                                      int x,
+                                      int y,
+                                      int w,
+                                      int h,
+                                      uint8_t cs,
+                                      uint8_t pf);
+bool skiac_canvas_write_pixels_format(skiac_canvas* c_canvas,
+                                      const uint8_t* pixels,
+                                      int w,
+                                      int h,
+                                      uint8_t cs,
+                                      uint8_t pf,
+                                      bool opaque,
+                                      int sx,
+                                      int sy,
+                                      int sw,
+                                      int sh,
+                                      int dx,
+                                      int dy);
+bool skiac_image_data_to_unorm8(const uint8_t* pixels,
+                                int w,
+                                int h,
+                                uint8_t cs,
+                                uint8_t pf,
+                                uint8_t* out);
 // Direct access to a raster surface's pixels. Succeeds only for
 // premultiplied RGBA_8888 surfaces in sRGB (0) or Display P3 (1).
 struct skiac_peek_pixels {
@@ -1608,7 +1638,8 @@ skiac_bitmap* skiac_bitmap_make_premul_from_image_data(uint8_t* ptr,
                                                        size_t width,
                                                        size_t height,
                                                        size_t row_bytes,
-                                                       uint8_t cs);
+                                                       uint8_t cs,
+                                                       uint8_t pf);
 bool skiac_bitmap_set_color_space(skiac_bitmap* c_bitmap,
                                   const uint8_t* icc,
                                   size_t icc_len,

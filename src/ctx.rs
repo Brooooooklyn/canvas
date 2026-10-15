@@ -31,7 +31,7 @@ use crate::{
     StrokeCap, StrokeJoin, Surface, TextSettings, Transform,
   },
   state::Context2dRenderingState,
-  webidl::{self, Double, Positional, ReportedSettings},
+  webidl::{self, Double, ImageDataPixelFormat, Positional, ReportedSettings},
 };
 
 static CSS_SIZE_REGEXP: LazyLock<Regex> =
@@ -628,16 +628,17 @@ impl Context {
   /// a read-out actually needs the picture (Context::get_picture). For
   /// content writers only -- reads (get_bitmap, read_pixels) need the flush
   /// but not the sync.
-  pub(crate) fn with_surface_canvas<F>(&mut self, f: F)
+  pub(crate) fn with_surface_canvas<F, R>(&mut self, f: F) -> R
   where
-    F: FnOnce(&mut Canvas),
+    F: FnOnce(&mut Canvas) -> R,
   {
     self.flush();
-    f(&mut self.surface.canvas);
+    let result = f(&mut self.surface.canvas);
     if let Some(ref recorder) = self.page_recorder {
       recorder.borrow_mut().note_surface_write();
     }
     self.note_direct_mutation();
+    result
   }
 
   /// Flush the deferred recording once it exceeds MAX_RECORDED_BYTES, bounding
@@ -2585,6 +2586,84 @@ impl Context {
     self.surface.read_pixels(x, y, w, h, color_type)
   }
 
+  /// getImageData into `out`, the zeroed data of a `w` x `h` ImageData of
+  /// `pixel_format`: Blink reads the canvas into the ImageData's own
+  /// unpremultiplied info (base_rendering_context_2d.cc:497-512). What lies
+  /// outside the canvas stays zero.
+  pub(crate) fn read_image_data(
+    &mut self,
+    out: &mut [u8],
+    [x, y]: [i32; 2],
+    [w, h]: [u32; 2],
+    color_space: ColorSpace,
+    pixel_format: ImageDataPixelFormat,
+  ) {
+    self.flush();
+    if self.has_pixels() {
+      self
+        .surface
+        .read_pixels_format(out, x, y, w, h, color_space, pixel_format);
+    }
+  }
+
+  /// putImageData on a raster canvas from Blink's dirty rect step on
+  /// (base_rendering_context_2d.cc:556-616): the dirty rect, normalized,
+  /// within the data, moved by (dx, dy) and within the canvas, written over
+  /// the canvas pixels. Data of another number of bytes per pixel than the
+  /// canvas is converted first; false when that cannot allocate.
+  pub(crate) fn put_image_data_pixels(
+    &mut self,
+    image_data: &ImageData,
+    data: *const u8,
+    [dx, dy]: [i32; 2],
+    dirty: Option<[i32; 4]>,
+  ) -> bool {
+    let (width, height) = (image_data.width as i64, image_data.height as i64);
+    let [mut x, mut y, mut w, mut h] = dirty
+      .map(|dirty| dirty.map(i64::from))
+      .unwrap_or([0, 0, width, height]);
+    // A negative size flips the origin, unless the origin is negative too.
+    for (origin, size) in [(&mut x, &mut w), (&mut y, &mut h)] {
+      if *size < 0 {
+        if *origin < 0 {
+          (*origin, *size) = (0, 0);
+        } else {
+          *origin += *size;
+          *size = -*size;
+        }
+      }
+    }
+    let (dx, dy) = (i64::from(dx), i64::from(dy));
+    let (canvas_width, canvas_height) = (
+      i64::from(self.surface.width()),
+      i64::from(self.surface.height()),
+    );
+    let left = x.max(0) + dx;
+    let top = y.max(0) + dy;
+    let right = (x + w).min(width) + dx;
+    let bottom = (y + h).min(height) + dy;
+    let (left, top) = (left.max(0), top.max(0));
+    let (right, bottom) = (right.min(canvas_width), bottom.min(canvas_height));
+    if left >= right || top >= bottom {
+      return true;
+    }
+    let source = [left - dx, top - dy, right - left, bottom - top].map(|v| v as i32);
+    let opaque = !self.alpha;
+    self.with_surface_canvas(|canvas| {
+      canvas.write_pixels_format(
+        data,
+        image_data.width,
+        image_data.height,
+        image_data.color_space,
+        image_data.pixel_format,
+        opaque,
+        source,
+        left as i32,
+        top as i32,
+      )
+    })
+  }
+
   pub fn set_line_dash(&mut self, line_dash_list: Vec<f32>) {
     self.state.line_dash_list = line_dash_list;
   }
@@ -4484,6 +4563,7 @@ pub enum CreateImageDataArgs {
     width: usize,
     height: usize,
     color_space: ColorSpace,
+    pixel_format: ImageDataPixelFormat,
   },
   /// createImageData([EnforceRange] long sw, [EnforceRange] long sh,
   /// optional ImageDataSettings settings).
@@ -4507,7 +4587,7 @@ impl FromNapiValue for CreateImageDataArgs {
     }
     let first = args.get(0)?;
     if args.len() == 1 {
-      // The same size and color space, new zeroed data
+      // The same size, color space and pixel format, new zeroed data
       // (base_rendering_context_2d.cc:296).
       if unsafe { <&ImageData as ValidateNapiValue>::validate(env, first) }.is_ok()
         && let Ok(image_data) = unsafe { ImageData::from_napi_ref(env, first) }
@@ -4516,6 +4596,7 @@ impl FromNapiValue for CreateImageDataArgs {
           width: image_data.width,
           height: image_data.height,
           color_space: image_data.color_space,
+          pixel_format: image_data.pixel_format,
         });
       }
       return Err(webidl::context_type_error(
@@ -5207,7 +5288,8 @@ impl CanvasRenderingContext2D {
         width,
         height,
         color_space,
-      } => ImageData::new_zeroed(env, width, height, color_space),
+        pixel_format,
+      } => ImageData::new_zeroed(env, width, height, color_space, pixel_format),
       CreateImageDataArgs::Size {
         width,
         height,
@@ -5225,7 +5307,13 @@ impl CanvasRenderingContext2D {
         let color_space = settings
           .color_space(env.raw(), prefix)?
           .unwrap_or(self.context.color_space);
-        ImageData::new_zeroed(env, width as usize, height as usize, color_space)
+        ImageData::new_zeroed(
+          env,
+          width as usize,
+          height as usize,
+          color_space,
+          settings.pixel_format,
+        )
       }
     }
   }
@@ -6186,32 +6274,37 @@ impl CanvasRenderingContext2D {
     let color_space = settings
       .color_space(raw, prefix)?
       .unwrap_or(self.context.color_space);
-    if len > MAX_DATA_BYTES {
-      return Err(out_of_memory(raw, prefix));
-    }
-    let image_data = self
-      .context
-      .get_image_data(x, y, sw, sh, color_space)
-      .map_err(|e| match e {
-        ReadPixelsError::OutOfMemory => out_of_memory(raw, prefix),
-        ReadPixelsError::Failed => Error::new(
-          Status::GenericFailure,
-          "Read pixels from canvas failed".to_string(),
-        ),
-      })?;
-    let data_object = Uint8ClampedSlice::from_data(env, image_data)?;
-    let mut instance = ImageData {
-      width: sw as usize,
-      height: sh as usize,
+    let pixel_format = settings.pixel_format;
+    let bytes = if pixel_format == ImageDataPixelFormat::Unorm8 {
+      if len > MAX_DATA_BYTES {
+        return Err(out_of_memory(raw, prefix));
+      }
+      self
+        .context
+        .get_image_data(x, y, sw, sh, color_space)
+        .map_err(|e| match e {
+          ReadPixelsError::OutOfMemory => out_of_memory(raw, prefix),
+          ReadPixelsError::Failed => Error::new(
+            Status::GenericFailure,
+            "Read pixels from canvas failed".to_string(),
+          ),
+        })?
+    } else {
+      let mut bytes = alloc_pixel_data(raw, prefix, len, pixel_format)?;
+      self
+        .context
+        .read_image_data(&mut bytes, [x, y], [sw, sh], color_space, pixel_format);
+      bytes
+    };
+    ImageData::from_bytes(
+      env,
+      prefix,
+      sw as usize,
+      sh as usize,
       color_space,
-      data_ref: Some(create_weak_ref(env, data_object.raw())?),
-    }
-    .into_instance(env)?;
-    instance.define_properties(&[Property::new()
-      .with_utf8_name("data")?
-      .with_value(&data_object)
-      .with_property_attributes(PropertyAttributes::Enumerable)])?;
-    Ok(instance)
+      pixel_format,
+      bytes,
+    )
   }
 
   #[napi]
@@ -6255,8 +6348,8 @@ impl CanvasRenderingContext2D {
     {
       return Ok(());
     }
-    // A detached (transferred) data buffer is an InvalidStateError; `data`
-    // is non-configurable so it cannot be deleted.
+    // A detached (transferred) data buffer is an InvalidStateError. Deleting
+    // the own `data` leaves the array, which the ImageData keeps.
     let data = image_data
       .resolve_pixels(&env)
       .map_err(|e| match e.status {
@@ -6274,6 +6367,37 @@ impl CanvasRenderingContext2D {
     if !self.paint_canvas(&this)? {
       return Ok(());
     }
+    let out_of_memory = || {
+      webidl::context_range_error(
+        env.raw(),
+        webidl::PUT_IMAGE_DATA,
+        "Out of memory in putImageData",
+      )
+    };
+    // Float data: a raster canvas writes it as Blink does. The SVG and PDF
+    // backends draw it as rgba-unorm8 data, below.
+    let unorm8;
+    let data = if image_data.pixel_format == ImageDataPixelFormat::Unorm8 {
+      data
+    } else if self.context.backend == Backend::Raster {
+      if !self
+        .context
+        .put_image_data_pixels(image_data, data, [dx, dy], dirty)
+      {
+        return Err(out_of_memory());
+      }
+      return Ok(());
+    } else {
+      unorm8 = crate::sk::image_data_to_unorm8(
+        data,
+        image_data.width,
+        image_data.height,
+        image_data.color_space,
+        image_data.pixel_format,
+      )
+      .ok_or_else(out_of_memory)?;
+      unorm8.as_ptr().cast_mut()
+    };
     if let Some([dirty_x, dirty_y, dirty_width, dirty_height]) = dirty {
       let mut dirty_x = dirty_x as f32;
       let mut dirty_y = dirty_y as f32;

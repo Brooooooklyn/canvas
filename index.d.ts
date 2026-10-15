@@ -180,20 +180,55 @@ interface CanvasPDFAnnotations {
 }
 
 type PredefinedColorSpace = 'display-p3' | 'srgb'
-/** Only 8-bit storage exists: 'rgba-float16' and 'rgba-float32' throw a TypeError. */
-type ImageDataPixelFormat = 'rgba-unorm8'
+/** 'rgba-float16' throws a NotSupportedError on a runtime without Float16Array (Node 22). */
+type ImageDataPixelFormat = 'rgba-unorm8' | 'rgba-float16' | 'rgba-float32'
+/** Float16Array, where the TypeScript lib has it. */
+type ImageDataFloat16Array = typeof globalThis extends { Float16Array: { prototype: infer T } } ? T : never
+type ImageDataArray = Uint8ClampedArray | ImageDataFloat16Array | Float32Array
 
 interface ImageDataSettings {
   colorSpace?: PredefinedColorSpace
   pixelFormat?: ImageDataPixelFormat
 }
 interface CanvasImageData {
-  createImageData(sw: number, sh: number, settings?: ImageDataSettings): ImageData
-  createImageData(imagedata: ImageData): ImageData
-  getImageData(sx: number, sy: number, sw: number, sh: number, settings?: ImageDataSettings): ImageData
-  putImageData(imagedata: ImageData, dx: number, dy: number): void
+  createImageData(sw: number, sh: number, settings?: ImageDataSettings & { pixelFormat?: 'rgba-unorm8' }): ImageData
+  createImageData(
+    sw: number,
+    sh: number,
+    settings: ImageDataSettings & { pixelFormat: 'rgba-float16' },
+  ): ImageData<ImageDataFloat16Array>
+  createImageData(
+    sw: number,
+    sh: number,
+    settings: ImageDataSettings & { pixelFormat: 'rgba-float32' },
+  ): ImageData<Float32Array>
+  createImageData(sw: number, sh: number, settings?: ImageDataSettings): ImageData<ImageDataArray>
+  createImageData<T extends ImageDataArray>(imagedata: ImageData<T>): ImageData<T>
+  getImageData(
+    sx: number,
+    sy: number,
+    sw: number,
+    sh: number,
+    settings?: ImageDataSettings & { pixelFormat?: 'rgba-unorm8' },
+  ): ImageData
+  getImageData(
+    sx: number,
+    sy: number,
+    sw: number,
+    sh: number,
+    settings: ImageDataSettings & { pixelFormat: 'rgba-float16' },
+  ): ImageData<ImageDataFloat16Array>
+  getImageData(
+    sx: number,
+    sy: number,
+    sw: number,
+    sh: number,
+    settings: ImageDataSettings & { pixelFormat: 'rgba-float32' },
+  ): ImageData<Float32Array>
+  getImageData(sx: number, sy: number, sw: number, sh: number, settings?: ImageDataSettings): ImageData<ImageDataArray>
+  putImageData(imagedata: ImageData<ImageDataArray>, dx: number, dy: number): void
   putImageData(
-    imagedata: ImageData,
+    imagedata: ImageData<ImageDataArray>,
     dx: number,
     dy: number,
     dirtyX: number,
@@ -513,11 +548,12 @@ export const DOMPoint: {
   fromPoint(other?: DOMPointInit): DOMPoint
 }
 
-export class ImageData {
+export class ImageData<T extends ImageDataArray = Uint8ClampedArray> {
   /**
-   * Returns the one-dimensional array containing the data in RGBA order, as integers in the range 0 to 255.
+   * Returns the one-dimensional array containing the data in RGBA order: integers in the range 0 to 255 for
+   * 'rgba-unorm8', unpremultiplied floats for 'rgba-float16' and 'rgba-float32'.
    */
-  readonly data: Uint8ClampedArray
+  readonly data: T
   /**
    * Returns the actual dimensions of the data in the ImageData object, in pixels.
    */
@@ -527,11 +563,12 @@ export class ImageData {
    */
   readonly width: number
   readonly colorSpace: PredefinedColorSpace
-  /** Always 'rgba-unorm8'. */
   readonly pixelFormat: ImageDataPixelFormat
 
+  /** Pass the data type for a float pixelFormat: `new ImageData<Float32Array>(w, h, { pixelFormat: 'rgba-float32' })`. */
   constructor(sw: number, sh: number, settings?: ImageDataSettings)
-  constructor(data: Uint8ClampedArray, sw: number, sh?: number, settings?: ImageDataSettings)
+  /** The pixelFormat must match the data type. */
+  constructor(data: T, sw: number, sh?: number, settings?: ImageDataSettings)
 }
 
 export class Image {
@@ -663,7 +700,7 @@ export interface SKRSContext2D extends CanvasRenderingContext2D {
   ): void
   /** null when `image` is an Image with no src or one that is still loading. */
   createPattern(
-    image: Image | ImageData | Canvas | SvgCanvas,
+    image: Image | ImageData<ImageDataArray> | Canvas | SvgCanvas,
     repeat: 'repeat' | 'repeat-x' | 'repeat-y' | 'no-repeat' | '' | null,
   ): CanvasPattern | null
   getContextAttributes(): Required<CanvasRenderingContext2DSettings>

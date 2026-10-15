@@ -1,4 +1,4 @@
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::Arc;
 use std::{borrow::Cow, ptr, str, str::FromStr};
@@ -9,32 +9,210 @@ use crate::avif::AvifImage;
 use crate::data_url;
 use crate::sk::{AccountedBitmap, AlphaType, Bitmap, ColorSpace, ColorType, try_zeroed_bytes};
 use crate::svg_image::SvgImage;
-use crate::webidl;
+use crate::webidl::{self, ImageDataPixelFormat};
 
 #[napi(custom_finalize)]
 pub struct ImageData {
   pub(crate) width: usize,
   pub(crate) height: usize,
   pub(crate) color_space: ColorSpace,
-  // Weak `napi_ref` (created with refcount 0) used to re-resolve the `data`
-  // typed array's backing pointer per use. The array is kept alive by the
-  // non-configurable `data` own property on the JS object — a strong
-  // reference here would root it independently and make `id.data.owner = id`
-  // cycles uncollectable.
+  /// The type of `data`: Uint8ClampedArray, Float16Array or Float32Array.
+  pub(crate) pixel_format: ImageDataPixelFormat,
+  // Weak `napi_ref` (created with refcount 0) to the `data` typed array, for
+  // the `data` getter and to re-resolve its backing pointer per use. The
+  // per-environment WeakMap of `attach_data` keeps the array alive as long as
+  // the ImageData — a strong reference here would root it independently and
+  // make `id.data.owner = id` cycles uncollectable.
   pub(crate) data_ref: Option<sys::napi_ref>,
 }
 
-/// Create a weak `napi_ref` for `value` (`initial_refcount = 0`).
-/// `ObjectRef` cannot express this: its `unref` is `napi_delete_reference`,
-/// and `create_ref` hardcodes a strong refcount of 1, so we call napi-sys
-/// directly.
-pub(crate) fn create_weak_ref(env: &Env, value: sys::napi_value) -> Result<sys::napi_ref> {
-  let mut ref_ = ptr::null_mut();
-  check_status!(
-    unsafe { sys::napi_create_reference(env.raw(), value, 0, &mut ref_) },
-    "Failed to create weak reference"
-  )?;
-  Ok(ref_)
+/// What ImageData creation takes from a JS environment, looked up the first
+/// time it is needed there: a WeakMap and its `set`, and the Float16Array
+/// constructor when the runtime has one. Strong refs, deleted when the
+/// environment exits.
+struct Intrinsics {
+  env: sys::napi_env,
+  weak_map: sys::napi_ref,
+  weak_map_set: sys::napi_ref,
+  float16_array: Option<sys::napi_ref>,
+}
+
+thread_local! {
+  static INTRINSICS: RefCell<Vec<Intrinsics>> = const { RefCell::new(Vec::new()) };
+}
+
+unsafe extern "C" fn delete_intrinsics(env: *mut std::ffi::c_void) {
+  let env: sys::napi_env = env.cast();
+  let removed = INTRINSICS.with(|all| {
+    let mut all = all.borrow_mut();
+    let index = all.iter().position(|entry| entry.env == env)?;
+    Some(all.swap_remove(index))
+  });
+  if let Some(entry) = removed {
+    for reference in [
+      Some(entry.weak_map),
+      Some(entry.weak_map_set),
+      entry.float16_array,
+    ]
+    .into_iter()
+    .flatten()
+    {
+      unsafe { sys::napi_delete_reference(env, reference) };
+    }
+  }
+}
+
+/// A global of `env`, or None when it is undefined.
+fn global_property(env: sys::napi_env, key: &std::ffi::CStr) -> Result<Option<sys::napi_value>> {
+  let mut global = ptr::null_mut();
+  check_status!(unsafe { sys::napi_get_global(env, &mut global) })?;
+  let mut value = ptr::null_mut();
+  check_status!(unsafe { sys::napi_get_named_property(env, global, key.as_ptr(), &mut value) })?;
+  Ok((webidl::type_of(env, value)? != ValueType::Undefined).then_some(value))
+}
+
+fn strong_ref(env: sys::napi_env, value: sys::napi_value) -> Result<sys::napi_ref> {
+  let mut reference = ptr::null_mut();
+  check_status!(unsafe { sys::napi_create_reference(env, value, 1, &mut reference) })?;
+  Ok(reference)
+}
+
+fn ref_value(env: sys::napi_env, reference: sys::napi_ref) -> Result<sys::napi_value> {
+  let mut value = ptr::null_mut();
+  check_status!(unsafe { sys::napi_get_reference_value(env, reference, &mut value) })?;
+  Ok(value)
+}
+
+/// The (WeakMap, WeakMap.prototype.set, Float16Array) of `env`.
+fn intrinsics(
+  env: sys::napi_env,
+) -> Result<(sys::napi_value, sys::napi_value, Option<sys::napi_value>)> {
+  let found = INTRINSICS.with(|all| {
+    all
+      .borrow()
+      .iter()
+      .find(|entry| entry.env == env)
+      .map(|entry| (entry.weak_map, entry.weak_map_set, entry.float16_array))
+  });
+  let (weak_map, weak_map_set, float16_array) = match found {
+    Some(refs) => refs,
+    None => {
+      let constructor = global_property(env, c"WeakMap")?
+        .ok_or_else(|| Error::from_reason("WeakMap is not defined".to_owned()))?;
+      let mut map = ptr::null_mut();
+      check_status!(unsafe { sys::napi_new_instance(env, constructor, 0, ptr::null(), &mut map) })?;
+      let mut set = ptr::null_mut();
+      check_status!(unsafe { sys::napi_get_named_property(env, map, c"set".as_ptr(), &mut set) })?;
+      let float16_array = global_property(env, c"Float16Array")?;
+      let entry = Intrinsics {
+        env,
+        weak_map: strong_ref(env, map)?,
+        weak_map_set: strong_ref(env, set)?,
+        float16_array: float16_array
+          .map(|value| strong_ref(env, value))
+          .transpose()?,
+      };
+      check_status!(unsafe {
+        sys::napi_add_env_cleanup_hook(env, Some(delete_intrinsics), env.cast())
+      })?;
+      let refs = (entry.weak_map, entry.weak_map_set, entry.float16_array);
+      INTRINSICS.with(|all| all.borrow_mut().push(entry));
+      refs
+    }
+  };
+  Ok((
+    ref_value(env, weak_map)?,
+    ref_value(env, weak_map_set)?,
+    float16_array
+      .map(|reference| ref_value(env, reference))
+      .transpose()?,
+  ))
+}
+
+/// NotSupportedError for rgba-float16 on a runtime without Float16Array
+/// (Node before 24). No Chrome counterpart: Chrome always has it.
+fn require_float16(
+  env: sys::napi_env,
+  prefix: &str,
+  pixel_format: ImageDataPixelFormat,
+) -> Result<()> {
+  if pixel_format == ImageDataPixelFormat::Float16 && intrinsics(env)?.2.is_none() {
+    return Err(webidl::dom_exception(
+      env,
+      "NotSupportedError",
+      &format!("{prefix}Float16Array is not supported by this JavaScript runtime."),
+    ));
+  }
+  Ok(())
+}
+
+/// A typed array of `pixel_format` over `bytes`, which it takes.
+fn new_data_array(
+  env: &Env,
+  prefix: &str,
+  bytes: Vec<u8>,
+  pixel_format: ImageDataPixelFormat,
+) -> Result<sys::napi_value> {
+  let raw = env.raw();
+  if pixel_format == ImageDataPixelFormat::Unorm8 {
+    return Ok(Uint8ClampedSlice::from_data(env, bytes)?.raw());
+  }
+  require_float16(raw, prefix, pixel_format)?;
+  // The allocator gives these (8 bytes or more) 8-byte aligned memory.
+  debug_assert!(bytes.as_ptr().align_offset(4) == 0);
+  let length = bytes.len() / pixel_format.element_size();
+  let buffer = ArrayBuffer::from_data(env, bytes)?.raw();
+  let mut array = ptr::null_mut();
+  if pixel_format == ImageDataPixelFormat::Float32 {
+    check_status!(unsafe {
+      sys::napi_create_typedarray(
+        raw,
+        sys::TypedarrayType::float32_array,
+        length,
+        buffer,
+        0,
+        &mut array,
+      )
+    })?;
+  } else {
+    let constructor = intrinsics(raw)?.2.expect("checked by require_float16");
+    check_status!(unsafe { sys::napi_new_instance(raw, constructor, 1, &buffer, &mut array) })?;
+  }
+  Ok(array)
+}
+
+/// Makes `array` the data of the ImageData object `this`, as Blink keeps it
+/// with the wrapper (ImageData::AssociateWithWrapper, image_data.cc:381-409):
+/// the `data` getter returns it, and an entry of the per-environment WeakMap
+/// keeps it alive exactly as long as `this`. A rgba-unorm8 ImageData also gets
+/// Chrome's own read-only `data` property, which can be deleted.
+fn attach_data(
+  env: sys::napi_env,
+  this: sys::napi_value,
+  array: sys::napi_value,
+  pixel_format: ImageDataPixelFormat,
+) -> Result<sys::napi_ref> {
+  let (weak_map, set, _) = intrinsics(env)?;
+  let mut ignored = ptr::null_mut();
+  check_status!(unsafe {
+    sys::napi_call_function(env, weak_map, set, 2, [this, array].as_ptr(), &mut ignored)
+  })?;
+  if pixel_format == ImageDataPixelFormat::Unorm8 {
+    let property = sys::napi_property_descriptor {
+      utf8name: c"data".as_ptr(),
+      name: ptr::null_mut(),
+      method: None,
+      getter: None,
+      setter: None,
+      value: array,
+      attributes: sys::PropertyAttributes::enumerable | sys::PropertyAttributes::configurable,
+      data: ptr::null_mut(),
+    };
+    check_status!(unsafe { sys::napi_define_properties(env, this, 1, &property) })?;
+  }
+  let mut reference = ptr::null_mut();
+  check_status!(unsafe { sys::napi_create_reference(env, array, 0, &mut reference) })?;
+  Ok(reference)
 }
 
 impl ObjectFinalize for ImageData {
@@ -76,6 +254,7 @@ impl ImageData {
         "ImageData pixel buffer is detached".to_owned(),
       ));
     }
+    let mut array_type = -1;
     let mut length = 0usize;
     let mut data = ptr::null_mut();
     check_status!(
@@ -83,7 +262,7 @@ impl ImageData {
         sys::napi_get_typedarray_info(
           env.raw(),
           array,
-          ptr::null_mut(),
+          &mut array_type,
           &mut length,
           &mut data,
           ptr::null_mut(),
@@ -92,6 +271,18 @@ impl ImageData {
       },
       "Failed to get ImageData typed array info"
     )?;
+    // rgba-float16 data comes from the global Float16Array, which script can
+    // replace: only read the pixels from an array of the format's type.
+    let array_format = DataArrayType::from_napi(array_type).map(DataArrayType::pixel_format);
+    if array_format != Some(self.pixel_format) {
+      return Err(Error::new(
+        Status::GenericFailure,
+        format!(
+          "ImageData data is not a {}",
+          DataArrayType::name_of(self.pixel_format)
+        ),
+      ));
+    }
     if length < self.width * self.height * 4 || (length != 0 && data.is_null()) {
       return Err(Error::new(
         Status::InvalidArg,
@@ -248,35 +439,67 @@ pub(crate) fn alloc_data(env: sys::napi_env, prefix: &str, len: usize) -> Result
   try_zeroed_bytes(len).ok_or_else(|| out_of_memory(env, prefix))
 }
 
+/// AllocateAndValidateDataArray for `elements` channels of `pixel_format`:
+/// RangeError above Chrome's byte limit, then NotSupportedError for
+/// rgba-float16 without Float16Array, then the zeroed bytes.
+pub(crate) fn alloc_pixel_data(
+  env: sys::napi_env,
+  prefix: &str,
+  elements: usize,
+  pixel_format: ImageDataPixelFormat,
+) -> Result<Vec<u8>> {
+  let Some(len) = elements.checked_mul(pixel_format.element_size()) else {
+    return Err(out_of_memory(env, prefix));
+  };
+  if len > MAX_DATA_BYTES {
+    return Err(out_of_memory(env, prefix));
+  }
+  require_float16(env, prefix, pixel_format)?;
+  alloc_data(env, prefix, len)
+}
+
 impl ImageData {
+  /// An ImageData of `bytes`, data of `pixel_format`.
+  pub(crate) fn from_bytes<'a>(
+    env: &'a Env,
+    prefix: &str,
+    width: usize,
+    height: usize,
+    color_space: ColorSpace,
+    pixel_format: ImageDataPixelFormat,
+    bytes: Vec<u8>,
+  ) -> Result<ClassInstance<'a, ImageData>> {
+    let array = new_data_array(env, prefix, bytes, pixel_format)?;
+    let mut instance = ImageData {
+      width,
+      height,
+      color_space,
+      pixel_format,
+      data_ref: None,
+    }
+    .into_instance(env)?;
+    instance.data_ref = Some(attach_data(env.raw(), instance.value, array, pixel_format)?);
+    Ok(instance)
+  }
+
   /// A zero-filled ImageData, as createImageData returns.
   pub(crate) fn new_zeroed<'a>(
     env: &'a Env,
     width: usize,
     height: usize,
     color_space: ColorSpace,
+    pixel_format: ImageDataPixelFormat,
   ) -> Result<ClassInstance<'a, ImageData>> {
-    let Some(length) = width.checked_mul(height).and_then(|v| v.checked_mul(4)) else {
+    let prefix = webidl::CREATE_IMAGE_DATA;
+    let Some(elements) = width.checked_mul(height).and_then(|v| v.checked_mul(4)) else {
       return Err(webidl::context_range_error(
         env.raw(),
-        webidl::CREATE_IMAGE_DATA,
+        prefix,
         "Out of memory at ImageData creation.",
       ));
     };
-    let data = alloc_data(env.raw(), webidl::CREATE_IMAGE_DATA, length)?;
-    let data_object = Uint8ClampedSlice::from_data(env, data)?;
-    let mut instance = ImageData {
-      width,
-      height,
-      color_space,
-      data_ref: Some(create_weak_ref(env, data_object.raw())?),
-    }
-    .into_instance(env)?;
-    instance.define_properties(&[Property::new()
-      .with_utf8_name("data")?
-      .with_value(&data_object)
-      .with_property_attributes(PropertyAttributes::Enumerable)])?;
-    Ok(instance)
+    let bytes = alloc_pixel_data(env.raw(), prefix, elements, pixel_format)?;
+    Self::from_bytes(env, prefix, width, height, color_space, pixel_format, bytes)
   }
 }
 
@@ -289,6 +512,29 @@ enum DataArrayType {
 }
 
 impl DataArrayType {
+  /// The type of a typed array of napi type `array_type`.
+  fn from_napi(array_type: sys::napi_typedarray_type) -> Option<Self> {
+    match array_type {
+      sys::TypedarrayType::uint8_clamped_array => Some(Self::Uint8Clamped),
+      sys::TypedarrayType::float32_array => Some(Self::Float32),
+      NAPI_FLOAT16_ARRAY => Some(Self::Float16),
+      // Node before 24.18 leaves the type unset for a Float16Array, the only
+      // TypedArray kind it has no napi type for.
+      -1 => Some(Self::Float16),
+      _ => None,
+    }
+  }
+
+  /// The name of the data type of `pixel_format`.
+  fn name_of(pixel_format: ImageDataPixelFormat) -> &'static str {
+    match pixel_format {
+      ImageDataPixelFormat::Unorm8 => Self::Uint8Clamped,
+      ImageDataPixelFormat::Float16 => Self::Float16,
+      ImageDataPixelFormat::Float32 => Self::Float32,
+    }
+    .name()
+  }
+
   fn name(self) -> &'static str {
     match self {
       Self::Uint8Clamped => "Uint8ClampedArray",
@@ -297,11 +543,11 @@ impl DataArrayType {
     }
   }
 
-  fn pixel_format(self) -> &'static str {
+  fn pixel_format(self) -> ImageDataPixelFormat {
     match self {
-      Self::Uint8Clamped => "rgba-unorm8",
-      Self::Float16 => "rgba-float16",
-      Self::Float32 => "rgba-float32",
+      Self::Uint8Clamped => ImageDataPixelFormat::Unorm8,
+      Self::Float16 => ImageDataPixelFormat::Float16,
+      Self::Float32 => ImageDataPixelFormat::Float32,
     }
   }
 }
@@ -331,15 +577,7 @@ fn data_array_type(env: sys::napi_env, value: sys::napi_value) -> Result<Option<
       ptr::null_mut(),
     )
   })?;
-  Ok(match array_type {
-    sys::TypedarrayType::uint8_clamped_array => Some(DataArrayType::Uint8Clamped),
-    sys::TypedarrayType::float32_array => Some(DataArrayType::Float32),
-    NAPI_FLOAT16_ARRAY => Some(DataArrayType::Float16),
-    // Node before 24.18 leaves the type unset for a Float16Array, the only
-    // TypedArray kind it has no napi type for.
-    -1 => Some(DataArrayType::Float16),
-    _ => None,
-  })
+  Ok(DataArrayType::from_napi(array_type))
 }
 
 /// The NotShared<T> conversion of ImageData data
@@ -487,8 +725,8 @@ fn construct_image_data_checked(
     }
   }
   let args = webidl::Arguments::with_len(env, &argv, argc.min(4) as u32)?;
-  let mut this = unsafe { This::from_napi_value(env, this)? };
-  let image_data = ImageData::construct(&Env::from(env), &mut this, &args)?;
+  let this = unsafe { This::from_napi_value(env, this)? };
+  let image_data = ImageData::construct(&Env::from(env), &this, &args)?;
   // What the class constructor glue of napi-rs does with its `this`: wrap
   // the value and register it, so that the getters, `&ImageData` arguments
   // and the finalizer find it as they find any other instance.
@@ -504,7 +742,7 @@ impl ImageData {
   #[napi(constructor)]
   pub fn new(
     env: Env,
-    mut this: This,
+    this: This,
     arg0: Unknown,
     arg1: Unknown,
     arg2: Unknown,
@@ -516,14 +754,14 @@ impl ImageData {
       &[arg0.raw(), arg1.raw(), arg2.raw(), arg3.raw()],
       argc.raw(),
     )?;
-    Self::construct(&env, &mut this, &args)
+    Self::construct(&env, &this, &args)
   }
 
   /// `new ImageData(sw, sh, settings?)` or `new ImageData(data, sw, sh?,
   /// settings?)`, picked as Chrome's binding picks them
   /// (v8_image_data.cc ConstructorCallback): with data first (a brand check)
   /// the data form, else the size form, which takes at most 3 arguments.
-  fn construct(env: &Env, this: &mut This, args: &webidl::Arguments) -> Result<Self> {
+  fn construct(env: &Env, this: &This, args: &webidl::Arguments) -> Result<Self> {
     let raw = env.raw();
     let prefix = webidl::IMAGE_DATA_CONSTRUCTOR;
     if args.len() < 2 {
@@ -550,20 +788,17 @@ impl ImageData {
     } else {
       webidl::ImageDataSettings::default()
     };
-    let length = validate_size(raw, prefix, width, Some(height), SizeErrors::Constructor)?;
+    let elements = validate_size(raw, prefix, width, Some(height), SizeErrors::Constructor)?;
     let color_space = settings.color_space(raw, prefix)?.unwrap_or_default();
-    let data_object = Uint8ClampedSlice::from_data(env, alloc_data(raw, prefix, length)?)?;
-    this.define_properties(&[Property::new()
-      .with_utf8_name("data")?
-      .with_value(&data_object)
-      // Enumerable only: non-writable/non-configurable so the array is
-      // pinned by ordinary GC tracing for exactly the ImageData's lifetime.
-      .with_property_attributes(PropertyAttributes::Enumerable)])?;
+    let pixel_format = settings.pixel_format;
+    let bytes = alloc_pixel_data(raw, prefix, elements, pixel_format)?;
+    let array = new_data_array(env, prefix, bytes, pixel_format)?;
     Ok(ImageData {
       width: width as usize,
       height: height as usize,
       color_space,
-      data_ref: Some(create_weak_ref(env, data_object.raw())?),
+      pixel_format,
+      data_ref: Some(attach_data(raw, this.object.raw(), array, pixel_format)?),
     })
   }
 
@@ -574,7 +809,7 @@ impl ImageData {
   /// pixel format, data length.
   fn from_data(
     env: &Env,
-    this: &mut This,
+    this: &This,
     array_type: DataArrayType,
     args: &webidl::Arguments,
   ) -> Result<Self> {
@@ -593,16 +828,16 @@ impl ImageData {
     };
     validate_size(raw, prefix, width, height, SizeErrors::Constructor)?;
     let color_space = settings.color_space(raw, prefix)?.unwrap_or_default();
-    // Storage is 8-bit only, so the pixel format is always rgba-unorm8
-    // (image_data.cc:139-171).
-    if array_type != DataArrayType::Uint8Clamped {
+    // The data type must match the pixel format (image_data.cc:139-171).
+    let pixel_format = array_type.pixel_format();
+    if pixel_format != settings.pixel_format {
       return Err(webidl::dom_exception(
         raw,
         "InvalidStateError",
         &format!(
           "{prefix}{} must use {} pixelFormat.",
           array_type.name(),
-          array_type.pixel_format()
+          pixel_format.as_str()
         ),
       ));
     }
@@ -618,21 +853,41 @@ impl ImageData {
         ptr::null_mut(),
       )
     })?;
-    let height = validate_data_length(raw, prefix, width, height, length, 1)?;
-    // The given array is the data, not a copy (image_data.cc:230). As for the
-    // other forms: a weak ref, and a non-configurable `data` property that
-    // keeps the array alive; resolve_pixels checks it on every use, as the
-    // caller may detach its buffer.
-    this.define_properties(&[Property::new()
-      .with_utf8_name("data")?
-      .with_value(&unsafe { Unknown::from_raw_unchecked(raw, data) })
-      .with_property_attributes(PropertyAttributes::Enumerable)])?;
+    let element_size = pixel_format.element_size();
+    let height = validate_data_length(
+      raw,
+      prefix,
+      width,
+      height,
+      length * element_size,
+      element_size,
+    )?;
+    // The given array is the data, not a copy (image_data.cc:230).
+    // resolve_pixels checks it on every use, as the caller may detach its
+    // buffer.
     Ok(ImageData {
       width: width as usize,
       height: height as usize,
       color_space,
-      data_ref: Some(create_weak_ref(env, data)?),
+      pixel_format,
+      data_ref: Some(attach_data(raw, this.object.raw(), data, pixel_format)?),
     })
+  }
+
+  /// The data: a Uint8ClampedArray, Float16Array or Float32Array. A
+  /// rgba-unorm8 ImageData also has it as an own property, as in Chrome.
+  #[napi(getter, ts_return_type = "ImageDataArray")]
+  pub fn get_data<'env>(&self, env: &'env Env) -> Result<Unknown<'env>> {
+    let raw = env.raw();
+    let mut value = ptr::null_mut();
+    if let Some(data_ref) = self.data_ref {
+      value = ref_value(raw, data_ref)?;
+    }
+    // Only before attach_data ran, or after the environment is torn down.
+    if value.is_null() {
+      check_status!(unsafe { sys::napi_get_undefined(raw, &mut value) })?;
+    }
+    Ok(unsafe { Unknown::from_raw_unchecked(raw, value) })
   }
 
   #[napi(getter)]
@@ -650,10 +905,9 @@ impl ImageData {
     self.color_space.as_str()
   }
 
-  /// Storage is always 8-bit RGBA here.
   #[napi(getter, ts_return_type = "ImageDataPixelFormat")]
   pub fn get_pixel_format(&self) -> &'static str {
-    "rgba-unorm8"
+    self.pixel_format.as_str()
   }
 }
 

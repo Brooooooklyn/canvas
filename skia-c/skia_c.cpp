@@ -1343,6 +1343,95 @@ bool skiac_surface_read_pixels_rect(skiac_surface* c_surface,
   return result;
 }
 
+// The colour type of an ImageData pixel format: 0 rgba-unorm8, 1
+// rgba-float16, 2 rgba-float32 (ImageData::ValidateAndCreate,
+// image_data.cc:120-133).
+static SkColorType ImageDataColorType(uint8_t pf) {
+  switch (pf) {
+    case 1:
+      return kRGBA_F16_SkColorType;
+    case 2:
+      return kRGBA_F32_SkColorType;
+    default:
+      return kRGBA_8888_SkColorType;
+  }
+}
+
+// getImageData into an ImageData of pixel format `pf` in colour space `cs`:
+// Blink reads the canvas into the ImageData's own unpremultiplied info
+// (base_rendering_context_2d.cc:497-512). Pixels outside the canvas are not
+// written. False when the rect misses the canvas.
+bool skiac_surface_read_pixels_format(skiac_surface* c_surface,
+                                      uint8_t* data,
+                                      size_t row_bytes,
+                                      int x,
+                                      int y,
+                                      int w,
+                                      int h,
+                                      uint8_t cs,
+                                      uint8_t pf) {
+  auto color_space = COLOR_SPACE_CAST;
+  auto info = SkImageInfo::Make(w, h, ImageDataColorType(pf),
+                                kUnpremul_SkAlphaType, color_space);
+  return SURFACE_CAST->readPixels(info, data, row_bytes, x, y);
+}
+
+// putImageData of the (sx, sy, sw, sh) part of `pixels` (a w x h ImageData of
+// pixel format `pf` in colour space `cs`) at (dx, dy). Blink converts the data
+// to the canvas's colour type when the bytes per pixel differ, then
+// PutByteArray writes it as unpremultiplied, or as opaque on an alpha:false
+// canvas (base_rendering_context_2d.cc:587-645). False when the conversion
+// cannot allocate.
+bool skiac_canvas_write_pixels_format(skiac_canvas* c_canvas,
+                                      const uint8_t* pixels,
+                                      int w,
+                                      int h,
+                                      uint8_t cs,
+                                      uint8_t pf,
+                                      bool opaque,
+                                      int sx,
+                                      int sy,
+                                      int sw,
+                                      int sh,
+                                      int dx,
+                                      int dy) {
+  auto color_space = COLOR_SPACE_CAST;
+  const auto src_info = SkImageInfo::Make(w, h, ImageDataColorType(pf),
+                                          kUnpremul_SkAlphaType, color_space);
+  SkPixmap data(src_info, pixels, src_info.minRowBytes());
+  const SkColorType canvas_type = CANVAS_CAST->imageInfo().colorType();
+  SkBitmap converted;
+  if (SkColorTypeBytesPerPixel(canvas_type) !=
+      SkColorTypeBytesPerPixel(data.colorType())) {
+    if (!converted.tryAllocPixels(src_info.makeColorType(canvas_type)) ||
+        !converted.writePixels(data, 0, 0)) {
+      return false;
+    }
+    data = converted.pixmap();
+  }
+  const SkImageInfo info = data.info().makeWH(sw, sh).makeAlphaType(
+      opaque ? kOpaque_SkAlphaType : kUnpremul_SkAlphaType);
+  CANVAS_CAST->writePixels(info, data.addr(sx, sy), data.rowBytes(), dx, dy);
+  return true;
+}
+
+// A float ImageData as rgba-unorm8 data in its own colour space, for the SVG
+// and PDF backends, which draw ImageData as an 8-bit image. `out` holds
+// w * h * 4 bytes.
+bool skiac_image_data_to_unorm8(const uint8_t* pixels,
+                                int w,
+                                int h,
+                                uint8_t cs,
+                                uint8_t pf,
+                                uint8_t* out) {
+  auto color_space = COLOR_SPACE_CAST;
+  const auto src_info = SkImageInfo::Make(w, h, ImageDataColorType(pf),
+                                          kUnpremul_SkAlphaType, color_space);
+  const auto dst_info = src_info.makeColorType(kRGBA_8888_SkColorType);
+  return SkPixmap(src_info, pixels, src_info.minRowBytes())
+      .readPixels(dst_info, out, dst_info.minRowBytes());
+}
+
 void skiac_surface_png_data(skiac_surface* c_surface, skiac_sk_data* data) {
   auto snapshot = SURFACE_CAST->makeImageSnapshot();
   auto image = encodable_image(snapshot.get());
@@ -3958,15 +4047,18 @@ skiac_bitmap* skiac_bitmap_make_from_image_data(uint8_t* ptr,
 // display-p3 ImageData (`cs` 1) is tagged so a draw converts it to the canvas
 // color space, as putImageData and Chrome's pattern over
 // createImageBitmap(imageData) do. An sRGB one stays untagged, which draws the
-// same and keeps the PNG that the SVG output embeds unchanged.
+// same and keeps the PNG that the SVG output embeds unchanged. A float
+// ImageData (`pf` 1 or 2) keeps its colour type, as Chrome's ImageBitmap of an
+// rgba-float16 ImageData does.
 skiac_bitmap* skiac_bitmap_make_premul_from_image_data(uint8_t* ptr,
                                                        size_t width,
                                                        size_t height,
                                                        size_t row_bytes,
-                                                       uint8_t cs) {
+                                                       uint8_t cs,
+                                                       uint8_t pf) {
   auto bitmap = new SkBitmap();
   const auto src_info = SkImageInfo::Make(
-      (int)width, (int)height, kRGBA_8888_SkColorType, kUnpremul_SkAlphaType,
+      (int)width, (int)height, ImageDataColorType(pf), kUnpremul_SkAlphaType,
       cs == 0 ? nullptr : COLOR_SPACE_CAST);
   if (!bitmap->tryAllocPixels(src_info.makeAlphaType(kPremul_SkAlphaType)) ||
       !bitmap->writePixels(SkPixmap(src_info, ptr, row_bytes), 0, 0)) {
