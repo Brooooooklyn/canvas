@@ -82,10 +82,37 @@ const patternImages = (text: string) =>
     (m) => ({ width: Number(m[1]), height: Number(m[2]), base64: m[3] }),
   )
 
-// The transform [a, b, c, d, e, f] of the first path filled with a pattern.
-const patternPathTransform = (text: string) => {
+// An SVG number as Chrome 155 reads it: Blink parses it in floats, one digit at a time
+// (GenericParseNumber in third_party/blink/renderer/core/svg/svg_parser_utilities.cc), so an exact
+// "4.19396e+06" reads as 4193960.25. Each step rounds to a float, as Chromium builds with
+// -ffp-contract=off.
+const chromeNumber = (text: string) => {
+  const f = Math.fround
+  const [, sign, int, frac, exp] = text.match(/^([-+]?)(\d*)(?:\.(\d+))?(?:e([-+]?\d+))?$/i)!
+  let integer = 0
+  let multiplier = 1
+  for (let i = int.length - 1; i >= 0; i--) {
+    integer = f(integer + f(multiplier * Number(int[i])))
+    multiplier = f(multiplier * 10)
+  }
+  let decimal = 0
+  let place = 1
+  for (const digit of frac ?? '') {
+    place = f(place * f(0.1))
+    decimal = f(decimal + f(Number(digit) * place))
+  }
+  let number = f(f(integer + decimal) * (sign === '-' ? -1 : 1))
+  if (exp && Number(exp)) {
+    number = f(number * f(10 ** Number(exp)))
+  }
+  return number
+}
+
+// The transform [a, b, c, d, e, f] of the first path filled with a pattern, its numbers read with
+// `read` (exactly by default).
+const patternPathTransform = (text: string, read: (n: string) => number = Number) => {
   const [, kind, args] = text.match(/<path fill="url\(#pattern_\d+\)"(?: transform="(\w+)\(([^)]*)\)")?/)!
-  const n = (args ?? '').split(' ').map(Number)
+  const n = (args ?? '').split(' ').map(read)
   return kind === 'matrix'
     ? n
     : kind === 'translate'
@@ -388,12 +415,12 @@ const runChild = (code: string) =>
     child.on('close', (status) => resolve({ status, stdout, stderr }))
   })
 
-// What an SVG renderer shows at canvas pixel (x, y) for the first conic draw: its pattern image under
-// the path's transform, sampled bilinearly (how Chrome upscales it). Transparent outside the image,
-// where the SVG repeats the tile: without the border the edges fade.
+// What Chrome shows at canvas pixel (x, y) for the first conic draw: its pattern image under the
+// path's transform as Chrome reads it, sampled bilinearly (how Chrome upscales it). Transparent
+// outside the image, where the SVG repeats the tile: without the border the edges fade.
 const renderFirstPattern = async (text: string) => {
   const image = await loadImage(Buffer.from(patternImages(text)[0].base64, 'base64'))
-  const [a, b, c, d, e, f] = patternPathTransform(text)
+  const [a, b, c, d, e, f] = patternPathTransform(text, chromeNumber)
   return (x: number, y: number) => {
     const ctx = createCanvas(1, 1).getContext('2d')
     const pattern = ctx.createPattern(image, 'no-repeat')!
@@ -571,13 +598,16 @@ console.log(JSON.stringify({ growth, images, path, clip }))
 // ("%.8g"), both as floats. The transform holds the origin of the conic raster image in canvas
 // pixels, so past 1,000,000 the export puts the origin on a number they write exactly. An origin of
 // 1234568 was written as 1.23457e+06, the fill 2 pixels off; one of 19999992 as 2e+07, 8 pixels off,
-// and the clip, written exactly, left 4 of the 10 columns. Chrome 155 cannot show the 20000100 wide
-// case: it draws no SVG shape from about 2^23 on (a plain <rect x="8388607"> draws nothing).
+// and the clip, written exactly, left 4 of the 10 columns. Chrome must also read the origin back
+// exactly (chromeNumber): it read the exact 4.19396e+06 as 4193960.25 and 1.04832e+06 as
+// 1048320.0625, so the fill moved by a fraction of a pixel and, in Chrome, its edge pixels changed
+// by up to 64. Chrome 155 cannot show the 20000100 wide case: it draws no SVG shape from about 2^23
+// on (a plain <rect x="8388607"> draws nothing).
 // Far from 0 the raster canvas, Chrome's too, changes with the canvas translation (the gradient's
 // matrix is in floats): over translations of 0 to 4096 pixels, Chrome's pixels at these points
-// changed by up to 1 at 1234560 and 14 at 20000000. The image is drawn under another translation
-// than the one each point was measured with, so the SVG is within that of Chrome (3 when the image
-// is scaled up).
+// changed by up to 1 at 1234560 and 1048320, 2 at 4194000 and 14 at 20000000. The image is drawn
+// under another translation than the one each point was measured with, so the SVG is within that of
+// Chrome (3 when the image is scaled up).
 // [canvas size, rect, conic center, canvas pixels per image pixel, tolerance, then [x, y, r, g, b, a]
 // measured in Chrome 155 (a raster canvas moved to the point by a multiple of 8)]
 const FAR_CASES = [
@@ -690,6 +720,99 @@ const FAR_CASES = [
       [2934568, 5, 0, 0, 0, 0],
     ],
   ],
+  // Origins Chrome read wrong: 4.19396e+06 (4193960.25), on both axes, the rect running past the
+  // canvas edge; 1.04832e+06 (1048320.0625); and 4.19392e+06 (4193920.25) at k = 2.
+  [
+    [4194311, 6],
+    [4194000.25, 0, 400, 6],
+    [4194200, -20],
+    1,
+    2,
+    [
+      [4193999, 3, 0, 0, 0, 0],
+      [4194000, 3, 0, 68, 187, 192],
+      [4194001, 3, 0, 68, 187, 255],
+      [4194002, 0, 0, 65, 189, 255],
+      [4194030, 5, 0, 73, 182, 255],
+      [4194060, 2, 0, 74, 180, 255],
+      [4194100, 3, 0, 86, 169, 255],
+      [4194150, 4, 0, 123, 132, 255],
+      [4194190, 1, 0, 236, 20, 255],
+      [4194200, 3, 51, 204, 0, 255],
+      [4194230, 5, 191, 65, 0, 255],
+      [4194300, 2, 255, 13, 242, 255],
+      [4194310, 0, 255, 19, 236, 255],
+      [4194310, 5, 255, 12, 243, 255],
+    ],
+  ],
+  [
+    [6, 4194311],
+    [0, 4194000.25, 6, 400],
+    [-20, 4194200],
+    1,
+    2,
+    [
+      [3, 4193999, 0, 0, 0, 0],
+      [3, 4194000, 226, 226, 31, 192],
+      [3, 4194001, 225, 225, 30, 255],
+      [0, 4194002, 223, 223, 32, 255],
+      [5, 4194030, 231, 231, 25, 255],
+      [2, 4194060, 232, 232, 22, 255],
+      [3, 4194100, 244, 244, 12, 255],
+      [4, 4194150, 255, 229, 26, 255],
+      [1, 4194190, 255, 117, 139, 255],
+      [3, 4194200, 255, 46, 210, 255],
+      [5, 4194230, 162, 94, 0, 255],
+      [2, 4194300, 84, 170, 0, 255],
+      [0, 4194310, 78, 176, 0, 255],
+      [5, 4194310, 86, 170, 0, 255],
+    ],
+  ],
+  [
+    [2000010, 6],
+    [1048330.25, 0, 300, 6],
+    [1048480, -20],
+    1,
+    1,
+    [
+      [1048329, 3, 0, 0, 0, 0],
+      [1048330, 3, 0, 74, 181, 192],
+      [1048331, 3, 0, 74, 181, 255],
+      [1048360, 5, 0, 83, 172, 255],
+      [1048400, 2, 0, 93, 161, 255],
+      [1048450, 3, 0, 158, 97, 255],
+      [1048480, 4, 51, 203, 0, 255],
+      [1048500, 1, 172, 83, 0, 255],
+      [1048520, 3, 218, 37, 0, 255],
+      [1048600, 5, 255, 15, 240, 255],
+      [1048629, 2, 255, 25, 231, 255],
+      [1048630, 3, 255, 24, 231, 64],
+      [1048631, 3, 0, 0, 0, 0],
+    ],
+  ],
+  [
+    [6000000, 10],
+    [4193923.5, 1, 1700000, 8],
+    [4194000, -20],
+    2,
+    3,
+    [
+      [4193923, 5, 0, 102, 153, 128],
+      [4193924, 5, 0, 102, 154, 255],
+      [4193926, 5, 0, 103, 152, 255],
+      [4193946, 3, 0, 116, 139, 255],
+      [4193966, 6, 0, 157, 97, 255],
+      [4193986, 5, 0, 224, 31, 255],
+      [4193996, 4, 25, 229, 0, 255],
+      [4194006, 6, 88, 166, 0, 255],
+      [4194026, 5, 180, 76, 0, 255],
+      [4194046, 3, 228, 27, 0, 255],
+      [4194136, 5, 255, 19, 236, 255],
+      [5893922, 5, 255, 49, 207, 255],
+      [5893923, 5, 255, 48, 207, 128],
+      [5893924, 5, 0, 0, 0, 0],
+    ],
+  ],
 ] as [number[], number[], number[], number, number, number[][]][]
 
 for (const [[w, h], [x, y, width, height], [cx, cy], k, tolerance, pixels] of FAR_CASES) {
@@ -705,16 +828,19 @@ for (const [[w, h], [x, y, width, height], [cx, cy], k, tolerance, pixels] of FA
     t.is(images.length, 1)
     const [a, b, c, d, e, f] = patternPathTransform(text)
     t.deepEqual([a, b, c, d], [k, 0, 0, k])
+    // Chrome reads every number of the transform back exactly.
+    t.deepEqual(patternPathTransform(text, chromeNumber), [a, b, c, d, e, f], 'the transform as Chrome reads it')
     // Whole canvas pixels; at one image pixel per canvas pixel a multiple of 8, Skia's dither period.
     t.true(Number.isInteger(e) && Number.isInteger(f), `image at ${e},${f}`)
     if (k === 1) {
       t.true(e % 8 === 0 && f % 8 === 0, `image at ${e},${f}`)
     }
-    // Under the transform, the path is the rect (in floats, as the canvas has it).
+    // Under the transform as Chrome reads it, the path is the rect (in floats, as the canvas has it).
     const d0 = text.match(/<path fill="url\(#pattern_0\)"[^>]* d="([^"]+)"/)![1]
-    const coords = d0.match(/-?[\d.]+(?:e[-+]?\d+)?/g)!.map(Number)
-    const xs = coords.filter((_, i) => i % 2 === 0).map((v) => a * v + e)
-    const ys = coords.filter((_, i) => i % 2 === 1).map((v) => d * v + f)
+    const coords = d0.match(/-?[\d.]+(?:e[-+]?\d+)?/g)!.map(chromeNumber)
+    const [ca, , , cd, ce, cf] = patternPathTransform(text, chromeNumber)
+    const xs = coords.filter((_, i) => i % 2 === 0).map((v) => Math.fround(Math.fround(ca * v) + ce))
+    const ys = coords.filter((_, i) => i % 2 === 1).map((v) => Math.fround(Math.fround(cd * v) + cf))
     const [fx, fy] = [Math.fround(x), Math.fround(y)]
     t.deepEqual(
       [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)],
@@ -726,7 +852,10 @@ for (const [[w, h], [x, y, width, height], [cx, cy], k, tolerance, pixels] of FA
     const attr = (name: string) => Number(clips[0].match(new RegExp(` ${name}="([-\\d.e+]+)"`))?.[1] ?? 0)
     const [x0, y0, x1, y1] = [attr('x'), attr('y'), attr('x') + attr('width'), attr('y') + attr('height')]
     t.true(
-      x0 <= Math.floor(fx) && y0 <= Math.floor(fy) && x1 >= Math.ceil(fx + width) && y1 >= Math.ceil(fy + height),
+      x0 <= Math.floor(fx) &&
+        y0 <= Math.floor(fy) &&
+        x1 >= Math.min(Math.ceil(fx + width), w) &&
+        y1 >= Math.min(Math.ceil(fy + height), h),
       `clip ${x0},${y0} to ${x1},${y1}`,
     )
     for (const [from, to, origin, size] of [

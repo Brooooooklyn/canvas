@@ -768,6 +768,77 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
     }
   }
 
+  // Whether Chrome reads the whole number `v` back from the text that
+  // SkSVGDevice writes for it in the element transform ("%g", see
+  // WrittenStep). Blink parses an SVG number in floats, one digit at a time
+  // (GenericParseNumber in
+  // third_party/blink/renderer/core/svg/svg_parser_utilities.cc): the digits
+  // before the point from right to left, each times its power of 10, the
+  // digits after it each times 0.1 to the power of its place, and then the
+  // sum times 10 to the power of the exponent, each step rounded to a float.
+  // So the exact text "4.19396e+06" reads as 4193960.25, and the fill moved by
+  // a quarter pixel. A whole number of up to 6 digits is written without an
+  // exponent and read back exactly. Chromium builds with -ffp-contract=off,
+  // so no step here may be fused with the next either.
+  static bool ChromeReadsExactly(int64_t v) {
+#if defined(__clang__)
+#pragma clang fp contract(off)
+#endif
+    const SkString text = SkStringPrintf("%g", static_cast<float>(v));
+    const char* p = text.c_str();
+    float sign = 1;
+    if (*p == '-') {
+      sign = -1;
+      p++;
+    }
+    const char* digits = p;
+    while (*p >= '0' && *p <= '9') {
+      p++;
+    }
+    float integer = 0;
+    float multiplier = 1;
+    for (const char* q = p; q != digits;) {
+      const float digit = multiplier * static_cast<float>(*--q - '0');
+      integer += digit;
+      multiplier *= 10;
+    }
+    float decimal = 0;
+    if (*p == '.') {
+      float frac = 1;
+      for (p++; *p >= '0' && *p <= '9'; p++) {
+        frac *= 0.1f;
+        const float digit = static_cast<float>(*p - '0') * frac;
+        decimal += digit;
+      }
+    }
+    float number = integer + decimal;
+    number *= sign;
+    if (*p == 'e') {
+      p++;
+      const bool negative = *p == '-';
+      if (*p == '+' || *p == '-') {
+        p++;
+      }
+      int exponent = 0;
+      for (; *p >= '0' && *p <= '9'; p++) {
+        exponent = exponent * 10 + (*p - '0');
+      }
+      number *= static_cast<float>(
+          std::pow(10.0, static_cast<double>(negative ? -exponent : exponent)));
+    }
+    return static_cast<double>(number) == static_cast<double>(v);
+  }
+
+  // The largest multiple of `align` at most `v` that SkSVGDevice writes
+  // exactly in the element transform and that Chrome reads back exactly.
+  static int64_t FloorOrigin(int64_t v, int64_t align) {
+    v = FloorWritten(v, align, 6);
+    while (!ChromeReadsExactly(v)) {
+      v = FloorWritten(v - 1, align, 6);
+    }
+    return v;
+  }
+
   // The axis of an image that covers the device pixels n0 to n1 at k device
   // pixels per image pixel (no more than n1 - n0), with a border of at least
   // `border` image pixels on each side.
@@ -778,14 +849,18 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
   // that part and its length are numbers that SkSVGDevice writes exactly
   // (WrittenStep), and k times each end in image pixels is a float. Otherwise
   // the SVG moves the fill or crops it: an origin of 1234568 was written as
-  // 1.23457e+06, 2 pixels off. Below 1,000,000 every whole number is written
-  // exactly, so there the numbers are the ones the rest of this comment gives.
-  // Past it, the origin moves down to the next number written exactly, and the
-  // image gets the pixels in between; the border and the length grow by the
-  // fewest pixels that put the ends of the clip on such numbers. If that fails
-  // (past 2^24 a float holds no odd number, and an odd origin or start of the
-  // clip reaches no even end by an even distance), all of them move to steps
-  // that hold every number of the axis.
+  // 1.23457e+06, 2 pixels off. Chrome must also read the origin back exactly
+  // (ChromeReadsExactly): it read 4.19396e+06 as 4193960.25, and the edge
+  // pixels of the fill changed by up to 64. Below 1,000,000 every whole number
+  // is written and read exactly, so there the numbers are the ones the rest of
+  // this comment gives. Past it, the origin moves down to the next number
+  // written and read exactly (at most 360 device pixels on an axis that stays
+  // below 2^23, where Chrome stops drawing SVG shapes, and 48,000 on any axis
+  // we accept), and the image gets the pixels in between; the border and the
+  // length grow by the fewest pixels that put the ends of the clip on such
+  // numbers. If that fails (past 2^24 a float holds no odd number, and an odd
+  // origin or start of the clip reaches no even end by an even distance), all
+  // of them move to steps that hold every number of the axis.
   //
   // At one image pixel per device pixel, the origin is a multiple of 8: Skia
   // dithers with an 8x8 pattern placed by the device position, so the image
@@ -805,9 +880,10 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
     const int64_t align = k == 1 ? 8 : 1;
     // A bound on the size of every number of the axis, and the steps that
     // hold them all up to it: the clip starts and ends fewer than `step` image
-    // pixels (of k device pixels) outside n0 to n1, and the origin is fewer
-    // than `origin_step` device pixels further out. For a canvas we accept,
-    // `step` is at most 320 and `origin_step` 8000.
+    // pixels (of k device pixels) outside n0 to n1, and the origin is at most
+    // n0 and more than -k * (border + step) - origin_step (it moves further
+    // down only from 1,000,000 on, see ChromeReadsExactly). For a canvas we
+    // accept, `step` is at most 320 and `origin_step` 8000.
     const int64_t bound =
         std::max(n0 < 0 ? -n0 : n0, n1) + axis.k * 8192 + (int64_t{1} << 20);
     const int64_t step = WrittenStep(bound, 8);
@@ -818,7 +894,7 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
       return axis;
     };
     const int64_t min_length = border == 0 ? 2 : 1;
-    axis.origin = FloorWritten(n0 - axis.k * border, align, 6);
+    axis.origin = FloorOrigin(n0 - axis.k * border, align);
     for (axis.start = border; axis.start < border + step; axis.start++) {
       const int64_t begin = axis.origin + axis.k * axis.start;
       if (begin > n0) {
@@ -840,11 +916,15 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
     }
     // Steps for the whole axis: the origin, k * start and k * length are
     // multiples of `step` (which divides `origin_step`), so the ends of the
-    // clip, in device pixels and times k in image pixels, are too.
+    // clip, in device pixels and times k in image pixels, are too. The origin
+    // moves down by `origin_step` until Chrome reads it back exactly.
     const int64_t unit = step / std::gcd(axis.k, step);
     axis.start = (border + unit - 1) / unit * unit;
     const int64_t origin = n0 - axis.k * axis.start;
     axis.origin = origin - ((origin % origin_step) + origin_step) % origin_step;
+    while (!ChromeReadsExactly(axis.origin)) {
+      axis.origin -= origin_step;
+    }
     const int64_t begin = axis.origin + axis.k * axis.start;
     const int64_t need =
         std::max((n1 - begin + axis.k - 1) / axis.k, min_length);
