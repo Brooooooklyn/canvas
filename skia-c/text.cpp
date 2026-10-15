@@ -9,7 +9,7 @@
 #include <string_view>
 #include <vector>
 
-#include "skia_c.hpp"
+#include "text.hpp"
 
 #if defined(SK_DEBUG) || !defined(SK_RELEASE)
 #error "skia-c must be built with SK_RELEASE like libskia (see build.rs)"
@@ -65,30 +65,6 @@ void EmHeight(const SkFont& font,
   *em_descent = 0;
 }
 
-// The CSS keyword of skiac_text_family::generic.
-const char* GenericFamilyName(int generic) {
-  switch (generic) {
-    case 1:
-      return "serif";
-    case 2:
-      return "sans-serif";
-    case 3:
-      return "cursive";
-    case 4:
-      return "fantasy";
-    case 5:
-      return "monospace";
-    case 6:
-      return "system-ui";
-    case 7:
-      return "-webkit-body";
-    case 8:
-      return "math";
-    default:
-      return "";
-  }
-}
-
 bool StartsWithLanguage(std::string_view lang, std::string_view language) {
   if (lang.size() < language.size()) {
     return false;
@@ -127,16 +103,7 @@ void MeasureOrDraw(skiac_font_collection* c_collection,
   auto text_direction = static_cast<TextDirection>(request.direction);
   const float letter_spacing = request.letter_spacing;
   TextStyle text_style;
-  std::vector<SkString> families_vec;
-  for (size_t i = 0; i < request.family_count; ++i) {
-    const auto& family = request.families[i];
-    if (family.generic) {
-      families_vec.emplace_back(GenericFamilyName(family.generic));
-    } else if (family.name_len > 0) {
-      families_vec.emplace_back(family.name, family.name_len);
-    }
-  }
-  text_style.setFontFamilies(families_vec);
+  text_style.setFontFamilies(ResolveFontFamilies(c_collection, request));
   text_style.setFontSize(request.size);
   text_style.setWordSpacing(request.word_spacing);
   text_style.setLetterSpacing(letter_spacing);
@@ -475,40 +442,18 @@ void skiac_text_draw(skiac_canvas* c_canvas,
 // a unicode-range face is skipped), and SimpleFontData::IdeographicInlineSize,
 // the unshaped advance of that glyph (simple_font_data.cc:437-474). Our
 // primary face is the first that text layout tries: findTypefaces() with the
-// same families, style and variations. When no family exists, Blink takes
-// the standard font (webkit-standard, then the last-resort font,
-// font_fallback_list.cc:181-194), which has no U+6C34 in a default setup,
-// not the face findTypefaces() falls back to (the first registered family).
-// False when no family exists or the face has no such glyph; ic is then 1em.
+// same resolved families (ResolveFontFamilies), style and variations. When no
+// family of the list exists, that is the standard font, as in Blink
+// (font_fallback_list.cc:181-194); it has no U+6C34 in a default setup.
+// False when nothing resolves or the face has no such glyph; ic is then 1em.
 // The request's text is not read.
 bool skiac_font_collection_ideographic_advance(
     skiac_font_collection* c_collection,
     const skiac_text_request* request,
     float* advance) {
   c_collection->flushCachesIfDirty();
-  std::vector<SkString> families_vec;
-  for (size_t i = 0; i < request->family_count; ++i) {
-    const auto& family = request->families[i];
-    if (family.generic) {
-      families_vec.emplace_back(GenericFamilyName(family.generic));
-    } else if (family.name_len > 0) {
-      families_vec.emplace_back(family.name, family.name_len);
-    }
-  }
-  // A family exists when a manager findTypefaces() asks has it: the dynamic,
-  // asset and fallback managers (FontCollection::getFontManagerOrder).
-  const sk_sp<SkFontMgr> managers[] = {
-      c_collection->assets, c_collection->font_mgr,
-      c_collection->collection->getFallbackManager()};
-  auto exists = [&managers](const SkString& family) {
-    for (const auto& manager : managers) {
-      if (manager && manager->matchFamily(family.c_str())->count() > 0) {
-        return true;
-      }
-    }
-    return false;
-  };
-  if (std::none_of(families_vec.begin(), families_vec.end(), exists)) {
+  const auto families_vec = ResolveFontFamilies(c_collection, *request);
+  if (families_vec.empty()) {
     return false;
   }
   std::vector<SkFontArguments::VariationPosition::Coordinate> coords;

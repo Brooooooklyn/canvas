@@ -562,6 +562,12 @@ struct skiac_font_collection {
   // memoizes findTypefaces() per {family list, weight, slant}, including
   // fallback misses, so any such change can invalidate an existing match.
   bool caches_dirty = false;
+  // font_families.cpp: every registered and system family name by its
+  // case-folded spelling, rebuilt when families_generation moves.
+  std::map<std::string, std::vector<std::string>> folded_families;
+  std::set<std::string> folded_registered_families;
+  uint64_t families_generation = 1;
+  uint64_t folded_families_generation = 0;
 
   skiac_font_collection()
       : collection(sk_make_sp<FontCollection>()),
@@ -576,7 +582,10 @@ struct skiac_font_collection {
   // Defer invalidation to the next text lookup instead of clearing on every
   // registration: loadFontsFromDir() registers one face per file, and
   // clearCaches() also purges the process-wide HarfBuzz face cache.
-  void markCachesDirty() { caches_dirty = true; }
+  void markCachesDirty() {
+    caches_dirty = true;
+    ++families_generation;
+  }
 
   void flushCachesIfDirty() {
     if (caches_dirty) {
@@ -595,6 +604,7 @@ struct skiac_font_collection {
     // Clear caches before swap
     collection->clearCaches();
     caches_dirty = false;
+    ++families_generation;
 
     // Create new provider
     auto new_assets = sk_make_sp<TypefaceFontProviderCustom>(font_mgr);

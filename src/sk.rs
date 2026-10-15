@@ -272,6 +272,17 @@ pub mod ffi {
     pub generic: i32,
   }
 
+  /// text.hpp skiac_font_units.
+  #[repr(C)]
+  #[derive(Debug, Clone, Copy, Default)]
+  pub struct skiac_font_units {
+    pub ex: f32,
+    pub ch: f32,
+    pub cap: f32,
+    pub ic: f32,
+    pub lh: f32,
+  }
+
   /// skia_c.hpp skiac_text_request: the text (not NUL-terminated) and the
   /// canvas text settings.
   #[repr(C)]
@@ -1355,6 +1366,12 @@ pub mod ffi {
       c_collection: *mut skiac_font_collection,
       request: *const skiac_text_request,
       advance: *mut f32,
+    ) -> bool;
+
+    pub fn skiac_font_collection_default_font_units(
+      c_font_collection: *mut skiac_font_collection,
+      size: f32,
+      units: *mut skiac_font_units,
     ) -> bool;
 
     // Variable Fonts
@@ -5571,6 +5588,14 @@ impl FontCollection {
 
   pub fn unregister_all(&self) -> usize {
     unsafe { ffi::skiac_font_collection_unregister_all(self.0) }
+  }
+
+  /// The px size of `ex`, `ch`, `cap`, `ic` and `lh` of the font the canvas
+  /// parses `font` against, at `size` px; None when no font is installed.
+  pub fn default_font_units(&self, size: f32) -> Option<ffi::skiac_font_units> {
+    let mut units = ffi::skiac_font_units::default();
+    unsafe { ffi::skiac_font_collection_default_font_units(self.0, size, &mut units) }
+      .then_some(units)
   }
 
   pub fn set_alias(&self, family: &str, alias_name: &str) -> bool {
