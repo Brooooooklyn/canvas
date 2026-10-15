@@ -1724,7 +1724,6 @@ impl FromStr for BlendMode {
       "color-burn" => Ok(BlendMode::ColorBurn),
       "color-dodge" => Ok(BlendMode::ColorDodge),
       "darken" => Ok(BlendMode::Darken),
-      "destination" => Ok(BlendMode::Destination),
       "destination-atop" => Ok(BlendMode::DestinationATop),
       "destination-in" => Ok(BlendMode::DestinationIn),
       "destination-out" => Ok(BlendMode::DestinationOut),
@@ -1735,7 +1734,6 @@ impl FromStr for BlendMode {
       "hue" => Ok(BlendMode::Hue),
       "lighten" => Ok(BlendMode::Lighten),
       "luminosity" => Ok(BlendMode::Luminosity),
-      "modulate" => Ok(BlendMode::Modulate),
       "multiply" => Ok(BlendMode::Multiply),
       "overlay" => Ok(BlendMode::Overlay),
       "lighter" => Ok(BlendMode::Plus),
@@ -1904,7 +1902,7 @@ impl FromStr for TextAlign {
       "left" => Ok(TextAlign::Left),
       "right" => Ok(TextAlign::Right),
       "start" => Ok(TextAlign::Start),
-      "justify" => Ok(TextAlign::Justify),
+      // CanvasTextAlign has no "justify".
       _ => Err(SkError::StringToTextAlignError(s.to_owned())),
     }
   }

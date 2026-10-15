@@ -1,5 +1,6 @@
 use std::cell::{Cell, RefCell};
 use std::f32::consts::PI;
+use std::marker::PhantomData;
 use std::mem;
 use std::result;
 use std::str::FromStr;
@@ -7,7 +8,7 @@ use std::sync::LazyLock;
 
 use cssparser::Parser;
 use cssparser_color::Color as CSSColor;
-use napi::{JsString, bindgen_prelude::*};
+use napi::bindgen_prelude::*;
 use regex::Regex;
 use rgb::RGBA;
 
@@ -2043,10 +2044,17 @@ impl Context {
       .map_err(|e| SkError::Generic(format!("Parse color [{}] error: {:?}", shadow_color, e)))?;
 
     match color {
+      // Without an element, currentcolor is opaque black (Chrome's
+      // OffscreenCanvas answer).
       CSSColor::CurrentColor => {
-        return Err(SkError::Generic(
-          "Color should not be `currentcolor` keyword".to_owned(),
-        ));
+        drop(parser);
+        self.state.shadow_color_string = shadow_color;
+        self.state.shadow_color = RGBA {
+          r: 0,
+          g: 0,
+          b: 0,
+          a: 255,
+        };
       }
       CSSColor::Rgba(rgba) => {
         drop(parser);
@@ -2082,6 +2090,11 @@ impl Context {
   }
 
   pub fn set_font_stretch(&mut self, stretch: String) -> result::Result<(), SkError> {
+    // CanvasFontStretch is an enum of the nine keywords: a percentage, which
+    // the font shorthand takes, is not one of its values.
+    if stretch.ends_with('%') {
+      return Ok(());
+    }
     if let Some(s) = crate::font::parse_font_stretch(&stretch) {
       self.state.font_stretch = s;
       self.state.font_stretch_raw = stretch;
@@ -3350,6 +3363,47 @@ impl ObjectFinalize for CanvasRenderingContext2D {
   }
 }
 
+/// A fillStyle or strokeStyle value, converted like Chrome's
+/// ExtractV8CanvasStyle (v8_canvas_style.cc): a string, then a CanvasPattern,
+/// then a CanvasGradient, else ToString. The class is chosen by its
+/// instanceof check and only that class is unwrapped; an object that passes
+/// the check but wraps nothing is converted with ToString, as Chrome does
+/// with an object that is not a real CanvasGradient.
+pub struct CanvasStyleArg<'a, S> {
+  /// None: the string is not a color, and the assignment is ignored.
+  pattern: Option<Pattern>,
+  /// What the getter then returns: the gradient or pattern, or the string.
+  value: Unknown<'a>,
+  site: PhantomData<S>,
+}
+
+impl<S: webidl::Site> FromNapiValue for CanvasStyleArg<'static, S> {
+  unsafe fn from_napi_value(env: sys::napi_env, value: sys::napi_value) -> Result<Self> {
+    let style = |pattern, value| {
+      Ok(Self {
+        pattern,
+        value: unsafe { Unknown::from_napi_value(env, value)? },
+        site: PhantomData,
+      })
+    };
+    if webidl::type_of(env, value)? != ValueType::String {
+      if unsafe { <&CanvasPattern as ValidateNapiValue>::validate(env, value) }.is_ok()
+        && let Ok(pattern) = unsafe { CanvasPattern::from_napi_ref(env, value) }
+      {
+        return style(Some(pattern.inner.clone()), value);
+      }
+      if unsafe { <&CanvasGradient as ValidateNapiValue>::validate(env, value) }.is_ok()
+        && let Ok(gradient) = unsafe { CanvasGradient::from_napi_ref(env, value) }
+      {
+        return style(Some(Pattern::Gradient(gradient.0.clone())), value);
+      }
+    }
+    let color = webidl::to_dom_string(env, value, S::PREFIX)?;
+    let pattern = Pattern::from_color(&color).ok();
+    style(pattern, unsafe { String::to_napi_value(env, color)? })
+  }
+}
+
 /// Source argument for `drawImage`. Wraps the `Either3` conversion so it runs
 /// in the generated callback glue inside the native borrow scope: napi-rs
 /// 3.12+ rejects `FromNapiValue` conversions performed inside a method body,
@@ -3675,9 +3729,12 @@ impl CanvasRenderingContext2D {
     self.context.state.paint.get_blend_mode().as_str()
   }
 
-  #[napi(setter, return_if_invalid)]
-  pub fn set_global_composite_operation(&mut self, mode: String) {
-    if let Ok(blend_mode) = mode.parse() {
+  #[napi(setter)]
+  pub fn set_global_composite_operation(
+    &mut self,
+    mode: webidl::DomString<webidl::SetGlobalCompositeOperation>,
+  ) {
+    if let Ok(blend_mode) = mode.0.parse() {
       self.context.state.paint.set_blend_mode(blend_mode);
       self.context.state.global_composite_operation = blend_mode;
     };
@@ -3705,9 +3762,12 @@ impl CanvasRenderingContext2D {
       .to_owned()
   }
 
-  #[napi(setter, return_if_invalid)]
-  pub fn set_image_smoothing_quality(&mut self, quality: String) {
-    if let Ok(quality) = quality.parse() {
+  #[napi(setter)]
+  pub fn set_image_smoothing_quality(
+    &mut self,
+    quality: webidl::DomString<webidl::SetImageSmoothingQuality>,
+  ) {
+    if let Ok(quality) = quality.0.parse() {
       self.context.state.image_smoothing_quality = quality;
     };
   }
@@ -3723,9 +3783,9 @@ impl CanvasRenderingContext2D {
       .to_owned()
   }
 
-  #[napi(setter, return_if_invalid)]
-  pub fn set_line_cap(&mut self, cap: String) {
-    if let Ok(cap) = cap.parse() {
+  #[napi(setter)]
+  pub fn set_line_cap(&mut self, cap: webidl::DomString<webidl::SetLineCap>) {
+    if let Ok(cap) = cap.0.parse() {
       self.context.state.paint.set_stroke_cap(cap);
     };
   }
@@ -3754,9 +3814,9 @@ impl CanvasRenderingContext2D {
       .to_owned()
   }
 
-  #[napi(setter, return_if_invalid)]
-  pub fn set_line_join(&mut self, join: String) {
-    if let Ok(join) = join.parse() {
+  #[napi(setter)]
+  pub fn set_line_join(&mut self, join: webidl::DomString<webidl::SetLineJoin>) {
+    if let Ok(join) = join.0.parse() {
       self.context.state.paint.set_stroke_join(join);
     };
   }
@@ -3785,20 +3845,15 @@ impl CanvasRenderingContext2D {
     this.get_named_property_unchecked(FILL_STYLE_HIDDEN_NAME)
   }
 
-  #[napi(setter, return_if_invalid)]
+  #[napi(setter)]
   pub fn set_fill_style(
     &mut self,
     mut this: This,
-    fill_style: Either3<JsString, ClassInstance<CanvasGradient>, ClassInstance<CanvasPattern>>,
+    fill_style: CanvasStyleArg<'_, webidl::SetFillStyle>,
   ) -> Result<()> {
-    if let Some(pattern) = match &fill_style {
-      Either3::A(color) => Pattern::from_color(color.into_utf8()?.as_str()?).ok(),
-      Either3::B(gradient) => Some(Pattern::Gradient(gradient.0.clone())),
-      Either3::C(pattern) => Some(pattern.inner.clone()),
-    } {
-      let raw_fill_style = fill_style.as_unknown();
+    if let Some(pattern) = fill_style.pattern {
       self.context.state.fill_style = pattern;
-      this.set(FILL_STYLE_HIDDEN_NAME, raw_fill_style)?;
+      this.set(FILL_STYLE_HIDDEN_NAME, fill_style.value)?;
     }
     Ok(())
   }
@@ -3808,9 +3863,9 @@ impl CanvasRenderingContext2D {
     self.context.state.filters_string.clone()
   }
 
-  #[napi(setter, return_if_invalid)]
-  pub fn set_filter(&mut self, filter: String) -> Result<()> {
-    self.context.set_filter(&filter)?;
+  #[napi(setter)]
+  pub fn set_filter(&mut self, filter: webidl::DomString<webidl::SetFilter>) -> Result<()> {
+    self.context.set_filter(&filter.0)?;
     Ok(())
   }
 
@@ -3830,10 +3885,10 @@ impl CanvasRenderingContext2D {
     Ok(())
   }
 
-  #[napi(setter, return_if_invalid)]
-  pub fn set_font(&mut self, font: String) -> Result<()> {
-    self.context.set_font(font)?;
-    Ok(())
+  #[napi(setter)]
+  pub fn set_font(&mut self, font: webidl::DomString<webidl::SetFont>) {
+    // An invalid font is ignored (base_rendering_context_2d.cc setFont).
+    let _ = self.context.set_font(font.0);
   }
 
   #[napi(getter)]
@@ -3841,9 +3896,9 @@ impl CanvasRenderingContext2D {
     self.context.state.text_direction.as_str().to_owned()
   }
 
-  #[napi(setter, return_if_invalid)]
-  pub fn set_direction(&mut self, direction: String) {
-    if let Ok(d) = direction.parse() {
+  #[napi(setter)]
+  pub fn set_direction(&mut self, direction: webidl::DomString<webidl::SetDirection>) {
+    if let Ok(d) = direction.0.parse() {
       self.context.state.text_direction = d;
     };
   }
@@ -3853,8 +3908,12 @@ impl CanvasRenderingContext2D {
     self.context.state.letter_spacing_raw.clone()
   }
 
-  #[napi(setter, return_if_invalid)]
-  pub fn set_letter_spacing(&mut self, spacing: String) -> Result<()> {
+  #[napi(setter)]
+  pub fn set_letter_spacing(
+    &mut self,
+    spacing: webidl::DomString<webidl::SetLetterSpacing>,
+  ) -> Result<()> {
+    let spacing = spacing.0;
     if let Some(size) = parse_css_size(&spacing) {
       self.context.state.letter_spacing = size;
       self.context.state.letter_spacing_raw = spacing;
@@ -3867,8 +3926,12 @@ impl CanvasRenderingContext2D {
     self.context.state.word_spacing_raw.clone()
   }
 
-  #[napi(setter, return_if_invalid)]
-  pub fn set_word_spacing(&mut self, spacing: String) -> Result<()> {
+  #[napi(setter)]
+  pub fn set_word_spacing(
+    &mut self,
+    spacing: webidl::DomString<webidl::SetWordSpacing>,
+  ) -> Result<()> {
+    let spacing = spacing.0;
     if let Some(size) = parse_css_size(&spacing) {
       self.context.state.word_spacing = size;
       self.context.state.word_spacing_raw = spacing;
@@ -3881,19 +3944,14 @@ impl CanvasRenderingContext2D {
     this.get(STROKE_STYLE_HIDDEN_NAME).ok().flatten()
   }
 
-  #[napi(setter, return_if_invalid)]
+  #[napi(setter)]
   pub fn set_stroke_style(
     &mut self,
     mut this: This,
-    fill_style: Either3<JsString, ClassInstance<CanvasGradient>, ClassInstance<CanvasPattern>>,
+    stroke_style: CanvasStyleArg<'_, webidl::SetStrokeStyle>,
   ) -> Result<()> {
-    if let Some(pattern) = match &fill_style {
-      Either3::A(color) => Pattern::from_color(color.into_utf8()?.as_str()?).ok(),
-      Either3::B(gradient) => Some(Pattern::Gradient(gradient.0.clone())),
-      Either3::C(pattern) => Some(pattern.inner.clone()),
-    } {
-      let raw_fill_style = fill_style.as_unknown();
-      this.set(STROKE_STYLE_HIDDEN_NAME, raw_fill_style)?;
+    if let Some(pattern) = stroke_style.pattern {
+      this.set(STROKE_STYLE_HIDDEN_NAME, stroke_style.value)?;
       self.context.state.stroke_style = pattern;
     }
     Ok(())
@@ -3922,10 +3980,10 @@ impl CanvasRenderingContext2D {
     self.context.state.shadow_color_string.clone()
   }
 
-  #[napi(setter, return_if_invalid)]
-  pub fn set_shadow_color(&mut self, shadow_color: String) -> Result<()> {
-    self.context.set_shadow_color(shadow_color)?;
-    Ok(())
+  #[napi(setter)]
+  pub fn set_shadow_color(&mut self, shadow_color: webidl::DomString<webidl::SetShadowColor>) {
+    // An invalid color is ignored (canvas_2d_recorder_context.cc:1220).
+    let _ = self.context.set_shadow_color(shadow_color.0);
   }
 
   #[napi(getter)]
@@ -3965,10 +4023,11 @@ impl CanvasRenderingContext2D {
     self.context.state.text_align.as_str().to_owned()
   }
 
-  #[napi(setter, return_if_invalid)]
-  pub fn set_text_align(&mut self, align: String) -> Result<()> {
-    self.context.set_text_align(align)?;
-    Ok(())
+  #[napi(setter)]
+  pub fn set_text_align(&mut self, align: webidl::DomString<webidl::SetTextAlign>) {
+    // A value outside the enum is ignored, as WebIDL does for an enum
+    // attribute.
+    let _ = self.context.set_text_align(align.0);
   }
 
   #[napi(getter)]
@@ -3976,10 +4035,9 @@ impl CanvasRenderingContext2D {
     self.context.state.text_baseline.as_str().to_owned()
   }
 
-  #[napi(setter, return_if_invalid)]
-  pub fn set_text_baseline(&mut self, baseline: String) -> Result<()> {
-    self.context.set_text_baseline(baseline)?;
-    Ok(())
+  #[napi(setter)]
+  pub fn set_text_baseline(&mut self, baseline: webidl::DomString<webidl::SetTextBaseline>) {
+    let _ = self.context.set_text_baseline(baseline.0);
   }
 
   #[napi(getter)]
@@ -3987,9 +4045,12 @@ impl CanvasRenderingContext2D {
     self.context.state.font_stretch_raw.clone()
   }
 
-  #[napi(setter, return_if_invalid)]
-  pub fn set_font_stretch(&mut self, stretch: String) -> Result<()> {
-    self.context.set_font_stretch(stretch)?;
+  #[napi(setter)]
+  pub fn set_font_stretch(
+    &mut self,
+    stretch: webidl::DomString<webidl::SetFontStretch>,
+  ) -> Result<()> {
+    self.context.set_font_stretch(stretch.0)?;
     Ok(())
   }
 
@@ -3998,9 +4059,12 @@ impl CanvasRenderingContext2D {
     self.context.state.font_kerning.as_str().to_owned()
   }
 
-  #[napi(setter, return_if_invalid)]
-  pub fn set_font_kerning(&mut self, kerning: String) -> Result<()> {
-    self.context.set_font_kerning(kerning)?;
+  #[napi(setter)]
+  pub fn set_font_kerning(
+    &mut self,
+    kerning: webidl::DomString<webidl::SetFontKerning>,
+  ) -> Result<()> {
+    self.context.set_font_kerning(kerning.0)?;
     Ok(())
   }
 
@@ -4009,9 +4073,12 @@ impl CanvasRenderingContext2D {
     self.context.state.font_variant_caps.as_str().to_owned()
   }
 
-  #[napi(setter, return_if_invalid)]
-  pub fn set_font_variant_caps(&mut self, variant_caps: String) -> Result<()> {
-    self.context.set_font_variant_caps(variant_caps)?;
+  #[napi(setter)]
+  pub fn set_font_variant_caps(
+    &mut self,
+    variant_caps: webidl::DomString<webidl::SetFontVariantCaps>,
+  ) -> Result<()> {
+    self.context.set_font_variant_caps(variant_caps.0)?;
     Ok(())
   }
 
@@ -4020,9 +4087,12 @@ impl CanvasRenderingContext2D {
     self.context.state.text_rendering.as_str().to_owned()
   }
 
-  #[napi(setter, return_if_invalid)]
-  pub fn set_text_rendering(&mut self, rendering: String) -> Result<()> {
-    self.context.set_text_rendering(rendering)?;
+  #[napi(setter)]
+  pub fn set_text_rendering(
+    &mut self,
+    rendering: webidl::DomString<webidl::SetTextRendering>,
+  ) -> Result<()> {
+    self.context.set_text_rendering(rendering.0)?;
     Ok(())
   }
 
@@ -4032,8 +4102,8 @@ impl CanvasRenderingContext2D {
   }
 
   #[napi(setter)]
-  pub fn set_lang(&mut self, lang: String) {
-    self.context.set_lang(lang);
+  pub fn set_lang(&mut self, lang: webidl::DomString<webidl::SetLang>) {
+    self.context.set_lang(lang.0);
   }
 
   #[napi]

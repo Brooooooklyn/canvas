@@ -90,8 +90,16 @@ impl Pattern {
     let color = CSSColor::parse(&mut parser)
       .map_err(|e| SkError::Generic(format!("Parse color [{color_str}] error: {e:?}")))?;
     match color {
-      CSSColor::CurrentColor => Err(SkError::Generic(
-        "Color should not be `currentcolor` keyword".to_owned(),
+      // Without an element, currentcolor is opaque black (Chrome's
+      // OffscreenCanvas answer).
+      CSSColor::CurrentColor => Ok(Pattern::Color(
+        RGBA {
+          r: 0,
+          g: 0,
+          b: 0,
+          a: 255,
+        },
+        color_str.to_owned(),
       )),
       CSSColor::Rgba(rgba) => Ok(Pattern::Color(
         RGBA {
