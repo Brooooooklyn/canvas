@@ -2378,22 +2378,26 @@ impl Context {
   /// `ctx.filter`. A value Blink cannot parse is a silent no-op
   /// (canvas_2d_recorder_context.cc:1317-1352): it neither throws nor resets
   /// the filter to `none`, and the getter replays the raw string unnormalised.
-  /// Lengths resolve now, against the font of this moment (Blink snapshots it
-  /// with SnapshotStateForFilter).
+  /// Lengths and drop-shadow() colors resolve now, against the font of this
+  /// moment (Blink snapshots it with SnapshotStateForFilter).
   pub fn set_filter(&mut self, filter_str: &str) -> result::Result<(), SkError> {
-    let Some(parsed) = parse_filter(filter_str) else {
+    let mut lengths = filter_lengths(FontUnits::default());
+    let Some(mut parsed) = parse_filter(filter_str, &lengths) else {
       return Ok(());
     };
-    let font = if parsed.uses_font_metrics() {
-      self.filter_font_units()
-    } else {
-      FontUnits::default()
-    };
+    if parsed.uses_font_metrics() {
+      lengths = filter_lengths(self.filter_font_units());
+      // A drop-shadow() color resolved while it parsed: parse again, with the
+      // font's lengths.
+      if let Some(reparsed) = parse_filter(filter_str, &lengths) {
+        parsed = reparsed;
+      }
+    }
     // The id advances with the stored chain so a reused ImageFilter dedups
     // under one accounting identity and a fresh chain re-charges under a new
     // one. `none` and a list of url()s build no filter. Blink's StateHasFilter
     // is "the resolved filter is not null" (canvas_2d_recorder_context.h).
-    self.state.filter = css_filters_to_image_filter(parsed.resolve(&filter_lengths(font)));
+    self.state.filter = css_filters_to_image_filter(parsed.resolve(&lengths));
     self.state.filters_string = filter_str.to_owned();
     self.state.filter_id = if self.state.filter.is_some() {
       next_resource_id()

@@ -62,31 +62,17 @@ impl ResolveContext {
 
   /// A drop-shadow() color in an OffscreenCanvas filter
   /// (StyleBuilderConverter::ConvertShadow, style_builder_converter.cc:
-  /// 2708-2722): black link colors, lengths from the filter's conversion
-  /// data, where em and rem are the 16px default font size and viewport,
-  /// container and line-height units are 0 (measured in Chrome 155).
-  /// Font-metric units (ex, ch, ic, cap) use the canvas font in Chrome; they
-  /// are 0 here.
-  pub(crate) const FILTER: Self = Self {
-    lengths: Lengths {
-      em: 16.0,
-      rem: 16.0,
-      ex: 0.0,
-      rex: 0.0,
-      ch: 0.0,
-      rch: 0.0,
-      ic: 0.0,
-      ric: 0.0,
-      cap: 0.0,
-      rcap: 0.0,
-      lh: 0.0,
-      rlh: 0.0,
-      viewport_width: 0.0,
-      viewport_height: 0.0,
-    },
-    link: Color::BLACK,
-    active_link: Color::BLACK,
-  };
+  /// 2708-2724): black link colors, and `lengths`, the conversion data the
+  /// filter's own lengths use (filter_operation_resolver.cc:285-297): em and
+  /// rem are 16px, viewport, container and line-height units 0, and the
+  /// font-metric units come from the canvas font.
+  pub(crate) fn filter(lengths: Lengths) -> Self {
+    Self {
+      lengths,
+      link: Color::BLACK,
+      active_link: Color::BLACK,
+    }
+  }
 }
 
 /// The kind of CSSValue a `<color>` parses to.
@@ -1196,11 +1182,11 @@ pub(crate) fn consume_color(p: &mut Parser<'_>, ctx: &ResolveContext) -> Option<
 }
 
 /// The color slot of a drop-shadow() in an OffscreenCanvas filter, read from
-/// `p` (the parser is left where it was when no color is there): a color
-/// that depends on currentcolor is black
-/// (style_builder_converter.cc:2708-2722).
-pub(crate) fn consume_filter_color(p: &mut Parser<'_>) -> Option<Color> {
-  let color = consume_color(p, &ResolveContext::FILTER)?;
+/// `p` (the parser is left where it was when no color is there) and resolved
+/// against the filter's `lengths`: a color that depends on currentcolor is
+/// black (style_builder_converter.cc:2708-2724).
+pub(crate) fn consume_filter_color(p: &mut Parser<'_>, lengths: &Lengths) -> Option<Color> {
+  let color = consume_color(p, &ResolveContext::filter(*lengths))?;
   Some(color.absolute().unwrap_or(Color::BLACK))
 }
 
@@ -1307,9 +1293,14 @@ mod tests {
 
   #[test]
   fn filter_colors_resolve_currentcolor_to_black() {
+    let lengths = Lengths {
+      em: 16.0,
+      rem: 16.0,
+      ..Lengths::default()
+    };
     let px = |s: &str| {
       with_parser(s, |p| {
-        let color = consume_filter_color(p)?;
+        let color = consume_filter_color(p, &lengths)?;
         p.is_exhausted().then_some(color)
       })
       .map(|c| c.serialize_as_canvas_color())

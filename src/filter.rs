@@ -89,7 +89,10 @@ enum FilterFunction {
     x: Arg,
     y: Arg,
     std_deviation: Option<Arg>,
+    /// Resolved as it was parsed, against the lengths `parse_filter` got.
     color: Color,
+    /// The color has a font-metric unit, at any depth.
+    color_reads_font: bool,
   },
 }
 
@@ -246,26 +249,64 @@ fn consume_angle(p: &mut Parser<'_>) -> Option<Arg> {
   .or_else(|| consume_math(p, false, Category::Angle))
 }
 
+/// Whether a dimension anywhere in `p`, inside functions and blocks too, has
+/// a font-metric unit. Reads `p` to its end.
+fn has_font_metric_unit(p: &mut Parser<'_>) -> bool {
+  let mut found = false;
+  while let Some((token, source)) = css_math::next_token(p) {
+    match token {
+      Token::Dimension { .. } => {
+        found |= matches!(
+          css_math::numeric_token(&token, source),
+          Some((_, Some(unit))) if is_font_metric_unit(unit)
+        );
+      }
+      Token::Function(_)
+      | Token::ParenthesisBlock
+      | Token::SquareBracketBlock
+      | Token::CurlyBracketBlock => {
+        found |= nested(p, |q| Some(has_font_metric_unit(q))).unwrap_or(false);
+      }
+      _ => {}
+    }
+  }
+  found
+}
+
+/// A drop-shadow() `<color>` read from `p`, resolved against `lengths`, and
+/// whether it has a font-metric unit (then `lengths` must have the font's).
+fn consume_shadow_color(p: &mut Parser<'_>, lengths: &Lengths) -> Option<(Color, bool)> {
+  let start = p.position();
+  let color = color::consume_filter_color(p, lengths)?;
+  // The color's own tokens, read again. The color parser's limits bound
+  // their nesting.
+  let mut tokens = Parser::new(p.slice_from(start));
+  tokens.set_nested_block_limit(0);
+  Some((color, has_font_metric_unit(&mut tokens)))
+}
+
 /// ParseSingleShadow with inset and spread forbidden: a color before or
 /// after the lengths, never between them.
-fn consume_drop_shadow(p: &mut Parser<'_>) -> Option<FilterFunction> {
+fn consume_drop_shadow(p: &mut Parser<'_>, lengths: &Lengths) -> Option<FilterFunction> {
   if p.is_exhausted() {
     return None;
   }
-  let mut color = color::consume_filter_color(p);
+  let mut color = consume_shadow_color(p, lengths);
   let x = consume_length(p, false)?;
   let y = consume_length(p, false)?;
   let std_deviation = consume_length(p, true);
   if color.is_none() && !p.is_exhausted() {
-    color = color::consume_filter_color(p);
+    color = consume_shadow_color(p, lengths);
   }
+  // No color is currentcolor, black in a canvas filter (product decision:
+  // OffscreenCanvas behaviour, no taint).
+  let (color, color_reads_font) = color.unwrap_or((Color::BLACK, false));
   Some(FilterFunction::DropShadow {
     x,
     y,
     std_deviation,
-    // No color is currentcolor, black in a canvas filter (product decision:
-    // OffscreenCanvas behaviour, no taint).
-    color: color.unwrap_or(Color::BLACK),
+    color,
+    color_reads_font,
   })
 }
 
@@ -315,7 +356,7 @@ fn consume_filter_function(function: Function, p: &mut Parser<'_>) -> Option<Fil
 }
 
 /// One `url()` or filter function.
-fn consume_item(p: &mut Parser<'_>) -> Option<FilterFunction> {
+fn consume_item(p: &mut Parser<'_>, lengths: &Lengths) -> Option<FilterFunction> {
   attempt(p, |p| {
     let (token, _) = css_math::next_token(p)?;
     match token {
@@ -327,7 +368,7 @@ fn consume_item(p: &mut Parser<'_>) -> Option<FilterFunction> {
         q.is_exhausted().then_some(FilterFunction::Url)
       }),
       Token::Function(name) if name.eq_ignore_ascii_case("drop-shadow") => nested(p, |q| {
-        let shadow = consume_drop_shadow(q)?;
+        let shadow = consume_drop_shadow(q, lengths)?;
         q.is_exhausted().then_some(shadow)
       }),
       Token::Function(name) => {
@@ -340,8 +381,10 @@ fn consume_item(p: &mut Parser<'_>) -> Option<FilterFunction> {
 }
 
 /// Parse a `ctx.filter` string: None when Blink rejects it (the setter then
-/// ignores the assignment).
-pub(crate) fn parse_filter(input: &str) -> Option<ParsedFilter> {
+/// ignores the assignment). A drop-shadow() color is resolved as it is
+/// parsed (layer 07's color parser), against `lengths`; what parses does not
+/// depend on them.
+pub(crate) fn parse_filter(input: &str, lengths: &Lengths) -> Option<ParsedFilter> {
   let mut p = Parser::new(input);
   // Our own limits (css_math, the color parser) bound the nesting.
   p.set_nested_block_limit(0);
@@ -355,7 +398,7 @@ pub(crate) fn parse_filter(input: &str) -> Option<ParsedFilter> {
   // CSS-wide keywords, `,`, `!important` and anything else that is not a
   // url() or a filter function end the list; the input must end there too.
   let mut list = Vec::new();
-  while let Some(item) = consume_item(&mut p) {
+  while let Some(item) = consume_item(&mut p, lengths) {
     list.push(item);
   }
   (!list.is_empty() && p.is_exhausted()).then_some(ParsedFilter(list))
@@ -443,7 +486,9 @@ impl Arg {
 
 impl ParsedFilter {
   /// Whether resolving reads the canvas font (ex, ch, ic, cap and their
-  /// root forms), so the caller measures it only then.
+  /// root forms), so the caller measures it only then. A drop-shadow() color
+  /// that does was resolved while it parsed, so it needs a parse with the
+  /// font's lengths.
   pub(crate) fn uses_font_metrics(&self) -> bool {
     let font = &is_font_metric_unit;
     let uses = |arg: &Option<Arg>| arg.as_ref().is_some_and(|a| a.any_unit(font));
@@ -456,8 +501,9 @@ impl ParsedFilter {
         x,
         y,
         std_deviation,
+        color_reads_font,
         ..
-      } => x.any_unit(font) || y.any_unit(font) || uses(std_deviation),
+      } => *color_reads_font || x.any_unit(font) || y.any_unit(font) || uses(std_deviation),
     })
   }
 
@@ -497,6 +543,7 @@ impl ParsedFilter {
             y,
             std_deviation,
             color,
+            ..
           } => CssFilter::DropShadow(
             x.resolve_length(lengths, false),
             y.resolve_length(lengths, false),
@@ -674,15 +721,23 @@ pub(crate) fn css_filters_to_image_filter(filters: Vec<CssFilter>) -> Option<Ima
 mod tests {
   use super::*;
 
-  /// What `s` resolves to with a 10px font whose x-height is 5, "0" 6 wide
-  /// and cap height 7; None when it is rejected.
-  fn resolve(s: &str) -> Option<Vec<CssFilter>> {
-    let lengths = filter_lengths(FontUnits {
+  /// The lengths of a 10px font whose x-height is 5, "0" 6 wide and cap
+  /// height 7.
+  fn lengths() -> Lengths {
+    filter_lengths(FontUnits {
       x_height: Some(5.0),
       zero_width: 6.0,
       cap_height: 7.0,
-    });
-    parse_filter(s).map(|f| f.resolve(&lengths))
+    })
+  }
+
+  fn parse(s: &str) -> Option<ParsedFilter> {
+    parse_filter(s, &lengths())
+  }
+
+  /// What `s` resolves to with that font; None when it is rejected.
+  fn resolve(s: &str) -> Option<Vec<CssFilter>> {
+    parse(s).map(|f| f.resolve(&lengths()))
   }
 
   fn one(s: &str) -> CssFilter {
@@ -736,16 +791,10 @@ mod tests {
       "url(\"#x\") blur(1px)",
       "URL(#x)",
     ] {
-      assert!(
-        parse_filter(input).is_some_and(|f| !f.0.is_empty()),
-        "{input:?}"
-      );
+      assert!(parse(input).is_some_and(|f| !f.0.is_empty()), "{input:?}");
     }
     for input in ["none", "NONE", " none "] {
-      assert!(
-        parse_filter(input).is_some_and(|f| f.0.is_empty()),
-        "{input:?}"
-      );
+      assert!(parse(input).is_some_and(|f| f.0.is_empty()), "{input:?}");
     }
     for input in [
       "",
@@ -765,7 +814,7 @@ mod tests {
       "url(#x x)",
       "url(\"#x\" x)",
     ] {
-      assert!(parse_filter(input).is_none(), "{input:?}");
+      assert!(parse(input).is_none(), "{input:?}");
     }
   }
 
@@ -808,7 +857,7 @@ mod tests {
       "blur(var(--x))",
       "foo(1)",
     ] {
-      assert!(parse_filter(input).is_none(), "{input:?}");
+      assert!(parse(input).is_none(), "{input:?}");
     }
   }
 
@@ -849,7 +898,7 @@ mod tests {
       "drop-shadow(sign(-3px) 0 0 red)",
       "drop-shadow(round(2.5px) 0 0 red)",
     ] {
-      assert!(parse_filter(input).is_none(), "{input:?}");
+      assert!(parse(input).is_none(), "{input:?}");
     }
   }
 
@@ -862,19 +911,72 @@ mod tests {
       ("drop-shadow(calc(1px + 1ch) 0)", true),
       ("drop-shadow(0 0 1rcap)", true),
       ("opacity(1) url(#x)", false),
+      // A drop-shadow() color, at any depth, before or after the lengths.
+      ("drop-shadow(1px 1px rgb(calc(1ex / 1px) 0 0))", true),
+      ("drop-shadow(rgb(calc(1ric / 1px) 0 0) 1px 1px)", true),
+      (
+        "drop-shadow(1px 1px color-mix(in srgb, rgb(0 calc((1px + 1cap) / 1px) 0), red))",
+        true,
+      ),
+      (
+        "drop-shadow(1px 1px rgb(from red calc(1rch / 1px) g b))",
+        true,
+      ),
+      ("drop-shadow(1px 1px rgb(calc(1\\63 h / 1px) 0 0))", true),
+      ("drop-shadow(1px 1px rgb(calc(1em / 1px) 0 0))", false),
+      ("drop-shadow(rgb(calc(1lh / 1px) 0 0) 1px 1ch)", true),
+      ("drop-shadow(rgb(calc(1lh / 1px) 0 0) 1px 1px)", false),
     ] {
-      assert_eq!(
-        parse_filter(input).unwrap().uses_font_metrics(),
-        uses,
-        "{input}"
-      );
+      assert_eq!(parse(input).unwrap().uses_font_metrics(), uses, "{input}");
     }
     // A font without an x-height: ex is 0.5em.
     let lengths = filter_lengths(FontUnits::default());
     assert_eq!(
-      parse_filter("blur(1ex)").unwrap().resolve(&lengths),
+      parse("blur(1ex)").unwrap().resolve(&lengths),
       vec![CssFilter::Blur(8.0)]
     );
+  }
+
+  // A drop-shadow() color resolves against the lengths it was parsed with,
+  // the same the filter's lengths use (ConvertShadow).
+  #[test]
+  fn shadow_colors_resolve_font_units() {
+    for (input, argb) in [
+      (
+        "drop-shadow(20px 0 0 rgb(calc(10ex / 1px) 0 0))",
+        0xff320000,
+      ),
+      (
+        "drop-shadow(20px 0 0 rgb(calc(10ch / 1px) 0 0))",
+        0xff3c0000,
+      ),
+      (
+        "drop-shadow(20px 0 0 rgb(calc(10cap / 1px) 0 0))",
+        0xff460000,
+      ),
+      (
+        "drop-shadow(20px 0 0 rgb(calc(10ic / 1px) 0 0))",
+        0xffa00000,
+      ),
+      (
+        "drop-shadow(rgb(calc(10rch / 1px) 0 0) 20px 0 0)",
+        0xff3c0000,
+      ),
+      (
+        "drop-shadow(20px 0 0 rgb(calc(calc(5ch / 1px) * 2) 0 calc(1ex / 1px)))",
+        0xff3c0005,
+      ),
+      (
+        "drop-shadow(20px 0 0 rgb(calc(10lh / 1px) 0 0))",
+        0xff000000,
+      ),
+    ] {
+      assert_eq!(
+        with_argb(input),
+        Some(vec![shadow(20.0, 0.0, 0.0, argb)]),
+        "{input}"
+      );
+    }
   }
 
   #[test]
@@ -974,7 +1076,7 @@ mod tests {
       "drop-shadow(inset 2px 2px red)",
       "drop-shadow(2px 2px red inset)",
     ] {
-      assert!(parse_filter(input).is_none(), "{input}");
+      assert!(parse(input).is_none(), "{input}");
     }
   }
 
