@@ -8,7 +8,7 @@ use std::ptr;
 use std::slice;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicI64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::error::SkError;
 use crate::font::{FontStretch, FontStyle};
@@ -202,8 +202,11 @@ pub mod ffi {
     pub font_ascent: f32,
     pub font_descent: f32,
     pub alphabetic_baseline: f32,
-    pub em_height_ascent: f32,
-    pub em_height_descent: f32,
+    /// The drawn glyph ink, left and right of the anchor x, before a maxWidth
+    /// squeeze (negative left of it). Filled only when `collect_ink` asks for
+    /// it (the alpha:false reset); measureText does not, and gets 0 for both.
+    pub ink_left: f32,
+    pub ink_right: f32,
   }
 
   #[repr(C)]
@@ -434,7 +437,11 @@ pub mod ffi {
       cs: u8,
     );
 
+    pub fn skiac_svg_canvas_flush(canvas: *mut skiac_canvas);
+
     pub fn skiac_surface_create_rgba(width: i32, height: i32, cs: u8) -> *mut skiac_surface;
+
+    pub fn skiac_surface_create_rgba_opaque(width: i32, height: i32, cs: u8) -> *mut skiac_surface;
 
     pub fn skiac_surface_ref(surface: *mut skiac_surface);
 
@@ -608,6 +615,7 @@ pub mod ffi {
       paint: *mut skiac_paint,
       canvas: *mut skiac_canvas,
       line_metrics: *mut skiac_line_metrics,
+      collect_ink: bool,
       variations: *const skiac_font_variation,
       variations_count: i32,
       kerning: i32,
@@ -655,6 +663,7 @@ pub mod ffi {
       dirty_height: f32,
       color_space: u8,
       snapshot: bool,
+      opaque: bool,
     );
 
     pub fn skiac_canvas_draw_picture(
@@ -877,7 +886,7 @@ pub mod ffi {
 
     pub fn skiac_shader_make_linear_gradient(
       points: *const skiac_point,
-      colors: *const super::Color,
+      colors: *const super::Color4f,
       positions: *const f32,
       count: i32,
       tile_mode: i32,
@@ -890,7 +899,7 @@ pub mod ffi {
       start_radius: f32,
       end_point: skiac_point,
       end_radius: f32,
-      colors: *const super::Color,
+      colors: *const super::Color4f,
       positions: *const f32,
       count: i32,
       tile_mode: i32,
@@ -901,8 +910,8 @@ pub mod ffi {
     pub fn skiac_shader_make_conic_gradient(
       cx: f32,
       cy: f32,
-      radius: f32,
-      colors: *const super::Color,
+      rotation: f32,
+      colors: *const super::Color4f,
       positions: *const f32,
       count: i32,
       tile_mode: i32,
@@ -1051,7 +1060,10 @@ pub mod ffi {
       dst: *mut u8,
       row_bytes: usize,
       alpha_type: i32,
+      cs: u8,
     ) -> bool;
+
+    pub fn skiac_image_color_space(image: *mut skiac_image) -> u8;
 
     pub fn skiac_canvas_draw_sk_image(
       canvas: *mut skiac_canvas,
@@ -1088,6 +1100,22 @@ pub mod ffi {
       color_type: i32,
       alpha_type: i32,
     ) -> *mut skiac_bitmap;
+
+    pub fn skiac_bitmap_make_premul_from_image_data(
+      ptr: *mut u8,
+      width: usize,
+      height: usize,
+      row_bytes: usize,
+      cs: u8,
+    ) -> *mut skiac_bitmap;
+
+    pub fn skiac_bitmap_set_color_space(
+      c_bitmap: *mut skiac_bitmap,
+      icc: *const u8,
+      icc_len: usize,
+      primaries: u16,
+      transfer: u16,
+    );
 
     pub fn skiac_bitmap_get_width(c_bitmap: *mut skiac_bitmap) -> usize;
 
@@ -1432,6 +1460,18 @@ pub enum ColorSpace {
   DisplayP3,
 }
 
+impl ColorSpace {
+  /// The `PredefinedColorSpace` string.
+  pub fn as_str(&self) -> &'static str {
+    match self {
+      Self::Srgb => "srgb",
+      Self::DisplayP3 => "display-p3",
+    }
+  }
+}
+
+// Accepts the non-standard "p3" alias; the web-facing paths use the strict
+// WebIDL enum in webidl.rs.
 impl FromStr for ColorSpace {
   type Err = SkError;
 
@@ -2123,6 +2163,17 @@ impl Surface {
     }
   }
 
+  /// alpha:false backing store: kOpaque, like Blink's canvas resource.
+  pub fn new_rgba_opaque(width: u32, height: u32, color_space: ColorSpace) -> Option<Surface> {
+    unsafe {
+      Self::from_ptr(ffi::skiac_surface_create_rgba_opaque(
+        width as i32,
+        height as i32,
+        color_space as u8,
+      ))
+    }
+  }
+
   pub fn new_rgba_premultiplied(
     width: u32,
     height: u32,
@@ -2181,6 +2232,17 @@ impl Surface {
         canvas: Canvas(unsafe { ffi::skiac_surface_get_canvas(ptr) }),
         is_svg: false,
       })
+    }
+  }
+
+  /// On an SVG surface, draw what its canvas recorded into the raster surface
+  /// beside it (skiac_svg_canvas_flush), so the raster holds what was drawn,
+  /// as a canvas would draw it. It can differ from the SVG output where
+  /// SkSVGDevice drops an effect (layers, blend modes). Every read of an SVG
+  /// surface's pixels comes after this.
+  pub(crate) fn flush_svg(&mut self) {
+    if self.is_svg && !self.canvas.0.is_null() {
+      unsafe { ffi::skiac_svg_canvas_flush(self.canvas.0) };
     }
   }
 
@@ -2518,7 +2580,7 @@ impl std::ops::DerefMut for Surface {
 
 impl Drop for Surface {
   fn drop(&mut self) {
-    // For SVG surfaces, the canvas was independently allocated via SkSVGCanvas::Make().release()
+    // For SVG surfaces, the canvas is the SkiacSvgCanvas made by skiac_surface_create_svg
     // and is NOT owned by the SkSurface, so we must destroy it separately.
     if self.is_svg && !self.canvas.0.is_null() {
       unsafe {
@@ -2692,25 +2754,50 @@ impl DerefMut for SurfaceDataMut<'_> {
   }
 }
 
+/// An unpremultiplied sRGB gradient stop color. Blink hands Skia float stops
+/// too (Color::ToGradientStopSkColor4f). The C side is `skiac_color4f`
+/// (skia-c/skia_c.hpp), which skia_c.cpp copies into SkColor4f values.
 #[repr(C)]
-#[derive(Copy, Clone, Eq, PartialEq, Hash, PartialOrd, Ord)]
-pub struct Color(pub u32);
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct Color4f {
+  pub r: f32,
+  pub g: f32,
+  pub b: f32,
+  pub a: f32,
+}
 
-impl fmt::Debug for Color {
-  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-    f.debug_struct("Color")
-      .field("R", &(((self.0) >> 16) & 0xFF))
-      .field("G", &(((self.0) >> 8) & 0xFF))
-      .field("B", &(self.0 & 0xFF))
-      .field("A", &(((self.0) >> 24) & 0xFF))
-      .finish()
+// The layout skia_c.cpp asserts for `skiac_color4f`.
+const _: () = {
+  assert!(std::mem::size_of::<Color4f>() == 16);
+  assert!(std::mem::align_of::<Color4f>() == 4);
+  assert!(std::mem::offset_of!(Color4f, r) == 0);
+  assert!(std::mem::offset_of!(Color4f, g) == 4);
+  assert!(std::mem::offset_of!(Color4f, b) == 8);
+  assert!(std::mem::offset_of!(Color4f, a) == 12);
+};
+
+impl Color4f {
+  pub const TRANSPARENT: Self = Self {
+    r: 0.0,
+    g: 0.0,
+    b: 0.0,
+    a: 0.0,
+  };
+
+  /// The same arithmetic as SkColor4f::FromColor: `x * (1 / 255.0f)`.
+  pub fn from_rgba8(r: u8, g: u8, b: u8, a: u8) -> Self {
+    Self {
+      r: unit_from_u8(r),
+      g: unit_from_u8(g),
+      b: unit_from_u8(b),
+      a: unit_from_u8(a),
+    }
   }
 }
 
-impl Color {
-  pub fn from_rgba(r: u8, g: u8, b: u8, a: u8) -> Color {
-    Color(((a as u32) << 24) | ((r as u32) << 16) | ((g as u32) << 8) | (b as u32))
-  }
+pub(crate) fn unit_from_u8(v: u8) -> f32 {
+  const K: f32 = 1.0 / 255.0;
+  v as f32 * K
 }
 
 #[repr(transparent)]
@@ -2915,6 +3002,7 @@ impl Canvas {
         paint.0,
         self.0,
         ptr::null_mut(),
+        false,
         variations.as_ptr() as *const ffi::skiac_font_variation,
         variations.len() as i32,
         kerning as i32,
@@ -2947,6 +3035,7 @@ impl Canvas {
     variant_caps: FontVariantCaps,
     lang: &str,
     text_rendering: TextRendering,
+    collect_ink: bool,
   ) -> Result<ffi::skiac_line_metrics, NulError> {
     let c_text = std::ffi::CString::new(text)?;
     let c_font_family = std::ffi::CString::new(font_family)?;
@@ -2982,6 +3071,7 @@ impl Canvas {
         paint.0,
         ptr::null_mut(),
         &mut line_metrics,
+        collect_ink,
         variations.as_ptr() as *const ffi::skiac_font_variation,
         variations.len() as i32,
         kerning as i32,
@@ -3096,6 +3186,7 @@ impl Canvas {
   /// Works on recording canvases (PictureRecorder).
   /// When `snapshot` is true, the pixel data is copied so the resulting SkImage
   /// is independent of the source buffer (required for deferred/recorded mode).
+  /// `opaque` (alpha:false) writes the bytes as given, alpha included.
   /// `pixels` must point to `width * height * 4` readable bytes.
   pub fn put_image_data(
     &mut self,
@@ -3110,6 +3201,7 @@ impl Canvas {
     dirty_height: f32,
     color_space: ColorSpace,
     snapshot: bool,
+    opaque: bool,
   ) {
     unsafe {
       ffi::skiac_canvas_put_image_data(
@@ -3127,6 +3219,7 @@ impl Canvas {
         dirty_height,
         color_space as u8,
         snapshot,
+        opaque,
       )
     }
   }
@@ -3766,7 +3859,7 @@ impl Drop for Path {
 
 #[derive(Debug, Clone)]
 pub struct Gradient {
-  pub colors: Vec<Color>,
+  pub colors: Vec<Color4f>,
   pub positions: Vec<f32>,
   pub tile_mode: TileMode,
   pub transform: Transform,
@@ -3791,7 +3884,8 @@ pub struct RadialGradient {
 #[derive(Debug, Clone)]
 pub struct ConicGradient {
   pub center: (f32, f32),
-  pub radius: f32,
+  /// Degrees, Blink's `rotation_`: `Rad2deg(startAngle) + 90`.
+  pub rotation: f32,
   pub base: Gradient,
 }
 
@@ -3862,7 +3956,7 @@ impl Shader {
       Self::from_ptr(ffi::skiac_shader_make_conic_gradient(
         grad.center.0,
         grad.center.1,
-        grad.radius,
+        grad.rotation,
         grad.base.colors.as_ptr(),
         grad.base.positions.as_ptr(),
         grad.base.colors.len() as i32,
@@ -4523,16 +4617,53 @@ impl Bitmap {
     }))
   }
 
+  /// A premultiplied copy of unpremultiplied RGBA bytes (an ImageData) in
+  /// `color_space`.
+  pub fn premul_from_image_data(
+    ptr: *mut u8,
+    width: usize,
+    height: usize,
+    row_bytes: usize,
+    color_space: ColorSpace,
+  ) -> Option<Self> {
+    let bitmap = unsafe {
+      ffi::skiac_bitmap_make_premul_from_image_data(
+        ptr,
+        width,
+        height,
+        row_bytes,
+        color_space as u8,
+      )
+    };
+    if bitmap.is_null() {
+      return None;
+    }
+    Some(Bitmap(ffi::skiac_bitmap_info {
+      bitmap,
+      width: width as i32,
+      height: height as i32,
+      is_canvas: false,
+    }))
+  }
+
+  /// Tags the pixels with a decoded file's color space: the ICC profile when
+  /// it has one, else the CICP primaries and transfer characteristics.
+  pub(crate) fn set_color_space(&mut self, icc: &[u8], primaries: u16, transfer: u16) {
+    unsafe {
+      ffi::skiac_bitmap_set_color_space(self.0.bitmap, icc.as_ptr(), icc.len(), primaries, transfer)
+    }
+  }
+
   /// Marks the pixels read-only, so an image made from them shares them. Only
   /// for a bitmap that nothing writes to again.
   pub(crate) fn set_immutable(&self) {
     unsafe { ffi::skiac_bitmap_set_immutable(self.0.bitmap) }
   }
 
-  /// One immutable image of these pixels, made at a pattern's first paint. It
-  /// shares the pixels of an immutable (decoded) bitmap and copies a mutable
-  /// one. It holds null when the bitmap has no pixels, and then the pattern
-  /// paints nothing.
+  /// An immutable image of these pixels, made once per `AccountedBitmap` at
+  /// the first paint of a pattern over it. It shares the pixels: nothing
+  /// writes to a bitmap after it is made. It holds null when the bitmap has no
+  /// pixels, and then the pattern paints nothing.
   pub(crate) fn make_image(&self) -> SkImage {
     SkImage(unsafe { ffi::skiac_bitmap_make_image(self.0.bitmap) })
   }
@@ -4562,6 +4693,10 @@ pub struct AccountedBitmap {
   pub(crate) resource_id: u64,
   env: napi::sys::napi_env,
   bytes: i64,
+  /// The one image every pattern over this bitmap samples, made at the first
+  /// paint. Mip levels are cached per image, so the patterns share them, as
+  /// Chrome's decode cache does.
+  image: OnceLock<SkImage>,
   /// The scaled copies Chrome's decode cache would hold for this image
   /// (`skiac_image_levels`), shared by drawImage and the Image's patterns.
   levels: *mut ffi::skiac_image_levels,
@@ -4581,6 +4716,7 @@ impl AccountedBitmap {
       resource_id: crate::page_recorder::next_resource_id(),
       env,
       bytes,
+      image: OnceLock::new(),
       levels: unsafe { ffi::skiac_image_levels_create() },
       level_bytes: AtomicI64::new(0),
     }
@@ -4599,6 +4735,12 @@ impl AccountedBitmap {
     let bytes = unsafe { ffi::skiac_image_levels_bytes(self.levels) } as i64;
     let reported = self.level_bytes.swap(bytes, Ordering::Relaxed);
     report_level_bytes(self.env, bytes - reported);
+  }
+
+  /// The image of these pixels that patterns sample (`Bitmap::make_image`),
+  /// made once and shared by every pattern over this bitmap.
+  pub(crate) fn image(&self) -> SkImage {
+    self.image.get_or_init(|| self.inner.make_image()).clone()
   }
 }
 
@@ -4679,8 +4821,7 @@ pub enum ImagePatternBacking {
 pub(crate) struct ImagePatternShared {
   pub(crate) transform: Transform,
   // The pattern's one image, made from `backing` at the first paint and kept
-  // for the pattern's life, so an SVG or AVIF pattern that is never painted
-  // makes no copy.
+  // for the pattern's life. It shares the backing's pixels.
   pub(crate) image: Option<SkImage>,
   // Cache the shader for the last sampling quality, decode level and canvas
   // colour space (`None` when the original image is drawn as it is, see
@@ -4844,7 +4985,7 @@ impl ImagePattern {
   /// or a failed snapshot) gives the empty shader, which paints nothing.
   fn make_image(&self) -> SkImage {
     match &self.backing {
-      Some(ImagePatternBacking::Bitmap(bitmap)) => bitmap.inner.make_image(),
+      Some(ImagePatternBacking::Bitmap(bitmap)) => bitmap.image(),
       // The cloned surface is never drawn to again, so its snapshot shares the
       // pixels and never copies them.
       Some(ImagePatternBacking::Surface(surface)) => surface
@@ -5249,11 +5390,21 @@ impl SkImage {
     }
   }
 
-  /// Read the whole image as RGBA_8888 pixels converted to sRGB, for the
-  /// encoders that write no color profile (GIF, AVIF).
+  /// The image's color space: display-p3, else sRGB (the canvas color spaces).
+  pub fn color_space(&self) -> ColorSpace {
+    if unsafe { ffi::skiac_image_color_space(self.0) } == ColorSpace::DisplayP3 as u8 {
+      ColorSpace::DisplayP3
+    } else {
+      ColorSpace::Srgb
+    }
+  }
+
+  /// Read the whole image as RGBA_8888 pixels converted to `color_space`: sRGB
+  /// for GIF, which has no color profile, and the image's own color space for
+  /// AVIF, which carries it as CICP.
   /// `alpha_type` must be [`AlphaType::Premultiplied`] or [`AlphaType::Unpremultiplied`];
   /// Skia converts from the image's premultiplied storage when unpremultiplied is requested.
-  pub fn read_pixels(&self, alpha_type: AlphaType) -> Option<Vec<u8>> {
+  pub fn read_pixels(&self, alpha_type: AlphaType, color_space: ColorSpace) -> Option<Vec<u8>> {
     let sk_alpha_type = match alpha_type {
       AlphaType::Premultiplied => 2,   // kPremul_SkAlphaType
       AlphaType::Unpremultiplied => 3, // kUnpremul_SkAlphaType
@@ -5265,7 +5416,13 @@ impl SkImage {
     let size = row_bytes.checked_mul(height)?;
     let mut pixels = vec![0u8; size];
     let ok = unsafe {
-      ffi::skiac_image_read_pixels(self.0, pixels.as_mut_ptr(), row_bytes, sk_alpha_type)
+      ffi::skiac_image_read_pixels(
+        self.0,
+        pixels.as_mut_ptr(),
+        row_bytes,
+        sk_alpha_type,
+        color_space as u8,
+      )
     };
     if ok { Some(pixels) } else { None }
   }

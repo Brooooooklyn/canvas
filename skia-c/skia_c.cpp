@@ -2,6 +2,7 @@
 #include <math.h>
 #include <algorithm>
 #include <atomic>
+#include <cstddef>
 #include <list>
 #include <memory>
 #include <optional>
@@ -183,6 +184,570 @@ static SkSurface* skiac_surface_create(int width,
   }
 }
 
+// The glyph outlines of a text blob drawn at (x, y), as SkSVGDevice draws text
+// with kConvertTextToPaths_Flag (AddPath in src/svg/SkSVGDevice.cpp).
+static SkPath TextBlobPath(const SkTextBlob* blob, SkScalar x, SkScalar y) {
+  struct Rec {
+    SkPathBuilder* path;
+    SkPoint origin;
+    const SkPoint* position;
+  };
+  sktext::GlyphRunBuilder builder;
+  const auto& list = builder.blobToGlyphRunList(*blob, {x, y});
+  SkPathBuilder path;
+  for (const auto& run : list) {
+    Rec rec{&path, list.origin(), run.positions().data()};
+    run.font().getPaths(
+        run.glyphsIDs(),
+        [](const SkPath* glyph, const SkMatrix& mx, void* ctx) {
+          auto rec = static_cast<Rec*>(ctx);
+          if (glyph) {
+            auto matrix = mx;
+            matrix.postTranslate(rec->position->fX + rec->origin.fX,
+                                 rec->position->fY + rec->origin.fY);
+            rec->path->addPath(*glyph, matrix);
+          }
+          rec->position++;
+        },
+        &rec);
+  }
+  return path.detach();
+}
+
+// The canvas an SVGCanvas context draws into. It sits in front of the
+// SkSVGCanvas and does two things with every call:
+//
+// - It sends the call to the SVG writer. SkSVGDevice drops the local matrix of
+//   an image shader (addImageShaderResources in src/svg/SkSVGDevice.cpp never
+//   writes a patternTransform), so a draw whose pattern has a non-identity
+//   matrix is rewritten for it, see drawPatternForSvg.
+// - It records the call, so drawImage, createPattern and getImageData read the
+//   SVGCanvas like a canvas source. The recording is drawn into the raster
+//   surface only when the surface is read (skiac_svg_canvas_flush), or when it
+//   grows past the PageRecorder cap (src/page_recorder.rs). Drawing an SVG that
+//   is never read costs no rasterization.
+//
+// Deleting it finishes the SVG document: the SkSVGCanvas destructor writes the
+// closing tags.
+class SkiacSvgCanvas final : public SkNWayCanvas {
+ public:
+  SkiacSvgCanvas(int width,
+                 int height,
+                 std::unique_ptr<SkCanvas> svg,
+                 sk_sp<SkSurface> raster)
+      : SkNWayCanvas(width, height),
+        fSvg(std::move(svg)),
+        fRaster(std::move(raster)) {
+    fLevels.emplace_back();
+    this->addCanvas(fSvg.get());
+    this->beginRecording();
+  }
+
+  ~SkiacSvgCanvas() override {
+    this->removeAll();
+    fSvg.reset();
+  }
+
+  // Draws the pending recording into the raster surface. A layer cannot be
+  // split across two recordings, so this waits for its restore; reads never
+  // happen inside a layer.
+  void flush() {
+    if (!fPendingDraws || fLayers > 0) {
+      return;
+    }
+    auto picture = fRecorder.finishRecordingAsPicture();
+    auto canvas = fRaster->getCanvas();
+    const auto count = canvas->save();
+    picture->playback(canvas);
+    canvas->restoreToCount(count);
+    this->beginRecording();
+  }
+
+ protected:
+  void willSave() override {
+    fLevels.back().matrix = this->getLocalToDevice();
+    fLevels.emplace_back();
+    INHERITED::willSave();
+  }
+
+  SaveLayerStrategy getSaveLayerStrategy(const SaveLayerRec& rec) override {
+    fLevels.back().matrix = this->getLocalToDevice();
+    fLevels.emplace_back().layer = true;
+    fLayers++;
+    return INHERITED::getSaveLayerStrategy(rec);
+  }
+
+  void willRestore() override {
+    if (fLevels.back().layer) {
+      fLayers--;
+    }
+    fLevels.pop_back();
+    INHERITED::willRestore();
+  }
+
+  void didRestore() override { this->flushIfOverLimit(); }
+
+  void onClipRect(const SkRect& rect,
+                  SkClipOp op,
+                  ClipEdgeStyle edge) override {
+    auto& clip = this->addClip(edge);
+    clip.rect = rect;
+    clip.op = op;
+    INHERITED::onClipRect(rect, op, edge);
+  }
+
+  void onClipRRect(const SkRRect& rrect,
+                   SkClipOp op,
+                   ClipEdgeStyle edge) override {
+    auto& clip = this->addClip(edge);
+    clip.kind = Clip::Kind::kRRect;
+    clip.rrect = rrect;
+    clip.op = op;
+    INHERITED::onClipRRect(rrect, op, edge);
+  }
+
+  void onClipPath(const SkPath& path,
+                  SkClipOp op,
+                  ClipEdgeStyle edge) override {
+    auto& clip = this->addClip(edge);
+    clip.kind = Clip::Kind::kPath;
+    clip.path = path;
+    clip.op = op;
+    INHERITED::onClipPath(path, op, edge);
+  }
+
+  void onClipShader(sk_sp<SkShader> shader, SkClipOp op) override {
+    auto& clip = this->addClip(kHard_ClipEdgeStyle);
+    clip.kind = Clip::Kind::kShader;
+    clip.shader = shader;
+    clip.op = op;
+    INHERITED::onClipShader(std::move(shader), op);
+  }
+
+  void onClipRegion(const SkRegion& region, SkClipOp op) override {
+    auto& clip = this->addClip(kHard_ClipEdgeStyle);
+    clip.kind = Clip::Kind::kRegion;
+    clip.region = region;
+    clip.op = op;
+    INHERITED::onClipRegion(region, op);
+  }
+
+  void onDrawPaint(const SkPaint& paint) override {
+    if (HasPatternMatrix(paint)) {
+      fRecording->drawPaint(paint);
+      this->drawPatternForSvg(SkPath::Rect(this->getLocalClipBounds()), paint);
+    } else {
+      INHERITED::onDrawPaint(paint);
+    }
+    this->didDraw(0, &paint);
+  }
+
+  void onDrawPoints(PointMode mode,
+                    size_t count,
+                    const SkPoint pts[],
+                    const SkPaint& paint) override {
+    if (HasPatternMatrix(paint)) {
+      fRecording->drawPoints(mode, {pts, count}, paint);
+      // As SkSVGDevice::drawPoints builds its path.
+      SkPathBuilder path;
+      for (size_t i = 0; i < count; i++) {
+        if (mode == kPoints_PointMode) {
+          path.moveTo(pts[i]);
+          path.lineTo(pts[i]);
+        } else if (mode == kLines_PointMode && i % 2 == 1) {
+          path.moveTo(pts[i - 1]);
+          path.lineTo(pts[i]);
+        }
+      }
+      if (mode == kPolygon_PointMode && count > 1) {
+        path.addPolygon({pts, count}, false);
+      }
+      this->drawPatternForSvg(path.detach(), paint);
+    } else {
+      INHERITED::onDrawPoints(mode, count, pts, paint);
+    }
+    this->didDraw(count * sizeof(SkPoint), &paint);
+  }
+
+  void onDrawRect(const SkRect& rect, const SkPaint& paint) override {
+    if (HasPatternMatrix(paint)) {
+      fRecording->drawRect(rect, paint);
+      this->drawPatternForSvg(SkPath::Rect(rect), paint);
+    } else {
+      INHERITED::onDrawRect(rect, paint);
+    }
+    this->didDraw(0, &paint);
+  }
+
+  void onDrawOval(const SkRect& rect, const SkPaint& paint) override {
+    if (HasPatternMatrix(paint)) {
+      fRecording->drawOval(rect, paint);
+      this->drawPatternForSvg(SkPath::Oval(rect), paint);
+    } else {
+      INHERITED::onDrawOval(rect, paint);
+    }
+    this->didDraw(0, &paint);
+  }
+
+  void onDrawRRect(const SkRRect& rrect, const SkPaint& paint) override {
+    if (HasPatternMatrix(paint)) {
+      fRecording->drawRRect(rrect, paint);
+      this->drawPatternForSvg(SkPath::RRect(rrect), paint);
+    } else {
+      INHERITED::onDrawRRect(rrect, paint);
+    }
+    this->didDraw(0, &paint);
+  }
+
+  void onDrawPath(const SkPath& path, const SkPaint& paint) override {
+    if (HasPatternMatrix(paint)) {
+      fRecording->drawPath(path, paint);
+      this->drawPatternForSvg(path, paint);
+    } else {
+      INHERITED::onDrawPath(path, paint);
+    }
+    this->didDraw(path.approximateBytesUsed(), &paint);
+  }
+
+  void onDrawTextBlob(const SkTextBlob* blob,
+                      SkScalar x,
+                      SkScalar y,
+                      const SkPaint& paint) override {
+    if (HasPatternMatrix(paint)) {
+      fRecording->drawTextBlob(blob, x, y, paint);
+      // The glyph outlines, so they can be drawn in the pattern's space.
+      this->drawPatternForSvg(TextBlobPath(blob, x, y), paint);
+    } else {
+      INHERITED::onDrawTextBlob(blob, x, y, paint);
+    }
+    this->didDraw(0, &paint);
+  }
+
+  // Played back through this canvas, so the SVG output rewrites the pattern
+  // paints inside the picture too (a composited draw records its paint into
+  // one). SkCanvas::onDrawPicture is what SkSVGCanvas itself does with it.
+  void onDrawPicture(const SkPicture* picture,
+                     const SkMatrix* matrix,
+                     const SkPaint* paint) override {
+    SkCanvas::onDrawPicture(picture, matrix, paint);
+  }
+
+  void onDrawRegion(const SkRegion& region, const SkPaint& paint) override {
+    INHERITED::onDrawRegion(region, paint);
+    this->didDraw(0, &paint);
+  }
+
+  void onDrawArc(const SkRect& rect,
+                 SkScalar start,
+                 SkScalar sweep,
+                 bool use_center,
+                 const SkPaint& paint) override {
+    INHERITED::onDrawArc(rect, start, sweep, use_center, paint);
+    this->didDraw(0, &paint);
+  }
+
+  void onDrawDRRect(const SkRRect& outer,
+                    const SkRRect& inner,
+                    const SkPaint& paint) override {
+    INHERITED::onDrawDRRect(outer, inner, paint);
+    this->didDraw(0, &paint);
+  }
+
+  void onDrawBehind(const SkPaint& paint) override {
+    INHERITED::onDrawBehind(paint);
+    this->didDraw(0, &paint);
+  }
+
+  void onDrawImage2(const SkImage* image,
+                    SkScalar left,
+                    SkScalar top,
+                    const SkSamplingOptions& sampling,
+                    const SkPaint* paint) override {
+    INHERITED::onDrawImage2(image, left, top, sampling, paint);
+    this->didDraw(this->imageBytes(image), paint);
+  }
+
+  void onDrawImageRect2(const SkImage* image,
+                        const SkRect& src,
+                        const SkRect& dst,
+                        const SkSamplingOptions& sampling,
+                        const SkPaint* paint,
+                        SrcRectConstraint constraint) override {
+    INHERITED::onDrawImageRect2(image, src, dst, sampling, paint, constraint);
+    this->didDraw(this->imageBytes(image), paint);
+  }
+
+  void onDrawImageLattice2(const SkImage* image,
+                           const Lattice& lattice,
+                           const SkRect& dst,
+                           SkFilterMode filter,
+                           const SkPaint* paint) override {
+    INHERITED::onDrawImageLattice2(image, lattice, dst, filter, paint);
+    this->didDraw(this->imageBytes(image), paint);
+  }
+
+  void onDrawAtlas2(const SkImage* image,
+                    const SkRSXform xform[],
+                    const SkRect tex[],
+                    const SkColor colors[],
+                    int count,
+                    SkBlendMode mode,
+                    const SkSamplingOptions& sampling,
+                    const SkRect* cull,
+                    const SkPaint* paint) override {
+    INHERITED::onDrawAtlas2(image, xform, tex, colors, count, mode, sampling,
+                            cull, paint);
+    this->didDraw(this->imageBytes(image), paint);
+  }
+
+  void onDrawEdgeAAImageSet2(const ImageSetEntry set[],
+                             int count,
+                             const SkPoint clips[],
+                             const SkMatrix matrices[],
+                             const SkSamplingOptions& sampling,
+                             const SkPaint* paint,
+                             SrcRectConstraint constraint) override {
+    INHERITED::onDrawEdgeAAImageSet2(set, count, clips, matrices, sampling,
+                                     paint, constraint);
+    size_t bytes = 0;
+    for (int i = 0; i < count; i++) {
+      bytes += this->imageBytes(set[i].fImage.get());
+    }
+    this->didDraw(bytes, paint);
+  }
+
+  void onDrawGlyphRunList(const sktext::GlyphRunList& list,
+                          const SkPaint& paint) override {
+    INHERITED::onDrawGlyphRunList(list, paint);
+    this->didDraw(0, &paint);
+  }
+
+  void onDrawSlug(const sktext::gpu::Slug* slug,
+                  const SkPaint& paint) override {
+    INHERITED::onDrawSlug(slug, paint);
+    this->didDraw(0, &paint);
+  }
+
+  void onDrawPatch(const SkPoint cubics[12],
+                   const SkColor colors[4],
+                   const SkPoint tex[4],
+                   SkBlendMode mode,
+                   const SkPaint& paint) override {
+    INHERITED::onDrawPatch(cubics, colors, tex, mode, paint);
+    this->didDraw(0, &paint);
+  }
+
+  void onDrawVerticesObject(const SkVertices* vertices,
+                            SkBlendMode mode,
+                            const SkPaint& paint) override {
+    INHERITED::onDrawVerticesObject(vertices, mode, paint);
+    this->didDraw(vertices->approximateSize(), &paint);
+  }
+
+  void onDrawMesh(const SkMesh& mesh,
+                  sk_sp<SkBlender> blender,
+                  const SkPaint& paint) override {
+    INHERITED::onDrawMesh(mesh, std::move(blender), paint);
+    this->didDraw(0, &paint);
+  }
+
+  void onDrawShadowRec(const SkPath& path,
+                       const SkDrawShadowRec& rec) override {
+    INHERITED::onDrawShadowRec(path, rec);
+    this->didDraw(path.approximateBytesUsed(), nullptr);
+  }
+
+  void onDrawDrawable(SkDrawable* drawable, const SkMatrix* matrix) override {
+    INHERITED::onDrawDrawable(drawable, matrix);
+    this->didDraw(drawable->approximateBytesUsed(), nullptr);
+  }
+
+  void onDrawEdgeAAQuad(const SkRect& rect,
+                        const SkPoint clip[4],
+                        QuadAAFlags aa,
+                        const SkColor4f& color,
+                        SkBlendMode mode) override {
+    INHERITED::onDrawEdgeAAQuad(rect, clip, aa, color, mode);
+    this->didDraw(0, nullptr);
+  }
+
+ private:
+  using INHERITED = SkNWayCanvas;
+
+  // Recorded-byte cap after which the recording is drawn into the raster
+  // surface: MAX_RECORDED_BYTES and BYTES_PER_RECORDED_OP in
+  // src/page_recorder.rs.
+  static constexpr size_t kMaxRecordedBytes = 32 * 1024 * 1024;
+  static constexpr size_t kBytesPerRecordedOp = 256;
+
+  struct Clip {
+    enum class Kind { kRect, kRRect, kPath, kShader, kRegion };
+    Kind kind = Kind::kRect;
+    SkM44 matrix;
+    SkRect rect;
+    SkRRect rrect;
+    SkPath path;
+    sk_sp<SkShader> shader;
+    SkRegion region;
+    SkClipOp op = SkClipOp::kIntersect;
+    bool aa = false;
+  };
+
+  // One save level: its clips, each with the matrix it was made under, and the
+  // matrix a restore to this level gives back.
+  struct Level {
+    std::vector<Clip> clips;
+    SkM44 matrix;
+    bool layer = false;
+  };
+
+  // A pattern whose matrix SkSVGDevice would drop.
+  static bool HasPatternMatrix(const SkPaint& paint) {
+    SkMatrix matrix;
+    auto shader = paint.getShader();
+    return shader && shader->isAImage(&matrix, nullptr) && !matrix.isIdentity();
+  }
+
+  Clip& addClip(ClipEdgeStyle edge) {
+    auto& clip = fLevels.back().clips.emplace_back();
+    clip.matrix = this->getLocalToDevice();
+    clip.aa = edge == kSoft_ClipEdgeStyle;
+    return clip;
+  }
+
+  // Starts a recording in the current state: every level's clips under the
+  // matrices they were made with, and the matrix each restore gives back.
+  void beginRecording() {
+    if (fRecording) {
+      this->removeCanvas(fRecording);
+    }
+    const auto size = this->getBaseLayerSize();
+    fRecording = fRecorder.beginRecording(SkRect::Make(size));
+    for (size_t i = 0; i < fLevels.size(); i++) {
+      for (const auto& clip : fLevels[i].clips) {
+        fRecording->setMatrix(clip.matrix);
+        switch (clip.kind) {
+          case Clip::Kind::kRect:
+            fRecording->clipRect(clip.rect, clip.op, clip.aa);
+            break;
+          case Clip::Kind::kRRect:
+            fRecording->clipRRect(clip.rrect, clip.op, clip.aa);
+            break;
+          case Clip::Kind::kPath:
+            fRecording->clipPath(clip.path, clip.op, clip.aa);
+            break;
+          case Clip::Kind::kShader:
+            fRecording->clipShader(clip.shader, clip.op);
+            break;
+          case Clip::Kind::kRegion:
+            fRecording->clipRegion(clip.region, clip.op);
+            break;
+        }
+      }
+      if (i + 1 < fLevels.size()) {
+        fRecording->setMatrix(fLevels[i].matrix);
+        fRecording->save();
+      }
+    }
+    fRecording->setMatrix(this->getLocalToDevice());
+    this->addCanvas(fRecording);
+    fPendingDraws = false;
+    fPendingBytes = 0;
+    fRecordedImages.clear();
+  }
+
+  // Bytes of an image the recording pins, once per image per recording.
+  size_t imageBytes(const SkImage* image) {
+    if (!image || !fRecordedImages.insert(image->uniqueID()).second) {
+      return 0;
+    }
+    return image->imageInfo().computeMinByteSize();
+  }
+
+  // A recorded op pins `bytes`, and the image its paint samples (a pattern)
+  // like the image of a drawImage.
+  void didDraw(size_t bytes, const SkPaint* paint) {
+    if (paint && paint->getShader()) {
+      bytes += this->imageBytes(paint->getShader()->isAImage(nullptr, nullptr));
+    }
+    fPendingDraws = true;
+    fPendingBytes += kBytesPerRecordedOp + bytes;
+    this->flushIfOverLimit();
+  }
+
+  void flushIfOverLimit() {
+    if (fPendingBytes >= kMaxRecordedBytes) {
+      this->flush();
+    }
+  }
+
+  // The SVG half of a draw whose pattern has the matrix M. SVG resolves a
+  // userSpaceOnUse pattern in the user space of the element that uses it, so
+  // the element is drawn under CTM * M, with its geometry mapped back by M^-1
+  // and a pattern with no matrix. A stroke is turned into its fill first, so M
+  // does not scale it. A no-repeat axis is clipped to the image, because
+  // SkSVGDevice writes a "100%" tile for it.
+  void drawPatternForSvg(const SkPath& path, const SkPaint& paint) {
+    SkMatrix matrix;
+    SkTileMode tile[2];
+    auto image = paint.getShader()->isAImage(&matrix, tile);
+    SkMatrix inverse;
+    if (!matrix.invert(&inverse)) {
+      // A singular pattern matrix paints transparent black (HTML spec,
+      // CanvasPattern setTransform), so there is nothing to write.
+      return;
+    }
+    SkPaint fill(paint);
+    SkPath geometry = path;
+    if (paint.getStyle() != SkPaint::kFill_Style || paint.getPathEffect()) {
+      SkPathBuilder builder;
+      if (skpathutils::FillPathWithPaint(path, paint, &builder, nullptr,
+                                         this->getTotalMatrix())) {
+        fill.setStyle(SkPaint::kFill_Style);
+      } else {
+        fill.setStyle(SkPaint::kStroke_Style);
+        fill.setStrokeWidth(0);
+      }
+      fill.setPathEffect(nullptr);
+      geometry = builder.detach();
+    }
+    geometry = geometry.makeTransform(inverse);
+    const bool decal =
+        tile[0] == SkTileMode::kDecal || tile[1] == SkTileMode::kDecal;
+    auto bounds = geometry.getBounds();
+    if (tile[0] == SkTileMode::kDecal) {
+      bounds.fLeft = std::max(bounds.fLeft, 0.0f);
+      bounds.fRight = std::min(bounds.fRight, (float)image->width());
+    }
+    if (tile[1] == SkTileMode::kDecal) {
+      bounds.fTop = std::max(bounds.fTop, 0.0f);
+      bounds.fBottom = std::min(bounds.fBottom, (float)image->height());
+    }
+    if (decal && bounds.isEmpty()) {
+      return;
+    }
+    fill.setShader(
+        sk_ref_sp(image)->makeShader(tile[0], tile[1], SkSamplingOptions()));
+    fSvg->save();
+    fSvg->concat(matrix);
+    if (decal) {
+      fSvg->clipRect(bounds, paint.isAntiAlias());
+    }
+    fSvg->drawPath(geometry, fill);
+    fSvg->restore();
+  }
+
+  std::unique_ptr<SkCanvas> fSvg;
+  sk_sp<SkSurface> fRaster;
+  SkPictureRecorder fRecorder;
+  SkCanvas* fRecording = nullptr;
+  std::vector<Level> fLevels;
+  int fLayers = 0;
+  bool fPendingDraws = false;
+  size_t fPendingBytes = 0;
+  std::unordered_set<uint32_t> fRecordedImages;
+};
+
 void skiac_surface_create_svg(skiac_svg_surface* c_surface,
                               int w,
                               int h,
@@ -204,7 +769,14 @@ void skiac_surface_create_svg(skiac_svg_surface* c_surface,
   }
   c_surface->stream = reinterpret_cast<skiac_w_memory_stream*>(w_stream);
   c_surface->surface = reinterpret_cast<skiac_surface*>(surface);
-  c_surface->canvas = reinterpret_cast<skiac_canvas*>(canvas.release());
+  c_surface->canvas = reinterpret_cast<skiac_canvas*>(
+      new SkiacSvgCanvas(w, h, std::move(canvas), sk_ref_sp(surface)));
+}
+
+// Draws what an SVGCanvas context recorded into its raster surface, before the
+// surface is read. `c_canvas` is the canvas skiac_surface_create_svg made.
+void skiac_svg_canvas_flush(skiac_canvas* c_canvas) {
+  static_cast<SkiacSvgCanvas*>(CANVAS_CAST)->flush();
 }
 
 skiac_surface* skiac_surface_create_rgba_premultiplied(int width,
@@ -214,13 +786,47 @@ skiac_surface* skiac_surface_create_rgba_premultiplied(int width,
       skiac_surface_create(width, height, kPremul_SkAlphaType, cs));
 }
 
+// alpha:false backing store. Blink gives such a canvas a kOpaque resource
+// (canvas_2d_color_params.h GetAlphaType, canvas_resource_provider.cc
+// CreateSkSurface), so putImageData and getImageData copy the bytes as given.
+skiac_surface* skiac_surface_create_rgba_opaque(int width,
+                                                int height,
+                                                uint8_t cs) {
+  return reinterpret_cast<skiac_surface*>(
+      skiac_surface_create(width, height, kOpaque_SkAlphaType, cs));
+}
+
 skiac_surface* skiac_surface_create_rgba(int width, int height, uint8_t cs) {
   return reinterpret_cast<skiac_surface*>(
       skiac_surface_create(width, height, kUnpremul_SkAlphaType, cs));
 }
 
+// Blink encodes canvas output from a kUnpremul readback (image_data_buffer.cc),
+// which is a plain copy for a kOpaque canvas, so an alpha:false canvas still
+// encodes as RGBA with its stored alpha. Skia's PNG encoder would write RGB for
+// a kOpaque image. The view shares the pixels: `image` must outlive it.
+static sk_sp<SkImage> encodable_image(SkImage* image) {
+  SkPixmap pixmap;
+  if (image->alphaType() != kOpaque_SkAlphaType ||
+      !image->peekPixels(&pixmap)) {
+    return sk_ref_sp(image);
+  }
+  return SkImages::RasterFromPixmap(
+      SkPixmap(pixmap.info().makeAlphaType(kUnpremul_SkAlphaType),
+               pixmap.addr(), pixmap.rowBytes()),
+      nullptr, nullptr);
+}
+
+// Blink's JPEG encoder blends its kUnpremul readback on black
+// (image_encoder.cc:51). Skia applies it to kUnpremul input only
+// (SkJpegEncoderImpl.cpp), which here is the view of an alpha:false canvas
+// (encodable_image); premultiplied pixels encode as before.
+static constexpr auto kJpegAlphaOption =
+    SkJpegEncoder::AlphaOption::kBlendOnBlack;
+
 bool skiac_surface_save(skiac_surface* c_surface, const char* path) {
-  auto image = SURFACE_CAST->makeImageSnapshot();
+  auto snapshot = SURFACE_CAST->makeImageSnapshot();
+  auto image = encodable_image(snapshot.get());
   auto data =
       SkPngEncoder::Encode(nullptr, image.get(), SkPngEncoder::Options());
   if (data) {
@@ -257,8 +863,11 @@ skiac_surface* skiac_surface_copy_rgba(skiac_surface* c_surface,
   // x, y, width, height are source rectangle coordinates.
   // Premultiplied like the source canvas: pattern shaders filter the stored
   // texels, and unpremul texels would pull transparent black into the color.
-  auto copy =
-      skiac_surface_create((int)width, (int)height, kPremul_SkAlphaType, cs);
+  // An alpha:false source stays kOpaque, like Blink's snapshot of it.
+  auto alpha_type = SURFACE_CAST->imageInfo().alphaType() == kOpaque_SkAlphaType
+                        ? kOpaque_SkAlphaType
+                        : kPremul_SkAlphaType;
+  auto copy = skiac_surface_create((int)width, (int)height, alpha_type, cs);
   if (!copy) {
     return nullptr;
   }
@@ -344,9 +953,10 @@ bool skiac_surface_read_pixels_rect(skiac_surface* c_surface,
 }
 
 void skiac_surface_png_data(skiac_surface* c_surface, skiac_sk_data* data) {
-  auto image = SURFACE_CAST->makeImageSnapshot().release();
-  auto png_data = SkPngEncoder::Encode(nullptr, image, SkPngEncoder::Options());
-  image->unref();
+  auto snapshot = SURFACE_CAST->makeImageSnapshot();
+  auto image = encodable_image(snapshot.get());
+  auto png_data =
+      SkPngEncoder::Encode(nullptr, image.get(), SkPngEncoder::Options());
   if (png_data) {
     data->ptr = png_data->bytes();
     data->size = png_data->size();
@@ -358,11 +968,14 @@ void skiac_surface_encode_data(skiac_surface* c_surface,
                                skiac_sk_data* data,
                                int format,
                                int quality) {
-  auto image = SURFACE_CAST->makeImageSnapshot().release();
+  auto snapshot = SURFACE_CAST->makeImageSnapshot();
+  auto image_ref = encodable_image(snapshot.get());
+  auto image = image_ref.get();
   sk_sp<SkData> encoded_data;
   if (format == int(SkEncodedImageFormat::kJPEG)) {
     SkJpegEncoder::Options options;
     options.fQuality = quality;
+    options.fAlphaOption = kJpegAlphaOption;
     encoded_data = SkJpegEncoder::Encode(nullptr, image, options);
   } else if (format == int(SkEncodedImageFormat::kPNG)) {
     encoded_data =
@@ -375,7 +988,6 @@ void skiac_surface_encode_data(skiac_surface* c_surface,
     options.fQuality = quality == 100 ? 75 : quality;
     encoded_data = SkWebpEncoder::Encode(nullptr, image, options);
   }
-  image->unref();
   if (encoded_data) {
     data->ptr = const_cast<uint8_t*>(encoded_data->bytes());
     data->size = encoded_data->size();
@@ -392,11 +1004,17 @@ bool skiac_surface_encode_stream(skiac_surface* c_surface,
   if (!SURFACE_CAST->peekPixels(&sk_pixmap)) {
     return false;
   }
+  // alpha:false: encode RGBA with the stored alpha, see encodable_image.
+  if (sk_pixmap.alphaType() == kOpaque_SkAlphaType) {
+    sk_pixmap = SkPixmap(sk_pixmap.info().makeAlphaType(kUnpremul_SkAlphaType),
+                         sk_pixmap.addr(), sk_pixmap.rowBytes());
+  }
   SkJavaScriptWStream stream(write_callback, context);
   std::unique_ptr<SkEncoder> encoder;
   if (format == int(SkEncodedImageFormat::kJPEG)) {
     SkJpegEncoder::Options options;
     options.fQuality = quality;
+    options.fAlphaOption = kJpegAlphaOption;
     encoder = SkJpegEncoder::Make(&stream, sk_pixmap, options);
   } else if (format == int(SkEncodedImageFormat::kPNG)) {
     encoder = SkPngEncoder::Make(&stream, sk_pixmap, SkPngEncoder::Options());
@@ -1120,6 +1738,7 @@ void skiac_canvas_get_line_metrics_or_draw_text(
     skiac_paint* c_paint,
     skiac_canvas* c_canvas,
     skiac_line_metrics* c_line_metrics,
+    bool collect_ink,
     const skiac_font_variation* variations,
     int variations_count,
     int kerning,
@@ -1406,6 +2025,35 @@ void skiac_canvas_get_line_metrics_or_draw_text(
     c_line_metrics->font_ascent = -font_metrics.fAscent + offset;
     c_line_metrics->font_descent = font_metrics.fDescent - offset;
     c_line_metrics->alphabetic_baseline = -font_metrics.fAscent + offset;
+    // The ink of every glyph the draw above paints, where it paints it:
+    // visit() walks the text blobs paint() draws, and the origin is the
+    // draw's own, rtl_offset and letter_spacing_offset included. Relative to
+    // x, unscaled. Only the alpha:false reset asks for it; the walk is a
+    // large share of a measure, so measureText skips it.
+    SkScalar ink_left = SK_ScalarInfinity;
+    SkScalar ink_right = SK_ScalarNegativeInfinity;
+    if (collect_ink) {
+      paragraph->visit([&](int, const Paragraph::VisitorInfo* info) {
+        if (!info) {
+          return;
+        }
+        std::vector<SkRect> glyph_bounds(info->count);
+        info->font.getBounds({info->glyphs, static_cast<size_t>(info->count)},
+                             glyph_bounds, PAINT_CAST);
+        for (int i = 0; i < info->count; ++i) {
+          if (glyph_bounds[i].isEmpty()) {
+            continue;
+          }
+          auto glyph_x = info->origin.fX + info->positions[i].fX;
+          ink_left = std::min(ink_left, glyph_x + glyph_bounds[i].fLeft);
+          ink_right = std::max(ink_right, glyph_x + glyph_bounds[i].fRight);
+        }
+      });
+    }
+    auto draw_x = paint_x - rtl_offset + letter_spacing_offset - x;
+    // No ink (only spaces) or not asked for: an empty box at the anchor.
+    c_line_metrics->ink_left = ink_left <= ink_right ? draw_x + ink_left : 0;
+    c_line_metrics->ink_right = ink_left <= ink_right ? draw_x + ink_right : 0;
   }
   delete paragraph;
 }
@@ -1478,11 +2126,17 @@ void skiac_canvas_put_image_data(skiac_canvas* c_canvas,
                                  float dirty_width,
                                  float dirty_height,
                                  uint8_t cs,
-                                 bool snapshot) {
+                                 bool snapshot,
+                                 bool opaque) {
   auto color_space = COLOR_SPACE_CAST;
+  // alpha:false: Blink's PutByteArray labels the pixels kOpaque, so the write
+  // onto the kOpaque canvas is a plain copy, alpha included
+  // (base_rendering_context_2d.cc PutByteArray, skbug 6157).
   auto info =
       SkImageInfo::Make(width, height, SkColorType::kRGBA_8888_SkColorType,
-                        SkAlphaType::kUnpremul_SkAlphaType, color_space);
+                        opaque ? SkAlphaType::kOpaque_SkAlphaType
+                               : SkAlphaType::kUnpremul_SkAlphaType,
+                        color_space);
   auto pixmap = SkPixmap(info, pixels, row_bytes);
   // When snapshot=true (deferred/recorded mode), copy the pixel data so the
   // SkPicture owns an independent snapshot. Without this, reusing and mutating
@@ -2214,8 +2868,47 @@ void skiac_path_effect_destroy(skiac_path_effect* c_path_effect) {
 
 // Shader
 
+// sk::Color4f (src/sk.rs), skiac_color4f and SkColor4f all hold r, g, b, a as
+// four floats. The stops are copied field by field, so nothing reads Rust
+// memory as an SkColor4f; the asserts keep the three layouts in step.
+static_assert(sizeof(skiac_color4f) == 16 && alignof(skiac_color4f) == 4,
+              "skiac_color4f must match sk::Color4f in src/sk.rs");
+static_assert(offsetof(skiac_color4f, r) == 0 &&
+                  offsetof(skiac_color4f, g) == 4 &&
+                  offsetof(skiac_color4f, b) == 8 &&
+                  offsetof(skiac_color4f, a) == 12,
+              "skiac_color4f must match sk::Color4f in src/sk.rs");
+static_assert(sizeof(skiac_color4f) == sizeof(SkColor4f) &&
+                  alignof(skiac_color4f) == alignof(SkColor4f),
+              "skiac_color4f must have the size and alignment of SkColor4f");
+static_assert(offsetof(skiac_color4f, r) == offsetof(SkColor4f, fR) &&
+                  offsetof(skiac_color4f, g) == offsetof(SkColor4f, fG) &&
+                  offsetof(skiac_color4f, b) == offsetof(SkColor4f, fB) &&
+                  offsetof(skiac_color4f, a) == offsetof(SkColor4f, fA),
+              "skiac_color4f must have the channel order of SkColor4f");
+
+// `count` unpremultiplied sRGB gradient stop colors.
+static std::vector<SkColor4f> gradient_stop_colors(const skiac_color4f* colors,
+                                                   int count) {
+  std::vector<SkColor4f> colors4f(count);
+  for (int i = 0; i < count; i++) {
+    colors4f[i] = {colors[i].r, colors[i].g, colors[i].b, colors[i].a};
+  }
+  return colors4f;
+}
+
+// Canvas gradient stops are legacy sRGB colors, and Blink interpolates them in
+// sRGB whatever the canvas color space (gradient.cc:305-315 picks kSRGB,
+// :248-250 maps it to SkGradient's kSRGB). kDestination would mix them in
+// display-p3 on a P3 canvas.
+static SkGradient::Interpolation legacy_stop_interpolation(uint32_t flags) {
+  auto interpolation = SkGradient::Interpolation::FromFlags(flags);
+  interpolation.fColorSpace = SkGradient::Interpolation::ColorSpace::kSRGB;
+  return interpolation;
+}
+
 skiac_shader* skiac_shader_make_linear_gradient(const skiac_point* c_points,
-                                                const uint32_t* colors,
+                                                const skiac_color4f* colors,
                                                 const float* positions,
                                                 int count,
                                                 int tile_mode,
@@ -2224,15 +2917,12 @@ skiac_shader* skiac_shader_make_linear_gradient(const skiac_point* c_points,
   const auto points = reinterpret_cast<const SkPoint*>(c_points);
   const auto skia_tile_mode = (SkTileMode)tile_mode;
   const auto ts = conv_from_transform(c_ts);
-  std::vector<SkColor4f> colors4f(count);
-  for (int i = 0; i < count; i++) {
-    colors4f[i] = SkColor4f::FromColor(colors[i]);
-  }
+  const auto colors4f = gradient_stop_colors(colors, count);
   SkSpan<const float> posSpan =
       positions ? SkSpan<const float>(positions, count) : SkSpan<const float>();
   SkGradient::Colors gradColors(SkSpan<const SkColor4f>(colors4f.data(), count),
                                 posSpan, skia_tile_mode);
-  SkGradient grad(gradColors, SkGradient::Interpolation::FromFlags(flags));
+  SkGradient grad(gradColors, legacy_stop_interpolation(flags));
   auto shader = SkShaders::LinearGradient(points, grad, &ts).release();
 
   if (shader) {
@@ -2246,7 +2936,7 @@ skiac_shader* skiac_shader_make_radial_gradient(skiac_point c_start_point,
                                                 float start_radius,
                                                 skiac_point c_end_point,
                                                 float end_radius,
-                                                const uint32_t* colors,
+                                                const skiac_color4f* colors,
                                                 const float* positions,
                                                 int count,
                                                 int tile_mode,
@@ -2254,15 +2944,12 @@ skiac_shader* skiac_shader_make_radial_gradient(skiac_point c_start_point,
                                                 skiac_transform c_ts) {
   const SkPoint startPoint = {c_start_point.x, c_start_point.y};
   const SkPoint endPoint = {c_end_point.x, c_end_point.y};
-  std::vector<SkColor4f> colors4f(count);
-  for (int i = 0; i < count; i++) {
-    colors4f[i] = SkColor4f::FromColor(colors[i]);
-  }
+  const auto colors4f = gradient_stop_colors(colors, count);
   SkSpan<const float> posSpan =
       positions ? SkSpan<const float>(positions, count) : SkSpan<const float>();
   SkGradient::Colors gradColors(SkSpan<const SkColor4f>(colors4f.data(), count),
                                 posSpan, (SkTileMode)tile_mode);
-  SkGradient grad(gradColors, SkGradient::Interpolation::FromFlags(flags));
+  SkGradient grad(gradColors, legacy_stop_interpolation(flags));
   auto shader =
       SkShaders::TwoPointConicalGradient(startPoint, start_radius, endPoint,
                                          end_radius, grad, nullptr)
@@ -2277,27 +2964,29 @@ skiac_shader* skiac_shader_make_radial_gradient(skiac_point c_start_point,
 
 skiac_shader* skiac_shader_make_conic_gradient(SkScalar cx,
                                                SkScalar cy,
-                                               SkScalar radius,
-                                               const uint32_t* colors,
+                                               SkScalar rotation,
+                                               const skiac_color4f* colors,
                                                const float* positions,
                                                int count,
                                                int tile_mode,
                                                uint32_t flags,
                                                skiac_transform c_ts) {
   auto ts = conv_from_transform(c_ts);
-  // Skia's sweep gradient angles are relative to the x-axis, not the y-axis.
-  ts.preRotate(radius - 90.0, cx, cy);
-  std::vector<SkColor4f> colors4f(count);
-  for (int i = 0; i < count; i++) {
-    colors4f[i] = SkColor4f::FromColor(colors[i]);
+  // Blink ConicGradient::CreateShader (gradient.cc:509-522): Skia's sweep
+  // gradient angles are relative to the x-axis, not the y-axis, and the sweep
+  // always runs from 0 to 360 degrees.
+  const float skia_rotation = rotation - 90;
+  if (skia_rotation) {
+    ts.preRotate(skia_rotation, cx, cy);
   }
+  const auto colors4f = gradient_stop_colors(colors, count);
   SkSpan<const float> posSpan =
       positions ? SkSpan<const float>(positions, count) : SkSpan<const float>();
   SkGradient::Colors gradColors(SkSpan<const SkColor4f>(colors4f.data(), count),
                                 posSpan, (SkTileMode)tile_mode);
-  SkGradient grad(gradColors, SkGradient::Interpolation::FromFlags(flags));
+  SkGradient grad(gradColors, legacy_stop_interpolation(flags));
   auto shader =
-      SkShaders::SweepGradient({cx, cy}, radius, 360.0f, grad, &ts).release();
+      SkShaders::SweepGradient({cx, cy}, 0.0f, 360.0f, grad, &ts).release();
 
   if (shader) {
     return reinterpret_cast<skiac_shader*>(shader);
@@ -2640,11 +3329,13 @@ void skiac_image_encode_data(skiac_image* c_image,
                              skiac_sk_data* data,
                              int format,
                              int quality) {
-  auto image = IMAGE_CAST;
+  auto image_ref = encodable_image(IMAGE_CAST);
+  auto image = image_ref.get();
   sk_sp<SkData> encoded_data;
   if (format == int(SkEncodedImageFormat::kJPEG)) {
     SkJpegEncoder::Options options;
     options.fQuality = quality;
+    options.fAlphaOption = kJpegAlphaOption;
     encoded_data = SkJpegEncoder::Encode(nullptr, image, options);
   } else if (format == int(SkEncodedImageFormat::kPNG)) {
     encoded_data =
@@ -2667,7 +3358,8 @@ void skiac_image_encode_data(skiac_image* c_image,
 bool skiac_image_read_pixels(skiac_image* c_image,
                              uint8_t* dst,
                              size_t row_bytes,
-                             int alpha_type) {
+                             int alpha_type,
+                             uint8_t cs) {
   if (!c_image || !dst) {
     return false;
   }
@@ -2677,12 +3369,19 @@ bool skiac_image_read_pixels(skiac_image* c_image,
   }
   auto image = IMAGE_CAST;
   // GIF has no color profile, so the spec wants its pixels converted to
-  // sRGB. AVIF supports one, but our AVIF encoder writes none, so it is
-  // converted too. Tagging AVIF with the canvas color space is a follow-up.
-  auto info = SkImageInfo::Make(
-      image->width(), image->height(), kRGBA_8888_SkColorType,
-      static_cast<SkAlphaType>(alpha_type), SkColorSpace::MakeSRGB());
+  // sRGB (cs 0). AVIF carries the canvas color space as CICP, so it reads
+  // the pixels in the image's own color space.
+  auto info =
+      SkImageInfo::Make(image->width(), image->height(), kRGBA_8888_SkColorType,
+                        static_cast<SkAlphaType>(alpha_type), COLOR_SPACE_CAST);
   return image->readPixels(nullptr, info, dst, row_bytes, 0, 0);
+}
+
+// 1 when the image is display-p3, else 0 (sRGB): the two canvas color spaces.
+uint8_t skiac_image_color_space(skiac_image* c_image) {
+  auto p3 =
+      SkColorSpace::MakeRGB(SkNamedTransferFn::kSRGB, SkNamedGamut::kDisplayP3);
+  return SkColorSpace::Equals(IMAGE_CAST->colorSpace(), p3.get()) ? 1 : 0;
 }
 
 void skiac_canvas_draw_sk_image(skiac_canvas* c_canvas,
@@ -2842,6 +3541,88 @@ skiac_bitmap* skiac_bitmap_make_from_image_data(uint8_t* ptr,
   return reinterpret_cast<skiac_bitmap*>(bitmap);
 }
 
+// ImageData pattern copy: RGBA unpremul bytes in, premultiplied texels out, as
+// putImageData stores them in a canvas and as createImageBitmap(imageData)
+// does, so filtering never pulls transparent black into the color. A
+// display-p3 ImageData (`cs` 1) is tagged so a draw converts it to the canvas
+// color space, as putImageData and Chrome's pattern over
+// createImageBitmap(imageData) do. An sRGB one stays untagged, which draws the
+// same and keeps the PNG that the SVG output embeds unchanged.
+skiac_bitmap* skiac_bitmap_make_premul_from_image_data(uint8_t* ptr,
+                                                       size_t width,
+                                                       size_t height,
+                                                       size_t row_bytes,
+                                                       uint8_t cs) {
+  auto bitmap = new SkBitmap();
+  const auto src_info = SkImageInfo::Make(
+      (int)width, (int)height, kRGBA_8888_SkColorType, kUnpremul_SkAlphaType,
+      cs == 0 ? nullptr : COLOR_SPACE_CAST);
+  if (!bitmap->tryAllocPixels(src_info.makeAlphaType(kPremul_SkAlphaType)) ||
+      !bitmap->writePixels(SkPixmap(src_info, ptr, row_bytes), 0, 0)) {
+    delete bitmap;
+    return nullptr;
+  }
+  return reinterpret_cast<skiac_bitmap*>(bitmap);
+}
+
+// The color space Chrome gives a CICP AVIF (avif_image_decoder.cc GetColorSpace
+// and ui/gfx/color_space.cc GetTransferFunction), or null to leave it untagged.
+// 2 (unspecified) means BT.709 primaries and the sRGB transfer, and Chrome
+// draws the BT.709 family of transfers (1, 6, 14, 15) with the sRGB curve, not
+// the 2.4 gamma that SkColorSpace::MakeCICP uses for them. Chrome cannot decode
+// transfers 9-12, and tone maps PQ (16) and HLG (18), so those stay untagged.
+static sk_sp<SkColorSpace> avif_cicp_color_space(uint16_t primaries,
+                                                 uint16_t transfer) {
+  switch (transfer) {
+    case 1:
+    case 2:
+    case 6:
+    case 14:
+    case 15:
+      transfer = 13;
+      break;
+    case 4:
+    case 5:
+    case 7:
+    case 8:
+    case 13:
+    case 17:
+      break;
+    default:
+      return nullptr;
+  }
+  primaries = primaries == 2 ? 1 : primaries;
+  if (primaries > UINT8_MAX) {
+    return nullptr;
+  }
+  return SkColorSpace::MakeCICP(
+      static_cast<SkNamedPrimaries::CicpId>(primaries),
+      static_cast<SkNamedTransferFn::CicpId>(transfer));
+}
+
+// Tag decoded AVIF pixels with the file's color space, as Chrome's AVIF
+// decoder does (avif_image_decoder.cc:868-914): an ICC profile wins, else the
+// CICP primaries and transfer. sRGB stays untagged, as before.
+void skiac_bitmap_set_color_space(skiac_bitmap* c_bitmap,
+                                  const uint8_t* icc,
+                                  size_t icc_len,
+                                  uint16_t primaries,
+                                  uint16_t transfer) {
+  sk_sp<SkColorSpace> color_space;
+  if (icc && icc_len) {
+    skcms_ICCProfile profile;
+    if (skcms_Parse(icc, icc_len, &profile)) {
+      color_space = SkColorSpace::Make(profile);
+    }
+  }
+  if (!color_space) {
+    color_space = avif_cicp_color_space(primaries, transfer);
+  }
+  if (color_space && !color_space->isSRGB()) {
+    BITMAP_CAST->setColorSpace(std::move(color_space));
+  }
+}
+
 size_t skiac_bitmap_get_width(skiac_bitmap* c_bitmap) {
   auto bitmap = reinterpret_cast<SkBitmap*>(c_bitmap);
   return bitmap->width();
@@ -2856,13 +3637,37 @@ void skiac_bitmap_set_immutable(skiac_bitmap* c_bitmap) {
   BITMAP_CAST->setImmutable();
 }
 
+// The image a pattern samples; Bitmap::make_image, for ImagePattern, is the
+// only caller. It shares the bitmap's pixels, as Chrome shares one decoded
+// image between all the patterns that use it. Sharing a mutable bitmap is safe
+// because nothing writes to a bitmap after its skiac_bitmap_make_* factory
+// returns: a new src or size makes a new bitmap. An immutable bitmap (decoded
+// by SkCodec: PNG, JPEG, WebP, GIF, ...; an ImageData copy) is shared by
+// RasterFromBitmap. That would copy a mutable one (SVG, AVIF), so it is
+// wrapped instead, and the image holds a ref on its pixel ref. Null when the
+// bitmap has no pixels.
 skiac_image* skiac_bitmap_make_image(skiac_bitmap* c_bitmap) {
-  // An immutable bitmap (decoded by SkCodec: PNG, JPEG, WebP, GIF, ...) shares
-  // its pixels with the image. A mutable one (SVG, AVIF) is copied here once,
-  // so the shaders a pattern rebuilds never copy it again. Null when the bitmap
-  // has no pixels.
-  return reinterpret_cast<skiac_image*>(
-      SkImages::RasterFromBitmap(*BITMAP_CAST).release());
+  if (BITMAP_CAST->isImmutable()) {
+    return reinterpret_cast<skiac_image*>(
+        SkImages::RasterFromBitmap(*BITMAP_CAST).release());
+  }
+  SkPixmap pixmap;
+  if (!BITMAP_CAST->peekPixels(&pixmap)) {
+    return nullptr;
+  }
+  auto pixel_ref = SkSafeRef(BITMAP_CAST->pixelRef());
+  auto image = SkImages::RasterFromPixmap(
+      pixmap,
+      [](const void*, void* ctx) {
+        SkSafeUnref(static_cast<SkPixelRef*>(ctx));
+      },
+      pixel_ref);
+  if (!image) {
+    // RasterFromPixmap calls the release proc only once it made the image.
+    SkSafeUnref(pixel_ref);
+    return nullptr;
+  }
+  return reinterpret_cast<skiac_image*>(image.release());
 }
 
 skiac_shader* skiac_image_make_pattern_shader(skiac_image* c_image,

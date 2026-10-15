@@ -6,7 +6,11 @@
 //! The float math matches Skia's conversion
 //! (skia/src/opts/SkSwizzler_opts.inc): normalized [0,1] space, guarded
 //! reciprocal of alpha (0 where alpha == 0), clamp to 255, round to nearest
-//! with ties to even (as Skia's SIMD paths do on both arm64 and x64).
+//! with ties to even (as Skia's SIMD paths do on both arm64 and x64). A pixel
+//! with alpha 0 reads as 0,0,0,0 whatever its RGB, as in Skia: valid
+//! premultiplied pixels already are, but an alpha:false canvas keeps
+//! putImageData bytes as given, and drawing it can leave alpha-0 pixels with
+//! RGB set on a premultiplied canvas.
 //!
 //! Targets without a matching implementation return `None` from [`row_fn`]
 //! and the caller falls back to Skia's own conversion through the C++ shim,
@@ -63,7 +67,10 @@ fn unpremul_channel(reciprocal_a: f32, c: u32) -> u32 {
 #[inline]
 fn unpremul_pixel(p: u32) -> u32 {
   let a = p >> 24;
-  if a == 0 || a == 255 {
+  if a == 0 {
+    return 0;
+  }
+  if a == 255 {
     return p;
   }
   let reciprocal_a = 1.0 / (a as f32 * (1.0 / 255.0));
@@ -93,10 +100,11 @@ pub mod neon {
       let a = vshrq_n_u32::<24>(p);
       let a_zero = vceqq_u32(a, vdupq_n_u32(0));
       // Fast path: vectors whose pixels are all fully opaque or fully
-      // transparent (the common case in real content) are copied as-is.
+      // transparent (the common case in real content) are copied as-is, with
+      // the alpha-0 pixels zeroed.
       let fast = vorrq_u32(vceqq_u32(a, vdupq_n_u32(255)), a_zero);
       if vminvq_u32(fast) == u32::MAX {
-        vst1q_u32(dst, p);
+        vst1q_u32(dst, vbicq_u32(p, a_zero));
         return;
       }
       let k1_255 = vdupq_n_f32(1.0 / 255.0);
@@ -158,10 +166,11 @@ pub mod sse2 {
       let a = _mm_srli_epi32::<24>(p);
       let a_zero = _mm_cmpeq_epi32(a, _mm_setzero_si128());
       // Fast path: vectors whose pixels are all fully opaque or fully
-      // transparent (the common case in real content) are copied as-is.
+      // transparent (the common case in real content) are copied as-is, with
+      // the alpha-0 pixels zeroed.
       let fast = _mm_or_si128(_mm_cmpeq_epi32(a, _mm_set1_epi32(255)), a_zero);
       if _mm_movemask_epi8(fast) == 0xFFFF {
-        _mm_storeu_si128(dst.cast(), p);
+        _mm_storeu_si128(dst.cast(), _mm_andnot_si128(a_zero, p));
         return;
       }
       let k1_255 = _mm_set1_ps(1.0 / 255.0);
@@ -223,10 +232,11 @@ pub mod avx2 {
       let a = _mm256_srli_epi32::<24>(p);
       let a_zero = _mm256_cmpeq_epi32(a, _mm256_setzero_si256());
       // Fast path: vectors whose pixels are all fully opaque or fully
-      // transparent (the common case in real content) are copied as-is.
+      // transparent (the common case in real content) are copied as-is, with
+      // the alpha-0 pixels zeroed.
       let fast = _mm256_or_si256(_mm256_cmpeq_epi32(a, _mm256_set1_epi32(255)), a_zero);
       if _mm256_movemask_epi8(fast) == -1 {
-        _mm256_storeu_si256(dst.cast(), p);
+        _mm256_storeu_si256(dst.cast(), _mm256_andnot_si256(a_zero, p));
         return;
       }
       let k1_255 = _mm256_set1_ps(1.0 / 255.0);
@@ -298,11 +308,12 @@ pub mod avx512 {
       let p = _mm512_loadu_si512(src.cast());
       let a = _mm512_srli_epi32::<24>(p);
       // Fast path: vectors whose pixels are all fully opaque or fully
-      // transparent (the common case in real content) are copied as-is.
+      // transparent (the common case in real content) are copied as-is, with
+      // the alpha-0 pixels zeroed.
       let is_opaque = _mm512_cmpeq_epi32_mask(a, _mm512_set1_epi32(255));
       let nonzero_a = _mm512_test_epi32_mask(a, a);
       if (is_opaque | !nonzero_a) == 0xFFFF {
-        _mm512_storeu_si512(dst.cast(), p);
+        _mm512_storeu_si512(dst.cast(), _mm512_maskz_mov_epi32(nonzero_a, p));
         return;
       }
       let k1_255 = _mm512_set1_ps(1.0 / 255.0);
@@ -392,6 +403,83 @@ mod tests {
       reference_row(&mut expected, &src[..n]);
       unsafe { row(actual.as_mut_ptr(), src.as_ptr(), n) };
       assert_eq!(actual, expected, "row conversion mismatch at n={n}");
+    }
+  }
+
+  // The row functions before alpha-0 pixels were zeroed: they copied a pixel
+  // with alpha 0 or 255 as-is.
+  fn previous_pixel(p: u32) -> u32 {
+    let a = p >> 24;
+    if a == 0 || a == 255 {
+      p
+    } else {
+      super::unpremul_pixel(p)
+    }
+  }
+
+  fn for_each_row_fn(f: impl Fn(unsafe fn(*mut u32, *const u32, usize))) {
+    #[cfg(target_arch = "x86_64")]
+    {
+      if std::arch::is_x86_feature_detected!("sse2") {
+        f(super::sse2::row);
+      }
+      if std::arch::is_x86_feature_detected!("avx2") {
+        f(super::avx2::row);
+      }
+      if std::arch::is_x86_feature_detected!("avx512f") {
+        f(super::avx512::row);
+      }
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+      f(super::neon::row);
+    }
+    f(super::row_scalar);
+  }
+
+  // Every valid premultiplied pixel (each channel <= alpha, so alpha 0 means
+  // RGB 0) converts exactly as before: alpha:true readback is unchanged.
+  #[test]
+  fn valid_premultiplied_pixels_convert_as_before() {
+    let mut src = Vec::new();
+    for a in 0u32..=255 {
+      for c in 0u32..=a {
+        src.push((a << 24) | ((a - c) << 16) | ((c / 2) << 8) | c);
+      }
+    }
+    for_each_row_fn(|row| {
+      let mut actual = vec![0u32; src.len()];
+      unsafe { row(actual.as_mut_ptr(), src.as_ptr(), src.len()) };
+      for (i, (&got, &p)) in actual.iter().zip(src.iter()).enumerate() {
+        assert_eq!(got, previous_pixel(p), "pixel {i} ({p:#010x})");
+      }
+    });
+  }
+
+  // Alpha 0 with RGB set (only an alpha:false canvas makes these) reads as 0,
+  // as Skia's conversion gives, in the vector fast path, the mixed path and
+  // the scalar tail.
+  #[test]
+  fn alpha_zero_reads_as_zero() {
+    let cases: [&[u32]; 3] = [
+      &[0x00_1e_14_0a; 16],
+      &[0x00_1e_14_0a, 0xff_00_00_ff, 0x00_ff_ff_ff, 0xff_01_02_03].repeat(4),
+      &[0x00_1e_14_0a, 0x80_10_10_10, 0x00_ff_ff_ff, 0x01_00_00_01].repeat(4),
+    ];
+    for src in cases {
+      for n in [1usize, 3, 4, 8, 16] {
+        for_each_row_fn(|row| {
+          let mut actual = vec![0xdead_beef_u32; n];
+          unsafe { row(actual.as_mut_ptr(), src.as_ptr(), n) };
+          for (i, &p) in src[..n].iter().enumerate() {
+            if p >> 24 == 0 {
+              assert_eq!(actual[i], 0, "pixel {i} ({p:#010x}) at n={n}");
+            } else {
+              assert_eq!(actual[i], super::unpremul_pixel(p), "pixel {i} at n={n}");
+            }
+          }
+        });
+      }
     }
   }
 

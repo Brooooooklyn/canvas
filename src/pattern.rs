@@ -2,20 +2,63 @@ use std::result::Result as StdResult;
 use std::sync::{Arc, Mutex};
 
 use cssparser::Parser;
-use cssparser_color::{Color as CSSColor, hsl_to_rgb};
+use cssparser_color::{Color as CSSColor, Hsl};
 use napi::bindgen_prelude::*;
 use rgb::RGBA;
 
-use crate::ctx::TransformObject;
 use crate::error::SkError;
 use crate::gradient::Gradient;
 use crate::image::{Image, ImageData};
 use crate::page_recorder::next_resource_id;
 use crate::sk::{
-  AccountedBitmap, AlphaType, Bitmap, ColorType, ImagePattern, ImagePatternBacking,
-  ImagePatternShared, TileMode, Transform,
+  AccountedBitmap, Bitmap, ImagePattern, ImagePatternBacking, ImagePatternShared, TileMode,
+  Transform,
 };
+use crate::webidl;
 use crate::{CanvasElement, SVGCanvas};
+
+/// Blink's gfx::HSLToSRGB (ui/gfx/color_conversions.cc:296-309): the CSS Color 4
+/// formula in f32, with the `fmod` done in f64 as in C++. `h` is in degrees,
+/// `s` and `l` in [0, 1].
+pub(crate) fn hsl_to_srgb(h: f32, s: f32, l: f32) -> [f32; 3] {
+  if s == 0.0 {
+    return [l, l, l];
+  }
+  let channel = |n: f32| {
+    let k = ((n + h / 30.0) as f64 % 12.0) as f32;
+    let a = s * l.min(1.0 - l);
+    l - a * (k - 3.0).min(9.0 - k).clamp(-1.0, 1.0)
+  };
+  [channel(0.0), channel(8.0), channel(4.0)]
+}
+
+/// The unrounded sRGB of an hsl() color, as Blink keeps it (Color::FromHSLA).
+pub(crate) fn hsl_color_to_srgb(hsl: &Hsl) -> [f32; 3] {
+  hsl_to_srgb(
+    hsl.hue.unwrap_or(0.0),
+    hsl.saturation.unwrap_or(0.0),
+    hsl.lightness.unwrap_or(0.0),
+  )
+}
+
+/// A float color channel as Chrome's CPU canvas draws it: Skia's Sk4f_toL32,
+/// `v * 255 + 0.5` pinned to [0, 255] and truncated (src/core/SkSwizzlePriv.h).
+pub(crate) fn srgb_channel_to_u8(v: f32) -> u8 {
+  (v * 255.0 + 0.5).clamp(0.0, 255.0) as u8
+}
+
+/// The 8-bit paint color of an hsl() fillStyle, strokeStyle, shadowColor or
+/// drop-shadow() color. Blink keeps the float sRGB in the paint and the CPU
+/// blitter rounds it with Sk4f_toL32.
+pub(crate) fn hsl_to_rgba8(hsl: &Hsl) -> RGBA<u8> {
+  let [r, g, b] = hsl_color_to_srgb(hsl);
+  RGBA {
+    r: srgb_channel_to_u8(r),
+    g: srgb_channel_to_u8(g),
+    b: srgb_channel_to_u8(b),
+    a: (hsl.alpha.unwrap_or(1.0) * 255.0).round() as u8,
+  }
+}
 
 #[derive(Debug)]
 pub enum Pattern {
@@ -59,24 +102,7 @@ impl Pattern {
         },
         color_str.to_owned(),
       )),
-      CSSColor::Hsl(hsl) => {
-        let h = hsl.hue.unwrap_or(0.0) / 360.0;
-        let s = hsl.saturation.unwrap_or(0.0);
-        let l = hsl.lightness.unwrap_or(0.0);
-        let a = hsl.alpha.unwrap_or(1.0);
-
-        let (r, g, b) = hsl_to_rgb(h, s, l);
-
-        Ok(Pattern::Color(
-          RGBA {
-            r: (r * 255.0) as u8,
-            g: (g * 255.0) as u8,
-            b: (b * 255.0) as u8,
-            a: (a * 255.0).round() as u8,
-          },
-          color_str.to_owned(),
-        ))
-      }
+      CSSColor::Hsl(hsl) => Ok(Pattern::Color(hsl_to_rgba8(&hsl), color_str.to_owned())),
       _ => Err(SkError::Generic("Unsupported color format".to_owned())),
     }
   }
@@ -87,27 +113,66 @@ pub struct CanvasPattern {
   pub(crate) inner: Pattern,
 }
 
-#[napi]
 impl CanvasPattern {
-  #[napi(constructor)]
-  pub fn new(
+  /// createPattern() after the argument conversion. Like Chrome
+  /// (Canvas2DRecorderContext::createPattern), the repetition is checked
+  /// before the image state. `Ok(None)` is a `null` result: an Image with no
+  /// src, or one that has not finished loading.
+  pub(crate) fn create(
     env: Env,
-    input: Either4<&mut Image, &mut ImageData, &mut CanvasElement, &mut SVGCanvas>,
-    repetition: Option<String>,
-  ) -> Result<Self> {
+    input: Either4<&mut Image, &mut ImageData, &mut CanvasElement<'_>, &mut SVGCanvas<'_>>,
+    repetition: &str,
+  ) -> Result<Option<Self>> {
+    // CanvasPattern::ParseRepetitionType: case-sensitive, '' is 'repeat'.
+    let (repeat_x, repeat_y) = match repetition {
+      "" | "repeat" => (TileMode::Repeat, TileMode::Repeat),
+      "repeat-x" => (TileMode::Repeat, TileMode::Decal),
+      "repeat-y" => (TileMode::Decal, TileMode::Repeat),
+      "no-repeat" => (TileMode::Decal, TileMode::Decal),
+      _ => {
+        return Err(webidl::dom_exception(
+          env.raw(),
+          "SyntaxError",
+          &format!(
+            "{}The provided type ('{repetition}') is not one of 'repeat', 'no-repeat', 'repeat-x', or 'repeat-y'.",
+            webidl::CREATE_PATTERN
+          ),
+        ));
+      }
+    };
     // The returned `ImagePattern` keeps shared ownership of the backing pixels
     // (`backing`), so clones pushed onto the `save()`/`restore()` state stack
     // stay valid after the JS `CanvasPattern` is garbage-collected.
     // https://github.com/Brooooooklyn/canvas/issues/1341
+    //
+    // `is_canvas` picks the canvas sampling rule (PatternSamplingOptions in
+    // skia_c.cpp). Chrome has no ImageData pattern; its analog, a pattern over
+    // createImageBitmap(imageData), samples like a canvas source.
+    //
     // A raster Image goes through Chrome's decode cache; an SVG Image is drawn
     // as vectors there, so its raster is sampled as it is.
     let is_image = matches!(&input, Either4::A(image) if !image.is_svg);
-    let (backing_bytes, backing, accounting_id) = match input {
+    let (backing_bytes, backing, accounting_id, is_canvas) = match input {
       Either4::A(image) => {
-        let bitmap = image
-          .bitmap
-          .as_ref()
-          .ok_or_else(|| Error::new(Status::InvalidArg, "Image is not completed.".to_owned()))?;
+        // Chrome checks ImageComplete() first (image_element_base.cc:59): a
+        // new src that is still loading gives null, even while the old
+        // picture is still held.
+        if !image.complete {
+          return Ok(None);
+        }
+        let Some(bitmap) = image.bitmap.as_ref() else {
+          if image.broken {
+            return Err(webidl::dom_exception(
+              env.raw(),
+              "InvalidStateError",
+              &format!(
+                "{}Source image is in the 'broken' state.",
+                webidl::CREATE_PATTERN
+              ),
+            ));
+          }
+          return Ok(None);
+        };
         (
           bitmap.inner.0.width as usize * bitmap.inner.0.height as usize * 4,
           ImagePatternBacking::Bitmap(bitmap.clone()),
@@ -115,19 +180,21 @@ impl CanvasPattern {
           // bitmap's own resource_id, so N patterns over one Image charge
           // once per recording window instead of per wrapper.
           bitmap.resource_id,
+          false,
         )
       }
       Either4::B(image_data) => {
         let data = image_data.resolve_pixels(&env)?;
         let image_data_size = image_data.width * image_data.height * 4;
-        let bitmap = Bitmap::from_image_data(
+        // Premultiplied like a canvas or an ImageBitmap, so filtering never
+        // pulls transparent black into the color. Drawn from its own color
+        // space, as putImageData draws it.
+        let bitmap = Bitmap::premul_from_image_data(
           data,
           image_data.width,
           image_data.height,
           image_data.width * 4,
-          image_data_size,
-          ColorType::RGBA8888,
-          AlphaType::Unpremultiplied,
+          image_data.color_space,
         )
         .ok_or_else(|| {
           Error::new(
@@ -151,6 +218,7 @@ impl CanvasPattern {
           ))),
           // Per-pattern pixel copy: fresh identity.
           next_resource_id(),
+          true,
         )
       }
       Either4::C(canvas) => {
@@ -175,9 +243,12 @@ impl CanvasPattern {
           ImagePatternBacking::Surface(cloned_surface.reference()),
           // Per-pattern surface clone: fresh identity.
           next_resource_id(),
+          true,
         )
       }
       Either4::D(svg_canvas) => {
+        // Draw what the SVG canvas recorded into its raster surface.
+        svg_canvas.ctx.context.flush();
         // Clone the surface to capture its current state and prevent segfaults
         // when the original canvas is resized or destroyed
         let cloned_surface = svg_canvas
@@ -197,26 +268,11 @@ impl CanvasPattern {
           ImagePatternBacking::Surface(cloned_surface.reference()),
           // Per-pattern surface clone: fresh identity.
           next_resource_id(),
+          true,
         )
       }
     };
-    let is_canvas = matches!(backing, ImagePatternBacking::Surface(_));
-    let (repeat_x, repeat_y) = match repetition {
-      None => (TileMode::Repeat, TileMode::Repeat),
-      Some(repetition) => match repetition.as_str() {
-        "" | "repeat" => (TileMode::Repeat, TileMode::Repeat),
-        "repeat-x" => (TileMode::Repeat, TileMode::Decal),
-        "repeat-y" => (TileMode::Decal, TileMode::Repeat),
-        "no-repeat" => (TileMode::Decal, TileMode::Decal),
-        _ => {
-          return Err(Error::new(
-            Status::InvalidArg,
-            format!("{repetition} is not valid repetition rule"),
-          ));
-        }
-      },
-    };
-    Ok(Self {
+    Ok(Some(Self {
       inner: Pattern::Image(ImagePattern {
         accounting_id,
         repeat_x,
@@ -231,18 +287,34 @@ impl CanvasPattern {
           shader: None,
         })),
       }),
-    })
+    }))
+  }
+}
+
+#[napi]
+impl CanvasPattern {
+  #[napi(constructor)]
+  pub fn new(
+    env: Env,
+    input: Either4<&mut Image, &mut ImageData, &mut CanvasElement, &mut SVGCanvas>,
+    repetition: Option<String>,
+  ) -> Result<Self> {
+    Self::create(env, input, repetition.as_deref().unwrap_or("repeat"))?
+      .ok_or_else(|| Error::new(Status::InvalidArg, "Image is not completed.".to_owned()))
   }
 
+  /// setTransform(optional DOMMatrix2DInit transform = {}).
   #[napi]
-  pub fn set_transform(&mut self, transform: TransformObject) {
+  pub fn set_transform(&mut self, transform: webidl::PatternTransform) -> Result<()> {
+    let [a, b, c, d, e, f] = transform.0;
     if let Pattern::Image(image) = &mut self.inner {
       // Clones already assigned to fill/stroke styles (and the save/restore
       // stack) share this state, so the new matrix takes effect at paint time
       // per https://html.spec.whatwg.org/#dom-canvaspattern-settransform
       let mut shared = image.shared.lock().unwrap();
-      shared.transform = transform.into();
+      shared.transform = Transform::new(a as f32, b as f32, c as f32, d as f32, e as f32, f as f32);
       shared.shader = None;
     }
+    Ok(())
   }
 }
