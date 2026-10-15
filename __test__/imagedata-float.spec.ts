@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 
 import test from 'ava'
 
-import { createCanvas, ImageData, SvgExportFlag } from '../index'
+import { createCanvas, ImageData, PDFDocument, SvgExportFlag } from '../index'
 
 import { HAS_F16, Float16, all3, arr, chromeEqual, ctx, desc, err, px } from './float16-helpers'
 
@@ -266,6 +266,71 @@ test('putImageData of float data on an SVGCanvas', (t) => {
   const data = new AnyImageData(new Float32Array([0.5, 0.25, 1, 1]), 1, 1, { pixelFormat: 'rgba-float32' })
   svg.putImageData(data, 0, 0, 0, 0, 1, 1)
   chromeEqual(t, { u8: px(svg, 0, 0) }, 'D1-put-f32-on-u8', { pick: (pin) => ({ u8: pin.u8 }) })
+})
+
+// No Chrome counterpart: SVG and PDF draw float data as the same data in
+// rgba-unorm8, also for a dirty rect that goes past the data.
+test('putImageData of float data on SVG and PDF draws what the same unorm8 data draws', (t) => {
+  const u8 = new ImageData(
+    new Uint8ClampedArray([255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 255, 51]),
+    2,
+    2,
+  )
+  const f32 = new AnyImageData(new Float32Array([1, 0, 0, 1, 0, 1, 0, 1, 0, 0, 1, 1, 1, 1, 1, 0.2]), 2, 2, {
+    pixelFormat: 'rgba-float32',
+  })
+  const draw = (data: ImageData) => {
+    const svgCanvas = createCanvas(2, 2, SvgExportFlag.NoPrettyXML)
+    const svg = svgCanvas.getContext('2d')
+    const pdf = new PDFDocument({ creationDate: new Date(0), modDate: new Date(0) })
+    const page = pdf.beginPage(2, 2)
+    for (const ctx of [svg, page]) {
+      ctx.putImageData(data, 0, 0, 0, 0, 1, 1)
+      ctx.putImageData(data, 0, 0, 1, 1, 5, 5)
+    }
+    pdf.endPage()
+    const pixels = arr(svg.getImageData(0, 0, 2, 2).data)
+    // The clip path ids count every SVG document made in the process.
+    const text = svgCanvas.getContent().toString()
+    return { pixels, svg: text.replace(/cl_\d+/g, 'cl'), pdf: pdf.close() }
+  }
+  const want = draw(u8)
+  const got = draw(f32)
+  t.deepEqual(want.pixels, [255, 0, 0, 255, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 51])
+  t.deepEqual(got.pixels, want.pixels)
+  t.is(got.svg, want.svg)
+  t.true(got.pdf.equals(want.pdf))
+})
+
+// No Chrome counterpart: SVG and PDF convert float data only for a draw that
+// shows some of it. A dirty rect that is empty or misses the data draws
+// nothing, and without a dirty rect these backends draw no ImageData at all.
+// Each of these calls used to convert the whole 4096x4096 rgba-float32 data,
+// which added 64 MiB to the peak memory.
+test('putImageData of float data that draws nothing on SVG and PDF converts nothing', (t) => {
+  const script = `
+    const { createCanvas, ImageData, PDFDocument, SvgExportFlag } = require(${JSON.stringify(fileURLToPath(new URL('../index.js', import.meta.url)))})
+    const id = new ImageData(4096, 4096, { pixelFormat: 'rgba-float32' })
+    id.data.fill(0.5)
+    const svg = createCanvas(16, 16, SvgExportFlag.NoPrettyXML).getContext('2d')
+    const pdf = new PDFDocument()
+    const page = pdf.beginPage(16, 16)
+    const rects = { empty: [0, 0, 0, 0], negative: [0, 0, -1, 4], outside: [4096, 0, 8, 8], below: [0, 4096, 8, 8], none: [] }
+    const growthMiB = {}
+    for (const [name, ctx] of [['svg', svg], ['pdf', page]]) {
+      for (const [rect, dirty] of Object.entries(rects)) {
+        const before = process.resourceUsage().maxRSS
+        ctx.putImageData(id, 0, 0, ...dirty)
+        growthMiB[name + '-' + rect] = Math.round((process.resourceUsage().maxRSS - before) / 1024)
+      }
+    }
+    console.log(JSON.stringify(growthMiB))
+  `
+  const child = spawnSync(process.execPath, ['-e', script], { encoding: 'utf8' })
+  t.is(child.status, 0, child.stderr)
+  const growthMiB: Record<string, number> = JSON.parse(child.stdout)
+  const total = Object.values(growthMiB).reduce((a, b) => a + b, 0)
+  t.true(total < 16, `peak memory grew by ${JSON.stringify(growthMiB)} MiB`)
 })
 
 test('putImageData of a detached float ImageData throws InvalidStateError', (t) => {

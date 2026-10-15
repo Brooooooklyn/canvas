@@ -6403,10 +6403,9 @@ impl CanvasRenderingContext2D {
     };
     // Float data, or any data on a float16 canvas: a raster canvas writes it
     // as Blink does. The SVG and PDF backends draw float data as rgba-unorm8
-    // data, below.
-    let unorm8;
+    // data, converted below only for a draw that shows some of it.
     let raster = self.context.backend == Backend::Raster;
-    let data = if raster
+    if raster
       && (image_data.pixel_format != ImageDataPixelFormat::Unorm8
         || self.context.pixel_format != CanvasPixelFormat::Unorm8)
     {
@@ -6417,19 +6416,10 @@ impl CanvasRenderingContext2D {
         return Err(out_of_memory());
       }
       return Ok(());
-    } else if image_data.pixel_format == ImageDataPixelFormat::Unorm8 {
-      data
-    } else {
-      unorm8 = crate::sk::image_data_to_unorm8(
-        data,
-        image_data.width,
-        image_data.height,
-        image_data.color_space,
-        image_data.pixel_format,
-      )
-      .ok_or_else(out_of_memory)?;
-      unorm8.as_ptr().cast_mut()
-    };
+    }
+    let float = image_data.pixel_format != ImageDataPixelFormat::Unorm8;
+    let unorm8;
+    let mut data = data;
     if let Some([dirty_x, dirty_y, dirty_width, dirty_height]) = dirty {
       let mut dirty_x = dirty_x as f32;
       let mut dirty_y = dirty_y as f32;
@@ -6468,6 +6458,24 @@ impl CanvasRenderingContext2D {
         && Context::rect_fillable(dy as f32 + dirty_y, dirty_height))
       {
         return Ok(());
+      }
+      if float {
+        // The spec cuts the dirty rect to the data and draws nothing when
+        // nothing is left. Only then is the whole data converted.
+        if f64::from(dirty_x) >= image_data.width as f64
+          || f64::from(dirty_y) >= image_data.height as f64
+        {
+          return Ok(());
+        }
+        unorm8 = crate::sk::image_data_to_unorm8(
+          data,
+          image_data.width,
+          image_data.height,
+          image_data.color_space,
+          image_data.pixel_format,
+        )
+        .ok_or_else(out_of_memory)?;
+        data = unorm8.as_ptr().cast_mut();
       }
       // Deferred mode: record via PageRecorder on a fresh layer (no clip/transform)
       // put_image_data uses drawImageRect with kSrc blend (pixel replacement),
@@ -6534,6 +6542,11 @@ impl CanvasRenderingContext2D {
       self.context.surface.canvas.restore();
       self.context.note_direct_mutation();
     } else {
+      // SVG and PDF devices take no writePixels, so the float data, which
+      // only they get here, would be converted for nothing.
+      if float {
+        return Ok(());
+      }
       // Deferred mode: use put_image_data with full image dimensions
       // because write_pixels (SkCanvas::writePixels) is NOT recordable by PictureRecorder
       self.context.flush_if_recording_limit_exceeded();
