@@ -1,0 +1,540 @@
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+import test from 'ava'
+
+import { createCanvas, Image, type SKRSContext2D } from '../index'
+
+// Chrome 155 values (arm64 == x64). An SVG Image has a natural size from CSS
+// default sizing of its root against 300x150 (image_loader.cc
+// DensityCorrectedNaturalSize), and drawImage and createPattern size it
+// against the canvas (canvas_2d_recorder_context.cc drawImage, createPattern).
+
+const DIR = dirname(fileURLToPath(import.meta.url))
+
+function load(svg: string | Buffer) {
+  const image = new Image()
+  return new Promise<Image | null>((resolve) => {
+    image.onload = () => resolve(image)
+    image.onerror = () => resolve(null)
+    image.src = Buffer.from(svg)
+  })
+}
+
+async function loaded(svg: string | Buffer) {
+  const image = await load(svg)
+  if (!image) {
+    throw new Error('the svg did not load')
+  }
+  return image
+}
+
+async function natural(svg: string) {
+  const image = await load(svg)
+  return image ? [image.naturalWidth, image.naturalHeight] : 'ERR'
+}
+
+const svg = (attributes: string, content: string) =>
+  `<svg xmlns="http://www.w3.org/2000/svg" ${attributes}>${content}</svg>`
+
+// A red rect over the whole viewport and a blue one over its top left 10%.
+const R =
+  '<rect x="0" y="0" width="100%" height="100%" fill="red"/><rect x="0" y="0" width="10%" height="10%" fill="blue"/>'
+
+const roots: Record<string, string> = {
+  none: '',
+  vb11: 'viewBox="0 0 10 10"',
+  vb21: 'viewBox="0 0 20 10"',
+  vb12: 'viewBox="0 0 10 20"',
+  pct: 'width="50%" height="50%" viewBox="0 0 10 10"',
+  pctNoVb: 'width="50%" height="50%"',
+  wOnlyVb: 'width="40" viewBox="0 0 10 20"',
+  wOnly: 'width="40"',
+  hOnly: 'height="30"',
+  hOnlyVb: 'height="30" viewBox="0 0 20 10"',
+  both: 'width="40" height="30"',
+  bothVb: 'width="40" height="30" viewBox="0 0 10 10"',
+  em: 'width="2em" height="1em"',
+  mm: 'width="10mm" height="1in"',
+  zero: 'width="0" height="0"',
+  zeroVb: 'viewBox="0 0 0 0"',
+  frac: 'width="10.6" height="20.4"',
+  huge: 'viewBox="0 0 100000 1"',
+}
+
+const naturalSizes: Record<string, number[]> = {
+  none: [300, 150],
+  vb11: [150, 150],
+  vb21: [300, 150],
+  vb12: [75, 150],
+  pct: [150, 150],
+  pctNoVb: [300, 150],
+  wOnlyVb: [40, 80],
+  wOnly: [40, 150],
+  hOnly: [300, 30],
+  hOnlyVb: [60, 30],
+  both: [40, 30],
+  bothVb: [40, 30],
+  em: [32, 16],
+  mm: [38, 96],
+  zero: [0, 0],
+  zeroVb: [300, 150],
+  frac: [11, 20],
+  huge: [300, 0],
+}
+
+test('svg natural size follows CSS default sizing like Chrome', async (t) => {
+  for (const [name, attributes] of Object.entries(roots)) {
+    const image = await loaded(svg(attributes, R))
+    t.deepEqual(
+      [image.naturalWidth, image.naturalHeight, image.width, image.height],
+      [...naturalSizes[name], ...naturalSizes[name]],
+      name,
+    )
+  }
+})
+
+// It used to abort the process.
+test('svg with a negative root width loads like Chrome', async (t) => {
+  const image = await loaded(svg('width="-10" height="20" viewBox="0 0 10 10"', R))
+  t.deepEqual([image.naturalWidth, image.naturalHeight], [0, 20])
+  const ctx = createCanvas(50, 40).getContext('2d')
+  ctx.drawImage(image, 0, 0)
+  t.is(sample(ctx, 50, 40), 'ext 0x0 blue 0x0')
+  t.is(ctx.createPattern(image, 'repeat'), null)
+})
+
+// SVGSVGElement::IntrinsicWidth: the width attribute as a CSS length at 96
+// dpi with a 16px font; a percentage, `auto` or a value that does not parse
+// leaves the width to the default (300).
+const rootWidths: Record<string, number> = {
+  '10pt': 13,
+  '1pc': 16,
+  '1cm': 38,
+  auto: 300,
+  ' 40 ': 40,
+  '1e1': 10,
+  '40px': 40,
+  '40 px': 300,
+  '+40': 40,
+  '40.5': 41,
+  '0.4': 0,
+  '40%': 300,
+  'calc(10px + 5px)': 15,
+  '40q': 38,
+  '1Q': 1,
+  '40PX': 40,
+  '': 300,
+  abc: 300,
+  '-0': 0,
+  '1vw': 0,
+  '2rem': 32,
+  'calc(50% + 10px)': 15,
+  'calc(2 * 10px)': 20,
+  'calc(10px * 2 + 1em)': 36,
+  'min(10px, 20px)': 10,
+  'max(10px, 20px)': 20,
+  'clamp(5px, 50px, 30px)': 30,
+  '1e1px': 10,
+  '.5e2': 50,
+  '40e': 300,
+  '\t40\n': 40,
+  '40px;': 300,
+  inherit: 300,
+  '1x': 300,
+  'calc(1in)': 96,
+  'calc(1in + 1%)': 97,
+  '1E1': 10,
+  '1e+1': 10,
+  '1e-1': 0,
+  '0x10': 300,
+  '1.': 300,
+  '.5': 1,
+  '40.5px': 41,
+  'calc(40.5px)': 41,
+  '1mm': 4,
+  '1pt': 1,
+  '2.5pc': 40,
+  'CALC(10px)': 10,
+  '1ic': 16,
+  '1cqw': 0,
+  'calc(10)': 10,
+  'calc(10px / 4)': 3,
+  'calc((10px + 2px) * 2)': 24,
+  '1vh': 0,
+  '1vmin': 0,
+  '1dvw': 0,
+  '10px 10px': 300,
+  'calc(1px*3)': 3,
+  'calc(1px +2px)': 300,
+  '1e1.5': 300,
+  '20e-1px': 2,
+  '1in ': 96,
+  ' 1in': 96,
+  '99999999': 33554428,
+  '1e10': 33554428,
+  'calc(infinity * 1px)': 33554432,
+  'calc(-10px)': 0,
+  '-5px': 0,
+  'calc(0.5px)': 1,
+  '0.5': 1,
+  '0.49': 0,
+  '1.5': 2,
+  '2.5': 3,
+  'calc(100%)': 300,
+  'calc(100% + 0px)': 0,
+  'calc(50% + 20px)': 30,
+  'calc(10% + 100px)': 110,
+  'calc(100% + 1px)': 2,
+  'calc(100% - 10px)': 0,
+  'calc(200% + 0px)': 0,
+  'calc(50%)': 300,
+  'min(50%, 10px)': 0,
+  'calc(1% + 200px)': 202,
+}
+
+test('svg root lengths like Chrome', async (t) => {
+  for (const [value, width] of Object.entries(rootWidths)) {
+    t.deepEqual(await natural(svg(`width="${value}" height="20"`, R)), [width, 20], JSON.stringify(value))
+  }
+})
+
+// ex, ch, lh and cap come from Chrome's default font at 16px: Times on macOS.
+test('svg root font-relative lengths like Chrome on macOS', async (t) => {
+  const widths: Record<string, number> = {
+    '2ex': 14,
+    '1ex': 7,
+    '3ex': 22,
+    '1rex': 7,
+    '2ch': 16,
+    '1ch': 8,
+    '1rch': 8,
+    '1lh': 18,
+    '1rlh': 18,
+    '1cap': 11,
+    '100ex': 718,
+    '1000ex': 7180,
+    '100ch': 800,
+    '100cap': 1059,
+    '1000cap': 10586,
+    '100lh': 1800,
+    '100ic': 1600,
+    '100rex': 718,
+    '100rch': 800,
+    '100rlh': 1800,
+    '100rcap': 1059,
+    '100ric': 1600,
+  }
+  for (const [value, width] of Object.entries(widths)) {
+    const [got] = (await natural(svg(`width="${value}" height="20"`, R))) as number[]
+    if (process.platform === 'darwin') {
+      t.is(got, width, value)
+    } else {
+      // Another default font: about the same size.
+      t.true(Math.abs(got - width) <= width / 5 + 1, `${value}: ${got}`)
+    }
+  }
+})
+
+test('svg preserveAspectRatio and viewBox parsing like Chrome', async (t) => {
+  const cases: Record<string, number[]> = {
+    'viewBox="0 0 10 20" preserveAspectRatio="none"': [300, 150],
+    'width="40" viewBox="0 0 10 20" preserveAspectRatio="none"': [300, 150],
+    'width="40" height="30" preserveAspectRatio="none"': [40, 30],
+    'viewBox="0 0 10 20" preserveAspectRatio=" none "': [300, 150],
+    'viewBox="0 0 10 20" preserveAspectRatio="defer none"': [75, 150],
+    'viewBox="0 0 10 20" preserveAspectRatio="NONE"': [75, 150],
+    'viewBox="0 0 10 20" preserveAspectRatio="none slice"': [300, 150],
+    'viewBox="0 0 10 20" preserveAspectRatio="xMidYMid"': [75, 150],
+    'viewBox="0 0 10 20" preserveAspectRatio="bogus"': [75, 150],
+    'height="30" viewBox="0 0 10 20" preserveAspectRatio="none"': [300, 150],
+    'viewBox="0,0,10,20"': [75, 150],
+    'viewBox="0 0 10 20 5"': [300, 150],
+    'viewBox="0 0 -10 20"': [300, 150],
+    'viewBox="0 0 10"': [300, 150],
+    'viewBox="0 0 10 20,"': [300, 150],
+    'viewBox="0, 0, 10, 20"': [75, 150],
+    'viewBox="0 0 1e1 2e1"': [75, 150],
+    'viewBox="0 0 10px 20"': [300, 150],
+    'viewBox="  0 0 10 20  "': [75, 150],
+    'viewBox="0 0 0 20"': [300, 150],
+    'viewBox="0 0 10 0"': [300, 150],
+    'viewBox="0 0 10 -1"': [300, 150],
+    'viewBox="-5 -5 10 20"': [75, 150],
+    'viewBox="0 0 10,20"': [75, 150],
+    'viewBox="0\t0\n10 20"': [75, 150],
+    'viewBox="0 0 .1e2 20"': [75, 150],
+    'viewBox="0 0 10 20x"': [300, 150],
+    'viewBox="0 0 1e40 1"': [300, 150],
+    'viewBox="0 0 10 20 ,"': [300, 150],
+    'viewBox="0,,0,10,20"': [300, 150],
+    'viewBox=",0 0 10 20"': [300, 150],
+    'viewBox="0 0 10 +20"': [75, 150],
+    'viewBox="0 0 10. 20"': [300, 150],
+    'viewBox="0 0 10 20e"': [300, 150],
+    'viewBox="0 0 1e-50 1"': [300, 150],
+    'viewBox="none"': [300, 150],
+    'width="40" viewBox="0 0 0 20"': [40, 150],
+    'width="0" height="0" viewBox="0 0 10 20"': [0, 0],
+    'width="0" viewBox="0 0 10 20"': [0, 0],
+    'height="0" viewBox="0 0 10 20"': [0, 0],
+    'width="40" height="0" viewBox="0 0 10 20"': [40, 0],
+    'width="40" height="20" style="width:10px"': [40, 20],
+  }
+  for (const [attributes, size] of Object.entries(cases)) {
+    t.deepEqual(await natural(svg(attributes, R)), size, attributes)
+  }
+})
+
+// The extent of what is drawn (alpha > 127) on row 0 and column 0, and of
+// the blue rect, as `ext WxH blue WxH`.
+function sample(ctx: SKRSContext2D, W: number, H: number) {
+  const d = ctx.getImageData(0, 0, W, H).data
+  let ex = -1
+  let ey = -1
+  let bx = -1
+  let by = -1
+  for (let x = 0; x < W; x++) {
+    if (d[x * 4 + 3] > 127) ex = x
+    if (d[x * 4 + 2] > 127 && d[x * 4 + 3] > 127) bx = x
+  }
+  for (let y = 0; y < H; y++) {
+    if (d[y * W * 4 + 3] > 127) ey = y
+    if (d[y * W * 4 + 2] > 127 && d[y * W * 4 + 3] > 127) by = y
+  }
+  return `ext ${ex + 1}x${ey + 1} blue ${bx + 1}x${by + 1}`
+}
+
+// Where the blue rects start on row 0 and column 0 of a pattern drawn at
+// half size.
+function patternStarts(ctx: SKRSContext2D, W: number, H: number) {
+  const d = ctx.getImageData(0, 0, W, H).data
+  const blue = (i: number) => d[i + 2] > 127 && d[i] < 128
+  const xs = []
+  for (let x = 1; x < W; x++) if (blue(x * 4) && !blue((x - 1) * 4)) xs.push(x)
+  const ys = []
+  for (let y = 1; y < H; y++) if (blue(y * W * 4) && !blue((y - 1) * W * 4)) ys.push(y)
+  return `blue starts x=${xs.join('|')} y=${ys.join('|')}`
+}
+
+// drawImage(image, 0, 0) and drawImage(image, 0, 0, 20, 20) on a 50x40 and
+// a 400x300 canvas.
+const draws: Record<string, [string, string, string, string]> = {
+  none: ['ext 50x40 blue 5x4', 'ext 20x20 blue 2x2', 'ext 400x300 blue 40x30', 'ext 20x20 blue 2x2'],
+  vb11: ['ext 40x40 blue 4x4', 'ext 20x20 blue 2x2', 'ext 300x300 blue 30x30', 'ext 20x20 blue 2x2'],
+  vb21: ['ext 50x25 blue 5x3', 'ext 20x20 blue 2x2', 'ext 400x200 blue 40x20', 'ext 20x20 blue 2x2'],
+  vb12: ['ext 20x40 blue 2x4', 'ext 20x20 blue 2x2', 'ext 150x300 blue 15x30', 'ext 20x20 blue 2x2'],
+  pct: ['ext 40x40 blue 4x4', 'ext 20x20 blue 2x2', 'ext 300x300 blue 30x30', 'ext 20x20 blue 2x2'],
+  pctNoVb: ['ext 50x40 blue 5x4', 'ext 20x20 blue 2x2', 'ext 400x300 blue 40x30', 'ext 20x20 blue 2x2'],
+  wOnlyVb: ['ext 40x40 blue 4x8', 'ext 20x20 blue 2x2', 'ext 40x80 blue 4x8', 'ext 20x20 blue 2x2'],
+  wOnly: ['ext 40x40 blue 4x4', 'ext 20x20 blue 2x2', 'ext 40x300 blue 4x30', 'ext 20x20 blue 2x2'],
+  hOnly: ['ext 50x30 blue 5x3', 'ext 20x20 blue 2x2', 'ext 400x30 blue 40x3', 'ext 20x20 blue 2x2'],
+  hOnlyVb: ['ext 50x30 blue 6x3', 'ext 20x20 blue 2x2', 'ext 60x30 blue 6x3', 'ext 20x20 blue 2x2'],
+  both: ['ext 40x30 blue 4x3', 'ext 20x20 blue 2x2', 'ext 40x30 blue 4x3', 'ext 20x20 blue 2x2'],
+  bothVb: ['ext 35x0 blue 8x0', 'ext 18x0 blue 4x0', 'ext 35x0 blue 8x0', 'ext 18x0 blue 4x0'],
+  em: ['ext 32x16 blue 3x2', 'ext 20x20 blue 2x2', 'ext 32x16 blue 3x2', 'ext 20x20 blue 2x2'],
+  mm: ['ext 38x40 blue 4x10', 'ext 20x20 blue 2x2', 'ext 38x96 blue 4x10', 'ext 20x20 blue 2x2'],
+  zero: ['ext 0x0 blue 0x0', 'ext 0x0 blue 0x0', 'ext 0x0 blue 0x0', 'ext 0x0 blue 0x0'],
+  zeroVb: ['ext 0x0 blue 0x0', 'ext 0x0 blue 0x0', 'ext 0x0 blue 0x0', 'ext 0x0 blue 0x0'],
+  frac: ['ext 10x20 blue 1x2', 'ext 20x20 blue 2x2', 'ext 10x20 blue 1x2', 'ext 20x20 blue 2x2'],
+  huge: ['ext 0x0 blue 0x0', 'ext 0x0 blue 0x0', 'ext 0x0 blue 0x0', 'ext 0x0 blue 0x0'],
+}
+
+test('drawImage of an svg uses the canvas as the default object size', async (t) => {
+  for (const [name, attributes] of Object.entries(roots)) {
+    const image = await loaded(svg(attributes, R))
+    const got = []
+    for (const [W, H] of [
+      [50, 40],
+      [400, 300],
+    ]) {
+      const ctx = createCanvas(W, H).getContext('2d')
+      ctx.drawImage(image, 0, 0)
+      got.push(sample(ctx, W, H))
+      const ctx5 = createCanvas(W, H).getContext('2d')
+      ctx5.drawImage(image, 0, 0, 20, 20)
+      got.push(sample(ctx5, W, H))
+    }
+    t.deepEqual(got, draws[name], name)
+  }
+})
+
+const patterns: Record<string, [string, string]> = {
+  none: ['blue starts x=25 y=20', 'blue starts x=200 y=150'],
+  vb11: ['blue starts x=20|40 y=20', 'blue starts x=150|300 y=150'],
+  vb21: ['blue starts x=25 y=13|25|38', 'blue starts x=200 y=100|200'],
+  vb12: ['blue starts x=10|20|30|40 y=20', 'blue starts x=75|150|225|300|375 y=150'],
+  both: [
+    'blue starts x=20|40 y=15|30',
+    'blue starts x=20|40|60|80|100|120|140|160|180|200|220|240|260|280|300|320|340|360|380 y=15|30|45|60|75|90|105|120|135|150|165|180|195|210|225|240|255|270|285',
+  ],
+  frac: [
+    'blue starts x=11|22|33|44 y=10|20|30',
+    'blue starts x=11|22|33|44|55|66|77|88|99|110|121|132|143|154|165|176|187|198|209|220|231|242|253|264|275|286|297|308|319|330|341|352|363|374|385|396 y=10|20|30|40|50|60|70|80|90|100|110|120|130|140|150|160|170|180|190|200|210|220|230|240|250|260|270|280|290',
+  ],
+  zeroVb: ['blue starts x= y=', 'blue starts x= y='],
+}
+
+test('createPattern of an svg tiles at the concrete size', async (t) => {
+  for (const [name, expected] of Object.entries(patterns)) {
+    const image = await loaded(svg(roots[name], R))
+    const got = []
+    for (const [W, H] of [
+      [50, 40],
+      [400, 300],
+    ]) {
+      const ctx = createCanvas(W, H).getContext('2d')
+      const pattern = ctx.createPattern(image, 'repeat')
+      t.not(pattern, null, name)
+      ctx.setTransform(0.5, 0, 0, 0.5, 0, 0)
+      ctx.fillStyle = pattern!
+      ctx.fillRect(0, 0, W * 2, H * 2)
+      got.push(patternStarts(ctx, W, H))
+    }
+    t.deepEqual(got, expected, name)
+  }
+  for (const name of ['zero', 'huge']) {
+    const image = await loaded(svg(roots[name], R))
+    t.is(createCanvas(50, 40).getContext('2d').createPattern(image, 'repeat'), null, name)
+  }
+})
+
+// A viewBox 10x10 with the left half red and the right half blue.
+const halves =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="5" height="10" fill="red"/><rect x="5" width="5" height="10" fill="blue"/></svg>'
+
+function extent(ctx: SKRSContext2D, W: number, H: number) {
+  const d = ctx.getImageData(0, 0, W, H).data
+  let mx = -1
+  let my = -1
+  let red = 0
+  let blue = 0
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++) {
+      const i = (y * W + x) * 4
+      if (d[i + 3] > 127) {
+        mx = Math.max(mx, x)
+        my = Math.max(my, y)
+        if (d[i] > 127) red++
+        if (d[i + 2] > 127) blue++
+      }
+    }
+  return { ext: [mx + 1, my + 1], red, blue }
+}
+
+test('drawImage source rect of an svg is in concrete-size units', async (t) => {
+  const image = await loaded(halves)
+  t.deepEqual([image.naturalWidth, image.naturalHeight], [150, 150])
+  const ctx = createCanvas(400, 300).getContext('2d')
+  // The concrete size is 300x300, so 150x150 is the red half.
+  ctx.drawImage(image, 0, 0, 150, 150, 0, 0, 100, 100)
+  t.deepEqual(extent(ctx, 400, 300), { ext: [100, 100], red: 10000, blue: 0 })
+  for (const [W, H] of [
+    [400, 300],
+    [50, 40],
+  ]) {
+    const ctx5 = createCanvas(W, H).getContext('2d')
+    ctx5.drawImage(image, 0, 0, 20, 20)
+    t.deepEqual(extent(ctx5, W, H), { ext: [20, 20], red: 200, blue: 200 }, `5 arguments on ${W}x${H}`)
+  }
+  const ctx3 = createCanvas(400, 300).getContext('2d')
+  ctx3.drawImage(image, 10, 5)
+  t.deepEqual(extent(ctx3, 400, 300), { ext: [310, 300], red: 44250, blue: 44250 })
+  const small = createCanvas(50, 40).getContext('2d')
+  small.drawImage(image, 10, 5)
+  t.deepEqual(extent(small, 50, 40), { ext: [50, 40], red: 700, blue: 700 })
+})
+
+// The 150x150 source is cut to the 40x40 concrete size and the destination
+// with it, to 26.67x26.67. The right and bottom edges are anti-aliased by
+// both the shape and the view clip, so the last column has alpha 113 and the
+// last row 128: the extent is 26x27.
+test('drawImage source rect of an svg cut to the concrete size like Chrome', async (t) => {
+  const image = await loaded(halves)
+  const ctx = createCanvas(50, 40).getContext('2d')
+  ctx.drawImage(image, 0, 0, 150, 150, 0, 0, 100, 100)
+  t.deepEqual(extent(ctx, 50, 40), { ext: [26, 27], red: 351, blue: 350 })
+  const d = ctx.getImageData(0, 0, 50, 40).data
+  t.deepEqual([d[(5 * 50 + 26) * 4 + 3], d[(26 * 50 + 5) * 4 + 3], d[(26 * 50 + 26) * 4 + 3]], [113, 128, 57])
+})
+
+test('drawImage of an svg follows the current canvas size', async (t) => {
+  const image = await loaded(halves)
+  const canvas = createCanvas(100, 100)
+  const ctx = canvas.getContext('2d')
+  ctx.drawImage(image, 0, 0)
+  t.deepEqual(extent(ctx, 100, 100), { ext: [100, 100], red: 5000, blue: 5000 })
+  canvas.width = 60
+  canvas.height = 200
+  ctx.drawImage(image, 0, 0)
+  t.deepEqual(extent(ctx, 60, 200), { ext: [60, 60], red: 1800, blue: 1800 })
+  const patternCtx = createCanvas(400, 300).getContext('2d')
+  patternCtx.fillStyle = patternCtx.createPattern(image, 'no-repeat')!
+  patternCtx.fillRect(0, 0, 400, 300)
+  t.deepEqual(extent(patternCtx, 400, 300), { ext: [300, 300], red: 45000, blue: 45000 })
+})
+
+// Chrome draws an SVG as vectors: under a transform it is as sharp as when
+// drawn at that size.
+const circle =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4.3" fill="#08f"/><rect x="1" y="1" width="2.5" height="1.3" fill="#f00"/></svg>'
+
+function alphaSum(data: Uint8ClampedArray) {
+  let sum = 0
+  for (let i = 3; i < data.length; i += 4) sum += data[i]
+  return sum
+}
+
+test('drawImage of an svg is drawn at the size it lands at like Chrome', async (t) => {
+  const image = await loaded(circle)
+  const draw = (setup: (ctx: SKRSContext2D) => void, args: number[]) => {
+    const ctx = createCanvas(100, 100).getContext('2d')
+    setup(ctx)
+    // @ts-expect-error spread of drawImage arguments
+    ctx.drawImage(image, ...args)
+    return ctx.getImageData(0, 0, 100, 100).data
+  }
+  const scaled = draw((ctx) => ctx.scale(4, 4), [0, 0, 20, 20])
+  const direct = draw(() => {}, [0, 0, 80, 80])
+  t.deepEqual(scaled, direct)
+  t.is(alphaSum(direct), 971940)
+  const huge = draw(() => {}, [-5000, -5000, 10100, 10100])
+  t.deepEqual(Array.from(huge.slice((50 * 100 + 50) * 4, (50 * 100 + 50) * 4 + 4)), [0, 136, 255, 255])
+  t.is(alphaSum(huge), 2550000)
+  const part = draw(() => {}, [25, 25, 50, 50, 0, 0, 100, 100])
+  t.is(alphaSum(part), 2550000)
+  t.deepEqual(Array.from(part.slice(0, 4)), [0, 136, 255, 255])
+})
+
+// img.width and img.height are the attributes; Chrome does not draw an SVG
+// at that size.
+test('img.width does not change what drawImage draws for an svg', async (t) => {
+  for (const [file, natural, n, max] of [
+    ['resize.svg', [10, 10], 86, [9, 9]],
+    ['mountain.svg', [128, 128], 190, [29, 19]],
+  ] as const) {
+    const image = await loaded(readFileSync(join(DIR, file)))
+    const count = () => {
+      const ctx = createCanvas(512, 512).getContext('2d')
+      ctx.drawImage(image, 0, 0)
+      const d = ctx.getImageData(0, 0, 512, 512).data
+      let count = 0
+      let mx = -1
+      let my = -1
+      for (let y = 0; y < 512; y++)
+        for (let x = 0; x < 512; x++)
+          if (d[(y * 512 + x) * 4 + 3]) {
+            count++
+            mx = Math.max(mx, x)
+            my = Math.max(my, y)
+          }
+      return [count, [mx, my]]
+    }
+    t.deepEqual(count(), [n, max], file)
+    image.width = 100
+    image.height = 100
+    t.deepEqual([image.width, image.height, image.naturalWidth, image.naturalHeight], [100, 100, ...natural], file)
+    t.deepEqual(count(), [n, max], `${file} with width 100`)
+  }
+})
