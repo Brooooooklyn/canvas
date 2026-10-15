@@ -243,7 +243,7 @@ const ARGUMENT_COUNTS = _argumentCounts()
 // call with `count` (1 to `n`) of them, the last one `last`. Without a marker
 // the native method counts up to the last argument that is not undefined:
 // that is `count` unless `last` is an explicit undefined, and only then is
-// the marker passed (reading a marker is slower than reading undefined).
+// the marker needed.
 function argumentCount(count, last) {
   return last === undefined ? ARGUMENT_COUNTS[count] : undefined
 }
@@ -293,7 +293,7 @@ CanvasRenderingContext2D.prototype.isPointInPath = function isPointInPath() {
     arguments[2],
     arguments[3],
     // (x, y, undefined) converts as (x, y) when x is not an object (only an
-    // object can be a Path2D), so the count, slower to read, is left out.
+    // object can be a Path2D), so the count is not needed.
     count === 3 && typeof arguments[0] !== 'object' ? undefined : argumentCount(count, arguments[count - 1]),
   )
 }

@@ -4,7 +4,11 @@
 //! Each helper throws the JS exception itself and returns an `Err` with
 //! `Status::PendingException`; napi-rs then keeps the pending exception.
 
-use std::{cell::RefCell, marker::PhantomData, ptr};
+use std::{
+  cell::{RefCell, UnsafeCell},
+  marker::PhantomData,
+  ptr,
+};
 
 use napi::{bindgen_prelude::*, sys};
 
@@ -1502,20 +1506,34 @@ impl FromNapiValue for Positional {
   }
 }
 
-/// What the argument-count markers wrap: the marker for `n` arguments is a
-/// plain object that wraps `&ARGUMENT_COUNTS[n]`. Only `argument_counts`
-/// wraps an object with these addresses, so no other value is read as a
-/// count.
+/// How many argument-count markers there are: for 0 to `MAX_POSITIONAL`
+/// arguments.
+const ARGUMENT_COUNT_MARKERS: usize = MAX_POSITIONAL + 1;
+
+/// The memory the argument-count markers point to. The marker for `n`
+/// arguments is an ArrayBuffer of one byte at `MARKER_BYTES[n]`, made with
+/// napi_create_external_arraybuffer, and its count is where its data
+/// starts. napi_get_arraybuffer_info gives that address without reading
+/// what is there. Only these ArrayBuffers start in this memory: script
+/// cannot make an ArrayBuffer over memory that it did not allocate, and a
+/// copy of a marker (slice, structuredClone, transfer to another length)
+/// has memory of its own. transfer() to the same length moves a marker: the
+/// new ArrayBuffer has its memory and its count, the old one, detached,
+/// none. So no other value is read as a count, and no value is read as
+/// another count.
 ///
-/// The markers are not napi externals. napi_get_value_external (Node 24,
-/// js_native_api_v8.cc) reads any v8::External as one that napi made, so an
-/// External that another kind of addon passes there would make us read
-/// memory we do not own. And V8 crashes (SIGBUS) when script makes an
-/// External the prototype of an object (`Object.create(marker)`).
-/// napi_unwrap reads only the private key that napi_wrap sets, which script
-/// and other addons cannot set, and the address it returns is only compared,
-/// never read.
-static ARGUMENT_COUNTS: [u8; 10] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+/// The markers are not napi externals: napi_get_value_external (Node 24,
+/// js_native_api_v8.cc) reads any v8::External as one that napi made, so
+/// an External that another kind of addon passes there would make us read
+/// memory we do not own. Nor objects wrapped with napi_wrap: napi_unwrap
+/// costs some 30 ns more for each marker read.
+struct MarkerBytes(UnsafeCell<[u8; ARGUMENT_COUNT_MARKERS]>);
+
+// SAFETY: only the addresses of the bytes are used. Script may write the
+// bytes, on any thread, through a view of a marker; nothing reads them.
+unsafe impl Sync for MarkerBytes {}
+
+static MARKER_BYTES: MarkerBytes = MarkerBytes(UnsafeCell::new([0; ARGUMENT_COUNT_MARKERS]));
 
 /// The argument-count markers for 0 to 9 arguments, for index.js only: its
 /// wrappers pass `markers[Math.min(arguments.length, n)]` after the `n`
@@ -1523,48 +1541,53 @@ static ARGUMENT_COUNTS: [u8; 10] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
 /// stroke, isPointInPath, isPointInStroke, drawImage) pass it only when the
 /// last of those arguments is an explicit undefined, and undefined otherwise:
 /// [`Arguments::take`] then finds the same count by itself.
+///
+/// None where the runtime does not allow external ArrayBuffers (Node built
+/// with the V8 sandbox, as in Electron). index.js then passes undefined, and
+/// an explicit undefined at the end counts as a missing argument, as in a
+/// raw call.
+// napi-rs registers the function only outside `cargo test`.
+#[cfg_attr(test, allow(dead_code))]
 #[napi(js_name = "_argumentCounts")]
-pub fn argument_counts(env: &Env) -> Result<Vec<Object<'_>>> {
-  ARGUMENT_COUNTS
-    .iter()
-    .map(|count| {
-      let marker = Object::new(env)?;
-      check_status!(unsafe {
-        sys::napi_wrap(
-          env.raw(),
-          marker.raw(),
-          ptr::from_ref(count).cast_mut().cast(),
-          None,
-          ptr::null_mut(),
-          ptr::null_mut(),
-        )
-      })?;
-      Ok(marker)
-    })
-    .collect()
+pub fn argument_counts(env: &Env) -> Result<Vec<Unknown<'_>>> {
+  let bytes = MARKER_BYTES.0.get().cast::<u8>();
+  let mut markers = Vec::with_capacity(ARGUMENT_COUNT_MARKERS);
+  for count in 0..ARGUMENT_COUNT_MARKERS {
+    let mut marker = ptr::null_mut();
+    let status = unsafe {
+      sys::napi_create_external_arraybuffer(
+        env.raw(),
+        bytes.wrapping_add(count).cast(),
+        1,
+        // Static memory: nothing to free.
+        None,
+        ptr::null_mut(),
+        &mut marker,
+      )
+    };
+    if status == sys::Status::napi_no_external_buffers_allowed {
+      return Ok(Vec::new());
+    }
+    check_status!(status)?;
+    markers.push(unsafe { Unknown::from_napi_value(env.raw(), marker)? });
+  }
+  Ok(markers)
 }
 
 /// The count of an `argument_counts` marker; None for any other value.
-fn argument_count(env: sys::napi_env, value: sys::napi_value) -> Result<Option<u32>> {
-  // Most calls from index.js pass undefined, which this check finds faster
-  // than napi_unwrap.
-  if raw_type_of(env, value)? != sys::ValueType::napi_object {
-    return Ok(None);
-  }
+fn argument_count(env: sys::napi_env, value: sys::napi_value) -> Option<u32> {
   let mut data = ptr::null_mut();
-  // Fails, without throwing, on an object that nothing wrapped. Private
-  // keys are own properties, and a Proxy has its own: an object made from a
-  // marker is not one. An object that another class or addon wrapped has
-  // another address.
-  if unsafe { sys::napi_unwrap(env, value, &mut data) } != sys::Status::napi_ok {
-    return Ok(None);
+  // Fails, without throwing, on a value that is not an ArrayBuffer or a
+  // SharedArrayBuffer, such as the undefined that most calls from index.js
+  // pass, or an External of any addon, whose pointer it does not read. The
+  // address it gives is only compared, never read.
+  if unsafe { sys::napi_get_arraybuffer_info(env, value, &mut data, ptr::null_mut()) }
+    != sys::Status::napi_ok
+  {
+    return None;
   }
-  Ok(
-    ARGUMENT_COUNTS
-      .iter()
-      .find(|count| ptr::eq(*count, data.cast::<u8>()))
-      .map(|count| u32::from(*count)),
-  )
+  let count = data.addr().wrapping_sub(MARKER_BYTES.0.get().addr());
+  (count < ARGUMENT_COUNT_MARKERS).then_some(count as u32)
 }
 
 /// The arguments of a call with `Positional` parameters.
@@ -1600,7 +1623,7 @@ impl Arguments {
     // that is not undefined. Only an argument at or past the marker's count
     // can raise it (from index.js none does), so only those are looked at,
     // from the last one.
-    let mut len = argument_count(env, argc)?.unwrap_or(0);
+    let mut len = argument_count(env, argc).unwrap_or(0);
     for index in (len.min(count as u32)..count as u32).rev() {
       if type_of(env, values[index as usize])? != ValueType::Undefined {
         len = index + 1;
