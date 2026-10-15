@@ -283,6 +283,20 @@ struct ShadowPass<'a> {
   foreground_filter: Option<&'a ImageFilter>,
 }
 
+/// The canvas calls `render_canvas` makes around a draw's own ops: the save,
+/// setMatrix, saveLayer and restore calls of each layer, copy's clear, the
+/// alpha:false reset. They land in the same recording as the draw, which
+/// `get_recording_canvas` charged as one op, so `render_passes` charges these
+/// on top (each call one op, an upper bound: SkCanvas drops some).
+#[derive(Default)]
+struct ExtraOps(Cell<usize>);
+
+impl ExtraOps {
+  fn add(&self, calls: usize) {
+    self.0.set(self.0.get() + calls);
+  }
+}
+
 /// The user-space rect a draw hands Blink's Draw as `bounds`. The gradient
 /// interpolation latch reads it (`dirty_rect_meets_clip`), and so does the
 /// alpha:false alpha reset, only for a draw Blink does not take
@@ -962,6 +976,7 @@ impl Context {
     // so a flush inside this helper would consolidate and zero pending_bytes
     // BEFORE the op is recorded, erasing its charge. The check lives at the
     // top of every public recording entry point instead.
+    let extra_ops = ExtraOps::default();
     if let Some(ref recorder) = self.page_recorder {
       let mut rec = recorder.borrow_mut();
       if let Some(canvas) = rec.get_recording_canvas() {
@@ -978,9 +993,13 @@ impl Context {
           width,
           height,
           shadow,
+          &extra_ops,
           shadow_f,
           f,
         );
+        // The layers, clears and alpha resets around the draw are in the
+        // recording too, also when the draw failed part way.
+        rec.account_recorded_ops(extra_ops.0.get());
         // This funnel only serves pixel commits; a recorded draw is a new
         // content generation for canvas-source dedup keys.
         rec.note_paint_op();
@@ -1004,6 +1023,7 @@ impl Context {
       width,
       height,
       shadow,
+      &extra_ops,
       shadow_f,
       f,
     );
@@ -1025,6 +1045,7 @@ impl Context {
     bounds: Option<DrawBounds>,
     width: f32,
     height: f32,
+    extra_ops: &ExtraOps,
   ) {
     if !matches!(
       blend_mode,
@@ -1046,13 +1067,17 @@ impl Context {
     paint.set_blend_mode(BlendMode::DestinationOver);
     match bounds {
       // Drawn under the CTM, as Blink draws the local rect.
-      Some(b) => canvas.draw_rect(b.left, b.top, b.right - b.left, b.bottom - b.top, &paint),
+      Some(b) => {
+        canvas.draw_rect(b.left, b.top, b.right - b.left, b.bottom - b.top, &paint);
+        extra_ops.add(1);
+      }
       // The whole clip (Blink: its local clip bounds).
       None => {
         canvas.save();
         canvas.reset_transform();
         canvas.draw_rect(0.0, 0.0, width, height, &paint);
         canvas.restore();
+        extra_ops.add(4);
       }
     }
   }
@@ -1806,6 +1831,7 @@ impl Context {
     filter: Option<&ImageFilter>,
     paint: &Paint,
     content_blend: BlendMode,
+    extra_ops: &ExtraOps,
     f: F,
   ) -> result::Result<(), SkError>
   where
@@ -1825,6 +1851,7 @@ impl Context {
     let result = f(canvas, &inner_paint);
     canvas.restore();
     canvas.restore();
+    extra_ops.add(6);
     result
   }
 
@@ -1860,6 +1887,7 @@ impl Context {
     device_ctm: &Matrix,
     filter: Option<&ImageFilter>,
     paint: &Paint,
+    extra_ops: &ExtraOps,
     f: F,
   ) -> result::Result<(), SkError>
   where
@@ -1888,6 +1916,7 @@ impl Context {
     let result = f(canvas, &inner_paint);
     canvas.restore();
     canvas.restore();
+    extra_ops.add(if inverted.is_some() { 6 } else { 4 });
     result
   }
 
@@ -1915,6 +1944,7 @@ impl Context {
     width: f32,
     height: f32,
     shadow: Option<ShadowPass<'_>>,
+    extra_ops: &ExtraOps,
     shadow_f: S,
     f: F,
   ) -> result::Result<(), SkError>
@@ -1944,6 +1974,7 @@ impl Context {
               shadow.filter,
               shadow.paint,
               BlendMode::SourceOver,
+              extra_ops,
               |canvas, paint| shadow_f(canvas, paint, &ctm),
             )?;
           } else {
@@ -1955,12 +1986,14 @@ impl Context {
               None,
               shadow.paint,
               BlendMode::SourceOver,
+              extra_ops,
               |canvas, paint| {
                 Self::composited_filter_layer(
                   canvas,
                   &ctm,
                   shadow.filter,
                   paint,
+                  extra_ops,
                   |canvas, paint| shadow_f(canvas, paint, &ctm),
                 )
               },
@@ -1975,11 +2008,12 @@ impl Context {
           content_filter,
           paint,
           BlendMode::SourceOver,
+          extra_ops,
           &f,
         )?;
         // CompositedDraw resets the whole clip (h:829).
         if reset_alpha {
-          Self::reset_alpha_if_needed(surface_canvas, blend_mode, None, width, height);
+          Self::reset_alpha_if_needed(surface_canvas, blend_mode, None, width, height, extra_ops);
         }
         return Ok(());
       }
@@ -1989,7 +2023,14 @@ impl Context {
         if let Some(foreground_filter) = shadow.as_ref().and_then(|s| s.foreground_filter) {
           // A non-opaque image: one DropShadow layer draws shadow and image
           // (DrawImageInternal, canvas_2d_recorder_context.cc:2117-2148).
-          Self::composited_filter_layer(surface_canvas, &ctm, Some(foreground_filter), paint, &f)?;
+          Self::composited_filter_layer(
+            surface_canvas,
+            &ctm,
+            Some(foreground_filter),
+            paint,
+            extra_ops,
+            &f,
+          )?;
         } else {
           if let Some(shadow) = shadow.as_ref() {
             Self::composited_filter_layer(
@@ -1997,13 +2038,14 @@ impl Context {
               &ctm,
               shadow.filter,
               shadow.paint,
+              extra_ops,
               |canvas, paint| shadow_f(canvas, paint, &ctm),
             )?;
           }
           f(surface_canvas, paint)?;
         }
         if reset_alpha {
-          Self::reset_alpha_if_needed(surface_canvas, blend_mode, bounds, width, height);
+          Self::reset_alpha_if_needed(surface_canvas, blend_mode, bounds, width, height, extra_ops);
         }
         return Ok(());
       }
@@ -2028,9 +2070,10 @@ impl Context {
       } else {
         surface_canvas.fill(0, 0, 0, 255);
       }
+      extra_ops.add(1);
       f(surface_canvas, paint)?;
       if reset_alpha {
-        Self::reset_alpha_if_needed(surface_canvas, blend_mode, bounds, width, height);
+        Self::reset_alpha_if_needed(surface_canvas, blend_mode, bounds, width, height, extra_ops);
       }
       return Ok(());
     }
@@ -2056,12 +2099,14 @@ impl Context {
             // The content pass below replaces every pixel for copy, so this
             // one's blend never shows there.
             Self::layer_content_blend(blend_mode, false),
+            extra_ops,
             |canvas, paint| {
               Self::composited_filter_layer(
                 canvas,
                 &device_ctm,
                 shadow.filter,
                 paint,
+                extra_ops,
                 |canvas, paint| shadow_f(canvas, paint, &device_ctm),
               )
             },
@@ -2074,13 +2119,14 @@ impl Context {
           None,
           paint,
           Self::layer_content_blend(blend_mode, pattern_shadow),
+          extra_ops,
           |canvas, paint| {
-            Self::composited_filter_layer(canvas, &device_ctm, content_filter, paint, &f)
+            Self::composited_filter_layer(canvas, &device_ctm, content_filter, paint, extra_ops, &f)
           },
         )?;
         // CompositedDraw resets the whole clip (h:829).
         if reset_alpha {
-          Self::reset_alpha_if_needed(surface_canvas, blend_mode, None, width, height);
+          Self::reset_alpha_if_needed(surface_canvas, blend_mode, None, width, height, extra_ops);
         }
         Ok(())
       }
@@ -2104,9 +2150,11 @@ impl Context {
             &current_transform,
             shadow.filter,
             shadow.paint,
+            extra_ops,
             |canvas, paint| shadow_f(canvas, paint, &current_transform),
           )?;
           surface_canvas.restore();
+          extra_ops.add(5);
         }
         let current_transform = surface_canvas.get_transform_matrix();
         Self::composited_filter_layer(
@@ -2114,10 +2162,11 @@ impl Context {
           &current_transform,
           content_filter,
           paint,
+          extra_ops,
           &f,
         )?;
         if reset_alpha {
-          Self::reset_alpha_if_needed(surface_canvas, blend_mode, bounds, width, height);
+          Self::reset_alpha_if_needed(surface_canvas, blend_mode, bounds, width, height, extra_ops);
         }
         Ok(())
       }
@@ -7125,6 +7174,162 @@ mod tests {
     // cap, so bound pending at twice the window.
     assert!(pending(&ctx) < 2 * 8 * 1024);
     assert_eq!(ctx.content_version(), 200);
+  }
+
+  type Setup = Box<dyn Fn(&mut Context)>;
+
+  /// fillRect `draws` times, each at a new place, on a 64x64 context.
+  fn fill_rects(alpha: bool, setup: &dyn Fn(&mut Context), draws: usize) -> Context {
+    let mut ctx = Context::new_with_alpha(64, 64, ColorSpace::default(), alpha).unwrap();
+    setup(&mut ctx);
+    for i in 0..draws {
+      let (x, y) = ((i * 13 % 56) as f32, (i * 7 % 56) as f32);
+      ctx.fill_rect(x, y, 8.0, 8.0).unwrap();
+    }
+    ctx
+  }
+
+  /// What one fillRect charges to the recording and what it records
+  /// (SkPicture::approximateBytesUsed), as the slope over 100 more draws so
+  /// one-off charges cancel.
+  fn fill_rect_bytes(alpha: bool, setup: &dyn Fn(&mut Context)) -> (usize, usize) {
+    let bytes = |draws| {
+      let ctx = fill_rects(alpha, setup, draws);
+      let charged = pending(&ctx);
+      let recorded = ctx
+        .page_recorder
+        .as_ref()
+        .unwrap()
+        .borrow_mut()
+        .recorded_bytes();
+      (charged, recorded)
+    };
+    let (charged_1, recorded_1) = bytes(1);
+    let (charged_101, recorded_101) = bytes(101);
+    (
+      (charged_101 - charged_1) / 100,
+      (recorded_101 - recorded_1) / 100,
+    )
+  }
+
+  // A composited draw records more than its draw inside its one
+  // get_recording_canvas: each CompositedDraw layer adds save, setMatrix,
+  // saveLayer, setMatrix, restore and restore, a filter layer the same, an
+  // alpha:false reset its kDstOver fill (and a save, setMatrix and restore
+  // when it covers the clip), copy its clear. Each is charged the base op
+  // bytes, so the charge covers what the recording holds and the cap trips as
+  // early as those bytes say. A plain draw stays one op.
+  #[test]
+  fn composited_draws_charge_every_op_they_record() {
+    const OP: usize = 256;
+    // The flat per-draw charge for the shadow's fresh filter
+    // (account_image_paint_resources).
+    const SHADOW: usize = 1024;
+    let mode = |blend: BlendMode| -> Setup {
+      Box::new(move |ctx| ctx.state.global_composite_operation = blend)
+    };
+    let shadow = |blend: BlendMode| -> Setup {
+      Box::new(move |ctx| {
+        ctx.state.global_composite_operation = blend;
+        ctx.state.shadow_color = Color::BLACK;
+        ctx.state.shadow_blur = 4.0;
+        ctx.state.shadow_offset_x = 2.0;
+      })
+    };
+    let filter = |blend: BlendMode, shadowed: bool| -> Setup {
+      Box::new(move |ctx| {
+        ctx.state.global_composite_operation = blend;
+        ctx.set_filter("blur(2px)").unwrap();
+        if shadowed {
+          ctx.state.shadow_color = Color::BLACK;
+          ctx.state.shadow_offset_x = 2.0;
+        }
+      })
+    };
+    // (case, alpha, setup, charge per draw)
+    let cases: Vec<(&str, bool, Setup, usize)> = vec![
+      ("source-over", true, mode(BlendMode::SourceOver), OP),
+      ("multiply", true, mode(BlendMode::Multiply), OP),
+      (
+        "source-over shadow",
+        true,
+        shadow(BlendMode::SourceOver),
+        OP + SHADOW,
+      ),
+      ("copy", true, mode(BlendMode::Source), 2 * OP),
+      ("source-in", true, mode(BlendMode::SourceIn), 7 * OP),
+      ("source-out", true, mode(BlendMode::SourceOut), 7 * OP),
+      (
+        "destination-in",
+        true,
+        mode(BlendMode::DestinationIn),
+        7 * OP,
+      ),
+      (
+        "destination-atop",
+        true,
+        mode(BlendMode::DestinationATop),
+        7 * OP,
+      ),
+      (
+        "source-in shadow",
+        true,
+        shadow(BlendMode::SourceIn),
+        13 * OP + SHADOW,
+      ),
+      (
+        "multiply shadow",
+        true,
+        shadow(BlendMode::Multiply),
+        13 * OP + SHADOW,
+      ),
+      ("blur", true, filter(BlendMode::SourceOver, false), 7 * OP),
+      (
+        "blur shadow",
+        true,
+        filter(BlendMode::SourceOver, true),
+        13 * OP + SHADOW,
+      ),
+      (
+        "source-in alpha:false",
+        false,
+        mode(BlendMode::SourceIn),
+        11 * OP,
+      ),
+      (
+        "source-atop alpha:false",
+        false,
+        mode(BlendMode::SourceATop),
+        2 * OP,
+      ),
+    ];
+    for (name, alpha, setup, per_draw) in &cases {
+      let (charged, recorded) = fill_rect_bytes(*alpha, setup.as_ref());
+      assert_eq!(charged, *per_draw, "{name}");
+      assert!(
+        charged >= recorded,
+        "{name}: {charged} B charged, {recorded} B recorded per draw"
+      );
+
+      // The cap trips within limit / charge draws; source-over keeps its 64.
+      let limit = 64 * OP;
+      let mut ctx = fill_rects(*alpha, setup.as_ref(), 0);
+      set_recording_limit(&ctx, limit);
+      let first = (1..=64)
+        .find(|i| {
+          let (x, y) = ((i * 13 % 56) as f32, (i * 7 % 56) as f32);
+          ctx.fill_rect(x, y, 8.0, 8.0).unwrap();
+          consolidations(&ctx) > 0
+        })
+        .unwrap_or_else(|| panic!("{name}: no consolidation in 64 draws"));
+      assert!(
+        first <= limit.div_ceil(*per_draw),
+        "{name}: first consolidation at draw {first}"
+      );
+      if *name == "source-over" {
+        assert_eq!(first, 64);
+      }
+    }
   }
 
   // A read must flush pending layers onto the surface and consolidate them
