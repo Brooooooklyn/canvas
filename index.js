@@ -292,7 +292,9 @@ CanvasRenderingContext2D.prototype.isPointInPath = function isPointInPath() {
     arguments[1],
     arguments[2],
     arguments[3],
-    argumentCount(count, arguments[count - 1]),
+    // (x, y, undefined) converts as (x, y) when x is not an object (only an
+    // object can be a Path2D), so the count, slower to read, is left out.
+    count === 3 && typeof arguments[0] !== 'object' ? undefined : argumentCount(count, arguments[count - 1]),
   )
 }
 Object.defineProperty(CanvasRenderingContext2D.prototype.isPointInPath, 'length', { value: 2 })
