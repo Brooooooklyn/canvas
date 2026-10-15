@@ -1045,6 +1045,13 @@ void skiac_paint_set_src_in_color_filter(skiac_paint* c_paint,
                                          uint8_t b,
                                          uint8_t a);
 
+// Color conversions: the skcms math Blink's Color uses (color.cc).
+uint32_t skiac_color4f_to_sk_color(skiac_color4f color);
+bool skiac_color_space_params(int space, float* matrix, float* transfer_fn);
+bool skiac_skcms_matrix3x3_invert(const float* matrix, float* inverse);
+float skiac_skcms_transfer_fn_eval(const float* transfer_fn, float x);
+bool skiac_skcms_transfer_fn_invert(const float* transfer_fn, float* inverse);
+
 // Path
 skiac_path* skiac_path_create();
 skiac_path* skiac_path_from_svg(char* svg_path);

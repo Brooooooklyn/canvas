@@ -754,6 +754,16 @@ pub mod ffi {
 
     pub fn skiac_paint_set_src_in_color_filter(paint: *mut skiac_paint, r: u8, g: u8, b: u8, a: u8);
 
+    pub fn skiac_color4f_to_sk_color(color: super::Color4f) -> u32;
+
+    pub fn skiac_color_space_params(space: i32, matrix: *mut f32, transfer_fn: *mut f32) -> bool;
+
+    pub fn skiac_skcms_matrix3x3_invert(matrix: *const f32, inverse: *mut f32) -> bool;
+
+    pub fn skiac_skcms_transfer_fn_eval(transfer_fn: *const f32, x: f32) -> f32;
+
+    pub fn skiac_skcms_transfer_fn_invert(transfer_fn: *const f32, inverse: *mut f32) -> bool;
+
     pub fn skiac_paint_get_color(paint: *mut skiac_paint) -> u32;
 
     pub fn skiac_path_create() -> *mut skiac_path;
@@ -2842,6 +2852,39 @@ impl Color4f {
       a: unit_from_u8(a),
     }
   }
+}
+
+impl Color4f {
+  /// `SkColor4f::toSkColor`: an 8-bit ARGB word (alpha in the top byte),
+  /// rounded and pinned the way Skia does it on this CPU.
+  pub fn to_sk_color(self) -> u32 {
+    unsafe { ffi::skiac_color4f_to_sk_color(self) }
+  }
+}
+
+/// The matrix (row major) and transfer function (g, a, b, c, d, e, f) of a
+/// predefined color space, from Skia's constants (see skia_c.cpp).
+pub(crate) fn color_space_params(space: i32) -> Option<([f32; 9], [f32; 7])> {
+  let mut m = [0.0f32; 9];
+  let mut t = [0.0f32; 7];
+  unsafe { ffi::skiac_color_space_params(space, m.as_mut_ptr(), t.as_mut_ptr()) }.then_some((m, t))
+}
+
+/// skcms_Matrix3x3_invert.
+pub(crate) fn skcms_matrix3x3_invert(m: &[f32; 9]) -> Option<[f32; 9]> {
+  let mut inv = [0.0f32; 9];
+  unsafe { ffi::skiac_skcms_matrix3x3_invert(m.as_ptr(), inv.as_mut_ptr()) }.then_some(inv)
+}
+
+/// skcms_TransferFunction_eval (Skia's own approximate powf).
+pub(crate) fn skcms_transfer_fn_eval(t: &[f32; 7], x: f32) -> f32 {
+  unsafe { ffi::skiac_skcms_transfer_fn_eval(t.as_ptr(), x) }
+}
+
+/// skcms_TransferFunction_invert.
+pub(crate) fn skcms_transfer_fn_invert(t: &[f32; 7]) -> Option<[f32; 7]> {
+  let mut inv = [0.0f32; 7];
+  unsafe { ffi::skiac_skcms_transfer_fn_invert(t.as_ptr(), inv.as_mut_ptr()) }.then_some(inv)
 }
 
 pub(crate) fn unit_from_u8(v: u8) -> f32 {
