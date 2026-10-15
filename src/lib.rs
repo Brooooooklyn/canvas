@@ -25,9 +25,9 @@ use ctx::{
   truncate_style_objects,
 };
 use encoding::{
-  ContextData, ContextOutputData, EncodeQuality, EncodeType, Encoding, ImageEncodeOptions,
-  ImageType, ToBlobSite, ToDataUrlAsyncSite, ToDataUrlSite, encode_image, encode_surface,
-  node_encode_error,
+  BlobQuality, ContextData, ContextOutputData, EncodeQuality, EncodeType, Encoding,
+  ImageEncodeOptions, ImageType, ToBlobSite, ToDataUrlAsyncSite, ToDataUrlSite, encode_image,
+  encode_surface, node_encode_error,
 };
 use font::{FONT_REGEXP, init_font_regexp};
 use sk::{ColorSpace, SkImage, SkiaDataRef};
@@ -409,13 +409,13 @@ impl<'c> CanvasElement<'c> {
   pub fn to_blob(
     &mut self,
     mime: EncodeType<ToBlobSite>,
-    quality: EncodeQuality,
+    quality: BlobQuality,
   ) -> Result<AsyncTask<AsyncBlob>> {
     // Flush deferred rendering before encoding
     self.ctx.context.flush();
     Ok(AsyncTask::new(AsyncBlob {
       image: self.snapshot()?,
-      encoding: Encoding::web(mime.0, quality.quality, None),
+      encoding: Encoding::web(mime.0, quality.0, None),
       width: self.ctx.context.width,
       height: self.ctx.context.height,
       reject_on_failure: false,
