@@ -468,8 +468,11 @@ fn libyuv_to_rgba(image: &YuvImage, matrix: u16, rgba: &mut [u8]) -> Option<bool
     Function::Yuv(row) => {
       let (u_plane, v_plane) = (image.u?, image.v?);
       let chroma_width = image.chroma_width();
-      let chroma_row = |plane: &Plane, y: usize| -> Vec<u16> {
-        (0..chroma_width).map(|x| read(plane, x, y)).collect()
+      // One chroma row of a plane, read into a buffer that is reused.
+      let chroma_row = |plane: &Plane, y: usize, row: &mut [u16]| {
+        for (x, value) in row.iter_mut().enumerate() {
+          *value = read(plane, x, y);
+        }
       };
       let mut u = vec![0u16; width];
       let mut v = vec![0u16; width];
@@ -485,44 +488,49 @@ fn libyuv_to_rgba(image: &YuvImage, matrix: u16, rgba: &mut [u8]) -> Option<bool
         }
         PixelFormat::Yuv422 => {
           // I422ToARGBMatrixLinear
+          let mut chroma_u = vec![0u16; chroma_width];
+          let mut chroma_v = vec![0u16; chroma_width];
           for y in 0..height {
-            linear_up(&chroma_row(&u_plane, y), &mut u);
-            linear_up(&chroma_row(&v_plane, y), &mut v);
+            chroma_row(&u_plane, y, &mut chroma_u);
+            chroma_row(&v_plane, y, &mut chroma_v);
+            linear_up(&chroma_u, &mut u);
+            linear_up(&chroma_v, &mut v);
             write_row(rgba, y, row, &u, &v);
           }
         }
         PixelFormat::Yuv420 => {
           // I420ToARGBMatrixBilinear: the first row (and the last one when
           // the height is even) from one chroma row, the others in pairs
-          // between two chroma rows.
-          linear_up(&chroma_row(&u_plane, 0), &mut u);
-          linear_up(&chroma_row(&v_plane, 0), &mut v);
+          // between two chroma rows. `*_top` holds chroma row `chroma_y`
+          // and `*_bottom` the next one; each chroma row is read once.
+          let mut u_top = vec![0u16; chroma_width];
+          let mut v_top = vec![0u16; chroma_width];
+          let mut u_bottom = vec![0u16; chroma_width];
+          let mut v_bottom = vec![0u16; chroma_width];
+          chroma_row(&u_plane, 0, &mut u_top);
+          chroma_row(&v_plane, 0, &mut v_top);
+          linear_up(&u_top, &mut u);
+          linear_up(&v_top, &mut v);
           write_row(rgba, 0, row, &u, &v);
           let mut u2 = vec![0u16; width];
           let mut v2 = vec![0u16; width];
           let mut chroma_y = 0;
           let mut y = 1;
           while y + 1 < height {
-            bilinear_up(
-              &chroma_row(&u_plane, chroma_y),
-              &chroma_row(&u_plane, chroma_y + 1),
-              &mut u,
-              &mut u2,
-            );
-            bilinear_up(
-              &chroma_row(&v_plane, chroma_y),
-              &chroma_row(&v_plane, chroma_y + 1),
-              &mut v,
-              &mut v2,
-            );
+            chroma_row(&u_plane, chroma_y + 1, &mut u_bottom);
+            chroma_row(&v_plane, chroma_y + 1, &mut v_bottom);
+            bilinear_up(&u_top, &u_bottom, &mut u, &mut u2);
+            bilinear_up(&v_top, &v_bottom, &mut v, &mut v2);
             write_row(rgba, y, row, &u, &v);
             write_row(rgba, y + 1, row, &u2, &v2);
+            std::mem::swap(&mut u_top, &mut u_bottom);
+            std::mem::swap(&mut v_top, &mut v_bottom);
             chroma_y += 1;
             y += 2;
           }
           if height & 1 == 0 && height > 1 {
-            linear_up(&chroma_row(&u_plane, chroma_y), &mut u);
-            linear_up(&chroma_row(&v_plane, chroma_y), &mut v);
+            linear_up(&u_top, &mut u);
+            linear_up(&v_top, &mut v);
             write_row(rgba, height - 1, row, &u, &v);
           }
         }
