@@ -272,7 +272,9 @@ static SkPath TextBlobPath(const SkTextBlob* blob, SkScalar x, SkScalar y) {
 // - It sends the call to the SVG writer. SkSVGDevice drops the local matrix of
 //   an image shader (addImageShaderResources in src/svg/SkSVGDevice.cpp never
 //   writes a patternTransform), so a draw whose pattern has a non-identity
-//   matrix is rewritten for it, see drawPatternForSvg.
+//   matrix is rewritten for it, see drawPatternForSvg. It has no conic
+//   gradient either, so a conic gradient draw is rewritten as an image
+//   pattern, see rasterizeSweep.
 // - It records the call, so drawImage, createPattern and getImageData read the
 //   SVGCanvas like a canvas source. The recording is drawn into the raster
 //   surface only when the surface is read (skiac_svg_canvas_flush), or when it
@@ -385,9 +387,9 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
   }
 
   void onDrawPaint(const SkPaint& paint) override {
-    if (HasPatternMatrix(paint)) {
+    if (NeedsSvgRewrite(paint)) {
       fRecording->drawPaint(paint);
-      this->drawPatternForSvg(SkPath::Rect(this->getLocalClipBounds()), paint);
+      this->drawForSvg(SkPath::Rect(this->getLocalClipBounds()), paint);
     } else {
       INHERITED::onDrawPaint(paint);
     }
@@ -398,7 +400,7 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
                     size_t count,
                     const SkPoint pts[],
                     const SkPaint& paint) override {
-    if (HasPatternMatrix(paint)) {
+    if (NeedsSvgRewrite(paint)) {
       fRecording->drawPoints(mode, {pts, count}, paint);
       // As SkSVGDevice::drawPoints builds its path.
       SkPathBuilder path;
@@ -414,7 +416,7 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
       if (mode == kPolygon_PointMode && count > 1) {
         path.addPolygon({pts, count}, false);
       }
-      this->drawPatternForSvg(path.detach(), paint);
+      this->drawForSvg(path.detach(), paint);
     } else {
       INHERITED::onDrawPoints(mode, count, pts, paint);
     }
@@ -422,9 +424,9 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
   }
 
   void onDrawRect(const SkRect& rect, const SkPaint& paint) override {
-    if (HasPatternMatrix(paint)) {
+    if (NeedsSvgRewrite(paint)) {
       fRecording->drawRect(rect, paint);
-      this->drawPatternForSvg(SkPath::Rect(rect), paint);
+      this->drawForSvg(SkPath::Rect(rect), paint);
     } else {
       INHERITED::onDrawRect(rect, paint);
     }
@@ -432,9 +434,9 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
   }
 
   void onDrawOval(const SkRect& rect, const SkPaint& paint) override {
-    if (HasPatternMatrix(paint)) {
+    if (NeedsSvgRewrite(paint)) {
       fRecording->drawOval(rect, paint);
-      this->drawPatternForSvg(SkPath::Oval(rect), paint);
+      this->drawForSvg(SkPath::Oval(rect), paint);
     } else {
       INHERITED::onDrawOval(rect, paint);
     }
@@ -442,9 +444,9 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
   }
 
   void onDrawRRect(const SkRRect& rrect, const SkPaint& paint) override {
-    if (HasPatternMatrix(paint)) {
+    if (NeedsSvgRewrite(paint)) {
       fRecording->drawRRect(rrect, paint);
-      this->drawPatternForSvg(SkPath::RRect(rrect), paint);
+      this->drawForSvg(SkPath::RRect(rrect), paint);
     } else {
       INHERITED::onDrawRRect(rrect, paint);
     }
@@ -452,9 +454,9 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
   }
 
   void onDrawPath(const SkPath& path, const SkPaint& paint) override {
-    if (HasPatternMatrix(paint)) {
+    if (NeedsSvgRewrite(paint)) {
       fRecording->drawPath(path, paint);
-      this->drawPatternForSvg(path, paint);
+      this->drawForSvg(path, paint);
     } else {
       INHERITED::onDrawPath(path, paint);
     }
@@ -465,10 +467,10 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
                       SkScalar x,
                       SkScalar y,
                       const SkPaint& paint) override {
-    if (HasPatternMatrix(paint)) {
+    if (NeedsSvgRewrite(paint)) {
       fRecording->drawTextBlob(blob, x, y, paint);
       // The glyph outlines, so they can be drawn in the pattern's space.
-      this->drawPatternForSvg(TextBlobPath(blob, x, y), paint);
+      this->drawForSvg(TextBlobPath(blob, x, y), paint);
     } else {
       INHERITED::onDrawTextBlob(blob, x, y, paint);
     }
@@ -660,6 +662,92 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
     return shader && shader->isAImage(&matrix, nullptr) && !matrix.isIdentity();
   }
 
+  // A conic gradient: SkSVGDevice writes only linear, radial and two-point
+  // conical gradients (addGradientShaderResources) and fills anything else
+  // with the paint color, black.
+  static bool IsSweepGradient(const SkPaint& paint) {
+    auto shader = paint.getShader();
+    return shader &&
+           as_SB(shader)->asGradient() == SkShaderBase::GradientType::kSweep;
+  }
+
+  static bool NeedsSvgRewrite(const SkPaint& paint) {
+    return HasPatternMatrix(paint) || IsSweepGradient(paint);
+  }
+
+  // The SVG half of a draw SkSVGDevice cannot write as it is.
+  void drawForSvg(const SkPath& path, const SkPaint& paint) {
+    if (!IsSweepGradient(paint)) {
+      this->drawPatternForSvg(path, paint);
+      return;
+    }
+    SkPaint image_paint;
+    if (this->rasterizeSweep(path, paint, &image_paint)) {
+      this->drawPatternForSvg(path, image_paint, /*clip_to_image=*/true);
+    }
+  }
+
+  // The most pixels rasterizeSweep allocates: Chrome's largest canvas,
+  // 32768 * 8192 pixels (IsValidImageSize, canvas_rendering_context_host.cc).
+  static constexpr int64_t kMaxSweepPixels = 32768 * 8192;
+
+  // `paint` with its conic gradient replaced by an image of what the raster
+  // canvas paints with it, globalAlpha included, at one image pixel per
+  // device pixel, over the device bounds of the draw inside the clip. The
+  // image's matrix maps its pixels back to local space. False: nothing to
+  // draw (nothing visible, a singular matrix, bounds over kMaxSweepPixels or
+  // no memory for them).
+  bool rasterizeSweep(const SkPath& path, const SkPaint& paint, SkPaint* out) {
+    const SkMatrix ctm = this->getTotalMatrix();
+    SkMatrix inverse;
+    if (!ctm.invert(&inverse)) {
+      return false;
+    }
+    // A stroke's outline, or the path of a fill or a hairline.
+    SkRect local = path.getBounds();
+    if (paint.getStyle() != SkPaint::kFill_Style || paint.getPathEffect()) {
+      SkPathBuilder builder;
+      if (skpathutils::FillPathWithPaint(path, paint, &builder, nullptr, ctm)) {
+        local = builder.computeBounds();
+      }
+    }
+    // One more pixel on each side for the antialiased edges.
+    SkIRect device = ctm.mapRect(local).roundOut().makeOutset(1, 1);
+    if (!device.intersect(this->getDeviceClipBounds())) {
+      return false;
+    }
+    // Skia dithers with an 8x8 pattern placed by the device position, so the
+    // image starts at a multiple of 8 to dither like the raster canvas.
+    device.fLeft &= ~7;
+    device.fTop &= ~7;
+    if (static_cast<int64_t>(device.width()) * device.height() >
+        kMaxSweepPixels) {
+      return false;
+    }
+    auto surface = SkSurfaces::Raster(SkImageInfo::MakeN32Premul(
+        device.width(), device.height(), SkColorSpace::MakeSRGB()));
+    if (!surface) {
+      return false;
+    }
+    auto canvas = surface->getCanvas();
+    canvas->translate(-device.fLeft, -device.fTop);
+    canvas->concat(ctm);
+    SkPaint fill;
+    fill.setShader(paint.refShader());
+    fill.setAlphaf(paint.getAlphaf());
+    fill.setDither(paint.isDither());
+    fill.setBlendMode(SkBlendMode::kSrc);
+    canvas->drawPaint(fill);
+    SkMatrix matrix = inverse;
+    matrix.preTranslate(device.fLeft, device.fTop);
+    *out = paint;
+    // The alpha is in the image.
+    out->setAlphaf(1);
+    out->setShader(surface->makeImageSnapshot()->makeShader(
+        SkTileMode::kDecal, SkTileMode::kDecal, SkSamplingOptions(), &matrix));
+    return true;
+  }
+
   Clip& addClip(ClipEdgeStyle edge) {
     auto& clip = fLevels.back().clips.emplace_back();
     clip.matrix = this->getLocalToDevice();
@@ -738,8 +826,13 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
   // the element is drawn under CTM * M, with its geometry mapped back by M^-1
   // and a pattern with no matrix. A stroke is turned into its fill first, so M
   // does not scale it. A no-repeat axis is clipped to the image, because
-  // SkSVGDevice writes a "100%" tile for it.
-  void drawPatternForSvg(const SkPath& path, const SkPaint& paint) {
+  // SkSVGDevice writes a "100%" tile for it. `clip_to_image`: a rasterized
+  // conic gradient, which already covers the draw and its antialiased edges
+  // in whole device pixels; it is clipped to the image only, since a clip at
+  // the geometry bounds would antialias those edges a second time.
+  void drawPatternForSvg(const SkPath& path,
+                         const SkPaint& paint,
+                         bool clip_to_image = false) {
     SkMatrix matrix;
     SkTileMode tile[2];
     auto image = paint.getShader()->isAImage(&matrix, tile);
@@ -767,6 +860,9 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
     const bool decal =
         tile[0] == SkTileMode::kDecal || tile[1] == SkTileMode::kDecal;
     auto bounds = geometry.getBounds();
+    if (clip_to_image) {
+      bounds = SkRect::Make(image->bounds());
+    }
     if (tile[0] == SkTileMode::kDecal) {
       bounds.fLeft = std::max(bounds.fLeft, 0.0f);
       bounds.fRight = std::min(bounds.fRight, (float)image->width());

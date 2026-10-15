@@ -63,6 +63,7 @@
 #include <modules/svg/include/SkSVGSVG.h>
 #include <src/core/SkFontDescriptor.h>
 #include <src/ports/SkFontMgr_custom.h>
+#include <src/shaders/SkShaderBase.h>
 #include <src/text/GlyphRun.h>
 #include <src/xml/SkXMLWriter.h>
 #include <algorithm>
