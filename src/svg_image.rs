@@ -16,11 +16,10 @@ use crate::svg_size::{FontUnits, SvgSizing, layout_floor};
 const CACHED_RASTERS: usize = 4;
 
 /// The largest raster made for one draw, in pixels; a bigger draw rasters
-/// only the part near the canvas.
+/// only the part its output on the canvas reads.
 const RASTER_BUDGET: f32 = 4096.0 * 4096.0;
 
-/// Device pixels kept around the canvas when a draw is cut down to it, for
-/// shadows and filters that reach in from outside.
+/// Device pixels kept around that part when a draw is cut down to it.
 const RASTER_MARGIN: f32 = 256.0;
 
 /// How a raster is made: the document laid out at `layout`, clipped to
@@ -206,13 +205,16 @@ impl SvgImage {
   }
 
   /// drawImage(image, ...numbers) on a `canvas_size` canvas under `ctm`.
-  /// None draws nothing.
+  /// `source_bounds` is the device rect the draw reads from, its shadow and
+  /// filter included (`Context::image_source_bounds`); None when that cannot
+  /// be bounded. None draws nothing.
   pub(crate) fn plan_draw(
     &mut self,
     env: &Env,
     numbers: &[f64],
     canvas_size: (u32, u32),
     ctm: &Transform,
+    source_bounds: Option<[f32; 4]>,
   ) -> napi::Result<Option<SvgDraw>> {
     // The canvas is the default object size (canvas_2d_recorder_context.cc
     // drawImage).
@@ -303,11 +305,14 @@ impl SvgImage {
         clip[3].ceil(),
       ];
       if (window[2] - window[0]) * (window[3] - window[1]) > RASTER_BUDGET {
+        // Only the part the draw reads: the canvas, and what its shadow and
+        // filter reach for. A reach that cannot be bounded takes scaled_draw.
+        let [left, top, right, bottom] = source_bounds?;
         window = [
-          window[0].max(-RASTER_MARGIN),
-          window[1].max(-RASTER_MARGIN),
-          window[2].min(canvas.0 + RASTER_MARGIN),
-          window[3].min(canvas.1 + RASTER_MARGIN),
+          window[0].max(left - RASTER_MARGIN),
+          window[1].max(top - RASTER_MARGIN),
+          window[2].min(right + RASTER_MARGIN),
+          window[3].min(bottom + RASTER_MARGIN),
         ];
       }
       let raster_width = window[2] - window[0];

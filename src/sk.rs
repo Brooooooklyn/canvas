@@ -1058,6 +1058,11 @@ pub mod ffi {
       color: u32,
     ) -> u32;
 
+    pub fn skiac_image_filter_input_bounds(
+      image_filter: *mut skiac_image_filter,
+      bounds: *mut i32,
+    ) -> bool;
+
     pub fn skiac_image_filter_ref(image_filter: *mut skiac_image_filter);
 
     pub fn skiac_image_filter_destroy(image_filter: *mut skiac_image_filter);
@@ -4509,6 +4514,16 @@ impl ImageFilter {
   pub fn filter_color(&self, color: u32) -> u32 {
     debug_assert!(!self.0.is_null(), "ImageFilter must never hold null");
     unsafe { ffi::skiac_image_filter_filter_color(self.0, color) }
+  }
+
+  /// The device rect (left, top, right, bottom) this filter reads to draw
+  /// its output over `output`, on a layer at the device identity (where
+  /// `Context::composited_filter_layer` puts it). None when Skia cannot
+  /// bound it.
+  pub fn input_bounds(&self, output: [i32; 4]) -> Option<[i32; 4]> {
+    debug_assert!(!self.0.is_null(), "ImageFilter must never hold null");
+    let mut bounds = output;
+    unsafe { ffi::skiac_image_filter_input_bounds(self.0, bounds.as_mut_ptr()) }.then_some(bounds)
   }
 
   pub fn make_drop_shadow_only(

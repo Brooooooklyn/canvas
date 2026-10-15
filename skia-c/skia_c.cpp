@@ -3370,6 +3370,26 @@ uint32_t skiac_image_filter_filter_color(skiac_image_filter* c_image_filter,
       .toSkColor();
 }
 
+// The device pixels the filter reads to draw its output over `bounds`
+// (left, top, right, bottom), written back to `bounds`: filterBounds in
+// reverse at the identity, as SkCanvas sizes the input of a filter layer
+// opened in device space (Context::composited_filter_layer). False when Skia
+// cannot bound them (beyond SkRectPriv::MakeILarge).
+bool skiac_image_filter_input_bounds(skiac_image_filter* c_image_filter,
+                                     int32_t bounds[4]) {
+  auto input = IMAGE_FILTER_CAST->filterBounds(
+      SkIRect::MakeLTRB(bounds[0], bounds[1], bounds[2], bounds[3]),
+      SkMatrix::I(), SkImageFilter::kReverse_MapDirection);
+  if (!input.isEmpty() && !SkRectPriv::MakeILarge().contains(input)) {
+    return false;
+  }
+  bounds[0] = input.left();
+  bounds[1] = input.top();
+  bounds[2] = input.right();
+  bounds[3] = input.bottom();
+  return true;
+}
+
 void skiac_image_filter_ref(skiac_image_filter* c_image_filter) {
   auto image_filter = IMAGE_FILTER_CAST;
   image_filter->ref();

@@ -62,6 +62,7 @@
 #include <modules/svg/include/SkSVGRenderContext.h>
 #include <modules/svg/include/SkSVGSVG.h>
 #include <src/core/SkFontDescriptor.h>
+#include <src/core/SkRectPriv.h>
 #include <src/ports/SkFontMgr_custom.h>
 #include <src/text/GlyphRun.h>
 #include <src/xml/SkDOM.h>
@@ -1256,6 +1257,8 @@ skiac_image_filter* skiac_image_filter_from_argb(
 bool skiac_image_filter_is_a_color_filter(skiac_image_filter* c_image_filter);
 uint32_t skiac_image_filter_filter_color(skiac_image_filter* c_image_filter,
                                          uint32_t color);
+bool skiac_image_filter_input_bounds(skiac_image_filter* c_image_filter,
+                                     int32_t bounds[4]);
 void skiac_image_filter_destroy(skiac_image_filter* c_image_filter);
 
 // SkImage (for PageCache)

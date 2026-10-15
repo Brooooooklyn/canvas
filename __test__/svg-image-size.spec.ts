@@ -508,6 +508,205 @@ test('drawImage of an svg is drawn at the size it lands at like Chrome', async (
   t.deepEqual(Array.from(part.slice(0, 4)), [0, 136, 255, 255])
 })
 
+// A draw bigger than 4096x4096 device pixels rasters only the part of the
+// SVG near the canvas. That part must hold every pixel the shadow and
+// ctx.filter read: Chrome draws their output from content far off the
+// canvas. 300x150 canvas, 6000x6000 SVGs with one green rect; the expected
+// values were measured in Chrome 155. Each row: the rect, where the image is
+// drawn, the state, then the painted RGB, the number of painted pixels, the
+// alpha sum, the alpha at x = 0, 50, 99, 100, 150, 200, 299 on y = 75, and
+// the alpha at (150, 99) and (150, 100).
+const offCanvas: [
+  string,
+  number[],
+  number[],
+  (ctx: SKRSContext2D) => void,
+  number[],
+  number,
+  number,
+  number[],
+  number[],
+][] = [
+  // The green ends at device x = -300.
+  [
+    'shadowOffsetX 400',
+    [0, 0, 5700, 6000],
+    [-6000, -3000],
+    (ctx) => {
+      ctx.shadowColor = 'blue'
+      ctx.shadowOffsetX = 400
+    },
+    [0, 0, 255],
+    15000,
+    3825000,
+    [255, 255, 255, 0, 0, 0, 0],
+    [0, 0],
+  ],
+  [
+    'shadowOffsetY 400',
+    [0, 0, 6000, 5700],
+    [-3000, -6000],
+    (ctx) => {
+      ctx.shadowColor = 'blue'
+      ctx.shadowOffsetY = 400
+    },
+    [0, 0, 255],
+    30000,
+    7650000,
+    [255, 255, 255, 255, 255, 255, 255],
+    [255, 0],
+  ],
+  [
+    'shadowBlur 400',
+    [0, 0, 5700, 6000],
+    [-6000, -3000],
+    (ctx) => {
+      ctx.shadowColor = 'blue'
+      ctx.shadowBlur = 400
+    },
+    [0, 0, 255],
+    27000,
+    146100,
+    [15, 8, 4, 4, 1, 0, 0],
+    [1, 1],
+  ],
+  [
+    'shadowOffsetX 300 and shadowBlur 100',
+    [0, 0, 5700, 6000],
+    [-6000, -3000],
+    (ctx) => {
+      ctx.shadowColor = 'blue'
+      ctx.shadowOffsetX = 300
+      ctx.shadowBlur = 100
+    },
+    [0, 0, 255],
+    18000,
+    732000,
+    [126, 38, 4, 3, 0, 0, 0],
+    [0, 0],
+  ],
+  [
+    'blur(200px)',
+    [0, 0, 5700, 6000],
+    [-6000, -3000],
+    (ctx) => {
+      ctx.filter = 'blur(200px)'
+    },
+    [0, 255, 0],
+    26850,
+    144150,
+    [15, 8, 4, 3, 1, 0, 0],
+    [1, 1],
+  ],
+  [
+    'drop-shadow(400px 0 0 red)',
+    [0, 0, 5700, 6000],
+    [-6000, -3000],
+    (ctx) => {
+      ctx.filter = 'drop-shadow(400px 0 0 red)'
+    },
+    [255, 0, 0],
+    15000,
+    3825000,
+    [255, 255, 255, 0, 0, 0, 0],
+    [0, 0],
+  ],
+  [
+    'blur(50px) and shadowOffsetX 400',
+    [0, 0, 5700, 6000],
+    [-6000, -3000],
+    (ctx) => {
+      ctx.filter = 'blur(50px)'
+      ctx.shadowColor = 'blue'
+      ctx.shadowOffsetX = 400
+    },
+    [0, 0, 255],
+    33000,
+    3830850,
+    [251, 216, 129, 126, 38, 3, 0],
+    [38, 38],
+  ],
+  // The green ends at device x = 50.
+  [
+    'blur(200px) on the edge',
+    [0, 0, 6000, 6000],
+    [-5950, -3000],
+    (ctx) => {
+      ctx.filter = 'blur(200px)'
+    },
+    [0, 255, 0],
+    45000,
+    3670200,
+    [152, 127, 102, 101, 78, 56, 25],
+    [78, 78],
+  ],
+  // The green starts at device x = 600.
+  [
+    'shadowOffsetX -400',
+    [300, 0, 5700, 6000],
+    [300, -3000],
+    (ctx) => {
+      ctx.shadowColor = 'blue'
+      ctx.shadowOffsetX = -400
+    },
+    [0, 0, 255],
+    15000,
+    3825000,
+    [0, 0, 0, 0, 0, 255, 255],
+    [0, 0],
+  ],
+]
+
+test('a large svg draw keeps the source its shadow and filter read, like Chrome', async (t) => {
+  for (const [name, rect, at, setup, rgb, painted, sumA, row, column] of offCanvas) {
+    const image = await loaded(
+      svg(
+        'width="6000" height="6000"',
+        `<rect x="${rect[0]}" y="${rect[1]}" width="${rect[2]}" height="${rect[3]}" fill="#00ff00"/>`,
+      ),
+    )
+    const ctx = createCanvas(300, 150).getContext('2d')
+    setup(ctx)
+    ctx.drawImage(image, at[0], at[1])
+    const d = ctx.getImageData(0, 0, 300, 150).data
+    let count = 0
+    const colors = new Set<string>()
+    for (let i = 0; i < d.length; i += 4) {
+      if (d[i + 3]) {
+        count++
+        colors.add(`${d[i]},${d[i + 1]},${d[i + 2]}`)
+      }
+    }
+    const alpha = (x: number, y: number) => d[(y * 300 + x) * 4 + 3]
+    t.deepEqual(
+      {
+        colors: [...colors],
+        painted: count,
+        sumA: alphaSum(d),
+        row: [0, 50, 99, 100, 150, 200, 299].map((x) => alpha(x, 75)),
+        column: [alpha(150, 99), alpha(150, 100)],
+      },
+      { colors: [rgb.join()], painted, sumA, row, column },
+      name,
+    )
+  }
+  // A 100x100 SVG drawn 6000x6000 is rastered at the size it lands at.
+  const icon = await loaded(svg('width="100" height="100"', '<rect width="95" height="100" fill="#00ff00"/>'))
+  const ctx = createCanvas(300, 150).getContext('2d')
+  ctx.shadowColor = 'blue'
+  ctx.shadowOffsetX = 400
+  ctx.drawImage(icon, -6000, -3000, 6000, 6000)
+  const d = ctx.getImageData(0, 0, 300, 150).data
+  t.is(alphaSum(d), 3825000)
+  t.deepEqual(
+    [99, 100].map((x) => Array.from(d.slice((75 * 300 + x) * 4, (75 * 300 + x) * 4 + 4))),
+    [
+      [0, 0, 255, 255],
+      [0, 0, 0, 0],
+    ],
+  )
+})
+
 // img.width and img.height are the attributes; Chrome does not draw an SVG
 // at that size.
 test('img.width does not change what drawImage draws for an svg', async (t) => {

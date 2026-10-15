@@ -2483,6 +2483,43 @@ impl Context {
     )
   }
 
+  /// The device rect a drawImage reads its source from when its output may
+  /// cover the whole canvas: the canvas, joined with the canvas mapped
+  /// backward through `ctx.filter` (the content pass) and through the shadow
+  /// filter (the shadow pass; an image's shadow always is one,
+  /// `ShadowSource::Image`). Skia sizes the layer of each pass the same way.
+  /// An SVG Image too large to raster whole rasters only this part of itself
+  /// (`SvgImage::plan_draw`). None when a filter cannot be bounded.
+  pub(crate) fn image_source_bounds(&self) -> Option<[f32; 4]> {
+    let canvas = [
+      0,
+      0,
+      self.width.min(i32::MAX as u32) as i32,
+      self.height.min(i32::MAX as u32) as i32,
+    ];
+    let mut bounds = canvas;
+    let mut join = |filter: &ImageFilter| -> Option<()> {
+      let [left, top, right, bottom] = filter.input_bounds(canvas)?;
+      if left < right && top < bottom {
+        bounds = [
+          bounds[0].min(left),
+          bounds[1].min(top),
+          bounds[2].max(right),
+          bounds[3].max(bottom),
+        ];
+      }
+      Some(())
+    };
+    if let Some(filter) = &self.state.filter {
+      join(filter)?;
+    }
+    let paint = self.image_paint(self.image_global_alpha());
+    if let Some(shadow) = self.shadow_paint(&paint, ShadowSource::Image, DrawContent::Geometry) {
+      join(shadow.filter.as_ref()?)?;
+    }
+    Some(bounds.map(|v| v as f32))
+  }
+
   /// Does `ctx.filter` still ride `composited_filter_layer`? The exact negation
   /// of `render_passes`'s content-pass rescue, and the one place that question
   /// is answered, so the content and shadow passes cannot disagree.
@@ -5023,7 +5060,9 @@ impl CanvasRenderingContext2D {
           // raster of it made for this draw, sampled as it is.
           let ctm = self.context.state.transform.get_transform();
           let canvas_size = (self.context.width, self.context.height);
-          let Some(draw) = svg.plan_draw(env, &args.numbers, canvas_size, &ctm)? else {
+          let source_bounds = self.context.image_source_bounds();
+          let Some(draw) = svg.plan_draw(env, &args.numbers, canvas_size, &ctm, source_bounds)?
+          else {
             return Ok(());
           };
           let (dx, dy, d_width, d_height) = draw.dst;
