@@ -282,6 +282,84 @@ test('addPath argument errors', (t) => {
   })
 })
 
+test('addPath reads a DOMMatrix member by member, as any other dictionary', (t) => {
+  const m = new DOMMatrix([1, 0, 0, 1, 30, 30])
+  Object.defineProperty(m, 'a', { value: 2 })
+  t.deepEqual(
+    run((p, q) => p.addPath(q, m)),
+    typeError('Property mismatch on matrix initialization.'),
+  )
+  // A Proxy is read through its get trap only.
+  const log: string[] = []
+  const proxy = new Proxy(
+    { e: 30, f: 30 },
+    {
+      getPrototypeOf() {
+        log.push('getPrototypeOf')
+        throw new Error('trap')
+      },
+      get(target, key, receiver) {
+        if (typeof key === 'string') log.push(key)
+        return Reflect.get(target, key, receiver)
+      },
+    },
+  )
+  t.deepEqual(
+    run((p, q) => p.addPath(q, proxy as any)),
+    added([30, 30, 39, 39], 25500),
+  )
+  t.is(log.join(), 'a,b,c,d,e,f,m11,m12,m21,m22,m41,m42')
+})
+
+test('addPath checks the receiver and the path before it reads the matrix', (t) => {
+  const log: string[] = []
+  const matrix = {
+    get a() {
+      log.push('a')
+      return 1
+    },
+  }
+  t.throws(() => Path2D.prototype.addPath.call({}, new Path2D(), matrix as any), {
+    instanceOf: TypeError,
+    message: 'Illegal invocation',
+  })
+  t.throws(() => Path2D.prototype.addPath.call(new Path2D(), {} as any, matrix as any), {
+    instanceOf: TypeError,
+    message: `${PREFIX}parameter 1 is not of type 'Path2D'.`,
+  })
+  t.is(log.join(), '')
+})
+
+test('addPath errors keep the bare text in the stack, as Chrome', (t) => {
+  const p = new Path2D()
+  const q = new Path2D()
+  const cases: [unknown[], string, string][] = [
+    [
+      [q, { a: 1, m11: 2 }],
+      'Property mismatch on matrix initialization.',
+      'Property mismatch on matrix initialization.',
+    ],
+    [
+      [q, 5],
+      "The provided value is not of type 'DOMMatrix2DInit'.",
+      "The provided value is not of type 'DOMMatrix2DInit'.",
+    ],
+    [
+      [q, { e: Symbol() }],
+      'Cannot convert a Symbol value to a number',
+      "Failed to read the 'e' property from 'DOMMatrix2DInit': Cannot convert a Symbol value to a number",
+    ],
+    [[{}, { a: 2 }], "parameter 1 is not of type 'Path2D'.", "parameter 1 is not of type 'Path2D'."],
+    [[{}], "parameter 1 is not of type 'Path2D'.", "parameter 1 is not of type 'Path2D'."],
+  ]
+  for (const [args, bare, message] of cases) {
+    const error = t.throws(() => (p.addPath as any)(...args), { instanceOf: TypeError })!
+    t.is(String(error.stack).split('\n')[0], `TypeError: ${bare}`)
+    t.is(error.message, PREFIX + message)
+    t.deepEqual(Object.keys(error), ['message'])
+  }
+})
+
 test("addPath has Chrome's length and name", (t) => {
   t.is(Path2D.prototype.addPath.length, 1)
   t.is(Path2D.prototype.addPath.name, 'addPath')

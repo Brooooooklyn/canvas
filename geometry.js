@@ -1004,3 +1004,5 @@ for (const propertyName of [
 }
 
 module.exports = { DOMPoint, DOMMatrix, DOMRect }
+// For index.js, which reads the matrix dictionaries of canvas methods.
+module.exports._toNumber = toNumber
