@@ -362,8 +362,9 @@ const LARGE_CHROME_PIXELS: Record<number, number[][]> = {
 // (SkSVGDevice writes the transform with 6 significant digits, exact for a whole k), with a 1 image
 // pixel border of the same gradient so the upscale does not mix the edges with the outside. The
 // pattern tile is the image: Chrome rasterizes a pattern tile larger than 2048 * 2048 device pixels
-// at that many pixels, so the transparent rest of a viewport-sized tile faded the edges. Away from
-// the seam the result stays within 3 of Chrome's raster, and the edges keep their full alpha.
+// at that many pixels, so the transparent rest of a viewport-sized tile faded the edges. The upscale
+// blurs the gradient's seam and center (accepted); at these points, away from both, the result stays
+// within 3 of Chrome's raster, and the edges keep their full alpha.
 for (const n of [4097, 8192]) {
   test(`svg export of a conic gradient on a ${n}x${n} canvas scales the raster to 4096 * 4096 pixels`, async (t) => {
     const svg = createCanvas(n, n, SvgExportFlag.NoPrettyXML)
