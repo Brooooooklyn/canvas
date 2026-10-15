@@ -1,11 +1,17 @@
-// The exceptions of drawImage: argument count, overload, image type, number
-// conversion and the broken image state.
-// Expected values and messages were measured in Chrome 155 (--disable-gpu;
-// pixel reads on a willReadFrequently canvas). Chrome lists its own image
-// types in the type error; ours lists our classes.
+// DOM and binding exceptions: drawImage (argument count, overload, image
+// type, number conversion, broken image), negative radii, Image decode() and
+// onerror. Expected values and messages were measured in Chrome 155 on arm64
+// macOS (--disable-gpu; pixel reads on a willReadFrequently canvas). Chrome
+// lists its own image types in the drawImage type error; ours lists our
+// classes.
+import { readFileSync } from 'node:fs'
+import { createServer } from 'node:http'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
 import test from 'ava'
 
-import { createCanvas, Image, ImageData, Path2D } from '../index'
+import { createCanvas, Image, ImageData, loadImage, Path2D } from '../index'
 
 // Untyped access for arguments the typings reject on purpose.
 const loose = <T>(value: T) => value as any
@@ -352,5 +358,147 @@ test('the radius text has six significant digits', (t) => {
       instanceOf: DOMException,
       message: radiusMessage('arc', 'CanvasRenderingContext2D', 'radius', text),
     })
+  }
+})
+
+const ENCODING_ERROR = {
+  instanceOf: DOMException,
+  name: 'EncodingError',
+  message: 'The source image cannot be decoded.',
+}
+const BROKEN_URL = 'data:image/png;base64,AAAAAAAAAAAA'
+const SIMPLE_PNG = `data:image/png;base64,${readFileSync(
+  join(fileURLToPath(new URL('.', import.meta.url)), '..', 'example', 'simple.png'),
+).toString('base64')}`
+
+const settle = (image: Image) =>
+  new Promise<string>((resolve) => {
+    image.onload = () => resolve('load')
+    image.onerror = () => resolve('error')
+  })
+
+test('decode() rejects with EncodingError', async (t) => {
+  // No src.
+  const error = await t.throwsAsync(new Image().decode(), ENCODING_ERROR)
+  t.is(error.code, 0)
+
+  // A broken image: before and after the load ends.
+  const broken = new Image()
+  const brokenEvent = settle(broken)
+  broken.src = BROKEN_URL
+  await t.throwsAsync(broken.decode(), ENCODING_ERROR)
+  t.is(await brokenEvent, 'error')
+  await t.throwsAsync(broken.decode(), ENCODING_ERROR)
+
+  // Pending, then src changes to a broken image or to another valid one:
+  // the first decode() rejects; the second follows the new src.
+  const second = createCanvas(3, 2)
+  second.getContext('2d').fillRect(0, 0, 3, 2)
+  const secondPng = second.toDataURL('image/png')
+  const toBroken = new Image()
+  toBroken.src = SIMPLE_PNG
+  const pendingBroken = t.throwsAsync(toBroken.decode(), ENCODING_ERROR)
+  toBroken.src = BROKEN_URL
+  await t.throwsAsync(toBroken.decode(), ENCODING_ERROR)
+  await pendingBroken
+  const toValid = new Image()
+  toValid.src = SIMPLE_PNG
+  const pendingValid = t.throwsAsync(toValid.decode(), ENCODING_ERROR)
+  toValid.src = secondPng
+  await t.notThrowsAsync(toValid.decode())
+  await pendingValid
+  t.is(toValid.naturalWidth, 3)
+
+  // Loaded, then src changes or is cleared before the decode() settles.
+  for (const next of [secondPng, '']) {
+    const loaded = new Image()
+    loaded.src = SIMPLE_PNG
+    await loaded.decode()
+    const pending = t.throwsAsync(loaded.decode(), ENCODING_ERROR)
+    loaded.src = next
+    await pending
+  }
+
+  // Cleared.
+  const cleared = new Image()
+  cleared.src = SIMPLE_PNG
+  await cleared.decode()
+  cleared.src = ''
+  t.true(cleared.complete)
+  await t.throwsAsync(cleared.decode(), ENCODING_ERROR)
+})
+
+test('decode() resolves for a loaded image and for the same src set again', async (t) => {
+  const image = new Image()
+  const event = settle(image)
+  image.src = SIMPLE_PNG
+  t.is(await event, 'load')
+  await t.notThrowsAsync(image.decode())
+
+  const again = new Image()
+  again.src = SIMPLE_PNG
+  const first = again.decode()
+  again.src = SIMPLE_PNG
+  const second = again.decode()
+  await t.notThrowsAsync(first)
+  await t.notThrowsAsync(second)
+})
+
+test('decode() returns a new promise on each call', async (t) => {
+  const image = new Image()
+  image.src = SIMPLE_PNG
+  const first = image.decode()
+  const second = image.decode()
+  t.not(first, second)
+  await Promise.allSettled([first, second])
+})
+
+test('onerror gets an Event of type error', async (t) => {
+  const image = new Image()
+  const event = await new Promise<Event>((resolve) => {
+    image.onerror = (event) => resolve(event)
+    image.src = BROKEN_URL
+  })
+  t.true(event instanceof Event)
+  t.false(event instanceof Error)
+  t.is(event.type, 'error')
+  t.is(Object.prototype.toString.call(event), '[object Event]')
+  t.false(event.bubbles)
+  t.false(event.cancelable)
+  t.true(image.complete)
+  // loadImage() still rejects with an Error that has a message.
+  await t.throwsAsync(() => loadImage(Buffer.from(BROKEN_URL.split(',')[1], 'base64')), {
+    instanceOf: Error,
+    message: 'Unsupported image type',
+  })
+})
+
+test('a failed HTTP load fires onerror and decode() rejects', async (t) => {
+  const server = createServer((request, response) => {
+    if (request.url === '/garbage.png') {
+      response.writeHead(200, { 'content-type': 'image/png' })
+      response.end('not a png')
+    } else {
+      response.writeHead(404)
+      response.end('missing')
+    }
+  })
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()))
+  try {
+    const { port } = server.address() as { port: number }
+    for (const name of ['missing', 'garbage']) {
+      const image = new Image()
+      const event = new Promise<Event>((resolve, reject) => {
+        image.onload = () => reject(new Error('onload'))
+        image.onerror = (event) => resolve(event)
+      })
+      image.src = `http://127.0.0.1:${port}/${name}.png`
+      const decoded = t.throwsAsync(image.decode(), ENCODING_ERROR)
+      t.is((await event).type, 'error', name)
+      await decoded
+      t.true(image.complete, name)
+    }
+  } finally {
+    server.close()
   }
 })
