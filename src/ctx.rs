@@ -1427,8 +1427,8 @@ impl Context {
 
   pub fn stroke_rect(&mut self, x: f32, y: f32, w: f32, h: f32) -> result::Result<(), SkError> {
     self.flush_if_recording_limit_exceeded();
-    // Paint construction is fallible (dash PathEffect, gradient shader); the
-    // resource charge must land only once the op can actually record.
+    // Paint construction is fallible; the resource charge must land only
+    // once the op can actually record.
     let stroke_paint = self.stroke_paint()?;
     if self.draws_nothing() {
       return Ok(());
@@ -2144,10 +2144,9 @@ impl Context {
   /// The paint drawImage and drawCanvas draw with: Blink's `image_flags_`
   /// (canvas_rendering_context_2d_state.cc:170-171 fill style and AA, :335
   /// alpha, :832 picked for image draws). It never reads fillStyle or the line
-  /// dash, so an unusable fillStyle (a gradient Skia cannot build) cannot stop
-  /// an image draw. Opaque black like a default cc::PaintFlags; the blend mode
-  /// comes from the state paint, and smoothing, `ctx.filter` and the shadow
-  /// are added by the callers.
+  /// dash. Opaque black like a default cc::PaintFlags; the blend mode comes
+  /// from the state paint, and smoothing, `ctx.filter` and the shadow are
+  /// added by the callers.
   fn image_paint(&self, alpha: f32) -> Paint {
     let mut paint = self.state.paint.clone();
     paint.set_style(PaintStyle::Fill);
@@ -2158,12 +2157,7 @@ impl Context {
 
   /// The shader half of a gradient fillStyle/strokeStyle paint. Blink always
   /// dithers gradients (gradient.cc ApplyToFlags).
-  fn set_gradient_paint(
-    &self,
-    paint: &mut Paint,
-    gradient: &Gradient,
-    alpha: f32,
-  ) -> result::Result<(), SkError> {
+  fn set_gradient_paint(&self, paint: &mut Paint, gradient: &Gradient, alpha: f32) {
     // SVG only: SkSVGDevice has no conic gradient and drops the alpha of a
     // color shader, so a gradient that paints one color everywhere goes out as
     // a plain paint color.
@@ -2177,14 +2171,16 @@ impl Context {
         255,
       );
       paint.set_alpha_f32(c.a * alpha);
-      return Ok(());
+      return;
     }
-    let shader = gradient.get_shader()?;
     paint.set_color(0, 0, 0, 255);
     paint.set_alpha_f32(alpha);
-    paint.set_shader(&shader);
+    // No shader: Chrome paints the paint color, black at globalAlpha
+    // (canvas_style.cc:130-137).
+    if let Some(shader) = gradient.get_shader() {
+      paint.set_shader(&shader);
+    }
     paint.set_dither(true);
-    Ok(())
   }
 
   /// An image pattern's shader for the current smoothing state, and the
@@ -2214,7 +2210,7 @@ impl Context {
         paint.set_color(c.r, c.g, c.b, c.a);
         paint.set_alpha_f32(c.a as f32 / 255.0 * alpha);
       }
-      Pattern::Gradient(g) => self.set_gradient_paint(&mut paint, g, alpha)?,
+      Pattern::Gradient(g) => self.set_gradient_paint(&mut paint, g, alpha),
       Pattern::Image(p) => {
         if let Some((shader, _)) = self.image_pattern_shader(p) {
           paint.set_color(0, 0, 0, 255);
@@ -2431,7 +2427,7 @@ impl Context {
         paint.set_color(c.r, c.g, c.b, c.a);
         paint.set_alpha_f32(c.a as f32 / 255.0 * global_alpha);
       }
-      Pattern::Gradient(g) => self.set_gradient_paint(&mut paint, g, global_alpha)?,
+      Pattern::Gradient(g) => self.set_gradient_paint(&mut paint, g, global_alpha),
       Pattern::Image(p) => {
         if let Some((shader, _)) = self.image_pattern_shader(p) {
           paint.set_color(0, 0, 0, 255);
@@ -3443,7 +3439,7 @@ impl Context {
   /// the scaled canvas (base_rendering_context_2d.cc:1066-1082), which misses
   /// part of the squeezed glyphs; that is not copied.
   ///
-  /// When measuring fails (for example a fill gradient with no shader) the
+  /// When measuring fails (for example a poisoned font collection lock) the
   /// reset takes the whole clip: the draw itself reports its own errors.
   fn text_bounds(
     &mut self,
@@ -4844,8 +4840,9 @@ impl CanvasRenderingContext2D {
     x1: f64,
     y1: f64,
   ) -> Result<ClassInstance<'scope, CanvasGradient>> {
-    let linear_gradient =
-      Gradient::create_linear_gradient(x0 as f32, y0 as f32, x1 as f32, y1 as f32);
+    // Blink ClampTo<float> (canvas_2d_recorder_context.cc:2366-2372).
+    let [x0, y0, x1, y1] = [x0, y0, x1, y1].map(clamp_to_f32);
+    let linear_gradient = Gradient::create_linear_gradient(x0, y0, x1, y1);
     CanvasGradient(linear_gradient).into_instance(env)
   }
 
@@ -4860,9 +4857,8 @@ impl CanvasRenderingContext2D {
     y1: f64,
     r1: f64,
   ) -> Result<ClassInstance<'scope, CanvasGradient>> {
-    let radial_gradient = Gradient::create_radial_gradient(
-      x0 as f32, y0 as f32, r0 as f32, x1 as f32, y1 as f32, r1 as f32,
-    );
+    let [x0, y0, r0, x1, y1, r1] = [x0, y0, r0, x1, y1, r1].map(clamp_to_f32);
+    let radial_gradient = Gradient::create_radial_gradient(x0, y0, r0, x1, y1, r1);
     CanvasGradient(radial_gradient).into_instance(env)
   }
 
@@ -4874,7 +4870,8 @@ impl CanvasRenderingContext2D {
     x: f64,
     y: f64,
   ) -> Result<ClassInstance<'scope, CanvasGradient>> {
-    let conic_gradient = Gradient::create_conic_gradient(x as f32, y as f32, start_angle as f32);
+    let [start_angle, x, y] = [start_angle, x, y].map(clamp_to_f32);
+    let conic_gradient = Gradient::create_conic_gradient(x, y, start_angle);
     CanvasGradient(conic_gradient).into_instance(env)
   }
 
