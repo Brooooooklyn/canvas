@@ -6,11 +6,8 @@ use std::result;
 use std::str::FromStr;
 use std::sync::LazyLock;
 
-use cssparser::Parser;
-use cssparser_color::Color as CSSColor;
 use napi::bindgen_prelude::*;
 use regex::Regex;
-use rgb::RGBA;
 
 use crate::font::FONT_MEDIUM_PX;
 use crate::font::parse_size_px;
@@ -22,6 +19,7 @@ use crate::sk::Canvas;
 use crate::{
   CanvasElement, SVGCanvas,
   avif::Config,
+  color::CanvasColor,
   error::SkError,
   filter::css_filter,
   filter::css_filters_to_image_filter,
@@ -30,7 +28,7 @@ use crate::{
   image::*,
   num,
   path::{Path, check_round_rect},
-  pattern::{CanvasPattern, Pattern, hsl_to_rgba8, srgb_channel_to_u8},
+  pattern::{CanvasPattern, Pattern, srgb_channel_to_u8},
   sk::{
     AccountedBitmap, AlphaType, Bitmap, BlendMode, ColorSpace, DecodedCopy, FillType,
     FilterQuality, FontVariantCaps, ImageFilter, ImagePattern, LineMetrics, MaskFilter, Matrix,
@@ -2088,44 +2086,11 @@ impl Context {
     self.state.global_alpha
   }
 
+  /// shadowColor: the paint color and the serialized getter value.
   pub fn set_shadow_color(&mut self, shadow_color: String) -> result::Result<(), SkError> {
-    let mut parser = Parser::new(&shadow_color);
-    let color = CSSColor::parse(&mut parser)
-      .map_err(|e| SkError::Generic(format!("Parse color [{}] error: {:?}", shadow_color, e)))?;
-
-    match color {
-      // Without an element, currentcolor is opaque black (Chrome's
-      // OffscreenCanvas answer).
-      CSSColor::CurrentColor => {
-        drop(parser);
-        self.state.shadow_color_string = shadow_color;
-        self.state.shadow_color = RGBA {
-          r: 0,
-          g: 0,
-          b: 0,
-          a: 255,
-        };
-      }
-      CSSColor::Rgba(rgba) => {
-        drop(parser);
-        self.state.shadow_color_string = shadow_color;
-        // Convert RgbaLegacy to RGBA<u8>
-        self.state.shadow_color = RGBA {
-          r: rgba.red,
-          g: rgba.green,
-          b: rgba.blue,
-          a: (rgba.alpha * 255.0).round() as u8,
-        };
-      }
-      CSSColor::Hsl(hsl) => {
-        drop(parser);
-        self.state.shadow_color_string = shadow_color;
-        self.state.shadow_color = hsl_to_rgba8(&hsl);
-      }
-      _ => {
-        return Err(SkError::Generic("Unsupported color format".to_owned()));
-      }
-    }
+    let color = CanvasColor::parse(&shadow_color)?;
+    self.state.shadow_color = color.to_rgba8();
+    self.state.shadow_color_string = color.serialize();
     Ok(())
   }
 
@@ -3460,7 +3425,12 @@ impl<S: webidl::Site> FromNapiValue for CanvasStyleArg<'static, S> {
     }
     let color = webidl::to_dom_string(env, value, S::PREFIX)?;
     let pattern = Pattern::from_color(&color).ok();
-    style(pattern, unsafe { String::to_napi_value(env, color)? })
+    // The getter returns the serialized color, not the string that was set.
+    let serialized = match &pattern {
+      Some(Pattern::Color(_, serialized)) => serialized.clone(),
+      _ => color,
+    };
+    style(pattern, unsafe { String::to_napi_value(env, serialized)? })
   }
 }
 
@@ -6140,6 +6110,8 @@ fn parse_font_variation_settings(settings: &str) -> (String, Vec<crate::sk::Font
 
 #[cfg(test)]
 mod tests {
+  use rgb::RGBA;
+
   use super::*;
 
   fn raster_ctx(width: u32, height: u32) -> Context {

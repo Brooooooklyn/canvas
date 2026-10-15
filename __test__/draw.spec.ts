@@ -1598,7 +1598,7 @@ test('reset', async (t) => {
   // Verify state stack is cleared (restore should not change anything)
   ctx.fillStyle = 'yellow'
   ctx.restore()
-  t.is(ctx.fillStyle, 'yellow') // Should still be yellow, not restored
+  t.is(ctx.fillStyle, '#ffff00') // Should still be yellow, not restored
 
   // Draw a rect with default styles to verify canvas was cleared
   ctx.fillStyle = 'blue'

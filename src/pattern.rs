@@ -1,11 +1,11 @@
 use std::result::Result as StdResult;
 use std::sync::{Arc, Mutex};
 
-use cssparser::Parser;
-use cssparser_color::{Color as CSSColor, Hsl};
+use cssparser_color::Hsl;
 use napi::bindgen_prelude::*;
 use rgb::RGBA;
 
+use crate::color::CanvasColor;
 use crate::error::SkError;
 use crate::gradient::Gradient;
 use crate::image::{Image, ImageData};
@@ -62,6 +62,7 @@ pub(crate) fn hsl_to_rgba8(hsl: &Hsl) -> RGBA<u8> {
 
 #[derive(Debug)]
 pub enum Pattern {
+  /// The paint color and its serialization.
   #[allow(dead_code)]
   Color(RGBA<u8>, String),
   Gradient(Gradient),
@@ -85,34 +86,11 @@ impl Default for Pattern {
 }
 
 impl Pattern {
+  /// A fillStyle or strokeStyle color: the paint color and what the getter
+  /// returns (Chrome's serialization, not the string that was set).
   pub fn from_color(color_str: &str) -> StdResult<Self, SkError> {
-    let mut parser = Parser::new(color_str);
-    let color = CSSColor::parse(&mut parser)
-      .map_err(|e| SkError::Generic(format!("Parse color [{color_str}] error: {e:?}")))?;
-    match color {
-      // Without an element, currentcolor is opaque black (Chrome's
-      // OffscreenCanvas answer).
-      CSSColor::CurrentColor => Ok(Pattern::Color(
-        RGBA {
-          r: 0,
-          g: 0,
-          b: 0,
-          a: 255,
-        },
-        color_str.to_owned(),
-      )),
-      CSSColor::Rgba(rgba) => Ok(Pattern::Color(
-        RGBA {
-          r: rgba.red,
-          g: rgba.green,
-          b: rgba.blue,
-          a: (rgba.alpha * 255.0).round() as u8,
-        },
-        color_str.to_owned(),
-      )),
-      CSSColor::Hsl(hsl) => Ok(Pattern::Color(hsl_to_rgba8(&hsl), color_str.to_owned())),
-      _ => Err(SkError::Generic("Unsupported color format".to_owned())),
-    }
+    let color = CanvasColor::parse(color_str)?;
+    Ok(Pattern::Color(color.to_rgba8(), color.serialize()))
   }
 }
 
