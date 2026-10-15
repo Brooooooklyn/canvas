@@ -1,16 +1,17 @@
 // measureText, fillText and strokeText keep the laid out line of a text and
-// reuse it for the same text and font settings. From the second draw of a
-// line its runs are drawn as one text blob when that puts every glyph on
-// the same pixel. A line drawn again must paint and measure what its first
-// draw did. Cascadia and Source Han Serif lines are drawn as one blob from
-// the second draw; Lato's descenders reach its font box, so a Lato line
-// keeps its runs.
+// reuse it for the same text and font settings. A line's runs are drawn as
+// one text blob, from its first draw, when that puts every glyph on the same
+// pixel. A line drawn again must paint and measure what its first draw did,
+// the one blob must paint what the runs paint, and an SVG canvas must write a
+// line the same way however often it was drawn before. Cascadia and Source
+// Han Serif lines are drawn as one blob; Lato's descenders reach its font
+// box, so a Lato line keeps its runs.
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import test from 'ava'
 
-import { createCanvas, GlobalFonts } from '../index'
+import { createCanvas, GlobalFonts, SvgExportFlag, type SKRSContext2D } from '../index'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -78,14 +79,18 @@ const PLACES: [number, number, number][] = [
   [3.5, 40, 6.25],
 ]
 
-function draw(line: Line, text: string, [x, y, tx]: [number, number, number], stroke: boolean) {
-  const ctx = createCanvas(760, 60).getContext('2d')
+function setUp(ctx: SKRSContext2D, line: Line) {
   ctx.font = line.font
   ctx.fontVariantCaps = line.caps
   ctx.letterSpacing = line.letterSpacing
   ctx.wordSpacing = line.wordSpacing
   ctx.direction = line.direction
   ctx.textAlign = 'left'
+}
+
+function draw(line: Line, text: string, [x, y, tx]: [number, number, number], stroke: boolean) {
+  const ctx = createCanvas(760, 60).getContext('2d')
+  setUp(ctx, line)
   ctx.translate(tx, 0)
   const before = ctx.measureText(text).width
   if (stroke) {
@@ -117,3 +122,45 @@ for (const stroke of [false, true]) {
     })
   })
 }
+
+// A translation of 2^-23 px has too many binary digits for the one-blob draw,
+// so the line keeps its runs, and it rounds away in every glyph's x sum when
+// the line starts at x >= 4.
+for (const stroke of [false, true]) {
+  test(`a line ${stroke ? 'stroked' : 'filled'} as one blob paints what its runs paint`, (t) => {
+    LINES.forEach((line, i) => {
+      for (const x of [10, 4.25, 200.5]) {
+        const text = `${line.text} ${stroke ? 'S' : 'F'}${i}`
+        const blob = draw(line, text, [x, 40.5, 0], stroke)
+        const runs = draw(line, text, [x, 40.5, 2 ** -23], stroke)
+        t.true(
+          blob.pixels.some((v) => v !== 0),
+          `${text}: nothing drawn`,
+        )
+        t.true(blob.pixels.equals(runs.pixels), `${text} at ${x}: the one blob paints differently`)
+      }
+    })
+  })
+}
+
+function svg(line: Line, text: string, x: number) {
+  const canvas = createCanvas(760, 60, SvgExportFlag.NoPrettyXML)
+  const ctx = canvas.getContext('2d')
+  setUp(ctx, line)
+  ctx.fillText(text, x, 40)
+  return canvas.getContent().toString()
+}
+
+test('an SVG canvas writes a line the same way however often it was drawn before', (t) => {
+  LINES.forEach((line, i) => {
+    for (const x of [10, 10.37]) {
+      const text = `${line.text} v${i}${x}`
+      const first = svg(line, text, x)
+      draw(line, text, [x, 40, 0], false)
+      t.is(svg(line, text, x), first, `${text} at ${x}`)
+    }
+  })
+  // One text element: the Cascadia line is drawn as one blob from its first
+  // draw.
+  t.is(svg(LINES[0], `${LINES[0].text} one`, 10).match(/<text/g)?.length, 1)
+})
