@@ -24,8 +24,7 @@ use napi::{
 
 use ctx::{
   CANVAS_HIDDEN_NAME, CanvasRenderingContext2D, Context, ContextData, ContextOutputData,
-  FILL_STYLE_HIDDEN_NAME, STROKE_STYLE_HIDDEN_NAME, SvgExportFlag, encode_surface,
-  reset_style_getters,
+  SvgExportFlag, encode_surface, truncate_style_objects,
 };
 use font::{FONT_REGEXP, init_font_regexp};
 use sk::{AlphaType, ColorSpace, SkImage, SkiaDataRef};
@@ -124,12 +123,12 @@ fn canvas_height(height: u32) -> u32 {
 }
 
 // Setting width or height resets the context to its default state (spec "set
-// bitmap dimensions"; Chrome: HTMLCanvasElement::Reset), so the style getters
-// read '#000000' again. The context object is read from the canvas's `ctx`
-// property: the napi_value inside `self.ctx` belongs to the constructor's
-// handle scope and must not be used in a later call.
+// bitmap dimensions"; Chrome: HTMLCanvasElement::Reset), so the saved style
+// objects go. The context object is read from the canvas's `ctx` property:
+// the napi_value inside `self.ctx` belongs to the constructor's handle scope
+// and must not be used in a later call.
 fn reset_ctx_style_getters(canvas: &This) -> Result<()> {
-  reset_style_getters(&mut canvas.get_named_property::<Object>("ctx")?)
+  truncate_style_objects(&canvas.get_named_property::<Object>("ctx")?, 0)
 }
 
 #[napi]
@@ -150,16 +149,6 @@ impl<'c> CanvasElement<'c> {
       reported_settings: Default::default(),
     }
     .into_instance(env)?;
-    ctx.as_object(env).define_properties(&[
-      Property::new()
-        .with_utf8_name(FILL_STYLE_HIDDEN_NAME)?
-        .with_napi_value(env, "#000000")?
-        .with_property_attributes(PropertyAttributes::Writable | PropertyAttributes::Configurable),
-      Property::new()
-        .with_utf8_name(STROKE_STYLE_HIDDEN_NAME)?
-        .with_napi_value(env, "#000000")?
-        .with_property_attributes(PropertyAttributes::Writable | PropertyAttributes::Configurable),
-    ])?;
     env.adjust_external_memory((width * height * 4) as i64)?;
     Ok(ctx)
   }
@@ -256,6 +245,7 @@ impl<'c> CanvasElement<'c> {
     if attrs.color_space != context_2d.color_space || !attrs.alpha {
       *context_2d =
         Context::new_with_alpha(self.width, self.height, attrs.color_space, attrs.alpha)?;
+      reset_ctx_style_getters(&this)?;
     }
     self.context_initialized = true;
     this.get_named_property("ctx").map(Some)
@@ -844,14 +834,6 @@ impl<'scope> SVGCanvas<'scope> {
     )?;
     let mut ctx_obj = ctx.as_object(env);
     ctx_obj.define_properties(&[
-      Property::new()
-        .with_utf8_name(FILL_STYLE_HIDDEN_NAME)?
-        .with_value(&env.create_string("#000000")?)
-        .with_property_attributes(PropertyAttributes::Writable | PropertyAttributes::Configurable),
-      Property::new()
-        .with_utf8_name(STROKE_STYLE_HIDDEN_NAME)?
-        .with_value(&env.create_string("#000000")?)
-        .with_property_attributes(PropertyAttributes::Writable | PropertyAttributes::Configurable),
       // For the read-only `canvas` getter, as on a Canvas.
       Property::new()
         .with_utf8_name(CANVAS_HIDDEN_NAME)?
@@ -894,6 +876,7 @@ impl<'scope> SVGCanvas<'scope> {
     // `canvas.ctx` (matrix, clip, paint) must not reach the base.
     if attrs.color_space != context_2d.color_space || !attrs.alpha {
       *context_2d = Context::new_svg(self.width, self.height, self.flag.into(), attrs.color_space)?;
+      reset_ctx_style_getters(&this)?;
     }
     if !attrs.alpha {
       context_2d.set_opaque();

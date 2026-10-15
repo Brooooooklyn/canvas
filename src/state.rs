@@ -18,6 +18,10 @@ pub struct Context2dRenderingState {
   pub line_dash_list: Vec<f32>,
   pub stroke_style: Pattern,
   pub fill_style: Pattern,
+  /// For a gradient or pattern style: the save() depth that set it, where the
+  /// context's style object array keeps the JS object the getter returns.
+  pub fill_style_slot: Option<u32>,
+  pub stroke_style_slot: Option<u32>,
   pub shadow_offset_x: f32,
   pub shadow_offset_y: f32,
   pub shadow_blur: f32,
@@ -68,6 +72,8 @@ impl Default for Context2dRenderingState {
       line_dash_list: vec![],
       stroke_style: Pattern::default(),
       fill_style: Pattern::default(),
+      fill_style_slot: None,
+      stroke_style_slot: None,
       shadow_offset_x: 0f32,
       shadow_offset_y: 0f32,
       shadow_blur: 0f32,
