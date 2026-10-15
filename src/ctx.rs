@@ -1632,14 +1632,8 @@ impl Context {
   ) -> result::Result<(), SkError> {
     self.flush_if_recording_limit_exceeded();
     let stroke_paint = self.stroke_paint()?;
-    self.draw_text(
-      text.replace('\n', " ").as_str(),
-      x,
-      y,
-      max_width,
-      &stroke_paint,
-      ShadowSource::Stroke,
-    )?;
+    // skia-c/text.cpp prepares the text (PrepareCanvasText).
+    self.draw_text(text, x, y, max_width, &stroke_paint, ShadowSource::Stroke)?;
     Ok(())
   }
 
@@ -1714,14 +1708,8 @@ impl Context {
   ) -> result::Result<(), SkError> {
     self.flush_if_recording_limit_exceeded();
     let fill_paint = self.fill_paint()?;
-    self.draw_text(
-      text.replace('\n', " ").as_str(),
-      x,
-      y,
-      max_width,
-      &fill_paint,
-      ShadowSource::Fill,
-    )?;
+    // skia-c/text.cpp prepares the text (PrepareCanvasText).
+    self.draw_text(text, x, y, max_width, &fill_paint, ShadowSource::Fill)?;
     Ok(())
   }
 
@@ -6064,7 +6052,9 @@ impl CanvasRenderingContext2D {
     }
     let (x, y, max_width) = (x.0, y.0, max_width.0);
     let text = text.0.as_str();
-    if text.is_empty() {
+    // BaseRenderingContext2D::DrawTextInternal: a maxWidth that is not a
+    // positive finite number draws nothing.
+    if text.is_empty() || max_width.is_some_and(|w| !w.is_finite() || w <= 0.0) {
       return Ok(());
     }
     if !x.is_nan() && !x.is_infinite() && !y.is_nan() && !y.is_infinite() {
@@ -6133,7 +6123,9 @@ impl CanvasRenderingContext2D {
     }
     let (x, y, max_width) = (x.0, y.0, max_width.0);
     let text = text.0.as_str();
-    if text.is_empty() {
+    // BaseRenderingContext2D::DrawTextInternal: a maxWidth that is not a
+    // positive finite number draws nothing.
+    if text.is_empty() || max_width.is_some_and(|w| !w.is_finite() || w <= 0.0) {
       return Ok(());
     }
     if !x.is_nan() && !x.is_infinite() && !y.is_nan() && !y.is_infinite() {
