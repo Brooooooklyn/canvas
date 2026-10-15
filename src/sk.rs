@@ -5104,6 +5104,61 @@ impl ImagePattern {
   ) -> Option<(Shader, DecodedCopy)> {
     let mut guard = self.shared.lock().unwrap();
     let shared = &mut *guard;
+    // Chrome sends every software image through its decode cache when the
+    // canvas is not sRGB (SoftwareImageDecodeCache::UseCacheForDrawImage,
+    // software_image_decode_cache.cc:538-560): a canvas, ImageData or SVG
+    // Image pattern there is drawn from a level made for the draw, converted
+    // to the canvas's colour space. On sRGB it is drawn as it is.
+    if let Some((ctm, color_space)) = decode
+      && !self.is_image
+      && color_space != ColorSpace::Srgb
+    {
+      let image = shared.image.get_or_insert_with(|| self.make_image()).0;
+      let level = if image.is_null() {
+        -1
+      } else {
+        unsafe {
+          ffi::skiac_image_pattern_level(
+            ffi::skiac_image_get_width(image),
+            ffi::skiac_image_get_height(image),
+            shared.transform.into(),
+            ctm.into(),
+            quality as i32,
+          )
+        }
+      };
+      let level = Some((level, color_space));
+      if shared
+        .shader
+        .as_ref()
+        .is_none_or(|(cached, cached_level, ..)| *cached != quality || *cached_level != level)
+      {
+        shared.shader = None;
+        let mut decoded_id = 0;
+        let mut decoded_bytes = 0;
+        let shader = unsafe {
+          Shader::from_ptr(ffi::skiac_image_make_decoded_pattern_shader(
+            ptr::null_mut(),
+            image,
+            ptr::null_mut(),
+            level.map_or(-1, |(level, _)| level),
+            self.repeat_x as i32,
+            self.repeat_y as i32,
+            quality as i32,
+            shared.transform.into(),
+            color_space as u8,
+            &mut decoded_id,
+            &mut decoded_bytes,
+          ))
+        };
+        let decoded = (decoded_bytes != 0).then_some((decoded_id, decoded_bytes));
+        shared.shader = shader.map(|shader| (quality, level, shader, decoded));
+      }
+      return shared
+        .shader
+        .as_ref()
+        .map(|(_, _, shader, decoded)| (shader.clone(), *decoded));
+    }
     let decode_cache = match (&self.backing, decode) {
       (Some(ImagePatternBacking::Bitmap(bitmap)), Some(decode)) if self.is_image => {
         Some((bitmap, decode))
