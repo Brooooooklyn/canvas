@@ -1353,7 +1353,11 @@ impl Context {
   pub fn reset_transform(&mut self) {
     self.flush_if_recording_limit_exceeded();
     // The path keeps its device position (canvas_2d_recorder_context.cc:1515).
-    if self.transform_is_invertible() {
+    // An empty path has nothing to map, and an identity map changes nothing.
+    if !self.path.is_empty()
+      && self.transform_is_invertible()
+      && !self.state.transform.get_transform().is_identity()
+    {
       self.path.transform_self(&self.state.transform);
     }
     self.state.transform = Matrix::identity();
