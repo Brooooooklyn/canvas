@@ -695,12 +695,13 @@ export interface SvgCanvas {
 
 export interface AvifConfig {
   /**
-   * 0-100 scale, 100 is the best quality. It is near-lossless, not lossless:
-   * the pixels are converted to 8-bit YUV (BT.601) first, which can change a
-   * channel by 1, and more with chroma subsampling.
+   * 0-100 scale, 100 is the best quality. 100 with 4:4:4 (the default) is
+   * lossless: R, G and B are coded as they are (CICP matrix 0, identity).
+   * Below 100, or with chroma subsampling, the pixels are lossy BT.601 YUV.
+   * Default 80.
    */
   quality?: number
-  /** 0-100 scale */
+  /** 0-100 scale. Default 100 when `quality` is 100 (lossless alpha), else 90. */
   alphaQuality?: number
   /**
    * aom encoder speed from 0 (slowest, smallest file) to 10 (fastest);

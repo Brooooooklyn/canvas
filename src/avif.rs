@@ -11,11 +11,12 @@ use crate::sk::ColorSpace;
 #[napi(object)]
 #[derive(Default, Clone)]
 pub struct AvifConfig {
-  /// 0-100 scale, 100 is the best quality. It is near-lossless, not lossless:
-  /// the pixels are converted to 8-bit YUV (BT.601) first, which can change a
-  /// channel by 1, and more with chroma subsampling.
+  /// 0-100 scale, 100 is the best quality. 100 with 4:4:4 (the default) is
+  /// lossless: R, G and B are coded as they are (CICP matrix 0, identity).
+  /// Below 100, or with chroma subsampling, the pixels are lossy BT.601 YUV.
+  /// Default 80.
   pub quality: Option<u32>,
-  /// 0-100 scale
+  /// 0-100 scale. Default 100 when `quality` is 100 (lossless alpha), else 90.
   pub alpha_quality: Option<u32>,
   /// aom encoder speed from 0 (slowest, smallest file) to 10 (fastest);
   /// larger values are 10. Default 5.
@@ -89,7 +90,16 @@ impl From<AvifConfig> for Config {
       quality: config.quality.unwrap_or(80).min(100) as u8,
       // Calculate alphaQuality, this is consistent with cavif.
       // https://github.com/kornelski/cavif-rs/blob/37847b95bb81d4cf90e36b7fab2c7fbbcf95abe2/src/main.rs#L97
-      alpha_quality: config.alpha_quality.unwrap_or(90).min(100) as u8,
+      // Quality 100 is lossless (see `encode`), so the alpha is lossless too
+      // unless alphaQuality says otherwise.
+      alpha_quality: config
+        .alpha_quality
+        .unwrap_or(if config.quality.is_some_and(|q| q >= 100) {
+          100
+        } else {
+          90
+        })
+        .min(100) as u8,
       // aom speed 0 (slowest) to 10 (fastest). Clamp before narrowing to u8,
       // so 256 is the fastest speed, not 0.
       speed: config.speed.unwrap_or(5).min(10) as u8,
@@ -188,7 +198,17 @@ pub(crate) fn encode(
       ColorSpace::DisplayP3 => sys::AVIF_COLOR_PRIMARIES_SMPTE432,
     } as u16;
     image.transferCharacteristics = sys::AVIF_TRANSFER_CHARACTERISTICS_SRGB as u16;
-    image.matrixCoefficients = sys::AVIF_MATRIX_COEFFICIENTS_BT601 as u16;
+    // Quality 100 with 4:4:4 is lossless, like WebP quality 1 in Chrome
+    // (image_encoder.cc:119-123): the identity matrix puts G, B and R into
+    // Y, U and V unchanged, and libavif codes quality 100 with aom's lossless
+    // mode. BT.601 YUV would round each channel first.
+    let lossless =
+      config.quality >= 100 && matches!(config.chroma_subsampling, ChromaSubsampling::Yuv444);
+    image.matrixCoefficients = if lossless {
+      sys::AVIF_MATRIX_COEFFICIENTS_IDENTITY
+    } else {
+      sys::AVIF_MATRIX_COEFFICIENTS_BT601
+    } as u16;
     image.yuvRange = sys::AVIF_RANGE_FULL;
     let mut rgb = sys::avifRGBImage::default();
     sys::avifRGBImageSetDefaults(&mut rgb, image);
