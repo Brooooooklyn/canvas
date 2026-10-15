@@ -34,9 +34,8 @@ use crate::{
   sk::{
     AccountedBitmap, AlphaType, Bitmap, BlendMode, ColorSpace, DecodedCopy, FillType,
     FilterQuality, FontVariantCaps, ImageFilter, ImagePattern, LineMetrics, MaskFilter, Matrix,
-    Paint, PaintStyle, Path as SkPath, PathEffect, PathOp, ReadPixelsError, Shader,
-    SkEncodedImageFormat, SkImage, SkWMemoryStream, SkiaDataRef, StrokeCap, StrokeJoin, Surface,
-    Transform,
+    Paint, PaintStyle, Path as SkPath, PathEffect, ReadPixelsError, Shader, SkEncodedImageFormat,
+    SkImage, SkWMemoryStream, SkiaDataRef, StrokeCap, StrokeJoin, Surface, Transform,
   },
   state::Context2dRenderingState,
   webidl::{self, Double, Positional, ReportedSettings},
@@ -587,13 +586,6 @@ impl Context {
     }
   }
 
-  /// Sync clip state to PageRecorder for restoration after layer promotion
-  fn sync_clip_to_recorder(&self) {
-    if let Some(ref recorder) = self.page_recorder {
-      recorder.borrow_mut().set_clip(self.state.clip_path.clone());
-    }
-  }
-
   /// Execute a rendering operation on the appropriate canvas (recording or direct)
   /// For deferred mode, operations are recorded to the PageRecorder
   /// For direct mode (SVG, PDF), operations go directly to the surface
@@ -983,22 +975,6 @@ impl Context {
       }
     };
 
-    // For state tracking (used by save/restore and layer promotion), compute the
-    // cumulative clip in device space. Transform the new path by the current CTM
-    // and intersect with the existing device-space clip.
-    let mut device_clip = clip_path.clone();
-    device_clip.transform_self(&self.state.transform);
-
-    if let Some(ref existing_clip) = self.state.clip_path
-      && !device_clip.op(existing_clip, PathOp::Intersect)
-    {
-      #[cfg(debug_assertions)]
-      eprintln!("Warning: Path intersection operation failed in clip()");
-      // op() failed (degenerate paths). Skip both Skia and state update
-      // to avoid divergence between tracked state and actual canvas clip.
-      return;
-    }
-
     // Pass the raw path to Skia. Skia's clipPath() is cumulative and applies the
     // current canvas CTM, so it correctly handles nested clips at different transforms.
     // The recorded op pins a COW-shared SkPathData; charge it once per data
@@ -1013,8 +989,13 @@ impl Context {
       canvas.set_clip_path(&clip_path);
     });
 
-    self.state.clip_path = Some(device_clip);
-    self.sync_clip_to_recorder();
+    self.state.has_clip = true;
+    // A recording restart replays the clip (Blink's ClipList).
+    if let Some(ref recorder) = self.page_recorder {
+      recorder
+        .borrow_mut()
+        .add_clip(&self.state.transform, clip_path);
+    }
     self.flush_if_recording_limit_exceeded();
   }
 
@@ -1047,7 +1028,7 @@ impl Context {
       && (y + height) >= self.height as f32
       && self.page_recorder.is_some()
       && self.state.transform.get_transform().is_identity()
-      && self.state.clip_path.is_none()
+      && !self.state.has_clip
       && self.states.is_empty()
     {
       // Full canvas clear - reset layers instead of accumulating
@@ -1100,12 +1081,8 @@ impl Context {
       canvas.save();
     });
     self.states.push(self.state.clone());
-    // Sync state to recorder at save time for layer promotion restoration
-    self.sync_transform_to_recorder();
-    self.sync_clip_to_recorder();
-    // Track save count for layer promotion restoration
     if let Some(ref recorder) = self.page_recorder {
-      recorder.borrow_mut().increment_save();
+      recorder.borrow_mut().push_save();
     }
     self.flush_if_recording_limit_exceeded();
   }
@@ -1121,33 +1098,12 @@ impl Context {
         self.path.transform_self(&inverse);
       }
       self.state = s;
-
-      // In deferred mode, explicitly restore canvas transform and clip.
-      // This is needed because layer promotion recreates the save stack with
-      // identity transform/no clip at save time, so canvas.restore() may not
-      // restore the correct state.
-      if self.page_recorder.is_some() {
-        let transform = self.state.transform.clone();
-        let clip = self.state.clip_path.clone();
-        // Re-apply clip if the restored state has one.
-        // The clip is stored in device space, so apply at identity transform first.
-        if let Some(ref clip_path) = clip {
-          self.with_canvas_state(|canvas| {
-            canvas.reset_transform();
-            canvas.set_clip_path(clip_path);
-          });
-        }
-        // Then restore the actual transform
-        self.with_canvas_state(|canvas| {
-          canvas.set_transform(&transform);
-        });
-      }
-
-      self.sync_transform_to_recorder();
-      self.sync_clip_to_recorder();
-      // Track save count for layer promotion restoration
+      // canvas.restore() lands on the saved clip and matrix, as Blink's
+      // restore() (canvas_2d_recorder_context.cc:419): the recording's save
+      // stack mirrors the context's, also after a recording restart
+      // (PageRecorder::resume_recording replays every level).
       if let Some(ref recorder) = self.page_recorder {
-        recorder.borrow_mut().decrement_save();
+        recorder.borrow_mut().pop_restore();
       }
       self.flush_if_recording_limit_exceeded();
     }
