@@ -360,6 +360,28 @@ test('addPath errors keep the bare text in the stack, as Chrome', (t) => {
   }
 })
 
+test("addPath conversion errors keep the engine's text, as Chrome", (t) => {
+  // A non-callable @@toPrimitive: V8 names the object in its own way.
+  class Foo {}
+  const text = (returned: string, object: string) =>
+    `'${returned}' returned for property 'Symbol(Symbol.toPrimitive)' of object '${object}' is not a function`
+  const cases: [object, unknown, string][] = [
+    [new Foo(), 5, text('5', '#<Foo>')],
+    [[], 5, text('5', '[object Array]')],
+    [Object.create(null), 5, text('5', '[object Object]')],
+    [{}, [1, 2], text('[object Array]', '#<Object>')],
+  ]
+  for (const [object, toPrimitive, bare] of cases) {
+    ;(object as any)[Symbol.toPrimitive] = toPrimitive
+    const error = t.throws(() => new Path2D().addPath(new Path2D(), { e: object } as any), {
+      instanceOf: TypeError,
+    })!
+    t.is(error.message, `${PREFIX}Failed to read the 'e' property from 'DOMMatrix2DInit': ${bare}`)
+    t.is(String(error.stack).split('\n')[0], `TypeError: ${bare}`)
+    t.deepEqual(Object.keys(error), ['message'])
+  }
+})
+
 test("addPath has Chrome's length and name", (t) => {
   t.is(Path2D.prototype.addPath.length, 1)
   t.is(Path2D.prototype.addPath.name, 'addPath')

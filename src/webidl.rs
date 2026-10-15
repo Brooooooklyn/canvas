@@ -1780,6 +1780,17 @@ impl FromNapiValue for GetImageDataSettings {
   }
 }
 
+/// [`to_number`] for index.js, which reads the matrix dictionaries of
+/// setTransform and addPath itself: `value` is a member, or the first of
+/// setTransform's six numbers, that is not a number, and `prefix` what its
+/// error message starts with. The engine's own texts stay, as Chrome's do.
+// Only JS calls it: the lib test build registers no napi exports.
+#[cfg_attr(test, allow(dead_code))]
+#[napi(js_name = "_toNumber")]
+pub fn to_number_for_js(env: &Env, value: Unknown, prefix: String) -> Result<f64> {
+  to_number(env.raw(), value.raw(), &prefix)
+}
+
 /// The first matrix argument of a method that index.js calls with the six
 /// numbers of a matrix (setTransform, addPath), after it read the matrix
 /// dictionary itself. A raw js-binding call may pass the dictionary there
