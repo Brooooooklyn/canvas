@@ -145,3 +145,50 @@ test('avif premultiplies alpha like Chrome 155', async (t) => {
     await expectChrome(t, name)
   }
 })
+
+// Chrome applies the 'irot' (anti-clockwise rotation) and 'imir' (mirror)
+// properties of an AVIF when it draws it (avif_image_decoder.cc
+// kAxisAngleToOrientation), and the natural size is the oriented one.
+// rect-irot1 is a 16x8 image rotated by 90 degrees, rect-irot3-imir0 by 270
+// degrees then mirrored, imir1 a 16x16 image mirrored.
+test('avif irot and imir orient like Chrome 155', async (t) => {
+  for (const name of ['rect-irot1.avif', 'rect-irot3-imir0.avif', 'imir1.avif']) {
+    await expectChrome(t, name)
+  }
+})
+
+// Chrome fails the decode when the ICC profile does not parse, or does not
+// describe RGB (gray for a 4:0:0 image).
+test('avif with an invalid ICC profile fires onerror like Chrome 155', async (t) => {
+  await expectChrome(t, 'bad-icc.avif')
+})
+
+// The names are p<primaries> and t<transfer> (the others are 1 and 13).
+// Chrome cannot use transfers 9 to 12 and fails the decode; it draws CICP
+// values that media::VideoColorSpace does not know (primaries 3, 13, 21, 23,
+// transfer 19, matrix 12 with P3 primaries) as sRGB, and honors the others.
+// PQ (16) and HLG (18) are left out: Chrome tone maps them.
+test('avif CICP color spaces like Chrome 155', async (t) => {
+  for (const name of [
+    't9.avif',
+    't10.avif',
+    't11.avif',
+    't12.avif',
+    'p3.avif',
+    'p13.avif',
+    'p21.avif',
+    'p22.avif',
+    'p23.avif',
+    't1.avif',
+    't4.avif',
+    't5.avif',
+    't7.avif',
+    't8.avif',
+    't13.avif',
+    't17.avif',
+    't19.avif',
+    'x-p12-m12-full-420.avif',
+  ]) {
+    await expectChrome(t, name)
+  }
+})

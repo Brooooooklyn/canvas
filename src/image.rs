@@ -1575,15 +1575,19 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
           AlphaType::Opaque
         },
       )
-      .map(|mut bitmap| {
+      .and_then(|mut bitmap| {
         // Like the PNG/JPEG/WebP codecs, keep the file's color space, so a
-        // draw converts it to the canvas color space as Chrome does.
-        bitmap.set_color_space(
+        // draw converts it to the canvas color space as Chrome does, and
+        // apply the irot/imir orientation as Chrome does. Chrome fails the
+        // decode for a color space it cannot use.
+        (bitmap.set_avif_color_space(
           avif_image.icc(),
           avif_image.color_primaries,
           avif_image.transfer_characteristics,
-        );
-        bitmap
+          avif_image.matrix_coefficients,
+          avif_image.is_mono,
+        ) && bitmap.orient(avif_image.origin))
+        .then_some(bitmap)
       });
       // `from_image_data` copies the pixels into an owned SkBitmap, so the
       // decoded AVIF buffer is dropped at the end of this arm.
@@ -1592,8 +1596,8 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
           data: bitmap,
           is_svg: false,
         }),
-        // Pixel-copy allocation failed; surface as an invalid image rather
-        // than succeeding with an empty bitmap.
+        // A color space Chrome cannot use, or a failed pixel copy: an
+        // invalid image rather than an empty bitmap.
         None => DecodeStatus::InvalidImage,
       }
     } else if if let Some(kind) = infer::get(&data_ref) {
