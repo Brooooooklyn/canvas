@@ -284,6 +284,88 @@ for (const [n, x0, size, border] of [
   })
 }
 
+// A 1 pixel clip strip at a multiple of 8 (or at 0) gave a 1 pixel image side, which SkImageShader
+// tiles with clamp, not repeat, and SkSVGDevice writes a clamp side as a viewport ("100%") tile: on
+// a 6000 x 6000 canvas Chrome drew the strip with alpha 58 instead of 255. That side of the image
+// has 2 pixels (the second is the gradient too, outside the clip), so the tile is the image.
+// [clip rect x, y, width, height, then [x, y, r, g, b, a] in canvas pixels measured in Chrome]
+for (const [cx, cy, cw, ch, pixels] of [
+  [
+    0,
+    3000,
+    6000,
+    1,
+    [
+      [0, 3000, 0, 124, 130, 255],
+      [1000, 3000, 0, 176, 78, 255],
+      [2000, 3000, 48, 206, 0, 255],
+      [3000, 3000, 176, 78, 0, 255],
+      [5999, 3000, 255, 9, 247, 255],
+    ],
+  ],
+  [
+    2496,
+    0,
+    1,
+    6000,
+    [
+      [2496, 0, 245, 245, 9, 255],
+      [2496, 1000, 255, 228, 26, 255],
+      [2496, 2000, 255, 48, 206, 255],
+      [2496, 3000, 123, 131, 0, 255],
+      [2496, 5999, 69, 186, 0, 255],
+    ],
+  ],
+  [
+    0,
+    0,
+    6000,
+    1,
+    [
+      [0, 0, 78, 78, 176, 255],
+      [1000, 0, 131, 131, 123, 255],
+      [2000, 0, 206, 206, 48, 255],
+      [3000, 0, 255, 228, 26, 255],
+      [5999, 0, 255, 124, 132, 255],
+    ],
+  ],
+] as [number, number, number, number, number[][]][]) {
+  test(`svg export of a conic gradient in a ${cw}x${ch} clip at ${cx},${cy} on a 6000x6000 canvas tiles its pattern with the image`, async (t) => {
+    const draw = (ctx: Ctx) => {
+      ctx.beginPath()
+      ctx.rect(cx, cy, cw, ch)
+      ctx.clip()
+      ctx.fillStyle = stops(ctx.createConicGradient(0.3, 2000, 2000))
+      ctx.fillRect(0, 0, 6000, 6000)
+    }
+    const svg = createCanvas(6000, 6000, SvgExportFlag.NoPrettyXML)
+    draw(svg.getContext('2d') as unknown as Ctx)
+    const text = svg.getContent().toString('utf8')
+    const images = patternImages(text)
+    t.is(images.length, 1)
+    const { width, height, base64 } = images[0]
+    t.notRegex(text, /"100%"/)
+    t.regex(text, new RegExp(`<pattern [^>]* width="${width}" height="${height}"`))
+    t.deepEqual([width, height], [Math.max(cw, 2), Math.max(ch, 2)])
+    // One image pixel per canvas pixel, from the strip's corner.
+    t.deepEqual(patternPathTransform(text), [1, 0, 0, 1, cx, cy])
+    const image = await loadImage(Buffer.from(base64, 'base64'))
+    const decoded = createCanvas(width, height).getContext('2d')
+    decoded.drawImage(image, 0, 0)
+    const at = (px: number, py: number) => [...decoded.getImageData(px - cx, py - cy, 1, 1).data]
+    for (const [px, py, ...rgba] of pixels) {
+      // The raster canvas, here a canvas of the 8 x 8 dither cell of (px, py), equals Chrome.
+      const raster = createCanvas(8, 8).getContext('2d')
+      raster.translate(-(px & ~7), -(py & ~7))
+      draw(raster)
+      t.deepEqual([...raster.getImageData(px & 7, py & 7, 1, 1).data], rgba, `raster ${px},${py}`)
+      t.deepEqual(at(px, py), rgba, `${px},${py}`)
+      // The second pixel across the strip.
+      t.is(at(px + (cw === 1 ? 1 : 0), py + (ch === 1 ? 1 : 0))[3], 255, `next to ${px},${py}`)
+    }
+  })
+}
+
 // The most pixels a conic raster image has, its border included: 4096 * 4096 (64 MiB N32).
 const BUDGET = 4096 * 4096
 

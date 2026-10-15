@@ -723,12 +723,25 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
   // side). At one image pixel per device pixel, the image, border included,
   // starts at a multiple of 8: Skia dithers with an 8x8 pattern placed by the
   // device position, so the image dithers like the raster canvas.
+  //
+  // No image side is 1 pixel: SkImageShader tiles a 1 pixel side with clamp,
+  // not repeat (optimize, src/shaders/SkImageShader.cpp), and SkSVGDevice
+  // writes a clamp side as a viewport ("100%") tile. A border makes a side at
+  // least 3 pixels; without one, a 1 pixel side (a clip strip) gets a second
+  // pixel of the gradient, outside the clip. Such a side starts at a multiple
+  // of 8, so adding 2 does not overflow.
   static SweepGrid MakeSweepGrid(const SkIRect& device, int64_t k, int border) {
     SweepGrid grid;
     grid.cover = device;
     if (k == 1) {
       grid.cover.fLeft = ((device.fLeft - border) & ~7) + border;
       grid.cover.fTop = ((device.fTop - border) & ~7) + border;
+      if (border == 0 && grid.cover.width64() == 1) {
+        grid.cover.fRight = grid.cover.fLeft + 2;
+      }
+      if (border == 0 && grid.cover.height64() == 1) {
+        grid.cover.fBottom = grid.cover.fTop + 2;
+      }
     }
     grid.kx = std::min(k, grid.cover.width64());
     grid.ky = std::min(k, grid.cover.height64());
@@ -751,12 +764,13 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
   // canvas paints with it, globalAlpha included, over the device bounds of the
   // draw inside the clip: one image pixel per device pixel, or k x k device
   // pixels per image pixel for bounds that do not fit kMaxSweepPixels or
-  // kMaxSweepSide. The image is the pattern tile (repeat), not the viewport (a
-  // "100%" decal tile): in Chrome the transparent rest of a viewport tile
-  // larger than kMaxExactTilePixels faded the image's edges. An image Chrome
-  // does not draw exactly (larger than kMaxExactTilePixels, or scaled) has a
-  // border of 1 image pixel of the same gradient, so that resampling it does
-  // not mix its edges with the other side of the tile. The image's matrix maps
+  // kMaxSweepSide. The image is the pattern tile (repeat, and no side of 1
+  // pixel, see MakeSweepGrid), not the viewport (a "100%" decal tile): in
+  // Chrome the transparent rest of a viewport tile larger than
+  // kMaxExactTilePixels faded the image's edges. An image Chrome does not
+  // draw exactly (larger than kMaxExactTilePixels, or scaled) has a border of
+  // 1 image pixel of the same gradient, so that resampling it does not mix
+  // its edges with the other side of the tile. The image's matrix maps
   // its pixels back to local space, and `clip` is the part of the image inside
   // the border. False: nothing to draw (nothing visible, a singular matrix or
   // no memory for the image).
