@@ -282,3 +282,89 @@ pub(crate) fn prepare(
   prepared.svg = svg;
   Ok((prepared, root_attributes))
 }
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  fn svg(body: &str) -> String {
+    format!(
+      r#"<svg xmlns="{}" width="20" height="20">{body}</svg>"#,
+      dom::SVG_NS
+    )
+  }
+
+  /// A data: URL of `svg`, percent-encoding only what must be.
+  fn data_url(svg: &str) -> String {
+    let encoded = svg
+      .replace('%', "%25")
+      .replace('<', "%3C")
+      .replace('>', "%3E")
+      .replace('"', "%22")
+      .replace('#', "%23");
+    format!("data:image/svg+xml,{encoded}")
+  }
+
+  fn start_tags(text: &str) -> usize {
+    text
+      .as_bytes()
+      .windows(2)
+      .filter(|w| w[0] == b'<' && w[1].is_ascii_alphabetic())
+      .count()
+  }
+
+  #[test]
+  fn use_fan_out_stops_at_the_element_budget() {
+    // 10^6 rects through <use> (Chrome hangs on it).
+    let mut body = String::from(r#"<defs><rect id="l0" width="1" height="1"/>"#);
+    for i in 1..=6 {
+      body += &format!(r#"<g id="l{i}">"#);
+      for k in 0..10 {
+        body += &format!(r##"<use href="#l{}" x="{}"/>"##, i - 1, k % 3);
+      }
+      body += "</g>";
+    }
+    body += r##"</defs><use href="#l6"/>"##;
+    let (prepared, _) = prepare(svg(&body).as_bytes(), &FontUnits::fallback()).unwrap();
+    let written = start_tags(&prepared.svg);
+    assert!(written <= ELEMENT_BUDGET, "{written} elements written");
+  }
+
+  #[test]
+  fn rasters_are_capped_in_pixels() {
+    let units = FontUnits::fallback();
+    let mut shared = Shared::new(&units);
+    let data: Rc<[u8]> = Rc::from(&[][..]);
+    let url = |s: &str| -> Rc<str> { Rc::from(s) };
+    // One raster: 2^25 pixels at most.
+    assert!(shared.raster(&url("a"), &data, (8192, 4096), 2).is_some());
+    assert!(shared.raster(&url("b"), &data, (8193, 4096), 2).is_none());
+    // The same raster at another quality costs nothing more.
+    assert!(shared.raster(&url("a"), &data, (8192, 4096), 0).is_some());
+    // All rasters: 2^26 pixels at most.
+    assert!(shared.raster(&url("c"), &data, (8192, 4096), 2).is_some());
+    assert!(shared.raster(&url("d"), &data, (1, 1), 2).is_none());
+    assert_eq!(shared.prepared.resources.len(), 3);
+  }
+
+  #[test]
+  fn nested_images_are_prepared_once_per_url() {
+    // Each level draws the level below 10 times: 10^5 draws of the rect.
+    let x = format!(r#"xmlns="{}""#, dom::SVG_NS);
+    let mut inner = format!(r#"<svg {x} width="4" height="4"><rect width="4" height="4"/></svg>"#);
+    for _ in 0..5 {
+      let mut b = format!(
+        r#"<image id="i" width="4" height="4" href="{}"/>"#,
+        data_url(&inner)
+      );
+      for k in 1..10 {
+        b += &format!(r##"<use href="#i" x="{k}"/>"##);
+      }
+      inner = format!(r#"<svg {x} width="4" height="4">{b}</svg>"#);
+    }
+    let (prepared, _) = prepare(inner.as_bytes(), &FontUnits::fallback()).unwrap();
+    // One per level below the top.
+    assert_eq!(prepared.resources.len(), 5);
+    assert_eq!(prepared.svg.matches("napi-svg:").count(), 10);
+  }
+}
