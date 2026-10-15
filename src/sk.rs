@@ -632,6 +632,8 @@ pub mod ffi {
 
     pub fn skiac_canvas_reset_transform(canvas: *mut skiac_canvas);
 
+    pub fn skiac_canvas_get_device_clip_bounds(canvas: *mut skiac_canvas, ltrb: *mut i32) -> bool;
+
     pub fn skiac_canvas_clip_rect(canvas: *mut skiac_canvas, x: f32, y: f32, w: f32, h: f32);
 
     pub fn skiac_canvas_clip_path(canvas: *mut skiac_canvas, path: *mut skiac_path);
@@ -922,6 +924,7 @@ pub mod ffi {
       count: i32,
       tile_mode: i32,
       flags: u32,
+      interpolation_space: i32,
       ts: skiac_transform,
     ) -> *mut skiac_shader;
 
@@ -935,6 +938,7 @@ pub mod ffi {
       count: i32,
       tile_mode: i32,
       flags: u32,
+      interpolation_space: i32,
       ts: skiac_transform,
     ) -> *mut skiac_shader;
 
@@ -947,6 +951,7 @@ pub mod ffi {
       count: i32,
       tile_mode: i32,
       flags: u32,
+      interpolation_space: i32,
       ts: skiac_transform,
     ) -> *mut skiac_shader;
 
@@ -2965,6 +2970,13 @@ impl Canvas {
     }
   }
 
+  /// `SkCanvas::getDeviceClipBounds` as left, top, right, bottom; None when
+  /// the clip is empty.
+  pub fn device_clip_bounds(&self) -> Option<[i32; 4]> {
+    let mut ltrb = [0i32; 4];
+    unsafe { ffi::skiac_canvas_get_device_clip_bounds(self.0, ltrb.as_mut_ptr()) }.then_some(ltrb)
+  }
+
   pub fn draw_color(&mut self, r: f32, g: f32, b: f32, a: f32) {
     unsafe {
       ffi::skiac_canvas_draw_color(self.0, r, g, b, a);
@@ -4025,6 +4037,18 @@ pub struct Gradient {
   pub positions: Vec<f32>,
   pub tile_mode: TileMode,
   pub transform: Transform,
+  pub interpolation: GradientInterpolation,
+}
+
+/// The color space Skia interpolates the stops in (skia_c.cpp
+/// `stop_interpolation`). Blink uses sRGB for legacy stops, else Oklab
+/// (gradient.cc:305-315).
+#[repr(i32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum GradientInterpolation {
+  #[default]
+  Srgb = 0,
+  Oklab = 1,
 }
 
 #[derive(Debug, Clone)]
@@ -4082,6 +4106,7 @@ impl Shader {
         grad.base.colors.len() as i32,
         grad.base.tile_mode as i32,
         0_u32,
+        grad.base.interpolation as i32,
         grad.base.transform.into(),
       ))
     }
@@ -4108,6 +4133,7 @@ impl Shader {
         grad.base.colors.len() as i32,
         grad.base.tile_mode as i32,
         0_u32,
+        grad.base.interpolation as i32,
         grad.base.transform.into(),
       ))
     }
@@ -4124,6 +4150,7 @@ impl Shader {
         grad.base.colors.len() as i32,
         grad.base.tile_mode as i32,
         0_u32,
+        grad.base.interpolation as i32,
         grad.base.transform.into(),
       ))
     }

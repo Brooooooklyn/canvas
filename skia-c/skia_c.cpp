@@ -2225,6 +2225,21 @@ void skiac_canvas_reset_transform(skiac_canvas* c_canvas) {
   CANVAS_CAST->resetMatrix();
 }
 
+// SkCanvas::getDeviceClipBounds, which Blink's Draw reads
+// (canvas_2d_recorder_context.h:861-865): false when the clip is empty.
+bool skiac_canvas_get_device_clip_bounds(skiac_canvas* c_canvas,
+                                         int32_t* ltrb) {
+  SkIRect bounds;
+  if (!CANVAS_CAST->getDeviceClipBounds(&bounds)) {
+    return false;
+  }
+  ltrb[0] = bounds.fLeft;
+  ltrb[1] = bounds.fTop;
+  ltrb[2] = bounds.fRight;
+  ltrb[3] = bounds.fBottom;
+  return true;
+}
+
 void skiac_canvas_clip_rect(skiac_canvas* c_canvas,
                             float x,
                             float y,
@@ -3182,13 +3197,16 @@ static std::vector<SkColor4f> gradient_stop_colors(const skiac_color4f* colors,
   return colors4f;
 }
 
-// Canvas gradient stops are legacy sRGB colors, and Blink interpolates them in
-// sRGB whatever the canvas color space (gradient.cc:305-315 picks kSRGB,
-// :248-250 maps it to SkGradient's kSRGB). kDestination would mix them in
-// display-p3 on a P3 canvas.
-static SkGradient::Interpolation legacy_stop_interpolation(uint32_t flags) {
+// Blink interpolates canvas gradient stops in sRGB when every stop is a legacy
+// color, else in Oklab, whatever the canvas color space (gradient.cc:305-315
+// latches the space; ResolveSkInterpolation, :215-256, maps kSRGB and kOklab).
+// kDestination would mix them in display-p3 on a P3 canvas.
+// `space`: 0 = sRGB, 1 = Oklab.
+static SkGradient::Interpolation stop_interpolation(uint32_t flags, int space) {
   auto interpolation = SkGradient::Interpolation::FromFlags(flags);
-  interpolation.fColorSpace = SkGradient::Interpolation::ColorSpace::kSRGB;
+  interpolation.fColorSpace =
+      space == 1 ? SkGradient::Interpolation::ColorSpace::kOKLab
+                 : SkGradient::Interpolation::ColorSpace::kSRGB;
   return interpolation;
 }
 
@@ -3198,6 +3216,7 @@ skiac_shader* skiac_shader_make_linear_gradient(const skiac_point* c_points,
                                                 int count,
                                                 int tile_mode,
                                                 uint32_t flags,
+                                                int interpolation_space,
                                                 skiac_transform c_ts) {
   const auto points = reinterpret_cast<const SkPoint*>(c_points);
   const auto skia_tile_mode = (SkTileMode)tile_mode;
@@ -3207,7 +3226,7 @@ skiac_shader* skiac_shader_make_linear_gradient(const skiac_point* c_points,
       positions ? SkSpan<const float>(positions, count) : SkSpan<const float>();
   SkGradient::Colors gradColors(SkSpan<const SkColor4f>(colors4f.data(), count),
                                 posSpan, skia_tile_mode);
-  SkGradient grad(gradColors, legacy_stop_interpolation(flags));
+  SkGradient grad(gradColors, stop_interpolation(flags, interpolation_space));
   auto shader = SkShaders::LinearGradient(points, grad, &ts).release();
 
   if (shader) {
@@ -3226,6 +3245,7 @@ skiac_shader* skiac_shader_make_radial_gradient(skiac_point c_start_point,
                                                 int count,
                                                 int tile_mode,
                                                 uint32_t flags,
+                                                int interpolation_space,
                                                 skiac_transform c_ts) {
   const SkPoint startPoint = {c_start_point.x, c_start_point.y};
   const SkPoint endPoint = {c_end_point.x, c_end_point.y};
@@ -3234,7 +3254,7 @@ skiac_shader* skiac_shader_make_radial_gradient(skiac_point c_start_point,
       positions ? SkSpan<const float>(positions, count) : SkSpan<const float>();
   SkGradient::Colors gradColors(SkSpan<const SkColor4f>(colors4f.data(), count),
                                 posSpan, (SkTileMode)tile_mode);
-  SkGradient grad(gradColors, legacy_stop_interpolation(flags));
+  SkGradient grad(gradColors, stop_interpolation(flags, interpolation_space));
   auto shader =
       SkShaders::TwoPointConicalGradient(startPoint, start_radius, endPoint,
                                          end_radius, grad, nullptr)
@@ -3255,6 +3275,7 @@ skiac_shader* skiac_shader_make_conic_gradient(SkScalar cx,
                                                int count,
                                                int tile_mode,
                                                uint32_t flags,
+                                               int interpolation_space,
                                                skiac_transform c_ts) {
   auto ts = conv_from_transform(c_ts);
   // Blink ConicGradient::CreateShader (gradient.cc:509-522): Skia's sweep
@@ -3269,7 +3290,7 @@ skiac_shader* skiac_shader_make_conic_gradient(SkScalar cx,
       positions ? SkSpan<const float>(positions, count) : SkSpan<const float>();
   SkGradient::Colors gradColors(SkSpan<const SkColor4f>(colors4f.data(), count),
                                 posSpan, (SkTileMode)tile_mode);
-  SkGradient grad(gradColors, legacy_stop_interpolation(flags));
+  SkGradient grad(gradColors, stop_interpolation(flags, interpolation_space));
   auto shader =
       SkShaders::SweepGradient({cx, cy}, 0.0f, 360.0f, grad, &ts).release();
 
