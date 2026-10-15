@@ -558,7 +558,18 @@ export class Image {
 export class Path2D {
   constructor(path?: Path2D | string)
 
-  addPath(path: Path2D, transform?: DOMMatrix2DInit): void
+  /** Missing members default to the identity; `a` and `m11` (and so on) must agree when both are given. */
+  addPath(
+    path: Path2D,
+    transform?: Partial<DOMMatrix2DInit> & {
+      m11?: number
+      m12?: number
+      m21?: number
+      m22?: number
+      m41?: number
+      m42?: number
+    },
+  ): void
   arc(x: number, y: number, radius: number, startAngle: number, endAngle: number, anticlockwise?: boolean): void
   arcTo(x1: number, y1: number, x2: number, y2: number, radius: number): void
   bezierCurveTo(cp1x: number, cp1y: number, cp2x: number, cp2y: number, x: number, y: number): void

@@ -221,6 +221,7 @@ for (const [Class, iface] of [
 
 const pathBrand = Path2D.prototype.getFillType
 for (const [method, required] of [
+  ['addPath', 1],
   ['arc', 5],
   ['arcTo', 5],
   ['bezierCurveTo', 6],
