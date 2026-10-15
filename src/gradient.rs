@@ -1,3 +1,5 @@
+use std::{cell::RefCell, rc::Rc};
+
 use cssparser::Parser;
 use cssparser_color::Color as CSSColor;
 use napi::bindgen_prelude::*;
@@ -466,8 +468,19 @@ pub(crate) mod blink_fast_path {
   }
 }
 
+/// A gradient is live: stops added after it became a fillStyle or
+/// strokeStyle apply to later draws (Blink's CanvasStyle keeps the
+/// CanvasGradient, canvas_style.cc), so a context shares it, not a copy.
+pub type SharedGradient = Rc<RefCell<Gradient>>;
+
 #[napi]
-pub struct CanvasGradient(pub(crate) Gradient);
+pub struct CanvasGradient(pub(crate) SharedGradient);
+
+impl CanvasGradient {
+  pub(crate) fn new(gradient: Gradient) -> Self {
+    Self(Rc::new(RefCell::new(gradient)))
+  }
+}
 
 #[napi]
 impl CanvasGradient {
@@ -516,7 +529,7 @@ impl CanvasGradient {
         ));
       }
     };
-    self.0.add_color_stop(index as f32, skia_color);
+    self.0.borrow_mut().add_color_stop(index as f32, skia_color);
     Ok(())
   }
 }
