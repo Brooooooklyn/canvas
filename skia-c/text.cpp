@@ -64,14 +64,16 @@ struct TextCaches {
     // where drawing `runs` puts it (DrawsLikeRuns). The first draw makes
     // both, so a draw takes the same blobs however often the line was drawn
     // before (an SVG or PDF canvas writes a text element for each blob run).
-    // `single`'s origin is the first run's, and a glyph's x is its run's
-    // offset from the first plus its x in its run. `frac_bits` is the most
+    // `single` leaves out the runs without ink (MakeSingleBlob); its origin
+    // and draw font are the first run's it has, and a glyph's x is its run's
+    // offset from that run plus its x in its run. `frac_bits` is the most
     // binary fraction digits of an offset or x, `span` twice the largest
     // offset plus the largest x.
     bool drawn = false;
     std::vector<Run> runs;
     sk_sp<SkTextBlob> single;
     SkPoint single_origin = {0, 0};
+    SkFont single_font;
     int frac_bits = 0;
     double span = 0;
     // The bytes the line counts in TextCaches::line_bytes, and its place in
@@ -282,7 +284,15 @@ size_t MakeRunBlobs(Line* line, const TextRasterPolicy& policy) {
 // miss the clip, and some fonts' glyphs overflow the font's bounding box,
 // which the bounds come from. Returns the bytes `line->single` keeps.
 size_t MakeSingleBlob(Line* line, const TextRasterPolicy& policy) {
-  const auto& runs = line->runs;
+  // A run whose blob has empty bounds has no ink, and a canvas skips its
+  // blob for a fill (an empty rect meets no clip): the joined blob leaves it
+  // out, so an SVG canvas writes no empty text element for it.
+  std::vector<const LineRun*> runs;
+  for (const LineRun& line_run : line->runs) {
+    if (!line_run.blob->bounds().isEmpty()) {
+      runs.push_back(&line_run);
+    }
+  }
   if (runs.size() < 2) {
     return 0;
   }
@@ -292,11 +302,11 @@ size_t MakeSingleBlob(Line* line, const TextRasterPolicy& policy) {
   int bits = 0;
   double max_offset = 0;
   double max_x = 0;
-  for (const LineRun& line_run : runs) {
-    const SkScalar offset = line_run.origin.fX;
+  for (const LineRun* line_run : runs) {
+    const SkScalar offset = line_run->origin.fX;
     bits = std::max(bits, FracBits(offset));
     max_offset = std::max(max_offset, std::fabs(static_cast<double>(offset)));
-    SkTextBlob::Iter it(*line_run.blob);
+    SkTextBlob::Iter it(*line_run->blob);
     SkTextBlob::Iter::ExperimentalRun run;
     while (it.experimentalNext(&run)) {
       for (int g = 0; g < run.count; ++g) {
@@ -313,17 +323,17 @@ size_t MakeSingleBlob(Line* line, const TextRasterPolicy& policy) {
   // DrawPaint adds a mask filter for some draw fonts; one paint draws the
   // joined blob.
   const bool masked =
-      policy.DrawPaint(runs[0].font, SkPaint()).getMaskFilter() != nullptr;
+      policy.DrawPaint(runs[0]->font, SkPaint()).getMaskFilter() != nullptr;
   // The blob runs: consecutive runs of one font.
   std::vector<std::pair<SkFont, int>> fonts;
   std::vector<SkRect> glyph_bounds;
-  for (const LineRun& line_run : runs) {
-    if (line_run.origin.fY != runs[0].origin.fY ||
-        (policy.DrawPaint(line_run.font, SkPaint()).getMaskFilter() !=
+  for (const LineRun* line_run : runs) {
+    if (line_run->origin.fY != runs[0]->origin.fY ||
+        (policy.DrawPaint(line_run->font, SkPaint()).getMaskFilter() !=
          nullptr) != masked) {
       return 0;
     }
-    SkTextBlob::Iter it(*line_run.blob);
+    SkTextBlob::Iter it(*line_run->blob);
     SkTextBlob::Iter::ExperimentalRun run;
     while (it.experimentalNext(&run)) {
       if (fonts.empty() || !(fonts.back().first == run.font)) {
@@ -341,21 +351,21 @@ size_t MakeSingleBlob(Line* line, const TextRasterPolicy& policy) {
             glyph_bounds[g]
                 .makeOffset(run.positions[g].fX, run.positions[g].fY)
                 .makeOutset(1, 1);
-        if (!line_run.blob->bounds().contains(ink)) {
+        if (!line_run->blob->bounds().contains(ink)) {
           return 0;
         }
       }
     }
   }
   SkTextBlobBuilder builder;
-  const SkScalar first = runs[0].origin.fX;
+  const SkScalar first = runs[0]->origin.fX;
   size_t font_index = 0;
   int left_in_font = 0;
   SkGlyphID* glyphs = nullptr;
   SkPoint* points = nullptr;
-  for (const LineRun& line_run : runs) {
-    const SkScalar offset = line_run.origin.fX;
-    SkTextBlob::Iter it(*line_run.blob);
+  for (const LineRun* line_run : runs) {
+    const SkScalar offset = line_run->origin.fX;
+    SkTextBlob::Iter it(*line_run->blob);
     SkTextBlob::Iter::ExperimentalRun run;
     while (it.experimentalNext(&run)) {
       for (int g = 0; g < run.count; ++g) {
@@ -375,7 +385,8 @@ size_t MakeSingleBlob(Line* line, const TextRasterPolicy& policy) {
     }
   }
   line->single = builder.make();
-  line->single_origin = runs[0].origin;
+  line->single_origin = runs[0]->origin;
+  line->single_font = runs[0]->font;
   line->frac_bits = bits;
   line->span = 2 * max_offset + max_x;
   size_t glyph_count = 0;
@@ -911,7 +922,7 @@ void MeasureOrDraw(skiac_font_collection* c_collection,
         line->drawn = true;
       }
       const SkPaint single_paint =
-          line->single ? policy.DrawPaint(line->runs[0].font, *paint)
+          line->single ? policy.DrawPaint(line->single_font, *paint)
                        : SkPaint();
       if (DrawsLikeRuns(*line, canvas, single_paint, final_x)) {
         canvas->drawTextBlob(line->single, final_x + line->single_origin.fX,
