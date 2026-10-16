@@ -25,16 +25,21 @@ const RASTER_MARGIN: f32 = 256.0;
 
 /// The largest lean of an image axis, |b| / |a| or |c| / |d|, under which a
 /// skewed draw still rasters that axis at its device spacing when |a| or |d|
-/// is under one device pixel.
+/// is under one device pixel; a bigger one rasters in device pixels.
 const SMALL_SKEW: f32 = 0.3;
 
+/// `RasterSpec::device` of a raster made in the destination space.
+const IDENTITY: [f32; 6] = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
+
 /// How a raster is made: the document laid out at `layout`, clipped to
-/// `view`, mapped by `[sx 0 tx; 0 sy ty]` and clipped to `clip` in a
-/// `width` x `height` raster.
+/// `view`, mapped by `[sx 0 tx; 0 sy ty]` (`matrix`) into a destination space,
+/// clipped to `clip` there and mapped by `device` (`[a, b, c, d, e, f]`, as a
+/// DOMMatrix) into a `width` x `height` raster.
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct RasterSpec {
   layout: (f32, f32),
   view: (f32, f32),
+  device: [f32; 6],
   matrix: [f32; 4],
   clip: [f32; 4],
   width: i32,
@@ -49,10 +54,13 @@ pub(crate) struct SvgImage {
 }
 
 /// What drawImage draws for an SVG Image: all of `raster` into `dst`
-/// (x, y, width, height in the current user space).
+/// (x, y, width, height in the current user space), or with `device`, 1:1 at
+/// that device pixel, the transform not applied again (`dst` is then the
+/// destination rect, the bounds of the draw).
 pub(crate) struct SvgDraw {
   pub raster: Arc<AccountedBitmap>,
   pub dst: (f32, f32, f32, f32),
+  pub device: Option<(f32, f32)>,
 }
 
 /// gfx::RectF with the same f32 steps as Blink.
@@ -167,6 +175,7 @@ impl SvgImage {
     let Some(bitmap) = self.document.render(
       spec.layout,
       spec.view,
+      spec.device,
       spec.matrix,
       spec.clip,
       spec.width,
@@ -202,6 +211,7 @@ impl SvgImage {
     let spec = RasterSpec {
       layout: (layout_floor(width), layout_floor(height)),
       view: (view_width, view_height),
+      device: IDENTITY,
       matrix: [1.0, 1.0, 0.0, 0.0],
       clip: [0.0, 0.0, view_width, view_height],
       width: view_width.min(i32::MAX as f32) as i32,
@@ -346,6 +356,7 @@ impl SvgImage {
       let spec = RasterSpec {
         layout,
         view,
+        device: IDENTITY,
         matrix: [
           a * scale_x,
           d * scale_y,
@@ -369,6 +380,94 @@ impl SvgImage {
       );
       Some((spec, draw_rect))
     };
+    // A skew of one axis that leans more than SMALL_SKEW with |a| or |d|
+    // under one device pixel: draw in device pixels through the whole
+    // transform, clipped (aliased) to the destination rect rounded out, like
+    // Chrome's vector draw (SVGImage::DrawInternal), and put that raster on
+    // the device 1:1. Skia draws a stroke at most one device pixel wide on
+    // both axes as a hairline whose coverage is its mapped width
+    // (SkDrawTreatAAStrokeAsHairline); a raster at a scale per image axis
+    // drawn through the transform gave strokes and edges up to 129 alpha off
+    // Chrome's, where most of these draws now give Chrome's pixels.
+    let skewed_device_draw = || {
+      let lean = if c == 0.0 {
+        b != 0.0 && b.abs() > SMALL_SKEW * a.abs()
+      } else {
+        b == 0.0 && c.abs() > SMALL_SKEW * d.abs()
+      };
+      if !(lean && (a.abs() < 1.0 || d.abs() < 1.0)) {
+        return None;
+      }
+      let left = dst.x.floor();
+      let top = dst.y.floor();
+      let right = dst.right().ceil();
+      let bottom = dst.bottom().ceil();
+      let mut window = [
+        f32::INFINITY,
+        f32::INFINITY,
+        f32::NEG_INFINITY,
+        f32::NEG_INFINITY,
+      ];
+      for (x, y) in [(left, top), (right, top), (left, bottom), (right, bottom)] {
+        let (device_x, device_y) = (a * x + c * y + e, b * x + d * y + f);
+        window = [
+          window[0].min(device_x),
+          window[1].min(device_y),
+          window[2].max(device_x),
+          window[3].max(device_y),
+        ];
+      }
+      let mut window = [
+        window[0].floor(),
+        window[1].floor(),
+        window[2].ceil(),
+        window[3].ceil(),
+      ];
+      // Only the part on the canvas or where its shadow and filter read:
+      // Skia steps an anti-aliased edge down from where the clip cuts it, so
+      // its coverage depends on that start, by up to 30 alpha for an edge
+      // that starts 900 rows higher. Chrome's draw starts at the canvas.
+      if let Some(bounds) = source_bounds {
+        window = [
+          window[0].max(bounds[0].floor()),
+          window[1].max(bounds[1].floor()),
+          window[2].min(bounds[2].ceil()),
+          window[3].min(bounds[3].ceil()),
+        ];
+      }
+      if (window[2] - window[0]) * (window[3] - window[1]) > RASTER_BUDGET {
+        // Only the part the draw reads, as device_draw. A reach that cannot
+        // be bounded takes scaled_draw.
+        let read = read?;
+        window = [
+          window[0].max(read[0]),
+          window[1].max(read[1]),
+          window[2].min(read[2]),
+          window[3].min(read[3]),
+        ];
+      }
+      let raster_width = window[2] - window[0];
+      let raster_height = window[3] - window[1];
+      if !(raster_width >= 1.0 && raster_height >= 1.0)
+        || raster_width * raster_height > RASTER_BUDGET * 4.0
+      {
+        return None;
+      }
+      let spec = RasterSpec {
+        layout,
+        view,
+        device: [a, b, c, d, e - window[0], f - window[1]],
+        matrix: [scale_x, scale_y, translate_x, translate_y],
+        clip: [left, top, right, bottom],
+        width: raster_width as i32,
+        height: raster_height as i32,
+      };
+      Some((
+        spec,
+        (dst.x, dst.y, dst.w, dst.h),
+        Some((window[0], window[1])),
+      ))
+    };
     // Rotated, skewed, flipped or too big: a raster at the device scale of
     // the destination, drawn through the transform.
     let scaled_draw = || {
@@ -380,7 +479,9 @@ impl SvgImage {
       // than the length, and under any lean when |a| and |d| are both at
       // least one device pixel, where the length blurred lines and edges that
       // Chrome draws sharp by up to 89 alpha. A bigger lean with |a| or |d|
-      // under one pixel keeps the length. Skia draws a stroke as a hairline
+      // under one pixel takes skewed_device_draw, and keeps the length here
+      // only when that has no window to draw (one off the canvas, too big, or
+      // for a reach that cannot be bounded): Skia draws a stroke as a hairline
       // when its width is at most one pixel on both axes of the raster, so
       // with either axis under a pixel the spacing, shorter than the length,
       // turns a thin stroke into a hairline (as does the fill SkSVG draws for
@@ -455,6 +556,7 @@ impl SvgImage {
         let spec = RasterSpec {
           layout,
           view,
+          device: IDENTITY,
           matrix: [
             to_raster_x,
             to_raster_y,
@@ -487,6 +589,7 @@ impl SvgImage {
       let spec = RasterSpec {
         layout,
         view,
+        device: IDENTITY,
         matrix: [
           to_raster_x,
           to_raster_y,
@@ -499,12 +602,17 @@ impl SvgImage {
       };
       Some((spec, (dst.x, dst.y, dst.w, dst.h)))
     };
-    let Some((spec, draw_rect)) = device_draw().or_else(scaled_draw) else {
+    let Some((spec, draw_rect, device)) = device_draw()
+      .map(|(spec, draw_rect)| (spec, draw_rect, None))
+      .or_else(skewed_device_draw)
+      .or_else(|| scaled_draw().map(|(spec, draw_rect)| (spec, draw_rect, None)))
+    else {
       return Ok(None);
     };
     Ok(self.raster(env, spec)?.map(|raster| SvgDraw {
       raster,
       dst: draw_rect,
+      device,
     }))
   }
 }
