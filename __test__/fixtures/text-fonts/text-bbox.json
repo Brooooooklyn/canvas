@@ -253,7 +253,7 @@
     "xor": [[244, 48, 249]]
   },
   "darwin": {
-    "note": "Chrome 155.0.8059.79 CPU canvas on macOS 27: the tables whose values differ from the Linux ones above, measured the same way. Chrome arm64 and x64 give the same values here, except for alphaReset, which is per process.arch.",
+    "note": "Chrome 155.0.8059.79 CPU canvas on macOS 27: the tables whose values differ from the Linux ones above, measured the same way. Chrome arm64 and x64 give the same values here, except for alphaReset, which is per process.arch. large, zeroWidth and negativeSpacing were measured on arm64 only; CoreText's glyph boxes are outline bounds, so their fractions show at every size.",
     "rtl": {
       "LatoT \"Hgjy\" ltr left": [60.99, -2.61, 60.75, 21.885, 5.475, "202,27,261,55"],
       "LatoT \"Hgjy\" ltr right": [60.99, 58.38, -0.24, 21.885, 5.475, "141,27,200,55"],
@@ -444,6 +444,65 @@
         11.4844,
         "301,55,438,91"
       ]
+    },
+    "large": {
+      "257px LatoT \"Hg\"": [325.619, -22.359, 321.507, 184.1405, 46.9025],
+      "257px LatoT \"jy\"": [196.862, 7.196, 194.806, 187.4815, 46.774],
+      "300px LatoT \"Hg\"": [380.1, -26.1, 375.3, 214.95, 54.75],
+      "300px LatoT \"jy\"": [229.8, 8.4, 227.4, 218.85, 54.6],
+      "600px LatoT \"Hg\"": [760.2, -52.2, 750.6, 429.9, 109.5],
+      "600px LatoT \"jy\"": [459.6, 16.8, 454.8, 437.7, 109.2001],
+      "257px SerifProT \"Hg\"": [330.759, -11.308, 324.848, 171.933, 61.423],
+      "257px SerifProT \"jy\"": [202.773, 21.331, 202.773, 186.582, 63.993],
+      "300px SerifProT \"Hg\"": [386.1, -13.2, 379.2, 200.7, 71.7],
+      "300px SerifProT \"jy\"": [236.7, 24.9, 236.7, 217.8, 74.7],
+      "600px SerifProT \"Hg\"": [772.2, -26.4, 758.4, 401.4, 143.4],
+      "600px SerifProT \"jy\"": [473.4, 49.8, 473.4, 435.6, 149.4],
+      "257px IosevkaT \"Hg\"": [257, -5.911, 251.089, 188.895, 54.741],
+      "257px IosevkaT \"jy\"": [257, -5.14, 251.089, 192.236, 54.741],
+      "300px IosevkaT \"Hg\"": [300, -6.9, 293.1, 220.5, 63.9],
+      "300px IosevkaT \"jy\"": [300, -6, 293.1, 224.4, 63.9],
+      "600px IosevkaT \"Hg\"": [600, -13.8, 586.2, 441, 127.8],
+      "600px IosevkaT \"jy\"": [600, -12, 586.2, 448.8, 127.8001],
+      "257px OswaldT \"Hg\"": [257.514, -16.191, 260.598, 208.17, 46.517],
+      "257px OswaldT \"jy\"": [159.854, 4.883, 157.027, 199.432, 37.522],
+      "300px OswaldT \"Hg\"": [300.6, -18.9, 304.2, 243, 54.3],
+      "300px OswaldT \"jy\"": [186.6, 5.7, 183.3, 232.8, 43.8],
+      "600px OswaldT \"Hg\"": [601.2, -37.8, 608.4, 486, 108.6],
+      "600px OswaldT \"jy\"": [373.2, 11.4, 366.6, 465.6, 87.6001]
+    },
+    "zeroWidth": {
+      "48px SerifProT \"f\u200bj\" ltr left ls-6px ws0px": [18.288, -1.632, 21.552, 35.952, 11.952, "301,43,321,91"],
+      "48px SerifProT \"f\u00adj\" ltr left ls-6px ws0px": [18.288, -1.632, 21.552, 35.952, 11.952, "301,43,321,91"],
+      "48px SerifProT \"f\ufeffj\" ltr left ls-6px ws0px": [18.288, -1.632, 21.552, 35.952, 11.952, "301,43,321,91"],
+      "48px SerifProT \"f\ufffcj\" ltr left ls-6px ws0px": [18.288, -1.632, 21.552, 35.952, 11.952, "301,43,321,91"],
+      "48px SerifProT \"f\u200bj\" ltr left ls6px ws0px": [42.288, -1.632, 33.552, 35.952, 11.952, "301,43,333,91"],
+      "48px SerifProT \"f\u200bj\" rtl left ls-6px ws0px": [18.288, -1.632, 21.552, 35.952, 11.952, "301,43,321,91"],
+      "48px SerifProT \"f\u200bj\" rtl right ls6px ws0px": [42.288, 40.656, -8.736, 35.952, 11.952, "259,43,291,91"],
+      "40px LatoT \"\u200bHello\" ltr left ls6px ws0px": [123.92, -3.48, 116.44, 29.46, 0.28, "303,50,416,80"],
+      "40px LatoT \"\ufeffHello\" ltr left ls-4px ws0px": [73.92, -3.48, 76.44, 29.46, 0.28, "303,50,376,80"],
+      "40px LatoT \"\u00adab cd\u00ad\" ltr center ls5px ws0px": [116.4, 56.36, 50.14, 29.46, 0.32, "243,50,350,80"],
+      "40px LatoT \"ab\u200bcd\" ltr left ls5px ws3px": [103.68, -1.84, 95.62, 29.46, 0.32, "301,50,395,80"],
+      "40px LatoT \"ab\u200bcd\" rtl start ls5px ws3px": [103.68, 101.84, -8.06, 29.46, 0.32, "197,50,292,80"],
+      "40px HarmattanT \"سلام abc\" ltr left ls6px ws0px": [
+        140.3672,
+        1.0742,
+        132.9609,
+        23.4375,
+        11.4844,
+        "298,56,433,91"
+      ],
+      "40px HarmattanT \"سلام\u200babc\" ltr left ls6px ws0px": [
+        125.5195,
+        1.0742,
+        118.1133,
+        23.4375,
+        11.4844,
+        "298,56,418,91"
+      ],
+      "40px LatoT \"\u200b\" ltr left ls6px ws0px": [0, 0, 0, 0, 0, "600,-1,-1,-1"],
+      "40px LatoT \"a\u200b\" ltr left ls6px ws0px": [26.28, -1.84, 17.8, 20.62, 0.32, "301,58,318,80"],
+      "small-caps 40px LatoT \"Ab\u200bcd\" ltr left ls4px ws0px": [101.58, -0.2, 96.32, 28.66, 0.224, "300,50,396,80"]
     },
     "alphaReset": {
       "arm64": {
