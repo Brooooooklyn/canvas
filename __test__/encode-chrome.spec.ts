@@ -363,6 +363,52 @@ test('convertToBlob reads ImageEncodeOptions like Chrome', async (t) => {
   )
 })
 
+// Past arguments.length, arguments[i] reads Object.prototype[i]: Chrome 155
+// reads none of them for toBlob(callback) and convertToBlob(), and encodes a
+// PNG. The getters log each read and are removed before the call returns.
+// Serial: they are on Object.prototype, which every test uses.
+test.serial('toBlob and convertToBlob read only the arguments they were given, like Chrome', async (t) => {
+  const canvas = patternCanvas()
+  const png = { type: 'image/png', b64: b64(canvas.toBuffer('image/png')) }
+  // Under the test loader, index.js has a source map. Node parses it when it
+  // first formats a stack through index.js, and that parse reads
+  // Object.prototype[0]: throw through index.js before the getters are there.
+  void t.throws(() => (canvas.toBlob as any)())?.stack
+  // What a read would get: a JPEG type, quality or options.
+  const values: Record<string, unknown> = { 0: { type: 'image/jpeg' }, 1: 'image/jpeg', 2: 0.5 }
+  let reads = ''
+  const withIndexGetters = <T>(call: () => T): T => {
+    for (const key of Object.keys(values)) {
+      Object.defineProperty(Object.prototype, key, {
+        configurable: true,
+        get() {
+          reads += `${key} `
+          return values[key]
+        },
+        set(value) {
+          Object.defineProperty(this, key, { value, writable: true, enumerable: true, configurable: true })
+        },
+      })
+    }
+    try {
+      return call()
+    } finally {
+      for (const key of Object.keys(values)) delete (Object.prototype as any)[key]
+    }
+  }
+  const viaToBlob = withIndexGetters(() => new Promise<Blob | null>((resolve) => canvas.toBlob(resolve)))
+  t.is(reads.trim(), '', 'toBlob(callback)')
+  const viaConvert = withIndexGetters(() => canvas.convertToBlob())
+  t.is(reads.trim(), '', 'convertToBlob()')
+  t.false('0' in Object.prototype)
+  for (const [label, blob] of [
+    ['toBlob(callback)', await viaToBlob],
+    ['convertToBlob()', await viaConvert],
+  ] as const) {
+    t.deepEqual({ type: blob!.type, b64: b64(new Uint8Array(await blob!.arrayBuffer())) }, png, label)
+  }
+})
+
 // toDataURL gives "data:," when the encoder cannot hold the size; toBlob and
 // convertToBlob encode the top-left part it can hold (JPEG 65500, WebP 16383).
 test('encoders crop or fail at the format maximum like Chrome', async (t) => {
