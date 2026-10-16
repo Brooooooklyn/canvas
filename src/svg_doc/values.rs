@@ -122,6 +122,30 @@ pub(crate) enum Value {
   Auto,
 }
 
+impl Value {
+  /// About the heap memory the value keeps, its shared parts counted whole.
+  pub(crate) fn heap_bytes(&self) -> usize {
+    use std::mem::size_of_val;
+    match self {
+      Value::Paint(Paint::Url(u)) => size_of_val(&**u) + u.0.len(),
+      Value::Dashes(Some(d)) => size_of_val(&**d),
+      Value::Url(Some(t)) | Value::Path(Some(t)) => t.len(),
+      Value::Families(f) => {
+        size_of_val(&**f)
+          + f
+            .iter()
+            .map(|f| match f {
+              Family::Named(n) => n.len(),
+              Family::Generic(_) => 0,
+            })
+            .sum::<usize>()
+      }
+      Value::Transform(Some(t)) => size_of_val(&**t),
+      _ => 0,
+    }
+  }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum TransformFn {
   Matrix([f32; 6]),
