@@ -3340,7 +3340,7 @@ impl Context {
   }
 
   /// `draw_image` of all of `bitmap` 1:1 at the device pixel (`x`, `y`), the
-  /// transform not applied again: an SVG Image rastered through the transform
+  /// transform not applied again: an SVG Image rastered in device pixels
   /// (`SvgImage::plan_draw`). `bounds` (x, y, width, height) is its
   /// destination rect in user space.
   pub(crate) fn draw_device_image(

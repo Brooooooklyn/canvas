@@ -905,6 +905,47 @@ test('a heavily skewed svg draw with rows under one pixel apart keeps a thin str
   }
 })
 
+const shapes =
+  '<circle cx="380" cy="460" r="40" fill="#ff0000"/>' +
+  '<circle cx="500" cy="520" r="25.5" fill="#0000ff"/>' +
+  '<polygon points="560,420 680,470 600,580" fill="#00ff00"/>' +
+  '<path d="M320 590 L680 410" stroke="#000000" stroke-width="2"/>' +
+  '<rect x="420" y="540" width="60" height="40" fill="#ff8800"/>'
+
+// Chrome draws an SVG Image as vectors, which imageSmoothingQuality and
+// imageSmoothingEnabled do not change (measured in Chrome 155 under a scale
+// and a fractional translation). The raster a scaled draw makes in device
+// pixels is put on the canvas 1:1, also at quality 'high', whose cubic
+// resampled it: about 3000 more pixels then differed from Chrome's.
+test('imageSmoothing does not change a scaled svg draw, like Chrome', async (t) => {
+  const image = await loaded(svg('width="1000" height="1000"', shapes))
+  const draw = (setup: (ctx: SKRSContext2D) => void) => {
+    const ctx = createCanvas(300, 150).getContext('2d')
+    ctx.setTransform(0.6, 0, 0, 0.9, 0.25, 0.5)
+    setup(ctx)
+    ctx.drawImage(image, -250.8, -417.8)
+    return Buffer.from(ctx.getImageData(0, 0, 300, 150).data)
+  }
+  const low = draw((ctx) => {
+    ctx.imageSmoothingQuality = 'low'
+  })
+  t.true(low.some((value) => value !== 0))
+  for (const quality of ['medium', 'high'] as const) {
+    t.true(
+      draw((ctx) => {
+        ctx.imageSmoothingQuality = quality
+      }).equals(low),
+      quality,
+    )
+  }
+  t.true(
+    draw((ctx) => {
+      ctx.imageSmoothingEnabled = false
+    }).equals(low),
+    'imageSmoothingEnabled = false',
+  )
+})
+
 // That part is the canvas plus 256 px, grown in 256 px steps only for a
 // shadow or filter that reaches further. A shadow or filter that reaches less
 // keeps the raster of the draw without one, so an animated small shadow or
