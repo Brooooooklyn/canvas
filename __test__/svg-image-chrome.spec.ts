@@ -269,3 +269,48 @@ test('hostile SVG images load without crashing', (t) => {
   // Chrome paints nothing here; SkSVG's filters are not Blink's.
   t.is(out.fe_many_prims[0], true)
 })
+
+// A raster in an SVG image is decoded at the first draw and kept with the
+// image. V8 is told about it, so dropped images are collected without an
+// explicit gc(), as plain PNG images are.
+test('dropped SVG images with a nested raster are collected', (t) => {
+  const script = `
+    const { Image, createCanvas } = require(${JSON.stringify(join(DIR, '..', 'index.js'))})
+    // 1024 x 1024: 4 MiB decoded, about 50 KB encoded.
+    const source = createCanvas(1024, 1024)
+    const sctx = source.getContext('2d')
+    const gradient = sctx.createLinearGradient(0, 0, 1024, 1024)
+    gradient.addColorStop(0, 'red')
+    gradient.addColorStop(1, 'blue')
+    sctx.fillStyle = gradient
+    sctx.fillRect(0, 0, 1024, 1024)
+    const png = source.toBuffer('image/png').toString('base64')
+    const svg = Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">' +
+        '<image href="data:image/png;base64,' + png + '" width="64" height="64"/></svg>',
+    )
+    const N = 40
+    let collected = 0
+    const registry = new FinalizationRegistry(() => collected++)
+    const ctx = createCanvas(8, 8).getContext('2d')
+    ;(async () => {
+      for (let i = 0; i < N; i++) {
+        const image = new Image()
+        image.src = svg
+        ctx.drawImage(image, 0, 0, 8, 8)
+        registry.register(image, i)
+        await new Promise((resolve) => setImmediate(resolve))
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      console.log(JSON.stringify({ N, collected, alpha: ctx.getImageData(4, 4, 1, 1).data[3] }))
+    })()
+  `
+  const run = spawnSync(process.execPath, ['--max-old-space-size=4096', '-e', script], {
+    encoding: 'utf8',
+    timeout: 120_000,
+  })
+  t.is(run.status, 0, run.stderr)
+  const out = JSON.parse(run.stdout)
+  t.is(out.alpha, 255, 'the nested raster draws')
+  t.true(out.collected >= out.N / 2, `${out.collected} of ${out.N} dropped images collected`)
+})
