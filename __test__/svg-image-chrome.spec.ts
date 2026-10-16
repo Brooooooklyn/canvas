@@ -265,6 +265,97 @@ test('svg revert-layer rolls back to lower cascade layers like Chrome', async (t
   }
 })
 
+// var() and memory (decision 13 Q10). Blink copies every substituted value
+// and has no total cap. Here a custom property that is exactly var(--x)
+// shares --x's value, elements with the same declarations and custom
+// properties reuse one substitution (like Blink's matched-properties cache),
+// and an SVG image builds at most 256 MiB of substituted text; past that a
+// var() value is invalid. Each case runs in a process of its own and
+// reports what loading it costs.
+function varCase(body: string) {
+  const script = `
+    const { Image, createCanvas } = require(${JSON.stringify(join(DIR, '..', 'index.js'))})
+    const NS = 'xmlns="http://www.w3.org/2000/svg"'
+    const big = (len) => 'rgb(0, 128,' + ' '.repeat(len - 14) + ' 0)'
+    const B = big(2097152)
+    const { svg, w, h, at } = (() => { ${body} })()
+    const warm = new Image()
+    warm.src = Buffer.from(\`<svg \${NS} width="4" height="4" style="--k: 1"><rect width="4" height="4" style="fill: var(--k, red)"/></svg>\`)
+    createCanvas(4, 4).getContext('2d').drawImage(warm, 0, 0)
+    const bytes = Buffer.from(svg)
+    const before = process.resourceUsage().maxRSS
+    const image = new Image()
+    const t0 = process.hrtime.bigint()
+    image.src = bytes
+    const ms = Number(process.hrtime.bigint() - t0) / 1e6
+    const ctx = createCanvas(w, h).getContext('2d')
+    ctx.drawImage(image, 0, 0)
+    const grownMB = (process.resourceUsage().maxRSS - before) / 1024
+    const px = at.map(([x, y]) => Array.from(ctx.getImageData(x, y, 1, 1).data))
+    console.log(JSON.stringify({ ms, grownMB, px }))
+  `
+  const run = spawnSync(process.execPath, ['--max-old-space-size=4096', '-e', script], {
+    encoding: 'utf8',
+    timeout: 120_000,
+  })
+  if (run.status !== 0) {
+    throw new Error(`status ${run.status}: ${run.stderr}`)
+  }
+  return JSON.parse(run.stdout) as { ms: number; grownMB: number; px: number[][] }
+}
+
+const VAR_GREEN = [0, 128, 0, 255]
+
+test('svg var(): nested aliases of a 2 MiB value share it', (t) => {
+  // 512 nested <g style="--a: var(--big)">: Chrome 155 renders it green and
+  // its renderer grows 17 MB; a copy per level was about 1 GB.
+  const r = varCase(`
+    const open = '<g style="--a: var(--big)">'.repeat(512)
+    const svg = \`<svg \${NS} width="20" height="20"><g style="--big: \${B}">\${open}<rect width="20" height="20" fill="red" style="fill: var(--a)"/>\${'</g>'.repeat(513)}</svg>\`
+    return { svg, w: 20, h: 20, at: [[10, 10]] }
+  `)
+  t.deepEqual(r.px, [VAR_GREEN])
+  t.true(r.grownMB < 256, `grew ${r.grownMB} MB`)
+})
+
+test('svg var(): siblings and inheriting children reuse one substitution', (t) => {
+  // 4096 rects that each substitute a 2 MiB value: Chrome 155 takes 37 ms
+  // (siblings) and 102 ms (inheriting children); a substitution per
+  // element took seconds.
+  const sib = varCase(`
+    const rect = '<rect width="20" height="20" fill="red" style="--a: var(--big); fill: var(--a)"/>'
+    const svg = \`<svg \${NS} width="20" height="20"><g style="--big: \${B}">\${rect.repeat(4096)}</g></svg>\`
+    return { svg, w: 20, h: 20, at: [[10, 10]] }
+  `)
+  t.deepEqual(sib.px, [VAR_GREEN])
+  t.true(sib.ms < 2000, `siblings: ${sib.ms} ms`)
+  const inh = varCase(`
+    let decl = \`--big: \${B};\`
+    for (let i = 0; i < 64; i++) decl += \` --a\${i}: var(--big);\`
+    const rect = '<rect width="20" height="20" fill="red" style="fill: var(--a63)"/>'
+    const svg = \`<svg \${NS} width="20" height="20"><g style="\${decl}">\${rect.repeat(4096)}</g></svg>\`
+    return { svg, w: 20, h: 20, at: [[10, 10]] }
+  `)
+  t.deepEqual(inh.px, [VAR_GREEN])
+  t.true(inh.ms < 2000, `inheriting children: ${inh.ms} ms`)
+})
+
+test('svg var(): past 256 MiB of substituted text a value is invalid', (t) => {
+  // 160 rects with different custom properties each substitute the 2 MiB
+  // value: 320 MiB. The ones past the budget get what a var() that fails
+  // gives in Chrome 155 (invalid at computed-value time: fill inherits the
+  // <g>'s blue over the rect's fill="red").
+  const r = varCase(`
+    let rects = ''
+    for (let i = 0; i < 160; i++) {
+      rects += \`<rect x="\${i}" width="1" height="10" fill="red" style="--i: \${i}; --a: var(--big); fill: var(--a)"/>\`
+    }
+    const svg = \`<svg \${NS} width="160" height="10"><g fill="blue" style="--big: \${B}">\${rects}</g></svg>\`
+    return { svg, w: 160, h: 10, at: [[10, 5], [100, 5], [150, 5], [159, 5]] }
+  `)
+  t.deepEqual(r.px, [VAR_GREEN, VAR_GREEN, BLUE, BLUE])
+})
+
 test('drawImage(svg) with an empty source rect draws nothing', async (t) => {
   const c: Case = require(join(FIXTURES, 'corpora', 'draw.cjs')).empty_sw
   const { data } = await draw(c)
