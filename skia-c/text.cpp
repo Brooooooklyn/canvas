@@ -87,9 +87,12 @@ using LineRun = TextCaches::Run;
 using Line = TextCaches::Line;
 
 constexpr float kMaxLayoutWidth = 100000;
-// TextCaches::lines holds up to this many lines and about this many bytes.
+// TextCaches::lines holds up to this many lines and about this many bytes
+// (TextCaches::line_bytes). A loop over 128 lines of 300 words stays in it,
+// as it stayed in skparagraph's ParagraphCache (128 paragraphs, now off),
+// which kept about 25 times the bytes for each.
 constexpr size_t kMaxLines = 512;
-constexpr size_t kMaxLineBytes = 4 << 20;
+constexpr size_t kMaxLineBytes = 16 << 20;
 
 bool StartsWithLanguage(std::string_view lang, std::string_view language) {
   if (lang.size() < language.size()) {
@@ -272,22 +275,30 @@ int FracBits(double value) {
   return std::max(0, 53 - exponent - trailing);
 }
 
+// The bytes that text blobs with `runs` blob runs (or blobs) of `glyphs`
+// glyphs in all keep, as malloc counts them: about 128 for a blob run's
+// record, its share of a blob and its slot in Line::runs, and 10 for a
+// glyph's id and position.
+size_t BlobBytes(size_t runs, size_t glyphs) {
+  return 128 * runs + 10 * glyphs;
+}
+
 // Joins the runs of `line` into `line->single` (one blob run for each run
 // of a font) when they share one baseline and every glyph's ink is inside
 // its own blob's bounds: a canvas skips a blob whose bounds miss the clip,
 // and some fonts' glyphs overflow the font's bounding box, which the bounds
-// come from.
-void MakeSingleBlob(Line* line) {
+// come from. Returns the bytes `line->single` keeps.
+size_t MakeSingleBlob(Line* line) {
   const auto& runs = line->runs;
   if (runs.size() < 2) {
-    return;
+    return 0;
   }
   // The blob runs: consecutive runs of one font.
   std::vector<std::pair<SkFont, int>> fonts;
   std::vector<SkRect> glyph_bounds;
   for (const LineRun& line_run : runs) {
     if (line_run.origin.fY != runs[0].origin.fY) {
-      return;
+      return 0;
     }
     SkTextBlob::Iter it(*line_run.blob);
     SkTextBlob::Iter::ExperimentalRun run;
@@ -308,7 +319,7 @@ void MakeSingleBlob(Line* line) {
                 .makeOffset(run.positions[g].fX, run.positions[g].fY)
                 .makeOutset(1, 1);
         if (!line_run.blob->bounds().contains(ink)) {
-          return;
+          return 0;
         }
       }
     }
@@ -352,6 +363,11 @@ void MakeSingleBlob(Line* line) {
   line->single_origin = runs[0].origin;
   line->frac_bits = bits;
   line->span = 2 * max_offset + max_x;
+  size_t glyph_count = 0;
+  for (const auto& font : fonts) {
+    glyph_count += font.second;
+  }
+  return BlobBytes(fonts.size(), glyph_count);
 }
 
 // Whether drawing `line.single` at x on `canvas` with `paint` puts every
@@ -741,9 +757,9 @@ Line* FindOrLayOutLine(skiac_font_collection* c_collection,
       glyphs += blob_run.count;
     }
   }
-  // A glyph costs an id and a position in its run's blob and in the single
-  // blob, with the blob and font overheads on top.
-  const size_t bytes = key.size() + 512 + 32 * fresh.runs.size() + 24 * glyphs;
+  // The key, its map node and the Line take about 512 bytes on top; a draw
+  // adds the single blob's (MeasureOrDraw).
+  const size_t bytes = key.size() + 512 + BlobBytes(fresh.runs.size(), glyphs);
   if (caches.lines.size() >= kMaxLines ||
       caches.line_bytes + bytes > kMaxLineBytes) {
     caches.lines.clear();
@@ -829,7 +845,7 @@ void MeasureOrDraw(skiac_font_collection* c_collection,
                                : paint_x - rtl_offset + letter_spacing_offset;
     const float final_y = y + baseline_y - line_baseline;
     if (!line->joined) {
-      MakeSingleBlob(line);
+      GetTextCaches(c_collection).line_bytes += MakeSingleBlob(line);
       line->joined = true;
     }
     if (DrawsLikeRuns(*line, canvas, *paint, final_x)) {
