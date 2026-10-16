@@ -199,6 +199,72 @@ macos('svg <text> is drawn with canvas text anti-aliasing', async (t) => {
   t.deepEqual(row, [119, 255, 255, 255, 184])
 })
 
+// A 20x20 SVG image drawn at (0, 0): the pixels at (5, 5) and (15, 15).
+async function corners(style: string, body: string) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><style>${style}</style>${body}</svg>`
+  const { data } = await draw({ svg, w: 20, h: 20 })
+  return [pixel(data, 20, 5, 5), pixel(data, 20, 15, 15)]
+}
+
+const RECT = '<rect width="20" height="20"'
+const RED = [255, 0, 0, 255]
+const GREEN = [0, 128, 0, 255]
+const BLUE = [0, 0, 255, 255]
+const BLACK = [0, 0, 0, 255]
+
+test('svg revert-layer rolls back to lower cascade layers like Chrome', async (t) => {
+  // Chrome 155.0.8059.80: StyleCascade::ResolveRevertLayer compares layers
+  // without importance (CascadePriority::ForLayerComparison); presentation
+  // attributes are below every layer, style="" above all of them, and a
+  // property with no lower layer left reverts to the UA sheet.
+  const cases: [string, string, string, number[][]][] = [
+    ['RL1', '@layer a,b; @layer a{rect{fill:red}} @layer b{rect{fill:revert-layer}}', `${RECT}/>`, [RED, RED]],
+    ['RL5', '@layer a{rect{fill:revert-layer}}', `${RECT} fill="green"/>`, [GREEN, GREEN]],
+    ['RL7', '@layer a{rect{fill:red}} rect{fill:blue}', `${RECT} style="fill:revert-layer"/>`, [BLUE, BLUE]],
+    [
+      'RLi1',
+      '@layer a,b; @layer a{rect{fill:red}} @layer b{rect{fill:revert-layer !important}}',
+      `${RECT}/>`,
+      [RED, RED],
+    ],
+    [
+      'RLi2',
+      '@layer a,b; @layer b{rect{fill:red !important}} @layer a{rect{fill:revert-layer !important}}',
+      `${RECT}/>`,
+      [BLACK, BLACK],
+    ],
+    [
+      'RL12',
+      '@layer a,b; @layer a{rect{--c:red}} @layer b{rect{--c:revert-layer}} rect{fill:var(--c,blue)}',
+      `${RECT}/>`,
+      [RED, RED],
+    ],
+    ['RLc2', 'rect{--c:green} rect{fill:var(--c,blue)}', `${RECT} style="--c:revert-layer"/>`, [GREEN, GREEN]],
+    // A nested <svg> whose overflow reverts clips (UA overflow: hidden).
+    [
+      'B3',
+      '',
+      '<svg width="10" height="10" overflow="visible" style="overflow:revert"><rect width="20" height="20" fill="red"/></svg>',
+      [RED, [0, 0, 0, 0]],
+    ],
+    [
+      'B4',
+      'svg svg{overflow:revert-layer}',
+      '<svg width="10" height="10"><rect width="20" height="20" fill="red"/></svg>',
+      [RED, [0, 0, 0, 0]],
+    ],
+    [
+      'B4b',
+      'svg svg{overflow:revert-layer}',
+      '<svg width="10" height="10" overflow="visible"><rect width="20" height="20" fill="red"/></svg>',
+      [RED, RED],
+    ],
+  ]
+  for (const [name, style, body, want] of cases) {
+    t.deepEqual(await corners(style, body), want, name)
+  }
+})
+
 test('drawImage(svg) with an empty source rect draws nothing', async (t) => {
   const c: Case = require(join(FIXTURES, 'corpora', 'draw.cjs')).empty_sw
   const { data } = await draw(c)
