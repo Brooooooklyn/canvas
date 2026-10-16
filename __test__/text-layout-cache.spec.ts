@@ -164,3 +164,28 @@ test('an SVG canvas writes a line the same way however often it was drawn before
   // draw.
   t.is(svg(LINES[0], `${LINES[0].text} one`, 10).match(/<text/g)?.length, 1)
 })
+
+// skparagraph's own cache of shaped paragraphs took sizes and spacings
+// within 1/4096 px for the same, so a line laid out after a nearly equal one
+// took that one's shaping. The laid out lines are kept by their exact
+// settings instead.
+test('a line laid out after a nearly equal one measures what it measures alone', (t) => {
+  const text = 'Hello AVAWAY world, fluffy Tokyo'
+  const pairs: [Partial<Line>, Partial<Line>][] = [
+    [{ font: '16px CacheLato' }, { font: '16.0001px CacheLato' }],
+    [{ letterSpacing: '1px' }, { letterSpacing: '1.0001px' }],
+  ]
+  const measure = (settings: Partial<Line>) => {
+    const ctx = createCanvas(10, 10).getContext('2d')
+    setUp(ctx, { ...LINES[1], ...settings })
+    const metrics = ctx.measureText(text)
+    return [metrics.width, metrics.actualBoundingBoxLeft, metrics.actualBoundingBoxRight]
+  }
+  pairs.forEach(([first, second], i) => {
+    measure(first)
+    const after = measure(second)
+    // A new alias drops every cached layout.
+    t.true(GlobalFonts.setAlias('CacheLato', `CacheLatoAlone${i}`))
+    t.deepEqual(after, measure(second), JSON.stringify(second))
+  })
+})
