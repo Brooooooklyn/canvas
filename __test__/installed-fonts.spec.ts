@@ -74,9 +74,12 @@ function measure(family: string) {
 // Descent, fontBoundingBoxAscent and Descent, and the width for Times. SF's
 // width is left out: Chrome applies its AAT tracking at the font size
 // (harfbuzz_face.cc hb_font_set_ptem), skparagraph's HarfBuzz at 12pt.
+// Italic is CoreText's italic UI font (SFNSItalic), not a slanted upright.
 const SYSTEM_UI: Record<string, number[]> = {
   '20px system-ui': [-1.695404052734375, 14.690093994140625, 3.687896728515625, 19, 4],
   'bold 20px system-ui': [-1.58203125, 15.384368896484375, 3.744659423828125, 19, 4],
+  'italic 20px system-ui': [-0.57403564453125, 14.70703125, 3.98468017578125, 19, 4],
+  'bold italic 20px system-ui': [-0.45196533203125, 15.458984375, 4.049224853515625, 19, 4],
   '20px BlinkMacSystemFont': [-1.695404052734375, 14.690093994140625, 3.687896728515625, 19, 4],
   'bold 20px BlinkMacSystemFont': [-1.58203125, 15.384368896484375, 3.744659423828125, 19, 4],
   '20px -apple-system': [-0.322265625, 13.65234375, 4.35546875, 18, 5, 168.49609375],

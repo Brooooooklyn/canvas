@@ -97,8 +97,17 @@ SyntheticStyle SynthesizeStyle(skiac_font_collection* c_collection,
   }
   if (IsSystemTypeface(c_collection, base)) {
     // `face` is the instance at the request's axes, its style from them.
-    return {weight > 200 + face->fontStyle().weight(),
-            slope == kItalicSlope && !face->isItalic()};
+    SkFontStyle style = face->fontStyle();
+#if defined(__APPLE__)
+    // The UI font's faces: Skia's style for the italic ones is upright 400;
+    // their traits have the slant and the weight (CoreTextFontStyle).
+    if (c_collection->system_ui_ids.count(base->uniqueID())) {
+      style = CoreTextFontStyle(face);
+    }
+#endif
+    return {
+        weight > 200 + style.weight(),
+        slope == kItalicSlope && style.slant() == SkFontStyle::kUpright_Slant};
   }
   // CSSSegmentedFontFace: `auto` descriptors are weight 400 and slope 0.
   bool bold = weight >= kBoldThreshold;
