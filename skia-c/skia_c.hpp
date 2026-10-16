@@ -127,8 +127,14 @@ sk_sp<SkTypeface> MakeCanvasTypefaceFromFile(const char* path);
 #if defined(__APPLE__)
 // Every font CoreText lists, by name.
 sk_sp<SkFontMgr> MakeCoreTextFontManager();
-// CoreText's UI font (system-ui): upright, and italic when it has one.
-std::vector<sk_sp<SkTypeface>> MakeSystemUiTypefaces();
+// The family "system-ui": CoreText's UI font and its bold, italic and bold
+// italic; `ids` gets their typeface ids.
+sk_sp<SkFontMgr> MakeSystemUiFontManager(std::set<SkTypefaceID>* ids);
+// A CoreText typeface's style from its font's traits. SkTypeface::fontStyle
+// takes them from the font's descriptor, which for CoreText's italic UI font
+// (CTFontCreateCopyWithSymbolicTraits) and its instances has only the italic
+// trait: upright 400 to Skia.
+SkFontStyle CoreTextFontStyle(SkTypeface* face);
 #endif
 // text_raster.cpp: the text gamma and contrast of Chrome's canvas surfaces.
 SkSurfaceProps CanvasSurfaceProps();
@@ -657,7 +663,7 @@ struct skiac_font_collection {
   // cache gives that font (font_cache_mac.mm CreateFontPlatformData).
   // CoreText does not list it (a dot name), so it is not with the installed
   // fonts; FontCollection asks it after them (its test font manager).
-  sk_sp<TypefaceFontProvider> system_ui;
+  sk_sp<SkFontMgr> system_ui;
   std::set<SkTypefaceID> system_ui_ids;
 #endif
 
@@ -686,11 +692,7 @@ struct skiac_font_collection {
     }
     font_mgr = MakeCoreTextFontManager();
     collection->setAssetFontManager(font_mgr);
-    system_ui = sk_make_sp<TypefaceFontProvider>();
-    for (sk_sp<SkTypeface>& face : MakeSystemUiTypefaces()) {
-      system_ui_ids.insert(face->uniqueID());
-      system_ui->registerTypeface(std::move(face), SkString("system-ui"));
-    }
+    system_ui = MakeSystemUiFontManager(&system_ui_ids);
     collection->setTestFontManager(system_ui);
     coretext_families.clear();
     installed_fonts_pending = true;
