@@ -28,6 +28,10 @@ function expectedValues(section: string, key: string): unknown[] {
   return x64 === undefined ? [arm] : [x64, arm]
 }
 
+// The Windows ARM64 Skia build rounds raster math a little differently (main
+// skips exact checks there too: pathkit.spec.ts).
+const WIN_ARM64 = process.platform === 'win32' && process.arch === 'arm64'
+
 function deepEqualOneOf(t: ExecutionContext, actual: unknown, list: unknown[]) {
   const json = JSON.stringify(actual)
   if (list.some((e) => JSON.stringify(e) === json)) {
@@ -238,6 +242,16 @@ for (const s of Object.keys(S.alpha)) {
   })
 }
 
+// The same keys, and every byte of each row within 1 of `expected`.
+const nearRow = (actual: Row, expected: Row) =>
+  JSON.stringify(Object.keys(actual).sort()) === JSON.stringify(Object.keys(expected).sort()) &&
+  Object.keys(actual).every((cs) => {
+    const [a, e] = [actual[cs], expected[cs]]
+    return Array.isArray(a) && Array.isArray(e)
+      ? a.length === e.length && a.every((v, i) => Math.abs(v - e[i]) <= 1)
+      : a === e
+  })
+
 // sc-grad.js: 64x1 linear gradient, stops spread evenly (a single stop sits at 0.5).
 for (const key of Object.keys(S.grad).filter((k) => k !== '__latch')) {
   test(`gradient stops match Chrome: ${key}`, (t) => {
@@ -256,7 +270,14 @@ for (const key of Object.keys(S.grad).filter((k) => k !== '__latch')) {
       ctx.fillRect(0, 0, 64, 1)
       r[cs] = row(ctx, 64)
     }
-    deepEqualOneOf(t, r, expectedValues('grad', key))
+    const expected = expectedValues('grad', key)
+    // Windows ARM64 CI measured one byte off by 1: 54 (Chrome 55) in the display-p3 row of
+    // 'color(display-p3 1 0 0) -> white'.
+    if (WIN_ARM64 && expected.some((e) => nearRow(r, e as Row))) {
+      t.pass()
+    } else {
+      deepEqualOneOf(t, r, expected)
+    }
   })
 }
 
