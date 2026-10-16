@@ -422,18 +422,20 @@ fn is_callable(env: sys::napi_env, value: sys::napi_value) -> Result<bool> {
 
 /// The intrinsics of a realm that the conversions use: Symbol.toPrimitive,
 /// Symbol.iterator and Proxy, and the getters `resizable` and `detached` of
-/// ArrayBuffer.prototype, read once, when the addon is registered in the
+/// ArrayBuffer.prototype; and those that ImageData uses: the Float16Array
+/// constructor, and a WeakMap with its `set` that keeps ImageData data alive.
+/// Read (and the WeakMap made) once, when the addon is registered in the
 /// environment of the realm. Chrome uses those of its realm, or reads the
 /// state itself, so a script that replaces globalThis.Symbol,
-/// globalThis.Proxy or an ArrayBuffer getter later changes no conversion. A
-/// worker thread has an environment and a realm of its own, and an
-/// environment stays on its thread.
+/// globalThis.Proxy, an ArrayBuffer getter, Float16Array or WeakMap later
+/// changes no conversion and no ImageData. A worker thread has an environment
+/// and a realm of its own, and an environment stays on its thread.
 struct RealmIntrinsics {
   env: sys::napi_env,
   /// An object with the own data properties toPrimitive, iterator, Proxy,
-  /// arrayBufferResizable and arrayBufferDetached, each undefined when it
-  /// could not be read. An object, because napi_create_reference takes a
-  /// symbol only from Node-API 10 on.
+  /// arrayBufferResizable, arrayBufferDetached, Float16Array, imageDataMap
+  /// and weakMapSet, each undefined when it could not be read. An object,
+  /// because napi_create_reference takes a symbol only from Node-API 10 on.
   holder: sys::napi_ref,
 }
 
@@ -522,6 +524,19 @@ pub fn capture_realm_intrinsics(_exports: Object, env: Env) -> Result<()> {
       .then(|| read(descriptor, c"get", sys::ValueType::napi_function))
       .flatten()
   };
+  // The WeakMap of image.rs attach_data, and the `set` it has now.
+  let weak_map = read(global, c"WeakMap", sys::ValueType::napi_function).and_then(|constructor| {
+    let mut map = ptr::null_mut();
+    if unsafe { sys::napi_new_instance(env, constructor, 0, ptr::null(), &mut map) }
+      != sys::Status::napi_ok
+    {
+      let mut exception = ptr::null_mut();
+      unsafe { sys::napi_get_and_clear_last_exception(env, &mut exception) };
+      return None;
+    }
+    (raw_type_of(env, map).ok()? == sys::ValueType::napi_object).then_some(map)
+  });
+  let weak_map_set = weak_map.and_then(|map| read(map, c"set", sys::ValueType::napi_function));
   let members = [
     member(c"toPrimitive", well_known(c"toPrimitive")),
     member(c"iterator", well_known(c"iterator")),
@@ -531,6 +546,12 @@ pub fn capture_realm_intrinsics(_exports: Object, env: Env) -> Result<()> {
     ),
     member(c"arrayBufferResizable", array_buffer_getter(c"resizable")),
     member(c"arrayBufferDetached", array_buffer_getter(c"detached")),
+    member(
+      c"Float16Array",
+      read(global, c"Float16Array", sys::ValueType::napi_function),
+    ),
+    member(c"imageDataMap", weak_map),
+    member(c"weakMapSet", weak_map_set),
   ];
   check_status!(unsafe {
     sys::napi_define_properties(env, holder, members.len(), members.as_ptr())
@@ -575,7 +596,10 @@ unsafe extern "C" fn forget_realm_intrinsics(env: *mut std::ffi::c_void) {
 
 /// The intrinsic `name` (a member of [`RealmIntrinsics::holder`]) of the
 /// realm of `env`; None when it could not be read at registration.
-fn intrinsic(env: sys::napi_env, name: &std::ffi::CStr) -> Result<Option<sys::napi_value>> {
+pub(crate) fn intrinsic(
+  env: sys::napi_env,
+  name: &std::ffi::CStr,
+) -> Result<Option<sys::napi_value>> {
   let Some(reference) = REALM_INTRINSICS.with_borrow(|list| {
     list
       .iter()
