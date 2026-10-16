@@ -18,6 +18,7 @@
 #include <include/ports/SkTypeface_mac.h>
 #endif
 
+#include "text.hpp"
 #include "text_raster.hpp"
 
 #include <math.h>
@@ -274,6 +275,16 @@ BlinkLine CollectBlinkLine(ParagraphImpl* paragraph,
     }
     line.runs.push_back(std::move(run));
   });
+  // TextLine puts a run after a piece narrower than nothing as if that piece
+  // were 0 wide; Blink adds the advances as they are (LineRunShifts, in the
+  // order visit() gives the runs, one per text blob). Chrome draws the
+  // glyphs unclipped, as here.
+  const std::vector<float> run_origins = LineRunShifts(paragraph);
+  if (run_origins.size() == line.runs.size()) {
+    for (size_t i = 0; i < run_origins.size(); ++i) {
+      line.runs[i].origin.fX += run_origins[i];
+    }
+  }
   // The glyphs visit() skips are the trailing spaces, which sit at the end of
   // the line in the paragraph's direction: left of every other glyph in RTL.
   if (rtl) {

@@ -402,6 +402,49 @@
       "harm ls6px": 44.4434,
       "harm ls-3px": 44.4434
     },
+    "negativeSpacing": {
+      "48px LatoT \"Hello world\" ltr left ls0px ws-20px": [223.8879, -4.176, 220.2159, 35.352, 0.336, "303,44,520,80"],
+      "48px LatoT \"Hello world\" ltr left ls-14px ws0px": [89.8879, -4.176, 100.2159, 35.352, 0.336, "303,44,400,80"],
+      "48px LatoT \"a b c d\" ltr left ls0px ws-20px": [68.208, -2.208, 64.536, 35.352, 0.384, "301,44,364,80"],
+      "48px LatoT \"a b c d\" ltr center ls0px ws-20px": [68.208, 31.896, 30.432, 35.352, 0.384, "267,44,330,80"],
+      "48px LatoT \"a b c d\" ltr right ls0px ws-20px": [68.208, 66, -3.672, 35.352, 0.384, "233,44,296,80"],
+      "48px LatoT \"a b c d\" rtl left ls0px ws-20px": [68.208, -2.208, 64.536, 35.352, 0.384, "301,44,364,80"],
+      "48px LatoT \"a b c d\" rtl start ls0px ws-20px": [68.208, 66, -3.672, 35.352, 0.384, "233,44,296,80"],
+      "16px LatoT \"Hello world\" ltr left ls0px ws-5px": [76.2959, -1.392, 75.0719, 11.784, 0.112, "301,68,375,80"],
+      "16px LatoT \"Hello world\" ltr left ls-5px ws0px": [26.2959, -1.392, 30.0719, 11.784, 0.112, "301,68,330,80"],
+      "48px LatoT, HanT \"ab 中文 cd\" ltr left ls0px ws-20px": [
+        174.944,
+        -2.208,
+        171.272,
+        40.7109,
+        4.2656,
+        "301,38,471,84"
+      ],
+      "48px LatoT, HanT \"ab 中文 cd\" ltr left ls-12px ws0px": [
+        118.944,
+        -2.208,
+        127.272,
+        40.7109,
+        4.2656,
+        "301,38,427,84"
+      ],
+      "40px HarmattanT \"abc سلام def\" ltr left ls0px ws-15px": [
+        139.1797,
+        -1.3867,
+        139.9805,
+        23.7305,
+        11.4844,
+        "301,55,440,91"
+      ],
+      "40px HarmattanT \"abc سلام def\" rtl left ls0px ws-15px": [
+        139.1797,
+        -1.5234,
+        137.7734,
+        23.7305,
+        11.4844,
+        "301,55,438,91"
+      ]
+    },
     "alphaReset": {
       "arm64": {
         "copy": [
