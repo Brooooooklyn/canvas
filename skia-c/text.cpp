@@ -71,8 +71,8 @@ struct TextCaches {
       metrics;
   // The SkUnicode every paragraph shares; skparagraph keeps no state in it.
   sk_sp<SkUnicode> unicode;
-  // Kept like skparagraph's ParagraphCache keeps shaped text, within a
-  // budget of lines and about `line_bytes` bytes.
+  // Kept within a budget of lines and about `line_bytes` bytes, in place of
+  // skparagraph's ParagraphCache (turned off in skiac_font_collection).
   std::unordered_map<std::string, Line> lines;
   size_t line_bytes = 0;
 };
