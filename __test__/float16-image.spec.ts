@@ -214,6 +214,61 @@ test('half-float decodes past 512 MiB are made again at the next draw', async (t
   )
 })
 
+// An Image of a 16-bit PNG keeps a copy of the encoded image to make its
+// half-float decodes from, and frees it when the Image is collected. The copy
+// used to be made on a libuv thread and freed on the JS thread, and mimalloc
+// kept it until that libuv thread had made about 100 more such copies: RSS
+// grew by a round's encoded bytes every round below. The PNGs are 8x8 with
+// 2 MiB after IEND, which decoders skip, so the copies are large and the
+// decodes small. Not measured on Windows.
+const rssTest = process.platform === 'win32' ? test.skip : test
+rssTest('collected 16-bit PNG Images give back their encoded copy', async (t) => {
+  const index = JSON.stringify(fileURLToPath(new URL('../index.js', import.meta.url)))
+  const png = JSON.stringify(fileURLToPath(fixtureUrl('hbd-8x8.png')))
+  const script = `
+    const { createCanvas, Image } = require(${index})
+    const png = require('node:fs').readFileSync(${png})
+    const pngs = [1, 2, 3, 4].map((fill) => Buffer.concat([png, Buffer.alloc(2 << 20, fill)]))
+    const ctx = createCanvas(8, 8).getContext('2d', { colorType: 'float16' })
+    ;(async () => {
+      const rss = []
+      for (let round = 0; round < 12; round++) {
+        let images = []
+        for (let i = 0; i < 24; i++) {
+          const image = new Image()
+          image.src = pngs[i % pngs.length]
+          await image.decode()
+          ctx.drawImage(image, 0, 0)
+          images.push(image)
+        }
+        images = null
+        for (let k = 0; k < 3; k++) {
+          gc()
+          await new Promise((resolve) => setTimeout(resolve, 50))
+        }
+        rss.push(process.memoryUsage.rss())
+      }
+      console.log(JSON.stringify({ encoded: 24 * pngs[0].length, rss }))
+    })().catch((error) => {
+      console.error(error)
+      process.exit(1)
+    })
+  `
+  // Four libuv threads, the default: each one held up to about 100 copies.
+  const { stdout } = await promisify(execFile)(process.execPath, ['--expose-gc', '-e', script], {
+    env: { ...process.env, UV_THREADPOOL_SIZE: '4' },
+    maxBuffer: 1 << 20,
+  })
+  const { encoded, rss } = JSON.parse(stdout) as { encoded: number; rss: number[] }
+  const mb = (bytes: number) => (bytes / 1048576).toFixed(1)
+  // The last 6 rounds, after 6 to warm up the allocators.
+  const grown = Math.max(...rss.slice(6)) - rss[5]
+  t.true(
+    grown < encoded,
+    `RSS grew ${mb(grown)} MB in 6 rounds of ${mb(encoded)} MB of images (RSS MB a round: ${rss.map(mb).join(', ')})`,
+  )
+})
+
 // Each worker keeps its own half-float decodes, and drops them as it exits.
 test('workers draw 16-bit PNGs on float16 canvases and exit cleanly', async (t) => {
   const index = JSON.stringify(fileURLToPath(new URL('../index.js', import.meta.url)))
