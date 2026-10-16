@@ -540,37 +540,38 @@ void LayOutLine(skiac_font_collection* c_collection,
     size_t end;
     int caps;
     bool small;
-    // A zero width space word: no letter spacing.
-    bool zero_width;
   };
   std::vector<Piece> pieces;
   std::string_view shaped = text;
   std::string caps_text;
-  // Without letter spacing there is nothing to leave out (and one word
-  // stays one text block).
-  auto zero_width = [&](const std::pair<size_t, size_t>& word) {
-    return letter_spacing != 0 && IsZeroWidthSpaceWord(text.substr(
-                                      word.first, word.second - word.first));
-  };
   if (request.variant_caps == 0) {
     for (const auto& word : words) {
-      pieces.push_back({word.first, word.second, 0, false, zero_width(word)});
+      pieces.push_back({word.first, word.second, 0, false});
     }
   } else {
     for (auto& word : words) {
-      const bool word_zero_width = zero_width(word);
       const size_t word_start = caps_text.size();
       for (const CapsPiece& piece : SplitCaps(
                c_collection, primary,
                text.substr(word.first, word.second - word.first), request)) {
         const size_t start = caps_text.size();
         caps_text += piece.text;
-        pieces.push_back({start, caps_text.size(), piece.caps, piece.small,
-                          word_zero_width});
+        pieces.push_back({start, caps_text.size(), piece.caps, piece.small});
       }
       word = {word_start, caps_text.size()};
     }
     shaped = caps_text;
+  }
+  // The characters Blink gives no letter spacing (NoLetterSpacingRanges),
+  // in either shaping: text blocks of their own with letter spacing 0. They
+  // keep their piece's half leading, so skparagraph shapes them with it
+  // (letter spacing is not a font attribute): a ZWJ sequence or a kerning
+  // pair across a ZWJ stays one shaping. skparagraph spaces a cluster by
+  // the block it starts in. Without letter spacing there is nothing to
+  // leave out (and one word stays one text block).
+  std::vector<std::pair<size_t, size_t>> no_spacing;
+  if (letter_spacing != 0) {
+    no_spacing = NoLetterSpacingRanges(shaped);
   }
   sk_sp<SkUnicode>& unicode = GetTextCaches(c_collection).unicode;
   if (!unicode) {
@@ -578,9 +579,19 @@ void LayOutLine(skiac_font_collection* c_collection,
   }
   ParagraphBuilderImpl builder(paragraph_style, font_collection, unicode);
   if (pieces.size() == 1 && pieces[0].caps == 0 && !pieces[0].small &&
-      !pieces[0].zero_width) {
+      no_spacing.empty()) {
     builder.addText(shaped.data(), shaped.size());
   } else {
+    auto add = [&](const TextStyle& style, size_t start, size_t end) {
+      if (start < end) {
+        builder.pushStyle(style);
+        builder.addText(shaped.data() + start, end - start);
+        builder.pop();
+      }
+    };
+    // The next range of `no_spacing` that ends after the current piece's
+    // start; the pieces and the ranges are in text order.
+    size_t range = 0;
     for (size_t i = 0; i < pieces.size(); ++i) {
       TextStyle piece_style = text_style;
       piece_style.setHalfLeading(i % 2 == 1);
@@ -588,13 +599,25 @@ void LayOutLine(skiac_font_collection* c_collection,
       if (pieces[i].small) {
         piece_style.setFontSize(SmallCapsSize(request.size));
       }
-      if (pieces[i].zero_width) {
-        piece_style.setLetterSpacing(0);
+      std::optional<TextStyle> unspaced_style;
+      size_t at = pieces[i].start;
+      const size_t end = pieces[i].end;
+      while (range < no_spacing.size() && no_spacing[range].first < end) {
+        if (!unspaced_style) {
+          unspaced_style = piece_style;
+          unspaced_style->setLetterSpacing(0);
+        }
+        const size_t from = std::max(at, no_spacing[range].first);
+        const size_t to = std::min(end, no_spacing[range].second);
+        add(piece_style, at, from);
+        add(*unspaced_style, from, to);
+        at = to;
+        if (no_spacing[range].second > end) {
+          break;
+        }
+        ++range;
       }
-      builder.pushStyle(piece_style);
-      builder.addText(shaped.data() + pieces[i].start,
-                      pieces[i].end - pieces[i].start);
-      builder.pop();
+      add(piece_style, at, end);
     }
   }
   std::unique_ptr<ParagraphImpl> paragraph(

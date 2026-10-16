@@ -15,6 +15,8 @@ typedef int32_t UChar32;
 typedef int UErrorCode;  // U_ZERO_ERROR = 0; failures are > 0
 
 // UProperty
+constexpr int UCHAR_DEFAULT_IGNORABLE_CODE_POINT = 5;
+constexpr int UCHAR_GRAPHEME_EXTEND = 11;
 constexpr int UCHAR_EMOJI_PRESENTATION = 58;
 constexpr int UCHAR_EMOJI_COMPONENT = 61;
 constexpr int UCHAR_EXTENDED_PICTOGRAPHIC = 64;

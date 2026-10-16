@@ -106,10 +106,35 @@ bool IsCommonOrInheritedScript(UChar32 c) {
 // and carriage return (spaces on a canvas): PlainTextNode makes these
 // zero width spaces, which end words. They stay in the text here, where
 // HarfBuzz draws them with no width and the bidi controls keep their
-// effect (Blink runs BiDi on the original text).
+// effect (Blink runs BiDi on the original text). Letter spacing skips a
+// wider set (GetsNoLetterSpacing).
 bool IsZeroWidthSpaceLike(UChar32 c) {
   return c == 0xAD || c == kZeroWidthSpace || c == 0x200E || c == 0x200F ||
          (c >= 0x202A && c <= 0x202E) || c == 0xFEFF || c == 0xFFFC;
+}
+
+// ShapeResultSpacing::ComputeSpacing adds no letter spacing to a HarfBuzz
+// cluster whose first UTF-16 code unit is Character::TreatAsZeroWidthSpace:
+// form feed, carriage return, U+FFFC and the Default_Ignorable_Code_Points
+// (below U+0100 only the soft hyphen; ZWNJ and ZWJ are among them). Blink's
+// clusters are grapheme clusters; skparagraph's are characters
+// (HB_BUFFER_CLUSTER_LEVEL_MONOTONE_CHARACTERS), so a default ignorable
+// after a base, a cluster of its own here, is inside the base's cluster
+// there and adds nothing to it either. Above U+FFFF Blink reads a lead
+// surrogate, which is not default ignorable: a default ignorable there gets
+// letter spacing when it starts a grapheme cluster (U+E0001), and none when
+// it extends one (the tags and variation selectors of U+E0000 to U+E0FFF).
+bool GetsNoLetterSpacing(UChar32 c) {
+  if (c == 0xC || c == 0xD || c == 0xFFFC) {
+    return true;
+  }
+  if (c < 0x100) {
+    return c == 0xAD;
+  }
+  if (!u_hasBinaryProperty(c, UCHAR_DEFAULT_IGNORABLE_CODE_POINT)) {
+    return false;
+  }
+  return c <= 0xFFFF || u_hasBinaryProperty(c, UCHAR_GRAPHEME_EXTEND);
 }
 
 bool IsWordDelimiter(UChar32 c) {
@@ -246,11 +271,28 @@ std::vector<std::pair<size_t, size_t>> SplitWords(std::string_view text) {
   return words;
 }
 
-bool IsZeroWidthSpaceWord(std::string_view word) {
-  const char* ptr = word.data();
-  const char* const end = word.data() + word.size();
-  const SkUnichar c = SkUTF::NextUTF8(&ptr, end);
-  return c >= 0 && ptr == end && IsZeroWidthSpaceLike(c);
+std::vector<std::pair<size_t, size_t>> NoLetterSpacingRanges(
+    std::string_view text) {
+  std::vector<std::pair<size_t, size_t>> ranges;
+  const char* ptr = text.data();
+  const char* const end = text.data() + text.size();
+  while (ptr < end) {
+    const size_t start = static_cast<size_t>(ptr - text.data());
+    const SkUnichar c = SkUTF::NextUTF8(&ptr, end);
+    if (c < 0) {
+      break;
+    }
+    if (!GetsNoLetterSpacing(c)) {
+      continue;
+    }
+    const size_t next = static_cast<size_t>(ptr - text.data());
+    if (!ranges.empty() && ranges.back().second == start) {
+      ranges.back().second = next;
+    } else {
+      ranges.emplace_back(start, next);
+    }
+  }
+  return ranges;
 }
 
 bool CanShapeWordByWord(skiac_font_collection* c_collection,
