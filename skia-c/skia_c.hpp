@@ -127,6 +127,8 @@ sk_sp<SkTypeface> MakeCanvasTypefaceFromFile(const char* path);
 #if defined(__APPLE__)
 // Every font CoreText lists, by name.
 sk_sp<SkFontMgr> MakeCoreTextFontManager();
+// CoreText's UI font (system-ui): upright, and italic when it has one.
+std::vector<sk_sp<SkTypeface>> MakeSystemUiTypefaces();
 #endif
 // text_raster.cpp: the text gamma and contrast of Chrome's canvas surfaces.
 SkSurfaceProps CanvasSurfaceProps();
@@ -651,6 +653,12 @@ struct skiac_font_collection {
   // font_families.cpp MatchCoreText: CoreText's family for a case-folded
   // name it does not list, empty for none.
   std::map<std::string, std::string> coretext_families;
+  // CoreText's UI font under the family "system-ui", which Blink's mac font
+  // cache gives that font (font_cache_mac.mm CreateFontPlatformData).
+  // CoreText does not list it (a dot name), so it is not with the installed
+  // fonts; FontCollection asks it after them (its test font manager).
+  sk_sp<TypefaceFontProvider> system_ui;
+  std::set<SkTypefaceID> system_ui_ids;
 #endif
 
   skiac_font_collection()
@@ -678,6 +686,12 @@ struct skiac_font_collection {
     }
     font_mgr = MakeCoreTextFontManager();
     collection->setAssetFontManager(font_mgr);
+    system_ui = sk_make_sp<TypefaceFontProvider>();
+    for (sk_sp<SkTypeface>& face : MakeSystemUiTypefaces()) {
+      system_ui_ids.insert(face->uniqueID());
+      system_ui->registerTypeface(std::move(face), SkString("system-ui"));
+    }
+    collection->setTestFontManager(system_ui);
     coretext_families.clear();
     installed_fonts_pending = true;
     markCachesDirty();

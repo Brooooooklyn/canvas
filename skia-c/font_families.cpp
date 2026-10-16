@@ -36,6 +36,11 @@ namespace {
 
 constexpr uint32_t kFoldCaseDefault = 0;  // U_FOLD_CASE_DEFAULT
 
+#if defined(__APPLE__)
+// The family of CoreText's UI font in skiac_font_collection::system_ui.
+constexpr char kSystemUiFamily[] = "system-ui";
+#endif
+
 enum Generic {
   kNamed = 0,
   kSerif = 1,
@@ -197,6 +202,16 @@ class FamilyResolver {
       return true;
     }
 #if defined(__APPLE__)
+    // font_cache_mac.mm CreateFontPlatformData: the family "system-ui" (also
+    // quoted, and BlinkMacSystemFont) is CoreText's UI font
+    // (MatchSystemUIFont), compared case-sensitively.
+    if (name == kSystemUiFamily) {
+      if (!c_collection_->system_ui) {
+        return false;
+      }
+      *out = kSystemUiFamily;
+      return true;
+    }
     if (MatchCoreText(name, out)) {
       return true;
     }
@@ -438,7 +453,7 @@ const char* SettingsFamily(int generic) {
 // FontCache::SystemFontFamily for `system-ui`.
 const char* SystemUiFamily() {
 #if defined(__APPLE__)
-  return "System Font";  // SFNS, CoreText's .AppleSystemUIFont
+  return kSystemUiFamily;  // CoreText's UI font (skiac_font_collection)
 #elif defined(_WIN32)
   return "Segoe UI";
 #else

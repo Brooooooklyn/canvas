@@ -22,6 +22,7 @@
 // `using namespace skia::textlayout` would make ambiguous.
 #if defined(__APPLE__)
 #include <include/ports/SkFontMgr_mac_ct.h>
+#include <include/ports/SkTypeface_mac.h>
 #endif
 
 #include "skia_c.hpp"
@@ -243,5 +244,28 @@ sk_sp<SkTypeface> MakeCanvasTypefaceFromFile(const char* path) {
 #if defined(__APPLE__)
 sk_sp<SkFontMgr> MakeCoreTextFontManager() {
   return SkFontMgr_New_CoreText(nullptr);
+}
+
+std::vector<sk_sp<SkTypeface>> MakeSystemUiTypefaces() {
+  std::vector<sk_sp<SkTypeface>> faces;
+  // font_matcher_mac.mm MatchSystemUIFont: CoreText's UI font, its italic
+  // from CTFontCreateCopyWithSymbolicTraits; weight and width are its axes.
+  CTFontRef upright =
+      CTFontCreateUIFontForLanguage(kCTFontUIFontSystem, 0, nullptr);
+  if (!upright) {
+    return faces;
+  }
+  if (sk_sp<SkTypeface> face = SkMakeTypefaceFromCTFont(upright)) {
+    faces.push_back(std::move(face));
+  }
+  if (CTFontRef italic = CTFontCreateCopyWithSymbolicTraits(
+          upright, 0, nullptr, kCTFontItalicTrait, kCTFontItalicTrait)) {
+    if (sk_sp<SkTypeface> face = SkMakeTypefaceFromCTFont(italic)) {
+      faces.push_back(std::move(face));
+    }
+    CFRelease(italic);
+  }
+  CFRelease(upright);
+  return faces;
 }
 #endif

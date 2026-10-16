@@ -109,6 +109,11 @@ bool IsSystemTypeface(skiac_font_collection* c_collection,
   if (c_collection->system_typeface_ids.count(typeface->uniqueID())) {
     return true;
   }
+#if defined(__APPLE__)
+  if (c_collection->system_ui_ids.count(typeface->uniqueID())) {
+    return true;
+  }
+#endif
   // The installed fonts the collection scanned itself (asset manager).
   if (!c_collection->font_mgr) {
     return false;
