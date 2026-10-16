@@ -1659,6 +1659,10 @@ struct BitmapDecoder {
   original_url: Option<String>,
 }
 
+/// How many first bytes [`may_be_high_bit_depth`] reads: through the colour
+/// type of a PNG's IHDR chunk.
+const HIGH_BIT_DEPTH_SNIFF: usize = 26;
+
 /// Whether Skia may decode `encoded` with more than 8 bits a channel
 /// (`Bitmap::is_high_bit_depth`), from its first bytes: a 16-bit RGB or RGBA
 /// PNG (Skia decodes 16-bit gray to 8 bits), any JPEG XL (Skia reports 16 bits
@@ -1707,9 +1711,18 @@ fn encoded_room(bytes: &[u8]) -> Option<Vec<u8>> {
 /// [`encoded_room`] for a data: URL, from the start of its body: room for as
 /// many bytes as the whole body can decode to. None when `url` is not a
 /// data: URL, as a file path is read in `compute`.
+///
+/// When the first KiB of a long body decodes to too few bytes to tell (it is
+/// mostly whitespace that a base64 body skips, or tabs and newlines), the
+/// room is made whatever the image is: an 8-bit one only fills it, in its
+/// decode task, which frees it.
 fn data_url_room(url: &[u8]) -> Option<Vec<u8>> {
   match data_url::head(url)? {
-    Ok(head) if head.essence != "image/svg+xml" && may_be_high_bit_depth(&head.prefix) => {
+    Ok(head)
+      if head.essence != "image/svg+xml"
+        && (may_be_high_bit_depth(&head.prefix)
+          || !head.whole && head.prefix.len() < HIGH_BIT_DEPTH_SNIFF) =>
+    {
       room(head.max_body_len)
     }
     _ => None,
@@ -2109,25 +2122,43 @@ mod tests {
         );
       }
       assert_eq!(skia || ico, may_be_high_bit_depth(bytes), "{name}");
+      assert_eq!(
+        may_be_high_bit_depth(bytes),
+        may_be_high_bit_depth(&bytes[..HIGH_BIT_DEPTH_SNIFF.min(bytes.len())])
+      );
       let room = encoded_room(bytes);
       assert_eq!(room.is_some(), skia || ico, "{name}");
       assert!(room.is_none_or(|room| room.capacity() >= bytes.len()));
       let base64 = base64_simd::STANDARD.encode_to_string(bytes);
+      let escaped: String = bytes.iter().map(|b| format!("%{b:02x}")).collect();
       for url in [
         format!("data:image/png;base64,{base64}"),
         format!(" data:;base64,{}\n", base64.replace('A', "\tA")),
-        format!(
-          "data:image/x,{}",
-          bytes
-            .iter()
-            .map(|b| format!("%{b:02x}"))
-            .collect::<String>()
-        ),
+        format!("data:image/x,{escaped}"),
       ] {
         let room = data_url_room(url.as_bytes());
         assert_eq!(room.is_some(), skia || ico, "{name} {}", &url[..20]);
         assert!(room.is_none_or(|room| room.capacity() >= bytes.len()));
         assert_eq!(encoded_room(url.as_bytes()).is_some(), skia || ico);
+      }
+      // Whitespace, tabs and newlines that the decode skips can fill the
+      // first KiB of a longer body: too few bytes to tell the image, which
+      // gets room whatever it is.
+      let spread: String = base64
+        .chars()
+        .map(|c| format!("{c}{}", " ".repeat(40)))
+        .collect();
+      for url in [
+        format!("data:image/png;base64,{}{base64}", " ".repeat(2000)),
+        format!("data:image/png;base64,{}{base64}", "\n".repeat(2000)),
+        format!("data:image/png;base64,{}{base64}", "%20".repeat(700)),
+        format!("data:image/png;base64,{spread}"),
+        format!("data:image/x,{}{escaped}", "\t".repeat(2000)),
+      ] {
+        let long = url.len() - url.find(',').unwrap() - 1 > 1024;
+        let room = data_url_room(url.as_bytes());
+        assert_eq!(room.is_some(), skia || ico || long, "{name} {}", &url[..20]);
+        assert!(room.is_none_or(|room| room.capacity() >= bytes.len()));
       }
       let svg = format!("data:image/svg+xml;base64,{base64}");
       assert!(data_url_room(svg.as_bytes()).is_none());
