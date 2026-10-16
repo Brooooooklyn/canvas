@@ -172,16 +172,19 @@ test('an SVG canvas writes a line the same way however often it was drawn before
   }
 })
 
+const macTest = process.platform === 'darwin' ? test : test.skip
+
 // A space or zero width space Apple Color Emoji draws, between Times letters,
 // is a run without ink: its blob's bounds are empty and a fill skips it, so
 // the line drawn as one blob writes no empty text element for it either.
-;(process.platform === 'darwin' ? test : test.skip)('an SVG canvas writes no text element for a run without ink', (t) => {
+macTest('an SVG canvas writes no text element for a run without ink', (t) => {
   for (const text of ['Hello world', 'ab\u200bcd', 'The quick brown fox jumps']) {
     const canvas = createCanvas(300, 60, SvgExportFlag.NoPrettyXML)
     const ctx = canvas.getContext('2d')
     ctx.font = '20px "Apple Color Emoji"'
     ctx.fillText(text, 10, 40)
-    const elements = canvas.getContent().toString().match(/<text[^>]*>/g) ?? []
+    const svgText = canvas.getContent().toString()
+    const elements = svgText.match(/<text[^>]*>/g) ?? []
     t.true(elements.length > 0, text)
     t.deepEqual(
       elements.filter((element) => /\sx=""/.test(element)),
