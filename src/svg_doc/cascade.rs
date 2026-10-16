@@ -2,6 +2,7 @@
 //! Blink's order, CSS-wide keywords, inheritance, and custom properties with
 //! `var()`.
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -13,7 +14,7 @@ use selectors::context::SelectorCaches;
 use super::dom::{Doc, NodeId, Ns};
 use super::props::{ALL, COUNT, Mode, Prop, parse_value};
 use super::select::{El, element_hashes, matches};
-use super::sheet::{Decl, Sheet, parse_style_attr};
+use super::sheet::{Sheet, parse_style_attr};
 use super::values::{Len, LenCtx, ROOT_FONT_SIZE, Value};
 
 /// CSSVariableData::kMaxVariableBytes (css_variable_data.h): a custom
@@ -118,13 +119,15 @@ struct Priority {
 /// `revert-layer` rolls back to declarations below its own.
 type LayerKey = (u8, u32);
 
-struct Candidate {
+/// A declaration that applies to an element. Name and value borrow from
+/// the document or the sheet where they can.
+struct Candidate<'a> {
   priority: Priority,
   layer: LayerKey,
   /// None for a custom property.
   prop: Option<Prop>,
-  name: String,
-  value: String,
+  name: Cow<'a, str>,
+  value: Cow<'a, str>,
   mode: Mode,
 }
 
@@ -252,31 +255,38 @@ impl<'a> Cascade<'a> {
     }
   }
 
-  fn push_decl(out: &mut Vec<Candidate>, decl: &Decl, priority: Priority, layer: LayerKey) {
-    let mut push = |name: &str, value: String| {
-      let prop = Prop::from_name(name);
+  fn push_decl<'c>(
+    out: &mut Vec<Candidate<'c>>,
+    name: Cow<'c, str>,
+    value: Cow<'c, str>,
+    priority: Priority,
+    layer: LayerKey,
+  ) {
+    let mut push = |name: Cow<'c, str>, value: Cow<'c, str>| {
+      let prop = Prop::from_name(&name);
       if prop.is_some() || name.starts_with("--") {
         out.push(Candidate {
           priority,
           layer,
           prop,
-          name: name.to_owned(),
+          name,
           value,
           mode: Mode::Css,
         });
       }
     };
-    if decl.name == "font" {
-      for (name, value) in expand_font(&decl.value).unwrap_or_default() {
-        push(name, value);
+    if name == "font" {
+      for (name, value) in expand_font(&value).unwrap_or_default() {
+        push(Cow::Borrowed(name), Cow::Owned(value));
       }
     } else {
-      push(&decl.name, decl.value.clone());
+      push(name, value);
     }
   }
 
-  fn candidates(&mut self, id: NodeId, scope: Option<NodeId>) -> Vec<Candidate> {
+  fn candidates(&mut self, id: NodeId, scope: Option<NodeId>) -> Vec<Candidate<'a>> {
     let doc = self.doc;
+    let sheet = self.sheet;
     let mut out = Vec::new();
     let Some(element) = doc.svg_name(id) else {
       return out;
@@ -303,16 +313,16 @@ impl<'a> Cascade<'a> {
         },
         layer: (0, 0),
         prop: Some(prop),
-        name: attr.name.clone(),
-        value: attr.value.clone(),
+        name: Cow::Borrowed(&attr.name),
+        value: Cow::Borrowed(&attr.value),
         mode: Mode::Attr,
       });
     }
     let el = El { doc, id, scope };
-    let layers = self.sheet.layers.len() as u32;
+    let layers = sheet.layers.len() as u32;
     let mut matched: Vec<(u32, u32)> = Vec::new();
     let mut lists = Vec::new();
-    self.sheet.index.candidates(el, &mut lists);
+    sheet.index.candidates(el, &mut lists);
     if !lists.is_empty() {
       self.ancestors.enter(el);
       let filter = &self.ancestors.filter;
@@ -327,7 +337,7 @@ impl<'a> Cascade<'a> {
       let caches = self.caches.entry(scope).or_default();
       for entry in entries {
         let rule = entry.rule;
-        let rule_selectors = &self.sheet.rules[rule as usize].selectors;
+        let rule_selectors = &sheet.rules[rule as usize].selectors;
         let selector = &rule_selectors.slice()[entry.selector as usize];
         if let Some(spec) = matches(selector, el, caches, filter) {
           match matched.last_mut() {
@@ -338,7 +348,7 @@ impl<'a> Cascade<'a> {
       }
     }
     for (rule, specificity) in matched {
-      let rule_ref = &self.sheet.rules[rule as usize];
+      let rule_ref = &sheet.rules[rule as usize];
       for decl in &rule_ref.decls {
         let layer = match (rule_ref.layer, decl.important) {
           (Some(l), false) => l as u32,
@@ -354,7 +364,13 @@ impl<'a> Cascade<'a> {
           order: next(),
         };
         let layer_key = (1, rule_ref.layer.map_or(layers, |l| l as u32));
-        Self::push_decl(&mut out, decl, priority, layer_key);
+        Self::push_decl(
+          &mut out,
+          Cow::Borrowed(&decl.name),
+          Cow::Borrowed(&decl.value),
+          priority,
+          layer_key,
+        );
       }
     }
     if let Some(style) = doc.attr(id, "style") {
@@ -366,7 +382,13 @@ impl<'a> Cascade<'a> {
           specificity: 0,
           order: next(),
         };
-        Self::push_decl(&mut out, &decl, priority, (2, 0));
+        Self::push_decl(
+          &mut out,
+          Cow::Owned(decl.name),
+          Cow::Owned(decl.value),
+          priority,
+          (2, 0),
+        );
       }
     }
     out.sort_by_key(|c| c.priority);
@@ -377,6 +399,24 @@ impl<'a> Cascade<'a> {
   /// `scope`, if any) whose parent's style is `parent`.
   pub(crate) fn compute(&mut self, id: NodeId, scope: Option<NodeId>, parent: &Style) -> Style {
     let candidates = self.candidates(id, scope);
+    // The candidates of each property, highest priority first: from
+    // `top[prop]` down through `next[i]`, linked in one pass.
+    const NONE: usize = usize::MAX;
+    let mut top = [NONE; COUNT];
+    let mut next = vec![NONE; candidates.len()];
+    for (i, c) in candidates.iter().enumerate() {
+      if let Some(prop) = c.prop {
+        next[i] = top[prop as usize];
+        top[prop as usize] = i;
+      }
+    }
+    let declarations = |prop: Prop| {
+      let first = top[prop as usize];
+      std::iter::successors((first != NONE).then_some(first), |&i| {
+        (next[i] != NONE).then_some(next[i])
+      })
+      .map(|i| &candidates[i])
+    };
 
     // Custom properties: the declarations of each, highest priority first.
     let mut raw: HashMap<&str, Vec<(LayerKey, &str)>> = HashMap::new();
@@ -429,7 +469,7 @@ impl<'a> Cascade<'a> {
       let mut declared = false;
       // Set by revert-layer: only declarations of lower layers are left.
       let mut below: Option<LayerKey> = None;
-      for c in candidates.iter().rev().filter(|c| c.prop == Some(prop)) {
+      for c in declarations(prop) {
         if below.is_some_and(|b| c.layer >= b) {
           continue;
         }
