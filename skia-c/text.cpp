@@ -88,10 +88,12 @@ using Line = TextCaches::Line;
 
 constexpr float kMaxLayoutWidth = 100000;
 // TextCaches::lines holds up to kMaxLines lines and about kMaxLineBytes bytes
-// (TextCaches::line_bytes), but it is not cleared for its bytes while it
-// holds fewer than kMinLines lines. skparagraph's ParagraphCache (now off)
-// kept the last 128 paragraphs of any size, each about 25 times the bytes of
-// a kept line, so a loop over 128 lines of any length stays in both.
+// (TextCaches::line_bytes; not a hard cap: a draw adds a line's joined blob
+// after the check), but it is not cleared for its bytes while it holds fewer
+// than kMinLines lines. skparagraph's ParagraphCache (now off) kept the last
+// 128 paragraphs of any size, each several times the bytes of a kept line
+// (up to about 25x with fallback runs), so a loop over 128 lines of any
+// length stays in both.
 constexpr size_t kMaxLines = 512;
 constexpr size_t kMinLines = 128;
 constexpr size_t kMaxLineBytes = 16 << 20;
