@@ -4223,13 +4223,22 @@ bool skiac_svg_document_attribute(skiac_svg_document* document,
 // (svg_image.cc PaintRecordForCurrentFrame): the root is laid out at the
 // container size `layout` (length_utils.cc ComputeReplacedSize), shown
 // stretched over the view, the rounded container size, which clips it
-// (anti-aliased). `[sx 0 tx; 0 sy ty]` maps that view into the new
-// `width` x `height` raster, which is also clipped (aliased) to `clip`.
+// (anti-aliased). `[sx 0 tx; 0 sy ty]` maps that view into the destination
+// space, which is clipped (aliased) to `clip` there, and
+// `[da dc de; db dd df]` maps the destination space into the new
+// `width` x `height` raster (SVGImage::DrawInternal: clipRect, then
+// concat(src_to_dst), under the canvas transform).
 bool skiac_svg_document_render(skiac_svg_document* document,
                                float layout_width,
                                float layout_height,
                                float view_width,
                                float view_height,
+                               float da,
+                               float db,
+                               float dc,
+                               float dd,
+                               float de,
+                               float df,
                                float sx,
                                float sy,
                                float tx,
@@ -4254,6 +4263,8 @@ bool skiac_svg_document_render(skiac_svg_document* document,
   }
   {
     SkCanvas canvas(*bitmap);
+    // A no-op for the identity.
+    canvas.concat(SkMatrix::MakeAll(da, dc, de, db, dd, df, 0, 0, 1));
     canvas.clipRect(
         SkRect::MakeLTRB(clip_left, clip_top, clip_right, clip_bottom));
     canvas.concat(SkMatrix::MakeAll(sx, 0, tx, 0, sy, ty, 0, 0, 1));

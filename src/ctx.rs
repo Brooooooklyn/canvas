@@ -3340,6 +3340,58 @@ impl Context {
     d_width: f32,
     d_height: f32,
   ) -> Result<()> {
+    self.draw_image_at(
+      bitmap, image, raster_key, sx, sy, s_width, s_height, dx, dy, d_width, d_height, None,
+    )
+  }
+
+  /// `draw_image` of all of `bitmap` 1:1 at the device pixel (`x`, `y`), the
+  /// transform not applied again: an SVG Image rastered through the transform
+  /// (`SvgImage::plan_draw`). `bounds` (x, y, width, height) is its
+  /// destination rect in user space.
+  pub(crate) fn draw_device_image(
+    &mut self,
+    bitmap: &Bitmap,
+    raster_key: RasterKey,
+    x: f32,
+    y: f32,
+    (bounds_x, bounds_y, bounds_width, bounds_height): (f32, f32, f32, f32),
+  ) -> Result<()> {
+    let (width, height) = (bitmap.0.width as f32, bitmap.0.height as f32);
+    let bounds = DrawBounds::rect(bounds_x, bounds_y, bounds_width, bounds_height);
+    self.draw_image_at(
+      bitmap,
+      None,
+      raster_key,
+      0.0,
+      0.0,
+      width,
+      height,
+      x,
+      y,
+      width,
+      height,
+      Some(bounds),
+    )
+  }
+
+  /// `draw_image`; with `device`, the destination rect is in device pixels
+  /// and `device` is the bounds of the draw in user space.
+  fn draw_image_at(
+    &mut self,
+    bitmap: &Bitmap,
+    image: Option<&AccountedBitmap>,
+    raster_key: RasterKey,
+    sx: f32,
+    sy: f32,
+    s_width: f32,
+    s_height: f32,
+    dx: f32,
+    dy: f32,
+    d_width: f32,
+    d_height: f32,
+    device: Option<DrawBounds>,
+  ) -> Result<()> {
     self.flush_if_recording_limit_exceeded();
     // Preflight the conditions under which skiac_canvas_draw_image records
     // NOTHING that retains the source raster, before paint construction and
@@ -3394,7 +3446,10 @@ impl Context {
     // Zero on the image-filter route, where the filter's dx/dy already carry it.
     let (shadow_offset_x, shadow_offset_y) =
       self.canvas_shadow_offset(source, DrawContent::Geometry);
-    let image_smoothing_enabled = self.state.image_smoothing_enabled;
+    // A device draw puts its pixels 1:1 on the device, unfiltered also for
+    // the cubic of quality high: Chrome draws an SVG Image as vectors, which
+    // no quality changes.
+    let image_smoothing_enabled = self.state.image_smoothing_enabled && device.is_none();
     let image_smoothing_quality = self.state.image_smoothing_quality;
     let raster = self.backend == Backend::Raster;
     // Known trade-off: the recording keeps the decode level it drew, so
@@ -3408,7 +3463,11 @@ impl Context {
     let decode = decode_cache.is_some()
       || (raster && bitmap.0.is_canvas && self.color_space != ColorSpace::Srgb);
     let color_space = self.color_space;
-    let ctm = self.state.transform.get_transform();
+    let ctm = if device.is_some() {
+      Transform::default()
+    } else {
+      self.state.transform.get_transform()
+    };
     let vector_device = !raster;
 
     // The recorded op pins a reference to the source pixels; charge its full
@@ -3424,7 +3483,7 @@ impl Context {
     );
     // Blink's bounds are the destination rect after ClipRectsToImageRect
     // (canvas_2d_recorder_context.cc:1983-2008) cut the source to the image.
-    let bounds = {
+    let bounds = device.unwrap_or_else(|| {
       let src = DrawBounds::rect(sx, sy, s_width, s_height);
       let dst = DrawBounds::rect(dx, dy, d_width, d_height);
       let scale_x = (dst.right - dst.left) / (src.right - src.left);
@@ -3435,7 +3494,7 @@ impl Context {
         right: dst.left + (src.right.min(bitmap.0.width as f32) - src.left) * scale_x,
         bottom: dst.top + (src.bottom.min(bitmap.0.height as f32) - src.top) * scale_y,
       }
-    };
+    });
     let decoded = RefCell::new(Vec::new());
     let result = self.with_shadowed_render_canvas(
       &paint,
@@ -3445,12 +3504,18 @@ impl Context {
       false,
       |shadow_canvas: &mut Canvas, shadow_paint, device_ctm| {
         shadow_canvas.save();
-        Self::apply_shadow_offset_matrix_to_canvas(
-          shadow_canvas,
-          device_ctm,
-          shadow_offset_x,
-          shadow_offset_y,
-        )?;
+        if device.is_some() {
+          // set_transform is relative to the device also inside a recording
+          // (see composited_layer).
+          shadow_canvas.set_transform(&Matrix::translated(shadow_offset_x, shadow_offset_y));
+        } else {
+          Self::apply_shadow_offset_matrix_to_canvas(
+            shadow_canvas,
+            device_ctm,
+            shadow_offset_x,
+            shadow_offset_y,
+          )?;
+        }
         let drawn = shadow_canvas.draw_image(
           bitmap,
           decode,
@@ -3475,6 +3540,10 @@ impl Context {
         Ok(())
       },
       |canvas: &mut Canvas, paint| {
+        if device.is_some() {
+          canvas.save();
+          canvas.set_transform(&Matrix::identity());
+        }
         let drawn = canvas.draw_image(
           bitmap,
           decode,
@@ -3494,6 +3563,9 @@ impl Context {
           image_smoothing_quality,
           paint,
         );
+        if device.is_some() {
+          canvas.restore();
+        }
         decoded.borrow_mut().extend(drawn);
         Ok(())
       },
@@ -5590,14 +5662,20 @@ impl CanvasRenderingContext2D {
           else {
             return Ok(());
           };
+          let raster_key = RasterKey::Resource {
+            id: draw.raster.resource_id,
+            generation: 0,
+          };
+          if let Some((x, y)) = draw.device {
+            return self
+              .context
+              .draw_device_image(&draw.raster.inner, raster_key, x, y, draw.dst);
+          }
           let (dx, dy, d_width, d_height) = draw.dst;
           return self.context.draw_image(
             &draw.raster.inner,
             None,
-            RasterKey::Resource {
-              id: draw.raster.resource_id,
-              generation: 0,
-            },
+            raster_key,
             0.0,
             0.0,
             draw.raster.inner.0.width as f32,

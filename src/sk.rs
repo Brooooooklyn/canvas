@@ -1156,6 +1156,12 @@ pub mod ffi {
       layout_height: f32,
       view_width: f32,
       view_height: f32,
+      da: f32,
+      db: f32,
+      dc: f32,
+      dd: f32,
+      de: f32,
+      df: f32,
       sx: f32,
       sy: f32,
       tx: f32,
@@ -4958,14 +4964,16 @@ impl SvgDocument {
   }
 
   /// A `width` x `height` raster of the document laid out at `layout`,
-  /// clipped to `view`, mapped by `[sx 0 tx; 0 sy ty]` and clipped to `clip`
-  /// (left, top, right, bottom) in raster pixels. None when the raster cannot
-  /// be allocated.
+  /// clipped to `view`, mapped by `[sx 0 tx; 0 sy ty]` into a destination
+  /// space, clipped to `clip` (left, top, right, bottom) there, and mapped by
+  /// `device` (`[a, b, c, d, e, f]`, as a DOMMatrix) into the raster. None
+  /// when the raster cannot be allocated.
   #[allow(clippy::too_many_arguments)]
   pub fn render(
     &mut self,
     layout: (f32, f32),
     view: (f32, f32),
+    [da, db, dc, dd, de, df]: [f32; 6],
     [sx, sy, tx, ty]: [f32; 4],
     [left, top, right, bottom]: [f32; 4],
     width: i32,
@@ -4985,6 +4993,12 @@ impl SvgDocument {
         layout.1,
         view.0,
         view.1,
+        da,
+        db,
+        dc,
+        dd,
+        de,
+        df,
         sx,
         sy,
         tx,

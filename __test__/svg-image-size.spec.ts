@@ -796,14 +796,16 @@ test('a large rotated or skewed svg draw keeps its edges sharp like Chrome', asy
 
 // Under a skew that keeps the columns of the image vertical, a lean of up to
 // 0.3 or |a| and |d| both at least one device pixel rasters it at the column
-// spacing, which keeps vertical edges on device pixels; a bigger lean with a
-// smaller spacing at the length of the axis, since at the spacing a
-// line thinner than a raster pixel came out up to 100 darker. 300x150 canvas,
-// a 1000x1000 SVG with a vertical <line> at x = 510.5, its center drawn at the
-// canvas center; the alpha at x = 150..161 of rows 0, 75 and 149 (the same on
-// each), measured in Chrome 155. Through a bigger skew with a smaller spacing
-// the raster blurs the line a little: each alpha within 32 of Chrome's and
-// their sum within 20.
+// spacing, which keeps vertical edges on device pixels; a bigger lean with
+// |a| or |d| under one pixel rasters it in device pixels through the whole
+// transform, where Skia draws a stroke at most one pixel wide on both axes as
+// a hairline of that coverage, as in Chrome. 300x150 canvas, a 1000x1000 SVG
+// with a vertical <line> at x = 510.5, its center drawn at the canvas center;
+// the alpha at x = 150..161 of rows 0, 75 and 149 (the same on each),
+// measured in Chrome 155: each alpha within the tolerance of Chrome's and,
+// with one, their sum within 20. The <line> has fill="none", which Chrome
+// draws the same: SkSVG also fills a <line> as a one pixel hairline, which
+// Chrome does not, and that makes these lines up to 66 darker.
 const skewedLines: [string, [number, number, number, number], number, number[], number][] = [
   ['setTransform(1, 0.3, 0, 1, 0, 0), width 1.5', [1, 0.3, 0, 1], 1.5, [0, 0, 0, 0, 0, 0, 0, 0, 0, 64, 255, 64], 0],
   ['setTransform(1, 1, 0, 1, 0, 0), width 1', [1, 1, 0, 1], 1, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 0], 0],
@@ -822,7 +824,7 @@ test('a skewed svg draw keeps thin lines about as dark as Chrome', async (t) => 
     const image = await loaded(
       svg(
         'width="1000" height="1000"',
-        `<line x1="510.5" y1="100" x2="510.5" y2="900" stroke="#000" stroke-width="${width}"/>`,
+        `<line x1="510.5" y1="100" x2="510.5" y2="900" fill="none" stroke="#000" stroke-width="${width}"/>`,
       ),
     )
     const ctx = createCanvas(300, 150).getContext('2d')
@@ -876,13 +878,14 @@ test('a heavily skewed svg draw keeps horizontal edges on device rows like Chrom
   }
 })
 
-// A column spacing of at least one pixel with rows under one pixel apart keeps
-// the length of the axis: under setTransform(2, 1.5, 0, 0.5, 0, 0) a raster at
-// the spacing (2 by 0.5 pixels per unit) draws a 0.5 wide stroke as a hairline,
-// 79 and 80 where Chrome draws 128 and 128. 300x150 canvas, a 1000x1000 SVG
-// with a vertical <path> at x = 510.5, its center drawn at the canvas center;
-// the alpha at x = 165..176 of rows 0, 75 and 149 (the same on each), measured
-// in Chrome 155: each within 24 of Chrome's and their sum within 10.
+// A column spacing of at least one pixel with rows under one pixel apart
+// rasters in device pixels too: under setTransform(2, 1.5, 0, 0.5, 0, 0) a
+// raster at the spacing (2 by 0.5 pixels per unit) draws a 0.5 wide stroke as
+// a hairline, 79 and 80 where Chrome draws 128 and 128. 300x150 canvas, a
+// 1000x1000 SVG with a vertical <path> at x = 510.5, its center drawn at the
+// canvas center; the alpha at x = 165..176 of rows 0, 75 and 149 (the same on
+// each), measured in Chrome 155: each within 24 of Chrome's and their sum
+// within 10.
 test('a heavily skewed svg draw with rows under one pixel apart keeps a thin stroke like Chrome', async (t) => {
   const image = await loaded(
     svg('width="1000" height="1000"', '<path d="M510.5 100 V900" stroke="#000" stroke-width="0.5"/>'),
