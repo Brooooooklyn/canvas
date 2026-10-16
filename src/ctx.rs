@@ -2710,7 +2710,8 @@ impl Context {
   /// filter (the shadow pass; the shadow of an SVG raster, premultiplied and
   /// so never opaque, always is one, `ShadowSource::Image { opaque: false }`).
   /// Skia sizes the layer of each pass the same way.
-  /// An SVG Image too large to raster whole rasters only this part of itself
+  /// An SVG Image drawn through a rotation, flip or skew rasters only this
+  /// part of itself, as does one too large to raster whole
   /// (`SvgImage::plan_draw`). None when a filter cannot be bounded.
   pub(crate) fn image_source_bounds(&self) -> Option<[f32; 4]> {
     let canvas = [

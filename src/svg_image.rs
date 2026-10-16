@@ -23,9 +23,9 @@ const RASTER_BUDGET: f32 = 4096.0 * 4096.0;
 /// the step that part grows by for a shadow or filter that reaches further.
 const RASTER_MARGIN: f32 = 256.0;
 
-/// The largest lean of an image axis, |b| / |a| or |c| / |d|, under which a
-/// skewed draw still rasters that axis at its device spacing when |a| or |d|
-/// is under one device pixel; a bigger one rasters in device pixels.
+/// The largest lean of an image axis, |b| / |a| or |c| / |d|, under which
+/// scaled_draw rasters that axis at its device spacing also when |a| or |d|
+/// is under one device pixel.
 const SMALL_SKEW: f32 = 0.3;
 
 /// `RasterSpec::device` of a raster made in the destination space.
@@ -378,22 +378,17 @@ impl SvgImage {
       };
       Some((spec, (window[0], window[1])))
     };
-    // A skew of one axis that leans more than SMALL_SKEW with |a| or |d|
-    // under one device pixel: draw in device pixels through the whole
-    // transform, clipped (aliased) to the destination rect rounded out, like
-    // Chrome's vector draw (SVGImage::DrawInternal), and put that raster on
-    // the device 1:1. Skia draws a stroke at most one device pixel wide on
-    // both axes as a hairline whose coverage is its mapped width
-    // (SkDrawTreatAAStrokeAsHairline); a raster at a scale per image axis
-    // drawn through the transform gave strokes and edges up to 129 alpha off
-    // Chrome's, where most of these draws now give Chrome's pixels.
-    let skewed_device_draw = || {
-      let lean = if c == 0.0 {
-        b != 0.0 && b.abs() > SMALL_SKEW * a.abs()
-      } else {
-        b == 0.0 && c.abs() > SMALL_SKEW * d.abs()
-      };
-      if !(lean && (a.abs() < 1.0 || d.abs() < 1.0)) {
+    // Any other transform (a rotation, a flip, a skew): the same, the SVG
+    // rendered through the whole transform, as Chrome draws its vectors
+    // (SVGImage::DrawInternal: clipRect, then concat(src_to_dst), under the
+    // canvas transform). A raster at a scale per image axis drawn through the
+    // transform resamples every edge, and Skia draws a stroke at most one
+    // raster pixel wide as a hairline of the raster's width
+    // (SkDrawTreatAAStrokeAsHairline): edges and thin lines came out up to
+    // 129 alpha off Chrome's that way.
+    let transformed_draw = || {
+      if b == 0.0 && c == 0.0 && a > 0.0 && d > 0.0 {
+        // device_draw's, which had no window for it.
         return None;
       }
       let left = dst.x.floor();
@@ -451,19 +446,40 @@ impl SvgImage {
       {
         return None;
       }
+      // The destination space is moved to put the corner of the clip at its
+      // origin, so that the raster is keyed by where the draw sits on the
+      // window: a draw moved by whole device pixels (by e and f, or by dx and
+      // dy where that is whole pixels on the device, as under a flip) whose
+      // window is not cut differently keeps the cached raster. In f64, so
+      // that each such move gives the same f32 numbers.
+      let (a64, b64, c64, d64) = (a as f64, b as f64, c as f64, d as f64);
+      let (left64, top64) = (left as f64, top as f64);
       let spec = RasterSpec {
         layout,
         view,
-        device: [a, b, c, d, e - window[0], f - window[1]],
-        matrix: [scale_x, scale_y, translate_x, translate_y],
-        clip: [left, top, right, bottom],
+        device: [
+          a,
+          b,
+          c,
+          d,
+          (a64 * left64 + c64 * top64 + e as f64 - window[0] as f64) as f32,
+          (b64 * left64 + d64 * top64 + f as f64 - window[1] as f64) as f32,
+        ],
+        matrix: [
+          scale_x,
+          scale_y,
+          (dst.x as f64 - left64 - src.x as f64 * scale_x as f64) as f32,
+          (dst.y as f64 - top64 - src.y as f64 * scale_y as f64) as f32,
+        ],
+        clip: [0.0, 0.0, right - left, bottom - top],
         width: raster_width as i32,
         height: raster_height as i32,
       };
       Some((spec, (window[0], window[1])))
     };
-    // Rotated, skewed, flipped or too big: a raster at the device scale of
-    // the destination, drawn through the transform.
+    // No window for a device draw (one off the canvas, too big, or for a
+    // reach that cannot be bounded): a raster at the device scale of the
+    // destination, drawn through the transform.
     let scaled_draw = || {
       // Device pixels per user unit on each axis of the image: the length of
       // the axis on the device. Under a skew that keeps the columns (rows) of
@@ -471,18 +487,11 @@ impl SvgImage {
       // horizontal (vertical) part of the axis, so that they stay on the
       // device pixel grid: under a small lean, where it is at most 4.2% less
       // than the length, and under any lean when |a| and |d| are both at
-      // least one device pixel, where the length blurred lines and edges that
-      // Chrome draws sharp by up to 89 alpha. A bigger lean with |a| or |d|
-      // under one pixel takes skewed_device_draw, and keeps the length here
-      // only when that has no window to draw (one off the canvas, too big, or
-      // for a reach that cannot be bounded): Skia draws a stroke as a hairline
-      // when its width is at most one pixel on both axes of the raster, so
-      // with either axis under a pixel the spacing, shorter than the length,
-      // turns a thin stroke into a hairline (as does the fill SkSVG draws for
-      // a <line>): thin lines came out up to 133 alpha darker than Chrome's
-      // with a spacing under one pixel, and a 0.5 wide <path> up to 49
-      // lighter with a spacing of 2 and |d| = 0.5. For a scale both are the
-      // same number.
+      // least one device pixel. With either under one pixel and a bigger lean
+      // the spacing, shorter than the length, would turn a thin stroke into a
+      // hairline: Skia draws a stroke as one when its width is at most one
+      // pixel on both axes of the raster. For a scale both are the same
+      // number.
       let columns =
         c == 0.0 && (b.abs() <= SMALL_SKEW * a.abs() || (a.abs() >= 1.0 && d.abs() >= 1.0));
       let rows =
@@ -597,7 +606,7 @@ impl SvgImage {
       Some((spec, (dst.x, dst.y, dst.w, dst.h)))
     };
     let Some((spec, draw_rect, device)) = device_draw()
-      .or_else(skewed_device_draw)
+      .or_else(transformed_draw)
       .map(|(spec, origin)| (spec, (dst.x, dst.y, dst.w, dst.h), Some(origin)))
       .or_else(|| scaled_draw().map(|(spec, draw_rect)| (spec, draw_rect, None)))
     else {
