@@ -11,6 +11,7 @@
 import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
+import { release } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { gunzipSync, inflateRawSync } from 'node:zlib'
@@ -89,6 +90,10 @@ const KNOWN_GAPS: Record<string, { max: number; x64?: number; why: string }> = {
 
 const X64 = process.arch === 'x64'
 const MACOS = process.platform === 'darwin'
+// Chrome's pixels were measured on macOS 27. CoreText ships with the OS, so
+// on another macOS version the pixels of the cases with <text> are not
+// compared.
+const TEXT_PIXELS = MACOS && Number.parseInt(release(), 10) === 27
 
 function load(svg: string) {
   const image = new Image()
@@ -128,8 +133,8 @@ for (const [tag, corpus] of Object.entries(REF.corpora)) {
       }
       t.truthy(image, 'Chrome loads it')
       t.deepEqual([image!.naturalWidth, image!.naturalHeight], [ref.nw, ref.nh])
-      if (text && !MACOS) {
-        t.pass('glyphs measured on macOS only')
+      if (text && !TEXT_PIXELS) {
+        t.pass('glyphs measured on macOS 27 only')
         return
       }
       const want = inflateRawSync(Buffer.from(X64 && ref.px_x64 ? ref.px_x64 : ref.px, 'base64'))
