@@ -276,6 +276,32 @@ class Resources final : public skresources::ResourceProvider {
 
   int nested_draws_left = kNestedDrawBudget;
 
+  // What the entries keep for the document's life: the encoded copies, the
+  // decoded rasters (one per URL), their scaled copies and the nested
+  // documents' pictures. Rasters are decoded at the first draw that needs
+  // them, so this grows as the document draws.
+  size_t retainedBytes() const {
+    size_t bytes = 0;
+    for (size_t i = 0; i < entries_.size(); ++i) {
+      const Entry& e = entries_[i];
+      if (e.data) {
+        bytes += e.data->size();
+      }
+      if (e.levels) {
+        bytes += skiac_image_levels_bytes(e.levels);
+      }
+      if (e.picture) {
+        bytes += e.picture->approximateBytesUsed();
+      }
+      SkPixmap pixels;
+      if (e.kind == 0 && e.image && !shared_raster_.count(i) &&
+          e.image->peekPixels(&pixels)) {
+        bytes += pixels.computeByteSize();
+      }
+    }
+    return bytes;
+  }
+
  private:
   sk_sp<SkImage> imageFor(size_t index) {
     auto shared = shared_raster_.find(index);
@@ -508,6 +534,10 @@ void RenderPrepared(SkSVGDOM* dom,
   provider->nested_draws_left = kNestedDrawBudget;
   ChromeSvgCanvas chrome(canvas, provider, cs);
   dom->render(&chrome);
+}
+
+size_t RetainedBytes(const skresources::ResourceProvider* resources) {
+  return static_cast<const Resources*>(resources)->retainedBytes();
 }
 
 }  // namespace napi_svg
