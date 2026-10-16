@@ -1,4 +1,4 @@
-use std::cell::{Cell, RefCell};
+use std::cell::Cell;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::{borrow::Cow, ptr, str, str::FromStr};
@@ -26,107 +26,10 @@ pub struct ImageData {
   pub(crate) data_ref: Option<sys::napi_ref>,
 }
 
-/// What ImageData creation takes from a JS environment, looked up the first
-/// time it is needed there: a WeakMap and its `set`, and the Float16Array
-/// constructor when the runtime has one. Strong refs, deleted when the
-/// environment exits.
-struct Intrinsics {
-  env: sys::napi_env,
-  weak_map: sys::napi_ref,
-  weak_map_set: sys::napi_ref,
-  float16_array: Option<sys::napi_ref>,
-}
-
-thread_local! {
-  static INTRINSICS: RefCell<Vec<Intrinsics>> = const { RefCell::new(Vec::new()) };
-}
-
-unsafe extern "C" fn delete_intrinsics(env: *mut std::ffi::c_void) {
-  let env: sys::napi_env = env.cast();
-  let removed = INTRINSICS.with(|all| {
-    let mut all = all.borrow_mut();
-    let index = all.iter().position(|entry| entry.env == env)?;
-    Some(all.swap_remove(index))
-  });
-  if let Some(entry) = removed {
-    for reference in [
-      Some(entry.weak_map),
-      Some(entry.weak_map_set),
-      entry.float16_array,
-    ]
-    .into_iter()
-    .flatten()
-    {
-      unsafe { sys::napi_delete_reference(env, reference) };
-    }
-  }
-}
-
-/// A global of `env`, or None when it is undefined.
-fn global_property(env: sys::napi_env, key: &std::ffi::CStr) -> Result<Option<sys::napi_value>> {
-  let mut global = ptr::null_mut();
-  check_status!(unsafe { sys::napi_get_global(env, &mut global) })?;
-  let mut value = ptr::null_mut();
-  check_status!(unsafe { sys::napi_get_named_property(env, global, key.as_ptr(), &mut value) })?;
-  Ok((webidl::type_of(env, value)? != ValueType::Undefined).then_some(value))
-}
-
-fn strong_ref(env: sys::napi_env, value: sys::napi_value) -> Result<sys::napi_ref> {
-  let mut reference = ptr::null_mut();
-  check_status!(unsafe { sys::napi_create_reference(env, value, 1, &mut reference) })?;
-  Ok(reference)
-}
-
 fn ref_value(env: sys::napi_env, reference: sys::napi_ref) -> Result<sys::napi_value> {
   let mut value = ptr::null_mut();
   check_status!(unsafe { sys::napi_get_reference_value(env, reference, &mut value) })?;
   Ok(value)
-}
-
-/// The (WeakMap, WeakMap.prototype.set, Float16Array) of `env`.
-fn intrinsics(
-  env: sys::napi_env,
-) -> Result<(sys::napi_value, sys::napi_value, Option<sys::napi_value>)> {
-  let found = INTRINSICS.with(|all| {
-    all
-      .borrow()
-      .iter()
-      .find(|entry| entry.env == env)
-      .map(|entry| (entry.weak_map, entry.weak_map_set, entry.float16_array))
-  });
-  let (weak_map, weak_map_set, float16_array) = match found {
-    Some(refs) => refs,
-    None => {
-      let constructor = global_property(env, c"WeakMap")?
-        .ok_or_else(|| Error::from_reason("WeakMap is not defined".to_owned()))?;
-      let mut map = ptr::null_mut();
-      check_status!(unsafe { sys::napi_new_instance(env, constructor, 0, ptr::null(), &mut map) })?;
-      let mut set = ptr::null_mut();
-      check_status!(unsafe { sys::napi_get_named_property(env, map, c"set".as_ptr(), &mut set) })?;
-      let float16_array = global_property(env, c"Float16Array")?;
-      let entry = Intrinsics {
-        env,
-        weak_map: strong_ref(env, map)?,
-        weak_map_set: strong_ref(env, set)?,
-        float16_array: float16_array
-          .map(|value| strong_ref(env, value))
-          .transpose()?,
-      };
-      check_status!(unsafe {
-        sys::napi_add_env_cleanup_hook(env, Some(delete_intrinsics), env.cast())
-      })?;
-      let refs = (entry.weak_map, entry.weak_map_set, entry.float16_array);
-      INTRINSICS.with(|all| all.borrow_mut().push(entry));
-      refs
-    }
-  };
-  Ok((
-    ref_value(env, weak_map)?,
-    ref_value(env, weak_map_set)?,
-    float16_array
-      .map(|reference| ref_value(env, reference))
-      .transpose()?,
-  ))
 }
 
 /// NotSupportedError for rgba-float16 on a runtime without Float16Array
@@ -136,7 +39,9 @@ fn require_float16(
   prefix: &str,
   pixel_format: ImageDataPixelFormat,
 ) -> Result<()> {
-  if pixel_format == ImageDataPixelFormat::Float16 && intrinsics(env)?.2.is_none() {
+  if pixel_format == ImageDataPixelFormat::Float16
+    && webidl::intrinsic(env, c"Float16Array")?.is_none()
+  {
     return Err(webidl::dom_exception(
       env,
       "NotSupportedError",
@@ -175,8 +80,68 @@ fn new_data_array(
       )
     })?;
   } else {
-    let constructor = intrinsics(raw)?.2.expect("checked by require_float16");
-    check_status!(unsafe { sys::napi_new_instance(raw, constructor, 1, &buffer, &mut array) })?;
+    // Node-API makes a Float16Array from Node 24.13.1 and 25.4.0 on. Before,
+    // the type is a napi_invalid_arg, with no exception.
+    let status = unsafe {
+      sys::napi_create_typedarray(raw, NAPI_FLOAT16_ARRAY, length, buffer, 0, &mut array)
+    };
+    if status == sys::Status::napi_invalid_arg {
+      array = new_float16_array(raw, prefix, buffer, length)?;
+    } else {
+      check_status!(status)?;
+    }
+  }
+  Ok(array)
+}
+
+/// `new Float16Array(buffer)`, with the Float16Array constructor the addon
+/// found when it was loaded (see webidl::RealmIntrinsics), for a Node-API
+/// without napi_float16_array. Script may have put another function there
+/// before the addon was loaded: only a Float16Array of `length` elements over
+/// all of `buffer` is taken, never one over a SharedArrayBuffer or another
+/// typed array.
+fn new_float16_array(
+  env: sys::napi_env,
+  prefix: &str,
+  buffer: sys::napi_value,
+  length: usize,
+) -> Result<sys::napi_value> {
+  let Some(constructor) = webidl::intrinsic(env, c"Float16Array")? else {
+    return Err(Error::from_reason("Float16Array is not defined".to_owned()));
+  };
+  let mut array = ptr::null_mut();
+  check_status!(unsafe { sys::napi_new_instance(env, constructor, 1, &buffer, &mut array) })?;
+  let mut is_typedarray = false;
+  check_status!(unsafe { sys::napi_is_typedarray(env, array, &mut is_typedarray) })?;
+  let mut array_type = -1;
+  let mut array_length = 0usize;
+  let mut array_buffer = ptr::null_mut();
+  let mut offset = 0usize;
+  let mut same_buffer = false;
+  let is_view = is_typedarray
+    && unsafe {
+      sys::napi_get_typedarray_info(
+        env,
+        array,
+        &mut array_type,
+        &mut array_length,
+        ptr::null_mut(),
+        &mut array_buffer,
+        &mut offset,
+      )
+    } == sys::Status::napi_ok
+    && DataArrayType::from_napi(array_type) == Some(DataArrayType::Float16)
+    && array_length == length
+    && offset == 0
+    && unsafe { sys::napi_strict_equals(env, array_buffer, buffer, &mut same_buffer) }
+      == sys::Status::napi_ok
+    && same_buffer;
+  if !is_view {
+    return Err(webidl::context_type_error(
+      env,
+      prefix,
+      "The Float16Array constructor did not make a Float16Array of the data.",
+    ));
   }
   Ok(array)
 }
@@ -184,15 +149,22 @@ fn new_data_array(
 /// Makes `array` the data of the ImageData object `this`, as Blink keeps it
 /// with the wrapper (ImageData::AssociateWithWrapper, image_data.cc:381-409):
 /// the `data` getter returns it, and an entry of the per-environment WeakMap
-/// keeps it alive exactly as long as `this`. A rgba-unorm8 ImageData also gets
-/// Chrome's own read-only `data` property, which can be deleted.
+/// keeps it alive exactly as long as `this`. The WeakMap and its `set` are
+/// those the addon made and found when it was loaded (see
+/// webidl::RealmIntrinsics), so no script runs here. A rgba-unorm8 ImageData
+/// also gets Chrome's own read-only `data` property, which can be deleted.
 fn attach_data(
   env: sys::napi_env,
   this: sys::napi_value,
   array: sys::napi_value,
   pixel_format: ImageDataPixelFormat,
 ) -> Result<sys::napi_ref> {
-  let (weak_map, set, _) = intrinsics(env)?;
+  let (Some(weak_map), Some(set)) = (
+    webidl::intrinsic(env, c"imageDataMap")?,
+    webidl::intrinsic(env, c"weakMapSet")?,
+  ) else {
+    return Err(Error::from_reason("WeakMap is not defined".to_owned()));
+  };
   let mut ignored = ptr::null_mut();
   check_status!(unsafe {
     sys::napi_call_function(env, weak_map, set, 2, [this, array].as_ptr(), &mut ignored)
@@ -271,8 +243,8 @@ impl ImageData {
       },
       "Failed to get ImageData typed array info"
     )?;
-    // rgba-float16 data comes from the global Float16Array, which script can
-    // replace: only read the pixels from an array of the format's type.
+    // Creation makes or checks an array of the format's type: only read the
+    // pixels from one.
     let array_format = DataArrayType::from_napi(array_type).map(DataArrayType::pixel_format);
     if array_format != Some(self.pixel_format) {
       return Err(Error::new(
@@ -510,8 +482,8 @@ impl DataArrayType {
       sys::TypedarrayType::uint8_clamped_array => Some(Self::Uint8Clamped),
       sys::TypedarrayType::float32_array => Some(Self::Float32),
       NAPI_FLOAT16_ARRAY => Some(Self::Float16),
-      // Node before 24.18 leaves the type unset for a Float16Array, the only
-      // TypedArray kind it has no napi type for.
+      // Node before 24.13.1 (25 before 25.4.0) leaves the type unset for a
+      // Float16Array, the only TypedArray kind it has no napi type for.
       -1 => Some(Self::Float16),
       _ => None,
     }
@@ -544,7 +516,7 @@ impl DataArrayType {
   }
 }
 
-/// `napi_float16_array` (js_native_api_types.h, Node 24.18 and later).
+/// `napi_float16_array` (js_native_api_types.h, Node 24.13.1 and 25.4.0 on).
 const NAPI_FLOAT16_ARRAY: sys::napi_typedarray_type = 11;
 
 /// The data type of `value`, if it is ImageData data: V8's

@@ -401,24 +401,210 @@ test('rgba-float16 without Float16Array is a NotSupportedError', (t) => {
   )
 })
 
-// No Chrome counterpart: Blink makes the array itself. Here the global
-// Float16Array makes it, so a replaced one can hand back any object; the
-// pixels are only read from a Float16Array.
-test('rgba-float16 data from a replaced Float16Array is not read', (t) => {
+const INDEX_JS = JSON.stringify(fileURLToPath(new URL('../index.js', import.meta.url)))
+
+/** Runs `script` in a new Node process, so that it sees a new JS realm. */
+function runInNewRealm(script: string, args: string[] = [], nodeArgs: string[] = []) {
+  return spawnSync(process.execPath, [...nodeArgs, '-e', script, ...args], { encoding: 'utf8' })
+}
+
+/** Node-API makes a Float16Array from Node 24.13.1 and 25.4.0 on. */
+function nodeApiHasFloat16Array() {
+  const [major, minor, patch] = process.versions.node.split('.').map(Number)
+  if (major === 24) return minor > 13 || (minor === 13 && patch >= 1)
+  if (major === 25) return minor >= 4
+  return major > 25
+}
+
+// No Chrome counterpart: Blink makes the array itself. Node-API makes it here
+// too where it can; elsewhere the Float16Array constructor that the addon
+// found when it was loaded makes it, and only a Float16Array over the new
+// buffer is taken.
+test('rgba-float16 data from a Float16Array replaced before load', (t) => {
   const script = `
+    const RealFloat16Array = globalThis.Float16Array
     globalThis.Float16Array = function () { return new Uint8Array(64 * 64 * 4) }
-    const { createCanvas, ImageData } = require(${JSON.stringify(fileURLToPath(new URL('../index.js', import.meta.url)))})
-    const id = new ImageData(64, 64, { pixelFormat: 'rgba-float16' })
-    const out = []
+    const { createCanvas, ImageData } = require(${INDEX_JS})
+    let id
+    try {
+      id = new ImageData(64, 64, { pixelFormat: 'rgba-float16' })
+    } catch (e) {
+      console.log(JSON.stringify({ error: e.name + ': ' + e.message }))
+      process.exit(0)
+    }
+    const out = [RealFloat16Array !== undefined && id.data instanceof RealFloat16Array]
     for (const opts of [{}, { colorType: 'float16' }]) {
       const c = createCanvas(64, 64).getContext('2d', opts)
       for (const run of [() => c.putImageData(id, 0, 0), () => c.createPattern(id, 'repeat')]) {
         try { run(); out.push('ok') } catch (e) { out.push(e.message) }
       }
     }
+    console.log(JSON.stringify({ out }))
+  `
+  const child = runInNewRealm(script)
+  t.is(child.status, 0, child.stderr)
+  if (HAS_F16 && nodeApiHasFloat16Array()) {
+    t.deepEqual(JSON.parse(child.stdout), { out: [true, 'ok', 'ok', 'ok', 'ok'] })
+  } else {
+    t.deepEqual(JSON.parse(child.stdout), {
+      error:
+        "TypeError: Failed to construct 'ImageData': The Float16Array constructor did not make a Float16Array of the data.",
+    })
+  }
+})
+
+// No Chrome counterpart: the addon takes what it needs from the realm when it
+// is loaded, as Blink uses its own, so a Float16Array that script puts in its
+// place later makes no rgba-float16 data.
+test('rgba-float16 data does not come from a Float16Array replaced after load', (t) => {
+  if (!HAS_F16) {
+    t.pass('this runtime has no Float16Array')
+    return
+  }
+  const script = `
+    const { createCanvas, ImageData } = require(${INDEX_JS})
+    const RealFloat16Array = Float16Array
+    let calls = 0
+    globalThis.Float16Array = {
+      shared: function (buffer) { calls++; return new RealFloat16Array(new SharedArrayBuffer(buffer.byteLength)) },
+      uint8: function () { calls++; return new Uint8Array(8) },
+      short: function () { calls++; return new RealFloat16Array(1) },
+      object: function () { calls++; return {} },
+    }[process.argv[1]]
+    const read = (make) => {
+      try {
+        const id = make()
+        return {
+          f16: id.data instanceof RealFloat16Array,
+          shared: id.data.buffer instanceof SharedArrayBuffer,
+          length: id.data.length,
+        }
+      } catch (e) {
+        return e.name + ': ' + e.message
+      }
+    }
+    const c = createCanvas(2, 1).getContext('2d')
+    const out = {
+      ctor: read(() => new ImageData(2, 1, { pixelFormat: 'rgba-float16' })),
+      create: read(() => c.createImageData(2, 1, { pixelFormat: 'rgba-float16' })),
+    }
+    try {
+      const id = new ImageData(2, 1, { pixelFormat: 'rgba-float16' })
+      id.data.set([1, 0, 0, 1, 0, 1, 0, 1])
+      c.putImageData(id, 0, 0)
+      out.put = Array.from(c.getImageData(0, 0, 2, 1).data)
+      const back = c.getImageData(0, 0, 2, 1, { pixelFormat: 'rgba-float16' })
+      out.get = { f16: back.data instanceof RealFloat16Array, data: Array.from(back.data) }
+    } catch (e) {
+      out.put = e.name + ': ' + e.message
+    }
+    out.calls = calls
     console.log(JSON.stringify(out))
   `
-  const child = spawnSync(process.execPath, ['-e', script], { encoding: 'utf8' })
-  t.is(child.status, 0, child.stderr)
-  t.deepEqual(JSON.parse(child.stdout), Array(4).fill('ImageData data is not a Float16Array'))
+  for (const replacement of ['shared', 'uint8', 'short', 'object']) {
+    const child = runInNewRealm(script, [replacement])
+    t.is(child.status, 0, child.stderr)
+    const made = { f16: true, shared: false, length: 8 }
+    t.deepEqual(
+      JSON.parse(child.stdout),
+      {
+        ctor: made,
+        create: made,
+        put: [255, 0, 0, 255, 0, 255, 0, 255],
+        get: { f16: true, data: [1, 0, 0, 1, 0, 1, 0, 1] },
+        calls: 0,
+      },
+      replacement,
+    )
+  }
+})
+
+// No Chrome counterpart: Blink keeps the data with the wrapper. Here a
+// WeakMap does, which the addon makes when it is loaded, so a WeakMap or
+// WeakMap.prototype.set that script replaces later neither sees nor drops the
+// data.
+test('ImageData data stays with its ImageData when WeakMap is replaced after load', (t) => {
+  const script = `
+    const { createCanvas, ImageData } = require(${INDEX_JS})
+    let calls = 0
+    if (process.argv[1] === 'set') {
+      WeakMap.prototype.set = function () { calls++; return this }
+    } else {
+      globalThis.WeakMap = function () { calls++; return { set() { calls++ } } }
+    }
+    // Made inside a function: no stack slot keeps the arrays.
+    function make() {
+      const fromData = new ImageData(new Float32Array([0, 1, 0, 1]), 1, 1, { pixelFormat: 'rgba-float32' })
+      const fromSize = new ImageData(1, 1, { pixelFormat: 'rgba-float32' })
+      fromSize.data.set([1, 0, 0, 1])
+      return [fromData, fromSize]
+    }
+    const made = make()
+    ;(async () => {
+      for (let i = 0; i < 5; i++) {
+        global.gc()
+        await new Promise((r) => setImmediate(r))
+      }
+      const c = createCanvas(1, 1).getContext('2d')
+      const out = made.map((id) => {
+        try {
+          c.putImageData(id, 0, 0)
+          return { data: Array.from(id.data), px: Array.from(c.getImageData(0, 0, 1, 1).data) }
+        } catch (e) {
+          return e.name + ': ' + e.message
+        }
+      })
+      console.log(JSON.stringify({ calls, out }))
+    })()
+  `
+  for (const replacement of ['set', 'global']) {
+    const child = runInNewRealm(script, [replacement], ['--expose-gc'])
+    t.is(child.status, 0, child.stderr)
+    t.deepEqual(
+      JSON.parse(child.stdout),
+      {
+        calls: 0,
+        out: [
+          { data: [0, 1, 0, 1], px: [0, 255, 0, 255] },
+          { data: [1, 0, 0, 1], px: [255, 0, 0, 255] },
+        ],
+      },
+      replacement,
+    )
+  }
+})
+
+// An ImageData made from script that the addon runs while it makes the first
+// ImageData of a realm used to register a second cleanup hook, which aborts
+// Node.
+test('an ImageData made inside a replaced WeakMap or Float16Array getter does not abort', (t) => {
+  const script = `
+    const { ImageData } = require(${INDEX_JS})
+    let nested = 0
+    if (process.argv[1] === 'weakmap') {
+      const RealWeakMap = WeakMap
+      globalThis.WeakMap = class extends RealWeakMap {
+        constructor() {
+          super()
+          if (nested++ === 0) new ImageData(1, 1)
+        }
+      }
+    } else {
+      const RealFloat16Array = globalThis.Float16Array
+      Object.defineProperty(globalThis, 'Float16Array', {
+        configurable: true,
+        get() {
+          if (nested++ === 0) new ImageData(1, 1)
+          return RealFloat16Array
+        },
+      })
+    }
+    const id = new ImageData(1, 1)
+    console.log(JSON.stringify({ length: id.data.length, nested }))
+  `
+  for (const replacement of ['weakmap', 'float16-getter']) {
+    const child = runInNewRealm(script, [replacement])
+    t.is(child.status, 0, `${replacement}: status ${child.status} signal ${child.signal}\n${child.stderr}`)
+    t.deepEqual(JSON.parse(child.stdout), { length: 4, nested: 0 }, replacement)
+  }
 })
