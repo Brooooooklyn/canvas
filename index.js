@@ -252,13 +252,16 @@ function argumentCount(count, last) {
 // picks the overload from the argument count (canvas_2d_recorder_context.idl),
 // and an explicit undefined counts: fill(path, undefined) is the nonzero
 // fill of path, fill(undefined, 'evenodd') a TypeError.
+// These wrappers and drawImage's read only the arguments the call has: past
+// arguments.length, arguments[i] would read Object.prototype[i], which
+// Chrome never reads.
 const _fill = CanvasRenderingContext2D.prototype.fill
 CanvasRenderingContext2D.prototype.fill = function fill() {
   const count = Math.min(arguments.length, 2)
   return _fill.call(
     this,
-    arguments[0],
-    arguments[1],
+    count > 0 ? arguments[0] : undefined,
+    count > 1 ? arguments[1] : undefined,
     count === 0 ? undefined : argumentCount(count, arguments[count - 1]),
   )
 }
@@ -268,16 +271,19 @@ CanvasRenderingContext2D.prototype.clip = function clip() {
   const count = Math.min(arguments.length, 2)
   return _clip.call(
     this,
-    arguments[0],
-    arguments[1],
+    count > 0 ? arguments[0] : undefined,
+    count > 1 ? arguments[1] : undefined,
     count === 0 ? undefined : argumentCount(count, arguments[count - 1]),
   )
 }
 
 const _stroke = CanvasRenderingContext2D.prototype.stroke
 CanvasRenderingContext2D.prototype.stroke = function stroke() {
-  const count = Math.min(arguments.length, 1)
-  return _stroke.call(this, arguments[0], count === 0 ? undefined : argumentCount(count, arguments[count - 1]))
+  if (arguments.length === 0) {
+    return _stroke.call(this, undefined, undefined)
+  }
+  const path = arguments[0]
+  return _stroke.call(this, path, argumentCount(1, path))
 }
 
 const _isPointInPath = CanvasRenderingContext2D.prototype.isPointInPath
@@ -290,8 +296,8 @@ CanvasRenderingContext2D.prototype.isPointInPath = function isPointInPath() {
     this,
     arguments[0],
     arguments[1],
-    arguments[2],
-    arguments[3],
+    count > 2 ? arguments[2] : undefined,
+    count > 3 ? arguments[3] : undefined,
     // (x, y, undefined) converts as (x, y) when x is not an object (only an
     // object can be a Path2D), so the count is not needed.
     count === 3 && typeof arguments[0] !== 'object' ? undefined : argumentCount(count, arguments[count - 1]),
@@ -309,7 +315,7 @@ CanvasRenderingContext2D.prototype.isPointInStroke = function isPointInStroke() 
     this,
     arguments[0],
     arguments[1],
-    arguments[2],
+    count > 2 ? arguments[2] : undefined,
     argumentCount(count, arguments[count - 1]),
   )
 }
@@ -381,12 +387,12 @@ CanvasRenderingContext2D.prototype.drawImage = function drawImage() {
     image,
     arguments[1],
     arguments[2],
-    arguments[3],
-    arguments[4],
-    arguments[5],
-    arguments[6],
-    arguments[7],
-    arguments[8],
+    count > 3 ? arguments[3] : undefined,
+    count > 4 ? arguments[4] : undefined,
+    count > 5 ? arguments[5] : undefined,
+    count > 6 ? arguments[6] : undefined,
+    count > 7 ? arguments[7] : undefined,
+    count > 8 ? arguments[8] : undefined,
     argumentCount(count, arguments[count - 1]),
   )
 }

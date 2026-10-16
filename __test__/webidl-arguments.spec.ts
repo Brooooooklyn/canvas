@@ -506,6 +506,101 @@ test("fill, clip, stroke, isPointInPath and isPointInStroke have Chrome's length
   }
 })
 
+// Runs `call` with index getters on Object.prototype, which log each read;
+// they are removed before it returns. Past arguments.length, arguments[i]
+// reads Object.prototype[i]: Chrome 155 reads none of them. `result` is what
+// `call` returns, or the error it throws as a string.
+const withIndexGetters = (values: Record<number, unknown>, call: () => unknown) => {
+  let reads = ''
+  const keys = Object.keys(values)
+  for (const key of keys) {
+    Object.defineProperty(Object.prototype, key, {
+      configurable: true,
+      get() {
+        reads += `${key} `
+        return values[Number(key)]
+      },
+      set(value) {
+        Object.defineProperty(this, key, { value, writable: true, enumerable: true, configurable: true })
+      },
+    })
+  }
+  let result: unknown
+  try {
+    result = call()
+  } catch (error) {
+    result = String(error)
+  } finally {
+    for (const key of keys) delete loose(Object.prototype)[key]
+  }
+  return { result, reads: reads.trim() }
+}
+
+// A path away from the center of ruleContext() and from its edge at (0, 5).
+const cornerPath = () => {
+  const path = new Path2D()
+  path.rect(8, 0, 1, 1)
+  return path
+}
+
+test.serial('fill and clip read only the arguments they were given', (t) => {
+  // [what the getters return, the call, alpha at the center] (Chrome 155)
+  const cases: [Record<number, unknown>, (ctx: any, method: 'fill' | 'clip') => unknown, number][] = [
+    [{ 0: 'evenodd', 1: 'evenodd' }, (ctx, method) => ctx[method](), 255],
+    [{ 0: cornerPath(), 1: 'evenodd' }, (ctx, method) => ctx[method](), 255],
+    [{ 1: 'evenodd' }, (ctx, method) => ctx[method](rulePath()), 255],
+    [{ 1: 'nonzero' }, (ctx, method) => ctx[method]('evenodd'), 0],
+    [{ 1: 'evenodd' }, (ctx, method) => ctx[method](undefined), 255],
+  ]
+  for (const method of ['fill', 'clip'] as const) {
+    for (const [values, call, alpha] of cases) {
+      const ctx = ruleContext()
+      t.deepEqual(
+        withIndexGetters(values, () => call(ctx, method)),
+        { result: undefined, reads: '' },
+        `${method}: ${call}`,
+      )
+      if (method === 'clip') ctx.fillRect(0, 0, 10, 10)
+      t.is(centerAlpha(ctx), alpha, `${method}: ${call}`)
+    }
+  }
+})
+
+test.serial('stroke reads only the arguments it was given', (t) => {
+  // Chrome 155: stroke() strokes the current path, whose edge covers (0, 5).
+  for (const value of [cornerPath(), 5]) {
+    const ctx = ruleContext()
+    ctx.strokeStyle = '#00f'
+    ctx.lineWidth = 2
+    t.deepEqual(
+      withIndexGetters({ 0: value }, () => ctx.stroke()),
+      { result: undefined, reads: '' },
+    )
+    t.deepEqual(pixel(ctx, 0, 5), [0, 0, 255, 255])
+    t.deepEqual(pixel(ctx, 5, 5), [0, 0, 0, 0])
+  }
+})
+
+test.serial('isPointInPath and isPointInStroke read only the arguments they were given', (t) => {
+  const ctx = loose(ruleContext())
+  ctx.lineWidth = 2
+  // [what the getters return, the call, the result] (Chrome 155)
+  const cases: [Record<number, unknown>, () => unknown, boolean][] = [
+    [{ 2: 'evenodd', 3: 'evenodd' }, () => ctx.isPointInPath(5, 5), true],
+    [{ 2: cornerPath() }, () => ctx.isPointInPath(5, 5), true],
+    [{ 3: 'nonzero' }, () => ctx.isPointInPath(5, 5, 'evenodd'), false],
+    [{ 3: 'evenodd' }, () => ctx.isPointInPath(5, 5, undefined), true],
+    [{ 3: 'evenodd' }, () => ctx.isPointInPath(rulePath(), 5, 5), true],
+    [{ 2: 5, 3: 'nonzero' }, () => ctx.isPointInPath(rulePath(), 5), false],
+    [{ 2: 5 }, () => ctx.isPointInStroke(0, 5), true],
+    [{ 2: cornerPath() }, () => ctx.isPointInStroke(0, 5), true],
+    [{ 2: 5 }, () => ctx.isPointInStroke(rulePath(), 0), false],
+  ]
+  for (const [values, call, expected] of cases) {
+    t.deepEqual(withIndexGetters(values, call), { result: expected, reads: '' }, String(call))
+  }
+})
+
 // [method, required argument count]
 const PATH_ARITY: [string, number][] = [
   ['moveTo', 2],
