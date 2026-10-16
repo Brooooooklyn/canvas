@@ -265,6 +265,83 @@ test('createImageData binding errors keep the bare message in the stack', (t) =>
   t.is(String(tooBig?.stack).split('\n')[0], 'RangeError: Out of memory at ImageData creation.')
 })
 
+/**
+ * Runs `f` with a getter on target[key] for each key of `values`, then
+ * removes them. The keys read, in order.
+ */
+function withIndexGetters(target: object, values: Record<string, unknown>, f: () => void) {
+  let reads = ''
+  const keys = Object.keys(values)
+  for (const key of keys) {
+    Object.defineProperty(target, key, {
+      configurable: true,
+      get() {
+        reads += key
+        return values[key]
+      },
+      set(value) {
+        Object.defineProperty(this, key, { value, writable: true, enumerable: true, configurable: true })
+      },
+    })
+  }
+  try {
+    f()
+  } finally {
+    for (const key of keys) delete (target as any)[key]
+  }
+  return reads
+}
+
+// Serial: the getters are on prototypes that every test in the file uses.
+test.serial('createImageData reads no argument that was not passed, as Chrome', (t) => {
+  // Under the test loader, index.js has a source map. Node parses it when it
+  // first formats a stack through index.js, and that parse reads
+  // Object.prototype[0]: throw through index.js before the getters are there.
+  void t.throws(() => ctx2d().createImageData())?.stack
+  const from = (first: number, value: unknown) =>
+    Object.fromEntries(Array.from({ length: 10 - first }, (_, i) => [first + i, value]))
+  const p3 = { colorSpace: 'display-p3' }
+  const required = typeError('1 argument required, but only 0 present.')
+  const cases: [object, Record<string, unknown>, (c: any, id: ImageData) => ImageData, object, 'display-p3'?][] = [
+    [Object.prototype, { 2: p3 }, (c) => c.createImageData(2, 2), ok(2, 2)],
+    [Object.prototype, { 2: 5 }, (c) => c.createImageData(2, 2), ok(2, 2)],
+    [Object.prototype, from(2, p3), (c) => c.createImageData(2, 2), ok(2, 2)],
+    // The default color space is the context's.
+    [
+      Object.prototype,
+      { 2: { colorSpace: 'srgb' } },
+      (c) => c.createImageData(2, 2),
+      ok(2, 2, 'display-p3'),
+      'display-p3',
+    ],
+    [Object.prototype, { 1: 3 }, (c, id) => c.createImageData(id), ok(2, 2)],
+    [Object.prototype, from(1, 3), (c, id) => c.createImageData(id), ok(2, 2)],
+    [Object.prototype, from(0, 2), (c) => c.createImageData(), required],
+    [Object.prototype, { 0: new ImageData(3, 1) }, (c) => c.createImageData(), required],
+    [Object.prototype, { 3: 'x' }, (c) => c.createImageData(2, 2, undefined), ok(2, 2)],
+    [Object.prototype, from(3, 'x'), (c) => c.createImageData(2, 2, p3), ok(2, 2, 'display-p3')],
+    [
+      Object.prototype,
+      from(2, p3),
+      (c) => c.createImageData.call({}, 2, 2),
+      { ctor: 'TypeError', name: 'TypeError', code: undefined, msg: 'Illegal invocation' },
+    ],
+    [Array.prototype, from(0, p3), (c) => c.createImageData(2, 2), ok(2, 2)],
+  ]
+  for (const [target, values, f, expected, colorSpace] of cases) {
+    const c = ctx2d(colorSpace)
+    const id = new ImageData(2, 2)
+    let r: object = { not: 'run' }
+    const reads = withIndexGetters(target, values, () => {
+      r = result(() => f(c, id))
+    })
+    t.deepEqual(r, expected, f.toString())
+    t.is(reads, '', f.toString())
+  }
+  t.false('2' in Object.prototype)
+  t.false('0' in Array.prototype)
+})
+
 test('createImageData(imagedata) still copies only the size and color space', (t) => {
   // The sibling overload: unchanged.
   const source = new ImageData(new Uint8ClampedArray([1, 2, 3, 4, 5, 6, 7, 8]), 2, 1, { colorSpace: 'display-p3' })
