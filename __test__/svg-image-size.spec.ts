@@ -1002,6 +1002,12 @@ const transformedDraws: [string, [number, number, number, number], string, numbe
   ],
 ]
 
+// The Windows ARM64 Skia build rounds raster math a little differently (main
+// skips exact checks there too: pathkit.spec.ts). Its CI measured sumA 160880
+// for 'scale(1, -1), curves' (Chrome 160879), every row equal, the other
+// cases exact; so there the sum may be 1 from Chrome's.
+const WIN_ARM64 = process.platform === 'win32' && process.arch === 'arm64'
+
 test('a rotated or flipped svg draw matches Chrome', async (t) => {
   for (const [name, [a, b, c, d], body, sumA, rows] of transformedDraws) {
     const image = await loaded(svg('width="1000" height="1000"', body))
@@ -1010,9 +1016,10 @@ test('a rotated or flipped svg draw matches Chrome', async (t) => {
     const det = a * d - b * c
     ctx.drawImage(image, (d * 150 - c * 75) / det - 500, (a * 75 - b * 150) / det - 500)
     const data = ctx.getImageData(0, 0, 300, 150).data
+    const sum = alphaSum(data)
     t.deepEqual(
       {
-        sumA: alphaSum(data),
+        sumA: WIN_ARM64 && Math.abs(sum - sumA) <= 1 ? sumA : sum,
         rows: rows.map(([y, x0, chrome]) => chrome.map((_, i) => data[(y * 300 + x0 + i) * 4 + 3])),
       },
       { sumA, rows: rows.map(([, , chrome]) => chrome) },
