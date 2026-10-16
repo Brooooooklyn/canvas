@@ -1347,6 +1347,63 @@ fn is_es_iterable_object(env: sys::napi_env, value: sys::napi_value, prefix: &st
 const MAX_RADII_SEQUENCE_LENGTH: u32 =
   (crate::image::MAX_DATA_BYTES / std::mem::size_of::<u32>()) as u32;
 
+/// The radii of one roundRect() call: how many there are, and the first
+/// four. Blink converts the whole sequence, then throws a RangeError for
+/// more than four radii before it looks at any of them
+/// (canvas_path.cc:575-580). So every radius is converted here too, in
+/// order, with its side effects and errors, but only the first four are
+/// kept: a long sparse Array costs no memory for its holes.
+#[derive(Debug)]
+pub(crate) struct Radii {
+  count: u32,
+  first: [Radius; 4],
+}
+
+impl Radii {
+  const EMPTY: Self = Self {
+    count: 0,
+    first: [Radius::Number(0.0); 4],
+  };
+
+  fn one(radius: Radius) -> Self {
+    Self {
+      count: 1,
+      first: [radius; 4],
+    }
+  }
+
+  /// Adds the next radius of a sequence. The length check of [`sequence`]
+  /// does not bound an Array that grows while it is read, nor any other
+  /// iterable. Blink's vector cannot hold more than
+  /// `MAX_RADII_SEQUENCE_LENGTH` radii: growing it past that fails a CHECK
+  /// (heap_allocator_impl.h:63), a crash. Here it is a RangeError, with the
+  /// message of the Array length check.
+  fn push(&mut self, env: sys::napi_env, prefix: &str, radius: Radius) -> Result<()> {
+    if self.count == MAX_RADII_SEQUENCE_LENGTH {
+      return Err(context_range_error(
+        env,
+        prefix,
+        "Array length exceeds supported limit.",
+      ));
+    }
+    if let Some(slot) = self.first.get_mut(self.count as usize) {
+      *slot = radius;
+    }
+    self.count += 1;
+    Ok(())
+  }
+
+  /// How many radii the argument has.
+  pub(crate) fn count(&self) -> u32 {
+    self.count
+  }
+
+  /// The radii, or the first four of them.
+  pub(crate) fn first(&self) -> &[Radius] {
+    &self.first[..self.count.min(4) as usize]
+  }
+}
+
 /// The roundRect() coordinates that are not numbers, recorded by
 /// [`RoundRectCoordinate`] for [`RoundRectRadii`], the last parameter of
 /// the same call: bit `I` of `mask` is set when coordinate `I` is in
@@ -1411,10 +1468,10 @@ enum RoundRectOverload {
 /// anything else one radius. Then x, y, w and h are converted, and then the
 /// radii: a sequence as any `sequence<T>` ([`sequence`]: an Array by index,
 /// never with its @@iterator; another iterable with its @@iterator, read a
-/// second time). Converted in the callback glue, so a getter may use the
-/// receiver, as in Chrome.
+/// second time), keeping only what [`Radii`] needs. Converted in the
+/// callback glue, so a getter may use the receiver, as in Chrome.
 pub struct RoundRectRadii<S> {
-  pub(crate) radii: Vec<Radius>,
+  pub(crate) radii: Radii,
   /// The coordinates converted here, by index; only those that
   /// [`RoundRectCoordinate`] recorded are set.
   coordinates: [f64; 4],
@@ -1467,12 +1524,17 @@ impl<S: Site> FromNapiValue for RoundRectRadii<S> {
     }
     let radii = match overload {
       RoundRectOverload::Sequence => {
+        let mut radii = Radii::EMPTY;
+        // [`sequence`] keeps a `()` for each radius: a Vec of a zero-sized
+        // type never allocates.
         sequence(env, value, S::PREFIX, MAX_RADII_SEQUENCE_LENGTH, |item| {
-          radius(env, item, S::PREFIX)
-        })?
+          let radius = radius(env, item, S::PREFIX)?;
+          radii.push(env, S::PREFIX, radius)
+        })?;
+        radii
       }
-      RoundRectOverload::One => vec![radius(env, value, S::PREFIX)?],
-      RoundRectOverload::Number(number) => vec![Radius::Number(number)],
+      RoundRectOverload::One => Radii::one(radius(env, value, S::PREFIX)?),
+      RoundRectOverload::Number(number) => Radii::one(Radius::Number(number)),
     };
     Ok(Self {
       radii,

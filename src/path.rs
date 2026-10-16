@@ -522,18 +522,17 @@ pub(crate) fn check_round_rect(
   prefix: &str,
   invertible: bool,
   rect: [f64; 4],
-  radii: &[webidl::Radius],
+  radii: &webidl::Radii,
 ) -> Result<Option<RoundRectArgs>> {
-  if radii.is_empty() || radii.len() > 4 {
+  let count = radii.count();
+  if count == 0 || count > 4 {
     return Err(webidl::context_range_error(
       env,
       prefix,
-      &format!(
-        "{} radii provided. Between one and four radii are necessary.",
-        radii.len()
-      ),
+      &format!("{count} radii provided. Between one and four radii are necessary."),
     ));
   }
+  let radii = radii.first();
   if !invertible {
     return Ok(None);
   }

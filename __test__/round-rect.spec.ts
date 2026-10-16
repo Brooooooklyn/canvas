@@ -3,9 +3,15 @@
 // Chrome 155 CPU canvas (--disable-gpu, getContext('2d', { willReadFrequently:
 // true })) in a standards-mode page; Chrome arm64 and x64 give the same
 // values.
+import { spawnSync } from 'node:child_process'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
 import test from 'ava'
 
 import { createCanvas, DOMPoint, Path2D } from '../index'
+
+const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 
 type Ctx = ReturnType<ReturnType<typeof createCanvas>['getContext']>
 
@@ -666,6 +672,55 @@ test('roundRect takes an Array of at most 536346624 radii, like Chrome', (t) => 
       })
       t.is(String(error?.stack).split('\n')[0], 'RangeError: Array length exceeds supported limit.')
     }
+  }
+})
+
+test('roundRect keeps only the first four radii while it converts a long list', (t) => {
+  // Chrome converts every radius, then throws for more than four whatever
+  // their values. Keeping all of them grew the peak resident size by about
+  // 375 MB for 8,000,000 holes and 195 MB for 4,000,000 iterated values
+  // (macOS arm64 and x64). Each list runs in a child process of its own,
+  // which reports how much its peak resident size grew during the call.
+  const run = (radii: string, call: string) => {
+    const script = `
+const { createCanvas, Path2D } = require('./index.js')
+const radii = ${radii}
+const before = process.resourceUsage().maxRSS
+let error = null
+try {
+  ${call}
+} catch (e) {
+  error = { message: e.name + ': ' + e.message, stack: String(e.stack).split('\\n')[0] }
+}
+const growthMB = (process.resourceUsage().maxRSS - before) / 1024
+process.stdout.write(JSON.stringify({ error, growthMB }))
+`
+    const { status, signal, stdout, stderr } = spawnSync(process.execPath, ['-e', script], {
+      cwd: root,
+      encoding: 'utf8',
+      timeout: 120_000,
+    })
+    t.is(status, 0, `status=${status} signal=${signal}\n${stderr}`)
+    return JSON.parse(stdout) as { error: { message: string; stack: string } | null; growthMB: number }
+  }
+  const count = (n: number) => n + ' radii provided. Between one and four radii are necessary.'
+  const holes = run(
+    'Object.assign([], { length: 8000000 })',
+    'createCanvas(8, 8).getContext("2d").roundRect(0, 0, 4, 4, radii)',
+  )
+  t.deepEqual(holes.error, { message: 'RangeError: ' + C + count(8000000), stack: 'RangeError: ' + count(8000000) })
+  const iterable = run(
+    '{ *[Symbol.iterator]() { for (let i = 0; i < 4000000; i++) yield 1 } }',
+    'new Path2D().roundRect(0, 0, 4, 4, radii)',
+  )
+  t.deepEqual(iterable.error, {
+    message: 'RangeError: ' + P + count(4000000),
+    stack: 'RangeError: ' + count(4000000),
+  })
+  // Not measured on Windows.
+  if (process.platform !== 'win32') {
+    t.true(holes.growthMB < 48, `8,000,000 holes grew the peak resident size by ${holes.growthMB} MB`)
+    t.true(iterable.growthMB < 48, `4,000,000 iterated values grew the peak resident size by ${iterable.growthMB} MB`)
   }
 })
 
