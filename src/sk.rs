@@ -1247,6 +1247,8 @@ pub mod ffi {
       info: *mut skiac_bitmap_info,
     ) -> bool;
 
+    pub fn skiac_svg_document_retained_bytes(document: *mut skiac_svg_document) -> usize;
+
     pub fn skiac_svg_document_destroy(document: *mut skiac_svg_document);
 
     pub fn skiac_font_collection_default_font_metrics(
@@ -5150,6 +5152,14 @@ impl SvgDocument {
       )
     };
     (rendered && !bitmap_info.bitmap.is_null()).then_some(Bitmap(bitmap_info))
+  }
+
+  /// The bytes a prepared document keeps for its `<image>` elements: their
+  /// encoded copies, the rasters decoded at the first draw that needs them
+  /// with their scaled copies, and the nested SVG images' pictures. 0 for a
+  /// document that is not prepared.
+  pub fn retained_bytes(&self) -> usize {
+    unsafe { ffi::skiac_svg_document_retained_bytes(self.0) }
   }
 }
 

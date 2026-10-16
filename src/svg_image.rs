@@ -44,7 +44,31 @@ pub(crate) struct SvgImage {
   /// With the font collection generation each was drawn in: a font
   /// registered later can change its text.
   rasters: Vec<(RasterSpec, u64, Arc<AccountedBitmap>)>,
+  /// `document.retained_bytes()` as last reported to V8.
+  reported: ReportedBytes,
 }
+
+/// Bytes reported to V8 through `Env::adjust_external_memory`, given back
+/// when dropped (as `AccountedBitmap` does for its pixels).
+struct ReportedBytes {
+  env: napi::sys::napi_env,
+  bytes: i64,
+}
+
+impl Drop for ReportedBytes {
+  fn drop(&mut self) {
+    if self.bytes != 0 && !self.env.is_null() {
+      let mut adjusted: i64 = 0;
+      unsafe {
+        napi::sys::napi_adjust_external_memory(self.env, -self.bytes, &mut adjusted);
+      }
+    }
+  }
+}
+
+// An SvgImage is parsed on a decode thread with nothing reported; it reports
+// only on the JS thread of the Image that holds it, and is dropped there.
+unsafe impl Send for ReportedBytes {}
 
 /// What drawImage draws for an SVG Image: all of `raster` into `dst`
 /// (x, y, width, height in the current user space).
@@ -166,7 +190,24 @@ impl SvgImage {
       sizing,
       color_space,
       rasters: Vec::new(),
+      reported: ReportedBytes {
+        env: std::ptr::null_mut(),
+        bytes: 0,
+      },
     }))
+  }
+
+  /// Tells V8 about the change in what the document keeps for its
+  /// `<image>` elements (`SvgDocument::retained_bytes`) since the last call.
+  pub(crate) fn report_retained_bytes(&mut self, env: &Env) -> napi::Result<()> {
+    let bytes = self.document.retained_bytes() as i64;
+    let delta = bytes - self.reported.bytes;
+    if delta != 0 {
+      env.adjust_external_memory(delta)?;
+      self.reported.env = env.raw();
+      self.reported.bytes = bytes;
+    }
+    Ok(())
   }
 
   /// The concrete size against `default_object_size`, or None when it
@@ -201,6 +242,8 @@ impl SvgImage {
       self.color_space,
     );
     drop(font);
+    // The render decodes the rasters it draws for the first time.
+    self.report_retained_bytes(env)?;
     let Some(bitmap) = bitmap else {
       return Ok(None);
     };

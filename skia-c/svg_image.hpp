@@ -27,6 +27,10 @@ void RenderPrepared(SkSVGDOM* dom,
                     SkCanvas* canvas,
                     uint8_t cs);
 
+// The bytes the images of a prepared document keep (encoded, decoded and
+// scaled copies, nested pictures), which grow as it draws.
+size_t RetainedBytes(const skresources::ResourceProvider* resources);
+
 }  // namespace napi_svg
 
 #endif  // SKIA_C_SVG_IMAGE_H

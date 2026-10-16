@@ -1583,6 +1583,7 @@ bool skiac_svg_document_render(skiac_svg_document* document,
                                int height,
                                uint8_t cs,
                                skiac_bitmap_info* bitmap_info);
+size_t skiac_svg_document_retained_bytes(skiac_svg_document* document);
 void skiac_svg_document_destroy(skiac_svg_document* document);
 bool skiac_font_collection_default_font_metrics(
     skiac_font_collection* c_collection,

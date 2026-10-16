@@ -3557,6 +3557,14 @@ bool skiac_svg_document_render(skiac_svg_document* document,
   return true;
 }
 
+// The bytes the <image> elements of a prepared document keep, for V8
+// (src/svg_image.rs); 0 for a document SkSVGDOM reads as it is.
+size_t skiac_svg_document_retained_bytes(skiac_svg_document* document) {
+  return document->resources
+             ? napi_svg::RetainedBytes(document->resources.get())
+             : 0;
+}
+
 void skiac_svg_document_destroy(skiac_svg_document* document) {
   delete document;
 }
