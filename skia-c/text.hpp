@@ -129,7 +129,7 @@ std::vector<CapsPiece> SplitCaps(skiac_font_collection* c_collection,
 // How far each text blob of `paragraph`'s first line moves right to sit
 // where Blink draws it, in the order visit() and paint() give the blobs;
 // empty when none moves (text.cpp). TextLine puts each run after the runs
-// before it, counting a run whose glyphs advance less than nothing
+// before it, counting a run whose clusters advance less than nothing
 // (negative letter or word spacing past their advances) as 0 wide; Blink
 // adds the advances as they are.
 std::vector<float> LineRunShifts(ParagraphImpl* paragraph);

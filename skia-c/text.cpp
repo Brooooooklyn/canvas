@@ -881,15 +881,19 @@ std::vector<float> LineRunShifts(ParagraphImpl* paragraph) {
   if (paragraph->lines().size() != 1 || paragraph->runs().size() < 2) {
     return shifts;
   }
-  // Without a glyph that advances less than nothing, no piece is narrower
-  // than 0 and TextLine's x is Blink's.
-  bool backwards = false;
-  for (const Run& run : paragraph->runs()) {
-    for (size_t i = 0; i < run.size() && !backwards; ++i) {
-      backwards = run.posX(i + 1) < run.posX(i);
+  // Without a cluster that advances less than nothing, no piece is narrower
+  // than 0 and TextLine's x is Blink's. A cluster's width holds its letter
+  // and word spacing. The glyph positions can go backwards without one:
+  // OneLineShaper can leave a glyph of the next text in a run, outside the
+  // run's clusters, and the spacing before it does not move it.
+  bool negative = false;
+  for (const Cluster& cluster : paragraph->clusters()) {
+    if (cluster.width() < 0) {
+      negative = true;
+      break;
     }
   }
-  if (!backwards) {
+  if (!negative) {
     return shifts;
   }
   const TextLine& line = paragraph->lines()[0];
