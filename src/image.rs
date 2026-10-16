@@ -1776,6 +1776,9 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
     let data_ref = match self.encoded.as_mut() {
       Some(room) if !svg_only && data_ref.len() <= room.capacity() => {
         room.extend_from_slice(&data_ref);
+        // The body of a data: URL is a copy too: free it now, not after the
+        // decode.
+        drop(data_ref);
         Cow::Borrowed(room.as_slice())
       }
       _ => data_ref,
