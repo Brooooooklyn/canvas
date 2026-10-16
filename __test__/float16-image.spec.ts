@@ -4,7 +4,7 @@
 import { execFile } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { promisify } from 'node:util'
+import { isDeepStrictEqual, promisify } from 'node:util'
 import { Worker } from 'node:worker_threads'
 
 import test from 'ava'
@@ -266,6 +266,69 @@ rssTest('collected 16-bit PNG Images give back their encoded copy', async (t) =>
   t.true(
     grown < encoded,
     `RSS grew ${mb(grown)} MB in 6 rounds of ${mb(encoded)} MB of images (RSS MB a round: ${rss.map(mb).join(', ')})`,
+  )
+})
+
+// A Buffer src is decoded on a libuv thread, and the load ends later on the JS
+// thread. The Image keeps the bytes it decoded for its half-float decodes, so
+// a Buffer changed in between changes neither canvas: both draw the image
+// that was decoded. The copy used to be made when the load ended, from the
+// changed Buffer: a float16 canvas then drew the other PNG, and a zeroed
+// Buffer left it the 8-bit pixels.
+test('an Image keeps the bytes it decoded when its Buffer changes during the load', async (t) => {
+  const index = JSON.stringify(fileURLToPath(new URL('../index.js', import.meta.url)))
+  const script = `
+    const { createCanvas, Image } = require(${index})
+    const fs = require('node:fs')
+    const small = fs.readFileSync(${JSON.stringify(fileURLToPath(fixtureUrl('hbd-4x1.png')))})
+    const other = fs.readFileSync(${JSON.stringify(fileURLToPath(fixtureUrl('hbd-8x8.png')))})
+    const draw = (image, settings) => {
+      const ctx = createCanvas(8, 8).getContext('2d', settings)
+      ctx.drawImage(image, 0, 0)
+      return Array.from(ctx.getImageData(0, 0, 8, 8, { pixelFormat: 'rgba-float32' }).data)
+    }
+    const look = (image) => ({
+      width: image.naturalWidth,
+      unorm8: draw(image, {}),
+      float16: draw(image, { colorType: 'float16' }),
+    })
+    const load = async (bytes, change) => {
+      const buffer = Buffer.alloc(Math.max(small.length, other.length))
+      bytes.copy(buffer)
+      const image = new Image()
+      image.src = buffer
+      if (change) {
+        // The JS thread waits while a libuv thread decodes the PNG.
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 300)
+        change(buffer)
+      }
+      return image.decode().then(() => look(image), () => 'broken')
+    }
+    ;(async () => {
+      console.log(JSON.stringify({
+        small: await load(small),
+        other: await load(other),
+        replaced: await load(small, (buffer) => other.copy(buffer)),
+        zeroed: await load(small, (buffer) => buffer.fill(0)),
+      }))
+    })().catch((error) => {
+      console.error(error)
+      process.exit(1)
+    })
+  `
+  const { stdout } = await promisify(execFile)(process.execPath, ['-e', script], { maxBuffer: 1 << 20 })
+  const out = JSON.parse(stdout)
+  t.is(out.small.width, 4)
+  t.is(out.other.width, 8)
+  // Decoded before the change (the JS thread waited), or after it on a very
+  // slow machine: either way one PNG, on both canvases.
+  t.true(
+    isDeepStrictEqual(out.replaced, out.small) || isDeepStrictEqual(out.replaced, out.other),
+    JSON.stringify({ replaced: out.replaced, small: out.small }),
+  )
+  t.true(
+    isDeepStrictEqual(out.zeroed, out.small) || out.zeroed === 'broken',
+    JSON.stringify({ zeroed: out.zeroed, small: out.small }),
   )
 })
 

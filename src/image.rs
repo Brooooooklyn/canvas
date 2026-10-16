@@ -1183,6 +1183,8 @@ impl Image {
     if let Either::A(buffer) = data {
       let buffer_data = buffer.as_ref();
       let length = buffer_data.len();
+      // Room for the copy of a high-bit-depth image, for the decode task.
+      let encoded = encoded_room(buffer_data);
 
       // Known raster signatures take precedence over the permissive SVG scan.
       // Raster payloads may legitimately contain the bytes `<svg` in metadata or
@@ -1276,6 +1278,7 @@ impl Image {
             color_space: self.color_space,
             data: Some(Either::A(unsafe { raw_data.cast()? })),
             file_content: None,
+            encoded,
             fire_events: true, // Fire onload after decode completes
             original_url: None,
           };
@@ -1331,6 +1334,7 @@ impl Image {
           color_space: self.color_space,
           data: Some(Either::A(unsafe { raw_data.cast()? })),
           file_content: None,
+          encoded,
           fire_events: true,
           original_url: None,
         };
@@ -1435,6 +1439,7 @@ impl Image {
             width,
             height,
             color_space,
+            encoded: encoded_room(&buffer),
             data: Some(Either::A(buffer)),
             file_content: None,
             this_ref: this.create_ref()?,
@@ -1524,6 +1529,11 @@ impl Image {
       color_space: self.color_space,
       data: Some(unsafe { raw_data.cast()? }),
       file_content: None,
+      // A file is read in `compute`: only a data: URL has room.
+      encoded: match &self.src {
+        Some(Either::B(url)) => data_url_room(url.as_bytes()),
+        _ => None,
+      },
       this_ref: this.create_ref()?,
       generation: self.load_generation,
       fire_events: true,
@@ -1621,8 +1631,8 @@ unsafe impl Send for DecodedBitmap {}
 struct BitmapInfo {
   data: Bitmap,
   /// Whether the image has more than 8 bits a channel: the Image then keeps
-  /// a copy of the encoded image, as a float16 canvas draws its half-float
-  /// decode.
+  /// a copy of the encoded image (`BitmapDecoder::take_encoded`), as a
+  /// float16 canvas draws its half-float decode.
   high_bit_depth: bool,
 }
 
@@ -1641,6 +1651,12 @@ struct BitmapDecoder {
   data: Option<Either<Uint8Array, String>>,
   // data from file path
   file_content: Option<Vec<u8>>,
+  /// Room for a copy of the encoded image, made on the JS thread when its
+  /// first bytes say it may have more than 8 bits a channel (`encoded_room`).
+  /// `compute` copies the bytes it decodes into it and decodes the copy, which
+  /// the Image keeps: a Buffer changed during the load changes neither its
+  /// 8-bit pixels nor its half-float decodes.
+  encoded: Option<Vec<u8>>,
   this_ref: ObjectRef,
   // Generation counter to detect stale loads
   generation: u64,
@@ -1651,21 +1667,78 @@ struct BitmapDecoder {
   original_url: Option<String>,
 }
 
+/// Whether Skia may decode `encoded` with more than 8 bits a channel
+/// (`Bitmap::is_high_bit_depth`), from its first bytes: a 16-bit RGB or RGBA
+/// PNG (Skia decodes 16-bit gray to 8 bits), any JPEG XL (Skia reports 16 bits
+/// for each one), or an ICO or CUR (Skia reports its largest image's, which
+/// can be a 16-bit PNG).
+fn may_be_high_bit_depth(encoded: &[u8]) -> bool {
+  const PNG: &[u8] = b"\x89PNG\r\n\x1a\n";
+  const JXL_CODESTREAM: &[u8] = b"\xff\x0a";
+  const JXL_CONTAINER: &[u8] = b"\0\0\0\x0cJXL \r\n\x87\n";
+  // The IHDR chunk comes first: its bit depth, then its colour type.
+  let png16 = encoded.starts_with(PNG)
+    && encoded.get(12..16) == Some(&b"IHDR"[..])
+    && encoded.get(24) == Some(&16)
+    && matches!(encoded.get(25), Some(2 | 6));
+  png16
+    || encoded.starts_with(JXL_CODESTREAM)
+    || encoded.starts_with(JXL_CONTAINER)
+    || encoded.starts_with(b"\0\0\x01\0")
+    || encoded.starts_with(b"\0\0\x02\0")
+}
+
+/// Room for `len` bytes, allocated on this thread.
+fn room(len: usize) -> Option<Vec<u8>> {
+  let mut room = Vec::new();
+  room.try_reserve_exact(len).ok()?;
+  Some(room)
+}
+
+/// Room for a copy of the image a Buffer src holds (an encoded image, or a
+/// data: URL), made on the JS thread, when it may have more than 8 bits a
+/// channel; None for every other image, which keeps no copy.
+///
+/// The room is allocated here and filled on a libuv thread: the JS thread
+/// frees it, with the Image or the decode task, and mimalloc frees a block
+/// on the thread that allocated it at once. A block allocated on a libuv
+/// thread and freed on the JS thread stayed in memory until that libuv
+/// thread had made about 100 more slow-path allocations.
+fn encoded_room(bytes: &[u8]) -> Option<Vec<u8>> {
+  if may_be_high_bit_depth(bytes) {
+    room(bytes.len())
+  } else {
+    data_url_room(bytes)
+  }
+}
+
+/// [`encoded_room`] for a data: URL, from the start of its body: room for as
+/// many bytes as the whole body can decode to. None when `url` is not a
+/// data: URL, as a file path is read in `compute`.
+fn data_url_room(url: &[u8]) -> Option<Vec<u8>> {
+  match data_url::head(url)? {
+    Ok(head) if head.essence != "image/svg+xml" && may_be_high_bit_depth(&head.prefix) => {
+      room(head.max_body_len)
+    }
+    _ => None,
+  }
+}
+
 impl BitmapDecoder {
-  /// A copy of the encoded image `compute` decoded: the Buffer, file, or
-  /// data: URL body bytes.
-  fn encoded_copy(&self) -> Option<Vec<u8>> {
-    let bytes = match self.data.as_ref()? {
-      Either::A(data) => data.as_ref(),
-      Either::B(path_or_svg) if data_url::is_data_url(path_or_svg.as_bytes()) => {
-        path_or_svg.as_bytes()
-      }
-      Either::B(_) => self.file_content.as_deref()?,
-    };
-    match data_url::parse(bytes) {
-      None => Some(bytes.to_vec()),
-      Some(Ok(url)) => Some(url.body),
-      Some(Err(())) => None,
+  /// The copy of the encoded image `compute` decoded, for the Image to keep:
+  /// the room `compute` filled, or for a file path a copy of the file made
+  /// here, on the JS thread. None without a filled room: when src was set,
+  /// its first bytes were not those of a high-bit-depth image (a Buffer
+  /// changed to one later keeps only its 8-bit pixels), or the bytes
+  /// `compute` decoded did not fit in the room.
+  fn take_encoded(&mut self) -> Option<Vec<u8>> {
+    match self.file_content.as_deref() {
+      Some(file) => match data_url::parse(file) {
+        None => Some(file.to_vec()),
+        Some(Ok(url)) => Some(url.body),
+        Some(Err(())) => None,
+      },
+      None => self.encoded.take().filter(|copy| !copy.is_empty()),
     }
   }
 }
@@ -1719,6 +1792,16 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
         let svg = url.essence == "image/svg+xml";
         (Cow::Owned(url.body), svg, !svg)
       }
+    };
+    // With room for a copy, the copy is what is decoded, and what the Image
+    // keeps: the room is filled here and never grows, so bytes that do not
+    // fit are decoded where they are, and not kept.
+    let data_ref = match self.encoded.as_mut() {
+      Some(room) if !svg_only && data_ref.len() <= room.capacity() => {
+        room.extend_from_slice(&data_ref);
+        Cow::Borrowed(room.as_slice())
+      }
+      _ => data_ref,
     };
     let length = data_ref.len();
     let mut width = self.width;
@@ -1826,14 +1909,11 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
     self_mut.complete = true;
     self_mut.bitmap = None;
 
-    // The encoded copy is made here, on the JS thread, which also frees it
-    // with the Image. mimalloc keeps a large block that another thread frees
-    // until the thread that allocated it empties its queue of such blocks,
-    // once every 100 of its slower allocations: copies made in `compute`, on
-    // a libuv thread, stayed in memory long after their Images were
-    // collected.
+    // The copy is allocated on the JS thread, which also frees it with the
+    // Image (`encoded_room`). A room the image does not keep is freed here
+    // too, with the task.
     let encoded = match &output.bitmap {
-      DecodeStatus::Ok(bitmap) if bitmap.high_bit_depth => self.encoded_copy(),
+      DecodeStatus::Ok(bitmap) if bitmap.high_bit_depth => self.take_encoded(),
       _ => None,
     };
 
@@ -1966,5 +2046,101 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
     // Unref this_ref (used in resolve/reject paths)
     self.this_ref.unref(&env)?;
     Ok(())
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use std::path::{Path, PathBuf};
+
+  use super::*;
+
+  /// 1x1 16-bit PNGs: gray, gray and alpha, RGB.
+  const GRAY16: &[u8] = b"\x89PNG\r\n\x1a\n\0\0\0\x0dIHDR\0\0\0\x01\0\0\0\x01\x10\0\0\0\0\x6a\xee\x47\x16\0\0\0\x0bIDAT\x78\x9c\x63\x68\x68\0\0\x01\x83\x01\x01\x18\x35\x22\x15\0\0\0\0IEND\xae\x42\x60\x82";
+  const GRAY_ALPHA16: &[u8] = b"\x89PNG\r\n\x1a\n\0\0\0\x0dIHDR\0\0\0\x01\0\0\0\x01\x10\x04\0\0\0\xe5\x8c\xd0\x41\0\0\0\x0bIDAT\x78\x9c\x63\x68\0\x02\0\x05\x05\x02\x01\xac\x53\x22\x3a\0\0\0\0IEND\xae\x42\x60\x82";
+  const RGB16: &[u8] = b"\x89PNG\r\n\x1a\n\0\0\0\x0dIHDR\0\0\0\x01\0\0\0\x01\x10\x02\0\0\0\xc0\xe7\x8f\x9d\0\0\0\x0bIDAT\x78\x9c\x63\x68\0\x03\0\x0a\x87\x03\x01\xc4\xc6\x1f\x66\0\0\0\0IEND\xae\x42\x60\x82";
+
+  /// An ICO of one PNG, `width` x `height`.
+  fn ico(png: &[u8], width: u8, height: u8) -> Vec<u8> {
+    let mut ico = vec![0, 0, 1, 0, 1, 0, width, height, 0, 0, 1, 0, 32, 0];
+    ico.extend_from_slice(&(png.len() as u32).to_le_bytes());
+    ico.extend_from_slice(&22u32.to_le_bytes());
+    ico.extend_from_slice(png);
+    ico
+  }
+
+  fn images(dir: &Path, out: &mut Vec<(String, Vec<u8>)>) {
+    for entry in std::fs::read_dir(dir).unwrap() {
+      let path: PathBuf = entry.unwrap().path();
+      if path.is_dir() {
+        images(&path, out);
+      } else if path.extension().is_some_and(|ext| {
+        ["png", "jpg", "jpeg", "webp", "gif", "avif", "bmp", "ico"]
+          .contains(&ext.to_string_lossy().to_ascii_lowercase().as_str())
+      }) {
+        out.push((path.display().to_string(), std::fs::read(&path).unwrap()));
+      }
+    }
+  }
+
+  /// Every image Skia decodes with more than 8 bits a channel gets room for
+  /// its copy, from a Buffer or a data: URL; other PNGs, JPEGs, WebPs, GIFs
+  /// and AVIFs get none.
+  #[test]
+  fn room_for_the_images_skia_decodes_to_more_than_8_bits() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut all = Vec::new();
+    images(&root.join("__test__/fixtures"), &mut all);
+    images(&root.join("example"), &mut all);
+    let hbd = std::fs::read(root.join("__test__/fixtures/float16/hbd-4x1.png")).unwrap();
+    let png8 = std::fs::read(root.join("__test__/fixtures/data-url/4x4.png")).unwrap();
+    for (name, bytes) in [
+      ("gray16", GRAY16.to_vec()),
+      ("gray-alpha16", GRAY_ALPHA16.to_vec()),
+      ("rgb16", RGB16.to_vec()),
+      ("ico16", ico(&hbd, 4, 1)),
+      ("ico8", ico(&png8, 4, 4)),
+    ] {
+      all.push((name.to_owned(), bytes));
+    }
+    let mut high = Vec::new();
+    for (name, bytes) in &all {
+      let skia = Bitmap::is_high_bit_depth(bytes);
+      let ico = bytes.starts_with(b"\0\0\x01\0");
+      if skia {
+        high.push(
+          Path::new(name)
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned(),
+        );
+      }
+      assert_eq!(skia || ico, may_be_high_bit_depth(bytes), "{name}");
+      let room = encoded_room(bytes);
+      assert_eq!(room.is_some(), skia || ico, "{name}");
+      assert!(room.is_none_or(|room| room.capacity() >= bytes.len()));
+      let base64 = base64_simd::STANDARD.encode_to_string(bytes);
+      for url in [
+        format!("data:image/png;base64,{base64}"),
+        format!(" data:;base64,{}\n", base64.replace('A', "\tA")),
+        format!(
+          "data:image/x,{}",
+          bytes
+            .iter()
+            .map(|b| format!("%{b:02x}"))
+            .collect::<String>()
+        ),
+      ] {
+        let room = data_url_room(url.as_bytes());
+        assert_eq!(room.is_some(), skia || ico, "{name} {}", &url[..20]);
+        assert!(room.is_none_or(|room| room.capacity() >= bytes.len()));
+        assert_eq!(encoded_room(url.as_bytes()).is_some(), skia || ico);
+      }
+      let svg = format!("data:image/svg+xml;base64,{base64}");
+      assert!(data_url_room(svg.as_bytes()).is_none());
+    }
+    high.sort();
+    assert_eq!(high, ["hbd-4x1.png", "hbd-8x8.png", "ico16", "rgb16"]);
   }
 }
