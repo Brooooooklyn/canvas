@@ -474,13 +474,18 @@ test('dropped SVG images with a nested raster are collected', (t) => {
 
 // A nested SVG image is recorded once and replayed; after a font change it
 // is recorded again, so its text uses the same fonts as the top level's.
+// The text falls back to a registered Lato while `family` is missing: with
+// no system fonts (Linux CI) an unknown family falls back to any registered
+// font, so before setAlias it would already draw with Oswald.
 test('a nested SVG image uses the fonts of the draw after GlobalFonts changes', (t) => {
   const script = (scenario: string) => `
     const { createHash } = require('node:crypto')
     const { Image, createCanvas, GlobalFonts } = require(${JSON.stringify(join(DIR, '..', 'index.js'))})
     const FONT = ${JSON.stringify(join(DIR, 'fonts', 'Oswald.ttf'))}
     const family = 'SvgNestedFont_${scenario}'
-    const text = '<text x="4" y="36" font-family="' + family + '" font-size="32">Hello WMW</text>'
+    const fallback = 'SvgNestedFallback_${scenario}'
+    GlobalFonts.registerFromPath(${JSON.stringify(join(DIR, 'fonts', 'Lato-Regular.ttf'))}, fallback)
+    const text = '<text x="4" y="36" font-family="' + family + ', ' + fallback + '" font-size="32">Hello WMW</text>'
     const inner = '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="50">' + text + '</svg>'
     const svg = Buffer.from(
       '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100">' + text +
@@ -506,7 +511,8 @@ test('a nested SVG image uses the fonts of the draw after GlobalFonts changes', 
     if (${JSON.stringify(scenario)} === 'register') GlobalFonts.registerFromPath(FONT, family)
     if (${JSON.stringify(scenario)} === 'remove') GlobalFonts.remove(key)
     if (${JSON.stringify(scenario)} === 'setAlias') GlobalFonts.setAlias('Oswald', family)
-    console.log(JSON.stringify({ before, same: bands(image), fresh: bands(load()) }))
+    const blank = createHash('sha1').update(Buffer.alloc(200 * 50 * 4)).digest('hex')
+    console.log(JSON.stringify({ blank, before, same: bands(image), fresh: bands(load()) }))
   `
   for (const scenario of ['register', 'remove', 'setAlias']) {
     const run = spawnSync(process.execPath, ['--max-old-space-size=4096', '-e', script(scenario)], {
@@ -514,7 +520,9 @@ test('a nested SVG image uses the fonts of the draw after GlobalFonts changes', 
       timeout: 60_000,
     })
     t.is(run.status, 0, run.stderr)
-    const { before, same, fresh } = JSON.parse(run.stdout)
+    const { blank, before, same, fresh } = JSON.parse(run.stdout)
+    t.not(before[0], blank, `${scenario}: the text draws before`)
+    t.not(same[0], blank, `${scenario}: the text draws after`)
     t.is(before[0], before[1], `${scenario}: the bands agree before`)
     t.not(same[0], before[0], `${scenario}: the font change shows`)
     t.is(same[1], same[0], `${scenario}: the nested text uses the new font too`)
