@@ -1612,9 +1612,10 @@ unsafe impl Send for DecodedBitmap {}
 
 struct BitmapInfo {
   data: Bitmap,
-  /// The encoded image, kept when it has more than 8 bits a channel: a
-  /// float16 canvas draws its half-float decode.
-  high_bit_depth: Option<Vec<u8>>,
+  /// Whether the image has more than 8 bits a channel: the Image then keeps
+  /// a copy of the encoded image, as a float16 canvas draws its half-float
+  /// decode.
+  high_bit_depth: bool,
 }
 
 enum DecodeStatus {
@@ -1640,6 +1641,25 @@ struct BitmapDecoder {
   fire_events: bool,
   // Preserve original HTTP URL for currentSrc when data is downloaded bytes
   original_url: Option<String>,
+}
+
+impl BitmapDecoder {
+  /// A copy of the encoded image `compute` decoded: the Buffer, file, or
+  /// data: URL body bytes.
+  fn encoded_copy(&self) -> Option<Vec<u8>> {
+    let bytes = match self.data.as_ref()? {
+      Either::A(data) => data.as_ref(),
+      Either::B(path_or_svg) if data_url::is_data_url(path_or_svg.as_bytes()) => {
+        path_or_svg.as_bytes()
+      }
+      Either::B(_) => self.file_content.as_deref()?,
+    };
+    match data_url::parse(bytes) {
+      None => Some(bytes.to_vec()),
+      Some(Ok(url)) => Some(url.body),
+      Some(Err(())) => None,
+    }
+  }
 }
 
 impl<'env> ScopedTask<'env> for BitmapDecoder {
@@ -1734,7 +1754,7 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
       match bitmap {
         Some(bitmap) => DecodeStatus::Ok(BitmapInfo {
           data: bitmap,
-          high_bit_depth: None,
+          high_bit_depth: false,
         }),
         // A color space Chrome cannot use, or a failed pixel copy: an
         // invalid image rather than an empty bitmap.
@@ -1747,7 +1767,7 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
       if let Some(bitmap) = Bitmap::from_buffer(data_ref.as_ptr().cast_mut(), length) {
         DecodeStatus::Ok(BitmapInfo {
           data: bitmap,
-          high_bit_depth: Bitmap::is_high_bit_depth(&data_ref).then(|| data_ref.to_vec()),
+          high_bit_depth: Bitmap::is_high_bit_depth(&data_ref),
         })
       } else {
         DecodeStatus::InvalidImage
@@ -1798,6 +1818,17 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
     self_mut.complete = true;
     self_mut.bitmap = None;
 
+    // The encoded copy is made here, on the JS thread, which also frees it
+    // with the Image. mimalloc keeps a large block that another thread frees
+    // until the thread that allocated it empties its queue of such blocks,
+    // once every 100 of its slower allocations: copies made in `compute`, on
+    // a libuv thread, stayed in memory long after their Images were
+    // collected.
+    let encoded = match &output.bitmap {
+      DecodeStatus::Ok(bitmap) if bitmap.high_bit_depth => self.encoded_copy(),
+      _ => None,
+    };
+
     let mut err: Option<&str> = None;
 
     // The source that loaded becomes src and currentSrc; an HTTP URL load
@@ -1822,11 +1853,11 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
         self_mut.natural_height = output.height;
         commit_src(self_mut);
         self_mut.svg = None;
-        let encoded_bytes = bitmap.high_bit_depth.as_ref().map_or(0, Vec::len) as i64;
+        let encoded_bytes = encoded.as_ref().map_or(0, Vec::len) as i64;
         let new_bytes = (output.width as i64) * (output.height as i64) * 4 + encoded_bytes;
         env.adjust_external_memory(new_bytes)?;
         let mut accounted = AccountedBitmap::new(bitmap.data, env.raw(), new_bytes);
-        if let Some(encoded) = bitmap.high_bit_depth {
+        if let Some(encoded) = encoded {
           accounted = accounted.with_high_bit_depth(encoded);
         }
         self_mut.bitmap = Some(Arc::new(accounted));
