@@ -109,9 +109,9 @@ if ('Blob' in globalThis) {
   CanvasElement.prototype.toBlob = function toBlob(callback, mimeType, quality) {
     _toBlob.call(
       this,
-      function (/** @type {Uint8Array} */ imageBuffer) {
-        const blob = new Blob([imageBuffer.buffer], { type: mimeType })
-        callback(blob)
+      function (/** @type {Uint8Array | null} */ imageBuffer) {
+        // null: no pixels, or the encoding failed.
+        callback(imageBuffer === null ? null : new Blob([imageBuffer.buffer], { type: mimeType }))
       },
       mimeType,
       quality,

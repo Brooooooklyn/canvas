@@ -18,6 +18,10 @@ pub struct Context2dRenderingState {
   pub line_dash_list: Vec<f32>,
   pub stroke_style: Pattern,
   pub fill_style: Pattern,
+  /// For a gradient or pattern style: the save() depth that set it, where the
+  /// context's style object array keeps the JS object the getter returns.
+  pub fill_style_slot: Option<u32>,
+  pub stroke_style_slot: Option<u32>,
   pub shadow_offset_x: f32,
   pub shadow_offset_y: f32,
   pub shadow_blur: f32,
@@ -68,11 +72,15 @@ impl Default for Context2dRenderingState {
       line_dash_list: vec![],
       stroke_style: Pattern::default(),
       fill_style: Pattern::default(),
+      fill_style_slot: None,
+      stroke_style_slot: None,
       shadow_offset_x: 0f32,
       shadow_offset_y: 0f32,
       shadow_blur: 0f32,
-      shadow_color: RGBA::new(0, 0, 0, 255),
-      shadow_color_string: "#000000".to_owned(),
+      // Transparent black, as the spec says and Chrome does
+      // (canvas_rendering_context_2d_state.cc: shadow_color_(Color::kTransparent)).
+      shadow_color: RGBA::new(0, 0, 0, 0),
+      shadow_color_string: "rgba(0, 0, 0, 0)".to_owned(),
       // 0.0 ~ 1.0
       global_alpha: 1.0,
       // A float specifying the amount of the line dash offset. The default value is 0.0.
