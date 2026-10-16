@@ -1,9 +1,19 @@
 // Argument count checks and WebIDL conversion of method arguments.
 // Expected values and messages were measured in Chrome 155 on arm64 macOS
 // (--disable-gpu; pixel reads on a willReadFrequently canvas).
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
 import test from 'ava'
 
-import { createCanvas, Path2D } from '../index'
+import { createCanvas, GlobalFonts, Path2D } from '../index'
+
+// A Linux test container has no system fonts, and each spec file runs in its
+// own process, so the text below uses a font this file registers.
+GlobalFonts.registerFromPath(
+  join(fileURLToPath(new URL('.', import.meta.url)), 'fonts', 'Lato-Regular.ttf'),
+  'WebidlLato',
+)
 
 // Untyped access for arguments the typings reject on purpose.
 const loose = <T>(value: T) => value as any
@@ -221,7 +231,7 @@ test('context methods convert arguments with ToNumber', (t) => {
   t.deepEqual([m.a, m.d, m.e], [2, 2, 1])
 
   ctx = context()
-  ctx.font = '10px sans-serif'
+  ctx.font = '10px WebidlLato'
   ctx.fillText(loose(5), loose('0'), loose('9'))
   t.true(ctx.measureText(loose(5)).width > 0)
 })
