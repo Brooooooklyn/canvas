@@ -536,7 +536,7 @@ pub(crate) fn emit_document(doc: &Doc, root: Root, shared: &mut Shared) -> Optio
   let mut b = Builder {
     doc,
     ids: collect_ids(doc),
-    cascade: Cascade::new(doc, &sheet, viewport),
+    cascade: Cascade::new(doc, &sheet, viewport, shared.var_budget.clone()),
     shared,
     viewport,
     fixed_viewport: view_box.is_some() || sized,

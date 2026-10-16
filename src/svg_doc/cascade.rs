@@ -3,7 +3,9 @@
 //! `var()`.
 
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::cell::Cell;
+use std::collections::{HashMap, HashSet};
+use std::hash::Hash;
 use std::rc::Rc;
 
 use cssparser::{ParseError, Parser, Token};
@@ -14,7 +16,7 @@ use selectors::context::SelectorCaches;
 use super::dom::{Doc, NodeId, Ns};
 use super::props::{ALL, COUNT, Mode, Prop, parse_value};
 use super::select::{El, element_hashes, matches};
-use super::sheet::{Sheet, parse_style_attr};
+use super::sheet::{Decl, Sheet, parse_style_attr};
 use super::values::{Len, LenCtx, ROOT_FONT_SIZE, Value};
 
 /// CSSVariableData::kMaxVariableBytes (css_variable_data.h): a custom
@@ -27,12 +29,30 @@ pub(crate) const MAX_VARIABLE_BYTES: usize = 2_097_152;
 /// recursion here off the native stack's end.
 const MAX_VAR_DEPTH: usize = 256;
 
+/// How many bytes of new substituted text one SVG image (its nested SVG
+/// images included) may build; past that, what `var()` would build is
+/// invalid (a custom property is guaranteed-invalid, a property is invalid
+/// at computed-value time). Values shared or reused from the memos below
+/// cost nothing. Blink has no such budget: it copies every substituted
+/// value until its renderer runs out of memory (decision 13 Q10, G4).
+pub(crate) const VAR_TEXT_BUDGET: usize = 256 << 20;
+
+/// What the memos of one cascade may hold (keys, in declarations) before
+/// they start over.
+const MEMO_LIMIT: usize = 1 << 16;
+
 /// The custom properties an element declares, over the ones it inherits.
 /// Elements that declare none share their parent's scope.
 pub(crate) struct CustomScope {
+  /// Unique in its cascade: what the memos key on.
+  id: u64,
   parent: Option<Rc<CustomScope>>,
   /// None is the guaranteed-invalid value.
-  vars: HashMap<String, Option<Rc<str>>>,
+  vars: HashMap<Rc<str>, Option<Rc<str>>>,
+}
+
+fn scope_id(scope: &Option<Rc<CustomScope>>) -> u64 {
+  scope.as_ref().map_or(0, |s| s.id)
 }
 
 fn lookup(scope: &Option<Rc<CustomScope>>, name: &str) -> Option<Rc<str>> {
@@ -120,7 +140,7 @@ struct Priority {
 type LayerKey = (u8, u32);
 
 /// A declaration that applies to an element. Name and value borrow from
-/// the document or the sheet where they can.
+/// the document, the sheet or a parsed style attribute where they can.
 struct Candidate<'a> {
   priority: Priority,
   layer: LayerKey,
@@ -177,6 +197,83 @@ fn has_var(text: &str) -> bool {
     .any(|w| w.eq_ignore_ascii_case(b"var("))
 }
 
+/// Where a declaration's text is. Borrowed text is in the document, the
+/// sheet or a parsed style attribute of the cascade, none of which moves or
+/// goes away while the cascade lives, so its address names it.
+type TextId = (usize, usize);
+
+impl Candidate<'_> {
+  /// `text` is the value or a part of it.
+  fn value_id(&self, text: &str) -> Option<TextId> {
+    matches!(self.value, Cow::Borrowed(_)).then_some((text.as_ptr() as usize, text.len()))
+  }
+
+  fn name_id(&self) -> Option<TextId> {
+    matches!(self.name, Cow::Borrowed(_)).then_some((self.name.as_ptr() as usize, self.name.len()))
+  }
+}
+
+/// The declarations of each custom property of an element, highest
+/// priority first.
+type CustomDecls<'r> = HashMap<&'r str, Vec<(LayerKey, &'r str, Option<TextId>)>>;
+
+/// The name in `text` when it is exactly `var(--name)`: substituting it
+/// gives that property's value as it is (see substitute_block), so the
+/// value can be shared instead.
+fn bare_var(text: &str) -> Option<String> {
+  let mut p = Parser::new(text);
+  match p.next_including_whitespace_and_comments() {
+    Ok(Token::Function(name)) if name.eq_ignore_ascii_case("var") => {}
+    _ => return None,
+  }
+  let name = p
+    .parse_nested_block(|i| -> Result<String, ParseError<()>> {
+      i.skip_whitespace();
+      let name = i.expect_ident_cloned()?.to_string();
+      i.skip_whitespace();
+      i.expect_exhausted()?;
+      Ok(name)
+    })
+    .ok()?;
+  (name.starts_with("--") && p.next_including_whitespace_and_comments().is_err()).then_some(name)
+}
+
+/// A map that forgets everything once its keys reach MEMO_LIMIT.
+struct Memo<K, V> {
+  map: HashMap<K, V>,
+  size: usize,
+}
+
+impl<K: Hash + Eq, V> Memo<K, V> {
+  fn new() -> Self {
+    Memo {
+      map: HashMap::new(),
+      size: 0,
+    }
+  }
+
+  fn get(&self, key: &K) -> Option<&V> {
+    self.map.get(key)
+  }
+
+  fn insert(&mut self, key: K, size: usize, value: V) {
+    if self.size + size > MEMO_LIMIT {
+      self.map.clear();
+      self.size = 0;
+    }
+    self.size += size;
+    self.map.insert(key, value);
+  }
+}
+
+/// The parent's scope and the custom-property declarations of an element,
+/// highest priority first.
+type ScopeKey = (u64, Vec<(TextId, TextId, LayerKey)>);
+
+/// A declaration with var() of a property: the text, the property, whether
+/// it is a presentation attribute, the font size (em), the custom scope.
+type ValueKey = (TextId, u8, bool, u32, u64);
+
 pub(crate) struct Cascade<'a> {
   pub doc: &'a Doc,
   pub sheet: &'a Sheet,
@@ -186,6 +283,23 @@ pub(crate) struct Cascade<'a> {
   /// an element matches differently inside an instance.
   caches: HashMap<Option<NodeId>, SelectorCaches>,
   ancestors: Ancestors,
+  /// What is left of VAR_TEXT_BUDGET, shared with the cascades of nested
+  /// SVG images.
+  var_budget: Rc<Cell<usize>>,
+  /// Parsed style attributes by text: elements with the same one share its
+  /// declarations, and so the memos.
+  inline: HashMap<&'a str, Rc<[Decl]>>,
+  /// Custom property names, one copy each.
+  names: HashSet<Rc<str>>,
+  /// Custom property values without var(), by declaration: one copy each.
+  plain: HashMap<TextId, Option<Rc<str>>>,
+  /// Custom scopes by parent scope and declarations: siblings with the same
+  /// custom properties share one (and the substitutions that use it).
+  scopes: Memo<ScopeKey, Rc<CustomScope>>,
+  /// What declarations with var() compute to (Blink reuses whole styles
+  /// through its MatchedPropertiesCache).
+  values: Memo<ValueKey, Option<Value>>,
+  scope_ids: u64,
 }
 
 /// The ancestor bloom filter, holding the hashes of the ancestors of the
@@ -245,14 +359,38 @@ impl Ancestors {
 }
 
 impl<'a> Cascade<'a> {
-  pub(crate) fn new(doc: &'a Doc, sheet: &'a Sheet, viewport: (f32, f32)) -> Self {
+  pub(crate) fn new(
+    doc: &'a Doc,
+    sheet: &'a Sheet,
+    viewport: (f32, f32),
+    var_budget: Rc<Cell<usize>>,
+  ) -> Self {
     Cascade {
       doc,
       sheet,
       viewport,
       caches: HashMap::new(),
       ancestors: Ancestors::new(),
+      var_budget,
+      inline: HashMap::new(),
+      names: HashSet::new(),
+      plain: HashMap::new(),
+      scopes: Memo::new(),
+      values: Memo::new(),
+      scope_ids: 0,
     }
+  }
+
+  /// The declarations of element `id`'s style attribute.
+  fn inline_decls(&mut self, id: NodeId) -> Option<Rc<[Decl]>> {
+    let text = self.doc.attr(id, "style")?;
+    Some(
+      self
+        .inline
+        .entry(text)
+        .or_insert_with(|| parse_style_attr(text).into())
+        .clone(),
+    )
   }
 
   fn push_decl<'c>(
@@ -284,7 +422,15 @@ impl<'a> Cascade<'a> {
     }
   }
 
-  fn candidates(&mut self, id: NodeId, scope: Option<NodeId>) -> Vec<Candidate<'a>> {
+  fn candidates<'c>(
+    &mut self,
+    id: NodeId,
+    scope: Option<NodeId>,
+    inline: Option<&'c [Decl]>,
+  ) -> Vec<Candidate<'c>>
+  where
+    'a: 'c,
+  {
     let doc = self.doc;
     let sheet = self.sheet;
     let mut out = Vec::new();
@@ -373,23 +519,21 @@ impl<'a> Cascade<'a> {
         );
       }
     }
-    if let Some(style) = doc.attr(id, "style") {
-      for decl in parse_style_attr(style) {
-        let priority = Priority {
-          important: decl.important,
-          origin: 2,
-          layer: 0,
-          specificity: 0,
-          order: next(),
-        };
-        Self::push_decl(
-          &mut out,
-          Cow::Owned(decl.name),
-          Cow::Owned(decl.value),
-          priority,
-          (2, 0),
-        );
-      }
+    for decl in inline.unwrap_or_default() {
+      let priority = Priority {
+        important: decl.important,
+        origin: 2,
+        layer: 0,
+        specificity: 0,
+        order: next(),
+      };
+      Self::push_decl(
+        &mut out,
+        Cow::Borrowed(&decl.name),
+        Cow::Borrowed(&decl.value),
+        priority,
+        (2, 0),
+      );
     }
     out.sort_by_key(|c| c.priority);
     out
@@ -398,7 +542,8 @@ impl<'a> Cascade<'a> {
   /// The computed style of element `id` (in the `<use>` instance rooted at
   /// `scope`, if any) whose parent's style is `parent`.
   pub(crate) fn compute(&mut self, id: NodeId, scope: Option<NodeId>, parent: &Style) -> Style {
-    let candidates = self.candidates(id, scope);
+    let inline = self.inline_decls(id);
+    let candidates = self.candidates(id, scope, inline.as_deref());
     // The candidates of each property, highest priority first: from
     // `top[prop]` down through `next[i]`, linked in one pass.
     const NONE: usize = usize::MAX;
@@ -418,28 +563,15 @@ impl<'a> Cascade<'a> {
       .map(|i| &candidates[i])
     };
 
-    // Custom properties: the declarations of each, highest priority first.
-    let mut raw: HashMap<&str, Vec<(LayerKey, &str)>> = HashMap::new();
-    for c in candidates.iter().rev().filter(|c| c.prop.is_none()) {
-      raw.entry(&c.name).or_default().push((c.layer, &c.value));
-    }
-    let custom = if raw.is_empty() {
+    let customs: Vec<&Candidate> = candidates
+      .iter()
+      .rev()
+      .filter(|c| c.prop.is_none())
+      .collect();
+    let custom = if customs.is_empty() {
       parent.custom.clone()
     } else {
-      let mut resolver = VarResolver {
-        raw: &raw,
-        inherited: &parent.custom,
-        resolved: HashMap::new(),
-        stack: Vec::new(),
-      };
-      let names: Vec<&str> = raw.keys().copied().collect();
-      for name in names {
-        resolver.resolve(name);
-      }
-      Some(Rc::new(CustomScope {
-        parent: parent.custom.clone(),
-        vars: resolver.resolved,
-      }))
+      Some(self.custom_scope(&parent.custom, &customs))
     };
 
     let mut style = Style {
@@ -498,11 +630,10 @@ impl<'a> Cascade<'a> {
           }
           break;
         }
-        if has_var(text) {
-          // Invalid at computed-value time: unset.
+        if let Some(value) = self.var_value(c, text, prop, &ctx, &style.custom) {
+          // None is invalid at computed-value time: unset.
           declared = true;
-          result =
-            substitute(text, &style.custom).and_then(|s| parse_value(prop, &s, c.mode, &ctx));
+          result = value;
           break;
         }
         if let Some(v) = parse_value(prop, text, c.mode, &ctx) {
@@ -551,13 +682,108 @@ impl<'a> Cascade<'a> {
     }
     style
   }
+
+  /// The scope of the custom properties `customs` (highest priority first)
+  /// over `inherited`.
+  fn custom_scope(
+    &mut self,
+    inherited: &Option<Rc<CustomScope>>,
+    customs: &[&Candidate],
+  ) -> Rc<CustomScope> {
+    let key: Option<ScopeKey> = customs
+      .iter()
+      .map(|c| Some((c.name_id()?, c.value_id(&c.value)?, c.layer)))
+      .collect::<Option<Vec<_>>>()
+      .map(|decls| (scope_id(inherited), decls));
+    if let Some(scope) = key.as_ref().and_then(|k| self.scopes.get(k)) {
+      return scope.clone();
+    }
+    let mut raw: CustomDecls = HashMap::new();
+    for c in customs {
+      let id = c.value_id(&c.value);
+      raw
+        .entry(&c.name)
+        .or_default()
+        .push((c.layer, &c.value, id));
+    }
+    let mut resolver = VarResolver {
+      raw: &raw,
+      inherited,
+      resolved: HashMap::new(),
+      stack: Vec::new(),
+      budget: &self.var_budget,
+      names: &mut self.names,
+      plain: &mut self.plain,
+    };
+    let names: Vec<&str> = raw.keys().copied().collect();
+    for name in names {
+      resolver.resolve(name);
+    }
+    let vars = resolver.resolved;
+    self.scope_ids += 1;
+    let scope = Rc::new(CustomScope {
+      id: self.scope_ids,
+      parent: inherited.clone(),
+      vars,
+    });
+    if let Some(key) = key {
+      let size = 1 + key.1.len();
+      self.scopes.insert(key, size, scope.clone());
+    }
+    scope
+  }
+
+  /// What declaration `c` of `prop` (its trimmed value `text`) computes to
+  /// when it has var(): None inside is invalid at computed-value time.
+  fn var_value(
+    &mut self,
+    c: &Candidate,
+    text: &str,
+    prop: Prop,
+    ctx: &LenCtx,
+    custom: &Option<Rc<CustomScope>>,
+  ) -> Option<Option<Value>> {
+    let key = c.value_id(text).map(|id| {
+      (
+        id,
+        prop as u8,
+        c.mode == Mode::Attr,
+        ctx.font_size.to_bits(),
+        scope_id(custom),
+      )
+    });
+    if let Some(value) = key.as_ref().and_then(|k| self.values.get(k)) {
+      return Some(value.clone());
+    }
+    if !has_var(text) {
+      return None;
+    }
+    let value =
+      substitute(text, custom, &self.var_budget).and_then(|s| parse_value(prop, &s, c.mode, ctx));
+    if let Some(key) = key {
+      self.values.insert(key, 1, value.clone());
+    }
+    Some(value)
+  }
 }
 
 struct VarResolver<'r> {
-  raw: &'r HashMap<&'r str, Vec<(LayerKey, &'r str)>>,
+  raw: &'r CustomDecls<'r>,
   inherited: &'r Option<Rc<CustomScope>>,
-  resolved: HashMap<String, Option<Rc<str>>>,
+  resolved: HashMap<Rc<str>, Option<Rc<str>>>,
   stack: Vec<&'r str>,
+  budget: &'r Cell<usize>,
+  names: &'r mut HashSet<Rc<str>>,
+  plain: &'r mut HashMap<TextId, Option<Rc<str>>>,
+}
+
+fn intern(names: &mut HashSet<Rc<str>>, name: &str) -> Rc<str> {
+  if let Some(n) = names.get(name) {
+    return n.clone();
+  }
+  let n: Rc<str> = Rc::from(name);
+  names.insert(n.clone());
+  n
 }
 
 impl<'r> VarResolver<'r> {
@@ -572,14 +798,15 @@ impl<'r> VarResolver<'r> {
       // A cycle: every property in it is guaranteed-invalid.
       let start = self.stack.iter().position(|s| *s == key).unwrap_or(0);
       for s in &self.stack[start..] {
-        self.resolved.insert((*s).to_owned(), None);
+        let name = intern(self.names, s);
+        self.resolved.insert(name, None);
       }
       return None;
     }
     // revert-layer rolls back to the highest declaration of a lower layer;
     // with none left, the property reverts.
     let mut below: Option<LayerKey> = None;
-    let text = decls.iter().find_map(|&(layer, text)| {
+    let text = decls.iter().find_map(|&(layer, text, id)| {
       if below.is_some_and(|b| layer >= b) {
         return None;
       }
@@ -587,44 +814,86 @@ impl<'r> VarResolver<'r> {
         below = Some(layer);
         return None;
       }
-      Some(text)
+      Some((text, id))
     });
-    let value = match text.map(|t| (t, css_wide(t))) {
-      Some((_, Some("initial"))) => None,
+    let value = match text.map(|(t, id)| (t, id, css_wide(t))) {
+      Some((_, _, Some("initial"))) => None,
       // inherit, unset, and revert (no user or UA declarations to go back
       // to: unset, which inherits).
-      None | Some((_, Some(_))) => lookup(self.inherited, name),
-      Some((text, None))
+      None | Some((_, _, Some(_))) => lookup(self.inherited, name),
+      Some((text, _, None))
         if text.len() > MAX_VARIABLE_BYTES || self.stack.len() >= MAX_VAR_DEPTH =>
       {
         None
       }
-      Some((text, None)) => {
+      // Built before from the same declaration, which has no var().
+      Some((_, Some(id), None)) if self.plain.contains_key(&id) => self.plain[&id].clone(),
+      Some((text, id, None)) => {
+        let plain = !has_var(text);
         self.stack.push(key);
-        let substituted = substitute_with(text, &mut |n| self.resolve(n));
+        let value = match bare_var(text) {
+          // Exactly var(--x): --x's value, shared.
+          Some(target) => self.resolve(&target),
+          None => {
+            let budget = self.budget;
+            substitute_with(text, &mut |n| self.resolve(n), budget).map(Rc::from)
+          }
+        };
         self.stack.pop();
-        if self.resolved.get(key) == Some(&None) {
+        let value = if self.resolved.get(key) == Some(&None) {
           None
         } else {
-          substituted.map(Rc::from)
+          value
+        };
+        if plain && let Some(id) = id {
+          self.plain.insert(id, value.clone());
         }
+        value
       }
     };
-    self.resolved.insert(key.to_owned(), value.clone());
+    let name = intern(self.names, key);
+    self.resolved.insert(name, value.clone());
     value
   }
 }
 
 /// `text` with every `var()` replaced, or None when one has no value and no
-/// fallback, or the result is longer than MAX_VARIABLE_BYTES.
-pub(crate) fn substitute(text: &str, custom: &Option<Rc<CustomScope>>) -> Option<String> {
-  substitute_with(text, &mut |name| lookup(custom, name))
+/// fallback, the result is longer than MAX_VARIABLE_BYTES, or `budget` (in
+/// bytes) runs out.
+pub(crate) fn substitute(
+  text: &str,
+  custom: &Option<Rc<CustomScope>>,
+  budget: &Cell<usize>,
+) -> Option<String> {
+  substitute_with(text, &mut |name| lookup(custom, name), budget)
 }
 
-fn substitute_with(text: &str, lookup: &mut dyn FnMut(&str) -> Option<Rc<str>>) -> Option<String> {
+/// What it builds, it takes from `budget`, whether it ends well or not.
+fn substitute_with(
+  text: &str,
+  lookup: &mut dyn FnMut(&str) -> Option<Rc<str>>,
+  budget: &Cell<usize>,
+) -> Option<String> {
   let mut p = Parser::new(text);
   let mut out = Substituted::default();
-  substitute_block(&mut p, lookup, &mut out).then_some(out.text)
+  let ok = substitute_block(&mut p, lookup, &mut out, budget);
+  budget.set(budget.get().saturating_sub(out.text.len()));
+  ok.then_some(out.text)
+}
+
+/// A var() substituted: another property's value, or its fallback.
+enum Piece {
+  Value(Rc<str>),
+  Fallback(String),
+}
+
+impl Piece {
+  fn as_str(&self) -> &str {
+    match self {
+      Piece::Value(v) => v,
+      Piece::Fallback(f) => f,
+    }
+  }
 }
 
 #[derive(Default)]
@@ -683,9 +952,10 @@ fn substitute_block(
   p: &mut Parser,
   lookup: &mut dyn FnMut(&str) -> Option<Rc<str>>,
   out: &mut Substituted,
+  budget: &Cell<usize>,
 ) -> bool {
   loop {
-    if out.len() > MAX_VARIABLE_BYTES {
+    if out.len() > MAX_VARIABLE_BYTES || out.text.len() > budget.get() {
       return false;
     }
     let start = p.position();
@@ -695,7 +965,7 @@ fn substitute_block(
     };
     match token {
       Token::Function(ref name) if name.eq_ignore_ascii_case("var") => {
-        let value = p.parse_nested_block(|i| -> Result<Option<String>, ParseError<()>> {
+        let value = p.parse_nested_block(|i| -> Result<Option<Piece>, ParseError<()>> {
           i.skip_whitespace();
           let name = i.expect_ident_cloned()?.to_string();
           if !name.starts_with("--") {
@@ -713,15 +983,20 @@ fn substitute_block(
             None
           };
           Ok(match lookup(&name) {
-            Some(v) => Some(v.to_string()),
-            None => fallback.and_then(|f| substitute_with(&f, lookup)),
+            Some(v) => Some(Piece::Value(v)),
+            None => fallback
+              .and_then(|f| substitute_with(&f, lookup, budget))
+              .map(Piece::Fallback),
           })
         });
         match value {
           // TokenSequence::Append (style_cascade.cc:1078-1084): a value that
           // would make the result longer than the cap is invalid.
-          Ok(Some(v)) if out.len() + v.len() <= MAX_VARIABLE_BYTES => {
-            out.push_value(&v);
+          Ok(Some(v))
+            if out.len() + v.as_str().len() <= MAX_VARIABLE_BYTES
+              && out.text.len() + v.as_str().len() <= budget.get() =>
+          {
+            out.push_value(v.as_str());
           }
           _ => return false,
         }
@@ -737,7 +1012,7 @@ fn substitute_block(
           _ => ")",
         };
         let ok = p
-          .parse_nested_block(|i| Ok::<_, ParseError<()>>(substitute_block(i, lookup, out)))
+          .parse_nested_block(|i| Ok::<_, ParseError<()>>(substitute_block(i, lookup, out, budget)))
           .unwrap_or(false);
         if !ok {
           return false;
@@ -757,6 +1032,12 @@ mod tests {
   use crate::svg_doc::values::{ColorValue, Paint, Rgba};
 
   fn styles(svg: &str) -> Vec<Style> {
+    styles_with_budget(svg, VAR_TEXT_BUDGET).0
+  }
+
+  /// The computed styles of every element, and the bytes of substituted
+  /// text built.
+  fn styles_with_budget(svg: &str, budget: usize) -> (Vec<Style>, usize) {
     let doc = Doc::parse(svg).unwrap();
     let mut sheet = Sheet::default();
     let env = Env {
@@ -768,7 +1049,8 @@ mod tests {
         sheet.add_sheet(&doc.text_content(id), &env);
       }
     }
-    let mut cascade = Cascade::new(&doc, &sheet, (100.0, 100.0));
+    let left = Rc::new(Cell::new(budget));
+    let mut cascade = Cascade::new(&doc, &sheet, (100.0, 100.0), left.clone());
     let mut out: Vec<Style> = Vec::new();
     let mut parents = vec![(doc.root, Style::initial())];
     // Depth first, in document order.
@@ -791,7 +1073,12 @@ mod tests {
       );
     }
     parents.clear();
-    out
+    drop(cascade);
+    (out, budget - left.get())
+  }
+
+  fn sub(text: &str, custom: &Option<Rc<CustomScope>>) -> Option<String> {
+    substitute(text, custom, &Cell::new(usize::MAX))
   }
 
   fn fill(style: &Style) -> Paint {
@@ -991,10 +1278,7 @@ mod tests {
       assert_eq!(e.is_some(), valid, "{len}");
       if let Some(e) = e {
         assert_eq!(e.len(), len);
-        assert_eq!(
-          substitute("var(--e)", &s[1].custom).map(|t| t.len()),
-          Some(len)
-        );
+        assert_eq!(sub("var(--e)", &s[1].custom).map(|t| t.len()), Some(len));
       }
     }
   }
@@ -1005,20 +1289,106 @@ mod tests {
       r#"<svg xmlns="{SVG_NS}"><rect style="--n: 10; --c: blue"/></svg>"#
     ));
     let custom = &s[1].custom;
-    assert_eq!(substitute("var(--n)px", custom).as_deref(), Some("10 px"));
+    assert_eq!(sub("var(--n)px", custom).as_deref(), Some("10 px"));
+    assert_eq!(sub("var(--n)var(--n)", custom).as_deref(), Some("10 10"));
+    assert_eq!(sub("var(--c)", custom).as_deref(), Some("blue"));
     assert_eq!(
-      substitute("var(--n)var(--n)", custom).as_deref(),
-      Some("10 10")
-    );
-    assert_eq!(substitute("var(--c)", custom).as_deref(), Some("blue"));
-    assert_eq!(
-      substitute("rgb(var(--n),0,0)", custom).as_deref(),
+      sub("rgb(var(--n),0,0)", custom).as_deref(),
       Some("rgb(10,0,0)")
     );
-    assert_eq!(
-      substitute("a.b var(--c)", custom).as_deref(),
-      Some("a.b blue")
+    assert_eq!(sub("a.b var(--c)", custom).as_deref(), Some("a.b blue"));
+  }
+
+  /// A valid color of `len` bytes: green.
+  fn big_green(len: usize) -> String {
+    format!("rgb(0, 128,{} 0)", " ".repeat(len - 14))
+  }
+
+  #[test]
+  fn bare_var_aliases_share_the_value() {
+    let big = "a".repeat(100_000);
+    let (s, built) = styles_with_budget(
+      &format!(
+        r#"<svg xmlns="{SVG_NS}"><g style="--big: {big}; --a1: var(--big); --a2: var( --a1 )"><rect style="--a3: var(--a2); --f: var(--big, x)"/></g></svg>"#
+      ),
+      VAR_TEXT_BUDGET,
     );
+    let (g, rect) = (&s[1].custom, &s[2].custom);
+    let value = lookup(g, "--big").unwrap();
+    for (scope, name) in [(g, "--a1"), (g, "--a2"), (rect, "--a3")] {
+      assert!(Rc::ptr_eq(&value, &lookup(scope, name).unwrap()), "{name}");
+    }
+    // With a fallback it is substituted: a copy.
+    let f = lookup(rect, "--f").unwrap();
+    assert!(!Rc::ptr_eq(&value, &f));
+    assert_eq!(f, value);
+    // --big once, --f once.
+    assert_eq!(built, 2 * big.len());
+  }
+
+  #[test]
+  fn elements_with_the_same_style_reuse_one_substitution() {
+    let big = big_green(100_000);
+    // Siblings with the same custom properties.
+    let rects = r#"<rect style="--a: var(--big); fill: var(--a)"/>"#.repeat(64);
+    let (s, built) = styles_with_budget(
+      &format!(r#"<svg xmlns="{SVG_NS}"><g style="--big: {big}">{rects}</g></svg>"#),
+      VAR_TEXT_BUDGET,
+    );
+    assert!(s[2..].iter().all(|s| fill(s) == GREEN));
+    assert!(Rc::ptr_eq(
+      s[2].custom.as_ref().unwrap(),
+      s[65].custom.as_ref().unwrap()
+    ));
+    // --big once, fill once.
+    assert_eq!(built, 2 * big.len());
+
+    // Children that inherit 64 aliases.
+    let mut decls = format!("--big: {big};");
+    for i in 0..64 {
+      decls += &format!(" --a{i}: var(--big);");
+    }
+    let rects = r#"<rect style="fill: var(--a63)"/>"#.repeat(64);
+    let (s, built) = styles_with_budget(
+      &format!(r#"<svg xmlns="{SVG_NS}"><g style="{decls}">{rects}</g></svg>"#),
+      VAR_TEXT_BUDGET,
+    );
+    assert!(s[2..].iter().all(|s| fill(s) == GREEN));
+    assert_eq!(built, 2 * big.len());
+
+    // The same declaration at another font size is computed again.
+    let s = styles(&format!(
+      r#"<svg xmlns="{SVG_NS}" style="--w: 1em"><g font-size="10"><rect style="stroke-width: var(--w)"/></g><g font-size="20"><rect style="stroke-width: var(--w)"/></g></svg>"#
+    ));
+    assert_eq!(s[2].len(Prop::StrokeWidth).unwrap().px, 10.0);
+    assert_eq!(s[4].len(Prop::StrokeWidth).unwrap().px, 20.0);
+  }
+
+  #[test]
+  fn past_the_budget_var_values_are_invalid() {
+    // Each rect has its own custom properties, so each substitutes the
+    // 1000-byte value: after --big, three fit in 4500 bytes.
+    let big = big_green(1000);
+    let mut rects = String::new();
+    for i in 0..10 {
+      rects += &format!(r#"<rect fill="red" style="--i: {i}; --a: var(--big); fill: var(--a)"/>"#);
+    }
+    rects += r#"<rect style="--a: var(--big); --c: x var(--big)"/>"#;
+    let (s, built) = styles_with_budget(
+      &format!(r#"<svg xmlns="{SVG_NS}"><g fill="blue" style="--big: {big}">{rects}</g></svg>"#),
+      4500,
+    );
+    let fills: Vec<Paint> = s[2..12].iter().map(fill).collect();
+    // Invalid at computed-value time: fill inherits the <g>'s blue.
+    assert_eq!(fills[..3], [GREEN, GREEN, GREEN]);
+    assert!(fills[3..].iter().all(|f| *f == BLUE), "{fills:?}");
+    assert!(built <= 4500);
+    let last = &s[12].custom;
+    // Past the budget, a custom property that needs new text is
+    // guaranteed-invalid; a shared one still works.
+    assert!(lookup(last, "--c").is_none());
+    let value = lookup(&s[1].custom, "--big").unwrap();
+    assert!(Rc::ptr_eq(&value, &lookup(last, "--a").unwrap()));
   }
 
   #[test]
