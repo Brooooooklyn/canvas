@@ -15,6 +15,10 @@ import { createCanvas, DOMMatrix, loadImage, SvgExportFlag } from '../index'
 type Ctx = ReturnType<ReturnType<typeof createCanvas>['getContext']>
 type G = ReturnType<Ctx['createLinearGradient']>
 
+// The Windows ARM64 Skia build rounds raster math a little differently (main
+// skips exact checks there too: pathkit.spec.ts).
+const WIN_ARM64 = process.platform === 'win32' && process.arch === 'arm64'
+
 const stops = (g: G) => {
   g.addColorStop(0, 'rgb(255, 0, 0)')
   g.addColorStop(0.25, 'rgb(0, 255, 0)')
@@ -873,7 +877,18 @@ for (const [[w, h], [x, y, width, height], [cx, cy], k, tolerance, pixels] of FA
       const raster = createCanvas(8, 8).getContext('2d')
       raster.translate(-(px & ~7), -(py & ~7))
       draw(raster)
-      t.deepEqual([...raster.getImageData(px & 7, py & 7, 1, 1).data], rgba, `raster ${px},${py}`)
+      const actual = [...raster.getImageData(px & 7, py & 7, 1, 1).data]
+      if (WIN_ARM64) {
+        // Windows ARM64 CI measured one channel off by 1: raster 7,1234630
+        // 255,149,106,255 (Chrome 107) and raster 1234590,3 0,121,135,255
+        // (Chrome 134).
+        t.true(
+          actual.every((v, i) => Math.abs(v - rgba[i]) <= 1),
+          `raster ${px},${py}: ${actual} vs Chrome ${rgba}`,
+        )
+      } else {
+        t.deepEqual(actual, rgba, `raster ${px},${py}`)
+      }
       if (rgba[3] === 255) {
         const pixel = shown(px, py)
         t.true(
