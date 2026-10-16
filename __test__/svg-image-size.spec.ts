@@ -708,12 +708,11 @@ test('a large svg draw keeps the source its shadow and filter read, like Chrome'
 })
 
 // Rotated or skewed, a draw bigger than 4096x4096 device pixels still
-// rasters the SVG at the device scale, only the part near the canvas. Shrunk
-// to fit 4096x4096 and drawn larger, a hard edge spread over three pixels.
-// 300x150 canvas, a 6000x6000 SVG with one green rect; each row of a case:
-// y, the first x, then the alpha from there, measured in Chrome 155. Chrome
-// draws the vectors through the transform; a raster drawn through it moves
-// an edge pixel by up to 15 (as the draws of smaller SVGs do).
+// rasters the SVG at the device scale, only the part on the canvas and where
+// its shadow reads. Shrunk to fit 4096x4096 and drawn larger, a hard edge
+// spread over three pixels. 300x150 canvas, a 6000x6000 SVG with one green
+// rect; each row of a case: y, the first x, then the alpha from there,
+// measured in Chrome 155: each within 15.
 const transformed: [string, number, number, (ctx: SKRSContext2D) => void, [number, number, number[]][]][] = [
   // The green ends at x = -300 in user space; its shadow lands at about 100.
   [
@@ -794,12 +793,13 @@ test('a large rotated or skewed svg draw keeps its edges sharp like Chrome', asy
   }
 })
 
-// Under a skew that keeps the columns of the image vertical, a lean of up to
-// 0.3 or |a| and |d| both at least one device pixel rasters it at the column
-// spacing, which keeps vertical edges on device pixels; a bigger lean with
-// |a| or |d| under one pixel rasters it in device pixels through the whole
-// transform, where Skia draws a stroke at most one pixel wide on both axes as
-// a hairline of that coverage, as in Chrome. 300x150 canvas, a 1000x1000 SVG
+// Under a skew the SVG is rendered in device pixels through the whole
+// transform, which keeps vertical edges on device pixels where the skew keeps
+// the columns of the image vertical, and where Skia draws a stroke at most
+// one pixel wide on both axes as a hairline of that coverage, as in Chrome.
+// A raster at the length of each image axis drawn through the transform
+// blurred these lines, and one at the column spacing made a thin line under
+// one pixel a hairline up to 100 darker. 300x150 canvas, a 1000x1000 SVG
 // with a vertical <line> at x = 510.5, its center drawn at the canvas center;
 // the alpha at x = 150..161 of rows 0, 75 and 149 (the same on each),
 // measured in Chrome 155: each alpha within the tolerance of Chrome's and,
@@ -846,8 +846,8 @@ test('a skewed svg draw keeps thin lines about as dark as Chrome', async (t) => 
 })
 
 // The same for rows: under setTransform(1, 0, 0.8, 1, 0, 0) the rows of the
-// image stay one device pixel apart, and a raster at that spacing keeps a
-// horizontal edge on a device row. 300x150 canvas, a 1000x1000 SVG with a few
+// image stay on device rows, and so does a horizontal edge of the SVG
+// rendered through the transform. 300x150 canvas, a 1000x1000 SVG with a few
 // shapes, its center drawn at the canvas center; the alpha above and below
 // the top edge of its rect, y = 114 and 115 at x = 110..160, measured in
 // Chrome 155.
@@ -878,8 +878,8 @@ test('a heavily skewed svg draw keeps horizontal edges on device rows like Chrom
   }
 })
 
-// A column spacing of at least one pixel with rows under one pixel apart
-// rasters in device pixels too: under setTransform(2, 1.5, 0, 0.5, 0, 0) a
+// A column spacing of at least one pixel with rows under one pixel apart is
+// rendered in device pixels too: under setTransform(2, 1.5, 0, 0.5, 0, 0) a
 // raster at the spacing (2 by 0.5 pixels per unit) draws a 0.5 wide stroke as
 // a hairline, 79 and 80 where Chrome draws 128 and 128. 300x150 canvas, a
 // 1000x1000 SVG with a vertical <path> at x = 510.5, its center drawn at the
@@ -944,6 +944,81 @@ test('imageSmoothing does not change a scaled svg draw, like Chrome', async (t) 
     }).equals(low),
     'imageSmoothingEnabled = false',
   )
+})
+
+// Rotated or flipped, the SVG is rendered in device pixels through the whole
+// transform and put on the canvas 1:1, as Chrome draws its vectors through
+// the transform. A raster at the device scale of each image axis drawn
+// through the transform was up to 89 alpha off Chrome (rotate(0.3) shapes),
+// 75 (scale(-1, 1) shapes), 69 (scale(1, -1) curves) and 10 (a 1 px line at
+// 45 degrees). 300x150 canvas, a 1000x1000 SVG, its center drawn at the
+// canvas center; for each case Chrome 155's alpha sum over the canvas and,
+// for a few rows, y, the first x and the alpha from there.
+const transformedDraws: [string, [number, number, number, number], string, number, [number, number, number[]][]][] = [
+  [
+    'rotate(PI / 4), a 1 px line',
+    [Math.cos(Math.PI / 4), Math.sin(Math.PI / 4), -Math.sin(Math.PI / 4), Math.cos(Math.PI / 4)],
+    '<path d="M510.5 100 V900" stroke="#000" stroke-width="1"/>',
+    55050,
+    [
+      [20, 216, [0, 0, 98, 229, 40, 0, 0, 0]],
+      [75, 161, [0, 0, 98, 229, 40, 0, 0, 0]],
+      [130, 106, [0, 0, 98, 229, 40, 0, 0, 0]],
+    ],
+  ],
+  [
+    'rotate(0.3), shapes',
+    [Math.cos(0.3), Math.sin(0.3), -Math.sin(0.3), Math.cos(0.3)],
+    shapes,
+    3750477,
+    [
+      [75, 123, [0, 0, 0, 55, 244, 255, 255, 255]],
+      [75, 157, [255, 255, 255, 253, 90, 0, 0, 0]],
+      [130, 55, [0, 0, 23, 102, 181, 248, 255, 255]],
+    ],
+  ],
+  [
+    'scale(-1, 1), shapes',
+    [-1, 0, 0, 1],
+    shapes,
+    4301502,
+    [
+      [75, 130, [0, 0, 0, 67, 241, 255, 255, 255]],
+      [75, 162, [255, 255, 255, 241, 67, 0, 0, 0]],
+      [130, 254, [0, 0, 0, 2, 87, 213, 255, 255]],
+    ],
+  ],
+  [
+    'scale(1, -1), curves',
+    [1, 0, 0, -1],
+    '<path d="M300 300 C 450 100, 550 900, 700 700" stroke="#000" fill="none" stroke-width="1"/>' +
+      '<circle cx="500" cy="500" r="120" stroke="#008" fill="none" stroke-width="1.5"/>',
+    160879,
+    [
+      [20, 40, [0, 0, 186, 237, 10, 0, 0, 0]],
+      [75, 146, [0, 0, 0, 185, 70, 0, 0, 0]],
+      [130, 123, [0, 0, 0, 220, 35, 0, 0, 0]],
+    ],
+  ],
+]
+
+test('a rotated or flipped svg draw matches Chrome', async (t) => {
+  for (const [name, [a, b, c, d], body, sumA, rows] of transformedDraws) {
+    const image = await loaded(svg('width="1000" height="1000"', body))
+    const ctx = createCanvas(300, 150).getContext('2d')
+    ctx.setTransform(a, b, c, d, 0, 0)
+    const det = a * d - b * c
+    ctx.drawImage(image, (d * 150 - c * 75) / det - 500, (a * 75 - b * 150) / det - 500)
+    const data = ctx.getImageData(0, 0, 300, 150).data
+    t.deepEqual(
+      {
+        sumA: alphaSum(data),
+        rows: rows.map(([y, x0, chrome]) => chrome.map((_, i) => data[(y * 300 + x0 + i) * 4 + 3])),
+      },
+      { sumA, rows: rows.map(([, , chrome]) => chrome) },
+      name,
+    )
+  }
 })
 
 // That part is the canvas plus 256 px, grown in 256 px steps only for a
