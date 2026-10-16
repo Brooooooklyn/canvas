@@ -2,18 +2,22 @@
 //! them.
 //!
 //! Chrome keeps these decodes in one `SoftwareImageDecodeCache`
-//! (`Image::SharedCCDecodeCache`, image.cc:83-98), backed by discardable
-//! memory: at most 1000 entries (`kNormalMaxItemsInCacheForSoftware`,
-//! software_image_decode_cache.cc:37), and the least recently used are
-//! purged past 512 MiB on desktop (`GetDefaultMaxBytes`,
-//! discardable_shared_memory_manager.cc:168-182). A purged decode is made
+//! (`Image::SharedCCDecodeCache`, image.cc:83-98) of at most 1000 entries
+//! (`kNormalMaxItemsInCacheForSoftware`, software_image_decode_cache.cc:37),
+//! backed by discardable memory. The limit on that memory is not one for
+//! these decodes: it is one pool for the whole browser, which every renderer
+//! and every other user of discardable memory shares, and the least recently
+//! used parts are purged past min(512 MiB, a quarter of the physical memory)
+//! on desktop (`GetDefaultMaxBytes`,
+//! discardable_shared_memory_manager.cc:166-215). A purged decode is made
 //! again from the encoded image at its next draw.
 //!
 //! Here an Image keeps its decodes weakly (`AccountedBitmap::float16_decode`)
 //! and this cache keeps them alive. Each env (the main thread and each worker)
-//! has its own cache with those limits: a decode is reported to its env's V8
-//! heap (`napi_adjust_external_memory`, which only that env's thread may
-//! call), so it is dropped on that thread, and before the env is torn down.
+//! has its own cache, of these decodes only, with at most 512 MiB and 1000
+//! decodes: a decode is reported to its env's V8 heap
+//! (`napi_adjust_external_memory`, which only that env's thread may call), so
+//! it is dropped on that thread, and before the env is torn down.
 
 use std::collections::VecDeque;
 use std::ffi::c_void;
@@ -23,7 +27,8 @@ use napi::sys;
 
 use crate::sk::{AccountedBitmap, ColorSpace};
 
-/// Chrome's discardable memory limit on desktop.
+/// The 512 MiB of Chrome's discardable memory pool on desktop, here for the
+/// decodes of one env.
 const MAX_BYTES: usize = 512 * 1024 * 1024;
 /// Chrome's `kNormalMaxItemsInCacheForSoftware`.
 const MAX_ITEMS: usize = 1000;

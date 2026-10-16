@@ -134,9 +134,11 @@ test('8-bit PNGs on float16 and display-p3', async (t) => {
   chromeEqual(t, M3, 'M3-8bit-translucent-png-on-p3')
 })
 
-// Chrome keeps half-float decodes in its software decode cache, which purges
-// the least recently used past 512 MiB, and decodes a purged image again at
-// its next draw. Each 4096x4096 decode is 128 MiB, so the 6 below (3 Images,
+// Chrome keeps half-float decodes in its software decode cache, in
+// discardable memory that the browser purges, least recently used first, past
+// min(512 MiB, a quarter of the RAM) for all its renderers, and decodes a
+// purged image again at its next draw. Here each env purges its own decodes
+// past 512 MiB. Each 4096x4096 decode is 128 MiB, so the 6 below (3 Images,
 // sRGB and display-p3) do not all fit: the first ones are decoded again, with
 // the same pixels. They used to be kept for as long as their Image. A pattern
 // keeps the decode it samples.
