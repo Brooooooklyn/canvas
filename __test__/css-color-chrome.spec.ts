@@ -131,9 +131,35 @@ function tableRow(s: string): Row {
   return r
 }
 
+// The fixture's selection colors are macOS Chrome's. Elsewhere Blink uses its defaults,
+// kDefaultActiveSelectionBgColor 0xFF1967D2 / kDefaultActiveSelectionFgColor 0xFFFFFFFF
+// (renderer_preferences.h:25-26), and Highlight is the background's BlendWithWhite()
+// (layout_theme.cc:361-371, color.cc:1213-1235): rgba(0, 65, 198, 0.8). src/color/names.rs
+// gives these off macOS. Each row is what Chrome 155 (macOS) returned for that plain color with
+// the procedure above; drop-shadow() keeps the keyword.
+const nonMacRow = (s: string, get: string, px: number[], p3: number[]): Row => ({
+  fillGet: get,
+  fill: px,
+  strokeGet: get,
+  fillP3: p3,
+  shadowGet: get,
+  shadow: px,
+  stopOk: true,
+  stop: px,
+  filterGet: `drop-shadow(20px 0 0 ${s})`,
+  filter: px,
+})
+const WHITE = [255, 255, 255, 255]
+const NON_MAC_TABLE: Record<string, Row> = {
+  Highlight: nonMacRow('Highlight', 'rgba(0, 65, 198, 0.8)', [0, 65, 198, 204], [25, 64, 190, 204]),
+  HighlightText: nonMacRow('HighlightText', '#ffffff', WHITE, WHITE),
+  SelectedItem: nonMacRow('SelectedItem', '#1967d2', [25, 103, 210, 255], [50, 101, 203, 255]),
+  SelectedItemText: nonMacRow('SelectedItemText', '#ffffff', WHITE, WHITE),
+}
+
 for (const s of Object.keys(S.table)) {
   test(`color site table matches Chrome: ${JSON.stringify(s)}`, (t) => {
-    t.deepEqual(tableRow(s), S.table[s])
+    t.deepEqual(tableRow(s), platform() !== 'darwin' && s in NON_MAC_TABLE ? NON_MAC_TABLE[s] : S.table[s])
   })
 }
 
