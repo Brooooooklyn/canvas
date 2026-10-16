@@ -45,6 +45,15 @@ const DEJAVU_ONLY =
   SYSTEM_FAMILIES.every((name) => FIXTURE.linuxFamilies.includes(name))
 const OS: Os | null = process.platform === 'darwin' ? 'darwin' : DEJAVU_ONLY ? 'linux' : null
 
+// A Linux test container has no fonts at all (each spec file runs in its own
+// process), so a family that is not found would fall back to the only font
+// this file registers, Lato, and the tests below could not tell. There,
+// Source Serif Pro stands in for Chrome Linux's standard font (Times New
+// Roman, the -webkit-standard setting), which every lookup ends with.
+if (!(width('20px serif', 'Hamburg') > 0)) {
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'SourceSerifPro-Regular.ttf'), 'Times New Roman')
+}
+
 const LATO = join(__dirname, 'fonts', 'Lato-Regular.ttf')
 for (const alias of ['LatoT', 'ÄLatoT', 'StraßeT', 'KelvinT']) {
   GlobalFonts.registerFromPath(LATO, alias)
