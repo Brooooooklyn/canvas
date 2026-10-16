@@ -660,21 +660,32 @@ void LayOutLine(skiac_font_collection* c_collection,
   }
   // FontPlatformData::SetupSkFont: the synthetic styles of the face that
   // draws each run. They change the glyphs, not the advances. `faces` holds
-  // a clone of each of `base_faces`, in order.
+  // a clone of each of `base_faces`, in order. SynthesizeStyle runs once for
+  // each face: it can ask the platform font manager (CoreText on macOS)
+  // whether the face is installed, and a line shaped word by word has a run
+  // for each word.
+  std::vector<std::pair<SkTypefaceID, SyntheticStyle>> synthesized;
   for (Run& run : paragraph->runs()) {
     auto& font = const_cast<SkFont&>(run.font());
-    SkTypeface* base = nullptr;
-    for (size_t i = 0; i < faces.size(); ++i) {
-      if (faces[i]->uniqueID() == font.getTypeface()->uniqueID()) {
-        base = faces.size() == base_faces.size() ? base_faces[i].get()
-                                                 : faces[i].get();
-        break;
+    const SkTypefaceID id = font.getTypeface()->uniqueID();
+    auto known =
+        std::find_if(synthesized.begin(), synthesized.end(),
+                     [id](const auto& entry) { return entry.first == id; });
+    if (known == synthesized.end()) {
+      SkTypeface* base = nullptr;
+      for (size_t i = 0; i < faces.size(); ++i) {
+        if (faces[i]->uniqueID() == id) {
+          base = faces.size() == base_faces.size() ? base_faces[i].get()
+                                                   : faces[i].get();
+          break;
+        }
       }
+      synthesized.emplace_back(
+          id, SynthesizeStyle(c_collection, font.getTypeface(), base, request));
+      known = synthesized.end() - 1;
     }
-    const SyntheticStyle synthetic =
-        SynthesizeStyle(c_collection, font.getTypeface(), base, request);
-    font.setEmbolden(synthetic.bold);
-    font.setSkewX(synthetic.italic ? -SK_Scalar1 / 4 : 0);
+    font.setEmbolden(known->second.bold);
+    font.setSkewX(known->second.italic ? -SK_Scalar1 / 4 : 0);
   }
   // skparagraph draws the first line's glyphs at floor(baseline + 0.5) below
   // the paint origin (TextLine.cpp, correctedBaseline).
