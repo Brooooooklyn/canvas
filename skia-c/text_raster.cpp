@@ -91,8 +91,11 @@ SkFont MetricsFont(sk_sp<SkTypeface> typeface, float size) {
 }
 
 TextRasterPolicy::TextRasterPolicy(const skiac_text_request& request)
-    : geometric_precision_(request.text_rendering == kGeometricPrecision),
-      lcd_text_(request.lcd_text) {}
+    : geometric_precision_(request.text_rendering == kGeometricPrecision) {
+#if defined(__APPLE__)
+  lcd_text_ = request.lcd_text;
+#endif
+}
 
 void TextRasterPolicy::ApplyToTextStyle(TextStyle* style) const {
 #if defined(__APPLE__)
