@@ -112,8 +112,15 @@ struct Priority {
   order: u32,
 }
 
+/// A cascade layer without importance (CascadePriority::ForLayerComparison,
+/// cascade_priority.h): origin (0 presentation attribute, 1 style sheet, 2
+/// style attribute), then the layer in normal order (unlayered last).
+/// `revert-layer` rolls back to declarations below its own.
+type LayerKey = (u8, u32);
+
 struct Candidate {
   priority: Priority,
+  layer: LayerKey,
   /// None for a custom property.
   prop: Option<Prop>,
   name: String,
@@ -245,12 +252,13 @@ impl<'a> Cascade<'a> {
     }
   }
 
-  fn push_decl(out: &mut Vec<Candidate>, decl: &Decl, priority: Priority) {
+  fn push_decl(out: &mut Vec<Candidate>, decl: &Decl, priority: Priority, layer: LayerKey) {
     let mut push = |name: &str, value: String| {
       let prop = Prop::from_name(name);
       if prop.is_some() || name.starts_with("--") {
         out.push(Candidate {
           priority,
+          layer,
           prop,
           name: name.to_owned(),
           value,
@@ -293,6 +301,7 @@ impl<'a> Cascade<'a> {
           specificity: 0,
           order: next(),
         },
+        layer: (0, 0),
         prop: Some(prop),
         name: attr.name.clone(),
         value: attr.value.clone(),
@@ -344,7 +353,8 @@ impl<'a> Cascade<'a> {
           specificity,
           order: next(),
         };
-        Self::push_decl(&mut out, decl, priority);
+        let layer_key = (1, rule_ref.layer.map_or(layers, |l| l as u32));
+        Self::push_decl(&mut out, decl, priority, layer_key);
       }
     }
     if let Some(style) = doc.attr(id, "style") {
@@ -356,7 +366,7 @@ impl<'a> Cascade<'a> {
           specificity: 0,
           order: next(),
         };
-        Self::push_decl(&mut out, &decl, priority);
+        Self::push_decl(&mut out, &decl, priority, (2, 0));
       }
     }
     out.sort_by_key(|c| c.priority);
@@ -368,10 +378,10 @@ impl<'a> Cascade<'a> {
   pub(crate) fn compute(&mut self, id: NodeId, scope: Option<NodeId>, parent: &Style) -> Style {
     let candidates = self.candidates(id, scope);
 
-    // Custom properties: the last (highest priority) declaration of each.
-    let mut raw: HashMap<&str, &str> = HashMap::new();
-    for c in candidates.iter().filter(|c| c.prop.is_none()) {
-      raw.insert(&c.name, &c.value);
+    // Custom properties: the declarations of each, highest priority first.
+    let mut raw: HashMap<&str, Vec<(LayerKey, &str)>> = HashMap::new();
+    for c in candidates.iter().rev().filter(|c| c.prop.is_none()) {
+      raw.entry(&c.name).or_default().push((c.layer, &c.value));
     }
     let custom = if raw.is_empty() {
       parent.custom.clone()
@@ -417,16 +427,35 @@ impl<'a> Cascade<'a> {
       };
       let mut result = None;
       let mut declared = false;
+      // Set by revert-layer: only declarations of lower layers are left.
+      let mut below: Option<LayerKey> = None;
       for c in candidates.iter().rev().filter(|c| c.prop == Some(prop)) {
+        if below.is_some_and(|b| c.layer >= b) {
+          continue;
+        }
         let text = c.value.trim();
         if let Some(keyword) = css_wide(text) {
-          declared = true;
-          result = match keyword {
-            "inherit" => Some(parent.get(prop).clone()),
-            "initial" => Some(prop.initial()),
-            // unset, and revert with no user or UA rules to go back to.
-            _ => None,
-          };
+          match keyword {
+            // StyleCascade::ResolveRevertLayer: the highest declaration of
+            // a lower layer applies; with none, the property reverts.
+            "revert-layer" => {
+              below = Some(c.layer);
+              continue;
+            }
+            // Back to the user and UA origins: as if no author declared
+            // it (the UA sheet's part is the caller's, see `declared`).
+            "revert" => {}
+            "inherit" => {
+              declared = true;
+              result = Some(parent.get(prop).clone());
+            }
+            "initial" => {
+              declared = true;
+              result = Some(prop.initial());
+            }
+            // unset
+            _ => declared = true,
+          }
           break;
         }
         if has_var(text) {
@@ -485,7 +514,7 @@ impl<'a> Cascade<'a> {
 }
 
 struct VarResolver<'r> {
-  raw: &'r HashMap<&'r str, &'r str>,
+  raw: &'r HashMap<&'r str, Vec<(LayerKey, &'r str)>>,
   inherited: &'r Option<Rc<CustomScope>>,
   resolved: HashMap<String, Option<Rc<str>>>,
   stack: Vec<&'r str>,
@@ -496,7 +525,7 @@ impl<'r> VarResolver<'r> {
     if let Some(v) = self.resolved.get(name) {
       return v.clone();
     }
-    let Some((&key, &text)) = self.raw.get_key_value(name) else {
+    let Some((&key, decls)) = self.raw.get_key_value(name) else {
       return lookup(self.inherited, name);
     };
     if self.stack.contains(&key) {
@@ -507,11 +536,30 @@ impl<'r> VarResolver<'r> {
       }
       return None;
     }
-    let value = match css_wide(text) {
-      Some("initial") => None,
-      Some(_) => lookup(self.inherited, name),
-      None if text.len() > MAX_VARIABLE_BYTES || self.stack.len() >= MAX_VAR_DEPTH => None,
-      None => {
+    // revert-layer rolls back to the highest declaration of a lower layer;
+    // with none left, the property reverts.
+    let mut below: Option<LayerKey> = None;
+    let text = decls.iter().find_map(|&(layer, text)| {
+      if below.is_some_and(|b| layer >= b) {
+        return None;
+      }
+      if css_wide(text) == Some("revert-layer") {
+        below = Some(layer);
+        return None;
+      }
+      Some(text)
+    });
+    let value = match text.map(|t| (t, css_wide(t))) {
+      Some((_, Some("initial"))) => None,
+      // inherit, unset, and revert (no user or UA declarations to go back
+      // to: unset, which inherits).
+      None | Some((_, Some(_))) => lookup(self.inherited, name),
+      Some((text, None))
+        if text.len() > MAX_VARIABLE_BYTES || self.stack.len() >= MAX_VAR_DEPTH =>
+      {
+        None
+      }
+      Some((text, None)) => {
         self.stack.push(key);
         let substituted = substitute_with(text, &mut |n| self.resolve(n));
         self.stack.pop();
@@ -731,6 +779,137 @@ mod tests {
     assert_eq!(fill(&s[2]), BLUE);
     assert_eq!(fill(&s[3]), BLUE);
     assert_eq!(fill(&s[4]), BLUE);
+  }
+
+  const GREEN: Paint = Paint::Color(ColorValue::Rgba(Rgba {
+    rgb: [0, 128, 0],
+    a: 1.0,
+  }));
+  const BLACK: Paint = Paint::Color(ColorValue::Rgba(Rgba::BLACK));
+
+  /// The style of a `<rect {attrs}>` in a `<g style="--c: green">`, with
+  /// `<style>{css}</style>`.
+  fn rect_style(css: &str, attrs: &str) -> Style {
+    let s = styles(&format!(
+      r#"<svg xmlns="{SVG_NS}"><style>{css}</style><g style="--c: green"><rect {attrs}/></g></svg>"#
+    ));
+    s[3].clone()
+  }
+
+  #[test]
+  fn revert_layer_rolls_back_like_blink() {
+    // Chrome 155: revert-layer goes to the highest declaration of a lower
+    // layer, layers compared without importance; presentation attributes
+    // are below every layer and style="" above all of them.
+    let cases = [
+      (
+        "@layer a,b; @layer a{rect{fill:red}} @layer b{rect{fill:revert-layer}}",
+        "",
+        RED,
+      ),
+      (
+        "@layer a{rect{fill:revert-layer}}",
+        r#"fill="green""#,
+        GREEN,
+      ),
+      (
+        "@layer a{rect{fill:red}} rect{fill:blue}",
+        r#"style="fill:revert-layer""#,
+        BLUE,
+      ),
+      (
+        "@layer a,b; @layer a{rect{fill:red}} @layer b{rect{fill:revert-layer !important}}",
+        "",
+        RED,
+      ),
+      (
+        "@layer a,b; @layer b{rect{fill:red !important}} @layer a{rect{fill:revert-layer !important}}",
+        "",
+        BLACK,
+      ),
+      (
+        "@layer a{rect{fill:red}} rect{fill:blue} rect{fill:revert-layer !important}",
+        "",
+        RED,
+      ),
+      (
+        "@layer a{rect{fill:red !important}}",
+        r#"style="fill:revert-layer !important""#,
+        RED,
+      ),
+      (
+        "@layer a,b,c; @layer a{rect{fill:red}} @layer b{rect{fill:revert-layer}} @layer c{rect{fill:revert-layer}}",
+        "",
+        RED,
+      ),
+      (
+        "@layer a,b,c; @layer a{rect{fill:red}} @layer b{rect{fill:12px}} @layer c{rect{fill:revert-layer}}",
+        "",
+        RED,
+      ),
+      (
+        "@layer a,b; @layer a{rect{fill:red}} @layer a{rect{fill:blue}} @layer b{rect{fill:REVERT-LAYER}}",
+        "",
+        BLUE,
+      ),
+      (
+        "@layer a{rect{fill:red}} @layer a{rect{fill:revert-layer}}",
+        "",
+        BLACK,
+      ),
+      // Custom properties roll back too; with nothing below, they inherit.
+      (
+        "@layer a,b; @layer a{rect{--c:red}} @layer b{rect{--c:revert-layer}} rect{fill:var(--c,blue)}",
+        "",
+        RED,
+      ),
+      (
+        "rect{--c:blue} rect{fill:var(--c)}",
+        r#"style="--c:revert-layer""#,
+        BLUE,
+      ),
+      (
+        "@layer a,b; @layer a{rect{--c:red}} @layer b{rect{--c:revert-layer !important}} rect{fill:var(--c)}",
+        "",
+        RED,
+      ),
+      (
+        "@layer a,b; @layer a{rect{--c:revert-layer}} @layer b{rect{--c:revert-layer}} rect{fill:var(--c,blue)}",
+        "",
+        GREEN,
+      ),
+      (
+        "rect{--c:red} rect{--c:revert} rect{fill:var(--c,blue)}",
+        "",
+        GREEN,
+      ),
+    ];
+    for (css, attrs, want) in cases {
+      assert_eq!(fill(&rect_style(css, attrs)), want, "{css} {attrs}");
+    }
+  }
+
+  #[test]
+  fn revert_leaves_the_property_to_the_ua_sheet() {
+    // Chrome 155 clips a nested <svg> whose overflow reverts (UA
+    // overflow: hidden), and does not clip one whose overflow is unset or
+    // reverts a layer down to overflow="visible".
+    let declared = |css: &str, attrs: &str| {
+      let s = styles(&format!(
+        r#"<svg xmlns="{SVG_NS}"><style>{css}</style><svg {attrs}/></svg>"#
+      ));
+      s[2].declared(Prop::Overflow)
+    };
+    assert!(!declared(
+      "",
+      r#"overflow="visible" style="overflow:revert""#
+    ));
+    assert!(!declared("svg svg{overflow:revert-layer}", ""));
+    assert!(declared(
+      "svg svg{overflow:revert-layer}",
+      r#"overflow="visible""#
+    ));
+    assert!(declared("svg svg{overflow:unset}", ""));
   }
 
   #[test]
