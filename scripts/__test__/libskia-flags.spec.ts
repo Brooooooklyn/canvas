@@ -23,10 +23,11 @@ const TARGETS = [
   { rust: 'x86_64-apple-darwin', platformName: 'darwin', targetTriple: 'x86_64-apple-darwin' },
 ]
 
-// build.rs libskia_flags: the "*" lines and the target's own.
+// build.rs libskia_flags: the "*" lines and the target's own. A Windows
+// checkout may have CRLF line ends, which build.rs's lines() drops too.
 function flagsFileDefines(target: string) {
   return readFileSync(join(ROOT, 'scripts', 'libskia.flags'), 'utf8')
-    .split('\n')
+    .split(/\r?\n/)
     .filter((line) => line.trim() && !line.startsWith('#'))
     .map((line) => line.split(' '))
     .filter(([scope]) => scope === '*' || scope === target)
