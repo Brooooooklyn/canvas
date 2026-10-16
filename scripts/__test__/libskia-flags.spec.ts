@@ -25,7 +25,7 @@ const TARGETS = [
 
 // build.rs libskia_flags: the "*" lines and the target's own.
 function flagsFileDefines(target: string) {
-  return readFileSync(join(ROOT, 'skia-c', 'libskia.flags'), 'utf8')
+  return readFileSync(join(ROOT, 'scripts', 'libskia.flags'), 'utf8')
     .split('\n')
     .filter((line) => line.trim() && !line.startsWith('#'))
     .map((line) => line.split(' '))
@@ -41,7 +41,7 @@ function gnArgDefines(args: Map<string, string>) {
 }
 
 for (const { rust, ...context } of TARGETS) {
-  test(`skia-c/libskia.flags has libskia's GN defines for ${rust}`, (t) => {
+  test(`scripts/libskia.flags has libskia's GN defines for ${rust}`, (t) => {
     const { args } = buildGnArgs({ ...context, env: {} })
     // The same flags; the order only matters for -USK_R32_SHIFT, which both
     // put before -DSK_R32_SHIFT=0.

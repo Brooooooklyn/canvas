@@ -7,6 +7,9 @@
 # Linux, a target triple adds that target's extra flags, and "gn" comes from
 # Skia's BUILD.gn configs (skia_public, skia_private) and is_official_build.
 # scripts/__test__/libskia-flags.spec.ts checks the first two kinds.
+#
+# It sits next to scripts/skia-gn-args.cjs, out of skia-c/, whose files CI
+# checks with clang-format.
 * -DSK_ENABLE_LEGACY_SHADERCONTEXT
 * -DSK_SUPPORT_LEGACY_ANISOTROPIC_MIPMAP_SCALE
 * -DSK_SUPPORT_LEGACY_CONIC_CHOP
