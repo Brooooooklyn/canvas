@@ -53,6 +53,32 @@ test('a 16-bit PNG keeps 16 bits on a float16 canvas', async (t) => {
   chromeEqual(t, H1, 'H1-hbd-fixtures')
 })
 
+// A base64 body skips its whitespace, which can fill the first KiB of a
+// data: URL: the start of the body then says too little to tell a 16-bit PNG
+// from others. It still draws with 16 bits, as in Chrome, from a string or a
+// Buffer src.
+test('a 16-bit PNG data: URL whose body starts with whitespace keeps 16 bits', async (t) => {
+  const [mime, body] = png16.split(',')
+  const draw = async (src: string | Buffer) => {
+    const c = ctx(2, 1, F16)
+    c.drawImage(await loadImage(src), 0, 0)
+    return f32(c, 0, 0, 2, 1)
+  }
+  const plain = await draw(png16)
+  // 0x8000 / 0xffff, where the 8-bit decode gives 0x80 / 0xff = 0.50196.
+  t.true(Math.abs(plain[0] - 0.5) < 1e-4, String(plain))
+  const urls = {
+    spaces: `${mime},${' '.repeat(2000)}${body}`,
+    newlines: `${mime},${'\n'.repeat(2000)}${body}`,
+    escapedSpaces: `${mime},${'%20'.repeat(700)}${body}`,
+    spread: `${mime},${Array.from(body, (char) => char + ' '.repeat(40)).join('')}`,
+  }
+  for (const [name, url] of Object.entries(urls)) {
+    t.deepEqual(await draw(url), plain, name)
+    t.deepEqual(await draw(Buffer.from(url)), plain, `${name} Buffer`)
+  }
+})
+
 // Each image is new to the decode cache: Chrome's shared cache can scale a
 // draw's decode from an earlier draw of the image on another colour space
 // (SoftwareImageDecodeCache::FindCachedCandidate does not compare them).

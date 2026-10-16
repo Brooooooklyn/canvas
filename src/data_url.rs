@@ -170,10 +170,14 @@ fn mime_type(input: &[u8]) -> (String, bool) {
 pub(crate) struct Head {
   /// The MIME type essence, as [`parse`] gives it.
   pub essence: String,
-  /// The first bytes of the body [`parse`] gives: all of them when the body
-  /// fits in [`HEAD_WINDOW`] bytes of the URL, else the ones that the first
-  /// [`HEAD_WINDOW`] bytes decode to. Empty when those do not decode.
+  /// The first bytes of the body [`parse`] gives: all of them when `whole`,
+  /// else the ones that the first [`HEAD_WINDOW`] bytes of the body decode
+  /// to, which can be few or none when they are mostly whitespace that a
+  /// base64 body skips, or tabs and newlines. Empty when those do not decode.
   pub prefix: Vec<u8>,
+  /// Whether the body ends in its first [`HEAD_WINDOW`] bytes, with the URL
+  /// or at a '#': `prefix` is then the whole body.
+  pub whole: bool,
   /// The most bytes the body can decode to.
   pub max_body_len: usize,
 }
@@ -251,6 +255,7 @@ pub(crate) fn head(input: &[u8]) -> Option<Result<Head, ()>> {
   Some(Ok(Head {
     essence,
     prefix,
+    whole,
     max_body_len,
   }))
 }
@@ -326,9 +331,11 @@ mod tests {
       assert_eq!(head(input), Some(Err(())));
       return None;
     };
+    // A short URL has its whole body in the window.
+    assert!(start.whole || input.len() > HEAD_WINDOW);
     let Ok(url) = parsed else {
       // The body does not decode: no prefix when it is all in the window.
-      if input.len() <= HEAD_WINDOW {
+      if start.whole {
         assert!(start.prefix.is_empty());
       }
       return Some(start);
@@ -336,7 +343,7 @@ mod tests {
     assert_eq!(start.essence, url.essence);
     assert!(start.max_body_len >= url.body.len());
     assert_eq!(start.prefix, url.body[..start.prefix.len()]);
-    if input.len() <= HEAD_WINDOW {
+    if start.whole {
       assert_eq!(start.prefix, url.body);
     }
     Some(start)
@@ -394,6 +401,19 @@ mod tests {
         300,
       ),
       (format!("data:image/png;base64,=={base64}"), 0),
+      // Whitespace the decode skips leaves few bytes of the window, or none.
+      (
+        format!("data:image/png;base64,{}{base64}", " ".repeat(1000)),
+        12,
+      ),
+      (
+        format!("data:image/png;base64,{}{base64}", "\r\n".repeat(1000)),
+        0,
+      ),
+      (
+        format!("data:image/png;base64,{}{base64}", "%20".repeat(700)),
+        0,
+      ),
     ] {
       let start = same_start(input.as_bytes()).unwrap();
       assert!(
