@@ -21,7 +21,7 @@ fn main() {
   println!("cargo:rerun-if-changed=skia-c/text_raster.cpp");
   println!("cargo:rerun-if-changed=skia-c/text_raster.hpp");
   println!("cargo:rerun-if-changed=skia-c/font_scalers.cpp");
-  println!("cargo:rerun-if-changed=skia-c/libskia.flags");
+  println!("cargo:rerun-if-changed=scripts/libskia.flags");
 
   let compile_target = env::var("TARGET").expect("TARGET");
   let compile_target_os = env::var("CARGO_CFG_TARGET_OS").expect("CARGO_CFG_TARGET_OS");
@@ -295,10 +295,10 @@ fn main() {
 }
 
 /// The -D / -U flags libskia's C++ is built with for `target`
-/// (skia-c/libskia.flags): Skia's private headers change class layouts with
-/// them.
+/// (scripts/libskia.flags): Skia's private headers change class layouts
+/// with them.
 fn libskia_flags(target: &str) -> Vec<String> {
-  include_str!("skia-c/libskia.flags")
+  include_str!("scripts/libskia.flags")
     .lines()
     .filter(|line| !line.trim().is_empty() && !line.starts_with('#'))
     .filter_map(|line| line.split_once(' '))
