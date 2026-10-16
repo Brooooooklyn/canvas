@@ -98,6 +98,61 @@ test('drawImage needs 3, 5 or 9 arguments', (t) => {
   t.deepEqual(pixel(nan, 1, 1), [0, 0, 0, 0])
 })
 
+// Runs `call` with index getters on Object.prototype, which log each read;
+// they are removed before it returns. Past arguments.length, arguments[i]
+// reads Object.prototype[i]: Chrome 155 reads none of them. `result` is what
+// `call` returns, or the error it throws as a string.
+const withIndexGetters = (values: Record<number, unknown>, call: () => unknown) => {
+  let reads = ''
+  const keys = Object.keys(values)
+  for (const key of keys) {
+    Object.defineProperty(Object.prototype, key, {
+      configurable: true,
+      get() {
+        reads += `${key} `
+        return values[Number(key)]
+      },
+      set(value) {
+        Object.defineProperty(this, key, { value, writable: true, enumerable: true, configurable: true })
+      },
+    })
+  }
+  let result: unknown
+  try {
+    result = call()
+  } catch (error) {
+    result = String(error)
+  } finally {
+    for (const key of keys) delete loose(Object.prototype)[key]
+  }
+  return { result, reads: reads.trim() }
+}
+
+test.serial('drawImage reads only the arguments it was given', (t) => {
+  const source = blueSource()
+  const blue = [0, 0, 255, 255]
+  const none = [0, 0, 0, 0]
+  // Getters that would make each call the 9-argument form.
+  const nine = { 3: 1, 4: 1, 5: 0, 6: 0, 7: 8, 8: 8 }
+  // [the arguments after the image, the getters, what drawImage gives, the
+  // pixels at (1, 1) and (5, 5)] (Chrome 155)
+  for (const [args, values, result, pixels] of [
+    [[0, 0], nine, undefined, [blue, none]],
+    [[0, 0, 8, 8], { 5: 0, 6: 0, 7: 1, 8: 1 }, undefined, [blue, blue]],
+    [[0, undefined], nine, undefined, [none, none]],
+    // 4 arguments: no overload.
+    [[0, 0, 1], { 4: 1, 5: 0, 6: 0, 7: 8, 8: 8 }, `TypeError: ${DRAW_IMAGE}${OVERLOAD}`, [none, none]],
+  ] as const) {
+    const ctx = context()
+    t.deepEqual(
+      withIndexGetters(values, () => loose(ctx).drawImage(source, ...args)),
+      { result, reads: '' },
+      String(args),
+    )
+    t.deepEqual([pixel(ctx, 1, 1), pixel(ctx, 5, 5)], pixels, String(args))
+  }
+})
+
 test('drawImage rejects a value that is not an image', (t) => {
   const ctx = loose(context())
   for (const value of [
