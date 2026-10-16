@@ -66,6 +66,63 @@ function measure(family: string) {
   t.deepEqual(actual, CHROME)
 })
 
+// Chrome 155 on macOS 27, "Hamburgefonstiv a b" at 20px: system-ui, and
+// BlinkMacSystemFont (which serializes as "system-ui"), is CoreText's UI font
+// (font_cache_mac.mm CreateFontPlatformData, font_matcher_mac.mm
+// MatchSystemUIFont); -apple-system and the ui-* keywords are no family
+// Chrome knows, so Times draws them. actualBoundingBoxLeft, Ascent and
+// Descent, fontBoundingBoxAscent and Descent, and the width for Times. SF's
+// width is left out: Chrome applies its AAT tracking at the font size
+// (harfbuzz_face.cc hb_font_set_ptem), skparagraph's HarfBuzz at 12pt.
+const SYSTEM_UI: Record<string, number[]> = {
+  '20px system-ui': [-1.695404052734375, 14.690093994140625, 3.687896728515625, 19, 4],
+  'bold 20px system-ui': [-1.58203125, 15.384368896484375, 3.744659423828125, 19, 4],
+  '20px BlinkMacSystemFont': [-1.695404052734375, 14.690093994140625, 3.687896728515625, 19, 4],
+  'bold 20px BlinkMacSystemFont': [-1.58203125, 15.384368896484375, 3.744659423828125, 19, 4],
+  '20px -apple-system': [-0.322265625, 13.65234375, 4.35546875, 18, 5, 168.49609375],
+  'bold 20px -apple-system': [-0.361328125, 13.818359375, 4.150390625, 18, 5, 181.123046875],
+  '20px ui-sans-serif': [-0.322265625, 13.65234375, 4.35546875, 18, 5, 168.49609375],
+  'bold 20px ui-sans-serif': [-0.361328125, 13.818359375, 4.150390625, 18, 5, 181.123046875],
+  '20px ui-serif': [-0.322265625, 13.65234375, 4.35546875, 18, 5, 168.49609375],
+  'bold 20px ui-serif': [-0.361328125, 13.818359375, 4.150390625, 18, 5, 181.123046875],
+  '20px ui-monospace': [-0.322265625, 13.65234375, 4.35546875, 18, 5, 168.49609375],
+  'bold 20px ui-monospace': [-0.361328125, 13.818359375, 4.150390625, 18, 5, 181.123046875],
+  '20px ui-rounded': [-0.322265625, 13.65234375, 4.35546875, 18, 5, 168.49609375],
+  'bold 20px ui-rounded': [-0.361328125, 13.818359375, 4.150390625, 18, 5, 181.123046875],
+}
+
+;(MEASURED_MACOS ? test : test.skip)("system-ui is CoreText's UI font like Chrome on macOS", (t) => {
+  const ctx = createCanvas(10, 10).getContext('2d')
+  const actual = Object.fromEntries(
+    Object.entries(SYSTEM_UI).map(([font, expected]) => {
+      ctx.font = font
+      const m = ctx.measureText('Hamburgefonstiv a b')
+      const values = [
+        m.actualBoundingBoxLeft,
+        m.actualBoundingBoxAscent,
+        m.actualBoundingBoxDescent,
+        m.fontBoundingBoxAscent,
+        m.fontBoundingBoxDescent,
+        m.width,
+      ]
+      return [font, values.slice(0, expected.length)]
+    }),
+  )
+  t.deepEqual(actual, SYSTEM_UI)
+})
+
+macTest('the family "system-ui" is the UI font only by its exact name', (t) => {
+  const ctx = createCanvas(10, 10).getContext('2d')
+  const width = (font: string) => {
+    ctx.font = font
+    return ctx.measureText('Hamburgefonstiv a b').width
+  }
+  t.is(width('20px "system-ui"'), width('20px system-ui'))
+  t.is(width('20px BlinkMacSystemFont'), width('20px system-ui'))
+  t.not(width('20px system-ui'), width('20px Times'))
+  t.is(width('20px "SYSTEM-UI"'), width('20px Times'))
+})
+
 macTest('installed family names match in any case, and hidden families never', (t) => {
   t.deepEqual(measure('TIMES'), measure('Times'))
   t.deepEqual(measure('courier'), measure('Courier'))
