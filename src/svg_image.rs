@@ -319,7 +319,11 @@ impl SvgImage {
       ]
     });
     // A scale and a translation: draw in device pixels, clipped (aliased) to
-    // the destination rect rounded out, like Chrome's vector draw.
+    // the destination rect rounded out, like Chrome's vector draw, and put
+    // that raster on the device 1:1 at the device pixel this returns, the
+    // transform not applied again. No imageSmoothing setting filters it:
+    // Chrome's vector draw ignores them (measured in Chrome 155: low, medium,
+    // high and off draw the same).
     let device_draw = || {
       if !(b == 0.0 && c == 0.0 && a > 0.0 && d > 0.0) {
         return None;
@@ -372,13 +376,7 @@ impl SvgImage {
         width: raster_width as i32,
         height: raster_height as i32,
       };
-      let draw_rect = (
-        (window[0] - e) / a,
-        (window[1] - f) / d,
-        raster_width / a,
-        raster_height / d,
-      );
-      Some((spec, draw_rect))
+      Some((spec, (window[0], window[1])))
     };
     // A skew of one axis that leans more than SMALL_SKEW with |a| or |d|
     // under one device pixel: draw in device pixels through the whole
@@ -462,11 +460,7 @@ impl SvgImage {
         width: raster_width as i32,
         height: raster_height as i32,
       };
-      Some((
-        spec,
-        (dst.x, dst.y, dst.w, dst.h),
-        Some((window[0], window[1])),
-      ))
+      Some((spec, (window[0], window[1])))
     };
     // Rotated, skewed, flipped or too big: a raster at the device scale of
     // the destination, drawn through the transform.
@@ -603,8 +597,8 @@ impl SvgImage {
       Some((spec, (dst.x, dst.y, dst.w, dst.h)))
     };
     let Some((spec, draw_rect, device)) = device_draw()
-      .map(|(spec, draw_rect)| (spec, draw_rect, None))
       .or_else(skewed_device_draw)
+      .map(|(spec, origin)| (spec, (dst.x, dst.y, dst.w, dst.h), Some(origin)))
       .or_else(|| scaled_draw().map(|(spec, draw_rect)| (spec, draw_rect, None)))
     else {
       return Ok(None);
