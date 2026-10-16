@@ -2146,6 +2146,33 @@ impl TryFrom<u32> for SvgExportFlag {
   }
 }
 
+/// `len` zeroed bytes, or None when the allocation fails, instead of
+/// aborting the process like `vec![0; len]`. The memory comes zeroed from the
+/// allocator (calloc), so a large buffer costs no zeroing pass.
+pub(crate) fn try_zeroed_bytes(len: usize) -> Option<Vec<u8>> {
+  if len == 0 {
+    return Some(Vec::new());
+  }
+  let layout = std::alloc::Layout::array::<u8>(len).ok()?;
+  // SAFETY: `layout` has a non-zero size.
+  let ptr = unsafe { std::alloc::alloc_zeroed(layout) };
+  if ptr.is_null() {
+    return None;
+  }
+  // SAFETY: `ptr` comes from the global allocator with the layout of a
+  // `Vec<u8>` of capacity `len`, and all `len` bytes are initialized (zero).
+  Some(unsafe { Vec::from_raw_parts(ptr, len, len) })
+}
+
+/// Why [`Surface::read_pixels`] returned no pixels.
+#[derive(Debug, PartialEq, Eq)]
+pub enum ReadPixelsError {
+  /// The pixel buffer could not be allocated.
+  OutOfMemory,
+  /// The rect cannot be read: no overlap with the surface, or Skia failed.
+  Failed,
+}
+
 pub struct Surface {
   ptr: *mut ffi::skiac_surface,
   pub(crate) canvas: Canvas,
@@ -2320,13 +2347,13 @@ impl Surface {
     width: u32,
     height: u32,
     color_space: ColorSpace,
-  ) -> Option<Vec<u8>> {
+  ) -> Result<Vec<u8>, ReadPixelsError> {
     // Reject requests whose dimensions or byte length cannot be represented,
     // instead of letting the length wrap (32-bit targets) and Skia write past
     // the allocation.
     let len = width as u64 * height as u64 * 4;
     if width > i32::MAX as u32 || height > i32::MAX as u32 || len > isize::MAX as u64 {
-      return None;
+      return Err(ReadPixelsError::Failed);
     }
     let len = len as usize;
 
@@ -2359,11 +2386,7 @@ impl Surface {
       && y >= 0
       && (x as u32).saturating_add(width) <= self.width()
       && (y as u32).saturating_add(height) <= self.height();
-    let mut result = if fully_contained {
-      Vec::with_capacity(len)
-    } else {
-      vec![0; len]
-    };
+    let mut result = Self::pixel_buffer(len, fully_contained)?;
     let status = unsafe {
       ffi::skiac_surface_read_pixels_rect(
         self.ptr,
@@ -2379,9 +2402,24 @@ impl Surface {
       // SAFETY: for a fully-contained rect readPixels writes all `len` bytes;
       // for the clipped case the buffer was zero-initialized above.
       unsafe { result.set_len(len) };
-      Some(result)
+      Ok(result)
     } else {
-      None
+      Err(ReadPixelsError::Failed)
+    }
+  }
+
+  /// The buffer of a `len`-byte read: only reserved when the read writes every
+  /// byte, else zeroed (the parts outside the surface read as transparent
+  /// black). Allocation failure is an error, not an abort.
+  fn pixel_buffer(len: usize, fully_contained: bool) -> Result<Vec<u8>, ReadPixelsError> {
+    if fully_contained {
+      let mut buffer = Vec::new();
+      buffer
+        .try_reserve_exact(len)
+        .map_err(|_| ReadPixelsError::OutOfMemory)?;
+      Ok(buffer)
+    } else {
+      try_zeroed_bytes(len).ok_or(ReadPixelsError::OutOfMemory)
     }
   }
 
@@ -2397,7 +2435,7 @@ impl Surface {
     width: u32,
     height: u32,
     len: usize,
-  ) -> Option<Vec<u8>> {
+  ) -> Result<Vec<u8>, ReadPixelsError> {
     // Clip the requested rect against the surface bounds, same semantics as
     // SkReadPixelsRec::trim: out-of-surface regions must read as transparent
     // black (the buffer is zero-initialized below in that case) and a rect
@@ -2421,18 +2459,14 @@ impl Surface {
     copy_w = copy_w.min(peek.width as i64 - src_x);
     copy_h = copy_h.min(peek.height as i64 - src_y);
     if copy_w <= 0 || copy_h <= 0 {
-      return None;
+      return Err(ReadPixelsError::Failed);
     }
     // Only zero-initialize when clipping leaves out-of-surface regions that
     // must read as transparent black; a fully-contained read writes every
     // byte and the zeroing pass is wasted work.
     let fully_contained =
       dst_off_x == 0 && dst_off_y == 0 && copy_w == width as i64 && copy_h == height as i64;
-    let mut result = if fully_contained {
-      Vec::with_capacity(len)
-    } else {
-      vec![0; len]
-    };
+    let mut result = Self::pixel_buffer(len, fully_contained)?;
     let src_stride = peek.row_bytes / 4;
     let src_base = unsafe {
       peek
@@ -2453,7 +2487,7 @@ impl Surface {
     }
     // SAFETY: same argument as the Skia path above.
     unsafe { result.set_len(len) };
-    Some(result)
+    Ok(result)
   }
 
   pub fn data<'env>(&'env self) -> Option<SurfaceData<'env>> {
@@ -3577,9 +3611,22 @@ impl Path {
     let bottom = y + radius_y;
     let mut rotated = Matrix::identity();
     rotated.pre_translate(x, y);
-    rotated.pre_rotate(radians_to_degrees(rotation));
+    let degrees = radians_to_degrees(rotation);
+    if degrees.is_finite() {
+      rotated.pre_rotate(degrees);
+    } else {
+      // |rotation| above ~5.9e36 overflows the f32 degrees. Rotate by the
+      // radians in double like Blink (AffineTransform::RotateRadians).
+      let (sin, cos) = (rotation as f64).sin_cos();
+      let (sin, cos) = (sin as f32, cos as f32);
+      rotated.pre_concat(&Matrix::new(cos, -sin, 0.0, sin, cos, 0.0));
+    }
     rotated.pre_translate(-x, -y);
-    let unrotated = rotated.invert().unwrap();
+    // Not invertible only for a non-finite center or rotation, which the
+    // callers drop first; never panic on it.
+    let Some(unrotated) = rotated.invert() else {
+      return;
+    };
 
     self.transform_self(&unrotated);
 

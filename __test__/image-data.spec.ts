@@ -29,9 +29,11 @@ test('should be able to create from Uint8ClampedArray without height', (t) => {
 test('should throw if width * height * 4 not equal to arraybuffer length', (t) => {
   const pixelArray = Array.from<number>({ length: 4 * 4 * 4 }).fill(255)
   const u8array = new Uint8ClampedArray(pixelArray)
+  // Chrome 155: IndexSizeError (DOMException code 1).
   t.throws(() => new ImageData(u8array, 4, 3), {
-    code: 'InvalidArg',
-    message: 'Index or size is negative or greater than the allowed amount',
+    name: 'IndexSizeError',
+    code: 1,
+    message: "Failed to construct 'ImageData': The input data length is not equal to (4 * width * height).",
   })
 })
 
@@ -57,7 +59,7 @@ test('should be able to create from Uint16Array', (t) => {
   const pixelArray = Array.from<number>({ length: 2 * 2 * 4 }).fill(65535) // max value for Uint16
   const u16array = new Uint16Array(pixelArray)
   const imageData = new ImageData(u16array, 2, 2)
-  
+
   t.is(imageData.width, 2)
   t.is(imageData.height, 2)
   // The data should be converted to Uint8ClampedArray
@@ -72,7 +74,7 @@ test('should be able to create from Uint16Array without height', (t) => {
   const pixelArray = Array.from<number>({ length: 2 * 2 * 4 }).fill(32768) // mid value
   const u16array = new Uint16Array(pixelArray)
   const imageData = new ImageData(u16array, 2)
-  
+
   t.is(imageData.width, 2)
   t.is(imageData.height, 2)
   t.true(imageData.data instanceof Uint8ClampedArray)
@@ -85,7 +87,7 @@ test('should be able to create from Float32Array', (t) => {
   const pixelArray = Array.from<number>({ length: 2 * 2 * 4 }).fill(1.0) // max normalized value
   const f32array = new Float32Array(pixelArray)
   const imageData = new ImageData(f32array, 2, 2)
-  
+
   t.is(imageData.width, 2)
   t.is(imageData.height, 2)
   // The data should be converted to Uint8ClampedArray
@@ -99,7 +101,7 @@ test('should be able to create from Float32Array without height', (t) => {
   const pixelArray = Array.from<number>({ length: 2 * 2 * 4 }).fill(0.5) // mid normalized value
   const f32array = new Float32Array(pixelArray)
   const imageData = new ImageData(f32array, 2)
-  
+
   t.is(imageData.width, 2)
   t.is(imageData.height, 2)
   t.true(imageData.data instanceof Uint8ClampedArray)
@@ -112,7 +114,7 @@ test('should clamp Float32Array values', (t) => {
   const pixelArray = [-0.5, 0.0, 0.5, 1.0, 1.5, 2.0, 0.25, 0.75, -1.0, 0.1, 0.9, 1.1, 0.0, 0.5, 1.0, 2.0]
   const f32array = new Float32Array(pixelArray)
   const imageData = new ImageData(f32array, 2, 2)
-  
+
   t.is(imageData.width, 2)
   t.is(imageData.height, 2)
   t.is(imageData.data[0], 0) // -0.5 clamped to 0

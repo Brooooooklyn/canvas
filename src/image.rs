@@ -9,7 +9,7 @@ use napi::{JsString, JsStringUtf8, ScopedTask, bindgen_prelude::*};
 use crate::avif::AvifImage;
 use crate::error::SkError;
 use crate::global_fonts::get_font;
-use crate::sk::{AccountedBitmap, AlphaType, Bitmap, ColorSpace, ColorType};
+use crate::sk::{AccountedBitmap, AlphaType, Bitmap, ColorSpace, ColorType, try_zeroed_bytes};
 use crate::webidl;
 
 #[napi(custom_finalize)]
@@ -103,8 +103,155 @@ impl ImageData {
   }
 }
 
+// ImageData::ValidateAndCreate (core/html/canvas/image_data.cc:41-232), the
+// checks every ImageData API runs, in this order:
+//
+//   validate_size         width, height, 4 * width * height
+//   color space           webidl::ImageDataSettings::color_space
+//   validate_data_length  the data forms of the constructor
+//   alloc_data            the other forms
+//
+// getImageData runs its own checks first (base_rendering_context_2d.cc:353).
+
+/// How a size whose `4 * width * height` does not fit in 32 bits is reported
+/// (`context_2d_error_mode`, image_data.cc:87-108).
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SizeErrors {
+  /// The ImageData constructor: IndexSizeError.
+  Constructor,
+  /// createImageData and getImageData: RangeError.
+  Context2D,
+}
+
+/// The most bytes Chrome gives ImageData data: it allocates them with
+/// PartitionAlloc, which refuses more than `MaxDirectMapped()` = 2^31 - 2 MiB
+/// (partition_alloc_constants.h:403), and AllocateAndValidateDataArray then
+/// throws (image_data.cc:262).
+pub(crate) const MAX_DATA_BYTES: usize = (1 << 31) - (1 << 21);
+
+const SIZE_EXCEEDS: &str = "The requested image size exceeds the supported range.";
+
+fn index_size_error(env: sys::napi_env, prefix: &str, msg: &str) -> Error {
+  webidl::dom_exception(env, "IndexSizeError", &format!("{prefix}{msg}"))
+}
+
+/// RangeError "Out of memory at ImageData creation" (no period), the error of
+/// a failed allocation and of getImageData's int overflow checks.
+pub(crate) fn out_of_memory(env: sys::napi_env, prefix: &str) -> Error {
+  webidl::range_error(env, &format!("{prefix}Out of memory at ImageData creation"))
+}
+
+/// The size steps of ImageData::ValidateAndCreate (image_data.cc:55-110).
+/// Returns `4 * width * height`, or 0 without a height.
+pub(crate) fn validate_size(
+  env: sys::napi_env,
+  prefix: &str,
+  width: u32,
+  height: Option<u32>,
+  errors: SizeErrors,
+) -> Result<usize> {
+  if width == 0 {
+    return Err(index_size_error(
+      env,
+      prefix,
+      "The source width is zero or not a number.",
+    ));
+  }
+  if width > i32::MAX as u32 {
+    return Err(index_size_error(env, prefix, SIZE_EXCEEDS));
+  }
+  if let Some(height) = height {
+    if height == 0 {
+      return Err(index_size_error(
+        env,
+        prefix,
+        "The source height is zero or not a number.",
+      ));
+    }
+    if height > i32::MAX as u32 {
+      return Err(index_size_error(env, prefix, SIZE_EXCEEDS));
+    }
+  }
+  // CheckedNumeric<unsigned>: 4, times width, times height.
+  match 4u32
+    .checked_mul(width)
+    .and_then(|v| v.checked_mul(height.unwrap_or(0)))
+  {
+    Some(len) => Ok(len as usize),
+    None => Err(match errors {
+      SizeErrors::Constructor => index_size_error(env, prefix, SIZE_EXCEEDS),
+      SizeErrors::Context2D => webidl::range_error(
+        env,
+        &format!("{prefix}Out of memory at ImageData creation."),
+      ),
+    }),
+  }
+}
+
+/// The data length steps of ImageData::ValidateAndCreate
+/// (image_data.cc:172-219) for `bytes` bytes of `element_size`-byte elements,
+/// 4 per pixel. `width` passed [`validate_size`]. Returns the height.
+pub(crate) fn validate_data_length(
+  env: sys::napi_env,
+  prefix: &str,
+  width: u32,
+  height: Option<u32>,
+  bytes: usize,
+  element_size: usize,
+) -> Result<u32> {
+  let Ok(bytes) = u32::try_from(bytes) else {
+    return Err(webidl::dom_exception(
+      env,
+      "NotSupportedError",
+      &format!("{prefix}The input data is too large. The maximum size is 4294967295."),
+    ));
+  };
+  if bytes == 0 {
+    return Err(webidl::dom_exception(
+      env,
+      "InvalidStateError",
+      &format!("{prefix}The input data has zero elements."),
+    ));
+  }
+  let elements = bytes / element_size as u32;
+  if !elements.is_multiple_of(4) {
+    return Err(webidl::dom_exception(
+      env,
+      "InvalidStateError",
+      &format!("{prefix}The input data length is not a multiple of 4."),
+    ));
+  }
+  let pixels = elements / 4;
+  if !pixels.is_multiple_of(width) {
+    return Err(index_size_error(
+      env,
+      prefix,
+      "The input data length is not a multiple of (4 * width).",
+    ));
+  }
+  let expected_height = pixels / width;
+  match height {
+    Some(height) if height != expected_height => Err(index_size_error(
+      env,
+      prefix,
+      "The input data length is not equal to (4 * width * height).",
+    )),
+    _ => Ok(expected_height),
+  }
+}
+
+/// AllocateAndValidateDataArray (image_data.cc:236-270): `len` zeroed bytes.
+/// RangeError above Chrome's limit, or when the allocation fails, instead of
+/// aborting the process.
+pub(crate) fn alloc_data(env: sys::napi_env, prefix: &str, len: usize) -> Result<Vec<u8>> {
+  if len > MAX_DATA_BYTES {
+    return Err(out_of_memory(env, prefix));
+  }
+  try_zeroed_bytes(len).ok_or_else(|| out_of_memory(env, prefix))
+}
+
 impl ImageData {
-  /// A zero-filled ImageData, as createImageData(imagedata) returns.
+  /// A zero-filled ImageData, as createImageData returns.
   pub(crate) fn new_zeroed<'a>(
     env: &'a Env,
     width: usize,
@@ -120,7 +267,8 @@ impl ImageData {
         ),
       ));
     };
-    let data_object = Uint8ClampedSlice::from_data(env, vec![0; length])?;
+    let data = alloc_data(env.raw(), webidl::CREATE_IMAGE_DATA, length)?;
+    let data_object = Uint8ClampedSlice::from_data(env, data)?;
     let mut instance = ImageData {
       width,
       height,
@@ -149,6 +297,7 @@ impl ImageData {
     maybe_settings: Unknown,
   ) -> Result<Self> {
     let raw = env.raw();
+    let prefix = webidl::IMAGE_DATA_CONSTRUCTOR;
     // The data forms: a present 3rd argument is `unsigned long sh`, so a
     // dictionary or null there is height 0. Chrome drops trailing undefined
     // arguments, so an undefined `sh` is missing only when no settings follow.
@@ -158,25 +307,27 @@ impl ImageData {
       }
       webidl::to_unsigned_long(raw, height_or_settings.raw()).map(Some)
     };
-    let data_settings = || {
-      webidl::ImageDataSettings::from_js(
-        raw,
-        Some(maybe_settings.raw()),
-        webidl::IMAGE_DATA_CONSTRUCTOR,
-      )
+    // The checks of the data forms, for `bytes` bytes of `element_size`-byte
+    // elements: the size, the color space, then the data length. Returns the
+    // height and the color space.
+    let validate_data_form = |bytes: usize, element_size: usize| -> Result<(u32, ColorSpace)> {
+      let width = width_or_height;
+      let height = data_height()?;
+      let settings = webidl::ImageDataSettings::from_js(raw, Some(maybe_settings.raw()), prefix)?;
+      validate_size(raw, prefix, width, height, SizeErrors::Constructor)?;
+      let color_space = settings.color_space(raw, prefix)?.unwrap_or_default();
+      let height = validate_data_length(raw, prefix, width, height, bytes, element_size)?;
+      Ok((height, color_space))
     };
     match width_or_data {
       Either4::A(width) => {
         let height = width_or_height;
-        let color_space = webidl::ImageDataSettings::from_js(
-          raw,
-          Some(height_or_settings.raw()),
-          webidl::IMAGE_DATA_CONSTRUCTOR,
-        )?
-        .color_space
-        .unwrap_or_default();
-        let arraybuffer_length = (width * height * 4) as usize;
-        let data_buffer = vec![0; arraybuffer_length];
+        let settings =
+          webidl::ImageDataSettings::from_js(raw, Some(height_or_settings.raw()), prefix)?;
+        let arraybuffer_length =
+          validate_size(raw, prefix, width, Some(height), SizeErrors::Constructor)?;
+        let color_space = settings.color_space(raw, prefix)?.unwrap_or_default();
+        let data_buffer = alloc_data(raw, prefix, arraybuffer_length)?;
         let data_object = Uint8ClampedSlice::from_data(&env, data_buffer)?;
         this.define_properties(&[Property::new()
           .with_utf8_name("data")?
@@ -193,19 +344,8 @@ impl ImageData {
       }
       Either4::B(data_object) => {
         // Uint8ClampedArray - each pixel takes 4 bytes
-        let input_data_length = data_object.len();
         let width = width_or_height;
-        let height = match data_height()? {
-          Some(height) => height,
-          None => (input_data_length as u32) / 4 / width,
-        };
-        let color_space = data_settings()?.color_space.unwrap_or_default();
-        if height * width * 4 != data_object.len() as u32 {
-          return Err(Error::new(
-            Status::InvalidArg,
-            "Index or size is negative or greater than the allowed amount".to_owned(),
-          ));
-        }
+        let (height, color_space) = validate_data_form(data_object.len(), 1)?;
         // https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D/createImageData
         // An existing ImageData object from which to copy the width and height.
         let cloned_data = Uint8ClampedSlice::from_data(&env, data_object.to_vec())?;
@@ -224,19 +364,8 @@ impl ImageData {
       }
       Either4::C(data_object) => {
         // Uint16Array - each pixel takes 4 elements (RGBA), 2 bytes per element
-        let input_data_length = data_object.len();
         let width = width_or_height;
-        let height = match data_height()? {
-          Some(height) => height,
-          None => (input_data_length as u32) / 4 / width,
-        };
-        let color_space = data_settings()?.color_space.unwrap_or_default();
-        if height * width * 4 != data_object.len() as u32 {
-          return Err(Error::new(
-            Status::InvalidArg,
-            "Index or size is negative or greater than the allowed amount".to_owned(),
-          ));
-        }
+        let (height, color_space) = validate_data_form(data_object.len() * 2, 2)?;
         // Convert Uint16Array to Uint8ClampedArray
         let mut u8_data = vec![0u8; width as usize * height as usize * 4];
         for (i, &val) in data_object.as_ref().iter().enumerate() {
@@ -259,19 +388,8 @@ impl ImageData {
       }
       Either4::D(data_object) => {
         // Float32Array - each pixel takes 4 elements (RGBA), 4 bytes per element
-        let input_data_length = data_object.len();
         let width = width_or_height;
-        let height = match data_height()? {
-          Some(height) => height,
-          None => (input_data_length as u32) / 4 / width,
-        };
-        let color_space = data_settings()?.color_space.unwrap_or_default();
-        if height * width * 4 != data_object.len() as u32 {
-          return Err(Error::new(
-            Status::InvalidArg,
-            "Index or size is negative or greater than the allowed amount".to_owned(),
-          ));
-        }
+        let (height, color_space) = validate_data_form(data_object.len() * 4, 4)?;
         // Convert Float32Array to Uint8ClampedArray
         let mut u8_data = vec![0u8; width as usize * height as usize * 4];
         for (i, &val) in data_object.as_ref().iter().enumerate() {

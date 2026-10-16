@@ -58,6 +58,8 @@ pub(crate) fn range_error(env: sys::napi_env, msg: &str) -> Error {
 /// The legacy `code` of the DOMException names used here (WebIDL table).
 fn dom_exception_code(name: &str) -> u32 {
   match name {
+    "IndexSizeError" => 1,
+    "NotSupportedError" => 9,
     "InvalidStateError" => 11,
     "SyntaxError" => 12,
     _ => 0,
@@ -275,10 +277,10 @@ pub(crate) const PATTERN_SET_TRANSFORM: &str =
 
 /// `ImageDataSettings` (core/html/canvas/image_data_settings.idl).
 #[derive(Clone, Copy, Debug, Default)]
-pub(crate) struct ImageDataSettings {
-  /// None: the caller's default (the context color space, or srgb for the
-  /// ImageData constructor).
-  pub color_space: Option<ColorSpace>,
+pub struct ImageDataSettings {
+  /// The colorSpace member, a value of the enum. Whether it is supported is
+  /// checked later, by [`Self::color_space`].
+  color_space: Option<&'static str>,
 }
 
 impl ImageDataSettings {
@@ -310,10 +312,18 @@ impl ImageDataSettings {
     // and Float32Array data). Storage here is 8-bit only, so they are
     // rejected like any value outside the enum, not stored as 8-bit.
     dictionary.enumeration("pixelFormat", "ImageDataPixelFormat", &["rgba-unorm8"])?;
-    let color_space = color_space
-      .map(|cs| supported_color_space(env, prefix, cs))
-      .transpose()?;
     Ok(Self { color_space })
+  }
+
+  /// The color space; None: the caller's default (the context color space, or
+  /// srgb for the ImageData constructor). An enum value that is not enabled
+  /// throws here, not in [`Self::from_js`]: ImageData::ValidateAndCreate
+  /// checks it after the size (image_data.cc:113).
+  pub(crate) fn color_space(&self, env: sys::napi_env, prefix: &str) -> Result<Option<ColorSpace>> {
+    self
+      .color_space
+      .map(|cs| supported_color_space(env, prefix, cs))
+      .transpose()
   }
 }
 
