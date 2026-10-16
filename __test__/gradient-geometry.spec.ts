@@ -1,8 +1,18 @@
 // Pinned to Chrome 155 CPU canvas (getContext('2d', { willReadFrequently: true }), --disable-gpu),
 // measured on arm64 and on x64 (Rosetta); both gave the same values.
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
 import test from 'ava'
 
-import { createCanvas, SvgExportFlag } from '../index'
+import { createCanvas, GlobalFonts, SvgExportFlag } from '../index'
+
+// A Linux test container has no system fonts, and each spec file runs in its
+// own process, so the text below uses a font this file registers.
+GlobalFonts.registerFromPath(
+  join(fileURLToPath(new URL('.', import.meta.url)), 'fonts', 'Lato-Regular.ttf'),
+  'GradientLato',
+)
 
 type Ctx = ReturnType<ReturnType<typeof createCanvas>['getContext']>
 type G = ReturnType<Ctx['createLinearGradient']>
@@ -173,7 +183,7 @@ for (const [name, expected] of Object.entries(HUGE_OPS_EXPECTED)) {
     ctx.fillStyle = g
     ctx.lineWidth = 2
     ctx.strokeRect(1, 1, 6, 6)
-    ctx.font = '8px sans-serif'
+    ctx.font = '8px GradientLato'
     const w = ctx.measureText('a').width > 0
     t.notThrows(() => ctx.fillText('a', 2, 6))
     ctx.shadowColor = 'rgb(0, 255, 0)'
@@ -411,7 +421,7 @@ test('a degenerate gradient paints no text and keeps the destination under desti
   ctx.fillStyle = 'rgb(0, 128, 0)'
   ctx.fillRect(0, 0, 16, 16)
   ctx.fillStyle = redBlue(ctx.createLinearGradient(3, 3, 3, 3))
-  ctx.font = '16px sans-serif'
+  ctx.font = '16px GradientLato'
   ctx.fillText('MW', 0, 14)
   t.is(all(ctx, 16, 16).filter((v, i) => i % 4 === 0 && v !== 0).length, 0)
   ctx.scale(2, 2)
