@@ -189,13 +189,16 @@ class Resources final : public skresources::ResourceProvider {
     sk_sp<SkImage> image;
     skiac_image_levels* levels = nullptr;
     sk_sp<SkPicture> picture;
+    // The font collection's families_generation `picture` was recorded in.
+    uint64_t picture_fonts = 0;
     bool loading = false;
   };
 
   Resources(const skiac_svg_resource* images,
             size_t count,
-            sk_sp<SkFontMgr> font_mgr)
-      : font_mgr_(std::move(font_mgr)) {
+            sk_sp<SkFontMgr> font_mgr,
+            skiac_font_collection* c_collection)
+      : font_mgr_(std::move(font_mgr)), c_collection_(c_collection) {
     entries_.resize(count);
     // Rasters of one URL share their bytes in Rust; decode them once.
     std::unordered_map<const uint8_t*, size_t> first;
@@ -251,12 +254,17 @@ class Resources final : public skresources::ResourceProvider {
     return it == by_id_.end() ? nullptr : &entries_[it->second];
   }
 
-  // The nested document of an SVG entry, recorded once.
+  // The nested document of an SVG entry, recorded once and again after a
+  // font is registered, removed or aliased: the picture keeps the typefaces
+  // its text resolved to, where the top level resolves them at each render.
   sk_sp<SkPicture> picture(Entry* e) {
-    if (e->picture || e->loading || !e->data) {
+    const uint64_t fonts = c_collection_->families_generation;
+    if ((e->picture && e->picture_fonts == fonts) || e->loading || !e->data) {
       return e->picture;
     }
     e->loading = true;
+    e->picture = nullptr;
+    e->picture_fonts = fonts;
     SkMemoryStream stream(e->data);
     // Not kept: the document refs this provider.
     sk_sp<SkSVGDOM> dom = SkSVGDOM::Builder()
@@ -353,6 +361,7 @@ class Resources final : public skresources::ResourceProvider {
   std::unordered_map<size_t, size_t> shared_raster_;
   std::unordered_map<uint32_t, size_t> by_id_;
   sk_sp<SkFontMgr> font_mgr_;
+  skiac_font_collection* c_collection_;
 
   friend class ChromeSvgCanvas;
 };
@@ -517,7 +526,8 @@ sk_sp<SkSVGDOM> MakePreparedDocument(
     size_t font_count,
     sk_sp<skresources::ResourceProvider>* resources) {
   auto font_mgr = sk_make_sp<SvgFontMgr>(c_collection, fonts, font_count);
-  auto provider = sk_make_sp<Resources>(images, image_count, font_mgr);
+  auto provider =
+      sk_make_sp<Resources>(images, image_count, font_mgr, c_collection);
   sk_sp<SkSVGDOM> dom = SkSVGDOM::Builder()
                             .setFontManager(font_mgr)
                             .setResourceProvider(provider)
