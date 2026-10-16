@@ -71,9 +71,20 @@ fn map_ns(uri: Option<&str>) -> Ns {
 }
 
 /// Documents nested deeper than this are parsed on a thread of their own
-/// with DEEP_PARSE_STACK of stack.
+/// with DEEP_PARSE_STACK of stack. roxmltree takes about 0.65 KiB of stack
+/// a level in a release build and 17 KiB in a debug build (measured on
+/// arm64 macOS: 5000 levels take 3.2 MiB and 82 MiB, 512 levels 0.32 MiB
+/// and 8.2 MiB), so a debug build parses fewer levels on the caller's
+/// stack and gives the thread more. MAX_TREE_DEPTH bounds the stack the
+/// thread uses.
+#[cfg(not(debug_assertions))]
 const SHALLOW_DEPTH: usize = 512;
+#[cfg(not(debug_assertions))]
 const DEEP_PARSE_STACK: usize = 16 << 20;
+#[cfg(debug_assertions)]
+const SHALLOW_DEPTH: usize = 20;
+#[cfg(debug_assertions)]
+const DEEP_PARSE_STACK: usize = 256 << 20;
 
 /// How deep elements nest in `text`, counting what internal entities may
 /// add: an upper bound, so the recursive XML parser is only handed
