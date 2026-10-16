@@ -45,7 +45,11 @@ class TextRasterPolicy {
   bool UsesLcdText(const SkFont& font, const SkMatrix& device) const;
 
   bool geometric_precision_;
+#if defined(__APPLE__)
+  // skiac_text_request::lcd_text. Only CoreText runs get LCD masks, so the
+  // other OSes do not keep it.
   bool lcd_text_;
+#endif
 };
 
 // One run of a laid out line, in visual order: the font skparagraph shaped
