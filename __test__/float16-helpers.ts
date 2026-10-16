@@ -21,15 +21,111 @@ const PINS: Record<string, Pin> = JSON.parse(
   readFileSync(new URL('./fixtures/float16/chrome-pins.json', import.meta.url), 'utf8'),
 ).scenarios
 
+const WIN_ARM64 = process.platform === 'win32' && process.arch === 'arm64'
+const LINUX_X64_MUSL =
+  process.platform === 'linux' &&
+  process.arch === 'x64' &&
+  (process.report.getReport() as any).header.glibcVersionRuntime === undefined
+
+/**
+ * Two prebuilt Skia builds are not compiled like Chrome's Skia, and Chrome
+ * never gives these values. Each entry is the value that build gave on CI,
+ * written over the arm64 pin (`hw`), for that target only. Drop an entry when
+ * its build is fixed.
+ *
+ * - win32-arm64: Skia's gn/skia/BUILD.gn adds -ffp-contract=off only `if
+ *   (is_clang && !is_win)`, so clang-cl (default -ffp-contract=on) fuses a*b+c
+ *   into fmadd. Chromium adds /clang:-ffp-contract=off on Windows too
+ *   (build/config/compiler/BUILD.gn). The fused skcms code moves the small
+ *   results of colour conversions by a few float16 steps. macOS arm64 gives
+ *   exactly these values when SkOpts, SkColorSpace, SkColorSpaceXformSteps,
+ *   SkRasterPipeline and skcms are rebuilt with -ffp-contract=on (skcms alone
+ *   gives P19 and H1), and gives the Chrome values with Skia's own flags.
+ * - linux-x64-musl on an AVX2 CPU: scripts/skia-gn-args.cjs adds
+ *   -march=sandybridge to extra_cflags_cc. It comes after the -march=x86-64-v3
+ *   of Skia's ml3 opts on the compile line, so SkOpts_ml3.cpp is built without
+ *   AVX2, FMA and F16C, while skcms keeps its AVX2+F16C code (-mavx2 -mf16c
+ *   stay on). Chrome runs both at the AVX2 level (`fma`) or both at the
+ *   baseline (`sw`); this build runs a mix, which matches neither. The CI
+ *   binding gives these values under qemu -cpu max, and the glibc binding gives
+ *   the same values once BMI2 is hidden (Skia's ml3 check needs it, skcms's
+ *   does not). On a CPU without AVX2 the musl build gives `sw`, as before.
+ */
+const BUILD_VALUES: Record<string, Record<string, unknown>> = WIN_ARM64
+  ? {
+      'P19-p3-f16-canvas-read': {
+        srgbF32: [0.999847412109375, 0.0004047706024721265, 0.000187480662134476, 1],
+      },
+      'P9-p3-color-on-srgb-f16': {
+        p3F16: {
+          f16: [1, -0.000023424625396728516, -0.00004738569259643555, 1],
+          f32: [1, -0.000023424625396728516, -0.00004738569259643555, 1],
+        },
+      },
+      'H1-hbd-fixtures': {
+        'hbd-8x8.png-f16p3': {
+          f32: [
+            -0.00001329183578491211, -0.000027835369110107422, 0.478759765625, 1, 0.11095718294382095,
+            0.006124055478721857, 0.47884130477905273, 0.96923828125, 0.22620904445648193, 0.0217758696526289,
+            0.4797191619873047, 0.93896484375, 0.34139785170555115, 0.04902553930878639, 0.48091399669647217,
+            0.908203125,
+          ],
+        },
+      },
+    }
+  : LINUX_X64_MUSL
+    ? {
+        'H1-hbd-fixtures': {
+          'hbd-4x1.png-f16p3': {
+            f32: [
+              0.46728515625, 0.262939453125, 0.962890625, 1, 0.308349609375, 0.66064453125, 0.1893310546875, 0.5,
+              0.9173177480697632, 0.2001953125, 0.4973958432674408, 0.75, 0.273681640625, 0.55419921875, 0.35400390625,
+              1,
+            ],
+            u8: [119, 67, 246, 255, 79, 168, 48, 128, 234, 51, 127, 191, 70, 141, 90, 255],
+          },
+          'hbd-8x8.png-f16p3': {
+            f32: [
+              0, 0, 0.478515625, 1, 0.11089421063661575, 0.006120119709521532, 0.47884130477905273, 0.96923828125,
+              0.2260790318250656, 0.0217758696526289, 0.47945916652679443, 0.93896484375, 0.34112903475761414,
+              0.04902553930878639, 0.48091399669647217, 0.908203125,
+            ],
+          },
+        },
+        'H2-hbd-down-fresh': {
+          'f16-down': [0.43220338225364685, 0.43739745020866394, 0.5921267867088318, 0.89306640625],
+          'f16p3-down': [0.4414980709552765, 0.4390377104282379, 0.581191897392273, 0.89306640625],
+          'f16-full-then-down': [0.43220338225364685, 0.43739745020866394, 0.5921267867088318, 0.89306640625],
+          'f16p3-full-then-down': [0.4414980709552765, 0.4390377104282379, 0.581191897392273, 0.89306640625],
+        },
+      }
+    : {}
+
+/** `pin` with the members of `values` written over it; arrays are replaced. */
+function overwrite(pin: unknown, values: Record<string, unknown>): unknown {
+  const copy: any = structuredClone(pin)
+  const write = (to: any, from: Record<string, any>) => {
+    for (const [k, v] of Object.entries(from)) {
+      if (v && typeof v === 'object' && !Array.isArray(v)) write(to[k], v)
+      else to[k] = v
+    }
+  }
+  write(copy, values)
+  return copy
+}
+
 /**
  * The Chrome values for this CPU. arm64: Chrome arm64. x64: Chrome x64 without
  * AVX (the macOS build under Rosetta, like our darwin-x64 CI) or with
- * AVX2+FMA+F16C (Linux and Windows x64), whichever the output matches.
+ * AVX2+FMA+F16C (Linux and Windows x64), whichever the output matches. Then
+ * the value of this build, where BUILD_VALUES has one.
  */
 export function chromeFor(id: string): unknown[] {
   const pin = PINS[id]
   if (!pin) throw new Error(`no pin ${id}`)
-  return process.arch === 'arm64' ? [pin.hw] : [pin.sw ?? pin.hw, pin.fma ?? pin.hw]
+  const chrome = process.arch === 'arm64' ? [pin.hw] : [pin.sw ?? pin.hw, pin.fma ?? pin.hw]
+  const build = BUILD_VALUES[id]
+  return build ? [...chrome, overwrite(pin.hw, build)] : chrome
 }
 
 /**
