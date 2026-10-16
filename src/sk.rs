@@ -2330,6 +2330,17 @@ impl Surface {
     }
     let len = len as usize;
 
+    // Per the canvas spec, pixels outside the surface read as transparent
+    // black, so a rect with no intersection is all zeros, not a failure
+    // (Skia's readPixels and the SIMD path both reject it).
+    if x as i64 >= self.width() as i64
+      || y as i64 >= self.height() as i64
+      || x as i64 + width as i64 <= 0
+      || y as i64 + height as i64 <= 0
+    {
+      return Some(vec![0; len]);
+    }
+
     // Fast path: fused SIMD unpremultiply straight from the surface pixels,
     // when the CPU has a supported SIMD implementation (runtime-detected) and
     // the surface is premultiplied RGBA in the requested color space.
