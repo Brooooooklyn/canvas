@@ -603,9 +603,10 @@ struct skiac_font_collection {
     collection->setAssetFontManager(font_mgr);
     collection->setDynamicFontManager(assets);
     collection->enableFontFallback();
-    // text.cpp keeps every laid out line (TextCaches::lines), so a paragraph
-    // is only laid out for a line it does not have, and skparagraph's own
-    // cache of shaped paragraphs would only cost its key on every miss.
+    // text.cpp keeps the laid out lines (TextCaches::lines), so a paragraph
+    // is only built for a line it does not have. skparagraph's own cache
+    // would keep up to 128 more paragraphs, each about 25 times the bytes of
+    // a kept line, and takes sizes and spacings within 1/4096 px for equal.
     collection->getParagraphCache()->turnOn(false);
   }
 
