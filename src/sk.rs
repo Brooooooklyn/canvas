@@ -207,6 +207,12 @@ pub mod ffi {
     /// it (the alpha:false reset); measureText does not, and gets 0 for both.
     pub ink_left: f32,
     pub ink_right: f32,
+    /// Blink's TextMetrics baselines, relative to the textBaseline.
+    pub hanging_baseline: f32,
+    pub ideographic_baseline: f32,
+    /// Blink's em box (ExtendedTextMetrics), relative to the textBaseline.
+    pub em_height_ascent: f32,
+    pub em_height_descent: f32,
   }
 
   #[repr(C)]
@@ -1724,7 +1730,6 @@ impl FromStr for BlendMode {
       "color-burn" => Ok(BlendMode::ColorBurn),
       "color-dodge" => Ok(BlendMode::ColorDodge),
       "darken" => Ok(BlendMode::Darken),
-      "destination" => Ok(BlendMode::Destination),
       "destination-atop" => Ok(BlendMode::DestinationATop),
       "destination-in" => Ok(BlendMode::DestinationIn),
       "destination-out" => Ok(BlendMode::DestinationOut),
@@ -1735,7 +1740,6 @@ impl FromStr for BlendMode {
       "hue" => Ok(BlendMode::Hue),
       "lighten" => Ok(BlendMode::Lighten),
       "luminosity" => Ok(BlendMode::Luminosity),
-      "modulate" => Ok(BlendMode::Modulate),
       "multiply" => Ok(BlendMode::Multiply),
       "overlay" => Ok(BlendMode::Overlay),
       "lighter" => Ok(BlendMode::Plus),
@@ -1904,7 +1908,7 @@ impl FromStr for TextAlign {
       "left" => Ok(TextAlign::Left),
       "right" => Ok(TextAlign::Right),
       "start" => Ok(TextAlign::Start),
-      "justify" => Ok(TextAlign::Justify),
+      // CanvasTextAlign has no "justify".
       _ => Err(SkError::StringToTextAlignError(s.to_owned())),
     }
   }

@@ -465,6 +465,10 @@ pub struct Image {
   file_content: Option<Vec<u8>>,
   // Generation counter to handle overlapping loads
   load_generation: u64,
+  /// Bumped when src changes to another value: a pending decode() then
+  /// rejects (HTML "update the image data" rejects the pending decodes).
+  /// Shared with the decode() callbacks.
+  decode_epoch: Rc<Cell<u64>>,
 
   decoder_task: Option<ObjectRef>,
 }
@@ -478,6 +482,63 @@ impl ObjectFinalize for Image {
     }
     Ok(())
   }
+}
+
+/// `Symbol.for(IMAGE_ERROR_KEY)` is where an onerror Event carries the Error
+/// behind it, so loadImage() can reject with that Error.
+const IMAGE_ERROR_KEY: &str = "@napi-rs/canvas/image-error";
+
+/// Calls `this.onerror`, if it is a function, with an Event of type 'error',
+/// as browsers do. The Event carries `error` under
+/// `Symbol.for(IMAGE_ERROR_KEY)` (not enumerable). Without a global Event
+/// (Node < 15) it gets `error` itself.
+fn fire_error(env: &Env, this: Object, error: Object) -> Result<()> {
+  let onerror = this.get_named_property_unchecked::<Unknown>("onerror")?;
+  if onerror.get_type()? != ValueType::Function {
+    return Ok(());
+  }
+  let onerror: Function<Unknown, Unknown> = Function::from_unknown(onerror)?;
+  let global = env.get_global()?;
+  let event_ctor = global.get_named_property_unchecked::<Unknown>("Event")?;
+  if event_ctor.get_type()? != ValueType::Function {
+    onerror.apply(this, error.to_unknown())?;
+    return Ok(());
+  }
+  let event_ctor: Function<&str, Object> = Function::from_unknown(event_ctor)?;
+  let event = event_ctor.new_instance("error")?;
+  // Symbol is a function; read it as an object for its `for` method.
+  let symbol = global.get_named_property_unchecked::<Object>("Symbol")?;
+  let symbol_for: Function<&str, Unknown> = symbol.get_named_property("for")?;
+  let key = symbol_for.apply(symbol, IMAGE_ERROR_KEY)?;
+  let property = sys::napi_property_descriptor {
+    utf8name: ptr::null(),
+    name: key.raw(),
+    method: None,
+    getter: None,
+    setter: None,
+    value: error.raw(),
+    attributes: sys::PropertyAttributes::default,
+    data: ptr::null_mut(),
+  };
+  check_status!(unsafe { sys::napi_define_properties(env.raw(), event.raw(), 1, &property) })?;
+  onerror.apply(this, event.to_unknown())?;
+  Ok(())
+}
+
+/// The rejection of decode() (image_loader.cc DecodeRequest::Reject).
+fn encoding_error(env: &Env) -> Error {
+  webidl::dom_exception(
+    env.raw(),
+    "EncodingError",
+    "The source image cannot be decoded.",
+  )
+}
+
+/// The value an Image `width` or `height` attribute takes (already
+/// ToUint32): HTML's reflection of an `unsigned long` gives the default 0
+/// for a value above 2147483647.
+fn image_dimension(value: u32) -> u32 {
+  if value > i32::MAX as u32 { 0 } else { value }
 }
 
 #[napi]
@@ -506,6 +567,7 @@ impl Image {
       file_content: None,
 
       load_generation: 0,
+      decode_epoch: Rc::new(Cell::new(0)),
       decoder_task: None,
     })
   }
@@ -516,7 +578,8 @@ impl Image {
   }
 
   #[napi(setter)]
-  pub fn set_width(&mut self, width: f64) {
+  pub fn set_width(&mut self, width: webidl::UnsignedLong<webidl::ImageSetWidth>) {
+    let width = f64::from(image_dimension(width.0));
     if (width - self.width).abs() > f64::EPSILON {
       self.width = width;
       self.need_regenerate_bitmap = true;
@@ -540,7 +603,8 @@ impl Image {
   }
 
   #[napi(setter)]
-  pub fn set_height(&mut self, height: f64) {
+  pub fn set_height(&mut self, height: webidl::UnsignedLong<webidl::ImageSetHeight>) {
+    let height = f64::from(image_dimension(height.0));
     if (height - self.height).abs() > f64::EPSILON {
       self.height = height;
       self.need_regenerate_bitmap = true;
@@ -574,8 +638,8 @@ impl Image {
   }
 
   #[napi(setter)]
-  pub fn set_alt(&mut self, alt: String) {
-    self.alt = alt;
+  pub fn set_alt(&mut self, alt: webidl::DomString<webidl::ImageSetAlt>) {
+    self.alt = alt.0;
   }
 
   #[napi(getter)]
@@ -589,6 +653,11 @@ impl Image {
 
   #[napi(setter)]
   pub fn set_src(&mut self, env: Env, this: This, raw_data: Unknown) -> Result<()> {
+    let previous_src = match &self.src {
+      Some(Either::B(string)) => Some(string.clone()),
+      _ => None,
+    };
+    let had_src = self.src.is_some();
     let data = match raw_data.get_type()? {
       ValueType::Object if (raw_data.is_buffer()? || raw_data.is_typedarray()?) => {
         let data: Uint8Array = unsafe { raw_data.cast() }?;
@@ -600,6 +669,18 @@ impl Image {
       }
       _ => return Ok(()),
     };
+    // Another src (any Buffer, another string, or '' after a src) rejects the
+    // pending decode() calls; the same string again does not.
+    let same_src = match &data {
+      Either::A(_) => false,
+      Either::B(string) if string.is_empty() => !had_src,
+      Either::B(string) => previous_src.as_deref() == Some(string.as_str()),
+    };
+    if !same_src {
+      self
+        .decode_epoch
+        .set(self.decode_epoch.get().wrapping_add(1));
+    }
     // Increment generation FIRST to invalidate all in-flight loads
     // This must happen for BOTH empty and valid src to prevent race conditions
     self.load_generation = self.load_generation.wrapping_add(1);
@@ -710,12 +791,8 @@ impl Image {
               self.is_svg = false;
               self.need_regenerate_bitmap = false;
 
-              let onerror = this.get_named_property_unchecked::<Unknown>("onerror")?;
               let error = env.create_error(Error::new(Status::InvalidArg, "Invalid SVG image"))?;
-              if onerror.get_type()? == ValueType::Function {
-                let onerror_func: Function<Object, Unknown> = Function::from_unknown(onerror)?;
-                onerror_func.apply(this, error)?;
-              }
+              fire_error(&env, *this, error)?;
               if let Some(previous_task) = self.decoder_task.replace(
                 PromiseRaw::resolve(&env, error)?
                   .coerce_to_object()?
@@ -753,13 +830,9 @@ impl Image {
                 self.is_svg = false;
                 self.need_regenerate_bitmap = false;
 
-                let onerror = this.get_named_property_unchecked::<Unknown>("onerror")?;
                 let error =
                   env.create_error(Error::new(Status::InvalidArg, "Invalid SVG image"))?;
-                if onerror.get_type()? == ValueType::Function {
-                  let onerror_func: Function<Object, Unknown> = Function::from_unknown(onerror)?;
-                  onerror_func.apply(this, error)?;
-                }
+                fire_error(&env, *this, error)?;
                 if let Some(previous_task) = self.decoder_task.replace(
                   PromiseRaw::resolve(&env, error)?
                     .coerce_to_object()?
@@ -991,7 +1064,7 @@ impl Image {
           // We still need to handle the error but can skip state updates since
           // the .then() may have already spawned the decoder.
           let Some(catch_ref) = catch_ref else {
-            return Ok(());
+            return Ok(None);
           };
           let this: Object = catch_ref.get_value(&ctx.env)?;
           catch_ref.unref(&ctx.env)?;
@@ -1006,7 +1079,7 @@ impl Image {
 
           // Ignore stale errors from superseded loads
           if generation != image.load_generation {
-            return Ok(());
+            return Ok(None);
           }
 
           image.complete = true;
@@ -1020,21 +1093,18 @@ impl Image {
           image.is_svg = false;
           image.need_regenerate_bitmap = false;
 
-          let onerror = this.get_named_property_unchecked::<Unknown>("onerror")?;
-          if onerror.get_type()? == ValueType::Function {
-            let onerror_func: Function<Object, Unknown> = Function::from_unknown(onerror)?;
-            let error_msg: String = ctx
-              .value
-              .coerce_to_string()
-              .and_then(|s: JsString| s.into_utf8())
-              .and_then(|s: JsStringUtf8| s.into_owned())
-              .unwrap_or_else(|_| "Network error".to_string());
-            let error_obj = ctx
-              .env
-              .create_error(Error::new(Status::GenericFailure, error_msg))?;
-            onerror_func.apply(this, error_obj)?;
-          }
-          Ok(())
+          let error_msg: String = ctx
+            .value
+            .coerce_to_string()
+            .and_then(|s: JsString| s.into_utf8())
+            .and_then(|s: JsStringUtf8| s.into_owned())
+            .unwrap_or_else(|_| "Network error".to_string());
+          let error_obj = ctx
+            .env
+            .create_error(Error::new(Status::GenericFailure, error_msg.clone()))?;
+          fire_error(&ctx.env, this, error_obj)?;
+          // The stored task ends with an Error, so decode() rejects.
+          Ok(Some(Error::new(Status::GenericFailure, error_msg)))
         })?;
 
       // Store promise reference
@@ -1075,22 +1145,28 @@ impl Image {
     Ok(())
   }
 
+  /// Resolves once the current load is decoded. Rejects with an
+  /// EncodingError DOMException when there is no src, the load fails, or
+  /// src changes to another value before it settles (image_loader.cc
+  /// DecodeRequest). Each call returns a new promise.
   #[napi(ts_return_type = "Promise<void>")]
   pub fn decode<'env>(&self, env: &'env Env) -> Result<Object<'env>> {
-    if let Some(promise_ref) = self.decoder_task.as_ref() {
-      // Return the stored promise reference
-      let promise = promise_ref.get_value(env)?;
-      return PromiseRaw::resolve(env, promise)?
-        .then(|ctx| {
-          if ctx.value.is_error()? {
-            ctx.env.throw(ctx.value)?;
-          }
-          Ok(ctx.value)
-        })?
-        .coerce_to_object();
-    }
-
-    PromiseRaw::resolve(env, ())?.coerce_to_object()
+    let has_src = self.src.is_some();
+    let epoch = Rc::clone(&self.decode_epoch);
+    let started = epoch.get();
+    let task = match self.decoder_task.as_ref() {
+      Some(promise_ref) => promise_ref.get_value(env)?.to_unknown(),
+      None => ().into_unknown(env)?,
+    };
+    PromiseRaw::resolve(env, task)?
+      .then(move |ctx: CallbackContext<Unknown>| {
+        if !has_src || ctx.value.is_error()? || epoch.get() != started {
+          return Err(encoding_error(&ctx.env));
+        }
+        Ok(())
+      })?
+      .catch(|ctx: CallbackContext<Unknown>| -> Result<()> { Err(encoding_error(&ctx.env)) })?
+      .coerce_to_object()
   }
 
   pub(crate) fn regenerate_bitmap_if_need(&mut self, env: &Env) -> Result<()> {
@@ -1467,11 +1543,7 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
     if let Some(err_str) = err.take() {
       let error = env.create_error(Error::new(Status::InvalidArg, err_str))?;
       if self.fire_events {
-        let on_error = this.get_named_property_unchecked::<Unknown>("onerror")?;
-        if on_error.get_type()? == ValueType::Function {
-          let onerror_func: Function<Object, Unknown> = Function::from_unknown(on_error)?;
-          onerror_func.apply(this, error)?;
-        }
+        fire_error(env, this, error)?;
       }
       // Return error so decode() promise rejects (even when fire_events is false)
       return error.into_unknown(env);
@@ -1514,14 +1586,11 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
     image.need_regenerate_bitmap = false;
 
     if self.fire_events {
-      let on_error = this.get_named_property_unchecked::<Unknown>("onerror")?;
-      if on_error.get_type()? == ValueType::Function {
-        let onerror_func: Function<Object, Unknown> = Function::from_unknown(on_error)?;
-        onerror_func.apply(
-          this,
-          env.create_error(Error::new(err.status, err.reason.clone()))?,
-        )?;
-      }
+      fire_error(
+        env,
+        this,
+        env.create_error(Error::new(err.status, err.reason.clone()))?,
+      )?;
     }
 
     Error::new(err.status, err.reason.clone()).into_unknown(env)

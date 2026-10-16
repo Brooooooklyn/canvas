@@ -1,6 +1,6 @@
 import { promises as fs } from 'node:fs'
 import { join, dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import test from 'ava'
 
@@ -151,13 +151,17 @@ test('load invalid image should not throw if onerror is provided', async (t) => 
     () =>
       new Promise<void>((resolve) => {
         const image = new Image()
-        image.onerror = (err) => {
-          t.is(err.message, 'Unsupported image type')
+        // An Event of type 'error', as in browsers.
+        image.onerror = (event) => {
+          t.true(event instanceof Event)
+          t.is(event.type, 'error')
           resolve()
         }
         image.src = broken
       }),
   )
+  // loadImage rejects with the Error behind it.
+  await t.throwsAsync(() => loadImage(broken), { instanceOf: Error, message: 'Unsupported image type' })
 })
 
 test('reset src to empty should not throw error', (t) => {
@@ -176,22 +180,20 @@ test('reset src to empty should not throw error', (t) => {
 })
 
 test('load invalid svg should throw error', async (t) => {
-  await t.throwsAsync(
-    () =>
-      new Promise((_, reject) => {
-        const image = new Image()
-        image.onload = () => {
-          reject(new Error('should not be called'))
-        }
-        image.onerror = (err) => {
-          reject(err)
-        }
-        image.src = Buffer.from('<svg></svg><p></p>')
-      }),
-    {
-      message: /Invalid/,
-    },
-  )
+  const event = await new Promise<Event>((resolve, reject) => {
+    const image = new Image()
+    image.onload = () => {
+      reject(new Error('should not be called'))
+    }
+    image.onerror = (event) => {
+      resolve(event)
+    }
+    image.src = Buffer.from('<svg></svg><p></p>')
+  })
+  t.is(event.type, 'error')
+  await t.throwsAsync(() => loadImage(Buffer.from('<svg></svg><p></p>')), {
+    message: /Invalid/,
+  })
 })
 
 test('should be able to load file path as src', async (t) => {
@@ -211,22 +213,20 @@ test('should be able to load file path as src', async (t) => {
 })
 
 test('should throw if src path is invalid', async (t) => {
-  await t.throwsAsync(
-    () =>
-      new Promise((_, reject) => {
-        const image = new Image()
-        image.onload = () => {
-          reject(new Error('should not be called'))
-        }
-        image.onerror = (err) => {
-          reject(err)
-        }
-        image.src = 'invalid/path/to/image.png'
-      }),
-    {
-      message: process.platform === 'win32' ? /The system cannot find the path specified/ : /No such file/,
-    },
-  )
+  const event = await new Promise<Event>((resolve, reject) => {
+    const image = new Image()
+    image.onload = () => {
+      reject(new Error('should not be called'))
+    }
+    image.onerror = (event) => {
+      resolve(event)
+    }
+    image.src = 'invalid/path/to/image.png'
+  })
+  t.is(event.type, 'error')
+  await t.throwsAsync(() => loadImage(pathToFileURL(join(__dirname, 'invalid/path/to/image.png'))), {
+    message: process.platform === 'win32' ? /The system cannot find the path specified/ : /No such file/,
+  })
 })
 
 test('should be able to set data url as Image src', async (t) => {
@@ -246,22 +246,18 @@ test('should be able to set data url as Image src', async (t) => {
 })
 
 test('should trigger onerror if src data url is invalid', async (t) => {
-  await t.throwsAsync(
-    () =>
-      new Promise((_, reject) => {
-        const image = new Image()
-        image.onload = () => {
-          reject(new Error('should not be called'))
-        }
-        image.onerror = (err) => {
-          reject(err)
-        }
-        image.src = 'data:image/png;base64,invalid'
-      }),
-    {
-      message: 'Decode data url failed Base64Error',
-    },
-  )
+  const image = new Image()
+  const event = await new Promise<Event>((resolve, reject) => {
+    image.onload = () => {
+      reject(new Error('should not be called'))
+    }
+    image.onerror = (event) => {
+      resolve(event)
+    }
+    image.src = 'data:image/png;base64,invalid'
+  })
+  t.is(event.type, 'error')
+  t.true(image.complete)
 })
 
 // HTML spec compliance tests for jsdom integration
@@ -690,13 +686,19 @@ test('decode() should return a Promise (W3C spec)', async (t) => {
   const image = new Image()
   const result = image.decode()
   t.true(result instanceof Promise, 'decode() should return a Promise')
-  await result // Should resolve immediately for image with no src
+  // No src: rejects, as in Chrome.
+  await t.throwsAsync(result, { name: 'EncodingError' })
 })
 
-test('decode() should resolve immediately for image with no src (W3C spec)', async (t) => {
+test('decode() rejects for an image with no src (W3C spec)', async (t) => {
   const image = new Image()
-  // Per spec: if no current request, decode() should resolve
-  await t.notThrowsAsync(image.decode(), 'decode() should resolve for image with no src')
+  // As in Chrome: an EncodingError DOMException.
+  const error = await t.throwsAsync(image.decode(), {
+    instanceOf: DOMException,
+    name: 'EncodingError',
+    message: 'The source image cannot be decoded.',
+  })
+  t.is(error.code, 0)
 })
 
 test('decode() should resolve after successful Buffer load (W3C spec)', async (t) => {
@@ -750,7 +752,7 @@ test('decode() should reject for broken image with invalid data (W3C spec)', asy
   image.src = broken
 
   // Per spec: decode() rejects with EncodingError for broken images
-  const error = await t.throwsAsync(async () => await image.decode())
+  const error = await t.throwsAsync(async () => await image.decode(), { name: 'EncodingError' })
   t.truthy(error, 'decode() should reject for broken image')
 })
 
@@ -760,7 +762,7 @@ test('decode() should reject for invalid base64 data URL (W3C spec)', async (t) 
 
   image.src = 'data:image/png;base64,invalid-base64!!!'
 
-  const error = await t.throwsAsync(async () => await image.decode())
+  const error = await t.throwsAsync(async () => await image.decode(), { name: 'EncodingError' })
   t.truthy(error, 'decode() should reject for invalid base64')
 })
 
@@ -769,7 +771,7 @@ test('decode() should reject for nonexistent file path (W3C spec)', async (t) =>
   const image = new Image()
   image.src = '/nonexistent-image-file-xyz.png'
 
-  const error = await t.throwsAsync(async () => await image.decode())
+  const error = await t.throwsAsync(async () => await image.decode(), { name: 'EncodingError' })
   t.truthy(error, 'decode() should reject for nonexistent file')
 })
 
@@ -894,7 +896,7 @@ test('decode() should work with AVIF images', async (t) => {
   }
 })
 
-test('decode() after clearing src should resolve immediately (W3C spec)', async (t) => {
+test('decode() after clearing src rejects (W3C spec)', async (t) => {
   const file = await loadImageFile()
   const image = new Image()
 
@@ -907,8 +909,8 @@ test('decode() after clearing src should resolve immediately (W3C spec)', async 
   // Clear src
   image.src = ''
 
-  // decode() should resolve (no current request)
-  await t.notThrowsAsync(image.decode(), 'decode() should resolve after clearing src')
+  // No src: decode() rejects, as in Chrome.
+  await t.throwsAsync(image.decode(), { name: 'EncodingError' })
 })
 
 // Per W3C spec: if src changes while decode() is pending, the pending decode
@@ -923,6 +925,8 @@ test('decode() pending when src changes should handle correctly (W3C spec)', asy
 
   // Get first decode promise
   const decodePromise1 = image.decode()
+  // The src change rejects it, as in Chrome.
+  const firstRejects = t.throwsAsync(decodePromise1, { name: 'EncodingError' })
 
   // Immediately change src (aborts first load)
   image.src = file2Path
@@ -935,6 +939,7 @@ test('decode() pending when src changes should handle correctly (W3C spec)', asy
 
   // Second decode should eventually resolve
   await t.notThrowsAsync(decodePromise2, 'new decode should resolve')
+  await firstRejects
   t.is(image.complete, true, 'should be complete')
   t.is(image.naturalWidth, 450, 'should have second image dimensions')
 })
@@ -1090,7 +1095,8 @@ test('failed SVG load should clear prior bitmap state (regression fix)', async (
   const ctx = canvas.getContext('2d')
   ctx.fillStyle = 'red'
   ctx.fillRect(0, 0, 100, 100) // Fill with red first
-  ctx.drawImage(image, 0, 0) // Should not change canvas (no bitmap)
+  // As in Chrome, a broken image throws and draws nothing.
+  t.throws(() => ctx.drawImage(image, 0, 0), { name: 'InvalidStateError' })
 
   const imageData = ctx.getImageData(50, 50, 1, 1)
   t.is(imageData.data[0], 255, 'Canvas should still be red (drawImage drew nothing)')
@@ -1130,7 +1136,8 @@ test('failed non-SVG buffer load should clear state and set naturalWidth/Height 
   const ctx = canvas.getContext('2d')
   ctx.fillStyle = 'blue'
   ctx.fillRect(0, 0, 100, 100) // Fill with blue first
-  ctx.drawImage(image, 0, 0) // Should not change canvas (no bitmap)
+  // As in Chrome, a broken image throws and draws nothing.
+  t.throws(() => ctx.drawImage(image, 0, 0), { name: 'InvalidStateError' })
 
   const imageData = ctx.getImageData(50, 50, 1, 1)
   t.is(imageData.data[2], 255, 'Canvas should still be blue (drawImage drew nothing)')
@@ -1157,7 +1164,7 @@ test('broken image should have all dimension getters return 0 (regression fix)',
   t.is(image.complete, true, 'complete should be true (broken state)')
 })
 
-test('decode() returns fresh resolved promise after clearing src (regression fix)', async (t) => {
+test('decode() rejects quickly after clearing src (regression fix)', async (t) => {
   const file = await loadImageFile()
   const image = new Image()
 
@@ -1174,12 +1181,12 @@ test('decode() returns fresh resolved promise after clearing src (regression fix
   // Clear src
   image.src = ''
 
-  // decode() should resolve immediately (decoder_task was cleared)
+  // No src: decode() rejects at once (decoder_task was cleared)
   const start = Date.now()
-  await image.decode()
+  await t.throwsAsync(image.decode(), { name: 'EncodingError' })
   const elapsed = Date.now() - start
 
-  t.true(elapsed < 50, 'decode() should resolve quickly after clearing src')
+  t.true(elapsed < 50, 'decode() should reject quickly after clearing src')
 })
 
 test('decode() works correctly after synchronous SVG load (regression fix)', async (t) => {

@@ -5,6 +5,8 @@ const {
   clearAllCache,
   CanvasRenderingContext2D,
   CanvasElement,
+  CanvasGradient,
+  CanvasPattern,
   SVGCanvas,
   Path: Path2D,
   ImageData,
@@ -20,6 +22,7 @@ const {
   GifEncoder,
   GifDisposal,
   LottieAnimation,
+  TextMetrics,
   _argumentCounts,
 } = require('./js-binding')
 
@@ -32,6 +35,45 @@ if (GifEncoder && typeof Symbol.dispose !== 'undefined') {
   GifEncoder.prototype[Symbol.dispose] = function () {
     this.dispose()
   }
+}
+
+// napi-rs defines a class's accessors in name order. Chrome's TextMetrics
+// prototype has them in IDL order (text_metrics.idl), which for...in shows,
+// then the constructor: define them again in that order.
+for (const name of [
+  'width',
+  'actualBoundingBoxLeft',
+  'actualBoundingBoxRight',
+  'fontBoundingBoxAscent',
+  'fontBoundingBoxDescent',
+  'actualBoundingBoxAscent',
+  'actualBoundingBoxDescent',
+  'hangingBaseline',
+  'alphabeticBaseline',
+  'ideographicBaseline',
+  'emHeightAscent',
+  'emHeightDescent',
+  'constructor',
+]) {
+  const descriptor = Object.getOwnPropertyDescriptor(TextMetrics.prototype, name)
+  delete TextMetrics.prototype[name]
+  Object.defineProperty(TextMetrics.prototype, name, descriptor)
+}
+
+// Chrome's Symbol.toStringTag, an own property of each prototype. The
+// canvas and Image classes take their HTML element names; SVGCanvas has no
+// counterpart and no tag.
+for (const [Class, tag] of [
+  [CanvasRenderingContext2D, 'CanvasRenderingContext2D'],
+  [CanvasGradient, 'CanvasGradient'],
+  [CanvasPattern, 'CanvasPattern'],
+  [Path2D, 'Path2D'],
+  [ImageData, 'ImageData'],
+  [TextMetrics, 'TextMetrics'],
+  [CanvasElement, 'HTMLCanvasElement'],
+  [Image, 'HTMLImageElement'],
+]) {
+  Object.defineProperty(Class.prototype, Symbol.toStringTag, { value: tag, configurable: true })
 }
 
 const SvgExportFlag = {
@@ -102,12 +144,182 @@ CanvasRenderingContext2D.prototype.getTransform = function getTransform() {
   return new DOMMatrix([a, b, c, d, e, f])
 }
 
-// The argument-count markers for 0 to 4 arguments. napi pads missing
-// arguments with undefined, so the createImageData and createPattern wrappers
-// pass the real count after the positional arguments, as one of these
-// markers: the native methods read a count only from a marker, and any other
-// value there (from a raw js-binding call) is an extra argument.
+// Chrome checks the receiver ('Illegal invocation'), then the argument count,
+// before it converts any argument. `brand` is a native method of the class: a
+// call on another receiver throws 'Illegal invocation'. As Blink's binding
+// errors, the stack keeps the bare message and `message` gets the prefix, as
+// an enumerable own property.
+function argumentCountError(brand, self, method, iface, required, present) {
+  brand.call(self)
+  const message = `${required} argument${required === 1 ? '' : 's'} required, but only ${present} present.`
+  const error = new TypeError(message)
+  void error.stack
+  Object.defineProperty(error, 'message', {
+    value: `Failed to execute '${method}' on '${iface}': ${message}`,
+    writable: true,
+    enumerable: true,
+    configurable: true,
+  })
+  throw error
+}
+
+// Wraps `proto[method]` with Chrome's argument count check; the wrapper's
+// `length` is the required argument count, as Chrome's Function.length.
+// napi pads missing arguments with undefined, so the native method cannot
+// tell f(1) from f(1, undefined); an explicit undefined counts in Chrome.
+function requireArguments(proto, brand, iface, method, required) {
+  const native = proto[method]
+  const wrapper = {
+    [method]() {
+      if (arguments.length < required) {
+        argumentCountError(brand, this, method, iface, required, arguments.length)
+      }
+      return native.apply(this, arguments)
+    },
+  }[method]
+  Object.defineProperty(wrapper, 'length', { value: required })
+  proto[method] = wrapper
+}
+
+const ctxBrand = CanvasRenderingContext2D.prototype.getContextAttributes
+for (const [method, required] of [
+  ['arc', 5],
+  ['arcTo', 5],
+  ['bezierCurveTo', 6],
+  ['clearRect', 4],
+  ['ellipse', 7],
+  ['fillRect', 4],
+  ['fillText', 3],
+  ['lineTo', 2],
+  ['measureText', 1],
+  ['moveTo', 2],
+  ['quadraticCurveTo', 4],
+  ['rect', 4],
+  ['rotate', 1],
+  ['roundRect', 4],
+  ['scale', 2],
+  ['setLineDash', 1],
+  ['strokeRect', 4],
+  ['strokeText', 3],
+  ['transform', 6],
+  ['translate', 2],
+]) {
+  requireArguments(CanvasRenderingContext2D.prototype, ctxBrand, 'CanvasRenderingContext2D', method, required)
+}
+
+// getContext(contextId, options): Chrome needs the id. The native method is
+// its own brand: with no arguments it converts undefined to 'undefined' and
+// returns null, without side effects.
+for (const [Class, iface] of [
+  [CanvasElement, 'HTMLCanvasElement'],
+  [SVGCanvas, 'SVGCanvas'],
+]) {
+  requireArguments(Class.prototype, Class.prototype.getContext, iface, 'getContext', 1)
+}
+
+const pathBrand = Path2D.prototype.getFillType
+for (const [method, required] of [
+  ['arc', 5],
+  ['arcTo', 5],
+  ['bezierCurveTo', 6],
+  ['ellipse', 7],
+  ['lineTo', 2],
+  ['moveTo', 2],
+  ['quadraticCurveTo', 4],
+  ['rect', 4],
+  ['roundRect', 4],
+]) {
+  requireArguments(Path2D.prototype, pathBrand, 'Path2D', method, required)
+}
+
+// The argument-count markers for 0 to 9 arguments. napi pads missing
+// arguments with undefined, so the wrappers below pass the real count after
+// the positional arguments, as one of these markers: the native methods read
+// a count only from a marker, and any other value there (from a raw
+// js-binding call) is an extra argument.
 const ARGUMENT_COUNTS = _argumentCounts()
+
+// What the wrappers below pass after their `n` positional arguments, for a
+// call with `count` (1 to `n`) of them, the last one `last`. Without a marker
+// the native method counts up to the last argument that is not undefined:
+// that is `count` unless `last` is an explicit undefined, and only then is
+// the marker needed.
+function argumentCount(count, last) {
+  return last === undefined ? ARGUMENT_COUNTS[count] : undefined
+}
+
+// fill(), clip(), stroke(), isPointInPath() and isPointInStroke(): WebIDL
+// picks the overload from the argument count (canvas_2d_recorder_context.idl),
+// and an explicit undefined counts: fill(path, undefined) is the nonzero
+// fill of path, fill(undefined, 'evenodd') a TypeError.
+// These wrappers and drawImage's read only the arguments the call has: past
+// arguments.length, arguments[i] would read Object.prototype[i], which
+// Chrome never reads.
+const _fill = CanvasRenderingContext2D.prototype.fill
+CanvasRenderingContext2D.prototype.fill = function fill() {
+  const count = Math.min(arguments.length, 2)
+  return _fill.call(
+    this,
+    count > 0 ? arguments[0] : undefined,
+    count > 1 ? arguments[1] : undefined,
+    count === 0 ? undefined : argumentCount(count, arguments[count - 1]),
+  )
+}
+
+const _clip = CanvasRenderingContext2D.prototype.clip
+CanvasRenderingContext2D.prototype.clip = function clip() {
+  const count = Math.min(arguments.length, 2)
+  return _clip.call(
+    this,
+    count > 0 ? arguments[0] : undefined,
+    count > 1 ? arguments[1] : undefined,
+    count === 0 ? undefined : argumentCount(count, arguments[count - 1]),
+  )
+}
+
+const _stroke = CanvasRenderingContext2D.prototype.stroke
+CanvasRenderingContext2D.prototype.stroke = function stroke() {
+  if (arguments.length === 0) {
+    return _stroke.call(this, undefined, undefined)
+  }
+  const path = arguments[0]
+  return _stroke.call(this, path, argumentCount(1, path))
+}
+
+const _isPointInPath = CanvasRenderingContext2D.prototype.isPointInPath
+CanvasRenderingContext2D.prototype.isPointInPath = function isPointInPath() {
+  if (arguments.length < 2) {
+    argumentCountError(ctxBrand, this, 'isPointInPath', 'CanvasRenderingContext2D', 2, arguments.length)
+  }
+  const count = Math.min(arguments.length, 4)
+  return _isPointInPath.call(
+    this,
+    arguments[0],
+    arguments[1],
+    count > 2 ? arguments[2] : undefined,
+    count > 3 ? arguments[3] : undefined,
+    // (x, y, undefined) converts as (x, y) when x is not an object (only an
+    // object can be a Path2D), so the count is not needed.
+    count === 3 && typeof arguments[0] !== 'object' ? undefined : argumentCount(count, arguments[count - 1]),
+  )
+}
+Object.defineProperty(CanvasRenderingContext2D.prototype.isPointInPath, 'length', { value: 2 })
+
+const _isPointInStroke = CanvasRenderingContext2D.prototype.isPointInStroke
+CanvasRenderingContext2D.prototype.isPointInStroke = function isPointInStroke() {
+  if (arguments.length < 2) {
+    argumentCountError(ctxBrand, this, 'isPointInStroke', 'CanvasRenderingContext2D', 2, arguments.length)
+  }
+  const count = Math.min(arguments.length, 3)
+  return _isPointInStroke.call(
+    this,
+    arguments[0],
+    arguments[1],
+    count > 2 ? arguments[2] : undefined,
+    argumentCount(count, arguments[count - 1]),
+  )
+}
+Object.defineProperty(CanvasRenderingContext2D.prototype.isPointInStroke, 'length', { value: 2 })
 
 // createImageData(): WebIDL picks the overload from the argument count, and an
 // explicit undefined counts: createImageData(imagedata, undefined) is the
@@ -139,8 +351,14 @@ CanvasRenderingContext2D.prototype.createPattern = function createPattern(image,
 // Store the original drawImage method
 const _drawImage = CanvasRenderingContext2D.prototype.drawImage
 
-// Override drawImage to ensure proper type recognition in bundled environments
-CanvasRenderingContext2D.prototype.drawImage = function drawImage(image, ...args) {
+// Override drawImage to ensure proper type recognition in bundled environments.
+// As in Chrome, it needs 3 arguments; the native method picks the overload
+// from the argument count (3, 5 or 9).
+CanvasRenderingContext2D.prototype.drawImage = function drawImage() {
+  if (arguments.length < 3) {
+    argumentCountError(ctxBrand, this, 'drawImage', 'CanvasRenderingContext2D', 3, arguments.length)
+  }
+  let image = arguments[0]
   // If the image is a Canvas-like object but not recognized due to bundling,
   // we need to ensure it's properly identified
   if (image && typeof image === 'object') {
@@ -163,8 +381,22 @@ CanvasRenderingContext2D.prototype.drawImage = function drawImage(image, ...args
   }
 
   // Call the original drawImage with the potentially corrected image
-  return _drawImage.apply(this, [image, ...args])
+  const count = Math.min(arguments.length, 9)
+  return _drawImage.call(
+    this,
+    image,
+    arguments[1],
+    arguments[2],
+    count > 3 ? arguments[3] : undefined,
+    count > 4 ? arguments[4] : undefined,
+    count > 5 ? arguments[5] : undefined,
+    count > 6 ? arguments[6] : undefined,
+    count > 7 ? arguments[7] : undefined,
+    count > 8 ? arguments[8] : undefined,
+    argumentCount(count, arguments[count - 1]),
+  )
 }
+Object.defineProperty(CanvasRenderingContext2D.prototype.drawImage, 'length', { value: 3 })
 
 function createCanvas(width, height, flag) {
   const isSvgBackend = typeof flag !== 'undefined'
