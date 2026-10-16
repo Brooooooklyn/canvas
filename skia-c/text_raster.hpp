@@ -28,6 +28,10 @@ class TextRasterPolicy {
   // of a draw, null when measuring.
   SkFont DrawFont(const SkFont& shaped, const SkMatrix* device) const;
 
+  // Whether DrawFont gives another font for some device than for none: a
+  // geometricPrecision run that may get LCD masks (macOS).
+  bool DrawFontUsesDevice() const;
+
   // The paint that draws a run with `draw_font` (DrawFont's result).
   SkPaint DrawPaint(const SkFont& draw_font, const SkPaint& paint) const;
 
