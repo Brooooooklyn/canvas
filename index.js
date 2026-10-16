@@ -121,7 +121,11 @@ if ('Blob' in globalThis) {
     if (typeof callback !== 'function') {
       bindingTypeError(canvasBrand, this, 'toBlob', 'HTMLCanvasElement', "parameter 1 is not of type 'Function'.")
     }
-    _toBlob.call(this, arguments[1], arguments[2]).then(
+    // Only the arguments that were passed: past arguments.length,
+    // arguments[i] reads Object.prototype[i], which Chrome never reads.
+    const type = arguments.length > 1 ? arguments[1] : undefined
+    const quality = arguments.length > 2 ? arguments[2] : undefined
+    _toBlob.call(this, type, quality).then(
       (result) => {
         const blob = result === null ? null : new Blob([result.data], { type: result.type })
         queueMicrotask(() => callback(blob))
@@ -134,7 +138,7 @@ if ('Blob' in globalThis) {
   CanvasElement.prototype.convertToBlob = function convertToBlob() {
     let pending
     try {
-      pending = _convertToBlob.call(this, arguments[0])
+      pending = _convertToBlob.call(this, arguments.length > 0 ? arguments[0] : undefined)
     } catch (error) {
       return Promise.reject(error)
     }
