@@ -609,10 +609,9 @@ test('font-relative units in a drop-shadow() color use the canvas font', (t) => 
   t.deepEqual(shadowPixel(color('rgb(calc(10ch / 1px) 0 0)'), '20px Lato', '40px Lato'), red(116))
 
   // ex is the x-height. On macOS Blink and we both read it off the "x" glyph
-  // (our measureText's actualBoundingBoxAscent), where we round it: 10px for
-  // 20px Lato and 21px for 40px, Chrome 10.13px and 20.26px, so Chrome draws
-  // 101 and 203 where we draw 100 and 210 (decisions.md 08-Q4: our font
-  // metrics). Elsewhere it is the font's x-height.
+  // (our measureText's actualBoundingBoxAscent): 10.13px for 20px Lato and
+  // 20.26px for 40px, as in Chrome, so we draw Chrome's 101 and 203.
+  // Elsewhere it is the font's x-height.
   const ex = (font: string) => shadowPixel(color('rgb(calc(10ex / 1px) 0 0)'), font)
   const exAfter = shadowPixel(color('rgb(calc(10ex / 1px) 0 0)'), '20px Lato', '40px Lato')
   const rex = shadowPixel(color('rgb(calc(10rex / 1px) 0 0)'), '20px Lato')
@@ -766,9 +765,9 @@ test('ic in ctx.filter is the U+6C34 advance of the first font of ctx.font', (t)
 // Chrome 155 (FontFace-loaded Lato, OffscreenCanvas, arm64 and x64 equal):
 // cap and ch are the cap height and the "0" advance of the primary font, the
 // first family of ctx.font that has a face, at the font size. The value is
-// the ink center of the shadow of a 1px column at x 0. ex is not pinned: on
-// macOS ours reads the top of the "x" glyph from the rounded glyph box
-// (10px), Chrome the exact one (10.13px).
+// the ink center of the shadow of a 1px column at x 0. ex is not pinned
+// here: on macOS ours reads the top of the "x" glyph exactly, as Chrome does
+// (10.13px for 20px Lato), and the drop-shadow() color test above checks it.
 test('cap and ch in ctx.filter come from the primary font of ctx.font', (t) => {
   GlobalFonts.registerFromPath(
     join(fileURLToPath(import.meta.url), '..', 'fonts', 'Lato-Regular.ttf'),
