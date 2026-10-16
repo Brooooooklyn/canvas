@@ -25,6 +25,7 @@ const {
   TextMetrics,
   _argumentCounts,
   _imageDataConstructor,
+  _toNumber: toNumber,
 } = require('./js-binding')
 
 const { DOMPoint, DOMMatrix, DOMRect } = require('./geometry')
@@ -337,6 +338,179 @@ CanvasRenderingContext2D.prototype.isPointInStroke = function isPointInStroke() 
   )
 }
 Object.defineProperty(CanvasRenderingContext2D.prototype.isPointInStroke, 'length', { value: 2 })
+
+// A TypeError as Chrome's bindings throw it, as in argumentCountError: the
+// stack keeps the bare message, and `message` gets the prefix.
+function contextTypeError(prefix, message) {
+  const error = new TypeError(message)
+  void error.stack
+  Object.defineProperty(error, 'message', {
+    value: prefix + message,
+    writable: true,
+    enumerable: true,
+    configurable: true,
+  })
+  return error
+}
+
+// An `unrestricted double` member of a matrix dictionary; undefined when it
+// is absent. The native ToNumber keeps the engine's texts, and the error
+// names the member, as in Chrome.
+function matrixMember(value, key, dictionary, prefix) {
+  if (typeof value === 'number' || value === undefined) return value
+  return toNumber(value, `${prefix}Failed to read the '${key}' property from '${dictionary}': `)
+}
+
+// a and m11 (and so on) disagree: both given and not equal. Two NaNs agree.
+const mismatch = (x, y) => x !== undefined && y !== undefined && x !== y && (x === x || y === y)
+// A 3D member against its identity value; absent is the identity. As C++
+// truthiness, NaN counts as 3D and -0 as 0.
+const notZero = (v) => v !== undefined && v !== 0
+const notOne = (v) => v !== undefined && v !== 1
+
+// The matrix of a DOMMatrix2DInit, or of a DOMMatrixInit when `full`, as
+// [m11, m12, m21, m22, m41, m42]; undefined and null are {}. As Blink's
+// bindings, every member is read with [[Get]], in order (a..f, m11, m12,
+// m21, m22, m41, m42, then is2D and m13..m44), then checked as
+// DOMMatrixReadOnly::ValidateAndFixup (dom_matrix_read_only.cc). A DOMMatrix
+// is read the same way: an own property, a patched getter or a Proxy may
+// make its members disagree. The result is one shared array: read it before
+// any other user code runs.
+const MATRIX = [1, 0, 0, 1, 0, 0]
+function matrix2DFromInit(init, prefix, full) {
+  if (init === undefined || init === null) {
+    MATRIX[0] = 1
+    MATRIX[1] = 0
+    MATRIX[2] = 0
+    MATRIX[3] = 1
+    MATRIX[4] = 0
+    MATRIX[5] = 0
+    return MATRIX
+  }
+  if (typeof init !== 'object' && typeof init !== 'function') {
+    throw contextTypeError(prefix, `The provided value is not of type '${full ? 'DOMMatrixInit' : 'DOMMatrix2DInit'}'.`)
+  }
+  const D2 = 'DOMMatrix2DInit'
+  const a = matrixMember(init.a, 'a', D2, prefix)
+  const b = matrixMember(init.b, 'b', D2, prefix)
+  const c = matrixMember(init.c, 'c', D2, prefix)
+  const d = matrixMember(init.d, 'd', D2, prefix)
+  const e = matrixMember(init.e, 'e', D2, prefix)
+  const f = matrixMember(init.f, 'f', D2, prefix)
+  const m11 = matrixMember(init.m11, 'm11', D2, prefix)
+  const m12 = matrixMember(init.m12, 'm12', D2, prefix)
+  const m21 = matrixMember(init.m21, 'm21', D2, prefix)
+  const m22 = matrixMember(init.m22, 'm22', D2, prefix)
+  const m41 = matrixMember(init.m41, 'm41', D2, prefix)
+  const m42 = matrixMember(init.m42, 'm42', D2, prefix)
+  let is3DIn2D = false
+  if (full) {
+    const D = 'DOMMatrixInit'
+    const is2D = init.is2D
+    const m13 = matrixMember(init.m13, 'm13', D, prefix)
+    const m14 = matrixMember(init.m14, 'm14', D, prefix)
+    const m23 = matrixMember(init.m23, 'm23', D, prefix)
+    const m24 = matrixMember(init.m24, 'm24', D, prefix)
+    const m31 = matrixMember(init.m31, 'm31', D, prefix)
+    const m32 = matrixMember(init.m32, 'm32', D, prefix)
+    const m33 = matrixMember(init.m33, 'm33', D, prefix)
+    const m34 = matrixMember(init.m34, 'm34', D, prefix)
+    const m43 = matrixMember(init.m43, 'm43', D, prefix)
+    const m44 = matrixMember(init.m44, 'm44', D, prefix)
+    // is2D is a boolean member: ToBoolean when present.
+    is3DIn2D =
+      is2D !== undefined &&
+      !!is2D &&
+      (notZero(m31) ||
+        notZero(m32) ||
+        notZero(m13) ||
+        notZero(m23) ||
+        notZero(m43) ||
+        notZero(m14) ||
+        notZero(m24) ||
+        notZero(m34) ||
+        notOne(m33) ||
+        notOne(m44))
+  }
+  if (
+    mismatch(a, m11) ||
+    mismatch(b, m12) ||
+    mismatch(c, m21) ||
+    mismatch(d, m22) ||
+    mismatch(e, m41) ||
+    mismatch(f, m42)
+  ) {
+    throw contextTypeError(prefix, 'Property mismatch on matrix initialization.')
+  }
+  if (is3DIn2D) {
+    throw contextTypeError(prefix, 'The is2D member is set to true but the input matrix is a 3d matrix.')
+  }
+  MATRIX[0] = m11 !== undefined ? m11 : a !== undefined ? a : 1
+  MATRIX[1] = m12 !== undefined ? m12 : b !== undefined ? b : 0
+  MATRIX[2] = m21 !== undefined ? m21 : c !== undefined ? c : 0
+  MATRIX[3] = m22 !== undefined ? m22 : d !== undefined ? d : 1
+  MATRIX[4] = m41 !== undefined ? m41 : e !== undefined ? e : 0
+  MATRIX[5] = m42 !== undefined ? m42 : f !== undefined ? f : 0
+  return MATRIX
+}
+
+// setTransform(): six or more arguments are six numbers, fewer a DOMMatrixInit
+// (canvas_2d_recorder_context.idl), and an explicit undefined counts. The
+// DOMMatrixInit is read above; the native method takes six numbers. It reads
+// a first argument that is not a number as a DOMMatrixInit, the form a raw
+// js-binding call may use, so ToNumber runs here for such an `a`.
+const _setTransform = CanvasRenderingContext2D.prototype.setTransform
+// A cheap native method: on another receiver it throws 'Illegal invocation',
+// which Chrome checks before it converts any argument.
+const ctxReceiver = CanvasRenderingContext2D.prototype.isContextLost
+const SET_TRANSFORM = "Failed to execute 'setTransform' on 'CanvasRenderingContext2D': "
+CanvasRenderingContext2D.prototype.setTransform = function setTransform() {
+  if (arguments.length >= 6) {
+    let a = arguments[0]
+    if (typeof a !== 'number') {
+      ctxReceiver.call(this)
+      a = toNumber(a, SET_TRANSFORM)
+    }
+    return _setTransform.call(this, a, arguments[1], arguments[2], arguments[3], arguments[4], arguments[5])
+  }
+  // Past arguments.length, arguments[0] would read Object.prototype[0].
+  const init = arguments.length > 0 ? arguments[0] : undefined
+  if (init !== undefined && init !== null) ctxReceiver.call(this)
+  const m = matrix2DFromInit(init, SET_TRANSFORM, true)
+  return _setTransform.call(this, m[0], m[1], m[2], m[3], m[4], m[5])
+}
+
+// addPath(path, transform = {}): Chrome checks the receiver, the argument
+// count and the path, then reads the DOMMatrix2DInit, read above. The native
+// method takes six numbers after the path; anything else there is a
+// DOMMatrix2DInit, which only a raw js-binding call passes. Without a
+// transform (undefined or null is `{}`), a native method that takes only the
+// path adds it as it is; Chrome's Path2D has no such method, so it comes off
+// the prototype.
+const _addPath = Path2D.prototype.addPath
+const _addPathWithoutTransform = Path2D.prototype._addPathWithoutTransform
+delete Path2D.prototype._addPathWithoutTransform
+const ADD_PATH = "Failed to execute 'addPath' on 'Path2D': "
+Path2D.prototype.addPath = function addPath() {
+  if (arguments.length < 1) {
+    argumentCountError(pathBrand, this, 'addPath', 'Path2D', 1, arguments.length)
+  }
+  const path = arguments[0]
+  // Past arguments.length, arguments[1] would read Object.prototype[1].
+  const transform = arguments.length > 1 ? arguments[1] : undefined
+  if (transform === undefined || transform === null) {
+    return _addPathWithoutTransform.call(this, path)
+  }
+  pathBrand.call(this)
+  try {
+    pathBrand.call(path)
+  } catch {
+    throw contextTypeError(ADD_PATH, "parameter 1 is not of type 'Path2D'.")
+  }
+  const m = matrix2DFromInit(transform, ADD_PATH, false)
+  return _addPath.call(this, path, m[0], m[1], m[2], m[3], m[4], m[5])
+}
+Object.defineProperty(Path2D.prototype.addPath, 'length', { value: 1 })
 
 // createImageData(): WebIDL picks the overload from the argument count, and an
 // explicit undefined counts: createImageData(imagedata, undefined) is the

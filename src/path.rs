@@ -1,6 +1,6 @@
 use napi::bindgen_prelude::*;
 
-use crate::ctx::check_radius;
+use crate::ctx::{check_radius, is_path2d, not_path2d};
 use crate::num;
 use crate::sk::{
   FillType as SkFillType, Matrix as SkMatrix, Path as SkPath, PathOp as SkPathOp, SkiaString,
@@ -125,40 +125,42 @@ pub struct Path {
 #[napi]
 impl Path {
   #[napi(constructor)]
-  pub fn new(path: Option<Either3<String, &mut Path, Unknown>>) -> Result<Self> {
-    let inner = match &path {
-      Some(Either3::A(path)) => SkPath::from_svg_path(path).ok_or_else(|| {
-        Error::new(
-          Status::InvalidArg,
-          "Create path from provided path string failed.".to_owned(),
-        )
-      })?,
-      Some(Either3::B(path)) => path.inner.clone(),
-      Some(Either3::C(c)) => {
-        return Err(Error::new(
-          Status::InvalidArg,
-          format!(
-            "Create path from provided unknown value failed {}.",
-            c.get_type()?
-          ),
-        ));
-      }
-      None => SkPath::new(),
-    };
-    Ok(Path { inner })
+  pub fn new(path: Option<PathInit>) -> Self {
+    Path {
+      inner: path.map_or_else(SkPath::new, |path| path.0),
+    }
   }
 
+  /// addPath(path, transform = {}) (Blink path_2d.h:80-91). index.js checks
+  /// the argument count and the path, reads the DOMMatrix2DInit itself and
+  /// passes it as six numbers; see `webidl::MatrixArg` for a raw call.
   #[napi]
-  pub fn add_path(&mut self, sub_path: &Path, matrix: Option<Matrix>) {
-    let transform = match matrix {
-      // A non-finite matrix adds nothing (Blink path_2d.h addPath).
-      Some(m) if ![m.a, m.b, m.c, m.d, m.e, m.f].iter().all(|v| v.is_finite()) => return,
-      Some(m) => SkMatrix::new(
-        m.a as f32, m.c as f32, m.e as f32, m.b as f32, m.d as f32, m.f as f32,
-      ),
-      None => SkMatrix::identity(),
-    };
-    self.inner.add_path(&sub_path.inner, &transform);
+  pub fn add_path(
+    &mut self,
+    path: AddPathSource,
+    a: webidl::AddPathA,
+    b: Double<webidl::PathAddPath>,
+    c: Double<webidl::PathAddPath>,
+    d: Double<webidl::PathAddPath>,
+    e: Double<webidl::PathAddPath>,
+    f: Double<webidl::PathAddPath>,
+  ) {
+    let [a, b, c, d, e, f] = a.0.with([b.0, c.0, d.0, e.0, f.0]);
+    // A non-finite matrix adds nothing.
+    if ![a, b, c, d, e, f].iter().all(|v| v.is_finite()) {
+      return;
+    }
+    let matrix = SkMatrix::new(a as f32, c as f32, e as f32, b as f32, d as f32, f as f32);
+    self.add_path_with(path, &matrix);
+  }
+
+  /// addPath(path) without a transform, or with an undefined or null one,
+  /// which is `{}`: the identity, so there is no matrix to read. index.js
+  /// calls it for those, and takes it off the prototype. As a method, it
+  /// still checks the receiver ('Illegal invocation') before the path.
+  #[napi(js_name = "_addPathWithoutTransform")]
+  pub fn add_path_without_transform(&mut self, path: AddPathSource) {
+    self.add_path_with(path, &SkMatrix::identity());
   }
 
   #[napi]
@@ -321,18 +323,24 @@ impl Path {
   #[napi]
   pub fn round_rect(
     &mut self,
-    x: Double<webidl::PathRoundRect>,
-    y: Double<webidl::PathRoundRect>,
-    width: Double<webidl::PathRoundRect>,
-    height: Double<webidl::PathRoundRect>,
-    radii: Either3<f64, Vec<f64>, Undefined>,
-  ) {
-    if let (Some([x, y, width, height]), Some(radii)) = (
-      num::saturated_f32s([x.0, y.0, width.0, height.0]),
-      round_rect_radii(radii),
-    ) {
-      self.inner.round_rect(x, y, width, height, radii);
+    env: &Env,
+    x: webidl::RoundRectCoordinate<0>,
+    y: webidl::RoundRectCoordinate<1>,
+    width: webidl::RoundRectCoordinate<2>,
+    height: webidl::RoundRectCoordinate<3>,
+    radii: webidl::RoundRectRadii<webidl::PathRoundRect>,
+  ) -> Result<()> {
+    // A Path2D has no matrix: always invertible.
+    if let Some(([x, y, width, height], radii)) = check_round_rect(
+      env.raw(),
+      <webidl::PathRoundRect as webidl::Site>::PREFIX,
+      true,
+      radii.rect([x.0, y.0, width.0, height.0]),
+      &radii.radii,
+    )? {
+      self.inner.round_rect(x, y, width, height, &radii);
     }
+    Ok(())
   }
 
   #[napi]
@@ -448,31 +456,126 @@ impl Path {
   }
 }
 
-/// The four corner radii of roundRect(). Each given radius goes through the
-/// path rule in the order given (Blink canvas_path.cc:597-628): None when one
-/// is outside the float range. Then the 1 to 4 radii expand to the corners.
-pub(crate) fn round_rect_radii(radii: Either3<f64, Vec<f64>, Undefined>) -> Option<[f32; 4]> {
-  let mut r = [0f32; 4];
-  let count = match radii {
-    Either3::A(radius) => {
-      r[0] = num::saturated_f32(radius)?;
-      1
+impl Path {
+  /// Adds `path` mapped by `matrix`. The path is read now, after the matrix
+  /// getters ran, as in Chrome. It may be this path.
+  fn add_path_with(&mut self, path: AddPathSource, matrix: &SkMatrix) {
+    if std::ptr::eq(path.0, self) {
+      let source = self.inner.clone();
+      self.inner.add_path(&source, matrix);
+    } else {
+      // SAFETY: a live Path2D other than the receiver (AddPathSource).
+      let source = unsafe { &*path.0 };
+      self.inner.add_path(&source.inner, matrix);
     }
-    Either3::B(list) => {
-      for (slot, radius) in r.iter_mut().zip(&list) {
-        *slot = num::saturated_f32(*radius)?;
-      }
-      list.len()
+  }
+}
+
+/// The argument of new Path2D(): `optional (Path2D or DOMString) path`
+/// (path_2d.h:58-68). A Path2D is copied. Anything else goes through
+/// ToString and is parsed as SVG path data, keeping the segments before the
+/// first error (path_2d.h:109-112): a bad string does not throw.
+pub struct PathInit(SkPath);
+
+impl FromNapiValue for PathInit {
+  unsafe fn from_napi_value(env: sys::napi_env, value: sys::napi_value) -> Result<Self> {
+    if is_path2d(env, value) {
+      let mut data = std::ptr::null_mut();
+      check_status!(unsafe { sys::napi_unwrap(env, value, &mut data) })?;
+      // SAFETY: is_path2d; only read, before any receiver exists.
+      let source = unsafe { &*data.cast::<Path>() };
+      return Ok(Self(source.inner.clone()));
     }
-    Either3::C(_) => 0,
+    let data = webidl::to_dom_string(env, value, webidl::PATH2D_CONSTRUCTOR)?;
+    Ok(Self(crate::svg_path::build_path_from_string(&data)))
+  }
+}
+
+/// The `path` argument of addPath(): a Path2D, else "parameter 1 is not of
+/// type 'Path2D'.", before the matrix is converted. Kept as a pointer: the
+/// method reads the path only after the matrix getters ran, and it may be the
+/// receiver, which the method borrows mutably.
+pub struct AddPathSource(*const Path);
+
+impl FromNapiValue for AddPathSource {
+  unsafe fn from_napi_value(env: sys::napi_env, value: sys::napi_value) -> Result<Self> {
+    let prefix = <webidl::PathAddPath as webidl::Site>::PREFIX;
+    if !is_path2d(env, value) {
+      return Err(not_path2d(env, prefix));
+    }
+    let mut data = std::ptr::null_mut();
+    check_status!(unsafe { sys::napi_unwrap(env, value, &mut data) })?;
+    Ok(Self(data.cast()))
+  }
+}
+
+/// The rect [x, y, width, height] and the (rx, ry) radii roundRect() adds.
+pub(crate) type RoundRectArgs = ([f32; 4], Vec<(f32, f32)>);
+
+/// The checks of Blink's CanvasPath::roundRect (canvas_path.cc:565-628), in
+/// its order: the radius count (a RangeError), then the matrix (`invertible`),
+/// then the rect, then each radius in turn. Ok(None) when nothing is added:
+/// a singular matrix, or a value outside the float range, which also ends the
+/// checks. Else the rect and the radii as (rx, ry) pairs.
+pub(crate) fn check_round_rect(
+  env: sys::napi_env,
+  prefix: &str,
+  invertible: bool,
+  rect: [f64; 4],
+  radii: &webidl::Radii,
+) -> Result<Option<RoundRectArgs>> {
+  let count = radii.count();
+  if count == 0 || count > 4 {
+    return Err(webidl::context_range_error(
+      env,
+      prefix,
+      &format!("{count} radii provided. Between one and four radii are necessary."),
+    ));
+  }
+  let radii = radii.first();
+  if !invertible {
+    return Ok(None);
+  }
+  let Some(rect) = num::saturated_f32s(rect) else {
+    return Ok(None);
   };
-  Some(match count {
-    0 => [0.0; 4],
-    1 => [r[0]; 4],
-    2 => [r[0], r[1], r[0], r[1]],
-    3 => [r[0], r[1], r[1], r[2]],
-    _ => r,
-  })
+  let negative = |what: &str, value: f32| {
+    Err(webidl::context_range_error(
+      env,
+      prefix,
+      &format!(
+        "{what} value {} is negative.",
+        webidl::number_to_string(f64::from(value))
+      ),
+    ))
+  };
+  let mut out = Vec::with_capacity(radii.len());
+  for radius in radii {
+    match *radius {
+      webidl::Radius::Point(x, y) => {
+        let Some([x, y]) = num::saturated_f32s([x, y]) else {
+          return Ok(None);
+        };
+        if x < 0.0 {
+          return negative("X-radius", x);
+        }
+        if y < 0.0 {
+          return negative("Y-radius", y);
+        }
+        out.push((x, y));
+      }
+      webidl::Radius::Number(r) => {
+        let Some(r) = num::saturated_f32(r) else {
+          return Ok(None);
+        };
+        if r < 0.0 {
+          return negative("Radius", r);
+        }
+        out.push((r, r));
+      }
+    }
+  }
+  Ok(Some((rect, out)))
 }
 
 impl ToNapiValue for SkiaString {

@@ -110,7 +110,13 @@ interface CanvasPath {
   moveTo(x: number, y: number): void
   quadraticCurveTo(cpx: number, cpy: number, x: number, y: number): void
   rect(x: number, y: number, w: number, h: number): void
-  roundRect(x: number, y: number, w: number, h: number, radii?: number | DOMPointInit | (number | DOMPointInit)[]): void
+  roundRect(
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    radii?: number | DOMPointInit | Iterable<number | DOMPointInit>,
+  ): void
 }
 
 type ImageSmoothingQuality = 'high' | 'low' | 'medium'
@@ -125,7 +131,17 @@ interface CanvasTransform {
   rotate(angle: number): void
   scale(x: number, y: number): void
   setTransform(a: number, b: number, c: number, d: number, e: number, f: number): void
-  setTransform(transform?: DOMMatrix2DInit): void
+  /** Missing members default to the identity; `a` and `m11` (and so on) must agree when both are given. */
+  setTransform(
+    transform?: Partial<DOMMatrixInit> & {
+      m11?: number
+      m12?: number
+      m21?: number
+      m22?: number
+      m41?: number
+      m42?: number
+    },
+  ): void
   transform(a: number, b: number, c: number, d: number, e: number, f: number): void
   translate(x: number, y: number): void
 }
@@ -542,7 +558,18 @@ export class Image {
 export class Path2D {
   constructor(path?: Path2D | string)
 
-  addPath(path: Path2D, transform?: DOMMatrix2DInit): void
+  /** Missing members default to the identity; `a` and `m11` (and so on) must agree when both are given. */
+  addPath(
+    path: Path2D,
+    transform?: Partial<DOMMatrix2DInit> & {
+      m11?: number
+      m12?: number
+      m21?: number
+      m22?: number
+      m41?: number
+      m42?: number
+    },
+  ): void
   arc(x: number, y: number, radius: number, startAngle: number, endAngle: number, anticlockwise?: boolean): void
   arcTo(x1: number, y1: number, x2: number, y2: number, radius: number): void
   bezierCurveTo(cp1x: number, cp1y: number, cp2x: number, cp2y: number, x: number, y: number): void
@@ -561,7 +588,13 @@ export class Path2D {
   moveTo(x: number, y: number): void
   quadraticCurveTo(cpx: number, cpy: number, x: number, y: number): void
   rect(x: number, y: number, w: number, h: number): void
-  roundRect(x: number, y: number, w: number, h: number, radii?: number | number[]): void
+  roundRect(
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    radii?: number | DOMPointInit | Iterable<number | DOMPointInit>,
+  ): void
 
   // PathKit methods
   op(path: Path2D, operation: PathOp): Path2D

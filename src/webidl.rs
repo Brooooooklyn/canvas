@@ -5,7 +5,7 @@
 //! `Status::PendingException`; napi-rs then keeps the pending exception.
 
 use std::{
-  cell::{RefCell, UnsafeCell},
+  cell::{Cell, RefCell, UnsafeCell},
   marker::PhantomData,
   ptr,
 };
@@ -258,6 +258,7 @@ sites! {
   CtxStrokeText: execute "strokeText" on "CanvasRenderingContext2D";
   CtxTranslate: execute "translate" on "CanvasRenderingContext2D";
   CtxTransform: execute "transform" on "CanvasRenderingContext2D";
+  CtxSetTransform: execute "setTransform" on "CanvasRenderingContext2D";
   CtxFill: execute "fill" on "CanvasRenderingContext2D";
   CtxClip: execute "clip" on "CanvasRenderingContext2D";
   CtxStroke: execute "stroke" on "CanvasRenderingContext2D";
@@ -274,6 +275,7 @@ sites! {
   PathEllipse: execute "ellipse" on "Path2D";
   PathRect: execute "rect" on "Path2D";
   PathRoundRect: execute "roundRect" on "Path2D";
+  PathAddPath: execute "addPath" on "Path2D";
   CanvasGetContext: execute "getContext" on "HTMLCanvasElement";
   SvgCanvasGetContext: execute "getContext" on "SVGCanvas";
   CanvasSetWidth: set "width" on "HTMLCanvasElement";
@@ -1260,14 +1262,285 @@ impl Dictionary<'_> {
     }
   }
 
-  /// `unrestricted double` member: ToNumber.
+  /// `unrestricted double` member: ToNumber. The engine's own errors name
+  /// the member, as in Chrome: "Failed to read the 'x' property from
+  /// 'DOMPointInit': Cannot convert a Symbol value to a number".
   fn number(&self, key: &str) -> Result<Option<f64>> {
     let Some(v) = member(self.env, self.value, key)? else {
       return Ok(None);
     };
-    let mut n = ptr::null_mut();
-    check_status!(unsafe { sys::napi_coerce_to_number(self.env, v, &mut n) })?;
-    Ok(Some(unsafe { f64::from_napi_value(self.env, n)? }))
+    // A number needs no conversion, so no error prefix either.
+    let mut number = 0.0;
+    if unsafe { sys::napi_get_value_double(self.env, v, &mut number) } == sys::Status::napi_ok {
+      return Ok(Some(number));
+    }
+    let prefix = format!(
+      "{}Failed to read the '{key}' property from '{}': ",
+      self.prefix, self.name
+    );
+    to_number(self.env, v, &prefix).map(Some)
+  }
+}
+
+/// One radius of roundRect(): WebIDL `(unrestricted double or DOMPointInit)`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum Radius {
+  Number(f64),
+  /// The x and y of a DOMPointInit.
+  Point(f64, f64),
+}
+
+/// `(unrestricted double or DOMPointInit)`: undefined, null and any object
+/// are a DOMPointInit (every member read, in order: w, x, y, z); anything
+/// else goes through ToNumber.
+fn radius(env: sys::napi_env, value: sys::napi_value, prefix: &str) -> Result<Radius> {
+  // A number needs no conversion.
+  let mut number = 0.0;
+  if unsafe { sys::napi_get_value_double(env, value, &mut number) } == sys::Status::napi_ok {
+    return Ok(Radius::Number(number));
+  }
+  match raw_type_of(env, value)? {
+    sys::ValueType::napi_undefined | sys::ValueType::napi_null => Ok(Radius::Point(0.0, 0.0)),
+    sys::ValueType::napi_object | sys::ValueType::napi_function => {
+      let dictionary = Dictionary {
+        env,
+        value,
+        prefix,
+        name: "DOMPointInit",
+      };
+      dictionary.number("w")?;
+      let x = dictionary.number("x")?;
+      let y = dictionary.number("y")?;
+      dictionary.number("z")?;
+      Ok(Radius::Point(x.unwrap_or(0.0), y.unwrap_or(0.0)))
+    }
+    _ => to_number(env, value, prefix).map(Radius::Number),
+  }
+}
+
+/// Blink's bindings::IsEsIterableObject (generated_code_helper.cc:256-284),
+/// which overload resolution runs on an object that is not an Array
+/// (bind_gen/interface.py:1246-1249): Get @@iterator once; undefined or null
+/// is not iterable, any other value that is not callable a TypeError.
+fn is_es_iterable_object(env: sys::napi_env, value: sys::napi_value, prefix: &str) -> Result<bool> {
+  let method = match intrinsic(env, c"iterator")? {
+    Some(key) => get_property(env, value, key)?,
+    // Not readable when the addon was registered: as if undefined.
+    None => return Ok(false),
+  };
+  match raw_type_of(env, method)? {
+    sys::ValueType::napi_function => Ok(true),
+    sys::ValueType::napi_undefined | sys::ValueType::napi_null => Ok(false),
+    _ => Err(context_type_error(
+      env,
+      prefix,
+      "@@iterator must be a function",
+    )),
+  }
+}
+
+/// The most radii Blink's HeapVector of union Members holds:
+/// PartitionAlloc's MaxAllocationSize() (the same 2^31 - 2^21 bytes as
+/// ImageData data) / 4, the size of a Member with pointer compression
+/// (heap_allocator_impl.h:61-67, partition_allocator.h:28-30). Measured in
+/// Chrome 155: 536346624.
+const MAX_RADII_SEQUENCE_LENGTH: u32 =
+  (crate::image::MAX_DATA_BYTES / std::mem::size_of::<u32>()) as u32;
+
+/// The radii of one roundRect() call: how many there are, and the first
+/// four. Blink converts the whole sequence, then throws a RangeError for
+/// more than four radii before it looks at any of them
+/// (canvas_path.cc:575-580). So every radius is converted here too, in
+/// order, with its side effects and errors, but only the first four are
+/// kept: a long sparse Array costs no memory for its holes.
+#[derive(Debug)]
+pub(crate) struct Radii {
+  count: u32,
+  first: [Radius; 4],
+}
+
+impl Radii {
+  const EMPTY: Self = Self {
+    count: 0,
+    first: [Radius::Number(0.0); 4],
+  };
+
+  fn one(radius: Radius) -> Self {
+    Self {
+      count: 1,
+      first: [radius; 4],
+    }
+  }
+
+  /// Adds the next radius of a sequence. The length check of [`sequence`]
+  /// does not bound an Array that grows while it is read, nor any other
+  /// iterable. Blink's vector cannot hold more than
+  /// `MAX_RADII_SEQUENCE_LENGTH` radii: growing it past that fails a CHECK
+  /// (heap_allocator_impl.h:63), a crash. Here it is a RangeError, with the
+  /// message of the Array length check.
+  fn push(&mut self, env: sys::napi_env, prefix: &str, radius: Radius) -> Result<()> {
+    if self.count == MAX_RADII_SEQUENCE_LENGTH {
+      return Err(context_range_error(
+        env,
+        prefix,
+        "Array length exceeds supported limit.",
+      ));
+    }
+    if let Some(slot) = self.first.get_mut(self.count as usize) {
+      *slot = radius;
+    }
+    self.count += 1;
+    Ok(())
+  }
+
+  /// How many radii the argument has.
+  pub(crate) fn count(&self) -> u32 {
+    self.count
+  }
+
+  /// The radii, or the first four of them.
+  pub(crate) fn first(&self) -> &[Radius] {
+    &self.first[..self.count.min(4) as usize]
+  }
+}
+
+/// The roundRect() coordinates that are not numbers, recorded by
+/// [`RoundRectCoordinate`] for [`RoundRectRadii`], the last parameter of
+/// the same call: bit `I` of `mask` is set when coordinate `I` is in
+/// `values[I]`. They are argument values of that call, alive until it
+/// returns.
+struct PendingCoordinates {
+  mask: Cell<u8>,
+  values: Cell<[sys::napi_value; 4]>,
+}
+
+thread_local! {
+  static PENDING_COORDINATES: PendingCoordinates = const {
+    PendingCoordinates {
+      mask: Cell::new(0),
+      values: Cell::new([ptr::null_mut(); 4]),
+    }
+  };
+}
+
+/// x, y, w or h of roundRect() (`I`: 0 to 3), an `unrestricted double`.
+/// Chrome picks the roundRect overload from the radii before it converts
+/// these, and the pick may run user code ([`RoundRectRadii`]). napi-rs
+/// converts the parameters in order, so this keeps a number, which runs no
+/// user code, and leaves any other value (None here) to [`RoundRectRadii`],
+/// which converts it after the pick.
+pub struct RoundRectCoordinate<const I: usize>(pub(crate) Option<f64>);
+
+impl<const I: usize> FromNapiValue for RoundRectCoordinate<I> {
+  unsafe fn from_napi_value(env: sys::napi_env, value: sys::napi_value) -> Result<Self> {
+    let mut number = 0.0;
+    if unsafe { sys::napi_get_value_double(env, value, &mut number) } == sys::Status::napi_ok {
+      return Ok(Self(Some(number)));
+    }
+    PENDING_COORDINATES.with(|pending| {
+      let mut values = pending.values.get();
+      values[I] = value;
+      pending.values.set(values);
+      pending.mask.set(pending.mask.get() | 1 << I);
+    });
+    Ok(Self(None))
+  }
+}
+
+/// Which roundRect overload the radii pick.
+enum RoundRectOverload {
+  /// `sequence<(unrestricted double or DOMPointInit)> radii`.
+  Sequence,
+  /// `optional (unrestricted double or DOMPointInit) radii = 0`.
+  One,
+  /// The same, with a number: the radii, or the default 0 for undefined.
+  Number(f64),
+}
+
+/// The `radii` argument of roundRect(), and the coordinates that
+/// [`RoundRectCoordinate`] left to convert. Blink declares two overloads
+/// (canvas_path.idl:16-17): `sequence<(unrestricted double or DOMPointInit)>
+/// radii`, and `optional (unrestricted double or DOMPointInit) radii = 0`.
+/// Overload resolution (bind_gen/interface.py:1075-1292) looks only at the
+/// radii, before any argument is converted: undefined picks the default 0;
+/// an Array, or another object whose @@iterator is callable
+/// ([`is_es_iterable_object`], one read, which may throw), the sequence;
+/// anything else one radius. Then x, y, w and h are converted, and then the
+/// radii: a sequence as any `sequence<T>` ([`sequence`]: an Array by index,
+/// never with its @@iterator; another iterable with its @@iterator, read a
+/// second time), keeping only what [`Radii`] needs. Converted in the
+/// callback glue, so a getter may use the receiver, as in Chrome.
+pub struct RoundRectRadii<S> {
+  pub(crate) radii: Radii,
+  /// The coordinates converted here, by index; only those that
+  /// [`RoundRectCoordinate`] recorded are set.
+  coordinates: [f64; 4],
+  site: PhantomData<S>,
+}
+
+impl<S> RoundRectRadii<S> {
+  /// x, y, w and h, from what their [`RoundRectCoordinate`] took.
+  pub(crate) fn rect(&self, taken: [Option<f64>; 4]) -> [f64; 4] {
+    std::array::from_fn(|index| taken[index].unwrap_or(self.coordinates[index]))
+  }
+}
+
+impl<S: Site> FromNapiValue for RoundRectRadii<S> {
+  unsafe fn from_napi_value(env: sys::napi_env, value: sys::napi_value) -> Result<Self> {
+    // Taken before any user code runs, which may make a call of its own.
+    let (mask, pending) = PENDING_COORDINATES.with(|pending| match pending.mask.get() {
+      0 => (0, [ptr::null_mut(); 4]),
+      mask => {
+        pending.mask.set(0);
+        (mask, pending.values.get())
+      }
+    });
+    let mut number = 0.0;
+    let overload =
+      if unsafe { sys::napi_get_value_double(env, value, &mut number) } == sys::Status::napi_ok {
+        RoundRectOverload::Number(number)
+      } else {
+        match raw_type_of(env, value)? {
+          sys::ValueType::napi_undefined => RoundRectOverload::Number(0.0),
+          sys::ValueType::napi_object | sys::ValueType::napi_function => {
+            let mut is_array = false;
+            check_status!(unsafe { sys::napi_is_array(env, value, &mut is_array) })?;
+            if is_array || is_es_iterable_object(env, value, S::PREFIX)? {
+              RoundRectOverload::Sequence
+            } else {
+              RoundRectOverload::One
+            }
+          }
+          _ => RoundRectOverload::One,
+        }
+      };
+    let mut coordinates = [0.0; 4];
+    if mask != 0 {
+      for (index, coordinate) in coordinates.iter_mut().enumerate() {
+        if mask & 1 << index != 0 {
+          *coordinate = to_number(env, pending[index], S::PREFIX)?;
+        }
+      }
+    }
+    let radii = match overload {
+      RoundRectOverload::Sequence => {
+        let mut radii = Radii::EMPTY;
+        // [`sequence`] keeps a `()` for each radius: a Vec of a zero-sized
+        // type never allocates.
+        sequence(env, value, S::PREFIX, MAX_RADII_SEQUENCE_LENGTH, |item| {
+          let radius = radius(env, item, S::PREFIX)?;
+          radii.push(env, S::PREFIX, radius)
+        })?;
+        radii
+      }
+      RoundRectOverload::One => Radii::one(radius(env, value, S::PREFIX)?),
+      RoundRectOverload::Number(number) => Radii::one(Radius::Number(number)),
+    };
+    Ok(Self {
+      radii,
+      coordinates,
+      site: PhantomData,
+    })
   }
 }
 
@@ -1301,6 +1574,7 @@ fn supported_color_space(env: sys::napi_env, prefix: &str, value: &str) -> Resul
 }
 
 pub(crate) const IMAGE_DATA_CONSTRUCTOR: &str = "Failed to construct 'ImageData': ";
+pub(crate) const PATH2D_CONSTRUCTOR: &str = "Failed to construct 'Path2D': ";
 pub(crate) const CREATE_IMAGE_DATA: &str =
   "Failed to execute 'createImageData' on 'CanvasRenderingContext2D': ";
 pub(crate) const GET_IMAGE_DATA: &str =
@@ -1481,24 +1755,33 @@ impl ContextSettings {
   }
 }
 
-/// `DOMMatrix2DInit` converted and fixed up like DOMMatrixReadOnly::fromMatrix2D
-/// (core/geometry/dom_matrix_read_only.cc:179): [m11, m12, m21, m22, m41, m42].
-/// Undefined or null is `{}` (the identity).
-pub(crate) fn dom_matrix_2d_init(
+/// A matrix dictionary argument: None when it is undefined or null (`{}`), a
+/// TypeError naming `type_name` when it is not an object.
+fn matrix_dictionary(
   env: sys::napi_env,
   value: Option<sys::napi_value>,
   prefix: &str,
-) -> Result<[f64; 6]> {
-  const IDENTITY: [f64; 6] = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
+  type_name: &str,
+) -> Result<Option<sys::napi_value>> {
   let Some(value) = present(env, value)? else {
-    return Ok(IDENTITY);
+    return Ok(None);
   };
   if !is_object(env, value)? {
     return Err(type_error(
       env,
-      &format!("{prefix}The provided value is not of type 'DOMMatrix2DInit'."),
+      &format!("{prefix}The provided value is not of type '{type_name}'."),
     ));
   }
+  Ok(Some(value))
+}
+
+/// The DOMMatrix2DInit members, in the order WebIDL reads them: a..f, then
+/// m11, m12, m21, m22, m41, m42.
+fn matrix_2d_members(
+  env: sys::napi_env,
+  value: sys::napi_value,
+  prefix: &str,
+) -> Result<[Option<f64>; 12]> {
   let dictionary = Dictionary {
     env,
     value,
@@ -1511,11 +1794,16 @@ pub(crate) fn dom_matrix_2d_init(
   ]) {
     *slot = dictionary.number(key)?;
   }
+  Ok(members)
+}
+
+/// ValidateAndFixup2D (dom_matrix_read_only.cc:48-76): a and m11 (and so on)
+/// must agree when both are given, two NaNs agree; then [m11, m12, m21, m22,
+/// m41, m42], each from the m-member, else its alias, else the identity.
+fn fixup_2d(env: sys::napi_env, prefix: &str, members: [Option<f64>; 12]) -> Result<[f64; 6]> {
   let (short, long) = members.split_at(6);
-  let mut matrix = IDENTITY;
+  let mut matrix = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
   for i in 0..6 {
-    // ValidateAndFixup2D: a and m11 (and so on) must agree when both are
-    // given; two NaNs agree.
     if let (Some(s), Some(l)) = (short[i], long[i])
       && s != l
       && !(s.is_nan() && l.is_nan())
@@ -1528,6 +1816,69 @@ pub(crate) fn dom_matrix_2d_init(
     if let Some(v) = long[i].or(short[i]) {
       matrix[i] = v;
     }
+  }
+  Ok(matrix)
+}
+
+/// `DOMMatrix2DInit` converted and fixed up like DOMMatrixReadOnly::fromMatrix2D
+/// (core/geometry/dom_matrix_read_only.cc:179): [m11, m12, m21, m22, m41, m42].
+/// Undefined or null is `{}` (the identity).
+pub(crate) fn dom_matrix_2d_init(
+  env: sys::napi_env,
+  value: Option<sys::napi_value>,
+  prefix: &str,
+) -> Result<[f64; 6]> {
+  match matrix_dictionary(env, value, prefix, "DOMMatrix2DInit")? {
+    Some(value) => fixup_2d(env, prefix, matrix_2d_members(env, value, prefix)?),
+    None => Ok([1.0, 0.0, 0.0, 1.0, 0.0, 0.0]),
+  }
+}
+
+/// `DOMMatrixInit` converted and checked like DOMMatrixReadOnly::fromMatrix
+/// (dom_matrix_read_only.cc:78-103, 192-213), for its 2D part only: [m11,
+/// m12, m21, m22, m41, m42]. Every member is read, the 3D ones after is2D;
+/// they only matter to the is2D check. Undefined or null is `{}`.
+pub(crate) fn dom_matrix_init_2d_part(
+  env: sys::napi_env,
+  value: Option<sys::napi_value>,
+  prefix: &str,
+) -> Result<[f64; 6]> {
+  let Some(value) = matrix_dictionary(env, value, prefix, "DOMMatrixInit")? else {
+    return Ok([1.0, 0.0, 0.0, 1.0, 0.0, 0.0]);
+  };
+  let members = matrix_2d_members(env, value, prefix)?;
+  let dictionary = Dictionary {
+    env,
+    value,
+    prefix,
+    name: "DOMMatrixInit",
+  };
+  let is_2d = dictionary.boolean("is2D")?;
+  // m13, m14, m23, m24, m31, m32, m33, m34, m43, m44 and their identity
+  // values. C++ truthiness: NaN is not 0, so it makes the matrix 3D.
+  let mut is_3d = false;
+  for (key, identity) in [
+    ("m13", 0.0),
+    ("m14", 0.0),
+    ("m23", 0.0),
+    ("m24", 0.0),
+    ("m31", 0.0),
+    ("m32", 0.0),
+    ("m33", 1.0),
+    ("m34", 0.0),
+    ("m43", 0.0),
+    ("m44", 1.0),
+  ] {
+    if let Some(v) = dictionary.number(key)? {
+      is_3d |= v != identity;
+    }
+  }
+  let matrix = fixup_2d(env, prefix, members)?;
+  if is_2d == Some(true) && is_3d {
+    return Err(type_error(
+      env,
+      &format!("{prefix}The is2D member is set to true but the input matrix is a 3d matrix."),
+    ));
   }
   Ok(matrix)
 }
@@ -1561,6 +1912,77 @@ pub struct GetImageDataSettings(pub(crate) ImageDataSettings);
 impl FromNapiValue for GetImageDataSettings {
   unsafe fn from_napi_value(env: sys::napi_env, value: sys::napi_value) -> Result<Self> {
     ImageDataSettings::from_js(env, Some(value), GET_IMAGE_DATA).map(Self)
+  }
+}
+
+/// [`to_number`] for index.js, which reads the matrix dictionaries of
+/// setTransform and addPath itself: `value` is a member, or the first of
+/// setTransform's six numbers, that is not a number, and `prefix` what its
+/// error message starts with. The engine's own texts stay, as Chrome's do.
+// Only JS calls it: the lib test build registers no napi exports.
+#[cfg_attr(test, allow(dead_code))]
+#[napi(js_name = "_toNumber")]
+pub fn to_number_for_js(env: &Env, value: Unknown, prefix: String) -> Result<f64> {
+  to_number(env.raw(), value.raw(), &prefix)
+}
+
+/// The first matrix argument of a method that index.js calls with the six
+/// numbers of a matrix (setTransform, addPath), after it read the matrix
+/// dictionary itself. A raw js-binding call may pass the dictionary there
+/// instead: undefined, null or an object is read as one, and the numbers
+/// after it are ignored.
+pub(crate) enum MatrixArg {
+  Number(f64),
+  Matrix([f64; 6]),
+}
+
+impl MatrixArg {
+  fn from_js(
+    env: sys::napi_env,
+    value: sys::napi_value,
+    prefix: &str,
+    dictionary: fn(sys::napi_env, Option<sys::napi_value>, &str) -> Result<[f64; 6]>,
+  ) -> Result<Self> {
+    let mut number = 0.0;
+    if unsafe { sys::napi_get_value_double(env, value, &mut number) } == sys::Status::napi_ok {
+      return Ok(Self::Number(number));
+    }
+    match raw_type_of(env, value)? {
+      sys::ValueType::napi_undefined
+      | sys::ValueType::napi_null
+      | sys::ValueType::napi_object
+      | sys::ValueType::napi_function => dictionary(env, Some(value), prefix).map(Self::Matrix),
+      _ => to_number(env, value, prefix).map(Self::Number),
+    }
+  }
+
+  /// [a, b, c, d, e, f], given the five numbers after this one.
+  pub(crate) fn with(self, [b, c, d, e, f]: [f64; 5]) -> [f64; 6] {
+    match self {
+      Self::Number(a) => [a, b, c, d, e, f],
+      Self::Matrix(matrix) => matrix,
+    }
+  }
+}
+
+/// The first argument of CanvasRenderingContext2D.setTransform(a, b, c, d,
+/// e, f); see [`MatrixArg`]. A raw call's dictionary is a DOMMatrixInit.
+pub struct SetTransformA(pub(crate) MatrixArg);
+
+impl FromNapiValue for SetTransformA {
+  unsafe fn from_napi_value(env: sys::napi_env, value: sys::napi_value) -> Result<Self> {
+    MatrixArg::from_js(env, value, CtxSetTransform::PREFIX, dom_matrix_init_2d_part).map(Self)
+  }
+}
+
+/// The first matrix argument of Path2D.addPath(path, a, b, c, d, e, f); see
+/// [`MatrixArg`]. A raw call's dictionary is a DOMMatrix2DInit, and a
+/// missing one the identity.
+pub struct AddPathA(pub(crate) MatrixArg);
+
+impl FromNapiValue for AddPathA {
+  unsafe fn from_napi_value(env: sys::napi_env, value: sys::napi_value) -> Result<Self> {
+    MatrixArg::from_js(env, value, PathAddPath::PREFIX, dom_matrix_2d_init).map(Self)
   }
 }
 

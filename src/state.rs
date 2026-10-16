@@ -1,6 +1,6 @@
 use rgb::RGBA;
 
-use crate::sk::{BlendMode, ImageFilter, Matrix, Path as SkPath};
+use crate::sk::{BlendMode, ImageFilter, Matrix};
 
 use super::{
   font::{Font, FontStretch},
@@ -58,7 +58,8 @@ pub struct Context2dRenderingState {
   /// alpha:false reset reads this, not `filter`.
   pub has_filter: bool,
   pub global_composite_operation: BlendMode,
-  pub clip_path: Option<SkPath>,
+  /// Blink's has_clip_: some clip() applies at this level or below.
+  pub has_clip: bool,
 }
 
 impl Default for Context2dRenderingState {
@@ -102,7 +103,7 @@ impl Default for Context2dRenderingState {
       filter_id: 0,
       has_filter: false,
       global_composite_operation: BlendMode::default(),
-      clip_path: None,
+      has_clip: false,
     }
   }
 }

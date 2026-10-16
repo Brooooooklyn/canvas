@@ -846,6 +846,17 @@ pub mod ffi {
 
     pub fn skiac_path_quad_to(path: *mut skiac_path, cpx: f32, cpy: f32, x: f32, y: f32);
 
+    pub fn skiac_path_arc_to_svg(
+      path: *mut skiac_path,
+      rx: f32,
+      ry: f32,
+      x_axis_rotate: f32,
+      large_arc: bool,
+      sweep: bool,
+      x: f32,
+      y: f32,
+    );
+
     pub fn skiac_path_close(path: *mut skiac_path);
 
     pub fn skiac_path_add_rect(path: *mut skiac_path, l: f32, t: f32, r: f32, b: f32);
@@ -3746,6 +3757,22 @@ impl Path {
     }
   }
 
+  /// SVG elliptical arc to (x, y): radii, x-axis rotation in degrees, and
+  /// the large-arc and sweep flags.
+  #[allow(clippy::too_many_arguments)]
+  pub fn svg_arc_to(
+    &mut self,
+    rx: f32,
+    ry: f32,
+    x_axis_rotate: f32,
+    large_arc: bool,
+    sweep: bool,
+    x: f32,
+    y: f32,
+  ) {
+    unsafe { ffi::skiac_path_arc_to_svg(self.0, rx, ry, x_axis_rotate, large_arc, sweep, x, y) }
+  }
+
   pub fn add_rect(&mut self, l: f32, t: f32, r: f32, b: f32) {
     unsafe {
       ffi::skiac_path_add_rect(self.0, l, t, r, b);
@@ -3834,30 +3861,51 @@ impl Path {
     unsafe { ffi::skiac_path_round(self.0, radius) }
   }
 
+  /// Blink CanvasPath::roundRect after its checks (canvas_path.cc:640-698).
+  /// `r` holds the 1 to 4 (rx, ry) radii in the order roundRect() got them.
   pub fn round_rect(
     &mut self,
     mut x: f32,
     mut y: f32,
     mut width: f32,
     mut height: f32,
-    mut radii: [f32; 4],
+    r: &[(f32, f32)],
   ) {
-    // https://github.com/chromium/chromium/blob/111.0.5520.1/third_party/blink/renderer/modules/canvas/canvas2d/canvas_path.cc#L601
+    if width == 0.0 || height == 0.0 {
+      // A flat rect has no rounded corners: Blink adds the rect as given,
+      // unsorted, with no moveTo after it.
+      self.add_rect(x, y, width, height);
+      return;
+    }
+    // Row-wise: top-left, top-right, bottom-left, bottom-right.
+    let mut c = match r {
+      [r0] => [*r0; 4],
+      [r0, r1] => [*r0, *r1, *r1, *r0],
+      [r0, r1, r2] => [*r0, *r1, *r1, *r2],
+      [r0, r1, r2, r3, ..] => [*r0, *r1, *r3, *r2],
+      [] => [(0.0, 0.0); 4],
+    };
     let mut clockwise = true;
-    if width < 0f32 {
+    if width < 0.0 {
+      // Horizontal flip
       clockwise = false;
       x += width;
       width = -width;
-      radii.swap(0, 1);
-      radii.swap(2, 3);
+      c.swap(0, 1);
+      c.swap(2, 3);
     }
-    if height < 0f32 {
+    if height < 0.0 {
+      // Vertical flip
       clockwise = !clockwise;
       y += height;
       height = -height;
-      radii.swap(0, 2);
-      radii.swap(1, 3);
+      c.swap(0, 2);
+      c.swap(1, 3);
     }
+    // SkRRect order: upper-left, upper-right, lower-right, lower-left.
+    let radii = [
+      c[0].0, c[0].1, c[1].0, c[1].1, c[3].0, c[3].1, c[2].0, c[2].1,
+    ];
     unsafe { ffi::skiac_path_round_rect(self.0, x, y, width, height, radii.as_ptr(), clockwise) };
     unsafe { ffi::skiac_path_move_to(self.0, x, y) };
   }

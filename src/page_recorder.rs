@@ -104,9 +104,12 @@ pub struct PageRecorder {
   // and cannot reproduce the write, so get_picture() has to be rebased on a
   // surface snapshot before returning a composite.
   surface_dirty: bool,
-  current_transform: Option<Matrix>, // Transform to restore after layer promotion
-  current_clip: Option<SkPath>,      // Clip path to restore after layer promotion
-  save_count: usize,                 // Track save stack depth to restore after layer promotion
+  // The context's save stack, replayed after a recording restart like
+  // Blink's RestoreMatrixClipStack (canvas_2d_recorder_context.cc:793-821):
+  // one entry per open save(), then the current level. Each level keeps its
+  // CTM and the clips added while it was current.
+  saved_levels: Vec<RecorderLevel>,
+  top_level: RecorderLevel,
   // Byte cap that trips flush_if_recording_limit_exceeded. A field rather
   // than MAX_RECORDED_BYTES so tests can shrink it and exercise the flush
   // path in a handful of ops instead of filling 32 MiB.
@@ -116,6 +119,14 @@ pub struct PageRecorder {
   consolidations: u64,
   // alpha:false: reset() clears to opaque black instead of transparent.
   opaque: bool,
+}
+
+/// One level of the context's save stack, for resume_recording.
+#[derive(Default)]
+struct RecorderLevel {
+  transform: Matrix,
+  /// Each clip() of this level: the CTM it ran under and its path.
+  clips: Vec<(Matrix, SkPath)>,
 }
 
 impl PageRecorder {
@@ -137,9 +148,8 @@ impl PageRecorder {
       retained_rasters: HashSet::new(),
       content_version: 0,
       surface_dirty: false,
-      current_transform: None,
-      current_clip: None,
-      save_count: 0,
+      saved_levels: Vec::new(),
+      top_level: RecorderLevel::default(),
       recording_limit: MAX_RECORDED_BYTES,
       consolidations: 0,
       opaque: false,
@@ -150,32 +160,43 @@ impl PageRecorder {
     self.opaque = true;
   }
 
-  /// Begin a new recording and restore the current canvas state (save stack, clip, transform).
+  /// Begin a new recording and replay the context's save stack into it, as
+  /// Blink's RestoreMatrixClipStack does: the root level, then one save()
+  /// per later level; each level's own clips in the order they were added,
+  /// then that level's CTM. A later canvas.restore() then lands on exactly
+  /// the saved clip and matrix.
+  ///
+  /// Blink replays each clip as its device-space path at identity. Here each
+  /// clip runs again as recorded, its path under its CTM: the same Skia ops,
+  /// so a restart never changes a pixel, as in Chrome. A device-space path
+  /// at identity clips a few edge pixels differently in this Skia build.
   fn resume_recording(&mut self) {
     self
       .current
       .begin_recording(0.0, 0.0, self.width, self.height);
+    let mut charges = Vec::new();
     if let Some(canvas) = self.current.get_recording_canvas() {
-      for _ in 0..self.save_count {
-        canvas.save();
-      }
-      if let Some(ref clip_path) = self.current_clip {
-        canvas.reset_transform();
-        canvas.set_clip_path(clip_path);
-      }
-      if let Some(ref transform) = self.current_transform {
-        canvas.set_transform(transform);
+      let levels = self
+        .saved_levels
+        .iter()
+        .chain(std::iter::once(&self.top_level));
+      for (index, level) in levels.enumerate() {
+        if index > 0 {
+          canvas.save();
+        }
+        for (transform, clip) in &level.clips {
+          canvas.set_transform(transform);
+          canvas.set_clip_path(clip);
+          charges.push((clip.generation_id(), clip.estimated_bytes()));
+        }
+        canvas.set_transform(&level.transform);
       }
     }
-    // The set_clip_path above re-pins the clip's SkPathData inside the new
-    // recording: it is the DEVICE-space clip (ctx.sync_clip_to_recorder
-    // stores the transformed path), a different data object than the raw
-    // path clip() already charged, so it needs its own key. Dedup makes it
-    // once per window per data version; after consolidate clears the set
-    // the resumed layer gets a fresh charge, matching its fresh reference.
-    if let Some(ref clip_path) = self.current_clip {
-      let bytes = clip_path.estimated_bytes();
-      let data_id = clip_path.generation_id();
+    // Each replayed clip re-pins its SkPathData inside the new recording.
+    // Dedup makes it once per window per data version; after consolidate
+    // clears the set the resumed layer gets a fresh charge, matching its
+    // fresh reference.
+    for (data_id, bytes) in charges {
       self.account_raster_resource(RasterKey::Path { data_id }, bytes);
     }
     self.changed = false;
@@ -209,24 +230,33 @@ impl PageRecorder {
     }
   }
 
-  /// Set the current transform to restore after layer promotion
+  /// The current level's CTM changed.
   pub fn set_transform(&mut self, transform: &Matrix) {
-    self.current_transform = Some(transform.clone());
+    self.top_level.transform = transform.clone();
   }
 
-  /// Set the current clip path to restore after layer promotion
-  pub fn set_clip(&mut self, clip_path: Option<SkPath>) {
-    self.current_clip = clip_path;
+  /// clip() added `path` under `transform` to the current level.
+  pub fn add_clip(&mut self, transform: &Matrix, path: SkPath) {
+    self.top_level.clips.push((transform.clone(), path));
   }
 
-  /// Increment save count (called when ctx.save() is invoked)
-  pub fn increment_save(&mut self) {
-    self.save_count += 1;
+  /// ctx.save(): the new level starts with the same CTM and no clips of its
+  /// own (Blink's kDontCopyClipList).
+  pub fn push_save(&mut self) {
+    let next = RecorderLevel {
+      transform: self.top_level.transform.clone(),
+      clips: Vec::new(),
+    };
+    self
+      .saved_levels
+      .push(std::mem::replace(&mut self.top_level, next));
   }
 
-  /// Decrement save count (called when ctx.restore() is invoked)
-  pub fn decrement_save(&mut self) {
-    self.save_count = self.save_count.saturating_sub(1);
+  /// ctx.restore(): back to the level below.
+  pub fn pop_restore(&mut self) {
+    if let Some(level) = self.saved_levels.pop() {
+      self.top_level = level;
+    }
   }
 
   /// Get composite picture of all layers (for drawCanvas)
@@ -365,11 +395,9 @@ impl PageRecorder {
     // pre-clear snapshot must not dedup the next draw against the cleared
     // raster under the old (id, version) key.
     self.content_version += 1;
-    // Reset transform and clip state
-    self.current_transform = None;
-    self.current_clip = None;
-    // Reset save count
-    self.save_count = 0;
+    // Reset the save stack mirror
+    self.saved_levels.clear();
+    self.top_level = RecorderLevel::default();
   }
 
   /// Write pixel data as a separate layer, bypassing clip and transform.
