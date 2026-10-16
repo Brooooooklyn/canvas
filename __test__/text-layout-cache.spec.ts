@@ -160,15 +160,16 @@ test('an SVG canvas writes a line the same way however often it was drawn before
       t.is(svg(line, text, x), first, `${text} at ${x}`)
     }
   })
-  // One text element where FreeType draws: the Cascadia line is drawn as one
-  // blob from its first draw. CoreText and Fontations place glyphs at Blink's
-  // 16.16 advances, whose float sums are exact only on short lines, so there
-  // a line this long keeps its runs.
+  // One text element where FreeType (Windows) or Fontations (Linux) draws:
+  // the Cascadia line is drawn as one blob from its first draw. CoreText's
+  // glyph boxes are a pixel wider (SkScalerContext_mac_ct.cpp pads them for
+  // antialiasing), so on macOS the right edge of wide glyphs such as 'r' and
+  // 'u' passes the font box MakeSingleBlob checks, and the line keeps its runs.
   const elements = svg(LINES[0], `${LINES[0].text} one`, 10).match(/<text/g)?.length
-  if (process.platform !== 'darwin' && process.platform !== 'linux') {
-    t.is(elements, 1)
-  } else {
+  if (process.platform === 'darwin') {
     t.true(elements! > 1)
+  } else {
+    t.is(elements, 1)
   }
 })
 
