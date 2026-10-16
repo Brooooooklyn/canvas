@@ -23,6 +23,7 @@
 #if defined(__APPLE__)
 #include <include/ports/SkFontMgr_mac_ct.h>
 #include <include/ports/SkTypeface_mac.h>
+#include <src/ports/SkTypeface_mac_ct.h>
 #endif
 
 #include "skia_c.hpp"
@@ -246,26 +247,172 @@ sk_sp<SkFontMgr> MakeCoreTextFontManager() {
   return SkFontMgr_New_CoreText(nullptr);
 }
 
-std::vector<sk_sp<SkTypeface>> MakeSystemUiTypefaces() {
-  std::vector<sk_sp<SkTypeface>> faces;
-  // font_matcher_mac.mm MatchSystemUIFont: CoreText's UI font, its italic
-  // from CTFontCreateCopyWithSymbolicTraits; weight and width are its axes.
-  CTFontRef upright =
-      CTFontCreateUIFontForLanguage(kCTFontUIFontSystem, 0, nullptr);
-  if (!upright) {
-    return faces;
+SkFontStyle CoreTextFontStyle(SkTypeface* face) {
+  CTFontRef font = SkTypeface_GetCTFontRef(face);
+  if (!font) {
+    return face->fontStyle();
   }
-  if (sk_sp<SkTypeface> face = SkMakeTypefaceFromCTFont(upright)) {
-    faces.push_back(std::move(face));
+  // SkTypeface_Mac::Make reads the traits of the font's descriptor;
+  // CTFontCopyTraits has them all.
+  CFDictionaryRef traits = CTFontCopyTraits(font);
+  if (!traits) {
+    return face->fontStyle();
   }
-  if (CTFontRef italic = CTFontCreateCopyWithSymbolicTraits(
-          upright, 0, nullptr, kCTFontItalicTrait, kCTFontItalicTrait)) {
-    if (sk_sp<SkTypeface> face = SkMakeTypefaceFromCTFont(italic)) {
-      faces.push_back(std::move(face));
+  const void* keys[] = {kCTFontTraitsAttribute};
+  const void* values[] = {traits};
+  CFDictionaryRef attributes = CFDictionaryCreate(
+      kCFAllocatorDefault, keys, values, 1, &kCFTypeDictionaryKeyCallBacks,
+      &kCFTypeDictionaryValueCallBacks);
+  CFRelease(traits);
+  if (!attributes) {
+    return face->fontStyle();
+  }
+  CTFontDescriptorRef descriptor =
+      CTFontDescriptorCreateWithAttributes(attributes);
+  CFRelease(attributes);
+  if (!descriptor) {
+    return face->fontStyle();
+  }
+  const SkFontStyle style = SkCTFontDescriptorGetSkFontStyle(descriptor, false);
+  CFRelease(descriptor);
+  return style;
+}
+
+namespace {
+
+// The family "system-ui": CoreText's UI font and its copies with the bold
+// and italic traits. TypefaceFontProvider would match them by their
+// SkTypeface::fontStyle, which is upright 400 for the italic ones.
+class SystemUiStyleSet final : public SkFontStyleSet {
+ public:
+  // Each face with the symbolic traits it was made with.
+  explicit SystemUiStyleSet(
+      std::vector<std::pair<sk_sp<SkTypeface>, uint32_t>> faces)
+      : faces_(std::move(faces)) {
+    for (const auto& face : faces_) {
+      styles_.push_back(CoreTextFontStyle(face.first.get()));
     }
-    CFRelease(italic);
   }
-  CFRelease(upright);
-  return faces;
+
+  int count() override { return static_cast<int>(faces_.size()); }
+  void getStyle(int index, SkFontStyle* style, SkString* name) override {
+    if (style) {
+      *style = styles_[index];
+    }
+    if (name) {
+      name->set(kSystemUiFamily);
+    }
+  }
+  sk_sp<SkTypeface> createTypeface(int index) override {
+    return faces_[index].first;
+  }
+  // font_matcher_mac.mm MatchSystemUIFont: the italic trait for any slant
+  // but normal, the bold trait from weight 600 (kBoldThreshold); the weight
+  // and width are then the variable axes.
+  sk_sp<SkTypeface> matchStyle(const SkFontStyle& pattern) override {
+    const uint32_t italic =
+        pattern.slant() != SkFontStyle::kUpright_Slant ? kCTFontItalicTrait : 0;
+    const uint32_t bold = pattern.weight() >= SkFontStyle::kSemiBold_Weight
+                              ? kCTFontBoldTrait
+                              : 0;
+    for (const uint32_t traits : {italic | bold, italic, bold, 0u}) {
+      for (const auto& face : faces_) {
+        if (face.second == traits) {
+          return face.first;
+        }
+      }
+    }
+    return nullptr;
+  }
+
+  static constexpr char kSystemUiFamily[] = "system-ui";
+
+ private:
+  std::vector<std::pair<sk_sp<SkTypeface>, uint32_t>> faces_;
+  std::vector<SkFontStyle> styles_;
+};
+
+// The one family SystemUiStyleSet, like TypefaceFontProvider with one family.
+class SystemUiFontMgr final : public SkFontMgr {
+ public:
+  explicit SystemUiFontMgr(sk_sp<SystemUiStyleSet> family)
+      : family_(std::move(family)) {}
+
+ protected:
+  int onCountFamilies() const override { return 1; }
+  void onGetFamilyName(int, SkString* name) const override {
+    name->set(SystemUiStyleSet::kSystemUiFamily);
+  }
+  sk_sp<SkFontStyleSet> onCreateStyleSet(int) const override { return family_; }
+  sk_sp<SkFontStyleSet> onMatchFamily(const char name[]) const override {
+    return name && strcmp(name, SystemUiStyleSet::kSystemUiFamily) == 0
+               ? family_
+               : nullptr;
+  }
+  sk_sp<SkTypeface> onMatchFamilyStyle(
+      const char name[],
+      const SkFontStyle& style) const override {
+    sk_sp<SkFontStyleSet> family = this->onMatchFamily(name);
+    return family ? family->matchStyle(style) : nullptr;
+  }
+  sk_sp<SkTypeface> onMatchFamilyStyleCharacter(const char[],
+                                                const SkFontStyle&,
+                                                const char*[],
+                                                int,
+                                                SkUnichar) const override {
+    return nullptr;
+  }
+  sk_sp<SkTypeface> onMakeFromData(sk_sp<SkData>, int) const override {
+    return nullptr;
+  }
+  sk_sp<SkTypeface> onMakeFromStreamIndex(std::unique_ptr<SkStreamAsset>,
+                                          int) const override {
+    return nullptr;
+  }
+  sk_sp<SkTypeface> onMakeFromStreamArgs(
+      std::unique_ptr<SkStreamAsset>,
+      const SkFontArguments&) const override {
+    return nullptr;
+  }
+  sk_sp<SkTypeface> onMakeFromFile(const char[], int) const override {
+    return nullptr;
+  }
+  sk_sp<SkTypeface> onLegacyMakeTypeface(const char[],
+                                         SkFontStyle style) const override {
+    return family_->matchStyle(style);
+  }
+
+ private:
+  sk_sp<SystemUiStyleSet> family_;
+};
+
+}  // namespace
+
+sk_sp<SkFontMgr> MakeSystemUiFontManager(std::set<SkTypefaceID>* ids) {
+  std::vector<std::pair<sk_sp<SkTypeface>, uint32_t>> faces;
+  // font_matcher_mac.mm MatchSystemUIFont: CoreText's UI font, and its copy
+  // with the bold or italic traits (CTFontCreateCopyWithSymbolicTraits).
+  if (CTFontRef upright =
+          CTFontCreateUIFontForLanguage(kCTFontUIFontSystem, 0, nullptr)) {
+    for (const uint32_t traits :
+         {0u, uint32_t{kCTFontBoldTrait}, uint32_t{kCTFontItalicTrait},
+          uint32_t{kCTFontBoldTrait | kCTFontItalicTrait}}) {
+      const auto symbolic = static_cast<CTFontSymbolicTraits>(traits);
+      CTFontRef font = traits ? CTFontCreateCopyWithSymbolicTraits(
+                                    upright, 0, nullptr, symbolic, symbolic)
+                              : static_cast<CTFontRef>(CFRetain(upright));
+      if (!font) {
+        continue;
+      }
+      if (sk_sp<SkTypeface> face = SkMakeTypefaceFromCTFont(font)) {
+        ids->insert(face->uniqueID());
+        faces.emplace_back(std::move(face), traits);
+      }
+      CFRelease(font);
+    }
+    CFRelease(upright);
+  }
+  return sk_make_sp<SystemUiFontMgr>(
+      sk_make_sp<SystemUiStyleSet>(std::move(faces)));
 }
 #endif
