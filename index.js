@@ -473,7 +473,8 @@ CanvasRenderingContext2D.prototype.setTransform = function setTransform() {
     }
     return _setTransform.call(this, a, arguments[1], arguments[2], arguments[3], arguments[4], arguments[5])
   }
-  const init = arguments[0]
+  // Past arguments.length, arguments[0] would read Object.prototype[0].
+  const init = arguments.length > 0 ? arguments[0] : undefined
   if (init !== undefined && init !== null) ctxReceiver.call(this)
   const m = matrix2DFromInit(init, SET_TRANSFORM, true)
   return _setTransform.call(this, m[0], m[1], m[2], m[3], m[4], m[5])
@@ -495,7 +496,8 @@ Path2D.prototype.addPath = function addPath() {
     argumentCountError(pathBrand, this, 'addPath', 'Path2D', 1, arguments.length)
   }
   const path = arguments[0]
-  const transform = arguments[1]
+  // Past arguments.length, arguments[1] would read Object.prototype[1].
+  const transform = arguments.length > 1 ? arguments[1] : undefined
   if (transform === undefined || transform === null) {
     return _addPathWithoutTransform.call(this, path)
   }
