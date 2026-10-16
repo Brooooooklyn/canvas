@@ -34,10 +34,23 @@ function sums(data: Uint8ClampedArray) {
   return s
 }
 
-function checkScene(t: any, scene: Scene, expected: number[], size = W) {
+// The Windows ARM64 Skia build rounds raster math a little differently (main
+// skips exact checks there too: pathkit.spec.ts).
+const WIN_ARM64 = process.platform === 'win32' && process.arch === 'arm64'
+
+/** `winArm64Tolerance`: how far each sum may be from Chrome's on Windows ARM64. */
+function checkScene(t: any, scene: Scene, expected: number[], size = W, winArm64Tolerance = 0) {
   const noRead = frame(scene, false, size)
   t.deepEqual(frame(scene, true, size), noRead, 'a mid-frame read changes the result')
-  t.deepEqual(sums(noRead), expected)
+  const actual = sums(noRead)
+  if (WIN_ARM64 && winArm64Tolerance > 0) {
+    t.true(
+      actual.every((sum, i) => Math.abs(sum - expected[i]) <= winArm64Tolerance),
+      `sums ${actual} vs Chrome ${expected}`,
+    )
+  } else {
+    t.deepEqual(actual, expected)
+  }
 }
 
 test('clip replay: nested rotated clips are the same with and without a mid-frame read', (t) => {
@@ -178,6 +191,12 @@ test('clip replay: three nested levels with transforms', (t) => {
       ctx.fillRect(-30, -30, 60, 60)
     },
     [15948, 32909, 69836, 277686],
+    W,
+    // Windows ARM64 CI measured [15942, 32910, 69730, 277639] (-6, +1, -106,
+    // -47), with and without the read. On macOS, both rotations and the x
+    // scale 1e-6 larger give the same sums, so this is rounding at the rotated
+    // edges. A clip applied twice is off by up to 2202.
+    106,
   )
 })
 
