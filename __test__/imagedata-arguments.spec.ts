@@ -255,6 +255,84 @@ test('putImageData ignores a dirty rect whose area overflows an int', (t) => {
   t.deepEqual(read(c, 2, 2), Array(16).fill(0))
 })
 
+/**
+ * Runs `f` with a getter on target[key] for each key of `values`, then
+ * removes them. The keys read, in order.
+ */
+function withIndexGetters(target: object, values: Record<string, unknown>, f: () => void) {
+  let reads = ''
+  const keys = Object.keys(values)
+  for (const key of keys) {
+    Object.defineProperty(target, key, {
+      configurable: true,
+      get() {
+        reads += key
+        return values[key]
+      },
+      set(value) {
+        Object.defineProperty(this, key, { value, writable: true, enumerable: true, configurable: true })
+      },
+    })
+  }
+  try {
+    f()
+  } finally {
+    for (const key of keys) delete (target as any)[key]
+  }
+  return reads
+}
+
+// Serial: the getters are on prototypes that every test in the file uses.
+test.serial('putImageData reads no argument that was not passed, as Chrome', (t) => {
+  // Under the test loader, index.js has a source map. Node parses it when it
+  // first formats a stack through index.js, and that parse reads
+  // Object.prototype[0]: throw through index.js before the getters are there.
+  void t.throws(() => ctx2d().putImageData())?.stack
+  const from = (first: number, value: unknown) =>
+    Object.fromEntries(Array.from({ length: 10 - first }, (_, i) => [first + i, value]))
+  // All of quad(), its (0,0) pixel only, nothing.
+  const all = [255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 255, 255]
+  const red = [255, 0, 0, 255, ...Array(12).fill(0)]
+  const none = Array(16).fill(0)
+  const overload = typeError(PUT, OVERLOAD)
+  const cases: [object, Record<string, unknown>, (c: any, id: ImageData) => unknown, object, number[]][] = [
+    [Object.prototype, { 3: 0, 4: 0, 5: 1, 6: 1 }, (c, id) => c.putImageData(id, 0, 0), { ok: 'undefined' }, all],
+    [Object.prototype, from(3, 1), (c, id) => c.putImageData(id, 0, 0), { ok: 'undefined' }, all],
+    [Object.prototype, from(3, 'x'), (c, id) => c.putImageData(id, 0, 0), { ok: 'undefined' }, all],
+    [
+      Object.prototype,
+      from(3, 0),
+      (c, id) => c.putImageData(id, 1, 1),
+      { ok: 'undefined' },
+      [...Array(12).fill(0), 255, 0, 0, 255],
+    ],
+    [Object.prototype, from(4, 1), (c, id) => c.putImageData(id, 0, 0, undefined), overload, none],
+    [Object.prototype, from(5, 1), (c, id) => c.putImageData(id, 0, 0, 0, 0), overload, none],
+    [Object.prototype, from(6, 1), (c, id) => c.putImageData(id, 0, 0, 0, 0, 1), overload, none],
+    [Object.prototype, from(7, 1), (c, id) => c.putImageData(id, 0, 0, 0, 0, 1, 1), { ok: 'undefined' }, red],
+    [
+      Object.prototype,
+      from(3, 1),
+      (c, id) => c.putImageData.call({}, id, 0, 0),
+      { ctor: 'TypeError', msg: 'Illegal invocation', stack0: 'TypeError: Illegal invocation' },
+      none,
+    ],
+    [Array.prototype, from(0, 1), (c, id) => c.putImageData(id, 0, 0), { ok: 'undefined' }, all],
+  ]
+  for (const [target, values, f, expected, pixels] of cases) {
+    const c = ctx2d()
+    const id = quad()
+    let r: object = { not: 'run' }
+    const reads = withIndexGetters(target, values, () => {
+      r = result(() => f(c, id))
+    })
+    t.deepEqual([r, read(c, 2, 2)], [expected, pixels], f.toString())
+    t.is(reads, '', f.toString())
+  }
+  t.false('3' in Object.prototype)
+  t.false('0' in Array.prototype)
+})
+
 test('getImageData needs 4 arguments', (t) => {
   const c = ctx2d()
   const required = (present: number) => typeError(GET, `4 arguments required, but only ${present} present.`)

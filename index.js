@@ -338,13 +338,16 @@ Object.defineProperty(CanvasRenderingContext2D.prototype.isPointInStroke, 'lengt
 const _createImageData = CanvasRenderingContext2D.prototype.createImageData
 
 CanvasRenderingContext2D.prototype.createImageData = function createImageData() {
+  const count = arguments.length
+  // Past arguments.length, arguments[i] would read Object.prototype[i]: pass
+  // undefined there, as napi pads missing arguments.
   return _createImageData.call(
     this,
-    arguments[0],
-    arguments[1],
-    arguments[2],
-    arguments[3],
-    ARGUMENT_COUNTS[Math.min(arguments.length, 4)],
+    count > 0 ? arguments[0] : undefined,
+    count > 1 ? arguments[1] : undefined,
+    count > 2 ? arguments[2] : undefined,
+    count > 3 ? arguments[3] : undefined,
+    ARGUMENT_COUNTS[Math.min(count, 4)],
   )
 }
 Object.defineProperty(CanvasRenderingContext2D.prototype.createImageData, 'length', { value: 1 })
@@ -355,19 +358,22 @@ Object.defineProperty(CanvasRenderingContext2D.prototype.createImageData, 'lengt
 const _putImageData = CanvasRenderingContext2D.prototype.putImageData
 
 CanvasRenderingContext2D.prototype.putImageData = function putImageData() {
-  if (arguments.length < 3) {
-    argumentCountError(ctxBrand, this, 'putImageData', 'CanvasRenderingContext2D', 3, arguments.length)
+  const count = arguments.length
+  if (count < 3) {
+    argumentCountError(ctxBrand, this, 'putImageData', 'CanvasRenderingContext2D', 3, count)
   }
+  // Past arguments.length, arguments[i] would read Object.prototype[i]: pass
+  // undefined there, as napi pads missing arguments.
   return _putImageData.call(
     this,
     arguments[0],
     arguments[1],
     arguments[2],
-    arguments[3],
-    arguments[4],
-    arguments[5],
-    arguments[6],
-    ARGUMENT_COUNTS[Math.min(arguments.length, 7)],
+    count > 3 ? arguments[3] : undefined,
+    count > 4 ? arguments[4] : undefined,
+    count > 5 ? arguments[5] : undefined,
+    count > 6 ? arguments[6] : undefined,
+    ARGUMENT_COUNTS[Math.min(count, 7)],
   )
 }
 Object.defineProperty(CanvasRenderingContext2D.prototype.putImageData, 'length', { value: 3 })
