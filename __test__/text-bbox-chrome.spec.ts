@@ -322,7 +322,10 @@ test('spacing that is not negative moves no word left of the text before it', (t
         }
         ctx.clearRect(0, 0, 600, 120)
         ctx.fillText(text, 300, 80)
-        const inkRight = Number(inkBox(ctx, 600, 120).split(',')[2])
+        // No painted box where the pixels are not compared (PIXEL_PINS).
+        const box = inkBox(ctx, 600, 120)
+        if (box === null) continue
+        const inkRight = Number(box.split(',')[2])
         if (!(inkRight >= Math.floor(300 + least) - 1)) {
           out.push(
             `${font} ls${letterSpacing} ws${wordSpacing} ${JSON.stringify(text)}: ink right ${inkRight} < ${300 + least}`,
