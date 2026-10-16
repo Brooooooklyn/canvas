@@ -359,6 +359,61 @@ test('setTransform checks the receiver before it reads any argument', (t) => {
   t.is(log.join(), '')
 })
 
+/**
+ * Runs `f` with a getter on Object.prototype[key] for each key of `values`,
+ * then removes them. The keys read, in order.
+ */
+function withIndexGetters(values: Record<string, unknown>, f: () => void) {
+  let reads = ''
+  const keys = Object.keys(values)
+  for (const key of keys) {
+    Object.defineProperty(Object.prototype, key, {
+      configurable: true,
+      get() {
+        reads += key
+        return values[key]
+      },
+      set(value) {
+        Object.defineProperty(this, key, { value, writable: true, enumerable: true, configurable: true })
+      },
+    })
+  }
+  try {
+    f()
+  } finally {
+    for (const key of keys) delete (Object.prototype as any)[key]
+  }
+  return reads
+}
+
+// Serial: the getters are on the Object.prototype of every test in the file.
+test.serial('setTransform reads no argument that was not passed, as Chrome', (t) => {
+  const scale3 = { a: 3, d: 3 }
+  const from = (first: number, value: unknown) =>
+    Object.fromEntries(Array.from({ length: 10 - first }, (_, i) => [first + i, value]))
+  const identity = ok([1, 0, 0, 1, 0, 0])
+  const cases: [Record<string, unknown>, (ctx: Ctx) => void, ReturnType<typeof ok>][] = [
+    [{ 0: scale3 }, (ctx) => ctx.setTransform(), identity],
+    [{ 0: 5 }, (ctx) => ctx.setTransform(), identity],
+    [from(0, scale3), (ctx) => ctx.setTransform(), identity],
+    [{ 0: scale3 }, (ctx) => ctx.setTransform(undefined), identity],
+    [from(1, 7), (ctx) => ctx.setTransform({ a: 4, d: 4 }), ok([4, 0, 0, 4, 0, 0])],
+    [from(6, 7), (ctx) => ctx.setTransform(4, 0, 0, 4, 1, 1), ok([4, 0, 0, 4, 1, 1])],
+  ]
+  for (const [values, f, expected] of cases) {
+    let reads = 'not run'
+    t.deepEqual(
+      run((ctx) => {
+        reads = withIndexGetters(values, () => f(ctx))
+      }),
+      expected,
+      f.toString(),
+    )
+    t.is(reads, '', f.toString())
+  }
+  t.false('0' in Object.prototype)
+})
+
 test('setTransform errors keep the bare text in the stack, as Chrome', (t) => {
   const ctx = createCanvas(4, 4).getContext('2d')
   const cases: [unknown[], string, string][] = [

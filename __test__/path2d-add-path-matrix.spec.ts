@@ -399,6 +399,61 @@ test('addPath without a transform adds the path as it is', (t) => {
   t.false('_addPathWithoutTransform' in Path2D.prototype)
 })
 
+/**
+ * Runs `f` with a getter on Object.prototype[key] for each key of `values`,
+ * then removes them. The keys read, in order.
+ */
+function withIndexGetters(values: Record<string, unknown>, f: () => void) {
+  let reads = ''
+  const keys = Object.keys(values)
+  for (const key of keys) {
+    Object.defineProperty(Object.prototype, key, {
+      configurable: true,
+      get() {
+        reads += key
+        return values[key]
+      },
+      set(value) {
+        Object.defineProperty(this, key, { value, writable: true, enumerable: true, configurable: true })
+      },
+    })
+  }
+  try {
+    f()
+  } finally {
+    for (const key of keys) delete (Object.prototype as any)[key]
+  }
+  return reads
+}
+
+// Serial: the getters are on the Object.prototype of every test in the file.
+test.serial('addPath reads no argument that was not passed, as Chrome', (t) => {
+  const scale3 = { a: 3, d: 3 }
+  const from = (first: number, value: unknown) =>
+    Object.fromEntries(Array.from({ length: 10 - first }, (_, i) => [first + i, value]))
+  const square = added([0, 0, 9, 9], 25500)
+  const cases: [Record<string, unknown>, (p: Path2D, q: Path2D) => void, ReturnType<typeof added>][] = [
+    [{ 1: scale3 }, (p, q) => p.addPath(q), square],
+    [{ 1: 5 }, (p, q) => p.addPath(q), square],
+    [from(1, scale3), (p, q) => p.addPath(q), square],
+    [{ 1: scale3 }, (p, q) => p.addPath(q, undefined), square],
+    [{ 1: scale3 }, (p, q) => (p.addPath as any)(q, null), square],
+    [from(2, scale3), (p, q) => p.addPath(q, { e: 5 } as any), added([5, 0, 14, 9], 25500)],
+  ]
+  for (const [values, f, expected] of cases) {
+    let reads = 'not run'
+    t.deepEqual(
+      run((p, q) => {
+        reads = withIndexGetters(values, () => f(p, q))
+      }),
+      expected,
+      f.toString(),
+    )
+    t.is(reads, '', f.toString())
+  }
+  t.false('1' in Object.prototype)
+})
+
 test('addPath errors keep the bare text in the stack, as Chrome', (t) => {
   const p = new Path2D()
   const q = new Path2D()
