@@ -132,6 +132,14 @@ bool TextRasterPolicy::UsesLcdText(const SkFont&, const SkMatrix&) const {
 }
 #endif
 
+bool TextRasterPolicy::DrawFontUsesDevice() const {
+#if defined(__APPLE__)
+  return geometric_precision_ && lcd_text_;
+#else
+  return false;
+#endif
+}
+
 SkFont TextRasterPolicy::DrawFont(const SkFont& shaped,
                                   const SkMatrix* device) const {
   SkFont font = shaped;
