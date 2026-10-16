@@ -181,6 +181,82 @@ test('zero width spaces get no letter spacing like Chrome', (t) => {
   t.deepEqual(spacedRows(FIXTURE.zeroWidth), [])
 })
 
+// Blink gives no letter spacing to a HarfBuzz cluster that starts with a
+// default ignorable code point, form feed, carriage return or U+FFFC
+// (Character::TreatAsZeroWidthSpace), whether it shapes word by word or the
+// whole text (fontKerning normal and optimizeLegibility do for this font,
+// whose space is kerned). Its clusters are graphemes: a ZWJ, U+034F or a
+// variation selector is inside the cluster before it. Above U+FFFF it reads
+// a lead surrogate, so U+E0001, which starts a cluster, is spaced. The
+// characters stay in their word's shaping: 'AV' keeps its kerning across a
+// ZWJ or U+2060. Chrome 155.0.8059.80, macOS arm64, 40px Source Serif Pro
+// from a FontFace.
+const NO_SPACING_MODES: Record<string, Partial<Ctx>> = {
+  default: {},
+  'fontKerning normal': { fontKerning: 'normal' },
+  optimizeLegibility: { textRendering: 'optimizeLegibility' },
+}
+const NO_SPACING_ROWS: [string, string, string, number][] = [
+  ...['6px', '-3px'].flatMap((ls) =>
+    Object.keys(NO_SPACING_MODES).flatMap((mode) =>
+      ['', '\u200B', '\uFEFF', '\u00AD', '\u200D', '\u2060'].map((zw): [string, string, string, number] => [
+        ls,
+        mode,
+        `a${zw}b`,
+        ls === '6px' ? 55.43998718261719 : 37.43998718261719,
+      ]),
+    ),
+  ),
+  ['6px', 'default', 'AV', 60.75999450683594],
+  ['6px', 'default', 'A\u200DV', 60.75999450683594],
+  ['6px', 'default', 'A\u2060V', 60.75999450683594],
+  ['6px', 'fontKerning normal', 'A\u200DV', 60.75999450683594],
+  ['6px', 'fontKerning normal', 'A\u2060V', 60.75999450683594],
+  ['6px', 'default', 'a\u200Cb', 55.43998718261719],
+  ['6px', 'default', 'a\u034Fb', 55.43998718261719],
+  ['6px', 'default', 'a\uFE0Fb', 55.43998718261719],
+  ['6px', 'default', 'a\u{E0100}b', 55.43998718261719],
+  ['6px', 'default', 'a\u{E0001}b', 61.43998718261719],
+]
+
+function spacedContext(ls: string, mode: string, width = 10, height = 10) {
+  const ctx = createCanvas(width, height).getContext('2d')
+  ctx.font = '40px SerifProT'
+  ctx.letterSpacing = ls
+  Object.assign(ctx, NO_SPACING_MODES[mode])
+  return ctx
+}
+
+test('default ignorable characters get no letter spacing in either shaping like Chrome', (t) => {
+  const out: string[] = []
+  for (const [ls, mode, text, chrome] of NO_SPACING_ROWS) {
+    const width = spacedContext(ls, mode).measureText(text).width
+    if (!(Math.abs(width - chrome) <= 1e-3)) {
+      out.push(`${ls} ${mode} ${JSON.stringify(text)}: ${width} (Chrome ${chrome})`)
+    }
+  }
+  t.deepEqual(out, [])
+  // Drawn, 'b' sits where it sits in 'ab' (Chrome: the same ink).
+  const pixels = (text: string) => {
+    const ctx = spacedContext('6px', 'fontKerning normal', 300, 80)
+    ctx.fillText(text, 10, 55)
+    return Buffer.from(ctx.getImageData(0, 0, 300, 80).data)
+  }
+  const ab = pixels('ab')
+  t.true(ab.some((v) => v !== 0))
+  t.true(pixels('a\u200Bb').equals(ab))
+  t.true(pixels('a\u2060b').equals(ab))
+  // A ZWJ emoji sequence stays one shaping, one glyph and one cluster
+  // (Chrome on macOS: 40 and 46). Only with an emoji font that joins it:
+  // Linux test containers have none.
+  const family = '\u{1F468}\u200D\u{1F469}\u200D\u{1F467}'
+  const width = (text: string, ls: string) => spacedContext(ls, 'default').measureText(text).width
+  if (Math.abs(width(family, '0px') - width('\u{1F468}', '0px')) <= 1e-3) {
+    t.true(Math.abs(width(family, '6px') - width(family, '0px') - 6) <= 1e-3, String(width(family, '6px')))
+    t.is(spacedContext('6px', 'fontKerning normal').measureText(family).width, width(family, '6px'))
+  }
+})
+
 // A word piece whose spacing outweighs its advance (a space with a large
 // negative wordSpacing or letterSpacing) moves the words after it left, and
 // nothing is clipped.
