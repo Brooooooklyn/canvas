@@ -22,6 +22,7 @@ mod select;
 mod sheet;
 mod values;
 
+use std::cell::Cell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -126,11 +127,13 @@ enum Loaded {
 type NestedKey = (Rc<str>, (i32, i32), (u32, u32));
 
 /// What every document of one SVG image shares: the resources, the work
-/// budget, and what was already loaded, by URL.
+/// budgets, and what was already loaded, by URL.
 pub(crate) struct Shared<'u> {
   prepared: Prepared,
   units: &'u FontUnits,
   elements_left: usize,
+  /// Bytes of substituted var() text left (cascade::VAR_TEXT_BUDGET).
+  var_budget: Rc<Cell<usize>>,
   raster_pixels: u64,
   loaded: HashMap<Rc<str>, Rc<Loaded>>,
   rasters: HashMap<(Rc<str>, u8), Option<usize>>,
@@ -145,6 +148,7 @@ impl<'u> Shared<'u> {
       prepared: Prepared::default(),
       units,
       elements_left: ELEMENT_BUDGET,
+      var_budget: Rc::new(Cell::new(cascade::VAR_TEXT_BUDGET)),
       raster_pixels: 0,
       loaded: HashMap::new(),
       rasters: HashMap::new(),
