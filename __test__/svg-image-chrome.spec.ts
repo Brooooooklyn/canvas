@@ -314,3 +314,53 @@ test('dropped SVG images with a nested raster are collected', (t) => {
   t.is(out.alpha, 255, 'the nested raster draws')
   t.true(out.collected >= out.N / 2, `${out.collected} of ${out.N} dropped images collected`)
 })
+
+// A nested SVG image is recorded once and replayed; after a font change it
+// is recorded again, so its text uses the same fonts as the top level's.
+test('a nested SVG image uses the fonts of the draw after GlobalFonts changes', (t) => {
+  const script = (scenario: string) => `
+    const { createHash } = require('node:crypto')
+    const { Image, createCanvas, GlobalFonts } = require(${JSON.stringify(join(DIR, '..', 'index.js'))})
+    const FONT = ${JSON.stringify(join(DIR, 'fonts', 'Oswald.ttf'))}
+    const family = 'SvgNestedFont_${scenario}'
+    const text = '<text x="4" y="36" font-family="' + family + '" font-size="32">Hello WMW</text>'
+    const inner = '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="50">' + text + '</svg>'
+    const svg = Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100">' + text +
+        '<image y="50" width="200" height="50" href="data:image/svg+xml,' + encodeURIComponent(inner) + '"/></svg>',
+    )
+    const load = () => {
+      const image = new Image()
+      image.src = svg
+      return image
+    }
+    // The top-level text (y 0..50) and the nested image's (y 50..100).
+    const bands = (image) => {
+      const ctx = createCanvas(200, 100).getContext('2d')
+      ctx.drawImage(image, 0, 0)
+      const band = (y) => createHash('sha1').update(ctx.getImageData(0, y, 200, 50).data).digest('hex')
+      return [band(0), band(50)]
+    }
+    let key = null
+    if (${JSON.stringify(scenario)} === 'remove') key = GlobalFonts.registerFromPath(FONT, family)
+    if (${JSON.stringify(scenario)} === 'setAlias') GlobalFonts.registerFromPath(FONT)
+    const image = load()
+    const before = bands(image)
+    if (${JSON.stringify(scenario)} === 'register') GlobalFonts.registerFromPath(FONT, family)
+    if (${JSON.stringify(scenario)} === 'remove') GlobalFonts.remove(key)
+    if (${JSON.stringify(scenario)} === 'setAlias') GlobalFonts.setAlias('Oswald', family)
+    console.log(JSON.stringify({ before, same: bands(image), fresh: bands(load()) }))
+  `
+  for (const scenario of ['register', 'remove', 'setAlias']) {
+    const run = spawnSync(process.execPath, ['--max-old-space-size=4096', '-e', script(scenario)], {
+      encoding: 'utf8',
+      timeout: 60_000,
+    })
+    t.is(run.status, 0, run.stderr)
+    const { before, same, fresh } = JSON.parse(run.stdout)
+    t.is(before[0], before[1], `${scenario}: the bands agree before`)
+    t.not(same[0], before[0], `${scenario}: the font change shows`)
+    t.is(same[1], same[0], `${scenario}: the nested text uses the new font too`)
+    t.deepEqual(same, fresh, `${scenario}: the same as a fresh image`)
+  }
+})
