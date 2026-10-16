@@ -678,6 +678,12 @@ pub mod ffi {
       max_width: f32,
     );
 
+    #[cfg(test)]
+    pub fn skiac_text_line_kept(
+      font_collection: *mut skiac_font_collection,
+      request: *const skiac_text_request,
+    ) -> bool;
+
     pub fn skiac_canvas_reset_transform(canvas: *mut skiac_canvas);
 
     pub fn skiac_canvas_get_device_clip_bounds(canvas: *mut skiac_canvas, ltrb: *mut i32) -> bool;
@@ -6199,4 +6205,89 @@ pub fn sk_svg_text_to_path(svg: &[u8], fc: &FontCollection) -> Option<SkiaDataRe
 unsafe extern "C" fn skiac_on_get_style(width: i32, weight: i32, slant: i32, raw_cb: *mut c_void) {
   let cb = Box::leak(unsafe { Box::from_raw(raw_cb as *mut Box<dyn FnMut(i32, i32, i32)>) });
   cb(width, weight, slant);
+}
+
+#[cfg(test)]
+mod text_line_tests {
+  use super::*;
+
+  fn settings() -> TextSettings {
+    TextSettings {
+      font: ComputedFont {
+        size: 8.0,
+        families: vec![FamilyName::Named("CacheLato".to_owned())],
+        ..ComputedFont::default()
+      },
+      stretch: FontStretch::Normal,
+      baseline: TextBaseline::default(),
+      align: TextAlign::default(),
+      direction: TextDirection::Ltr,
+      letter_spacing: 0.0,
+      word_spacing: 0.0,
+      variations: Vec::new(),
+      kerning: FontKerning::default(),
+      variant_caps: FontVariantCaps::default(),
+      lang: String::new(),
+      text_rendering: TextRendering::default(),
+    }
+  }
+
+  fn measure(collection: &FontCollection, settings: &TextSettings, text: &str) -> f32 {
+    let paint = Paint::default();
+    let mut metrics = ffi::skiac_line_metrics::default();
+    settings.with_request(text, |request| unsafe {
+      ffi::skiac_text_measure(collection.0, request, paint.0, &mut metrics);
+    });
+    metrics.width
+  }
+
+  fn kept(collection: &FontCollection, settings: &TextSettings, text: &str) -> bool {
+    settings.with_request(text, |request| unsafe {
+      ffi::skiac_text_line_kept(collection.0, request)
+    })
+  }
+
+  /// The laid out lines past the byte budget: the least recently used one
+  /// goes first, and the last 128 used stay.
+  #[test]
+  fn the_last_128_lines_used_stay_whatever_their_bytes() {
+    let collection = FontCollection::new();
+    let lato = concat!(
+      env!("CARGO_MANIFEST_DIR"),
+      "/__test__/fonts/Lato-Regular.ttf"
+    );
+    assert!(
+      collection
+        .register_from_path(lato, Some("CacheLato"))
+        .is_some()
+    );
+    let settings = settings();
+    // 14,000 glyphs a line, about 140 KB: 128 lines pass the 16 MB budget.
+    let lines: Vec<String> = (0..130)
+      .map(|i| format!("{i}{}", "i".repeat(14000)))
+      .collect();
+    for line in &lines[..129] {
+      assert!(measure(&collection, &settings, line) > 0.0);
+    }
+    assert!(!kept(&collection, &settings, &lines[0]));
+    for (i, line) in lines[1..129].iter().enumerate() {
+      assert!(kept(&collection, &settings, line), "line {}", i + 1);
+    }
+    // Line 1 measured again is the newest: line 129 drops line 2 instead.
+    measure(&collection, &settings, &lines[1]);
+    measure(&collection, &settings, &lines[129]);
+    assert!(kept(&collection, &settings, &lines[1]));
+    assert!(!kept(&collection, &settings, &lines[2]));
+    for line in &lines[3..130] {
+      assert!(kept(&collection, &settings, line));
+    }
+    // A dropped line gives its bytes back: once the lines left fit the
+    // budget, short lines are added without dropping any.
+    let short: Vec<String> = (0..200).map(|i| format!("s{i}")).collect();
+    for line in &short {
+      measure(&collection, &settings, line);
+    }
+    assert!(short.iter().all(|line| kept(&collection, &settings, line)));
+    assert!(kept(&collection, &settings, &lines[129]));
+  }
 }

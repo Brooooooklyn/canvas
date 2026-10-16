@@ -190,11 +190,13 @@ test('a line laid out after a nearly equal one measures what it measures alone',
   })
 })
 
-// The laid out lines are kept within a budget of bytes, but never fewer than
-// the last 128, which skparagraph's ParagraphCache (now off) kept whatever
-// their size. So a loop over 128 lines that pass the budget together lays
-// each line out once. Only the time shows it: measuring a kept line takes a
-// small part of a layout's time.
+// The laid out lines are kept within a budget of bytes, the least recently
+// used dropped first, but never fewer than the last 128 used, which
+// skparagraph's ParagraphCache (now off) kept whatever their size. So a loop
+// over 128 lines that pass the budget together lays each line out once:
+// lines kept from earlier tests are older and go first. Only the time shows
+// it here: measuring a kept line takes a small part of a layout's time
+// (src/sk.rs text_line_tests checks which lines are kept).
 test('a loop over 128 lines longer than the budget allows lays each one out once', (t) => {
   const ctx = createCanvas(10, 10).getContext('2d')
   ctx.font = '8px CacheLato'
@@ -209,8 +211,6 @@ test('a loop over 128 lines longer than the budget allows lays each one out once
     return times.sort((a, b) => a - b)[times.length >> 1]
   }
   const layout = medianTime()
-  // Lines kept from earlier tests can drop part of the loop once more.
-  medianTime()
   const kept = medianTime()
   t.true(kept * 5 < layout, `${kept} ns a kept line vs ${layout} ns a layout`)
 })

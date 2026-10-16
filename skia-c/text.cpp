@@ -5,6 +5,7 @@
 #include <string.h>
 #include <algorithm>
 #include <cmath>
+#include <list>
 #include <map>
 #include <memory>
 #include <optional>
@@ -62,6 +63,10 @@ struct TextCaches {
     SkPoint single_origin = {0, 0};
     int frac_bits = 0;
     double span = 0;
+    // The bytes the line counts in TextCaches::line_bytes, and its place in
+    // TextCaches::lru.
+    size_t bytes = 0;
+    std::list<const std::string*>::iterator lru;
   };
 
   // ResolveFontFamilies by the request's family list.
@@ -75,6 +80,9 @@ struct TextCaches {
   // skparagraph's ParagraphCache (turned off in skiac_font_collection).
   std::unordered_map<std::string, Line> lines;
   size_t line_bytes = 0;
+  // The keys of `lines` (their map nodes do not move), least recently used
+  // first.
+  std::list<const std::string*> lru;
 };
 
 void TextCachesDeleter::operator()(TextCaches* caches) const {
@@ -89,11 +97,12 @@ using Line = TextCaches::Line;
 constexpr float kMaxLayoutWidth = 100000;
 // TextCaches::lines holds up to kMaxLines lines and about kMaxLineBytes bytes
 // (TextCaches::line_bytes; not a hard cap: a draw adds a line's joined blob
-// after the check), but it is not cleared for its bytes while it holds fewer
-// than kMinLines lines. skparagraph's ParagraphCache (now off) kept the last
-// 128 paragraphs of any size, each several times the bytes of a kept line
-// (up to about 25x with fallback runs), so a loop over 128 lines of any
-// length stays in both.
+// after the check), dropping the least recently used line first, but it
+// drops none for its bytes while it holds fewer than kMinLines lines. So the
+// last kMinLines lines used stay whatever their bytes, as in skparagraph's
+// ParagraphCache (now off), which kept the last 128 paragraphs of any size,
+// each several times the bytes of a kept line (up to about 25x with fallback
+// runs): a loop over 128 lines of any length stays in both.
 constexpr size_t kMaxLines = 512;
 constexpr size_t kMinLines = 128;
 constexpr size_t kMaxLineBytes = 16 << 20;
@@ -765,10 +774,12 @@ Line* FindOrLayOutLine(skiac_font_collection* c_collection,
   std::string key;
   AppendLineKey(&key, request);
   {
-    auto& lines = GetTextCaches(c_collection).lines;
-    auto found = lines.find(key);
-    if (found != lines.end()) {
-      return &found->second;
+    TextCaches& caches = GetTextCaches(c_collection);
+    auto found = caches.lines.find(key);
+    if (found != caches.lines.end()) {
+      Line* line = &found->second;
+      caches.lru.splice(caches.lru.end(), caches.lru, line->lru);
+      return line;
     }
   }
   Line fresh;
@@ -787,14 +798,20 @@ Line* FindOrLayOutLine(skiac_font_collection* c_collection,
   // The key, its map node and the Line take about 512 bytes on top; a draw
   // adds the single blob's (MeasureOrDraw).
   const size_t bytes = key.size() + 512 + BlobBytes(fresh.runs.size(), glyphs);
-  if (caches.lines.size() >= kMaxLines ||
-      (caches.lines.size() >= kMinLines &&
-       caches.line_bytes + bytes > kMaxLineBytes)) {
-    caches.lines.clear();
-    caches.line_bytes = 0;
+  while (!caches.lru.empty() && (caches.lines.size() >= kMaxLines ||
+                                 (caches.lines.size() >= kMinLines &&
+                                  caches.line_bytes + bytes > kMaxLineBytes))) {
+    auto oldest = caches.lines.find(*caches.lru.front());
+    caches.line_bytes -= oldest->second.bytes;
+    caches.lines.erase(oldest);
+    caches.lru.pop_front();
   }
+  fresh.bytes = bytes;
   caches.line_bytes += bytes;
-  return &caches.lines.emplace(std::move(key), std::move(fresh)).first->second;
+  auto& [line_key, line] =
+      *caches.lines.emplace(std::move(key), std::move(fresh)).first;
+  line.lru = caches.lru.insert(caches.lru.end(), &line_key);
+  return &line;
 }
 
 // Lays out `request` (or takes the layout of an earlier call) and either
@@ -873,7 +890,9 @@ void MeasureOrDraw(skiac_font_collection* c_collection,
                                : paint_x - rtl_offset + letter_spacing_offset;
     const float final_y = y + baseline_y - line_baseline;
     if (!line->joined) {
-      GetTextCaches(c_collection).line_bytes += MakeSingleBlob(line);
+      const size_t single_bytes = MakeSingleBlob(line);
+      line->bytes += single_bytes;
+      GetTextCaches(c_collection).line_bytes += single_bytes;
       line->joined = true;
     }
     if (DrawsLikeRuns(*line, canvas, *paint, final_x)) {
@@ -1006,6 +1025,16 @@ void skiac_text_draw(skiac_canvas* c_canvas,
   MeasureOrDraw(c_collection, *request, reinterpret_cast<SkPaint*>(c_paint),
                 reinterpret_cast<SkCanvas*>(c_canvas), x, y, max_width,
                 nullptr);
+}
+
+bool skiac_text_line_kept(skiac_font_collection* c_collection,
+                          const skiac_text_request* request) {
+  if (!c_collection->text_caches) {
+    return false;
+  }
+  std::string key;
+  AppendLineKey(&key, *request);
+  return c_collection->text_caches->lines.count(key) > 0;
 }
 
 // The advance of U+6C34 in the primary face of a font, for the ic unit:

@@ -1059,6 +1059,10 @@ void skiac_text_draw(skiac_canvas* c_canvas,
                      float x,
                      float y,
                      float max_width);
+// Whether the laid out line of `request` is kept, without laying it out or
+// marking it used (tests).
+bool skiac_text_line_kept(skiac_font_collection* c_collection,
+                          const skiac_text_request* request);
 bool skiac_font_collection_ideographic_advance(
     skiac_font_collection* c_collection,
     const skiac_text_request* request,
