@@ -189,3 +189,28 @@ test('a line laid out after a nearly equal one measures what it measures alone',
     t.deepEqual(after, measure(second), JSON.stringify(second))
   })
 })
+
+// The laid out lines are kept within a budget of bytes, but never fewer than
+// the last 128, which skparagraph's ParagraphCache (now off) kept whatever
+// their size. So a loop over 128 lines that pass the budget together lays
+// each line out once. Only the time shows it: measuring a kept line takes a
+// small part of a layout's time.
+test('a loop over 128 lines longer than the budget allows lays each one out once', (t) => {
+  const ctx = createCanvas(10, 10).getContext('2d')
+  ctx.font = '8px CacheLato'
+  // 20,000 glyphs a line, about 25 MB of glyph ids and positions in all.
+  const lines = Array.from({ length: 128 }, (_, i) => `${i}${'i'.repeat(20000)}`)
+  const medianTime = () => {
+    const times = lines.map((line) => {
+      const start = process.hrtime.bigint()
+      ctx.measureText(line)
+      return Number(process.hrtime.bigint() - start)
+    })
+    return times.sort((a, b) => a - b)[times.length >> 1]
+  }
+  const layout = medianTime()
+  // Lines kept from earlier tests can drop part of the loop once more.
+  medianTime()
+  const kept = medianTime()
+  t.true(kept * 5 < layout, `${kept} ns a kept line vs ${layout} ns a layout`)
+})

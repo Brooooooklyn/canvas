@@ -87,11 +87,13 @@ using LineRun = TextCaches::Run;
 using Line = TextCaches::Line;
 
 constexpr float kMaxLayoutWidth = 100000;
-// TextCaches::lines holds up to this many lines and about this many bytes
-// (TextCaches::line_bytes). A loop over 128 lines of 300 words stays in it,
-// as it stayed in skparagraph's ParagraphCache (128 paragraphs, now off),
-// which kept about 25 times the bytes for each.
+// TextCaches::lines holds up to kMaxLines lines and about kMaxLineBytes bytes
+// (TextCaches::line_bytes), but it is not cleared for its bytes while it
+// holds fewer than kMinLines lines. skparagraph's ParagraphCache (now off)
+// kept the last 128 paragraphs of any size, each about 25 times the bytes of
+// a kept line, so a loop over 128 lines of any length stays in both.
 constexpr size_t kMaxLines = 512;
+constexpr size_t kMinLines = 128;
 constexpr size_t kMaxLineBytes = 16 << 20;
 
 bool StartsWithLanguage(std::string_view lang, std::string_view language) {
@@ -761,7 +763,8 @@ Line* FindOrLayOutLine(skiac_font_collection* c_collection,
   // adds the single blob's (MeasureOrDraw).
   const size_t bytes = key.size() + 512 + BlobBytes(fresh.runs.size(), glyphs);
   if (caches.lines.size() >= kMaxLines ||
-      caches.line_bytes + bytes > kMaxLineBytes) {
+      (caches.lines.size() >= kMinLines &&
+       caches.line_bytes + bytes > kMaxLineBytes)) {
     caches.lines.clear();
     caches.line_bytes = 0;
   }
