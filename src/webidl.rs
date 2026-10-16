@@ -54,11 +54,6 @@ pub(crate) fn type_error(env: sys::napi_env, msg: &str) -> Error {
   throw(env, new_error(env, ErrorKind::TypeError, msg), msg)
 }
 
-/// Throw a RangeError.
-pub(crate) fn range_error(env: sys::napi_env, msg: &str) -> Error {
-  throw(env, new_error(env, ErrorKind::RangeError, msg), msg)
-}
-
 /// The legacy `code` of a DOMException name (the WebIDL error names
 /// table); 0 for the names without one, such as EncodingError.
 fn dom_exception_code(name: &str) -> u32 {
@@ -269,6 +264,7 @@ sites! {
   CtxIsPointInPath: execute "isPointInPath" on "CanvasRenderingContext2D";
   CtxIsPointInStroke: execute "isPointInStroke" on "CanvasRenderingContext2D";
   CtxDrawImage: execute "drawImage" on "CanvasRenderingContext2D";
+  CtxGetImageData: execute "getImageData" on "CanvasRenderingContext2D";
   PathMoveTo: execute "moveTo" on "Path2D";
   PathLineTo: execute "lineTo" on "Path2D";
   PathBezierCurveTo: execute "bezierCurveTo" on "Path2D";
@@ -340,7 +336,8 @@ pub(crate) fn context_type_error(env: sys::napi_env, prefix: &str, msg: &str) ->
   context_error(env, ErrorKind::TypeError, prefix, msg)
 }
 
-/// A RangeError as Chrome throws it from a binding; see
+/// A RangeError as Chrome throws it from a binding, such as "Out of memory
+/// at ImageData creation": `stack` keeps the bare `msg`, as in
 /// [`context_type_error`].
 pub(crate) fn context_range_error(env: sys::napi_env, prefix: &str, msg: &str) -> Error {
   context_error(env, ErrorKind::RangeError, prefix, msg)
@@ -418,16 +415,19 @@ fn is_callable(env: sys::napi_env, value: sys::napi_value) -> Result<bool> {
 }
 
 /// The intrinsics of a realm that the conversions use: Symbol.toPrimitive,
-/// Symbol.iterator and Proxy, read once, when the addon is registered in the
-/// environment of the realm. Chrome uses those of its realm, so a script
-/// that replaces globalThis.Symbol or globalThis.Proxy later changes no
-/// conversion. A worker thread has an environment and a realm of its own,
-/// and an environment stays on its thread.
+/// Symbol.iterator and Proxy, and the getters `resizable` and `detached` of
+/// ArrayBuffer.prototype, read once, when the addon is registered in the
+/// environment of the realm. Chrome uses those of its realm, or reads the
+/// state itself, so a script that replaces globalThis.Symbol,
+/// globalThis.Proxy or an ArrayBuffer getter later changes no conversion. A
+/// worker thread has an environment and a realm of its own, and an
+/// environment stays on its thread.
 struct RealmIntrinsics {
   env: sys::napi_env,
-  /// An object with the own data properties toPrimitive, iterator and
-  /// Proxy, each undefined when it could not be read. An object, because
-  /// napi_create_reference takes a symbol only from Node-API 10 on.
+  /// An object with the own data properties toPrimitive, iterator, Proxy,
+  /// arrayBufferResizable and arrayBufferDetached, each undefined when it
+  /// could not be read. An object, because napi_create_reference takes a
+  /// symbol only from Node-API 10 on.
   holder: sys::napi_ref,
 }
 
@@ -475,6 +475,47 @@ pub fn capture_realm_intrinsics(_exports: Object, env: Env) -> Result<()> {
       attributes: sys::PropertyAttributes::default,
       data: ptr::null_mut(),
     };
+  // The getters of %ArrayBuffer.prototype%, the prototype of an ArrayBuffer
+  // the engine makes (globalThis.ArrayBuffer may be another one).
+  let mut buffer = ptr::null_mut();
+  let mut prototype = ptr::null_mut();
+  let prototype = (unsafe { sys::napi_create_arraybuffer(env, 0, ptr::null_mut(), &mut buffer) }
+    == sys::Status::napi_ok
+    && unsafe { sys::napi_get_prototype(env, buffer, &mut prototype) } == sys::Status::napi_ok)
+    .then_some(prototype);
+  let object = read(global, c"Object", sys::ValueType::napi_function);
+  let describe = object.and_then(|object| {
+    read(
+      object,
+      c"getOwnPropertyDescriptor",
+      sys::ValueType::napi_function,
+    )
+  });
+  let array_buffer_getter = |name: &std::ffi::CStr| {
+    let (prototype, object, describe) = (prototype?, object?, describe?);
+    let mut key = ptr::null_mut();
+    let mut descriptor = ptr::null_mut();
+    let described = unsafe {
+      sys::napi_create_string_utf8(env, name.as_ptr(), name.to_bytes().len() as isize, &mut key)
+        == sys::Status::napi_ok
+        && sys::napi_call_function(
+          env,
+          object,
+          describe,
+          2,
+          [prototype, key].as_ptr(),
+          &mut descriptor,
+        ) == sys::Status::napi_ok
+    };
+    if !described {
+      let mut exception = ptr::null_mut();
+      unsafe { sys::napi_get_and_clear_last_exception(env, &mut exception) };
+      return None;
+    }
+    (raw_type_of(env, descriptor).ok()? == sys::ValueType::napi_object)
+      .then(|| read(descriptor, c"get", sys::ValueType::napi_function))
+      .flatten()
+  };
   let members = [
     member(c"toPrimitive", well_known(c"toPrimitive")),
     member(c"iterator", well_known(c"iterator")),
@@ -482,6 +523,8 @@ pub fn capture_realm_intrinsics(_exports: Object, env: Env) -> Result<()> {
       c"Proxy",
       read(global, c"Proxy", sys::ValueType::napi_function),
     ),
+    member(c"arrayBufferResizable", array_buffer_getter(c"resizable")),
+    member(c"arrayBufferDetached", array_buffer_getter(c"detached")),
   ];
   check_status!(unsafe {
     sys::napi_define_properties(env, holder, members.len(), members.as_ptr())
@@ -524,8 +567,8 @@ unsafe extern "C" fn forget_realm_intrinsics(env: *mut std::ffi::c_void) {
   });
 }
 
-/// The intrinsic `name` (toPrimitive, iterator or Proxy) of the realm of
-/// `env`; None when it could not be read at registration.
+/// The intrinsic `name` (a member of [`RealmIntrinsics::holder`]) of the
+/// realm of `env`; None when it could not be read at registration.
 fn intrinsic(env: sys::napi_env, name: &std::ffi::CStr) -> Result<Option<sys::napi_value>> {
   let Some(reference) = REALM_INTRINSICS.with_borrow(|list| {
     list
@@ -544,6 +587,28 @@ fn intrinsic(env: sys::napi_env, name: &std::ffi::CStr) -> Result<Option<sys::na
   let mut value = ptr::null_mut();
   check_status!(unsafe { sys::napi_get_named_property(env, holder, name.as_ptr(), &mut value) })?;
   Ok((raw_type_of(env, value)? != sys::ValueType::napi_undefined).then_some(value))
+}
+
+/// Blink's IsResizableByUserJavaScript() of `buffer`, an ArrayBuffer that
+/// is not shared: resizable and not detached. Calls the built-in getters
+/// `resizable` and `detached` of the realm (see [`RealmIntrinsics`]) with
+/// the buffer as receiver: they read its internal state, so no own
+/// property, prototype, Proxy or later patched getter changes the answer,
+/// and no script runs. Not resizable without the `resizable` getter (a Node
+/// with no resizable buffers); not detached without the `detached` one.
+pub(crate) fn is_resizable_by_script(env: sys::napi_env, buffer: sys::napi_value) -> Result<bool> {
+  let flag = |name: &std::ffi::CStr| -> Result<bool> {
+    let Some(getter) = intrinsic(env, name)? else {
+      return Ok(false);
+    };
+    let value = call(env, buffer, getter, &[])?;
+    let mut result = false;
+    Ok(
+      unsafe { sys::napi_get_value_bool(env, value, &mut result) } == sys::Status::napi_ok
+        && result,
+    )
+  };
+  Ok(flag(c"arrayBufferResizable")? && !flag(c"arrayBufferDetached")?)
 }
 
 /// The get trap of a [`relay`]: the `value` of its handler, `this`.
@@ -1078,11 +1143,58 @@ impl<S: Site> FromNapiValue for DoubleSequence<S> {
 }
 
 /// WebIDL `unsigned long` (ToNumber, then ToUint32: NaN and infinities are
-/// 0, the rest is truncated modulo 2^32). ToNumber may throw.
-pub(crate) fn to_unsigned_long(env: sys::napi_env, value: sys::napi_value) -> Result<u32> {
-  let mut number = ptr::null_mut();
-  check_status!(unsafe { sys::napi_coerce_to_number(env, value, &mut number) })?;
-  Ok(to_uint32(unsafe { f64::from_napi_value(env, number)? }))
+/// 0, the rest is truncated modulo 2^32). Errors from user code pass as they
+/// are; the engine's own ones get `prefix`.
+pub(crate) fn to_unsigned_long(
+  env: sys::napi_env,
+  value: sys::napi_value,
+  prefix: &str,
+) -> Result<u32> {
+  to_number(env, value, prefix).map(to_uint32)
+}
+
+/// WebIDL `[EnforceRange] long` (v8_binding_for_core.cc EnforceRange):
+/// ToNumber, then a TypeError for NaN, an infinity, or a value outside the
+/// long range once truncated. Errors from user code pass as they are; the
+/// engine's own ones get `prefix`.
+pub(crate) fn enforce_range_long(
+  env: sys::napi_env,
+  value: sys::napi_value,
+  prefix: &str,
+) -> Result<i32> {
+  let x = to_number(env, value, prefix)?;
+  if x.is_nan() {
+    return Err(context_type_error(
+      env,
+      prefix,
+      "Value is not of type 'long'.",
+    ));
+  }
+  if x.is_infinite() {
+    return Err(context_type_error(
+      env,
+      prefix,
+      "Value is infinite and not of type 'long'.",
+    ));
+  }
+  let x = x.trunc();
+  if x < f64::from(i32::MIN) || x > f64::from(i32::MAX) {
+    return Err(context_type_error(
+      env,
+      prefix,
+      "Value is outside the 'long' value range.",
+    ));
+  }
+  Ok(x as i32)
+}
+
+/// An `[EnforceRange] long` argument: see [`enforce_range_long`].
+pub struct EnforceRangeLong<S>(pub i32, PhantomData<S>);
+
+impl<S: Site> FromNapiValue for EnforceRangeLong<S> {
+  unsafe fn from_napi_value(env: sys::napi_env, value: sys::napi_value) -> Result<Self> {
+    enforce_range_long(env, value, S::PREFIX).map(|x| Self(x, PhantomData))
+  }
 }
 
 /// ToUint32 of a number: NaN and infinities are 0, the rest is truncated
@@ -1193,6 +1305,8 @@ pub(crate) const CREATE_IMAGE_DATA: &str =
   "Failed to execute 'createImageData' on 'CanvasRenderingContext2D': ";
 pub(crate) const GET_IMAGE_DATA: &str =
   "Failed to execute 'getImageData' on 'CanvasRenderingContext2D': ";
+pub(crate) const PUT_IMAGE_DATA: &str =
+  "Failed to execute 'putImageData' on 'CanvasRenderingContext2D': ";
 pub(crate) const CANVAS_GET_CONTEXT: &str =
   "Failed to execute 'getContext' on 'HTMLCanvasElement': ";
 pub(crate) const SVG_CANVAS_GET_CONTEXT: &str = "Failed to execute 'getContext' on 'SVGCanvas': ";
@@ -1590,7 +1704,8 @@ fn argument_count(env: sys::napi_env, value: sys::napi_value) -> Option<u32> {
   (count < ARGUMENT_COUNT_MARKERS).then_some(count as u32)
 }
 
-/// The arguments of a call with `Positional` parameters.
+/// The arguments of a call with `Positional` parameters, or of the ImageData
+/// constructor.
 pub(crate) struct Arguments {
   env: sys::napi_env,
   values: [sys::napi_value; MAX_POSITIONAL],
@@ -1601,14 +1716,7 @@ pub(crate) struct Arguments {
 
 impl Arguments {
   /// The `count` values the `Positional` parameters of this call recorded.
-  ///
-  /// `argc` is the argument after them: index.js passes an
-  /// `argument_counts` marker there, or undefined when the count is the last
-  /// argument that is not undefined. A raw call (the js-binding entrypoint)
-  /// has none, and any other value there is an extra argument, ignored.
-  /// napi pads missing arguments with undefined, so without the marker `f(x)`
-  /// and `f(x, undefined)` look the same here, and the count then runs up to
-  /// the last argument that is not undefined.
+  /// See [`Self::new`] for `argc`.
   pub(crate) fn take(env: sys::napi_env, count: usize, argc: sys::napi_value) -> Result<Self> {
     // Taken before any user code runs, which may make a call of its own.
     let (values, recorded) =
@@ -1619,6 +1727,60 @@ impl Arguments {
         format!("Expected {count} positional arguments, got {recorded}"),
       ));
     }
+    Self::counted(env, values, count, argc)
+  }
+
+  /// `values` and the argument count.
+  ///
+  /// `argc` is the argument after them: index.js passes an
+  /// `argument_counts` marker there, or undefined when the count is the last
+  /// argument that is not undefined. A raw call (the js-binding entrypoint)
+  /// has none, and any other value there is an extra argument, ignored.
+  /// napi pads missing arguments with undefined, so without the marker `f(x)`
+  /// and `f(x, undefined)` look the same here, and the count then runs up to
+  /// the last argument that is not undefined.
+  pub(crate) fn new(
+    env: sys::napi_env,
+    values: &[sys::napi_value],
+    argc: sys::napi_value,
+  ) -> Result<Self> {
+    Self::counted(env, Self::copy(values)?, values.len(), argc)
+  }
+
+  /// `values` of a call with `len` arguments, the count a native function
+  /// reads from its callback info.
+  pub(crate) fn with_len(env: sys::napi_env, values: &[sys::napi_value], len: u32) -> Result<Self> {
+    Ok(Self {
+      env,
+      values: Self::copy(values)?,
+      count: values.len(),
+      len,
+    })
+  }
+
+  fn copy(values: &[sys::napi_value]) -> Result<[sys::napi_value; MAX_POSITIONAL]> {
+    let mut array = [ptr::null_mut(); MAX_POSITIONAL];
+    let Some(slots) = array.get_mut(..values.len()) else {
+      return Err(Error::new(
+        Status::GenericFailure,
+        format!(
+          "Expected at most {MAX_POSITIONAL} arguments, got {}",
+          values.len()
+        ),
+      ));
+    };
+    slots.copy_from_slice(values);
+    Ok(array)
+  }
+
+  /// The first `count` of `values`, with the argument count of `argc` (see
+  /// [`Self::new`]).
+  fn counted(
+    env: sys::napi_env,
+    values: [sys::napi_value; MAX_POSITIONAL],
+    count: usize,
+    argc: sys::napi_value,
+  ) -> Result<Self> {
     // The count is the marker's (0 without one), raised to the last argument
     // that is not undefined. Only an argument at or past the marker's count
     // can raise it (from index.js none does), so only those are looked at,
@@ -1640,6 +1802,17 @@ impl Arguments {
 
   pub(crate) fn len(&self) -> u32 {
     self.len
+  }
+
+  /// Blink's NonUndefinedArgumentLength (generated_code_helper.h): the count
+  /// without the trailing undefined arguments.
+  pub(crate) fn non_undefined_len(&self) -> Result<u32> {
+    for index in (0..self.count).rev() {
+      if type_of(self.env, self.values[index])? != ValueType::Undefined {
+        return Ok(index as u32 + 1);
+      }
+    }
+    Ok(0)
   }
 
   /// Argument `index`; undefined past the recorded ones.

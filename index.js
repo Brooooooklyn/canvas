@@ -9,7 +9,7 @@ const {
   CanvasPattern,
   SVGCanvas,
   Path: Path2D,
-  ImageData,
+  ImageData: NativeImageData,
   Image,
   FontKey,
   GlobalFonts,
@@ -24,6 +24,7 @@ const {
   LottieAnimation,
   TextMetrics,
   _argumentCounts,
+  _imageDataConstructor,
 } = require('./js-binding')
 
 const { DOMPoint, DOMMatrix, DOMRect } = require('./geometry')
@@ -68,7 +69,7 @@ for (const [Class, tag] of [
   [CanvasGradient, 'CanvasGradient'],
   [CanvasPattern, 'CanvasPattern'],
   [Path2D, 'Path2D'],
-  [ImageData, 'ImageData'],
+  [NativeImageData, 'ImageData'],
   [TextMetrics, 'TextMetrics'],
   [CanvasElement, 'HTMLCanvasElement'],
   [Image, 'HTMLImageElement'],
@@ -190,6 +191,7 @@ for (const [method, required] of [
   ['ellipse', 7],
   ['fillRect', 4],
   ['fillText', 3],
+  ['getImageData', 4],
   ['lineTo', 2],
   ['measureText', 1],
   ['moveTo', 2],
@@ -238,6 +240,21 @@ for (const [method, required] of [
 // a count only from a marker, and any other value there (from a raw
 // js-binding call) is an extra argument.
 const ARGUMENT_COUNTS = _argumentCounts()
+
+// new ImageData(): Chrome checks `new` and the real argument count before it
+// picks an overload (image_data.idl). The class napi-rs makes sees neither,
+// so a native function checks them and builds the instance itself, from
+// new.target.prototype. Instances share the class prototype, so instanceof
+// works for those that createImageData and getImageData return.
+const ImageData = _imageDataConstructor()
+Object.defineProperty(ImageData, 'length', { value: 2 })
+Object.defineProperty(ImageData, 'prototype', { value: NativeImageData.prototype, writable: false })
+Object.defineProperty(NativeImageData.prototype, 'constructor', {
+  value: ImageData,
+  writable: true,
+  enumerable: false,
+  configurable: true,
+})
 
 // What the wrappers below pass after their `n` positional arguments, for a
 // call with `count` (1 to `n`) of them, the last one `last`. Without a marker
@@ -327,15 +344,45 @@ Object.defineProperty(CanvasRenderingContext2D.prototype.isPointInStroke, 'lengt
 const _createImageData = CanvasRenderingContext2D.prototype.createImageData
 
 CanvasRenderingContext2D.prototype.createImageData = function createImageData() {
+  const count = arguments.length
+  // Past arguments.length, arguments[i] would read Object.prototype[i]: pass
+  // undefined there, as napi pads missing arguments.
   return _createImageData.call(
+    this,
+    count > 0 ? arguments[0] : undefined,
+    count > 1 ? arguments[1] : undefined,
+    count > 2 ? arguments[2] : undefined,
+    count > 3 ? arguments[3] : undefined,
+    ARGUMENT_COUNTS[Math.min(count, 4)],
+  )
+}
+Object.defineProperty(CanvasRenderingContext2D.prototype.createImageData, 'length', { value: 1 })
+
+// putImageData(imagedata, dx, dy) or (imagedata, dx, dy, dirtyX, dirtyY,
+// dirtyWidth, dirtyHeight): as in Chrome, it needs 3 arguments; the native
+// method picks the overload from the argument count (3 or 7).
+const _putImageData = CanvasRenderingContext2D.prototype.putImageData
+
+CanvasRenderingContext2D.prototype.putImageData = function putImageData() {
+  const count = arguments.length
+  if (count < 3) {
+    argumentCountError(ctxBrand, this, 'putImageData', 'CanvasRenderingContext2D', 3, count)
+  }
+  // Past arguments.length, arguments[i] would read Object.prototype[i]: pass
+  // undefined there, as napi pads missing arguments.
+  return _putImageData.call(
     this,
     arguments[0],
     arguments[1],
     arguments[2],
-    arguments[3],
-    ARGUMENT_COUNTS[Math.min(arguments.length, 4)],
+    count > 3 ? arguments[3] : undefined,
+    count > 4 ? arguments[4] : undefined,
+    count > 5 ? arguments[5] : undefined,
+    count > 6 ? arguments[6] : undefined,
+    ARGUMENT_COUNTS[Math.min(count, 7)],
   )
 }
+Object.defineProperty(CanvasRenderingContext2D.prototype.putImageData, 'length', { value: 3 })
 
 // createPattern(image, repetitionType): as in Chrome, both arguments are
 // required, and the image is converted before the repetition, a

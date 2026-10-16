@@ -53,7 +53,11 @@ run('createPattern(canvas)', () => ctx.createPattern(source))
     'createImageData(2, 3)': [2, 3, 24, 'srgb'],
     'createImageData(2, 3, settings)': [2, 3, 24, 'display-p3'],
     'createImageData(imagedata)': [2, 3, 24, 'srgb'],
-    'createImageData(data, 1)': [1, 2, 8, 'srgb'],
+    // No typed array form: the array is ToNumber'd as sw ('0,0,...' is NaN).
+    'createImageData(data, 1)': {
+      error: 'TypeError',
+      message: `${CREATE_IMAGE_DATA}Value is not of type 'long'.`,
+    },
     'createImageData()': {
       error: 'TypeError',
       message: `${CREATE_IMAGE_DATA}1 argument required, but only 0 present.`,
@@ -66,6 +70,58 @@ run('createPattern(canvas)', () => ctx.createPattern(source))
     'createPattern(canvas)': {
       error: 'TypeError',
       message: `${CREATE_PATTERN}2 arguments required, but only 1 present.`,
+    },
+  })
+})
+
+test('the raw js-binding createImageData has no typed array form for huge sizes', (t) => {
+  // Without a trailing undefined, the raw method counts as index.js does:
+  // the values Chrome gives.
+  const out = runRaw(`
+run('createImageData(u8c(0), 2 ** 31, 2 ** 31)', () => size(ctx.createImageData(new Uint8ClampedArray(0), 2 ** 31, 2 ** 31)))
+run('createImageData(u8c(0), 65536, 65536)', () => size(ctx.createImageData(new Uint8ClampedArray(0), 65536, 65536)))
+run('createImageData(u8c([16]), 2 ** 25)', () => size(ctx.createImageData(new Uint8ClampedArray([16]), 2 ** 25)))
+`)
+  t.deepEqual(out, {
+    'createImageData(u8c(0), 2 ** 31, 2 ** 31)': {
+      error: 'TypeError',
+      message: `${CREATE_IMAGE_DATA}Value is outside the 'long' value range.`,
+    },
+    'createImageData(u8c(0), 65536, 65536)': {
+      error: 'TypeError',
+      message: `${CREATE_IMAGE_DATA}The provided value is not of type 'ImageDataSettings'.`,
+    },
+    'createImageData(u8c([16]), 2 ** 25)': {
+      error: 'RangeError',
+      message: `${CREATE_IMAGE_DATA}Out of memory at ImageData creation`,
+    },
+  })
+})
+
+test('the raw js-binding ImageData class takes positional arguments', (t) => {
+  // index.js exports a native function that checks new and the real argument
+  // count; the class itself only sees padded arguments.
+  const out = runRaw(`
+run('new ImageData(1)', () => size(new ImageData(1)))
+run('new ImageData(1, 1, {}, undefined)', () => size(new ImageData(1, 1, {}, undefined)))
+run('new ImageData(data, 1).data', () => {
+  const a = new Uint8ClampedArray(4)
+  return new ImageData(a, 1).data === a
+})
+run('new ImageData(u16, 1, 1, {})', () => size(new ImageData(new Uint16Array(4), 1, 1, {})))
+`)
+  t.deepEqual(out, {
+    'new ImageData(1)': {
+      error: 'TypeError',
+      message: "Failed to construct 'ImageData': 2 arguments required, but only 1 present.",
+    },
+    // Without the argument count that index.js passes, a trailing undefined
+    // counts as a missing argument.
+    'new ImageData(1, 1, {}, undefined)': [1, 1, 4, 'srgb'],
+    'new ImageData(data, 1).data': true,
+    'new ImageData(u16, 1, 1, {})': {
+      error: 'TypeError',
+      message: "Failed to construct 'ImageData': Overload resolution failed.",
     },
   })
 })

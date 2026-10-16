@@ -2131,8 +2131,8 @@ impl Context {
 
   pub fn get_image_data(
     &mut self,
-    x: f32,
-    y: f32,
+    x: i32,
+    y: i32,
     w: u32,
     h: u32,
     color_type: ColorSpace,
@@ -2147,9 +2147,21 @@ impl Context {
     // SVGCanvas draws its recording into its raster surface here.
     self.flush();
 
-    self
-      .surface
-      .read_pixels(x as i32, y as i32, w, h, color_type)
+    // A rect that misses the canvas reads as transparent black, in any color
+    // space (getImageDataInternal: the pixels outside are zero).
+    let (left, top) = (i64::from(x), i64::from(y));
+    if left >= i64::from(self.surface.width())
+      || top >= i64::from(self.surface.height())
+      || left + i64::from(w) <= 0
+      || top + i64::from(h) <= 0
+    {
+      return (w as usize)
+        .checked_mul(h as usize)
+        .and_then(|n| n.checked_mul(4))
+        .and_then(crate::sk::try_zeroed_bytes)
+        .ok_or(ReadPixelsError::OutOfMemory);
+    }
+    self.surface.read_pixels(x, y, w, h, color_type)
   }
 
   pub fn set_line_dash(&mut self, line_dash_list: Vec<f32>) {
@@ -3778,10 +3790,11 @@ impl FromNapiValue for CreatePatternArgs<'static> {
 /// The arguments of `createImageData`, its last parameter: it gets the
 /// argument count and converts the `Positional` arguments before it. WebIDL
 /// picks the overload from the argument count, and an explicit undefined
-/// counts (base_rendering_context_2d.idl:25).
+/// counts (base_rendering_context_2d.idl:25). There is no typed array form:
+/// with two or more arguments, a typed array is ToNumber'd as sw.
 /// They are converted in the callback glue, before napi-rs borrows the
-/// context, so a settings getter may use it.
-pub enum CreateImageDataArgs<'a> {
+/// context, so a valueOf or a settings getter may use it.
+pub enum CreateImageDataArgs {
   /// createImageData(ImageData imagedata).
   ImageData {
     width: usize,
@@ -3795,102 +3808,104 @@ pub enum CreateImageDataArgs<'a> {
     height: u32,
     settings: webidl::ImageDataSettings,
   },
-  /// Non-standard createImageData(Uint8ClampedArray data, sw, sh?, settings?).
-  Data {
-    data: Uint8ClampedSlice<'a>,
-    width: u32,
-    height: u32,
-    color_space: Option<ColorSpace>,
-  },
 }
 
-impl FromNapiValue for CreateImageDataArgs<'static> {
+impl FromNapiValue for CreateImageDataArgs {
   unsafe fn from_napi_value(env: sys::napi_env, argc: sys::napi_value) -> Result<Self> {
     let args = webidl::Arguments::take(env, 4, argc)?;
-    let type_error =
-      |msg: &str| webidl::type_error(env, &format!("{}{msg}", webidl::CREATE_IMAGE_DATA));
-    let settings = |value: sys::napi_value| {
-      webidl::ImageDataSettings::from_js(env, Some(value), webidl::CREATE_IMAGE_DATA)
-    };
-    // `long` as before, except that undefined is not a long.
-    let long = |value: sys::napi_value| -> Result<u32> {
-      if webidl::type_of(env, value)? == ValueType::Undefined {
-        return Err(type_error("Value is not of type 'long'."));
-      }
-      Ok(unsafe { i32::from_napi_value(env, value)? }.unsigned_abs())
-    };
+    let prefix = webidl::CREATE_IMAGE_DATA;
     if args.len() == 0 {
-      return Err(type_error("1 argument required, but only 0 present."));
+      return Err(webidl::context_type_error(
+        env,
+        prefix,
+        "1 argument required, but only 0 present.",
+      ));
     }
-    let first = unsafe {
-      Either3::<&ImageData, Uint8ClampedSlice, Unknown>::from_napi_value(env, args.get(0)?)?
-    };
+    let first = args.get(0)?;
     if args.len() == 1 {
       // The same size and color space, new zeroed data
       // (base_rendering_context_2d.cc:296).
-      return match first {
-        Either3::A(image_data) => Ok(Self::ImageData {
+      if unsafe { <&ImageData as ValidateNapiValue>::validate(env, first) }.is_ok()
+        && let Ok(image_data) = unsafe { ImageData::from_napi_ref(env, first) }
+      {
+        return Ok(Self::ImageData {
           width: image_data.width,
           height: image_data.height,
           color_space: image_data.color_space,
-        }),
-        _ => Err(type_error("parameter 1 is not of type 'ImageData'.")),
-      };
-    }
-    match first {
-      // Two or more arguments select (long sw, long sh, ...), and an
-      // ImageData is not a long.
-      Either3::A(_) => Err(type_error("Value is not of type 'long'.")),
-      Either3::C(width) => {
-        let width = long(width.raw())?;
-        let height = long(args.get(1)?)?;
-        let settings = settings(args.get(2)?)?;
-        Ok(Self::Size {
-          width,
-          height,
-          settings,
-        })
+        });
       }
-      Either3::B(data) => {
-        let input_data_length = data.len();
-        let width = long(args.get(1)?)?;
-        if width == 0 {
-          // The width check of createImageData(sw, sh); the height below
-          // divides by the width.
-          return Err(webidl::dom_exception(
-            env,
-            "IndexSizeError",
-            &format!(
-              "{}The source width is zero or not a number.",
-              webidl::CREATE_IMAGE_DATA
-            ),
-          ));
-        }
-        let height = args.get(2)?;
-        let height = if webidl::type_of(env, height)? == ValueType::Number {
-          unsafe { i32::from_napi_value(env, height)? }.unsigned_abs()
-        } else {
-          // A dictionary here is converted but, as before, not used.
-          settings(height)?;
-          (input_data_length as u32) / 4 / width
-        };
-        // The typed array aliases the caller's buffer, which may be detached
-        // later via transfer; the pixel length is checked on every use.
-        if input_data_length < (width as usize) * (height as usize) * 4 {
-          return Err(Error::new(
-            Status::InvalidArg,
-            "Index or size is negative or greater than the allowed amount".to_owned(),
-          ));
-        }
-        let color_space = settings(args.get(3)?)?.color_space(env, webidl::CREATE_IMAGE_DATA)?;
-        Ok(Self::Data {
-          data,
-          width,
-          height,
-          color_space,
-        })
-      }
+      return Err(webidl::context_type_error(
+        env,
+        prefix,
+        "parameter 1 is not of type 'ImageData'.",
+      ));
     }
+    // std::abs of each (base_rendering_context_2d.cc:312).
+    let long = |value| webidl::enforce_range_long(env, value, prefix).map(i32::unsigned_abs);
+    let width = long(first)?;
+    let height = long(args.get(1)?)?;
+    let settings = webidl::ImageDataSettings::from_js(env, Some(args.get(2)?), prefix)?;
+    Ok(Self::Size {
+      width,
+      height,
+      settings,
+    })
+  }
+}
+
+/// The arguments of `putImageData`, its last parameter: (imagedata, dx, dy)
+/// or (imagedata, dx, dy, dirtyX, dirtyY, dirtyWidth, dirtyHeight), with
+/// [EnforceRange] long numbers (base_rendering_context_2d.idl). WebIDL picks
+/// the overload from the argument count and checks the image data before it
+/// converts the numbers. The image data is borrowed after their user code.
+pub struct PutImageDataArgs {
+  image_data: &'static ImageData,
+  dx: i32,
+  dy: i32,
+  /// dirtyX, dirtyY, dirtyWidth and dirtyHeight.
+  dirty: Option<[i32; 4]>,
+}
+
+impl FromNapiValue for PutImageDataArgs {
+  unsafe fn from_napi_value(env: sys::napi_env, argc: sys::napi_value) -> Result<Self> {
+    let args = webidl::Arguments::take(env, 7, argc)?;
+    let prefix = webidl::PUT_IMAGE_DATA;
+    let count = match args.len() {
+      count @ 0..=2 => {
+        return Err(webidl::context_type_error(
+          env,
+          prefix,
+          &format!("3 arguments required, but only {count} present."),
+        ));
+      }
+      count @ (3 | 7) => count,
+      _ => {
+        return Err(webidl::context_type_error(
+          env,
+          prefix,
+          "Overload resolution failed.",
+        ));
+      }
+    };
+    let not_image_data =
+      || webidl::context_type_error(env, prefix, "parameter 1 is not of type 'ImageData'.");
+    let image_data = args.get(0)?;
+    if unsafe { <&ImageData as ValidateNapiValue>::validate(env, image_data) }.is_err() {
+      return Err(not_image_data());
+    }
+    // dx, dy, then the dirty rectangle.
+    let mut numbers = [0; 6];
+    for (index, number) in (1..count).zip(&mut numbers) {
+      *number = webidl::enforce_range_long(env, args.get(index)?, prefix)?;
+    }
+    let image_data =
+      unsafe { ImageData::from_napi_ref(env, image_data) }.map_err(|_| not_image_data())?;
+    Ok(Self {
+      image_data,
+      dx: numbers[0],
+      dy: numbers[1],
+      dirty: (count == 7).then(|| [numbers[2], numbers[3], numbers[4], numbers[5]]),
+    })
   }
 }
 
@@ -4471,9 +4486,9 @@ impl CanvasRenderingContext2D {
     self.context.close_path();
   }
 
-  /// createImageData(imagedata) or (sw, sh, settings?), and the non-standard
-  /// (data, sw, sh?, settings?). The index.js wrapper passes the argument
-  /// count after the 4 positional arguments; see `webidl::Arguments::take`.
+  /// createImageData(imagedata) or (sw, sh, settings?). The index.js wrapper
+  /// passes the argument count after the 4 positional arguments; see
+  /// `webidl::Arguments::take`.
   #[napi]
   pub fn create_image_data<'scope>(
     &'scope mut self,
@@ -4482,7 +4497,7 @@ impl CanvasRenderingContext2D {
     _arg1: Positional,
     _arg2: Positional,
     _arg3: Positional,
-    args: CreateImageDataArgs<'scope>,
+    args: CreateImageDataArgs,
   ) -> Result<ClassInstance<'scope, ImageData>> {
     match args {
       CreateImageDataArgs::ImageData {
@@ -4508,27 +4523,6 @@ impl CanvasRenderingContext2D {
           .color_space(env.raw(), prefix)?
           .unwrap_or(self.context.color_space);
         ImageData::new_zeroed(env, width as usize, height as usize, color_space)
-      }
-      CreateImageDataArgs::Data {
-        data: data_object,
-        width,
-        height,
-        color_space,
-      } => {
-        let mut instance = ImageData {
-          width: width as usize,
-          height: height as usize,
-          color_space: color_space.unwrap_or_default(),
-          // Weak ref: the non-configurable `data` property keeps the caller's
-          // array alive for exactly the ImageData's lifetime.
-          data_ref: Some(create_weak_ref(env, data_object.raw())?),
-        }
-        .into_instance(env)?;
-        instance.define_properties(&[Property::new()
-          .with_utf8_name("data")?
-          .with_value(&data_object)
-          .with_property_attributes(PropertyAttributes::Enumerable)])?;
-        Ok(instance)
       }
     }
   }
@@ -5263,84 +5257,87 @@ impl CanvasRenderingContext2D {
   pub fn get_image_data<'scope>(
     &'scope mut self,
     env: &'scope Env,
-    x: f64,
-    y: f64,
-    width: f64,
-    height: f64,
+    sx: webidl::EnforceRangeLong<webidl::CtxGetImageData>,
+    sy: webidl::EnforceRangeLong<webidl::CtxGetImageData>,
+    sw: webidl::EnforceRangeLong<webidl::CtxGetImageData>,
+    sh: webidl::EnforceRangeLong<webidl::CtxGetImageData>,
     settings: webidl::GetImageDataSettings,
   ) -> Result<ClassInstance<'scope, ImageData>> {
-    let settings = settings.0;
-    if !x.is_nan()
-      && !x.is_infinite()
-      && !y.is_nan()
-      && !y.is_infinite()
-      && !width.is_nan()
-      && !width.is_infinite()
-      && !height.is_nan()
-      && !height.is_infinite()
-    {
-      let raw = env.raw();
-      let prefix = webidl::GET_IMAGE_DATA;
-      // getImageDataInternal (base_rendering_context_2d.cc:353-410) on the
-      // truncated `long` values: the product must fit in an int, and neither
-      // side may be 0.
-      let (sw, sh) = (width.trunc() as i64, height.trunc() as i64);
-      if i32::try_from(sw as i128 * sh as i128).is_err() {
-        return Err(out_of_memory(raw, prefix));
-      }
-      if sw == 0 || sh == 0 {
-        return Err(webidl::dom_exception(
-          raw,
-          "IndexSizeError",
-          &format!(
-            "{prefix}The source {} is 0.",
-            if sw == 0 { "width" } else { "height" }
-          ),
-        ));
-      }
-      // saturated_cast<int>(SafeUnsignedAbs(..)), then ValidateAndCreate.
-      let sw = sw.unsigned_abs().min(i32::MAX as u64) as u32;
-      let sh = sh.unsigned_abs().min(i32::MAX as u64) as u32;
-      let len = validate_size(raw, prefix, sw, Some(sh), SizeErrors::Context2D)?;
-      // Spec: defaultColorSpace is this context's color space.
-      let color_space = settings
-        .color_space(raw, prefix)?
-        .unwrap_or(self.context.color_space);
-      if len > MAX_DATA_BYTES {
-        return Err(out_of_memory(raw, prefix));
-      }
-      // Per spec: if sw/sh is negative, flip the origin and use abs value
-      let sx = if width < 0.0 { x + width } else { x };
-      let sy = if height < 0.0 { y + height } else { y };
-      let image_data = self
-        .context
-        .get_image_data(sx as f32, sy as f32, sw, sh, color_space)
-        .map_err(|e| match e {
-          ReadPixelsError::OutOfMemory => out_of_memory(raw, prefix),
-          ReadPixelsError::Failed => Error::new(
-            Status::GenericFailure,
-            "Read pixels from canvas failed".to_string(),
-          ),
-        })?;
-      let data_object = Uint8ClampedSlice::from_data(env, image_data)?;
-      let mut instance = ImageData {
-        width: sw as usize,
-        height: sh as usize,
-        color_space,
-        data_ref: Some(create_weak_ref(env, data_object.raw())?),
-      }
-      .into_instance(env)?;
-      instance.define_properties(&[Property::new()
-        .with_utf8_name("data")?
-        .with_value(&data_object)
-        .with_property_attributes(PropertyAttributes::Enumerable)])?;
-      Ok(instance)
-    } else {
-      Err(Error::new(
-        Status::InvalidArg,
-        "The x, y, width, and height arguments must be finite numbers".to_owned(),
-      ))
+    let raw = env.raw();
+    let prefix = webidl::GET_IMAGE_DATA;
+    // A PDF page has no pixels to read (its surface is null).
+    if self.context.backend == Backend::Pdf {
+      return Err(webidl::dom_exception(
+        raw,
+        "NotSupportedError",
+        "getImageData() is not supported on a PDF page",
+      ));
     }
+    let settings = settings.0;
+    let (sx, sy, sw, sh) = (sx.0, sy.0, sw.0, sh.0);
+    // getImageDataInternal (base_rendering_context_2d.cc) on the `long`
+    // values: the product must fit in an int, and neither side may be 0.
+    if sw.checked_mul(sh).is_none() {
+      return Err(out_of_memory(raw, prefix));
+    }
+    if sw == 0 || sh == 0 {
+      return Err(webidl::dom_exception(
+        raw,
+        "IndexSizeError",
+        &format!(
+          "{prefix}The source {} is 0.",
+          if sw == 0 { "width" } else { "height" }
+        ),
+      ));
+    }
+    // A negative size flips the origin: sx += sw, then
+    // sw = saturated_cast<int>(SafeUnsignedAbs(sw)), each with CheckAdd.
+    let flip = |origin: i32, size: i32| -> Option<(i32, i32)> {
+      if size >= 0 {
+        return Some((origin, size));
+      }
+      let origin = origin.checked_add(size)?;
+      Some((origin, size.unsigned_abs().min(i32::MAX as u32) as i32))
+    };
+    let Some(((x, w), (y, h))) = flip(sx, sw).zip(flip(sy, sh)) else {
+      return Err(out_of_memory(raw, prefix));
+    };
+    if x.checked_add(w).is_none() || y.checked_add(h).is_none() {
+      return Err(out_of_memory(raw, prefix));
+    }
+    let (sw, sh) = (w as u32, h as u32);
+    // ImageData::ValidateAndCreate.
+    let len = validate_size(raw, prefix, sw, Some(sh), SizeErrors::Context2D)?;
+    // Spec: defaultColorSpace is this context's color space.
+    let color_space = settings
+      .color_space(raw, prefix)?
+      .unwrap_or(self.context.color_space);
+    if len > MAX_DATA_BYTES {
+      return Err(out_of_memory(raw, prefix));
+    }
+    let image_data = self
+      .context
+      .get_image_data(x, y, sw, sh, color_space)
+      .map_err(|e| match e {
+        ReadPixelsError::OutOfMemory => out_of_memory(raw, prefix),
+        ReadPixelsError::Failed => Error::new(
+          Status::GenericFailure,
+          "Read pixels from canvas failed".to_string(),
+        ),
+      })?;
+    let data_object = Uint8ClampedSlice::from_data(env, image_data)?;
+    let mut instance = ImageData {
+      width: sw as usize,
+      height: sh as usize,
+      color_space,
+      data_ref: Some(create_weak_ref(env, data_object.raw())?),
+    }
+    .into_instance(env)?;
+    instance.define_properties(&[Property::new()
+      .with_utf8_name("data")?
+      .with_value(&data_object)
+      .with_property_attributes(PropertyAttributes::Enumerable)])?;
+    Ok(instance)
   }
 
   #[napi]
@@ -5354,30 +5351,55 @@ impl CanvasRenderingContext2D {
       .collect()
   }
 
+  /// putImageData(imagedata, dx, dy) or (imagedata, dx, dy, dirtyX, dirtyY,
+  /// dirtyWidth, dirtyHeight). The index.js wrapper passes the argument
+  /// count after them; see `webidl::Arguments::take`.
   #[napi]
   pub fn put_image_data(
     &mut self,
     env: Env,
-    image_data: &ImageData,
-    dx: i32,
-    dy: i32,
-    dirty_x: Option<f64>,
-    dirty_y: Option<f64>,
-    dirty_width: Option<f64>,
-    dirty_height: Option<f64>,
+    _image_data: Positional,
+    _dx: Positional,
+    _dy: Positional,
+    _dirty_x: Positional,
+    _dirty_y: Positional,
+    _dirty_width: Positional,
+    _dirty_height: Positional,
+    args: PutImageDataArgs,
   ) -> Result<()> {
-    // Throws if the backing buffer was detached (transferred); `data` is
-    // non-configurable so it cannot be deleted.
-    let data = image_data.resolve_pixels(&env)?;
-    if let Some(dirty_x) = dirty_x {
+    let PutImageDataArgs {
+      image_data,
+      dx,
+      dy,
+      dirty,
+    } = args;
+    // base_rendering_context_2d.cc putImageData: a dirty area that overflows
+    // an int returns before the detach check.
+    if let Some([_, _, w, h]) = dirty
+      && w.checked_mul(h).is_none()
+    {
+      return Ok(());
+    }
+    // A detached (transferred) data buffer is an InvalidStateError; `data`
+    // is non-configurable so it cannot be deleted.
+    let data = image_data
+      .resolve_pixels(&env)
+      .map_err(|e| match e.status {
+        Status::InvalidArg => webidl::dom_exception(
+          env.raw(),
+          "InvalidStateError",
+          &format!(
+            "{}The source data has been detached.",
+            webidl::PUT_IMAGE_DATA
+          ),
+        ),
+        _ => e,
+      })?;
+    if let Some([dirty_x, dirty_y, dirty_width, dirty_height]) = dirty {
       let mut dirty_x = dirty_x as f32;
-      let mut dirty_y = dirty_y.map(|d| d as f32).unwrap_or(0.0);
-      let mut dirty_width = dirty_width
-        .map(|d| d as f32)
-        .unwrap_or(image_data.width as f32);
-      let mut dirty_height = dirty_height
-        .map(|d| d as f32)
-        .unwrap_or(image_data.height as f32);
+      let mut dirty_y = dirty_y as f32;
+      let mut dirty_width = dirty_width as f32;
+      let mut dirty_height = dirty_height as f32;
       // as per https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-putimagedata
       if dirty_width < 0f32 {
         dirty_x += dirty_width;
@@ -6102,7 +6124,7 @@ mod tests {
   /// Read a single surface pixel through the deferred flush path.
   fn pixel_at(ctx: &mut Context, x: f32, y: f32) -> [u8; 4] {
     let data = ctx
-      .get_image_data(x, y, 1, 1, ColorSpace::default())
+      .get_image_data(x as i32, y as i32, 1, 1, ColorSpace::default())
       .expect("pixels");
     [data[0], data[1], data[2], data[3]]
   }
