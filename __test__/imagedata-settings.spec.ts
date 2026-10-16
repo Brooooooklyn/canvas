@@ -409,3 +409,18 @@ test('createImageData settings getters may use the same context', (t) => {
   })
   t.is(withData.colorSpace, 'display-p3')
 })
+
+test('getImageData outside the canvas returns transparent black', (t) => {
+  for (const colorSpace of ['srgb', 'display-p3'] as const) {
+    const ctx = filled()
+    for (const [x, y] of [
+      [20, 20],
+      [-20, -20],
+      [2, 0],
+      [0, -2],
+    ]) {
+      const { data } = ctx.getImageData(x, y, 2, 2, { colorSpace })
+      t.deepEqual([...data], new Array(16).fill(0))
+    }
+  }
+})
