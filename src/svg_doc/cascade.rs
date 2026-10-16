@@ -41,6 +41,11 @@ pub(crate) const VAR_TEXT_BUDGET: usize = 256 << 20;
 /// they start over.
 const MEMO_LIMIT: usize = 1 << 16;
 
+/// What the values a memo keeps may hold on the heap before it starts over.
+/// A parsed value can be much larger than its text (a family list `a,a,...`
+/// more than ten times), so a count of keys does not bound it.
+const MEMO_BYTES: usize = 16 << 20;
+
 /// The custom properties an element declares, over the ones it inherits.
 /// Elements that declare none share their parent's scope.
 pub(crate) struct CustomScope {
@@ -238,10 +243,12 @@ fn bare_var(text: &str) -> Option<String> {
   (name.starts_with("--") && p.next_including_whitespace_and_comments().is_err()).then_some(name)
 }
 
-/// A map that forgets everything once its keys reach MEMO_LIMIT.
+/// A map that forgets everything once its keys reach MEMO_LIMIT or the heap
+/// bytes of its values reach MEMO_BYTES.
 struct Memo<K, V> {
   map: HashMap<K, V>,
   size: usize,
+  bytes: usize,
 }
 
 impl<K: Hash + Eq, V> Memo<K, V> {
@@ -249,6 +256,7 @@ impl<K: Hash + Eq, V> Memo<K, V> {
     Memo {
       map: HashMap::new(),
       size: 0,
+      bytes: 0,
     }
   }
 
@@ -256,12 +264,14 @@ impl<K: Hash + Eq, V> Memo<K, V> {
     self.map.get(key)
   }
 
-  fn insert(&mut self, key: K, size: usize, value: V) {
-    if self.size + size > MEMO_LIMIT {
+  fn insert(&mut self, key: K, size: usize, bytes: usize, value: V) {
+    if self.size + size > MEMO_LIMIT || self.bytes + bytes > MEMO_BYTES {
       self.map.clear();
       self.size = 0;
+      self.bytes = 0;
     }
     self.size += size;
+    self.bytes += bytes;
     self.map.insert(key, value);
   }
 }
@@ -728,7 +738,8 @@ impl<'a> Cascade<'a> {
     });
     if let Some(key) = key {
       let size = 1 + key.1.len();
-      self.scopes.insert(key, size, scope.clone());
+      // Its values are text VAR_TEXT_BUDGET counts, or shared.
+      self.scopes.insert(key, size, 0, scope.clone());
     }
     scope
   }
@@ -761,7 +772,8 @@ impl<'a> Cascade<'a> {
     let value =
       substitute(text, custom, &self.var_budget).and_then(|s| parse_value(prop, &s, c.mode, ctx));
     if let Some(key) = key {
-      self.values.insert(key, 1, value.clone());
+      let bytes = value.as_ref().map_or(0, Value::heap_bytes);
+      self.values.insert(key, 1, bytes, value.clone());
     }
     Some(value)
   }
@@ -1029,7 +1041,7 @@ mod tests {
   use super::*;
   use crate::svg_doc::dom::SVG_NS;
   use crate::svg_doc::sheet::Env;
-  use crate::svg_doc::values::{ColorValue, Paint, Rgba};
+  use crate::svg_doc::values::{ColorValue, Family, Paint, Rgba};
 
   fn styles(svg: &str) -> Vec<Style> {
     styles_with_budget(svg, VAR_TEXT_BUDGET).0
@@ -1038,6 +1050,32 @@ mod tests {
   /// The computed styles of every element, and the bytes of substituted
   /// text built.
   fn styles_with_budget(svg: &str, budget: usize) -> (Vec<Style>, usize) {
+    let (out, built, _) = cascade_over(svg, budget);
+    (out, built)
+  }
+
+  /// The heap bytes of the font-family lists the value memo keeps.
+  fn memo_families_bytes(cascade: &Cascade) -> usize {
+    let family = |f: &Family| {
+      std::mem::size_of::<Family>()
+        + match f {
+          Family::Named(n) => n.len(),
+          Family::Generic(_) => 0,
+        }
+    };
+    cascade
+      .values
+      .map
+      .values()
+      .map(|v| match v {
+        Some(Value::Families(f)) => f.iter().map(family).sum(),
+        _ => 0,
+      })
+      .sum()
+  }
+
+  /// styles_with_budget, and what memo_families_bytes counts at the end.
+  fn cascade_over(svg: &str, budget: usize) -> (Vec<Style>, usize, usize) {
     let doc = Doc::parse(svg).unwrap();
     let mut sheet = Sheet::default();
     let env = Env {
@@ -1073,8 +1111,9 @@ mod tests {
       );
     }
     parents.clear();
+    let kept = memo_families_bytes(&cascade);
     drop(cascade);
-    (out, budget - left.get())
+    (out, budget - left.get(), kept)
   }
 
   fn sub(text: &str, custom: &Option<Rc<CustomScope>>) -> Option<String> {
@@ -1389,6 +1428,32 @@ mod tests {
     assert!(lookup(last, "--c").is_none());
     let value = lookup(&s[1].custom, "--big").unwrap();
     assert!(Rc::ptr_eq(&value, &lookup(last, "--a").unwrap()));
+  }
+
+  #[test]
+  fn the_value_memo_keeps_a_bounded_number_of_bytes() {
+    // A 64 KiB family list at the root; 48 siblings with their own custom
+    // scopes each compute font-family: var(--f) (a memo miss each).
+    let list = format!("{}a", "a,".repeat(32 * 1024 - 1));
+    let gs = (0..48)
+      .map(|i| format!(r#"<g style="--k: {i}"/>"#))
+      .collect::<String>();
+    let (s, _, kept) = cascade_over(
+      &format!(
+        r#"<svg xmlns="{SVG_NS}" style="--f: {list}"><style>g {{ font-family: var(--f) }}</style>{gs}</svg>"#
+      ),
+      VAR_TEXT_BUDGET,
+    );
+    let one = match s[2].get(Prop::FontFamily) {
+      Value::Families(f) => f.len() * std::mem::size_of::<Family>() + f.len(),
+      _ => panic!(),
+    };
+    for g in &s[2..] {
+      assert!(matches!(g.get(Prop::FontFamily), Value::Families(f) if f.len() == 32 * 1024));
+    }
+    // Without a limit on bytes the memo kept all 48 (about 38 MB).
+    assert!(kept <= MEMO_BYTES.max(one), "{kept}");
+    assert!(kept > 0);
   }
 
   #[test]
