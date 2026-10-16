@@ -188,6 +188,53 @@ test('words after a negative-width piece sit where Chrome draws them', (t) => {
   t.deepEqual(spacedRows(FIXTURE.negativeSpacing), [])
 })
 
+// Blink adds the advances of the words, so spacing that is not negative
+// never moves a word left of the text before it. The marked letters fall
+// back to the second font, and skparagraph leaves one of their glyphs at the
+// end of the separator's run in the first font, outside its clusters and not
+// moved by the spacing before it, so its glyph positions go backwards
+// although no piece is narrower than nothing.
+test('spacing that is not negative moves no word left of the text before it', (t) => {
+  const out: string[] = []
+  const marked = 'a\u0308\u0323'
+  const ctx = createCanvas(600, 120).getContext('2d')
+  for (const font of [
+    '16px NKoT, SerifProT',
+    '16px NKoT, IosevkaT',
+    '16px NKoT, OswaldT',
+    '16px HarmattanT, SerifProT',
+  ]) {
+    for (const [letterSpacing, wordSpacing] of [
+      ['1px', '10px'],
+      ['1px', '0px'],
+      ['0px', '0px'],
+    ]) {
+      for (const separator of [' ', '\u2009']) {
+        ctx.font = font
+        ctx.letterSpacing = letterSpacing
+        ctx.wordSpacing = wordSpacing
+        const before = `Hello ${marked}`
+        const text = `${before}${separator}${marked}`
+        // The last word starts no left of where `before` ends.
+        const least = ctx.measureText(before).width + ctx.measureText(marked).actualBoundingBoxRight
+        const right = ctx.measureText(text).actualBoundingBoxRight
+        if (!(right >= least - 1e-3)) {
+          out.push(`${font} ls${letterSpacing} ws${wordSpacing} ${JSON.stringify(text)}: right ${right} < ${least}`)
+        }
+        ctx.clearRect(0, 0, 600, 120)
+        ctx.fillText(text, 300, 80)
+        const inkRight = Number(inkBox(ctx, 600, 120).split(',')[2])
+        if (!(inkRight >= Math.floor(300 + least) - 1)) {
+          out.push(
+            `${font} ls${letterSpacing} ws${wordSpacing} ${JSON.stringify(text)}: ink right ${inkRight} < ${300 + least}`,
+          )
+        }
+      }
+    }
+  }
+  t.deepEqual(out, [])
+})
+
 // Above 256px Skia measures glyphs on a scaled path strike, so the boxes
 // have fractions. Blink keeps them: subpixel positioning is on (Chrome
 // Linux's WebFontRenderStyle), so SkFontGetBoundsForGlyphs does not round
