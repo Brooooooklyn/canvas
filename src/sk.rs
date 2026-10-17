@@ -8,10 +8,11 @@ use std::ptr;
 use std::slice;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicI64, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, Weak};
 
 use crate::error::SkError;
 use crate::font::{ComputedFont, FamilyName, FontStretch, FontStyle};
+use crate::webidl::{CanvasPixelFormat, ImageDataPixelFormat};
 
 #[allow(non_camel_case_types)]
 pub mod ffi {
@@ -502,6 +503,7 @@ pub mod ffi {
       width: i32,
       height: i32,
       cs: u8,
+      pixel_format: u8,
     ) -> *mut skiac_surface;
 
     pub fn skiac_surface_create_svg(
@@ -511,13 +513,19 @@ pub mod ffi {
       alphaType: i32,
       flag: u32,
       cs: u8,
+      pixel_format: u8,
     );
 
     pub fn skiac_svg_canvas_flush(canvas: *mut skiac_canvas);
 
     pub fn skiac_surface_create_rgba(width: i32, height: i32, cs: u8) -> *mut skiac_surface;
 
-    pub fn skiac_surface_create_rgba_opaque(width: i32, height: i32, cs: u8) -> *mut skiac_surface;
+    pub fn skiac_surface_create_rgba_opaque(
+      width: i32,
+      height: i32,
+      cs: u8,
+      pixel_format: u8,
+    ) -> *mut skiac_surface;
 
     pub fn skiac_surface_ref(surface: *mut skiac_surface);
 
@@ -550,6 +558,43 @@ pub mod ffi {
       w: i32,
       h: i32,
       color_space: u8,
+    ) -> bool;
+
+    pub fn skiac_surface_read_pixels_format(
+      surface: *mut skiac_surface,
+      data: *mut u8,
+      row_bytes: usize,
+      x: i32,
+      y: i32,
+      w: i32,
+      h: i32,
+      color_space: u8,
+      pixel_format: u8,
+    ) -> bool;
+
+    pub fn skiac_canvas_write_pixels_format(
+      canvas: *mut skiac_canvas,
+      pixels: *const u8,
+      w: i32,
+      h: i32,
+      color_space: u8,
+      pixel_format: u8,
+      opaque: bool,
+      sx: i32,
+      sy: i32,
+      sw: i32,
+      sh: i32,
+      dx: i32,
+      dy: i32,
+    ) -> bool;
+
+    pub fn skiac_image_data_to_unorm8(
+      pixels: *const u8,
+      w: i32,
+      h: i32,
+      color_space: u8,
+      pixel_format: u8,
+      out: *mut u8,
     ) -> bool;
 
     pub fn skiac_surface_peek_premul_rgba(
@@ -1161,6 +1206,7 @@ pub mod ffi {
       quality: f32,
       lossless: bool,
       crop_to_max_dimension: bool,
+      unpremul_readback: bool,
     );
 
     pub fn skiac_image_read_pixels(
@@ -1251,6 +1297,7 @@ pub mod ffi {
       height: usize,
       row_bytes: usize,
       cs: u8,
+      pixel_format: u8,
     ) -> *mut skiac_bitmap;
 
     pub fn skiac_bitmap_set_color_space(
@@ -1265,7 +1312,19 @@ pub mod ffi {
 
     pub fn skiac_bitmap_orient(bitmap_info: *mut skiac_bitmap_info, origin: i32) -> bool;
 
+    pub fn skiac_bitmap_is_high_bit_depth(ptr: *const u8, size: usize) -> bool;
+
+    pub fn skiac_bitmap_make_high_bit_depth(
+      ptr: *const u8,
+      size: usize,
+      cs: u8,
+      bitmap_info: *mut skiac_bitmap_info,
+    ) -> bool;
+
     pub fn skiac_bitmap_source_is_opaque(c_bitmap: *mut skiac_bitmap, is_canvas: bool) -> bool;
+
+    pub fn skiac_bitmap_source_bytes_per_pixel(c_bitmap: *mut skiac_bitmap, is_canvas: bool)
+    -> i32;
 
     pub fn skiac_bitmap_get_width(c_bitmap: *mut skiac_bitmap) -> usize;
 
@@ -2364,12 +2423,18 @@ impl Surface {
   }
 
   /// alpha:false backing store: kOpaque, like Blink's canvas resource.
-  pub fn new_rgba_opaque(width: u32, height: u32, color_space: ColorSpace) -> Option<Surface> {
+  pub fn new_rgba_opaque(
+    width: u32,
+    height: u32,
+    color_space: ColorSpace,
+    pixel_format: CanvasPixelFormat,
+  ) -> Option<Surface> {
     unsafe {
       Self::from_ptr(ffi::skiac_surface_create_rgba_opaque(
         width as i32,
         height as i32,
         color_space as u8,
+        pixel_format as u8,
       ))
     }
   }
@@ -2378,22 +2443,26 @@ impl Surface {
     width: u32,
     height: u32,
     color_space: ColorSpace,
+    pixel_format: CanvasPixelFormat,
   ) -> Option<Surface> {
     unsafe {
       Self::from_ptr(ffi::skiac_surface_create_rgba_premultiplied(
         width as i32,
         height as i32,
         color_space as u8,
+        pixel_format as u8,
       ))
     }
   }
 
+  /// An SVG surface, with a raster surface of `pixel_format` beside it.
   pub fn new_svg(
     width: u32,
     height: u32,
     alpha_type: AlphaType,
     flag: SvgExportFlag,
     color_space: ColorSpace,
+    pixel_format: CanvasPixelFormat,
   ) -> Option<(Surface, SkWMemoryStream)> {
     let mut svg_surface = ffi::skiac_svg_surface {
       stream: ptr::null_mut(),
@@ -2408,6 +2477,7 @@ impl Surface {
         alpha_type as i32,
         flag as u32,
         color_space as u8,
+        pixel_format as u8,
       );
     };
     if svg_surface.surface.is_null() {
@@ -2593,6 +2663,37 @@ impl Surface {
       Ok(buffer)
     } else {
       try_zeroed_bytes(len).ok_or(ReadPixelsError::OutOfMemory)
+    }
+  }
+
+  /// Reads the (x, y, width, height) rect into `out` as an ImageData of
+  /// `pixel_format` holds it: unpremultiplied, in `color_space`. `out` holds
+  /// the whole rect, zeroed: what lies outside the surface stays zero. False
+  /// when the rect misses the surface.
+  pub fn read_pixels_format(
+    &self,
+    out: &mut [u8],
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+    color_space: ColorSpace,
+    pixel_format: ImageDataPixelFormat,
+  ) -> bool {
+    let row_bytes = width as usize * pixel_format.bytes_per_pixel();
+    assert!(out.len() >= row_bytes * height as usize);
+    unsafe {
+      ffi::skiac_surface_read_pixels_format(
+        self.ptr,
+        out.as_mut_ptr(),
+        row_bytes,
+        x,
+        y,
+        width as i32,
+        height as i32,
+        color_space as u8,
+        pixel_format as u8,
+      )
     }
   }
 
@@ -3423,6 +3524,42 @@ impl Canvas {
   pub fn write_pixels(&mut self, pixels: *const u8, width: usize, height: usize, x: i32, y: i32) {
     unsafe {
       ffi::skiac_canvas_write_pixels(self.0, width as i32, height as i32, pixels, width * 4, x, y);
+    }
+  }
+
+  /// putImageData on a raster canvas, as Blink writes it: the `src` part (x,
+  /// y, width, height) of a `width` x `height` ImageData of `pixel_format` in
+  /// `color_space`, at (dx, dy), converted first when the canvas stores
+  /// another number of bytes per pixel. False when that conversion cannot
+  /// allocate. `pixels` must point to the whole ImageData.
+  pub fn write_pixels_format(
+    &mut self,
+    pixels: *const u8,
+    width: usize,
+    height: usize,
+    color_space: ColorSpace,
+    pixel_format: ImageDataPixelFormat,
+    opaque: bool,
+    [sx, sy, sw, sh]: [i32; 4],
+    dx: i32,
+    dy: i32,
+  ) -> bool {
+    unsafe {
+      ffi::skiac_canvas_write_pixels_format(
+        self.0,
+        pixels,
+        width as i32,
+        height as i32,
+        color_space as u8,
+        pixel_format as u8,
+        opaque,
+        sx,
+        sy,
+        sw,
+        sh,
+        dx,
+        dy,
+      )
     }
   }
 
@@ -4834,6 +4971,30 @@ impl Drop for ImageFilter {
   }
 }
 
+/// A float ImageData's pixels as rgba-unorm8 bytes in the same colour space,
+/// or None when they cannot be allocated. `pixels` must point to `width` x
+/// `height` pixels of `pixel_format`.
+pub fn image_data_to_unorm8(
+  pixels: *const u8,
+  width: usize,
+  height: usize,
+  color_space: ColorSpace,
+  pixel_format: ImageDataPixelFormat,
+) -> Option<Vec<u8>> {
+  let mut out = try_zeroed_bytes(width.checked_mul(height)?.checked_mul(4)?)?;
+  unsafe {
+    ffi::skiac_image_data_to_unorm8(
+      pixels,
+      width as i32,
+      height as i32,
+      color_space as u8,
+      pixel_format as u8,
+      out.as_mut_ptr(),
+    )
+  }
+  .then_some(out)
+}
+
 #[repr(transparent)]
 #[derive(Debug)]
 pub struct Bitmap(pub(crate) ffi::skiac_bitmap_info);
@@ -4846,6 +5007,11 @@ impl Bitmap {
   /// an alpha:false canvas.
   pub fn is_opaque_source(&self) -> bool {
     unsafe { ffi::skiac_bitmap_source_is_opaque(self.0.bitmap, self.0.is_canvas) }
+  }
+
+  /// The bytes of one pixel of a drawImage source: 8 for a float16 canvas.
+  pub fn bytes_per_pixel(&self) -> usize {
+    unsafe { ffi::skiac_bitmap_source_bytes_per_pixel(self.0.bitmap, self.0.is_canvas) as usize }
   }
 
   pub fn from_buffer(ptr: *mut u8, size: usize) -> Option<Self> {
@@ -4862,6 +5028,33 @@ impl Bitmap {
         None
       }
     }
+  }
+
+  /// Whether `data`, an encoded image, has more than 8 bits a channel (a
+  /// 16-bit PNG): Chrome draws it on a float16 canvas from a half-float
+  /// decode.
+  pub fn is_high_bit_depth(data: &[u8]) -> bool {
+    unsafe { ffi::skiac_bitmap_is_high_bit_depth(data.as_ptr(), data.len()) }
+  }
+
+  /// The premultiplied half-float decode of a high-bit-depth image for a
+  /// float16 canvas in `color_space`.
+  pub fn high_bit_depth(data: &[u8], color_space: ColorSpace) -> Option<Self> {
+    let mut bitmap_info = ffi::skiac_bitmap_info {
+      bitmap: ptr::null_mut(),
+      width: 0,
+      height: 0,
+      is_canvas: false,
+    };
+    unsafe {
+      ffi::skiac_bitmap_make_high_bit_depth(
+        data.as_ptr(),
+        data.len(),
+        color_space as u8,
+        &mut bitmap_info,
+      )
+    }
+    .then_some(Bitmap(bitmap_info))
   }
 
   pub fn from_image_data(
@@ -4895,22 +5088,23 @@ impl Bitmap {
     }))
   }
 
-  /// A premultiplied copy of unpremultiplied RGBA bytes (an ImageData) in
-  /// `color_space`.
+  /// A premultiplied copy of the unpremultiplied pixels of an ImageData in
+  /// `color_space`, in the colour type of `pixel_format`.
   pub fn premul_from_image_data(
     ptr: *mut u8,
     width: usize,
     height: usize,
-    row_bytes: usize,
     color_space: ColorSpace,
+    pixel_format: ImageDataPixelFormat,
   ) -> Option<Self> {
     let bitmap = unsafe {
       ffi::skiac_bitmap_make_premul_from_image_data(
         ptr,
         width,
         height,
-        row_bytes,
+        width * pixel_format.bytes_per_pixel(),
         color_space as u8,
+        pixel_format as u8,
       )
     };
     if bitmap.is_null() {
@@ -5104,6 +5298,20 @@ pub struct AccountedBitmap {
   /// outlive this bitmap stay reported until their pixels are freed
   /// (`release_level_bytes`).
   level_bytes: AtomicI64,
+  /// Set for a high-bit-depth image.
+  high_bit_depth: Option<HighBitDepth>,
+}
+
+/// A high-bit-depth image's encoded bytes, and its half-float decodes for
+/// float16 canvases, made on first use: one per canvas colour space. The
+/// decode cache (`decode_cache`) keeps the decodes alive, with a draw or a
+/// pattern that uses one; the image only points to them. A decode the cache
+/// gave up is made again from the encoded bytes, which the image keeps for
+/// that (as Chrome keeps an image's encoded data).
+#[derive(Debug)]
+struct HighBitDepth {
+  encoded: Vec<u8>,
+  decodes: Mutex<[Weak<AccountedBitmap>; 2]>,
 }
 
 impl AccountedBitmap {
@@ -5118,7 +5326,52 @@ impl AccountedBitmap {
       image: OnceLock::new(),
       levels: unsafe { ffi::skiac_image_levels_create() },
       level_bytes: AtomicI64::new(0),
+      high_bit_depth: None,
     }
+  }
+
+  /// Keeps `encoded`, the image these pixels are the 8-bit decode of, when it
+  /// has more than 8 bits a channel. Its bytes must already be in `bytes`.
+  pub(crate) fn with_high_bit_depth(mut self, encoded: Vec<u8>) -> Self {
+    self.high_bit_depth = Some(HighBitDepth {
+      encoded,
+      decodes: Mutex::new([Weak::new(), Weak::new()]),
+    });
+    self
+  }
+
+  /// What a float16 canvas in `color_space` draws in place of these pixels:
+  /// the half-float decode of a high-bit-depth image, reported to V8 while it
+  /// lives. It is made when nothing holds it, and kept in the decode cache as
+  /// its most recently used entry. None for any other image, or when it
+  /// cannot be decoded.
+  pub(crate) fn float16_decode(&self, color_space: ColorSpace) -> Option<Arc<AccountedBitmap>> {
+    let high_bit_depth = self.high_bit_depth.as_ref()?;
+    let decode = {
+      let mut decodes = high_bit_depth.decodes.lock().unwrap();
+      let slot = &mut decodes[color_space as usize];
+      match slot.upgrade() {
+        Some(decode) => decode,
+        None => {
+          let bitmap = Bitmap::high_bit_depth(&high_bit_depth.encoded, color_space)?;
+          let bytes = i64::from(bitmap.0.width) * i64::from(bitmap.0.height) * 8;
+          if !self.env.is_null() {
+            let mut adjusted: i64 = 0;
+            unsafe { napi::sys::napi_adjust_external_memory(self.env, bytes, &mut adjusted) };
+          }
+          let decode = Arc::new(AccountedBitmap::new(bitmap, self.env, bytes));
+          *slot = Arc::downgrade(&decode);
+          decode
+        }
+      }
+    };
+    crate::decode_cache::keep(
+      self.env,
+      (self.resource_id, color_space),
+      decode.bytes as usize,
+      &decode,
+    );
+    Some(decode)
   }
 
   /// The live levels' bytes, as last reported.
@@ -5145,6 +5398,10 @@ impl AccountedBitmap {
 
 impl Drop for AccountedBitmap {
   fn drop(&mut self) {
+    // Nothing draws this image's half-float decodes again.
+    if self.high_bit_depth.is_some() {
+      crate::decode_cache::forget(self.env, self.resource_id);
+    }
     // A recorded draw or a shader can still hold a level: it stays reported,
     // and is reported freed with its pixels.
     let held = unsafe {
@@ -5196,6 +5453,9 @@ pub(crate) fn reported_level_bytes() -> i64 {
 // napi_env__::DeleteMe), so the stored env is still valid when Drop runs.
 // It is valid in `release_level_bytes` too: a level that outlives the bitmap
 // is held by a recording or a pattern shader, which finalizers free as well.
+// The decode cache's static holds half-float decodes of every env, but only
+// the env's own thread adds or drops them, and its cleanup hook drops the
+// rest before the env is torn down (`decode_cache`).
 unsafe impl Send for AccountedBitmap {}
 unsafe impl Sync for AccountedBitmap {}
 
@@ -5227,12 +5487,26 @@ pub(crate) struct ImagePatternShared {
   // `get_shader`), with the copy it samples; rebuilt when the transform, the
   // quality, the level or the colour space changes. Every shader samples
   // `image` or a cached level, so a rebuild copies no pixels.
-  pub(crate) shader: Option<(FilterQuality, PatternDecode, Shader, DecodedCopy)>,
+  pub(crate) shader: Option<PatternShader>,
 }
 
+/// A pattern's cached shader: the sampling quality, decode and copy it was
+/// made for, and the half-float decode it samples, which it keeps so that
+/// the decode's pixels stay reported to V8 after the decode cache gives it
+/// up.
+pub(crate) type PatternShader = (
+  FilterQuality,
+  PatternDecode,
+  Shader,
+  DecodedCopy,
+  Option<Arc<AccountedBitmap>>,
+);
+
 /// The decode level and canvas colour space an Image pattern's shader samples
-/// (`skiac_image_pattern_level`), or `None` for the original image as it is.
-pub(crate) type PatternDecode = Option<(i32, ColorSpace)>;
+/// (`skiac_image_pattern_level`), and whether it samples the half-float
+/// decode of a high-bit-depth image, or `None` for the original image as it
+/// is.
+pub(crate) type PatternDecode = Option<(i32, ColorSpace, bool)>;
 
 /// The SkImage uniqueID and byte size of the decode copy a shader samples in
 /// place of the original, which a recorded paint keeps; `None` when it samples
@@ -5291,15 +5565,16 @@ impl ImagePattern {
     self.backing_bytes
   }
 
-  /// `decode` is the context's transform and colour space on a raster
-  /// canvas, and `None` on PDF and SVG, which draw the original image. With
-  /// it, an Image source is drawn from the decode level Chrome picks for the
-  /// pattern under that transform (`skiac_image_pattern_level`), in that
-  /// colour space. Returns the shader and the decode copy it samples.
+  /// `decode` is the context's transform, colour space and pixel format on a
+  /// raster canvas, and `None` on PDF and SVG, which draw the original image.
+  /// With it, an Image source is drawn from the decode level Chrome picks for
+  /// the pattern under that transform (`skiac_image_pattern_level`), in that
+  /// colour space, from the half-float decode of a high-bit-depth image on a
+  /// float16 canvas. Returns the shader and the decode copy it samples.
   pub(crate) fn get_shader(
     &self,
     quality: FilterQuality,
-    decode: Option<(Transform, ColorSpace)>,
+    decode: Option<(Transform, ColorSpace, CanvasPixelFormat)>,
   ) -> Option<(Shader, DecodedCopy)> {
     let mut guard = self.shared.lock().unwrap();
     let shared = &mut *guard;
@@ -5308,7 +5583,7 @@ impl ImagePattern {
     // software_image_decode_cache.cc:538-560): a canvas, ImageData or SVG
     // Image pattern there is drawn from a level made for the draw, converted
     // to the canvas's colour space. On sRGB it is drawn as it is.
-    if let Some((ctm, color_space)) = decode
+    if let Some((ctm, color_space, _)) = decode
       && !self.is_image
       && color_space != ColorSpace::Srgb
     {
@@ -5326,7 +5601,7 @@ impl ImagePattern {
           )
         }
       };
-      let level = Some((level, color_space));
+      let level = Some((level, color_space, false));
       if shared
         .shader
         .as_ref()
@@ -5340,7 +5615,7 @@ impl ImagePattern {
             ptr::null_mut(),
             image,
             ptr::null_mut(),
-            level.map_or(-1, |(level, _)| level),
+            level.map_or(-1, |(level, ..)| level),
             self.repeat_x as i32,
             self.repeat_y as i32,
             quality as i32,
@@ -5351,31 +5626,45 @@ impl ImagePattern {
           ))
         };
         let decoded = (decoded_bytes != 0).then_some((decoded_id, decoded_bytes));
-        shared.shader = shader.map(|shader| (quality, level, shader, decoded));
+        shared.shader = shader.map(|shader| (quality, level, shader, decoded, None));
       }
       return shared
         .shader
         .as_ref()
-        .map(|(_, _, shader, decoded)| (shader.clone(), *decoded));
+        .map(|(_, _, shader, decoded, _)| (shader.clone(), *decoded));
     }
+    // A float16 canvas samples a high-bit-depth image's half-float decode,
+    // as drawImage does.
     let decode_cache = match (&self.backing, decode) {
-      (Some(ImagePatternBacking::Bitmap(bitmap)), Some(decode)) if self.is_image => {
-        Some((bitmap, decode))
+      (Some(ImagePatternBacking::Bitmap(bitmap)), Some((ctm, color_space, pixel_format)))
+        if self.is_image =>
+      {
+        let float16 = (pixel_format == CanvasPixelFormat::Float16)
+          .then(|| bitmap.float16_decode(color_space))
+          .flatten();
+        let half_float = float16.is_some();
+        Some((
+          float16.unwrap_or_else(|| bitmap.clone()),
+          (ctm, color_space),
+          half_float,
+        ))
       }
       _ => None,
     };
-    let level = decode_cache.map(|(bitmap, (ctm, color_space))| {
-      let level = unsafe {
-        ffi::skiac_image_pattern_level(
-          bitmap.inner.0.width,
-          bitmap.inner.0.height,
-          shared.transform.into(),
-          ctm.into(),
-          quality as i32,
-        )
-      };
-      (level, color_space)
-    });
+    let level = decode_cache
+      .as_ref()
+      .map(|(bitmap, (ctm, color_space), half_float)| {
+        let level = unsafe {
+          ffi::skiac_image_pattern_level(
+            bitmap.inner.0.width,
+            bitmap.inner.0.height,
+            shared.transform.into(),
+            (*ctm).into(),
+            quality as i32,
+          )
+        };
+        (level, *color_space, *half_float)
+      });
     if shared
       .shader
       .as_ref()
@@ -5386,12 +5675,17 @@ impl ImagePattern {
       // freed.
       shared.shader = None;
       shared.shader = match (decode_cache, level) {
-        (Some((bitmap, _)), Some((level, color_space))) => {
-          // The original image is only made when level 0 samples it.
-          let image = if level == 0 {
-            shared.image.get_or_insert_with(|| self.make_image()).0
-          } else {
+        (Some((bitmap, _, half_float)), Some((level, color_space, _))) => {
+          // The original image is only made when level 0 samples it. The
+          // half-float decode keeps its own.
+          let half_float_image;
+          let image = if level != 0 {
             ptr::null_mut()
+          } else if half_float {
+            half_float_image = bitmap.image();
+            half_float_image.0
+          } else {
+            shared.image.get_or_insert_with(|| self.make_image()).0
           };
           let mut decoded_id = 0;
           let mut decoded_bytes = 0;
@@ -5412,7 +5706,7 @@ impl ImagePattern {
           };
           bitmap.sync_level_bytes();
           let decoded = (decoded_bytes != 0).then_some((decoded_id, decoded_bytes));
-          shader.map(|shader| (shader, decoded))
+          shader.map(|shader| (shader, decoded, half_float.then_some(bitmap)))
         }
         _ => {
           let image = shared.image.get_or_insert_with(|| self.make_image());
@@ -5424,15 +5718,15 @@ impl ImagePattern {
             quality,
             shared.transform,
           )
-          .map(|shader| (shader, None))
+          .map(|shader| (shader, None, None))
         }
       }
-      .map(|(shader, decoded)| (quality, level, shader, decoded));
+      .map(|(shader, decoded, half_float)| (quality, level, shader, decoded, half_float));
     }
     shared
       .shader
       .as_ref()
-      .map(|(_, _, shader, decoded)| (shader.clone(), *decoded))
+      .map(|(_, _, shader, decoded, _)| (shader.clone(), *decoded))
   }
 
   /// The image every shader of this pattern samples. A null one (no pixels,
@@ -5878,13 +6172,15 @@ impl SkImage {
 
   /// Encode the image into the given format (JPEG/PNG/WebP; quality is
   /// ignored for PNG, and for a lossless WebP). `crop_to_max_dimension`:
-  /// encode the top-left part the encoder can hold.
+  /// encode the top-left part the encoder can hold. `unpremul_readback`:
+  /// encode toDataURL's unpremultiplied readback of a float16 image.
   pub fn encode_data(
     &self,
     format: SkEncodedImageFormat,
     quality: f32,
     lossless: bool,
     crop_to_max_dimension: bool,
+    unpremul_readback: bool,
   ) -> Option<SkiaDataRef> {
     unsafe {
       let mut data = ffi::skiac_sk_data {
@@ -5899,6 +6195,7 @@ impl SkImage {
         quality,
         lossless,
         crop_to_max_dimension,
+        unpremul_readback,
       );
 
       if data.ptr.is_null() {

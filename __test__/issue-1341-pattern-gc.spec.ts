@@ -195,11 +195,12 @@ const ctx = createCanvas(256, 256).getContext('2d')
   t.true(stdout.includes('finished without crash'), `unexpected output:\n${stdout}`)
 })
 
-// `imageData.data` is a non-configurable, non-writable own property: `delete`
-// is a no-op (and throws in strict mode), so the typed array stays reachable
-// for exactly the ImageData's lifetime via ordinary GC tracing. No native
-// strong ref pins it, which keeps `id.data.owner = id` cycles collectable.
-test('delete imageData.data is a no-op and putImageData/createPattern keep working', async (t) => {
+// As in Chrome, a unorm8 ImageData's own `data` is configurable and
+// ImageData.prototype has a `data` getter. Deleting the own property leaves the
+// getter, which gives the same array: a per-env WeakMap keeps it alive for
+// exactly the ImageData's lifetime. No native strong ref pins it, which keeps
+// `id.data.owner = id` cycles collectable.
+test('delete imageData.data leaves the same array and putImageData/createPattern keep working', async (t) => {
   const { status, signal, stdout, stderr } = await runInChildProcess(
     `
 const { createCanvas } = require('./index.js')
@@ -211,15 +212,18 @@ const ctx = createCanvas(256, 256).getContext('2d')
       imageData.data[k] = 255
       imageData.data[k + 3] = 255
     }
-    if (delete imageData.data) {
-      throw new Error('delete imageData.data unexpectedly succeeded')
-    }
-    if (!(imageData.data instanceof Uint8ClampedArray)) {
-      throw new Error('imageData.data lost after delete')
+    // No local reference to the array: only the ImageData keeps it.
+    imageData.data.marker = i
+    if (!delete imageData.data || Object.prototype.hasOwnProperty.call(imageData, 'data')) {
+      throw new Error('delete imageData.data failed')
     }
 
     global.gc()
     await new Promise((r) => setImmediate(r))
+
+    if (imageData.data?.marker !== i || imageData.data[0] !== 255 || imageData.data !== imageData.data) {
+      throw new Error('imageData.data lost after delete')
+    }
 
     ctx.putImageData(imageData, 0, 0)
     const pattern = ctx.createPattern(imageData, 'repeat')
@@ -262,9 +266,23 @@ function makeCtor() {
   ctor.data.owner = ctor
   return new WeakRef(ctor)
 }
+// A float ImageData has no own data property: only the WeakMap and the weak
+// napi_ref hold its array.
+function makeFloat() {
+  const float = new ImageData(new Float32Array(16), 2, 2, { pixelFormat: 'rgba-float32' })
+  float.data.owner = float
+  return new WeakRef(float)
+}
+function makeFloatRead() {
+  const read = ctx.getImageData(0, 0, 2, 2, { pixelFormat: 'rgba-float32' })
+  read.data.owner = read
+  return new WeakRef(read)
+}
 const cyclicRef = makeCyclic()
 const plainRef = makePlain()
 const ctorRef = makeCtor()
+const floatRef = makeFloat()
+const floatReadRef = makeFloatRead()
 ;(async () => {
   for (let i = 0; i < 10; i++) {
     global.gc()
@@ -281,6 +299,10 @@ const ctorRef = makeCtor()
   }
   if (ctorRef.deref() !== undefined) {
     console.error('ctor cyclic ImageData was not collected')
+    process.exit(1)
+  }
+  if (floatRef.deref() !== undefined || floatReadRef.deref() !== undefined) {
+    console.error('cyclic float ImageData was not collected')
     process.exit(1)
   }
   console.log('finished without crash')

@@ -74,6 +74,8 @@ pub struct PageRecorder {
   layers: Vec<SkPicture>,   // Accumulated finalized layers
   width: f32,
   height: f32,
+  /// The bytes of one surface pixel: 8 on a float16 canvas.
+  pub(crate) bytes_per_pixel: usize,
   changed: bool,                     // Dirty flag for lazy layer promotion
   depth: usize, // Tracks how many layers have been rendered to external surface
   cached_picture: Option<SkPicture>, // Cached composite picture for get_picture()
@@ -145,6 +147,7 @@ impl PageRecorder {
       layers: Vec::new(),
       width,
       height,
+      bytes_per_pixel: 4,
       changed: false,
       depth: 0,
       cached_picture: None,
@@ -353,10 +356,10 @@ impl PageRecorder {
       self.cached_picture = None;
       self.layers_at_cache = 0;
       self.pending_bytes = 0;
-      // The snapshot picture retains the passed raster (~width*height*4);
+      // The snapshot picture retains the passed raster (~width*height*bpp);
       // approx_bytes_used on a composited picture cannot see it, so it joins
       // the raster-byte tally a drawCanvas destination is charged with.
-      self.raster_bytes = self.width as usize * self.height as usize * 4;
+      self.raster_bytes = self.width as usize * self.height as usize * self.bytes_per_pixel;
       // The layers that pinned the deduped rasters are gone; future ops
       // re-charge shared sources under the new window.
       self.retained_rasters.clear();
@@ -664,7 +667,7 @@ mod tests {
 
   /// A raster surface snapshot for consolidate_with_snapshot.
   fn snapshot_of(width: u32, height: u32) -> SkImage {
-    Surface::new_rgba_premultiplied(width, height, ColorSpace::default())
+    Surface::new_rgba_premultiplied(width, height, ColorSpace::default(), Default::default())
       .and_then(|surface| surface.make_image_snapshot())
       .expect("snapshot")
   }

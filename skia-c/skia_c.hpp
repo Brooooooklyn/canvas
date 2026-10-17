@@ -1069,21 +1069,24 @@ struct skiac_text_request {
 
 extern "C" {
 void skiac_clear_all_cache();
-// Surface
+// Surface. `pf` is the CanvasPixelFormat: 0 unorm8, 1 float16.
 skiac_surface* skiac_surface_create_rgba_premultiplied(int width,
                                                        int height,
-                                                       uint8_t cs);
+                                                       uint8_t cs,
+                                                       uint8_t pf);
 void skiac_surface_create_svg(skiac_svg_surface* c_surface,
                               int width,
                               int height,
                               int alphaType,
                               uint32_t flag,
-                              uint8_t cs);
+                              uint8_t cs,
+                              uint8_t pf);
 void skiac_svg_canvas_flush(skiac_canvas* c_canvas);
 skiac_surface* skiac_surface_create_rgba(int width, int height, uint8_t cs);
 skiac_surface* skiac_surface_create_rgba_opaque(int width,
                                                 int height,
-                                                uint8_t cs);
+                                                uint8_t cs,
+                                                uint8_t pf);
 void skiac_surface_ref(skiac_surface* c_surface);
 void skiac_surface_destroy(skiac_surface* c_surface);
 skiac_surface* skiac_surface_copy_rgba(skiac_surface* c_surface,
@@ -1104,6 +1107,36 @@ bool skiac_surface_read_pixels_rect(skiac_surface* c_surface,
                                     int w,
                                     int h,
                                     uint8_t cs);
+// getImageData / putImageData of an ImageData pixel format: 0 rgba-unorm8,
+// 1 rgba-float16, 2 rgba-float32.
+bool skiac_surface_read_pixels_format(skiac_surface* c_surface,
+                                      uint8_t* data,
+                                      size_t row_bytes,
+                                      int x,
+                                      int y,
+                                      int w,
+                                      int h,
+                                      uint8_t cs,
+                                      uint8_t pf);
+bool skiac_canvas_write_pixels_format(skiac_canvas* c_canvas,
+                                      const uint8_t* pixels,
+                                      int w,
+                                      int h,
+                                      uint8_t cs,
+                                      uint8_t pf,
+                                      bool opaque,
+                                      int sx,
+                                      int sy,
+                                      int sw,
+                                      int sh,
+                                      int dx,
+                                      int dy);
+bool skiac_image_data_to_unorm8(const uint8_t* pixels,
+                                int w,
+                                int h,
+                                uint8_t cs,
+                                uint8_t pf,
+                                uint8_t* out);
 // Direct access to a raster surface's pixels. Succeeds only for
 // premultiplied RGBA_8888 surfaces in sRGB (0) or Display P3 (1).
 struct skiac_peek_pixels {
@@ -1542,7 +1575,8 @@ void skiac_image_encode_data(skiac_image* c_image,
                              int format,
                              float quality,
                              bool lossless,
-                             bool crop_to_max_dimension);
+                             bool crop_to_max_dimension,
+                             bool unpremul_readback);
 bool skiac_image_read_pixels(skiac_image* c_image,
                              uint8_t* dst,
                              size_t row_bytes,
@@ -1608,7 +1642,8 @@ skiac_bitmap* skiac_bitmap_make_premul_from_image_data(uint8_t* ptr,
                                                        size_t width,
                                                        size_t height,
                                                        size_t row_bytes,
-                                                       uint8_t cs);
+                                                       uint8_t cs,
+                                                       uint8_t pf);
 bool skiac_bitmap_set_color_space(skiac_bitmap* c_bitmap,
                                   const uint8_t* icc,
                                   size_t icc_len,
@@ -1617,7 +1652,13 @@ bool skiac_bitmap_set_color_space(skiac_bitmap* c_bitmap,
                                   uint16_t matrix,
                                   bool is_mono);
 bool skiac_bitmap_orient(skiac_bitmap_info* bitmap_info, int origin);
+bool skiac_bitmap_is_high_bit_depth(const uint8_t* ptr, size_t size);
+bool skiac_bitmap_make_high_bit_depth(const uint8_t* ptr,
+                                      size_t size,
+                                      uint8_t cs,
+                                      skiac_bitmap_info* bitmap_info);
 bool skiac_bitmap_source_is_opaque(skiac_bitmap* c_bitmap, bool is_canvas);
+int skiac_bitmap_source_bytes_per_pixel(skiac_bitmap* c_bitmap, bool is_canvas);
 size_t skiac_bitmap_get_width(skiac_bitmap* c_bitmap);
 size_t skiac_bitmap_get_height(skiac_bitmap* c_bitmap);
 void skiac_bitmap_set_immutable(skiac_bitmap* c_bitmap);
