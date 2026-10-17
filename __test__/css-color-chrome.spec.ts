@@ -242,15 +242,12 @@ for (const s of Object.keys(S.alpha)) {
   })
 }
 
-// The same keys, and every byte of each row within 1 of `expected`.
-const nearRow = (actual: Row, expected: Row) =>
-  JSON.stringify(Object.keys(actual).sort()) === JSON.stringify(Object.keys(expected).sort()) &&
-  Object.keys(actual).every((cs) => {
-    const [a, e] = [actual[cs], expected[cs]]
-    return Array.isArray(a) && Array.isArray(e)
-      ? a.length === e.length && a.every((v, i) => Math.abs(v - e[i]) <= 1)
-      : a === e
-  })
+// Windows ARM64 CI measured one byte 1 off Chrome's: byte 17 (pixel 4, green) of the display-p3 row
+// of 'color(display-p3 1 0 0) -> white' is 54 there, 55 in Chrome. There that case also accepts its
+// row with that one byte; every other byte, case and platform is checked exactly.
+const WIN_ARM64_GRAD = new Map<string, [string, number, number]>([
+  ['color(display-p3 1 0 0) -> white', ['display-p3', 17, 54]],
+])
 
 // sc-grad.js: 64x1 linear gradient, stops spread evenly (a single stop sits at 0.5).
 for (const key of Object.keys(S.grad).filter((k) => k !== '__latch')) {
@@ -271,13 +268,15 @@ for (const key of Object.keys(S.grad).filter((k) => k !== '__latch')) {
       r[cs] = row(ctx, 64)
     }
     const expected = expectedValues('grad', key)
-    // Windows ARM64 CI measured one byte off by 1: 54 (Chrome 55) in the display-p3 row of
-    // 'color(display-p3 1 0 0) -> white'.
-    if (WIN_ARM64 && expected.some((e) => nearRow(r, e as Row))) {
-      t.pass()
-    } else {
-      deepEqualOneOf(t, r, expected)
+    const measured = WIN_ARM64 ? WIN_ARM64_GRAD.get(key) : undefined
+    if (measured) {
+      const [cs, i, v] = measured
+      const chrome = expected[0] as Row
+      const winRow = [...(chrome[cs] as number[])]
+      winRow[i] = v
+      expected.push({ ...chrome, [cs]: winRow })
     }
+    deepEqualOneOf(t, r, expected)
   })
 }
 
