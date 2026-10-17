@@ -93,19 +93,20 @@ const MACOS = process.platform === 'darwin'
 const DARWIN = MACOS ? Number.parseInt(release(), 10) : 0
 // Chrome's pixels were measured on macOS 27 (Darwin 27). CoreText ships with
 // the OS: on macOS 26 (Darwin 25, the CI runners) some <text> cases draw a few
-// edge pixels differently. These are the largest channel differences the
-// macos-26 runners measured (CI run 38941212528, the same on arm64 and x64);
-// the other <text> cases are exact there. A text layout bug moves far more
-// (a 0.25 px shift 83, a lost text-anchor 255), so the check still catches
-// it. On other macOS versions and other systems the pixels of the cases with
-// <text> are not compared.
-const TEXT_GAPS_DARWIN25: Record<string, number> = {
-  'corpus1/text_hi': 3,
-  'corpus1/text_serif': 3,
-  'corpus1/text_sans': 6,
-  'corpus1/text_arial': 3,
-  'corpus2/g_text_anchor': 3,
-  'corpus2/g_text_tspan': 4,
+// edge pixels differently. For each, the macos-26 runners measured the largest
+// channel difference (`max`) and how many pixels differ in any channel (`px`)
+// in CI run 38941212528, the same on arm64 and x64; the other <text> cases are
+// exact there. A text layout bug moves far more (a 0.25 px shift 83, a lost
+// text-anchor 255), and a small change spread over the text moves more pixels,
+// so the check still catches it. On other macOS versions and other systems the
+// pixels of the cases with <text> are not compared.
+const TEXT_GAPS_DARWIN25: Record<string, { max: number; px: number }> = {
+  'corpus1/text_hi': { max: 3, px: 3 },
+  'corpus1/text_serif': { max: 3, px: 3 },
+  'corpus1/text_sans': { max: 6, px: 4 },
+  'corpus1/text_arial': { max: 3, px: 3 },
+  'corpus2/g_text_anchor': { max: 3, px: 2 },
+  'corpus2/g_text_tspan': { max: 4, px: 4 },
 }
 const TEXT_PIXELS = DARWIN === 27 || DARWIN === 25
 
@@ -169,13 +170,17 @@ for (const [tag, corpus] of Object.entries(REF.corpora)) {
       const key = `${tag}/${name}`
       const gap = KNOWN_GAPS[key]
       let allowed = gap ? ((X64 ? gap.x64 : undefined) ?? gap.max) : 0
-      if (text && DARWIN === 25) {
-        allowed = Math.max(allowed, TEXT_GAPS_DARWIN25[key] ?? 0)
+      const textGap = text && DARWIN === 25 ? TEXT_GAPS_DARWIN25[key] : undefined
+      if (textGap) {
+        allowed = Math.max(allowed, textGap.max)
       }
       t.true(
         max <= allowed,
         `max channel diff ${max} (allowed ${allowed}) in ${count} px, first at (${first % c.w}, ${Math.floor(first / c.w)})`,
       )
+      if (textGap) {
+        t.true(count <= textGap.px, `${count} px differ (allowed ${textGap.px})`)
+      }
     })
   }
 }
