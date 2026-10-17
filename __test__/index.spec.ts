@@ -104,7 +104,8 @@ test('gif output of a display-p3 canvas is converted to sRGB', async (t) => {
   t.deepEqual(await decode(p3.encodeSync('gif')), [31, 128, 223, 255], 'encodeSync')
 })
 
-// Our YUV to RGB step for AVIF can round a channel 1 lower than Chrome's.
+// AVIF stores YUV, so a decoded channel can be 1 off the RGB the file was
+// made from.
 const nearPixel = (t: ExecutionContext, actual: number[], expected: readonly number[], label: string) =>
   t.true(
     actual.every((value, i) => Math.abs(value - expected[i]) <= 1),
@@ -114,9 +115,9 @@ const nearPixel = (t: ExecutionContext, actual: number[], expected: readonly num
 // The spec: a format that supports a color profile must carry the bitmap's
 // color space. AVIF does this with CICP (an 'nclx' colr box), so the pixels
 // of a P3 canvas stay P3, tagged primaries 12 (P3), transfer 13 (sRGB),
-// matrix 6 (BT.601) and full range; an sRGB canvas is tagged 1/13/6. Chrome
-// has no AVIF encoder; the pixels are what Chrome 155 CPU decodes from these
-// files, apart from the 1 lower red (Chrome 255, 234).
+// matrix 0 (identity: quality 100 is lossless) and full range; an sRGB canvas
+// is tagged 1/13/0. Chrome has no AVIF encoder; the pixels are what Chrome 155
+// CPU decodes from these files.
 test('avif output keeps the canvas color space and tags it as CICP', async (t) => {
   const colr = (data: Buffer) => {
     const at = data.indexOf('colrnclx')
@@ -125,11 +126,11 @@ test('avif output keeps the canvas color space and tags it as CICP', async (t) =
   for (const { source, cicp, decoded } of [
     {
       source: 'display-p3',
-      cicp: [12, 13, 6, 1],
+      cicp: [12, 13, 0, 1],
       decoded: {
         'display-p3': [
           [255, 0, 0, 255],
-          [31, 128, 223, 255],
+          [32, 128, 223, 255],
         ],
         srgb: [
           [255, 0, 0, 255],
@@ -139,7 +140,7 @@ test('avif output keeps the canvas color space and tags it as CICP', async (t) =
     },
     {
       source: 'srgb',
-      cicp: [1, 13, 6, 1],
+      cicp: [1, 13, 0, 1],
       decoded: {
         'display-p3': [
           [234, 51, 35, 255],
@@ -147,7 +148,7 @@ test('avif output keeps the canvas color space and tags it as CICP', async (t) =
         ],
         srgb: [
           [255, 0, 0, 255],
-          [31, 128, 223, 255],
+          [32, 128, 223, 255],
         ],
       },
     },
@@ -170,7 +171,7 @@ test('avif output keeps the canvas color space and tags it as CICP', async (t) =
         const out = createCanvas(4, 4).getContext('2d', { colorSpace })
         out.drawImage(image, 0, 0)
         const [left, right] = decoded[colorSpace]
-        nearPixel(t, [...out.getImageData(0, 0, 1, 1).data], left, `${label} left`)
+        t.deepEqual([...out.getImageData(0, 0, 1, 1).data], left, `${label} left`)
         t.deepEqual([...out.getImageData(3, 0, 1, 1).data], right, `${label} right`)
       }
     }
@@ -216,8 +217,7 @@ test('avif quality: a higher quality gives a bigger and more exact file', async 
 // The fixtures hold P3 255,0,0 (left) and P3 200,100,50 (right), tagged with an
 // ICC profile, with CICP 12/13/6, or with CICP 12/2/6. Chrome 155 CPU honors
 // the ICC profile, else the CICP, where an unspecified (2) transfer means sRGB
-// (avif_image_decoder.cc:868-914). Our red is 1 lower (nearPixel), as it is
-// for an sRGB AVIF.
+// (avif_image_decoder.cc:868-914).
 test('avif decode honors the ICC profile or CICP color space', async (t) => {
   for (const name of ['avif-p3-icc', 'avif-p3-cicp', 'avif-p3-cicp-transfer-unspecified']) {
     const image = await loadImage(join(__dirname, 'fixtures', `${name}.avif`))
@@ -227,7 +227,7 @@ test('avif decode honors the ICC profile or CICP color space', async (t) => {
     ] as const) {
       const ctx = createCanvas(4, 4).getContext('2d', { colorSpace })
       ctx.drawImage(image, 0, 0)
-      nearPixel(t, [...ctx.getImageData(0, 0, 1, 1).data], left, `${name} ${colorSpace} left`)
+      t.deepEqual([...ctx.getImageData(0, 0, 1, 1).data], left, `${name} ${colorSpace} left`)
       t.deepEqual([...ctx.getImageData(3, 0, 1, 1).data], right, `${name} ${colorSpace} right`)
     }
   }
@@ -246,7 +246,7 @@ const decodeAvifRow = async (name: string, colorSpace: 'srgb' | 'display-p3') =>
 // Chrome draws the BT.709 family of CICP transfers (1 BT.709, 6 SMPTE 170M,
 // 14 and 15 BT.2020) with the sRGB curve (ui/gfx/color_space.cc
 // GetTransferFunction), not with the 2.4 gamma of SkColorSpace::MakeCICP.
-// Expected values are Chrome 155 CPU; ours can round a channel 1 lower.
+// Expected values are Chrome 155 CPU.
 test('avif decode draws BT.709-family CICP transfers with the sRGB curve', async (t) => {
   const bt709Primaries = {
     srgb: [
@@ -330,24 +330,25 @@ test('avif decode draws BT.709-family CICP transfers with the sRGB curve', async
   for (const [name, expected] of Object.entries(cases)) {
     for (const colorSpace of ['srgb', 'display-p3'] as const) {
       const row = await decodeAvifRow(name, colorSpace)
-      row.forEach((pixel, x) => nearPixel(t, pixel, expected[colorSpace][x], `${name} ${colorSpace} x=${x}`))
+      t.deepEqual(row, expected[colorSpace], `${name} ${colorSpace}`)
     }
   }
 })
 
-// Chrome cannot decode CICP transfer 11 (IEC 61966-2-4), and it tone maps PQ
-// (16) and HLG (18) when it draws them into a canvas. We have neither, so
+// Chrome cannot decode CICP transfer 11 (IEC 61966-2-4): onerror. It tone
+// maps PQ (16) and HLG (18) when it draws them into a canvas. We cannot, so
 // these stay untagged (drawn as sRGB), as before AVIF color spaces were
 // honored. These are not Chrome's values (PQ grey 132, HLG grey 99), but are
 // closer to them than Skia's plain BT.709, PQ and HLG curves (121, 181, 137).
-test('avif decode leaves CICP transfers 11, PQ and HLG untagged', async (t) => {
+test('avif decode fails CICP transfer 11 and leaves PQ and HLG untagged', async (t) => {
+  await t.throwsAsync(loadImage(join(__dirname, 'fixtures', 'avif-cicp-1-11-6.avif')))
   const untagged = [
     [128, 128, 128, 255],
     [200, 100, 50, 255],
     [31, 128, 223, 255],
     [255, 0, 0, 255],
   ]
-  for (const name of ['avif-cicp-1-11-6', 'avif-cicp-9-16-9', 'avif-cicp-9-18-9']) {
+  for (const name of ['avif-cicp-9-16-9', 'avif-cicp-9-18-9']) {
     const row = await decodeAvifRow(name, 'srgb')
     row.forEach((pixel, x) => nearPixel(t, pixel, untagged[x], `${name} x=${x}`))
   }

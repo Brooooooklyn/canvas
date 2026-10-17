@@ -108,6 +108,12 @@ pub mod ffi {
 
   #[repr(C)]
   #[derive(Copy, Clone, Debug)]
+  pub struct skiac_svg_document {
+    _unused: [u8; 0],
+  }
+
+  #[repr(C)]
+  #[derive(Copy, Clone, Debug)]
   pub struct skiac_image_levels {
     _unused: [u8; 0],
   }
@@ -497,13 +503,15 @@ pub mod ffi {
       surface: *mut skiac_surface,
       data: *mut skiac_sk_data,
       format: i32,
-      quality: i32,
+      quality: f32,
+      lossless: bool,
     );
 
     pub fn skiac_surface_encode_stream(
       surface: *mut skiac_surface,
       format: i32,
-      quality: i32,
+      quality: f32,
+      lossless: bool,
       write_callback: SkiacWStreamWriteCallback,
       context: *mut c_void,
     ) -> bool;
@@ -1074,6 +1082,11 @@ pub mod ffi {
       color: u32,
     ) -> u32;
 
+    pub fn skiac_image_filter_input_bounds(
+      image_filter: *mut skiac_image_filter,
+      bounds: *mut i32,
+    ) -> bool;
+
     pub fn skiac_image_filter_ref(image_filter: *mut skiac_image_filter);
 
     pub fn skiac_image_filter_destroy(image_filter: *mut skiac_image_filter);
@@ -1093,7 +1106,9 @@ pub mod ffi {
       image: *mut skiac_image,
       data: *mut skiac_sk_data,
       format: i32,
-      quality: i32,
+      quality: f32,
+      lossless: bool,
+      crop_to_max_dimension: bool,
     );
 
     pub fn skiac_image_read_pixels(
@@ -1122,14 +1137,50 @@ pub mod ffi {
       info: *mut skiac_bitmap_info,
     ) -> bool;
 
-    pub fn skiac_bitmap_make_from_svg(
+    pub fn skiac_svg_document_make(
       data: *const u8,
-      size: usize,
-      width: f32,
-      height: f32,
-      info: *mut skiac_bitmap_info,
+      length: usize,
       font_collection: *mut skiac_font_collection,
+    ) -> *mut skiac_svg_document;
+
+    pub fn skiac_svg_document_attribute(
+      document: *mut skiac_svg_document,
+      index: i32,
+      ptr: *mut *const c_char,
+      length: *mut usize,
+    ) -> bool;
+
+    pub fn skiac_svg_document_render(
+      document: *mut skiac_svg_document,
+      layout_width: f32,
+      layout_height: f32,
+      view_width: f32,
+      view_height: f32,
+      da: f32,
+      db: f32,
+      dc: f32,
+      dd: f32,
+      de: f32,
+      df: f32,
+      sx: f32,
+      sy: f32,
+      tx: f32,
+      ty: f32,
+      clip_left: f32,
+      clip_top: f32,
+      clip_right: f32,
+      clip_bottom: f32,
+      width: i32,
+      height: i32,
       cs: u8,
+      info: *mut skiac_bitmap_info,
+    ) -> bool;
+
+    pub fn skiac_svg_document_destroy(document: *mut skiac_svg_document);
+
+    pub fn skiac_font_collection_default_font_metrics(
+      font_collection: *mut skiac_font_collection,
+      metrics: *mut f32,
     ) -> bool;
 
     pub fn skiac_bitmap_make_from_image_data(
@@ -1156,7 +1207,11 @@ pub mod ffi {
       icc_len: usize,
       primaries: u16,
       transfer: u16,
-    );
+      matrix: u16,
+      is_mono: bool,
+    ) -> bool;
+
+    pub fn skiac_bitmap_orient(bitmap_info: *mut skiac_bitmap_info, origin: i32) -> bool;
 
     pub fn skiac_bitmap_source_is_opaque(c_bitmap: *mut skiac_bitmap, is_canvas: bool) -> bool;
 
@@ -2605,7 +2660,8 @@ impl Surface {
   pub fn encode_stream(
     &self,
     format: SkEncodedImageFormat,
-    quality: u8,
+    quality: f32,
+    lossless: bool,
     write_callback: ffi::SkiacWStreamWriteCallback,
     context: *mut c_void,
   ) -> bool {
@@ -2613,7 +2669,8 @@ impl Surface {
       ffi::skiac_surface_encode_stream(
         self.ptr,
         format as i32,
-        quality as i32,
+        quality,
+        lossless,
         write_callback,
         context,
       )
@@ -2719,14 +2776,19 @@ impl SurfaceRef {
     }
   }
 
-  pub fn encode_data(&self, format: SkEncodedImageFormat, quality: u8) -> Option<SkiaDataRef> {
+  pub fn encode_data(
+    &self,
+    format: SkEncodedImageFormat,
+    quality: f32,
+    lossless: bool,
+  ) -> Option<SkiaDataRef> {
     unsafe {
       let mut data = ffi::skiac_sk_data {
         ptr: ptr::null_mut(),
         size: 0,
         data: ptr::null_mut(),
       };
-      ffi::skiac_surface_encode_data(self.0, &mut data, format as i32, quality as i32);
+      ffi::skiac_surface_encode_data(self.0, &mut data, format as i32, quality, lossless);
 
       if data.ptr.is_null() {
         None
@@ -4572,6 +4634,16 @@ impl ImageFilter {
     unsafe { ffi::skiac_image_filter_filter_color(self.0, color) }
   }
 
+  /// The device rect (left, top, right, bottom) this filter reads to draw
+  /// its output over `output`, on a layer at the device identity (where
+  /// `Context::composited_filter_layer` puts it). None when Skia cannot
+  /// bound it.
+  pub fn input_bounds(&self, output: [i32; 4]) -> Option<[i32; 4]> {
+    debug_assert!(!self.0.is_null(), "ImageFilter must never hold null");
+    let mut bounds = output;
+    unsafe { ffi::skiac_image_filter_input_bounds(self.0, bounds.as_mut_ptr()) }.then_some(bounds)
+  }
+
   pub fn make_drop_shadow_only(
     dx: f32,
     dy: f32,
@@ -4737,72 +4809,6 @@ impl Bitmap {
     }
   }
 
-  pub fn from_svg_data(
-    data: *const u8,
-    size: usize,
-    color_space: ColorSpace,
-    fc: &FontCollection,
-  ) -> Option<Result<Self, crate::error::SkError>> {
-    let mut bitmap_info = ffi::skiac_bitmap_info {
-      bitmap: ptr::null_mut(),
-      width: 0,
-      height: 0,
-      is_canvas: false,
-    };
-    unsafe {
-      let is_valid = ffi::skiac_bitmap_make_from_svg(
-        data,
-        size,
-        -1.0,
-        -1.0,
-        &mut bitmap_info,
-        fc.0,
-        color_space as u8,
-      );
-
-      if !is_valid {
-        return Some(Err(crate::error::SkError::InvalidSvg));
-      }
-
-      if bitmap_info.bitmap.is_null() {
-        return None;
-      }
-      Some(Ok(Bitmap(bitmap_info)))
-    }
-  }
-
-  pub fn from_svg_data_with_custom_size(
-    data: *const u8,
-    size: usize,
-    width: f32,
-    height: f32,
-    color_space: ColorSpace,
-    fc: &FontCollection,
-  ) -> Option<Self> {
-    let mut bitmap_info = ffi::skiac_bitmap_info {
-      bitmap: ptr::null_mut(),
-      width: 0,
-      height: 0,
-      is_canvas: false,
-    };
-    unsafe {
-      ffi::skiac_bitmap_make_from_svg(
-        data,
-        size,
-        width,
-        height,
-        &mut bitmap_info,
-        fc.0,
-        color_space as u8,
-      );
-
-      if bitmap_info.bitmap.is_null() {
-        return None;
-      }
-      Some(Bitmap(bitmap_info))
-    }
-  }
-
   pub fn from_image_data(
     ptr: *mut u8,
     width: usize,
@@ -4863,12 +4869,35 @@ impl Bitmap {
     }))
   }
 
-  /// Tags the pixels with a decoded file's color space: the ICC profile when
-  /// it has one, else the CICP primaries and transfer characteristics.
-  pub(crate) fn set_color_space(&mut self, icc: &[u8], primaries: u16, transfer: u16) {
+  /// Tags the pixels with a decoded AVIF's color space, as Chrome does: the
+  /// ICC profile when it has one, else the CICP. False when Chrome fails the
+  /// decode (an ICC profile it cannot use, CICP transfers 9 to 12).
+  pub(crate) fn set_avif_color_space(
+    &mut self,
+    icc: &[u8],
+    primaries: u16,
+    transfer: u16,
+    matrix: u16,
+    is_mono: bool,
+  ) -> bool {
     unsafe {
-      ffi::skiac_bitmap_set_color_space(self.0.bitmap, icc.as_ptr(), icc.len(), primaries, transfer)
+      ffi::skiac_bitmap_set_color_space(
+        self.0.bitmap,
+        icc.as_ptr(),
+        icc.len(),
+        primaries,
+        transfer,
+        matrix,
+        is_mono,
+      )
     }
+  }
+
+  /// Replaces the pixels with their copy in `origin` (an SkEncodedOrigin, 1
+  /// is as is); the size swaps for 90 and 270 degrees. False when the copy
+  /// cannot be made.
+  pub(crate) fn orient(&mut self, origin: i32) -> bool {
+    unsafe { ffi::skiac_bitmap_orient(&mut self.0, origin) }
   }
 
   /// Marks the pixels read-only, so an image made from them shares them. Only
@@ -4893,6 +4922,104 @@ impl Drop for Bitmap {
         ffi::skiac_bitmap_destroy(self.0.bitmap);
       }
     }
+  }
+}
+
+/// A parsed SVG image (Skia's SVG DOM) and the raw root attributes that give
+/// its natural size.
+pub struct SvgDocument(*mut ffi::skiac_svg_document);
+
+// Built on a decode thread, then used only by the JS thread that owns the
+// Image.
+unsafe impl Send for SvgDocument {}
+
+/// The root attributes `SvgDocument::attribute` reads, in the order the C
+/// side stores them.
+#[derive(Clone, Copy)]
+pub enum SvgRootAttribute {
+  Width = 0,
+  Height = 1,
+  ViewBox = 2,
+  PreserveAspectRatio = 3,
+}
+
+impl SvgDocument {
+  /// None when the bytes are not an SVG document Skia can use.
+  pub fn parse(data: &[u8], fc: &FontCollection) -> Option<Self> {
+    let document = unsafe { ffi::skiac_svg_document_make(data.as_ptr(), data.len(), fc.0) };
+    (!document.is_null()).then_some(SvgDocument(document))
+  }
+
+  /// The attribute of the root element as written, if present.
+  pub fn attribute(&self, attribute: SvgRootAttribute) -> Option<String> {
+    let mut ptr: *const c_char = ptr::null();
+    let mut length = 0usize;
+    unsafe {
+      if !ffi::skiac_svg_document_attribute(self.0, attribute as i32, &mut ptr, &mut length) {
+        return None;
+      }
+      let bytes = slice::from_raw_parts(ptr.cast::<u8>(), length);
+      Some(String::from_utf8_lossy(bytes).into_owned())
+    }
+  }
+
+  /// A `width` x `height` raster of the document laid out at `layout`,
+  /// clipped to `view`, mapped by `[sx 0 tx; 0 sy ty]` into a destination
+  /// space, clipped to `clip` (left, top, right, bottom) there, and mapped by
+  /// `device` (`[a, b, c, d, e, f]`, as a DOMMatrix) into the raster. None
+  /// when the raster cannot be allocated.
+  #[allow(clippy::too_many_arguments)]
+  pub fn render(
+    &mut self,
+    layout: (f32, f32),
+    view: (f32, f32),
+    [da, db, dc, dd, de, df]: [f32; 6],
+    [sx, sy, tx, ty]: [f32; 4],
+    [left, top, right, bottom]: [f32; 4],
+    width: i32,
+    height: i32,
+    color_space: ColorSpace,
+  ) -> Option<Bitmap> {
+    let mut bitmap_info = ffi::skiac_bitmap_info {
+      bitmap: ptr::null_mut(),
+      width: 0,
+      height: 0,
+      is_canvas: false,
+    };
+    let rendered = unsafe {
+      ffi::skiac_svg_document_render(
+        self.0,
+        layout.0,
+        layout.1,
+        view.0,
+        view.1,
+        da,
+        db,
+        dc,
+        dd,
+        de,
+        df,
+        sx,
+        sy,
+        tx,
+        ty,
+        left,
+        top,
+        right,
+        bottom,
+        width,
+        height,
+        color_space as u8,
+        &mut bitmap_info,
+      )
+    };
+    (rendered && !bitmap_info.bitmap.is_null()).then_some(Bitmap(bitmap_info))
+  }
+}
+
+impl Drop for SvgDocument {
+  fn drop(&mut self) {
+    unsafe { ffi::skiac_svg_document_destroy(self.0) }
   }
 }
 
@@ -5292,6 +5419,14 @@ unsafe impl Send for FontCollection {}
 unsafe impl Sync for FontCollection {}
 
 impl FontCollection {
+  /// The x-height, '0' advance, cap height and line spacing of Chrome's
+  /// default font at 16px, or None when that font is not installed.
+  pub fn default_font_metrics(&self) -> Option<[f32; 4]> {
+    let mut metrics = [0f32; 4];
+    unsafe { ffi::skiac_font_collection_default_font_metrics(self.0, metrics.as_mut_ptr()) }
+      .then_some(metrics)
+  }
+
   pub fn new() -> FontCollection {
     unsafe {
       let c_font_collection = ffi::skiac_font_collection_create();
@@ -5677,15 +5812,30 @@ impl SkImage {
     }
   }
 
-  /// Encode the image into the given format (JPEG/PNG/WebP; quality is ignored for PNG)
-  pub fn encode_data(&self, format: SkEncodedImageFormat, quality: u8) -> Option<SkiaDataRef> {
+  /// Encode the image into the given format (JPEG/PNG/WebP; quality is
+  /// ignored for PNG, and for a lossless WebP). `crop_to_max_dimension`:
+  /// encode the top-left part the encoder can hold.
+  pub fn encode_data(
+    &self,
+    format: SkEncodedImageFormat,
+    quality: f32,
+    lossless: bool,
+    crop_to_max_dimension: bool,
+  ) -> Option<SkiaDataRef> {
     unsafe {
       let mut data = ffi::skiac_sk_data {
         ptr: ptr::null_mut(),
         size: 0,
         data: ptr::null_mut(),
       };
-      ffi::skiac_image_encode_data(self.0, &mut data, format as i32, quality as i32);
+      ffi::skiac_image_encode_data(
+        self.0,
+        &mut data,
+        format as i32,
+        quality,
+        lossless,
+        crop_to_max_dimension,
+      );
 
       if data.ptr.is_null() {
         None

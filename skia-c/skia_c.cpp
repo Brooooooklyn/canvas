@@ -1267,6 +1267,32 @@ static sk_sp<SkImage> encodable_image(SkImage* image) {
 static constexpr auto kJpegAlphaOption =
     SkJpegEncoder::AlphaOption::kBlendOnBlack;
 
+// Blink ImageEncoder::Encode (image_encoder.cc:52-54): quality 100 keeps the
+// chroma at full resolution (4:4:4); every other quality is 4:2:0.
+static SkJpegEncoder::Options jpeg_options(int quality) {
+  SkJpegEncoder::Options options;
+  options.fQuality = quality;
+  options.fAlphaOption = kJpegAlphaOption;
+  if (quality == 100) {
+    options.fDownsample = SkJpegEncoder::Downsample::k444;
+  }
+  return options;
+}
+
+// Blink ImageEncoder::ComputeWebpOptions (image_encoder.cc:116-131): lossless
+// uses effort 75; a lossy quality is passed as the float it is.
+static SkWebpEncoder::Options webp_options(float quality, bool lossless) {
+  SkWebpEncoder::Options options;
+  if (lossless) {
+    options.fCompression = SkWebpEncoder::Compression::kLossless;
+    options.fQuality = 75.0f;
+  } else {
+    options.fCompression = SkWebpEncoder::Compression::kLossy;
+    options.fQuality = quality;
+  }
+  return options;
+}
+
 bool skiac_surface_save(skiac_surface* c_surface, const char* path) {
   auto snapshot = SURFACE_CAST->makeImageSnapshot();
   auto image = encodable_image(snapshot.get());
@@ -1410,37 +1436,17 @@ void skiac_surface_png_data(skiac_surface* c_surface, skiac_sk_data* data) {
 void skiac_surface_encode_data(skiac_surface* c_surface,
                                skiac_sk_data* data,
                                int format,
-                               int quality) {
+                               float quality,
+                               bool lossless) {
   auto snapshot = SURFACE_CAST->makeImageSnapshot();
-  auto image_ref = encodable_image(snapshot.get());
-  auto image = image_ref.get();
-  sk_sp<SkData> encoded_data;
-  if (format == int(SkEncodedImageFormat::kJPEG)) {
-    SkJpegEncoder::Options options;
-    options.fQuality = quality;
-    options.fAlphaOption = kJpegAlphaOption;
-    encoded_data = SkJpegEncoder::Encode(nullptr, image, options);
-  } else if (format == int(SkEncodedImageFormat::kPNG)) {
-    encoded_data =
-        SkPngEncoder::Encode(nullptr, image, SkPngEncoder::Options());
-  } else if (format == int(SkEncodedImageFormat::kWEBP)) {
-    SkWebpEncoder::Options options;
-    options.fCompression = quality == 100
-                               ? SkWebpEncoder::Compression::kLossless
-                               : SkWebpEncoder::Compression::kLossy;
-    options.fQuality = quality == 100 ? 75 : quality;
-    encoded_data = SkWebpEncoder::Encode(nullptr, image, options);
-  }
-  if (encoded_data) {
-    data->ptr = const_cast<uint8_t*>(encoded_data->bytes());
-    data->size = encoded_data->size();
-    data->data = reinterpret_cast<skiac_data*>(encoded_data.release());
-  }
+  skiac_image_encode_data(reinterpret_cast<skiac_image*>(snapshot.get()), data,
+                          format, quality, lossless, false);
 }
 
 bool skiac_surface_encode_stream(skiac_surface* c_surface,
                                  int format,
-                                 int quality,
+                                 float quality,
+                                 bool lossless,
                                  write_callback_t write_callback,
                                  void* context) {
   SkPixmap sk_pixmap;
@@ -1455,19 +1461,13 @@ bool skiac_surface_encode_stream(skiac_surface* c_surface,
   SkJavaScriptWStream stream(write_callback, context);
   std::unique_ptr<SkEncoder> encoder;
   if (format == int(SkEncodedImageFormat::kJPEG)) {
-    SkJpegEncoder::Options options;
-    options.fQuality = quality;
-    options.fAlphaOption = kJpegAlphaOption;
-    encoder = SkJpegEncoder::Make(&stream, sk_pixmap, options);
+    encoder = SkJpegEncoder::Make(&stream, sk_pixmap,
+                                  jpeg_options(static_cast<int>(quality)));
   } else if (format == int(SkEncodedImageFormat::kPNG)) {
     encoder = SkPngEncoder::Make(&stream, sk_pixmap, SkPngEncoder::Options());
   } else if (format == int(SkEncodedImageFormat::kWEBP)) {
-    SkWebpEncoder::Options options;
-    options.fCompression = quality == 100
-                               ? SkWebpEncoder::Compression::kLossless
-                               : SkWebpEncoder::Compression::kLossy;
-    options.fQuality = quality == 100 ? 75 : quality;
-    return SkWebpEncoder::Encode(&stream, sk_pixmap, options);
+    return SkWebpEncoder::Encode(&stream, sk_pixmap,
+                                 webp_options(quality, lossless));
   }
   if (encoder) {
     return encoder->encodeRows(sk_pixmap.height());
@@ -3913,6 +3913,26 @@ uint32_t skiac_image_filter_filter_color(skiac_image_filter* c_image_filter,
       .toSkColor();
 }
 
+// The device pixels the filter reads to draw its output over `bounds`
+// (left, top, right, bottom), written back to `bounds`: filterBounds in
+// reverse at the identity, as SkCanvas sizes the input of a filter layer
+// opened in device space (Context::composited_filter_layer). False when Skia
+// cannot bound them (beyond SkRectPriv::MakeILarge).
+bool skiac_image_filter_input_bounds(skiac_image_filter* c_image_filter,
+                                     int32_t bounds[4]) {
+  auto input = IMAGE_FILTER_CAST->filterBounds(
+      SkIRect::MakeLTRB(bounds[0], bounds[1], bounds[2], bounds[3]),
+      SkMatrix::I(), SkImageFilter::kReverse_MapDirection);
+  if (!input.isEmpty() && !SkRectPriv::MakeILarge().contains(input)) {
+    return false;
+  }
+  bounds[0] = input.left();
+  bounds[1] = input.top();
+  bounds[2] = input.right();
+  bounds[3] = input.bottom();
+  return true;
+}
+
 void skiac_image_filter_ref(skiac_image_filter* c_image_filter) {
   auto image_filter = IMAGE_FILTER_CAST;
   image_filter->ref();
@@ -3955,28 +3975,51 @@ int skiac_image_get_height(skiac_image* c_image) {
 }
 
 // Encodes the image directly; the caller keeps ownership of c_image.
+// `crop_to_max_dimension`: toBlob and convertToBlob encode the top-left part
+// that the encoder can hold, as Blink's CanvasAsyncBlobCreator does
+// (canvas_async_blob_creator.cc:199-209, ImageEncoder::MaxDimension).
 void skiac_image_encode_data(skiac_image* c_image,
                              skiac_sk_data* data,
                              int format,
-                             int quality) {
+                             float quality,
+                             bool lossless,
+                             bool crop_to_max_dimension) {
   auto image_ref = encodable_image(IMAGE_CAST);
   auto image = image_ref.get();
+  int max_dimension = format == int(SkEncodedImageFormat::kJPEG)   ? 65500
+                      : format == int(SkEncodedImageFormat::kWEBP) ? 16383
+                                                                   : 65535;
+  SkPixmap pixmap;
   sk_sp<SkData> encoded_data;
-  if (format == int(SkEncodedImageFormat::kJPEG)) {
-    SkJpegEncoder::Options options;
-    options.fQuality = quality;
-    options.fAlphaOption = kJpegAlphaOption;
-    encoded_data = SkJpegEncoder::Encode(nullptr, image, options);
+  if (crop_to_max_dimension &&
+      std::max(image->width(), image->height()) > max_dimension &&
+      image->peekPixels(&pixmap)) {
+    pixmap.reset(pixmap.info().makeWH(std::min(pixmap.width(), max_dimension),
+                                      std::min(pixmap.height(), max_dimension)),
+                 pixmap.addr(), pixmap.rowBytes());
+    SkDynamicMemoryWStream stream;
+    bool ok = false;
+    if (format == int(SkEncodedImageFormat::kJPEG)) {
+      ok = SkJpegEncoder::Encode(&stream, pixmap,
+                                 jpeg_options(static_cast<int>(quality)));
+    } else if (format == int(SkEncodedImageFormat::kPNG)) {
+      ok = SkPngEncoder::Encode(&stream, pixmap, SkPngEncoder::Options());
+    } else if (format == int(SkEncodedImageFormat::kWEBP)) {
+      ok = SkWebpEncoder::Encode(&stream, pixmap,
+                                 webp_options(quality, lossless));
+    }
+    if (ok) {
+      encoded_data = stream.detachAsData();
+    }
+  } else if (format == int(SkEncodedImageFormat::kJPEG)) {
+    encoded_data = SkJpegEncoder::Encode(
+        nullptr, image, jpeg_options(static_cast<int>(quality)));
   } else if (format == int(SkEncodedImageFormat::kPNG)) {
     encoded_data =
         SkPngEncoder::Encode(nullptr, image, SkPngEncoder::Options());
   } else if (format == int(SkEncodedImageFormat::kWEBP)) {
-    SkWebpEncoder::Options options;
-    options.fCompression = quality == 100
-                               ? SkWebpEncoder::Compression::kLossless
-                               : SkWebpEncoder::Compression::kLossy;
-    options.fQuality = quality == 100 ? 75 : quality;
-    encoded_data = SkWebpEncoder::Encode(nullptr, image, options);
+    encoded_data =
+        SkWebpEncoder::Encode(nullptr, image, webp_options(quality, lossless));
   }
   if (encoded_data) {
     data->ptr = const_cast<uint8_t*>(encoded_data->bytes());
@@ -4032,6 +4075,32 @@ void skiac_sk_data_destroy(skiac_data* c_data) {
 
 // Bitmap
 
+// The copy of `bitmap` that Chrome draws for an encoded origin (EXIF, or AVIF
+// irot/imir): Blink's image.cc applies the origin when it draws. The copy
+// keeps the color space (the ICC profile) and is drawn pixel for pixel, so
+// only the size changes (it swaps for 90 and 270 degrees). Null when it
+// cannot allocate.
+static std::unique_ptr<SkBitmap> orient_bitmap(const SkBitmap& bitmap,
+                                               SkEncodedOrigin origin) {
+  auto width = bitmap.width();
+  auto height = bitmap.height();
+  if (SkEncodedOriginSwapsWidthHeight(origin)) {
+    std::swap(width, height);
+  }
+  auto oriented = std::make_unique<SkBitmap>();
+  if (!oriented->tryAllocPixels(bitmap.info().makeWH(width, height))) {
+    return nullptr;
+  }
+  SkCanvas canvas(*oriented);
+  canvas.setMatrix(SkEncodedOriginToMatrix(origin, width, height));
+  auto image = SkImages::RasterFromBitmap(bitmap);
+  if (!image) {
+    return nullptr;
+  }
+  canvas.drawImage(image, 0, 0);
+  return oriented;
+}
+
 bool skiac_bitmap_make_from_buffer(const uint8_t* ptr,
                                    size_t size,
                                    skiac_bitmap_info* bitmap_info) {
@@ -4059,92 +4128,232 @@ bool skiac_bitmap_make_from_buffer(const uint8_t* ptr,
       result != SkCodec::kErrorInInput) {
     return false;
   }
-  auto dimension = codec->dimensions();
   auto origin = codec->getOrigin();
-  auto width = dimension.width();
-  auto height = dimension.height();
   // https://github.com/chromium/chromium/blob/126.0.6423.1/third_party/blink/renderer/platform/graphics/image.cc#L124
   // need to create a new bitmap with the correct orientation
   if (origin != SkEncodedOrigin::kTopLeft_SkEncodedOrigin) {
-    if (origin == SkEncodedOrigin::kLeftTop_SkEncodedOrigin ||
-        origin == SkEncodedOrigin::kRightTop_SkEncodedOrigin ||
-        origin == SkEncodedOrigin::kRightBottom_SkEncodedOrigin ||
-        origin == SkEncodedOrigin::kLeftBottom_SkEncodedOrigin) {
-      width = height;
-      height = dimension.width();
-    }
-    auto oriented_bitmap = std::make_unique<SkBitmap>();
-    auto oriented_bitmap_info =
-        SkImageInfo::Make(width, height, info.colorType(), info.alphaType());
-    if (!oriented_bitmap->tryAllocPixels(oriented_bitmap_info)) {
+    bitmap = orient_bitmap(*bitmap, origin);
+    if (!bitmap) {
       return false;
     }
-    SkCanvas canvas(*oriented_bitmap);
-    auto matrix = SkEncodedOriginToMatrix(origin, width, height);
-    canvas.setMatrix(matrix);
-    auto image = SkImages::RasterFromBitmap(*bitmap);
-    if (!image) {
-      return false;
-    }
-    canvas.drawImage(image, 0, 0);
-    oriented_bitmap->setImmutable();
-    bitmap_info->bitmap =
-        reinterpret_cast<skiac_bitmap*>(oriented_bitmap.release());
-  } else {
-    bitmap->setImmutable();
-    bitmap_info->bitmap = reinterpret_cast<skiac_bitmap*>(bitmap.release());
   }
-  bitmap_info->width = width;
-  bitmap_info->height = height;
+  bitmap->setImmutable();
+  bitmap_info->width = bitmap->width();
+  bitmap_info->height = bitmap->height();
+  bitmap_info->bitmap = reinterpret_cast<skiac_bitmap*>(bitmap.release());
   return true;
 }
 
-bool skiac_bitmap_make_from_svg(const uint8_t* data,
-                                size_t length,
-                                float width,
-                                float height,
-                                skiac_bitmap_info* bitmap_info,
-                                skiac_font_collection* c_collection,
-                                uint8_t cs) {
-  auto color_space = COLOR_SPACE_CAST;
-  SkMemoryStream svg_stream(data, length, false);
-  auto svg_dom =
-      SkSVGDOM::Builder().setFontManager(c_collection->assets).make(svg_stream);
-  if (!svg_dom) {
+// The AVIF irot/imir orientation (see AvifImage::origin): the bitmap is
+// replaced by its oriented copy, so the natural size swaps for 90 and 270
+// degrees.
+bool skiac_bitmap_orient(skiac_bitmap_info* bitmap_info, int origin) {
+  auto encoded_origin = static_cast<SkEncodedOrigin>(origin);
+  if (encoded_origin < kTopLeft_SkEncodedOrigin ||
+      encoded_origin > kLast_SkEncodedOrigin) {
     return false;
   }
-  auto svg_root = svg_dom->getRoot();
-  auto svg_container_size =
-      svg_root->intrinsicSize(SkSVGLengthContext(SkSize::Make(0, 0)));
-  if (svg_container_size.isZero()) {
-    auto view_box = svg_root->getViewBox();
-    if (!view_box) {
-      return true;
-    }
-    svg_container_size = SkSize::Make(view_box->width(), view_box->height());
-    if (svg_container_size.isEmpty()) {
-      return true;
-    }
-    svg_dom->setContainerSize(svg_container_size);
+  if (encoded_origin == kTopLeft_SkEncodedOrigin) {
+    return true;
   }
-  auto image_w = svg_container_size.width();
-  auto image_h = svg_container_size.height();
-  if (width > 0 && height > 0) {
-    svg_root->setTransform(SkMatrix::Scale(width / image_w, height / image_h));
-    image_w = width;
-    image_h = height;
+  auto bitmap = reinterpret_cast<SkBitmap*>(bitmap_info->bitmap);
+  auto oriented = orient_bitmap(*bitmap, encoded_origin);
+  if (!oriented) {
+    return false;
   }
-  auto imageinfo =
-      SkImageInfo::Make(image_w, image_h, kRGBA_8888_SkColorType,
-                        SkAlphaType::kPremul_SkAlphaType, color_space);
-  auto bitmap = new SkBitmap();
-  bitmap->allocPixels(imageinfo);
-  auto sk_svg_canvas = new SkCanvas(*bitmap);
-  svg_dom->render(sk_svg_canvas);
-  delete sk_svg_canvas;
-  bitmap_info->bitmap = reinterpret_cast<skiac_bitmap*>(bitmap);
-  bitmap_info->width = imageinfo.width();
-  bitmap_info->height = imageinfo.height();
+  delete bitmap;
+  bitmap_info->width = oriented->width();
+  bitmap_info->height = oriented->height();
+  bitmap_info->bitmap = reinterpret_cast<skiac_bitmap*>(oriented.release());
+  return true;
+}
+
+// An SVG image: the parsed document plus the raw width, height, viewBox and
+// preserveAspectRatio of its root, which give its natural size. Chrome reads
+// them as CSS and SVG values (svg_svg_element.cc IntrinsicWidth), so they are
+// handed to Rust as written instead of as Skia parsed them.
+struct skiac_svg_document {
+  sk_sp<SkSVGDOM> dom;
+  SkString attributes[4];
+  bool present[4] = {false, false, false, false};
+};
+
+skiac_svg_document* skiac_svg_document_make(
+    const uint8_t* data,
+    size_t length,
+    skiac_font_collection* c_collection) {
+  SkMemoryStream xml_stream(data, length, false);
+  SkDOM xml;
+  auto xml_root = xml.build(xml_stream);
+  if (!xml_root) {
+    return nullptr;
+  }
+  SkMemoryStream svg_stream(data, length, false);
+  auto dom =
+      SkSVGDOM::Builder().setFontManager(c_collection->assets).make(svg_stream);
+  if (!dom) {
+    return nullptr;
+  }
+  auto document = new skiac_svg_document();
+  document->dom = std::move(dom);
+  static const char* names[] = {"width", "height", "viewBox",
+                                "preserveAspectRatio"};
+  for (int i = 0; i < 4; i++) {
+    if (auto value = xml.findAttr(xml_root, names[i])) {
+      document->attributes[i].set(value);
+      document->present[i] = true;
+    }
+  }
+  return document;
+}
+
+bool skiac_svg_document_attribute(skiac_svg_document* document,
+                                  int index,
+                                  const char** ptr,
+                                  size_t* length) {
+  if (index < 0 || index > 3 || !document->present[index]) {
+    return false;
+  }
+  *ptr = document->attributes[index].c_str();
+  *length = document->attributes[index].size();
+  return true;
+}
+
+// Renders the document as Chrome paints an SVG image for a container
+// (svg_image.cc PaintRecordForCurrentFrame): the root is laid out at the
+// container size `layout` (length_utils.cc ComputeReplacedSize), shown
+// stretched over the view, the rounded container size, which clips it
+// (anti-aliased). `[sx 0 tx; 0 sy ty]` maps that view into the destination
+// space, which is clipped (aliased) to `clip` there, and
+// `[da dc de; db dd df]` maps the destination space into the new
+// `width` x `height` raster (SVGImage::DrawInternal: clipRect, then
+// concat(src_to_dst), under the canvas transform).
+bool skiac_svg_document_render(skiac_svg_document* document,
+                               float layout_width,
+                               float layout_height,
+                               float view_width,
+                               float view_height,
+                               float da,
+                               float db,
+                               float dc,
+                               float dd,
+                               float de,
+                               float df,
+                               float sx,
+                               float sy,
+                               float tx,
+                               float ty,
+                               float clip_left,
+                               float clip_top,
+                               float clip_right,
+                               float clip_bottom,
+                               int width,
+                               int height,
+                               uint8_t cs,
+                               skiac_bitmap_info* bitmap_info) {
+  auto color_space = COLOR_SPACE_CAST;
+  auto info = SkImageInfo::Make(width, height, kRGBA_8888_SkColorType,
+                                kPremul_SkAlphaType, color_space);
+  auto bitmap = std::make_unique<SkBitmap>();
+  // tryAllocPixels zeroes the pixels (SkMallocPixelRef::MakeAllocate,
+  // sk_calloc_canfail): no clear, which would make every page of a large,
+  // mostly empty raster resident.
+  if (width <= 0 || height <= 0 || !bitmap->tryAllocPixels(info)) {
+    return false;
+  }
+  {
+    SkCanvas canvas(*bitmap);
+    // A no-op for the identity.
+    canvas.concat(SkMatrix::MakeAll(da, dc, de, db, dd, df, 0, 0, 1));
+    canvas.clipRect(
+        SkRect::MakeLTRB(clip_left, clip_top, clip_right, clip_bottom));
+    canvas.concat(SkMatrix::MakeAll(sx, 0, tx, 0, sy, ty, 0, 0, 1));
+    canvas.clipRect(SkRect::MakeWH(view_width, view_height), true);
+    canvas.scale(view_width / layout_width, view_height / layout_height);
+    auto root = document->dom->getRoot();
+    root->setWidth(SkSVGLength(100, SkSVGLength::Unit::kPercentage));
+    root->setHeight(SkSVGLength(100, SkSVGLength::Unit::kPercentage));
+    document->dom->setContainerSize(SkSize::Make(layout_width, layout_height));
+    document->dom->render(&canvas);
+  }
+  bitmap_info->width = width;
+  bitmap_info->height = height;
+  bitmap_info->bitmap = reinterpret_cast<skiac_bitmap*>(bitmap.release());
+  return true;
+}
+
+void skiac_svg_document_destroy(skiac_svg_document* document) {
+  delete document;
+}
+
+// The font-relative units of an SVG image root, for Chrome's default font at
+// 16px: the "standard" family (Times on macOS, Times New Roman elsewhere,
+// chrome/app/resources/locale_settings_*.grd). `metrics` gets the x-height,
+// the advance of '0', the cap height and the line spacing; false when no such
+// font is installed.
+bool skiac_font_collection_default_font_metrics(
+    skiac_font_collection* c_collection,
+    float* metrics) {
+#ifdef __APPLE__
+  static const char* families[] = {"Times", "Times New Roman"};
+#else
+  static const char* families[] = {"Times New Roman", "Liberation Serif",
+                                   "Tinos"};
+#endif
+  sk_sp<SkTypeface> typeface;
+  for (auto family : families) {
+    typeface =
+        c_collection->font_mgr->matchFamilyStyle(family, SkFontStyle::Normal());
+    if (typeface) {
+      break;
+    }
+  }
+  if (!typeface) {
+    return false;
+  }
+  // Unhinted, as CoreText and DirectWrite measure.
+  SkFont font(typeface, 16);
+  font.setHinting(SkFontHinting::kNone);
+  font.setSubpixel(true);
+  font.setLinearMetrics(true);
+  SkFontMetrics font_metrics;
+  font.getMetrics(&font_metrics);
+  // font_metrics.cc AscentDescentWithHacks, with its macOS ascent hack.
+  float ascent = SkScalarRoundToScalar(-font_metrics.fAscent);
+  float descent = SkScalarRoundToScalar(font_metrics.fDescent);
+#ifdef __APPLE__
+  SkString family;
+  typeface->getFamilyName(&family);
+  if (family.equals("Times") || family.equals("Helvetica") ||
+      family.equals("Courier")) {
+    ascent += floorf(((ascent + descent) * 0.15f) + 0.5f);
+  }
+#endif
+  // simple_font_data.cc PlatformInit: the OS/2 x-height, or on Apple the top
+  // of the 'x' glyph outline (skia_text_metrics.cc SkFontGetBoundsForGlyph);
+  // 0.56 of the ascent when the font has none.
+  float x_height =
+      font_metrics.fXHeight > 0 ? font_metrics.fXHeight : ascent * 0.56f;
+#ifdef __APPLE__
+  if (font_metrics.fXHeight > 0) {
+    if (auto x_glyph = font.unicharToGlyph('x')) {
+      if (auto path = font.getPath(x_glyph)) {
+        x_height = -path->getBounds().fTop;
+      }
+    }
+  }
+#endif
+  float zero_advance = 8;
+  if (auto zero_glyph = font.unicharToGlyph('0')) {
+    font.getWidths({&zero_glyph, 1}, {&zero_advance, 1});
+  }
+  float cap_height = font_metrics.fCapHeight;
+  float line_spacing =
+      lroundf(ascent) + lroundf(descent) + lroundf(font_metrics.fLeading);
+  metrics[0] = x_height;
+  metrics[1] = zero_advance;
+  metrics[2] = cap_height;
+  metrics[3] = line_spacing;
   return true;
 }
 
@@ -4230,27 +4439,87 @@ static sk_sp<SkColorSpace> avif_cicp_color_space(uint16_t primaries,
       static_cast<SkNamedTransferFn::CicpId>(transfer));
 }
 
+// media::VideoColorSpace::IsSpecified (video_color_space.cc:210-281) for
+// CICP values without "unspecified" (2): the IDs Chrome knows. Matrix 10 and
+// matrices above 11 are not among them.
+static bool video_color_space_is_specified(uint16_t primaries,
+                                           uint16_t transfer,
+                                           uint16_t matrix) {
+  const bool primaries_ok =
+      primaries == 1 || (primaries >= 4 && primaries <= 12) || primaries == 22;
+  const bool transfer_ok = transfer == 1 || (transfer >= 4 && transfer <= 18);
+  const bool matrix_ok =
+      matrix <= 11 && matrix != 2 && matrix != 3 && matrix != 10;
+  return primaries_ok && transfer_ok && matrix_ok;
+}
+
 // Tag decoded AVIF pixels with the file's color space, as Chrome's AVIF
-// decoder does (avif_image_decoder.cc:868-914): an ICC profile wins, else the
-// CICP primaries and transfer. sRGB stays untagged, as before.
-void skiac_bitmap_set_color_space(skiac_bitmap* c_bitmap,
+// decoder does (avif_image_decoder.cc:852-895 and GetColorSpace at :60-117).
+// False when Chrome fails the decode (onerror). The CICP values are
+// CrabbyAvif's: a value it does not know is 2 (unspecified).
+//  - An ICC profile wins. It must parse and describe RGB (or gray for a 4:0:0
+//    image), as skia::ColorProfile::IsRGB/IsGray check.
+//  - Else, when primaries or transfer are given, the CICP with Chrome's
+//    defaults (primaries 1, transfer 13 (sRGB), matrix 6). A combination
+//    media::VideoColorSpace does not know (for example matrix 12) is drawn
+//    as sRGB (gfx::ColorSpace::CreateJpeg/CreateREC709). Chrome cannot make
+//    an SkColorSpace for transfers 9 to 12, and fails the decode.
+// sRGB stays untagged, as before.
+bool skiac_bitmap_set_color_space(skiac_bitmap* c_bitmap,
                                   const uint8_t* icc,
                                   size_t icc_len,
                                   uint16_t primaries,
-                                  uint16_t transfer) {
+                                  uint16_t transfer,
+                                  uint16_t matrix,
+                                  bool is_mono) {
   sk_sp<SkColorSpace> color_space;
   if (icc && icc_len) {
     skcms_ICCProfile profile;
-    if (skcms_Parse(icc, icc_len, &profile)) {
-      color_space = SkColorSpace::Make(profile);
+    if (!skcms_Parse(icc, icc_len, &profile)) {
+      return false;
     }
-  }
-  if (!color_space) {
-    color_space = avif_cicp_color_space(primaries, transfer);
+    if (profile.data_color_space != skcms_Signature_RGB &&
+        !(is_mono && profile.data_color_space == skcms_Signature_Gray)) {
+      return false;
+    }
+    // skia::ColorProfile::ComputeSkColorSpace (color_profile.cc:48-87): a
+    // transfer Skia cannot use becomes the sRGB curve, keeping the gamut; no
+    // gamut at all is sRGB.
+    color_space = SkColorSpace::Make(profile);
+    if (!color_space && profile.has_toXYZD50) {
+      skcms_ICCProfile with_srgb = profile;
+      skcms_SetTransferFunction(&with_srgb, skcms_sRGB_TransferFunction());
+      color_space = SkColorSpace::Make(with_srgb);
+    }
+  } else {
+    // CrabbyAvif's ColorPrimaries, TransferCharacteristics and
+    // MatrixCoefficients from u16.
+    if (!(primaries <= 2 || (primaries >= 4 && primaries <= 12) ||
+          primaries == 22)) {
+      primaries = 2;
+    }
+    if (transfer > 18) {
+      transfer = 2;
+    }
+    if (!(matrix <= 14 || matrix == 16 || matrix == 17)) {
+      matrix = 2;
+    }
+    if (primaries != 2 || transfer != 2) {
+      primaries = primaries == 2 ? 1 : primaries;
+      transfer = transfer == 2 ? 13 : transfer;
+      matrix = (is_mono || matrix == 2) ? 6 : matrix;
+      if (video_color_space_is_specified(primaries, transfer, matrix)) {
+        if (transfer >= 9 && transfer <= 12) {
+          return false;
+        }
+        color_space = avif_cicp_color_space(primaries, transfer);
+      }
+    }
   }
   if (color_space && !color_space->isSRGB()) {
     BITMAP_CAST->setColorSpace(std::move(color_space));
   }
+  return true;
 }
 
 // Chrome's CanvasImageSource::IsOpaque for a drawImage source: an image whose

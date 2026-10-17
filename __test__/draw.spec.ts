@@ -702,8 +702,11 @@ test('drawImage-svg', async (t) => {
   await snapshotImage(t)
 })
 
+// Chrome 155: a viewBox-only SVG has the natural size 150x150 (its ratio
+// against 300x150) and drawImage(image, 0, 0) draws it at the largest size of
+// that ratio that fits the canvas, here all of the 512x512 canvas.
 test('drawImage-svg-with-only-viewBox', async (t) => {
-  const { ctx } = t.context
+  const { ctx, canvas } = t.context
   const filePath = './only-viewbox.svg'
   const file = await promises.readFile(join(__dirname, filePath))
   const image = new Image()
@@ -713,8 +716,14 @@ test('drawImage-svg-with-only-viewBox', async (t) => {
   }
   image.src = file
   await promise
+  t.deepEqual([image.naturalWidth, image.naturalHeight], [150, 150])
   ctx.drawImage(image, 0, 0)
-  await snapshotImage(t)
+  const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data
+  const color = [36, 152, 238, 255]
+  t.true(
+    data.every((value, i) => value === color[i % 4]),
+    'every pixel is the SVG background',
+  )
 })
 
 test('drawImage-svg-resize', async (t) => {
@@ -728,9 +737,8 @@ test('drawImage-svg-resize', async (t) => {
   }
   image.src = file
   await promise
-  image.width = 100
-  image.height = 100
-  ctx.drawImage(image, 0, 0)
+  // As in Chrome, the size is given to drawImage, not set on the image.
+  ctx.drawImage(image, 0, 0, 100, 100)
   await snapshotImage(t, { canvas, ctx }, 'png', 0.2)
 })
 
@@ -744,7 +752,9 @@ test.skip('drawImage-svg-with-css', async (t) => {
   await snapshotImage(t)
 })
 
-test('drawImage-svg without width height should be empty image', async (t) => {
+// Chrome 155: an SVG without width and height has the natural size 300x150
+// and drawImage(image, 0, 0) draws it at the canvas size.
+test('drawImage-svg without width height draws at the canvas size', async (t) => {
   const { ctx, canvas } = t.context
   const filePath = './mountain.svg'
   const svgContent = (await promises.readFile(join(__dirname, filePath))).toString('utf-8')
@@ -758,10 +768,29 @@ test('drawImage-svg without width height should be empty image', async (t) => {
   }
   image.src = Buffer.from(svgContent.replace('width="128"', '').replace('height="128"', ''))
   await promise
+  t.deepEqual([image.naturalWidth, image.naturalHeight], [300, 150])
   ctx.drawImage(image, 0, 0)
-  const output = await canvas.encode('png')
-  const outputData = png.decoders['image/png'](output)
-  t.deepEqual(outputData.data, Buffer.alloc(outputData.width * outputData.height * 4, 0))
+  const { width, height } = canvas
+  const data = ctx.getImageData(0, 0, width, height).data
+  let count = 0
+  const box = [width, height, -1, -1]
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      if (data[(y * width + x) * 4 + 3]) {
+        count++
+        box[0] = Math.min(box[0], x)
+        box[1] = Math.min(box[1], y)
+        box[2] = Math.max(box[2], x)
+        box[3] = Math.max(box[3], y)
+      }
+    }
+  }
+  const pixel = (x: number, y: number) => Array.from(data.slice((y * width + x) * 4, (y * width + x) * 4 + 4))
+  t.deepEqual([width, height], [512, 512])
+  t.is(count, 190)
+  t.deepEqual(box, [0, 10, 29, 19])
+  t.deepEqual(pixel(15, 18), [0, 0, 0, 255])
+  t.deepEqual(pixel(511, 511), [0, 0, 0, 0])
 })
 
 test('draw-image-svg-noto-emoji', async (t) => {

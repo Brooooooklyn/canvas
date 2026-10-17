@@ -16,7 +16,9 @@ const test = ava as TestFn<{
 }>
 
 const FIREFOX = readFileSync(join(__dirname, 'fixtures', 'firefox-logo.svg'))
-const FIREFOX_IMAGE = new Image(200, 206.433)
+const FIREFOX_IMAGE = new Image()
+// drawImage draws an SVG at the size given to it, not at img.width/height.
+const FIREFOX_SIZE = [200, 206.433] as const
 const { promise: firefoxImageLoad, resolve } = Promise.withResolvers<void>()
 FIREFOX_IMAGE.onload = () => {
   resolve()
@@ -33,7 +35,7 @@ test.beforeEach(async (t) => {
 test('filter-blur', async (t) => {
   const { ctx } = t.context
   ctx.filter = 'blur(5px)'
-  ctx.drawImage(FIREFOX_IMAGE, 0, 0)
+  ctx.drawImage(FIREFOX_IMAGE, 0, 0, ...FIREFOX_SIZE)
   await snapshotImage(t)
 })
 
@@ -60,21 +62,21 @@ test('filter-contrast', async (t) => {
 test('filter-contrast-ff', async (t) => {
   const { ctx } = t.context
   ctx.filter = 'contrast(200%)'
-  ctx.drawImage(FIREFOX_IMAGE, 0, 0)
+  ctx.drawImage(FIREFOX_IMAGE, 0, 0, ...FIREFOX_SIZE)
   await snapshotImage(t)
 })
 
 test('filter-grayscale', async (t) => {
   const { ctx } = t.context
   ctx.filter = 'grayscale(80%)'
-  ctx.drawImage(FIREFOX_IMAGE, 0, 0)
+  ctx.drawImage(FIREFOX_IMAGE, 0, 0, ...FIREFOX_SIZE)
   await snapshotImage(t)
 })
 
 test('filter-hue-rotate', async (t) => {
   const { ctx } = t.context
   ctx.filter = 'hue-rotate(90deg)'
-  ctx.drawImage(FIREFOX_IMAGE, 0, 0)
+  ctx.drawImage(FIREFOX_IMAGE, 0, 0, ...FIREFOX_SIZE)
   await snapshotImage(t)
 })
 
