@@ -617,12 +617,15 @@ struct TextCachesDeleter {
 
 struct skiac_font_collection {
   sk_sp<FontCollection> collection;
-  // The installed fonts FontCollection resolves by name (its asset font
-  // manager): FreeType over SK_FONT_FILE_PREFIX (SkFontMgr_Custom), or
-  // CoreText on macOS once loadSystemFonts turned it on. May be null. Only
-  // CoreText also picks a fallback font for a character no family has:
-  // SkFontMgr_Custom's onMatchFamilyStyleCharacter returns null, so on
-  // Linux and Windows such a character draws the first font's .notdef.
+  // FontCollection's asset font manager, asked by name after `assets`:
+  // FreeType over SK_FONT_FILE_PREFIX (SkFontMgr_Custom), or CoreText on
+  // macOS once loadSystemFonts turned it on. May be null. On Android the
+  // prefix is /usr/share/fonts/, which is not there, so it has no fonts;
+  // loadSystemFonts puts /system/fonts in `assets` instead. Only CoreText
+  // picks a fallback font for a character no family has: SkFontMgr_Custom
+  // and TypefaceFontProvider (`assets`) return null from
+  // onMatchFamilyStyleCharacter, so on Linux, Windows and Android such a
+  // character draws the first font's .notdef.
   // Registered fonts are made by MakeCanvasTypeface.
   sk_sp<SkFontMgr> font_mgr;
   sk_sp<TypefaceFontProviderCustom> assets;
