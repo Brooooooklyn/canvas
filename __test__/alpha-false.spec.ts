@@ -630,11 +630,10 @@ test('alpha:false resets the whole clip after a draw under a filter that adds no
 GlobalFonts.registerFromPath(join(fileURLToPath(import.meta.url), '..', 'fonts', 'Lato-Regular.ttf'), 'AlphaFalseLato')
 
 // Text bounds are the glyph bounds (base_rendering_context_2d.cc:1019,
-// 1076-1113), so the outermost anti-aliased glyph pixels keep a lowered alpha in
-// Chrome too. Our glyph bounds come from measureText, which rounds the box
-// (Lato 16px ascent: 11 here, 11.464 in Chrome), so the fringe pixels differ
-// and only the shape of the result is pinned: a few pixels, not none and not
-// the whole glyph.
+// 1076-1113). On Linux Chrome hints the box to whole pixels (Lato 16px
+// ascent 11), which covers every glyph pixel: none stays below 255. macOS
+// Chrome reads an unhinted box (ascent 11.464) and leaves 4 (copy) or 5 (xor)
+// fringe pixels.
 test('alpha:false text resets alpha inside the glyph bounds only', (t) => {
   for (const op of ['copy', 'xor'] as const) {
     const { ctx } = opaqueBackground(40, 24)
@@ -647,15 +646,14 @@ test('alpha:false text resets alpha inside the glyph bounds only', (t) => {
     for (let i = 3; i < data.length; i += 4) {
       if (data[i] < 255) below++
     }
-    // Chrome: 4 for copy, 5 for xor. Without the reset about 150 glyph pixels
-    // stay below 255; resetting the whole clip leaves none.
-    t.true(below > 0 && below < 30, `${op}: ${below} pixels below alpha 255`)
+    // Without the reset about 150 glyph pixels stay below 255.
+    t.is(below, 0, `${op}: ${below} pixels below alpha 255`)
     t.deepEqual(px(ctx, 38, 2), op === 'copy' ? [0, 0, 0, 255] : [200, 100, 50, 255], op)
   }
 })
 
 // maxWidth draws the text under scale(maxWidth / width, 1) about its anchor
-// (skia_c.cpp skiac_canvas_get_line_metrics_or_draw_text), and letterSpacing
+// (skia-c/text.cpp MeasureOrDraw), and letterSpacing
 // moves the glyphs by a shift measureText's box leaves out, so the reset takes
 // the glyph box as drawn: the ink of the drawn glyphs, scaled toward the anchor.
 // A glyph pixel the reset misses keeps the xor alpha (128 where fully
