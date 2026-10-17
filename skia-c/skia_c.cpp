@@ -2,9 +2,11 @@
 #include <math.h>
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <cstddef>
 #include <list>
 #include <memory>
+#include <numeric>
 #include <optional>
 #include <unordered_map>
 #include <vector>
@@ -272,7 +274,9 @@ static SkPath TextBlobPath(const SkTextBlob* blob, SkScalar x, SkScalar y) {
 // - It sends the call to the SVG writer. SkSVGDevice drops the local matrix of
 //   an image shader (addImageShaderResources in src/svg/SkSVGDevice.cpp never
 //   writes a patternTransform), so a draw whose pattern has a non-identity
-//   matrix is rewritten for it, see drawPatternForSvg.
+//   matrix is rewritten for it, see drawPatternForSvg. It has no conic
+//   gradient either, so a conic gradient draw is rewritten as an image
+//   pattern, see rasterizeSweep.
 // - It records the call, so drawImage, createPattern and getImageData read the
 //   SVGCanvas like a canvas source. The recording is drawn into the raster
 //   surface only when the surface is read (skiac_svg_canvas_flush), or when it
@@ -385,9 +389,9 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
   }
 
   void onDrawPaint(const SkPaint& paint) override {
-    if (HasPatternMatrix(paint)) {
+    if (NeedsSvgRewrite(paint)) {
       fRecording->drawPaint(paint);
-      this->drawPatternForSvg(SkPath::Rect(this->getLocalClipBounds()), paint);
+      this->drawForSvg(SkPath::Rect(this->getLocalClipBounds()), paint);
     } else {
       INHERITED::onDrawPaint(paint);
     }
@@ -398,7 +402,7 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
                     size_t count,
                     const SkPoint pts[],
                     const SkPaint& paint) override {
-    if (HasPatternMatrix(paint)) {
+    if (NeedsSvgRewrite(paint)) {
       fRecording->drawPoints(mode, {pts, count}, paint);
       // As SkSVGDevice::drawPoints builds its path.
       SkPathBuilder path;
@@ -414,7 +418,7 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
       if (mode == kPolygon_PointMode && count > 1) {
         path.addPolygon({pts, count}, false);
       }
-      this->drawPatternForSvg(path.detach(), paint);
+      this->drawForSvg(path.detach(), paint);
     } else {
       INHERITED::onDrawPoints(mode, count, pts, paint);
     }
@@ -422,9 +426,9 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
   }
 
   void onDrawRect(const SkRect& rect, const SkPaint& paint) override {
-    if (HasPatternMatrix(paint)) {
+    if (NeedsSvgRewrite(paint)) {
       fRecording->drawRect(rect, paint);
-      this->drawPatternForSvg(SkPath::Rect(rect), paint);
+      this->drawForSvg(SkPath::Rect(rect), paint);
     } else {
       INHERITED::onDrawRect(rect, paint);
     }
@@ -432,9 +436,9 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
   }
 
   void onDrawOval(const SkRect& rect, const SkPaint& paint) override {
-    if (HasPatternMatrix(paint)) {
+    if (NeedsSvgRewrite(paint)) {
       fRecording->drawOval(rect, paint);
-      this->drawPatternForSvg(SkPath::Oval(rect), paint);
+      this->drawForSvg(SkPath::Oval(rect), paint);
     } else {
       INHERITED::onDrawOval(rect, paint);
     }
@@ -442,9 +446,9 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
   }
 
   void onDrawRRect(const SkRRect& rrect, const SkPaint& paint) override {
-    if (HasPatternMatrix(paint)) {
+    if (NeedsSvgRewrite(paint)) {
       fRecording->drawRRect(rrect, paint);
-      this->drawPatternForSvg(SkPath::RRect(rrect), paint);
+      this->drawForSvg(SkPath::RRect(rrect), paint);
     } else {
       INHERITED::onDrawRRect(rrect, paint);
     }
@@ -452,9 +456,9 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
   }
 
   void onDrawPath(const SkPath& path, const SkPaint& paint) override {
-    if (HasPatternMatrix(paint)) {
+    if (NeedsSvgRewrite(paint)) {
       fRecording->drawPath(path, paint);
-      this->drawPatternForSvg(path, paint);
+      this->drawForSvg(path, paint);
     } else {
       INHERITED::onDrawPath(path, paint);
     }
@@ -465,10 +469,10 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
                       SkScalar x,
                       SkScalar y,
                       const SkPaint& paint) override {
-    if (HasPatternMatrix(paint)) {
+    if (NeedsSvgRewrite(paint)) {
       fRecording->drawTextBlob(blob, x, y, paint);
       // The glyph outlines, so they can be drawn in the pattern's space.
-      this->drawPatternForSvg(TextBlobPath(blob, x, y), paint);
+      this->drawForSvg(TextBlobPath(blob, x, y), paint);
     } else {
       INHERITED::onDrawTextBlob(blob, x, y, paint);
     }
@@ -660,6 +664,380 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
     return shader && shader->isAImage(&matrix, nullptr) && !matrix.isIdentity();
   }
 
+  // A conic gradient: SkSVGDevice writes only linear, radial and two-point
+  // conical gradients (addGradientShaderResources) and fills anything else
+  // with the paint color, black.
+  static bool IsSweepGradient(const SkPaint& paint) {
+    auto shader = paint.getShader();
+    return shader &&
+           as_SB(shader)->asGradient() == SkShaderBase::GradientType::kSweep;
+  }
+
+  static bool NeedsSvgRewrite(const SkPaint& paint) {
+    return HasPatternMatrix(paint) || IsSweepGradient(paint);
+  }
+
+  // The SVG half of a draw SkSVGDevice cannot write as it is.
+  void drawForSvg(const SkPath& path, const SkPaint& paint) {
+    if (!IsSweepGradient(paint)) {
+      this->drawPatternForSvg(path, paint);
+      return;
+    }
+    SkPaint image_paint;
+    SkRect image_clip;
+    if (this->rasterizeSweep(path, paint, &image_paint, &image_clip)) {
+      this->drawPatternForSvg(path, image_paint, &image_clip);
+    }
+  }
+
+  // The most pixels a conic raster image has, its border included: 4096 *
+  // 4096, a 64 MiB N32 image. Past it, an image pixel covers k x k device
+  // pixels.
+  static constexpr int64_t kMaxSweepPixels = 4096 * 4096;
+
+  // The longest side of a conic raster image, its border included. Skia
+  // encodes it as a PNG with libpng, whose default user limits reject a wider
+  // or higher image (PNG_USER_WIDTH_MAX and PNG_USER_HEIGHT_MAX in
+  // third_party/externals/libpng/scripts/pnglibconf.h.prebuilt); SkSVGDevice
+  // then writes no pattern and fills the path with the paint color, black.
+  static constexpr int64_t kMaxSweepSide = 1000000;
+
+  // The largest pattern tile Chrome draws at one pixel per device pixel. It
+  // draws an SVG pattern through an SkPictureShader (cc/paint/paint_shader.cc),
+  // which rasterizes a larger tile at 2048 * 2048 pixels and scales that up
+  // (kMaxTileArea, src/shaders/SkPictureShader.cpp).
+  static constexpr int64_t kMaxExactTilePixels = 2048 * 2048;
+
+  // One axis of a conic raster image: image pixel i covers the device pixels
+  // origin + k * i to origin + k * (i + 1). Of its `size` pixels, the `length`
+  // pixels from `start` on cover the draw, and the rest is a border.
+  struct SweepAxis {
+    int64_t k;
+    int64_t origin;
+    int64_t start;
+    int64_t length;
+    int64_t size;
+  };
+
+  struct SweepGrid {
+    SweepAxis x;
+    SweepAxis y;
+  };
+
+  // The step of the whole numbers around `v` that SkSVGDevice writes exactly
+  // with `digits` significant digits. It writes floats (24 bits), the element
+  // transform with "%g", 6 digits (svg_transform in src/svg/SkSVGDevice.cpp),
+  // and the clip rect with "%.8g", 8 digits (SkStrAppendScalar in
+  // src/core/SkString.cpp). Below 1,000,000 the step is 1.
+  static int64_t WrittenStep(int64_t v, int digits) {
+    const int64_t a = v < 0 ? -v : v;
+    int64_t limit = 1;
+    for (int i = 0; i < digits; i++) {
+      limit *= 10;
+    }
+    int64_t decimal = 1;
+    for (int64_t rest = a; rest >= limit; rest /= 10) {
+      decimal *= 10;
+    }
+    int64_t binary = 1;
+    for (int64_t rest = a; rest >= (int64_t{1} << 24); rest /= 2) {
+      binary *= 2;
+    }
+    return std::lcm(decimal, binary);
+  }
+
+  static bool IsWritten(int64_t v, int digits) {
+    return v % WrittenStep(v, digits) == 0;
+  }
+
+  // Whether the whole number `v` is a float.
+  static bool IsFloat(int64_t v) {
+    return static_cast<int64_t>(static_cast<float>(v)) == v;
+  }
+
+  // The largest multiple of `align` at most `v` that SkSVGDevice writes
+  // exactly with `digits` significant digits.
+  static int64_t FloorWritten(int64_t v, int64_t align, int digits) {
+    for (;;) {
+      const int64_t step = std::lcm(align, WrittenStep(v, digits));
+      const int64_t floor = v - ((v % step) + step) % step;
+      if (floor == v) {
+        return v;
+      }
+      v = floor;
+    }
+  }
+
+  // Whether Chrome reads the whole number `v` back from the text that
+  // SkSVGDevice writes for it in the element transform ("%g", see
+  // WrittenStep). Blink parses an SVG number in floats, one digit at a time
+  // (GenericParseNumber in
+  // third_party/blink/renderer/core/svg/svg_parser_utilities.cc): the digits
+  // before the point from right to left, each times its power of 10, the
+  // digits after it each times 0.1 to the power of its place, and then the
+  // sum times 10 to the power of the exponent, each step rounded to a float.
+  // So the exact text "4.19396e+06" reads as 4193960.25, and the fill moved by
+  // a quarter pixel. A whole number of up to 6 digits is written without an
+  // exponent and read back exactly. Chromium builds with -ffp-contract=off,
+  // so no step here may be fused with the next either.
+  static bool ChromeReadsExactly(int64_t v) {
+#if defined(__clang__)
+#pragma clang fp contract(off)
+#endif
+    const SkString text = SkStringPrintf("%g", static_cast<float>(v));
+    const char* p = text.c_str();
+    float sign = 1;
+    if (*p == '-') {
+      sign = -1;
+      p++;
+    }
+    const char* digits = p;
+    while (*p >= '0' && *p <= '9') {
+      p++;
+    }
+    float integer = 0;
+    float multiplier = 1;
+    for (const char* q = p; q != digits;) {
+      const float digit = multiplier * static_cast<float>(*--q - '0');
+      integer += digit;
+      multiplier *= 10;
+    }
+    float decimal = 0;
+    if (*p == '.') {
+      float frac = 1;
+      for (p++; *p >= '0' && *p <= '9'; p++) {
+        frac *= 0.1f;
+        const float digit = static_cast<float>(*p - '0') * frac;
+        decimal += digit;
+      }
+    }
+    float number = integer + decimal;
+    number *= sign;
+    if (*p == 'e') {
+      p++;
+      const bool negative = *p == '-';
+      if (*p == '+' || *p == '-') {
+        p++;
+      }
+      int exponent = 0;
+      for (; *p >= '0' && *p <= '9'; p++) {
+        exponent = exponent * 10 + (*p - '0');
+      }
+      number *= static_cast<float>(
+          std::pow(10.0, static_cast<double>(negative ? -exponent : exponent)));
+    }
+    return static_cast<double>(number) == static_cast<double>(v);
+  }
+
+  // The largest multiple of `align` at most `v` that SkSVGDevice writes
+  // exactly in the element transform and that Chrome reads back exactly.
+  static int64_t FloorOrigin(int64_t v, int64_t align) {
+    v = FloorWritten(v, align, 6);
+    while (!ChromeReadsExactly(v)) {
+      v = FloorWritten(v - 1, align, 6);
+    }
+    return v;
+  }
+
+  // The axis of an image that covers the device pixels n0 to n1 at k device
+  // pixels per image pixel (no more than n1 - n0), with a border of at least
+  // `border` image pixels on each side.
+  //
+  // The SVG gives the origin in the element transform, and the part of the
+  // image that covers the draw as the clip rect, which SkMatrix maps to device
+  // pixels as k * x + origin in floats (mapRect). So the origin, the ends of
+  // that part and its length are numbers that SkSVGDevice writes exactly
+  // (WrittenStep), and k times each end in image pixels is a float. Otherwise
+  // the SVG moves the fill or crops it: an origin of 1234568 was written as
+  // 1.23457e+06, 2 pixels off. Chrome must also read the origin back exactly
+  // (ChromeReadsExactly): it read 4.19396e+06 as 4193960.25, and the edge
+  // pixels of the fill changed by up to 64. Below 1,000,000 every whole number
+  // is written and read exactly, so there the numbers are the ones the rest of
+  // this comment gives. Past it, the origin moves down to the next number
+  // written and read exactly (at most 360 device pixels on an axis that stays
+  // below 2^23, where Chrome stops drawing SVG shapes, and 48,000 on any axis
+  // we accept), and the image gets the pixels in between; the border and the
+  // length grow by the fewest pixels that put the ends of the clip on such
+  // numbers. If that fails (past 2^24 a float holds no odd number, and an odd
+  // origin or start of the clip reaches no even end by an even distance), all
+  // of them move to steps that hold every number of the axis.
+  //
+  // At one image pixel per device pixel, the origin is a multiple of 8: Skia
+  // dithers with an 8x8 pattern placed by the device position, so the image
+  // dithers like the raster canvas.
+  //
+  // No image side is 1 pixel: SkImageShader tiles a 1 pixel side with clamp,
+  // not repeat (optimize, src/shaders/SkImageShader.cpp), and SkSVGDevice
+  // writes a clamp side as a viewport ("100%") tile. A border makes a side at
+  // least 3 pixels; without one, a 1 pixel side (a clip strip) gets a second
+  // pixel of the gradient, outside the clip.
+  static SweepAxis MakeSweepAxis(int64_t n0,
+                                 int64_t n1,
+                                 int64_t k,
+                                 int border) {
+    SweepAxis axis;
+    axis.k = std::min(k, n1 - n0);
+    const int64_t align = k == 1 ? 8 : 1;
+    // A bound on the size of every number of the axis, and the steps that
+    // hold them all up to it: the clip starts and ends fewer than `step` image
+    // pixels (of k device pixels) outside n0 to n1, and the origin is at most
+    // n0 and more than -k * (border + step) - origin_step (it moves further
+    // down only from 1,000,000 on, see ChromeReadsExactly). For a canvas we
+    // accept, `step` is at most 320 and `origin_step` 8000.
+    const int64_t bound =
+        std::max(n0 < 0 ? -n0 : n0, n1) + axis.k * 8192 + (int64_t{1} << 20);
+    const int64_t step = WrittenStep(bound, 8);
+    const int64_t origin_step = std::lcm(align, WrittenStep(bound, 6));
+    auto finish = [&](int64_t length) {
+      axis.length = length;
+      axis.size = axis.start + length + border;
+      return axis;
+    };
+    const int64_t min_length = border == 0 ? 2 : 1;
+    axis.origin = FloorOrigin(n0 - axis.k * border, align);
+    for (axis.start = border; axis.start < border + step; axis.start++) {
+      const int64_t begin = axis.origin + axis.k * axis.start;
+      if (begin > n0) {
+        break;
+      }
+      if (!IsWritten(begin, 8)) {
+        continue;
+      }
+      const int64_t need =
+          std::max((n1 - begin + axis.k - 1) / axis.k, min_length);
+      for (int64_t length = need; length < need + step; length++) {
+        if (IsWritten(begin + axis.k * length, 8) &&
+            IsWritten(axis.k * length, 8) &&
+            IsFloat(axis.k * (axis.start + length))) {
+          return finish(length);
+        }
+      }
+      break;
+    }
+    // Steps for the whole axis: the origin, k * start and k * length are
+    // multiples of `step` (which divides `origin_step`), so the ends of the
+    // clip, in device pixels and times k in image pixels, are too. The origin
+    // moves down by `origin_step` until Chrome reads it back exactly.
+    const int64_t unit = step / std::gcd(axis.k, step);
+    axis.start = (border + unit - 1) / unit * unit;
+    const int64_t origin = n0 - axis.k * axis.start;
+    axis.origin = origin - ((origin % origin_step) + origin_step) % origin_step;
+    while (!ChromeReadsExactly(axis.origin)) {
+      axis.origin -= origin_step;
+    }
+    const int64_t begin = axis.origin + axis.k * axis.start;
+    const int64_t need =
+        std::max((n1 - begin + axis.k - 1) / axis.k, min_length);
+    return finish((need + unit - 1) / unit * unit);
+  }
+
+  // The grid of `device` at k device pixels per image pixel (no more than a
+  // side), see MakeSweepAxis.
+  static SweepGrid MakeSweepGrid(const SkIRect& device, int64_t k, int border) {
+    return {MakeSweepAxis(device.fLeft, device.fRight, k, border),
+            MakeSweepAxis(device.fTop, device.fBottom, k, border)};
+  }
+
+  // Whether the image of `grid`, border included, fits kMaxSweepPixels and
+  // kMaxSweepSide.
+  static bool SweepGridFits(const SweepGrid& grid) {
+    return grid.x.size <= kMaxSweepSide && grid.y.size <= kMaxSweepSide &&
+           grid.x.size * grid.y.size <= kMaxSweepPixels;
+  }
+
+  // `paint` with its conic gradient replaced by an image of what the raster
+  // canvas paints with it, globalAlpha included, over the device bounds of the
+  // draw inside the clip: one image pixel per device pixel, or k x k device
+  // pixels per image pixel for bounds that do not fit kMaxSweepPixels or
+  // kMaxSweepSide. The image is the pattern tile (repeat, and no side of 1
+  // pixel, see MakeSweepAxis), not the viewport (a "100%" decal tile): in
+  // Chrome the transparent rest of a viewport tile larger than
+  // kMaxExactTilePixels faded the image's edges. An image Chrome does not
+  // draw exactly (larger than kMaxExactTilePixels, or scaled) has a border of
+  // at least 1 image pixel of the same gradient, so that resampling it does
+  // not mix its edges with the other side of the tile. The image's matrix maps
+  // its pixels back to local space, and `clip` is the part of the image inside
+  // the border. False: nothing to draw (nothing visible, a singular matrix or
+  // no memory for the image).
+  bool rasterizeSweep(const SkPath& path,
+                      const SkPaint& paint,
+                      SkPaint* out,
+                      SkRect* clip) {
+    const SkMatrix ctm = this->getTotalMatrix();
+    SkMatrix inverse;
+    if (!ctm.invert(&inverse)) {
+      return false;
+    }
+    // A stroke's outline, or the path of a fill or a hairline.
+    SkRect local = path.getBounds();
+    if (paint.getStyle() != SkPaint::kFill_Style || paint.getPathEffect()) {
+      SkPathBuilder builder;
+      if (skpathutils::FillPathWithPaint(path, paint, &builder, nullptr, ctm)) {
+        local = builder.computeBounds();
+      }
+    }
+    // One more pixel on each side for the antialiased edges.
+    SkIRect device = ctm.mapRect(local).roundOut().makeOutset(1, 1);
+    if (!device.intersect(this->getDeviceClipBounds())) {
+      return false;
+    }
+    SweepGrid grid = MakeSweepGrid(device, 1, 0);
+    if (grid.x.size * grid.y.size > kMaxExactTilePixels ||
+        !SweepGridFits(grid)) {
+      // The smallest whole k that fits: SkSVGDevice writes the element
+      // transform with 6 significant digits (svg_transform), which only a
+      // whole k keeps exact. The SVG renderer scales the image back up,
+      // bilinear in Chrome. No k below the square root of the area ratio or
+      // below the longest side over kMaxSweepSide fits; both are rounded down
+      // so that rounding noise cannot skip the smallest k.
+      const int64_t w = device.width64();
+      const int64_t h = device.height64();
+      int64_t k = std::max<int64_t>({1,
+                                     static_cast<int64_t>(std::sqrt(
+                                         static_cast<double>(w * h) /
+                                         static_cast<double>(kMaxSweepPixels))),
+                                     std::max(w, h) / kMaxSweepSide});
+      grid = MakeSweepGrid(device, k, 1);
+      while (!SweepGridFits(grid)) {
+        grid = MakeSweepGrid(device, ++k, 1);
+      }
+    }
+    const SweepAxis& x = grid.x;
+    const SweepAxis& y = grid.y;
+    // The device position of the image pixel at (start, start).
+    const int64_t left = x.origin + x.k * x.start;
+    const int64_t top = y.origin + y.k * y.start;
+    auto surface = SkSurfaces::Raster(SkImageInfo::MakeN32Premul(
+        static_cast<int>(x.size), static_cast<int>(y.size),
+        SkColorSpace::MakeSRGB()));
+    if (!surface) {
+      return false;
+    }
+    auto canvas = surface->getCanvas();
+    canvas->translate(x.start, y.start);
+    canvas->scale(1.0f / x.k, 1.0f / y.k);
+    canvas->translate(-left, -top);
+    canvas->concat(ctm);
+    SkPaint fill;
+    fill.setShader(paint.refShader());
+    fill.setAlphaf(paint.getAlphaf());
+    fill.setDither(paint.isDither());
+    fill.setBlendMode(SkBlendMode::kSrc);
+    canvas->drawPaint(fill);
+    SkMatrix matrix = inverse;
+    matrix.preTranslate(left, top);
+    matrix.preScale(x.k, y.k);
+    matrix.preTranslate(-x.start, -y.start);
+    *clip = SkRect::MakeXYWH(x.start, y.start, x.length, y.length);
+    *out = paint;
+    // The alpha is in the image.
+    out->setAlphaf(1);
+    out->setShader(surface->makeImageSnapshot()->makeShader(
+        SkTileMode::kRepeat, SkTileMode::kRepeat, SkSamplingOptions(),
+        &matrix));
+    return true;
+  }
+
   Clip& addClip(ClipEdgeStyle edge) {
     auto& clip = fLevels.back().clips.emplace_back();
     clip.matrix = this->getLocalToDevice();
@@ -738,8 +1116,14 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
   // the element is drawn under CTM * M, with its geometry mapped back by M^-1
   // and a pattern with no matrix. A stroke is turned into its fill first, so M
   // does not scale it. A no-repeat axis is clipped to the image, because
-  // SkSVGDevice writes a "100%" tile for it.
-  void drawPatternForSvg(const SkPath& path, const SkPaint& paint) {
+  // SkSVGDevice writes a "100%" tile for it. `image_clip`: a rasterized conic
+  // gradient, which already covers the draw and its antialiased edges in whole
+  // device pixels; it is clipped to that rect of the image only (the image
+  // without its border, whatever the tile mode), since a clip at the geometry
+  // bounds would antialias those edges a second time.
+  void drawPatternForSvg(const SkPath& path,
+                         const SkPaint& paint,
+                         const SkRect* image_clip = nullptr) {
     SkMatrix matrix;
     SkTileMode tile[2];
     auto image = paint.getShader()->isAImage(&matrix, tile);
@@ -766,7 +1150,11 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
     geometry = geometry.makeTransform(inverse);
     const bool decal =
         tile[0] == SkTileMode::kDecal || tile[1] == SkTileMode::kDecal;
+    const bool clip = decal || image_clip;
     auto bounds = geometry.getBounds();
+    if (image_clip) {
+      bounds = *image_clip;
+    }
     if (tile[0] == SkTileMode::kDecal) {
       bounds.fLeft = std::max(bounds.fLeft, 0.0f);
       bounds.fRight = std::min(bounds.fRight, (float)image->width());
@@ -775,14 +1163,14 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
       bounds.fTop = std::max(bounds.fTop, 0.0f);
       bounds.fBottom = std::min(bounds.fBottom, (float)image->height());
     }
-    if (decal && bounds.isEmpty()) {
+    if (clip && bounds.isEmpty()) {
       return;
     }
     fill.setShader(
         sk_ref_sp(image)->makeShader(tile[0], tile[1], SkSamplingOptions()));
     fSvg->save();
     fSvg->concat(matrix);
-    if (decal) {
+    if (clip) {
       fSvg->clipRect(bounds, paint.isAntiAlias());
     }
     fSvg->drawPath(geometry, fill);

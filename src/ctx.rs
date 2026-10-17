@@ -2,6 +2,7 @@ use std::cell::{Cell, RefCell};
 use std::f32::consts::PI;
 use std::marker::PhantomData;
 use std::mem;
+use std::rc::Rc;
 use std::result;
 use std::str::FromStr;
 use std::sync::LazyLock;
@@ -713,7 +714,7 @@ impl Context {
           self.account_raster_resource(RasterKey::Image { uid }, bytes);
         }
       }
-      Pattern::Gradient(gradient) => self.account_raster_bytes(gradient.estimated_bytes()),
+      Pattern::Gradient(gradient) => self.account_raster_bytes(gradient.borrow().estimated_bytes()),
       Pattern::Color(..) => {}
     };
   }
@@ -1421,8 +1422,8 @@ impl Context {
 
   pub fn stroke_rect(&mut self, x: f32, y: f32, w: f32, h: f32) -> result::Result<(), SkError> {
     self.flush_if_recording_limit_exceeded();
-    // Paint construction is fallible (dash PathEffect, gradient shader); the
-    // resource charge must land only once the op can actually record.
+    // Paint construction is fallible; the resource charge must land only
+    // once the op can actually record.
     let stroke_paint = self.stroke_paint()?;
     if self.draws_nothing() {
       return Ok(());
@@ -2138,10 +2139,9 @@ impl Context {
   /// The paint drawImage and drawCanvas draw with: Blink's `image_flags_`
   /// (canvas_rendering_context_2d_state.cc:170-171 fill style and AA, :335
   /// alpha, :832 picked for image draws). It never reads fillStyle or the line
-  /// dash, so an unusable fillStyle (a gradient Skia cannot build) cannot stop
-  /// an image draw. Opaque black like a default cc::PaintFlags; the blend mode
-  /// comes from the state paint, and smoothing, `ctx.filter` and the shadow
-  /// are added by the callers.
+  /// dash. Opaque black like a default cc::PaintFlags; the blend mode comes
+  /// from the state paint, and smoothing, `ctx.filter` and the shadow are
+  /// added by the callers.
   fn image_paint(&self, alpha: f32) -> Paint {
     let mut paint = self.state.paint.clone();
     paint.set_style(PaintStyle::Fill);
@@ -2152,12 +2152,7 @@ impl Context {
 
   /// The shader half of a gradient fillStyle/strokeStyle paint. Blink always
   /// dithers gradients (gradient.cc ApplyToFlags).
-  fn set_gradient_paint(
-    &self,
-    paint: &mut Paint,
-    gradient: &Gradient,
-    alpha: f32,
-  ) -> result::Result<(), SkError> {
+  fn set_gradient_paint(&self, paint: &mut Paint, gradient: &Gradient, alpha: f32) {
     // SVG only: SkSVGDevice has no conic gradient and drops the alpha of a
     // color shader, so a gradient that paints one color everywhere goes out as
     // a plain paint color.
@@ -2171,14 +2166,16 @@ impl Context {
         255,
       );
       paint.set_alpha_f32(c.a * alpha);
-      return Ok(());
+      return;
     }
-    let shader = gradient.get_shader()?;
     paint.set_color(0, 0, 0, 255);
     paint.set_alpha_f32(alpha);
-    paint.set_shader(&shader);
+    // No shader: Chrome paints the paint color, black at globalAlpha
+    // (canvas_style.cc:130-137).
+    if let Some(shader) = gradient.get_shader() {
+      paint.set_shader(&shader);
+    }
     paint.set_dither(true);
-    Ok(())
   }
 
   /// An image pattern's shader for the current smoothing state, and the
@@ -2208,7 +2205,7 @@ impl Context {
         paint.set_color(c.r, c.g, c.b, c.a);
         paint.set_alpha_f32(c.a as f32 / 255.0 * alpha);
       }
-      Pattern::Gradient(g) => self.set_gradient_paint(&mut paint, g, alpha)?,
+      Pattern::Gradient(g) => self.set_gradient_paint(&mut paint, &g.borrow(), alpha),
       Pattern::Image(p) => {
         if let Some((shader, _)) = self.image_pattern_shader(p) {
           paint.set_color(0, 0, 0, 255);
@@ -2425,7 +2422,7 @@ impl Context {
         paint.set_color(c.r, c.g, c.b, c.a);
         paint.set_alpha_f32(c.a as f32 / 255.0 * global_alpha);
       }
-      Pattern::Gradient(g) => self.set_gradient_paint(&mut paint, g, global_alpha)?,
+      Pattern::Gradient(g) => self.set_gradient_paint(&mut paint, &g.borrow(), global_alpha),
       Pattern::Image(p) => {
         if let Some((shader, _)) = self.image_pattern_shader(p) {
           paint.set_color(0, 0, 0, 255);
@@ -3437,7 +3434,7 @@ impl Context {
   /// the scaled canvas (base_rendering_context_2d.cc:1066-1082), which misses
   /// part of the squeezed glyphs; that is not copied.
   ///
-  /// When measuring fails (for example a fill gradient with no shader) the
+  /// When measuring fails (for example a poisoned font collection lock) the
   /// reset takes the whole clip: the draw itself reports its own errors.
   fn text_bounds(
     &mut self,
@@ -3678,7 +3675,7 @@ impl<S: webidl::Site> FromNapiValue for CanvasStyleArg<'static, S> {
       if unsafe { <&CanvasGradient as ValidateNapiValue>::validate(env, value) }.is_ok()
         && let Ok(gradient) = unsafe { CanvasGradient::from_napi_ref(env, value) }
       {
-        return style(Some(Pattern::Gradient(gradient.0.clone())), value);
+        return style(Some(Pattern::Gradient(Rc::clone(&gradient.0))), value);
       }
     }
     let color = webidl::to_dom_string(env, value, S::PREFIX)?;
@@ -4814,47 +4811,64 @@ impl CanvasRenderingContext2D {
     }
   }
 
+  /// createLinearGradient(double x0, double y0, double x1, double y1); the
+  /// index.js wrapper checks the argument count.
   #[napi]
   pub fn create_linear_gradient<'scope>(
     &'scope mut self,
     env: &'scope Env,
-    x0: f64,
-    y0: f64,
-    x1: f64,
-    y1: f64,
+    x0: webidl::RestrictedDouble<webidl::CtxCreateLinearGradient>,
+    y0: webidl::RestrictedDouble<webidl::CtxCreateLinearGradient>,
+    x1: webidl::RestrictedDouble<webidl::CtxCreateLinearGradient>,
+    y1: webidl::RestrictedDouble<webidl::CtxCreateLinearGradient>,
   ) -> Result<ClassInstance<'scope, CanvasGradient>> {
-    let linear_gradient =
-      Gradient::create_linear_gradient(x0 as f32, y0 as f32, x1 as f32, y1 as f32);
-    CanvasGradient(linear_gradient).into_instance(env)
+    // Blink ClampTo<float> (canvas_2d_recorder_context.cc:2366-2372).
+    let [x0, y0, x1, y1] = [x0.0, y0.0, x1.0, y1.0].map(clamp_to_f32);
+    let linear_gradient = Gradient::create_linear_gradient(x0, y0, x1, y1);
+    CanvasGradient::new(linear_gradient).into_instance(env)
   }
 
   #[napi]
   pub fn create_radial_gradient<'scope>(
     &'scope mut self,
     env: &'scope Env,
-    x0: f64,
-    y0: f64,
-    r0: f64,
-    x1: f64,
-    y1: f64,
-    r1: f64,
+    x0: webidl::RestrictedDouble<webidl::CtxCreateRadialGradient>,
+    y0: webidl::RestrictedDouble<webidl::CtxCreateRadialGradient>,
+    r0: webidl::RestrictedDouble<webidl::CtxCreateRadialGradient>,
+    x1: webidl::RestrictedDouble<webidl::CtxCreateRadialGradient>,
+    y1: webidl::RestrictedDouble<webidl::CtxCreateRadialGradient>,
+    r1: webidl::RestrictedDouble<webidl::CtxCreateRadialGradient>,
   ) -> Result<ClassInstance<'scope, CanvasGradient>> {
-    let radial_gradient = Gradient::create_radial_gradient(
-      x0 as f32, y0 as f32, r0 as f32, x1 as f32, y1 as f32, r1 as f32,
-    );
-    CanvasGradient(radial_gradient).into_instance(env)
+    let [x0, y0, r0, x1, y1, r1] = [x0.0, y0.0, r0.0, x1.0, y1.0, r1.0];
+    // canvas_2d_recorder_context.cc:2376-2392, on the doubles, after the
+    // bindings converted every argument.
+    if r0 < 0.0 || r1 < 0.0 {
+      return Err(webidl::dom_exception(
+        env.raw(),
+        "IndexSizeError",
+        &format!(
+          "{}The {} provided is less than 0.",
+          <webidl::CtxCreateRadialGradient as webidl::Site>::PREFIX,
+          if r0 < 0.0 { "r0" } else { "r1" }
+        ),
+      ));
+    }
+    let [x0, y0, r0, x1, y1, r1] = [x0, y0, r0, x1, y1, r1].map(clamp_to_f32);
+    let radial_gradient = Gradient::create_radial_gradient(x0, y0, r0, x1, y1, r1);
+    CanvasGradient::new(radial_gradient).into_instance(env)
   }
 
   #[napi]
   pub fn create_conic_gradient<'scope>(
     &'scope mut self,
     env: &'scope Env,
-    start_angle: f64,
-    x: f64,
-    y: f64,
+    start_angle: webidl::RestrictedDouble<webidl::CtxCreateConicGradient>,
+    x: webidl::RestrictedDouble<webidl::CtxCreateConicGradient>,
+    y: webidl::RestrictedDouble<webidl::CtxCreateConicGradient>,
   ) -> Result<ClassInstance<'scope, CanvasGradient>> {
-    let conic_gradient = Gradient::create_conic_gradient(x as f32, y as f32, start_angle as f32);
-    CanvasGradient(conic_gradient).into_instance(env)
+    let [start_angle, x, y] = [start_angle.0, x.0, y.0].map(clamp_to_f32);
+    let conic_gradient = Gradient::create_conic_gradient(x, y, start_angle);
+    CanvasGradient::new(conic_gradient).into_instance(env)
   }
 
   /// createPattern(image, repetition). The index.js wrapper passes the
@@ -7497,7 +7511,7 @@ mod tests {
         );
       }
       assert_eq!(gradient.estimated_bytes(), GRADIENT_BYTES);
-      ctx.state.fill_style = Pattern::Gradient(gradient);
+      ctx.state.fill_style = Pattern::Gradient(Rc::new(RefCell::new(gradient)));
       ctx.state.line_dash_list = vec![2.0, 3.0];
       ctx
     };
