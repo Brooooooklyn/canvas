@@ -956,6 +956,7 @@ void skiac_canvas_get_line_metrics_or_draw_text(
     const char* lang,
     int text_rendering);
 void skiac_canvas_reset_transform(skiac_canvas* c_canvas);
+bool skiac_canvas_get_device_clip_bounds(skiac_canvas* c_canvas, int32_t* ltrb);
 void skiac_canvas_clip_rect(skiac_canvas* c_canvas,
                             float x,
                             float y,
@@ -1044,6 +1045,16 @@ void skiac_paint_set_src_in_color_filter(skiac_paint* c_paint,
                                          uint8_t g,
                                          uint8_t b,
                                          uint8_t a);
+void skiac_paint_set_color4f(skiac_paint* c_paint, skiac_color4f color);
+void skiac_paint_set_src_in_color_filter4f(skiac_paint* c_paint,
+                                           skiac_color4f color);
+
+// Color conversions: the skcms math Blink's Color uses (color.cc).
+uint32_t skiac_color4f_to_sk_color(skiac_color4f color);
+bool skiac_color_space_params(int space, float* matrix, float* transfer_fn);
+bool skiac_skcms_matrix3x3_invert(const float* matrix, float* inverse);
+float skiac_skcms_transfer_fn_eval(const float* transfer_fn, float x);
+bool skiac_skcms_transfer_fn_invert(const float* transfer_fn, float* inverse);
 
 // Path
 skiac_path* skiac_path_create();
@@ -1149,6 +1160,7 @@ skiac_shader* skiac_shader_make_linear_gradient(const skiac_point* points,
                                                 int count,
                                                 int tile_mode,
                                                 uint32_t flags,
+                                                int interpolation_space,
                                                 skiac_transform c_ts);
 skiac_shader* skiac_shader_make_radial_gradient(skiac_point start_point,
                                                 float start_radius,
@@ -1159,6 +1171,7 @@ skiac_shader* skiac_shader_make_radial_gradient(skiac_point start_point,
                                                 int count,
                                                 int tile_mode,
                                                 uint32_t flags,
+                                                int interpolation_space,
                                                 skiac_transform c_ts);
 skiac_shader* skiac_shader_make_conic_gradient(float cx,
                                                float cy,
@@ -1168,6 +1181,7 @@ skiac_shader* skiac_shader_make_conic_gradient(float cx,
                                                int count,
                                                int tile_mode,
                                                uint32_t flags,
+                                               int interpolation_space,
                                                skiac_transform c_ts);
 skiac_shader* skiac_shader_make_from_surface_image(skiac_surface* c_surface,
                                                    skiac_transform c_ts,

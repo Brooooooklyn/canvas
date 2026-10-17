@@ -632,6 +632,8 @@ pub mod ffi {
 
     pub fn skiac_canvas_reset_transform(canvas: *mut skiac_canvas);
 
+    pub fn skiac_canvas_get_device_clip_bounds(canvas: *mut skiac_canvas, ltrb: *mut i32) -> bool;
+
     pub fn skiac_canvas_clip_rect(canvas: *mut skiac_canvas, x: f32, y: f32, w: f32, h: f32);
 
     pub fn skiac_canvas_clip_path(canvas: *mut skiac_canvas, path: *mut skiac_path);
@@ -753,6 +755,20 @@ pub mod ffi {
     );
 
     pub fn skiac_paint_set_src_in_color_filter(paint: *mut skiac_paint, r: u8, g: u8, b: u8, a: u8);
+
+    pub fn skiac_paint_set_color4f(paint: *mut skiac_paint, color: super::Color4f);
+
+    pub fn skiac_paint_set_src_in_color_filter4f(paint: *mut skiac_paint, color: super::Color4f);
+
+    pub fn skiac_color4f_to_sk_color(color: super::Color4f) -> u32;
+
+    pub fn skiac_color_space_params(space: i32, matrix: *mut f32, transfer_fn: *mut f32) -> bool;
+
+    pub fn skiac_skcms_matrix3x3_invert(matrix: *const f32, inverse: *mut f32) -> bool;
+
+    pub fn skiac_skcms_transfer_fn_eval(transfer_fn: *const f32, x: f32) -> f32;
+
+    pub fn skiac_skcms_transfer_fn_invert(transfer_fn: *const f32, inverse: *mut f32) -> bool;
 
     pub fn skiac_paint_get_color(paint: *mut skiac_paint) -> u32;
 
@@ -908,6 +924,7 @@ pub mod ffi {
       count: i32,
       tile_mode: i32,
       flags: u32,
+      interpolation_space: i32,
       ts: skiac_transform,
     ) -> *mut skiac_shader;
 
@@ -921,6 +938,7 @@ pub mod ffi {
       count: i32,
       tile_mode: i32,
       flags: u32,
+      interpolation_space: i32,
       ts: skiac_transform,
     ) -> *mut skiac_shader;
 
@@ -933,6 +951,7 @@ pub mod ffi {
       count: i32,
       tile_mode: i32,
       flags: u32,
+      interpolation_space: i32,
       ts: skiac_transform,
     ) -> *mut skiac_shader;
 
@@ -2844,6 +2863,39 @@ impl Color4f {
   }
 }
 
+impl Color4f {
+  /// `SkColor4f::toSkColor`: an 8-bit ARGB word (alpha in the top byte),
+  /// rounded and pinned the way Skia does it on this CPU.
+  pub fn to_sk_color(self) -> u32 {
+    unsafe { ffi::skiac_color4f_to_sk_color(self) }
+  }
+}
+
+/// The matrix (row major) and transfer function (g, a, b, c, d, e, f) of a
+/// predefined color space, from Skia's constants (see skia_c.cpp).
+pub(crate) fn color_space_params(space: i32) -> Option<([f32; 9], [f32; 7])> {
+  let mut m = [0.0f32; 9];
+  let mut t = [0.0f32; 7];
+  unsafe { ffi::skiac_color_space_params(space, m.as_mut_ptr(), t.as_mut_ptr()) }.then_some((m, t))
+}
+
+/// skcms_Matrix3x3_invert.
+pub(crate) fn skcms_matrix3x3_invert(m: &[f32; 9]) -> Option<[f32; 9]> {
+  let mut inv = [0.0f32; 9];
+  unsafe { ffi::skiac_skcms_matrix3x3_invert(m.as_ptr(), inv.as_mut_ptr()) }.then_some(inv)
+}
+
+/// skcms_TransferFunction_eval (Skia's own approximate powf).
+pub(crate) fn skcms_transfer_fn_eval(t: &[f32; 7], x: f32) -> f32 {
+  unsafe { ffi::skiac_skcms_transfer_fn_eval(t.as_ptr(), x) }
+}
+
+/// skcms_TransferFunction_invert.
+pub(crate) fn skcms_transfer_fn_invert(t: &[f32; 7]) -> Option<[f32; 7]> {
+  let mut inv = [0.0f32; 7];
+  unsafe { ffi::skiac_skcms_transfer_fn_invert(t.as_ptr(), inv.as_mut_ptr()) }.then_some(inv)
+}
+
 pub(crate) fn unit_from_u8(v: u8) -> f32 {
   const K: f32 = 1.0 / 255.0;
   v as f32 * K
@@ -2916,6 +2968,13 @@ impl Canvas {
     unsafe {
       ffi::skiac_canvas_reset_transform(self.0);
     }
+  }
+
+  /// `SkCanvas::getDeviceClipBounds` as left, top, right, bottom; None when
+  /// the clip is empty.
+  pub fn device_clip_bounds(&self) -> Option<[i32; 4]> {
+    let mut ltrb = [0i32; 4];
+    unsafe { ffi::skiac_canvas_get_device_clip_bounds(self.0, ltrb.as_mut_ptr()) }.then_some(ltrb)
   }
 
   pub fn draw_color(&mut self, r: f32, g: f32, b: f32, a: f32) {
@@ -3376,6 +3435,14 @@ impl Paint {
     }
   }
 
+  /// `SkPaint::setColor4f(color, sRGB)`: Blink's float paint color
+  /// (CanvasStyle::ApplyColorToFlags, canvas_style.h:125-134).
+  pub fn set_color4f(&mut self, color: Color4f) {
+    unsafe {
+      ffi::skiac_paint_set_color4f(self.0, color);
+    }
+  }
+
   pub fn set_alpha(&mut self, a: u8) {
     unsafe {
       ffi::skiac_paint_set_alpha(self.0, a);
@@ -3483,6 +3550,14 @@ impl Paint {
   pub fn set_src_in_color_filter(&mut self, r: u8, g: u8, b: u8, a: u8) {
     unsafe {
       ffi::skiac_paint_set_src_in_color_filter(self.0, r, g, b, a);
+    }
+  }
+
+  /// The float form of `set_src_in_color_filter`: Chromium's looper passes the
+  /// shadow's SkColor4f (draw_looper.cc:33-34).
+  pub fn set_src_in_color_filter4f(&mut self, color: Color4f) {
+    unsafe {
+      ffi::skiac_paint_set_src_in_color_filter4f(self.0, color);
     }
   }
 
@@ -3962,6 +4037,18 @@ pub struct Gradient {
   pub positions: Vec<f32>,
   pub tile_mode: TileMode,
   pub transform: Transform,
+  pub interpolation: GradientInterpolation,
+}
+
+/// The color space Skia interpolates the stops in (skia_c.cpp
+/// `stop_interpolation`). Blink uses sRGB for legacy stops, else Oklab
+/// (gradient.cc:305-315).
+#[repr(i32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum GradientInterpolation {
+  #[default]
+  Srgb = 0,
+  Oklab = 1,
 }
 
 #[derive(Debug, Clone)]
@@ -4019,6 +4106,7 @@ impl Shader {
         grad.base.colors.len() as i32,
         grad.base.tile_mode as i32,
         0_u32,
+        grad.base.interpolation as i32,
         grad.base.transform.into(),
       ))
     }
@@ -4045,6 +4133,7 @@ impl Shader {
         grad.base.colors.len() as i32,
         grad.base.tile_mode as i32,
         0_u32,
+        grad.base.interpolation as i32,
         grad.base.transform.into(),
       ))
     }
@@ -4061,6 +4150,7 @@ impl Shader {
         grad.base.colors.len() as i32,
         grad.base.tile_mode as i32,
         0_u32,
+        grad.base.interpolation as i32,
         grad.base.transform.into(),
       ))
     }
