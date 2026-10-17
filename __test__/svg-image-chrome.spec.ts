@@ -90,10 +90,24 @@ const KNOWN_GAPS: Record<string, { max: number; x64?: number; why: string }> = {
 
 const X64 = process.arch === 'x64'
 const MACOS = process.platform === 'darwin'
-// Chrome's pixels were measured on macOS 27. CoreText ships with the OS, so
-// on another macOS version the pixels of the cases with <text> are not
-// compared.
-const TEXT_PIXELS = MACOS && Number.parseInt(release(), 10) === 27
+const DARWIN = MACOS ? Number.parseInt(release(), 10) : 0
+// Chrome's pixels were measured on macOS 27 (Darwin 27). CoreText ships with
+// the OS: on macOS 26 (Darwin 25, the CI runners) some <text> cases draw a few
+// edge pixels differently. These are the largest channel differences the
+// macos-26 runners measured (CI run 38941212528, the same on arm64 and x64);
+// the other <text> cases are exact there. A text layout bug moves far more
+// (a 0.25 px shift 83, a lost text-anchor 255), so the check still catches
+// it. On other macOS versions and other systems the pixels of the cases with
+// <text> are not compared.
+const TEXT_GAPS_DARWIN25: Record<string, number> = {
+  'corpus1/text_hi': 3,
+  'corpus1/text_serif': 3,
+  'corpus1/text_sans': 6,
+  'corpus1/text_arial': 3,
+  'corpus2/g_text_anchor': 3,
+  'corpus2/g_text_tspan': 4,
+}
+const TEXT_PIXELS = DARWIN === 27 || DARWIN === 25
 
 function load(svg: string) {
   const image = new Image()
@@ -134,7 +148,7 @@ for (const [tag, corpus] of Object.entries(REF.corpora)) {
       t.truthy(image, 'Chrome loads it')
       t.deepEqual([image!.naturalWidth, image!.naturalHeight], [ref.nw, ref.nh])
       if (text && !TEXT_PIXELS) {
-        t.pass('glyphs measured on macOS 27 only')
+        t.pass('glyphs measured on macOS 27 and 26 only')
         return
       }
       const want = inflateRawSync(Buffer.from(X64 && ref.px_x64 ? ref.px_x64 : ref.px, 'base64'))
@@ -152,8 +166,12 @@ for (const [tag, corpus] of Object.entries(REF.corpora)) {
         }
         max = Math.max(max, m)
       }
-      const gap = KNOWN_GAPS[`${tag}/${name}`]
-      const allowed = gap ? ((X64 ? gap.x64 : undefined) ?? gap.max) : 0
+      const key = `${tag}/${name}`
+      const gap = KNOWN_GAPS[key]
+      let allowed = gap ? ((X64 ? gap.x64 : undefined) ?? gap.max) : 0
+      if (text && DARWIN === 25) {
+        allowed = Math.max(allowed, TEXT_GAPS_DARWIN25[key] ?? 0)
+      }
       t.true(
         max <= allowed,
         `max channel diff ${max} (allowed ${allowed}) in ${count} px, first at (${first % c.w}, ${Math.floor(first / c.w)})`,
