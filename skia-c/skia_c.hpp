@@ -702,6 +702,10 @@ struct skiac_line_metrics {
   // Blink's em box (ExtendedTextMetrics), relative to the textBaseline.
   float em_height_ascent;
   float em_height_descent;
+  // SkFontMetrics fXHeight and fCapHeight of the first run's font (0 when
+  // the font does not say).
+  float x_height;
+  float cap_height;
 };
 
 struct skiac_rect {
@@ -1004,7 +1008,8 @@ void skiac_canvas_draw_picture_rect(skiac_canvas* c_canvas,
                                     float dy,
                                     float dw,
                                     float dh,
-                                    skiac_paint* c_paint);
+                                    skiac_paint* c_paint,
+                                    bool isolate);
 void skiac_canvas_destroy(skiac_canvas* c_canvas);
 
 // Paint
@@ -1322,6 +1327,7 @@ void skiac_bitmap_set_color_space(skiac_bitmap* c_bitmap,
                                   size_t icc_len,
                                   uint16_t primaries,
                                   uint16_t transfer);
+bool skiac_bitmap_source_is_opaque(skiac_bitmap* c_bitmap, bool is_canvas);
 size_t skiac_bitmap_get_width(skiac_bitmap* c_bitmap);
 size_t skiac_bitmap_get_height(skiac_bitmap* c_bitmap);
 void skiac_bitmap_set_immutable(skiac_bitmap* c_bitmap);
@@ -1397,6 +1403,17 @@ bool skiac_font_collection_set_alias(skiac_font_collection* c_font_collection,
                                      const char* family,
                                      const char* alias);
 void skiac_font_collection_destroy(skiac_font_collection* c_font_collection);
+bool skiac_font_collection_ideographic_advance(
+    skiac_font_collection* c_collection,
+    float font_size,
+    int weight,
+    int stretch,
+    float stretch_width,
+    int slant,
+    const char* font_family,
+    const skiac_font_variation* variations,
+    int variations_count,
+    float* advance);
 
 // Variable Fonts
 int skiac_typeface_get_variation_design_position(

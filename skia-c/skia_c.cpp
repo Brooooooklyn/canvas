@@ -2480,6 +2480,8 @@ void skiac_canvas_get_line_metrics_or_draw_text(
     EmHeight(font, font_metrics, &em_ascent, &em_descent);
     c_line_metrics->em_height_ascent = em_ascent + offset;
     c_line_metrics->em_height_descent = em_descent - offset;
+    c_line_metrics->x_height = font_metrics.fXHeight;
+    c_line_metrics->cap_height = font_metrics.fCapHeight;
     // The ink of every glyph the draw above paints, where it paints it:
     // visit() walks the text blobs paint() draws, and the origin is the
     // draw's own, rtl_offset and letter_spacing_offset included. Relative to
@@ -2647,7 +2649,8 @@ void skiac_canvas_draw_picture_rect(skiac_canvas* c_canvas,
                                     float dy,
                                     float dw,
                                     float dh,
-                                    skiac_paint* c_paint) {
+                                    skiac_paint* c_paint,
+                                    bool isolate) {
   if (c_canvas == nullptr || c_picture == nullptr) {
     return;
   }
@@ -2672,6 +2675,35 @@ void skiac_canvas_draw_picture_rect(skiac_canvas* c_canvas,
 
   const auto dst_rect = SkRect::MakeXYWH(dx, dy, dw, dh);
   const SkPaint* paint = PAINT_CAST;
+
+  if (isolate) {
+    // drawImage of a canvas draws its pixels: the source's own copy, clears
+    // and full-canvas modes composite inside a layer the size of the
+    // destination, never onto it. `paint` goes on the layer.
+    const SkMatrix ctm = canvas->getTotalMatrix();
+    const SkRect device = ctm.mapRect(dst_rect.makeSorted());
+    canvas->save();
+    canvas->resetMatrix();
+    if (device.isFinite()) {
+      SkIRect bounds = device.roundOut();
+      // The raster pipeline dithers on the layer's own device x/y (an 8x8
+      // matrix): an origin on a multiple of 8 keeps a gradient's dither the
+      // same as drawn straight onto the canvas.
+      bounds.fLeft &= ~7;
+      bounds.fTop &= ~7;
+      const SkRect layer_bounds = SkRect::Make(bounds);
+      canvas->saveLayer(&layer_bounds, paint);
+    } else {
+      // A destination past the f32 range: the clip bounds.
+      canvas->saveLayer(nullptr, paint);
+    }
+    canvas->setMatrix(ctm);
+    canvas->clipRect(dst_rect, SkClipOp::kIntersect, true /* antialias */);
+    canvas->drawPicture(picture, &matrix, nullptr);
+    canvas->restore();
+    canvas->restore();
+    return;
+  }
 
   canvas->save();
   // The source crop -- `drawPicture` replays the whole picture. The clip
@@ -4221,6 +4253,16 @@ void skiac_bitmap_set_color_space(skiac_bitmap* c_bitmap,
   }
 }
 
+// Chrome's CanvasImageSource::IsOpaque for a drawImage source: an image whose
+// decoder reports no alpha (JPEG, RGB PNG), or an alpha:false canvas.
+bool skiac_bitmap_source_is_opaque(skiac_bitmap* c_bitmap, bool is_canvas) {
+  if (is_canvas) {
+    return reinterpret_cast<SkSurface*>(c_bitmap)->imageInfo().alphaType() ==
+           kOpaque_SkAlphaType;
+  }
+  return BITMAP_CAST->alphaType() == kOpaque_SkAlphaType;
+}
+
 size_t skiac_bitmap_get_width(skiac_bitmap* c_bitmap) {
   auto bitmap = reinterpret_cast<SkBitmap*>(c_bitmap);
   return bitmap->width();
@@ -4306,7 +4348,9 @@ int skiac_image_pattern_level(int width,
 // copy converted to `cs` stands in for the original when the image is in
 // another colour space. `c_decoded_id` and `c_decoded_bytes` get the uniqueID
 // and byte size of the copy the shader samples, which a recorded paint keeps;
-// the size is 0 when it samples the original.
+// the size is 0 when it samples the original. A canvas, ImageData or SVG
+// Image pattern passes no `c_bitmap` and no `c_levels`: its pixels are read
+// from `c_image`, and a level is made for this shader only.
 skiac_shader* skiac_image_make_decoded_pattern_shader(
     skiac_bitmap* c_bitmap,
     skiac_image* c_image,
@@ -4327,14 +4371,20 @@ skiac_shader* skiac_image_make_decoded_pattern_shader(
   auto ts = conv_from_transform(c_ts);
   sk_sp<SkImage> image;
   SkPixmap original;
-  if (!BITMAP_CAST->peekPixels(&original)) {
+  const bool has_pixels = c_bitmap
+                              ? BITMAP_CAST->peekPixels(&original)
+                              : c_image && IMAGE_CAST->peekPixels(&original);
+  if (!has_pixels) {
     // A null image gives an empty shader below.
   } else if (level == 0 && !ConversionTarget(original, cs)) {
     image = sk_ref_sp(IMAGE_CAST);
   } else {
     const SkIRect src = SkIRect::MakeSize(original.dimensions());
     const SkISize size = CcSizeForLevel(src.size(), level);
-    image = FindOrMakeLevel(c_levels, original, src, size, cs);
+    // Without a level cache the decode is made for this shader only.
+    image = c_levels ? FindOrMakeLevel(c_levels, original, src, size, cs)
+                     : MakeLevelImage(original, src, size,
+                                      ConversionTarget(original, cs), nullptr);
     if (image) {
       *c_decoded_id = image->uniqueID();
       *c_decoded_bytes = image->imageInfo().computeMinByteSize();
@@ -4560,6 +4610,81 @@ bool skiac_font_collection_set_alias(skiac_font_collection* c_font_collection,
 
 void skiac_font_collection_destroy(skiac_font_collection* c_font_collection) {
   delete c_font_collection;
+}
+
+// The advance of U+6C34 in the primary face of a font, for the ic unit:
+// Blink's FontSizes::Ic (css_to_length_conversion_data.cc:139-152) reads
+// Font::PrimaryFontWithCjkWater(), the first font of the family list that
+// exists, whether or not it has the glyph (font_fallback_list.cc:88-195; only
+// a unicode-range face is skipped), and SimpleFontData::IdeographicInlineSize,
+// the unshaped advance of that glyph (simple_font_data.cc:437-474). Our
+// primary face is the first that text layout tries: findTypefaces() with the
+// same families, style and variations. When no family exists, Blink takes
+// the standard font (webkit-standard, then the last-resort font,
+// font_fallback_list.cc:181-194), which has no U+6C34 in a default setup,
+// not the face findTypefaces() falls back to (the first registered family).
+// False when no family exists or the face has no such glyph; ic is then 1em.
+bool skiac_font_collection_ideographic_advance(
+    skiac_font_collection* c_collection,
+    float font_size,
+    int weight,
+    int stretch,
+    float stretch_width,
+    int slant,
+    const char* font_family,
+    const skiac_font_variation* variations,
+    int variations_count,
+    float* advance) {
+  c_collection->flushCachesIfDirty();
+  skia_private::TArray<SkString> families;
+  SkStrSplit(font_family, ",", &families);
+  std::vector<SkString> families_vec(families.begin(), families.end());
+  // A family exists when a manager findTypefaces() asks has it: the dynamic,
+  // asset and fallback managers (FontCollection::getFontManagerOrder).
+  const sk_sp<SkFontMgr> managers[] = {
+      c_collection->assets, c_collection->font_mgr,
+      c_collection->collection->getFallbackManager()};
+  auto exists = [&managers](const SkString& family) {
+    for (const auto& manager : managers) {
+      if (manager && manager->matchFamily(family.c_str())->count() > 0) {
+        return true;
+      }
+    }
+    return false;
+  };
+  if (std::none_of(families_vec.begin(), families_vec.end(), exists)) {
+    return false;
+  }
+  std::vector<SkFontArguments::VariationPosition::Coordinate> coords;
+  for (int i = 0; i < variations_count; i++) {
+    coords.push_back({variations[i].tag, variations[i].value});
+  }
+  if (stretch_width != 100.0f) {
+    coords.push_back({SkSetFourByteTag('w', 'd', 't', 'h'), stretch_width});
+  }
+  std::optional<FontArguments> font_args;
+  if (!coords.empty()) {
+    SkFontArguments args;
+    args.setVariationDesignPosition(
+        {coords.data(), static_cast<int>(coords.size())});
+    font_args.emplace(args);
+  }
+  auto typefaces = c_collection->collection->findTypefaces(
+      families_vec, SkFontStyle(weight, stretch, (SkFontStyle::Slant)slant),
+      font_args);
+  if (typefaces.empty()) {
+    return false;
+  }
+  SkFont font(typefaces[0], font_size);
+  // Blink's font has subpixel positioning, so the advance is unhinted.
+  font.setSubpixel(true);
+  font.setLinearMetrics(true);
+  auto glyph = font.unicharToGlyph(0x6C34);
+  if (glyph == 0) {
+    return false;
+  }
+  *advance = font.getWidth(glyph);
+  return true;
 }
 
 // Variable Fonts

@@ -213,6 +213,10 @@ pub mod ffi {
     /// Blink's em box (ExtendedTextMetrics), relative to the textBaseline.
     pub em_height_ascent: f32,
     pub em_height_descent: f32,
+    /// SkFontMetrics fXHeight and fCapHeight of the first run's font (0 when
+    /// the font does not say).
+    pub x_height: f32,
+    pub cap_height: f32,
   }
 
   #[repr(C)]
@@ -694,6 +698,7 @@ pub mod ffi {
       dw: f32,
       dh: f32,
       paint: *mut skiac_paint,
+      isolate: bool,
     );
 
     pub fn skiac_canvas_destroy(canvas: *mut skiac_canvas);
@@ -1153,6 +1158,8 @@ pub mod ffi {
       transfer: u16,
     );
 
+    pub fn skiac_bitmap_source_is_opaque(c_bitmap: *mut skiac_bitmap, is_canvas: bool) -> bool;
+
     pub fn skiac_bitmap_get_width(c_bitmap: *mut skiac_bitmap) -> usize;
 
     pub fn skiac_bitmap_get_height(c_bitmap: *mut skiac_bitmap) -> usize;
@@ -1262,6 +1269,19 @@ pub mod ffi {
     ) -> bool;
 
     pub fn skiac_font_collection_destroy(c_font_collection: *mut skiac_font_collection);
+
+    pub fn skiac_font_collection_ideographic_advance(
+      c_collection: *mut skiac_font_collection,
+      font_size: f32,
+      weight: i32,
+      stretch: i32,
+      stretch_width: f32,
+      slant: i32,
+      font_family: *const c_char,
+      variations: *const skiac_font_variation,
+      variations_count: i32,
+      advance: *mut f32,
+    ) -> bool;
 
     // Variable Fonts
     pub fn skiac_typeface_get_variation_design_position(
@@ -3339,7 +3359,8 @@ impl Canvas {
   }
 
   /// Optimized: draws picture with source/dest rects in a single FFI call
-  /// Combines save/clip/transform/draw/restore operations
+  /// Combines save/clip/transform/draw/restore operations. `isolate` replays
+  /// the picture inside a layer, so its own blend modes and clears stay in it.
   #[inline]
   pub fn draw_picture_rect(
     &mut self,
@@ -3353,10 +3374,11 @@ impl Canvas {
     dw: f32,
     dh: f32,
     paint: &Paint,
+    isolate: bool,
   ) {
     unsafe {
       ffi::skiac_canvas_draw_picture_rect(
-        self.0, picture.0, sx, sy, sw, sh, dx, dy, dw, dh, paint.0,
+        self.0, picture.0, sx, sy, sw, sh, dx, dy, dw, dh, paint.0, isolate,
       );
     }
   }
@@ -4693,6 +4715,12 @@ unsafe impl Send for Bitmap {}
 unsafe impl Sync for Bitmap {}
 
 impl Bitmap {
+  /// Chrome's `IsOpaque()` for a drawImage source: decoded without alpha, or
+  /// an alpha:false canvas.
+  pub fn is_opaque_source(&self) -> bool {
+    unsafe { ffi::skiac_bitmap_source_is_opaque(self.0.bitmap, self.0.is_canvas) }
+  }
+
   pub fn from_buffer(ptr: *mut u8, size: usize) -> Option<Self> {
     let mut bitmap_info = ffi::skiac_bitmap_info {
       bitmap: ptr::null_mut(),
@@ -5093,6 +5121,61 @@ impl ImagePattern {
   ) -> Option<(Shader, DecodedCopy)> {
     let mut guard = self.shared.lock().unwrap();
     let shared = &mut *guard;
+    // Chrome sends every software image through its decode cache when the
+    // canvas is not sRGB (SoftwareImageDecodeCache::UseCacheForDrawImage,
+    // software_image_decode_cache.cc:538-560): a canvas, ImageData or SVG
+    // Image pattern there is drawn from a level made for the draw, converted
+    // to the canvas's colour space. On sRGB it is drawn as it is.
+    if let Some((ctm, color_space)) = decode
+      && !self.is_image
+      && color_space != ColorSpace::Srgb
+    {
+      let image = shared.image.get_or_insert_with(|| self.make_image()).0;
+      let level = if image.is_null() {
+        -1
+      } else {
+        unsafe {
+          ffi::skiac_image_pattern_level(
+            ffi::skiac_image_get_width(image),
+            ffi::skiac_image_get_height(image),
+            shared.transform.into(),
+            ctm.into(),
+            quality as i32,
+          )
+        }
+      };
+      let level = Some((level, color_space));
+      if shared
+        .shader
+        .as_ref()
+        .is_none_or(|(cached, cached_level, ..)| *cached != quality || *cached_level != level)
+      {
+        shared.shader = None;
+        let mut decoded_id = 0;
+        let mut decoded_bytes = 0;
+        let shader = unsafe {
+          Shader::from_ptr(ffi::skiac_image_make_decoded_pattern_shader(
+            ptr::null_mut(),
+            image,
+            ptr::null_mut(),
+            level.map_or(-1, |(level, _)| level),
+            self.repeat_x as i32,
+            self.repeat_y as i32,
+            quality as i32,
+            shared.transform.into(),
+            color_space as u8,
+            &mut decoded_id,
+            &mut decoded_bytes,
+          ))
+        };
+        let decoded = (decoded_bytes != 0).then_some((decoded_id, decoded_bytes));
+        shared.shader = shader.map(|shader| (quality, level, shader, decoded));
+      }
+      return shared
+        .shader
+        .as_ref()
+        .map(|(_, _, shader, decoded)| (shader.clone(), *decoded));
+    }
     let decode_cache = match (&self.backing, decode) {
       (Some(ImagePatternBacking::Bitmap(bitmap)), Some(decode)) if self.is_image => {
         Some((bitmap, decode))
@@ -5345,6 +5428,39 @@ impl FontCollection {
     let family = CString::new(family).unwrap();
     let alias_name = CString::new(alias_name).unwrap();
     unsafe { ffi::skiac_font_collection_set_alias(self.0, family.as_ptr(), alias_name.as_ptr()) }
+  }
+
+  /// The advance of U+6C34 in the primary face of this font (the first
+  /// family of `font_family` that exists), or None when no family exists or
+  /// that face has no such glyph. Blink's ideographic advance, for the ic
+  /// unit.
+  pub fn ideographic_advance(
+    &self,
+    font_size: f32,
+    weight: u32,
+    stretch: i32,
+    stretch_width: f32,
+    slant: FontStyle,
+    font_family: &str,
+    variations: &[FontVariation],
+  ) -> Option<f32> {
+    let c_font_family = CString::new(font_family).ok()?;
+    let mut advance = 0.0;
+    unsafe {
+      ffi::skiac_font_collection_ideographic_advance(
+        self.0,
+        font_size,
+        weight as i32,
+        stretch,
+        stretch_width,
+        slant as i32,
+        c_font_family.as_ptr(),
+        variations.as_ptr() as *const ffi::skiac_font_variation,
+        variations.len() as i32,
+        &mut advance,
+      )
+    }
+    .then_some(advance)
   }
 
   pub fn get_variation_axes(
@@ -5886,11 +6002,6 @@ unsafe impl Send for SkottieAnimation {}
 #[inline(always)]
 pub(crate) fn radians_to_degrees(rad: f32) -> f32 {
   rad / PI * 180.0
-}
-
-#[inline(always)]
-pub(crate) fn degrees_to_radians(degrees: f32) -> f32 {
-  degrees / 180.0 * PI
 }
 
 #[inline(always)]
