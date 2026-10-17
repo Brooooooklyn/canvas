@@ -25,8 +25,9 @@ fn main() {
   println!("cargo:rerun-if-changed=skia-c/svg_image.hpp");
   println!("cargo:rerun-if-changed=scripts/libskia.flags");
 
-  // src/svg_doc/dom.rs sizes its deep-parse stack by this: roxmltree's
-  // stack use per element level follows the opt-level, not debug assertions.
+  // src/svg_doc/dom.rs sizes its deep-parse stack by this (or by debug
+  // assertions): roxmltree's stack use per element level follows the
+  // opt-level. OPT_LEVEL is the opt-level of this crate's profile.
   println!("cargo:rustc-check-cfg=cfg(svg_unoptimized)");
   if env::var("OPT_LEVEL").as_deref() == Ok("0") {
     println!("cargo:rustc-cfg=svg_unoptimized");

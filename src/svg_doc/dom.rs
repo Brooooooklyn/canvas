@@ -76,17 +76,20 @@ fn map_ns(uri: Option<&str>) -> Ns {
 /// build (opt-level 0; measured on arm64 macOS: 5000 levels take 3.2 MiB
 /// and 82 MiB, 512 levels 0.32 MiB and 8.2 MiB), so an unoptimized build
 /// parses fewer levels on the caller's stack and gives the thread more.
-/// The stack use follows the opt-level, not debug assertions, so build.rs
-/// sets svg_unoptimized when OPT_LEVEL is 0 (opt-level 1 takes about
-/// 1 KiB a level: 5000 levels fit in 16 MiB). MAX_TREE_DEPTH bounds the
-/// stack the thread uses.
-#[cfg(not(svg_unoptimized))]
+/// The stack use follows the opt-level, not debug assertions (opt-level 1
+/// takes about 1 KiB a level: 5000 levels fit in 16 MiB). build.rs sets
+/// svg_unoptimized when OPT_LEVEL is 0. OPT_LEVEL is the opt-level of this
+/// crate's profile, so RUSTFLAGS='-C opt-level=0' does not change it. That
+/// flag turns debug assertions on, though, so debug_assertions also picks
+/// the large stack. A per-package opt-level for roxmltree is not seen
+/// (known gap). MAX_TREE_DEPTH bounds the stack the thread uses.
+#[cfg(not(any(svg_unoptimized, debug_assertions)))]
 const SHALLOW_DEPTH: usize = 512;
-#[cfg(not(svg_unoptimized))]
+#[cfg(not(any(svg_unoptimized, debug_assertions)))]
 const DEEP_PARSE_STACK: usize = 16 << 20;
-#[cfg(svg_unoptimized)]
+#[cfg(any(svg_unoptimized, debug_assertions))]
 const SHALLOW_DEPTH: usize = 20;
-#[cfg(svg_unoptimized)]
+#[cfg(any(svg_unoptimized, debug_assertions))]
 const DEEP_PARSE_STACK: usize = 256 << 20;
 
 /// How deep elements nest in `text`, counting what internal entities may
