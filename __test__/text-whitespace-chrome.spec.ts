@@ -6,6 +6,7 @@
 // nothing for a maxWidth that is not a positive finite number
 // (BaseRenderingContext2D::DrawTextInternal).
 import { readFileSync } from 'node:fs'
+import { release } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -28,9 +29,13 @@ interface Fixture {
   coords: Record<string, [string, string]>
 }
 
-const FIXTURE: Fixture = JSON.parse(
-  readFileSync(join(__dirname, 'fixtures', 'text-fonts', 'whitespace-maxwidth.json'), 'utf8'),
-)
+// Chrome on macOS reads the fonts through CoreText: its own rows there.
+const RAW = JSON.parse(readFileSync(join(__dirname, 'fixtures', 'text-fonts', 'whitespace-maxwidth.json'), 'utf8'))
+const FIXTURE: Fixture = process.platform === 'darwin' ? { ...RAW, ...RAW.darwin } : RAW
+
+// Chrome's macOS rows were measured on macOS 27. CoreText ships with the OS,
+// so on another macOS version the painted pixels are not compared.
+const PIXEL_PINS = process.platform !== 'darwin' || Number.parseInt(release(), 10) === 27
 
 GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'Lato-Regular.ttf'), 'LatoT')
 
@@ -52,6 +57,11 @@ type Ctx = ReturnType<ReturnType<typeof createCanvas>['getContext']>
 function rowMismatch(key: string, m: TextMetrics, row: Row) {
   const actual = FIELDS.map((field) => m[field])
   return actual.every((v, i) => Math.abs(v - row[i]) <= 1e-3) ? [] : [`${key}: ${actual} (Chrome ${row})`]
+}
+
+// The painted box, or on another macOS version only whether anything drew.
+function seen(box: string) {
+  return PIXEL_PINS ? box : box.endsWith(',-1,-1,-1') ? 'nothing' : 'drawn'
 }
 
 function inkBox(ctx: Ctx, w: number, h: number) {
@@ -107,7 +117,7 @@ test('fillText and strokeText draw canvas whitespace like Chrome', (t) => {
       else ctx.strokeText(`a${ch}b`, 10, 30)
       const chrome = op === 'fill' ? (FIXTURE.wsDraw[name] as [string, string])[1] : FIXTURE.wsDraw[`${name} stroke`]
       const box = inkBox(ctx, 200, 40)
-      if (box !== chrome) out.push(`${op} ${name}: ${box} (Chrome ${chrome})`)
+      if (seen(box) !== seen(chrome)) out.push(`${op} ${name}: ${box} (Chrome ${chrome})`)
     }
   }
   t.deepEqual(out, [])
@@ -141,7 +151,7 @@ test('maxWidth that is not a positive finite number draws nothing like Chrome', 
       else ctx.strokeText('Hello', 10, 30, maxWidth as number)
       const chrome = FIXTURE.maxWidth[`${op} ${label}`][1]
       const box = inkBox(ctx, 200, 40)
-      if (box !== chrome) out.push(`${op} ${label}: ${box} (Chrome ${chrome})`)
+      if (seen(box) !== seen(chrome)) out.push(`${op} ${label}: ${box} (Chrome ${chrome})`)
     }
   }
   t.deepEqual(out, [])
@@ -161,9 +171,9 @@ test('maxWidth squeezes the text around the aligned anchor like Chrome', (t) => 
       ctx.direction = direction as CanvasDirection
       ctx.fillText('Hello World', 100, 30, 40)
     }
-    actual[key] = inkBox(ctx, 200, 40)
+    actual[key] = seen(inkBox(ctx, 200, 40))
   }
-  t.deepEqual(actual, FIXTURE.maxWidthAlign)
+  t.deepEqual(actual, Object.fromEntries(Object.entries(FIXTURE.maxWidthAlign).map(([key, box]) => [key, seen(box)])))
 })
 
 test('non-finite and far away anchors draw nothing like Chrome', (t) => {
@@ -175,7 +185,7 @@ test('non-finite and far away anchors draw nothing like Chrome', (t) => {
     ctx.font = '20px LatoT'
     if (op === 'fill') ctx.fillText('Hi', x, y)
     else ctx.strokeText('Hi', x, y)
-    actual[key] = inkBox(ctx, 100, 40)
+    actual[key] = seen(inkBox(ctx, 100, 40))
   }
-  t.deepEqual(actual, Object.fromEntries(Object.entries(FIXTURE.coords).map(([key, [, box]]) => [key, box])))
+  t.deepEqual(actual, Object.fromEntries(Object.entries(FIXTURE.coords).map(([key, [, box]]) => [key, seen(box)])))
 })

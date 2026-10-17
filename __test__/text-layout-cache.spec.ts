@@ -160,9 +160,39 @@ test('an SVG canvas writes a line the same way however often it was drawn before
       t.is(svg(line, text, x), first, `${text} at ${x}`)
     }
   })
-  // One text element: the Cascadia line is drawn as one blob from its first
-  // draw.
-  t.is(svg(LINES[0], `${LINES[0].text} one`, 10).match(/<text/g)?.length, 1)
+  // One text element where FreeType (Windows) or Fontations (Linux) draws:
+  // the Cascadia line is drawn as one blob from its first draw. CoreText's
+  // glyph boxes are a pixel wider (SkScalerContext_mac_ct.cpp pads them for
+  // antialiasing), so on macOS the right edge of wide glyphs such as 'r' and
+  // 'u' passes the font box MakeSingleBlob checks, and the line keeps its runs.
+  const elements = svg(LINES[0], `${LINES[0].text} one`, 10).match(/<text/g)?.length
+  if (process.platform === 'darwin') {
+    t.true(elements! > 1)
+  } else {
+    t.is(elements, 1)
+  }
+})
+
+const macTest = process.platform === 'darwin' ? test : test.skip
+
+// A space or zero width space Apple Color Emoji draws, between Times letters,
+// is a run without ink: its blob's bounds are empty and a fill skips it, so
+// the line drawn as one blob writes no empty text element for it either.
+macTest('an SVG canvas writes no text element for a run without ink', (t) => {
+  for (const text of ['Hello world', 'ab\u200bcd', 'The quick brown fox jumps']) {
+    const canvas = createCanvas(300, 60, SvgExportFlag.NoPrettyXML)
+    const ctx = canvas.getContext('2d')
+    ctx.font = '20px "Apple Color Emoji"'
+    ctx.fillText(text, 10, 40)
+    const svgText = canvas.getContent().toString()
+    const elements = svgText.match(/<text[^>]*>/g) ?? []
+    t.true(elements.length > 0, text)
+    t.deepEqual(
+      elements.filter((element) => /\sx=""/.test(element)),
+      [],
+      text,
+    )
+  }
 })
 
 // skparagraph's own cache of shaped paragraphs took sizes and spacings

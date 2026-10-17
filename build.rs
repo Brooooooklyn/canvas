@@ -18,6 +18,10 @@ fn main() {
   println!("cargo:rerun-if-changed=skia-c/text_styles.cpp");
   println!("cargo:rerun-if-changed=skia-c/text_caps.cpp");
   println!("cargo:rerun-if-changed=skia-c/icu_api.h");
+  println!("cargo:rerun-if-changed=skia-c/text_raster.cpp");
+  println!("cargo:rerun-if-changed=skia-c/text_raster.hpp");
+  println!("cargo:rerun-if-changed=skia-c/font_scalers.cpp");
+  println!("cargo:rerun-if-changed=scripts/libskia.flags");
 
   let compile_target = env::var("TARGET").expect("TARGET");
   let compile_target_os = env::var("CARGO_CFG_TARGET_OS").expect("CARGO_CFG_TARGET_OS");
@@ -49,15 +53,7 @@ fn main() {
 
   let mut build = cc::Build::new();
 
-  build
-    .cpp(true)
-    .file("skia-c/skia_c.cpp")
-    .file("skia-c/text.cpp")
-    .file("skia-c/font_families.cpp")
-    .file("skia-c/text_metrics.cpp")
-    .file("skia-c/text_words.cpp")
-    .file("skia-c/text_styles.cpp")
-    .file("skia-c/text_caps.cpp");
+  build.cpp(true);
   // Skia is built with SK_R32_SHIFT=0 (scripts/skia-gn-args.cjs): kN32 is
   // RGBA, like our surfaces, so the legacy blitters can draw on them. The value
   // shapes inline code in Skia's headers, so skia-c must use the same one;
@@ -238,7 +234,26 @@ fn main() {
 
   let out_dir = env::var("OUT_DIR").unwrap();
 
+  // Skia's Fontations font scaler, which Chrome draws Linux fonts and some
+  // macOS web fonts with (skia-c/font_scalers.cpp). Its Rust half is the
+  // skia-fontations crate; its C++ half is compiled here with the toolchain
+  // setup above and libskia's own defines.
+  let fontations = compile_target_os == "macos" || compile_target_os == "linux";
+  let mut fontations_build = build.clone();
+
+  if fontations {
+    build.define("SKIAC_FONTATIONS", None);
+  }
   build
+    .file("skia-c/skia_c.cpp")
+    .file("skia-c/text.cpp")
+    .file("skia-c/font_families.cpp")
+    .file("skia-c/text_metrics.cpp")
+    .file("skia-c/text_words.cpp")
+    .file("skia-c/text_styles.cpp")
+    .file("skia-c/text_caps.cpp")
+    .file("skia-c/text_raster.cpp")
+    .file("skia-c/font_scalers.cpp")
     .include("./skia-c")
     .include(skia_path)
     // https://github.com/rust-lang/rust/pull/93901#issuecomment-1119360260
@@ -246,10 +261,50 @@ fn main() {
     .out_dir(&out_dir)
     .compile("skiac");
 
+  if fontations {
+    // Writes the bridge's C++ (ffi.rs.h / ffi.rs.cc) under
+    // OUT_DIR/cxxbridge; Skia includes the header as
+    // "src/ports/fontations/src/ffi.rs.h".
+    cxx_build::CFG.include_prefix = "";
+    let bridge = cxx_build::bridge("skia/src/ports/fontations/src/ffi.rs");
+    let cxxbridge = path::Path::new(&out_dir).join("cxxbridge");
+    fontations_build
+      .files(bridge.get_files())
+      .file(skia_path.join("src/ports/SkTypeface_fontations.cpp"))
+      .file(skia_path.join("src/ports/SkFontScanner_fontations.cpp"))
+      .file(skia_path.join("src/ports/SkFontMgr_fontations_empty.cpp"))
+      .include(cxxbridge.join("include"))
+      .include(cxxbridge.join("include").join("skia"))
+      .include(skia_path);
+    for flag in libskia_flags(&compile_target) {
+      fontations_build.flag(flag);
+    }
+    fontations_build
+      // gn/skia/BUILD.gn builds Skia with clang this way.
+      .flag_if_supported("-ffp-contract=off")
+      .flag_if_supported("-Wno-unused-but-set-variable")
+      .cargo_metadata(false)
+      .out_dir(&out_dir)
+      .compile("skiac_fontations");
+  }
+
   println!("cargo:rustc-link-search={skia_lib_dir}");
   println!("cargo:rustc-link-search={}", &out_dir);
   println!("cargo:rustc-link-lib=static=skshaper");
   napi_build::setup();
+}
+
+/// The -D / -U flags libskia's C++ is built with for `target`
+/// (scripts/libskia.flags): Skia's private headers change class layouts
+/// with them.
+fn libskia_flags(target: &str) -> Vec<String> {
+  include_str!("scripts/libskia.flags")
+    .lines()
+    .filter(|line| !line.trim().is_empty() && !line.starts_with('#'))
+    .filter_map(|line| line.split_once(' '))
+    .filter(|(scope, _)| *scope == "*" || *scope == "gn" || *scope == target)
+    .map(|(_, flag)| flag.trim().to_owned())
+    .collect()
 }
 
 fn link_libcxx(build: &mut cc::Build) {

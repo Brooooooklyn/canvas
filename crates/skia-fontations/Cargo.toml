@@ -1,0 +1,21 @@
+# The Rust half of Skia's Fontations font scaler (src/ports/fontations), the
+# scaler Chrome draws Linux fonts and some macOS web fonts with. build.rs
+# compiles its C++ half (cxx bridge and SkTypeface_fontations) into
+# libskiac_fontations. The versions are the ones Skia pins
+# (skia/bazel/external/fontations/Cargo.toml).
+[package]
+edition = "2021"
+name    = "skia-fontations"
+publish = false
+version = "0.0.0"
+
+[lib]
+# Skia's bridge is the crate root; its `mod base;` and friends sit next to it.
+path = "../../skia/src/ports/fontations/src/ffi.rs"
+
+[dependencies]
+bytemuck   = "1.16"
+cxx        = "=1.0.205"
+font-types = "=0.12.0"
+read-fonts = "=0.40.1"
+skrifa     = "=0.43.2"

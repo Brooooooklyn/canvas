@@ -1,0 +1,37 @@
+# The -D / -U flags libskia's C++ is compiled with. build.rs compiles Skia's
+# Fontations C++ (src/ports/SkTypeface_fontations.cpp and friends) with them,
+# since Skia's private headers change class layouts with these defines.
+#
+# Lines are "<scope> <flag>": scope "*" is every target and must match
+# scripts/skia-gn-args.cjs (extra_cflags / extra_cflags_cc) for macOS and
+# Linux, a target triple adds that target's extra flags, and "gn" comes from
+# Skia's BUILD.gn configs (skia_public, skia_private) and is_official_build.
+# scripts/__test__/libskia-flags.spec.ts checks the first two kinds.
+#
+# It sits next to scripts/skia-gn-args.cjs, out of skia-c/, whose files CI
+# checks with clang-format.
+* -DSK_ENABLE_LEGACY_SHADERCONTEXT
+* -DSK_SUPPORT_LEGACY_ANISOTROPIC_MIPMAP_SCALE
+* -DSK_SUPPORT_LEGACY_CONIC_CHOP
+* -DSK_AVOID_SLOW_RASTER_PIPELINE_BLURS
+* -DSK_LEGACY_INITWITHPREV_LAYER_SIZING
+* -DSK_SUPPORT_LEGACY_RRECT_TRANSFORM
+* -USK_R32_SHIFT
+* -DSK_R32_SHIFT=0
+* -DSK_ENABLE_SVG
+* -DSK_RELEASE
+* -DSK_DISABLE_TRACING
+* -DSK_ENCODE_WEBP
+* -DSK_CODEC_DECODES_WEBP
+* -DSK_ENCODE_PNG
+* -DSK_CODEC_DECODES_PNG
+* -DSK_ENCODE_JPEG
+* -DSK_CODEC_DECODES_JPEG
+* -DSK_SHAPER_HARFBUZZ_AVAILABLE
+aarch64-unknown-linux-gnu -DAT_HWCAP2=26
+armv7-unknown-linux-gnueabihf -DSK_DISABLE_PATHDATA
+gn -DSK_CODEC_DECODES_BMP
+gn -DSK_CODEC_DECODES_WBMP
+gn -DSK_GAMMA_APPLY_TO_A8
+gn -DSKIA_IMPLEMENTATION=1
+gn -DNDEBUG
