@@ -580,7 +580,12 @@ void LayOutLine(skiac_font_collection* c_collection,
   // leave out (and one word stays one text block).
   std::vector<std::pair<size_t, size_t>> no_spacing;
   if (letter_spacing != 0) {
-    no_spacing = NoLetterSpacingRanges(shaped);
+    std::vector<size_t> piece_starts;
+    piece_starts.reserve(pieces.size());
+    for (const Piece& piece : pieces) {
+      piece_starts.push_back(piece.start);
+    }
+    no_spacing = NoLetterSpacingRanges(shaped, piece_starts);
   }
   sk_sp<SkUnicode>& unicode = GetTextCaches(c_collection).unicode;
   if (!unicode) {
