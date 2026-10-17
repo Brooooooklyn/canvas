@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "skia_c.hpp"
+#include "svg_image.hpp"
 
 // libskia is built with SK_RELEASE; a debug skia-c would see other class
 // layouts in the shared Skia headers (see build.rs).
@@ -1963,17 +1964,23 @@ static SkIRect SampledBounds(const SkRect& src,
 // Image's level cache; a canvas source has none, and its decode is made for
 // the one draw. Returns the decode it drew in place of the source, which a
 // recording keeps, or null.
-static sk_sp<SkImage> DrawDecodedImage(SkCanvas* canvas,
-                                       const SkBitmap* bitmap,
-                                       const sk_sp<SkImage>& snapshot,
-                                       const SkPixmap& original,
-                                       skiac_image_levels* levels,
-                                       uint8_t cs,
-                                       const SkRect& src,
-                                       const SkRect& dst,
-                                       const SkM44& matrix,
-                                       int fq,
-                                       const SkPaint& paint) {
+// `constraint`: kFast for canvas drawImage
+// (Image::kDoNotClampImageToSourceRect), kStrict for an SVG <image>
+// (GraphicsContext::DrawImage clamps).
+}  // extern "C"
+
+sk_sp<SkImage> DrawDecodedImage(SkCanvas* canvas,
+                                const SkBitmap* bitmap,
+                                const sk_sp<SkImage>& snapshot,
+                                const SkPixmap& original,
+                                skiac_image_levels* levels,
+                                uint8_t cs,
+                                const SkRect& src,
+                                const SkRect& dst,
+                                const SkM44& matrix,
+                                int fq,
+                                const SkPaint& paint,
+                                SkCanvas::SrcRectConstraint constraint) {
   SkIRect int_src;
   src.roundOut(&int_src);
   const CcDecodeKey key =
@@ -1993,7 +2000,7 @@ static sk_sp<SkImage> DrawDecodedImage(SkCanvas* canvas,
           snapshot ? snapshot : SkImages::RasterFromBitmap(*bitmap);
       if (image) {
         canvas->drawImageRect(image.get(), src, dst, DecodedSampling(fq),
-                              &paint, SkCanvas::kFast_SrcRectConstraint);
+                              &paint, constraint);
       }
       return nullptr;
     }
@@ -2021,11 +2028,13 @@ static sk_sp<SkImage> DrawDecodedImage(SkCanvas* canvas,
   const float level_y = offset_src.y() * adjust_y;
   const float level_w = offset_src.width() * adjust_x;
   const float level_h = offset_src.height() * adjust_y;
-  canvas->drawImageRect(
-      decoded.get(), SkRect::MakeXYWH(level_x, level_y, level_w, level_h), dst,
-      DecodedSampling(fq), &paint, SkCanvas::kFast_SrcRectConstraint);
+  canvas->drawImageRect(decoded.get(),
+                        SkRect::MakeXYWH(level_x, level_y, level_w, level_h),
+                        dst, DecodedSampling(fq), &paint, constraint);
   return decoded;
 }
+
+extern "C" {
 
 skiac_image_levels* skiac_image_levels_create() {
   return new skiac_image_levels();
@@ -3954,32 +3963,49 @@ bool skiac_bitmap_orient(skiac_bitmap_info* bitmap_info, int origin) {
 // handed to Rust as written instead of as Skia parsed them.
 struct skiac_svg_document {
   sk_sp<SkSVGDOM> dom;
+  // The images and fonts of a document src/svg_doc prepared
+  // (svg_image.cpp); null for one SkSVGDOM reads as it is.
+  sk_sp<skresources::ResourceProvider> resources;
   SkString attributes[4];
   bool present[4] = {false, false, false, false};
 };
 
-skiac_svg_document* skiac_svg_document_make(
-    const uint8_t* data,
-    size_t length,
-    skiac_font_collection* c_collection) {
-  SkMemoryStream xml_stream(data, length, false);
+skiac_svg_document* skiac_svg_document_make(const uint8_t* data,
+                                            size_t length,
+                                            skiac_font_collection* c_collection,
+                                            bool prepared,
+                                            const skiac_svg_resource* images,
+                                            size_t image_count,
+                                            const skiac_svg_font_list* fonts,
+                                            size_t font_count) {
+  // A prepared document's root attributes are read in Rust.
   SkDOM xml;
-  auto xml_root = xml.build(xml_stream);
-  if (!xml_root) {
-    return nullptr;
+  const SkDOM::Node* xml_root = nullptr;
+  if (!prepared) {
+    SkMemoryStream xml_stream(data, length, false);
+    xml_root = xml.build(xml_stream);
+    if (!xml_root) {
+      return nullptr;
+    }
   }
   SkMemoryStream svg_stream(data, length, false);
   c_collection->prepareLookup();
-  auto dom =
-      SkSVGDOM::Builder().setFontManager(c_collection->assets).make(svg_stream);
+  sk_sp<skresources::ResourceProvider> resources;
+  auto dom = prepared ? napi_svg::MakePreparedDocument(
+                            svg_stream, c_collection, images, image_count,
+                            fonts, font_count, &resources)
+                      : SkSVGDOM::Builder()
+                            .setFontManager(c_collection->assets)
+                            .make(svg_stream);
   if (!dom) {
     return nullptr;
   }
   auto document = new skiac_svg_document();
   document->dom = std::move(dom);
+  document->resources = std::move(resources);
   static const char* names[] = {"width", "height", "viewBox",
                                 "preserveAspectRatio"};
-  for (int i = 0; i < 4; i++) {
+  for (int i = 0; xml_root && i < 4; i++) {
     if (auto value = xml.findAttr(xml_root, names[i])) {
       document->attributes[i].set(value);
       document->present[i] = true;
@@ -4043,7 +4069,9 @@ bool skiac_svg_document_render(skiac_svg_document* document,
     return false;
   }
   {
-    SkCanvas canvas(*bitmap);
+    // A prepared document draws its text with the canvas text gamma.
+    SkCanvas canvas(
+        *bitmap, document->resources ? CanvasSurfaceProps() : SkSurfaceProps());
     // A no-op for the identity.
     canvas.concat(SkMatrix::MakeAll(da, dc, de, db, dd, df, 0, 0, 1));
     canvas.clipRect(
@@ -4055,12 +4083,25 @@ bool skiac_svg_document_render(skiac_svg_document* document,
     root->setWidth(SkSVGLength(100, SkSVGLength::Unit::kPercentage));
     root->setHeight(SkSVGLength(100, SkSVGLength::Unit::kPercentage));
     document->dom->setContainerSize(SkSize::Make(layout_width, layout_height));
-    document->dom->render(&canvas);
+    if (document->resources) {
+      napi_svg::RenderPrepared(document->dom.get(), document->resources.get(),
+                               &canvas, cs);
+    } else {
+      document->dom->render(&canvas);
+    }
   }
   bitmap_info->width = width;
   bitmap_info->height = height;
   bitmap_info->bitmap = reinterpret_cast<skiac_bitmap*>(bitmap.release());
   return true;
+}
+
+// The bytes the <image> elements of a prepared document keep, for V8
+// (src/svg_image.rs); 0 for a document SkSVGDOM reads as it is.
+size_t skiac_svg_document_retained_bytes(skiac_svg_document* document) {
+  return document->resources
+             ? napi_svg::RetainedBytes(document->resources.get())
+             : 0;
 }
 
 void skiac_svg_document_destroy(skiac_svg_document* document) {

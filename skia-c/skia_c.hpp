@@ -142,6 +142,22 @@ SkFontStyle CoreTextFontStyle(SkTypeface* face);
 #endif
 // text_raster.cpp: the text gamma and contrast of Chrome's canvas surfaces.
 SkSurfaceProps CanvasSurfaceProps();
+// skia_c.cpp: draws `src` of a raster as Chrome draws an image from its
+// decode cache (DrawImageRectOp::RasterWithFlags). Returns the decode it drew
+// in place of the source, or null.
+sk_sp<SkImage> DrawDecodedImage(
+    SkCanvas* canvas,
+    const SkBitmap* bitmap,
+    const sk_sp<SkImage>& snapshot,
+    const SkPixmap& original,
+    skiac_image_levels* levels,
+    uint8_t cs,
+    const SkRect& src,
+    const SkRect& dst,
+    const SkM44& matrix,
+    int fq,
+    const SkPaint& paint,
+    SkCanvas::SrcRectConstraint constraint = SkCanvas::kFast_SrcRectConstraint);
 
 enum class CssBaseline {
   Top,
@@ -1030,6 +1046,31 @@ struct skiac_text_family {
   int generic;
 };
 
+// An image of a prepared SVG document (src/svg_doc Resource), which its
+// <image> elements name napi-img:K or napi-svg:K (svg_image.cpp).
+struct skiac_svg_resource {
+  // 0: a raster, `data` holds its encoded bytes; 1: an SVG document, `data`
+  // holds its prepared text.
+  uint8_t kind;
+  // Raster: Blink's InterpolationQuality, 0 none, 1 low, 2 medium.
+  uint8_t quality;
+  const uint8_t* data;
+  size_t length;
+  // SVG: the frame (the rounded container size) and the root's laid-out
+  // size.
+  int frame_width;
+  int frame_height;
+  float root_width;
+  float root_height;
+};
+
+// A font-family list of a prepared SVG document, which its font-family
+// attributes name napi-font:K.
+struct skiac_svg_font_list {
+  const skiac_text_family* families;
+  size_t count;
+};
+
 // The text and the canvas text settings of one measureText, fillText or
 // strokeText (text.cpp).
 struct skiac_text_request {
@@ -1596,10 +1637,18 @@ void skiac_sk_data_destroy(skiac_data* c_data);
 bool skiac_bitmap_make_from_buffer(const uint8_t* ptr,
                                    size_t size,
                                    skiac_bitmap_info* bitmap_info);
-skiac_svg_document* skiac_svg_document_make(
-    const uint8_t* data,
-    size_t length,
-    skiac_font_collection* c_collection);
+skiac_svg_document* skiac_svg_document_make(const uint8_t* data,
+                                            size_t length,
+                                            skiac_font_collection* c_collection,
+                                            bool prepared,
+                                            const skiac_svg_resource* images,
+                                            size_t image_count,
+                                            const skiac_svg_font_list* fonts,
+                                            size_t font_count);
+bool skiac_svg_image_size(const uint8_t* data,
+                          size_t length,
+                          int* width,
+                          int* height);
 bool skiac_svg_document_attribute(skiac_svg_document* document,
                                   int index,
                                   const char** ptr,
@@ -1627,6 +1676,7 @@ bool skiac_svg_document_render(skiac_svg_document* document,
                                int height,
                                uint8_t cs,
                                skiac_bitmap_info* bitmap_info);
+size_t skiac_svg_document_retained_bytes(skiac_svg_document* document);
 void skiac_svg_document_destroy(skiac_svg_document* document);
 bool skiac_font_collection_default_font_metrics(
     skiac_font_collection* c_collection,

@@ -65,6 +65,7 @@ pub mod picture_recorder;
 mod sk;
 mod state;
 pub mod svg;
+mod svg_doc;
 mod svg_image;
 mod svg_path;
 mod svg_size;

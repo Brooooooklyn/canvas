@@ -21,7 +21,17 @@ fn main() {
   println!("cargo:rerun-if-changed=skia-c/text_raster.cpp");
   println!("cargo:rerun-if-changed=skia-c/text_raster.hpp");
   println!("cargo:rerun-if-changed=skia-c/font_scalers.cpp");
+  println!("cargo:rerun-if-changed=skia-c/svg_image.cpp");
+  println!("cargo:rerun-if-changed=skia-c/svg_image.hpp");
   println!("cargo:rerun-if-changed=scripts/libskia.flags");
+
+  // src/svg_doc/dom.rs sizes its deep-parse stack by this (or by debug
+  // assertions): roxmltree's stack use per element level follows the
+  // opt-level. OPT_LEVEL is the opt-level of this crate's profile.
+  println!("cargo:rustc-check-cfg=cfg(svg_unoptimized)");
+  if env::var("OPT_LEVEL").as_deref() == Ok("0") {
+    println!("cargo:rustc-cfg=svg_unoptimized");
+  }
 
   let compile_target = env::var("TARGET").expect("TARGET");
   let compile_target_os = env::var("CARGO_CFG_TARGET_OS").expect("CARGO_CFG_TARGET_OS");
@@ -254,6 +264,7 @@ fn main() {
     .file("skia-c/text_caps.cpp")
     .file("skia-c/text_raster.cpp")
     .file("skia-c/font_scalers.cpp")
+    .file("skia-c/svg_image.cpp")
     .include("./skia-c")
     .include(skia_path)
     // https://github.com/rust-lang/rust/pull/93901#issuecomment-1119360260
