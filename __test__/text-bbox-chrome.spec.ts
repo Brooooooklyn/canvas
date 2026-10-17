@@ -187,10 +187,12 @@ test('zero width spaces get no letter spacing like Chrome', (t) => {
 // whole text (fontKerning normal and optimizeLegibility do for this font,
 // whose space is kerned). Its clusters are graphemes: a ZWJ, U+034F or a
 // variation selector is inside the cluster before it. Above U+FFFF it reads
-// a lead surrogate, so U+E0001, which starts a cluster, is spaced. The
-// characters stay in their word's shaping: 'AV' keeps its kerning across a
-// ZWJ or U+2060. Chrome 155.0.8059.80, macOS arm64, 40px Source Serif Pro
-// from a FontFace.
+// a lead surrogate, so U+E0001, which starts a cluster, is spaced, and so is
+// a tag or variation selector that starts a word (or the whole text): the
+// first character of a HarfBuzz buffer starts a cluster. The characters
+// stay in their word's shaping: 'AV' keeps its kerning across a ZWJ or
+// U+2060. Chrome 155.0.8059.80, macOS arm64, 40px Source Serif Pro from a
+// FontFace.
 const NO_SPACING_MODES: Record<string, Partial<Ctx>> = {
   default: {},
   'fontKerning normal': { fontKerning: 'normal' },
@@ -217,6 +219,14 @@ const NO_SPACING_ROWS: [string, string, string, number][] = [
   ['6px', 'default', 'a\uFE0Fb', 55.43998718261719],
   ['6px', 'default', 'a\u{E0100}b', 55.43998718261719],
   ['6px', 'default', 'a\u{E0001}b', 61.43998718261719],
+  ['6px', 'default', '\u{E0100}', 6],
+  ['6px', 'default', '\u{E0100}b', 35.079986572265625],
+  ['6px', 'default', '\u{E0100}\u{E0100}b', 35.079986572265625],
+  ['6px', 'default', ' \u{E0100}b', 50.39997863769531],
+  ['6px', 'default', '\u{E0020}b', 35.079986572265625],
+  ['6px', 'default', '\u{E007F}b', 35.079986572265625],
+  ['6px', 'fontKerning normal', '\u{E0100}b', 35.079986572265625],
+  ['6px', 'fontKerning normal', ' \u{E0100}b', 44.39997863769531],
 ]
 
 function spacedContext(ls: string, mode: string, width = 10, height = 10) {

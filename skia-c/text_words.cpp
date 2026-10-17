@@ -121,10 +121,14 @@ bool IsZeroWidthSpaceLike(UChar32 c) {
 // (HB_BUFFER_CLUSTER_LEVEL_MONOTONE_CHARACTERS), so a default ignorable
 // after a base, a cluster of its own here, is inside the base's cluster
 // there and adds nothing to it either. Above U+FFFF Blink reads a lead
-// surrogate, which is not default ignorable: a default ignorable there gets
-// letter spacing when it starts a grapheme cluster (U+E0001), and none when
-// it extends one (the tags and variation selectors of U+E0000 to U+E0FFF).
-bool GetsNoLetterSpacing(UChar32 c) {
+// surrogate, which is not default ignorable, so a default ignorable there
+// gets letter spacing when it starts a cluster. U+E0001 always starts one.
+// A Grapheme_Extend one (the tags and variation selectors of U+E0000 to
+// U+E0FFF) goes in the cluster before it and gets none, unless it is the
+// first character of a HarfBuzz buffer, where it starts a cluster: Blink
+// shapes each piece (a word, or the whole text, and its caps runs) as its
+// own buffer. `starts_piece`: `c` is the first character of a piece.
+bool GetsNoLetterSpacing(UChar32 c, bool starts_piece) {
   if (c == 0xC || c == 0xD || c == 0xFFFC) {
     return true;
   }
@@ -134,7 +138,8 @@ bool GetsNoLetterSpacing(UChar32 c) {
   if (!u_hasBinaryProperty(c, UCHAR_DEFAULT_IGNORABLE_CODE_POINT)) {
     return false;
   }
-  return c <= 0xFFFF || u_hasBinaryProperty(c, UCHAR_GRAPHEME_EXTEND);
+  return c <= 0xFFFF ||
+         (!starts_piece && u_hasBinaryProperty(c, UCHAR_GRAPHEME_EXTEND));
 }
 
 bool IsWordDelimiter(UChar32 c) {
@@ -272,17 +277,25 @@ std::vector<std::pair<size_t, size_t>> SplitWords(std::string_view text) {
 }
 
 std::vector<std::pair<size_t, size_t>> NoLetterSpacingRanges(
-    std::string_view text) {
+    std::string_view text,
+    const std::vector<size_t>& piece_starts) {
   std::vector<std::pair<size_t, size_t>> ranges;
   const char* ptr = text.data();
   const char* const end = text.data() + text.size();
+  // The first of `piece_starts` at or after the current character.
+  size_t piece = 0;
   while (ptr < end) {
     const size_t start = static_cast<size_t>(ptr - text.data());
     const SkUnichar c = SkUTF::NextUTF8(&ptr, end);
     if (c < 0) {
       break;
     }
-    if (!GetsNoLetterSpacing(c)) {
+    while (piece < piece_starts.size() && piece_starts[piece] < start) {
+      ++piece;
+    }
+    const bool starts_piece =
+        piece < piece_starts.size() && piece_starts[piece] == start;
+    if (!GetsNoLetterSpacing(c, starts_piece)) {
       continue;
     }
     const size_t next = static_cast<size_t>(ptr - text.data());

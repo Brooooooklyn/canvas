@@ -82,8 +82,11 @@ std::vector<std::pair<size_t, size_t>> SplitWords(std::string_view text);
 // gives no letter spacing (ShapeResultSpacing skips
 // Character::TreatAsZeroWidthSpace: the default ignorable code points, form
 // feed, carriage return and U+FFFC), in order, adjacent ones merged.
+// `piece_starts` are the byte starts of the pieces shaped on their own, in
+// order: a tag or variation selector above U+FFFF that starts one is spaced.
 std::vector<std::pair<size_t, size_t>> NoLetterSpacingRanges(
-    std::string_view text);
+    std::string_view text,
+    const std::vector<size_t>& piece_starts);
 
 // FontFallbackList::CanShapeWordByWord: false when the request turns on
 // kerning or ligatures and the first family with a space glyph has the
