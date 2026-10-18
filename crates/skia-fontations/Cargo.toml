@@ -16,6 +16,6 @@ path = "../../skia/src/ports/fontations/src/ffi.rs"
 [dependencies]
 bytemuck   = "1.16"
 cxx        = "=1.0.205"
-font-types = "=0.12.0"
+font-types = "=0.12.7"
 read-fonts = "=0.40.1"
 skrifa     = "=0.43.2"
