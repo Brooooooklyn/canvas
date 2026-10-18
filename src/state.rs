@@ -1,5 +1,4 @@
-use rgb::RGBA;
-
+use crate::color::Color;
 use crate::sk::{BlendMode, ImageFilter, Matrix};
 
 use super::{
@@ -25,8 +24,8 @@ pub struct Context2dRenderingState {
   pub shadow_offset_x: f32,
   pub shadow_offset_y: f32,
   pub shadow_blur: f32,
-  pub shadow_color: RGBA<u8>,
-  pub shadow_color_string: String,
+  /// Blink keeps the parsed Color; the getter serializes it.
+  pub shadow_color: Color,
   pub global_alpha: f64,
   pub line_dash_offset: f32,
   pub image_smoothing_enabled: bool,
@@ -79,8 +78,7 @@ impl Default for Context2dRenderingState {
       shadow_blur: 0f32,
       // Transparent black, as the spec says and Chrome does
       // (canvas_rendering_context_2d_state.cc: shadow_color_(Color::kTransparent)).
-      shadow_color: RGBA::new(0, 0, 0, 0),
-      shadow_color_string: "rgba(0, 0, 0, 0)".to_owned(),
+      shadow_color: Color::TRANSPARENT,
       // 0.0 ~ 1.0
       global_alpha: 1.0,
       // A float specifying the amount of the line dash offset. The default value is 0.0.
