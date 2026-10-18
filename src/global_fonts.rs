@@ -3,6 +3,7 @@ use std::path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{LazyLock, LockResult, Mutex, MutexGuard, OnceLock, PoisonError};
 
+use crate::font::{FontParseContext, FontRelativeUnits, PARENT_FONT_SIZE, ROOT_FONT_SIZE};
 use crate::sk::*;
 
 #[cfg(target_os = "windows")]
@@ -32,6 +33,44 @@ pub(crate) fn font_collection_generation() -> u64 {
 
 fn note_font_collection_mutation() {
   FONT_COLLECTION_GENERATION.fetch_add(1, Ordering::Relaxed);
+}
+
+/// The font-relative units (`ex`, `ch`, `cap`, `ic`, `lh` and their root
+/// forms) the canvas `font` setter resolves against: the default style's font
+/// at 10px and at 16px (skia-c/font_families.cpp). Cached per font collection
+/// generation.
+pub(crate) fn font_parse_context() -> FontParseContext {
+  static CACHE: Mutex<Option<(u64, FontParseContext)>> = Mutex::new(None);
+  let generation = font_collection_generation();
+  if let Ok(cache) = CACHE.lock()
+    && let Some((cached, context)) = *cache
+    && cached == generation
+  {
+    return context;
+  }
+  let units = |fonts: &FontCollection, size: f64| {
+    fonts
+      .default_font_units(size as f32)
+      .map(|u| FontRelativeUnits {
+        ex: u.ex as f64,
+        ch: u.ch as f64,
+        cap: u.cap as f64,
+        ic: u.ic as f64,
+        lh: u.lh as f64,
+      })
+      .unwrap_or_else(|| FontRelativeUnits::fallback(size))
+  };
+  let context = match get_font() {
+    Ok(fonts) => FontParseContext {
+      parent: units(&fonts, PARENT_FONT_SIZE),
+      root: units(&fonts, ROOT_FONT_SIZE),
+    },
+    Err(_) => FontParseContext::default(),
+  };
+  if let Ok(mut cache) = CACHE.lock() {
+    *cache = Some((generation, context));
+  }
+  context
 }
 
 #[inline]
@@ -237,10 +276,7 @@ fn load_fonts_from_dir<P: AsRef<path::Path>>(dir: P) -> napi::Result<u32> {
             | Some("woff") => {
               if let Some(p) = p.into_os_string().to_str() {
                 let font_collection = get_font().map_err(into_napi_error)?;
-                if font_collection
-                  .register_from_path::<String>(p, None)
-                  .is_some()
-                {
+                if font_collection.register_system_font(p).is_some() {
                   // Bump while the collection lock is still held and after
                   // EACH registration: the guard drops between files, so a
                   // reader on another thread can resolve a family mid-load.

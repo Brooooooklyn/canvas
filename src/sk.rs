@@ -1,6 +1,6 @@
 use std::convert::TryFrom;
 use std::f32::consts::PI;
-use std::ffi::{CStr, CString, NulError, c_void};
+use std::ffi::{CStr, CString, c_void};
 use std::fmt::{self, Display};
 use std::ops::{Deref, DerefMut};
 use std::os::raw::c_char;
@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::error::SkError;
-use crate::font::{FontStretch, FontStyle};
+use crate::font::{ComputedFont, FamilyName, FontStretch, FontStyle};
 
 #[allow(non_camel_case_types)]
 pub mod ffi {
@@ -209,8 +209,8 @@ pub mod ffi {
     pub font_descent: f32,
     pub alphabetic_baseline: f32,
     /// The drawn glyph ink, left and right of the anchor x, before a maxWidth
-    /// squeeze (negative left of it). Filled only when `collect_ink` asks for
-    /// it (the alpha:false reset); measureText does not, and gets 0 for both.
+    /// squeeze (negative left of it): `-left` and `right`, for the
+    /// alpha:false reset.
     pub ink_left: f32,
     pub ink_right: f32,
     /// Blink's TextMetrics baselines, relative to the textBaseline.
@@ -219,8 +219,8 @@ pub mod ffi {
     /// Blink's em box (ExtendedTextMetrics), relative to the textBaseline.
     pub em_height_ascent: f32,
     pub em_height_descent: f32,
-    /// SkFontMetrics fXHeight and fCapHeight of the first run's font (0 when
-    /// the font does not say).
+    /// SkFontMetrics fXHeight and fCapHeight of the primary font (0 when the
+    /// font does not say).
     pub x_height: f32,
     pub cap_height: f32,
   }
@@ -260,6 +260,56 @@ pub mod ffi {
   pub struct skiac_font_variation {
     pub tag: u32,
     pub value: f32,
+  }
+
+  /// One family of the canvas font; `generic` is 0 for a named family, else
+  /// `GenericFamily as i32`.
+  #[repr(C)]
+  #[derive(Debug, Clone, Copy)]
+  pub struct skiac_text_family {
+    pub name: *const c_char,
+    pub name_len: usize,
+    pub generic: i32,
+  }
+
+  /// text.hpp skiac_font_units.
+  #[repr(C)]
+  #[derive(Debug, Clone, Copy, Default)]
+  pub struct skiac_font_units {
+    pub ex: f32,
+    pub ch: f32,
+    pub cap: f32,
+    pub ic: f32,
+    pub lh: f32,
+  }
+
+  /// skia_c.hpp skiac_text_request: the text (not NUL-terminated) and the
+  /// canvas text settings.
+  #[repr(C)]
+  #[derive(Debug, Clone, Copy)]
+  pub struct skiac_text_request {
+    pub text: *const c_char,
+    pub text_len: usize,
+    pub families: *const skiac_text_family,
+    pub family_count: usize,
+    pub size: f32,
+    pub weight: f32,
+    pub slope: f32,
+    pub style: i32,
+    pub stretch: i32,
+    pub stretch_pct: f32,
+    pub baseline: i32,
+    pub align: i32,
+    pub direction: i32,
+    pub letter_spacing: f32,
+    pub word_spacing: f32,
+    pub variations: *const skiac_font_variation,
+    pub variations_count: i32,
+    pub kerning: i32,
+    pub variant_caps: i32,
+    pub lang: *const c_char,
+    pub lang_len: usize,
+    pub text_rendering: i32,
   }
 
   #[repr(C)]
@@ -611,36 +661,28 @@ pub mod ffi {
       filter_quality: i32,
     );
 
-    pub fn skiac_canvas_get_line_metrics_or_draw_text(
-      text: *const c_char,
-      text_len: usize,
-      max_width: f32,
+    pub fn skiac_text_measure(
+      font_collection: *mut skiac_font_collection,
+      request: *const skiac_text_request,
+      paint: *mut skiac_paint,
+      line_metrics: *mut skiac_line_metrics,
+    );
+
+    pub fn skiac_text_draw(
+      canvas: *mut skiac_canvas,
+      font_collection: *mut skiac_font_collection,
+      request: *const skiac_text_request,
+      paint: *mut skiac_paint,
       x: f32,
       y: f32,
-      canvas_width: f32,
-      font_collection: *mut skiac_font_collection,
-      font_size: f32,
-      weight: i32,
-      width: i32,
-      stretch_width: f32,
-      slant: i32,
-      font_family: *const c_char,
-      baseline: i32,
-      align: i32,
-      direction: i32,
-      letter_spacing: f32,
-      word_spacing: f32,
-      paint: *mut skiac_paint,
-      canvas: *mut skiac_canvas,
-      line_metrics: *mut skiac_line_metrics,
-      collect_ink: bool,
-      variations: *const skiac_font_variation,
-      variations_count: i32,
-      kerning: i32,
-      variant_caps: i32,
-      lang: *const c_char,
-      text_rendering: i32,
+      max_width: f32,
     );
+
+    #[cfg(test)]
+    pub fn skiac_text_line_kept(
+      font_collection: *mut skiac_font_collection,
+      request: *const skiac_text_request,
+    ) -> bool;
 
     pub fn skiac_canvas_reset_transform(canvas: *mut skiac_canvas);
 
@@ -1302,6 +1344,11 @@ pub mod ffi {
       maybe_name_alias: *const c_char,
     ) -> u32;
 
+    pub fn skiac_font_collection_register_system_font(
+      c_font_collection: *mut skiac_font_collection,
+      font_path: *const c_char,
+    ) -> u32;
+
     pub fn skiac_font_collection_unregister(
       c_font_collection: *mut skiac_font_collection,
       typeface_id: u32,
@@ -1327,15 +1374,14 @@ pub mod ffi {
 
     pub fn skiac_font_collection_ideographic_advance(
       c_collection: *mut skiac_font_collection,
-      font_size: f32,
-      weight: i32,
-      stretch: i32,
-      stretch_width: f32,
-      slant: i32,
-      font_family: *const c_char,
-      variations: *const skiac_font_variation,
-      variations_count: i32,
+      request: *const skiac_text_request,
       advance: *mut f32,
+    ) -> bool;
+
+    pub fn skiac_font_collection_default_font_units(
+      c_font_collection: *mut skiac_font_collection,
+      size: f32,
+      units: *mut skiac_font_units,
     ) -> bool;
 
     // Variable Fonts
@@ -2992,6 +3038,102 @@ pub struct FontVariation {
   pub value: f32,
 }
 
+/// The canvas text settings one fillText, strokeText or measureText uses.
+#[derive(Debug, Clone)]
+pub struct TextSettings {
+  pub font: ComputedFont,
+  pub stretch: FontStretch,
+  pub baseline: TextBaseline,
+  pub align: TextAlign,
+  pub direction: TextDirection,
+  pub letter_spacing: f32,
+  pub word_spacing: f32,
+  pub variations: Vec<FontVariation>,
+  pub kerning: FontKerning,
+  pub variant_caps: FontVariantCaps,
+  pub lang: String,
+  pub text_rendering: TextRendering,
+}
+
+impl TextSettings {
+  /// Calls `f` with the skia-c request for `text`, which borrows `text` and
+  /// `self` and holds no NUL-terminated strings.
+  fn with_request<R>(&self, text: &str, f: impl FnOnce(&ffi::skiac_text_request) -> R) -> R {
+    let families: Vec<ffi::skiac_text_family> = self
+      .font
+      .families
+      .iter()
+      .map(|family| match family {
+        FamilyName::Generic(generic) => ffi::skiac_text_family {
+          name: ptr::null(),
+          name_len: 0,
+          generic: *generic as i32,
+        },
+        FamilyName::Named(name) => ffi::skiac_text_family {
+          name: name.as_ptr().cast(),
+          name_len: name.len(),
+          generic: 0,
+        },
+      })
+      .collect();
+    let request = ffi::skiac_text_request {
+      text: text.as_ptr().cast(),
+      text_len: text.len(),
+      families: families.as_ptr(),
+      family_count: families.len(),
+      size: self.font.size,
+      weight: self.font.weight,
+      slope: self.font.slope,
+      style: self.font.style as i32,
+      stretch: self.stretch as i32,
+      stretch_pct: self.stretch.to_width_percentage(),
+      baseline: self.baseline as i32,
+      align: self.align as i32,
+      direction: self.direction.as_sk_direction(),
+      letter_spacing: self.letter_spacing,
+      word_spacing: self.word_spacing,
+      variations: self.variations.as_ptr().cast(),
+      variations_count: self.variations.len() as i32,
+      kerning: self.kerning as i32,
+      variant_caps: self.variant_caps as i32,
+      lang: self.lang.as_ptr().cast(),
+      lang_len: self.lang.len(),
+      text_rendering: self.text_rendering as i32,
+    };
+    f(&request)
+  }
+
+  /// A hash of the settings that pick the typeface: the families, weight,
+  /// slope, stretch and variations. Not the size.
+  pub fn typeface_key(&self) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    for family in &self.font.families {
+      match family {
+        FamilyName::Generic(generic) => (*generic as i32).hash(&mut hasher),
+        FamilyName::Named(name) => {
+          0i32.hash(&mut hasher);
+          name.hash(&mut hasher);
+        }
+      }
+    }
+    self.font.weight.to_bits().hash(&mut hasher);
+    self.font.slope.to_bits().hash(&mut hasher);
+    (self.font.style as i32).hash(&mut hasher);
+    (self.stretch as i32).hash(&mut hasher);
+    self
+      .stretch
+      .to_width_percentage()
+      .to_bits()
+      .hash(&mut hasher);
+    for v in &self.variations {
+      v.tag.hash(&mut hasher);
+      v.value.to_bits().hash(&mut hasher);
+    }
+    hasher.finish()
+  }
+}
+
 impl Canvas {
   pub fn clear(&mut self) {
     unsafe {
@@ -3137,140 +3279,30 @@ impl Canvas {
   pub fn draw_text(
     &mut self,
     text: &str,
+    settings: &TextSettings,
+    font_collection: &FontCollection,
+    paint: &Paint,
     x: f32,
     y: f32,
     max_width: f32,
-    canvas_width: f32,
-    weight: u32,
-    stretch: i32,
-    stretch_width: f32,
-    slant: FontStyle,
-    font_collection: &FontCollection,
-    font_size: f32,
-    font_family: &str,
-    baseline: TextBaseline,
-    align: TextAlign,
-    direction: TextDirection,
-    letter_spacing: f32,
-    word_spacing: f32,
-    paint: &Paint,
-    variations: &[FontVariation],
-    kerning: FontKerning,
-    variant_caps: FontVariantCaps,
-    lang: &str,
-    text_rendering: TextRendering,
-  ) -> Result<(), NulError> {
-    let c_text = std::ffi::CString::new(text)?;
-    let c_font_family = std::ffi::CString::new(font_family)?;
-    // Convert lang to C string, or null if empty/"inherit"
-    let c_lang = if lang.is_empty() || lang == "inherit" {
-      None
-    } else {
-      Some(std::ffi::CString::new(lang)?)
-    };
-
-    unsafe {
-      ffi::skiac_canvas_get_line_metrics_or_draw_text(
-        c_text.as_ptr(),
-        text.len(),
-        max_width,
-        x,
-        y,
-        canvas_width,
-        font_collection.0,
-        font_size,
-        weight as i32,
-        stretch,
-        stretch_width,
-        slant as i32,
-        c_font_family.as_ptr(),
-        baseline as i32,
-        align as i32,
-        direction.as_sk_direction(),
-        letter_spacing,
-        word_spacing,
-        paint.0,
-        self.0,
-        ptr::null_mut(),
-        false,
-        variations.as_ptr() as *const ffi::skiac_font_variation,
-        variations.len() as i32,
-        kerning as i32,
-        variant_caps as i32,
-        c_lang.as_ref().map_or(ptr::null(), |s| s.as_ptr()),
-        text_rendering as i32,
-      );
-    };
-    Ok(())
+  ) {
+    settings.with_request(text, |request| unsafe {
+      ffi::skiac_text_draw(self.0, font_collection.0, request, paint.0, x, y, max_width);
+    });
   }
 
   pub fn get_line_metrics(
     &self,
     text: &str,
+    settings: &TextSettings,
     font_collection: &FontCollection,
-    font_size: f32,
-    weight: u32,
-    stretch: i32,
-    stretch_width: f32,
-    slant: FontStyle,
-    font_family: &str,
-    baseline: TextBaseline,
-    align: TextAlign,
-    direction: TextDirection,
-    letter_spacing: f32,
-    word_spacing: f32,
     paint: &Paint,
-    variations: &[FontVariation],
-    kerning: FontKerning,
-    variant_caps: FontVariantCaps,
-    lang: &str,
-    text_rendering: TextRendering,
-    collect_ink: bool,
-  ) -> Result<ffi::skiac_line_metrics, NulError> {
-    let c_text = std::ffi::CString::new(text)?;
-    let c_font_family = std::ffi::CString::new(font_family)?;
-    // Convert lang to C string, or null if empty/"inherit"
-    let c_lang = if lang.is_empty() || lang == "inherit" {
-      None
-    } else {
-      Some(std::ffi::CString::new(lang)?)
-    };
-
+  ) -> ffi::skiac_line_metrics {
     let mut line_metrics = ffi::skiac_line_metrics::default();
-
-    unsafe {
-      ffi::skiac_canvas_get_line_metrics_or_draw_text(
-        c_text.as_ptr(),
-        text.len(),
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        font_collection.0,
-        font_size,
-        weight as i32,
-        stretch,
-        stretch_width,
-        slant as i32,
-        c_font_family.as_ptr(),
-        baseline as i32,
-        align as i32,
-        direction.as_sk_direction(),
-        letter_spacing,
-        word_spacing,
-        paint.0,
-        ptr::null_mut(),
-        &mut line_metrics,
-        collect_ink,
-        variations.as_ptr() as *const ffi::skiac_font_variation,
-        variations.len() as i32,
-        kerning as i32,
-        variant_caps as i32,
-        c_lang.as_ref().map_or(ptr::null(), |s| s.as_ptr()),
-        text_rendering as i32,
-      );
-    }
-    Ok(line_metrics)
+    settings.with_request(text, |request| unsafe {
+      ffi::skiac_text_measure(font_collection.0, request, paint.0, &mut line_metrics);
+    });
+    line_metrics
   }
 
   pub fn draw_surface(
@@ -5511,6 +5543,14 @@ impl FontCollection {
     result
   }
 
+  /// Registers an installed font (loadSystemFonts / loadFontsFromDir). Like
+  /// Chrome's system fonts, tiny sizes keep fractional ascent and descent.
+  pub fn register_system_font(&self, font_path: &str) -> Option<u32> {
+    let fp = CString::new(font_path).ok()?;
+    let id = unsafe { ffi::skiac_font_collection_register_system_font(self.0, fp.as_ptr()) };
+    (id > 0).then_some(id)
+  }
+
   pub fn register_from_path<S: AsRef<str>>(
     &self,
     font_path: &str,
@@ -5559,43 +5599,31 @@ impl FontCollection {
     unsafe { ffi::skiac_font_collection_unregister_all(self.0) }
   }
 
+  /// The px size of `ex`, `ch`, `cap`, `ic` and `lh` of the font the canvas
+  /// parses `font` against, at `size` px; None when no font is installed.
+  pub fn default_font_units(&self, size: f32) -> Option<ffi::skiac_font_units> {
+    let mut units = ffi::skiac_font_units::default();
+    unsafe { ffi::skiac_font_collection_default_font_units(self.0, size, &mut units) }
+      .then_some(units)
+  }
+
   pub fn set_alias(&self, family: &str, alias_name: &str) -> bool {
     let family = CString::new(family).unwrap();
     let alias_name = CString::new(alias_name).unwrap();
     unsafe { ffi::skiac_font_collection_set_alias(self.0, family.as_ptr(), alias_name.as_ptr()) }
   }
 
-  /// The advance of U+6C34 in the primary face of this font (the first
-  /// family of `font_family` that exists), or None when no family exists or
+  /// The advance of U+6C34 in the primary face of the `settings` font (the
+  /// first of its families that exists), or None when no family exists or
   /// that face has no such glyph. Blink's ideographic advance, for the ic
   /// unit.
-  pub fn ideographic_advance(
-    &self,
-    font_size: f32,
-    weight: u32,
-    stretch: i32,
-    stretch_width: f32,
-    slant: FontStyle,
-    font_family: &str,
-    variations: &[FontVariation],
-  ) -> Option<f32> {
-    let c_font_family = CString::new(font_family).ok()?;
+  pub fn ideographic_advance(&self, settings: &TextSettings) -> Option<f32> {
     let mut advance = 0.0;
-    unsafe {
-      ffi::skiac_font_collection_ideographic_advance(
-        self.0,
-        font_size,
-        weight as i32,
-        stretch,
-        stretch_width,
-        slant as i32,
-        c_font_family.as_ptr(),
-        variations.as_ptr() as *const ffi::skiac_font_variation,
-        variations.len() as i32,
-        &mut advance,
-      )
-    }
-    .then_some(advance)
+    settings
+      .with_request("", |request| unsafe {
+        ffi::skiac_font_collection_ideographic_advance(self.0, request, &mut advance)
+      })
+      .then_some(advance)
   }
 
   pub fn get_variation_axes(
@@ -6177,4 +6205,89 @@ pub fn sk_svg_text_to_path(svg: &[u8], fc: &FontCollection) -> Option<SkiaDataRe
 unsafe extern "C" fn skiac_on_get_style(width: i32, weight: i32, slant: i32, raw_cb: *mut c_void) {
   let cb = Box::leak(unsafe { Box::from_raw(raw_cb as *mut Box<dyn FnMut(i32, i32, i32)>) });
   cb(width, weight, slant);
+}
+
+#[cfg(test)]
+mod text_line_tests {
+  use super::*;
+
+  fn settings() -> TextSettings {
+    TextSettings {
+      font: ComputedFont {
+        size: 8.0,
+        families: vec![FamilyName::Named("CacheLato".to_owned())],
+        ..ComputedFont::default()
+      },
+      stretch: FontStretch::Normal,
+      baseline: TextBaseline::default(),
+      align: TextAlign::default(),
+      direction: TextDirection::Ltr,
+      letter_spacing: 0.0,
+      word_spacing: 0.0,
+      variations: Vec::new(),
+      kerning: FontKerning::default(),
+      variant_caps: FontVariantCaps::default(),
+      lang: String::new(),
+      text_rendering: TextRendering::default(),
+    }
+  }
+
+  fn measure(collection: &FontCollection, settings: &TextSettings, text: &str) -> f32 {
+    let paint = Paint::default();
+    let mut metrics = ffi::skiac_line_metrics::default();
+    settings.with_request(text, |request| unsafe {
+      ffi::skiac_text_measure(collection.0, request, paint.0, &mut metrics);
+    });
+    metrics.width
+  }
+
+  fn kept(collection: &FontCollection, settings: &TextSettings, text: &str) -> bool {
+    settings.with_request(text, |request| unsafe {
+      ffi::skiac_text_line_kept(collection.0, request)
+    })
+  }
+
+  /// The laid out lines past the byte budget: the least recently used one
+  /// goes first, and the last 128 used stay.
+  #[test]
+  fn the_last_128_lines_used_stay_whatever_their_bytes() {
+    let collection = FontCollection::new();
+    let lato = concat!(
+      env!("CARGO_MANIFEST_DIR"),
+      "/__test__/fonts/Lato-Regular.ttf"
+    );
+    assert!(
+      collection
+        .register_from_path(lato, Some("CacheLato"))
+        .is_some()
+    );
+    let settings = settings();
+    // 14,000 glyphs a line, about 140 KB: 128 lines pass the 16 MB budget.
+    let lines: Vec<String> = (0..130)
+      .map(|i| format!("{i}{}", "i".repeat(14000)))
+      .collect();
+    for line in &lines[..129] {
+      assert!(measure(&collection, &settings, line) > 0.0);
+    }
+    assert!(!kept(&collection, &settings, &lines[0]));
+    for (i, line) in lines[1..129].iter().enumerate() {
+      assert!(kept(&collection, &settings, line), "line {}", i + 1);
+    }
+    // Line 1 measured again is the newest: line 129 drops line 2 instead.
+    measure(&collection, &settings, &lines[1]);
+    measure(&collection, &settings, &lines[129]);
+    assert!(kept(&collection, &settings, &lines[1]));
+    assert!(!kept(&collection, &settings, &lines[2]));
+    for line in &lines[3..130] {
+      assert!(kept(&collection, &settings, line));
+    }
+    // A dropped line gives its bytes back: once the lines left fit the
+    // budget, short lines are added without dropping any.
+    let short: Vec<String> = (0..200).map(|i| format!("s{i}")).collect();
+    for line in &short {
+      measure(&collection, &settings, line);
+    }
+    assert!(short.iter().all(|line| kept(&collection, &settings, line)));
+    assert!(kept(&collection, &settings, &lines[129]));
+  }
 }

@@ -10,7 +10,7 @@ use napi::bindgen_prelude::*;
 use regex::Regex;
 
 use crate::font::FONT_MEDIUM_PX;
-use crate::font::parse_size_px;
+use crate::font::{parse_canvas_font, parse_size_px};
 use crate::global_fonts::get_font;
 use crate::page_recorder::{PageRecorder, RasterKey, next_resource_id};
 use crate::sk::Canvas;
@@ -19,7 +19,6 @@ use crate::{
   color::{self, Color},
   error::SkError,
   filter::{FontReads, FontUnits, css_filters_to_image_filter, filter_lengths, parse_filter},
-  font::Font,
   gradient::{CanvasGradient, Gradient, SharedGradient},
   image::*,
   num,
@@ -29,7 +28,7 @@ use crate::{
     AccountedBitmap, AlphaType, Bitmap, BlendMode, Color4f, ColorSpace, DecodedCopy, FillType,
     FilterQuality, FontVariantCaps, ImageFilter, ImagePattern, LineMetrics, MaskFilter, Matrix,
     Paint, PaintStyle, Path as SkPath, PathEffect, ReadPixelsError, Shader, SkWMemoryStream,
-    StrokeCap, StrokeJoin, Surface, Transform,
+    StrokeCap, StrokeJoin, Surface, TextSettings, Transform,
   },
   state::Context2dRenderingState,
   webidl::{self, Double, Positional, ReportedSettings},
@@ -1633,16 +1632,8 @@ impl Context {
   ) -> result::Result<(), SkError> {
     self.flush_if_recording_limit_exceeded();
     let stroke_paint = self.stroke_paint()?;
-    let variations = self.state.font_variations.clone();
-    self.draw_text(
-      text.replace('\n', " ").as_str(),
-      x,
-      y,
-      max_width,
-      &stroke_paint,
-      ShadowSource::Stroke,
-      &variations,
-    )?;
+    // skia-c/text.cpp prepares the text (PrepareCanvasText).
+    self.draw_text(text, x, y, max_width, &stroke_paint, ShadowSource::Stroke)?;
     Ok(())
   }
 
@@ -1717,16 +1708,8 @@ impl Context {
   ) -> result::Result<(), SkError> {
     self.flush_if_recording_limit_exceeded();
     let fill_paint = self.fill_paint()?;
-    let variations = self.state.font_variations.clone();
-    self.draw_text(
-      text.replace('\n', " ").as_str(),
-      x,
-      y,
-      max_width,
-      &fill_paint,
-      ShadowSource::Fill,
-      &variations,
-    )?;
+    // skia-c/text.cpp prepares the text (PrepareCanvasText).
+    self.draw_text(text, x, y, max_width, &fill_paint, ShadowSource::Fill)?;
     Ok(())
   }
 
@@ -2413,36 +2396,29 @@ impl Context {
   /// from the top of the "x" glyph, elsewhere from the font's own value; a
   /// font without one gives None.
   fn filter_font_units(&mut self, reads: FontReads) -> FontUnits {
-    let measure = |ctx: &mut Self, text: &str| {
-      let state = &ctx.state;
-      let paint = Paint::default();
+    // The canvas font (family, size, weight, slope, stretch, variations)
+    // with no text styling.
+    let settings = TextSettings {
+      baseline: crate::sk::TextBaseline::Alphabetic,
+      align: crate::sk::TextAlign::Left,
+      direction: crate::sk::TextDirection::Ltr,
+      letter_spacing: 0.0,
+      word_spacing: 0.0,
+      kerning: crate::sk::FontKerning::Auto,
+      variant_caps: FontVariantCaps::Normal,
+      lang: String::new(),
+      text_rendering: crate::sk::TextRendering::Auto,
+      ..self.text_settings()
+    };
+    let paint = Paint::default();
+    let measure = |ctx: &Self, text: &str| {
       let font = get_font().ok()?;
-      ctx
-        .surface
-        .canvas
-        .get_line_metrics(
-          text,
-          &font,
-          state.font_style.size,
-          state.font_style.weight,
-          state.font_stretch as i32,
-          state.font_stretch.to_width_percentage(),
-          state.font_style.style,
-          &state.font_style.family,
-          crate::sk::TextBaseline::Alphabetic,
-          crate::sk::TextAlign::Left,
-          crate::sk::TextDirection::Ltr,
-          0.0,
-          0.0,
-          &paint,
-          &state.font_variations,
-          crate::sk::FontKerning::Auto,
-          FontVariantCaps::Normal,
-          "",
-          crate::sk::TextRendering::Auto,
-          false,
-        )
-        .ok()
+      Some(
+        ctx
+          .surface
+          .canvas
+          .get_line_metrics(text, &settings, &font, &paint),
+      )
     };
     let mut units = FontUnits::default();
     if reads.glyphs {
@@ -2460,39 +2436,36 @@ impl Context {
       units.cap_height = x.cap_height as f64;
     }
     if reads.ideographic {
-      let state = &self.state;
       units.ideographic_advance = get_font()
         .ok()
-        .and_then(|font| {
-          font.ideographic_advance(
-            state.font_style.size,
-            state.font_style.weight,
-            state.font_stretch as i32,
-            state.font_stretch.to_width_percentage(),
-            state.font_style.style,
-            &state.font_style.family,
-            &state.font_variations,
-          )
-        })
+        .and_then(|font| font.ideographic_advance(&settings))
         .map(f64::from);
     }
     units
   }
 
-  pub fn get_font(&self) -> &str {
-    &self.state.font
+  /// Blink's computed form of the font (BaseRenderingContext2D::font()).
+  pub fn get_font(&self) -> String {
+    crate::font::serialize_canvas_font(
+      &self.state.font_style,
+      self.state.font_variant_caps == FontVariantCaps::SmallCaps,
+    )
   }
 
-  pub fn set_font(&mut self, font: String) -> result::Result<(), SkError> {
-    self.state.font_style = Font::new(&font)?;
-    // Apply CSS font-variant-css2 to fontVariantCaps state.
-    // In font shorthand, it only supports `<font-variant-css2>= normal | small-caps`
-    // Spec: https://drafts.csswg.org/css-fonts/#font-prop
-    self.state.font_variant_caps = match self.state.font_style.variant {
-      crate::font::FontVariant::SmallCaps => FontVariantCaps::SmallCaps,
-      crate::font::FontVariant::Normal => FontVariantCaps::Normal,
+  /// An invalid value is an error and changes nothing. A valid one replaces
+  /// the whole font description, so fontStretch and fontVariantCaps take the
+  /// shorthand's values (or normal); kerning, spacing and textRendering stay.
+  pub fn set_font(&mut self, font: &str) -> result::Result<(), SkError> {
+    let parsed = parse_canvas_font(font, &crate::global_fonts::font_parse_context())
+      .ok_or_else(|| SkError::InvalidFontStyle(font.to_owned()))?;
+    self.state.font_stretch = parsed.stretch;
+    self.state.font_stretch_raw = parsed.stretch.as_str().to_owned();
+    self.state.font_variant_caps = if parsed.small_caps {
+      FontVariantCaps::SmallCaps
+    } else {
+      FontVariantCaps::Normal
     };
-    self.state.font = font;
+    self.state.font_style = parsed;
     Ok(())
   }
 
@@ -3773,6 +3746,25 @@ impl Context {
     Ok(())
   }
 
+  /// The text settings of the current state.
+  fn text_settings(&self) -> TextSettings {
+    let state = &self.state;
+    TextSettings {
+      font: state.font_style.clone(),
+      stretch: state.font_stretch,
+      baseline: state.text_baseline,
+      align: state.text_align,
+      direction: state.text_direction,
+      letter_spacing: state.letter_spacing,
+      word_spacing: state.word_spacing,
+      variations: state.font_variations.clone(),
+      kerning: state.font_kerning,
+      variant_caps: state.font_variant_caps,
+      lang: state.lang.clone(),
+      text_rendering: state.text_rendering,
+    }
+  }
+
   fn draw_text(
     &mut self,
     text: &str,
@@ -3783,7 +3775,6 @@ impl Context {
     // `fillText` and `strokeText` share this body but read different styles;
     // `shadow_paint` needs to know which one to consult.
     source: ShadowSource,
-    variations: &[crate::sk::FontVariation],
   ) -> result::Result<(), SkError> {
     // Measured before get_font(): measuring takes the same font lock.
     let text_bounds = if self.resets_alpha() || self.gradient_latch_pending(source) {
@@ -3798,46 +3789,22 @@ impl Context {
     };
     let font = get_font()?;
 
-    // Extract all state values to avoid borrow conflicts with with_render_canvas
     // The one `DrawContent::Glyphs` in the file, which keeps a colour-only
     // `ctx.filter` on the layer for PDF text; see `filter_takes_layer`. All
     // three readers below get the same value, so the passes cannot disagree.
     let shadow_paint = self.shadow_paint(paint, source, DrawContent::Glyphs);
-    let width = self.width as f32;
     // Zero on the image-filter route, where the filter's dx/dy already carry it.
     let (shadow_offset_x, shadow_offset_y) = self.canvas_shadow_offset(source, DrawContent::Glyphs);
-    let font_weight = self.state.font_style.weight;
-    let font_stretch = self.state.font_stretch;
-    let font_stretch_percentage = font_stretch.to_width_percentage();
-    let font_style_style = self.state.font_style.style;
-    let font_size = self.state.font_style.size;
-    let font_family = self.state.font_style.family.clone();
-    let text_baseline = self.state.text_baseline;
-    let text_align = self.state.text_align;
-    let text_direction = self.state.text_direction;
-    let letter_spacing = self.state.letter_spacing;
-    let word_spacing = self.state.word_spacing;
-    let font_kerning = self.state.font_kerning;
-    let font_variant_caps = self.state.font_variant_caps;
-    let lang = self.state.lang.clone();
-    let text_rendering = self.state.text_rendering;
-
-    // Canvas::draw_text converts text, family, and lang with CString::new,
-    // which fails on interior NUL. Check here so the charges below never
-    // commit for a draw that cannot record (same SkError::NulError the
-    // conversion would produce).
-    if text.contains('\0') || font_family.contains('\0') || lang.contains('\0') {
-      return Err(SkError::NulError);
-    }
+    let settings = self.text_settings();
 
     if self.draws_nothing() {
       return Ok(());
     }
     self.latch_gradient_interpolation(source, shadow_paint.is_some(), |_| text_bounds);
-    // Everything fallible (get_font, the NUL preflight) is behind us, so the
-    // paint-resource charge can land here -- the same position fill/stroke
-    // use, after their fallible paint builds. `source` already says which
-    // style `paint` was built from.
+    // Everything fallible (get_font) is behind us, so the paint-resource
+    // charge can land here -- the same position fill/stroke use, after their
+    // fallible paint builds. `source` already says which style `paint` was
+    // built from.
     match source {
       ShadowSource::Fill => self.account_paint_resources(&self.state.fill_style),
       ShadowSource::Stroke => self.account_paint_resources(&self.state.stroke_style),
@@ -3862,14 +3829,7 @@ impl Context {
     let typeface_key = {
       let mut hasher = std::collections::hash_map::DefaultHasher::new();
       use std::hash::{Hash, Hasher};
-      font_family.hash(&mut hasher);
-      font_weight.hash(&mut hasher);
-      std::mem::discriminant(&font_stretch).hash(&mut hasher);
-      font_stretch_percentage.to_bits().hash(&mut hasher);
-      for v in variations {
-        v.tag.hash(&mut hasher);
-        v.value.to_bits().hash(&mut hasher);
-      }
+      settings.typeface_key().hash(&mut hasher);
       crate::global_fonts::font_collection_generation().hash(&mut hasher);
       hasher.finish()
     };
@@ -3888,60 +3848,12 @@ impl Context {
           shadow_offset_x,
           shadow_offset_y,
         )?;
-        shadow_canvas.draw_text(
-          text,
-          x,
-          y,
-          max_width,
-          width,
-          font_weight,
-          font_stretch as i32,
-          font_stretch_percentage,
-          font_style_style,
-          &font,
-          font_size,
-          &font_family,
-          text_baseline,
-          text_align,
-          text_direction,
-          letter_spacing,
-          word_spacing,
-          shadow_paint,
-          variations,
-          font_kerning,
-          font_variant_caps,
-          &lang,
-          text_rendering,
-        )?;
+        shadow_canvas.draw_text(text, &settings, &font, shadow_paint, x, y, max_width);
         shadow_canvas.restore();
         Ok(())
       },
       |canvas, paint| {
-        canvas.draw_text(
-          text,
-          x,
-          y,
-          max_width,
-          width,
-          font_weight,
-          font_stretch as i32,
-          font_stretch_percentage,
-          font_style_style,
-          &font,
-          font_size,
-          &font_family,
-          text_baseline,
-          text_align,
-          text_direction,
-          letter_spacing,
-          word_spacing,
-          paint,
-          variations,
-          font_kerning,
-          font_variant_caps,
-          &lang,
-          text_rendering,
-        )?;
+        canvas.draw_text(text, &settings, &font, paint, x, y, max_width);
         Ok(())
       },
     )?;
@@ -3955,7 +3867,7 @@ impl Context {
   /// for a stroke (base_rendering_context_2d.cc:1016-1080). Only the
   /// alpha:false reset reads them. Left and right are the ink of the glyphs
   /// the draw paints, where it paints them (`ink_left` / `ink_right` from
-  /// skia_c.cpp skiac_canvas_get_line_metrics_or_draw_text), so the
+  /// skia-c/text.cpp MeasureOrDraw), so the
   /// letterSpacing shift applies only where the draw applies it: to LTR text
   /// that is not cursive. Top and bottom are measureText's.
   ///
@@ -3974,7 +3886,7 @@ impl Context {
     max_width: f32,
     source: ShadowSource,
   ) -> Option<DrawBounds> {
-    let metrics = self.get_line_metrics(text, true).ok()?.0;
+    let metrics = self.get_line_metrics(text).ok()?.0;
     // The same test and ratio as the draw.
     let scale = if metrics.width > max_width {
       max_width / metrics.width
@@ -3995,42 +3907,16 @@ impl Context {
     })
   }
 
-  /// `collect_ink` fills `ink_left` / `ink_right`, which costs a walk over
-  /// every drawn glyph; measureText does not read them and passes false.
-  fn get_line_metrics(
-    &mut self,
-    text: &str,
-    collect_ink: bool,
-  ) -> result::Result<LineMetrics, SkError> {
-    let state = &self.state;
+  fn get_line_metrics(&mut self, text: &str) -> result::Result<LineMetrics, SkError> {
     let fill_paint = self.fill_paint()?;
-    let weight = state.font_style.weight;
-    let stretch = state.font_stretch;
-    let slant = state.font_style.style;
+    let settings = self.text_settings();
     let font = get_font()?;
-    let line_metrics = LineMetrics(self.surface.canvas.get_line_metrics(
+    Ok(LineMetrics(self.surface.canvas.get_line_metrics(
       text,
+      &settings,
       &font,
-      state.font_style.size,
-      weight,
-      stretch as i32,
-      stretch.to_width_percentage(),
-      slant,
-      &state.font_style.family,
-      state.text_baseline,
-      state.text_align,
-      state.text_direction,
-      state.letter_spacing,
-      state.word_spacing,
       &fill_paint,
-      &self.state.font_variations,
-      self.state.font_kerning,
-      self.state.font_variant_caps,
-      &self.state.lang,
-      self.state.text_rendering,
-      collect_ink,
-    )?);
-    Ok(line_metrics)
+    )))
   }
 
   /// Post-translate `canvas` by a DEVICE-space `(shadow_offset_x,
@@ -4926,7 +4812,7 @@ impl CanvasRenderingContext2D {
 
   #[napi(getter)]
   pub fn get_font(&self) -> String {
-    self.context.get_font().to_owned()
+    self.context.get_font()
   }
 
   #[napi(getter)]
@@ -4949,7 +4835,7 @@ impl CanvasRenderingContext2D {
       return;
     }
     // An invalid font is ignored (base_rendering_context_2d.cc setFont).
-    let _ = self.context.set_font(font.0);
+    let _ = self.context.set_font(&font.0);
   }
 
   #[napi(getter)]
@@ -6086,14 +5972,8 @@ impl CanvasRenderingContext2D {
     &mut self,
     text: webidl::DomString<webidl::CtxMeasureText>,
   ) -> Result<TextMetrics> {
-    let text = text.0.as_str();
-    // The empty string keeps every field 0 (Chrome still reports the font's
-    // metrics there).
-    let metrics = if text.is_empty() {
-      Default::default()
-    } else {
-      self.context.get_line_metrics(text, false)?.0
-    };
+    // The empty string still reports the font's metrics, like Chrome.
+    let metrics = self.context.get_line_metrics(text.0.as_str())?.0;
     Ok(TextMetrics {
       width: metrics.width as f64,
       actual_bounding_box_left: metrics.left as f64,
@@ -6172,7 +6052,9 @@ impl CanvasRenderingContext2D {
     }
     let (x, y, max_width) = (x.0, y.0, max_width.0);
     let text = text.0.as_str();
-    if text.is_empty() {
+    // BaseRenderingContext2D::DrawTextInternal: a maxWidth that is not a
+    // positive finite number draws nothing.
+    if text.is_empty() || max_width.is_some_and(|w| !w.is_finite() || w <= 0.0) {
       return Ok(());
     }
     if !x.is_nan() && !x.is_infinite() && !y.is_nan() && !y.is_infinite() {
@@ -6241,7 +6123,9 @@ impl CanvasRenderingContext2D {
     }
     let (x, y, max_width) = (x.0, y.0, max_width.0);
     let text = text.0.as_str();
-    if text.is_empty() {
+    // BaseRenderingContext2D::DrawTextInternal: a maxWidth that is not a
+    // positive finite number draws nothing.
+    if text.is_empty() || max_width.is_some_and(|w| !w.is_finite() || w <= 0.0) {
       return Ok(());
     }
     if !x.is_nan() && !x.is_infinite() && !y.is_nan() && !y.is_infinite() {
@@ -8498,19 +8382,17 @@ mod tests {
       fonts.register_from_path::<String>("__test__/fonts/Lato-Regular.ttf", None);
     }
     let mut ctx = raster_ctx(64, 64);
-    ctx.set_font("16px Lato".to_owned()).unwrap();
+    ctx.set_font("16px Lato").unwrap();
     for _ in 0..3 {
       ctx.fill_text("hello", 0.0, 16.0, MAX_TEXT_WIDTH).unwrap();
     }
     assert_eq!(retained(&ctx), 1);
     assert_eq!(raster_bytes(&ctx), 1024 * 1024);
 
-    // A text draw that cannot record (interior NUL) commits no charge.
-    let pending0 = pending(&ctx);
-    let version0 = ctx.content_version();
-    assert!(ctx.fill_text("a\0b", 0.0, 16.0, MAX_TEXT_WIDTH).is_err());
-    assert_eq!(pending(&ctx), pending0);
-    assert_eq!(ctx.content_version(), version0);
+    // A U+0000 in the text is text: it draws under the same face.
+    ctx.fill_text("a\0b", 0.0, 16.0, MAX_TEXT_WIDTH).unwrap();
+    assert_eq!(retained(&ctx), 1);
+    assert_eq!(raster_bytes(&ctx), 1024 * 1024);
   }
 
   // measureText's line-metrics path builds paints but must leave the
@@ -8522,41 +8404,25 @@ mod tests {
     let pending0 = pending(&ctx);
     let raster0 = raster_bytes(&ctx);
     let version0 = ctx.content_version();
-    ctx.get_line_metrics("measure me", false).unwrap();
+    ctx.get_line_metrics("measure me").unwrap();
     assert_eq!(pending(&ctx), pending0);
     assert_eq!(raster_bytes(&ctx), raster0);
     assert_eq!(ctx.content_version(), version0);
   }
 
-  // measureText never reads the glyph ink, so it must not pay for the walk
-  // that finds it: the ink comes back empty.
+  // The alpha:false reset and measureText read the same glyph box: the ink
+  // of every drawn glyph, relative to the anchor.
   #[test]
-  fn measure_text_skips_the_ink_walk() {
+  fn text_bounds_are_the_measured_ink() {
     {
       let fonts = get_font().unwrap();
       fonts.register_from_path::<String>("__test__/fonts/Lato-Regular.ttf", None);
     }
     let mut ctx = raster_ctx(64, 64);
-    ctx.set_font("16px Lato".to_owned()).unwrap();
-    let measured = ctx.get_line_metrics("Hgjy", false).unwrap().0;
-    assert_eq!((measured.ink_left, measured.ink_right), (0.0, 0.0));
-    // The alpha:false reset asks for it and gets the glyphs; the rest of the
-    // metrics are the same either way.
-    let with_ink = ctx.get_line_metrics("Hgjy", true).unwrap().0;
-    assert!(with_ink.ink_right > with_ink.ink_left && with_ink.ink_right > 0.0);
-    let rest = |m: &crate::sk::ffi::skiac_line_metrics| {
-      (
-        m.ascent,
-        m.descent,
-        m.left,
-        m.right,
-        m.width,
-        m.font_ascent,
-        m.font_descent,
-        m.alphabetic_baseline,
-      )
-    };
-    assert_eq!(rest(&with_ink), rest(&measured));
+    ctx.set_font("16px Lato").unwrap();
+    let m = ctx.get_line_metrics("Hgjy").unwrap().0;
+    assert!(m.ink_right > m.ink_left && m.ink_right > 0.0);
+    assert_eq!((m.ink_left, m.ink_right), (-m.left, m.right));
   }
 
   // Blink's Draw returns before anything is recorded when the CTM is singular
@@ -8575,7 +8441,7 @@ mod tests {
     let bitmap = test_bitmap(4, 4, [255, 0, 0, 255]);
 
     let mut ctx = raster_ctx(16, 16);
-    ctx.set_font("16px Lato".to_owned()).unwrap();
+    ctx.set_font("16px Lato").unwrap();
     ctx.state.shadow_color = Color::BLACK;
     ctx.state.shadow_offset_x = 2.0;
     // Skia order (scaleX, skewX, transX, skewY, scaleY, transY): x scaled by 0.

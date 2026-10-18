@@ -71,6 +71,7 @@
 #include <algorithm>
 #include <cstring>
 #include <map>
+#include <memory>
 #include <set>
 #include <string>
 #include <unordered_set>
@@ -550,6 +551,13 @@ struct skiac_svg_surface {
   skiac_canvas* canvas;
 };
 
+// text.cpp: the laid out lines of recent requests and other text work,
+// kept by the font collection.
+struct TextCaches;
+struct TextCachesDeleter {
+  void operator()(TextCaches* caches) const;
+};
+
 struct skiac_font_collection {
   sk_sp<FontCollection> collection;
   sk_sp<SkFontMgr> font_mgr;
@@ -562,6 +570,30 @@ struct skiac_font_collection {
   // memoizes findTypefaces() per {family list, weight, slant}, including
   // fallback misses, so any such change can invalidate an existing match.
   bool caches_dirty = false;
+  // font_families.cpp: every registered and system family name by its
+  // case-folded spelling, rebuilt when families_generation moves.
+  std::map<std::string, std::vector<std::string>> folded_families;
+  std::set<std::string> folded_registered_families;
+  uint64_t families_generation = 1;
+  uint64_t folded_families_generation = 0;
+  // Fonts loadSystemFonts / loadFontsFromDir registered (font_families.cpp
+  // skiac_font_collection_register_system_font): Blink keeps tiny system
+  // fonts' ascent and descent unrounded, never a web font's.
+  std::set<uint32_t> system_font_ids;
+  std::set<SkTypefaceID> system_typeface_ids;
+  // text_words.cpp CanShapeWordByWord: whether a face's GPOS / GSUB lookups
+  // touch the space glyph, per typeface (cleared with the match caches).
+  std::map<SkTypefaceID, uint8_t> space_in_lookups;
+  // text_caps.cpp: the OpenType caps features of a face for a script.
+  std::map<std::pair<SkTypefaceID, uint32_t>, uint8_t> caps_features;
+  // FontCollection keeps a clone of every face for every list of font
+  // arguments it was asked for; text.cpp counts the lists (by hash) and
+  // drops the caches past kMaxFontArguments.
+  static constexpr size_t kMaxFontArguments = 256;
+  std::unordered_set<size_t> font_arguments;
+  // text.cpp: the resolved families, primary font metrics and laid out lines
+  // of recent requests; dropped with the match caches.
+  std::unique_ptr<TextCaches, TextCachesDeleter> text_caches;
 
   skiac_font_collection()
       : collection(sk_make_sp<FontCollection>()),
@@ -571,17 +603,42 @@ struct skiac_font_collection {
     collection->setAssetFontManager(font_mgr);
     collection->setDynamicFontManager(assets);
     collection->enableFontFallback();
+    // text.cpp keeps the laid out lines (TextCaches::lines), so a paragraph
+    // is only built for a line it does not have. skparagraph's own cache
+    // would keep up to 128 more paragraphs, each several times the bytes of
+    // a kept line (up to about 25x with fallback runs), and takes sizes and
+    // spacings within 1/4096 px for equal.
+    collection->getParagraphCache()->turnOn(false);
   }
 
   // Defer invalidation to the next text lookup instead of clearing on every
   // registration: loadFontsFromDir() registers one face per file, and
   // clearCaches() also purges the process-wide HarfBuzz face cache.
-  void markCachesDirty() { caches_dirty = true; }
+  void markCachesDirty() {
+    caches_dirty = true;
+    ++families_generation;
+  }
 
   void flushCachesIfDirty() {
     if (caches_dirty) {
       collection->clearCaches();
+      space_in_lookups.clear();
+      caps_features.clear();
+      font_arguments.clear();
+      text_caches.reset();
       caches_dirty = false;
+    }
+  }
+
+  // Called before a lookup with font arguments whose hash is `hash`.
+  void noteFontArguments(size_t hash) {
+    if (font_arguments.insert(hash).second &&
+        font_arguments.size() > kMaxFontArguments) {
+      collection->clearCaches();
+      space_in_lookups.clear();
+      caps_features.clear();
+      text_caches.reset();
+      font_arguments = {hash};
     }
   }
 
@@ -594,12 +651,19 @@ struct skiac_font_collection {
 
     // Clear caches before swap
     collection->clearCaches();
+    space_in_lookups.clear();
+    caps_features.clear();
+    font_arguments.clear();
+    text_caches.reset();
     caches_dirty = false;
+    ++families_generation;
 
     // Create new provider
     auto new_assets = sk_make_sp<TypefaceFontProviderCustom>(font_mgr);
 
     // Re-register all remaining fonts, preserving original IDs
+    std::set<uint32_t> kept_system_font_ids;
+    system_typeface_ids.clear();
     for (const auto& [id, font_info] : old_fonts) {
       sk_sp<SkTypeface> typeface;
 
@@ -612,10 +676,15 @@ struct skiac_font_collection {
       }
 
       if (typeface) {
+        if (system_font_ids.count(id)) {
+          kept_system_font_ids.insert(id);
+          system_typeface_ids.insert(typeface->uniqueID());
+        }
         new_assets->registerTypefaceWithId(id, font_info.data, font_info.path,
                                            typeface, font_info.aliases);
       }
     }
+    system_font_ids = std::move(kept_system_font_ids);
 
     // Replay setAlias mappings
     // These aliases intentionally shadow/override existing family names
@@ -694,8 +763,7 @@ struct skiac_line_metrics {
   float font_descent;
   float alphabetic_baseline;
   // The drawn glyph ink, left and right of the anchor x, before a maxWidth
-  // squeeze. Filled only when collect_ink asks for it (the alpha:false
-  // reset); measureText does not, and gets 0 for both.
+  // squeeze (the alpha:false reset): -left and right.
   float ink_left;
   float ink_right;
   // Blink's TextMetrics baselines, relative to the textBaseline:
@@ -705,8 +773,8 @@ struct skiac_line_metrics {
   // Blink's em box (ExtendedTextMetrics), relative to the textBaseline.
   float em_height_ascent;
   float em_height_descent;
-  // SkFontMetrics fXHeight and fCapHeight of the first run's font (0 when
-  // the font does not say).
+  // SkFontMetrics fXHeight and fCapHeight of the primary font (0 when the
+  // font does not say).
   float x_height;
   float cap_height;
 };
@@ -806,6 +874,50 @@ struct skiac_variable_font_axis {
 struct skiac_font_variation {
   uint32_t tag;  // OpenType tag
   float value;   // Value for this axis
+};
+
+// One family of the canvas font (font.rs FamilyName). `name` is UTF-8 and
+// not NUL-terminated; a generic family has no name.
+struct skiac_text_family {
+  const char* name;
+  size_t name_len;
+  // 0 named, 1 serif, 2 sans-serif, 3 cursive, 4 fantasy, 5 monospace,
+  // 6 system-ui, 7 -webkit-body, 8 math.
+  int generic;
+};
+
+// The text and the canvas text settings of one measureText, fillText or
+// strokeText (text.cpp).
+struct skiac_text_request {
+  // UTF-8, not NUL-terminated: a U+0000 in the text is text.
+  const char* text;
+  size_t text_len;
+  const skiac_text_family* families;
+  size_t family_count;
+  float size;
+  // CSS font-weight, 1..1000 in quarter steps.
+  float weight;
+  // Degrees, 14 for italic and plain oblique.
+  float slope;
+  // The font-style keyword: SkFontStyle::Slant values.
+  int style;
+  // SkFontStyle::Width values (font.rs FontStretch).
+  int stretch;
+  // The fontStretch percentage, 100 for normal.
+  float stretch_pct;
+  int baseline;
+  int align;
+  int direction;
+  float letter_spacing;
+  float word_spacing;
+  const skiac_font_variation* variations;
+  int variations_count;
+  int kerning;
+  int variant_caps;
+  // The lang attribute, not NUL-terminated; empty or "inherit" for none.
+  const char* lang;
+  size_t lang_len;
+  int text_rendering;
 };
 
 extern "C" {
@@ -935,35 +1047,26 @@ void skiac_canvas_draw_surface_rect(skiac_canvas* c_canvas,
                                     float dw,
                                     float dh,
                                     int filter_quality);
-void skiac_canvas_get_line_metrics_or_draw_text(
-    const char* text,
-    size_t text_len,
-    float max_width,
-    float x,
-    float y,
-    float canvas_width,
+// Text (text.cpp)
+void skiac_text_measure(skiac_font_collection* c_collection,
+                        const skiac_text_request* request,
+                        skiac_paint* c_paint,
+                        skiac_line_metrics* c_line_metrics);
+void skiac_text_draw(skiac_canvas* c_canvas,
+                     skiac_font_collection* c_collection,
+                     const skiac_text_request* request,
+                     skiac_paint* c_paint,
+                     float x,
+                     float y,
+                     float max_width);
+// Whether the laid out line of `request` is kept, without laying it out or
+// marking it used (tests).
+bool skiac_text_line_kept(skiac_font_collection* c_collection,
+                          const skiac_text_request* request);
+bool skiac_font_collection_ideographic_advance(
     skiac_font_collection* c_collection,
-    float font_size,
-    int weight,
-    int stretch,
-    float stretch_width,
-    int slant,
-    const char* font_family,
-    int baseline,
-    int align,
-    int direction,
-    float letter_spacing,
-    float world_spacing,
-    skiac_paint* c_paint,
-    skiac_canvas* c_canvas,
-    skiac_line_metrics* c_line_metrics,
-    bool collect_ink,
-    const skiac_font_variation* variations,
-    int variations_count,
-    int kerning,
-    int variant_caps,
-    const char* lang,
-    int text_rendering);
+    const skiac_text_request* request,
+    float* advance);
 void skiac_canvas_reset_transform(skiac_canvas* c_canvas);
 bool skiac_canvas_get_device_clip_bounds(skiac_canvas* c_canvas, int32_t* ltrb);
 void skiac_canvas_clip_rect(skiac_canvas* c_canvas,
@@ -1443,17 +1546,6 @@ bool skiac_font_collection_set_alias(skiac_font_collection* c_font_collection,
                                      const char* family,
                                      const char* alias);
 void skiac_font_collection_destroy(skiac_font_collection* c_font_collection);
-bool skiac_font_collection_ideographic_advance(
-    skiac_font_collection* c_collection,
-    float font_size,
-    int weight,
-    int stretch,
-    float stretch_width,
-    int slant,
-    const char* font_family,
-    const skiac_font_variation* variations,
-    int variations_count,
-    float* advance);
 
 // Variable Fonts
 int skiac_typeface_get_variation_design_position(
