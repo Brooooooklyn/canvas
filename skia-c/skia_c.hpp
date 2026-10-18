@@ -62,9 +62,11 @@
 #include <modules/svg/include/SkSVGRenderContext.h>
 #include <modules/svg/include/SkSVGSVG.h>
 #include <src/core/SkFontDescriptor.h>
+#include <src/core/SkRectPriv.h>
 #include <src/ports/SkFontMgr_custom.h>
 #include <src/shaders/SkShaderBase.h>
 #include <src/text/GlyphRun.h>
+#include <src/xml/SkDOM.h>
 #include <src/xml/SkXMLWriter.h>
 #include <algorithm>
 #include <cstring>
@@ -103,6 +105,7 @@ typedef struct skiac_drawable skiac_drawable;
 typedef struct skiac_encoder skiac_encoder;
 typedef struct skiac_document skiac_document;
 typedef struct skiac_skottie_animation skiac_skottie_animation;
+typedef struct skiac_svg_document skiac_svg_document;
 
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
 #define SK_FONT_FILE_PREFIX "C:/Windows/Fonts"
@@ -857,10 +860,12 @@ void skiac_surface_png_data(skiac_surface* c_surface, skiac_sk_data* data);
 void skiac_surface_encode_data(skiac_surface* c_surface,
                                skiac_sk_data* data,
                                int format,
-                               int quality);
+                               float quality,
+                               bool lossless);
 bool skiac_surface_encode_stream(skiac_surface* c_surface,
                                  int format,
-                                 int quality,
+                                 float quality,
+                                 bool lossless,
                                  write_callback_t write_callback,
                                  void* context);
 int skiac_surface_get_alpha_type(skiac_surface* c_surface);
@@ -1272,6 +1277,8 @@ skiac_image_filter* skiac_image_filter_from_argb(
 bool skiac_image_filter_is_a_color_filter(skiac_image_filter* c_image_filter);
 uint32_t skiac_image_filter_filter_color(skiac_image_filter* c_image_filter,
                                          uint32_t color);
+bool skiac_image_filter_input_bounds(skiac_image_filter* c_image_filter,
+                                     int32_t bounds[4]);
 void skiac_image_filter_destroy(skiac_image_filter* c_image_filter);
 
 // SkImage (for PageCache)
@@ -1283,7 +1290,9 @@ int skiac_image_get_height(skiac_image* c_image);
 void skiac_image_encode_data(skiac_image* c_image,
                              skiac_sk_data* data,
                              int format,
-                             int quality);
+                             float quality,
+                             bool lossless,
+                             bool crop_to_max_dimension);
 bool skiac_image_read_pixels(skiac_image* c_image,
                              uint8_t* dst,
                              size_t row_bytes,
@@ -1303,13 +1312,41 @@ void skiac_sk_data_destroy(skiac_data* c_data);
 bool skiac_bitmap_make_from_buffer(const uint8_t* ptr,
                                    size_t size,
                                    skiac_bitmap_info* bitmap_info);
-bool skiac_bitmap_make_from_svg(const uint8_t* data,
-                                size_t length,
-                                float width,
-                                float height,
-                                skiac_bitmap_info* bitmap_info,
-                                skiac_font_collection* c_collection,
-                                uint8_t cs);
+skiac_svg_document* skiac_svg_document_make(
+    const uint8_t* data,
+    size_t length,
+    skiac_font_collection* c_collection);
+bool skiac_svg_document_attribute(skiac_svg_document* document,
+                                  int index,
+                                  const char** ptr,
+                                  size_t* length);
+bool skiac_svg_document_render(skiac_svg_document* document,
+                               float layout_width,
+                               float layout_height,
+                               float view_width,
+                               float view_height,
+                               float da,
+                               float db,
+                               float dc,
+                               float dd,
+                               float de,
+                               float df,
+                               float sx,
+                               float sy,
+                               float tx,
+                               float ty,
+                               float clip_left,
+                               float clip_top,
+                               float clip_right,
+                               float clip_bottom,
+                               int width,
+                               int height,
+                               uint8_t cs,
+                               skiac_bitmap_info* bitmap_info);
+void skiac_svg_document_destroy(skiac_svg_document* document);
+bool skiac_font_collection_default_font_metrics(
+    skiac_font_collection* c_collection,
+    float* metrics);
 skiac_bitmap* skiac_bitmap_make_from_image_data(uint8_t* ptr,
                                                 size_t width,
                                                 size_t height,
@@ -1322,11 +1359,14 @@ skiac_bitmap* skiac_bitmap_make_premul_from_image_data(uint8_t* ptr,
                                                        size_t height,
                                                        size_t row_bytes,
                                                        uint8_t cs);
-void skiac_bitmap_set_color_space(skiac_bitmap* c_bitmap,
+bool skiac_bitmap_set_color_space(skiac_bitmap* c_bitmap,
                                   const uint8_t* icc,
                                   size_t icc_len,
                                   uint16_t primaries,
-                                  uint16_t transfer);
+                                  uint16_t transfer,
+                                  uint16_t matrix,
+                                  bool is_mono);
+bool skiac_bitmap_orient(skiac_bitmap_info* bitmap_info, int origin);
 bool skiac_bitmap_source_is_opaque(skiac_bitmap* c_bitmap, bool is_canvas);
 size_t skiac_bitmap_get_width(skiac_bitmap* c_bitmap);
 size_t skiac_bitmap_get_height(skiac_bitmap* c_bitmap);

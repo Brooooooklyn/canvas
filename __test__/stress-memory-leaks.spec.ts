@@ -2,6 +2,8 @@ import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { readFileSync, unlinkSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
+import { setFlagsFromString } from 'node:v8'
+import { runInNewContext } from 'node:vm'
 
 import { default as ava } from 'ava'
 
@@ -18,6 +20,7 @@ import {
 const shouldSkip = process.env.RUN_STRESS_TESTS !== 'true'
 
 const test = shouldSkip ? ava.skip : ava
+const serialTest = shouldSkip ? ava.serial.skip : ava.serial
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ITERATIONS = 500
@@ -313,4 +316,32 @@ test('stress: combined interleaved operations should not crash', async (t) => {
   }
 
   t.pass('Completed 200 combined interleaved cycles without crash')
+})
+
+// ============================================================================
+// A failed AVIF decode frees the libavif decoder and image
+// Exercises: AvifImage::decode_from returning early on a truncated file
+// Risk: every failed decode leaked the decoder (base: +36 MB in 10000 decodes)
+// ============================================================================
+serialTest('stress: failed AVIF decodes do not leak', async (t) => {
+  const avif = readFileSync(join(__dirname, 'fixtures', 'avif-cicp-1-1-6.avif'))
+  const truncated = avif.subarray(0, Math.floor(avif.length * 0.6))
+  setFlagsFromString('--expose-gc')
+  const gc = runInNewContext('gc') as () => void
+  const decodeOnce = () =>
+    new Promise<void>((resolve, reject) => {
+      const image = new Image()
+      image.onload = () => reject(new Error('a truncated AVIF must not load'))
+      image.onerror = () => resolve()
+      image.src = truncated
+    })
+  const rss: number[] = []
+  for (let round = 0; round < 4; round++) {
+    for (let i = 0; i < 5000; i++) await decodeOnce()
+    gc()
+    rss.push(process.memoryUsage().rss / 1048576)
+  }
+  // Round 0 warms up the allocator; base grew 36 MB from round 1 to 3.
+  // Serial: RSS is process-wide, so a concurrent async test would add its own memory.
+  t.true(rss[3] - rss[1] < 25, `RSS MB per round: ${rss.map((v) => v.toFixed(1)).join(', ')}`)
 })

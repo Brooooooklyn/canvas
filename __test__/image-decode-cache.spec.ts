@@ -315,10 +315,12 @@ test('drawImage of a canvas on a display-p3 canvas draws its decode', (t) => {
   }
 })
 
-// Chrome draws an SVG Image as vectors, never from the decode cache. We keep
-// sampling the SVG's raster with the smoothing quality, as before: 'high' is
-// cubic and an Image pattern's 'medium' takes a mip level, so neither matches
-// 'low', as decode levels would.
+// Chrome draws an SVG Image as vectors, never from the decode cache. drawImage
+// puts a raster made in device pixels on the canvas 1:1, which no quality
+// changes, as in Chrome 155 (this draw is the same at off, low, medium and
+// high there, and here). A pattern keeps sampling the SVG's raster with the
+// smoothing quality: an Image pattern's 'medium' takes a mip level, so it
+// does not match 'low', as decode levels would.
 test('SVG Images are not drawn from decode levels', async (t) => {
   const stripes = Array.from(
     { length: 32 },
@@ -328,7 +330,7 @@ test('SVG Images are not drawn from decode levels', async (t) => {
     Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">${stripes}</svg>`),
   )
   const drawn = (quality: Quality) => draw(24, quality, image, (ctx, s) => ctx.drawImage(s, 0, 0, 20, 20))
-  t.notDeepEqual(drawn('high'), drawn('low'))
+  t.deepEqual(drawn('high'), drawn('low'))
   const filled = (quality: Quality) => fillPattern(8, quality, image, (_, p) => p.setTransform(scale(0.3)))
   t.notDeepEqual(filled('medium'), filled('low'))
 })

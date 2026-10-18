@@ -29,17 +29,12 @@ module.exports = async function loadImage(source, options = {}) {
   if (isBufferLike(source)) return createImage(Buffer.from(source), options.alt)
   // if the source is Image instance, copy the image src to new image
   if (source instanceof Image) return createImage(source.src, options.alt)
-  // if source is string and in data uri format, construct image using data uri
-  if (typeof source === 'string' && source.trimStart().startsWith('data:')) {
-    const commaIdx = source.indexOf(',')
-    const encoding = source.lastIndexOf('base64', commaIdx) < 0 ? 'utf-8' : 'base64'
-    const data = Buffer.from(source.slice(commaIdx + 1), encoding)
-    // Empty payload would silently complete on Image (HTML spec) and the loadImage
-    // promise would never settle; reject upfront instead.
-    // See https://github.com/Brooooooklyn/canvas/issues/1255
-    if (data.length === 0) throw new Error(`Invalid data URI: empty payload in ${source.slice(0, 64)}`)
-    return createImage(data, options.alt)
-  }
+  // A data: URL (the URL parser drops leading C0 controls and spaces) is
+  // the image's src, as in a browser: Image parses it with the Fetch data:
+  // URL processor. A URL object with the data: scheme too.
+  // An empty body fires onerror, so the promise settles (issue #1255).
+  if (typeof source === 'string' && isDataUrl(source)) return createImage(source, options.alt)
+  if (source instanceof URL && source.protocol === 'data:') return createImage(source.href, options.alt)
   // if source is a string or URL instance
   if (typeof source === 'string') {
     // if the source exists as a file, construct image from that file
@@ -147,6 +142,14 @@ async function createImage(src, alt) {
     image.onerror = (event) => reject((event && event[IMAGE_ERROR]) || event)
     image.src = src
   })
+}
+
+// The URL parser skips leading C0 controls and spaces; the scheme is
+// ASCII case-insensitive.
+function isDataUrl(src) {
+  let i = 0
+  while (i < src.length && src.charCodeAt(i) <= 0x20) i++
+  return src.slice(i, i + 5).toLowerCase() === 'data:'
 }
 
 function isBufferLike(src) {
