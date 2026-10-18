@@ -245,18 +245,29 @@ test('canvas width and height setters keep 0 and convert like Chrome', (t) => {
 
 test('createCanvas sizes convert as the width and height setters do', (t) => {
   // No Chrome counterpart: the size is set as canvas.width and canvas.height
-  // would set it, and a missing size is the default 300 x 150.
+  // would set it, and a missing size is the default 300 x 150. Not the
+  // setters' rule: NaN, an infinity or a non-zero number that converts to 0
+  // is the default too (pdf.js passes them for malformed PDFs; main gave
+  // 350 x 150), while a value whose ToNumber is 0 stays 0.
   for (const flag of [undefined, SvgExportFlag.NoPrettyXML]) {
     const make = (...args: unknown[]) => {
       const canvas = loose(createCanvas)(args[0], args[1], flag)
       return [canvas.width, canvas.height]
     }
     t.deepEqual(make(0, 0), [0, 0])
+    t.deepEqual(make(-0, ''), [0, 0])
+    t.deepEqual(make(false, []), [0, 0])
     t.deepEqual(make(-1, 10), [300, 10])
     t.deepEqual(make(10, -10), [10, 150])
     t.deepEqual(make(10.7, 20.2), [10, 20])
     t.deepEqual(make('7', null), [7, 0])
-    t.deepEqual(make(NaN, 4294967297), [0, 1])
+    t.deepEqual(make(NaN, 4294967297), [300, 1])
+    t.deepEqual(make(10, NaN), [10, 150])
+    t.deepEqual(make(Infinity, -Infinity), [300, 150])
+    t.deepEqual(make(0.5, -0.5), [300, 150])
+    t.deepEqual(make(2 ** 32, -(2 ** 32)), [300, 150])
+    t.deepEqual(make('abc', 2), [300, 2])
+    t.deepEqual(make({ valueOf: () => NaN }, '0.5'), [300, 150])
     t.deepEqual(make(), [300, 150])
     t.deepEqual(make(10), [10, 150])
     t.throws(() => make(Symbol(), 1), { instanceOf: TypeError })
@@ -264,6 +275,25 @@ test('createCanvas sizes convert as the width and height setters do', (t) => {
   }
   const canvas = loose(createCanvas)()
   t.true(canvas.getContext('2d').canvas === canvas)
+})
+
+test('a canvas made with a NaN size can be drawn and used as a pattern', (t) => {
+  // pdf.js draws such a canvas, or makes a pattern of it; main drew a
+  // 350 x 10 canvas.
+  const source = createCanvas(NaN, 10)
+  t.deepEqual([source.width, source.height], [300, 10])
+  const sourceCtx = source.getContext('2d')
+  sourceCtx.fillStyle = '#0f0'
+  sourceCtx.fillRect(0, 0, 300, 10)
+  const ctx = blueCanvas()
+  t.notThrows(() => ctx.drawImage(source, 0, 0))
+  t.deepEqual(px(ctx), [0, 255, 0, 255])
+  const pattern = ctx.createPattern(source, 'repeat')
+  t.is(pattern?.constructor.name, 'CanvasPattern')
+  const other = blueCanvas()
+  other.fillStyle = pattern!
+  other.fillRect(0, 0, 4, 4)
+  t.deepEqual(px(other, 3, 3), [0, 255, 0, 255])
 })
 
 test('a zero-size canvas has no pixels', (t) => {

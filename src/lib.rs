@@ -120,17 +120,26 @@ fn canvas_height(height: u32) -> u32 {
 /// A width or height given to a canvas constructor (no Chrome counterpart):
 /// missing (undefined) is the default, as for a `<canvas>` without the
 /// attribute; any other value is converted as the setter converts it, with
-/// the setter's error prefix.
+/// the setter's error prefix, except that NaN, an infinity, or a non-zero
+/// number that ToUint32 makes 0 (0.5, 2**32) is the default too. A value
+/// whose ToNumber is 0 stays 0.
 fn constructor_size<S: webidl::Site>(
   env: &Env,
   value: Unknown,
   size: fn(u32) -> u32,
 ) -> Result<u32> {
+  // `size` gives the default for any value above 2147483647.
   if value.get_type()? == ValueType::Undefined {
-    // `size` gives the default for any value above 2147483647.
     return Ok(size(u32::MAX));
   }
-  webidl::to_unsigned_long(env.raw(), value.raw(), S::PREFIX).map(size)
+  let number = webidl::to_number(env.raw(), value.raw(), S::PREFIX)?;
+  let converted = webidl::to_uint32(number);
+  // Not the setters' rule (Chrome's 0): pdf.js calls createCanvas(NaN, h) or
+  // (0.5, h) for malformed PDFs and draws the canvas; main gave 350 x 150.
+  if !number.is_finite() || (number != 0.0 && converted == 0) {
+    return Ok(size(u32::MAX));
+  }
+  Ok(size(converted))
 }
 
 /// What the Node-only encoders throw, or reject with, as an IndexSizeError, on
