@@ -76,11 +76,19 @@ test('createImageData reads a typed array argument as a number, like Chrome', (t
     ['true, true', (c) => c.createImageData(true, true), ok(1, 1)],
     ['1.9, -1.9', (c) => c.createImageData(1.9, -1.9), ok(1, 1)],
     ['-3.7, 2.2', (c) => c.createImageData(-3.7, 2.2), ok(3, 2)],
-    ['u8c([]), 1', (c) => c.createImageData(u8c([]), 1), indexSize('The source width is zero or not a number.')],
-    ['null, 1', (c) => c.createImageData(null, 1), indexSize('The source width is zero or not a number.')],
-    // [EnforceRange] long.
-    ['NaN, 1', (c) => c.createImageData(NaN, 1), typeError(NOT_LONG)],
-    ['1, Infinity', (c) => c.createImageData(1, Infinity), typeError("Value is infinite and not of type 'long'.")],
+    // Not Chrome (IndexSizeError): a zero side gives an empty ImageData, as
+    // on main (pdf.js passes such sizes from malformed PDFs).
+    ['u8c([]), 1', (c) => c.createImageData(u8c([]), 1), ok(0, 1)],
+    ['null, 1', (c) => c.createImageData(null, 1), ok(0, 1)],
+    // [EnforceRange] long. Not Chrome (TypeError): a NaN or infinite Number
+    // is 0, as on main. Other values that convert to them throw as in Chrome.
+    ['NaN, 1', (c) => c.createImageData(NaN, 1), ok(0, 1)],
+    ['1, Infinity', (c) => c.createImageData(1, Infinity), ok(1, 0)],
+    ['-Infinity, 2', (c) => c.createImageData(-Infinity, 2), ok(0, 2)],
+    ["'abc', 1", (c) => c.createImageData('abc', 1), typeError(NOT_LONG)],
+    ['undefined, 1', (c) => c.createImageData(undefined, 1), typeError(NOT_LONG)],
+    ["'Infinity', 1", (c) => c.createImageData('Infinity', 1), typeError("Value is infinite and not of type 'long'.")],
+    ['{valueOf: NaN}, 1', (c) => c.createImageData({ valueOf: () => NaN }, 1), typeError(NOT_LONG)],
     ['2 ** 31, 1', (c) => c.createImageData(2 ** 31, 1), typeError("Value is outside the 'long' value range.")],
     [
       '-(2 ** 31), 1',
@@ -154,16 +162,9 @@ test('createImageData has no typed array form, even for huge sizes', (t) => {
       (c) => c.createImageData(u8c([255]), u8c([255]), 2 ** 31),
       typeError(NOT_SETTINGS),
     ],
-    [
-      'u8c(0), 65536, undefined',
-      (c) => c.createImageData(u8c(0), 65536, undefined),
-      indexSize('The source width is zero or not a number.'),
-    ],
-    [
-      'u8c(0), 2 ** 31 - 1',
-      (c) => c.createImageData(u8c(0), 2 ** 31 - 1),
-      indexSize('The source width is zero or not a number.'),
-    ],
+    // Not Chrome (IndexSizeError): a 0 width gives an empty ImageData.
+    ['u8c(0), 65536, undefined', (c) => c.createImageData(u8c(0), 65536, undefined), ok(0, 65536)],
+    ['u8c(0), 2 ** 31 - 1', (c) => c.createImageData(u8c(0), 2 ** 31 - 1), ok(0, 2 ** 31 - 1)],
     [
       'u8c([255]), -(2 ** 31)',
       (c) => c.createImageData(u8c([255]), -(2 ** 31)),
@@ -250,7 +251,7 @@ test('createImageData converts sw, then sh, then the settings', (t) => {
 test('createImageData binding errors keep the bare message in the stack', (t) => {
   const c = ctx2d()
   for (const [fn, msg] of [
-    [() => c.createImageData(NaN, 1), NOT_LONG],
+    [() => c.createImageData(undefined, 1), NOT_LONG],
     [() => c.createImageData(undefined), "parameter 1 is not of type 'ImageData'."],
     [() => c.createImageData(), '1 argument required, but only 0 present.'],
   ] as [() => unknown, string][]) {

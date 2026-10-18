@@ -3840,8 +3840,18 @@ impl FromNapiValue for CreateImageDataArgs {
         "parameter 1 is not of type 'ImageData'.",
       ));
     }
-    // std::abs of each (base_rendering_context_2d.cc:312).
-    let long = |value| webidl::enforce_range_long(env, value, prefix).map(i32::unsigned_abs);
+    // std::abs of each (base_rendering_context_2d.cc:312). Not Chrome: a NaN
+    // or infinite Number is 0, not a TypeError (pdf.js passes an image /Width
+    // of 1e400 from malformed PDFs, and main returned an empty ImageData).
+    // Any other value converts as in Chrome.
+    let long = |value| -> Result<u32> {
+      if webidl::type_of(env, value)? == ValueType::Number
+        && !unsafe { f64::from_napi_value(env, value)? }.is_finite()
+      {
+        return Ok(0);
+      }
+      webidl::enforce_range_long(env, value, prefix).map(i32::unsigned_abs)
+    };
     let width = long(first)?;
     let height = long(args.get(1)?)?;
     let settings = webidl::ImageDataSettings::from_js(env, Some(args.get(2)?), prefix)?;
