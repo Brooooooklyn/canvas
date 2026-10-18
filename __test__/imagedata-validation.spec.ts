@@ -133,8 +133,10 @@ test('ImageData data forms validate before dividing', (t) => {
 test('createImageData validates sizes in context error mode', (t) => {
   const ctx = ctx2d()
   const cases: [number, number, object][] = [
-    [0, 1, indexSize(CREATE + WIDTH_ZERO)],
-    [1, 0, indexSize(CREATE + HEIGHT_ZERO)],
+    // Not Chrome (IndexSizeError): an empty ImageData, as on main (see the
+    // test below).
+    [0, 1, ok(0, 1)],
+    [1, 0, ok(1, 0)],
     // std::abs(INT_MIN) is above INT_MAX.
     [-2147483648, 1, indexSize(CREATE + EXCEEDS)],
     [32768, 32768, rangeError(CREATE + OOM_SIZE)],
@@ -171,6 +173,54 @@ test('createImageData validates sizes in context error mode', (t) => {
     result(() => loose(ctx).createImageData(u8(4), 0)),
     indexSize(CREATE + WIDTH_ZERO),
   )
+})
+
+// Not Chrome: Chrome throws for these sizes. pdf.js passes them from malformed
+// PDFs (an image /Width of 0.5 or 1e400 makes createImageData(width, 16)), and
+// main returned an empty ImageData, so the page went on.
+test('createImageData returns an empty ImageData for a size that converts to 0', (t) => {
+  const ctx = ctx2d()
+  for (const w of [0, -0, 0.5, -0.5, NaN, Infinity, -Infinity]) {
+    t.deepEqual(
+      result(() => ctx.createImageData(w, 16)),
+      ok(0, 16),
+      `createImageData(${w}, 16)`,
+    )
+  }
+  t.deepEqual(
+    result(() => ctx.createImageData(16, NaN)),
+    ok(16, 0),
+  )
+  t.deepEqual(
+    result(() => ctx.createImageData(0, 0)),
+    ok(0, 0),
+  )
+  t.deepEqual(
+    result(() => ctx.createImageData(-3, 2)),
+    ok(3, 2),
+  )
+  // A display-p3 settings dictionary is still read.
+  t.deepEqual(
+    result(() => ctx.createImageData(0.5, 16, { colorSpace: 'display-p3' })),
+    ok(0, 16, 'display-p3'),
+  )
+})
+
+test('pdf.js can fill and put an empty createImageData chunk', (t) => {
+  const ctx = ctx2d()
+  ctx.fillStyle = '#f00'
+  ctx.fillRect(0, 0, 4, 4)
+  // putBinaryImageData / putBinaryImageMask: one 16-row chunk, written through
+  // a Uint32Array view, then put at (0, i * 16).
+  const chunk = ctx.createImageData(0.5, 16)
+  const view = new Uint32Array(chunk.data.buffer)
+  t.is(view.length, 0)
+  view.fill(0xff00ff00)
+  t.notThrows(() => ctx.putImageData(chunk, 0, 0))
+  t.notThrows(() => ctx.putImageData(chunk, 0, 16))
+  t.notThrows(() => ctx.putImageData(chunk, 0, 0, 0, 0, 4, 4))
+  t.notThrows(() => ctx.putImageData(ctx.createImageData(4, NaN), 0, 0, 0, 0, 4, 4))
+  t.deepEqual(Array.from(ctx.getImageData(0, 0, 4, 4).data), Array.from({ length: 16 }, () => [255, 0, 0, 255]).flat())
 })
 
 test('getImageData rejects zero and overflowing sizes', (t) => {
@@ -231,7 +281,8 @@ test('size checks run before the colorSpace support check', (t) => {
       'new(u8(4), 0, 1)': indexSize(CONSTRUCT + WIDTH_ZERO),
       'new(u8(5), 1, undefined)': indexSize(CONSTRUCT + HEIGHT_ZERO),
       'new(u8(4), 1, 1073741825)': indexSize(CONSTRUCT + EXCEEDS),
-      'create(0, 1)': indexSize(CREATE + WIDTH_ZERO),
+      // Not Chrome: a zero side has no size error (see above).
+      'create(0, 1)': unsupported(CREATE),
       'create(32768, 32768)': rangeError(CREATE + OOM_SIZE),
       'create(23170, 23170)': unsupported(CREATE),
       'create(1, 1)': unsupported(CREATE),
@@ -249,7 +300,7 @@ test('size checks run before the colorSpace support check', (t) => {
       'new(u8(4), 0, 1)': indexSize(CONSTRUCT + WIDTH_ZERO),
       'new(u8(5), 1, undefined)': indexSize(CONSTRUCT + HEIGHT_ZERO),
       'new(u8(4), 1, 1073741825)': indexSize(CONSTRUCT + EXCEEDS),
-      'create(0, 1)': indexSize(CREATE + WIDTH_ZERO),
+      'create(0, 1)': ok(0, 1, 'display-p3'),
       'create(32768, 32768)': rangeError(CREATE + OOM_SIZE),
       'create(23170, 23170)': rangeError(CREATE + OOM),
       'create(1, 1)': ok(1, 1, 'display-p3'),

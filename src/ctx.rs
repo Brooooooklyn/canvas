@@ -4137,13 +4137,18 @@ impl CanvasRenderingContext2D {
         settings,
       } => {
         let prefix = webidl::CREATE_IMAGE_DATA;
-        validate_size(
-          env.raw(),
-          prefix,
-          width,
-          Some(height),
-          SizeErrors::Context2D,
-        )?;
+        // Not Chrome: Chrome throws an IndexSizeError for a zero side. pdf.js
+        // passes sizes that convert to 0 (an image /Width of 0.5) from
+        // malformed PDFs, and main returned an empty ImageData.
+        if width != 0 && height != 0 {
+          validate_size(
+            env.raw(),
+            prefix,
+            width,
+            Some(height),
+            SizeErrors::Context2D,
+          )?;
+        }
         // Spec: defaultColorSpace is this context's color space.
         let color_space = settings
           .color_space(env.raw(), prefix)?
