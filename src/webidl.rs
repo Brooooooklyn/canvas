@@ -266,6 +266,10 @@ sites! {
   CtxIsPointInStroke: execute "isPointInStroke" on "CanvasRenderingContext2D";
   CtxDrawImage: execute "drawImage" on "CanvasRenderingContext2D";
   CtxGetImageData: execute "getImageData" on "CanvasRenderingContext2D";
+  CtxCreateLinearGradient: execute "createLinearGradient" on "CanvasRenderingContext2D";
+  CtxCreateRadialGradient: execute "createRadialGradient" on "CanvasRenderingContext2D";
+  CtxCreateConicGradient: execute "createConicGradient" on "CanvasRenderingContext2D";
+  GradientAddColorStop: execute "addColorStop" on "CanvasGradient";
   PathMoveTo: execute "moveTo" on "Path2D";
   PathLineTo: execute "lineTo" on "Path2D";
   PathBezierCurveTo: execute "bezierCurveTo" on "Path2D";
@@ -872,6 +876,50 @@ pub struct Double<S>(pub f64, PhantomData<S>);
 impl<S: Site> FromNapiValue for Double<S> {
   unsafe fn from_napi_value(env: sys::napi_env, value: sys::napi_value) -> Result<Self> {
     to_number(env, value, S::PREFIX).map(|v| Self(v, PhantomData))
+  }
+}
+
+/// WebIDL `double`: ToNumber, then a TypeError for NaN and the infinities
+/// (Blink ToRestrictedDouble, v8_binding_for_core.cc:521-531).
+pub(crate) fn to_restricted_double(
+  env: sys::napi_env,
+  value: sys::napi_value,
+  prefix: &str,
+) -> Result<f64> {
+  let number = to_number(env, value, prefix)?;
+  if !number.is_finite() {
+    return Err(context_type_error(
+      env,
+      prefix,
+      "The provided double value is non-finite.",
+    ));
+  }
+  Ok(number)
+}
+
+/// A WebIDL `double` argument, converted in the callback glue like
+/// [`Double`].
+pub struct RestrictedDouble<S>(pub f64, PhantomData<S>);
+
+impl<S: Site> FromNapiValue for RestrictedDouble<S> {
+  unsafe fn from_napi_value(env: sys::napi_env, value: sys::napi_value) -> Result<Self> {
+    to_restricted_double(env, value, S::PREFIX).map(|v| Self(v, PhantomData))
+  }
+}
+
+/// A WebIDL `double` argument that takes a Number as it is, NaN and the
+/// infinities too; any other value converts as [`RestrictedDouble`] does.
+/// Not Chrome (a TypeError for a non-finite Number): pdf.js passes non-finite
+/// gradient coordinates from malformed PDFs, and main did not throw for them.
+pub struct NumberOrRestrictedDouble<S>(pub f64, PhantomData<S>);
+
+impl<S: Site> FromNapiValue for NumberOrRestrictedDouble<S> {
+  unsafe fn from_napi_value(env: sys::napi_env, value: sys::napi_value) -> Result<Self> {
+    let mut number = 0.0;
+    if unsafe { sys::napi_get_value_double(env, value, &mut number) } == sys::Status::napi_ok {
+      return Ok(Self(number, PhantomData));
+    }
+    to_restricted_double(env, value, S::PREFIX).map(|v| Self(v, PhantomData))
   }
 }
 
@@ -2288,5 +2336,32 @@ mod tests {
     assert_eq!(number_to_string(f64::NEG_INFINITY), "-Infinity");
     assert_eq!(number_to_string(-0.0), "0");
     assert_eq!(number_to_string(123.0), "123");
+  }
+
+  #[test]
+  fn number_to_string_matches_blink_for_doubles() {
+    // Chrome 155: the offset in addColorStop's IndexSizeError message, a
+    // double (not a float).
+    for (offset, text) in [
+      (-0.1, "-0.1"),
+      (1.1, "1.1"),
+      (-1e-7, "-1.00000e-7"),
+      (1.0000001, "1"),
+      (1.0000000000000002, "1"),
+      (12345678.9, "1.23457e+7"),
+      (123456.7, "123457"),
+      (1e21, "1.00000e+21"),
+      (-1.5e300, "-1.50000e+300"),
+      (1.23456789, "1.23457"),
+      (-1.0 / 3.0, "-0.333333"),
+      (-5e-324, "-4.94066e-324"),
+      (-0.000001, "-0.000001"),
+      (-0.0000015, "-0.0000015"),
+      (999999.5, "1.00000e+6"),
+      (9.999995, "10"),
+      (2.0, "2"),
+    ] {
+      assert_eq!(number_to_string(offset), text, "{offset:e}");
+    }
   }
 }

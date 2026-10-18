@@ -1,3 +1,4 @@
+use std::rc::Rc;
 use std::result::Result as StdResult;
 use std::sync::{Arc, Mutex};
 
@@ -8,7 +9,7 @@ use rgb::RGBA;
 use crate::color::CanvasColor;
 use crate::ctx::zero_size_source_check;
 use crate::error::SkError;
-use crate::gradient::Gradient;
+use crate::gradient::SharedGradient;
 use crate::image::{Image, ImageData};
 use crate::page_recorder::next_resource_id;
 use crate::sk::{
@@ -66,7 +67,7 @@ pub enum Pattern {
   /// The paint color and its serialization.
   #[allow(dead_code)]
   Color(RGBA<u8>, String),
-  Gradient(Gradient),
+  Gradient(SharedGradient),
   Image(ImagePattern),
 }
 
@@ -74,7 +75,8 @@ impl Clone for Pattern {
   fn clone(&self) -> Self {
     match self {
       Pattern::Color(rgba, s) => Pattern::Color(*rgba, s.clone()),
-      Pattern::Gradient(g) => Pattern::Gradient(g.clone()),
+      // The same live gradient (save() and restore() keep it).
+      Pattern::Gradient(g) => Pattern::Gradient(Rc::clone(g)),
       Pattern::Image(img) => Pattern::Image(img.clone()),
     }
   }

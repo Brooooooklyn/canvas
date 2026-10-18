@@ -1,16 +1,16 @@
-use std::result;
+use std::{cell::RefCell, rc::Rc};
 
-use cssparser::Parser;
+use cssparser::{Parser, Token};
 use cssparser_color::Color as CSSColor;
 use napi::bindgen_prelude::*;
 
 use crate::{
-  error::SkError,
   pattern::hsl_color_to_srgb,
   sk::{
     Color4f, ConicGradient, Gradient as SkGradient, LinearGradient, RadialGradient, Shader,
     TileMode, Transform, unit_from_u8,
   },
+  webidl::{self, Positional, Site},
 };
 
 #[derive(Debug, Clone)]
@@ -157,61 +157,99 @@ impl Gradient {
     }
   }
 
+  /// Blink's `DegenerateHandling::kDisallow` (canvas_gradient.cc:100-135): a
+  /// linear gradient whose points are equal, or a radial gradient whose
+  /// circles are equal, gets `PaintShader::MakeEmpty()` and paints nothing
+  /// (gradient.cc:399-402, 457-463). Exact float compare of the factory's
+  /// ClampTo<float> values; the radii as Blink compares them, after
+  /// ClampFloatGeometry and max(0). A conic gradient is never degenerate
+  /// here: its angles are always 0 and 360 degrees.
+  fn is_degenerate(&self) -> bool {
+    match self {
+      Self::Linear(g) => g.start_point == g.end_point,
+      Self::Radial(g) => {
+        g.start == g.end && skia_radius(g.start_radius) == skia_radius(g.end_radius)
+      }
+      Self::Conic(_) => false,
+    }
+  }
+
   /// The one color the gradient paints everywhere, if there is one: transparent
-  /// black with no stops, or the color that all its stops share.
+  /// black with no stops or a degenerate geometry, or the color that all its
+  /// stops share.
   pub(crate) fn constant_color(&self) -> Option<Color4f> {
+    if self.is_degenerate() {
+      return Some(Color4f::TRANSPARENT);
+    }
     match self.base().colors.split_first() {
       None => Some(Color4f::TRANSPARENT),
       Some((first, rest)) => rest.iter().all(|c| c == first).then_some(*first),
     }
   }
 
-  pub(crate) fn get_shader(&self) -> result::Result<Shader, SkError> {
+  /// The Skia shader, or None when Skia cannot build one (for example a conic
+  /// gradient whose start angle in degrees overflows f32). cc's
+  /// PaintShader::GetSkShader then gives no shader either, and Chrome paints
+  /// the paint's color: black at globalAlpha (canvas_style.cc:130-137).
+  pub(crate) fn get_shader(&self) -> Option<Shader> {
+    // A degenerate gradient gets no stops: the transparent shader of a
+    // gradient with no stops, which paints exactly like Blink's empty shader
+    // (measured in Chrome 155 under every composite op, shadow and filter).
+    let no_stops = SkGradient {
+      colors: Vec::new(),
+      positions: Vec::new(),
+      tile_mode: TileMode::Clamp,
+      transform: Transform::default(),
+    };
+    let stops = |base: &SkGradient| {
+      Self::skia_stops(if self.is_degenerate() {
+        &no_stops
+      } else {
+        base
+      })
+    };
     match self {
-      Self::Linear(linear_gradient) => Ok(
-        Shader::new_linear_gradient(&LinearGradient {
-          start_point: linear_gradient.start_point,
-          end_point: linear_gradient.end_point,
-          base: Self::skia_stops(&linear_gradient.base),
-        })
-        .ok_or_else(|| SkError::Generic("Get shader of linear gradient failed".to_owned()))?,
-      ),
-      // Note, Skia has a different notion of a "radial" gradient.
-      // Skia has a twoPointConical gradient that is the same as the
-      // canvas's RadialGradient.
-      Self::Radial(radial_gradient) => {
-        // From the spec: "The points in the linear gradient must be transformed
-        // as described by the current transformation matrix when rendering."
-        let base = Self::skia_stops(&radial_gradient.base);
-        let new_radial_gradient = RadialGradient {
-          start: radial_gradient.start,
-          end: radial_gradient.end,
-          start_radius: radial_gradient.start_radius,
-          end_radius: radial_gradient.end_radius,
-          base,
-        };
-
-        Ok(
-          Shader::new_radial_gradient(&new_radial_gradient)
-            .ok_or_else(|| SkError::Generic("Get shader of radial gradient failed".to_owned()))?,
-        )
-      }
-      Self::Conic(conic_gradient) => {
-        // The canvas CTM already applies to the shader, so the angle does not
-        // depend on it.
-        let new_conic_gradient = ConicGradient {
-          center: conic_gradient.center,
-          rotation: conic_gradient.rotation,
-          base: Self::skia_stops(&conic_gradient.base),
-        };
-
-        Ok(
-          Shader::new_conic_gradient(&new_conic_gradient)
-            .ok_or_else(|| SkError::Generic("Get shader of conic gradient failed".to_owned()))?,
-        )
-      }
+      Self::Linear(g) => Shader::new_linear_gradient(&LinearGradient {
+        // Blink ClampNonFiniteToSafeFloat (gradient.cc:404-405).
+        start_point: clamp_point(g.start_point),
+        end_point: clamp_point(g.end_point),
+        base: stops(&g.base),
+      }),
+      // Skia's two-point conical gradient is the canvas radial gradient.
+      // Blink clamps the centers like the linear points, and the radii to
+      // max(ClampFloatGeometry(r), 0) (gradient.cc:453-459).
+      Self::Radial(g) => Shader::new_radial_gradient(&RadialGradient {
+        start: clamp_point(g.start),
+        start_radius: skia_radius(g.start_radius),
+        end: clamp_point(g.end),
+        end_radius: skia_radius(g.end_radius),
+        base: stops(&g.base),
+      }),
+      // The canvas CTM already applies to the shader, so the angle does not
+      // depend on it. Blink does not clamp the conic center.
+      Self::Conic(g) => Shader::new_conic_gradient(&ConicGradient {
+        center: g.center,
+        rotation: g.rotation,
+        base: stops(&g.base),
+      }),
     }
   }
+}
+
+/// gfx::ClampFloatGeometry (ui/gfx/geometry/clamp_float_geometry.h): NaN is
+/// 0, and the value saturates at +-FLT_MAX / 1e6.
+fn clamp_float_geometry(v: f32) -> f32 {
+  const MAX: f32 = f32::MAX / 1e6;
+  if v.is_nan() { 0.0 } else { v.clamp(-MAX, MAX) }
+}
+
+fn clamp_point((x, y): (f32, f32)) -> (f32, f32) {
+  (clamp_float_geometry(x), clamp_float_geometry(y))
+}
+
+/// The radius Blink gives Skia: max(ClampFloatGeometry(r), 0).
+fn skia_radius(r: f32) -> f32 {
+  clamp_float_geometry(r).max(0.0)
 }
 
 /// Whether Blink rounds this hsl() color's alpha to k/255. Only its CSS fast
@@ -431,57 +469,147 @@ pub(crate) mod blink_fast_path {
   }
 }
 
+/// A gradient is live: stops added after it became a fillStyle or
+/// strokeStyle apply to later draws (Blink's CanvasStyle keeps the
+/// CanvasGradient, canvas_style.cc), so a context shares it, not a copy.
+pub type SharedGradient = Rc<RefCell<Gradient>>;
+
 #[napi]
-pub struct CanvasGradient(pub(crate) Gradient);
+pub struct CanvasGradient(pub(crate) SharedGradient);
+
+impl CanvasGradient {
+  pub(crate) fn new(gradient: Gradient) -> Self {
+    Self(Rc::new(RefCell::new(gradient)))
+  }
+}
+
+/// The arguments of addColorStop(double offset, DOMString color), its last
+/// parameter: it gets the argument count and converts the `Positional`
+/// arguments before it, in order, before napi-rs borrows the gradient, so
+/// valueOf and toString may use it, as in Chrome.
+pub struct AddColorStopArgs {
+  offset: f64,
+  color: String,
+}
+
+impl FromNapiValue for AddColorStopArgs {
+  unsafe fn from_napi_value(env: sys::napi_env, argc: sys::napi_value) -> Result<Self> {
+    let prefix = webidl::GradientAddColorStop::PREFIX;
+    let args = webidl::Arguments::take(env, 2, argc)?;
+    if args.len() < 2 {
+      return Err(webidl::context_type_error(
+        env,
+        prefix,
+        &format!("2 arguments required, but only {} present.", args.len()),
+      ));
+    }
+    let offset = webidl::to_restricted_double(env, args.get(0)?, prefix)?;
+    let color = webidl::to_dom_string(env, args.get(1)?, prefix)?;
+    Ok(Self { offset, color })
+  }
+}
+
+/// A gradient stop color.
+enum StopColor {
+  Color(Color4f),
+  /// A CSS Color 4 form that Chrome accepts and that is not converted yet.
+  Unsupported,
+}
+
+/// A stop color as Blink's ParseCanvasColorString takes it
+/// (canvas_style.cc:61-123): the string without its leading and trailing
+/// HTML spaces; `currentcolor` in any case is opaque black (no element, so
+/// Chrome's OffscreenCanvas answer); a named color must be the whole string
+/// (Color::SetNamedColor takes no comment or escape); anything else must be
+/// one CSS color with nothing after it. None: Blink throws a SyntaxError.
+fn parse_stop_color(color: &str) -> Option<StopColor> {
+  let stripped = color.trim_matches(blink_fast_path::HTML_SPACES);
+  if stripped.eq_ignore_ascii_case("currentcolor") {
+    return Some(StopColor::Color(Color4f::from_rgba8(0, 0, 0, 255)));
+  }
+  let mut parser = Parser::new(stripped);
+  // A leading identifier is a named color: Color::SetNamedColor matches the
+  // bare name only.
+  let starts_with_ident = {
+    let state = parser.state();
+    let ident = matches!(parser.next(), Ok(Token::Ident(_)));
+    parser.reset(&state);
+    ident
+  };
+  if starts_with_ident && !stripped.bytes().all(|b| b.is_ascii_alphabetic()) {
+    return None;
+  }
+  let parsed = CSSColor::parse(&mut parser).ok()?;
+  parser.expect_exhausted().ok()?;
+  Some(StopColor::Color(match parsed {
+    CSSColor::CurrentColor => Color4f::from_rgba8(0, 0, 0, 255),
+    CSSColor::Rgba(rgba) => Color4f::from_rgba8(
+      rgba.red,
+      rgba.green,
+      rgba.blue,
+      (rgba.alpha * 255.0).round() as u8,
+    ),
+    // Blink keeps an hsl() stop as float sRGB (Color::ToGradientStopSkColor4f).
+    CSSColor::Hsl(hsl) => {
+      let [r, g, b] = hsl_color_to_srgb(&hsl);
+      let alpha = hsl.alpha.unwrap_or(1.0);
+      Color4f {
+        r,
+        g,
+        b,
+        a: if blink_rounds_hsl_alpha(color) {
+          unit_from_u8((alpha * 255.0).round() as u8)
+        } else {
+          alpha
+        },
+      }
+    }
+    _ => return Some(StopColor::Unsupported),
+  }))
+}
 
 #[napi]
 impl CanvasGradient {
+  /// addColorStop(offset, color). The index.js wrapper passes the argument
+  /// count after them; see `webidl::Arguments::take`.
   #[napi]
-  pub fn add_color_stop(&mut self, index: f64, color: String) -> Result<()> {
-    if color.is_empty() {
-      return Ok(());
+  pub fn add_color_stop(
+    &mut self,
+    env: &Env,
+    _offset: Positional,
+    _color: Positional,
+    args: AddColorStopArgs,
+  ) -> Result<()> {
+    let prefix = webidl::GradientAddColorStop::PREFIX;
+    let AddColorStopArgs { offset, color } = args;
+    // canvas_gradient.cc:137-158: the range, then the color.
+    if !(0.0..=1.0).contains(&offset) {
+      return Err(webidl::dom_exception(
+        env.raw(),
+        "IndexSizeError",
+        &format!(
+          "{prefix}The provided value ({}) is outside the range (0.0, 1.0).",
+          webidl::number_to_string(offset)
+        ),
+      ));
     }
-    let color_str = color.as_str();
-    let mut parser = Parser::new(color_str);
-    let color = CSSColor::parse(&mut parser).map_err(|e| {
-      Error::new(
-        Status::InvalidArg,
-        format!("Parse color [{color_str}] error: {e:?}"),
-      )
-    })?;
-    let skia_color = match color {
-      // Without an element, currentcolor is opaque black (Chrome's
-      // OffscreenCanvas answer).
-      CSSColor::CurrentColor => Color4f::from_rgba8(0, 0, 0, 255),
-      CSSColor::Rgba(rgba) => Color4f::from_rgba8(
-        rgba.red,                           // Already u8
-        rgba.green,                         // Already u8
-        rgba.blue,                          // Already u8
-        (rgba.alpha * 255.0).round() as u8, // Scale f32 0.0-1.0 to u8 0-255
-      ),
-      // Blink keeps an hsl() stop as float sRGB (Color::ToGradientStopSkColor4f).
-      CSSColor::Hsl(hsl) => {
-        let [r, g, b] = hsl_color_to_srgb(&hsl);
-        let alpha = hsl.alpha.unwrap_or(1.0);
-        Color4f {
-          r,
-          g,
-          b,
-          a: if blink_rounds_hsl_alpha(color_str) {
-            unit_from_u8((alpha * 255.0).round() as u8)
-          } else {
-            alpha
-          },
-        }
-      }
-      _ => {
+    let stop = match parse_stop_color(&color) {
+      Some(StopColor::Color(stop)) => stop,
+      Some(StopColor::Unsupported) => {
         return Err(Error::new(
           Status::InvalidArg,
           "Unsupported color format".to_owned(),
         ));
       }
+      None => {
+        return Err(webidl::dom_exception(
+          env.raw(),
+          "SyntaxError",
+          &format!("{prefix}The value provided ('{color}') could not be parsed as a color."),
+        ));
+      }
     };
-    self.0.add_color_stop(index as f32, skia_color);
+    self.0.borrow_mut().add_color_stop(offset as f32, stop);
     Ok(())
   }
 }
@@ -716,5 +844,45 @@ fn test_blink_rounds_hsl_alpha() {
     "hsl(0 0% 50%, 0.3)",
   ] {
     assert!(!blink_rounds_hsl_alpha(float), "{float:?}");
+  }
+}
+
+/// Blink kDisallow: equal linear points, or equal radial circles after the
+/// radius clamp, paint nothing; anything else still paints.
+#[test]
+fn test_degenerate_geometry_paints_nothing() {
+  let red = Color4f::from_rgba8(255, 0, 0, 255);
+  let blue = Color4f::from_rgba8(0, 0, 255, 255);
+  let two_stops = |mut g: Gradient| {
+    g.add_color_stop(0.0, red);
+    g.add_color_stop(1.0, blue);
+    g
+  };
+  // The factories pass ClampTo<float> of the JS doubles.
+  for g in [
+    Gradient::create_linear_gradient(2.0, 2.0, 2.0, 2.0),
+    Gradient::create_linear_gradient(0.0, 0.0, -0.0, 0.0),
+    Gradient::create_linear_gradient(2.0, 2.0, (2.0f64 + 1e-7) as f32, 2.0),
+    Gradient::create_linear_gradient(f32::MAX, 0.0, f32::MAX, 0.0),
+    Gradient::create_radial_gradient(2.0, 2.0, 1.0, 2.0, 2.0, 1.0),
+    Gradient::create_radial_gradient(2.0, 2.0, 0.0, 2.0, 2.0, 0.0),
+    // Both radii clamp to FLT_MAX / 1e6.
+    Gradient::create_radial_gradient(2.0, 2.0, 1e33, 2.0, 2.0, 2e33),
+  ] {
+    let g = two_stops(g);
+    assert_eq!(g.constant_color(), Some(Color4f::TRANSPARENT));
+    assert!(g.get_shader().is_some());
+  }
+  for g in [
+    Gradient::create_linear_gradient(2.0, 2.0, 2.00001, 2.0),
+    // Distinct as floats, equal only after ClampFloatGeometry.
+    Gradient::create_linear_gradient(1e34, 0.0, 2e34, 0.0),
+    Gradient::create_radial_gradient(2.0, 2.0, 1.0, 2.0, 2.0, (1.0f64 + 1e-7) as f32),
+    Gradient::create_radial_gradient(2.0, 2.0, 1.0, 2.00001, 2.0, 1.0),
+    Gradient::create_conic_gradient(2.0, 2.0, 0.0),
+  ] {
+    let g = two_stops(g);
+    assert_eq!(g.constant_color(), None);
+    assert!(g.get_shader().is_some());
   }
 }
