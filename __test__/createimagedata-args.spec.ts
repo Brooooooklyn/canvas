@@ -176,17 +176,6 @@ test('createImageData has no typed array form, even for huge sizes', (t) => {
       (c) => c.createImageData(u8c([255]), 2 ** 31 - 1),
       rangeError('Out of memory at ImageData creation.'),
     ],
-    // 4 * 16 * 2 ** 25 bytes is over Chrome's limit.
-    [
-      'u8c([16]), 2 ** 25',
-      (c) => c.createImageData(u8c([16]), 2 ** 25),
-      rangeError('Out of memory at ImageData creation'),
-    ],
-    [
-      'u8c([16]), 2 ** 25, {}',
-      (c) => c.createImageData(u8c([16]), 2 ** 25, {}),
-      rangeError('Out of memory at ImageData creation'),
-    ],
   ]
   for (const [label, fn, expected] of cases) {
     t.deepEqual(

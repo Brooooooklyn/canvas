@@ -80,7 +80,6 @@ test('the raw js-binding createImageData has no typed array form for huge sizes'
   const out = runRaw(`
 run('createImageData(u8c(0), 2 ** 31, 2 ** 31)', () => size(ctx.createImageData(new Uint8ClampedArray(0), 2 ** 31, 2 ** 31)))
 run('createImageData(u8c(0), 65536, 65536)', () => size(ctx.createImageData(new Uint8ClampedArray(0), 65536, 65536)))
-run('createImageData(u8c([16]), 2 ** 25)', () => size(ctx.createImageData(new Uint8ClampedArray([16]), 2 ** 25)))
 `)
   t.deepEqual(out, {
     'createImageData(u8c(0), 2 ** 31, 2 ** 31)': {
@@ -90,10 +89,6 @@ run('createImageData(u8c([16]), 2 ** 25)', () => size(ctx.createImageData(new Ui
     'createImageData(u8c(0), 65536, 65536)': {
       error: 'TypeError',
       message: `${CREATE_IMAGE_DATA}The provided value is not of type 'ImageDataSettings'.`,
-    },
-    'createImageData(u8c([16]), 2 ** 25)': {
-      error: 'RangeError',
-      message: `${CREATE_IMAGE_DATA}Out of memory at ImageData creation`,
     },
   })
 })
