@@ -1,6 +1,6 @@
-import { execSync } from 'node:child_process'
+import { execFileSync, execSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { readFileSync } from 'node:fs'
+import { readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -85,4 +85,22 @@ export function libPath(lib, hostPlatform, triple, tag = TAG) {
   const copy = join(dirname, '..', platformName)
   const downloadUrl = `https://github.com/${OWNER}/${REPO}/releases/download/${tag}/${platformName}`
   return { binary, copy, downloadUrl, filename: platformName }
+}
+
+/**
+ * Download `url` to `output` with curl. `--fail` makes an HTTP error (a 404 for
+ * a release asset that is not published yet) fail the download instead of
+ * saving the error page as the file. On failure no partial file is left.
+ * @param {string} url
+ * @param {string} output
+ */
+export function downloadFile(url, output) {
+  try {
+    execFileSync('curl', ['--fail', '--location', '-H', 'Accept: application/octet-stream', '-o', output, url], {
+      stdio: 'inherit',
+    })
+  } catch (e) {
+    rmSync(output, { force: true })
+    throw new Error(`Failed to download ${url}`, { cause: e })
+  }
 }

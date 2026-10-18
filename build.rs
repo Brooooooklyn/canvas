@@ -46,6 +46,12 @@ fn main() {
   // shapes inline code in Skia's headers, so skia-c must use the same one;
   // SkTypes.h would pick 16 (BGRA) on Windows.
   build.define("SK_R32_SHIFT", "0");
+  // libskia is a release build (is_debug=false, -DSK_RELEASE in
+  // scripts/skia-gn-args.cjs). Without these, SkLoadUserConfig.h picks
+  // SK_DEBUG for skia-c, and the SkDEBUGCODE members change the layout of
+  // classes shared with libskia (SkMutex, SkPixelRef, SkTextBlob, ...).
+  build.define("NDEBUG", None);
+  build.define("SK_RELEASE", None);
 
   if compile_target.as_str() == "aarch64-linux-android" {
     let nkd_home = env::var("ANDROID_NDK_LATEST_HOME").unwrap();
