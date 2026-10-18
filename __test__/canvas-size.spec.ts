@@ -3,8 +3,11 @@
 // willReadFrequently canvas in a standards-mode page); arm64 and x64 gave the
 // same results. Chrome gives a canvas a bitmap only when
 // CanvasRenderingContextHost::IsValidImageSize holds: no side is 0 or above
-// 65535, and the area is at most 32768 * 8192. Node-only APIs have no Chrome
-// counterpart: they follow the layer's decisions (noted per test).
+// 65535, and the area is at most 32768 * 8192. Not Chrome: here the limit is
+// Skia's (no side above 536870911, at most 2147483647 bytes of pixels), as on
+// main, because pdf.js draws wider images from malformed PDFs; the over-limit
+// sizes below are over both. Node-only APIs have no Chrome counterpart: they
+// follow the layer's decisions (noted per test).
 import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -27,9 +30,10 @@ const FRAME = { x: 0, y: 0, width: 64, height: 64 }
 
 const OVER_LIMIT: [number, number][] = [
   [2 ** 30, 1],
-  [65536, 1],
-  [65535, 4097],
-  [16384, 16385],
+  [536870912, 1],
+  [1, 536870912],
+  [23171, 23171],
+  [32768, 16384],
   [100000, 100000],
 ]
 
@@ -79,13 +83,23 @@ test('over-limit canvases keep their size but have no pixels', (t) => {
   t.is(canvas.toDataURL(), 'data:,')
 })
 
-test('the largest side Chrome allows still draws', (t) => {
-  const canvas = createCanvas(65535, 1)
-  const ctx = canvas.getContext('2d')
-  ctx.fillStyle = '#0f0'
-  ctx.fillRect(0, 0, 1, 1)
-  t.deepEqual(px(ctx), [0, 255, 0, 255])
-  t.true(canvas.toDataURL().startsWith('data:image/png;base64,'))
+test('the largest side Chrome allows, and wider ones Skia holds, still draw', (t) => {
+  // Not Chrome above 65535 (no pixels there): pdf.js makes a 70000 x 1 canvas
+  // for a malformed image, and main drew it.
+  for (const [w, h] of [
+    [65535, 1],
+    [65536, 1],
+    [70000, 2],
+    [1, 70000],
+  ]) {
+    const canvas = createCanvas(w, h)
+    const ctx = canvas.getContext('2d')
+    ctx.fillStyle = '#0f0'
+    ctx.fillRect(0, 0, 1, 1)
+    t.deepEqual(px(ctx), [0, 255, 0, 255], `${w}x${h}`)
+    t.true(canvas.toDataURL().startsWith('data:image/png;base64,'), `${w}x${h}`)
+    t.false(ctx.isContextLost(), `${w}x${h}`)
+  }
 })
 
 test('over-limit canvas: getImageData returns zeros of the asked size', (t) => {
@@ -192,7 +206,7 @@ test('external memory stays balanced across sizes without pixels', (t) => {
       const b = createCanvas(100, 100)
       b.width = 2 ** 30
       b.width = 100
-      b.height = 100000
+      b.height = 2 ** 30
     }
     for (let i = 0; i < 4; i++) make()
     gc(); gc()
@@ -677,8 +691,11 @@ test('lost context: setters work, save/restore and transforms do nothing', (t) =
   // So does a size without pixels.
   canvas.width = 0
   t.true(ctx.isContextLost())
-  canvas.width = 100000
+  canvas.width = 2 ** 30
   t.true(ctx.isContextLost())
+  // A size Skia holds restores it, also one over Chrome's limit.
+  canvas.width = 100000
+  t.false(ctx.isContextLost())
 })
 
 test('LottieAnimation.render takes the bitmap first, like a draw', (t) => {

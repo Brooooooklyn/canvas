@@ -212,23 +212,29 @@ pub(crate) enum PixelState {
   Ready,
   /// A side is 0.
   Empty,
-  /// Larger than Chrome allows (`is_valid_image_size`).
+  /// Larger than Skia's raster limit (`is_valid_image_size`).
   InvalidSize,
   /// A valid size whose surface could not be allocated.
   AllocationFailed,
 }
 
-/// Chrome's CanvasRenderingContextHost::IsValidImageSize
-/// (canvas_rendering_context_host.cc:128-149): no side is 0 or above 65535,
-/// and the area is at most 32768 * 8192.
+/// Whether a raster canvas of this size gets a bitmap: Skia's raster limit.
+/// No side is 0 or above SK_MaxS32 >> 2 (SkImageInfoIsValid), and the 4-byte
+/// pixels fit in SK_MaxS32 bytes (SkImageInfo::computeByteSize), so no canvas
+/// reserves more than 2 GiB.
+///
+/// Not Chrome: CanvasRenderingContextHost::IsValidImageSize
+/// (canvas_rendering_context_host.cc:128-149) also gives no bitmap for a side
+/// above 65535 or an area above 32768 * 8192 (pdf.js draws images wider than
+/// that from malformed PDFs; main drew every size Skia holds).
 pub(crate) fn is_valid_image_size(width: u32, height: u32) -> bool {
-  const MAX_SIDE: u32 = 65535;
-  const MAX_AREA: u64 = 32768 * 8192;
+  const MAX_SIDE: u32 = (i32::MAX >> 2) as u32;
+  const MAX_BYTES: u64 = i32::MAX as u64;
   width > 0
     && height > 0
     && width <= MAX_SIDE
     && height <= MAX_SIDE
-    && u64::from(width) * u64::from(height) <= MAX_AREA
+    && u64::from(width) * u64::from(height) * 4 <= MAX_BYTES
 }
 
 /// The shadow half of a draw, as `shadow_paint` builds it. `paint` draws the
@@ -6551,19 +6557,47 @@ mod tests {
   }
 
   #[test]
-  fn is_valid_image_size_matches_chrome() {
-    // Chrome 155: these sizes draw (true) or give no pixels (false).
+  fn is_valid_image_size_keeps_the_sizes_over_chromes_limit() {
+    // Chrome 155 gives no pixels at 65536 x 1, 65535 x 4097 and
+    // 16384 x 16385; Skia holds them, as main drew them.
     for (width, height, valid) in [
       (65535, 1, true),
-      (65536, 1, false),
+      (65536, 1, true),
       (65535, 4096, true),
-      (65535, 4097, false),
+      (65535, 4097, true),
       (16384, 16384, true),
-      (16384, 16385, false),
+      (16384, 16385, true),
       (0, 5, false),
       (5, 0, false),
       (100000, 100000, false),
       (1 << 30, 1, false),
+    ] {
+      assert_eq!(
+        is_valid_image_size(width, height),
+        valid,
+        "{width}x{height}"
+      );
+    }
+  }
+
+  #[test]
+  fn is_valid_image_size_is_skias_raster_limit() {
+    // A side up to SK_MaxS32 >> 2, and 4 * width * height up to SK_MaxS32.
+    for (width, height, valid) in [
+      (1, 1, true),
+      (65536, 1, true),
+      (70000, 2, true),
+      (1, 70000, true),
+      (23170, 23170, true),
+      (32767, 16384, true),
+      (536870911, 1, true),
+      (1, 536870911, true),
+      (536870912, 1, false),
+      (1, 536870912, false),
+      (23171, 23171, false),
+      (32768, 16384, false),
+      (16384, 32768, false),
+      (u32::MAX, u32::MAX, false),
     ] {
       assert_eq!(
         is_valid_image_size(width, height),
@@ -6579,7 +6613,8 @@ mod tests {
       (0, 5, PixelState::Empty),
       (5, 0, PixelState::Empty),
       (1 << 30, 1, PixelState::InvalidSize),
-      (65536, 1, PixelState::InvalidSize),
+      (536870912, 1, PixelState::InvalidSize),
+      (32768, 16384, PixelState::InvalidSize),
     ] {
       let ctx = raster_ctx(width, height);
       assert_eq!(ctx.pixel_state, state, "{width}x{height}");
