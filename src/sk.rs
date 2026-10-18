@@ -310,6 +310,7 @@ pub mod ffi {
     pub lang: *const c_char,
     pub lang_len: usize,
     pub text_rendering: i32,
+    pub lcd_text: bool,
   }
 
   #[repr(C)]
@@ -484,6 +485,15 @@ pub mod ffi {
     link(name = "skiac", kind = "static", modifiers = "+bundle,+whole-archive")
   )]
   #[cfg_attr(target_os = "windows", link(name = "skiac", kind = "static"))]
+  // Skia's Fontations scaler, C++ half (build.rs).
+  #[cfg_attr(
+    any(target_os = "macos", target_os = "linux"),
+    link(
+      name = "skiac_fontations",
+      kind = "static",
+      modifiers = "+bundle,+whole-archive"
+    )
+  )]
   unsafe extern "C" {
 
     pub fn skiac_clear_all_cache();
@@ -1377,6 +1387,14 @@ pub mod ffi {
       request: *const skiac_text_request,
       advance: *mut f32,
     ) -> bool;
+
+    pub fn skiac_font_collection_enable_installed_fonts(
+      c_font_collection: *mut skiac_font_collection,
+    );
+
+    pub fn skiac_font_collection_load_installed_fonts(
+      c_font_collection: *mut skiac_font_collection,
+    ) -> u32;
 
     pub fn skiac_font_collection_default_font_units(
       c_font_collection: *mut skiac_font_collection,
@@ -3053,6 +3071,10 @@ pub struct TextSettings {
   pub variant_caps: FontVariantCaps,
   pub lang: String,
   pub text_rendering: TextRendering,
+  /// Whether Chrome's macOS canvas would draw the text from LCD masks: an
+  /// alpha:false raster canvas, a source-over draw and no `ctx.filter` layer.
+  /// skia-c checks the transform and size (text_raster.cpp UsesLcdText).
+  pub lcd_text: bool,
 }
 
 impl TextSettings {
@@ -3099,6 +3121,7 @@ impl TextSettings {
       lang: self.lang.as_ptr().cast(),
       lang_len: self.lang.len(),
       text_rendering: self.text_rendering as i32,
+      lcd_text: self.lcd_text,
     };
     f(&request)
   }
@@ -5599,6 +5622,19 @@ impl FontCollection {
     unsafe { ffi::skiac_font_collection_unregister_all(self.0) }
   }
 
+  /// macOS: resolves CoreText's installed fonts by name from now on and
+  /// registers them at the first font lookup or registration. Elsewhere a
+  /// no-op.
+  pub fn enable_installed_fonts(&self) {
+    unsafe { ffi::skiac_font_collection_enable_installed_fonts(self.0) }
+  }
+
+  /// macOS: `enable_installed_fonts`, then registers the installed fonts now.
+  /// Returns how many faces that registered. Elsewhere 0.
+  pub fn load_installed_fonts(&self) -> u32 {
+    unsafe { ffi::skiac_font_collection_load_installed_fonts(self.0) }
+  }
+
   /// The px size of `ex`, `ch`, `cap`, `ic` and `lh` of the font the canvas
   /// parses `font` against, at `size` px; None when no font is installed.
   pub fn default_font_units(&self, size: f32) -> Option<ffi::skiac_font_units> {
@@ -6229,6 +6265,7 @@ mod text_line_tests {
       variant_caps: FontVariantCaps::default(),
       lang: String::new(),
       text_rendering: TextRendering::default(),
+      lcd_text: false,
     }
   }
 

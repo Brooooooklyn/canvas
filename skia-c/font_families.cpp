@@ -22,6 +22,7 @@
 #include <src/core/SkUTF.h>
 
 #include "text.hpp"
+#include "text_raster.hpp"
 
 #if defined(SK_DEBUG) || !defined(SK_RELEASE)
 #error "skia-c must be built with SK_RELEASE like libskia (see build.rs)"
@@ -34,6 +35,11 @@ extern "C" int32_t u_foldCase(int32_t c, uint32_t options);
 namespace {
 
 constexpr uint32_t kFoldCaseDefault = 0;  // U_FOLD_CASE_DEFAULT
+
+#if defined(__APPLE__)
+// The family of CoreText's UI font in skiac_font_collection::system_ui.
+constexpr char kSystemUiFamily[] = "system-ui";
+#endif
 
 enum Generic {
   kNamed = 0,
@@ -195,6 +201,21 @@ class FamilyResolver {
     if (!name.empty() && Find(name, out)) {
       return true;
     }
+#if defined(__APPLE__)
+    // font_cache_mac.mm CreateFontPlatformData: the family "system-ui" (also
+    // quoted, and BlinkMacSystemFont) is CoreText's UI font
+    // (MatchSystemUIFont), compared case-sensitively.
+    if (name == kSystemUiFamily) {
+      if (!c_collection_->system_ui) {
+        return false;
+      }
+      *out = kSystemUiFamily;
+      return true;
+    }
+    if (MatchCoreText(name, out)) {
+      return true;
+    }
+#endif
 #if !defined(__APPLE__) && !defined(_WIN32)
     if (FindFontconfig(name, out)) {
       return true;
@@ -208,6 +229,39 @@ class FamilyResolver {
     }
     return false;
   }
+
+#if defined(__APPLE__)
+  // font_matcher_mac.mm MatchFontFamily: CoreText also matches families it
+  // does not list (Times and Courier on macOS 27), in any case. Never a dot
+  // name (font_cache_mac.mm IsSystemFontName) or LastResort.
+  bool MatchCoreText(std::string_view name, std::string* out) const {
+    const sk_sp<SkFontMgr>& manager = c_collection_->font_mgr;
+    if (!manager || name.empty() || name.front() == '.' ||
+        EqualsIgnoringAsciiCase(name, "LastResort")) {
+      return false;
+    }
+    std::string key = Fold(name);
+    auto& matches = c_collection_->coretext_families;
+    auto it = matches.find(key);
+    if (it == matches.end()) {
+      std::string family;
+      sk_sp<SkFontStyleSet> set =
+          manager->matchFamily(std::string(name).c_str());
+      if (sk_sp<SkTypeface> face =
+              set && set->count() > 0 ? set->createTypeface(0) : nullptr) {
+        SkString face_family;
+        face->getFamilyName(&face_family);
+        family.assign(face_family.c_str(), face_family.size());
+      }
+      it = matches.emplace(std::move(key), std::move(family)).first;
+    }
+    if (it->second.empty()) {
+      return false;
+    }
+    *out = it->second;
+    return true;
+  }
+#endif
 
   bool FindFirst(const std::vector<const char*>& names,
                  std::string* out) const {
@@ -399,7 +453,7 @@ const char* SettingsFamily(int generic) {
 // FontCache::SystemFontFamily for `system-ui`.
 const char* SystemUiFamily() {
 #if defined(__APPLE__)
-  return "System Font";  // SFNS, CoreText's .AppleSystemUIFont
+  return kSystemUiFamily;  // CoreText's UI font (skiac_font_collection)
 #elif defined(_WIN32)
   return "Segoe UI";
 #else
@@ -542,30 +596,42 @@ bool skiac_font_collection_default_font_units(
   if (typefaces.empty() || !typefaces.front()) {
     return false;
   }
-  // The SkFont skparagraph shapes with (TextStyle defaults).
-  SkFont font(typefaces.front(), size);
-  font.setEdging(SkFont::Edging::kAntiAlias);
-  font.setHinting(SkFontHinting::kSlight);
-  font.setSubpixel(true);
+  const SkFont font = MetricsFont(typefaces.front(), size);
   SkFontMetrics metrics;
   font.getMetrics(&metrics);
   units->ex = metrics.fXHeight ? metrics.fXHeight : size / 2;
+#if defined(__APPLE__)
+  // SimpleFontData::PlatformInit: CTFontGetXHeight counts the part of 'x'
+  // below the baseline, so Blink measures the glyph's outline instead.
+  if (metrics.fXHeight) {
+    if (const SkGlyphID x_glyph = font.unicharToGlyph('x')) {
+      const std::optional<SkPath> path = font.getPath(x_glyph);
+      units->ex =
+          -(path ? path->getBounds() : font.getBounds(x_glyph, nullptr)).fTop;
+    }
+  }
+#endif
   units->cap = metrics.fCapHeight;
   SkGlyphID zero = font.unicharToGlyph('0');
   units->ch = zero ? font.getWidth(zero) : size / 2;
   SkGlyphID water = font.unicharToGlyph(0x6C34);
   units->ic = water ? font.getWidth(water) : size;
   // FontMetrics::LineSpacing for line-height: normal.
-  units->lh =
-      static_cast<float>(lroundf(-metrics.fAscent) + lroundf(metrics.fDescent) +
-                         lroundf(metrics.fLeading));
+  float ascent;
+  float descent;
+  AscentDescentWithHacks(c_collection, font, typefaces.front().get(), &ascent,
+                         &descent);
+  units->lh = static_cast<float>(lroundf(ascent) + lroundf(descent) +
+                                 lroundf(metrics.fLeading));
   return true;
 }
 
 uint32_t skiac_font_collection_register_system_font(
     skiac_font_collection* c_collection,
     const char* path) {
-  sk_sp<SkTypeface> typeface = c_collection->font_mgr->makeFromFile(path);
+  // Installed fonts register first, as loadSystemFonts does elsewhere.
+  c_collection->prepareLookup();
+  sk_sp<SkTypeface> typeface = MakeCanvasTypefaceFromFile(path);
   if (!typeface) {
     return 0;
   }
