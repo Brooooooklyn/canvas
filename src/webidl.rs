@@ -422,18 +422,20 @@ fn is_callable(env: sys::napi_env, value: sys::napi_value) -> Result<bool> {
 
 /// The intrinsics of a realm that the conversions use: Symbol.toPrimitive,
 /// Symbol.iterator and Proxy, and the getters `resizable` and `detached` of
-/// ArrayBuffer.prototype, read once, when the addon is registered in the
+/// ArrayBuffer.prototype; and those that ImageData uses: the Float16Array
+/// constructor, and a WeakMap with its `set` that keeps ImageData data alive.
+/// Read (and the WeakMap made) once, when the addon is registered in the
 /// environment of the realm. Chrome uses those of its realm, or reads the
 /// state itself, so a script that replaces globalThis.Symbol,
-/// globalThis.Proxy or an ArrayBuffer getter later changes no conversion. A
-/// worker thread has an environment and a realm of its own, and an
-/// environment stays on its thread.
+/// globalThis.Proxy, an ArrayBuffer getter, Float16Array or WeakMap later
+/// changes no conversion and no ImageData. A worker thread has an environment
+/// and a realm of its own, and an environment stays on its thread.
 struct RealmIntrinsics {
   env: sys::napi_env,
   /// An object with the own data properties toPrimitive, iterator, Proxy,
-  /// arrayBufferResizable and arrayBufferDetached, each undefined when it
-  /// could not be read. An object, because napi_create_reference takes a
-  /// symbol only from Node-API 10 on.
+  /// arrayBufferResizable, arrayBufferDetached, Float16Array, imageDataMap
+  /// and weakMapSet, each undefined when it could not be read. An object,
+  /// because napi_create_reference takes a symbol only from Node-API 10 on.
   holder: sys::napi_ref,
 }
 
@@ -522,6 +524,19 @@ pub fn capture_realm_intrinsics(_exports: Object, env: Env) -> Result<()> {
       .then(|| read(descriptor, c"get", sys::ValueType::napi_function))
       .flatten()
   };
+  // The WeakMap of image.rs attach_data, and the `set` it has now.
+  let weak_map = read(global, c"WeakMap", sys::ValueType::napi_function).and_then(|constructor| {
+    let mut map = ptr::null_mut();
+    if unsafe { sys::napi_new_instance(env, constructor, 0, ptr::null(), &mut map) }
+      != sys::Status::napi_ok
+    {
+      let mut exception = ptr::null_mut();
+      unsafe { sys::napi_get_and_clear_last_exception(env, &mut exception) };
+      return None;
+    }
+    (raw_type_of(env, map).ok()? == sys::ValueType::napi_object).then_some(map)
+  });
+  let weak_map_set = weak_map.and_then(|map| read(map, c"set", sys::ValueType::napi_function));
   let members = [
     member(c"toPrimitive", well_known(c"toPrimitive")),
     member(c"iterator", well_known(c"iterator")),
@@ -531,6 +546,12 @@ pub fn capture_realm_intrinsics(_exports: Object, env: Env) -> Result<()> {
     ),
     member(c"arrayBufferResizable", array_buffer_getter(c"resizable")),
     member(c"arrayBufferDetached", array_buffer_getter(c"detached")),
+    member(
+      c"Float16Array",
+      read(global, c"Float16Array", sys::ValueType::napi_function),
+    ),
+    member(c"imageDataMap", weak_map),
+    member(c"weakMapSet", weak_map_set),
   ];
   check_status!(unsafe {
     sys::napi_define_properties(env, holder, members.len(), members.as_ptr())
@@ -575,7 +596,10 @@ unsafe extern "C" fn forget_realm_intrinsics(env: *mut std::ffi::c_void) {
 
 /// The intrinsic `name` (a member of [`RealmIntrinsics::holder`]) of the
 /// realm of `env`; None when it could not be read at registration.
-fn intrinsic(env: sys::napi_env, name: &std::ffi::CStr) -> Result<Option<sys::napi_value>> {
+pub(crate) fn intrinsic(
+  env: sys::napi_env,
+  name: &std::ffi::CStr,
+) -> Result<Option<sys::napi_value>> {
   let Some(reference) = REALM_INTRINSICS.with_borrow(|list| {
     list
       .iter()
@@ -1639,12 +1663,51 @@ pub(crate) const CREATE_PATTERN: &str =
 pub(crate) const PATTERN_SET_TRANSFORM: &str =
   "Failed to execute 'setTransform' on 'CanvasPattern': ";
 
+/// `ImageDataPixelFormat` (core/html/canvas/image_data_settings.idl): the
+/// colour type of an ImageData's data (image_data.cc:120-133). The values are
+/// what the C functions take as `pf`.
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ImageDataPixelFormat {
+  /// Uint8ClampedArray data, kRGBA_8888.
+  #[default]
+  Unorm8 = 0,
+  /// Float16Array data, kRGBA_F16.
+  Float16 = 1,
+  /// Float32Array data, kRGBA_F32.
+  Float32 = 2,
+}
+
+impl ImageDataPixelFormat {
+  const VALUES: [&'static str; 3] = ["rgba-unorm8", "rgba-float16", "rgba-float32"];
+
+  pub(crate) fn as_str(self) -> &'static str {
+    Self::VALUES[self as usize]
+  }
+
+  /// The bytes of one channel.
+  pub(crate) fn element_size(self) -> usize {
+    match self {
+      Self::Unorm8 => 1,
+      Self::Float16 => 2,
+      Self::Float32 => 4,
+    }
+  }
+
+  /// The bytes of one RGBA pixel.
+  pub(crate) fn bytes_per_pixel(self) -> usize {
+    4 * self.element_size()
+  }
+}
+
 /// `ImageDataSettings` (core/html/canvas/image_data_settings.idl).
 #[derive(Clone, Copy, Debug, Default)]
 pub struct ImageDataSettings {
   /// The colorSpace member, a value of the enum. Whether it is supported is
   /// checked later, by [`Self::color_space`].
   color_space: Option<&'static str>,
+  /// The pixelFormat member, "rgba-unorm8" by default.
+  pub(crate) pixel_format: ImageDataPixelFormat,
 }
 
 impl ImageDataSettings {
@@ -1672,11 +1735,19 @@ impl ImageDataSettings {
     // Members in lexicographic order, as the bindings read them.
     let color_space =
       dictionary.enumeration("colorSpace", "PredefinedColorSpace", PREDEFINED_COLOR_SPACE)?;
-    // Chrome 155 also takes 'rgba-float16' and 'rgba-float32' (Float16Array
-    // and Float32Array data). Storage here is 8-bit only, so they are
-    // rejected like any value outside the enum, not stored as 8-bit.
-    dictionary.enumeration("pixelFormat", "ImageDataPixelFormat", &["rgba-unorm8"])?;
-    Ok(Self { color_space })
+    let pixel_format = match dictionary.enumeration(
+      "pixelFormat",
+      "ImageDataPixelFormat",
+      &ImageDataPixelFormat::VALUES,
+    )? {
+      Some("rgba-float16") => ImageDataPixelFormat::Float16,
+      Some("rgba-float32") => ImageDataPixelFormat::Float32,
+      _ => ImageDataPixelFormat::Unorm8,
+    };
+    Ok(Self {
+      color_space,
+      pixel_format,
+    })
   }
 
   /// The color space; None: the caller's default (the context color space, or
@@ -1691,12 +1762,15 @@ impl ImageDataSettings {
   }
 }
 
-/// `CanvasPixelFormat`.
+/// `CanvasPixelFormat`: the colour type of the canvas's pixels, kRGBA_8888
+/// or kRGBA_F16 (canvas_2d_color_params.cc). The values are what the C
+/// functions take as `pf`.
+#[repr(u8)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(crate) enum CanvasPixelFormat {
+pub enum CanvasPixelFormat {
   #[default]
-  Unorm8,
-  Float16,
+  Unorm8 = 0,
+  Float16 = 1,
 }
 
 impl CanvasPixelFormat {
@@ -1706,14 +1780,19 @@ impl CanvasPixelFormat {
       Self::Float16 => "float16",
     }
   }
+
+  pub(crate) fn bytes_per_pixel(self) -> usize {
+    match self {
+      Self::Unorm8 => 4,
+      Self::Float16 => 8,
+    }
+  }
 }
 
 /// getContext() options that change nothing here and are only reported by
 /// getContextAttributes().
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct ReportedSettings {
-  /// Storage stays 8-bit; float16 is only echoed.
-  pub color_type: CanvasPixelFormat,
   /// Echoed as given, as Chrome does
   /// (canvas_context_creation_attributes_helpers.cc:33).
   pub desynchronized: bool,
@@ -1728,6 +1807,7 @@ pub(crate) struct ReportedSettings {
 pub(crate) struct ContextSettings {
   pub alpha: bool,
   pub color_space: ColorSpace,
+  pub color_type: CanvasPixelFormat,
   pub reported: ReportedSettings,
 }
 
@@ -1736,6 +1816,7 @@ impl Default for ContextSettings {
     Self {
       alpha: true,
       color_space: ColorSpace::Srgb,
+      color_type: CanvasPixelFormat::Unorm8,
       reported: ReportedSettings::default(),
     }
   }
@@ -1772,7 +1853,7 @@ impl ContextSettings {
     if dictionary.enumeration("colorType", "CanvasPixelFormat", &["unorm8", "float16"])?
       == Some("float16")
     {
-      settings.reported.color_type = CanvasPixelFormat::Float16;
+      settings.color_type = CanvasPixelFormat::Float16;
     }
     dictionary.boolean("depth")?;
     if let Some(desynchronized) = dictionary.boolean("desynchronized")? {

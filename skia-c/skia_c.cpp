@@ -139,15 +139,17 @@ void skiac_clear_all_cache() {
 
 // Surface
 
-static SkSurface* skiac_surface_create(int width,
-                                       int height,
-                                       SkAlphaType alphaType,
-                                       uint8_t cs) {
+static SkSurface* skiac_surface_create(
+    int width,
+    int height,
+    SkAlphaType alphaType,
+    uint8_t cs,
+    SkColorType backing_store_color_type = kRGBA_8888_SkColorType) {
   // Init() is idempotent, so can be called more than once with no adverse
   // effect.
   SkGraphics::Init();
   auto color_space = COLOR_SPACE_CAST;
-  auto info = SkImageInfo::Make(width, height, kRGBA_8888_SkColorType,
+  auto info = SkImageInfo::Make(width, height, backing_store_color_type,
                                 alphaType, color_space);
   // Text drawn on the surface uses Chrome's text gamma and contrast.
   const SkSurfaceProps props = CanvasSurfaceProps();
@@ -1110,12 +1112,19 @@ class SkiacSvgCanvas final : public SkNWayCanvas {
   std::unordered_set<uint32_t> fRecordedImages;
 };
 
+// The colour type of a canvas's CanvasPixelFormat: 0 unorm8, 1 float16
+// (Canvas2DColorParams::GetSharedImageFormat, canvas_2d_color_params.cc).
+static SkColorType CanvasColorType(uint8_t pf) {
+  return pf == 1 ? kRGBA_F16_SkColorType : kRGBA_8888_SkColorType;
+}
+
 void skiac_surface_create_svg(skiac_svg_surface* c_surface,
                               int w,
                               int h,
                               int alphaType,
                               uint32_t flag,
-                              uint8_t cs) {
+                              uint8_t cs,
+                              uint8_t pf) {
   auto w_stream = new SkDynamicMemoryWStream();
 
   auto canvas = SkSVGCanvas::Make(SkRect::MakeWH(w, h), w_stream, flag);
@@ -1125,8 +1134,9 @@ void skiac_surface_create_svg(skiac_svg_surface* c_surface,
   }
   // A raster cannot be 0 wide or high: a canvas with a 0 side has no pixels,
   // and its raster is a stand-in that nothing reads (Context::new_svg).
-  auto surface = skiac_surface_create(std::max(w, 1), std::max(h, 1),
-                                      (SkAlphaType)alphaType, cs);
+  auto surface =
+      skiac_surface_create(std::max(w, 1), std::max(h, 1),
+                           (SkAlphaType)alphaType, cs, CanvasColorType(pf));
   if (!surface) {
     canvas.reset();
     delete w_stream;
@@ -1146,9 +1156,10 @@ void skiac_svg_canvas_flush(skiac_canvas* c_canvas) {
 
 skiac_surface* skiac_surface_create_rgba_premultiplied(int width,
                                                        int height,
-                                                       uint8_t cs) {
-  return reinterpret_cast<skiac_surface*>(
-      skiac_surface_create(width, height, kPremul_SkAlphaType, cs));
+                                                       uint8_t cs,
+                                                       uint8_t pf) {
+  return reinterpret_cast<skiac_surface*>(skiac_surface_create(
+      width, height, kPremul_SkAlphaType, cs, CanvasColorType(pf)));
 }
 
 // alpha:false backing store. Blink gives such a canvas a kOpaque resource
@@ -1156,9 +1167,10 @@ skiac_surface* skiac_surface_create_rgba_premultiplied(int width,
 // CreateSkSurface), so putImageData and getImageData copy the bytes as given.
 skiac_surface* skiac_surface_create_rgba_opaque(int width,
                                                 int height,
-                                                uint8_t cs) {
-  return reinterpret_cast<skiac_surface*>(
-      skiac_surface_create(width, height, kOpaque_SkAlphaType, cs));
+                                                uint8_t cs,
+                                                uint8_t pf) {
+  return reinterpret_cast<skiac_surface*>(skiac_surface_create(
+      width, height, kOpaque_SkAlphaType, cs, CanvasColorType(pf)));
 }
 
 skiac_surface* skiac_surface_create_rgba(int width, int height, uint8_t cs) {
@@ -1254,11 +1266,13 @@ skiac_surface* skiac_surface_copy_rgba(skiac_surface* c_surface,
   // x, y, width, height are source rectangle coordinates.
   // Premultiplied like the source canvas: pattern shaders filter the stored
   // texels, and unpremul texels would pull transparent black into the color.
-  // An alpha:false source stays kOpaque, like Blink's snapshot of it.
+  // An alpha:false source stays kOpaque, like Blink's snapshot of it, and a
+  // float16 source stays float16.
   auto alpha_type = SURFACE_CAST->imageInfo().alphaType() == kOpaque_SkAlphaType
                         ? kOpaque_SkAlphaType
                         : kPremul_SkAlphaType;
-  auto copy = skiac_surface_create((int)width, (int)height, alpha_type, cs);
+  auto copy = skiac_surface_create((int)width, (int)height, alpha_type, cs,
+                                   SURFACE_CAST->imageInfo().colorType());
   if (!copy) {
     return nullptr;
   }
@@ -1343,6 +1357,95 @@ bool skiac_surface_read_pixels_rect(skiac_surface* c_surface,
   return result;
 }
 
+// The colour type of an ImageData pixel format: 0 rgba-unorm8, 1
+// rgba-float16, 2 rgba-float32 (ImageData::ValidateAndCreate,
+// image_data.cc:120-133).
+static SkColorType ImageDataColorType(uint8_t pf) {
+  switch (pf) {
+    case 1:
+      return kRGBA_F16_SkColorType;
+    case 2:
+      return kRGBA_F32_SkColorType;
+    default:
+      return kRGBA_8888_SkColorType;
+  }
+}
+
+// getImageData into an ImageData of pixel format `pf` in colour space `cs`:
+// Blink reads the canvas into the ImageData's own unpremultiplied info
+// (base_rendering_context_2d.cc:497-512). Pixels outside the canvas are not
+// written. False when the rect misses the canvas.
+bool skiac_surface_read_pixels_format(skiac_surface* c_surface,
+                                      uint8_t* data,
+                                      size_t row_bytes,
+                                      int x,
+                                      int y,
+                                      int w,
+                                      int h,
+                                      uint8_t cs,
+                                      uint8_t pf) {
+  auto color_space = COLOR_SPACE_CAST;
+  auto info = SkImageInfo::Make(w, h, ImageDataColorType(pf),
+                                kUnpremul_SkAlphaType, color_space);
+  return SURFACE_CAST->readPixels(info, data, row_bytes, x, y);
+}
+
+// putImageData of the (sx, sy, sw, sh) part of `pixels` (a w x h ImageData of
+// pixel format `pf` in colour space `cs`) at (dx, dy). Blink converts the data
+// to the canvas's colour type when the bytes per pixel differ, then
+// PutByteArray writes it as unpremultiplied, or as opaque on an alpha:false
+// canvas (base_rendering_context_2d.cc:587-645). False when the conversion
+// cannot allocate.
+bool skiac_canvas_write_pixels_format(skiac_canvas* c_canvas,
+                                      const uint8_t* pixels,
+                                      int w,
+                                      int h,
+                                      uint8_t cs,
+                                      uint8_t pf,
+                                      bool opaque,
+                                      int sx,
+                                      int sy,
+                                      int sw,
+                                      int sh,
+                                      int dx,
+                                      int dy) {
+  auto color_space = COLOR_SPACE_CAST;
+  const auto src_info = SkImageInfo::Make(w, h, ImageDataColorType(pf),
+                                          kUnpremul_SkAlphaType, color_space);
+  SkPixmap data(src_info, pixels, src_info.minRowBytes());
+  const SkColorType canvas_type = CANVAS_CAST->imageInfo().colorType();
+  SkBitmap converted;
+  if (SkColorTypeBytesPerPixel(canvas_type) !=
+      SkColorTypeBytesPerPixel(data.colorType())) {
+    if (!converted.tryAllocPixels(src_info.makeColorType(canvas_type)) ||
+        !converted.writePixels(data, 0, 0)) {
+      return false;
+    }
+    data = converted.pixmap();
+  }
+  const SkImageInfo info = data.info().makeWH(sw, sh).makeAlphaType(
+      opaque ? kOpaque_SkAlphaType : kUnpremul_SkAlphaType);
+  CANVAS_CAST->writePixels(info, data.addr(sx, sy), data.rowBytes(), dx, dy);
+  return true;
+}
+
+// A float ImageData as rgba-unorm8 data in its own colour space, for the SVG
+// and PDF backends, which draw ImageData as an 8-bit image. `out` holds
+// w * h * 4 bytes.
+bool skiac_image_data_to_unorm8(const uint8_t* pixels,
+                                int w,
+                                int h,
+                                uint8_t cs,
+                                uint8_t pf,
+                                uint8_t* out) {
+  auto color_space = COLOR_SPACE_CAST;
+  const auto src_info = SkImageInfo::Make(w, h, ImageDataColorType(pf),
+                                          kUnpremul_SkAlphaType, color_space);
+  const auto dst_info = src_info.makeColorType(kRGBA_8888_SkColorType);
+  return SkPixmap(src_info, pixels, src_info.minRowBytes())
+      .readPixels(dst_info, out, dst_info.minRowBytes());
+}
+
 void skiac_surface_png_data(skiac_surface* c_surface, skiac_sk_data* data) {
   auto snapshot = SURFACE_CAST->makeImageSnapshot();
   auto image = encodable_image(snapshot.get());
@@ -1362,7 +1465,7 @@ void skiac_surface_encode_data(skiac_surface* c_surface,
                                bool lossless) {
   auto snapshot = SURFACE_CAST->makeImageSnapshot();
   skiac_image_encode_data(reinterpret_cast<skiac_image*>(snapshot.get()), data,
-                          format, quality, lossless, false);
+                          format, quality, lossless, false, false);
 }
 
 bool skiac_surface_encode_stream(skiac_surface* c_surface,
@@ -1726,31 +1829,46 @@ static sk_sp<SkColorSpace> ConversionTarget(const SkPixmap& original,
   return SkColorSpace::Equals(source.get(), target.get()) ? nullptr : target;
 }
 
+// Float pixels: a float16 canvas's, or a float ImageData pattern's. Chrome
+// decodes them to N32 like every image that is not HDR
+// (SoftwareImageDecodeCache::GetColorTypeForPaintImage,
+// software_image_decode_cache.cc:737-752), which rounds them.
+static bool IsFloat(const SkPixmap& pixmap) {
+  return pixmap.colorType() == kRGBA_F16_SkColorType ||
+         pixmap.colorType() == kRGBA_F32_SkColorType;
+}
+
 // GenerateCacheEntryFromCandidate (software_image_decode_cache_utils.cc:
 // 183-270) with the original decode as the candidate: the src subset, in
 // `target` when it is set (DoDecodeImage), scaled to the level size with
-// kMedium (linear, nearest mip) into N32 premul. With `counter` the pixels
-// count in it until they are freed.
+// kMedium (linear, nearest mip) into `level_ct` premul: N32, or F16 for the
+// half-float decode of a high-bit-depth image (the F16 decode cache). With
+// `counter` the pixels count in it until they are freed.
 static sk_sp<SkImage> MakeLevelImage(const SkPixmap& original,
                                      const SkIRect& src,
                                      SkISize size,
                                      sk_sp<SkColorSpace> target,
-                                     skiac_image_level_bytes* counter) {
+                                     skiac_image_level_bytes* counter,
+                                     SkColorType level_ct = kN32_SkColorType) {
   SkPixmap subset;
   if (!original.extractSubset(&subset, src)) {
     return nullptr;
   }
+  // The scale starts from the decode: copy to it first when the pixels are
+  // in another colour space or type.
   SkBitmap converted;
-  if (target && size != src.size()) {
-    if (!converted.tryAllocPixels(SkImageInfo::Make(
-            src.size(), kN32_SkColorType, kPremul_SkAlphaType, target)) ||
+  if ((target || (IsFloat(original) && level_ct != kRGBA_F16_SkColorType)) &&
+      size != src.size()) {
+    if (!converted.tryAllocPixels(
+            SkImageInfo::Make(src.size(), level_ct, kPremul_SkAlphaType,
+                              target ? target : original.refColorSpace())) ||
         !subset.readPixels(converted.pixmap())) {
       return nullptr;
     }
     subset = converted.pixmap();
   }
   const SkImageInfo info =
-      SkImageInfo::Make(size, kN32_SkColorType, kPremul_SkAlphaType,
+      SkImageInfo::Make(size, level_ct, kPremul_SkAlphaType,
                         target ? target : original.refColorSpace());
   SkBitmap level;
   if (counter) {
@@ -1799,8 +1917,11 @@ static sk_sp<SkImage> FindOrMakeLevel(skiac_image_levels* cache,
     cache->lru.splice(cache->lru.end(), cache->lru, found->second);
     return found->second->image;
   }
-  sk_sp<SkImage> image = MakeLevelImage(original, src, size, std::move(target),
-                                        cache->counter.get());
+  // An Image's original is float only as the half-float decode of a
+  // high-bit-depth image, whose levels stay half floats.
+  sk_sp<SkImage> image = MakeLevelImage(
+      original, src, size, std::move(target), cache->counter.get(),
+      IsFloat(original) ? kRGBA_F16_SkColorType : kN32_SkColorType);
   if (!image) {
     return nullptr;
   }
@@ -1865,7 +1986,9 @@ static sk_sp<SkImage> DrawDecodedImage(SkCanvas* canvas,
   SkIRect decoded_src = key.src;
   SkISize decoded_size = key.size;
   if (key.level == 0) {
-    if (!target) {
+    // A float16 canvas source draws from its N32 decode even when it is in
+    // the canvas's colour space.
+    if (!target && (levels || !IsFloat(original))) {
       sk_sp<SkImage> image =
           snapshot ? snapshot : SkImages::RasterFromBitmap(*bitmap);
       if (image) {
@@ -3544,13 +3667,30 @@ int skiac_image_get_height(skiac_image* c_image) {
 // `crop_to_max_dimension`: toBlob and convertToBlob encode the top-left part
 // that the encoder can hold, as Blink's CanvasAsyncBlobCreator does
 // (canvas_async_blob_creator.cc:199-209, ImageEncoder::MaxDimension).
+// `unpremul_readback`: toDataURL encodes an unpremultiplied readback of the
+// pixels in their own colour type (ImageDataBuffer, image_data_buffer.cc:
+// 66-90), which a float16 canvas rounds differently from the encoder's own
+// unpremultiply. 8-bit images keep the encoder's.
 void skiac_image_encode_data(skiac_image* c_image,
                              skiac_sk_data* data,
                              int format,
                              float quality,
                              bool lossless,
-                             bool crop_to_max_dimension) {
+                             bool crop_to_max_dimension,
+                             bool unpremul_readback) {
   auto image_ref = encodable_image(IMAGE_CAST);
+  if (unpremul_readback && image_ref->alphaType() == kPremul_SkAlphaType &&
+      image_ref->colorType() != kRGBA_8888_SkColorType &&
+      image_ref->colorType() != kBGRA_8888_SkColorType) {
+    SkBitmap readback;
+    if (!readback.tryAllocPixels(
+            image_ref->imageInfo().makeAlphaType(kUnpremul_SkAlphaType)) ||
+        !image_ref->readPixels(nullptr, readback.pixmap(), 0, 0)) {
+      return;
+    }
+    readback.setImmutable();
+    image_ref = SkImages::RasterFromBitmap(readback);
+  }
   auto image = image_ref.get();
   int max_dimension = format == int(SkEncodedImageFormat::kJPEG)   ? 65500
                       : format == int(SkEncodedImageFormat::kWEBP) ? 16383
@@ -3697,6 +3837,80 @@ bool skiac_bitmap_make_from_buffer(const uint8_t* ptr,
   auto origin = codec->getOrigin();
   // https://github.com/chromium/chromium/blob/126.0.6423.1/third_party/blink/renderer/platform/graphics/image.cc#L124
   // need to create a new bitmap with the correct orientation
+  if (origin != SkEncodedOrigin::kTopLeft_SkEncodedOrigin) {
+    bitmap = orient_bitmap(*bitmap, origin);
+    if (!bitmap) {
+      return false;
+    }
+  }
+  bitmap->setImmutable();
+  bitmap_info->width = bitmap->width();
+  bitmap_info->height = bitmap->height();
+  bitmap_info->bitmap = reinterpret_cast<skiac_bitmap*>(bitmap.release());
+  return true;
+}
+
+// Whether the encoded image has more than 8 bits a channel (a 16-bit PNG):
+// Chrome draws such an image on a float16 canvas from a half-float decode
+// (CanvasImageProvider::GetRasterContent, canvas_resource_provider.cc:
+// 2075-2085; SkiaImageDecoderBase::ImageIsHighBitDepth).
+bool skiac_bitmap_is_high_bit_depth(const uint8_t* ptr, size_t size) {
+  auto codec = SkCodec::MakeFromData(
+      SkData::MakeWithoutCopy(reinterpret_cast<const void*>(ptr), size));
+  return codec && codec->hasHighBitDepthEncodedData();
+}
+
+// The half-float decode of a high-bit-depth image for a float16 canvas in
+// colour space `cs`, premultiplied. Blink decodes the pixels without a colour
+// transform and tags them with the image's colour space
+// (SkiaImageDecoderBase::Decode); DecodingImageGenerator::GetPixels then
+// converts them to the canvas's colour space from an unpremultiplied decode
+// (decoding_image_generator.cc:193-221).
+bool skiac_bitmap_make_high_bit_depth(const uint8_t* ptr,
+                                      size_t size,
+                                      uint8_t cs,
+                                      skiac_bitmap_info* bitmap_info) {
+  auto codec = SkCodec::MakeFromData(
+      SkData::MakeWithoutCopy(reinterpret_cast<const void*>(ptr), size));
+  if (!codec || !codec->hasHighBitDepthEncodedData()) {
+    return false;
+  }
+  const SkImageInfo codec_info = codec->getInfo();
+  sk_sp<SkColorSpace> image_cs = codec_info.refColorSpace();
+  if (!image_cs) {
+    image_cs = SkColorSpace::MakeSRGB();
+  }
+  auto target = COLOR_SPACE_CAST;
+  const bool xform = !SkColorSpace::Equals(image_cs.get(), target.get());
+  const bool opaque = codec_info.alphaType() == kOpaque_SkAlphaType;
+  const SkAlphaType alpha_type = opaque  ? kOpaque_SkAlphaType
+                                 : xform ? kUnpremul_SkAlphaType
+                                         : kPremul_SkAlphaType;
+  const SkImageInfo info = codec_info.makeColorType(kRGBA_F16_SkColorType)
+                               .makeAlphaType(alpha_type)
+                               .makeColorSpace(image_cs);
+  auto bitmap = std::make_unique<SkBitmap>();
+  if (!bitmap->tryAllocPixels(info)) {
+    return false;
+  }
+  const auto result = codec->getPixels(info.makeColorSpace(nullptr),
+                                       bitmap->getPixels(), bitmap->rowBytes());
+  if (result != SkCodec::kSuccess && result != SkCodec::kIncompleteInput &&
+      result != SkCodec::kErrorInInput) {
+    return false;
+  }
+  if (xform) {
+    auto converted = std::make_unique<SkBitmap>();
+    if (!converted->tryAllocPixels(info.makeAlphaType(opaque
+                                                          ? kOpaque_SkAlphaType
+                                                          : kPremul_SkAlphaType)
+                                       .makeColorSpace(target)) ||
+        !bitmap->readPixels(converted->pixmap())) {
+      return false;
+    }
+    bitmap = std::move(converted);
+  }
+  auto origin = codec->getOrigin();
   if (origin != SkEncodedOrigin::kTopLeft_SkEncodedOrigin) {
     bitmap = orient_bitmap(*bitmap, origin);
     if (!bitmap) {
@@ -3958,15 +4172,18 @@ skiac_bitmap* skiac_bitmap_make_from_image_data(uint8_t* ptr,
 // display-p3 ImageData (`cs` 1) is tagged so a draw converts it to the canvas
 // color space, as putImageData and Chrome's pattern over
 // createImageBitmap(imageData) do. An sRGB one stays untagged, which draws the
-// same and keeps the PNG that the SVG output embeds unchanged.
+// same and keeps the PNG that the SVG output embeds unchanged. A float
+// ImageData (`pf` 1 or 2) keeps its colour type, as Chrome's ImageBitmap of an
+// rgba-float16 ImageData does.
 skiac_bitmap* skiac_bitmap_make_premul_from_image_data(uint8_t* ptr,
                                                        size_t width,
                                                        size_t height,
                                                        size_t row_bytes,
-                                                       uint8_t cs) {
+                                                       uint8_t cs,
+                                                       uint8_t pf) {
   auto bitmap = new SkBitmap();
   const auto src_info = SkImageInfo::Make(
-      (int)width, (int)height, kRGBA_8888_SkColorType, kUnpremul_SkAlphaType,
+      (int)width, (int)height, ImageDataColorType(pf), kUnpremul_SkAlphaType,
       cs == 0 ? nullptr : COLOR_SPACE_CAST);
   if (!bitmap->tryAllocPixels(src_info.makeAlphaType(kPremul_SkAlphaType)) ||
       !bitmap->writePixels(SkPixmap(src_info, ptr, row_bytes), 0, 0)) {
@@ -4104,6 +4321,15 @@ bool skiac_bitmap_source_is_opaque(skiac_bitmap* c_bitmap, bool is_canvas) {
   return BITMAP_CAST->alphaType() == kOpaque_SkAlphaType;
 }
 
+// The bytes per pixel of a drawImage source: 8 for a float16 canvas.
+int skiac_bitmap_source_bytes_per_pixel(skiac_bitmap* c_bitmap,
+                                        bool is_canvas) {
+  if (is_canvas) {
+    return reinterpret_cast<SkSurface*>(c_bitmap)->imageInfo().bytesPerPixel();
+  }
+  return BITMAP_CAST->bytesPerPixel();
+}
+
 size_t skiac_bitmap_get_width(skiac_bitmap* c_bitmap) {
   auto bitmap = reinterpret_cast<SkBitmap*>(c_bitmap);
   return bitmap->width();
@@ -4217,7 +4443,8 @@ skiac_shader* skiac_image_make_decoded_pattern_shader(
                               : c_image && IMAGE_CAST->peekPixels(&original);
   if (!has_pixels) {
     // A null image gives an empty shader below.
-  } else if (level == 0 && !ConversionTarget(original, cs)) {
+  } else if (level == 0 && !ConversionTarget(original, cs) &&
+             (c_levels || !IsFloat(original))) {
     image = sk_ref_sp(IMAGE_CAST);
   } else {
     const SkIRect src = SkIRect::MakeSize(original.dimensions());

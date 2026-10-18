@@ -31,7 +31,7 @@ use crate::{
     StrokeCap, StrokeJoin, Surface, TextSettings, Transform,
   },
   state::Context2dRenderingState,
-  webidl::{self, Double, Positional, ReportedSettings},
+  webidl::{self, CanvasPixelFormat, Double, ImageDataPixelFormat, Positional, ReportedSettings},
 };
 
 static CSS_SIZE_REGEXP: LazyLock<Regex> =
@@ -215,23 +215,39 @@ pub(crate) enum PixelState {
   AllocationFailed,
 }
 
-/// Whether a raster canvas of this size gets a bitmap: Skia's raster limit.
-/// No side is 0 or above SK_MaxS32 >> 2 (SkImageInfoIsValid), and the 4-byte
-/// pixels fit in SK_MaxS32 bytes (SkImageInfo::computeByteSize), so no canvas
-/// reserves more than 2 GiB.
+/// Whether a raster canvas of this size and pixel format gets a bitmap:
+/// Skia's raster limit. No side is 0 or above SK_MaxS32 >> 2
+/// (SkImageInfoIsValid), and the pixels (4 bytes each, 8 for float16) fit in
+/// SK_MaxS32 bytes (SkImageInfo::computeByteSize), so no canvas reserves more
+/// than 2 GiB. A size Skia would refuse is an invalid size here, never a
+/// failed allocation.
 ///
-/// Not Chrome: CanvasRenderingContextHost::IsValidImageSize
+/// Not Chrome for unorm8: CanvasRenderingContextHost::IsValidImageSize
 /// (canvas_rendering_context_host.cc:128-149) also gives no bitmap for a side
 /// above 65535 or an area above 32768 * 8192 (pdf.js draws images wider than
-/// that from malformed PDFs; main drew every size Skia holds).
-pub(crate) fn is_valid_image_size(width: u32, height: u32) -> bool {
+/// that from malformed PDFs; main drew every size Skia holds). Float16
+/// canvases, which main did not have, keep Chrome's limit as well.
+pub(crate) fn is_valid_image_size(
+  width: u32,
+  height: u32,
+  pixel_format: CanvasPixelFormat,
+) -> bool {
   const MAX_SIDE: u32 = (i32::MAX >> 2) as u32;
   const MAX_BYTES: u64 = i32::MAX as u64;
+  const CHROME_MAX_SIDE: u32 = 65535;
+  const CHROME_MAX_AREA: u64 = 32768 * 8192;
+  if pixel_format == CanvasPixelFormat::Float16
+    && (width > CHROME_MAX_SIDE
+      || height > CHROME_MAX_SIDE
+      || u64::from(width) * u64::from(height) > CHROME_MAX_AREA)
+  {
+    return false;
+  }
   width > 0
     && height > 0
     && width <= MAX_SIDE
     && height <= MAX_SIDE
-    && u64::from(width) * u64::from(height) * 4 <= MAX_BYTES
+    && u64::from(width) * u64::from(height) * pixel_format.bytes_per_pixel() as u64 <= MAX_BYTES
 }
 
 /// Blink's ShouldDrawImageAntialiased (canvas_2d_recorder_context.cc:
@@ -362,6 +378,8 @@ pub struct Context {
   pub width: u32,
   pub height: u32,
   pub color_space: ColorSpace,
+  /// getContext's colorType: the colour type of the surface's pixels.
+  pub(crate) pixel_format: CanvasPixelFormat,
   pub stream: Option<SkWMemoryStream>,
   /// Content generation for backends without a recorder (SVG, PDF) and for
   /// raster writes that bypass it. The raster backend's canonical generation
@@ -377,6 +395,7 @@ impl Context {
     height: u32,
     svg_export_flag: crate::sk::SvgExportFlag,
     color_space: ColorSpace,
+    pixel_format: CanvasPixelFormat,
   ) -> Result<Self> {
     let (surface, stream) = Surface::new_svg(
       width,
@@ -384,6 +403,7 @@ impl Context {
       AlphaType::Premultiplied,
       svg_export_flag,
       color_space,
+      pixel_format,
     )
     .ok_or_else(|| Error::from_reason("Create skia svg surface failed".to_owned()))?;
     Ok(Context {
@@ -407,13 +427,14 @@ impl Context {
       width,
       height,
       color_space,
+      pixel_format,
       stream: Some(stream),
       direct_content_version: Cell::new(0),
     })
   }
 
   pub fn new(width: u32, height: u32, color_space: ColorSpace) -> Result<Self> {
-    Self::new_with_alpha(width, height, color_space, true)
+    Self::new_with_alpha(width, height, color_space, true, CanvasPixelFormat::Unorm8)
   }
 
   /// A raster context. alpha:false gets a kOpaque surface cleared to opaque
@@ -426,17 +447,18 @@ impl Context {
     height: u32,
     color_space: ColorSpace,
     alpha: bool,
+    pixel_format: CanvasPixelFormat,
   ) -> Result<Self> {
     let new_surface = |width, height| {
       if alpha {
-        Surface::new_rgba_premultiplied(width, height, color_space)
+        Surface::new_rgba_premultiplied(width, height, color_space, pixel_format)
       } else {
-        Surface::new_rgba_opaque(width, height, color_space)
+        Surface::new_rgba_opaque(width, height, color_space, pixel_format)
       }
     };
     let mut pixel_state = if width == 0 || height == 0 {
       PixelState::Empty
-    } else if !is_valid_image_size(width, height) {
+    } else if !is_valid_image_size(width, height, pixel_format) {
       PixelState::InvalidSize
     } else {
       PixelState::Ready
@@ -458,13 +480,12 @@ impl Context {
         1,
       ),
     };
+    let mut recorder = PageRecorder::new(recorder_width as f32, recorder_height as f32);
+    recorder.bytes_per_pixel = pixel_format.bytes_per_pixel();
     let mut context = Context {
       surface,
       resource_id: next_resource_id(),
-      page_recorder: Some(RefCell::new(PageRecorder::new(
-        recorder_width as f32,
-        recorder_height as f32,
-      ))), // Enable deferred rendering
+      page_recorder: Some(RefCell::new(recorder)), // Enable deferred rendering
       backend: Backend::Raster,
       pixel_state,
       context_lost: false,
@@ -475,6 +496,7 @@ impl Context {
       width,
       height,
       color_space,
+      pixel_format,
       stream: None,
       direct_content_version: Cell::new(0),
     };
@@ -523,6 +545,7 @@ impl Context {
       width,
       height,
       color_space: ColorSpace::default(),
+      pixel_format: CanvasPixelFormat::Unorm8,
       stream: None,
       direct_content_version: Cell::new(0),
     }
@@ -565,14 +588,15 @@ impl Context {
   }
 
   /// The bytes of the pixels, as reported to V8 as external memory: the
-  /// surface's (the 1x1 stand-in when the canvas has no pixels), or the
-  /// page size of a PDF page, whose surface the document owns.
+  /// surface's (the 1x1 stand-in when the canvas has no pixels), 8 per pixel
+  /// for float16, or the page size of a PDF page, whose surface the document
+  /// owns.
   pub(crate) fn surface_bytes(&self) -> i64 {
     let (width, height) = match self.backend {
       Backend::Pdf => (self.width, self.height),
       Backend::Raster | Backend::Svg => (self.surface.width(), self.surface.height()),
     };
-    i64::from(width) * i64::from(height) * 4
+    i64::from(width) * i64::from(height) * self.pixel_format.bytes_per_pixel() as i64
   }
 
   /// Draw the pending recording into the surface: the PageRecorder of a
@@ -634,16 +658,17 @@ impl Context {
   /// a read-out actually needs the picture (Context::get_picture). For
   /// content writers only -- reads (get_bitmap, read_pixels) need the flush
   /// but not the sync.
-  pub(crate) fn with_surface_canvas<F>(&mut self, f: F)
+  pub(crate) fn with_surface_canvas<F, R>(&mut self, f: F) -> R
   where
-    F: FnOnce(&mut Canvas),
+    F: FnOnce(&mut Canvas) -> R,
   {
     self.flush();
-    f(&mut self.surface.canvas);
+    let result = f(&mut self.surface.canvas);
     if let Some(ref recorder) = self.page_recorder {
       recorder.borrow_mut().note_surface_write();
     }
     self.note_direct_mutation();
+    result
   }
 
   /// Flush the deferred recording once it exceeds MAX_RECORDED_BYTES, bounding
@@ -2325,8 +2350,13 @@ impl Context {
     } else {
       FilterQuality::None
     };
-    let decode = (self.backend == Backend::Raster)
-      .then(|| (self.state.transform.get_transform(), self.color_space));
+    let decode = (self.backend == Backend::Raster).then(|| {
+      (
+        self.state.transform.get_transform(),
+        self.color_space,
+        self.pixel_format,
+      )
+    });
     pattern.get_shader(quality, decode)
   }
 
@@ -2589,6 +2619,84 @@ impl Context {
         .ok_or(ReadPixelsError::OutOfMemory);
     }
     self.surface.read_pixels(x, y, w, h, color_type)
+  }
+
+  /// getImageData into `out`, the zeroed data of a `w` x `h` ImageData of
+  /// `pixel_format`: Blink reads the canvas into the ImageData's own
+  /// unpremultiplied info (base_rendering_context_2d.cc:497-512). What lies
+  /// outside the canvas stays zero.
+  pub(crate) fn read_image_data(
+    &mut self,
+    out: &mut [u8],
+    [x, y]: [i32; 2],
+    [w, h]: [u32; 2],
+    color_space: ColorSpace,
+    pixel_format: ImageDataPixelFormat,
+  ) {
+    self.flush();
+    if self.has_pixels() {
+      self
+        .surface
+        .read_pixels_format(out, x, y, w, h, color_space, pixel_format);
+    }
+  }
+
+  /// putImageData on a raster canvas from Blink's dirty rect step on
+  /// (base_rendering_context_2d.cc:556-616): the dirty rect, normalized,
+  /// within the data, moved by (dx, dy) and within the canvas, written over
+  /// the canvas pixels. Data of another number of bytes per pixel than the
+  /// canvas is converted first; false when that cannot allocate.
+  pub(crate) fn put_image_data_pixels(
+    &mut self,
+    image_data: &ImageData,
+    data: *const u8,
+    [dx, dy]: [i32; 2],
+    dirty: Option<[i32; 4]>,
+  ) -> bool {
+    let (width, height) = (image_data.width as i64, image_data.height as i64);
+    let [mut x, mut y, mut w, mut h] = dirty
+      .map(|dirty| dirty.map(i64::from))
+      .unwrap_or([0, 0, width, height]);
+    // A negative size flips the origin, unless the origin is negative too.
+    for (origin, size) in [(&mut x, &mut w), (&mut y, &mut h)] {
+      if *size < 0 {
+        if *origin < 0 {
+          (*origin, *size) = (0, 0);
+        } else {
+          *origin += *size;
+          *size = -*size;
+        }
+      }
+    }
+    let (dx, dy) = (i64::from(dx), i64::from(dy));
+    let (canvas_width, canvas_height) = (
+      i64::from(self.surface.width()),
+      i64::from(self.surface.height()),
+    );
+    let left = x.max(0) + dx;
+    let top = y.max(0) + dy;
+    let right = (x + w).min(width) + dx;
+    let bottom = (y + h).min(height) + dy;
+    let (left, top) = (left.max(0), top.max(0));
+    let (right, bottom) = (right.min(canvas_width), bottom.min(canvas_height));
+    if left >= right || top >= bottom {
+      return true;
+    }
+    let source = [left - dx, top - dy, right - left, bottom - top].map(|v| v as i32);
+    let opaque = !self.alpha;
+    self.with_surface_canvas(|canvas| {
+      canvas.write_pixels_format(
+        data,
+        image_data.width,
+        image_data.height,
+        image_data.color_space,
+        image_data.pixel_format,
+        opaque,
+        source,
+        left as i32,
+        top as i32,
+      )
+    })
   }
 
   pub fn set_line_dash(&mut self, line_dash_list: Vec<f32>) {
@@ -3453,7 +3561,7 @@ impl Context {
     // pins instead, charged below under its own identity.
     self.account_raster_resource(
       raster_key,
-      (bitmap.0.width as usize) * (bitmap.0.height as usize) * 4,
+      (bitmap.0.width as usize) * (bitmap.0.height as usize) * bitmap.bytes_per_pixel(),
     );
     // Blink's bounds are the destination rect after ClipRectsToImageRect
     // (canvas_2d_recorder_context.cc:1983-2008) cut the source to the image.
@@ -4490,6 +4598,7 @@ pub enum CreateImageDataArgs {
     width: usize,
     height: usize,
     color_space: ColorSpace,
+    pixel_format: ImageDataPixelFormat,
   },
   /// createImageData([EnforceRange] long sw, [EnforceRange] long sh,
   /// optional ImageDataSettings settings).
@@ -4513,7 +4622,7 @@ impl FromNapiValue for CreateImageDataArgs {
     }
     let first = args.get(0)?;
     if args.len() == 1 {
-      // The same size and color space, new zeroed data
+      // The same size, color space and pixel format, new zeroed data
       // (base_rendering_context_2d.cc:296).
       if unsafe { <&ImageData as ValidateNapiValue>::validate(env, first) }.is_ok()
         && let Ok(image_data) = unsafe { ImageData::from_napi_ref(env, first) }
@@ -4522,6 +4631,7 @@ impl FromNapiValue for CreateImageDataArgs {
           width: image_data.width,
           height: image_data.height,
           color_space: image_data.color_space,
+          pixel_format: image_data.pixel_format,
         });
       }
       return Err(webidl::context_type_error(
@@ -4620,7 +4730,7 @@ impl CanvasRenderingContext2D {
   ) -> Result<Self> {
     let color_space = ColorSpace::from_str(&color_space)?;
     let context = if let Some(flag) = flag {
-      Context::new_svg(width, height, flag.into(), color_space)?
+      Context::new_svg(width, height, flag.into(), color_space, Default::default())?
     } else {
       Context::new(width, height, color_space)?
     };
@@ -5223,7 +5333,8 @@ impl CanvasRenderingContext2D {
         width,
         height,
         color_space,
-      } => ImageData::new_zeroed(env, width, height, color_space),
+        pixel_format,
+      } => ImageData::new_zeroed(env, width, height, color_space, pixel_format),
       CreateImageDataArgs::Size {
         width,
         height,
@@ -5246,7 +5357,13 @@ impl CanvasRenderingContext2D {
         let color_space = settings
           .color_space(env.raw(), prefix)?
           .unwrap_or(self.context.color_space);
-        ImageData::new_zeroed(env, width as usize, height as usize, color_space)
+        ImageData::new_zeroed(
+          env,
+          width as usize,
+          height as usize,
+          color_space,
+          settings.pixel_format,
+        )
       }
     }
   }
@@ -5506,6 +5623,7 @@ impl CanvasRenderingContext2D {
     // keyed by its current AccountedBitmap's own resource_id: every decode,
     // src reset, and regenerate_bitmap_if_need constructs a fresh
     // AccountedBitmap, so a swapped bitmap can never alias the stale charge.
+    let float16_decode: Option<std::sync::Arc<AccountedBitmap>>;
     let (bitmap, decode_cache, raster_key) = match args.image {
       // A canvas source without pixels draws nothing
       // (HTMLCanvasElement::GetSourceImageForCanvasInternal: not paintable).
@@ -5582,7 +5700,18 @@ impl CanvasRenderingContext2D {
             d_height,
           );
         }
-        if let Some(bitmap) = &image.bitmap {
+        // A raster float16 canvas draws a high-bit-depth image from its
+        // half-float decode (CanvasImageProvider::GetRasterContent,
+        // canvas_resource_provider.cc:2075-2085).
+        float16_decode = image
+          .bitmap
+          .as_ref()
+          .filter(|_| {
+            self.context.backend == Backend::Raster
+              && self.context.pixel_format == CanvasPixelFormat::Float16
+          })
+          .and_then(|bitmap| bitmap.float16_decode(self.context.color_space));
+        if let Some(bitmap) = float16_decode.as_ref().or(image.bitmap.as_ref()) {
           (
             BitmapRef::Borrowed(&bitmap.inner),
             Some(bitmap.as_ref()),
@@ -5685,11 +5814,13 @@ impl CanvasRenderingContext2D {
     // Get picture from source canvas (preserves vector graphics)
     // Note: We need mutable access to the source context to get the picture
     // This is safe because we have exclusive access to the CanvasElement
-    // A raster destination in another color space would replay the source's
-    // ops in its own space (gradients interpolate there), so it takes the
-    // source bitmap, as drawImage does. PDF and SVG keep the vector replay.
+    // A raster destination in another color space or pixel format would
+    // replay the source's ops in its own (gradients interpolate there, and a
+    // float16 canvas keeps what unorm8 rounds), so it takes the source
+    // bitmap, as drawImage does. PDF and SVG keep the vector replay.
     let picture = if self.context.backend == Backend::Raster
-      && canvas.ctx.context.color_space != self.context.color_space
+      && (canvas.ctx.context.color_space != self.context.color_space
+        || canvas.ctx.context.pixel_format != self.context.pixel_format)
     {
       None
     } else {
@@ -5863,7 +5994,7 @@ impl CanvasRenderingContext2D {
     ContextAttributes {
       alpha: self.context.alpha,
       color_space: self.context.color_space.as_str().to_owned(),
-      color_type: reported.color_type.as_str().to_owned(),
+      color_type: self.context.pixel_format.as_str().to_owned(),
       desynchronized: reported.desynchronized,
       // Chrome 155 does not read toneMapping and reports the default.
       tone_mapping: CanvasToneMapping {
@@ -6202,34 +6333,39 @@ impl CanvasRenderingContext2D {
     }
     let (sw, sh) = (w as u32, h as u32);
     // ImageData::ValidateAndCreate.
-    validate_size(raw, prefix, sw, Some(sh), SizeErrors::Context2D)?;
+    let len = validate_size(raw, prefix, sw, Some(sh), SizeErrors::Context2D)?;
     // Spec: defaultColorSpace is this context's color space.
     let color_space = settings
       .color_space(raw, prefix)?
       .unwrap_or(self.context.color_space);
-    let image_data = self
-      .context
-      .get_image_data(x, y, sw, sh, color_space)
-      .map_err(|e| match e {
-        ReadPixelsError::OutOfMemory => out_of_memory(raw, prefix),
-        ReadPixelsError::Failed => Error::new(
-          Status::GenericFailure,
-          "Read pixels from canvas failed".to_string(),
-        ),
-      })?;
-    let data_object = Uint8ClampedSlice::from_data(env, image_data)?;
-    let mut instance = ImageData {
-      width: sw as usize,
-      height: sh as usize,
+    let pixel_format = settings.pixel_format;
+    let bytes = if pixel_format == ImageDataPixelFormat::Unorm8 {
+      self
+        .context
+        .get_image_data(x, y, sw, sh, color_space)
+        .map_err(|e| match e {
+          ReadPixelsError::OutOfMemory => out_of_memory(raw, prefix),
+          ReadPixelsError::Failed => Error::new(
+            Status::GenericFailure,
+            "Read pixels from canvas failed".to_string(),
+          ),
+        })?
+    } else {
+      let mut bytes = alloc_pixel_data(raw, prefix, len, pixel_format)?;
+      self
+        .context
+        .read_image_data(&mut bytes, [x, y], [sw, sh], color_space, pixel_format);
+      bytes
+    };
+    ImageData::from_bytes(
+      env,
+      prefix,
+      sw as usize,
+      sh as usize,
       color_space,
-      data_ref: Some(create_weak_ref(env, data_object.raw())?),
-    }
-    .into_instance(env)?;
-    instance.define_properties(&[Property::new()
-      .with_utf8_name("data")?
-      .with_value(&data_object)
-      .with_property_attributes(PropertyAttributes::Enumerable)])?;
-    Ok(instance)
+      pixel_format,
+      bytes,
+    )
   }
 
   #[napi]
@@ -6273,8 +6409,8 @@ impl CanvasRenderingContext2D {
     {
       return Ok(());
     }
-    // A detached (transferred) data buffer is an InvalidStateError; `data`
-    // is non-configurable so it cannot be deleted.
+    // A detached (transferred) data buffer is an InvalidStateError. Deleting
+    // the own `data` leaves the array, which the ImageData keeps.
     let data = image_data
       .resolve_pixels(&env)
       .map_err(|e| match e.status {
@@ -6292,6 +6428,32 @@ impl CanvasRenderingContext2D {
     if !self.paint_canvas(&this)? {
       return Ok(());
     }
+    let out_of_memory = || {
+      webidl::context_range_error(
+        env.raw(),
+        webidl::PUT_IMAGE_DATA,
+        "Out of memory in putImageData",
+      )
+    };
+    // Float data, or any data on a float16 canvas: a raster canvas writes it
+    // as Blink does. The SVG and PDF backends draw float data as rgba-unorm8
+    // data, converted below only for a draw that shows some of it.
+    let raster = self.context.backend == Backend::Raster;
+    if raster
+      && (image_data.pixel_format != ImageDataPixelFormat::Unorm8
+        || self.context.pixel_format != CanvasPixelFormat::Unorm8)
+    {
+      if !self
+        .context
+        .put_image_data_pixels(image_data, data, [dx, dy], dirty)
+      {
+        return Err(out_of_memory());
+      }
+      return Ok(());
+    }
+    let float = image_data.pixel_format != ImageDataPixelFormat::Unorm8;
+    let unorm8;
+    let mut data = data;
     if let Some([dirty_x, dirty_y, dirty_width, dirty_height]) = dirty {
       let mut dirty_x = dirty_x as f32;
       let mut dirty_y = dirty_y as f32;
@@ -6330,6 +6492,24 @@ impl CanvasRenderingContext2D {
         && Context::rect_fillable(dy as f32 + dirty_y, dirty_height))
       {
         return Ok(());
+      }
+      if float {
+        // The spec cuts the dirty rect to the data and draws nothing when
+        // nothing is left. Only then is the whole data converted.
+        if f64::from(dirty_x) >= image_data.width as f64
+          || f64::from(dirty_y) >= image_data.height as f64
+        {
+          return Ok(());
+        }
+        unorm8 = crate::sk::image_data_to_unorm8(
+          data,
+          image_data.width,
+          image_data.height,
+          image_data.color_space,
+          image_data.pixel_format,
+        )
+        .ok_or_else(out_of_memory)?;
+        data = unorm8.as_ptr().cast_mut();
       }
       // Deferred mode: record via PageRecorder on a fresh layer (no clip/transform)
       // put_image_data uses drawImageRect with kSrc blend (pixel replacement),
@@ -6396,6 +6576,11 @@ impl CanvasRenderingContext2D {
       self.context.surface.canvas.restore();
       self.context.note_direct_mutation();
     } else {
+      // SVG and PDF devices take no writePixels, so the float data, which
+      // only they get here, would be converted for nothing.
+      if float {
+        return Ok(());
+      }
       // Deferred mode: use put_image_data with full image dimensions
       // because write_pixels (SkCanvas::writePixels) is NOT recordable by PictureRecorder
       self.context.flush_if_recording_limit_exceeded();
@@ -6942,7 +7127,7 @@ mod tests {
       (1 << 30, 1, false),
     ] {
       assert_eq!(
-        is_valid_image_size(width, height),
+        is_valid_image_size(width, height, CanvasPixelFormat::Unorm8),
         valid,
         "{width}x{height}"
       );
@@ -6969,9 +7154,46 @@ mod tests {
       (u32::MAX, u32::MAX, false),
     ] {
       assert_eq!(
-        is_valid_image_size(width, height),
+        is_valid_image_size(width, height, CanvasPixelFormat::Unorm8),
         valid,
         "{width}x{height}"
+      );
+    }
+  }
+
+  #[test]
+  fn is_valid_image_size_counts_8_bytes_for_float16() {
+    // Float16: Chrome's side and area limit, and 8 * width * height up to
+    // SK_MaxS32 (268435455 pixels). The unorm8 column is Skia's limit alone,
+    // at 4 bytes a pixel.
+    for (width, height, float16, unorm8) in [
+      (1, 1, true, true),
+      (65535, 1, true, true),
+      (65536, 1, false, true),
+      (70000, 2, false, true),
+      (268435455, 1, false, true),
+      (1, 268435455, false, true),
+      (65535, 4096, true, true),
+      (16384, 16383, true, true),
+      (23170, 11585, true, true),
+      (268435456, 1, false, true),
+      (1, 268435456, false, true),
+      (65536, 4096, false, true),
+      (16384, 16384, false, true),
+      (23170, 23170, false, true),
+      (536870911, 1, false, true),
+      (536870912, 1, false, false),
+      (0, 5, false, false),
+    ] {
+      assert_eq!(
+        is_valid_image_size(width, height, CanvasPixelFormat::Float16),
+        float16,
+        "float16 {width}x{height}"
+      );
+      assert_eq!(
+        is_valid_image_size(width, height, CanvasPixelFormat::Unorm8),
+        unorm8,
+        "unorm8 {width}x{height}"
       );
     }
   }
@@ -6990,6 +7212,22 @@ mod tests {
       assert_eq!((ctx.width, ctx.height), (width, height));
       assert_eq!((ctx.surface.width(), ctx.surface.height()), (1, 1));
       assert_eq!(ctx.surface_bytes(), 4);
+    }
+    // A float16 canvas over Chrome's side limit, and over Skia's limit at 8
+    // bytes a pixel but under it at 4: an invalid size, not a failed
+    // allocation.
+    for (width, height) in [(70000, 2), (268435456, 1), (16384, 16384)] {
+      let ctx = Context::new_with_alpha(
+        width,
+        height,
+        ColorSpace::default(),
+        true,
+        CanvasPixelFormat::Float16,
+      )
+      .expect("float16 context");
+      assert_eq!(ctx.pixel_state, PixelState::InvalidSize, "{width}x{height}");
+      assert_eq!((ctx.surface.width(), ctx.surface.height()), (1, 1));
+      assert_eq!(ctx.surface_bytes(), 8);
     }
     let ctx = raster_ctx(3, 2);
     assert_eq!(ctx.pixel_state, PixelState::Ready);
@@ -7127,7 +7365,14 @@ mod tests {
 
   /// fillRect `draws` times, each at a new place, on a 64x64 context.
   fn fill_rects(alpha: bool, setup: &dyn Fn(&mut Context), draws: usize) -> Context {
-    let mut ctx = Context::new_with_alpha(64, 64, ColorSpace::default(), alpha).unwrap();
+    let mut ctx = Context::new_with_alpha(
+      64,
+      64,
+      ColorSpace::default(),
+      alpha,
+      CanvasPixelFormat::Unorm8,
+    )
+    .unwrap();
     setup(&mut ctx);
     for i in 0..draws {
       let (x, y) = ((i * 13 % 56) as f32, (i * 7 % 56) as f32);
@@ -7494,7 +7739,11 @@ mod tests {
       pattern
         .get_shader(
           FilterQuality::Low,
-          Some((Transform::default(), ColorSpace::Srgb))
+          Some((
+            Transform::default(),
+            ColorSpace::Srgb,
+            CanvasPixelFormat::Unorm8
+          ))
         )
         .is_some()
     );
@@ -7511,6 +7760,7 @@ mod tests {
       64,
       SvgExportFlag::ConvertTextToPaths,
       ColorSpace::default(),
+      Default::default(),
     )
     .expect("svg context");
     svg
@@ -7873,7 +8123,11 @@ mod tests {
       pattern
         .get_shader(
           FilterQuality::Low,
-          Some((Transform::default(), ColorSpace::DisplayP3))
+          Some((
+            Transform::default(),
+            ColorSpace::DisplayP3,
+            CanvasPixelFormat::Unorm8
+          ))
         )
         .is_some()
     );
@@ -7886,7 +8140,8 @@ mod tests {
           FilterQuality::Low,
           Some((
             Transform::new(0.5, 0.0, 0.0, 0.5, 0.0, 0.0),
-            ColorSpace::DisplayP3
+            ColorSpace::DisplayP3,
+            CanvasPixelFormat::Unorm8
           ))
         )
         .is_some()

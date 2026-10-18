@@ -9,32 +9,183 @@ use crate::avif::AvifImage;
 use crate::data_url;
 use crate::sk::{AccountedBitmap, AlphaType, Bitmap, ColorSpace, ColorType, try_zeroed_bytes};
 use crate::svg_image::SvgImage;
-use crate::webidl;
+use crate::webidl::{self, ImageDataPixelFormat};
 
 #[napi(custom_finalize)]
 pub struct ImageData {
   pub(crate) width: usize,
   pub(crate) height: usize,
   pub(crate) color_space: ColorSpace,
-  // Weak `napi_ref` (created with refcount 0) used to re-resolve the `data`
-  // typed array's backing pointer per use. The array is kept alive by the
-  // non-configurable `data` own property on the JS object — a strong
-  // reference here would root it independently and make `id.data.owner = id`
-  // cycles uncollectable.
+  /// The type of `data`: Uint8ClampedArray, Float16Array or Float32Array.
+  pub(crate) pixel_format: ImageDataPixelFormat,
+  // Weak `napi_ref` (created with refcount 0) to the `data` typed array, for
+  // the `data` getter and to re-resolve its backing pointer per use. The
+  // per-environment WeakMap of `attach_data` keeps the array alive as long as
+  // the ImageData — a strong reference here would root it independently and
+  // make `id.data.owner = id` cycles uncollectable.
   pub(crate) data_ref: Option<sys::napi_ref>,
 }
 
-/// Create a weak `napi_ref` for `value` (`initial_refcount = 0`).
-/// `ObjectRef` cannot express this: its `unref` is `napi_delete_reference`,
-/// and `create_ref` hardcodes a strong refcount of 1, so we call napi-sys
-/// directly.
-pub(crate) fn create_weak_ref(env: &Env, value: sys::napi_value) -> Result<sys::napi_ref> {
-  let mut ref_ = ptr::null_mut();
-  check_status!(
-    unsafe { sys::napi_create_reference(env.raw(), value, 0, &mut ref_) },
-    "Failed to create weak reference"
-  )?;
-  Ok(ref_)
+fn ref_value(env: sys::napi_env, reference: sys::napi_ref) -> Result<sys::napi_value> {
+  let mut value = ptr::null_mut();
+  check_status!(unsafe { sys::napi_get_reference_value(env, reference, &mut value) })?;
+  Ok(value)
+}
+
+/// NotSupportedError for rgba-float16 on a runtime without Float16Array
+/// (Node before 24). No Chrome counterpart: Chrome always has it.
+fn require_float16(
+  env: sys::napi_env,
+  prefix: &str,
+  pixel_format: ImageDataPixelFormat,
+) -> Result<()> {
+  if pixel_format == ImageDataPixelFormat::Float16
+    && webidl::intrinsic(env, c"Float16Array")?.is_none()
+  {
+    return Err(webidl::dom_exception(
+      env,
+      "NotSupportedError",
+      &format!("{prefix}Float16Array is not supported by this JavaScript runtime."),
+    ));
+  }
+  Ok(())
+}
+
+/// A typed array of `pixel_format` over `bytes`, which it takes.
+fn new_data_array(
+  env: &Env,
+  prefix: &str,
+  bytes: Vec<u8>,
+  pixel_format: ImageDataPixelFormat,
+) -> Result<sys::napi_value> {
+  let raw = env.raw();
+  if pixel_format == ImageDataPixelFormat::Unorm8 {
+    return Ok(Uint8ClampedSlice::from_data(env, bytes)?.raw());
+  }
+  require_float16(raw, prefix, pixel_format)?;
+  // The allocator gives these (8 bytes or more) 8-byte aligned memory. An
+  // empty Vec (a 0-wide createImageData) has a dangling pointer.
+  debug_assert!(bytes.is_empty() || bytes.as_ptr().align_offset(4) == 0);
+  let length = bytes.len() / pixel_format.element_size();
+  let buffer = ArrayBuffer::from_data(env, bytes)?.raw();
+  let mut array = ptr::null_mut();
+  if pixel_format == ImageDataPixelFormat::Float32 {
+    check_status!(unsafe {
+      sys::napi_create_typedarray(
+        raw,
+        sys::TypedarrayType::float32_array,
+        length,
+        buffer,
+        0,
+        &mut array,
+      )
+    })?;
+  } else {
+    // Node-API makes a Float16Array from Node 24.13.1 and 25.4.0 on. Before,
+    // the type is a napi_invalid_arg, with no exception.
+    let status = unsafe {
+      sys::napi_create_typedarray(raw, NAPI_FLOAT16_ARRAY, length, buffer, 0, &mut array)
+    };
+    if status == sys::Status::napi_invalid_arg {
+      array = new_float16_array(raw, prefix, buffer, length)?;
+    } else {
+      check_status!(status)?;
+    }
+  }
+  Ok(array)
+}
+
+/// `new Float16Array(buffer)`, with the Float16Array constructor the addon
+/// found when it was loaded (see webidl::RealmIntrinsics), for a Node-API
+/// without napi_float16_array. Script may have put another function there
+/// before the addon was loaded: only a Float16Array of `length` elements over
+/// all of `buffer` is taken, never one over a SharedArrayBuffer or another
+/// typed array.
+fn new_float16_array(
+  env: sys::napi_env,
+  prefix: &str,
+  buffer: sys::napi_value,
+  length: usize,
+) -> Result<sys::napi_value> {
+  let Some(constructor) = webidl::intrinsic(env, c"Float16Array")? else {
+    return Err(Error::from_reason("Float16Array is not defined".to_owned()));
+  };
+  let mut array = ptr::null_mut();
+  check_status!(unsafe { sys::napi_new_instance(env, constructor, 1, &buffer, &mut array) })?;
+  let mut is_typedarray = false;
+  check_status!(unsafe { sys::napi_is_typedarray(env, array, &mut is_typedarray) })?;
+  let mut array_type = -1;
+  let mut array_length = 0usize;
+  let mut array_buffer = ptr::null_mut();
+  let mut offset = 0usize;
+  let mut same_buffer = false;
+  let is_view = is_typedarray
+    && unsafe {
+      sys::napi_get_typedarray_info(
+        env,
+        array,
+        &mut array_type,
+        &mut array_length,
+        ptr::null_mut(),
+        &mut array_buffer,
+        &mut offset,
+      )
+    } == sys::Status::napi_ok
+    && DataArrayType::from_napi(array_type) == Some(DataArrayType::Float16)
+    && array_length == length
+    && offset == 0
+    && unsafe { sys::napi_strict_equals(env, array_buffer, buffer, &mut same_buffer) }
+      == sys::Status::napi_ok
+    && same_buffer;
+  if !is_view {
+    return Err(webidl::context_type_error(
+      env,
+      prefix,
+      "The Float16Array constructor did not make a Float16Array of the data.",
+    ));
+  }
+  Ok(array)
+}
+
+/// Makes `array` the data of the ImageData object `this`, as Blink keeps it
+/// with the wrapper (ImageData::AssociateWithWrapper, image_data.cc:381-409):
+/// the `data` getter returns it, and an entry of the per-environment WeakMap
+/// keeps it alive exactly as long as `this`. The WeakMap and its `set` are
+/// those the addon made and found when it was loaded (see
+/// webidl::RealmIntrinsics), so no script runs here. A rgba-unorm8 ImageData
+/// also gets Chrome's own read-only `data` property, which can be deleted.
+fn attach_data(
+  env: sys::napi_env,
+  this: sys::napi_value,
+  array: sys::napi_value,
+  pixel_format: ImageDataPixelFormat,
+) -> Result<sys::napi_ref> {
+  let (Some(weak_map), Some(set)) = (
+    webidl::intrinsic(env, c"imageDataMap")?,
+    webidl::intrinsic(env, c"weakMapSet")?,
+  ) else {
+    return Err(Error::from_reason("WeakMap is not defined".to_owned()));
+  };
+  let mut ignored = ptr::null_mut();
+  check_status!(unsafe {
+    sys::napi_call_function(env, weak_map, set, 2, [this, array].as_ptr(), &mut ignored)
+  })?;
+  if pixel_format == ImageDataPixelFormat::Unorm8 {
+    let property = sys::napi_property_descriptor {
+      utf8name: c"data".as_ptr(),
+      name: ptr::null_mut(),
+      method: None,
+      getter: None,
+      setter: None,
+      value: array,
+      attributes: sys::PropertyAttributes::enumerable | sys::PropertyAttributes::configurable,
+      data: ptr::null_mut(),
+    };
+    check_status!(unsafe { sys::napi_define_properties(env, this, 1, &property) })?;
+  }
+  let mut reference = ptr::null_mut();
+  check_status!(unsafe { sys::napi_create_reference(env, array, 0, &mut reference) })?;
+  Ok(reference)
 }
 
 impl ObjectFinalize for ImageData {
@@ -76,6 +227,7 @@ impl ImageData {
         "ImageData pixel buffer is detached".to_owned(),
       ));
     }
+    let mut array_type = -1;
     let mut length = 0usize;
     let mut data = ptr::null_mut();
     check_status!(
@@ -83,7 +235,7 @@ impl ImageData {
         sys::napi_get_typedarray_info(
           env.raw(),
           array,
-          ptr::null_mut(),
+          &mut array_type,
           &mut length,
           &mut data,
           ptr::null_mut(),
@@ -92,6 +244,18 @@ impl ImageData {
       },
       "Failed to get ImageData typed array info"
     )?;
+    // Creation makes or checks an array of the format's type: only read the
+    // pixels from one.
+    let array_format = DataArrayType::from_napi(array_type).map(DataArrayType::pixel_format);
+    if array_format != Some(self.pixel_format) {
+      return Err(Error::new(
+        Status::GenericFailure,
+        format!(
+          "ImageData data is not a {}",
+          DataArrayType::name_of(self.pixel_format)
+        ),
+      ));
+    }
     if length < self.width * self.height * 4 || (length != 0 && data.is_null()) {
       return Err(Error::new(
         Status::InvalidArg,
@@ -235,42 +399,89 @@ pub(crate) fn validate_data_length(
 /// AllocateAndValidateDataArray (image_data.cc:236-270): `len` zeroed bytes.
 /// RangeError when the allocation fails, instead of aborting the process.
 ///
-/// Not Chrome: Chrome's PartitionAlloc refuses more than 2^31 - 2 MiB
-/// (partition_alloc_constants.h:403). Main had no limit, and pdf.js reads
-/// whole canvases and makes image-wide chunks, so there is none here.
+/// Not Chrome for rgba-unorm8 data: Chrome's PartitionAlloc refuses more than
+/// 2^31 - 2 MiB (partition_alloc_constants.h:403). Main had no limit, and
+/// pdf.js reads whole canvases and makes image-wide chunks, so there is none
+/// here. Float data keeps Chrome's limit: see [`MAX_FLOAT_DATA_BYTES`].
 pub(crate) fn alloc_data(env: sys::napi_env, prefix: &str, len: usize) -> Result<Vec<u8>> {
   try_zeroed_bytes(len).ok_or_else(|| out_of_memory(env, prefix))
 }
 
+/// The most bytes Chrome gives ImageData data: it allocates them with
+/// PartitionAlloc, which refuses more than `MaxDirectMapped()` = 2^31 - 2 MiB
+/// (partition_alloc_constants.h:403), and AllocateAndValidateDataArray then
+/// throws (image_data.cc:262). Only rgba-float16 and rgba-float32 data are
+/// held to it: main had no float ImageData, and without it a float32
+/// ImageData whose `4 * width * height` fits in 32 bits could take 16 GiB.
+pub(crate) const MAX_FLOAT_DATA_BYTES: usize = (1 << 31) - (1 << 21);
+
+/// The bytes of `elements` channels of `pixel_format`, or None when the size
+/// overflows or float data is above [`MAX_FLOAT_DATA_BYTES`].
+fn data_byte_size(elements: usize, pixel_format: ImageDataPixelFormat) -> Option<usize> {
+  let len = elements.checked_mul(pixel_format.element_size())?;
+  (pixel_format == ImageDataPixelFormat::Unorm8 || len <= MAX_FLOAT_DATA_BYTES).then_some(len)
+}
+
+/// AllocateAndValidateDataArray for `elements` channels of `pixel_format`:
+/// RangeError when the byte size overflows or float data is above Chrome's
+/// limit (both before anything is allocated), then NotSupportedError for
+/// rgba-float16 without Float16Array, then the zeroed bytes of
+/// [`alloc_data`].
+pub(crate) fn alloc_pixel_data(
+  env: sys::napi_env,
+  prefix: &str,
+  elements: usize,
+  pixel_format: ImageDataPixelFormat,
+) -> Result<Vec<u8>> {
+  let Some(len) = data_byte_size(elements, pixel_format) else {
+    return Err(out_of_memory(env, prefix));
+  };
+  require_float16(env, prefix, pixel_format)?;
+  alloc_data(env, prefix, len)
+}
+
 impl ImageData {
+  /// An ImageData of `bytes`, data of `pixel_format`.
+  pub(crate) fn from_bytes<'a>(
+    env: &'a Env,
+    prefix: &str,
+    width: usize,
+    height: usize,
+    color_space: ColorSpace,
+    pixel_format: ImageDataPixelFormat,
+    bytes: Vec<u8>,
+  ) -> Result<ClassInstance<'a, ImageData>> {
+    let array = new_data_array(env, prefix, bytes, pixel_format)?;
+    let mut instance = ImageData {
+      width,
+      height,
+      color_space,
+      pixel_format,
+      data_ref: None,
+    }
+    .into_instance(env)?;
+    instance.data_ref = Some(attach_data(env.raw(), instance.value, array, pixel_format)?);
+    Ok(instance)
+  }
+
   /// A zero-filled ImageData, as createImageData returns.
   pub(crate) fn new_zeroed<'a>(
     env: &'a Env,
     width: usize,
     height: usize,
     color_space: ColorSpace,
+    pixel_format: ImageDataPixelFormat,
   ) -> Result<ClassInstance<'a, ImageData>> {
-    let Some(length) = width.checked_mul(height).and_then(|v| v.checked_mul(4)) else {
+    let prefix = webidl::CREATE_IMAGE_DATA;
+    let Some(elements) = width.checked_mul(height).and_then(|v| v.checked_mul(4)) else {
       return Err(webidl::context_range_error(
         env.raw(),
-        webidl::CREATE_IMAGE_DATA,
+        prefix,
         "Out of memory at ImageData creation.",
       ));
     };
-    let data = alloc_data(env.raw(), webidl::CREATE_IMAGE_DATA, length)?;
-    let data_object = Uint8ClampedSlice::from_data(env, data)?;
-    let mut instance = ImageData {
-      width,
-      height,
-      color_space,
-      data_ref: Some(create_weak_ref(env, data_object.raw())?),
-    }
-    .into_instance(env)?;
-    instance.define_properties(&[Property::new()
-      .with_utf8_name("data")?
-      .with_value(&data_object)
-      .with_property_attributes(PropertyAttributes::Enumerable)])?;
-    Ok(instance)
+    let bytes = alloc_pixel_data(env.raw(), prefix, elements, pixel_format)?;
+    Self::from_bytes(env, prefix, width, height, color_space, pixel_format, bytes)
   }
 }
 
@@ -283,6 +494,29 @@ enum DataArrayType {
 }
 
 impl DataArrayType {
+  /// The type of a typed array of napi type `array_type`.
+  fn from_napi(array_type: sys::napi_typedarray_type) -> Option<Self> {
+    match array_type {
+      sys::TypedarrayType::uint8_clamped_array => Some(Self::Uint8Clamped),
+      sys::TypedarrayType::float32_array => Some(Self::Float32),
+      NAPI_FLOAT16_ARRAY => Some(Self::Float16),
+      // Node before 24.13.1 (25 before 25.4.0) leaves the type unset for a
+      // Float16Array, the only TypedArray kind it has no napi type for.
+      -1 => Some(Self::Float16),
+      _ => None,
+    }
+  }
+
+  /// The name of the data type of `pixel_format`.
+  fn name_of(pixel_format: ImageDataPixelFormat) -> &'static str {
+    match pixel_format {
+      ImageDataPixelFormat::Unorm8 => Self::Uint8Clamped,
+      ImageDataPixelFormat::Float16 => Self::Float16,
+      ImageDataPixelFormat::Float32 => Self::Float32,
+    }
+    .name()
+  }
+
   fn name(self) -> &'static str {
     match self {
       Self::Uint8Clamped => "Uint8ClampedArray",
@@ -291,16 +525,16 @@ impl DataArrayType {
     }
   }
 
-  fn pixel_format(self) -> &'static str {
+  fn pixel_format(self) -> ImageDataPixelFormat {
     match self {
-      Self::Uint8Clamped => "rgba-unorm8",
-      Self::Float16 => "rgba-float16",
-      Self::Float32 => "rgba-float32",
+      Self::Uint8Clamped => ImageDataPixelFormat::Unorm8,
+      Self::Float16 => ImageDataPixelFormat::Float16,
+      Self::Float32 => ImageDataPixelFormat::Float32,
     }
   }
 }
 
-/// `napi_float16_array` (js_native_api_types.h, Node 24.18 and later).
+/// `napi_float16_array` (js_native_api_types.h, Node 24.13.1 and 25.4.0 on).
 const NAPI_FLOAT16_ARRAY: sys::napi_typedarray_type = 11;
 
 /// The data type of `value`, if it is ImageData data: V8's
@@ -325,15 +559,7 @@ fn data_array_type(env: sys::napi_env, value: sys::napi_value) -> Result<Option<
       ptr::null_mut(),
     )
   })?;
-  Ok(match array_type {
-    sys::TypedarrayType::uint8_clamped_array => Some(DataArrayType::Uint8Clamped),
-    sys::TypedarrayType::float32_array => Some(DataArrayType::Float32),
-    NAPI_FLOAT16_ARRAY => Some(DataArrayType::Float16),
-    // Node before 24.18 leaves the type unset for a Float16Array, the only
-    // TypedArray kind it has no napi type for.
-    -1 => Some(DataArrayType::Float16),
-    _ => None,
-  })
+  Ok(DataArrayType::from_napi(array_type))
 }
 
 /// The NotShared<T> conversion of ImageData data
@@ -481,8 +707,8 @@ fn construct_image_data_checked(
     }
   }
   let args = webidl::Arguments::with_len(env, &argv, argc.min(4) as u32)?;
-  let mut this = unsafe { This::from_napi_value(env, this)? };
-  let image_data = ImageData::construct(&Env::from(env), &mut this, &args)?;
+  let this = unsafe { This::from_napi_value(env, this)? };
+  let image_data = ImageData::construct(&Env::from(env), &this, &args)?;
   // What the class constructor glue of napi-rs does with its `this`: wrap
   // the value and register it, so that the getters, `&ImageData` arguments
   // and the finalizer find it as they find any other instance.
@@ -498,7 +724,7 @@ impl ImageData {
   #[napi(constructor)]
   pub fn new(
     env: Env,
-    mut this: This,
+    this: This,
     arg0: Unknown,
     arg1: Unknown,
     arg2: Unknown,
@@ -510,14 +736,14 @@ impl ImageData {
       &[arg0.raw(), arg1.raw(), arg2.raw(), arg3.raw()],
       argc.raw(),
     )?;
-    Self::construct(&env, &mut this, &args)
+    Self::construct(&env, &this, &args)
   }
 
   /// `new ImageData(sw, sh, settings?)` or `new ImageData(data, sw, sh?,
   /// settings?)`, picked as Chrome's binding picks them
   /// (v8_image_data.cc ConstructorCallback): with data first (a brand check)
   /// the data form, else the size form, which takes at most 3 arguments.
-  fn construct(env: &Env, this: &mut This, args: &webidl::Arguments) -> Result<Self> {
+  fn construct(env: &Env, this: &This, args: &webidl::Arguments) -> Result<Self> {
     let raw = env.raw();
     let prefix = webidl::IMAGE_DATA_CONSTRUCTOR;
     if args.len() < 2 {
@@ -544,20 +770,17 @@ impl ImageData {
     } else {
       webidl::ImageDataSettings::default()
     };
-    let length = validate_size(raw, prefix, width, Some(height), SizeErrors::Constructor)?;
+    let elements = validate_size(raw, prefix, width, Some(height), SizeErrors::Constructor)?;
     let color_space = settings.color_space(raw, prefix)?.unwrap_or_default();
-    let data_object = Uint8ClampedSlice::from_data(env, alloc_data(raw, prefix, length)?)?;
-    this.define_properties(&[Property::new()
-      .with_utf8_name("data")?
-      .with_value(&data_object)
-      // Enumerable only: non-writable/non-configurable so the array is
-      // pinned by ordinary GC tracing for exactly the ImageData's lifetime.
-      .with_property_attributes(PropertyAttributes::Enumerable)])?;
+    let pixel_format = settings.pixel_format;
+    let bytes = alloc_pixel_data(raw, prefix, elements, pixel_format)?;
+    let array = new_data_array(env, prefix, bytes, pixel_format)?;
     Ok(ImageData {
       width: width as usize,
       height: height as usize,
       color_space,
-      data_ref: Some(create_weak_ref(env, data_object.raw())?),
+      pixel_format,
+      data_ref: Some(attach_data(raw, this.object.raw(), array, pixel_format)?),
     })
   }
 
@@ -568,7 +791,7 @@ impl ImageData {
   /// pixel format, data length.
   fn from_data(
     env: &Env,
-    this: &mut This,
+    this: &This,
     array_type: DataArrayType,
     args: &webidl::Arguments,
   ) -> Result<Self> {
@@ -587,16 +810,16 @@ impl ImageData {
     };
     validate_size(raw, prefix, width, height, SizeErrors::Constructor)?;
     let color_space = settings.color_space(raw, prefix)?.unwrap_or_default();
-    // Storage is 8-bit only, so the pixel format is always rgba-unorm8
-    // (image_data.cc:139-171).
-    if array_type != DataArrayType::Uint8Clamped {
+    // The data type must match the pixel format (image_data.cc:139-171).
+    let pixel_format = array_type.pixel_format();
+    if pixel_format != settings.pixel_format {
       return Err(webidl::dom_exception(
         raw,
         "InvalidStateError",
         &format!(
           "{prefix}{} must use {} pixelFormat.",
           array_type.name(),
-          array_type.pixel_format()
+          pixel_format.as_str()
         ),
       ));
     }
@@ -612,21 +835,41 @@ impl ImageData {
         ptr::null_mut(),
       )
     })?;
-    let height = validate_data_length(raw, prefix, width, height, length, 1)?;
-    // The given array is the data, not a copy (image_data.cc:230). As for the
-    // other forms: a weak ref, and a non-configurable `data` property that
-    // keeps the array alive; resolve_pixels checks it on every use, as the
-    // caller may detach its buffer.
-    this.define_properties(&[Property::new()
-      .with_utf8_name("data")?
-      .with_value(&unsafe { Unknown::from_raw_unchecked(raw, data) })
-      .with_property_attributes(PropertyAttributes::Enumerable)])?;
+    let element_size = pixel_format.element_size();
+    let height = validate_data_length(
+      raw,
+      prefix,
+      width,
+      height,
+      length * element_size,
+      element_size,
+    )?;
+    // The given array is the data, not a copy (image_data.cc:230).
+    // resolve_pixels checks it on every use, as the caller may detach its
+    // buffer.
     Ok(ImageData {
       width: width as usize,
       height: height as usize,
       color_space,
-      data_ref: Some(create_weak_ref(env, data)?),
+      pixel_format,
+      data_ref: Some(attach_data(raw, this.object.raw(), data, pixel_format)?),
     })
+  }
+
+  /// The data: a Uint8ClampedArray, Float16Array or Float32Array. A
+  /// rgba-unorm8 ImageData also has it as an own property, as in Chrome.
+  #[napi(getter, ts_return_type = "ImageDataArray")]
+  pub fn get_data<'env>(&self, env: &'env Env) -> Result<Unknown<'env>> {
+    let raw = env.raw();
+    let mut value = ptr::null_mut();
+    if let Some(data_ref) = self.data_ref {
+      value = ref_value(raw, data_ref)?;
+    }
+    // Only before attach_data ran, or after the environment is torn down.
+    if value.is_null() {
+      check_status!(unsafe { sys::napi_get_undefined(raw, &mut value) })?;
+    }
+    Ok(unsafe { Unknown::from_raw_unchecked(raw, value) })
   }
 
   #[napi(getter)]
@@ -644,10 +887,9 @@ impl ImageData {
     self.color_space.as_str()
   }
 
-  /// Storage is always 8-bit RGBA here.
   #[napi(getter, ts_return_type = "ImageDataPixelFormat")]
   pub fn get_pixel_format(&self) -> &'static str {
-    "rgba-unorm8"
+    self.pixel_format.as_str()
   }
 }
 
@@ -923,6 +1165,8 @@ impl Image {
     if let Either::A(buffer) = data {
       let buffer_data = buffer.as_ref();
       let length = buffer_data.len();
+      // Room for the copy of a high-bit-depth image, for the decode task.
+      let encoded = encoded_room(buffer_data);
 
       // Known raster signatures take precedence over the permissive SVG scan.
       // Raster payloads may legitimately contain the bytes `<svg` in metadata or
@@ -1016,6 +1260,7 @@ impl Image {
             color_space: self.color_space,
             data: Some(Either::A(unsafe { raw_data.cast()? })),
             file_content: None,
+            encoded,
             fire_events: true, // Fire onload after decode completes
             original_url: None,
           };
@@ -1071,6 +1316,7 @@ impl Image {
           color_space: self.color_space,
           data: Some(Either::A(unsafe { raw_data.cast()? })),
           file_content: None,
+          encoded,
           fire_events: true,
           original_url: None,
         };
@@ -1175,6 +1421,7 @@ impl Image {
             width,
             height,
             color_space,
+            encoded: encoded_room(&buffer),
             data: Some(Either::A(buffer)),
             file_content: None,
             this_ref: this.create_ref()?,
@@ -1264,6 +1511,11 @@ impl Image {
       color_space: self.color_space,
       data: Some(unsafe { raw_data.cast()? }),
       file_content: None,
+      // A file is read in `compute`: only a data: URL has room.
+      encoded: match &self.src {
+        Some(Either::B(url)) => data_url_room(url.as_bytes()),
+        _ => None,
+      },
       this_ref: this.create_ref()?,
       generation: self.load_generation,
       fire_events: true,
@@ -1360,6 +1612,10 @@ unsafe impl Send for DecodedBitmap {}
 
 struct BitmapInfo {
   data: Bitmap,
+  /// Whether the image has more than 8 bits a channel: the Image then keeps
+  /// a copy of the encoded image (`BitmapDecoder::take_encoded`), as a
+  /// float16 canvas draws its half-float decode.
+  high_bit_depth: bool,
 }
 
 enum DecodeStatus {
@@ -1377,6 +1633,12 @@ struct BitmapDecoder {
   data: Option<Either<Uint8Array, String>>,
   // data from file path
   file_content: Option<Vec<u8>>,
+  /// Room for a copy of the encoded image, made on the JS thread when its
+  /// first bytes say it may have more than 8 bits a channel (`encoded_room`).
+  /// `compute` copies the bytes it decodes into it and decodes the copy, which
+  /// the Image keeps: a Buffer changed during the load changes neither its
+  /// 8-bit pixels nor its half-float decodes.
+  encoded: Option<Vec<u8>>,
   this_ref: ObjectRef,
   // Generation counter to detect stale loads
   generation: u64,
@@ -1385,6 +1647,95 @@ struct BitmapDecoder {
   fire_events: bool,
   // Preserve original HTTP URL for currentSrc when data is downloaded bytes
   original_url: Option<String>,
+}
+
+/// How many first bytes [`may_be_high_bit_depth`] reads: through the colour
+/// type of a PNG's IHDR chunk.
+const HIGH_BIT_DEPTH_SNIFF: usize = 26;
+
+/// Whether Skia may decode `encoded` with more than 8 bits a channel
+/// (`Bitmap::is_high_bit_depth`), from its first bytes: a 16-bit RGB or RGBA
+/// PNG (Skia decodes 16-bit gray to 8 bits), any JPEG XL (Skia reports 16 bits
+/// for each one), or an ICO or CUR (Skia reports its largest image's, which
+/// can be a 16-bit PNG).
+fn may_be_high_bit_depth(encoded: &[u8]) -> bool {
+  const PNG: &[u8] = b"\x89PNG\r\n\x1a\n";
+  const JXL_CODESTREAM: &[u8] = b"\xff\x0a";
+  const JXL_CONTAINER: &[u8] = b"\0\0\0\x0cJXL \r\n\x87\n";
+  // The IHDR chunk comes first: its bit depth, then its colour type.
+  let png16 = encoded.starts_with(PNG)
+    && encoded.get(12..16) == Some(&b"IHDR"[..])
+    && encoded.get(24) == Some(&16)
+    && matches!(encoded.get(25), Some(2 | 6));
+  png16
+    || encoded.starts_with(JXL_CODESTREAM)
+    || encoded.starts_with(JXL_CONTAINER)
+    || encoded.starts_with(b"\0\0\x01\0")
+    || encoded.starts_with(b"\0\0\x02\0")
+}
+
+/// Room for `len` bytes, allocated on this thread.
+fn room(len: usize) -> Option<Vec<u8>> {
+  let mut room = Vec::new();
+  room.try_reserve_exact(len).ok()?;
+  Some(room)
+}
+
+/// Room for a copy of the image a Buffer src holds (an encoded image, or a
+/// data: URL), made on the JS thread, when it may have more than 8 bits a
+/// channel; None for every other image, which keeps no copy.
+///
+/// The room is allocated here and filled on a libuv thread: the JS thread
+/// frees it, with the Image or the decode task, and mimalloc frees a block
+/// on the thread that allocated it at once. A block allocated on a libuv
+/// thread and freed on the JS thread stayed in memory until that libuv
+/// thread had made about 100 more slow-path allocations.
+fn encoded_room(bytes: &[u8]) -> Option<Vec<u8>> {
+  if may_be_high_bit_depth(bytes) {
+    room(bytes.len())
+  } else {
+    data_url_room(bytes)
+  }
+}
+
+/// [`encoded_room`] for a data: URL, from the start of its body: room for as
+/// many bytes as the whole body can decode to. None when `url` is not a
+/// data: URL, as a file path is read in `compute`.
+///
+/// When the first KiB of a long body decodes to too few bytes to tell (it is
+/// mostly whitespace that a base64 body skips, or tabs and newlines), the
+/// room is made whatever the image is: an 8-bit one only fills it, in its
+/// decode task, which frees it.
+fn data_url_room(url: &[u8]) -> Option<Vec<u8>> {
+  match data_url::head(url)? {
+    Ok(head)
+      if head.essence != "image/svg+xml"
+        && (may_be_high_bit_depth(&head.prefix)
+          || !head.whole && head.prefix.len() < HIGH_BIT_DEPTH_SNIFF) =>
+    {
+      room(head.max_body_len)
+    }
+    _ => None,
+  }
+}
+
+impl BitmapDecoder {
+  /// The copy of the encoded image `compute` decoded, for the Image to keep:
+  /// the room `compute` filled, or for a file path a copy of the file made
+  /// here, on the JS thread. None without a filled room: when src was set,
+  /// its first bytes were not those of a high-bit-depth image (a Buffer
+  /// changed to one later keeps only its 8-bit pixels), or the bytes
+  /// `compute` decoded did not fit in the room.
+  fn take_encoded(&mut self) -> Option<Vec<u8>> {
+    match self.file_content.as_deref() {
+      Some(file) => match data_url::parse(file) {
+        None => Some(file.to_vec()),
+        Some(Ok(url)) => Some(url.body),
+        Some(Err(())) => None,
+      },
+      None => self.encoded.take().filter(|copy| !copy.is_empty()),
+    }
+  }
 }
 
 impl<'env> ScopedTask<'env> for BitmapDecoder {
@@ -1437,6 +1788,19 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
         (Cow::Owned(url.body), svg, !svg)
       }
     };
+    // With room for a copy, the copy is what is decoded, and what the Image
+    // keeps: the room is filled here and never grows, so bytes that do not
+    // fit are decoded where they are, and not kept.
+    let data_ref = match self.encoded.as_mut() {
+      Some(room) if !svg_only && data_ref.len() <= room.capacity() => {
+        room.extend_from_slice(&data_ref);
+        // The body of a data: URL is a copy too: free it now, not after the
+        // decode.
+        drop(data_ref);
+        Cow::Borrowed(room.as_slice())
+      }
+      _ => data_ref,
+    };
     let length = data_ref.len();
     let mut width = self.width;
     let mut height = self.height;
@@ -1477,7 +1841,10 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
       // `from_image_data` copies the pixels into an owned SkBitmap, so the
       // decoded AVIF buffer is dropped at the end of this arm.
       match bitmap {
-        Some(bitmap) => DecodeStatus::Ok(BitmapInfo { data: bitmap }),
+        Some(bitmap) => DecodeStatus::Ok(BitmapInfo {
+          data: bitmap,
+          high_bit_depth: false,
+        }),
         // A color space Chrome cannot use, or a failed pixel copy: an
         // invalid image rather than an empty bitmap.
         None => DecodeStatus::InvalidImage,
@@ -1487,7 +1854,10 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
     {
       // Other image formats detected by infer (PNG, JPEG, GIF, WebP, etc.)
       if let Some(bitmap) = Bitmap::from_buffer(data_ref.as_ptr().cast_mut(), length) {
-        DecodeStatus::Ok(BitmapInfo { data: bitmap })
+        DecodeStatus::Ok(BitmapInfo {
+          data: bitmap,
+          high_bit_depth: Bitmap::is_high_bit_depth(&data_ref),
+        })
       } else {
         DecodeStatus::InvalidImage
       }
@@ -1537,6 +1907,14 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
     self_mut.complete = true;
     self_mut.bitmap = None;
 
+    // The copy is allocated on the JS thread, which also frees it with the
+    // Image (`encoded_room`). A room the image does not keep is freed here
+    // too, with the task.
+    let encoded = match &output.bitmap {
+      DecodeStatus::Ok(bitmap) if bitmap.high_bit_depth => self.take_encoded(),
+      _ => None,
+    };
+
     let mut err: Option<&str> = None;
 
     // The source that loaded becomes src and currentSrc; an HTTP URL load
@@ -1561,13 +1939,14 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
         self_mut.natural_height = output.height;
         commit_src(self_mut);
         self_mut.svg = None;
-        let new_bytes = (output.width as i64) * (output.height as i64) * 4;
+        let encoded_bytes = encoded.as_ref().map_or(0, Vec::len) as i64;
+        let new_bytes = (output.width as i64) * (output.height as i64) * 4 + encoded_bytes;
         env.adjust_external_memory(new_bytes)?;
-        self_mut.bitmap = Some(Arc::new(AccountedBitmap::new(
-          bitmap.data,
-          env.raw(),
-          new_bytes,
-        )));
+        let mut accounted = AccountedBitmap::new(bitmap.data, env.raw(), new_bytes);
+        if let Some(encoded) = encoded {
+          accounted = accounted.with_high_bit_depth(encoded);
+        }
+        self_mut.bitmap = Some(Arc::new(accounted));
       }
       DecodeStatus::Svg(svg) => {
         commit_src(self_mut);
@@ -1665,5 +2044,161 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
     // Unref this_ref (used in resolve/reject paths)
     self.this_ref.unref(&env)?;
     Ok(())
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use std::path::{Path, PathBuf};
+
+  use super::*;
+
+  /// 1x1 16-bit PNGs: gray, gray and alpha, RGB.
+  const GRAY16: &[u8] = b"\x89PNG\r\n\x1a\n\0\0\0\x0dIHDR\0\0\0\x01\0\0\0\x01\x10\0\0\0\0\x6a\xee\x47\x16\0\0\0\x0bIDAT\x78\x9c\x63\x68\x68\0\0\x01\x83\x01\x01\x18\x35\x22\x15\0\0\0\0IEND\xae\x42\x60\x82";
+  const GRAY_ALPHA16: &[u8] = b"\x89PNG\r\n\x1a\n\0\0\0\x0dIHDR\0\0\0\x01\0\0\0\x01\x10\x04\0\0\0\xe5\x8c\xd0\x41\0\0\0\x0bIDAT\x78\x9c\x63\x68\0\x02\0\x05\x05\x02\x01\xac\x53\x22\x3a\0\0\0\0IEND\xae\x42\x60\x82";
+  const RGB16: &[u8] = b"\x89PNG\r\n\x1a\n\0\0\0\x0dIHDR\0\0\0\x01\0\0\0\x01\x10\x02\0\0\0\xc0\xe7\x8f\x9d\0\0\0\x0bIDAT\x78\x9c\x63\x68\0\x03\0\x0a\x87\x03\x01\xc4\xc6\x1f\x66\0\0\0\0IEND\xae\x42\x60\x82";
+
+  /// An ICO of one PNG, `width` x `height`.
+  fn ico(png: &[u8], width: u8, height: u8) -> Vec<u8> {
+    let mut ico = vec![0, 0, 1, 0, 1, 0, width, height, 0, 0, 1, 0, 32, 0];
+    ico.extend_from_slice(&(png.len() as u32).to_le_bytes());
+    ico.extend_from_slice(&22u32.to_le_bytes());
+    ico.extend_from_slice(png);
+    ico
+  }
+
+  fn images(dir: &Path, out: &mut Vec<(String, Vec<u8>)>) {
+    for entry in std::fs::read_dir(dir).unwrap() {
+      let path: PathBuf = entry.unwrap().path();
+      if path.is_dir() {
+        images(&path, out);
+      } else if path.extension().is_some_and(|ext| {
+        ["png", "jpg", "jpeg", "webp", "gif", "avif", "bmp", "ico"]
+          .contains(&ext.to_string_lossy().to_ascii_lowercase().as_str())
+      }) {
+        out.push((path.display().to_string(), std::fs::read(&path).unwrap()));
+      }
+    }
+  }
+
+  /// Float ImageData data keeps Chrome's byte limit; rgba-unorm8 data has
+  /// none, as on main. Sizes only: nothing is allocated.
+  #[test]
+  fn only_float_image_data_has_chromes_byte_limit() {
+    use ImageDataPixelFormat::{Float16, Float32, Unorm8};
+    let channels = |width: usize, height: usize| 4 * width * height;
+    for (elements, pixel_format, len) in [
+      // rgba-unorm8 above Chrome's limit, up to a 4 * width * height of u32::MAX.
+      (channels(23170, 23170), Unorm8, Some(2_147_395_600)),
+      (channels(32767, 32767), Unorm8, Some(4_294_705_156)),
+      (u32::MAX as usize, Unorm8, Some(u32::MAX as usize)),
+      // Float data up to 2^31 - 2 MiB bytes.
+      (channels(8192, 8192), Float32, Some(1 << 30)),
+      (
+        MAX_FLOAT_DATA_BYTES / 4,
+        Float32,
+        Some(MAX_FLOAT_DATA_BYTES),
+      ),
+      (MAX_FLOAT_DATA_BYTES / 4 + 1, Float32, None),
+      (channels(16384, 8192), Float32, None),
+      (channels(23170, 23170), Float32, None),
+      (channels(8192, 16384), Float16, Some(1 << 30)),
+      (
+        MAX_FLOAT_DATA_BYTES / 2,
+        Float16,
+        Some(MAX_FLOAT_DATA_BYTES),
+      ),
+      (MAX_FLOAT_DATA_BYTES / 2 + 1, Float16, None),
+      (channels(16384, 16384), Float16, None),
+      (u32::MAX as usize, Float16, None),
+      // The byte size overflows.
+      (usize::MAX, Float16, None),
+      (usize::MAX, Float32, None),
+    ] {
+      assert_eq!(
+        data_byte_size(elements, pixel_format),
+        len,
+        "{elements} {pixel_format:?}"
+      );
+    }
+  }
+
+  /// Every image Skia decodes with more than 8 bits a channel gets room for
+  /// its copy, from a Buffer or a data: URL; other PNGs, JPEGs, WebPs, GIFs
+  /// and AVIFs get none.
+  #[test]
+  fn room_for_the_images_skia_decodes_to_more_than_8_bits() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut all = Vec::new();
+    images(&root.join("__test__/fixtures"), &mut all);
+    images(&root.join("example"), &mut all);
+    let hbd = std::fs::read(root.join("__test__/fixtures/float16/hbd-4x1.png")).unwrap();
+    let png8 = std::fs::read(root.join("__test__/fixtures/data-url/4x4.png")).unwrap();
+    for (name, bytes) in [
+      ("gray16", GRAY16.to_vec()),
+      ("gray-alpha16", GRAY_ALPHA16.to_vec()),
+      ("rgb16", RGB16.to_vec()),
+      ("ico16", ico(&hbd, 4, 1)),
+      ("ico8", ico(&png8, 4, 4)),
+    ] {
+      all.push((name.to_owned(), bytes));
+    }
+    let mut high = Vec::new();
+    for (name, bytes) in &all {
+      let skia = Bitmap::is_high_bit_depth(bytes);
+      let ico = bytes.starts_with(b"\0\0\x01\0");
+      if skia {
+        high.push(
+          Path::new(name)
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned(),
+        );
+      }
+      assert_eq!(skia || ico, may_be_high_bit_depth(bytes), "{name}");
+      assert_eq!(
+        may_be_high_bit_depth(bytes),
+        may_be_high_bit_depth(&bytes[..HIGH_BIT_DEPTH_SNIFF.min(bytes.len())])
+      );
+      let room = encoded_room(bytes);
+      assert_eq!(room.is_some(), skia || ico, "{name}");
+      assert!(room.is_none_or(|room| room.capacity() >= bytes.len()));
+      let base64 = base64_simd::STANDARD.encode_to_string(bytes);
+      let escaped: String = bytes.iter().map(|b| format!("%{b:02x}")).collect();
+      for url in [
+        format!("data:image/png;base64,{base64}"),
+        format!(" data:;base64,{}\n", base64.replace('A', "\tA")),
+        format!("data:image/x,{escaped}"),
+      ] {
+        let room = data_url_room(url.as_bytes());
+        assert_eq!(room.is_some(), skia || ico, "{name} {}", &url[..20]);
+        assert!(room.is_none_or(|room| room.capacity() >= bytes.len()));
+        assert_eq!(encoded_room(url.as_bytes()).is_some(), skia || ico);
+      }
+      // Whitespace, tabs and newlines that the decode skips can fill the
+      // first KiB of a longer body: too few bytes to tell the image, which
+      // gets room whatever it is.
+      let spread: String = base64
+        .chars()
+        .map(|c| format!("{c}{}", " ".repeat(40)))
+        .collect();
+      for url in [
+        format!("data:image/png;base64,{}{base64}", " ".repeat(2000)),
+        format!("data:image/png;base64,{}{base64}", "\n".repeat(2000)),
+        format!("data:image/png;base64,{}{base64}", "%20".repeat(700)),
+        format!("data:image/png;base64,{spread}"),
+        format!("data:image/x,{}{escaped}", "\t".repeat(2000)),
+      ] {
+        let long = url.len() - url.find(',').unwrap() - 1 > 1024;
+        let room = data_url_room(url.as_bytes());
+        assert_eq!(room.is_some(), skia || ico || long, "{name} {}", &url[..20]);
+        assert!(room.is_none_or(|room| room.capacity() >= bytes.len()));
+      }
+      let svg = format!("data:image/svg+xml;base64,{base64}");
+      assert!(data_url_room(svg.as_bytes()).is_none());
+    }
+    high.sort();
+    assert_eq!(high, ["hbd-4x1.png", "hbd-8x8.png", "ico16", "rgb16"]);
   }
 }
