@@ -1,6 +1,6 @@
 ---
 name: upgrade-skia
-description: Upgrade the vendored Skia submodule to a new Chrome milestone (chrome/mNNN) end to end - bump the submodule, build and test locally, bump the README version badges, push the `release` branch, wait for the "Build skia" matrix to publish the prebuilt binaries, then open the PR to main and watch its CI. Use this skill whenever the user mentions upgrading or bumping Skia, a new chrome/m milestone, the `release` branch, the "Build skia" workflow, or the `skia-<sha>-<args>` release tags - even if they only say "update skia" or give a bare milestone number.
+description: Upgrade the vendored Skia submodule to a new Chrome milestone (chrome/mNNN) end to end - bump the submodule, build and test locally, bump the README version badges, push the `release` branch, wait for the "Build skia" matrix to publish the prebuilt binaries, then open the PR to main and watch its CI. Use this skill whenever the user mentions upgrading or bumping Skia, a new chrome/m milestone, the `release` branch, the "Build skia" workflow, or the `skia-<sha>-<args>` release tags - even if they only say "update skia" or give a bare milestone number. Also use it for a bump of the Skia-tied Rust crates (font-types, read-fonts, skrifa, cxx, cxx-build), and for a `cannot update the lock file ... --locked` CI failure.
 ---
 
 # Upgrade Skia
@@ -83,6 +83,53 @@ Compute the tag you will wait for later:
 node -e "import('./scripts/utils.mjs').then((m) => console.log(m.TAG))"
 ```
 
+## Phase 2b - sync the Skia-tied Rust crates
+
+The `skia-fontations` crate compiles Skia's own Rust source. Its `[lib]` path is
+`skia/src/ports/fontations/src/ffi.rs`, so the submodule bump changes the code that this
+crate builds. Its exact pins must follow the new milestone:
+
+| Our pin | Must equal |
+|---|---|
+| `font-types`, `read-fonts`, `skrifa` in `crates/skia-fontations/Cargo.toml` | the `crate.spec` versions in `skia/MODULE.bazel` |
+| `cxx` in `crates/skia-fontations/Cargo.toml` | `cxx-build` in the root `Cargo.toml` |
+
+1. Compare the pins:
+
+```bash
+for c in font-types read-fonts skrifa; do
+  skia=$(grep -A1 "package = \"$c\"" skia/MODULE.bazel | sed -n 's/.*version = "=\(.*\)",/\1/p')
+  ours=$(sed -n "s/^$c *= *\"=\(.*\)\"/\1/p" crates/skia-fontations/Cargo.toml)
+  echo "$c skia=$skia ours=$ours"
+done
+grep -h -E '^cxx(-build)? +=' Cargo.toml crates/skia-fontations/Cargo.toml
+```
+
+2. Edit each `=` pin that differs. Then move `Cargo.lock` with the pins:
+
+```bash
+cargo update -p font-types -p read-fonts -p skrifa
+```
+
+3. Prove that the manifests and the lock agree. CI builds with `--locked`:
+
+```bash
+cargo metadata --locked --format-version 1 > /dev/null
+cargo tree --locked -p skia-fontations --depth 1 -e normal
+```
+
+4. Stage `crates/skia-fontations/Cargo.toml`, `Cargo.toml` and `Cargo.lock` with the
+   submodule.
+
+Warning: never change a pin without `Cargo.lock`. Every CI build job then fails with
+`cannot update the lock file ... because --locked was passed`. See
+`references/troubleshooting.md` section 11.
+
+Renovate does not update these pins. `.github/renovate.json` disables it for
+`crates/skia-fontations/Cargo.toml` and for `cxx-build`. The upgrade is the only place
+that moves them. Do not move them to the versions that Chrome ships. That is a product
+decision; see `references/troubleshooting.md` section 11.
+
 ## Phase 3 - build and test locally
 
 Build Skia first. The build takes tens of minutes, so run it in the background and
@@ -137,6 +184,8 @@ Map the failure to its layer, then read
 |---|---|---|
 | `gn gen` rejects an argument | Skia build config | `scripts/build-skia.js` GN_ARGS |
 | `ninja` reports `FAILED:` | Skia source or toolchain | `scripts/build-skia.js` flags |
+| `cargo` says `cannot update the lock file` | lock drift | `Cargo.lock`, with the pins of Phase 2b |
+| `yarn build` Rust errors in `skia/src/ports/fontations/src/` | Fontations crate API churn | `crates/skia-fontations/Cargo.toml` pins (Phase 2b) |
 | `yarn build` C++ errors | Skia C++ API churn | `skia-c/skia_c.cpp`, `skia-c/skia_c.hpp` |
 | `yarn build` link errors | archive list drift | `src/sk.rs` `#[link]`, `LIB` in `scripts/release-skia-binary.mjs` |
 | `yarn test` image diffs | raster output changed | `__test__/snapshots/*` |
@@ -238,7 +287,9 @@ The PR shows both workflows against the same head commit: the 11 already green
 Sort the fix into one of two kinds. The kind decides the procedure.
 
 **Kind A - the fix does not change the Skia build.** Rust, C++ binding, test or
-snapshot changes. The published binaries are still correct. Push the fix to
+snapshot changes. The crate pins of Phase 2b and `Cargo.lock` are Kind A too: cargo and
+`build.rs` build Fontations from the submodule, not from the release assets. The
+published binaries are still correct. Push the fix to
 `release` with `[skip skia]` in the commit subject:
 
 ```bash
@@ -279,6 +330,8 @@ inside this list unless the build or a test forces you out:
 - `scripts/build-skia.js` (GN args, per target flags)
 - `skia-c/skia_c.cpp`, `skia-c/skia_c.hpp` (C++ API churn)
 - `src/sk.rs` (extern and `#[link]` declarations)
+- `crates/skia-fontations/Cargo.toml`, `cxx-build` in `Cargo.toml`, `Cargo.lock`
+  (the Skia-tied crate pins of Phase 2b)
 - `__test__/snapshots/*` (raster changes you verified)
 
 A fix that reaches beyond this list is scope drift until you prove otherwise.

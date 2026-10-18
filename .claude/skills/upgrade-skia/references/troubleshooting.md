@@ -14,6 +14,8 @@ real failures from past milestones and the in-tree patch log.
 7. Failure class: image snapshot diffs
 8. The in-tree patch log
 9. What past upgrades actually changed
+10. Failure classes found during the m151 to m154 upgrade
+11. Failure class: the Skia-tied Rust crates drift
 
 ## 1. How to research a failure
 
@@ -277,3 +279,86 @@ python3 -c "import io;p='<file>';d=io.open(p,'rb').read();io.open(p,'wb').write(
 
 This also explains why the dead `skia_c_api_example` strip in section 2 is doubly inert
 on Windows.
+
+## 11. Failure class: the Skia-tied Rust crates drift
+
+`crates/skia-fontations` builds Skia's own Rust source,
+`skia/src/ports/fontations/src/ffi.rs`. Its pins are exact on purpose. They are the
+versions that Skia's Bazel build resolves for that file: the `crate.spec` blocks in
+`skia/MODULE.bazel`. `cxx` is ours to choose, but it must equal `cxx-build` in the
+root `Cargo.toml`. `cxx-build` generates the C++ code of the bridge, and `cxx` holds
+the runtime that this code calls.
+
+### Every CI build job fails at once with `--locked`
+
+```
+error: cannot update the lock file /build/Cargo.lock because --locked was passed to prevent this
+help: to generate the lock file without accessing the network, remove the --locked flag and use --offline instead.
+```
+
+Real case, after Renovate PR #1386 merged to main. It changed `font-types = "=0.12.0"`
+to `"=0.12.7"` in `crates/skia-fontations/Cargo.toml` and did not change `Cargo.lock`.
+CI builds with `yarn build ... -- --locked`, and `scripts/generate-sbom.mjs` runs
+`cargo metadata --locked`. So all build jobs went red on main.
+
+The red PR still auto-merged. The required check `Publish` is skipped when the builds
+fail, and GitHub counts a skipped required check as passed.
+
+Fix, PR #1388: put the pin back to Skia's `=0.12.0`. Disable Renovate for
+`crates/skia-fontations/Cargo.toml` and for `cxx-build`.
+
+To reproduce, and to verify a fix:
+
+```bash
+cargo metadata --locked --format-version 1 > /dev/null   # exit 101 with the error above
+```
+
+When a pin change is right, move the lock with it:
+
+```bash
+# after you edit the = pins in the manifests
+cargo update -p font-types -p read-fonts -p skrifa
+cargo metadata --locked --format-version 1 > /dev/null
+```
+
+Add `-p cxx -p cxx-build` when cxx moves. This is a Kind A fix.
+
+### `yarn build` fails in `ffi.rs`
+
+Signature: rustc errors with paths under `skia/src/ports/fontations/src/`. Examples are
+an unresolved import or a missing method on a skrifa type.
+
+Cause: the new milestone's `ffi.rs` uses a newer skrifa or read-fonts API than our pins.
+
+Fix: copy the new `crate.spec` versions from `skia/MODULE.bazel`, as in SKILL.md
+Phase 2b. This is a Kind A fix.
+
+### Which versions are right
+
+| Source | What it tells you |
+|---|---|
+| `skia/MODULE.bazel`, `crate.spec` | The pin source. Skia's Bazel build resolves exactly these versions for `ffi.rs`. |
+| `skia/bazel/external/fontations/Cargo.toml` | The same numbers as caret ranges. At m156 it agrees with `MODULE.bazel`. |
+| `skia/bazel/external/fontations/Cargo.lock` | Stale. At m156 it still lists font-types 0.8.3 and skrifa 0.29.0. Ignore it. |
+| Chromium `third_party/rust/chromium_crates_io/Cargo.lock` | What Chrome ships. Chrome 155 has newer crates than Skia m156 pins. |
+
+Read Chrome's set for a release tag:
+
+```bash
+curl -sf https://raw.githubusercontent.com/chromium/chromium/155.0.8059.79/third_party/rust/chromium_crates_io/Cargo.lock \
+  | awk '/^name = /{n=$3} /^version = /{print n, $3}' | tr -d '"' \
+  | grep -E '^(font-types|read-fonts|skrifa|cxx) '
+```
+
+| Crate | Skia m156 (`MODULE.bazel`) | Chrome 155 |
+|---|---|---|
+| font-types | 0.12.0 | 0.12.4 |
+| read-fonts | 0.40.1 | 0.43.3 |
+| skrifa | 0.43.2 | 0.46.2 |
+
+Do not move the pins to Chrome's set inside an upgrade. Our pins follow the set that
+Skia builds this exact `ffi.rs` with. A switch to Chrome's set is a product decision, so
+hand it back to the user.
+
+`bytemuck` is a caret range (`1.16`), as in Skia's `Cargo.toml`. Lock maintenance can
+move it inside 1.x. That is safe.
