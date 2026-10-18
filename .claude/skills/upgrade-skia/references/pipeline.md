@@ -217,6 +217,16 @@ attributes in `src/sk.rs`. Three lists must agree:
 A missing entry in `LIB` gives a green Skia build and a link failure later, or worse,
 a silently incomplete `libskia.a`.
 
+One part of Skia does not come from the release assets: the Fontations font scaler,
+on macOS and Linux only. `build.rs` compiles its C++ half from the submodule into
+`libskiac_fontations`. Cargo builds its Rust half as the path crate
+`crates/skia-fontations`, whose `[lib]` path is `skia/src/ports/fontations/src/ffi.rs`.
+So this code follows the submodule, not the tag. Its crate pins follow
+`skia/MODULE.bazel` (SKILL.md Phase 2b).
+
+CI builds with `yarn build ... -- --locked`. A manifest change without the matching
+`Cargo.lock` change fails every build job. See `troubleshooting.md` section 11.
+
 There is no GitHub cache for the Skia archives. They are downloaded with `curl` on
 every run. The only cache is cargo and yarn, in
 `.github/actions/setup-rust/action.yaml`.

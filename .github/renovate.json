@@ -21,9 +21,15 @@
       "matchUpdateTypes": ["lockFileMaintenance"]
     },
     {
-      "description": "Skia's Fontations scaler pins these to Skia's versions (skia/bazel/external/fontations/Cargo.toml); update them with Skia, not alone.",
+      "description": "Skia's Fontations scaler pins these to Skia's versions (the crate.spec blocks in skia/MODULE.bazel); update them with Skia, not alone.",
       "matchManagers": ["cargo"],
       "matchFileNames": ["crates/skia-fontations/Cargo.toml"],
+      "enabled": false
+    },
+    {
+      "description": "cxx-build must equal cxx in crates/skia-fontations/Cargo.toml, which the rule above freezes; update both with Skia.",
+      "matchManagers": ["cargo"],
+      "matchPackageNames": ["cxx-build"],
       "enabled": false
     }
   ],
