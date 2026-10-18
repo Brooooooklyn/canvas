@@ -19,6 +19,12 @@
       "groupName": "Cargo lock file maintenance",
       "matchManagers": ["cargo"],
       "matchUpdateTypes": ["lockFileMaintenance"]
+    },
+    {
+      "description": "Skia's Fontations scaler pins these to Skia's versions (skia/bazel/external/fontations/Cargo.toml); update them with Skia, not alone.",
+      "matchManagers": ["cargo"],
+      "matchFileNames": ["crates/skia-fontations/Cargo.toml"],
+      "enabled": false
     }
   ],
   "lockFileMaintenance": {
