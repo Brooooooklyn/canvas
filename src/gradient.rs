@@ -450,12 +450,9 @@ impl CanvasGradient {
       )
     })?;
     let skia_color = match color {
-      CSSColor::CurrentColor => {
-        return Err(Error::new(
-          Status::InvalidArg,
-          "Gradient stop color should not be `currentcolor` keyword".to_owned(),
-        ));
-      }
+      // Without an element, currentcolor is opaque black (Chrome's
+      // OffscreenCanvas answer).
+      CSSColor::CurrentColor => Color4f::from_rgba8(0, 0, 0, 255),
       CSSColor::Rgba(rgba) => Color4f::from_rgba8(
         rgba.red,                           // Already u8
         rgba.green,                         // Already u8

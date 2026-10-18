@@ -23,8 +23,9 @@ use napi::{
 };
 
 use ctx::{
-  CanvasRenderingContext2D, Context, ContextData, ContextOutputData, FILL_STYLE_HIDDEN_NAME,
-  STROKE_STYLE_HIDDEN_NAME, SvgExportFlag, encode_surface, reset_style_getters,
+  CANVAS_HIDDEN_NAME, CanvasRenderingContext2D, Context, ContextData, ContextOutputData,
+  FILL_STYLE_HIDDEN_NAME, STROKE_STYLE_HIDDEN_NAME, SvgExportFlag, encode_surface,
+  reset_style_getters,
 };
 use font::{FONT_REGEXP, init_font_regexp};
 use sk::{AlphaType, ColorSpace, SkImage, SkiaDataRef};
@@ -99,6 +100,27 @@ pub struct CanvasElement<'scope> {
   context_initialized: bool,
 }
 
+/// The width a canvas takes for a `width` attribute value (already ToUint32):
+/// HTML's reflection of a non-negative `unsigned long` gives the default 300
+/// for a value above 2147483647. 0 keeps the 350 fallback: a canvas without
+/// pixels is not supported.
+fn canvas_width(width: u32) -> u32 {
+  match width {
+    0 => 350,
+    width if width > i32::MAX as u32 => 300,
+    width => width,
+  }
+}
+
+/// As `canvas_width`, for `height`: the default is 150.
+fn canvas_height(height: u32) -> u32 {
+  if height == 0 || height > i32::MAX as u32 {
+    150
+  } else {
+    height
+  }
+}
+
 // Setting width or height resets the context to its default state (spec "set
 // bitmap dimensions"; Chrome: HTMLCanvasElement::Reset), so the style getters
 // read '#000000' again. The context object is read from the canvas's `ctx`
@@ -148,12 +170,12 @@ impl<'c> CanvasElement<'c> {
     let ctx = Self::create_context(env, width, height)?;
     let ctx = ctx.assign_to_this_with_attributes("ctx", PropertyAttributes::Default, &mut this)?;
     let mut ctx_obj = ctx.as_object(env);
+    // For the read-only `canvas` getter: not writable, enumerable or
+    // configurable.
     ctx_obj.define_properties(&[Property::new()
-      .with_utf8_name("canvas")?
+      .with_utf8_name(CANVAS_HIDDEN_NAME)?
       .with_value(&this)
-      .with_property_attributes(
-        PropertyAttributes::Default | PropertyAttributes::Writable | PropertyAttributes::Enumerable,
-      )])?;
+      .with_property_attributes(PropertyAttributes::Default)])?;
     Ok(Self {
       width,
       height,
@@ -163,8 +185,13 @@ impl<'c> CanvasElement<'c> {
   }
 
   #[napi(setter)]
-  pub fn set_width(&mut self, env: Env, this: This, width: i32) -> Result<()> {
-    let width = (if width <= 0 { 350 } else { width }) as u32;
+  pub fn set_width(
+    &mut self,
+    env: Env,
+    this: This,
+    width: webidl::UnsignedLong<webidl::CanvasSetWidth>,
+  ) -> Result<()> {
+    let width = canvas_width(width.0);
     self.width = width;
     let height = self.height;
     let new_ctx = Self::resized_context(&self.ctx.context, width, height)?;
@@ -179,8 +206,13 @@ impl<'c> CanvasElement<'c> {
   }
 
   #[napi(setter)]
-  pub fn set_height(&mut self, env: Env, this: This, height: i32) -> Result<()> {
-    let height = (if height <= 0 { 150 } else { height }) as u32;
+  pub fn set_height(
+    &mut self,
+    env: Env,
+    this: This,
+    height: webidl::UnsignedLong<webidl::CanvasSetHeight>,
+  ) -> Result<()> {
+    let height = canvas_height(height.0);
     self.height = height;
     let width = self.width;
     let new_ctx = Self::resized_context(&self.ctx.context, width, height)?;
@@ -194,24 +226,25 @@ impl<'c> CanvasElement<'c> {
     self.height
   }
 
+  /// getContext(contextId, options): the 2d context, or null for any other
+  /// id, as Chrome does for an id it does not know
+  /// (html_canvas_element.cc). The index.js wrapper checks the argument
+  /// count.
   #[napi]
   pub fn get_context<'env>(
     &mut self,
     this: This,
-    context_type: String,
+    context_type: webidl::DomString<webidl::CanvasGetContext>,
     // Converted (and may throw) on every call, also once the context exists
-    // (HTMLCanvasElementModule::getContext).
+    // and for an unsupported id (HTMLCanvasElementModule::getContext).
     attrs: webidl::CanvasContextOptions,
-  ) -> Result<Unknown<'env>> {
+  ) -> Result<Option<Unknown<'env>>> {
     let attrs = attrs.0;
-    if context_type != "2d" {
-      return Err(Error::new(
-        Status::InvalidArg,
-        format!("{context_type} is not supported"),
-      ));
+    if context_type.0 != "2d" {
+      return Ok(None);
     }
     if self.context_initialized {
-      return this.get_named_property("ctx");
+      return this.get_named_property("ctx").map(Some);
     }
     self.ctx.reported_settings = attrs.reported;
     let context_2d = &mut self.ctx.context;
@@ -223,7 +256,7 @@ impl<'c> CanvasElement<'c> {
         Context::new_with_alpha(self.width, self.height, attrs.color_space, attrs.alpha)?;
     }
     self.context_initialized = true;
-    this.get_named_property("ctx")
+    this.get_named_property("ctx").map(Some)
   }
 
   #[napi]
@@ -817,14 +850,11 @@ impl<'scope> SVGCanvas<'scope> {
         .with_utf8_name(STROKE_STYLE_HIDDEN_NAME)?
         .with_value(&env.create_string("#000000")?)
         .with_property_attributes(PropertyAttributes::Writable | PropertyAttributes::Configurable),
+      // For the read-only `canvas` getter, as on a Canvas.
       Property::new()
-        .with_utf8_name("canvas")?
+        .with_utf8_name(CANVAS_HIDDEN_NAME)?
         .with_value(&this)
-        .with_property_attributes(
-          PropertyAttributes::Default
-            | PropertyAttributes::Writable
-            | PropertyAttributes::Enumerable,
-        ),
+        .with_property_attributes(PropertyAttributes::Default),
     ])?;
     env.adjust_external_memory((width * height * 4) as i64)?;
 
@@ -837,23 +867,22 @@ impl<'scope> SVGCanvas<'scope> {
     })
   }
 
+  /// getContext(contextId, options): the 2d context, or null for any other
+  /// id, as for Canvas.
   #[napi]
   pub fn get_context<'env>(
     &'env mut self,
     this: This<'env>,
-    context_type: String,
+    context_type: webidl::DomString<webidl::SvgCanvasGetContext>,
     // Converted on every call, as for Canvas.
     attrs: webidl::SvgCanvasContextOptions,
-  ) -> Result<Unknown<'env>> {
+  ) -> Result<Option<Unknown<'env>>> {
     let attrs = attrs.0;
-    if context_type != "2d" {
-      return Err(Error::new(
-        Status::InvalidArg,
-        format!("{context_type} is not supported"),
-      ));
+    if context_type.0 != "2d" {
+      return Ok(None);
     }
     if self.context_initialized {
-      return this.get_named_property("ctx");
+      return this.get_named_property("ctx").map(Some);
     }
     self.ctx.reported_settings = attrs.reported;
     let context_2d = &mut self.ctx.context;
@@ -868,7 +897,7 @@ impl<'scope> SVGCanvas<'scope> {
       context_2d.set_opaque();
     }
     self.context_initialized = true;
-    this.get_named_property("ctx")
+    this.get_named_property("ctx").map(Some)
   }
 
   #[napi]
@@ -924,8 +953,13 @@ impl<'scope> SVGCanvas<'scope> {
   }
 
   #[napi(setter)]
-  pub fn set_width(&mut self, env: Env, this: This, width: i32) -> Result<()> {
-    let width = (if width <= 0 { 350 } else { width }) as u32;
+  pub fn set_width(
+    &mut self,
+    env: Env,
+    this: This,
+    width: webidl::UnsignedLong<webidl::SvgCanvasSetWidth>,
+  ) -> Result<()> {
+    let width = canvas_width(width.0);
     self.width = width;
     let height = self.height;
     let new_ctx = self.resized_context(width, height)?;
@@ -940,8 +974,13 @@ impl<'scope> SVGCanvas<'scope> {
   }
 
   #[napi(setter)]
-  pub fn set_height(&mut self, env: Env, this: This, height: i32) -> Result<()> {
-    let height = (if height <= 0 { 150 } else { height }) as u32;
+  pub fn set_height(
+    &mut self,
+    env: Env,
+    this: This,
+    height: webidl::UnsignedLong<webidl::SvgCanvasSetHeight>,
+  ) -> Result<()> {
+    let height = canvas_height(height.0);
     self.height = height;
     let width = self.width;
     let new_ctx = self.resized_context(width, height)?;

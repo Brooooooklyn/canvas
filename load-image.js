@@ -7,6 +7,9 @@ const { Image } = require('./js-binding')
 let http, https
 
 const MAX_REDIRECTS = 20
+// Image fires onerror with an Event, as browsers do; the Error behind it is
+// under this key.
+const IMAGE_ERROR = Symbol.for('@napi-rs/canvas/image-error')
 const REDIRECT_STATUSES = new Set([301, 302])
 
 /**
@@ -141,7 +144,7 @@ async function createImage(src, alt) {
         .then(() => image.decode())
         .then(() => resolve(image), reject)
     }
-    image.onerror = (e) => reject(e)
+    image.onerror = (event) => reject((event && event[IMAGE_ERROR]) || event)
     image.src = src
   })
 }

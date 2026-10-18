@@ -64,6 +64,51 @@ struct skiac_path {
 #define MAX_LAYOUT_WIDTH 100000
 #define HANGING_AS_PERCENT_OF_ASCENT 80
 
+// Blink's em box (SimpleFontData::TrySetNormalizedTypoAscentAndDescent): the
+// ascent:descent ratio scaled to the font size, in LayoutUnits (1/64 px,
+// rounded half away from zero).
+static bool NormalizedEmHeight(float font_size,
+                               float ascent,
+                               float descent,
+                               float* em_ascent,
+                               float* em_descent) {
+  const float height = ascent + descent;
+  if (height <= 0 || ascent < 0 || ascent > height) {
+    return false;
+  }
+  auto layout_unit = [](float value) { return roundf(value * 64) / 64; };
+  *em_ascent = layout_unit(font_size * ascent / height);
+  *em_descent = layout_unit(font_size) - *em_ascent;
+  return true;
+}
+
+// Blink's SimpleFontData::NormalizedTypoAscentAndDescent: the OS/2
+// sTypoAscender and sTypoDescender (offset 68) when the ascender is
+// positive, else the font's ascent and descent.
+static void EmHeight(const SkFont& font,
+                     const SkFontMetrics& font_metrics,
+                     float* em_ascent,
+                     float* em_descent) {
+  uint8_t os2[4];
+  SkTypeface* typeface = font.getTypeface();
+  if (typeface && typeface->getTableData(SkSetFourByteTag('O', 'S', '/', '2'),
+                                         68, sizeof(os2), os2) == sizeof(os2)) {
+    float typo_ascender = static_cast<int16_t>((os2[0] << 8) | os2[1]);
+    float typo_descender = -static_cast<int16_t>((os2[2] << 8) | os2[3]);
+    if (typo_ascender > 0 &&
+        NormalizedEmHeight(font.getSize(), typo_ascender, typo_descender,
+                           em_ascent, em_descent)) {
+      return;
+    }
+  }
+  if (NormalizedEmHeight(font.getSize(), -font_metrics.fAscent,
+                         font_metrics.fDescent, em_ascent, em_descent)) {
+    return;
+  }
+  *em_ascent = 0;
+  *em_descent = 0;
+}
+
 extern "C" {
 void SkStrSplit(const char* str,
                 const char* delimiters,
@@ -1925,6 +1970,15 @@ void skiac_canvas_get_line_metrics_or_draw_text(
   auto alphabetic_baseline = paragraph->getAlphabeticBaseline();
   auto css_baseline = (CssBaseline)baseline;
   SkScalar baseline_offset = 0;
+  // https://github.com/chromium/chromium/blob/104.0.5092.1/third_party/blink/renderer/core/html/canvas/text_metrics.cc#L21-L25
+  // According to
+  // http://wiki.apache.org/xmlgraphics-fop/LineLayout/AlignmentHandling
+  // "FOP (Formatting Objects Processor) puts the hanging baseline at 80% of
+  // the ascender height". Shared by the Hanging case and hangingBaseline, so
+  // hangingBaseline is exactly 0 at 'hanging'.
+  SkScalar hanging_offset =
+      -alphabetic_baseline -
+      font_metrics.fAscent * HANGING_AS_PERCENT_OF_ASCENT / 100.0;
   switch (css_baseline) {
     case CssBaseline::Top:
       baseline_offset = -alphabetic_baseline - font_metrics.fAscent -
@@ -1932,14 +1986,7 @@ void skiac_canvas_get_line_metrics_or_draw_text(
                         font_metrics.fUnderlineThickness;
       break;
     case CssBaseline::Hanging:
-      // https://github.com/chromium/chromium/blob/104.0.5092.1/third_party/blink/renderer/core/html/canvas/text_metrics.cc#L21-L25
-      // According to
-      // http://wiki.apache.org/xmlgraphics-fop/LineLayout/AlignmentHandling
-      // "FOP (Formatting Objects Processor) puts the hanging baseline at 80% of
-      // the ascender height"
-      baseline_offset =
-          -alphabetic_baseline -
-          font_metrics.fAscent * HANGING_AS_PERCENT_OF_ASCENT / 100.0;
+      baseline_offset = hanging_offset;
       break;
     case CssBaseline::Middle:
       baseline_offset = -paragraph->getHeight() / 2;
@@ -2031,7 +2078,17 @@ void skiac_canvas_get_line_metrics_or_draw_text(
     c_line_metrics->width = line_width;
     c_line_metrics->font_ascent = -font_metrics.fAscent + offset;
     c_line_metrics->font_descent = font_metrics.fDescent - offset;
-    c_line_metrics->alphabetic_baseline = -font_metrics.fAscent + offset;
+    // Blink (text_metrics.cc), with offset = -baseline_y:
+    // alphabetic = -baseline_y, hanging = 0.8 * ascent - baseline_y,
+    // ideographic = -descent - baseline_y.
+    c_line_metrics->alphabetic_baseline = offset;
+    c_line_metrics->hanging_baseline = hanging_offset - baseline_offset;
+    c_line_metrics->ideographic_baseline = -c_line_metrics->font_descent;
+    float em_ascent;
+    float em_descent;
+    EmHeight(font, font_metrics, &em_ascent, &em_descent);
+    c_line_metrics->em_height_ascent = em_ascent + offset;
+    c_line_metrics->em_height_descent = em_descent - offset;
     // The ink of every glyph the draw above paints, where it paints it:
     // visit() walks the text blobs paint() draws, and the origin is the
     // draw's own, rtl_offset and letter_spacing_offset included. Relative to

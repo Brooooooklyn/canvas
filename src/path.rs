@@ -1,10 +1,12 @@
 use napi::bindgen_prelude::*;
 
+use crate::ctx::check_radius;
 use crate::num;
 use crate::sk::{
   FillType as SkFillType, Matrix as SkMatrix, Path as SkPath, PathOp as SkPathOp, SkiaString,
   StrokeCap as SkStrokeCap, StrokeJoin as SkStrokeJoin,
 };
+use crate::webidl::{self, Double};
 
 #[napi(object)]
 pub struct Matrix {
@@ -168,31 +170,45 @@ impl Path {
   // context does (Blink canvas_path.cc: saturated_cast<float>, then isfinite).
 
   #[napi]
-  pub fn move_to(&mut self, x: f64, y: f64) {
-    if let Some([x, y]) = num::saturated_f32s([x, y]) {
+  pub fn move_to(&mut self, x: Double<webidl::PathMoveTo>, y: Double<webidl::PathMoveTo>) {
+    if let Some([x, y]) = num::saturated_f32s([x.0, y.0]) {
       self.inner.move_to(x, y);
     }
   }
 
   #[napi]
-  pub fn line_to(&mut self, x: f64, y: f64) {
-    if let Some([x, y]) = num::saturated_f32s([x, y]) {
+  pub fn line_to(&mut self, x: Double<webidl::PathLineTo>, y: Double<webidl::PathLineTo>) {
+    if let Some([x, y]) = num::saturated_f32s([x.0, y.0]) {
       self.inner.line_to(x, y);
     }
   }
 
   #[napi]
-  pub fn bezier_curve_to(&mut self, cp1x: f64, cp1y: f64, cp2x: f64, cp2y: f64, x: f64, y: f64) {
+  pub fn bezier_curve_to(
+    &mut self,
+    cp1x: Double<webidl::PathBezierCurveTo>,
+    cp1y: Double<webidl::PathBezierCurveTo>,
+    cp2x: Double<webidl::PathBezierCurveTo>,
+    cp2y: Double<webidl::PathBezierCurveTo>,
+    x: Double<webidl::PathBezierCurveTo>,
+    y: Double<webidl::PathBezierCurveTo>,
+  ) {
     if let Some([cp1x, cp1y, cp2x, cp2y, x, y]) =
-      num::saturated_f32s([cp1x, cp1y, cp2x, cp2y, x, y])
+      num::saturated_f32s([cp1x.0, cp1y.0, cp2x.0, cp2y.0, x.0, y.0])
     {
       self.inner.cubic_to(cp1x, cp1y, cp2x, cp2y, x, y);
     }
   }
 
   #[napi]
-  pub fn quadratic_curve_to(&mut self, cpx: f64, cpy: f64, x: f64, y: f64) {
-    if let Some([cpx, cpy, x, y]) = num::saturated_f32s([cpx, cpy, x, y]) {
+  pub fn quadratic_curve_to(
+    &mut self,
+    cpx: Double<webidl::PathQuadraticCurveTo>,
+    cpy: Double<webidl::PathQuadraticCurveTo>,
+    x: Double<webidl::PathQuadraticCurveTo>,
+    y: Double<webidl::PathQuadraticCurveTo>,
+  ) {
+    if let Some([cpx, cpy, x, y]) = num::saturated_f32s([cpx.0, cpy.0, x.0, y.0]) {
       self.inner.quad_to(cpx, cpy, x, y);
     }
   }
@@ -200,65 +216,104 @@ impl Path {
   #[napi]
   pub fn arc(
     &mut self,
-    x: f64,
-    y: f64,
-    radius: f64,
-    start_angle: f64,
-    end_angle: f64,
-    anticlockwise: Option<bool>,
-  ) {
-    if let Some([x, y, radius, start_angle, end_angle]) =
-      num::saturated_f32s([x, y, radius, start_angle, end_angle])
-    {
-      self.inner.arc(
-        x,
-        y,
-        radius,
-        start_angle,
-        end_angle,
-        anticlockwise.unwrap_or(false),
-      );
-    }
+    env: &Env,
+    x: Double<webidl::PathArc>,
+    y: Double<webidl::PathArc>,
+    radius: Double<webidl::PathArc>,
+    start_angle: Double<webidl::PathArc>,
+    end_angle: Double<webidl::PathArc>,
+    anticlockwise: webidl::Boolean,
+  ) -> Result<()> {
+    let Some([x, y, radius, start_angle, end_angle]) =
+      num::saturated_f32s([x.0, y.0, radius.0, start_angle.0, end_angle.0])
+    else {
+      return Ok(());
+    };
+    check_radius(
+      env.raw(),
+      <webidl::PathArc as webidl::Site>::PREFIX,
+      "radius",
+      radius,
+    )?;
+    self
+      .inner
+      .arc(x, y, radius, start_angle, end_angle, anticlockwise.0);
+    Ok(())
   }
 
   #[napi]
-  pub fn arc_to(&mut self, x1: f64, y1: f64, x2: f64, y2: f64, radius: f64) {
-    if let Some([x1, y1, x2, y2, radius]) = num::saturated_f32s([x1, y1, x2, y2, radius]) {
-      self.inner.arc_to_tangent(x1, y1, x2, y2, radius);
-    }
+  pub fn arc_to(
+    &mut self,
+    env: &Env,
+    x1: Double<webidl::PathArcTo>,
+    y1: Double<webidl::PathArcTo>,
+    x2: Double<webidl::PathArcTo>,
+    y2: Double<webidl::PathArcTo>,
+    radius: Double<webidl::PathArcTo>,
+  ) -> Result<()> {
+    let Some([x1, y1, x2, y2, radius]) = num::saturated_f32s([x1.0, y1.0, x2.0, y2.0, radius.0])
+    else {
+      return Ok(());
+    };
+    check_radius(
+      env.raw(),
+      <webidl::PathArcTo as webidl::Site>::PREFIX,
+      "radius",
+      radius,
+    )?;
+    self.inner.arc_to_tangent(x1, y1, x2, y2, radius);
+    Ok(())
   }
 
   #[napi]
   pub fn ellipse(
     &mut self,
-    x: f64,
-    y: f64,
-    radius_x: f64,
-    radius_y: f64,
-    rotation: f64,
-    start_angle: f64,
-    end_angle: f64,
-    anticlockwise: Option<bool>,
-  ) {
-    if let Some([x, y, radius_x, radius_y, rotation, start_angle, end_angle]) =
-      num::saturated_f32s([x, y, radius_x, radius_y, rotation, start_angle, end_angle])
-    {
-      self.inner.ellipse(
-        x,
-        y,
-        radius_x,
-        radius_y,
-        rotation,
-        start_angle,
-        end_angle,
-        anticlockwise.unwrap_or(false),
-      );
-    }
+    env: &Env,
+    x: Double<webidl::PathEllipse>,
+    y: Double<webidl::PathEllipse>,
+    radius_x: Double<webidl::PathEllipse>,
+    radius_y: Double<webidl::PathEllipse>,
+    rotation: Double<webidl::PathEllipse>,
+    start_angle: Double<webidl::PathEllipse>,
+    end_angle: Double<webidl::PathEllipse>,
+    anticlockwise: webidl::Boolean,
+  ) -> Result<()> {
+    let Some([x, y, radius_x, radius_y, rotation, start_angle, end_angle]) = num::saturated_f32s([
+      x.0,
+      y.0,
+      radius_x.0,
+      radius_y.0,
+      rotation.0,
+      start_angle.0,
+      end_angle.0,
+    ]) else {
+      return Ok(());
+    };
+    let prefix = <webidl::PathEllipse as webidl::Site>::PREFIX;
+    check_radius(env.raw(), prefix, "major-axis radius", radius_x)?;
+    check_radius(env.raw(), prefix, "minor-axis radius", radius_y)?;
+    self.inner.ellipse(
+      x,
+      y,
+      radius_x,
+      radius_y,
+      rotation,
+      start_angle,
+      end_angle,
+      anticlockwise.0,
+    );
+    Ok(())
   }
 
   #[napi]
-  pub fn rect(&mut self, x: f64, y: f64, width: f64, height: f64) {
-    if let Some([x, y, width, height]) = num::saturated_f32s([x, y, width, height]) {
+  pub fn rect(
+    &mut self,
+    x: Double<webidl::PathRect>,
+    y: Double<webidl::PathRect>,
+    width: Double<webidl::PathRect>,
+    height: Double<webidl::PathRect>,
+  ) {
+    if let Some([x, y, width, height]) = num::saturated_f32s([x.0, y.0, width.0, height.0]) {
       self.inner.add_rect(x, y, width, height);
     }
   }
@@ -266,14 +321,14 @@ impl Path {
   #[napi]
   pub fn round_rect(
     &mut self,
-    x: f64,
-    y: f64,
-    width: f64,
-    height: f64,
+    x: Double<webidl::PathRoundRect>,
+    y: Double<webidl::PathRoundRect>,
+    width: Double<webidl::PathRoundRect>,
+    height: Double<webidl::PathRoundRect>,
     radii: Either3<f64, Vec<f64>, Undefined>,
   ) {
     if let (Some([x, y, width, height]), Some(radii)) = (
-      num::saturated_f32s([x, y, width, height]),
+      num::saturated_f32s([x.0, y.0, width.0, height.0]),
       round_rect_radii(radii),
     ) {
       self.inner.round_rect(x, y, width, height, radii);

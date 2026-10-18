@@ -538,7 +538,9 @@ export class Image {
   // if it's a string, it can be a file path, a data URL, a remote URL, or a SVG string
   src: Uint8Array | string
   onload?(): void
-  onerror?(err: Error): void
+  /** Called with an Event of type 'error', as in browsers. */
+  onerror?(event: Event): void
+  /** Rejects with an EncodingError DOMException when the image cannot be decoded. */
   decode(): Promise<void>
 }
 
@@ -592,7 +594,7 @@ export interface StrokeOptions {
 }
 
 export interface SKRSContext2D extends CanvasRenderingContext2D {
-  canvas: Canvas
+  readonly canvas: Canvas
   /**
    * @param startAngle The angle at which to begin the gradient, in radians. Angle measurements start vertically above the centre and move around clockwise.
    * @param x The x-axis coordinate of the centre of the gradient.
@@ -650,6 +652,14 @@ export interface ContextAttributes extends CanvasRenderingContext2DSettings {}
 export interface SvgCanvas {
   width: number
   height: number
+  /**
+   * Returns null for an id other than '2d', as browsers do for an unsupported id.
+   * Declared before the '2d' overload, so `ReturnType` still gives the context.
+   */
+  getContext<T extends string>(
+    contextType: T extends '2d' ? never : T,
+    contextAttributes?: ContextAttributes,
+  ): SKRSContext2D | null
   getContext(contextType: '2d', contextAttributes?: ContextAttributes): SKRSContext2D
 
   getContent(): Buffer
@@ -839,6 +849,14 @@ export class Canvas {
 
   width: number
   height: number
+  /**
+   * Returns null for an id other than '2d', as browsers do for an unsupported id.
+   * Declared before the '2d' overload, so `ReturnType` still gives the context.
+   */
+  getContext<T extends string>(
+    contextType: T extends '2d' ? never : T,
+    contextAttributes?: ContextAttributes,
+  ): SKRSContext2D | null
   getContext(contextType: '2d', contextAttributes?: ContextAttributes): SKRSContext2D
   encodeSync(format: 'webp' | 'jpeg', quality?: number): Buffer
   encodeSync(format: 'png'): Buffer

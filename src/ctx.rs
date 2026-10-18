@@ -1,5 +1,6 @@
 use std::cell::{Cell, RefCell};
 use std::f32::consts::PI;
+use std::marker::PhantomData;
 use std::mem;
 use std::result;
 use std::str::FromStr;
@@ -7,7 +8,7 @@ use std::sync::LazyLock;
 
 use cssparser::Parser;
 use cssparser_color::Color as CSSColor;
-use napi::{JsString, bindgen_prelude::*};
+use napi::bindgen_prelude::*;
 use regex::Regex;
 use rgb::RGBA;
 
@@ -38,7 +39,7 @@ use crate::{
     Transform,
   },
   state::Context2dRenderingState,
-  webidl::{self, Positional, ReportedSettings},
+  webidl::{self, Double, Positional, ReportedSettings},
 };
 
 static CSS_SIZE_REGEXP: LazyLock<Regex> =
@@ -53,6 +54,8 @@ impl From<SkError> for Error {
 pub(crate) const MAX_TEXT_WIDTH: f32 = 100_000.0;
 pub(crate) const FILL_STYLE_HIDDEN_NAME: &str = "_fillStyle";
 pub(crate) const STROKE_STYLE_HIDDEN_NAME: &str = "_strokeStyle";
+/// Where the canvas classes keep a context's canvas, for the `canvas` getter.
+pub(crate) const CANVAS_HIDDEN_NAME: &str = "_canvas";
 
 /// The fillStyle/strokeStyle getters read these hidden JS properties, so every
 /// reset to the default state (ctx.reset(), and a width/height change, which
@@ -1950,12 +1953,7 @@ impl Context {
         }
       }
     };
-    if !last_state.line_dash_list.is_empty() {
-      let path_effect = PathEffect::new_dash_path(
-        last_state.line_dash_list.as_slice(),
-        last_state.line_dash_offset,
-      )
-      .ok_or_else(|| SkError::Generic("Make line dash path effect failed".to_string()))?;
+    if let Some(path_effect) = self.line_dash_path_effect() {
       paint.set_path_effect(&path_effect);
     }
     // Deliberately NO `set_image_filter(state.filter)`: `ctx.filter` is a
@@ -2048,10 +2046,17 @@ impl Context {
       .map_err(|e| SkError::Generic(format!("Parse color [{}] error: {:?}", shadow_color, e)))?;
 
     match color {
+      // Without an element, currentcolor is opaque black (Chrome's
+      // OffscreenCanvas answer).
       CSSColor::CurrentColor => {
-        return Err(SkError::Generic(
-          "Color should not be `currentcolor` keyword".to_owned(),
-        ));
+        drop(parser);
+        self.state.shadow_color_string = shadow_color;
+        self.state.shadow_color = RGBA {
+          r: 0,
+          g: 0,
+          b: 0,
+          a: 255,
+        };
       }
       CSSColor::Rgba(rgba) => {
         drop(parser);
@@ -2087,6 +2092,11 @@ impl Context {
   }
 
   pub fn set_font_stretch(&mut self, stretch: String) -> result::Result<(), SkError> {
+    // CanvasFontStretch is an enum of the nine keywords: a percentage, which
+    // the font shorthand takes, is not one of its values.
+    if stretch.ends_with('%') {
+      return Ok(());
+    }
     if let Some(s) = crate::font::parse_font_stretch(&stretch) {
       self.state.font_stretch = s;
       self.state.font_stretch_raw = stretch;
@@ -2146,6 +2156,18 @@ impl Context {
     self.state.line_dash_list = line_dash_list;
   }
 
+  /// The dash of the current line dash list. A list with no non-zero entry
+  /// strokes solid (canvas_rendering_context_2d_state.cc UpdateLineDash), and
+  /// so does one Skia cannot dash (the intervals sum to 0 or overflow), as a
+  /// null dash effect does in Chrome.
+  fn line_dash_path_effect(&self) -> Option<PathEffect> {
+    let state = &self.state;
+    if !state.line_dash_list.iter().any(|dash| *dash != 0.0) {
+      return None;
+    }
+    PathEffect::new_dash_path(state.line_dash_list.as_slice(), state.line_dash_offset)
+  }
+
   fn stroke_paint(&self) -> result::Result<Paint, SkError> {
     let last_state = &self.state;
     let current_paint = &last_state.paint;
@@ -2166,12 +2188,7 @@ impl Context {
         }
       }
     };
-    if !last_state.line_dash_list.is_empty() {
-      let path_effect = PathEffect::new_dash_path(
-        last_state.line_dash_list.as_slice(),
-        last_state.line_dash_offset,
-      )
-      .ok_or_else(|| SkError::Generic("Make line dash path effect failed".to_string()))?;
+    if let Some(path_effect) = self.line_dash_path_effect() {
       paint.set_path_effect(&path_effect);
     }
     // Deliberately NO `set_image_filter(state.filter)`: `ctx.filter` is a
@@ -3348,51 +3365,313 @@ impl ObjectFinalize for CanvasRenderingContext2D {
   }
 }
 
-/// Source argument for `drawImage`. Wraps the `Either3` conversion so it runs
-/// in the generated callback glue inside the native borrow scope: napi-rs
-/// 3.12+ rejects `FromNapiValue` conversions performed inside a method body,
-/// and the wrapper keeps the custom error message.
-pub struct DrawImageSource<'a>(
-  pub Either3<&'a mut CanvasElement<'a>, &'a mut SVGCanvas<'a>, &'a mut Image>,
-);
-
-impl TypeName for DrawImageSource<'_> {
-  fn type_name() -> &'static str {
-    "CanvasElement | SVGCanvas | Image"
-  }
-
-  fn value_type() -> ValueType {
-    ValueType::Object
-  }
+/// A fillStyle or strokeStyle value, converted like Chrome's
+/// ExtractV8CanvasStyle (v8_canvas_style.cc): a string, then a CanvasPattern,
+/// then a CanvasGradient, else ToString. The class is chosen by its
+/// instanceof check and only that class is unwrapped; an object that passes
+/// the check but wraps nothing is converted with ToString, as Chrome does
+/// with an object that is not a real CanvasGradient.
+pub struct CanvasStyleArg<'a, S> {
+  /// None: the string is not a color, and the assignment is ignored.
+  pattern: Option<Pattern>,
+  /// What the getter then returns: the gradient or pattern, or the string.
+  value: Unknown<'a>,
+  site: PhantomData<S>,
 }
 
-impl ValidateNapiValue for DrawImageSource<'_> {
-  unsafe fn validate(_env: sys::napi_env, _napi_val: sys::napi_value) -> Result<sys::napi_value> {
-    Ok(std::ptr::null_mut())
-  }
-}
-
-impl FromNapiValue for DrawImageSource<'static> {
-  unsafe fn from_napi_value(env: sys::napi_env, napi_val: sys::napi_value) -> Result<Self> {
-    match unsafe {
-      <Either3<&mut CanvasElement, &mut SVGCanvas, &mut Image> as FromNapiValue>::from_napi_value(
-        env, napi_val,
-      )
-    } {
-      Ok(value) => Ok(DrawImageSource(value)),
-      Err(_) => {
-        // Throw the TypeError eagerly: napi >= 3.12 no longer maps the
-        // InvalidArg status to a JS TypeError when synthesizing the error.
-        let _ = Env::from_raw(env).throw_type_error(
-          "Value is not one of these types: `CanvasElement`, `SVGCanvas`, `Image`",
-          Some("InvalidArg"),
-        );
-        Err(Error::new(
-          Status::InvalidArg,
-          "Value is not one of these types: `CanvasElement`, `SVGCanvas`, `Image`".to_string(),
-        ))
+impl<S: webidl::Site> FromNapiValue for CanvasStyleArg<'static, S> {
+  unsafe fn from_napi_value(env: sys::napi_env, value: sys::napi_value) -> Result<Self> {
+    let style = |pattern, value| {
+      Ok(Self {
+        pattern,
+        value: unsafe { Unknown::from_napi_value(env, value)? },
+        site: PhantomData,
+      })
+    };
+    if webidl::type_of(env, value)? != ValueType::String {
+      if unsafe { <&CanvasPattern as ValidateNapiValue>::validate(env, value) }.is_ok()
+        && let Ok(pattern) = unsafe { CanvasPattern::from_napi_ref(env, value) }
+      {
+        return style(Some(pattern.inner.clone()), value);
+      }
+      if unsafe { <&CanvasGradient as ValidateNapiValue>::validate(env, value) }.is_ok()
+        && let Ok(gradient) = unsafe { CanvasGradient::from_napi_ref(env, value) }
+      {
+        return style(Some(Pattern::Gradient(gradient.0.clone())), value);
       }
     }
+    let color = webidl::to_dom_string(env, value, S::PREFIX)?;
+    let pattern = Pattern::from_color(&color).ok();
+    style(pattern, unsafe { String::to_napi_value(env, color)? })
+  }
+}
+
+/// Whether `value` is a Path2D for overload resolution: its instanceof check
+/// and a native Path behind it (an object made with
+/// `Object.create(Path2D.prototype)` has none). The borrow itself comes after
+/// the other arguments ran their user code.
+///
+/// A value that is not an object, a function included, is never a Path2D,
+/// and is not checked further: Chrome's wrapper type check runs no user code
+/// (Path2D[Symbol.hasInstance]), and a failed instanceof check costs the
+/// formatted message of a napi-rs error.
+fn is_path2d(env: sys::napi_env, value: sys::napi_value) -> bool {
+  matches!(webidl::type_of(env, value), Ok(ValueType::Object))
+    && unsafe { <&Path as ValidateNapiValue>::validate(env, value) }.is_ok()
+    && has_native_object(env, value)
+}
+
+/// Whether a native object is wrapped in `value`, of any class.
+fn has_native_object(env: sys::napi_env, value: sys::napi_value) -> bool {
+  let mut data = std::ptr::null_mut();
+  unsafe { sys::napi_unwrap(env, value, &mut data) == sys::Status::napi_ok && !data.is_null() }
+}
+
+fn not_path2d(env: sys::napi_env, prefix: &str) -> Error {
+  webidl::context_type_error(env, prefix, "parameter 1 is not of type 'Path2D'.")
+}
+
+/// Borrows a value that passed `is_path2d`.
+fn borrow_path(
+  env: sys::napi_env,
+  value: Option<sys::napi_value>,
+  prefix: &str,
+) -> Result<Option<&'static mut Path>> {
+  value
+    .map(|value| {
+      unsafe { Path::from_napi_mut_ref(env, value) }.map_err(|_| not_path2d(env, prefix))
+    })
+    .transpose()
+}
+
+/// The arguments of fill() or clip(), their last parameter: (optional
+/// CanvasFillRule) or (Path2D, optional CanvasFillRule). WebIDL picks the
+/// overload from the argument count and, for one argument, from whether it
+/// is a Path2D (canvas_2d_recorder_context.idl).
+pub struct FillArgs<S> {
+  path: Option<&'static mut Path>,
+  rule: FillType,
+  site: PhantomData<S>,
+}
+
+impl<S: webidl::Site> FromNapiValue for FillArgs<S> {
+  unsafe fn from_napi_value(env: sys::napi_env, argc: sys::napi_value) -> Result<Self> {
+    let args = webidl::Arguments::take(env, 2, argc)?;
+    let first = args.get(0)?;
+    let (path, rule) = match args.len() {
+      0 => (None, FillType::Winding),
+      1 if is_path2d(env, first) => (Some(first), FillType::Winding),
+      1 => (None, webidl::fill_rule(env, first, S::PREFIX)?),
+      _ => {
+        if !is_path2d(env, first) {
+          return Err(not_path2d(env, S::PREFIX));
+        }
+        (
+          Some(first),
+          webidl::fill_rule(env, args.get(1)?, S::PREFIX)?,
+        )
+      }
+    };
+    Ok(Self {
+      path: borrow_path(env, path, S::PREFIX)?,
+      rule,
+      site: PhantomData,
+    })
+  }
+}
+
+/// The argument of stroke(): none, or a Path2D.
+pub struct StrokeArgs {
+  path: Option<&'static mut Path>,
+}
+
+impl FromNapiValue for StrokeArgs {
+  unsafe fn from_napi_value(env: sys::napi_env, argc: sys::napi_value) -> Result<Self> {
+    let args = webidl::Arguments::take(env, 1, argc)?;
+    let prefix = <webidl::CtxStroke as webidl::Site>::PREFIX;
+    let path = if args.len() == 0 {
+      None
+    } else {
+      let path = args.get(0)?;
+      if !is_path2d(env, path) {
+        return Err(not_path2d(env, prefix));
+      }
+      Some(path)
+    };
+    Ok(Self {
+      path: borrow_path(env, path, prefix)?,
+    })
+  }
+}
+
+/// The arguments of isPointInPath(): (x, y, optional CanvasFillRule) or
+/// (Path2D, x, y, optional CanvasFillRule). Three arguments pick the Path2D
+/// form only when the first one is a Path2D.
+pub struct IsPointInPathArgs {
+  path: Option<&'static mut Path>,
+  x: f64,
+  y: f64,
+  rule: FillType,
+}
+
+impl FromNapiValue for IsPointInPathArgs {
+  unsafe fn from_napi_value(env: sys::napi_env, argc: sys::napi_value) -> Result<Self> {
+    let args = webidl::Arguments::take(env, 4, argc)?;
+    let prefix = <webidl::CtxIsPointInPath as webidl::Site>::PREFIX;
+    let first = args.get(0)?;
+    let with_path = match args.len() {
+      0..=2 => false,
+      3 => is_path2d(env, first),
+      _ => {
+        if !is_path2d(env, first) {
+          return Err(not_path2d(env, prefix));
+        }
+        true
+      }
+    };
+    let offset = u32::from(with_path);
+    let x = webidl::to_number(env, args.get(offset)?, prefix)?;
+    let y = webidl::to_number(env, args.get(offset + 1)?, prefix)?;
+    let rule = if args.len() > 2 + offset {
+      webidl::fill_rule(env, args.get(2 + offset)?, prefix)?
+    } else {
+      FillType::Winding
+    };
+    Ok(Self {
+      path: borrow_path(env, with_path.then_some(first), prefix)?,
+      x,
+      y,
+      rule,
+    })
+  }
+}
+
+/// The arguments of isPointInStroke(): (x, y) or (Path2D, x, y).
+pub struct IsPointInStrokeArgs {
+  path: Option<&'static mut Path>,
+  x: f64,
+  y: f64,
+}
+
+impl FromNapiValue for IsPointInStrokeArgs {
+  unsafe fn from_napi_value(env: sys::napi_env, argc: sys::napi_value) -> Result<Self> {
+    let args = webidl::Arguments::take(env, 3, argc)?;
+    let prefix = <webidl::CtxIsPointInStroke as webidl::Site>::PREFIX;
+    let first = args.get(0)?;
+    let with_path = args.len() > 2;
+    if with_path && !is_path2d(env, first) {
+      return Err(not_path2d(env, prefix));
+    }
+    let offset = u32::from(with_path);
+    let x = webidl::to_number(env, args.get(offset)?, prefix)?;
+    let y = webidl::to_number(env, args.get(offset + 1)?, prefix)?;
+    Ok(Self {
+      path: borrow_path(env, with_path.then_some(first), prefix)?,
+      x,
+      y,
+    })
+  }
+}
+
+/// The class of a drawImage image, found by the type check of its WebIDL
+/// union: the instanceof check of the class, and a native object behind it
+/// (an object made with `Object.create(Image.prototype)` has none and is not
+/// an image).
+#[derive(Clone, Copy)]
+enum DrawImageKind {
+  CanvasElement,
+  SVGCanvas,
+  Image,
+}
+
+impl DrawImageKind {
+  unsafe fn of(env: sys::napi_env, value: sys::napi_value) -> Option<Self> {
+    let kind = unsafe {
+      if <&mut CanvasElement as ValidateNapiValue>::validate(env, value).is_ok() {
+        Self::CanvasElement
+      } else if <&mut SVGCanvas as ValidateNapiValue>::validate(env, value).is_ok() {
+        Self::SVGCanvas
+      } else if <&mut Image as ValidateNapiValue>::validate(env, value).is_ok() {
+        Self::Image
+      } else {
+        return None;
+      }
+    };
+    has_native_object(env, value).then_some(kind)
+  }
+
+  /// Borrows `value` as this class. User code ran since `of`, and may have
+  /// changed the prototype or Symbol.hasInstance, so the instanceof check is
+  /// not repeated.
+  unsafe fn borrow(self, env: sys::napi_env, value: sys::napi_value) -> Result<DrawImageSource> {
+    unsafe {
+      Ok(match self {
+        Self::CanvasElement => Either3::A(CanvasElement::from_napi_mut_ref(env, value)?),
+        Self::SVGCanvas => Either3::B(SVGCanvas::from_napi_mut_ref(env, value)?),
+        Self::Image => Either3::C(Image::from_napi_mut_ref(env, value)?),
+      })
+    }
+  }
+}
+
+type DrawImageSource =
+  Either3<&'static mut CanvasElement<'static>, &'static mut SVGCanvas<'static>, &'static mut Image>;
+
+/// The arguments of `drawImage`, its last parameter: (image, dx, dy),
+/// (image, dx, dy, dw, dh) or (image, sx, sy, sw, sh, dx, dy, dw, dh).
+/// WebIDL picks the overload from the argument count, and fails for any
+/// other count before it converts anything
+/// (canvas_2d_recorder_context.idl). The image is type checked before the
+/// numbers run their user code, and borrowed after it.
+pub struct DrawImageArgs {
+  image: DrawImageSource,
+  /// The 2, 4 or 8 numbers after the image, in `numbers[..len]`.
+  numbers: [f64; 8],
+  len: usize,
+}
+
+impl FromNapiValue for DrawImageArgs {
+  unsafe fn from_napi_value(env: sys::napi_env, argc: sys::napi_value) -> Result<Self> {
+    let args = webidl::Arguments::take(env, 9, argc)?;
+    let prefix = <webidl::CtxDrawImage as webidl::Site>::PREFIX;
+    let count = match args.len() {
+      count @ 0..=2 => {
+        return Err(webidl::context_type_error(
+          env,
+          prefix,
+          &format!("3 arguments required, but only {count} present."),
+        ));
+      }
+      count @ (3 | 5 | 9) => count,
+      _ => {
+        return Err(webidl::context_type_error(
+          env,
+          prefix,
+          "Overload resolution failed.",
+        ));
+      }
+    };
+    let not_an_image = || {
+      webidl::context_type_error(
+        env,
+        prefix,
+        "The provided value is not of type '(CanvasElement or Image or SVGCanvas)'.",
+      )
+    };
+    let image = args.get(0)?;
+    let Some(kind) = (unsafe { DrawImageKind::of(env, image) }) else {
+      return Err(not_an_image());
+    };
+    let mut numbers = [0.0; 8];
+    for (number, index) in numbers.iter_mut().zip(1..count) {
+      *number = webidl::to_number(env, args.get(index)?, prefix)?;
+    }
+    let image = unsafe { kind.borrow(env, image) }.map_err(|_| not_an_image())?;
+    Ok(Self {
+      image,
+      numbers,
+      len: count as usize - 1,
+    })
   }
 }
 
@@ -3641,10 +3920,13 @@ impl CanvasRenderingContext2D {
     self.context.get_miter_limit()
   }
 
-  #[napi(setter, return_if_invalid)]
-  pub fn set_miter_limit(&mut self, miter_limit: f64) {
-    if !miter_limit.is_nan() && !miter_limit.is_infinite() {
-      self.context.set_miter_limit(miter_limit as f32);
+  #[napi(setter)]
+  pub fn set_miter_limit(&mut self, miter_limit: webidl::Double<webidl::SetMiterLimit>) {
+    // Blink keeps the old value unless the new one is finite and > 0
+    // (canvas_2d_recorder_context.cc:1150).
+    let miter_limit = miter_limit.0;
+    if miter_limit.is_finite() && miter_limit > 0.0 {
+      self.context.set_miter_limit(clamp_to_f32(miter_limit));
     }
   }
 
@@ -3653,8 +3935,9 @@ impl CanvasRenderingContext2D {
     self.context.get_global_alpha()
   }
 
-  #[napi(setter, return_if_invalid)]
-  pub fn set_global_alpha(&mut self, alpha: f64) {
+  #[napi(setter)]
+  pub fn set_global_alpha(&mut self, alpha: webidl::Double<webidl::SetGlobalAlpha>) {
+    let alpha = alpha.0;
     if !(0.0..=1.0).contains(&alpha) {
       #[cfg(debug_assertions)]
       eprintln!("Alpha value out of range, expected 0.0 - 1.0, but got : {alpha}");
@@ -3669,9 +3952,12 @@ impl CanvasRenderingContext2D {
     self.context.state.paint.get_blend_mode().as_str()
   }
 
-  #[napi(setter, return_if_invalid)]
-  pub fn set_global_composite_operation(&mut self, mode: String) {
-    if let Ok(blend_mode) = mode.parse() {
+  #[napi(setter)]
+  pub fn set_global_composite_operation(
+    &mut self,
+    mode: webidl::DomString<webidl::SetGlobalCompositeOperation>,
+  ) {
+    if let Ok(blend_mode) = mode.0.parse() {
       self.context.state.paint.set_blend_mode(blend_mode);
       self.context.state.global_composite_operation = blend_mode;
     };
@@ -3699,9 +3985,12 @@ impl CanvasRenderingContext2D {
       .to_owned()
   }
 
-  #[napi(setter, return_if_invalid)]
-  pub fn set_image_smoothing_quality(&mut self, quality: String) {
-    if let Ok(quality) = quality.parse() {
+  #[napi(setter)]
+  pub fn set_image_smoothing_quality(
+    &mut self,
+    quality: webidl::DomString<webidl::SetImageSmoothingQuality>,
+  ) {
+    if let Ok(quality) = quality.0.parse() {
       self.context.state.image_smoothing_quality = quality;
     };
   }
@@ -3717,9 +4006,9 @@ impl CanvasRenderingContext2D {
       .to_owned()
   }
 
-  #[napi(setter, return_if_invalid)]
-  pub fn set_line_cap(&mut self, cap: String) {
-    if let Ok(cap) = cap.parse() {
+  #[napi(setter)]
+  pub fn set_line_cap(&mut self, cap: webidl::DomString<webidl::SetLineCap>) {
+    if let Ok(cap) = cap.0.parse() {
       self.context.state.paint.set_stroke_cap(cap);
     };
   }
@@ -3729,9 +4018,12 @@ impl CanvasRenderingContext2D {
     self.context.state.line_dash_offset as f64
   }
 
-  #[napi(setter, return_if_invalid)]
-  pub fn set_line_dash_offset(&mut self, offset: f64) {
-    self.context.state.line_dash_offset = offset as f32;
+  #[napi(setter)]
+  pub fn set_line_dash_offset(&mut self, offset: webidl::Double<webidl::SetLineDashOffset>) {
+    // A non-finite offset is ignored (canvas_2d_recorder_context.cc:1253).
+    if offset.0.is_finite() {
+      self.context.state.line_dash_offset = clamp_to_f32(offset.0);
+    }
   }
 
   #[napi(getter)]
@@ -3745,9 +4037,9 @@ impl CanvasRenderingContext2D {
       .to_owned()
   }
 
-  #[napi(setter, return_if_invalid)]
-  pub fn set_line_join(&mut self, join: String) {
-    if let Ok(join) = join.parse() {
+  #[napi(setter)]
+  pub fn set_line_join(&mut self, join: webidl::DomString<webidl::SetLineJoin>) {
+    if let Ok(join) = join.0.parse() {
       self.context.state.paint.set_stroke_join(join);
     };
   }
@@ -3757,9 +4049,24 @@ impl CanvasRenderingContext2D {
     self.context.state.paint.get_stroke_width() as f64
   }
 
-  #[napi(setter, return_if_invalid)]
-  pub fn set_line_width(&mut self, width: f64) {
-    self.context.state.paint.set_stroke_width(width as f32);
+  #[napi(setter)]
+  pub fn set_line_width(&mut self, width: webidl::Double<webidl::SetLineWidth>) {
+    // Blink keeps the old width unless the new one is finite and > 0
+    // (canvas_2d_recorder_context.cc:1103).
+    let width = width.0;
+    if width.is_finite() && width > 0.0 {
+      self
+        .context
+        .state
+        .paint
+        .set_stroke_width(clamp_to_f32(width));
+    }
+  }
+
+  /// The canvas: a read-only prototype getter, as in browsers.
+  #[napi(getter)]
+  pub fn get_canvas<'env>(&'env self, this: This<'env>) -> Result<Unknown<'env>> {
+    this.get_named_property_unchecked(CANVAS_HIDDEN_NAME)
   }
 
   #[napi(getter)]
@@ -3767,20 +4074,15 @@ impl CanvasRenderingContext2D {
     this.get_named_property_unchecked(FILL_STYLE_HIDDEN_NAME)
   }
 
-  #[napi(setter, return_if_invalid)]
+  #[napi(setter)]
   pub fn set_fill_style(
     &mut self,
     mut this: This,
-    fill_style: Either3<JsString, ClassInstance<CanvasGradient>, ClassInstance<CanvasPattern>>,
+    fill_style: CanvasStyleArg<'_, webidl::SetFillStyle>,
   ) -> Result<()> {
-    if let Some(pattern) = match &fill_style {
-      Either3::A(color) => Pattern::from_color(color.into_utf8()?.as_str()?).ok(),
-      Either3::B(gradient) => Some(Pattern::Gradient(gradient.0.clone())),
-      Either3::C(pattern) => Some(pattern.inner.clone()),
-    } {
-      let raw_fill_style = fill_style.as_unknown();
+    if let Some(pattern) = fill_style.pattern {
       self.context.state.fill_style = pattern;
-      this.set(FILL_STYLE_HIDDEN_NAME, raw_fill_style)?;
+      this.set(FILL_STYLE_HIDDEN_NAME, fill_style.value)?;
     }
     Ok(())
   }
@@ -3790,9 +4092,9 @@ impl CanvasRenderingContext2D {
     self.context.state.filters_string.clone()
   }
 
-  #[napi(setter, return_if_invalid)]
-  pub fn set_filter(&mut self, filter: String) -> Result<()> {
-    self.context.set_filter(&filter)?;
+  #[napi(setter)]
+  pub fn set_filter(&mut self, filter: webidl::DomString<webidl::SetFilter>) -> Result<()> {
+    self.context.set_filter(&filter.0)?;
     Ok(())
   }
 
@@ -3812,10 +4114,16 @@ impl CanvasRenderingContext2D {
     Ok(())
   }
 
-  #[napi(setter, return_if_invalid)]
-  pub fn set_font(&mut self, font: String) -> Result<()> {
-    self.context.set_font(font)?;
-    Ok(())
+  #[napi(setter)]
+  pub fn set_font(&mut self, font: webidl::DomString<webidl::SetFont>) {
+    // A number is not a font (it has no family), and Chrome keeps the font;
+    // the font parser here would take it as a size. str::parse::<f64> takes
+    // every form ToString gives a Number ("5", "1e+21", "NaN", "Infinity").
+    if font.0.parse::<f64>().is_ok() {
+      return;
+    }
+    // An invalid font is ignored (base_rendering_context_2d.cc setFont).
+    let _ = self.context.set_font(font.0);
   }
 
   #[napi(getter)]
@@ -3823,9 +4131,9 @@ impl CanvasRenderingContext2D {
     self.context.state.text_direction.as_str().to_owned()
   }
 
-  #[napi(setter, return_if_invalid)]
-  pub fn set_direction(&mut self, direction: String) {
-    if let Ok(d) = direction.parse() {
+  #[napi(setter)]
+  pub fn set_direction(&mut self, direction: webidl::DomString<webidl::SetDirection>) {
+    if let Ok(d) = direction.0.parse() {
       self.context.state.text_direction = d;
     };
   }
@@ -3835,8 +4143,12 @@ impl CanvasRenderingContext2D {
     self.context.state.letter_spacing_raw.clone()
   }
 
-  #[napi(setter, return_if_invalid)]
-  pub fn set_letter_spacing(&mut self, spacing: String) -> Result<()> {
+  #[napi(setter)]
+  pub fn set_letter_spacing(
+    &mut self,
+    spacing: webidl::DomString<webidl::SetLetterSpacing>,
+  ) -> Result<()> {
+    let spacing = spacing.0;
     if let Some(size) = parse_css_size(&spacing) {
       self.context.state.letter_spacing = size;
       self.context.state.letter_spacing_raw = spacing;
@@ -3849,8 +4161,12 @@ impl CanvasRenderingContext2D {
     self.context.state.word_spacing_raw.clone()
   }
 
-  #[napi(setter, return_if_invalid)]
-  pub fn set_word_spacing(&mut self, spacing: String) -> Result<()> {
+  #[napi(setter)]
+  pub fn set_word_spacing(
+    &mut self,
+    spacing: webidl::DomString<webidl::SetWordSpacing>,
+  ) -> Result<()> {
+    let spacing = spacing.0;
     if let Some(size) = parse_css_size(&spacing) {
       self.context.state.word_spacing = size;
       self.context.state.word_spacing_raw = spacing;
@@ -3863,19 +4179,14 @@ impl CanvasRenderingContext2D {
     this.get(STROKE_STYLE_HIDDEN_NAME).ok().flatten()
   }
 
-  #[napi(setter, return_if_invalid)]
+  #[napi(setter)]
   pub fn set_stroke_style(
     &mut self,
     mut this: This,
-    fill_style: Either3<JsString, ClassInstance<CanvasGradient>, ClassInstance<CanvasPattern>>,
+    stroke_style: CanvasStyleArg<'_, webidl::SetStrokeStyle>,
   ) -> Result<()> {
-    if let Some(pattern) = match &fill_style {
-      Either3::A(color) => Pattern::from_color(color.into_utf8()?.as_str()?).ok(),
-      Either3::B(gradient) => Some(Pattern::Gradient(gradient.0.clone())),
-      Either3::C(pattern) => Some(pattern.inner.clone()),
-    } {
-      let raw_fill_style = fill_style.as_unknown();
-      this.set(STROKE_STYLE_HIDDEN_NAME, raw_fill_style)?;
+    if let Some(pattern) = stroke_style.pattern {
+      this.set(STROKE_STYLE_HIDDEN_NAME, stroke_style.value)?;
       self.context.state.stroke_style = pattern;
     }
     Ok(())
@@ -3886,8 +4197,9 @@ impl CanvasRenderingContext2D {
     self.context.state.shadow_blur as f64
   }
 
-  #[napi(setter, return_if_invalid)]
-  pub fn set_shadow_blur(&mut self, blur: f64) {
+  #[napi(setter)]
+  pub fn set_shadow_blur(&mut self, blur: webidl::Double<webidl::SetShadowBlur>) {
+    let blur = blur.0;
     // Blink discards a non-finite or negative assignment and keeps the previous
     // value (canvas_2d_recorder_context.cc:1202-1207). Storing it is not inert:
     // it becomes the sigma, `SkImageFilters::Blur` rejects it, and the Blur node
@@ -3903,10 +4215,10 @@ impl CanvasRenderingContext2D {
     self.context.state.shadow_color_string.clone()
   }
 
-  #[napi(setter, return_if_invalid)]
-  pub fn set_shadow_color(&mut self, shadow_color: String) -> Result<()> {
-    self.context.set_shadow_color(shadow_color)?;
-    Ok(())
+  #[napi(setter)]
+  pub fn set_shadow_color(&mut self, shadow_color: webidl::DomString<webidl::SetShadowColor>) {
+    // An invalid color is ignored (canvas_2d_recorder_context.cc:1220).
+    let _ = self.context.set_shadow_color(shadow_color.0);
   }
 
   #[napi(getter)]
@@ -3914,8 +4226,9 @@ impl CanvasRenderingContext2D {
     self.context.state.shadow_offset_x as f64
   }
 
-  #[napi(setter, return_if_invalid)]
-  pub fn set_shadow_offset_x(&mut self, offset_x: f64) {
+  #[napi(setter)]
+  pub fn set_shadow_offset_x(&mut self, offset_x: webidl::Double<webidl::SetShadowOffsetX>) {
+    let offset_x = offset_x.0;
     // Same rule as `set_shadow_blur`, minus the sign test: Blink drops only
     // non-finite offsets (canvas_2d_recorder_context.cc:1170-1179) -- a negative
     // offset is meaningful, it casts the shadow left/up.
@@ -3930,8 +4243,9 @@ impl CanvasRenderingContext2D {
     self.context.state.shadow_offset_y as f64
   }
 
-  #[napi(setter, return_if_invalid)]
-  pub fn set_shadow_offset_y(&mut self, offset_y: f64) {
+  #[napi(setter)]
+  pub fn set_shadow_offset_y(&mut self, offset_y: webidl::Double<webidl::SetShadowOffsetY>) {
+    let offset_y = offset_y.0;
     // canvas_2d_recorder_context.cc:1186-1195, see `set_shadow_offset_x`.
     if !offset_y.is_finite() {
       return;
@@ -3944,10 +4258,11 @@ impl CanvasRenderingContext2D {
     self.context.state.text_align.as_str().to_owned()
   }
 
-  #[napi(setter, return_if_invalid)]
-  pub fn set_text_align(&mut self, align: String) -> Result<()> {
-    self.context.set_text_align(align)?;
-    Ok(())
+  #[napi(setter)]
+  pub fn set_text_align(&mut self, align: webidl::DomString<webidl::SetTextAlign>) {
+    // A value outside the enum is ignored, as WebIDL does for an enum
+    // attribute.
+    let _ = self.context.set_text_align(align.0);
   }
 
   #[napi(getter)]
@@ -3955,10 +4270,9 @@ impl CanvasRenderingContext2D {
     self.context.state.text_baseline.as_str().to_owned()
   }
 
-  #[napi(setter, return_if_invalid)]
-  pub fn set_text_baseline(&mut self, baseline: String) -> Result<()> {
-    self.context.set_text_baseline(baseline)?;
-    Ok(())
+  #[napi(setter)]
+  pub fn set_text_baseline(&mut self, baseline: webidl::DomString<webidl::SetTextBaseline>) {
+    let _ = self.context.set_text_baseline(baseline.0);
   }
 
   #[napi(getter)]
@@ -3966,9 +4280,12 @@ impl CanvasRenderingContext2D {
     self.context.state.font_stretch_raw.clone()
   }
 
-  #[napi(setter, return_if_invalid)]
-  pub fn set_font_stretch(&mut self, stretch: String) -> Result<()> {
-    self.context.set_font_stretch(stretch)?;
+  #[napi(setter)]
+  pub fn set_font_stretch(
+    &mut self,
+    stretch: webidl::DomString<webidl::SetFontStretch>,
+  ) -> Result<()> {
+    self.context.set_font_stretch(stretch.0)?;
     Ok(())
   }
 
@@ -3977,9 +4294,12 @@ impl CanvasRenderingContext2D {
     self.context.state.font_kerning.as_str().to_owned()
   }
 
-  #[napi(setter, return_if_invalid)]
-  pub fn set_font_kerning(&mut self, kerning: String) -> Result<()> {
-    self.context.set_font_kerning(kerning)?;
+  #[napi(setter)]
+  pub fn set_font_kerning(
+    &mut self,
+    kerning: webidl::DomString<webidl::SetFontKerning>,
+  ) -> Result<()> {
+    self.context.set_font_kerning(kerning.0)?;
     Ok(())
   }
 
@@ -3988,9 +4308,12 @@ impl CanvasRenderingContext2D {
     self.context.state.font_variant_caps.as_str().to_owned()
   }
 
-  #[napi(setter, return_if_invalid)]
-  pub fn set_font_variant_caps(&mut self, variant_caps: String) -> Result<()> {
-    self.context.set_font_variant_caps(variant_caps)?;
+  #[napi(setter)]
+  pub fn set_font_variant_caps(
+    &mut self,
+    variant_caps: webidl::DomString<webidl::SetFontVariantCaps>,
+  ) -> Result<()> {
+    self.context.set_font_variant_caps(variant_caps.0)?;
     Ok(())
   }
 
@@ -3999,9 +4322,12 @@ impl CanvasRenderingContext2D {
     self.context.state.text_rendering.as_str().to_owned()
   }
 
-  #[napi(setter, return_if_invalid)]
-  pub fn set_text_rendering(&mut self, rendering: String) -> Result<()> {
-    self.context.set_text_rendering(rendering)?;
+  #[napi(setter)]
+  pub fn set_text_rendering(
+    &mut self,
+    rendering: webidl::DomString<webidl::SetTextRendering>,
+  ) -> Result<()> {
+    self.context.set_text_rendering(rendering.0)?;
     Ok(())
   }
 
@@ -4011,43 +4337,62 @@ impl CanvasRenderingContext2D {
   }
 
   #[napi(setter)]
-  pub fn set_lang(&mut self, lang: String) {
-    self.context.set_lang(lang);
+  pub fn set_lang(&mut self, lang: webidl::DomString<webidl::SetLang>) {
+    self.context.set_lang(lang.0);
   }
 
   #[napi]
   pub fn arc(
     &mut self,
-    x: f64,
-    y: f64,
-    radius: f64,
-    start_angle: f64,
-    end_angle: f64,
-    anticlockwise: Option<bool>,
-  ) {
+    env: &Env,
+    x: Double<webidl::CtxArc>,
+    y: Double<webidl::CtxArc>,
+    radius: Double<webidl::CtxArc>,
+    start_angle: Double<webidl::CtxArc>,
+    end_angle: Double<webidl::CtxArc>,
+    anticlockwise: webidl::Boolean,
+  ) -> Result<()> {
     // Path methods drop a call with a value outside the float range
     // (Blink canvas_path.cc: saturated_cast<float>, then isfinite).
     let Some([x, y, radius, start_angle, end_angle]) =
-      num::saturated_f32s([x, y, radius, start_angle, end_angle])
+      num::saturated_f32s([x.0, y.0, radius.0, start_angle.0, end_angle.0])
     else {
-      return;
+      return Ok(());
     };
-    self.context.arc(
-      x,
-      y,
+    check_radius(
+      env.raw(),
+      <webidl::CtxArc as webidl::Site>::PREFIX,
+      "radius",
       radius,
-      start_angle,
-      end_angle,
-      anticlockwise.unwrap_or(false),
-    );
+    )?;
+    self
+      .context
+      .arc(x, y, radius, start_angle, end_angle, anticlockwise.0);
+    Ok(())
   }
 
   #[napi]
-  pub fn arc_to(&mut self, x1: f64, y1: f64, x2: f64, y2: f64, radius: f64) {
-    let Some([x1, y1, x2, y2, radius]) = num::saturated_f32s([x1, y1, x2, y2, radius]) else {
-      return;
+  pub fn arc_to(
+    &mut self,
+    env: &Env,
+    x1: Double<webidl::CtxArcTo>,
+    y1: Double<webidl::CtxArcTo>,
+    x2: Double<webidl::CtxArcTo>,
+    y2: Double<webidl::CtxArcTo>,
+    radius: Double<webidl::CtxArcTo>,
+  ) -> Result<()> {
+    let Some([x1, y1, x2, y2, radius]) = num::saturated_f32s([x1.0, y1.0, x2.0, y2.0, radius.0])
+    else {
+      return Ok(());
     };
+    check_radius(
+      env.raw(),
+      <webidl::CtxArcTo as webidl::Site>::PREFIX,
+      "radius",
+      radius,
+    )?;
     self.context.arc_to(x1, y1, x2, y2, radius);
+    Ok(())
   }
 
   #[napi]
@@ -4056,8 +4401,17 @@ impl CanvasRenderingContext2D {
   }
 
   #[napi]
-  pub fn bezier_curve_to(&mut self, cp1x: f64, cp1y: f64, cp2x: f64, cp2y: f64, x: f64, y: f64) {
-    let Some([cp1x, cp1y, cp2x, cp2y, x, y]) = num::saturated_f32s([cp1x, cp1y, cp2x, cp2y, x, y])
+  pub fn bezier_curve_to(
+    &mut self,
+    cp1x: Double<webidl::CtxBezierCurveTo>,
+    cp1y: Double<webidl::CtxBezierCurveTo>,
+    cp2x: Double<webidl::CtxBezierCurveTo>,
+    cp2y: Double<webidl::CtxBezierCurveTo>,
+    x: Double<webidl::CtxBezierCurveTo>,
+    y: Double<webidl::CtxBezierCurveTo>,
+  ) {
+    let Some([cp1x, cp1y, cp2x, cp2y, x, y]) =
+      num::saturated_f32s([cp1x.0, cp1y.0, cp2x.0, cp2y.0, x.0, y.0])
     else {
       return;
     };
@@ -4065,39 +4419,44 @@ impl CanvasRenderingContext2D {
   }
 
   #[napi]
-  pub fn quadratic_curve_to(&mut self, cpx: f64, cpy: f64, x: f64, y: f64) {
-    let Some([cpx, cpy, x, y]) = num::saturated_f32s([cpx, cpy, x, y]) else {
+  pub fn quadratic_curve_to(
+    &mut self,
+    cpx: Double<webidl::CtxQuadraticCurveTo>,
+    cpy: Double<webidl::CtxQuadraticCurveTo>,
+    x: Double<webidl::CtxQuadraticCurveTo>,
+    y: Double<webidl::CtxQuadraticCurveTo>,
+  ) {
+    let Some([cpx, cpy, x, y]) = num::saturated_f32s([cpx.0, cpy.0, x.0, y.0]) else {
       return;
     };
     self.context.quadratic_curve_to(cpx, cpy, x, y);
   }
 
+  /// clip(fillRule?) or clip(path, fillRule?). The index.js wrapper passes
+  /// the argument count after them; see `webidl::Arguments::take`.
   #[napi]
   pub fn clip(
     &mut self,
-    rule_or_path: Option<Either<String, &mut Path>>,
-    maybe_rule: Option<String>,
+    _path_or_rule: Positional,
+    _rule: Positional,
+    args: FillArgs<webidl::CtxClip>,
   ) {
-    let rule = rule_or_path
-      .as_ref()
-      .and_then(|e| match e {
-        Either::A(s) => FillType::from_str(s).ok(),
-        Either::B(_) => None,
-      })
-      .or_else(|| maybe_rule.and_then(|s| FillType::from_str(&s).ok()))
-      .unwrap_or(FillType::Winding);
-    let path = rule_or_path.and_then(|e| match e {
-      Either::A(_) => None,
-      Either::B(p) => Some(p),
-    });
-    self.context.clip(path.map(|p| &mut p.inner), rule);
+    self
+      .context
+      .clip(args.path.map(|p| &mut p.inner), args.rule);
   }
 
   #[napi]
-  pub fn clear_rect(&mut self, x: f64, y: f64, width: f64, height: f64) -> Result<()> {
+  pub fn clear_rect(
+    &mut self,
+    x: Double<webidl::CtxClearRect>,
+    y: Double<webidl::CtxClearRect>,
+    width: Double<webidl::CtxClearRect>,
+    height: Double<webidl::CtxClearRect>,
+  ) -> Result<()> {
     // ValidateRectForCanvas: a non-finite or empty (0 x 0) rect clears
     // nothing; then ClampTo<float> (canvas_2d_recorder_context.cc:1928).
-    let Some([x, y, width, height]) = num::clamped_f32s([x, y, width, height]) else {
+    let Some([x, y, width, height]) = num::clamped_f32s([x.0, y.0, width.0, height.0]) else {
       return Ok(());
     };
     if width == 0.0 && height == 0.0 {
@@ -4238,8 +4597,14 @@ impl CanvasRenderingContext2D {
   }
 
   #[napi]
-  pub fn rect(&mut self, x: f64, y: f64, width: f64, height: f64) {
-    let Some([x, y, width, height]) = num::saturated_f32s([x, y, width, height]) else {
+  pub fn rect(
+    &mut self,
+    x: Double<webidl::CtxRect>,
+    y: Double<webidl::CtxRect>,
+    width: Double<webidl::CtxRect>,
+    height: Double<webidl::CtxRect>,
+  ) {
+    let Some([x, y, width, height]) = num::saturated_f32s([x.0, y.0, width.0, height.0]) else {
       return;
     };
     self.context.rect(x, y, width, height);
@@ -4248,13 +4613,13 @@ impl CanvasRenderingContext2D {
   #[napi]
   pub fn round_rect(
     &mut self,
-    x: f64,
-    y: f64,
-    width: f64,
-    height: f64,
+    x: Double<webidl::CtxRoundRect>,
+    y: Double<webidl::CtxRoundRect>,
+    width: Double<webidl::CtxRoundRect>,
+    height: Double<webidl::CtxRoundRect>,
     radii: Either3<f64, Vec<f64>, Undefined>,
   ) {
-    let Some([x, y, width, height]) = num::saturated_f32s([x, y, width, height]) else {
+    let Some([x, y, width, height]) = num::saturated_f32s([x.0, y.0, width.0, height.0]) else {
       return;
     };
     let Some(radii_array) = round_rect_radii(radii) else {
@@ -4263,25 +4628,18 @@ impl CanvasRenderingContext2D {
     self.context.round_rect(x, y, width, height, radii_array);
   }
 
+  /// fill(fillRule?) or fill(path, fillRule?). The index.js wrapper passes
+  /// the argument count after them; see `webidl::Arguments::take`.
   #[napi]
   pub fn fill(
     &mut self,
-    rule_or_path: Option<Either<String, &mut Path>>,
-    maybe_rule: Option<String>,
+    _path_or_rule: Positional,
+    _rule: Positional,
+    args: FillArgs<webidl::CtxFill>,
   ) -> Result<()> {
-    let rule = rule_or_path
-      .as_ref()
-      .and_then(|e| match e {
-        Either::A(s) => FillType::from_str(s).ok(),
-        Either::B(_) => None,
-      })
-      .or_else(|| maybe_rule.and_then(|s| FillType::from_str(&s).ok()))
-      .unwrap_or(FillType::Winding);
-    let path = rule_or_path.and_then(|e| match e {
-      Either::A(_) => None,
-      Either::B(p) => Some(p),
-    });
-    self.context.fill(path.map(|p| &mut p.inner), rule)?;
+    self
+      .context
+      .fill(args.path.map(|p| &mut p.inner), args.rule)?;
     Ok(())
   }
 
@@ -4301,36 +4659,58 @@ impl CanvasRenderingContext2D {
     reset_style_getters(&mut this)
   }
 
-  #[napi(return_if_invalid)]
-  pub fn rotate(&mut self, angle: f64) {
+  #[napi]
+  pub fn rotate(&mut self, angle: Double<webidl::CtxRotate>) {
     // A non-finite transform argument makes the call a no-op
     // (canvas_2d_recorder_context.cc:1354-1482).
-    if angle.is_finite() {
-      self.context.rotate(angle);
-    }
-  }
-
-  #[napi(return_if_invalid)]
-  pub fn scale(&mut self, x: f64, y: f64) {
-    if let Some([x, y]) = num::clamped_f32s([x, y]) {
-      self.context.scale(x, y);
+    if angle.0.is_finite() {
+      self.context.rotate(angle.0);
     }
   }
 
   #[napi]
+  pub fn scale(&mut self, x: Double<webidl::CtxScale>, y: Double<webidl::CtxScale>) {
+    if let Some([x, y]) = num::clamped_f32s([x.0, y.0]) {
+      self.context.scale(x, y);
+    }
+  }
+
+  /// drawImage(image, dx, dy), (image, dx, dy, dw, dh) or (image, sx, sy,
+  /// sw, sh, dx, dy, dw, dh). The index.js wrapper passes the argument count
+  /// after them; see `webidl::Arguments::take`.
+  #[napi]
   pub fn draw_image(
     &mut self,
     env: &Env,
-    image: DrawImageSource<'_>,
-    sx: Option<f64>,
-    sy: Option<f64>,
-    s_width: Option<f64>,
-    s_height: Option<f64>,
-    dx: Option<f64>,
-    dy: Option<f64>,
-    d_width: Option<f64>,
-    d_height: Option<f64>,
+    _image: Positional,
+    _arg1: Positional,
+    _arg2: Positional,
+    _arg3: Positional,
+    _arg4: Positional,
+    _arg5: Positional,
+    _arg6: Positional,
+    _arg7: Positional,
+    _arg8: Positional,
+    args: DrawImageArgs,
   ) -> Result<()> {
+    // Chrome returns on a non-finite number before it looks at the image,
+    // then throws for a broken image (canvas_2d_recorder_context.cc
+    // DrawImage). The source size of the 3 and 5 argument forms is finite.
+    if !args.numbers[..args.len].iter().all(|n| n.is_finite()) {
+      return Ok(());
+    }
+    if let Either3::C(image) = &args.image
+      && image.broken
+    {
+      return Err(webidl::dom_exception(
+        env.raw(),
+        "InvalidStateError",
+        &format!(
+          "{}The HTMLImageElement provided is in the 'broken' state.",
+          <webidl::CtxDrawImage as webidl::Site>::PREFIX
+        ),
+      ));
+    }
     // raster_key dedups the retained-raster charge inside draw_image:
     // (resource identity, content generation). A canvas source is keyed by
     // its Context's resource_id -- a monotonic id, not the SkSurface*, which
@@ -4340,7 +4720,7 @@ impl CanvasRenderingContext2D {
     // keyed by its current AccountedBitmap's own resource_id: every decode,
     // src reset, and regenerate_bitmap_if_need constructs a fresh
     // AccountedBitmap, so a swapped bitmap can never alias the stale charge.
-    let (bitmap, decode_cache, raster_key) = match image.0 {
+    let (bitmap, decode_cache, raster_key) = match args.image {
       Either3::A(canvas) => {
         // Flush the source canvas to render deferred operations before getting bitmap
         canvas.ctx.context.flush();
@@ -4392,40 +4772,32 @@ impl CanvasRenderingContext2D {
     let bitmap_ref = bitmap.as_ref();
     let source_width = bitmap_ref.0.width as f64;
     let source_height = bitmap_ref.0.height as f64;
-    let (sx, sy, s_width, s_height, dx, dy, d_width, d_height) =
-      match (sx, sy, s_width, s_height, dx, dy, d_width, d_height) {
-        (Some(dx), Some(dy), None, None, None, None, None, None) => (
-          0.0,
-          0.0,
-          source_width,
-          source_height,
-          dx,
-          dy,
-          source_width,
-          source_height,
-        ),
-        (Some(dx), Some(dy), Some(d_width), Some(d_height), None, None, None, None) => (
-          0.0,
-          0.0,
-          source_width,
-          source_height,
-          dx,
-          dy,
-          d_width,
-          d_height,
-        ),
-        (
-          Some(sx),
-          Some(sy),
-          Some(s_width),
-          Some(s_height),
-          Some(dx),
-          Some(dy),
-          Some(d_width),
-          Some(d_height),
-        ) => (sx, sy, s_width, s_height, dx, dy, d_width, d_height),
-        _ => return Ok(()),
-      };
+    let (sx, sy, s_width, s_height, dx, dy, d_width, d_height) = match args.numbers[..args.len] {
+      [dx, dy] => (
+        0.0,
+        0.0,
+        source_width,
+        source_height,
+        dx,
+        dy,
+        source_width,
+        source_height,
+      ),
+      [dx, dy, d_width, d_height] => (
+        0.0,
+        0.0,
+        source_width,
+        source_height,
+        dx,
+        dy,
+        d_width,
+        d_height,
+      ),
+      [sx, sy, s_width, s_height, dx, dy, d_width, d_height] => {
+        (sx, sy, s_width, s_height, dx, dy, d_width, d_height)
+      }
+      _ => return Ok(()),
+    };
     let (sx, sy, s_width, s_height) = Context::adjust_rect_for_canvas(sx, sy, s_width, s_height);
     let (dx, dy, d_width, d_height) = Context::adjust_rect_for_canvas(dx, dy, d_width, d_height);
     self.context.draw_image(
@@ -4652,113 +5024,78 @@ impl CanvasRenderingContext2D {
     }
   }
 
+  /// isPointInPath(x, y, fillRule?) or (path, x, y, fillRule?). The
+  /// index.js wrapper passes the argument count after them; see
+  /// `webidl::Arguments::take`.
   #[napi]
   pub fn is_point_in_path(
     &self,
-    x_or_path: Either<f64, &Path>,
-    x_or_y: f64,
-    y_or_fill_rule: Option<Either<f64, String>>,
-    maybe_fill_rule: Option<String>,
-  ) -> Result<bool> {
-    let inverted = self.context.state.transform.invert();
-    match x_or_path {
-      Either::A(x) => {
-        let mut x = x as f32;
-        let mut y = x_or_y as f32;
-        let fill_rule = y_or_fill_rule
-          .and_then(|v| match v {
-            Either::B(rule) => rule.parse().ok(),
-            _ => None,
-          })
-          .unwrap_or(FillType::Winding);
-        if let Some(inverted) = inverted {
-          let (mapped_x, mapped_y) = inverted.map_points(x, y);
-          x = mapped_x;
-          y = mapped_y;
-        }
-        Ok(self.context.path.hit_test(x, y, fill_rule))
-      }
-      Either::B(path) => {
-        let mut x = x_or_y as f32;
-        let mut y = match y_or_fill_rule {
-          Some(Either::A(y)) => y as f32,
-          _ => {
-            return Err(Error::new(
-              Status::InvalidArg,
-              "The y-axis coordinate of the point to check is missing".to_owned(),
-            ));
-          }
-        };
-        let fill_rule = maybe_fill_rule
-          .and_then(|s| s.parse().ok())
-          .unwrap_or(FillType::Winding);
-        if let Some(inverted) = inverted {
-          let (mapped_x, mapped_y) = inverted.map_points(x, y);
-          x = mapped_x;
-          y = mapped_y;
-        }
-        Ok(path.inner.hit_test(x, y, fill_rule))
-      }
+    _arg0: Positional,
+    _arg1: Positional,
+    _arg2: Positional,
+    _arg3: Positional,
+    args: IsPointInPathArgs,
+  ) -> bool {
+    let mut x = args.x as f32;
+    let mut y = args.y as f32;
+    if let Some(inverted) = self.context.state.transform.invert() {
+      (x, y) = inverted.map_points(x, y);
+    }
+    match args.path {
+      Some(path) => path.inner.hit_test(x, y, args.rule),
+      None => self.context.path.hit_test(x, y, args.rule),
+    }
+  }
+
+  /// isPointInStroke(x, y) or (path, x, y). The index.js wrapper passes the
+  /// argument count after them; see `webidl::Arguments::take`.
+  #[napi]
+  pub fn is_point_in_stroke(
+    &self,
+    _arg0: Positional,
+    _arg1: Positional,
+    _arg2: Positional,
+    args: IsPointInStrokeArgs,
+  ) -> bool {
+    let stroke_w = self.context.get_stroke_width();
+    let mut x = args.x as f32;
+    let mut y = args.y as f32;
+    if let Some(inverted) = self.context.state.transform.invert() {
+      (x, y) = inverted.map_points(x, y);
+    }
+    match args.path {
+      Some(path) => path.inner.stroke_hit_test(x, y, stroke_w),
+      None => self.context.path.stroke_hit_test(x, y, stroke_w),
     }
   }
 
   #[napi]
-  pub fn is_point_in_stroke(
-    &self,
-    x_or_path: Either<f64, &Path>,
-    x_or_y: f64,
-    maybe_y: Option<f64>,
-  ) -> Result<bool> {
-    let stroke_w = self.context.get_stroke_width();
-    let inverted = self.context.state.transform.invert();
-    match x_or_path {
-      Either::A(x) => {
-        let mut x = x as f32;
-        let mut y = x_or_y as f32;
-        if let Some(inverted) = inverted {
-          let (mapped_x, mapped_y) = inverted.map_points(x, y);
-          x = mapped_x;
-          y = mapped_y;
-        }
-        Ok(self.context.path.stroke_hit_test(x, y, stroke_w))
-      }
-      Either::B(path) => {
-        let mut x = x_or_y as f32;
-        if let Some(y) = maybe_y {
-          let mut y = y as f32;
-          if let Some(inverted) = inverted {
-            let (mapped_x, mapped_y) = inverted.map_points(x, y);
-            x = mapped_x;
-            y = mapped_y;
-          }
-          Ok(path.inner.stroke_hit_test(x, y, stroke_w))
-        } else {
-          Err(Error::new(
-            Status::InvalidArg,
-            "The y-axis coordinate of the point to check is missing".to_owned(),
-          ))
-        }
-      }
-    }
-  }
-
-  #[napi(return_if_invalid)]
   pub fn ellipse(
     &mut self,
-    x: f64,
-    y: f64,
-    radius_x: f64,
-    radius_y: f64,
-    rotation: f64,
-    start_angle: f64,
-    end_angle: f64,
-    anticlockwise: Option<bool>,
-  ) {
-    let Some([x, y, radius_x, radius_y, rotation, start_angle, end_angle]) =
-      num::saturated_f32s([x, y, radius_x, radius_y, rotation, start_angle, end_angle])
-    else {
-      return;
+    env: &Env,
+    x: Double<webidl::CtxEllipse>,
+    y: Double<webidl::CtxEllipse>,
+    radius_x: Double<webidl::CtxEllipse>,
+    radius_y: Double<webidl::CtxEllipse>,
+    rotation: Double<webidl::CtxEllipse>,
+    start_angle: Double<webidl::CtxEllipse>,
+    end_angle: Double<webidl::CtxEllipse>,
+    anticlockwise: webidl::Boolean,
+  ) -> Result<()> {
+    let Some([x, y, radius_x, radius_y, rotation, start_angle, end_angle]) = num::saturated_f32s([
+      x.0,
+      y.0,
+      radius_x.0,
+      radius_y.0,
+      rotation.0,
+      start_angle.0,
+      end_angle.0,
+    ]) else {
+      return Ok(());
     };
+    let prefix = <webidl::CtxEllipse as webidl::Site>::PREFIX;
+    check_radius(env.raw(), prefix, "major-axis radius", radius_x)?;
+    check_radius(env.raw(), prefix, "minor-axis radius", radius_y)?;
     self.context.ellipse(
       x,
       y,
@@ -4767,59 +5104,69 @@ impl CanvasRenderingContext2D {
       rotation,
       start_angle,
       end_angle,
-      anticlockwise.unwrap_or(false),
+      anticlockwise.0,
     );
+    Ok(())
   }
 
-  #[napi(return_if_invalid)]
-  pub fn line_to(&mut self, x: f64, y: f64) {
-    if let Some([x, y]) = num::saturated_f32s([x, y]) {
+  #[napi]
+  pub fn line_to(&mut self, x: Double<webidl::CtxLineTo>, y: Double<webidl::CtxLineTo>) {
+    if let Some([x, y]) = num::saturated_f32s([x.0, y.0]) {
       self.context.path.line_to(x, y);
     }
   }
 
   #[napi]
-  pub fn measure_text(&mut self, text: Unknown) -> Result<TextMetrics> {
-    let text = text.coerce_to_string()?.into_utf8()?;
-    let text = text.as_str()?;
-    if text.is_empty() {
-      return Ok(TextMetrics {
-        actual_bounding_box_ascent: 0.0,
-        actual_bounding_box_descent: 0.0,
-        actual_bounding_box_left: 0.0,
-        actual_bounding_box_right: 0.0,
-        font_bounding_box_ascent: 0.0,
-        font_bounding_box_descent: 0.0,
-        alphabetic_baseline: 0.0,
-        em_height_ascent: 0.0,
-        em_height_descent: 0.0,
-        width: 0.0,
-      });
-    }
-    let metrics = self.context.get_line_metrics(text, false)?;
+  pub fn measure_text(
+    &mut self,
+    text: webidl::DomString<webidl::CtxMeasureText>,
+  ) -> Result<TextMetrics> {
+    let text = text.0.as_str();
+    // The empty string keeps every field 0 (Chrome still reports the font's
+    // metrics there).
+    let metrics = if text.is_empty() {
+      Default::default()
+    } else {
+      self.context.get_line_metrics(text, false)?.0
+    };
     Ok(TextMetrics {
-      actual_bounding_box_ascent: metrics.0.ascent as f64,
-      actual_bounding_box_descent: metrics.0.descent as f64,
-      actual_bounding_box_left: metrics.0.left as f64,
-      actual_bounding_box_right: metrics.0.right as f64,
-      font_bounding_box_ascent: metrics.0.font_ascent as f64,
-      font_bounding_box_descent: metrics.0.font_descent as f64,
-      alphabetic_baseline: metrics.0.alphabetic_baseline as f64,
-      em_height_ascent: metrics.0.font_ascent as f64,
-      em_height_descent: metrics.0.font_descent as f64,
-      width: metrics.0.width as f64,
+      width: metrics.width as f64,
+      actual_bounding_box_left: metrics.left as f64,
+      actual_bounding_box_right: metrics.right as f64,
+      font_bounding_box_ascent: metrics.font_ascent as f64,
+      font_bounding_box_descent: metrics.font_descent as f64,
+      actual_bounding_box_ascent: metrics.ascent as f64,
+      actual_bounding_box_descent: metrics.descent as f64,
+      hanging_baseline: metrics.hanging_baseline as f64,
+      alphabetic_baseline: metrics.alphabetic_baseline as f64,
+      ideographic_baseline: metrics.ideographic_baseline as f64,
+      em_height_ascent: metrics.em_height_ascent as f64,
+      em_height_descent: metrics.em_height_descent as f64,
     })
   }
 
-  #[napi(return_if_invalid)]
-  pub fn move_to(&mut self, x: f64, y: f64) {
-    if let Some([x, y]) = num::saturated_f32s([x, y]) {
+  /// Always false: a raster, SVG or PDF context is never lost.
+  #[napi]
+  pub fn is_context_lost(&self) -> bool {
+    false
+  }
+
+  #[napi]
+  pub fn move_to(&mut self, x: Double<webidl::CtxMoveTo>, y: Double<webidl::CtxMoveTo>) {
+    if let Some([x, y]) = num::saturated_f32s([x.0, y.0]) {
       self.context.path.move_to(x, y);
     }
   }
 
-  #[napi(return_if_invalid)]
-  pub fn fill_rect(&mut self, x: f64, y: f64, width: f64, height: f64) -> Result<()> {
+  #[napi]
+  pub fn fill_rect(
+    &mut self,
+    x: Double<webidl::CtxFillRect>,
+    y: Double<webidl::CtxFillRect>,
+    width: Double<webidl::CtxFillRect>,
+    height: Double<webidl::CtxFillRect>,
+  ) -> Result<()> {
+    let (x, y, width, height) = (x.0, y.0, width.0, height.0);
     if !x.is_nan()
       && !x.is_infinite()
       && !y.is_nan()
@@ -4836,10 +5183,16 @@ impl CanvasRenderingContext2D {
     Ok(())
   }
 
-  #[napi(return_if_invalid)]
-  pub fn fill_text(&mut self, text: Unknown, x: f64, y: f64, max_width: Option<f64>) -> Result<()> {
-    let text = text.coerce_to_string()?.into_utf8()?;
-    let text = text.as_str()?;
+  #[napi]
+  pub fn fill_text(
+    &mut self,
+    text: webidl::DomString<webidl::CtxFillText>,
+    x: Double<webidl::CtxFillText>,
+    y: Double<webidl::CtxFillText>,
+    max_width: webidl::OptionalDouble<webidl::CtxFillText>,
+  ) -> Result<()> {
+    let (x, y, max_width) = (x.0, y.0, max_width.0);
+    let text = text.0.as_str();
     if text.is_empty() {
       return Ok(());
     }
@@ -4854,14 +5207,23 @@ impl CanvasRenderingContext2D {
     Ok(())
   }
 
+  /// stroke() or stroke(path). The index.js wrapper passes the argument
+  /// count after it; see `webidl::Arguments::take`.
   #[napi]
-  pub fn stroke(&mut self, path: Option<&mut Path>) -> Result<()> {
-    self.context.stroke(path.map(|p| &mut p.inner))?;
+  pub fn stroke(&mut self, _path: Positional, args: StrokeArgs) -> Result<()> {
+    self.context.stroke(args.path.map(|p| &mut p.inner))?;
     Ok(())
   }
 
-  #[napi(return_if_invalid)]
-  pub fn stroke_rect(&mut self, x: f64, y: f64, width: f64, height: f64) -> Result<()> {
+  #[napi]
+  pub fn stroke_rect(
+    &mut self,
+    x: Double<webidl::CtxStrokeRect>,
+    y: Double<webidl::CtxStrokeRect>,
+    width: Double<webidl::CtxStrokeRect>,
+    height: Double<webidl::CtxStrokeRect>,
+  ) -> Result<()> {
+    let (x, y, width, height) = (x.0, y.0, width.0, height.0);
     if !x.is_nan()
       && !x.is_infinite()
       && !y.is_nan()
@@ -4878,16 +5240,16 @@ impl CanvasRenderingContext2D {
     Ok(())
   }
 
-  #[napi(return_if_invalid)]
+  #[napi]
   pub fn stroke_text(
     &mut self,
-    text: Unknown,
-    x: f64,
-    y: f64,
-    max_width: Option<f64>,
+    text: webidl::DomString<webidl::CtxStrokeText>,
+    x: Double<webidl::CtxStrokeText>,
+    y: Double<webidl::CtxStrokeText>,
+    max_width: webidl::OptionalDouble<webidl::CtxStrokeText>,
   ) -> Result<()> {
-    let text = text.coerce_to_string()?.into_utf8()?;
-    let text = text.as_str()?;
+    let (x, y, max_width) = (x.0, y.0, max_width.0);
+    let text = text.0.as_str();
     if text.is_empty() {
       return Ok(());
     }
@@ -5161,8 +5523,17 @@ impl CanvasRenderingContext2D {
     Ok(())
   }
 
-  #[napi(return_if_invalid)]
-  pub fn set_line_dash(&mut self, dash_list: Vec<f64>) {
+  #[napi]
+  pub fn set_line_dash(&mut self, dash_list: webidl::DoubleSequence<webidl::CtxSetLineDash>) {
+    let dash_list = dash_list.0;
+    // A list with a negative or non-finite entry is ignored
+    // (canvas_2d_recorder_context.cc:1237 LineDashSequenceIsValid).
+    if !dash_list
+      .iter()
+      .all(|dash| dash.is_finite() && *dash >= 0.0)
+    {
+      return;
+    }
     let len = dash_list.len();
     let is_odd = len & 1 != 0;
     let mut line_dash_list = if is_odd {
@@ -5171,9 +5542,9 @@ impl CanvasRenderingContext2D {
       vec![0f32; len]
     };
     for (idx, dash) in dash_list.iter().enumerate() {
-      line_dash_list[idx] = *dash as f32;
+      line_dash_list[idx] = clamp_to_f32(*dash);
       if is_odd {
-        line_dash_list[idx + len] = *dash as f32;
+        line_dash_list[idx + len] = clamp_to_f32(*dash);
       }
     }
     self.context.set_line_dash(line_dash_list);
@@ -5184,16 +5555,24 @@ impl CanvasRenderingContext2D {
     self.context.reset_transform();
   }
 
-  #[napi(return_if_invalid)]
-  pub fn translate(&mut self, x: f64, y: f64) {
-    if let Some([x, y]) = num::clamped_f32s([x, y]) {
+  #[napi]
+  pub fn translate(&mut self, x: Double<webidl::CtxTranslate>, y: Double<webidl::CtxTranslate>) {
+    if let Some([x, y]) = num::clamped_f32s([x.0, y.0]) {
       self.context.translate(x, y);
     }
   }
 
-  #[napi(return_if_invalid)]
-  pub fn transform(&mut self, a: f64, b: f64, c: f64, d: f64, e: f64, f: f64) -> Result<()> {
-    let Some([a, b, c, d, e, f]) = num::clamped_f32s([a, b, c, d, e, f]) else {
+  #[napi]
+  pub fn transform(
+    &mut self,
+    a: Double<webidl::CtxTransform>,
+    b: Double<webidl::CtxTransform>,
+    c: Double<webidl::CtxTransform>,
+    d: Double<webidl::CtxTransform>,
+    e: Double<webidl::CtxTransform>,
+    f: Double<webidl::CtxTransform>,
+  ) -> Result<()> {
+    let Some([a, b, c, d, e, f]) = num::clamped_f32s([a.0, b.0, c.0, d.0, e.0, f.0]) else {
       return Ok(());
     };
     self.context.transform(Matrix::new(a, c, e, b, d, f))?;
@@ -5268,18 +5647,99 @@ impl AsRef<Bitmap> for BitmapRef<'_> {
   }
 }
 
-#[napi(object)]
+/// A measureText() result. As in browsers it is a class whose fields are
+/// read-only getters on the prototype (text_metrics.idl), so the object has
+/// no own properties, and scripts cannot construct one.
+#[napi]
 pub struct TextMetrics {
-  pub actual_bounding_box_ascent: f64,
-  pub actual_bounding_box_descent: f64,
-  pub actual_bounding_box_left: f64,
-  pub actual_bounding_box_right: f64,
-  pub font_bounding_box_ascent: f64,
-  pub font_bounding_box_descent: f64,
-  pub alphabetic_baseline: f64,
-  pub em_height_ascent: f64,
-  pub em_height_descent: f64,
-  pub width: f64,
+  width: f64,
+  actual_bounding_box_left: f64,
+  actual_bounding_box_right: f64,
+  font_bounding_box_ascent: f64,
+  font_bounding_box_descent: f64,
+  actual_bounding_box_ascent: f64,
+  actual_bounding_box_descent: f64,
+  hanging_baseline: f64,
+  alphabetic_baseline: f64,
+  ideographic_baseline: f64,
+  em_height_ascent: f64,
+  em_height_descent: f64,
+}
+
+/// The getters, in Blink's order (text_metrics.idl); emHeightAscent and
+/// emHeightDescent (behind ExtendedTextMetrics in Chrome) come last.
+#[napi]
+impl TextMetrics {
+  /// Only measureText() makes one; napi-rs skips this for the objects it
+  /// returns.
+  #[napi(constructor)]
+  pub fn new(env: &Env) -> Result<Self> {
+    Err(webidl::context_type_error(
+      env.raw(),
+      "Failed to construct 'TextMetrics': ",
+      "Illegal constructor",
+    ))
+  }
+
+  #[napi(getter)]
+  pub fn get_width(&self) -> f64 {
+    self.width
+  }
+
+  #[napi(getter)]
+  pub fn get_actual_bounding_box_left(&self) -> f64 {
+    self.actual_bounding_box_left
+  }
+
+  #[napi(getter)]
+  pub fn get_actual_bounding_box_right(&self) -> f64 {
+    self.actual_bounding_box_right
+  }
+
+  #[napi(getter)]
+  pub fn get_font_bounding_box_ascent(&self) -> f64 {
+    self.font_bounding_box_ascent
+  }
+
+  #[napi(getter)]
+  pub fn get_font_bounding_box_descent(&self) -> f64 {
+    self.font_bounding_box_descent
+  }
+
+  #[napi(getter)]
+  pub fn get_actual_bounding_box_ascent(&self) -> f64 {
+    self.actual_bounding_box_ascent
+  }
+
+  #[napi(getter)]
+  pub fn get_actual_bounding_box_descent(&self) -> f64 {
+    self.actual_bounding_box_descent
+  }
+
+  #[napi(getter)]
+  pub fn get_hanging_baseline(&self) -> f64 {
+    self.hanging_baseline
+  }
+
+  #[napi(getter)]
+  pub fn get_alphabetic_baseline(&self) -> f64 {
+    self.alphabetic_baseline
+  }
+
+  #[napi(getter)]
+  pub fn get_ideographic_baseline(&self) -> f64 {
+    self.ideographic_baseline
+  }
+
+  #[napi(getter)]
+  pub fn get_em_height_ascent(&self) -> f64 {
+    self.em_height_ascent
+  }
+
+  #[napi(getter)]
+  pub fn get_em_height_descent(&self) -> f64 {
+    self.em_height_descent
+  }
 }
 
 #[napi(object)]
@@ -5444,6 +5904,29 @@ impl Task for ContextData {
 /// every downstream Skia filter rejects.
 fn clamp_to_f32(value: f64) -> f32 {
   value.clamp(f32::MIN as f64, f32::MAX as f64) as f32
+}
+
+/// Blink's radius check for arc, arcTo and ellipse (canvas_path.cc), after
+/// the finite check: a negative radius throws an IndexSizeError that shows
+/// the float value. `name` is "radius", "major-axis radius" or
+/// "minor-axis radius".
+pub(crate) fn check_radius(
+  env: sys::napi_env,
+  prefix: &str,
+  name: &str,
+  radius: f32,
+) -> Result<()> {
+  if radius < 0.0 {
+    return Err(webidl::dom_exception(
+      env,
+      "IndexSizeError",
+      &format!(
+        "{prefix}The {name} provided ({}) is negative.",
+        webidl::number_to_string(f64::from(radius))
+      ),
+    ));
+  }
+  Ok(())
 }
 
 fn parse_css_size(css_size: &str) -> Option<f32> {
