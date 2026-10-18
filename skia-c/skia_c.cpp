@@ -2777,6 +2777,22 @@ void skiac_path_quad_to(skiac_path* c_path,
   c_path->invalidate();
 }
 
+// SVG elliptical arc, as Blink PathBuilder::ArcTo (path_builder.cc:309-323).
+void skiac_path_arc_to_svg(skiac_path* c_path,
+                           float rx,
+                           float ry,
+                           float x_axis_rotate,
+                           bool large_arc,
+                           bool sweep,
+                           float x,
+                           float y) {
+  c_path->builder.arcTo(
+      SkVector{rx, ry}, x_axis_rotate,
+      large_arc ? SkPathBuilder::kLarge_ArcSize : SkPathBuilder::kSmall_ArcSize,
+      sweep ? SkPathDirection::kCW : SkPathDirection::kCCW, SkPoint{x, y});
+  c_path->invalidate();
+}
+
 void skiac_path_close(skiac_path* c_path) {
   c_path->builder.close();
   c_path->invalidate();
@@ -2895,18 +2911,22 @@ void skiac_path_round_rect(skiac_path* c_path,
                            SkScalar y,
                            SkScalar width,
                            SkScalar height,
-                           SkScalar* radii,
+                           const SkScalar* radii,
                            bool clockwise) {
-  // Convert 4 scalar radii to uniform SkVector radii (same x/y per corner)
+  // radii: (rx, ry) of the upper-left, upper-right, lower-right and
+  // lower-left corners (SkRRect order).
   SkVector radii_vectors[4];
   for (size_t i = 0; i < 4; i++) {
-    radii_vectors[i] = {radii[i], radii[i]};
+    radii_vectors[i] = {radii[2 * i], radii[2 * i + 1]};
   }
   SkRect rect = SkRect::MakeXYWH(x, y, width, height);
   SkRRect rrect;
   rrect.setRectRadii(rect, radii_vectors);
   auto direction = clockwise ? SkPathDirection::kCW : SkPathDirection::kCCW;
-  c_path->builder.addRRect(rrect, direction);
+  // Blink PathBuilder::AddRoundedRect (path_builder.cc:352-360) starts at
+  // the upper-left, after the corner radius (index 0), not at SkPathBuilder's
+  // default start.
+  c_path->builder.addRRect(rrect, direction, 0);
   c_path->invalidate();
 }
 
