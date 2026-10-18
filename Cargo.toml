@@ -9,22 +9,25 @@ version  = "0.1.0"
 crate-type = ["cdylib"]
 
 [dependencies]
-anyhow          = "1"
-base64-simd     = "0.8"
-cssparser       = "0.38"
-gif             = "0.14"
-imagesize       = { version = "0.15", default-features = false, features = ["png", "jpeg", "gif", "webp", "heif"] }
-infer           = "0.22"
-libavif         = { version = "0.14", default-features = false, features = ["codec-aom"] }
-libavif-sys     = { version = "0.17", default-features = false, features = ["codec-aom"] }
-napi            = { version = "3.1", default-features = false, features = ["napi5", "web_stream", "serde-json"] }
-napi-derive     = { version = "3.1", default-features = false }
-num_cpus        = "1"
-regex           = "1"
-serde           = "1"
-serde_derive    = "1"
-serde_json      = "1"
-thiserror       = "2"
+anyhow           = "1"
+base64-simd      = "0.8"
+cssparser        = "0.38"
+gif              = "0.14"
+imagesize        = { version = "0.15", default-features = false, features = ["png", "jpeg", "gif", "webp", "heif"] }
+infer            = "0.22"
+libavif          = { version = "0.14", default-features = false, features = ["codec-aom"] }
+libavif-sys      = { version = "0.17", default-features = false, features = ["codec-aom"] }
+napi             = { version = "3.1", default-features = false, features = ["napi5", "web_stream", "serde-json"] }
+napi-derive      = { version = "3.1", default-features = false }
+num_cpus         = "1"
+precomputed-hash = "0.1"
+regex            = "1"
+roxmltree        = "0.21"
+selectors        = "0.41"
+serde            = "1"
+serde_derive     = "1"
+serde_json       = "1"
+thiserror        = "2"
 
 # Skia's Fontations font scaler (build.rs compiles its C++ half). build.rs
 # links the C++ runtime per target, so cxx's link-cplusplus links none.

@@ -803,9 +803,7 @@ test('a large rotated or skewed svg draw keeps its edges sharp like Chrome', asy
 // with a vertical <line> at x = 510.5, its center drawn at the canvas center;
 // the alpha at x = 150..161 of rows 0, 75 and 149 (the same on each),
 // measured in Chrome 155: each alpha within the tolerance of Chrome's and,
-// with one, their sum within 20. The <line> has fill="none", which Chrome
-// draws the same: SkSVG also fills a <line> as a one pixel hairline, which
-// Chrome does not, and that makes these lines up to 66 darker.
+// with one, their sum within 20.
 const skewedLines: [string, [number, number, number, number], number, number[], number][] = [
   ['setTransform(1, 0.3, 0, 1, 0, 0), width 1.5', [1, 0.3, 0, 1], 1.5, [0, 0, 0, 0, 0, 0, 0, 0, 0, 64, 255, 64], 0],
   ['setTransform(1, 1, 0, 1, 0, 0), width 1', [1, 1, 0, 1], 1, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 0], 0],
@@ -824,7 +822,7 @@ test('a skewed svg draw keeps thin lines about as dark as Chrome', async (t) => 
     const image = await loaded(
       svg(
         'width="1000" height="1000"',
-        `<line x1="510.5" y1="100" x2="510.5" y2="900" fill="none" stroke="#000" stroke-width="${width}"/>`,
+        `<line x1="510.5" y1="100" x2="510.5" y2="900" stroke="#000" stroke-width="${width}"/>`,
       ),
     )
     const ctx = createCanvas(300, 150).getContext('2d')

@@ -1207,7 +1207,7 @@ impl Image {
         // An SVG is parsed now; its natural size comes from its root.
         if is_svg {
           match SvgImage::parse(buffer_data, self.color_space)? {
-            Some(svg) => self.set_svg(svg),
+            Some(svg) => self.set_svg(&env, svg)?,
             None => {
               // Invalid SVG - fire onerror synchronously
               // Clear prior image state to prevent stale data from being drawn
@@ -1557,8 +1557,10 @@ impl Image {
   }
 
   /// The Image now shows `svg`: its natural size comes from the SVG, and
-  /// `width`/`height` without an attribute take it.
-  fn set_svg(&mut self, svg: SvgImage) {
+  /// `width`/`height` without an attribute take it. V8 is told about the
+  /// encoded copies of its `<image>` elements.
+  fn set_svg(&mut self, env: &Env, mut svg: SvgImage) -> Result<()> {
+    svg.report_retained_bytes(env)?;
     let (natural_width, natural_height) = svg.sizing.natural();
     self.natural_width = natural_width as f64;
     self.natural_height = natural_height as f64;
@@ -1570,6 +1572,7 @@ impl Image {
     }
     self.bitmap = None;
     self.svg = Some(svg);
+    Ok(())
   }
 
   pub(crate) fn is_svg(&self) -> bool {
@@ -1950,7 +1953,7 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
       }
       DecodeStatus::Svg(svg) => {
         commit_src(self_mut);
-        self_mut.set_svg(svg);
+        self_mut.set_svg(env, svg)?;
       }
       DecodeStatus::Empty => {
         // ERROR PATH: empty / undecodable input. Surface via onerror so callers
