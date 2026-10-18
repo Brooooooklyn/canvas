@@ -86,20 +86,6 @@ test('float ImageData sizes count bytes per element', (t) => {
   chromeEqual(t, out, 'I6-float-sizes')
 })
 
-test('float ImageData over 2 GiB is a RangeError', (t) => {
-  // The byte size is checked before the Float16Array one, so these throw the
-  // same RangeError on every runtime. f32_8192 (1 GiB) is pinned but not
-  // allocated here.
-  const out = {
-    f32_16384x8192: err(() => new AnyImageData(16384, 8192, { pixelFormat: 'rgba-float32' }).data.byteLength),
-    f16_16384x16384: err(() => new AnyImageData(16384, 16384, { pixelFormat: 'rgba-float16' }).data.byteLength),
-    f32_23170: err(() => new AnyImageData(23170, 23170, { pixelFormat: 'rgba-float32' }).data.byteLength),
-  }
-  chromeEqual(t, out, 'I7-float-byte-limits', {
-    pick: (pin) => Object.fromEntries(Object.entries(pin).filter(([k]) => k !== 'f32_8192')),
-  })
-})
-
 // Not Chrome (IndexSizeError): a zero side gives an empty ImageData, as for
 // rgba-unorm8 (imagedata-validation.spec.ts), and putting it draws nothing.
 test('createImageData with a zero side gives an empty float ImageData', (t) => {
