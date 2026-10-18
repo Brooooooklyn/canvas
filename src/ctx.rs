@@ -4944,14 +4944,11 @@ impl CanvasRenderingContext2D {
       // saturated_cast<int>(SafeUnsignedAbs(..)), then ValidateAndCreate.
       let sw = sw.unsigned_abs().min(i32::MAX as u64) as u32;
       let sh = sh.unsigned_abs().min(i32::MAX as u64) as u32;
-      let len = validate_size(raw, prefix, sw, Some(sh), SizeErrors::Context2D)?;
+      validate_size(raw, prefix, sw, Some(sh), SizeErrors::Context2D)?;
       // Spec: defaultColorSpace is this context's color space.
       let color_space = settings
         .color_space(raw, prefix)?
         .unwrap_or(self.context.color_space);
-      if len > MAX_DATA_BYTES {
-        return Err(out_of_memory(raw, prefix));
-      }
       // Per spec: if sw/sh is negative, flip the origin and use abs value
       let sx = if width < 0.0 { x + width } else { x };
       let sy = if height < 0.0 { y + height } else { y };
@@ -5637,6 +5634,21 @@ mod tests {
     assert_eq!(crate::sk::try_zeroed_bytes(0), Some(Vec::new()));
     assert_eq!(crate::sk::try_zeroed_bytes(isize::MAX as usize), None);
     assert_eq!(crate::sk::try_zeroed_bytes(usize::MAX), None);
+  }
+
+  // With no ImageData size limit, a read too large for the allocator is
+  // OutOfMemory (a RangeError in JS), not an abort. The request is ~8 EiB, so
+  // the allocator refuses it without reserving anything.
+  #[test]
+  #[cfg(target_pointer_width = "64")]
+  fn huge_pixel_reads_report_allocation_failure() {
+    let ctx = raster_ctx(4, 4);
+    assert_eq!(
+      ctx
+        .surface
+        .read_pixels(0, 0, i32::MAX as u32, 1 << 30, ColorSpace::default()),
+      Err(ReadPixelsError::OutOfMemory)
+    );
   }
 
   // The deferred recording must consolidate once charged bytes pass the cap:

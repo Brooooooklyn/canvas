@@ -1,8 +1,8 @@
 // ImageData size and data length checks (ImageData::ValidateAndCreate,
 // image_data.cc, and getImageDataInternal, base_rendering_context_2d.cc).
 // Expected values were measured in Chrome 155 (--disable-gpu, arm64 = x64).
-// Before, a zero width in the data forms divided by zero (abort), sizes
-// wrapped around in u32, and huge sizes allocated up to 4 GiB.
+// Before, a zero width in the data forms divided by zero (abort) and sizes
+// wrapped around in u32.
 import test from 'ava'
 
 import { createCanvas, ImageData } from '../index'
@@ -15,8 +15,9 @@ const WIDTH_ZERO = 'The source width is zero or not a number.'
 const HEIGHT_ZERO = 'The source height is zero or not a number.'
 const EXCEEDS = 'The requested image size exceeds the supported range.'
 // With a period: 4 * width * height does not fit in 32 bits (createImageData
-// and getImageData). Without: Chrome's allocator limit of 2145386496 bytes,
-// or getImageData's int overflow checks.
+// and getImageData). Without: getImageData's int overflow checks. Not Chrome:
+// there is no 2145386496-byte allocator limit (main had none), so sizes
+// between that and 4 GiB are allocated and not tested here.
 const OOM_SIZE = 'Out of memory at ImageData creation.'
 const OOM = 'Out of memory at ImageData creation'
 
@@ -58,12 +59,6 @@ test('ImageData rejects zero and out-of-range sizes', (t) => {
     [46341, 46341, indexSize(CONSTRUCT + EXCEEDS)],
     [1073741824, 1, indexSize(CONSTRUCT + EXCEEDS)],
     [1, 1073741824, indexSize(CONSTRUCT + EXCEEDS)],
-    // Above 2145386496 bytes; nothing is allocated.
-    [23170, 23170, rangeError(CONSTRUCT + OOM)],
-    [32767, 32767, rangeError(CONSTRUCT + OOM)],
-    [1073741823, 1, rangeError(CONSTRUCT + OOM)],
-    [536346625, 1, rangeError(CONSTRUCT + OOM)],
-    [524289, 1023, rangeError(CONSTRUCT + OOM)],
     [3, 2, ok(3, 2)],
   ]
   for (const [w, h, expected] of cases) {
@@ -145,12 +140,6 @@ test('createImageData validates sizes in context error mode', (t) => {
     [1073741824, 1, rangeError(CREATE + OOM_SIZE)],
     [1, 1073741824, rangeError(CREATE + OOM_SIZE)],
     [2147483647, 1, rangeError(CREATE + OOM_SIZE)],
-    [23170, 23170, rangeError(CREATE + OOM)],
-    [32767, 32767, rangeError(CREATE + OOM)],
-    [1073741823, 1, rangeError(CREATE + OOM)],
-    [536346625, 1, rangeError(CREATE + OOM)],
-    [-536346625, 1, rangeError(CREATE + OOM)],
-    [524289, 1023, rangeError(CREATE + OOM)],
     [3, 2, ok(3, 2)],
     [-3, -2, ok(3, 2)],
     [-1, 1, ok(1, 1)],
@@ -242,13 +231,6 @@ test('getImageData rejects zero and overflowing sizes', (t) => {
     [[0, 0, 1, 1073741824], rangeError(GET + OOM_SIZE)],
     [[0, 0, 2147483647, 1], rangeError(GET + OOM_SIZE)],
     [[0, 0, -2147483648, 1], rangeError(GET + OOM_SIZE)],
-    // Above 2145386496 bytes; nothing is allocated.
-    [[0, 0, 23170, 23170], rangeError(GET + OOM)],
-    [[0, 0, 32767, 32767], rangeError(GET + OOM)],
-    [[0, 0, 1073741823, 1], rangeError(GET + OOM)],
-    [[0, 0, 536346625, 1], rangeError(GET + OOM)],
-    [[0, 0, -536346625, 1], rangeError(GET + OOM)],
-    [[0, 0, 524289, 1023], rangeError(GET + OOM)],
     [[0, 0, 3, 2], ok(3, 2)],
     [[1, 1, 2, 2], ok(2, 2)],
     [[2, 0, -1, 1], ok(1, 1)],
@@ -275,8 +257,6 @@ test('size checks run before the colorSpace support check', (t) => {
     rec2020: {
       'new(0, 1)': indexSize(CONSTRUCT + WIDTH_ZERO),
       'new(32768, 32768)': indexSize(CONSTRUCT + EXCEEDS),
-      // The allocator limit comes after the colorSpace check.
-      'new(23170, 23170)': unsupported(CONSTRUCT),
       'new(1, 1)': unsupported(CONSTRUCT),
       'new(u8(4), 0, 1)': indexSize(CONSTRUCT + WIDTH_ZERO),
       'new(u8(5), 1, undefined)': indexSize(CONSTRUCT + HEIGHT_ZERO),
@@ -284,30 +264,25 @@ test('size checks run before the colorSpace support check', (t) => {
       // Not Chrome: a zero side has no size error (see above).
       'create(0, 1)': unsupported(CREATE),
       'create(32768, 32768)': rangeError(CREATE + OOM_SIZE),
-      'create(23170, 23170)': unsupported(CREATE),
       'create(1, 1)': unsupported(CREATE),
       'get(0, 0, 0, 1)': indexSize(GET + 'The source width is 0.'),
       'get(0, 0, 46341, 46341)': rangeError(GET + OOM),
       'get(0, 0, 32768, 32768)': rangeError(GET + OOM_SIZE),
-      'get(0, 0, 23170, 23170)': unsupported(GET),
       'get(0, 0, 1, 1)': unsupported(GET),
     },
     'display-p3': {
       'new(0, 1)': indexSize(CONSTRUCT + WIDTH_ZERO),
       'new(32768, 32768)': indexSize(CONSTRUCT + EXCEEDS),
-      'new(23170, 23170)': rangeError(CONSTRUCT + OOM),
       'new(1, 1)': ok(1, 1, 'display-p3'),
       'new(u8(4), 0, 1)': indexSize(CONSTRUCT + WIDTH_ZERO),
       'new(u8(5), 1, undefined)': indexSize(CONSTRUCT + HEIGHT_ZERO),
       'new(u8(4), 1, 1073741825)': indexSize(CONSTRUCT + EXCEEDS),
       'create(0, 1)': ok(0, 1, 'display-p3'),
       'create(32768, 32768)': rangeError(CREATE + OOM_SIZE),
-      'create(23170, 23170)': rangeError(CREATE + OOM),
       'create(1, 1)': ok(1, 1, 'display-p3'),
       'get(0, 0, 0, 1)': indexSize(GET + 'The source width is 0.'),
       'get(0, 0, 46341, 46341)': rangeError(GET + OOM),
       'get(0, 0, 32768, 32768)': rangeError(GET + OOM_SIZE),
-      'get(0, 0, 23170, 23170)': rangeError(GET + OOM),
       'get(0, 0, 1, 1)': ok(1, 1, 'display-p3'),
     },
   }
@@ -316,19 +291,16 @@ test('size checks run before the colorSpace support check', (t) => {
     const calls: Record<string, () => ImageData> = {
       'new(0, 1)': () => new ImageData(0, 1, settings),
       'new(32768, 32768)': () => new ImageData(32768, 32768, settings),
-      'new(23170, 23170)': () => new ImageData(23170, 23170, settings),
       'new(1, 1)': () => new ImageData(1, 1, settings),
       'new(u8(4), 0, 1)': () => new ImageData(u8(4), 0, 1, settings),
       'new(u8(5), 1, undefined)': () => new ImageData(u8(5), 1, undefined, settings),
       'new(u8(4), 1, 1073741825)': () => new ImageData(u8(4), 1, 1073741825, settings),
       'create(0, 1)': () => ctx.createImageData(0, 1, settings),
       'create(32768, 32768)': () => ctx.createImageData(32768, 32768, settings),
-      'create(23170, 23170)': () => ctx.createImageData(23170, 23170, settings),
       'create(1, 1)': () => ctx.createImageData(1, 1, settings),
       'get(0, 0, 0, 1)': () => ctx.getImageData(0, 0, 0, 1, settings),
       'get(0, 0, 46341, 46341)': () => ctx.getImageData(0, 0, 46341, 46341, settings),
       'get(0, 0, 32768, 32768)': () => ctx.getImageData(0, 0, 32768, 32768, settings),
-      'get(0, 0, 23170, 23170)': () => ctx.getImageData(0, 0, 23170, 23170, settings),
       'get(0, 0, 1, 1)': () => ctx.getImageData(0, 0, 1, 1, settings),
     }
     for (const [call, fn] of Object.entries(calls)) {

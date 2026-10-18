@@ -123,12 +123,6 @@ pub(crate) enum SizeErrors {
   Context2D,
 }
 
-/// The most bytes Chrome gives ImageData data: it allocates them with
-/// PartitionAlloc, which refuses more than `MaxDirectMapped()` = 2^31 - 2 MiB
-/// (partition_alloc_constants.h:403), and AllocateAndValidateDataArray then
-/// throws (image_data.cc:262).
-pub(crate) const MAX_DATA_BYTES: usize = (1 << 31) - (1 << 21);
-
 const SIZE_EXCEEDS: &str = "The requested image size exceeds the supported range.";
 
 fn index_size_error(env: sys::napi_env, prefix: &str, msg: &str) -> Error {
@@ -241,12 +235,12 @@ pub(crate) fn validate_data_length(
 }
 
 /// AllocateAndValidateDataArray (image_data.cc:236-270): `len` zeroed bytes.
-/// RangeError above Chrome's limit, or when the allocation fails, instead of
-/// aborting the process.
+/// RangeError when the allocation fails, instead of aborting the process.
+///
+/// Not Chrome: Chrome's PartitionAlloc refuses more than 2^31 - 2 MiB
+/// (partition_alloc_constants.h:403). Main had no limit, and pdf.js reads
+/// whole canvases and makes image-wide chunks, so there is none here.
 pub(crate) fn alloc_data(env: sys::napi_env, prefix: &str, len: usize) -> Result<Vec<u8>> {
-  if len > MAX_DATA_BYTES {
-    return Err(out_of_memory(env, prefix));
-  }
   try_zeroed_bytes(len).ok_or_else(|| out_of_memory(env, prefix))
 }
 
