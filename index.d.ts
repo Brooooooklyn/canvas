@@ -515,12 +515,7 @@ export class ImageData {
   readonly pixelFormat: ImageDataPixelFormat
 
   constructor(sw: number, sh: number, settings?: ImageDataSettings)
-  constructor(
-    data: Uint8ClampedArray | Uint16Array | Float16Array | Float32Array,
-    sw: number,
-    sh?: number,
-    settings?: ImageDataSettings,
-  )
+  constructor(data: Uint8ClampedArray, sw: number, sh?: number, settings?: ImageDataSettings)
 }
 
 export class Image {
