@@ -215,23 +215,39 @@ pub(crate) enum PixelState {
   AllocationFailed,
 }
 
-/// Whether a raster canvas of this size gets a bitmap: Skia's raster limit.
-/// No side is 0 or above SK_MaxS32 >> 2 (SkImageInfoIsValid), and the 4-byte
-/// pixels fit in SK_MaxS32 bytes (SkImageInfo::computeByteSize), so no canvas
-/// reserves more than 2 GiB.
+/// Whether a raster canvas of this size and pixel format gets a bitmap:
+/// Skia's raster limit. No side is 0 or above SK_MaxS32 >> 2
+/// (SkImageInfoIsValid), and the pixels (4 bytes each, 8 for float16) fit in
+/// SK_MaxS32 bytes (SkImageInfo::computeByteSize), so no canvas reserves more
+/// than 2 GiB. A size Skia would refuse is an invalid size here, never a
+/// failed allocation.
 ///
-/// Not Chrome: CanvasRenderingContextHost::IsValidImageSize
+/// Not Chrome for unorm8: CanvasRenderingContextHost::IsValidImageSize
 /// (canvas_rendering_context_host.cc:128-149) also gives no bitmap for a side
 /// above 65535 or an area above 32768 * 8192 (pdf.js draws images wider than
-/// that from malformed PDFs; main drew every size Skia holds).
-pub(crate) fn is_valid_image_size(width: u32, height: u32) -> bool {
+/// that from malformed PDFs; main drew every size Skia holds). Float16
+/// canvases, which main did not have, keep Chrome's limit as well.
+pub(crate) fn is_valid_image_size(
+  width: u32,
+  height: u32,
+  pixel_format: CanvasPixelFormat,
+) -> bool {
   const MAX_SIDE: u32 = (i32::MAX >> 2) as u32;
   const MAX_BYTES: u64 = i32::MAX as u64;
+  const CHROME_MAX_SIDE: u32 = 65535;
+  const CHROME_MAX_AREA: u64 = 32768 * 8192;
+  if pixel_format == CanvasPixelFormat::Float16
+    && (width > CHROME_MAX_SIDE
+      || height > CHROME_MAX_SIDE
+      || u64::from(width) * u64::from(height) > CHROME_MAX_AREA)
+  {
+    return false;
+  }
   width > 0
     && height > 0
     && width <= MAX_SIDE
     && height <= MAX_SIDE
-    && u64::from(width) * u64::from(height) * 4 <= MAX_BYTES
+    && u64::from(width) * u64::from(height) * pixel_format.bytes_per_pixel() as u64 <= MAX_BYTES
 }
 
 /// Blink's ShouldDrawImageAntialiased (canvas_2d_recorder_context.cc:
@@ -442,7 +458,7 @@ impl Context {
     };
     let mut pixel_state = if width == 0 || height == 0 {
       PixelState::Empty
-    } else if !is_valid_image_size(width, height) {
+    } else if !is_valid_image_size(width, height, pixel_format) {
       PixelState::InvalidSize
     } else {
       PixelState::Ready
@@ -7111,7 +7127,7 @@ mod tests {
       (1 << 30, 1, false),
     ] {
       assert_eq!(
-        is_valid_image_size(width, height),
+        is_valid_image_size(width, height, CanvasPixelFormat::Unorm8),
         valid,
         "{width}x{height}"
       );
@@ -7138,9 +7154,46 @@ mod tests {
       (u32::MAX, u32::MAX, false),
     ] {
       assert_eq!(
-        is_valid_image_size(width, height),
+        is_valid_image_size(width, height, CanvasPixelFormat::Unorm8),
         valid,
         "{width}x{height}"
+      );
+    }
+  }
+
+  #[test]
+  fn is_valid_image_size_counts_8_bytes_for_float16() {
+    // Float16: Chrome's side and area limit, and 8 * width * height up to
+    // SK_MaxS32 (268435455 pixels). The unorm8 column is Skia's limit alone,
+    // at 4 bytes a pixel.
+    for (width, height, float16, unorm8) in [
+      (1, 1, true, true),
+      (65535, 1, true, true),
+      (65536, 1, false, true),
+      (70000, 2, false, true),
+      (268435455, 1, false, true),
+      (1, 268435455, false, true),
+      (65535, 4096, true, true),
+      (16384, 16383, true, true),
+      (23170, 11585, true, true),
+      (268435456, 1, false, true),
+      (1, 268435456, false, true),
+      (65536, 4096, false, true),
+      (16384, 16384, false, true),
+      (23170, 23170, false, true),
+      (536870911, 1, false, true),
+      (536870912, 1, false, false),
+      (0, 5, false, false),
+    ] {
+      assert_eq!(
+        is_valid_image_size(width, height, CanvasPixelFormat::Float16),
+        float16,
+        "float16 {width}x{height}"
+      );
+      assert_eq!(
+        is_valid_image_size(width, height, CanvasPixelFormat::Unorm8),
+        unorm8,
+        "unorm8 {width}x{height}"
       );
     }
   }
@@ -7159,6 +7212,22 @@ mod tests {
       assert_eq!((ctx.width, ctx.height), (width, height));
       assert_eq!((ctx.surface.width(), ctx.surface.height()), (1, 1));
       assert_eq!(ctx.surface_bytes(), 4);
+    }
+    // A float16 canvas over Chrome's side limit, and over Skia's limit at 8
+    // bytes a pixel but under it at 4: an invalid size, not a failed
+    // allocation.
+    for (width, height) in [(70000, 2), (268435456, 1), (16384, 16384)] {
+      let ctx = Context::new_with_alpha(
+        width,
+        height,
+        ColorSpace::default(),
+        true,
+        CanvasPixelFormat::Float16,
+      )
+      .expect("float16 context");
+      assert_eq!(ctx.pixel_state, PixelState::InvalidSize, "{width}x{height}");
+      assert_eq!((ctx.surface.width(), ctx.surface.height()), (1, 1));
+      assert_eq!(ctx.surface_bytes(), 8);
     }
     let ctx = raster_ctx(3, 2);
     assert_eq!(ctx.pixel_state, PixelState::Ready);

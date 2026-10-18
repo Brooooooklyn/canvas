@@ -176,7 +176,8 @@ impl<'c> CanvasElement<'c> {
     // A lost context stays lost while the size is not valid (Chrome:
     // InitializeResourceProvider fails again). A valid size restores it here
     // at once; Chrome restores it two tasks later, with contextrestored.
-    context.context_lost = old.context_lost && !is_valid_image_size(width, height);
+    context.context_lost =
+      old.context_lost && !is_valid_image_size(width, height, old.pixel_format);
     Ok(context)
   }
 

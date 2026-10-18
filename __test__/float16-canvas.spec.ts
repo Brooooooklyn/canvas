@@ -747,3 +747,49 @@ test('float16 canvas sources on display-p3 canvases go through the 8-bit decode'
   }
   chromeEqual(t, X18, 'X18-f16p3-pattern-on-p3')
 })
+
+// A float16 canvas keeps Chrome's size limit (a side up to 65535, an area up
+// to 32768 * 8192), and Skia's at 8 bytes a pixel. Over either it has an
+// invalid size and loses its context like any other, also when a unorm8
+// canvas of that size would have pixels (canvas-size.spec.ts). No size here
+// gets a bitmap over 256 KiB: each canvas grows from 1 x 1, and every size it
+// passes through is over the limit or small.
+test('a float16 canvas over Chrome’s or Skia’s limit loses its context', (t) => {
+  for (const [w, h] of [
+    [70000, 2],
+    [268435456, 1],
+    [1, 268435456],
+    [16384, 16384],
+  ]) {
+    const cv = canvas(1, 1)
+    const c = cv.getContext('2d', F16)
+    cv.width = w
+    cv.height = h
+    c.fillStyle = '#0f0'
+    c.fillRect(0, 0, 1, 1)
+    t.deepEqual(
+      [c.isContextLost(), px(c, 0, 0), cv.toDataURL(), c.getContextAttributes().colorType],
+      [true, [0, 0, 0, 0], 'data:,', 'float16'],
+      `${w}x${h}`,
+    )
+    cv.width = 2
+    cv.height = 2
+    c.fillStyle = '#0f0'
+    c.fillRect(0, 0, 1, 1)
+    t.deepEqual([c.isContextLost(), px(c, 0, 0)], [false, [0, 255, 0, 255]], `${w}x${h} then 2x2`)
+  }
+  // A lost float16 context stays lost at a size over the limit that 4 bytes a
+  // pixel would fit.
+  const cv = canvas(1, 1)
+  const c = cv.getContext('2d', F16)
+  cv.width = 2 ** 30
+  c.fillRect(0, 0, 1, 1)
+  t.true(c.isContextLost())
+  cv.width = 268435456
+  c.fillRect(0, 0, 1, 1)
+  t.true(c.isContextLost(), '268435456x1')
+  cv.width = 2
+  c.fillStyle = '#0f0'
+  c.fillRect(0, 0, 1, 1)
+  t.deepEqual([c.isContextLost(), px(c, 0, 0)], [false, [0, 255, 0, 255]], '2x1')
+})
