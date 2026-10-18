@@ -1567,8 +1567,13 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
         avif_image.row_bytes as usize,
         (avif_image.row_bytes * avif_image.height) as usize,
         ColorType::RGBA8888,
-        // libavif's avifImageYUVToRGB outputs straight (non-premultiplied) alpha.
-        AlphaType::Unpremultiplied,
+        // libavif's avifImageYUVToRGB outputs straight (non-premultiplied)
+        // alpha, 255 everywhere when the file has no alpha plane.
+        if avif_image.has_alpha() {
+          AlphaType::Unpremultiplied
+        } else {
+          AlphaType::Opaque
+        },
       )
       .map(|mut bitmap| {
         // Like the PNG/JPEG/WebP codecs, keep the file's color space, so a

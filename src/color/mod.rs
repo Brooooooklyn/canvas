@@ -11,7 +11,7 @@ mod parse;
 mod serialize;
 
 pub(crate) use model::{Color, ColorSpace};
-pub(crate) use parse::{Site, parse_canvas_color, parse_filter_color};
+pub(crate) use parse::{Site, consume_filter_color, parse_canvas_color};
 
 #[cfg(test)]
 mod tests {
