@@ -907,6 +907,22 @@ impl<S: Site> FromNapiValue for RestrictedDouble<S> {
   }
 }
 
+/// A WebIDL `double` argument that takes a Number as it is, NaN and the
+/// infinities too; any other value converts as [`RestrictedDouble`] does.
+/// Not Chrome (a TypeError for a non-finite Number): pdf.js passes non-finite
+/// gradient coordinates from malformed PDFs, and main did not throw for them.
+pub struct NumberOrRestrictedDouble<S>(pub f64, PhantomData<S>);
+
+impl<S: Site> FromNapiValue for NumberOrRestrictedDouble<S> {
+  unsafe fn from_napi_value(env: sys::napi_env, value: sys::napi_value) -> Result<Self> {
+    let mut number = 0.0;
+    if unsafe { sys::napi_get_value_double(env, value, &mut number) } == sys::Status::napi_ok {
+      return Ok(Self(number, PhantomData));
+    }
+    to_restricted_double(env, value, S::PREFIX).map(|v| Self(v, PhantomData))
+  }
+}
+
 /// An `optional unrestricted double` argument with no default: None when it
 /// is undefined (or missing), else ToNumber.
 pub struct OptionalDouble<S>(pub Option<f64>, PhantomData<S>);

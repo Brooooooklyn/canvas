@@ -7,7 +7,7 @@
 // for them, and a throw rejects the whole page render. Each PDF here is one
 // page (pdfjs-malformed-pdfs.ts) with a red square drawn before the bad
 // operators and a green square after them. The expected outcome of each case
-// is main's.
+// is main's, or better where noted.
 import { createRequire } from 'node:module'
 import { pathToFileURL } from 'node:url'
 
@@ -82,6 +82,15 @@ const EXPECTED: Record<keyof typeof pdfs, Outcome> = {
   r28_radial_nan_r1: 'draws',
   r28_pat_radial_inf_r1: 'draws',
   r28_pat_radial_overflow: 'draws',
+  // Non-finite axial coordinates or radial center: the gradient paints
+  // nothing. Main rejected these: it failed to make the Skia shader ("Get
+  // shader of ... gradient failed").
+  r28_axial_inf: 'draws',
+  r28_axial_nan: 'draws',
+  r28_axial_inf_x0: 'draws',
+  r28_pat_axial_inf: 'draws',
+  r28_pat_axial_overflow: 'draws',
+  r28_radial_inf_center: 'draws',
 
   // `1e400 0 0 1 50 50 cm`: transform() ignores the Infinity scale, as in
   // Chrome, so the half-transparent group lands on the red square. Main drew
@@ -104,14 +113,6 @@ const EXPECTED: Record<keyof typeof pdfs, Outcome> = {
   r28_radial_neg: 'rejects',
   r28_radial_neg_r1: 'rejects',
   r28_pat_radial_neg: 'rejects',
-  // Non-finite axial coordinates or radial center: main fails to make the
-  // Skia shader ("Get shader of ... gradient failed").
-  r28_axial_inf: 'rejects',
-  r28_axial_nan: 'rejects',
-  r28_axial_inf_x0: 'rejects',
-  r28_pat_axial_inf: 'rejects',
-  r28_pat_axial_overflow: 'rejects',
-  r28_radial_inf_center: 'rejects',
 }
 
 const require = createRequire(import.meta.url)

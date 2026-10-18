@@ -339,6 +339,12 @@ for (const [name, args] of Object.entries(STOP_CASES)) {
   })
 }
 
+// Not Chrome: a NaN or infinite Number does not throw in createLinearGradient
+// and createRadialGradient (Chrome: the TypeError of a WebIDL double); the
+// gradient paints nothing. pdf.js passes them from malformed PDFs, and main
+// did not throw there. Other values that convert to NaN or an infinity keep
+// Chrome's TypeError, and a negative radius (-Infinity too) keeps its
+// IndexSizeError. createConicGradient is Chrome's.
 const CREATE_CASES: Record<string, (c: any) => unknown> = {
   linNaN: (c) => c.createLinearGradient(NaN, 0, 1, 1),
   linInf0: (c) => c.createLinearGradient(0, Infinity, 1, 1),
@@ -349,6 +355,8 @@ const CREATE_CASES: Record<string, (c: any) => unknown> = {
   lin0: (c) => c.createLinearGradient(),
   linStr: (c) => c.createLinearGradient('0', '0', '8', '0'),
   linBadStr: (c) => c.createLinearGradient('a', 0, 8, 0),
+  linInfStr: (c) => c.createLinearGradient(0, 'Infinity', 8, 0),
+  linNaNObj: (c) => c.createLinearGradient(0, 0, { valueOf: () => NaN }, 0),
   linNull: (c) => c.createLinearGradient(null, 0, 8, 0),
   radNeg0: (c) => c.createRadialGradient(0, 0, -1, 0, 0, 1),
   radNeg1: (c) => c.createRadialGradient(0, 0, 1, 0, 0, -1),
@@ -359,6 +367,9 @@ const CREATE_CASES: Record<string, (c: any) => unknown> = {
   radNegNaN: (c) => c.createRadialGradient(0, 0, -1, 0, 0, NaN),
   radNaNNeg: (c) => c.createRadialGradient(NaN, 0, 1, 0, 0, -1),
   radInfR: (c) => c.createRadialGradient(0, 0, Infinity, 0, 0, 1),
+  radInfR1: (c) => c.createRadialGradient(0, 0, 0, 0, 0, Infinity),
+  radInfCenter: (c) => c.createRadialGradient(Infinity, 0, 0, 0, 0, 1),
+  radNaNStr: (c) => c.createRadialGradient(0, 0, 'NaN', 0, 0, 1),
   radNInfR: (c) => c.createRadialGradient(0, 0, 0, 0, 0, -Infinity),
   rad5: (c) => c.createRadialGradient(0, 0, 0, 0, 0),
   radNeg5: (c) => c.createRadialGradient(0, 0, -1, 0, 0),
@@ -368,31 +379,11 @@ const CREATE_CASES: Record<string, (c: any) => unknown> = {
   con2: (c) => c.createConicGradient(0, 0),
 }
 const CREATE_EXPECTED: Record<string, Expect> = {
-  linNaN: {
-    type: 'TypeError',
-    message:
-      "Failed to execute 'createLinearGradient' on 'CanvasRenderingContext2D': The provided double value is non-finite.",
-  },
-  linInf0: {
-    type: 'TypeError',
-    message:
-      "Failed to execute 'createLinearGradient' on 'CanvasRenderingContext2D': The provided double value is non-finite.",
-  },
-  linInf: {
-    type: 'TypeError',
-    message:
-      "Failed to execute 'createLinearGradient' on 'CanvasRenderingContext2D': The provided double value is non-finite.",
-  },
-  linNInf: {
-    type: 'TypeError',
-    message:
-      "Failed to execute 'createLinearGradient' on 'CanvasRenderingContext2D': The provided double value is non-finite.",
-  },
-  linNaNInf: {
-    type: 'TypeError',
-    message:
-      "Failed to execute 'createLinearGradient' on 'CanvasRenderingContext2D': The provided double value is non-finite.",
-  },
+  linNaN: { ok: true },
+  linInf0: { ok: true },
+  linInf: { ok: true },
+  linNInf: { ok: true },
+  linNaNInf: { ok: true },
   lin3: {
     type: 'TypeError',
     message:
@@ -410,6 +401,16 @@ const CREATE_EXPECTED: Record<string, Expect> = {
       "Failed to execute 'createLinearGradient' on 'CanvasRenderingContext2D': The provided double value is non-finite.",
   },
   linNull: { ok: true },
+  linInfStr: {
+    type: 'TypeError',
+    message:
+      "Failed to execute 'createLinearGradient' on 'CanvasRenderingContext2D': The provided double value is non-finite.",
+  },
+  linNaNObj: {
+    type: 'TypeError',
+    message:
+      "Failed to execute 'createLinearGradient' on 'CanvasRenderingContext2D': The provided double value is non-finite.",
+  },
   radNeg0: {
     dom: 'IndexSizeError',
     code: 1,
@@ -431,30 +432,29 @@ const CREATE_EXPECTED: Record<string, Expect> = {
     code: 1,
     message: "Failed to execute 'createRadialGradient' on 'CanvasRenderingContext2D': The r0 provided is less than 0.",
   },
-  radNaN: {
-    type: 'TypeError',
-    message:
-      "Failed to execute 'createRadialGradient' on 'CanvasRenderingContext2D': The provided double value is non-finite.",
-  },
+  radNaN: { ok: true },
   radNegNaN: {
-    type: 'TypeError',
-    message:
-      "Failed to execute 'createRadialGradient' on 'CanvasRenderingContext2D': The provided double value is non-finite.",
+    dom: 'IndexSizeError',
+    code: 1,
+    message: "Failed to execute 'createRadialGradient' on 'CanvasRenderingContext2D': The r0 provided is less than 0.",
   },
   radNaNNeg: {
-    type: 'TypeError',
-    message:
-      "Failed to execute 'createRadialGradient' on 'CanvasRenderingContext2D': The provided double value is non-finite.",
+    dom: 'IndexSizeError',
+    code: 1,
+    message: "Failed to execute 'createRadialGradient' on 'CanvasRenderingContext2D': The r1 provided is less than 0.",
   },
-  radInfR: {
+  radInfR: { ok: true },
+  radInfR1: { ok: true },
+  radInfCenter: { ok: true },
+  radNaNStr: {
     type: 'TypeError',
     message:
       "Failed to execute 'createRadialGradient' on 'CanvasRenderingContext2D': The provided double value is non-finite.",
   },
   radNInfR: {
-    type: 'TypeError',
-    message:
-      "Failed to execute 'createRadialGradient' on 'CanvasRenderingContext2D': The provided double value is non-finite.",
+    dom: 'IndexSizeError',
+    code: 1,
+    message: "Failed to execute 'createRadialGradient' on 'CanvasRenderingContext2D': The r1 provided is less than 0.",
   },
   rad5: {
     type: 'TypeError',
@@ -493,6 +493,36 @@ for (const [name, make] of Object.entries(CREATE_CASES)) {
     check(t, () => make(createCanvas(8, 8).getContext('2d')), CREATE_EXPECTED[name])
   })
 }
+
+test('a gradient with a NaN or infinite Number paints nothing', (t) => {
+  // Not Chrome (a TypeError); see CREATE_CASES.
+  const gradients: [string, (c: Ctx) => ReturnType<Ctx['createLinearGradient']>][] = [
+    ['linear NaN', (c) => c.createLinearGradient(NaN, 0, 4, 0)],
+    ['linear Infinity', (c) => c.createLinearGradient(0, 0, Infinity, 0)],
+    ['linear -Infinity', (c) => c.createLinearGradient(0, -Infinity, 4, 0)],
+    ['radial NaN center', (c) => c.createRadialGradient(NaN, 2, 0, 2, 2, 4)],
+    ['radial Infinity center', (c) => c.createRadialGradient(2, 2, 0, Infinity, 2, 4)],
+    ['radial NaN r0', (c) => c.createRadialGradient(2, 2, NaN, 2, 2, 4)],
+    ['radial Infinity r0', (c) => c.createRadialGradient(2, 2, Infinity, 2, 2, 4)],
+    ['radial Infinity r1', (c) => c.createRadialGradient(2, 2, 0, 2, 2, Infinity)],
+    ['radial NaN r1', (c) => c.createRadialGradient(2, 2, 0, 2, 2, NaN)],
+  ]
+  for (const [name, make] of gradients) {
+    const ctx = createCanvas(4, 4).getContext('2d')
+    ctx.fillStyle = '#336699'
+    ctx.fillRect(0, 0, 4, 4)
+    const before = all(ctx, 4, 4)
+    const gradient = make(ctx)
+    gradient.addColorStop(0, 'red')
+    gradient.addColorStop(1, 'lime')
+    ctx.fillStyle = gradient
+    ctx.fillRect(0, 0, 4, 4)
+    ctx.strokeStyle = gradient
+    ctx.lineWidth = 2
+    ctx.strokeRect(1, 1, 2, 2)
+    t.deepEqual(all(ctx, 4, 4), before, name)
+  }
+})
 
 test('gradient method lengths match Chrome', (t) => {
   const ctx = createCanvas(1, 1).getContext('2d')
@@ -812,7 +842,7 @@ test('gradient binding errors keep the bare message in their stack', (t) => {
       () => (ctx.createLinearGradient as (...a: unknown[]) => unknown)(0, 0, 0),
       'TypeError: 4 arguments required, but only 3 present.',
     ],
-    [() => ctx.createLinearGradient(0, 0, 0, NaN), 'TypeError: The provided double value is non-finite.'],
+    [() => ctx.createLinearGradient(0, 0, 0, 'NaN' as never), 'TypeError: The provided double value is non-finite.'],
     [
       () => (ctx.createConicGradient as (...a: unknown[]) => unknown)(0),
       'TypeError: 3 arguments required, but only 1 present.',

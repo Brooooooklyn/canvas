@@ -4838,13 +4838,13 @@ impl CanvasRenderingContext2D {
   pub fn create_linear_gradient<'scope>(
     &'scope mut self,
     env: &'scope Env,
-    x0: webidl::RestrictedDouble<webidl::CtxCreateLinearGradient>,
-    y0: webidl::RestrictedDouble<webidl::CtxCreateLinearGradient>,
-    x1: webidl::RestrictedDouble<webidl::CtxCreateLinearGradient>,
-    y1: webidl::RestrictedDouble<webidl::CtxCreateLinearGradient>,
+    x0: webidl::NumberOrRestrictedDouble<webidl::CtxCreateLinearGradient>,
+    y0: webidl::NumberOrRestrictedDouble<webidl::CtxCreateLinearGradient>,
+    x1: webidl::NumberOrRestrictedDouble<webidl::CtxCreateLinearGradient>,
+    y1: webidl::NumberOrRestrictedDouble<webidl::CtxCreateLinearGradient>,
   ) -> Result<ClassInstance<'scope, CanvasGradient>> {
     // Blink ClampTo<float> (canvas_2d_recorder_context.cc:2366-2372).
-    let [x0, y0, x1, y1] = [x0.0, y0.0, x1.0, y1.0].map(clamp_to_f32);
+    let [x0, y0, x1, y1] = finite_or_degenerate([x0.0, y0.0, x1.0, y1.0]);
     let linear_gradient = Gradient::create_linear_gradient(x0, y0, x1, y1);
     CanvasGradient::new(linear_gradient).into_instance(env)
   }
@@ -4853,16 +4853,16 @@ impl CanvasRenderingContext2D {
   pub fn create_radial_gradient<'scope>(
     &'scope mut self,
     env: &'scope Env,
-    x0: webidl::RestrictedDouble<webidl::CtxCreateRadialGradient>,
-    y0: webidl::RestrictedDouble<webidl::CtxCreateRadialGradient>,
-    r0: webidl::RestrictedDouble<webidl::CtxCreateRadialGradient>,
-    x1: webidl::RestrictedDouble<webidl::CtxCreateRadialGradient>,
-    y1: webidl::RestrictedDouble<webidl::CtxCreateRadialGradient>,
-    r1: webidl::RestrictedDouble<webidl::CtxCreateRadialGradient>,
+    x0: webidl::NumberOrRestrictedDouble<webidl::CtxCreateRadialGradient>,
+    y0: webidl::NumberOrRestrictedDouble<webidl::CtxCreateRadialGradient>,
+    r0: webidl::NumberOrRestrictedDouble<webidl::CtxCreateRadialGradient>,
+    x1: webidl::NumberOrRestrictedDouble<webidl::CtxCreateRadialGradient>,
+    y1: webidl::NumberOrRestrictedDouble<webidl::CtxCreateRadialGradient>,
+    r1: webidl::NumberOrRestrictedDouble<webidl::CtxCreateRadialGradient>,
   ) -> Result<ClassInstance<'scope, CanvasGradient>> {
     let [x0, y0, r0, x1, y1, r1] = [x0.0, y0.0, r0.0, x1.0, y1.0, r1.0];
     // canvas_2d_recorder_context.cc:2376-2392, on the doubles, after the
-    // bindings converted every argument.
+    // bindings converted every argument. NaN is not below 0; -Infinity is.
     if r0 < 0.0 || r1 < 0.0 {
       return Err(webidl::dom_exception(
         env.raw(),
@@ -4874,7 +4874,7 @@ impl CanvasRenderingContext2D {
         ),
       ));
     }
-    let [x0, y0, r0, x1, y1, r1] = [x0, y0, r0, x1, y1, r1].map(clamp_to_f32);
+    let [x0, y0, r0, x1, y1, r1] = finite_or_degenerate([x0, y0, r0, x1, y1, r1]);
     let radial_gradient = Gradient::create_radial_gradient(x0, y0, r0, x1, y1, r1);
     CanvasGradient::new(radial_gradient).into_instance(env)
   }
@@ -6379,6 +6379,18 @@ impl Task for ContextData {
 /// every downstream Skia filter rejects.
 fn clamp_to_f32(value: f64) -> f32 {
   value.clamp(f32::MIN as f64, f32::MAX as f64) as f32
+}
+
+/// A gradient factory's doubles as `clamp_to_f32` makes them, or all 0 when
+/// one is NaN or infinite: a degenerate gradient, which paints nothing.
+/// Not Chrome (a TypeError in the binding): pdf.js passes them from malformed
+/// PDFs; main threw at the fill or painted with the first stop.
+fn finite_or_degenerate<const N: usize>(values: [f64; N]) -> [f32; N] {
+  if values.iter().all(|v| v.is_finite()) {
+    values.map(clamp_to_f32)
+  } else {
+    [0.0; N]
+  }
 }
 
 /// Blink AffineTransform::IsInvertible (affine_transform.cc:63-69): a normal
