@@ -100,6 +100,32 @@ test('float ImageData over 2 GiB is a RangeError', (t) => {
   })
 })
 
+// Not Chrome (IndexSizeError): a zero side gives an empty ImageData, as for
+// rgba-unorm8 (imagedata-validation.spec.ts), and putting it draws nothing.
+test('createImageData with a zero side gives an empty float ImageData', (t) => {
+  const c = ctx(2, 2)
+  c.fillStyle = '#f00'
+  c.fillRect(0, 0, 2, 2)
+  for (const [pf, type] of HAS_F16
+    ? [
+        ['rgba-float16', '[object Float16Array]'],
+        ['rgba-float32', '[object Float32Array]'],
+      ]
+    : [['rgba-float32', '[object Float32Array]']]) {
+    for (const [w, h, width, height] of [
+      [0, 1, 0, 1],
+      [1, 0, 1, 0],
+      [NaN, 2, 0, 2],
+    ]) {
+      const id = c.createImageData(w, h, loose({ pixelFormat: pf }))
+      t.deepEqual(desc(id), { w: width, h: height, cs: 'srgb', pf, type, len: 0, d: [] }, `${pf} ${w} x ${h}`)
+      t.notThrows(() => c.putImageData(id, 0, 0))
+      t.notThrows(() => c.putImageData(id, 0, 0, 0, 0, 2, 2))
+    }
+  }
+  t.deepEqual(px(c, 1, 1), [255, 0, 0, 255])
+})
+
 test('float data is a prototype getter; unorm8 data is also a configurable own property', (t) => {
   const c = ctx(1, 1)
   const out: Record<string, unknown> = {}

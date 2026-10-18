@@ -63,8 +63,9 @@ fn new_data_array(
     return Ok(Uint8ClampedSlice::from_data(env, bytes)?.raw());
   }
   require_float16(raw, prefix, pixel_format)?;
-  // The allocator gives these (8 bytes or more) 8-byte aligned memory.
-  debug_assert!(bytes.as_ptr().align_offset(4) == 0);
+  // The allocator gives these (8 bytes or more) 8-byte aligned memory. An
+  // empty Vec (a 0-wide createImageData) has a dangling pointer.
+  debug_assert!(bytes.is_empty() || bytes.as_ptr().align_offset(4) == 0);
   let length = bytes.len() / pixel_format.element_size();
   let buffer = ArrayBuffer::from_data(env, bytes)?.raw();
   let mut array = ptr::null_mut();
