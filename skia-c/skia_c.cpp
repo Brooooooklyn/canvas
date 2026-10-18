@@ -813,7 +813,10 @@ void skiac_surface_create_svg(skiac_svg_surface* c_surface,
     delete w_stream;
     return;
   }
-  auto surface = skiac_surface_create(w, h, (SkAlphaType)alphaType, cs);
+  // A raster cannot be 0 wide or high: a canvas with a 0 side has no pixels,
+  // and its raster is a stand-in that nothing reads (Context::new_svg).
+  auto surface = skiac_surface_create(std::max(w, 1), std::max(h, 1),
+                                      (SkAlphaType)alphaType, cs);
   if (!surface) {
     canvas.reset();
     delete w_stream;

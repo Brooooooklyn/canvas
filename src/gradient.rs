@@ -225,7 +225,7 @@ impl Gradient {
 /// (CSSParserFastPaths::ParseColor's Is8Bit check), e.g. a slice of a string
 /// that had a non-Latin-1 character. Node-API does not expose that, so every
 /// string is treated as one-byte here.
-fn blink_rounds_hsl_alpha(color: &str) -> bool {
+pub(crate) fn blink_rounds_hsl_alpha(color: &str) -> bool {
   use blink_fast_path::*;
   let chars = color.trim_matches(HTML_SPACES).as_bytes();
   // MightBeHSLOrHSLA (:902-911): the name is case-sensitive.
@@ -275,8 +275,8 @@ fn blink_rounds_hsl_alpha(color: &str) -> bool {
 /// The pieces of Blink's css_parser_fast_paths.cc that its hsl() fast path
 /// uses, reduced to what they accept: each returns how much it consumes (or
 /// whether it matched), not the parsed value.
-mod blink_fast_path {
-  pub(super) const HTML_SPACES: [char; 5] = [' ', '\t', '\n', '\x0c', '\r'];
+pub(crate) mod blink_fast_path {
+  pub(crate) const HTML_SPACES: [char; 5] = [' ', '\t', '\n', '\x0c', '\r'];
 
   fn is_html_space(c: u8) -> bool {
     matches!(c, b' ' | b'\t' | b'\n' | b'\x0c' | b'\r')
@@ -329,7 +329,7 @@ mod blink_fast_path {
 
   /// ParseFloatWithMaxValue (:576-621): HTML spaces, an optional '-', at
   /// least one digit, then an optional '.' and digits. Returns the rest.
-  fn parse_float_with_max_value(chars: &[u8]) -> Option<&[u8]> {
+  pub(crate) fn parse_float_with_max_value(chars: &[u8]) -> Option<&[u8]> {
     let current = skip_html_spaces(chars);
     let current = current.strip_prefix(b"-").unwrap_or(current);
     let digits = current.iter().take_while(|c| c.is_ascii_digit()).count();
@@ -350,14 +350,14 @@ mod blink_fast_path {
   /// kMustWhitespaceTerminate, kMustCharacterTerminate and
   /// kCouldWhitespaceTerminate (:625-639).
   #[derive(Clone, Copy, PartialEq, Eq)]
-  pub(super) enum TerminatorStatus {
+  pub(crate) enum TerminatorStatus {
     MustWhitespace,
     MustCharacter,
     CouldWhitespace,
   }
 
   /// SkipToTerminator (:643-678).
-  pub(super) fn skip_to_terminator(
+  pub(crate) fn skip_to_terminator(
     chars: &mut &[u8],
     terminator: u8,
     terminator_status: &mut TerminatorStatus,
@@ -410,7 +410,7 @@ mod blink_fast_path {
   /// ParseAlphaValue (:770-832): HTML spaces, an optional '-', a number with
   /// no sign or exponent, then the terminator, which must also be the last
   /// character, right after a digit.
-  pub(super) fn parse_alpha_value(chars: &[u8], terminator: u8) -> bool {
+  pub(crate) fn parse_alpha_value(chars: &[u8], terminator: u8) -> bool {
     let chars = skip_html_spaces(chars);
     let chars = chars.strip_prefix(b"-").unwrap_or(chars);
     let length = chars.len();

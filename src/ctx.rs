@@ -6,11 +6,8 @@ use std::result;
 use std::str::FromStr;
 use std::sync::LazyLock;
 
-use cssparser::Parser;
-use cssparser_color::Color as CSSColor;
 use napi::bindgen_prelude::*;
 use regex::Regex;
-use rgb::RGBA;
 
 use crate::font::FONT_MEDIUM_PX;
 use crate::font::parse_size_px;
@@ -22,6 +19,7 @@ use crate::sk::Canvas;
 use crate::{
   CanvasElement, SVGCanvas,
   avif::Config,
+  color::CanvasColor,
   error::SkError,
   filter::css_filter,
   filter::css_filters_to_image_filter,
@@ -30,7 +28,7 @@ use crate::{
   image::*,
   num,
   path::{Path, check_round_rect},
-  pattern::{CanvasPattern, Pattern, hsl_to_rgba8, srgb_channel_to_u8},
+  pattern::{CanvasPattern, Pattern, srgb_channel_to_u8},
   sk::{
     AccountedBitmap, AlphaType, Bitmap, BlendMode, ColorSpace, DecodedCopy, FillType,
     FilterQuality, FontVariantCaps, ImageFilter, ImagePattern, LineMetrics, MaskFilter, Matrix,
@@ -51,19 +49,98 @@ impl From<SkError> for Error {
 }
 
 pub(crate) const MAX_TEXT_WIDTH: f32 = 100_000.0;
-pub(crate) const FILL_STYLE_HIDDEN_NAME: &str = "_fillStyle";
-pub(crate) const STROKE_STYLE_HIDDEN_NAME: &str = "_strokeStyle";
 /// Where the canvas classes keep a context's canvas, for the `canvas` getter.
 pub(crate) const CANVAS_HIDDEN_NAME: &str = "_canvas";
 
-/// The fillStyle/strokeStyle getters read these hidden JS properties, so every
-/// reset to the default state (ctx.reset(), and a width/height change, which
-/// Chrome runs through the same Reset: html_canvas_element.cc:870-872) must
-/// reset them too.
-pub(crate) fn reset_style_getters(ctx: &mut Object) -> Result<()> {
-  ctx.set_named_property(FILL_STYLE_HIDDEN_NAME, "#000000")?;
-  ctx.set_named_property(STROKE_STYLE_HIDDEN_NAME, "#000000")?;
+/// The gradient and pattern objects that the fillStyle and strokeStyle getters
+/// return, in a JS array on the context: index 2 * depth for fillStyle and
+/// 2 * depth + 1 for strokeStyle, where depth is the save() depth that set
+/// the object (the state's `fill_style_slot` / `stroke_style_slot`). Like
+/// Chrome's state stack (each state holds its CanvasStyle), the getters follow
+/// save() and restore(). The array lives in the JS heap, so a cycle such as
+/// `gradient.ctx = ctx` stays collectable. Colors need no object: the getter
+/// returns their serialization from the Rust state.
+const STYLE_OBJECTS_NAME: &str = "_styleObjects";
+
+/// The style object array of `ctx`, if it has one.
+fn style_objects<'a>(ctx: &Object<'a>) -> Result<Option<Object<'a>>> {
+  let value: Unknown = ctx.get_named_property(STYLE_OBJECTS_NAME)?;
+  if value.get_type()? != ValueType::Object || !value.is_array()? {
+    return Ok(None);
+  }
+  Ok(Some(unsafe {
+    Object::from_napi_value(value.value().env, value.raw())?
+  }))
+}
+
+/// Drops the saved style objects from `length` on: after restore() popped the
+/// states that set them, or with `0` when the state stack starts over (reset()
+/// and a width or height change, which Chrome runs through the same Reset:
+/// html_canvas_element.cc; and a lost context, see
+/// `CanvasRenderingContext2D::drop_style_objects_if_lost`).
+pub(crate) fn truncate_style_objects(ctx: &Object, length: u32) -> Result<()> {
+  if let Some(mut objects) = style_objects(ctx)?
+    && objects.get_array_length_unchecked()? > length
+  {
+    objects.set_named_property("length", length)?;
+  }
   Ok(())
+}
+
+/// The fillStyle or strokeStyle getter: a color's serialization, or the
+/// gradient or pattern object set at depth `slot` (undefined if it is gone).
+fn style_getter<'a>(
+  ctx: &Object<'a>,
+  style: &Pattern,
+  slot: Option<u32>,
+  offset: u32,
+) -> Result<Either3<String, Unknown<'a>, Undefined>> {
+  if let Pattern::Color(_, serialized) = style {
+    return Ok(Either3::A(serialized.clone()));
+  }
+  match (slot, style_objects(ctx)?) {
+    (Some(slot), Some(objects)) => Ok(Either3::B(objects.get_element(2 * slot + offset)?)),
+    _ => Ok(Either3::C(())),
+  }
+}
+
+/// The fillStyle or strokeStyle setter: stores `style` in `state_slot`'s
+/// state and keeps the getter's object. `depth` is the current save() depth.
+fn set_style(
+  env: &Env,
+  ctx: &mut Object,
+  style: CanvasStyleArg<'_, impl webidl::Site>,
+  depth: u32,
+  offset: u32,
+) -> Result<Option<(Pattern, Option<u32>)>> {
+  let Some(pattern) = style.pattern else {
+    // Not a color: the assignment is ignored.
+    return Ok(None);
+  };
+  let index = 2 * depth + offset;
+  if let Pattern::Color(..) = pattern {
+    // Free an object this depth set before; lower depths keep theirs.
+    if let Some(mut objects) = style_objects(ctx)?
+      && objects.get_array_length_unchecked()? > index
+    {
+      objects.delete_element(index)?;
+    }
+    return Ok(Some((pattern, None)));
+  }
+  let mut objects = match style_objects(ctx)? {
+    Some(objects) => objects,
+    None => {
+      ctx.define_properties(&[Property::new()
+        .with_utf8_name(STYLE_OBJECTS_NAME)?
+        .with_value(&env.create_array(0)?)
+        .with_property_attributes(
+          PropertyAttributes::Writable | PropertyAttributes::Configurable,
+        )])?;
+      style_objects(ctx)?.ok_or_else(|| Error::from_reason("No style object array"))?
+    }
+  };
+  objects.set_element(index, style.value)?;
+  Ok(Some((pattern, Some(depth))))
 }
 
 /// Where the draw casting the shadow gets its colour from. `shadow_paint` is
@@ -120,6 +197,44 @@ pub(crate) enum Backend {
   Svg,
   /// `Context::new_from_surface`: `SkPDFDevice`, one per page.
   Pdf,
+}
+
+/// Whether the canvas has a bitmap. Chrome makes one (a resource provider)
+/// only for a valid size, and a failed allocation leaves the canvas without
+/// one, with no exception (CanvasRenderingContext2D::InitializeResourceProvider,
+/// canvas_rendering_context_2d.cc:1307-1360). Without a bitmap, drawing does
+/// nothing, reads are transparent black and toDataURL() is "data:,". The
+/// Context then holds a 1x1 stand-in surface that nothing reads, so every code
+/// path still has a real surface.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum PixelState {
+  /// `surface` is the bitmap.
+  Ready,
+  /// A side is 0.
+  Empty,
+  /// Larger than Skia's raster limit (`is_valid_image_size`).
+  InvalidSize,
+  /// A valid size whose surface could not be allocated.
+  AllocationFailed,
+}
+
+/// Whether a raster canvas of this size gets a bitmap: Skia's raster limit.
+/// No side is 0 or above SK_MaxS32 >> 2 (SkImageInfoIsValid), and the 4-byte
+/// pixels fit in SK_MaxS32 bytes (SkImageInfo::computeByteSize), so no canvas
+/// reserves more than 2 GiB.
+///
+/// Not Chrome: CanvasRenderingContextHost::IsValidImageSize
+/// (canvas_rendering_context_host.cc:128-149) also gives no bitmap for a side
+/// above 65535 or an area above 32768 * 8192 (pdf.js draws images wider than
+/// that from malformed PDFs; main drew every size Skia holds).
+pub(crate) fn is_valid_image_size(width: u32, height: u32) -> bool {
+  const MAX_SIDE: u32 = (i32::MAX >> 2) as u32;
+  const MAX_BYTES: u64 = i32::MAX as u64;
+  width > 0
+    && height > 0
+    && width <= MAX_SIDE
+    && height <= MAX_SIDE
+    && u64::from(width) * u64::from(height) * 4 <= MAX_BYTES
 }
 
 /// The shadow half of a draw, as `shadow_paint` builds it. `paint` draws the
@@ -202,6 +317,11 @@ pub struct Context {
   pub(crate) page_recorder: Option<RefCell<PageRecorder>>, // Deferred rendering recorder (RefCell for interior mutability)
   /// Which device `surface` is over. Set once by the constructor.
   pub(crate) backend: Backend,
+  /// Whether `surface` is the bitmap. Set once by the constructor.
+  pub(crate) pixel_state: PixelState,
+  /// Chrome's isContextLost(): an over-limit canvas loses its context the
+  /// first time an op asks for the bitmap (`paint_canvas`).
+  pub(crate) context_lost: bool,
   path: SkPath,
   pub alpha: bool,
   pub(crate) states: Vec<Context2dRenderingState>,
@@ -238,6 +358,15 @@ impl Context {
       resource_id: next_resource_id(),
       page_recorder: None, // SVG uses direct rendering
       backend: Backend::Svg,
+      context_lost: false,
+      // SvgCanvas has no Chrome counterpart and no size limit: only a 0 side
+      // leaves it without pixels (its raster is then a stand-in, see
+      // skiac_surface_create_svg).
+      pixel_state: if width == 0 || height == 0 {
+        PixelState::Empty
+      } else {
+        PixelState::Ready
+      },
       alpha: true,
       path: SkPath::new(),
       states: vec![],
@@ -265,17 +394,47 @@ impl Context {
     color_space: ColorSpace,
     alpha: bool,
   ) -> Result<Self> {
-    let surface = if alpha {
-      Surface::new_rgba_premultiplied(width, height, color_space)
+    let new_surface = |width, height| {
+      if alpha {
+        Surface::new_rgba_premultiplied(width, height, color_space)
+      } else {
+        Surface::new_rgba_opaque(width, height, color_space)
+      }
+    };
+    let mut pixel_state = if width == 0 || height == 0 {
+      PixelState::Empty
+    } else if !is_valid_image_size(width, height) {
+      PixelState::InvalidSize
     } else {
-      Surface::new_rgba_opaque(width, height, color_space)
+      PixelState::Ready
+    };
+    let mut surface = None;
+    if pixel_state == PixelState::Ready {
+      surface = new_surface(width, height);
+      if surface.is_none() {
+        pixel_state = PixelState::AllocationFailed;
+      }
     }
-    .ok_or_else(|| Error::from_reason("Create skia surface failed".to_owned()))?;
+    // Without a bitmap: the 1x1 stand-in, with a recorder of the same size.
+    let (surface, recorder_width, recorder_height) = match surface {
+      Some(surface) => (surface, width, height),
+      None => (
+        new_surface(1, 1)
+          .ok_or_else(|| Error::from_reason("Create skia surface failed".to_owned()))?,
+        1,
+        1,
+      ),
+    };
     let mut context = Context {
       surface,
       resource_id: next_resource_id(),
-      page_recorder: Some(RefCell::new(PageRecorder::new(width as f32, height as f32))), // Enable deferred rendering
+      page_recorder: Some(RefCell::new(PageRecorder::new(
+        recorder_width as f32,
+        recorder_height as f32,
+      ))), // Enable deferred rendering
       backend: Backend::Raster,
+      pixel_state,
+      context_lost: false,
       alpha: true,
       path: SkPath::new(),
       states: vec![],
@@ -322,6 +481,8 @@ impl Context {
       resource_id: next_resource_id(),
       page_recorder: None, // PDF uses direct rendering
       backend: Backend::Pdf,
+      pixel_state: PixelState::Ready,
+      context_lost: false,
       alpha: true,
       path: SkPath::new(),
       states: vec![],
@@ -332,6 +493,53 @@ impl Context {
       stream: None,
       direct_content_version: Cell::new(0),
     }
+  }
+
+  /// Whether the canvas has a bitmap; see `PixelState`.
+  pub(crate) fn has_pixels(&self) -> bool {
+    self.pixel_state == PixelState::Ready
+  }
+
+  /// Blink's GetOrCreatePaintCanvas: whether an op may draw. Each op asks
+  /// where Blink does (canvas_2d_recorder_context.cc), and returns when it
+  /// may not, so a canvas without pixels ignores what Chrome ignores (a
+  /// transform, a clip, a draw). An op that does not ask, and draws anyway,
+  /// draws on the stand-in surface, which nothing reads.
+  pub(crate) fn paint_canvas(&mut self) -> bool {
+    if self.context_lost {
+      return false;
+    }
+    match self.pixel_state {
+      PixelState::Ready => true,
+      // InitializeResourceProvider: an invalid size that is not empty loses
+      // the context (canvas_rendering_context_2d.cc:1347-1352).
+      PixelState::InvalidSize => {
+        self.lose_context();
+        false
+      }
+      PixelState::Empty | PixelState::AllocationFailed => false,
+    }
+  }
+
+  /// Blink's LoseContext, which runs ResetInternal: the state, the state
+  /// stack and the path start over (canvas_rendering_context_2d.cc:300-304).
+  /// The context stays lost until a resize to a valid size.
+  fn lose_context(&mut self) {
+    self.context_lost = true;
+    self.state = Context2dRenderingState::default();
+    self.states.clear();
+    self.path = SkPath::new();
+  }
+
+  /// The bytes of the pixels, as reported to V8 as external memory: the
+  /// surface's (the 1x1 stand-in when the canvas has no pixels), or the
+  /// page size of a PDF page, whose surface the document owns.
+  pub(crate) fn surface_bytes(&self) -> i64 {
+    let (width, height) = match self.backend {
+      Backend::Pdf => (self.width, self.height),
+      Backend::Raster | Backend::Svg => (self.surface.width(), self.surface.height()),
+    };
+    i64::from(width) * i64::from(height) * 4
   }
 
   /// Draw the pending recording into the surface: the PageRecorder of a
@@ -1170,6 +1378,23 @@ impl Context {
   }
 
   pub fn reset(&mut self) {
+    // Without pixels there is no bitmap to clear, only the state below.
+    if self.has_pixels() {
+      self.clear_for_reset();
+    }
+
+    // Clear the current path
+    self.path = SkPath::new();
+
+    // Clear the drawing state stack
+    self.states.clear();
+
+    // Reset all styles to default
+    self.state = Context2dRenderingState::default();
+  }
+
+  /// The bitmap half of `reset()`.
+  fn clear_for_reset(&mut self) {
     // Clear the backing buffer to transparent black and reset canvas state
     self.with_canvas_state(|canvas| {
       canvas.clear();
@@ -1198,15 +1423,6 @@ impl Context {
       // earlier content there stays in the SVG.
       self.surface.canvas.fill(0, 0, 0, 255);
     }
-
-    // Clear the current path
-    self.path = SkPath::new();
-
-    // Clear the drawing state stack
-    self.states.clear();
-
-    // Reset all styles to default
-    self.state = Context2dRenderingState::default();
   }
 
   pub fn stroke_rect(&mut self, x: f32, y: f32, w: f32, h: f32) -> result::Result<(), SkError> {
@@ -1475,6 +1691,9 @@ impl Context {
       Some(p) => p.clone(),
       None => self.path.clone(),
     };
+    if Self::path_reaches_draw(&path_to_draw, true) && !self.paint_canvas() {
+      return Ok(());
+    }
 
     // Extract state for shadow rendering to avoid borrow conflicts
     let shadow_paint =
@@ -1836,6 +2055,9 @@ impl Context {
       self.path.set_fill_type(fill_rule);
       self.path.clone()
     };
+    if Self::path_reaches_draw(&path_to_draw, false) && !self.paint_canvas() {
+      return Ok(());
+    }
 
     // Extract state for shadow rendering to avoid borrow conflicts
     let shadow_paint = self.shadow_paint(&fill_paint, ShadowSource::Fill, DrawContent::Geometry);
@@ -2088,44 +2310,11 @@ impl Context {
     self.state.global_alpha
   }
 
+  /// shadowColor: the paint color and the serialized getter value.
   pub fn set_shadow_color(&mut self, shadow_color: String) -> result::Result<(), SkError> {
-    let mut parser = Parser::new(&shadow_color);
-    let color = CSSColor::parse(&mut parser)
-      .map_err(|e| SkError::Generic(format!("Parse color [{}] error: {:?}", shadow_color, e)))?;
-
-    match color {
-      // Without an element, currentcolor is opaque black (Chrome's
-      // OffscreenCanvas answer).
-      CSSColor::CurrentColor => {
-        drop(parser);
-        self.state.shadow_color_string = shadow_color;
-        self.state.shadow_color = RGBA {
-          r: 0,
-          g: 0,
-          b: 0,
-          a: 255,
-        };
-      }
-      CSSColor::Rgba(rgba) => {
-        drop(parser);
-        self.state.shadow_color_string = shadow_color;
-        // Convert RgbaLegacy to RGBA<u8>
-        self.state.shadow_color = RGBA {
-          r: rgba.red,
-          g: rgba.green,
-          b: rgba.blue,
-          a: (rgba.alpha * 255.0).round() as u8,
-        };
-      }
-      CSSColor::Hsl(hsl) => {
-        drop(parser);
-        self.state.shadow_color_string = shadow_color;
-        self.state.shadow_color = hsl_to_rgba8(&hsl);
-      }
-      _ => {
-        return Err(SkError::Generic("Unsupported color format".to_owned()));
-      }
-    }
+    let color = CanvasColor::parse(&shadow_color)?;
+    self.state.shadow_color = color.to_rgba8();
+    self.state.shadow_color_string = color.serialize();
     Ok(())
   }
 
@@ -2196,9 +2385,12 @@ impl Context {
     self.flush();
 
     // A rect that misses the canvas reads as transparent black, in any color
-    // space (getImageDataInternal: the pixels outside are zero).
+    // space (getImageDataInternal: the pixels outside are zero). So does a
+    // canvas without pixels (an ImageData of zeros, as for a lost context:
+    // base_rendering_context_2d.cc:420-424).
     let (left, top) = (i64::from(x), i64::from(y));
-    if left >= i64::from(self.surface.width())
+    if !self.has_pixels()
+      || left >= i64::from(self.surface.width())
       || top >= i64::from(self.surface.height())
       || left + i64::from(w) <= 0
       || top + i64::from(h) <= 0
@@ -2656,6 +2848,17 @@ impl Context {
   /// records nothing charges nothing; anything fallible before it still runs.
   fn draws_nothing(&self) -> bool {
     !self.transform_is_invertible()
+  }
+
+  /// Whether Blink's DrawPathInternal gets as far as Draw, which takes the
+  /// bitmap (`paint_canvas`): not for an empty path or NaN bounds, nor, for a
+  /// stroke, for bounds of zero size (canvas_2d_recorder_context.cc:1579-1603).
+  fn path_reaches_draw(path: &SkPath, stroke: bool) -> bool {
+    let (left, top, right, bottom) = path.get_bounds();
+    let (width, height) = (right - left, bottom - top);
+    !path.is_empty()
+      && !(left.is_nan() || top.is_nan() || width.is_nan() || height.is_nan())
+      && !(stroke && width == 0.0 && height == 0.0)
   }
 
   /// Whether a draw whose own geometry provably paints nothing may be
@@ -3418,7 +3621,33 @@ pub struct CanvasRenderingContext2D {
 
 impl ObjectFinalize for CanvasRenderingContext2D {
   fn finalize(self, env: Env) -> Result<()> {
-    env.adjust_external_memory(-((self.context.width * self.context.height * 4) as i64))?;
+    env.adjust_external_memory(-self.context.surface_bytes())?;
+    Ok(())
+  }
+}
+
+impl CanvasRenderingContext2D {
+  /// `Context::paint_canvas` for an op on `this`, the context object: when
+  /// the op loses the context, its style objects go too
+  /// (`drop_style_objects_if_lost`).
+  pub(crate) fn paint_canvas(&mut self, this: &Object) -> Result<bool> {
+    let was_lost = self.context.context_lost;
+    let paint = self.context.paint_canvas();
+    self.drop_style_objects_if_lost(was_lost, this)?;
+    Ok(paint)
+  }
+
+  /// After an op that may lose the context (`was_lost`: whether it was lost
+  /// before the op): if the op lost it, drop the gradient and pattern objects
+  /// of `this`, the context object. Blink's LoseContext runs ResetInternal,
+  /// which drops the states and their styles
+  /// (canvas_rendering_context_2d.cc:300-304). `Context::lose_context` cannot
+  /// reach the JS array, and restore() does nothing on a lost context, so no
+  /// later restore drops them.
+  fn drop_style_objects_if_lost(&self, was_lost: bool, this: &Object) -> Result<()> {
+    if !was_lost && self.context.context_lost {
+      truncate_style_objects(this, 0)?;
+    }
     Ok(())
   }
 }
@@ -3432,7 +3661,7 @@ impl ObjectFinalize for CanvasRenderingContext2D {
 pub struct CanvasStyleArg<'a, S> {
   /// None: the string is not a color, and the assignment is ignored.
   pattern: Option<Pattern>,
-  /// What the getter then returns: the gradient or pattern, or the string.
+  /// The value as given: the gradient or pattern the getter then returns.
   value: Unknown<'a>,
   site: PhantomData<S>,
 }
@@ -3459,8 +3688,7 @@ impl<S: webidl::Site> FromNapiValue for CanvasStyleArg<'static, S> {
       }
     }
     let color = webidl::to_dom_string(env, value, S::PREFIX)?;
-    let pattern = Pattern::from_color(&color).ok();
-    style(pattern, unsafe { String::to_napi_value(env, color)? })
+    style(Pattern::from_color(&color).ok(), value)
   }
 }
 
@@ -4140,20 +4368,26 @@ impl CanvasRenderingContext2D {
     this.get_named_property_unchecked(CANVAS_HIDDEN_NAME)
   }
 
-  #[napi(getter)]
-  pub fn get_fill_style<'env>(&'env self, this: This<'env>) -> Result<Unknown<'env>> {
-    this.get_named_property_unchecked(FILL_STYLE_HIDDEN_NAME)
+  #[napi(getter, ts_return_type = "string | CanvasGradient | CanvasPattern")]
+  pub fn get_fill_style<'env>(
+    &'env self,
+    this: This<'env>,
+  ) -> Result<Either3<String, Unknown<'env>, Undefined>> {
+    let state = &self.context.state;
+    style_getter(&this, &state.fill_style, state.fill_style_slot, 0)
   }
 
   #[napi(setter)]
   pub fn set_fill_style(
     &mut self,
+    env: &Env,
     mut this: This,
     fill_style: CanvasStyleArg<'_, webidl::SetFillStyle>,
   ) -> Result<()> {
-    if let Some(pattern) = fill_style.pattern {
+    let depth = self.context.states.len() as u32;
+    if let Some((pattern, slot)) = set_style(env, &mut this, fill_style, depth, 0)? {
       self.context.state.fill_style = pattern;
-      this.set(FILL_STYLE_HIDDEN_NAME, fill_style.value)?;
+      self.context.state.fill_style_slot = slot;
     }
     Ok(())
   }
@@ -4245,20 +4479,26 @@ impl CanvasRenderingContext2D {
     Ok(())
   }
 
-  #[napi(getter)]
-  pub fn get_stroke_style<'env>(&'env self, this: This<'env>) -> Option<Unknown<'env>> {
-    this.get(STROKE_STYLE_HIDDEN_NAME).ok().flatten()
+  #[napi(getter, ts_return_type = "string | CanvasGradient | CanvasPattern")]
+  pub fn get_stroke_style<'env>(
+    &'env self,
+    this: This<'env>,
+  ) -> Result<Either3<String, Unknown<'env>, Undefined>> {
+    let state = &self.context.state;
+    style_getter(&this, &state.stroke_style, state.stroke_style_slot, 1)
   }
 
   #[napi(setter)]
   pub fn set_stroke_style(
     &mut self,
+    env: &Env,
     mut this: This,
     stroke_style: CanvasStyleArg<'_, webidl::SetStrokeStyle>,
   ) -> Result<()> {
-    if let Some(pattern) = stroke_style.pattern {
-      this.set(STROKE_STYLE_HIDDEN_NAME, stroke_style.value)?;
+    let depth = self.context.states.len() as u32;
+    if let Some((pattern, slot)) = set_style(env, &mut this, stroke_style, depth, 1)? {
       self.context.state.stroke_style = pattern;
+      self.context.state.stroke_style_slot = slot;
     }
     Ok(())
   }
@@ -4508,18 +4748,25 @@ impl CanvasRenderingContext2D {
   #[napi]
   pub fn clip(
     &mut self,
+    this: This,
     _path_or_rule: Positional,
     _rule: Positional,
     args: FillArgs<webidl::CtxClip>,
-  ) {
+  ) -> Result<()> {
+    // ClipInternal takes the bitmap first (canvas_2d_recorder_context.cc:1824).
+    if !self.paint_canvas(&this)? {
+      return Ok(());
+    }
     self
       .context
       .clip(args.path.map(|p| &mut p.inner), args.rule);
+    Ok(())
   }
 
   #[napi]
   pub fn clear_rect(
     &mut self,
+    this: This,
     x: Double<webidl::CtxClearRect>,
     y: Double<webidl::CtxClearRect>,
     width: Double<webidl::CtxClearRect>,
@@ -4530,7 +4777,7 @@ impl CanvasRenderingContext2D {
     let Some([x, y, width, height]) = num::clamped_f32s([x.0, y.0, width.0, height.0]) else {
       return Ok(());
     };
-    if width == 0.0 && height == 0.0 {
+    if (width == 0.0 && height == 0.0) || !self.paint_canvas(&this)? {
       return Ok(());
     }
     self.context.clear_rect(x, y, width, height)?;
@@ -4687,46 +4934,81 @@ impl CanvasRenderingContext2D {
   #[napi]
   pub fn fill(
     &mut self,
+    this: This,
     _path_or_rule: Positional,
     _rule: Positional,
     args: FillArgs<webidl::CtxFill>,
   ) -> Result<()> {
-    self
+    // Context::fill takes the bitmap once the path reaches the draw.
+    let was_lost = self.context.context_lost;
+    let filled = self
       .context
-      .fill(args.path.map(|p| &mut p.inner), args.rule)?;
+      .fill(args.path.map(|p| &mut p.inner), args.rule);
+    self.drop_style_objects_if_lost(was_lost, &this)?;
+    filled?;
     Ok(())
   }
 
   #[napi]
-  pub fn save(&mut self) {
+  pub fn save(&mut self, this: This) -> Result<()> {
+    // A lost context saves nothing; then save() takes the bitmap, which may
+    // lose the context, and pushes the state anyway
+    // (canvas_2d_recorder_context.cc:395-416).
+    if self.context.context_lost {
+      return Ok(());
+    }
+    self.paint_canvas(&this)?;
     self.context.save();
+    Ok(())
   }
 
   #[napi(return_if_invalid)]
-  pub fn restore(&mut self) {
+  pub fn restore(&mut self, this: This) -> Result<()> {
+    if self.context.context_lost {
+      return Ok(());
+    }
+    let depth = self.context.states.len();
     self.context.restore();
+    // The popped state's own style objects are unreachable now.
+    if self.context.states.len() < depth {
+      truncate_style_objects(&this, 2 * depth as u32)?;
+    }
+    Ok(())
   }
 
   #[napi]
-  pub fn reset(&mut self, mut this: This) -> Result<()> {
+  pub fn reset(&mut self, this: This) -> Result<()> {
     self.context.reset();
-    reset_style_getters(&mut this)
+    truncate_style_objects(&this, 0)
   }
 
   #[napi]
-  pub fn rotate(&mut self, angle: Double<webidl::CtxRotate>) {
-    // A non-finite transform argument makes the call a no-op
-    // (canvas_2d_recorder_context.cc:1354-1482).
+  pub fn rotate(&mut self, this: This, angle: Double<webidl::CtxRotate>) -> Result<()> {
+    // The transforms take the bitmap first, then a non-finite argument makes
+    // the call a no-op (canvas_2d_recorder_context.cc:1354-1482).
+    if !self.paint_canvas(&this)? {
+      return Ok(());
+    }
     if angle.0.is_finite() {
       self.context.rotate(angle.0);
     }
+    Ok(())
   }
 
   #[napi]
-  pub fn scale(&mut self, x: Double<webidl::CtxScale>, y: Double<webidl::CtxScale>) {
+  pub fn scale(
+    &mut self,
+    this: This,
+    x: Double<webidl::CtxScale>,
+    y: Double<webidl::CtxScale>,
+  ) -> Result<()> {
+    if !self.paint_canvas(&this)? {
+      return Ok(());
+    }
     if let Some([x, y]) = num::clamped_f32s([x.0, y.0]) {
       self.context.scale(x, y);
     }
+    Ok(())
   }
 
   /// drawImage(image, dx, dy), (image, dx, dy, dw, dh) or (image, sx, sy,
@@ -4736,6 +5018,7 @@ impl CanvasRenderingContext2D {
   pub fn draw_image(
     &mut self,
     env: &Env,
+    this: This,
     _image: Positional,
     _arg1: Positional,
     _arg2: Positional,
@@ -4747,6 +5030,20 @@ impl CanvasRenderingContext2D {
     _arg8: Positional,
     args: DrawImageArgs,
   ) -> Result<()> {
+    let source_size = match &args.image {
+      Either3::A(canvas) => Some((canvas.width, canvas.height)),
+      Either3::B(svg) => Some((svg.width, svg.height)),
+      Either3::C(_) => None,
+    };
+    zero_size_source_check(
+      env,
+      source_size,
+      <webidl::CtxDrawImage as webidl::Site>::PREFIX,
+    )?;
+    // Then the bitmap of this canvas (canvas_2d_recorder_context.cc:2228).
+    if !self.paint_canvas(&this)? {
+      return Ok(());
+    }
     // Chrome returns on a non-finite number before it looks at the image,
     // then throws for a broken image (canvas_2d_recorder_context.cc
     // DrawImage). The source size of the 3 and 5 argument forms is finite.
@@ -4775,6 +5072,10 @@ impl CanvasRenderingContext2D {
     // src reset, and regenerate_bitmap_if_need constructs a fresh
     // AccountedBitmap, so a swapped bitmap can never alias the stale charge.
     let (bitmap, decode_cache, raster_key) = match args.image {
+      // A canvas source without pixels draws nothing
+      // (HTMLCanvasElement::GetSourceImageForCanvasInternal: not paintable).
+      Either3::A(canvas) if !canvas.ctx.context.has_pixels() => return Ok(()),
+      Either3::B(svg) if !svg.ctx.context.has_pixels() => return Ok(()),
       Either3::A(canvas) => {
         // Flush the source canvas to render deferred operations before getting bitmap
         canvas.ctx.context.flush();
@@ -4876,6 +5177,8 @@ impl CanvasRenderingContext2D {
   #[napi]
   pub fn draw_canvas(
     &mut self,
+    env: &Env,
+    this: This,
     canvas: &mut CanvasElement,
     sx: Option<f64>,
     sy: Option<f64>,
@@ -4886,6 +5189,16 @@ impl CanvasRenderingContext2D {
     d_width: Option<f64>,
     d_height: Option<f64>,
   ) -> Result<()> {
+    // As drawImage: a zero-size source throws, and nothing is drawn onto or
+    // from a canvas without pixels.
+    zero_size_source_check(
+      env,
+      Some((canvas.width, canvas.height)),
+      <webidl::CtxDrawImage as webidl::Site>::PREFIX,
+    )?;
+    if !self.paint_canvas(&this)? || !canvas.ctx.context.has_pixels() {
+      return Ok(());
+    }
     // The budget check must run BEFORE get_picture()/the charge below: the
     // picture captures the source's retained recording, and a flush after
     // charging would erase that charge (issue #1342, review round 3).
@@ -5083,45 +5396,55 @@ impl CanvasRenderingContext2D {
   /// `webidl::Arguments::take`.
   #[napi]
   pub fn is_point_in_path(
-    &self,
+    &mut self,
+    this: This,
     _arg0: Positional,
     _arg1: Positional,
     _arg2: Positional,
     _arg3: Positional,
     args: IsPointInPathArgs,
-  ) -> bool {
-    // Blink IsPointInPathInternal: false under a singular CTM, else the point
-    // through the double inverse (canvas_2d_recorder_context.cc:1852-1870).
+  ) -> Result<bool> {
+    // IsPointInPathInternal takes the bitmap first, then returns false under
+    // a singular CTM, else maps the point through the double inverse
+    // (canvas_2d_recorder_context.cc:1852-1870).
+    if !self.paint_canvas(&this)? {
+      return Ok(false);
+    }
     if !self.context.transform_is_invertible() {
-      return false;
+      return Ok(false);
     }
     let (x, y) = blink_inverse_map(&self.context.state.transform, args.x as f32, args.y as f32);
-    match args.path {
+    Ok(match args.path {
       Some(path) => path.inner.hit_test(x, y, args.rule),
       None => self.context.path.hit_test(x, y, args.rule),
-    }
+    })
   }
 
   /// isPointInStroke(x, y) or (path, x, y). The index.js wrapper passes the
   /// argument count after them; see `webidl::Arguments::take`.
   #[napi]
   pub fn is_point_in_stroke(
-    &self,
+    &mut self,
+    this: This,
     _arg0: Positional,
     _arg1: Positional,
     _arg2: Positional,
     args: IsPointInStrokeArgs,
-  ) -> bool {
-    // As isPointInPath (canvas_2d_recorder_context.cc:1887-1913).
+  ) -> Result<bool> {
+    // As isPointInPath: the bitmap, then the CTM
+    // (canvas_2d_recorder_context.cc:1887-1913).
+    if !self.paint_canvas(&this)? {
+      return Ok(false);
+    }
     if !self.context.transform_is_invertible() {
-      return false;
+      return Ok(false);
     }
     let stroke_w = self.context.get_stroke_width();
     let (x, y) = blink_inverse_map(&self.context.state.transform, args.x as f32, args.y as f32);
-    match args.path {
+    Ok(match args.path {
       Some(path) => path.inner.stroke_hit_test(x, y, stroke_w),
       None => self.context.path.stroke_hit_test(x, y, stroke_w),
-    }
+    })
   }
 
   #[napi]
@@ -5200,10 +5523,11 @@ impl CanvasRenderingContext2D {
     })
   }
 
-  /// Always false: a raster, SVG or PDF context is never lost.
+  /// Only an over-limit canvas loses its context; an SVG or PDF context
+  /// never does.
   #[napi]
   pub fn is_context_lost(&self) -> bool {
-    false
+    self.context.context_lost
   }
 
   #[napi]
@@ -5216,6 +5540,7 @@ impl CanvasRenderingContext2D {
   #[napi]
   pub fn fill_rect(
     &mut self,
+    this: This,
     x: Double<webidl::CtxFillRect>,
     y: Double<webidl::CtxFillRect>,
     width: Double<webidl::CtxFillRect>,
@@ -5231,6 +5556,12 @@ impl CanvasRenderingContext2D {
       && !height.is_nan()
       && !height.is_infinite()
     {
+      // ValidateRectForCanvas, then the bitmap (canvas_2d_recorder_context.cc:
+      // 1726). A 0 x 0 rect returns first in Chrome; here it keeps its own
+      // path, which draws on the stand-in surface without pixels.
+      if (width != 0.0 || height != 0.0) && !self.paint_canvas(&this)? {
+        return Ok(());
+      }
       self
         .context
         .fill_rect(x as f32, y as f32, width as f32, height as f32)?;
@@ -5241,11 +5572,17 @@ impl CanvasRenderingContext2D {
   #[napi]
   pub fn fill_text(
     &mut self,
+    this: This,
     text: webidl::DomString<webidl::CtxFillText>,
     x: Double<webidl::CtxFillText>,
     y: Double<webidl::CtxFillText>,
     max_width: webidl::OptionalDouble<webidl::CtxFillText>,
   ) -> Result<()> {
+    // DrawTextInternal takes the bitmap first, even for an empty text
+    // (base_rendering_context_2d.cc:1019).
+    if !self.paint_canvas(&this)? {
+      return Ok(());
+    }
     let (x, y, max_width) = (x.0, y.0, max_width.0);
     let text = text.0.as_str();
     if text.is_empty() {
@@ -5265,14 +5602,18 @@ impl CanvasRenderingContext2D {
   /// stroke() or stroke(path). The index.js wrapper passes the argument
   /// count after it; see `webidl::Arguments::take`.
   #[napi]
-  pub fn stroke(&mut self, _path: Positional, args: StrokeArgs) -> Result<()> {
-    self.context.stroke(args.path.map(|p| &mut p.inner))?;
-    Ok(())
+  pub fn stroke(&mut self, this: This, _path: Positional, args: StrokeArgs) -> Result<()> {
+    // As fill: Context::stroke takes the bitmap.
+    let was_lost = self.context.context_lost;
+    let stroked = self.context.stroke(args.path.map(|p| &mut p.inner));
+    self.drop_style_objects_if_lost(was_lost, &this)?;
+    stroked
   }
 
   #[napi]
   pub fn stroke_rect(
     &mut self,
+    this: This,
     x: Double<webidl::CtxStrokeRect>,
     y: Double<webidl::CtxStrokeRect>,
     width: Double<webidl::CtxStrokeRect>,
@@ -5288,6 +5629,10 @@ impl CanvasRenderingContext2D {
       && !height.is_nan()
       && !height.is_infinite()
     {
+      // As fillRect (canvas_2d_recorder_context.cc:1789).
+      if (width != 0.0 || height != 0.0) && !self.paint_canvas(&this)? {
+        return Ok(());
+      }
       self
         .context
         .stroke_rect(x as f32, y as f32, width as f32, height as f32)?;
@@ -5298,11 +5643,15 @@ impl CanvasRenderingContext2D {
   #[napi]
   pub fn stroke_text(
     &mut self,
+    this: This,
     text: webidl::DomString<webidl::CtxStrokeText>,
     x: Double<webidl::CtxStrokeText>,
     y: Double<webidl::CtxStrokeText>,
     max_width: webidl::OptionalDouble<webidl::CtxStrokeText>,
   ) -> Result<()> {
+    if !self.paint_canvas(&this)? {
+      return Ok(());
+    }
     let (x, y, max_width) = (x.0, y.0, max_width.0);
     let text = text.0.as_str();
     if text.is_empty() {
@@ -5421,6 +5770,7 @@ impl CanvasRenderingContext2D {
   pub fn put_image_data(
     &mut self,
     env: Env,
+    this: This,
     _image_data: Positional,
     _dx: Positional,
     _dy: Positional,
@@ -5458,6 +5808,10 @@ impl CanvasRenderingContext2D {
         ),
         _ => e,
       })?;
+    // Then a canvas without pixels returns (base_rendering_context_2d.cc:557).
+    if !self.paint_canvas(&this)? {
+      return Ok(());
+    }
     if let Some([dirty_x, dirty_y, dirty_width, dirty_height]) = dirty {
       let mut dirty_x = dirty_x as f32;
       let mut dirty_y = dirty_y as f32;
@@ -5634,20 +5988,34 @@ impl CanvasRenderingContext2D {
   }
 
   #[napi]
-  pub fn reset_transform(&mut self) {
+  pub fn reset_transform(&mut self, this: This) -> Result<()> {
+    if !self.paint_canvas(&this)? {
+      return Ok(());
+    }
     self.context.reset_transform();
+    Ok(())
   }
 
   #[napi]
-  pub fn translate(&mut self, x: Double<webidl::CtxTranslate>, y: Double<webidl::CtxTranslate>) {
+  pub fn translate(
+    &mut self,
+    this: This,
+    x: Double<webidl::CtxTranslate>,
+    y: Double<webidl::CtxTranslate>,
+  ) -> Result<()> {
+    if !self.paint_canvas(&this)? {
+      return Ok(());
+    }
     if let Some([x, y]) = num::clamped_f32s([x.0, y.0]) {
       self.context.translate(x, y);
     }
+    Ok(())
   }
 
   #[napi]
   pub fn transform(
     &mut self,
+    this: This,
     a: Double<webidl::CtxTransform>,
     b: Double<webidl::CtxTransform>,
     c: Double<webidl::CtxTransform>,
@@ -5655,6 +6023,9 @@ impl CanvasRenderingContext2D {
     e: Double<webidl::CtxTransform>,
     f: Double<webidl::CtxTransform>,
   ) -> Result<()> {
+    if !self.paint_canvas(&this)? {
+      return Ok(());
+    }
     let Some([a, b, c, d, e, f]) = num::clamped_f32s([a.0, b.0, c.0, d.0, e.0, f.0]) else {
       return Ok(());
     };
@@ -5674,16 +6045,23 @@ impl CanvasRenderingContext2D {
   #[napi]
   pub fn set_transform(
     &mut self,
+    this: This,
     a: webidl::SetTransformA,
     b: Double<webidl::CtxSetTransform>,
     c: Double<webidl::CtxSetTransform>,
     d: Double<webidl::CtxSetTransform>,
     e: Double<webidl::CtxSetTransform>,
     f: Double<webidl::CtxSetTransform>,
-  ) {
+  ) -> Result<()> {
     if let Some([a, b, c, d, e, f]) = num::clamped_f32s(a.0.with([b.0, c.0, d.0, e.0, f.0])) {
+      // setTransform checks its numbers, then resetTransform and transform
+      // take the bitmap (canvas_2d_recorder_context.cc:1528-1541).
+      if !self.paint_canvas(&this)? {
+        return Ok(());
+      }
       self.context.set_transform(Matrix::new(a, c, e, b, d, f));
     }
+    Ok(())
   }
 
   /// Annotate a rectangular region with a clickable URL link (for PDF documents)
@@ -6040,6 +6418,24 @@ fn blink_inverse_map(m: &Matrix, x: f32, y: f32) -> (f32, f32) {
   )
 }
 
+/// ToCanvasImageSource (canvas_image_source_util.cc:31-38), the first thing
+/// drawImage and createPattern do with their image: a canvas source (its
+/// width and height in `size`) with a side of 0 is an InvalidStateError.
+pub(crate) fn zero_size_source_check(
+  env: &Env,
+  size: Option<(u32, u32)>,
+  prefix: &str,
+) -> Result<()> {
+  match size {
+    Some((width, height)) if width == 0 || height == 0 => Err(webidl::dom_exception(
+      env.raw(),
+      "InvalidStateError",
+      &format!("{prefix}The image argument is a canvas element with a width or height of 0."),
+    )),
+    _ => Ok(()),
+  }
+}
+
 /// Blink's radius check for arc, arcTo and ellipse (canvas_path.cc), after
 /// the finite check: a negative radius throws an IndexSizeError that shows
 /// the float value. `name` is "radius", "major-axis radius" or
@@ -6152,10 +6548,83 @@ fn parse_font_variation_settings(settings: &str) -> (String, Vec<crate::sk::Font
 
 #[cfg(test)]
 mod tests {
+  use rgb::RGBA;
+
   use super::*;
 
   fn raster_ctx(width: u32, height: u32) -> Context {
     Context::new(width, height, ColorSpace::default()).expect("raster context")
+  }
+
+  #[test]
+  fn is_valid_image_size_keeps_the_sizes_over_chromes_limit() {
+    // Chrome 155 gives no pixels at 65536 x 1, 65535 x 4097 and
+    // 16384 x 16385; Skia holds them, as main drew them.
+    for (width, height, valid) in [
+      (65535, 1, true),
+      (65536, 1, true),
+      (65535, 4096, true),
+      (65535, 4097, true),
+      (16384, 16384, true),
+      (16384, 16385, true),
+      (0, 5, false),
+      (5, 0, false),
+      (100000, 100000, false),
+      (1 << 30, 1, false),
+    ] {
+      assert_eq!(
+        is_valid_image_size(width, height),
+        valid,
+        "{width}x{height}"
+      );
+    }
+  }
+
+  #[test]
+  fn is_valid_image_size_is_skias_raster_limit() {
+    // A side up to SK_MaxS32 >> 2, and 4 * width * height up to SK_MaxS32.
+    for (width, height, valid) in [
+      (1, 1, true),
+      (65536, 1, true),
+      (70000, 2, true),
+      (1, 70000, true),
+      (23170, 23170, true),
+      (32767, 16384, true),
+      (536870911, 1, true),
+      (1, 536870911, true),
+      (536870912, 1, false),
+      (1, 536870912, false),
+      (23171, 23171, false),
+      (32768, 16384, false),
+      (16384, 32768, false),
+      (u32::MAX, u32::MAX, false),
+    ] {
+      assert_eq!(
+        is_valid_image_size(width, height),
+        valid,
+        "{width}x{height}"
+      );
+    }
+  }
+
+  #[test]
+  fn a_canvas_without_pixels_holds_a_stand_in_surface() {
+    for (width, height, state) in [
+      (0, 5, PixelState::Empty),
+      (5, 0, PixelState::Empty),
+      (1 << 30, 1, PixelState::InvalidSize),
+      (536870912, 1, PixelState::InvalidSize),
+      (32768, 16384, PixelState::InvalidSize),
+    ] {
+      let ctx = raster_ctx(width, height);
+      assert_eq!(ctx.pixel_state, state, "{width}x{height}");
+      assert_eq!((ctx.width, ctx.height), (width, height));
+      assert_eq!((ctx.surface.width(), ctx.surface.height()), (1, 1));
+      assert_eq!(ctx.surface_bytes(), 4);
+    }
+    let ctx = raster_ctx(3, 2);
+    assert_eq!(ctx.pixel_state, PixelState::Ready);
+    assert_eq!(ctx.surface_bytes(), 24);
   }
 
   fn pending(ctx: &Context) -> usize {
@@ -7464,6 +7933,7 @@ mod tests {
 
     let mut ctx = raster_ctx(16, 16);
     ctx.set_font("16px Lato".to_owned()).unwrap();
+    ctx.state.shadow_color = RGBA::new(0, 0, 0, 255);
     ctx.state.shadow_offset_x = 2.0;
     // Skia order (scaleX, skewX, transX, skewY, scaleY, transY): x scaled by 0.
     ctx.set_transform(Matrix::new(0.0, 0.0, 0.0, 0.0, 1.0, 0.0));

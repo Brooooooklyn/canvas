@@ -1,18 +1,19 @@
 use std::result::Result as StdResult;
 use std::sync::{Arc, Mutex};
 
-use cssparser::Parser;
-use cssparser_color::{Color as CSSColor, Hsl};
+use cssparser_color::Hsl;
 use napi::bindgen_prelude::*;
 use rgb::RGBA;
 
+use crate::color::CanvasColor;
+use crate::ctx::zero_size_source_check;
 use crate::error::SkError;
 use crate::gradient::Gradient;
 use crate::image::{Image, ImageData};
 use crate::page_recorder::next_resource_id;
 use crate::sk::{
-  AccountedBitmap, Bitmap, ImagePattern, ImagePatternBacking, ImagePatternShared, TileMode,
-  Transform,
+  AccountedBitmap, Bitmap, ColorSpace, ImagePattern, ImagePatternBacking, ImagePatternShared,
+  Surface, TileMode, Transform,
 };
 use crate::webidl;
 use crate::{CanvasElement, SVGCanvas};
@@ -62,6 +63,7 @@ pub(crate) fn hsl_to_rgba8(hsl: &Hsl) -> RGBA<u8> {
 
 #[derive(Debug)]
 pub enum Pattern {
+  /// The paint color and its serialization.
   #[allow(dead_code)]
   Color(RGBA<u8>, String),
   Gradient(Gradient),
@@ -85,34 +87,11 @@ impl Default for Pattern {
 }
 
 impl Pattern {
+  /// A fillStyle or strokeStyle color: the paint color and what the getter
+  /// returns (Chrome's serialization, not the string that was set).
   pub fn from_color(color_str: &str) -> StdResult<Self, SkError> {
-    let mut parser = Parser::new(color_str);
-    let color = CSSColor::parse(&mut parser)
-      .map_err(|e| SkError::Generic(format!("Parse color [{color_str}] error: {e:?}")))?;
-    match color {
-      // Without an element, currentcolor is opaque black (Chrome's
-      // OffscreenCanvas answer).
-      CSSColor::CurrentColor => Ok(Pattern::Color(
-        RGBA {
-          r: 0,
-          g: 0,
-          b: 0,
-          a: 255,
-        },
-        color_str.to_owned(),
-      )),
-      CSSColor::Rgba(rgba) => Ok(Pattern::Color(
-        RGBA {
-          r: rgba.red,
-          g: rgba.green,
-          b: rgba.blue,
-          a: (rgba.alpha * 255.0).round() as u8,
-        },
-        color_str.to_owned(),
-      )),
-      CSSColor::Hsl(hsl) => Ok(Pattern::Color(hsl_to_rgba8(&hsl), color_str.to_owned())),
-      _ => Err(SkError::Generic("Unsupported color format".to_owned())),
-    }
+    let color = CanvasColor::parse(color_str)?;
+    Ok(Pattern::Color(color.to_rgba8(), color.serialize()))
   }
 }
 
@@ -131,6 +110,13 @@ impl CanvasPattern {
     input: Either4<&mut Image, &mut ImageData, &mut CanvasElement<'_>, &mut SVGCanvas<'_>>,
     repetition: &str,
   ) -> Result<Option<Self>> {
+    // ToCanvasImageSource comes first: a canvas source with a 0 side throws.
+    let source_size = match &input {
+      Either4::C(canvas) => Some((canvas.width, canvas.height)),
+      Either4::D(svg) => Some((svg.width, svg.height)),
+      _ => None,
+    };
+    zero_size_source_check(&env, source_size, webidl::CREATE_PATTERN)?;
     // CanvasPattern::ParseRepetitionType: case-sensitive, '' is 'repeat'.
     let (repeat_x, repeat_y) = match repetition {
       "" | "repeat" => (TileMode::Repeat, TileMode::Repeat),
@@ -229,6 +215,15 @@ impl CanvasPattern {
           true,
         )
       }
+      // A canvas source without pixels gives an empty image, which paints
+      // transparent black (Canvas2DRecorderContext::createPattern,
+      // kInvalidSourceImageStatus): a transparent 1x1 surface here.
+      Either4::C(canvas) if !canvas.ctx.context.has_pixels() => {
+        transparent_backing(canvas.ctx.context.color_space)?
+      }
+      Either4::D(svg_canvas) if !svg_canvas.ctx.context.has_pixels() => {
+        transparent_backing(svg_canvas.ctx.context.color_space)?
+      }
       Either4::C(canvas) => {
         // Flush deferred rendering before accessing the surface
         canvas.ctx.context.flush();
@@ -297,6 +292,24 @@ impl CanvasPattern {
       }),
     }))
   }
+}
+
+/// The backing of a pattern over a canvas without pixels: one transparent
+/// pixel, as `create` returns it for a canvas source.
+fn transparent_backing(color_space: ColorSpace) -> Result<(usize, ImagePatternBacking, u64, bool)> {
+  let mut surface = Surface::new_rgba_premultiplied(1, 1, color_space).ok_or_else(|| {
+    Error::new(
+      Status::GenericFailure,
+      "Failed to create pattern surface".to_owned(),
+    )
+  })?;
+  surface.canvas.clear();
+  Ok((
+    4,
+    ImagePatternBacking::Surface(surface.reference()),
+    next_resource_id(),
+    true,
+  ))
 }
 
 #[napi]

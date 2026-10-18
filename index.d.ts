@@ -873,7 +873,11 @@ export interface ConvertToBlobOptions {
 }
 
 export class Canvas {
-  constructor(width: number, height: number, flag?: SvgExportFlag)
+  /**
+   * A missing width or height is the default, 300 x 150, as is NaN, an infinity
+   * or a non-zero number that converts to 0 (such as 0.5). 0 stays 0.
+   */
+  constructor(width?: number, height?: number, flag?: SvgExportFlag)
 
   width: number
   height: number
@@ -918,7 +922,11 @@ export class Canvas {
   convertToBlob(options?: ConvertToBlobOptions): Promise<Blob>
 }
 
-export function createCanvas(width: number, height: number): Canvas
+/**
+ * A missing width or height is the default, 300 x 150, as is NaN, an infinity
+ * or a non-zero number that converts to 0 (such as 0.5). 0 stays 0.
+ */
+export function createCanvas(width?: number, height?: number): Canvas
 
 export function createCanvas(width: number, height: number, svgExportFlag: SvgExportFlag): SvgCanvas
 

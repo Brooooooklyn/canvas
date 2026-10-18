@@ -1557,7 +1557,7 @@ test('reset', async (t) => {
   t.is(ctx.strokeStyle, '#000000')
   t.is(ctx.lineWidth, 1)
   t.is(ctx.globalAlpha, 1)
-  t.is(ctx.shadowColor, '#000000')
+  t.is(ctx.shadowColor, 'rgba(0, 0, 0, 0)')
   t.is(ctx.shadowBlur, 0)
   t.is(ctx.shadowOffsetX, 0)
   t.is(ctx.shadowOffsetY, 0)
@@ -1598,7 +1598,7 @@ test('reset', async (t) => {
   // Verify state stack is cleared (restore should not change anything)
   ctx.fillStyle = 'yellow'
   ctx.restore()
-  t.is(ctx.fillStyle, 'yellow') // Should still be yellow, not restored
+  t.is(ctx.fillStyle, '#ffff00') // Should still be yellow, not restored
 
   // Draw a rect with default styles to verify canvas was cleared
   ctx.fillStyle = 'blue'

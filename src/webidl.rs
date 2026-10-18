@@ -1204,7 +1204,7 @@ impl<S: Site> FromNapiValue for EnforceRangeLong<S> {
 
 /// ToUint32 of a number: NaN and infinities are 0, the rest is truncated
 /// modulo 2^32.
-fn to_uint32(x: f64) -> u32 {
+pub(crate) fn to_uint32(x: f64) -> u32 {
   if !x.is_finite() {
     return 0;
   }
