@@ -86,6 +86,45 @@ test('float ImageData sizes count bytes per element', (t) => {
   chromeEqual(t, out, 'I6-float-sizes')
 })
 
+test('float ImageData over 2 GiB is a RangeError', (t) => {
+  // The byte size is checked before the Float16Array one, so these throw the
+  // same RangeError on every runtime. f32_8192 (1 GiB) is pinned but not
+  // allocated here.
+  const out = {
+    f32_16384x8192: err(() => new AnyImageData(16384, 8192, { pixelFormat: 'rgba-float32' }).data.byteLength),
+    f16_16384x16384: err(() => new AnyImageData(16384, 16384, { pixelFormat: 'rgba-float16' }).data.byteLength),
+    f32_23170: err(() => new AnyImageData(23170, 23170, { pixelFormat: 'rgba-float32' }).data.byteLength),
+  }
+  chromeEqual(t, out, 'I7-float-byte-limits', {
+    pick: (pin) => Object.fromEntries(Object.entries(pin).filter(([k]) => k !== 'f32_8192')),
+  })
+})
+
+// createImageData and getImageData get float data from the same allocation as
+// the constructor (AllocateAndValidateDataArray), so they throw the same
+// RangeError before allocating anything.
+test('createImageData and getImageData refuse float data over 2 GiB', (t) => {
+  const c = ctx(2, 2)
+  const outOfMemory = (method: string) => ({
+    threw: true,
+    ctor: 'RangeError',
+    name: 'RangeError',
+    message: `Failed to execute '${method}' on 'CanvasRenderingContext2D': Out of memory at ImageData creation`,
+  })
+  const out = {
+    create_f32: err(() => c.createImageData(16384, 8192, loose({ pixelFormat: 'rgba-float32' })).data.byteLength),
+    create_f16: err(() => c.createImageData(16384, 16384, loose({ pixelFormat: 'rgba-float16' })).data.byteLength),
+    get_f32: err(() => c.getImageData(0, 0, 23170, 23170, loose({ pixelFormat: 'rgba-float32' })).data.byteLength),
+    get_f16: err(() => c.getImageData(0, 0, 16384, 16384, loose({ pixelFormat: 'rgba-float16' })).data.byteLength),
+  }
+  t.deepEqual(JSON.parse(JSON.stringify(out)), {
+    create_f32: outOfMemory('createImageData'),
+    create_f16: outOfMemory('createImageData'),
+    get_f32: outOfMemory('getImageData'),
+    get_f16: outOfMemory('getImageData'),
+  })
+})
+
 // Not Chrome (IndexSizeError): a zero side gives an empty ImageData, as for
 // rgba-unorm8 (imagedata-validation.spec.ts), and putting it draws nothing.
 test('createImageData with a zero side gives an empty float ImageData', (t) => {

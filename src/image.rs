@@ -399,24 +399,41 @@ pub(crate) fn validate_data_length(
 /// AllocateAndValidateDataArray (image_data.cc:236-270): `len` zeroed bytes.
 /// RangeError when the allocation fails, instead of aborting the process.
 ///
-/// Not Chrome: Chrome's PartitionAlloc refuses more than 2^31 - 2 MiB
-/// (partition_alloc_constants.h:403). Main had no limit, and pdf.js reads
-/// whole canvases and makes image-wide chunks, so there is none here.
+/// Not Chrome for rgba-unorm8 data: Chrome's PartitionAlloc refuses more than
+/// 2^31 - 2 MiB (partition_alloc_constants.h:403). Main had no limit, and
+/// pdf.js reads whole canvases and makes image-wide chunks, so there is none
+/// here. Float data keeps Chrome's limit: see [`MAX_FLOAT_DATA_BYTES`].
 pub(crate) fn alloc_data(env: sys::napi_env, prefix: &str, len: usize) -> Result<Vec<u8>> {
   try_zeroed_bytes(len).ok_or_else(|| out_of_memory(env, prefix))
 }
 
+/// The most bytes Chrome gives ImageData data: it allocates them with
+/// PartitionAlloc, which refuses more than `MaxDirectMapped()` = 2^31 - 2 MiB
+/// (partition_alloc_constants.h:403), and AllocateAndValidateDataArray then
+/// throws (image_data.cc:262). Only rgba-float16 and rgba-float32 data are
+/// held to it: main had no float ImageData, and without it a float32
+/// ImageData whose `4 * width * height` fits in 32 bits could take 16 GiB.
+pub(crate) const MAX_FLOAT_DATA_BYTES: usize = (1 << 31) - (1 << 21);
+
+/// The bytes of `elements` channels of `pixel_format`, or None when the size
+/// overflows or float data is above [`MAX_FLOAT_DATA_BYTES`].
+fn data_byte_size(elements: usize, pixel_format: ImageDataPixelFormat) -> Option<usize> {
+  let len = elements.checked_mul(pixel_format.element_size())?;
+  (pixel_format == ImageDataPixelFormat::Unorm8 || len <= MAX_FLOAT_DATA_BYTES).then_some(len)
+}
+
 /// AllocateAndValidateDataArray for `elements` channels of `pixel_format`:
-/// RangeError when the byte size overflows, then NotSupportedError for
+/// RangeError when the byte size overflows or float data is above Chrome's
+/// limit (both before anything is allocated), then NotSupportedError for
 /// rgba-float16 without Float16Array, then the zeroed bytes of
-/// [`alloc_data`] (no byte limit).
+/// [`alloc_data`].
 pub(crate) fn alloc_pixel_data(
   env: sys::napi_env,
   prefix: &str,
   elements: usize,
   pixel_format: ImageDataPixelFormat,
 ) -> Result<Vec<u8>> {
-  let Some(len) = elements.checked_mul(pixel_format.element_size()) else {
+  let Some(len) = data_byte_size(elements, pixel_format) else {
     return Err(out_of_memory(env, prefix));
   };
   require_float16(env, prefix, pixel_format)?;
@@ -2061,6 +2078,48 @@ mod tests {
       }) {
         out.push((path.display().to_string(), std::fs::read(&path).unwrap()));
       }
+    }
+  }
+
+  /// Float ImageData data keeps Chrome's byte limit; rgba-unorm8 data has
+  /// none, as on main. Sizes only: nothing is allocated.
+  #[test]
+  fn only_float_image_data_has_chromes_byte_limit() {
+    use ImageDataPixelFormat::{Float16, Float32, Unorm8};
+    let channels = |width: usize, height: usize| 4 * width * height;
+    for (elements, pixel_format, len) in [
+      // rgba-unorm8 above Chrome's limit, up to a 4 * width * height of u32::MAX.
+      (channels(23170, 23170), Unorm8, Some(2_147_395_600)),
+      (channels(32767, 32767), Unorm8, Some(4_294_705_156)),
+      (u32::MAX as usize, Unorm8, Some(u32::MAX as usize)),
+      // Float data up to 2^31 - 2 MiB bytes.
+      (channels(8192, 8192), Float32, Some(1 << 30)),
+      (
+        MAX_FLOAT_DATA_BYTES / 4,
+        Float32,
+        Some(MAX_FLOAT_DATA_BYTES),
+      ),
+      (MAX_FLOAT_DATA_BYTES / 4 + 1, Float32, None),
+      (channels(16384, 8192), Float32, None),
+      (channels(23170, 23170), Float32, None),
+      (channels(8192, 16384), Float16, Some(1 << 30)),
+      (
+        MAX_FLOAT_DATA_BYTES / 2,
+        Float16,
+        Some(MAX_FLOAT_DATA_BYTES),
+      ),
+      (MAX_FLOAT_DATA_BYTES / 2 + 1, Float16, None),
+      (channels(16384, 16384), Float16, None),
+      (u32::MAX as usize, Float16, None),
+      // The byte size overflows.
+      (usize::MAX, Float16, None),
+      (usize::MAX, Float32, None),
+    ] {
+      assert_eq!(
+        data_byte_size(elements, pixel_format),
+        len,
+        "{elements} {pixel_format:?}"
+      );
     }
   }
 
