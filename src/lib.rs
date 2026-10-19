@@ -18,10 +18,8 @@ use std::{
 };
 
 use napi::{
-  Property, ScopedTask,
-  bindgen_prelude::*,
-  tokio::sync::mpsc::{channel, error::TrySendError},
-  tokio_stream::wrappers::ReceiverStream,
+  Property, ScopedTask, bindgen_prelude::*, tokio::sync::mpsc::unbounded_channel,
+  tokio_stream::wrappers::UnboundedReceiverStream,
 };
 
 use ctx::{
@@ -492,12 +490,11 @@ impl<'c> CanvasElement<'c> {
     let Some((format, quality, lossless)) = Encoding::node(ty, quality).skia() else {
       unreachable!("png, jpeg and webp are Skia encoders");
     };
-    let (tx, rx) = channel(1024);
-    let callback = |buffer: &[u8]| match tx.try_send(Ok(buffer.to_vec())) {
-      Ok(_) | Err(TrySendError::Closed(_)) => {}
-      Err(TrySendError::Full(_)) => {
-        eprintln!("encode_image_stream_callback: channel is full");
-      }
+    // Unbounded: the encoder runs to the end before the stream has a reader,
+    // so the channel holds the whole output. send fails only once rx is dropped.
+    let (tx, rx) = unbounded_channel();
+    let callback = |buffer: &[u8]| {
+      let _ = tx.send(Ok(buffer.to_vec()));
     };
     if !self.encode_image_inner(format, quality, lossless, callback) {
       return Err(Error::new(
@@ -505,7 +502,7 @@ impl<'c> CanvasElement<'c> {
         "Encode image stream failed",
       ));
     }
-    ReadableStream::create_with_stream_bytes(env, ReceiverStream::new(rx))
+    ReadableStream::create_with_stream_bytes(env, UnboundedReceiverStream::new(rx))
   }
 
   // let the compiler infer the type of the callback

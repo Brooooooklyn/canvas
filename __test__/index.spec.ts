@@ -1241,3 +1241,31 @@ test('should be able to encode image stream', async (t) => {
   }
   t.deepEqual(Buffer.concat(buffers), await ctx.canvas.encode('png'))
 })
+
+test('should keep every chunk of a large image stream', async (t) => {
+  const { canvas, ctx } = t.context
+  canvas.width = 1024
+  canvas.height = 1024
+  // Noise does not compress, so the PNG is about 3.6 MB: more than 1024 writes.
+  const imageData = ctx.createImageData(1024, 1024)
+  let seed = 0x12345678
+  for (let i = 0; i < imageData.data.length; i += 4) {
+    seed ^= seed << 13
+    seed ^= seed >>> 17
+    seed ^= seed << 5
+    imageData.data[i] = seed & 0xff
+    imageData.data[i + 1] = (seed >>> 8) & 0xff
+    imageData.data[i + 2] = (seed >>> 16) & 0xff
+    imageData.data[i + 3] = 255
+  }
+  ctx.putImageData(imageData, 0, 0)
+  const buffers = []
+  for await (const chunk of canvas.encodeStream('png')) {
+    buffers.push(chunk)
+  }
+  const streamed = Buffer.concat(buffers)
+  const encoded = await canvas.encode('png')
+  // t.deepEqual takes about 1 s on 3.6 MB, Buffer#equals does not.
+  t.is(streamed.length, encoded.length)
+  t.true(streamed.equals(encoded))
+})
