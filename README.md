@@ -149,53 +149,6 @@ writeFileSync(join(__dirname, 'draw-emoji.png'), b)
 
 ![](./example/draw-emoji.png)
 
-# Performance
-
-See [benchmark](./benchmark) for benchmark code.
-
-Hardware info:
-
-```
-                  ,MMMM.           Host        -  xxxxxxxxxxxxxxxxxxxxxxx
-                .MMMMMM            Machine     -  Mac15,9
-                MMMMM,             Kernel      -  24.0.0
-      .;MMMMM:' MMMMMMMMMM;.       OS          -  macOS 15.0.1 Sequoia
-    MMMMMMMMMMMMNWMMMMMMMMMMM:     DE          -  Aqua
-  .MMMMMMMMMMMMMMMMMMMMMMMMWM.     WM          -  Quartz Compositor
-  MMMMMMMMMMMMMMMMMMMMMMMMM.       Packages    -  194 (Homebrew), 32 (cargo)
- ;MMMMMMMMMMMMMMMMMMMMMMMM:        Shell       -  zsh
- :MMMMMMMMMMMMMMMMMMMMMMMM:        Terminal    -  warpterminal (Version v0.2024.10.23.14.49.stable_00)
- .MMMMMMMMMMMMMMMMMMMMMMMMM.       Resolution  -  5120x2880@160fps (as 2560x1440)
-  MMMMMMMMMMMMMMMMMMMMMMMMMMM.                    2992x1934@120fps (as 1496x967)
-   .MMMMMMMMMMMMMMMMMMMMMMMMMM.                   2232x1512@60fps (as 1116x756)
-     MMMMMMMMMMMMMMMMMMMMMMMM      Uptime      -  1d 2h 32m
-      ;MMMMMMMMMMMMMMMMMMMM.       CPU         -  Apple M3 Max (16)
-        .MMMM,.    .MMMM,.         CPU Load    -  16%
-                                   Memory      -  50.1 GB / 134.2 GB
-                                   Battery     -  78% & Discharging
-                                   Disk Space  -  624.0 GB / 994.7 GB
-```
-
-```
-❯ yarn bench
-Draw a House and export to PNG
-┌─────────┬─────────────────┬───────────────────────┬──────────────────────────┬────────────────────────────┬───────────────────────────┬─────────┐
-│ (index) │ Task name       │ Latency average (ns)  │ Latency median (ns)      │ Throughput average (ops/s) │ Throughput median (ops/s) │ Samples │
-├─────────┼─────────────────┼───────────────────────┼──────────────────────────┼────────────────────────────┼───────────────────────────┼─────────┤
-│ 0       │ '@napi-rs/skia' │ '14676992.14 ± 0.68%' │ '14602333.00'            │ '68 ± 0.59%'               │ '68'                      │ 69      │
-│ 1       │ 'skia-canvas'   │ '21167809.17 ± 2.05%' │ '20960021.00 ± 13646.00' │ '47 ± 1.31%'               │ '48'                      │ 64      │
-│ 2       │ 'node-canvas'   │ '16552027.42 ± 0.70%' │ '16451291.50 ± 2208.50'  │ '60 ± 0.62%'               │ '61'                      │ 64      │
-└─────────┴─────────────────┴───────────────────────┴──────────────────────────┴────────────────────────────┴───────────────────────────┴─────────┘
-Draw Gradient and export to PNG
-┌─────────┬─────────────────┬───────────────────────┬─────────────────────────┬────────────────────────────┬───────────────────────────┬─────────┐
-│ (index) │ Task name       │ Latency average (ns)  │ Latency median (ns)     │ Throughput average (ops/s) │ Throughput median (ops/s) │ Samples │
-├─────────┼─────────────────┼───────────────────────┼─────────────────────────┼────────────────────────────┼───────────────────────────┼─────────┤
-│ 0       │ '@napi-rs/skia' │ '15228495.58 ± 0.53%' │ '15146312.50 ± 1187.50' │ '66 ± 0.48%'               │ '66'                      │ 66      │
-│ 1       │ 'skia-canvas'   │ '21725564.41 ± 2.20%' │ '21412520.50 ± 2104.50' │ '46 ± 1.39%'               │ '47'                      │ 64      │
-│ 2       │ 'node-canvas'   │ '17976022.14 ± 1.53%' │ '17563479.50 ± 5104.50' │ '56 ± 1.38%'               │ '57'                      │ 64      │
-└─────────┴─────────────────┴───────────────────────┴─────────────────────────┴────────────────────────────┴───────────────────────────┴─────────┘
-```
-
 # Features
 
 ## Path2D
@@ -439,7 +392,7 @@ $ node scripts/build-skia.js
 
 # Install NPM packages, build the Node.js addon:
 $ npm install -g yarn
-$ yarn install --mode=skip-build # Here are modules that are used for benchmarking and are hard to install, you can skip it by specifying `--mode=skip-build`
+$ yarn install --mode=skip-build # `canvas` (node-canvas) is a native module that only the node-canvas compat tests use and is hard to install, you can skip building it by specifying `--mode=skip-build`
 $ sudo dnf install clang # https://fedora.pkgs.org/34/fedora-x86_64/clang-12.0.0-0.3.rc1.fc34.x86_64.rpm.html
 $ yarn build
 
