@@ -42,7 +42,7 @@ class PNGStream extends Readable {
     if (this._done) return
     this._done = true
     this._canvas
-      .encode('png')
+      .encode('png', _pngOptions(this._options))
       .then((buf) => {
         this.push(buf)
         this.push(null)
@@ -109,6 +109,20 @@ function _extractQuality(mime, configOrQuality) {
   return NODE_CANVAS_DEFAULT_QUALITY
 }
 
+/**
+ * The native PNG options for a node-canvas PngConfig: only `resolution`, the
+ * one member node-canvas writes (a pHYs chunk); undefined without a numeric
+ * one, so the native call stays a plain PNG encode.
+ *
+ * @param {object|undefined} config
+ * @returns {{ resolution: number }|undefined}
+ */
+function _pngOptions(config) {
+  if (config === null || typeof config !== 'object') return undefined
+  const resolution = config.resolution
+  return typeof resolution === 'number' ? { resolution: resolution } : undefined
+}
+
 // ---------------------------------------------------------------------------
 // Compat methods added to each canvas instance created via this module
 // ---------------------------------------------------------------------------
@@ -159,7 +173,8 @@ function _compatToBuffer(mimeOrCallback, configOrQuality) {
       return
     }
     const q = _extractQuality(mime, config)
-    this.encode(format, q != null ? Math.round(q * 100) : undefined).then(
+    const options = format === 'png' ? _pngOptions(config) : q != null ? Math.round(q * 100) : undefined
+    this.encode(format, options).then(
       (buf) => callback(null, buf),
       (err) => callback(err),
     )
@@ -176,7 +191,11 @@ function _compatToBuffer(mimeOrCallback, configOrQuality) {
     return this.data()
   }
 
-  // Sync: extract quality (0-1) and scale to 0-100 for native toBuffer
+  // Sync: PNG takes the resolution; JPEG / WebP a quality (0-1) scaled to
+  // 0-100 for native toBuffer
+  if (mimeOrCallback === 'image/png') {
+    return _origToBuffer.call(this, mimeOrCallback, _pngOptions(configOrQuality))
+  }
   const q = _extractQuality(mimeOrCallback, configOrQuality)
   return _origToBuffer.call(this, mimeOrCallback, q != null ? Math.round(q * 100) : undefined)
 }

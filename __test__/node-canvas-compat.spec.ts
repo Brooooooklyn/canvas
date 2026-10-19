@@ -21,6 +21,7 @@ import {
   DOMMatrix,
   GlobalFonts,
 } from '../node-canvas'
+import { createCanvas as nativeCreateCanvas } from '../index'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const fontPath = join(__dirname, 'fonts', 'SourceSerifPro-Regular.ttf')
@@ -393,6 +394,78 @@ test('createJPEGStream with default quality', async (t) => {
   const buf = Buffer.concat(chunks)
   t.is(buf[0], 0xff)
   t.is(buf[1], 0xd8)
+})
+
+// ---------------------------------------------------------------------------
+// PngConfig.resolution: the pHYs chunk node-canvas writes
+// ---------------------------------------------------------------------------
+
+const PHYS_300 = '000000097048597300002e2300002e230178a53f76'
+const PHYS_72 = '000000097048597300000b1300000b1301009a9c18'
+
+function pngChunk(png: Buffer, type: string): string | undefined {
+  let offset = 8
+  while (offset < png.length) {
+    const length = png.readUInt32BE(offset)
+    if (png.toString('latin1', offset + 4, offset + 8) === type) {
+      return png.subarray(offset, offset + 12 + length).toString('hex')
+    }
+    offset += 12 + length
+  }
+  return undefined
+}
+
+function drawnCanvas<T extends { getContext(id: '2d'): any }>(canvas: T): T {
+  const ctx = canvas.getContext('2d')
+  ctx.fillStyle = '#00ff00'
+  ctx.fillRect(0, 0, 10, 10)
+  ctx.fillStyle = 'rgba(0, 0, 255, 0.5)'
+  ctx.fillRect(4, 4, 10, 10)
+  return canvas
+}
+
+test('PngConfig.resolution writes a pHYs chunk', async (t) => {
+  const canvas = drawnCanvas(createCanvas(16, 16))
+  t.is(pngChunk(canvas.toBuffer('image/png', { resolution: 300, compressionLevel: 9 }), 'pHYs'), PHYS_300)
+  const viaCallback = await new Promise<Buffer>((resolve, reject) => {
+    canvas.toBuffer((err, buf) => (err ? reject(err) : resolve(buf)), 'image/png', { resolution: 300 })
+  })
+  t.is(pngChunk(viaCallback, 'pHYs'), PHYS_300)
+  const streamed = Buffer.concat(await canvas.createPNGStream({ resolution: 300 }).toArray())
+  t.is(pngChunk(streamed, 'pHYs'), PHYS_300)
+  // The fraction is dropped, as node-canvas does.
+  t.is(pngChunk(canvas.toBuffer('image/png', { resolution: 72.6 }), 'pHYs'), PHYS_72)
+})
+
+test('PngConfig without a usable resolution gives the plain PNG', async (t) => {
+  const canvas = drawnCanvas(createCanvas(16, 16))
+  const plain = drawnCanvas(nativeCreateCanvas(16, 16)).toBuffer('image/png')
+  const configs: any[] = [
+    { compressionLevel: 9 },
+    { resolution: 0 },
+    { resolution: NaN },
+    { resolution: '300' },
+    { resolution: -1 },
+    // Text is not forwarded: node-canvas writes none.
+    { title: 'x' },
+  ]
+  for (const config of configs) {
+    t.deepEqual(canvas.toBuffer('image/png', config), plain, JSON.stringify(config))
+    const viaCallback = await new Promise<Buffer>((resolve, reject) => {
+      canvas.toBuffer((err, buf) => (err ? reject(err) : resolve(buf)), 'image/png', config)
+    })
+    t.deepEqual(viaCallback, plain, JSON.stringify(config))
+    t.deepEqual(Buffer.concat(await canvas.createPNGStream(config).toArray()), plain, JSON.stringify(config))
+  }
+  t.deepEqual(canvas.toBuffer(), plain)
+})
+
+test('JpegConfig.resolution is not forwarded', (t) => {
+  const canvas = drawnCanvas(createCanvas(16, 16))
+  const jpeg = canvas.toBuffer('image/jpeg', { quality: 0.5, resolution: 300 } as any)
+  t.deepEqual(jpeg, drawnCanvas(nativeCreateCanvas(16, 16)).toBuffer('image/jpeg', 50))
+  // JFIF units 0, density 1x1.
+  t.is(jpeg.subarray(13, 18).toString('hex'), '0000010001')
 })
 
 // ---------------------------------------------------------------------------

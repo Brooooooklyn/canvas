@@ -751,6 +751,49 @@ export interface AvifConfig {
   chromaSubsampling?: ChromaSubsampling
 }
 
+/**
+ * Metadata that `toBuffer`, `encode` and `encodeSync` write into PNG and JPEG
+ * output. It goes in the same options object as the other options. WebP, AVIF
+ * and GIF output ignore it. `toDataURL`, `toDataURLAsync`, `toBlob`,
+ * `convertToBlob`, `encodeStream` and `savePng` never write it.
+ *
+ * Nothing is converted, as in node-canvas: a member counts only when it is a
+ * number (`resolution`) or a string (the text members). Any other value is
+ * ignored. U+0000 is removed from text, and text that is then empty writes
+ * nothing. In JPEG, the XMP text must fit in one 64 KB segment (about 65000
+ * bytes of UTF-8 in all) and `comment` in 65533 UTF-8 bytes; more is a
+ * RangeError. PNG text has no such limit.
+ */
+export interface ImageMetadata {
+  /**
+   * Pixels per inch for both axes, as node-canvas's `PngConfig.resolution`.
+   * The fraction is dropped (300.9 is 300). A value below 1, NaN and the
+   * infinities write nothing.
+   * - PNG: a `pHYs` chunk of `Math.round(ppi * 39.3701)` pixels per metre (the
+   *   bytes node-canvas writes), at most 2147483647.
+   * - JPEG: the JFIF density in dots per inch, at most 65535.
+   */
+  resolution?: number
+  /** PNG `Title` text chunk; JPEG XMP `dc:title`. */
+  title?: string
+  /** PNG `Author` text chunk; JPEG XMP `dc:creator`. */
+  author?: string
+  /** PNG `Description` text chunk; JPEG XMP `dc:description`. */
+  description?: string
+  /** PNG `Copyright` text chunk; JPEG XMP `dc:rights`. */
+  copyright?: string
+  /** PNG `Software` text chunk; JPEG XMP `xmp:CreatorTool`. */
+  software?: string
+  /** PNG `Comment` text chunk; JPEG `COM` segment. */
+  comment?: string
+}
+
+/** The object form of `encode('jpeg')` and `encodeSync('jpeg')`: a quality and metadata. */
+export interface JpegEncodeOptions extends ImageMetadata {
+  /** 0-100; a larger value is 100. Default 92. */
+  quality?: number
+}
+
 /** GIF encoding configuration for single-frame encoding */
 export interface GifConfig {
   /**
@@ -935,17 +978,25 @@ export class Canvas {
   ): SKRSContext2D | null
   getContext(contextType: '2d', contextAttributes?: ContextAttributes): SKRSContext2D
   encodeSync(format: 'webp' | 'jpeg', quality?: number): Buffer
-  encodeSync(format: 'png'): Buffer
+  encodeSync(format: 'jpeg', options: JpegEncodeOptions): Buffer
+  encodeSync(format: 'png', options?: ImageMetadata): Buffer
   encodeSync(format: 'avif', cfg?: AvifConfig | number): Buffer
   encodeSync(format: 'gif', quality?: number): Buffer
   encode(format: 'webp' | 'jpeg', quality?: number): Promise<Buffer>
-  encode(format: 'png'): Promise<Buffer>
+  encode(format: 'jpeg', options: JpegEncodeOptions): Promise<Buffer>
+  encode(format: 'png', options?: ImageMetadata): Promise<Buffer>
   encode(format: 'avif', cfg?: AvifConfig | number): Promise<Buffer>
   encode(format: 'gif', quality?: number): Promise<Buffer>
+  /** Writes no image metadata; use `encode` and stream the Buffer for that. */
   encodeStream(format: 'webp' | 'jpeg', quality?: number): ReadableStream<Buffer>
   encodeStream(format: 'png'): ReadableStream<Buffer>
-  toBuffer(mime: 'image/png'): Buffer
+  toBuffer(mime: 'image/png', options?: ImageMetadata): Buffer
   toBuffer(mime: 'image/jpeg' | 'image/webp', quality?: number): Buffer
+  /**
+   * JPEG with metadata, at quality 92: toBuffer does not read a quality from an
+   * object. To set both, use `encodeSync('jpeg', { quality, ...metadata })`.
+   */
+  toBuffer(mime: 'image/jpeg', options: ImageMetadata): Buffer
   toBuffer(mime: 'image/avif', cfg?: AvifConfig | number): Buffer
   toBuffer(mime: 'image/gif', quality?: number): Buffer
   /** The stored pixels, premultiplied: RGBA bytes, or RGBA half floats (8 bytes a pixel) for colorType 'float16'. */
