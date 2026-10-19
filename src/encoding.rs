@@ -6,7 +6,8 @@
 //! ComputeWebpOptions (image_encoder.cc:109-131) turn the quality into
 //! encoder settings. AVIF and GIF are this library's extra types there. The
 //! Node methods (toBuffer, encode, encodeSync, encodeStream) take a 0-100
-//! quality.
+//! quality; toBuffer, encode and encodeSync also take PNG and JPEG metadata
+//! (image_metadata.rs) in the same options object.
 
 use std::cell::Cell;
 use std::mem;
@@ -16,6 +17,7 @@ use napi::bindgen_prelude::*;
 use crate::{
   avif::{self, AvifConfig},
   gif::{self, GifConfig},
+  image_metadata::{ImageMetadata, MetadataPatch},
   sk::{AlphaType, ColorSpace, SkEncodedImageFormat, SkImage, SkiaDataRef},
   webidl,
 };
@@ -200,6 +202,8 @@ pub enum ContextOutputData {
   Skia(SkiaDataRef),
   Avif(Vec<u8>),
   Gif(Vec<u8>),
+  /// Skia's output with metadata put in.
+  Owned(Vec<u8>),
 }
 
 unsafe impl Send for ContextOutputData {}
@@ -209,7 +213,9 @@ impl ContextOutputData {
   pub(crate) fn as_slice(&self) -> &[u8] {
     match self {
       ContextOutputData::Skia(data) => data.slice(),
-      ContextOutputData::Avif(data) | ContextOutputData::Gif(data) => data,
+      ContextOutputData::Avif(data)
+      | ContextOutputData::Gif(data)
+      | ContextOutputData::Owned(data) => data,
     }
   }
 
@@ -220,7 +226,9 @@ impl ContextOutputData {
           mem::drop(data_ref)
         })
       },
-      ContextOutputData::Avif(output) | ContextOutputData::Gif(output) => unsafe {
+      ContextOutputData::Avif(output)
+      | ContextOutputData::Gif(output)
+      | ContextOutputData::Owned(output) => unsafe {
         BufferSlice::from_external(
           &env,
           output.as_ptr().cast_mut(),
@@ -239,7 +247,9 @@ impl ContextOutputData {
           mem::drop(d)
         })
       },
-      ContextOutputData::Avif(data) | ContextOutputData::Gif(data) => unsafe {
+      ContextOutputData::Avif(data)
+      | ContextOutputData::Gif(data)
+      | ContextOutputData::Owned(data) => unsafe {
         Uint8ArraySlice::from_external(env, data.as_ptr().cast_mut(), data.len(), data, |_, d| {
           mem::drop(d)
         })
@@ -297,6 +307,22 @@ pub(crate) fn encode_image(
   }
 }
 
+/// `output` with `patch` put in; without a patch, `output` as it is (no
+/// copy). Err(None): the encoder's output does not have the layout the patch
+/// needs.
+pub(crate) fn with_metadata(
+  output: ContextOutputData,
+  patch: &MetadataPatch,
+) -> std::result::Result<ContextOutputData, Option<String>> {
+  if let MetadataPatch::None = patch {
+    return Ok(output);
+  }
+  patch
+    .apply(output.as_slice())
+    .map(ContextOutputData::Owned)
+    .ok_or(None)
+}
+
 /// The error toBuffer (`via_mime`) or encode/encodeSync have always thrown
 /// for a failed encode.
 pub(crate) fn node_encode_error(ty: ImageType, detail: Option<String>, via_mime: bool) -> Error {
@@ -319,6 +345,7 @@ pub struct ContextData {
   pub(crate) encoding: Encoding,
   pub(crate) width: u32,
   pub(crate) height: u32,
+  pub(crate) metadata: MetadataPatch,
 }
 
 #[inline]
@@ -331,7 +358,51 @@ pub(crate) fn encode_surface(data: &ContextData) -> Result<ContextOutputData> {
     false,
     false,
   )
+  .and_then(|output| with_metadata(output, &data.metadata))
   .map_err(|detail| node_encode_error(data.encoding.image_type(), detail, false))
+}
+
+/// The quality half of the 2nd argument of toBuffer, encode and encodeSync,
+/// converted as it always has been (Either3<u32, AvifConfig, Unknown>): a
+/// number is the quality, and any object an AvifConfig, unless one of its
+/// members fails to convert.
+pub(crate) enum NodeQuality {
+  Number(u32),
+  Config(AvifConfig),
+  Other,
+}
+
+/// The 2nd argument of toBuffer, encode and encodeSync: the quality, and,
+/// from an object, the metadata members, read after the AvifConfig ones.
+pub struct NodeEncodeOptions {
+  pub(crate) quality: NodeQuality,
+  pub(crate) metadata: ImageMetadata,
+}
+
+impl FromNapiValue for NodeEncodeOptions {
+  unsafe fn from_napi_value(env: sys::napi_env, value: sys::napi_value) -> Result<Self> {
+    let quality = match unsafe { Either3::<u32, AvifConfig, Unknown>::from_napi_value(env, value)? }
+    {
+      Either3::A(quality) => NodeQuality::Number(quality),
+      Either3::B(config) => NodeQuality::Config(config),
+      Either3::C(_) => NodeQuality::Other,
+    };
+    // An AvifConfig getter that threw: its exception is the result.
+    let mut pending = false;
+    check_status!(unsafe { sys::napi_is_exception_pending(env, &mut pending) })?;
+    if pending {
+      return Err(Error::new(
+        Status::PendingException,
+        "Failed to read the encode options".to_owned(),
+      ));
+    }
+    let metadata = if webidl::type_of(env, value)? == ValueType::Object {
+      unsafe { ImageMetadata::read(env, value)? }
+    } else {
+      ImageMetadata::default()
+    };
+    Ok(Self { quality, metadata })
+  }
 }
 
 impl Task for ContextData {

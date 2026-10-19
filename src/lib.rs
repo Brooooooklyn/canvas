@@ -30,12 +30,10 @@ use ctx::{
 };
 use encoding::{
   BlobQuality, ContextData, ContextOutputData, EncodeQuality, EncodeType, Encoding,
-  ImageEncodeOptions, ImageType, ToBlobSite, ToDataUrlAsyncSite, ToDataUrlSite, encode_image,
-  encode_surface, node_encode_error,
+  ImageEncodeOptions, ImageType, NodeEncodeOptions, NodeQuality, ToBlobSite, ToDataUrlAsyncSite,
+  ToDataUrlSite, encode_image, encode_surface, node_encode_error, with_metadata,
 };
 use sk::{ColorSpace, SkImage, SkiaDataRef};
-
-use avif::AvifConfig;
 
 #[global_allocator]
 static ALLOC: mimalloc_safe::MiMalloc = mimalloc_safe::MiMalloc;
@@ -55,6 +53,7 @@ mod gif;
 pub mod global_fonts;
 mod gradient;
 mod image;
+mod image_metadata;
 pub mod lottie;
 mod num;
 mod page_recorder;
@@ -312,16 +311,18 @@ impl<'c> CanvasElement<'c> {
     &mut self,
     env: &'env Env,
     format: String,
-    quality_or_config: Either3<u32, AvifConfig, Unknown>,
+    options: NodeEncodeOptions,
   ) -> Result<Either<AsyncTask<ContextData>, Unknown<'env>>> {
     if !self.ctx.context.has_pixels() {
       return rejected_with_index_size_error(env, NO_PIXELS).map(Either::B);
     }
     // Flush deferred rendering before encoding
     self.ctx.context.flush();
-    Ok(Either::A(AsyncTask::new(
-      self.encode_inner(format, quality_or_config)?,
-    )))
+    Ok(Either::A(AsyncTask::new(self.encode_inner(
+      env.raw(),
+      format,
+      options,
+    )?)))
   }
 
   #[napi]
@@ -329,14 +330,14 @@ impl<'c> CanvasElement<'c> {
     &'env mut self,
     env: Env,
     format: String,
-    quality_or_config: Either3<u32, AvifConfig, Unknown>,
+    options: NodeEncodeOptions,
   ) -> Result<BufferSlice<'env>> {
     if !self.ctx.context.has_pixels() {
       return Err(no_pixels_error(&env));
     }
     // Flush deferred rendering before encoding
     self.ctx.context.flush();
-    let data = self.encode_inner(format, quality_or_config)?;
+    let data = self.encode_inner(env.raw(), format, options)?;
     let output = encode_surface(&data)?;
     output.into_buffer_slice(env)
   }
@@ -346,7 +347,7 @@ impl<'c> CanvasElement<'c> {
     &'env mut self,
     env: Env,
     mime: String,
-    quality_or_config: Either3<u32, AvifConfig, Unknown>,
+    options: NodeEncodeOptions,
   ) -> Result<BufferSlice<'env>> {
     if !self.ctx.context.has_pixels() {
       return Err(no_pixels_error(&env));
@@ -355,8 +356,12 @@ impl<'c> CanvasElement<'c> {
     self.ctx.context.flush();
     let ty = ImageType::from_mime(&mime)
       .ok_or_else(|| Error::new(Status::InvalidArg, format!("{mime} is not valid mime")))?;
+    let metadata = options
+      .metadata
+      .plan(ty)
+      .map_err(|msg| webidl::context_range_error(env.raw(), "", &msg))?;
     let image = self.snapshot()?.ok_or_else(|| no_pixels_error(&env))?;
-    let encoding = node_encoding(ty, quality_or_config, true);
+    let encoding = node_encoding(ty, options.quality, true);
     encode_image(
       &image,
       &encoding,
@@ -365,6 +370,7 @@ impl<'c> CanvasElement<'c> {
       false,
       false,
     )
+    .and_then(|output| with_metadata(output, &metadata))
     .map_err(|detail| node_encode_error(ty, detail, true))?
     .into_buffer_slice(env)
   }
@@ -557,11 +563,16 @@ impl<'c> CanvasElement<'c> {
 
   fn encode_inner(
     &self,
+    env: sys::napi_env,
     format: String,
-    quality_or_config: Either3<u32, AvifConfig, Unknown>,
+    options: NodeEncodeOptions,
   ) -> Result<ContextData> {
     let ty = ImageType::from_format(&format)
       .ok_or_else(|| Error::new(Status::InvalidArg, format!("{format} is not valid format")))?;
+    let metadata = options
+      .metadata
+      .plan(ty)
+      .map_err(|msg| webidl::context_range_error(env, "", &msg))?;
     let image = self.snapshot()?.ok_or_else(|| {
       Error::new(
         Status::GenericFailure,
@@ -570,9 +581,10 @@ impl<'c> CanvasElement<'c> {
     })?;
     Ok(ContextData {
       image,
-      encoding: node_encoding(ty, quality_or_config, false),
+      encoding: node_encoding(ty, options.quality, false),
       width: self.ctx.context.width,
       height: self.ctx.context.height,
+      metadata,
     })
   }
 
@@ -589,14 +601,10 @@ impl<'c> CanvasElement<'c> {
 /// The encoding of a Node method (toBuffer, or encode/encodeSync): a number
 /// is the 0-100 quality (a larger one is 100), an AvifConfig the AVIF
 /// settings. Without either, the defaults each method has always used.
-fn node_encoding(
-  ty: ImageType,
-  quality_or_config: Either3<u32, AvifConfig, Unknown>,
-  to_buffer: bool,
-) -> Encoding {
-  match quality_or_config {
-    Either3::A(quality) => Encoding::node(ty, Some(quality)),
-    Either3::B(config) => match ty {
+fn node_encoding(ty: ImageType, quality: NodeQuality, to_buffer: bool) -> Encoding {
+  match quality {
+    NodeQuality::Number(quality) => Encoding::node(ty, Some(quality)),
+    NodeQuality::Config(config) => match ty {
       ImageType::Avif => Encoding::Avif(config),
       // toBuffer has used Blink's default WebP quality for an AvifConfig.
       ImageType::Webp if to_buffer => Encoding::node(ty, Some(80)),
@@ -604,8 +612,8 @@ fn node_encoding(
       _ => Encoding::node(ty, None),
     },
     // toBuffer('image/gif') has passed 92 as the GIF quality.
-    Either3::C(_) if to_buffer && ty == ImageType::Gif => Encoding::node(ty, Some(92)),
-    Either3::C(_) => Encoding::node(ty, None),
+    NodeQuality::Other if to_buffer && ty == ImageType::Gif => Encoding::node(ty, Some(92)),
+    NodeQuality::Other => Encoding::node(ty, None),
   }
 }
 
