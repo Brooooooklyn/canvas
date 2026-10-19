@@ -392,7 +392,7 @@ $ node scripts/build-skia.js
 
 # Install NPM packages, build the Node.js addon:
 $ npm install -g yarn
-$ yarn install --mode=skip-build # `canvas` (node-canvas) is a native module that only the node-canvas compat tests use and is hard to install, you can skip building it by specifying `--mode=skip-build`
+$ yarn install --mode=skip-build # skip building node-canvas (heavy native dep)
 $ sudo dnf install clang # https://fedora.pkgs.org/34/fedora-x86_64/clang-12.0.0-0.3.rc1.fc34.x86_64.rpm.html
 $ yarn build
 
