@@ -451,6 +451,10 @@ test('PngConfig without a usable resolution gives the plain PNG', async (t) => {
   ]
   for (const config of configs) {
     t.deepEqual(canvas.toBuffer('image/png', config), plain, JSON.stringify(config))
+    const viaCallback = await new Promise<Buffer>((resolve, reject) => {
+      canvas.toBuffer((err, buf) => (err ? reject(err) : resolve(buf)), 'image/png', config)
+    })
+    t.deepEqual(viaCallback, plain, JSON.stringify(config))
     t.deepEqual(Buffer.concat(await canvas.createPNGStream(config).toArray()), plain, JSON.stringify(config))
   }
   t.deepEqual(canvas.toBuffer(), plain)
