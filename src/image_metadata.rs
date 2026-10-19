@@ -207,35 +207,14 @@ fn clean(text: &str) -> Option<String> {
   (!text.is_empty()).then_some(text)
 }
 
-const fn crc_table() -> [u32; 256] {
-  let mut table = [0; 256];
-  let mut n = 0;
-  while n < 256 {
-    let mut c = n as u32;
-    let mut k = 0;
-    while k < 8 {
-      c = if c & 1 != 0 {
-        0xEDB8_8320 ^ (c >> 1)
-      } else {
-        c >> 1
-      };
-      k += 1;
-    }
-    table[n] = c;
-    n += 1;
-  }
-  table
-}
-
-static CRC_TABLE: [u32; 256] = crc_table();
-
-/// The PNG CRC-32 of `parts`, one after the other.
+/// The PNG CRC-32 (IEEE) of `parts`, one after the other; crc32fast uses
+/// the CPU's SIMD or CRC instructions where it has them.
 fn crc32(parts: &[&[u8]]) -> u32 {
-  let mut crc = 0xFFFF_FFFF_u32;
-  for &byte in parts.iter().flat_map(|part| part.iter()) {
-    crc = CRC_TABLE[((crc ^ u32::from(byte)) & 0xFF) as usize] ^ (crc >> 8);
+  let mut hasher = crc32fast::Hasher::new();
+  for part in parts {
+    hasher.update(part);
   }
-  crc ^ 0xFFFF_FFFF
+  hasher.finalize()
 }
 
 /// Appends a chunk with `data` (the concatenated parts). The caller keeps
