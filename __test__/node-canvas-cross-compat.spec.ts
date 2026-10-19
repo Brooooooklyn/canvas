@@ -27,6 +27,7 @@ import {
   registerFont as napiRegisterFont,
   deregisterAllFonts as napiDeregisterAllFonts,
 } from '../node-canvas'
+import { createCanvas as nativeCreateCanvas } from '../index'
 
 // Real node-canvas — skip all tests if not available
 const require = createRequire(import.meta.url)
@@ -328,6 +329,43 @@ ctest('createPNGStream: both return Readable streams producing PNG data', async 
   const ncBuf = await streamToBuffer(ncStream)
   t.true(isPng(ncBuf), 'node-canvas PNG stream should produce PNG data')
   t.true(ncBuf.length > 0)
+})
+
+// ---------------------------------------------------------------------------
+// PngConfig.resolution: the same pHYs chunk
+// ---------------------------------------------------------------------------
+
+function physChunk(png: Buffer): string | undefined {
+  let offset = 8
+  while (offset < png.length) {
+    const length = png.readUInt32BE(offset)
+    if (png.toString('latin1', offset + 4, offset + 8) === 'pHYs') {
+      return png.subarray(offset, offset + 12 + length).toString('hex')
+    }
+    offset += 12 + length
+  }
+  return undefined
+}
+
+ctest('PngConfig.resolution: both write the same pHYs chunk', async (t) => {
+  const draw = <T extends { getContext(id: '2d'): any }>(canvas: T): T => {
+    canvas.getContext('2d').fillRect(0, 0, 10, 10)
+    return canvas
+  }
+  for (const resolution of [72, 96, 150, 300, 600, 1200, 72.6, 0, 0.5, NaN, Infinity, '300']) {
+    const config = { resolution } as any
+    const label = String(resolution)
+    const expected = physChunk(draw(ncCreateCanvas(10, 10)).toBuffer('image/png', config))
+    t.is(expected === undefined, !(typeof resolution === 'number' && resolution >= 1 && resolution < Infinity), label)
+    const napiCanvas = draw(napiCreateCanvas(10, 10))
+    t.is(physChunk(napiCanvas.toBuffer('image/png', config)), expected, label)
+    const viaCallback = await new Promise<Buffer>((resolve, reject) => {
+      napiCanvas.toBuffer((err: Error | null, buf: Buffer) => (err ? reject(err) : resolve(buf)), 'image/png', config)
+    })
+    t.is(physChunk(viaCallback), expected, label)
+    t.is(physChunk(await streamToBuffer(napiCanvas.createPNGStream(config))), expected, label)
+    t.is(physChunk(draw(nativeCreateCanvas(10, 10)).toBuffer('image/png', config)), expected, label)
+  }
 })
 
 // ---------------------------------------------------------------------------
