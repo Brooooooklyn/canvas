@@ -45,7 +45,11 @@ export interface PngConfig {
   palette?: Uint8ClampedArray
   /** Background color index for indexed PNGs. Not supported by Skia backend. */
   backgroundIndex?: number
-  /** Pixels per inch. Accepted for compatibility. */
+  /**
+   * Pixels per inch, written as a PNG `pHYs` chunk with the bytes node-canvas
+   * writes. The fraction is dropped. 0, a value below 1, NaN, the infinities
+   * and a non-number write none.
+   */
   resolution?: number
 }
 
