@@ -101,7 +101,7 @@ const jpeg = await canvas.encode('jpeg', { quality: 90, resolution: 300, copyrig
 | `software`    | `Software`         | XMP `xmp:CreatorTool`   |
 | `comment`     | `Comment`          | `COM` 段                |
 
-WebP、AVIF 和 GIF 会忽略这些选项。`toDataURL`、`toBlob`、`convertToBlob`、`encodeStream` 和 `savePng` 不会写元数据：需要带元数据的文件时，把 `toBuffer` 或 `encode` 返回的 Buffer 写到磁盘。传入对象时，`toBuffer('image/jpeg', ...)` 的质量是 92；要用别的质量，请用 `encode` 或 `encodeSync`。
+WebP、AVIF 和 GIF 会忽略这些选项。`toDataURL`、`toDataURLAsync`、`toBlob`、`convertToBlob`、`encodeStream` 和 `savePng` 不会写元数据：需要带元数据的文件时，把 `toBuffer` 或 `encode` 返回的 Buffer 写到磁盘。传入对象时，`toBuffer('image/jpeg', ...)` 的质量是 92；要用别的质量，请用 `encode` 或 `encodeSync`。
 
 ## Emoji 文字
 

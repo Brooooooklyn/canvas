@@ -47,8 +47,9 @@ export interface PngConfig {
   backgroundIndex?: number
   /**
    * Pixels per inch, written as a PNG `pHYs` chunk with the bytes node-canvas
-   * writes. The fraction is dropped. 0, a value below 1, NaN, the infinities
-   * and a non-number write none.
+   * writes, up to 54546055 ppi; a larger value writes 2147483647 px/m, the
+   * PNG maximum. The fraction is dropped. 0, a value below 1, NaN, the
+   * infinities and a non-number write none.
    */
   resolution?: number
 }

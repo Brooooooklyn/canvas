@@ -118,7 +118,7 @@ const jpeg = await canvas.encode('jpeg', { quality: 90, resolution: 300, copyrig
 | `software`    | `Software`         | XMP `xmp:CreatorTool`        |
 | `comment`     | `Comment`          | `COM` segment                |
 
-WebP, AVIF and GIF output ignore these options. `toDataURL`, `toBlob`, `convertToBlob`, `encodeStream` and `savePng` never write metadata. To save a file with metadata, write the Buffer from `toBuffer` or `encode`. With an options object, `toBuffer('image/jpeg', ...)` encodes at quality 92; use `encode` or `encodeSync` for another quality.
+WebP, AVIF and GIF output ignore these options. `toDataURL`, `toDataURLAsync`, `toBlob`, `convertToBlob`, `encodeStream` and `savePng` never write metadata. To save a file with metadata, write the Buffer from `toBuffer` or `encode`. With an options object, `toBuffer('image/jpeg', ...)` encodes at quality 92; use `encode` or `encodeSync` for another quality.
 
 ## Emoji text
 
