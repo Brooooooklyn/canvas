@@ -29,7 +29,7 @@ cd canvas
 # 2. Download a matching *pre-built* Skia binary
 node scripts/release-skia-binary.mjs --download
 
-# 3. Install JS deps (skip heavy bench deps)
+# 3. Install JS deps (skip building node-canvas, a heavy native dep)
 yarn install --immutable --mode=skip-build
 
 # 4. Build the native Node-API bindings for **your** host machine
