@@ -92,6 +92,34 @@ main()
 
 ![](./example/simple.png)
 
+## Image metadata
+
+`toBuffer`, `encode` and `encodeSync` can write the resolution (DPI) and a few text fields into PNG and JPEG output. Put them in the options object:
+
+```js
+const png = canvas.toBuffer('image/png', {
+  resolution: 300, // pixels per inch, the same option as node-canvas
+  title: 'Floor plan',
+  author: 'Jane Doe',
+  description: 'Ground floor, 1:100',
+})
+
+// JPEG: use encode / encodeSync to set the quality as well
+const jpeg = await canvas.encode('jpeg', { quality: 90, resolution: 300, copyright: '© 2026 Jane Doe' })
+```
+
+| Option        | PNG                | JPEG                         |
+| ------------- | ------------------ | ---------------------------- |
+| `resolution`  | `pHYs` chunk       | JFIF density (dots per inch) |
+| `title`       | `Title` text chunk | XMP `dc:title`               |
+| `author`      | `Author`           | XMP `dc:creator`             |
+| `description` | `Description`      | XMP `dc:description`         |
+| `copyright`   | `Copyright`        | XMP `dc:rights`              |
+| `software`    | `Software`         | XMP `xmp:CreatorTool`        |
+| `comment`     | `Comment`          | `COM` segment                |
+
+WebP, AVIF and GIF output ignore these options. `toDataURL`, `toBlob`, `convertToBlob`, `encodeStream` and `savePng` never write metadata. To save a file with metadata, write the Buffer from `toBuffer` or `encode`. With an options object, `toBuffer('image/jpeg', ...)` encodes at quality 92; use `encode` or `encodeSync` for another quality.
+
 ## Emoji text
 
 ```js

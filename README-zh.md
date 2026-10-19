@@ -75,6 +75,34 @@ main()
 
 ![](./example/simple.png)
 
+## 图片元数据
+
+`toBuffer`、`encode` 和 `encodeSync` 可以把分辨率（DPI）和几个文字字段写进 PNG 和 JPEG。把它们放在选项对象里：
+
+```js
+const png = canvas.toBuffer('image/png', {
+  resolution: 300, // 每英寸像素数，和 node-canvas 的选项相同
+  title: '平面图',
+  author: '张三',
+  description: '一层，1:100',
+})
+
+// JPEG：要同时设置质量，请用 encode / encodeSync
+const jpeg = await canvas.encode('jpeg', { quality: 90, resolution: 300, copyright: '© 2026 张三' })
+```
+
+| 选项          | PNG                | JPEG                    |
+| ------------- | ------------------ | ----------------------- |
+| `resolution`  | `pHYs` chunk       | JFIF 密度（每英寸点数） |
+| `title`       | `Title` 文字 chunk | XMP `dc:title`          |
+| `author`      | `Author`           | XMP `dc:creator`        |
+| `description` | `Description`      | XMP `dc:description`    |
+| `copyright`   | `Copyright`        | XMP `dc:rights`         |
+| `software`    | `Software`         | XMP `xmp:CreatorTool`   |
+| `comment`     | `Comment`          | `COM` 段                |
+
+WebP、AVIF 和 GIF 会忽略这些选项。`toDataURL`、`toBlob`、`convertToBlob`、`encodeStream` 和 `savePng` 不会写元数据：需要带元数据的文件时，把 `toBuffer` 或 `encode` 返回的 Buffer 写到磁盘。传入对象时，`toBuffer('image/jpeg', ...)` 的质量是 92；要用别的质量，请用 `encode` 或 `encodeSync`。
+
 ## Emoji 文字
 
 ```js
