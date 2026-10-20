@@ -1,3 +1,40 @@
+## [1.0.12](https://github.com/Brooooooklyn/canvas/compare/v1.0.11...v1.0.12) (2026-10-20)
+
+
+### Bug Fixes
+
+* **canvas:** compositing, shadows, drawCanvas and filters like Chrome ([#1379](https://github.com/Brooooooklyn/canvas/issues/1379)) ([c6f06a6](https://github.com/Brooooooklyn/canvas/commit/c6f06a6cf47ff11a3df5942ec3c760d6a06fdf00))
+* **canvas:** draw Image sources from Chrome's decode-cache levels ([#1367](https://github.com/Brooooooklyn/canvas/issues/1367)) ([7c3d0c2](https://github.com/Brooooooklyn/canvas/commit/7c3d0c23ff92282f8fa56e52cfdd04942342e4e3))
+* **canvas:** enable dithering for gradient fill and stroke paints ([#1358](https://github.com/Brooooooklyn/canvas/issues/1358)) ([5f95bd4](https://github.com/Brooooooklyn/canvas/commit/5f95bd4ef6f24088cadeb2833e89a937276a8705))
+* **canvas:** gradients and SVG conic export work like Chrome ([#1377](https://github.com/Brooooooklyn/canvas/issues/1377)) ([4059399](https://github.com/Brooooooklyn/canvas/commit/405939965e8133adf1bd2a939fd8825fcb722f93))
+* **canvas:** ImageData patterns and SvgCanvas reads like Chrome ([#1363](https://github.com/Brooooooklyn/canvas/issues/1363)) ([e2f6a83](https://github.com/Brooooooklyn/canvas/commit/e2f6a8337cd4b4bcaf4f82d7e2d4177a998f861e))
+* **canvas:** match Chrome for alpha:false, clearRect and 'copy' ([#1365](https://github.com/Brooooooklyn/canvas/issues/1365)) ([d82b79c](https://github.com/Brooooooklyn/canvas/commit/d82b79ced9c952410c0de4fa3f789d3ff381f742))
+* **canvas:** match Chrome for hsl() colors and gradient edge cases ([#1362](https://github.com/Brooooooklyn/canvas/issues/1362)) ([17a4b3b](https://github.com/Brooooooklyn/canvas/commit/17a4b3b547e45c3df873668349858d0f177f02bb))
+* **canvas:** parse fonts, lay out and measure text like Blink ([#1381](https://github.com/Brooooooklyn/canvas/issues/1381)) ([a43bb16](https://github.com/Brooooooklyn/canvas/commit/a43bb1615498f255d581d8f77f9d72ec9177a446))
+* **canvas:** paths, clips, roundRect and setTransform work like Chrome ([#1375](https://github.com/Brooooooklyn/canvas/issues/1375)) ([1299146](https://github.com/Brooooooklyn/canvas/commit/12991469a994419c05c605a9adcf6cb0d5109523))
+* **canvas:** preserve fractional global alpha through native paints ([#1355](https://github.com/Brooooooklyn/canvas/issues/1355)) ([2eb68bc](https://github.com/Brooooooklyn/canvas/commit/2eb68bc464b200704e5e039dd881dc7a8d46e440))
+* **canvas:** preserve pattern snapshots and honor current image sampling quality ([#1357](https://github.com/Brooooooklyn/canvas/issues/1357)) ([65f4e7c](https://github.com/Brooooooklyn/canvas/commit/65f4e7c17021753a57eef686c80d158a868b0c4b))
+* **canvas:** style getters, shadowColor and canvas sizes like Chrome ([#1376](https://github.com/Brooooooklyn/canvas/issues/1376)) ([9bf7aef](https://github.com/Brooooooklyn/canvas/commit/9bf7aef2a653cb5ff098b3d4e44fec6843873cbc))
+* **canvas:** WebIDL conversion for ImageData, getContext, createPattern ([#1361](https://github.com/Brooooooklyn/canvas/issues/1361)) ([583b7e2](https://github.com/Brooooooklyn/canvas/commit/583b7e2dab3394e83a5cd32fc9eaf85bee98d76f))
+* **canvas:** WebIDL conversion, arity checks and exceptions like Chrome ([#1373](https://github.com/Brooooooklyn/canvas/issues/1373)) ([676047d](https://github.com/Brooooooklyn/canvas/commit/676047d9f97bc92a222468b2ff83f05966869fd6))
+* **codecs:** Chrome's encoders, AVIF decode, data: URLs and SVG images ([#1380](https://github.com/Brooooooklyn/canvas/issues/1380)) ([b5b38a9](https://github.com/Brooooooklyn/canvas/commit/b5b38a91ef1a474856e3a88388cd1ad02629b2f5))
+* crash-safe non-finite args, ImageData sizes, DOMMatrixInit ([#1372](https://github.com/Brooooooklyn/canvas/issues/1372)) ([004444b](https://github.com/Brooooooklyn/canvas/commit/004444bf0756a9147f632f9ec44ceb4bae04ffb8))
+* **deps:** pin font-types back to Skia's 0.12.0 ([#1388](https://github.com/Brooooooklyn/canvas/issues/1388)) ([57cd52b](https://github.com/Brooooooklyn/canvas/commit/57cd52bb6fa933ced3b18991f566af942b5a3e77))
+* **deps:** update rust crate font-types to v0.12.7 ([#1386](https://github.com/Brooooooklyn/canvas/issues/1386)) ([61d89eb](https://github.com/Brooooooklyn/canvas/commit/61d89ebfa9bea59105d9b31836599a4199aaa318))
+* **imagedata:** ImageData and get/put/createImageData work like Chrome ([#1374](https://github.com/Brooooooklyn/canvas/issues/1374)) ([82eeacc](https://github.com/Brooooooklyn/canvas/commit/82eeacca4e99afea0ab1321753f7fc86a7b3ffae))
+* reset style getters on resize, tag AVIF color, exact PDF alpha ([#1364](https://github.com/Brooooooklyn/canvas/issues/1364)) ([09b86b4](https://github.com/Brooooooklyn/canvas/commit/09b86b4a12d6eafe29a50a8d9608537ee47ac445))
+* retain display-p3 backing surfaces through context acquisition and resize ([#1359](https://github.com/Brooooooklyn/canvas/issues/1359)) ([0b502f6](https://github.com/Brooooooklyn/canvas/commit/0b502f67a2a9a656740a1e0a1187d505a4697971))
+
+
+### Features
+
+* **canvas:** float16 canvas storage and float ImageData formats ([#1383](https://github.com/Brooooooklyn/canvas/issues/1383)) ([5f841db](https://github.com/Brooooooklyn/canvas/commit/5f841dbad225f8b03d74548871caa60445935019))
+* **canvas:** rasterize text like Chrome with CoreText and Fontations ([#1382](https://github.com/Brooooooklyn/canvas/issues/1382)) ([4c9902a](https://github.com/Brooooooklyn/canvas/commit/4c9902a870f0744f43e2ce8da8762ff9fb4cfd42))
+* **canvas:** write DPI and text metadata in toBuffer, encode and encodeSync ([#1390](https://github.com/Brooooooklyn/canvas/issues/1390)) ([60f2df2](https://github.com/Brooooooklyn/canvas/commit/60f2df22062d549e4193321a6e0bc1cde8ad4a7a))
+* chrome/m157 ([#1391](https://github.com/Brooooooklyn/canvas/issues/1391)) ([2c52f61](https://github.com/Brooooooklyn/canvas/commit/2c52f61ed2c2c9cedeef5e967d99fb0999dc804f))
+* **color:** CSS Color 4/5 at every canvas color site, like Chrome ([#1378](https://github.com/Brooooooklyn/canvas/issues/1378)) ([3be7099](https://github.com/Brooooooklyn/canvas/commit/3be7099bf512675429ad7098ab0b89d47e04624b))
+* **skia:** build Skia with Chrome's CPU raster defines and blitters ([#1366](https://github.com/Brooooooklyn/canvas/issues/1366)) ([9eeb454](https://github.com/Brooooooklyn/canvas/commit/9eeb454f7d8b68f4448e851c793ebf8bf65dd389))
+* **svg:** draw SVG images like Chrome: CSS, var(), <use>, <image> ([#1384](https://github.com/Brooooooklyn/canvas/issues/1384)) ([b04d0bc](https://github.com/Brooooooklyn/canvas/commit/b04d0bce57f98d818f5d49ba533060a2bf7633c0))
 ## [1.0.11](https://github.com/Brooooooklyn/canvas/compare/v1.0.10...v1.0.11) (2026-10-10)
 
 
