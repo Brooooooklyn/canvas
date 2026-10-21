@@ -16,6 +16,11 @@
       "matchPackageNames": ["cssparser", "cssparser-color"]
     },
     {
+      "groupName": "oxc-node",
+      "matchManagers": ["npm"],
+      "matchPackageNames": ["@oxc-node/*"]
+    },
+    {
       "groupName": "Cargo lock file maintenance",
       "matchManagers": ["cargo"],
       "matchUpdateTypes": ["lockFileMaintenance"]
