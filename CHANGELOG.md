@@ -1,3 +1,9 @@
+## [1.0.13](https://github.com/Brooooooklyn/canvas/compare/v1.0.12...v1.0.13) (2026-10-21)
+
+
+### Bug Fixes
+
+* **canvas:** wrap native methods, not previous wrappers, on re-evaluation ([#1395](https://github.com/Brooooooklyn/canvas/issues/1395)) ([6997e1d](https://github.com/Brooooooklyn/canvas/commit/6997e1d839249f5ba678f1074656486748a4f7c1))
 ## [1.0.12](https://github.com/Brooooooklyn/canvas/compare/v1.0.11...v1.0.12) (2026-10-20)
 
 
