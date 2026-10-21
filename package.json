@@ -83,7 +83,7 @@
     "@node-rs/crc32": "^1.10.6",
     "@octokit/rest": "^22.0.1",
     "@oxc-node/cli": "^0.1.0",
-    "@oxc-node/core": "^0.1.0",
+    "@oxc-node/core": "^1.0.0",
     "@taplo/cli": "^0.7.0",
     "@types/lodash": "^4.17.21",
     "@types/node": "^25.0.3",
