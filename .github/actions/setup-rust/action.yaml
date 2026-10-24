@@ -34,7 +34,7 @@ runs:
       id: zig-toolchain
       shell: bash
       run: |
-        cargo_zigbuild_version="$(cargo zigbuild --version)"
+        cargo_zigbuild_version="$(cargo-zigbuild --version)"
         zig_version="$(zig version)"
         echo "cache-key=-${cargo_zigbuild_version// /-}-zig-${zig_version}" >> "$GITHUB_OUTPUT"
 
