@@ -27,6 +27,17 @@ runs:
       env:
         CARGO_INCREMENTAL: '1'
 
+    # CMake caches absolute paths to cargo-zigbuild's versioned compiler wrappers.
+    # A tool upgrade must not restore build output referring to the old wrappers.
+    - name: Get Zig toolchain cache key
+      if: ${{ contains(inputs.targets, 'musl') }}
+      id: zig-toolchain
+      shell: bash
+      run: |
+        cargo_zigbuild_version="$(cargo-zigbuild --version)"
+        zig_version="$(zig version)"
+        echo "cache-key=-${cargo_zigbuild_version// /-}-zig-${zig_version}" >> "$GITHUB_OUTPUT"
+
     - name: Cache cargo
       uses: actions/cache@v6
       with:
@@ -35,4 +46,4 @@ runs:
           ~/.cargo/git/db/
           ~/.napi-rs
           target/${{ inputs.targets }}
-        key: ${{ steps.rustup-version.outputs.RUST_TOOLCHAIN_VERSION }}-${{ inputs.targets }}-cargo-cache
+        key: ${{ steps.rustup-version.outputs.RUST_TOOLCHAIN_VERSION }}-${{ inputs.targets }}-cargo-cache${{ steps.zig-toolchain.outputs.cache-key }}
