@@ -2,7 +2,6 @@
 
 ![CI](https://github.com/Brooooooklyn/canvas/workflows/CI/badge.svg)
 ![Skia Version](https://img.shields.io/badge/Skia-chrome%2Fm157-hotpink)
-[![install size](https://packagephobia.com/badge?p=@napi-rs/canvas)](https://packagephobia.com/result?p=@napi-rs/canvas)
 [![Downloads](https://img.shields.io/npm/dm/@napi-rs/canvas.svg?sanitize=true)](https://npmcharts.com/compare/@napi-rs/canvas?minimal=true)
 
 > 🚀 帮助我成为全职开源开发者: [Sponsoring me on Github](https://github.com/sponsors/Brooooooklyn)
