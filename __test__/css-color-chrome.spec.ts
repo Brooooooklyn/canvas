@@ -239,11 +239,12 @@ for (const s of Object.keys(S.alpha)) {
 }
 
 // Our Windows builds (x64 and arm64) give one byte 1 off Chrome's (macOS) row: byte 17 (pixel 4,
-// green) of the display-p3 row of 'color(display-p3 1 0 0) -> white' is 54, not 55. This is not FP
-// contraction: win32-arm64 gave 54 both before and after Skia was built with -ffp-contract=off, and
-// win32-x64 gave 55 before and 54 after; Linux and macOS give 55. Chrome on Windows was not
-// measured. There that case also accepts its row with that one byte; every other byte, case and
-// platform is checked exactly.
+// green) of the display-p3 row of 'color(display-p3 1 0 0) -> white' is 54, not 55. win32-arm64 gave
+// 54 both before and after Skia was built with -ffp-contract=off, and win32-x64 gave 55 before and
+// 54 after; Linux and macOS give 55. So with contraction off, as in Chromium, both Windows builds
+// give 54, and x64 matched only because of contraction. The cause is unknown, and Chrome on Windows
+// was not measured. On win32 that case also accepts its row with that one byte; every other byte,
+// case and platform is checked exactly.
 const WIN32_GRAD = new Map<string, [string, number, number]>([
   ['color(display-p3 1 0 0) -> white', ['display-p3', 17, 54]],
 ])
