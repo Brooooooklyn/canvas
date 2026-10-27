@@ -400,6 +400,23 @@ macTest('the per-user font folder comes back after a switch on macOS', (t) => {
   t.deepEqual(out.back, out.first)
 })
 
+// A setAlias of an installed family keeps working in a mode that finds the
+// family only by name (CoreText does not list Courier).
+macTest('a setAlias of an installed family survives switching on macOS', (t) => {
+  backToDefault(t)
+  t.true(GlobalFonts.setAlias('Courier', 'UsBrandCourier'))
+  t.true(GlobalFonts.setAlias('UsBrandCourier', 'UsBrandCourier2'))
+  const courier = textWidth('20px Courier')
+  t.is(textWidth('20px UsBrandCourier2'), courier)
+  for (const mode of ['system', 'portable'] as const) {
+    setTextRenderer(mode)
+    t.true(GlobalFonts.has('UsBrandCourier'), mode)
+    t.is(textWidth('20px UsBrandCourier'), textWidth('20px Courier'), mode)
+    t.is(textWidth('20px UsBrandCourier2'), textWidth('20px Courier'), mode)
+  }
+  t.is(textWidth('20px UsBrandCourier2'), courier)
+})
+
 // With DISABLE_SYSTEM_FONTS_LOAD, loadSystemFonts() takes the user font
 // folder too, as startup does.
 macTest('loadSystemFonts takes the per-user font folder on macOS', (t) => {
