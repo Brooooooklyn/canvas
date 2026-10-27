@@ -734,6 +734,7 @@ jobs:
       - test-linux-x64-musl-binding
       - test-linux-aarch64-gnu-binding
       - test-linux-aarch64-musl-binding
+      - test-linux-electron
       - build-armv7-linux-gnueabihf
       - test-macOS-windows-binding
       - test-windows-arm64-binding
