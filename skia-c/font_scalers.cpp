@@ -205,7 +205,7 @@ bool WantsFontations(const SkTypeface& probe) {
 
 // useSystemFontRenderer(): Rust keeps its own copy
 // (global_fonts.rs SYSTEM_FONT_RENDERER) and sets both under the font lock.
-std::atomic<bool> g_system_font_renderer{true};
+std::atomic<bool> g_system_font_renderer{false};
 
 }  // namespace
 

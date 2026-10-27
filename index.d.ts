@@ -10,13 +10,14 @@ export function clearAllCache(): void
  * plus each OS's text gamma and contrast, LCD text on opaque macOS canvases,
  * Chrome's per-OS font family settings and macOS metric rules.
  *
- * `useSystemFontRenderer(false)` draws text the same way on every OS:
- * FreeType, Skia's default text gamma, no LCD text and one font family
- * table. The same registered fonts then give the same pixels and
- * TextMetrics on macOS, Linux and Windows.
+ * By default text is drawn the same way on every OS: FreeType, Skia's
+ * default text gamma, no LCD text and one font family table. The same
+ * registered fonts give the same pixels and TextMetrics on macOS, Linux and
+ * Windows.
  *
  * Applies to the whole process, worker threads included. Call it once at
- * startup, before creating canvases. Registered fonts keep their FontKey. A
+ * startup, before creating canvases. `useSystemFontRenderer(false)` switches
+ * back. Registered fonts keep their FontKey. A
  * canvas created before the switch keeps its text gamma until its width or
  * height is set; font sizes already parsed from `ex`/`ch`/... units keep
  * their value.

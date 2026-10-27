@@ -23,7 +23,7 @@ static GLOBAL_FONT_COLLECTION: OnceLock<Mutex<FontCollection>> = OnceLock::new()
 /// Whether useSystemFontRenderer() is on, for Rust readers. The C++ side keeps
 /// its own copy (font_scalers.cpp SystemFontRenderer); both are written
 /// together, under the font lock once the collection exists.
-static SYSTEM_FONT_RENDERER: AtomicBool = AtomicBool::new(true);
+static SYSTEM_FONT_RENDERER: AtomicBool = AtomicBool::new(false);
 
 pub(crate) fn system_font_renderer() -> bool {
   SYSTEM_FONT_RENDERER.load(Ordering::Relaxed)
