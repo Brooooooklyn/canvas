@@ -201,8 +201,10 @@ function textWidth(font: string) {
 test.serial('a chain of setAlias names survives switching', (t) => {
   backToDefault(t)
   // Not Lato: on a Linux with no installed fonts the fallback for a missing
-  // family is the first registered font, UsLato.
-  const key = GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'iosevka-slab-regular.ttf'), 'ZChainBase')
+  // family is the first registered font, UsLato. Not a file the spec
+  // registers at the top either: registerFromPath dedupes by path, so the
+  // teardown would remove that font too.
+  const key = GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'Oswald.ttf'), 'ZChainBase')
   t.teardown(() => {
     GlobalFonts.remove(key!)
   })
@@ -223,7 +225,7 @@ test.serial('a chain of setAlias names survives switching', (t) => {
 // the aliased font, also once the fonts are made again.
 test.serial('a font registered under a setAlias name stays behind the alias across switching', (t) => {
   backToDefault(t)
-  const base = GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'iosevka-slab-regular.ttf'), 'UsAliasBase')
+  const base = GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'RobotoMono-VariableFont_wght.ttf'), 'UsAliasBase')
   t.true(GlobalFonts.setAlias('UsAliasBase', 'UsAliasShared'))
   const serif = GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'SourceSerifPro-Regular.ttf'), 'UsAliasShared')
   t.teardown(() => GlobalFonts.removeBatch([base!, serif!]))
@@ -243,7 +245,7 @@ test.serial('a repeated setAlias call keeps its face across a rebuild', (t) => {
   const bold = GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'SourceHanSerifCN-Bold.ttf'), 'UsRepeatA')
   t.true(GlobalFonts.setAlias('UsRepeatA', 'UsRepeatB'))
   const boldWidth = textWidth('20px UsRepeatB')
-  const regular = GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'Lato-Regular.ttf'), 'UsRepeatA')
+  const regular = GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'SourceSerifPro-Regular.ttf'), 'UsRepeatA')
   t.true(GlobalFonts.setAlias('UsRepeatA', 'UsRepeatB'))
   const other = GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'Oswald.ttf'), 'UsRepeatOther')
   t.teardown(() => GlobalFonts.removeBatch([bold!, regular!]))
@@ -398,6 +400,45 @@ macTest('the per-user font folder comes back after a switch on macOS', (t) => {
   t.deepEqual(out.back, out.first)
 })
 
+// With DISABLE_SYSTEM_FONTS_LOAD, loadSystemFonts() takes the user font
+// folder too, as startup does.
+macTest('loadSystemFonts takes the per-user font folder on macOS', (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'canvas-home-'))
+  t.teardown(() => rmSync(home, { recursive: true, force: true }))
+  mkdirSync(join(home, 'Library', 'Fonts'), { recursive: true })
+  copyFileSync(join(__dirname, 'fonts', 'Lato-Regular.ttf'), join(home, 'Library', 'Fonts', 'UPPER.TTF'))
+  const out = macProbe(
+    `const { GlobalFonts } = require('./index.js')
+const has = () => GlobalFonts.families.some(({ family }) => family === 'Lato')
+const before = has()
+GlobalFonts.loadSystemFonts()
+console.log(JSON.stringify({ before, after: has() }))`,
+    { HOME: home, DISABLE_SYSTEM_FONTS_LOAD: '1' },
+  )
+  t.deepEqual(out, { before: false, after: true })
+})
+
+// Each mode makes its faces once: switching back and forth (and listing the
+// families, which lists the installed fonts) does not keep adding faces.
+;(process.platform === 'win32' ? test.serial.skip : test.serial)(
+  'switching back and forth does not grow memory',
+  (t) => {
+    const out = macProbe(`const { GlobalFonts, setTextRenderer } = require('./index.js')
+const round = () => {
+  for (const mode of ['system', 'portable']) {
+    setTextRenderer(mode)
+    GlobalFonts.families.length
+  }
+}
+round()
+round()
+const before = process.memoryUsage().rss
+for (let i = 0; i < 6; i++) round()
+console.log(JSON.stringify({ growth: (process.memoryUsage().rss - before) / 2 ** 20 }))`)
+    t.true(out.growth < 150, `RSS grew by ${out.growth} MiB`)
+  },
+)
+
 // A new process that runs PROBE_STEPS (comma separated) and prints what
 // '20px Helvetica' measures and the first family after each "state" step.
 const HELVETICA_PROBE = `
@@ -470,4 +511,12 @@ macTest('installed fonts removed by removeAll stay removed across a switch on ma
   }
   t.true(out.loaded > 0)
   t.true(out.families[3] > 0)
+})
+
+// The last test: no test above removed the fonts this file registers at the
+// top (registerFromPath dedupes by path, so a test that registers the same
+// file and removes its key removes them too).
+test.serial("the spec's own fonts are still registered", (t) => {
+  t.true(GlobalFonts.has('UsLato'))
+  t.true(GlobalFonts.has('UsIosevka'))
 })

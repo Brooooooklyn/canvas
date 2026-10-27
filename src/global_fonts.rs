@@ -386,7 +386,13 @@ fn load_system_fonts() -> napi::Result<u32> {
 
 #[cfg(target_os = "macos")]
 fn load_system_fonts() -> napi::Result<u32> {
-  let files = font_files(FONT_PATH);
+  // CoreText's installed fonts also take the all-users and the user font
+  // folder, which index.js passes at startup.
+  let mut files = font_files(FONT_PATH);
+  files.extend(font_files("/Library/Fonts"));
+  if let Some(home) = std::env::var_os("HOME") {
+    files.extend(font_files(path::Path::new(&home).join("Library/Fonts")));
+  }
   let font_collection = get_font().map_err(into_napi_error)?;
   let count = font_collection.load_installed_fonts(&files);
   note_font_collection_mutation();

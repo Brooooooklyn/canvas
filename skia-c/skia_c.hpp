@@ -219,6 +219,10 @@ struct RegisteredFont {
   // Type 1 font) registers this one again, so the font keeps its FontKey and
   // the next rebuild tries again.
   sk_sp<SkTypeface> typeface;
+  // The face each renderer mode made ([0] portable, [1] system), so a switch
+  // back reuses it: a switch makes no face twice, and the retired providers
+  // hold no more faces than the two modes have.
+  sk_sp<SkTypeface> mode_typefaces[2];
   std::vector<std::string> aliases;  // All aliases for this font
   // When each alias was registered (parallel to aliases). A rebuild
   // registers every (face, alias) pair again in this order, so the
@@ -406,12 +410,15 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
   // under each of its names.
   void addRebuiltFont(uint32_t id,
                       const RegisteredFont& old,
-                      sk_sp<SkTypeface> typeface) {
+                      sk_sp<SkTypeface> typeface,
+                      const sk_sp<SkTypeface> (&mode_typefaces)[2]) {
     RegisteredFont font_info;
     font_info.data = old.data;
     font_info.path = old.path;
     font_info.installed = old.installed;
     font_info.typeface = std::move(typeface);
+    font_info.mode_typefaces[0] = mode_typefaces[0];
+    font_info.mode_typefaces[1] = mode_typefaces[1];
     registered_fonts[id] = std::move(font_info);
 
     // Update secondary index
@@ -743,6 +750,10 @@ struct skiac_font_collection {
   // Without the system renderer face 0 of each is registered, as
   // loadSystemFonts does elsewhere.
   std::vector<std::string> installed_files;
+  // The installed faces each mode listed ([0] portable, [1] system), so a
+  // switch back registers the same faces again instead of new ones. Dropped
+  // when installed_files grows.
+  std::vector<sk_sp<SkTypeface>> installed_faces[2];
   // font_families.cpp MatchCoreText: CoreText's family for a case-folded
   // name it does not list, empty for none.
   std::map<std::string, std::string> coretext_families;
@@ -782,6 +793,8 @@ struct skiac_font_collection {
       if (std::find(installed_files.begin(), installed_files.end(), path) ==
           installed_files.end()) {
         installed_files.push_back(std::move(path));
+        installed_faces[0].clear();
+        installed_faces[1].clear();
       }
     }
     if (installed_fonts_enabled) {
@@ -817,35 +830,51 @@ struct skiac_font_collection {
         ++count;
       }
     };
+    std::vector<sk_sp<SkTypeface>>& faces =
+        installed_faces[SystemFontRenderer() ? 1 : 0];
+    if (faces.empty()) {
+      listInstalledFaces(&faces);
+    }
+    for (const auto& face : faces) {
+      add(face);
+    }
+    markCachesDirty();
+    installed_font_count = count;
+    return count;
+  }
+
+  // The installed faces of the current mode, in listing order.
+  void listInstalledFaces(std::vector<sk_sp<SkTypeface>>* faces) {
     if (SystemFontRenderer()) {
       const int families = font_mgr->countFamilies();
       for (int i = 0; i < families; ++i) {
         sk_sp<SkFontStyleSet> set = font_mgr->createStyleSet(i);
         const int styles = set ? set->count() : 0;
         for (int j = 0; j < styles; ++j) {
-          add(set->createTypeface(j));
+          if (sk_sp<SkTypeface> face = set->createTypeface(j)) {
+            faces->push_back(std::move(face));
+          }
         }
       }
-    } else {
-      // Every face of a collection, as CoreText lists them.
-      sk_sp<SkFontMgr> freetype = SkFontMgr_New_Custom_Empty();
-      for (const auto& path : installed_files) {
-        add(MakeCanvasTypefaceFromFile(path.c_str()));
-        if (!IsCollectionFile(path.c_str())) {
-          continue;
+      return;
+    }
+    // Every face of a collection, as CoreText lists them.
+    sk_sp<SkFontMgr> freetype = SkFontMgr_New_Custom_Empty();
+    for (const auto& path : installed_files) {
+      if (sk_sp<SkTypeface> face = MakeCanvasTypefaceFromFile(path.c_str())) {
+        faces->push_back(std::move(face));
+      }
+      if (!IsCollectionFile(path.c_str())) {
+        continue;
+      }
+      for (int index = 1;; ++index) {
+        sk_sp<SkTypeface> face = freetype->makeFromFile(path.c_str(), index);
+        if (!face) {
+          break;
         }
-        for (int index = 1;; ++index) {
-          sk_sp<SkTypeface> face = freetype->makeFromFile(path.c_str(), index);
-          if (!face) {
-            break;
-          }
-          add(std::move(face));
-        }
+        faces->push_back(std::move(face));
       }
     }
-    markCachesDirty();
-    installed_font_count = count;
-    return count;
   }
 
   // GlobalFonts.removeAll() removed the installed fonts: they stay out
@@ -926,6 +955,9 @@ struct skiac_font_collection {
     // Re-register all remaining fonts, preserving original IDs, under each
     // name in the order the names were registered (IDs are hashes, and a
     // name a font gained later goes after the fonts registered between).
+    // A switch (relist_installed) flipped the mode before this rebuild.
+    const int mode = SystemFontRenderer() ? 1 : 0;
+    const int previous_mode = relist_installed ? 1 - mode : mode;
     // {order, is a setAlias, font ID, alias index or set_aliases index}
     std::vector<std::tuple<uint64_t, bool, uint32_t, size_t>> names;
     for (const auto& [id, font_info] : old_fonts) {
@@ -974,9 +1006,21 @@ struct skiac_font_collection {
       }
       auto it = made.find(id);
       if (it == made.end()) {
+        // The face it has now was made in the mode before this rebuild.
+        sk_sp<SkTypeface> mode_typefaces[2] = {font_info.mode_typefaces[0],
+                                               font_info.mode_typefaces[1]};
+        // (Unless it is the other mode's face, kept when that mode could not
+        // make it.)
+        if (!font_info.installed && font_info.typeface &&
+            !mode_typefaces[previous_mode] &&
+            font_info.typeface != mode_typefaces[1 - previous_mode]) {
+          mode_typefaces[previous_mode] = font_info.typeface;
+        }
         sk_sp<SkTypeface> typeface;
         if (font_info.installed) {
           typeface = font_info.typeface;
+        } else if (mode_typefaces[mode]) {
+          typeface = mode_typefaces[mode];
         } else if (!font_info.path.empty()) {
           // Path-registered font: reload from path (lazy loading)
           typeface = MakeCanvasTypefaceFromFile(font_info.path.c_str());
@@ -984,8 +1028,12 @@ struct skiac_font_collection {
           // Buffer-registered font: recreate from stored data
           typeface = MakeCanvasTypeface(font_info.data);
         }
+        if (typeface && !font_info.installed) {
+          mode_typefaces[mode] = typeface;
+        }
         // Not made again (its file is gone, or this mode cannot read it):
-        // the face it had stays.
+        // the face it had stays, and the next switch to this mode tries
+        // again.
         if (!typeface) {
           typeface = font_info.typeface;
         }
@@ -994,7 +1042,7 @@ struct skiac_font_collection {
             kept_system_font_ids.insert(id);
             system_typeface_ids.insert(typeface->uniqueID());
           }
-          new_assets->addRebuiltFont(id, font_info, typeface);
+          new_assets->addRebuiltFont(id, font_info, typeface, mode_typefaces);
         }
         it = made.emplace(id, std::move(typeface)).first;
       }
