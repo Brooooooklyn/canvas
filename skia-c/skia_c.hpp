@@ -212,6 +212,10 @@ struct RegisteredFont {
   // typeface itself.
   sk_sp<SkTypeface> installed;
   std::vector<std::string> aliases;  // All aliases for this font
+  // When it was registered. A rebuild registers the fonts again in this
+  // order, so the provider's first family (its fallback, onLegacyMakeTypeface)
+  // and the first face of a family stay as in a process that never rebuilt.
+  uint64_t order = 0;
 };
 
 class TypefaceFontProviderCustom : public TypefaceFontProvider {
@@ -275,6 +279,7 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
     font_info.data = data;
     font_info.aliases.push_back(
         originalName);  // Track under what name it's registered
+    font_info.order = ++registrations;
     registered_fonts[id] = std::move(font_info);
 
     // Update secondary index
@@ -342,6 +347,7 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
     if (aliasStr != originalName) {
       font_info.aliases.push_back(aliasStr);
     }
+    font_info.order = ++registrations;
     registered_fonts[id] = std::move(font_info);
 
     // Update secondary index
@@ -375,6 +381,7 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
     RegisteredFont font_info;
     font_info.installed = typeface;
     font_info.aliases.push_back(std::string(family.c_str()));
+    font_info.order = ++registrations;
     registered_fonts[id] = std::move(font_info);
     this->registerTypeface(std::move(typeface));
     return id;
@@ -400,6 +407,7 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
       font_info.installed = typeface;
     }
     font_info.aliases = aliases;
+    font_info.order = ++registrations;
     registered_fonts[id] = std::move(font_info);
 
     // Update secondary index
@@ -484,6 +492,7 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
     RegisteredFont font_info;
     font_info.path = path;
     font_info.aliases.push_back(originalName);
+    font_info.order = ++registrations;
     registered_fonts[id] = std::move(font_info);
 
     // Update secondary index
@@ -546,6 +555,7 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
     if (aliasStr != originalName) {
       font_info.aliases.push_back(aliasStr);
     }
+    font_info.order = ++registrations;
     registered_fonts[id] = std::move(font_info);
 
     // Update secondary index
@@ -616,6 +626,7 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
  private:
   sk_sp<SkFontMgr> font_mgr;
   std::map<uint32_t, RegisteredFont> registered_fonts;
+  uint64_t registrations = 0;
   // Secondary index: content hash -> set of registered IDs with that hash
   // This enables fast duplicate detection even after removals break the probe
   // chain. Complexity is O(k) where k is the number of hash collisions
@@ -842,10 +853,18 @@ struct skiac_font_collection {
     // Create new provider
     auto new_assets = sk_make_sp<TypefaceFontProviderCustom>(font_mgr);
 
-    // Re-register all remaining fonts, preserving original IDs
+    // Re-register all remaining fonts, preserving original IDs, in the order
+    // they were registered (IDs are hashes).
+    std::vector<std::pair<uint64_t, uint32_t>> order;
+    for (const auto& [id, font_info] : old_fonts) {
+      order.emplace_back(font_info.order, id);
+    }
+    std::sort(order.begin(), order.end());
     std::set<uint32_t> kept_system_font_ids;
     system_typeface_ids.clear();
-    for (const auto& [id, font_info] : old_fonts) {
+    for (const auto& entry : order) {
+      const uint32_t id = entry.second;
+      const RegisteredFont& font_info = old_fonts.at(id);
       sk_sp<SkTypeface> typeface;
 
       if (font_info.installed) {
