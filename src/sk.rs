@@ -3994,11 +3994,15 @@ impl Path {
     end_angle: f32,
     ccw: bool,
   ) {
-    // based off of CanonicalizeAngle in Chrome
+    // Blink CanonicalizeAngle (canvas_path.cc:315-334).
     let tau = 2.0 * PI;
     let mut new_start_angle = start_angle % tau;
     if new_start_angle < 0.0 {
       new_start_angle += tau;
+      // A tiny negative start rounds up to tau (crbug.com/503422).
+      if new_start_angle >= tau {
+        new_start_angle -= tau;
+      }
     }
     let delta = new_start_angle - start_angle;
     let start_angle = new_start_angle;
@@ -4024,6 +4028,11 @@ impl Path {
     let top = y - radius_y;
     let right = x + radius_x;
     let bottom = y + radius_y;
+    // Blink AddEllipse skips the transform for rotation 0 (path_builder.cc:492).
+    if rotation == 0.0 {
+      self.add_ellipse_arcs(left, top, right, bottom, start_angle, end_angle);
+      return;
+    }
     let mut rotated = Matrix::identity();
     rotated.pre_translate(x, y);
     let degrees = radians_to_degrees(rotation);
@@ -4044,28 +4053,33 @@ impl Path {
     };
 
     self.transform_self(&unrotated);
+    self.add_ellipse_arcs(left, top, right, bottom, start_angle, end_angle);
+    self.transform_self(&rotated);
+  }
 
-    // draw in 2 180 degree segments because trying to draw all 360 degrees at once
-    // draws nothing.
-    let sweep_deg = radians_to_degrees(end_angle - start_angle);
-    let start_deg = radians_to_degrees(start_angle);
-    if almost_equal(sweep_deg.abs(), 360.0) {
-      let half_sweep = sweep_deg / 2.0;
-      self.arc_to(left, top, right, bottom, start_deg, half_sweep, false);
-      self.arc_to(
-        x - radius_x,
-        y - radius_y,
-        x + radius_x,
-        y + radius_y,
-        start_deg + half_sweep,
-        half_sweep,
-        false,
-      );
+  /// Blink PathBuilder::AddEllipse (path_builder.cc:445-480). `start` is
+  /// already in [0, 2π) and `end` is adjusted, both in radians.
+  fn add_ellipse_arcs(
+    &mut self,
+    left: f32,
+    top: f32,
+    right: f32,
+    bottom: f32,
+    start: f32,
+    end: f32,
+  ) {
+    let start_deg = start * RAD_TO_DEG;
+    let sweep_deg = (end - start) * RAD_TO_DEG;
+    // SkPathBuilder::arcTo draws nothing for a 360 sweep, so draw two halves.
+    // f32 rounding puts a full sweep a few ulps off 360 (1 ulp = 3.05e-5), so
+    // use Blink's WebCoreFloatNearlyEqual tolerance of 1/4096 (:465).
+    if (sweep_deg.abs() - 360.0).abs() <= 1.0 / 4096.0 {
+      let half = 180.0f32.copysign(sweep_deg);
+      self.arc_to(left, top, right, bottom, start_deg, half, false);
+      self.arc_to(left, top, right, bottom, start_deg + half, half, false);
     } else {
       self.arc_to(left, top, right, bottom, start_deg, sweep_deg, false);
     }
-
-    self.transform_self(&rotated);
   }
 
   pub fn scoot(&mut self, x: f32, y: f32) {
@@ -4083,6 +4097,18 @@ impl Path {
     end_angle: f32,
     from_end: bool,
   ) {
+    // Blink canvas_path.cc:457-461: a zero-radius arc adds only its start
+    // point (lineTo, which is a moveTo on an empty path). On an empty path our
+    // line_to adds moveTo plus a zero-length line that stroke caps draw, and
+    // Chrome draws nothing there, so use move_to.
+    if radius == 0.0 {
+      if self.is_empty() {
+        self.move_to(center_x, center_y);
+      } else {
+        self.line_to(center_x, center_y);
+      }
+      return;
+    }
     self.ellipse(
       center_x,
       center_y,
@@ -4308,37 +4334,6 @@ impl Path {
     ];
     unsafe { ffi::skiac_path_round_rect(self.0, x, y, width, height, radii.as_ptr(), clockwise) };
     unsafe { ffi::skiac_path_move_to(self.0, x, y) };
-  }
-
-  fn ellipse_helper(&mut self, x: f32, y: f32, rx: f32, ry: f32, start_angle: f32, end_angle: f32) {
-    let sweep_degrees = radians_to_degrees(end_angle - start_angle);
-    let start_degrees = radians_to_degrees(start_angle);
-    let left = x - rx;
-    let top = y - ry;
-    let right = x + rx;
-    let bottom = y + ry;
-    if almost_equal(sweep_degrees.abs(), 360.0) {
-      let half_sweep = sweep_degrees / 2.0;
-      self.arc_to(left, top, right, bottom, start_degrees, half_sweep, false);
-      self.arc_to(
-        left,
-        top,
-        right,
-        bottom,
-        start_degrees + half_sweep,
-        half_sweep,
-        false,
-      );
-    };
-    self.arc_to(
-      left,
-      top,
-      right,
-      bottom,
-      start_degrees,
-      sweep_degrees,
-      false,
-    );
   }
 }
 
@@ -6692,10 +6687,8 @@ pub(crate) fn radians_to_degrees(rad: f32) -> f32 {
   rad / PI * 180.0
 }
 
-#[inline(always)]
-fn almost_equal(floata: f32, floatb: f32) -> bool {
-  (floata - floatb).abs() < 0.00001
-}
+/// Blink Rad2deg / base::RadToDeg<float>: rad * (180.0f / kPiFloat).
+const RAD_TO_DEG: f32 = 180.0 / PI;
 
 pub fn sk_svg_text_to_path(svg: &[u8], fc: &FontCollection) -> Option<SkiaDataRef> {
   let mut output_data = ffi::skiac_sk_data {
