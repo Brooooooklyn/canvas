@@ -122,8 +122,8 @@ sk_sp<SkFontMgr> SkFontMgr_New_Custom_Directory(const char* dir);
 sk_sp<SkFontMgr> SkFontMgr_New_Custom_Empty();
 
 // font_scalers.cpp: typefaces drawn by FreeType, or after
-// useSystemFontRenderer() by the scaler of each OS's Chrome.
-// Whether useSystemFontRenderer() is on. Set only under the font lock.
+// setTextRenderer('system') by the scaler of each OS's Chrome.
+// Whether setTextRenderer('system') is on. Set only under the font lock.
 bool SystemFontRenderer();
 void SetSystemFontRenderer(bool enabled);
 // The installed fonts the collection resolves by name before loadSystemFonts
@@ -990,7 +990,7 @@ struct skiac_font_collection {
     collection->setDynamicFontManager(assets);
   }
 
-  // useSystemFontRenderer(): every font is made again for the new mode, and
+  // setTextRenderer(): every font is made again for the new mode, and
   // every cache that holds a typeface or a laid out line is dropped. Returns
   // whether the mode changed. Called with the font lock held.
   bool setSystemFontRenderer(bool enabled) {
@@ -1965,7 +1965,7 @@ uint32_t skiac_font_collection_load_installed_fonts(
     skiac_font_collection* c_font_collection,
     const char* const* paths,
     size_t count);
-// useSystemFontRenderer(): the first sets the mode before the collection is
+// setTextRenderer(): the first sets the mode before the collection is
 // made; the second makes every font of `c_font_collection` again for the new
 // mode and returns whether it changed.
 void skiac_set_system_font_renderer(bool enabled);

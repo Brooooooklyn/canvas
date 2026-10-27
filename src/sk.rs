@@ -5925,7 +5925,7 @@ fn c_strings(strings: &[String]) -> (Vec<CString>, Vec<*const c_char>) {
 }
 
 /// Sets the system font renderer flag of the C++ side before the global font
-/// collection is made (global_fonts.rs use_system_font_renderer).
+/// collection is made (global_fonts.rs set_system_font_renderer).
 pub fn set_system_font_renderer_flag(enabled: bool) {
   unsafe { ffi::skiac_set_system_font_renderer(enabled) }
 }
@@ -6100,7 +6100,7 @@ impl FontCollection {
     unsafe { ffi::skiac_font_collection_load_installed_fonts(self.0, ptrs.as_ptr(), ptrs.len()) }
   }
 
-  /// useSystemFontRenderer(): makes every font again for the new mode and
+  /// setTextRenderer(): makes every font again for the new mode and
   /// drops the text caches. Returns whether the mode changed.
   pub fn set_system_font_renderer(&self, enabled: bool) -> bool {
     unsafe { ffi::skiac_font_collection_set_system_font_renderer(self.0, enabled) }

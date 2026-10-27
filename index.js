@@ -26,7 +26,8 @@ const {
   _argumentCounts,
   _imageDataConstructor,
   _toNumber: toNumber,
-  useSystemFontRenderer,
+  setTextRenderer,
+  getTextRenderer,
 } = require('./js-binding')
 
 const { DOMPoint, DOMMatrix, DOMRect } = require('./geometry')
@@ -704,7 +705,7 @@ class Canvas {
 
 if (!process.env.DISABLE_SYSTEM_FONTS_LOAD) {
   // Installed fonts and the per-user font folders: FreeType by default;
-  // CoreText's on macOS after useSystemFontRenderer(). On macOS that is
+  // CoreText's on macOS after setTextRenderer('system'). On macOS that is
   // /Library/Fonts (all users) and ~/Library/Fonts, after
   // /System/Library/Fonts, as CoreText lists them.
   const homedirPath = homedir()
@@ -719,7 +720,8 @@ if (!process.env.DISABLE_SYSTEM_FONTS_LOAD) {
 
 module.exports = {
   clearAllCache,
-  useSystemFontRenderer,
+  setTextRenderer,
+  getTextRenderer,
   Canvas,
   createCanvas,
   Path2D,

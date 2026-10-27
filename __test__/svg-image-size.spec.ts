@@ -1,4 +1,4 @@
-import './use-system-fonts'
+import './use-system-text-renderer'
 
 import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'

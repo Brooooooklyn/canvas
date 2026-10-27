@@ -8,7 +8,7 @@
 // drawImage(image, ...(args ?? dst ?? [0, 0])) on a w x h canvas and reads
 // it back. `px_x64` is Chrome under Rosetta where it differs from arm64.
 
-import './use-system-fonts'
+import './use-system-text-renderer'
 
 import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'

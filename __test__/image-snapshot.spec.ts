@@ -1,4 +1,4 @@
-import './use-system-fonts'
+import './use-system-text-renderer'
 
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'

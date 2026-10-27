@@ -3,7 +3,7 @@
 // shorthand and the getter serializes the computed font
 // (base_rendering_context_2d.cc font()). The fixture rows were measured on
 // macOS arm64, macOS x64 and Linux x64 Chrome.
-import './use-system-fonts'
+import './use-system-text-renderer'
 
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'

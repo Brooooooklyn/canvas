@@ -9,7 +9,7 @@
 // On Windows, which keeps FreeType, two engine differences are left out:
 // Chrome reads Harmattan's glyph boxes through Fontations (FreeType's are
 // one pixel taller) and rasterizes one NKo column differently.
-import './use-system-fonts'
+import './use-system-text-renderer'
 
 import { readFileSync } from 'node:fs'
 import { release } from 'node:os'

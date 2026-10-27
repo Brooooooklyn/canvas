@@ -3,7 +3,7 @@
 //              draw font                              text gamma / contrast
 //   default    skparagraph's font                      Skia's defaults
 //
-// After useSystemFontRenderer(), like each OS's Chrome:
+// After setTextRenderer('system'), like each OS's Chrome:
 //
 //              draw font (CreateSkFont)               text gamma / contrast
 //   macOS      subpixel AA edging, normal hinting      sRGB / 0

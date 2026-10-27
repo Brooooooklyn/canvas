@@ -6,7 +6,7 @@
 // line the same way however often it was drawn before. Cascadia and Source
 // Han Serif lines are drawn as one blob; Lato's descenders reach its font
 // box, so a Lato line keeps its runs.
-import './use-system-fonts'
+import './use-system-text-renderer'
 
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'

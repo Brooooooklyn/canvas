@@ -4,7 +4,7 @@
 // surface cleared to black, and puts alpha back to 255 after the composite
 // modes that can lower it (Blink ResetAlphaIfNeeded,
 // canvas_2d_recorder_context.h:729-752).
-import './use-system-fonts'
+import './use-system-text-renderer'
 
 import { release } from 'node:os'
 import { join } from 'node:path'

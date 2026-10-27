@@ -1,13 +1,13 @@
-// Child process of use-system-font-renderer.spec.ts. It runs the steps given
+// Child process of text-renderer.spec.ts. It runs the steps given
 // as arguments and prints the last probe as JSON:
 //
 //   register        register the text-raster fonts as Sw*
 //   warm            probe and drop the result (fills the caches)
-//   switch:<bool>   useSystemFontRenderer(<bool>)
+//   switch:<mode>   setTextRenderer(<mode>)
 //   probe           probe, then loadSystemFonts()
 import { createHash } from 'node:crypto'
 
-import { createCanvas, GlobalFonts, SvgExportFlag, useSystemFontRenderer } from '../index'
+import { createCanvas, GlobalFonts, setTextRenderer, SvgExportFlag, type TextRenderer } from '../index'
 import { registerTextFonts, sceneRow, textScenes } from './text-scenes'
 
 const METRICS = [
@@ -99,7 +99,7 @@ for (const step of process.argv.slice(2)) {
   } else if (step === 'warm') {
     probe(false)
   } else if (step.startsWith('switch:')) {
-    useSystemFontRenderer(step === 'switch:true')
+    setTextRenderer(step.slice('switch:'.length) as TextRenderer)
   } else if (step === 'probe') {
     result = probe(true)
   } else {

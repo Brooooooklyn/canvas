@@ -5,7 +5,7 @@
 // becomes a dotted capital), and shapes each run of letters that change when
 // uppercased, or do not, on its own (OpenTypeCapsSupport, SmallCapsIterator,
 // SimpleFontData::SmallCapsFontData).
-import './use-system-fonts'
+import './use-system-text-renderer'
 
 import { readFileSync } from 'node:fs'
 import { release } from 'node:os'

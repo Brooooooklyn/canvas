@@ -3,29 +3,35 @@ import { ReadableStream } from 'node:stream/web'
 // Clear all type of caches in Skia
 export function clearAllCache(): void
 
+export type TextRenderer = 'portable' | 'system'
+
 /**
- * Draw text with each OS's own font renderer, as Chrome does: CoreText on
- * macOS (Fontations for some color and variable fonts) with CoreText's
- * installed fonts and fallback, Fontations on Linux, FreeType elsewhere;
- * plus each OS's text gamma and contrast, LCD text on opaque macOS canvases,
- * Chrome's per-OS font family settings and macOS metric rules.
+ * Selects how text is drawn.
  *
- * By default text is drawn the same way on every OS: FreeType, Skia's
- * default text gamma, no LCD text and one font family table. The same
+ * `'portable'` (the default) draws text the same way on every OS: FreeType,
+ * Skia's default text gamma, no LCD text and one font family table. The same
  * registered fonts give the same pixels and TextMetrics on macOS, Linux and
  * Windows.
  *
- * Applies to the whole process, worker threads included. Call it once at
- * startup, before creating canvases. `useSystemFontRenderer(false)` switches
- * back. Registered fonts keep their FontKey. A canvas created before the
- * switch keeps its text gamma until its width or height is set. A
- * `ctx.font` value set before the switch keeps its parsed
- * form: sizes in `ex`/`ch`/... units and, on macOS, the BlinkMacSystemFont
- * to system-ui rewrite. Set `ctx.font` again after the switch.
+ * `'system'` draws text with each OS's own font renderer, as Chrome does:
+ * CoreText on macOS (Fontations for some color and variable fonts) with
+ * CoreText's installed fonts and fallback, Fontations on Linux, FreeType
+ * elsewhere; plus each OS's text gamma and contrast, LCD text on opaque macOS
+ * canvases, Chrome's per-OS font family settings and macOS metric rules.
  *
- * Not a React hook, despite the `use` prefix.
+ * Applies to the whole process, worker threads included. Call it once at
+ * startup, before creating canvases. Setting the mode in use again changes
+ * nothing. Any other value throws a TypeError. Registered fonts keep their
+ * FontKey. A canvas created before the switch keeps its text gamma until its
+ * width or height is set. A `ctx.font` value set before the switch keeps its
+ * parsed form: sizes in `ex`/`ch`/... units and, on macOS, the
+ * BlinkMacSystemFont to system-ui rewrite. Set `ctx.font` again after the
+ * switch.
  */
-export function useSystemFontRenderer(enabled?: boolean): void
+export function setTextRenderer(renderer: TextRenderer): void
+
+/** The text renderer in use, set by {@link setTextRenderer}. */
+export function getTextRenderer(): TextRenderer
 
 interface CanvasRenderingContext2D
   extends CanvasCompositing,

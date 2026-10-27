@@ -4,7 +4,7 @@
 // (font_matcher_mac.mm MatchFontFamily), which finds Times and Courier though
 // macOS 27 does not list them, and never matches a hidden "." family or
 // LastResort (font_cache_mac.mm IsSystemFontName).
-import './use-system-fonts'
+import './use-system-text-renderer'
 
 import { spawnSync } from 'node:child_process'
 import { release } from 'node:os'
@@ -137,7 +137,7 @@ macTest('installed family names match in any case, and hidden families never', (
 })
 
 // A fresh process, as index.js runs at startup. The probes switch to the
-// system font renderer right after require, as this spec does.
+// system text renderer right after require, as this spec does.
 function run(script: string, env: Record<string, string> = {}) {
   const { stdout, stderr, status } = spawnSync(process.execPath, ['-e', script], {
     cwd: join(__dirname, '..'),
@@ -150,7 +150,7 @@ function run(script: string, env: Record<string, string> = {}) {
 
 const PROBE = `
 const { createCanvas, GlobalFonts } = require('./index.js')
-require('./index.js').useSystemFontRenderer()
+require('./index.js').setTextRenderer('system')
 const width = (family) => {
   const ctx = createCanvas(10, 10).getContext('2d')
   ctx.font = '20px ' + family
@@ -183,7 +183,7 @@ macTest('DISABLE_SYSTEM_FONTS_LOAD leaves only the registered fonts until loadSy
 // back to the CSS answer: 1ex is 0.5em.
 const SVG_PROBE = `
 const { Image, GlobalFonts } = require('./index.js')
-require('./index.js').useSystemFontRenderer()
+require('./index.js').setTextRenderer('system')
 const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="2ex" height="20"></svg>'
 const width = async () => {
   const image = new Image()

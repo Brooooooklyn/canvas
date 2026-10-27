@@ -1,6 +1,6 @@
-// useSystemFontRenderer() switches a running process between the default font
-// renderer (the same text on every OS) and the system one (Chrome's per-OS
-// text). A switched process must draw and measure like a process that started
+// setTextRenderer() switches a running process between the 'portable' text
+// renderer (the default: the same text on every OS) and the 'system' one
+// (Chrome's per-OS text). A switched process must draw and measure like a process that started
 // in that mode. The tests switch this process, so they run one at a time and
 // each switches back to the default at the end.
 import { spawnSync } from 'node:child_process'
@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url'
 
 import test, { type ExecutionContext } from 'ava'
 
-import { createCanvas, GlobalFonts, Image, useSystemFontRenderer, type SKRSContext2D } from '../index'
+import { createCanvas, getTextRenderer, GlobalFonts, Image, setTextRenderer, type SKRSContext2D } from '../index'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const require = createRequire(import.meta.url)
@@ -25,7 +25,7 @@ GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'Lato-Regular.ttf'), 'UsLa
 GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'iosevka-slab-regular.ttf'), 'UsIosevka')
 
 function backToDefault(t: ExecutionContext) {
-  t.teardown(() => useSystemFontRenderer(false))
+  t.teardown(() => setTextRenderer('portable'))
 }
 
 function measure(api: { createCanvas: typeof createCanvas } = { createCanvas }) {
@@ -57,18 +57,56 @@ function drawText(canvas: ReturnType<typeof createCanvas>) {
   return pixels(ctx)
 }
 
-test.serial('useSystemFontRenderer returns nothing, and the same mode again changes nothing', (t) => {
+// The first test: nothing in this process has switched yet.
+test.serial('getTextRenderer is portable at start', (t) => {
+  t.is(getTextRenderer(), 'portable')
+})
+
+test.serial('setTextRenderer returns nothing, and the same mode again changes nothing', (t) => {
   backToDefault(t)
-  t.is(typeof useSystemFontRenderer, 'function')
+  t.is(typeof setTextRenderer, 'function')
   const portable = measure()
-  t.is(useSystemFontRenderer(false), undefined)
+  t.is(setTextRenderer('portable'), undefined)
+  t.is(getTextRenderer(), 'portable')
   t.deepEqual(measure(), portable)
-  t.is(useSystemFontRenderer(), undefined)
+  t.is(setTextRenderer('system'), undefined)
+  t.is(getTextRenderer(), 'system')
   const system = measure()
-  t.is(useSystemFontRenderer(true), undefined)
+  t.is(setTextRenderer('system'), undefined)
+  t.is(getTextRenderer(), 'system')
   t.deepEqual(measure(), system)
-  useSystemFontRenderer(false)
+  setTextRenderer('portable')
+  t.is(getTextRenderer(), 'portable')
   t.deepEqual(measure(), portable)
+})
+
+test.serial('setTextRenderer throws a TypeError for any other value and keeps the mode', (t) => {
+  backToDefault(t)
+  const set = setTextRenderer as (renderer?: unknown) => void
+  const cases: [unknown, string][] = [
+    [undefined, 'undefined'],
+    [null, 'null'],
+    [true, 'true'],
+    [false, 'false'],
+    [1, '1'],
+    ['System', "'System'"],
+    ['', "''"],
+    [Symbol('system'), 'a symbol'],
+    [{ toString: () => 'system' }, 'an object'],
+    [() => 'system', 'a function'],
+  ]
+  for (const mode of ['portable', 'system'] as const) {
+    setTextRenderer(mode)
+    for (const [value, shown] of cases) {
+      t.throws(() => set(value), {
+        instanceOf: TypeError,
+        message: `Invalid text renderer: ${shown}, expected 'portable' or 'system'`,
+      })
+      t.is(getTextRenderer(), mode)
+    }
+    t.throws(() => set(), { instanceOf: TypeError })
+    t.is(getTextRenderer(), mode)
+  }
 })
 
 // __test__/font-renderer-probe.ts in a new process, with the steps it lists.
@@ -91,14 +129,14 @@ for (const [label, env] of [
   [' with DISABLE_SYSTEM_FONTS_LOAD', { DISABLE_SYSTEM_FONTS_LOAD: '1' }],
 ] as const) {
   test.serial(`a process switched after drawing equals one started with the system renderer${label}`, (t) => {
-    const fresh = probe(['switch:true', 'register', 'probe'], env)
-    const switched = probe(['register', 'warm', 'switch:true', 'probe'], env)
+    const fresh = probe(['switch:system', 'register', 'probe'], env)
+    const switched = probe(['register', 'warm', 'switch:system', 'probe'], env)
     t.deepEqual(switched, fresh)
   })
 
   test.serial(`a process switched back equals one that never switched${label}`, (t) => {
     const fresh = probe(['register', 'probe'], env)
-    const switched = probe(['switch:true', 'register', 'warm', 'switch:false', 'probe'], env)
+    const switched = probe(['switch:system', 'register', 'warm', 'switch:portable', 'probe'], env)
     t.deepEqual(switched, fresh)
   })
 }
@@ -116,11 +154,11 @@ test.serial('a FontKey and a setAlias name survive switching', (t) => {
   const before = width('20px SwAlias')
   t.is(before, width('20px SwSerif'))
   t.true(GlobalFonts.has('SwAlias'))
-  useSystemFontRenderer()
+  setTextRenderer('system')
   t.true(GlobalFonts.has('SwSerif'))
   t.true(GlobalFonts.has('SwAlias'))
   t.is(width('20px SwAlias'), width('20px SwSerif'))
-  useSystemFontRenderer(false)
+  setTextRenderer('portable')
   t.is(width('20px SwAlias'), before)
   t.true(GlobalFonts.remove(key!))
   t.false(GlobalFonts.has('SwSerif'))
@@ -147,10 +185,10 @@ function textWidth(font: string) {
     t.truthy(key)
     const before = textWidth('20px UsGone')
     rmSync(file)
-    useSystemFontRenderer()
+    setTextRenderer('system')
     t.true(GlobalFonts.has('UsGone'))
     t.not(textWidth('20px UsGone'), textWidth('20px UsNoSuchFamily'))
-    useSystemFontRenderer(false)
+    setTextRenderer('portable')
     t.true(GlobalFonts.has('UsGone'))
     t.is(textWidth('20px UsGone'), before)
     t.true(GlobalFonts.remove(key!))
@@ -173,24 +211,24 @@ test.serial('a shared family keeps its first face across switching', (t) => {
   const before = textWidth('20px UsOrderShared')
   t.is(before, textWidth('20px "Source Serif Pro"'))
   t.not(before, textWidth('20px UsOrderA'))
-  useSystemFontRenderer()
+  setTextRenderer('system')
   t.is(textWidth('20px UsOrderShared'), textWidth('20px "Source Serif Pro"'))
-  useSystemFontRenderer(false)
+  setTextRenderer('portable')
   t.is(textWidth('20px UsOrderShared'), before)
 })
 
 test.serial('a canvas made before a switch draws like a new one once its size is set', (t) => {
   backToDefault(t)
   for (const [from, to] of [
-    [true, false],
-    [false, true],
-  ]) {
-    useSystemFontRenderer(from)
+    ['system', 'portable'],
+    ['portable', 'system'],
+  ] as const) {
+    setTextRenderer(from)
     const old = createCanvas(160, 24)
     drawText(old)
-    useSystemFontRenderer(to)
+    setTextRenderer(to)
     const fresh = drawText(createCanvas(160, 24))
-    if (from && GAMMA_OS) {
+    if (from === 'system' && GAMMA_OS) {
       // The old canvas keeps the system renderer's text gamma.
       t.notDeepEqual(drawText(old), fresh)
     }
@@ -216,11 +254,11 @@ test.serial('an SVG image draws its text with the current renderer', async (t) =
   }
   const portable = draw()
   t.true(portable.some((value) => value !== 0))
-  useSystemFontRenderer()
+  setTextRenderer('system')
   if (GAMMA_OS) {
     t.notDeepEqual(draw(), portable)
   }
-  useSystemFontRenderer(false)
+  setTextRenderer('portable')
   t.deepEqual(draw(), portable)
 })
 
@@ -229,7 +267,7 @@ test.serial('an SVG image draws its text with the current renderer', async (t) =
 test.serial('loading index.js again keeps the mode', (t) => {
   backToDefault(t)
   const portable = measure()
-  useSystemFontRenderer()
+  setTextRenderer('system')
   const system = measure()
   for (const file of ['../index.js', '../js-binding.js', '../geometry.js', '../load-image.js', '../node-canvas.js']) {
     delete require.cache[require.resolve(file)]
@@ -240,7 +278,8 @@ test.serial('loading index.js again keeps the mode', (t) => {
     // CoreText's descent: 10, FreeType's: 14.
     t.notDeepEqual(system, portable)
   }
-  reloaded.useSystemFontRenderer(false)
+  t.is(reloaded.getTextRenderer(), 'system')
+  reloaded.setTextRenderer('portable')
   t.deepEqual(measure(reloaded), portable)
 })
 
@@ -249,14 +288,14 @@ test.serial('loading index.js again keeps the mode', (t) => {
 // FreeType; the system renderer lists CoreText's fonts instead (CoreText does
 // not read HOME, so Lato is not checked there).
 const HOME_PROBE = `
-const { GlobalFonts, useSystemFontRenderer } = require('./index.js')
+const { GlobalFonts, setTextRenderer } = require('./index.js')
 const list = () => GlobalFonts.families.map(({ family, styles }) => family + ':' + styles.length).sort()
 const out = { first: list() }
-useSystemFontRenderer()
+setTextRenderer('system')
 out.loaded = GlobalFonts.loadSystemFonts()
 out.loadedAgain = GlobalFonts.loadSystemFonts()
 out.faces = GlobalFonts.families.reduce((n, family) => n + family.styles.length, 0)
-useSystemFontRenderer(false)
+setTextRenderer('portable')
 out.back = list()
 console.log(JSON.stringify(out))
 `
@@ -286,7 +325,7 @@ macTest('the per-user font folder comes back after a switch on macOS', (t) => {
 // '20px Helvetica' measures and the first family after each "state" step.
 const HELVETICA_PROBE = `
 const { join } = require('path')
-const { GlobalFonts, createCanvas, useSystemFontRenderer } = require('./index.js')
+const { GlobalFonts, createCanvas, setTextRenderer } = require('./index.js')
 const width = (font) => {
   const ctx = createCanvas(10, 10).getContext('2d')
   ctx.font = font
@@ -295,8 +334,8 @@ const width = (font) => {
 const out = []
 for (const step of process.env.PROBE_STEPS.split(',')) {
   if (step === 'register') GlobalFonts.registerFromPath(join('__test__', 'fonts', 'Lato-Regular.ttf'), 'Helvetica')
-  else if (step === 'switch:true') useSystemFontRenderer(true)
-  else if (step === 'switch:false') useSystemFontRenderer(false)
+  else if (step === 'switch:system') setTextRenderer('system')
+  else if (step === 'switch:portable') setTextRenderer('portable')
   else if (step === 'state') out.push({ width: width('20px Helvetica'), lato: width('20px Lato'), first: GlobalFonts.families[0].family })
 }
 console.log(JSON.stringify(out))
@@ -317,24 +356,24 @@ function macProbe(script: string, env: Record<string, string> = {}) {
 macTest('installed fonts stay before registered fonts across a switch on macOS', (t) => {
   const helvetica = (steps: string[]) => macProbe(HELVETICA_PROBE, { PROBE_STEPS: steps.join(',') })
   const [portable] = helvetica(['register', 'state'])
-  const [system] = helvetica(['switch:true', 'register', 'state'])
+  const [system] = helvetica(['switch:system', 'register', 'state'])
   // The installed Helvetica wins over Lato.
   t.not(portable.width, portable.lato)
-  t.deepEqual(helvetica(['register', 'switch:true', 'state', 'switch:false', 'state']), [system, portable])
+  t.deepEqual(helvetica(['register', 'switch:system', 'state', 'switch:portable', 'state']), [system, portable])
 })
 
 const REMOVE_ALL_PROBE = `
-const { GlobalFonts, createCanvas, useSystemFontRenderer } = require('./index.js')
+const { GlobalFonts, createCanvas, setTextRenderer } = require('./index.js')
 const width = () => {
   const ctx = createCanvas(10, 10).getContext('2d')
   ctx.font = '20px Helvetica'
   return ctx.measureText('Hello').width
 }
 const out = { removed: GlobalFonts.removeAll(), families: [GlobalFonts.families.length], widths: [width()] }
-useSystemFontRenderer(true)
+setTextRenderer('system')
 out.families.push(GlobalFonts.families.length)
 out.widths.push(width())
-useSystemFontRenderer(false)
+setTextRenderer('portable')
 out.families.push(GlobalFonts.families.length)
 out.widths.push(width())
 out.loaded = GlobalFonts.loadSystemFonts()

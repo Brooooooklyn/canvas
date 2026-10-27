@@ -3,8 +3,11 @@ use std::path;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{LockResult, Mutex, MutexGuard, OnceLock, PoisonError};
 
+use napi::{Env, JsValue, Unknown, ValueType};
+
 use crate::font::{FontParseContext, FontRelativeUnits, PARENT_FONT_SIZE, ROOT_FONT_SIZE};
 use crate::sk::*;
+use crate::webidl;
 
 #[cfg(target_os = "windows")]
 const FONT_PATH: &str = "C:/Windows/Fonts";
@@ -20,8 +23,8 @@ static FONT_DIR: OnceLock<napi::Result<u32>> = OnceLock::new();
 
 static GLOBAL_FONT_COLLECTION: OnceLock<Mutex<FontCollection>> = OnceLock::new();
 
-/// Whether useSystemFontRenderer() is on, for Rust readers. The C++ side keeps
-/// its own copy (font_scalers.cpp SystemFontRenderer); both are written
+/// Whether setTextRenderer('system') is on, for Rust readers. The C++ side
+/// keeps its own copy (font_scalers.cpp SystemFontRenderer); both are written
 /// together, under the font lock once the collection exists.
 static SYSTEM_FONT_RENDERER: AtomicBool = AtomicBool::new(false);
 
@@ -100,12 +103,48 @@ pub struct FontKey {
   pub typeface_id: u32,
 }
 
-/// Draws text with each OS's own font renderer, as Chrome does, for the whole
-/// process; `false` switches back. Every registered font is made again and
-/// every text cache is dropped.
-#[napi]
-pub fn use_system_font_renderer(enabled: Option<bool>) -> napi::Result<()> {
-  let enabled = enabled.unwrap_or(true);
+const PORTABLE: &str = "portable";
+const SYSTEM: &str = "system";
+
+/// Selects how text is drawn, for the whole process: 'portable' (the
+/// default) or 'system' (each OS's own font renderer, as Chrome does). Every
+/// registered font is made again and every text cache is dropped. Any other
+/// value is a TypeError and changes nothing.
+#[napi(ts_args_type = "renderer: TextRenderer")]
+pub fn set_text_renderer(env: &Env, renderer: Unknown) -> napi::Result<()> {
+  let (env, value) = (env.raw(), renderer.raw());
+  // ToString runs no user code on a primitive; any other value is only named.
+  let shown = match webidl::type_of(env, value)? {
+    ValueType::String => match webidl::to_js_string(env, value)?.as_str() {
+      PORTABLE => return set_system_font_renderer(false),
+      SYSTEM => return set_system_font_renderer(true),
+      other => format!("'{other}'"),
+    },
+    ValueType::Symbol => "a symbol".to_owned(),
+    ValueType::Function => "a function".to_owned(),
+    ValueType::Object | ValueType::External => "an object".to_owned(),
+    // undefined, null, a boolean, a number or a bigint.
+    _ => webidl::to_js_string(env, value)?,
+  };
+  Err(webidl::type_error(
+    env,
+    &format!("Invalid text renderer: {shown}, expected '{PORTABLE}' or '{SYSTEM}'"),
+  ))
+}
+
+/// The text renderer in use: 'portable' or 'system'.
+#[napi(ts_return_type = "TextRenderer")]
+pub fn get_text_renderer() -> &'static str {
+  if system_font_renderer() {
+    SYSTEM
+  } else {
+    PORTABLE
+  }
+}
+
+/// Switches the system font renderer on or off; the same mode again is a
+/// no-op.
+fn set_system_font_renderer(enabled: bool) -> napi::Result<()> {
   let mut fresh = false;
   // Called before any font use: the collection is made in that mode.
   let collection = GLOBAL_FONT_COLLECTION.get_or_init(|| {

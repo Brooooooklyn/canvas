@@ -1,7 +1,7 @@
 // The macOS values of draw.spec, svg.spec and svg-canvas.spec with the system
 // font renderer, where CoreText draws the registered fonts. By default those
 // specs check FreeType's values, the same on every OS.
-import './use-system-fonts'
+import './use-system-text-renderer'
 
 import { readFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'

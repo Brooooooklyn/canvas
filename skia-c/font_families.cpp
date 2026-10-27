@@ -14,7 +14,7 @@
 //
 // By default every OS uses Linux's rules and settings, so the same fonts give
 // the same families everywhere. Each OS's own rules (CoreText matching, the
-// Windows renames, the per-OS settings) apply after useSystemFontRenderer().
+// Windows renames, the per-OS settings) apply after setTextRenderer('system').
 
 #include <math.h>
 #include <string.h>
@@ -180,7 +180,7 @@ class FamilyResolver {
     IndexFamilies(c_collection);
   }
 
-  // Whether this lookup uses the OS's own rules (useSystemFontRenderer()),
+  // Whether this lookup uses the OS's own rules (setTextRenderer('system')),
   // read once so one lookup never mixes modes.
   bool system() const { return system_; }
 

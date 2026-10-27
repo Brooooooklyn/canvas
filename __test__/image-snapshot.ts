@@ -7,7 +7,7 @@ import PNG from '@jimp/png'
 import JPEG from '@jimp/jpeg'
 import { ExecutionContext } from 'ava'
 
-import { isSystemFontRenderer } from './font-renderer'
+import { getTextRenderer } from '../index'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -23,7 +23,7 @@ export function snapshotPath(
   title: string,
   ext: string,
   existing: (p: string) => boolean,
-  system = isSystemFontRenderer(),
+  system = getTextRenderer() === 'system',
 ) {
   const shared = join(__dirname, 'snapshots', `${title}.${ext}`)
   const os = join(__dirname, 'snapshots', process.platform, `${title}.${ext}`)
@@ -44,7 +44,7 @@ export async function snapshotImage<C>(
 
   async function writeFailureImage() {
     // A .system.spec wrapper runs the same titles, so keep its failures apart.
-    const name = isSystemFontRenderer() ? `${t.title}.system` : t.title
+    const name = getTextRenderer() === 'system' ? `${t.title}.system` : t.title
     await fs.writeFile(join(__dirname, 'failure', `${name}.${ext}`), image)
   }
 

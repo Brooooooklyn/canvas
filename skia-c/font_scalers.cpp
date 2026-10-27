@@ -7,7 +7,7 @@
 //                                                       scan, and face 0 of
 //                                                       each installed file
 //
-// After useSystemFontRenderer(), the scaler each OS's Chrome draws a font
+// After setTextRenderer('system'), the scaler each OS's Chrome draws a font
 // with:
 //
 //             registered fonts (web fonts)              installed fonts
@@ -203,7 +203,7 @@ bool WantsFontations(const SkTypeface& probe) {
 }
 #endif
 
-// useSystemFontRenderer(): Rust keeps its own copy
+// setTextRenderer(): Rust keeps its own copy
 // (global_fonts.rs SYSTEM_FONT_RENDERER) and sets both under the font lock.
 std::atomic<bool> g_system_font_renderer{false};
 
