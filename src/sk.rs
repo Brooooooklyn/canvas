@@ -3994,7 +3994,7 @@ impl Path {
     end_angle: f32,
     ccw: bool,
   ) {
-    // Blink CanonicalizeAngle (canvas_path.cc:315-334).
+    // Blink CanonicalizeAngle (canvas_path.cc:315-333).
     let tau = 2.0 * PI;
     let mut new_start_angle = start_angle % tau;
     if new_start_angle < 0.0 {
@@ -4072,7 +4072,7 @@ impl Path {
     let sweep_deg = (end - start) * RAD_TO_DEG;
     // SkPathBuilder::arcTo draws nothing for a 360 sweep, so draw two halves.
     // f32 rounding puts a full sweep a few ulps off 360 (1 ulp = 3.05e-5), so
-    // use Blink's WebCoreFloatNearlyEqual tolerance of 1/4096 (:465).
+    // use Blink's WebCoreFloatNearlyEqual tolerance of 1/4096 (:466).
     if (sweep_deg.abs() - 360.0).abs() <= 1.0 / 4096.0 {
       let half = 180.0f32.copysign(sweep_deg);
       self.arc_to(left, top, right, bottom, start_deg, half, false);
@@ -4097,10 +4097,9 @@ impl Path {
     end_angle: f32,
     from_end: bool,
   ) {
-    // Blink canvas_path.cc:457-461: a zero-radius arc adds only its start
-    // point (lineTo, which is a moveTo on an empty path). On an empty path our
-    // line_to adds moveTo plus a zero-length line that stroke caps draw, and
-    // Chrome draws nothing there, so use move_to.
+    // Blink canvas_path.cc:457-461 adds lineTo(center), which on an empty
+    // path is moveTo plus a zero-length lineTo. Chrome's stroke prunes that
+    // line and ours does not (its caps draw a dot), so use move_to there.
     if radius == 0.0 {
       if self.is_empty() {
         self.move_to(center_x, center_y);
