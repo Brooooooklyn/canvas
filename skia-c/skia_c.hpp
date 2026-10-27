@@ -693,17 +693,12 @@ struct skiac_font_collection {
     std::string family;
     std::string alias;
     uint64_t order;
-    // The face the call bound, kept when a rebuild cannot find the family.
-    sk_sp<SkTypeface> typeface;
   };
   std::vector<SetAlias> set_aliases;
 
   // `registered`: the call registered a face. Such a call is always kept,
   // as a repeat can pick another face of the family than the first call.
-  void addSetAlias(const char* family,
-                   const char* alias,
-                   sk_sp<SkTypeface> typeface,
-                   bool registered) {
+  void addSetAlias(const char* family, const char* alias, bool registered) {
     if (!registered) {
       for (const auto& entry : set_aliases) {
         if (entry.family == family && entry.alias == alias) {
@@ -711,8 +706,7 @@ struct skiac_font_collection {
         }
       }
     }
-    set_aliases.push_back(
-        {family, alias, assets->nextOrder(), std::move(typeface)});
+    set_aliases.push_back({family, alias, assets->nextOrder()});
   }
   // Set when the dynamic provider gains a face or an alias. FontCollection
   // memoizes findTypefaces() per {family list, weight, slant}, including
@@ -990,21 +984,18 @@ struct skiac_font_collection {
         }
 #endif
         // These aliases intentionally shadow/override existing family names
-        // The family as the new mode has it: listed, else found by name
-        // (CoreText resolves families it does not list, as Courier), else
-        // the face the call bound.
+        // The family as the new mode lists it. On a switch also as the new
+        // mode's installed fonts find it by name: CoreText resolves families
+        // it does not list (Courier), which the default mode lists.
         SetAlias& entry = set_aliases[index];
         sk_sp<SkTypeface> typeface =
             new_assets->matchFamilyStyle(entry.family.c_str(), SkFontStyle());
-        if (!typeface && font_mgr) {
+        if (!typeface && relist_installed && font_mgr) {
           typeface =
               font_mgr->matchFamilyStyle(entry.family.c_str(), SkFontStyle());
         }
         if (typeface) {
-          entry.typeface = typeface;
-        }
-        if (entry.typeface) {
-          new_assets->registerTypeface(entry.typeface,
+          new_assets->registerTypeface(std::move(typeface),
                                        SkString(entry.alias.c_str()));
         }
         entry.order = new_assets->nextOrder();

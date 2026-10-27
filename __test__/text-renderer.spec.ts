@@ -400,6 +400,27 @@ macTest('the per-user font folder comes back after a switch on macOS', (t) => {
   t.deepEqual(out.back, out.first)
 })
 
+// Removing a font drops the setAlias names that lead to it, chained ones
+// too, with remove() and with removeBatch().
+for (const how of ['remove', 'removeBatch'] as const) {
+  test.serial(`${how} drops a chain of setAlias names after a switch`, (t) => {
+    backToDefault(t)
+    const key = GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'Oswald.ttf'), 'UsDropA')
+    t.true(GlobalFonts.setAlias('UsDropA', 'UsDropB'))
+    t.true(GlobalFonts.setAlias('UsDropB', 'UsDropC'))
+    setTextRenderer('system')
+    setTextRenderer('portable')
+    t.true(GlobalFonts.has('UsDropC'))
+    if (how === 'remove') {
+      t.true(GlobalFonts.remove(key!))
+    } else {
+      GlobalFonts.removeBatch([key!])
+    }
+    t.false(GlobalFonts.has('UsDropB'))
+    t.false(GlobalFonts.has('UsDropC'))
+  })
+}
+
 // A setAlias of an installed family keeps working in a mode that finds the
 // family only by name (CoreText does not list Courier).
 macTest('a setAlias of an installed family survives switching on macOS', (t) => {
