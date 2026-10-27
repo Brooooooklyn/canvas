@@ -90,6 +90,7 @@ test('ellipse() strokes a full ellipse for every start', (t) => {
 
 test('a tiny negative start still gives a full sweep', (t) => {
   // f32(-1e-45) + 2π rounds to 2π; Blink folds it back to 0 (crbug.com/503422).
+  // A start of 2π draws the same points as 0, so this pins the output, not the fold.
   for (const s of [-1e-8, -1e-38, -1e-45, -5e-324]) {
     t.is(
       stroke(small, (ctx) => ctx.ellipse(20, 20, 15, 10, 0, s, s + TAU)),
