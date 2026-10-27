@@ -12,6 +12,8 @@
 // Chrome was measured on macOS 27. CoreText ships with the OS, so on another
 // macOS version the pixel rows are checked loosely: the alpha sum within 2% of
 // Chrome's and well above what FreeType drew before.
+import './use-system-fonts'
+
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { release } from 'node:os'

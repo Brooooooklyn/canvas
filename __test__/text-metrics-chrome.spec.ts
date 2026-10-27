@@ -8,6 +8,8 @@
 //
 // On macOS the tables under "darwin" are Chrome's on macOS, which reads the
 // fonts through CoreText; other platforms check the Linux rows.
+import './use-system-fonts'
+
 import { copyFileSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { release, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
