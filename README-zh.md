@@ -137,11 +137,11 @@ const { useSystemFontRenderer } = require('@napi-rs/canvas')
 useSystemFontRenderer()
 ```
 
-它作用于整个进程。请在启动时、创建 canvas 之前调用一次。`useSystemFontRenderer(false)` 切换回默认方式。切换之前创建的 canvas 会保留原来的文字 gamma，直到你设置它的 width 或 height。
+它作用于整个进程。请在启动时、创建 canvas 之前调用一次。`useSystemFontRenderer(false)` 切换回默认方式。切换之前创建的 canvas 会保留原来的文字 gamma，直到你设置它的 width 或 height。切换之前设置的 `ctx.font` 值会保留它解析后的结果（`ex`、`ch` 等字体相关单位的字号，以及 macOS 上 `BlinkMacSystemFont` 到 `system-ui` 的改写），所以切换之后请重新设置 `ctx.font`。
 
 `useSystemFontRenderer` 不是 React hook。如果 `react-hooks/rules-of-hooks` 这条 lint 规则报错，可以换个名字导入，例如 `const { useSystemFontRenderer: setSystemFontRenderer } = require('@napi-rs/canvas')`。
 
-> **行为变化**（[#1402](https://github.com/Brooooooklyn/canvas/issues/1402)）：macOS 和 Linux 上的文字改为按 Windows 的方式绘制，所以像素和 `measureText` 结果和 1.0.12、1.0.13 不同。在 macOS 上，已安装的字体重新成为 FreeType 字体（和 1.0.11 一样），不再有 CoreText 的逐字符回退，`sans-serif`、`serif` 和 `monospace` 对应 Arial、Times New Roman 和 Linux 的等宽字体列表。在 macOS 上，`DISABLE_SYSTEM_FONTS_LOAD` 不再让按名字查找找不到已安装的字体，和 Linux、Windows 以及 1.0.12 之前一样；它只让这些字体不出现在 `GlobalFonts.families` 里。调用 `useSystemFontRenderer()` 可以回到 1.0.12 / 1.0.13 的行为。
+> **行为变化**（[#1402](https://github.com/Brooooooklyn/canvas/issues/1402)）：macOS 和 Linux 上的文字改为按 Windows 的方式绘制，所以像素和 `measureText` 结果和 1.0.12、1.0.13 不同。在 macOS 上，已安装的字体重新成为 FreeType 字体（和 1.0.11 一样），读取自 `/System/Library/Fonts`、`/Library/Fonts` 和 `~/Library/Fonts`；不再有 CoreText 的逐字符回退，`sans-serif`、`serif` 和 `monospace` 对应 Arial、Times New Roman 和 Linux 的等宽字体列表。在 macOS 上，`DISABLE_SYSTEM_FONTS_LOAD` 不再让按名字查找找不到已安装的字体，和 Linux、Windows 以及 1.0.12 之前一样；它只让这些字体不出现在 `GlobalFonts.families` 里。调用 `useSystemFontRenderer()` 可以回到 1.0.12 / 1.0.13 的行为。
 
 ## Emoji 文字
 

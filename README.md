@@ -154,11 +154,11 @@ const { useSystemFontRenderer } = require('@napi-rs/canvas')
 useSystemFontRenderer()
 ```
 
-It applies to the whole process. Call it once at startup, before you create canvases. `useSystemFontRenderer(false)` switches back. A canvas created before the switch keeps its old text gamma until you set its width or height.
+It applies to the whole process. Call it once at startup, before you create canvases. `useSystemFontRenderer(false)` switches back. A canvas created before the switch keeps its old text gamma until you set its width or height. A `ctx.font` value set before the switch keeps its parsed form (sizes in `ex`, `ch` and other font-relative units, and on macOS the `BlinkMacSystemFont` to `system-ui` rewrite), so set `ctx.font` again after the switch.
 
 `useSystemFontRenderer` is not a React hook. If the `react-hooks/rules-of-hooks` lint rule flags it, import it under another name, for example `const { useSystemFontRenderer: setSystemFontRenderer } = require('@napi-rs/canvas')`.
 
-> **Behavior change** ([#1402](https://github.com/Brooooooklyn/canvas/issues/1402)): text on macOS and Linux is drawn the way Windows draws it, so pixels and `measureText` results differ from 1.0.12 and 1.0.13. On macOS, the installed fonts are FreeType faces again (as in 1.0.11), CoreText's per-character fallback is off, and `sans-serif`, `serif` and `monospace` map to Arial, Times New Roman and the Linux monospace list. On macOS, `DISABLE_SYSTEM_FONTS_LOAD` no longer hides installed fonts from name lookup, as on Linux and Windows and before 1.0.12; it only keeps them out of `GlobalFonts.families`. Call `useSystemFontRenderer()` to get the 1.0.12 / 1.0.13 behavior back.
+> **Behavior change** ([#1402](https://github.com/Brooooooklyn/canvas/issues/1402)): text on macOS and Linux is drawn the way Windows draws it, so pixels and `measureText` results differ from 1.0.12 and 1.0.13. On macOS, the installed fonts are FreeType faces again (as in 1.0.11), read from `/System/Library/Fonts`, `/Library/Fonts` and `~/Library/Fonts`; CoreText's per-character fallback is off, and `sans-serif`, `serif` and `monospace` map to Arial, Times New Roman and the Linux monospace list. On macOS, `DISABLE_SYSTEM_FONTS_LOAD` no longer hides installed fonts from name lookup, as on Linux and Windows and before 1.0.12; it only keeps them out of `GlobalFonts.families`. Call `useSystemFontRenderer()` to get the 1.0.12 / 1.0.13 behavior back.
 
 ## Emoji text
 

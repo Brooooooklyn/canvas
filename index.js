@@ -703,13 +703,15 @@ class Canvas {
 }
 
 if (!process.env.DISABLE_SYSTEM_FONTS_LOAD) {
-  // Installed fonts and the per-user font folder: FreeType by default;
-  // CoreText's on macOS after useSystemFontRenderer().
+  // Installed fonts and the per-user font folders: FreeType by default;
+  // CoreText's on macOS after useSystemFontRenderer(). On macOS that is
+  // /Library/Fonts (all users) and ~/Library/Fonts, after
+  // /System/Library/Fonts, as CoreText lists them.
   const homedirPath = homedir()
   const userFontDirs =
     {
       win32: [join(homedirPath, 'AppData', 'Local', 'Microsoft', 'Windows', 'Fonts')],
-      darwin: [join(homedirPath, 'Library', 'Fonts')],
+      darwin: ['/Library/Fonts', join(homedirPath, 'Library', 'Fonts')],
       linux: [join('usr', 'local', 'share', 'fonts'), join(homedirPath, '.fonts')],
     }[platform()] ?? []
   GlobalFonts.enableSystemFonts(userFontDirs)
