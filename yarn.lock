@@ -561,6 +561,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@napi-rs/canvas-e2e-electron@workspace:e2e/electron":
+  version: 0.0.0-use.local
+  resolution: "@napi-rs/canvas-e2e-electron@workspace:e2e/electron"
+  dependencies:
+    "@napi-rs/canvas": "workspace:*"
+    electron: "npm:^45.0.0"
+  languageName: unknown
+  linkType: soft
+
 "@napi-rs/canvas-e2e-webpack@workspace:e2e/webpack":
   version: 0.0.0-use.local
   resolution: "@napi-rs/canvas-e2e-webpack@workspace:e2e/webpack"

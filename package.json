@@ -71,6 +71,7 @@
     "test:ci": "NODE_OPTIONS='--import=core-js/proposals/iterator-helpers.js' ava -c 1",
     "test": "NODE_OPTIONS='--import=core-js/proposals/iterator-helpers.js' ava",
     "e2e": "yarn workspace @napi-rs/canvas-e2e-webpack test",
+    "e2e:electron": "yarn workspace @napi-rs/canvas-e2e-electron test",
     "version": "napi version && conventional-changelog -p angular -i CHANGELOG.md -s && git add ."
   },
   "devDependencies": {
