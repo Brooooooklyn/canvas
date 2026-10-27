@@ -421,6 +421,31 @@ for (const how of ['remove', 'removeBatch'] as const) {
   })
 }
 
+// An alias name that is also an installed family does not move to that
+// installed font when the registered font behind it is removed.
+for (const how of ['remove', 'removeBatch'] as const) {
+  macTest(`${how} does not move an alias chain to an installed font of the same name on macOS`, (t) => {
+    const out = macProbe(
+      `const { join } = require('path')
+const { GlobalFonts, createCanvas } = require('./index.js')
+const width = (font) => {
+  const ctx = createCanvas(10, 10).getContext('2d')
+  ctx.font = font
+  return ctx.measureText('Hamburgefonstiv').width
+}
+const key = GlobalFonts.registerFromPath(join('__test__', 'fonts', 'Oswald.ttf'), 'UsCollideBase')
+GlobalFonts.setAlias('UsCollideBase', 'Helvetica')
+GlobalFonts.setAlias('Helvetica', 'UsCollideLeaf')
+const before = GlobalFonts.has('UsCollideLeaf')
+if (process.env.HOW === 'remove') GlobalFonts.remove(key)
+else GlobalFonts.removeBatch([key])
+console.log(JSON.stringify({ before, after: GlobalFonts.has('UsCollideLeaf'), removedAll: GlobalFonts.removeAll() }))`,
+      { DISABLE_SYSTEM_FONTS_LOAD: '1', HOW: how },
+    )
+    t.deepEqual(out, { before: true, after: false, removedAll: 0 })
+  })
+}
+
 // A setAlias of an installed family keeps working in a mode that finds the
 // family only by name (CoreText does not list Courier).
 macTest('a setAlias of an installed family survives switching on macOS', (t) => {

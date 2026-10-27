@@ -693,12 +693,18 @@ struct skiac_font_collection {
     std::string family;
     std::string alias;
     uint64_t order;
+    // The family was an installed font when the call ran, so a rebuild may
+    // find it by name among the installed fonts.
+    bool installed;
   };
   std::vector<SetAlias> set_aliases;
 
   // `registered`: the call registered a face. Such a call is always kept,
   // as a repeat can pick another face of the family than the first call.
-  void addSetAlias(const char* family, const char* alias, bool registered) {
+  void addSetAlias(const char* family,
+                   const char* alias,
+                   bool registered,
+                   bool installed) {
     if (!registered) {
       for (const auto& entry : set_aliases) {
         if (entry.family == family && entry.alias == alias) {
@@ -706,7 +712,7 @@ struct skiac_font_collection {
         }
       }
     }
-    set_aliases.push_back({family, alias, assets->nextOrder()});
+    set_aliases.push_back({family, alias, assets->nextOrder(), installed});
   }
   // Set when the dynamic provider gains a face or an alias. FontCollection
   // memoizes findTypefaces() per {family list, weight, slant}, including
@@ -984,15 +990,16 @@ struct skiac_font_collection {
         }
 #endif
         // These aliases intentionally shadow/override existing family names
-        // The family as the new provider lists it, else as the installed
-        // fonts find it by name: CoreText resolves families it does not list
-        // (Courier), which the default mode lists. An alias of a removed
-        // font has no entry left (remove() erases them), so this finds no
-        // removed font.
+        // The family as the new provider lists it. A family that was an
+        // installed font is also looked up by name among the installed
+        // fonts: CoreText resolves families it does not list (Courier),
+        // which the default mode lists. A registered family that is gone
+        // is not, so its aliases do not move to an installed font of the
+        // same name.
         SetAlias& entry = set_aliases[index];
         sk_sp<SkTypeface> typeface =
             new_assets->matchFamilyStyle(entry.family.c_str(), SkFontStyle());
-        if (!typeface && font_mgr) {
+        if (!typeface && entry.installed && font_mgr) {
           typeface =
               font_mgr->matchFamilyStyle(entry.family.c_str(), SkFontStyle());
         }
