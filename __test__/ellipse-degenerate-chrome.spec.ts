@@ -137,6 +137,39 @@ test('a zero-sweep ellipse adds only its start point', (t) => {
   t.is(countPainted(ctx), 0)
 })
 
+test('a degenerate ellipse whose points all land on the start point is a lone point', (t) => {
+  // In float, π/2 to 5π/2 anticlockwise leaves a 4.8e-7 sweep, not 0, so
+  // every point Blink adds is the start point. Chrome strokes nothing.
+  const strokeRound = (lineWidth: number, args: Parameters<Ctx['ellipse']>) => {
+    ctx.reset()
+    ctx.lineWidth = lineWidth
+    ctx.lineCap = 'round'
+    ctx.ellipse(...args)
+    ctx.stroke()
+    return countPainted(ctx)
+  }
+  const cases: Parameters<Ctx['ellipse']>[] = [
+    [50, 50, 0, 40, 0, Math.PI / 2, (5 * Math.PI) / 2, true],
+    [50, 50, 0, 40, 0, -Math.PI / 2, (-5 * Math.PI) / 2, false],
+    [50, 50, 40, 0, 0, Math.PI, 3 * Math.PI, true],
+    [70, 70, 0, 40, -2.2, 7.5, 7.5 + TAU, true],
+  ]
+  for (const args of cases) {
+    const name = args.join(',')
+    const path = new Path2D()
+    path.ellipse(...args)
+    t.is(path.toSVGString(), '', name)
+    t.is(strokeRound(1, args), 0, `${name} lineWidth 1`)
+    t.is(strokeRound(20, args), 0, `${name} lineWidth 20`)
+  }
+
+  // At center 50 the rotated end point is 4e-6 off the start, so the bounds
+  // are not empty and Chrome strokes it (4 px and 346 px).
+  const offByLittle: Parameters<Ctx['ellipse']> = [50, 50, 0, 40, -2.2, 7.5, 7.5 + TAU, true]
+  t.true(strokeRound(1, offByLittle) > 0)
+  t.true(strokeRound(20, offByLittle) > 0)
+})
+
 test('a degenerate ellipse strokes and fills like Chrome', (t) => {
   const stroke = (lineWidth: number, cap: 'butt' | 'square', build: (c: Ctx) => InstanceType<typeof Path2D> | void) => {
     ctx.reset()

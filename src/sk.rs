@@ -4080,25 +4080,33 @@ impl Path {
       self.degenerate_line_to(px, py);
       return;
     }
-    self.finite_line_to(px, py);
+    // At most 6 points: start, up to 4 multiples of π/2, end.
+    let mut points = Vec::with_capacity(6);
+    points.push((px, py));
     let half_pi = std::f32::consts::FRAC_PI_2;
     if !ccw {
       let mut angle = start - start % half_pi + half_pi;
       while angle < end {
-        let (px, py) = point(angle);
-        self.finite_line_to(px, py);
+        points.push(point(angle));
         angle += half_pi;
       }
     } else {
       let mut angle = start - start % half_pi;
       while angle > end {
-        let (px, py) = point(angle);
-        self.finite_line_to(px, py);
+        points.push(point(angle));
         angle -= half_pi;
       }
     }
-    let (px, py) = point(end);
-    self.finite_line_to(px, py);
+    points.push(point(end));
+    // A sweep that is tiny after f32 rounding can put every point on the
+    // start point. That is a lone point too, so use the same policy as above.
+    if self.is_empty() && points.iter().all(|&p| p == (px, py)) {
+      self.degenerate_line_to(px, py);
+      return;
+    }
+    for (px, py) in points {
+      self.finite_line_to(px, py);
+    }
   }
 
   /// Blink CanvasPath::lineTo (canvas_path.cc:125-151 m156): a non-finite
