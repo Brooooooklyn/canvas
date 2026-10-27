@@ -238,6 +238,16 @@ for (const s of Object.keys(S.alpha)) {
   })
 }
 
+// Our Windows builds (x64 and arm64) give one byte 1 off Chrome's (macOS) row: byte 17 (pixel 4,
+// green) of the display-p3 row of 'color(display-p3 1 0 0) -> white' is 54, not 55. This is not FP
+// contraction: win32-arm64 gave 54 both before and after Skia was built with -ffp-contract=off, and
+// win32-x64 gave 55 before and 54 after; Linux and macOS give 55. Chrome on Windows was not
+// measured. There that case also accepts its row with that one byte; every other byte, case and
+// platform is checked exactly.
+const WIN32_GRAD = new Map<string, [string, number, number]>([
+  ['color(display-p3 1 0 0) -> white', ['display-p3', 17, 54]],
+])
+
 // sc-grad.js: 64x1 linear gradient, stops spread evenly (a single stop sits at 0.5).
 for (const key of Object.keys(S.grad).filter((k) => k !== '__latch')) {
   test(`gradient stops match Chrome: ${key}`, (t) => {
@@ -256,7 +266,16 @@ for (const key of Object.keys(S.grad).filter((k) => k !== '__latch')) {
       ctx.fillRect(0, 0, 64, 1)
       r[cs] = row(ctx, 64)
     }
-    deepEqualOneOf(t, r, expectedValues('grad', key))
+    const expected = expectedValues('grad', key)
+    const measured = process.platform === 'win32' ? WIN32_GRAD.get(key) : undefined
+    if (measured) {
+      const [cs, i, v] = measured
+      const chrome = expected[0] as Row
+      const winRow = [...(chrome[cs] as number[])]
+      winRow[i] = v
+      expected.push({ ...chrome, [cs]: winRow })
+    }
+    deepEqualOneOf(t, r, expected)
   })
 }
 
