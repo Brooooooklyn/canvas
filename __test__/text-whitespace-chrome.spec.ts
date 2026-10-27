@@ -5,6 +5,8 @@
 // paragraph separators with the space glyph (HarfBuzzFace), and draws
 // nothing for a maxWidth that is not a positive finite number
 // (BaseRenderingContext2D::DrawTextInternal).
+import './use-system-text-renderer'
+
 import { readFileSync } from 'node:fs'
 import { release } from 'node:os'
 import { dirname, join } from 'node:path'

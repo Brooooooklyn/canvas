@@ -1,4 +1,9 @@
-// Canvas text rasterization like each OS's Chrome:
+// Canvas text rasterization. By default every OS draws the same way:
+//
+//              draw font                              text gamma / contrast
+//   default    skparagraph's font                      Skia's defaults
+//
+// After setTextRenderer('system'), like each OS's Chrome:
 //
 //              draw font (CreateSkFont)               text gamma / contrast
 //   macOS      subpixel AA edging, normal hinting      sRGB / 0
@@ -10,7 +15,8 @@
 //   others     skparagraph's font                      Skia's defaults
 //
 // The scalers themselves (CoreText, Fontations, FreeType) are picked where
-// typefaces are made (font_scalers.cpp).
+// typefaces are made (font_scalers.cpp). Any new per-OS text branch must
+// also check SystemFontRenderer().
 
 // CoreText's headers declare a global TextRange, which skia_c.hpp's
 // `using namespace skia::textlayout` would make ambiguous.
@@ -59,6 +65,13 @@ int32_t TruncatedHarfBuzzPosition(SkScalar value) {
 }  // namespace
 
 SkSurfaceProps CanvasSurfaceProps() {
+  if (!SystemFontRenderer()) {
+    // SkTypes.h's text contrast and gamma (what SkSurfaceProps() gives on
+    // desktop), spelled out: the Android libskia is built with
+    // skia_use_fixed_gamma_text (SK_GAMMA_EXPONENT=1.4,
+    // SK_GAMMA_CONTRAST=0.0), and the default text is the same on every OS.
+    return SkSurfaceProps(0, kUnknown_SkPixelGeometry, 0.5f, 0.0f);
+  }
 #if defined(__APPLE__)
   // Chrome's skia/BUILD.gn for mac: SK_GAMMA_SRGB, SK_GAMMA_CONTRAST=0.0.
   return SkSurfaceProps(0, kUnknown_SkPixelGeometry, 0.0f, 0.0f);
@@ -74,30 +87,36 @@ SkSurfaceProps CanvasSurfaceProps() {
 SkFont MetricsFont(sk_sp<SkTypeface> typeface, float size) {
   SkFont font(std::move(typeface), size);
 #if defined(__APPLE__)
-  // font_platform_data_mac.mm FontPlatformData::CreateSkFont.
-  font.setEdging(SkFont::Edging::kSubpixelAntiAlias);
-  font.setHinting(SkFontHinting::kNormal);
-  font.setSubpixel(true);
-  font.setLinearMetrics(true);
-  font.setEmbeddedBitmaps(false);
-#else
+  if (SystemFontRenderer()) {
+    // font_platform_data_mac.mm FontPlatformData::CreateSkFont.
+    font.setEdging(SkFont::Edging::kSubpixelAntiAlias);
+    font.setHinting(SkFontHinting::kNormal);
+    font.setSubpixel(true);
+    font.setLinearMetrics(true);
+    font.setEmbeddedBitmaps(false);
+    return font;
+  }
+#endif
   // skparagraph's shaping font (TextStyle defaults) with subpixel
   // positioning, which Chrome Linux forces on for the canvas.
   font.setEdging(SkFont::Edging::kAntiAlias);
   font.setHinting(SkFontHinting::kSlight);
   font.setSubpixel(true);
-#endif
   return font;
 }
 
 TextRasterPolicy::TextRasterPolicy(const skiac_text_request& request)
-    : geometric_precision_(request.text_rendering == kGeometricPrecision) {
+    : geometric_precision_(request.text_rendering == kGeometricPrecision),
+      system_(SystemFontRenderer()) {
 #if defined(__APPLE__)
-  lcd_text_ = request.lcd_text;
+  lcd_text_ = system_ && request.lcd_text;
 #endif
 }
 
 void TextRasterPolicy::ApplyToTextStyle(TextStyle* style) const {
+  if (!system_) {
+    return;
+  }
 #if defined(__APPLE__)
   style->setFontEdging(SkFont::Edging::kSubpixelAntiAlias);
   style->setFontHinting(SkFontHinting::kNormal);
@@ -145,6 +164,9 @@ bool TextRasterPolicy::DrawFontUsesDevice() const {
 
 SkFont TextRasterPolicy::DrawFont(const SkFont& shaped,
                                   const SkMatrix* device) const {
+  if (!system_) {
+    return shaped;
+  }
   SkFont font = shaped;
 #if defined(__APPLE__)
   // font_platform_data_mac.mm FontPlatformData::CreateSkFont.
@@ -178,6 +200,9 @@ SkFont TextRasterPolicy::DrawFont(const SkFont& shaped,
 
 SkPaint TextRasterPolicy::DrawPaint(const SkFont& draw_font,
                                     const SkPaint& paint) const {
+  if (!system_) {
+    return SkPaint(paint);
+  }
   SkPaint draw_paint(paint);
 #if defined(__APPLE__)
   // Chrome's Skia leaves SK_GAMMA_APPLY_TO_A8 undefined, so CoreText draws
@@ -201,6 +226,11 @@ SkPaint TextRasterPolicy::DrawPaint(const SkFont& draw_font,
 void TextRasterPolicy::GlyphBounds(const SkFont& draw_font,
                                    SkSpan<const SkGlyphID> glyphs,
                                    SkSpan<SkRect> bounds) const {
+  if (!system_) {
+    // SkFont::getBounds: whole-pixel glyph boxes.
+    draw_font.getBounds(glyphs, bounds, nullptr);
+    return;
+  }
 #if defined(__APPLE__)
   // skia_text_metrics.cc GetPathBoundsForGlyph: the outline's bounds, the
   // glyph's metrics for one without an outline. Subpixel positioning is on,

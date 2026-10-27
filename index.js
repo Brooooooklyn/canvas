@@ -26,6 +26,8 @@ const {
   _argumentCounts,
   _imageDataConstructor,
   _toNumber: toNumber,
+  setTextRenderer,
+  getTextRenderer,
 } = require('./js-binding')
 
 const { DOMPoint, DOMMatrix, DOMRect } = require('./geometry')
@@ -702,24 +704,24 @@ class Canvas {
 }
 
 if (!process.env.DISABLE_SYSTEM_FONTS_LOAD) {
-  // macOS: CoreText's installed fonts, user fonts included, listed at the
-  // first font lookup.
-  GlobalFonts.enableSystemFonts()
-  const platformName = platform()
+  // Installed fonts and the per-user font folders: FreeType by default;
+  // CoreText's on macOS after setTextRenderer('system'). On macOS that is
+  // /Library/Fonts (all users) and ~/Library/Fonts, after
+  // /System/Library/Fonts, as CoreText lists them.
   const homedirPath = homedir()
-  switch (platformName) {
-    case 'win32':
-      GlobalFonts.loadFontsFromDir(join(homedirPath, 'AppData', 'Local', 'Microsoft', 'Windows', 'Fonts'))
-      break
-    case 'linux':
-      GlobalFonts.loadFontsFromDir(join('usr', 'local', 'share', 'fonts'))
-      GlobalFonts.loadFontsFromDir(join(homedirPath, '.fonts'))
-      break
-  }
+  const userFontDirs =
+    {
+      win32: [join(homedirPath, 'AppData', 'Local', 'Microsoft', 'Windows', 'Fonts')],
+      darwin: ['/Library/Fonts', join(homedirPath, 'Library', 'Fonts')],
+      linux: [join('usr', 'local', 'share', 'fonts'), join(homedirPath, '.fonts')],
+    }[platform()] ?? []
+  GlobalFonts.enableSystemFonts(userFontDirs)
 }
 
 module.exports = {
   clearAllCache,
+  setTextRenderer,
+  getTextRenderer,
   Canvas,
   createCanvas,
   Path2D,

@@ -143,6 +143,10 @@ impl FontRelativeUnits {
 pub struct FontParseContext {
   pub parent: FontRelativeUnits,
   pub root: FontRelativeUnits,
+  /// setTextRenderer('system') was on when the units were read, under the
+  /// same font lock, so a parse never mixes one mode's units with the other
+  /// mode's rules.
+  pub system: bool,
 }
 
 impl Default for FontParseContext {
@@ -150,6 +154,7 @@ impl Default for FontParseContext {
     FontParseContext {
       parent: FontRelativeUnits::fallback(PARENT_FONT_SIZE),
       root: FontRelativeUnits::fallback(ROOT_FONT_SIZE),
+      system: false,
     }
   }
 }
@@ -595,7 +600,7 @@ pub(crate) fn parse_canvas_font(input: &str, ctx: &FontParseContext) -> Option<C
   if !p.is_exhausted() {
     return None;
   }
-  if cfg!(target_os = "macos") {
+  if cfg!(target_os = "macos") && ctx.system {
     // StyleBuilderConverterBase::ConvertFontFamily on macOS.
     for family in &mut families {
       if matches!(family, FamilyName::Named(name) if name == "BlinkMacSystemFont") {

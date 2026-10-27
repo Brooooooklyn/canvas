@@ -119,6 +119,46 @@ const jpeg = await canvas.encode('jpeg', { quality: 90, resolution: 300, copyrig
 
 WebP, AVIF and GIF output ignore these options. `toDataURL`, `toDataURLAsync`, `toBlob`, `convertToBlob`, `encodeStream` and `savePng` never write metadata. To save a file with metadata, write the Buffer from `toBuffer` or `encode`. With an options object, `toBuffer('image/jpeg', ...)` encodes at quality 92; use `encode` or `encodeSync` for another quality.
 
+## Text rendering
+
+By default text looks the same on every OS. Every font is drawn with FreeType, with Skia's default text gamma, no LCD (subpixel) text and one font family table (the one Linux uses). The same font files give the same pixels and the same `measureText` results on macOS, Linux and Windows.
+
+To get the same output everywhere, register your own font files under names no OS installs, and draw only with those names:
+
+```js
+const { GlobalFonts } = require('@napi-rs/canvas')
+
+GlobalFonts.registerFromPath('./fonts/Lato-Regular.ttf', 'MyLato')
+ctx.font = '20px MyLato'
+```
+
+These still depend on the OS and the machine:
+
+- Installed fonts. Names like `Arial` or `Helvetica`, and the generic families (`sans-serif`, `serif`, `monospace`, `system-ui`, the canvas default `10px sans-serif`) resolve to whatever is installed.
+- Characters your registered fonts lack. They are taken from the installed default fonts when those have them, else they draw as boxes. There is no search through all installed fonts.
+- The `ex`, `ch`, `cap` and line-height units inside SVG images use an installed default font.
+- Lottie (Skottie) text uses installed fonts.
+- PDF font embedding depends on the build target.
+- x64 and arm64 builds can differ by 1 color level on some edge pixels.
+- A `FREETYPE_PROPERTIES` env var changes FreeType's hinting.
+
+Set `DISABLE_SYSTEM_FONTS_LOAD=1` to keep installed fonts out of `GlobalFonts.families`. By default they can still be found by name, on every OS.
+
+### `setTextRenderer()`
+
+`setTextRenderer('system')` draws text the way Chrome does on each OS: CoreText on macOS (with CoreText's installed fonts and fallback), Fontations on Linux and FreeType on Windows, plus each OS's text gamma, LCD text on opaque macOS canvases, Chrome's per-OS font families and the macOS metric rules. This was the default in 1.0.12 and 1.0.13. `'portable'` is the default.
+
+```js
+const { setTextRenderer, getTextRenderer } = require('@napi-rs/canvas')
+
+setTextRenderer('system')
+getTextRenderer() // 'system'
+```
+
+It applies to the whole process. Call it once at startup, before you create canvases. `setTextRenderer('portable')` switches back. Any other value throws a `TypeError`. A canvas created before the switch keeps its old text gamma until you set its width or height. A `ctx.font` value set before the switch keeps its parsed form (sizes in `ex`, `ch` and other font-relative units, and on macOS the `BlinkMacSystemFont` to `system-ui` rewrite), so set `ctx.font` again after the switch.
+
+> **Behavior change** ([#1402](https://github.com/Brooooooklyn/canvas/issues/1402)): text on macOS and Linux is drawn the way Windows draws it, so pixels and `measureText` results differ from 1.0.12 and 1.0.13. On macOS, the installed fonts are FreeType faces again (as in 1.0.11), read from `/System/Library/Fonts`, `/Library/Fonts` and `~/Library/Fonts`; CoreText's per-character fallback is off, and `sans-serif`, `serif` and `monospace` map to Arial, Times New Roman and the Linux monospace list. On macOS, `DISABLE_SYSTEM_FONTS_LOAD` no longer hides installed fonts from name lookup, as on Linux and Windows and before 1.0.12; it only keeps them out of `GlobalFonts.families`. Call `setTextRenderer('system')` to get the 1.0.12 / 1.0.13 behavior back.
+
 ## Emoji text
 
 ```js

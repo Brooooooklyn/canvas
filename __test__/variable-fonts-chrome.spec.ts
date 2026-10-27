@@ -6,6 +6,8 @@
 // (FontCustomPlatformData::GetFontPlatformData). An installed font fakes
 // bold when the weight is more than 200 above the face's, and italic only
 // for `italic` and plain `oblique` (FontCache::CreateFontPlatformData).
+import './use-system-text-renderer'
+
 import { copyFileSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { release, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'

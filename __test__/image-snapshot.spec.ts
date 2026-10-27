@@ -1,3 +1,5 @@
+import './use-system-text-renderer'
+
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -42,6 +44,19 @@ test('a snapshot under snapshots/<os>/ wins over the shared one', async (t) => {
     snapshotPath(title, 'png', () => false),
     shared,
   )
+  // Only the system font renderer reads snapshots/<os>/.
+  t.is(
+    snapshotPath(title, 'png', () => true, false),
+    shared,
+  )
+  t.is(
+    snapshotPath(title, 'png', () => true, true),
+    perOs,
+  )
+  t.is(
+    snapshotPath(title, 'png', () => false, true),
+    shared,
+  )
 
   // A red canvas matches the red per-OS snapshot, not the blue shared one.
   const failures: string[] = []
@@ -55,5 +70,5 @@ test('a snapshot under snapshots/<os>/ wins over the shared one', async (t) => {
   } as unknown as ExecutionContext<unknown>
   await snapshotImage(probe)
   t.deepEqual(failures, [])
-  rmSync(join(__dirname, 'failure', `${title}.png`), { force: true })
+  rmSync(join(__dirname, 'failure', `${title}.system.png`), { force: true })
 })

@@ -11,6 +11,10 @@
 //                                      locale_settings_{mac,linux,win}.grd)
 //                                  ──> the keyword as a family name
 //   then the standard font (-webkit-standard), else the last resort.
+//
+// By default every OS uses Linux's rules and settings, so the same fonts give
+// the same families everywhere. Each OS's own rules (CoreText matching, the
+// Windows renames, the per-OS settings) apply after setTextRenderer('system').
 
 #include <math.h>
 #include <string.h>
@@ -39,6 +43,18 @@ constexpr uint32_t kFoldCaseDefault = 0;  // U_FOLD_CASE_DEFAULT
 #if defined(__APPLE__)
 // The family of CoreText's UI font in skiac_font_collection::system_ui.
 constexpr char kSystemUiFamily[] = "system-ui";
+#endif
+
+#if defined(_WIN32)
+constexpr bool kWindows = true;
+#else
+constexpr bool kWindows = false;
+#endif
+// Linux and Android, whose rules every OS uses by default.
+#if defined(__APPLE__) || defined(_WIN32)
+constexpr bool kFontconfigOs = false;
+#else
+constexpr bool kFontconfigOs = true;
 #endif
 
 enum Generic {
@@ -160,9 +176,13 @@ void IndexFamilies(skiac_font_collection* c_collection) {
 class FamilyResolver {
  public:
   explicit FamilyResolver(skiac_font_collection* c_collection)
-      : c_collection_(c_collection) {
+      : c_collection_(c_collection), system_(SystemFontRenderer()) {
     IndexFamilies(c_collection);
   }
+
+  // Whether this lookup uses the OS's own rules (setTextRenderer('system')),
+  // read once so one lookup never mixes modes.
+  bool system() const { return system_; }
 
   // The spelling of `name` the collection knows, matched case-insensitively;
   // the exact spelling wins when two families fold alike.
@@ -196,31 +216,33 @@ class FamilyResolver {
                   std::string* out,
                   bool allow_alternate) const {
 #if defined(_WIN32)
-    name = AdjustFamilyNameToAvoidUnsupportedFonts(name);
+    if (system_) {
+      name = AdjustFamilyNameToAvoidUnsupportedFonts(name);
+    }
 #endif
     if (!name.empty() && Find(name, out)) {
       return true;
     }
 #if defined(__APPLE__)
-    // font_cache_mac.mm CreateFontPlatformData: the family "system-ui" (also
-    // quoted, and BlinkMacSystemFont) is CoreText's UI font
-    // (MatchSystemUIFont), compared case-sensitively.
-    if (name == kSystemUiFamily) {
-      if (!c_collection_->system_ui) {
-        return false;
+    if (system_) {
+      // font_cache_mac.mm CreateFontPlatformData: the family "system-ui"
+      // (also quoted, and BlinkMacSystemFont) is CoreText's UI font
+      // (MatchSystemUIFont), compared case-sensitively.
+      if (name == kSystemUiFamily) {
+        if (!c_collection_->system_ui) {
+          return false;
+        }
+        *out = kSystemUiFamily;
+        return true;
       }
-      *out = kSystemUiFamily;
-      return true;
-    }
-    if (MatchCoreText(name, out)) {
-      return true;
+      if (MatchCoreText(name, out)) {
+        return true;
+      }
     }
 #endif
-#if !defined(__APPLE__) && !defined(_WIN32)
-    if (FindFontconfig(name, out)) {
+    if ((!system_ || kFontconfigOs) && FindFontconfig(name, out)) {
       return true;
     }
-#endif
     if (allow_alternate) {
       std::string_view alternate = AlternateFamilyName(name);
       if (!alternate.empty()) {
@@ -273,7 +295,6 @@ class FamilyResolver {
     return false;
   }
 
-#if !defined(__APPLE__) && !defined(_WIN32)
   // SkFontConfigInterfaceDirect::isAcceptableMatch: a family other than the
   // one asked for is used only when it is metric-compatible
   // (GetFontEquivClass), or when the request is fontconfig's own "sans",
@@ -337,7 +358,6 @@ class FamilyResolver {
         return kSansList;
     }
   }
-#endif
 
 #if defined(_WIN32)
   // alternate_font_family.h AdjustFamilyNameToAvoidUnsupportedFonts.
@@ -358,15 +378,14 @@ class FamilyResolver {
 #endif
 
   // alternate_font_family.h AlternateFamilyName.
-  static std::string_view AlternateFamilyName(std::string_view name) {
+  std::string_view AlternateFamilyName(std::string_view name) const {
     if (EqualsIgnoringAsciiCase(name, "Courier")) {
       return "Courier New";
     }
-#if !defined(_WIN32)
-    if (EqualsIgnoringAsciiCase(name, "Courier New")) {
+    if (!(kWindows && system_) &&
+        EqualsIgnoringAsciiCase(name, "Courier New")) {
       return "Courier";
     }
-#endif
     if (EqualsIgnoringAsciiCase(name, "Times")) {
       return "Times New Roman";
     }
@@ -383,52 +402,59 @@ class FamilyResolver {
   }
 
   skiac_font_collection* c_collection_;
+  bool system_;
 };
 
 // Chrome's default font settings (WebPreferences *_font_family_map), from
-// chrome/app/resources/locale_settings_{mac,linux,win}.grd. Windows uses
-// IDS_FIXED_FONT_FAMILY_ALT_WIN (Consolas) when ClearType is on, the
-// Windows default.
-const char* SettingsFamily(int generic) {
+// chrome/app/resources/locale_settings_{mac,linux,win}.grd; Linux's unless
+// `system`. Windows uses IDS_FIXED_FONT_FAMILY_ALT_WIN (Consolas) when
+// ClearType is on, the Windows default.
+const char* SettingsFamily(int generic, bool system) {
 #if defined(__APPLE__)
-  switch (generic) {
-    case kSerif:
-      return "Times";
-    case kSansSerif:
-      return "Helvetica";
-    case kMonospace:
-      return "Menlo";
-    case kCursive:
-      return "Apple Chancery";
-    case kFantasy:
-      return "Papyrus";
-    case kMath:
-      return "STIX Two Math";
-    case kWebkitBody:
-      return "Times";  // standard
-    default:
-      return nullptr;
+  if (system) {
+    switch (generic) {
+      case kSerif:
+        return "Times";
+      case kSansSerif:
+        return "Helvetica";
+      case kMonospace:
+        return "Menlo";
+      case kCursive:
+        return "Apple Chancery";
+      case kFantasy:
+        return "Papyrus";
+      case kMath:
+        return "STIX Two Math";
+      case kWebkitBody:
+        return "Times";  // standard
+      default:
+        return nullptr;
+    }
   }
 #elif defined(_WIN32)
-  switch (generic) {
-    case kSerif:
-      return "Times New Roman";
-    case kSansSerif:
-      return "Arial";
-    case kMonospace:
-      return "Consolas";
-    case kCursive:
-      return "Comic Sans MS";
-    case kFantasy:
-      return "Impact";
-    case kMath:
-      return "Cambria Math";
-    case kWebkitBody:
-      return "Times New Roman";  // standard
-    default:
-      return nullptr;
+  if (system) {
+    switch (generic) {
+      case kSerif:
+        return "Times New Roman";
+      case kSansSerif:
+        return "Arial";
+      case kMonospace:
+        return "Consolas";
+      case kCursive:
+        return "Comic Sans MS";
+      case kFantasy:
+        return "Impact";
+      case kMath:
+        return "Cambria Math";
+      case kWebkitBody:
+        return "Times New Roman";  // standard
+      default:
+        return nullptr;
+    }
   }
 #else
+  (void)system;
+#endif
   switch (generic) {
     case kSerif:
       return "Times New Roman";
@@ -447,18 +473,22 @@ const char* SettingsFamily(int generic) {
     default:
       return nullptr;
   }
-#endif
 }
 
-// FontCache::SystemFontFamily for `system-ui`.
-const char* SystemUiFamily() {
+// FontCache::SystemFontFamily for `system-ui`; Linux's unless `system`.
+const char* SystemUiFamily(bool system) {
 #if defined(__APPLE__)
-  return kSystemUiFamily;  // CoreText's UI font (skiac_font_collection)
+  if (system) {
+    return kSystemUiFamily;  // CoreText's UI font (skiac_font_collection)
+  }
 #elif defined(_WIN32)
-  return "Segoe UI";
+  if (system) {
+    return "Segoe UI";
+  }
 #else
-  return "sans";  // the desktop default, fontconfig's sans-serif
+  (void)system;
 #endif
+  return "sans";  // the desktop default, fontconfig's sans-serif
 }
 
 bool ResolveGeneric(const FamilyResolver& resolver,
@@ -471,12 +501,12 @@ bool ResolveGeneric(const FamilyResolver& resolver,
     return true;
   }
   if (generic == kSystemUi) {
-    return resolver.FindSystem(SystemUiFamily(), out);
+    return resolver.FindSystem(SystemUiFamily(resolver.system()), out);
   }
   // CSSFontSelector::GetFontData: the settings family, then
   // FontFallbackList asks the font cache for the generic name itself
   // (FontBuilder::GenericFontFamilyName: -webkit-body is -webkit-standard).
-  const char* settings = SettingsFamily(generic);
+  const char* settings = SettingsFamily(generic, resolver.system());
   if (settings && resolver.FindSystem(settings, out)) {
     return true;
   }
@@ -487,14 +517,17 @@ bool ResolveGeneric(const FamilyResolver& resolver,
 // FontCache::GetLastResortFallbackFont: macOS asks for Times, then Lucida
 // Grande (font_cache_mac.mm); the other platforms for the generic family of
 // the description (alternate_font_family.h GetFallbackFontFamily), "Sans" and
-// "Arial", and Windows for a few more (font_cache_skia.cc).
+// "Arial", and Windows for a few more (font_cache_skia.cc). Linux's unless
+// the system renderer is on.
 bool ResolveLastResort(const FamilyResolver& resolver,
                        int description_generic,
                        std::string* out) {
 #if defined(__APPLE__)
-  return resolver.FindSystem("Times", out) ||
-         resolver.FindSystem("Lucida Grande", out);
-#else
+  if (resolver.system()) {
+    return resolver.FindSystem("Times", out) ||
+           resolver.FindSystem("Lucida Grande", out);
+  }
+#endif
   const char* fallback = "";
   switch (description_generic) {
     case kSerif:
@@ -512,15 +545,16 @@ bool ResolveLastResort(const FamilyResolver& resolver,
     return true;
   }
 #if defined(_WIN32)
-  for (const char* name : {"MS UI Gothic", "Microsoft Sans Serif", "Segoe UI",
-                           "Calibri", "Times New Roman", "Courier New"}) {
-    if (resolver.FindSystem(name, out)) {
-      return true;
+  if (resolver.system()) {
+    for (const char* name : {"MS UI Gothic", "Microsoft Sans Serif", "Segoe UI",
+                             "Calibri", "Times New Roman", "Courier New"}) {
+      if (resolver.FindSystem(name, out)) {
+        return true;
+      }
     }
   }
 #endif
   return false;
-#endif
 }
 
 // After the family list, FontFallbackList::GetFontData tries the standard
@@ -528,7 +562,8 @@ bool ResolveLastResort(const FamilyResolver& resolver,
 bool ResolveStandard(const FamilyResolver& resolver,
                      int description_generic,
                      std::string* out) {
-  return resolver.FindSystem(SettingsFamily(kWebkitBody), out) ||
+  return resolver.FindSystem(SettingsFamily(kWebkitBody, resolver.system()),
+                             out) ||
          ResolveLastResort(resolver, description_generic, out);
 }
 
@@ -603,7 +638,7 @@ bool skiac_font_collection_default_font_units(
 #if defined(__APPLE__)
   // SimpleFontData::PlatformInit: CTFontGetXHeight counts the part of 'x'
   // below the baseline, so Blink measures the glyph's outline instead.
-  if (metrics.fXHeight) {
+  if (resolver.system() && metrics.fXHeight) {
     if (const SkGlyphID x_glyph = font.unicharToGlyph('x')) {
       const std::optional<SkPath> path = font.getPath(x_glyph);
       units->ex =

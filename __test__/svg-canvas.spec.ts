@@ -1,5 +1,4 @@
 import { spawn } from 'node:child_process'
-import { readFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -50,25 +49,8 @@ test('should be able to export text', (t) => {
   ctx.strokeStyle = 'hotpink'
   ctx.font = '50px i-curly'
   ctx.strokeText('@napi-rs/canvas', 50, 300)
-  const svg = canvas.getContent().toString('utf8')
-  if (process.platform === 'darwin') {
-    // CoreText draws this font on macOS: its outline points are within 0.02px
-    // of FreeType's, which the snapshot (fixtures/svg-export-text.svg) holds.
-    t.true(numberDistance(svg, readFileSync(join(__dirname, 'fixtures', 'svg-export-text.svg'), 'utf8')) <= 0.02)
-    return
-  }
-  t.snapshot(svg)
+  t.snapshot(canvas.getContent().toString('utf8'))
 })
-
-const NUMBER = /-?\d+(?:\.\d+)?(?:e-?\d+)?/g
-
-// How far apart the numbers of two texts are, or Infinity when the texts
-// differ in more than their numbers.
-function numberDistance(actual: string, expected: string) {
-  if (actual.replace(NUMBER, '#') !== expected.replace(NUMBER, '#')) return Infinity
-  const want = expected.match(NUMBER) ?? []
-  return Math.max(0, ...(actual.match(NUMBER) ?? []).map((value, i) => Math.abs(Number(value) - Number(want[i]))))
-}
 
 // Spec getContext: a later call returns the same context and does not apply
 // its attributes again, so a late { alpha: false } paints no base.

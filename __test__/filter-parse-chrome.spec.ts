@@ -5,6 +5,8 @@
 // Every expected value was measured in Chrome 155 CPU canvas (--disable-gpu,
 // willReadFrequently) on an OffscreenCanvas in a standards-mode page, and is
 // equal on arm64 and x64, except where a test says otherwise.
+import './use-system-text-renderer'
+
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 

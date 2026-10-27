@@ -1487,11 +1487,22 @@ pub mod ffi {
 
     pub fn skiac_font_collection_enable_installed_fonts(
       c_font_collection: *mut skiac_font_collection,
+      paths: *const *const c_char,
+      count: usize,
     );
 
     pub fn skiac_font_collection_load_installed_fonts(
       c_font_collection: *mut skiac_font_collection,
+      paths: *const *const c_char,
+      count: usize,
     ) -> u32;
+
+    pub fn skiac_set_system_font_renderer(enabled: bool);
+
+    pub fn skiac_font_collection_set_system_font_renderer(
+      c_font_collection: *mut skiac_font_collection,
+      enabled: bool,
+    ) -> bool;
 
     pub fn skiac_font_collection_default_font_units(
       c_font_collection: *mut skiac_font_collection,
@@ -5902,6 +5913,23 @@ impl Drop for SkiaString {
 #[derive(Debug, Clone)]
 pub struct LineMetrics(pub ffi::skiac_line_metrics);
 
+/// `strings` as C strings (one with a NUL byte is left out) and their
+/// pointers, which live as long as the first.
+fn c_strings(strings: &[String]) -> (Vec<CString>, Vec<*const c_char>) {
+  let strings: Vec<CString> = strings
+    .iter()
+    .filter_map(|s| CString::new(s.as_str()).ok())
+    .collect();
+  let ptrs = strings.iter().map(|s| s.as_ptr()).collect();
+  (strings, ptrs)
+}
+
+/// Sets the system font renderer flag of the C++ side before the global font
+/// collection is made (global_fonts.rs set_system_font_renderer).
+pub fn set_system_font_renderer_flag(enabled: bool) {
+  unsafe { ffi::skiac_set_system_font_renderer(enabled) }
+}
+
 #[derive(Debug)]
 pub struct FontCollection(pub *mut ffi::skiac_font_collection);
 
@@ -6057,17 +6085,25 @@ impl FontCollection {
     unsafe { ffi::skiac_font_collection_unregister_all(self.0) }
   }
 
-  /// macOS: resolves CoreText's installed fonts by name from now on and
-  /// registers them at the first font lookup or registration. Elsewhere a
-  /// no-op.
-  pub fn enable_installed_fonts(&self) {
-    unsafe { ffi::skiac_font_collection_enable_installed_fonts(self.0) }
+  /// macOS: resolves the installed fonts by name from now on and registers
+  /// them at the first font lookup or registration: CoreText's with the
+  /// system font renderer, else face 0 of each of `files`. Elsewhere a no-op.
+  pub fn enable_installed_fonts(&self, files: &[String]) {
+    let (_files, ptrs) = c_strings(files);
+    unsafe { ffi::skiac_font_collection_enable_installed_fonts(self.0, ptrs.as_ptr(), ptrs.len()) }
   }
 
   /// macOS: `enable_installed_fonts`, then registers the installed fonts now.
   /// Returns how many faces that registered. Elsewhere 0.
-  pub fn load_installed_fonts(&self) -> u32 {
-    unsafe { ffi::skiac_font_collection_load_installed_fonts(self.0) }
+  pub fn load_installed_fonts(&self, files: &[String]) -> u32 {
+    let (_files, ptrs) = c_strings(files);
+    unsafe { ffi::skiac_font_collection_load_installed_fonts(self.0, ptrs.as_ptr(), ptrs.len()) }
+  }
+
+  /// setTextRenderer(): makes every font again for the new mode and
+  /// drops the text caches. Returns whether the mode changed.
+  pub fn set_system_font_renderer(&self, enabled: bool) -> bool {
+    unsafe { ffi::skiac_font_collection_set_system_font_renderer(self.0, enabled) }
   }
 
   /// The px size of `ex`, `ch`, `cap`, `ic` and `lh` of the font the canvas

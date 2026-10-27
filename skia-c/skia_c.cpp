@@ -4109,21 +4109,23 @@ void skiac_svg_document_destroy(skiac_svg_document* document) {
 }
 
 // The font-relative units of an SVG image root, for Chrome's default font at
-// 16px: the "standard" family (Times on macOS, Times New Roman elsewhere,
-// chrome/app/resources/locale_settings_*.grd). `metrics` gets the x-height,
-// the advance of '0', the cap height and the line spacing; false when no such
-// font is installed.
+// 16px: the "standard" family (Times on macOS with the system renderer, Times
+// New Roman elsewhere, chrome/app/resources/locale_settings_*.grd). `metrics`
+// gets the x-height, the advance of '0', the cap height and the line spacing;
+// false when no such font is installed.
 bool skiac_font_collection_default_font_metrics(
     skiac_font_collection* c_collection,
     float* metrics) {
+  std::vector<const char*> families = {"Times New Roman", "Liberation Serif",
+                                       "Tinos"};
 #ifdef __APPLE__
-  static const char* families[] = {"Times", "Times New Roman"};
-#else
-  static const char* families[] = {"Times New Roman", "Liberation Serif",
-                                   "Tinos"};
+  const bool system = SystemFontRenderer();
+  if (system) {
+    families = {"Times", "Times New Roman"};
+  }
 #endif
-  // No installed fonts on macOS until loadSystemFonts turns CoreText's on
-  // (DISABLE_SYSTEM_FONTS_LOAD).
+  // No installed fonts on macOS with the system renderer until
+  // loadSystemFonts turns CoreText's on (DISABLE_SYSTEM_FONTS_LOAD).
   if (!c_collection->font_mgr) {
     return false;
   }
@@ -4151,8 +4153,8 @@ bool skiac_font_collection_default_font_metrics(
 #ifdef __APPLE__
   SkString family;
   typeface->getFamilyName(&family);
-  if (family.equals("Times") || family.equals("Helvetica") ||
-      family.equals("Courier")) {
+  if (system && (family.equals("Times") || family.equals("Helvetica") ||
+                 family.equals("Courier"))) {
     ascent += floorf(((ascent + descent) * 0.15f) + 0.5f);
   }
 #endif
@@ -4162,7 +4164,7 @@ bool skiac_font_collection_default_font_metrics(
   float x_height =
       font_metrics.fXHeight > 0 ? font_metrics.fXHeight : ascent * 0.56f;
 #ifdef __APPLE__
-  if (font_metrics.fXHeight > 0) {
+  if (system && font_metrics.fXHeight > 0) {
     if (auto x_glyph = font.unicharToGlyph('x')) {
       if (auto path = font.getPath(x_glyph)) {
         x_height = -path->getBounds().fTop;
@@ -4626,7 +4628,7 @@ size_t skiac_font_collection_unregister(
     for (const auto& alias : removed_aliases) {
       auto it = c_font_collection->set_aliases.begin();
       while (it != c_font_collection->set_aliases.end()) {
-        if (it->first == alias) {
+        if (it->family == alias) {
           it = c_font_collection->set_aliases.erase(it);
         } else {
           ++it;
@@ -4662,7 +4664,7 @@ size_t skiac_font_collection_unregister_batch(
     for (const auto& alias : all_removed_aliases) {
       auto it = c_font_collection->set_aliases.begin();
       while (it != c_font_collection->set_aliases.end()) {
-        if (it->first == alias) {
+        if (it->family == alias) {
           it = c_font_collection->set_aliases.erase(it);
         } else {
           ++it;
@@ -4680,6 +4682,9 @@ size_t skiac_font_collection_unregister_all(
   // The installed fonts loadSystemFonts turned on go too, as if registered.
   c_font_collection->prepareLookup();
   size_t removed_count = c_font_collection->assets->removeAllTypefaces();
+#if defined(__APPLE__)
+  c_font_collection->disableInstalledFonts();
+#endif
   if (removed_count > 0) {
     // Clear all set_aliases since all fonts are removed
     c_font_collection->set_aliases.clear();
@@ -4699,6 +4704,8 @@ bool skiac_font_collection_set_alias(skiac_font_collection* c_font_collection,
   if (!typeface) {
     return false;  // Family doesn't exist, don't store invalid mapping
   }
+  const bool installed =
+      c_font_collection->system_typeface_ids.count(typeface->uniqueID()) > 0;
 
   // Check if this alias already points to the SAME typeface (true idempotency)
   // We compare by uniqueID rather than just checking if the alias exists,
@@ -4709,15 +4716,13 @@ bool skiac_font_collection_set_alias(skiac_font_collection* c_font_collection,
       existing_typeface->uniqueID() == typeface->uniqueID()) {
     // Alias already points to the same typeface - true idempotency, no need to
     // re-register
-    c_font_collection->set_aliases.insert(
-        {std::string(family), std::string(alias)});
+    c_font_collection->addSetAlias(family, alias, /*registered=*/false,
+                                   installed);
     return true;
   }
 
-  // Track the alias for rebuild (only valid mappings, std::set
-  // auto-deduplicates)
-  c_font_collection->set_aliases.insert(
-      {std::string(family), std::string(alias)});
+  // Track the alias for rebuild (only valid mappings)
+  c_font_collection->addSetAlias(family, alias, /*registered=*/true, installed);
 
   // Register the alias - this will shadow any existing font with the same name
   c_font_collection->assets->registerTypeface(std::move(typeface),
@@ -4727,23 +4732,41 @@ bool skiac_font_collection_set_alias(skiac_font_collection* c_font_collection,
 }
 
 void skiac_font_collection_enable_installed_fonts(
-    skiac_font_collection* c_font_collection) {
+    skiac_font_collection* c_font_collection,
+    const char* const* paths,
+    size_t count) {
 #if defined(__APPLE__)
-  c_font_collection->enableInstalledFonts();
+  c_font_collection->enableInstalledFonts(paths, count);
 #else
   (void)c_font_collection;
+  (void)paths;
+  (void)count;
 #endif
 }
 
 uint32_t skiac_font_collection_load_installed_fonts(
-    skiac_font_collection* c_font_collection) {
+    skiac_font_collection* c_font_collection,
+    const char* const* paths,
+    size_t count) {
 #if defined(__APPLE__)
-  c_font_collection->enableInstalledFonts();
+  c_font_collection->enableInstalledFonts(paths, count);
   return c_font_collection->registerInstalledFonts();
 #else
   (void)c_font_collection;
+  (void)paths;
+  (void)count;
   return 0;
 #endif
+}
+
+void skiac_set_system_font_renderer(bool enabled) {
+  SetSystemFontRenderer(enabled);
+}
+
+bool skiac_font_collection_set_system_font_renderer(
+    skiac_font_collection* c_font_collection,
+    bool enabled) {
+  return c_font_collection->setSystemFontRenderer(enabled);
 }
 
 void skiac_font_collection_destroy(skiac_font_collection* c_font_collection) {

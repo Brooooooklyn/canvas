@@ -45,6 +45,9 @@ class TextRasterPolicy {
   bool UsesLcdText(const SkFont& font, const SkMatrix& device) const;
 
   bool geometric_precision_;
+  // SystemFontRenderer() when the request began, so one request never mixes
+  // modes.
+  bool system_;
 #if defined(__APPLE__)
   // skiac_text_request::lcd_text. Only CoreText runs get LCD masks, so the
   // other OSes do not keep it.

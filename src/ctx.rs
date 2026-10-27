@@ -2441,22 +2441,26 @@ impl Context {
       ..self.text_settings()
     };
     let paint = Paint::default();
+    // The metrics, and setTextRenderer('system') read under the same font
+    // lock, so a switch on another thread cannot pair one mode's glyphs with
+    // the other mode's rule.
     let measure = |ctx: &Self, text: &str| {
       let font = get_font().ok()?;
-      Some(
+      Some((
         ctx
           .surface
           .canvas
           .get_line_metrics(text, &settings, &font, &paint),
-      )
+        crate::global_fonts::system_font_renderer(),
+      ))
     };
     let mut units = FontUnits::default();
     if reads.glyphs {
-      let x = measure(self, "x").unwrap_or_default();
-      let zero = measure(self, "0").unwrap_or_default();
+      let (x, system) = measure(self, "x").unwrap_or_default();
+      let (zero, _) = measure(self, "0").unwrap_or_default();
       units.x_height = if x.x_height == 0.0 {
         None
-      } else if cfg!(target_vendor = "apple") {
+      } else if cfg!(target_vendor = "apple") && system {
         // `ascent` is actualBoundingBoxAscent at the alphabetic baseline.
         Some(x.ascent as f64)
       } else {

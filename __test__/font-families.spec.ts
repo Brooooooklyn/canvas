@@ -5,6 +5,8 @@
 // last (font_fallback_list.cc GetFontData). The font-relative units of the
 // font shorthand come from the default style's font
 // (canvas_font_cache.cc CreateDefaultFontStyle).
+import './use-system-text-renderer'
+
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
