@@ -26,6 +26,7 @@ const {
   _argumentCounts,
   _imageDataConstructor,
   _toNumber: toNumber,
+  useSystemFontRenderer,
 } = require('./js-binding')
 
 const { DOMPoint, DOMMatrix, DOMRect } = require('./geometry')
@@ -720,6 +721,7 @@ if (!process.env.DISABLE_SYSTEM_FONTS_LOAD) {
 
 module.exports = {
   clearAllCache,
+  useSystemFontRenderer,
   Canvas,
   createCanvas,
   Path2D,

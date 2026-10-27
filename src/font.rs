@@ -595,7 +595,7 @@ pub(crate) fn parse_canvas_font(input: &str, ctx: &FontParseContext) -> Option<C
   if !p.is_exhausted() {
     return None;
   }
-  if cfg!(target_os = "macos") {
+  if cfg!(target_os = "macos") && crate::global_fonts::system_font_renderer() {
     // StyleBuilderConverterBase::ConvertFontFamily on macOS.
     for family in &mut families {
       if matches!(family, FamilyName::Named(name) if name == "BlinkMacSystemFont") {

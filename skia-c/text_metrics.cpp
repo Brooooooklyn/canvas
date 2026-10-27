@@ -157,8 +157,9 @@ void AscentDescentWithHacks(skiac_font_collection* c_collection,
   // Blink's macOS ascent hack for Times, Helvetica and Courier (+15%).
   SkString family;
   font.getTypeface()->getFamilyName(&family);
-  if (family.equals("Times") || family.equals("Helvetica") ||
-      family.equals("Courier")) {
+  if (SystemFontRenderer() &&
+      (family.equals("Times") || family.equals("Helvetica") ||
+       family.equals("Courier"))) {
     *ascent += floorf((*ascent + *descent) * 0.15f + 0.5f);
   }
 #endif

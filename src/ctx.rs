@@ -2456,7 +2456,7 @@ impl Context {
       let zero = measure(self, "0").unwrap_or_default();
       units.x_height = if x.x_height == 0.0 {
         None
-      } else if cfg!(target_vendor = "apple") {
+      } else if cfg!(target_vendor = "apple") && crate::global_fonts::system_font_renderer() {
         // `ascent` is actualBoundingBoxAscent at the alphabetic baseline.
         Some(x.ascent as f64)
       } else {

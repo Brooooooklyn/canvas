@@ -455,6 +455,7 @@ module.exports.SVGCanvas = nativeBinding.SVGCanvas
 module.exports.ChromaSubsampling = nativeBinding.ChromaSubsampling
 module.exports.clearAllCache = nativeBinding.clearAllCache
 module.exports.convertSVGTextToPath = nativeBinding.convertSVGTextToPath
+module.exports.useSystemFontRenderer = nativeBinding.useSystemFontRenderer
 module.exports.FillType = nativeBinding.FillType
 module.exports.PathOp = nativeBinding.PathOp
 module.exports.StrokeCap = nativeBinding.StrokeCap

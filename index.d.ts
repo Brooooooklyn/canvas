@@ -3,6 +3,28 @@ import { ReadableStream } from 'node:stream/web'
 // Clear all type of caches in Skia
 export function clearAllCache(): void
 
+/**
+ * Draw text with each OS's own font renderer, as Chrome does: CoreText on
+ * macOS (Fontations for some color and variable fonts) with CoreText's
+ * installed fonts and fallback, Fontations on Linux, FreeType elsewhere;
+ * plus each OS's text gamma and contrast, LCD text on opaque macOS canvases,
+ * Chrome's per-OS font family settings and macOS metric rules.
+ *
+ * `useSystemFontRenderer(false)` draws text the same way on every OS:
+ * FreeType, Skia's default text gamma, no LCD text and one font family
+ * table. The same registered fonts then give the same pixels and
+ * TextMetrics on macOS, Linux and Windows.
+ *
+ * Applies to the whole process, worker threads included. Call it once at
+ * startup, before creating canvases. Registered fonts keep their FontKey. A
+ * canvas created before the switch keeps its text gamma until its width or
+ * height is set; font sizes already parsed from `ex`/`ch`/... units keep
+ * their value.
+ *
+ * Not a React hook, despite the `use` prefix.
+ */
+export function useSystemFontRenderer(enabled?: boolean): void
+
 interface CanvasRenderingContext2D
   extends CanvasCompositing,
   CanvasDrawPath,

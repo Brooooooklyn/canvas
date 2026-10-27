@@ -1,5 +1,14 @@
-// The scaler each OS's Chrome draws a font with, and the typefaces the
-// canvas makes from font files:
+// The typefaces the canvas makes from font files. By default every OS uses
+// FreeType, so the same fonts draw the same everywhere:
+//
+//             registered fonts (web fonts)              installed fonts
+//   default   FreeType                                  FreeType: the
+//                                                       SK_FONT_FILE_PREFIX
+//                                                       scan, and face 0 of
+//                                                       each installed file
+//
+// After useSystemFontRenderer(), the scaler each OS's Chrome draws a font
+// with:
 //
 //             registered fonts (web fonts)              installed fonts
 //   macOS     CoreText; Fontations for CBDT, COLRv1,   CoreText: every face
@@ -11,10 +20,14 @@
 //
 // WOFF and WOFF2 are decoded to SFNT first, as Blink's OTS step hands the
 // scalers SFNT data.
+//
+// Any new per-OS text branch must also check SystemFontRenderer(), or the
+// default text is no longer the same on every OS.
 
 #include <stdint.h>
 #include <string.h>
 #include <algorithm>
+#include <atomic>
 #include <memory>
 #include <vector>
 
@@ -190,9 +203,24 @@ bool WantsFontations(const SkTypeface& probe) {
 }
 #endif
 
+// useSystemFontRenderer(): Rust keeps its own copy
+// (global_fonts.rs SYSTEM_FONT_RENDERER) and sets both under the font lock.
+std::atomic<bool> g_system_font_renderer{true};
+
 }  // namespace
 
+bool SystemFontRenderer() {
+  return g_system_font_renderer.load(std::memory_order_relaxed);
+}
+
+void SetSystemFontRenderer(bool enabled) {
+  g_system_font_renderer.store(enabled, std::memory_order_relaxed);
+}
+
 sk_sp<SkFontMgr> MakeInstalledFontManager() {
+  if (!SystemFontRenderer()) {
+    return SkFontMgr_New_Custom_Directory(SK_FONT_FILE_PREFIX);
+  }
 #if defined(__APPLE__)
   // CoreText's installed fonts come with loadSystemFonts
   // (skiac_font_collection::enableInstalledFonts).
@@ -205,6 +233,9 @@ sk_sp<SkFontMgr> MakeInstalledFontManager() {
 sk_sp<SkTypeface> MakeCanvasTypeface(std::unique_ptr<SkStreamAsset> stream) {
   if (!stream) {
     return nullptr;
+  }
+  if (!SystemFontRenderer()) {
+    return SkFontMgr_New_Custom_Empty()->makeFromStream(std::move(stream), 0);
   }
 #if defined(__APPLE__)
   sk_sp<const SkData> data = SfntData(std::move(stream));
