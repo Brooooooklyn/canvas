@@ -1,0 +1,16 @@
+{
+  "name": "@napi-rs/canvas-e2e-electron",
+  "version": "1.0.0",
+  "description": "E2E test for @napi-rs/canvas inside Electron",
+  "private": true,
+  "main": "index.js",
+  "scripts": {
+    "test": "node run.js"
+  },
+  "dependencies": {
+    "@napi-rs/canvas": "workspace:*"
+  },
+  "devDependencies": {
+    "electron": "^45.0.0"
+  }
+}

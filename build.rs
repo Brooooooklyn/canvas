@@ -163,7 +163,7 @@ fn main() {
       // definitions; it hides nothing, napi_register_module_v1 stays
       // exported. Not -Bsymbolic-functions: zig (the musl linker) rejects
       // it, and every symbol the addon exports is a function anyway.
-      // scripts/__test__/elf-symbolic.spec.ts checks the built binary.
+      // e2e/electron loads the built addon inside Electron.
       println!("cargo:rustc-cdylib-link-arg=-Wl,-Bsymbolic");
       // `cargo test` links a real binary, not the node-loaded cdylib, so
       // let the node-provided napi_* symbols stay unresolved (tests never
