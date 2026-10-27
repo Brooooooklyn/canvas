@@ -196,6 +196,27 @@ function textWidth(font: string) {
   },
 )
 
+// setAlias names are replayed in call order, so an alias of an alias whose
+// name sorts first still finds the alias it names.
+test.serial('a chain of setAlias names survives switching', (t) => {
+  backToDefault(t)
+  const key = GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'Lato-Regular.ttf'), 'ZChainBase')
+  t.teardown(() => {
+    GlobalFonts.remove(key!)
+  })
+  t.true(GlobalFonts.setAlias('ZChainBase', 'AChainFirst'))
+  t.true(GlobalFonts.setAlias('AChainFirst', 'BChainSecond'))
+  const before = textWidth('20px BChainSecond')
+  t.not(before, textWidth('20px UsNoSuchFamily'))
+  for (const mode of ['system', 'portable'] as const) {
+    setTextRenderer(mode)
+    t.true(GlobalFonts.has('AChainFirst'))
+    t.true(GlobalFonts.has('BChainSecond'))
+    t.is(textWidth('20px BChainSecond'), textWidth('20px ZChainBase'))
+  }
+  t.is(textWidth('20px BChainSecond'), before)
+})
+
 // A name a font gains later goes after the fonts registered in between: the
 // first face of the family stays the first.
 test.serial('a shared family keeps its first face across switching', (t) => {

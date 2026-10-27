@@ -4714,15 +4714,12 @@ bool skiac_font_collection_set_alias(skiac_font_collection* c_font_collection,
       existing_typeface->uniqueID() == typeface->uniqueID()) {
     // Alias already points to the same typeface - true idempotency, no need to
     // re-register
-    c_font_collection->set_aliases.insert(
-        {std::string(family), std::string(alias)});
+    c_font_collection->addSetAlias(family, alias);
     return true;
   }
 
-  // Track the alias for rebuild (only valid mappings, std::set
-  // auto-deduplicates)
-  c_font_collection->set_aliases.insert(
-      {std::string(family), std::string(alias)});
+  // Track the alias for rebuild (only valid mappings, without repeats)
+  c_font_collection->addSetAlias(family, alias);
 
   // Register the alias - this will shadow any existing font with the same name
   c_font_collection->assets->registerTypeface(std::move(typeface),

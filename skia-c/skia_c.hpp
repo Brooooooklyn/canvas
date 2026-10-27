@@ -672,8 +672,17 @@ struct skiac_font_collection {
   sk_sp<TypefaceFontProviderCustom> assets;
   // Keep old providers alive to avoid destruction issues
   std::vector<sk_sp<TypefaceFontProviderCustom>> retired_assets;
-  // Track setAlias mappings for rebuild: {family, alias} pairs
-  std::set<std::pair<std::string, std::string>> set_aliases;
+  // Track setAlias mappings for rebuild: {family, alias} pairs, in call
+  // order, so an alias of an alias is replayed after the alias it names.
+  std::vector<std::pair<std::string, std::string>> set_aliases;
+
+  void addSetAlias(const char* family, const char* alias) {
+    std::pair<std::string, std::string> entry(family, alias);
+    if (std::find(set_aliases.begin(), set_aliases.end(), entry) ==
+        set_aliases.end()) {
+      set_aliases.push_back(std::move(entry));
+    }
+  }
   // Set when the dynamic provider gains a face or an alias. FontCollection
   // memoizes findTypefaces() per {family list, weight, slant}, including
   // fallback misses, so any such change can invalidate an existing match.
