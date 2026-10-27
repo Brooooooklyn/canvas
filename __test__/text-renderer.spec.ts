@@ -552,6 +552,51 @@ console.log(JSON.stringify({ growth: (process.memoryUsage().rss - before) / 2 **
   t.true(out.growth < 30, `RSS grew by ${out.growth} MiB`)
 })
 
+// A font parsed on a worker while another thread switches is in one mode:
+// its units and its family rules come from the same mode.
+macTest('a font parsed during a switch on a worker uses one mode', (t) => {
+  const out = macProbe(`const { Worker } = require('worker_threads')
+const { join } = require('path')
+const index = join(process.cwd(), 'index.js')
+const { createCanvas, setTextRenderer } = require(index)
+const parse = () => {
+  const ctx = createCanvas(10, 10).getContext('2d')
+  ctx.font = '10ex BlinkMacSystemFont'
+  return ctx.font
+}
+const valid = new Set([parse()])
+setTextRenderer('system')
+valid.add(parse())
+setTextRenderer('portable')
+const code = \`
+const { parentPort } = require('worker_threads')
+const { createCanvas } = require(\${JSON.stringify(index)})
+const seen = new Set()
+for (let i = 0; i < 3000; i++) {
+  const ctx = createCanvas(10, 10).getContext('2d')
+  ctx.font = '10ex BlinkMacSystemFont'
+  seen.add(ctx.font)
+}
+parentPort.postMessage([...seen])
+\`
+const workers = [0, 1].map(() => new Worker(code, { eval: true }))
+const done = workers.map((w) => new Promise((resolve) => w.once('message', resolve)))
+let running = true
+Promise.all(done).then((lists) => {
+  running = false
+  const seen = [...new Set(lists.flat())]
+  console.log(JSON.stringify({ valid: [...valid], bad: seen.filter((v) => !valid.has(v)) }))
+})
+const flip = (system) => {
+  if (!running) return
+  setTextRenderer(system ? 'system' : 'portable')
+  setImmediate(() => flip(!system))
+}
+flip(true)`)
+  t.is(out.valid.length, 2)
+  t.deepEqual(out.bad, [])
+})
+
 // A new process that runs PROBE_STEPS (comma separated) and prints what
 // '20px Helvetica' measures and the first family after each "state" step.
 const HELVETICA_PROBE = `

@@ -54,9 +54,12 @@ fn note_font_collection_mutation() {
 pub(crate) fn font_parse_context() -> FontParseContext {
   static CACHE: Mutex<Option<(u64, FontParseContext)>> = Mutex::new(None);
   let generation = font_collection_generation();
+  // A switch sets the mode before it bumps the generation, so the mode is
+  // part of the key: a parse during a switch waits for the font lock below.
   if let Ok(cache) = CACHE.lock()
     && let Some((cached, context)) = *cache
     && cached == generation
+    && context.system == system_font_renderer()
   {
     return context;
   }
@@ -76,6 +79,8 @@ pub(crate) fn font_parse_context() -> FontParseContext {
     Ok(fonts) => FontParseContext {
       parent: units(&fonts, PARENT_FONT_SIZE),
       root: units(&fonts, ROOT_FONT_SIZE),
+      // Read under the lock the switch holds while it writes the mode.
+      system: system_font_renderer(),
     },
     Err(_) => FontParseContext::default(),
   };
