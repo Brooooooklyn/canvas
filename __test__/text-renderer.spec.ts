@@ -200,7 +200,9 @@ function textWidth(font: string) {
 // name sorts first still finds the alias it names.
 test.serial('a chain of setAlias names survives switching', (t) => {
   backToDefault(t)
-  const key = GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'Lato-Regular.ttf'), 'ZChainBase')
+  // Not Lato: on a Linux with no installed fonts the fallback for a missing
+  // family is the first registered font, UsLato.
+  const key = GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'iosevka-slab-regular.ttf'), 'ZChainBase')
   t.teardown(() => {
     GlobalFonts.remove(key!)
   })
