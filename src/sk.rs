@@ -3994,6 +3994,18 @@ impl Path {
     end_angle: f32,
     ccw: bool,
   ) {
+    // Blink arc() and DegenerateEllipse add only lineTo(center) when both radii
+    // are 0 (canvas_path.cc:457-461, 389-395 m156). On an empty path that is
+    // moveTo plus a zero-length lineTo. Chrome's stroke prunes that line and
+    // ours does not (its caps draw a dot), so use move_to there.
+    if radius_x == 0.0 && radius_y == 0.0 {
+      if self.is_empty() {
+        self.move_to(x, y);
+      } else {
+        self.line_to(x, y);
+      }
+      return;
+    }
     // Blink CanonicalizeAngle (canvas_path.cc:315-333).
     let tau = 2.0 * PI;
     let mut new_start_angle = start_angle % tau;
@@ -4098,17 +4110,6 @@ impl Path {
     end_angle: f32,
     from_end: bool,
   ) {
-    // Blink canvas_path.cc:457-461 adds lineTo(center), which on an empty
-    // path is moveTo plus a zero-length lineTo. Chrome's stroke prunes that
-    // line and ours does not (its caps draw a dot), so use move_to there.
-    if radius == 0.0 {
-      if self.is_empty() {
-        self.move_to(center_x, center_y);
-      } else {
-        self.line_to(center_x, center_y);
-      }
-      return;
-    }
     self.ellipse(
       center_x,
       center_y,

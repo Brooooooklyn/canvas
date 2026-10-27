@@ -151,6 +151,47 @@ test('a zero-radius full arc draws nothing', (t) => {
   }
 })
 
+// Chrome adds only lineTo(center) when both radii are 0, and its stroke drops
+// that zero-length line. A full sweep here used to build "M50 50L50 50", whose
+// caps drew a dot (round 338 px, square 400 px).
+test('a zero-radius full ellipse draws nothing', (t) => {
+  const ctx = createCanvas(100, 100).getContext('2d')
+  const draw = (cap: 'round' | 'square', s: number, moveTo: boolean, api: 'ctx' | 'Path2D') => {
+    ctx.reset()
+    ctx.lineWidth = 20
+    ctx.lineCap = cap
+    ctx.beginPath()
+    if (api === 'ctx') {
+      if (moveTo) ctx.moveTo(10, 10)
+      ctx.ellipse(50, 50, 0, 0, 0, s, s + TAU)
+      ctx.stroke()
+      return { n: countPainted(ctx), svg: null }
+    }
+    const path = new Path2D()
+    if (moveTo) path.moveTo(10, 10)
+    path.ellipse(50, 50, 0, 0, 0, s, s + TAU)
+    ctx.stroke(path)
+    return { n: countPainted(ctx), svg: path.toSVGString() }
+  }
+  // Chrome 156 counts for the line from (10, 10) to the center.
+  const afterMoveTo: Record<string, number> = { round: 1496, square: 1641 }
+  for (const api of ['ctx', 'Path2D'] as const) {
+    for (const [cap, n] of Object.entries(afterMoveTo) as ['round' | 'square', number][]) {
+      for (const s of [0, -Math.PI / 2]) {
+        const name = `${api} ${cap} start ${s}`
+        const empty = draw(cap, s, false, api)
+        t.is(empty.n, 0, name)
+        const line = draw(cap, s, true, api)
+        t.is(line.n, n, `${name} after moveTo`)
+        if (api === 'Path2D') {
+          t.is(empty.svg, '', name)
+          t.is(line.svg, 'M10 10L50 50', `${name} after moveTo`)
+        }
+      }
+    }
+  }
+})
+
 // Chrome's general route (ellipse(), or arc() on a non-empty path) is never
 // empty on this grid. The counts vary per start, so only check "not empty".
 test('full and near-full sweeps are never empty', async (t) => {
