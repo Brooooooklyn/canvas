@@ -4628,7 +4628,7 @@ size_t skiac_font_collection_unregister(
     for (const auto& alias : removed_aliases) {
       auto it = c_font_collection->set_aliases.begin();
       while (it != c_font_collection->set_aliases.end()) {
-        if (it->first == alias) {
+        if (it->family == alias) {
           it = c_font_collection->set_aliases.erase(it);
         } else {
           ++it;
@@ -4664,7 +4664,7 @@ size_t skiac_font_collection_unregister_batch(
     for (const auto& alias : all_removed_aliases) {
       auto it = c_font_collection->set_aliases.begin();
       while (it != c_font_collection->set_aliases.end()) {
-        if (it->first == alias) {
+        if (it->family == alias) {
           it = c_font_collection->set_aliases.erase(it);
         } else {
           ++it;

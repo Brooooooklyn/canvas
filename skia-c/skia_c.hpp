@@ -622,6 +622,10 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
     return true;
   }
 
+  // The next registration order, shared with setAlias (rebuildAssets
+  // replays both in this order).
+  uint64_t nextOrder() { return ++registrations; }
+
   // Remove all typefaces from tracking
   // Note: caller must also clear set_aliases in skiac_font_collection
   size_t removeAllTypefaces() {
@@ -672,16 +676,24 @@ struct skiac_font_collection {
   sk_sp<TypefaceFontProviderCustom> assets;
   // Keep old providers alive to avoid destruction issues
   std::vector<sk_sp<TypefaceFontProviderCustom>> retired_assets;
-  // Track setAlias mappings for rebuild: {family, alias} pairs, in call
-  // order, so an alias of an alias is replayed after the alias it names.
-  std::vector<std::pair<std::string, std::string>> set_aliases;
+  // Track setAlias mappings for rebuild, with the registration order of the
+  // call: rebuildAssets replays them between the font registrations, so an
+  // alias of an alias finds the alias it names, and a font registered under
+  // an alias name later goes after it.
+  struct SetAlias {
+    std::string family;
+    std::string alias;
+    uint64_t order;
+  };
+  std::vector<SetAlias> set_aliases;
 
   void addSetAlias(const char* family, const char* alias) {
-    std::pair<std::string, std::string> entry(family, alias);
-    if (std::find(set_aliases.begin(), set_aliases.end(), entry) ==
-        set_aliases.end()) {
-      set_aliases.push_back(std::move(entry));
+    for (const auto& entry : set_aliases) {
+      if (entry.family == family && entry.alias == alias) {
+        return;
+      }
     }
+    set_aliases.push_back({family, alias, assets->nextOrder()});
   }
   // Set when the dynamic provider gains a face or an alias. FontCollection
   // memoizes findTypefaces() per {family list, weight, slant}, including
@@ -896,11 +908,15 @@ struct skiac_font_collection {
     // Re-register all remaining fonts, preserving original IDs, under each
     // name in the order the names were registered (IDs are hashes, and a
     // name a font gained later goes after the fonts registered between).
-    std::vector<std::tuple<uint64_t, uint32_t, size_t>> names;
+    // {order, is a setAlias, font ID, alias index or set_aliases index}
+    std::vector<std::tuple<uint64_t, bool, uint32_t, size_t>> names;
     for (const auto& [id, font_info] : old_fonts) {
       for (size_t i = 0; i < font_info.aliases.size(); ++i) {
-        names.emplace_back(font_info.orders[i], id, i);
+        names.emplace_back(font_info.orders[i], false, id, i);
       }
+    }
+    for (size_t i = 0; i < set_aliases.size(); ++i) {
+      names.emplace_back(set_aliases[i].order, true, 0, i);
     }
     std::sort(names.begin(), names.end());
     std::set<uint32_t> kept_system_font_ids;
@@ -908,7 +924,26 @@ struct skiac_font_collection {
     // Each font made again, by ID; null when it is not kept.
     std::map<uint32_t, sk_sp<SkTypeface>> made;
     [[maybe_unused]] bool relisted = false;
-    for (const auto& [order, id, index] : names) {
+    for (const auto& [order, is_set_alias, id, index] : names) {
+      if (is_set_alias) {
+#if defined(__APPLE__)
+        // setAlias lists the installed fonts first (prepareLookup).
+        if (relist_installed && !relisted) {
+          relisted = true;
+          registerInstalledFonts(new_assets.get(), &kept_system_font_ids);
+        }
+#endif
+        // These aliases intentionally shadow/override existing family names
+        SetAlias& entry = set_aliases[index];
+        auto typeface =
+            new_assets->matchFamilyStyle(entry.family.c_str(), SkFontStyle());
+        if (typeface) {
+          new_assets->registerTypeface(std::move(typeface),
+                                       SkString(entry.alias.c_str()));
+        }
+        entry.order = new_assets->nextOrder();
+        continue;
+      }
       const RegisteredFont& font_info = old_fonts.at(id);
       if (font_info.installed && relist_installed) {
 #if defined(__APPLE__)
@@ -950,25 +985,13 @@ struct skiac_font_collection {
       }
     }
 #if defined(__APPLE__)
-    // None was registered yet, but the setAlias replay needs them.
+    // None was registered yet: they are listed after the replay, as at the
+    // next lookup.
     if (relist_installed && !relisted) {
       registerInstalledFonts(new_assets.get(), &kept_system_font_ids);
     }
 #endif
     system_font_ids = std::move(kept_system_font_ids);
-
-    // Replay setAlias mappings
-    // These aliases intentionally shadow/override existing family names
-    for (const auto& [family, alias] : set_aliases) {
-      auto style = SkFontStyle();
-      auto typeface = new_assets->matchFamilyStyle(family.c_str(), style);
-      if (typeface) {
-        // Register the alias - this may shadow existing families (intended
-        // behavior)
-        new_assets->registerTypeface(std::move(typeface),
-                                     SkString(alias.c_str()));
-      }
-    }
 
     // IMPORTANT: Font Provider Lifecycle Management
     //

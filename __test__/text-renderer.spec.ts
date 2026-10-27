@@ -219,6 +219,23 @@ test.serial('a chain of setAlias names survives switching', (t) => {
   t.is(textWidth('20px BChainSecond'), before)
 })
 
+// A font registered under a setAlias name after the setAlias call goes after
+// the aliased font, also once the fonts are made again.
+test.serial('a font registered under a setAlias name stays behind the alias across switching', (t) => {
+  backToDefault(t)
+  const base = GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'iosevka-slab-regular.ttf'), 'UsAliasBase')
+  t.true(GlobalFonts.setAlias('UsAliasBase', 'UsAliasShared'))
+  const serif = GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'SourceSerifPro-Regular.ttf'), 'UsAliasShared')
+  t.teardown(() => GlobalFonts.removeBatch([base!, serif!]))
+  const before = textWidth('20px UsAliasShared')
+  t.is(before, textWidth('20px UsAliasBase'))
+  for (const mode of ['system', 'portable'] as const) {
+    setTextRenderer(mode)
+    t.is(textWidth('20px UsAliasShared'), textWidth('20px UsAliasBase'))
+  }
+  t.is(textWidth('20px UsAliasShared'), before)
+})
+
 // A name a font gains later goes after the fonts registered in between: the
 // first face of the family stays the first.
 test.serial('a shared family keeps its first face across switching', (t) => {
