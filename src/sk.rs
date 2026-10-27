@@ -1021,8 +1021,6 @@ pub mod ffi {
 
     pub fn skiac_path_is_empty(path: *mut skiac_path) -> bool;
 
-    pub fn skiac_path_is_point(path: *mut skiac_path, x: f32, y: f32) -> bool;
-
     pub fn skiac_path_count_points(path: *mut skiac_path) -> i32;
 
     pub fn skiac_path_count_verbs(path: *mut skiac_path) -> i32;
@@ -4077,9 +4075,14 @@ impl Path {
       )
     };
     let (px, py) = point(start);
-    // Only the start point when both radii are 0 or the sweep is 0 (:393-395).
-    if (radius_x == 0.0 && radius_y == 0.0) || start == end {
+    // Only the start point when both radii are 0 (:393-395).
+    if radius_x == 0.0 && radius_y == 0.0 {
       self.degenerate_line_to(px, py);
+      return;
+    }
+    // A zero sweep also gives only the start point (:393-395). See below.
+    if start == end {
+      self.add_ellipse(x, y, radius_x, radius_y, rotation, start, end);
       return;
     }
     // At most 6 points: start, up to 4 multiples of π/2, end.
@@ -4101,10 +4104,13 @@ impl Path {
     }
     points.push(point(end));
     // A sweep that is tiny after f32 rounding can put every point on the
-    // start point. When the path is empty or already has only that point, the
-    // whole path is one point, so use the lone-point policy above.
-    if points.iter().all(|&p| p == (px, py)) && self.is_point_path_or_empty(px, py) {
-      self.degenerate_line_to(px, py);
+    // start point. Blink then adds lines of zero length, and Chrome strokes
+    // nothing only because its stroke() skips a path whose bounds are one
+    // point (canvas_2d_recorder_context.cc:1595-1602 m156). Whether the final
+    // path is one point is known only at draw time, so no rule here can match
+    // that for every path. Keep the arc route we used before for this case.
+    if points.iter().all(|&p| p == (px, py)) {
+      self.add_ellipse(x, y, radius_x, radius_y, rotation, start, end);
       return;
     }
     for (px, py) in points {
@@ -4123,28 +4129,18 @@ impl Path {
   }
 
   /// [`Self::finite_line_to`] for a lone point from arc() or ellipse(). Chrome
-  /// does not stroke a path whose points all coincide, that is whose bounds
-  /// have zero width and height (canvas_2d_recorder_context.cc:1595-1602
-  /// m156). Ours does (its caps draw a dot). So when the path would stay one
-  /// point, add only a moveTo on an empty path and nothing on a path whose
-  /// points are all already this point. Otherwise add Blink's lineTo.
+  /// does not stroke a path whose points all coincide
+  /// (canvas_2d_recorder_context.cc:1595-1602 m156) and ours does (its caps
+  /// draw a dot), so on an empty path add only the moveTo.
   fn degenerate_line_to(&mut self, x: f32, y: f32) {
     if !x.is_finite() || !y.is_finite() {
       return;
     }
     if self.is_empty() {
       self.move_to(x, y);
-    } else if !self.is_point_path_or_empty(x, y) {
+    } else {
       self.line_to(x, y);
     }
-  }
-
-  /// True when the path is empty or every point in it, moveTo points
-  /// included, is exactly (x, y). Adding lines to (x, y) then leaves Blink's
-  /// path bounds at zero size. A moveTo right after a moveTo replaces it
-  /// (SkPathBuilder::moveTo), in Blink too.
-  fn is_point_path_or_empty(&self, x: f32, y: f32) -> bool {
-    self.is_empty() || unsafe { ffi::skiac_path_is_point(self.0, x, y) }
   }
 
   /// Blink PathBuilder::AddEllipse with the rotation (path_builder.cc:482-505

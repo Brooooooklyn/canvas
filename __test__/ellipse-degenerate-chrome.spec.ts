@@ -137,7 +137,7 @@ test('a zero-sweep ellipse adds only its start point', (t) => {
   t.is(countPainted(ctx), 0)
 })
 
-test('a degenerate ellipse whose points all land on the start point is a lone point', (t) => {
+test('a degenerate ellipse whose points all land on the start point strokes nothing', (t) => {
   // In float, π/2 to 5π/2 anticlockwise leaves a 4.8e-7 sweep, not 0, so
   // every point Blink adds is the start point. Chrome strokes nothing.
   const strokeRound = (lineWidth: number, args: Parameters<Ctx['ellipse']>) => {
@@ -170,15 +170,20 @@ test('a degenerate ellipse whose points all land on the start point is a lone po
   t.true(strokeRound(20, offByLittle) > 0)
 })
 
-test('a lone point on a path that is already that point adds nothing', (t) => {
-  // Each call adds only (50,90) or (50,50). Blink adds lineTo to it, and
-  // Chrome strokes nothing because the path bounds are still one point
+test('a collapsed or zero-sweep ellipse strokes nothing, as in Chrome', (t) => {
+  // Every point Blink adds is the start point, so Blink adds only zero-length
+  // lines, and Chrome strokes nothing because the path bounds are one point
   // (canvas_2d_recorder_context.cc:1595-1602 m156). Our stroke has no such
-  // check, so a zero-length line would paint a cap dot.
+  // check, so such lines would paint a cap dot. These keep the arc route.
   const collapsed = (c: Ctx | InstanceType<typeof Path2D>) =>
     c.ellipse(50, 50, 0, 40, 0, Math.PI / 2, (5 * Math.PI) / 2, true)
   const cases: Record<string, (c: Ctx | InstanceType<typeof Path2D>) => void> = {
     'collapsed ellipse twice': (c) => {
+      collapsed(c)
+      collapsed(c)
+    },
+    'collapsed ellipse three times': (c) => {
+      collapsed(c)
       collapsed(c)
       collapsed(c)
     },
@@ -187,36 +192,26 @@ test('a lone point on a path that is already that point adds nothing', (t) => {
       collapsed(c)
     },
     'moveTo elsewhere, moveTo, then collapsed ellipse': (c) => {
-      // A moveTo right after a moveTo replaces it, in Skia and in Blink.
       c.moveTo(10, 10)
       c.moveTo(50, 90)
       collapsed(c)
-    },
-    'arc radius 0 twice': (c) => {
-      c.arc(50, 50, 0, 0, TAU)
-      c.arc(50, 50, 0, 0, TAU)
-    },
-    'moveTo, then arc radius 0': (c) => {
-      c.moveTo(50, 50)
-      c.arc(50, 50, 0, 0, TAU)
-    },
-    'ellipse radii 0 twice': (c) => {
-      c.ellipse(50, 50, 0, 0, 0, 0, TAU)
-      c.ellipse(50, 50, 0, 0, 0, 0, TAU)
-    },
-    'moveTo, then ellipse radii 0': (c) => {
-      c.moveTo(50, 50)
-      c.ellipse(50, 50, 0, 0, 0, 0, TAU)
     },
     'zero-sweep ellipse twice': (c) => {
       c.ellipse(50, 50, 30, 20, 0, 1, 1)
       c.ellipse(50, 50, 30, 20, 0, 1, 1)
     },
   }
+  // Not here, and the same as before this change: arc(p, 0) twice, moveTo(p)
+  // then arc(p, 0), and the same with ellipse radii 0 paint a dot (338 px
+  // round, 400 px square at lineWidth 20) where Chrome paints 0. Whether the
+  // final path is one point is known only at stroke time, so matching Chrome
+  // there needs its stroke-time check, not a path rule. For the same reason,
+  // after other points (moveTo(10, 10) lineTo(30, 10) moveTo(50, 90) then the
+  // collapsed ellipse) Chrome strokes its zero-length lines as a dot (1072 px
+  // round) and the arc route paints 736 px.
   for (const [name, build] of Object.entries(cases)) {
     const path = new Path2D()
     build(path)
-    t.is(path.toSVGString(), '', `${name} Path2D`)
     for (const cap of ['round', 'square'] as const) {
       ctx.reset()
       ctx.lineWidth = 20
@@ -233,61 +228,52 @@ test('a lone point on a path that is already that point adds nothing', (t) => {
   }
 })
 
-test("a lone point keeps Blink's lines when the path has other points", (t) => {
-  const collapsed = (c: Ctx | InstanceType<typeof Path2D>) =>
-    c.ellipse(50, 50, 0, 40, 0, Math.PI / 2, (5 * Math.PI) / 2, true)
-  // The bounds are not one point, so Chrome strokes the zero-length lines at
-  // (50,90) and paints a dot there.
-  const dot = new Path2D()
-  dot.moveTo(10, 10)
-  dot.lineTo(30, 10)
-  dot.moveTo(50, 90)
-  collapsed(dot)
-  assertPath(
-    t,
-    dot,
-    [
-      ['M', 10, 10],
-      ['L', 30, 10],
-      ['M', 50, 90],
-      ['L', 50, 90],
-      ['L', 50, 90],
-      ['L', 50, 90],
-    ],
-    'dot after a line',
-  )
-  // The earlier points are all (50,90), but the moveTo(10,10) is not, so the
-  // second call is a line from (10,10).
-  const line = new Path2D()
-  line.lineTo(50, 90)
-  collapsed(line)
-  line.moveTo(10, 10)
-  collapsed(line)
-  assertPath(
-    t,
-    line,
-    [
-      ['M', 50, 90],
-      ['L', 50, 90],
-      ['M', 10, 10],
-      ['L', 50, 90],
-      ['L', 50, 90],
-      ['L', 50, 90],
-    ],
-    'line from a trailing moveTo',
-  )
+test('moveTo(x, y) then arc(x, y, 0) keeps a dot at each point, as in Chrome', (t) => {
+  const c120 = createCanvas(120, 120).getContext('2d')
+  const points = [
+    [20, 20],
+    [60, 30],
+    [40, 80],
+    [90, 90],
+  ]
+  const dots = (c: Ctx | InstanceType<typeof Path2D>) => {
+    for (const [x, y] of points) {
+      c.moveTo(x, y)
+      c.arc(x, y, 0, 0, TAU)
+    }
+  }
   const counts: Record<string, number> = {}
-  for (const [name, path] of Object.entries({ dot, line })) {
-    ctx.reset()
-    ctx.lineWidth = 20
-    ctx.lineCap = 'round'
-    ctx.stroke(path)
-    counts[name] = countPainted(ctx)
+  for (const [lineWidth, cap] of [
+    [20, 'round'],
+    [20, 'square'],
+    [1, 'round'],
+  ] as const) {
+    for (const api of ['ctx', 'Path2D']) {
+      c120.reset()
+      c120.lineWidth = lineWidth
+      c120.lineCap = cap
+      if (api === 'ctx') {
+        dots(c120)
+        c120.stroke()
+      } else {
+        const path = new Path2D()
+        dots(path)
+        c120.stroke(path)
+      }
+      counts[`${lineWidth} ${cap} ${api}`] = countPainted(c120)
+    }
   }
   if (!WIN_ARM64) {
-    t.deepEqual(counts, { dot: 1072, line: 2257 })
+    t.deepEqual(counts, {
+      '20 round ctx': 1344,
+      '20 round Path2D': 1344,
+      '20 square ctx': 1600,
+      '20 square Path2D': 1600,
+      '1 round ctx': 16,
+      '1 round Path2D': 16,
+    })
   } else {
-    t.pass()
+    t.true(Object.values(counts).every((n) => n > 0))
   }
 })
 

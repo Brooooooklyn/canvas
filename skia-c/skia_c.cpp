@@ -3102,23 +3102,6 @@ bool skiac_path_is_empty(skiac_path* c_path) {
   return c_path->builder.isEmpty();
 }
 
-// True when the path has points and every one of them, moveTo points included,
-// is (x, y). SkPathBuilder::moveTo already replaces a moveTo that directly
-// follows another one. Reads the builder without a snapshot and stops at the
-// first other point.
-bool skiac_path_is_point(skiac_path* c_path, float x, float y) {
-  auto pts = c_path->builder.points();
-  if (pts.empty()) {
-    return false;
-  }
-  for (const auto& pt : pts) {
-    if (pt.fX != x || pt.fY != y) {
-      return false;
-    }
-  }
-  return true;
-}
-
 int skiac_path_count_points(skiac_path* c_path) {
   return c_path->path().countPoints();
 }

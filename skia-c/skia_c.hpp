@@ -1779,7 +1779,6 @@ void skiac_path_add_circle(skiac_path* c_path, float x, float y, float r);
 skiac_path* skiac_path_transform(skiac_path* c_path, skiac_matrix* c_matrix);
 void skiac_path_transform_self(skiac_path* c_path, skiac_matrix* c_matrix);
 bool skiac_path_is_empty(skiac_path* c_path);
-bool skiac_path_is_point(skiac_path* c_path, float x, float y);
 int skiac_path_count_points(skiac_path* c_path);
 int skiac_path_count_verbs(skiac_path* c_path);
 uint32_t skiac_path_generation_id(skiac_path* c_path);
