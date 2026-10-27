@@ -4072,7 +4072,8 @@ impl Path {
     let sweep_deg = (end - start) * RAD_TO_DEG;
     // SkPathBuilder::arcTo draws nothing for a 360 sweep, so draw two halves.
     // f32 rounding puts a full sweep a few ulps off 360 (1 ulp = 3.05e-5), so
-    // use Blink's WebCoreFloatNearlyEqual tolerance of 1/4096 (:466).
+    // use Blink's WebCoreFloatNearlyEqual tolerance of 1/4096 (:466). A
+    // partial sweep within it is closed too, as in Chrome's AddEllipse route.
     if (sweep_deg.abs() - 360.0).abs() <= 1.0 / 4096.0 {
       let half = 180.0f32.copysign(sweep_deg);
       self.arc_to(left, top, right, bottom, start_deg, half, false);
