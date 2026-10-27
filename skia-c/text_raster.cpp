@@ -66,7 +66,11 @@ int32_t TruncatedHarfBuzzPosition(SkScalar value) {
 
 SkSurfaceProps CanvasSurfaceProps() {
   if (!SystemFontRenderer()) {
-    return SkSurfaceProps();
+    // SkTypes.h's text contrast and gamma (what SkSurfaceProps() gives on
+    // desktop), spelled out: the Android libskia is built with
+    // skia_use_fixed_gamma_text (SK_GAMMA_EXPONENT=1.4,
+    // SK_GAMMA_CONTRAST=0.0), and the default text is the same on every OS.
+    return SkSurfaceProps(0, kUnknown_SkPixelGeometry, 0.5f, 0.0f);
   }
 #if defined(__APPLE__)
   // Chrome's skia/BUILD.gn for mac: SK_GAMMA_SRGB, SK_GAMMA_CONTRAST=0.0.
