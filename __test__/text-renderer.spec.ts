@@ -4,7 +4,7 @@
 // in that mode. The tests switch this process, so they run one at a time and
 // each switches back to the default at the end.
 import { spawnSync } from 'node:child_process'
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -195,6 +195,28 @@ function textWidth(font: string) {
     t.false(GlobalFonts.has('UsGone'))
   },
 )
+
+// A font file replaced on disk after registering is not read again: the
+// font keeps the content it was registered with in both modes.
+test.serial('a font whose file is replaced keeps its content across switching', (t) => {
+  backToDefault(t)
+  const dir = mkdtempSync(join(tmpdir(), 'canvas-replaced-'))
+  t.teardown(() => rmSync(dir, { recursive: true, force: true }))
+  const file = join(dir, 'font.ttf')
+  copyFileSync(join(__dirname, 'fonts', 'SourceSerifPro-Regular.ttf'), file)
+  const key = GlobalFonts.registerFromPath(file, 'UsReplaced')
+  const oswald = GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'Oswald.ttf'), 'UsReplacedOswald')
+  t.teardown(() => GlobalFonts.removeBatch([key!, oswald!]))
+  const before = textWidth('20px UsReplaced')
+  t.not(before, textWidth('20px UsReplacedOswald'))
+  // Replace it the way an atomic write does: a new file renamed over it.
+  copyFileSync(join(__dirname, 'fonts', 'Oswald.ttf'), join(dir, 'next.ttf'))
+  renameSync(join(dir, 'next.ttf'), file)
+  setTextRenderer('system')
+  t.not(textWidth('20px UsReplaced'), textWidth('20px UsReplacedOswald'))
+  setTextRenderer('portable')
+  t.is(textWidth('20px UsReplaced'), before)
+})
 
 // setAlias names are replayed in call order, so an alias of an alias whose
 // name sorts first still finds the alias it names.

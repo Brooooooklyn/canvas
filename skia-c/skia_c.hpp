@@ -1047,8 +1047,17 @@ struct skiac_font_collection {
         } else if (mode_typefaces[mode]) {
           typeface = mode_typefaces[mode];
         } else if (!font_info.path.empty()) {
-          // Path-registered font: reload from path (lazy loading)
-          typeface = MakeCanvasTypefaceFromFile(font_info.path.c_str());
+          // Path-registered font: made from the data of the face it has, so
+          // a file replaced or removed since it was registered is not read
+          // again; from the path only when that face gives no data.
+          std::unique_ptr<SkStreamAsset> stream;
+          if (font_info.typeface) {
+            int index = 0;
+            stream = font_info.typeface->openStream(&index);
+          }
+          typeface = stream
+                         ? MakeCanvasTypeface(std::move(stream))
+                         : MakeCanvasTypefaceFromFile(font_info.path.c_str());
         } else if (font_info.data) {
           // Buffer-registered font: recreate from stored data
           typeface = MakeCanvasTypeface(font_info.data);
