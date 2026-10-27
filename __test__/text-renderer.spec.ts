@@ -434,6 +434,16 @@ macTest('a setAlias of an installed family survives switching on macOS', (t) => 
     t.true(GlobalFonts.has('UsBrandCourier'), mode)
     t.is(textWidth('20px UsBrandCourier'), textWidth('20px Courier'), mode)
     t.is(textWidth('20px UsBrandCourier2'), textWidth('20px Courier'), mode)
+    // An unrelated removal rebuilds too, and keeps the alias.
+    for (const how of ['remove', 'removeBatch'] as const) {
+      const other = GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'Oswald.ttf'), 'UsCourierOther')
+      if (how === 'remove') {
+        t.true(GlobalFonts.remove(other!))
+      } else {
+        GlobalFonts.removeBatch([other!])
+      }
+      t.is(textWidth('20px UsBrandCourier2'), textWidth('20px Courier'), `${mode} ${how}`)
+    }
   }
   t.is(textWidth('20px UsBrandCourier2'), courier)
 })

@@ -984,13 +984,15 @@ struct skiac_font_collection {
         }
 #endif
         // These aliases intentionally shadow/override existing family names
-        // The family as the new mode lists it. On a switch also as the new
-        // mode's installed fonts find it by name: CoreText resolves families
-        // it does not list (Courier), which the default mode lists.
+        // The family as the new provider lists it, else as the installed
+        // fonts find it by name: CoreText resolves families it does not list
+        // (Courier), which the default mode lists. An alias of a removed
+        // font has no entry left (remove() erases them), so this finds no
+        // removed font.
         SetAlias& entry = set_aliases[index];
         sk_sp<SkTypeface> typeface =
             new_assets->matchFamilyStyle(entry.family.c_str(), SkFontStyle());
-        if (!typeface && relist_installed && font_mgr) {
+        if (!typeface && font_mgr) {
           typeface =
               font_mgr->matchFamilyStyle(entry.family.c_str(), SkFontStyle());
         }
