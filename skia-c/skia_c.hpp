@@ -769,6 +769,12 @@ struct skiac_font_collection {
   // fonts; FontCollection asks it after them (its test font manager).
   sk_sp<SkFontMgr> system_ui;
   std::set<SkTypefaceID> system_ui_ids;
+  // Each mode's installed font managers, made once: the retired providers
+  // keep the managers they had, so a new one per switch would add up.
+  sk_sp<SkFontMgr> portable_font_mgr;
+  sk_sp<SkFontMgr> coretext_font_mgr;
+  sk_sp<SkFontMgr> coretext_system_ui;
+  std::set<SkTypefaceID> coretext_system_ui_ids;
 #endif
 
   skiac_font_collection()
@@ -785,6 +791,9 @@ struct skiac_font_collection {
     // a kept line (up to about 25x with fallback runs), and takes sizes and
     // spacings within 1/4096 px for equal.
     collection->getParagraphCache()->turnOn(false);
+#if defined(__APPLE__)
+    portable_font_mgr = font_mgr;
+#endif
   }
 
 #if defined(__APPLE__)
@@ -1120,7 +1129,14 @@ struct skiac_font_collection {
     for (const auto& [id, font_info] : assets->getRegisteredFonts()) {
       listed = listed || font_info.installed;
     }
-    font_mgr = MakeInstalledFontManager();
+    if (enabled) {
+      font_mgr = nullptr;
+    } else {
+      if (!portable_font_mgr) {
+        portable_font_mgr = MakeInstalledFontManager();
+      }
+      font_mgr = portable_font_mgr;
+    }
     collection->setAssetFontManager(font_mgr);
     system_ui = nullptr;
     system_ui_ids.clear();
@@ -1163,9 +1179,14 @@ struct skiac_font_collection {
   // With the system renderer, CoreText's installed fonts resolve by name.
   void useInstalledLookup() {
     if (SystemFontRenderer()) {
-      font_mgr = MakeCoreTextFontManager();
+      if (!coretext_font_mgr) {
+        coretext_font_mgr = MakeCoreTextFontManager();
+        coretext_system_ui = MakeSystemUiFontManager(&coretext_system_ui_ids);
+      }
+      font_mgr = coretext_font_mgr;
       collection->setAssetFontManager(font_mgr);
-      system_ui = MakeSystemUiFontManager(&system_ui_ids);
+      system_ui = coretext_system_ui;
+      system_ui_ids = coretext_system_ui_ids;
       collection->setTestFontManager(system_ui);
       coretext_families.clear();
     }

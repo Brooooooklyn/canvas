@@ -512,6 +512,24 @@ console.log(JSON.stringify({ growth: (process.memoryUsage().rss - before) / 2 **
   },
 )
 
+// Each mode's installed font managers are made once, so many switches with
+// nothing listed (DISABLE_SYSTEM_FONTS_LOAD, no drawing) keep memory flat.
+macTest('many switches do not add installed font managers on macOS', (t) => {
+  const out = macProbe(
+    `const { setTextRenderer } = require('./index.js')
+const round = () => {
+  setTextRenderer('system')
+  setTextRenderer('portable')
+}
+for (let i = 0; i < 5; i++) round()
+const before = process.memoryUsage().rss
+for (let i = 0; i < 60; i++) round()
+console.log(JSON.stringify({ growth: (process.memoryUsage().rss - before) / 2 ** 20 }))`,
+    { DISABLE_SYSTEM_FONTS_LOAD: '1' },
+  )
+  t.true(out.growth < 30, `RSS grew by ${out.growth} MiB`)
+})
+
 // A new process that runs PROBE_STEPS (comma separated) and prints what
 // '20px Helvetica' measures and the first family after each "state" step.
 const HELVETICA_PROBE = `
