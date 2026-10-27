@@ -4682,6 +4682,9 @@ size_t skiac_font_collection_unregister_all(
   // The installed fonts loadSystemFonts turned on go too, as if registered.
   c_font_collection->prepareLookup();
   size_t removed_count = c_font_collection->assets->removeAllTypefaces();
+#if defined(__APPLE__)
+  c_font_collection->disableInstalledFonts();
+#endif
   if (removed_count > 0) {
     // Clear all set_aliases since all fonts are removed
     c_font_collection->set_aliases.clear();

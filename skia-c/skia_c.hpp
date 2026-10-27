@@ -74,6 +74,7 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <tuple>
 #include <unordered_set>
 #include <vector>
 
@@ -208,14 +209,20 @@ inline uint32_t computePathHash(const std::string& path) {
 struct RegisteredFont {
   sk_sp<SkData> data;  // For buffer-registered fonts (null for path-registered)
   std::string path;  // For path-registered fonts (empty for buffer-registered)
-  // An installed font (macOS loadSystemFonts): no data or path, the
-  // typeface itself.
-  sk_sp<SkTypeface> installed;
+  // An installed font (macOS loadSystemFonts): no data or path, only the
+  // typeface.
+  bool installed = false;
+  // The face registered now. A rebuild that cannot make the font again (its
+  // file is gone, or the new renderer mode cannot read it, as Fontations a
+  // Type 1 font) registers this one again, so the font keeps its FontKey and
+  // the next rebuild tries again.
+  sk_sp<SkTypeface> typeface;
   std::vector<std::string> aliases;  // All aliases for this font
-  // When it was registered. A rebuild registers the fonts again in this
-  // order, so the provider's first family (its fallback, onLegacyMakeTypeface)
-  // and the first face of a family stay as in a process that never rebuilt.
-  uint64_t order = 0;
+  // When each alias was registered (parallel to aliases). A rebuild
+  // registers every (face, alias) pair again in this order, so the
+  // provider's first family (its fallback, onLegacyMakeTypeface) and the
+  // first face of a family stay as in a process that never rebuilt.
+  std::vector<uint64_t> orders;
 };
 
 class TypefaceFontProviderCustom : public TypefaceFontProvider {
@@ -277,9 +284,10 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
     // Store font data with original family name for rebuild
     RegisteredFont font_info;
     font_info.data = data;
+    font_info.typeface = typeface;
     font_info.aliases.push_back(
         originalName);  // Track under what name it's registered
-    font_info.order = ++registrations;
+    font_info.orders.push_back(++registrations);
     registered_fonts[id] = std::move(font_info);
 
     // Update secondary index
@@ -321,6 +329,7 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
             if (std::find(aliases.begin(), aliases.end(), aliasStr) ==
                 aliases.end()) {
               aliases.push_back(aliasStr);
+              font_it->second.orders.push_back(++registrations);
               this->registerTypeface(typeface, alias);
             }
             return existing_id;
@@ -341,13 +350,15 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
     // Store font data - avoid duplicates if alias equals original name
     RegisteredFont font_info;
     font_info.data = data;
+    font_info.typeface = typeface;
     font_info.aliases.push_back(originalName);  // Track original name
+    font_info.orders.push_back(++registrations);
 
     // Only add alias if different from original name
     if (aliasStr != originalName) {
       font_info.aliases.push_back(aliasStr);
+      font_info.orders.push_back(++registrations);
     }
-    font_info.order = ++registrations;
     registered_fonts[id] = std::move(font_info);
 
     // Update secondary index
@@ -379,57 +390,50 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
     SkString family;
     typeface->getFamilyName(&family);
     RegisteredFont font_info;
-    font_info.installed = typeface;
+    font_info.installed = true;
+    font_info.typeface = typeface;
     font_info.aliases.push_back(std::string(family.c_str()));
-    font_info.order = ++registrations;
+    font_info.orders.push_back(++registrations);
     registered_fonts[id] = std::move(font_info);
     this->registerTypeface(std::move(typeface));
     return id;
   }
 
-  // Register with explicit ID (used during rebuild to preserve FontKey)
-  // Only registers under the names in aliases (which includes original family
-  // name if tracked)
-  void registerTypefaceWithId(uint32_t id,
-                              sk_sp<SkData> data,
-                              const std::string& path,
-                              sk_sp<SkTypeface> typeface,
-                              const std::vector<std::string>& aliases,
-                              bool installed = false) {
-    if (!typeface) {
-      return;
-    }
-
+  // A rebuild: the font `id` of the old provider, made again as `typeface`
+  // (its FontKey stays), with no name yet. addRebuiltAlias registers it
+  // under each of its names.
+  void addRebuiltFont(uint32_t id,
+                      const RegisteredFont& old,
+                      sk_sp<SkTypeface> typeface) {
     RegisteredFont font_info;
-    font_info.data = data;
-    font_info.path = path;
-    if (installed) {
-      font_info.installed = typeface;
-    }
-    font_info.aliases = aliases;
-    font_info.order = ++registrations;
+    font_info.data = old.data;
+    font_info.path = old.path;
+    font_info.installed = old.installed;
+    font_info.typeface = std::move(typeface);
     registered_fonts[id] = std::move(font_info);
 
     // Update secondary index
     uint32_t content_hash;
-    if (installed) {
+    if (old.installed) {
       content_hash = 0;
-    } else if (!path.empty()) {
-      content_hash = computePathHash(path);
-    } else if (data) {
-      content_hash = computeFontContentHash(data);
+    } else if (!old.path.empty()) {
+      content_hash = computePathHash(old.path);
+    } else if (old.data) {
+      content_hash = computeFontContentHash(old.data);
     } else {
       content_hash = id;  // Fallback to id if no path or data
     }
     if (content_hash) {
       content_hash_index[content_hash].insert(id);
     }
+  }
 
-    // Register under each tracked name (first one is typically original family
-    // name)
-    for (const auto& name : aliases) {
-      this->registerTypeface(typeface, SkString(name.c_str()));
-    }
+  // A rebuild: registers the font `id` (addRebuiltFont) under `name`.
+  void addRebuiltAlias(uint32_t id, const std::string& name) {
+    RegisteredFont& font_info = registered_fonts.at(id);
+    font_info.aliases.push_back(name);
+    font_info.orders.push_back(++registrations);
+    this->registerTypeface(font_info.typeface, SkString(name.c_str()));
   }
 
   /**
@@ -491,8 +495,9 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
     // Store path (not data) with original family name for rebuild
     RegisteredFont font_info;
     font_info.path = path;
+    font_info.typeface = typeface;
     font_info.aliases.push_back(originalName);
-    font_info.order = ++registrations;
+    font_info.orders.push_back(++registrations);
     registered_fonts[id] = std::move(font_info);
 
     // Update secondary index
@@ -530,6 +535,7 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
           if (std::find(aliases.begin(), aliases.end(), aliasStr) ==
               aliases.end()) {
             aliases.push_back(aliasStr);
+            font_it->second.orders.push_back(++registrations);
             this->registerTypeface(typeface, alias);
           }
           return existing_id;
@@ -549,13 +555,15 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
     // Store path (not data) - avoid duplicates if alias equals original name
     RegisteredFont font_info;
     font_info.path = path;
+    font_info.typeface = typeface;
     font_info.aliases.push_back(originalName);
+    font_info.orders.push_back(++registrations);
 
     // Only add alias if different from original name
     if (aliasStr != originalName) {
       font_info.aliases.push_back(aliasStr);
+      font_info.orders.push_back(++registrations);
     }
-    font_info.order = ++registrations;
     registered_fonts[id] = std::move(font_info);
 
     // Update secondary index
@@ -755,6 +763,12 @@ struct skiac_font_collection {
 
   // Registers every installed face (once). Returns how many that registered.
   uint32_t registerInstalledFonts() {
+    return registerInstalledFonts(assets.get(), &system_font_ids);
+  }
+
+  // Registers every installed face (once) in `target`, their IDs in `ids`.
+  uint32_t registerInstalledFonts(TypefaceFontProviderCustom* target,
+                                  std::set<uint32_t>* ids) {
     if (!installed_fonts_pending) {
       return installed_font_count;
     }
@@ -766,8 +780,8 @@ struct skiac_font_collection {
       }
       const SkTypefaceID typeface_id = typeface->uniqueID();
       if (const uint32_t id =
-              assets->registerInstalledTypeface(std::move(typeface))) {
-        system_font_ids.insert(id);
+              target->registerInstalledTypeface(std::move(typeface))) {
+        ids->insert(id);
         system_typeface_ids.insert(typeface_id);
         ++count;
       }
@@ -789,6 +803,14 @@ struct skiac_font_collection {
     markCachesDirty();
     installed_font_count = count;
     return count;
+  }
+
+  // GlobalFonts.removeAll() removed the installed fonts: they stay out
+  // across renderer switches until loadSystemFonts turns them on again.
+  void disableInstalledFonts() {
+    installed_fonts_enabled = false;
+    installed_fonts_pending = false;
+    installed_font_count = 0;
   }
 #endif
 
@@ -834,10 +856,15 @@ struct skiac_font_collection {
   // Rebuild the dynamic font provider with only remaining fonts
   // Since sk_sp is reference-counted, old providers stay alive as long as any
   // typeface from them is still in use. We can safely clear retired_assets.
-  void rebuildAssets() {
+  // `relist_installed` (a renderer switch, macOS): the installed fonts of the
+  // old mode give their place to the current mode's, registered where the
+  // first of the old ones was.
+  void rebuildAssets(bool relist_installed = false) {
     // The installed fonts loadSystemFonts turned on are registered first, so
     // the rebuild keeps them.
-    prepareLookup();
+    if (!relist_installed) {
+      prepareLookup();
+    }
     // Get current registered fonts before swap
     auto old_fonts = assets->getRegisteredFonts();
 
@@ -853,40 +880,68 @@ struct skiac_font_collection {
     // Create new provider
     auto new_assets = sk_make_sp<TypefaceFontProviderCustom>(font_mgr);
 
-    // Re-register all remaining fonts, preserving original IDs, in the order
-    // they were registered (IDs are hashes).
-    std::vector<std::pair<uint64_t, uint32_t>> order;
+    // Re-register all remaining fonts, preserving original IDs, under each
+    // name in the order the names were registered (IDs are hashes, and a
+    // name a font gained later goes after the fonts registered between).
+    std::vector<std::tuple<uint64_t, uint32_t, size_t>> names;
     for (const auto& [id, font_info] : old_fonts) {
-      order.emplace_back(font_info.order, id);
+      for (size_t i = 0; i < font_info.aliases.size(); ++i) {
+        names.emplace_back(font_info.orders[i], id, i);
+      }
     }
-    std::sort(order.begin(), order.end());
+    std::sort(names.begin(), names.end());
     std::set<uint32_t> kept_system_font_ids;
     system_typeface_ids.clear();
-    for (const auto& entry : order) {
-      const uint32_t id = entry.second;
+    // Each font made again, by ID; null when it is not kept.
+    std::map<uint32_t, sk_sp<SkTypeface>> made;
+    [[maybe_unused]] bool relisted = false;
+    for (const auto& [order, id, index] : names) {
       const RegisteredFont& font_info = old_fonts.at(id);
-      sk_sp<SkTypeface> typeface;
-
-      if (font_info.installed) {
-        typeface = font_info.installed;
-      } else if (!font_info.path.empty()) {
-        // Path-registered font: reload from path (lazy loading)
-        typeface = MakeCanvasTypefaceFromFile(font_info.path.c_str());
-      } else if (font_info.data) {
-        // Buffer-registered font: recreate from stored data
-        typeface = MakeCanvasTypeface(font_info.data);
-      }
-
-      if (typeface) {
-        if (system_font_ids.count(id)) {
-          kept_system_font_ids.insert(id);
-          system_typeface_ids.insert(typeface->uniqueID());
+      if (font_info.installed && relist_installed) {
+#if defined(__APPLE__)
+        if (!relisted) {
+          relisted = true;
+          registerInstalledFonts(new_assets.get(), &kept_system_font_ids);
         }
-        new_assets->registerTypefaceWithId(id, font_info.data, font_info.path,
-                                           typeface, font_info.aliases,
-                                           font_info.installed != nullptr);
+#endif
+        continue;
+      }
+      auto it = made.find(id);
+      if (it == made.end()) {
+        sk_sp<SkTypeface> typeface;
+        if (font_info.installed) {
+          typeface = font_info.typeface;
+        } else if (!font_info.path.empty()) {
+          // Path-registered font: reload from path (lazy loading)
+          typeface = MakeCanvasTypefaceFromFile(font_info.path.c_str());
+        } else if (font_info.data) {
+          // Buffer-registered font: recreate from stored data
+          typeface = MakeCanvasTypeface(font_info.data);
+        }
+        // Not made again (its file is gone, or this mode cannot read it):
+        // the face it had stays.
+        if (!typeface) {
+          typeface = font_info.typeface;
+        }
+        if (typeface) {
+          if (system_font_ids.count(id)) {
+            kept_system_font_ids.insert(id);
+            system_typeface_ids.insert(typeface->uniqueID());
+          }
+          new_assets->addRebuiltFont(id, font_info, typeface);
+        }
+        it = made.emplace(id, std::move(typeface)).first;
+      }
+      if (it->second) {
+        new_assets->addRebuiltAlias(id, font_info.aliases[index]);
       }
     }
+#if defined(__APPLE__)
+    // None was registered yet, but the setAlias replay needs them.
+    if (relist_installed && !relisted) {
+      registerInstalledFonts(new_assets.get(), &kept_system_font_ids);
+    }
+#endif
     system_font_ids = std::move(kept_system_font_ids);
 
     // Replay setAlias mappings
@@ -941,16 +996,11 @@ struct skiac_font_collection {
     // Typefaces made from here on are made in the new mode.
     SetSystemFontRenderer(enabled);
 #if defined(__APPLE__)
-    // The installed fonts belong to the mode they were listed in.
-    std::vector<uint32_t> listed;
+    // The installed fonts belong to the mode they were listed in: the
+    // rebuild puts the new mode's in their place.
+    bool listed = false;
     for (const auto& [id, font_info] : assets->getRegisteredFonts()) {
-      if (font_info.installed) {
-        listed.push_back(id);
-      }
-    }
-    for (uint32_t id : listed) {
-      assets->removeTypeface(id);
-      system_font_ids.erase(id);
+      listed = listed || font_info.installed;
     }
     font_mgr = MakeInstalledFontManager();
     collection->setAssetFontManager(font_mgr);
@@ -960,14 +1010,17 @@ struct skiac_font_collection {
     coretext_families.clear();
     installed_fonts_pending = false;
     installed_font_count = 0;
-    // setAlias replay needs the installed families, so list them now.
-    // Otherwise they are listed at the next lookup, as at startup.
-    const bool eager = installed_fonts_enabled && !set_aliases.empty();
+    // Registered installed fonts are listed now, so they keep their place
+    // before the fonts registered after them; the setAlias replay needs the
+    // installed families too. Otherwise they are listed at the next lookup,
+    // as at startup.
+    const bool eager =
+        installed_fonts_enabled && (listed || !set_aliases.empty());
     if (eager) {
       startInstalledFonts();
     }
 #endif
-    rebuildAssets();
+    rebuildAssets(/*relist_installed=*/true);
 #if defined(__APPLE__)
     if (installed_fonts_enabled && !eager) {
       startInstalledFonts();

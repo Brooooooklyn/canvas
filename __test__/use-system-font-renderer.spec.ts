@@ -4,7 +4,7 @@
 // in that mode. The tests switch this process, so they run one at a time and
 // each switches back to the default at the end.
 import { spawnSync } from 'node:child_process'
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -126,6 +126,59 @@ test.serial('a FontKey and a setAlias name survive switching', (t) => {
   t.false(GlobalFonts.has('SwSerif'))
 })
 
+function textWidth(font: string) {
+  const ctx = createCanvas(10, 10).getContext('2d')
+  ctx.font = font
+  return ctx.measureText('Hamburgefonstiv').width
+}
+
+// A font file deleted after registering cannot be made again: the font keeps
+// the face it had, its FontKey and its names. Windows cannot delete a font
+// file while it is open.
+;(process.platform === 'win32' ? test.serial.skip : test.serial)(
+  'a font whose file is gone survives switching',
+  (t) => {
+    backToDefault(t)
+    const dir = mkdtempSync(join(tmpdir(), 'canvas-gone-'))
+    t.teardown(() => rmSync(dir, { recursive: true, force: true }))
+    const file = join(dir, 'gone.ttf')
+    copyFileSync(join(__dirname, 'fonts', 'iosevka-slab-regular.ttf'), file)
+    const key = GlobalFonts.registerFromPath(file, 'UsGone')
+    t.truthy(key)
+    const before = textWidth('20px UsGone')
+    rmSync(file)
+    useSystemFontRenderer()
+    t.true(GlobalFonts.has('UsGone'))
+    t.not(textWidth('20px UsGone'), textWidth('20px UsNoSuchFamily'))
+    useSystemFontRenderer(false)
+    t.true(GlobalFonts.has('UsGone'))
+    t.is(textWidth('20px UsGone'), before)
+    t.true(GlobalFonts.remove(key!))
+    t.false(GlobalFonts.has('UsGone'))
+  },
+)
+
+// A name a font gains later goes after the fonts registered in between: the
+// first face of the family stays the first.
+test.serial('a shared family keeps its first face across switching', (t) => {
+  backToDefault(t)
+  const oswald = readFileSync(join(__dirname, 'fonts', 'Oswald.ttf'))
+  const first = GlobalFonts.register(oswald, 'UsOrderA')
+  const serif = GlobalFonts.register(
+    readFileSync(join(__dirname, 'fonts', 'SourceSerifPro-Regular.ttf')),
+    'UsOrderShared',
+  )
+  t.is(GlobalFonts.register(oswald, 'UsOrderShared')?.typefaceId, first?.typefaceId)
+  t.teardown(() => GlobalFonts.removeBatch([first!, serif!]))
+  const before = textWidth('20px UsOrderShared')
+  t.is(before, textWidth('20px "Source Serif Pro"'))
+  t.not(before, textWidth('20px UsOrderA'))
+  useSystemFontRenderer()
+  t.is(textWidth('20px UsOrderShared'), textWidth('20px "Source Serif Pro"'))
+  useSystemFontRenderer(false)
+  t.is(textWidth('20px UsOrderShared'), before)
+})
+
 test.serial('a canvas made before a switch draws like a new one once its size is set', (t) => {
   backToDefault(t)
   for (const [from, to] of [
@@ -227,4 +280,67 @@ macTest('the per-user font folder comes back after a switch on macOS', (t) => {
   t.is(out.loadedAgain, out.loaded)
   t.is(out.faces, out.loaded)
   t.deepEqual(out.back, out.first)
+})
+
+// A new process that runs PROBE_STEPS (comma separated) and prints what
+// '20px Helvetica' measures and the first family after each "state" step.
+const HELVETICA_PROBE = `
+const { join } = require('path')
+const { GlobalFonts, createCanvas, useSystemFontRenderer } = require('./index.js')
+const width = (font) => {
+  const ctx = createCanvas(10, 10).getContext('2d')
+  ctx.font = font
+  return ctx.measureText('Hamburgefonstiv').width
+}
+const out = []
+for (const step of process.env.PROBE_STEPS.split(',')) {
+  if (step === 'register') GlobalFonts.registerFromPath(join('__test__', 'fonts', 'Lato-Regular.ttf'), 'Helvetica')
+  else if (step === 'switch:true') useSystemFontRenderer(true)
+  else if (step === 'switch:false') useSystemFontRenderer(false)
+  else if (step === 'state') out.push({ width: width('20px Helvetica'), lato: width('20px Lato'), first: GlobalFonts.families[0].family })
+}
+console.log(JSON.stringify(out))
+`
+
+function macProbe(script: string, env: Record<string, string> = {}) {
+  const { stdout, stderr, status } = spawnSync(process.execPath, ['-e', script], {
+    cwd: join(__dirname, '..'),
+    env: { ...process.env, ...env },
+    encoding: 'utf8',
+  })
+  if (status !== 0) throw new Error(stderr)
+  return JSON.parse(stdout)
+}
+
+// Installed fonts register first, so a registered font under an installed
+// family name comes after the installed faces, before and after a switch.
+macTest('installed fonts stay before registered fonts across a switch on macOS', (t) => {
+  const helvetica = (steps: string[]) => macProbe(HELVETICA_PROBE, { PROBE_STEPS: steps.join(',') })
+  const [portable] = helvetica(['register', 'state'])
+  const [system] = helvetica(['switch:true', 'register', 'state'])
+  // The installed Helvetica wins over Lato.
+  t.not(portable.width, portable.lato)
+  t.deepEqual(helvetica(['register', 'switch:true', 'state', 'switch:false', 'state']), [system, portable])
+})
+
+const REMOVE_ALL_PROBE = `
+const { GlobalFonts, useSystemFontRenderer } = require('./index.js')
+const out = { removed: GlobalFonts.removeAll(), families: [GlobalFonts.families.length] }
+useSystemFontRenderer(true)
+out.families.push(GlobalFonts.families.length)
+useSystemFontRenderer(false)
+out.families.push(GlobalFonts.families.length)
+out.loaded = GlobalFonts.loadSystemFonts()
+out.families.push(GlobalFonts.families.length)
+console.log(JSON.stringify(out))
+`
+
+// GlobalFonts.removeAll() removes the installed fonts too; a switch does not
+// bring them back, loadSystemFonts does.
+macTest('installed fonts removed by removeAll stay removed across a switch on macOS', (t) => {
+  const out = macProbe(REMOVE_ALL_PROBE)
+  t.true(out.removed > 0)
+  t.deepEqual(out.families.slice(0, 3), [0, 0, 0])
+  t.true(out.loaded > 0)
+  t.true(out.families[3] > 0)
 })
