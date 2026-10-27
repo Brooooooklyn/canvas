@@ -9,7 +9,6 @@ import { createCanvas, Path2D } from '../index'
 type Ctx = ReturnType<ReturnType<typeof createCanvas>['getContext']>
 
 const TAU = 2 * Math.PI
-const WIN_ARM64 = process.platform === 'win32' && process.arch === 'arm64'
 
 const small = createCanvas(40, 40).getContext('2d')
 const big = createCanvas(200, 200).getContext('2d')
@@ -56,12 +55,7 @@ test('arc() strokes a full circle for every start', (t) => {
 
 test('arc() at -π/4 strokes a full circle', (t) => {
   const s = -Math.PI / 4
-  // win32-arm64: the prebuilt Skia is built by clang-cl without
-  // -ffp-contract=off (gn/skia/BUILD.gn adds it only `if (is_clang && !is_win)`),
-  // so SkPoint::DotProduct in SkConic::BuildUnitArc becomes one fmadd. For the
-  // second 180° half the dot is -0.99999994, not -1, that half's conics move
-  // 1-2 ulps, and 9 faint edge pixels (alpha <= 7) round to 0. Same ring, no gap.
-  const full = WIN_ARM64 ? 290 : 299
+  const full = 299
   // Chrome's general route: a path that is not empty before arc().
   const afterMoveTo = stroke(small, (ctx) => {
     ctx.moveTo(20 + 15 * Math.cos(s), 20 + 15 * Math.sin(s))
@@ -173,9 +167,8 @@ test('a zero-radius full ellipse draws nothing', (t) => {
     ctx.stroke(path)
     return { n: countPainted(ctx), svg: path.toSVGString() }
   }
-  // Chrome 156 counts for the line from (10, 10) to the center. The
-  // win32-arm64 Skia (see the -π/4 test) strokes the square-cap line 1 px
-  // smaller, so compare with the same line drawn by lineTo on this build.
+  // Chrome 156 counts for the line from (10, 10) to the center, which the
+  // same line drawn by lineTo must give too.
   const afterMoveTo: Record<string, number> = { round: 1496, square: 1641 }
   for (const [cap, chrome] of Object.entries(afterMoveTo) as ['round' | 'square', number][]) {
     ctx.reset()
@@ -185,7 +178,7 @@ test('a zero-radius full ellipse draws nothing', (t) => {
     ctx.lineTo(50, 50)
     ctx.stroke()
     afterMoveTo[cap] = countPainted(ctx)
-    if (!WIN_ARM64) t.is(afterMoveTo[cap], chrome, `${cap} line`)
+    t.is(afterMoveTo[cap], chrome, `${cap} line`)
   }
   for (const api of ['ctx', 'Path2D'] as const) {
     for (const [cap, n] of Object.entries(afterMoveTo) as ['round' | 'square', number][]) {
