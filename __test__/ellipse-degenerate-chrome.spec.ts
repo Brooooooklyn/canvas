@@ -170,6 +170,127 @@ test('a degenerate ellipse whose points all land on the start point is a lone po
   t.true(strokeRound(20, offByLittle) > 0)
 })
 
+test('a lone point on a path that is already that point adds nothing', (t) => {
+  // Each call adds only (50,90) or (50,50). Blink adds lineTo to it, and
+  // Chrome strokes nothing because the path bounds are still one point
+  // (canvas_2d_recorder_context.cc:1595-1602 m156). Our stroke has no such
+  // check, so a zero-length line would paint a cap dot.
+  const collapsed = (c: Ctx | InstanceType<typeof Path2D>) =>
+    c.ellipse(50, 50, 0, 40, 0, Math.PI / 2, (5 * Math.PI) / 2, true)
+  const cases: Record<string, (c: Ctx | InstanceType<typeof Path2D>) => void> = {
+    'collapsed ellipse twice': (c) => {
+      collapsed(c)
+      collapsed(c)
+    },
+    'moveTo, then collapsed ellipse': (c) => {
+      c.moveTo(50, 90)
+      collapsed(c)
+    },
+    'moveTo elsewhere, moveTo, then collapsed ellipse': (c) => {
+      // A moveTo right after a moveTo replaces it, in Skia and in Blink.
+      c.moveTo(10, 10)
+      c.moveTo(50, 90)
+      collapsed(c)
+    },
+    'arc radius 0 twice': (c) => {
+      c.arc(50, 50, 0, 0, TAU)
+      c.arc(50, 50, 0, 0, TAU)
+    },
+    'moveTo, then arc radius 0': (c) => {
+      c.moveTo(50, 50)
+      c.arc(50, 50, 0, 0, TAU)
+    },
+    'ellipse radii 0 twice': (c) => {
+      c.ellipse(50, 50, 0, 0, 0, 0, TAU)
+      c.ellipse(50, 50, 0, 0, 0, 0, TAU)
+    },
+    'moveTo, then ellipse radii 0': (c) => {
+      c.moveTo(50, 50)
+      c.ellipse(50, 50, 0, 0, 0, 0, TAU)
+    },
+    'zero-sweep ellipse twice': (c) => {
+      c.ellipse(50, 50, 30, 20, 0, 1, 1)
+      c.ellipse(50, 50, 30, 20, 0, 1, 1)
+    },
+  }
+  for (const [name, build] of Object.entries(cases)) {
+    const path = new Path2D()
+    build(path)
+    t.is(path.toSVGString(), '', `${name} Path2D`)
+    for (const cap of ['round', 'square'] as const) {
+      ctx.reset()
+      ctx.lineWidth = 20
+      ctx.lineCap = cap
+      build(ctx)
+      ctx.stroke()
+      t.is(countPainted(ctx), 0, `${name} ${cap}`)
+      ctx.reset()
+      ctx.lineWidth = 20
+      ctx.lineCap = cap
+      ctx.stroke(path)
+      t.is(countPainted(ctx), 0, `${name} ${cap} Path2D`)
+    }
+  }
+})
+
+test("a lone point keeps Blink's lines when the path has other points", (t) => {
+  const collapsed = (c: Ctx | InstanceType<typeof Path2D>) =>
+    c.ellipse(50, 50, 0, 40, 0, Math.PI / 2, (5 * Math.PI) / 2, true)
+  // The bounds are not one point, so Chrome strokes the zero-length lines at
+  // (50,90) and paints a dot there.
+  const dot = new Path2D()
+  dot.moveTo(10, 10)
+  dot.lineTo(30, 10)
+  dot.moveTo(50, 90)
+  collapsed(dot)
+  assertPath(
+    t,
+    dot,
+    [
+      ['M', 10, 10],
+      ['L', 30, 10],
+      ['M', 50, 90],
+      ['L', 50, 90],
+      ['L', 50, 90],
+      ['L', 50, 90],
+    ],
+    'dot after a line',
+  )
+  // The earlier points are all (50,90), but the moveTo(10,10) is not, so the
+  // second call is a line from (10,10).
+  const line = new Path2D()
+  line.lineTo(50, 90)
+  collapsed(line)
+  line.moveTo(10, 10)
+  collapsed(line)
+  assertPath(
+    t,
+    line,
+    [
+      ['M', 50, 90],
+      ['L', 50, 90],
+      ['M', 10, 10],
+      ['L', 50, 90],
+      ['L', 50, 90],
+      ['L', 50, 90],
+    ],
+    'line from a trailing moveTo',
+  )
+  const counts: Record<string, number> = {}
+  for (const [name, path] of Object.entries({ dot, line })) {
+    ctx.reset()
+    ctx.lineWidth = 20
+    ctx.lineCap = 'round'
+    ctx.stroke(path)
+    counts[name] = countPainted(ctx)
+  }
+  if (!WIN_ARM64) {
+    t.deepEqual(counts, { dot: 1072, line: 2257 })
+  } else {
+    t.pass()
+  }
+})
+
 test('a degenerate ellipse strokes and fills like Chrome', (t) => {
   const stroke = (lineWidth: number, cap: 'butt' | 'square', build: (c: Ctx) => InstanceType<typeof Path2D> | void) => {
     ctx.reset()
