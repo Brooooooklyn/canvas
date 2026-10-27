@@ -324,23 +324,34 @@ macTest('installed fonts stay before registered fonts across a switch on macOS',
 })
 
 const REMOVE_ALL_PROBE = `
-const { GlobalFonts, useSystemFontRenderer } = require('./index.js')
-const out = { removed: GlobalFonts.removeAll(), families: [GlobalFonts.families.length] }
+const { GlobalFonts, createCanvas, useSystemFontRenderer } = require('./index.js')
+const width = () => {
+  const ctx = createCanvas(10, 10).getContext('2d')
+  ctx.font = '20px Helvetica'
+  return ctx.measureText('Hello').width
+}
+const out = { removed: GlobalFonts.removeAll(), families: [GlobalFonts.families.length], widths: [width()] }
 useSystemFontRenderer(true)
 out.families.push(GlobalFonts.families.length)
+out.widths.push(width())
 useSystemFontRenderer(false)
 out.families.push(GlobalFonts.families.length)
+out.widths.push(width())
 out.loaded = GlobalFonts.loadSystemFonts()
 out.families.push(GlobalFonts.families.length)
 console.log(JSON.stringify(out))
 `
 
 // GlobalFonts.removeAll() removes the installed fonts too; a switch does not
-// bring them back, loadSystemFonts does.
+// bring them back, loadSystemFonts does. They still resolve by name in both
+// modes, as without a switch.
 macTest('installed fonts removed by removeAll stay removed across a switch on macOS', (t) => {
   const out = macProbe(REMOVE_ALL_PROBE)
   t.true(out.removed > 0)
   t.deepEqual(out.families.slice(0, 3), [0, 0, 0])
+  for (const width of out.widths) {
+    t.true(width > 0)
+  }
   t.true(out.loaded > 0)
   t.true(out.families[3] > 0)
 })

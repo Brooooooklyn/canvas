@@ -708,6 +708,9 @@ struct skiac_font_collection {
   // registered.
   bool installed_fonts_enabled = false;
   bool installed_fonts_pending = false;
+  // Installed fonts resolve by name (loadSystemFonts ran once); removeAll
+  // does not turn this off.
+  bool installed_lookup = false;
   uint32_t installed_font_count = 0;
   // The installed font files (Rust's FONT_PATH and user folders), in order.
   // Without the system renderer face 0 of each is registered, as
@@ -758,6 +761,7 @@ struct skiac_font_collection {
       return;
     }
     installed_fonts_enabled = true;
+    installed_lookup = true;
     startInstalledFonts();
   }
 
@@ -1018,6 +1022,9 @@ struct skiac_font_collection {
         installed_fonts_enabled && (listed || !set_aliases.empty());
     if (eager) {
       startInstalledFonts();
+    } else if (installed_lookup && !installed_fonts_enabled) {
+      // After removeAll the installed fonts still resolve by name.
+      useInstalledLookup();
     }
 #endif
     rebuildAssets(/*relist_installed=*/true);
@@ -1034,6 +1041,13 @@ struct skiac_font_collection {
   // The installed fonts of the current mode resolve by name, and are
   // registered at the next lookup.
   void startInstalledFonts() {
+    useInstalledLookup();
+    installed_fonts_pending = true;
+    markCachesDirty();
+  }
+
+  // With the system renderer, CoreText's installed fonts resolve by name.
+  void useInstalledLookup() {
     if (SystemFontRenderer()) {
       font_mgr = MakeCoreTextFontManager();
       collection->setAssetFontManager(font_mgr);
@@ -1041,8 +1055,6 @@ struct skiac_font_collection {
       collection->setTestFontManager(system_ui);
       coretext_families.clear();
     }
-    installed_fonts_pending = true;
-    markCachesDirty();
   }
 #endif
 };

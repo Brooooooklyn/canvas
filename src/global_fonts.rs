@@ -376,10 +376,13 @@ fn font_files<P: AsRef<path::Path>>(dir: P) -> Vec<String> {
         let p = f.path();
         if meta.is_dir() {
           files.extend(font_files(p));
-        } else if is_font_file(&p)
-          && let Some(p) = p.to_str()
-        {
-          files.push(p.to_owned());
+        } else if is_font_file(&p) {
+          // A symlink (e.g. /Library/Fonts/Arial Unicode.ttf) names its
+          // target, so a file linked from two folders is listed once.
+          let p = std::fs::canonicalize(&p).unwrap_or(p);
+          if let Some(p) = p.to_str() {
+            files.push(p.to_owned());
+          }
         }
       }
     }

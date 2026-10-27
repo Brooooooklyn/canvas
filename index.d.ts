@@ -17,9 +17,9 @@ export function clearAllCache(): void
  *
  * Applies to the whole process, worker threads included. Call it once at
  * startup, before creating canvases. `useSystemFontRenderer(false)` switches
- * back. Registered fonts keep their FontKey. A
- * canvas created before the switch keeps its text gamma until its width or
- * height is set. A `ctx.font` value set before the switch keeps its parsed
+ * back. Registered fonts keep their FontKey. A canvas created before the
+ * switch keeps its text gamma until its width or height is set. A
+ * `ctx.font` value set before the switch keeps its parsed
  * form: sizes in `ex`/`ch`/... units and, on macOS, the BlinkMacSystemFont
  * to system-ui rewrite. Set `ctx.font` again after the switch.
  *
