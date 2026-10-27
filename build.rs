@@ -154,6 +154,17 @@ fn main() {
         .static_crt(true);
     }
     "linux" => {
+      // #1405: rustc exports every #[no_mangle]/#[export_name] item of the
+      // cdylib's deps, cxx's runtime included (cxxbridge1$string$drop, ...).
+      // ld.so looks those names up in the host process first, and Electron
+      // (Chromium links Fontations through cxx) exports the same ones, so
+      // canvas freed its own Rust strings with Chromium's allocator and
+      // trapped. -Bsymbolic binds the addon's references to its own
+      // definitions; it hides nothing, napi_register_module_v1 stays
+      // exported. Not -Bsymbolic-functions: zig (the musl linker) rejects
+      // it, and every symbol the addon exports is a function anyway.
+      // scripts/__test__/elf-symbolic.spec.ts checks the built binary.
+      println!("cargo:rustc-cdylib-link-arg=-Wl,-Bsymbolic");
       // `cargo test` links a real binary, not the node-loaded cdylib, so
       // let the node-provided napi_* symbols stay unresolved (tests never
       // execute those paths). gnu only: musl cross-builds link through
