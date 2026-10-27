@@ -173,8 +173,20 @@ test('a zero-radius full ellipse draws nothing', (t) => {
     ctx.stroke(path)
     return { n: countPainted(ctx), svg: path.toSVGString() }
   }
-  // Chrome 156 counts for the line from (10, 10) to the center.
+  // Chrome 156 counts for the line from (10, 10) to the center. The
+  // win32-arm64 Skia (see the -π/4 test) strokes the square-cap line 1 px
+  // smaller, so compare with the same line drawn by lineTo on this build.
   const afterMoveTo: Record<string, number> = { round: 1496, square: 1641 }
+  for (const [cap, chrome] of Object.entries(afterMoveTo) as ['round' | 'square', number][]) {
+    ctx.reset()
+    ctx.lineWidth = 20
+    ctx.lineCap = cap
+    ctx.moveTo(10, 10)
+    ctx.lineTo(50, 50)
+    ctx.stroke()
+    afterMoveTo[cap] = countPainted(ctx)
+    if (!WIN_ARM64) t.is(afterMoveTo[cap], chrome, `${cap} line`)
+  }
   for (const api of ['ctx', 'Path2D'] as const) {
     for (const [cap, n] of Object.entries(afterMoveTo) as ['round' | 'square', number][]) {
       for (const s of [0, -Math.PI / 2]) {
