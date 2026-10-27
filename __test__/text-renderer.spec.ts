@@ -236,6 +236,43 @@ test.serial('a font registered under a setAlias name stays behind the alias acro
   t.is(textWidth('20px UsAliasShared'), before)
 })
 
+// A setAlias call again picks the face the family has now; a rebuild (a
+// removal or a switch) keeps that pick.
+test.serial('a repeated setAlias call keeps its face across a rebuild', (t) => {
+  backToDefault(t)
+  const bold = GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'SourceHanSerifCN-Bold.ttf'), 'UsRepeatA')
+  t.true(GlobalFonts.setAlias('UsRepeatA', 'UsRepeatB'))
+  const boldWidth = textWidth('20px UsRepeatB')
+  const regular = GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'Lato-Regular.ttf'), 'UsRepeatA')
+  t.true(GlobalFonts.setAlias('UsRepeatA', 'UsRepeatB'))
+  const other = GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'Oswald.ttf'), 'UsRepeatOther')
+  t.teardown(() => GlobalFonts.removeBatch([bold!, regular!]))
+  const before = textWidth('20px UsRepeatB')
+  t.not(before, boldWidth)
+  t.is(before, textWidth('20px UsRepeatA'))
+  t.true(GlobalFonts.remove(other!))
+  t.is(textWidth('20px UsRepeatB'), before)
+  for (const mode of ['system', 'portable'] as const) {
+    setTextRenderer(mode)
+    t.is(textWidth('20px UsRepeatB'), textWidth('20px UsRepeatA'))
+  }
+  t.is(textWidth('20px UsRepeatB'), before)
+})
+
+// Every face of an installed collection (Helvetica.ttc) is listed, so bold
+// Helvetica is the real bold face, in both modes and after switching back.
+macTest('installed collection files list every face on macOS', (t) => {
+  backToDefault(t)
+  const weights = () =>
+    GlobalFonts.families.find(({ family }) => family === 'Helvetica')?.styles.map(({ weight }) => weight) ?? []
+  const boldGain = () => textWidth('bold 20px Helvetica') - textWidth('20px Helvetica')
+  for (const mode of ['portable', 'system', 'portable'] as const) {
+    setTextRenderer(mode)
+    t.true(weights().includes(700), mode)
+    t.true(boldGain() > 5, mode)
+  }
+})
+
 // A name a font gains later goes after the fonts registered in between: the
 // first face of the family stays the first.
 test.serial('a shared family keeps its first face across switching', (t) => {

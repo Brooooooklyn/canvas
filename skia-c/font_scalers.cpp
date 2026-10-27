@@ -273,6 +273,12 @@ sk_sp<SkTypeface> MakeCanvasTypefaceFromFile(const char* path) {
   return MakeCanvasTypeface(SkStream::MakeFromFile(path));
 }
 
+bool IsCollectionFile(const char* path) {
+  std::unique_ptr<SkStreamAsset> stream = SkStream::MakeFromFile(path);
+  uint8_t tag[4] = {};
+  return stream && stream->read(tag, 4) == 4 && !memcmp(tag, "ttcf", 4);
+}
+
 #if defined(__APPLE__)
 sk_sp<SkFontMgr> MakeCoreTextFontManager() {
   return SkFontMgr_New_CoreText(nullptr);

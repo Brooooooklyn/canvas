@@ -133,6 +133,8 @@ sk_sp<SkFontMgr> MakeInstalledFontManager();
 sk_sp<SkTypeface> MakeCanvasTypeface(std::unique_ptr<SkStreamAsset> stream);
 sk_sp<SkTypeface> MakeCanvasTypeface(sk_sp<SkData> data);
 sk_sp<SkTypeface> MakeCanvasTypefaceFromFile(const char* path);
+// The file starts with the 'ttcf' tag of a font collection.
+bool IsCollectionFile(const char* path);
 #if defined(__APPLE__)
 // Every font CoreText lists, by name.
 sk_sp<SkFontMgr> MakeCoreTextFontManager();
@@ -687,10 +689,14 @@ struct skiac_font_collection {
   };
   std::vector<SetAlias> set_aliases;
 
-  void addSetAlias(const char* family, const char* alias) {
-    for (const auto& entry : set_aliases) {
-      if (entry.family == family && entry.alias == alias) {
-        return;
+  // `registered`: the call registered a face. Such a call is always kept,
+  // as a repeat can pick another face of the family than the first call.
+  void addSetAlias(const char* family, const char* alias, bool registered) {
+    if (!registered) {
+      for (const auto& entry : set_aliases) {
+        if (entry.family == family && entry.alias == alias) {
+          return;
+        }
       }
     }
     set_aliases.push_back({family, alias, assets->nextOrder()});
@@ -821,8 +827,20 @@ struct skiac_font_collection {
         }
       }
     } else {
+      // Every face of a collection, as CoreText lists them.
+      sk_sp<SkFontMgr> freetype = SkFontMgr_New_Custom_Empty();
       for (const auto& path : installed_files) {
         add(MakeCanvasTypefaceFromFile(path.c_str()));
+        if (!IsCollectionFile(path.c_str())) {
+          continue;
+        }
+        for (int index = 1;; ++index) {
+          sk_sp<SkTypeface> face = freetype->makeFromFile(path.c_str(), index);
+          if (!face) {
+            break;
+          }
+          add(std::move(face));
+        }
       }
     }
     markCachesDirty();
