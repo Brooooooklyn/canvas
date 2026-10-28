@@ -496,7 +496,11 @@ impl FromNapiValue for PathInit {
       return Ok(Self(source.inner.clone()));
     }
     let data = webidl::to_dom_string(env, value, webidl::PATH2D_CONSTRUCTOR)?;
-    Ok(Self(crate::svg_path::build_path_from_string(&data)))
+    // Blink builds it straight into the PathBuilder (path_2d.h:109-112 m156),
+    // never the LineBuilder, so closePath() keeps a zero-length 'M p L p'.
+    let mut path = crate::svg_path::build_path_from_string(&data);
+    path.materialize();
+    Ok(Self(path))
   }
 }
 

@@ -275,6 +275,36 @@ test('closePath empties a path that is one zero-length line, whatever built it',
   )
 })
 
+test('closePath keeps a zero-length line from a Path2D string', (t) => {
+  // Path2D(string) is built in Blink's PathBuilder (path_2d.h:109-112 m156),
+  // never the LineBuilder, so closePath closes 'M p L p' and lineTo(80, 20)
+  // draws from p. Chrome: the same counts for all three.
+  for (const [d, line] of [
+    ['M50 50L50 50', false],
+    ['M50 50', true],
+    ['M50 50L50 50Z', false],
+  ] as const) {
+    const build = () => {
+      const path = new Path2D(d)
+      if (line) path.lineTo(50, 50)
+      path.closePath()
+      path.lineTo(80, 20)
+      return path
+    }
+    t.deepEqual(
+      STYLES.map((setup) => {
+        ctx.reset()
+        setup()
+        ctx.stroke(build())
+        return countPainted()
+      }),
+      [884, 1206, 1432, 63, 65, 2249, 1217, 313, 366, 438],
+      d,
+    )
+    t.is(build().toSVGString(), 'M50 50L50 50ZM50 50L80 20', d)
+  }
+})
+
 test('fill, clip and isPointInStroke of a one-point path are not pruned', (t) => {
   const build = (c: Target) => {
     c.moveTo(50, 50)
