@@ -1021,7 +1021,13 @@ pub mod ffi {
 
     pub fn skiac_path_is_empty(path: *mut skiac_path) -> bool;
 
-    pub fn skiac_path_end_points(path: *mut skiac_path, points: *mut f32) -> bool;
+    pub fn skiac_path_may_be_point(
+      path: *mut skiac_path,
+      x: f32,
+      y: f32,
+      tolerance: f32,
+      max_points: i32,
+    ) -> bool;
 
     pub fn skiac_path_count_points(path: *mut skiac_path) -> i32;
 
@@ -4276,23 +4282,20 @@ impl Path {
     // Blink always adds this lineTo. Chrome then skips a stroke whose path
     // bounds are one point, at draw time (canvas_2d_recorder_context.cc:
     // 1595-1602 m156), and our stroke cannot, so a zero-length line there
-    // would paint a cap dot. While the first point, the last point and the
-    // current point of the path are all near this point (Skia's 1/4096, so
-    // that an earlier point Skia computed a few ulps off Blink's still
-    // counts), the path may be that one point and the line has no visible
-    // length: add nothing, as the old Skia arcTo route did (it compared the
-    // last point). That route always added the line when the canonicalized
-    // start was 0 or 360 degrees (arc_is_lone_point in SkPathBuilder.cpp; a
-    // start like -1e-8 canonicalizes to 0), so keep that too. Otherwise add
-    // Blink's line.
+    // would paint a cap dot. While every point of the path is within Skia's
+    // 1/4096 of Blink's point (so that an earlier point Skia computed a few
+    // ulps off Blink's still counts), the path may stay that one point: add
+    // nothing, as the old Skia arcTo route did. Only the last 64 points are
+    // checked, so that a loop of such calls stays linear; a longer path whose
+    // last 64 points pass also adds nothing. The old route always added the
+    // line when the canonicalized start was 0 or 360 degrees
+    // (arc_is_lone_point in SkPathBuilder.cpp; a start like -1e-8
+    // canonicalizes to 0), and a path of several such dots is not one point,
+    // so keep that too.
     let (canonical, _) = Self::ellipse_angles(start, start, false);
     let degrees = (canonical * RAD_TO_DEG) % 360.0;
     let skia_lone_point = degrees == 0.0 || degrees == 360.0;
-    let near =
-      |(ax, ay): (f32, f32)| (ax - px).abs() <= 1.0 / 4096.0 && (ay - py).abs() <= 1.0 / 4096.0;
-    if !skia_lone_point
-      && let Some(points) = self.end_points()
-      && points.into_iter().all(near)
+    if !skia_lone_point && unsafe { ffi::skiac_path_may_be_point(self.0, px, py, 1.0 / 4096.0, 64) }
     {
       return;
     }
@@ -4400,17 +4403,6 @@ impl Path {
 
   pub fn is_empty(&self) -> bool {
     unsafe { ffi::skiac_path_is_empty(self.0) }
-  }
-
-  /// The first and the last point of the path and its current point (after
-  /// closePath(), the contour's moveTo point), `None` when it is empty.
-  fn end_points(&self) -> Option<[(f32, f32); 3]> {
-    let mut p = [0.0f32; 6];
-    unsafe { ffi::skiac_path_end_points(self.0, p.as_mut_ptr()) }.then_some([
-      (p[0], p[1]),
-      (p[2], p[3]),
-      (p[4], p[5]),
-    ])
   }
 
   pub fn hit_test(&self, x: f32, y: f32, kind: FillType) -> bool {

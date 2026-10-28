@@ -3102,26 +3102,25 @@ bool skiac_path_is_empty(skiac_path* c_path) {
   return c_path->builder.isEmpty();
 }
 
-// The first and the last point of a non-empty path, and its current point:
-// the point the next lineTo starts from, which after a close is the
-// contour's moveTo point. O(1), except after a close, where it walks back
-// over the closed contour.
-bool skiac_path_end_points(skiac_path* c_path, float* points) {
+// Whether every point of a non-empty path is within `tolerance` of (x, y) on
+// each axis. It looks at the last `max_points` points at most, and a longer
+// path whose last points all pass counts as such a point too.
+bool skiac_path_may_be_point(skiac_path* c_path,
+                             float x,
+                             float y,
+                             float tolerance,
+                             int max_points) {
   auto pts = c_path->builder.points();
-  auto verbs = c_path->builder.verbs();
-  if (pts.empty() || verbs.empty()) {
+  if (pts.empty()) {
     return false;
   }
-  SkPoint current = pts.back();
-  if (verbs.back() == SkPathVerb::kClose) {
-    current = pts[SkPathPriv::FindLastMoveToIndex(verbs, pts.size())];
+  size_t n = std::min(pts.size(), static_cast<size_t>(max_points));
+  for (size_t i = pts.size() - n; i < pts.size(); i++) {
+    if (!(std::abs(pts[i].fX - x) <= tolerance) ||
+        !(std::abs(pts[i].fY - y) <= tolerance)) {
+      return false;
+    }
   }
-  points[0] = pts.front().fX;
-  points[1] = pts.front().fY;
-  points[2] = pts.back().fX;
-  points[3] = pts.back().fY;
-  points[4] = current.fX;
-  points[5] = current.fY;
   return true;
 }
 

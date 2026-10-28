@@ -173,6 +173,25 @@ test('arc() with start == end strokes and fills like Chrome', (t) => {
       c.closePath()
       c.arc(4211.46826171875, -9042.9736328125, 10000, 2, 2)
     },
+    // A closed contour that starts and ends on the point is not one point,
+    // so Blink's zero-length line after closePath strokes as a new contour.
+    // Was 1025 px square.
+    'closed contour on the point, arc(1, 1)': (c) => {
+      const p = blinkPoint(50, 50, 30, 1)
+      c.moveTo(p[0], p[1])
+      c.lineTo(80, 30)
+      c.lineTo(p[0], p[1])
+      c.closePath()
+      c.arc(50, 50, 30, 1, 1)
+    },
+    // The same with the point (50, 50) from a radius of 10000. Was 999 px.
+    'closed contour on the point, radius 10000': (c) => {
+      c.moveTo(50, 50)
+      c.lineTo(80, 30)
+      c.lineTo(50, 50)
+      c.closePath()
+      c.arc(4211.46826171875, -9042.9736328125, 10000, 2, 2)
+    },
     // The point 1e-4 away from the current point is a line in Blink. The arc
     // route skipped points within 1/4096. Was 1853 px butt.
     'lineTo near the point, arc(1, 1)': (c) => {
@@ -199,6 +218,8 @@ test('arc() with start == end strokes and fills like Chrome', (t) => {
     'closed, then arc on the last vertex': [134, 1851, 2226, 0],
     'arc(0, 1), arc(1, 1)': [57, 650, 1066, 106],
     'closed contour ending on the point': [74, 1238, 1790, 0],
+    'closed contour on the point, arc(1, 1)': [92, 1025, 1245, 0],
+    'closed contour on the point, radius 10000': [62, 784, 984, 0],
     'lineTo near the point, arc(1, 1)': [133, 2094, 2321, 0],
   }
   t.deepEqual(
@@ -256,8 +277,8 @@ test('arc() with start == end adds Blink point and only that', (t) => {
 test('arc() with start == end on a path that is one point strokes nothing, as in Chrome', (t) => {
   // Blink adds only zero-length lines here, and Chrome skips a stroke whose
   // path bounds are one point (canvas_2d_recorder_context.cc:1595-1602 m156).
-  // Our stroke has no such check, so we add no line while the first and the
-  // last point of the path are within 1/4096 of the new point.
+  // Our stroke has no such check, so we add no line while every point of the
+  // path is within 1/4096 of the new point.
   const cases: Record<string, (c: Target) => void> = {
     'arc(1, 1) twice': (c) => {
       c.arc(50, 50, 30, 1, 1)
@@ -267,6 +288,15 @@ test('arc() with start == end on a path that is one point strokes nothing, as in
       c.arc(50, 50, 30, 1, 1)
       c.arc(50, 50, 30, 1, 1)
       c.arc(50, 50, 30, 1, 1)
+    },
+    // (50, 50) from a radius of 10000, where Skia's point was 1e-3 off.
+    'arc(..., 10000, 2, 2) twice': (c) => {
+      c.arc(4211.46826171875, -9042.9736328125, 10000, 2, 2)
+      c.arc(4211.46826171875, -9042.9736328125, 10000, 2, 2)
+    },
+    'moveTo, arc(..., 10000, 2, 2) on it': (c) => {
+      c.moveTo(50, 50)
+      c.arc(4211.46826171875, -9042.9736328125, 10000, 2, 2)
     },
     'arc(50, 50) twice': (c) => {
       c.arc(50, 50, 30, 50, 50)
