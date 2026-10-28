@@ -731,3 +731,132 @@ test('a closed arc() on an empty path keeps the dot Chrome draws when its sweep 
   })
   t.deepEqual(restored, NONE, 'save, rotate, restore, closePath')
 })
+
+test('a transform call that changes Blink double CTM takes the path out of the line and arc builders', (t) => {
+  // Blink maps the path (GetModifiablePath, canvas_path.h:193-196 m156) in
+  // rotate() whenever its double CTM changes (canvas_2d_recorder_context.cc:
+  // 1399-1412), and in resetTransform(), setTransform() and restore() when
+  // that CTM is not the identity (:734-748, :1496-1546). The path then
+  // leaves the LineBuilder and the ArcBuilder, even when our float map
+  // snaps to the identity: rotate(1e-5), rotate(2 * PI). So closePath no
+  // longer empties arc(p, 0), and a closed tiny arc() is pruned. Chrome 156
+  // counts for lineWidth 20 butt and round (the line), and for STYLES (the
+  // closed arc).
+  const tiny = (c: Ctx) => c.arc(50, 50, 30, 1, 1 + 1e-7)
+  const DOT = [0, 342, 441, 4, 4, 610, 0]
+  const toLine = (c: Ctx) => c.lineTo(80, 20)
+  const strokeWith = (styles: (() => void)[], build: (c: Ctx) => void) =>
+    styles.map((setup) => {
+      ctx.reset()
+      setup()
+      ctx.beginPath()
+      build(ctx)
+      ctx.stroke()
+      return countPainted()
+    })
+  const LINE_20 = [884, 1206]
+  const lines: Record<string, [(c: Ctx) => void, number[]]> = {
+    'rotate(1e-5)': [(c) => c.rotate(1e-5), LINE_20],
+    'rotate(1e-6)': [(c) => c.rotate(1e-6), LINE_20],
+    'rotate(1e-20)': [(c) => c.rotate(1e-20), LINE_20],
+    'rotate(2 * PI)': [(c) => c.rotate(TAU), LINE_20],
+    'save, rotate(1e-5), restore': [
+      (c) => {
+        c.save()
+        c.rotate(1e-5)
+        c.restore()
+      },
+      LINE_20,
+    ],
+    'rotate(1e-5), isPointInPath': [
+      (c) => {
+        c.rotate(1e-5)
+        c.isPointInPath(0, 0)
+      },
+      LINE_20,
+    ],
+    'rotate(0)': [(c) => c.rotate(0), [0, 0]],
+    'scale(1, 1)': [(c) => c.scale(1, 1), [0, 0]],
+    'translate(0, 0)': [(c) => c.translate(0, 0), [0, 0]],
+  }
+  for (const [name, [xf, expected]] of Object.entries(lines)) {
+    const got = strokeWith(STYLES.slice(0, 2), (c) => {
+      arc0(c)
+      xf(c)
+      c.closePath()
+      toLine(c)
+    })
+    t.deepEqual(got, expected, `arc(p, 0), ${name}, closePath, lineTo`)
+  }
+  // The path is built under a rotation the float CTM snapped away. Blink's
+  // double CTM is not the identity, so resetTransform(), setTransform() and
+  // restore() map the path; rotating back makes it the identity again.
+  const before: Record<string, [(c: Ctx) => void, (c: Ctx) => void, boolean]> = {
+    resetTransform: [(c) => c.rotate(1e-5), (c) => c.resetTransform(), true],
+    setTransform: [(c) => c.rotate(1e-5), (c) => c.setTransform(1, 0, 0, 1, 0, 0), true],
+    restore: [
+      (c) => {
+        c.save()
+        c.rotate(1e-5)
+      },
+      (c) => c.restore(),
+      true,
+    ],
+    'rotate there and back, resetTransform': [
+      (c) => {
+        c.rotate(1e-5)
+        c.rotate(-1e-5)
+      },
+      (c) => c.resetTransform(),
+      false,
+    ],
+    'rotate there and back, restore': [
+      (c) => {
+        c.save()
+        c.rotate(1e-5)
+        c.rotate(-1e-5)
+      },
+      (c) => c.restore(),
+      false,
+    ],
+  }
+  for (const [name, [first, then, maps]] of Object.entries(before)) {
+    const got = strokeWith(STYLES.slice(0, 2), (c) => {
+      first(c)
+      arc0(c)
+      then(c)
+      c.closePath()
+      toLine(c)
+    })
+    t.deepEqual(got, maps ? LINE_20 : [0, 0], `line, ${name}`)
+    const closed = strokeWith(STYLES, (c) => {
+      first(c)
+      tiny(c)
+      then(c)
+      c.closePath()
+    })
+    t.deepEqual(closed, maps ? NONE : DOT, `closed tiny arc, ${name}`)
+  }
+  const arcs: Record<string, [(c: Ctx) => void, number[]]> = {
+    'rotate(1e-5)': [(c) => c.rotate(1e-5), NONE],
+    'rotate(2 * PI)': [(c) => c.rotate(TAU), NONE],
+    'rotate(1e-5), isPointInPath': [
+      (c) => {
+        c.rotate(1e-5)
+        c.isPointInPath(0, 0)
+      },
+      NONE,
+    ],
+    'rotate(0)': [(c) => c.rotate(0), DOT],
+    'scale(1, 1)': [(c) => c.scale(1, 1), DOT],
+    'translate(0, 0)': [(c) => c.translate(0, 0), DOT],
+  }
+  for (const [name, [xf, expected]] of Object.entries(arcs)) {
+    const got = strokeWith(STYLES, (c) => {
+      tiny(c)
+      xf(c)
+      c.closePath()
+    })
+    t.deepEqual(got, expected, `closed tiny arc, ${name}`)
+  }
+})

@@ -4035,6 +4035,14 @@ impl Path {
     }
   }
 
+  /// Blink CanvasPath::GetModifiablePath (canvas_path.h:193-196 m156): the
+  /// path leaves the LineBuilder and the ArcBuilder for good. The context's
+  /// transform calls do this whenever Blink's double CTM changes, even if
+  /// the path map is the identity in float.
+  pub fn materialize(&mut self) {
+    self.1.line = LineState::Other;
+  }
+
   pub fn from_svg_path(path: &str) -> Option<Path> {
     let path_str = CString::new(path).ok()?;
     let raw = path_str.into_raw();
