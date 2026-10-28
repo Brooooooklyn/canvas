@@ -39,6 +39,15 @@ const CHROME_RASTER_DEFINES = [
   '-DSK_R32_SHIFT=0',
 ]
 
+// clang-cl defaults to -ffp-contract=on and fuses a*b+c into one FMA (seen on
+// win32-arm64), so Windows output drifts from Chrome and from our other
+// targets. Skia's gn/skia/BUILD.gn adds -ffp-contract=off only
+// `if (is_clang && !is_win)`; Chromium adds /clang:-ffp-contract=off on Windows
+// too (build/config/compiler/BUILD.gn, config("compiler")). extra_cflags goes
+// on the C and the C++ compile line of every target, skcms and third_party
+// included, after Skia's /fp:precise.
+const CHROME_WIN_CFLAGS = ['/clang:-ffp-contract=off']
+
 // context mirrors the build host: targetTriple is the --target= value ('' for
 // native), the rest describe the build machine.
 // Returns { gnArgs, args: Map<name, value>, cc, cxx }
@@ -139,6 +148,8 @@ function buildGnArgs({
         console.info(`Found clang version: ${clangVersion}`)
         extraSkiaBuildFlag = `clang_win_version=\\"${clangVersion}\\"`
       }
+      // See CHROME_WIN_CFLAGS above.
+      GN_ARGS.push(`extra_cflags=[${CHROME_WIN_CFLAGS.map((flag) => `\\"${flag}\\"`).join(',')}]`)
       GN_ARGS.push(`clang_win=\\"C:\\\\Program Files\\\\LLVM\\"`)
       GN_ARGS.push(`skia_enable_fontmgr_win=false`)
       break

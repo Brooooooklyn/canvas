@@ -15,10 +15,6 @@ import { createCanvas, DOMMatrix, loadImage, SvgExportFlag } from '../index'
 type Ctx = ReturnType<ReturnType<typeof createCanvas>['getContext']>
 type G = ReturnType<Ctx['createLinearGradient']>
 
-// The Windows ARM64 Skia build rounds raster math a little differently (main
-// skips exact checks there too: pathkit.spec.ts).
-const WIN_ARM64 = process.platform === 'win32' && process.arch === 'arm64'
-
 const stops = (g: G) => {
   g.addColorStop(0, 'rgb(255, 0, 0)')
   g.addColorStop(0.25, 'rgb(0, 255, 0)')
@@ -819,20 +815,7 @@ const FAR_CASES = [
   ],
 ] as [number[], number[], number[], number, number, number[][]][]
 
-// Windows ARM64 CI got one channel 1 off Chrome's raster pixel in two cases: raster 7,1234630
-// 255,149,106,255 (Chrome 107) in the rect at 2,1234569.5, and raster 1234590,3 0,121,135,255
-// (Chrome 134) in the rect at 1234567.5,1. The pixels before those were exact; AVA stops a test at
-// its first failed assertion, so the pixels after them were not measured. There, in these two cases,
-// from that pixel on, a channel may be 1 off, and t.log records each pixel that is not exact (AVA
-// prints the logs of passing tests too) so the values can be pinned. Every other pixel, case and
-// platform is checked exactly. [rect x, rect y, index of the first pixel that was off]
-const WIN_ARM64_NEAR: [number, number, number][] = [
-  [2, 1234569.5, 4],
-  [1234567.5, 1, 3],
-]
-
 for (const [[w, h], [x, y, width, height], [cx, cy], k, tolerance, pixels] of FAR_CASES) {
-  const nearFrom = WIN_ARM64 ? WIN_ARM64_NEAR.find(([nx, ny]) => nx === x && ny === y)?.[2] : undefined
   test(`svg export of a conic gradient ${width}x${height} at ${x},${y} on a ${w}x${h} canvas writes the image origin exactly`, async (t) => {
     const draw = (ctx: Ctx) => {
       ctx.fillStyle = stops(ctx.createConicGradient(0.3, cx, cy))
@@ -886,22 +869,12 @@ for (const [[w, h], [x, y, width, height], [cx, cy], k, tolerance, pixels] of FA
     // seam and the center). Our raster canvas, here a canvas of the 8 x 8 dither cell of the point,
     // equals it at every point.
     const shown = await renderFirstPattern(text)
-    for (const [index, [px, py, ...rgba]] of pixels.entries()) {
+    for (const [px, py, ...rgba] of pixels) {
       const raster = createCanvas(8, 8).getContext('2d')
       raster.translate(-(px & ~7), -(py & ~7))
       draw(raster)
       const actual = [...raster.getImageData(px & 7, py & 7, 1, 1).data]
-      if (nearFrom !== undefined && index >= nearFrom) {
-        if (actual.some((v, i) => v !== rgba[i])) {
-          t.log(`Windows ARM64 raster ${px},${py}: ${actual} (Chrome ${rgba})`)
-        }
-        t.true(
-          actual.every((v, i) => Math.abs(v - rgba[i]) <= 1),
-          `raster ${px},${py}: ${actual} vs Chrome ${rgba}`,
-        )
-      } else {
-        t.deepEqual(actual, rgba, `raster ${px},${py}`)
-      }
+      t.deepEqual(actual, rgba, `raster ${px},${py}`)
       if (rgba[3] === 255) {
         const pixel = shown(px, py)
         t.true(
