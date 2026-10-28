@@ -4287,9 +4287,10 @@ impl Path {
     // ulps off Blink's still counts), the path may stay that one point: add
     // nothing, as the old Skia arcTo route did. Only the last 64 points are
     // checked, so that a loop of such calls stays linear; a longer path whose
-    // last 64 points pass also adds nothing. The old route always added the
-    // line when the canonicalized start was 0 or 360 degrees
-    // (arc_is_lone_point in SkPathBuilder.cpp; a start like -1e-8
+    // last 64 points pass also adds nothing, unless it was just closed (its
+    // moveTo point, where the line starts, may be further back). The old
+    // route always added the line when the canonicalized start was 0 or 360
+    // degrees (arc_is_lone_point in SkPathBuilder.cpp; a start like -1e-8
     // canonicalizes to 0), and a path of several such dots is not one point,
     // so keep that too.
     let (canonical, _) = Self::ellipse_angles(start, start, false);

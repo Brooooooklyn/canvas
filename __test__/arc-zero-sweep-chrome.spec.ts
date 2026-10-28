@@ -326,6 +326,30 @@ test('arc() with start == end on a path that is one point strokes nothing, as in
   }
 })
 
+test('arc() with start == end after a long closed contour starts at its moveTo point', (t) => {
+  // After closePath the line starts at the contour's moveTo point (10, 10),
+  // however many points the contour has on (50, 50). With lineTo(80, 10)
+  // after it, the path is a triangle: Chrome fills 1450 px.
+  for (const n of [63, 64, 65, 130]) {
+    const build = (c: Target) => {
+      c.moveTo(10, 10)
+      for (let i = 0; i < n; i++) c.lineTo(50, 50)
+      c.closePath()
+      c.arc(4211.46826171875, -9042.9736328125, 10000, 2, 2)
+      c.lineTo(80, 10)
+    }
+    for (const api of APIS) {
+      t.is(paint(api, build), 1450, `${n} points ${api} fill`)
+    }
+    ctx.reset()
+    build(ctx)
+    t.true(ctx.isPointInPath(50, 20), `${n} points isPointInPath`)
+    const path = new Path2D()
+    build(path)
+    t.true(ctx.isPointInPath(path, 50, 20), `${n} points isPointInPath Path2D`)
+  }
+})
+
 test('moveTo(x + r, y) then arc(x, y, r, s, s) keeps a dot at each point, as in Chrome', (t) => {
   // The old Skia route always added the line for a lone point: a start that
   // canonicalizes to 0 (-1e-8 and -1e-30 do in float), or a radius so small
