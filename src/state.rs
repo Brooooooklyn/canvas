@@ -49,10 +49,15 @@ pub struct Context2dRenderingState {
   pub font_variant_caps: FontVariantCaps,
   pub text_rendering: TextRendering,
   pub lang: String,
+  /// The canvas's float matrix, as Chrome's SkCanvas keeps it: each
+  /// transform call changes it in float (`ctx.rs` `paint_concat`). Everything
+  /// is drawn with it.
   pub transform: Matrix,
-  /// Blink's CTM, a double AffineTransform [a, b, c, d, e, f], only to know
-  /// when Blink maps the path (GetModifiablePath). `transform` is float and
-  /// snaps: after rotate(1e-5) it is the identity, Blink's is not.
+  /// Blink's CTM, a double AffineTransform [a, b, c, d, e, f]: what
+  /// getTransform() returns, what the path and the isPointInPath and
+  /// isPointInStroke points are mapped by, and what decides when Blink maps
+  /// the path (GetModifiablePath). It can differ from `transform`: after
+  /// rotate(1e-5) `transform` is the identity (setRotate snaps), this is not.
   pub blink_transform: [f64; 6],
   pub filter: Option<ImageFilter>,
   pub filters_string: String,
