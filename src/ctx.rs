@@ -1549,13 +1549,20 @@ impl Context {
     if !self.transform_is_invertible() {
       return;
     }
+    // AffineTransform::Translate (affine_transform.cc:154-158 m156). Blink
+    // returns when its double CTM stays the same (translate(1e-30, 0) after
+    // translate(10, 10), canvas_2d_recorder_context.cc:1437-1439), so only a
+    // change takes the path out of the line and arc builders.
+    let old = self.state.blink_transform;
+    let [a, b, c, d, e, f] = old;
+    let (tx, ty) = (f64::from(x), f64::from(y));
+    self.state.blink_transform = [a, b, c, d, e + (tx * a + ty * c), f + (tx * b + ty * d)];
+    if self.state.blink_transform != old {
+      self.path.materialize();
+    }
     let inverse = Matrix::translated(-x, -y);
     self.path.transform_self(&inverse);
     self.state.transform.pre_translate(x, y);
-    // AffineTransform::Translate (affine_transform.cc:154-158 m156).
-    let [a, b, c, d, e, f] = self.state.blink_transform;
-    let (tx, ty) = (f64::from(x), f64::from(y));
-    self.state.blink_transform = [a, b, c, d, e + (tx * a + ty * c), f + (tx * b + ty * d)];
     let transform = self.state.transform.clone();
     self.with_canvas_state(|canvas| {
       canvas.set_transform(&transform);
@@ -1568,13 +1575,16 @@ impl Context {
     self.flush_if_recording_limit_exceeded();
     self.state.transform = ts.multiply(&self.state.transform);
     let t = ts.get_transform();
-    self.state.blink_transform = blink_multiply(
-      self.state.blink_transform,
-      [t.a, t.b, t.c, t.d, t.e, t.f].map(f64::from),
-    );
+    let old = self.state.blink_transform;
+    self.state.blink_transform = blink_multiply(old, [t.a, t.b, t.c, t.d, t.e, t.f].map(f64::from));
     // The path follows only into an invertible CTM; under a singular one it
     // stays in the last invertible space (canvas_2d_recorder_context.cc:1478).
+    // Blink returns when its double CTM stays the same (:1476-1478), so only
+    // a change takes the path out of the line and arc builders.
     if self.transform_is_invertible() {
+      if self.state.blink_transform != old {
+        self.path.materialize();
+      }
       self.path.transform_self(&blink_inverse(&ts));
     }
     let transform = self.state.transform.clone();
@@ -1643,13 +1653,19 @@ impl Context {
     self.flush_if_recording_limit_exceeded();
     self.state.transform.pre_scale(x, y);
     // AffineTransform::ScaleNonUniform (affine_transform.cc:145-162 m156).
-    let [a, b, c, d, e, f] = self.state.blink_transform;
+    let old = self.state.blink_transform;
+    let [a, b, c, d, e, f] = old;
     let (sx, sy) = (f64::from(x), f64::from(y));
     self.state.blink_transform = [a * sx, b * sx, c * sy, d * sy, e, f];
     // As in transform(): the path follows only into an invertible CTM. Blink
     // computes 1 / x in double (canvas_2d_recorder_context.cc:1384), then
     // ToSkMatrix clamps it to float, so 1 / 1e-39 is FLT_MAX, not inf.
+    // Blink returns when its double CTM stays the same (:1376-1378), so only
+    // a change takes the path out of the line and arc builders.
     if self.transform_is_invertible() {
+      if self.state.blink_transform != old {
+        self.path.materialize();
+      }
       let mut inverse = Matrix::identity();
       inverse.pre_scale(clamp_to_f32(1.0 / x as f64), clamp_to_f32(1.0 / y as f64));
       self.path.transform_self(&inverse);
@@ -1669,14 +1685,20 @@ impl Context {
     // position. It leaves an invertible CTM to device space, then enters the
     // new CTM's space if that one is invertible. An empty path has nothing to
     // map, and an identity map changes nothing.
+    // Blink takes the path out of the line and arc builders in each half
+    // that maps it: resetTransform() when its double CTM is not the identity
+    // (:1507-1521), transform() when the new CTM is not the identity
+    // (:1476-1484). ts is float, so its double identity test is the float one.
     if !self.path.is_empty() {
-      if self.transform_is_invertible() && self.state.blink_transform != BLINK_IDENTITY {
+      let ts_maps = matrix_is_invertible(&ts) && !ts.get_transform().is_identity();
+      if (self.transform_is_invertible() && self.state.blink_transform != BLINK_IDENTITY) || ts_maps
+      {
         self.path.materialize();
       }
       if self.transform_is_invertible() && !self.state.transform.get_transform().is_identity() {
         self.path.transform_self(&self.state.transform);
       }
-      if matrix_is_invertible(&ts) && !ts.get_transform().is_identity() {
+      if ts_maps {
         self.path.transform_self(&blink_inverse(&ts));
       }
     }

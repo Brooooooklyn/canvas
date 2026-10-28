@@ -417,6 +417,11 @@ impl Path {
       matrix.d as f32,
       matrix.f as f32,
     );
+    // Not a Blink API. A map that moves points leaves the line and arc
+    // builders, as it did before transform_self stopped deciding that.
+    if !trans.get_transform().is_identity() {
+      self.inner.materialize();
+    }
     self.inner.transform_self(&trans);
     self
   }

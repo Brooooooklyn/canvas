@@ -4037,8 +4037,9 @@ impl Path {
 
   /// Blink CanvasPath::GetModifiablePath (canvas_path.h:193-196 m156): the
   /// path leaves the LineBuilder and the ArcBuilder for good. The context's
-  /// transform calls do this whenever Blink's double CTM changes, even if
-  /// the path map is the identity in float.
+  /// transform calls do this exactly where Blink calls GetModifiablePath,
+  /// decided from Blink's double CTM, never from the float path map: see
+  /// `Context2dRenderingState::blink_transform`.
   pub fn materialize(&mut self) {
     self.1.line = LineState::Other;
   }
@@ -4560,12 +4561,11 @@ impl Path {
     )
   }
 
+  /// Map every point by `matrix`. Only the geometry: the caller decides, as
+  /// Blink does, whether the path leaves the line and arc builders
+  /// ([`Path::materialize`]). The context's float map can be the identity
+  /// where Blink's double CTM changed, and the other way round.
   pub fn transform_self(&mut self, matrix: &Matrix) {
-    // Blink maps the path (GetModifiablePath) only for a CTM that is not the
-    // identity (PopStateStack, canvas_2d_recorder_context.cc:735-747 m156).
-    if !matrix.get_transform().is_identity() {
-      self.1.line = LineState::Other;
-    }
     unsafe { ffi::skiac_path_transform_self(self.0, matrix.0) };
   }
 
