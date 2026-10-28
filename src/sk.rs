@@ -4280,12 +4280,17 @@ impl Path {
     // would paint a cap dot. While the first and the last point of the path
     // are both near this point (Skia's 1/4096, so that an earlier point Skia
     // computed a few ulps off Blink's still counts), the path may be that one
-    // point: add nothing, as the old Skia arcTo route did. Skia's lone-point
-    // route always added the line at a start of 0 mod 2π, so keep that too.
-    // Otherwise the path cannot be one point in Chrome either: add Blink's line.
+    // point: add nothing, as the old Skia arcTo route did. That route always
+    // added the line when the canonicalized start was 0 or 360 degrees
+    // (arc_is_lone_point in SkPathBuilder.cpp), so keep that too; a start like
+    // -1e-8 canonicalizes to 0. Otherwise the path cannot be one point in
+    // Chrome either: add Blink's line.
+    let (canonical, _) = Self::ellipse_angles(start, start, false);
+    let degrees = (canonical * RAD_TO_DEG) % 360.0;
+    let skia_lone_point = degrees == 0.0 || degrees == 360.0;
     let near =
       |(ax, ay): (f32, f32)| (ax - px).abs() <= 1.0 / 4096.0 && (ay - py).abs() <= 1.0 / 4096.0;
-    if start % (2.0 * PI) != 0.0
+    if !skia_lone_point
       && let Some((first, last)) = self.end_points()
       && near(first)
       && near(last)

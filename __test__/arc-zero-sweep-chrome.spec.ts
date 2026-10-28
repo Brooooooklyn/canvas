@@ -285,9 +285,10 @@ test('arc() with start == end on a path that is one point strokes nothing, as in
 })
 
 test('moveTo(x + r, y) then arc(x, y, r, 0, 0) keeps a dot at each point, as in Chrome', (t) => {
-  // At a start of 0 mod 2π the old Skia route always added the line, and a
-  // path of several such dots is not one point, so Chrome strokes each dot.
-  for (const s of [0, 2 * Math.PI]) {
+  // At a start that canonicalizes to 0 the old Skia route always added the
+  // line, and a path of several such dots is not one point, so Chrome strokes
+  // each dot. -1e-8 and -1e-30 canonicalize to 0 in float.
+  for (const s of [0, 2 * Math.PI, -1e-8, -1e-30]) {
     const dots = (c: Target) => {
       for (const [x, y] of [
         [25, 25],
