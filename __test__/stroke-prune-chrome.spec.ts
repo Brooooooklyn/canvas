@@ -2,12 +2,10 @@
 // point (DrawPathInternal, canvas_2d_recorder_context.cc:1595-1602 m156): no
 // caps, no shadow, no dash. Its closePath() also empties a path that is one
 // moveTo plus one zero-length lineTo (CanvasPath::closePath, canvas_path.cc:
-// 76-93). We do both only for a path built with arc(), ellipse(), arcTo(),
-// rect() or roundRect(). pdf.js strokes PDF dots ('x y m x y l S',
-// 'x y m h S') as moveTo, lineTo, closePath and curves only, and needs them
-// (ISO 32000 8.5.3.2, mozilla/pdf.js#22040); Firefox and Chrome 151 draw them
-// too. Pixel counts are pixels with alpha > 0, pinned to Chrome 156 CPU canvas
-// (--disable-gpu, getContext('2d', { willReadFrequently: true })).
+// 76-93). Both hold for every path, whatever calls built it
+// (stroke-prune-point-paths-chrome.spec.ts). Pixel counts are pixels with
+// alpha > 0, pinned to Chrome 156 CPU canvas (--disable-gpu,
+// getContext('2d', { willReadFrequently: true })).
 import test from 'ava'
 
 import { createCanvas, Path2D } from '../index'
@@ -204,29 +202,27 @@ test('a one-point path from arc(), ellipse(), arcTo(), rect() or roundRect() str
   })
 })
 
-test('a one-point path of moveTo, lineTo, closePath and curves keeps its dot for pdf.js', (t) => {
-  // Chrome 156 strokes all of these as 0 px. pdf.js draws a PDF dot
-  // ('x y m x y l S', 'x y m h S', '0 0 re S', 'x y m x y x y x y c S') with
-  // exactly these calls, so they keep the cap dot that Firefox, Chrome 151,
-  // Acrobat and the PDF spec draw (ISO 32000 8.5.3.2, mozilla/pdf.js#22040).
-  const DOT = [0, 338, 400, 4, 4, 676, 338]
-  // A dash keeps no part of a zero-length closed contour or curve.
-  const CLOSED_DOT = [0, 338, 400, 4, 4, 676, 0]
+test('a one-point path of moveTo, lineTo, closePath and curves strokes nothing too', (t) => {
+  // Chrome 156 strokes all of these as 0 px, like the paths above. These are
+  // the calls pdf.js makes for a PDF dot ('x y m x y l S', 'x y m h S',
+  // '0 0 re S', 'x y m x y x y x y c S'), so pdf.js draws no such dot in
+  // Chrome either (pdfjs-dots.spec.ts). Until the prune covered every path we
+  // drew a cap dot here: 338 px round and 400 px square at lineWidth 20.
   expectCounts(t, {
     'M p L p': [
       (c) => {
         c.moveTo(50, 50)
         c.lineTo(50, 50)
       },
-      DOT,
+      NONE,
     ],
-    'L p': [(c) => c.lineTo(50, 50), DOT],
+    'L p': [(c) => c.lineTo(50, 50), NONE],
     'M p Z': [
       (c) => {
         c.moveTo(50, 50)
         c.closePath()
       },
-      CLOSED_DOT,
+      NONE,
     ],
     'M p L p Z': [
       (c) => {
@@ -234,24 +230,25 @@ test('a one-point path of moveTo, lineTo, closePath and curves keeps its dot for
         c.lineTo(50, 50)
         c.closePath()
       },
-      CLOSED_DOT,
+      NONE,
     ],
     'M p C p p p': [
       (c) => {
         c.moveTo(50, 50)
         c.bezierCurveTo(50, 50, 50, 50, 50, 50)
       },
-      CLOSED_DOT,
+      NONE,
     ],
     'M p Q p p': [
       (c) => {
         c.moveTo(50, 50)
         c.quadraticCurveTo(50, 50, 50, 50)
       },
-      CLOSED_DOT,
+      NONE,
     ],
   })
   // pdf.js rescaleAndStroke copies the path in with addPath(path, matrix).
+  // Chrome: 0 px (we drew 338).
   const path = new Path2D()
   path.moveTo(25, 25)
   path.lineTo(25, 25)
@@ -261,7 +258,7 @@ test('a one-point path of moveTo, lineTo, closePath and curves keeps its dot for
   ctx.lineWidth = 20
   ctx.lineCap = 'round'
   ctx.stroke(scaled)
-  t.is(countPainted(), 338)
+  t.is(countPainted(), 0)
 })
 
 test('a lone point next to another subpath keeps the dot Blink gives it', (t) => {
@@ -386,7 +383,7 @@ test('a lone point then a line keeps Blink zero-length line', (t) => {
   })
 })
 
-test('closePath empties a path that is one zero-length line from arc(), ellipse() or rect()', (t) => {
+test('closePath empties a path that is one zero-length line', (t) => {
   expectCounts(t, {
     'arc(p, 0), closePath, line': [
       (c) => {
@@ -505,8 +502,8 @@ test('closePath empties a path that is one zero-length line from arc(), ellipse(
   arc0(path)
   path.closePath()
   t.is(path.toSVGString(), '')
-  // pdf.js closes 'x y m x y l h' dots: Chrome 156 empties these (LINE), we
-  // keep the dot.
+  // The same for a line from moveTo and lineTo, as pdf.js closes
+  // 'x y m x y l h' (we kept the dot: LINE_AND_DOT).
   expectCounts(t, {
     'moveTo(p), lineTo(p), closePath, line': [
       (c) => {
@@ -515,7 +512,15 @@ test('closePath empties a path that is one zero-length line from arc(), ellipse(
         c.closePath()
         line(c)
       },
-      LINE_AND_DOT,
+      LINE,
+    ],
+    'lineTo(p), closePath, line': [
+      (c) => {
+        c.lineTo(50, 50)
+        c.closePath()
+        line(c)
+      },
+      LINE,
     ],
   })
 })
