@@ -270,3 +270,32 @@ test('rotate() turns the canvas by ClampTo<float>(RadToDeg(angle)) degrees', (t)
     t.deepEqual(ink(ctx), expected, `rotate(${a}), ${r} out`)
   }
 })
+
+test('a rotation that the float CTM snaps away leaves the path in place after restore()', (t) => {
+  // SkMatrix::setRotate snaps a |sin| or |cos| up to 1/65536 to 0, in
+  // Chrome's paint CTM and in ours. Chrome maps the path back with its double
+  // CTM, which does not snap, so save(); rotate(a); restore() leaves the path
+  // where it was. Ours maps it back with the snapped CTM, so the path must
+  // follow the same snapped rotation, or 1.4e-5 rad turns a square 10000 px
+  // out (918060 instead of 918119). [x0, y0, x1, y1, alpha sum].
+  const back: Record<string, (ctx: Ctx) => void> = {
+    restore: (ctx) => ctx.restore(),
+    resetTransform: (ctx) => {
+      ctx.resetTransform()
+      ctx.translate(-10000, 0)
+    },
+    setTransform: (ctx) => ctx.setTransform(1, 0, 0, 1, -10000, 0),
+  }
+  for (const a of [1.4e-5, -1.4e-5, 1.5e-5, 1.6e-5, Math.PI / 2 + 1e-5, Math.PI + 1e-5]) {
+    for (const [name, undo] of Object.entries(back)) {
+      const ctx = createCanvas(100, 100).getContext('2d')
+      ctx.translate(-10000, 0)
+      ctx.rect(10020.5, 20.5, 60, 60)
+      ctx.save()
+      ctx.rotate(a)
+      undo(ctx)
+      ctx.fill()
+      t.deepEqual(ink(ctx), [20, 20, 80, 80, 918119], `rotate(${a}), ${name}`)
+    }
+  }
+})

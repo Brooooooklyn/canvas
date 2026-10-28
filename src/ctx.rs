@@ -1583,10 +1583,24 @@ impl Context {
     // (canvas_2d_recorder_context.cc:1409-1412, affine_transform.cc:130-136).
     // The angle is in radians here, not degrees as SkMatrix::setRotate takes.
     if self.transform_is_invertible() {
+      // Our CTM is float only: setRotate snaps a |sin| or |cos| up to 1/65536
+      // to 0 (SkScalarSinSnapToZero, SkScalar.h), which Chrome's paint CTM
+      // does too, but not its double CTM, that restore(), resetTransform()
+      // and setTransform() map the path back with. Ours maps it back with the
+      // snapped CTM, so snap the inverse the same way, or a tiny rotation is
+      // left in the path after save(); rotate(1.4e-5); restore().
+      let snap = |v: f64| {
+        if (v as f32).abs() <= 1.0 / 65536.0 {
+          0.0
+        } else {
+          v as f32
+        }
+      };
       let (sin, cos) = (-angle).sin_cos();
+      let (sin, cos) = (snap(sin), snap(cos));
       // AffineTransform(cos, sin, -sin, cos) in SkMatrix order: scaleX, skewX,
       // transX, skewY, scaleY, transY.
-      let inverse = Matrix::new(cos as f32, -sin as f32, 0.0, sin as f32, cos as f32, 0.0);
+      let inverse = Matrix::new(cos, -sin, 0.0, sin, cos, 0.0);
       self.path.transform_self(&inverse);
     }
     let transform = self.state.transform.clone();
