@@ -4035,6 +4035,12 @@ impl Path {
     }
   }
 
+  /// Blink CanvasPath::IsLine (canvas_path.h:148 m156): the whole path is one
+  /// LineBuilder line, whose fill Blink skips.
+  pub fn is_blink_line(&self) -> bool {
+    self.1.line == LineState::Line
+  }
+
   /// Blink CanvasPath::GetModifiablePath (canvas_path.h:193-196 m156): the
   /// path leaves the LineBuilder and the ArcBuilder for good. The context's
   /// transform calls do this exactly where Blink calls GetModifiablePath,

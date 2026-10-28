@@ -1823,6 +1823,13 @@ impl Context {
     if source.stroke_is_pruned() {
       return Ok(());
     }
+    // Nor for an empty path or NaN bounds, whatever the composite op
+    // (canvas_2d_recorder_context.cc:1579-1594 m156): copy and the
+    // full-canvas modes must not clear for it. A path of one point is
+    // `stroke_is_pruned`'s.
+    if !Self::path_reaches_draw(source, false) {
+      return Ok(());
+    }
     // Clone the path to avoid borrow conflicts with with_render_canvas
     let path_to_draw = source.clone();
     if Self::path_reaches_draw(&path_to_draw, true) && !self.paint_canvas() {
@@ -2267,14 +2274,21 @@ impl Context {
     // Clone the path and set fill type to avoid borrow conflicts with with_render_canvas.
     // set_fill_type must happen BEFORE any early return: for a caller-supplied
     // Path object it mutates the caller's object, an observable side effect.
-    let path_to_draw = if let Some(p) = path {
+    // Blink's DrawPathInternal returns before Draw for a path that does not
+    // reach it and for the fill of a line, whatever the composite op
+    // (canvas_2d_recorder_context.cc:1579-1610 m156): copy and the
+    // full-canvas modes must not clear for it. Asked of the path itself: a
+    // clone is never Blink's LineBuilder line, and the clone of a path past
+    // float range is empty.
+    let reaches_draw = |p: &SkPath| Self::path_reaches_draw(p, false) && !p.is_blink_line();
+    let (path_to_draw, reaches_draw) = if let Some(p) = path {
       p.set_fill_type(fill_rule);
-      p.clone()
+      (p.clone(), reaches_draw(p))
     } else {
       self.path.set_fill_type(fill_rule);
-      self.path.clone()
+      (self.path.clone(), reaches_draw(&self.path))
     };
-    if Self::path_reaches_draw(&path_to_draw, false) && !self.paint_canvas() {
+    if !reaches_draw || !self.paint_canvas() {
       return Ok(());
     }
 
@@ -6310,10 +6324,9 @@ impl CanvasRenderingContext2D {
       && !height.is_nan()
       && !height.is_infinite()
     {
-      // ValidateRectForCanvas, then the bitmap (canvas_2d_recorder_context.cc:
-      // 1726). A 0 x 0 rect returns first in Chrome; here it keeps its own
-      // path, which draws on the stand-in surface without pixels.
-      if (width != 0.0 || height != 0.0) && !self.paint_canvas(&this)? {
+      // ValidateRectForCanvas, which drops a 0 x 0 rect whatever the
+      // composite op, then the bitmap (canvas_2d_recorder_context.cc:1726).
+      if (width == 0.0 && height == 0.0) || !self.paint_canvas(&this)? {
         return Ok(());
       }
       self
@@ -6386,7 +6399,7 @@ impl CanvasRenderingContext2D {
       && !height.is_infinite()
     {
       // As fillRect (canvas_2d_recorder_context.cc:1789).
-      if (width != 0.0 || height != 0.0) && !self.paint_canvas(&this)? {
+      if (width == 0.0 && height == 0.0) || !self.paint_canvas(&this)? {
         return Ok(());
       }
       self

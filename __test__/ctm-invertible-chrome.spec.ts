@@ -10,7 +10,7 @@
 // (--disable-gpu, getContext('2d', { willReadFrequently: true })).
 import test from 'ava'
 
-import { createCanvas } from '../index'
+import { createCanvas, Path2D } from '../index'
 
 type Ctx = ReturnType<ReturnType<typeof createCanvas>['getContext']>
 
@@ -217,4 +217,80 @@ test('a path point mapped past float range stays in the path', (t) => {
   ctx.resetTransform()
   ctx.fill()
   t.deepEqual(ink(ctx), [0, 0])
+})
+
+test('an empty path, the fill of a line and a 0 x 0 rect never reach copy or a full-canvas mode', (t) => {
+  // Blink's DrawPathInternal returns before Draw for an empty path and for
+  // the fill of a LineBuilder line, and ValidateRectForCanvas drops a 0 x 0
+  // rect (canvas_2d_recorder_context.cc m156), whatever the composite op. Under
+  // a CTM whose float matrix is singular these used to stop at the float
+  // invertibility check; with the double CTM they reach the composite op.
+  const ops: Record<string, (ctx: Ctx) => void> = {
+    'fill()': (ctx) => ctx.fill(),
+    'stroke()': (ctx) => ctx.stroke(),
+    'fill(Path2D)': (ctx) => ctx.fill(new Path2D()),
+    'stroke(Path2D)': (ctx) => ctx.stroke(new Path2D()),
+    'fill() of a line': (ctx) => {
+      ctx.moveTo(10, 10)
+      ctx.lineTo(60, 40)
+      ctx.fill()
+    },
+    'fill(Path2D) of a line': (ctx) => {
+      const p = new Path2D()
+      p.moveTo(10, 10)
+      p.lineTo(60, 40)
+      ctx.fill(p)
+    },
+    'fillRect 0x0': (ctx) => ctx.fillRect(10, 10, 0, 0),
+    'strokeRect 0x0': (ctx) => ctx.strokeRect(10, 10, 0, 0),
+    // A path that is not empty and not a line still reaches Draw.
+    'fill() of a moveTo': (ctx) => {
+      ctx.moveTo(10, 10)
+      ctx.fill()
+    },
+    'fill() of a closed line': (ctx) => {
+      ctx.moveTo(10, 10)
+      ctx.lineTo(60, 40)
+      ctx.closePath()
+      ctx.fill()
+    },
+    'fillRect 0x20': (ctx) => ctx.fillRect(10, 10, 0, 20),
+  }
+  const ctms: Record<string, (ctx: Ctx) => void> = {
+    identity: () => {},
+    floatSingular: (ctx) => {
+      ctx.scale(1, 0.8)
+      ctx.transform(0.4, 1, 8, 20, 0, 0)
+    },
+    // The path goes past float range: not empty in Blink, so it reaches Draw.
+    pastFloatRange: (ctx) => {
+      ctx.moveTo(10, 10)
+      ctx.lineTo(60, 20)
+      ctx.lineTo(30, 60)
+      ctx.scale(1e-30, 1e-30)
+      ctx.scale(1e-30, 1e-30)
+    },
+  }
+  const modes = ['copy', 'source-in', 'source-out', 'destination-in', 'destination-atop'] as const
+  const kept = [10000, 2550000]
+  const cleared = [0, 0]
+  for (const [ctmName, ctm] of Object.entries(ctms)) {
+    const names = ctmName === 'pastFloatRange' ? ['fill()'] : Object.keys(ops)
+    for (const name of names) {
+      for (const mode of modes) {
+        const ctx = newCtx()
+        ctx.fillStyle = 'rgb(0, 128, 255)'
+        ctx.fillRect(0, 0, 100, 100)
+        ctx.fillStyle = 'red'
+        ctx.lineWidth = 4
+        ctm(ctx)
+        ctx.globalCompositeOperation = mode
+        ops[name](ctx)
+        const reaches =
+          ctmName === 'pastFloatRange' ||
+          ['fill() of a moveTo', 'fill() of a closed line', 'fillRect 0x20'].includes(name)
+        t.deepEqual(ink(ctx), reaches ? cleared : kept, `${ctmName} ${mode} ${name}`)
+      }
+    }
+  }
 })
