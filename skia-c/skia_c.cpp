@@ -3116,35 +3116,6 @@ bool skiac_path_is_empty(skiac_path* c_path) {
   return c_path->builder.isEmpty();
 }
 
-// Whether every point of a non-empty path is within `tolerance` of (x, y) on
-// each axis. It looks at the last `max_points` points at most, and a longer
-// path whose last points all pass counts as such a point too, unless it ends
-// with a close: then the next line starts at a moveTo point that may not be
-// among them.
-bool skiac_path_may_be_point(skiac_path* c_path,
-                             float x,
-                             float y,
-                             float tolerance,
-                             int max_points) {
-  auto pts = c_path->builder.points();
-  auto verbs = c_path->builder.verbs();
-  if (pts.empty() || verbs.empty()) {
-    return false;
-  }
-  if (pts.size() > static_cast<size_t>(max_points) &&
-      verbs.back() == SkPathVerb::kClose) {
-    return false;
-  }
-  size_t n = std::min(pts.size(), static_cast<size_t>(max_points));
-  for (size_t i = pts.size() - n; i < pts.size(); i++) {
-    if (!(std::abs(pts[i].fX - x) <= tolerance) ||
-        !(std::abs(pts[i].fY - y) <= tolerance)) {
-      return false;
-    }
-  }
-  return true;
-}
-
 int skiac_path_count_points(skiac_path* c_path) {
   return c_path->path().countPoints();
 }

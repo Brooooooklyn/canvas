@@ -1032,14 +1032,6 @@ pub mod ffi {
 
     pub fn skiac_path_is_empty(path: *mut skiac_path) -> bool;
 
-    pub fn skiac_path_may_be_point(
-      path: *mut skiac_path,
-      x: f32,
-      y: f32,
-      tolerance: f32,
-      max_points: i32,
-    ) -> bool;
-
     pub fn skiac_path_count_points(path: *mut skiac_path) -> i32;
 
     pub fn skiac_path_count_verbs(path: *mut skiac_path) -> i32;
@@ -4329,15 +4321,15 @@ impl Path {
     }
     // Blink tests the raw f32 angles, before CanonicalizeAngle, and then adds
     // only lineTo(x + r·cosf(start), y + r·sinf(start)) (canvas_path.cc:457-461
-    // m156). Canonicalizing first can move the end 1 ulp off the start, and
-    // AdjustEndAngle then turns that into an almost full circle. A radius
-    // that vanishes against the center in float makes Skia's oval one point,
-    // which the arc route below adds as lone points (arc_is_lone_point in
-    // SkPathBuilder.cpp) at Blink's point, so keep that route there.
-    let (x, y, r) = (center_x, center_y, radius);
-    let oval_is_point = (x + r) - (x - r) == 0.0 && (y + r) - (y - r) == 0.0;
-    if start_angle == end_angle && !oval_is_point {
-      self.arc_lone_point(center_x, center_y, radius, start_angle);
+    // m156), in f32 like Blink (Chromium builds with -ffp-contract=off, so
+    // there is no FMA). Canonicalizing first can move the end 1 ulp off the
+    // start, and AdjustEndAngle then turns that into an almost full circle.
+    // If the path is then one point, Chrome's stroke skips it at draw time
+    // (Self::stroke_is_pruned).
+    if start_angle == end_angle {
+      let px = center_x + radius * start_angle.cos();
+      let py = center_y + radius * start_angle.sin();
+      self.finite_line_to(px, py);
       return;
     }
     let (start_angle, end_angle) = Self::ellipse_angles(start_angle, end_angle, from_end);
@@ -4350,36 +4342,6 @@ impl Path {
       start_angle,
       end_angle,
     )
-  }
-
-  /// Blink's point for arc() with start == end, in f32 like Blink (Chromium
-  /// builds with -ffp-contract=off, so there is no FMA). The anticlockwise
-  /// flag does not matter here.
-  fn arc_lone_point(&mut self, x: f32, y: f32, radius: f32, start: f32) {
-    let px = x + radius * start.cos();
-    let py = y + radius * start.sin();
-    // Blink always adds this lineTo. Chrome then skips a stroke whose path
-    // bounds are one point, at draw time (canvas_2d_recorder_context.cc:
-    // 1595-1602 m156; Self::stroke_is_pruned). An earlier point Skia computed
-    // a few ulps off Blink's would make our bounds not quite one point, and a
-    // zero-length line from it would paint a cap dot. So while every point of
-    // the path is within Skia's 1/4096 of Blink's point, the path may stay
-    // that one point: add nothing, as the old Skia arcTo route did. Only the
-    // last 64 points are checked, so that a loop of such calls stays linear;
-    // a longer path whose last 64 points pass also adds nothing, unless it was
-    // just closed (its moveTo point, where the line starts, may be further
-    // back). The old route always added the line when the canonicalized start
-    // was 0 or 360 degrees (arc_is_lone_point in SkPathBuilder.cpp; a start
-    // like -1e-8 canonicalizes to 0), and a path of several such dots is not
-    // one point, so keep that too.
-    let (canonical, _) = Self::ellipse_angles(start, start, false);
-    let degrees = (canonical * RAD_TO_DEG) % 360.0;
-    let skia_lone_point = degrees == 0.0 || degrees == 360.0;
-    if !skia_lone_point && unsafe { ffi::skiac_path_may_be_point(self.0, px, py, 1.0 / 4096.0, 64) }
-    {
-      return;
-    }
-    self.finite_line_to(px, py);
   }
 
   pub fn arc_to(

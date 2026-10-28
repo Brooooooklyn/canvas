@@ -295,8 +295,7 @@ test('arc() with start == end adds Blink point and only that', (t) => {
 test('arc() with start == end on a path that is one point strokes nothing, as in Chrome', (t) => {
   // Blink adds only zero-length lines here, and Chrome skips a stroke whose
   // path bounds are one point (canvas_2d_recorder_context.cc:1595-1602 m156).
-  // Our stroke has no such check, so we add no line while every point of the
-  // path is within 1/4096 of the new point.
+  // Our stroke does the same (stroke-prune-chrome.spec.ts).
   const cases: Record<string, (c: Target) => void> = {
     'arc(1, 1) twice': (c) => {
       c.arc(50, 50, 30, 1, 1)
@@ -320,7 +319,6 @@ test('arc() with start == end on a path that is one point strokes nothing, as in
       c.arc(50, 50, 30, 50, 50)
       c.arc(50, 50, 30, 50, 50)
     },
-    // The zero-sweep ellipse keeps Skia's point, a few ulps off Blink's.
     'zero-sweep ellipse at 2, then arc(2, 2)': (c) => {
       c.ellipse(50, 50, 30, 30, 0, 2, 2)
       c.arc(50, 50, 30, 2, 2)
@@ -330,15 +328,71 @@ test('arc() with start == end on a path that is one point strokes nothing, as in
       c.arc(50, 50, 30, (5 * Math.PI) / 4, (5 * Math.PI) / 4)
     },
   }
-  // Not here, and the same as before this change: Chrome strokes a dot for a
-  // zero-sweep ellipse at -1 then arc(-1, -1) (its two points differ by an
-  // ulp, 347 px round), and for moveTo(p + 1e-4) then arc() at p (342 px);
-  // we paint 0. moveTo(80, 50) then arc(50, 50, 30, 0, 0) paints a 338 px dot
-  // where Chrome paints 0 (next test).
   for (const [name, build] of Object.entries(cases)) {
     for (const api of APIS) {
       for (const cap of ['round', 'square'] as const) {
         t.is(paint(api, build, [20, cap]), 0, `${name} ${api} ${cap}`)
+      }
+    }
+  }
+})
+
+test('arc() with start == end is only Blink lineTo, also next to a point', (t) => {
+  // Chrome strokes a dot when the path is not quite one point, and nothing
+  // when it is. We used to add no line while the path was within 1/4096 of
+  // the new point, and to take Skia's arc route for a radius that vanishes
+  // against the center: these painted 0, 0 and 1206 px (lineWidth 20 round).
+  const p = blinkPoint(50, 50, 30, 1)
+  const cases: Record<string, [(c: Target) => void, number[], boolean]> = {
+    // The zero-sweep ellipse point is an ulp off the arc point.
+    'zero-sweep ellipse at -1, then arc(-1, -1)': [
+      (c) => {
+        c.ellipse(50, 50, 30, 30, 0, -1, -1)
+        c.arc(50, 50, 30, -1, -1)
+      },
+      [347, 444, 4, 0],
+      false,
+    ],
+    'moveTo(p + 1e-4), arc() at p': [
+      (c) => {
+        c.moveTo(p[0] + 1e-4, p[1])
+        c.arc(50, 50, 30, 1, 1)
+      },
+      [342, 441, 4, 0],
+      true,
+    ],
+    // Blink's point is the center, so the path is one point before the line.
+    'arc(50, 50, 1e-8, 1, 1), closePath, lineTo(80, 20)': [
+      (c) => {
+        c.arc(50, 50, 1e-8, 1, 1)
+        c.closePath()
+        c.lineTo(80, 20)
+      },
+      [0, 0, 0, 0],
+      false,
+    ],
+  }
+  for (const [name, [build, expected, hit]] of Object.entries(cases)) {
+    for (const api of APIS) {
+      t.deepEqual(
+        [
+          paint(api, build, [20, 'round']),
+          paint(api, build, [20, 'square']),
+          paint(api, build, [1, 'round']),
+          paint(api, build),
+        ],
+        expected,
+        `${name} ${api}`,
+      )
+      ctx.reset()
+      ctx.lineWidth = 2
+      if (api === 'ctx') {
+        build(ctx)
+        t.is(ctx.isPointInStroke(p[0], p[1]), hit, `${name} ${api} isPointInStroke`)
+      } else {
+        const path = new Path2D()
+        build(path)
+        t.is(ctx.isPointInStroke(path, p[0], p[1]), hit, `${name} ${api} isPointInStroke`)
       }
     }
   }
