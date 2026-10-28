@@ -579,3 +579,64 @@ test('fill(path) under a singular matrix draws nothing; the Path2D is unchanged'
     SQUARE,
   )
 })
+
+test('a path inverse past float range clamps to FLT_MAX', (t) => {
+  // Measured in Chrome 156. ToSkMatrix clamps every entry to float
+  // (affine_transform.cc:236-252), so the inverse of a 1e-39 scale is FLT_MAX
+  // and a 0 coordinate stays 0. Before, the entry was inf and 0 * inf made the
+  // path NaN: nothing painted.
+  const alongX: [string, (ctx: Ctx) => void][] = [
+    ['setTransform(1, 0, 0, 1e-39, 0, 0)', (ctx) => ctx.setTransform(1, 0, 0, 1e-39, 0, 0)],
+    ['transform(1, 0, 0, 1e-39, 0, 0)', (ctx) => ctx.transform(1, 0, 0, 1e-39, 0, 0)],
+    ['scale(1, 1e-39)', (ctx) => ctx.scale(1, 1e-39)],
+    [
+      'save(), scale(1, 1e-39), restore()',
+      (ctx) => {
+        ctx.save()
+        ctx.scale(1, 1e-39)
+        ctx.restore()
+      },
+    ],
+  ]
+  for (const [name, op] of alongX) {
+    const butt = (ctx: Ctx) => {
+      ctx.lineWidth = 20
+      ctx.lineCap = 'butt'
+      ctx.moveTo(10, 0)
+      ctx.lineTo(90, 0)
+      op(ctx)
+      ctx.resetTransform()
+      ctx.stroke()
+    }
+    t.deepEqual(box(butt, 100, 100), { box: [10, 0, 89, 9], sum: 204000 }, name)
+    const ctx = createCanvas(100, 100).getContext('2d')
+    ctx.rect(10, 0, 50, 0)
+    ctx.lineTo(10, 0)
+    op(ctx)
+    ctx.resetTransform()
+    ctx.lineWidth = 6
+    t.deepEqual(
+      [ctx.isPointInStroke(30, 2), ctx.isPointInStroke(30, 5), ctx.isPointInStroke(70, 1)],
+      [true, false, false],
+      name,
+    )
+  }
+  const alongY: [string, (ctx: Ctx) => void][] = [
+    ['setTransform(1e-39, 0, 0, 1, 0, 0)', (ctx) => ctx.setTransform(1e-39, 0, 0, 1, 0, 0)],
+    ['setTransform(0, 1, 1e-39, 0, 0, 0)', (ctx) => ctx.setTransform(0, 1, 1e-39, 0, 0, 0)],
+    ['transform(1e-39, 0, 0, 1, 0, 0)', (ctx) => ctx.transform(1e-39, 0, 0, 1, 0, 0)],
+    ['scale(1e-39, 1)', (ctx) => ctx.scale(1e-39, 1)],
+  ]
+  for (const [name, op] of alongY) {
+    const butt = (ctx: Ctx) => {
+      ctx.lineWidth = 20
+      ctx.lineCap = 'butt'
+      ctx.moveTo(0, 10)
+      ctx.lineTo(0, 90)
+      op(ctx)
+      ctx.resetTransform()
+      ctx.stroke()
+    }
+    t.deepEqual(box(butt, 100, 100), { box: [0, 10, 9, 89], sum: 204000 }, name)
+  }
+})

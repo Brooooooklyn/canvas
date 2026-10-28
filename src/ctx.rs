@@ -1600,10 +1600,11 @@ impl Context {
     self.flush_if_recording_limit_exceeded();
     self.state.transform.pre_scale(x, y);
     // As in transform(): the path follows only into an invertible CTM. Blink
-    // computes 1 / x in double (canvas_2d_recorder_context.cc:1380).
+    // computes 1 / x in double (canvas_2d_recorder_context.cc:1384), then
+    // ToSkMatrix clamps it to float, so 1 / 1e-39 is FLT_MAX, not inf.
     if self.transform_is_invertible() {
       let mut inverse = Matrix::identity();
-      inverse.pre_scale((1.0 / x as f64) as f32, (1.0 / y as f64) as f32);
+      inverse.pre_scale(clamp_to_f32(1.0 / x as f64), clamp_to_f32(1.0 / y as f64));
       self.path.transform_self(&inverse);
     }
     let transform = self.state.transform.clone();
@@ -6967,8 +6968,11 @@ fn blink_inverse_values(m: &Matrix) -> [f64; 6] {
 }
 
 /// [`blink_inverse_values`] as a float matrix.
+/// The f32 entries go through AffineTransform::ToSkMatrix's ClampToFloat
+/// (affine_transform.cc:236-252): an entry past f32 range is FLT_MAX, not
+/// inf, so a 0 coordinate stays 0 instead of becoming NaN.
 fn blink_inverse(m: &Matrix) -> Matrix {
-  let [a, b, c, d, e, f] = blink_inverse_values(m).map(|v| v as f32);
+  let [a, b, c, d, e, f] = blink_inverse_values(m).map(clamp_to_f32);
   // Matrix::new takes SkMatrix order: scaleX, skewX, transX, skewY, scaleY, transY.
   Matrix::new(a, c, e, b, d, f)
 }
