@@ -1577,9 +1577,15 @@ impl Context {
     // (canvas_2d_recorder_context.cc:1384-1408); in f32 it overflows.
     let degrees = Self::clamp_to_f32(angle * (180.0 / PI as f64));
     self.state.transform.pre_rotate(degrees);
-    // As in transform(): the path follows only into an invertible CTM.
+    // As in transform(): the path follows only into an invertible CTM, by
+    // AffineTransform().RotateRadians(-angle) in double, then ToSkMatrix
+    // (canvas_2d_recorder_context.cc:1409-1412, affine_transform.cc:130-136).
+    // The angle is in radians here, not degrees as SkMatrix::setRotate takes.
     if self.transform_is_invertible() {
-      let inverse = Matrix::rotated(-Self::clamp_to_f32(angle), 0.0, 0.0);
+      let (sin, cos) = (-angle).sin_cos();
+      // AffineTransform(cos, sin, -sin, cos) in SkMatrix order: scaleX, skewX,
+      // transX, skewY, scaleY, transY.
+      let inverse = Matrix::new(cos as f32, -sin as f32, 0.0, sin as f32, cos as f32, 0.0);
       self.path.transform_self(&inverse);
     }
     let transform = self.state.transform.clone();

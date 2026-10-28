@@ -4702,10 +4702,6 @@ impl Matrix {
     Matrix(unsafe { ffi::skiac_matrix_from_ts(&mut c_ts) })
   }
 
-  pub fn rotated(radians: f32, x: f32, y: f32) -> Self {
-    Matrix(unsafe { ffi::skiac_matrix_create_rotated(radians, x, y) })
-  }
-
   pub fn translated(x: f32, y: f32) -> Self {
     Matrix(unsafe { ffi::skiac_matrix_create_translated(x, y) })
   }
