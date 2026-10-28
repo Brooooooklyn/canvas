@@ -32,7 +32,7 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: 26
           cache: 'yarn'
 
       - name: Install
@@ -160,7 +160,7 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: 26
           cache: 'yarn'
 
       - name: Set env
@@ -272,7 +272,7 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: 26
 
       - name: Install
         uses: ./.github/actions/setup-rust
@@ -652,7 +652,7 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: 26
           cache: 'yarn'
 
       - name: Install dependencies
@@ -747,7 +747,7 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: 26
           cache: 'yarn'
 
       - name: Install dependencies
