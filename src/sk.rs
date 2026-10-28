@@ -3950,7 +3950,9 @@ struct PathShape {
   arc_family: bool,
   /// Blink's LineBuilder: whether the whole path is one moveTo (`Start`) or one
   /// moveTo plus one lineTo (`Line`), so that closePath can clear a line of
-  /// zero length. Only meaningful on a non-empty path.
+  /// zero length. Or Blink's ArcBuilder (`Arc`): the whole path is one arc(),
+  /// maybe closed, which Chrome never prunes. Only meaningful on a non-empty
+  /// path.
   line: LineState,
 }
 
@@ -3958,6 +3960,11 @@ struct PathShape {
 enum LineState {
   Start,
   Line,
+  /// Blink arc() on an empty path with radius >= 1 and start != end keeps
+  /// only the arc (ArcBuilder, canvas_path.cc:466-473 m156). Its bounds are
+  /// the whole oval (:714-729), so the stroke prune never fires, even when
+  /// the sweep rounds to one point; Chrome then strokes it with drawArc.
+  Arc,
   #[default]
   Other,
 }
@@ -3971,7 +3978,8 @@ pub struct Path(pub(crate) *mut ffi::skiac_path, PathShape, Cell<bool>);
 impl Clone for Path {
   fn clone(&self) -> Path {
     // A copy is a plain path in Blink (Path2D(path) and addPath go through
-    // the PathBuilder), so it is never a LineBuilder line.
+    // the PathBuilder), so it is never a LineBuilder line or an ArcBuilder
+    // arc.
     let shape = PathShape {
       arc_family: self.1.arc_family,
       line: LineState::Other,
@@ -4055,9 +4063,9 @@ impl Path {
   /// Blink skips the stroke of a path whose bounds are one point
   /// (canvas_2d_recorder_context.cc:1595-1602 m156). Only for a path built
   /// with arc(), ellipse(), arcTo(), rect() or roundRect(): see
-  /// [`PathShape::arc_family`].
+  /// [`PathShape::arc_family`]. Never for Blink's ArcBuilder ([`LineState::Arc`]).
   pub fn stroke_is_pruned(&self) -> bool {
-    if !self.1.arc_family || self.is_empty() {
+    if !self.1.arc_family || self.is_empty() || self.1.line == LineState::Arc {
       return false;
     }
     let (left, top, right, bottom) = self.get_bounds();
@@ -4312,6 +4320,7 @@ impl Path {
     end_angle: f32,
     from_end: bool,
   ) {
+    let was_empty = self.is_empty();
     self.begin_arc_family();
     // Blink arc() adds only lineTo(center) for radius 0 (canvas_path.cc:457-461
     // m156).
@@ -4341,7 +4350,12 @@ impl Path {
       0.0,
       start_angle,
       end_angle,
-    )
+    );
+    // Blink's ArcBuilder (canvas_path.cc:466-473 m156); the callers drop the
+    // call under a singular CTM first, as Blink does (:451).
+    if was_empty && radius >= 1.0 {
+      self.1.line = LineState::Arc;
+    }
   }
 
   pub fn arc_to(
@@ -4478,6 +4492,11 @@ impl Path {
       if read {
         self.move_to(x, y);
       }
+      return;
+    }
+    // Blink keeps the ArcBuilder and only marks it closed (:95-100).
+    if self.1.line == LineState::Arc {
+      unsafe { ffi::skiac_path_close(self.0) };
       return;
     }
     self.close();

@@ -626,3 +626,108 @@ test('closePath keeps the point once Blink built the path with GetPath()', (t) =
   ctx.stroke()
   t.is(countPainted(), LINE[1])
 })
+
+test('a closed arc() on an empty path keeps the dot Chrome draws when its sweep rounds to one point', (t) => {
+  // Blink keeps arc() on an empty path with radius >= 1 as an ArcBuilder
+  // (canvas_path.cc:466-473 m156) whose bounds are the whole oval (:714-729),
+  // so the prune never fires, and Chrome draws the closed arc as a dot. A
+  // copy (addPath), radius < 1, ellipse() or any call after the arc gives a
+  // plain path again, which is pruned. On the context save(), rotate() and
+  // restore() map the path (PopStateStack), which makes it plain too.
+  const tiny = (c: Target) => c.arc(50, 50, 30, 1, 1 + 1e-7)
+  const DOT = [0, 342, 441, 4, 4, 610, 0]
+  const dot = (expected: number[]) => ({ ctx: expected, Path2D: expected, addPath: NONE })
+  const cases: Record<string, [Build, { ctx: number[]; Path2D: number[]; addPath: number[] }]> = {
+    'arc(1, 1 + 1e-7), closePath': [
+      (c) => {
+        tiny(c)
+        c.closePath()
+      },
+      dot(DOT),
+    ],
+    anticlockwise: [
+      (c) => {
+        c.arc(50, 50, 30, 1 + 1e-7, 1, true)
+        c.closePath()
+      },
+      dot(DOT),
+    ],
+    'arc(50, 50 + 4e-6), closePath': [
+      (c) => {
+        c.arc(50, 50, 30, 50, 50 + 4e-6)
+        c.closePath()
+      },
+      dot([0, 343, 440, 4, 4, 537, 0]),
+    ],
+    'radius 1': [
+      (c) => {
+        c.arc(50, 50, 1, 1, 1 + 1e-7)
+        c.closePath()
+      },
+      dot([0, 347, 441, 2, 4, 694, 0]),
+    ],
+    'closePath twice': [
+      (c) => {
+        tiny(c)
+        c.closePath()
+        c.closePath()
+      },
+      dot(DOT),
+    ],
+    'radius 0.9': [
+      (c) => {
+        c.arc(50, 50, 0.9, 1, 1 + 1e-7)
+        c.closePath()
+      },
+      dot(NONE),
+    ],
+    'not closed': [tiny, dot(NONE)],
+    'closePath, moveTo': [
+      (c) => {
+        tiny(c)
+        c.closePath()
+        c.moveTo(80, 80)
+      },
+      dot(NONE),
+    ],
+    ellipse: [
+      (c) => {
+        c.ellipse(50, 50, 30, 30, 0, 1, 1 + 1e-7)
+        c.closePath()
+      },
+      dot(NONE),
+    ],
+  }
+  for (const [name, [build, expected]] of Object.entries(cases)) {
+    t.deepEqual(counts(build), expected, name)
+  }
+  // isPointInPath builds Blink's PathBuilder but keeps the ArcBuilder.
+  for (const api of ['ctx', 'Path2D'] as const) {
+    const read = STYLES.map((setup) => {
+      ctx.reset()
+      setup()
+      const path = api === 'ctx' ? null : new Path2D()
+      const target = path ?? ctx
+      tiny(target)
+      if (path) ctx.isPointInPath(path, 1, 1)
+      else ctx.isPointInPath(1, 1)
+      target.closePath()
+      if (path) ctx.stroke(path)
+      else ctx.stroke()
+      return countPainted()
+    })
+    t.deepEqual(read, DOT, `isPointInPath, closePath ${api}`)
+  }
+  const restored = STYLES.map((setup) => {
+    ctx.reset()
+    setup()
+    tiny(ctx)
+    ctx.save()
+    ctx.rotate(0.3)
+    ctx.restore()
+    ctx.closePath()
+    ctx.stroke()
+    return countPainted()
+  })
+  t.deepEqual(restored, NONE, 'save, rotate, restore, closePath')
+})

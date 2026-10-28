@@ -1750,15 +1750,17 @@ impl Context {
     self.flush_if_recording_limit_exceeded();
     let stroke_paint = self.stroke_paint()?;
 
-    // Clone the path to avoid borrow conflicts with with_render_canvas
-    let path_to_draw = match path {
-      Some(p) => p.clone(),
-      None => self.path.clone(),
+    let source: &SkPath = match path.as_deref() {
+      Some(p) => p,
+      None => &self.path,
     };
-    // Blink returns before it takes the bitmap: no shadow, no dash.
-    if path_to_draw.stroke_is_pruned() {
+    // Blink returns before it takes the bitmap: no shadow, no dash. Asked of
+    // the path itself: a clone is never Blink's ArcBuilder.
+    if source.stroke_is_pruned() {
       return Ok(());
     }
+    // Clone the path to avoid borrow conflicts with with_render_canvas
+    let path_to_draw = source.clone();
     if Self::path_reaches_draw(&path_to_draw, true) && !self.paint_canvas() {
       return Ok(());
     }
