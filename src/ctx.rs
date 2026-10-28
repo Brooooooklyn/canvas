@@ -1,5 +1,4 @@
 use std::cell::{Cell, RefCell};
-use std::f32::consts::PI;
 use std::marker::PhantomData;
 use std::rc::Rc;
 use std::result;
@@ -1573,9 +1572,10 @@ impl Context {
   /// `angle` in radians, finite.
   pub fn rotate(&mut self, angle: f64) {
     self.flush_if_recording_limit_exceeded();
-    // Blink paints with ClampTo<float>(angle * (180.0 / kPiFloat)) degrees
-    // (canvas_2d_recorder_context.cc:1384-1408); in f32 it overflows.
-    let degrees = Self::clamp_to_f32(angle * (180.0 / PI as f64));
+    // Blink paints with ClampTo<float>(base::RadToDeg(angle)) degrees, with a
+    // double pi (canvas_2d_recorder_context.cc:1407, angle_conversions.h:21);
+    // in f32 it overflows.
+    let degrees = Self::clamp_to_f32(angle * (180.0 / std::f64::consts::PI));
     self.state.transform.pre_rotate(degrees);
     // As in transform(): the path follows only into an invertible CTM, by
     // AffineTransform().RotateRadians(-angle) in double, then ToSkMatrix

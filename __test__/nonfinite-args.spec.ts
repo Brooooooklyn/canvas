@@ -244,15 +244,16 @@ test('transform arguments clamp to FLT_MAX', (t) => {
 })
 
 test('rotate paints like Chrome for huge angles', (t) => {
-  // Blink paints with ClampTo<float>(angle * 180 / kPiFloat) degrees; before,
-  // the f32 degrees overflowed and the matrix became NaN (nothing painted).
+  // Blink paints with ClampTo<float>(base::RadToDeg(angle)) degrees, a double
+  // pi in Chrome 156; before, the f32 degrees overflowed and the matrix became
+  // NaN (nothing painted).
   const cases: [number, string][] = [
     [1e300, '45452 3cae86f5'],
     [-1e300, '45455 1445a014'],
     [3.5e38, '45452 3cae86f5'],
     [1e39, '45452 3cae86f5'],
     [1e10, '46098 d7d95f45'],
-    [1e7, '45940 ba8efd03'],
+    [1e7, '46178 1937ad1b'],
     [12345.678, '46052 178c6623'],
     [0.1, '46174 d71fe815'],
     [1, '45969 71211682'],
