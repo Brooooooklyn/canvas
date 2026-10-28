@@ -153,6 +153,9 @@ test('rotated ellipses draw like Chrome, also with a huge finite rotation', (t) 
     [1e10, '48734 33ffab45', '52237 2c7d3642'],
     [1e20, '47166 b0fdea05', '49883 9e0848ea'],
     [3e38, '48768 b117985', '52388 ae6da11f'],
+    // Was 48009 e6d14f7e / 50954 f67b6df7: we rotated in f32 around the
+    // center, Blink in double around the origin.
+    [1e38, '47998 e8723ae3', '50941 27692ab8'],
   ]
   for (const target of ['ctx', 'Path2D'] as const) {
     for (const [r, small, large] of cases) {
@@ -164,11 +167,6 @@ test('rotated ellipses draw like Chrome, also with a huge finite rotation', (t) 
         t.is(`${s.a} ${s.h}`, expected, `${target}.ellipse(20, 20, ${rx}, 4, ${r}, 0, 6)`)
         t.deepEqual(ipp, [true, true])
       }
-    }
-    // Chrome 47998 / 50941: ours rotates in f32 around the center, Blink in
-    // double around the origin, so a few edge pixels differ. It must draw.
-    for (const rx of [5, 6]) {
-      t.true(pathScene(target, (p) => p.ellipse(20, 20, rx, 4, 1e38, 0, 6)).s.a > 47000, `${target} rotation 1e38`)
     }
   }
 })

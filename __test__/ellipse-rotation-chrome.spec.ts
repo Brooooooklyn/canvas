@@ -217,3 +217,50 @@ test('a chain of rotated ellipses paints like Chrome', (t) => {
     t.deepEqual(paint(chain(k, rotation)), { ctx: counts, Path2D: counts }, `k ${k} rotation ${rotation}`)
   }
 })
+
+test('a thin rotated ellipse() strokes its tips like Chrome', (t) => {
+  // ellipse(50, 50, 1e-3, 30, ...) is 0.002 wide, so an ulp in a control point
+  // turns the tips of a wide stroke. With the f32 matrices about (50, 50) a
+  // lineWidth 20 stroke lost up to 160 pixels and fill() painted 22 pixels
+  // where Chrome paints 4. [pre, rotation, start, end, anticlockwise] ->
+  // Chrome 156 [lineWidth 1 butt, 1 round, 1 square, 20 butt, 20 round,
+  // 20 square, fill]. The comment gives what the f32 matrices painted.
+  const cases: [string, number, number, number, boolean, number[]][] = [
+    ['empty', 0.7, 0, TAU, false, [92, 92, 92, 1468, 1466, 1469, 4]], // 20: 1308, 1305, 1307, fill 22
+    ['moveTo', -2, 1, 2, false, [138, 138, 138, 1751, 1905, 1926, 134]], // 1 butt: 136, fill 133
+    ['lineAfter', 1e10, Math.PI / 2, Math.PI / 2 - TAU, true, [218, 224, 224, 2522, 2680, 2754, 11]], // 20: 2686, 2841, 2917
+  ]
+  const styles = [
+    [1, 'butt'],
+    [1, 'round'],
+    [1, 'square'],
+    [20, 'butt'],
+    [20, 'round'],
+    [20, 'square'],
+  ] as const
+  for (const [preName, rotation, start, end, ccw, expected] of cases) {
+    const build = (p: Target) => {
+      if (preName === 'moveTo') p.moveTo(10, 10)
+      p.ellipse(50, 50, 1e-3, 30, rotation, start, end, ccw)
+      if (preName === 'lineAfter') p.lineTo(80, 20)
+    }
+    for (const api of ['ctx', 'Path2D']) {
+      const counts: number[] = []
+      for (const style of [...styles, null]) {
+        ctx.reset()
+        ctx.beginPath()
+        const p = api === 'ctx' ? null : new Path2D()
+        build(p ?? ctx)
+        if (style) {
+          ctx.lineWidth = style[0]
+          ctx.lineCap = style[1]
+          if (p) ctx.stroke(p)
+          else ctx.stroke()
+        } else if (p) ctx.fill(p)
+        else ctx.fill()
+        counts.push(countPainted(ctx))
+      }
+      t.deepEqual(counts, expected, `${api} ${preName} rotation ${rotation}`)
+    }
+  }
+})
