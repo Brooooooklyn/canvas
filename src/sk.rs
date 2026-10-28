@@ -1047,8 +1047,17 @@ pub mod ffi {
 
     pub fn skiac_path_hit_test(path: *mut skiac_path, x: f32, y: f32, kind: i32) -> bool;
 
-    pub fn skiac_path_stroke_hit_test(path: *mut skiac_path, x: f32, y: f32, stroke_w: f32)
-    -> bool;
+    pub fn skiac_path_stroke_hit_test(
+      path: *mut skiac_path,
+      x: f32,
+      y: f32,
+      stroke_w: f32,
+      cap: i32,
+      join: u8,
+      miter_limit: f32,
+      path_effect: *mut skiac_path_effect,
+      res_scale: f32,
+    ) -> bool;
 
     pub fn skiac_path_round_rect(
       path: *mut skiac_path,
@@ -4490,8 +4499,33 @@ impl Path {
     unsafe { ffi::skiac_path_hit_test(self.0, x, y, kind as i32) }
   }
 
-  pub fn stroke_hit_test(&self, x: f32, y: f32, stroke_w: f32) -> bool {
-    unsafe { ffi::skiac_path_stroke_hit_test(self.0, x, y, stroke_w) }
+  /// Whether (x, y) is inside this path's stroke outline, made with the
+  /// given stroke state and dash at resolution scale `res_scale`.
+  #[allow(clippy::too_many_arguments)]
+  pub fn stroke_hit_test(
+    &self,
+    x: f32,
+    y: f32,
+    stroke_w: f32,
+    cap: StrokeCap,
+    join: StrokeJoin,
+    miter_limit: f32,
+    dash: Option<&PathEffect>,
+    res_scale: f32,
+  ) -> bool {
+    unsafe {
+      ffi::skiac_path_stroke_hit_test(
+        self.0,
+        x,
+        y,
+        stroke_w,
+        cap as i32,
+        join as u8,
+        miter_limit,
+        dash.map_or(ptr::null_mut(), |effect| effect.0),
+        res_scale,
+      )
+    }
   }
 
   pub fn to_svg_string(&self) -> SkiaString {

@@ -2727,6 +2727,31 @@ impl Context {
     PathEffect::new_dash_path(state.line_dash_list.as_slice(), state.line_dash_offset)
   }
 
+  /// Blink IsPointInStrokeInternal's stroke (canvas_2d_recorder_context.cc:
+  /// 1918-1926): the StrokeData from lineWidth, lineCap, lineJoin,
+  /// miterLimit and the line dash, then Path::StrokeContains at the
+  /// resolution scale Path::StrokePath takes from the CTM (path.cc:126-151).
+  /// (x, y) is already in user space. Only for an invertible CTM.
+  fn stroke_hit_test(&self, path: &SkPath, x: f32, y: f32) -> bool {
+    let t = self.state.transform.get_transform();
+    let [a, b, c, d] = [t.a, t.b, t.c, t.d].map(f64::from);
+    let res_scale = clamp_to_f32((a * a + b * b).max(c * c + d * d).sqrt());
+    // StrokeData::SetLineDash: an empty list does not dash, and one whose
+    // intervals sum to 0 gets a null SkDashPathEffect; both stroke solid.
+    let dash = self.line_dash_path_effect();
+    let paint = &self.state.paint;
+    path.stroke_hit_test(
+      x,
+      y,
+      self.get_stroke_width(),
+      paint.get_stroke_cap(),
+      paint.get_stroke_join(),
+      self.get_miter_limit(),
+      dash.as_ref(),
+      res_scale,
+    )
+  }
+
   fn stroke_paint(&self) -> result::Result<Paint, SkError> {
     let last_state = &self.state;
     let current_paint = &last_state.paint;
@@ -6056,19 +6081,20 @@ impl CanvasRenderingContext2D {
     _arg2: Positional,
     args: IsPointInStrokeArgs,
   ) -> Result<bool> {
-    // As isPointInPath: the bitmap, then the CTM
-    // (canvas_2d_recorder_context.cc:1887-1913).
+    // As isPointInPath: the bitmap, then the CTM, then the point through the
+    // double inverse; then the stroke of the current state
+    // (canvas_2d_recorder_context.cc:1899-1926).
     if !self.paint_canvas(&this)? {
       return Ok(false);
     }
     if !self.context.transform_is_invertible() {
       return Ok(false);
     }
-    let stroke_w = self.context.get_stroke_width();
     let (x, y) = blink_inverse_map(&self.context.state.transform, args.x as f32, args.y as f32);
+    let context = &self.context;
     Ok(match args.path {
-      Some(path) => path.inner.stroke_hit_test(x, y, stroke_w),
-      None => self.context.path.stroke_hit_test(x, y, stroke_w),
+      Some(path) => context.stroke_hit_test(&path.inner, x, y),
+      None => context.stroke_hit_test(&context.path, x, y),
     })
   }
 

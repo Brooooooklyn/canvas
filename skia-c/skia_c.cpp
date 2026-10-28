@@ -3169,22 +3169,41 @@ bool skiac_path_hit_test(skiac_path* c_path, float x, float y, int type) {
   return temp_builder.snapshot().contains(x, y);
 }
 
+// Blink Path::StrokeContains / StrokePath (platform/geometry/path.cc:126-151):
+// the stroke outline from the full stroke state (StrokeData::SetupPaint,
+// stroke_data.cc:51-58) at the CTM's resolution scale, then a winding
+// contains. Like Blink, the result of FillPathWithPaint is not checked: a
+// source that is not finite strokes to an empty path, which contains nothing.
+// The source is read as winding, since fill(rule) and clip(rule) set the fill
+// type on our path and Blink's path keeps the default.
 bool skiac_path_stroke_hit_test(skiac_path* c_path,
                                 float x,
                                 float y,
-                                float stroke_w) {
+                                float stroke_w,
+                                int cap,
+                                uint8_t join,
+                                float miter_limit,
+                                skiac_path_effect* c_path_effect,
+                                float res_scale) {
   SkPath path_with_winding = c_path->path();
   path_with_winding.setFillType(SkPathFillType::kWinding);
 
   SkPaint paint;
-  paint.setStrokeWidth(stroke_w);
   paint.setStyle(SkPaint::kStroke_Style);
-  SkPathBuilder traced_path;
-
-  if (skpathutils::FillPathWithPaint(path_with_winding, paint, &traced_path)) {
-    return traced_path.detach().contains(x, y);
+  paint.setStrokeWidth(stroke_w);
+  paint.setStrokeCap((SkPaint::Cap)cap);
+  paint.setStrokeJoin((SkPaint::Join)join);
+  paint.setStrokeMiter(miter_limit);
+  if (c_path_effect) {
+    // sk_ref_sp: the Rust PathEffect keeps its own reference.
+    paint.setPathEffect(
+        sk_ref_sp(reinterpret_cast<SkPathEffect*>(c_path_effect)));
   }
-  return path_with_winding.contains(x, y);
+  SkPathBuilder traced_path;
+  skpathutils::FillPathWithPaint(path_with_winding, paint, &traced_path,
+                                 nullptr,
+                                 SkMatrix::Scale(res_scale, res_scale));
+  return traced_path.detach().contains(x, y);
 }
 
 void skiac_path_round_rect(skiac_path* c_path,

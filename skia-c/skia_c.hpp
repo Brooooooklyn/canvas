@@ -1798,7 +1798,12 @@ bool skiac_path_hit_test(skiac_path* c_path, float x, float y, int type);
 bool skiac_path_stroke_hit_test(skiac_path* c_path,
                                 float x,
                                 float y,
-                                float stroke_w);
+                                float stroke_w,
+                                int cap,
+                                uint8_t join,
+                                float miter_limit,
+                                skiac_path_effect* c_path_effect,
+                                float res_scale);
 void skiac_path_round_rect(skiac_path* c_path,
                            SkScalar x,
                            SkScalar y,
