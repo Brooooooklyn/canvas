@@ -1,0 +1,570 @@
+// One-point paths. Chrome strokes nothing for a path whose bounds are one
+// point (DrawPathInternal, canvas_2d_recorder_context.cc:1595-1602 m156): no
+// caps, no shadow, no dash. Its closePath() also empties a path that is one
+// moveTo plus one zero-length lineTo (CanvasPath::closePath, canvas_path.cc:
+// 76-93). We do both only for a path built with arc(), ellipse(), arcTo(),
+// rect() or roundRect(). pdf.js strokes PDF dots ('x y m x y l S',
+// 'x y m h S') as moveTo, lineTo, closePath and curves only, and needs them
+// (ISO 32000 8.5.3.2, mozilla/pdf.js#22040); Firefox and Chrome 151 draw them
+// too. Pixel counts are pixels with alpha > 0, pinned to Chrome 156 CPU canvas
+// (--disable-gpu, getContext('2d', { willReadFrequently: true })).
+import test from 'ava'
+
+import { createCanvas, Path2D } from '../index'
+
+type Ctx = ReturnType<ReturnType<typeof createCanvas>['getContext']>
+type Target = Ctx | InstanceType<typeof Path2D>
+type Build = (t: Target) => void
+
+const TAU = 2 * Math.PI
+const ctx = createCanvas(100, 100).getContext('2d')
+
+function countPainted() {
+  const data = ctx.getImageData(0, 0, 100, 100).data
+  let n = 0
+  for (let i = 3; i < data.length; i += 4) {
+    if (data[i]) n++
+  }
+  return n
+}
+
+// The path on the context, as a Path2D, and as a Path2D copied in with
+// addPath().
+const APIS = ['ctx', 'Path2D', 'addPath'] as const
+
+function stroke(api: (typeof APIS)[number], build: Build, setup: () => void) {
+  ctx.reset()
+  setup()
+  ctx.beginPath()
+  if (api === 'ctx') {
+    build(ctx)
+    ctx.stroke()
+  } else {
+    const path = new Path2D()
+    build(path)
+    if (api === 'Path2D') {
+      ctx.stroke(path)
+    } else {
+      const copy = new Path2D()
+      copy.addPath(path)
+      ctx.stroke(copy)
+    }
+  }
+  return countPainted()
+}
+
+// [lineWidth 20 butt, round, square, lineWidth 1 round, square,
+//  lineWidth 20 round with a shadow, with a dash]
+const STYLES: (() => void)[] = [
+  ...(
+    [
+      [20, 'butt'],
+      [20, 'round'],
+      [20, 'square'],
+      [1, 'round'],
+      [1, 'square'],
+    ] as const
+  ).map(([lineWidth, cap]) => () => {
+    ctx.lineWidth = lineWidth
+    ctx.lineCap = cap
+  }),
+  () => {
+    ctx.lineWidth = 20
+    ctx.lineCap = 'round'
+    ctx.shadowColor = 'blue'
+    ctx.shadowOffsetX = 20
+    ctx.shadowOffsetY = 20
+  },
+  () => {
+    ctx.lineWidth = 20
+    ctx.lineCap = 'round'
+    ctx.setLineDash([5, 5])
+  },
+]
+
+function counts(build: Build) {
+  return Object.fromEntries(APIS.map((api) => [api, STYLES.map((setup) => stroke(api, build, setup))]))
+}
+
+function expectCounts(t: import('ava').ExecutionContext, cases: Record<string, [Build, number[]]>) {
+  for (const [name, [build, expected]] of Object.entries(cases)) {
+    t.deepEqual(counts(build), Object.fromEntries(APIS.map((api) => [api, expected])), name)
+  }
+}
+
+const arc0 = (t: Target, x = 50, y = 50) => t.arc(x, y, 0, 0, TAU)
+const ell00 = (t: Target) => t.ellipse(50, 50, 0, 0, 0, 0, TAU)
+// In float, π/2 to 5π/2 anticlockwise puts every point on (50, 90).
+const collapsed = (t: Target) => t.ellipse(50, 50, 0, 40, 0, Math.PI / 2, (5 * Math.PI) / 2, true)
+const zeroSweep = (t: Target) => t.ellipse(50, 50, 30, 20, 0, 1, 1)
+const line = (t: Target) => {
+  t.moveTo(10, 10)
+  t.lineTo(30, 10)
+}
+
+const NONE = [0, 0, 0, 0, 0, 0, 0]
+// moveTo(10, 10) lineTo(30, 10) alone, and with a round dot at (50, 50).
+const LINE = [400, 736, 800, 44, 44, 1472, 636]
+const LINE_AND_DOT = [400, 1072, 1200, 48, 48, 2142, 636]
+
+test('a one-point path from arc(), ellipse(), arcTo(), rect() or roundRect() strokes nothing', (t) => {
+  expectCounts(t, {
+    'arc(p, 0) twice': [
+      (c) => {
+        arc0(c)
+        arc0(c)
+      },
+      NONE,
+    ],
+    'moveTo(p), arc(p, 0)': [
+      (c) => {
+        c.moveTo(50, 50)
+        arc0(c)
+      },
+      NONE,
+    ],
+    'lineTo(p), arc(p, 0)': [
+      (c) => {
+        c.lineTo(50, 50)
+        arc0(c)
+      },
+      NONE,
+    ],
+    'ellipse radii 0 twice': [
+      (c) => {
+        ell00(c)
+        ell00(c)
+      },
+      NONE,
+    ],
+    'moveTo(p), ellipse radii 0': [
+      (c) => {
+        c.moveTo(50, 50)
+        ell00(c)
+      },
+      NONE,
+    ],
+    'collapsed ellipse': [collapsed, NONE],
+    'moveTo, collapsed ellipse': [
+      (c) => {
+        c.moveTo(50, 90)
+        collapsed(c)
+      },
+      NONE,
+    ],
+    'zero-sweep ellipse': [zeroSweep, NONE],
+    'arc(50, 50, 10, 1, 1) twice': [
+      (c) => {
+        c.arc(50, 50, 10, 1, 1)
+        c.arc(50, 50, 10, 1, 1)
+      },
+      NONE,
+    ],
+    'moveTo(60, 50), arc(50, 50, 10, 0, 0)': [
+      (c) => {
+        c.moveTo(60, 50)
+        c.arc(50, 50, 10, 0, 0)
+      },
+      NONE,
+    ],
+    'pie slice of radius 0, three times': [
+      (c) => {
+        for (let i = 0; i < 3; i++) {
+          c.moveTo(50, 50)
+          c.arc(50, 50, 0, i, i + 1)
+          c.closePath()
+        }
+      },
+      NONE,
+    ],
+    'moveTo(p), arcTo(p, p, 10)': [
+      (c) => {
+        c.moveTo(50, 50)
+        c.arcTo(50, 50, 50, 50, 10)
+      },
+      NONE,
+    ],
+    'moveTo(p), arcTo(p, q, 10)': [
+      (c) => {
+        c.moveTo(50, 50)
+        c.arcTo(50, 50, 80, 20, 10)
+      },
+      NONE,
+    ],
+    'arcTo on an empty path': [(c) => c.arcTo(50, 50, 80, 20, 10), NONE],
+    'rect(p, 0, 0)': [(c) => c.rect(50, 50, 0, 0), NONE],
+    'rect(p, 0, 0), lineTo(p)': [
+      (c) => {
+        c.rect(50, 50, 0, 0)
+        c.lineTo(50, 50)
+      },
+      NONE,
+    ],
+    'roundRect(p, 0, 0, 5)': [(c) => c.roundRect(50, 50, 0, 0, 5), NONE],
+  })
+})
+
+test('a one-point path of moveTo, lineTo, closePath and curves keeps its dot for pdf.js', (t) => {
+  // Chrome 156 strokes all of these as 0 px. pdf.js draws a PDF dot
+  // ('x y m x y l S', 'x y m h S', '0 0 re S', 'x y m x y x y x y c S') with
+  // exactly these calls, so they keep the cap dot that Firefox, Chrome 151,
+  // Acrobat and the PDF spec draw (ISO 32000 8.5.3.2, mozilla/pdf.js#22040).
+  const DOT = [0, 338, 400, 4, 4, 676, 338]
+  // A dash keeps no part of a zero-length closed contour or curve.
+  const CLOSED_DOT = [0, 338, 400, 4, 4, 676, 0]
+  expectCounts(t, {
+    'M p L p': [
+      (c) => {
+        c.moveTo(50, 50)
+        c.lineTo(50, 50)
+      },
+      DOT,
+    ],
+    'L p': [(c) => c.lineTo(50, 50), DOT],
+    'M p Z': [
+      (c) => {
+        c.moveTo(50, 50)
+        c.closePath()
+      },
+      CLOSED_DOT,
+    ],
+    'M p L p Z': [
+      (c) => {
+        c.moveTo(50, 50)
+        c.lineTo(50, 50)
+        c.closePath()
+      },
+      CLOSED_DOT,
+    ],
+    'M p C p p p': [
+      (c) => {
+        c.moveTo(50, 50)
+        c.bezierCurveTo(50, 50, 50, 50, 50, 50)
+      },
+      CLOSED_DOT,
+    ],
+    'M p Q p p': [
+      (c) => {
+        c.moveTo(50, 50)
+        c.quadraticCurveTo(50, 50, 50, 50)
+      },
+      CLOSED_DOT,
+    ],
+  })
+  // pdf.js rescaleAndStroke copies the path in with addPath(path, matrix).
+  const path = new Path2D()
+  path.moveTo(25, 25)
+  path.lineTo(25, 25)
+  const scaled = new Path2D()
+  scaled.addPath(path, { a: 2, d: 2 })
+  ctx.reset()
+  ctx.lineWidth = 20
+  ctx.lineCap = 'round'
+  ctx.stroke(scaled)
+  t.is(countPainted(), 338)
+})
+
+test('a lone point next to another subpath keeps the dot Blink gives it', (t) => {
+  expectCounts(t, {
+    'arc(p, 0), line': [
+      (c) => {
+        arc0(c)
+        line(c)
+      },
+      LINE_AND_DOT,
+    ],
+    'ellipse radii 0, line': [
+      (c) => {
+        ell00(c)
+        line(c)
+      },
+      LINE_AND_DOT,
+    ],
+    'arc(50, 50, 10, 0, 0), line': [
+      (c) => {
+        c.arc(50, 50, 10, 0, 0)
+        line(c)
+      },
+      LINE_AND_DOT,
+    ],
+    'collapsed ellipse, line': [
+      (c) => {
+        collapsed(c)
+        line(c)
+      },
+      [400, 1072, 1200, 48, 48, 1807, 636],
+    ],
+    'zero-sweep ellipse, line': [
+      (c) => {
+        zeroSweep(c)
+        line(c)
+      },
+      [400, 1080, 1241, 48, 48, 2159, 636],
+    ],
+    'closePath on an empty path, arc(p, 0), line': [
+      (c) => {
+        c.closePath()
+        arc0(c)
+        line(c)
+      },
+      LINE_AND_DOT,
+    ],
+    // Blink adds only moveTo(p) for these.
+    'arcTo on an empty path, line': [
+      (c) => {
+        c.arcTo(50, 50, 80, 20, 10)
+        line(c)
+      },
+      LINE,
+    ],
+    'rect(p, 0, 0), line': [
+      (c) => {
+        c.rect(50, 50, 0, 0)
+        line(c)
+      },
+      LINE,
+    ],
+    'line, rect(p, 0, 0)': [
+      (c) => {
+        line(c)
+        c.rect(50, 50, 0, 0)
+      },
+      LINE,
+    ],
+  })
+})
+
+test('a lone point then a line keeps Blink zero-length line', (t) => {
+  // Blink adds moveTo(p) lineTo(p), then the line: thin round and square caps
+  // differ from a plain moveTo(p) lineTo(q).
+  expectCounts(t, {
+    'collapsed ellipse, lineTo(80, 20)': [
+      (c) => {
+        collapsed(c)
+        c.lineTo(80, 20)
+      },
+      [1654, 1953, 2048, 141, 140, 3278, 1905],
+    ],
+    'moveTo(50, 90), collapsed ellipse, lineTo(80, 20)': [
+      (c) => {
+        c.moveTo(50, 90)
+        collapsed(c)
+        c.lineTo(80, 20)
+      },
+      [1654, 1953, 2048, 141, 140, 3278, 1905],
+    ],
+    'arc(p, 0), lineTo(80, 20)': [
+      (c) => {
+        arc0(c)
+        c.lineTo(80, 20)
+      },
+      [884, 1206, 1405, 55, 55, 2252, 1217],
+    ],
+    'arc(p, 0), lineTo(80, 20), closePath': [
+      (c) => {
+        arc0(c)
+        c.lineTo(80, 20)
+        c.closePath()
+      },
+      [884, 884, 884, 61, 61, 1730, 928],
+    ],
+    'moveTo(10, 10), collapsed ellipse': [
+      (c) => {
+        c.moveTo(10, 10)
+        collapsed(c)
+      },
+      [1938, 2256, 2306, 163, 163, 3114, 2113],
+    ],
+    // rect(p, 0, 0) is moveTo(p) only.
+    'rect(p, 0, 0), lineTo(80, 20)': [
+      (c) => {
+        c.rect(50, 50, 0, 0)
+        c.lineTo(80, 20)
+      },
+      [884, 1206, 1405, 62, 64, 2252, 1217],
+    ],
+  })
+})
+
+test('closePath empties a path that is one zero-length line from arc(), ellipse() or rect()', (t) => {
+  expectCounts(t, {
+    'arc(p, 0), closePath, line': [
+      (c) => {
+        arc0(c)
+        c.closePath()
+        line(c)
+      },
+      LINE,
+    ],
+    'arc(p, 0), closePath twice, line': [
+      (c) => {
+        arc0(c)
+        c.closePath()
+        c.closePath()
+        line(c)
+      },
+      LINE,
+    ],
+    'ellipse radii 0, closePath, line': [
+      (c) => {
+        ell00(c)
+        c.closePath()
+        line(c)
+      },
+      LINE,
+    ],
+    'zero-sweep ellipse, closePath, line': [
+      (c) => {
+        zeroSweep(c)
+        c.closePath()
+        line(c)
+      },
+      LINE,
+    ],
+    'arc(50, 50, 10, 1, 1), closePath, line': [
+      (c) => {
+        c.arc(50, 50, 10, 1, 1)
+        c.closePath()
+        line(c)
+      },
+      LINE,
+    ],
+    'rect(p, 0, 0), lineTo(p), closePath, line': [
+      (c) => {
+        c.rect(50, 50, 0, 0)
+        c.lineTo(50, 50)
+        c.closePath()
+        line(c)
+      },
+      LINE,
+    ],
+    // The path is empty again, so lineTo(80, 20) is one point.
+    'arc(p, 0), closePath, lineTo(80, 20)': [
+      (c) => {
+        arc0(c)
+        c.closePath()
+        c.lineTo(80, 20)
+      },
+      NONE,
+    ],
+    'arc(p, 0), closePath, collapsed ellipse': [
+      (c) => {
+        arc0(c)
+        c.closePath()
+        collapsed(c)
+      },
+      NONE,
+    ],
+    'arc(p, 0), closePath, arc(50, 90, 0), line': [
+      (c) => {
+        arc0(c)
+        c.closePath()
+        arc0(c, 50, 90)
+        line(c)
+      },
+      [400, 1072, 1200, 48, 48, 1807, 636],
+    ],
+    // Not one LineBuilder line in Blink: the dot stays.
+    'moveTo(p), arc(p, 0), closePath, line': [
+      (c) => {
+        c.moveTo(50, 50)
+        arc0(c)
+        c.closePath()
+        line(c)
+      },
+      LINE_AND_DOT,
+    ],
+    'collapsed ellipse, closePath, line': [
+      (c) => {
+        collapsed(c)
+        c.closePath()
+        line(c)
+      },
+      [400, 1072, 1200, 48, 48, 1807, 636],
+    ],
+    'arcTo on an empty path, lineTo(p), closePath, line': [
+      (c) => {
+        c.arcTo(50, 50, 80, 20, 10)
+        c.lineTo(50, 50)
+        c.closePath()
+        line(c)
+      },
+      LINE_AND_DOT,
+    ],
+    'arc(p, 0), moveTo(p), closePath, line': [
+      (c) => {
+        arc0(c)
+        c.moveTo(50, 50)
+        c.closePath()
+        line(c)
+      },
+      LINE_AND_DOT,
+    ],
+  })
+  const path = new Path2D()
+  arc0(path)
+  path.closePath()
+  t.is(path.toSVGString(), '')
+  // pdf.js closes 'x y m x y l h' dots: Chrome 156 empties these (LINE), we
+  // keep the dot.
+  expectCounts(t, {
+    'moveTo(p), lineTo(p), closePath, line': [
+      (c) => {
+        c.moveTo(50, 50)
+        c.lineTo(50, 50)
+        c.closePath()
+        line(c)
+      },
+      LINE_AND_DOT,
+    ],
+  })
+})
+
+test('isPointInStroke sees the zero-length lines, as in Chrome', (t) => {
+  // Blink prunes only the stroke, not the hit test. lineWidth 20, round caps.
+  const hits = (build: Build, x: number, y: number) =>
+    APIS.slice(0, 2).map((api) => {
+      ctx.reset()
+      ctx.lineWidth = 20
+      ctx.lineCap = 'round'
+      ctx.beginPath()
+      if (api === 'ctx') {
+        build(ctx)
+        return ctx.isPointInStroke(x, y)
+      }
+      const path = new Path2D()
+      build(path)
+      return ctx.isPointInStroke(path, x, y)
+    })
+  t.deepEqual(hits(arc0, 50, 45), [true, true], 'arc(p, 0)')
+  t.deepEqual(hits(ell00, 50, 50), [true, true], 'ellipse radii 0')
+  t.deepEqual(hits(collapsed, 50, 90), [true, true], 'collapsed ellipse')
+  t.deepEqual(
+    hits((c) => c.arc(50, 50, 10, 0, 0), 56, 50),
+    [true, true],
+    'arc(50, 50, 10, 0, 0)',
+  )
+  // moveTo(p) only, or emptied by closePath.
+  t.deepEqual(
+    hits((c) => c.rect(50, 50, 0, 0), 50, 50),
+    [false, false],
+    'rect(p, 0, 0)',
+  )
+  t.deepEqual(
+    hits((c) => c.arcTo(50, 50, 80, 20, 10), 50, 50),
+    [false, false],
+    'arcTo on an empty path',
+  )
+  t.deepEqual(
+    hits(
+      (c) => {
+        arc0(c)
+        c.closePath()
+      },
+      50,
+      50,
+    ),
+    [false, false],
+    'arc(p, 0), closePath',
+  )
+})

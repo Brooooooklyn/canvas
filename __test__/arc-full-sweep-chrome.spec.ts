@@ -145,9 +145,9 @@ test('a zero-radius full arc draws nothing', (t) => {
   }
 })
 
-// Chrome adds only lineTo(center) when both radii are 0, and its stroke drops
-// that zero-length line. A full sweep here used to build "M50 50L50 50", whose
-// caps drew a dot (round 338 px, square 400 px).
+// Chrome adds only lineTo(center) when both radii are 0, and its stroke skips
+// a path whose bounds are one point. Our stroke once drew the caps of that
+// zero-length line as a dot (round 338 px, square 400 px).
 test('a zero-radius full ellipse draws nothing', (t) => {
   const ctx = createCanvas(100, 100).getContext('2d')
   const draw = (cap: 'round' | 'square', s: number, moveTo: boolean, api: 'ctx' | 'Path2D') => {
@@ -189,7 +189,9 @@ test('a zero-radius full ellipse draws nothing', (t) => {
         const line = draw(cap, s, true, api)
         t.is(line.n, n, `${name} after moveTo`)
         if (api === 'Path2D') {
-          t.is(empty.svg, '', name)
+          // Blink's lineTo(center) on an empty path; the stroke skips it, as
+          // its bounds are one point.
+          t.is(empty.svg, 'M50 50L50 50', name)
           t.is(line.svg, 'M10 10L50 50', `${name} after moveTo`)
         }
       }

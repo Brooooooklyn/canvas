@@ -99,10 +99,19 @@ test('arc() with start == end draws no circle, whatever the start', (t) => {
   for (const [s, ccw] of BIG_STARTS) {
     const name = `arc(50, 50, 30, ${s}, ${s}, ${ccw})`
     const arc = (c: Target) => c.arc(50, 50, 30, s, s, ccw)
+    const p = blinkPoint(50, 50, 30, s)
+    // On an empty path Blink's lineTo is moveTo plus a zero-length line.
     const empty = new Path2D()
     arc(empty)
-    t.is(empty.toSVGString(), '', name)
-    const p = blinkPoint(50, 50, 30, s)
+    assertPath(
+      t,
+      empty,
+      [
+        ['M', p[0], p[1]],
+        ['L', p[0], p[1]],
+      ],
+      `${name} empty path`,
+    )
     const afterMoveTo = new Path2D()
     afterMoveTo.moveTo(10, 10)
     arc(afterMoveTo)
@@ -229,11 +238,20 @@ test('arc() with start == end strokes and fills like Chrome', (t) => {
 })
 
 test('arc() with start == end adds Blink point and only that', (t) => {
-  // Empty path: only the moveTo (see degenerate_line_to in src/sk.rs).
+  // Empty path: Blink's moveTo plus a zero-length line. The stroke skips it,
+  // as its bounds are one point (stroke-prune-chrome.spec.ts).
   for (const ccw of [false, true]) {
     const empty = new Path2D()
     empty.arc(50, 50, 30, -1, -1, ccw)
-    t.is(empty.toSVGString(), '')
+    assertPath(
+      t,
+      empty,
+      [
+        ['M', 66.209068, 24.755871],
+        ['L', 66.209068, 24.755871],
+      ],
+      `empty, start -1 ccw ${ccw}`,
+    )
     const path = new Path2D()
     path.moveTo(10, 10)
     path.arc(50, 50, 30, -1, -1, ccw)

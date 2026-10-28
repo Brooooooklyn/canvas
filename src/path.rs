@@ -165,7 +165,7 @@ impl Path {
 
   #[napi]
   pub fn close_path(&mut self) {
-    self.inner.close();
+    self.inner.close_path();
   }
 
   // Path methods drop a call with a value outside the float range, as the
@@ -316,7 +316,7 @@ impl Path {
     height: Double<webidl::PathRect>,
   ) {
     if let Some([x, y, width, height]) = num::saturated_f32s([x.0, y.0, width.0, height.0]) {
-      self.inner.add_rect(x, y, width, height);
+      self.inner.rect(x, y, width, height);
     }
   }
 

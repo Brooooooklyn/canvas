@@ -1240,8 +1240,8 @@ impl Context {
   }
 
   pub fn begin_path(&mut self) {
-    let new_sub_path = SkPath::new();
-    self.path.swap(&new_sub_path);
+    let mut new_sub_path = SkPath::new();
+    self.path.swap(&mut new_sub_path);
   }
 
   pub fn bezier_curve_to(&mut self, cp1x: f32, cp1y: f32, cp2x: f32, cp2y: f32, x: f32, y: f32) {
@@ -1370,7 +1370,7 @@ impl Context {
   }
 
   pub fn close_path(&mut self) {
-    self.path.close();
+    self.path.close_path();
   }
 
   pub fn rect(&mut self, x: f32, y: f32, width: f32, height: f32) {
@@ -1379,7 +1379,7 @@ impl Context {
     if !self.transform_is_invertible() {
       return;
     }
-    self.path.add_rect(x, y, width, height);
+    self.path.rect(x, y, width, height);
   }
 
   pub fn round_rect(&mut self, x: f32, y: f32, width: f32, height: f32, radii: &[(f32, f32)]) {
@@ -1755,6 +1755,10 @@ impl Context {
       Some(p) => p.clone(),
       None => self.path.clone(),
     };
+    // Blink returns before it takes the bitmap: no shadow, no dash.
+    if path_to_draw.stroke_is_pruned() {
+      return Ok(());
+    }
     if Self::path_reaches_draw(&path_to_draw, true) && !self.paint_canvas() {
       return Ok(());
     }
