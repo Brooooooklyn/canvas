@@ -238,13 +238,18 @@ for (const s of Object.keys(S.alpha)) {
   })
 }
 
-// Our Windows builds (x64 and arm64) give one byte 1 off Chrome's (macOS) row: byte 17 (pixel 4,
-// green) of the display-p3 row of 'color(display-p3 1 0 0) -> white' is 54, not 55. win32-arm64 gave
-// 54 both before and after Skia was built with -ffp-contract=off, and win32-x64 gave 55 before and
-// 54 after; Linux and macOS give 55. So with contraction off, as in Chromium, both Windows builds
-// give 54, and x64 matched only because of contraction. The cause is unknown, and Chrome on Windows
-// was not measured. On win32 that case also accepts its row with that one byte; every other byte,
-// case and platform is checked exactly.
+// On Windows, Chrome gives 54, not the fixture's 55 (Chrome macOS), for byte 17 (pixel 4, green) of
+// the display-p3 row of 'color(display-p3 1 0 0) -> white'. Every other byte matches. Measured with
+// Chrome 156.0.8078.48 and Edge 155/156, headless --disable-gpu, OffscreenCanvas with
+// willReadFrequently, on GitHub windows-latest (x64) and windows-11-arm.
+// The cause is the CRT's cbrtf. These stops mix in Oklab, and Skia's lin_srgb_to_oklab
+// (SkGradientBaseShader.cpp) calls std::cbrtf, which on Windows is the UCRT one, in Chrome and in
+// our addon alike. The UCRT returns cbrtf(0x3e6a3f98) = 0x3f1c9106 (0.67 ulp off); macOS and glibc
+// return the correctly rounded 0x3f1c9107. On x64 it also returns cbrtf(0x3ef6616c) = 0x3f489c1a,
+// not 0x3f489c1b. macOS with those cbrtf results swapped in gives 54 too. So our Windows builds
+// (x64 and arm64) match Chrome on Windows. (win32-x64 gave 55 only while Skia was built with FP
+// contraction on, which Chromium does not do.) On win32 this case also accepts that row; every other
+// byte, case and platform is checked exactly.
 const WIN32_GRAD = new Map<string, [string, number, number]>([
   ['color(display-p3 1 0 0) -> white', ['display-p3', 17, 54]],
 ])
