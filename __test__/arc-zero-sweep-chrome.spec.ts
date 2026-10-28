@@ -162,6 +162,17 @@ test('arc() with start == end strokes and fills like Chrome', (t) => {
       c.arc(50, 50, 30, 0, 1)
       c.arc(50, 50, 30, 1, 1)
     },
+    // After closePath the current point is the moveTo point (20, 20), not the
+    // last vertex (50, 50), which is the arc's point. Blink adds the line
+    // from (20, 20).
+    'closed contour ending on the point': (c) => {
+      c.moveTo(50, 50)
+      c.lineTo(70, 50)
+      c.moveTo(20, 20)
+      c.lineTo(50, 50)
+      c.closePath()
+      c.arc(4211.46826171875, -9042.9736328125, 10000, 2, 2)
+    },
     // The point 1e-4 away from the current point is a line in Blink. The arc
     // route skipped points within 1/4096. Was 1853 px butt.
     'lineTo near the point, arc(1, 1)': (c) => {
@@ -187,6 +198,7 @@ test('arc() with start == end strokes and fills like Chrome', (t) => {
     'moveTo, lineTo, arc at x 3e38': [144, 1530, 1910, 0],
     'closed, then arc on the last vertex': [134, 1851, 2226, 0],
     'arc(0, 1), arc(1, 1)': [57, 650, 1066, 106],
+    'closed contour ending on the point': [74, 1238, 1790, 0],
     'lineTo near the point, arc(1, 1)': [133, 2094, 2321, 0],
   }
   t.deepEqual(

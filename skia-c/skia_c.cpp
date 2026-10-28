@@ -3102,20 +3102,26 @@ bool skiac_path_is_empty(skiac_path* c_path) {
   return c_path->builder.isEmpty();
 }
 
-// The first and the last point of a non-empty path, in O(1).
-bool skiac_path_end_points(skiac_path* c_path,
-                           float* first_x,
-                           float* first_y,
-                           float* last_x,
-                           float* last_y) {
+// The first and the last point of a non-empty path, and its current point:
+// the point the next lineTo starts from, which after a close is the
+// contour's moveTo point. O(1), except after a close, where it walks back
+// over the closed contour.
+bool skiac_path_end_points(skiac_path* c_path, float* points) {
   auto pts = c_path->builder.points();
-  if (pts.empty()) {
+  auto verbs = c_path->builder.verbs();
+  if (pts.empty() || verbs.empty()) {
     return false;
   }
-  *first_x = pts.front().fX;
-  *first_y = pts.front().fY;
-  *last_x = pts.back().fX;
-  *last_y = pts.back().fY;
+  SkPoint current = pts.back();
+  if (verbs.back() == SkPathVerb::kClose) {
+    current = pts[SkPathPriv::FindLastMoveToIndex(verbs, pts.size())];
+  }
+  points[0] = pts.front().fX;
+  points[1] = pts.front().fY;
+  points[2] = pts.back().fX;
+  points[3] = pts.back().fY;
+  points[4] = current.fX;
+  points[5] = current.fY;
   return true;
 }
 

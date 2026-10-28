@@ -62,6 +62,7 @@
 #include <modules/svg/include/SkSVGRenderContext.h>
 #include <modules/svg/include/SkSVGSVG.h>
 #include <src/core/SkFontDescriptor.h>
+#include <src/core/SkPathPriv.h>
 #include <src/core/SkRectPriv.h>
 #include <src/ports/SkFontMgr_custom.h>
 #include <src/shaders/SkShaderBase.h>
@@ -1779,11 +1780,7 @@ void skiac_path_add_circle(skiac_path* c_path, float x, float y, float r);
 skiac_path* skiac_path_transform(skiac_path* c_path, skiac_matrix* c_matrix);
 void skiac_path_transform_self(skiac_path* c_path, skiac_matrix* c_matrix);
 bool skiac_path_is_empty(skiac_path* c_path);
-bool skiac_path_end_points(skiac_path* c_path,
-                           float* first_x,
-                           float* first_y,
-                           float* last_x,
-                           float* last_y);
+bool skiac_path_end_points(skiac_path* c_path, float* points);
 int skiac_path_count_points(skiac_path* c_path);
 int skiac_path_count_verbs(skiac_path* c_path);
 uint32_t skiac_path_generation_id(skiac_path* c_path);
