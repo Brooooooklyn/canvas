@@ -221,8 +221,8 @@ test('a chain of rotated ellipses paints like Chrome', (t) => {
 test('a thin rotated ellipse() strokes its tips like Chrome', (t) => {
   // ellipse(50, 50, 1e-3, 30, ...) is 0.002 wide, so an ulp in a control point
   // turns the tips of a wide stroke. With the f32 matrices about (50, 50) a
-  // lineWidth 20 stroke lost up to 160 pixels and fill() painted 22 pixels
-  // where Chrome paints 4. [pre, rotation, start, end, anticlockwise] ->
+  // lineWidth 20 stroke was off by up to 164 pixels (160 fewer, or 164 more)
+  // and fill() painted 22 pixels where Chrome paints 4. [pre, rotation, start, end, anticlockwise] ->
   // Chrome 156 [lineWidth 1 butt, 1 round, 1 square, 20 butt, 20 round,
   // 20 square, fill]. The comment gives what the f32 matrices painted.
   const cases: [string, number, number, number, boolean, number[]][] = [

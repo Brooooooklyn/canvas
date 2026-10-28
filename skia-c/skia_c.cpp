@@ -3099,8 +3099,8 @@ void skiac_path_transform_self(skiac_path* c_path, skiac_matrix* c_matrix) {
 }
 
 // Blink PathBuilder::Transform (path_builder.cc:547-551 m156): map the
-// builder's points in place. Unlike skiac_path_transform_self, this keeps the
-// builder state (the last moveTo, a trailing moveTo) and makes no copies.
+// builder's points in place. Unlike skiac_path_transform_self, which maps a
+// snapshot and rebuilds the builder from it, this makes no copies.
 void skiac_path_transform_in_place(skiac_path* c_path,
                                    float sx,
                                    float kx,
