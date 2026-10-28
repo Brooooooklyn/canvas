@@ -5320,6 +5320,11 @@ impl CanvasRenderingContext2D {
     _rule: Positional,
     args: FillArgs<webidl::CtxClip>,
   ) -> Result<()> {
+    // Blink takes GetPath() first (canvas_2d_recorder_context.cc:1841, 1846).
+    match &args.path {
+      Some(path) => path.inner.read_by_blink(),
+      None => self.context.path.read_by_blink(),
+    }
     // ClipInternal takes the bitmap first (canvas_2d_recorder_context.cc:1824).
     if !self.paint_canvas(&this)? {
       return Ok(());
@@ -6058,6 +6063,11 @@ impl CanvasRenderingContext2D {
     _arg3: Positional,
     args: IsPointInPathArgs,
   ) -> Result<bool> {
+    // Blink takes GetPath() first (canvas_2d_recorder_context.cc:1853, 1861).
+    match &args.path {
+      Some(path) => path.inner.read_by_blink(),
+      None => self.context.path.read_by_blink(),
+    }
     // IsPointInPathInternal takes the bitmap first, then returns false under
     // a singular CTM, else maps the point through the double inverse
     // (canvas_2d_recorder_context.cc:1852-1870).
@@ -6085,6 +6095,11 @@ impl CanvasRenderingContext2D {
     _arg2: Positional,
     args: IsPointInStrokeArgs,
   ) -> Result<bool> {
+    // Blink takes GetPath() first (canvas_2d_recorder_context.cc:1890, 1896).
+    match &args.path {
+      Some(path) => path.inner.read_by_blink(),
+      None => self.context.path.read_by_blink(),
+    }
     // As isPointInPath: the bitmap, then the CTM, then the point through the
     // double inverse; then the stroke of the current state
     // (canvas_2d_recorder_context.cc:1899-1926).

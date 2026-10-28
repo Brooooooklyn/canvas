@@ -568,3 +568,61 @@ test('isPointInStroke sees the zero-length lines, as in Chrome', (t) => {
     'arc(p, 0), closePath',
   )
 })
+
+test('closePath keeps the point once Blink built the path with GetPath()', (t) => {
+  // isPointInPath, isPointInStroke, clip, Path2D(path) and addPath(path) make
+  // Blink build its PathBuilder from the line (GetPath, canvas_path.h:140).
+  // closePath then puts back moveTo(p), so lineTo(80, 20) draws a line
+  // (1206 px, lineWidth 20, round). stroke() and fill() of a one-point path
+  // return before GetPath, so the path stays empty and lineTo(80, 20) is one
+  // point again (0 px).
+  type Read = (p: InstanceType<typeof Path2D> | null) => void
+  const reads: Record<string, [Read, number, boolean]> = {
+    nothing: [() => {}, 0, true],
+    isPointInPath: [(p) => (p ? ctx.isPointInPath(p, 50, 50) : ctx.isPointInPath(50, 50)), 1206, true],
+    isPointInStroke: [(p) => (p ? ctx.isPointInStroke(p, 50, 50) : ctx.isPointInStroke(50, 50)), 1206, true],
+    clip: [
+      (p) => {
+        ctx.save()
+        if (p) ctx.clip(p)
+        else ctx.clip()
+        ctx.restore()
+      },
+      1206,
+      true,
+    ],
+    stroke: [(p) => (p ? ctx.stroke(p) : ctx.stroke()), 0, true],
+    fill: [(p) => (p ? ctx.fill(p) : ctx.fill()), 0, true],
+    'Path2D(path)': [(p) => p && new Path2D(p), 1206, false],
+    'addPath(path)': [(p) => p && new Path2D().addPath(p), 1206, false],
+  }
+  for (const [name, [read, expected, onCtx]] of Object.entries(reads)) {
+    for (const api of onCtx ? (['ctx', 'Path2D'] as const) : (['Path2D'] as const)) {
+      ctx.reset()
+      ctx.lineWidth = 20
+      ctx.lineCap = 'round'
+      const path = api === 'ctx' ? null : new Path2D()
+      const target = path ?? ctx
+      arc0(target)
+      read(path)
+      ctx.clearRect(0, 0, 100, 100)
+      target.closePath()
+      target.lineTo(80, 20)
+      if (path) ctx.stroke(path)
+      else ctx.stroke()
+      t.is(countPainted(), expected, `${name} ${api}`)
+    }
+  }
+  // save() and restore() with the identity CTM do not map the path in Blink
+  // (PopStateStack), so closePath still empties it.
+  ctx.reset()
+  ctx.lineWidth = 20
+  ctx.lineCap = 'round'
+  arc0(ctx)
+  ctx.save()
+  ctx.restore()
+  ctx.closePath()
+  line(ctx)
+  ctx.stroke()
+  t.is(countPainted(), LINE[1])
+})

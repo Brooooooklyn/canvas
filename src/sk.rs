@@ -1,3 +1,4 @@
+use std::cell::Cell;
 use std::convert::TryFrom;
 use std::f32::consts::PI;
 use std::ffi::{CStr, CString, c_void};
@@ -3969,8 +3970,11 @@ enum LineState {
   Other,
 }
 
+/// The third field is Blink's GetPath() on a `Line` path: it builds the
+/// PathBuilder from the LineBuilder (isPointInPath, isPointInStroke, clip,
+/// Path2D(path), addPath(path)), and closePath then keeps the current point.
 #[derive(Debug)]
-pub struct Path(pub(crate) *mut ffi::skiac_path, PathShape);
+pub struct Path(pub(crate) *mut ffi::skiac_path, PathShape, Cell<bool>);
 
 impl Clone for Path {
   fn clone(&self) -> Path {
@@ -3980,7 +3984,11 @@ impl Clone for Path {
       arc_family: self.1.arc_family,
       line: LineState::Other,
     };
-    Path(unsafe { ffi::skiac_path_clone(self.0) }, shape)
+    Path(
+      unsafe { ffi::skiac_path_clone(self.0) },
+      shape,
+      Cell::new(false),
+    )
   }
 }
 
@@ -4004,12 +4012,27 @@ impl Path {
   }
 
   pub fn new() -> Path {
-    unsafe { Path(ffi::skiac_path_create(), PathShape::default()) }
+    unsafe {
+      Path(
+        ffi::skiac_path_create(),
+        PathShape::default(),
+        Cell::new(false),
+      )
+    }
   }
 
   pub fn swap(&mut self, other: &mut Path) {
     unsafe { ffi::skiac_path_swap(self.0, other.0) }
     std::mem::swap(&mut self.1, &mut other.1);
+    self.2.swap(&other.2);
+  }
+
+  /// Blink CanvasPath::GetPath (canvas_path.h:140-143 m156), for the closePath
+  /// clear: see the third field of [`Path`].
+  pub fn read_by_blink(&self) {
+    if self.1.line == LineState::Line {
+      self.2.set(true);
+    }
   }
 
   pub fn from_svg_path(path: &str) -> Option<Path> {
@@ -4022,7 +4045,7 @@ impl Path {
     if p.is_null() {
       None
     } else {
-      Some(Path(p, PathShape::default()))
+      Some(Path(p, PathShape::default(), Cell::new(false)))
     }
   }
 
@@ -4445,6 +4468,8 @@ impl Path {
     } else {
       LineState::Other
     };
+    // Blink's lineTo resets the PathBuilder here.
+    self.2.set(false);
   }
 
   pub fn cubic_to(&mut self, x1: f32, y1: f32, x2: f32, y2: f32, x3: f32, y3: f32) {
@@ -4471,16 +4496,26 @@ impl Path {
   }
 
   /// Blink CanvasPath::closePath (canvas_path.cc:76-93 m156): a path that is
-  /// one LineBuilder line of zero length becomes empty. Only for a path built
-  /// with arc(), ellipse(), arcTo(), rect() or roundRect(): pdf.js closes
-  /// 'x y m x y l h' PDF dots with closePath and needs them (see
-  /// [`PathShape::arc_family`]).
+  /// one LineBuilder line of zero length becomes empty, or only moveTo(that
+  /// point) once GetPath() built its PathBuilder ([`Self::read_by_blink`]).
+  /// Only for a path built with arc(), ellipse(), arcTo(), rect() or
+  /// roundRect(): pdf.js closes 'x y m x y l h' PDF dots with closePath and
+  /// needs them (see [`PathShape::arc_family`]).
   pub fn close_path(&mut self) {
     if self.1.arc_family && self.1.line == LineState::Line && self.is_one_point_line() {
       let fill_type = self.get_fill_type();
-      *self = Path(unsafe { ffi::skiac_path_create() }, self.1);
+      let (x, y, _, _) = self.get_bounds();
+      let read = self.2.get();
+      *self = Path(
+        unsafe { ffi::skiac_path_create() },
+        self.1,
+        Cell::new(false),
+      );
       self.1.line = LineState::Other;
       self.set_fill_type(FillType::from(fill_type as u32));
+      if read {
+        self.move_to(x, y);
+      }
       return;
     }
     self.close();
@@ -4532,11 +4567,16 @@ impl Path {
     Self(
       unsafe { ffi::skiac_path_transform(self.0, transform.0) },
       shape,
+      Cell::new(false),
     )
   }
 
   pub fn transform_self(&mut self, matrix: &Matrix) {
-    self.1.line = LineState::Other;
+    // Blink maps the path (GetModifiablePath) only for a CTM that is not the
+    // identity (PopStateStack, canvas_2d_recorder_context.cc:735-747 m156).
+    if !matrix.get_transform().is_identity() {
+      self.1.line = LineState::Other;
+    }
     unsafe { ffi::skiac_path_transform_self(self.0, matrix.0) };
   }
 
