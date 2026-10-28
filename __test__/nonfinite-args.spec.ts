@@ -250,6 +250,11 @@ test('rotate paints like Chrome for huge angles', (t) => {
   const cases: [number, string][] = [
     [1e300, '45452 3cae86f5'],
     [-1e300, '45455 1445a014'],
+    // The double degrees overflow to inf; Blink's ClampTo makes them FLT_MAX.
+    [3.13756645e306, '45452 3cae86f5'],
+    [-3.13756645e306, '45455 1445a014'],
+    [Number.MAX_VALUE, '45452 3cae86f5'],
+    [-Number.MAX_VALUE, '45455 1445a014'],
     [3.5e38, '45452 3cae86f5'],
     [1e39, '45452 3cae86f5'],
     [1e10, '46098 d7d95f45'],
