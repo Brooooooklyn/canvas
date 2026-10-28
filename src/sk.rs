@@ -3994,19 +3994,28 @@ impl Path {
     end_angle: f32,
     ccw: bool,
   ) {
-    // Blink arc() and DegenerateEllipse add only lineTo(center) when both radii
-    // are 0 (canvas_path.cc:457-461, 389-395 m156). On an empty path that is
-    // moveTo plus a zero-length lineTo. Chrome's stroke prunes that line and
-    // ours does not (its caps draw a dot), so use move_to there.
-    if radius_x == 0.0 && radius_y == 0.0 {
-      if self.is_empty() {
-        self.move_to(x, y);
-      } else {
-        self.line_to(x, y);
-      }
+    let (start_angle, end_angle) = Self::ellipse_angles(start_angle, end_angle, ccw);
+    // Blink ellipse() draws a zero radius or a zero sweep as straight lines
+    // (canvas_path.cc:526-532 m156).
+    if radius_x == 0.0 || radius_y == 0.0 || start_angle == end_angle {
+      self.degenerate_ellipse(
+        x,
+        y,
+        radius_x,
+        radius_y,
+        rotation,
+        start_angle,
+        end_angle,
+        ccw,
+      );
       return;
     }
-    // Blink CanonicalizeAngle (canvas_path.cc:315-333).
+    self.add_ellipse(x, y, radius_x, radius_y, rotation, start_angle, end_angle);
+  }
+
+  /// Blink CanonicalizeAngle then AdjustEndAngle (canvas_path.cc:261-333
+  /// m156): the start in [0, 2π) and the end at most 2π away from it.
+  fn ellipse_angles(start_angle: f32, end_angle: f32, ccw: bool) -> (f32, f32) {
     let tau = 2.0 * PI;
     let mut new_start_angle = start_angle % tau;
     if new_start_angle < 0.0 {
@@ -4020,7 +4029,6 @@ impl Path {
     let start_angle = new_start_angle;
     let mut end_angle = end_angle + delta;
 
-    // Based off of AdjustEndAngle in Chrome.
     if !ccw && (end_angle - start_angle) >= tau {
       end_angle = start_angle + tau; // Draw complete ellipse
     } else if ccw && (start_angle - end_angle) >= tau {
@@ -4030,7 +4038,123 @@ impl Path {
     } else if ccw && start_angle < end_angle {
       end_angle = start_angle - (tau - (end_angle - start_angle) % tau);
     }
+    (start_angle, end_angle)
+  }
 
+  /// Blink DegenerateEllipse (canvas_path.cc:368-423 m156): lines to the
+  /// start point, to each multiple of π/2 inside the sweep, and to the end
+  /// point. `start` is in [0, 2π) and `end` is adjusted.
+  fn degenerate_ellipse(
+    &mut self,
+    x: f32,
+    y: f32,
+    radius_x: f32,
+    radius_y: f32,
+    rotation: f32,
+    start: f32,
+    end: f32,
+    ccw: bool,
+  ) {
+    // AffineTransform::RotateRadians and MapPoint work in double and clamp to
+    // float, NaN to 0 (affine_transform.cc:132-139, 200-205).
+    let (sin, cos) = ((rotation as f64).sin(), (rotation as f64).cos());
+    let clamp = |v: f64| {
+      if v.is_nan() {
+        0.0
+      } else {
+        v.clamp(-f32::MAX as f64, f32::MAX as f64) as f32
+      }
+    };
+    let point = |angle: f32| {
+      // GetPointOnEllipse (canvas_path.cc:308-313).
+      let px = (radius_x * angle.cos()) as f64;
+      let py = (radius_y * angle.sin()) as f64;
+      (
+        x + clamp(cos * px + -sin * py + 0.0),
+        y + clamp(sin * px + cos * py + 0.0),
+      )
+    };
+    let (px, py) = point(start);
+    // Only the start point when both radii are 0 (:393-395).
+    if radius_x == 0.0 && radius_y == 0.0 {
+      self.degenerate_line_to(px, py);
+      return;
+    }
+    // A zero sweep also gives only the start point (:393-395). See below.
+    if start == end {
+      self.add_ellipse(x, y, radius_x, radius_y, rotation, start, end);
+      return;
+    }
+    // At most 6 points: start, up to 4 multiples of π/2, end.
+    let mut points = Vec::with_capacity(6);
+    points.push((px, py));
+    let half_pi = std::f32::consts::FRAC_PI_2;
+    if !ccw {
+      let mut angle = start - start % half_pi + half_pi;
+      while angle < end {
+        points.push(point(angle));
+        angle += half_pi;
+      }
+    } else {
+      let mut angle = start - start % half_pi;
+      while angle > end {
+        points.push(point(angle));
+        angle -= half_pi;
+      }
+    }
+    points.push(point(end));
+    // A sweep that is tiny after f32 rounding can put every point on the
+    // start point. Blink then adds lines of zero length, and Chrome strokes
+    // nothing only because its stroke() skips a path whose bounds are one
+    // point (canvas_2d_recorder_context.cc:1595-1602 m156). Whether the final
+    // path is one point is known only at draw time, so no rule here can match
+    // that for every path. Keep the arc route we used before for this case.
+    if points.iter().all(|&p| p == (px, py)) {
+      self.add_ellipse(x, y, radius_x, radius_y, rotation, start, end);
+      return;
+    }
+    for (px, py) in points {
+      self.finite_line_to(px, py);
+    }
+  }
+
+  /// Blink CanvasPath::lineTo (canvas_path.cc:125-151 m156): a non-finite
+  /// point is dropped, and on an empty path it adds moveTo plus a zero-length
+  /// lineTo, as line_to does. That zero-length line changes thin round and
+  /// square caps in Skia, so keep it.
+  fn finite_line_to(&mut self, x: f32, y: f32) {
+    if x.is_finite() && y.is_finite() {
+      self.line_to(x, y);
+    }
+  }
+
+  /// [`Self::finite_line_to`] for a lone point from arc() or ellipse(). Chrome
+  /// does not stroke a path whose points all coincide
+  /// (canvas_2d_recorder_context.cc:1595-1602 m156) and ours does (its caps
+  /// draw a dot), so on an empty path add only the moveTo.
+  fn degenerate_line_to(&mut self, x: f32, y: f32) {
+    if !x.is_finite() || !y.is_finite() {
+      return;
+    }
+    if self.is_empty() {
+      self.move_to(x, y);
+    } else {
+      self.line_to(x, y);
+    }
+  }
+
+  /// Blink PathBuilder::AddEllipse with the rotation (path_builder.cc:482-505
+  /// m156) for a non-degenerate ellipse.
+  fn add_ellipse(
+    &mut self,
+    x: f32,
+    y: f32,
+    radius_x: f32,
+    radius_y: f32,
+    rotation: f32,
+    start_angle: f32,
+    end_angle: f32,
+  ) {
     // Based off of Chrome's implementation in
     // https://cs.chromium.org/chromium/src/third_party/blink/renderer/platform/graphics/path.cc
     // of note, can't use addArc or addOval because they close the arc, which
@@ -4110,7 +4234,15 @@ impl Path {
     end_angle: f32,
     from_end: bool,
   ) {
-    self.ellipse(
+    // Blink arc() adds only lineTo(center) for radius 0 (canvas_path.cc:457-461
+    // m156).
+    if radius == 0.0 {
+      self.degenerate_line_to(center_x, center_y);
+      return;
+    }
+    // A zero sweep (Blink's lineTo at :459) still takes the arc route here.
+    let (start_angle, end_angle) = Self::ellipse_angles(start_angle, end_angle, from_end);
+    self.add_ellipse(
       center_x,
       center_y,
       radius,
@@ -4118,7 +4250,6 @@ impl Path {
       0.0,
       start_angle,
       end_angle,
-      from_end,
     )
   }
 
