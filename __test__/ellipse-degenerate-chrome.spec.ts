@@ -11,9 +11,6 @@ import { createCanvas, Path2D } from '../index'
 type Ctx = ReturnType<ReturnType<typeof createCanvas>['getContext']>
 
 const TAU = 2 * Math.PI
-// win32-arm64 Skia is built with FP contraction (see arc-full-sweep-chrome),
-// which can move stroke edges by a pixel. Path structure is checked everywhere.
-const WIN_ARM64 = process.platform === 'win32' && process.arch === 'arm64'
 
 const ctx = createCanvas(100, 100).getContext('2d')
 
@@ -263,18 +260,14 @@ test('moveTo(x, y) then arc(x, y, 0) keeps a dot at each point, as in Chrome', (
       counts[`${lineWidth} ${cap} ${api}`] = countPainted(c120)
     }
   }
-  if (!WIN_ARM64) {
-    t.deepEqual(counts, {
-      '20 round ctx': 1344,
-      '20 round Path2D': 1344,
-      '20 square ctx': 1600,
-      '20 square Path2D': 1600,
-      '1 round ctx': 16,
-      '1 round Path2D': 16,
-    })
-  } else {
-    t.true(Object.values(counts).every((n) => n > 0))
-  }
+  t.deepEqual(counts, {
+    '20 round ctx': 1344,
+    '20 round Path2D': 1344,
+    '20 square ctx': 1600,
+    '20 square Path2D': 1600,
+    '1 round ctx': 16,
+    '1 round Path2D': 16,
+  })
 })
 
 test('a degenerate ellipse strokes and fills like Chrome', (t) => {
@@ -306,17 +299,13 @@ test('a degenerate ellipse strokes and fills like Chrome', (t) => {
   ctx.ellipse(50, 50, 30, 0, -2, 1, -2, true)
   ctx.fill()
   const fill = countPainted(ctx)
-  if (!WIN_ARM64) {
-    t.deepEqual(counts, {
-      'rx 0, rotation -2': 1290,
-      'rx 0, rotation -2, Path2D': 1290,
-      'ry 0, rotation 1e10, anticlockwise': 1293,
-      'ry 0 after moveTo, square cap': 1936,
-    })
-    t.is(fill, 854)
-  } else {
-    t.pass()
-  }
+  t.deepEqual(counts, {
+    'rx 0, rotation -2': 1290,
+    'rx 0, rotation -2, Path2D': 1290,
+    'ry 0, rotation 1e10, anticlockwise': 1293,
+    'ry 0 after moveTo, square cap': 1936,
+  })
+  t.is(fill, 854)
 })
 
 test('isPointInPath sees the lines of a degenerate ellipse', (t) => {
