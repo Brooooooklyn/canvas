@@ -41,7 +41,11 @@ test('getTransform() returns Blink double CTM', (t) => {
   ctx = newCtx()
   ctx.rotate(2.5)
   ctx.rotate(-2.5)
-  t.deepEqual(matrix(ctx), [0.9999999999999999, 0, 0, 0.9999999999999999, 0, 0])
+  // Blink and we take cos() and sin() from the C library: macOS gives
+  // 0.9999999999999999, glibc gives 1.
+  const [a, ...rest] = matrix(ctx)
+  t.true(a === 0.9999999999999999 || a === 1, `a = ${a}`)
+  t.deepEqual(rest, [0, 0, a, 0, 0])
   // The float CTM snapped to the identity.
   ctx = newCtx()
   ctx.rotate(1e-5)
