@@ -1778,6 +1778,13 @@ void skiac_path_add_rect(skiac_path* c_path,
 void skiac_path_add_circle(skiac_path* c_path, float x, float y, float r);
 skiac_path* skiac_path_transform(skiac_path* c_path, skiac_matrix* c_matrix);
 void skiac_path_transform_self(skiac_path* c_path, skiac_matrix* c_matrix);
+void skiac_path_transform_in_place(skiac_path* c_path,
+                                   float sx,
+                                   float kx,
+                                   float tx,
+                                   float ky,
+                                   float sy,
+                                   float ty);
 bool skiac_path_is_empty(skiac_path* c_path);
 bool skiac_path_may_be_point(skiac_path* c_path,
                              float x,

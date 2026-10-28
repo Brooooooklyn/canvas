@@ -1019,6 +1019,16 @@ pub mod ffi {
 
     pub fn skiac_path_transform_self(path: *mut skiac_path, matrix: *mut skiac_matrix);
 
+    pub fn skiac_path_transform_in_place(
+      path: *mut skiac_path,
+      sx: f32,
+      kx: f32,
+      tx: f32,
+      ky: f32,
+      sy: f32,
+      ty: f32,
+    );
+
     pub fn skiac_path_is_empty(path: *mut skiac_path) -> bool;
 
     pub fn skiac_path_may_be_point(
@@ -4090,7 +4100,7 @@ impl Path {
     }
     // A zero sweep also gives only the start point (:393-395). See below.
     if start == end {
-      self.add_ellipse(x, y, radius_x, radius_y, rotation, start, end);
+      self.add_collapsed_ellipse(x, y, radius_x, radius_y, rotation, start, end);
       return;
     }
     // At most 6 points: start, up to 4 multiples of π/2, end.
@@ -4118,7 +4128,7 @@ impl Path {
     // path is one point is known only at draw time, so no rule here can match
     // that for every path. Keep the arc route we used before for this case.
     if points.iter().all(|&p| p == (px, py)) {
-      self.add_ellipse(x, y, radius_x, radius_y, rotation, start, end);
+      self.add_collapsed_ellipse(x, y, radius_x, radius_y, rotation, start, end);
       return;
     }
     for (px, py) in points {
@@ -4151,9 +4161,14 @@ impl Path {
     }
   }
 
-  /// Blink PathBuilder::AddEllipse with the rotation (path_builder.cc:482-505
-  /// m156) for a non-degenerate ellipse.
-  fn add_ellipse(
+  /// The arc route [`Self::degenerate_ellipse`] keeps for a sweep that leaves
+  /// only the start point. Blink adds lineTo(start point) there and does not
+  /// map the path. This is the route we used before, with its own rotation (an
+  /// f32 matrix about the center, the arc built at the center), so this class
+  /// keeps its old output: Blink's matrices from [`Self::add_ellipse`] match
+  /// Chrome here less often than this route does (in a Chrome 156 grid of
+  /// zero sweeps they lost 476 images that this route matches and won 300).
+  fn add_collapsed_ellipse(
     &mut self,
     x: f32,
     y: f32,
@@ -4163,16 +4178,10 @@ impl Path {
     start_angle: f32,
     end_angle: f32,
   ) {
-    // Based off of Chrome's implementation in
-    // https://cs.chromium.org/chromium/src/third_party/blink/renderer/platform/graphics/path.cc
-    // of note, can't use addArc or addOval because they close the arc, which
-    // the spec says not to do (unless the user explicitly calls closePath).
-    // This throws off points being in/out of the arc.
     let left = x - radius_x;
     let top = y - radius_y;
     let right = x + radius_x;
     let bottom = y + radius_y;
-    // Blink AddEllipse skips the transform for rotation 0 (path_builder.cc:492).
     if rotation == 0.0 {
       self.add_ellipse_arcs(left, top, right, bottom, start_angle, end_angle);
       return;
@@ -4199,6 +4208,71 @@ impl Path {
     self.transform_self(&unrotated);
     self.add_ellipse_arcs(left, top, right, bottom, start_angle, end_angle);
     self.transform_self(&rotated);
+  }
+
+  /// Blink PathBuilder::AddEllipse with the rotation (path_builder.cc:482-505
+  /// m156) for a non-degenerate ellipse.
+  fn add_ellipse(
+    &mut self,
+    x: f32,
+    y: f32,
+    radius_x: f32,
+    radius_y: f32,
+    rotation: f32,
+    start_angle: f32,
+    end_angle: f32,
+  ) {
+    // Based off of Chrome's implementation in
+    // https://cs.chromium.org/chromium/src/third_party/blink/renderer/platform/graphics/path.cc
+    // of note, can't use addArc or addOval because they close the arc, which
+    // the spec says not to do (unless the user explicitly calls closePath).
+    // This throws off points being in/out of the arc.
+    // Blink AddEllipse skips the transform for rotation 0 (path_builder.cc:492).
+    if rotation == 0.0 {
+      let (left, top) = (x - radius_x, y - radius_y);
+      let (right, bottom) = (x + radius_x, y + radius_y);
+      self.add_ellipse_arcs(left, top, right, bottom, start_angle, end_angle);
+      return;
+    }
+    // Blink maps the whole path by the inverse of Translation(x, y) ·
+    // RotateRadians(rotation), adds the arc around the origin, and maps the
+    // whole path back (path_builder.cc:496-503). Earlier points move by that
+    // round trip in Chrome too, so do the same rather than add the arc alone.
+    // The matrices are built in double like AffineTransform: RotateRadians,
+    // DoMultiply with a translation and Inverse (affine_transform.cc:71-136),
+    // then ToSkMatrix clamps each entry to float, NaN to 0 (:236-257).
+    let (sin, cos) = ((rotation as f64).sin(), (rotation as f64).cos());
+    // DoMultiply adds the translation to the rotation's 0 (:102-103).
+    let (e, f) = (x as f64 + 0.0, y as f64 + 0.0);
+    // ellipse_transform [a, b, c, d, e, f] = [cos, sin, -sin, cos, x, y].
+    let (a, b, c, d) = (cos, sin, -sin, cos);
+    let det = a * d - b * c;
+    let clamp = |v: f64| {
+      if v.is_nan() {
+        0.0
+      } else {
+        v.clamp(-f32::MAX as f64, f32::MAX as f64) as f32
+      }
+    };
+    // SkMatrix order [sx, kx, tx, ky, sy, ty] = [a, c, e, b, d, f].
+    let inverse = [
+      clamp(d / det),
+      clamp(-c / det),
+      clamp((c * f - d * e) / det),
+      clamp(-b / det),
+      clamp(a / det),
+      clamp((b * e - a * f) / det),
+    ];
+    self.transform_in_place(inverse);
+    self.add_ellipse_arcs(
+      -radius_x,
+      -radius_y,
+      radius_x,
+      radius_y,
+      start_angle,
+      end_angle,
+    );
+    self.transform_in_place([clamp(a), clamp(c), clamp(e), clamp(b), clamp(d), clamp(f)]);
   }
 
   /// Blink PathBuilder::AddEllipse (path_builder.cc:445-480). `start` is
@@ -4400,6 +4474,12 @@ impl Path {
 
   pub fn transform_self(&mut self, matrix: &Matrix) {
     unsafe { ffi::skiac_path_transform_self(self.0, matrix.0) };
+  }
+
+  /// Blink PathBuilder::Transform (path_builder.cc:547-551 m156): map every
+  /// point in place, `m` in SkMatrix order [sx, kx, tx, ky, sy, ty].
+  fn transform_in_place(&mut self, m: [f32; 6]) {
+    unsafe { ffi::skiac_path_transform_in_place(self.0, m[0], m[1], m[2], m[3], m[4], m[5]) };
   }
 
   pub fn is_empty(&self) -> bool {
