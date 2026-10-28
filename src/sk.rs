@@ -4569,6 +4569,16 @@ impl Path {
     unsafe { ffi::skiac_path_transform_self(self.0, matrix.0) };
   }
 
+  /// Blink PathBuilder::Transform (path_builder.cc:547-551 m156), what the
+  /// context's GetModifiablePath().Transform calls run. A point past float
+  /// range becomes inf and stays, so the path is no longer finite and draws
+  /// and hit tests nothing, as in Chrome; `transform_self`
+  /// (SkPath::makeTransform) would empty the path instead.
+  pub fn transform_like_blink(&mut self, matrix: &Matrix) {
+    let t = matrix.get_transform();
+    self.transform_in_place([t.a, t.c, t.e, t.b, t.d, t.f]);
+  }
+
   /// Blink PathBuilder::Transform (path_builder.cc:547-551 m156): map every
   /// point in place, `m` in SkMatrix order [sx, kx, tx, ky, sy, ty].
   fn transform_in_place(&mut self, m: [f32; 6]) {
