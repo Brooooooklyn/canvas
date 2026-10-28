@@ -284,11 +284,20 @@ test('arc() with start == end on a path that is one point strokes nothing, as in
   }
 })
 
-test('moveTo(x + r, y) then arc(x, y, r, 0, 0) keeps a dot at each point, as in Chrome', (t) => {
-  // At a start that canonicalizes to 0 the old Skia route always added the
-  // line, and a path of several such dots is not one point, so Chrome strokes
-  // each dot. -1e-8 and -1e-30 canonicalize to 0 in float.
-  for (const s of [0, 2 * Math.PI, -1e-8, -1e-30]) {
+test('moveTo(x + r, y) then arc(x, y, r, s, s) keeps a dot at each point, as in Chrome', (t) => {
+  // The old Skia route always added the line for a lone point: a start that
+  // canonicalizes to 0 (-1e-8 and -1e-30 do in float), or a radius so small
+  // that the float oval is one point (1e-8 at 25 or 75). A path of several
+  // such dots is not one point, so Chrome strokes each dot.
+  const cases: [number, number][] = [
+    [10, 0],
+    [10, 2 * Math.PI],
+    [10, -1e-8],
+    [10, -1e-30],
+    [1e-8, 1],
+    [1e-8, 50],
+  ]
+  for (const [r, s] of cases) {
     const dots = (c: Target) => {
       for (const [x, y] of [
         [25, 25],
@@ -296,15 +305,15 @@ test('moveTo(x + r, y) then arc(x, y, r, 0, 0) keeps a dot at each point, as in 
         [25, 75],
         [75, 75],
       ]) {
-        c.moveTo(x + 10, y)
-        c.arc(x, y, 10, s, s)
+        c.moveTo(x + r, y)
+        c.arc(x, y, r, s, s)
       }
     }
     for (const api of APIS) {
       t.deepEqual(
         [paint(api, dots, [20, 'round']), paint(api, dots, [20, 'square']), paint(api, dots, [1, 'round'])],
         [1344, 1600, 16],
-        `start ${s} ${api}`,
+        `radius ${r} start ${s} ${api}`,
       )
     }
   }

@@ -4251,8 +4251,13 @@ impl Path {
     // Blink tests the raw f32 angles, before CanonicalizeAngle, and then adds
     // only lineTo(x + r·cosf(start), y + r·sinf(start)) (canvas_path.cc:457-461
     // m156). Canonicalizing first can move the end 1 ulp off the start, and
-    // AdjustEndAngle then turns that into an almost full circle.
-    if start_angle == end_angle {
+    // AdjustEndAngle then turns that into an almost full circle. A radius
+    // that vanishes against the center in float makes Skia's oval one point,
+    // which the arc route below adds as lone points (arc_is_lone_point in
+    // SkPathBuilder.cpp) at Blink's point, so keep that route there.
+    let (x, y, r) = (center_x, center_y, radius);
+    let oval_is_point = (x + r) - (x - r) == 0.0 && (y + r) - (y - r) == 0.0;
+    if start_angle == end_angle && !oval_is_point {
       self.arc_lone_point(center_x, center_y, radius, start_angle);
       return;
     }
@@ -4282,9 +4287,9 @@ impl Path {
     // computed a few ulps off Blink's still counts), the path may be that one
     // point: add nothing, as the old Skia arcTo route did. That route always
     // added the line when the canonicalized start was 0 or 360 degrees
-    // (arc_is_lone_point in SkPathBuilder.cpp), so keep that too; a start like
-    // -1e-8 canonicalizes to 0. Otherwise the path cannot be one point in
-    // Chrome either: add Blink's line.
+    // (arc_is_lone_point in SkPathBuilder.cpp; a start like -1e-8
+    // canonicalizes to 0), so keep that too. Otherwise the path cannot be one
+    // point in Chrome either: add Blink's line.
     let (canonical, _) = Self::ellipse_angles(start, start, false);
     let degrees = (canonical * RAD_TO_DEG) % 360.0;
     let skia_lone_point = degrees == 0.0 || degrees == 360.0;
