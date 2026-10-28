@@ -3102,6 +3102,23 @@ bool skiac_path_is_empty(skiac_path* c_path) {
   return c_path->builder.isEmpty();
 }
 
+// The first and the last point of a non-empty path, in O(1).
+bool skiac_path_end_points(skiac_path* c_path,
+                           float* first_x,
+                           float* first_y,
+                           float* last_x,
+                           float* last_y) {
+  auto pts = c_path->builder.points();
+  if (pts.empty()) {
+    return false;
+  }
+  *first_x = pts.front().fX;
+  *first_y = pts.front().fY;
+  *last_x = pts.back().fX;
+  *last_y = pts.back().fY;
+  return true;
+}
+
 int skiac_path_count_points(skiac_path* c_path) {
   return c_path->path().countPoints();
 }

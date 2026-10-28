@@ -1021,6 +1021,14 @@ pub mod ffi {
 
     pub fn skiac_path_is_empty(path: *mut skiac_path) -> bool;
 
+    pub fn skiac_path_end_points(
+      path: *mut skiac_path,
+      first_x: *mut f32,
+      first_y: *mut f32,
+      last_x: *mut f32,
+      last_y: *mut f32,
+    ) -> bool;
+
     pub fn skiac_path_count_points(path: *mut skiac_path) -> i32;
 
     pub fn skiac_path_count_verbs(path: *mut skiac_path) -> i32;
@@ -4240,7 +4248,14 @@ impl Path {
       self.degenerate_line_to(center_x, center_y);
       return;
     }
-    // A zero sweep (Blink's lineTo at :459) still takes the arc route here.
+    // Blink tests the raw f32 angles, before CanonicalizeAngle, and then adds
+    // only lineTo(x + r·cosf(start), y + r·sinf(start)) (canvas_path.cc:457-461
+    // m156). Canonicalizing first can move the end 1 ulp off the start, and
+    // AdjustEndAngle then turns that into an almost full circle.
+    if start_angle == end_angle {
+      self.arc_lone_point(center_x, center_y, radius, start_angle);
+      return;
+    }
     let (start_angle, end_angle) = Self::ellipse_angles(start_angle, end_angle, from_end);
     self.add_ellipse(
       center_x,
@@ -4251,6 +4266,34 @@ impl Path {
       start_angle,
       end_angle,
     )
+  }
+
+  /// Blink's point for arc() with start == end, in f32 like Blink (Chromium
+  /// builds with -ffp-contract=off, so there is no FMA). The anticlockwise
+  /// flag does not matter here.
+  fn arc_lone_point(&mut self, x: f32, y: f32, radius: f32, start: f32) {
+    let px = x + radius * start.cos();
+    let py = y + radius * start.sin();
+    // Blink always adds this lineTo. Chrome then skips a stroke whose path
+    // bounds are one point, at draw time (canvas_2d_recorder_context.cc:
+    // 1595-1602 m156), and our stroke cannot, so a zero-length line there
+    // would paint a cap dot. While the first and the last point of the path
+    // are both near this point (Skia's 1/4096, so that an earlier point Skia
+    // computed a few ulps off Blink's still counts), the path may be that one
+    // point: add nothing, as the old Skia arcTo route did. Skia's lone-point
+    // route always added the line at a start of 0 mod 2π, so keep that too.
+    // Otherwise the path cannot be one point in Chrome either: add Blink's line.
+    let near =
+      |(ax, ay): (f32, f32)| (ax - px).abs() <= 1.0 / 4096.0 && (ay - py).abs() <= 1.0 / 4096.0;
+    if start % (2.0 * PI) != 0.0
+      && let Some((first, last)) = self.end_points()
+      && near(first)
+      && near(last)
+    {
+      return;
+    }
+    // Drops a non-finite point, and adds only moveTo on an empty path.
+    self.degenerate_line_to(px, py);
   }
 
   pub fn arc_to(
@@ -4353,6 +4396,13 @@ impl Path {
 
   pub fn is_empty(&self) -> bool {
     unsafe { ffi::skiac_path_is_empty(self.0) }
+  }
+
+  /// The first and the last point of the path, `None` when it is empty.
+  fn end_points(&self) -> Option<((f32, f32), (f32, f32))> {
+    let (mut fx, mut fy, mut lx, mut ly) = (0.0, 0.0, 0.0, 0.0);
+    unsafe { ffi::skiac_path_end_points(self.0, &mut fx, &mut fy, &mut lx, &mut ly) }
+      .then_some(((fx, fy), (lx, ly)))
   }
 
   pub fn hit_test(&self, x: f32, y: f32, kind: FillType) -> bool {
