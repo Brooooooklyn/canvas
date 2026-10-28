@@ -141,6 +141,13 @@ fn main() {
       .flag("-fvisibility-inlines-hidden")
       .flag("-fdata-sections")
       .flag("-ffunction-sections")
+      // Chromium compiles all of its code this way
+      // (build/config/compiler/BUILD.gn, config("compiler")), and libskia
+      // too (gn/skia/BUILD.gn). clang and gcc contract a*b+c into one FMA
+      // by default where the CPU has one (arm64, riscv64), so
+      // SkMatrix::mapPoint, inlined in skia_c.cpp, mapped a trailing moveTo
+      // 1 ulp off libskia's mapPoints and off Chrome.
+      .flag("-ffp-contract=off")
       .flag("-Wno-unused-function")
       .flag("-Wno-unused-parameter");
   }
@@ -149,6 +156,9 @@ fn main() {
     "windows" => {
       build
         .flag("/std:c++20")
+        // clang-cl takes the clang flag only through /clang:, as in
+        // Chromium and scripts/skia-gn-args.cjs (CHROME_WIN_CFLAGS).
+        .flag("/clang:-ffp-contract=off")
         .flag("-Wno-unused-function")
         .flag("-Wno-unused-parameter")
         .static_crt(true);
@@ -302,8 +312,6 @@ fn main() {
       fontations_build.flag(flag);
     }
     fontations_build
-      // gn/skia/BUILD.gn builds Skia with clang this way.
-      .flag_if_supported("-ffp-contract=off")
       .flag_if_supported("-Wno-unused-but-set-variable")
       .cargo_metadata(false)
       .out_dir(&out_dir)
