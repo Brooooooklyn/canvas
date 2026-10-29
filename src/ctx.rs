@@ -1,5 +1,4 @@
 use std::cell::{Cell, RefCell};
-use std::f32::consts::PI;
 use std::marker::PhantomData;
 use std::rc::Rc;
 use std::result;
@@ -30,7 +29,7 @@ use crate::{
     Paint, PaintStyle, Path as SkPath, PathEffect, ReadPixelsError, Shader, SkWMemoryStream,
     StrokeCap, StrokeJoin, Surface, TextSettings, Transform,
   },
-  state::Context2dRenderingState,
+  state::{BLINK_IDENTITY, Context2dRenderingState},
   webidl::{self, CanvasPixelFormat, Double, ImageDataPixelFormat, Positional, ReportedSettings},
 };
 
@@ -1241,8 +1240,8 @@ impl Context {
   }
 
   pub fn begin_path(&mut self) {
-    let new_sub_path = SkPath::new();
-    self.path.swap(&new_sub_path);
+    let mut new_sub_path = SkPath::new();
+    self.path.swap(&mut new_sub_path);
   }
 
   pub fn bezier_curve_to(&mut self, cp1x: f32, cp1y: f32, cp2x: f32, cp2y: f32, x: f32, y: f32) {
@@ -1371,7 +1370,7 @@ impl Context {
   }
 
   pub fn close_path(&mut self) {
-    self.path.close();
+    self.path.close_path();
   }
 
   pub fn rect(&mut self, x: f32, y: f32, width: f32, height: f32) {
@@ -1380,7 +1379,7 @@ impl Context {
     if !self.transform_is_invertible() {
       return;
     }
-    self.path.add_rect(x, y, width, height);
+    self.path.rect(x, y, width, height);
   }
 
   pub fn round_rect(&mut self, x: f32, y: f32, width: f32, height: f32, radii: &[(f32, f32)]) {
@@ -1408,13 +1407,21 @@ impl Context {
       // Blink PopStateStack (canvas_2d_recorder_context.cc:729-742): the path
       // goes to device space through an invertible CTM only, then into the
       // restored space if that CTM is invertible.
+      // Blink maps it when its double CTM is not the identity, which ours
+      // can be after a snapped rotate(); see `blink_transform`.
       if self.transform_is_invertible() {
+        if self.state.blink_transform != BLINK_IDENTITY {
+          self.path.materialize();
+        }
         self.path.transform_self(&self.state.transform);
       }
       self.with_canvas_state(|canvas| {
         canvas.restore();
       });
       if matrix_is_invertible(&s.transform) {
+        if s.blink_transform != BLINK_IDENTITY {
+          self.path.materialize();
+        }
         self.path.transform_self(&blink_inverse(&s.transform));
       }
       self.state = s;
@@ -1542,6 +1549,17 @@ impl Context {
     if !self.transform_is_invertible() {
       return;
     }
+    // AffineTransform::Translate (affine_transform.cc:154-158 m156). Blink
+    // returns when its double CTM stays the same (translate(1e-30, 0) after
+    // translate(10, 10), canvas_2d_recorder_context.cc:1437-1439), so only a
+    // change takes the path out of the line and arc builders.
+    let old = self.state.blink_transform;
+    let [a, b, c, d, e, f] = old;
+    let (tx, ty) = (f64::from(x), f64::from(y));
+    self.state.blink_transform = [a, b, c, d, e + (tx * a + ty * c), f + (tx * b + ty * d)];
+    if self.state.blink_transform != old {
+      self.path.materialize();
+    }
     let inverse = Matrix::translated(-x, -y);
     self.path.transform_self(&inverse);
     self.state.transform.pre_translate(x, y);
@@ -1556,9 +1574,17 @@ impl Context {
   pub fn transform(&mut self, ts: Matrix) -> result::Result<(), SkError> {
     self.flush_if_recording_limit_exceeded();
     self.state.transform = ts.multiply(&self.state.transform);
+    let t = ts.get_transform();
+    let old = self.state.blink_transform;
+    self.state.blink_transform = blink_multiply(old, [t.a, t.b, t.c, t.d, t.e, t.f].map(f64::from));
     // The path follows only into an invertible CTM; under a singular one it
     // stays in the last invertible space (canvas_2d_recorder_context.cc:1478).
+    // Blink returns when its double CTM stays the same (:1476-1478), so only
+    // a change takes the path out of the line and arc builders.
     if self.transform_is_invertible() {
+      if self.state.blink_transform != old {
+        self.path.materialize();
+      }
       self.path.transform_self(&blink_inverse(&ts));
     }
     let transform = self.state.transform.clone();
@@ -1573,13 +1599,46 @@ impl Context {
   /// `angle` in radians, finite.
   pub fn rotate(&mut self, angle: f64) {
     self.flush_if_recording_limit_exceeded();
-    // Blink paints with ClampTo<float>(angle * (180.0 / kPiFloat)) degrees
-    // (canvas_2d_recorder_context.cc:1384-1408); in f32 it overflows.
-    let degrees = Self::clamp_to_f32(angle * (180.0 / PI as f64));
+    // Blink paints with ClampTo<float>(base::RadToDeg(angle)) degrees, with a
+    // double pi (canvas_2d_recorder_context.cc:1407, angle_conversions.h:21).
+    // Past 3.1e306 the double degrees overflow to inf, which ClampTo turns
+    // into FLT_MAX (math_extras.h ClampToDirectComparison).
+    let degrees = clamp_to_f32(angle * (180.0 / std::f64::consts::PI));
     self.state.transform.pre_rotate(degrees);
-    // As in transform(): the path follows only into an invertible CTM.
+    // Blink's double CTM, AffineTransform::RotateRadians
+    // (affine_transform.cc:132-139 m156). Blink maps the path whenever it
+    // changes (canvas_2d_recorder_context.cc:1399-1412), also when the map
+    // below snaps to the identity in float (rotate(1e-5), rotate(2 * PI)).
+    let (sin, cos) = angle.sin_cos();
+    let old = self.state.blink_transform;
+    self.state.blink_transform = blink_multiply(old, [cos, sin, -sin, cos, 0.0, 0.0]);
+    let changed = self.state.blink_transform != old;
+    // As in transform(): the path follows only into an invertible CTM, by
+    // AffineTransform().RotateRadians(-angle) in double, then ToSkMatrix
+    // (canvas_2d_recorder_context.cc:1409-1412, affine_transform.cc:130-136).
+    // The angle is in radians here, not degrees as SkMatrix::setRotate takes.
     if self.transform_is_invertible() {
-      let inverse = Matrix::rotated(-Self::clamp_to_f32(angle), 0.0, 0.0);
+      if changed {
+        self.path.materialize();
+      }
+      // Our CTM is float only: setRotate snaps a |sin| or |cos| up to 1/65536
+      // to 0 (SkScalarSinSnapToZero, SkScalar.h), which Chrome's paint CTM
+      // does too, but not its double CTM, that restore(), resetTransform()
+      // and setTransform() map the path back with. Ours maps it back with the
+      // snapped CTM, so snap the inverse the same way, or a tiny rotation is
+      // left in the path after save(); rotate(1.4e-5); restore().
+      let snap = |v: f64| {
+        if (v as f32).abs() <= 1.0 / 65536.0 {
+          0.0
+        } else {
+          v as f32
+        }
+      };
+      let (sin, cos) = (-angle).sin_cos();
+      let (sin, cos) = (snap(sin), snap(cos));
+      // AffineTransform(cos, sin, -sin, cos) in SkMatrix order: scaleX, skewX,
+      // transX, skewY, scaleY, transY.
+      let inverse = Matrix::new(cos, -sin, 0.0, sin, cos, 0.0);
       self.path.transform_self(&inverse);
     }
     let transform = self.state.transform.clone();
@@ -1593,11 +1652,22 @@ impl Context {
   pub fn scale(&mut self, x: f32, y: f32) {
     self.flush_if_recording_limit_exceeded();
     self.state.transform.pre_scale(x, y);
+    // AffineTransform::ScaleNonUniform (affine_transform.cc:145-162 m156).
+    let old = self.state.blink_transform;
+    let [a, b, c, d, e, f] = old;
+    let (sx, sy) = (f64::from(x), f64::from(y));
+    self.state.blink_transform = [a * sx, b * sx, c * sy, d * sy, e, f];
     // As in transform(): the path follows only into an invertible CTM. Blink
-    // computes 1 / x in double (canvas_2d_recorder_context.cc:1380).
+    // computes 1 / x in double (canvas_2d_recorder_context.cc:1384), then
+    // ToSkMatrix clamps it to float, so 1 / 1e-39 is FLT_MAX, not inf.
+    // Blink returns when its double CTM stays the same (:1376-1378), so only
+    // a change takes the path out of the line and arc builders.
     if self.transform_is_invertible() {
+      if self.state.blink_transform != old {
+        self.path.materialize();
+      }
       let mut inverse = Matrix::identity();
-      inverse.pre_scale((1.0 / x as f64) as f32, (1.0 / y as f64) as f32);
+      inverse.pre_scale(clamp_to_f32(1.0 / x as f64), clamp_to_f32(1.0 / y as f64));
       self.path.transform_self(&inverse);
     }
     let transform = self.state.transform.clone();
@@ -1615,15 +1685,26 @@ impl Context {
     // position. It leaves an invertible CTM to device space, then enters the
     // new CTM's space if that one is invertible. An empty path has nothing to
     // map, and an identity map changes nothing.
+    // Blink takes the path out of the line and arc builders in each half
+    // that maps it: resetTransform() when its double CTM is not the identity
+    // (:1507-1521), transform() when the new CTM is not the identity
+    // (:1476-1484). ts is float, so its double identity test is the float one.
     if !self.path.is_empty() {
+      let ts_maps = matrix_is_invertible(&ts) && !ts.get_transform().is_identity();
+      if (self.transform_is_invertible() && self.state.blink_transform != BLINK_IDENTITY) || ts_maps
+      {
+        self.path.materialize();
+      }
       if self.transform_is_invertible() && !self.state.transform.get_transform().is_identity() {
         self.path.transform_self(&self.state.transform);
       }
-      if matrix_is_invertible(&ts) && !ts.get_transform().is_identity() {
+      if ts_maps {
         self.path.transform_self(&blink_inverse(&ts));
       }
     }
     self.state.transform = ts.clone();
+    let t = ts.get_transform();
+    self.state.blink_transform = [t.a, t.b, t.c, t.d, t.e, t.f].map(f64::from);
     self.with_canvas_state(|canvas| {
       canvas.set_transform(&ts);
     });
@@ -1637,10 +1718,14 @@ impl Context {
     // An identity map changes nothing, and an empty path has nothing to map.
     // The matrix is read once: each read is an FFI call.
     let t = self.state.transform.get_transform();
+    if self.state.blink_transform != BLINK_IDENTITY && is_invertible(&t) {
+      self.path.materialize();
+    }
     if !t.is_identity() && !self.path.is_empty() && is_invertible(&t) {
       self.path.transform_self(&self.state.transform);
     }
     self.state.transform = Matrix::identity();
+    self.state.blink_transform = BLINK_IDENTITY;
     self.with_canvas_state(|canvas| {
       canvas.reset_transform();
     });
@@ -1742,11 +1827,17 @@ impl Context {
     self.flush_if_recording_limit_exceeded();
     let stroke_paint = self.stroke_paint()?;
 
-    // Clone the path to avoid borrow conflicts with with_render_canvas
-    let path_to_draw = match path {
-      Some(p) => p.clone(),
-      None => self.path.clone(),
+    let source: &SkPath = match path.as_deref() {
+      Some(p) => p,
+      None => &self.path,
     };
+    // Blink returns before it takes the bitmap: no shadow, no dash. Asked of
+    // the path itself: a clone is never Blink's ArcBuilder.
+    if source.stroke_is_pruned() {
+      return Ok(());
+    }
+    // Clone the path to avoid borrow conflicts with with_render_canvas
+    let path_to_draw = source.clone();
     if Self::path_reaches_draw(&path_to_draw, true) && !self.paint_canvas() {
       return Ok(());
     }
@@ -2717,6 +2808,31 @@ impl Context {
       return None;
     }
     PathEffect::new_dash_path(state.line_dash_list.as_slice(), state.line_dash_offset)
+  }
+
+  /// Blink IsPointInStrokeInternal's stroke (canvas_2d_recorder_context.cc:
+  /// 1918-1926): the StrokeData from lineWidth, lineCap, lineJoin,
+  /// miterLimit and the line dash, then Path::StrokeContains at the
+  /// resolution scale Path::StrokePath takes from the CTM (path.cc:126-151).
+  /// (x, y) is already in user space. Only for an invertible CTM.
+  fn stroke_hit_test(&self, path: &SkPath, x: f32, y: f32) -> bool {
+    let t = self.state.transform.get_transform();
+    let [a, b, c, d] = [t.a, t.b, t.c, t.d].map(f64::from);
+    let res_scale = clamp_to_f32((a * a + b * b).max(c * c + d * d).sqrt());
+    // StrokeData::SetLineDash: an empty list does not dash, and one whose
+    // intervals sum to 0 gets a null SkDashPathEffect; both stroke solid.
+    let dash = self.line_dash_path_effect();
+    let paint = &self.state.paint;
+    path.stroke_hit_test(
+      x,
+      y,
+      self.get_stroke_width(),
+      paint.get_stroke_cap(),
+      paint.get_stroke_join(),
+      self.get_miter_limit(),
+      dash.as_ref(),
+      res_scale,
+    )
   }
 
   fn stroke_paint(&self) -> result::Result<Paint, SkError> {
@@ -5283,6 +5399,11 @@ impl CanvasRenderingContext2D {
     _rule: Positional,
     args: FillArgs<webidl::CtxClip>,
   ) -> Result<()> {
+    // Blink takes GetPath() first (canvas_2d_recorder_context.cc:1841, 1846).
+    match &args.path {
+      Some(path) => path.inner.read_by_blink(),
+      None => self.context.path.read_by_blink(),
+    }
     // ClipInternal takes the bitmap first (canvas_2d_recorder_context.cc:1824).
     if !self.paint_canvas(&this)? {
       return Ok(());
@@ -6021,6 +6142,11 @@ impl CanvasRenderingContext2D {
     _arg3: Positional,
     args: IsPointInPathArgs,
   ) -> Result<bool> {
+    // Blink takes GetPath() first (canvas_2d_recorder_context.cc:1853, 1861).
+    match &args.path {
+      Some(path) => path.inner.read_by_blink(),
+      None => self.context.path.read_by_blink(),
+    }
     // IsPointInPathInternal takes the bitmap first, then returns false under
     // a singular CTM, else maps the point through the double inverse
     // (canvas_2d_recorder_context.cc:1852-1870).
@@ -6048,19 +6174,25 @@ impl CanvasRenderingContext2D {
     _arg2: Positional,
     args: IsPointInStrokeArgs,
   ) -> Result<bool> {
-    // As isPointInPath: the bitmap, then the CTM
-    // (canvas_2d_recorder_context.cc:1887-1913).
+    // Blink takes GetPath() first (canvas_2d_recorder_context.cc:1890, 1896).
+    match &args.path {
+      Some(path) => path.inner.read_by_blink(),
+      None => self.context.path.read_by_blink(),
+    }
+    // As isPointInPath: the bitmap, then the CTM, then the point through the
+    // double inverse; then the stroke of the current state
+    // (canvas_2d_recorder_context.cc:1899-1926).
     if !self.paint_canvas(&this)? {
       return Ok(false);
     }
     if !self.context.transform_is_invertible() {
       return Ok(false);
     }
-    let stroke_w = self.context.get_stroke_width();
     let (x, y) = blink_inverse_map(&self.context.state.transform, args.x as f32, args.y as f32);
+    let context = &self.context;
     Ok(match args.path {
-      Some(path) => path.inner.stroke_hit_test(x, y, stroke_w),
-      None => self.context.path.stroke_hit_test(x, y, stroke_w),
+      Some(path) => context.stroke_hit_test(&path.inner, x, y),
+      None => context.stroke_hit_test(&context.path, x, y),
     })
   }
 
@@ -6940,6 +7072,24 @@ fn is_invertible(t: &Transform) -> bool {
   det.is_finite() && det != 0.0
 }
 
+/// Blink AffineTransform DoMultiply (affine_transform.cc:101-113 m156): t1 * t2,
+/// as [a, b, c, d, e, f].
+fn blink_multiply(t1: [f64; 6], t2: [f64; 6]) -> [f64; 6] {
+  let [a1, b1, c1, d1, e1, f1] = t1;
+  let [a2, b2, c2, d2, e2, f2] = t2;
+  if a1 == 1.0 && b1 == 0.0 && c1 == 0.0 && d1 == 1.0 {
+    return [a2, b2, c2, d2, e1 + e2, f1 + f2];
+  }
+  [
+    a1 * a2 + c1 * b2,
+    b1 * a2 + d1 * b2,
+    a1 * c2 + c1 * d2,
+    b1 * c2 + d1 * d2,
+    a1 * e2 + c1 * f2 + e1,
+    b1 * e2 + d1 * f2 + f1,
+  ]
+}
+
 /// Blink AffineTransform::Inverse (affine_transform.cc:71-95) in double, as
 /// [a, b, c, d, e, f]: a translation is negated exactly. Only for an
 /// invertible matrix.
@@ -6961,8 +7111,11 @@ fn blink_inverse_values(m: &Matrix) -> [f64; 6] {
 }
 
 /// [`blink_inverse_values`] as a float matrix.
+/// The f32 entries go through AffineTransform::ToSkMatrix's ClampToFloat
+/// (affine_transform.cc:236-252): an entry past f32 range is FLT_MAX, not
+/// inf, so a 0 coordinate stays 0 instead of becoming NaN.
 fn blink_inverse(m: &Matrix) -> Matrix {
-  let [a, b, c, d, e, f] = blink_inverse_values(m).map(|v| v as f32);
+  let [a, b, c, d, e, f] = blink_inverse_values(m).map(clamp_to_f32);
   // Matrix::new takes SkMatrix order: scaleX, skewX, transX, skewY, scaleY, transY.
   Matrix::new(a, c, e, b, d, f)
 }

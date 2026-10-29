@@ -153,6 +153,9 @@ test('rotated ellipses draw like Chrome, also with a huge finite rotation', (t) 
     [1e10, '48734 33ffab45', '52237 2c7d3642'],
     [1e20, '47166 b0fdea05', '49883 9e0848ea'],
     [3e38, '48768 b117985', '52388 ae6da11f'],
+    // Was 48009 e6d14f7e / 50954 f67b6df7: we rotated in f32 around the
+    // center, Blink in double around the origin.
+    [1e38, '47998 e8723ae3', '50941 27692ab8'],
   ]
   for (const target of ['ctx', 'Path2D'] as const) {
     for (const [r, small, large] of cases) {
@@ -164,11 +167,6 @@ test('rotated ellipses draw like Chrome, also with a huge finite rotation', (t) 
         t.is(`${s.a} ${s.h}`, expected, `${target}.ellipse(20, 20, ${rx}, 4, ${r}, 0, 6)`)
         t.deepEqual(ipp, [true, true])
       }
-    }
-    // Chrome 47998 / 50941: ours rotates in f32 around the center, Blink in
-    // double around the origin, so a few edge pixels differ. It must draw.
-    for (const rx of [5, 6]) {
-      t.true(pathScene(target, (p) => p.ellipse(20, 20, rx, 4, 1e38, 0, 6)).s.a > 47000, `${target} rotation 1e38`)
     }
   }
 })
@@ -244,15 +242,21 @@ test('transform arguments clamp to FLT_MAX', (t) => {
 })
 
 test('rotate paints like Chrome for huge angles', (t) => {
-  // Blink paints with ClampTo<float>(angle * 180 / kPiFloat) degrees; before,
-  // the f32 degrees overflowed and the matrix became NaN (nothing painted).
+  // Blink paints with ClampTo<float>(base::RadToDeg(angle)) degrees, a double
+  // pi in Chrome 156; before, the f32 degrees overflowed and the matrix became
+  // NaN (nothing painted).
   const cases: [number, string][] = [
     [1e300, '45452 3cae86f5'],
     [-1e300, '45455 1445a014'],
+    // The double degrees overflow to inf; Blink's ClampTo makes them FLT_MAX.
+    [3.13756645e306, '45452 3cae86f5'],
+    [-3.13756645e306, '45455 1445a014'],
+    [Number.MAX_VALUE, '45452 3cae86f5'],
+    [-Number.MAX_VALUE, '45455 1445a014'],
     [3.5e38, '45452 3cae86f5'],
     [1e39, '45452 3cae86f5'],
     [1e10, '46098 d7d95f45'],
-    [1e7, '45940 ba8efd03'],
+    [1e7, '46178 1937ad1b'],
     [12345.678, '46052 178c6623'],
     [0.1, '46174 d71fe815'],
     [1, '45969 71211682'],

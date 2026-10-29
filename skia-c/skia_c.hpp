@@ -1778,6 +1778,13 @@ void skiac_path_add_rect(skiac_path* c_path,
 void skiac_path_add_circle(skiac_path* c_path, float x, float y, float r);
 skiac_path* skiac_path_transform(skiac_path* c_path, skiac_matrix* c_matrix);
 void skiac_path_transform_self(skiac_path* c_path, skiac_matrix* c_matrix);
+void skiac_path_transform_in_place(skiac_path* c_path,
+                                   float sx,
+                                   float kx,
+                                   float tx,
+                                   float ky,
+                                   float sy,
+                                   float ty);
 bool skiac_path_is_empty(skiac_path* c_path);
 int skiac_path_count_points(skiac_path* c_path);
 int skiac_path_count_verbs(skiac_path* c_path);
@@ -1786,7 +1793,12 @@ bool skiac_path_hit_test(skiac_path* c_path, float x, float y, int type);
 bool skiac_path_stroke_hit_test(skiac_path* c_path,
                                 float x,
                                 float y,
-                                float stroke_w);
+                                float stroke_w,
+                                int cap,
+                                uint8_t join,
+                                float miter_limit,
+                                skiac_path_effect* c_path_effect,
+                                float res_scale);
 void skiac_path_round_rect(skiac_path* c_path,
                            SkScalar x,
                            SkScalar y,

@@ -165,7 +165,7 @@ impl Path {
 
   #[napi]
   pub fn close_path(&mut self) {
-    self.inner.close();
+    self.inner.close_path();
   }
 
   // Path methods drop a call with a value outside the float range, as the
@@ -316,7 +316,7 @@ impl Path {
     height: Double<webidl::PathRect>,
   ) {
     if let Some([x, y, width, height]) = num::saturated_f32s([x.0, y.0, width.0, height.0]) {
-      self.inner.add_rect(x, y, width, height);
+      self.inner.rect(x, y, width, height);
     }
   }
 
@@ -417,6 +417,11 @@ impl Path {
       matrix.d as f32,
       matrix.f as f32,
     );
+    // Not a Blink API. A map that moves points leaves the line and arc
+    // builders, as it did before transform_self stopped deciding that.
+    if !trans.get_transform().is_identity() {
+      self.inner.materialize();
+    }
     self.inner.transform_self(&trans);
     self
   }
@@ -466,6 +471,8 @@ impl Path {
     } else {
       // SAFETY: a live Path2D other than the receiver (AddPathSource).
       let source = unsafe { &*path.0 };
+      // Blink reads it with GetPath() (path_2d.h:90 m156).
+      source.inner.read_by_blink();
       self.inner.add_path(&source.inner, matrix);
     }
   }
@@ -484,6 +491,8 @@ impl FromNapiValue for PathInit {
       check_status!(unsafe { sys::napi_unwrap(env, value, &mut data) })?;
       // SAFETY: is_path2d; only read, before any receiver exists.
       let source = unsafe { &*data.cast::<Path>() };
+      // Blink reads it with GetPath() (path_2d.h:108 m156).
+      source.inner.read_by_blink();
       return Ok(Self(source.inner.clone()));
     }
     let data = webidl::to_dom_string(env, value, webidl::PATH2D_CONSTRUCTOR)?;

@@ -12,6 +12,8 @@ use super::{
 
 use crate::sk::FontVariation;
 
+pub const BLINK_IDENTITY: [f64; 6] = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
+
 #[derive(Debug, Clone)]
 pub struct Context2dRenderingState {
   pub line_dash_list: Vec<f32>,
@@ -48,6 +50,10 @@ pub struct Context2dRenderingState {
   pub text_rendering: TextRendering,
   pub lang: String,
   pub transform: Matrix,
+  /// Blink's CTM, a double AffineTransform [a, b, c, d, e, f], only to know
+  /// when Blink maps the path (GetModifiablePath). `transform` is float and
+  /// snaps: after rotate(1e-5) it is the identity, Blink's is not.
+  pub blink_transform: [f64; 6],
   pub filter: Option<ImageFilter>,
   pub filters_string: String,
   /// Accounting identity for `filter`: the parsed chain is ONE refcounted
@@ -100,6 +106,7 @@ impl Default for Context2dRenderingState {
       text_rendering: TextRendering::Auto,
       lang: "inherit".to_owned(),
       transform: Matrix::identity(),
+      blink_transform: BLINK_IDENTITY,
       filter: None,
       filters_string: "none".to_owned(),
       filter_id: 0,

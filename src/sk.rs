@@ -1,3 +1,4 @@
+use std::cell::Cell;
 use std::convert::TryFrom;
 use std::f32::consts::PI;
 use std::ffi::{CStr, CString, c_void};
@@ -1019,6 +1020,16 @@ pub mod ffi {
 
     pub fn skiac_path_transform_self(path: *mut skiac_path, matrix: *mut skiac_matrix);
 
+    pub fn skiac_path_transform_in_place(
+      path: *mut skiac_path,
+      sx: f32,
+      kx: f32,
+      tx: f32,
+      ky: f32,
+      sy: f32,
+      ty: f32,
+    );
+
     pub fn skiac_path_is_empty(path: *mut skiac_path) -> bool;
 
     pub fn skiac_path_count_points(path: *mut skiac_path) -> i32;
@@ -1029,8 +1040,17 @@ pub mod ffi {
 
     pub fn skiac_path_hit_test(path: *mut skiac_path, x: f32, y: f32, kind: i32) -> bool;
 
-    pub fn skiac_path_stroke_hit_test(path: *mut skiac_path, x: f32, y: f32, stroke_w: f32)
-    -> bool;
+    pub fn skiac_path_stroke_hit_test(
+      path: *mut skiac_path,
+      x: f32,
+      y: f32,
+      stroke_w: f32,
+      cap: i32,
+      join: u8,
+      miter_limit: f32,
+      path_effect: *mut skiac_path_effect,
+      res_scale: f32,
+    ) -> bool;
 
     pub fn skiac_path_round_rect(
       path: *mut skiac_path,
@@ -3918,13 +3938,57 @@ impl Drop for Paint {
 unsafe impl Send for Paint {}
 unsafe impl Sync for Paint {}
 
-#[repr(transparent)]
+/// What Blink's CanvasPath tracks about how a path was built, for the stroke
+/// prune and the closePath clear (canvas_path.cc m156).
+#[derive(Debug, Clone, Copy, Default)]
+struct PathShape {
+  /// arc(), ellipse(), arcTo(), rect() or roundRect() added to this path.
+  /// Only such a path is pruned when its bounds are one point: pdf.js
+  /// strokes PDF dots ('x y m x y l S', 'x y m h S') as moveTo, lineTo,
+  /// closePath and curves, never with these calls, and needs the dots
+  /// (ISO 32000 8.5.3.2, pdf.js#22040).
+  arc_family: bool,
+  /// Blink's LineBuilder: whether the whole path is one moveTo (`Start`) or one
+  /// moveTo plus one lineTo (`Line`), so that closePath can clear a line of
+  /// zero length. Or Blink's ArcBuilder (`Arc`): the whole path is one arc(),
+  /// maybe closed, which Chrome never prunes. Only meaningful on a non-empty
+  /// path.
+  line: LineState,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+enum LineState {
+  Start,
+  Line,
+  /// Blink arc() on an empty path with radius >= 1 and start != end keeps
+  /// only the arc (ArcBuilder, canvas_path.cc:466-473 m156). Its bounds are
+  /// the whole oval (:714-729), so the stroke prune never fires, even when
+  /// the sweep rounds to one point; Chrome then strokes it with drawArc.
+  Arc,
+  #[default]
+  Other,
+}
+
+/// The third field is Blink's GetPath() on a `Line` path: it builds the
+/// PathBuilder from the LineBuilder (isPointInPath, isPointInStroke, clip,
+/// Path2D(path), addPath(path)), and closePath then keeps the current point.
 #[derive(Debug)]
-pub struct Path(pub(crate) *mut ffi::skiac_path);
+pub struct Path(pub(crate) *mut ffi::skiac_path, PathShape, Cell<bool>);
 
 impl Clone for Path {
   fn clone(&self) -> Path {
-    Path(unsafe { ffi::skiac_path_clone(self.0) })
+    // A copy is a plain path in Blink (Path2D(path) and addPath go through
+    // the PathBuilder), so it is never a LineBuilder line or an ArcBuilder
+    // arc.
+    let shape = PathShape {
+      arc_family: self.1.arc_family,
+      line: LineState::Other,
+    };
+    Path(
+      unsafe { ffi::skiac_path_clone(self.0) },
+      shape,
+      Cell::new(false),
+    )
   }
 }
 
@@ -3948,11 +4012,36 @@ impl Path {
   }
 
   pub fn new() -> Path {
-    unsafe { Path(ffi::skiac_path_create()) }
+    unsafe {
+      Path(
+        ffi::skiac_path_create(),
+        PathShape::default(),
+        Cell::new(false),
+      )
+    }
   }
 
-  pub fn swap(&mut self, other: &Path) {
+  pub fn swap(&mut self, other: &mut Path) {
     unsafe { ffi::skiac_path_swap(self.0, other.0) }
+    std::mem::swap(&mut self.1, &mut other.1);
+    self.2.swap(&other.2);
+  }
+
+  /// Blink CanvasPath::GetPath (canvas_path.h:140-143 m156), for the closePath
+  /// clear: see the third field of [`Path`].
+  pub fn read_by_blink(&self) {
+    if self.1.line == LineState::Line {
+      self.2.set(true);
+    }
+  }
+
+  /// Blink CanvasPath::GetModifiablePath (canvas_path.h:193-196 m156): the
+  /// path leaves the LineBuilder and the ArcBuilder for good. The context's
+  /// transform calls do this exactly where Blink calls GetModifiablePath,
+  /// decided from Blink's double CTM, never from the float path map: see
+  /// `Context2dRenderingState::blink_transform`.
+  pub fn materialize(&mut self) {
+    self.1.line = LineState::Other;
   }
 
   pub fn from_svg_path(path: &str) -> Option<Path> {
@@ -3962,15 +4051,34 @@ impl Path {
     unsafe {
       drop(CString::from_raw(raw));
     }
-    if p.is_null() { None } else { Some(Path(p)) }
+    if p.is_null() {
+      None
+    } else {
+      Some(Path(p, PathShape::default(), Cell::new(false)))
+    }
   }
 
   pub fn add_path(&mut self, sub_path: &Path, transform: &Matrix) {
+    self.1.arc_family |= sub_path.1.arc_family;
+    self.1.line = LineState::Other;
     unsafe { ffi::skiac_add_path(self.0, sub_path.0, transform.0) };
   }
 
   pub fn op(&mut self, other: &Path, op: PathOp) -> bool {
+    self.1.line = LineState::Other;
     unsafe { ffi::skiac_path_op(self.0, other.0, op as i32) }
+  }
+
+  /// Blink skips the stroke of a path whose bounds are one point
+  /// (canvas_2d_recorder_context.cc:1595-1602 m156). Only for a path built
+  /// with arc(), ellipse(), arcTo(), rect() or roundRect(): see
+  /// [`PathShape::arc_family`]. Never for Blink's ArcBuilder ([`LineState::Arc`]).
+  pub fn stroke_is_pruned(&self) -> bool {
+    if !self.1.arc_family || self.is_empty() || self.1.line == LineState::Arc {
+      return false;
+    }
+    let (left, top, right, bottom) = self.get_bounds();
+    right - left == 0.0 && bottom - top == 0.0
   }
 
   pub fn set_fill_type(&mut self, kind: FillType) {
@@ -3994,6 +4102,7 @@ impl Path {
     end_angle: f32,
     ccw: bool,
   ) {
+    self.begin_arc_family();
     let (start_angle, end_angle) = Self::ellipse_angles(start_angle, end_angle, ccw);
     // Blink ellipse() draws a zero radius or a zero sweep as straight lines
     // (canvas_path.cc:526-532 m156).
@@ -4075,47 +4184,33 @@ impl Path {
       )
     };
     let (px, py) = point(start);
-    // Only the start point when both radii are 0 (:393-395).
-    if radius_x == 0.0 && radius_y == 0.0 {
-      self.degenerate_line_to(px, py);
+    self.finite_line_to(px, py);
+    // Only the start point when both radii are 0 or the sweep is 0 (:393-395).
+    if (radius_x == 0.0 && radius_y == 0.0) || start == end {
       return;
     }
-    // A zero sweep also gives only the start point (:393-395). See below.
-    if start == end {
-      self.add_ellipse(x, y, radius_x, radius_y, rotation, start, end);
-      return;
-    }
-    // At most 6 points: start, up to 4 multiples of π/2, end.
-    let mut points = Vec::with_capacity(6);
-    points.push((px, py));
+    // Up to 4 multiples of π/2, then the end. Every point can land on the
+    // start point after f32 rounding: Blink adds those lines of zero length,
+    // and Chrome's stroke skips the path if its bounds are that one point
+    // (Self::stroke_is_pruned).
     let half_pi = std::f32::consts::FRAC_PI_2;
     if !ccw {
       let mut angle = start - start % half_pi + half_pi;
       while angle < end {
-        points.push(point(angle));
+        let (px, py) = point(angle);
+        self.finite_line_to(px, py);
         angle += half_pi;
       }
     } else {
       let mut angle = start - start % half_pi;
       while angle > end {
-        points.push(point(angle));
+        let (px, py) = point(angle);
+        self.finite_line_to(px, py);
         angle -= half_pi;
       }
     }
-    points.push(point(end));
-    // A sweep that is tiny after f32 rounding can put every point on the
-    // start point. Blink then adds lines of zero length, and Chrome strokes
-    // nothing only because its stroke() skips a path whose bounds are one
-    // point (canvas_2d_recorder_context.cc:1595-1602 m156). Whether the final
-    // path is one point is known only at draw time, so no rule here can match
-    // that for every path. Keep the arc route we used before for this case.
-    if points.iter().all(|&p| p == (px, py)) {
-      self.add_ellipse(x, y, radius_x, radius_y, rotation, start, end);
-      return;
-    }
-    for (px, py) in points {
-      self.finite_line_to(px, py);
-    }
+    let (px, py) = point(end);
+    self.finite_line_to(px, py);
   }
 
   /// Blink CanvasPath::lineTo (canvas_path.cc:125-151 m156): a non-finite
@@ -4124,21 +4219,6 @@ impl Path {
   /// square caps in Skia, so keep it.
   fn finite_line_to(&mut self, x: f32, y: f32) {
     if x.is_finite() && y.is_finite() {
-      self.line_to(x, y);
-    }
-  }
-
-  /// [`Self::finite_line_to`] for a lone point from arc() or ellipse(). Chrome
-  /// does not stroke a path whose points all coincide
-  /// (canvas_2d_recorder_context.cc:1595-1602 m156) and ours does (its caps
-  /// draw a dot), so on an empty path add only the moveTo.
-  fn degenerate_line_to(&mut self, x: f32, y: f32) {
-    if !x.is_finite() || !y.is_finite() {
-      return;
-    }
-    if self.is_empty() {
-      self.move_to(x, y);
-    } else {
       self.line_to(x, y);
     }
   }
@@ -4160,37 +4240,52 @@ impl Path {
     // of note, can't use addArc or addOval because they close the arc, which
     // the spec says not to do (unless the user explicitly calls closePath).
     // This throws off points being in/out of the arc.
-    let left = x - radius_x;
-    let top = y - radius_y;
-    let right = x + radius_x;
-    let bottom = y + radius_y;
     // Blink AddEllipse skips the transform for rotation 0 (path_builder.cc:492).
     if rotation == 0.0 {
+      let (left, top) = (x - radius_x, y - radius_y);
+      let (right, bottom) = (x + radius_x, y + radius_y);
       self.add_ellipse_arcs(left, top, right, bottom, start_angle, end_angle);
       return;
     }
-    let mut rotated = Matrix::identity();
-    rotated.pre_translate(x, y);
-    let degrees = radians_to_degrees(rotation);
-    if degrees.is_finite() {
-      rotated.pre_rotate(degrees);
-    } else {
-      // |rotation| above ~5.9e36 overflows the f32 degrees. Rotate by the
-      // radians in double like Blink (AffineTransform::RotateRadians).
-      let (sin, cos) = (rotation as f64).sin_cos();
-      let (sin, cos) = (sin as f32, cos as f32);
-      rotated.pre_concat(&Matrix::new(cos, -sin, 0.0, sin, cos, 0.0));
-    }
-    rotated.pre_translate(-x, -y);
-    // Not invertible only for a non-finite center or rotation, which the
-    // callers drop first; never panic on it.
-    let Some(unrotated) = rotated.invert() else {
-      return;
+    // Blink maps the whole path by the inverse of Translation(x, y) ·
+    // RotateRadians(rotation), adds the arc around the origin, and maps the
+    // whole path back (path_builder.cc:496-503). Earlier points move by that
+    // round trip in Chrome too, so do the same rather than add the arc alone.
+    // The matrices are built in double like AffineTransform: RotateRadians,
+    // DoMultiply with a translation and Inverse (affine_transform.cc:71-136),
+    // then ToSkMatrix clamps each entry to float, NaN to 0 (:236-257).
+    let (sin, cos) = ((rotation as f64).sin(), (rotation as f64).cos());
+    // DoMultiply adds the translation to the rotation's 0 (:102-103).
+    let (e, f) = (x as f64 + 0.0, y as f64 + 0.0);
+    // ellipse_transform [a, b, c, d, e, f] = [cos, sin, -sin, cos, x, y].
+    let (a, b, c, d) = (cos, sin, -sin, cos);
+    let det = a * d - b * c;
+    let clamp = |v: f64| {
+      if v.is_nan() {
+        0.0
+      } else {
+        v.clamp(-f32::MAX as f64, f32::MAX as f64) as f32
+      }
     };
-
-    self.transform_self(&unrotated);
-    self.add_ellipse_arcs(left, top, right, bottom, start_angle, end_angle);
-    self.transform_self(&rotated);
+    // SkMatrix order [sx, kx, tx, ky, sy, ty] = [a, c, e, b, d, f].
+    let inverse = [
+      clamp(d / det),
+      clamp(-c / det),
+      clamp((c * f - d * e) / det),
+      clamp(-b / det),
+      clamp(a / det),
+      clamp((b * e - a * f) / det),
+    ];
+    self.transform_in_place(inverse);
+    self.add_ellipse_arcs(
+      -radius_x,
+      -radius_y,
+      radius_x,
+      radius_y,
+      start_angle,
+      end_angle,
+    );
+    self.transform_in_place([clamp(a), clamp(c), clamp(e), clamp(b), clamp(d), clamp(f)]);
   }
 
   /// Blink PathBuilder::AddEllipse (path_builder.cc:445-480). `start` is
@@ -4234,13 +4329,27 @@ impl Path {
     end_angle: f32,
     from_end: bool,
   ) {
+    let was_empty = self.is_empty();
+    self.begin_arc_family();
     // Blink arc() adds only lineTo(center) for radius 0 (canvas_path.cc:457-461
     // m156).
     if radius == 0.0 {
-      self.degenerate_line_to(center_x, center_y);
+      self.finite_line_to(center_x, center_y);
       return;
     }
-    // A zero sweep (Blink's lineTo at :459) still takes the arc route here.
+    // Blink tests the raw f32 angles, before CanonicalizeAngle, and then adds
+    // only lineTo(x + r·cosf(start), y + r·sinf(start)) (canvas_path.cc:457-461
+    // m156), in f32 like Blink (Chromium builds with -ffp-contract=off, so
+    // there is no FMA). Canonicalizing first can move the end 1 ulp off the
+    // start, and AdjustEndAngle then turns that into an almost full circle.
+    // If the path is then one point, Chrome's stroke skips it at draw time
+    // (Self::stroke_is_pruned).
+    if start_angle == end_angle {
+      let px = center_x + radius * start_angle.cos();
+      let py = center_y + radius * start_angle.sin();
+      self.finite_line_to(px, py);
+      return;
+    }
     let (start_angle, end_angle) = Self::ellipse_angles(start_angle, end_angle, from_end);
     self.add_ellipse(
       center_x,
@@ -4250,7 +4359,12 @@ impl Path {
       0.0,
       start_angle,
       end_angle,
-    )
+    );
+    // Blink's ArcBuilder (canvas_path.cc:466-473 m156); the callers drop the
+    // call under a singular CTM first, as Blink does (:451).
+    if was_empty && radius >= 1.0 {
+      self.1.line = LineState::Arc;
+    }
   }
 
   pub fn arc_to(
@@ -4263,6 +4377,7 @@ impl Path {
     sweep_angle: f32,
     force_move_to: bool,
   ) {
+    self.1.line = LineState::Other;
     unsafe {
       ffi::skiac_path_arc_to(
         self.0,
@@ -4278,21 +4393,68 @@ impl Path {
   }
 
   pub fn arc_to_tangent(&mut self, x1: f32, y1: f32, x2: f32, y2: f32, radius: f32) {
-    self.scoot(x1, y1);
-    unsafe { ffi::skiac_path_arc_to_tangent(self.0, x1, y1, x2, y2, radius) }
+    self.begin_arc_family();
+    // Blink arcTo() adds only moveTo(x1, y1) on an empty path
+    // (canvas_path.cc:248-249 m156).
+    if self.is_empty() {
+      self.move_to(x1, y1);
+    } else {
+      unsafe { ffi::skiac_path_arc_to_tangent(self.0, x1, y1, x2, y2, radius) }
+    }
+    self.1.line = LineState::Other;
   }
 
+  /// Blink CanvasPath::rect() (canvas_path.cc:540-560 m156): a rect of zero
+  /// width and height is only moveTo(x, y).
+  pub fn rect(&mut self, x: f32, y: f32, width: f32, height: f32) {
+    self.begin_arc_family();
+    if width == 0.0 && height == 0.0 {
+      self.move_to(x, y);
+    } else {
+      self.add_rect(x, y, width, height);
+    }
+  }
+
+  /// Marks the path as built with arc(), ellipse(), arcTo(), rect() or
+  /// roundRect(). On a non-empty path these calls first move Blink's
+  /// LineBuilder into the PathBuilder
+  /// (UpdatePathFromLineOrArcIfNecessaryForMutation), so the path is no longer
+  /// a LineBuilder line.
+  fn begin_arc_family(&mut self) {
+    self.1.arc_family = true;
+    if !self.is_empty() {
+      self.1.line = LineState::Other;
+    }
+  }
+
+  /// Blink CanvasPath::moveTo (canvas_path.cc:108-123 m156): on an empty path
+  /// the point goes to the LineBuilder.
   pub fn move_to(&mut self, x: f32, y: f32) {
+    self.1.line = if self.is_empty() {
+      LineState::Start
+    } else {
+      LineState::Other
+    };
     unsafe {
       ffi::skiac_path_move_to(self.0, x, y);
     }
   }
 
+  /// Blink CanvasPath::lineTo (canvas_path.cc:125-151 m156): on an empty path
+  /// or after a lone moveTo the line goes to the LineBuilder.
   pub fn line_to(&mut self, x: f32, y: f32) {
+    let line = self.is_empty() || self.1.line == LineState::Start;
     self.scoot(x, y);
     unsafe {
       ffi::skiac_path_line_to(self.0, x, y);
     }
+    self.1.line = if line {
+      LineState::Line
+    } else {
+      LineState::Other
+    };
+    // Blink's lineTo resets the PathBuilder here.
+    self.2.set(false);
   }
 
   pub fn cubic_to(&mut self, x1: f32, y1: f32, x2: f32, y2: f32, x3: f32, y3: f32) {
@@ -4300,6 +4462,7 @@ impl Path {
     unsafe {
       ffi::skiac_path_cubic_to(self.0, x1, y1, x2, y2, x3, y3);
     }
+    self.1.line = LineState::Other;
   }
 
   pub fn quad_to(&mut self, cpx: f32, cpy: f32, x: f32, y: f32) {
@@ -4307,12 +4470,52 @@ impl Path {
     unsafe {
       ffi::skiac_path_quad_to(self.0, cpx, cpy, x, y);
     }
+    self.1.line = LineState::Other;
   }
 
   pub fn close(&mut self) {
     unsafe {
       ffi::skiac_path_close(self.0);
     }
+    self.1.line = LineState::Other;
+  }
+
+  /// Blink CanvasPath::closePath (canvas_path.cc:76-93 m156): a path that is
+  /// one LineBuilder line of zero length becomes empty, or only moveTo(that
+  /// point) once GetPath() built its PathBuilder ([`Self::read_by_blink`]).
+  /// Only for a path built with arc(), ellipse(), arcTo(), rect() or
+  /// roundRect(): pdf.js closes 'x y m x y l h' PDF dots with closePath and
+  /// needs them (see [`PathShape::arc_family`]).
+  pub fn close_path(&mut self) {
+    if self.1.arc_family && self.1.line == LineState::Line && self.is_one_point_line() {
+      let fill_type = self.get_fill_type();
+      let (x, y, _, _) = self.get_bounds();
+      let read = self.2.get();
+      *self = Path(
+        unsafe { ffi::skiac_path_create() },
+        self.1,
+        Cell::new(false),
+      );
+      self.1.line = LineState::Other;
+      self.set_fill_type(FillType::from(fill_type as u32));
+      if read {
+        self.move_to(x, y);
+      }
+      return;
+    }
+    // Blink keeps the ArcBuilder and only marks it closed (:95-100).
+    if self.1.line == LineState::Arc {
+      unsafe { ffi::skiac_path_close(self.0) };
+      return;
+    }
+    self.close();
+  }
+
+  /// Whether the path is one moveTo and one lineTo to the same point.
+  fn is_one_point_line(&self) -> bool {
+    let verbs = unsafe { ffi::skiac_path_count_verbs(self.0) };
+    let (left, top, right, bottom) = self.get_bounds();
+    verbs == 2 && right - left == 0.0 && bottom - top == 0.0
   }
 
   /// SVG elliptical arc to (x, y): radii, x-axis rotation in degrees, and
@@ -4328,27 +4531,49 @@ impl Path {
     x: f32,
     y: f32,
   ) {
+    self.1.line = LineState::Other;
     unsafe { ffi::skiac_path_arc_to_svg(self.0, rx, ry, x_axis_rotate, large_arc, sweep, x, y) }
   }
 
   pub fn add_rect(&mut self, l: f32, t: f32, r: f32, b: f32) {
+    self.1.line = LineState::Other;
     unsafe {
       ffi::skiac_path_add_rect(self.0, l, t, r, b);
     }
   }
 
   pub fn push_circle(&mut self, x: f32, y: f32, r: f32) {
+    self.1.line = LineState::Other;
     unsafe {
       ffi::skiac_path_add_circle(self.0, x, y, r);
     }
   }
 
   pub fn transform(&self, transform: &Matrix) -> Self {
-    Self(unsafe { ffi::skiac_path_transform(self.0, transform.0) })
+    let shape = PathShape {
+      arc_family: self.1.arc_family,
+      line: LineState::Other,
+    };
+    Self(
+      unsafe { ffi::skiac_path_transform(self.0, transform.0) },
+      shape,
+      Cell::new(false),
+    )
   }
 
+  /// Map every point by `matrix`. Only the geometry: the caller decides, as
+  /// Blink does, whether the path leaves the line and arc builders
+  /// ([`Path::materialize`]). The context's float map can be the identity
+  /// where Blink's double CTM changed, and the other way round.
   pub fn transform_self(&mut self, matrix: &Matrix) {
     unsafe { ffi::skiac_path_transform_self(self.0, matrix.0) };
+  }
+
+  /// Blink PathBuilder::Transform (path_builder.cc:547-551 m156): map every
+  /// point in place, `m` in SkMatrix order [sx, kx, tx, ky, sy, ty].
+  fn transform_in_place(&mut self, m: [f32; 6]) {
+    self.1.line = LineState::Other;
+    unsafe { ffi::skiac_path_transform_in_place(self.0, m[0], m[1], m[2], m[3], m[4], m[5]) };
   }
 
   pub fn is_empty(&self) -> bool {
@@ -4359,8 +4584,33 @@ impl Path {
     unsafe { ffi::skiac_path_hit_test(self.0, x, y, kind as i32) }
   }
 
-  pub fn stroke_hit_test(&self, x: f32, y: f32, stroke_w: f32) -> bool {
-    unsafe { ffi::skiac_path_stroke_hit_test(self.0, x, y, stroke_w) }
+  /// Whether (x, y) is inside this path's stroke outline, made with the
+  /// given stroke state and dash at resolution scale `res_scale`.
+  #[allow(clippy::too_many_arguments)]
+  pub fn stroke_hit_test(
+    &self,
+    x: f32,
+    y: f32,
+    stroke_w: f32,
+    cap: StrokeCap,
+    join: StrokeJoin,
+    miter_limit: f32,
+    dash: Option<&PathEffect>,
+    res_scale: f32,
+  ) -> bool {
+    unsafe {
+      ffi::skiac_path_stroke_hit_test(
+        self.0,
+        x,
+        y,
+        stroke_w,
+        cap as i32,
+        join as u8,
+        miter_limit,
+        dash.map_or(ptr::null_mut(), |effect| effect.0),
+        res_scale,
+      )
+    }
   }
 
   pub fn to_svg_string(&self) -> SkiaString {
@@ -4374,14 +4624,17 @@ impl Path {
   }
 
   pub fn simplify(&mut self) -> bool {
+    self.1.line = LineState::Other;
     unsafe { ffi::skiac_path_simplify(self.0) }
   }
 
   pub fn as_winding(&mut self) -> bool {
+    self.1.line = LineState::Other;
     unsafe { ffi::skiac_path_as_winding(self.0) }
   }
 
   pub fn stroke(&mut self, cap: StrokeCap, join: StrokeJoin, width: f32, miter_limit: f32) -> bool {
+    self.1.line = LineState::Other;
     unsafe { ffi::skiac_path_stroke(self.0, cap as i32, join as u8, width, miter_limit) }
   }
 
@@ -4408,14 +4661,17 @@ impl Path {
   }
 
   pub fn trim(&mut self, start: f32, end: f32, is_complement: bool) -> bool {
+    self.1.line = LineState::Other;
     unsafe { ffi::skiac_path_trim(self.0, start, end, is_complement) }
   }
 
   pub fn dash(&mut self, on: f32, off: f32, phase: f32) -> bool {
+    self.1.line = LineState::Other;
     unsafe { ffi::skiac_path_dash(self.0, on, off, phase) }
   }
 
   pub fn round(&mut self, radius: f32) -> bool {
+    self.1.line = LineState::Other;
     unsafe { ffi::skiac_path_round(self.0, radius) }
   }
 
@@ -4429,6 +4685,7 @@ impl Path {
     mut height: f32,
     r: &[(f32, f32)],
   ) {
+    self.begin_arc_family();
     if width == 0.0 || height == 0.0 {
       // A flat rect has no rounded corners: Blink adds the rect as given,
       // unsorted, with no moveTo after it.
@@ -4466,6 +4723,7 @@ impl Path {
     ];
     unsafe { ffi::skiac_path_round_rect(self.0, x, y, width, height, radii.as_ptr(), clockwise) };
     unsafe { ffi::skiac_path_move_to(self.0, x, y) };
+    self.1.line = LineState::Other;
   }
 }
 
@@ -4700,10 +4958,6 @@ impl Matrix {
   pub fn from_transform(ts: &Transform) -> Self {
     let mut c_ts: ffi::skiac_transform = ts.into();
     Matrix(unsafe { ffi::skiac_matrix_from_ts(&mut c_ts) })
-  }
-
-  pub fn rotated(radians: f32, x: f32, y: f32) -> Self {
-    Matrix(unsafe { ffi::skiac_matrix_create_rotated(radians, x, y) })
   }
 
   pub fn translated(x: f32, y: f32) -> Self {
@@ -6813,11 +7067,6 @@ impl Drop for SkottieAnimation {
 // SkottieAnimation is not thread-safe (contains raw pointer)
 // but can be sent between threads
 unsafe impl Send for SkottieAnimation {}
-
-#[inline(always)]
-pub(crate) fn radians_to_degrees(rad: f32) -> f32 {
-  rad / PI * 180.0
-}
 
 /// Blink Rad2deg / base::RadToDeg<float>: rad * (180.0f / kPiFloat).
 const RAD_TO_DEG: f32 = 180.0 / PI;

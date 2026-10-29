@@ -11,9 +11,6 @@ import { createCanvas, Path2D } from '../index'
 type Ctx = ReturnType<ReturnType<typeof createCanvas>['getContext']>
 
 const TAU = 2 * Math.PI
-// win32-arm64 Skia is built with FP contraction (see arc-full-sweep-chrome),
-// which can move stroke edges by a pixel. Path structure is checked everywhere.
-const WIN_ARM64 = process.platform === 'win32' && process.arch === 'arm64'
 
 const ctx = createCanvas(100, 100).getContext('2d')
 
@@ -112,9 +109,18 @@ test('a degenerate ellipse rotates its points by the rotation in radians', (t) =
 
 test('a zero-sweep ellipse adds only its start point', (t) => {
   const p = [50 + 30 * Math.cos(1), 50 + 20 * Math.sin(1)]
+  // On an empty path Blink's lineTo is moveTo plus a zero-length line.
   const empty = new Path2D()
   empty.ellipse(50, 50, 30, 20, 0, 1, 1)
-  t.is(empty.toSVGString(), '')
+  assertPath(
+    t,
+    empty,
+    [
+      ['M', p[0], p[1]],
+      ['L', p[0], p[1]],
+    ],
+    'zero sweep, empty path',
+  )
   const afterMoveTo = new Path2D()
   afterMoveTo.moveTo(10, 10)
   afterMoveTo.ellipse(50, 50, 30, 20, 0, 1, 1)
@@ -128,7 +134,8 @@ test('a zero-sweep ellipse adds only its start point', (t) => {
     'zero sweep',
   )
 
-  // Chrome does not stroke a path whose points all coincide.
+  // Chrome does not stroke a path whose bounds are one point
+  // (canvas_2d_recorder_context.cc:1595-1602 m156).
   ctx.reset()
   ctx.lineWidth = 20
   ctx.lineCap = 'round'
@@ -158,7 +165,13 @@ test('a degenerate ellipse whose points all land on the start point strokes noth
     const name = args.join(',')
     const path = new Path2D()
     path.ellipse(...args)
-    t.is(path.toSVGString(), '', name)
+    // Blink's moveTo and lines, every point on the start point.
+    const svg = parse(path.toSVGString())
+    t.regex(svg.map((c) => c[0]).join(''), /^ML+$/, name)
+    t.true(
+      svg.every(([, x, y]) => x === svg[0][1] && y === svg[0][2]),
+      `${name} ${path.toSVGString()}`,
+    )
     t.is(strokeRound(1, args), 0, `${name} lineWidth 1`)
     t.is(strokeRound(20, args), 0, `${name} lineWidth 20`)
   }
@@ -173,8 +186,7 @@ test('a degenerate ellipse whose points all land on the start point strokes noth
 test('a collapsed or zero-sweep ellipse strokes nothing, as in Chrome', (t) => {
   // Every point Blink adds is the start point, so Blink adds only zero-length
   // lines, and Chrome strokes nothing because the path bounds are one point
-  // (canvas_2d_recorder_context.cc:1595-1602 m156). Our stroke has no such
-  // check, so such lines would paint a cap dot. These keep the arc route.
+  // (canvas_2d_recorder_context.cc:1595-1602 m156).
   const collapsed = (c: Ctx | InstanceType<typeof Path2D>) =>
     c.ellipse(50, 50, 0, 40, 0, Math.PI / 2, (5 * Math.PI) / 2, true)
   const cases: Record<string, (c: Ctx | InstanceType<typeof Path2D>) => void> = {
@@ -201,14 +213,8 @@ test('a collapsed or zero-sweep ellipse strokes nothing, as in Chrome', (t) => {
       c.ellipse(50, 50, 30, 20, 0, 1, 1)
     },
   }
-  // Not here, and the same as before this change: arc(p, 0) twice, moveTo(p)
-  // then arc(p, 0), and the same with ellipse radii 0 paint a dot (338 px
-  // round, 400 px square at lineWidth 20) where Chrome paints 0. Whether the
-  // final path is one point is known only at stroke time, so matching Chrome
-  // there needs its stroke-time check, not a path rule. For the same reason,
-  // after other points (moveTo(10, 10) lineTo(30, 10) moveTo(50, 90) then the
-  // collapsed ellipse) Chrome strokes its zero-length lines as a dot (1072 px
-  // round) and the arc route paints 736 px.
+  // arc(p, 0) twice, moveTo(p) then arc(p, 0), and the same with ellipse
+  // radii 0 are in stroke-prune-chrome.spec.ts.
   for (const [name, build] of Object.entries(cases)) {
     const path = new Path2D()
     build(path)
@@ -263,18 +269,14 @@ test('moveTo(x, y) then arc(x, y, 0) keeps a dot at each point, as in Chrome', (
       counts[`${lineWidth} ${cap} ${api}`] = countPainted(c120)
     }
   }
-  if (!WIN_ARM64) {
-    t.deepEqual(counts, {
-      '20 round ctx': 1344,
-      '20 round Path2D': 1344,
-      '20 square ctx': 1600,
-      '20 square Path2D': 1600,
-      '1 round ctx': 16,
-      '1 round Path2D': 16,
-    })
-  } else {
-    t.true(Object.values(counts).every((n) => n > 0))
-  }
+  t.deepEqual(counts, {
+    '20 round ctx': 1344,
+    '20 round Path2D': 1344,
+    '20 square ctx': 1600,
+    '20 square Path2D': 1600,
+    '1 round ctx': 16,
+    '1 round Path2D': 16,
+  })
 })
 
 test('a degenerate ellipse strokes and fills like Chrome', (t) => {
@@ -306,17 +308,13 @@ test('a degenerate ellipse strokes and fills like Chrome', (t) => {
   ctx.ellipse(50, 50, 30, 0, -2, 1, -2, true)
   ctx.fill()
   const fill = countPainted(ctx)
-  if (!WIN_ARM64) {
-    t.deepEqual(counts, {
-      'rx 0, rotation -2': 1290,
-      'rx 0, rotation -2, Path2D': 1290,
-      'ry 0, rotation 1e10, anticlockwise': 1293,
-      'ry 0 after moveTo, square cap': 1936,
-    })
-    t.is(fill, 854)
-  } else {
-    t.pass()
-  }
+  t.deepEqual(counts, {
+    'rx 0, rotation -2': 1290,
+    'rx 0, rotation -2, Path2D': 1290,
+    'ry 0, rotation 1e10, anticlockwise': 1293,
+    'ry 0 after moveTo, square cap': 1936,
+  })
+  t.is(fill, 854)
 })
 
 test('isPointInPath sees the lines of a degenerate ellipse', (t) => {
