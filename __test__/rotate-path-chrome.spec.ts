@@ -124,25 +124,30 @@ const SCENES: Record<string, (ctx: Ctx, a: number) => void> = {
 }
 
 // Chrome 156 [x0, y0, x1, y1, alpha sum]; main had 300 to 1700 pixels wrong in
-// each. The stroke from a lone moveTo at 1e10 and 20 is left out: its end
-// column is one alpha level off (the moveTo is mapped with a fused
-// multiply-add). Angles 1, -2, 0.25 and 20 also need the double-pi degrees.
+// each. The stroke from a lone moveTo at 1e10 and 20 needs skia_c.cpp built
+// with -ffp-contract=off (fp-contract-chrome.spec.ts): with an FMA, its end
+// column was one alpha level off on arm64. Angles 1, -2, 0.25 and 20 also need
+// the double-pi degrees.
 const EXPECTED: Record<string, Record<string, number[]>> = {
   'moveTo, rotate, lineTo, stroke': {
     '0.7': [50, 40, 59, 59, 51000],
     'π/2': [50, 40, 59, 59, 51000],
     π: [50, 40, 59, 59, 51000],
+    '1e10': [50, 40, 59, 59, 51000],
     '1': [49, 40, 59, 59, 51000],
     '-2': [50, 40, 59, 59, 51000],
     '0.25': [49, 40, 59, 59, 51020],
+    '20': [49, 40, 59, 59, 51020],
   },
   'moveTo, rotate, lineTo, resetTransform, stroke': {
     '0.7': [50, 40, 59, 59, 51000],
     'π/2': [50, 40, 59, 59, 51000],
     π: [50, 40, 59, 59, 51000],
+    '1e10': [50, 40, 59, 59, 51000],
     '1': [49, 40, 59, 59, 51000],
     '-2': [50, 40, 59, 59, 51000],
     '0.25': [50, 40, 59, 59, 51000],
+    '20': [49, 40, 59, 59, 51000],
   },
   'curve, rotate, stroke': {
     '0.7': [19, 17, 77, 87, 166322],
