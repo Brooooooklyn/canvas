@@ -1412,16 +1412,16 @@ impl Context {
         self.path.materialize();
         self
           .path
-          .transform_self(&blink_to_sk_matrix(self.state.blink_transform));
+          .transform_like_blink(&blink_to_sk_matrix(self.state.blink_transform));
       }
       self.with_canvas_state(|canvas| {
         canvas.restore();
       });
-      if matrix_is_invertible(&s.transform) && s.blink_transform != BLINK_IDENTITY {
+      if blink_is_invertible(s.blink_transform) && s.blink_transform != BLINK_IDENTITY {
         self.path.materialize();
         self
           .path
-          .transform_self(&blink_to_sk_matrix(blink_inverse(s.blink_transform)));
+          .transform_like_blink(&blink_to_sk_matrix(blink_inverse(s.blink_transform)));
       }
       self.state = s;
       // canvas.restore() lands on the saved clip and matrix, as Blink's
@@ -1562,7 +1562,7 @@ impl Context {
     let transform = paint_translate(&self.state.transform, x, y);
     self.set_paint_transform(transform);
     self.path.materialize();
-    self.path.transform_self(&Matrix::translated(-x, -y));
+    self.path.transform_like_blink(&Matrix::translated(-x, -y));
     self.sync_transform_to_recorder();
     self.flush_if_recording_limit_exceeded();
   }
@@ -1596,7 +1596,7 @@ impl Context {
       if !self.path.is_empty() {
         self
           .path
-          .transform_self(&blink_to_sk_matrix(blink_inverse(values)));
+          .transform_like_blink(&blink_to_sk_matrix(blink_inverse(values)));
       }
     }
   }
@@ -1638,7 +1638,7 @@ impl Context {
       // AffineTransform(cos, sin, -sin, cos) in SkMatrix order: scaleX, skewX,
       // transX, skewY, scaleY, transY.
       let inverse = Matrix::new(cos, -sin, 0.0, sin, cos, 0.0);
-      self.path.transform_self(&inverse);
+      self.path.transform_like_blink(&inverse);
     }
     self.sync_transform_to_recorder();
     self.flush_if_recording_limit_exceeded();
@@ -1665,7 +1665,7 @@ impl Context {
       self.path.materialize();
       let mut inverse = Matrix::identity();
       inverse.pre_scale(clamp_to_f32(1.0 / sx), clamp_to_f32(1.0 / sy));
-      self.path.transform_self(&inverse);
+      self.path.transform_like_blink(&inverse);
     }
     self.sync_transform_to_recorder();
     self.flush_if_recording_limit_exceeded();
@@ -1707,7 +1707,7 @@ impl Context {
     if invertible {
       self.path.materialize();
       if !self.path.is_empty() {
-        self.path.transform_self(&blink_to_sk_matrix(ctm));
+        self.path.transform_like_blink(&blink_to_sk_matrix(ctm));
       }
     }
   }
@@ -1821,6 +1821,13 @@ impl Context {
     // Blink returns before it takes the bitmap: no shadow, no dash. Asked of
     // the path itself: a clone is never Blink's ArcBuilder.
     if source.stroke_is_pruned() {
+      return Ok(());
+    }
+    // Nor for an empty path or NaN bounds, whatever the composite op
+    // (canvas_2d_recorder_context.cc:1579-1594 m156): copy and the
+    // full-canvas modes must not clear for it. A path of one point is
+    // `stroke_is_pruned`'s.
+    if !Self::path_reaches_draw(source, false) {
       return Ok(());
     }
     // Clone the path to avoid borrow conflicts with with_render_canvas
@@ -2267,14 +2274,21 @@ impl Context {
     // Clone the path and set fill type to avoid borrow conflicts with with_render_canvas.
     // set_fill_type must happen BEFORE any early return: for a caller-supplied
     // Path object it mutates the caller's object, an observable side effect.
-    let path_to_draw = if let Some(p) = path {
+    // Blink's DrawPathInternal returns before Draw for a path that does not
+    // reach it and for the fill of a line, whatever the composite op
+    // (canvas_2d_recorder_context.cc:1579-1610 m156): copy and the
+    // full-canvas modes must not clear for it. Asked of the path itself: a
+    // clone is never Blink's LineBuilder line, and the clone of a path past
+    // float range is empty.
+    let reaches_draw = |p: &SkPath| Self::path_reaches_draw(p, false) && !p.is_blink_line();
+    let (path_to_draw, reaches_draw) = if let Some(p) = path {
       p.set_fill_type(fill_rule);
-      p.clone()
+      (p.clone(), reaches_draw(p))
     } else {
       self.path.set_fill_type(fill_rule);
-      self.path.clone()
+      (self.path.clone(), reaches_draw(&self.path))
     };
-    if Self::path_reaches_draw(&path_to_draw, false) && !self.paint_canvas() {
+    if !reaches_draw || !self.paint_canvas() {
       return Ok(());
     }
 
@@ -3304,11 +3318,16 @@ impl Context {
     lo.is_finite() && hi.is_finite() && hi == lo
   }
 
-  /// Blink's `IsTransformInvertible`: AffineTransform::IsInvertible checks
-  /// for a finite, non-zero determinant. Skia's own invert() also rejects a
-  /// nearly-zero one, which Chrome still draws with.
+  /// Blink's `IsTransformInvertible`, which the state sets from its double
+  /// CTM (canvas_rendering_context_2d_state.cc:482-486 m156), never from the
+  /// float canvas matrix. The two disagree: after `scale(1e-30, 1e-30)` twice
+  /// the float matrix is 0 and the double CTM is invertible; after
+  /// `translate(FLT_MAX, FLT_MAX)` twice and `rotate(0.5)` SkM44 puts NaN in
+  /// the float matrix (inf * 0) and the double CTM is a rotation; after
+  /// `scale(1, 0.7)` and `transform(3, 3, 7, 7, 0, 0)` the double CTM is
+  /// singular and the float matrix is not.
   fn transform_is_invertible(&self) -> bool {
-    matrix_is_invertible(&self.state.transform)
+    blink_is_invertible(self.state.blink_transform)
   }
 
   /// Blink's Draw returns before anything is drawn when the CTM is singular
@@ -6305,10 +6324,9 @@ impl CanvasRenderingContext2D {
       && !height.is_nan()
       && !height.is_infinite()
     {
-      // ValidateRectForCanvas, then the bitmap (canvas_2d_recorder_context.cc:
-      // 1726). A 0 x 0 rect returns first in Chrome; here it keeps its own
-      // path, which draws on the stand-in surface without pixels.
-      if (width != 0.0 || height != 0.0) && !self.paint_canvas(&this)? {
+      // ValidateRectForCanvas, which drops a 0 x 0 rect whatever the
+      // composite op, then the bitmap (canvas_2d_recorder_context.cc:1726).
+      if (width == 0.0 && height == 0.0) || !self.paint_canvas(&this)? {
         return Ok(());
       }
       self
@@ -6381,7 +6399,7 @@ impl CanvasRenderingContext2D {
       && !height.is_infinite()
     {
       // As fillRect (canvas_2d_recorder_context.cc:1789).
-      if (width != 0.0 || height != 0.0) && !self.paint_canvas(&this)? {
+      if (width == 0.0 && height == 0.0) || !self.paint_canvas(&this)? {
         return Ok(());
       }
       self
@@ -7067,17 +7085,12 @@ fn finite_or_degenerate<const N: usize>(values: [f64; N]) -> [f32; N] {
   }
 }
 
-/// Blink AffineTransform::IsInvertible (affine_transform.cc:63-69): a normal
-/// determinant, computed in double. From f32 entries a non-zero determinant
-/// is never subnormal in double, so finite and non-zero is the same test.
-fn matrix_is_invertible(m: &Matrix) -> bool {
-  is_invertible(&m.get_transform())
-}
-
-/// [`matrix_is_invertible`] of values already read.
-fn is_invertible(t: &Transform) -> bool {
-  let det = t.a as f64 * t.d as f64 - t.b as f64 * t.c as f64;
-  det.is_finite() && det != 0.0
+/// Blink AffineTransform::IsInvertible (affine_transform.cc:65-71 m156):
+/// std::isnormal(Det()) of the double CTM. A determinant that underflows to
+/// a subnormal or 0, or overflows to inf, is singular.
+fn blink_is_invertible(t: [f64; 6]) -> bool {
+  let [a, b, c, d, _, _] = t;
+  (a * d - b * c).is_normal()
 }
 
 /// Blink AffineTransform DoMultiply (affine_transform.cc:101-113 m156): t1 * t2,

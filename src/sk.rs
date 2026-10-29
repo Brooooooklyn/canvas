@@ -4035,6 +4035,12 @@ impl Path {
     }
   }
 
+  /// Blink CanvasPath::IsLine (canvas_path.h:148 m156): the whole path is one
+  /// LineBuilder line, whose fill Blink skips.
+  pub fn is_blink_line(&self) -> bool {
+    self.1.line == LineState::Line
+  }
+
   /// Blink CanvasPath::GetModifiablePath (canvas_path.h:193-196 m156): the
   /// path leaves the LineBuilder and the ArcBuilder for good. The context's
   /// transform calls do this exactly where Blink calls GetModifiablePath,
@@ -4567,6 +4573,16 @@ impl Path {
   /// where Blink's double CTM changed, and the other way round.
   pub fn transform_self(&mut self, matrix: &Matrix) {
     unsafe { ffi::skiac_path_transform_self(self.0, matrix.0) };
+  }
+
+  /// Blink PathBuilder::Transform (path_builder.cc:547-551 m156), what the
+  /// context's GetModifiablePath().Transform calls run. A point past float
+  /// range becomes inf and stays, so the path is no longer finite and draws
+  /// and hit tests nothing, as in Chrome; `transform_self`
+  /// (SkPath::makeTransform) would empty the path instead.
+  pub fn transform_like_blink(&mut self, matrix: &Matrix) {
+    let t = matrix.get_transform();
+    self.transform_in_place([t.a, t.c, t.e, t.b, t.d, t.f]);
   }
 
   /// Blink PathBuilder::Transform (path_builder.cc:547-551 m156): map every
