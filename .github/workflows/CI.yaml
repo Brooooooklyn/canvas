@@ -468,7 +468,8 @@ jobs:
         shell: bash
 
       - name: Test bindings
-        run: docker run --rm -v $(pwd):/canvas -w /canvas node:${{ matrix.node }}-slim yarn test:ci
+        # Use the checked-in Yarn bundle; newer Node images omit Yarn/Corepack.
+        run: docker run --rm -v "$(pwd):/canvas" -w /canvas node:${{ matrix.node }}-slim node .yarn/releases/yarn-*.cjs test:ci
 
       - name: Test failed
         if: ${{ failure() }}
@@ -521,7 +522,8 @@ jobs:
         shell: bash
 
       - name: Test bindings
-        run: docker run --rm -v $(pwd):/canvas -w /canvas node:${{ matrix.node }}-alpine yarn test:ci
+        # Use the checked-in Yarn bundle; newer Node images omit Yarn/Corepack.
+        run: docker run --rm -v "$(pwd):/canvas" -w /canvas node:${{ matrix.node }}-alpine node .yarn/releases/yarn-*.cjs test:ci
 
       - name: Test failed
         if: ${{ failure() }}
@@ -572,7 +574,7 @@ jobs:
           name: test-aarch64-${{ matrix.node }}
           options: '--platform linux/arm64 -v ${{ github.workspace }}:/skia -w /skia'
           args: |
-            sh -c "set -e && yarn test:ci && ls -la"
+            sh -c "set -e && node .yarn/releases/yarn-*.cjs test:ci && ls -la"
 
       - name: Test failed
         if: ${{ failure() }}
@@ -623,7 +625,7 @@ jobs:
           name: test-alpine-musl
           options: '--platform linux/arm64 -v ${{ github.workspace }}:/skia -w /skia'
           args: |
-            sh -c "set -e && yarn test:ci"
+            sh -c "set -e && node .yarn/releases/yarn-*.cjs test:ci"
 
       - name: Test failed
         if: ${{ failure() }}
