@@ -1,3 +1,24 @@
+# [1.1.0](https://github.com/Brooooooklyn/canvas/compare/v1.0.13...v1.1.0) (2026-10-30)
+
+
+### Bug Fixes
+
+* **build:** bind the addon's own symbols on Linux so Electron's cxx runtime cannot replace them ([#1406](https://github.com/Brooooooklyn/canvas/issues/1406)) ([10a395a](https://github.com/Brooooooklyn/canvas/commit/10a395a0ff2c56736c1d7db9c676c2edcc556b20))
+* **build:** compile skia-c with -ffp-contract=off like Chromium ([#1412](https://github.com/Brooooooklyn/canvas/issues/1412)) ([c95bd18](https://github.com/Brooooooklyn/canvas/commit/c95bd1856ee7645a262dd59eaaadeb27f23660e5))
+* **build:** compile Windows Skia with -ffp-contract=off like Chromium ([#1409](https://github.com/Brooooooklyn/canvas/issues/1409)) ([b6d884d](https://github.com/Brooooooklyn/canvas/commit/b6d884d2ec5fbf677d38be9c04ee9b13b7454c3b))
+* **ci:** invalidate musl cache on Zig toolchain changes ([#1400](https://github.com/Brooooooklyn/canvas/issues/1400)) ([d6020bf](https://github.com/Brooooooklyn/canvas/commit/d6020bf418c1df604db5e9176f3517cac72428aa))
+* **ci:** use vendored Yarn in Node test containers ([#1417](https://github.com/Brooooooklyn/canvas/issues/1417)) ([ca7b04a](https://github.com/Brooooooklyn/canvas/commit/ca7b04a5e60c26b83c839e25af3faab3c2d7a8cf))
+* **ctx:** decide CTM invertibility from Blink's double CTM ([#1414](https://github.com/Brooooooklyn/canvas/issues/1414)) ([504e9fe](https://github.com/Brooooooklyn/canvas/commit/504e9feb488aca15aa4ace4cc4da19db7c025cb9))
+* **ctx:** keep Blink's double CTM as the source of truth ([#1413](https://github.com/Brooooooklyn/canvas/issues/1413)) ([2407be5](https://github.com/Brooooooklyn/canvas/commit/2407be54bf63bf648d8f14eb6026646ea4308c08))
+* **ctx:** skip the stroke of every one-point path like Chrome ([#1415](https://github.com/Brooooooklyn/canvas/issues/1415)) ([0df1c35](https://github.com/Brooooooklyn/canvas/commit/0df1c3537232408d7ed5f7e081bae819415ed05a))
+* **path:** draw a degenerate ellipse() as straight lines like Chrome ([#1408](https://github.com/Brooooooklyn/canvas/issues/1408)) ([767c57c](https://github.com/Brooooooklyn/canvas/commit/767c57cdd93ebc3be7cc26e3314d855605ed5a3d))
+* **path:** draw full-sweep arc() and ellipse() for every start angle ([#1407](https://github.com/Brooooooklyn/canvas/issues/1407)) ([18f5c06](https://github.com/Brooooooklyn/canvas/commit/18f5c06e969263fa9b1675ba6fe624d80cd6e105))
+* **path:** follow-ups to [#1408](https://github.com/Brooooooklyn/canvas/issues/1408): rotate() path, arc() start == end, rotated ellipse, isPointInStroke state, one-point stroke prune ([#1411](https://github.com/Brooooooklyn/canvas/issues/1411)) ([4cbdc28](https://github.com/Brooooooklyn/canvas/commit/4cbdc28cf746fb4e2521151d35f13f5790275a80))
+
+
+### Features
+
+* **text:** draw text the same on every OS by default, add setTextRenderer ([#1404](https://github.com/Brooooooklyn/canvas/issues/1404)) ([bf00526](https://github.com/Brooooooklyn/canvas/commit/bf0052671d7dfd998456eec0e1ac305fa9879dd1))
 ## [1.0.13](https://github.com/Brooooooklyn/canvas/compare/v1.0.12...v1.0.13) (2026-10-21)
 
 
