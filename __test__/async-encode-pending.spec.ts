@@ -1,4 +1,8 @@
 import { pbkdf2 } from 'node:crypto'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import type { ReadableStream } from 'node:stream/web'
 
 import test, { type ExecutionContext } from 'ava'
 
@@ -45,6 +49,29 @@ function redCanvas() {
 }
 
 const blobBytes = async (blob: Blob) => Buffer.from(await blob.arrayBuffer())
+
+async function streamBytes(stream: ReadableStream<Buffer>) {
+  const chunks: Buffer[] = []
+  for await (const chunk of stream) chunks.push(chunk)
+  return Buffer.concat(chunks)
+}
+
+// savePng is not in index.d.ts.
+type SavePngCanvas = Canvas & { savePng(path: string): void }
+
+function savedPng(canvas: Canvas) {
+  const dir = mkdtempSync(join(tmpdir(), 'async-encode-pending-'))
+  try {
+    const path = join(dir, 'out.png')
+    ;(canvas as SavePngCanvas).savePng(path)
+    return readFileSync(path)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+}
+
+const pixel = (ctx: SKRSContext2D) => [...ctx.getImageData(128, 128, 1, 1).data]
+const BLUE = [0, 0, 255, 255]
 
 interface Op {
   name: string
@@ -172,6 +199,76 @@ for (const op of OPS) {
       differs(t, expected2, second.sync(redCanvas().canvas), 'the second snapshot is blue, not red')
     })
   }
+
+  // Using the canvas as a source of another context borrows it as an
+  // argument (&mut CanvasElement), not as the receiver. Before the fix,
+  // drawCanvas and createPattern failed at that argument borrow; drawImage
+  // failed earlier, at the source.width read in the index.js wrapper.
+  const SOURCE_USES: [string, (target: SKRSContext2D, source: Canvas) => void][] = [
+    ['drawImage', (target, source) => target.drawImage(source, 0, 0)],
+    [
+      'createPattern and a fill',
+      (target, source) => {
+        const pattern = target.createPattern(source, 'repeat')
+        if (!pattern) throw new Error('createPattern returned null')
+        target.fillStyle = pattern
+        target.fillRect(0, 0, 256, 256)
+      },
+    ],
+    ['drawCanvas', (target, source) => target.drawCanvas(source, 0, 0)],
+  ]
+
+  for (const [use, draw] of SOURCE_USES) {
+    test(`another context's ${use} of the canvas while ${op.name} is pending`, async (t) => {
+      const { canvas, ctx } = redCanvas()
+      const expected = op.sync(canvas)
+      const target = createCanvas(256, 256).getContext('2d')
+      const occupiers = occupyThreadpool()
+      const pending = op.start(canvas)
+      drawBlue(ctx)
+      draw(target, canvas)
+      t.deepEqual(pixel(target), BLUE, `${use} draws the current blue pixels`)
+      const [output] = await Promise.all([pending, ...occupiers])
+      same(t, output, expected, 'the pending result is the red bitmap of the call')
+    })
+  }
+
+  test(`encodeStream while ${op.name} is pending`, async (t) => {
+    const { canvas, ctx } = redCanvas()
+    const expected = op.sync(canvas)
+    const twin = createCanvas(256, 256)
+    drawBlue(twin.getContext('2d'))
+    const occupiers = occupyThreadpool()
+    const pending = op.start(canvas)
+    drawBlue(ctx)
+    const stream = canvas.encodeStream('png')
+    ctx.clearRect(0, 0, 256, 256)
+    const [output, streamed, twinStreamed] = await Promise.all([
+      pending,
+      streamBytes(stream),
+      streamBytes(twin.encodeStream('png')),
+      ...occupiers,
+    ])
+    t.true(streamed.length > 0 && streamed.equals(twinStreamed), 'the stream gives the blue pixels of its call')
+    const redStreamed = await streamBytes(redCanvas().canvas.encodeStream('png'))
+    t.false(streamed.equals(redStreamed), 'the stream bytes depend on the pixels')
+    same(t, output, expected, 'the pending result is the red bitmap of the call')
+  })
+
+  test(`savePng while ${op.name} is pending`, async (t) => {
+    const { canvas, ctx } = redCanvas()
+    const expected = op.sync(canvas)
+    const twin = createCanvas(256, 256)
+    drawBlue(twin.getContext('2d'))
+    const occupiers = occupyThreadpool()
+    const pending = op.start(canvas)
+    drawBlue(ctx)
+    const saved = savedPng(canvas)
+    t.true(saved.length > 0 && saved.equals(savedPng(twin)), 'savePng writes the current blue pixels')
+    t.false(saved.equals(savedPng(redCanvas().canvas)), 'the saved bytes depend on the pixels')
+    const [output] = await Promise.all([pending, ...occupiers])
+    same(t, output, expected, 'the pending result is the red bitmap of the call')
+  })
 
   test(`encodeSync, toBuffer and toDataURL while ${op.name} is pending`, async (t) => {
     const { canvas, ctx } = redCanvas()
