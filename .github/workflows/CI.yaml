@@ -273,8 +273,13 @@ jobs:
         run: |
           # libaom-sys forces armv7-linux-gcc.cmake, which runs
           # arm-linux-gnueabihf-{gcc,g++,as}.
+          # libaom-sys sets AOM_TARGET_CPU=arm. cpu.cmake then compiles the
+          # *_neon.c files, but rtcd.pl only matches armv7/armv8 and declares
+          # the *_c functions only, so the NEON files call undeclared
+          # functions. The NEON code is never called. GCC 10 only warned
+          # about this; clang 16+ makes it an error.
           mkdir -p "$RUNNER_TEMP/armv7-bin"
-          printf '#!/bin/sh\nexec clang-19 --target=armv7-unknown-linux-gnueabihf "$@"\n' > "$RUNNER_TEMP/armv7-bin/arm-linux-gnueabihf-gcc"
+          printf '#!/bin/sh\nexec clang-19 --target=armv7-unknown-linux-gnueabihf -Wno-error=implicit-function-declaration "$@"\n' > "$RUNNER_TEMP/armv7-bin/arm-linux-gnueabihf-gcc"
           printf '#!/bin/sh\nexec clang++-19 --target=armv7-unknown-linux-gnueabihf "$@"\n' > "$RUNNER_TEMP/armv7-bin/arm-linux-gnueabihf-g++"
           printf '#!/bin/sh\nexec armv7-unknown-linux-gnueabihf-as "$@"\n' > "$RUNNER_TEMP/armv7-bin/arm-linux-gnueabihf-as"
           chmod +x "$RUNNER_TEMP"/armv7-bin/*
