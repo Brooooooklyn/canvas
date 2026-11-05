@@ -614,7 +614,7 @@ __metadata:
     npm-run-all2: "npm:^9.0.0"
     oxlint: "npm:^1.34.0"
     oxlint-tsgolint: "npm:^7.0.0"
-    pdfjs-dist: "npm:6.4.299"
+    pdfjs-dist: "npm:6.5.438"
     pinst: "npm:^3.0.0"
     png.js: "npm:^0.2.1"
     prettier: "npm:^3.7.4"
@@ -4665,7 +4665,19 @@ __metadata:
   languageName: node
   linkType: hard
 
-"pdfjs-dist@npm:6.4.299, pdfjs-dist@npm:^6.0.0":
+"pdfjs-dist@npm:6.5.438":
+  version: 6.5.438
+  resolution: "pdfjs-dist@npm:6.5.438"
+  dependencies:
+    "@napi-rs/canvas": "npm:^1.0.13"
+  dependenciesMeta:
+    "@napi-rs/canvas":
+      optional: true
+  checksum: 10c0/5b8ed4ddaddb678297b11a9b8559d474d04aa5ef27847d3c9771af8cfef1d45a2f5f01154a683629b352d3f3a9f32059b2c29d30e7c91cdd1eca1e602fedb071
+  languageName: node
+  linkType: hard
+
+"pdfjs-dist@npm:^6.0.0":
   version: 6.4.299
   resolution: "pdfjs-dist@npm:6.4.299"
   dependencies:
