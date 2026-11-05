@@ -8,7 +8,7 @@ move binaries. Every fact here comes from the files and from real CI runs.
 1. Workflows and triggers
 2. The tag rule
 3. The 11 build jobs
-4. The 111 assets
+4. The 112 assets
 5. Scripts
 6. How the addon consumes the binaries
 7. Timing
@@ -105,7 +105,7 @@ From the last successful run. All jobs run in parallel.
 | `stable - linux-x64-musl - build skia` | `--target=x86_64-unknown-linux-musl` |
 | `stable - aarch64-linux-gnu - build skia` | docker `ubuntu-builder:jammy-aarch64`, `--target=aarch64-unknown-linux-gnu` |
 | `stable - linux-aarch64-musl - build skia` | `--target=aarch64-unknown-linux-musl` |
-| `stable - armv7-linux - build skia` | container `debian:11`, `--target=armv7-unknown-linux-gnueabihf` |
+| `stable - armv7-linux - build skia` | ubuntu-latest, no container: clang-19 + napi-cross glibc 2.17 sysroot + libc++ from `build-c++abi.mjs`, `--target=armv7-unknown-linux-gnueabihf` |
 | `stable - aarch64-linux-android - build skia` | `--target=aarch64-linux-android` |
 | `stable - riscv64-linux-gnu - build skia` | `--target=riscv64gc-unknown-linux-gnu` |
 
@@ -128,9 +128,10 @@ if (process.env.SKIP_SYNC_SK_DEPS !== 'false' && process.env.SKIP_SYNC_SK_DEPS !
 So `SKIP_SYNC_SK_DEPS=0` **skips** the in-script sync. Docker jobs set it because the
 host already synced.
 
-## 4. The 111 assets
+## 4. The 112 assets
 
-10 components, 11 platforms, plus `icudtl.dat`.
+10 components, 11 platforms, plus `icudtl.dat` and
+`libc++-linux-armv7-gnueabihf.tar.gz` (armv7 job only).
 
 Components: `skia`, `skparagraph`, `skshaper`, `svg`, `skunicode_core`,
 `skunicode_icu`, `skottie`, `skresources`, `sksg`, `jsonreader`.
@@ -149,13 +150,14 @@ Components: `skia`, `skparagraph`, `skshaper`, `svg`, `skunicode_core`,
 | host win32, no `--target` | `<c>-win32-x64-msvc.lib` |
 | `aarch64-pc-windows-msvc` | `<c>-win32-arm64-msvc.lib` |
 
-`icudtl.dat` is uploaded only by the win32 host job.
+`icudtl.dat` is uploaded only by the win32 host job, and
+`libc++-linux-armv7-gnueabihf.tar.gz` only by the armv7 job.
 
 The release object is created by whichever job finishes first, even in a failed run.
 Assets are uploaded per job and overwrite same named assets. So:
 
 ```bash
-gh release view <tag> --json assets --jq '.assets | length'   # must be 111
+gh release view <tag> --json assets --jq '.assets | length'   # must be 112
 ```
 
 An older release with 61 or 55 assets is from a smaller matrix. Do not use those
@@ -168,7 +170,13 @@ counts as the gate.
 | `scripts/build-skia.js` | `gn gen` plus `ninja` for one target. Accepts only `--target=<triple>`. |
 | `scripts/release-skia-binary.mjs` | `--download`, `--upload`, `--download-icu`. Holds the `LIB` list. |
 | `scripts/utils.mjs` | Derives `TAG` and maps component plus triple to an asset name. |
-| `scripts/build-c++abi.mjs` | Builds static libc++ for the musl targets. Reads the root `llvm-version` file. |
+| `scripts/build-c++abi.mjs` | Builds static libc++. See below. |
+
+`build-c++abi.mjs` reads the root `llvm-version` file. With no `--target`, it
+builds libc++ for the host (musl). With
+`--target=armv7-unknown-linux-gnueabihf`, it builds the
+`libc++-linux-armv7-gnueabihf.tar.gz` release asset against the napi-cross
+sysroot. The tag does not hash this script.
 
 `build-skia.js` valid `--target=` values:
 

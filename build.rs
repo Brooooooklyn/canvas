@@ -215,19 +215,27 @@ fn main() {
             println!("cargo:rustc-link-lib=static=atomic");
           }
           "arm" => {
-            unsafe {
-              env::set_var("CC", "clang");
-              env::set_var("CXX", "clang++");
-              env::set_var("TARGET_CC", "clang");
-              env::set_var("TARGET_CXX", "clang++");
-            }
+            // CI sets TARGET_CC/TARGET_CXX=clang-19/clang++-19; napi
+            // --use-napi-cross adds the glibc 2.17 sysroot, --gcc-toolchain
+            // and the GCC 4.8.5 linker. libc++ under
+            // /usr/armv7-unknown-linux-gnueabihf/lib/llvm-19 is the Skia
+            // release asset libc++-linux-armv7-gnueabihf.tar.gz, built by
+            // scripts/build-c++abi.mjs against the same sysroot.
+            println!("cargo:rerun-if-env-changed=TARGET_SYSROOT");
+            let sysroot = env::var("TARGET_SYSROOT")
+              .expect("TARGET_SYSROOT is unset: build armv7 with `napi build --use-napi-cross`");
+            link_libcxx(&mut build);
+            // The CPU flags match scripts/skia-gn-args.cjs; without -mfpu
+            // clang turns on NEON.
             build
-              .cpp_set_stdlib("stdc++")
-              .flag("-static")
-              .include("/usr/arm-linux-gnueabihf/include")
-              .include("/usr/arm-linux-gnueabihf/include/c++/9");
-            println!("cargo:rustc-link-lib=static=stdc++");
-            println!("cargo:rustc-link-search=/usr/lib/gcc-cross/arm-linux-gnueabihf/9");
+              .flag(format!("--sysroot={sysroot}"))
+              .flag("-march=armv7-a")
+              .flag("-mfpu=vfpv3-d16")
+              .flag("-mfloat-abi=hard")
+              .flag("-mthumb")
+              .flag("-nostdinc++")
+              .flag("-isystem/usr/armv7-unknown-linux-gnueabihf/lib/llvm-19/include/c++/v1");
+            println!("cargo:rustc-link-search=/usr/armv7-unknown-linux-gnueabihf/lib/llvm-19/lib");
           }
           _ => {}
         },

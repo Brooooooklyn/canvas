@@ -35,6 +35,10 @@ All Apple M chips on **macOS**.
 
 Since Skia relies on the [glibc](https://www.gnu.org/software/libc/) 2.18 API, you need to have at least glibc version >= 2.18 on your system.
 
+Note: the armv7 (`linux-arm-gnueabihf`) packages from 0.1.66 to 1.1.0 need
+a newer glibc (0.1.66 needs 2.28, 1.1.0 needs 2.30). Later versions need
+glibc 2.18, like the other targets.
+
 ## AWS Lambda usage
 
 To use this library on Lambda you will need to use a Lambda layer.
