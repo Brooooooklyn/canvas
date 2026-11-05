@@ -11,8 +11,13 @@ import { createCanvas, type Canvas, type SKRSContext2D } from '../index.js'
 type Output = Buffer | string
 
 // Occupy every libuv worker so the async encode task is queued behind them
-// and cannot start before the main thread uses the canvas.
-function occupyThreadpool(count = 8): Promise<unknown>[] {
+// and cannot start before the main thread uses the canvas. This makes the
+// call-time snapshot check strict. It costs 8 pbkdf2 jobs per test, so it
+// runs on macOS CI only; elsewhere the tests still check that each call
+// works while the encode is pending (the borrow guard of napi-rs #3584).
+const OCCUPY_THREADPOOL = process.platform === 'darwin' && !!process.env.CI
+
+function occupyThreadpool(count = OCCUPY_THREADPOOL ? 8 : 0): Promise<unknown>[] {
   return Array.from(
     { length: count },
     () =>
