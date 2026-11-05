@@ -49,8 +49,9 @@ function runInChildProcess(
   })
 }
 
-// A canvas that is not held alive across the await must still be kept
-// native-alive by the async encode task itself (issue #1312).
+// A canvas that is not held alive across the await may be collected while
+// the encode runs: the task's SkImage snapshot keeps the pixels alive, and
+// the canvas is not GC-rooted (issue #1312).
 test('encode() completes when the canvas is not referenced across the await', async (t) => {
   const { status, signal, stdout, stderr } = await runInChildProcess(`
 const { createCanvas } = require('./index.js')

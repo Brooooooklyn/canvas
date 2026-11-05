@@ -147,6 +147,26 @@ fn rejected_with_index_size_error<'env>(env: &'env Env, message: &str) -> Result
   Ok(unsafe { Unknown::from_raw_unchecked(raw, promise) })
 }
 
+/// Starts an owned encode task and returns its promise. Unlike an `AsyncTask`
+/// return, this claims no borrow lease, so the canvas stays usable while the
+/// task runs (napi-rs #3584). Env::spawn roots nothing, so `T: 'static` makes
+/// a task that borrows the canvas (self, self.ctx, This) fail to compile
+/// (E0521); a task that must reach the canvas has to own a reference itself.
+/// The bound blocks borrows only: a task may hold owned, immutable data (an
+/// SkImage snapshot, plain values), never a SurfaceRef, Surface, Canvas or
+/// other handle to live state, which would race with later draws.
+/// Do not use a `&'static self` / `&'static mut self` receiver: napi-derive
+/// ignores the receiver lifetime, which would defeat this bound.
+fn spawn_owned<'env, T>(
+  env: &'env Env,
+  task: T,
+) -> Result<PromiseRaw<'env, <T as ScopedTask<'env>>::JsValue>>
+where
+  T: ScopedTask<'env> + 'static,
+{
+  Ok(env.spawn(task)?.promise_object())
+}
+
 /// Puts `new` in place of a canvas's Context, and reports the change in
 /// pixel bytes to V8: every add and subtract uses `surface_bytes`, so they
 /// match also for a canvas without pixels.
@@ -306,23 +326,22 @@ impl<'c> CanvasElement<'c> {
     this.get_named_property("ctx").map(Some)
   }
 
-  #[napi]
+  #[napi(ts_return_type = "Promise<Buffer>")]
   pub fn encode<'env>(
     &mut self,
     env: &'env Env,
     format: String,
     options: NodeEncodeOptions,
-  ) -> Result<Either<AsyncTask<ContextData>, Unknown<'env>>> {
+  ) -> Result<Either<PromiseRaw<'env, Buffer>, Unknown<'env>>> {
     if !self.ctx.context.has_pixels() {
       return rejected_with_index_size_error(env, NO_PIXELS).map(Either::B);
     }
     // Flush deferred rendering before encoding
     self.ctx.context.flush();
-    Ok(Either::A(AsyncTask::new(self.encode_inner(
-      env.raw(),
-      format,
-      options,
-    )?)))
+    Ok(Either::A(spawn_owned(
+      env,
+      self.encode_inner(env.raw(), format, options)?,
+    )?))
   }
 
   #[napi]
@@ -403,14 +422,15 @@ impl<'c> CanvasElement<'c> {
   }
 
   #[napi(js_name = "toDataURLAsync")]
-  pub fn to_data_url_async(
+  pub fn to_data_url_async<'env>(
     &mut self,
+    env: &'env Env,
     mime: EncodeType<ToDataUrlAsyncSite>,
     quality: EncodeQuality,
-  ) -> Result<AsyncTask<AsyncDataUrl>> {
+  ) -> Result<PromiseRaw<'env, String>> {
     // Flush deferred rendering before encoding
     self.ctx.context.flush();
-    Ok(AsyncTask::new(self.to_data_url_inner(mime.0, quality)?))
+    spawn_owned(env, self.to_data_url_inner(mime.0, quality)?)
   }
 
   /// toDataURL(type, quality): the type is converted to a string and picked
@@ -432,20 +452,24 @@ impl<'c> CanvasElement<'c> {
   /// null when the canvas has no pixels or the encoder fails (Chrome calls
   /// back null then).
   #[napi(ts_return_type = "Promise<{ data: Uint8Array; type: string } | null>")]
-  pub fn to_blob(
+  pub fn to_blob<'env>(
     &mut self,
+    env: &'env Env,
     mime: EncodeType<ToBlobSite>,
     quality: BlobQuality,
-  ) -> Result<AsyncTask<AsyncBlob>> {
+  ) -> Result<PromiseRaw<'env, Either<BlobData<'env>, Null>>> {
     // Flush deferred rendering before encoding
     self.ctx.context.flush();
-    Ok(AsyncTask::new(AsyncBlob {
-      image: self.snapshot()?,
-      encoding: Encoding::web(mime.0, quality.0, None),
-      width: self.ctx.context.width,
-      height: self.ctx.context.height,
-      reject_on_failure: false,
-    }))
+    spawn_owned(
+      env,
+      AsyncBlob {
+        image: self.snapshot()?,
+        encoding: Encoding::web(mime.0, quality.0, None),
+        width: self.ctx.context.width,
+        height: self.ctx.context.height,
+        reject_on_failure: false,
+      },
+    )
   }
 
   /// OffscreenCanvas.convertToBlob(options): ImageEncodeOptions `type`
@@ -456,19 +480,22 @@ impl<'c> CanvasElement<'c> {
     &mut self,
     env: &'env Env,
     options: ImageEncodeOptions,
-  ) -> Result<Either<AsyncTask<AsyncBlob>, Unknown<'env>>> {
+  ) -> Result<Either<PromiseRaw<'env, Either<BlobData<'env>, Null>>, Unknown<'env>>> {
     if !self.ctx.context.has_pixels() {
       return rejected_with_index_size_error(env, CONVERT_TO_BLOB_NO_PIXELS).map(Either::B);
     }
     // Flush deferred rendering before encoding
     self.ctx.context.flush();
-    Ok(Either::A(AsyncTask::new(AsyncBlob {
-      image: self.snapshot()?,
-      encoding: Encoding::web(options.ty, Some(options.quality), None),
-      width: self.ctx.context.width,
-      height: self.ctx.context.height,
-      reject_on_failure: true,
-    })))
+    Ok(Either::A(spawn_owned(
+      env,
+      AsyncBlob {
+        image: self.snapshot()?,
+        encoding: Encoding::web(options.ty, Some(options.quality), None),
+        width: self.ctx.context.width,
+        height: self.ctx.context.height,
+        reject_on_failure: true,
+      },
+    )?))
   }
 
   #[napi]
