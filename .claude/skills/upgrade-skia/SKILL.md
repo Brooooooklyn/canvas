@@ -302,9 +302,9 @@ git push origin release
 
 **Kind B - the fix changes the Skia build config.** Any edit to `GN_ARGS` in
 `scripts/build-skia.js`, to the `LIB` list in `scripts/release-skia-binary.mjs`, or
-to `.github/workflows/skia.yaml`, or to `scripts/build-c++abi.mjs` (it builds the armv7
-libc++ asset, and the tag does not hash it). The published binaries are now stale. Follow the
-long path:
+to `.github/workflows/skia.yaml`, or to `scripts/build-c++abi.mjs` (it builds
+the armv7 libc++ asset, and the tag does not hash it). The published binaries
+are now stale. Follow the long path:
 
 1. Close the PR. `gh pr close <pr-number>`.
 2. Commit the fix without `[skip skia]` and push `release`.

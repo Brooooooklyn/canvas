@@ -170,7 +170,13 @@ counts as the gate.
 | `scripts/build-skia.js` | `gn gen` plus `ninja` for one target. Accepts only `--target=<triple>`. |
 | `scripts/release-skia-binary.mjs` | `--download`, `--upload`, `--download-icu`. Holds the `LIB` list. |
 | `scripts/utils.mjs` | Derives `TAG` and maps component plus triple to an asset name. |
-| `scripts/build-c++abi.mjs` | No `--target`: builds static libc++ for the host (musl). `--target=armv7-unknown-linux-gnueabihf`: builds the `libc++-linux-armv7-gnueabihf.tar.gz` release asset against the napi-cross sysroot. Reads the root `llvm-version` file. Not part of the tag hash. |
+| `scripts/build-c++abi.mjs` | Builds static libc++. See below. |
+
+`build-c++abi.mjs` reads the root `llvm-version` file. With no `--target`, it
+builds libc++ for the host (musl). With
+`--target=armv7-unknown-linux-gnueabihf`, it builds the
+`libc++-linux-armv7-gnueabihf.tar.gz` release asset against the napi-cross
+sysroot. The tag does not hash this script.
 
 `build-skia.js` valid `--target=` values:
 
