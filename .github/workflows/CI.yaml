@@ -284,7 +284,7 @@ jobs:
           TARGET_CC: clang-19
           TARGET_CXX: clang++-19
           TARGET_CFLAGS: -march=armv7-a -mfpu=vfpv3-d16 -mfloat-abi=hard -mthumb
-          TARGET_CXXFLAGS: -march=armv7-a -mfpu=vfpv3-d16 -mfloat-abi=hard -mthumb -stdlib=libc++ -nostdinc++ -isystem/usr/armv7-unknown-linux-gnueabihf/lib/llvm-19/include/c++/v1
+          TARGET_CXXFLAGS: -march=armv7-a -mfpu=vfpv3-d16 -mfloat-abi=hard -mthumb -stdlib=libc++ -nostdinc++ -isystem/usr/armv7-unknown-linux-gnueabihf/lib/llvm-19/include/c++/v1 -L/usr/armv7-unknown-linux-gnueabihf/lib/llvm-19/lib
 
       # A shared-object link allows undefined symbols, so a missing libc or
       # libc++abi symbol would only fail at load time. README promises

@@ -358,6 +358,11 @@ jobs:
         run: echo "${PWD}/depot_tools" >> "$GITHUB_PATH"
         shell: bash
 
+      - name: Setup cmake
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: '4.x'
+
       - name: Install dependencies
         run: yarn install --immutable --mode=skip-build
 
@@ -368,7 +373,7 @@ jobs:
       - name: Install cross tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang-19 llvm-19 ninja-build
+          sudo apt-get install -y clang-19 llvm-19 ninja-build wget unzip
           sudo mkdir -p /usr/armv7-unknown-linux-gnueabihf
           sudo chown "$(id -u):$(id -g)" /usr/armv7-unknown-linux-gnueabihf
           node -e "require('@napi-rs/cross-toolchain').download('x64', 'armv7-unknown-linux-gnueabihf').unpack('/usr/armv7-unknown-linux-gnueabihf')"
