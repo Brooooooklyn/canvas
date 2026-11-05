@@ -238,16 +238,44 @@ function buildGnArgs({
         `extra_cflags_c=[${extraCflags}]`,
       )
       break
-    case 'armv7-unknown-linux-gnueabihf':
-      cc = '"arm-linux-gnueabihf-gcc"'
-      cxx = '"arm-linux-gnueabihf-g++"'
+    case 'armv7-unknown-linux-gnueabihf': {
+      // skia.yaml unpacks the napi-cross toolchain (glibc 2.17 sysroot, GCC
+      // 4.8.5 crt/libgcc, binutils) here, and scripts/build-c++abi.mjs installs
+      // libc++ 19 built against that sysroot under lib/llvm-19.
+      const toolchain = '/usr/armv7-unknown-linux-gnueabihf'
+      // --target must be this exact triple for clang to find
+      // lib/gcc/armv7-unknown-linux-gnueabihf/4.8.5. The CPU flags are the
+      // napi-cross GCC defaults; without -mfpu clang turns on NEON.
+      const armv7Flags = [
+        '--target=armv7-unknown-linux-gnueabihf',
+        `--sysroot=${toolchain}/armv7-unknown-linux-gnueabihf/sysroot`,
+        `--gcc-toolchain=${toolchain}`,
+        '-march=armv7-a',
+        '-mfpu=vfpv3-d16',
+        '-mfloat-abi=hard',
+        '-mthumb',
+      ]
+        .map((flag) => `"${flag}"`)
+        .join(', ')
+      cc = '"clang-19"'
+      cxx = '"clang++-19"'
       // Disable SkPathData backend - it has issues on 32-bit ARM under QEMU emulation
       // The kill switch was added in Chrome m144: skia commit 7f325708d2
       extraCflagsCC += ',"-DSK_DISABLE_PATHDATA"'
+      // -nostdinc++ keeps the host /usr/lib/llvm-19 libc++ headers out.
+      extraCflagsCC += `, "-stdlib=libc++", "-nostdinc++", "-isystem${toolchain}/lib/llvm-19/include/c++/v1"`
       // Use "armv7a" (not "arm") to avoid Skia's zlib bug where ARM CRC32
       // (armv8-only) is incorrectly enabled for all ARM targets
       extraSkiaBuildFlag += ' target_cpu="armv7a" target_os="linux"'
+      GN_ARGS.push(
+        `extra_ldflags=[${armv7Flags}, "-stdlib=libc++", "-L${toolchain}/lib/llvm-19/lib"]`,
+        `ar="llvm-ar-19"`,
+        // --target is needed for icudtl_dat.S.
+        `extra_asmflags=[${armv7Flags}]`,
+        `extra_cflags=[${armv7Flags}]`,
+      )
       break
+    }
     case 'aarch64-apple-darwin':
       extraSkiaBuildFlag += ' target_cpu="arm64" target_os="mac"'
       extraCflagsCC += ', "--target=arm64-apple-macos", "-mmacosx-version-min=11.0"'

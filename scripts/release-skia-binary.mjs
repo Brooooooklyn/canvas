@@ -31,6 +31,10 @@ const LIB = [
   'jsonreader',
 ]
 const ICU_DAT = 'icudtl.dat'
+// libc++ built by scripts/build-c++abi.mjs against the napi-cross glibc 2.17
+// sysroot. libskia was compiled with its headers, so the canvas armv7 build
+// must link this exact copy.
+const ARMV7_LIBCXX = 'libc++-linux-armv7-gnueabihf.tar.gz'
 
 const CLIENT = new Octokit({
   auth: process.env.GITHUB_TOKEN,
@@ -122,6 +126,31 @@ async function upload() {
       data: await fs.readFile(icuDataPath),
     })
   }
+  if (TARGET_TRIPLE === 'armv7-unknown-linux-gnueabihf') {
+    const libcxx = assets.find(({ name }) => name === ARMV7_LIBCXX)
+    if (libcxx) {
+      console.info(green(`[${ARMV7_LIBCXX}] existed, delete it...`))
+      await CLIENT.repos.deleteReleaseAsset({
+        owner: OWNER,
+        repo: REPO,
+        asset_id: libcxx.id,
+      })
+    }
+    console.info(green(`Uploading [${ARMV7_LIBCXX}] to github release: [${TAG}]`))
+    const libcxxPath = join(dirname, '..', ARMV7_LIBCXX)
+    await CLIENT.repos.uploadReleaseAsset({
+      owner: OWNER,
+      repo: REPO,
+      name: ARMV7_LIBCXX,
+      release_id,
+      mediaType: { format: 'raw' },
+      headers: {
+        'content-length': statSync(libcxxPath).size,
+        'content-type': 'application/octet-stream',
+      },
+      data: await fs.readFile(libcxxPath),
+    })
+  }
 }
 
 async function download() {
@@ -137,6 +166,11 @@ async function download() {
     await downloadIcu()
     await fs.copyFile(join(dirname, '..', ICU_DAT), join(dirname, '..', 'npm', 'win32-x64-msvc', ICU_DAT))
     await fs.copyFile(join(dirname, '..', ICU_DAT), join(dirname, '..', 'npm', 'win32-arm64-msvc', ICU_DAT))
+  }
+  if (TARGET_TRIPLE === 'armv7-unknown-linux-gnueabihf') {
+    const downloadUrl = `https://github.com/${OWNER}/${REPO}/releases/download/${TAG}/${ARMV7_LIBCXX}`
+    console.info(`downloading ${downloadUrl}`)
+    downloadFile(downloadUrl, join(dirname, '..', ARMV7_LIBCXX))
   }
 }
 
