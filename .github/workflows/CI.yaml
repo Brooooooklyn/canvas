@@ -227,39 +227,13 @@ jobs:
   build-armv7-linux-gnueabihf:
     name: Build armv7-unknown-linux-gnueabihf
     runs-on: ubuntu-latest
-    container:
-      image: debian:11
 
     steps:
-      - name: Setup tools
+      - name: Install clang
         run: |
-            # Debian 11 LTS ended on 2026-08-31. The bullseye-security index is frozen
-            # (Valid-Until 2026-09-07) and its pool is now only partially mirrored:
-            # deb.debian.org and security.debian.org each return 404 for files the
-            # other still serves, and both have dropped llvm-toolchain-19. Add both
-            # mirrors plus a dated snapshot so apt can fall back, and accept the
-            # frozen index on those entries only. Live repositories added below
-            # (apt.llvm.org, nodesource) keep their expiry check.
-            sed -i 's|^deb http://deb.debian.org/debian-security|deb [check-valid-until=no] http://deb.debian.org/debian-security|' /etc/apt/sources.list
-            echo "deb [check-valid-until=no] http://security.debian.org/debian-security bullseye-security main" >> /etc/apt/sources.list
-            echo "deb [check-valid-until=no] http://snapshot.debian.org/archive/debian-security/20260831T064608Z bullseye-security main" >> /etc/apt/sources.list
-            # llvm-toolchain-19 is on the snapshot only, so that source has no
-            # alternate. apt 2.2 retries zero times by default, which turns a
-            # rate-limit or timeout into a failed build. Retry transient errors.
-            # A 404 stays a permanent error, so mirror fallback is still immediate.
-            echo 'Acquire::Retries "3";' > /etc/apt/apt.conf.d/80retries
-            apt-get update
-            apt-get install -y gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf libatomic1-armhf-cross git build-essential cmake ninja-build wget curl gnupg
-            echo "deb http://apt.llvm.org/bullseye/ llvm-toolchain-bullseye-19 main" >> /etc/apt/sources.list
-            echo "deb-src http://apt.llvm.org/bullseye/ llvm-toolchain-bullseye-19 main" >> /etc/apt/sources.list
-            wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -
-            apt-get update
-            apt-get install -y clang-19
-            ln -s /usr/bin/clang-19 /usr/bin/clang
-            ln -s /usr/bin/clang++-19 /usr/bin/clang++
-            curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
-            apt-get install -y nodejs
-            npm install -g yarn corepack
+          sudo apt-get update
+          sudo apt-get install -y clang-19 llvm-19
+
       - uses: actions/checkout@v7
         with:
           submodules: true
@@ -273,6 +247,7 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: 26
+          cache: 'yarn'
 
       - name: Install
         uses: ./.github/actions/setup-rust
@@ -280,20 +255,66 @@ jobs:
           targets: 'armv7-unknown-linux-gnueabihf'
 
       - name: Install dependencies
-        run: |
-          corepack enable
-          yarn install --immutable --mode=skip-build
+        run: yarn install --immutable --mode=skip-build
 
+      # The Skia release also carries the libc++ libskia was compiled with,
+      # built against the same glibc 2.17 sysroot napi-cross uses below.
       - name: Download skia binary
         run: |
-          git config --global --add safe.directory "$(pwd)"
-          git config --global --add safe.directory "$(pwd)/skia"
           node ./scripts/release-skia-binary.mjs --download --target=armv7-unknown-linux-gnueabihf
+          sudo mkdir -p /usr/armv7-unknown-linux-gnueabihf/lib/llvm-19
+          sudo tar -xzf libc++-linux-armv7-gnueabihf.tar.gz -C /usr/armv7-unknown-linux-gnueabihf/lib/llvm-19
 
+      # napi --use-napi-cross sets the GCC 4.8.5 linker, TARGET_SYSROOT and
+      # TARGET_AR, and prefixes TARGET_CFLAGS/TARGET_CXXFLAGS with --sysroot
+      # and --gcc-toolchain because TARGET_CC/TARGET_CXX are clang. Without
+      # -mfpu clang turns on NEON.
       - name: Build
         run: |
-          export CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_LINKER=arm-linux-gnueabihf-gcc
-          yarn build --target armv7-unknown-linux-gnueabihf -- --locked
+          # libaom-sys forces armv7-linux-gcc.cmake, which runs
+          # arm-linux-gnueabihf-{gcc,g++,as}.
+          mkdir -p "$RUNNER_TEMP/armv7-bin"
+          printf '#!/bin/sh\nexec clang-19 --target=armv7-unknown-linux-gnueabihf "$@"\n' > "$RUNNER_TEMP/armv7-bin/arm-linux-gnueabihf-gcc"
+          printf '#!/bin/sh\nexec clang++-19 --target=armv7-unknown-linux-gnueabihf "$@"\n' > "$RUNNER_TEMP/armv7-bin/arm-linux-gnueabihf-g++"
+          printf '#!/bin/sh\nexec armv7-unknown-linux-gnueabihf-as "$@"\n' > "$RUNNER_TEMP/armv7-bin/arm-linux-gnueabihf-as"
+          chmod +x "$RUNNER_TEMP"/armv7-bin/*
+          export PATH="$RUNNER_TEMP/armv7-bin:$PATH"
+          yarn build --target armv7-unknown-linux-gnueabihf --use-napi-cross -- --locked
+        env:
+          TARGET_CC: clang-19
+          TARGET_CXX: clang++-19
+          TARGET_CFLAGS: -march=armv7-a -mfpu=vfpv3-d16 -mfloat-abi=hard -mthumb
+          TARGET_CXXFLAGS: -march=armv7-a -mfpu=vfpv3-d16 -mfloat-abi=hard -mthumb -stdlib=libc++ -nostdinc++ -isystem/usr/armv7-unknown-linux-gnueabihf/lib/llvm-19/include/c++/v1
+
+      # A shared-object link allows undefined symbols, so a missing libc or
+      # libc++abi symbol would only fail at load time. README promises
+      # glibc 2.18.
+      - name: Check armv7 glibc and C++ runtime needs
+        run: |
+          set -euo pipefail
+          F="${APP_NAME}.linux-arm-gnueabihf.node"
+          llvm-readelf-19 -d "$F" | sed -n 's/.*(NEEDED).*\[\(.*\)\]/\1/p' | tee needed.txt
+          if grep -vxE 'libc\.so\.6|libm\.so\.6|libdl\.so\.2|libpthread\.so\.0|librt\.so\.1|libgcc_s\.so\.1|ld-linux-armhf\.so\.3' needed.txt; then
+            echo '::error::unexpected NEEDED library'
+            exit 1
+          fi
+          llvm-readelf-19 -V "$F" > versions.txt
+          if grep -E 'GLIBCXX_|CXXABI_' versions.txt; then
+            echo '::error::needs libstdc++'
+            exit 1
+          fi
+          MAX=$(grep -oE 'GLIBC_2\.[0-9]+' versions.txt | sort -u -t. -k2,2n | tail -1)
+          echo "highest glibc version: $MAX"
+          if [ "${MAX#GLIBC_2.}" -gt 18 ]; then
+            echo "::error::needs $MAX, README promises 2.18"
+            exit 1
+          fi
+          llvm-readelf-19 --dyn-syms -W "$F" | awk '$7 == "UND" && $5 == "GLOBAL" && $8 != "" && $8 !~ /@/ && $8 !~ /^(napi_|node_api_)/' > unresolved.txt
+          if [ -s unresolved.txt ]; then
+            cat unresolved.txt
+            echo '::error::unversioned strong undefined symbols'
+            exit 1
+          fi
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7

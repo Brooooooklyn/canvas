@@ -25,7 +25,7 @@ to the `release` branch builds them.
                                               |
         push branch `release`  ------>  workflow "Build skia" (11 jobs)
                                               |
-                                    111 assets uploaded to skia-<sha8>-<args8>
+                                    112 assets uploaded to skia-<sha8>-<args8>
                                               |
                             now, and only now, open the PR release -> main
                                               |
@@ -236,7 +236,7 @@ The matrix has 11 jobs and takes 12 to 19 minutes. The long pole is
 
 Warning: the release tag appears even when the build fails, and the asset count alone
 proves nothing. Each job uploads its own assets, and a later run overwrites only the
-assets its own jobs produce. A run with two red jobs can still show all 111 assets,
+assets its own jobs produce. A run with two red jobs can still show all 112 assets,
 because the missing ones are stale files left by the previous run. This happened during
 the m154 upgrade.
 
@@ -244,11 +244,11 @@ The only gate is 11 green jobs in the run you are watching:
 
 ```bash
 gh run view <run-id> --json jobs --jq '[.jobs[] | {name, conclusion}]'
-gh release view <tag> --json assets --jq '.assets | length'   # expect 111
+gh release view <tag> --json assets --jq '.assets | length'   # expect 112
 ```
 
 Proceed only when all 11 jobs of that single run are green. Then confirm the count is
-111 as a second check.
+112 as a second check.
 
 To wait for a run that a push has not registered yet:
 
@@ -307,7 +307,7 @@ long path:
 
 1. Close the PR. `gh pr close <pr-number>`.
 2. Commit the fix without `[skip skia]` and push `release`.
-3. Wait for all 11 jobs and 111 assets, as in Phase 6.
+3. Wait for all 11 jobs and 112 assets, as in Phase 6.
 4. Reopen or recreate the PR. Watch CI again.
 
 ```
@@ -317,7 +317,7 @@ CI fails
    |
    +-- Kind B: build-skia.js, LIB, skia.yaml
            |
-           close PR -> push release -> wait 11/11 + 111 assets -> new PR
+           close PR -> push release -> wait 11/11 + 112 assets -> new PR
 ```
 
 ## Scope discipline
@@ -340,6 +340,6 @@ Hand product decisions back to the user instead of settling them here.
 ## References
 
 - `references/pipeline.md` - the CI map: workflows, the 11 jobs, the tag rule, the
-  111 assets, and every script and command involved.
+  112 assets, and every script and command involved.
 - `references/troubleshooting.md` - known failure classes, the real historical
   breakages and their fixes, and the in-tree patch log.

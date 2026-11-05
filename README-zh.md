@@ -35,6 +35,8 @@ npm install @napi-rs/canvas
 
 由于 Skia 依赖 [glibc](https://www.gnu.org/software/libc/) 2.18 的 API，所以最少需要您的系统中 glibc 版本 >= 2.18。
 
+注意：armv7（`linux-arm-gnueabihf`）从 0.1.66 到 1.1.0 的包需要更新的 glibc（0.1.66 需要 2.28，1.1.0 需要 2.30）；之后的版本和其他平台一样只需要 glibc 2.18。
+
 # 用法
 
 ```js
