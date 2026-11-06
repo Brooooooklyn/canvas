@@ -8,7 +8,7 @@ use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::fmt;
 
-use cssparser::{CowRcStr, ParseError, ToCss};
+use cssparser::{ParseError, ToCss};
 use precomputed_hash::PrecomputedHash;
 use selectors::attr::{AttrSelectorOperation, CaseSensitivity, NamespaceConstraint};
 use selectors::bloom::BloomFilter;
@@ -216,7 +216,7 @@ impl<'i> selectors::parser::Parser<'i> for SelectorParser {
 
   fn parse_non_ts_pseudo_class(
     &self,
-    name: CowRcStr<'i>,
+    name: &str,
   ) -> Result<NeverPseudoClass, ParseError<Self::Error>> {
     let lower = name.to_ascii_lowercase();
     if NEVER_PSEUDO_CLASSES.contains(&lower.as_str()) {
@@ -229,7 +229,7 @@ impl<'i> selectors::parser::Parser<'i> for SelectorParser {
 
   fn parse_pseudo_element(
     &self,
-    name: CowRcStr<'i>,
+    name: &str,
   ) -> Result<NeverPseudoElement, ParseError<Self::Error>> {
     let lower = name.to_ascii_lowercase();
     if NEVER_PSEUDO_ELEMENTS.contains(&lower.as_str()) {
@@ -504,7 +504,7 @@ pub(crate) fn matches(
     NeedsSelectorFlags::No,
     MatchingForInvalidation::No,
   );
-  selectors::matching::matches_selector(selector, 0, None, &el, &mut context)
+  selectors::matching::matches_selector(selector, 0, None, el, &mut context)
     .then(|| selector.specificity())
 }
 

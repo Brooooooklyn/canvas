@@ -269,6 +269,10 @@ jobs:
       # TARGET_AR, and prefixes TARGET_CFLAGS/TARGET_CXXFLAGS with --sysroot
       # and --gcc-toolchain because TARGET_CC/TARGET_CXX are clang. Without
       # -mfpu clang turns on NEON.
+      # cc 1.11 passes --target=arm-unknown-linux-gnueabihf (the rustc LLVM
+      # triple), and clang then misses the napi-cross GCC install under
+      # lib/gcc/armv7-unknown-linux-gnueabihf and links with the host ld.
+      # --gcc-triple keeps that GCC install, and its ld, for every target.
       - name: Build
         run: |
           # libaom-sys forces armv7-linux-gcc.cmake, which runs
@@ -288,8 +292,8 @@ jobs:
         env:
           TARGET_CC: clang-19
           TARGET_CXX: clang++-19
-          TARGET_CFLAGS: -march=armv7-a -mfpu=vfpv3-d16 -mfloat-abi=hard -mthumb
-          TARGET_CXXFLAGS: -march=armv7-a -mfpu=vfpv3-d16 -mfloat-abi=hard -mthumb -stdlib=libc++ -nostdinc++ -isystem/usr/armv7-unknown-linux-gnueabihf/lib/llvm-19/include/c++/v1 -L/usr/armv7-unknown-linux-gnueabihf/lib/llvm-19/lib
+          TARGET_CFLAGS: --gcc-triple=armv7-unknown-linux-gnueabihf -march=armv7-a -mfpu=vfpv3-d16 -mfloat-abi=hard -mthumb
+          TARGET_CXXFLAGS: --gcc-triple=armv7-unknown-linux-gnueabihf -march=armv7-a -mfpu=vfpv3-d16 -mfloat-abi=hard -mthumb -stdlib=libc++ -nostdinc++ -isystem/usr/armv7-unknown-linux-gnueabihf/lib/llvm-19/include/c++/v1 -L/usr/armv7-unknown-linux-gnueabihf/lib/llvm-19/lib
 
       # A shared-object link allows undefined symbols, so a missing libc or
       # libc++abi symbol would only fail at load time. README promises
