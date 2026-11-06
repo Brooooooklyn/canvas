@@ -337,31 +337,8 @@ jobs:
 
     name: stable - armv7-linux - build skia
     runs-on: ubuntu-latest
-    container:
-      image: debian:11
 
     steps:
-      - name: Setup tools
-        run: |
-          # Debian 11 LTS ended on 2026-08-31. The bullseye-security index is frozen
-          # (Valid-Until 2026-09-07) and its pool is now only partially mirrored:
-          # deb.debian.org and security.debian.org each return 404 for files the
-          # other still serves. Add both mirrors plus a dated snapshot so apt can
-          # fall back, and accept the frozen index on those entries only. Live
-          # repositories added below (nodesource) keep their expiry check.
-          sed -i 's|^deb http://deb.debian.org/debian-security|deb [check-valid-until=no] http://deb.debian.org/debian-security|' /etc/apt/sources.list
-          echo "deb [check-valid-until=no] http://security.debian.org/debian-security bullseye-security main" >> /etc/apt/sources.list
-          echo "deb [check-valid-until=no] http://snapshot.debian.org/archive/debian-security/20260831T064608Z bullseye-security main" >> /etc/apt/sources.list
-          # apt 2.2 retries zero times by default, which turns a rate-limit or
-          # timeout on any mirror into a failed build. Retry transient errors.
-          # A 404 stays a permanent error, so mirror fallback is still immediate.
-          echo 'Acquire::Retries "3";' > /etc/apt/apt.conf.d/80retries
-          apt-get update
-          apt-get install -y gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf libatomic1-armhf-cross git build-essential cmake ninja-build wget curl python3
-          curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
-          apt-get install -y nodejs
-          npm install -g yarn corepack
-          ln -s /usr/bin/python3 /usr/bin/python
       - uses: actions/checkout@v7
         with:
           submodules: true
@@ -370,6 +347,40 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: 26
+          cache: 'yarn'
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.x'
+          architecture: 'x64'
+
+      - name: Set env
+        run: echo "${PWD}/depot_tools" >> "$GITHUB_PATH"
+        shell: bash
+
+      - name: Setup cmake
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: '4.x'
+
+      - name: Install dependencies
+        run: yarn install --immutable --mode=skip-build
+
+      # clang-19 matches llvm-version and the x64/aarch64 Skia compiler. The
+      # napi-cross toolchain (the @napi-rs/cross-toolchain version from
+      # yarn.lock, the same one `napi build --use-napi-cross` uses) gives the
+      # glibc 2.17 sysroot, GCC 4.8.5 crt/libgcc and the linker.
+      - name: Install cross tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-19 llvm-19 ninja-build wget unzip
+          sudo mkdir -p /usr/armv7-unknown-linux-gnueabihf
+          sudo chown "$(id -u):$(id -g)" /usr/armv7-unknown-linux-gnueabihf
+          node -e "require('@napi-rs/cross-toolchain').download('x64', 'armv7-unknown-linux-gnueabihf').unpack('/usr/armv7-unknown-linux-gnueabihf')"
+
+      - name: Build libc++
+        working-directory: ${{ runner.temp }}
+        run: node "$GITHUB_WORKSPACE/scripts/build-c++abi.mjs" --target=armv7-unknown-linux-gnueabihf
 
       - name: Sync deps
         uses: nick-fields/retry@v4
@@ -387,16 +398,8 @@ jobs:
         env:
           SKIP_SYNC_SK_DEPS: 0
 
-      - name: Install dependencies
-        run: |
-          corepack enable
-          yarn install --immutable --mode=skip-build
-
       - name: Upload release
-        run: |
-          git config --global --add safe.directory "$(pwd)"
-          git config --global --add safe.directory "$(pwd)/skia"
-          node ./scripts/release-skia-binary.mjs --upload --target=armv7-unknown-linux-gnueabihf
+        run: node ./scripts/release-skia-binary.mjs --upload --target=armv7-unknown-linux-gnueabihf
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
