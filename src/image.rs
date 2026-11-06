@@ -2186,6 +2186,13 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
           PendingState::Installed => {
             // The pixels went in at a draw: keep that bitmap (the Arc, and
             // the resource_id a pattern holds), and charge nothing again.
+            // A raster load still ends with width/height = the bitmap size,
+            // as the Done path's width rule gives, so a width set after the
+            // draw is reset at onload the same way it is without the draw.
+            if let Some(bitmap) = &self_mut.bitmap {
+              self_mut.width = bitmap.inner.0.width as f64;
+              self_mut.height = bitmap.inner.0.height as f64;
+            }
             self_mut.complete = true;
             self.commit_src(self_mut);
             self_mut.broken = false;

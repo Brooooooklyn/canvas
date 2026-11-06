@@ -168,14 +168,22 @@ const ctx = createCanvas(256, 256).getContext('2d')
 const at = (c) => Array.from(c.getImageData(200, 200, 1, 1).data)
 ;(async () => {
   const expected = await (async () => {
+    const ref = new Image()
+    ref.src = readFileSync('__test__/javascript.png')
+    await ref.decode()
+    const c = createCanvas(256, 256).getContext('2d')
+    c.drawImage(ref, 0, 0)
+    return at(c)
+  })()
+  await (async () => {
+    const bytes = readFileSync('__test__/javascript.png')
     const img = new Image()
-    img.src = readFileSync('__test__/javascript.png')
+    img.src = bytes
     ctx.fillStyle = ctx.createPattern(img, 'repeat') // before onload: draw-time decode
     ctx.save()
+    // One decode per load: a second decode of these bytes would fail (onerror)
+    bytes.fill(0)
     await new Promise((res, rej) => { img.onload = res; img.onerror = rej })
-    const ref = createCanvas(256, 256).getContext('2d')
-    ref.drawImage(img, 0, 0)
-    return at(ref)
   })()
   // drop JS refs to the pattern and image, collect, then paint from the saved state
   ctx.fillStyle = '#00ff00'

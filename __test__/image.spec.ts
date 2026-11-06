@@ -1597,3 +1597,62 @@ test('#1423: EXIF JPEG drawn before onload matches the draw after onload', async
   await early.decode()
   t.deepEqual(look(early), before)
 })
+
+// One decode per load: once a draw has decoded the image, nothing decodes the
+// bytes again. Clearing them after the draw would make a second decode fail
+// and fire onerror, or install an empty bitmap.
+test('#1423: a load decodes once: bytes cleared after a draw-time decode are not read again', async (t) => {
+  for (const use of ['drawImage', 'createPattern'] as const) {
+    const bytes = redPng()
+    const image = new Image()
+    const events: string[] = []
+    const settled = new Promise<void>((resolve) => {
+      image.onload = () => {
+        events.push('load')
+        resolve()
+      }
+      image.onerror = () => {
+        events.push('error')
+        resolve()
+      }
+    })
+    image.src = bytes
+    const ctx = createCanvas(4, 4).getContext('2d')
+    if (use === 'drawImage') {
+      ctx.drawImage(image, 0, 0)
+    } else {
+      t.not(ctx.createPattern(image, 'repeat'), null)
+    }
+    bytes.fill(0)
+    await settled
+    await image.decode()
+    t.deepEqual(events, ['load'], use)
+    t.deepEqual(
+      pixel((c) => c.drawImage(image, 0, 0)),
+      [255, 0, 0, 255],
+      use,
+    )
+  }
+})
+
+// A raster load ends with width/height = the decoded size, whether or not a
+// draw decoded it first (main reset them at onload; the draw must not change
+// that).
+test('#1423: width/height set after a draw-time decode are reset at onload like without the draw', async (t) => {
+  const sizes: Array<[number, number]> = []
+  for (const draw of [true, false]) {
+    const image = new Image()
+    image.src = redPng()
+    if (draw) {
+      pixel((ctx) => ctx.drawImage(image, 0, 0))
+    }
+    image.width = 10
+    image.height = 7
+    await image.decode()
+    sizes.push([image.width, image.height])
+  }
+  t.deepEqual(sizes, [
+    [4, 4],
+    [4, 4],
+  ])
+})
