@@ -1589,13 +1589,17 @@ test('#1423: EXIF JPEG drawn before onload matches the draw after onload', async
   }
   const early = new Image()
   early.src = file
+  // Before onload, width/height keep the header size (600x450) as without
+  // the draw; the pixels and naturalWidth are the rotated decode already.
   const before = look(early)
+  t.deepEqual([before.w, before.h], [600, 450])
   const late = new Image()
   late.src = file
   await late.decode()
-  t.deepEqual(before, look(late))
+  const after = look(late)
+  t.deepEqual([before.nw, before.px], [after.nw, after.px])
   await early.decode()
-  t.deepEqual(look(early), before)
+  t.deepEqual(look(early), after)
 })
 
 // One decode per load: once a draw has decoded the image, nothing decodes the
@@ -1638,6 +1642,35 @@ test('#1423: a load decodes once: bytes cleared after a draw-time decode are not
 // A raster load ends with width/height = the decoded size, whether or not a
 // draw decoded it first (main reset them at onload; the draw must not change
 // that).
+test('#1423: a draw before onload keeps the width/height the caller set', async (t) => {
+  for (const use of ['drawImage', 'createPattern'] as const) {
+    const image = new Image(2, 2)
+    image.src = redPng()
+    const draw = () => {
+      const canvas = createCanvas(4, 4)
+      const ctx = canvas.getContext('2d')
+      if (use === 'drawImage') {
+        ctx.drawImage(image, 0, 0, image.width, image.height)
+      } else {
+        t.not(ctx.createPattern(image, 'repeat'), null)
+        ctx.drawImage(image, 0, 0, image.width, image.height)
+      }
+      return [Array.from(ctx.getImageData(1, 1, 1, 1).data), Array.from(ctx.getImageData(3, 3, 1, 1).data)]
+    }
+    const first = draw()
+    t.deepEqual([image.width, image.height], [2, 2], use)
+    t.is(image.naturalWidth, 4, use)
+    t.deepEqual(first, [
+      [255, 0, 0, 255],
+      [0, 0, 0, 0],
+    ])
+    t.deepEqual(draw(), first, `${use}: the second draw is the same`)
+    await image.decode()
+    // onload resets a raster load to the bitmap size, as on main.
+    t.deepEqual([image.width, image.height], [4, 4], use)
+  }
+})
+
 test('#1423: width/height set after a draw-time decode are reset at onload like without the draw', async (t) => {
   const sizes: Array<[number, number]> = []
   for (const draw of [true, false]) {

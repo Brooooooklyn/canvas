@@ -1640,7 +1640,7 @@ impl Image {
       unreachable!("checked above");
     };
     let encoded = keep_encoded(&out.bitmap, encoded);
-    if let Err(e) = self.install_decoded(env, out, encoded) {
+    if let Err(e) = self.install_decoded(env, out, encoded, true) {
       // A failure goes back, so resolve fires onerror instead of an onload
       // with no pixels.
       *state = PendingState::Done {
@@ -1659,11 +1659,20 @@ impl Image {
     env: &Env,
     out: DecodedBitmap,
     encoded: Option<Vec<u8>>,
+    at_draw: bool,
   ) -> Result<()> {
     match out.bitmap {
       DecodeStatus::Ok(bitmap) => {
-        self.width = out.width;
-        self.height = out.height;
+        // At a draw, only an auto (-1) width/height takes the bitmap size: a
+        // draw must not change a size the caller set, or the next draw with
+        // img.width/img.height would differ. onload still resets them to the
+        // bitmap size (BitmapDecoder::resolve), as without the draw.
+        if !at_draw || (self.width - -1.0).abs() < f64::EPSILON {
+          self.width = out.width;
+        }
+        if !at_draw || (self.height - -1.0).abs() < f64::EPSILON {
+          self.height = out.height;
+        }
         self.natural_width = out.width;
         self.natural_height = out.height;
         self.svg = None;
@@ -2248,7 +2257,7 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
     if err.is_none() {
       // SUCCESS PATH: set dimensions, bitmap or SVG, currentSrc
       self.commit_src(self_mut);
-      self_mut.install_decoded(env, output, encoded)?;
+      self_mut.install_decoded(env, output, encoded, false)?;
     } else {
       // Clear state like reject() does. Reset width/height to auto (-1.0)
       // so getters return 0 (from natural_width/height)
