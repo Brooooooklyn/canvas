@@ -1,11 +1,14 @@
 {
-  "note": "Chrome 157.0.8103.38 (headless, --disable-gpu, macOS arm64). Canvas + element CSS: font-size-adjust, font-optical-sizing and font-variation-settings set as CSS on a fresh <canvas> in the document whose own font is the ctx.font (so from-font resolves against the same font); ctx.font / fontVariantCaps on the context; fonts loaded with FontFace(family, data, {weight, stretch, style: \"auto\"}) like GlobalFonts.register. metrics: measureText [width, fontBoundingBoxAscent, fontBoundingBoxDescent, actualBoundingBoxAscent, actualBoundingBoxDescent, hangingBaseline, ideographicBaseline] (Chrome 157 measureText has no emHeight*). computed: getComputedStyle font-size-adjust (from-font resolved by Chrome). dom: the width of a <span> with the same font and CSS (LayoutUnit, 1/64 px): Chrome's canvas gives a named installed family and the system fallback no font-size-adjust at all (it skips FontBuilder::UpdateAdjustedSize), where the DOM gives them the primary font's adjusted size (DESIGN D7). Script: font-features/pr-b/fix1/capture-size-adjust.cjs.",
+  "note": "Chrome 157.0.8103.38 (headless, --disable-gpu, macOS arm64). Canvas + element CSS: font-size-adjust, font-optical-sizing and font-variation-settings set as CSS on a fresh <canvas> in the document whose own font is the ctx.font (so from-font resolves against the same font); ctx.font / fontVariantCaps on the context; fonts loaded with FontFace(family, data, {weight, stretch, style: \"auto\"}) like GlobalFonts.register. metrics: measureText [width, fontBoundingBoxAscent, fontBoundingBoxDescent, actualBoundingBoxAscent, actualBoundingBoxDescent, hangingBaseline, ideographicBaseline] (Chrome 157 measureText has no emHeight*). computed: getComputedStyle font-size-adjust (from-font resolved by Chrome). dom: the width of a <span> with the same font and CSS (LayoutUnit, 1/64 px): Chrome's canvas gives a named installed family and the system fallback no font-size-adjust at all (it skips FontBuilder::UpdateAdjustedSize), where the DOM gives them the primary font's adjusted size (DESIGN D7). Script: font-features/pr-b/fix1/capture-size-adjust.cjs. Rows for partial composition, RTL text with marks, three families and each face's own opsz default under font-optical-sizing none: font-features/pr-b/fix2/capture-shaping.cjs.",
   "fonts": {
     "SALato": "Lato-Regular.ttf",
     "SASerif": "SourceSerifPro-Regular.ttf",
     "SAHan": "SourceHanSerifCN-Bold.ttf",
     "SANews": "Newsreader-opsz-only.ttf",
-    "SAGsub": "gsubtest-lookup1.otf"
+    "SAGsub": "gsubtest-lookup1.otf",
+    "SAGar": "EBGaramond-Regular.ttf",
+    "SAHarm": "Harmattan-Regular.ttf",
+    "SAOpsz6": "SpaceOpsz-6.ttf"
   },
   "darwin": {
     "metrics": {
@@ -1958,6 +1961,470 @@
         "computed": "cap-height 0.5",
         "metrics": [39.43681335449219, 28, 6, 20.555715560913086, 0.2232799530029297, 22.399999618530273, -6],
         "dom": 39.4375
+      },
+      "Gar,Serif composed A-circumflex-grave none": {
+        "font": "80px SAGar, SASerif",
+        "text": "\u00C2\u0300",
+        "css": {
+          "fontSizeAdjust": "none"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [55.36000061035156, 81, 24, 65.84000396728516, 0.4000091552734375, 64.80000305175781, -24],
+        "dom": 55.375
+      },
+      "Gar,Serif partly composed A-circumflex-grave none": {
+        "font": "80px SAGar, SASerif",
+        "text": "A\u0302\u0300",
+        "css": {
+          "fontSizeAdjust": "none"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [55.36000061035156, 81, 24, 65.84000396728516, 0.4000091552734375, 64.80000305175781, -24],
+        "dom": 55.375
+      },
+      "Gar,Serif U+1EA6 none": {
+        "font": "80px SAGar, SASerif",
+        "text": "\u1EA6",
+        "css": {
+          "fontSizeAdjust": "none"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [55.36000061035156, 81, 24, 65.84000396728516, 0.4000091552734375, 64.80000305175781, -24],
+        "dom": 55.375
+      },
+      "Lato,Harm RTL marks none": {
+        "font": "40px SALato, SAHarm",
+        "text": "ا\u064Eل\u0651م e\u0301 ab",
+        "css": {
+          "fontSizeAdjust": "none"
+        },
+        "ctx": {
+          "direction": "rtl"
+        },
+        "computed": "none",
+        "metrics": [115.38761901855469, 39, 9, 29.46000099182129, 11.484376907348633, 31.200000762939453, -9],
+        "dom": 115.40625
+      },
+      "Harm,Lato RTL marks none": {
+        "font": "40px SAHarm, SALato",
+        "text": "م\u064E\u0651e\u0301 \u01E9",
+        "css": {
+          "fontSizeAdjust": "none"
+        },
+        "ctx": {
+          "direction": "rtl"
+        },
+        "computed": "none",
+        "metrics": [62.67578125, 42, 26, 34.66796875, 11.484375, 33.599998474121094, -26],
+        "dom": 62.6875
+      },
+      "Gar,Serif,Harm RTL none": {
+        "font": "80px SAGar, SASerif, SAHarm",
+        "text": "م\u064E A\u0302\u0300",
+        "css": {
+          "fontSizeAdjust": "none"
+        },
+        "ctx": {
+          "direction": "rtl"
+        },
+        "computed": "none",
+        "metrics": [106.94593811035156, 81, 24, 65.84000396728516, 22.96875, 64.80000305175781, -24],
+        "dom": 106.96875
+      },
+      "Gar,Lato,Serif none": {
+        "font": "40px SAGar, SALato, SASerif",
+        "text": "A\u0302\u0300 \u01E9 x\u0301 Hx",
+        "css": {
+          "fontSizeAdjust": "none"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [140.35997009277344, 40, 12, 38.80000686645508, 0.20000457763671875, 32, -12],
+        "dom": 140.375
+      },
+      "Gsub,Gar,Serif none": {
+        "font": "40px SAGsub, SAGar, SASerif",
+        "text": "A\u0302\u0300 \u01E9 Hx",
+        "css": {
+          "fontSizeAdjust": "none"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [159.15997314453125, 30, 10, 38.80000686645508, 0.20000457763671875, 24, -10],
+        "dom": 159.171875
+      },
+      "Gsub,Lato,News none": {
+        "font": "40px SAGsub, SALato, SANews",
+        "text": "Hx \u00E9 k\u030C",
+        "css": {
+          "fontSizeAdjust": "none"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [151.35997009277344, 30, 10, 34.66796875, 0.2800025939941406, 24, -10],
+        "dom": 151.375
+      },
+      "Gsub,Harm,News none": {
+        "font": "40px SAGsub, SAHarm, SANews",
+        "text": "Hx ا\u064E e\u0301",
+        "css": {
+          "fontSizeAdjust": "none"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [119.94140625, 30, 10, 24.94140625, 1.23046875, 24, -10],
+        "dom": 119.96875
+      },
+      "Gar,Serif composed A-circumflex-grave 0.5": {
+        "font": "80px SAGar, SASerif",
+        "text": "\u00C2\u0300",
+        "css": {
+          "fontSizeAdjust": "0.5"
+        },
+        "ctx": {},
+        "computed": "0.5",
+        "metrics": [68.3419189453125, 99, 29, 81.27947998046875, 0.493804931640625, 79.19999694824219, -29],
+        "dom": 68.34375
+      },
+      "Gar,Serif partly composed A-circumflex-grave 0.5": {
+        "font": "80px SAGar, SASerif",
+        "text": "A\u0302\u0300",
+        "css": {
+          "fontSizeAdjust": "0.5"
+        },
+        "ctx": {},
+        "computed": "0.5",
+        "metrics": [68.3419189453125, 99, 29, 81.27947998046875, 0.493804931640625, 79.19999694824219, -29],
+        "dom": 68.34375
+      },
+      "Gar,Serif U+1EA6 0.5": {
+        "font": "80px SAGar, SASerif",
+        "text": "\u1EA6",
+        "css": {
+          "fontSizeAdjust": "0.5"
+        },
+        "ctx": {},
+        "computed": "0.5",
+        "metrics": [68.3419189453125, 99, 29, 81.27947998046875, 0.493804931640625, 79.19999694824219, -29],
+        "dom": 68.34375
+      },
+      "Lato,Harm RTL marks 0.5": {
+        "font": "40px SALato, SAHarm",
+        "text": "ا\u064Eل\u0651م e\u0301 ab",
+        "css": {
+          "fontSizeAdjust": "0.5"
+        },
+        "ctx": {
+          "direction": "rtl"
+        },
+        "computed": "0.5",
+        "metrics": [126.66375732421875, 39, 8, 39.0570182800293, 15.371837615966797, 31.200000762939453, -8],
+        "dom": 126.671875
+      },
+      "Harm,Lato RTL marks 0.5": {
+        "font": "40px SAHarm, SALato",
+        "text": "م\u064E\u0651e\u0301 \u01E9",
+        "css": {
+          "fontSizeAdjust": "0.5"
+        },
+        "ctx": {
+          "direction": "rtl"
+        },
+        "computed": "0.5",
+        "metrics": [79.406494140625, 57, 35, 38.6287841796875, 15.371837615966797, 45.599998474121094, -35],
+        "dom": 79.421875
+      },
+      "Gar,Serif,Harm RTL 0.5": {
+        "font": "80px SAGar, SASerif, SAHarm",
+        "text": "م\u064E A\u0302\u0300",
+        "css": {
+          "fontSizeAdjust": "0.5"
+        },
+        "ctx": {
+          "direction": "rtl"
+        },
+        "computed": "0.5",
+        "metrics": [135.72569274902344, 99, 29, 81.27947998046875, 30.743675231933594, 79.19999694824219, -29],
+        "dom": 135.75
+      },
+      "Gar,Lato,Serif 0.5": {
+        "font": "40px SAGar, SALato, SASerif",
+        "text": "A\u0302\u0300 \u01E9 x\u0301 Hx",
+        "css": {
+          "fontSizeAdjust": "0.5"
+        },
+        "ctx": {},
+        "computed": "0.5",
+        "metrics": [169.29222106933594, 50, 15, 40.836997985839844, 0.2469024658203125, 40, -15],
+        "dom": 169.296875
+      },
+      "Gsub,Gar,Serif 0.5": {
+        "font": "40px SAGsub, SAGar, SASerif",
+        "text": "A\u0302\u0300 \u01E9 Hx",
+        "css": {
+          "fontSizeAdjust": "0.5"
+        },
+        "ctx": {},
+        "computed": "0.5",
+        "metrics": [178.43084716796875, 30, 10, 40.836997985839844, 0.2469024658203125, 24, -10],
+        "dom": 178.4375
+      },
+      "Gsub,Lato,News 0.5": {
+        "font": "40px SAGsub, SALato, SANews",
+        "text": "Hx \u00E9 k\u030C",
+        "css": {
+          "fontSizeAdjust": "0.5"
+        },
+        "ctx": {},
+        "computed": "0.5",
+        "metrics": [152.71730041503906, 30, 10, 38.6287841796875, 0.2763633728027344, 24, -10],
+        "dom": 152.71875
+      },
+      "Gsub,Harm,News 0.5": {
+        "font": "40px SAGsub, SAHarm, SANews",
+        "text": "Hx ا\u064E e\u0301",
+        "css": {
+          "fontSizeAdjust": "0.5"
+        },
+        "ctx": {},
+        "computed": "0.5",
+        "metrics": [140.23153686523438, 30, 10, 33.38406753540039, 1.6469841003417969, 24, -10],
+        "dom": 140.25
+      },
+      "Gar,Serif composed A-circumflex-grave from-font": {
+        "font": "80px SAGar, SASerif",
+        "text": "\u00C2\u0300",
+        "css": {
+          "fontSizeAdjust": "from-font"
+        },
+        "ctx": {},
+        "computed": "0.405",
+        "metrics": [55.36000061035156, 81, 24, 65.84000396728516, 0.4000091552734375, 64.80000305175781, -24],
+        "dom": 55.375
+      },
+      "Gar,Serif partly composed A-circumflex-grave from-font": {
+        "font": "80px SAGar, SASerif",
+        "text": "A\u0302\u0300",
+        "css": {
+          "fontSizeAdjust": "from-font"
+        },
+        "ctx": {},
+        "computed": "0.405",
+        "metrics": [55.36000061035156, 81, 24, 65.84000396728516, 0.4000091552734375, 64.80000305175781, -24],
+        "dom": 55.375
+      },
+      "Gar,Serif U+1EA6 from-font": {
+        "font": "80px SAGar, SASerif",
+        "text": "\u1EA6",
+        "css": {
+          "fontSizeAdjust": "from-font"
+        },
+        "ctx": {},
+        "computed": "0.405",
+        "metrics": [55.36000061035156, 81, 24, 65.84000396728516, 0.4000091552734375, 64.80000305175781, -24],
+        "dom": 55.375
+      },
+      "Lato,Harm RTL marks from-font": {
+        "font": "40px SALato, SAHarm",
+        "text": "ا\u064Eل\u0651م e\u0301 ab",
+        "css": {
+          "fontSizeAdjust": "from-font"
+        },
+        "ctx": {
+          "direction": "rtl"
+        },
+        "computed": "0.5065",
+        "metrics": [128.3182830810547, 39, 9, 39.56035614013672, 15.569942474365234, 31.200000762939453, -9],
+        "dom": 128.328125
+      },
+      "Harm,Lato RTL marks from-font": {
+        "font": "40px SAHarm, SALato",
+        "text": "م\u064E\u0651e\u0301 \u01E9",
+        "css": {
+          "fontSizeAdjust": "from-font"
+        },
+        "ctx": {
+          "direction": "rtl"
+        },
+        "computed": "0.373535",
+        "metrics": [59.320770263671875, 42, 26, 28.8524169921875, 11.484375, 33.599998474121094, -26],
+        "dom": 59.328125
+      },
+      "Gar,Serif,Harm RTL from-font": {
+        "font": "80px SAGar, SASerif, SAHarm",
+        "text": "م\u064E A\u0302\u0300",
+        "css": {
+          "fontSizeAdjust": "from-font"
+        },
+        "ctx": {
+          "direction": "rtl"
+        },
+        "computed": "0.405",
+        "metrics": [109.93960571289062, 81, 24, 65.84000396728516, 24.9010009765625, 64.80000305175781, -24],
+        "dom": 109.96875
+      },
+      "Gar,Lato,Serif from-font": {
+        "font": "40px SAGar, SALato, SASerif",
+        "text": "A\u0302\u0300 \u01E9 x\u0301 Hx",
+        "css": {
+          "fontSizeAdjust": "from-font"
+        },
+        "ctx": {},
+        "computed": "0.405",
+        "metrics": [137.13267517089844, 40, 12, 33.077003479003906, 0.20000457763671875, 32, -12],
+        "dom": 137.140625
+      },
+      "Gsub,Gar,Serif from-font": {
+        "font": "40px SAGsub, SAGar, SASerif",
+        "text": "A\u0302\u0300 \u01E9 Hx",
+        "css": {
+          "fontSizeAdjust": "from-font"
+        },
+        "ctx": {},
+        "computed": "0.5",
+        "metrics": [178.43084716796875, 30, 10, 40.836997985839844, 0.2469024658203125, 24, -10],
+        "dom": 178.4375
+      },
+      "Gsub,Lato,News from-font": {
+        "font": "40px SAGsub, SALato, SANews",
+        "text": "Hx \u00E9 k\u030C",
+        "css": {
+          "fontSizeAdjust": "from-font"
+        },
+        "ctx": {},
+        "computed": "0.5",
+        "metrics": [152.71730041503906, 30, 10, 38.6287841796875, 0.2763633728027344, 24, -10],
+        "dom": 152.71875
+      },
+      "Gsub,Harm,News from-font": {
+        "font": "40px SAGsub, SAHarm, SANews",
+        "text": "Hx ا\u064E e\u0301",
+        "css": {
+          "fontSizeAdjust": "from-font"
+        },
+        "ctx": {},
+        "computed": "0.5",
+        "metrics": [140.23153686523438, 30, 10, 33.38406753540039, 1.6469841003417969, 24, -10],
+        "dom": 140.25
+      },
+      "Gar,Serif composed A-circumflex-grave cap-height 0.5": {
+        "font": "80px SAGar, SASerif",
+        "text": "\u00C2\u0300",
+        "css": {
+          "fontSizeAdjust": "cap-height 0.5"
+        },
+        "ctx": {},
+        "computed": "cap-height 0.5",
+        "metrics": [42.57875061035156, 62, 18, 50.639190673828125, 0.30765533447265625, 49.599998474121094, -18],
+        "dom": 42.59375
+      },
+      "Gar,Serif partly composed A-circumflex-grave cap-height 0.5": {
+        "font": "80px SAGar, SASerif",
+        "text": "A\u0302\u0300",
+        "css": {
+          "fontSizeAdjust": "cap-height 0.5"
+        },
+        "ctx": {},
+        "computed": "cap-height 0.5",
+        "metrics": [42.57875061035156, 62, 18, 50.639190673828125, 0.30765533447265625, 49.599998474121094, -18],
+        "dom": 42.59375
+      },
+      "Gar,Serif U+1EA6 cap-height 0.5": {
+        "font": "80px SAGar, SASerif",
+        "text": "\u1EA6",
+        "css": {
+          "fontSizeAdjust": "cap-height 0.5"
+        },
+        "ctx": {},
+        "computed": "cap-height 0.5",
+        "metrics": [42.57875061035156, 62, 18, 50.639190673828125, 0.30765533447265625, 49.599998474121094, -18],
+        "dom": 42.59375
+      },
+      "Lato,Harm RTL marks cap-height 0.5": {
+        "font": "40px SALato, SAHarm",
+        "text": "ا\u064Eل\u0651م e\u0301 ab",
+        "css": {
+          "fontSizeAdjust": "cap-height 0.5"
+        },
+        "ctx": {
+          "direction": "rtl"
+        },
+        "computed": "cap-height 0.5",
+        "metrics": [88.64448547363281, 28, 6, 26.88909149169922, 10.58285140991211, 22.399999618530273, -6],
+        "dom": 88.65625
+      },
+      "Harm,Lato RTL marks cap-height 0.5": {
+        "font": "40px SAHarm, SALato",
+        "text": "م\u064E\u0651e\u0301 \u01E9",
+        "css": {
+          "fontSizeAdjust": "cap-height 0.5"
+        },
+        "ctx": {
+          "direction": "rtl"
+        },
+        "computed": "cap-height 0.5",
+        "metrics": [54.43568420410156, 39, 24, 26.191650390625, 10.58285140991211, 31.200000762939453, -24],
+        "dom": 54.453125
+      },
+      "Gar,Serif,Harm RTL cap-height 0.5": {
+        "font": "80px SAGar, SASerif, SAHarm",
+        "text": "م\u064E A\u0302\u0300",
+        "css": {
+          "fontSizeAdjust": "cap-height 0.5"
+        },
+        "ctx": {
+          "direction": "rtl"
+        },
+        "computed": "cap-height 0.5",
+        "metrics": [87.681640625, 62, 18, 50.639190673828125, 21.1685791015625, 49.599998474121094, -18],
+        "dom": 87.703125
+      },
+      "Gar,Lato,Serif cap-height 0.5": {
+        "font": "40px SAGar, SALato, SASerif",
+        "text": "A\u0302\u0300 \u01E9 x\u0301 Hx",
+        "css": {
+          "fontSizeAdjust": "cap-height 0.5"
+        },
+        "ctx": {},
+        "computed": "cap-height 0.5",
+        "metrics": [107.43901062011719, 31, 9, 28.954505920410156, 0.15380096435546875, 24.799999237060547, -9],
+        "dom": 107.453125
+      },
+      "Gsub,Gar,Serif cap-height 0.5": {
+        "font": "40px SAGsub, SAGar, SASerif",
+        "text": "A\u0302\u0300 \u01E9 Hx",
+        "css": {
+          "fontSizeAdjust": "cap-height 0.5"
+        },
+        "ctx": {},
+        "computed": "cap-height 0.5",
+        "metrics": [115.74623107910156, 20, 7, 28.954505920410156, 0.15380096435546875, 16, -7],
+        "dom": 115.75
+      },
+      "Gsub,Lato,News cap-height 0.5": {
+        "font": "40px SAGsub, SALato, SANews",
+        "text": "Hx \u00E9 k\u030C",
+        "css": {
+          "fontSizeAdjust": "cap-height 0.5"
+        },
+        "ctx": {},
+        "computed": "cap-height 0.5",
+        "metrics": [104.89140319824219, 20, 7, 26.191650390625, 0.1953716278076172, 16, -7],
+        "dom": 104.90625
+      },
+      "Gsub,Harm,News cap-height 0.5": {
+        "font": "40px SAGsub, SAHarm, SANews",
+        "text": "Hx ا\u064E e\u0301",
+        "css": {
+          "fontSizeAdjust": "cap-height 0.5"
+        },
+        "ctx": {},
+        "computed": "cap-height 0.5",
+        "metrics": [95.22596740722656, 20, 7, 22.983503341674805, 1.1338787078857422, 16, -7],
+        "dom": 95.25
       }
     },
     "opsz": {
@@ -2410,6 +2877,150 @@
         "computed": "0.5",
         "metrics": [1298.9766845703125, 30, 10, 32.202171325683594, 11.582111358642578, 24, -10],
         "dom": 1298.984375
+      },
+      "40px Opsz6,News none auto": {
+        "font": "40px SAOpsz6, SANews",
+        "text": "HHHH",
+        "css": {
+          "fontSizeAdjust": "none",
+          "fontOpticalSizing": "auto"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [127.6533203125, 32, 8, 27.533437728881836, 0, 25.600000381469727, -8],
+        "dom": 127.65625
+      },
+      "40px Opsz6,News spaces none auto": {
+        "font": "40px SAOpsz6, SANews",
+        "text": "H H H",
+        "css": {
+          "fontSizeAdjust": "none",
+          "fontOpticalSizing": "auto"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [115.739990234375, 32, 8, 27.533437728881836, 0, 25.600000381469727, -8],
+        "dom": 115.75
+      },
+      "40px Gsub,Opsz6,News none auto": {
+        "font": "40px SAGsub, SAOpsz6, SANews",
+        "text": "HHHH H",
+        "css": {
+          "fontSizeAdjust": "none",
+          "fontOpticalSizing": "auto"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [189.566650390625, 30, 10, 27.533437728881836, 0, 24, -10],
+        "dom": 189.578125
+      },
+      "40px Opsz6,News none none": {
+        "font": "40px SAOpsz6, SANews",
+        "text": "HHHH",
+        "css": {
+          "fontSizeAdjust": "none",
+          "fontOpticalSizing": "none"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [124.719970703125, 32, 8, 26.80000114440918, 0, 25.600000381469727, -8],
+        "dom": 124.734375
+      },
+      "40px Opsz6,News spaces none none": {
+        "font": "40px SAOpsz6, SANews",
+        "text": "H H H",
+        "css": {
+          "fontSizeAdjust": "none",
+          "fontOpticalSizing": "none"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [113.53997802734375, 32, 8, 26.80000114440918, 0, 25.600000381469727, -8],
+        "dom": 113.546875
+      },
+      "40px Gsub,Opsz6,News none none": {
+        "font": "40px SAGsub, SAOpsz6, SANews",
+        "text": "HHHH H",
+        "css": {
+          "fontSizeAdjust": "none",
+          "fontOpticalSizing": "none"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [185.89996337890625, 30, 10, 26.80000114440918, 0, 24, -10],
+        "dom": 185.90625
+      },
+      "40px Opsz6,News 0.5 auto": {
+        "font": "40px SAOpsz6, SANews",
+        "text": "HHHH",
+        "css": {
+          "fontSizeAdjust": "0.5",
+          "fontOpticalSizing": "auto"
+        },
+        "ctx": {},
+        "computed": "0.5",
+        "metrics": [138.92901611328125, 32, 8, 29.98202133178711, 0, 25.600000381469727, -8],
+        "dom": 138.9375
+      },
+      "40px Opsz6,News spaces 0.5 auto": {
+        "font": "40px SAOpsz6, SANews",
+        "text": "H H H",
+        "css": {
+          "fontSizeAdjust": "0.5",
+          "fontOpticalSizing": "auto"
+        },
+        "ctx": {},
+        "computed": "0.5",
+        "metrics": [124.19676208496094, 32, 8, 29.98202133178711, 0, 25.600000381469727, -8],
+        "dom": 124.203125
+      },
+      "40px Gsub,Opsz6,News 0.5 auto": {
+        "font": "40px SAGsub, SAOpsz6, SANews",
+        "text": "HHHH H",
+        "css": {
+          "fontSizeAdjust": "0.5",
+          "fontOpticalSizing": "auto"
+        },
+        "ctx": {},
+        "computed": "0.5",
+        "metrics": [203.66127014160156, 30, 10, 29.98202133178711, 0, 24, -10],
+        "dom": 203.671875
+      },
+      "40px Opsz6,News 0.5 none": {
+        "font": "40px SAOpsz6, SANews",
+        "text": "HHHH",
+        "css": {
+          "fontSizeAdjust": "0.5",
+          "fontOpticalSizing": "none"
+        },
+        "ctx": {},
+        "computed": "0.5",
+        "metrics": [146.35888671875, 32, 8, 31.449800491333008, 0, 25.600000381469727, -8],
+        "dom": 146.359375
+      },
+      "40px Opsz6,News spaces 0.5 none": {
+        "font": "40px SAOpsz6, SANews",
+        "text": "H H H",
+        "css": {
+          "fontSizeAdjust": "0.5",
+          "fontOpticalSizing": "none"
+        },
+        "ctx": {},
+        "computed": "0.5",
+        "metrics": [129.7691650390625, 32, 8, 31.449800491333008, 0, 25.600000381469727, -8],
+        "dom": 129.78125
+      },
+      "40px Gsub,Opsz6,News 0.5 none": {
+        "font": "40px SAGsub, SAOpsz6, SANews",
+        "text": "HHHH H",
+        "css": {
+          "fontSizeAdjust": "0.5",
+          "fontOpticalSizing": "none"
+        },
+        "ctx": {},
+        "computed": "0.5",
+        "metrics": [212.9486083984375, 30, 10, 31.449800491333008, 0, 24, -10],
+        "dom": 212.953125
       }
     }
   }

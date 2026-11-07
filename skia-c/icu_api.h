@@ -1,7 +1,7 @@
 // The ICU C API the text code calls. ICU is linked from libskunicode_icu
 // (built with U_DISABLE_RENAMING, unversioned symbols), but its headers are
 // not on the addon's include path, so the few declarations needed live here,
-// copied from uchar.h, uscript.h, ustring.h and unorm2.h.
+// copied from uchar.h, uscript.h and ustring.h.
 
 #ifndef SKIA_C_ICU_API_H
 #define SKIA_C_ICU_API_H
@@ -55,16 +55,6 @@ int32_t u_strToLower(char16_t* dest,
                      UErrorCode* error);
 int8_t u_charType(UChar32 c);
 int uscript_getScript(UChar32 codepoint, UErrorCode* err);
-
-typedef struct UNormalizer2 UNormalizer2;
-const UNormalizer2* unorm2_getNFCInstance(UErrorCode* error);
-const UNormalizer2* unorm2_getNFDInstance(UErrorCode* error);
-int32_t unorm2_normalize(const UNormalizer2* normalizer,
-                         const char16_t* src,
-                         int32_t length,
-                         char16_t* dest,
-                         int32_t capacity,
-                         UErrorCode* error);
 
 }  // extern "C"
 

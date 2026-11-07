@@ -52,6 +52,25 @@ std::optional<SkFontParameters::Variation::Axis> FindAxis(
   return std::nullopt;
 }
 
+// font-optical-sizing none without an opsz of the request's own, with the
+// system renderer on Apple: FontVariations sets the opsz axis default
+// (DESIGN D8), and each face needs its own.
+bool SetsOpszDefault(const skiac_text_request& request) {
+#if defined(__APPLE__)
+  if (request.optical_sizing == 0 || !SystemFontRenderer()) {
+    return false;
+  }
+  for (int i = 0; request.variations && i < request.variations_count; ++i) {
+    if (request.variations[i].tag == kOpsz) {
+      return false;
+    }
+  }
+  return true;
+#else
+  return false;
+#endif
+}
+
 }  // namespace
 
 std::vector<SkFontArguments::VariationPosition::Coordinate> FontVariations(
@@ -92,14 +111,14 @@ std::vector<SkFontArguments::VariationPosition::Coordinate> FontVariations(
     if (request.optical_sizing == 0) {
       coords.push_back({kOpsz, opsz_size});
     }
-#if defined(__APPLE__)
     // none: Blink sets the face's default, as CoreText otherwise sizes the
-    // face for its own 12pt (DESIGN D8). FreeType and Fontations take the
+    // face for its own 12pt (DESIGN D8): the default of the first of `faces`
+    // with the axis; a later face with another default gets its own
+    // instance (UsedSizes::face_opsz). FreeType and Fontations take the
     // default without a coordinate, which keeps each face's own default.
-    else if (SystemFontRenderer()) {
+    else if (SetsOpszDefault(request)) {
       coords.push_back({kOpsz, opsz_axis->def});
     }
-#endif
   }
   return coords;
 }
@@ -229,7 +248,21 @@ UsedSizes ComputeUsedSizes(skiac_font_collection* c_collection,
                            const skiac_text_request& request) {
   UsedSizes sizes{request.size, request.size, {}, {}, {}};
   const float computed = request.size;
-  if (request.size_adjust_metric < 0 || !(computed > 0) || base_faces.empty()) {
+  // font-optical-sizing none (SetsOpszDefault): FontVariations sets the
+  // default of the first face with the axis, and each face has its own.
+  const bool opsz_default = SetsOpszDefault(request);
+  std::optional<float> first_default;
+  if (opsz_default) {
+    for (const auto& face : base_faces) {
+      if (const auto axis = FindAxis(Axes(face.get()), kOpsz)) {
+        first_default = axis->def;
+        break;
+      }
+    }
+  }
+  const bool adjust =
+      request.size_adjust_metric >= 0 && computed > 0 && !base_faces.empty();
+  if (!adjust && !first_default) {
     return sizes;
   }
   const int metric = request.size_adjust_metric;
@@ -249,7 +282,7 @@ UsedSizes ComputeUsedSizes(skiac_font_collection* c_collection,
     return AspectValue(c_collection, face, base.get(), computed, metric,
                        request);
   };
-  const float primary_aspect = aspect_of(base_faces.front());
+  const float primary_aspect = adjust ? aspect_of(base_faces.front()) : 1;
   // from-font: the primary font's own aspect (UpdateAdjustedSize).
   const float value = request.size_adjust_from_font ? primary_aspect
                                                     : request.size_adjust_value;
@@ -261,9 +294,14 @@ UsedSizes ComputeUsedSizes(skiac_font_collection* c_collection,
   auto effective_for = [](float adjusted) {
     return floorf(adjusted * kFontSizePrecision) / kFontSizePrecision;
   };
-  const float adjusted = adjusted_for(primary_aspect);
-  sizes.opsz = adjusted;
-  sizes.effective = effective_for(adjusted);
+  if (adjust) {
+    const float adjusted = adjusted_for(primary_aspect);
+    sizes.opsz = adjusted;
+    sizes.effective = effective_for(adjusted);
+  }
+  if (first_default) {
+    sizes.opsz = *first_default;
+  }
   // CSSFontFace::GetFontData (a registered face) and CSSFontSelector::
   // GetFontData (a generic family) size each face from its own aspect; a
   // named installed family (FontCache::GetFontData) and the system fallback
@@ -291,12 +329,17 @@ UsedSizes ComputeUsedSizes(skiac_font_collection* c_collection,
     const sk_sp<SkTypeface>& face = found.front();
     float size = sizes.effective;
     float opsz = sizes.opsz;
-    if (!sizes.faces.empty() &&
+    if (adjust && !sizes.faces.empty() &&
         (generic[i] || !IsSystemTypeface(c_collection, face.get()))) {
       const float face_adjusted = adjusted_for(aspect_of(face));
       size = effective_for(face_adjusted);
       if (opsz_follows_size && FindAxis(Axes(face.get()), kOpsz)) {
         opsz = face_adjusted;
+      }
+    }
+    if (opsz_default) {
+      if (const auto axis = FindAxis(Axes(face.get()), kOpsz)) {
+        opsz = axis->def;
       }
     }
     differs = differs || size != sizes.effective || opsz != sizes.opsz;

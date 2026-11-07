@@ -203,19 +203,32 @@ test.serial('the adjusted size is not capped, and stays finite', (t) => {
   })
 })
 
-test.serial('a cluster takes the size of the face that draws its NFC or NFD form', (t) => {
+test.serial('a cluster takes the size of the face that draws it', (t) => {
   // Lato has U+00E9 but no U+0301: HarfBuzz composes "e\u0301" to it, so
   // Lato draws both at its size. Source Serif has no U+01E9 but k and
-  // U+030C: it draws both forms of that at its own size.
+  // U+030C: it draws both forms of that at its own size. EB Garamond has
+  // U+00C2 and U+0300 but no U+0302 or U+1EA6: HarfBuzz composes the "A\u0302"
+  // of "A\u0302\u0300" and decomposes U+1EA6 to them, so EB Garamond draws
+  // all three at its size.
   const pixels = (font: string, text: string, adjust: string) => {
-    const canvas = createCanvas(120, 80)
+    const canvas = createCanvas(120, 120)
     const ctx = canvas.getContext('2d')
     ctx.fontSizeAdjust = adjust
     ctx.font = font
-    ctx.fillText(text, 10, 60)
-    return Buffer.from(ctx.getImageData(0, 0, 120, 80).data)
+    ctx.fillText(text, 10, 90)
+    return Buffer.from(ctx.getImageData(0, 0, 120, 120).data)
   }
   withBothRenderers((renderer) => {
+    for (const adjust of ['0.5', 'from-font', 'cap-height 0.5']) {
+      const label = `${renderer} ${adjust} EB Garamond`
+      const font = '80px SAGar, SASerif'
+      const composed = width(font, '\u00C2\u0300', { fontSizeAdjust: adjust })
+      t.true(close(width('80px SAGar', '\u00C2\u0300', { fontSizeAdjust: adjust }), composed), label)
+      for (const text of ['A\u0302\u0300', '\u1EA6']) {
+        t.true(close(width(font, text, { fontSizeAdjust: adjust }), composed), `${label} ${text}`)
+        t.true(pixels(font, text, adjust).equals(pixels(font, '\u00C2\u0300', adjust)), `${label} ${text} draw`)
+      }
+    }
     const font = '40px SALato, SASerif'
     for (const adjust of ['0.5', 'from-font', 'cap-height 0.5']) {
       const label = `${renderer} ${adjust}`
@@ -280,6 +293,38 @@ test.serial('font-optical-sizing none is the opsz default, auto the used size', 
       ),
       renderer,
     )
+  })
+})
+
+test.serial('font-optical-sizing none gives each face its own opsz default', (t) => {
+  // SpaceOpsz (only a space, opsz default 6) comes first: Newsreader still
+  // draws the letters at its own default, 18, not at 6. The macOS system
+  // renderer sets the default as a coordinate (DESIGN D8); the portable one
+  // sets none.
+  const pixels = (font: string, text: string, css: Props) => {
+    const canvas = createCanvas(200, 60)
+    const ctx = canvas.getContext('2d')
+    Object.assign(ctx, css)
+    ctx.font = font
+    ctx.fillText(text, 5, 45)
+    return Buffer.from(ctx.getImageData(0, 0, 200, 60).data)
+  }
+  withBothRenderers((renderer) => {
+    for (const adjust of ['none', '0.5']) {
+      const none = { fontSizeAdjust: adjust, fontOpticalSizing: 'none' }
+      for (const font of ['40px SAOpsz6, SANews', '40px SAGsub, SAOpsz6, SANews']) {
+        const label = `${renderer} ${adjust} ${font}`
+        t.true(close(width(font, 'HHHH', none), width('40px SANews', 'HHHH', none)), label)
+        t.true(pixels(font, 'HHHH', none).equals(pixels('40px SANews', 'HHHH', none)), `${label} draw`)
+      }
+      t.true(
+        close(
+          width('40px SAOpsz6, SANews', 'HHHH', none),
+          width('40px SANews', 'HHHH', { fontSizeAdjust: adjust, fontVariationSettings: "'opsz' 18" }),
+        ),
+        `${renderer} ${adjust} opsz 18`,
+      )
+    }
   })
 })
 

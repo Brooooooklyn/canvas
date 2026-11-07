@@ -434,7 +434,7 @@ size_t LineBytes(size_t runs, size_t glyphs, size_t words) {
   return 128 * runs + 14 * glyphs + 16 * words;
 }
 
-// A part of a piece drawn at one font size and opsz (FaceSizeRuns).
+// A part of the shaped text drawn at one font size and opsz (FaceSizeRuns).
 struct SizeRun {
   size_t start;
   size_t end;
@@ -442,158 +442,87 @@ struct SizeRun {
   float opsz;
 };
 
-// `cluster` (code points) in NFC (`compose`) or NFD, without the default
-// ignorables; nullopt when ICU fails.
-std::optional<std::vector<SkUnichar>> Normalized(
-    const std::vector<SkUnichar>& cluster,
-    bool compose) {
-  UErrorCode error = 0;
-  const UNormalizer2* normalizer =
-      compose ? unorm2_getNFCInstance(&error) : unorm2_getNFDInstance(&error);
-  if (error > 0 || !normalizer) {
-    return std::nullopt;
-  }
-  std::u16string source;
-  for (const SkUnichar c : cluster) {
-    uint16_t units[2];
-    const size_t count = SkUTF::ToUTF16(c, units);
-    source.append(reinterpret_cast<const char16_t*>(units), count);
-  }
-  std::u16string result(source.size() * 3 + 4, u'\0');
-  int32_t length = unorm2_normalize(
-      normalizer, source.data(), static_cast<int32_t>(source.size()),
-      result.data(), static_cast<int32_t>(result.size()), &error);
-  if (error == U_BUFFER_OVERFLOW_ERROR && length > 0) {
-    error = 0;
-    result.resize(static_cast<size_t>(length));
-    length = unorm2_normalize(normalizer, source.data(),
-                              static_cast<int32_t>(source.size()),
-                              result.data(), length, &error);
-  }
-  if (error > 0 || length < 0) {
-    return std::nullopt;
-  }
-  std::vector<SkUnichar> code_points;
-  const uint16_t* at = reinterpret_cast<const uint16_t*>(result.data());
-  const uint16_t* stop = at + std::min<size_t>(length, result.size());
-  while (at < stop) {
-    const SkUnichar c = SkUTF::NextUTF16(&at, stop);
-    if (c < 0) {
-      return std::nullopt;
-    }
-    if (!u_hasBinaryProperty(c, UCHAR_DEFAULT_IGNORABLE_CODE_POINT)) {
-      code_points.push_back(c);
-    }
-  }
-  return code_points;
-}
-
-// The space characters HarfBuzz draws with U+0020 in a face without them
-// (hb-unicode.hh space_fallback_type, without U+0020 itself).
-bool IsFallbackSpace(SkUnichar c) {
-  return c == 0x00A0 || (c >= 0x2000 && c <= 0x200A) || c == 0x202F ||
-         c == 0x205F || c == 0x3000;
-}
-
-// Whether HarfBuzz draws each of `code_points` with `face`: with its own
-// glyph or, without one, with the face's space for a space character and
-// its U+2010 for U+2011 (hb-ot-shape-normalize.cc
-// decompose_current_character).
-bool HasGlyphs(SkTypeface* face, const std::vector<SkUnichar>& code_points) {
-  for (const SkUnichar c : code_points) {
-    if (!face->unicharToGlyph(c) &&
-        !(IsFallbackSpace(c) && face->unicharToGlyph(0x0020)) &&
-        !(c == 0x2011 && face->unicharToGlyph(0x2010))) {
-      return false;
-    }
-  }
-  return true;
-}
-
-// The parts of [start, end) of `text` (UTF-8) by the size of the family that
-// draws them under font-size-adjust (DESIGN D7): each grapheme cluster goes
-// to the first of `sizes.faces` with a glyph for each of its characters that
-// is not default ignorable, or, with none, to the system fallback at the
-// primary's size; consecutive clusters of one size and opsz make one part.
-// HarfBuzz composes or decomposes a cluster to the glyphs the face has
-// (hb-ot-shape-normalize.cc), so a face that has every character of the
-// cluster's NFC or NFD form draws it too: Lato draws "e\u0301" as its
-// U+00E9, and U+2009 with its space (HasGlyphs).
-std::vector<SizeRun> FaceSizeRuns(std::string_view text,
-                                  size_t start,
-                                  size_t end,
+// The parts of `paragraph`'s text by the size and opsz of the family whose
+// face draws them (UsedSizes::faces; DESIGN D7, D8), in text order, and in
+// `split` whether any part has another size or opsz than the primary's.
+// `paragraph` is the text laid out with one size: font fallback does not
+// depend on the size, so its runs tell which face HarfBuzz and skparagraph
+// draw each cluster with (composed, decomposed or partly composed, a space
+// character drawn with U+0020). `family_of` gives the index in
+// `sizes.faces` of a run's typeface, or -1 for a face of no family (system
+// fallback, at the primary's size).
+template <typename FamilyOf>
+std::vector<SizeRun> FaceSizeRuns(ParagraphImpl* paragraph,
                                   const UsedSizes& sizes,
-                                  const sk_sp<SkUnicode>& unicode) {
-  std::vector<SizeRun> runs;
-  if (start >= end) {
-    return runs;
-  }
-  std::string piece(text.substr(start, end - start));
-  skia_private::TArray<SkUnicode::CodeUnitFlags, true> flags;
-  const bool have_flags = unicode->computeCodeUnitFlags(
-      piece.data(), static_cast<int>(piece.size()), false, &flags);
-  auto cluster_start = [&](size_t at) {
-    return at == 0 || at >= piece.size() || !have_flags ||
-           static_cast<int>(at) >= flags.size() ||
-           SkUnicode::hasGraphemeStartFlag(flags[static_cast<int>(at)]);
-  };
-  size_t at = 0;
-  while (at < piece.size()) {
-    // One cluster: [at, next).
-    size_t next = at;
-    // The cluster's characters, and those that are not default ignorable.
-    std::vector<SkUnichar> cluster;
-    std::vector<SkUnichar> code_points;
-    do {
-      const char* ptr = piece.data() + next;
-      const SkUnichar c = SkUTF::NextUTF8(&ptr, piece.data() + piece.size());
-      if (c < 0) {
-        // Not UTF-8 (the canvas text always is): a byte of its own.
-        next = std::max(next + 1, static_cast<size_t>(ptr - piece.data()));
-        break;
-      }
-      next = ptr - piece.data();
-      cluster.push_back(c);
-      if (!u_hasBinaryProperty(c, UCHAR_DEFAULT_IGNORABLE_CODE_POINT)) {
-        code_points.push_back(c);
-      }
-    } while (next < piece.size() && !cluster_start(next));
-    float size = sizes.effective;
-    float opsz = sizes.opsz;
-    if (!code_points.empty()) {
-      // The cluster's NFC and NFD forms, when a face lacks a character.
-      std::optional<std::optional<std::vector<SkUnichar>>> nfc;
-      std::optional<std::optional<std::vector<SkUnichar>>> nfd;
-      auto covers_form = [&](SkTypeface* face, bool compose) {
-        auto& form = compose ? nfc : nfd;
-        if (!form) {
-          form = Normalized(cluster, compose);
-        }
-        return *form && !(*form)->empty() && **form != code_points &&
-               HasGlyphs(face, **form);
-      };
-      for (size_t i = 0; i < sizes.faces.size(); ++i) {
-        SkTypeface* face = sizes.faces[i].get();
-        if (HasGlyphs(face, code_points) || covers_form(face, true) ||
-            covers_form(face, false)) {
-          size = sizes.face_sizes[i];
-          opsz = sizes.face_opsz[i];
-          break;
-        }
-      }
-    } else if (!runs.empty()) {
-      // A cluster of default ignorables stays with the text before it.
-      size = runs.back().size;
-      opsz = runs.back().opsz;
+                                  FamilyOf family_of,
+                                  bool* split) {
+  std::vector<SizeRun> parts;
+  for (const Run& run : paragraph->runs()) {
+    const TextRange range = run.textRange();
+    if (range.start >= range.end) {
+      continue;
     }
-    if (!runs.empty() && runs.back().size == size && runs.back().opsz == opsz) {
-      runs.back().end = start + next;
+    const int family = family_of(run.font().getTypeface());
+    if (family < 0) {
+      parts.push_back({range.start, range.end, sizes.effective, sizes.opsz});
     } else {
-      runs.push_back({start + at, start + next, size, opsz});
+      parts.push_back({range.start, range.end, sizes.face_sizes[family],
+                       sizes.face_opsz[family]});
     }
-    at = next;
   }
-  return runs;
+  // RTL runs come in visual order.
+  std::sort(parts.begin(), parts.end(), [](const SizeRun& a, const SizeRun& b) {
+    return a.start < b.start;
+  });
+  *split = false;
+  std::vector<SizeRun> merged;
+  for (const SizeRun& part : parts) {
+    *split = *split || part.size != sizes.effective || part.opsz != sizes.opsz;
+    if (!merged.empty() && merged.back().end >= part.start &&
+        merged.back().size == part.size && merged.back().opsz == part.opsz) {
+      merged.back().end = std::max(merged.back().end, part.end);
+    } else {
+      merged.push_back(part);
+    }
+  }
+  return merged;
+}
+
+// The parts of [start, end) by `runs` (FaceSizeRuns); text no run covers
+// stays with the part before it, or takes the primary's size at the start.
+std::vector<SizeRun> PieceSizeRuns(const std::vector<SizeRun>& runs,
+                                   size_t start,
+                                   size_t end,
+                                   const UsedSizes& sizes) {
+  std::vector<SizeRun> parts;
+  auto add = [&parts](size_t from, size_t to, float size, float opsz) {
+    if (from >= to) {
+      return;
+    }
+    if (!parts.empty() && parts.back().size == size &&
+        parts.back().opsz == opsz) {
+      parts.back().end = to;
+    } else {
+      parts.push_back({from, to, size, opsz});
+    }
+  };
+  size_t at = start;
+  for (const SizeRun& run : runs) {
+    if (run.end <= start || run.start >= end) {
+      continue;
+    }
+    const size_t from = std::max(at, run.start);
+    const size_t to = std::min(end, run.end);
+    if (from > at) {
+      add(at, from, parts.empty() ? sizes.effective : parts.back().size,
+          parts.empty() ? sizes.opsz : parts.back().opsz);
+    }
+    add(from, to, run.size, run.opsz);
+    at = std::max(at, to);
+  }
+  add(at, end, parts.empty() ? sizes.effective : parts.back().size,
+      parts.empty() ? sizes.opsz : parts.back().opsz);
+  return parts;
 }
 
 // Lays out `request` with skparagraph into `line`.
@@ -633,9 +562,12 @@ void LayOutLine(skiac_font_collection* c_collection,
     c_collection->noteFontArguments(
         std::hash<FontArguments>()(*text_style.getFontArguments()));
   }
-  // font-size-adjust: the font arguments of each family with an opsz of its
-  // own (UsedSizes::face_opsz), and their instances of `base_faces`, here
-  // as a note can drop the caches.
+  // The font arguments of each family with an opsz of its own
+  // (UsedSizes::face_opsz: its own size under font-size-adjust, or its own
+  // default for font-optical-sizing none), and their instances of
+  // `base_faces`, here as a note can drop the caches. FontVariations of the
+  // family's face alone gives its own default, and otherwise the same
+  // coordinates as for every face.
   struct OpszArguments {
     float opsz;
     std::vector<SkFontArguments::VariationPosition::Coordinate> coords;
@@ -648,13 +580,14 @@ void LayOutLine(skiac_font_collection* c_collection,
   };
   std::vector<OpszArguments> face_arguments;
   std::vector<std::pair<SkTypefaceID, SkTypeface*>> face_instances;
-  for (const float opsz : sizes.face_opsz) {
+  for (size_t f = 0; f < sizes.faces.size(); ++f) {
+    const float opsz = sizes.face_opsz[f];
     if (opsz == sizes.opsz ||
         std::any_of(face_arguments.begin(), face_arguments.end(),
                     [opsz](const auto& known) { return known.opsz == opsz; })) {
       continue;
     }
-    OpszArguments known{opsz, FontVariations(base_faces, request, opsz)};
+    OpszArguments known{opsz, FontVariations({sizes.faces[f]}, request, opsz)};
     if (known.coords.empty()) {
       continue;
     }
@@ -790,77 +723,122 @@ void LayOutLine(skiac_font_collection* c_collection,
   if (!unicode) {
     unicode = SkUnicodes::ICU::Make();
   }
-  ParagraphBuilderImpl builder(paragraph_style, font_collection, unicode);
-  // font-size-adjust with a family of another size than the primary: the
-  // pieces' parts each family draws (FaceSizeRuns).
-  const bool per_face = !sizes.faces.empty();
-  if (pieces.size() == 1 && pieces[0].caps == 0 && !pieces[0].small &&
-      no_spacing.empty() && !per_face) {
-    builder.addText(shaped.data(), shaped.size());
-  } else {
-    auto add = [&](const TextStyle& style, size_t start, size_t end) {
-      if (start < end) {
-        builder.pushStyle(style);
-        builder.addText(shaped.data() + start, end - start);
-        builder.pop();
-      }
-    };
-    // The next range of `no_spacing` that ends after the current part's
-    // start; the parts and the ranges are in text order.
-    size_t range = 0;
-    // Adds [at, end) with `style`, the characters without letter spacing
-    // with a copy of it at letter spacing 0.
-    auto add_spaced = [&](const TextStyle& style, size_t at, size_t end) {
-      std::optional<TextStyle> unspaced_style;
-      while (range < no_spacing.size() && no_spacing[range].first < end) {
-        if (!unspaced_style) {
-          unspaced_style = style;
-          unspaced_style->setLetterSpacing(0);
+  // Lays out the pieces, each part of `face_runs` (FaceSizeRuns) at its
+  // family's size and opsz, or without them every piece at the primary's,
+  // as without font-size-adjust.
+  auto lay_out = [&](const std::vector<SizeRun>* face_runs) {
+    ParagraphBuilderImpl builder(paragraph_style, font_collection, unicode);
+    if (pieces.size() == 1 && pieces[0].caps == 0 && !pieces[0].small &&
+        no_spacing.empty() && !face_runs) {
+      builder.addText(shaped.data(), shaped.size());
+    } else {
+      auto add = [&](const TextStyle& style, size_t start, size_t end) {
+        if (start < end) {
+          builder.pushStyle(style);
+          builder.addText(shaped.data() + start, end - start);
+          builder.pop();
         }
-        const size_t from = std::max(at, no_spacing[range].first);
-        const size_t to = std::min(end, no_spacing[range].second);
-        add(style, at, from);
-        add(*unspaced_style, from, to);
-        at = to;
-        if (no_spacing[range].second > end) {
-          break;
-        }
-        ++range;
-      }
-      add(style, at, end);
-    };
-    for (size_t i = 0; i < pieces.size(); ++i) {
-      TextStyle piece_style = text_style;
-      piece_style.setHalfLeading(i % 2 == 1);
-      // FontFeatureRange::FromFontDescription: the caps features come
-      // first, so font-feature-settings can turn them off.
-      piece_style.resetFontFeatures();
-      AddCapsFeatures(&piece_style, pieces[i].caps);
-      AddBlinkFeatures(&piece_style, request);
-      if (pieces[i].small) {
-        // SimpleFontData::CreateScaledFontData scales the computed size,
-        // without font-size-adjust, whichever face draws the piece.
-        piece_style.setFontSize(SmallCapsSize(request.size));
-      } else if (per_face) {
-        for (const auto& run : FaceSizeRuns(shaped, pieces[i].start,
-                                            pieces[i].end, sizes, unicode)) {
-          TextStyle run_style = piece_style;
-          run_style.setFontSize(run.size);
-          for (const OpszArguments& known : face_arguments) {
-            if (known.opsz == run.opsz) {
-              run_style.setFontArguments(known.arguments());
-            }
+      };
+      // The next range of `no_spacing` that ends after the current part's
+      // start; the parts and the ranges are in text order.
+      size_t range = 0;
+      // Adds [at, end) with `style`, the characters without letter spacing
+      // with a copy of it at letter spacing 0.
+      auto add_spaced = [&](const TextStyle& style, size_t at, size_t end) {
+        std::optional<TextStyle> unspaced_style;
+        while (range < no_spacing.size() && no_spacing[range].first < end) {
+          if (!unspaced_style) {
+            unspaced_style = style;
+            unspaced_style->setLetterSpacing(0);
           }
-          add_spaced(run_style, run.start, run.end);
+          const size_t from = std::max(at, no_spacing[range].first);
+          const size_t to = std::min(end, no_spacing[range].second);
+          add(style, at, from);
+          add(*unspaced_style, from, to);
+          at = to;
+          if (no_spacing[range].second > end) {
+            break;
+          }
+          ++range;
         }
-        continue;
+        add(style, at, end);
+      };
+      for (size_t i = 0; i < pieces.size(); ++i) {
+        TextStyle piece_style = text_style;
+        piece_style.setHalfLeading(i % 2 == 1);
+        // FontFeatureRange::FromFontDescription: the caps features come
+        // first, so font-feature-settings can turn them off.
+        piece_style.resetFontFeatures();
+        AddCapsFeatures(&piece_style, pieces[i].caps);
+        AddBlinkFeatures(&piece_style, request);
+        if (pieces[i].small) {
+          // SimpleFontData::CreateScaledFontData scales the computed size,
+          // without font-size-adjust, whichever face draws the piece.
+          piece_style.setFontSize(SmallCapsSize(request.size));
+        } else if (face_runs) {
+          for (const SizeRun& run : PieceSizeRuns(*face_runs, pieces[i].start,
+                                                  pieces[i].end, sizes)) {
+            TextStyle run_style = piece_style;
+            run_style.setFontSize(run.size);
+            for (const OpszArguments& known : face_arguments) {
+              if (known.opsz == run.opsz) {
+                run_style.setFontArguments(known.arguments());
+              }
+            }
+            add_spaced(run_style, run.start, run.end);
+          }
+          continue;
+        }
+        add_spaced(piece_style, pieces[i].start, pieces[i].end);
       }
-      add_spaced(piece_style, pieces[i].start, pieces[i].end);
+    }
+    std::unique_ptr<ParagraphImpl> laid_out(
+        static_cast<ParagraphImpl*>(builder.Build().release()));
+    laid_out->layout(kMaxLayoutWidth);
+    return laid_out;
+  };
+  // A family of another size or opsz than the primary (font-size-adjust,
+  // or font-optical-sizing none with the system renderer on Apple): the
+  // text laid out at the primary's size tells which face draws each part
+  // (FaceSizeRuns), then the parts drawn at another size are laid out
+  // again at it. When no part is, the first layout is the line's.
+  const bool per_face = !sizes.faces.empty();
+  std::unique_ptr<ParagraphImpl> paragraph = lay_out(nullptr);
+  if (per_face) {
+    // The family of a face that draws a run: `faces` and `base_faces` are
+    // the families' faces in order, and `sizes.faces` the same faces.
+    auto family_of = [&](SkTypeface* typeface) -> int {
+      const SkTypefaceID id = typeface ? typeface->uniqueID() : 0;
+      std::optional<size_t> index;
+      for (size_t i = 0; !index && i < faces.size(); ++i) {
+        if (faces[i]->uniqueID() == id) {
+          index = i;
+        }
+      }
+      for (size_t i = 0; !index && i < base_faces.size(); ++i) {
+        if (base_faces[i]->uniqueID() == id) {
+          index = i;
+        }
+      }
+      if (!index || faces.size() != base_faces.size()) {
+        return -1;
+      }
+      const SkTypefaceID base_id = base_faces[*index]->uniqueID();
+      for (size_t i = 0; i < sizes.faces.size(); ++i) {
+        if (sizes.faces[i]->uniqueID() == base_id) {
+          return static_cast<int>(i);
+        }
+      }
+      return sizes.faces.size() == base_faces.size() ? static_cast<int>(*index)
+                                                     : -1;
+    };
+    bool split = false;
+    const std::vector<SizeRun> face_runs =
+        FaceSizeRuns(paragraph.get(), sizes, family_of, &split);
+    if (split) {
+      paragraph = lay_out(&face_runs);
     }
   }
-  std::unique_ptr<ParagraphImpl> paragraph(
-      static_cast<ParagraphImpl*>(builder.Build().release()));
-  paragraph->layout(kMaxLayoutWidth);
   // line_metrics.fWidth doesn't contain the suffix spaces
   // run.calculateWidth will return 0 if font is rendering as fallback
   //
