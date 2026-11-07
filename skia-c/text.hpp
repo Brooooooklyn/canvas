@@ -17,9 +17,12 @@
 // FontFallbackList: each family of the font resolved to the spelling the
 // collection knows (case-insensitive, generic families through the platform
 // defaults) and, last, the standard font. Families that resolve to nothing
-// are left out.
+// are left out. `generic`, when given, gets for each resolved family whether
+// it came through the font selector as a generic family (the standard font
+// too) rather than by name.
 std::vector<SkString> ResolveFontFamilies(skiac_font_collection* c_collection,
-                                          const skiac_text_request& request);
+                                          const skiac_text_request& request,
+                                          std::vector<bool>* generic = nullptr);
 
 // The primary font's metrics TextMetrics reads, in px, y up
 // (text_metrics.cpp).
@@ -108,11 +111,42 @@ bool CanShapeWordByWord(skiac_font_collection* c_collection,
 // The variation coordinates for `request` when `faces` (the request's
 // families' faces before font arguments) vary or the request has its own
 // variations, else none: wght, wdth and slnt from the weight, stretch and
-// slope, the request's variations, then opsz at the font size
-// (text_styles.cpp).
+// slope, the request's variations, then, for font-optical-sizing: auto and
+// no opsz of the request's own, opsz at `opsz_size` (UsedSizes::opsz), and
+// for none with the system renderer on Apple the axis default of the first
+// of `faces` with the axis (text_styles.cpp).
 std::vector<SkFontArguments::VariationPosition::Coordinate> FontVariations(
     const std::vector<sk_sp<SkTypeface>>& faces,
-    const skiac_text_request& request);
+    const skiac_text_request& request,
+    float opsz_size);
+
+// The font sizes font-size-adjust gives (FontBuilder::UpdateAdjustedSize,
+// FontDescription::EffectiveFontSize, CSSFontFace::GetFontData and
+// CSSFontSelector::GetFontData; text_styles.cpp).
+struct UsedSizes {
+  // The primary font's size: the adjusted size floored to 1/100 px, or the
+  // request's size without font-size-adjust.
+  float effective;
+  // The adjusted size before the floor, for opsz (font-optical-sizing:
+  // auto); for none with the system renderer on Apple, the opsz default of
+  // the first face with the axis, which FontVariations sets.
+  float opsz;
+  // Only when a family's own aspect gives it another size or opsz than the
+  // primary, or (font-optical-sizing none with the system renderer on
+  // Apple) its own opsz default differs from `opsz`: the resolved families'
+  // faces (before font arguments), in order, with their effective sizes and
+  // opsz. A character no face has (system fallback) gets `effective` and
+  // `opsz`.
+  std::vector<sk_sp<SkTypeface>> faces;
+  std::vector<float> face_sizes;
+  std::vector<float> face_opsz;
+};
+
+// `base_faces` are the request's families' faces before font arguments
+// (FontCollection::findTypefaces of `families`).
+UsedSizes ComputeUsedSizes(skiac_font_collection* c_collection,
+                           const std::vector<sk_sp<SkTypeface>>& base_faces,
+                           const skiac_text_request& request);
 
 // FontPlatformData's synthetic bold (SkFont embolden) and italic (skew).
 struct SyntheticStyle {
@@ -155,6 +189,13 @@ std::vector<float> LineRunShifts(ParagraphImpl* paragraph);
 
 // Turns on the OpenType features of a variant caps value.
 void AddCapsFeatures(TextStyle* style, int caps);
+
+// Adds the OpenType features of `request` after the caps ones, in Blink's
+// order (FontFeatureRange::FromFontDescription): kern 0 for fontKerning
+// none, the font-variant-ligatures / textRendering / letterSpacing ligature
+// rules, font-variant-numeric, font-feature-settings, then
+// font-variant-position (text_styles.cpp).
+void AddBlinkFeatures(TextStyle* style, const skiac_text_request& request);
 
 // The synthesized small caps font size for a font of `size` px.
 float SmallCapsSize(float size);

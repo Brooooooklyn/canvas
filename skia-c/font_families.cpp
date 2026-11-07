@@ -570,16 +570,20 @@ bool ResolveStandard(const FamilyResolver& resolver,
 }  // namespace
 
 std::vector<SkString> ResolveFontFamilies(skiac_font_collection* c_collection,
-                                          const skiac_text_request& request) {
+                                          const skiac_text_request& request,
+                                          std::vector<bool>* generic) {
   FamilyResolver resolver(c_collection);
   std::vector<SkString> resolved;
-  auto add = [&resolved](const std::string& name) {
+  auto add = [&resolved, generic](const std::string& name, bool is_generic) {
     for (const auto& family : resolved) {
       if (family.equals(name.c_str(), name.size())) {
         return;
       }
     }
     resolved.emplace_back(name.c_str(), name.size());
+    if (generic) {
+      generic->push_back(is_generic);
+    }
   };
   // StyleBuilderConverterBase::ConvertFontFamily: the description's generic
   // family is the last serif / sans-serif / cursive / fantasy / monospace /
@@ -600,12 +604,14 @@ std::vector<SkString> ResolveFontFamilies(skiac_font_collection* c_collection,
               resolver.FindSystem({family.name, family.name_len}, &name);
     }
     if (found) {
-      add(name);
+      add(name, family.generic != kNamed);
     }
   }
+  // The standard font comes through the font selector as a generic family
+  // (-webkit-standard).
   std::string standard;
   if (ResolveStandard(resolver, description_generic, &standard)) {
-    add(standard);
+    add(standard, true);
   }
   return resolved;
 }

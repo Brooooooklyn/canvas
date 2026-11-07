@@ -10,6 +10,10 @@ use super::{
   },
 };
 
+use crate::font_props::{
+  FontFeatureSettings, FontOpticalSizing, FontSizeAdjust, FontVariantLigatures, FontVariantNumeric,
+  FontVariantPosition,
+};
 use crate::sk::FontVariation;
 
 pub const BLINK_IDENTITY: [f64; 6] = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
@@ -36,6 +40,14 @@ pub struct Context2dRenderingState {
   pub font_style: ComputedFont,
   pub font_variation_settings: String,
   pub font_variations: Vec<FontVariation>,
+  /// The six non-standard CSS font properties, parsed; the getters serialize
+  /// them (`font_props.rs`). `ctx.font` keeps them.
+  pub font_feature_settings: FontFeatureSettings,
+  pub font_variant_ligatures: FontVariantLigatures,
+  pub font_variant_numeric: FontVariantNumeric,
+  pub font_variant_position: FontVariantPosition,
+  pub font_size_adjust: FontSizeAdjust,
+  pub font_optical_sizing: FontOpticalSizing,
   pub text_align: TextAlign,
   pub text_baseline: TextBaseline,
   pub text_direction: TextDirection,
@@ -97,6 +109,12 @@ impl Default for Context2dRenderingState {
       font_style: ComputedFont::default(),
       font_variation_settings: "normal".to_owned(),
       font_variations: vec![],
+      font_feature_settings: FontFeatureSettings::default(),
+      font_variant_ligatures: FontVariantLigatures::default(),
+      font_variant_numeric: FontVariantNumeric::default(),
+      font_variant_position: FontVariantPosition::Normal,
+      font_size_adjust: FontSizeAdjust::None,
+      font_optical_sizing: FontOpticalSizing::Auto,
       text_align: TextAlign::default(),
       text_baseline: TextBaseline::default(),
       text_direction: TextDirection::default(),

@@ -1,0 +1,14 @@
+SpaceOpsz-6.ttf: made for these tests with fontTools.fontBuilder. It has a
+.notdef box and an empty U+0020 (250 units wide, 1000 units per em), and
+one axis, opsz 6 (default)..72, with no variations. It holds no third-party
+data.
+
+The person who associated a work with this deed has dedicated the work to
+the public domain by waiving all of his or her rights to the work worldwide
+under copyright law, including all related and neighboring rights, to the
+extent allowed by law.
+
+You can copy, modify, distribute and perform the work, even for commercial
+purposes, all without asking permission.
+
+http://creativecommons.org/publicdomain/zero/1.0/

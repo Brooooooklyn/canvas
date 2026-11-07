@@ -49,6 +49,7 @@ mod encoding;
 mod error;
 mod filter;
 mod font;
+mod font_props;
 mod gif;
 pub mod global_fonts;
 mod gradient;

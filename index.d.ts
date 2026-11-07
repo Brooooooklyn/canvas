@@ -738,6 +738,48 @@ export interface SKRSContext2D extends CanvasRenderingContext2D {
 
   letterSpacing: string
   wordSpacing: string
+  /**
+   * Non-standard: Chrome's CanvasRenderingContext2D has no such attribute.
+   * Behaves like the CSS `font-feature-settings` property in Chrome.
+   * Invalid values are ignored. Default `"normal"`.
+   * @experimental
+   */
+  fontFeatureSettings: string
+  /**
+   * Non-standard: Chrome's CanvasRenderingContext2D has no such attribute.
+   * Behaves like the CSS `font-variant-ligatures` property in Chrome.
+   * Invalid values are ignored. Default `"normal"`.
+   * @experimental
+   */
+  fontVariantLigatures: string
+  /**
+   * Non-standard: Chrome's CanvasRenderingContext2D has no such attribute.
+   * Behaves like the CSS `font-variant-numeric` property in Chrome.
+   * Invalid values are ignored. Default `"normal"`.
+   * @experimental
+   */
+  fontVariantNumeric: string
+  /**
+   * Non-standard: Chrome's CanvasRenderingContext2D has no such attribute.
+   * Behaves like the CSS `font-variant-position` property in Chrome.
+   * Invalid values are ignored. Default `"normal"`.
+   * @experimental
+   */
+  fontVariantPosition: 'normal' | 'sub' | 'super'
+  /**
+   * Non-standard: Chrome's CanvasRenderingContext2D has no such attribute.
+   * Behaves like the CSS `font-size-adjust` property in Chrome.
+   * Invalid values are ignored. Default `"none"`.
+   * @experimental
+   */
+  fontSizeAdjust: string
+  /**
+   * Non-standard: Chrome's CanvasRenderingContext2D has no such attribute.
+   * Behaves like the CSS `font-optical-sizing` property in Chrome.
+   * Invalid values are ignored. Default `"auto"`.
+   * @experimental
+   */
+  fontOpticalSizing: 'auto' | 'none'
 }
 
 export type ColorSpace = 'srgb' | 'display-p3'
