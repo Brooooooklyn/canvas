@@ -51,6 +51,9 @@ const ALLOWED = new Set([
   'fractional',
   // Fallback inside a word: Blink adds the range with the item as context.
   'family-fallback',
+  // A run holds at most 32768 glyphs (Blink's kMaxGlyphs): 40000 glyphs
+  // are shaped as two runs. Chrome 157 gives the new width.
+  'max-glyphs',
   // The trailing spaces' glyphs are drawn (no ink), as Chrome draws them;
   // skparagraph's visit() leaves them out.
   'trailing-space',
@@ -129,7 +132,7 @@ const TEXTS = [
   ['Hello world, fidelity '.repeat(100), 'BSLato', ['long']],
   // Two glyphs per character: one run holds at most kMaxGlyphs (32768)
   // glyphs (ShapeResultRun::LimitNumGlyphs).
-  ['ā'.repeat(20000), 'BSGar', ['long']],
+  ['ā'.repeat(20000), 'BSGar', ['long', 'max-glyphs']],
   ['NoSuchFamily text', 'NoSuchFamily, BSLato', []],
 ]
 
@@ -259,9 +262,9 @@ async function run(file, limit) {
       Object.assign(draw, c.ctx)
       draw.textBaseline = 'top'
       draw.fillText(c.text, 20, 10.3)
-      row.pixels = createHash('sha1')
-        .update(draw.getImageData(0, 0, w, 80).data)
-        .digest('hex')
+      const data = draw.getImageData(0, 0, w, 80).data
+      row.pixels = createHash('sha1').update(data).digest('hex')
+      row.inked = data.some((v, i) => i % 4 === 3 && v !== 0)
     }
     lines.push(JSON.stringify(row))
     // One case at a time: let the event loop run (machine rule).
@@ -284,6 +287,46 @@ function sameInk(text, oldDump, newDump) {
       ),
     )
   return ink(oldDump) === ink(newDump)
+}
+
+// Lost text rather than a changed sum: fails whatever the case's tags.
+function broken(a, b) {
+  if (!b.metrics.every(Number.isFinite)) {
+    return 'non-finite metrics'
+  }
+  const glyphs = (row) => JSON.parse(row.dump).runs.reduce((n, run) => n + run.glyphs.length, 0)
+  if (glyphs(a) && !glyphs(b)) {
+    return 'no glyphs'
+  }
+  const ink = (m) => m.slice(1, 5).some((v) => v !== 0)
+  if (ink(a.metrics) && !ink(b.metrics)) {
+    return 'no ink bounds'
+  }
+  if (a.inked && !b.inked) {
+    return 'blank drawing'
+  }
+  return false
+}
+
+// The largest move of a glyph that is not white space, between two dumps
+// that draw the same such glyphs (font, glyph and cluster) in the same
+// order; Infinity when they do not.
+function moved(text, oldDump, newDump) {
+  const bytes = Buffer.from(text, 'utf8')
+  const ink = (dump) =>
+    JSON.parse(dump).runs.flatMap((run) =>
+      run.glyphs.flatMap((glyph, i) =>
+        /\s/.test(String.fromCharCode(bytes[run.clusters[i]]))
+          ? []
+          : [{ key: `${run.family}/${run.size}/${glyph}/${run.clusters[i]}`, x: run.x[i], y: run.y[i] }],
+      ),
+    )
+  const a = ink(oldDump)
+  const b = ink(newDump)
+  if (a.length !== b.length || a.some((g, i) => g.key !== b[i].key)) {
+    return Infinity
+  }
+  return Math.max(0, ...a.map((g, i) => Math.max(Math.abs(g.x - b[i].x), Math.abs(g.y - b[i].y))))
 }
 
 function compare(oldFile, newFile, limit) {
@@ -340,27 +383,24 @@ function compare(oldFile, newFile, limit) {
       identical++
       continue
     }
-    // Past 256 px skparagraph's float sums lose bits that 16.16 keeps.
-    const tags = [...c.tags]
-    const derived = []
-    if (Math.abs(a.metrics[0]) > 256) {
-      derived.push('long')
+    const lost = broken(a, b)
+    if (lost) {
+      failures.push(`${label}: ${lost}; ${diffs.join('; ')}`)
+      continue
     }
-    if (/\s$/.test(c.text)) {
-      derived.push('trailing-space')
+    // 'long' and 'trailing-space' allow only what they are about, also when
+    // the case names them: the same glyphs and clusters but the spaces'
+    // (drawn as Chrome draws them), and for a long line (past 256 px
+    // skparagraph's float sums lose bits that 16.16 keeps) the same runs
+    // with rounding-sized moves of the metrics and of every glyph.
+    const tags = c.tags.filter((t) => t !== 'long')
+    const width = Math.abs(a.metrics[0])
+    const shift = Math.max(...a.metrics.map((v, i) => Math.abs(v - b.metrics[i])))
+    if (/\s$/.test(c.text) && sameInk(c.text, a.dump, b.dump) && !shift && a.pixels === b.pixels) {
+      tags.push('trailing-space')
     }
-    // A class found from the case rather than named in it allows only what
-    // it is about: the same glyphs and clusters but the spaces' (drawn as
-    // Chrome draws them), and for a long line rounding-sized moves.
-    if (derived.length && sameInk(c.text, a.dump, b.dump)) {
-      const width = Math.abs(a.metrics[0])
-      const moved = Math.max(...a.metrics.map((v, i) => Math.abs(v - b.metrics[i])))
-      if (derived.includes('trailing-space') && !moved && a.pixels === b.pixels) {
-        tags.push('trailing-space')
-      }
-      if (derived.includes('long') && moved <= 1e-5 * width) {
-        tags.push('long')
-      }
+    if (width > 256 && Math.max(shift, moved(c.text, a.dump, b.dump)) <= 1e-5 * width) {
+      tags.push('long')
     }
     const why = tags.filter((t) => ALLOWED.has(t))
     ;(why.length ? allowed : failures).push(`${label} [${tags.join(',')}]: ${diffs.join('; ')}`)
