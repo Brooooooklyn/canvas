@@ -203,6 +203,22 @@ pub mod ffi {
     _unused: [u8; 0],
   }
 
+  /// skia-c/shaper.hpp skiac_ucd_icu_diffs.
+  #[cfg(test)]
+  #[repr(C)]
+  #[derive(Copy, Clone, Default, Debug)]
+  pub struct skiac_ucd_icu_diffs {
+    pub assigned: u32,
+    pub general_category: u32,
+    pub combining_class: u32,
+    pub mirroring: u32,
+    pub script: u32,
+    pub decompose: u32,
+    pub compose: u32,
+    pub compose_pairs: u32,
+    pub first: u32,
+  }
+
   #[repr(C)]
   #[derive(Copy, Clone, Default, Debug)]
   pub struct skiac_line_metrics {
@@ -795,6 +811,9 @@ pub mod ffi {
       font_collection: *mut skiac_font_collection,
       request: *const skiac_text_request,
     ) -> bool;
+
+    #[cfg(test)]
+    pub fn skiac_debug_ucd_icu_diffs(diffs: *mut skiac_ucd_icu_diffs);
 
     pub fn skiac_canvas_reset_transform(canvas: *mut skiac_canvas);
 
@@ -7235,5 +7254,29 @@ mod text_line_tests {
     }
     assert!(short.iter().all(|line| kept(&collection, &settings, line)));
     assert!(kept(&collection, &settings, &lines[129]));
+  }
+
+  /// HarfBuzz's own Unicode data (what the shaper's HarfBuzz uses) gives
+  /// what ICU gives (what Chromium's HarfBuzz uses) for every code point. A
+  /// Skia bump that breaks this needs ICU-backed unicode funcs in the shaper.
+  #[test]
+  fn harfbuzz_unicode_data_matches_icu() {
+    let mut diffs = ffi::skiac_ucd_icu_diffs::default();
+    unsafe { ffi::skiac_debug_ucd_icu_diffs(&mut diffs) };
+    // ICU 78.2 (Unicode 17) assigns 299,382 code points.
+    assert!(diffs.assigned > 290_000, "{diffs:?}");
+    assert!(diffs.compose_pairs > 100_000, "{diffs:?}");
+    assert_eq!(
+      [
+        diffs.general_category,
+        diffs.combining_class,
+        diffs.mirroring,
+        diffs.script,
+        diffs.decompose,
+        diffs.compose,
+      ],
+      [0; 6],
+      "{diffs:?}"
+    );
   }
 }
