@@ -306,3 +306,37 @@ test.serial('rows still to flip differ from Chrome with the portable renderer', 
     [],
   )
 })
+
+// A first cluster of more than 32768 glyphs (Blink's kMaxGlyphs): Blink cuts
+// the run at kMaxGlyphs and skips the rest of it, so the "b" after the marks
+// is not drawn. Chrome 157, 10px EB Garamond, LTR and RTL: 9.139984130859375
+// with 16000 marks, 3.989990234375 (the width of "a") with 16385. The old
+// path keeps the "b".
+test.serial('a cluster longer than kMaxGlyphs is cut as in Chrome', (t) => {
+  if (!BLINK) {
+    t.pass('the new path only')
+    return
+  }
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'EBGaramond-Regular.ttf'), 'KMaxGaramond')
+  const widths = (['system', 'portable'] as const).flatMap((renderer) => {
+    setTextRenderer(renderer)
+    try {
+      return (['ltr', 'rtl'] as const).flatMap((direction) =>
+        [16000, 16385].map((marks) => {
+          const ctx = createCanvas(10, 10).getContext('2d')
+          ctx.font = '10px KMaxGaramond'
+          ctx.direction = direction
+          return ctx.measureText(`a${'̈́'.repeat(marks)}b`).width
+        }),
+      )
+    } finally {
+      setTextRenderer('system')
+    }
+  })
+  t.deepEqual(
+    widths,
+    [9.139984130859375, 3.989990234375, 9.139984130859375, 3.989990234375].concat([
+      9.139984130859375, 3.989990234375, 9.139984130859375, 3.989990234375,
+    ]),
+  )
+})
