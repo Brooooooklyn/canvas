@@ -34,8 +34,9 @@ bool Reject(ShaperReject reason) {
 
 constexpr const char* kOtShaperList[] = {"ot", nullptr};
 
-// HarfBuzzRunGlyphData::kMaxCharacterIndex.
+// HarfBuzzRunGlyphData::kMaxCharacterIndex and kMaxGlyphs.
 constexpr uint32_t kMaxCharacterIndex = (1u << 15) - 1;
+constexpr uint32_t kMaxGlyphs = 1u << 15;
 
 bool IsUnicodeVariationSelector(char16_t unit) {
   return (unit >= 0x180B && unit <= 0x180D) ||
@@ -268,6 +269,29 @@ class ItemShaper {
         run.num_characters = last_cluster - right[1].cluster;
       }
     }
+    // LimitNumGlyphs, then at most kMaxGlyphs glyphs, cut at the last
+    // cluster boundary before it (or at kMaxGlyphs, the rest of that
+    // cluster dropped, when the first cluster alone is longer).
+    uint32_t num_glyphs_removed = 0;
+    if (num_glyphs > kMaxGlyphs) {
+      const uint32_t old_num_glyphs = num_glyphs;
+      num_glyphs = kMaxGlyphs;
+      const uint32_t end_cluster = infos[start_glyph + num_glyphs].cluster;
+      for (; num_glyphs; --num_glyphs) {
+        if (infos[start_glyph + num_glyphs - 1].cluster != end_cluster) {
+          break;
+        }
+      }
+      if (!num_glyphs) {
+        num_glyphs = kMaxGlyphs;
+        num_glyphs_removed = old_num_glyphs - num_glyphs;
+      } else if (!rtl_) {
+        run.num_characters = end_cluster - infos[start_glyph].cluster;
+      } else {
+        run.num_characters = infos[start_glyph].cluster - end_cluster;
+        run.start = infos[start_glyph + num_glyphs - 1].cluster;
+      }
+    }
     // ComputeGlyphPositions.
     int64_t total_advance = 0;
     run.glyphs.resize(num_glyphs);
@@ -300,7 +324,7 @@ class ItemShaper {
           return rtl_ ? existing.start > start : existing.start < start;
         });
     result_->runs.insert(at, std::move(run));
-    return start_glyph + num_glyphs;
+    return start_glyph + num_glyphs + num_glyphs_removed;
   }
 
   void CommitGlyphs(const FontEntry* font,

@@ -931,11 +931,16 @@ Line* FindOrLayOutLine(skiac_font_collection* c_collection,
   for (const BlinkRun& run : fresh.blink.runs) {
     glyphs += run.glyphs.size();
   }
+  // The Blink shaper's copy of the glyphs where TextMetrics measures them.
+  for (const BlinkRun& run : fresh.ink_blink.runs) {
+    glyphs += run.glyphs.size();
+  }
   // The key, its map node and the Line take about 512 bytes on top; the
   // first draw adds the text blobs' (MeasureOrDraw).
   const size_t bytes =
       key.size() + 512 +
-      LineBytes(fresh.blink.runs.size(), glyphs, fresh.words.size());
+      LineBytes(fresh.blink.runs.size() + fresh.ink_blink.runs.size(), glyphs,
+                fresh.words.size());
   while (!caches.lru.empty() && (caches.lines.size() >= kMaxLines ||
                                  (caches.lines.size() >= kMinLines &&
                                   caches.line_bytes + bytes > kMaxLineBytes))) {

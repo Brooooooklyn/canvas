@@ -127,6 +127,9 @@ const TEXTS = [
   ['Hamburgefonstiv '.repeat(40), 'BSLato', ['long']],
   ['Hamburgefonstiv水'.repeat(40), 'BSLato, BSHan', ['long', 'script', 'family-fallback']],
   ['Hello world, fidelity '.repeat(100), 'BSLato', ['long']],
+  // Two glyphs per character: one run holds at most kMaxGlyphs (32768)
+  // glyphs (ShapeResultRun::LimitNumGlyphs).
+  ['ā'.repeat(20000), 'BSGar', ['long']],
   ['NoSuchFamily text', 'NoSuchFamily, BSLato', []],
 ]
 
@@ -268,6 +271,21 @@ async function run(file, limit) {
   process.stdout.write(JSON.stringify({ cases: all.length, maxRssKb: process.resourceUsage().maxRSS }) + '\n')
 }
 
+// Whether two line dumps draw the same glyphs for the same clusters, in the
+// same order, once the glyphs of white space are left out.
+function sameInk(text, oldDump, newDump) {
+  const bytes = Buffer.from(text, 'utf8')
+  const ink = (dump) =>
+    JSON.stringify(
+      JSON.parse(dump).runs.flatMap((run) =>
+        run.glyphs.flatMap((glyph, i) =>
+          /\s/.test(String.fromCharCode(bytes[run.clusters[i]])) ? [] : [[glyph, run.clusters[i]]],
+        ),
+      ),
+    )
+  return ink(oldDump) === ink(newDump)
+}
+
 function compare(oldFile, newFile, limit) {
   const all = cases().slice(0, limit)
   const read = (file) =>
@@ -324,11 +342,25 @@ function compare(oldFile, newFile, limit) {
     }
     // Past 256 px skparagraph's float sums lose bits that 16.16 keeps.
     const tags = [...c.tags]
+    const derived = []
     if (Math.abs(a.metrics[0]) > 256) {
-      tags.push('long')
+      derived.push('long')
     }
     if (/\s$/.test(c.text)) {
-      tags.push('trailing-space')
+      derived.push('trailing-space')
+    }
+    // A class found from the case rather than named in it allows only what
+    // it is about: the same glyphs and clusters but the spaces' (drawn as
+    // Chrome draws them), and for a long line rounding-sized moves.
+    if (derived.length && sameInk(c.text, a.dump, b.dump)) {
+      const width = Math.abs(a.metrics[0])
+      const moved = Math.max(...a.metrics.map((v, i) => Math.abs(v - b.metrics[i])))
+      if (derived.includes('trailing-space') && !moved && a.pixels === b.pixels) {
+        tags.push('trailing-space')
+      }
+      if (derived.includes('long') && moved <= 1e-5 * width) {
+        tags.push('long')
+      }
     }
     const why = tags.filter((t) => ALLOWED.has(t))
     ;(why.length ? allowed : failures).push(`${label} [${tags.join(',')}]: ${diffs.join('; ')}`)
