@@ -289,10 +289,39 @@ function sameInk(text, oldDump, newDump) {
   return ink(oldDump) === ink(newDump)
 }
 
-// Lost text rather than a changed sum: fails whatever the case's tags.
-function broken(a, b) {
+// Lost or misplaced text rather than a changed sum: fails whatever the
+// case's tags.
+function broken(c, a, b) {
   if (!b.metrics.every(Number.isFinite)) {
     return 'non-finite metrics'
+  }
+  // Every grapheme that starts a cluster of the old path still starts one.
+  // A cluster that starts inside a grapheme (a mark) may merge into its base.
+  const bytes = Buffer.from(c.text, 'utf8')
+  const clusters = (row) =>
+    new Set(
+      JSON.parse(row.dump).runs.flatMap((run) =>
+        run.clusters.filter((cluster) => !/\s/.test(String.fromCharCode(bytes[cluster]))),
+      ),
+    )
+  const graphemes = new Set(
+    [...new Intl.Segmenter('und', { granularity: 'grapheme' }).segment(c.text)].map((g) =>
+      Buffer.byteLength(c.text.slice(0, g.index), 'utf8'),
+    ),
+  )
+  const kept = clusters(b)
+  const lost = [...clusters(a)].filter((cluster) => graphemes.has(cluster) && !kept.has(cluster))
+  if (lost.length) {
+    return `no glyph for the clusters at bytes ${lost.slice(0, 5).join(',')}`
+  }
+  // Every glyph stays on the line, with a margin of one font size.
+  const size = parseFloat(c.font.match(/([\d.]+)px/)[1])
+  const width = Math.abs(b.metrics[0])
+  const off = JSON.parse(b.dump).runs.some(
+    (run) => run.x.some((x) => x < -size || x > width + size) || run.y.some((y) => Math.abs(y) > 2 * size),
+  )
+  if (off) {
+    return 'a glyph off the line'
   }
   const glyphs = (row) => JSON.parse(row.dump).runs.reduce((n, run) => n + run.glyphs.length, 0)
   if (glyphs(a) && !glyphs(b)) {
@@ -383,7 +412,7 @@ function compare(oldFile, newFile, limit) {
       identical++
       continue
     }
-    const lost = broken(a, b)
+    const lost = broken(c, a, b)
     if (lost) {
       failures.push(`${label}: ${lost}; ${diffs.join('; ')}`)
       continue
@@ -406,6 +435,53 @@ function compare(oldFile, newFile, limit) {
     ;(why.length ? allowed : failures).push(`${label} [${tags.join(',')}]: ${diffs.join('; ')}`)
   }
   return { cases: all.length, identical, accepted, allowed, failures }
+}
+
+// Breaks one row of the new path's output in each way the comparator must
+// catch, also in a case whose tags allow a difference. Returns the breaks
+// that compared without a failure.
+function selfTest(oldFile, newFile, file, limit) {
+  const all = cases().slice(0, limit)
+  const find = (text, tag) => all.find((c) => c.text === text || (tag && c.tags.includes(tag) && c.draw))
+  const han = find('漢字')
+  const long = find(null, 'long')
+  const breaks = {
+    'a deleted glyph': [han, (run) => ['x', 'y', 'glyphs', 'clusters'].forEach((k) => run[k].shift())],
+    'a glyph moved 1e6 px': [han, (run) => (run.x[0] += 1e6)],
+    'no glyphs and zero metrics': [
+      han,
+      (run, row) => {
+        row.metrics = row.metrics.map(() => 0)
+        ;['x', 'y', 'glyphs', 'clusters'].forEach((k) => (run[k] = []))
+      },
+    ],
+    'a word glyph moved 5 px on a long line': [long, (run) => (run.x[0] += 5)],
+  }
+  const rows = readFileSync(newFile, 'utf8').trim().split('\n')
+  const missed = []
+  for (const [name, [c, change]] of Object.entries(breaks)) {
+    if (!c) {
+      continue
+    }
+    const broke = rows.map((line) => {
+      const row = JSON.parse(line)
+      if (row.id !== c.id) {
+        return line
+      }
+      const dump = JSON.parse(row.dump)
+      change(
+        dump.runs.find((run) => run.glyphs.length),
+        row,
+      )
+      row.dump = JSON.stringify(dump)
+      return JSON.stringify(row)
+    })
+    writeFileSync(file, broke.join('\n') + '\n')
+    if (!compare(oldFile, file, limit).failures.some((f) => f.startsWith(`#${c.id} `))) {
+      missed.push(`${name} (#${c.id})`)
+    }
+  }
+  return missed
 }
 
 const args = process.argv.slice(2)
@@ -442,5 +518,9 @@ if (option('--run')) {
   for (const failure of result.failures) {
     console.log(`FAIL ${failure}`)
   }
-  process.exit(result.failures.length ? 1 : 0)
+  const missed = selfTest(files.skparagraph, files.blink, join(out, 'self-test.jsonl'), limit)
+  for (const name of missed) {
+    console.log(`FAIL self-test: the comparator passes ${name}`)
+  }
+  process.exit(result.failures.length || missed.length ? 1 : 0)
 }
