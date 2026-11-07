@@ -28,7 +28,7 @@ struct SystemFallbackKeyHash {
     size_t hash = std::hash<uint32_t>()(key.code_point);
     for (const uint64_t part :
          {uint64_t{key.emoji_presentation}, uint64_t{key.primary},
-          uint64_t{key.weight_bits}, uint64_t{key.slope_bits},
+          key.primary_axes, uint64_t{key.weight_bits}, uint64_t{key.slope_bits},
           static_cast<uint64_t>(key.pixel_size)}) {
       hash = hash * 31 + std::hash<uint64_t>()(part);
     }
@@ -44,12 +44,7 @@ struct ShaperCaches {
   std::unordered_map<SkTypefaceID, Parent> parents;
   std::list<SkTypefaceID> lru;
   hb_buffer_t* buffer = nullptr;
-  // The system fallback results (FontCache's character fallback), and the
-  // opsz instances of the system fallback faces.
-  std::unordered_map<SystemFallbackKey,
-                     SystemFallbackFont,
-                     SystemFallbackKeyHash>
-      fallback;
+  // The opsz instances of the system fallback faces.
   std::map<std::pair<SkTypefaceID, uint32_t>, sk_sp<SkTypeface>> instances;
 
   ~ShaperCaches() {
@@ -61,6 +56,18 @@ struct ShaperCaches {
 
 void DestroyShaperCaches(ShaperCaches* caches) {
   delete caches;
+}
+
+// The system fallback results (FontCache's character fallback).
+struct SystemFallbackCache {
+  std::unordered_map<SystemFallbackKey,
+                     SystemFallbackFont,
+                     SystemFallbackKeyHash>
+      fonts;
+};
+
+void SystemFallbackCacheDeleter::operator()(SystemFallbackCache* cache) const {
+  delete cache;
 }
 
 namespace {
@@ -374,19 +381,25 @@ hb_buffer_t* ShaperBuffer(skiac_font_collection* c_collection) {
 const SystemFallbackFont* FindSystemFallback(
     skiac_font_collection* c_collection,
     const SystemFallbackKey& key) {
-  ShaperCaches& caches = GetShaperCaches(c_collection);
-  const auto found = caches.fallback.find(key);
-  return found == caches.fallback.end() ? nullptr : &found->second;
+  if (!c_collection->system_fallbacks) {
+    return nullptr;
+  }
+  const auto& fonts = c_collection->system_fallbacks->fonts;
+  const auto found = fonts.find(key);
+  return found == fonts.end() ? nullptr : &found->second;
 }
 
 void StoreSystemFallback(skiac_font_collection* c_collection,
                          const SystemFallbackKey& key,
                          SystemFallbackFont font) {
-  ShaperCaches& caches = GetShaperCaches(c_collection);
-  if (caches.fallback.size() >= kMaxSystemFallbacks) {
-    caches.fallback.clear();
+  if (!c_collection->system_fallbacks) {
+    c_collection->system_fallbacks.reset(new SystemFallbackCache());
   }
-  caches.fallback[key] = std::move(font);
+  auto& fonts = c_collection->system_fallbacks->fonts;
+  if (fonts.size() >= kMaxSystemFallbacks) {
+    fonts.clear();
+  }
+  fonts[key] = std::move(font);
 }
 
 namespace {

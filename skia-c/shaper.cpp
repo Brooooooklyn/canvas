@@ -50,11 +50,32 @@ bool IsEmojiPresentationEmoji(Priority priority) {
          priority == Priority::kEmojiEmojiWithVS;
 }
 
+#if defined(__APPLE__)
 uint32_t FloatBits(float value) {
   uint32_t bits;
   memcpy(&bits, &value, sizeof(bits));
   return bits;
 }
+
+// The variation design position of a typeface, as a hash.
+uint64_t VariationHash(SkTypeface* face) {
+  const int count = face->getVariationDesignPosition({});
+  if (count <= 0) {
+    return 0;
+  }
+  std::vector<SkFontArguments::VariationPosition::Coordinate> coordinates(
+      count);
+  if (face->getVariationDesignPosition(coordinates) != count) {
+    return 0;
+  }
+  uint64_t hash = 0;
+  for (const auto& coordinate : coordinates) {
+    hash = hash * 1000003 + coordinate.axis;
+    hash = hash * 1000003 + FloatBits(coordinate.value);
+  }
+  return hash;
+}
+#endif
 
 // The fonts of one line: Blink's FontFallbackList (the family entries),
 // the last resort font, and the system fallback fonts the line asked for.
@@ -150,11 +171,17 @@ class LineFonts {
     const FontEntry& primary = families_.front();
     const bool emoji = IsEmojiPresentationEmoji(priority);
     const bool italic = request_.slope != 0;
-    const SystemFallbackKey key = {hint, emoji, primary.face->uniqueID(),
-                                   FloatBits(request_.weight),
-                                   FloatBits(request_.slope),
-                                   // FontDescription::ComputedPixelSize.
-                                   static_cast<int>(request_.size + 0.5f)};
+    // The primary font by its family face and its axes, not by the
+    // instance's typeface ID: a dropped and remade instance (the font
+    // arguments' caches) is the same font, and a new CTFont per line would
+    // grow CoreText's per-font fallback tables.
+    const SystemFallbackKey key = {
+        hint, emoji,
+        primary.base ? primary.base->uniqueID() : primary.face->uniqueID(),
+        VariationHash(primary.face.get()), FloatBits(request_.weight),
+        FloatBits(request_.slope),
+        // FontDescription::ComputedPixelSize.
+        static_cast<int>(request_.size + 0.5f)};
     SystemFallbackFont font;
     if (const SystemFallbackFont* found =
             FindSystemFallback(c_collection_, key)) {

@@ -16,7 +16,27 @@
 #include "icu_api.h"
 #include "shaper.hpp"
 
+// libobjc's pool functions (what @autoreleasepool compiles to).
+extern "C" {
+void* objc_autoreleasePoolPush(void);
+void objc_autoreleasePoolPop(void* pool);
+}
+
 namespace {
+
+// CoreText autoreleases objects (font URLs, descriptors) while it matches a
+// font. Blink's renderer threads drain a pool per task; Node's main thread has
+// none, so without this pool they are never freed.
+class ScopedAutoreleasePool {
+ public:
+  ScopedAutoreleasePool() : pool_(objc_autoreleasePoolPush()) {}
+  ScopedAutoreleasePool(const ScopedAutoreleasePool&) = delete;
+  ScopedAutoreleasePool& operator=(const ScopedAutoreleasePool&) = delete;
+  ~ScopedAutoreleasePool() { objc_autoreleasePoolPop(pool_); }
+
+ private:
+  void* pool_;
+};
 
 // A CF object released when it goes out of scope (ScopedCFTypeRef).
 template <typename T>
@@ -189,6 +209,7 @@ SystemFallbackFont MacAlternateFont(SkTypeface* base,
                                     int css_weight,
                                     bool italic,
                                     float computed_pixel_size) {
+  ScopedAutoreleasePool pool;
   SystemFallbackFont result;
   CTFontRef ct_font = base ? SkTypeface_GetCTFontRef(base) : nullptr;
   const float size = computed_pixel_size;

@@ -314,13 +314,16 @@ SyntheticStyle MacMatchedFontSynthetic(SkTypeface* face,
                                        bool italic);
 #endif
 
-// The system fallback results of a collection (TextCaches), by code point,
-// emoji presentation, primary typeface, weight, slope and
-// ComputedPixelSize. At most 1024, cleared when full.
+// The system fallback results of a collection
+// (skiac_font_collection::system_fallbacks, kept across the drops of
+// TextCaches), by code point, emoji presentation, primary font (family face
+// and axes), weight, slope and ComputedPixelSize. At most 1024, cleared when
+// full.
 struct SystemFallbackKey {
   uint32_t code_point;
   bool emoji_presentation;
   SkTypefaceID primary;
+  uint64_t primary_axes;
   uint32_t weight_bits;
   uint32_t slope_bits;
   int pixel_size;
