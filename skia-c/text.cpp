@@ -771,15 +771,19 @@ void LayOutLine(skiac_font_collection* c_collection,
         piece_style.resetFontFeatures();
         AddCapsFeatures(&piece_style, pieces[i].caps);
         AddBlinkFeatures(&piece_style, request);
+        // SimpleFontData::CreateScaledFontData scales the computed size,
+        // without font-size-adjust, whichever face draws the piece; the
+        // face keeps its own opsz.
         if (pieces[i].small) {
-          // SimpleFontData::CreateScaledFontData scales the computed size,
-          // without font-size-adjust, whichever face draws the piece.
           piece_style.setFontSize(SmallCapsSize(request.size));
-        } else if (face_runs) {
+        }
+        if (face_runs) {
           for (const SizeRun& run : PieceSizeRuns(*face_runs, pieces[i].start,
                                                   pieces[i].end, sizes)) {
             TextStyle run_style = piece_style;
-            run_style.setFontSize(run.size);
+            if (!pieces[i].small) {
+              run_style.setFontSize(run.size);
+            }
             for (const OpszArguments& known : face_arguments) {
               if (known.opsz == run.opsz) {
                 run_style.setFontArguments(known.arguments());

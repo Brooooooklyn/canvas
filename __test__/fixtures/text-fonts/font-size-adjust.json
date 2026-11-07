@@ -1,5 +1,5 @@
 {
-  "note": "Chrome 157.0.8103.38 (headless, --disable-gpu, macOS arm64). Canvas + element CSS: font-size-adjust, font-optical-sizing and font-variation-settings set as CSS on a fresh <canvas> in the document whose own font is the ctx.font (so from-font resolves against the same font); ctx.font / fontVariantCaps on the context; fonts loaded with FontFace(family, data, {weight, stretch, style: \"auto\"}) like GlobalFonts.register. metrics: measureText [width, fontBoundingBoxAscent, fontBoundingBoxDescent, actualBoundingBoxAscent, actualBoundingBoxDescent, hangingBaseline, ideographicBaseline] (Chrome 157 measureText has no emHeight*). computed: getComputedStyle font-size-adjust (from-font resolved by Chrome). dom: the width of a <span> with the same font and CSS (LayoutUnit, 1/64 px): Chrome's canvas gives a named installed family and the system fallback no font-size-adjust at all (it skips FontBuilder::UpdateAdjustedSize), where the DOM gives them the primary font's adjusted size (DESIGN D7). Script: font-features/pr-b/fix1/capture-size-adjust.cjs. Rows for partial composition, RTL text with marks, three families and each face's own opsz default under font-optical-sizing none: font-features/pr-b/fix2/capture-shaping.cjs.",
+  "note": "Chrome 157.0.8103.38 (headless, --disable-gpu, macOS arm64). Canvas + element CSS: font-size-adjust, font-optical-sizing and font-variation-settings set as CSS on a fresh <canvas> in the document whose own font is the ctx.font (so from-font resolves against the same font); ctx.font / fontVariantCaps on the context; fonts loaded with FontFace(family, data, {weight, stretch, style: \"auto\"}) like GlobalFonts.register. metrics: measureText [width, fontBoundingBoxAscent, fontBoundingBoxDescent, actualBoundingBoxAscent, actualBoundingBoxDescent, hangingBaseline, ideographicBaseline] (Chrome 157 measureText has no emHeight*). computed: getComputedStyle font-size-adjust (from-font resolved by Chrome). dom: the width of a <span> with the same font and CSS (LayoutUnit, 1/64 px): Chrome's canvas gives a named installed family and the system fallback no font-size-adjust at all (it skips FontBuilder::UpdateAdjustedSize), where the DOM gives them the primary font's adjusted size (DESIGN D7). Script: font-features/pr-b/fix1/capture-size-adjust.cjs. Rows for partial composition, RTL text with marks, three families and each face's own opsz default under font-optical-sizing none: font-features/pr-b/fix2/capture-shaping.cjs. Rows for synthesized small caps with each face's own opsz: font-features/pr-b/fix3/capture-small-caps.cjs.",
   "fonts": {
     "SALato": "Lato-Regular.ttf",
     "SASerif": "SourceSerifPro-Regular.ttf",
@@ -3021,6 +3021,290 @@
         "computed": "0.5",
         "metrics": [212.9486083984375, 30, 10, 31.449800491333008, 0, 24, -10],
         "dom": 212.953125
+      },
+      "40px Opsz6,News small-caps none auto": {
+        "font": "40px SAOpsz6, SANews",
+        "text": "hhhh",
+        "css": {
+          "fontSizeAdjust": "none",
+          "fontOpticalSizing": "auto"
+        },
+        "ctx": {
+          "fontVariantCaps": "small-caps"
+        },
+        "computed": "none",
+        "metrics": [89.3572998046875, 32, 8, 19.273406982421875, 0, 25.600000381469727, -8],
+        "dom": 89.359375
+      },
+      "40px Opsz6,News small-caps words none auto": {
+        "font": "40px SAOpsz6, SANews",
+        "text": "Hhhh hh",
+        "css": {
+          "fontSizeAdjust": "none",
+          "fontOpticalSizing": "auto"
+        },
+        "ctx": {
+          "fontVariantCaps": "small-caps"
+        },
+        "computed": "none",
+        "metrics": [153.60995483398438, 32, 8, 27.533437728881836, 0, 25.600000381469727, -8],
+        "dom": 153.625
+      },
+      "40px Opsz6,News all-small-caps spacing none auto": {
+        "font": "40px SAOpsz6, SANews",
+        "text": "Hhhh hh",
+        "css": {
+          "fontSizeAdjust": "none",
+          "fontOpticalSizing": "auto"
+        },
+        "ctx": {
+          "fontVariantCaps": "all-small-caps",
+          "letterSpacing": "3px"
+        },
+        "computed": "none",
+        "metrics": [162.03594970703125, 32, 8, 19.273406982421875, 0, 25.600000381469727, -8],
+        "dom": 141.046875
+      },
+      "40px News,Lato small-caps none auto": {
+        "font": "40px SANews, SALato",
+        "text": "Hh \u00E9\u00E9 hx",
+        "css": {
+          "fontSizeAdjust": "none",
+          "fontOpticalSizing": "auto"
+        },
+        "ctx": {
+          "fontVariantCaps": "small-caps"
+        },
+        "computed": "none",
+        "metrics": [147.0368194580078, 29, 11, 27.533437728881836, 0, 23.200000762939453, -11],
+        "dom": 147.046875
+      },
+      "40px Lato,News small-caps none auto": {
+        "font": "40px SALato, SANews",
+        "text": "Hh \u00E9\u00E9 hx",
+        "css": {
+          "fontSizeAdjust": "none",
+          "fontOpticalSizing": "auto"
+        },
+        "ctx": {
+          "fontVariantCaps": "small-caps"
+        },
+        "computed": "none",
+        "metrics": [138.55593872070312, 39, 9, 28.65999984741211, 0, 31.200000762939453, -9],
+        "dom": 138.5625
+      },
+      "40px Opsz6,News small-caps none none": {
+        "font": "40px SAOpsz6, SANews",
+        "text": "hhhh",
+        "css": {
+          "fontSizeAdjust": "none",
+          "fontOpticalSizing": "none"
+        },
+        "ctx": {
+          "fontVariantCaps": "small-caps"
+        },
+        "computed": "none",
+        "metrics": [87.303955078125, 32, 8, 18.760000228881836, 0, 25.600000381469727, -8],
+        "dom": 87.3125
+      },
+      "40px Opsz6,News small-caps words none none": {
+        "font": "40px SAOpsz6, SANews",
+        "text": "Hhhh hh",
+        "css": {
+          "fontSizeAdjust": "none",
+          "fontOpticalSizing": "none"
+        },
+        "ctx": {
+          "fontVariantCaps": "small-caps"
+        },
+        "computed": "none",
+        "metrics": [150.3099365234375, 32, 8, 26.80000114440918, 0, 25.600000381469727, -8],
+        "dom": 150.3125
+      },
+      "40px Opsz6,News all-small-caps spacing none none": {
+        "font": "40px SAOpsz6, SANews",
+        "text": "Hhhh hh",
+        "css": {
+          "fontSizeAdjust": "none",
+          "fontOpticalSizing": "none"
+        },
+        "ctx": {
+          "fontVariantCaps": "all-small-caps",
+          "letterSpacing": "3px"
+        },
+        "computed": "none",
+        "metrics": [158.9559326171875, 32, 8, 18.760000228881836, 0, 25.600000381469727, -8],
+        "dom": 137.96875
+      },
+      "40px News,Lato small-caps none none": {
+        "font": "40px SANews, SALato",
+        "text": "Hh \u00E9\u00E9 hx",
+        "css": {
+          "fontSizeAdjust": "none",
+          "fontOpticalSizing": "none"
+        },
+        "ctx": {
+          "fontVariantCaps": "small-caps"
+        },
+        "computed": "none",
+        "metrics": [144.54592895507812, 29, 11, 26.80000114440918, 0, 23.200000762939453, -11],
+        "dom": 144.546875
+      },
+      "40px Lato,News small-caps none none": {
+        "font": "40px SALato, SANews",
+        "text": "Hh \u00E9\u00E9 hx",
+        "css": {
+          "fontSizeAdjust": "none",
+          "fontOpticalSizing": "none"
+        },
+        "ctx": {
+          "fontVariantCaps": "small-caps"
+        },
+        "computed": "none",
+        "metrics": [138.55593872070312, 39, 9, 28.65999984741211, 0, 31.200000762939453, -9],
+        "dom": 138.5625
+      },
+      "40px Opsz6,News small-caps 0.5 auto": {
+        "font": "40px SAOpsz6, SANews",
+        "text": "hhhh",
+        "css": {
+          "fontSizeAdjust": "0.5",
+          "fontOpticalSizing": "auto"
+        },
+        "ctx": {
+          "fontVariantCaps": "small-caps"
+        },
+        "computed": "0.5",
+        "metrics": [89.67291259765625, 32, 8, 19.352157592773438, 0, 25.600000381469727, -8],
+        "dom": 89.6875
+      },
+      "40px Opsz6,News small-caps words 0.5 auto": {
+        "font": "40px SAOpsz6, SANews",
+        "text": "Hhhh hh",
+        "css": {
+          "fontSizeAdjust": "0.5",
+          "fontOpticalSizing": "auto"
+        },
+        "ctx": {
+          "fontVariantCaps": "small-caps"
+        },
+        "computed": "0.5",
+        "metrics": [156.82339477539062, 32, 8, 29.98202133178711, 0, 25.600000381469727, -8],
+        "dom": 156.828125
+      },
+      "40px Opsz6,News all-small-caps spacing 0.5 auto": {
+        "font": "40px SAOpsz6, SANews",
+        "text": "Hhhh hh",
+        "css": {
+          "fontSizeAdjust": "0.5",
+          "fontOpticalSizing": "auto"
+        },
+        "ctx": {
+          "fontVariantCaps": "all-small-caps",
+          "letterSpacing": "3px"
+        },
+        "computed": "0.5",
+        "metrics": [162.50936889648438, 32, 8, 19.352157592773438, 0, 25.600000381469727, -8],
+        "dom": 141.515625
+      },
+      "40px News,Lato small-caps 0.5 auto": {
+        "font": "40px SANews, SALato",
+        "text": "Hh \u00E9\u00E9 hx",
+        "css": {
+          "fontSizeAdjust": "0.5",
+          "fontOpticalSizing": "auto"
+        },
+        "ctx": {
+          "fontVariantCaps": "small-caps"
+        },
+        "computed": "0.5",
+        "metrics": [151.65841674804688, 32, 11, 29.98202133178711, 0, 25.600000381469727, -11],
+        "dom": 151.078125
+      },
+      "40px Lato,News small-caps 0.5 auto": {
+        "font": "40px SALato, SANews",
+        "text": "Hh \u00E9\u00E9 hx",
+        "css": {
+          "fontSizeAdjust": "0.5",
+          "fontOpticalSizing": "auto"
+        },
+        "ctx": {
+          "fontVariantCaps": "small-caps"
+        },
+        "computed": "0.5",
+        "metrics": [137.9621124267578, 39, 8, 28.287418365478516, 0, 31.200000762939453, -8],
+        "dom": 137.96875
+      },
+      "40px Opsz6,News small-caps 0.5 none": {
+        "font": "40px SAOpsz6, SANews",
+        "text": "hhhh",
+        "css": {
+          "fontSizeAdjust": "0.5",
+          "fontOpticalSizing": "none"
+        },
+        "ctx": {
+          "fontVariantCaps": "small-caps"
+        },
+        "computed": "0.5",
+        "metrics": [87.303955078125, 32, 8, 18.760000228881836, 0, 25.600000381469727, -8],
+        "dom": 87.3125
+      },
+      "40px Opsz6,News small-caps words 0.5 none": {
+        "font": "40px SAOpsz6, SANews",
+        "text": "Hhhh hh",
+        "css": {
+          "fontSizeAdjust": "0.5",
+          "fontOpticalSizing": "none"
+        },
+        "ctx": {
+          "fontVariantCaps": "small-caps"
+        },
+        "computed": "0.5",
+        "metrics": [155.71966552734375, 32, 8, 31.449800491333008, 0, 25.600000381469727, -8],
+        "dom": 155.734375
+      },
+      "40px Opsz6,News all-small-caps spacing 0.5 none": {
+        "font": "40px SAOpsz6, SANews",
+        "text": "Hhhh hh",
+        "css": {
+          "fontSizeAdjust": "0.5",
+          "fontOpticalSizing": "none"
+        },
+        "ctx": {
+          "fontVariantCaps": "all-small-caps",
+          "letterSpacing": "3px"
+        },
+        "computed": "0.5",
+        "metrics": [158.9559326171875, 32, 8, 18.760000228881836, 0, 25.600000381469727, -8],
+        "dom": 137.96875
+      },
+      "40px News,Lato small-caps 0.5 none": {
+        "font": "40px SANews, SALato",
+        "text": "Hh \u00E9\u00E9 hx",
+        "css": {
+          "fontSizeAdjust": "0.5",
+          "fontOpticalSizing": "none"
+        },
+        "ctx": {
+          "fontVariantCaps": "small-caps"
+        },
+        "computed": "0.5",
+        "metrics": [153.03701782226562, 35, 12, 31.449800491333008, 0, 28, -12],
+        "dom": 153.046875
+      },
+      "40px Lato,News small-caps 0.5 none": {
+        "font": "40px SALato, SANews",
+        "text": "Hh \u00E9\u00E9 hx",
+        "css": {
+          "fontSizeAdjust": "0.5",
+          "fontOpticalSizing": "none"
+        },
+        "ctx": {
+          "fontVariantCaps": "small-caps"
+        },
+        "computed": "0.5",
+        "metrics": [137.9621124267578, 39, 8, 28.287418365478516, 0, 31.200000762939453, -8],
+        "dom": 137.96875
       }
     }
   }

@@ -328,6 +328,39 @@ test.serial('font-optical-sizing none gives each face its own opsz default', (t)
   })
 })
 
+test.serial('synthesized small caps keep the opsz of the face that draws them', (t) => {
+  // Newsreader has no smcp: its small caps are 0.7 x the font size, at its
+  // own opsz (its default 18 for none, its adjusted size for auto), not at
+  // SpaceOpsz's (SimpleFontData::CreateScaledFontData keeps the face).
+  const pixels = (font: string, props: Props) => {
+    const canvas = createCanvas(200, 60)
+    const ctx = canvas.getContext('2d')
+    ctx.font = font
+    Object.assign(ctx, props)
+    ctx.fillText('hhhh', 5, 45)
+    return Buffer.from(ctx.getImageData(0, 0, 200, 60).data)
+  }
+  withBothRenderers((renderer) => {
+    for (const css of [
+      { fontOpticalSizing: 'none' },
+      { fontSizeAdjust: '0.5' },
+      { fontSizeAdjust: '0.5', fontOpticalSizing: 'none' },
+    ]) {
+      for (const caps of [
+        { fontVariantCaps: 'small-caps' },
+        { fontVariantCaps: 'all-small-caps', letterSpacing: '3px' },
+      ]) {
+        const props = { ...css, ...caps }
+        const label = `${renderer} ${JSON.stringify(props)}`
+        const ours = context({ font: '40px SAOpsz6, SANews', css: {}, ctx: props }).measureText('hhhh').width
+        const news = context({ font: '40px SANews', css: {}, ctx: props }).measureText('hhhh').width
+        t.true(close(ours, news), `${label} ${ours} ${news}`)
+        t.true(pixels('40px SAOpsz6, SANews', props).equals(pixels('40px SANews', props)), `${label} draw`)
+      }
+    }
+  })
+})
+
 test.serial('a fallback family with its own size has its own opsz', (t) => {
   // GsubOne has no letters: Newsreader draws them at its own adjusted size
   // and opsz (CSSFontFace::GetFontData), as when it is the primary font.
