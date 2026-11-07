@@ -124,12 +124,13 @@ std::vector<SkFontArguments::VariationPosition::Coordinate> FontVariations(
 // FontDescription::EffectiveFontSize, CSSFontFace::GetFontData and
 // CSSFontSelector::GetFontData; text_styles.cpp).
 struct UsedSizes {
-  // The primary font's size: the adjusted size floored to 1/100 px, or the
-  // request's size without font-size-adjust.
+  // The primary font's size: the adjusted size (the request's size without
+  // font-size-adjust) floored to 1/100 px (EffectiveFontSize).
   float effective;
-  // The adjusted size before the floor, for opsz (font-optical-sizing:
-  // auto); for none with the system renderer on Apple, the opsz default of
-  // the first face with the axis, which FontVariations sets.
+  // The adjusted size (the request's size without font-size-adjust) before
+  // the floor, for opsz (font-optical-sizing: auto); for none with the
+  // system renderer on Apple, the opsz default of the first face with the
+  // axis, which FontVariations sets.
   float opsz;
   // Only when a family's own aspect gives it another size or opsz than the
   // primary, or (font-optical-sizing none with the system renderer on

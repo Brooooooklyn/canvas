@@ -58,16 +58,10 @@ const DOM_CASES = (name: string) => /Hiragino|fallback/.test(name)
 // fontSizeAdjust none). Pin them only on the capture's Darwin major.
 const SYSTEM_FALLBACK = (name: string) => name.startsWith('Lato fallback ')
 const CAPTURE_DARWIN = '27'
-// Chrome floors every font size to 1/100 px, also without font-size-adjust
-// (EffectiveFontSize); a fractional ctx.font size is not floored here
-// (outside font-size-adjust).
 // Hiragino Sans as the primary font: the width differs without
 // font-size-adjust too (66.28 here, 67.02 in Chrome; outside
 // font-size-adjust).
-const SKIP = [
-  '13.348px auto',
-  ...['none', '0.5', 'from-font', 'ic-width 0.5', 'cap-height 0.5'].map((v) => `Hiragino ${v}`),
-]
+const SKIP = ['none', '0.5', 'from-font', 'ic-width 0.5', 'cap-height 0.5'].map((v) => `Hiragino ${v}`)
 
 function context(c: Pick<Case, 'font' | 'css' | 'ctx'>) {
   const ctx = createCanvas(10, 10).getContext('2d')
@@ -184,6 +178,28 @@ test.serial('font-size-adjust picks the used size from the primary font', (t) =>
     // The ctx.font getter keeps the computed size.
     const ctx = context({ font: '20px SALato', css: { fontSizeAdjust: '0.5' }, ctx: {} })
     t.is(ctx.font, '20px SALato', renderer)
+  })
+})
+
+test.serial('every font size is floored to 1/100 px, also without font-size-adjust', (t) => {
+  // FontDescription::EffectiveFontSize. Chrome 157, 'Hello world' in Lato:
+  // 0.004px to 0.009px measure 0; 0.01px, 0.015px and 0.019px all 0.05074;
+  // 11pt (14.6667px) is the 14.66px width 74.48737.
+  withBothRenderers((renderer) => {
+    const text = 'Hello world'
+    for (const [size, floored] of [
+      ['10.567px', '10.56px'],
+      ['33.339px', '33.33px'],
+      ['14.6666667px', '14.66px'],
+      ['11pt', '14.66px'],
+      ['0.019px', '0.01px'],
+      ['99.999px', '99.99px'],
+    ]) {
+      t.is(width(`${size} SALato`, text), width(`${floored} SALato`, text), `${renderer} ${size}`)
+    }
+    t.true(width('0.009px SALato', text) < 1e-6, renderer)
+    // The ctx.font getter keeps the computed size.
+    t.is(context({ font: '10.567px SALato', css: {}, ctx: {} }).font, '10.567px SALato', renderer)
   })
 })
 

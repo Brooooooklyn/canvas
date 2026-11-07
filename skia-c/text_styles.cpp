@@ -241,13 +241,23 @@ float AspectValue(skiac_font_collection* c_collection,
   return value > 0 ? value / size : 1.0f;
 }
 
+// FontDescription::EffectiveFontSize: the computed or adjusted size floored
+// to 1/100 px (FontCacheKey::PrecisionMultiplier), the size every font of
+// the request is made at, also without font-size-adjust.
+float EffectiveSize(float size) {
+  const float capped = size <= kMaxAdjustedSize ? size : kMaxAdjustedSize;
+  return floorf(capped * kFontSizePrecision) / kFontSizePrecision;
+}
+
 }  // namespace
 
 UsedSizes ComputeUsedSizes(skiac_font_collection* c_collection,
                            const std::vector<sk_sp<SkTypeface>>& base_faces,
                            const skiac_text_request& request) {
-  UsedSizes sizes{request.size, request.size, {}, {}, {}};
   const float computed = request.size;
+  // opsz (font-optical-sizing: auto) follows the specified size, not floored
+  // (FontPlatformData's opsz is the specified size).
+  UsedSizes sizes{EffectiveSize(computed), computed, {}, {}, {}};
   // font-optical-sizing none (SetsOpszDefault): FontVariations sets the
   // default of the first face with the axis, and each face has its own.
   const bool opsz_default = SetsOpszDefault(request);
@@ -260,14 +270,18 @@ UsedSizes ComputeUsedSizes(skiac_font_collection* c_collection,
       }
     }
   }
+  // A font made at size 0 has no aspect (AspectValue), so the adjusted size
+  // stays the computed one (UpdateAdjustedSize).
+  const float measured = EffectiveSize(computed);
   const bool adjust =
-      request.size_adjust_metric >= 0 && computed > 0 && !base_faces.empty();
+      request.size_adjust_metric >= 0 && measured > 0 && !base_faces.empty();
   if (!adjust && !first_default) {
     return sizes;
   }
   const int metric = request.size_adjust_metric;
   // The face Blink measures: the instance at the request's axes, opsz at the
-  // computed size (UpdateAdjustedSize sets the adjusted size to it first).
+  // computed size (UpdateAdjustedSize sets the adjusted size to it first),
+  // made at its effective size (the computed size floored).
   auto aspect_of = [&](const sk_sp<SkTypeface>& base) {
     sk_sp<SkTypeface> face = base;
     const auto coords = FontVariations({base}, request, computed);
@@ -279,7 +293,7 @@ UsedSizes ComputeUsedSizes(skiac_font_collection* c_collection,
         face = std::move(clone);
       }
     }
-    return AspectValue(c_collection, face, base.get(), computed, metric,
+    return AspectValue(c_collection, face, base.get(), measured, metric,
                        request);
   };
   const float primary_aspect = adjust ? aspect_of(base_faces.front()) : 1;
@@ -291,13 +305,10 @@ UsedSizes ComputeUsedSizes(skiac_font_collection* c_collection,
     const float adjusted = (value / aspect) * computed;
     return adjusted <= kMaxAdjustedSize ? adjusted : kMaxAdjustedSize;
   };
-  auto effective_for = [](float adjusted) {
-    return floorf(adjusted * kFontSizePrecision) / kFontSizePrecision;
-  };
   if (adjust) {
     const float adjusted = adjusted_for(primary_aspect);
     sizes.opsz = adjusted;
-    sizes.effective = effective_for(adjusted);
+    sizes.effective = EffectiveSize(adjusted);
   }
   if (first_default) {
     sizes.opsz = *first_default;
@@ -332,7 +343,7 @@ UsedSizes ComputeUsedSizes(skiac_font_collection* c_collection,
     if (adjust && !sizes.faces.empty() &&
         (generic[i] || !IsSystemTypeface(c_collection, face.get()))) {
       const float face_adjusted = adjusted_for(aspect_of(face));
-      size = effective_for(face_adjusted);
+      size = EffectiveSize(face_adjusted);
       if (opsz_follows_size && FindAxis(Axes(face.get()), kOpsz)) {
         opsz = face_adjusted;
       }
