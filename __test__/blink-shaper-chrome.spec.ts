@@ -117,9 +117,10 @@ function ours(row: Row): Value {
   if (row.kind === 'same') {
     const a = draw(row, row.draws![0])
     const b = draw(row, row.draws![1])
-    // Two blank draws are not "the same text drawing": the capture has no
-    // blank row, so this never equals Chrome.
-    if (a.every((v, i) => i % 4 !== 3 || v === 0)) {
+    // A blank draw is no text drawing at all: every 'same' row in the capture
+    // has ink in both draws, so check() fails a blank one at every stage.
+    const blank = (data: Uint8ClampedArray) => data.every((v, i) => i % 4 !== 3 || v === 0)
+    if (blank(a) || blank(b)) {
       return 'blank'
     }
     return a.every((v, i) => v === b[i])
@@ -170,7 +171,14 @@ function check({ renderer, rows, flip, widthOnly }: Check) {
   setTextRenderer(renderer)
   try {
     for (const [name, row] of rows) {
-      const diff = differences(row, ours(row), widthOnly)
+      const value = ours(row)
+      if (value === 'blank') {
+        // Missing text, not a shaping difference: fails before and after the
+        // row's flip stage.
+        mismatches.push(`${name}: blank drawing`)
+        continue
+      }
+      const diff = differences(row, value, widthOnly)
       if (landed(flip(row))) {
         pinned++
         if (diff.length) {
@@ -229,7 +237,9 @@ test.serial('rows match Chrome with the system renderer on macOS', (t) => {
   }
   const rows = ROWS.filter(([, row]) => !row.system || CAPTURE_DARWIN)
   const { mismatches, pinned } = check({ renderer: 'system', rows, flip: (row) => row.flip, widthOnly: false })
-  t.true(pinned > 600, `${pinned} pinned rows`)
+  // Off the capture's Darwin major the system-font rows are left out (521
+  // pinned rows at S0 on macOS 26, 651 on macOS 27).
+  t.true(pinned > (CAPTURE_DARWIN ? 600 : 450), `${pinned} pinned rows`)
   t.deepEqual(mismatches, [])
 })
 
