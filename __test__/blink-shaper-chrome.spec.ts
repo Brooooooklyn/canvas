@@ -23,7 +23,7 @@ import { createCanvas, GlobalFonts, setTextRenderer } from '../index'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
 type Props = Partial<Record<string, string>>
-type Value = number[] | boolean | { ink: boolean; color: boolean }
+type Value = number[] | boolean | 'blank' | { ink: boolean; color: boolean }
 interface Draw {
   text: string
   direction: string
@@ -43,7 +43,8 @@ interface Row {
   system?: true
   lowEnd?: true
   // false: the portable renderer's own glyph metrics differ from the macOS
-  // Chrome capture (not a shaping difference); not checked.
+  // Chrome capture (not a shaping difference; also when a row with `flip`
+  // already differs between the two renderers on the old path); not checked.
   portable?: false
   chrome: Value
   flip?: string
@@ -116,6 +117,11 @@ function ours(row: Row): Value {
   if (row.kind === 'same') {
     const a = draw(row, row.draws![0])
     const b = draw(row, row.draws![1])
+    // Two blank draws are not "the same text drawing": the capture has no
+    // blank row, so this never equals Chrome.
+    if (a.every((v, i) => i % 4 !== 3 || v === 0)) {
+      return 'blank'
+    }
     return a.every((v, i) => v === b[i])
   }
   const d = draw(row, { text: row.text!, direction: 'inherit' })

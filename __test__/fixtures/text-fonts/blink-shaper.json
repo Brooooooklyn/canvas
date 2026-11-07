@@ -345,6 +345,7 @@
       "ctx": {
         "direction": "ltr"
       },
+      "system": true,
       "chrome": [148.81678771972656, -0.7000000476837158, 147.15663146972656, 77.63671875, 0]
     },
     "q6: \"1Ā\" rtl": {
@@ -354,6 +355,7 @@
       "ctx": {
         "direction": "rtl"
       },
+      "system": true,
       "chrome": [148.81678771972656, 148.11679077148438, -1.66015625, 77.63671875, 0]
     },
     "q6: \"1 Ā\" ltr": {
@@ -363,6 +365,7 @@
       "ctx": {
         "direction": "ltr"
       },
+      "system": true,
       "chrome": [173.6167755126953, -7.299999713897705, 171.9566192626953, 77.63671875, 0]
     },
     "q6: \"1 Ā\" rtl": {
@@ -372,6 +375,7 @@
       "ctx": {
         "direction": "rtl"
       },
+      "system": true,
       "chrome": [173.6167755126953, 172.1519317626953, -6.1499786376953125, 77.63671875, 0]
     },
     "q6: \"1.\" ltr": {
@@ -5182,7 +5186,7 @@
       "text": "Hamburgefonstiv",
       "chrome": [183.8639373779297, -2.0879998207092285, 183.6359405517578, 17.676000595092773, 4.379999160766602],
       "flip": "S6",
-      "flipPortable": "S6"
+      "portable": false
     },
     "trak: 40px": {
       "group": "trak",
@@ -7036,7 +7040,7 @@
       },
       "chrome": [66.50161743164062, -1.568359375, 64.67164611816406, 28.465723037719727, 12.050233840942383],
       "flip": "S6",
-      "flipPortable": "S6"
+      "portable": false
     },
     "arabic: full from-font": {
       "group": "arabic",
@@ -7125,7 +7129,7 @@
       },
       "chrome": [106.8692626953125, -1.829980492591858, 105.03929138183594, 28.465723037719727, 10.169466018676758],
       "flip": "S6",
-      "flipPortable": "S6"
+      "portable": false
     },
     "arabic: mid_full from-font": {
       "group": "arabic",
@@ -7214,7 +7218,7 @@
       },
       "chrome": [54.033172607421875, -1.568359375, 52.20320129394531, 28.465723037719727, 12.050233840942383],
       "flip": "S6",
-      "flipPortable": "S6"
+      "portable": false
     },
     "arabic: end_full from-font": {
       "group": "arabic",
@@ -7303,7 +7307,7 @@
       },
       "chrome": [78.89698791503906, -1.829980492591858, 77.0672378540039, 28.465723037719727, 10.169466018676758],
       "flip": "S6",
-      "flipPortable": "S6"
+      "portable": false
     },
     "arabic: start_full from-font": {
       "group": "arabic",
@@ -7506,7 +7510,7 @@
       },
       "chrome": [40.97410583496094, -3.0004799365997314, 38.91120910644531, 31.111900329589844, 0.54730224609375],
       "flip": "S6",
-      "flipPortable": "S6"
+      "portable": false
     },
     "kerning: 0.5 \"ě\"": {
       "group": "kerning",
@@ -7567,7 +7571,7 @@
       },
       "chrome": [40.61878967285156, -0.5527200102806091, 38.55589294433594, 31.111900329589844, 0.54730224609375],
       "flip": "S6",
-      "flipPortable": "S6"
+      "portable": false
     },
     "kerning: 0.5 \"Tex̌\"": {
       "group": "kerning",
@@ -7578,7 +7582,7 @@
       },
       "chrome": [60.795501708984375, -0.5527200102806091, 60.37451171875, 31.111900329589844, 0.27636146545410156],
       "flip": "S6",
-      "flipPortable": "S6"
+      "portable": false
     },
     "kerning: 0.5 \"Tx̌\"": {
       "group": "kerning",
@@ -7589,7 +7593,7 @@
       },
       "chrome": [42.59523010253906, -0.5527200102806091, 42.17423629760742, 31.111900329589844, 0],
       "flip": "S6",
-      "flipPortable": "S6"
+      "portable": false
     },
     "nosuch-fsa: 0.5 \"kě\"": {
       "group": "nosuch-fsa",
@@ -7687,7 +7691,7 @@
       "text": "Hello world, fidelity",
       "chrome": [90.1400146484375, -0.918720006942749, 90.0555419921875, 7.777440547943115, 1.8110404014587402],
       "flip": "S0a",
-      "flipPortable": "S0a"
+      "portable": false
     },
     "size-floor: 10.567px \"e\"": {
       "group": "size-floor",
@@ -7695,7 +7699,7 @@
       "text": "e",
       "chrome": [5.5334320068359375, -0.390720009803772, 5.105760097503662, 5.433120250701904, 0.07392024993896484],
       "flip": "S0a",
-      "flipPortable": "S0a"
+      "portable": false
     },
     "size-floor: 10.567px \"eeeeeeeeee\"": {
       "group": "size-floor",
@@ -7703,7 +7707,7 @@
       "text": "eeeeeeeeee",
       "chrome": [55.334320068359375, -0.390720009803772, 54.906646728515625, 5.433120250701904, 0.07392024993896484],
       "flip": "S0a",
-      "flipPortable": "S0a"
+      "portable": false
     },
     "size-floor: 10.567px \"AV\"": {
       "group": "size-floor",
@@ -7711,7 +7715,7 @@
       "text": "AV",
       "chrome": [13.64349365234375, -0.052799999713897705, 13.595987319946289, 7.566240310668945, 0],
       "flip": "S0a",
-      "flipPortable": "S0a"
+      "portable": false
     },
     "size-floor: 10.567px \"A V\"": {
       "group": "size-floor",
@@ -7719,15 +7723,15 @@
       "text": "A V",
       "chrome": [16.399642944335938, -0.052799999713897705, 16.352136611938477, 7.566240310668945, 0],
       "flip": "S0a",
-      "flipPortable": "S0a"
+      "portable": false
     },
     "size-floor: 10.567px long 2200": {
       "group": "size-floor",
       "font": "10.567px BSLato",
       "text": "Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity ",
       "chrome": [9217.82421875, -0.918720006942749, 9215.7021484375, 7.777440547943115, 1.8110404014587402],
-      "flip": "S0a",
-      "flipPortable": "S0a"
+      "flip": "S2",
+      "portable": false
     },
     "size-floor: 10.56px \"Hello world, fidelity\"": {
       "group": "size-floor",
@@ -7769,8 +7773,8 @@
       "font": "10.56px BSLato",
       "text": "Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity ",
       "chrome": [9217.82421875, -0.918720006942749, 9215.7021484375, 7.777440547943115, 1.8110404014587402],
-      "flip": "S0a",
-      "flipPortable": "S0a"
+      "flip": "S2",
+      "portable": false
     },
     "size-floor: 10.57px \"Hello world, fidelity\"": {
       "group": "size-floor",
@@ -7812,8 +7816,8 @@
       "font": "10.57px BSLato",
       "text": "Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity ",
       "chrome": [9226.537109375, -0.9195899367332458, 9224.4130859375, 7.784804821014404, 1.812756061553955],
-      "flip": "S0a",
-      "flipPortable": "S0a"
+      "flip": "S2",
+      "portable": false
     },
     "size-floor: 33.339px \"Hello world, fidelity\"": {
       "group": "size-floor",
@@ -7821,7 +7825,7 @@
       "text": "Hello world, fidelity",
       "chrome": [284.5047607421875, -2.899710178375244, 284.2381286621094, 24.54754638671875, 5.716096878051758],
       "flip": "S0a",
-      "flipPortable": "S0a"
+      "portable": false
     },
     "size-floor: 33.339px \"e\"": {
       "group": "size-floor",
@@ -7829,7 +7833,7 @@
       "text": "e",
       "chrome": [17.464920043945312, -1.2332100868225098, 16.115055084228516, 17.148286819458008, 0.23331260681152344],
       "flip": "S0a",
-      "flipPortable": "S0a"
+      "portable": false
     },
     "size-floor: 33.339px \"eeeeeeeeee\"": {
       "group": "size-floor",
@@ -7837,7 +7841,7 @@
       "text": "eeeeeeeeee",
       "chrome": [174.64920043945312, -1.2332100868225098, 173.29934692382812, 17.148286819458008, 0.23331260681152344],
       "flip": "S0a",
-      "flipPortable": "S0a"
+      "portable": false
     },
     "size-floor: 33.339px \"AV\"": {
       "group": "size-floor",
@@ -7845,7 +7849,7 @@
       "text": "AV",
       "chrome": [43.06236267089844, -0.16665001213550568, 42.91238021850586, 23.880945205688477, 0],
       "flip": "S0a",
-      "flipPortable": "S0a"
+      "portable": false
     },
     "size-floor: 33.339px \"A V\"": {
       "group": "size-floor",
@@ -7853,15 +7857,15 @@
       "text": "A V",
       "chrome": [51.761474609375, -0.16665001213550568, 51.61149215698242, 23.880945205688477, 0],
       "flip": "S0a",
-      "flipPortable": "S0a"
+      "portable": false
     },
     "size-floor: 33.339px long 2200": {
       "group": "size-floor",
       "font": "33.339px BSLato",
       "text": "Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity ",
       "chrome": [29093.91015625, -2.899710178375244, 29087.2109375, 24.54754638671875, 5.716096878051758],
-      "flip": "S0a",
-      "flipPortable": "S0a"
+      "flip": "S2",
+      "portable": false
     },
     "size-floor: 33.33px \"Hello world, fidelity\"": {
       "group": "size-floor",
@@ -7903,8 +7907,8 @@
       "font": "33.33px BSLato",
       "text": "Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity ",
       "chrome": [29093.91015625, -2.899710178375244, 29087.2109375, 24.54754638671875, 5.716096878051758],
-      "flip": "S0a",
-      "flipPortable": "S0a"
+      "flip": "S2",
+      "portable": false
     },
     "size-floor: 33.34px \"Hello world, fidelity\"": {
       "group": "size-floor",
@@ -7946,8 +7950,8 @@
       "font": "33.34px BSLato",
       "text": "Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity ",
       "chrome": [29102.658203125, -2.9005799293518066, 29095.955078125, 24.55491065979004, 5.717811584472656],
-      "flip": "S0a",
-      "flipPortable": "S0a"
+      "flip": "S2",
+      "portable": false
     },
     "size-floor: 14.6666667px \"Hello world, fidelity\"": {
       "group": "size-floor",
@@ -7955,7 +7959,7 @@
       "text": "Hello world, fidelity",
       "chrome": [125.1375732421875, -1.2754199504852295, 125.02030944824219, 10.797090530395508, 2.514190673828125],
       "flip": "S0a",
-      "flipPortable": "S0a"
+      "portable": false
     },
     "size-floor: 14.6666667px \"e\"": {
       "group": "size-floor",
@@ -7963,7 +7967,7 @@
       "text": "e",
       "chrome": [7.6818389892578125, -0.5424200296401978, 7.088109970092773, 7.542570114135742, 0.10262060165405273],
       "flip": "S0a",
-      "flipPortable": "S0a"
+      "portable": false
     },
     "size-floor: 14.6666667px \"eeeeeeeeee\"": {
       "group": "size-floor",
@@ -7971,7 +7975,7 @@
       "text": "eeeeeeeeee",
       "chrome": [76.81838989257812, -0.5424200296401978, 76.22466278076172, 7.542570114135742, 0.10262060165405273],
       "flip": "S0a",
-      "flipPortable": "S0a"
+      "portable": false
     },
     "size-floor: 14.6666667px \"AV\"": {
       "group": "size-floor",
@@ -7979,7 +7983,7 @@
       "text": "AV",
       "chrome": [18.940719604492188, -0.07329999655485153, 18.874752044677734, 10.503890037536621, 0],
       "flip": "S0a",
-      "flipPortable": "S0a"
+      "portable": false
     },
     "size-floor: 14.6666667px \"A V\"": {
       "group": "size-floor",
@@ -7987,15 +7991,15 @@
       "text": "A V",
       "chrome": [22.7669677734375, -0.07329999655485153, 22.70100212097168, 10.503890037536621, 0],
       "flip": "S0a",
-      "flipPortable": "S0a"
+      "portable": false
     },
     "size-floor: 14.6666667px long 2200": {
       "group": "size-floor",
       "font": "14.6666667px BSLato",
       "text": "Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity ",
       "chrome": [12796.7109375, -1.2754199504852295, 12793.7646484375, 10.797090530395508, 2.514190673828125],
-      "flip": "S0a",
-      "flipPortable": "S0a"
+      "flip": "S2",
+      "portable": false
     },
     "size-floor: 23.9px \"Hello world, fidelity\"": {
       "group": "size-floor",
@@ -8037,8 +8041,8 @@
       "font": "23.9px BSLato",
       "text": "Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity ",
       "chrome": [20862.279296875, -2.0792999267578125, 20857.474609375, 17.60235023498535, 4.098852157592773],
-      "flip": "S0a",
-      "flipPortable": "S0a"
+      "flip": "S2",
+      "portable": false
     },
     "size-floor: 13.5px \"Hello world, fidelity\"": {
       "group": "size-floor",
@@ -8077,8 +8081,8 @@
       "font": "13.5px BSLato",
       "text": "Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity ",
       "chrome": [11784.12890625, -1.1744999885559082, 11781.416015625, 9.942749977111816, 2.315249443054199],
-      "flip": "S0a",
-      "flipPortable": "S0a"
+      "flip": "S2",
+      "portable": false
     },
     "size-floor: 13.348px \"Hello world, fidelity\"": {
       "group": "size-floor",
@@ -8086,7 +8090,7 @@
       "text": "Hello world, fidelity",
       "chrome": [113.87014770507812, -1.160580039024353, 113.763427734375, 9.824910163879395, 2.287811279296875],
       "flip": "S0a",
-      "flipPortable": "S0a"
+      "portable": false
     },
     "size-floor: 13.348px \"e\"": {
       "group": "size-floor",
@@ -8094,7 +8098,7 @@
       "text": "e",
       "chrome": [6.9901580810546875, -0.49358001351356506, 6.44989013671875, 6.863430500030518, 0.09338045120239258],
       "flip": "S0a",
-      "flipPortable": "S0a"
+      "portable": false
     },
     "size-floor: 13.348px \"eeeeeeeeee\"": {
       "group": "size-floor",
@@ -8102,7 +8106,7 @@
       "text": "eeeeeeeeee",
       "chrome": [69.90158081054688, -0.49358001351356506, 69.36131286621094, 6.863430500030518, 0.09338045120239258],
       "flip": "S0a",
-      "flipPortable": "S0a"
+      "portable": false
     },
     "size-floor: 13.348px \"AV\"": {
       "group": "size-floor",
@@ -8110,7 +8114,7 @@
       "text": "AV",
       "chrome": [17.235275268554688, -0.06669999659061432, 17.175247192382812, 9.558110237121582, 0],
       "flip": "S0a",
-      "flipPortable": "S0a"
+      "portable": false
     },
     "size-floor: 13.348px \"A V\"": {
       "group": "size-floor",
@@ -8118,15 +8122,15 @@
       "text": "A V",
       "chrome": [20.717010498046875, -0.06669999659061432, 20.656982421875, 9.558110237121582, 0],
       "flip": "S0a",
-      "flipPortable": "S0a"
+      "portable": false
     },
     "size-floor: 13.348px long 2200": {
       "group": "size-floor",
       "font": "13.348px BSLato",
       "text": "Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity Hello world, fidelity ",
       "chrome": [11644.44140625, -1.160580039024353, 11641.76171875, 9.824910163879395, 2.287811279296875],
-      "flip": "S0a",
-      "flipPortable": "S0a"
+      "flip": "S2",
+      "portable": false
     },
     "long: 13px x3": {
       "group": "long",
@@ -8174,7 +8178,7 @@
       "text": "Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv",
       "chrome": [12249.6953125, -1.1309999227523804, 12249.572265625, 9.57450008392334, 2.372500419616699],
       "flip": "S2",
-      "flipPortable": "S2"
+      "portable": false
     },
     "long: 13px fallback x120": {
       "group": "long",
@@ -8182,7 +8186,7 @@
       "text": "Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水Hamburgefonstiv水",
       "chrome": [13511.1396484375, -1.1309999227523804, 13510.828125, 11.03857421875, 2.372500419616699],
       "flip": "S2",
-      "flipPortable": "S2"
+      "portable": false
     },
     "script: kana kanji": {
       "group": "script",
