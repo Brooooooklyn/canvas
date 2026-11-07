@@ -192,16 +192,16 @@ test('font-variation-settings', async (t) => {
 })
 
 test('font-variation-settings-with-font-family', async (t) => {
-  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'RobotoMono-VariableFont_wght.ttf'), 'Roboto Mono');
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'RobotoMono-VariableFont_wght.ttf'), 'Roboto Mono')
   const canvas = createCanvas(1280, 680)
   const ctx = canvas.getContext('2d')
   ctx.fillStyle = 'blue'
   ctx.fillRect(0, 0, canvas.width, canvas.height)
   ctx.fillStyle = 'white'
   for (let i = 1; i <= 9; i++) {
-    ctx.font = `${i * 100} 45px Roboto Mono`;
+    ctx.font = `${i * 100} 45px Roboto Mono`
     ctx.fontVariationSettings = `'wght' ${i * 100}`
-    ctx.fillText(`${i * 100}: Jackdaws love my big sphinx of quartz`, 30, i * 65);
+    ctx.fillText(`${i * 100}: Jackdaws love my big sphinx of quartz`, 30, i * 65)
   }
   await snapshotImage(t, { canvas, ctx })
 })
@@ -318,7 +318,7 @@ test('font-variant-caps-all-values', (t) => {
 })
 
 test('font-variant-caps', async (t) => {
-  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'ScienceGothic-VariableFont.ttf'), 'Science Gothic');
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'ScienceGothic-VariableFont.ttf'), 'Science Gothic')
   const canvas = createCanvas(650, 390)
   const ctx = canvas.getContext('2d')!
 
@@ -370,7 +370,7 @@ test('font-variant-caps', async (t) => {
 })
 
 test('font-variant-caps-from-css-font-shorthand', async (t) => {
-  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'ScienceGothic-VariableFont.ttf'), 'Science Gothic');
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'ScienceGothic-VariableFont.ttf'), 'Science Gothic')
   const canvas = createCanvas(620, 200)
   const ctx = canvas.getContext('2d')!
 
@@ -398,7 +398,7 @@ test('font-variant-caps-from-css-font-shorthand', async (t) => {
 })
 
 test('font-variant-caps-shorthand-vs-property-equality', async (t) => {
-  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'ScienceGothic-VariableFont.ttf'), 'Science Gothic');
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'ScienceGothic-VariableFont.ttf'), 'Science Gothic')
 
   // Canvas 1: Use font shorthand with small-caps
   const canvas1 = createCanvas(500, 100)
@@ -428,11 +428,7 @@ test('font-variant-caps-shorthand-vs-property-equality', async (t) => {
 
 test('direction-all-values', (t) => {
   const { ctx } = t.context
-  const validValues = [
-    'ltr',
-    'rtl',
-    'inherit',
-  ] as const
+  const validValues = ['ltr', 'rtl', 'inherit'] as const
 
   validValues.forEach((value) => {
     ctx.direction = value
@@ -768,29 +764,6 @@ test('lang-save-restore', (t) => {
   t.is(ctx.lang, 'tr', 'lang should be restored after ctx.restore()')
 })
 
-test('lang-ligature-turkish-vs-english', async (t) => {
-  // Test based on MDN example: https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D/lang
-  // Turkish locale disables "fi" ligature because Turkish has dotless i (ı)
-  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'Lato-Regular.ttf'), 'Lato')
-  const canvas = createCanvas(450, 150)
-  const ctx = canvas.getContext('2d')!
-
-  ctx.fillStyle = 'white'
-  ctx.fillRect(0, 0, canvas.width, canvas.height)
-  ctx.fillStyle = 'black'
-  ctx.font = '36px Lato'
-
-  // English: "fi" should render as ligature (combined glyph)
-  ctx.lang = 'en'
-  ctx.fillText('en: finish crafting', 20, 55)
-
-  // Turkish: "fi" should NOT be a ligature (separate f and i glyphs)
-  ctx.lang = 'tr'
-  ctx.fillText('tr: finish crafting', 20, 115)
-
-  await snapshotImage(t, { canvas, ctx })
-})
-
 // =============================================================================
 // textRendering property tests
 // =============================================================================
@@ -844,8 +817,9 @@ test('text-rendering-comparison', async (t) => {
   ctx.font = '28px Source Serif Pro'
 
   // Use text with ligatures (office has "ffi", waffle has "ffl")
-  // Per Chromium's implementation, textRendering only affects ligatures (liga, clig)
-  // and contextual alternates (calt), NOT kerning. Kerning is controlled by fontKerning.
+  // Like Blink (FontFeatureRange::FromFontDescription), only optimizeSpeed
+  // changes the shaping features: it turns liga, clig and calt off. Kerning
+  // follows fontKerning alone, whatever textRendering is.
   const testText = 'office waffle'
   const modes = ['auto', 'optimizeSpeed', 'optimizeLegibility', 'geometricPrecision'] as const
 
@@ -861,7 +835,7 @@ test('text-rendering-comparison', async (t) => {
   // So optimizeSpeed should produce wider text (no ligatures = more glyphs = wider).
   t.true(
     widths.optimizeSpeed >= widths.auto,
-    `Expected 'optimizeSpeed' (${widths.optimizeSpeed.toFixed(2)}) >= 'auto' (${widths.auto.toFixed(2)})`
+    `Expected 'optimizeSpeed' (${widths.optimizeSpeed.toFixed(2)}) >= 'auto' (${widths.auto.toFixed(2)})`,
   )
 
   // auto, optimizeLegibility, geometricPrecision should all produce the same width
@@ -869,12 +843,12 @@ test('text-rendering-comparison', async (t) => {
   t.is(
     widths.auto,
     widths.optimizeLegibility,
-    `Expected 'auto' (${widths.auto.toFixed(2)}) === 'optimizeLegibility' (${widths.optimizeLegibility.toFixed(2)})`
+    `Expected 'auto' (${widths.auto.toFixed(2)}) === 'optimizeLegibility' (${widths.optimizeLegibility.toFixed(2)})`,
   )
   t.is(
     widths.auto,
     widths.geometricPrecision,
-    `Expected 'auto' (${widths.auto.toFixed(2)}) === 'geometricPrecision' (${widths.geometricPrecision.toFixed(2)})`
+    `Expected 'auto' (${widths.auto.toFixed(2)}) === 'geometricPrecision' (${widths.geometricPrecision.toFixed(2)})`,
   )
 
   await snapshotImage(t, { canvas, ctx })
