@@ -218,6 +218,64 @@ jobs:
           args: |
             sh -c "${{ matrix.settings.build }}"
 
+      # As in the armv7 job: a shared-object link allows undefined symbols,
+      # so a HarfBuzz, ICU or Skia symbol missing from the Skia archives
+      # would only fail at its first call. musl has no symbol versions: what
+      # its libc exports (zig's libc.S, the stub the addon links against)
+      # does not count. riscv64 takes libstdc++ from the host process and
+      # android liblog is unversioned, so those do not count either.
+      - name: Check undefined symbols
+        if: ${{ contains(matrix.settings.target, 'linux') }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          NODES=("${APP_NAME}".*.node)
+          F="${NODES[0]}"
+          readelf --dyn-syms -W "$F" | awk '$7 == "UND" && $5 == "GLOBAL" && $8 != "" && $8 !~ /@/ && $8 !~ /^(napi_|node_api_)/ {print $8}' | sort -u > undefined.txt
+          : > provided.txt
+          case "${{ matrix.settings.target }}" in
+            *-musl)
+              ZIG_LIB=$(zig env | sed -nE 's/.*lib_dir"?[[:space:]]*[:=][[:space:]]*"([^"]+)".*/\1/p')
+              grep -oE '^(\.globl|\.weak|WEAK64|WEAKTIME64)[[:space:]]+[A-Za-z0-9_]+' "$ZIG_LIB/libc/musl/libc.S" | awk '{print $2}' | sort -u > provided.txt
+              ;;
+            riscv64gc-*)
+              LIBSTDCXX=$(riscv64-linux-gnu-g++ -print-file-name=libstdc++.so.6)
+              readelf --dyn-syms -W "$LIBSTDCXX" | awk '$7 != "UND" && $8 != "" {sub(/@.*/, "", $8); print $8}' | sort -u > provided.txt
+              ;;
+            *-android)
+              grep -E '^__android_log_' undefined.txt > provided.txt || true
+              ;;
+          esac
+          comm -23 undefined.txt provided.txt > unresolved.txt
+          if [ -s unresolved.txt ]; then
+            cat unresolved.txt
+            echo '::error::unversioned strong undefined symbols'
+            exit 1
+          fi
+
+      # The Windows link fails on a missing symbol; check that none comes
+      # from a DLL instead (Windows ships its own ICU as icu.dll).
+      - name: Check Windows imports
+        if: ${{ contains(matrix.settings.target, 'windows-msvc') }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          VS=$("/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe" -latest -products '*' -property installationPath)
+          DUMPBINS=("$(cygpath -u "$VS")"/VC/Tools/MSVC/*/bin/Hostx64/x64/dumpbin.exe)
+          DUMPBIN="${DUMPBINS[-1]}"
+          NODES=("${APP_NAME}".*.node)
+          F="${NODES[0]}"
+          "$DUMPBIN" /nologo /imports "$F" | tr -d '\r' > imports.txt
+          sed -nE 's/^    ([^ ].*\.[dD][lL][lL])$/\1/p' imports.txt | tr '[:upper:]' '[:lower:]' | sort -u | tee dlls.txt
+          if grep -vxE 'advapi32\.dll|api-ms-win-core-synch-l1-2-0\.dll|bcryptprimitives\.dll|kernel32\.dll|ntdll\.dll' dlls.txt; then
+            echo '::error::unexpected imported DLL'
+            exit 1
+          fi
+          if grep -E '^ +[0-9A-Fa-f]+ +(hb_|u_|ubidi_|ubrk_|ucasemap_|udata_|unorm2_|uscript_)' imports.txt; then
+            echo '::error::HarfBuzz or ICU function imported from a DLL'
+            exit 1
+          fi
+
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
