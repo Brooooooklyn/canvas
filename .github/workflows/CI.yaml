@@ -260,9 +260,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          VS=$("/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe" -latest -products '*' -property installationPath)
+          # vswhere prints CRLF; $(...) keeps the CR, which breaks the path.
+          VS=$("/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe" -latest -products '*' -property installationPath | tr -d '\r')
           DUMPBINS=("$(cygpath -u "$VS")"/VC/Tools/MSVC/*/bin/Hostx64/x64/dumpbin.exe)
           DUMPBIN="${DUMPBINS[-1]}"
+          if [ ! -x "$DUMPBIN" ]; then
+            echo "::error::dumpbin not found under $VS"
+            exit 1
+          fi
           NODES=("${APP_NAME}".*.node)
           F="${NODES[0]}"
           # Dash options: Git Bash rewrites a leading-slash argument such as
