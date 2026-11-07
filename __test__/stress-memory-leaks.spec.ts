@@ -15,6 +15,7 @@ import {
   SvgExportFlag,
   SvgCanvas,
   convertSVGTextToPath,
+  setTextRenderer,
 } from '../index'
 
 const shouldSkip = process.env.RUN_STRESS_TESTS !== 'true'
@@ -344,4 +345,41 @@ serialTest('stress: failed AVIF decodes do not leak', async (t) => {
   // Round 0 warms up the allocator; base grew 36 MB from round 1 to 3.
   // Serial: RSS is process-wide, so a concurrent async test would add its own memory.
   t.true(rss[3] - rss[1] < 25, `RSS MB per round: ${rss.map((v) => v.toFixed(1)).join(', ')}`)
+})
+
+// ============================================================================
+// Text layout: the line cache, the shaper's HarfBuzz fonts and its system
+// fallback cache stay within their budgets
+// Exercises: LayOutLine / LayOutLineBlink (NAPI_RS_CANVAS_SHAPER=blink) with
+// font-variation instances, family fallback and, on macOS, system fallback
+// Risk: a cache that keeps every font or line it saw (DESIGN-SHAPER.md 6.2)
+// ============================================================================
+serialTest('stress: text layout with fallback does not grow from N to 2N lines', async (t) => {
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'RobotoMono-VariableFont_wght.ttf'), 'StressMono')
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'SourceHanSerifCN-Bold.ttf'), 'StressHan')
+  setFlagsFromString('--expose-gc')
+  const gc = runInNewContext('gc') as () => void
+  // Hebrew, Thai and Devanagari have no family font: system fallback on
+  // macOS, the first font's .notdef elsewhere. PUA has no fallback anywhere.
+  const tails = ['水', 'שלום', 'สวัสดี', 'नमस्ते', '😀', '⌚︎', '\uE000', 'a☺️b']
+  setTextRenderer('system')
+  try {
+    const ctx = createCanvas(200, 50).getContext('2d')
+    let line = 0
+    const round = async (n: number) => {
+      for (let i = 0; i < n; i++, line++) {
+        ctx.font = `${100 + (line % 600)} 16px StressMono, StressHan`
+        ctx.measureText(`line ${line} ${tails[line % tails.length]} ${line * 7}`)
+        ctx.fillText(`d${line}${tails[(line + 3) % tails.length]}`, 10, 30)
+        if (i % 100 === 0) await new Promise(setImmediate)
+      }
+      gc()
+      return process.memoryUsage().rss / 1048576
+    }
+    // Round 0 warms up the caches; then N lines, then 2N more.
+    const rss = [await round(3000), await round(3000), await round(6000)]
+    t.true(rss[2] - rss[1] < 25, `RSS MB after warm-up, N, 2N: ${rss.map((v) => v.toFixed(1)).join(', ')}`)
+  } finally {
+    setTextRenderer('portable')
+  }
 })

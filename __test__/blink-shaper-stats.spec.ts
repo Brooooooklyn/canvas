@@ -101,24 +101,65 @@ test.serial(
 
 test.serial('each request the shaper cannot lay out yet is counted under its reason', (t) => {
   stats()
+  // A character no family has goes to the old path where the shaper has no
+  // system fallback source: always with the portable renderer.
+  setTextRenderer('portable')
   const cases: [string, string, Record<string, string>, string][] = [
     ['40px StatsLato', 'Hello', { letterSpacing: '2px' }, 'letterSpacing'],
     ['40px StatsLato', 'Hello', { wordSpacing: '2px' }, 'wordSpacing'],
     ['40px StatsLato', 'Hello', { fontVariantCaps: 'small-caps' }, 'caps'],
     ['40px StatsLato, StatsHan', 'Hello', { fontSizeAdjust: '0.5' }, 'faceSizes'],
-    ['40px StatsLato', '', {}, 'fallback'],
-    ['40px StatsLato', 'a️b', {}, 'variationSelector'],
+    ['40px StatsLato', '\uE000', {}, 'fallback'],
+    ['40px StatsLato', '\u{10FFFD}', {}, 'fallback'],
   ]
-  for (const [font, text, props, reason] of cases) {
-    measure(font, text, props)
-    const s = stats()
-    if (BLINK) {
-      t.deepEqual(rejected(s), { [reason]: 1 }, reason)
-      t.is(s.accepted, 0, reason)
-    } else {
-      t.deepEqual(rejected(s), {}, reason)
+  try {
+    for (const [font, text, props, reason] of cases) {
+      measure(font, text, props)
+      const s = stats()
+      if (BLINK) {
+        t.deepEqual(rejected(s), { [reason]: 1 }, reason)
+        t.is(s.accepted, 0, reason)
+      } else {
+        t.deepEqual(rejected(s), {}, reason)
+      }
     }
+  } finally {
+    setTextRenderer('system')
   }
+})
+
+// Stage S3: the fallback stages. A variation selector the family fonts can
+// shape (also the second pass that ignores it) is laid out by the shaper
+// everywhere. With the system renderer on macOS, a character no family has
+// goes to CoreText's fallback (or, for private use and non-characters, to the
+// first font's .notdef), so nothing is turned down; elsewhere it still is.
+test.serial('variation selectors and system fallback are laid out by the shaper', (t) => {
+  stats()
+  // A selector after a character it makes no variation sequence with is not
+  // looked at (Character::IsVariationSequence).
+  for (const text of ['a\uFE0Fb', 'a\uFE0Eb', '水\uFE00']) {
+    t.true(measure('40px StatsLato, StatsHan', text).width > 0, text)
+  }
+  let s = stats()
+  t.deepEqual(rejected(s), {})
+  t.is(s.accepted, BLINK ? 3 : 0)
+  // U+2205 U+FE00 is a standardized variation sequence: a font with only the
+  // base gives kUnmatchedVSGlyphId, and the second pass ignores the selector.
+  const fallback = ['\uE000', '\uFFFE', 'שלום', '😀', '⌚\uFE0E', 'a☺️b', 'x\u3000y', 'こんにちは', '\u2205\uFE00']
+  for (const text of fallback) {
+    measure('40px StatsLato', text)
+  }
+  s = stats()
+  const apple = process.platform === 'darwin'
+  if (!BLINK) {
+    t.deepEqual(rejected(s), {})
+  } else if (apple) {
+    t.deepEqual(rejected(s), {})
+    t.is(s.accepted, fallback.length)
+  } else {
+    t.true((rejected(s).fallback ?? 0) > 0)
+  }
+  t.is(s.cacheChanges, 0)
 })
 
 test.serial('text in two families is laid out by the shaper', (t) => {
