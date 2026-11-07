@@ -265,7 +265,9 @@ jobs:
           DUMPBIN="${DUMPBINS[-1]}"
           NODES=("${APP_NAME}".*.node)
           F="${NODES[0]}"
-          "$DUMPBIN" /nologo /imports "$F" | tr -d '\r' > imports.txt
+          # Dash options: Git Bash rewrites a leading-slash argument such as
+          # /imports into a Windows path before dumpbin sees it.
+          "$DUMPBIN" -nologo -imports "$F" | tr -d '\r' > imports.txt
           sed -nE 's/^    ([^ ].*\.[dD][lL][lL])$/\1/p' imports.txt | tr '[:upper:]' '[:lower:]' | sort -u | tee dlls.txt
           # The addon imports GetProcAddress from kernel32 (napi-rs loads
           # node's functions with it): if either line is missing, the
@@ -273,7 +275,7 @@ jobs:
           # pass.
           if ! grep -qx 'kernel32\.dll' dlls.txt || ! grep -qE '^ +[0-9A-Fa-f]+ +GetProcAddress$' imports.txt; then
             cat imports.txt
-            echo '::error::could not read the dumpbin /imports output'
+            echo '::error::could not read the dumpbin -imports output'
             exit 1
           fi
           if grep -vxE 'advapi32\.dll|api-ms-win-core-synch-l1-2-0\.dll|bcryptprimitives\.dll|kernel32\.dll|ntdll\.dll' dlls.txt; then
