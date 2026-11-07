@@ -488,10 +488,22 @@ std::optional<std::vector<SkUnichar>> Normalized(
   return code_points;
 }
 
-// Whether `face` has a glyph for each of `code_points`.
+// The space characters HarfBuzz draws with U+0020 in a face without them
+// (hb-unicode.hh space_fallback_type, without U+0020 itself).
+bool IsFallbackSpace(SkUnichar c) {
+  return c == 0x00A0 || (c >= 0x2000 && c <= 0x200A) || c == 0x202F ||
+         c == 0x205F || c == 0x3000;
+}
+
+// Whether HarfBuzz draws each of `code_points` with `face`: with its own
+// glyph or, without one, with the face's space for a space character and
+// its U+2010 for U+2011 (hb-ot-shape-normalize.cc
+// decompose_current_character).
 bool HasGlyphs(SkTypeface* face, const std::vector<SkUnichar>& code_points) {
   for (const SkUnichar c : code_points) {
-    if (!face->unicharToGlyph(c)) {
+    if (!face->unicharToGlyph(c) &&
+        !(IsFallbackSpace(c) && face->unicharToGlyph(0x0020)) &&
+        !(c == 0x2011 && face->unicharToGlyph(0x2010))) {
       return false;
     }
   }
@@ -506,7 +518,7 @@ bool HasGlyphs(SkTypeface* face, const std::vector<SkUnichar>& code_points) {
 // HarfBuzz composes or decomposes a cluster to the glyphs the face has
 // (hb-ot-shape-normalize.cc), so a face that has every character of the
 // cluster's NFC or NFD form draws it too: Lato draws "e\u0301" as its
-// U+00E9.
+// U+00E9, and U+2009 with its space (HasGlyphs).
 std::vector<SizeRun> FaceSizeRuns(std::string_view text,
                                   size_t start,
                                   size_t end,

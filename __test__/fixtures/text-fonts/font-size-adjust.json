@@ -1859,6 +1859,105 @@
         "computed": "0.37",
         "metrics": [139.27194213867188, 29, 6, 20.285999298095703, 0, 23.200000762939453, -6],
         "dom": 139.28125
+      },
+      "Lato,Han thin space none": {
+        "font": "40px SALato, SAHan",
+        "text": "a\u2009b",
+        "css": {
+          "fontSizeAdjust": "none"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [50.63999938964844, 39, 9, 29.46000099182129, 0.32000160217285156, 31.200000762939453, -9],
+        "dom": 50.640625
+      },
+      "Lato,Han en space none": {
+        "font": "40px SALato, SAHan",
+        "text": "Hx\u2002",
+        "css": {
+          "fontSizeAdjust": "none"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [70.39997863769531, 39, 9, 28.65999984741211, 0, 31.200000762939453, -9],
+        "dom": 70.40625
+      },
+      "Lato,Han nb hyphen none": {
+        "font": "40px SALato, SAHan",
+        "text": "a\u2011b",
+        "css": {
+          "fontSizeAdjust": "none"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [56.519989013671875, 39, 9, 29.46000099182129, 0.32000160217285156, 31.200000762939453, -9],
+        "dom": 56.53125
+      },
+      "Lato,Han thin space 0.5": {
+        "font": "40px SALato, SAHan",
+        "text": "a\u2009b",
+        "css": {
+          "fontSizeAdjust": "0.5"
+        },
+        "ctx": {},
+        "computed": "0.5",
+        "metrics": [49.98167419433594, 39, 8, 29.0770206451416, 0.3158416748046875, 31.200000762939453, -8],
+        "dom": 49.984375
+      },
+      "Lato,Han en space 0.5": {
+        "font": "40px SALato, SAHan",
+        "text": "Hx\u2002",
+        "css": {
+          "fontSizeAdjust": "0.5"
+        },
+        "ctx": {},
+        "computed": "0.5",
+        "metrics": [69.48480224609375, 39, 8, 28.287418365478516, 0, 31.200000762939453, -8],
+        "dom": 69.5
+      },
+      "Lato,Han nb hyphen 0.5": {
+        "font": "40px SALato, SAHan",
+        "text": "a\u2011b",
+        "css": {
+          "fontSizeAdjust": "0.5"
+        },
+        "ctx": {},
+        "computed": "0.5",
+        "metrics": [55.78523254394531, 39, 8, 29.0770206451416, 0.3158416748046875, 31.200000762939453, -8],
+        "dom": 55.796875
+      },
+      "Lato,Han thin space cap-height 0.5": {
+        "font": "40px SALato, SAHan",
+        "text": "a\u2009b",
+        "css": {
+          "fontSizeAdjust": "cap-height 0.5"
+        },
+        "ctx": {},
+        "computed": "cap-height 0.5",
+        "metrics": [35.33404541015625, 28, 6, 20.555715560913086, 0.2232799530029297, 22.399999618530273, -6],
+        "dom": 35.34375
+      },
+      "Lato,Han en space cap-height 0.5": {
+        "font": "40px SALato, SAHan",
+        "text": "Hx\u2002",
+        "css": {
+          "fontSizeAdjust": "cap-height 0.5"
+        },
+        "ctx": {},
+        "computed": "cap-height 0.5",
+        "metrics": [49.12159729003906, 28, 6, 19.997514724731445, 0, 22.399999618530273, -6],
+        "dom": 49.125
+      },
+      "Lato,Han nb hyphen cap-height 0.5": {
+        "font": "40px SALato, SAHan",
+        "text": "a\u2011b",
+        "css": {
+          "fontSizeAdjust": "cap-height 0.5"
+        },
+        "ctx": {},
+        "computed": "cap-height 0.5",
+        "metrics": [39.43681335449219, 28, 6, 20.555715560913086, 0.2232799530029297, 22.399999618530273, -6],
+        "dom": 39.4375
       }
     },
     "opsz": {

@@ -234,6 +234,21 @@ test.serial('a cluster takes the size of the face that draws its NFC or NFD form
   })
 })
 
+test.serial('a space character a face lacks takes the size of the face that draws its U+0020', (t) => {
+  // Lato has no U+2002 or U+2009: HarfBuzz draws them with its space, at
+  // Lato's size, not Source Han's (the fixture has U+2011, which goes to
+  // Source Han: Lato has no U+2010 either).
+  withBothRenderers((renderer) => {
+    for (const adjust of ['0.5', 'cap-height 0.5']) {
+      const label = `${renderer} ${adjust}`
+      const css = { fontSizeAdjust: adjust }
+      for (const text of ['\u2002', 'a\u2009b']) {
+        t.true(close(width('40px SALato, SAHan', text, css), width('40px SALato', text, css)), `${label} ${text}`)
+      }
+    }
+  })
+})
+
 test.serial('font-optical-sizing none is the opsz default, auto the used size', (t) => {
   withBothRenderers((renderer) => {
     const text = 'Hamburgefonstiv '.repeat(4)
