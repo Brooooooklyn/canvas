@@ -143,8 +143,7 @@ float AdvanceHeight(skiac_font_collection* c_collection,
       uint8_t advance[2];
       if (typeface->getTableData(SkSetFourByteTag('v', 'm', 't', 'x'),
                                  static_cast<size_t>(index) * 4,
-                                 sizeof(advance),
-                                 advance) == sizeof(advance)) {
+                                 sizeof(advance), advance) == sizeof(advance)) {
         return ReadU16(advance) * (font.getSize() / upem);
       }
     }
@@ -219,8 +218,7 @@ UsedSizes ComputeUsedSizes(skiac_font_collection* c_collection,
                            const skiac_text_request& request) {
   UsedSizes sizes{request.size, request.size, {}, {}};
   const float computed = request.size;
-  if (request.size_adjust_metric < 0 || !(computed > 0) ||
-      base_faces.empty()) {
+  if (request.size_adjust_metric < 0 || !(computed > 0) || base_faces.empty()) {
     return sizes;
   }
   const int metric = request.size_adjust_metric;
@@ -242,9 +240,8 @@ UsedSizes ComputeUsedSizes(skiac_font_collection* c_collection,
   };
   const float primary_aspect = aspect_of(base_faces.front());
   // from-font: the primary font's own aspect (UpdateAdjustedSize).
-  const float value = request.size_adjust_from_font
-                          ? primary_aspect
-                          : request.size_adjust_value;
+  const float value = request.size_adjust_from_font ? primary_aspect
+                                                    : request.size_adjust_value;
   // MetricsMultiplierAdjustedFontSize, then EffectiveFontSize.
   auto adjusted_for = [&](float aspect) {
     return std::min((value / aspect) * computed, kMaxFontSize);
