@@ -9,6 +9,8 @@
 //! keywords, var() and an empty value ([`reject_canvas_keyword`]), as
 //! Chrome's canvas string setters (font, letterSpacing, filter) do.
 
+use std::collections::BTreeMap;
+
 use cssparser::{Parser, Token};
 
 use crate::css_math::{self, Category, Lengths, MathOptions};
@@ -178,16 +180,16 @@ impl FontFeatureSettings {
     if let Some(ident) = try_ident(&mut p) {
       return (ident.eq_ignore_ascii_case("normal") && p.is_exhausted()).then(Self::default);
     }
-    let mut features: Vec<FontFeature> = Vec::new();
+    // Keyed by tag: an insert replaces the earlier item of a tag (the last
+    // wins), and iteration is in tag order. O(n log n) for n items.
+    let mut features: BTreeMap<u32, i32> = BTreeMap::new();
     loop {
       let tag = match p.next() {
         Ok(Token::QuotedString(s)) => tag_from_str(s)?,
         _ => return None,
       };
       let value = feature_value(&mut p)?;
-      // Dedupe: the last item of a tag wins.
-      features.retain(|f| f.tag != tag);
-      features.push(FontFeature { tag, value });
+      features.insert(tag, value);
       if p.is_exhausted() {
         break;
       }
@@ -196,8 +198,12 @@ impl FontFeatureSettings {
         _ => return None,
       }
     }
-    features.sort_by_key(|f| f.tag);
-    Some(Self(features))
+    Some(Self(
+      features
+        .into_iter()
+        .map(|(tag, value)| FontFeature { tag, value })
+        .collect(),
+    ))
   }
 
   pub fn serialize(&self) -> String {
