@@ -216,7 +216,7 @@ float AspectValue(skiac_font_collection* c_collection,
 UsedSizes ComputeUsedSizes(skiac_font_collection* c_collection,
                            const std::vector<sk_sp<SkTypeface>>& base_faces,
                            const skiac_text_request& request) {
-  UsedSizes sizes{request.size, request.size, {}, {}};
+  UsedSizes sizes{request.size, request.size, {}, {}, {}};
   const float computed = request.size;
   if (request.size_adjust_metric < 0 || !(computed > 0) || base_faces.empty()) {
     return sizes;
@@ -262,6 +262,13 @@ UsedSizes ComputeUsedSizes(skiac_font_collection* c_collection,
   const SkFontStyle style(static_cast<int>(roundf(request.weight)),
                           request.stretch,
                           static_cast<SkFontStyle::Slant>(request.style));
+  // font-optical-sizing auto without an opsz of the request's own: a face
+  // made at its own adjusted size has its opsz at that size too
+  // (FontCustomPlatformData::GetFontPlatformData), when it has the axis.
+  bool opsz_follows_size = request.optical_sizing == 0;
+  for (int i = 0; request.variations && i < request.variations_count; ++i) {
+    opsz_follows_size = opsz_follows_size && request.variations[i].tag != kOpsz;
+  }
   bool differs = false;
   for (size_t i = 0; i < families.size(); ++i) {
     const std::vector<sk_sp<SkTypeface>> found =
@@ -271,17 +278,24 @@ UsedSizes ComputeUsedSizes(skiac_font_collection* c_collection,
     }
     const sk_sp<SkTypeface>& face = found.front();
     float size = sizes.effective;
+    float opsz = sizes.opsz;
     if (!sizes.faces.empty() &&
         (generic[i] || !IsSystemTypeface(c_collection, face.get()))) {
-      size = effective_for(adjusted_for(aspect_of(face)));
+      const float face_adjusted = adjusted_for(aspect_of(face));
+      size = effective_for(face_adjusted);
+      if (opsz_follows_size && FindAxis(Axes(face.get()), kOpsz)) {
+        opsz = face_adjusted;
+      }
     }
-    differs = differs || size != sizes.effective;
+    differs = differs || size != sizes.effective || opsz != sizes.opsz;
     sizes.faces.push_back(face);
     sizes.face_sizes.push_back(size);
+    sizes.face_opsz.push_back(opsz);
   }
   if (!differs) {
     sizes.faces.clear();
     sizes.face_sizes.clear();
+    sizes.face_opsz.clear();
   }
   return sizes;
 }

@@ -434,11 +434,12 @@ size_t LineBytes(size_t runs, size_t glyphs, size_t words) {
   return 128 * runs + 14 * glyphs + 16 * words;
 }
 
-// A part of a piece drawn at one font size (FaceSizeRuns).
+// A part of a piece drawn at one font size and opsz (FaceSizeRuns).
 struct SizeRun {
   size_t start;
   size_t end;
   float size;
+  float opsz;
 };
 
 // `cluster` (code points) in NFC (`compose`) or NFD, without the default
@@ -501,8 +502,8 @@ bool HasGlyphs(SkTypeface* face, const std::vector<SkUnichar>& code_points) {
 // draws them under font-size-adjust (DESIGN D7): each grapheme cluster goes
 // to the first of `sizes.faces` with a glyph for each of its characters that
 // is not default ignorable, or, with none, to the system fallback at the
-// primary's size; consecutive clusters of one size make one part. HarfBuzz
-// composes or decomposes a cluster to the glyphs the face has
+// primary's size; consecutive clusters of one size and opsz make one part.
+// HarfBuzz composes or decomposes a cluster to the glyphs the face has
 // (hb-ot-shape-normalize.cc), so a face that has every character of the
 // cluster's NFC or NFD form draws it too: Lato draws "e\u0301" as its
 // U+00E9.
@@ -546,6 +547,7 @@ std::vector<SizeRun> FaceSizeRuns(std::string_view text,
       }
     } while (next < piece.size() && !cluster_start(next));
     float size = sizes.effective;
+    float opsz = sizes.opsz;
     if (!code_points.empty()) {
       // The cluster's NFC and NFD forms, when a face lacks a character.
       std::optional<std::optional<std::vector<SkUnichar>>> nfc;
@@ -563,17 +565,19 @@ std::vector<SizeRun> FaceSizeRuns(std::string_view text,
         if (HasGlyphs(face, code_points) || covers_form(face, true) ||
             covers_form(face, false)) {
           size = sizes.face_sizes[i];
+          opsz = sizes.face_opsz[i];
           break;
         }
       }
     } else if (!runs.empty()) {
       // A cluster of default ignorables stays with the text before it.
       size = runs.back().size;
+      opsz = runs.back().opsz;
     }
-    if (!runs.empty() && runs.back().size == size) {
+    if (!runs.empty() && runs.back().size == size && runs.back().opsz == opsz) {
       runs.back().end = start + next;
     } else {
-      runs.push_back({start + at, start + next, size});
+      runs.push_back({start + at, start + next, size, opsz});
     }
     at = next;
   }
@@ -616,6 +620,43 @@ void LayOutLine(skiac_font_collection* c_collection,
     text_style.setFontArguments(std::make_optional(font_args));
     c_collection->noteFontArguments(
         std::hash<FontArguments>()(*text_style.getFontArguments()));
+  }
+  // font-size-adjust: the font arguments of each family with an opsz of its
+  // own (UsedSizes::face_opsz), and their instances of `base_faces`, here
+  // as a note can drop the caches.
+  struct OpszArguments {
+    float opsz;
+    std::vector<SkFontArguments::VariationPosition::Coordinate> coords;
+    SkFontArguments arguments() const {
+      SkFontArguments font_args;
+      font_args.setVariationDesignPosition(
+          {coords.data(), static_cast<int>(coords.size())});
+      return font_args;
+    }
+  };
+  std::vector<OpszArguments> face_arguments;
+  std::vector<std::pair<SkTypefaceID, SkTypeface*>> face_instances;
+  for (const float opsz : sizes.face_opsz) {
+    if (opsz == sizes.opsz ||
+        std::any_of(face_arguments.begin(), face_arguments.end(),
+                    [opsz](const auto& known) { return known.opsz == opsz; })) {
+      continue;
+    }
+    OpszArguments known{opsz, FontVariations(base_faces, request, opsz)};
+    if (known.coords.empty()) {
+      continue;
+    }
+    const std::optional<FontArguments> arguments(known.arguments());
+    c_collection->noteFontArguments(std::hash<FontArguments>()(*arguments));
+    const std::vector<sk_sp<SkTypeface>> instances =
+        font_collection->findTypefaces(text_style.getFontFamilies(), font_style,
+                                       arguments);
+    for (size_t i = 0;
+         i < instances.size() && instances.size() == base_faces.size(); ++i) {
+      face_instances.emplace_back(instances[i]->uniqueID(),
+                                  base_faces[i].get());
+    }
+    face_arguments.push_back(std::move(known));
   }
 
   // The OpenType features of fontKerning, textRendering, letterSpacing and
@@ -793,6 +834,11 @@ void LayOutLine(skiac_font_collection* c_collection,
                                             pieces[i].end, sizes, unicode)) {
           TextStyle run_style = piece_style;
           run_style.setFontSize(run.size);
+          for (const OpszArguments& known : face_arguments) {
+            if (known.opsz == run.opsz) {
+              run_style.setFontArguments(known.arguments());
+            }
+          }
           add_spaced(run_style, run.start, run.end);
         }
         continue;
@@ -849,6 +895,11 @@ void LayOutLine(skiac_font_collection* c_collection,
           base = faces.size() == base_faces.size() ? base_faces[i].get()
                                                    : faces[i].get();
           break;
+        }
+      }
+      for (const auto& instance : face_instances) {
+        if (!base && instance.first == id) {
+          base = instance.second;
         }
       }
       synthesized.emplace_back(

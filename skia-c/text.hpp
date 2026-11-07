@@ -128,12 +128,13 @@ struct UsedSizes {
   float effective;
   // The adjusted size before the floor, for opsz (font-optical-sizing: auto).
   float opsz;
-  // Only when a family's own aspect gives it another size than the primary:
-  // the resolved families' faces (before font arguments), in order, with
-  // their effective sizes. A character no face has (system fallback) gets
-  // `effective`.
+  // Only when a family's own aspect gives it another size or opsz than the
+  // primary: the resolved families' faces (before font arguments), in order,
+  // with their effective sizes and opsz. A character no face has (system
+  // fallback) gets `effective` and `opsz`.
   std::vector<sk_sp<SkTypeface>> faces;
   std::vector<float> face_sizes;
+  std::vector<float> face_opsz;
 };
 
 // `base_faces` are the request's families' faces before font arguments

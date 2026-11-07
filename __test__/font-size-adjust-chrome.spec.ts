@@ -242,6 +242,31 @@ test.serial('font-optical-sizing none is the opsz default, auto the used size', 
   })
 })
 
+test.serial('a fallback family with its own size has its own opsz', (t) => {
+  // GsubOne has no letters: Newsreader draws them at its own adjusted size
+  // and opsz (CSSFontFace::GetFontData), as when it is the primary font.
+  const text = 'Hamburgefonstiv'.repeat(4)
+  const pixels = (font: string, css: Props) => {
+    const canvas = createCanvas(1400, 60)
+    const ctx = canvas.getContext('2d')
+    Object.assign(ctx, css)
+    ctx.font = font
+    ctx.fillText(text, 5, 45)
+    return Buffer.from(ctx.getImageData(0, 0, 1400, 60).data)
+  }
+  withBothRenderers((renderer) => {
+    for (const css of [
+      { fontSizeAdjust: '0.5' },
+      { fontSizeAdjust: '0.5', fontOpticalSizing: 'none' },
+      { fontSizeAdjust: '0.5', fontVariationSettings: "'opsz' 30" },
+    ]) {
+      const label = `${renderer} ${JSON.stringify(css)}`
+      t.true(close(width('40px SAGsub, SANews', text, css), width('40px SANews', text, css)), label)
+      t.true(pixels('40px SAGsub, SANews', css).equals(pixels('40px SANews', css)), `${label} draw`)
+    }
+  })
+})
+
 test.serial('font-size-adjust and font-optical-sizing are part of the layout cache key', (t) => {
   const ctx = createCanvas(10, 10).getContext('2d')
   const toggles: [string, string, string][] = [

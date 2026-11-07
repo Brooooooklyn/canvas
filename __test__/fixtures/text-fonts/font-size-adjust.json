@@ -4,7 +4,8 @@
     "SALato": "Lato-Regular.ttf",
     "SASerif": "SourceSerifPro-Regular.ttf",
     "SAHan": "SourceHanSerifCN-Bold.ttf",
-    "SANews": "Newsreader-opsz-only.ttf"
+    "SANews": "Newsreader-opsz-only.ttf",
+    "SAGsub": "gsubtest-lookup1.otf"
   },
   "darwin": {
     "metrics": {
@@ -2128,6 +2129,144 @@
         "computed": "none",
         "metrics": [1752.95654296875, 9, 3, 8.513999938964844, 3.1800003051757812, 7.199999809265137, -3],
         "dom": 1747.921875
+      },
+      "40px Gsub,News none": {
+        "font": "40px SAGsub, SANews",
+        "text": "HamburgefonstivHamburgefonstivHamburgefonstivHamburgefonstiv",
+        "css": {
+          "fontSizeAdjust": "none"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [1179.081298828125, 30, 10, 28.909687042236328, 10.0703125, 24, -10],
+        "dom": 1179.09375
+      },
+      "40px News none": {
+        "font": "40px SANews",
+        "text": "HamburgefonstivHamburgefonstivHamburgefonstivHamburgefonstiv",
+        "css": {
+          "fontSizeAdjust": "none"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [1179.081298828125, 29, 11, 28.909687042236328, 10.0703125, 23.200000762939453, -11],
+        "dom": 1179.09375
+      },
+      "40px Gsub,News none none": {
+        "font": "40px SAGsub, SANews",
+        "text": "HamburgefonstivHamburgefonstivHamburgefonstivHamburgefonstiv",
+        "css": {
+          "fontSizeAdjust": "none",
+          "fontOpticalSizing": "none"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [1129.279541015625, 30, 10, 28.380001068115234, 10.60000228881836, 24, -10],
+        "dom": 1129.28125
+      },
+      "40px Gsub,News none opsz 30": {
+        "font": "40px SAGsub, SANews",
+        "text": "HamburgefonstivHamburgefonstivHamburgefonstivHamburgefonstiv",
+        "css": {
+          "fontSizeAdjust": "none",
+          "fontVariationSettings": "'opsz' 30"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [1156.4447021484375, 30, 10, 28.66874885559082, 10.311254501342773, 24, -10],
+        "dom": 1156.453125
+      },
+      "40px Gsub,News 0.5": {
+        "font": "40px SAGsub, SANews",
+        "text": "HamburgefonstivHamburgefonstivHamburgefonstivHamburgefonstiv",
+        "css": {
+          "fontSizeAdjust": "0.5"
+        },
+        "ctx": {},
+        "computed": "0.5",
+        "metrics": [1287.015625, 30, 10, 31.440673828125, 10.833137512207031, 24, -10],
+        "dom": 1287.015625
+      },
+      "40px News 0.5": {
+        "font": "40px SANews",
+        "text": "HamburgefonstivHamburgefonstivHamburgefonstivHamburgefonstiv",
+        "css": {
+          "fontSizeAdjust": "0.5"
+        },
+        "ctx": {},
+        "computed": "0.5",
+        "metrics": [1287.015625, 32, 11, 31.440673828125, 10.833137512207031, 25.600000381469727, -11],
+        "dom": 1273.21875
+      },
+      "40px Gsub,News 0.5 none": {
+        "font": "40px SAGsub, SANews",
+        "text": "HamburgefonstivHamburgefonstivHamburgefonstivHamburgefonstiv",
+        "css": {
+          "fontSizeAdjust": "0.5",
+          "fontOpticalSizing": "none"
+        },
+        "ctx": {},
+        "computed": "0.5",
+        "metrics": [1325.209716796875, 30, 10, 33.30392837524414, 12.439102172851562, 24, -10],
+        "dom": 1325.21875
+      },
+      "40px Gsub,News 0.5 opsz 30": {
+        "font": "40px SAGsub, SANews",
+        "text": "HamburgefonstivHamburgefonstivHamburgefonstivHamburgefonstiv",
+        "css": {
+          "fontSizeAdjust": "0.5",
+          "fontVariationSettings": "'opsz' 30"
+        },
+        "ctx": {},
+        "computed": "0.5",
+        "metrics": [1298.9766845703125, 30, 10, 32.202171325683594, 11.582111358642578, 24, -10],
+        "dom": 1298.984375
+      },
+      "40px Gsub,News from-font": {
+        "font": "40px SAGsub, SANews",
+        "text": "HamburgefonstivHamburgefonstivHamburgefonstivHamburgefonstiv",
+        "css": {
+          "fontSizeAdjust": "from-font"
+        },
+        "ctx": {},
+        "computed": "0.5",
+        "metrics": [1287.015625, 30, 10, 31.440673828125, 10.833137512207031, 24, -10],
+        "dom": 1287.015625
+      },
+      "40px News from-font": {
+        "font": "40px SANews",
+        "text": "HamburgefonstivHamburgefonstivHamburgefonstivHamburgefonstiv",
+        "css": {
+          "fontSizeAdjust": "from-font"
+        },
+        "ctx": {},
+        "computed": "0.461039",
+        "metrics": [1179.081298828125, 29, 11, 28.909687042236328, 10.0703125, 23.200000762939453, -11],
+        "dom": 1179.09375
+      },
+      "40px Gsub,News from-font none": {
+        "font": "40px SAGsub, SANews",
+        "text": "HamburgefonstivHamburgefonstivHamburgefonstivHamburgefonstiv",
+        "css": {
+          "fontSizeAdjust": "from-font",
+          "fontOpticalSizing": "none"
+        },
+        "ctx": {},
+        "computed": "0.5",
+        "metrics": [1325.209716796875, 30, 10, 33.30392837524414, 12.439102172851562, 24, -10],
+        "dom": 1325.21875
+      },
+      "40px Gsub,News from-font opsz 30": {
+        "font": "40px SAGsub, SANews",
+        "text": "HamburgefonstivHamburgefonstivHamburgefonstivHamburgefonstiv",
+        "css": {
+          "fontSizeAdjust": "from-font",
+          "fontVariationSettings": "'opsz' 30"
+        },
+        "ctx": {},
+        "computed": "0.5",
+        "metrics": [1298.9766845703125, 30, 10, 32.202171325683594, 11.582111358642578, 24, -10],
+        "dom": 1298.984375
       }
     }
   }
