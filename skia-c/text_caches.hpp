@@ -7,6 +7,7 @@
 
 #include <list>
 #include <map>
+#include <memory>
 #include <string>
 #include <tuple>
 #include <unordered_map>
@@ -15,6 +16,13 @@
 
 #include "text.hpp"
 #include "text_raster.hpp"
+
+// The Blink shaper's HarfBuzz caches (shaper_font.cpp).
+struct ShaperCaches;
+void DestroyShaperCaches(ShaperCaches* caches);
+struct ShaperCachesDeleter {
+  void operator()(ShaperCaches* caches) const { DestroyShaperCaches(caches); }
+};
 
 // What one laid out text gives measureText, fillText and strokeText, and
 // the work text.cpp repeats for the same request; kept by the font
@@ -47,6 +55,9 @@ struct TextCaches {
     float last_word_advance = 0;
     // The glyphs where Blink puts them (text_raster.cpp CollectBlinkLine).
     BlinkLine blink;
+    // The Blink shaper: the glyphs where TextMetrics measures their ink, when
+    // that is not where `blink` draws them; else empty.
+    BlinkLine ink_blink;
     // The words, byte ranges of the shaped text (MeasureBlinkInk).
     std::vector<std::pair<size_t, size_t>> words;
     // MeasureBlinkInk's result by the left edge's float bits; the edge
@@ -90,6 +101,28 @@ struct TextCaches {
   // The keys of `lines` (their map nodes do not move), least recently used
   // first.
   std::list<const std::string*> lru;
+  // The Blink shaper's faces, fonts and buffer.
+  std::unique_ptr<ShaperCaches, ShaperCachesDeleter> shaper;
 };
+
+// The collection's TextCaches, made on first use (text.cpp).
+TextCaches& GetTextCaches(skiac_font_collection* c_collection);
+
+// ResolveFontFamilies of the request's family list, cached: a reference into
+// TextCaches::families, valid until the next call (text.cpp).
+const std::vector<SkString>& CachedFontFamilies(
+    skiac_font_collection* c_collection,
+    const skiac_text_request& request);
+
+// MeasurePrimaryFont, cached in TextCaches::metrics (text.cpp).
+PrimaryFontMetrics CachedPrimaryFont(skiac_font_collection* c_collection,
+                                     SkTypeface* typeface,
+                                     SkTypeface* base_typeface,
+                                     float size);
+
+// Counts each drop of a TextCaches and each clear of one of its maps, which
+// end the references a layout holds into them (shaper.cpp checks that none
+// happens during a Blink layout).
+void NoteTextCachesChange();
 
 #endif  // SKIA_C_TEXT_CACHES_H

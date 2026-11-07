@@ -204,12 +204,12 @@ pub mod ffi {
   }
 
   /// skia-c/shaper.hpp skiac_shaper_stats.
-  #[cfg(test)]
   #[repr(C)]
   #[derive(Copy, Clone, Default, Debug)]
   pub struct skiac_shaper_stats {
     pub accepted: u64,
     pub rejected: [u64; 16],
+    pub cache_changes: u64,
   }
 
   /// skia-c/shaper.hpp skiac_ucd_icu_diffs.
@@ -821,8 +821,14 @@ pub mod ffi {
       request: *const skiac_text_request,
     ) -> bool;
 
-    #[cfg(test)]
     pub fn skiac_debug_shaper_stats(stats: *mut skiac_shaper_stats, reset: bool);
+
+    pub fn skiac_debug_text_line(
+      font_collection: *mut skiac_font_collection,
+      request: *const skiac_text_request,
+      sink: unsafe extern "C" fn(*const c_char, usize, *mut c_void),
+      context: *mut c_void,
+    );
 
     #[cfg(test)]
     pub fn skiac_debug_ucd_icu_diffs(diffs: *mut skiac_ucd_icu_diffs);
@@ -3585,6 +3591,31 @@ impl Canvas {
     settings.with_request(text, |request| unsafe {
       ffi::skiac_text_draw(self.0, font_collection.0, request, paint.0, x, y, max_width);
     });
+  }
+
+  /// The laid out line of `text` as JSON (skia-c text.cpp
+  /// skiac_debug_text_line), for the shaper's differential harness.
+  pub fn debug_text_line(
+    &self,
+    text: &str,
+    settings: &TextSettings,
+    font_collection: &FontCollection,
+  ) -> String {
+    unsafe extern "C" fn sink(data: *const c_char, len: usize, context: *mut c_void) {
+      let out = unsafe { &mut *(context as *mut String) };
+      let bytes = unsafe { slice::from_raw_parts(data as *const u8, len) };
+      *out = String::from_utf8_lossy(bytes).into_owned();
+    }
+    let mut out = String::new();
+    settings.with_request(text, |request| unsafe {
+      ffi::skiac_debug_text_line(
+        font_collection.0,
+        request,
+        sink,
+        &mut out as *mut String as *mut c_void,
+      );
+    });
+    out
   }
 
   pub fn get_line_metrics(
@@ -7310,13 +7341,16 @@ mod text_line_tests {
       })
       .collect();
     let stats = shaper_stats(true);
-    assert_eq!(stats.accepted, 0, "{mode}");
+    // No reference the shaper holds into the caches outlived them: the drop
+    // came after the layout.
+    assert_eq!(stats.cache_changes, 0, "{mode}");
+    assert!(stats.rejected.iter().all(|&n| n == 0), "{mode}");
     if mode == "blink" {
-      // Every layout asked the shaper, which takes none yet.
-      assert_eq!(stats.rejected[0], 300, "{mode}");
-      assert!(stats.rejected[1..].iter().all(|&n| n == 0), "{mode}");
+      // The shaper laid out every line: the character the variable font
+      // lacks is in the second family.
+      assert_eq!(stats.accepted, 300, "{mode}");
     } else {
-      assert!(stats.rejected.iter().all(|&n| n == 0), "{mode}");
+      assert_eq!(stats.accepted, 0, "{mode}");
     }
     // The drop ran after line 256's layout and before its store: the lines
     // before it went with the caches, it and the later ones are kept.

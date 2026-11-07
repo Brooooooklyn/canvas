@@ -64,6 +64,9 @@ struct BlinkRun {
   std::vector<SkPoint> positions;
   // Each glyph's first byte in the paragraph's text.
   std::vector<uint32_t> clusters;
+  // The Blink shaper: the run's PlainTextItem, in visual order (one item
+  // is one word, or one bidi run).
+  uint32_t item = 0;
 };
 
 struct BlinkLine {
@@ -101,9 +104,9 @@ struct BlinkRectF {
 // coordinates) and y from the alphabetic baseline (at `baseline` in the runs'
 // coordinates). Blink unites the glyph boxes of each run with
 // GlyphBoundsAccumulator, the runs of each word (`words`, byte ranges of the
-// paragraph's text) and then the words with gfx::RectF::Union, each in its
-// own coordinates, and the float rounding of those steps shows in the
-// result.
+// paragraph's text; when empty, each run's BlinkRun::item) and then the
+// words with gfx::RectF::Union, each in its own coordinates, and the float
+// rounding of those steps shows in the result.
 BlinkRectF MeasureBlinkInk(const BlinkLine& line,
                            const TextRasterPolicy& policy,
                            SkSpan<const std::pair<size_t, size_t>> words,

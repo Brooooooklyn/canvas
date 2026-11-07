@@ -103,10 +103,21 @@ std::vector<std::pair<size_t, size_t>> NoLetterSpacingRanges(
 // FontFallbackList::CanShapeWordByWord: false when the request turns on
 // kerning or ligatures and the first family with a space glyph has the
 // space in a GPOS (kerning) or GSUB (ligatures) lookup. `faces` are the
-// request's families' faces, in order.
+// request's families' faces, in order. `space_glyph` looks the space up
+// (the Blink shaper: HarfBuzz's cmap); null for SkTypeface::unicharToGlyph.
 bool CanShapeWordByWord(skiac_font_collection* c_collection,
                         const std::vector<sk_sp<SkTypeface>>& faces,
-                        const skiac_text_request& request);
+                        const skiac_text_request& request,
+                        SkGlyphID (*space_glyph)(skiac_font_collection*,
+                                                 SkTypeface*) = nullptr);
+
+// plain_text_node.cc NextWordEndIndex on the normalized UTF-16 text: the end
+// of the word that starts at `start`. `is_8bit`: the text is Blink's 8-bit
+// string (PreparedText::is_8bit).
+size_t NextWordEndIndex(const char16_t* text,
+                        size_t length,
+                        size_t start,
+                        bool is_8bit);
 
 // The variation coordinates for `request` when `faces` (the request's
 // families' faces before font arguments) vary or the request has its own
@@ -197,6 +208,10 @@ void AddCapsFeatures(TextStyle* style, int caps);
 // rules, font-variant-numeric, font-feature-settings, then
 // font-variant-position (text_styles.cpp).
 void AddBlinkFeatures(TextStyle* style, const skiac_text_request& request);
+
+// The same features as HarfBuzz features over the whole buffer, in the same
+// order (the Blink shaper's).
+std::vector<hb_feature_t> BlinkFeatures(const skiac_text_request& request);
 
 // The synthesized small caps font size for a font of `size` px.
 float SmallCapsSize(float size);

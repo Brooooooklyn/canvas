@@ -193,6 +193,16 @@ size_t NextWordEnd(const std::vector<CodePoint>& text, size_t start) {
   return length;
 }
 
+// U16_NEXT over `text`; a lone surrogate is itself.
+UChar32 NextCodePoint(const char16_t* text, size_t length, size_t* i) {
+  UChar32 c = text[(*i)++];
+  if (c >= 0xD800 && c <= 0xDBFF && *i < length && text[*i] >= 0xDC00 &&
+      text[*i] <= 0xDFFF) {
+    c = 0x10000 + ((c - 0xD800) << 10) + (text[(*i)++] - 0xDC00);
+  }
+  return c;
+}
+
 // HarfBuzzFace::HasSpaceInLigaturesOrKerning's TableHasSpace: any lookup of
 // the table that reads or writes `space`.
 bool TableHasSpace(hb_face_t* face, hb_tag_t table, hb_codepoint_t space) {
@@ -276,6 +286,65 @@ std::vector<std::pair<size_t, size_t>> SplitWords(std::string_view text) {
   return words;
 }
 
+size_t NextWordEndIndex(const char16_t* text,
+                        size_t length,
+                        size_t start,
+                        bool is_8bit) {
+  // plain_text_node.cc IsWordDelimiter<split_by_zws>: the text is
+  // normalized, so the zero width space stands for every ZWS-like
+  // character.
+  auto delimiter = [](UChar32 c, bool split_by_zws) {
+    return c == kSpace || c == kTab || (split_by_zws && c == kZeroWidthSpace);
+  };
+  if (start >= length) {
+    return 0;
+  }
+  if (start + 1 == length || delimiter(text[start], true)) {
+    return start + 1;
+  }
+  // 8-bit words end at IsWordDelimiter().
+  if (is_8bit) {
+    for (size_t i = start + 1;; ++i) {
+      if (i == length || delimiter(text[i], false)) {
+        return i;
+      }
+    }
+  }
+  size_t end = start;
+  UChar32 ch = NextCodePoint(text, length, &end);
+  if (!IsCjkIdeographOrSymbol(ch)) {
+    for (size_t next_end = end; end < length; end = next_end) {
+      ch = NextCodePoint(text, length, &next_end);
+      if (delimiter(ch, true) || IsCjkIdeographOrSymbolBase(ch)) {
+        return end;
+      }
+    }
+    return length;
+  }
+  // CJK and emoji: one word per character, keeping marks, modifiers, ZWJ
+  // sequences and common-script symbols with the character before them.
+  bool has_any_script = !IsCommonOrInheritedScript(ch);
+  for (size_t next_end = end; end < length; end = next_end) {
+    ch = NextCodePoint(text, length, &next_end);
+    if (IsMarkOrModifier(ch) || ch == kZeroWidthJoiner ||
+        u_hasBinaryProperty(ch, UCHAR_EMOJI_COMPONENT) ||
+        u_hasBinaryProperty(ch, UCHAR_EXTENDED_PICTOGRAPHIC)) {
+      continue;
+    }
+    if (IsCjkIdeographOrSymbol(ch)) {
+      if (IsCommonOrInheritedScript(ch)) {
+        continue;
+      }
+      if (!has_any_script) {
+        has_any_script = true;
+        continue;
+      }
+    }
+    return end;
+  }
+  return length;
+}
+
 std::vector<std::pair<size_t, size_t>> NoLetterSpacingRanges(
     std::string_view text,
     const std::vector<size_t>& piece_starts) {
@@ -310,7 +379,9 @@ std::vector<std::pair<size_t, size_t>> NoLetterSpacingRanges(
 
 bool CanShapeWordByWord(skiac_font_collection* c_collection,
                         const std::vector<sk_sp<SkTypeface>>& faces,
-                        const skiac_text_request& request) {
+                        const skiac_text_request& request,
+                        SkGlyphID (*space_glyph)(skiac_font_collection*,
+                                                 SkTypeface*)) {
   // FontDescription::UpdateTypesettingFeatures (text_rendering 2 and 3 are
   // optimizeLegibility and geometricPrecision; kerning 1 none, 2 normal).
   const bool legible =
@@ -338,7 +409,8 @@ bool CanShapeWordByWord(skiac_font_collection* c_collection,
   SkTypeface* primary = nullptr;
   SkGlyphID space = 0;
   for (const auto& face : faces) {
-    space = face->unicharToGlyph(kSpace);
+    space = space_glyph ? space_glyph(c_collection, face.get())
+                        : face->unicharToGlyph(kSpace);
     if (space) {
       primary = face.get();
       break;
@@ -347,8 +419,11 @@ bool CanShapeWordByWord(skiac_font_collection* c_collection,
   if (!primary) {
     return false;
   }
-  // Bits: 1 GPOS checked, 2 space in GPOS, 4 GSUB checked, 8 space in GSUB.
-  auto& cache = c_collection->space_in_lookups;
+  // Bits: 1 GPOS checked, 2 space in GPOS, 4 GSUB checked, 8 space in GSUB;
+  // the Blink shaper's space glyph (HarfBuzz's cmap) is kept apart, as it can
+  // be another glyph (a symbol cmap on FreeType).
+  auto& cache = space_glyph ? c_collection->hb_space_in_lookups
+                            : c_collection->space_in_lookups;
   if (cache.size() > 1024) {
     cache.clear();
   }

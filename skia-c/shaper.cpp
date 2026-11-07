@@ -1,17 +1,30 @@
-// The Blink-style text shaper (shaper.hpp): the switch, the entry point and
-// its counters.
+// The Blink-style text shaper (shaper.hpp): the switch, the entry point, the
+// font list and the shaping loop (a port of HarfBuzzShaper::ShapeSegment,
+// ExtractShapeResults and CommitGlyphs, harfbuzz_shaper.cc, with
+// ShapeResult::InsertRun, shape_result.cc), and its counters.
 
 #include "shaper.hpp"
 
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include <algorithm>
 #include <atomic>
+#include <deque>
+#include <limits>
+#include <optional>
+#include <string_view>
+#include <unordered_set>
+
+#include "icu_api.h"
 
 namespace {
 
 std::atomic<uint64_t> g_accepted{0};
 std::atomic<uint64_t> g_rejected[kShaperRejectSlots];
+std::atomic<uint64_t> g_text_caches_changes{0};
+std::atomic<uint64_t> g_cache_changes{0};
 
 bool Reject(ShaperReject reason) {
   g_rejected[static_cast<size_t>(reason)].fetch_add(1,
@@ -19,7 +32,431 @@ bool Reject(ShaperReject reason) {
   return false;
 }
 
+constexpr const char* kOtShaperList[] = {"ot", nullptr};
+
+// HarfBuzzRunGlyphData::kMaxCharacterIndex.
+constexpr uint32_t kMaxCharacterIndex = (1u << 15) - 1;
+
+bool IsUnicodeVariationSelector(char16_t unit) {
+  return (unit >= 0x180B && unit <= 0x180D) ||
+         (unit >= 0xFE00 && unit <= 0xFE0F);
+}
+
+// Whether `text` has a variation selector (U+180B..U+180D, U+FE00..U+FE0F,
+// U+E0100..U+E01EF: lead surrogate U+DB40, trail U+DD00..U+DDEF).
+bool HasVariationSelector(const std::u16string& text) {
+  for (size_t i = 0; i < text.size(); ++i) {
+    if (IsUnicodeVariationSelector(text[i])) {
+      return true;
+    }
+    if (text[i] == 0xDB40 && i + 1 < text.size() && text[i + 1] >= 0xDD00 &&
+        text[i + 1] <= 0xDDEF) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// FontFallbackIterator's kFontGroupFonts stage: the family entries, each
+// typeface once (UniqueOrNext). The later stages (system fallback, the last
+// resort, the first candidate's .notdef) come with stage S3: when the
+// family entries run out, the request is turned down.
+class FallbackIterator {
+ public:
+  explicit FallbackIterator(std::vector<FontEntry>& entries)
+      : entries_(entries) {}
+
+  FontEntry* Next() {
+    while (index_ < entries_.size()) {
+      FontEntry& entry = entries_[index_++];
+      if (returned_.insert(entry.face->uniqueID()).second) {
+        return &entry;
+      }
+    }
+    return nullptr;
+  }
+
+ private:
+  std::vector<FontEntry>& entries_;
+  size_t index_ = 0;
+  std::unordered_set<SkTypefaceID> returned_;
+};
+
+enum class QueueAction { kNextFont, kRange };
+
+struct QueueItem {
+  QueueAction action;
+  uint32_t start;
+  uint32_t num_characters;
+};
+
+struct BufferSlice {
+  uint32_t start_character_index;
+  uint32_t num_characters;
+  uint32_t start_glyph_index;
+  uint32_t num_glyphs;
+};
+
+// HarfBuzzShaper for one item (RangeContext over the whole item).
+class ItemShaper {
+ public:
+  ItemShaper(const char16_t* text,
+             uint32_t length,
+             bool rtl,
+             hb_buffer_t* buffer,
+             const std::vector<hb_feature_t>& features,
+             hb_language_t language,
+             std::vector<FontEntry>& entries,
+             ShapeResult* result)
+      : text_(text),
+        length_(length),
+        rtl_(rtl),
+        buffer_(buffer),
+        features_(features),
+        language_(language),
+        entries_(entries),
+        result_(result) {}
+
+  // False when some characters are left that no family entry draws.
+  bool ShapeSegment(const Segment& segment) {
+    FallbackIterator iterator(entries_);
+    queue_.clear();
+    queue_.push_back({QueueAction::kNextFont, 0, 0});
+    queue_.push_back(
+        {QueueAction::kRange, segment.start, segment.end - segment.start});
+    FontEntry* font = nullptr;
+    bool font_cycle_queued = false;
+    while (!queue_.empty()) {
+      const QueueItem current = queue_.front();
+      queue_.pop_front();
+      if (current.action != QueueAction::kRange) {
+        // CollectFallbackHintChars needs a queued character, and the later
+        // stages read the hint; the family stage does not.
+        if (queue_.empty()) {
+          break;
+        }
+        font = iterator.Next();
+        if (!font) {
+          return false;
+        }
+        font_cycle_queued = false;
+        continue;
+      }
+      // FontFallbackIterator::HasNext stays true while the system stages
+      // are ahead, so no family font is the last to shape.
+      const uint32_t shape_start = current.start;
+      const uint32_t shape_end =
+          std::min(length_, current.start + current.num_characters);
+      hb_buffer_add_utf16(buffer_, reinterpret_cast<const uint16_t*>(text_),
+                          static_cast<int>(length_), shape_start,
+                          static_cast<int>(shape_end - shape_start));
+      hb_buffer_set_language(buffer_, language_);
+      hb_buffer_set_script(buffer_, IcuScriptToHbScript(segment.script));
+      hb_buffer_set_direction(buffer_,
+                              rtl_ ? HB_DIRECTION_RTL : HB_DIRECTION_LTR);
+      SetVariationSelectorMode(font, VariationSelectorMode::kUseSpecified);
+      hb_shape_full(font->hb.get(), buffer_, features_.data(),
+                    static_cast<unsigned int>(features_.size()), kOtShaperList);
+      if (!font->draw_font.isSubpixel()) {
+        RoundBufferPositions();
+      }
+      ExtractShapeResults(current, font, segment.script, &font_cycle_queued);
+      hb_buffer_reset(buffer_);
+    }
+    return true;
+  }
+
+ private:
+  // RoundHarfBuzzBufferPositions.
+  void RoundBufferPositions() {
+    unsigned int length = 0;
+    hb_glyph_position_t* positions =
+        hb_buffer_get_glyph_positions(buffer_, &length);
+    auto round = [](hb_position_t* value) {
+      if (*value & 0xFFFF) {
+        *value = static_cast<hb_position_t>(
+                     ::round(static_cast<float>(*value) / (1 << 16)))
+                 << 16;
+      }
+    };
+    for (unsigned int i = 0; i < length; ++i) {
+      round(&positions[i].x_offset);
+      round(&positions[i].y_offset);
+      round(&positions[i].x_advance);
+      round(&positions[i].y_advance);
+    }
+  }
+
+  BufferSlice ComputeSlice(const QueueItem& current,
+                           const hb_glyph_info_t* glyph_info,
+                           uint32_t num_glyphs,
+                           uint32_t old_glyph_index,
+                           uint32_t new_glyph_index) const {
+    BufferSlice result;
+    result.start_glyph_index = old_glyph_index;
+    result.num_glyphs = new_glyph_index - old_glyph_index;
+    const uint32_t shape_end =
+        std::min(length_, current.start + current.num_characters);
+    if (!rtl_) {
+      result.start_character_index = glyph_info[old_glyph_index].cluster;
+      if (new_glyph_index == num_glyphs) {
+        result.num_characters = shape_end - result.start_character_index;
+      } else {
+        result.num_characters =
+            glyph_info[new_glyph_index].cluster - result.start_character_index;
+      }
+    } else {
+      result.start_character_index = glyph_info[new_glyph_index - 1].cluster;
+      if (old_glyph_index == 0) {
+        result.num_characters = shape_end - result.start_character_index;
+      } else {
+        result.num_characters = glyph_info[old_glyph_index - 1].cluster -
+                                glyph_info[new_glyph_index - 1].cluster;
+      }
+    }
+    return result;
+  }
+
+  void QueueCharacters(bool* font_cycle_queued, const BufferSlice& slice) {
+    if (!*font_cycle_queued) {
+      queue_.push_back({QueueAction::kNextFont, 0, 0});
+      *font_cycle_queued = true;
+    }
+    queue_.push_back({QueueAction::kRange, slice.start_character_index,
+                      slice.num_characters});
+  }
+
+  // ShapeResult::InsertRun (LimitNumGlyphs, ComputeGlyphPositions, the
+  // visual order of the runs). Returns the glyph after the run.
+  uint32_t InsertRun(ShapedRun run,
+                     uint32_t start_glyph,
+                     uint32_t num_glyphs,
+                     const hb_glyph_info_t* infos,
+                     const hb_glyph_position_t* positions,
+                     uint32_t* run_characters) {
+    // LimitNumGlyphs: every character index must fit in 15 bits.
+    const hb_glyph_info_t* left = &infos[start_glyph];
+    const hb_glyph_info_t* right = &left[num_glyphs - 1];
+    if (!rtl_) {
+      const uint32_t start_cluster = left->cluster;
+      const uint32_t max_cluster = start_cluster + kMaxCharacterIndex;
+      if (right->cluster > max_cluster) {
+        const hb_glyph_info_t* limit =
+            std::upper_bound(left, right + 1, max_cluster,
+                             [](uint32_t cluster, const hb_glyph_info_t& info) {
+                               return cluster < info.cluster;
+                             });
+        --limit;
+        right = limit;
+        num_glyphs = static_cast<uint32_t>(right - left + 1);
+        run.num_characters = right[1].cluster - start_cluster;
+      }
+    } else {
+      const uint32_t start_cluster = right->cluster;
+      const uint32_t last_cluster = left->cluster;
+      if (last_cluster > start_cluster + kMaxCharacterIndex) {
+        const uint32_t min_cluster = last_cluster - kMaxCharacterIndex;
+        const hb_glyph_info_t* limit =
+            std::upper_bound(left, right + 1, min_cluster,
+                             [](uint32_t cluster, const hb_glyph_info_t& info) {
+                               return cluster > info.cluster;
+                             });
+        --limit;
+        right = limit;
+        num_glyphs = static_cast<uint32_t>(right - left + 1);
+        run.start = right->cluster;
+        run.num_characters = last_cluster - right[1].cluster;
+      }
+    }
+    // ComputeGlyphPositions.
+    int64_t total_advance = 0;
+    run.glyphs.resize(num_glyphs);
+    for (uint32_t i = 0; i < num_glyphs; ++i) {
+      const hb_glyph_info_t& info = infos[start_glyph + i];
+      const hb_glyph_position_t& pos = positions[start_glyph + i];
+      ShapedGlyph& glyph = run.glyphs[i];
+      glyph.glyph = static_cast<SkGlyphID>(info.codepoint);
+      glyph.character_index = info.cluster - run.start;
+      glyph.advance = pos.x_advance;
+      glyph.x_offset = 0;
+      glyph.y_offset = 0;
+      if (pos.x_offset || pos.y_offset) {
+        glyph.x_offset = static_cast<float>(pos.x_offset) / (1 << 16);
+        glyph.y_offset = -(static_cast<float>(pos.y_offset) / (1 << 16));
+        run.has_offsets = true;
+        run.has_vertical_offsets = run.has_vertical_offsets || pos.y_offset;
+      }
+      total_advance += pos.x_advance;
+    }
+    run.width =
+        static_cast<float>(std::max<int64_t>(total_advance, 0)) / (1 << 16);
+    result_->width += run.width;
+    *run_characters = run.num_characters;
+    // ShapeResult::InsertRun(run): LTR before the next run with a bigger
+    // start, RTL before the next run with a smaller one.
+    auto at = std::lower_bound(
+        result_->runs.begin(), result_->runs.end(), run.start,
+        [this](const ShapedRun& existing, uint32_t start) {
+          return rtl_ ? existing.start > start : existing.start < start;
+        });
+    result_->runs.insert(at, std::move(run));
+    return start_glyph + num_glyphs;
+  }
+
+  void CommitGlyphs(const FontEntry* font,
+                    int script,
+                    const BufferSlice& slice) {
+    const hb_glyph_info_t* infos = hb_buffer_get_glyph_infos(buffer_, nullptr);
+    const hb_glyph_position_t* positions =
+        hb_buffer_get_glyph_positions(buffer_, nullptr);
+    BufferSlice current = slice;
+    uint32_t run_start_index = slice.start_character_index;
+    for (;;) {
+      ShapedRun run;
+      run.font = font;
+      run.script = script;
+      run.rtl = rtl_;
+      run.start = run_start_index;
+      run.num_characters = current.num_characters;
+      uint32_t run_characters = 0;
+      const uint32_t next_start_glyph =
+          InsertRun(std::move(run), current.start_glyph_index,
+                    current.num_glyphs, infos, positions, &run_characters);
+      const uint32_t next_num_glyphs =
+          current.num_glyphs - (next_start_glyph - current.start_glyph_index);
+      if (!next_num_glyphs) {
+        break;
+      }
+      // The rest of the slice goes in another run.
+      current = {current.start_character_index + run_characters,
+                 current.num_characters - run_characters, next_start_glyph,
+                 next_num_glyphs};
+      if (!rtl_) {
+        run_start_index = current.start_character_index;
+      }
+    }
+  }
+
+  void ExtractShapeResults(const QueueItem& current,
+                           const FontEntry* font,
+                           int script,
+                           bool* font_cycle_queued) {
+    const uint32_t num_glyphs = hb_buffer_get_length(buffer_);
+    const hb_glyph_info_t* glyph_info =
+        hb_buffer_get_glyph_infos(buffer_, nullptr);
+    if (!num_glyphs) {
+      return;
+    }
+    enum ClusterResult { kShaped, kNotDef, kUnknown };
+    ClusterResult current_cluster_result = kUnknown;
+    ClusterResult previous_cluster_result = kUnknown;
+    uint32_t previous_cluster = 0;
+    uint32_t current_cluster = 0;
+    uint32_t last_change_glyph_index = 0;
+    uint32_t previous_cluster_start_glyph_index = 0;
+    const SkGlyphID space_glyph = font->space_glyph;
+    for (uint32_t glyph_index = 0; glyph_index < num_glyphs; ++glyph_index) {
+      const hb_glyph_info_t& glyph = glyph_info[glyph_index];
+      previous_cluster = current_cluster;
+      current_cluster = glyph.cluster;
+      const hb_codepoint_t glyph_id = glyph.codepoint;
+      ClusterResult glyph_result;
+      if (glyph_id == 0) {
+        glyph_result = kNotDef;
+      } else if (glyph_id == space_glyph && text_[current_cluster] == 0x3000) {
+        // Never the last font to shape here (see ShapeSegment).
+        glyph_result = kNotDef;
+      } else if (glyph_id == kUnmatchedVSGlyphId) {
+        glyph_result = kNotDef;
+      } else {
+        glyph_result = kShaped;
+      }
+      if (current_cluster != previous_cluster) {
+        if (previous_cluster_result != current_cluster_result &&
+            previous_cluster_result != kUnknown) {
+          const BufferSlice slice = ComputeSlice(
+              current, glyph_info, num_glyphs, last_change_glyph_index,
+              previous_cluster_start_glyph_index);
+          if (current_cluster_result == kShaped) {
+            QueueCharacters(font_cycle_queued, slice);
+          } else {
+            CommitGlyphs(font, script, slice);
+          }
+          last_change_glyph_index = previous_cluster_start_glyph_index;
+        }
+        previous_cluster_result = current_cluster_result;
+        previous_cluster_start_glyph_index = glyph_index;
+        current_cluster_result = glyph_result;
+      } else {
+        current_cluster_result =
+            glyph_result == kShaped && (current_cluster_result == kShaped ||
+                                        current_cluster_result == kUnknown)
+                ? kShaped
+                : kNotDef;
+      }
+    }
+    if (current_cluster_result != previous_cluster_result &&
+        previous_cluster_result != kUnknown) {
+      if (current_cluster_result == kShaped) {
+        QueueCharacters(font_cycle_queued,
+                        ComputeSlice(current, glyph_info, num_glyphs,
+                                     last_change_glyph_index,
+                                     previous_cluster_start_glyph_index));
+        CommitGlyphs(
+            font, script,
+            ComputeSlice(current, glyph_info, num_glyphs,
+                         previous_cluster_start_glyph_index, num_glyphs));
+      } else {
+        CommitGlyphs(font, script,
+                     ComputeSlice(current, glyph_info, num_glyphs,
+                                  last_change_glyph_index,
+                                  previous_cluster_start_glyph_index));
+        QueueCharacters(
+            font_cycle_queued,
+            ComputeSlice(current, glyph_info, num_glyphs,
+                         previous_cluster_start_glyph_index, num_glyphs));
+      }
+    } else {
+      const BufferSlice slice = ComputeSlice(
+          current, glyph_info, num_glyphs, last_change_glyph_index, num_glyphs);
+      if (current_cluster_result == kNotDef) {
+        QueueCharacters(font_cycle_queued, slice);
+      } else {
+        CommitGlyphs(font, script, slice);
+      }
+    }
+  }
+
+  const char16_t* text_;
+  const uint32_t length_;
+  const bool rtl_;
+  hb_buffer_t* buffer_;
+  const std::vector<hb_feature_t>& features_;
+  hb_language_t language_;
+  std::vector<FontEntry>& entries_;
+  ShapeResult* result_;
+  std::deque<QueueItem> queue_;
+};
+
+// The HarfBuzz language of ctx.lang: "und" for none ("" or "inherit"; the
+// host language comes with stage S8), as skshaper does for none.
+hb_language_t ShapingLanguage(const skiac_text_request& request) {
+  static const hb_language_t und = hb_language_from_string("und", -1);
+  const std::string_view lang(request.lang ? request.lang : "",
+                              request.lang ? request.lang_len : 0);
+  if (lang.empty() || lang == "inherit") {
+    return und;
+  }
+  const hb_language_t language =
+      hb_language_from_string(lang.data(), static_cast<int>(lang.size()));
+  return language == HB_LANGUAGE_INVALID ? und : language;
+}
+
 }  // namespace
+
+void NoteTextCachesChange() {
+  g_text_caches_changes.fetch_add(1, std::memory_order_relaxed);
+}
 
 bool BlinkShaperOn() {
   static const bool on = [] {
@@ -32,8 +469,154 @@ bool BlinkShaperOn() {
 bool LayOutLineBlink(skiac_font_collection* c_collection,
                      const skiac_text_request& request,
                      TextCaches::Line* line) {
-  // Nothing is shaped here yet: skparagraph lays out every request.
-  return Reject(ShaperReject::kNotImplemented);
+  // The requests the shaper cannot lay out yet.
+  if (request.letter_spacing != 0) {
+    return Reject(ShaperReject::kLetterSpacing);
+  }
+  if (request.word_spacing != 0) {
+    return Reject(ShaperReject::kWordSpacing);
+  }
+  if (request.variant_caps != 0) {
+    return Reject(ShaperReject::kCaps);
+  }
+  auto font_collection = c_collection->collection;
+  const SkFontStyle font_style(static_cast<int>(roundf(request.weight)),
+                               request.stretch,
+                               static_cast<SkFontStyle::Slant>(request.style));
+  // The FontList, with every noteFontArguments call, before any reference
+  // into the caches is taken. The families are copied: the cache entry is
+  // a reference into TextCaches.
+  const std::vector<SkString> families =
+      CachedFontFamilies(c_collection, request);
+  const std::vector<sk_sp<SkTypeface>> base_faces =
+      font_collection->findTypefaces(families, font_style);
+  const UsedSizes sizes = ComputeUsedSizes(c_collection, base_faces, request);
+  if (!sizes.faces.empty()) {
+    return Reject(ShaperReject::kFaceSizes);
+  }
+  const std::vector<SkFontArguments::VariationPosition::Coordinate> coords =
+      FontVariations(base_faces, request, sizes.opsz);
+  std::optional<FontArguments> font_args;
+  if (!coords.empty()) {
+    SkFontArguments args;
+    args.setVariationDesignPosition(
+        {coords.data(), static_cast<int>(coords.size())});
+    font_args.emplace(args);
+    c_collection->noteFontArguments(std::hash<FontArguments>()(*font_args));
+  }
+  const std::vector<sk_sp<SkTypeface>> faces =
+      coords.empty()
+          ? base_faces
+          : font_collection->findTypefaces(families, font_style, font_args);
+
+  TextCaches::Line scratch;
+  SkTypeface* primary = faces.empty() ? nullptr : faces.front().get();
+  SkTypeface* primary_base =
+      base_faces.empty() ? nullptr : base_faces.front().get();
+  scratch.primary =
+      CachedPrimaryFont(c_collection, primary, primary_base, sizes.effective);
+  if (request.text_len == 0 ||
+      (request.size_adjust_metric >= 0 && !(sizes.effective > 0))) {
+    scratch.empty = true;
+    *line = std::move(scratch);
+    g_accepted.fetch_add(1, std::memory_order_relaxed);
+    return true;
+  }
+  if (faces.empty()) {
+    return Reject(ShaperReject::kFallback);
+  }
+  PreparedText prepared = PrepareText(request.text, request.text_len);
+  if (HasVariationSelector(prepared.text)) {
+    return Reject(ShaperReject::kVariationSelector);
+  }
+
+  // From here the layout holds references into the caches (HarfBuzz fonts,
+  // the buffer): none may be dropped before it ends.
+  const uint64_t caches_changes =
+      g_text_caches_changes.load(std::memory_order_relaxed);
+  sk_sp<SkUnicode>& unicode = GetTextCaches(c_collection).unicode;
+  if (!unicode) {
+    // Loads ICU's data on Windows before the first ICU call.
+    unicode = SkUnicodes::ICU::Make();
+  }
+
+  // The family entries (Blink's SimpleFontData): the shaping font
+  // OneLineShaper builds, its synthetic styles, and the draw font.
+  const TextRasterPolicy policy(request);
+  TextStyle flags;
+  policy.ApplyToTextStyle(&flags);
+  std::vector<FontEntry> entries;
+  entries.reserve(faces.size());
+  for (size_t i = 0; i < faces.size(); ++i) {
+    FontEntry entry;
+    entry.face = faces[i];
+    entry.base = faces.size() == base_faces.size() ? base_faces[i].get()
+                                                   : faces[i].get();
+    entry.size = sizes.effective;
+    entry.opsz = sizes.opsz;
+    entry.synthetic =
+        SynthesizeStyle(c_collection, entry.face.get(), entry.base, request);
+    SkFont font(entry.face, entry.size);
+    font.setEdging(flags.getFontEdging());
+    font.setHinting(flags.getFontHinting());
+    font.setSubpixel(flags.getSubpixel());
+    font.setEmbolden(entry.synthetic.bold);
+    font.setSkewX(entry.synthetic.italic ? -SK_Scalar1 / 4 : 0);
+    entry.shaping_font = font;
+    entry.draw_font = policy.DrawFont(font, nullptr);
+    entry.space_glyph = HbNominalGlyph(c_collection, entry.face.get(), 0x20);
+    if (!MakeEntryFont(c_collection, &entry)) {
+      return Reject(ShaperReject::kFallback);
+    }
+    entries.push_back(std::move(entry));
+  }
+
+  const bool word_by_word = CanShapeWordByWord(
+      c_collection, faces, request,
+      [](skiac_font_collection* collection, SkTypeface* face) {
+        return HbNominalGlyph(collection, face, 0x20);
+      });
+  const bool rtl = request.direction == static_cast<int>(TextDirection::kRtl);
+  const ItemList items = SegmentText(prepared, rtl, word_by_word);
+  const std::vector<hb_feature_t> features = BlinkFeatures(request);
+  const hb_language_t language = ShapingLanguage(request);
+  hb_buffer_t* buffer = ShaperBuffer(c_collection);
+  hb_buffer_reset(buffer);
+
+  std::vector<ShapedItem> shaped;
+  shaped.reserve(items.items.size());
+  for (const Item& item : items.items) {
+    ShapedItem result{item, {}};
+    const char16_t* text = prepared.text.data() + item.start;
+    ItemShaper shaper(text, item.length, item.rtl, buffer, features, language,
+                      entries, &result.result);
+    for (const Segment& segment :
+         SegmentItem(text, item.length, prepared.is_8bit)) {
+      if (!shaper.ShapeSegment(segment)) {
+        hb_buffer_reset(buffer);
+        return Reject(ShaperReject::kFallback);
+      }
+    }
+    shaped.push_back(std::move(result));
+  }
+
+  PlacedLine placed =
+      PlaceItems(shaped, prepared, items.contains_rtl, items.rtl_base);
+  scratch.line_width = placed.line_width;
+  // Blink places the glyphs from the left edge: no skparagraph offsets.
+  scratch.paragraph_width = placed.line_width;
+  scratch.layout_width = placed.line_width;
+  scratch.line_baseline = 0;
+  scratch.letter_spacing_offset = 0;
+  scratch.last_word_advance = placed.last_item_width;
+  scratch.blink = std::move(placed.blink);
+  scratch.ink_blink = std::move(placed.ink);
+  if (g_text_caches_changes.load(std::memory_order_relaxed) != caches_changes) {
+    g_cache_changes.fetch_add(1, std::memory_order_relaxed);
+  }
+  *line = std::move(scratch);
+  g_accepted.fetch_add(1, std::memory_order_relaxed);
+  return true;
 }
 
 extern "C" {
@@ -46,6 +629,9 @@ void skiac_debug_shaper_stats(skiac_shaper_stats* stats, bool reset) {
         reset ? g_rejected[i].exchange(0, std::memory_order_relaxed)
               : g_rejected[i].load(std::memory_order_relaxed);
   }
+  stats->cache_changes =
+      reset ? g_cache_changes.exchange(0, std::memory_order_relaxed)
+            : g_cache_changes.load(std::memory_order_relaxed);
 }
 
 }  // extern "C"
