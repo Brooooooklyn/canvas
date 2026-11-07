@@ -917,9 +917,11 @@ Line* FindOrLayOutLine(skiac_font_collection* c_collection,
     }
   }
   Line fresh;
+  c_collection->layout_font_arguments.clear();
   LayOutLine(c_collection, request, &fresh);
-  // The layout can drop the caches (noteFontArguments), so look them up
-  // again.
+  // The layout can ask for a drop of the caches (noteFontArguments): it runs
+  // now, so look them up again. The line goes into the new ones.
+  c_collection->dropCachesIfOverBudget();
   TextCaches& caches = GetTextCaches(c_collection);
   size_t glyphs = 0;
   for (const BlinkRun& run : fresh.blink.runs) {

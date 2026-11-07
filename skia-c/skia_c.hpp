@@ -736,9 +736,13 @@ struct skiac_font_collection {
   std::map<std::pair<SkTypefaceID, uint32_t>, uint8_t> caps_features;
   // FontCollection keeps a clone of every face for every list of font
   // arguments it was asked for; text.cpp counts the lists (by hash) and
-  // drops the caches past kMaxFontArguments.
+  // drops the caches past kMaxFontArguments, after the layout that passed
+  // it (`caches_over_budget`). `layout_font_arguments`: the hashes the
+  // current layout noted.
   static constexpr size_t kMaxFontArguments = 256;
   std::unordered_set<size_t> font_arguments;
+  std::vector<size_t> layout_font_arguments;
+  bool caches_over_budget = false;
   // text.cpp: the resolved families, primary font metrics and laid out lines
   // of recent requests; dropped with the match caches.
   std::unique_ptr<TextCaches, TextCachesDeleter> text_caches;
@@ -928,16 +932,32 @@ struct skiac_font_collection {
     }
   }
 
-  // Called before a lookup with font arguments whose hash is `hash`.
+  // Called by a layout before a lookup with font arguments whose hash is
+  // `hash`. Past kMaxFontArguments it only marks the caches over budget: the
+  // layout holds references into them, so FindOrLayOutLine drops them after
+  // it (dropCachesIfOverBudget).
   void noteFontArguments(size_t hash) {
+    layout_font_arguments.push_back(hash);
     if (font_arguments.insert(hash).second &&
         font_arguments.size() > kMaxFontArguments) {
+      caches_over_budget = true;
+    }
+  }
+
+  // After a layout: the drop noteFontArguments asked for, keeping the font
+  // argument lists that layout noted.
+  void dropCachesIfOverBudget() {
+    if (caches_over_budget) {
       collection->clearCaches();
       space_in_lookups.clear();
       caps_features.clear();
       text_caches.reset();
-      font_arguments = {hash};
+      font_arguments.clear();
+      font_arguments.insert(layout_font_arguments.begin(),
+                            layout_font_arguments.end());
+      caches_over_budget = false;
     }
+    layout_font_arguments.clear();
   }
 
   // Rebuild the dynamic font provider with only remaining fonts
