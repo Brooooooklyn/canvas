@@ -1575,6 +1575,12 @@ test('reset', async (t) => {
   ctx.fontStretch = 'expanded'
   ctx.fontKerning = 'none'
   ctx.fontVariationSettings = '"wght" 700'
+  ctx.fontFeatureSettings = '"liga" 0'
+  ctx.fontVariantLigatures = 'no-common-ligatures'
+  ctx.fontVariantNumeric = 'tabular-nums'
+  ctx.fontVariantPosition = 'super'
+  ctx.fontSizeAdjust = '0.5'
+  ctx.fontOpticalSizing = 'none'
   ctx.fillRect(50, 50, 100, 100)
 
   // Save state
@@ -1611,6 +1617,12 @@ test('reset', async (t) => {
   t.is(ctx.fontKerning, 'auto')
   t.is(ctx.fontVariationSettings, 'normal')
   t.is(ctx.fontVariantCaps, 'normal')
+  t.is(ctx.fontFeatureSettings, 'normal')
+  t.is(ctx.fontVariantLigatures, 'normal')
+  t.is(ctx.fontVariantNumeric, 'normal')
+  t.is(ctx.fontVariantPosition as string, 'normal')
+  t.is(ctx.fontSizeAdjust, 'none')
+  t.is(ctx.fontOpticalSizing as string, 'auto')
   // TODO Support textRendering
   // t.is(ctx.textRendering , 'auto')
   // Other properties

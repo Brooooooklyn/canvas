@@ -236,6 +236,12 @@ sites! {
   SetTextBaseline: set "textBaseline" on "CanvasRenderingContext2D";
   SetFontStretch: set "fontStretch" on "CanvasRenderingContext2D";
   SetFontKerning: set "fontKerning" on "CanvasRenderingContext2D";
+  SetFontFeatureSettings: set "fontFeatureSettings" on "CanvasRenderingContext2D";
+  SetFontVariantLigatures: set "fontVariantLigatures" on "CanvasRenderingContext2D";
+  SetFontVariantNumeric: set "fontVariantNumeric" on "CanvasRenderingContext2D";
+  SetFontVariantPosition: set "fontVariantPosition" on "CanvasRenderingContext2D";
+  SetFontSizeAdjust: set "fontSizeAdjust" on "CanvasRenderingContext2D";
+  SetFontOpticalSizing: set "fontOpticalSizing" on "CanvasRenderingContext2D";
   SetFontVariantCaps: set "fontVariantCaps" on "CanvasRenderingContext2D";
   SetTextRendering: set "textRendering" on "CanvasRenderingContext2D";
   SetLang: set "lang" on "CanvasRenderingContext2D";
