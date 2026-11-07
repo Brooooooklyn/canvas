@@ -156,6 +156,57 @@ const ctx = createCanvas(256, 256).getContext('2d')
   t.true(stdout.includes('finished without crash'), `unexpected output:\n${stdout}`)
 })
 
+// A pattern made before onload decodes the image at that moment (#1423). The
+// load that ends later must keep that bitmap: the pattern on the saved state
+// still paints it after the Image and the pattern are garbage-collected.
+test('pattern created before onload keeps its bitmap after the load and GC', async (t) => {
+  const { status, signal, stdout, stderr } = await runInChildProcess(
+    `
+const { readFileSync } = require('node:fs')
+const { createCanvas, Image } = require('./index.js')
+const ctx = createCanvas(256, 256).getContext('2d')
+const at = (c) => Array.from(c.getImageData(200, 200, 1, 1).data)
+;(async () => {
+  const expected = await (async () => {
+    const ref = new Image()
+    ref.src = readFileSync('__test__/javascript.png')
+    await ref.decode()
+    const c = createCanvas(256, 256).getContext('2d')
+    c.drawImage(ref, 0, 0)
+    return at(c)
+  })()
+  await (async () => {
+    const bytes = readFileSync('__test__/javascript.png')
+    const img = new Image()
+    img.src = bytes
+    ctx.fillStyle = ctx.createPattern(img, 'repeat') // before onload: draw-time decode
+    ctx.save()
+    // One decode per load: a second decode of these bytes would fail (onerror)
+    bytes.fill(0)
+    await new Promise((res, rej) => { img.onload = res; img.onerror = rej })
+  })()
+  // drop JS refs to the pattern and image, collect, then paint from the saved state
+  ctx.fillStyle = '#00ff00'
+  global.gc()
+  await new Promise((r) => setImmediate(r))
+  global.gc()
+  ctx.restore()
+  ctx.fillRect(0, 0, 256, 256)
+  console.log(JSON.stringify({ expected, got: at(ctx) }))
+})().catch((error) => {
+  console.error(error)
+  process.exit(1)
+})
+`,
+    ['--expose-gc'],
+  )
+
+  t.is(status, 0, `expected exit 0, got status=${status} signal=${signal}\n${stderr}${stdout}`)
+  const { expected, got } = JSON.parse(stdout.trim().split('\n').pop() ?? '{}')
+  t.notDeepEqual(expected, [0, 0, 0, 0], 'the sampled pixel is part of the image')
+  t.deepEqual(got, expected)
+})
+
 // The ImageData source used to alias the JS-backed pixel buffer; the pattern
 // must hold an owned copy so it cannot dangle after the ImageData is GCd.
 test('pattern created from ImageData stays valid after the ImageData is GCd', async (t) => {

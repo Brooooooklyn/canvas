@@ -71,7 +71,7 @@ impl CanvasPattern {
   /// src, or one that has not finished loading.
   pub(crate) fn create(
     env: Env,
-    input: Either4<&mut Image, &mut ImageData, &mut CanvasElement<'_>, &mut SVGCanvas<'_>>,
+    mut input: Either4<&mut Image, &mut ImageData, &mut CanvasElement<'_>, &mut SVGCanvas<'_>>,
     repetition: &str,
     default_object_size: (f32, f32),
   ) -> Result<Option<Self>> {
@@ -99,6 +99,10 @@ impl CanvasPattern {
         ));
       }
     };
+    // A complete Buffer image not decoded yet is decoded now, as a draw does.
+    if let Either4::A(image) = &mut input {
+      image.ensure_decoded(&env)?;
+    }
     // The returned `ImagePattern` keeps shared ownership of the backing pixels
     // (`backing`), so clones pushed onto the `save()`/`restore()` state stack
     // stay valid after the JS `CanvasPattern` is garbage-collected.

@@ -5790,6 +5790,9 @@ impl CanvasRenderingContext2D {
         if !image.complete {
           return Ok(());
         }
+        // A complete Buffer image not decoded yet is decoded now, as Chrome
+        // decodes an <img> when it is drawn.
+        image.ensure_decoded(env)?;
         if let Some(svg) = image.svg.as_mut() {
           // Chrome draws an SVG Image as vectors sized by this canvas: here a
           // raster of it made for this draw, sampled as it is.

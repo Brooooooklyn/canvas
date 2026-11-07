@@ -91,11 +91,11 @@ test('createPattern returns null for an image that is not ready and throws for a
   t.is(ctx.createPattern(empty, 'repeat'), null)
   // The repetition is checked before the image state.
   t.throws(() => ctx.createPattern(empty, loose('bogus')), syntaxError('bogus'))
-  // still decoding
+  // a complete Buffer image is usable before onload
   const png = await source().encode('png')
   const decoding = new Image()
   const decoded = loadInto(decoding, png)
-  t.is(ctx.createPattern(decoding, 'repeat'), null)
+  t.not(ctx.createPattern(decoding, 'repeat'), null)
   await decoded
   t.true(ctx.createPattern(decoding, 'repeat') !== null)
   // still loading from a file
@@ -412,4 +412,17 @@ test('createPattern returns null while an Image loads a new src', async (t) => {
     code: 11,
     message: `${CREATE_PATTERN}Source image is in the 'broken' state.`,
   })
+})
+
+test('createPattern on a Buffer image before onload: pattern for good bytes, null for bad ones', async (t) => {
+  const ctx = createCanvas(4, 4).getContext('2d')
+  const good = new Image()
+  const goodLoaded = loadInto(good, await source().encode('png'))
+  t.not(ctx.createPattern(good, 'repeat'), null)
+  await goodLoaded
+  const bad = new Image()
+  const badLoaded = loadInto(bad, await fs.readFile(join(__dirname, 'fixtures', 'broken.png')))
+  t.is(ctx.createPattern(bad, 'repeat'), null)
+  await badLoaded
+  t.throws(() => ctx.createPattern(bad, 'repeat'), { name: 'InvalidStateError' })
 })

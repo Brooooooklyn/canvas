@@ -1037,7 +1037,7 @@ test('onload fires asynchronously for non-SVG Buffer (regression fix)', async (t
   }
   image.src = file
 
-  // Immediately after setting src, onload should NOT have fired yet (async decode)
+  // Immediately after setting src, onload should NOT have fired yet (load event is queued)
   t.is(onloadFired, false, 'onload should not fire synchronously for non-SVG Buffer')
 
   // Wait for decode to complete
@@ -1230,8 +1230,10 @@ test('complete is true immediately for Buffer even when decode is async (regress
   // even though bitmap decode is still pending
   t.is(image.complete, true, 'complete should be true immediately for Buffer')
 
-  // But bitmap is not ready yet, so drawImage would draw nothing
-  // (this is expected - user should await decode() or use onload)
+  // drawImage decodes on demand and draws
+  const ctx = createCanvas(300, 320).getContext('2d')
+  ctx.drawImage(image, 0, 0)
+  t.not(ctx.getImageData(100, 100, 1, 1).data[3], 0, 'drawImage should draw before onload')
 
   // After decode, everything works
   await image.decode()
@@ -1253,9 +1255,9 @@ test('dimensions available immediately for Buffer when imagesize succeeds', asyn
   t.is(image.naturalHeight, 320, 'naturalHeight should be available immediately')
 })
 
-test('setting new Buffer src should clear old bitmap (no stale renders)', async (t) => {
-  // Regression test: when setting a new Buffer src, the old bitmap should be cleared
-  // so drawImage no-ops during async decode instead of drawing the old image.
+test('a new Buffer src draws the new image, never the old one', async (t) => {
+  // Regression test: when setting a new Buffer src, the old bitmap is cleared,
+  // and a drawImage before onload decodes and draws the new image (#1423).
   const file1 = await loadImageFile() // simple.png
   const image = new Image()
 
@@ -1279,31 +1281,27 @@ test('setting new Buffer src should clear old bitmap (no stale renders)', async 
   const file2 = await fs.readFile(join(__dirname, 'fixtures', 'with-exif.jpg'))
   image.src = file2
 
-  // IMMEDIATELY after setting new src (before decode completes):
+  // IMMEDIATELY after setting new src (before onload):
   // - complete should be true (for jsdom compat)
-  // - but bitmap should be cleared (no stale render)
+  // - drawImage draws the new image, not the old one
   t.is(image.complete, true, 'complete should be true immediately')
 
-  // Try to draw - should no-op because bitmap is cleared
-  const canvas2 = createCanvas(300, 320)
-  const ctx2 = canvas2.getContext('2d')
-  ctx2.fillStyle = 'rgb(1, 2, 3)' // Known background color
-  ctx2.fillRect(0, 0, 300, 320)
-  ctx2.drawImage(image, 0, 0) // Should no-op - old bitmap is cleared, new not ready
-
-  // Canvas should still have our background color (drawImage did nothing)
-  const pixel2 = ctx2.getImageData(100, 100, 1, 1).data
-  t.is(pixel2[0], 1, 'Canvas should still have background (drawImage no-op)')
-  t.is(pixel2[1], 2)
-  t.is(pixel2[2], 3)
+  const drawOnBackground = () => {
+    const ctx = createCanvas(300, 320).getContext('2d')
+    ctx.fillStyle = 'rgb(1, 2, 3)' // Known background color
+    ctx.fillRect(0, 0, 300, 320)
+    ctx.drawImage(image, 0, 0)
+    return Array.from(ctx.getImageData(100, 100, 1, 1).data)
+  }
+  const pixel2 = drawOnBackground()
+  t.notDeepEqual(pixel2, [1, 2, 3, 255], 'New image should be drawn before onload')
+  t.notDeepEqual(pixel2, Array.from(pixel1), 'Old image should not be drawn')
 
   // Wait for new image to load
   await image.decode()
 
-  // Now drawImage should work with the new image
-  ctx2.drawImage(image, 0, 0)
-  const pixel3 = ctx2.getImageData(100, 100, 1, 1).data
-  t.true(pixel3[0] !== 1 || pixel3[1] !== 2 || pixel3[2] !== 3, 'New image should be drawn after decode')
+  // The draw after the load is the same
+  t.deepEqual(drawOnBackground(), pixel2, 'New image should be drawn the same after decode')
 })
 
 test('AVIF from Buffer should work (regression fix for infer crate detection)', async (t) => {
@@ -1389,4 +1387,305 @@ test('should fire onerror for invalid HTTP URL', async (t) => {
   image.src = 'https://httpbin.org/status/404'
   await promise
   t.true(image.complete, 'image should be complete after error')
+})
+
+const redPng = () => {
+  const c = createCanvas(4, 4)
+  const x = c.getContext('2d')
+  x.fillStyle = 'red'
+  x.fillRect(0, 0, 4, 4)
+  return c.toBuffer('image/png')
+}
+
+const pixel = (draw: (ctx: any) => void) => {
+  const ctx = createCanvas(4, 4).getContext('2d')
+  draw(ctx)
+  return Array.from(ctx.getImageData(0, 0, 1, 1).data)
+}
+
+test('#1423: a complete Buffer image draws before onload', async (t) => {
+  const image = new Image()
+  let loads = 0
+  const loaded = new Promise<void>((resolve) => {
+    image.onload = () => {
+      loads++
+      resolve()
+    }
+  })
+  image.src = redPng()
+  t.true(image.complete)
+  t.is(image.width, 4)
+  t.deepEqual(
+    pixel((ctx) => ctx.drawImage(image, 0, 0)),
+    [255, 0, 0, 255],
+  )
+  t.is(loads, 0, 'onload is still queued')
+  t.is(image.currentSrc, null, 'currentSrc still set at load')
+  await loaded
+  t.is(loads, 1)
+  t.is(image.currentSrc, '[Buffer]')
+  t.deepEqual(
+    pixel((ctx) => ctx.drawImage(image, 0, 0)),
+    [255, 0, 0, 255],
+  )
+  await image.decode()
+  await new Promise((r) => setTimeout(r, 20))
+  t.is(loads, 1, 'onload fires once')
+})
+
+test('#1423: createPattern right after src = Buffer paints the image', async (t) => {
+  const image = new Image()
+  image.src = redPng()
+  const p = pixel((ctx) => {
+    const pattern = ctx.createPattern(image, 'repeat')
+    t.not(pattern, null)
+    ctx.fillStyle = pattern
+    ctx.fillRect(0, 0, 4, 4)
+  })
+  t.deepEqual(p, [255, 0, 0, 255])
+  await image.decode()
+  t.not(createCanvas(1, 1).getContext('2d').createPattern(image, 'repeat'), null)
+})
+
+test('#1423: happy-dom adapter shape draws in the same turn', (t) => {
+  const image = new Image()
+  image.src = redPng()
+  image.width = 4
+  image.height = 4
+  t.deepEqual(
+    pixel((ctx) => ctx.drawImage(image, 0, 0, 4, 4)),
+    [255, 0, 0, 255],
+  )
+})
+
+test('#1423: a handler attached after a draw-time decode still fires and can draw', async (t) => {
+  const image = new Image()
+  image.src = redPng()
+  pixel((ctx) => ctx.drawImage(image, 0, 0)) // draw-time decode
+  const order: string[] = []
+  await new Promise<void>((resolve) => {
+    image.onload = () => {
+      order.push('load')
+      t.is(image.width, 4)
+      t.deepEqual(
+        pixel((ctx) => ctx.drawImage(image, 0, 0)),
+        [255, 0, 0, 255],
+      )
+      resolve()
+    }
+  })
+  image.decode().then(() => order.push('decode'))
+  await image.decode()
+  t.deepEqual(order.slice(0, 2), ['load', 'decode'])
+})
+
+test('#1423: onload runs before decode() resolves', async (t) => {
+  const image = new Image()
+  const order: string[] = []
+  image.onload = () => order.push('load')
+  image.src = redPng()
+  pixel((ctx) => ctx.drawImage(image, 0, 0))
+  await image.decode().then(() => order.push('decode'))
+  t.deepEqual(order, ['load', 'decode'])
+})
+
+test('#1423: src change after a draw-time decode shows the new image only', async (t) => {
+  const image = new Image()
+  const events: number[] = []
+  image.onload = () => events.push(image.naturalWidth)
+  image.src = redPng()
+  pixel((ctx) => ctx.drawImage(image, 0, 0))
+  const first = image.decode()
+  const blue = createCanvas(8, 8)
+  const bx = blue.getContext('2d')
+  bx.fillStyle = 'blue'
+  bx.fillRect(0, 0, 8, 8)
+  image.src = blue.toBuffer('image/png')
+  t.deepEqual(
+    pixel((ctx) => ctx.drawImage(image, 0, 0)),
+    [0, 0, 255, 255],
+  )
+  t.is(image.naturalWidth, 8)
+  await t.throwsAsync(first, { name: 'EncodingError' })
+  await image.decode()
+  await new Promise((r) => setTimeout(r, 20))
+  t.deepEqual(events, [8], 'only the second load fires')
+})
+
+test('#1423: undecodable Buffer draws nothing before onerror, then is broken', async (t) => {
+  for (const bytes of [
+    await fs.readFile(join(__dirname, 'fixtures', 'broken.png')),
+    Buffer.from('not an image at all'),
+  ]) {
+    const image = new Image()
+    let errors = 0
+    const failed = new Promise<void>((resolve) => {
+      image.onerror = () => {
+        errors++
+        resolve()
+      }
+    })
+    image.src = bytes
+    t.true(image.complete)
+    t.deepEqual(
+      pixel((ctx) => ctx.drawImage(image, 0, 0)),
+      [0, 0, 0, 0],
+    ) // no throw
+    t.is(createCanvas(1, 1).getContext('2d').createPattern(image, 'repeat'), null)
+    t.is(errors, 0)
+    await failed
+    t.is(errors, 1)
+    t.is(image.naturalWidth, 0)
+    t.throws(() => createCanvas(1, 1).getContext('2d').drawImage(image, 0, 0), { name: 'InvalidStateError' })
+    await t.throwsAsync(image.decode(), { name: 'EncodingError' })
+  }
+})
+
+test('#1423: Buffers imagesize cannot read draw before onload', async (t) => {
+  // 1x1 24-bit BMP, red (naturalWidth 0 right after src, 1 at onload)
+  const bmp = Buffer.alloc(58)
+  bmp.write('BM', 0)
+  bmp.writeUInt32LE(58, 2)
+  bmp.writeUInt32LE(54, 10)
+  bmp.writeUInt32LE(40, 14)
+  bmp.writeInt32LE(1, 18)
+  bmp.writeInt32LE(1, 22)
+  bmp.writeUInt16LE(1, 26)
+  bmp.writeUInt16LE(24, 28)
+  bmp.writeUInt32LE(4, 34)
+  bmp[56] = 255
+  const dataUrl = Buffer.from(`data:image/png;base64,${redPng().toString('base64')}`)
+  const svgUrl = Buffer.from(
+    'data:image/svg+xml,' +
+      encodeURIComponent(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><rect width="4" height="4" fill="red"/></svg>',
+      ),
+  )
+  for (const bytes of [bmp, dataUrl, svgUrl]) {
+    const image = new Image()
+    const loaded = new Promise((resolve) => (image.onload = resolve))
+    image.src = bytes
+    t.is(image.naturalWidth, 0)
+    t.deepEqual(
+      pixel((ctx) => ctx.drawImage(image, 0, 0)),
+      [255, 0, 0, 255],
+    )
+    t.true(image.naturalWidth > 0)
+    await loaded
+  }
+})
+
+test('#1423: EXIF JPEG drawn before onload matches the draw after onload', async (t) => {
+  const file = await fs.readFile(join(__dirname, 'fixtures', 'with-exif.jpg'))
+  const look = (image: Image) => {
+    const ctx = createCanvas(200, 200).getContext('2d')
+    ctx.drawImage(image, 0, 0)
+    return {
+      w: image.width,
+      h: image.height,
+      nw: image.naturalWidth,
+      px: Array.from(ctx.getImageData(50, 50, 1, 1).data),
+    }
+  }
+  const early = new Image()
+  early.src = file
+  // Before onload, width/height keep the header size (600x450) as without
+  // the draw; the pixels and naturalWidth are the rotated decode already.
+  const before = look(early)
+  t.deepEqual([before.w, before.h], [600, 450])
+  const late = new Image()
+  late.src = file
+  await late.decode()
+  const after = look(late)
+  t.deepEqual([before.nw, before.px], [after.nw, after.px])
+  await early.decode()
+  t.deepEqual(look(early), after)
+})
+
+// One decode per load: once a draw has decoded the image, nothing decodes the
+// bytes again. Clearing them after the draw would make a second decode fail
+// and fire onerror, or install an empty bitmap.
+test('#1423: a load decodes once: bytes cleared after a draw-time decode are not read again', async (t) => {
+  for (const use of ['drawImage', 'createPattern'] as const) {
+    const bytes = redPng()
+    const image = new Image()
+    const events: string[] = []
+    const settled = new Promise<void>((resolve) => {
+      image.onload = () => {
+        events.push('load')
+        resolve()
+      }
+      image.onerror = () => {
+        events.push('error')
+        resolve()
+      }
+    })
+    image.src = bytes
+    const ctx = createCanvas(4, 4).getContext('2d')
+    if (use === 'drawImage') {
+      ctx.drawImage(image, 0, 0)
+    } else {
+      t.not(ctx.createPattern(image, 'repeat'), null)
+    }
+    bytes.fill(0)
+    await settled
+    await image.decode()
+    t.deepEqual(events, ['load'], use)
+    t.deepEqual(
+      pixel((c) => c.drawImage(image, 0, 0)),
+      [255, 0, 0, 255],
+      use,
+    )
+  }
+})
+
+// A raster load ends with width/height = the decoded size, whether or not a
+// draw decoded it first (main reset them at onload; the draw must not change
+// that).
+test('#1423: a draw before onload keeps the width/height the caller set', async (t) => {
+  for (const use of ['drawImage', 'createPattern'] as const) {
+    const image = new Image(2, 2)
+    image.src = redPng()
+    const draw = () => {
+      const canvas = createCanvas(4, 4)
+      const ctx = canvas.getContext('2d')
+      if (use === 'drawImage') {
+        ctx.drawImage(image, 0, 0, image.width, image.height)
+      } else {
+        t.not(ctx.createPattern(image, 'repeat'), null)
+        ctx.drawImage(image, 0, 0, image.width, image.height)
+      }
+      return [Array.from(ctx.getImageData(1, 1, 1, 1).data), Array.from(ctx.getImageData(3, 3, 1, 1).data)]
+    }
+    const first = draw()
+    t.deepEqual([image.width, image.height], [2, 2], use)
+    t.is(image.naturalWidth, 4, use)
+    t.deepEqual(first, [
+      [255, 0, 0, 255],
+      [0, 0, 0, 0],
+    ])
+    t.deepEqual(draw(), first, `${use}: the second draw is the same`)
+    await image.decode()
+    // onload resets a raster load to the bitmap size, as on main.
+    t.deepEqual([image.width, image.height], [4, 4], use)
+  }
+})
+
+test('#1423: width/height set after a draw-time decode are reset at onload like without the draw', async (t) => {
+  const sizes: Array<[number, number]> = []
+  for (const draw of [true, false]) {
+    const image = new Image()
+    image.src = redPng()
+    if (draw) {
+      pixel((ctx) => ctx.drawImage(image, 0, 0))
+    }
+    image.width = 10
+    image.height = 7
+    await image.decode()
+    sizes.push([image.width, image.height])
+  }
+  t.deepEqual(sizes, [
+    [4, 4],
+    [4, 4],
+  ])
 })

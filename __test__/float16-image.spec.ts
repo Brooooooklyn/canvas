@@ -9,7 +9,7 @@ import { Worker } from 'node:worker_threads'
 
 import test from 'ava'
 
-import { loadImage } from '../index'
+import { Image, loadImage } from '../index'
 
 import { F16, arr, chromeEqual, ctx } from './float16-helpers'
 
@@ -51,6 +51,22 @@ test('a 16-bit PNG keeps 16 bits on a float16 canvas', async (t) => {
     }
   }
   chromeEqual(t, H1, 'H1-hbd-fixtures')
+})
+
+test('a 16-bit PNG Buffer drawn before onload keeps 16 bits', async (t) => {
+  const bytes = fixture('hbd-4x1.png')
+  const late = await loadImage(bytes)
+  const early = new Image()
+  early.src = bytes
+  const draw = (image: any) => {
+    const c = ctx(4, 1, F16)
+    c.drawImage(image, 0, 0)
+    return f32(c, 0, 0, 4, 1)
+  }
+  const first = draw(early) // draw-time decode + install
+  t.deepEqual(first, draw(late))
+  await early.decode()
+  t.deepEqual(draw(early), first) // resolve kept the same bitmap
 })
 
 // A base64 body skips its whitespace, which can fill the first KiB of a

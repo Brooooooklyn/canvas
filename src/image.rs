@@ -1,6 +1,6 @@
 use std::cell::Cell;
 use std::rc::Rc;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::{borrow::Cow, ptr, str, str::FromStr};
 
 use napi::{JsString, JsStringUtf8, ScopedTask, bindgen_prelude::*};
@@ -923,6 +923,9 @@ pub struct Image {
   decode_epoch: Rc<Cell<u64>>,
 
   decoder_task: Option<ObjectRef>,
+  /// The current Buffer load's decode, shared with its `BitmapDecoder`;
+  /// None for every other src kind.
+  pending_decode: Option<Arc<PendingDecode>>,
 }
 
 impl ObjectFinalize for Image {
@@ -1019,6 +1022,7 @@ impl Image {
       load_generation: 0,
       decode_epoch: Rc::new(Cell::new(0)),
       decoder_task: None,
+      pending_decode: None,
     })
   }
 
@@ -1129,6 +1133,8 @@ impl Image {
     // This must happen for BOTH empty and valid src to prevent race conditions
     self.load_generation = self.load_generation.wrapping_add(1);
     self.broken = false;
+    // Only a Buffer raster load below gets a new decode slot.
+    self.pending_decode = None;
 
     // Check if src is empty per HTML spec.
     // The previous `< 5` byte heuristic incorrectly silenced tiny invalid buffers
@@ -1160,8 +1166,9 @@ impl Image {
       return Ok(());
     }
 
-    // For Buffer: load synchronously (dimensions + events), decode bitmap synchronously
-    // This matches node-canvas behavior where onerror/onload fire synchronously
+    // For Buffer: the header dimensions and complete=true now. A raster is
+    // decoded on the thread pool, or at the first drawImage/createPattern
+    // before onload (Image::ensure_decoded); onload still fires from resolve.
     if let Either::A(buffer) = data {
       let buffer_data = buffer.as_ref();
       let length = buffer_data.len();
@@ -1235,13 +1242,9 @@ impl Image {
           }
         }
 
-        // Set complete = true immediately for Buffer sources (jsdom compatibility).
-        // NOTE: For non-SVG buffers, complete=true means dimensions are available from header
-        // parsing, but bitmap decoding is still async. This differs from the HTML spec where
-        // complete implies the image is fully decoded. Callers should either:
-        // 1. Use the onload handler (fires after bitmap decode) before drawImage/createPattern
-        // 2. Call await image.decode() before drawing
-        // Calling drawImage while complete=true but before decode finishes will silently no-op.
+        // complete=true: all bytes are here. drawImage/createPattern decode on
+        // demand (Image::ensure_decoded) if they come before onload; onload
+        // still fires from resolve.
         self.complete = true;
 
         // For non-SVG images, spawn async bitmap decoding task.
@@ -1252,6 +1255,8 @@ impl Image {
           self.bitmap = None;
           self.svg = None;
 
+          let slot = Arc::new(PendingDecode(Mutex::new(PendingState::Queued { encoded })));
+          self.pending_decode = Some(Arc::clone(&slot));
           let task = BitmapDecoder {
             width: self.width,
             height: self.height,
@@ -1260,7 +1265,8 @@ impl Image {
             color_space: self.color_space,
             data: Some(Either::A(unsafe { raw_data.cast()? })),
             file_content: None,
-            encoded,
+            encoded: None,
+            pending: Some(slot),
             fire_events: true, // Fire onload after decode completes
             original_url: None,
           };
@@ -1296,9 +1302,10 @@ impl Image {
         return Ok(());
       } else {
         // imagesize failed (format not supported by imagesize, e.g. BMP, ICO, TIFF)
-        // Fall through to async decode - let Skia/infer determine validity.
-        // NOTE: complete=true but dimensions are 0 until decode completes.
-        // Same caveats apply as above: use onload or decode() before drawing.
+        // Fall through to the decode - let Skia/infer determine validity.
+        // complete=true: all bytes are here. drawImage/createPattern decode on
+        // demand (Image::ensure_decoded) if they come before onload; onload
+        // still fires from resolve. Dimensions are 0 until the decode.
         self.complete = true;
 
         // Clear previous state to avoid exposing stale data from previous loads.
@@ -1308,6 +1315,8 @@ impl Image {
         self.bitmap = None;
         self.svg = None;
 
+        let slot = Arc::new(PendingDecode(Mutex::new(PendingState::Queued { encoded })));
+        self.pending_decode = Some(Arc::clone(&slot));
         let task = BitmapDecoder {
           width: self.width,
           height: self.height,
@@ -1316,7 +1325,8 @@ impl Image {
           color_space: self.color_space,
           data: Some(Either::A(unsafe { raw_data.cast()? })),
           file_content: None,
-          encoded,
+          encoded: None,
+          pending: Some(slot),
           fire_events: true,
           original_url: None,
         };
@@ -1424,6 +1434,7 @@ impl Image {
             encoded: encoded_room(&buffer),
             data: Some(Either::A(buffer)),
             file_content: None,
+            pending: None,
             this_ref: this.create_ref()?,
             generation,
             fire_events: true,
@@ -1516,6 +1527,7 @@ impl Image {
         Some(Either::B(url)) => data_url_room(url.as_bytes()),
         _ => None,
       },
+      pending: None,
       this_ref: this.create_ref()?,
       generation: self.load_generation,
       fire_events: true,
@@ -1580,6 +1592,120 @@ impl Image {
   }
 }
 
+impl Image {
+  /// A Buffer image that is complete but not decoded yet is decoded now, the
+  /// way Chrome decodes an <img> when it is drawn. Calls no JS and fires no
+  /// events: drawImage and createPattern call it while they hold the Image.
+  /// onload/onerror still come from BitmapDecoder::resolve.
+  pub(crate) fn ensure_decoded(&mut self, env: &Env) -> Result<()> {
+    if !self.complete || self.broken || self.bitmap.is_some() || self.svg.is_some() {
+      return Ok(());
+    }
+    let Some(slot) = self.pending_decode.clone() else {
+      return Ok(());
+    };
+    // Waits if the thread pool is decoding this load right now.
+    let mut state = lock(&slot);
+    if let PendingState::Queued { encoded } = &mut *state {
+      let Some(Either::A(bytes)) = &self.src else {
+        return Ok(());
+      };
+      let mut room = encoded.take();
+      let result = decode_bytes(
+        Cow::Borrowed(bytes.as_ref()),
+        room.as_mut(),
+        self.width,
+        self.height,
+        self.color_space,
+      );
+      *state = PendingState::Done {
+        result,
+        encoded: room,
+      };
+    }
+    let ready = matches!(
+      &*state,
+      PendingState::Done { result: Ok(out), .. }
+        if matches!(out.bitmap, DecodeStatus::Ok(_) | DecodeStatus::Svg(_))
+    );
+    // A failure stays in the slot for resolve, which fires onerror.
+    if !ready {
+      return Ok(());
+    }
+    let PendingState::Done {
+      result: Ok(out),
+      encoded,
+    } = std::mem::replace(&mut *state, PendingState::Installed)
+    else {
+      unreachable!("checked above");
+    };
+    let encoded = keep_encoded(&out.bitmap, encoded);
+    if let Err(e) = self.install_decoded(env, out, encoded, true) {
+      // A failure goes back, so resolve fires onerror instead of an onload
+      // with no pixels.
+      *state = PendingState::Done {
+        result: Err(Error::new(e.status, e.reason.clone())),
+        encoded: None,
+      };
+      return Err(e);
+    }
+    Ok(())
+  }
+
+  /// The Image now shows a decoded raster or SVG. The only place that tells
+  /// V8 about an Image bitmap. Other statuses are left to the caller.
+  fn install_decoded(
+    &mut self,
+    env: &Env,
+    out: DecodedBitmap,
+    encoded: Option<Vec<u8>>,
+    at_draw: bool,
+  ) -> Result<()> {
+    match out.bitmap {
+      DecodeStatus::Ok(bitmap) => {
+        // At a draw, only an auto (-1) width/height takes the bitmap size: a
+        // draw must not change a size the caller set, or the next draw with
+        // img.width/img.height would differ. onload still resets them to the
+        // bitmap size (BitmapDecoder::resolve), as without the draw.
+        if !at_draw || (self.width - -1.0).abs() < f64::EPSILON {
+          self.width = out.width;
+        }
+        if !at_draw || (self.height - -1.0).abs() < f64::EPSILON {
+          self.height = out.height;
+        }
+        self.natural_width = out.width;
+        self.natural_height = out.height;
+        self.svg = None;
+        let encoded_bytes = encoded.as_ref().map_or(0, Vec::len) as i64;
+        let new_bytes = (out.width as i64) * (out.height as i64) * 4 + encoded_bytes;
+        env.adjust_external_memory(new_bytes)?;
+        let mut accounted = AccountedBitmap::new(bitmap.data, env.raw(), new_bytes);
+        if let Some(encoded) = encoded {
+          accounted = accounted.with_high_bit_depth(encoded);
+        }
+        self.bitmap = Some(Arc::new(accounted));
+      }
+      DecodeStatus::Svg(svg) => self.set_svg(env, svg)?,
+      DecodeStatus::Empty | DecodeStatus::InvalidSvg | DecodeStatus::InvalidImage => {}
+    }
+    Ok(())
+  }
+
+  /// The HTML "broken" state after a failed load: complete, and every
+  /// dimension getter gives 0.
+  fn set_broken(&mut self) {
+    self.complete = true;
+    self.broken = true;
+    // Reset width/height to auto (-1.0) so getters return 0 (from natural_width/height)
+    self.width = -1.0;
+    self.height = -1.0;
+    self.natural_width = 0.0;
+    self.natural_height = 0.0;
+    self.bitmap = None;
+    self.svg = None;
+  }
+}
+
 fn is_svg_image(data: &[u8], length: usize) -> bool {
   let mut is_svg = false;
   if length >= 11 {
@@ -1629,6 +1755,39 @@ enum DecodeStatus {
   InvalidImage,
 }
 
+/// One Buffer load's decode, shared by the Image (draw-time decode,
+/// `Image::ensure_decoded`) and its BitmapDecoder (thread-pool decode).
+/// Whoever gets the lock first decodes; the other one finds the result.
+pub(crate) struct PendingDecode(Mutex<PendingState>);
+
+enum PendingState {
+  /// Nobody decoded yet. `encoded` is the room from `encoded_room`, made on
+  /// the JS thread.
+  Queued { encoded: Option<Vec<u8>> },
+  /// Decoded, not yet put on the Image. Err is what `compute` used to return
+  /// (e.g. "Decode avif image failed").
+  Done {
+    result: Result<DecodedBitmap>,
+    encoded: Option<Vec<u8>>,
+  },
+  /// The pixels (or SVG) are on the Image already.
+  Installed,
+}
+
+/// A panic while the lock was held leaves `Queued` or `Done`; both are
+/// handled, so a poisoned lock is used as it is.
+fn lock(slot: &PendingDecode) -> MutexGuard<'_, PendingState> {
+  slot.0.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// What `compute` hands to `resolve`.
+enum DecodeOutput {
+  /// A load without a slot (a path, a string data: URL, an HTTP download).
+  Direct(DecodedBitmap),
+  /// A Buffer load: the result is in the task's `PendingDecode`.
+  InSlot,
+}
+
 struct BitmapDecoder {
   width: f64,
   height: f64,
@@ -1640,8 +1799,12 @@ struct BitmapDecoder {
   /// first bytes say it may have more than 8 bits a channel (`encoded_room`).
   /// `compute` copies the bytes it decodes into it and decodes the copy, which
   /// the Image keeps: a Buffer changed during the load changes neither its
-  /// 8-bit pixels nor its half-float decodes.
+  /// 8-bit pixels nor its half-float decodes. For a Buffer src the room lives
+  /// in `pending` instead, and this is None.
   encoded: Option<Vec<u8>>,
+  /// A Buffer load's decode slot, shared with the Image, which can decode
+  /// first when it is drawn; None for every other load.
+  pending: Option<Arc<PendingDecode>>,
   this_ref: ObjectRef,
   // Generation counter to detect stale loads
   generation: u64,
@@ -1722,6 +1885,171 @@ fn data_url_room(url: &[u8]) -> Option<Vec<u8>> {
   }
 }
 
+/// The room filled with the decoded bytes, for the Image to keep: Some only
+/// for a high-bit-depth image whose bytes fit in the room. Any other room is
+/// dropped by the caller, on the JS thread.
+fn keep_encoded(status: &DecodeStatus, room: Option<Vec<u8>>) -> Option<Vec<u8>> {
+  match status {
+    DecodeStatus::Ok(bitmap) if bitmap.high_bit_depth => room.filter(|copy| !copy.is_empty()),
+    _ => None,
+  }
+}
+
+/// Decodes the bytes of an image src: an encoded raster, an SVG, or a data:
+/// URL holding either. With `encoded` room, the bytes are copied into it and
+/// the copy is decoded (`BitmapDecoder::encoded`). `width`/`height` are the
+/// Image's (-1 for auto); a raster gives its own size.
+fn decode_bytes(
+  data_ref: Cow<'_, [u8]>,
+  encoded: Option<&mut Vec<u8>>,
+  width: f64,
+  height: f64,
+  color_space: ColorSpace,
+) -> Result<DecodedBitmap> {
+  let (image_width, image_height) = (width, height);
+  // A data: URL (a string, or bytes) holds the image in its body. Chrome
+  // decodes it as SVG only when its MIME type is image/svg+xml; any other
+  // type is sniffed as a raster image, so an SVG body fails there.
+  let (data_ref, svg_only, raster_only) = match data_url::parse(&data_ref) {
+    None => (data_ref, false, false),
+    Some(Err(())) => {
+      return Ok(DecodedBitmap {
+        bitmap: DecodeStatus::InvalidImage,
+        width: image_width,
+        height: image_height,
+      });
+    }
+    Some(Ok(url)) => {
+      let svg = url.essence == "image/svg+xml";
+      (Cow::Owned(url.body), svg, !svg)
+    }
+  };
+  // With room for a copy, the copy is what is decoded, and what the Image
+  // keeps: the room is filled here and never grows, so bytes that do not
+  // fit are decoded where they are, and not kept.
+  let data_ref = match encoded {
+    Some(room) if !svg_only && data_ref.len() <= room.capacity() => {
+      room.extend_from_slice(&data_ref);
+      // The body of a data: URL is a copy too: free it now, not after the
+      // decode.
+      drop(data_ref);
+      Cow::Borrowed(room.as_slice())
+    }
+    _ => data_ref,
+  };
+  let length = data_ref.len();
+  let mut width = image_width;
+  let mut height = image_height;
+  let bitmap = if !svg_only && libavif::is_avif(data_ref.as_ref()) {
+    // Check AVIF first - infer::get() may not recognize AVIF format
+    let mut avif_image = AvifImage::decode_from(data_ref.as_ref())
+      .map_err(|e| Error::new(Status::InvalidArg, format!("Decode avif image failed {e}")))?;
+
+    let bitmap = Bitmap::from_image_data(
+      avif_image.data.as_mut_ptr(),
+      avif_image.width as usize,
+      avif_image.height as usize,
+      avif_image.row_bytes as usize,
+      avif_image.data.len(),
+      ColorType::RGBA8888,
+      // Premultiplied by the YUV conversion, as Chrome's decoder does;
+      // 255 everywhere and opaque when the file has no alpha plane.
+      if avif_image.has_alpha() {
+        AlphaType::Premultiplied
+      } else {
+        AlphaType::Opaque
+      },
+    )
+    .and_then(|mut bitmap| {
+      // Like the PNG/JPEG/WebP codecs, keep the file's color space, so a
+      // draw converts it to the canvas color space as Chrome does, and
+      // apply the irot/imir orientation as Chrome does. Chrome fails the
+      // decode for a color space it cannot use.
+      (bitmap.set_avif_color_space(
+        avif_image.icc(),
+        avif_image.color_primaries,
+        avif_image.transfer_characteristics,
+        avif_image.matrix_coefficients,
+        avif_image.is_mono,
+      ) && bitmap.orient(avif_image.origin))
+      .then_some(bitmap)
+    });
+    // `from_image_data` copies the pixels into an owned SkBitmap, so the
+    // decoded AVIF buffer is dropped at the end of this arm.
+    match bitmap {
+      Some(bitmap) => DecodeStatus::Ok(BitmapInfo {
+        data: bitmap,
+        high_bit_depth: false,
+      }),
+      // A color space Chrome cannot use, or a failed pixel copy: an
+      // invalid image rather than an empty bitmap.
+      None => DecodeStatus::InvalidImage,
+    }
+  } else if !svg_only
+    && infer::get(&data_ref).is_some_and(|kind| kind.matcher_type() == infer::MatcherType::Image)
+  {
+    // Other image formats detected by infer (PNG, JPEG, GIF, WebP, etc.)
+    if let Some(bitmap) = Bitmap::from_buffer(data_ref.as_ptr().cast_mut(), length) {
+      DecodeStatus::Ok(BitmapInfo {
+        data: bitmap,
+        high_bit_depth: Bitmap::is_high_bit_depth(&data_ref),
+      })
+    } else {
+      DecodeStatus::InvalidImage
+    }
+  } else if !raster_only && (svg_only || is_svg_image(&data_ref, length)) {
+    match SvgImage::parse(&data_ref, color_space)? {
+      Some(svg) => DecodeStatus::Svg(svg),
+      None => DecodeStatus::InvalidSvg,
+    }
+  } else {
+    DecodeStatus::InvalidImage
+  };
+
+  if let DecodeStatus::Ok(ref b) = bitmap {
+    if (image_width - -1.0).abs() < f64::EPSILON
+      || (image_width - b.data.0.width as f64).abs() > f64::EPSILON
+    {
+      width = b.data.0.width as f64;
+    }
+    if (image_height - -1.0).abs() < f64::EPSILON
+      || (image_height - b.data.0.height as f64).abs() > f64::EPSILON
+    {
+      height = b.data.0.height as f64;
+    }
+  }
+  Ok(DecodedBitmap {
+    bitmap,
+    width,
+    height,
+  })
+}
+
+/// Fires onerror (with `err`) or onload, when `fire_events`, and gives what
+/// the decode task's promise settles with: the Error, or undefined.
+fn fire_load_events<'env>(
+  env: &'env Env,
+  this: Object,
+  err: Option<&str>,
+  fire_events: bool,
+) -> Result<Unknown<'env>> {
+  if let Some(err_str) = err {
+    let error = env.create_error(Error::new(Status::InvalidArg, err_str))?;
+    if fire_events {
+      fire_error(env, this, error)?;
+    }
+    // Return error so decode() promise rejects (even when fire_events is false)
+    return error.into_unknown(env);
+  } else if fire_events {
+    let onload = this.get_named_property_unchecked::<Unknown>("onload")?;
+    if onload.get_type()? == ValueType::Function {
+      let onload_func: Function<(), ()> = Function::from_unknown(onload)?;
+      onload_func.apply(this, ())?;
+    }
+  }
+  ().into_unknown(env)
+}
+
 impl BitmapDecoder {
   /// The copy of the encoded image `compute` decoded, for the Image to keep:
   /// the room `compute` filled, or for a file path a copy of the file made
@@ -1739,13 +2067,56 @@ impl BitmapDecoder {
       None => self.encoded.take().filter(|copy| !copy.is_empty()),
     }
   }
+
+  /// The source that loaded becomes src and currentSrc; an HTTP URL load
+  /// keeps its URL rather than the downloaded bytes.
+  fn commit_src(&mut self, image: &mut Image) {
+    image.src = self.data.take();
+    if let Some(url) = self.original_url.take() {
+      image.src = Some(Either::B(url));
+    }
+    image.current_src = match &image.src {
+      Some(Either::A(_)) => Some("[Buffer]".to_string()),
+      Some(Either::B(s)) => Some(s.clone()),
+      None => None,
+    };
+  }
+
+  /// The task's Buffer bytes, for the slot decode.
+  fn buffer_bytes(&self) -> &[u8] {
+    match &self.data {
+      Some(Either::A(bytes)) => bytes.as_ref(),
+      _ => &[],
+    }
+  }
 }
 
 impl<'env> ScopedTask<'env> for BitmapDecoder {
-  type Output = DecodedBitmap;
+  type Output = DecodeOutput;
   type JsValue = Unknown<'env>;
 
   fn compute(&mut self) -> Result<Self::Output> {
+    if let Some(slot) = &self.pending {
+      // Held during the decode, on purpose: a draw on the JS thread waits
+      // for this decode instead of doing a second one.
+      let mut state = lock(slot);
+      if let PendingState::Queued { encoded } = &mut *state {
+        let mut room = encoded.take();
+        let result = decode_bytes(
+          Cow::Borrowed(self.buffer_bytes()),
+          room.as_mut(),
+          self.width,
+          self.height,
+          self.color_space,
+        );
+        *state = PendingState::Done {
+          result,
+          encoded: room,
+        };
+      }
+      // Done or Installed: a draw decoded it already.
+      return Ok(DecodeOutput::InSlot);
+    }
     let data_ref = match self.data.as_ref() {
       Some(Either::A(data)) => Cow::Borrowed(data.as_ref()),
       Some(Either::B(path_or_svg)) => {
@@ -1767,129 +2138,21 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
         }
       }
       None => {
-        return Ok(DecodedBitmap {
+        return Ok(DecodeOutput::Direct(DecodedBitmap {
           bitmap: DecodeStatus::Empty,
           width: self.width,
           height: self.height,
-        });
+        }));
       }
     };
-    // A data: URL (a string, or bytes) holds the image in its body. Chrome
-    // decodes it as SVG only when its MIME type is image/svg+xml; any other
-    // type is sniffed as a raster image, so an SVG body fails there.
-    let (data_ref, svg_only, raster_only) = match data_url::parse(&data_ref) {
-      None => (data_ref, false, false),
-      Some(Err(())) => {
-        return Ok(DecodedBitmap {
-          bitmap: DecodeStatus::InvalidImage,
-          width: self.width,
-          height: self.height,
-        });
-      }
-      Some(Ok(url)) => {
-        let svg = url.essence == "image/svg+xml";
-        (Cow::Owned(url.body), svg, !svg)
-      }
-    };
-    // With room for a copy, the copy is what is decoded, and what the Image
-    // keeps: the room is filled here and never grows, so bytes that do not
-    // fit are decoded where they are, and not kept.
-    let data_ref = match self.encoded.as_mut() {
-      Some(room) if !svg_only && data_ref.len() <= room.capacity() => {
-        room.extend_from_slice(&data_ref);
-        // The body of a data: URL is a copy too: free it now, not after the
-        // decode.
-        drop(data_ref);
-        Cow::Borrowed(room.as_slice())
-      }
-      _ => data_ref,
-    };
-    let length = data_ref.len();
-    let mut width = self.width;
-    let mut height = self.height;
-    let bitmap = if !svg_only && libavif::is_avif(data_ref.as_ref()) {
-      // Check AVIF first - infer::get() may not recognize AVIF format
-      let mut avif_image = AvifImage::decode_from(data_ref.as_ref())
-        .map_err(|e| Error::new(Status::InvalidArg, format!("Decode avif image failed {e}")))?;
-
-      let bitmap = Bitmap::from_image_data(
-        avif_image.data.as_mut_ptr(),
-        avif_image.width as usize,
-        avif_image.height as usize,
-        avif_image.row_bytes as usize,
-        avif_image.data.len(),
-        ColorType::RGBA8888,
-        // Premultiplied by the YUV conversion, as Chrome's decoder does;
-        // 255 everywhere and opaque when the file has no alpha plane.
-        if avif_image.has_alpha() {
-          AlphaType::Premultiplied
-        } else {
-          AlphaType::Opaque
-        },
-      )
-      .and_then(|mut bitmap| {
-        // Like the PNG/JPEG/WebP codecs, keep the file's color space, so a
-        // draw converts it to the canvas color space as Chrome does, and
-        // apply the irot/imir orientation as Chrome does. Chrome fails the
-        // decode for a color space it cannot use.
-        (bitmap.set_avif_color_space(
-          avif_image.icc(),
-          avif_image.color_primaries,
-          avif_image.transfer_characteristics,
-          avif_image.matrix_coefficients,
-          avif_image.is_mono,
-        ) && bitmap.orient(avif_image.origin))
-        .then_some(bitmap)
-      });
-      // `from_image_data` copies the pixels into an owned SkBitmap, so the
-      // decoded AVIF buffer is dropped at the end of this arm.
-      match bitmap {
-        Some(bitmap) => DecodeStatus::Ok(BitmapInfo {
-          data: bitmap,
-          high_bit_depth: false,
-        }),
-        // A color space Chrome cannot use, or a failed pixel copy: an
-        // invalid image rather than an empty bitmap.
-        None => DecodeStatus::InvalidImage,
-      }
-    } else if !svg_only
-      && infer::get(&data_ref).is_some_and(|kind| kind.matcher_type() == infer::MatcherType::Image)
-    {
-      // Other image formats detected by infer (PNG, JPEG, GIF, WebP, etc.)
-      if let Some(bitmap) = Bitmap::from_buffer(data_ref.as_ptr().cast_mut(), length) {
-        DecodeStatus::Ok(BitmapInfo {
-          data: bitmap,
-          high_bit_depth: Bitmap::is_high_bit_depth(&data_ref),
-        })
-      } else {
-        DecodeStatus::InvalidImage
-      }
-    } else if !raster_only && (svg_only || is_svg_image(&data_ref, length)) {
-      match SvgImage::parse(&data_ref, self.color_space)? {
-        Some(svg) => DecodeStatus::Svg(svg),
-        None => DecodeStatus::InvalidSvg,
-      }
-    } else {
-      DecodeStatus::InvalidImage
-    };
-
-    if let DecodeStatus::Ok(ref b) = bitmap {
-      if (self.width - -1.0).abs() < f64::EPSILON
-        || (self.width - b.data.0.width as f64).abs() > f64::EPSILON
-      {
-        width = b.data.0.width as f64;
-      }
-      if (self.height - -1.0).abs() < f64::EPSILON
-        || (self.height - b.data.0.height as f64).abs() > f64::EPSILON
-      {
-        height = b.data.0.height as f64;
-      }
-    }
-    Ok(DecodedBitmap {
-      bitmap,
-      width,
-      height,
-    })
+    decode_bytes(
+      data_ref,
+      self.encoded.as_mut(),
+      self.width,
+      self.height,
+      self.color_space,
+    )
+    .map(DecodeOutput::Direct)
   }
 
   fn resolve(&mut self, env: &'env Env, output: Self::Output) -> Result<Self::JsValue> {
@@ -1907,103 +2170,106 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
       return ().into_unknown(env);
     }
 
-    self_mut.complete = true;
-    self_mut.bitmap = None;
-
     // The copy is allocated on the JS thread, which also frees it with the
     // Image (`encoded_room`). A room the image does not keep is freed here
     // too, with the task.
-    let encoded = match &output.bitmap {
-      DecodeStatus::Ok(bitmap) if bitmap.high_bit_depth => self.take_encoded(),
-      _ => None,
-    };
-
-    let mut err: Option<&str> = None;
-
-    // The source that loaded becomes src and currentSrc; an HTTP URL load
-    // keeps its URL rather than the downloaded bytes.
-    let mut commit_src = |image: &mut Image| {
-      image.src = self.data.take();
-      if let Some(url) = self.original_url.take() {
-        image.src = Some(Either::B(url));
+    let (output, encoded) = match output {
+      DecodeOutput::Direct(output) => {
+        let encoded = match &output.bitmap {
+          DecodeStatus::Ok(bitmap) if bitmap.high_bit_depth => self.take_encoded(),
+          _ => None,
+        };
+        (output, encoded)
       }
-      image.current_src = match &image.src {
-        Some(Either::A(_)) => Some("[Buffer]".to_string()),
-        Some(Either::B(s)) => Some(s.clone()),
-        None => None,
-      };
-    };
-    match output.bitmap {
-      DecodeStatus::Ok(bitmap) => {
-        // SUCCESS PATH: set dimensions, bitmap, currentSrc
-        self_mut.width = output.width;
-        self_mut.height = output.height;
-        self_mut.natural_width = output.width;
-        self_mut.natural_height = output.height;
-        commit_src(self_mut);
-        self_mut.svg = None;
-        let encoded_bytes = encoded.as_ref().map_or(0, Vec::len) as i64;
-        let new_bytes = (output.width as i64) * (output.height as i64) * 4 + encoded_bytes;
-        env.adjust_external_memory(new_bytes)?;
-        let mut accounted = AccountedBitmap::new(bitmap.data, env.raw(), new_bytes);
-        if let Some(encoded) = encoded {
-          accounted = accounted.with_high_bit_depth(encoded);
+      DecodeOutput::InSlot => {
+        let Some(slot) = self.pending.take() else {
+          return Err(Error::new(
+            Status::GenericFailure,
+            "Image decode slot is missing",
+          ));
+        };
+        // The generation matches: this load is the Image's current one.
+        self_mut.pending_decode = None;
+        let state = std::mem::replace(&mut *lock(&slot), PendingState::Installed);
+        let (result, room) = match state {
+          PendingState::Installed => {
+            // The pixels went in at a draw: keep that bitmap (the Arc, and
+            // the resource_id a pattern holds), and charge nothing again.
+            // A raster load still ends with width/height = the bitmap size,
+            // as the Done path's width rule gives, so a width set after the
+            // draw is reset at onload the same way it is without the draw.
+            if let Some(bitmap) = &self_mut.bitmap {
+              self_mut.width = bitmap.inner.0.width as f64;
+              self_mut.height = bitmap.inner.0.height as f64;
+            }
+            self_mut.complete = true;
+            self.commit_src(self_mut);
+            self_mut.broken = false;
+            return fire_load_events(env, this, None, self.fire_events);
+          }
+          PendingState::Done { result, encoded } => (result, encoded),
+          // compute always runs first; decode here if it did not.
+          PendingState::Queued { mut encoded } => {
+            let result = decode_bytes(
+              Cow::Borrowed(self.buffer_bytes()),
+              encoded.as_mut(),
+              self.width,
+              self.height,
+              self.color_space,
+            );
+            (result, encoded)
+          }
+        };
+        match result {
+          Ok(output) => {
+            let encoded = keep_encoded(&output.bitmap, room);
+            (output, encoded)
+          }
+          // What `reject` does with the Err `compute` used to return.
+          Err(err) => {
+            drop(room);
+            self_mut.set_broken();
+            if self.fire_events {
+              fire_error(
+                env,
+                this,
+                env.create_error(Error::new(err.status, err.reason.clone()))?,
+              )?;
+            }
+            return Error::new(err.status, err.reason).into_unknown(env);
+          }
         }
-        self_mut.bitmap = Some(Arc::new(accounted));
       }
-      DecodeStatus::Svg(svg) => {
-        commit_src(self_mut);
-        self_mut.set_svg(env, svg)?;
-      }
-      DecodeStatus::Empty => {
-        // ERROR PATH: empty / undecodable input. Surface via onerror so callers
-        // (especially loadImage) settle instead of hanging.
-        // See https://github.com/Brooooooklyn/canvas/issues/1255
-        self_mut.width = -1.0;
-        self_mut.height = -1.0;
-        self_mut.natural_width = 0.0;
-        self_mut.natural_height = 0.0;
-        self_mut.svg = None;
-        err = Some("Empty image data");
-      }
-      DecodeStatus::InvalidSvg => {
-        // ERROR PATH: clear state like reject() does
-        // Reset width/height to auto (-1.0) so getters return 0 (from natural_width/height)
-        self_mut.width = -1.0;
-        self_mut.height = -1.0;
-        self_mut.natural_width = 0.0;
-        self_mut.natural_height = 0.0;
-        self_mut.svg = None;
-        err = Some("Invalid SVG image");
-      }
-      DecodeStatus::InvalidImage => {
-        // ERROR PATH: clear state like reject() does
-        // Reset width/height to auto (-1.0) so getters return 0 (from natural_width/height)
-        self_mut.width = -1.0;
-        self_mut.height = -1.0;
-        self_mut.natural_width = 0.0;
-        self_mut.natural_height = 0.0;
-        self_mut.svg = None;
-        err = Some("Unsupported image type");
-      }
+    };
+
+    self_mut.complete = true;
+    self_mut.bitmap = None;
+
+    // ERROR PATH: empty / undecodable input. Surface via onerror so callers
+    // (especially loadImage) settle instead of hanging.
+    // See https://github.com/Brooooooklyn/canvas/issues/1255
+    let err = match output.bitmap {
+      DecodeStatus::Ok(_) | DecodeStatus::Svg(_) => None,
+      DecodeStatus::Empty => Some("Empty image data"),
+      DecodeStatus::InvalidSvg => Some("Invalid SVG image"),
+      DecodeStatus::InvalidImage => Some("Unsupported image type"),
+    };
+    if err.is_none() {
+      // SUCCESS PATH: set dimensions, bitmap or SVG, currentSrc
+      self.commit_src(self_mut);
+      self_mut.install_decoded(env, output, encoded, false)?;
+    } else {
+      // Clear state like reject() does. Reset width/height to auto (-1.0)
+      // so getters return 0 (from natural_width/height)
+      self_mut.width = -1.0;
+      self_mut.height = -1.0;
+      self_mut.natural_width = 0.0;
+      self_mut.natural_height = 0.0;
+      self_mut.svg = None;
     }
 
     self_mut.broken = err.is_some();
-    if let Some(err_str) = err.take() {
-      let error = env.create_error(Error::new(Status::InvalidArg, err_str))?;
-      if self.fire_events {
-        fire_error(env, this, error)?;
-      }
-      // Return error so decode() promise rejects (even when fire_events is false)
-      return error.into_unknown(env);
-    } else if self.fire_events {
-      let onload = this.get_named_property_unchecked::<Unknown>("onload")?;
-      if onload.get_type()? == ValueType::Function {
-        let onload_func: Function<(), ()> = Function::from_unknown(onload)?;
-        onload_func.apply(this, ())?;
-      }
-    }
-    ().into_unknown(env)
+    fire_load_events(env, this, err, self.fire_events)
   }
 
   fn reject(&mut self, env: &'env Env, err: Error) -> Result<Self::JsValue> {
@@ -2021,16 +2287,8 @@ impl<'env> ScopedTask<'env> for BitmapDecoder {
     }
 
     // Per HTML spec: complete must be true after load finishes, even on error (broken state)
-    image.complete = true;
-    image.broken = true;
     // Clear decoded state so all dimension getters return 0 for broken image
-    // Reset width/height to auto (-1.0) so getters return 0 (from natural_width/height)
-    image.width = -1.0;
-    image.height = -1.0;
-    image.natural_width = 0.0;
-    image.natural_height = 0.0;
-    image.bitmap = None;
-    image.svg = None;
+    image.set_broken();
 
     if self.fire_events {
       fire_error(
@@ -2082,6 +2340,57 @@ mod tests {
         out.push((path.display().to_string(), std::fs::read(&path).unwrap()));
       }
     }
+  }
+
+  /// `decode_bytes`, the decode both the thread pool and a draw run, gives
+  /// what `compute` gave before it moved there.
+  #[test]
+  fn decode_bytes_gives_the_status_and_size_of_each_src() {
+    let decode = |bytes: &[u8], room: Option<Vec<u8>>| {
+      let mut room = room;
+      let out = decode_bytes(
+        Cow::Borrowed(bytes),
+        room.as_mut(),
+        -1.0,
+        -1.0,
+        ColorSpace::Srgb,
+      )
+      .unwrap();
+      (out, room)
+    };
+    // 16-bit gray: Skia decodes it to 8 bits, and it gets no room.
+    assert!(encoded_room(GRAY16).is_none());
+    let (out, _) = decode(GRAY16, None);
+    match &out.bitmap {
+      DecodeStatus::Ok(b) => assert!(!b.high_bit_depth),
+      _ => panic!("GRAY16 did not decode"),
+    }
+    assert_eq!((out.width, out.height), (1.0, 1.0));
+    // 16-bit RGB: high bit depth, the room holds the bytes decoded.
+    let (out, room) = decode(RGB16, encoded_room(RGB16));
+    match &out.bitmap {
+      DecodeStatus::Ok(b) => assert!(b.high_bit_depth),
+      _ => panic!("RGB16 did not decode"),
+    }
+    assert_eq!(room.as_deref(), Some(RGB16));
+    assert_eq!(keep_encoded(&out.bitmap, room).as_deref(), Some(RGB16));
+    // Garbage.
+    let (out, _) = decode(b"BROKEN PNG", None);
+    assert!(matches!(out.bitmap, DecodeStatus::InvalidImage));
+    assert_eq!((out.width, out.height), (-1.0, -1.0));
+    // A data: URL in a Buffer.
+    let url = format!(
+      "data:image/png;base64,{}",
+      base64_simd::STANDARD.encode_to_string(RGB16)
+    );
+    let (out, room) = decode(url.as_bytes(), encoded_room(url.as_bytes()));
+    assert!(matches!(out.bitmap, DecodeStatus::Ok(_)));
+    assert_eq!((out.width, out.height), (1.0, 1.0));
+    assert_eq!(room.as_deref(), Some(RGB16));
+    // An SVG data: URL.
+    let svg = b"data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='4' height='4'/>";
+    let (out, _) = decode(svg, None);
+    assert!(matches!(out.bitmap, DecodeStatus::Svg(_)));
   }
 
   /// Float ImageData data keeps Chrome's byte limit; rgba-unorm8 data has
