@@ -156,6 +156,13 @@ std::vector<float> LineRunShifts(ParagraphImpl* paragraph);
 // Turns on the OpenType features of a variant caps value.
 void AddCapsFeatures(TextStyle* style, int caps);
 
+// Adds the OpenType features of `request` after the caps ones, in Blink's
+// order (FontFeatureRange::FromFontDescription): kern 0 for fontKerning
+// none, the font-variant-ligatures / textRendering / letterSpacing ligature
+// rules, font-variant-numeric, font-feature-settings, then
+// font-variant-position (text_styles.cpp).
+void AddBlinkFeatures(TextStyle* style, const skiac_text_request& request);
+
 // The synthesized small caps font size for a font of `size` px.
 float SmallCapsSize(float size);
 

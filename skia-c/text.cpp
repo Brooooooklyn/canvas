@@ -210,6 +210,22 @@ void AppendLineKey(std::string* key, const skiac_text_request& request) {
   put_int(static_cast<int64_t>(lang_len));
   put(request.lang, lang_len);
   put_int(request.text_rendering);
+  const int features_count = request.features ? request.features_count : 0;
+  put_int(features_count);
+  for (int i = 0; i < features_count; ++i) {
+    put_int(request.features[i].tag);
+    put_int(request.features[i].value);
+  }
+  put_int(request.lig_common);
+  put_int(request.lig_discretionary);
+  put_int(request.lig_historical);
+  put_int(request.lig_contextual);
+  put_int(request.variant_numeric);
+  put_int(request.variant_position);
+  put_int(request.optical_sizing);
+  put_int(request.size_adjust_metric);
+  put_float(request.size_adjust_value);
+  put_int(request.size_adjust_from_font);
   put(request.text, request.text_len);
 }
 
@@ -450,13 +466,10 @@ void LayOutLine(skiac_font_collection* c_collection,
         std::hash<FontArguments>()(*text_style.getFontArguments()));
   }
 
-  // Apply font kerning feature
-  // kerning: 0=auto (don't set feature), 1=none (disable), 2=normal (enable)
-  if (request.kerning == 1) {
-    text_style.addFontFeature(SkString("kern"), 0);
-  } else if (request.kerning == 2) {
-    text_style.addFontFeature(SkString("kern"), 1);
-  }
+  // The OpenType features of fontKerning, textRendering, letterSpacing and
+  // the font-variant and font-feature-settings properties, in Blink's order
+  // (text_styles.cpp AddBlinkFeatures).
+  AddBlinkFeatures(&text_style, request);
 
   // Apply language/locale for language-specific glyph variants
   // lang: BCP-47 language tag (e.g., "en", "tr", "zh-Hans"), empty or
@@ -467,26 +480,6 @@ void LayOutLine(skiac_font_collection* c_collection,
     // No per-language feature rule here: like Blink, the font's own
     // language systems (e.g. a TRK locl) decide what changes for a language.
     text_style.setLocale(SkString(lang.data(), lang.size()));
-  }
-
-  // Apply textRendering: only optimizeSpeed changes behavior.
-  // text_rendering: 0=auto, 1=optimizeSpeed, 2=optimizeLegibility,
-  // 3=geometricPrecision
-  if (request.text_rendering == 1) {
-    // optimizeSpeed: disable ligatures and contextual alternates for speed
-    // Note: kern is NOT touched here - it's fontKerning's responsibility
-    text_style.addFontFeature(SkString("liga"), 0);
-    text_style.addFontFeature(SkString("clig"), 0);
-    text_style.addFontFeature(SkString("calt"), 0);
-  }
-
-  // Blink turns the optional ligatures off for any non-zero letter spacing
-  // (FontFeatureRange::FromFontDescription); skparagraph only drops `liga`,
-  // and only for positive spacing.
-  if (letter_spacing != 0) {
-    text_style.addFontFeature(SkString("liga"), 0);
-    text_style.addFontFeature(SkString("clig"), 0);
-    text_style.addFontFeature(SkString("calt"), 0);
   }
 
   text_style.setTextBaseline(TextBaseline::kAlphabetic);
@@ -607,7 +600,11 @@ void LayOutLine(skiac_font_collection* c_collection,
     for (size_t i = 0; i < pieces.size(); ++i) {
       TextStyle piece_style = text_style;
       piece_style.setHalfLeading(i % 2 == 1);
+      // FontFeatureRange::FromFontDescription: the caps features come
+      // first, so font-feature-settings can turn them off.
+      piece_style.resetFontFeatures();
       AddCapsFeatures(&piece_style, pieces[i].caps);
+      AddBlinkFeatures(&piece_style, request);
       if (pieces[i].small) {
         piece_style.setFontSize(SmallCapsSize(request.size));
       }

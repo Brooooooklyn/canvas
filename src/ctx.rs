@@ -2534,6 +2534,13 @@ impl Context {
       variant_caps: FontVariantCaps::Normal,
       lang: String::new(),
       text_rendering: crate::sk::TextRendering::Auto,
+      // Blink's ch is the unshaped "0" and ex/cap/ic come from the primary
+      // font: no OpenType features. Size-adjust and optical sizing stay, as
+      // they pick the font's size and instance.
+      feature_settings: Default::default(),
+      variant_ligatures: Default::default(),
+      variant_numeric: Default::default(),
+      variant_position: crate::font_props::FontVariantPosition::Normal,
       ..self.text_settings()
     };
     let paint = Paint::default();
@@ -4037,6 +4044,12 @@ impl Context {
       variant_caps: state.font_variant_caps,
       lang: state.lang.clone(),
       text_rendering: state.text_rendering,
+      feature_settings: state.font_feature_settings.clone(),
+      variant_ligatures: state.font_variant_ligatures,
+      variant_numeric: state.font_variant_numeric,
+      variant_position: state.font_variant_position,
+      size_adjust: state.font_size_adjust,
+      optical_sizing: state.font_optical_sizing,
       lcd_text: false,
     }
   }

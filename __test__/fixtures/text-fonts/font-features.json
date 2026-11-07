@@ -1,0 +1,1308 @@
+{
+  "note": "Chrome 157.0.8103.38 (headless, --disable-gpu, macOS arm64). Canvas + element CSS: the six properties are set as CSS on a fresh <canvas> in the document, ctx.font / letterSpacing / textRendering / fontKerning / fontVariantCaps / lang on the context; fonts loaded with FontFace(family, data, {weight, stretch, style: \"auto\"}) like GlobalFonts.register. lookup1: gsubtest-lookup1.otf (subset), 200px, each PUA char measured alone, a tag is listed when its glyph is the 2304-unit one (width - letterSpacing > 460.3). lookup3: gsubtest-lookup3.otf (subset), the liga alternate chars that become the 2299-unit pass glyph. darwin.widths: measureText().width with real fonts at 40px and 100px. Script: font-features/pr-b/capture-features.cjs.",
+  "fonts": {
+    "GsubOne": "gsubtest-lookup1.otf",
+    "GsubThree": "gsubtest-lookup3.otf",
+    "FFLato": "Lato-Regular.ttf",
+    "FFSerif": "SourceSerifPro-Regular.ttf",
+    "FFSciGothic": "ScienceGothic-VariableFont.ttf",
+    "FFOswald": "Oswald.ttf"
+  },
+  "chars": {
+    "lookup1": {
+      "liga": 57960,
+      "clig": 57424,
+      "dlig": 57848,
+      "hlig": 57904,
+      "calt": 57404,
+      "rlig": 58088,
+      "kern": 57952,
+      "smcp": 58124,
+      "c2sc": 57400,
+      "subs": 58220,
+      "sups": 58224,
+      "lnum": 57968,
+      "tnum": 58244,
+      "zero": 58296,
+      "ss01": 58136,
+      "frac": 57876,
+      "afrc": 57376,
+      "ordn": 58032,
+      "onum": 58024,
+      "pnum": 58052
+    },
+    "lookup3": {
+      "alt1": 57961,
+      "alt2": 57962,
+      "alt3": 57963
+    }
+  },
+  "lookup1": {
+    "default": {
+      "css": {},
+      "ctx": {},
+      "on": ["liga", "clig", "calt", "rlig", "kern"]
+    },
+    "fvl normal": {
+      "css": {
+        "fontVariantLigatures": "normal"
+      },
+      "ctx": {},
+      "on": ["liga", "clig", "calt", "rlig", "kern"]
+    },
+    "fvl common": {
+      "css": {
+        "fontVariantLigatures": "common-ligatures"
+      },
+      "ctx": {},
+      "on": ["liga", "clig", "calt", "rlig", "kern"]
+    },
+    "fvl contextual": {
+      "css": {
+        "fontVariantLigatures": "contextual"
+      },
+      "ctx": {},
+      "on": ["liga", "clig", "calt", "rlig", "kern"]
+    },
+    "fvl no-discretionary": {
+      "css": {
+        "fontVariantLigatures": "no-discretionary-ligatures"
+      },
+      "ctx": {},
+      "on": ["liga", "clig", "calt", "rlig", "kern"]
+    },
+    "fvl none": {
+      "css": {
+        "fontVariantLigatures": "none"
+      },
+      "ctx": {},
+      "on": ["rlig", "kern"]
+    },
+    "fvl no-common": {
+      "css": {
+        "fontVariantLigatures": "no-common-ligatures"
+      },
+      "ctx": {},
+      "on": ["calt", "rlig", "kern"]
+    },
+    "fvl discretionary": {
+      "css": {
+        "fontVariantLigatures": "discretionary-ligatures"
+      },
+      "ctx": {},
+      "on": ["liga", "clig", "dlig", "calt", "rlig", "kern"]
+    },
+    "fvl historical": {
+      "css": {
+        "fontVariantLigatures": "historical-ligatures"
+      },
+      "ctx": {},
+      "on": ["liga", "clig", "hlig", "calt", "rlig", "kern"]
+    },
+    "fvl no-contextual": {
+      "css": {
+        "fontVariantLigatures": "no-contextual"
+      },
+      "ctx": {},
+      "on": ["liga", "clig", "rlig", "kern"]
+    },
+    "fvl all-on": {
+      "css": {
+        "fontVariantLigatures": "common-ligatures discretionary-ligatures historical-ligatures contextual"
+      },
+      "ctx": {},
+      "on": ["liga", "clig", "dlig", "hlig", "calt", "rlig", "kern"]
+    },
+    "fvl all-off": {
+      "css": {
+        "fontVariantLigatures": "no-common-ligatures no-discretionary-ligatures no-historical-ligatures no-contextual"
+      },
+      "ctx": {},
+      "on": ["rlig", "kern"]
+    },
+    "optimizeSpeed": {
+      "css": {},
+      "ctx": {
+        "textRendering": "optimizeSpeed"
+      },
+      "on": ["rlig", "kern"]
+    },
+    "optimizeSpeed + fvl common": {
+      "css": {
+        "fontVariantLigatures": "common-ligatures"
+      },
+      "ctx": {
+        "textRendering": "optimizeSpeed"
+      },
+      "on": ["liga", "clig", "rlig", "kern"]
+    },
+    "optimizeSpeed + fvl contextual": {
+      "css": {
+        "fontVariantLigatures": "contextual"
+      },
+      "ctx": {
+        "textRendering": "optimizeSpeed"
+      },
+      "on": ["calt", "rlig", "kern"]
+    },
+    "optimizeSpeed + fvl discretionary": {
+      "css": {
+        "fontVariantLigatures": "discretionary-ligatures"
+      },
+      "ctx": {
+        "textRendering": "optimizeSpeed"
+      },
+      "on": ["dlig", "rlig", "kern"]
+    },
+    "optimizeSpeed + ffs liga": {
+      "css": {
+        "fontFeatureSettings": "\"liga\""
+      },
+      "ctx": {
+        "textRendering": "optimizeSpeed"
+      },
+      "on": ["liga", "rlig", "kern"]
+    },
+    "optimizeLegibility": {
+      "css": {},
+      "ctx": {
+        "textRendering": "optimizeLegibility"
+      },
+      "on": ["liga", "clig", "calt", "rlig", "kern"]
+    },
+    "ls 1px": {
+      "css": {},
+      "ctx": {
+        "letterSpacing": "1px"
+      },
+      "on": ["rlig", "kern"]
+    },
+    "ls -1px": {
+      "css": {},
+      "ctx": {
+        "letterSpacing": "-1px"
+      },
+      "on": ["rlig", "kern"]
+    },
+    "ls 0.001px": {
+      "css": {},
+      "ctx": {
+        "letterSpacing": "0.001px"
+      },
+      "on": ["rlig", "kern"]
+    },
+    "ls 1px + fvl all-on": {
+      "css": {
+        "fontVariantLigatures": "common-ligatures discretionary-ligatures historical-ligatures contextual"
+      },
+      "ctx": {
+        "letterSpacing": "1px"
+      },
+      "on": ["rlig", "kern"]
+    },
+    "ls 1px + ffs liga,dlig,calt,clig,hlig": {
+      "css": {
+        "fontFeatureSettings": "\"liga\", \"dlig\", \"calt\", \"clig\", \"hlig\""
+      },
+      "ctx": {
+        "letterSpacing": "1px"
+      },
+      "on": ["liga", "clig", "dlig", "hlig", "calt", "rlig", "kern"]
+    },
+    "ls -1px + ffs liga,dlig,calt,clig,hlig": {
+      "css": {
+        "fontFeatureSettings": "\"liga\", \"dlig\", \"calt\", \"clig\", \"hlig\""
+      },
+      "ctx": {
+        "letterSpacing": "-1px"
+      },
+      "on": ["liga", "clig", "dlig", "hlig", "calt", "rlig", "kern"]
+    },
+    "ffs liga 0": {
+      "css": {
+        "fontFeatureSettings": "\"liga\" 0"
+      },
+      "ctx": {},
+      "on": ["clig", "calt", "rlig", "kern"]
+    },
+    "ffs liga 2": {
+      "css": {
+        "fontFeatureSettings": "\"liga\" 2"
+      },
+      "ctx": {},
+      "on": ["liga", "clig", "calt", "rlig", "kern"]
+    },
+    "ffs dlig": {
+      "css": {
+        "fontFeatureSettings": "\"dlig\""
+      },
+      "ctx": {},
+      "on": ["liga", "clig", "dlig", "calt", "rlig", "kern"]
+    },
+    "ffs dlig 0 + fvl discretionary": {
+      "css": {
+        "fontFeatureSettings": "\"dlig\" 0",
+        "fontVariantLigatures": "discretionary-ligatures"
+      },
+      "ctx": {},
+      "on": ["liga", "clig", "calt", "rlig", "kern"]
+    },
+    "ffs liga 1 + fvl none": {
+      "css": {
+        "fontFeatureSettings": "\"liga\" 1",
+        "fontVariantLigatures": "none"
+      },
+      "ctx": {},
+      "on": ["liga", "rlig", "kern"]
+    },
+    "ffs LIGA 0": {
+      "css": {
+        "fontFeatureSettings": "\"LIGA\" 0"
+      },
+      "ctx": {},
+      "on": ["liga", "clig", "calt", "rlig", "kern"]
+    },
+    "ffs liga 0, liga 1": {
+      "css": {
+        "fontFeatureSettings": "\"liga\" 0, \"liga\" 1"
+      },
+      "ctx": {},
+      "on": ["liga", "clig", "calt", "rlig", "kern"]
+    },
+    "ffs liga 1, liga 0": {
+      "css": {
+        "fontFeatureSettings": "\"liga\" 1, \"liga\" 0"
+      },
+      "ctx": {},
+      "on": ["clig", "calt", "rlig", "kern"]
+    },
+    "ffs ss01": {
+      "css": {
+        "fontFeatureSettings": "\"ss01\""
+      },
+      "ctx": {},
+      "on": ["liga", "clig", "calt", "rlig", "kern", "ss01"]
+    },
+    "ffs kern 0": {
+      "css": {
+        "fontFeatureSettings": "\"kern\" 0"
+      },
+      "ctx": {},
+      "on": ["liga", "clig", "calt", "rlig"]
+    },
+    "fontKerning none": {
+      "css": {},
+      "ctx": {
+        "fontKerning": "none"
+      },
+      "on": ["liga", "clig", "calt", "rlig"]
+    },
+    "fontKerning normal": {
+      "css": {},
+      "ctx": {
+        "fontKerning": "normal"
+      },
+      "on": ["liga", "clig", "calt", "rlig", "kern"]
+    },
+    "fontKerning none + ffs kern": {
+      "css": {
+        "fontFeatureSettings": "\"kern\""
+      },
+      "ctx": {
+        "fontKerning": "none"
+      },
+      "on": ["liga", "clig", "calt", "rlig", "kern"]
+    },
+    "small-caps": {
+      "css": {},
+      "ctx": {
+        "fontVariantCaps": "small-caps"
+      },
+      "on": ["liga", "clig", "calt", "rlig", "kern", "smcp"]
+    },
+    "small-caps + ffs smcp 0": {
+      "css": {
+        "fontFeatureSettings": "\"smcp\" 0"
+      },
+      "ctx": {
+        "fontVariantCaps": "small-caps"
+      },
+      "on": ["liga", "clig", "calt", "rlig", "kern"]
+    },
+    "all-small-caps": {
+      "css": {},
+      "ctx": {
+        "fontVariantCaps": "all-small-caps"
+      },
+      "on": ["liga", "clig", "calt", "rlig", "kern", "smcp", "c2sc"]
+    },
+    "sub": {
+      "css": {
+        "fontVariantPosition": "sub"
+      },
+      "ctx": {},
+      "on": ["liga", "clig", "calt", "rlig", "kern", "subs"]
+    },
+    "super": {
+      "css": {
+        "fontVariantPosition": "super"
+      },
+      "ctx": {},
+      "on": ["liga", "clig", "calt", "rlig", "kern", "sups"]
+    },
+    "sub + ffs subs 0": {
+      "css": {
+        "fontVariantPosition": "sub",
+        "fontFeatureSettings": "\"subs\" 0"
+      },
+      "ctx": {},
+      "on": ["liga", "clig", "calt", "rlig", "kern", "subs"]
+    },
+    "super + ffs sups 0": {
+      "css": {
+        "fontVariantPosition": "super",
+        "fontFeatureSettings": "\"sups\" 0"
+      },
+      "ctx": {},
+      "on": ["liga", "clig", "calt", "rlig", "kern", "sups"]
+    },
+    "lining-nums": {
+      "css": {
+        "fontVariantNumeric": "lining-nums"
+      },
+      "ctx": {},
+      "on": ["liga", "clig", "calt", "rlig", "kern", "lnum"]
+    },
+    "oldstyle-nums": {
+      "css": {
+        "fontVariantNumeric": "oldstyle-nums"
+      },
+      "ctx": {},
+      "on": ["liga", "clig", "calt", "rlig", "kern", "onum"]
+    },
+    "proportional-nums": {
+      "css": {
+        "fontVariantNumeric": "proportional-nums"
+      },
+      "ctx": {},
+      "on": ["liga", "clig", "calt", "rlig", "kern", "pnum"]
+    },
+    "tabular-nums": {
+      "css": {
+        "fontVariantNumeric": "tabular-nums"
+      },
+      "ctx": {},
+      "on": ["liga", "clig", "calt", "rlig", "kern", "tnum"]
+    },
+    "diagonal-fractions": {
+      "css": {
+        "fontVariantNumeric": "diagonal-fractions"
+      },
+      "ctx": {},
+      "on": ["liga", "clig", "calt", "rlig", "kern", "frac"]
+    },
+    "stacked-fractions": {
+      "css": {
+        "fontVariantNumeric": "stacked-fractions"
+      },
+      "ctx": {},
+      "on": ["liga", "clig", "calt", "rlig", "kern", "afrc"]
+    },
+    "ordinal": {
+      "css": {
+        "fontVariantNumeric": "ordinal"
+      },
+      "ctx": {},
+      "on": ["liga", "clig", "calt", "rlig", "kern", "ordn"]
+    },
+    "slashed-zero": {
+      "css": {
+        "fontVariantNumeric": "slashed-zero"
+      },
+      "ctx": {},
+      "on": ["liga", "clig", "calt", "rlig", "kern", "zero"]
+    },
+    "numeric all": {
+      "css": {
+        "fontVariantNumeric": "lining-nums tabular-nums diagonal-fractions ordinal slashed-zero"
+      },
+      "ctx": {},
+      "on": ["liga", "clig", "calt", "rlig", "kern", "lnum", "tnum", "zero", "frac", "ordn"]
+    },
+    "tabular-nums + ffs tnum 0": {
+      "css": {
+        "fontVariantNumeric": "tabular-nums",
+        "fontFeatureSettings": "\"tnum\" 0"
+      },
+      "ctx": {},
+      "on": ["liga", "clig", "calt", "rlig", "kern"]
+    },
+    "slashed-zero + ffs zero 0": {
+      "css": {
+        "fontVariantNumeric": "slashed-zero",
+        "fontFeatureSettings": "\"zero\" 0"
+      },
+      "ctx": {},
+      "on": ["liga", "clig", "calt", "rlig", "kern"]
+    },
+    "lang tr": {
+      "css": {},
+      "ctx": {
+        "lang": "tr"
+      },
+      "on": ["liga", "clig", "calt", "rlig", "kern"]
+    }
+  },
+  "lookup3": {
+    "default": {
+      "css": {},
+      "ctx": {},
+      "pass": ["alt1"]
+    },
+    "ffs liga 0": {
+      "css": {
+        "fontFeatureSettings": "\"liga\" 0"
+      },
+      "ctx": {},
+      "pass": []
+    },
+    "ffs liga 1": {
+      "css": {
+        "fontFeatureSettings": "\"liga\" 1"
+      },
+      "ctx": {},
+      "pass": ["alt1"]
+    },
+    "ffs liga 2": {
+      "css": {
+        "fontFeatureSettings": "\"liga\" 2"
+      },
+      "ctx": {},
+      "pass": ["alt2"]
+    },
+    "ffs liga 3": {
+      "css": {
+        "fontFeatureSettings": "\"liga\" 3"
+      },
+      "ctx": {},
+      "pass": ["alt3"]
+    },
+    "ffs liga 4": {
+      "css": {
+        "fontFeatureSettings": "\"liga\" 4"
+      },
+      "ctx": {},
+      "pass": []
+    },
+    "ffs liga 257": {
+      "css": {
+        "fontFeatureSettings": "\"liga\" 257"
+      },
+      "ctx": {},
+      "pass": ["alt1"]
+    },
+    "ffs liga -1": {
+      "css": {
+        "fontFeatureSettings": "\"liga\" -1"
+      },
+      "ctx": {},
+      "pass": []
+    },
+    "ffs liga calc(1.5)": {
+      "css": {
+        "fontFeatureSettings": "\"liga\" calc(1.5)"
+      },
+      "ctx": {},
+      "pass": ["alt2"]
+    },
+    "ffs liga 2, liga 3": {
+      "css": {
+        "fontFeatureSettings": "\"liga\" 2, \"liga\" 3"
+      },
+      "ctx": {},
+      "pass": ["alt3"]
+    }
+  },
+  "darwin": {
+    "widths": {
+      "Lato fi default @40": {
+        "font": "40px FFLato",
+        "text": "fi",
+        "css": {},
+        "ctx": {},
+        "width": 22.79998779296875
+      },
+      "Lato fi default @100": {
+        "font": "100px FFLato",
+        "text": "fi",
+        "css": {},
+        "ctx": {},
+        "width": 57
+      },
+      "Lato fi ffs liga 0 @40": {
+        "font": "40px FFLato",
+        "text": "fi",
+        "css": {
+          "fontFeatureSettings": "\"liga\" 0"
+        },
+        "ctx": {},
+        "width": 23.719985961914062
+      },
+      "Lato fi ffs liga 0 @100": {
+        "font": "100px FFLato",
+        "text": "fi",
+        "css": {
+          "fontFeatureSettings": "\"liga\" 0"
+        },
+        "ctx": {},
+        "width": 59.29998779296875
+      },
+      "Lato fi fvl none @40": {
+        "font": "40px FFLato",
+        "text": "fi",
+        "css": {
+          "fontVariantLigatures": "none"
+        },
+        "ctx": {},
+        "width": 23.719985961914062
+      },
+      "Lato fi fvl none @100": {
+        "font": "100px FFLato",
+        "text": "fi",
+        "css": {
+          "fontVariantLigatures": "none"
+        },
+        "ctx": {},
+        "width": 59.29998779296875
+      },
+      "Lato fi ls 1px + fvl common @40": {
+        "font": "40px FFLato",
+        "text": "fi",
+        "css": {
+          "fontVariantLigatures": "common-ligatures"
+        },
+        "ctx": {
+          "letterSpacing": "1px"
+        },
+        "width": 25.719985961914062
+      },
+      "Lato fi ls 1px + fvl common @100": {
+        "font": "100px FFLato",
+        "text": "fi",
+        "css": {
+          "fontVariantLigatures": "common-ligatures"
+        },
+        "ctx": {
+          "letterSpacing": "1px"
+        },
+        "width": 61.29998779296875
+      },
+      "Lato fi ls 1px + ffs liga @40": {
+        "font": "40px FFLato",
+        "text": "fi",
+        "css": {
+          "fontFeatureSettings": "\"liga\""
+        },
+        "ctx": {
+          "letterSpacing": "1px"
+        },
+        "width": 23.79998779296875
+      },
+      "Lato fi ls 1px + ffs liga @100": {
+        "font": "100px FFLato",
+        "text": "fi",
+        "css": {
+          "fontFeatureSettings": "\"liga\""
+        },
+        "ctx": {
+          "letterSpacing": "1px"
+        },
+        "width": 58
+      },
+      "Lato fi ls -1px + ffs liga @40": {
+        "font": "40px FFLato",
+        "text": "fi",
+        "css": {
+          "fontFeatureSettings": "\"liga\""
+        },
+        "ctx": {
+          "letterSpacing": "-1px"
+        },
+        "width": 21.79998779296875
+      },
+      "Lato fi ls -1px + ffs liga @100": {
+        "font": "100px FFLato",
+        "text": "fi",
+        "css": {
+          "fontFeatureSettings": "\"liga\""
+        },
+        "ctx": {
+          "letterSpacing": "-1px"
+        },
+        "width": 56
+      },
+      "Lato fi optimizeSpeed + fvl common @40": {
+        "font": "40px FFLato",
+        "text": "fi",
+        "css": {
+          "fontVariantLigatures": "common-ligatures"
+        },
+        "ctx": {
+          "textRendering": "optimizeSpeed"
+        },
+        "width": 22.79998779296875
+      },
+      "Lato fi optimizeSpeed + fvl common @100": {
+        "font": "100px FFLato",
+        "text": "fi",
+        "css": {
+          "fontVariantLigatures": "common-ligatures"
+        },
+        "ctx": {
+          "textRendering": "optimizeSpeed"
+        },
+        "width": 57
+      },
+      "GsubOne,Lato fi ffs liga 0 @40": {
+        "font": "40px GsubOne, FFLato",
+        "text": "fi",
+        "css": {
+          "fontFeatureSettings": "\"liga\" 0"
+        },
+        "ctx": {},
+        "width": 23.719985961914062
+      },
+      "GsubOne,Lato fi ffs liga 0 @100": {
+        "font": "100px GsubOne, FFLato",
+        "text": "fi",
+        "css": {
+          "fontFeatureSettings": "\"liga\" 0"
+        },
+        "ctx": {},
+        "width": 59.29998779296875
+      },
+      "GsubOne,Lato fi default @40": {
+        "font": "40px GsubOne, FFLato",
+        "text": "fi",
+        "css": {},
+        "ctx": {},
+        "width": 22.79998779296875
+      },
+      "GsubOne,Lato fi default @100": {
+        "font": "100px GsubOne, FFLato",
+        "text": "fi",
+        "css": {},
+        "ctx": {},
+        "width": 57
+      },
+      "Lato words fvl none @40": {
+        "font": "40px FFLato",
+        "text": "office fi AV To",
+        "css": {
+          "fontVariantLigatures": "none"
+        },
+        "ctx": {},
+        "width": 239.27987670898438
+      },
+      "Lato words fvl none @100": {
+        "font": "100px FFLato",
+        "text": "office fi AV To",
+        "css": {
+          "fontVariantLigatures": "none"
+        },
+        "ctx": {},
+        "width": 598.1998901367188
+      },
+      "Lato words fvl discretionary @40": {
+        "font": "40px FFLato",
+        "text": "office fi AV To",
+        "css": {
+          "fontVariantLigatures": "discretionary-ligatures"
+        },
+        "ctx": {},
+        "width": 237.43988037109375
+      },
+      "Lato words fvl discretionary @100": {
+        "font": "100px FFLato",
+        "text": "office fi AV To",
+        "css": {
+          "fontVariantLigatures": "discretionary-ligatures"
+        },
+        "ctx": {},
+        "width": 593.5999145507812
+      },
+      "Lato words fvl no-common @40": {
+        "font": "40px FFLato",
+        "text": "office fi AV To",
+        "css": {
+          "fontVariantLigatures": "no-common-ligatures"
+        },
+        "ctx": {},
+        "width": 239.27987670898438
+      },
+      "Lato words fvl no-common @100": {
+        "font": "100px FFLato",
+        "text": "office fi AV To",
+        "css": {
+          "fontVariantLigatures": "no-common-ligatures"
+        },
+        "ctx": {},
+        "width": 598.1998901367188
+      },
+      "Lato words fvl common + optimizeSpeed @40": {
+        "font": "40px FFLato",
+        "text": "office fi AV To",
+        "css": {
+          "fontVariantLigatures": "common-ligatures"
+        },
+        "ctx": {
+          "textRendering": "optimizeSpeed"
+        },
+        "width": 237.43988037109375
+      },
+      "Lato words fvl common + optimizeSpeed @100": {
+        "font": "100px FFLato",
+        "text": "office fi AV To",
+        "css": {
+          "fontVariantLigatures": "common-ligatures"
+        },
+        "ctx": {
+          "textRendering": "optimizeSpeed"
+        },
+        "width": 593.5999145507812
+      },
+      "Serif digits normal @40": {
+        "font": "40px FFSerif",
+        "text": "0123456789",
+        "css": {},
+        "ctx": {},
+        "width": 200
+      },
+      "Serif digits normal @100": {
+        "font": "100px FFSerif",
+        "text": "0123456789",
+        "css": {},
+        "ctx": {},
+        "width": 500
+      },
+      "Serif digits proportional-nums @40": {
+        "font": "40px FFSerif",
+        "text": "0123456789",
+        "css": {
+          "fontVariantNumeric": "proportional-nums"
+        },
+        "ctx": {},
+        "width": 196.15994262695312
+      },
+      "Serif digits proportional-nums @100": {
+        "font": "100px FFSerif",
+        "text": "0123456789",
+        "css": {
+          "fontVariantNumeric": "proportional-nums"
+        },
+        "ctx": {},
+        "width": 490.3999328613281
+      },
+      "Serif digits oldstyle-nums proportional-nums @40": {
+        "font": "40px FFSerif",
+        "text": "0123456789",
+        "css": {
+          "fontVariantNumeric": "oldstyle-nums proportional-nums"
+        },
+        "ctx": {},
+        "width": 199.0799560546875
+      },
+      "Serif digits oldstyle-nums proportional-nums @100": {
+        "font": "100px FFSerif",
+        "text": "0123456789",
+        "css": {
+          "fontVariantNumeric": "oldstyle-nums proportional-nums"
+        },
+        "ctx": {},
+        "width": 497.699951171875
+      },
+      "Serif digits proportional-nums + ffs pnum 0 @40": {
+        "font": "40px FFSerif",
+        "text": "0123456789",
+        "css": {
+          "fontVariantNumeric": "proportional-nums",
+          "fontFeatureSettings": "\"pnum\" 0"
+        },
+        "ctx": {},
+        "width": 200
+      },
+      "Serif digits proportional-nums + ffs pnum 0 @100": {
+        "font": "100px FFSerif",
+        "text": "0123456789",
+        "css": {
+          "fontVariantNumeric": "proportional-nums",
+          "fontFeatureSettings": "\"pnum\" 0"
+        },
+        "ctx": {},
+        "width": 500
+      },
+      "Serif digits tabular-nums + ffs tnum 0 @40": {
+        "font": "40px FFSerif",
+        "text": "0123456789",
+        "css": {
+          "fontVariantNumeric": "tabular-nums",
+          "fontFeatureSettings": "\"tnum\" 0"
+        },
+        "ctx": {},
+        "width": 200
+      },
+      "Serif digits tabular-nums + ffs tnum 0 @100": {
+        "font": "100px FFSerif",
+        "text": "0123456789",
+        "css": {
+          "fontVariantNumeric": "tabular-nums",
+          "fontFeatureSettings": "\"tnum\" 0"
+        },
+        "ctx": {},
+        "width": 500
+      },
+      "Serif AV To default @40": {
+        "font": "40px FFSerif",
+        "text": "AV To 0123",
+        "css": {},
+        "ctx": {},
+        "width": 190.71995544433594
+      },
+      "Serif AV To default @100": {
+        "font": "100px FFSerif",
+        "text": "AV To 0123",
+        "css": {},
+        "ctx": {},
+        "width": 476.7999572753906
+      },
+      "Serif AV To ffs kern 0 @40": {
+        "font": "40px FFSerif",
+        "text": "AV To 0123",
+        "css": {
+          "fontFeatureSettings": "\"kern\" 0"
+        },
+        "ctx": {},
+        "width": 198.2799530029297
+      },
+      "Serif AV To ffs kern 0 @100": {
+        "font": "100px FFSerif",
+        "text": "AV To 0123",
+        "css": {
+          "fontFeatureSettings": "\"kern\" 0"
+        },
+        "ctx": {},
+        "width": 495.699951171875
+      },
+      "Serif fraction normal @40": {
+        "font": "40px FFSerif",
+        "text": "1/2 3/4",
+        "css": {},
+        "ctx": {},
+        "width": 115.71998596191406
+      },
+      "Serif fraction normal @100": {
+        "font": "100px FFSerif",
+        "text": "1/2 3/4",
+        "css": {},
+        "ctx": {},
+        "width": 289.29998779296875
+      },
+      "Serif fraction diagonal-fractions @40": {
+        "font": "40px FFSerif",
+        "text": "1/2 3/4",
+        "css": {
+          "fontVariantNumeric": "diagonal-fractions"
+        },
+        "ctx": {},
+        "width": 79.71992492675781
+      },
+      "Serif fraction diagonal-fractions @100": {
+        "font": "100px FFSerif",
+        "text": "1/2 3/4",
+        "css": {
+          "fontVariantNumeric": "diagonal-fractions"
+        },
+        "ctx": {},
+        "width": 199.29998779296875
+      },
+      "Serif ordinal @40": {
+        "font": "40px FFSerif",
+        "text": "1st 2nd",
+        "css": {
+          "fontVariantNumeric": "ordinal"
+        },
+        "ctx": {},
+        "width": 102.63996887207031
+      },
+      "Serif ordinal @100": {
+        "font": "100px FFSerif",
+        "text": "1st 2nd",
+        "css": {
+          "fontVariantNumeric": "ordinal"
+        },
+        "ctx": {},
+        "width": 256.5999755859375
+      },
+      "Serif slashed-zero @40": {
+        "font": "40px FFSerif",
+        "text": "0 10",
+        "css": {
+          "fontVariantNumeric": "slashed-zero"
+        },
+        "ctx": {},
+        "width": 69.31999206542969
+      },
+      "Serif slashed-zero @100": {
+        "font": "100px FFSerif",
+        "text": "0 10",
+        "css": {
+          "fontVariantNumeric": "slashed-zero"
+        },
+        "ctx": {},
+        "width": 173.29998779296875
+      },
+      "SciGothic 100 normal @40": {
+        "font": "100 40px FFSciGothic",
+        "text": "0123456789",
+        "css": {},
+        "ctx": {},
+        "width": 295.09991455078125
+      },
+      "SciGothic 100 normal @100": {
+        "font": "100 100px FFSciGothic",
+        "text": "0123456789",
+        "css": {},
+        "ctx": {},
+        "width": 737.75
+      },
+      "SciGothic 100 tabular-nums @40": {
+        "font": "100 40px FFSciGothic",
+        "text": "0123456789",
+        "css": {
+          "fontVariantNumeric": "tabular-nums"
+        },
+        "ctx": {},
+        "width": 300
+      },
+      "SciGothic 100 tabular-nums @100": {
+        "font": "100 100px FFSciGothic",
+        "text": "0123456789",
+        "css": {
+          "fontVariantNumeric": "tabular-nums"
+        },
+        "ctx": {},
+        "width": 750
+      },
+      "SciGothic 900 normal @40": {
+        "font": "900 40px FFSciGothic",
+        "text": "0123456789",
+        "css": {},
+        "ctx": {},
+        "width": 344.4599304199219
+      },
+      "SciGothic 900 normal @100": {
+        "font": "900 100px FFSciGothic",
+        "text": "0123456789",
+        "css": {},
+        "ctx": {},
+        "width": 861.1499633789062
+      },
+      "SciGothic 900 tabular-nums @40": {
+        "font": "900 40px FFSciGothic",
+        "text": "0123456789",
+        "css": {
+          "fontVariantNumeric": "tabular-nums"
+        },
+        "ctx": {},
+        "width": 380
+      },
+      "SciGothic 900 tabular-nums @100": {
+        "font": "900 100px FFSciGothic",
+        "text": "0123456789",
+        "css": {
+          "fontVariantNumeric": "tabular-nums"
+        },
+        "ctx": {},
+        "width": 950
+      },
+      "Serif position normal @40": {
+        "font": "40px FFSerif",
+        "text": "x2 H2O 123",
+        "css": {},
+        "ctx": {},
+        "width": 199.5199737548828
+      },
+      "Serif position normal @100": {
+        "font": "100px FFSerif",
+        "text": "x2 H2O 123",
+        "css": {},
+        "ctx": {},
+        "width": 498.7999572753906
+      },
+      "Serif position sub @40": {
+        "font": "40px FFSerif",
+        "text": "x2 H2O 123",
+        "css": {
+          "fontVariantPosition": "sub"
+        },
+        "ctx": {},
+        "width": 173.51991271972656
+      },
+      "Serif position sub @100": {
+        "font": "100px FFSerif",
+        "text": "x2 H2O 123",
+        "css": {
+          "fontVariantPosition": "sub"
+        },
+        "ctx": {},
+        "width": 433.7999572753906
+      },
+      "Serif position super @40": {
+        "font": "40px FFSerif",
+        "text": "x2 H2O 123",
+        "css": {
+          "fontVariantPosition": "super"
+        },
+        "ctx": {},
+        "width": 146.11990356445312
+      },
+      "Serif position super @100": {
+        "font": "100px FFSerif",
+        "text": "x2 H2O 123",
+        "css": {
+          "fontVariantPosition": "super"
+        },
+        "ctx": {},
+        "width": 365.2999572753906
+      },
+      "Serif position super + ffs sups 0 @40": {
+        "font": "40px FFSerif",
+        "text": "x2 H2O 123",
+        "css": {
+          "fontVariantPosition": "super",
+          "fontFeatureSettings": "\"sups\" 0"
+        },
+        "ctx": {},
+        "width": 146.11990356445312
+      },
+      "Serif position super + ffs sups 0 @100": {
+        "font": "100px FFSerif",
+        "text": "x2 H2O 123",
+        "css": {
+          "fontVariantPosition": "super",
+          "fontFeatureSettings": "\"sups\" 0"
+        },
+        "ctx": {},
+        "width": 365.2999572753906
+      },
+      "Oswald position sub @40": {
+        "font": "40px FFOswald",
+        "text": "x2 H2O 123",
+        "css": {
+          "fontVariantPosition": "sub"
+        },
+        "ctx": {},
+        "width": 169.43992614746094
+      },
+      "Oswald position sub @100": {
+        "font": "100px FFOswald",
+        "text": "x2 H2O 123",
+        "css": {
+          "fontVariantPosition": "sub"
+        },
+        "ctx": {},
+        "width": 423.59991455078125
+      },
+      "Oswald position super @40": {
+        "font": "40px FFOswald",
+        "text": "x2 H2O 123",
+        "css": {
+          "fontVariantPosition": "super"
+        },
+        "ctx": {},
+        "width": 159.159912109375
+      },
+      "Oswald position super @100": {
+        "font": "100px FFOswald",
+        "text": "x2 H2O 123",
+        "css": {
+          "fontVariantPosition": "super"
+        },
+        "ctx": {},
+        "width": 397.8999328613281
+      },
+      "Oswald fraction diagonal-fractions @40": {
+        "font": "40px FFOswald",
+        "text": "1/2 3/4",
+        "css": {
+          "fontVariantNumeric": "diagonal-fractions"
+        },
+        "ctx": {},
+        "width": 81.91996765136719
+      },
+      "Oswald fraction diagonal-fractions @100": {
+        "font": "100px FFOswald",
+        "text": "1/2 3/4",
+        "css": {
+          "fontVariantNumeric": "diagonal-fractions"
+        },
+        "ctx": {},
+        "width": 204.79998779296875
+      },
+      "Serif small-caps + pnum @40": {
+        "font": "40px FFSerif",
+        "text": "Ab12Ab12",
+        "css": {
+          "fontVariantNumeric": "proportional-nums"
+        },
+        "ctx": {
+          "fontVariantCaps": "small-caps"
+        },
+        "width": 175.27993774414062
+      },
+      "Serif small-caps + pnum @100": {
+        "font": "100px FFSerif",
+        "text": "Ab12Ab12",
+        "css": {
+          "fontVariantNumeric": "proportional-nums"
+        },
+        "ctx": {
+          "fontVariantCaps": "small-caps"
+        },
+        "width": 438.1999206542969
+      },
+      "Serif small-caps + ffs smcp 0 @40": {
+        "font": "40px FFSerif",
+        "text": "Ab12Ab12",
+        "css": {
+          "fontFeatureSettings": "\"smcp\" 0"
+        },
+        "ctx": {
+          "fontVariantCaps": "small-caps"
+        },
+        "width": 179.27996826171875
+      },
+      "Serif small-caps + ffs smcp 0 @100": {
+        "font": "100px FFSerif",
+        "text": "Ab12Ab12",
+        "css": {
+          "fontFeatureSettings": "\"smcp\" 0"
+        },
+        "ctx": {
+          "fontVariantCaps": "small-caps"
+        },
+        "width": 448.1999816894531
+      },
+      "Lato small-caps + super @40": {
+        "font": "40px FFLato",
+        "text": "Ab12Ab12",
+        "css": {
+          "fontVariantPosition": "super"
+        },
+        "ctx": {
+          "fontVariantCaps": "small-caps"
+        },
+        "width": 183.43197631835938
+      },
+      "Lato small-caps + super @100": {
+        "font": "100px FFLato",
+        "text": "Ab12Ab12",
+        "css": {
+          "fontVariantPosition": "super"
+        },
+        "ctx": {
+          "fontVariantCaps": "small-caps"
+        },
+        "width": 458.5799560546875
+      },
+      "Lato small-caps + ffs liga 0 @40": {
+        "font": "40px FFLato",
+        "text": "fi Fi",
+        "css": {
+          "fontFeatureSettings": "\"liga\" 0"
+        },
+        "ctx": {
+          "fontVariantCaps": "small-caps"
+        },
+        "width": 63.39996337890625
+      },
+      "Lato small-caps + ffs liga 0 @100": {
+        "font": "100px FFLato",
+        "text": "fi Fi",
+        "css": {
+          "fontFeatureSettings": "\"liga\" 0"
+        },
+        "ctx": {
+          "fontVariantCaps": "small-caps"
+        },
+        "width": 158.4999542236328
+      },
+      "Serif fontKerning none + pnum @40": {
+        "font": "40px FFSerif",
+        "text": "AV To 0123",
+        "css": {
+          "fontVariantNumeric": "proportional-nums"
+        },
+        "ctx": {
+          "fontKerning": "none"
+        },
+        "width": 195.8399200439453
+      },
+      "Serif fontKerning none + pnum @100": {
+        "font": "100px FFSerif",
+        "text": "AV To 0123",
+        "css": {
+          "fontVariantNumeric": "proportional-nums"
+        },
+        "ctx": {
+          "fontKerning": "none"
+        },
+        "width": 489.59991455078125
+      },
+      "Serif fontKerning none + ffs kern @40": {
+        "font": "40px FFSerif",
+        "text": "AV To 0123",
+        "css": {
+          "fontFeatureSettings": "\"kern\""
+        },
+        "ctx": {
+          "fontKerning": "none"
+        },
+        "width": 190.71995544433594
+      },
+      "Serif fontKerning none + ffs kern @100": {
+        "font": "100px FFSerif",
+        "text": "AV To 0123",
+        "css": {
+          "fontFeatureSettings": "\"kern\""
+        },
+        "ctx": {
+          "fontKerning": "none"
+        },
+        "width": 476.7999572753906
+      },
+      "Serif lang tr + pnum @40": {
+        "font": "40px FFSerif",
+        "text": "fi 0123",
+        "css": {
+          "fontVariantNumeric": "proportional-nums"
+        },
+        "ctx": {
+          "lang": "tr"
+        },
+        "width": 114.199951171875
+      },
+      "Serif lang tr + pnum @100": {
+        "font": "100px FFSerif",
+        "text": "fi 0123",
+        "css": {
+          "fontVariantNumeric": "proportional-nums"
+        },
+        "ctx": {
+          "lang": "tr"
+        },
+        "width": 285.49993896484375
+      }
+    }
+  }
+}

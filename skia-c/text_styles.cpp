@@ -84,6 +84,95 @@ std::vector<SkFontArguments::VariationPosition::Coordinate> FontVariations(
   return coords;
 }
 
+namespace {
+
+void AddFeature(TextStyle* style, SkFourByteTag tag, uint32_t value) {
+  const char name[4] = {
+      static_cast<char>(tag >> 24), static_cast<char>((tag >> 16) & 0xFF),
+      static_cast<char>((tag >> 8) & 0xFF), static_cast<char>(tag & 0xFF)};
+  // skparagraph turns the value back into a uint32_t (SkToU32).
+  style->addFontFeature(SkString(name, 4), static_cast<int>(value));
+}
+
+void AddFeature(TextStyle* style, const char* tag, uint32_t value) {
+  style->addFontFeature(SkString(tag), static_cast<int>(value));
+}
+
+// FontDescription::LigaturesState values (font_props.rs LigatureState).
+constexpr uint8_t kLigaturesNormal = 0;
+constexpr uint8_t kLigaturesEnabled = 1;
+constexpr uint8_t kLigaturesDisabled = 2;
+
+}  // namespace
+
+void AddBlinkFeatures(TextStyle* style, const skiac_text_request& request) {
+  // FontFeatureRange::FromFontDescription (font_features.cc). kerning: 0
+  // auto, 1 none, 2 normal; HarfBuzz has kern on, so only none pushes.
+  if (request.kerning == 1) {
+    AddFeature(style, "kern", 0);
+  }
+  // Ligatures. Any non-zero letter spacing turns the optional ones off;
+  // optimizeSpeed (text_rendering 1) turns the default-on ones off unless
+  // font-variant-ligatures enables them.
+  const bool letter_spacing = request.letter_spacing != 0;
+  const bool default_is_off = request.text_rendering == 1;
+  const uint8_t common = request.lig_common;
+  if (letter_spacing || common == kLigaturesDisabled ||
+      (common == kLigaturesNormal && default_is_off)) {
+    AddFeature(style, "liga", 0);
+    AddFeature(style, "clig", 0);
+  }
+  if (!letter_spacing && request.lig_discretionary == kLigaturesEnabled) {
+    AddFeature(style, "dlig", 1);
+  }
+  if (!letter_spacing && request.lig_historical == kLigaturesEnabled) {
+    AddFeature(style, "hlig", 1);
+  }
+  const uint8_t contextual = request.lig_contextual;
+  if (letter_spacing || contextual == kLigaturesDisabled ||
+      (contextual == kLigaturesNormal && default_is_off)) {
+    AddFeature(style, "calt", 0);
+  }
+  // No canvas source for font-variant-east-asian or the width variants.
+  // font-variant-numeric.
+  const uint32_t numeric = request.variant_numeric;
+  const uint32_t figure = numeric & 3;
+  const uint32_t spacing = (numeric >> 2) & 3;
+  const uint32_t fraction = (numeric >> 4) & 3;
+  if (figure == 1) {
+    AddFeature(style, "lnum", 1);
+  } else if (figure == 2) {
+    AddFeature(style, "onum", 1);
+  }
+  if (spacing == 1) {
+    AddFeature(style, "pnum", 1);
+  } else if (spacing == 2) {
+    AddFeature(style, "tnum", 1);
+  }
+  if (fraction == 2) {
+    AddFeature(style, "afrc", 1);
+  } else if (fraction == 1) {
+    AddFeature(style, "frac", 1);
+  }
+  if (numeric & (1 << 6)) {
+    AddFeature(style, "ordn", 1);
+  }
+  if (numeric & (1 << 7)) {
+    AddFeature(style, "zero", 1);
+  }
+  // font-feature-settings, in computed order. Blink's default chws 1 is not
+  // pushed (no text-spacing-trim source here).
+  for (int i = 0; request.features && i < request.features_count; ++i) {
+    AddFeature(style, request.features[i].tag, request.features[i].value);
+  }
+  // font-variant-position, last: it wins over font-feature-settings.
+  if (request.variant_position == 1) {
+    AddFeature(style, "subs", 1);
+  } else if (request.variant_position == 2) {
+    AddFeature(style, "sups", 1);
+  }
+}
+
 SyntheticStyle SynthesizeStyle(skiac_font_collection* c_collection,
                                SkTypeface* face,
                                SkTypeface* base,
