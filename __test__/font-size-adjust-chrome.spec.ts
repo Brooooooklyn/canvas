@@ -177,6 +177,37 @@ test.serial('font-size-adjust picks the used size from the primary font', (t) =>
   })
 })
 
+test.serial('a cluster takes the size of the face that draws its NFC or NFD form', (t) => {
+  // Lato has U+00E9 but no U+0301: HarfBuzz composes "e\u0301" to it, so
+  // Lato draws both at its size. Source Serif has no U+01E9 but k and
+  // U+030C: it draws both forms of that at its own size.
+  const pixels = (font: string, text: string, adjust: string) => {
+    const canvas = createCanvas(120, 80)
+    const ctx = canvas.getContext('2d')
+    ctx.fontSizeAdjust = adjust
+    ctx.font = font
+    ctx.fillText(text, 10, 60)
+    return Buffer.from(ctx.getImageData(0, 0, 120, 80).data)
+  }
+  withBothRenderers((renderer) => {
+    const font = '40px SALato, SASerif'
+    for (const adjust of ['0.5', 'from-font', 'cap-height 0.5']) {
+      const label = `${renderer} ${adjust}`
+      const composed = width(font, '\u00E9', { fontSizeAdjust: adjust })
+      t.true(close(width(font, 'e\u0301', { fontSizeAdjust: adjust }), composed), label)
+      t.true(close(width('40px SALato', '\u00E9', { fontSizeAdjust: adjust }), composed), label)
+      t.true(pixels(font, 'e\u0301', adjust).equals(pixels(font, '\u00E9', adjust)), `${label} draw`)
+      const caron = width(font, '\u01E9', { fontSizeAdjust: adjust })
+      t.true(close(width(font, 'k\u030C', { fontSizeAdjust: adjust }), caron), label)
+      if (adjust !== 'from-font') {
+        // from-font takes the primary's aspect: Lato's here.
+        t.true(close(width('40px SASerif', '\u01E9', { fontSizeAdjust: adjust }), caron), label)
+      }
+      t.true(pixels(font, 'k\u030C', adjust).equals(pixels(font, '\u01E9', adjust)), `${label} draw caron`)
+    }
+  })
+})
+
 test.serial('font-optical-sizing none is the opsz default, auto the used size', (t) => {
   withBothRenderers((renderer) => {
     const text = 'Hamburgefonstiv '.repeat(4)

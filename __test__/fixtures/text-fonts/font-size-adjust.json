@@ -1,5 +1,5 @@
 {
-  "note": "Chrome 157.0.8103.38 (headless, --disable-gpu, macOS arm64). Canvas + element CSS: font-size-adjust, font-optical-sizing and font-variation-settings set as CSS on a fresh <canvas> in the document whose own font is the ctx.font (so from-font resolves against the same font); ctx.font / fontVariantCaps on the context; fonts loaded with FontFace(family, data, {weight, stretch, style: \"auto\"}) like GlobalFonts.register. metrics: measureText [width, fontBoundingBoxAscent, fontBoundingBoxDescent, actualBoundingBoxAscent, actualBoundingBoxDescent, hangingBaseline, ideographicBaseline] (Chrome 157 measureText has no emHeight*). computed: getComputedStyle font-size-adjust (from-font resolved by Chrome). dom: the width of a <span> with the same font and CSS (LayoutUnit, 1/64 px): Chrome's canvas gives a named installed family and the system fallback no font-size-adjust at all (it skips FontBuilder::UpdateAdjustedSize), where the DOM gives them the primary font's adjusted size (DESIGN D7). Script: font-features/pr-b/s3/capture-size-adjust.cjs.",
+  "note": "Chrome 157.0.8103.38 (headless, --disable-gpu, macOS arm64). Canvas + element CSS: font-size-adjust, font-optical-sizing and font-variation-settings set as CSS on a fresh <canvas> in the document whose own font is the ctx.font (so from-font resolves against the same font); ctx.font / fontVariantCaps on the context; fonts loaded with FontFace(family, data, {weight, stretch, style: \"auto\"}) like GlobalFonts.register. metrics: measureText [width, fontBoundingBoxAscent, fontBoundingBoxDescent, actualBoundingBoxAscent, actualBoundingBoxDescent, hangingBaseline, ideographicBaseline] (Chrome 157 measureText has no emHeight*). computed: getComputedStyle font-size-adjust (from-font resolved by Chrome). dom: the width of a <span> with the same font and CSS (LayoutUnit, 1/64 px): Chrome's canvas gives a named installed family and the system fallback no font-size-adjust at all (it skips FontBuilder::UpdateAdjustedSize), where the DOM gives them the primary font's adjusted size (DESIGN D7). Script: font-features/pr-b/fix1/capture-size-adjust.cjs.",
   "fonts": {
     "SALato": "Lato-Regular.ttf",
     "SASerif": "SourceSerifPro-Regular.ttf",
@@ -1360,6 +1360,226 @@
         "computed": "cap-height 0.5",
         "metrics": [67.01998901367188, 18, 2, 16.420000076293945, 1.200002670288086, 14.399999618530273, -2],
         "dom": 43.46875
+      },
+      "Lato,Serif NFC e-acute none": {
+        "font": "40px SALato, SASerif",
+        "text": "\u00E9",
+        "css": {
+          "fontSizeAdjust": "none"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [20.959991455078125, 39, 9, 28.979999542236328, 0.2800025939941406, 31.200000762939453, -9],
+        "dom": 20.96875
+      },
+      "Lato,Serif NFD e-acute none": {
+        "font": "40px SALato, SASerif",
+        "text": "e\u0301",
+        "css": {
+          "fontSizeAdjust": "none"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [20.959991455078125, 39, 9, 28.979999542236328, 0.2800025939941406, 31.200000762939453, -9],
+        "dom": 20.96875
+      },
+      "Lato,Serif NFD word none": {
+        "font": "40px SALato, SASerif",
+        "text": "Re\u0301sume\u0301",
+        "css": {
+          "fontSizeAdjust": "none"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [140.11996459960938, 39, 9, 28.979999542236328, 0.32000160217285156, 31.200000762939453, -9],
+        "dom": 140.125
+      },
+      "Lato,Serif NFC k-caron none": {
+        "font": "40px SALato, SASerif",
+        "text": "\u01E9",
+        "css": {
+          "fontSizeAdjust": "none"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [21.879989624023438, 39, 9, 38.80000686645508, 0, 31.200000762939453, -9],
+        "dom": 21.890625
+      },
+      "Lato,Serif NFD k-caron none": {
+        "font": "40px SALato, SASerif",
+        "text": "k\u030C",
+        "css": {
+          "fontSizeAdjust": "none"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [21.879989624023438, 39, 9, 38.80000686645508, 0, 31.200000762939453, -9],
+        "dom": 21.890625
+      },
+      "Lato,Serif NFC e-acute 0.5": {
+        "font": "40px SALato, SASerif",
+        "text": "\u00E9",
+        "css": {
+          "fontSizeAdjust": "0.5"
+        },
+        "ctx": {},
+        "computed": "0.5",
+        "metrics": [20.687515258789062, 39, 8, 28.603260040283203, 0.27636146545410156, 31.200000762939453, -8],
+        "dom": 20.703125
+      },
+      "Lato,Serif NFD e-acute 0.5": {
+        "font": "40px SALato, SASerif",
+        "text": "e\u0301",
+        "css": {
+          "fontSizeAdjust": "0.5"
+        },
+        "ctx": {},
+        "computed": "0.5",
+        "metrics": [20.687515258789062, 39, 8, 28.603260040283203, 0.27636146545410156, 31.200000762939453, -8],
+        "dom": 20.703125
+      },
+      "Lato,Serif NFD word 0.5": {
+        "font": "40px SALato, SASerif",
+        "text": "Re\u0301sume\u0301",
+        "css": {
+          "fontSizeAdjust": "0.5"
+        },
+        "ctx": {},
+        "computed": "0.5",
+        "metrics": [138.2983856201172, 39, 8, 28.603260040283203, 0.3158416748046875, 31.200000762939453, -8],
+        "dom": 138.3125
+      },
+      "Lato,Serif NFC k-caron 0.5": {
+        "font": "40px SALato, SASerif",
+        "text": "\u01E9",
+        "css": {
+          "fontSizeAdjust": "0.5"
+        },
+        "ctx": {},
+        "computed": "0.5",
+        "metrics": [23.0286865234375, 39, 8, 40.836997985839844, 0, 31.200000762939453, -8],
+        "dom": 23.03125
+      },
+      "Lato,Serif NFD k-caron 0.5": {
+        "font": "40px SALato, SASerif",
+        "text": "k\u030C",
+        "css": {
+          "fontSizeAdjust": "0.5"
+        },
+        "ctx": {},
+        "computed": "0.5",
+        "metrics": [23.0286865234375, 39, 8, 40.836997985839844, 0, 31.200000762939453, -8],
+        "dom": 23.03125
+      },
+      "Lato,Serif NFC e-acute from-font": {
+        "font": "40px SALato, SASerif",
+        "text": "\u00E9",
+        "css": {
+          "fontSizeAdjust": "from-font"
+        },
+        "ctx": {},
+        "computed": "0.5065",
+        "metrics": [20.959991455078125, 39, 9, 28.979999542236328, 0.2800025939941406, 31.200000762939453, -9],
+        "dom": 20.96875
+      },
+      "Lato,Serif NFD e-acute from-font": {
+        "font": "40px SALato, SASerif",
+        "text": "e\u0301",
+        "css": {
+          "fontSizeAdjust": "from-font"
+        },
+        "ctx": {},
+        "computed": "0.5065",
+        "metrics": [20.959991455078125, 39, 9, 28.979999542236328, 0.2800025939941406, 31.200000762939453, -9],
+        "dom": 20.96875
+      },
+      "Lato,Serif NFD word from-font": {
+        "font": "40px SALato, SASerif",
+        "text": "Re\u0301sume\u0301",
+        "css": {
+          "fontSizeAdjust": "from-font"
+        },
+        "ctx": {},
+        "computed": "0.5065",
+        "metrics": [140.11996459960938, 39, 9, 28.979999542236328, 0.32000160217285156, 31.200000762939453, -9],
+        "dom": 140.125
+      },
+      "Lato,Serif NFC k-caron from-font": {
+        "font": "40px SALato, SASerif",
+        "text": "\u01E9",
+        "css": {
+          "fontSizeAdjust": "from-font"
+        },
+        "ctx": {},
+        "computed": "0.5065",
+        "metrics": [23.329544067382812, 39, 9, 41.3704948425293, 0, 31.200000762939453, -9],
+        "dom": 23.34375
+      },
+      "Lato,Serif NFD k-caron from-font": {
+        "font": "40px SALato, SASerif",
+        "text": "k\u030C",
+        "css": {
+          "fontSizeAdjust": "from-font"
+        },
+        "ctx": {},
+        "computed": "0.5065",
+        "metrics": [23.329544067382812, 39, 9, 41.3704948425293, 0, 31.200000762939453, -9],
+        "dom": 23.34375
+      },
+      "Lato,Serif NFC e-acute cap-height 0.5": {
+        "font": "40px SALato, SASerif",
+        "text": "\u00E9",
+        "css": {
+          "fontSizeAdjust": "cap-height 0.5"
+        },
+        "ctx": {},
+        "computed": "cap-height 0.5",
+        "metrics": [14.624832153320312, 28, 6, 20.220794677734375, 0.1953716278076172, 22.399999618530273, -6],
+        "dom": 14.625
+      },
+      "Lato,Serif NFD e-acute cap-height 0.5": {
+        "font": "40px SALato, SASerif",
+        "text": "e\u0301",
+        "css": {
+          "fontSizeAdjust": "cap-height 0.5"
+        },
+        "ctx": {},
+        "computed": "cap-height 0.5",
+        "metrics": [14.624832153320312, 28, 6, 20.220794677734375, 0.1953716278076172, 22.399999618530273, -6],
+        "dom": 14.625
+      },
+      "Lato,Serif NFD word cap-height 0.5": {
+        "font": "40px SALato, SASerif",
+        "text": "Re\u0301sume\u0301",
+        "css": {
+          "fontSizeAdjust": "cap-height 0.5"
+        },
+        "ctx": {},
+        "computed": "cap-height 0.5",
+        "metrics": [97.76869201660156, 28, 6, 20.220794677734375, 0.2232818603515625, 22.399999618530273, -6],
+        "dom": 97.78125
+      },
+      "Lato,Serif NFC k-caron cap-height 0.5": {
+        "font": "40px SALato, SASerif",
+        "text": "\u01E9",
+        "css": {
+          "fontSizeAdjust": "cap-height 0.5"
+        },
+        "ctx": {},
+        "computed": "cap-height 0.5",
+        "metrics": [16.32794189453125, 28, 6, 28.954505920410156, 0, 22.399999618530273, -6],
+        "dom": 16.328125
+      },
+      "Lato,Serif NFD k-caron cap-height 0.5": {
+        "font": "40px SALato, SASerif",
+        "text": "k\u030C",
+        "css": {
+          "fontSizeAdjust": "cap-height 0.5"
+        },
+        "ctx": {},
+        "computed": "cap-height 0.5",
+        "metrics": [16.32794189453125, 28, 6, 28.954505920410156, 0, 22.399999618530273, -6],
+        "dom": 16.328125
       },
       "Lato small-caps 20px none": {
         "font": "20px SALato",

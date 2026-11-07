@@ -441,11 +441,71 @@ struct SizeRun {
   float size;
 };
 
+// `cluster` (code points) in NFC (`compose`) or NFD, without the default
+// ignorables; nullopt when ICU fails.
+std::optional<std::vector<SkUnichar>> Normalized(
+    const std::vector<SkUnichar>& cluster,
+    bool compose) {
+  UErrorCode error = 0;
+  const UNormalizer2* normalizer =
+      compose ? unorm2_getNFCInstance(&error) : unorm2_getNFDInstance(&error);
+  if (error > 0 || !normalizer) {
+    return std::nullopt;
+  }
+  std::u16string source;
+  for (const SkUnichar c : cluster) {
+    uint16_t units[2];
+    const size_t count = SkUTF::ToUTF16(c, units);
+    source.append(reinterpret_cast<const char16_t*>(units), count);
+  }
+  std::u16string result(source.size() * 3 + 4, u'\0');
+  int32_t length = unorm2_normalize(
+      normalizer, source.data(), static_cast<int32_t>(source.size()),
+      result.data(), static_cast<int32_t>(result.size()), &error);
+  if (error == U_BUFFER_OVERFLOW_ERROR && length > 0) {
+    error = 0;
+    result.resize(static_cast<size_t>(length));
+    length = unorm2_normalize(normalizer, source.data(),
+                              static_cast<int32_t>(source.size()),
+                              result.data(), length, &error);
+  }
+  if (error > 0 || length < 0) {
+    return std::nullopt;
+  }
+  std::vector<SkUnichar> code_points;
+  const uint16_t* at = reinterpret_cast<const uint16_t*>(result.data());
+  const uint16_t* stop = at + std::min<size_t>(length, result.size());
+  while (at < stop) {
+    const SkUnichar c = SkUTF::NextUTF16(&at, stop);
+    if (c < 0) {
+      return std::nullopt;
+    }
+    if (!u_hasBinaryProperty(c, UCHAR_DEFAULT_IGNORABLE_CODE_POINT)) {
+      code_points.push_back(c);
+    }
+  }
+  return code_points;
+}
+
+// Whether `face` has a glyph for each of `code_points`.
+bool HasGlyphs(SkTypeface* face, const std::vector<SkUnichar>& code_points) {
+  for (const SkUnichar c : code_points) {
+    if (!face->unicharToGlyph(c)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 // The parts of [start, end) of `text` (UTF-8) by the size of the family that
 // draws them under font-size-adjust (DESIGN D7): each grapheme cluster goes
 // to the first of `sizes.faces` with a glyph for each of its characters that
 // is not default ignorable, or, with none, to the system fallback at the
-// primary's size; consecutive clusters of one size make one part.
+// primary's size; consecutive clusters of one size make one part. HarfBuzz
+// composes or decomposes a cluster to the glyphs the face has
+// (hb-ot-shape-normalize.cc), so a face that has every character of the
+// cluster's NFC or NFD form draws it too: Lato draws "e\u0301" as its
+// U+00E9.
 std::vector<SizeRun> FaceSizeRuns(std::string_view text,
                                   size_t start,
                                   size_t end,
@@ -468,6 +528,8 @@ std::vector<SizeRun> FaceSizeRuns(std::string_view text,
   while (at < piece.size()) {
     // One cluster: [at, next).
     size_t next = at;
+    // The cluster's characters, and those that are not default ignorable.
+    std::vector<SkUnichar> cluster;
     std::vector<SkUnichar> code_points;
     do {
       const char* ptr = piece.data() + next;
@@ -478,21 +540,28 @@ std::vector<SizeRun> FaceSizeRuns(std::string_view text,
         break;
       }
       next = ptr - piece.data();
+      cluster.push_back(c);
       if (!u_hasBinaryProperty(c, UCHAR_DEFAULT_IGNORABLE_CODE_POINT)) {
         code_points.push_back(c);
       }
     } while (next < piece.size() && !cluster_start(next));
     float size = sizes.effective;
     if (!code_points.empty()) {
-      for (size_t i = 0; i < sizes.faces.size(); ++i) {
-        bool covers = true;
-        for (const SkUnichar c : code_points) {
-          if (!sizes.faces[i]->unicharToGlyph(c)) {
-            covers = false;
-            break;
-          }
+      // The cluster's NFC and NFD forms, when a face lacks a character.
+      std::optional<std::optional<std::vector<SkUnichar>>> nfc;
+      std::optional<std::optional<std::vector<SkUnichar>>> nfd;
+      auto covers_form = [&](SkTypeface* face, bool compose) {
+        auto& form = compose ? nfc : nfd;
+        if (!form) {
+          form = Normalized(cluster, compose);
         }
-        if (covers) {
+        return *form && !(*form)->empty() && **form != code_points &&
+               HasGlyphs(face, **form);
+      };
+      for (size_t i = 0; i < sizes.faces.size(); ++i) {
+        SkTypeface* face = sizes.faces[i].get();
+        if (HasGlyphs(face, code_points) || covers_form(face, true) ||
+            covers_form(face, false)) {
           size = sizes.face_sizes[i];
           break;
         }
