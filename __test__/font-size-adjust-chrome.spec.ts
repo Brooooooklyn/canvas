@@ -15,12 +15,13 @@
 import './use-system-text-renderer'
 
 import { readFileSync } from 'node:fs'
+import { release } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import test from 'ava'
 
-import { createCanvas, GlobalFonts, setTextRenderer } from '../index'
+import { createCanvas, GlobalFonts, setTextRenderer, SvgExportFlag } from '../index'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -51,6 +52,12 @@ for (const [family, file] of Object.entries(FIXTURE.fonts)) {
 // DOM gives them the primary font's adjusted size, as we do (DESIGN D7).
 // These cases are checked against the DOM width.
 const DOM_CASES = (name: string) => /Hiragino|fallback/.test(name)
+// The 'Lato fallback' rows draw characters Lato lacks with the macOS system
+// fallback fonts, and those change between macOS versions (the CI image
+// macos-26 gives another width than the capture's macOS 27, also with
+// fontSizeAdjust none). Pin them only on the capture's Darwin major.
+const SYSTEM_FALLBACK = (name: string) => name.startsWith('Lato fallback ')
+const CAPTURE_DARWIN = '27'
 // Chrome floors every font size to 1/100 px, also without font-size-adjust
 // (EffectiveFontSize); a fractional ctx.font size is not floored here
 // (outside font-size-adjust).
@@ -89,6 +96,9 @@ function mismatches(cases: Record<string, Case>) {
   const out: string[] = []
   for (const [name, chrome] of Object.entries(cases)) {
     if (SKIP.includes(name)) {
+      continue
+    }
+    if (SYSTEM_FALLBACK(name) && release().split('.')[0] !== CAPTURE_DARWIN) {
       continue
     }
     const ours = metrics(chrome)
@@ -200,6 +210,45 @@ test.serial('the adjusted size is not capped, and stays finite', (t) => {
       t.deepEqual(metrics, huge[0], renderer)
     }
     t.true(huge[0][1] > 1e36, renderer)
+  })
+})
+
+test.serial('text wider than the layout width stays one line', (t) => {
+  // '600' makes 20px Lato about 23692 px, so ten H are about 179112 px wide,
+  // more than skparagraph's layout width. All ten must be drawn, scaled to
+  // maxWidth, in the raster and in the SVG export.
+  const text = 'HHHHHHHHHH'
+  withBothRenderers((renderer) => {
+    for (const direction of ['ltr', 'rtl'] as const) {
+      const label = `${renderer} ${direction}`
+      const canvas = createCanvas(200, 200)
+      const ctx = canvas.getContext('2d')
+      ctx.font = '20px SALato'
+      ctx.fontSizeAdjust = '600'
+      ctx.direction = direction
+      t.true(ctx.measureText(text).width > 170000, label)
+      ctx.fillText(text, direction === 'rtl' ? 190 : 10, 150, 180)
+      const { data } = ctx.getImageData(0, 0, 200, 200)
+      let left = 200
+      let right = -1
+      for (let i = 3; i < data.length; i += 4) {
+        if (data[i] > 0) {
+          const x = ((i - 3) / 4) % 200
+          left = Math.min(left, x)
+          right = Math.max(right, x)
+        }
+      }
+      t.true(right - left > 170, `${label} ink ${left}-${right}`)
+      const svg = createCanvas(200, 200, SvgExportFlag.ConvertTextToPaths)
+      const svgCtx = svg.getContext('2d')
+      svgCtx.font = '20px SALato'
+      svgCtx.fontSizeAdjust = '600'
+      svgCtx.direction = direction
+      svgCtx.fillText(text, direction === 'rtl' ? 190 : 10, 150, 180)
+      const d = /\sd="([^"]*)"/.exec(svg.getContent().toString())?.[1] ?? ''
+      // One contour for each H.
+      t.is(d.match(/M/g)?.length, 10, label)
+    }
   })
 })
 

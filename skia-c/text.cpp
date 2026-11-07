@@ -799,6 +799,16 @@ void LayOutLine(skiac_font_collection* c_collection,
     std::unique_ptr<ParagraphImpl> laid_out(
         static_cast<ParagraphImpl*>(builder.Build().release()));
     laid_out->layout(kMaxLayoutWidth);
+    // Text wider than kMaxLayoutWidth (a large font-size-adjust size can
+    // make 20px text 100000 px wide) wraps, and only line 0 is drawn. Lay it
+    // out again just wider than the text, so it stays one line.
+    if (laid_out->lines().size() > 1) {
+      const float width = laid_out->getMaxIntrinsicWidth();
+      if (std::isfinite(width)) {
+        laid_out->layout(
+            std::max(SkScalarCeilToScalar(width) + 1, width * 1.0001f));
+      }
+    }
     return laid_out;
   };
   // A family of another size or opsz than the primary (font-size-adjust,
@@ -859,7 +869,8 @@ void LayOutLine(skiac_font_collection* c_collection,
   // RTL text sits at the right edge of the layout width. Lay it out again
   // just wider than the text (no reshaping: one line keeps its runs), so its
   // glyph positions are not floats near kMaxLayoutWidth that lose 1/128 px.
-  float layout_width = kMaxLayoutWidth;
+  // kMaxLayoutWidth, or the width lay_out used for text wider than that.
+  float layout_width = paragraph->getMaxWidth();
   if (text_direction == TextDirection::kRtl &&
       SkScalarCeilToScalar(paragraph_width) + 1 < kMaxLayoutWidth) {
     layout_width = SkScalarCeilToScalar(paragraph_width) + 1;
