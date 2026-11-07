@@ -616,6 +616,24 @@ std::vector<SkString> ResolveFontFamilies(skiac_font_collection* c_collection,
   return resolved;
 }
 
+std::string LastResortFamily(skiac_font_collection* c_collection,
+                             const skiac_text_request& request) {
+  FamilyResolver resolver(c_collection);
+  // The description's generic family, as ResolveFontFamilies finds it.
+  int description_generic = kNamed;
+  for (size_t i = 0; i < request.family_count; ++i) {
+    const int generic = request.families[i].generic;
+    if (generic && generic != kSystemUi && generic != kMath) {
+      description_generic = generic;
+    }
+  }
+  std::string name;
+  if (!ResolveLastResort(resolver, description_generic, &name)) {
+    name.clear();
+  }
+  return name;
+}
+
 // The canvas parses `font` against a 10px `sans-serif` style made without a
 // font selector (canvas_font_cache.cc CreateDefaultFontStyle), so its font is
 // the platform's match for the name "sans-serif", which no platform has, and

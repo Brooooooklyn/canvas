@@ -53,9 +53,13 @@ enum class ShaperReject : uint32_t {
   kCaps,
   // A family has its own size or opsz (UsedSizes::faces: stage S6).
   kFaceSizes,
-  // A character that no family's face draws (system fallback: stage S3).
+  // A character that no family's face draws, where the shaper has no system
+  // fallback source: off Apple, with the portable renderer, or before the
+  // system fonts are loaded (Linux and Windows system fallback is not part
+  // of this work). The Apple system renderer lays it out since stage S3.
   kFallback,
-  // A variation selector (the VS fallback pass: stage S3).
+  // Kept so the slot numbers stay: variation selectors are laid out since
+  // stage S3 (the second pass that ignores them).
   kVariationSelector,
   kCount,
 };
@@ -271,6 +275,68 @@ PlacedLine PlaceItems(const std::vector<ShapedItem>& items,
                       const PreparedText& prepared,
                       bool contains_rtl,
                       bool rtl_base);
+
+// ---- fallback (shaper_chars.cpp, shaper_fallback_mac.cpp, shaper_font.cpp)
+
+// Character::IsVariationSequence: an emoji, standardized or ideographic
+// variation sequence.
+bool IsVariationSequence(uint32_t character, uint32_t selector);
+// Character::IsPrivateUse || Character::IsNonCharacter: FontCache gives such
+// a character no fallback font.
+bool IsPrivateUseOrNonCharacter(uint32_t c);
+// Character::IsCommonOrInheritedScript.
+bool IsCommonOrInheritedScript(uint32_t c);
+// Character::HasLikelyScript (with ScriptBasedOnUnicodeBlock).
+bool HasLikelyScript(uint32_t c);
+
+// A system fallback font and the synthetic styles it is drawn with; no face
+// when the system has none for the character.
+struct SystemFallbackFont {
+  sk_sp<SkTypeface> face;
+  SyntheticStyle synthetic = {false, false};
+};
+
+#if defined(__APPLE__)
+// font_cache_mac.mm GetAlternateFontPlatformData: CoreText's font for
+// `character` from `base`'s CTFont (Times when it has none) at
+// `computed_pixel_size`, with no language; the Apple Symbols swap for an
+// emoji without emoji presentation; the trait and weight refinement; the
+// synthetic styles from the traits.
+SystemFallbackFont MacAlternateFont(SkTypeface* base,
+                                    SyntheticStyle base_synthetic,
+                                    uint32_t character,
+                                    int css_weight,
+                                    bool italic,
+                                    float computed_pixel_size);
+// CreateFontPlatformData's synthetic styles for a font matched by family.
+SyntheticStyle MacMatchedFontSynthetic(SkTypeface* face,
+                                       float css_weight,
+                                       bool italic);
+#endif
+
+// The system fallback results of a collection (TextCaches), by code point,
+// emoji presentation, primary typeface, weight, slope and
+// ComputedPixelSize. At most 1024, cleared when full.
+struct SystemFallbackKey {
+  uint32_t code_point;
+  bool emoji_presentation;
+  SkTypefaceID primary;
+  uint32_t weight_bits;
+  uint32_t slope_bits;
+  int pixel_size;
+  bool operator==(const SystemFallbackKey&) const = default;
+};
+const SystemFallbackFont* FindSystemFallback(
+    skiac_font_collection* c_collection,
+    const SystemFallbackKey& key);
+void StoreSystemFallback(skiac_font_collection* c_collection,
+                         const SystemFallbackKey& key,
+                         SystemFallbackFont font);
+// A system fallback face at an opsz (FontPlatformDataFromCTFont), cached by
+// typeface and opsz.
+sk_sp<SkTypeface> SystemFallbackInstance(skiac_font_collection* c_collection,
+                                         sk_sp<SkTypeface> face,
+                                         float opsz);
 
 // ---- debug entry points (cargo tests and the harness) ----
 

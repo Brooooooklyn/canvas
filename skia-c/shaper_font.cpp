@@ -5,9 +5,13 @@
 // and SkFontGetGlyphExtentsForHarfBuzz of skia_text_metrics.cc).
 
 #include <math.h>
+#include <string.h>
+
+#include <algorithm>
 
 #include <limits>
 #include <list>
+#include <map>
 #include <unordered_map>
 
 #include "shaper.hpp"
@@ -19,6 +23,19 @@ struct HbFontData {
 
 // The parent fonts by typeface, least recently used first (LRU 100, like
 // skshaper's face cache), and the buffer.
+struct SystemFallbackKeyHash {
+  size_t operator()(const SystemFallbackKey& key) const {
+    size_t hash = std::hash<uint32_t>()(key.code_point);
+    for (const uint64_t part :
+         {uint64_t{key.emoji_presentation}, uint64_t{key.primary},
+          uint64_t{key.weight_bits}, uint64_t{key.slope_bits},
+          static_cast<uint64_t>(key.pixel_size)}) {
+      hash = hash * 31 + std::hash<uint64_t>()(part);
+    }
+    return hash;
+  }
+};
+
 struct ShaperCaches {
   struct Parent {
     HbFontRef font;
@@ -27,6 +44,13 @@ struct ShaperCaches {
   std::unordered_map<SkTypefaceID, Parent> parents;
   std::list<SkTypefaceID> lru;
   hb_buffer_t* buffer = nullptr;
+  // The system fallback results (FontCache's character fallback), and the
+  // opsz instances of the system fallback faces.
+  std::unordered_map<SystemFallbackKey,
+                     SystemFallbackFont,
+                     SystemFallbackKeyHash>
+      fallback;
+  std::map<std::pair<SkTypefaceID, uint32_t>, sk_sp<SkTypeface>> instances;
 
   ~ShaperCaches() {
     if (buffer) {
@@ -42,6 +66,8 @@ void DestroyShaperCaches(ShaperCaches* caches) {
 namespace {
 
 constexpr size_t kMaxParents = 100;
+constexpr size_t kMaxSystemFallbacks = 1024;
+constexpr size_t kMaxSystemInstances = 256;
 
 // skia_text_metrics.cc SkiaScalarToHarfBuzzPosition: ClampTo<int>.
 hb_position_t SkiaScalarToHarfBuzzPosition(SkScalar value) {
@@ -143,10 +169,12 @@ bool HasColorTable(SkTypeface* typeface) {
 }
 
 // harfbuzz_face.cc HarfBuzzGetGlyph with the canvas's VariationSelectorMode
-// (font-variant-emoji normal: kUseSpecifiedVariationSelector) and
-// SystemFallbackEmojiVSSupport (stable). A selector after a character makes
-// a variation sequence here; LayOutLineBlink turns down text with one until
-// the VS fallback pass is ported (stage S3).
+// (font-variant-emoji normal: kUseSpecifiedVariationSelector, or
+// kIgnoreVariationSelector on the shaper's second pass) and
+// SystemFallbackEmojiVSSupport (stable). A selector is considered only after
+// a character it makes a variation sequence with
+// (Character::IsVariationSequence); a sequence the font has only the base
+// of gives kUnmatchedVSGlyphId, so the shaper tries the next font.
 hb_bool_t GetGlyph(hb_font_t* hb_font,
                    void* font_data,
                    hb_codepoint_t unicode,
@@ -160,7 +188,8 @@ hb_bool_t GetGlyph(hb_font_t* hb_font,
   hb_font_t* parent = hb_font_get_parent(hb_font);
   const bool consider_variation_selector =
       data->mode != VariationSelectorMode::kIgnore &&
-      IsUnicodeVariationSelector(variation_selector);
+      IsUnicodeVariationSelector(variation_selector) &&
+      IsVariationSequence(unicode, variation_selector);
   bool text_presentation_requested = false;
   bool emoji_presentation_requested = false;
   if (consider_variation_selector) {
@@ -174,11 +203,14 @@ hb_bool_t GetGlyph(hb_font_t* hb_font,
   }
   const hb_bool_t has_base_glyph =
       hb_font_get_glyph(parent, unicode, variation_selector, glyph);
-  if (consider_variation_selector && has_base_glyph &&
-      (text_presentation_requested || emoji_presentation_requested)) {
-    const bool has_color_table = HasColorTable(data->font.getTypeface());
-    if ((has_color_table && text_presentation_requested) ||
-        (!has_color_table && emoji_presentation_requested)) {
+  if (consider_variation_selector && has_base_glyph) {
+    if (text_presentation_requested || emoji_presentation_requested) {
+      const bool has_color_table = HasColorTable(data->font.getTypeface());
+      if ((has_color_table && text_presentation_requested) ||
+          (!has_color_table && emoji_presentation_requested)) {
+        *glyph = kUnmatchedVSGlyphId;
+      }
+    } else {
       *glyph = kUnmatchedVSGlyphId;
     }
   }
@@ -227,14 +259,20 @@ void GetAdvances(hb_font_t*,
                  void*) {
   const SkFont& font = static_cast<HbFontData*>(font_data)->font;
   std::vector<SkGlyphID> glyphs(count);
+  std::vector<bool> unmatched(count);
   for (unsigned int i = 0; i < count; ++i) {
-    glyphs[i] = static_cast<SkGlyphID>(*reinterpret_cast<const hb_codepoint_t*>(
-        reinterpret_cast<const char*>(first_glyph) + i * glyph_stride));
+    const hb_codepoint_t glyph = *reinterpret_cast<const hb_codepoint_t*>(
+        reinterpret_cast<const char*>(first_glyph) + i * glyph_stride);
+    // kUnmatchedVSGlyphId has no width: its cluster is shaped again with the
+    // next font, or with the selector ignored (SkFontGetGlyphWidthForHarfBuzz
+    // leaves it 0).
+    unmatched[i] = glyph == kUnmatchedVSGlyphId;
+    glyphs[i] = unmatched[i] ? 0 : static_cast<SkGlyphID>(glyph);
   }
   std::vector<SkScalar> widths(count);
   font.getWidths(glyphs, widths);
   for (unsigned int i = 0; i < count; ++i) {
-    SkScalar width = widths[i];
+    SkScalar width = unmatched[i] ? 0 : widths[i];
     if (!font.isSubpixel()) {
       width = SkScalarRoundToScalar(width);
     }
@@ -331,4 +369,106 @@ hb_buffer_t* ShaperBuffer(skiac_font_collection* c_collection) {
     caches.buffer = hb_buffer_create();
   }
   return caches.buffer;
+}
+
+const SystemFallbackFont* FindSystemFallback(
+    skiac_font_collection* c_collection,
+    const SystemFallbackKey& key) {
+  ShaperCaches& caches = GetShaperCaches(c_collection);
+  const auto found = caches.fallback.find(key);
+  return found == caches.fallback.end() ? nullptr : &found->second;
+}
+
+void StoreSystemFallback(skiac_font_collection* c_collection,
+                         const SystemFallbackKey& key,
+                         SystemFallbackFont font) {
+  ShaperCaches& caches = GetShaperCaches(c_collection);
+  if (caches.fallback.size() >= kMaxSystemFallbacks) {
+    caches.fallback.clear();
+  }
+  caches.fallback[key] = std::move(font);
+}
+
+namespace {
+
+// font_platform_data_mac.mm VariableAxisChangeEffective.
+bool VariableAxisChangeEffective(SkTypeface* typeface,
+                                 SkFourByteTag axis,
+                                 float value) {
+  const int axis_count = typeface->getVariationDesignParameters({});
+  if (axis_count <= 0) {
+    return false;
+  }
+  std::vector<SkFontParameters::Variation::Axis> axes(axis_count);
+  typeface->getVariationDesignParameters(axes);
+  float clamped = value;
+  for (const auto& parameters : axes) {
+    if (parameters.tag == axis) {
+      clamped = std::max(std::min(value, parameters.max), parameters.min);
+    }
+  }
+  const int coordinate_count = typeface->getVariationDesignPosition({});
+  if (coordinate_count <= 0) {
+    return true;
+  }
+  std::vector<SkFontArguments::VariationPosition::Coordinate> coordinates(
+      coordinate_count);
+  typeface->getVariationDesignPosition(coordinates);
+  for (const auto& coordinate : coordinates) {
+    if (coordinate.axis == axis) {
+      return coordinate.value != clamped;
+    }
+  }
+  return true;
+}
+
+}  // namespace
+
+sk_sp<SkTypeface> SystemFallbackInstance(skiac_font_collection* c_collection,
+                                         sk_sp<SkTypeface> face,
+                                         float opsz) {
+  // FontPlatformDataFromCTFont with font-optical-sizing auto and no
+  // variation settings: only opsz, at the specified size, when it changes
+  // the face.
+  constexpr SkFourByteTag kOpsz = SkSetFourByteTag('o', 'p', 's', 'z');
+  const int count = face->getVariationDesignPosition({});
+  if (count <= 0) {
+    return face;
+  }
+  std::vector<SkFontArguments::VariationPosition::Coordinate> coordinates(
+      count);
+  if (face->getVariationDesignPosition(coordinates) != count) {
+    return face;
+  }
+  bool changed = false;
+  for (auto& coordinate : coordinates) {
+    if (coordinate.axis == kOpsz &&
+        VariableAxisChangeEffective(face.get(), kOpsz, opsz)) {
+      coordinate.value = opsz;
+      changed = true;
+    }
+  }
+  if (!changed) {
+    return face;
+  }
+  ShaperCaches& caches = GetShaperCaches(c_collection);
+  uint32_t bits;
+  memcpy(&bits, &opsz, sizeof(bits));
+  const auto key = std::make_pair(face->uniqueID(), bits);
+  if (const auto found = caches.instances.find(key);
+      found != caches.instances.end()) {
+    return found->second;
+  }
+  SkFontArguments args;
+  args.setVariationDesignPosition(
+      {coordinates.data(), static_cast<int>(coordinates.size())});
+  sk_sp<SkTypeface> instance = face->makeClone(args);
+  if (!instance) {
+    return face;
+  }
+  if (caches.instances.size() >= kMaxSystemInstances) {
+    caches.instances.clear();
+  }
+  caches.instances[key] = instance;
+  return instance;
 }

@@ -24,6 +24,12 @@ std::vector<SkString> ResolveFontFamilies(skiac_font_collection* c_collection,
                                           const skiac_text_request& request,
                                           std::vector<bool>* generic = nullptr);
 
+// FontCache::GetLastResortFallbackFont's family for `request`: on macOS with
+// the system renderer Times (else Lucida Grande); empty when none resolves
+// (font_families.cpp).
+std::string LastResortFamily(skiac_font_collection* c_collection,
+                             const skiac_text_request& request);
+
 // The primary font's metrics TextMetrics reads, in px, y up
 // (text_metrics.cpp).
 struct PrimaryFontMetrics {
