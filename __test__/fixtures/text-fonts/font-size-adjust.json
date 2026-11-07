@@ -866,6 +866,94 @@
         "metrics": [108.5599365234375, 18, 7, 14.980000495910645, 4.9800004959106445, 14.399999618530273, -7],
         "dom": 54.28125
       },
+      "Lato bold 20px none": {
+        "font": "bold 20px SALato",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "none"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [111.17988586425781, 20, 4, 15.022499084472656, 3.9624996185302734, 16, -4],
+        "dom": 111.1875
+      },
+      "Lato bold italic 20px none": {
+        "font": "italic bold 20px SALato",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "none"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [111.17988586425781, 20, 4, 15.022499084472656, 3.9624996185302734, 16, -4],
+        "dom": 111.1875
+      },
+      "Lato bold 20px 0.5": {
+        "font": "bold 20px SALato",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "0.5"
+        },
+        "ctx": {},
+        "computed": "0.5",
+        "metrics": [106.45477294921875, 19, 4, 14.384042739868164, 3.794095993041992, 15.199999809265137, -4],
+        "dom": 106.46875
+      },
+      "Lato bold italic 20px 0.5": {
+        "font": "italic bold 20px SALato",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "0.5"
+        },
+        "ctx": {},
+        "computed": "0.5",
+        "metrics": [106.45477294921875, 19, 4, 14.384042739868164, 3.794095993041992, 15.199999809265137, -4],
+        "dom": 106.46875
+      },
+      "Lato bold 20px cap-height 0.5": {
+        "font": "bold 20px SALato",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "cap-height 0.5"
+        },
+        "ctx": {},
+        "computed": "cap-height 0.5",
+        "metrics": [77.54794311523438, 14, 3, 10.478193283081055, 2.7638444900512695, 11.199999809265137, -3],
+        "dom": 77.5625
+      },
+      "Lato bold italic 20px cap-height 0.5": {
+        "font": "italic bold 20px SALato",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "cap-height 0.5"
+        },
+        "ctx": {},
+        "computed": "cap-height 0.5",
+        "metrics": [77.54794311523438, 14, 3, 10.478193283081055, 2.7638444900512695, 11.199999809265137, -3],
+        "dom": 77.5625
+      },
+      "Lato bold 20px ch-width 0.5": {
+        "font": "bold 20px SALato",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "ch-width 0.5"
+        },
+        "ctx": {},
+        "computed": "ch-width 0.5",
+        "metrics": [95.83708190917969, 17, 4, 12.949394226074219, 3.4156761169433594, 13.600000381469727, -4],
+        "dom": 95.84375
+      },
+      "Lato bold italic 20px ch-width 0.5": {
+        "font": "italic bold 20px SALato",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "ch-width 0.5"
+        },
+        "ctx": {},
+        "computed": "ch-width 0.5",
+        "metrics": [95.83708190917969, 17, 4, 12.949394226074219, 3.4156761169433594, 13.600000381469727, -4],
+        "dom": 95.84375
+      },
       "Han 20px none": {
         "font": "20px SAHan",
         "text": "水Hx",

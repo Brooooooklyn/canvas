@@ -162,8 +162,15 @@ float AspectValue(skiac_font_collection* c_collection,
                   const sk_sp<SkTypeface>& face,
                   SkTypeface* base,
                   float size,
-                  int metric) {
-  const SkFont font = MetricsFont(face, size);
+                  int metric,
+                  const skiac_text_request& request) {
+  SkFont font = MetricsFont(face, size);
+  // FontPlatformData::SetupSkFont: the font Blink measures has the face's
+  // synthetic bold and italic, which move the top of the 'x' outline.
+  const SyntheticStyle synthetic =
+      SynthesizeStyle(c_collection, face.get(), base, request);
+  font.setEmbolden(synthetic.bold);
+  font.setSkewX(synthetic.italic ? -SK_Scalar1 / 4 : 0);
   SkFontMetrics metrics;
   font.getMetrics(&metrics);
   float value = 0;
@@ -230,7 +237,8 @@ UsedSizes ComputeUsedSizes(skiac_font_collection* c_collection,
         face = std::move(clone);
       }
     }
-    return AspectValue(c_collection, face, base.get(), computed, metric);
+    return AspectValue(c_collection, face, base.get(), computed, metric,
+                       request);
   };
   const float primary_aspect = aspect_of(base_faces.front());
   // from-font: the primary font's own aspect (UpdateAdjustedSize).
