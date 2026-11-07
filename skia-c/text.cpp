@@ -122,23 +122,6 @@ constexpr size_t kMaxLineBytes = 16 << 20;
 // Line::inks holds up to this many left edges.
 constexpr size_t kMaxInks = 4;
 
-bool StartsWithLanguage(std::string_view lang, std::string_view language) {
-  if (lang.size() < language.size()) {
-    return false;
-  }
-  for (size_t i = 0; i < language.size(); ++i) {
-    char c = lang[i];
-    if (c >= 'A' && c <= 'Z') {
-      c = static_cast<char>(c - 'A' + 'a');
-    }
-    if (c != language[i]) {
-      return false;
-    }
-  }
-  return lang.size() == language.size() || lang[language.size()] == '-' ||
-         lang[language.size()] == '_';
-}
-
 TextCaches& GetTextCaches(skiac_font_collection* c_collection) {
   if (!c_collection->text_caches) {
     c_collection->text_caches.reset(new TextCaches());
@@ -481,17 +464,9 @@ void LayOutLine(skiac_font_collection* c_collection,
   std::string_view lang(request.lang ? request.lang : "",
                         request.lang ? request.lang_len : 0);
   if (!lang.empty() && lang != "inherit") {
+    // No per-language feature rule here: like Blink, the font's own
+    // language systems (e.g. a TRK locl) decide what changes for a language.
     text_style.setLocale(SkString(lang.data(), lang.size()));
-
-    // Turkish/Azerbaijani locale: disable standard and contextual ligatures
-    // These languages have a dotless i (ı) as a separate letter from dotted i.
-    // The "fi" ligature would incorrectly merge "f" with "i", obscuring the dot
-    // which is semantically significant. Use case-insensitive comparison per
-    // BCP-47 (RFC 5646).
-    if (StartsWithLanguage(lang, "tr") || StartsWithLanguage(lang, "az")) {
-      text_style.addFontFeature(SkString("liga"), 0);
-      text_style.addFontFeature(SkString("clig"), 0);
-    }
   }
 
   // Apply textRendering: only optimizeSpeed changes behavior.
