@@ -6,6 +6,7 @@
 
 #include <math.h>
 #include <algorithm>
+#include <limits>
 #include <optional>
 #include <vector>
 
@@ -111,10 +112,20 @@ constexpr int kCapHeight = 1;
 constexpr int kChWidth = 2;
 constexpr int kIcWidth = 3;
 constexpr int kIcHeight = 4;
-// font.rs MAX_FONT_SIZE (DESIGN D16).
-constexpr float kMaxFontSize = 10000;
 // FontCacheKey::PrecisionMultiplier.
 constexpr float kFontSizePrecision = 100;
+// The largest adjusted size whose effective size (the 1/100 floor) is
+// finite: the next float up times 100 is infinity (DESIGN D16). Blink caps
+// only the computed size (kMaximumAllowedFontSize, as ctx.font here), not
+// the adjusted one; past this size its effective size is infinity and
+// measureText gives infinite metrics. A larger, infinite or NaN adjusted
+// size gets this size instead. Skia takes any finite size: it draws and
+// measures a font above 256 px as paths of the 64 px font scaled up
+// (SkStrikeSpec::ShouldDrawAsPath), and its float to int conversions
+// saturate.
+constexpr float kMaxAdjustedSize = 0x1.47ae12p+121f;  // 3.40282328e36
+static_assert(kMaxAdjustedSize * kFontSizePrecision <=
+              std::numeric_limits<float>::max());
 constexpr SkUnichar kCjkWater = 0x6C34;
 
 uint16_t ReadU16(const uint8_t* data) {
@@ -244,7 +255,8 @@ UsedSizes ComputeUsedSizes(skiac_font_collection* c_collection,
                                                     : request.size_adjust_value;
   // MetricsMultiplierAdjustedFontSize, then EffectiveFontSize.
   auto adjusted_for = [&](float aspect) {
-    return std::min((value / aspect) * computed, kMaxFontSize);
+    const float adjusted = (value / aspect) * computed;
+    return adjusted <= kMaxAdjustedSize ? adjusted : kMaxAdjustedSize;
   };
   auto effective_for = [](float adjusted) {
     return floorf(adjusted * kFontSizePrecision) / kFontSizePrecision;

@@ -177,6 +177,32 @@ test.serial('font-size-adjust picks the used size from the primary font', (t) =>
   })
 })
 
+test.serial('the adjusted size is not capped, and stays finite', (t) => {
+  // Chrome caps only the computed size: '600' at 20px Lato is about 23692
+  // px (the fixture). Past about 3.4e36 px its effective size (the 1/100
+  // floor) is infinity; that size is the largest one here (DESIGN D16).
+  withBothRenderers((renderer) => {
+    const ctx = createCanvas(100, 40).getContext('2d')
+    ctx.font = '20px SALato'
+    ctx.fontSizeAdjust = '600'
+    t.true(ctx.measureText('Hx').fontBoundingBoxAscent > 20000, renderer)
+    const huge = ['1e35', '3e38', 'calc(infinity)', 'cap-height calc(infinity)'].map((adjust) => {
+      ctx.fontSizeAdjust = adjust
+      ctx.fillText('Hx', 10, 30)
+      const m = ctx.measureText('Hx')
+      return [m.width, m.fontBoundingBoxAscent, m.actualBoundingBoxAscent]
+    })
+    for (const metrics of huge) {
+      t.true(
+        metrics.every((v) => Number.isFinite(v)),
+        `${renderer} ${metrics}`,
+      )
+      t.deepEqual(metrics, huge[0], renderer)
+    }
+    t.true(huge[0][1] > 1e36, renderer)
+  })
+})
+
 test.serial('a cluster takes the size of the face that draws its NFC or NFD form', (t) => {
   // Lato has U+00E9 but no U+0301: HarfBuzz composes "e\u0301" to it, so
   // Lato draws both at its size. Source Serif has no U+01E9 but k and
