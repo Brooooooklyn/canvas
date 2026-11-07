@@ -159,6 +159,36 @@ function differences(row: Row, value: Value, widthOnly: boolean) {
     : [`${JSON.stringify(value)} (Chrome ${JSON.stringify(row.chrome)})`]
 }
 
+// Missing text or broken metrics, not a shaping difference: fails before and
+// after the row's flip stage. Every Chrome row has ink and finite metrics.
+function invalidOutput(row: Row, value: Value): string | false {
+  if (value === 'blank') {
+    return 'blank drawing'
+  }
+  if (Array.isArray(value)) {
+    const chrome = row.chrome as number[]
+    if (value.some((v) => !Number.isFinite(v))) {
+      return `non-finite metrics ${JSON.stringify(value)}`
+    }
+    // A layout that failed gives all zeros. Rows whose Chrome metrics are all
+    // zero (no glyph at all) are kept.
+    if (value.every((v) => v === 0) && chrome.some((v) => v !== 0)) {
+      return 'all-zero metrics'
+    }
+    // Ink bounds are fields 1-4. Whitespace-only rows have no ink in Chrome
+    // either, so only a row with Chrome ink needs ours.
+    const ink = (m: number[]) => m.slice(1).some((v) => v !== 0)
+    if (ink(chrome) && !ink(value)) {
+      return `no ink bounds ${JSON.stringify(value)}`
+    }
+    return false
+  }
+  if (typeof value === 'object' && !value.ink) {
+    return 'no ink'
+  }
+  return false
+}
+
 interface Check {
   renderer: 'system' | 'portable'
   rows: [string, Row][]
@@ -174,15 +204,7 @@ function check({ renderer, rows, flip, widthOnly }: Check) {
   try {
     for (const [name, row] of rows) {
       const value = ours(row)
-      // Missing text or broken metrics, not a shaping difference: fails before
-      // and after the row's flip stage. Every Chrome row has ink and finite
-      // metrics.
-      const invalid =
-        value === 'blank'
-          ? 'blank drawing'
-          : Array.isArray(value)
-            ? value.some((v) => !Number.isFinite(v)) && `non-finite metrics ${JSON.stringify(value)}`
-            : typeof value === 'object' && !value.ink && 'no ink'
+      const invalid = invalidOutput(row, value)
       if (invalid) {
         mismatches.push(`${name}: ${invalid}`)
         continue
@@ -193,9 +215,10 @@ function check({ renderer, rows, flip, widthOnly }: Check) {
         if (diff.length) {
           mismatches.push(`${name}: ${diff.join(', ')}`)
         }
-      } else if (!diff.length && DARWIN) {
-        // Checked on the capture OS only: another OS may differ for its own
-        // reasons, and the flip is pinned once it lands.
+      } else if (!diff.length && (DARWIN || renderer === 'portable')) {
+        // The system renderer is checked on the capture OS only: another OS
+        // may differ for its own reasons. The portable renderer draws the
+        // registered fonts the same on every OS, so it is checked everywhere.
         early.push(`${name} (flip ${flip(row)}) already matches Chrome`)
       }
     }
