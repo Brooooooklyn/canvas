@@ -54,9 +54,11 @@ const FIXTURE: { darwin: string; fonts: Record<string, string>; cases: Record<st
   readFileSync(join(__dirname, 'fixtures', 'text-fonts', 'blink-shaper.json'), 'utf8'),
 )
 
-for (const [family, file] of Object.entries(FIXTURE.fonts)) {
-  GlobalFonts.registerFromPath(join(__dirname, 'fonts', file), family)
-}
+// A probe font that does not register would leave its rows drawn with a
+// fallback font, and rows still to flip would hide that.
+const UNREGISTERED = Object.entries(FIXTURE.fonts).flatMap(([family, file]) =>
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', file), family) ? [] : [`${family}: ${file}`],
+)
 
 // The last shaper stage on this branch.
 const LANDED = 'S0'
@@ -172,10 +174,17 @@ function check({ renderer, rows, flip, widthOnly }: Check) {
   try {
     for (const [name, row] of rows) {
       const value = ours(row)
-      if (value === 'blank') {
-        // Missing text, not a shaping difference: fails before and after the
-        // row's flip stage.
-        mismatches.push(`${name}: blank drawing`)
+      // Missing text or broken metrics, not a shaping difference: fails before
+      // and after the row's flip stage. Every Chrome row has ink and finite
+      // metrics.
+      const invalid =
+        value === 'blank'
+          ? 'blank drawing'
+          : Array.isArray(value)
+            ? value.some((v) => !Number.isFinite(v)) && `non-finite metrics ${JSON.stringify(value)}`
+            : typeof value === 'object' && !value.ink && 'no ink'
+      if (invalid) {
+        mismatches.push(`${name}: ${invalid}`)
         continue
       }
       const diff = differences(row, value, widthOnly)
@@ -199,6 +208,7 @@ function check({ renderer, rows, flip, widthOnly }: Check) {
 const ROWS = Object.entries(FIXTURE.cases)
 
 test.serial('the fixture covers every group of the shaper stages', (t) => {
+  t.deepEqual(UNREGISTERED, [], 'every probe font registers')
   const groups = new Set(ROWS.map(([, row]) => row.group))
   for (const group of [
     'q1',
