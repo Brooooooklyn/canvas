@@ -146,6 +146,7 @@ class SvgFontMgr final : public SkFontMgr {
           {family.name.data(), family.name.size(), family.generic});
     }
     skiac_text_request request{};
+    request.size_adjust_metric = -1;
     request.families = families.data();
     request.family_count = families.size();
     c_collection_->flushCachesIfDirty();
@@ -435,6 +436,7 @@ class ChromeSvgCanvas final : public SkNWayCanvas {
                       SkScalar y,
                       const SkPaint& paint) override {
     skiac_text_request request{};
+    request.size_adjust_metric = -1;
     const TextRasterPolicy policy(request);
     const SkMatrix device = this->getTotalMatrix();
     for (SkTextBlobRunIterator it(blob); !it.done(); it.next()) {

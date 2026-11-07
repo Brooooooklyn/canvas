@@ -15,6 +15,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "icu_api.h"
 #include "text.hpp"
 #include "text_raster.hpp"
 
@@ -433,6 +434,83 @@ size_t LineBytes(size_t runs, size_t glyphs, size_t words) {
   return 128 * runs + 14 * glyphs + 16 * words;
 }
 
+// A part of a piece drawn at one font size (FaceSizeRuns).
+struct SizeRun {
+  size_t start;
+  size_t end;
+  float size;
+};
+
+// The parts of [start, end) of `text` (UTF-8) by the size of the family that
+// draws them under font-size-adjust (DESIGN D7): each grapheme cluster goes
+// to the first of `sizes.faces` with a glyph for each of its characters that
+// is not default ignorable, or, with none, to the system fallback at the
+// primary's size; consecutive clusters of one size make one part.
+std::vector<SizeRun> FaceSizeRuns(std::string_view text,
+                                  size_t start,
+                                  size_t end,
+                                  const UsedSizes& sizes,
+                                  const sk_sp<SkUnicode>& unicode) {
+  std::vector<SizeRun> runs;
+  if (start >= end) {
+    return runs;
+  }
+  std::string piece(text.substr(start, end - start));
+  skia_private::TArray<SkUnicode::CodeUnitFlags, true> flags;
+  const bool have_flags = unicode->computeCodeUnitFlags(
+      piece.data(), static_cast<int>(piece.size()), false, &flags);
+  auto cluster_start = [&](size_t at) {
+    return at == 0 || at >= piece.size() || !have_flags ||
+           static_cast<int>(at) >= flags.size() ||
+           SkUnicode::hasGraphemeStartFlag(flags[static_cast<int>(at)]);
+  };
+  size_t at = 0;
+  while (at < piece.size()) {
+    // One cluster: [at, next).
+    size_t next = at;
+    std::vector<SkUnichar> code_points;
+    do {
+      const char* ptr = piece.data() + next;
+      const SkUnichar c = SkUTF::NextUTF8(&ptr, piece.data() + piece.size());
+      if (c < 0) {
+        // Not UTF-8 (the canvas text always is): a byte of its own.
+        next = std::max(next + 1, static_cast<size_t>(ptr - piece.data()));
+        break;
+      }
+      next = ptr - piece.data();
+      if (!u_hasBinaryProperty(c, UCHAR_DEFAULT_IGNORABLE_CODE_POINT)) {
+        code_points.push_back(c);
+      }
+    } while (next < piece.size() && !cluster_start(next));
+    float size = sizes.effective;
+    if (!code_points.empty()) {
+      for (size_t i = 0; i < sizes.faces.size(); ++i) {
+        bool covers = true;
+        for (const SkUnichar c : code_points) {
+          if (!sizes.faces[i]->unicharToGlyph(c)) {
+            covers = false;
+            break;
+          }
+        }
+        if (covers) {
+          size = sizes.face_sizes[i];
+          break;
+        }
+      }
+    } else if (!runs.empty()) {
+      // A cluster of default ignorables stays with the text before it.
+      size = runs.back().size;
+    }
+    if (!runs.empty() && runs.back().size == size) {
+      runs.back().end = start + next;
+    } else {
+      runs.push_back({start + at, start + next, size});
+    }
+    at = next;
+  }
+  return runs;
+}
+
 // Lays out `request` with skparagraph into `line`.
 void LayOutLine(skiac_font_collection* c_collection,
                 const skiac_text_request& request,
@@ -455,8 +533,13 @@ void LayOutLine(skiac_font_collection* c_collection,
   // the text (FontCustomPlatformData::GetFontPlatformData).
   const std::vector<sk_sp<SkTypeface>> base_faces =
       font_collection->findTypefaces(text_style.getFontFamilies(), font_style);
+  // font-size-adjust: the primary font's size, opsz, and a size for each
+  // family that has its own (text_styles.cpp ComputeUsedSizes). Without it,
+  // the request's size.
+  const UsedSizes sizes = ComputeUsedSizes(c_collection, base_faces, request);
+  text_style.setFontSize(sizes.effective);
   const std::vector<SkFontArguments::VariationPosition::Coordinate> coords =
-      FontVariations(base_faces, request);
+      FontVariations(base_faces, request, sizes.opsz);
   if (!coords.empty()) {
     SkFontArguments font_args;
     font_args.setVariationDesignPosition(
@@ -509,8 +592,11 @@ void LayOutLine(skiac_font_collection* c_collection,
   SkTypeface* primary_base =
       base_faces.empty() ? nullptr : base_faces.front().get();
   line->primary =
-      CachedPrimaryFont(c_collection, primary, primary_base, request.size);
-  if (request.text_len == 0) {
+      CachedPrimaryFont(c_collection, primary, primary_base, sizes.effective);
+  // font-size-adjust 0 makes the font size 0: Blink draws nothing and
+  // measures 0 (skparagraph would give a width of FLT_MIN).
+  if (request.text_len == 0 ||
+      (request.size_adjust_metric >= 0 && !(sizes.effective > 0))) {
     // Nothing to lay out or draw; measureText keeps the font metrics.
     line->empty = true;
     return;
@@ -583,8 +669,11 @@ void LayOutLine(skiac_font_collection* c_collection,
     unicode = SkUnicodes::ICU::Make();
   }
   ParagraphBuilderImpl builder(paragraph_style, font_collection, unicode);
+  // font-size-adjust with a family of another size than the primary: the
+  // pieces' parts each family draws (FaceSizeRuns).
+  const bool per_face = !sizes.faces.empty();
   if (pieces.size() == 1 && pieces[0].caps == 0 && !pieces[0].small &&
-      no_spacing.empty()) {
+      no_spacing.empty() && !per_face) {
     builder.addText(shaped.data(), shaped.size());
   } else {
     auto add = [&](const TextStyle& style, size_t start, size_t end) {
@@ -594,9 +683,30 @@ void LayOutLine(skiac_font_collection* c_collection,
         builder.pop();
       }
     };
-    // The next range of `no_spacing` that ends after the current piece's
-    // start; the pieces and the ranges are in text order.
+    // The next range of `no_spacing` that ends after the current part's
+    // start; the parts and the ranges are in text order.
     size_t range = 0;
+    // Adds [at, end) with `style`, the characters without letter spacing
+    // with a copy of it at letter spacing 0.
+    auto add_spaced = [&](const TextStyle& style, size_t at, size_t end) {
+      std::optional<TextStyle> unspaced_style;
+      while (range < no_spacing.size() && no_spacing[range].first < end) {
+        if (!unspaced_style) {
+          unspaced_style = style;
+          unspaced_style->setLetterSpacing(0);
+        }
+        const size_t from = std::max(at, no_spacing[range].first);
+        const size_t to = std::min(end, no_spacing[range].second);
+        add(style, at, from);
+        add(*unspaced_style, from, to);
+        at = to;
+        if (no_spacing[range].second > end) {
+          break;
+        }
+        ++range;
+      }
+      add(style, at, end);
+    };
     for (size_t i = 0; i < pieces.size(); ++i) {
       TextStyle piece_style = text_style;
       piece_style.setHalfLeading(i % 2 == 1);
@@ -606,27 +716,19 @@ void LayOutLine(skiac_font_collection* c_collection,
       AddCapsFeatures(&piece_style, pieces[i].caps);
       AddBlinkFeatures(&piece_style, request);
       if (pieces[i].small) {
+        // SimpleFontData::CreateScaledFontData scales the computed size,
+        // without font-size-adjust, whichever face draws the piece.
         piece_style.setFontSize(SmallCapsSize(request.size));
-      }
-      std::optional<TextStyle> unspaced_style;
-      size_t at = pieces[i].start;
-      const size_t end = pieces[i].end;
-      while (range < no_spacing.size() && no_spacing[range].first < end) {
-        if (!unspaced_style) {
-          unspaced_style = piece_style;
-          unspaced_style->setLetterSpacing(0);
+      } else if (per_face) {
+        for (const auto& run : FaceSizeRuns(shaped, pieces[i].start,
+                                            pieces[i].end, sizes, unicode)) {
+          TextStyle run_style = piece_style;
+          run_style.setFontSize(run.size);
+          add_spaced(run_style, run.start, run.end);
         }
-        const size_t from = std::max(at, no_spacing[range].first);
-        const size_t to = std::min(end, no_spacing[range].second);
-        add(piece_style, at, from);
-        add(*unspaced_style, from, to);
-        at = to;
-        if (no_spacing[range].second > end) {
-          break;
-        }
-        ++range;
+        continue;
       }
-      add(piece_style, at, end);
+      add_spaced(piece_style, pieces[i].start, pieces[i].end);
     }
   }
   std::unique_ptr<ParagraphImpl> paragraph(
@@ -1099,7 +1201,18 @@ bool skiac_font_collection_ideographic_advance(
   if (typefaces.empty()) {
     return false;
   }
-  SkFont font(typefaces[0], request->size);
+  // At the primary font's size under font-size-adjust.
+  const float size =
+      ComputeUsedSizes(
+          c_collection,
+          c_collection->collection->findTypefaces(
+              families_vec,
+              SkFontStyle(static_cast<int>(roundf(request->weight)),
+                          request->stretch,
+                          static_cast<SkFontStyle::Slant>(request->style))),
+          *request)
+          .effective;
+  SkFont font(typefaces[0], size);
   // Blink's font has subpixel positioning, so the advance is unhinted.
   font.setSubpixel(true);
   font.setLinearMetrics(true);

@@ -1,0 +1,1826 @@
+{
+  "note": "Chrome 157.0.8103.38 (headless, --disable-gpu, macOS arm64). Canvas + element CSS: font-size-adjust, font-optical-sizing and font-variation-settings set as CSS on a fresh <canvas> in the document whose own font is the ctx.font (so from-font resolves against the same font); ctx.font / fontVariantCaps on the context; fonts loaded with FontFace(family, data, {weight, stretch, style: \"auto\"}) like GlobalFonts.register. metrics: measureText [width, fontBoundingBoxAscent, fontBoundingBoxDescent, actualBoundingBoxAscent, actualBoundingBoxDescent, hangingBaseline, ideographicBaseline] (Chrome 157 measureText has no emHeight*). computed: getComputedStyle font-size-adjust (from-font resolved by Chrome). dom: the width of a <span> with the same font and CSS (LayoutUnit, 1/64 px): Chrome's canvas gives a named installed family and the system fallback no font-size-adjust at all (it skips FontBuilder::UpdateAdjustedSize), where the DOM gives them the primary font's adjusted size (DESIGN D7). Script: font-features/pr-b/s3/capture-size-adjust.cjs.",
+  "fonts": {
+    "SALato": "Lato-Regular.ttf",
+    "SASerif": "SourceSerifPro-Regular.ttf",
+    "SAHan": "SourceHanSerifCN-Bold.ttf",
+    "SANews": "Newsreader-opsz-only.ttf"
+  },
+  "darwin": {
+    "metrics": {
+      "Lato 13px none": {
+        "font": "13px SALato",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "none"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [72.26689147949219, 13, 3, 9.56149959564209, 2.372500419616699, 10.399999618530273, -3],
+        "dom": 72.28125
+      },
+      "Lato 13px 0": {
+        "font": "13px SALato",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "0"
+        },
+        "ctx": {},
+        "computed": "0",
+        "metrics": [0, 0, 0, 0, 0, 0, 0],
+        "dom": 0
+      },
+      "Lato 13px 0.37": {
+        "font": "13px SALato",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "0.37"
+        },
+        "ctx": {},
+        "computed": "0.37",
+        "metrics": [52.75483703613281, 9, 2, 6.979894638061523, 1.7319250106811523, 7.199999809265137, -2],
+        "dom": 52.765625
+      },
+      "Lato 13px 0.5": {
+        "font": "13px SALato",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "0.5"
+        },
+        "ctx": {},
+        "computed": "0.5",
+        "metrics": [71.32188415527344, 13, 3, 9.436464309692383, 2.341475486755371, 10.399999618530273, -3],
+        "dom": 71.328125
+      },
+      "Lato 13px 0.51": {
+        "font": "13px SALato",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "0.51"
+        },
+        "ctx": {},
+        "computed": "0.51",
+        "metrics": [72.71163940429688, 13, 3, 9.620339393615723, 2.387101173400879, 10.399999618530273, -3],
+        "dom": 72.71875
+      },
+      "Lato 13px 0.6": {
+        "font": "13px SALato",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "0.6"
+        },
+        "ctx": {},
+        "computed": "0.6",
+        "metrics": [85.55291748046875, 15, 3, 11.319344520568848, 2.808675765991211, 12, -3],
+        "dom": 85.5625
+      },
+      "Lato 13px 0.9": {
+        "font": "13px SALato",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "0.9"
+        },
+        "ctx": {},
+        "computed": "0.9",
+        "metrics": [128.35723876953125, 23, 5, 16.982694625854492, 4.213926315307617, 18.399999618530273, -5],
+        "dom": 128.359375
+      },
+      "Lato 13px from-font": {
+        "font": "13px SALato",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "from-font"
+        },
+        "ctx": {},
+        "computed": "0.5065",
+        "metrics": [72.26689147949219, 13, 3, 9.56149959564209, 2.372500419616699, 10.399999618530273, -3],
+        "dom": 72.28125
+      },
+      "Lato 13px cap-height 0.5": {
+        "font": "13px SALato",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "cap-height 0.5"
+        },
+        "ctx": {},
+        "computed": "cap-height 0.5",
+        "metrics": [50.4200439453125, 9, 2, 6.670984745025635, 1.6552767753601074, 7.199999809265137, -2],
+        "dom": 50.421875
+      },
+      "Lato 13px cap-height from-font": {
+        "font": "13px SALato",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "cap-height from-font"
+        },
+        "ctx": {},
+        "computed": "cap-height 0.7165",
+        "metrics": [72.26689147949219, 13, 3, 9.56149959564209, 2.372500419616699, 10.399999618530273, -3],
+        "dom": 72.28125
+      },
+      "Lato 13px ch-width 0.5": {
+        "font": "13px SALato",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "ch-width 0.5"
+        },
+        "ctx": {},
+        "computed": "ch-width 0.5",
+        "metrics": [62.26068115234375, 11, 2, 8.23759937286377, 2.0440006256103516, 8.800000190734863, -2],
+        "dom": 62.265625
+      },
+      "Lato 13px ic-width 0.5": {
+        "font": "13px SALato",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "ic-width 0.5"
+        },
+        "ctx": {},
+        "computed": "ic-width 0.5",
+        "metrics": [36.13336181640625, 6, 1, 4.780749797821045, 1.1862502098083496, 4.800000190734863, -1],
+        "dom": 36.140625
+      },
+      "Lato 13px ic-height 0.5": {
+        "font": "13px SALato",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "ic-height 0.5"
+        },
+        "ctx": {},
+        "computed": "ic-height 0.5",
+        "metrics": [36.13336181640625, 6, 1, 4.780749797821045, 1.1862502098083496, 4.800000190734863, -1],
+        "dom": 36.140625
+      },
+      "Lato 20px none": {
+        "font": "20px SALato",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "none"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [111.17988586425781, 20, 4, 14.709999084472656, 3.6499996185302734, 16, -4],
+        "dom": 111.1875
+      },
+      "Lato 20px 0": {
+        "font": "20px SALato",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "0"
+        },
+        "ctx": {},
+        "computed": "0",
+        "metrics": [0, 0, 0, 0, 0, 0, 0],
+        "dom": 0
+      },
+      "Lato 20px 0.37": {
+        "font": "20px SALato",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "0.37"
+        },
+        "ctx": {},
+        "computed": "0.37",
+        "metrics": [81.21687316894531, 14, 3, 10.745654106140137, 2.666325569152832, 11.199999809265137, -3],
+        "dom": 81.21875
+      },
+      "Lato 20px 0.5": {
+        "font": "20px SALato",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "0.5"
+        },
+        "ctx": {},
+        "computed": "0.5",
+        "metrics": [109.73455810546875, 19, 4, 14.518769264221191, 3.602553367614746, 15.199999809265137, -4],
+        "dom": 109.75
+      },
+      "Lato 20px 0.51": {
+        "font": "20px SALato",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "0.51"
+        },
+        "ctx": {},
+        "computed": "0.51",
+        "metrics": [111.90261840820312, 20, 4, 14.80561351776123, 3.6737279891967773, 16, -4],
+        "dom": 111.90625
+      },
+      "Lato 20px 0.6": {
+        "font": "20px SALato",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "0.6"
+        },
+        "ctx": {},
+        "computed": "0.6",
+        "metrics": [131.69261169433594, 23, 5, 17.423994064331055, 4.32342529296875, 18.399999618530273, -5],
+        "dom": 131.703125
+      },
+      "Lato 20px 0.9": {
+        "font": "20px SALato",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "0.9"
+        },
+        "ctx": {},
+        "computed": "0.9",
+        "metrics": [197.5111846923828, 35, 8, 26.132312774658203, 6.484230041503906, 28, -8],
+        "dom": 197.515625
+      },
+      "Lato 20px from-font": {
+        "font": "20px SALato",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "from-font"
+        },
+        "ctx": {},
+        "computed": "0.5065",
+        "metrics": [111.17988586425781, 20, 4, 14.709999084472656, 3.6499996185302734, 16, -4],
+        "dom": 111.1875
+      },
+      "Lato 20px cap-height 0.5": {
+        "font": "20px SALato",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "cap-height 0.5"
+        },
+        "ctx": {},
+        "computed": "cap-height 0.5",
+        "metrics": [77.54794311523438, 14, 3, 10.260224342346191, 2.5458765029907227, 11.199999809265137, -3],
+        "dom": 77.5625
+      },
+      "Lato 20px cap-height from-font": {
+        "font": "20px SALato",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "cap-height from-font"
+        },
+        "ctx": {},
+        "computed": "cap-height 0.7165",
+        "metrics": [111.17988586425781, 20, 4, 14.709999084472656, 3.6499996185302734, 16, -4],
+        "dom": 111.1875
+      },
+      "Lato 20px ch-width 0.5": {
+        "font": "20px SALato",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "ch-width 0.5"
+        },
+        "ctx": {},
+        "computed": "ch-width 0.5",
+        "metrics": [95.83708190917969, 17, 4, 12.68001937866211, 3.14630126953125, 13.600000381469727, -4],
+        "dom": 95.84375
+      },
+      "Lato 20px ic-width 0.5": {
+        "font": "20px SALato",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "ic-width 0.5"
+        },
+        "ctx": {},
+        "computed": "ic-width 0.5",
+        "metrics": [55.58990478515625, 10, 2, 7.354999542236328, 1.8249998092651367, 8, -2],
+        "dom": 55.59375
+      },
+      "Lato 20px ic-height 0.5": {
+        "font": "20px SALato",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "ic-height 0.5"
+        },
+        "ctx": {},
+        "computed": "ic-height 0.5",
+        "metrics": [55.58990478515625, 10, 2, 7.354999542236328, 1.8249998092651367, 8, -2],
+        "dom": 55.59375
+      },
+      "Lato 40px none": {
+        "font": "40px SALato",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "none"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [222.3599090576172, 39, 9, 29.419998168945312, 7.299999237060547, 31.200000762939453, -9],
+        "dom": 222.375
+      },
+      "Lato 40px 0": {
+        "font": "40px SALato",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "0"
+        },
+        "ctx": {},
+        "computed": "0",
+        "metrics": [0, 0, 0, 0, 0, 0, 0],
+        "dom": 0
+      },
+      "Lato 40px 0.37": {
+        "font": "40px SALato",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "0.37"
+        },
+        "ctx": {},
+        "computed": "0.37",
+        "metrics": [162.43386840820312, 29, 6, 21.491308212280273, 5.332651138305664, 23.200000762939453, -6],
+        "dom": 162.4375
+      },
+      "Lato 40px 0.5": {
+        "font": "40px SALato",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "0.5"
+        },
+        "ctx": {},
+        "computed": "0.5",
+        "metrics": [219.46923828125, 39, 8, 29.037538528442383, 7.205106735229492, 31.200000762939453, -8],
+        "dom": 219.484375
+      },
+      "Lato 40px 0.51": {
+        "font": "40px SALato",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "0.51"
+        },
+        "ctx": {},
+        "computed": "0.51",
+        "metrics": [223.86087036132812, 40, 9, 29.61858367919922, 7.349281311035156, 32, -9],
+        "dom": 223.875
+      },
+      "Lato 40px 0.6": {
+        "font": "40px SALato",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "0.6"
+        },
+        "ctx": {},
+        "computed": "0.6",
+        "metrics": [263.3853454589844, 47, 10, 34.84798812866211, 8.6468505859375, 37.599998474121094, -10],
+        "dom": 263.390625
+      },
+      "Lato 40px 0.9": {
+        "font": "40px SALato",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "0.9"
+        },
+        "ctx": {},
+        "computed": "0.9",
+        "metrics": [395.07806396484375, 70, 15, 52.2719841003418, 12.970279693603516, 56, -15],
+        "dom": 395.078125
+      },
+      "Lato 40px from-font": {
+        "font": "40px SALato",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "from-font"
+        },
+        "ctx": {},
+        "computed": "0.5065",
+        "metrics": [222.3599090576172, 39, 9, 29.419998168945312, 7.299999237060547, 31.200000762939453, -9],
+        "dom": 222.375
+      },
+      "Lato 40px cap-height 0.5": {
+        "font": "40px SALato",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "cap-height 0.5"
+        },
+        "ctx": {},
+        "computed": "cap-height 0.5",
+        "metrics": [155.15162658691406, 28, 6, 20.527803421020508, 5.093576431274414, 22.399999618530273, -6],
+        "dom": 155.15625
+      },
+      "Lato 40px cap-height from-font": {
+        "font": "40px SALato",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "cap-height from-font"
+        },
+        "ctx": {},
+        "computed": "cap-height 0.7165",
+        "metrics": [222.3599090576172, 39, 9, 29.419998168945312, 7.299999237060547, 31.200000762939453, -9],
+        "dom": 222.375
+      },
+      "Lato 40px ch-width 0.5": {
+        "font": "40px SALato",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "ch-width 0.5"
+        },
+        "ctx": {},
+        "computed": "ch-width 0.5",
+        "metrics": [191.6742706298828, 34, 7, 25.36003875732422, 6.2926025390625, 27.200000762939453, -7],
+        "dom": 191.6875
+      },
+      "Lato 40px ic-width 0.5": {
+        "font": "40px SALato",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "ic-width 0.5"
+        },
+        "ctx": {},
+        "computed": "ic-width 0.5",
+        "metrics": [111.17988586425781, 20, 4, 14.709999084472656, 3.6499996185302734, 16, -4],
+        "dom": 55.59375
+      },
+      "Lato 40px ic-height 0.5": {
+        "font": "40px SALato",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "ic-height 0.5"
+        },
+        "ctx": {},
+        "computed": "ic-height 0.5",
+        "metrics": [111.17988586425781, 20, 4, 14.709999084472656, 3.6499996185302734, 16, -4],
+        "dom": 55.59375
+      },
+      "Serif 13px none": {
+        "font": "13px SASerif",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "none"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [70.56394958496094, 12, 4, 9.737000465393066, 3.23699951171875, 9.600000381469727, -4],
+        "dom": 70.578125
+      },
+      "Serif 13px 0": {
+        "font": "13px SASerif",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "0"
+        },
+        "ctx": {},
+        "computed": "0",
+        "metrics": [0, 0, 0, 0, 0, 0, 0],
+        "dom": 0
+      },
+      "Serif 13px 0.37": {
+        "font": "13px SASerif",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "0.37"
+        },
+        "ctx": {},
+        "computed": "0.37",
+        "metrics": [54.931304931640625, 9, 3, 7.579880237579346, 2.519880771636963, 7.199999809265137, -3],
+        "dom": 54.9375
+      },
+      "Serif 13px 0.5": {
+        "font": "13px SASerif",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "0.5"
+        },
+        "ctx": {},
+        "computed": "0.5",
+        "metrics": [74.25498962402344, 13, 5, 10.246320724487305, 3.406320571899414, 10.399999618530273, -5],
+        "dom": 74.265625
+      },
+      "Serif 13px 0.51": {
+        "font": "13px SASerif",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "0.51"
+        },
+        "ctx": {},
+        "computed": "0.51",
+        "metrics": [75.72050476074219, 13, 5, 10.4485502243042, 3.473550796508789, 10.399999618530273, -5],
+        "dom": 75.734375
+      },
+      "Serif 13px 0.6": {
+        "font": "13px SASerif",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "0.6"
+        },
+        "ctx": {},
+        "computed": "0.6",
+        "metrics": [89.12767028808594, 15, 6, 12.298580169677734, 4.088582992553711, 12, -6],
+        "dom": 89.140625
+      },
+      "Serif 13px 0.9": {
+        "font": "13px SASerif",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "0.9"
+        },
+        "ctx": {},
+        "computed": "0.9",
+        "metrics": [133.6915283203125, 23, 8, 18.4478702545166, 6.132869720458984, 18.399999618530273, -8],
+        "dom": 133.703125
+      },
+      "Serif 13px from-font": {
+        "font": "13px SASerif",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "from-font"
+        },
+        "ctx": {},
+        "computed": "0.475",
+        "metrics": [70.56394958496094, 12, 4, 9.737000465393066, 3.23699951171875, 9.600000381469727, -4],
+        "dom": 70.578125
+      },
+      "Serif 13px cap-height 0.5": {
+        "font": "13px SASerif",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "cap-height 0.5"
+        },
+        "ctx": {},
+        "computed": "cap-height 0.5",
+        "metrics": [52.6514892578125, 9, 3, 7.2652997970581055, 2.4153003692626953, 7.199999809265137, -3],
+        "dom": 52.65625
+      },
+      "Serif 13px cap-height from-font": {
+        "font": "13px SASerif",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "cap-height from-font"
+        },
+        "ctx": {},
+        "computed": "cap-height 0.67",
+        "metrics": [70.56394958496094, 12, 4, 9.737000465393066, 3.23699951171875, 9.600000381469727, -4],
+        "dom": 70.578125
+      },
+      "Serif 13px ch-width 0.5": {
+        "font": "13px SASerif",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "ch-width 0.5"
+        },
+        "ctx": {},
+        "computed": "ch-width 0.5",
+        "metrics": [70.56394958496094, 12, 4, 9.737000465393066, 3.23699951171875, 9.600000381469727, -4],
+        "dom": 70.578125
+      },
+      "Serif 13px ic-width 0.5": {
+        "font": "13px SASerif",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "ic-width 0.5"
+        },
+        "ctx": {},
+        "computed": "ic-width 0.5",
+        "metrics": [35.281951904296875, 6, 2, 4.868500232696533, 1.618499755859375, 4.800000190734863, -2],
+        "dom": 35.296875
+      },
+      "Serif 13px ic-height 0.5": {
+        "font": "13px SASerif",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "ic-height 0.5"
+        },
+        "ctx": {},
+        "computed": "ic-height 0.5",
+        "metrics": [35.281951904296875, 6, 2, 4.868500232696533, 1.618499755859375, 4.800000190734863, -2],
+        "dom": 35.296875
+      },
+      "Serif 20px none": {
+        "font": "20px SASerif",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "none"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [108.5599365234375, 18, 7, 14.980000495910645, 4.9800004959106445, 14.399999618530273, -7],
+        "dom": 108.5625
+      },
+      "Serif 20px 0": {
+        "font": "20px SASerif",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "0"
+        },
+        "ctx": {},
+        "computed": "0",
+        "metrics": [0, 0, 0, 0, 0, 0, 0],
+        "dom": 0
+      },
+      "Serif 20px 0.37": {
+        "font": "20px SASerif",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "0.37"
+        },
+        "ctx": {},
+        "computed": "0.37",
+        "metrics": [84.51388549804688, 14, 5, 11.661930084228516, 3.8769302368164062, 11.199999809265137, -5],
+        "dom": 84.515625
+      },
+      "Serif 20px 0.5": {
+        "font": "20px SASerif",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "0.5"
+        },
+        "ctx": {},
+        "computed": "0.5",
+        "metrics": [114.25932312011719, 19, 7, 15.766449928283691, 5.241452217102051, 15.199999809265137, -7],
+        "dom": 114.265625
+      },
+      "Serif 20px 0.51": {
+        "font": "20px SASerif",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "0.51"
+        },
+        "ctx": {},
+        "computed": "0.51",
+        "metrics": [116.53904724121094, 20, 7, 16.081029891967773, 5.346031188964844, 16, -7],
+        "dom": 116.546875
+      },
+      "Serif 20px 0.6": {
+        "font": "20px SASerif",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "0.6"
+        },
+        "ctx": {},
+        "computed": "0.6",
+        "metrics": [137.11119079589844, 23, 8, 18.919740676879883, 6.289741516113281, 18.399999618530273, -8],
+        "dom": 137.125
+      },
+      "Serif 20px 0.9": {
+        "font": "20px SASerif",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "0.9"
+        },
+        "ctx": {},
+        "computed": "0.9",
+        "metrics": [205.66685485839844, 35, 13, 28.379610061645508, 9.434610366821289, 28, -13],
+        "dom": 205.671875
+      },
+      "Serif 20px from-font": {
+        "font": "20px SASerif",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "from-font"
+        },
+        "ctx": {},
+        "computed": "0.475",
+        "metrics": [108.5599365234375, 18, 7, 14.980000495910645, 4.9800004959106445, 14.399999618530273, -7],
+        "dom": 108.5625
+      },
+      "Serif 20px cap-height 0.5": {
+        "font": "20px SASerif",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "cap-height 0.5"
+        },
+        "ctx": {},
+        "computed": "cap-height 0.5",
+        "metrics": [80.98565673828125, 14, 5, 11.175080299377441, 3.715081214904785, 11.199999809265137, -5],
+        "dom": 81
+      },
+      "Serif 20px cap-height from-font": {
+        "font": "20px SASerif",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "cap-height from-font"
+        },
+        "ctx": {},
+        "computed": "cap-height 0.67",
+        "metrics": [108.5599365234375, 18, 7, 14.980000495910645, 4.9800004959106445, 14.399999618530273, -7],
+        "dom": 108.5625
+      },
+      "Serif 20px ch-width 0.5": {
+        "font": "20px SASerif",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "ch-width 0.5"
+        },
+        "ctx": {},
+        "computed": "ch-width 0.5",
+        "metrics": [108.5599365234375, 18, 7, 14.980000495910645, 4.9800004959106445, 14.399999618530273, -7],
+        "dom": 108.5625
+      },
+      "Serif 20px ic-width 0.5": {
+        "font": "20px SASerif",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "ic-width 0.5"
+        },
+        "ctx": {},
+        "computed": "ic-width 0.5",
+        "metrics": [54.27995300292969, 9, 3, 7.490000247955322, 2.4900002479553223, 7.199999809265137, -3],
+        "dom": 54.28125
+      },
+      "Serif 20px ic-height 0.5": {
+        "font": "20px SASerif",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "ic-height 0.5"
+        },
+        "ctx": {},
+        "computed": "ic-height 0.5",
+        "metrics": [54.27995300292969, 9, 3, 7.490000247955322, 2.4900002479553223, 7.199999809265137, -3],
+        "dom": 54.28125
+      },
+      "Serif 40px none": {
+        "font": "40px SASerif",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "none"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [217.1199493408203, 37, 13, 29.96000099182129, 9.960000991821289, 29.600000381469727, -13],
+        "dom": 217.125
+      },
+      "Serif 40px 0": {
+        "font": "40px SASerif",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "0"
+        },
+        "ctx": {},
+        "computed": "0",
+        "metrics": [0, 0, 0, 0, 0, 0, 0],
+        "dom": 0
+      },
+      "Serif 40px 0.37": {
+        "font": "40px SASerif",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "0.37"
+        },
+        "ctx": {},
+        "computed": "0.37",
+        "metrics": [169.0821533203125, 29, 10, 23.331350326538086, 7.756351470947266, 23.200000762939453, -10],
+        "dom": 169.09375
+      },
+      "Serif 40px 0.5": {
+        "font": "40px SASerif",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "0.5"
+        },
+        "ctx": {},
+        "computed": "0.5",
+        "metrics": [228.51869201660156, 39, 14, 31.532899856567383, 10.482904434204102, 31.200000762939453, -14],
+        "dom": 228.53125
+      },
+      "Serif 40px 0.51": {
+        "font": "40px SASerif",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "0.51"
+        },
+        "ctx": {},
+        "computed": "0.51",
+        "metrics": [233.07823181152344, 39, 14, 32.16205978393555, 10.692062377929688, 31.200000762939453, -14],
+        "dom": 233.09375
+      },
+      "Serif 40px 0.6": {
+        "font": "40px SASerif",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "0.6"
+        },
+        "ctx": {},
+        "computed": "0.6",
+        "metrics": [274.22247314453125, 46, 17, 37.839481353759766, 12.579483032226562, 36.79999923706055, -17],
+        "dom": 274.234375
+      },
+      "Serif 40px 0.9": {
+        "font": "40px SASerif",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "0.9"
+        },
+        "ctx": {},
+        "computed": "0.9",
+        "metrics": [411.33380126953125, 70, 25, 56.759220123291016, 18.869220733642578, 56, -25],
+        "dom": 411.34375
+      },
+      "Serif 40px from-font": {
+        "font": "40px SASerif",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "from-font"
+        },
+        "ctx": {},
+        "computed": "0.475",
+        "metrics": [217.1199493408203, 37, 13, 29.96000099182129, 9.960000991821289, 29.600000381469727, -13],
+        "dom": 217.125
+      },
+      "Serif 40px cap-height 0.5": {
+        "font": "40px SASerif",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "cap-height 0.5"
+        },
+        "ctx": {},
+        "computed": "cap-height 0.5",
+        "metrics": [162.02572631835938, 27, 10, 22.357650756835938, 7.432651519775391, 21.600000381469727, -10],
+        "dom": 162.03125
+      },
+      "Serif 40px cap-height from-font": {
+        "font": "40px SASerif",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "cap-height from-font"
+        },
+        "ctx": {},
+        "computed": "cap-height 0.67",
+        "metrics": [217.1199493408203, 37, 13, 29.96000099182129, 9.960000991821289, 29.600000381469727, -13],
+        "dom": 217.125
+      },
+      "Serif 40px ch-width 0.5": {
+        "font": "40px SASerif",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "ch-width 0.5"
+        },
+        "ctx": {},
+        "computed": "ch-width 0.5",
+        "metrics": [217.1199493408203, 37, 13, 29.96000099182129, 9.960000991821289, 29.600000381469727, -13],
+        "dom": 217.125
+      },
+      "Serif 40px ic-width 0.5": {
+        "font": "40px SASerif",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "ic-width 0.5"
+        },
+        "ctx": {},
+        "computed": "ic-width 0.5",
+        "metrics": [108.5599365234375, 18, 7, 14.980000495910645, 4.9800004959106445, 14.399999618530273, -7],
+        "dom": 54.28125
+      },
+      "Serif 40px ic-height 0.5": {
+        "font": "40px SASerif",
+        "text": "Hxgy 0123 fi",
+        "css": {
+          "fontSizeAdjust": "ic-height 0.5"
+        },
+        "ctx": {},
+        "computed": "ic-height 0.5",
+        "metrics": [108.5599365234375, 18, 7, 14.980000495910645, 4.9800004959106445, 14.399999618530273, -7],
+        "dom": 54.28125
+      },
+      "Han 20px none": {
+        "font": "20px SAHan",
+        "text": "水Hx",
+        "css": {
+          "fontSizeAdjust": "none"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [49.326171875, 23, 6, 16.982421875, 1.7578125, 18.399999618530273, -2.40234375],
+        "dom": 49.328125
+      },
+      "Han 20px ic-width 1": {
+        "font": "20px SAHan",
+        "text": "水Hx",
+        "css": {
+          "fontSizeAdjust": "ic-width 1"
+        },
+        "ctx": {},
+        "computed": "ic-width 1",
+        "metrics": [49.326171875, 23, 6, 16.982421875, 1.7578125, 18.399999618530273, -2.40234375],
+        "dom": 49.328125
+      },
+      "Han 20px ic-height 1": {
+        "font": "20px SAHan",
+        "text": "水Hx",
+        "css": {
+          "fontSizeAdjust": "ic-height 1"
+        },
+        "ctx": {},
+        "computed": "ic-height 1",
+        "metrics": [49.326171875, 23, 6, 16.982421875, 1.7578125, 18.399999618530273, -2.40234375],
+        "dom": 49.328125
+      },
+      "Han 20px ic-width 0.5": {
+        "font": "20px SAHan",
+        "text": "水Hx",
+        "css": {
+          "fontSizeAdjust": "ic-width 0.5"
+        },
+        "ctx": {},
+        "computed": "ic-width 0.5",
+        "metrics": [24.6630859375, 12, 3, 8.4912109375, 0.87890625, 9.600000381469727, -1.201171875],
+        "dom": 24.671875
+      },
+      "Han 20px ic-height 0.5": {
+        "font": "20px SAHan",
+        "text": "水Hx",
+        "css": {
+          "fontSizeAdjust": "ic-height 0.5"
+        },
+        "ctx": {},
+        "computed": "ic-height 0.5",
+        "metrics": [24.6630859375, 12, 3, 8.4912109375, 0.87890625, 9.600000381469727, -1.201171875],
+        "dom": 24.671875
+      },
+      "Han 20px from-font": {
+        "font": "20px SAHan",
+        "text": "水Hx",
+        "css": {
+          "fontSizeAdjust": "from-font"
+        },
+        "ctx": {},
+        "computed": "0.535156",
+        "metrics": [49.326171875, 23, 6, 16.982421875, 1.7578125, 18.399999618530273, -2.40234375],
+        "dom": 49.328125
+      },
+      "Han 20px ic-width from-font": {
+        "font": "20px SAHan",
+        "text": "水Hx",
+        "css": {
+          "fontSizeAdjust": "ic-width from-font"
+        },
+        "ctx": {},
+        "computed": "ic-width 1",
+        "metrics": [49.326171875, 23, 6, 16.982421875, 1.7578125, 18.399999618530273, -2.40234375],
+        "dom": 49.328125
+      },
+      "Lato,Han none": {
+        "font": "20px SALato, SAHan",
+        "text": "Hx水",
+        "css": {
+          "fontSizeAdjust": "none"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [45.199981689453125, 20, 4, 16.982421875, 1.7578125, 16, -4],
+        "dom": 45.203125
+      },
+      "Lato,Serif none": {
+        "font": "20px SALato, SASerif",
+        "text": "HxΩ",
+        "css": {
+          "fontSizeAdjust": "none"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [39.61997985839844, 20, 4, 14.329999923706055, 0, 16, -4],
+        "dom": 39.625
+      },
+      "Lato,serif none": {
+        "font": "20px SALato, serif",
+        "text": "HxΩ",
+        "css": {
+          "fontSizeAdjust": "none"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [40.561309814453125, 20, 4, 14.329999923706055, 0, 16, -4],
+        "dom": 40.5625
+      },
+      "Lato,Hiragino none": {
+        "font": "20px SALato, \"Hiragino Sans\"",
+        "text": "HxΩ水",
+        "css": {
+          "fontSizeAdjust": "none"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [65.19998168945312, 20, 4, 16.420000076293945, 1.200002670288086, 16, -4],
+        "dom": 65.203125
+      },
+      "Lato fallback none": {
+        "font": "20px SALato",
+        "text": "HxΩ水",
+        "css": {
+          "fontSizeAdjust": "none"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [60.561309814453125, 20, 4, 16.420000076293945, 1.9200000762939453, 16, -4],
+        "dom": 60.5625
+      },
+      "Hiragino none": {
+        "font": "20px \"Hiragino Sans\"",
+        "text": "HxΩ水",
+        "css": {
+          "fontSizeAdjust": "none"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [67.01998901367188, 18, 2, 16.420000076293945, 1.200002670288086, 14.399999618530273, -2],
+        "dom": 67.03125
+      },
+      "Lato,Han 0.5": {
+        "font": "20px SALato, SAHan",
+        "text": "Hx水",
+        "css": {
+          "fontSizeAdjust": "0.5"
+        },
+        "ctx": {},
+        "computed": "0.5",
+        "metrics": [43.55238342285156, 19, 4, 15.86158275604248, 1.641798973083496, 15.199999809265137, -4],
+        "dom": 43.5625
+      },
+      "Lato,Serif 0.5": {
+        "font": "20px SALato, SASerif",
+        "text": "HxΩ",
+        "css": {
+          "fontSizeAdjust": "0.5"
+        },
+        "ctx": {},
+        "computed": "0.5",
+        "metrics": [40.0494384765625, 19, 4, 14.398200035095215, 0, 15.199999809265137, -4],
+        "dom": 40.0625
+      },
+      "Lato,serif 0.5": {
+        "font": "20px SALato, serif",
+        "text": "HxΩ",
+        "css": {
+          "fontSizeAdjust": "0.5"
+        },
+        "ctx": {},
+        "computed": "0.5",
+        "metrics": [41.98490905761719, 19, 4, 15.7308988571167, 0, 15.199999809265137, -4],
+        "dom": 42
+      },
+      "Lato,Hiragino 0.5": {
+        "font": "20px SALato, \"Hiragino Sans\"",
+        "text": "HxΩ水",
+        "css": {
+          "fontSizeAdjust": "0.5"
+        },
+        "ctx": {},
+        "computed": "0.5",
+        "metrics": [64.87239074707031, 19, 4, 16.420000076293945, 1.200002670288086, 15.199999809265137, -4],
+        "dom": 64.359375
+      },
+      "Lato fallback 0.5": {
+        "font": "20px SALato",
+        "text": "HxΩ水",
+        "css": {
+          "fontSizeAdjust": "0.5"
+        },
+        "ctx": {},
+        "computed": "0.5",
+        "metrics": [61.98490905761719, 19, 4, 16.420000076293945, 1.9200000762939453, 15.199999809265137, -4],
+        "dom": 61.734375
+      },
+      "Hiragino 0.5": {
+        "font": "20px \"Hiragino Sans\"",
+        "text": "HxΩ水",
+        "css": {
+          "fontSizeAdjust": "0.5"
+        },
+        "ctx": {},
+        "computed": "0.5",
+        "metrics": [67.01998901367188, 18, 2, 16.420000076293945, 1.200002670288086, 14.399999618530273, -2],
+        "dom": 60.921875
+      },
+      "Lato,Han from-font": {
+        "font": "20px SALato, SAHan",
+        "text": "Hx水",
+        "css": {
+          "fontSizeAdjust": "from-font"
+        },
+        "ctx": {},
+        "computed": "0.5065",
+        "metrics": [44.11997985839844, 20, 4, 16.065370559692383, 1.662893295288086, 16, -4],
+        "dom": 44.125
+      },
+      "Lato,Serif from-font": {
+        "font": "20px SALato, SASerif",
+        "text": "HxΩ",
+        "css": {
+          "fontSizeAdjust": "from-font"
+        },
+        "ctx": {},
+        "computed": "0.5065",
+        "metrics": [40.57170104980469, 20, 4, 14.582880020141602, 0, 16, -4],
+        "dom": 40.578125
+      },
+      "Lato,serif from-font": {
+        "font": "20px SALato, serif",
+        "text": "HxΩ",
+        "css": {
+          "fontSizeAdjust": "from-font"
+        },
+        "ctx": {},
+        "computed": "0.5065",
+        "metrics": [42.53523254394531, 20, 4, 15.935653686523438, 0, 16, -4],
+        "dom": 42.546875
+      },
+      "Lato,Hiragino from-font": {
+        "font": "20px SALato, \"Hiragino Sans\"",
+        "text": "HxΩ水",
+        "css": {
+          "fontSizeAdjust": "from-font"
+        },
+        "ctx": {},
+        "computed": "0.5065",
+        "metrics": [65.19998168945312, 20, 4, 16.420000076293945, 1.200002670288086, 16, -4],
+        "dom": 65.203125
+      },
+      "Lato fallback from-font": {
+        "font": "20px SALato",
+        "text": "HxΩ水",
+        "css": {
+          "fontSizeAdjust": "from-font"
+        },
+        "ctx": {},
+        "computed": "0.5065",
+        "metrics": [62.53523254394531, 20, 4, 16.420000076293945, 1.9200000762939453, 16, -4],
+        "dom": 62.546875
+      },
+      "Hiragino from-font": {
+        "font": "20px \"Hiragino Sans\"",
+        "text": "HxΩ水",
+        "css": {
+          "fontSizeAdjust": "from-font"
+        },
+        "ctx": {},
+        "computed": "0.55",
+        "metrics": [67.01998901367188, 18, 2, 16.420000076293945, 1.200002670288086, 14.399999618530273, -2],
+        "dom": 67.03125
+      },
+      "Lato,Han ic-width 0.5": {
+        "font": "20px SALato, SAHan",
+        "text": "Hx水",
+        "css": {
+          "fontSizeAdjust": "ic-width 0.5"
+        },
+        "ctx": {},
+        "computed": "ic-width 0.5",
+        "metrics": [22.599990844726562, 10, 2, 8.4912109375, 0.87890625, 8, -2],
+        "dom": 22.609375
+      },
+      "Lato,Serif ic-width 0.5": {
+        "font": "20px SALato, SASerif",
+        "text": "HxΩ",
+        "css": {
+          "fontSizeAdjust": "ic-width 0.5"
+        },
+        "ctx": {},
+        "computed": "ic-width 0.5",
+        "metrics": [19.809982299804688, 10, 2, 7.164999961853027, 0, 8, -2],
+        "dom": 19.8125
+      },
+      "Lato,serif ic-width 0.5": {
+        "font": "20px SALato, serif",
+        "text": "HxΩ",
+        "css": {
+          "fontSizeAdjust": "ic-width 0.5"
+        },
+        "ctx": {},
+        "computed": "ic-width 0.5",
+        "metrics": [20.280654907226562, 10, 2, 7.164999961853027, 0, 8, -2],
+        "dom": 20.28125
+      },
+      "Lato,Hiragino ic-width 0.5": {
+        "font": "20px SALato, \"Hiragino Sans\"",
+        "text": "HxΩ水",
+        "css": {
+          "fontSizeAdjust": "ic-width 0.5"
+        },
+        "ctx": {},
+        "computed": "ic-width 0.5",
+        "metrics": [52.59999084472656, 10, 2, 16.420000076293945, 1.200002670288086, 8, -2],
+        "dom": 32.609375
+      },
+      "Lato fallback ic-width 0.5": {
+        "font": "20px SALato",
+        "text": "HxΩ水",
+        "css": {
+          "fontSizeAdjust": "ic-width 0.5"
+        },
+        "ctx": {},
+        "computed": "ic-width 0.5",
+        "metrics": [40.28065490722656, 10, 2, 16.420000076293945, 1.9200000762939453, 8, -2],
+        "dom": 30.28125
+      },
+      "Hiragino ic-width 0.5": {
+        "font": "20px \"Hiragino Sans\"",
+        "text": "HxΩ水",
+        "css": {
+          "fontSizeAdjust": "ic-width 0.5"
+        },
+        "ctx": {},
+        "computed": "ic-width 0.5",
+        "metrics": [67.01998901367188, 18, 2, 16.420000076293945, 1.200002670288086, 14.399999618530273, -2],
+        "dom": 33.515625
+      },
+      "Lato,Han cap-height 0.5": {
+        "font": "20px SALato, SAHan",
+        "text": "Hx水",
+        "css": {
+          "fontSizeAdjust": "cap-height 0.5"
+        },
+        "ctx": {},
+        "computed": "cap-height 0.5",
+        "metrics": [31.286972045898438, 14, 3, 11.641449928283691, 1.204981803894043, 11.199999809265137, -3],
+        "dom": 31.296875
+      },
+      "Lato,Serif cap-height 0.5": {
+        "font": "20px SALato, SASerif",
+        "text": "HxΩ",
+        "css": {
+          "fontSizeAdjust": "cap-height 0.5"
+        },
+        "ctx": {},
+        "computed": "cap-height 0.5",
+        "metrics": [28.33428955078125, 14, 3, 10.205280303955078, 0, 11.199999809265137, -3],
+        "dom": 28.34375
+      },
+      "Lato,serif cap-height 0.5": {
+        "font": "20px SALato, serif",
+        "text": "HxΩ",
+        "css": {
+          "fontSizeAdjust": "cap-height 0.5"
+        },
+        "ctx": {},
+        "computed": "cap-height 0.5",
+        "metrics": [29.182449340820312, 14, 3, 10.668485641479492, 0, 11.199999809265137, -3],
+        "dom": 29.1875
+      },
+      "Lato,Hiragino cap-height 0.5": {
+        "font": "20px SALato, \"Hiragino Sans\"",
+        "text": "HxΩ水",
+        "css": {
+          "fontSizeAdjust": "cap-height 0.5"
+        },
+        "ctx": {},
+        "computed": "cap-height 0.5",
+        "metrics": [57.57698059082031, 14, 3, 16.420000076293945, 1.200002670288086, 11.199999809265137, -3],
+        "dom": 45.484375
+      },
+      "Lato fallback cap-height 0.5": {
+        "font": "20px SALato",
+        "text": "HxΩ水",
+        "css": {
+          "fontSizeAdjust": "cap-height 0.5"
+        },
+        "ctx": {},
+        "computed": "cap-height 0.5",
+        "metrics": [49.18244934082031, 14, 3, 16.420000076293945, 1.9200000762939453, 11.199999809265137, -3],
+        "dom": 43.140625
+      },
+      "Hiragino cap-height 0.5": {
+        "font": "20px \"Hiragino Sans\"",
+        "text": "HxΩ水",
+        "css": {
+          "fontSizeAdjust": "cap-height 0.5"
+        },
+        "ctx": {},
+        "computed": "cap-height 0.5",
+        "metrics": [67.01998901367188, 18, 2, 16.420000076293945, 1.200002670288086, 14.399999618530273, -2],
+        "dom": 43.46875
+      },
+      "Lato small-caps 20px none": {
+        "font": "20px SALato",
+        "text": "Ab12Ab12",
+        "css": {
+          "fontSizeAdjust": "none"
+        },
+        "ctx": {
+          "fontVariantCaps": "small-caps"
+        },
+        "computed": "none",
+        "metrics": [91.7159423828125, 20, 4, 14.489999771118164, 0, 16, -4],
+        "dom": 91.71875
+      },
+      "Serif small-caps 20px none": {
+        "font": "20px SASerif",
+        "text": "Ab12Ab12",
+        "css": {
+          "fontSizeAdjust": "none"
+        },
+        "ctx": {
+          "fontVariantCaps": "small-caps"
+        },
+        "computed": "none",
+        "metrics": [88.919921875, 18, 7, 13.480000495910645, 0, 14.399999618530273, -7],
+        "dom": 88.921875
+      },
+      "Lato all-small-caps 20px none": {
+        "font": "20px SALato",
+        "text": "Ab12Ab12",
+        "css": {
+          "fontSizeAdjust": "none"
+        },
+        "ctx": {
+          "fontVariantCaps": "all-small-caps"
+        },
+        "computed": "none",
+        "metrics": [69.63595581054688, 20, 4, 10.142999649047852, 0, 16, -4],
+        "dom": 69.640625
+      },
+      "Lato small-caps 40px none": {
+        "font": "40px SALato",
+        "text": "Ab12Ab12",
+        "css": {
+          "fontSizeAdjust": "none"
+        },
+        "ctx": {
+          "fontVariantCaps": "small-caps"
+        },
+        "computed": "none",
+        "metrics": [183.43197631835938, 39, 9, 28.979999542236328, 0, 31.200000762939453, -9],
+        "dom": 183.4375
+      },
+      "Serif small-caps 40px none": {
+        "font": "40px SASerif",
+        "text": "Ab12Ab12",
+        "css": {
+          "fontSizeAdjust": "none"
+        },
+        "ctx": {
+          "fontVariantCaps": "small-caps"
+        },
+        "computed": "none",
+        "metrics": [177.83993530273438, 37, 13, 26.96000099182129, 0, 29.600000381469727, -13],
+        "dom": 177.84375
+      },
+      "Lato all-small-caps 40px none": {
+        "font": "40px SALato",
+        "text": "Ab12Ab12",
+        "css": {
+          "fontSizeAdjust": "none"
+        },
+        "ctx": {
+          "fontVariantCaps": "all-small-caps"
+        },
+        "computed": "none",
+        "metrics": [139.27194213867188, 39, 9, 20.285999298095703, 0, 31.200000762939453, -9],
+        "dom": 139.28125
+      },
+      "Lato small-caps 20px 0.5": {
+        "font": "20px SALato",
+        "text": "Ab12Ab12",
+        "css": {
+          "fontSizeAdjust": "0.5"
+        },
+        "ctx": {
+          "fontVariantCaps": "small-caps"
+        },
+        "computed": "0.5",
+        "metrics": [90.75912475585938, 19, 4, 14.301630020141602, 0, 15.199999809265137, -4],
+        "dom": 90.765625
+      },
+      "Serif small-caps 20px 0.5": {
+        "font": "20px SASerif",
+        "text": "Ab12Ab12",
+        "css": {
+          "fontSizeAdjust": "0.5"
+        },
+        "ctx": {
+          "fontVariantCaps": "small-caps"
+        },
+        "computed": "0.5",
+        "metrics": [93.58822631835938, 19, 7, 14.187700271606445, 0, 15.199999809265137, -7],
+        "dom": 93.59375
+      },
+      "Lato all-small-caps 20px 0.5": {
+        "font": "20px SALato",
+        "text": "Ab12Ab12",
+        "css": {
+          "fontSizeAdjust": "0.5"
+        },
+        "ctx": {
+          "fontVariantCaps": "all-small-caps"
+        },
+        "computed": "0.5",
+        "metrics": [69.63595581054688, 19, 4, 10.142999649047852, 0, 15.199999809265137, -4],
+        "dom": 69.640625
+      },
+      "Lato small-caps 40px 0.5": {
+        "font": "40px SALato",
+        "text": "Ab12Ab12",
+        "css": {
+          "fontSizeAdjust": "0.5"
+        },
+        "ctx": {
+          "fontVariantCaps": "small-caps"
+        },
+        "computed": "0.5",
+        "metrics": [181.51834106445312, 39, 8, 28.603260040283203, 0, 31.200000762939453, -8],
+        "dom": 181.53125
+      },
+      "Serif small-caps 40px 0.5": {
+        "font": "40px SASerif",
+        "text": "Ab12Ab12",
+        "css": {
+          "fontSizeAdjust": "0.5"
+        },
+        "ctx": {
+          "fontVariantCaps": "small-caps"
+        },
+        "computed": "0.5",
+        "metrics": [187.17654418945312, 39, 14, 28.37540054321289, 0, 31.200000762939453, -14],
+        "dom": 187.1875
+      },
+      "Lato all-small-caps 40px 0.5": {
+        "font": "40px SALato",
+        "text": "Ab12Ab12",
+        "css": {
+          "fontSizeAdjust": "0.5"
+        },
+        "ctx": {
+          "fontVariantCaps": "all-small-caps"
+        },
+        "computed": "0.5",
+        "metrics": [139.27194213867188, 39, 8, 20.285999298095703, 0, 31.200000762939453, -8],
+        "dom": 139.28125
+      },
+      "Lato small-caps 20px 0.37": {
+        "font": "20px SALato",
+        "text": "Ab12Ab12",
+        "css": {
+          "fontSizeAdjust": "0.37"
+        },
+        "ctx": {
+          "fontVariantCaps": "small-caps"
+        },
+        "computed": "0.37",
+        "metrics": [71.8807373046875, 14, 3, 10.584944725036621, 0, 11.199999809265137, -3],
+        "dom": 71.890625
+      },
+      "Serif small-caps 20px 0.37": {
+        "font": "20px SASerif",
+        "text": "Ab12Ab12",
+        "css": {
+          "fontSizeAdjust": "0.37"
+        },
+        "ctx": {
+          "fontVariantCaps": "small-caps"
+        },
+        "computed": "0.37",
+        "metrics": [69.22415161132812, 14, 5, 10.494179725646973, 0, 11.199999809265137, -5],
+        "dom": 69.234375
+      },
+      "Lato all-small-caps 20px 0.37": {
+        "font": "20px SALato",
+        "text": "Ab12Ab12",
+        "css": {
+          "fontSizeAdjust": "0.37"
+        },
+        "ctx": {
+          "fontVariantCaps": "all-small-caps"
+        },
+        "computed": "0.37",
+        "metrics": [69.63595581054688, 14, 3, 10.142999649047852, 0, 11.199999809265137, -3],
+        "dom": 69.640625
+      },
+      "Lato small-caps 40px 0.37": {
+        "font": "40px SALato",
+        "text": "Ab12Ab12",
+        "css": {
+          "fontSizeAdjust": "0.37"
+        },
+        "ctx": {
+          "fontVariantCaps": "small-caps"
+        },
+        "computed": "0.37",
+        "metrics": [143.76153564453125, 29, 6, 21.169889450073242, 0, 23.200000762939453, -6],
+        "dom": 143.765625
+      },
+      "Serif small-caps 40px 0.37": {
+        "font": "40px SASerif",
+        "text": "Ab12Ab12",
+        "css": {
+          "fontSizeAdjust": "0.37"
+        },
+        "ctx": {
+          "fontVariantCaps": "small-caps"
+        },
+        "computed": "0.37",
+        "metrics": [138.49285888671875, 29, 10, 20.995100021362305, 0, 23.200000762939453, -10],
+        "dom": 138.5
+      },
+      "Lato all-small-caps 40px 0.37": {
+        "font": "40px SALato",
+        "text": "Ab12Ab12",
+        "css": {
+          "fontSizeAdjust": "0.37"
+        },
+        "ctx": {
+          "fontVariantCaps": "all-small-caps"
+        },
+        "computed": "0.37",
+        "metrics": [139.27194213867188, 29, 6, 20.285999298095703, 0, 23.200000762939453, -6],
+        "dom": 139.28125
+      }
+    },
+    "opsz": {
+      "6px auto": {
+        "font": "6px SANews",
+        "text": "Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv ",
+        "css": {
+          "fontOpticalSizing": "auto"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [1135.0777587890625, 4, 2, 4.451999664306641, 1.3949999809265137, 3.200000047683716, -2],
+        "dom": 1132.328125
+      },
+      "6px none": {
+        "font": "6px SANews",
+        "text": "Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv ",
+        "css": {
+          "fontOpticalSizing": "none"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [876.4760131835938, 4, 2, 4.256999969482422, 1.5900001525878906, 3.200000047683716, -2],
+        "dom": 873.96875
+      },
+      "8px auto": {
+        "font": "8px SANews",
+        "text": "Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv ",
+        "css": {
+          "fontOpticalSizing": "auto"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [1455.9632568359375, 6, 2, 5.8926873207092285, 1.903313159942627, 4.800000190734863, -2],
+        "dom": 1452.34375
+      },
+      "8px none": {
+        "font": "8px SANews",
+        "text": "Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv ",
+        "css": {
+          "fontOpticalSizing": "none"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [1168.6375732421875, 6, 2, 5.676000118255615, 2.119999885559082, 4.800000190734863, -2],
+        "dom": 1165.28125
+      },
+      "12px auto": {
+        "font": "12px SANews",
+        "text": "Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv ",
+        "css": {
+          "fontOpticalSizing": "auto"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [2011.557373046875, 9, 3, 8.709000587463379, 2.9850006103515625, 7.199999809265137, -3],
+        "dom": 2006.28125
+      },
+      "12px none": {
+        "font": "12px SANews",
+        "text": "Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv ",
+        "css": {
+          "fontOpticalSizing": "none"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [1752.95654296875, 9, 3, 8.513999938964844, 3.1800003051757812, 7.199999809265137, -3],
+        "dom": 1747.921875
+      },
+      "12.5px auto": {
+        "font": "12.5px SANews",
+        "text": "Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv ",
+        "css": {
+          "fontOpticalSizing": "auto"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [2072.91455078125, 9, 3, 9.054980278015137, 3.1262712478637695, 7.199999809265137, -3],
+        "dom": 2067.4375
+      },
+      "12.5px none": {
+        "font": "12.5px SANews",
+        "text": "Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv ",
+        "css": {
+          "fontOpticalSizing": "none"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [1825.99853515625, 9, 3, 8.86875057220459, 3.3125009536743164, 7.199999809265137, -3],
+        "dom": 1820.75
+      },
+      "18px auto": {
+        "font": "18px SANews",
+        "text": "Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv ",
+        "css": {
+          "fontOpticalSizing": "auto"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [2629.436767578125, 13, 5, 12.770999908447266, 4.770000457763672, 10.399999618530273, -5],
+        "dom": 2621.890625
+      },
+      "18px none": {
+        "font": "18px SANews",
+        "text": "Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv ",
+        "css": {
+          "fontOpticalSizing": "none"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [2629.436767578125, 13, 5, 12.770999908447266, 4.770000457763672, 10.399999618530273, -5],
+        "dom": 2621.890625
+      },
+      "24px auto": {
+        "font": "24px SANews",
+        "text": "Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv ",
+        "css": {
+          "fontOpticalSizing": "auto"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [3547.10791015625, 18, 6, 17.1146240234375, 6.27337646484375, 14.399999618530273, -6],
+        "dom": 3536.796875
+      },
+      "24px none": {
+        "font": "24px SANews",
+        "text": "Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv ",
+        "css": {
+          "fontOpticalSizing": "none"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [3505.915771484375, 18, 6, 17.027999877929688, 6.3600006103515625, 14.399999618530273, -6],
+        "dom": 3495.84375
+      },
+      "36px auto": {
+        "font": "36px SANews",
+        "text": "Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv ",
+        "css": {
+          "fontOpticalSizing": "auto"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [5444.26513671875, 26, 10, 25.93209457397461, 9.149906158447266, 20.799999237060547, -10],
+        "dom": 5428.078125
+      },
+      "36px none": {
+        "font": "36px SANews",
+        "text": "Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv ",
+        "css": {
+          "fontOpticalSizing": "none"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [5258.876953125, 26, 10, 25.54199981689453, 9.540000915527344, 20.799999237060547, -10],
+        "dom": 5243.765625
+      },
+      "72px auto": {
+        "font": "72px SANews",
+        "text": "Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv ",
+        "css": {
+          "fontOpticalSizing": "auto"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [11630.1572265625, 53, 19, 53.42399978637695, 16.740001678466797, 42.400001525878906, -19],
+        "dom": 11593.4375
+      },
+      "72px none": {
+        "font": "72px SANews",
+        "text": "Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv ",
+        "css": {
+          "fontOpticalSizing": "none"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [10517.759765625, 53, 19, 51.08399963378906, 19.080001831054688, 42.400001525878906, -19],
+        "dom": 10487.53125
+      },
+      "100px auto": {
+        "font": "100px SANews",
+        "text": "Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv ",
+        "css": {
+          "fontOpticalSizing": "auto"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [16153.0048828125, 74, 26, 74.19999694824219, 23.250015258789062, 59.20000076293945, -26],
+        "dom": 16102
+      },
+      "100px none": {
+        "font": "100px SANews",
+        "text": "Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv ",
+        "css": {
+          "fontOpticalSizing": "none"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [14608.0048828125, 74, 26, 70.95000457763672, 26.50000762939453, 59.20000076293945, -26],
+        "dom": 14566
+      },
+      "12px opsz 40 auto": {
+        "font": "12px SANews",
+        "text": "Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv ",
+        "css": {
+          "fontOpticalSizing": "auto",
+          "fontVariationSettings": "'opsz' 40"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [1828.490966796875, 9, 3, 8.672906875610352, 3.02109432220459, 7.199999809265137, -3],
+        "dom": 1823.015625
+      },
+      "40px ic-width 0.5 auto": {
+        "font": "40px SANews",
+        "text": "Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv ",
+        "css": {
+          "fontOpticalSizing": "auto",
+          "fontSizeAdjust": "ic-width 0.5"
+        },
+        "ctx": {},
+        "computed": "ic-width 0.5",
+        "metrics": [2933.046630859375, 15, 5, 14.214062690734863, 5.275937080383301, 12, -5],
+        "dom": 2924.59375
+      },
+      "40px ic-width 0.3337 auto": {
+        "font": "40px SANews",
+        "text": "Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv ",
+        "css": {
+          "fontOpticalSizing": "auto",
+          "fontSizeAdjust": "ic-width 0.3337"
+        },
+        "ctx": {},
+        "computed": "ic-width 0.3337",
+        "metrics": [2171.576416015625, 10, 4, 9.632835388183594, 3.3669958114624023, 8, -4],
+        "dom": 2165.78125
+      },
+      "12px opsz 40 none": {
+        "font": "12px SANews",
+        "text": "Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv ",
+        "css": {
+          "fontOpticalSizing": "none",
+          "fontVariationSettings": "'opsz' 40"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [1828.490966796875, 9, 3, 8.672906875610352, 3.02109432220459, 7.199999809265137, -3],
+        "dom": 1823.015625
+      },
+      "40px ic-width 0.5 none": {
+        "font": "40px SANews",
+        "text": "Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv ",
+        "css": {
+          "fontOpticalSizing": "none",
+          "fontSizeAdjust": "ic-width 0.5"
+        },
+        "ctx": {},
+        "computed": "ic-width 0.5",
+        "metrics": [2921.59765625, 15, 5, 14.190000534057617, 5.30000114440918, 12, -5],
+        "dom": 2913.203125
+      },
+      "40px ic-width 0.3337 none": {
+        "font": "40px SANews",
+        "text": "Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv ",
+        "css": {
+          "fontOpticalSizing": "none",
+          "fontSizeAdjust": "ic-width 0.3337"
+        },
+        "ctx": {},
+        "computed": "ic-width 0.3337",
+        "metrics": [1948.704833984375, 10, 4, 9.464730262756348, 3.535099983215332, 8, -4],
+        "dom": 1943.109375
+      },
+      "20px opsz 20": {
+        "font": "20px SANews",
+        "text": "Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv ",
+        "css": {
+          "fontVariationSettings": "'opsz' 20"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [2933.046630859375, 15, 5, 14.214062690734863, 5.275937080383301, 12, -5],
+        "dom": 2924.59375
+      },
+      "13.348px auto": {
+        "font": "13.348px SANews",
+        "text": "Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv ",
+        "css": {},
+        "ctx": {},
+        "computed": "none",
+        "metrics": [2171.576416015625, 10, 4, 9.632835388183594, 3.3669958114624023, 8, -4],
+        "dom": 2165.78125
+      },
+      "13.34px opsz 13.348": {
+        "font": "13.34px SANews",
+        "text": "Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv ",
+        "css": {
+          "fontVariationSettings": "'opsz' 13.348"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [2171.576416015625, 10, 4, 9.632835388183594, 3.3669958114624023, 8, -4],
+        "dom": 2165.78125
+      },
+      "12px opsz 18": {
+        "font": "12px SANews",
+        "text": "Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv Hamburgefonstiv ",
+        "css": {
+          "fontVariationSettings": "'opsz' 18"
+        },
+        "ctx": {},
+        "computed": "none",
+        "metrics": [1752.95654296875, 9, 3, 8.513999938964844, 3.1800003051757812, 7.199999809265137, -3],
+        "dom": 1747.921875
+      }
+    }
+  }
+}

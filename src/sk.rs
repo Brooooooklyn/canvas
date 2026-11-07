@@ -3368,7 +3368,7 @@ impl TextSettings {
   }
 
   /// A hash of the settings that pick the typeface: the families, weight,
-  /// slope, stretch and variations. Not the size.
+  /// slope, stretch, variations and optical sizing. Not the size.
   pub fn typeface_key(&self) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -3394,6 +3394,7 @@ impl TextSettings {
       v.tag.hash(&mut hasher);
       v.value.to_bits().hash(&mut hasher);
     }
+    (self.optical_sizing as i32).hash(&mut hasher);
     hasher.finish()
   }
 }

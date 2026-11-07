@@ -4,10 +4,13 @@
 // CreateFontPlatformData and a fallback font PlatformFallbackFontForCharacter
 // (Linux).
 
+#include <math.h>
+#include <algorithm>
 #include <optional>
 #include <vector>
 
 #include "text.hpp"
+#include "text_raster.hpp"
 
 #if defined(SK_DEBUG) || !defined(SK_RELEASE)
 #error "skia-c must be built with SK_RELEASE like libskia (see build.rs)"
@@ -52,14 +55,18 @@ std::optional<SkFontParameters::Variation::Axis> FindAxis(
 
 std::vector<SkFontArguments::VariationPosition::Coordinate> FontVariations(
     const std::vector<sk_sp<SkTypeface>>& faces,
-    const skiac_text_request& request) {
+    const skiac_text_request& request,
+    float opsz_size) {
   bool variable = false;
-  bool has_opsz = false;
+  std::optional<SkFontParameters::Variation::Axis> opsz_axis;
   for (const auto& face : faces) {
     const auto axes = Axes(face.get());
     variable = variable || !axes.empty();
-    has_opsz = has_opsz || FindAxis(axes, kOpsz).has_value();
+    if (!opsz_axis) {
+      opsz_axis = FindAxis(axes, kOpsz);
+    }
   }
+  const bool has_opsz = opsz_axis.has_value();
   std::vector<SkFontArguments::VariationPosition::Coordinate> coords;
   if (!variable && request.variations_count <= 0) {
     return coords;
@@ -76,12 +83,202 @@ std::vector<SkFontArguments::VariationPosition::Coordinate> FontVariations(
     explicit_opsz = explicit_opsz || request.variations[i].tag == kOpsz;
     coords.push_back({request.variations[i].tag, request.variations[i].value});
   }
-  // font-optical-sizing: auto. Only for faces with the axis, so other faces
-  // are not cloned for every size.
+  // font-optical-sizing: auto, at the adjusted size before the 1/100 floor
+  // (FontCustomPlatformData::GetFontPlatformData's adjusted_specified_size).
+  // Only for faces with the axis, so other faces are not cloned for every
+  // size.
   if (has_opsz && !explicit_opsz) {
-    coords.push_back({kOpsz, request.size});
+    if (request.optical_sizing == 0) {
+      coords.push_back({kOpsz, opsz_size});
+    }
+#if defined(__APPLE__)
+    // none: Blink sets the face's default, as CoreText otherwise sizes the
+    // face for its own 12pt (DESIGN D8). FreeType and Fontations take the
+    // default without a coordinate, which keeps each face's own default.
+    else if (SystemFontRenderer()) {
+      coords.push_back({kOpsz, opsz_axis->def});
+    }
+#endif
   }
   return coords;
+}
+
+namespace {
+
+// font_size_adjust.h FontSizeAdjust::Metric (font_props.rs
+// SizeAdjustMetric).
+constexpr int kCapHeight = 1;
+constexpr int kChWidth = 2;
+constexpr int kIcWidth = 3;
+constexpr int kIcHeight = 4;
+// font.rs MAX_FONT_SIZE (DESIGN D16).
+constexpr float kMaxFontSize = 10000;
+// FontCacheKey::PrecisionMultiplier.
+constexpr float kFontSizePrecision = 100;
+constexpr SkUnichar kCjkWater = 0x6C34;
+
+uint16_t ReadU16(const uint8_t* data) {
+  return static_cast<uint16_t>((data[0] << 8) | data[1]);
+}
+
+// SimpleFontData::IdeographicAdvanceHeight: OpenTypeVerticalData::
+// AdvanceHeight of `glyph`, the vmtx advance (the last long metric for a
+// glyph past them), or without vhea / vmtx the font's rounded height
+// (HarfBuzzFontData::UpdateFallbackMetricsAndScale).
+float AdvanceHeight(skiac_font_collection* c_collection,
+                    const SkFont& font,
+                    SkTypeface* base,
+                    SkGlyphID glyph) {
+  SkTypeface* typeface = font.getTypeface();
+  uint8_t vhea[36];
+  const int upem = typeface->getUnitsPerEm();
+  if (upem > 0 &&
+      typeface->getTableData(SkSetFourByteTag('v', 'h', 'e', 'a'), 0,
+                             sizeof(vhea), vhea) == sizeof(vhea)) {
+    const uint16_t count = ReadU16(vhea + 34);
+    const size_t vmtx_size =
+        typeface->getTableSize(SkSetFourByteTag('v', 'm', 't', 'x'));
+    if (count && vmtx_size >= static_cast<size_t>(count) * 4) {
+      const uint16_t index = glyph < count ? glyph : count - 1;
+      uint8_t advance[2];
+      if (typeface->getTableData(SkSetFourByteTag('v', 'm', 't', 'x'),
+                                 static_cast<size_t>(index) * 4,
+                                 sizeof(advance),
+                                 advance) == sizeof(advance)) {
+        return ReadU16(advance) * (font.getSize() / upem);
+      }
+    }
+  }
+  float ascent;
+  float descent;
+  AscentDescentWithHacks(c_collection, font, base, &ascent, &descent);
+  return static_cast<float>(lroundf(ascent) + lroundf(descent));
+}
+
+// FontSizeFunctions AspectValue: the metric of `face` (an instance of
+// `base` at the request's axes) at `size` px over the size, 1 when the face
+// has no such metric.
+float AspectValue(skiac_font_collection* c_collection,
+                  const sk_sp<SkTypeface>& face,
+                  SkTypeface* base,
+                  float size,
+                  int metric) {
+  const SkFont font = MetricsFont(face, size);
+  SkFontMetrics metrics;
+  font.getMetrics(&metrics);
+  float value = 0;
+  switch (metric) {
+    case kCapHeight:
+      value = metrics.fCapHeight;
+      break;
+    case kChWidth:
+      if (const SkGlyphID zero = font.unicharToGlyph('0')) {
+        value = font.getWidth(zero);
+      }
+      break;
+    case kIcWidth:
+      if (const SkGlyphID water = font.unicharToGlyph(kCjkWater)) {
+        value = font.getWidth(water);
+      }
+      break;
+    case kIcHeight:
+      if (const SkGlyphID water = font.unicharToGlyph(kCjkWater)) {
+        value = AdvanceHeight(c_collection, font, base, water);
+      }
+      break;
+    default:
+      value = metrics.fXHeight;
+#if defined(__APPLE__)
+      // SimpleFontData::PlatformInit: CTFontGetXHeight counts the part of
+      // 'x' below the baseline, so Blink measures the glyph's outline
+      // (as skiac_font_collection_default_font_units, DESIGN D22).
+      if (SystemFontRenderer() && value) {
+        if (const SkGlyphID x_glyph = font.unicharToGlyph('x')) {
+          const std::optional<SkPath> path = font.getPath(x_glyph);
+          value = -(path ? path->getBounds() : font.getBounds(x_glyph, nullptr))
+                       .fTop;
+        }
+      }
+#endif
+      break;
+  }
+  return value > 0 ? value / size : 1.0f;
+}
+
+}  // namespace
+
+UsedSizes ComputeUsedSizes(skiac_font_collection* c_collection,
+                           const std::vector<sk_sp<SkTypeface>>& base_faces,
+                           const skiac_text_request& request) {
+  UsedSizes sizes{request.size, request.size, {}, {}};
+  const float computed = request.size;
+  if (request.size_adjust_metric < 0 || !(computed > 0) ||
+      base_faces.empty()) {
+    return sizes;
+  }
+  const int metric = request.size_adjust_metric;
+  // The face Blink measures: the instance at the request's axes, opsz at the
+  // computed size (UpdateAdjustedSize sets the adjusted size to it first).
+  auto aspect_of = [&](const sk_sp<SkTypeface>& base) {
+    sk_sp<SkTypeface> face = base;
+    const auto coords = FontVariations({base}, request, computed);
+    if (!coords.empty()) {
+      SkFontArguments args;
+      args.setVariationDesignPosition(
+          {coords.data(), static_cast<int>(coords.size())});
+      if (sk_sp<SkTypeface> clone = base->makeClone(args)) {
+        face = std::move(clone);
+      }
+    }
+    return AspectValue(c_collection, face, base.get(), computed, metric);
+  };
+  const float primary_aspect = aspect_of(base_faces.front());
+  // from-font: the primary font's own aspect (UpdateAdjustedSize).
+  const float value = request.size_adjust_from_font
+                          ? primary_aspect
+                          : request.size_adjust_value;
+  // MetricsMultiplierAdjustedFontSize, then EffectiveFontSize.
+  auto adjusted_for = [&](float aspect) {
+    return std::min((value / aspect) * computed, kMaxFontSize);
+  };
+  auto effective_for = [](float adjusted) {
+    return floorf(adjusted * kFontSizePrecision) / kFontSizePrecision;
+  };
+  const float adjusted = adjusted_for(primary_aspect);
+  sizes.opsz = adjusted;
+  sizes.effective = effective_for(adjusted);
+  // CSSFontFace::GetFontData (a registered face) and CSSFontSelector::
+  // GetFontData (a generic family) size each face from its own aspect; a
+  // named installed family (FontCache::GetFontData) and the system fallback
+  // take the primary's size.
+  std::vector<bool> generic;
+  const std::vector<SkString> families =
+      ResolveFontFamilies(c_collection, request, &generic);
+  const SkFontStyle style(static_cast<int>(roundf(request.weight)),
+                          request.stretch,
+                          static_cast<SkFontStyle::Slant>(request.style));
+  bool differs = false;
+  for (size_t i = 0; i < families.size(); ++i) {
+    const std::vector<sk_sp<SkTypeface>> found =
+        c_collection->collection->findTypefaces({families[i]}, style);
+    if (found.empty() || !found.front()) {
+      continue;
+    }
+    const sk_sp<SkTypeface>& face = found.front();
+    float size = sizes.effective;
+    if (!sizes.faces.empty() &&
+        (generic[i] || !IsSystemTypeface(c_collection, face.get()))) {
+      size = effective_for(adjusted_for(aspect_of(face)));
+    }
+    differs = differs || size != sizes.effective;
+    sizes.faces.push_back(face);
+    sizes.face_sizes.push_back(size);
+  }
+  if (!differs) {
+    sizes.faces.clear();
+    sizes.face_sizes.clear();
+  }
+  return sizes;
 }
 
 namespace {
