@@ -56,7 +56,8 @@ interface Row {
   blinkFrom?: string
   // The row differs from Chrome for a reason outside the shaper that is
   // handed off (DESIGN-SHAPER.md 1.2: q5 S1 system-ui CJK font choice, q5 S3
-  // Hiragino Sans face choice); not checked.
+  // Hiragino Sans face choice); not checked with the switch on (the old path
+  // is still checked to differ, as for any row before its flip stage).
   handoff?: string
 }
 const FIXTURE: { darwin: string; fonts: Record<string, string>; cases: Record<string, Row> } = JSON.parse(
@@ -215,7 +216,7 @@ function check({ renderer, rows, flip, widthOnly }: Check) {
       if (BLINK && row.blinkFrom && STAGES.indexOf(row.blinkFrom) > STAGES.indexOf(LANDED)) {
         continue
       }
-      if (row.handoff) {
+      if (BLINK && row.handoff) {
         continue
       }
       const value = ours(row)
