@@ -114,8 +114,6 @@ test.serial('each request the shaper cannot lay out yet is counted under its rea
   // system fallback source: always with the portable renderer.
   setTextRenderer('portable')
   const cases: [string, string, Record<string, string>, string][] = [
-    ['40px StatsLato', 'Hello', { letterSpacing: '2px' }, 'letterSpacing'],
-    ['40px StatsLato', 'Hello', { wordSpacing: '2px' }, 'wordSpacing'],
     ['40px StatsLato', 'Hello', { fontVariantCaps: 'small-caps' }, 'caps'],
     ['40px StatsLato, StatsHan', 'Hello', { fontSizeAdjust: '0.5' }, 'faceSizes'],
     ['40px StatsLato', '\uE000', {}, 'fallback'],
@@ -135,6 +133,34 @@ test.serial('each request the shaper cannot lay out yet is counted under its rea
   } finally {
     setTextRenderer('system')
   }
+})
+
+// Stage S4: ShapeResultSpacing. Letter and word spacing (positive, negative,
+// tiny, in every renderer and direction) are laid out by the shaper: no
+// request is turned down for spacing.
+test.serial('letter and word spacing are laid out by the shaper', (t) => {
+  stats()
+  let count = 0
+  for (const renderer of ['portable', 'system'] as const) {
+    setTextRenderer(renderer)
+    for (const text of ['Hello world', ' a  b ', 'office fi', 'q\u0301x', '\u00a0ab\u00a0']) {
+      for (const props of [
+        { letterSpacing: '2px' },
+        { wordSpacing: '3px' },
+        { letterSpacing: '-10px', wordSpacing: '-60px' },
+        { letterSpacing: '0.0002px', direction: 'rtl' },
+        { letterSpacing: '1px', fontFeatureSettings: '"liga"' },
+      ]) {
+        measure('40px StatsLato', text, props)
+        count++
+      }
+    }
+  }
+  setTextRenderer('system')
+  const s = stats()
+  t.deepEqual(rejected(s), {})
+  t.is(s.accepted, BLINK ? count : 0)
+  t.is(s.cacheChanges, 0)
 })
 
 // Stage S3: the fallback stages. A variation selector the family fonts can

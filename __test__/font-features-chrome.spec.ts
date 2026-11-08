@@ -41,10 +41,15 @@ for (const [family, file] of Object.entries(FIXTURE.fonts)) {
 
 // DESIGN D10: skparagraph appends `liga 0` to every block with a positive
 // letter spacing (OneLineShaper.cpp), after font-feature-settings, so
-// `"liga"` cannot turn liga back on there. Chrome turns it on. Fixing it needs
-// a Skia patch; until then these cases differ.
+// `"liga"` cannot turn liga back on there. Chrome turns it on. The Blink
+// shaper (NAPI_RS_CANVAS_SHAPER=blink, DESIGN-SHAPER.md S4) puts letter
+// spacing's `liga 0` before font-feature-settings, as Blink's
+// FontFeatureRange::FromFontDescription does, and matches Chrome; the old
+// path still differs until the shaper is the default (S9).
 const D10_LOOKUP1 = ['ls 1px + ffs liga,dlig,calt,clig,hlig']
 const D10_WIDTHS = ['Lato fi ls 1px + ffs liga @40', 'Lato fi ls 1px + ffs liga @100']
+const BLINK = process.env.NAPI_RS_CANVAS_SHAPER === 'blink'
+const d10Test = BLINK ? test.serial : test.serial.failing
 
 // The six go on the context (Chrome: element CSS), then the font and the
 // context attributes, as the capture did.
@@ -116,7 +121,7 @@ test.serial('font-feature-settings values pick the gsubtest-lookup3 alternate li
   })
 })
 
-test.serial.failing('D10: "liga" turns liga back on with a positive letterSpacing like Chrome', (t) => {
+d10Test('D10: "liga" turns liga back on with a positive letterSpacing like Chrome', (t) => {
   t.deepEqual(mismatches(D10_LOOKUP1), [])
 })
 
@@ -139,9 +144,14 @@ test.serial('real-font widths match Chrome on macOS', (t) => {
   t.deepEqual(widthMismatches(names), [])
 })
 
-test.serial.failing('D10: Lato fi with letterSpacing 1px and "liga" is a ligature like Chrome', (t) => {
+d10Test('D10: Lato fi with letterSpacing 1px and "liga" is a ligature like Chrome', (t) => {
   if (process.platform !== 'darwin') {
-    t.fail('Chrome widths are pinned on macOS')
+    // test.serial.failing needs a failure off macOS too.
+    if (BLINK) {
+      t.pass('Chrome widths are pinned on macOS')
+    } else {
+      t.fail('Chrome widths are pinned on macOS')
+    }
     return
   }
   t.deepEqual(widthMismatches(D10_WIDTHS), [])

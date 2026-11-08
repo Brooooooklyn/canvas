@@ -931,16 +931,15 @@ Line* FindOrLayOutLine(skiac_font_collection* c_collection,
   for (const BlinkRun& run : fresh.blink.runs) {
     glyphs += run.glyphs.size();
   }
-  // The Blink shaper's copy of the glyphs where TextMetrics measures them.
-  for (const BlinkRun& run : fresh.ink_blink.runs) {
-    glyphs += run.glyphs.size();
-  }
+  // The Blink shaper's glyphs also keep the x and offset TextMetrics
+  // measures them at: 12 bytes each.
+  const size_t ink_glyphs = fresh.blink.item_widths.empty() ? 0 : glyphs;
   // The key, its map node and the Line take about 512 bytes on top; the
   // first draw adds the text blobs' (MeasureOrDraw).
   const size_t bytes =
       key.size() + 512 +
-      LineBytes(fresh.blink.runs.size() + fresh.ink_blink.runs.size(), glyphs,
-                fresh.words.size());
+      LineBytes(fresh.blink.runs.size(), glyphs, fresh.words.size()) +
+      12 * ink_glyphs + 4 * fresh.blink.item_widths.size();
   while (!caches.lru.empty() && (caches.lines.size() >= kMaxLines ||
                                  (caches.lines.size() >= kMinLines &&
                                   caches.line_bytes + bytes > kMaxLineBytes))) {
@@ -1096,14 +1095,14 @@ void MeasureOrDraw(skiac_font_collection* c_collection,
   if (found != line->inks.end()) {
     ink = found->second;
   } else {
-    ink = MeasureBlinkInk(
-        line->ink_blink.runs.empty() ? line->blink : line->ink_blink, policy,
-        line->words, left_edge, line_baseline);
+    ink = MeasureBlinkInk(line->blink, policy, line->words, left_edge,
+                          line_baseline);
     if (line->inks.size() < kMaxInks) {
       line->inks.emplace_back(left_bits, ink);
     }
   }
-  if (ink.IsEmpty()) {
+  // The Blink shaper's items give TextMetrics' box also without ink.
+  if (ink.IsEmpty() && line->blink.item_widths.empty()) {
     // No glyph has ink: gfx::RectF::Union keeps the last empty word box, a
     // point on the baseline at the left edge of the visually last word
     // (the last word for LTR text, the first for RTL), so for "   " the box

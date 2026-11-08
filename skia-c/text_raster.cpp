@@ -447,11 +447,70 @@ struct InkGlyph {
 
 }  // namespace
 
+namespace {
+
+// TextMetrics::MeasureRuns for a line of the Blink shaper: each item's
+// ShapeResult::ComputeInkBounds (PlainTextNode::Shape: outset to the left
+// when the item is narrower than nothing), offset to the float sum of the
+// widths of the items before it, united item by item in visual order.
+BlinkRectF MeasureItemInk(const BlinkLine& line,
+                          const TextRasterPolicy& policy,
+                          float left_edge,
+                          float baseline) {
+  // The runs of each item, in visual order (an RTL base's reversed LTR
+  // words are drawn from the last item, but measured from the first).
+  std::vector<std::vector<size_t>> item_runs(line.item_widths.size());
+  for (size_t r = 0; r < line.runs.size(); ++r) {
+    item_runs[line.runs[r].item].push_back(r);
+  }
+  BlinkRectF ink;
+  float xpos = 0;
+  for (size_t item = 0; item < item_runs.size(); ++item) {
+    BlinkRectF item_ink;
+    for (const size_t r : item_runs[item]) {
+      const BlinkRun& run = line.runs[r];
+      const SkFont font = policy.DrawFont(run.font, nullptr);
+      std::vector<SkRect> bounds(run.glyphs.size());
+      policy.GlyphBounds(font, run.glyphs, bounds);
+      GlyphBoundsAccumulator accumulator;
+      for (size_t i = 0; i < run.glyphs.size(); ++i) {
+        // SkFontGetBoundsForGlyphs rounds out without subpixel positioning.
+        const SkRect box =
+            font.isSubpixel() ? bounds[i] : SkRect::Make(bounds[i].roundOut());
+        accumulator.Unite(SkRectToRectF(box), run.ink_x[i],
+                          {run.offsets[i].fX, run.offsets[i].fY - baseline});
+      }
+      Union(&item_ink, accumulator.Bounds());
+    }
+    const float width = line.item_widths[item];
+    if (width < 0) {
+      // Negative spacing can put glyphs left of the item's start: the box
+      // covers them (gfx::RectF::Outset of the left side).
+      const float left = std::min(width, item_ink.width);
+      if (left < item_ink.x) {
+        const float outset = item_ink.x - left;
+        item_ink = MakeRectF(item_ink.x + -outset, item_ink.y,
+                             item_ink.width - (-outset + -0.0f),
+                             item_ink.height - (-0.0f + -0.0f));
+      }
+    }
+    item_ink.x += xpos - left_edge;
+    Union(&ink, item_ink);
+    xpos += width;
+  }
+  return ink;
+}
+
+}  // namespace
+
 BlinkRectF MeasureBlinkInk(const BlinkLine& line,
                            const TextRasterPolicy& policy,
                            SkSpan<const std::pair<size_t, size_t>> words,
                            float left_edge,
                            float baseline) {
+  if (!line.item_widths.empty()) {
+    return MeasureItemInk(line, policy, left_edge, baseline);
+  }
   // The glyphs in visual order, with the word each belongs to.
   std::vector<InkGlyph> glyphs;
   for (size_t r = 0; r < line.runs.size(); ++r) {
