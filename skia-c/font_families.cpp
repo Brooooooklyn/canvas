@@ -590,15 +590,18 @@ const char* SystemUiFamily(bool system) {
 
 // `script_setting`, when not empty, is the setting of the locale's script
 // for this generic family (LocaleFamilies::generic), in place of the common
-// one.
+// one. `*registered` is whether `out` is the family registered under the
+// keyword.
 bool ResolveGeneric(const FamilyResolver& resolver,
                     int generic,
                     std::string_view script_setting,
-                    std::string* out) {
+                    std::string* out,
+                    bool* registered) {
   // A family registered under the keyword itself is how a Node program sets
   // its generic families (decision: the registered alias wins).
   const char* keyword = GenericKeyword(generic);
-  if (resolver.IsRegistered(keyword) && resolver.Find(keyword, out)) {
+  *registered = resolver.IsRegistered(keyword) && resolver.Find(keyword, out);
+  if (*registered) {
     return true;
   }
   if (generic == kSystemUi) {
@@ -981,13 +984,14 @@ std::vector<SkString> ResolveFontFamilies(skiac_font_collection* c_collection,
     }
     std::string name;
     bool found;
+    bool registered = false;
     if (family.generic) {
       found =
           ResolveGeneric(resolver, family.generic,
                          locale && family.generic > 0 && family.generic < 9
                              ? std::string_view(locale->generic[family.generic])
                              : std::string_view(),
-                         &name);
+                         &name, &registered);
     } else {
       // FontFallbackList does not ask the system for an empty name.
       found = family.name_len > 0 &&
@@ -997,9 +1001,11 @@ std::vector<SkString> ResolveFontFamilies(skiac_font_collection* c_collection,
       // A -webkit-body that is not the description's generic family is
       // named after the common standard font (FontBuilder::
       // GenericFontFamilyName) and comes from the font cache by that name,
-      // as an installed family (with the shaper's locale settings).
+      // as an installed family (with the shaper's locale settings). A
+      // family registered under -webkit-body (setAlias) stays a generic
+      // family, as one registered under serif does.
       add(name, family.generic != kNamed &&
-                    !(locale && family.generic == kWebkitBody));
+                    !(locale && family.generic == kWebkitBody && !registered));
     }
   }
   // The standard font comes through the font selector as a generic family

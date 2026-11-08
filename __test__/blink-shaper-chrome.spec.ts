@@ -987,3 +987,38 @@ test.serial('a setAlias call that adds no face keeps its name under -webkit-body
   t.true(near(before, BLINK ? 55.63999938964844 : ARIAL), `before: ${before}`)
   t.true(near(after, ARIAL), `after: ${after}`)
 })
+
+// A family registered under -webkit-body (setAlias) is the program's
+// generic family, as one registered under serif: under font-size-adjust it
+// is sized at its own aspect (CSSFontSelector::GetFontData). Only the
+// -webkit-body that comes from the font cache by the standard font's name
+// is an installed family at the primary's size. "→" is drawn by the alias
+// (Arial; BSLato has no U+2192), 38.56 with either keyword and on the old
+// path. In a child process, as the aliases would change the other rows.
+test.serial('a setAlias family under -webkit-body is sized as a generic family', async (t) => {
+  if (!CAPTURE_DARWIN) {
+    t.pass('the macOS system fonts of the capture')
+    return
+  }
+  t.timeout(2 * CHILD_TIMEOUT, 'one child process')
+  const script = `
+    const { createCanvas, GlobalFonts, setTextRenderer } = require(${INDEX_JS})
+    GlobalFonts.registerFromPath(${JSON.stringify(fontPath('BSLato'))}, 'BSLato')
+    setTextRenderer('system')
+    const width = (font) => {
+      const ctx = createCanvas(10, 10).getContext('2d')
+      ctx.font = font
+      ctx.fontSizeAdjust = '0.5'
+      return ctx.measureText('→').width
+    }
+    GlobalFonts.setAlias('Arial', '-webkit-body')
+    const body = width('40px BSLato, -webkit-body, sans-serif')
+    GlobalFonts.setAlias('Arial', 'serif')
+    console.log(JSON.stringify({ body, serif: width('40px BSLato, serif, sans-serif') }))`
+  const { body, serif } = JSON.parse(await runChild(t, script, hostEnv(BLINK ? 'blink' : '', { LANG: 'C' }))) as Record<
+    string,
+    number
+  >
+  t.true(serif < 39, `serif: ${serif} (font-size-adjust sizes the alias)`)
+  t.true(Math.abs(body - serif) <= 1e-3, `-webkit-body: ${body}, serif: ${serif}`)
+})
