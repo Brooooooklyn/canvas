@@ -122,7 +122,7 @@ constexpr size_t kMaxLineBytes = 16 << 20;
 // Line::inks holds up to this many left edges.
 constexpr size_t kMaxInks = 4;
 
-// Every request field LayOutLine reads, then the text.
+// Every request field LayOutLineBlink reads, then the text.
 void AppendLineKey(std::string* key, const skiac_text_request& request) {
   auto put = [key](const void* data, size_t size) {
     key->append(static_cast<const char*>(data), size);

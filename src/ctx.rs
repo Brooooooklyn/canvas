@@ -1733,7 +1733,7 @@ impl Context {
   ) -> result::Result<(), SkError> {
     self.flush_if_recording_limit_exceeded();
     let stroke_paint = self.stroke_paint()?;
-    // skia-c/text.cpp prepares the text (PrepareCanvasText).
+    // skia-c prepares the text (shaper_text.cpp PrepareText).
     self.draw_text(text, x, y, max_width, &stroke_paint, ShadowSource::Stroke)?;
     Ok(())
   }
@@ -1809,7 +1809,7 @@ impl Context {
   ) -> result::Result<(), SkError> {
     self.flush_if_recording_limit_exceeded();
     let fill_paint = self.fill_paint()?;
-    // skia-c/text.cpp prepares the text (PrepareCanvasText).
+    // skia-c prepares the text (shaper_text.cpp PrepareText).
     self.draw_text(text, x, y, max_width, &fill_paint, ShadowSource::Fill)?;
     Ok(())
   }
