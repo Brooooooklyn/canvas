@@ -605,16 +605,18 @@ test.serial('"inherit" follows the host language like Chrome', async (t) => {
   t.true(close(old.system, OLD), `old path: ${old.system}`)
 })
 
-// A line the shaper turns down (a character no family draws, with the
-// portable renderer: ShaperReject::kFallback) goes to the old path with the
-// host language the shaper gives "inherit", as an explicit lang does: the
-// rest of the line keeps the host language's glyphs and case map. [text
-// width, width of U+E000 alone] per lang; the letter is the difference.
+// A line with a character no family draws (U+E000, with the portable
+// renderer: no system fallback source) keeps the host language the shaper
+// gives "inherit", as an explicit lang does: the rest of the line keeps the
+// host language's glyphs and case map. Before stage P2 the shaper turned
+// such a line down to the old path; now it draws the first font's .notdef
+// itself. [text width, width of U+E000 alone] per lang; the letter is the
+// difference.
 // LoclProbe "a" is 46.2 with tr (TRK locl), 82.1 with en (ENG), 50.7 with
 // none; Turkish small-caps "i" (dotted capital I, from BSNKo as Lato has
 // none) is 9.492, else 8.596 (Chrome 157 with -AppleLanguages (tr),
 // stages/S8/review-ci).
-test.serial('a line the shaper turns down keeps the host language', async (t) => {
+test.serial('a line with a character no family draws keeps the host language', async (t) => {
   t.timeout(3 * CHILD_TIMEOUT, 'two child processes')
   const fonts = Object.fromEntries(['BSLocl', 'BSLato', 'BSNKo'].map((family) => [family, fontPath(family)]))
   const script = `
@@ -640,7 +642,7 @@ test.serial('a line the shaper turns down keeps the host language', async (t) =>
         const alone = width(font, text, lang, props)
         const accepted = JSON.parse(binding.__shaperStats(true)).rejected[5] === 0
         const line = width(font, text + '\\uE000', lang, props)
-        const rejected = JSON.parse(binding.__shaperStats(true)).rejected[5] > 0
+        const rejected = JSON.parse(binding.__shaperStats(true)).rejected.some((n) => n > 0)
         out[name][lang] = { alone, letter: line - width(font, '\\uE000', lang, props), accepted, rejected }
       }
     }
@@ -659,10 +661,10 @@ test.serial('a line the shaper turns down keeps the host language', async (t) =>
   for (const [name, expected] of Object.entries(EXPECTED)) {
     for (const lang of ['inherit', 'tr', 'en']) {
       const got = blink[name][lang]
-      t.true(got.accepted && got.rejected, `${name} ${lang}: the shaper lays out the letter and turns the line down`)
+      t.true(got.accepted && !got.rejected, `${name} ${lang}: the shaper lays out the letter and the line`)
       const want = lang === 'en' ? expected.en : expected.tr
       t.true(near(got.alone, want), `${name} ${lang} alone: ${got.alone} (${want})`)
-      t.true(near(got.letter, want), `${name} ${lang} in the turned-down line: ${got.letter} (${want})`)
+      t.true(near(got.letter, want), `${name} ${lang} in the line: ${got.letter} (${want})`)
     }
   }
   // The old path does not read the host language ("inherit" is no lang).
@@ -673,16 +675,17 @@ test.serial('a line the shaper turns down keeps the host language', async (t) =>
   }
 })
 
-// A line the shaper turns down picks its fonts as the shaper does
-// (ResolveFontRequest): the families with the locale's font settings and
-// their sizes under font-size-adjust. Under -webkit-body as the
+// A line with a character no family draws picks its fonts as a line without
+// one (ResolveFontRequest): the families with the locale's font settings
+// and their sizes under font-size-adjust. Under -webkit-body as the
 // description's generic family an installed family is the standard font, a
 // generic family sized at its own aspect; a -webkit-body that is not the
 // description's generic family is an installed family at the primary's
-// size. Portable renderer, so U+E000 (no family has it) turns the line down.
+// size. Portable renderer: before stage P2 the shaper turned a line with a
+// character no family has down to the old path; now it lays it out.
 // "Times New Roman" (the portable standard font) is registered in case no
 // such font is installed; where one is (macOS, Windows) it takes the name.
-test.serial('a line the shaper turns down keeps the font sizes of the shaper', async (t) => {
+test.serial('a line with a character no family draws keeps the font sizes of the shaper', async (t) => {
   t.timeout(2 * CHILD_TIMEOUT, 'one child process')
   const script = `
     const { createCanvas, GlobalFonts, setTextRenderer } = require(${INDEX_JS})
@@ -701,7 +704,7 @@ test.serial('a line the shaper turns down keeps the font sizes of the shaper', a
         const alone = width('→')
         const accepted = JSON.parse(binding.__shaperStats(true)).rejected[5] === 0
         const letter = width('→→') - width('→')
-        const rejected = JSON.parse(binding.__shaperStats(true)).rejected[5] > 0
+        const rejected = JSON.parse(binding.__shaperStats(true)).rejected.some((n) => n > 0)
         out.push({ font, fontSizeAdjust, alone, letter, accepted, rejected })
       }
     }
@@ -716,8 +719,8 @@ test.serial('a line the shaper turns down keeps the font sizes of the shaper', a
   }[]
   for (const { font, fontSizeAdjust, alone, letter, accepted, rejected } of rows) {
     const name = `${font} fontSizeAdjust ${fontSizeAdjust}`
-    t.true(accepted && rejected, `${name}: the shaper lays out the arrow and turns the line down`)
-    t.true(Math.abs(alone - letter) <= 1e-3, `${name}: alone ${alone}, in the turned-down line ${letter}`)
+    t.true(accepted && !rejected, `${name}: the shaper lays out the arrow and the line`)
+    t.true(Math.abs(alone - letter) <= 1e-3, `${name}: alone ${alone}, in the line ${letter}`)
   }
 })
 
