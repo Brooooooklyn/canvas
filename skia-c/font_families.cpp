@@ -208,14 +208,25 @@ class FamilyResolver {
 
   // Whether `name` is a font the program registered (a web font: Blink's
   // FontFaceCache), not an installed one the collection lists (macOS).
+  // FontFaceCache::Get finds the family by name and takes its best face for
+  // any request, so one registered face of any style makes the family a web
+  // font, also next to installed faces of the same name (Chrome 157: a bold
+  // FontFace "AppleMyungjo", lang ja "40px AppleMyungjo, -webkit-body" and
+  // "bold 40px AppleMyungjo, -webkit-body" draw the FontFace, 53.28).
   bool IsWebFont(std::string_view name) const {
     std::string spelling;
     if (!IsRegistered(name) || !Find(name, &spelling)) {
       return false;
     }
-    const sk_sp<SkTypeface> face = c_collection_->assets->matchFamilyStyle(
-        spelling.c_str(), SkFontStyle());
-    return face && !IsSystemTypeface(c_collection_, face.get());
+    const sk_sp<SkFontStyleSet> faces =
+        c_collection_->assets->matchFamily(spelling.c_str());
+    for (int i = 0; faces && i < faces->count(); ++i) {
+      const sk_sp<SkTypeface> face = faces->createTypeface(i);
+      if (face && !IsSystemTypeface(c_collection_, face.get())) {
+        return true;
+      }
+    }
+    return false;
   }
 
   // FontCache::GetFontData(description, name): the platform font manager's

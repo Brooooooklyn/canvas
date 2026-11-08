@@ -1323,6 +1323,8 @@ std::string WindowsHostLanguage() {
 }
 #endif
 
+}  // namespace
+
 // LayoutLocale::GetDefault's language (DefaultLanguage: the browser's UI
 // locale, D19), read once per process. NAPI_RS_CANVAS_TEST_POSIX_LANGUAGE=1
 // (tests only) uses the Linux rule on every OS, so a test can set the
@@ -1344,6 +1346,8 @@ const std::string& HostLanguage() {
   }();
   return language;
 }
+
+namespace {
 
 // FontDescription::LocaleOrDefault for ctx.lang, as a language tag: the
 // host language for "inherit" (a canvas with no lang of its own: D19),

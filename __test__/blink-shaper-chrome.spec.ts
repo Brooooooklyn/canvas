@@ -496,6 +496,87 @@ test.serial('"inherit" follows the host language like Chrome', (t) => {
   t.true(close(old.system, OLD), `old path: ${old.system}`)
 })
 
+// A line the shaper turns down (a character no family draws, with the
+// portable renderer: ShaperReject::kFallback) goes to the old path with the
+// host language the shaper gives "inherit", as an explicit lang does: the
+// rest of the line keeps the host language's glyphs and case map. [text
+// width, width of U+E000 alone] per lang; the letter is the difference.
+// LoclProbe "a" is 46.2 with tr (TRK locl), 82.1 with en (ENG), 50.7 with
+// none; Turkish small-caps "i" (dotted capital I) is 9.324, else 8.596.
+test.serial('a line the shaper turns down keeps the host language', (t) => {
+  const fonts = Object.fromEntries(
+    Object.entries(FIXTURE.fonts).map(([family, file]) => [family, join(__dirname, 'fonts', file)]),
+  )
+  const script = `
+    const { createCanvas, GlobalFonts, setTextRenderer } = require(${JSON.stringify(join(__dirname, '..', 'index.js'))})
+    const binding = require(${JSON.stringify(join(__dirname, '..', 'js-binding.js'))})
+    for (const [family, file] of Object.entries(${JSON.stringify(fonts)})) GlobalFonts.registerFromPath(file, family)
+    setTextRenderer('portable')
+    const width = (font, text, lang, props) => {
+      const ctx = createCanvas(10, 10).getContext('2d')
+      ctx.font = font
+      Object.assign(ctx, props)
+      ctx.lang = lang
+      return ctx.measureText(text).width
+    }
+    const out = {}
+    for (const [name, font, text, props] of [
+      ['locl', '100px BSLocl', 'a', {}],
+      ['caps', '40px BSLato', 'i', { fontVariantCaps: 'small-caps' }],
+    ]) {
+      out[name] = {}
+      for (const lang of ['inherit', 'tr', 'en']) {
+        binding.__shaperStats(true)
+        const alone = width(font, text, lang, props)
+        const accepted = JSON.parse(binding.__shaperStats(true)).rejected[5] === 0
+        const line = width(font, text + '\\uE000', lang, props)
+        const rejected = JSON.parse(binding.__shaperStats(true)).rejected[5] > 0
+        out[name][lang] = { alone, letter: line - width(font, '\\uE000', lang, props), accepted, rejected }
+      }
+    }
+    console.log(JSON.stringify(out))`
+  const run = (shaper: string) => {
+    const child = spawnSync(process.execPath, ['-e', script], {
+      env: {
+        ...process.env,
+        LANGUAGE: 'tr',
+        LC_ALL: '',
+        LC_MESSAGES: '',
+        LANG: '',
+        NAPI_RS_CANVAS_SHAPER: shaper,
+        NAPI_RS_CANVAS_TEST_POSIX_LANGUAGE: '1',
+      },
+      encoding: 'utf8',
+    })
+    t.is(child.status, 0, child.stderr)
+    return JSON.parse(child.stdout) as Record<
+      string,
+      Record<string, { alone: number; letter: number; accepted: boolean; rejected: boolean }>
+    >
+  }
+  const near = (a: number, b: number) => Math.abs(a - b) <= 1e-3
+  const EXPECTED: Record<string, { tr: number; en: number; none: number }> = {
+    locl: { tr: 46.19999694824219, en: 82.09999084472656, none: 50.69999694824219 },
+    caps: { tr: 9.32421875, en: 8.595993041992188, none: 8.595993041992188 },
+  }
+  const blink = run('blink')
+  for (const [name, expected] of Object.entries(EXPECTED)) {
+    for (const lang of ['inherit', 'tr', 'en']) {
+      const got = blink[name][lang]
+      t.true(got.accepted && got.rejected, `${name} ${lang}: the shaper lays out the letter and turns the line down`)
+      const want = lang === 'en' ? expected.en : expected.tr
+      t.true(near(got.alone, want), `${name} ${lang} alone: ${got.alone} (${want})`)
+      t.true(near(got.letter, want), `${name} ${lang} in the turned-down line: ${got.letter} (${want})`)
+    }
+  }
+  // The old path does not read the host language ("inherit" is no lang).
+  const old = run('skparagraph')
+  for (const [name, expected] of Object.entries(EXPECTED)) {
+    t.true(near(old[name].inherit.letter, expected.none), `old path ${name}: ${old[name].inherit.letter}`)
+    t.true(near(old[name].tr.letter, expected.tr), `old path ${name} tr: ${old[name].tr.letter}`)
+  }
+})
+
 // The generic families follow the host's UI language too: Chrome registers
 // no per-script default for the UI locale's own script, and the common
 // defaults come from that locale's locale_settings_mac_<ui>.xtb (ja, ko,
@@ -584,4 +665,50 @@ test.serial('generic families follow the host language like Chrome', (t) => {
       )
     })
   }
+})
+
+// -webkit-body as the description's generic family gives Standard(script)
+// to every family that is not a web font (FontSelector::
+// FamilyNameFromSettings). CSSFontSelector::GetFontData asks FontFaceCache
+// by family name first, and it takes the family's best face for any
+// request, so a registered face of any style keeps the family, also when
+// installed faces share its name. Chrome 157, "bold 40px AppleMyungjo,
+// -webkit-body" "Ag": 59.99998 (Hiragino Kaku Gothic ProN W6) with lang ja
+// and 48.887 (Times) with no lang (en-US host); with a bold FontFace
+// "AppleMyungjo" (SourceHanSerifCN-Bold) 53.28125 for both. In a child
+// process, as the face would replace AppleMyungjo for the other rows.
+test.serial('a registered face keeps a family that is also installed under -webkit-body', (t) => {
+  if (!BLINK || !CAPTURE_DARWIN) {
+    t.pass('the new path with the macOS system fonts of the capture')
+    return
+  }
+  const script = `
+    const { createCanvas, GlobalFonts, setTextRenderer } = require(${JSON.stringify(join(__dirname, '..', 'index.js'))})
+    setTextRenderer('system')
+    const widths = () => ['ja', 'inherit'].map((lang) => {
+      const ctx = createCanvas(10, 10).getContext('2d')
+      ctx.font = 'bold 40px AppleMyungjo, -webkit-body'
+      ctx.lang = lang
+      return ctx.measureText('Ag').width
+    })
+    const installed = widths()
+    GlobalFonts.registerFromPath(${JSON.stringify(join(__dirname, 'fonts', 'SourceHanSerifCN-Bold.ttf'))}, 'AppleMyungjo')
+    console.log(JSON.stringify({ installed, registered: widths() }))`
+  const child = spawnSync(process.execPath, ['-e', script], {
+    env: {
+      ...process.env,
+      LANGUAGE: '',
+      LC_ALL: '',
+      LC_MESSAGES: '',
+      LANG: 'C',
+      NAPI_RS_CANVAS_SHAPER: 'blink',
+      NAPI_RS_CANVAS_TEST_POSIX_LANGUAGE: '1',
+    },
+    encoding: 'utf8',
+  })
+  t.is(child.status, 0, child.stderr)
+  const { installed, registered } = JSON.parse(child.stdout) as Record<string, number[]>
+  const close = (a: number[], b: number[]) => a.every((v, i) => Math.abs(v - b[i]) <= 1e-3)
+  t.true(close(installed, [59.99998474121094, 48.88671875]), `installed: ${installed}`)
+  t.true(close(registered, [53.28125, 53.28125]), `registered: ${registered}`)
 })

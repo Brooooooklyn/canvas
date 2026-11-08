@@ -473,14 +473,10 @@ std::vector<SizeRun> PieceSizeRuns(const std::vector<SizeRun>& runs,
   return parts;
 }
 
-// Lays out `request` into `line`: with the Blink shaper when it is on and
-// takes the request (shaper.cpp), else with skparagraph.
-void LayOutLine(skiac_font_collection* c_collection,
-                const skiac_text_request& request,
-                Line* line) {
-  if (BlinkShaperOn() && LayOutLineBlink(c_collection, request, line)) {
-    return;
-  }
+// Lays out `request` into `line` with skparagraph.
+void LayOutLineParagraph(skiac_font_collection* c_collection,
+                         const skiac_text_request& request,
+                         Line* line) {
   auto font_collection = c_collection->collection;
   auto font_style =
       SkFontStyle(static_cast<int>(roundf(request.weight)), request.stretch,
@@ -922,6 +918,36 @@ void LayOutLine(skiac_font_collection* c_collection,
   }
   line->blink = std::move(blink);
   line->words = std::move(words);
+}
+
+// Lays out `request` into `line`: with the Blink shaper when it is on and
+// takes the request (shaper.cpp), else with skparagraph.
+void LayOutLine(skiac_font_collection* c_collection,
+                const skiac_text_request& request,
+                Line* line) {
+  if (!BlinkShaperOn()) {
+    LayOutLineParagraph(c_collection, request, line);
+    return;
+  }
+  if (LayOutLineBlink(c_collection, request, line)) {
+    return;
+  }
+  // A line the shaper turns down takes the language the shaper gives
+  // "inherit" (the host's, D19) for skparagraph's locale and the case map,
+  // as an explicit lang does: a character without a font does not change
+  // the language of the rest of the line. The line key keeps "inherit"; the
+  // host language is fixed per process.
+  const std::string_view lang(request.lang ? request.lang : "",
+                              request.lang ? request.lang_len : 0);
+  if (lang != "inherit") {
+    LayOutLineParagraph(c_collection, request, line);
+    return;
+  }
+  const std::string& host = HostLanguage();
+  skiac_text_request fallback = request;
+  fallback.lang = host.data();
+  fallback.lang_len = host.size();
+  LayOutLineParagraph(c_collection, fallback, line);
 }
 
 // The cached layout of `request`, laid out now if there is none.

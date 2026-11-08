@@ -39,6 +39,11 @@ bool LayOutLineBlink(skiac_font_collection* c_collection,
                      const skiac_text_request& request,
                      TextCaches::Line* line);
 
+// The host's UI language that ctx.lang "inherit" takes (LayoutLocale::
+// GetDefault, D19), read once per process. The shaper uses it, and so does
+// skparagraph for a line the shaper turns down (text.cpp LayOutLine).
+const std::string& HostLanguage();
+
 // Why LayOutLineBlink turned a request down: one value for each kind of
 // request the shaper cannot lay out yet. Each step of the work removes
 // values; when none is left, every request is laid out by the shaper.
