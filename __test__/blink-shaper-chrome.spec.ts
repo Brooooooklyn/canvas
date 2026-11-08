@@ -384,3 +384,33 @@ test.serial('a line with more than 100 fallback faces is laid out like Chrome', 
   const line = JSON.parse((ctx as unknown as { __debugTextLine(text: string): string }).__debugTextLine(text))
   t.true(new Set(line.runs.map((run: { family: string }) => run.family)).size > 100)
 })
+
+// A private use character picked as the hint (ChooseHintIndex: the first
+// hint after the first with a likely script; PUA's script is Unknown) gets
+// no system font (FontCache::FallbackFontForCharacter returns none for
+// private use), so the iterator goes on to the last resort font and then the
+// first candidate: the ∅ next to it is drawn with Lato's .notdef too, though
+// ∅ alone gets Apple Symbols. Chrome 157, 40px Lato, [width,
+// actualBoundingBoxRight]; the old path keeps the Apple Symbols ∅.
+test.serial('a private use hint makes its neighbours .notdef as in Chrome', (t) => {
+  if (!BLINK || !CAPTURE_DARWIN) {
+    t.pass('the new path with the macOS system fonts of the capture')
+    return
+  }
+  const ctx = createCanvas(10, 10).getContext('2d')
+  ctx.font = '40px BSLato'
+  t.deepEqual(
+    ['∅', '∅', '∅', '∅∅', 'a∅b', ''].map((text) => {
+      const metrics = ctx.measureText(text)
+      return [metrics.width, metrics.actualBoundingBoxRight]
+    }),
+    [
+      [28.69140625, 25.8984375],
+      [42.519989013671875, 41.63999557495117],
+      [42.519989013671875, 41.63999557495117],
+      [63.77998352050781, 62.899993896484375],
+      [92.59140014648438, 91.15140533447266],
+      [21.259994506835938, 20.380001068115234],
+    ],
+  )
+})
