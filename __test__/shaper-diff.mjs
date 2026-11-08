@@ -25,7 +25,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const require = createRequire(import.meta.url)
 
 // The stage this branch has landed, and the classes it may change.
-const STAGE = 'S6'
+const STAGE = 'S7'
 const ALLOWED = new Set([
   // PR-D10: no forced liga 0 (letter spacing is still turned down in S2).
   'd10',
@@ -145,6 +145,22 @@ const ALLOWED = new Set([
   // on macOS 27, system-ui "Hamburgefonstiv": 13px 104.07617 (old path
   // 105.21875), 20px 150.84521 (157.57072), 24px 177.4368 (176.36827).
   'trak-ptem',
+  // S7, Blink's default chws 1 after font-feature-settings unless they set
+  // chws or a non-zero halt / palt (font_features.cc, text-spacing-trim
+  // normal): a font with chws closes up adjacent CJK punctuation. Chrome 157
+  // (blink-shaper.json): "q7: BSChws default （（水））" 300 at 100px (old
+  // path 500), "han-kerning: BSChws ffs \"vhal\" 1 （（水））" 120 at 40px
+  // (200).
+  'chws',
+  // S7, HanKerning (han_kerning.cc, TextSpacingTrimFallback): halt on the
+  // open punctuation after open, middle or close punctuation and on the
+  // close punctuation before close or middle punctuation, per range and
+  // font, in a font with halt; the dot, colon and quote classes come from
+  // the font's glyphs for the locale. Chrome 157 (blink-shaper.json): "q7:
+  // BSHan default （（水））" 400 at 100px (old path 500), "han-kerning:
+  // BSHan zh-TW 水。、水" 140 at 40px (160), "han-kerning: BSHalt, BSHan
+  // （漢）（水）" 220 (240).
+  'han-kerning',
 ])
 
 const FONTS = {
@@ -166,6 +182,9 @@ const FONTS = {
   BSArB: 'ArB.ttf',
   BSGothic: 'ScienceGothic-VariableFont.ttf',
   BSTrak: 'TrakProbe.ttf',
+  BSChws: 'ChwsProbe.otf',
+  BSHalt: 'NotoSansCJKjp-Regular-subset-halt.otf',
+  BSKai: 'HYXiXingKaiW.ttf',
 }
 
 // One letter of each of these scripts, most of which no font in the
@@ -435,6 +454,88 @@ const FACE_SIZES = [
   ]),
 ]
 
+// S7: CJK punctuation (chws, HanKerning) at the start, in the middle and at
+// the end of a line, in pairs and next to Latin, with a font that has chws
+// (and halt), one with only halt (the Noto subset, SHS), one with neither
+// (HYXiXingKaiW: its output must not change), across fonts, and with the
+// settings that interact (lang, spacing, caps, size adjust, RTL, the
+// glyph-width features that turn chws or HanKerning off; vertical features
+// only count as set). Every character is in a family font (no fallback off
+// macOS). [text, font, settings, tags]
+const CJK_TEXTS = [
+  '（（水））',
+  '水（（水',
+  '水））水',
+  '水。、水',
+  '水，（水）',
+  '水：「水」',
+  '“水”（水）',
+  '水」「水',
+  '・（水',
+  '　（水）',
+]
+const CJK_FONTS = [
+  ['BSChws', ['chws', 'han-kerning']],
+  ['BSHalt', ['han-kerning']],
+  ['BSHan', ['han-kerning']],
+  ['BSKai', []],
+]
+const CJK = [
+  ...CJK_FONTS.flatMap(([family, tags]) =>
+    [undefined, 'ja', 'zh-CN', 'zh-TW', 'ko'].flatMap((lang) =>
+      CJK_TEXTS.filter((text) => family !== 'BSKai' || !text.includes('・')).map((text) => [
+        text,
+        `40px ${family}`,
+        lang ? { lang } : {},
+        ['script', ...tags],
+      ]),
+    ),
+  ),
+  ...CJK_FONTS.flatMap(([family, tags]) =>
+    ['Hello（（水））World', '(（水）)', '[「水」]', '水） (水'].map((text) => [
+      text,
+      `40px ${family}`,
+      {},
+      ['script', ...tags],
+    ]),
+  ),
+  ...[
+    ['（漢）（水）', 'BSHalt, BSHan'],
+    ['水）（漢', 'BSHalt, BSHan'],
+    ['水）（漢', 'BSChws, BSHan'],
+    ['漢、（水）', 'BSChws, BSHan'],
+    ['（（漢））', 'BSHan, BSHalt'],
+    ['a（（b））c', 'BSLato, BSHalt'],
+    ['a）（b', 'BSLato, BSChws'],
+    ['（（水））', 'BSKai, BSHalt'],
+  ].map(([text, families]) => [
+    text,
+    `40px ${families}`,
+    {},
+    ['script', 'family-fallback', 'han-kerning', ...(families.includes('BSChws') ? ['chws'] : [])],
+  ]),
+  ...CJK_FONTS.flatMap(([family, tags]) =>
+    [
+      [{ letterSpacing: '5px' }, ['ls-cluster']],
+      [{ wordSpacing: '7px' }, ['ws-rule']],
+      [{ fontVariantCaps: 'small-caps' }, ['caps-per-font']],
+      [{ fontSizeAdjust: '0.5' }, []],
+      [{ direction: 'rtl' }, []],
+      [{ fontFeatureSettings: '"halt" 1' }, []],
+      [{ fontFeatureSettings: '"palt" 1' }, []],
+      [{ fontFeatureSettings: '"chws" 0' }, []],
+      [{ fontFeatureSettings: '"vhal" 1' }, []],
+      [{ fontFeatureSettings: '"vchw" 1' }, []],
+      [{ fontKerning: 'none' }, []],
+    ].map(([settings, extra]) => [
+      'Ab（（水））cd 水、（水）',
+      `40px ${family}`,
+      settings,
+      ['script', ...tags, ...extra],
+    ]),
+  ),
+]
+
 // One property changed at a time on a few texts.
 const SETTINGS = [
   [{ fontKerning: 'none' }, []],
@@ -518,6 +619,11 @@ function cases() {
       for (const direction of ['ltr', 'rtl']) {
         out.push({ renderer, text, font, ctx: { ...settings, direction }, tags, draw: false })
       }
+      out.push({ renderer, text, font, ctx: settings, tags, draw: true })
+    }
+    for (const [text, font, settings, tags] of CJK) {
+      out.push({ renderer, text, font, ctx: settings, tags, draw: false })
+      out.push({ renderer, text, font, ctx: { ...settings, direction: 'rtl' }, tags, draw: false })
       out.push({ renderer, text, font, ctx: settings, tags, draw: true })
     }
     for (const [settings, settingTags] of SETTINGS) {
