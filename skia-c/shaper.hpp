@@ -302,12 +302,32 @@ struct SystemFallbackFont {
 // `computed_pixel_size`, with no language; the Apple Symbols swap for an
 // emoji without emoji presentation; the trait and weight refinement; the
 // synthetic styles from the traits.
+// For a `base` made from data, CoreText is asked with the same font from
+// `inputs` (MacFallbackInputs) by the key's primary font; `base` still gives
+// the traits.
+struct SystemFallbackKey;
+struct MacFallbackInputs;
 SystemFallbackFont MacAlternateFont(SkTypeface* base,
+                                    MacFallbackInputs* inputs,
+                                    const SystemFallbackKey& key,
                                     SyntheticStyle base_synthetic,
                                     uint32_t character,
                                     int css_weight,
                                     bool italic,
                                     float computed_pixel_size);
+// The CoreText fonts the system fallback asks with for primary fonts made
+// from data (as the registered fonts are), by the key's primary font (family
+// face and axes): the CGFont of the first instance given, kept until the
+// assets are rebuilt (not bounded: one per such font in use), and a CTFont
+// made from it for the 64 most recently asked. CoreText keeps about 4 KB for
+// every CGFont of a font made from data that it found a fallback from, after
+// that CGFont is freed, and an instance remade after the font arguments'
+// caches drop has a new CGFont. A CTFont made again from a kept CGFont adds
+// nothing and gives the same fallback fonts; it only takes CoreText about
+// 1 ms to set up. An installed font (one with a URL) is asked with its own
+// CTFont: its remade instances add nothing.
+MacFallbackInputs* CreateMacFallbackInputs();
+void DestroyMacFallbackInputs(MacFallbackInputs* inputs);
 // CreateFontPlatformData's synthetic styles for a font matched by family.
 SyntheticStyle MacMatchedFontSynthetic(SkTypeface* face,
                                        float css_weight,
@@ -335,16 +355,10 @@ const SystemFallbackFont* FindSystemFallback(
 void StoreSystemFallback(skiac_font_collection* c_collection,
                          const SystemFallbackKey& key,
                          SystemFallbackFont font);
-// The primary font CoreText is asked with for `key`: the first instance
-// given for the key's primary font (family face and axes), kept with the
-// results (at most 64, the least recently asked dropped first). CoreText
-// keeps about 4 KB for every CTFont it found a fallback from, after that
-// font is freed, and an instance remade after the font arguments' caches
-// drop is a new CTFont: one per primary font bounds that, whatever results
-// are dropped.
-SkTypeface* SystemFallbackInput(skiac_font_collection* c_collection,
-                                const SystemFallbackKey& key,
-                                const sk_sp<SkTypeface>& face);
+#if defined(__APPLE__)
+// The collection's MacFallbackInputs, kept with the results.
+MacFallbackInputs* SystemFallbackInputs(skiac_font_collection* c_collection);
+#endif
 // A system fallback face at an opsz (FontPlatformDataFromCTFont), cached by
 // typeface and opsz.
 sk_sp<SkTypeface> SystemFallbackInstance(skiac_font_collection* c_collection,

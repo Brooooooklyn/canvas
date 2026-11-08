@@ -12,6 +12,7 @@
 #include <limits>
 #include <list>
 #include <map>
+#include <memory>
 #include <unordered_map>
 
 #include "shaper.hpp"
@@ -58,8 +59,8 @@ void DestroyShaperCaches(ShaperCaches* caches) {
   delete caches;
 }
 
-// The system fallback results (FontCache's character fallback), and the
-// primary fonts CoreText is asked with; both least recently used first.
+// The system fallback results (FontCache's character fallback), least
+// recently used first, and on Apple the fonts CoreText is asked with.
 struct SystemFallbackCache {
   using Result = std::pair<SystemFallbackKey, SystemFallbackFont>;
   std::list<Result> results;
@@ -67,11 +68,14 @@ struct SystemFallbackCache {
                      std::list<Result>::iterator,
                      SystemFallbackKeyHash>
       fonts;
-  // By the key's primary font (family face and axes).
-  using InputKey = std::pair<SkTypefaceID, uint64_t>;
-  using Input = std::pair<InputKey, sk_sp<SkTypeface>>;
-  std::list<Input> input_lru;
-  std::map<InputKey, std::list<Input>::iterator> inputs;
+#if defined(__APPLE__)
+  struct InputsDeleter {
+    void operator()(MacFallbackInputs* inputs) const {
+      DestroyMacFallbackInputs(inputs);
+    }
+  };
+  std::unique_ptr<MacFallbackInputs, InputsDeleter> inputs;
+#endif
 };
 
 void SystemFallbackCacheDeleter::operator()(SystemFallbackCache* cache) const {
@@ -82,7 +86,6 @@ namespace {
 
 constexpr size_t kMaxParents = 100;
 constexpr size_t kMaxSystemFallbacks = 4096;
-constexpr size_t kMaxSystemFallbackInputs = 64;
 constexpr size_t kMaxSystemInstances = 256;
 
 // skia_text_metrics.cc SkiaScalarToHarfBuzzPosition: ClampTo<int>.
@@ -422,28 +425,18 @@ void StoreSystemFallback(skiac_font_collection* c_collection,
   cache.fonts[key] = std::prev(cache.results.end());
 }
 
-SkTypeface* SystemFallbackInput(skiac_font_collection* c_collection,
-                                const SystemFallbackKey& key,
-                                const sk_sp<SkTypeface>& face) {
+#if defined(__APPLE__)
+MacFallbackInputs* SystemFallbackInputs(skiac_font_collection* c_collection) {
   if (!c_collection->system_fallbacks) {
     c_collection->system_fallbacks.reset(new SystemFallbackCache());
   }
   SystemFallbackCache& cache = *c_collection->system_fallbacks;
-  const SystemFallbackCache::InputKey input = {key.primary, key.primary_axes};
-  if (const auto found = cache.inputs.find(input);
-      found != cache.inputs.end()) {
-    cache.input_lru.splice(cache.input_lru.end(), cache.input_lru,
-                           found->second);
-    return found->second->second.get();
+  if (!cache.inputs) {
+    cache.inputs.reset(CreateMacFallbackInputs());
   }
-  while (cache.inputs.size() >= kMaxSystemFallbackInputs) {
-    cache.inputs.erase(cache.input_lru.front().first);
-    cache.input_lru.pop_front();
-  }
-  cache.input_lru.emplace_back(input, face);
-  cache.inputs[input] = std::prev(cache.input_lru.end());
-  return face.get();
+  return cache.inputs.get();
 }
+#endif
 
 namespace {
 

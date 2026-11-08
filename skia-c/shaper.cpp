@@ -200,7 +200,7 @@ class LineFonts {
       }
       if (!font.face) {
         font = MacAlternateFont(
-            SystemFallbackInput(c_collection_, key, primary.face),
+            primary.face.get(), SystemFallbackInputs(c_collection_), key,
             primary.synthetic, hint, static_cast<int>(request_.weight), italic,
             static_cast<float>(key.pixel_size));
       }

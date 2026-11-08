@@ -13,6 +13,10 @@
 #include <CoreText/CoreText.h>
 #include <include/ports/SkTypeface_mac.h>
 
+#include <list>
+#include <map>
+#include <utility>
+
 #include "icu_api.h"
 #include "shaper.hpp"
 
@@ -203,7 +207,76 @@ float CTFontWeight(CTFontRef font) {
 
 }  // namespace
 
+struct MacFallbackInputs {
+  using Key = std::pair<SkTypefaceID, uint64_t>;
+  struct Input {
+    Input() = default;
+    Input(const Input&) = delete;
+    Input& operator=(const Input&) = delete;
+    ScopedCF<CGFontRef> graphics_font;
+    ScopedCF<CTFontRef> font;
+    std::list<Key>::iterator lru;
+  };
+  static constexpr size_t kMaxFonts = 64;
+  std::map<Key, Input> inputs;
+  // The keys whose input has a font, least recently asked first.
+  std::list<Key> font_lru;
+
+  // The font to ask CoreText with for `ct_font`, `key`'s primary font.
+  CTFontRef Font(const Key& key, CTFontRef ct_font) {
+    auto found = inputs.find(key);
+    if (found == inputs.end()) {
+      ScopedCF<CFTypeRef> url(
+          CTFontCopyAttribute(ct_font, kCTFontURLAttribute));
+      if (url) {
+        return ct_font;
+      }
+      ScopedCF<CGFontRef> graphics_font(
+          CTFontCopyGraphicsFont(ct_font, nullptr));
+      if (!graphics_font) {
+        return ct_font;
+      }
+      found = inputs.try_emplace(key).first;
+      found->second.graphics_font.reset(graphics_font.get());
+      CFRetain(graphics_font.get());
+      found->second.lru = font_lru.end();
+    }
+    Input& input = found->second;
+    const CGFloat size = CTFontGetSize(ct_font);
+    if (input.font && CTFontGetSize(input.font.get()) == size) {
+      font_lru.splice(font_lru.end(), font_lru, input.lru);
+      return input.font.get();
+    }
+    if (input.font) {
+      font_lru.erase(input.lru);
+      input.font.reset(nullptr);
+    }
+    while (font_lru.size() >= kMaxFonts) {
+      inputs.find(font_lru.front())->second.font.reset(nullptr);
+      font_lru.pop_front();
+    }
+    input.font.reset(CTFontCreateWithGraphicsFont(input.graphics_font.get(),
+                                                  size, nullptr, nullptr));
+    if (!input.font) {
+      input.lru = font_lru.end();
+      return ct_font;
+    }
+    input.lru = font_lru.insert(font_lru.end(), key);
+    return input.font.get();
+  }
+};
+
+MacFallbackInputs* CreateMacFallbackInputs() {
+  return new MacFallbackInputs();
+}
+
+void DestroyMacFallbackInputs(MacFallbackInputs* inputs) {
+  delete inputs;
+}
+
 SystemFallbackFont MacAlternateFont(SkTypeface* base,
+                                    MacFallbackInputs* inputs,
+                                    const SystemFallbackKey& key,
                                     SyntheticStyle base_synthetic,
                                     uint32_t character,
                                     int css_weight,
@@ -213,7 +286,12 @@ SystemFallbackFont MacAlternateFont(SkTypeface* base,
   SystemFallbackFont result;
   CTFontRef ct_font = base ? SkTypeface_GetCTFontRef(base) : nullptr;
   const float size = computed_pixel_size;
-  ScopedCF<CTFontRef> substitute(GetSubstituteFont(ct_font, character, size));
+  // The same font and variation as ct_font, for a font made from data with
+  // the CGFont CoreText keeps its fallback data for (MacFallbackInputs).
+  CTFontRef asked = ct_font && inputs
+                        ? inputs->Font({key.primary, key.primary_axes}, ct_font)
+                        : ct_font;
+  ScopedCF<CTFontRef> substitute(GetSubstituteFont(asked, character, size));
   if (!substitute) {
     return result;
   }
