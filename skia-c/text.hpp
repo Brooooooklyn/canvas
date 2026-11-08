@@ -208,6 +208,55 @@ std::vector<CapsPiece> SplitCaps(skiac_font_collection* c_collection,
                                  std::string_view word,
                                  const skiac_text_request& request);
 
+// font-variant-caps per font, for the Blink shaper (text_caps.cpp): Blink's
+// OpenTypeCapsSupport of one font for request.variant_caps and a script.
+struct CapsSupport {
+  enum class Font : uint8_t { kFull, kFallback, kNone };
+  enum class Synthesis : uint8_t {
+    kNone,
+    kLowerToSmallCaps,
+    kUpperToSmallCaps,
+    kBoth,
+  };
+  Font font = Font::kFull;
+  Synthesis synthesis = Synthesis::kNone;
+};
+
+// SmallCapsIterator::SmallCapsBehavior: kInvalid for a run of combining
+// marks only.
+enum class CaseRun { kInvalid, kUppercaseNeeded, kSameCase };
+
+// CaseMapIntend.
+enum class CaseMapIntend { kKeepSameCase, kUpperCase, kLowerCase };
+
+// OpenTypeCapsSupport(face, caps, auto synthesis, script): the caps
+// features `face` has for `script` (cached in caps_features).
+CapsSupport FontCapsSupport(skiac_font_collection* c_collection,
+                            SkTypeface* face,
+                            int caps,
+                            hb_script_t script);
+// OpenTypeCapsSupport::NeedsRunCaseSplitting.
+bool NeedsRunCaseSplitting(const CapsSupport& support, int caps);
+// OpenTypeCapsSupport::FontFeatureToUse.
+int CapsFeatureToUse(const CapsSupport& support, int caps, CaseRun run);
+// OpenTypeCapsSupport::NeedsCaseChange.
+CaseMapIntend NeedsCaseChange(const CapsSupport& support, CaseRun run);
+// OpenTypeCapsSupport::NeedsSyntheticFont.
+bool NeedsSyntheticFont(const CapsSupport& support, int caps, CaseRun run);
+// SmallCapsIterator::Consume once over text[0, length): the end of the
+// first run of characters that change when uppercased, or do not (combining
+// marks go with the run they are in), and that run's behavior.
+uint32_t NextCaseRun(const char16_t* text, uint32_t length, CaseRun* run);
+// CapsFeatureSettingsScopedOverlay: the OpenType features of a variant caps
+// value, put before `features` in Blink's order.
+void PrependCapsFeatures(std::vector<hb_feature_t>* features, int caps);
+// CaseMap::Locale of request.lang: "tr", "el", "lt", "nl", or root ("").
+const char* CaseMapLocale(const skiac_text_request& request);
+// `text` upper or lower cased with ICU for `locale`.
+std::u16string MapCase(CaseMapIntend intend,
+                       const char* locale,
+                       const std::u16string& text);
+
 // How far each text blob of `paragraph`'s first line moves right to sit
 // where Blink draws it, in the order visit() and paint() give the blobs;
 // empty when none moves (text.cpp). TextLine puts each run after the runs

@@ -114,7 +114,6 @@ test.serial('each request the shaper cannot lay out yet is counted under its rea
   // system fallback source: always with the portable renderer.
   setTextRenderer('portable')
   const cases: [string, string, Record<string, string>, string][] = [
-    ['40px StatsLato', 'Hello', { fontVariantCaps: 'small-caps' }, 'caps'],
     ['40px StatsLato, StatsHan', 'Hello', { fontSizeAdjust: '0.5' }, 'faceSizes'],
     ['40px StatsLato', '\uE000', {}, 'fallback'],
     ['40px StatsLato', '\u{10FFFD}', {}, 'fallback'],
@@ -154,6 +153,47 @@ test.serial('letter and word spacing are laid out by the shaper', (t) => {
         // Lato has no U+0301: without a family font for it, the line would
         // need the system fallback, which only macOS has on the shaper.
         measure(text.includes('\u0301') ? '40px StatsSerif' : '40px StatsLato', text, props)
+        count++
+      }
+    }
+  }
+  setTextRenderer('system')
+  const s = stats()
+  t.deepEqual(rejected(s), {})
+  t.is(s.accepted, BLINK ? count : 0)
+  t.is(s.cacheChanges, 0)
+})
+
+// Stage S5: font-variant-caps per font in the shaping loop. Every value, on
+// a font with the caps features (Source Serif: smcp, c2sc; Roboto Mono:
+// smcp) and without them (Lato, synthesized), with a fallback family, the
+// lang's case mapping, marks, spacing and RTL, is laid out by the shaper: no
+// request is turned down for caps.
+test.serial('font-variant-caps is laid out by the shaper', (t) => {
+  stats()
+  let count = 0
+  for (const renderer of ['portable', 'system'] as const) {
+    setTextRenderer(renderer)
+    for (const fontVariantCaps of [
+      'small-caps',
+      'all-small-caps',
+      'petite-caps',
+      'all-petite-caps',
+      'unicase',
+      'titling-caps',
+    ]) {
+      for (const [font, text, props] of [
+        ['40px StatsLato', 'Hello World ß fi 123 Éé', {}],
+        ['40px StatsSerif', 'Hello World ß fi 123 Éé', {}],
+        ['40px StatsMono', 'aBcDeF', {}],
+        ['40px StatsLato, StatsSerif', 'Hello αβγ q\u0301x', {}],
+        ['40px StatsLato, StatsHan', 'ab水cd Ef', {}],
+        ['40px StatsSerif', 'İstanbul ılık iI', { lang: 'tr' }],
+        ['40px StatsSerif', 'άλφα Ωμέγα', { lang: 'el' }],
+        ['40px StatsSerif', '\u0301\u0308 Straße', {}],
+        ['40px StatsLato', 'Hello World', { letterSpacing: '5px', direction: 'rtl' }],
+      ] as [string, string, Record<string, string>][]) {
+        measure(font, text, { ...props, fontVariantCaps })
         count++
       }
     }

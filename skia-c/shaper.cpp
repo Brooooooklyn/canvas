@@ -15,6 +15,7 @@
 #include <limits>
 #include <optional>
 #include <string_view>
+#include <unordered_map>
 #include <unordered_set>
 
 #include "icu_api.h"
@@ -126,6 +127,28 @@ class LineFonts {
   }
 
   std::deque<FontEntry>& families() { return families_; }
+
+  // SimpleFontData::SmallCapsFontData: `font` at the synthesized small caps
+  // size (CreateScaledFontData: the computed size, without
+  // font-size-adjust, times 0.7, rounded), with its face, opsz and synthetic
+  // styles; made once per font of the line.
+  FontEntry* SmallCaps(FontEntry* font) {
+    auto [found, made] = small_caps_index_.try_emplace(font, font);
+    if (made) {
+      FontEntry entry;
+      entry.face = font->face;
+      entry.base = font->base;
+      entry.size = SmallCapsSize(request_.size);
+      entry.opsz = font->opsz;
+      entry.synthetic = font->synthetic;
+      entry.small_caps = true;
+      if (Finish(&entry)) {
+        small_caps_.push_back(std::move(entry));
+        found->second = &small_caps_.back();
+      }
+    }
+    return found->second;
+  }
 
   // Whether this host has a system fallback source the shaper ports: the
   // CoreText one, with the system renderer once the installed fonts are on.
@@ -254,6 +277,9 @@ class LineFonts {
   TextStyle flags_;
   std::deque<FontEntry> families_;
   std::deque<FontEntry> others_;
+  // The small caps copies, by the font they copy.
+  std::deque<FontEntry> small_caps_;
+  std::unordered_map<const FontEntry*, FontEntry*> small_caps_index_;
   bool system_source_ = false;
   sk_sp<SkTypeface> locale_standard_;
   sk_sp<SkTypeface> last_resort_face_;
@@ -421,6 +447,9 @@ class ItemShaper {
              hb_buffer_t* buffer,
              const std::vector<hb_feature_t>& features,
              hb_language_t language,
+             skiac_font_collection* c_collection,
+             int variant_caps,
+             const char* case_map_locale,
              LineFonts& fonts,
              ShapeResult* result)
       : text_(text),
@@ -429,6 +458,9 @@ class ItemShaper {
         buffer_(buffer),
         features_(features),
         language_(language),
+        c_collection_(c_collection),
+        variant_caps_(variant_caps),
+        case_map_locale_(case_map_locale),
         fonts_(fonts),
         result_(result) {}
 
@@ -448,7 +480,7 @@ class ItemShaper {
     // The canvas's font-variant-emoji is normal.
     VariationSelectorMode mode = VariationSelectorMode::kUseSpecified;
     while (!queue_.empty()) {
-      const QueueItem current = queue_.front();
+      QueueItem current = queue_.front();
       queue_.pop_front();
       if (current.action != QueueAction::kRange) {
         if (current.action == QueueAction::kReset) {
@@ -484,23 +516,52 @@ class ItemShaper {
       if (!iterator.HasNext()) {
         stage_ = ChangeStageToLast(stage_);
       }
+      // font-variant-caps for this font: its own caps features for the
+      // segment's script, or synthesized small caps from it, each case run
+      // shaped on its own (the rest of the range goes back to the queue's
+      // front for the same font).
+      CapsSupport caps_support;
+      CaseRun case_run = CaseRun::kSameCase;
+      if (variant_caps_) {
+        caps_support =
+            FontCapsSupport(c_collection_, font->face.get(), variant_caps_,
+                            IcuScriptToHbScript(segment.script));
+        if (NeedsRunCaseSplitting(caps_support, variant_caps_)) {
+          SplitUntilNextCaseChange(&current, &case_run);
+        }
+      }
       const uint32_t shape_start = current.start;
       const uint32_t shape_end =
           std::min(length_, current.start + current.num_characters);
-      hb_buffer_add_utf16(buffer_, reinterpret_cast<const uint16_t*>(text_),
-                          static_cast<int>(length_), shape_start,
-                          static_cast<int>(shape_end - shape_start));
+      FontEntry* adjusted_font = font;
+      CaseMapIntend case_map_intend = CaseMapIntend::kKeepSameCase;
+      if (variant_caps_) {
+        case_map_intend = NeedsCaseChange(caps_support, case_run);
+        if (NeedsSyntheticFont(caps_support, variant_caps_, case_run)) {
+          adjusted_font = fonts_.SmallCaps(font);
+        }
+      }
+      FillBuffer(case_map_intend, shape_start, shape_end - shape_start);
       hb_buffer_set_language(buffer_, language_);
       hb_buffer_set_script(buffer_, IcuScriptToHbScript(segment.script));
       hb_buffer_set_direction(buffer_,
                               rtl_ ? HB_DIRECTION_RTL : HB_DIRECTION_LTR);
-      SetVariationSelectorMode(font, mode);
-      hb_shape_full(font->hb.get(), buffer_, features_.data(),
-                    static_cast<unsigned int>(features_.size()), kOtShaperList);
-      if (!font->draw_font.isSubpixel()) {
+      SetVariationSelectorMode(adjusted_font, mode);
+      const int caps_feature =
+          CapsFeatureToUse(caps_support, variant_caps_, case_run);
+      const std::vector<hb_feature_t>* features = &features_;
+      if (caps_feature) {
+        caps_features_ = features_;
+        PrependCapsFeatures(&caps_features_, caps_feature);
+        features = &caps_features_;
+      }
+      hb_shape_full(adjusted_font->hb.get(), buffer_, features->data(),
+                    static_cast<unsigned int>(features->size()), kOtShaperList);
+      if (!adjusted_font->draw_font.isSubpixel()) {
         RoundBufferPositions();
       }
-      ExtractShapeResults(current, font, segment.script, &font_cycle_queued);
+      ExtractShapeResults(current, adjusted_font, segment.script,
+                          &font_cycle_queued);
       hb_buffer_reset(buffer_);
     }
     return true;
@@ -598,6 +659,73 @@ class ItemShaper {
       }
     }
     return false;
+  }
+
+  // SplitUntilNextCaseChange: `current` ends at its first case change
+  // (SmallCapsIterator), and the rest goes to the front of the queue.
+  void SplitUntilNextCaseChange(QueueItem* current, CaseRun* case_run) {
+    const uint32_t end =
+        std::min(length_, current->start + current->num_characters);
+    const uint32_t until =
+        NextCaseRun(text_ + current->start, end - current->start, case_run);
+    if (until > 0 && until < current->num_characters) {
+      queue_.push_front({QueueAction::kRange, current->start + until,
+                         current->num_characters - until});
+      current->num_characters = until;
+    }
+  }
+
+  // The item upper or lower cased (CaseMap of the lang), made once per item.
+  const std::u16string& CaseMapped(CaseMapIntend intend) {
+    std::optional<std::u16string>& mapped =
+        intend == CaseMapIntend::kUpperCase ? upper_ : lower_;
+    if (!mapped) {
+      mapped = MapCase(intend, case_map_locale_,
+                       std::u16string(text_, text_ + length_));
+    }
+    return *mapped;
+  }
+
+  // CaseMappingHarfBuzzBufferFiller: [start, start + count) of the item,
+  // with the whole item as context. Case mapped, the item's mapping when it
+  // keeps the length; else each character mapped on its own, all of its
+  // mapping at its own index (FillSlowCase), with the unmapped item as
+  // context. The clusters stay item indices.
+  void FillBuffer(CaseMapIntend intend, uint32_t start, uint32_t count) {
+    const auto* text = reinterpret_cast<const uint16_t*>(text_);
+    if (intend == CaseMapIntend::kKeepSameCase) {
+      hb_buffer_add_utf16(buffer_, text, static_cast<int>(length_), start,
+                          static_cast<int>(count));
+      return;
+    }
+    const std::u16string& mapped = CaseMapped(intend);
+    if (mapped.size() == length_) {
+      hb_buffer_add_utf16(
+          buffer_, reinterpret_cast<const uint16_t*>(mapped.data()),
+          static_cast<int>(length_), start, static_cast<int>(count));
+      return;
+    }
+    hb_buffer_add_utf16(buffer_, text, static_cast<int>(length_), start, 0);
+    for (uint32_t i = start; i < start + count;) {
+      uint32_t next = i + 1;
+      if (text_[i] >= 0xD800 && text_[i] <= 0xDBFF && next < length_ &&
+          text_[next] >= 0xDC00 && text_[next] <= 0xDFFF) {
+        ++next;
+      }
+      const std::u16string one = MapCase(
+          intend, case_map_locale_, std::u16string(text_ + i, text_ + next));
+      for (size_t j = 0; j < one.size();) {
+        uint32_t c = one[j++];
+        if (c >= 0xD800 && c <= 0xDBFF && j < one.size() && one[j] >= 0xDC00 &&
+            one[j] <= 0xDFFF) {
+          c = 0x10000 + ((c - 0xD800) << 10) + (one[j++] - 0xDC00);
+        }
+        hb_buffer_add(buffer_, c, i);
+      }
+      i = next;
+    }
+    hb_buffer_add_utf16(buffer_, text, static_cast<int>(length_), start + count,
+                        0);
   }
 
   // RoundHarfBuzzBufferPositions.
@@ -895,8 +1023,15 @@ class ItemShaper {
   hb_buffer_t* buffer_;
   const std::vector<hb_feature_t>& features_;
   hb_language_t language_;
+  skiac_font_collection* c_collection_;
+  const int variant_caps_;
+  const char* case_map_locale_;
   LineFonts& fonts_;
   ShapeResult* result_;
+  // The features with the caps ones in front, for a range that has them.
+  std::vector<hb_feature_t> caps_features_;
+  std::optional<std::u16string> upper_;
+  std::optional<std::u16string> lower_;
   std::deque<QueueItem> queue_;
   std::vector<uint32_t> hints_;
   FallbackStage stage_ = FallbackStage::kIntermediate;
@@ -934,10 +1069,6 @@ bool BlinkShaperOn() {
 bool LayOutLineBlink(skiac_font_collection* c_collection,
                      const skiac_text_request& request,
                      TextCaches::Line* line) {
-  // The requests the shaper cannot lay out yet.
-  if (request.variant_caps != 0) {
-    return Reject(ShaperReject::kCaps);
-  }
   auto font_collection = c_collection->collection;
   const SkFontStyle font_style(static_cast<int>(roundf(request.weight)),
                                request.stretch,
@@ -1060,6 +1191,7 @@ bool LayOutLineBlink(skiac_font_collection* c_collection,
   const ItemList items = SegmentText(prepared, rtl, word_by_word);
   const std::vector<hb_feature_t> features = BlinkFeatures(request);
   const hb_language_t language = ShapingLanguage(request);
+  const char* case_map_locale = CaseMapLocale(request);
   hb_buffer_t* buffer = ShaperBuffer(c_collection);
   hb_buffer_reset(buffer);
 
@@ -1069,6 +1201,7 @@ bool LayOutLineBlink(skiac_font_collection* c_collection,
     ShapedItem result{item, {}};
     const char16_t* text = prepared.text.data() + item.start;
     ItemShaper shaper(text, item.length, item.rtl, buffer, features, language,
+                      c_collection, request.variant_caps, case_map_locale,
                       fonts, &result.result);
     for (const Segment& segment :
          SegmentItem(text, item.length, prepared.is_8bit)) {

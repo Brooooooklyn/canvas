@@ -49,7 +49,8 @@ enum class ShaperReject : uint32_t {
   // out since stage S4 (ShapeResultSpacing).
   kLetterSpacing,
   kWordSpacing,
-  // fontVariantCaps is not normal (caps per font: stage S5).
+  // Kept so the slot numbers stay: fontVariantCaps is laid out since stage
+  // S5 (caps per font in the shaping loop).
   kCaps,
   // A family has its own size or opsz (UsedSizes::faces: stage S6).
   kFaceSizes,
