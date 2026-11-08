@@ -790,9 +790,13 @@ StandardScript LocaleStandardScript(std::string_view lang,
   std::replace(tag.begin(), tag.end(), '_', '-');
   std::string_view view(tag);
   while (!view.empty()) {
-    for (const Subtag& entry : kLocaleScripts) {
-      if (EqualsIgnoringAsciiCase(view, entry.subtag)) {
-        return entry.script;
+    // Only a view of at most 6 bytes can be a list entry: a long tag walks
+    // without the compares.
+    if (view.size() <= 6) {
+      for (const Subtag& entry : kLocaleScripts) {
+        if (EqualsIgnoringAsciiCase(view, entry.subtag)) {
+          return entry.script;
+        }
       }
     }
     if (whole_tag) {
