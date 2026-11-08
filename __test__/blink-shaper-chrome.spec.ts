@@ -495,3 +495,93 @@ test.serial('"inherit" follows the host language like Chrome', (t) => {
   const old = run('skparagraph', { LANGUAGE: 'tr' })
   t.true(close(old.system, OLD), `old path: ${old.system}`)
 })
+
+// The generic families follow the host's UI language too: Chrome registers
+// no per-script default for the UI locale's own script, and the common
+// defaults come from that locale's locale_settings_mac_<ui>.xtb (ja, ko,
+// zh-CN, zh-TW, ar, he, fa). Desktop Chrome 157 with -AppleLanguages (ja /
+// zh-TW / ar / ko), "Ag" widths; headless Chrome does not apply the common
+// defaults, so these are headed captures. [lang (none: "inherit"), font,
+// width].
+test.serial('generic families follow the host language like Chrome', (t) => {
+  if (!BLINK || !CAPTURE_DARWIN) {
+    t.pass('the new path with the macOS system fonts of the capture')
+    return
+  }
+  const HOSTS: [Record<string, string>, [string | null, string, number][]][] = [
+    [
+      { LANG: 'ja_JP.UTF-8' },
+      [
+        [null, '40px serif', 50.83998107910156],
+        [null, '40px sans-serif', 55.63999938964844],
+        [null, '40px -webkit-body', 55.63999938964844],
+        ['en', '40px serif', 50.83998107910156],
+        ['ja', '40px serif', 50.83998107910156],
+        ['zh-CN', '40px serif', 45.91998291015625],
+        ['ar', '40px sans-serif', 55.63999938964844],
+      ],
+    ],
+    [
+      { LANG: 'zh_TW.UTF-8' },
+      [
+        [null, '40px serif', 45.91998291015625],
+        [null, '40px cursive', 47.15998840332031],
+        [null, '40px BSNo', 49.91999816894531],
+        ['ja', '40px serif', 50.83998107910156],
+        ['ja', '40px cursive', 47.15998840332031],
+        ['ko', '40px sans-serif', 44.43998718261719],
+        ['zh-TW', '40px serif', 45.91998291015625],
+      ],
+    ],
+    [
+      { LANG: 'ar_EG.UTF-8' },
+      [
+        [null, '40px monospace', 48.0078125],
+        ['en', '40px monospace', 48.0078125],
+        ['ja', '40px serif', 50.83998107910156],
+        ['zh-TW', '40px monospace', 48.0078125],
+      ],
+    ],
+    [
+      { LANG: 'ko_KR.UTF-8' },
+      [
+        [null, '40px serif', 48.9755859375],
+        [null, '40px BSNo', 44.43998718261719],
+        ['en', '40px -webkit-body', 44.43998718261719],
+        ['ko', '40px serif', 48.9755859375],
+      ],
+    ],
+  ]
+  for (const [host, rows] of HOSTS) {
+    const script = `
+      const { createCanvas, setTextRenderer } = require(${JSON.stringify(join(__dirname, '..', 'index.js'))})
+      setTextRenderer('system')
+      console.log(JSON.stringify(${JSON.stringify(rows)}.map(([lang, font]) => {
+        const ctx = createCanvas(10, 10).getContext('2d')
+        ctx.font = font
+        if (lang) ctx.lang = lang
+        return ctx.measureText('Ag').width
+      })))`
+    const child = spawnSync(process.execPath, ['-e', script], {
+      env: {
+        ...process.env,
+        LANGUAGE: '',
+        LC_ALL: '',
+        LC_MESSAGES: '',
+        LANG: '',
+        ...host,
+        NAPI_RS_CANVAS_SHAPER: 'blink',
+        NAPI_RS_CANVAS_TEST_POSIX_LANGUAGE: '1',
+      },
+      encoding: 'utf8',
+    })
+    t.is(child.status, 0, child.stderr)
+    const widths = JSON.parse(child.stdout) as number[]
+    rows.forEach(([lang, font, chrome], i) => {
+      t.true(
+        Math.abs(widths[i] - chrome) <= 1e-3,
+        `${JSON.stringify(host)} ${lang} ${font}: ${widths[i]} (Chrome ${chrome})`,
+      )
+    })
+  }
+})

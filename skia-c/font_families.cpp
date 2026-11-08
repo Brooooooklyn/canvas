@@ -206,6 +206,18 @@ class FamilyResolver {
     return c_collection_->folded_registered_families.count(Fold(name)) > 0;
   }
 
+  // Whether `name` is a font the program registered (a web font: Blink's
+  // FontFaceCache), not an installed one the collection lists (macOS).
+  bool IsWebFont(std::string_view name) const {
+    std::string spelling;
+    if (!IsRegistered(name) || !Find(name, &spelling)) {
+      return false;
+    }
+    const sk_sp<SkTypeface> face = c_collection_->assets->matchFamilyStyle(
+        spelling.c_str(), SkFontStyle());
+    return face && !IsSystemTypeface(c_collection_, face.get());
+  }
+
   // FontCache::GetFontData(description, name): the platform font manager's
   // match for one family name.
   bool FindSystem(std::string_view name, std::string* out) const {
@@ -840,7 +852,37 @@ std::vector<SkString> ResolveFontFamilies(skiac_font_collection* c_collection,
   // -webkit-body in the list.
   int description_generic = kNamed;
   for (size_t i = 0; i < request.family_count; ++i) {
+    const int g = request.families[i].generic;
+    if (g && g != kSystemUi && g != kMath) {
+      description_generic = g;
+    }
+  }
+  // FontSelector::FamilyNameFromSettings: when the description's generic
+  // family is -webkit-body, CSSFontSelector::GetFontData gives every family
+  // of the list that is not a web font (system-ui, math, the other generic
+  // families and installed names too) Standard(script), before the font
+  // cache sees the name. Chrome 157: lang ja "40px Helvetica, -webkit-body"
+  // and "40px serif, -webkit-body" "Ag" are Hiragino Kaku Gothic ProN 55.64,
+  // no lang "40px Helvetica, -webkit-body" is Times 48.89. Only with the
+  // shaper's locale settings (the old path keeps each family's own font).
+  std::string body_standard;
+  if (locale && description_generic == kWebkitBody) {
+    body_standard = locale->standard;
+    if (body_standard.empty() &&
+        !resolver.FindSystem(SettingsFamily(kWebkitBody, resolver.system()),
+                             &body_standard)) {
+      body_standard.clear();
+    }
+  }
+  for (size_t i = 0; i < request.family_count; ++i) {
     const auto& family = request.families[i];
+    if (!body_standard.empty() &&
+        !(family.generic
+              ? resolver.IsRegistered(GenericKeyword(family.generic))
+              : resolver.IsWebFont({family.name, family.name_len}))) {
+      add(body_standard, true);
+      continue;
+    }
     std::string name;
     bool found;
     if (family.generic) {
@@ -850,16 +892,18 @@ std::vector<SkString> ResolveFontFamilies(skiac_font_collection* c_collection,
                              ? std::string_view(locale->generic[family.generic])
                              : std::string_view(),
                          &name);
-      if (family.generic != kSystemUi && family.generic != kMath) {
-        description_generic = family.generic;
-      }
     } else {
       // FontFallbackList does not ask the system for an empty name.
       found = family.name_len > 0 &&
               resolver.FindSystem({family.name, family.name_len}, &name);
     }
     if (found) {
-      add(name, family.generic != kNamed);
+      // A -webkit-body that is not the description's generic family is
+      // named after the common standard font (FontBuilder::
+      // GenericFontFamilyName) and comes from the font cache by that name,
+      // as an installed family (with the shaper's locale settings).
+      add(name, family.generic != kNamed &&
+                    !(locale && family.generic == kWebkitBody));
     }
   }
   // The standard font comes through the font selector as a generic family
@@ -951,51 +995,94 @@ LocaleFamilies LocaleFontFamilies(skiac_font_collection* c_collection,
   families.standard = LocaleStandardFamily(c_collection, lang, host_language);
 #if defined(__APPLE__)
   FamilyResolver resolver(c_collection);
-  // The same scripts and host rule as the standard font: PrefsTabHelper::
-  // RegisterProfilePrefs registers the per-script defaults of every generic
-  // family in one loop (kFontDefaults) and skips them all for the script of
-  // the UI locale. Chrome 157 with -AppleLanguages (ja): lang "ja" "40px
-  // serif Ag" is Times, lang "zh-CN" and "ko" get Songti SC and AppleMyungjo.
   if (!resolver.system() || lang.empty()) {
-    return families;
-  }
-  const StandardScript script = LocaleStandardScript(lang);
-  if (script == LocaleStandardScript(host_language)) {
     return families;
   }
   // locale_settings_mac.grd IDS_{SERIF,SANS_SERIF,CURSIVE,FIXED}_FONT_FAMILY_*
   // as kFontDefaults registers them on macOS. A list (a leading ',') is its
   // first available family (gfx::FontList::FirstAvailableOrFirst), the same
-  // lists as the standard font's. Not modeled: the Japanese fixed font
-  // (",Osaka,BIZ UDGothic,Menlo", Osaka, which Fixed() turns into
-  // Osaka-Mono): Osaka-Mono is the "Regular-Mono" face of the family Osaka,
-  // which only the PostScript-name match of font_matcher_mac.mm
-  // MatchFontFamily finds; lang "ja" monospace keeps the common Menlo.
+  // lists as the standard font's.
   struct Settings {
+    std::vector<const char*> standard;
     std::vector<const char*> serif;
     std::vector<const char*> sans_serif;
     std::vector<const char*> cursive;
     std::vector<const char*> monospace;
-  } settings;
-  switch (script) {
-    case StandardScript::kJapanese:
-      settings = {
-          {"Hiragino Mincho ProN"}, {"Hiragino Kaku Gothic ProN"}, {}, {}};
-      break;
-    case StandardScript::kKorean:
-      settings = {{"AppleMyungjo"}, {"Apple SD Gothic Neo"}, {}, {}};
-      break;
-    case StandardScript::kSimplifiedHan:
-      settings = {{"Songti SC"}, {"PingFang SC", "STHeiti"}, {"Kaiti SC"}, {}};
-      break;
-    case StandardScript::kTraditionalHan:
-      settings = {{"Songti TC"}, {"PingFang TC", "Heiti TC"}, {"Kaiti TC"}, {}};
-      break;
-    case StandardScript::kDevanagari:
-      settings = {{"Devanagari MT"}, {"Kohinoor Devanagari"}, {}, {"Menlo"}};
-      break;
-    case StandardScript::kCommon:
-      return families;
+  };
+  // The common entries (USCRIPT_COMMON) come from the UI locale's own
+  // locale_settings_mac_<ui>.xtb, which changes them for ja, ko, zh-CN,
+  // zh-TW, ar, he and fa; empty: the en ones (SettingsFamily). Desktop
+  // Chrome 157 with -AppleLanguages (ja): no lang and lang "en" / "ar"
+  // "40px serif Ag" 50.84 (Hiragino Mincho ProN), "40px BSNo Ag" with
+  // (zh-TW) 49.92 (PingFang TC); (ar) "40px monospace Ag" 48.01 (Courier
+  // New). Headless Chrome does not apply the common entries (its common
+  // monospace is Courier on every host), so these come from headed captures.
+  // The ja UI's fixed font ",Osaka,BIZ UDGothic,Menlo" is not modeled
+  // (Osaka-Mono, below) and keeps Menlo.
+  Settings common;
+  if (host_language == "ja") {
+    common = {{"Hiragino Kaku Gothic ProN"},
+              {"Hiragino Mincho ProN"},
+              {"Hiragino Kaku Gothic ProN"},
+              {},
+              {}};
+  } else if (host_language == "ko") {
+    common = {{"Apple SD Gothic Neo"},
+              {"AppleMyungjo"},
+              {"Apple SD Gothic Neo"},
+              {},
+              {}};
+  } else if (host_language == "zh-CN") {
+    common = {{"PingFang SC", "STHeiti"},
+              {"Songti SC"},
+              {"PingFang SC", "STHeiti"},
+              {"Kaiti SC"},
+              {}};
+  } else if (host_language == "zh-TW") {
+    common = {{"PingFang TC", "Heiti TC"},
+              {"Songti TC"},
+              {"PingFang TC", "Heiti TC"},
+              {"Kaiti TC"},
+              {}};
+  } else if (host_language == "ar" || host_language == "he" ||
+             host_language == "fa") {
+    common = {{}, {"Times New Roman"}, {"Arial"}, {}, {"Courier New"}};
+  }
+  // The same scripts and host rule as the standard font: PrefsTabHelper::
+  // RegisterProfilePrefs registers the per-script defaults of every generic
+  // family in one loop (kFontDefaults) and skips them all for the script of
+  // the UI locale, which then gets the common entries. Not modeled: the
+  // Japanese fixed font (",Osaka,BIZ UDGothic,Menlo", Osaka, which Fixed()
+  // turns into Osaka-Mono): Osaka-Mono is the "Regular-Mono" face of the
+  // family Osaka, which only the PostScript-name match of font_matcher_mac.mm
+  // MatchFontFamily finds; lang "ja" monospace keeps the common Menlo.
+  Settings own;
+  const StandardScript script = LocaleStandardScript(lang);
+  if (script != LocaleStandardScript(host_language)) {
+    switch (script) {
+      case StandardScript::kJapanese:
+        own = {{},
+               {"Hiragino Mincho ProN"},
+               {"Hiragino Kaku Gothic ProN"},
+               {},
+               {}};
+        break;
+      case StandardScript::kKorean:
+        own = {{}, {"AppleMyungjo"}, {"Apple SD Gothic Neo"}, {}, {}};
+        break;
+      case StandardScript::kSimplifiedHan:
+        own = {{}, {"Songti SC"}, {"PingFang SC", "STHeiti"}, {"Kaiti SC"}, {}};
+        break;
+      case StandardScript::kTraditionalHan:
+        own = {
+            {}, {"Songti TC"}, {"PingFang TC", "Heiti TC"}, {"Kaiti TC"}, {}};
+        break;
+      case StandardScript::kDevanagari:
+        own = {{}, {"Devanagari MT"}, {"Kohinoor Devanagari"}, {}, {"Menlo"}};
+        break;
+      case StandardScript::kCommon:
+        break;
+    }
   }
   auto first_available = [&resolver](const std::vector<const char*>& names) {
     std::string name;
@@ -1006,12 +1093,33 @@ LocaleFamilies LocaleFontFamilies(skiac_font_collection* c_collection,
     }
     return names.empty() ? std::string() : std::string(names.front());
   };
-  families.generic[kSerif] = first_available(settings.serif);
-  families.generic[kSansSerif] = first_available(settings.sans_serif);
-  families.generic[kCursive] = first_available(settings.cursive);
-  families.generic[kMonospace] = first_available(settings.monospace);
-  // FamilyNameFromSettings: -webkit-body is Standard(script).
-  families.generic[kWebkitBody] = families.standard;
+  // GenericFontFamilySettings::GenericFontFamilyForScript: the script's own
+  // entry, else the common one.
+  auto setting = [&first_available](
+                     const std::vector<const char*>& script_own,
+                     const std::vector<const char*>& common_one) {
+    return first_available(!script_own.empty() ? script_own : common_one);
+  };
+  families.generic[kSerif] = setting(own.serif, common.serif);
+  families.generic[kSansSerif] = setting(own.sans_serif, common.sans_serif);
+  families.generic[kCursive] = setting(own.cursive, common.cursive);
+  families.generic[kMonospace] = setting(own.monospace, common.monospace);
+  // A -webkit-body entry is named after Standard() of the common script
+  // (FontBuilder::GenericFontFamilyName); as the description's generic
+  // family it is Standard(script) (ResolveFontFamilies).
+  families.generic[kWebkitBody] = first_available(common.standard);
+  // Standard(script): LocaleStandardFamily, else the common entry.
+  if (families.standard.empty()) {
+    std::string name;
+    for (const char* candidate : common.standard) {
+      if (resolver.FindSystem(candidate, &name)) {
+        families.standard = name;
+        break;
+      }
+    }
+  }
+#else
+  (void)host_language;
 #endif
   return families;
 }

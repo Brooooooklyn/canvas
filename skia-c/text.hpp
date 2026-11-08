@@ -51,14 +51,19 @@ std::string LocaleStandardFamily(skiac_font_collection* c_collection,
 // The generic font family settings of a locale's script
 // (GenericFontFamilySettings: FontSelector::FamilyNameFromSettings takes
 // Serif(script), SansSerif(script), ... for a generic family, and
-// Standard(script) for -webkit-body), where Chrome has a default of its own
-// for that script; an empty entry is the common setting. The same scripts and
-// host rule as LocaleStandardFamily (font_families.cpp).
+// Standard(script) for the description's -webkit-body): the script's own
+// default where Chrome has one, else the common entry of the host's UI
+// language `host_language` (its locale_settings_mac_<ui>.xtb, macOS); an
+// empty entry is the en common setting. The same scripts and host rule as
+// LocaleStandardFamily (font_families.cpp).
 struct LocaleFamilies {
-  // LocaleStandardFamily: the standard font, already resolved.
+  // Standard(script), already resolved: LocaleStandardFamily, else the
+  // host's common standard font; empty for the en one.
   std::string standard;
   // By skiac_font_family::generic (1 serif ... 8 math): the settings family
-  // name, looked up like the common one (SettingsFamily).
+  // name, looked up like the common one (SettingsFamily). For -webkit-body
+  // (as a family that is not the description's generic family) the common
+  // standard font of the host.
   std::string generic[9];
 };
 LocaleFamilies LocaleFontFamilies(skiac_font_collection* c_collection,

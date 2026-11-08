@@ -188,7 +188,10 @@ const ALLOWED = new Set([
   // 40px serif Ag" 50.84 (old path 48.89, Times), "lang: ja 40px serif 直骨"
   // actualBoundingBoxLeft -2.32 (shaper before -3.16), "lang: zh-CN 40px
   // cursive 水说" -4.68 (before -1.56), "lang: hi 40px sans-serif नम" 43.68
-  // (before 48.71).
+  // (before 48.71). With -webkit-body as the description's generic family
+  // the other families are the standard font: "lang: ja 40px Helvetica,
+  // -webkit-body Ag" 55.64 (Hiragino Kaku Gothic ProN; old path Helvetica
+  // 48.93), stages/S8/review-generic/chrome2.json.
   'locale-generic',
 ])
 
@@ -600,7 +603,9 @@ const LANGUAGE = [
     lang === 'inherit' ? ['host-language', 'caps-clusters'] : ['caps-clusters'],
   ]),
   // The generic families by the locale's script (installed fonts: macOS
-  // system renderer only).
+  // system renderer only). With -webkit-body as the description's generic
+  // family every family that is not a web font is the standard font
+  // (FontSelector::FamilyNameFromSettings), so the lists with -webkit-body.
   ...[
     ['ja', 'Agあ直'],
     ['ko', 'Ag한直'],
@@ -612,12 +617,18 @@ const LANGUAGE = [
     ['inherit', 'Ag直'],
     ['', 'Ag直'],
   ].flatMap(([lang, text]) =>
-    ['serif', 'sans-serif', 'cursive', 'monospace', '-webkit-body', 'BSLato, serif'].map((families) => [
-      text,
-      `40px ${families}`,
-      { lang },
-      ['locale-generic', 'system-fallback', 'script'],
-    ]),
+    [
+      'serif',
+      'sans-serif',
+      'cursive',
+      'monospace',
+      '-webkit-body',
+      'BSLato, serif',
+      'Helvetica, -webkit-body',
+      'serif, -webkit-body',
+      '-webkit-body, serif',
+      'BSLato, -webkit-body',
+    ].map((families) => [text, `40px ${families}`, { lang }, ['locale-generic', 'system-fallback', 'script']]),
   ),
 ]
 
