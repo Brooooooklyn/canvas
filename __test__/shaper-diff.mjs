@@ -25,7 +25,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const require = createRequire(import.meta.url)
 
 // The stage this branch has landed, and the classes it may change.
-const STAGE = 'S3'
+const STAGE = 'S4'
 const ALLOWED = new Set([
   // PR-D10: no forced liga 0 (letter spacing is still turned down in S2).
   'd10',
@@ -80,6 +80,27 @@ const ALLOWED = new Set([
   // font's .notdef. Chrome 157: "pua: 16px \"g_d0_f1\", sans-serif" rows
   // (10.140625 for U+E000, U+F8FF, U+100000, U+FFFE).
   'pua',
+  // S4, letter spacing once per cluster, on its last glyph in HarfBuzz order
+  // (ShapeResult::ApplySpacingOrExpansion), none between the letters of a
+  // cursive script or after a zero width character. Chrome 157
+  // (blink-shaper.json): "spacing: ls.q0301" (59.32, two spacings for
+  // "q\u0301x"), "spacing: ls.deva_word" (116.48), "spacing: ls.vs16"
+  // (106.64).
+  'ls-cluster',
+  // S4, word spacing on the TreatAsSpace characters (space, tab, NBSP) but a
+  // space at the string's start; none on U+2002, U+3000, U+2028. Chrome 157
+  // (blink-shaper.json): "spacing: ws.lead2" (68.08), "spacing: ws.nbspLead"
+  // (60.36), "spacing: ws.en2002" (62.64), "spacing: han.ws.3000" (120),
+  // "spacing: ws.ls2028" (50.36).
+  'ws-rule',
+  // S4, spacing below 0: the widths are not clamped, and an item narrower
+  // than nothing has its ink box outset to the left. Chrome 157
+  // (blink-shaper.json): "spacing: neg.ls_big" (-58.68, left 58.68),
+  // "spacing: neg.ws_big" (-9.64, left 28.96).
+  'negative-spacing',
+  // S4, spacing as TextRunLayoutUnit (truncated to 1/65536 px). Chrome 157
+  // (blink-shaper.json): "spacing: tiny.ls" (0.0002px: 181.20192).
+  'ls-quantize',
 ])
 
 const FONTS = {
@@ -216,6 +237,50 @@ const TEXTS = [
   [FACES, 'BSLato', ['script', 'system-fallback', 'faces100']],
 ]
 
+// S4: letter and word spacing on the texts they change: multi-glyph
+// clusters, cursive scripts, zero width characters, runs of spaces, NBSP,
+// U+2002, U+3000, the separators, negative and tiny values. ("liga" with a
+// letter spacing makes a ligature of two clusters, which broken() rejects:
+// font-features-chrome.spec.ts pins it; and spacing that puts a glyph more
+// than a font size left of the text is pinned by blink-shaper-chrome.spec.ts
+// and text-bbox-chrome.spec.ts.) [text, font families, settings, tags]
+const SPACED = [
+  ['q\u0301x', 'BSSerif', { letterSpacing: '8px' }, ['ls-cluster', 'script']],
+  ['q\u0301\u0308x', 'BSSerif', { letterSpacing: '8px' }, ['ls-cluster', 'script']],
+  ['q\u0301x', 'BSGar', { letterSpacing: '8px' }, ['ls-cluster', 'script']],
+  ['कि नमस्ते र्क', 'BSDeva', { letterSpacing: '8px' }, ['ls-cluster', 'script']],
+  ['fi ffi office', 'BSSerif', { letterSpacing: '8px' }, ['ls-cluster']],
+  ['سلام عليكم', 'BSHarm', { letterSpacing: '8px' }, ['ls-cluster', 'script', 'bidi']],
+  ['ߒߞߏ ߞߊ߲', 'BSNKo', { letterSpacing: '8px' }, ['ls-cluster', 'script']],
+  ['ᠮᠣᠩᠭᠣᠯ', 'BSMong', { letterSpacing: '8px' }, ['ls-cluster', 'script']],
+  ['ab\u00adcd a\u200bb a\u200db', 'BSLato', { letterSpacing: '8px' }, ['ls-cluster', 'zw']],
+  ['שָׁלוֹם', 'BSLato', { letterSpacing: '8px' }, ['ls-cluster', 'system-fallback']],
+  ['a☺️b', 'BSLato', { letterSpacing: '8px' }, ['ls-cluster', 'emoji', 'vs16']],
+  ['a🐈\u200d🍕b', 'BSLato', { letterSpacing: '8px' }, ['ls-cluster', 'emoji', 'vs16']],
+  ['  ab', 'BSLato', { wordSpacing: '10px' }, ['ws-rule']],
+  ['ab  ', 'BSLato', { wordSpacing: '10px' }, ['ws-rule']],
+  ['a   b', 'BSLato', { wordSpacing: '10px' }, ['ws-rule']],
+  ['   ', 'BSLato', { wordSpacing: '10px' }, ['ws-rule']],
+  ['   ', 'BSSerif', { wordSpacing: '10px' }, ['ws-rule']],
+  ['a\u00a0b \u00a0ab ab\u00a0', 'BSLato', { wordSpacing: '10px' }, ['ws-rule']],
+  ['\u00a0ab', 'BSLato', { wordSpacing: '10px' }, ['ws-rule']],
+  ['a\u2002b', 'BSLato', { wordSpacing: '10px' }, ['ws-rule']],
+  ['一\u3000一', 'BSHan', { wordSpacing: '10px' }, ['ws-rule', 'script']],
+  ['a\u2028b c\u2029d', 'BSLato', { wordSpacing: '10px', letterSpacing: '10px' }, ['ws-rule', 'separator', 'bidi']],
+  ['بسم الله ', 'BSHarm', { wordSpacing: '10px' }, ['ws-rule', 'script', 'bidi']],
+  [' a  b ', 'BSLato', { letterSpacing: '3px', wordSpacing: '7px' }, ['ws-rule', 'ls-cluster']],
+  ['abc', 'BSLato', { letterSpacing: '-40px' }, ['negative-spacing']],
+  ['a b', 'BSLato', { wordSpacing: '-60px' }, ['negative-spacing']],
+  ['a b', 'BSLato', { letterSpacing: '-10px', wordSpacing: '-10px' }, ['negative-spacing']],
+  ['Hello world', 'BSLato', { letterSpacing: '-8px' }, ['negative-spacing']],
+  ['   ', 'BSLato', { wordSpacing: '-5px' }, ['negative-spacing', 'ws-rule']],
+  ['abcdefghij', 'BSLato', { letterSpacing: '0.0002px' }, ['ls-quantize']],
+  ['abcdefghij', 'BSLato', { letterSpacing: '0.00001px' }, ['ls-quantize']],
+  ['Hello world', 'BSLato', { letterSpacing: '1.3333px', wordSpacing: '0.7px' }, ['ls-quantize']],
+  // The trailing space takes word spacing too.
+  ['Hamburgefonstiv '.repeat(40), 'BSLato', { letterSpacing: '1px', wordSpacing: '2px' }, ['long', 'ws-rule']],
+]
+
 // One property changed at a time on a few texts.
 const SETTINGS = [
   [{ fontKerning: 'none' }, []],
@@ -229,7 +294,7 @@ const SETTINGS = [
   [{ fontVariantNumeric: 'tabular-nums' }, []],
   [{ fontVariantPosition: 'super' }, []],
   [{ fontFeatureSettings: '"liga" 0, "kern" 0' }, []],
-  [{ letterSpacing: '2px' }, ['d10']],
+  [{ letterSpacing: '2px' }, []],
   [{ wordSpacing: '3px' }, []],
   [{ fontVariantCaps: 'small-caps' }, []],
   [{ fontSizeAdjust: '0.5' }, []],
@@ -281,6 +346,14 @@ function cases() {
         }
       }
     }
+    for (const [text, families, settings, tags] of SPACED) {
+      for (const direction of ['ltr', 'rtl']) {
+        out.push({ renderer, text, font: `40px ${families}`, ctx: { ...settings, direction }, tags, draw: false })
+      }
+      if (text.length <= 60) {
+        out.push({ renderer, text, font: `40px ${families}`, ctx: settings, tags, draw: true })
+      }
+    }
     for (const [settings, settingTags] of SETTINGS) {
       for (const text of SETTING_TEXTS) {
         const families = TEXTS.find(([t]) => t === text)[1]
@@ -293,10 +366,10 @@ function cases() {
 }
 
 // Whether the new path must lay a case out in this stage: plain text in the
-// registered fonts, no spacing, caps or font-size-adjust, and every
-// character in a family (no fallback tag).
+// registered fonts, no caps or font-size-adjust, and every character in a
+// family (no fallback tag). Letter and word spacing are laid out since S4.
 function mustAccept(c) {
-  const blocked = ['letterSpacing', 'wordSpacing', 'fontVariantCaps', 'fontSizeAdjust']
+  const blocked = ['fontVariantCaps', 'fontSizeAdjust']
   if (blocked.some((p) => p in c.ctx)) {
     return false
   }
