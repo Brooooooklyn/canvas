@@ -90,6 +90,23 @@ const ALLOWED = new Set([
   // source draws the first font's .notdef (portable renderer, P2), e.g.
   // 40px BSLato "\u231A\uFE0E", "a\u263A\uFE0Fb", "\u2205\uFE00".
   'grapheme-cluster',
+  // P2 (detected, not tagged): a line drawn all in .notdef by a synthetic
+  // bold or oblique font, with combining marks that HarfBuzz places by its
+  // fallback (a GPOS with no script for them: the Hebrew shaper's gpos_tag
+  // 'hebr', hb-ot-shape.cc disable_gpos). Blink's glyph extents come from
+  // the SkFont with the synthetic styles (font_platform_data.cc:271-272
+  // CreateSkFont, mac/font_platform_data_mac.mm:255-256,
+  // harfbuzz_font_data.h:52-59, harfbuzz_face.cc:309-317,
+  // skia_text_metrics.cc:81-118); the old path shapes without them
+  // (setFakeMissingFontStyles(false), skhb_glyph_extents). Only the marks
+  // move; the other glyphs, the advances and the font metrics stay. Seen
+  // off macOS, where no font has Hebrew: bold 24px and italic 30px BSLato
+  // "שָׁלוֹם" (Linux CI). Chrome 157 (stages/P2/heb-marks/chrome.json), web
+  // font Lato with Hebrew marks no macOS font has, so all .notdef: the mark
+  // moves with the synthetic style, "א֢" 24px descent 18.696, bold
+  // 19.821, 30px left -0.668, italic 2.019 (old path 21.5, 21.875, -0.648,
+  // -0.648: the same offsets); the shaper equals Chrome in 35 of 35 rows.
+  'notdef-mark-synthetic',
   // S4, letter spacing once per cluster, on its last glyph in HarfBuzz order
   // (ShapeResult::ApplySpacingOrExpansion), none between the letters of a
   // cursive script or after a zero width character. Chrome 157
@@ -787,6 +804,42 @@ function graphemeClusters(text, dump) {
   return JSON.stringify(parsed)
 }
 
+// Whether `newRow` differs from `oldRow` only where HarfBuzz's fallback put
+// the combining marks of a line drawn all in .notdef by a synthetic bold or
+// oblique font ('notdef-mark-synthetic'): the same runs, fonts and glyphs,
+// the clusters at their graphemes' starts (`grouped`, the old dump so
+// moved), every glyph that is not a mark where it was, and the same
+// metrics but the ink box. Only the marks' x and y may change.
+function notdefMarkSynthetic(text, oldRow, newRow, grouped) {
+  if (!/\p{M}/u.test(text)) {
+    return false
+  }
+  const bytes = Buffer.from(text, 'utf8')
+  const mark = (cluster) => /^\p{M}/u.test(bytes.subarray(cluster).toString('utf8'))
+  const a = JSON.parse(oldRow.dump)
+  const b = JSON.parse(newRow.dump)
+  const g = JSON.parse(grouped)
+  if (
+    !a.runs.length ||
+    a.runs.length !== b.runs.length ||
+    JSON.stringify({ ...a, runs: null }) !== JSON.stringify({ ...b, runs: null })
+  ) {
+    return false
+  }
+  const runs = a.runs.every((ra, r) => {
+    const { x: ax, y: ay, clusters: ac, ...fontA } = ra
+    const { x: bx, y: by, clusters: bc, ...fontB } = b.runs[r]
+    return (
+      JSON.stringify(fontA) === JSON.stringify(fontB) &&
+      (ra.embolden === true || ra.skew !== 0) &&
+      ra.glyphs.every((glyph) => glyph === 0) &&
+      JSON.stringify(g.runs[r].clusters) === JSON.stringify(bc) &&
+      ac.every((cluster, i) => mark(cluster) || (ax[i] === bx[i] && ay[i] === by[i]))
+    )
+  })
+  return runs && oldRow.metrics.every((v, i) => (i >= 1 && i <= 4) || v === newRow.metrics[i])
+}
+
 const FIELDS = [
   'width',
   'actualBoundingBoxLeft',
@@ -1014,6 +1067,9 @@ function compare(oldFile, newFile, limit) {
     const grouped = graphemeClusters(c.text, a.dump)
     if (grouped !== a.dump && dump({ dump: grouped }) === dump(b) && !shift && a.pixels === b.pixels) {
       tags.push('grapheme-cluster')
+    }
+    if (notdefMarkSynthetic(c.text, a, b, grouped)) {
+      tags.push('notdef-mark-synthetic')
     }
     const move = Math.min(moved(c.text, a.dump, b.dump), moved(c.text, grouped, b.dump))
     if (width > 256 && Math.max(shift, move) <= 1e-5 * width) {
