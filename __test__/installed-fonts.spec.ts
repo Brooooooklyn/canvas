@@ -74,8 +74,9 @@ function measure(family: string) {
 // MatchSystemUIFont); -apple-system and the ui-* keywords are no family
 // Chrome knows, so Times draws them. actualBoundingBoxLeft, Ascent and
 // Descent, fontBoundingBoxAscent and Descent, and the width for Times. SF's
-// width is left out: Chrome applies its AAT tracking at the font size
-// (harfbuzz_face.cc hb_font_set_ptem), skparagraph's HarfBuzz at 12pt.
+// width is left out here: Chrome applies its AAT tracking at the font size
+// (harfbuzz_face.cc hb_font_set_ptem), skparagraph's HarfBuzz at 12pt; the
+// Blink shaper's widths are pinned in SF_WIDTHS below.
 // Italic is CoreText's italic UI font (SFNSItalic), not a slanted upright.
 const SYSTEM_UI: Record<string, number[]> = {
   '20px system-ui': [-1.695404052734375, 14.690093994140625, 3.687896728515625, 19, 4],
@@ -115,6 +116,52 @@ const SYSTEM_UI: Record<string, number[]> = {
   )
   t.deepEqual(actual, SYSTEM_UI)
 })
+
+// Chrome 157 on macOS 27, "Hamburgefonstiv" in system-ui (SF, which has an
+// AAT `trak` table and no `sbix`): width, actualBoundingBoxLeft, Right,
+// Ascent and Descent. Chrome shapes SF with HarfBuzz's own advances and
+// tracks them at ptem = the specified size (harfbuzz_face.cc GetFunctions,
+// GetScaledFont); the Blink shaper does the same from stage S6. The old
+// path gives CoreText's advances and HarfBuzz's tracking at 12 pt, so it
+// matches only at 12px and at 100px (no tracking at either size).
+const SF_WIDTHS: Record<number, number[]> = {
+  6: [52.166015625, -0.5390625, 51.7265625, 4.470703125, 1.11328125],
+  9: [75.3486328125, -0.80859375, 74.8828125, 6.7060546875, 1.669921875],
+  12: [97.125, -1.078125, 96.7265625, 8.94140625, 2.2265625],
+  13: [104.076171875, -1.16796875, 103.720703125, 9.6865234375, 2.412109375],
+  17: [131.119140625, -1.52734375, 130.986328125, 12.6669921875, 3.154296875],
+  20: [150.84521484375, -1.695404052734375, 150.73825073242188, 14.690093994140625, 3.687896728515625],
+  // 177.43679809570312 and 177.00100708007812, which need 17 digits.
+  24: [11628498 / 65536, -1.734375, 11599938 / 65536, 17.25750732421875, 4.357177734375],
+  28: [206.869140625, -1.9140625, 206.171875, 20.001953125, 5.05859375],
+  50: [364.2822265625, -3.41796875, 363.37890625, 35.7177734375, 9.033203125],
+  100: [718.310546875, -6.8359375, 717.1875, 71.435546875, 18.06640625],
+}
+
+const BLINK = process.env.NAPI_RS_CANVAS_SHAPER === 'blink'
+;(MEASURED_MACOS ? (BLINK ? test : test.failing) : test.skip)(
+  'system-ui widths are tracked at the font size like Chrome on macOS',
+  (t) => {
+    const ctx = createCanvas(10, 10).getContext('2d')
+    const actual = Object.fromEntries(
+      Object.keys(SF_WIDTHS).map((size) => {
+        ctx.font = `${size}px system-ui`
+        const m = ctx.measureText('Hamburgefonstiv')
+        return [
+          size,
+          [
+            m.width,
+            m.actualBoundingBoxLeft,
+            m.actualBoundingBoxRight,
+            m.actualBoundingBoxAscent,
+            m.actualBoundingBoxDescent,
+          ],
+        ]
+      }),
+    )
+    t.deepEqual(actual, SF_WIDTHS)
+  },
+)
 
 macTest('the family "system-ui" is the UI font only by its exact name', (t) => {
   const ctx = createCanvas(10, 10).getContext('2d')
