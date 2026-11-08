@@ -245,6 +245,8 @@ const FONTS = {
   BSHalt: 'NotoSansCJKjp-Regular-subset-halt.otf',
   BSKai: 'HYXiXingKaiW.ttf',
   BSLocl: 'LoclProbe.ttf',
+  BSType1A: 'Roboto2-Regular.pfa',
+  BSType1B: 'Roboto2-Regular.pfb',
 }
 
 // One letter of each of these scripts, most of which no font in the
@@ -696,6 +698,21 @@ const SIZES = [
   ['14.6666667px', ['fractional']],
 ]
 
+// S9: registered Type 1 fonts (FreeType loads them; they have no SFNT
+// tables, so no cmap for HarfBuzz), .pfa and .pfb. The shaper maps their
+// characters with Skia, as the old path does: the same glyphs. They hold
+// the characters of "HELLO, WORLD!" only. After the other cases, so those
+// keep their ids. [text, families, settings, tags]
+const TYPE1 = ['BSType1A', 'BSType1B'].flatMap((family) => [
+  ['H', family, {}, []],
+  ['HELLO, WORLD!', family, {}, []],
+  ['Hello World', family, {}, []],
+  ['WORLD! Hello', `${family}, BSLato`, {}, ['family-fallback']],
+  ['HELLO WORLD', family, { letterSpacing: '3px', wordSpacing: '5px' }, []],
+  ['Hello World', family, { fontVariantCaps: 'small-caps' }, []],
+  ['HELLO WORLD', family, { fontKerning: 'none' }, []],
+])
+
 function cases() {
   const out = []
   for (const renderer of ['portable', 'system']) {
@@ -770,6 +787,25 @@ function cases() {
         }
         out.push({ renderer, text, font: `40px ${families}`, ctx: settings, tags, draw: false })
       }
+    }
+  }
+  for (const renderer of ['portable', 'system']) {
+    for (const [text, families, settings, tags] of TYPE1) {
+      for (const direction of ['ltr', 'rtl']) {
+        out.push({ renderer, text, font: `40px ${families}`, ctx: { ...settings, direction }, tags, draw: false })
+      }
+      for (const [size, sizeTags] of SIZES.slice(1)) {
+        out.push({
+          renderer,
+          text,
+          font: `${size} ${families}`,
+          ctx: settings,
+          tags: [...tags, ...sizeTags],
+          draw: false,
+        })
+      }
+      out.push({ renderer, text, font: `40px ${families}`, ctx: settings, tags, draw: true })
+      out.push({ renderer, text, font: `40px ${families}`, ctx: { ...settings, direction: 'rtl' }, tags, draw: true })
     }
   }
   return out.map((c, i) => ({ id: i, ...c }))

@@ -462,3 +462,73 @@ test.serial('the text caches never change during a layout, also when a layout pa
   t.is(s.accepted, 300)
   t.true(widths.every((w) => w > 0))
 })
+
+// A registered Type 1 font (FreeType loads it; it has no SFNT tables, so no
+// cmap for HarfBuzz): the shaper maps its characters with Skia, as the old
+// path does, and draws its glyphs, not the fallback font's. Chrome cannot
+// load such a font (OTS turns it down), so the old path is the reference:
+// the same widths, pixels and fonts, with both files (.pfa and .pfb) and
+// both renderers. The fixtures hold the characters of "HELLO, WORLD!" only.
+// At 30px every line is under 256px (no float sum rounding).
+test.serial('a registered Type 1 font keeps its glyphs on the shaper', (t) => {
+  const script = `
+    const { createHash } = require('node:crypto')
+    const { readFileSync } = require('node:fs')
+    const { createCanvas, GlobalFonts, setTextRenderer } = require(${JSON.stringify(join(__dirname, '..', 'index.js'))})
+    const binding = require(${JSON.stringify(join(__dirname, '..', 'js-binding.js'))})
+    GlobalFonts.registerFromPath(${JSON.stringify(join(__dirname, 'fonts', 'Roboto2-Regular.pfa'))}, 'StatsType1A')
+    GlobalFonts.register(readFileSync(${JSON.stringify(join(__dirname, 'fonts', 'Roboto2-Regular.pfb'))}), 'StatsType1B')
+    const out = { rows: [], stats: null }
+    binding.__shaperStats(true)
+    for (const renderer of ['portable', 'system']) {
+      setTextRenderer(renderer)
+      for (const family of ['StatsType1A', 'StatsType1B']) {
+        for (const [text, props] of [
+          ['H', {}],
+          ['WORLD!', {}],
+          ['HELLO, WORLD!', {}],
+          ['Hello World', {}],
+          ['HELLO', { letterSpacing: '3px' }],
+          ['Hello', { fontVariantCaps: 'small-caps' }],
+        ]) {
+          const canvas = createCanvas(260, 50)
+          const ctx = canvas.getContext('2d')
+          ctx.font = '30px ' + family
+          Object.assign(ctx, props)
+          const m = ctx.measureText(text)
+          ctx.fillText(text, 5, 35)
+          const pixels = createHash('sha1').update(ctx.getImageData(0, 0, 260, 50).data).digest('hex')
+          const families = [...new Set(JSON.parse(ctx.__debugTextLine(text)).runs.map((run) => run.family))]
+          out.rows.push([renderer, family, text, m.width, m.actualBoundingBoxAscent, m.actualBoundingBoxDescent, pixels, families.join('|')])
+        }
+      }
+    }
+    out.stats = JSON.parse(binding.__shaperStats(true))
+    console.log(JSON.stringify(out))`
+  const run = (shaper: string) =>
+    JSON.parse(
+      execFileSync(process.execPath, ['-e', script], {
+        env: { ...process.env, NAPI_RS_CANVAS_SHAPER: shaper },
+        encoding: 'utf8',
+        timeout: 20_000,
+      }),
+    ) as { rows: [string, string, string, number, number, number, string, string][]; stats: Stats }
+  const old = run('skparagraph')
+  const blink = run('')
+  t.is(old.stats.accepted, 0)
+  t.deepEqual(blink.stats.rejected, NONE)
+  t.is(blink.stats.accepted, blink.rows.length)
+  for (const [i, row] of blink.rows.entries()) {
+    t.deepEqual(row, old.rows[i], row.slice(0, 3).join(' '))
+  }
+  // "WORLD!" is all the Type 1 font's, and "H" is its glyph (22.02 px), not
+  // the fallback font's.
+  for (const [renderer, family, text, width, , , , families] of blink.rows) {
+    if (text === 'WORLD!') {
+      t.is(families, 'Roboto2', `${renderer} ${family} ${text}`)
+    }
+    if (text === 'H') {
+      t.true(Math.abs(width - 22.02) < 0.01, `${renderer} ${family} ${text}: ${width}`)
+    }
+  }
+})

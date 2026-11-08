@@ -1,0 +1,7 @@
+Roboto2-Regular.pfa and Roboto2-Regular.pfb: copied unchanged from Skia's
+resources/fonts. They are Type 1 (PostScript) conversions of a subset of
+Roboto (the characters of "HELLO, WORLD!"), made for Skia's tests
+("Font data copyright Google 2014").
+
+Roboto is licensed under the Apache License, Version 2.0:
+http://www.apache.org/licenses/LICENSE-2.0
