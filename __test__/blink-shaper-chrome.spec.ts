@@ -577,6 +577,137 @@ test.serial('a line the shaper turns down keeps the host language', (t) => {
   }
 })
 
+// A line the shaper turns down picks its fonts as the shaper does
+// (ResolveFontRequest): the families with the locale's font settings and
+// their sizes under font-size-adjust. Under -webkit-body as the
+// description's generic family an installed family is the standard font, a
+// generic family sized at its own aspect; a -webkit-body that is not the
+// description's generic family is an installed family at the primary's
+// size. Portable renderer, so U+E000 (no family has it) turns the line down.
+// "Times New Roman" (the portable standard font) is registered in case no
+// such font is installed; where one is (macOS, Windows) it takes the name.
+test.serial('a line the shaper turns down keeps the font sizes of the shaper', (t) => {
+  const script = `
+    const { createCanvas, GlobalFonts, setTextRenderer } = require(${JSON.stringify(join(__dirname, '..', 'index.js'))})
+    const binding = require(${JSON.stringify(join(__dirname, '..', 'js-binding.js'))})
+    GlobalFonts.registerFromPath(${JSON.stringify(join(__dirname, 'fonts', 'Lato-Regular.ttf'))}, 'BSLato')
+    GlobalFonts.registerFromPath(${JSON.stringify(join(__dirname, 'fonts', 'SourceSerifPro-Regular.ttf'))}, 'Times New Roman')
+    setTextRenderer('portable')
+    const out = []
+    for (const font of ['40px BSLato, Times New Roman, -webkit-body', '40px BSLato, -webkit-body, serif', '40px BSLato, -webkit-body']) {
+      for (const fontSizeAdjust of ['0.5', 'none']) {
+        const ctx = createCanvas(10, 10).getContext('2d')
+        ctx.font = font
+        ctx.fontSizeAdjust = fontSizeAdjust
+        const width = (text) => ctx.measureText(text).width
+        binding.__shaperStats(true)
+        const alone = width('\u2192')
+        const accepted = JSON.parse(binding.__shaperStats(true)).rejected[5] === 0
+        const letter = width('\u2192\u2192\uE000') - width('\u2192\uE000')
+        const rejected = JSON.parse(binding.__shaperStats(true)).rejected[5] > 0
+        out.push({ font, fontSizeAdjust, alone, letter, accepted, rejected })
+      }
+    }
+    console.log(JSON.stringify(out))`
+  const child = spawnSync(process.execPath, ['-e', script], {
+    env: { ...process.env, NAPI_RS_CANVAS_SHAPER: 'blink' },
+    encoding: 'utf8',
+  })
+  t.is(child.status, 0, child.stderr)
+  const rows = JSON.parse(child.stdout) as {
+    font: string
+    fontSizeAdjust: string
+    alone: number
+    letter: number
+    accepted: boolean
+    rejected: boolean
+  }[]
+  for (const { font, fontSizeAdjust, alone, letter, accepted, rejected } of rows) {
+    const name = `${font} fontSizeAdjust ${fontSizeAdjust}`
+    t.true(accepted && rejected, `${name}: the shaper lays out the arrow and turns the line down`)
+    t.true(Math.abs(alone - letter) <= 1e-3, `${name}: alone ${alone}, in the turned-down line ${letter}`)
+  }
+})
+
+// The font-metric units of ctx.filter read the canvas font with its locale
+// (the canvas state's font: SetFontForFilter, FontSizes::Ex / Ch / Cap /
+// Ic), so a generic family takes the setting of the lang's script, or of the
+// host's UI language for "inherit", as the text does. Chrome 157
+// OffscreenCanvas (as filter-parse-chrome.spec.ts): 5 units as the red of a
+// drop-shadow() color; the "ja" host rows are from desktop Chrome with
+// -AppleLanguages (ja), the others from an en-GB host
+// (stages/S8/review-r2/chrome-units-*.json). [lang (none: "inherit"), font,
+// unit, red].
+test.serial('filter font units follow the lang like the text', (t) => {
+  if (!CAPTURE_DARWIN) {
+    t.pass('the macOS system fonts of the capture')
+    return
+  }
+  const HOSTS: [Record<string, string>, [string | null, string, string, number][]][] = [
+    [
+      { LANG: 'ja_JP.UTF-8' },
+      [
+        [null, '40px serif', 'ic', 200],
+        [null, '40px serif', 'ex', 108],
+        [null, '40px serif', 'ch', 118],
+        [null, '40px serif', 'cap', 149],
+        [null, '20px serif', 'ic', 100],
+        [null, 'bold 40px serif', 'ic', 200],
+        [null, '40px NoSuchFamily', 'ic', 200],
+        [null, '40px Times', 'ic', 80],
+        ['en', '40px sans-serif', 'ic', 200],
+      ],
+    ],
+    [
+      { LANG: 'en_US.UTF-8' },
+      [
+        [null, '40px serif', 'ic', 80],
+        [null, '40px serif', 'ex', 90],
+        ['ja', '40px serif', 'ic', 200],
+        ['ja', '40px serif', 'ex', 108],
+        ['ja', '40px NoSuchFamily', 'ic', 200],
+        ['zh-CN', '40px serif', 'ic', 200],
+        ['zh-CN', '40px serif', 'ch', 94],
+        ['zh-CN', '40px serif', 'cap', 139],
+        ['ko', '40px sans-serif', 'ic', 173],
+        ['en', '40px serif', 'ic', 80],
+      ],
+    ],
+  ]
+  for (const [host, rows] of HOSTS) {
+    const script = `
+      const { createCanvas, setTextRenderer } = require(${JSON.stringify(join(__dirname, '..', 'index.js'))})
+      setTextRenderer('system')
+      console.log(JSON.stringify(${JSON.stringify(rows)}.map(([lang, font, unit]) => {
+        const ctx = createCanvas(60, 20).getContext('2d')
+        if (lang) ctx.lang = lang
+        ctx.font = font
+        ctx.filter = 'drop-shadow(20px 0 0 rgb(calc(5' + unit + ' / 1px) 0 0))'
+        ctx.fillStyle = 'blue'
+        ctx.fillRect(0, 0, 20, 20)
+        return ctx.getImageData(30, 10, 1, 1).data[0]
+      })))`
+    const child = spawnSync(process.execPath, ['-e', script], {
+      env: {
+        ...process.env,
+        LANGUAGE: '',
+        LC_ALL: '',
+        LC_MESSAGES: '',
+        LANG: '',
+        ...host,
+        NAPI_RS_CANVAS_SHAPER: 'blink',
+        NAPI_RS_CANVAS_TEST_POSIX_LANGUAGE: '1',
+      },
+      encoding: 'utf8',
+    })
+    t.is(child.status, 0, child.stderr)
+    const reds = JSON.parse(child.stdout) as number[]
+    rows.forEach(([lang, font, unit, chrome], i) => {
+      t.is(reds[i], chrome, `${JSON.stringify(host)} ${lang} ${font} 5${unit}`)
+    })
+  }
+})
+
 // The generic families follow the host's UI language too: Chrome registers
 // no per-script default for the UI locale's own script, and the common
 // defaults come from that locale's locale_settings_mac_<ui>.xtb (ja, ko,

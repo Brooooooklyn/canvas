@@ -1375,6 +1375,30 @@ hb_language_t ShapingLanguage(const std::string& lang) {
 
 }  // namespace
 
+FontResolution ResolveFontRequest(skiac_font_collection* c_collection,
+                                  const skiac_text_request& request) {
+  const std::string_view lang(request.lang ? request.lang : "",
+                              request.lang ? request.lang_len : 0);
+  FontResolution fonts;
+  if (!BlinkShaperOn()) {
+    fonts.lang = std::string(lang);
+    fonts.paragraph_lang = fonts.lang;
+    return fonts;
+  }
+  fonts.lang = ResolvedLanguage(request);
+  // A character without a font does not change the language of the rest of
+  // the line: skparagraph takes the host language for "inherit", as for an
+  // explicit lang. The line key keeps "inherit"; the host language is fixed
+  // per process.
+  fonts.paragraph_lang = lang == "inherit" ? fonts.lang : std::string(lang);
+  // A generic family takes the setting of the locale's script
+  // (FontSelector::FamilyNameFromSettings), and the last family is the
+  // standard font of that script (FontFallbackList::GetFontData's
+  // -webkit-standard).
+  fonts.families = LocaleFontFamilies(c_collection, fonts.lang, HostLanguage());
+  return fonts;
+}
+
 void NoteTextCachesChange() {
   g_text_caches_changes.fetch_add(1, std::memory_order_relaxed);
 }
@@ -1389,6 +1413,7 @@ bool BlinkShaperOn() {
 
 bool LayOutLineBlink(skiac_font_collection* c_collection,
                      const skiac_text_request& request,
+                     const FontResolution& resolution,
                      TextCaches::Line* line) {
   auto font_collection = c_collection->collection;
   const SkFontStyle font_style(static_cast<int>(roundf(request.weight)),
@@ -1396,22 +1421,18 @@ bool LayOutLineBlink(skiac_font_collection* c_collection,
                                static_cast<SkFontStyle::Slant>(request.style));
   // FontDescription::LocaleOrDefault: the HarfBuzz language, the case map
   // locale, HanKerning's locale and the standard font's script.
-  const std::string lang = ResolvedLanguage(request);
+  const std::string& lang = resolution.lang;
   // The FontList, with every noteFontArguments call, before any reference
   // into the caches is taken. The families are copied: the cache entry is
-  // a reference into TextCaches. A generic family takes the setting of the
-  // locale's script (FontSelector::FamilyNameFromSettings), and the last one
-  // is the standard font of that script (FontFallbackList::GetFontData's
-  // -webkit-standard). ComputeUsedSizes sizes the same families (a generic
-  // family, the standard font too, at its own aspect under font-size-adjust).
-  const LocaleFamilies locale_families =
-      LocaleFontFamilies(c_collection, lang, HostLanguage());
+  // a reference into TextCaches. The families and ComputeUsedSizes take the
+  // locale's font settings (a generic family, the standard font too, at its
+  // own aspect under font-size-adjust).
   const std::vector<SkString> families =
-      CachedFontFamilies(c_collection, request, &locale_families);
+      CachedFontFamilies(c_collection, request, resolution.locale());
   const std::vector<sk_sp<SkTypeface>> base_faces =
       font_collection->findTypefaces(families, font_style);
   const UsedSizes sizes =
-      ComputeUsedSizes(c_collection, base_faces, request, &locale_families);
+      ComputeUsedSizes(c_collection, base_faces, request, resolution.locale());
   const std::vector<SkFontArguments::VariationPosition::Coordinate> coords =
       FontVariations(base_faces, request, sizes.opsz);
   std::optional<FontArguments> font_args;
@@ -1553,6 +1574,10 @@ bool LayOutLineBlink(skiac_font_collection* c_collection,
 }
 
 extern "C" {
+
+bool skiac_blink_shaper_on() {
+  return BlinkShaperOn();
+}
 
 void skiac_debug_shaper_stats(skiac_shaper_stats* stats, bool reset) {
   stats->accepted = reset ? g_accepted.exchange(0, std::memory_order_relaxed)
