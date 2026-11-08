@@ -54,6 +54,10 @@ interface Row {
   // not checked before it. ("fallback: han-ja", Chrome's standard font for
   // Japanese, is now turned down to the old path: reason localeFallback.)
   blinkFrom?: string
+  // The row differs from Chrome for a reason outside the shaper that is
+  // handed off (DESIGN-SHAPER.md 1.2: q5 S1 system-ui CJK font choice, q5 S3
+  // Hiragino Sans face choice); not checked.
+  handoff?: string
 }
 const FIXTURE: { darwin: string; fonts: Record<string, string>; cases: Record<string, Row> } = JSON.parse(
   readFileSync(join(__dirname, 'fixtures', 'text-fonts', 'blink-shaper.json'), 'utf8'),
@@ -66,7 +70,7 @@ const UNREGISTERED = Object.entries(FIXTURE.fonts).flatMap(([family, file]) =>
 )
 
 // The last shaper stage on this branch.
-const LANDED = 'S6'
+const LANDED = 'S7'
 const STAGES = ['S0', 'S0a', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9', 'S10']
 const BLINK = process.env.NAPI_RS_CANVAS_SHAPER === 'blink'
 
@@ -211,6 +215,9 @@ function check({ renderer, rows, flip, widthOnly }: Check) {
       if (BLINK && row.blinkFrom && STAGES.indexOf(row.blinkFrom) > STAGES.indexOf(LANDED)) {
         continue
       }
+      if (row.handoff) {
+        continue
+      }
       const value = ours(row)
       const invalid = invalidOutput(row, value)
       if (invalid) {
@@ -250,6 +257,7 @@ test.serial('the fixture covers every group of the shaper stages', (t) => {
     'q5',
     'q7',
     'cjk-punct',
+    'han-kerning',
     'q9',
     'trak',
     'spacing',

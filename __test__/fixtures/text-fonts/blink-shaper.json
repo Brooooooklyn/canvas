@@ -4382,7 +4382,8 @@
       "text": "「（水）」",
       "system": true,
       "chrome": [160, -27.15999984741211, 132.83999633789062, 33.720001220703125, 3.3200035095214844],
-      "flip": "S7"
+      "flip": "S7",
+      "handoff": "q5 S3: Chrome 157 draws 400 \"Hiragino Sans\" with the next heavier face (ink differs; widths equal Chrome with the shaper)"
     },
     "cjk-punct: system-ui 「（水）」": {
       "group": "cjk-punct",
@@ -4390,7 +4391,8 @@
       "text": "「（水）」",
       "system": true,
       "chrome": [189.25880432128906, -24.336101531982422, 164.687255859375, 31.092178344726562, 4.035484313964844],
-      "flip": "S7"
+      "flip": "S7",
+      "handoff": "q5 S1: Chrome 157 draws system-ui CJK with .PingFangUIDisplaySC"
     },
     "cjk-punct: BSHalt 水「（水）」": {
       "group": "cjk-punct",
@@ -4414,7 +4416,8 @@
       "text": "水「（水）」",
       "system": true,
       "chrome": [200, -1.5999999046325684, 172.83999633789062, 33.720001220703125, 3.3200035095214844],
-      "flip": "S7"
+      "flip": "S7",
+      "handoff": "q5 S3: Chrome 157 draws 400 \"Hiragino Sans\" with the next heavier face (ink differs; widths equal Chrome with the shaper)"
     },
     "cjk-punct: system-ui 水「（水）」": {
       "group": "cjk-punct",
@@ -4422,7 +4425,8 @@
       "text": "水「（水）」",
       "system": true,
       "chrome": [227.11056518554688, -1.4229130744934082, 202.53900146484375, 31.092178344726562, 4.035484313964844],
-      "flip": "S7"
+      "flip": "S7",
+      "handoff": "q5 S1: Chrome 157 draws system-ui CJK with .PingFangUIDisplaySC"
     },
     "cjk-punct: BSHalt （水）。": {
       "group": "cjk-punct",
@@ -4446,7 +4450,8 @@
       "text": "（水）。",
       "system": true,
       "chrome": [140, -27.279998779296875, 114.4800033569336, 33.720001220703125, 3.3200035095214844],
-      "flip": "S7"
+      "flip": "S7",
+      "handoff": "q5 S3: Chrome 157 draws 400 \"Hiragino Sans\" with the next heavier face (ink differs; widths equal Chrome with the shaper)"
     },
     "cjk-punct: system-ui （水）。": {
       "group": "cjk-punct",
@@ -4454,7 +4459,8 @@
       "text": "（水）。",
       "system": true,
       "chrome": [151.40704345703125, -26.098920822143555, 127.9139404296875, 31.090225219726562, 4.181087493896484],
-      "flip": "S7"
+      "flip": "S7",
+      "handoff": "q5 S1: Chrome 157 draws system-ui CJK with .PingFangUIDisplaySC"
     },
     "cjk-punct: BSHalt 水（水）。": {
       "group": "cjk-punct",
@@ -4478,7 +4484,8 @@
       "text": "水（水）。",
       "system": true,
       "chrome": [180, -1.5999999046325684, 154.48001098632812, 33.720001220703125, 3.3200035095214844],
-      "flip": "S7"
+      "flip": "S7",
+      "handoff": "q5 S3: Chrome 157 draws 400 \"Hiragino Sans\" with the next heavier face (ink differs; widths equal Chrome with the shaper)"
     },
     "cjk-punct: system-ui 水（水）。": {
       "group": "cjk-punct",
@@ -4486,7 +4493,8 @@
       "text": "水（水）。",
       "system": true,
       "chrome": [189.25880432128906, -1.4229130744934082, 165.7657012939453, 31.090225219726562, 4.181087493896484],
-      "flip": "S7"
+      "flip": "S7",
+      "handoff": "q5 S1: Chrome 157 draws system-ui CJK with .PingFangUIDisplaySC"
     },
     "cjk-punct: BSHalt 水。、水": {
       "group": "cjk-punct",
@@ -4510,7 +4518,8 @@
       "text": "水。、水",
       "system": true,
       "chrome": [140, -1.5999999046325684, 138.60000610351562, 32.84000015258789, 2.799999237060547],
-      "flip": "S7"
+      "flip": "S7",
+      "handoff": "q5 S3: Chrome 157 draws 400 \"Hiragino Sans\" with the next heavier face (ink differs; widths equal Chrome with the shaper)"
     },
     "cjk-punct: system-ui 水。、水": {
       "group": "cjk-punct",
@@ -4518,7 +4527,8 @@
       "text": "水。、水",
       "system": true,
       "chrome": [151.40704345703125, -1.4229130744934082, 149.8121337890625, 30.882568359375, 4.181087493896484],
-      "flip": "S7"
+      "flip": "S7",
+      "handoff": "q5 S1: Chrome 157 draws system-ui CJK with .PingFangUIDisplaySC"
     },
     "cjk-punct: BSHalt 水水。、水": {
       "group": "cjk-punct",
@@ -4542,7 +4552,8 @@
       "text": "水水。、水",
       "system": true,
       "chrome": [180, -1.5999999046325684, 178.60000610351562, 32.84000015258789, 2.799999237060547],
-      "flip": "S7"
+      "flip": "S7",
+      "handoff": "q5 S3: Chrome 157 draws 400 \"Hiragino Sans\" with the next heavier face (ink differs; widths equal Chrome with the shaper)"
     },
     "cjk-punct: system-ui 水水。、水": {
       "group": "cjk-punct",
@@ -4550,7 +4561,8 @@
       "text": "水水。、水",
       "system": true,
       "chrome": [189.25880432128906, -1.4229130744934082, 187.66390991210938, 30.882568359375, 4.181087493896484],
-      "flip": "S7"
+      "flip": "S7",
+      "handoff": "q5 S1: Chrome 157 draws system-ui CJK with .PingFangUIDisplaySC"
     },
     "cjk-punct: BSHalt 水（（水": {
       "group": "cjk-punct",
@@ -4574,7 +4586,8 @@
       "text": "水（（水",
       "system": true,
       "chrome": [140, -1.5999999046325684, 138.60000610351562, 33.720001220703125, 3.3200035095214844],
-      "flip": "S7"
+      "flip": "S7",
+      "handoff": "q5 S3: Chrome 157 draws 400 \"Hiragino Sans\" with the next heavier face (ink differs; widths equal Chrome with the shaper)"
     },
     "cjk-punct: system-ui 水（（水": {
       "group": "cjk-punct",
@@ -4582,7 +4595,8 @@
       "text": "水（（水",
       "system": true,
       "chrome": [151.40704345703125, -1.4229130744934082, 149.8121337890625, 31.090225219726562, 4.022556304931641],
-      "flip": "S7"
+      "flip": "S7",
+      "handoff": "q5 S1: Chrome 157 draws system-ui CJK with .PingFangUIDisplaySC"
     },
     "cjk-punct: BSHalt 水水（（水": {
       "group": "cjk-punct",
@@ -4606,7 +4620,8 @@
       "text": "水水（（水",
       "system": true,
       "chrome": [180, -1.5999999046325684, 178.60000610351562, 33.720001220703125, 3.3200035095214844],
-      "flip": "S7"
+      "flip": "S7",
+      "handoff": "q5 S3: Chrome 157 draws 400 \"Hiragino Sans\" with the next heavier face (ink differs; widths equal Chrome with the shaper)"
     },
     "cjk-punct: system-ui 水水（（水": {
       "group": "cjk-punct",
@@ -4614,7 +4629,8 @@
       "text": "水水（（水",
       "system": true,
       "chrome": [189.25880432128906, -1.4229130744934082, 187.66390991210938, 31.090225219726562, 4.022556304931641],
-      "flip": "S7"
+      "flip": "S7",
+      "handoff": "q5 S1: Chrome 157 draws system-ui CJK with .PingFangUIDisplaySC"
     },
     "cjk-punct: BSHalt 水」「水": {
       "group": "cjk-punct",
@@ -4638,7 +4654,8 @@
       "text": "水」「水",
       "system": true,
       "chrome": [140, -1.5999999046325684, 138.60000610351562, 33.720001220703125, 3.3199996948242188],
-      "flip": "S7"
+      "flip": "S7",
+      "handoff": "q5 S3: Chrome 157 draws 400 \"Hiragino Sans\" with the next heavier face (ink differs; widths equal Chrome with the shaper)"
     },
     "cjk-punct: system-ui 水」「水": {
       "group": "cjk-punct",
@@ -4646,7 +4663,8 @@
       "text": "水」「水",
       "system": true,
       "chrome": [151.40704345703125, -1.4229130744934082, 149.8121337890625, 31.092178344726562, 4.022674560546875],
-      "flip": "S7"
+      "flip": "S7",
+      "handoff": "q5 S1: Chrome 157 draws system-ui CJK with .PingFangUIDisplaySC"
     },
     "cjk-punct: BSHalt 水水」「水": {
       "group": "cjk-punct",
@@ -4670,7 +4688,8 @@
       "text": "水水」「水",
       "system": true,
       "chrome": [180, -1.5999999046325684, 178.60000610351562, 33.720001220703125, 3.3199996948242188],
-      "flip": "S7"
+      "flip": "S7",
+      "handoff": "q5 S3: Chrome 157 draws 400 \"Hiragino Sans\" with the next heavier face (ink differs; widths equal Chrome with the shaper)"
     },
     "cjk-punct: system-ui 水水」「水": {
       "group": "cjk-punct",
@@ -4678,7 +4697,8 @@
       "text": "水水」「水",
       "system": true,
       "chrome": [189.25880432128906, -1.4229130744934082, 187.66390991210938, 31.092178344726562, 4.022674560546875],
-      "flip": "S7"
+      "flip": "S7",
+      "handoff": "q5 S1: Chrome 157 draws system-ui CJK with .PingFangUIDisplaySC"
     },
     "cjk-punct: BSHalt 、（水）": {
       "group": "cjk-punct",
@@ -4702,7 +4722,8 @@
       "text": "、（水）",
       "system": true,
       "chrome": [140, -1.7200000286102295, 112.72000122070312, 33.720001220703125, 3.3200035095214844],
-      "flip": "S7"
+      "flip": "S7",
+      "handoff": "q5 S3: Chrome 157 draws 400 \"Hiragino Sans\" with the next heavier face (ink differs; widths equal Chrome with the shaper)"
     },
     "cjk-punct: system-ui 、（水）": {
       "group": "cjk-punct",
@@ -4710,7 +4731,8 @@
       "text": "、（水）",
       "system": true,
       "chrome": [151.40704345703125, -4.684194564819336, 125.03125762939453, 31.090225219726562, 4.0960693359375],
-      "flip": "S7"
+      "flip": "S7",
+      "handoff": "q5 S1: Chrome 157 draws system-ui CJK with .PingFangUIDisplaySC"
     },
     "cjk-punct: BSHalt 水、（水）": {
       "group": "cjk-punct",
@@ -4734,7 +4756,8 @@
       "text": "水、（水）",
       "system": true,
       "chrome": [180, -1.5999999046325684, 152.72000122070312, 33.720001220703125, 3.3200035095214844],
-      "flip": "S7"
+      "flip": "S7",
+      "handoff": "q5 S3: Chrome 157 draws 400 \"Hiragino Sans\" with the next heavier face (ink differs; widths equal Chrome with the shaper)"
     },
     "cjk-punct: system-ui 水、（水）": {
       "group": "cjk-punct",
@@ -4742,7 +4765,8 @@
       "text": "水、（水）",
       "system": true,
       "chrome": [189.25880432128906, -1.4229130744934082, 162.88302612304688, 31.090225219726562, 4.0960693359375],
-      "flip": "S7"
+      "flip": "S7",
+      "handoff": "q5 S1: Chrome 157 draws system-ui CJK with .PingFangUIDisplaySC"
     },
     "q9: system-ui 6px": {
       "group": "q9",
@@ -9124,6 +9148,4754 @@
         "direction": "rtl"
       },
       "chrome": [139.19992065429688, 138.19992065429688, -0.91998291015625, 39.56000518798828, 9.560001373291016]
+    },
+    "han-kerning: BSChws none （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "（（水））",
+      "chrome": [120, -7.799999237060547, 112.19999694824219, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws none 水（（水": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "水（（水",
+      "chrome": [120, -1.159999966621399, 118.8800048828125, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws none 水））水": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "水））水",
+      "chrome": [120, -1.159999966621399, 118.8800048828125, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws none 水。、水": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "水。、水",
+      "chrome": [120, -1.159999966621399, 118.8800048828125, 33.52000045776367, 3.2400054931640625],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws none 水，（水）": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "水，（水）",
+      "chrome": [140, -1.159999966621399, 132.20001220703125, 34.2400016784668, 4.280002593994141],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws none 水：「水」": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "水：「水」",
+      "chrome": [140, -1.159999966621399, 134, 33.84000015258789, 3.44000244140625],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws none 水；（水）": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "水；（水）",
+      "chrome": [140, -1.159999966621399, 132.1999969482422, 34.2400016784668, 4.120002746582031],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws none “水”（水）": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "“水”（水）",
+      "chrome": [157.91998291015625, -2.5199999809265137, 150.11997985839844, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws none 水」「水": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "水」「水",
+      "chrome": [120, -1.159999966621399, 118.8800048828125, 33.84000015258789, 3.44000244140625],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws none （水）。": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "（水）。",
+      "chrome": [100, -7.799999237060547, 93.8800048828125, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws none ・（水": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "・（水",
+      "chrome": [80, -5.760000228881836, 78.8800048828125, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws none 　（水）": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "　（水）",
+      "chrome": [120, -47.80000305175781, 112.19999694824219, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws ja （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "（（水））",
+      "ctx": {
+        "lang": "ja"
+      },
+      "chrome": [120, -7.799999237060547, 112.19999694824219, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws ja 水（（水": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "水（（水",
+      "ctx": {
+        "lang": "ja"
+      },
+      "chrome": [120, -1.159999966621399, 118.8800048828125, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws ja 水））水": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "水））水",
+      "ctx": {
+        "lang": "ja"
+      },
+      "chrome": [120, -1.159999966621399, 118.8800048828125, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws ja 水。、水": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "水。、水",
+      "ctx": {
+        "lang": "ja"
+      },
+      "chrome": [120, -1.159999966621399, 118.8800048828125, 33.52000045776367, 3.2400054931640625],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws ja 水，（水）": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "水，（水）",
+      "ctx": {
+        "lang": "ja"
+      },
+      "chrome": [140, -1.159999966621399, 132.20001220703125, 34.2400016784668, 4.280002593994141],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws ja 水：「水」": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "水：「水」",
+      "ctx": {
+        "lang": "ja"
+      },
+      "chrome": [140, -1.159999966621399, 134, 33.84000015258789, 3.44000244140625],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws ja 水；（水）": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "水；（水）",
+      "ctx": {
+        "lang": "ja"
+      },
+      "chrome": [140, -1.159999966621399, 132.1999969482422, 34.2400016784668, 4.120002746582031],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws ja “水”（水）": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "“水”（水）",
+      "ctx": {
+        "lang": "ja"
+      },
+      "chrome": [157.91998291015625, -2.5199999809265137, 150.11997985839844, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws ja 水」「水": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "水」「水",
+      "ctx": {
+        "lang": "ja"
+      },
+      "chrome": [120, -1.159999966621399, 118.8800048828125, 33.84000015258789, 3.44000244140625],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws ja （水）。": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "（水）。",
+      "ctx": {
+        "lang": "ja"
+      },
+      "chrome": [100, -7.799999237060547, 93.8800048828125, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws ja ・（水": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "・（水",
+      "ctx": {
+        "lang": "ja"
+      },
+      "chrome": [80, -5.760000228881836, 78.8800048828125, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws ja 　（水）": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "　（水）",
+      "ctx": {
+        "lang": "ja"
+      },
+      "chrome": [120, -47.80000305175781, 112.19999694824219, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws zh-CN （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "（（水））",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "chrome": [120, -7.799999237060547, 112.19999694824219, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws zh-CN 水（（水": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "水（（水",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "chrome": [120, -1.5600000619888306, 119, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws zh-CN 水））水": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "水））水",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "chrome": [120, -1.5600000619888306, 119, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws zh-CN 水。、水": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "水。、水",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "chrome": [120, -1.5600000619888306, 119, 33.52000045776367, 3.2400054931640625],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws zh-CN 水，（水）": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "水，（水）",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "chrome": [140, -1.5600000619888306, 132.1999969482422, 34.2400016784668, 4.280002593994141],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws zh-CN 水：「水」": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "水：「水」",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "chrome": [140, -1.5600000619888306, 134, 33.84000015258789, 3.44000244140625],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws zh-CN 水；（水）": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "水；（水）",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "chrome": [140, -1.5600000619888306, 132.1999969482422, 34.2400016784668, 4.120002746582031],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws zh-CN “水”（水）": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "“水”（水）",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "chrome": [157.91998291015625, -2.5199999809265137, 150.11997985839844, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws zh-CN 水」「水": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "水」「水",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "chrome": [120, -1.5600000619888306, 119, 33.84000015258789, 3.44000244140625],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws zh-CN （水）。": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "（水）。",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "chrome": [100, -7.799999237060547, 93.8800048828125, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws zh-CN ・（水": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "・（水",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "chrome": [80, -5.760000228881836, 79, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws zh-CN 　（水）": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "　（水）",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "chrome": [120, -47.80000305175781, 112.19999694824219, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws zh-TW （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "（（水））",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "chrome": [120, -7.799999237060547, 112.19999694824219, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws zh-TW 水（（水": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "水（（水",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "chrome": [120, -1.5600000619888306, 119, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws zh-TW 水））水": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "水））水",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "chrome": [120, -1.5600000619888306, 119, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws zh-TW 水。、水": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "水。、水",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "chrome": [120, -1.5600000619888306, 119, 33.52000045776367, 3.2400054931640625],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws zh-TW 水，（水）": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "水，（水）",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "chrome": [140, -1.5600000619888306, 132.1999969482422, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws zh-TW 水：「水」": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "水：「水」",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "chrome": [140, -1.5600000619888306, 134, 33.84000015258789, 3.44000244140625],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws zh-TW 水；（水）": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "水；（水）",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "chrome": [140, -1.5600000619888306, 132.1999969482422, 34.2400016784668, 4.120002746582031],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws zh-TW “水”（水）": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "“水”（水）",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "chrome": [157.91998291015625, -2.5199999809265137, 150.11997985839844, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws zh-TW 水」「水": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "水」「水",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "chrome": [120, -1.5600000619888306, 119, 33.84000015258789, 3.44000244140625],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws zh-TW （水）。": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "（水）。",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "chrome": [100, -7.799999237060547, 96.19999694824219, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws zh-TW ・（水": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "・（水",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "chrome": [80, -5.760000228881836, 79, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws zh-TW 　（水）": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "　（水）",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "chrome": [120, -47.80000305175781, 112.19999694824219, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws ko （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "（（水））",
+      "ctx": {
+        "lang": "ko"
+      },
+      "chrome": [120, -7.799999237060547, 112.19999694824219, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws ko 水（（水": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "水（（水",
+      "ctx": {
+        "lang": "ko"
+      },
+      "chrome": [120, -1.159999966621399, 118.8800048828125, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws ko 水））水": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "水））水",
+      "ctx": {
+        "lang": "ko"
+      },
+      "chrome": [120, -1.159999966621399, 118.8800048828125, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws ko 水。、水": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "水。、水",
+      "ctx": {
+        "lang": "ko"
+      },
+      "chrome": [120, -1.159999966621399, 118.8800048828125, 33.52000045776367, 3.2400054931640625],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws ko 水，（水）": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "水，（水）",
+      "ctx": {
+        "lang": "ko"
+      },
+      "chrome": [140, -1.159999966621399, 132.20001220703125, 34.2400016784668, 4.280002593994141],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws ko 水：「水」": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "水：「水」",
+      "ctx": {
+        "lang": "ko"
+      },
+      "chrome": [140, -1.159999966621399, 134, 33.84000015258789, 3.44000244140625],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws ko 水；（水）": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "水；（水）",
+      "ctx": {
+        "lang": "ko"
+      },
+      "chrome": [140, -1.159999966621399, 132.1999969482422, 34.2400016784668, 4.120002746582031],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws ko “水”（水）": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "“水”（水）",
+      "ctx": {
+        "lang": "ko"
+      },
+      "chrome": [157.91998291015625, -2.5199999809265137, 150.11997985839844, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws ko 水」「水": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "水」「水",
+      "ctx": {
+        "lang": "ko"
+      },
+      "chrome": [120, -1.159999966621399, 118.8800048828125, 33.84000015258789, 3.44000244140625],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws ko （水）。": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "（水）。",
+      "ctx": {
+        "lang": "ko"
+      },
+      "chrome": [100, -7.799999237060547, 93.8800048828125, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws ko ・（水": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "・（水",
+      "ctx": {
+        "lang": "ko"
+      },
+      "chrome": [80, -5.760000228881836, 78.8800048828125, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws ko 　（水）": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "　（水）",
+      "ctx": {
+        "lang": "ko"
+      },
+      "chrome": [120, -47.80000305175781, 112.19999694824219, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt none （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "（（水））",
+      "chrome": [160, -27.799999237060547, 132.1999969482422, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt none 水（（水": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "水（（水",
+      "chrome": [140, -1.159999966621399, 138.8800048828125, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt none 水））水": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "水））水",
+      "chrome": [140, -1.159999966621399, 138.8800048828125, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt none 水。、水": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "水。、水",
+      "chrome": [140, -1.159999966621399, 138.8800048828125, 33.52000045776367, 3.2400054931640625],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt none 水，（水）": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "水，（水）",
+      "chrome": [180, -1.159999966621399, 152.20001220703125, 34.2400016784668, 4.280002593994141],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt none 水：「水」": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "水：「水」",
+      "chrome": [180, -1.159999966621399, 154, 33.84000015258789, 3.44000244140625],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt none 水；（水）": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "水；（水）",
+      "chrome": [200, -1.159999966621399, 172.1999969482422, 34.2400016784668, 4.120002746582031]
+    },
+    "han-kerning: BSHalt none “水”（水）": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "“水”（水）",
+      "chrome": [197.91998291015625, -2.5199999809265137, 170.11997985839844, 34.2400016784668, 3.8400001525878906]
+    },
+    "han-kerning: BSHalt none 水」「水": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "水」「水",
+      "chrome": [140, -1.159999966621399, 138.8800048828125, 33.84000015258789, 3.44000244140625],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt none （水）。": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "（水）。",
+      "chrome": [140, -27.799999237060547, 113.8800048828125, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt none ・（水": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "・（水",
+      "chrome": [100, -15.760000228881836, 98.8800048828125, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt none 　（水）": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "　（水）",
+      "chrome": [140, -47.80000305175781, 112.19999694824219, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt ja （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "（（水））",
+      "ctx": {
+        "lang": "ja"
+      },
+      "chrome": [160, -27.799999237060547, 132.1999969482422, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt ja 水（（水": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "水（（水",
+      "ctx": {
+        "lang": "ja"
+      },
+      "chrome": [140, -1.159999966621399, 138.8800048828125, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt ja 水））水": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "水））水",
+      "ctx": {
+        "lang": "ja"
+      },
+      "chrome": [140, -1.159999966621399, 138.8800048828125, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt ja 水。、水": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "水。、水",
+      "ctx": {
+        "lang": "ja"
+      },
+      "chrome": [140, -1.159999966621399, 138.8800048828125, 33.52000045776367, 3.2400054931640625],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt ja 水，（水）": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "水，（水）",
+      "ctx": {
+        "lang": "ja"
+      },
+      "chrome": [180, -1.159999966621399, 152.20001220703125, 34.2400016784668, 4.280002593994141],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt ja 水：「水」": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "水：「水」",
+      "ctx": {
+        "lang": "ja"
+      },
+      "chrome": [180, -1.159999966621399, 154, 33.84000015258789, 3.44000244140625],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt ja 水；（水）": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "水；（水）",
+      "ctx": {
+        "lang": "ja"
+      },
+      "chrome": [200, -1.159999966621399, 172.1999969482422, 34.2400016784668, 4.120002746582031]
+    },
+    "han-kerning: BSHalt ja “水”（水）": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "“水”（水）",
+      "ctx": {
+        "lang": "ja"
+      },
+      "chrome": [197.91998291015625, -2.5199999809265137, 170.11997985839844, 34.2400016784668, 3.8400001525878906]
+    },
+    "han-kerning: BSHalt ja 水」「水": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "水」「水",
+      "ctx": {
+        "lang": "ja"
+      },
+      "chrome": [140, -1.159999966621399, 138.8800048828125, 33.84000015258789, 3.44000244140625],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt ja （水）。": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "（水）。",
+      "ctx": {
+        "lang": "ja"
+      },
+      "chrome": [140, -27.799999237060547, 113.8800048828125, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt ja ・（水": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "・（水",
+      "ctx": {
+        "lang": "ja"
+      },
+      "chrome": [100, -15.760000228881836, 98.8800048828125, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt ja 　（水）": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "　（水）",
+      "ctx": {
+        "lang": "ja"
+      },
+      "chrome": [140, -47.80000305175781, 112.19999694824219, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt zh-CN （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "（（水））",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "chrome": [160, -27.799999237060547, 132.1999969482422, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt zh-CN 水（（水": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "水（（水",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "chrome": [140, -1.5600000619888306, 139, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt zh-CN 水））水": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "水））水",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "chrome": [140, -1.5600000619888306, 139, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt zh-CN 水。、水": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "水。、水",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "chrome": [140, -1.5600000619888306, 139, 33.52000045776367, 3.2400054931640625],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt zh-CN 水，（水）": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "水，（水）",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "chrome": [180, -1.5600000619888306, 152.1999969482422, 34.2400016784668, 4.280002593994141],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt zh-CN 水：「水」": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "水：「水」",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "chrome": [180, -1.5600000619888306, 154, 33.84000015258789, 3.44000244140625],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt zh-CN 水；（水）": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "水；（水）",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "chrome": [200, -1.5600000619888306, 172.1999969482422, 34.2400016784668, 4.120002746582031]
+    },
+    "han-kerning: BSHalt zh-CN “水”（水）": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "“水”（水）",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "chrome": [197.91998291015625, -2.5199999809265137, 170.11997985839844, 34.2400016784668, 3.8400001525878906]
+    },
+    "han-kerning: BSHalt zh-CN 水」「水": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "水」「水",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "chrome": [140, -1.5600000619888306, 139, 33.84000015258789, 3.44000244140625],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt zh-CN （水）。": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "（水）。",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "chrome": [140, -27.799999237060547, 113.8800048828125, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt zh-CN ・（水": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "・（水",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "chrome": [100, -15.760000228881836, 99, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt zh-CN 　（水）": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "　（水）",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "chrome": [140, -47.80000305175781, 112.19999694824219, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt zh-TW （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "（（水））",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "chrome": [160, -27.799999237060547, 132.1999969482422, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt zh-TW 水（（水": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "水（（水",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "chrome": [140, -1.5600000619888306, 139, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt zh-TW 水））水": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "水））水",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "chrome": [140, -1.5600000619888306, 139, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt zh-TW 水。、水": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "水。、水",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "chrome": [160, -1.5600000619888306, 159, 33.52000045776367, 3.2400054931640625]
+    },
+    "han-kerning: BSHalt zh-TW 水，（水）": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "水，（水）",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "chrome": [180, -1.5600000619888306, 152.1999969482422, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt zh-TW 水：「水」": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "水：「水」",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "chrome": [180, -1.5600000619888306, 154, 33.84000015258789, 3.44000244140625],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt zh-TW 水；（水）": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "水；（水）",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "chrome": [200, -1.5600000619888306, 172.1999969482422, 34.2400016784668, 4.120002746582031]
+    },
+    "han-kerning: BSHalt zh-TW “水”（水）": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "“水”（水）",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "chrome": [197.91998291015625, -2.5199999809265137, 170.11997985839844, 34.2400016784668, 3.8400001525878906]
+    },
+    "han-kerning: BSHalt zh-TW 水」「水": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "水」「水",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "chrome": [140, -1.5600000619888306, 139, 33.84000015258789, 3.44000244140625],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt zh-TW （水）。": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "（水）。",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "chrome": [140, -27.799999237060547, 126.19999694824219, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt zh-TW ・（水": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "・（水",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "chrome": [100, -15.760000228881836, 99, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt zh-TW 　（水）": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "　（水）",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "chrome": [140, -47.80000305175781, 112.19999694824219, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt ko （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "（（水））",
+      "ctx": {
+        "lang": "ko"
+      },
+      "chrome": [160, -27.799999237060547, 132.1999969482422, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt ko 水（（水": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "水（（水",
+      "ctx": {
+        "lang": "ko"
+      },
+      "chrome": [140, -1.159999966621399, 138.8800048828125, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt ko 水））水": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "水））水",
+      "ctx": {
+        "lang": "ko"
+      },
+      "chrome": [140, -1.159999966621399, 138.8800048828125, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt ko 水。、水": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "水。、水",
+      "ctx": {
+        "lang": "ko"
+      },
+      "chrome": [140, -1.159999966621399, 138.8800048828125, 33.52000045776367, 3.2400054931640625],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt ko 水，（水）": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "水，（水）",
+      "ctx": {
+        "lang": "ko"
+      },
+      "chrome": [180, -1.159999966621399, 152.20001220703125, 34.2400016784668, 4.280002593994141],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt ko 水：「水」": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "水：「水」",
+      "ctx": {
+        "lang": "ko"
+      },
+      "chrome": [180, -1.159999966621399, 154, 33.84000015258789, 3.44000244140625],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt ko 水；（水）": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "水；（水）",
+      "ctx": {
+        "lang": "ko"
+      },
+      "chrome": [200, -1.159999966621399, 172.1999969482422, 34.2400016784668, 4.120002746582031]
+    },
+    "han-kerning: BSHalt ko “水”（水）": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "“水”（水）",
+      "ctx": {
+        "lang": "ko"
+      },
+      "chrome": [197.91998291015625, -2.5199999809265137, 170.11997985839844, 34.2400016784668, 3.8400001525878906]
+    },
+    "han-kerning: BSHalt ko 水」「水": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "水」「水",
+      "ctx": {
+        "lang": "ko"
+      },
+      "chrome": [140, -1.159999966621399, 138.8800048828125, 33.84000015258789, 3.44000244140625],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt ko （水）。": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "（水）。",
+      "ctx": {
+        "lang": "ko"
+      },
+      "chrome": [140, -27.799999237060547, 113.8800048828125, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt ko ・（水": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "・（水",
+      "ctx": {
+        "lang": "ko"
+      },
+      "chrome": [100, -15.760000228881836, 98.8800048828125, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt ko 　（水）": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "　（水）",
+      "ctx": {
+        "lang": "ko"
+      },
+      "chrome": [140, -47.80000305175781, 112.19999694824219, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan none （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "（（水））",
+      "chrome": [160, -25.68359375, 134.31640625, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan none 水（（水": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水（（水",
+      "chrome": [140, -0.83984375, 139.04296875, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan none 水））水": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水））水",
+      "chrome": [140, -0.83984375, 139.04296875, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan none 水。、水": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水。、水",
+      "chrome": [140, -0.83984375, 139.04296875, 33.96484375, 3.515625],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan none 水，（水）": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水，（水）",
+      "chrome": [180, -0.83984375, 154.31640625, 34.12109375, 8.88671875],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan none 水：「水」": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水：「水」",
+      "chrome": [180, -0.83984375, 154.04296875, 34.04296875, 3.6328125],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan none 水；（水）": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水；（水）",
+      "chrome": [200, -0.83984375, 174.31640625, 34.12109375, 5.56640625]
+    },
+    "han-kerning: BSHan none “水”（水）": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "“水”（水）",
+      "chrome": [240, -21.2890625, 214.31640625, 34.7265625, 3.7109375]
+    },
+    "han-kerning: BSHan none 水」「水": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水」「水",
+      "chrome": [140, -0.83984375, 139.04296875, 34.04296875, 3.6328125],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan none （水）。": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "（水）。",
+      "chrome": [140, -25.68359375, 112.96875, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan none ・（水": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "・（水",
+      "chrome": [100, -15.56640625, 99.04296875, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan none 　（水）": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "　（水）",
+      "chrome": [140, -45.68359375, 114.31640625, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan ja （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "（（水））",
+      "ctx": {
+        "lang": "ja"
+      },
+      "chrome": [160, -25.68359375, 134.31640625, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan ja 水（（水": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水（（水",
+      "ctx": {
+        "lang": "ja"
+      },
+      "chrome": [140, -0.83984375, 139.04296875, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan ja 水））水": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水））水",
+      "ctx": {
+        "lang": "ja"
+      },
+      "chrome": [140, -0.83984375, 139.04296875, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan ja 水。、水": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水。、水",
+      "ctx": {
+        "lang": "ja"
+      },
+      "chrome": [140, -0.83984375, 139.04296875, 33.96484375, 3.515625],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan ja 水，（水）": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水，（水）",
+      "ctx": {
+        "lang": "ja"
+      },
+      "chrome": [180, -0.83984375, 154.31640625, 34.12109375, 8.88671875],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan ja 水：「水」": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水：「水」",
+      "ctx": {
+        "lang": "ja"
+      },
+      "chrome": [180, -0.83984375, 154.04296875, 34.04296875, 3.6328125],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan ja 水；（水）": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水；（水）",
+      "ctx": {
+        "lang": "ja"
+      },
+      "chrome": [200, -0.83984375, 174.31640625, 34.12109375, 5.56640625]
+    },
+    "han-kerning: BSHan ja “水”（水）": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "“水”（水）",
+      "ctx": {
+        "lang": "ja"
+      },
+      "chrome": [240, -21.2890625, 214.31640625, 34.7265625, 3.7109375]
+    },
+    "han-kerning: BSHan ja 水」「水": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水」「水",
+      "ctx": {
+        "lang": "ja"
+      },
+      "chrome": [140, -0.83984375, 139.04296875, 34.04296875, 3.6328125],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan ja （水）。": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "（水）。",
+      "ctx": {
+        "lang": "ja"
+      },
+      "chrome": [140, -25.68359375, 112.96875, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan ja ・（水": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "・（水",
+      "ctx": {
+        "lang": "ja"
+      },
+      "chrome": [100, -15.56640625, 99.04296875, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan ja 　（水）": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "　（水）",
+      "ctx": {
+        "lang": "ja"
+      },
+      "chrome": [140, -45.68359375, 114.31640625, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan zh-CN （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "（（水））",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "chrome": [160, -25.68359375, 134.31640625, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan zh-CN 水（（水": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水（（水",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "chrome": [140, -0.83984375, 139.04296875, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan zh-CN 水））水": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水））水",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "chrome": [140, -0.83984375, 139.04296875, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan zh-CN 水。、水": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水。、水",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "chrome": [140, -0.83984375, 139.04296875, 33.96484375, 3.515625],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan zh-CN 水，（水）": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水，（水）",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "chrome": [180, -0.83984375, 154.31640625, 34.12109375, 8.88671875],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan zh-CN 水：「水」": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水：「水」",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "chrome": [180, -0.83984375, 154.04296875, 34.04296875, 3.6328125],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan zh-CN 水；（水）": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水；（水）",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "chrome": [200, -0.83984375, 174.31640625, 34.12109375, 5.56640625]
+    },
+    "han-kerning: BSHan zh-CN “水”（水）": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "“水”（水）",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "chrome": [240, -21.2890625, 214.31640625, 34.7265625, 3.7109375]
+    },
+    "han-kerning: BSHan zh-CN 水」「水": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水」「水",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "chrome": [140, -0.83984375, 139.04296875, 34.04296875, 3.6328125],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan zh-CN （水）。": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "（水）。",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "chrome": [140, -25.68359375, 112.96875, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan zh-CN ・（水": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "・（水",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "chrome": [100, -15.56640625, 99.04296875, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan zh-CN 　（水）": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "　（水）",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "chrome": [140, -45.68359375, 114.31640625, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan zh-TW （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "（（水））",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "chrome": [160, -25.68359375, 134.31640625, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan zh-TW 水（（水": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水（（水",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "chrome": [140, -0.83984375, 139.04296875, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan zh-TW 水））水": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水））水",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "chrome": [140, -0.83984375, 139.04296875, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan zh-TW 水。、水": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水。、水",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "chrome": [140, -0.83984375, 139.04296875, 33.96484375, 3.515625],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan zh-TW 水，（水）": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水，（水）",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "chrome": [180, -0.83984375, 154.31640625, 34.12109375, 8.88671875],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan zh-TW 水：「水」": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水：「水」",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "chrome": [180, -0.83984375, 154.04296875, 34.04296875, 3.6328125],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan zh-TW 水；（水）": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水；（水）",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "chrome": [200, -0.83984375, 174.31640625, 34.12109375, 5.56640625]
+    },
+    "han-kerning: BSHan zh-TW “水”（水）": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "“水”（水）",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "chrome": [240, -21.2890625, 214.31640625, 34.7265625, 3.7109375]
+    },
+    "han-kerning: BSHan zh-TW 水」「水": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水」「水",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "chrome": [140, -0.83984375, 139.04296875, 34.04296875, 3.6328125],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan zh-TW （水）。": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "（水）。",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "chrome": [140, -25.68359375, 112.96875, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan zh-TW ・（水": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "・（水",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "chrome": [100, -15.56640625, 99.04296875, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan zh-TW 　（水）": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "　（水）",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "chrome": [140, -45.68359375, 114.31640625, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan ko （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "（（水））",
+      "ctx": {
+        "lang": "ko"
+      },
+      "chrome": [160, -25.68359375, 134.31640625, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan ko 水（（水": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水（（水",
+      "ctx": {
+        "lang": "ko"
+      },
+      "chrome": [140, -0.83984375, 139.04296875, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan ko 水））水": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水））水",
+      "ctx": {
+        "lang": "ko"
+      },
+      "chrome": [140, -0.83984375, 139.04296875, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan ko 水。、水": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水。、水",
+      "ctx": {
+        "lang": "ko"
+      },
+      "chrome": [140, -0.83984375, 139.04296875, 33.96484375, 3.515625],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan ko 水，（水）": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水，（水）",
+      "ctx": {
+        "lang": "ko"
+      },
+      "chrome": [180, -0.83984375, 154.31640625, 34.12109375, 8.88671875],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan ko 水：「水」": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水：「水」",
+      "ctx": {
+        "lang": "ko"
+      },
+      "chrome": [180, -0.83984375, 154.04296875, 34.04296875, 3.6328125],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan ko 水；（水）": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水；（水）",
+      "ctx": {
+        "lang": "ko"
+      },
+      "chrome": [200, -0.83984375, 174.31640625, 34.12109375, 5.56640625]
+    },
+    "han-kerning: BSHan ko “水”（水）": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "“水”（水）",
+      "ctx": {
+        "lang": "ko"
+      },
+      "chrome": [240, -21.2890625, 214.31640625, 34.7265625, 3.7109375]
+    },
+    "han-kerning: BSHan ko 水」「水": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水」「水",
+      "ctx": {
+        "lang": "ko"
+      },
+      "chrome": [140, -0.83984375, 139.04296875, 34.04296875, 3.6328125],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan ko （水）。": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "（水）。",
+      "ctx": {
+        "lang": "ko"
+      },
+      "chrome": [140, -25.68359375, 112.96875, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan ko ・（水": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "・（水",
+      "ctx": {
+        "lang": "ko"
+      },
+      "chrome": [100, -15.56640625, 99.04296875, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan ko 　（水）": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "　（水）",
+      "ctx": {
+        "lang": "ko"
+      },
+      "chrome": [140, -45.68359375, 114.31640625, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan en-TW 水。、水": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水。、水",
+      "ctx": {
+        "lang": "en-TW"
+      },
+      "chrome": [140, -0.83984375, 139.04296875, 33.96484375, 3.515625],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan en-TW 水：「水」": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水：「水」",
+      "ctx": {
+        "lang": "en-TW"
+      },
+      "chrome": [180, -0.83984375, 154.04296875, 34.04296875, 3.6328125],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan en-TW “水”（水）": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "“水”（水）",
+      "ctx": {
+        "lang": "en-TW"
+      },
+      "chrome": [240, -21.2890625, 214.31640625, 34.7265625, 3.7109375]
+    },
+    "han-kerning: BSHan en-JP 水。、水": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水。、水",
+      "ctx": {
+        "lang": "en-JP"
+      },
+      "chrome": [140, -0.83984375, 139.04296875, 33.96484375, 3.515625],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan en-JP 水：「水」": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水：「水」",
+      "ctx": {
+        "lang": "en-JP"
+      },
+      "chrome": [180, -0.83984375, 154.04296875, 34.04296875, 3.6328125],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan en-JP “水”（水）": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "“水”（水）",
+      "ctx": {
+        "lang": "en-JP"
+      },
+      "chrome": [240, -21.2890625, 214.31640625, 34.7265625, 3.7109375]
+    },
+    "han-kerning: BSHan zh-Hant 水。、水": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水。、水",
+      "ctx": {
+        "lang": "zh-Hant"
+      },
+      "chrome": [140, -0.83984375, 139.04296875, 33.96484375, 3.515625],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan zh-Hant 水：「水」": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水：「水」",
+      "ctx": {
+        "lang": "zh-Hant"
+      },
+      "chrome": [180, -0.83984375, 154.04296875, 34.04296875, 3.6328125],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan zh-Hant “水”（水）": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "“水”（水）",
+      "ctx": {
+        "lang": "zh-Hant"
+      },
+      "chrome": [240, -21.2890625, 214.31640625, 34.7265625, 3.7109375]
+    },
+    "han-kerning: BSHan zh_TW 水。、水": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水。、水",
+      "ctx": {
+        "lang": "zh_TW"
+      },
+      "chrome": [140, -0.83984375, 139.04296875, 33.96484375, 3.515625],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan zh_TW 水：「水」": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水：「水」",
+      "ctx": {
+        "lang": "zh_TW"
+      },
+      "chrome": [180, -0.83984375, 154.04296875, 34.04296875, 3.6328125],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan zh_TW “水”（水）": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "“水”（水）",
+      "ctx": {
+        "lang": "zh_TW"
+      },
+      "chrome": [240, -21.2890625, 214.31640625, 34.7265625, 3.7109375]
+    },
+    "han-kerning: BSHan und-Hant 水。、水": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水。、水",
+      "ctx": {
+        "lang": "und-Hant"
+      },
+      "chrome": [140, -0.83984375, 139.04296875, 33.96484375, 3.515625],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan und-Hant 水：「水」": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水：「水」",
+      "ctx": {
+        "lang": "und-Hant"
+      },
+      "chrome": [180, -0.83984375, 154.04296875, 34.04296875, 3.6328125],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan und-Hant “水”（水）": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "“水”（水）",
+      "ctx": {
+        "lang": "und-Hant"
+      },
+      "chrome": [240, -21.2890625, 214.31640625, 34.7265625, 3.7109375]
+    },
+    "han-kerning: BSHan zh-HK 水。、水": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水。、水",
+      "ctx": {
+        "lang": "zh-HK"
+      },
+      "chrome": [140, -0.83984375, 139.04296875, 33.96484375, 3.515625],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan zh-HK 水：「水」": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水：「水」",
+      "ctx": {
+        "lang": "zh-HK"
+      },
+      "chrome": [180, -0.83984375, 154.04296875, 34.04296875, 3.6328125],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan zh-HK “水”（水）": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "“水”（水）",
+      "ctx": {
+        "lang": "zh-HK"
+      },
+      "chrome": [240, -21.2890625, 214.31640625, 34.7265625, 3.7109375]
+    },
+    "han-kerning: BSHan zh-Hant-CN 水。、水": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水。、水",
+      "ctx": {
+        "lang": "zh-Hant-CN"
+      },
+      "chrome": [140, -0.83984375, 139.04296875, 33.96484375, 3.515625],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan zh-Hant-CN 水：「水」": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水：「水」",
+      "ctx": {
+        "lang": "zh-Hant-CN"
+      },
+      "chrome": [180, -0.83984375, 154.04296875, 34.04296875, 3.6328125],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan zh-Hant-CN “水”（水）": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "“水”（水）",
+      "ctx": {
+        "lang": "zh-Hant-CN"
+      },
+      "chrome": [240, -21.2890625, 214.31640625, 34.7265625, 3.7109375]
+    },
+    "han-kerning: BSHan zh-Latn-TW 水。、水": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水。、水",
+      "ctx": {
+        "lang": "zh-Latn-TW"
+      },
+      "chrome": [140, -0.83984375, 139.04296875, 33.96484375, 3.515625],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan zh-Latn-TW 水：「水」": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水：「水」",
+      "ctx": {
+        "lang": "zh-Latn-TW"
+      },
+      "chrome": [180, -0.83984375, 154.04296875, 34.04296875, 3.6328125],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan zh-Latn-TW “水”（水）": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "“水”（水）",
+      "ctx": {
+        "lang": "zh-Latn-TW"
+      },
+      "chrome": [240, -21.2890625, 214.31640625, 34.7265625, 3.7109375]
+    },
+    "han-kerning: BSHan ja-Hira 水。、水": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水。、水",
+      "ctx": {
+        "lang": "ja-Hira"
+      },
+      "chrome": [140, -0.83984375, 139.04296875, 33.96484375, 3.515625],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan ja-Hira 水：「水」": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水：「水」",
+      "ctx": {
+        "lang": "ja-Hira"
+      },
+      "chrome": [180, -0.83984375, 154.04296875, 34.04296875, 3.6328125],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan ja-Hira “水”（水）": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "“水”（水）",
+      "ctx": {
+        "lang": "ja-Hira"
+      },
+      "chrome": [240, -21.2890625, 214.31640625, 34.7265625, 3.7109375]
+    },
+    "han-kerning: BSHan ko-KR 水。、水": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水。、水",
+      "ctx": {
+        "lang": "ko-KR"
+      },
+      "chrome": [140, -0.83984375, 139.04296875, 33.96484375, 3.515625],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan ko-KR 水：「水」": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水：「水」",
+      "ctx": {
+        "lang": "ko-KR"
+      },
+      "chrome": [180, -0.83984375, 154.04296875, 34.04296875, 3.6328125],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan ko-KR “水”（水）": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "“水”（水）",
+      "ctx": {
+        "lang": "ko-KR"
+      },
+      "chrome": [240, -21.2890625, 214.31640625, 34.7265625, 3.7109375]
+    },
+    "han-kerning: BSChws mixed Hello（（水））World": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "Hello（（水））World",
+      "chrome": [329.2799072265625, -4.039999961853027, 325.59991455078125, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws mixed (（水）)": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "(（水）)",
+      "chrome": [107.03997802734375, -3.680000066757202, 103.3599853515625, 34.2400016784668, 7.840003967285156],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws mixed [「水」]": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "[「水」]",
+      "chrome": [107.03997802734375, -4.239999771118164, 102.8399887084961, 33.84000015258789, 6.8000030517578125],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws mixed a（b）c": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "a（b）c",
+      "chrome": [107.63996887207031, -2.3600001335144043, 106.51997375488281, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws mixed カタカナ（ひらがな）。": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "カタカナ（ひらがな）。",
+      "system": true,
+      "chrome": [380, -5.400000095367432, 373.8800048828125, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7"
+    },
+    "han-kerning: BSChws mixed 水） (水": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "水） (水",
+      "chrome": [122.47998046875, -1.159999966621399, 121.3599853515625, 34.2400016784668, 7.840003967285156],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws mixed 水）　（水": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "水）　（水",
+      "chrome": [160, -1.159999966621399, 158.8800048828125, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt mixed Hello（（水））World": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "Hello（（水））World",
+      "chrome": [369.2798767089844, -4.039999961853027, 365.59991455078125, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt mixed (（水）)": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "(（水）)",
+      "chrome": [147.03997802734375, -3.680000066757202, 143.3599853515625, 34.2400016784668, 7.840003967285156]
+    },
+    "han-kerning: BSHalt mixed [「水」]": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "[「水」]",
+      "chrome": [147.03997802734375, -4.239999771118164, 142.83999633789062, 33.84000015258789, 6.8000030517578125]
+    },
+    "han-kerning: BSHalt mixed a（b）c": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "a（b）c",
+      "chrome": [147.6399688720703, -2.3600001335144043, 146.5199737548828, 34.2400016784668, 3.8400001525878906]
+    },
+    "han-kerning: BSHalt mixed カタカナ（ひらがな）。": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "カタカナ（ひらがな）。",
+      "system": true,
+      "chrome": [420, -5.400000095367432, 393.8800048828125, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7"
+    },
+    "han-kerning: BSHalt mixed 水） (水": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "水） (水",
+      "chrome": [142.47998046875, -1.159999966621399, 141.3599853515625, 34.2400016784668, 7.840003967285156]
+    },
+    "han-kerning: BSHalt mixed 水）　（水": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "水）　（水",
+      "chrome": [160, -1.159999966621399, 158.8800048828125, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan mixed Hello（（水））World": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "Hello（（水））World",
+      "chrome": [392.63671875, -1.796875, 391.6796875, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan mixed (（水）)": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "(（水）)",
+      "chrome": [151.8359375, -3.4765625, 148.359375, 34.12109375, 8.0859375]
+    },
+    "han-kerning: BSHan mixed [「水」]": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "[「水」]",
+      "chrome": [149.6875, -4.47265625, 145.1953125, 34.04296875, 7.12890625]
+    },
+    "han-kerning: BSHan mixed a（b）c": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "a（b）c",
+      "chrome": [152.44140625, -1.7578125, 150.91796875, 34.12109375, 3.7109375]
+    },
+    "han-kerning: BSHan mixed カタカナ（ひらがな）。": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "カタカナ（ひらがな）。",
+      "chrome": [420, -3.125, 392.96875, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan mixed 水） (水": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水） (水",
+      "chrome": [145.95703125, -0.83984375, 145, 34.12109375, 8.0859375]
+    },
+    "han-kerning: BSHan mixed 水）　（水": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水）　（水",
+      "chrome": [160, -0.83984375, 159.04296875, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSLato, BSHalt mixed Hello（（水））World": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSHalt",
+      "text": "Hello（（水））World",
+      "chrome": [364.99993896484375, -3.4800000190734863, 361.93994140625, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSLato, BSHalt mixed (（水）)": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSHalt",
+      "text": "(（水）)",
+      "chrome": [144, -2.680000066757202, 141.05999755859375, 34.2400016784668, 5.860004425048828]
+    },
+    "han-kerning: BSLato, BSHalt mixed [「水」]": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSHalt",
+      "text": "[「水」]",
+      "chrome": [144, -2.8400001525878906, 141.16000366210938, 33.84000015258789, 5.780002593994141]
+    },
+    "han-kerning: BSLato, BSHalt mixed a（b）c": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSHalt",
+      "text": "a（b）c",
+      "chrome": [141.3199920654297, -1.840000033378601, 140.54000854492188, 34.2400016784668, 3.8400001525878906]
+    },
+    "han-kerning: BSLato, BSHalt mixed カタカナ（ひらがな）。": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSHalt",
+      "text": "カタカナ（ひらがな）。",
+      "system": true,
+      "chrome": [420, -5.400000095367432, 393.8800048828125, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7"
+    },
+    "han-kerning: BSLato, BSHalt mixed 水） (水": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSHalt",
+      "text": "水） (水",
+      "chrome": [139.71998596191406, -1.159999966621399, 138.59999084472656, 34.2400016784668, 5.860004425048828]
+    },
+    "han-kerning: BSLato, BSHalt mixed 水）　（水": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSHalt",
+      "text": "水）　（水",
+      "chrome": [160, -1.159999966621399, 158.8800048828125, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSLato, BSChws mixed Hello（（水））World": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSChws",
+      "text": "Hello（（水））World",
+      "chrome": [324.99993896484375, -3.4800000190734863, 321.93994140625, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSLato, BSChws mixed (（水）)": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSChws",
+      "text": "(（水）)",
+      "chrome": [104, -2.680000066757202, 101.06000518798828, 34.2400016784668, 5.860004425048828],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSLato, BSChws mixed [「水」]": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSChws",
+      "text": "[「水」]",
+      "chrome": [104, -2.8400001525878906, 101.16000366210938, 33.84000015258789, 5.780002593994141],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSLato, BSChws mixed a（b）c": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSChws",
+      "text": "a（b）c",
+      "chrome": [101.31999206542969, -1.840000033378601, 100.54000091552734, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSLato, BSChws mixed カタカナ（ひらがな）。": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSChws",
+      "text": "カタカナ（ひらがな）。",
+      "system": true,
+      "chrome": [380, -5.400000095367432, 373.8800048828125, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7"
+    },
+    "han-kerning: BSLato, BSChws mixed 水） (水": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSChws",
+      "text": "水） (水",
+      "chrome": [119.71998596191406, -1.159999966621399, 118.59999084472656, 34.2400016784668, 5.860004425048828],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSLato, BSChws mixed 水）　（水": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSChws",
+      "text": "水）　（水",
+      "chrome": [160, -1.159999966621399, 158.8800048828125, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt, BSHan （漢）（水）": {
+      "group": "han-kerning",
+      "font": "40px BSHalt, BSHan",
+      "text": "（漢）（水）",
+      "chrome": [220, -27.799999237060547, 192.20001220703125, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt, BSHan 水）（漢": {
+      "group": "han-kerning",
+      "font": "40px BSHalt, BSHan",
+      "text": "水）（漢",
+      "chrome": [140, -1.159999966621399, 139.16015625, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt, BSHan 漢）（水": {
+      "group": "han-kerning",
+      "font": "40px BSHalt, BSHan",
+      "text": "漢）（水",
+      "chrome": [140, -1.07421875, 138.8800048828125, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt, BSHan （（漢））": {
+      "group": "han-kerning",
+      "font": "40px BSHalt, BSHan",
+      "text": "（（漢））",
+      "chrome": [160, -27.799999237060547, 132.1999969482422, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt, BSHan 漢、（水）": {
+      "group": "han-kerning",
+      "font": "40px BSHalt, BSHan",
+      "text": "漢、（水）",
+      "chrome": [180, -1.07421875, 152.20001220703125, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt, BSHan 水」「漢」": {
+      "group": "han-kerning",
+      "font": "40px BSHalt, BSHan",
+      "text": "水」「漢」",
+      "chrome": [180, -1.159999966621399, 154, 34.00390625, 3.59375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws, BSHan （漢）（水）": {
+      "group": "han-kerning",
+      "font": "40px BSChws, BSHan",
+      "text": "（漢）（水）",
+      "chrome": [160, -7.799999237060547, 152.20001220703125, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws, BSHan 水）（漢": {
+      "group": "han-kerning",
+      "font": "40px BSChws, BSHan",
+      "text": "水）（漢",
+      "chrome": [120, -1.159999966621399, 119.16015625, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws, BSHan 漢）（水": {
+      "group": "han-kerning",
+      "font": "40px BSChws, BSHan",
+      "text": "漢）（水",
+      "chrome": [120, -1.07421875, 118.8800048828125, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws, BSHan （（漢））": {
+      "group": "han-kerning",
+      "font": "40px BSChws, BSHan",
+      "text": "（（漢））",
+      "chrome": [120, -7.799999237060547, 112.19999694824219, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws, BSHan 漢、（水）": {
+      "group": "han-kerning",
+      "font": "40px BSChws, BSHan",
+      "text": "漢、（水）",
+      "chrome": [140, -1.07421875, 132.20001220703125, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws, BSHan 水」「漢」": {
+      "group": "han-kerning",
+      "font": "40px BSChws, BSHan",
+      "text": "水」「漢」",
+      "chrome": [140, -1.159999966621399, 134, 34.00390625, 3.59375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan, BSHalt （漢）（水）": {
+      "group": "han-kerning",
+      "font": "40px BSHan, BSHalt",
+      "text": "（漢）（水）",
+      "chrome": [220, -25.68359375, 194.31640625, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan, BSHalt 水）（漢": {
+      "group": "han-kerning",
+      "font": "40px BSHan, BSHalt",
+      "text": "水）（漢",
+      "chrome": [140, -0.83984375, 139.16015625, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan, BSHalt 漢）（水": {
+      "group": "han-kerning",
+      "font": "40px BSHan, BSHalt",
+      "text": "漢）（水",
+      "chrome": [140, -1.07421875, 139.04296875, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan, BSHalt （（漢））": {
+      "group": "han-kerning",
+      "font": "40px BSHan, BSHalt",
+      "text": "（（漢））",
+      "chrome": [160, -25.68359375, 134.31640625, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan, BSHalt 漢、（水）": {
+      "group": "han-kerning",
+      "font": "40px BSHan, BSHalt",
+      "text": "漢、（水）",
+      "chrome": [180, -1.07421875, 154.31640625, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan, BSHalt 水」「漢」": {
+      "group": "han-kerning",
+      "font": "40px BSHan, BSHalt",
+      "text": "水」「漢」",
+      "chrome": [180, -0.83984375, 154.04296875, 34.04296875, 3.6328125],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSLato, BSHalt a（（b））c": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSHalt",
+      "text": "a（（b））c",
+      "chrome": [181.3199920654297, -1.840000033378601, 180.5399932861328, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSLato, BSHalt a）（b": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSHalt",
+      "text": "a）（b",
+      "chrome": [102.63999938964844, -1.840000033378601, 101.19999694824219, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSLato, BSHalt ab。（c）": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSHalt",
+      "text": "ab。（c）",
+      "chrome": [161.3199920654297, -1.840000033378601, 133.51998901367188, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSLato, BSChws a（（b））c": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSChws",
+      "text": "a（（b））c",
+      "chrome": [141.3199920654297, -1.840000033378601, 140.54000854492188, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSLato, BSChws a）（b": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSChws",
+      "text": "a）（b",
+      "chrome": [82.63999938964844, -1.840000033378601, 81.19999694824219, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSLato, BSChws ab。（c）": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSChws",
+      "text": "ab。（c）",
+      "chrome": [121.31999206542969, -1.840000033378601, 113.51998901367188, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSLato, BSHan a（（b））c": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSHan",
+      "text": "a（（b））c",
+      "chrome": [181.3199920654297, -1.840000033378601, 180.5399932861328, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSLato, BSHan a）（b": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSHan",
+      "text": "a）（b",
+      "chrome": [102.63999938964844, -1.840000033378601, 101.19999694824219, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSLato, BSHan ab。（c）": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSHan",
+      "text": "ab。（c）",
+      "chrome": [161.3199920654297, -1.840000033378601, 135.6363983154297, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws ls 5px （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "（（水））",
+      "ctx": {
+        "letterSpacing": "5px"
+      },
+      "lowEnd": true,
+      "chrome": [145, -7.799999237060547, 132.1999969482422, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws ls 5px 水、（水） 水": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "水、（水） 水",
+      "ctx": {
+        "letterSpacing": "5px"
+      },
+      "lowEnd": true,
+      "chrome": [223.95999145507812, -1.159999966621399, 217.83999633789062, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws ls 5px Ab（（水））cd": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "Ab（（水））cd",
+      "ctx": {
+        "letterSpacing": "5px"
+      },
+      "lowEnd": true,
+      "chrome": [258.27996826171875, -0.1600000113248825, 249.5999755859375, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws ws 7px （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "（（水））",
+      "ctx": {
+        "wordSpacing": "7px"
+      },
+      "lowEnd": true,
+      "chrome": [120, -7.799999237060547, 112.19999694824219, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws ws 7px 水、（水） 水": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "水、（水） 水",
+      "ctx": {
+        "wordSpacing": "7px"
+      },
+      "lowEnd": true,
+      "chrome": [195.95999145507812, -1.159999966621399, 194.83999633789062, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws ws 7px Ab（（水））cd": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "Ab（（水））cd",
+      "ctx": {
+        "wordSpacing": "7px"
+      },
+      "lowEnd": true,
+      "chrome": [213.2799530029297, -0.1600000113248825, 209.5999755859375, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws small-caps （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "（（水））",
+      "ctx": {
+        "fontVariantCaps": "small-caps"
+      },
+      "chrome": [120, -7.799999237060547, 112.19999694824219, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws small-caps 水、（水） 水": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "水、（水） 水",
+      "ctx": {
+        "fontVariantCaps": "small-caps"
+      },
+      "chrome": [188.95999145507812, -1.159999966621399, 187.83999633789062, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws small-caps Ab（（水））cd": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "Ab（（水））cd",
+      "ctx": {
+        "fontVariantCaps": "small-caps"
+      },
+      "chrome": [199.84397888183594, -0.1600000113248825, 198.19198608398438, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws all-small-caps （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "（（水））",
+      "ctx": {
+        "fontVariantCaps": "all-small-caps"
+      },
+      "chrome": [84, -5.459999084472656, 78.54000091552734, 23.968000411987305, 2.6880016326904297],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws all-small-caps 水、（水） 水": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "水、（水） 水",
+      "ctx": {
+        "fontVariantCaps": "all-small-caps"
+      },
+      "chrome": [132.27198791503906, -0.8119999766349792, 131.48797607421875, 23.968000411987305, 2.6880016326904297],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws all-small-caps Ab（（水））cd": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "Ab（（水））cd",
+      "ctx": {
+        "fontVariantCaps": "all-small-caps"
+      },
+      "chrome": [156.5479736328125, -0.1120000034570694, 154.89598083496094, 23.968000411987305, 2.6880016326904297],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws fsa 0.5 （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "（（水））",
+      "css": {
+        "fontSizeAdjust": "0.5"
+      },
+      "chrome": [110.49003601074219, -7.181858062744141, 103.30818176269531, 31.52648162841797, 3.5356826782226562],
+      "flip": "S7",
+      "portable": false
+    },
+    "han-kerning: BSChws fsa 0.5 水、（水） 水": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "水、（水） 水",
+      "css": {
+        "fontSizeAdjust": "0.5"
+      },
+      "chrome": [173.9849395751953, -1.0680700540542603, 172.95370483398438, 31.52648162841797, 3.5356826782226562],
+      "flip": "S7",
+      "portable": false
+    },
+    "han-kerning: BSChws fsa 0.5 Ab（（水））cd": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "Ab（（水））cd",
+      "css": {
+        "fontSizeAdjust": "0.5"
+      },
+      "chrome": [196.37757873535156, -0.14732001721858978, 192.98922729492188, 31.52648162841797, 3.5356826782226562],
+      "flip": "S7",
+      "portable": false
+    },
+    "han-kerning: BSChws rtl （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "（（水））",
+      "ctx": {
+        "direction": "rtl"
+      },
+      "chrome": [120, 112.19999694824219, -7.8000030517578125, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws rtl 水、（水） 水": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "水、（水） 水",
+      "ctx": {
+        "direction": "rtl"
+      },
+      "chrome": [188.95999145507812, 187.79998779296875, -1.1199951171875, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws rtl Ab（（水））cd": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "Ab（（水））cd",
+      "ctx": {
+        "direction": "rtl"
+      },
+      "chrome": [213.2799530029297, 213.1199493408203, -3.6799774169921875, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws ffs \"halt\" 1 （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "（（水））",
+      "css": {
+        "fontFeatureSettings": "\"halt\" 1"
+      },
+      "chrome": [120, -7.799999237060547, 112.19999694824219, 34.2400016784668, 3.8400001525878906]
+    },
+    "han-kerning: BSChws ffs \"halt\" 1 水、（水） 水": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "水、（水） 水",
+      "css": {
+        "fontFeatureSettings": "\"halt\" 1"
+      },
+      "chrome": [188.95999145507812, -1.159999966621399, 187.83999633789062, 34.2400016784668, 3.8400001525878906]
+    },
+    "han-kerning: BSChws ffs \"halt\" 1 Ab（（水））cd": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "Ab（（水））cd",
+      "css": {
+        "fontFeatureSettings": "\"halt\" 1"
+      },
+      "chrome": [213.2799530029297, -0.1600000113248825, 209.5999755859375, 34.2400016784668, 3.8400001525878906]
+    },
+    "han-kerning: BSChws ffs \"palt\" 1 （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "（（水））",
+      "css": {
+        "fontFeatureSettings": "\"palt\" 1"
+      },
+      "chrome": [120, -9.240001678466797, 110.75999450683594, 34.2400016784668, 3.8400001525878906]
+    },
+    "han-kerning: BSChws ffs \"palt\" 1 水、（水） 水": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "水、（水） 水",
+      "css": {
+        "fontFeatureSettings": "\"palt\" 1"
+      },
+      "chrome": [188.95999145507812, -1.159999966621399, 187.83999633789062, 34.2400016784668, 3.8400001525878906]
+    },
+    "han-kerning: BSChws ffs \"palt\" 1 Ab（（水））cd": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "Ab（（水））cd",
+      "css": {
+        "fontFeatureSettings": "\"palt\" 1"
+      },
+      "chrome": [213.2799530029297, -0.1600000113248825, 209.5999755859375, 34.2400016784668, 3.8400001525878906]
+    },
+    "han-kerning: BSChws ffs \"chws\" 0 （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "（（水））",
+      "css": {
+        "fontFeatureSettings": "\"chws\" 0"
+      },
+      "chrome": [200, -27.799999237060547, 172.1999969482422, 34.2400016784668, 3.8400001525878906]
+    },
+    "han-kerning: BSChws ffs \"chws\" 0 水、（水） 水": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "水、（水） 水",
+      "css": {
+        "fontFeatureSettings": "\"chws\" 0"
+      },
+      "chrome": [248.95999145507812, -1.159999966621399, 247.83999633789062, 34.2400016784668, 3.8400001525878906]
+    },
+    "han-kerning: BSChws ffs \"chws\" 0 Ab（（水））cd": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "Ab（（水））cd",
+      "css": {
+        "fontFeatureSettings": "\"chws\" 0"
+      },
+      "chrome": [293.27996826171875, -0.1600000113248825, 289.5999755859375, 34.2400016784668, 3.8400001525878906]
+    },
+    "han-kerning: BSChws ffs \"chws\" 1 （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "（（水））",
+      "css": {
+        "fontFeatureSettings": "\"chws\" 1"
+      },
+      "chrome": [120, -7.799999237060547, 112.19999694824219, 34.2400016784668, 3.8400001525878906]
+    },
+    "han-kerning: BSChws ffs \"chws\" 1 水、（水） 水": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "水、（水） 水",
+      "css": {
+        "fontFeatureSettings": "\"chws\" 1"
+      },
+      "chrome": [188.95999145507812, -1.159999966621399, 187.83999633789062, 34.2400016784668, 3.8400001525878906]
+    },
+    "han-kerning: BSChws ffs \"chws\" 1 Ab（（水））cd": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "Ab（（水））cd",
+      "css": {
+        "fontFeatureSettings": "\"chws\" 1"
+      },
+      "chrome": [213.2799530029297, -0.1600000113248825, 209.5999755859375, 34.2400016784668, 3.8400001525878906]
+    },
+    "han-kerning: BSChws ffs \"vhal\" 1 （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "（（水））",
+      "css": {
+        "fontFeatureSettings": "\"vhal\" 1"
+      },
+      "chrome": [120, -7.799999237060547, 112.19999694824219, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws ffs \"vhal\" 1 水、（水） 水": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "水、（水） 水",
+      "css": {
+        "fontFeatureSettings": "\"vhal\" 1"
+      },
+      "chrome": [188.95999145507812, -1.159999966621399, 187.83999633789062, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws ffs \"vhal\" 1 Ab（（水））cd": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "Ab（（水））cd",
+      "css": {
+        "fontFeatureSettings": "\"vhal\" 1"
+      },
+      "chrome": [213.2799530029297, -0.1600000113248825, 209.5999755859375, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws ffs \"vchw\" 1 （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "（（水））",
+      "css": {
+        "fontFeatureSettings": "\"vchw\" 1"
+      },
+      "chrome": [120, -7.799999237060547, 112.19999694824219, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws ffs \"vchw\" 1 水、（水） 水": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "水、（水） 水",
+      "css": {
+        "fontFeatureSettings": "\"vchw\" 1"
+      },
+      "chrome": [188.95999145507812, -1.159999966621399, 187.83999633789062, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws ffs \"vchw\" 1 Ab（（水））cd": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "Ab（（水））cd",
+      "css": {
+        "fontFeatureSettings": "\"vchw\" 1"
+      },
+      "chrome": [213.2799530029297, -0.1600000113248825, 209.5999755859375, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws ffs \"halt\" 0 （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "（（水））",
+      "css": {
+        "fontFeatureSettings": "\"halt\" 0"
+      },
+      "chrome": [120, -7.799999237060547, 112.19999694824219, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws ffs \"halt\" 0 水、（水） 水": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "水、（水） 水",
+      "css": {
+        "fontFeatureSettings": "\"halt\" 0"
+      },
+      "chrome": [188.95999145507812, -1.159999966621399, 187.83999633789062, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws ffs \"halt\" 0 Ab（（水））cd": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "Ab（（水））cd",
+      "css": {
+        "fontFeatureSettings": "\"halt\" 0"
+      },
+      "chrome": [213.2799530029297, -0.1600000113248825, 209.5999755859375, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws kerning none （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "（（水））",
+      "ctx": {
+        "fontKerning": "none"
+      },
+      "chrome": [120, -7.799999237060547, 112.19999694824219, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws kerning none 水、（水） 水": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "水、（水） 水",
+      "ctx": {
+        "fontKerning": "none"
+      },
+      "chrome": [188.95999145507812, -1.159999966621399, 187.83999633789062, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws kerning none Ab（（水））cd": {
+      "group": "han-kerning",
+      "font": "40px BSChws",
+      "text": "Ab（（水））cd",
+      "ctx": {
+        "fontKerning": "none"
+      },
+      "chrome": [214.23995971679688, -0.1600000113248825, 210.55996704101562, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt ls 5px （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "（（水））",
+      "ctx": {
+        "letterSpacing": "5px"
+      },
+      "lowEnd": true,
+      "chrome": [185, -27.799999237060547, 152.1999969482422, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt ls 5px 水、（水） 水": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "水、（水） 水",
+      "ctx": {
+        "letterSpacing": "5px"
+      },
+      "lowEnd": true,
+      "chrome": [263.9599914550781, -1.159999966621399, 257.8399963378906, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt ls 5px Ab（（水））cd": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "Ab（（水））cd",
+      "ctx": {
+        "letterSpacing": "5px"
+      },
+      "lowEnd": true,
+      "chrome": [298.27996826171875, -0.1600000113248825, 289.5999755859375, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt ws 7px （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "（（水））",
+      "ctx": {
+        "wordSpacing": "7px"
+      },
+      "lowEnd": true,
+      "chrome": [160, -27.799999237060547, 132.1999969482422, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt ws 7px 水、（水） 水": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "水、（水） 水",
+      "ctx": {
+        "wordSpacing": "7px"
+      },
+      "lowEnd": true,
+      "chrome": [235.95999145507812, -1.159999966621399, 234.83999633789062, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt ws 7px Ab（（水））cd": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "Ab（（水））cd",
+      "ctx": {
+        "wordSpacing": "7px"
+      },
+      "lowEnd": true,
+      "chrome": [253.2799530029297, -0.1600000113248825, 249.5999755859375, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt small-caps （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "（（水））",
+      "ctx": {
+        "fontVariantCaps": "small-caps"
+      },
+      "chrome": [160, -27.799999237060547, 132.1999969482422, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt small-caps 水、（水） 水": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "水、（水） 水",
+      "ctx": {
+        "fontVariantCaps": "small-caps"
+      },
+      "chrome": [228.95999145507812, -1.159999966621399, 227.83999633789062, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt small-caps Ab（（水））cd": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "Ab（（水））cd",
+      "ctx": {
+        "fontVariantCaps": "small-caps"
+      },
+      "chrome": [239.84397888183594, -0.1600000113248825, 238.19198608398438, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt all-small-caps （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "（（水））",
+      "ctx": {
+        "fontVariantCaps": "all-small-caps"
+      },
+      "chrome": [112, -19.459999084472656, 92.54000091552734, 23.968000411987305, 2.6880016326904297],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt all-small-caps 水、（水） 水": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "水、（水） 水",
+      "ctx": {
+        "fontVariantCaps": "all-small-caps"
+      },
+      "chrome": [160.27198791503906, -0.8119999766349792, 159.48797607421875, 23.968000411987305, 2.6880016326904297],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt all-small-caps Ab（（水））cd": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "Ab（（水））cd",
+      "ctx": {
+        "fontVariantCaps": "all-small-caps"
+      },
+      "chrome": [184.5479736328125, -0.1120000034570694, 182.89596557617188, 23.968000411987305, 2.6880016326904297],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt fsa 0.5 （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "（（水））",
+      "css": {
+        "fontSizeAdjust": "0.5"
+      },
+      "chrome": [147.3200225830078, -25.596851348876953, 121.72317504882812, 31.52648162841797, 3.5356826782226562],
+      "flip": "S7",
+      "portable": false
+    },
+    "han-kerning: BSHalt fsa 0.5 水、（水） 水": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "水、（水） 水",
+      "css": {
+        "fontSizeAdjust": "0.5"
+      },
+      "chrome": [210.81492614746094, -1.0680700540542603, 209.78369140625, 31.52648162841797, 3.5356826782226562],
+      "flip": "S7",
+      "portable": false
+    },
+    "han-kerning: BSHalt fsa 0.5 Ab（（水））cd": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "Ab（（水））cd",
+      "css": {
+        "fontSizeAdjust": "0.5"
+      },
+      "chrome": [233.2075653076172, -0.14732001721858978, 229.8192138671875, 31.52648162841797, 3.5356826782226562],
+      "flip": "S7",
+      "portable": false
+    },
+    "han-kerning: BSHalt rtl （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "（（水））",
+      "ctx": {
+        "direction": "rtl"
+      },
+      "chrome": [160, 132.1999969482422, -27.800003051757812, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt rtl 水、（水） 水": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "水、（水） 水",
+      "ctx": {
+        "direction": "rtl"
+      },
+      "chrome": [228.95999145507812, 227.79998779296875, -1.1199951171875, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt rtl Ab（（水））cd": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "Ab（（水））cd",
+      "ctx": {
+        "direction": "rtl"
+      },
+      "chrome": [253.2799530029297, 253.1199493408203, -3.6799774169921875, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt ffs \"halt\" 1 （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "（（水））",
+      "css": {
+        "fontFeatureSettings": "\"halt\" 1"
+      },
+      "chrome": [120, -7.799999237060547, 112.19999694824219, 34.2400016784668, 3.8400001525878906]
+    },
+    "han-kerning: BSHalt ffs \"halt\" 1 水、（水） 水": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "水、（水） 水",
+      "css": {
+        "fontFeatureSettings": "\"halt\" 1"
+      },
+      "chrome": [188.95999145507812, -1.159999966621399, 187.83999633789062, 34.2400016784668, 3.8400001525878906]
+    },
+    "han-kerning: BSHalt ffs \"halt\" 1 Ab（（水））cd": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "Ab（（水））cd",
+      "css": {
+        "fontFeatureSettings": "\"halt\" 1"
+      },
+      "chrome": [213.2799530029297, -0.1600000113248825, 209.5999755859375, 34.2400016784668, 3.8400001525878906]
+    },
+    "han-kerning: BSHalt ffs \"palt\" 1 （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "（（水））",
+      "css": {
+        "fontFeatureSettings": "\"palt\" 1"
+      },
+      "chrome": [120, -9.240001678466797, 110.75999450683594, 34.2400016784668, 3.8400001525878906]
+    },
+    "han-kerning: BSHalt ffs \"palt\" 1 水、（水） 水": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "水、（水） 水",
+      "css": {
+        "fontFeatureSettings": "\"palt\" 1"
+      },
+      "chrome": [188.95999145507812, -1.159999966621399, 187.83999633789062, 34.2400016784668, 3.8400001525878906]
+    },
+    "han-kerning: BSHalt ffs \"palt\" 1 Ab（（水））cd": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "Ab（（水））cd",
+      "css": {
+        "fontFeatureSettings": "\"palt\" 1"
+      },
+      "chrome": [213.2799530029297, -0.1600000113248825, 209.5999755859375, 34.2400016784668, 3.8400001525878906]
+    },
+    "han-kerning: BSHalt ffs \"chws\" 0 （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "（（水））",
+      "css": {
+        "fontFeatureSettings": "\"chws\" 0"
+      },
+      "chrome": [160, -27.799999237060547, 132.1999969482422, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt ffs \"chws\" 0 水、（水） 水": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "水、（水） 水",
+      "css": {
+        "fontFeatureSettings": "\"chws\" 0"
+      },
+      "chrome": [228.95999145507812, -1.159999966621399, 227.83999633789062, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt ffs \"chws\" 0 Ab（（水））cd": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "Ab（（水））cd",
+      "css": {
+        "fontFeatureSettings": "\"chws\" 0"
+      },
+      "chrome": [253.2799530029297, -0.1600000113248825, 249.5999755859375, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt ffs \"chws\" 1 （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "（（水））",
+      "css": {
+        "fontFeatureSettings": "\"chws\" 1"
+      },
+      "chrome": [160, -27.799999237060547, 132.1999969482422, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt ffs \"chws\" 1 水、（水） 水": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "水、（水） 水",
+      "css": {
+        "fontFeatureSettings": "\"chws\" 1"
+      },
+      "chrome": [228.95999145507812, -1.159999966621399, 227.83999633789062, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt ffs \"chws\" 1 Ab（（水））cd": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "Ab（（水））cd",
+      "css": {
+        "fontFeatureSettings": "\"chws\" 1"
+      },
+      "chrome": [253.2799530029297, -0.1600000113248825, 249.5999755859375, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt ffs \"vhal\" 1 （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "（（水））",
+      "css": {
+        "fontFeatureSettings": "\"vhal\" 1"
+      },
+      "chrome": [200, -27.799999237060547, 172.1999969482422, 34.2400016784668, 3.8400001525878906]
+    },
+    "han-kerning: BSHalt ffs \"vhal\" 1 水、（水） 水": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "水、（水） 水",
+      "css": {
+        "fontFeatureSettings": "\"vhal\" 1"
+      },
+      "chrome": [248.95999145507812, -1.159999966621399, 247.83999633789062, 34.2400016784668, 3.8400001525878906]
+    },
+    "han-kerning: BSHalt ffs \"vhal\" 1 Ab（（水））cd": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "Ab（（水））cd",
+      "css": {
+        "fontFeatureSettings": "\"vhal\" 1"
+      },
+      "chrome": [293.27996826171875, -0.1600000113248825, 289.5999755859375, 34.2400016784668, 3.8400001525878906]
+    },
+    "han-kerning: BSHalt ffs \"vchw\" 1 （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "（（水））",
+      "css": {
+        "fontFeatureSettings": "\"vchw\" 1"
+      },
+      "chrome": [160, -27.799999237060547, 132.1999969482422, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt ffs \"vchw\" 1 水、（水） 水": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "水、（水） 水",
+      "css": {
+        "fontFeatureSettings": "\"vchw\" 1"
+      },
+      "chrome": [228.95999145507812, -1.159999966621399, 227.83999633789062, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt ffs \"vchw\" 1 Ab（（水））cd": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "Ab（（水））cd",
+      "css": {
+        "fontFeatureSettings": "\"vchw\" 1"
+      },
+      "chrome": [253.2799530029297, -0.1600000113248825, 249.5999755859375, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt ffs \"halt\" 0 （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "（（水））",
+      "css": {
+        "fontFeatureSettings": "\"halt\" 0"
+      },
+      "chrome": [160, -27.799999237060547, 132.1999969482422, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt ffs \"halt\" 0 水、（水） 水": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "水、（水） 水",
+      "css": {
+        "fontFeatureSettings": "\"halt\" 0"
+      },
+      "chrome": [228.95999145507812, -1.159999966621399, 227.83999633789062, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt ffs \"halt\" 0 Ab（（水））cd": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "Ab（（水））cd",
+      "css": {
+        "fontFeatureSettings": "\"halt\" 0"
+      },
+      "chrome": [253.2799530029297, -0.1600000113248825, 249.5999755859375, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt kerning none （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "（（水））",
+      "ctx": {
+        "fontKerning": "none"
+      },
+      "chrome": [160, -27.799999237060547, 132.1999969482422, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt kerning none 水、（水） 水": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "水、（水） 水",
+      "ctx": {
+        "fontKerning": "none"
+      },
+      "chrome": [228.95999145507812, -1.159999966621399, 227.83999633789062, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt kerning none Ab（（水））cd": {
+      "group": "han-kerning",
+      "font": "40px BSHalt",
+      "text": "Ab（（水））cd",
+      "ctx": {
+        "fontKerning": "none"
+      },
+      "chrome": [254.23995971679688, -0.1600000113248825, 250.55996704101562, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan ls 5px （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "（（水））",
+      "ctx": {
+        "letterSpacing": "5px"
+      },
+      "lowEnd": true,
+      "chrome": [185, -25.68359375, 154.31640625, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan ls 5px 水、（水） 水": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水、（水） 水",
+      "ctx": {
+        "letterSpacing": "5px"
+      },
+      "lowEnd": true,
+      "chrome": [265.0390625, -0.83984375, 259.08203125, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan ls 5px Ab（（水））cd": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "Ab（（水））cd",
+      "ctx": {
+        "letterSpacing": "5px"
+      },
+      "lowEnd": true,
+      "chrome": [309.9609375, -0.48828125, 304.00390625, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan ws 7px （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "（（水））",
+      "ctx": {
+        "wordSpacing": "7px"
+      },
+      "lowEnd": true,
+      "chrome": [160, -25.68359375, 134.31640625, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan ws 7px 水、（水） 水": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水、（水） 水",
+      "ctx": {
+        "wordSpacing": "7px"
+      },
+      "lowEnd": true,
+      "chrome": [237.0390625, -0.83984375, 236.08203125, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan ws 7px Ab（（水））cd": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "Ab（（水））cd",
+      "ctx": {
+        "wordSpacing": "7px"
+      },
+      "lowEnd": true,
+      "chrome": [264.9609375, -0.48828125, 264.00390625, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan small-caps （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "（（水））",
+      "ctx": {
+        "fontVariantCaps": "small-caps"
+      },
+      "chrome": [160, -25.68359375, 134.31640625, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan small-caps 水、（水） 水": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水、（水） 水",
+      "ctx": {
+        "fontVariantCaps": "small-caps"
+      },
+      "chrome": [230.0390625, -0.83984375, 229.08203125, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan small-caps Ab（（水））cd": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "Ab（（水））cd",
+      "ctx": {
+        "fontVariantCaps": "small-caps"
+      },
+      "chrome": [251.44921875, -0.48828125, 250.109375, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan all-small-caps （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "（（水））",
+      "ctx": {
+        "fontVariantCaps": "all-small-caps"
+      },
+      "chrome": [112, -17.978515625, 94.021484375, 23.884765625, 2.59765625],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan all-small-caps 水、（水） 水": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水、（水） 水",
+      "ctx": {
+        "fontVariantCaps": "all-small-caps"
+      },
+      "chrome": [161.02734375, -0.587890625, 160.357421875, 23.884765625, 2.59765625],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan all-small-caps Ab（（水））cd": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "Ab（（水））cd",
+      "ctx": {
+        "fontVariantCaps": "all-small-caps"
+      },
+      "chrome": [194.49609375, -0.341796875, 193.15625, 23.884765625, 2.59765625],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan fsa 0.5 （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "（（水））",
+      "css": {
+        "fontSizeAdjust": "0.5"
+      },
+      "chrome": [149.47998046875, -23.994895935058594, 125.4850845336914, 31.87763023376465, 3.466947555541992],
+      "flip": "S7",
+      "portable": false
+    },
+    "han-kerning: BSHan fsa 0.5 水、（水） 水": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水、（水） 水",
+      "css": {
+        "fontSizeAdjust": "0.5"
+      },
+      "chrome": [214.91395568847656, -0.7846239805221558, 214.0198516845703, 31.87763023376465, 3.466947555541992],
+      "flip": "S7",
+      "portable": false
+    },
+    "han-kerning: BSHan fsa 0.5 Ab（（水））cd": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "Ab（（水））cd",
+      "css": {
+        "fontSizeAdjust": "0.5"
+      },
+      "chrome": [247.53970336914062, -0.4561767578125, 246.64559936523438, 31.87763023376465, 3.466947555541992],
+      "flip": "S7",
+      "portable": false
+    },
+    "han-kerning: BSHan rtl （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "（（水））",
+      "ctx": {
+        "direction": "rtl"
+      },
+      "chrome": [160, 134.31640625, -25.68359375, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan rtl 水、（水） 水": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水、（水） 水",
+      "ctx": {
+        "direction": "rtl"
+      },
+      "chrome": [230.0390625, 229.19921875, -0.95703125, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan rtl Ab（（水））cd": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "Ab（（水））cd",
+      "ctx": {
+        "direction": "rtl"
+      },
+      "chrome": [264.9609375, 264.47265625, -0.95703125, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan ffs \"halt\" 1 （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "（（水））",
+      "css": {
+        "fontFeatureSettings": "\"halt\" 1"
+      },
+      "chrome": [120, -5.68359375, 114.31640625, 34.12109375, 3.7109375]
+    },
+    "han-kerning: BSHan ffs \"halt\" 1 水、（水） 水": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水、（水） 水",
+      "css": {
+        "fontFeatureSettings": "\"halt\" 1"
+      },
+      "chrome": [190.0390625, -0.83984375, 189.08203125, 34.12109375, 3.7109375]
+    },
+    "han-kerning: BSHan ffs \"halt\" 1 Ab（（水））cd": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "Ab（（水））cd",
+      "css": {
+        "fontFeatureSettings": "\"halt\" 1"
+      },
+      "chrome": [224.9609375, -0.48828125, 224.00390625, 34.12109375, 3.7109375]
+    },
+    "han-kerning: BSHan ffs \"palt\" 1 （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "（（水））",
+      "css": {
+        "fontFeatureSettings": "\"palt\" 1"
+      },
+      "chrome": [120, -6.4453125, 113.5546875, 34.12109375, 3.7109375]
+    },
+    "han-kerning: BSHan ffs \"palt\" 1 水、（水） 水": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水、（水） 水",
+      "css": {
+        "fontFeatureSettings": "\"palt\" 1"
+      },
+      "chrome": [190.0390625, -0.83984375, 189.08203125, 34.12109375, 3.7109375]
+    },
+    "han-kerning: BSHan ffs \"palt\" 1 Ab（（水））cd": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "Ab（（水））cd",
+      "css": {
+        "fontFeatureSettings": "\"palt\" 1"
+      },
+      "chrome": [224.9609375, -0.48828125, 224.00390625, 34.12109375, 3.7109375]
+    },
+    "han-kerning: BSHan ffs \"chws\" 0 （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "（（水））",
+      "css": {
+        "fontFeatureSettings": "\"chws\" 0"
+      },
+      "chrome": [160, -25.68359375, 134.31640625, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan ffs \"chws\" 0 水、（水） 水": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水、（水） 水",
+      "css": {
+        "fontFeatureSettings": "\"chws\" 0"
+      },
+      "chrome": [230.0390625, -0.83984375, 229.08203125, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan ffs \"chws\" 0 Ab（（水））cd": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "Ab（（水））cd",
+      "css": {
+        "fontFeatureSettings": "\"chws\" 0"
+      },
+      "chrome": [264.9609375, -0.48828125, 264.00390625, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan ffs \"chws\" 1 （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "（（水））",
+      "css": {
+        "fontFeatureSettings": "\"chws\" 1"
+      },
+      "chrome": [160, -25.68359375, 134.31640625, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan ffs \"chws\" 1 水、（水） 水": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水、（水） 水",
+      "css": {
+        "fontFeatureSettings": "\"chws\" 1"
+      },
+      "chrome": [230.0390625, -0.83984375, 229.08203125, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan ffs \"chws\" 1 Ab（（水））cd": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "Ab（（水））cd",
+      "css": {
+        "fontFeatureSettings": "\"chws\" 1"
+      },
+      "chrome": [264.9609375, -0.48828125, 264.00390625, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan ffs \"vhal\" 1 （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "（（水））",
+      "css": {
+        "fontFeatureSettings": "\"vhal\" 1"
+      },
+      "chrome": [200, -25.68359375, 174.31640625, 34.12109375, 3.7109375]
+    },
+    "han-kerning: BSHan ffs \"vhal\" 1 水、（水） 水": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水、（水） 水",
+      "css": {
+        "fontFeatureSettings": "\"vhal\" 1"
+      },
+      "chrome": [250.0390625, -0.83984375, 249.08203125, 34.12109375, 3.7109375]
+    },
+    "han-kerning: BSHan ffs \"vhal\" 1 Ab（（水））cd": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "Ab（（水））cd",
+      "css": {
+        "fontFeatureSettings": "\"vhal\" 1"
+      },
+      "chrome": [304.9609375, -0.48828125, 304.00390625, 34.12109375, 3.7109375]
+    },
+    "han-kerning: BSHan ffs \"vchw\" 1 （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "（（水））",
+      "css": {
+        "fontFeatureSettings": "\"vchw\" 1"
+      },
+      "chrome": [160, -25.68359375, 134.31640625, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan ffs \"vchw\" 1 水、（水） 水": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水、（水） 水",
+      "css": {
+        "fontFeatureSettings": "\"vchw\" 1"
+      },
+      "chrome": [230.0390625, -0.83984375, 229.08203125, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan ffs \"vchw\" 1 Ab（（水））cd": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "Ab（（水））cd",
+      "css": {
+        "fontFeatureSettings": "\"vchw\" 1"
+      },
+      "chrome": [264.9609375, -0.48828125, 264.00390625, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan ffs \"halt\" 0 （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "（（水））",
+      "css": {
+        "fontFeatureSettings": "\"halt\" 0"
+      },
+      "chrome": [160, -25.68359375, 134.31640625, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan ffs \"halt\" 0 水、（水） 水": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水、（水） 水",
+      "css": {
+        "fontFeatureSettings": "\"halt\" 0"
+      },
+      "chrome": [230.0390625, -0.83984375, 229.08203125, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan ffs \"halt\" 0 Ab（（水））cd": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "Ab（（水））cd",
+      "css": {
+        "fontFeatureSettings": "\"halt\" 0"
+      },
+      "chrome": [264.9609375, -0.48828125, 264.00390625, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan kerning none （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "（（水））",
+      "ctx": {
+        "fontKerning": "none"
+      },
+      "chrome": [160, -25.68359375, 134.31640625, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan kerning none 水、（水） 水": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "水、（水） 水",
+      "ctx": {
+        "fontKerning": "none"
+      },
+      "chrome": [230.0390625, -0.83984375, 229.08203125, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHan kerning none Ab（（水））cd": {
+      "group": "han-kerning",
+      "font": "40px BSHan",
+      "text": "Ab（（水））cd",
+      "ctx": {
+        "fontKerning": "none"
+      },
+      "chrome": [265.1171875, -0.48828125, 264.16015625, 34.12109375, 3.7109375],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSLato, BSHalt ls 5px （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSHalt",
+      "text": "（（水））",
+      "ctx": {
+        "letterSpacing": "5px"
+      },
+      "lowEnd": true,
+      "chrome": [185, -27.799999237060547, 152.1999969482422, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSLato, BSHalt ls 5px 水、（水） 水": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSHalt",
+      "text": "水、（水） 水",
+      "ctx": {
+        "letterSpacing": "5px"
+      },
+      "lowEnd": true,
+      "chrome": [262.719970703125, -1.159999966621399, 256.5999755859375, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSLato, BSHalt ls 5px Ab（（水））cd": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSHalt",
+      "text": "Ab（（水））cd",
+      "ctx": {
+        "letterSpacing": "5px"
+      },
+      "lowEnd": true,
+      "chrome": [295.5999755859375, -0.19999998807907104, 287.53997802734375, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSLato, BSHalt ws 7px （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSHalt",
+      "text": "（（水））",
+      "ctx": {
+        "wordSpacing": "7px"
+      },
+      "lowEnd": true,
+      "chrome": [160, -27.799999237060547, 132.1999969482422, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSLato, BSHalt ws 7px 水、（水） 水": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSHalt",
+      "text": "水、（水） 水",
+      "ctx": {
+        "wordSpacing": "7px"
+      },
+      "lowEnd": true,
+      "chrome": [234.71998596191406, -1.159999966621399, 233.59999084472656, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSLato, BSHalt ws 7px Ab（（水））cd": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSHalt",
+      "text": "Ab（（水））cd",
+      "ctx": {
+        "wordSpacing": "7px"
+      },
+      "lowEnd": true,
+      "chrome": [250.59999084472656, -0.19999998807907104, 247.53997802734375, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSLato, BSHalt small-caps （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSHalt",
+      "text": "（（水））",
+      "ctx": {
+        "fontVariantCaps": "small-caps"
+      },
+      "chrome": [160, -27.799999237060547, 132.1999969482422, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSLato, BSHalt small-caps 水、（水） 水": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSHalt",
+      "text": "水、（水） 水",
+      "ctx": {
+        "fontVariantCaps": "small-caps"
+      },
+      "chrome": [227.71998596191406, -1.159999966621399, 226.59999084472656, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSLato, BSHalt small-caps Ab（（水））cd": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSHalt",
+      "text": "Ab（（水））cd",
+      "ctx": {
+        "fontVariantCaps": "small-caps"
+      },
+      "chrome": [245.57998657226562, -0.19999998807907104, 244.3199920654297, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSLato, BSHalt all-small-caps （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSHalt",
+      "text": "（（水））",
+      "ctx": {
+        "fontVariantCaps": "all-small-caps"
+      },
+      "chrome": [112, -19.459999084472656, 92.54000091552734, 23.968000411987305, 2.6880016326904297],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSLato, BSHalt all-small-caps 水、（水） 水": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSHalt",
+      "text": "水、（水） 水",
+      "ctx": {
+        "fontVariantCaps": "all-small-caps"
+      },
+      "chrome": [159.40399169921875, -0.8119999766349792, 158.6199951171875, 23.968000411987305, 2.6880016326904297],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSLato, BSHalt all-small-caps Ab（（水））cd": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSHalt",
+      "text": "Ab（（水））cd",
+      "ctx": {
+        "fontVariantCaps": "all-small-caps"
+      },
+      "chrome": [189.41998291015625, -0.14000000059604645, 188.1599884033203, 23.968000411987305, 2.6880016326904297],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSLato, BSHalt fsa 0.5 （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSHalt",
+      "text": "（（水））",
+      "css": {
+        "fontSizeAdjust": "0.5"
+      },
+      "chrome": [147.3200225830078, -25.596851348876953, 121.72317504882812, 31.52648162841797, 3.5356826782226562],
+      "flip": "S7",
+      "portable": false
+    },
+    "han-kerning: BSLato, BSHalt fsa 0.5 水、（水） 水": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSHalt",
+      "text": "水、（水） 水",
+      "css": {
+        "fontSizeAdjust": "0.5"
+      },
+      "chrome": [210.1846466064453, -1.0680700540542603, 209.15341186523438, 31.52648162841797, 3.5356826782226562],
+      "flip": "S7",
+      "portable": false
+    },
+    "han-kerning: BSLato, BSHalt fsa 0.5 Ab（（水））cd": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSHalt",
+      "text": "Ab（（水））cd",
+      "css": {
+        "fontSizeAdjust": "0.5"
+      },
+      "chrome": [236.74220275878906, -0.19739998877048492, 233.72198486328125, 31.52648162841797, 3.5356826782226562],
+      "flip": "S7",
+      "portable": false
+    },
+    "han-kerning: BSLato, BSHalt rtl （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSHalt",
+      "text": "（（水））",
+      "ctx": {
+        "direction": "rtl"
+      },
+      "chrome": [160, 132.1999969482422, -27.800003051757812, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSLato, BSHalt rtl 水、（水） 水": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSHalt",
+      "text": "水、（水） 水",
+      "ctx": {
+        "direction": "rtl"
+      },
+      "chrome": [227.71998596191406, 226.5599822998047, -1.1199951171875, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSLato, BSHalt rtl Ab（（水））cd": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSHalt",
+      "text": "Ab（（水））cd",
+      "ctx": {
+        "direction": "rtl"
+      },
+      "chrome": [250.59999084472656, 250.39999389648438, -3.0600128173828125, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSLato, BSHalt ffs \"halt\" 1 （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSHalt",
+      "text": "（（水））",
+      "css": {
+        "fontFeatureSettings": "\"halt\" 1"
+      },
+      "chrome": [120, -7.799999237060547, 112.19999694824219, 34.2400016784668, 3.8400001525878906]
+    },
+    "han-kerning: BSLato, BSHalt ffs \"halt\" 1 水、（水） 水": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSHalt",
+      "text": "水、（水） 水",
+      "css": {
+        "fontFeatureSettings": "\"halt\" 1"
+      },
+      "chrome": [187.71998596191406, -1.159999966621399, 186.59999084472656, 34.2400016784668, 3.8400001525878906]
+    },
+    "han-kerning: BSLato, BSHalt ffs \"halt\" 1 Ab（（水））cd": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSHalt",
+      "text": "Ab（（水））cd",
+      "css": {
+        "fontFeatureSettings": "\"halt\" 1"
+      },
+      "chrome": [210.59999084472656, -0.19999998807907104, 207.53997802734375, 34.2400016784668, 3.8400001525878906]
+    },
+    "han-kerning: BSLato, BSHalt ffs \"palt\" 1 （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSHalt",
+      "text": "（（水））",
+      "css": {
+        "fontFeatureSettings": "\"palt\" 1"
+      },
+      "chrome": [120, -9.240001678466797, 110.75999450683594, 34.2400016784668, 3.8400001525878906]
+    },
+    "han-kerning: BSLato, BSHalt ffs \"palt\" 1 水、（水） 水": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSHalt",
+      "text": "水、（水） 水",
+      "css": {
+        "fontFeatureSettings": "\"palt\" 1"
+      },
+      "chrome": [187.71998596191406, -1.159999966621399, 186.59999084472656, 34.2400016784668, 3.8400001525878906]
+    },
+    "han-kerning: BSLato, BSHalt ffs \"palt\" 1 Ab（（水））cd": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSHalt",
+      "text": "Ab（（水））cd",
+      "css": {
+        "fontFeatureSettings": "\"palt\" 1"
+      },
+      "chrome": [210.59999084472656, -0.19999998807907104, 207.53997802734375, 34.2400016784668, 3.8400001525878906]
+    },
+    "han-kerning: BSLato, BSHalt ffs \"chws\" 0 （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSHalt",
+      "text": "（（水））",
+      "css": {
+        "fontFeatureSettings": "\"chws\" 0"
+      },
+      "chrome": [160, -27.799999237060547, 132.1999969482422, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSLato, BSHalt ffs \"chws\" 0 水、（水） 水": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSHalt",
+      "text": "水、（水） 水",
+      "css": {
+        "fontFeatureSettings": "\"chws\" 0"
+      },
+      "chrome": [227.71998596191406, -1.159999966621399, 226.59999084472656, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSLato, BSHalt ffs \"chws\" 0 Ab（（水））cd": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSHalt",
+      "text": "Ab（（水））cd",
+      "css": {
+        "fontFeatureSettings": "\"chws\" 0"
+      },
+      "chrome": [250.59999084472656, -0.19999998807907104, 247.53997802734375, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSLato, BSHalt ffs \"chws\" 1 （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSHalt",
+      "text": "（（水））",
+      "css": {
+        "fontFeatureSettings": "\"chws\" 1"
+      },
+      "chrome": [160, -27.799999237060547, 132.1999969482422, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSLato, BSHalt ffs \"chws\" 1 水、（水） 水": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSHalt",
+      "text": "水、（水） 水",
+      "css": {
+        "fontFeatureSettings": "\"chws\" 1"
+      },
+      "chrome": [227.71998596191406, -1.159999966621399, 226.59999084472656, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSLato, BSHalt ffs \"chws\" 1 Ab（（水））cd": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSHalt",
+      "text": "Ab（（水））cd",
+      "css": {
+        "fontFeatureSettings": "\"chws\" 1"
+      },
+      "chrome": [250.59999084472656, -0.19999998807907104, 247.53997802734375, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSLato, BSHalt ffs \"vhal\" 1 （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSHalt",
+      "text": "（（水））",
+      "css": {
+        "fontFeatureSettings": "\"vhal\" 1"
+      },
+      "chrome": [200, -27.799999237060547, 172.1999969482422, 34.2400016784668, 3.8400001525878906]
+    },
+    "han-kerning: BSLato, BSHalt ffs \"vhal\" 1 水、（水） 水": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSHalt",
+      "text": "水、（水） 水",
+      "css": {
+        "fontFeatureSettings": "\"vhal\" 1"
+      },
+      "chrome": [247.71998596191406, -1.159999966621399, 246.59999084472656, 34.2400016784668, 3.8400001525878906]
+    },
+    "han-kerning: BSLato, BSHalt ffs \"vhal\" 1 Ab（（水））cd": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSHalt",
+      "text": "Ab（（水））cd",
+      "css": {
+        "fontFeatureSettings": "\"vhal\" 1"
+      },
+      "chrome": [290.5999755859375, -0.19999998807907104, 287.53997802734375, 34.2400016784668, 3.8400001525878906]
+    },
+    "han-kerning: BSLato, BSHalt ffs \"vchw\" 1 （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSHalt",
+      "text": "（（水））",
+      "css": {
+        "fontFeatureSettings": "\"vchw\" 1"
+      },
+      "chrome": [160, -27.799999237060547, 132.1999969482422, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSLato, BSHalt ffs \"vchw\" 1 水、（水） 水": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSHalt",
+      "text": "水、（水） 水",
+      "css": {
+        "fontFeatureSettings": "\"vchw\" 1"
+      },
+      "chrome": [227.71998596191406, -1.159999966621399, 226.59999084472656, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSLato, BSHalt ffs \"vchw\" 1 Ab（（水））cd": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSHalt",
+      "text": "Ab（（水））cd",
+      "css": {
+        "fontFeatureSettings": "\"vchw\" 1"
+      },
+      "chrome": [250.59999084472656, -0.19999998807907104, 247.53997802734375, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSLato, BSHalt ffs \"halt\" 0 （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSHalt",
+      "text": "（（水））",
+      "css": {
+        "fontFeatureSettings": "\"halt\" 0"
+      },
+      "chrome": [160, -27.799999237060547, 132.1999969482422, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSLato, BSHalt ffs \"halt\" 0 水、（水） 水": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSHalt",
+      "text": "水、（水） 水",
+      "css": {
+        "fontFeatureSettings": "\"halt\" 0"
+      },
+      "chrome": [227.71998596191406, -1.159999966621399, 226.59999084472656, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSLato, BSHalt ffs \"halt\" 0 Ab（（水））cd": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSHalt",
+      "text": "Ab（（水））cd",
+      "css": {
+        "fontFeatureSettings": "\"halt\" 0"
+      },
+      "chrome": [250.59999084472656, -0.19999998807907104, 247.53997802734375, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSLato, BSHalt kerning none （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSHalt",
+      "text": "（（水））",
+      "ctx": {
+        "fontKerning": "none"
+      },
+      "chrome": [160, -27.799999237060547, 132.1999969482422, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSLato, BSHalt kerning none 水、（水） 水": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSHalt",
+      "text": "水、（水） 水",
+      "ctx": {
+        "fontKerning": "none"
+      },
+      "chrome": [227.71998596191406, -1.159999966621399, 226.59999084472656, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSLato, BSHalt kerning none Ab（（水））cd": {
+      "group": "han-kerning",
+      "font": "40px BSLato, BSHalt",
+      "text": "Ab（（水））cd",
+      "ctx": {
+        "fontKerning": "none"
+      },
+      "chrome": [250.59999084472656, -0.19999998807907104, 247.53997802734375, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt, BSLato rtl （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSHalt, BSLato",
+      "text": "（（水））",
+      "ctx": {
+        "direction": "rtl"
+      },
+      "chrome": [160, 132.1999969482422, -27.800003051757812, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt, BSLato rtl abc（（水））": {
+      "group": "han-kerning",
+      "font": "40px BSHalt, BSLato",
+      "text": "abc（（水））",
+      "ctx": {
+        "direction": "rtl"
+      },
+      "chrome": [227.6399688720703, 225.27996826171875, -27.800003051757812, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSHalt, BSLato ltr （（abc））": {
+      "group": "han-kerning",
+      "font": "40px BSHalt, BSLato",
+      "text": "（（abc））",
+      "ctx": {
+        "direction": "ltr"
+      },
+      "chrome": [187.6399688720703, -27.799999237060547, 159.8399658203125, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws, BSLato rtl （（水））": {
+      "group": "han-kerning",
+      "font": "40px BSChws, BSLato",
+      "text": "（（水））",
+      "ctx": {
+        "direction": "rtl"
+      },
+      "chrome": [120, 112.19999694824219, -7.8000030517578125, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws, BSLato rtl abc（（水））": {
+      "group": "han-kerning",
+      "font": "40px BSChws, BSLato",
+      "text": "abc（（水））",
+      "ctx": {
+        "direction": "rtl"
+      },
+      "chrome": [187.6399688720703, 185.27996826171875, -7.8000030517578125, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "han-kerning: BSChws, BSLato ltr （（abc））": {
+      "group": "han-kerning",
+      "font": "40px BSChws, BSLato",
+      "text": "（（abc））",
+      "ctx": {
+        "direction": "ltr"
+      },
+      "chrome": [147.6399688720703, -7.799999237060547, 139.8399658203125, 34.2400016784668, 3.8400001525878906],
+      "flip": "S7",
+      "flipPortable": "S7"
+    },
+    "cjk-punct: fallback BSLato 「（水）」": {
+      "group": "cjk-punct",
+      "font": "40px BSLato",
+      "text": "「（水）」",
+      "system": true,
+      "chrome": [160, -26, 134, 33.08000183105469, 4.280002593994141],
+      "flip": "S7"
+    },
+    "cjk-punct: fallback sans-serif 「（水）」": {
+      "group": "cjk-punct",
+      "font": "40px sans-serif",
+      "text": "「（水）」",
+      "system": true,
+      "chrome": [160, -26, 134, 33.08000183105469, 4.280002593994141],
+      "flip": "S7"
+    },
+    "cjk-punct: fallback serif 「（水）」": {
+      "group": "cjk-punct",
+      "font": "40px serif",
+      "text": "「（水）」",
+      "system": true,
+      "chrome": [200, -25.15999984741211, 174.75999450683594, 31.079999923706055, 6.760000228881836]
+    },
+    "cjk-punct: fallback BSLato 水「（水）」": {
+      "group": "cjk-punct",
+      "font": "40px BSLato",
+      "text": "水「（水）」",
+      "system": true,
+      "chrome": [200, -1.5600000619888306, 174, 33.08000183105469, 4.280002593994141],
+      "flip": "S7"
+    },
+    "cjk-punct: fallback sans-serif 水「（水）」": {
+      "group": "cjk-punct",
+      "font": "40px sans-serif",
+      "text": "水「（水）」",
+      "system": true,
+      "chrome": [200, -1.5600000619888306, 174, 33.08000183105469, 4.280002593994141],
+      "flip": "S7"
+    },
+    "cjk-punct: fallback serif 水「（水）」": {
+      "group": "cjk-punct",
+      "font": "40px serif",
+      "text": "水「（水）」",
+      "system": true,
+      "chrome": [240, -1.3600001335144043, 214.75999450683594, 31.079999923706055, 6.760000228881836]
+    },
+    "cjk-punct: fallback BSLato （水）。": {
+      "group": "cjk-punct",
+      "font": "40px BSLato",
+      "text": "（水）。",
+      "system": true,
+      "chrome": [140, -28.1200008392334, 115.20000457763672, 33.08000183105469, 4.3600006103515625],
+      "flip": "S7"
+    },
+    "cjk-punct: fallback sans-serif （水）。": {
+      "group": "cjk-punct",
+      "font": "40px sans-serif",
+      "text": "（水）。",
+      "system": true,
+      "chrome": [140, -28.1200008392334, 115.20000457763672, 33.08000183105469, 4.3600006103515625],
+      "flip": "S7"
+    },
+    "cjk-punct: fallback serif （水）。": {
+      "group": "cjk-punct",
+      "font": "40px serif",
+      "text": "（水）。",
+      "system": true,
+      "chrome": [160, -26.479999542236328, 134.75999450683594, 31.079999923706055, 6.760000228881836]
+    },
+    "cjk-punct: fallback BSLato 水（水）。": {
+      "group": "cjk-punct",
+      "font": "40px BSLato",
+      "text": "水（水）。",
+      "system": true,
+      "chrome": [180, -1.5600000619888306, 155.20001220703125, 33.08000183105469, 4.3600006103515625],
+      "flip": "S7"
+    },
+    "cjk-punct: fallback sans-serif 水（水）。": {
+      "group": "cjk-punct",
+      "font": "40px sans-serif",
+      "text": "水（水）。",
+      "system": true,
+      "chrome": [180, -1.5600000619888306, 155.20001220703125, 33.08000183105469, 4.3600006103515625],
+      "flip": "S7"
+    },
+    "cjk-punct: fallback serif 水（水）。": {
+      "group": "cjk-punct",
+      "font": "40px serif",
+      "text": "水（水）。",
+      "system": true,
+      "chrome": [200, -1.3600001335144043, 174.75999450683594, 31.079999923706055, 6.760000228881836]
+    },
+    "cjk-punct: fallback BSLato 水。、水": {
+      "group": "cjk-punct",
+      "font": "40px BSLato",
+      "text": "水。、水",
+      "system": true,
+      "chrome": [140, -1.5600000619888306, 138.47999572753906, 32.84000015258789, 4.3600006103515625],
+      "flip": "S7"
+    },
+    "cjk-punct: fallback sans-serif 水。、水": {
+      "group": "cjk-punct",
+      "font": "40px sans-serif",
+      "text": "水。、水",
+      "system": true,
+      "chrome": [140, -1.5600000619888306, 138.47999572753906, 32.84000015258789, 4.3600006103515625],
+      "flip": "S7"
+    },
+    "cjk-punct: fallback serif 水。、水": {
+      "group": "cjk-punct",
+      "font": "40px serif",
+      "text": "水。、水",
+      "system": true,
+      "chrome": [160, -1.3600001335144043, 158.63999938964844, 31.079999923706055, 6.760000228881836]
+    },
+    "cjk-punct: fallback BSLato 水水。、水": {
+      "group": "cjk-punct",
+      "font": "40px BSLato",
+      "text": "水水。、水",
+      "system": true,
+      "chrome": [180, -1.5600000619888306, 178.47999572753906, 32.84000015258789, 4.3600006103515625],
+      "flip": "S7"
+    },
+    "cjk-punct: fallback sans-serif 水水。、水": {
+      "group": "cjk-punct",
+      "font": "40px sans-serif",
+      "text": "水水。、水",
+      "system": true,
+      "chrome": [180, -1.5600000619888306, 178.47999572753906, 32.84000015258789, 4.3600006103515625],
+      "flip": "S7"
+    },
+    "cjk-punct: fallback serif 水水。、水": {
+      "group": "cjk-punct",
+      "font": "40px serif",
+      "text": "水水。、水",
+      "system": true,
+      "chrome": [200, -1.3600001335144043, 198.63999938964844, 31.079999923706055, 6.760000228881836]
+    },
+    "cjk-punct: fallback BSLato 水（（水": {
+      "group": "cjk-punct",
+      "font": "40px BSLato",
+      "text": "水（（水",
+      "system": true,
+      "chrome": [140, -1.5600000619888306, 138.47999572753906, 33.08000183105469, 4.280002593994141],
+      "flip": "S7"
+    },
+    "cjk-punct: fallback sans-serif 水（（水": {
+      "group": "cjk-punct",
+      "font": "40px sans-serif",
+      "text": "水（（水",
+      "system": true,
+      "chrome": [140, -1.5600000619888306, 138.47999572753906, 33.08000183105469, 4.280002593994141],
+      "flip": "S7"
+    },
+    "cjk-punct: fallback serif 水（（水": {
+      "group": "cjk-punct",
+      "font": "40px serif",
+      "text": "水（（水",
+      "system": true,
+      "chrome": [160, -1.3600001335144043, 158.63999938964844, 31.079999923706055, 6.760000228881836]
+    },
+    "cjk-punct: fallback BSLato 水水（（水": {
+      "group": "cjk-punct",
+      "font": "40px BSLato",
+      "text": "水水（（水",
+      "system": true,
+      "chrome": [180, -1.5600000619888306, 178.47999572753906, 33.08000183105469, 4.280002593994141],
+      "flip": "S7"
+    },
+    "cjk-punct: fallback sans-serif 水水（（水": {
+      "group": "cjk-punct",
+      "font": "40px sans-serif",
+      "text": "水水（（水",
+      "system": true,
+      "chrome": [180, -1.5600000619888306, 178.47999572753906, 33.08000183105469, 4.280002593994141],
+      "flip": "S7"
+    },
+    "cjk-punct: fallback serif 水水（（水": {
+      "group": "cjk-punct",
+      "font": "40px serif",
+      "text": "水水（（水",
+      "system": true,
+      "chrome": [200, -1.3600001335144043, 198.63999938964844, 31.079999923706055, 6.760000228881836]
+    },
+    "cjk-punct: fallback BSLato 水」「水": {
+      "group": "cjk-punct",
+      "font": "40px BSLato",
+      "text": "水」「水",
+      "system": true,
+      "chrome": [140, -1.5600000619888306, 138.47999572753906, 33.08000183105469, 4.280002593994141],
+      "flip": "S7"
+    },
+    "cjk-punct: fallback sans-serif 水」「水": {
+      "group": "cjk-punct",
+      "font": "40px sans-serif",
+      "text": "水」「水",
+      "system": true,
+      "chrome": [140, -1.5600000619888306, 138.47999572753906, 33.08000183105469, 4.280002593994141],
+      "flip": "S7"
+    },
+    "cjk-punct: fallback serif 水」「水": {
+      "group": "cjk-punct",
+      "font": "40px serif",
+      "text": "水」「水",
+      "system": true,
+      "chrome": [160, -1.3600001335144043, 158.63999938964844, 31.079999923706055, 6.760000228881836]
+    },
+    "cjk-punct: fallback BSLato 水水」「水": {
+      "group": "cjk-punct",
+      "font": "40px BSLato",
+      "text": "水水」「水",
+      "system": true,
+      "chrome": [180, -1.5600000619888306, 178.47999572753906, 33.08000183105469, 4.280002593994141],
+      "flip": "S7"
+    },
+    "cjk-punct: fallback sans-serif 水水」「水": {
+      "group": "cjk-punct",
+      "font": "40px sans-serif",
+      "text": "水水」「水",
+      "system": true,
+      "chrome": [180, -1.5600000619888306, 178.47999572753906, 33.08000183105469, 4.280002593994141],
+      "flip": "S7"
+    },
+    "cjk-punct: fallback serif 水水」「水": {
+      "group": "cjk-punct",
+      "font": "40px serif",
+      "text": "水水」「水",
+      "system": true,
+      "chrome": [200, -1.3600001335144043, 198.63999938964844, 31.079999923706055, 6.760000228881836]
+    },
+    "cjk-punct: fallback BSLato 、（水）": {
+      "group": "cjk-punct",
+      "font": "40px BSLato",
+      "text": "、（水）",
+      "system": true,
+      "chrome": [140, -5.12000036239624, 111.87999725341797, 33.08000183105469, 4.280002593994141],
+      "flip": "S7"
+    },
+    "cjk-punct: fallback sans-serif 、（水）": {
+      "group": "cjk-punct",
+      "font": "40px sans-serif",
+      "text": "、（水）",
+      "system": true,
+      "chrome": [140, -5.12000036239624, 111.87999725341797, 33.08000183105469, 4.280002593994141],
+      "flip": "S7"
+    },
+    "cjk-punct: fallback serif 、（水）": {
+      "group": "cjk-punct",
+      "font": "40px serif",
+      "text": "、（水）",
+      "system": true,
+      "chrome": [160, -3.9600000381469727, 134.8800048828125, 31.079999923706055, 6.760000228881836]
+    },
+    "cjk-punct: fallback BSLato 水、（水）": {
+      "group": "cjk-punct",
+      "font": "40px BSLato",
+      "text": "水、（水）",
+      "system": true,
+      "chrome": [180, -1.5600000619888306, 151.8800048828125, 33.08000183105469, 4.280002593994141],
+      "flip": "S7"
+    },
+    "cjk-punct: fallback sans-serif 水、（水）": {
+      "group": "cjk-punct",
+      "font": "40px sans-serif",
+      "text": "水、（水）",
+      "system": true,
+      "chrome": [180, -1.5600000619888306, 151.8800048828125, 33.08000183105469, 4.280002593994141],
+      "flip": "S7"
+    },
+    "cjk-punct: fallback serif 水、（水）": {
+      "group": "cjk-punct",
+      "font": "40px serif",
+      "text": "水、（水）",
+      "system": true,
+      "chrome": [200, -1.3600001335144043, 174.8800048828125, 31.079999923706055, 6.760000228881836]
     }
   }
 }
