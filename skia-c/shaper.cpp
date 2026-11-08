@@ -1396,7 +1396,7 @@ void NoteTextCachesChange() {
 bool BlinkShaperOn() {
   static const bool on = [] {
     const char* value = getenv("NAPI_RS_CANVAS_SHAPER");
-    return value && strcmp(value, "blink") == 0;
+    return !value || strcmp(value, "skparagraph") != 0;
   }();
   return on;
 }

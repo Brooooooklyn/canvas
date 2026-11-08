@@ -39,18 +39,6 @@ for (const [family, file] of Object.entries(FIXTURE.fonts)) {
   GlobalFonts.registerFromPath(join(__dirname, 'fonts', file), family)
 }
 
-// DESIGN D10: skparagraph appends `liga 0` to every block with a positive
-// letter spacing (OneLineShaper.cpp), after font-feature-settings, so
-// `"liga"` cannot turn liga back on there. Chrome turns it on. The Blink
-// shaper (NAPI_RS_CANVAS_SHAPER=blink, DESIGN-SHAPER.md S4) puts letter
-// spacing's `liga 0` before font-feature-settings, as Blink's
-// FontFeatureRange::FromFontDescription does, and matches Chrome; the old
-// path still differs until the shaper is the default (S9).
-const D10_LOOKUP1 = ['ls 1px + ffs liga,dlig,calt,clig,hlig']
-const D10_WIDTHS = ['Lato fi ls 1px + ffs liga @40', 'Lato fi ls 1px + ffs liga @100']
-const BLINK = process.env.NAPI_RS_CANVAS_SHAPER === 'blink'
-const d10Test = BLINK ? test.serial : test.serial.failing
-
 // The six go on the context (Chrome: element CSS), then the font and the
 // context attributes, as the capture did.
 function context(font: string, c: Case) {
@@ -104,7 +92,7 @@ function withBothRenderers(fn: (renderer: string) => void) {
 }
 
 test.serial('the features that fire in gsubtest-lookup1 match Chrome', (t) => {
-  const names = Object.keys(FIXTURE.lookup1).filter((name) => !D10_LOOKUP1.includes(name))
+  const names = Object.keys(FIXTURE.lookup1)
   t.true(names.length >= 50)
   withBothRenderers((renderer) => {
     t.deepEqual(mismatches(names), [], renderer)
@@ -119,10 +107,6 @@ test.serial('font-feature-settings values pick the gsubtest-lookup3 alternate li
       .map(([name, ours, chrome]) => `${name}: ${ours} (Chrome ${chrome})`)
     t.deepEqual(out, [], renderer)
   })
-})
-
-d10Test('D10: "liga" turns liga back on with a positive letterSpacing like Chrome', (t) => {
-  t.deepEqual(mismatches(D10_LOOKUP1), [])
 })
 
 function widthMismatches(names: string[]) {
@@ -140,21 +124,8 @@ test.serial('real-font widths match Chrome on macOS', (t) => {
     t.pass('Chrome widths are pinned on macOS')
     return
   }
-  const names = Object.keys(FIXTURE.darwin.widths).filter((name) => !D10_WIDTHS.includes(name))
+  const names = Object.keys(FIXTURE.darwin.widths)
   t.deepEqual(widthMismatches(names), [])
-})
-
-d10Test('D10: Lato fi with letterSpacing 1px and "liga" is a ligature like Chrome', (t) => {
-  if (process.platform !== 'darwin') {
-    // test.serial.failing needs a failure off macOS too.
-    if (BLINK) {
-      t.pass('Chrome widths are pinned on macOS')
-    } else {
-      t.fail('Chrome widths are pinned on macOS')
-    }
-    return
-  }
-  t.deepEqual(widthMismatches(D10_WIDTHS), [])
 })
 
 test.serial('each property is part of the layout cache key', (t) => {

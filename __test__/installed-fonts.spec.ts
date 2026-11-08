@@ -138,30 +138,26 @@ const SF_WIDTHS: Record<number, number[]> = {
   100: [718.310546875, -6.8359375, 717.1875, 71.435546875, 18.06640625],
 }
 
-const BLINK = process.env.NAPI_RS_CANVAS_SHAPER === 'blink'
-;(MEASURED_MACOS ? (BLINK ? test : test.failing) : test.skip)(
-  'system-ui widths are tracked at the font size like Chrome on macOS',
-  (t) => {
-    const ctx = createCanvas(10, 10).getContext('2d')
-    const actual = Object.fromEntries(
-      Object.keys(SF_WIDTHS).map((size) => {
-        ctx.font = `${size}px system-ui`
-        const m = ctx.measureText('Hamburgefonstiv')
-        return [
-          size,
-          [
-            m.width,
-            m.actualBoundingBoxLeft,
-            m.actualBoundingBoxRight,
-            m.actualBoundingBoxAscent,
-            m.actualBoundingBoxDescent,
-          ],
-        ]
-      }),
-    )
-    t.deepEqual(actual, SF_WIDTHS)
-  },
-)
+;(MEASURED_MACOS ? test : test.skip)('system-ui widths are tracked at the font size like Chrome on macOS', (t) => {
+  const ctx = createCanvas(10, 10).getContext('2d')
+  const actual = Object.fromEntries(
+    Object.keys(SF_WIDTHS).map((size) => {
+      ctx.font = `${size}px system-ui`
+      const m = ctx.measureText('Hamburgefonstiv')
+      return [
+        size,
+        [
+          m.width,
+          m.actualBoundingBoxLeft,
+          m.actualBoundingBoxRight,
+          m.actualBoundingBoxAscent,
+          m.actualBoundingBoxDescent,
+        ],
+      ]
+    }),
+  )
+  t.deepEqual(actual, SF_WIDTHS)
+})
 
 macTest('the family "system-ui" is the UI font only by its exact name', (t) => {
   const ctx = createCanvas(10, 10).getContext('2d')

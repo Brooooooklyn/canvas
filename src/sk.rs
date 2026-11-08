@@ -7347,9 +7347,9 @@ mod text_line_tests {
     // came after the layout.
     assert_eq!(stats.cache_changes, 0, "{mode}");
     assert!(stats.rejected.iter().all(|&n| n == 0), "{mode}");
-    if mode == "blink" {
-      // The shaper laid out every line: the character the variable font
-      // lacks is in the second family.
+    if mode != "skparagraph" {
+      // The shaper (the default since stage S9) laid out every line: the
+      // character the variable font lacks is in the second family.
       assert_eq!(stats.accepted, 300, "{mode}");
     } else {
       assert_eq!(stats.accepted, 0, "{mode}");
@@ -7381,7 +7381,7 @@ mod text_line_tests {
 
   /// noteFontArguments past its budget drops the caches only after the
   /// layout that passed it (skia_c.hpp dropCachesIfOverBudget), with the
-  /// shaper switch unset, off and on.
+  /// shaper switch unset (the shaper), off and on.
   #[test]
   fn a_cache_drop_waits_for_the_end_of_the_layout() {
     if let Ok(mode) = std::env::var("SKIAC_DEFERRED_DROP_CHILD") {

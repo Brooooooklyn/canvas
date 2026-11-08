@@ -1,8 +1,9 @@
-// The Blink shaper's counters (DESIGN-SHAPER.md D40): with
-// NAPI_RS_CANVAS_SHAPER=blink the shaper lays out every request (since stage
-// S9 it turns none down to the old path), so each layout is counted as
-// accepted. Also the guard that the text caches never change while the
-// shaper holds references into them.
+// The Blink shaper's counters (DESIGN-SHAPER.md D40): since stage S9 the
+// shaper is the default and lays out every request (it turns none down to
+// the old path any more), so each layout is counted as accepted. Also the
+// guard that the text caches never change while the shaper holds references
+// into them. NAPI_RS_CANVAS_SHAPER=skparagraph (the old path, in child
+// processes here) lays out nothing with the shaper.
 import { execFileSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
@@ -28,8 +29,6 @@ function stats(): Stats {
 
 // No request is turned down since stage S9: every slot of `rejected` is 0.
 const NONE = Array.from({ length: 16 }, () => 0)
-
-const BLINK = process.env.NAPI_RS_CANVAS_SHAPER === 'blink'
 
 for (const [family, file] of [
   ['StatsLato', 'Lato-Regular.ttf'],
@@ -87,7 +86,7 @@ test.serial(
     setTextRenderer('system')
     const s = stats()
     t.deepEqual(s.rejected, NONE)
-    t.is(s.accepted, BLINK ? count : 0)
+    t.is(s.accepted, count)
     t.is(s.cacheChanges, 0)
   },
 )
@@ -106,7 +105,7 @@ test.serial('a character no family has is laid out by the shaper without a fallb
       t.true(measure('40px StatsLato', text).width > 0, text)
       const s = stats()
       t.deepEqual(s.rejected, NONE, text)
-      t.is(s.accepted, BLINK ? 1 : 0, text)
+      t.is(s.accepted, 1, text)
     }
   } finally {
     setTextRenderer('system')
@@ -197,7 +196,7 @@ test.serial('a host without fonts is laid out by the shaper as the old path draw
       }),
     ) as { rows: [string, string, string, number, number, number, number][]; stats: Stats }
   const old = run('skparagraph')
-  const blink = run('blink')
+  const blink = run('')
   t.is(old.stats.accepted, 0)
   t.deepEqual(blink.stats.rejected, NONE)
   t.is(blink.stats.accepted, blink.rows.length)
@@ -299,7 +298,7 @@ test.serial('letter and word spacing are laid out by the shaper', (t) => {
   setTextRenderer('system')
   const s = stats()
   t.deepEqual(s.rejected, NONE)
-  t.is(s.accepted, BLINK ? count : 0)
+  t.is(s.accepted, count)
   t.is(s.cacheChanges, 0)
 })
 
@@ -340,7 +339,7 @@ test.serial('font-variant-caps is laid out by the shaper', (t) => {
   setTextRenderer('system')
   const s = stats()
   t.deepEqual(s.rejected, NONE)
-  t.is(s.accepted, BLINK ? count : 0)
+  t.is(s.accepted, count)
   t.is(s.cacheChanges, 0)
 })
 
@@ -373,7 +372,7 @@ test.serial('per-face sizes and opsz are laid out by the shaper', (t) => {
   setTextRenderer('system')
   const s = stats()
   t.deepEqual(s.rejected, NONE)
-  t.is(s.accepted, BLINK ? count : 0)
+  t.is(s.accepted, count)
   t.is(s.cacheChanges, 0)
 })
 
@@ -392,7 +391,7 @@ test.serial('variation selectors and system fallback are laid out by the shaper'
   }
   let s = stats()
   t.deepEqual(s.rejected, NONE)
-  t.is(s.accepted, BLINK ? 3 : 0)
+  t.is(s.accepted, 3)
   // U+2205 U+FE00 is a standardized variation sequence: a font with only the
   // base gives kUnmatchedVSGlyphId, and the second pass ignores the selector.
   const fallback = ['\uE000', '\uFFFE', 'שלום', '😀', '⌚\uFE0E', 'a☺️b', 'x\u3000y', 'こんにちは', '\u2205\uFE00']
@@ -401,7 +400,7 @@ test.serial('variation selectors and system fallback are laid out by the shaper'
   }
   s = stats()
   t.deepEqual(s.rejected, NONE)
-  t.is(s.accepted, BLINK ? fallback.length : 0)
+  t.is(s.accepted, fallback.length)
   t.is(s.cacheChanges, 0)
 })
 
@@ -433,7 +432,7 @@ test.serial('a character the standard font of the lang has is laid out by the sh
     // system fallback: a character no family has draws the first font's
     // .notdef (stage P2), also on the shaper.
     t.deepEqual(s.rejected, NONE, `${text} ${lang}`)
-    t.is(s.accepted, BLINK ? 1 : 0, `${text} ${lang}`)
+    t.is(s.accepted, 1, `${text} ${lang}`)
   }
 })
 
@@ -443,7 +442,7 @@ test.serial('text in two families is laid out by the shaper', (t) => {
   t.true(measure('40px StatsLato, StatsHan', '水 water').width > 0)
   const s = stats()
   t.deepEqual(s.rejected, NONE)
-  t.is(s.accepted, BLINK ? 2 : 0)
+  t.is(s.accepted, 2)
 })
 
 test.serial('the text caches never change during a layout, also when a layout passes the font argument budget', (t) => {
@@ -460,6 +459,6 @@ test.serial('the text caches never change during a layout, also when a layout pa
   const s = stats()
   t.is(s.cacheChanges, 0)
   t.deepEqual(s.rejected, NONE)
-  t.is(s.accepted, BLINK ? 300 : 0)
+  t.is(s.accepted, 300)
   t.true(widths.every((w) => w > 0))
 })

@@ -4,10 +4,11 @@
 // skparagraph path (text.cpp LayOutLine), so drawing and measuring stay as
 // they are.
 //
-// NAPI_RS_CANVAS_SHAPER picks the path, once per process: unset or
-// "skparagraph" lays every line out with skparagraph, "blink" with
-// LayOutLineBlink, which lays out every request (stage S9: none is turned
-// down to skparagraph any more); skiac_debug_shaper_stats counts them.
+// NAPI_RS_CANVAS_SHAPER picks the path, once per process: unset (the
+// default since stage S9) or any value but "skparagraph" lays every line out
+// with LayOutLineBlink; "skparagraph" keeps the old skparagraph path, for
+// the differential harness until the old path goes (stage S10).
+// skiac_debug_shaper_stats counts the lines the shaper laid out.
 
 #ifndef SKIA_C_SHAPER_H
 #define SKIA_C_SHAPER_H
@@ -26,8 +27,8 @@
 
 // ---- the switch and the entry point ----
 
-// NAPI_RS_CANVAS_SHAPER == "blink", read once per process (so it is not part
-// of the line key).
+// NAPI_RS_CANVAS_SHAPER != "skparagraph", read once per process (so it is
+// not part of the line key).
 bool BlinkShaperOn();
 
 // The host's UI language that ctx.lang "inherit" takes (LayoutLocale::
