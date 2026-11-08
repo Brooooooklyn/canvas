@@ -702,6 +702,9 @@ struct skiac_font_collection {
     // The family was an installed font when the call ran, so a rebuild may
     // find it by name among the installed fonts.
     bool installed;
+    // The provider lists the alias for this call: false once a rebuild did
+    // not find the family (font_families.cpp IsWebFont).
+    bool active = true;
   };
   std::vector<SetAlias> set_aliases;
 
@@ -712,8 +715,10 @@ struct skiac_font_collection {
                    bool registered,
                    bool installed) {
     if (!registered) {
-      for (const auto& entry : set_aliases) {
+      for (auto& entry : set_aliases) {
         if (entry.family == family && entry.alias == alias) {
+          // The provider lists the alias with the family's face.
+          entry.active = true;
           return;
         }
       }
@@ -1051,6 +1056,7 @@ struct skiac_font_collection {
           typeface =
               font_mgr->matchFamilyStyle(entry.family.c_str(), SkFontStyle());
         }
+        entry.active = typeface != nullptr;
         if (typeface) {
           new_assets->registerTypeface(std::move(typeface),
                                        SkString(entry.alias.c_str()));

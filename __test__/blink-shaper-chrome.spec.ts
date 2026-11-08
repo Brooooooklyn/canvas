@@ -859,3 +859,52 @@ test.serial('a registered face keeps a family that is also installed under -webk
   t.true(close(installed, [59.99998474121094, 48.88671875]), `installed: ${installed}`)
   t.true(close(registered, [53.28125, 53.28125]), `registered: ${registered}`)
 })
+
+// GlobalFonts.setAlias(family, alias) is a FontFace(alias, local(family)):
+// FontFaceCache holds it whatever face it names, so -webkit-body keeps the
+// alias also when that face is installed, or when the alias is an installed
+// family's name. Chrome 157, FontFace "BrandFont" with local(Arial) (local
+// ArialMT gives the same), "Ag": 48.92578 (Arial) for "40px BrandFont,
+// -webkit-body", "bold 40px BrandFont, -webkit-body" and "40px BrandFont",
+// with lang ja and with no lang (en-US host), and with FontFace "Helvetica"
+// local(Arial) for lang ja "40px Helvetica, -webkit-body" (55.64, Hiragino
+// Kaku Gothic ProN, before). The old path keeps each family's font, also
+// Arial. In a child process, as the aliases would change the other rows.
+test.serial('a setAlias name keeps its family under -webkit-body', async (t) => {
+  if (!CAPTURE_DARWIN) {
+    t.pass('the macOS system fonts of the capture')
+    return
+  }
+  t.timeout(2 * CHILD_TIMEOUT, 'one child process')
+  const script = `
+    const { createCanvas, GlobalFonts, setTextRenderer } = require(${INDEX_JS})
+    setTextRenderer('system')
+    const width = (font, lang) => {
+      const ctx = createCanvas(10, 10).getContext('2d')
+      ctx.font = font
+      ctx.lang = lang
+      return ctx.measureText('Ag').width
+    }
+    const before = width('40px Helvetica, -webkit-body', 'ja')
+    GlobalFonts.setAlias('Arial', 'BrandFont')
+    const brand = ['ja', 'inherit'].flatMap((lang) =>
+      ['40px BrandFont, -webkit-body', 'bold 40px BrandFont, -webkit-body', '40px BrandFont'].map((font) =>
+        width(font, lang),
+      ),
+    )
+    GlobalFonts.setAlias('Arial', 'Helvetica')
+    const helvetica = width('40px Helvetica, -webkit-body', 'ja')
+    console.log(JSON.stringify({ before, brand, helvetica }))`
+  const { before, brand, helvetica } = JSON.parse(
+    await runChild(t, script, hostEnv(BLINK ? 'blink' : '', { LANG: 'C' })),
+  ) as { before: number; brand: number[]; helvetica: number }
+  const ARIAL = 48.92578125
+  const near = (a: number, b: number) => Math.abs(a - b) <= 1e-3
+  // The old path draws Helvetica's own face (as wide as Arial in "Ag").
+  t.true(near(before, BLINK ? 55.63999938964844 : ARIAL), `before: ${before}`)
+  t.true(
+    brand.every((w) => near(w, ARIAL)),
+    `BrandFont: ${brand}`,
+  )
+  t.true(near(helvetica, ARIAL), `Helvetica: ${helvetica}`)
+})

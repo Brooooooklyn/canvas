@@ -271,10 +271,22 @@ class FamilyResolver {
   // font, also next to installed faces of the same name (Chrome 157: a bold
   // FontFace "AppleMyungjo", lang ja "40px AppleMyungjo, -webkit-body" and
   // "bold 40px AppleMyungjo, -webkit-body" draw the FontFace, 53.28).
+  // A setAlias name is a FontFace(alias, local(family)): in FontFaceCache
+  // whatever face it names, an installed one too (Chrome 157: FontFace
+  // "BrandFont" or "Helvetica" with local(Arial), lang ja "40px BrandFont,
+  // -webkit-body" draws Arial, 48.93). removeFont and removeAll drop the
+  // aliases of the families they remove, and an alias whose family a
+  // rebuild does not find is not listed again (not active).
   bool IsWebFont(std::string_view name) const {
     std::string spelling;
     if (!IsRegistered(name) || !Find(name, &spelling)) {
       return false;
+    }
+    const std::string folded = Fold(name);
+    for (const auto& entry : c_collection_->set_aliases) {
+      if (entry.active && Fold(entry.alias) == folded) {
+        return true;
+      }
     }
     const sk_sp<SkFontStyleSet> faces =
         c_collection_->assets->matchFamily(spelling.c_str());
