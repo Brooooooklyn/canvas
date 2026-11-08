@@ -317,8 +317,8 @@ SyntheticStyle MacMatchedFontSynthetic(SkTypeface* face,
 // The system fallback results of a collection
 // (skiac_font_collection::system_fallbacks, kept across the drops of
 // TextCaches), by code point, emoji presentation, primary font (family face
-// and axes), weight, slope and ComputedPixelSize. At most 1024, cleared when
-// full.
+// and axes), weight, slope and ComputedPixelSize. At most 4096, the least
+// recently used dropped first.
 struct SystemFallbackKey {
   uint32_t code_point;
   bool emoji_presentation;
@@ -335,6 +335,16 @@ const SystemFallbackFont* FindSystemFallback(
 void StoreSystemFallback(skiac_font_collection* c_collection,
                          const SystemFallbackKey& key,
                          SystemFallbackFont font);
+// The primary font CoreText is asked with for `key`: the first instance
+// given for the key's primary font (family face and axes), kept with the
+// results (at most 64, the least recently asked dropped first). CoreText
+// keeps about 4 KB for every CTFont it found a fallback from, after that
+// font is freed, and an instance remade after the font arguments' caches
+// drop is a new CTFont: one per primary font bounds that, whatever results
+// are dropped.
+SkTypeface* SystemFallbackInput(skiac_font_collection* c_collection,
+                                const SystemFallbackKey& key,
+                                const sk_sp<SkTypeface>& face);
 // A system fallback face at an opsz (FontPlatformDataFromCTFont), cached by
 // typeface and opsz.
 sk_sp<SkTypeface> SystemFallbackInstance(skiac_font_collection* c_collection,

@@ -757,7 +757,9 @@ struct skiac_font_collection {
   // shaper_font.cpp: the Blink shaper's system fallback results, kept when
   // text_caches is dropped. They depend on the system fonts only, and asking
   // CoreText again with a remade instance's CTFont after each drop grows
-  // CoreText's own fallback tables.
+  // CoreText's own fallback tables. With them, the primary instances CoreText
+  // is asked with (registered fonts): dropped by rebuildAssets, which removes
+  // fonts.
   std::unique_ptr<SystemFallbackCache, SystemFallbackCacheDeleter>
       system_fallbacks;
 #if defined(__APPLE__)
@@ -998,6 +1000,7 @@ struct skiac_font_collection {
     caps_features.clear();
     font_arguments.clear();
     text_caches.reset();
+    system_fallbacks.reset();
     caches_dirty = false;
     ++families_generation;
 

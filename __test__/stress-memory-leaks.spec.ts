@@ -383,3 +383,84 @@ serialTest('stress: text layout with fallback does not grow from N to 2N lines',
     setTextRenderer('portable')
   }
 })
+
+// ============================================================================
+// Text layout: more system fallback keys than the results cache holds
+// Exercises: the shaper's system fallback cache (NAPI_RS_CANVAS_SHAPER=blink,
+// macOS) under eviction while the font arguments' caches drop and remake the
+// primary instances
+// Risk: CoreText keeps about 4 KB for each CTFont it found a fallback from;
+// asking again with a remade instance grew RSS by about 4 MB per 1000 lines
+// ============================================================================
+serialTest('stress: system fallback past its cache budget does not grow from N to 2N lines', async (t) => {
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'RobotoMono-VariableFont_wght.ttf'), 'StressFallbackMono')
+  setFlagsFromString('--expose-gc')
+  const gc = runInNewContext('gc') as () => void
+  setTextRenderer('system')
+  try {
+    const ctx = createCanvas(200, 50).getContext('2d')
+    let line = 0
+    const round = async (n: number) => {
+      for (let i = 0; i < n; i++, line++) {
+        // 1025 weights, each a fallback key for the Thai text and a font
+        // argument list (past the 256 that drop the caches).
+        ctx.font = `${100 + (line % 1025) / 2} 16px StressFallbackMono`
+        ctx.measureText(`สวัสดี ${line}`)
+        if (i % 100 === 0) await new Promise(setImmediate)
+      }
+      gc()
+      return process.memoryUsage().rss / 1048576
+    }
+    // Round 0 warms up the caches; then N lines, then 2N more.
+    const rss = [await round(3075), await round(3000), await round(6000)]
+    t.true(rss[2] - rss[1] < 10, `RSS MB after warm-up, N, 2N: ${rss.map((v) => v.toFixed(1)).join(', ')}`)
+  } finally {
+    setTextRenderer('portable')
+  }
+})
+
+// ============================================================================
+// Text layout: system fallback results dropped while a few primary fonts stay
+// in use
+// Exercises: the CoreText input the shaper keeps per primary font (family
+// face and axes), NAPI_RS_CANVAS_SHAPER=blink on macOS
+// Risk: 60 weights x 73 code points (4380 keys) cycle through the results,
+// and 4000 more weights on the cold lines drop the font arguments' caches
+// (past 256 lists) and push the hot instances out of skia's caches; asking
+// CoreText with each remade instance kept about 4 KB per instance
+// ============================================================================
+serialTest('stress: system fallback with remade primary instances does not grow from N to 2N lines', async (t) => {
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'RobotoMono-VariableFont_wght.ttf'), 'StressFallbackMono')
+  setFlagsFromString('--expose-gc')
+  const gc = runInNewContext('gc') as () => void
+  const chars: string[] = []
+  for (const [first, last] of [
+    [0x0e01, 0x0e2e],
+    [0x05d0, 0x05ea],
+  ]) {
+    for (let c = first; c <= last; c++) chars.push(String.fromCodePoint(c))
+  }
+  setTextRenderer('system')
+  try {
+    const ctx = createCanvas(200, 50).getContext('2d')
+    let line = 0
+    const round = async (n: number) => {
+      for (let i = 0; i < n; i++, line++) {
+        ctx.font = `${100 + (line % 60)} 16px StressFallbackMono`
+        ctx.measureText(`${chars[Math.floor(line / 60) % chars.length]} ${line}`)
+        for (const cold of [0, 1]) {
+          ctx.font = `${300 + ((2 * line + cold) % 4000) / 10} 16px StressFallbackMono`
+          ctx.measureText(`cold ${line}`)
+        }
+        if (i % 100 === 0) await new Promise(setImmediate)
+      }
+      gc()
+      return process.memoryUsage().rss / 1048576
+    }
+    // Round 0 warms up the caches; then N lines, then 2N more.
+    const rss = [await round(4380), await round(8760), await round(17520)]
+    t.true(rss[2] - rss[1] < 14, `RSS MB after warm-up, N, 2N: ${rss.map((v) => v.toFixed(1)).join(', ')}`)
+  } finally {
+    setTextRenderer('portable')
+  }
+})

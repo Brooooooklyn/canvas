@@ -58,12 +58,20 @@ void DestroyShaperCaches(ShaperCaches* caches) {
   delete caches;
 }
 
-// The system fallback results (FontCache's character fallback).
+// The system fallback results (FontCache's character fallback), and the
+// primary fonts CoreText is asked with; both least recently used first.
 struct SystemFallbackCache {
+  using Result = std::pair<SystemFallbackKey, SystemFallbackFont>;
+  std::list<Result> results;
   std::unordered_map<SystemFallbackKey,
-                     SystemFallbackFont,
+                     std::list<Result>::iterator,
                      SystemFallbackKeyHash>
       fonts;
+  // By the key's primary font (family face and axes).
+  using InputKey = std::pair<SkTypefaceID, uint64_t>;
+  using Input = std::pair<InputKey, sk_sp<SkTypeface>>;
+  std::list<Input> input_lru;
+  std::map<InputKey, std::list<Input>::iterator> inputs;
 };
 
 void SystemFallbackCacheDeleter::operator()(SystemFallbackCache* cache) const {
@@ -73,7 +81,8 @@ void SystemFallbackCacheDeleter::operator()(SystemFallbackCache* cache) const {
 namespace {
 
 constexpr size_t kMaxParents = 100;
-constexpr size_t kMaxSystemFallbacks = 1024;
+constexpr size_t kMaxSystemFallbacks = 4096;
+constexpr size_t kMaxSystemFallbackInputs = 64;
 constexpr size_t kMaxSystemInstances = 256;
 
 // skia_text_metrics.cc SkiaScalarToHarfBuzzPosition: ClampTo<int>.
@@ -384,9 +393,13 @@ const SystemFallbackFont* FindSystemFallback(
   if (!c_collection->system_fallbacks) {
     return nullptr;
   }
-  const auto& fonts = c_collection->system_fallbacks->fonts;
-  const auto found = fonts.find(key);
-  return found == fonts.end() ? nullptr : &found->second;
+  SystemFallbackCache& cache = *c_collection->system_fallbacks;
+  const auto found = cache.fonts.find(key);
+  if (found == cache.fonts.end()) {
+    return nullptr;
+  }
+  cache.results.splice(cache.results.end(), cache.results, found->second);
+  return &found->second->second;
 }
 
 void StoreSystemFallback(skiac_font_collection* c_collection,
@@ -395,11 +408,41 @@ void StoreSystemFallback(skiac_font_collection* c_collection,
   if (!c_collection->system_fallbacks) {
     c_collection->system_fallbacks.reset(new SystemFallbackCache());
   }
-  auto& fonts = c_collection->system_fallbacks->fonts;
-  if (fonts.size() >= kMaxSystemFallbacks) {
-    fonts.clear();
+  SystemFallbackCache& cache = *c_collection->system_fallbacks;
+  if (const auto found = cache.fonts.find(key); found != cache.fonts.end()) {
+    found->second->second = std::move(font);
+    cache.results.splice(cache.results.end(), cache.results, found->second);
+    return;
   }
-  fonts[key] = std::move(font);
+  while (cache.fonts.size() >= kMaxSystemFallbacks) {
+    cache.fonts.erase(cache.results.front().first);
+    cache.results.pop_front();
+  }
+  cache.results.emplace_back(key, std::move(font));
+  cache.fonts[key] = std::prev(cache.results.end());
+}
+
+SkTypeface* SystemFallbackInput(skiac_font_collection* c_collection,
+                                const SystemFallbackKey& key,
+                                const sk_sp<SkTypeface>& face) {
+  if (!c_collection->system_fallbacks) {
+    c_collection->system_fallbacks.reset(new SystemFallbackCache());
+  }
+  SystemFallbackCache& cache = *c_collection->system_fallbacks;
+  const SystemFallbackCache::InputKey input = {key.primary, key.primary_axes};
+  if (const auto found = cache.inputs.find(input);
+      found != cache.inputs.end()) {
+    cache.input_lru.splice(cache.input_lru.end(), cache.input_lru,
+                           found->second);
+    return found->second->second.get();
+  }
+  while (cache.inputs.size() >= kMaxSystemFallbackInputs) {
+    cache.inputs.erase(cache.input_lru.front().first);
+    cache.input_lru.pop_front();
+  }
+  cache.input_lru.emplace_back(input, face);
+  cache.inputs[input] = std::prev(cache.input_lru.end());
+  return face.get();
 }
 
 namespace {
