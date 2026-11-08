@@ -118,11 +118,23 @@ bool IsSystemTypeface(skiac_font_collection* c_collection,
   if (!c_collection->font_mgr) {
     return false;
   }
+  // A CoreText match on macOS: asked once per typeface until the installed
+  // faces change (skiac_font_collection::system_typefaces).
+  auto& known = c_collection->system_typefaces;
+  const SkTypefaceID id = typeface->uniqueID();
+  if (const auto found = known.find(id); found != known.end()) {
+    return found->second;
+  }
   SkString family;
   typeface->getFamilyName(&family);
   sk_sp<SkTypeface> installed = c_collection->font_mgr->matchFamilyStyle(
       family.c_str(), typeface->fontStyle());
-  return installed && installed->uniqueID() == typeface->uniqueID();
+  const bool system = installed && installed->uniqueID() == id;
+  if (known.size() >= skiac_font_collection::kMaxSystemTypefaces) {
+    known.clear();
+  }
+  known.emplace(id, system);
+  return system;
 }
 
 hb_face_t* CreateHbFace(SkTypeface* typeface) {
