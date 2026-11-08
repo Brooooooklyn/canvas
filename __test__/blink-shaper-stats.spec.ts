@@ -151,7 +151,9 @@ test.serial('letter and word spacing are laid out by the shaper', (t) => {
         { letterSpacing: '0.0002px', direction: 'rtl' },
         { letterSpacing: '1px', fontFeatureSettings: '"liga"' },
       ]) {
-        measure('40px StatsLato', text, props)
+        // Lato has no U+0301: without a family font for it, the line would
+        // need the system fallback, which only macOS has on the shaper.
+        measure(text.includes('\u0301') ? '40px StatsSerif' : '40px StatsLato', text, props)
         count++
       }
     }
