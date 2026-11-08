@@ -464,6 +464,20 @@ class ItemShaper {
         fonts_(fonts),
         result_(result) {}
 
+  // The order of the runs InsertRun's lower_bound inserts give, after the
+  // item's last segment: by start, LTR ascending and RTL descending, a run
+  // before the runs of its start inserted earlier (the runs' characters are
+  // disjoint, so no two have one start, but the order would hold for them
+  // too). Reversed, then sorted stably: O(n log n) for n runs.
+  void SortRuns() {
+    std::vector<ShapedRun>& runs = result_->runs;
+    std::reverse(runs.begin(), runs.end());
+    std::stable_sort(runs.begin(), runs.end(),
+                     [this](const ShapedRun& a, const ShapedRun& b) {
+                       return rtl_ ? a.start > b.start : a.start < b.start;
+                     });
+  }
+
   // HarfBuzzShaper::ShapeSegment.
   void ShapeSegment(const Segment& segment) {
     HanKerning han_kerning(text_, length_, segment.start, segment.end);
@@ -862,13 +876,12 @@ class ItemShaper {
     result_->width += run.width;
     *run_characters = run.num_characters;
     // ShapeResult::InsertRun(run): LTR before the next run with a bigger
-    // start, RTL before the next run with a smaller one.
-    auto at = std::lower_bound(
-        result_->runs.begin(), result_->runs.end(), run.start,
-        [this](const ShapedRun& existing, uint32_t start) {
-          return rtl_ ? existing.start > start : existing.start < start;
-        });
-    result_->runs.insert(at, std::move(run));
+    // start, RTL before the next run with a smaller one. Blink's runs are
+    // pointers; these hold their glyphs, and moving every later run for each
+    // run put in the middle (each character a fallback font draws, between
+    // the first font's runs) is quadratic. So the run is appended, and
+    // SortRuns gives the item's runs that order once it is shaped.
+    result_->runs.push_back(std::move(run));
     return start_glyph + num_glyphs + num_glyphs_removed;
   }
 
@@ -1536,6 +1549,7 @@ bool LayOutLineBlink(skiac_font_collection* c_collection,
          SegmentItem(text, item.length, prepared.is_8bit)) {
       shaper.ShapeSegment(segment);
     }
+    shaper.SortRuns();
     shaped.push_back(std::move(result));
   }
   // PlainTextNode::Shape: the spacing over the whole text, item by item.

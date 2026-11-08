@@ -172,6 +172,66 @@ test.serial('a character no family has keeps the old path width without a fallba
   t.deepEqual(blink.widths, old.widths)
 })
 
+// A line whose characters alternate between the first family and the next
+// one: each character the second font draws is a run between two of the
+// first font's runs. Putting each run in the middle of the item's runs as it
+// was shaped took quadratic time (64000 pairs: 2.5 s, the old path 0.3 s);
+// the shaper must stay near the old path's time, and with Iosevka's and
+// Source Serif's 5 px advances the widths are exact and equal. RTL too
+// (Harmattan, then Source Serif for U+20AB), where the float sums differ.
+test.serial('a line of many runs is laid out in about the old path time', (t) => {
+  const script = `
+    const { createCanvas, GlobalFonts, setTextRenderer } = require(${JSON.stringify(join(__dirname, '..', 'index.js'))})
+    const binding = require(${JSON.stringify(join(__dirname, '..', 'js-binding.js'))})
+    GlobalFonts.registerFromPath(${JSON.stringify(join(__dirname, 'fonts', 'iosevka-slab-regular.ttf'))}, 'RunsIosevka')
+    GlobalFonts.registerFromPath(${JSON.stringify(join(__dirname, 'fonts', 'SourceSerifPro-Regular.ttf'))}, 'RunsSerif')
+    GlobalFonts.registerFromPath(${JSON.stringify(join(__dirname, 'fonts', 'Harmattan-Regular.ttf'))}, 'RunsArabic')
+    const out = { lines: [], stats: null }
+    binding.__shaperStats(true)
+    for (const [renderer, font, text, direction] of [
+      ['portable', '10px RunsIosevka, RunsSerif', 'a\\u20AB', 'ltr'],
+      ['system', '10px RunsIosevka, RunsSerif', 'a\\u20AB', 'ltr'],
+      ['portable', '10px RunsArabic, RunsSerif', '\\u0628\\u20AB', 'rtl'],
+    ]) {
+      setTextRenderer(renderer)
+      const ctx = createCanvas(10, 10).getContext('2d')
+      ctx.font = font
+      ctx.direction = direction
+      const line = text.repeat(64000)
+      const start = process.hrtime.bigint()
+      const width = ctx.measureText(line).width
+      out.lines.push({ width, ms: Number(process.hrtime.bigint() - start) / 1e6 })
+    }
+    out.stats = JSON.parse(binding.__shaperStats(true))
+    console.log(JSON.stringify(out))`
+  const run = (shaper: string) =>
+    JSON.parse(
+      execFileSync(process.execPath, ['-e', script], {
+        env: { ...process.env, NAPI_RS_CANVAS_SHAPER: shaper },
+        encoding: 'utf8',
+        timeout: 120_000,
+      }),
+    ) as { lines: { width: number; ms: number }[]; stats: Stats }
+  const old = run('skparagraph')
+  const blink = run('blink')
+  t.is(old.stats.accepted, 0)
+  t.deepEqual(rejected(blink.stats), {})
+  t.is(blink.stats.accepted, 3)
+  t.deepEqual(
+    blink.lines.slice(0, 2).map((line) => line.width),
+    [640000, 640000],
+  )
+  t.deepEqual(
+    old.lines.slice(0, 2).map((line) => line.width),
+    [640000, 640000],
+  )
+  t.true(Math.abs(blink.lines[2].width - old.lines[2].width) < 1e-3 * old.lines[2].width)
+  for (const [i, line] of blink.lines.entries()) {
+    const bound = Math.max(1000, 3 * old.lines[i].ms)
+    t.true(line.ms < bound, `line ${i}: ${line.ms} ms, old path ${old.lines[i].ms} ms`)
+  }
+})
+
 // Stage S4: ShapeResultSpacing. Letter and word spacing (positive, negative,
 // tiny, in every renderer and direction) are laid out by the shaper: no
 // request is turned down for spacing.
