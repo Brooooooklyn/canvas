@@ -25,7 +25,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const require = createRequire(import.meta.url)
 
 // The stage this branch has landed, and the classes it may change.
-const STAGE = 'S5'
+const STAGE = 'S6'
 const ALLOWED = new Set([
   // PR-D10: no forced liga 0 (letter spacing is still turned down in S2).
   'd10',
@@ -125,6 +125,26 @@ const ALLOWED = new Set([
   // Chrome 157 (stages/S5/caps-chrome.json) gives the new metrics for each:
   // 40px BSOswald lang tr small-caps "İstanbul ılık iI" 177.1799.
   'caps-clusters',
+  // S6, each family at its own size and opsz (font-size-adjust by the
+  // family's own aspect) in one shaping pass (D31), where the old path laid
+  // the parts of another size out on their own: kerning and Arabic joining
+  // now act across the change of family. Chrome 157 (blink-shaper.json,
+  // stages/S6/chrome-s6.json), 40px "BSLato, BSSerif" font-size-adjust 0.5
+  // "ke\u030c" 40.97411 (old path 42.15851); 40px "BSArA, BSArB"
+  // "ببلبب" 0.5 106.86926 (154.1595), from-font 79.84375 (115.17578).
+  'face-size',
+  // S6, a registered font's AAT trak table is not applied: Chrome's OTS
+  // step drops trak from a web font (web_font_decoder.cc), and a font
+  // registered with GlobalFonts is one. Chrome 157, TrakProbe
+  // "Hamburgefonstiv": 12px 91.93192, 24px 183.86394, 40px 306.43991 (old
+  // path, HarfBuzz's trak at 12 pt: +18, +36, +60).
+  'trak-web',
+  // S6, an installed font's trak at ptem = the specified size, and on Apple
+  // with the system renderer HarfBuzz's own advances for a face with trak
+  // and no sbix (harfbuzz_face.cc GetFunctions, GetScaledFont). Chrome 157
+  // on macOS 27, system-ui "Hamburgefonstiv": 13px 104.07617 (old path
+  // 105.21875), 20px 150.84521 (157.57072), 24px 177.4368 (176.36827).
+  'trak-ptem',
 ])
 
 const FONTS = {
@@ -145,6 +165,7 @@ const FONTS = {
   BSArA: 'ArA.ttf',
   BSArB: 'ArB.ttf',
   BSGothic: 'ScienceGothic-VariableFont.ttf',
+  BSTrak: 'TrakProbe.ttf',
 }
 
 // One letter of each of these scripts, most of which no font in the
@@ -361,6 +382,59 @@ const CAPS = [
   ['AVATAR Hello', 'BSLato', { fontVariantCaps: 'small-caps', fontKerning: 'none' }, []],
 ]
 
+// S6: per-family sizes and opsz (font-size-adjust by each family's own
+// aspect, a variable font's opsz at its own size, font-optical-sizing none),
+// and trak at ptem. [text, font, settings, tags]
+const FACE_SIZES = [
+  ...['0.5', 'from-font', 'cap-height 0.7'].flatMap((fsa) => [
+    [
+      'ke\u030c Te\u030c Tex\u030c',
+      '40px BSLato, BSSerif',
+      { fontSizeAdjust: fsa },
+      ['face-size', 'family-fallback', 'script'],
+    ],
+    ['ببلبب بلبل', '40px BSArA, BSArB', { fontSizeAdjust: fsa }, ['face-size', 'family-fallback', 'script']],
+    ['Hamburgefonstiv水Hamburgefonstiv', '40px BSLato, BSHan', { fontSizeAdjust: fsa }, ['script', 'family-fallback']],
+    ['Te\u030c News', '40px BSLato, BSNews', { fontSizeAdjust: fsa }, ['face-size', 'family-fallback', 'script']],
+  ]),
+  // A missing family does not shift the face index.
+  [
+    'ke\u030c',
+    '40px NoSuchFamily, BSLato, BSSerif',
+    { fontSizeAdjust: '0.5' },
+    ['face-size', 'family-fallback', 'script'],
+  ],
+  // The standard font has its own size, and no character takes it.
+  ['Hello world', '40px BSLato', { fontSizeAdjust: '0.5' }, []],
+  ['Hello world', '13.348px BSLato', { fontSizeAdjust: '0.5' }, []],
+  // A system fallback font takes the primary's size (macOS system
+  // renderer; elsewhere the old path lays the line out).
+  ['News 水', '40px BSNews, BSLato', { fontSizeAdjust: '0.5' }, ['system-fallback']],
+  // font-optical-sizing none: with the system renderer on Apple each face's
+  // own opsz default.
+  ['ke\u030c News', '40px BSLato, BSNews', { fontOpticalSizing: 'none' }, ['face-size', 'family-fallback', 'script']],
+  [
+    'ke\u030c x',
+    '40px BSLato, BSSerif',
+    { fontSizeAdjust: '0.5', letterSpacing: '2px' },
+    ['face-size', 'family-fallback', 'script', 'ls-cluster'],
+  ],
+  [
+    'ke\u030c Hello',
+    '40px BSLato, BSSerif',
+    { fontSizeAdjust: '0.5', fontVariantCaps: 'small-caps' },
+    ['face-size', 'family-fallback', 'script', 'caps-per-font'],
+  ],
+  ...['12px', '24px', '40px', '14.6666667px'].map((size) => ['Hamburgefonstiv', `${size} BSTrak`, {}, ['trak-web']]),
+  ['Hamburgefonstiv a b', '40px BSTrak', { letterSpacing: '2px' }, ['trak-web', 'ls-cluster']],
+  ...['13px', '20px', '24px', 'bold 20px', 'italic 17px'].map((size) => [
+    'Hamburgefonstiv',
+    `${size} system-ui`,
+    {},
+    ['trak-ptem'],
+  ]),
+]
+
 // One property changed at a time on a few texts.
 const SETTINGS = [
   [{ fontKerning: 'none' }, []],
@@ -440,6 +514,12 @@ function cases() {
       }
       out.push({ renderer, text, font: `30px ${families}`, ctx: settings, tags, draw: true })
     }
+    for (const [text, font, settings, tags] of FACE_SIZES) {
+      for (const direction of ['ltr', 'rtl']) {
+        out.push({ renderer, text, font, ctx: { ...settings, direction }, tags, draw: false })
+      }
+      out.push({ renderer, text, font, ctx: settings, tags, draw: true })
+    }
     for (const [settings, settingTags] of SETTINGS) {
       for (const text of SETTING_TEXTS) {
         const families = TEXTS.find(([t]) => t === text)[1]
@@ -463,14 +543,10 @@ function cases() {
 }
 
 // Whether the new path must lay a case out in this stage: plain text in the
-// registered fonts, no caps or font-size-adjust, and every character in a
-// family (no fallback tag). Letter and word spacing are laid out since S4,
-// font-variant-caps since S5.
+// registered fonts and every character in a family (no fallback tag).
+// Letter and word spacing are laid out since S4, font-variant-caps since
+// S5, font-size-adjust (a size per family) since S6.
 function mustAccept(c) {
-  const blocked = ['fontSizeAdjust']
-  if (blocked.some((p) => p in c.ctx)) {
-    return false
-  }
   // S3: with the system renderer on macOS, a character no family has (and
   // a private use one) is laid out by the shaper.
   const fallback = ['system-fallback', 'vs16', 'vs15', 'pua']
