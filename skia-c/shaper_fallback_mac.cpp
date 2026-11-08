@@ -215,12 +215,28 @@ struct MacFallbackInputs {
     Input& operator=(const Input&) = delete;
     ScopedCF<CGFontRef> graphics_font;
     ScopedCF<CTFontRef> font;
+    std::list<Key>::iterator use;
     std::list<Key>::iterator lru;
   };
+  // The kept CGFonts, least recently asked dropped first. A kept CGFont
+  // costs about 26 KB with what CoreText keeps for it while it lives; a
+  // dropped one leaves CoreText's own few KB, which any new CGFont of the
+  // same variation adds again (stages/S3 deviations 1d).
+  static constexpr size_t kMaxGraphicsFonts = 1024;
   static constexpr size_t kMaxFonts = 64;
   std::map<Key, Input> inputs;
+  // Every key, least recently asked first.
+  std::list<Key> uses;
   // The keys whose input has a font, least recently asked first.
   std::list<Key> font_lru;
+
+  void Erase(std::map<Key, Input>::iterator found) {
+    if (found->second.font) {
+      font_lru.erase(found->second.lru);
+    }
+    uses.erase(found->second.use);
+    inputs.erase(found);
+  }
 
   // The font to ask CoreText with for `ct_font`, `key`'s primary font.
   CTFontRef Font(const Key& key, CTFontRef ct_font) {
@@ -236,10 +252,16 @@ struct MacFallbackInputs {
       if (!graphics_font) {
         return ct_font;
       }
+      while (!uses.empty() && inputs.size() >= kMaxGraphicsFonts) {
+        Erase(inputs.find(uses.front()));
+      }
       found = inputs.try_emplace(key).first;
       found->second.graphics_font.reset(graphics_font.get());
       CFRetain(graphics_font.get());
       found->second.lru = font_lru.end();
+      found->second.use = uses.insert(uses.end(), key);
+    } else {
+      uses.splice(uses.end(), uses, found->second.use);
     }
     Input& input = found->second;
     const CGFloat size = CTFontGetSize(ct_font);

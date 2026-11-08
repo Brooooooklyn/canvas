@@ -317,15 +317,17 @@ SystemFallbackFont MacAlternateFont(SkTypeface* base,
                                     float computed_pixel_size);
 // The CoreText fonts the system fallback asks with for primary fonts made
 // from data (as the registered fonts are), by the key's primary font (family
-// face and axes): the CGFont of the first instance given, kept until the
-// assets are rebuilt (not bounded: one per such font in use), and a CTFont
-// made from it for the 64 most recently asked. CoreText keeps about 4 KB for
-// every CGFont of a font made from data that it found a fallback from, after
-// that CGFont is freed, and an instance remade after the font arguments'
-// caches drop has a new CGFont. A CTFont made again from a kept CGFont adds
-// nothing and gives the same fallback fonts; it only takes CoreText about
-// 1 ms to set up. An installed font (one with a URL) is asked with its own
-// CTFont: its remade instances add nothing.
+// face and axes): the CGFont of the first instance given, for the 1024 most
+// recently asked until the assets are rebuilt, and a CTFont made from it for
+// the 64 most recently asked. CoreText keeps about 4 KB for every CGFont of a
+// font made from data that it found a fallback from, after that CGFont is
+// freed, and an instance remade after the font arguments' caches drop has a
+// new CGFont. A CTFont made again from a kept CGFont adds nothing and gives
+// the same fallback fonts; it only takes CoreText about 1 ms to set up. A
+// kept CGFont costs about 26 KB while it lives, so past 1024 primary fonts
+// in use a dropped one asked again adds CoreText's 4 KB once more. An
+// installed font (one with a URL) is asked with its own CTFont: its remade
+// instances add nothing.
 MacFallbackInputs* CreateMacFallbackInputs();
 void DestroyMacFallbackInputs(MacFallbackInputs* inputs);
 // CreateFontPlatformData's synthetic styles for a font matched by family.
