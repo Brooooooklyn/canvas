@@ -11,13 +11,13 @@
 // switch on, until S9 makes it the default.
 import './use-system-text-renderer'
 
-import { spawnSync } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { release } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import test from 'ava'
+import test, { type ExecutionContext } from 'ava'
 
 import { createCanvas, GlobalFonts, setTextRenderer } from '../index'
 
@@ -93,6 +93,85 @@ function landed(flip: string | undefined) {
 
 const DARWIN = process.platform === 'darwin'
 const CAPTURE_DARWIN = DARWIN && release().split('.')[0] === FIXTURE.darwin
+
+// The host-language tests run each host in a child process (the shaper reads
+// the host language and NAPI_RS_CANVAS_SHAPER once per process). A child
+// takes well under a second; one that runs longer than CHILD_TIMEOUT is
+// killed and fails its test with its stack (macOS `sample`), so a hang shows
+// where it is and does not stall the run until ava's 3 minute timeout.
+const CHILD_TIMEOUT = 20_000
+const INDEX_JS = JSON.stringify(join(__dirname, '..', 'index.js'))
+const BINDING_JS = JSON.stringify(join(__dirname, '..', 'js-binding.js'))
+const fontPath = (family: string) => join(__dirname, 'fonts', FIXTURE.fonts[family]!)
+
+// The stack of a running process: `sample`, or `sudo -n sample` where the
+// node binary has the hardened runtime (CI); empty where neither works.
+function processStack(pid: number) {
+  if (!DARWIN) {
+    return ''
+  }
+  for (const [command, args] of [
+    ['sample', [String(pid), '2']],
+    ['sudo', ['-n', 'sample', String(pid), '2']],
+  ] as const) {
+    const { stdout, stderr } = spawnSync(command, args, { encoding: 'utf8', timeout: 30_000 })
+    if (stdout?.includes('Call graph')) {
+      return stdout
+    }
+    if (stderr) {
+      console.error(`${command}: ${stderr}`)
+    }
+  }
+  return ''
+}
+
+function runChild(t: ExecutionContext, script: string, env: Record<string, string>): Promise<string> {
+  const name = JSON.stringify(env)
+  const start = Date.now()
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ['-e', script], { env: { ...process.env, ...env } })
+    let stdout = ''
+    let stderr = ''
+    child.stdout.setEncoding('utf8').on('data', (chunk: string) => (stdout += chunk))
+    child.stderr.setEncoding('utf8').on('data', (chunk: string) => (stderr += chunk))
+    const timer = setTimeout(() => {
+      const stack = child.pid ? processStack(child.pid) : ''
+      child.kill('SIGKILL')
+      reject(
+        new Error(
+          `child ${name} still running after ${CHILD_TIMEOUT} ms\nstdout: ${stdout}\nstderr: ${stderr}\n${stack}`,
+        ),
+      )
+    }, CHILD_TIMEOUT)
+    child.on('error', (error) => {
+      clearTimeout(timer)
+      reject(error)
+    })
+    child.on('close', (status, signal) => {
+      clearTimeout(timer)
+      t.log(`child ${name}: ${Date.now() - start} ms`)
+      if (status === 0) {
+        resolve(stdout)
+      } else {
+        reject(new Error(`child ${name} exited with ${status ?? signal}\nstderr: ${stderr}`))
+      }
+    })
+  })
+}
+
+// The host language from LANGUAGE / LC_ALL / LC_MESSAGES / LANG on every OS
+// (NAPI_RS_CANVAS_TEST_POSIX_LANGUAGE=1), with `host` as the only setting.
+function hostEnv(shaper: string, host: Record<string, string>) {
+  return {
+    LANGUAGE: '',
+    LC_ALL: '',
+    LC_MESSAGES: '',
+    LANG: '',
+    ...host,
+    NAPI_RS_CANVAS_SHAPER: shaper,
+    NAPI_RS_CANVAS_TEST_POSIX_LANGUAGE: '1',
+  }
+}
 
 function context(row: Row, width = 10, height = 10) {
   const ctx = createCanvas(width, height).getContext('2d')
@@ -426,13 +505,17 @@ test.serial('a private use hint makes its neighbours .notdef as in Chrome', (t) 
 // Linux rule (l10n_util.cc: LANGUAGE, LC_ALL, LC_MESSAGES, LANG; C and POSIX
 // are en-US); NAPI_RS_CANVAS_TEST_POSIX_LANGUAGE=1 makes the resolver use
 // that rule on every OS (test only; macOS and Windows read the OS settings).
-// Chrome 157 with -AppleLanguages (en-US / tr / ja / zh-Hant-TW), widths of
-// [100px LoclProbe "a", 40px BSHalt "水。、水", 40px BSChws "水。、水",
-// 40px BSHalt "（水）。", 40px BSLato small-caps "i", all-small-caps "iI"].
-test.serial('"inherit" follows the host language like Chrome', (t) => {
+// Chrome 157 with -AppleLanguages (en-US / tr / ja / zh-Hant-TW / de),
+// widths of [100px LoclProbe "a", 40px BSHalt "水。、水", 40px BSChws
+// "水。、水", 40px BSHalt "（水）。", 40px "BSLato, BSNKo" small-caps "i",
+// all-small-caps "iI"]. Lato has no U+0130, so the Turkish dotted capital I
+// of the case map comes from BSNKo (no smcp: synthesized, 0.339em at 28px)
+// on every OS, not from the OS standard font (stages/S8/review-ci).
+test.serial('"inherit" follows the host language like Chrome', async (t) => {
+  t.timeout(7 * CHILD_TIMEOUT, 'six child processes')
   const HOSTS: [Record<string, string>, number[]][] = [
     [{ LANG: 'C' }, [82.09999084472656, 140, 120, 140, 8.595993041992188, 17.191986083984375]],
-    [{ LANGUAGE: 'tr' }, [46.19999694824219, 140, 120, 140, 9.32421875, 17.920211791992188]],
+    [{ LANGUAGE: 'tr' }, [46.19999694824219, 140, 120, 140, 9.491989135742188, 18.087982177734375]],
     [{ LANG: 'ja_JP.UTF-8' }, [92, 140, 120, 140, 8.595993041992188, 17.191986083984375]],
     [{ LANG: 'zh_TW.UTF-8' }, [50.69999694824219, 160, 120, 140, 8.595993041992188, 17.191986083984375]],
     // GLib also lists the name without its modifier, which Chrome takes ("de";
@@ -442,10 +525,10 @@ test.serial('"inherit" follows the host language like Chrome', (t) => {
   // The old path does not read the host language (dflt, no HanKerning).
   const OLD = [50.69999694824219, 160, 160, 160, 8.595993041992188, 17.191986083984375]
   const fonts = Object.fromEntries(
-    Object.entries(FIXTURE.fonts).map(([family, file]) => [family, join(__dirname, 'fonts', file)]),
+    ['BSLocl', 'BSHalt', 'BSChws', 'BSLato', 'BSNKo'].map((family) => [family, fontPath(family)]),
   )
   const script = `
-    const { createCanvas, GlobalFonts, setTextRenderer } = require(${JSON.stringify(join(__dirname, '..', 'index.js'))})
+    const { createCanvas, GlobalFonts, setTextRenderer } = require(${INDEX_JS})
     for (const [family, file] of Object.entries(${JSON.stringify(fonts)})) GlobalFonts.registerFromPath(file, family)
     const out = {}
     for (const renderer of ['system', 'portable']) {
@@ -455,8 +538,8 @@ test.serial('"inherit" follows the host language like Chrome', (t) => {
         ['40px BSHalt', '水。、水', {}],
         ['40px BSChws', '水。、水', {}],
         ['40px BSHalt', '（水）。', {}],
-        ['40px BSLato', 'i', { fontVariantCaps: 'small-caps' }],
-        ['40px BSLato', 'iI', { fontVariantCaps: 'all-small-caps' }],
+        ['40px BSLato, BSNKo', 'i', { fontVariantCaps: 'small-caps' }],
+        ['40px BSLato, BSNKo', 'iI', { fontVariantCaps: 'all-small-caps' }],
       ].map(([font, text, props]) => {
         const ctx = createCanvas(10, 10).getContext('2d')
         ctx.font = font
@@ -465,26 +548,11 @@ test.serial('"inherit" follows the host language like Chrome', (t) => {
       })
     }
     console.log(JSON.stringify(out))`
-  const run = (shaper: string, host: Record<string, string>) => {
-    const child = spawnSync(process.execPath, ['-e', script], {
-      env: {
-        ...process.env,
-        LANGUAGE: '',
-        LC_ALL: '',
-        LC_MESSAGES: '',
-        LANG: '',
-        ...host,
-        NAPI_RS_CANVAS_SHAPER: shaper,
-        NAPI_RS_CANVAS_TEST_POSIX_LANGUAGE: '1',
-      },
-      encoding: 'utf8',
-    })
-    t.is(child.status, 0, child.stderr)
-    return JSON.parse(child.stdout) as Record<string, number[]>
-  }
+  const run = async (shaper: string, host: Record<string, string>) =>
+    JSON.parse(await runChild(t, script, hostEnv(shaper, host))) as Record<string, number[]>
   const close = (a: number[], b: number[]) => a.length === b.length && a.every((v, i) => Math.abs(v - b[i]) <= 1e-3)
   for (const [host, chrome] of HOSTS) {
-    const blink = run('blink', host)
+    const blink = await run('blink', host)
     for (const renderer of ['system', 'portable']) {
       t.true(
         close(blink[renderer], chrome),
@@ -492,7 +560,7 @@ test.serial('"inherit" follows the host language like Chrome', (t) => {
       )
     }
   }
-  const old = run('skparagraph', { LANGUAGE: 'tr' })
+  const old = await run('skparagraph', { LANGUAGE: 'tr' })
   t.true(close(old.system, OLD), `old path: ${old.system}`)
 })
 
@@ -502,14 +570,15 @@ test.serial('"inherit" follows the host language like Chrome', (t) => {
 // rest of the line keeps the host language's glyphs and case map. [text
 // width, width of U+E000 alone] per lang; the letter is the difference.
 // LoclProbe "a" is 46.2 with tr (TRK locl), 82.1 with en (ENG), 50.7 with
-// none; Turkish small-caps "i" (dotted capital I) is 9.324, else 8.596.
-test.serial('a line the shaper turns down keeps the host language', (t) => {
-  const fonts = Object.fromEntries(
-    Object.entries(FIXTURE.fonts).map(([family, file]) => [family, join(__dirname, 'fonts', file)]),
-  )
+// none; Turkish small-caps "i" (dotted capital I, from BSNKo as Lato has
+// none) is 9.492, else 8.596 (Chrome 157 with -AppleLanguages (tr),
+// stages/S8/review-ci).
+test.serial('a line the shaper turns down keeps the host language', async (t) => {
+  t.timeout(3 * CHILD_TIMEOUT, 'two child processes')
+  const fonts = Object.fromEntries(['BSLocl', 'BSLato', 'BSNKo'].map((family) => [family, fontPath(family)]))
   const script = `
-    const { createCanvas, GlobalFonts, setTextRenderer } = require(${JSON.stringify(join(__dirname, '..', 'index.js'))})
-    const binding = require(${JSON.stringify(join(__dirname, '..', 'js-binding.js'))})
+    const { createCanvas, GlobalFonts, setTextRenderer } = require(${INDEX_JS})
+    const binding = require(${BINDING_JS})
     for (const [family, file] of Object.entries(${JSON.stringify(fonts)})) GlobalFonts.registerFromPath(file, family)
     setTextRenderer('portable')
     const width = (font, text, lang, props) => {
@@ -522,7 +591,7 @@ test.serial('a line the shaper turns down keeps the host language', (t) => {
     const out = {}
     for (const [name, font, text, props] of [
       ['locl', '100px BSLocl', 'a', {}],
-      ['caps', '40px BSLato', 'i', { fontVariantCaps: 'small-caps' }],
+      ['caps', '40px BSLato, BSNKo', 'i', { fontVariantCaps: 'small-caps' }],
     ]) {
       out[name] = {}
       for (const lang of ['inherit', 'tr', 'en']) {
@@ -535,31 +604,17 @@ test.serial('a line the shaper turns down keeps the host language', (t) => {
       }
     }
     console.log(JSON.stringify(out))`
-  const run = (shaper: string) => {
-    const child = spawnSync(process.execPath, ['-e', script], {
-      env: {
-        ...process.env,
-        LANGUAGE: 'tr',
-        LC_ALL: '',
-        LC_MESSAGES: '',
-        LANG: '',
-        NAPI_RS_CANVAS_SHAPER: shaper,
-        NAPI_RS_CANVAS_TEST_POSIX_LANGUAGE: '1',
-      },
-      encoding: 'utf8',
-    })
-    t.is(child.status, 0, child.stderr)
-    return JSON.parse(child.stdout) as Record<
+  const run = async (shaper: string) =>
+    JSON.parse(await runChild(t, script, hostEnv(shaper, { LANGUAGE: 'tr' }))) as Record<
       string,
       Record<string, { alone: number; letter: number; accepted: boolean; rejected: boolean }>
     >
-  }
   const near = (a: number, b: number) => Math.abs(a - b) <= 1e-3
   const EXPECTED: Record<string, { tr: number; en: number; none: number }> = {
     locl: { tr: 46.19999694824219, en: 82.09999084472656, none: 50.69999694824219 },
-    caps: { tr: 9.32421875, en: 8.595993041992188, none: 8.595993041992188 },
+    caps: { tr: 9.491989135742188, en: 8.595993041992188, none: 8.595993041992188 },
   }
-  const blink = run('blink')
+  const blink = await run('blink')
   for (const [name, expected] of Object.entries(EXPECTED)) {
     for (const lang of ['inherit', 'tr', 'en']) {
       const got = blink[name][lang]
@@ -570,7 +625,7 @@ test.serial('a line the shaper turns down keeps the host language', (t) => {
     }
   }
   // The old path does not read the host language ("inherit" is no lang).
-  const old = run('skparagraph')
+  const old = await run('skparagraph')
   for (const [name, expected] of Object.entries(EXPECTED)) {
     t.true(near(old[name].inherit.letter, expected.none), `old path ${name}: ${old[name].inherit.letter}`)
     t.true(near(old[name].tr.letter, expected.tr), `old path ${name} tr: ${old[name].tr.letter}`)
@@ -586,12 +641,13 @@ test.serial('a line the shaper turns down keeps the host language', (t) => {
 // size. Portable renderer, so U+E000 (no family has it) turns the line down.
 // "Times New Roman" (the portable standard font) is registered in case no
 // such font is installed; where one is (macOS, Windows) it takes the name.
-test.serial('a line the shaper turns down keeps the font sizes of the shaper', (t) => {
+test.serial('a line the shaper turns down keeps the font sizes of the shaper', async (t) => {
+  t.timeout(2 * CHILD_TIMEOUT, 'one child process')
   const script = `
-    const { createCanvas, GlobalFonts, setTextRenderer } = require(${JSON.stringify(join(__dirname, '..', 'index.js'))})
-    const binding = require(${JSON.stringify(join(__dirname, '..', 'js-binding.js'))})
-    GlobalFonts.registerFromPath(${JSON.stringify(join(__dirname, 'fonts', 'Lato-Regular.ttf'))}, 'BSLato')
-    GlobalFonts.registerFromPath(${JSON.stringify(join(__dirname, 'fonts', 'SourceSerifPro-Regular.ttf'))}, 'Times New Roman')
+    const { createCanvas, GlobalFonts, setTextRenderer } = require(${INDEX_JS})
+    const binding = require(${BINDING_JS})
+    GlobalFonts.registerFromPath(${JSON.stringify(fontPath('BSLato'))}, 'BSLato')
+    GlobalFonts.registerFromPath(${JSON.stringify(fontPath('BSSerif'))}, 'Times New Roman')
     setTextRenderer('portable')
     const out = []
     for (const font of ['40px BSLato, Times New Roman, -webkit-body', '40px BSLato, -webkit-body, serif', '40px BSLato, -webkit-body']) {
@@ -601,20 +657,15 @@ test.serial('a line the shaper turns down keeps the font sizes of the shaper', (
         ctx.fontSizeAdjust = fontSizeAdjust
         const width = (text) => ctx.measureText(text).width
         binding.__shaperStats(true)
-        const alone = width('\u2192')
+        const alone = width('→')
         const accepted = JSON.parse(binding.__shaperStats(true)).rejected[5] === 0
-        const letter = width('\u2192\u2192\uE000') - width('\u2192\uE000')
+        const letter = width('→→') - width('→')
         const rejected = JSON.parse(binding.__shaperStats(true)).rejected[5] > 0
         out.push({ font, fontSizeAdjust, alone, letter, accepted, rejected })
       }
     }
     console.log(JSON.stringify(out))`
-  const child = spawnSync(process.execPath, ['-e', script], {
-    env: { ...process.env, NAPI_RS_CANVAS_SHAPER: 'blink' },
-    encoding: 'utf8',
-  })
-  t.is(child.status, 0, child.stderr)
-  const rows = JSON.parse(child.stdout) as {
+  const rows = JSON.parse(await runChild(t, script, { NAPI_RS_CANVAS_SHAPER: 'blink' })) as {
     font: string
     fontSizeAdjust: string
     alone: number
@@ -638,11 +689,12 @@ test.serial('a line the shaper turns down keeps the font sizes of the shaper', (
 // -AppleLanguages (ja), the others from an en-GB host
 // (stages/S8/review-r2/chrome-units-*.json). [lang (none: "inherit"), font,
 // unit, red].
-test.serial('filter font units follow the lang like the text', (t) => {
+test.serial('filter font units follow the lang like the text', async (t) => {
   if (!CAPTURE_DARWIN) {
     t.pass('the macOS system fonts of the capture')
     return
   }
+  t.timeout(3 * CHILD_TIMEOUT, 'two child processes')
   const HOSTS: [Record<string, string>, [string | null, string, string, number][]][] = [
     [
       { LANG: 'ja_JP.UTF-8' },
@@ -676,7 +728,7 @@ test.serial('filter font units follow the lang like the text', (t) => {
   ]
   for (const [host, rows] of HOSTS) {
     const script = `
-      const { createCanvas, setTextRenderer } = require(${JSON.stringify(join(__dirname, '..', 'index.js'))})
+      const { createCanvas, setTextRenderer } = require(${INDEX_JS})
       setTextRenderer('system')
       console.log(JSON.stringify(${JSON.stringify(rows)}.map(([lang, font, unit]) => {
         const ctx = createCanvas(60, 20).getContext('2d')
@@ -687,21 +739,7 @@ test.serial('filter font units follow the lang like the text', (t) => {
         ctx.fillRect(0, 0, 20, 20)
         return ctx.getImageData(30, 10, 1, 1).data[0]
       })))`
-    const child = spawnSync(process.execPath, ['-e', script], {
-      env: {
-        ...process.env,
-        LANGUAGE: '',
-        LC_ALL: '',
-        LC_MESSAGES: '',
-        LANG: '',
-        ...host,
-        NAPI_RS_CANVAS_SHAPER: 'blink',
-        NAPI_RS_CANVAS_TEST_POSIX_LANGUAGE: '1',
-      },
-      encoding: 'utf8',
-    })
-    t.is(child.status, 0, child.stderr)
-    const reds = JSON.parse(child.stdout) as number[]
+    const reds = JSON.parse(await runChild(t, script, hostEnv('blink', host))) as number[]
     rows.forEach(([lang, font, unit, chrome], i) => {
       t.is(reds[i], chrome, `${JSON.stringify(host)} ${lang} ${font} 5${unit}`)
     })
@@ -715,11 +753,12 @@ test.serial('filter font units follow the lang like the text', (t) => {
 // zh-TW / ar / ko), "Ag" widths; headless Chrome does not apply the common
 // defaults, so these are headed captures. [lang (none: "inherit"), font,
 // width].
-test.serial('generic families follow the host language like Chrome', (t) => {
+test.serial('generic families follow the host language like Chrome', async (t) => {
   if (!BLINK || !CAPTURE_DARWIN) {
     t.pass('the new path with the macOS system fonts of the capture')
     return
   }
+  t.timeout(5 * CHILD_TIMEOUT, 'four child processes')
   const HOSTS: [Record<string, string>, [string | null, string, number][]][] = [
     [
       { LANG: 'ja_JP.UTF-8' },
@@ -766,7 +805,7 @@ test.serial('generic families follow the host language like Chrome', (t) => {
   ]
   for (const [host, rows] of HOSTS) {
     const script = `
-      const { createCanvas, setTextRenderer } = require(${JSON.stringify(join(__dirname, '..', 'index.js'))})
+      const { createCanvas, setTextRenderer } = require(${INDEX_JS})
       setTextRenderer('system')
       console.log(JSON.stringify(${JSON.stringify(rows)}.map(([lang, font]) => {
         const ctx = createCanvas(10, 10).getContext('2d')
@@ -774,21 +813,7 @@ test.serial('generic families follow the host language like Chrome', (t) => {
         if (lang) ctx.lang = lang
         return ctx.measureText('Ag').width
       })))`
-    const child = spawnSync(process.execPath, ['-e', script], {
-      env: {
-        ...process.env,
-        LANGUAGE: '',
-        LC_ALL: '',
-        LC_MESSAGES: '',
-        LANG: '',
-        ...host,
-        NAPI_RS_CANVAS_SHAPER: 'blink',
-        NAPI_RS_CANVAS_TEST_POSIX_LANGUAGE: '1',
-      },
-      encoding: 'utf8',
-    })
-    t.is(child.status, 0, child.stderr)
-    const widths = JSON.parse(child.stdout) as number[]
+    const widths = JSON.parse(await runChild(t, script, hostEnv('blink', host))) as number[]
     rows.forEach(([lang, font, chrome], i) => {
       t.true(
         Math.abs(widths[i] - chrome) <= 1e-3,
@@ -808,13 +833,14 @@ test.serial('generic families follow the host language like Chrome', (t) => {
 // and 48.887 (Times) with no lang (en-US host); with a bold FontFace
 // "AppleMyungjo" (SourceHanSerifCN-Bold) 53.28125 for both. In a child
 // process, as the face would replace AppleMyungjo for the other rows.
-test.serial('a registered face keeps a family that is also installed under -webkit-body', (t) => {
+test.serial('a registered face keeps a family that is also installed under -webkit-body', async (t) => {
   if (!BLINK || !CAPTURE_DARWIN) {
     t.pass('the new path with the macOS system fonts of the capture')
     return
   }
+  t.timeout(2 * CHILD_TIMEOUT, 'one child process')
   const script = `
-    const { createCanvas, GlobalFonts, setTextRenderer } = require(${JSON.stringify(join(__dirname, '..', 'index.js'))})
+    const { createCanvas, GlobalFonts, setTextRenderer } = require(${INDEX_JS})
     setTextRenderer('system')
     const widths = () => ['ja', 'inherit'].map((lang) => {
       const ctx = createCanvas(10, 10).getContext('2d')
@@ -823,22 +849,12 @@ test.serial('a registered face keeps a family that is also installed under -webk
       return ctx.measureText('Ag').width
     })
     const installed = widths()
-    GlobalFonts.registerFromPath(${JSON.stringify(join(__dirname, 'fonts', 'SourceHanSerifCN-Bold.ttf'))}, 'AppleMyungjo')
+    GlobalFonts.registerFromPath(${JSON.stringify(fontPath('BSHan'))}, 'AppleMyungjo')
     console.log(JSON.stringify({ installed, registered: widths() }))`
-  const child = spawnSync(process.execPath, ['-e', script], {
-    env: {
-      ...process.env,
-      LANGUAGE: '',
-      LC_ALL: '',
-      LC_MESSAGES: '',
-      LANG: 'C',
-      NAPI_RS_CANVAS_SHAPER: 'blink',
-      NAPI_RS_CANVAS_TEST_POSIX_LANGUAGE: '1',
-    },
-    encoding: 'utf8',
-  })
-  t.is(child.status, 0, child.stderr)
-  const { installed, registered } = JSON.parse(child.stdout) as Record<string, number[]>
+  const { installed, registered } = JSON.parse(await runChild(t, script, hostEnv('blink', { LANG: 'C' }))) as Record<
+    string,
+    number[]
+  >
   const close = (a: number[], b: number[]) => a.every((v, i) => Math.abs(v - b[i]) <= 1e-3)
   t.true(close(installed, [59.99998474121094, 48.88671875]), `installed: ${installed}`)
   t.true(close(registered, [53.28125, 53.28125]), `registered: ${registered}`)
