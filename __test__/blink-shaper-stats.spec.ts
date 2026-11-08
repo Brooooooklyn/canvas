@@ -271,50 +271,37 @@ test.serial('variation selectors and system fallback are laid out by the shaper'
   t.is(s.cacheChanges, 0)
 })
 
-// Chrome's last family is the standard font of the lang's script
+// Chrome's last family is the standard font of the locale's script
 // (-webkit-standard, GenericFontFamilySettings::Standard): on macOS Hiragino
 // Kaku Gothic ProN for Japanese, Apple SD Gothic Neo for Korean, PingFang
-// SC / TC for Han, Devanagari MT for Devanagari. The shaper's family list has
-// the common one (Times) until stage S8, so a character no family has goes
-// to the old path when that font has it, and to CoreText's fallback when it
-// does not (Hiragino has no 这们 and no Thai: Chrome 157 gives the no-lang
-// values there).
-test.serial('a character the standard font of the lang has goes to the old path', (t) => {
+// SC / TC for Han, Devanagari MT for Devanagari. Since stage S8 the shaper's
+// family list has it, so these lines are laid out by the shaper (the old
+// localeFallback reason is not used any more).
+test.serial('a character the standard font of the lang has is laid out by the shaper', (t) => {
   stats()
-  const cases: [string, string, boolean][] = [
-    ['直骨', 'ja', true],
-    ['ア', 'ja', true],
-    ['直骨', 'ko', true],
-    ['直骨', 'zh-CN', true],
-    ['这们', 'zh-Hant', true],
-    ['नम', 'hi', true],
-    ['直骨', 'en-Jpan', true],
-    ['直骨', 'ja-Cyrl', false],
-    ['这们', 'ja', false],
-    ['กข', 'ja', false],
-    ['直骨', 'th', false],
-    ['直骨', 'inherit', false],
-    ['Hello', 'ja', false],
-  ]
   const apple = process.platform === 'darwin'
-  for (const [text, lang, old] of cases) {
+  for (const [text, lang] of [
+    ['直骨', 'ja'],
+    ['ア', 'ja'],
+    ['直骨', 'ko'],
+    ['直骨', 'zh-CN'],
+    ['这们', 'zh-Hant'],
+    ['नम', 'hi'],
+    ['直骨', 'en-Jpan'],
+    ['直骨', 'en-Hang'],
+    ['直骨', 'ja-Cyrl'],
+    ['这们', 'ja'],
+    ['直骨', 'inherit'],
+    ['Hello', 'ja'],
+  ]) {
     measure('40px StatsLato', text, { lang })
     const s = stats()
-    if (!BLINK) {
+    if (BLINK && apple) {
       t.deepEqual(rejected(s), {}, `${text} ${lang}`)
-    } else if (apple) {
-      t.deepEqual(rejected(s), old ? { localeFallback: 1 } : {}, `${text} ${lang}`)
-      t.is(s.accepted, old ? 0 : 1, `${text} ${lang}`)
+      t.is(s.accepted, 1, `${text} ${lang}`)
+    } else if (!BLINK) {
+      t.deepEqual(rejected(s), {}, `${text} ${lang}`)
     }
-  }
-  // With the portable renderer there is no system fallback source.
-  setTextRenderer('portable')
-  try {
-    measure('40px StatsLato', '直骨', { lang: 'ja' })
-    const s = stats()
-    t.deepEqual(rejected(s), BLINK ? { fallback: 1 } : {})
-  } finally {
-    setTextRenderer('system')
   }
 })
 

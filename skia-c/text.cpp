@@ -40,7 +40,8 @@ TextCaches& GetTextCaches(skiac_font_collection* c_collection) {
 
 const std::vector<SkString>& CachedFontFamilies(
     skiac_font_collection* c_collection,
-    const skiac_text_request& request) {
+    const skiac_text_request& request,
+    std::string_view standard_family) {
   auto& cache = GetTextCaches(c_collection).families;
   if (cache.size() > 256) {
     NoteTextCachesChange();
@@ -54,12 +55,20 @@ const std::vector<SkString>& CachedFontFamilies(
     key.append(reinterpret_cast<const char*>(prefix), sizeof(prefix));
     key.append(family.name, family.name_len);
   }
+  if (!standard_family.empty()) {
+    // A family entry's prefix never has a negative generic value.
+    const int64_t prefix[2] = {-1,
+                               static_cast<int64_t>(standard_family.size())};
+    key.append(reinterpret_cast<const char*>(prefix), sizeof(prefix));
+    key.append(standard_family);
+  }
   auto found = cache.find(key);
   if (found == cache.end()) {
-    found =
-        cache
-            .emplace(std::move(key), ResolveFontFamilies(c_collection, request))
-            .first;
+    found = cache
+                .emplace(std::move(key),
+                         ResolveFontFamilies(c_collection, request, nullptr,
+                                             standard_family))
+                .first;
   }
   return found->second;
 }

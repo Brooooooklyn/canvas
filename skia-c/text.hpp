@@ -19,10 +19,13 @@
 // defaults) and, last, the standard font. Families that resolve to nothing
 // are left out. `generic`, when given, gets for each resolved family whether
 // it came through the font selector as a generic family (the standard font
-// too) rather than by name.
-std::vector<SkString> ResolveFontFamilies(skiac_font_collection* c_collection,
-                                          const skiac_text_request& request,
-                                          std::vector<bool>* generic = nullptr);
+// too) rather than by name. `standard_family`, when not empty, is the
+// standard font to use in place of the common one (LocaleStandardFamily).
+std::vector<SkString> ResolveFontFamilies(
+    skiac_font_collection* c_collection,
+    const skiac_text_request& request,
+    std::vector<bool>* generic = nullptr,
+    std::string_view standard_family = {});
 
 // FontCache::GetLastResortFallbackFont's family for `request`: on macOS with
 // the system renderer Times (else Lucida Grande); empty when none resolves
@@ -30,16 +33,18 @@ std::vector<SkString> ResolveFontFamilies(skiac_font_collection* c_collection,
 std::string LastResortFamily(skiac_font_collection* c_collection,
                              const skiac_text_request& request);
 
-// The standard font of the request's language, where it is not the common
-// one: FontFallbackList::GetFontData's -webkit-standard, which
-// FontSelector::FamilyNameFromSettings takes from the settings for
-// LocaleOrDefault's script (GenericFontFamilySettings::Standard). On macOS
-// with the system renderer, for a lang whose script is Japanese, Korean,
-// Simplified or Traditional Han, or Devanagari; else empty, also for none or
-// "inherit" (font_families.cpp). ResolveFontFamilies does not use it yet: its
-// standard font is the common one (stage S8).
+// The standard font of a locale (`lang`, a language tag; the shaper passes
+// LocaleOrDefault's), where it is not the common one:
+// FontFallbackList::GetFontData's -webkit-standard, which
+// FontSelector::FamilyNameFromSettings takes from the settings for the
+// locale's script (GenericFontFamilySettings::Standard). On macOS with the
+// system renderer, for a locale whose script is Japanese, Korean, Simplified
+// or Traditional Han, or Devanagari, and is not the script of the host's UI
+// language `host_language` (Chrome has no per-script default for that one);
+// else empty (font_families.cpp).
 std::string LocaleStandardFamily(skiac_font_collection* c_collection,
-                                 const skiac_text_request& request);
+                                 std::string_view lang,
+                                 std::string_view host_language);
 
 // LayoutLocale::GetScriptForHan of `lang` (a UScriptCode: Katakana or
 // Hiragana, Hangul, Simplified or Traditional Han), on every OS.
@@ -256,6 +261,8 @@ uint32_t NextCaseRun(const char16_t* text, uint32_t length, CaseRun* run);
 void PrependCapsFeatures(std::vector<hb_feature_t>* features, int caps);
 // CaseMap::Locale of request.lang: "tr", "el", "lt", "nl", or root ("").
 const char* CaseMapLocale(const skiac_text_request& request);
+// CaseMap::Locale of a language tag (the shaper's LocaleOrDefault).
+const char* CaseMapLocale(std::string_view lang);
 // `text` upper or lower cased with ICU for `locale`.
 std::u16string MapCase(CaseMapIntend intend,
                        const char* locale,

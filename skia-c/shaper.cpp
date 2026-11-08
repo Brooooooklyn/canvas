@@ -20,6 +20,16 @@
 
 #include "icu_api.h"
 
+#if defined(__APPLE__)
+#include <CoreFoundation/CoreFoundation.h>
+#elif defined(_WIN32)
+// kernel32's GetUserDefaultLocaleName (winnls.h), declared here so that
+// <windows.h>'s macros stay out of this file.
+extern "C" __declspec(dllimport) int __stdcall GetUserDefaultLocaleName(
+    wchar_t* locale_name,
+    int length);
+#endif
+
 namespace {
 
 std::atomic<uint64_t> g_accepted{0};
@@ -171,14 +181,6 @@ class LineFonts {
   void set_system_source(bool system_source) { system_source_ = system_source; }
   bool system_source() const { return system_source_; }
 
-  // The standard font of the lang's script where it is not the family
-  // list's own (LocaleStandardFamily), found before the layout takes any
-  // reference into the caches.
-  void set_locale_standard(sk_sp<SkTypeface> face) {
-    locale_standard_ = std::move(face);
-  }
-  SkTypeface* locale_standard() const { return locale_standard_.get(); }
-
   // FontCache::GetLastResortFallbackFont through the family matching, found
   // before the layout takes any reference into the caches.
   void set_last_resort(sk_sp<SkTypeface> face, SkTypeface* base) {
@@ -298,7 +300,6 @@ class LineFonts {
   std::deque<FontEntry> small_caps_;
   std::unordered_map<const FontEntry*, FontEntry*> small_caps_index_;
   bool system_source_ = false;
-  sk_sp<SkTypeface> locale_standard_;
   sk_sp<SkTypeface> last_resort_face_;
   SkTypeface* last_resort_base_ = nullptr;
   bool last_resort_made_ = false;
@@ -319,22 +320,16 @@ class FallbackIterator {
 
   bool HasNext() const { return stage_ != Stage::kOutOfLuck; }
   bool needs_system_source() const { return needs_system_source_; }
-  // Next stopped after the family entries, before the system fonts, for the
-  // caller to tell whether the lang's standard font has a character still to
-  // shape; the next call goes on to the system fonts.
-  bool at_locale_standard() const { return at_locale_standard_; }
 
   void Reset() {
     index_ = 0;
     stage_ = Stage::kFontGroupFonts;
-    locale_standard_asked_ = false;
     asked_.clear();
     returned_.clear();
     first_candidate_ = nullptr;
   }
 
   FontEntry* Next(const std::vector<uint32_t>& hints) {
-    at_locale_standard_ = false;
     switch (stage_) {
       case Stage::kOutOfLuck:
         return nullptr;
@@ -361,16 +356,6 @@ class FallbackIterator {
       if (!fonts_.system_source()) {
         needs_system_source_ = true;
         return nullptr;
-      }
-      // FontFallbackList::GetFontData: Chrome's last family is the standard
-      // font, unless a family entry already gave it.
-      if (SkTypeface* standard = fonts_.locale_standard();
-          standard && !locale_standard_asked_) {
-        locale_standard_asked_ = true;
-        if (!returned_.count(standard->uniqueID())) {
-          at_locale_standard_ = true;
-          return nullptr;
-        }
       }
       stage_ = IsNonTextFallbackPriority(priority_)
                    ? Stage::kFallbackPriorityFonts
@@ -436,8 +421,6 @@ class FallbackIterator {
   std::unordered_set<SkTypefaceID> returned_;
   FontEntry* first_candidate_ = nullptr;
   bool needs_system_source_ = false;
-  bool locale_standard_asked_ = false;
-  bool at_locale_standard_ = false;
 };
 
 enum class QueueAction { kNextFont, kRange, kReset };
@@ -485,8 +468,7 @@ class ItemShaper {
 
   // HarfBuzzShaper::ShapeSegment. False when a character no family font
   // has needs a system fallback font this host has no source for
-  // (ShaperReject::kFallback), or one the lang's standard font has, which
-  // the family list does not have yet (kLocaleFallback): reject_reason().
+  // (ShaperReject::kFallback): reject_reason().
   bool ShapeSegment(const Segment& segment) {
     HanKerning han_kerning(text_, length_, segment.start, segment.end);
     FallbackIterator iterator(fonts_, segment.priority);
@@ -519,13 +501,6 @@ class ItemShaper {
         if (iterator.needs_system_source()) {
           reject_reason_ = ShaperReject::kFallback;
           return false;
-        }
-        if (iterator.at_locale_standard()) {
-          if (QueuedRangesHaveGlyphs(fonts_.locale_standard())) {
-            reject_reason_ = ShaperReject::kLocaleFallback;
-            return false;
-          }
-          font = iterator.Next(hints_);
         }
         if (!font) {
           break;
@@ -576,9 +551,8 @@ class ItemShaper {
         features = &caps_features_;
       }
       // HanKerning's `halt` ranges for this range and font, on a copy of
-      // its features (Blink's FontFeatureRangesSaver drops them after it).
-      // The FontData's locale is the shaping language for now (the host
-      // language for none comes with stage S8).
+      // its features (Blink's FontFeatureRangesSaver drops them after it),
+      // with the FontData of the locale (LocaleOrDefault).
       bool han_kerning_computed = false;
       if (han_kerning.MayApply() &&
           han_kerning.RangeMayApply(shape_start, shape_end)) {
@@ -678,28 +652,6 @@ class ItemShaper {
       }
     }
     return !hints_.empty();
-  }
-
-  // Whether `face` has a glyph for a code point of the ranges queued for the
-  // next font.
-  bool QueuedRangesHaveGlyphs(SkTypeface* face) const {
-    for (const QueueItem& item : queue_) {
-      if (item.action != QueueAction::kRange) {
-        break;
-      }
-      const uint32_t end = std::min(length_, item.start + item.num_characters);
-      for (uint32_t i = item.start; i < end;) {
-        uint32_t c = text_[i++];
-        if (c >= 0xD800 && c <= 0xDBFF && i < end && text_[i] >= 0xDC00 &&
-            text_[i] <= 0xDFFF) {
-          c = 0x10000 + ((c - 0xD800) << 10) + (text_[i++] - 0xDC00);
-        }
-        if (face->unicharToGlyph(static_cast<SkUnichar>(c))) {
-          return true;
-        }
-      }
-    }
-    return false;
   }
 
   // SplitUntilNextCaseChange: `current` ends at its first case change
@@ -1167,15 +1119,243 @@ std::vector<FamilyFace> FamilyFaces(
   return out;
 }
 
-// The HarfBuzz language of ctx.lang: "und" for none ("" or "inherit"; the
-// host language comes with stage S8), as skshaper does for none.
-hb_language_t ShapingLanguage(const skiac_text_request& request) {
-  static const hb_language_t und = hb_language_from_string("und", -1);
+// Chrome's UI locales (build/config/locales.gni platform_pak_locales off
+// Android; the .lproj names of Chrome.app on macOS).
+constexpr std::string_view kChromeLocales[] = {
+    "af", "am",  "ar",    "bg",    "bn", "ca",     "cs",    "da",
+    "de", "el",  "en-GB", "en-US", "es", "es-419", "et",    "fa",
+    "fi", "fil", "fr",    "gu",    "he", "hi",     "hr",    "hu",
+    "id", "it",  "ja",    "kn",    "ko", "lt",     "lv",    "ml",
+    "mr", "ms",  "nb",    "nl",    "pl", "pt-BR",  "pt-PT", "ro",
+    "ru", "sk",  "sl",    "sr",    "sv", "sw",     "ta",    "te",
+    "th", "tr",  "uk",    "ur",    "vi", "zh-CN",  "zh-TW",
+};
+
+bool IsChromeLocale(std::string_view locale) {
+  return std::find(std::begin(kChromeLocales), std::end(kChromeLocales),
+                   locale) != std::end(kChromeLocales);
+}
+
+bool EqualsAscii(std::string_view a, std::string_view b) {
+  return a.size() == b.size() &&
+         std::equal(a.begin(), a.end(), b.begin(), [](char x, char y) {
+           auto lower = [](char c) {
+             return c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c;
+           };
+           return lower(x) == lower(y);
+         });
+}
+
+// l10n_util::CheckAndResolveLocale over Chrome's UI locales: the locale, or
+// its language with Chrome's region mapping, or an alias; empty for none.
+std::string CheckAndResolveLocale(const std::string& locale) {
+  if (IsChromeLocale(locale)) {
+    return locale;
+  }
+  if (locale.find('@') != std::string::npos) {
+    return {};
+  }
+  const std::string lang = locale.substr(0, locale.find('-'));
+  if (lang.size() < locale.size()) {
+    const std::string_view region =
+        std::string_view(locale).substr(lang.size() + 1);
+    std::string tmp = lang;
+    if (EqualsAscii(lang, "es") && !EqualsAscii(region, "es")) {
+      tmp += "-419";
+    } else if (EqualsAscii(lang, "pt") && !EqualsAscii(region, "br")) {
+      tmp += "-PT";
+    } else if (EqualsAscii(lang, "zh")) {
+      tmp += EqualsAscii(region, "hk") || EqualsAscii(region, "mo") ? "-TW"
+                                                                    : "-CN";
+    } else if (EqualsAscii(lang, "en")) {
+      tmp += EqualsAscii(region, "lr") || EqualsAscii(region, "ph") ? "-US"
+                                                                    : "-GB";
+    }
+    if (IsChromeLocale(tmp)) {
+      return tmp;
+    }
+  }
+  static constexpr std::pair<std::string_view, std::string_view> kAliases[] = {
+      {"en", "en-US"}, {"iw", "he"},  {"no", "nb"},
+      {"pt", "pt-BR"}, {"tl", "fil"}, {"zh", "zh-CN"}};
+  for (const auto& [source, dest] : kAliases) {
+    if (EqualsAscii(lang, source) && IsChromeLocale(dest)) {
+      return std::string(dest);
+    }
+  }
+  return {};
+}
+
+// base::i18n::GetCanonicalLocale of a POSIX locale name
+// ("language[_territory][.codeset][@modifier]"): "ja-JP"; a modifier stays
+// as "@..." (CheckAndResolveLocale turns it down); "C" and "POSIX" (ICU's
+// en_US_POSIX) are none.
+std::string CanonicalPosixLocale(std::string_view name) {
+  std::string modifier;
+  if (const size_t at = name.find('@'); at != std::string_view::npos) {
+    modifier = "@" + std::string(name.substr(at + 1));
+    name = name.substr(0, at);
+  }
+  name = name.substr(0, name.find('.'));
+  if (name.empty() || name == "C" || name == "POSIX") {
+    return {};
+  }
+  std::string out;
+  size_t part = 0;
+  size_t begin = 0;
+  while (begin <= name.size()) {
+    size_t end = name.find_first_of("_-", begin);
+    if (end == std::string_view::npos) {
+      end = name.size();
+    }
+    std::string subtag(name.substr(begin, end - begin));
+    for (char& c : subtag) {
+      // The language lower case, a script title case, a region upper case.
+      const bool upper = part > 0 && (subtag.size() != 4 || &c == &subtag[0]);
+      if (upper && c >= 'a' && c <= 'z') {
+        c = static_cast<char>(c - 'a' + 'A');
+      } else if (!upper && c >= 'A' && c <= 'Z') {
+        c = static_cast<char>(c - 'A' + 'a');
+      }
+    }
+    if (!subtag.empty()) {
+      out += (out.empty() ? "" : "-") + subtag;
+    }
+    ++part;
+    begin = end + 1;
+  }
+  return out.empty() ? std::string() : out + modifier;
+}
+
+// GetApplicationLocaleInternalNonMac with GLib (Linux): g_get_language_names
+// (LANGUAGE as a ':' list, else LC_ALL, else LC_MESSAGES, else LANG; "C"
+// last), each through CheckAndResolveLocale; else "en-US".
+std::string PosixHostLanguage() {
+  const char* value = nullptr;
+  for (const char* name : {"LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG"}) {
+    value = getenv(name);
+    if (value && *value) {
+      break;
+    }
+    value = nullptr;
+  }
+  std::string_view list = value ? value : "";
+  while (!list.empty()) {
+    const size_t colon = list.find(':');
+    const std::string resolved =
+        CheckAndResolveLocale(CanonicalPosixLocale(list.substr(0, colon)));
+    if (!resolved.empty()) {
+      return resolved;
+    }
+    list = colon == std::string_view::npos ? std::string_view()
+                                           : list.substr(colon + 1);
+  }
+  return "en-US";
+}
+
+#if defined(__APPLE__)
+// l10n_util::OverrideLocaleWithCocoaLocale: the first of the outer bundle's
+// preferredLocalizations (the user's language list matched against
+// Chrome.app's .lproj names), '_' as '-', "en" as "en-US".
+std::string AppleHostLanguage() {
+  std::vector<CFStringRef> names;
+  for (std::string_view locale : kChromeLocales) {
+    std::string lproj(locale == "en-US" ? "en" : locale);
+    std::replace(lproj.begin(), lproj.end(), '-', '_');
+    names.push_back(CFStringCreateWithBytes(
+        kCFAllocatorDefault, reinterpret_cast<const UInt8*>(lproj.data()),
+        static_cast<CFIndex>(lproj.size()), kCFStringEncodingASCII, false));
+  }
+  CFArrayRef available = CFArrayCreate(
+      kCFAllocatorDefault, reinterpret_cast<const void**>(names.data()),
+      static_cast<CFIndex>(names.size()), &kCFTypeArrayCallBacks);
+  for (CFStringRef name : names) {
+    CFRelease(name);
+  }
+  std::string out;
+  if (CFArrayRef preferred =
+          CFBundleCopyLocalizationsForPreferences(available, nullptr)) {
+    if (CFArrayGetCount(preferred) > 0) {
+      CFStringRef first =
+          static_cast<CFStringRef>(CFArrayGetValueAtIndex(preferred, 0));
+      char buffer[64];
+      if (CFStringGetCString(first, buffer, sizeof(buffer),
+                             kCFStringEncodingASCII)) {
+        out = buffer;
+      }
+    }
+    CFRelease(preferred);
+  }
+  CFRelease(available);
+  std::replace(out.begin(), out.end(), '_', '-');
+  if (out.empty() || out == "en") {
+    out = "en-US";
+  }
+  return out;
+}
+#endif
+
+#if defined(_WIN32)
+// GetApplicationLocaleInternalNonMac on Windows without --lang or a pref:
+// ICU's configured locale (the user default locale) through
+// CheckAndResolveLocale; else "en-US".
+std::string WindowsHostLanguage() {
+  wchar_t name[85];  // LOCALE_NAME_MAX_LENGTH
+  const int length = GetUserDefaultLocaleName(name, 85);
+  std::string ascii;
+  for (int i = 0; i + 1 < length; ++i) {
+    if (name[i] > 0x7f) {
+      return "en-US";
+    }
+    ascii += static_cast<char>(name[i]);
+  }
+  const std::string resolved =
+      CheckAndResolveLocale(CanonicalPosixLocale(ascii));
+  return resolved.empty() ? "en-US" : resolved;
+}
+#endif
+
+// LayoutLocale::GetDefault's language (DefaultLanguage: the browser's UI
+// locale, D19), read once per process. NAPI_RS_CANVAS_TEST_POSIX_LANGUAGE=1
+// (tests only) uses the Linux rule on every OS, so a test can set the
+// language through LANGUAGE / LC_ALL / LC_MESSAGES / LANG in a child process
+// without changing the host's settings.
+const std::string& HostLanguage() {
+  static const std::string language = [] {
+    if (const char* test = getenv("NAPI_RS_CANVAS_TEST_POSIX_LANGUAGE");
+        test && strcmp(test, "1") == 0) {
+      return PosixHostLanguage();
+    }
+#if defined(__APPLE__)
+    return AppleHostLanguage();
+#elif defined(_WIN32)
+    return WindowsHostLanguage();
+#else
+    return PosixHostLanguage();
+#endif
+  }();
+  return language;
+}
+
+// FontDescription::LocaleOrDefault for ctx.lang, as a language tag: the
+// host language for "inherit" (a canvas with no lang of its own: D19),
+// "und" for "" (LayoutLocale of "": HarfBuzz's dflt, R17), else the tag.
+std::string ResolvedLanguage(const skiac_text_request& request) {
   const std::string_view lang(request.lang ? request.lang : "",
                               request.lang ? request.lang_len : 0);
-  if (lang.empty() || lang == "inherit") {
-    return und;
+  if (lang == "inherit") {
+    return HostLanguage();
   }
+  if (lang.empty()) {
+    return "und";
+  }
+  return std::string(lang);
+}
+
+// The HarfBuzz language of a resolved language (LayoutLocale's
+// HarfbuzzLanguage); "und" when HarfBuzz has none for it.
+hb_language_t ShapingLanguage(const std::string& lang) {
+  static const hb_language_t und = hb_language_from_string("und", -1);
   const hb_language_t language =
       hb_language_from_string(lang.data(), static_cast<int>(lang.size()));
   return language == HB_LANGUAGE_INVALID ? und : language;
@@ -1202,11 +1382,16 @@ bool LayOutLineBlink(skiac_font_collection* c_collection,
   const SkFontStyle font_style(static_cast<int>(roundf(request.weight)),
                                request.stretch,
                                static_cast<SkFontStyle::Slant>(request.style));
+  // FontDescription::LocaleOrDefault: the HarfBuzz language, the case map
+  // locale, HanKerning's locale and the standard font's script.
+  const std::string lang = ResolvedLanguage(request);
   // The FontList, with every noteFontArguments call, before any reference
   // into the caches is taken. The families are copied: the cache entry is
-  // a reference into TextCaches.
-  const std::vector<SkString> families =
-      CachedFontFamilies(c_collection, request);
+  // a reference into TextCaches. The last one is the standard font of the
+  // locale's script (FontFallbackList::GetFontData's -webkit-standard).
+  const std::vector<SkString> families = CachedFontFamilies(
+      c_collection, request,
+      LocaleStandardFamily(c_collection, lang, HostLanguage()));
   const std::vector<sk_sp<SkTypeface>> base_faces =
       font_collection->findTypefaces(families, font_style);
   const UsedSizes sizes = ComputeUsedSizes(c_collection, base_faces, request);
@@ -1250,19 +1435,9 @@ bool LayOutLineBlink(skiac_font_collection* c_collection,
   bool system_source = false;
   sk_sp<SkTypeface> last_resort_face;
   sk_sp<SkTypeface> last_resort_base;
-  sk_sp<SkTypeface> locale_standard;
 #if defined(__APPLE__)
   system_source = SystemFontRenderer() && c_collection->font_mgr;
   if (system_source) {
-    if (const std::string name = LocaleStandardFamily(c_collection, request);
-        !name.empty()) {
-      const std::vector<sk_sp<SkTypeface>> standard =
-          font_collection->findTypefaces({SkString(name.c_str(), name.size())},
-                                         font_style);
-      if (!standard.empty()) {
-        locale_standard = standard.front();
-      }
-    }
     const std::string name = LastResortFamily(c_collection, request);
     if (!name.empty()) {
       const std::vector<SkString> last_resort = {
@@ -1305,7 +1480,6 @@ bool LayOutLineBlink(skiac_font_collection* c_collection,
     }
   }
   fonts.set_system_source(system_source);
-  fonts.set_locale_standard(std::move(locale_standard));
   fonts.set_last_resort(last_resort_face, last_resort_base.get());
 
   const bool word_by_word = CanShapeWordByWord(
@@ -1317,9 +1491,9 @@ bool LayOutLineBlink(skiac_font_collection* c_collection,
   const ItemList items = SegmentText(prepared, rtl, word_by_word);
   const std::vector<hb_feature_t> features =
       BlinkFeatures(request, /*default_chws=*/true);
-  const hb_language_t language = ShapingLanguage(request);
-  const int han_script = HanScriptForLocale(hb_language_to_string(language));
-  const char* case_map_locale = CaseMapLocale(request);
+  const hb_language_t language = ShapingLanguage(lang);
+  const int han_script = HanScriptForLocale(lang);
+  const char* case_map_locale = CaseMapLocale(lang);
   hb_buffer_t* buffer = ShaperBuffer(c_collection);
   hb_buffer_reset(buffer);
 

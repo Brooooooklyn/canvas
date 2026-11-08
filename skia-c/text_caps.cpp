@@ -279,8 +279,11 @@ bool LocaleMatches(std::string_view locale, std::string_view lang) {
 }  // namespace
 
 const char* CaseMapLocale(const skiac_text_request& request) {
-  const std::string_view lang(request.lang ? request.lang : "",
-                              request.lang ? request.lang_len : 0);
+  return CaseMapLocale(std::string_view(request.lang ? request.lang : "",
+                                        request.lang ? request.lang_len : 0));
+}
+
+const char* CaseMapLocale(std::string_view lang) {
   if (LocaleMatches(lang, "tr") || LocaleMatches(lang, "az")) {
     return "tr";
   }

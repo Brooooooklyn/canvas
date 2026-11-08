@@ -64,11 +64,8 @@ enum class ShaperReject : uint32_t {
   // Kept so the slot numbers stay: variation selectors are laid out since
   // stage S3 (the second pass that ignores them).
   kVariationSelector,
-  // A character no family has, which the standard font of the lang's script
-  // has (Japanese, Korean, Han, Devanagari on macOS): Chrome tries that font
-  // (-webkit-standard by LocaleOrDefault's script) before the system
-  // fallback, and the shaper's family list has the common standard font
-  // only (stage S8).
+  // Not used since stage S8 (the family list has the standard font of the
+  // locale's script); the slot is kept so the counters keep their indices.
   kLocaleFallback,
   kCount,
 };

@@ -105,11 +105,13 @@ struct TextCaches {
 // The collection's TextCaches, made on first use (text.cpp).
 TextCaches& GetTextCaches(skiac_font_collection* c_collection);
 
-// ResolveFontFamilies of the request's family list, cached: a reference into
+// ResolveFontFamilies of the request's family list (with `standard_family`
+// as the standard font when it is not empty), cached: a reference into
 // TextCaches::families, valid until the next call (text.cpp).
 const std::vector<SkString>& CachedFontFamilies(
     skiac_font_collection* c_collection,
-    const skiac_text_request& request);
+    const skiac_text_request& request,
+    std::string_view standard_family = {});
 
 // MeasurePrimaryFont, cached in TextCaches::metrics (text.cpp).
 PrimaryFontMetrics CachedPrimaryFont(skiac_font_collection* c_collection,
