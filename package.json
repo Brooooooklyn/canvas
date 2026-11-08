@@ -69,7 +69,6 @@
     "prepublishOnly": "pinst --disable && napi prepublish -t npm",
     "postpublish": "pinst --enable",
     "test:ci": "NODE_OPTIONS='--import=core-js/proposals/iterator-helpers.js' ava -c 1",
-    "test:shaper-diff": "node __test__/shaper-diff.mjs",
     "test": "NODE_OPTIONS='--import=core-js/proposals/iterator-helpers.js' ava",
     "e2e": "yarn workspace @napi-rs/canvas-e2e-webpack test",
     "e2e:electron": "yarn workspace @napi-rs/canvas-e2e-electron test",
