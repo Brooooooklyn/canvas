@@ -51,13 +51,8 @@ interface Row {
   flipPortable?: string
   // The old path matches Chrome here by another route than Chrome's, and the
   // shaper reaches Chrome only from this stage: with the switch on the row is
-  // not checked before it. "fallback: han-ja": Chrome draws 直骨 with lang ja
-  // in its standard font for Japanese, Hiragino Kaku Gothic ProN
-  // (GenericFontFamilySettings::Standard by the locale's script,
-  // locale_settings_mac.grd IDS_STANDARD_FONT_FAMILY_JAPANESE), not by
-  // fallback; the old path gets the same glyphs from CoreText's fallback with
-  // the language, which the shaper does not pass (D20). The per-script
-  // generic fonts are font matching, handed to the language stage.
+  // not checked before it. ("fallback: han-ja", Chrome's standard font for
+  // Japanese, is now turned down to the old path: reason localeFallback.)
   blinkFrom?: string
 }
 const FIXTURE: { darwin: string; fonts: Record<string, string>; cases: Record<string, Row> } = JSON.parse(

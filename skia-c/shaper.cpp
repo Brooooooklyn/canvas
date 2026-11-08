@@ -132,6 +132,14 @@ class LineFonts {
   void set_system_source(bool system_source) { system_source_ = system_source; }
   bool system_source() const { return system_source_; }
 
+  // The standard font of the lang's script where it is not the family
+  // list's own (LocaleStandardFamily), found before the layout takes any
+  // reference into the caches.
+  void set_locale_standard(sk_sp<SkTypeface> face) {
+    locale_standard_ = std::move(face);
+  }
+  SkTypeface* locale_standard() const { return locale_standard_.get(); }
+
   // FontCache::GetLastResortFallbackFont through the family matching, found
   // before the layout takes any reference into the caches.
   void set_last_resort(sk_sp<SkTypeface> face, SkTypeface* base) {
@@ -247,6 +255,7 @@ class LineFonts {
   std::deque<FontEntry> families_;
   std::deque<FontEntry> others_;
   bool system_source_ = false;
+  sk_sp<SkTypeface> locale_standard_;
   sk_sp<SkTypeface> last_resort_face_;
   SkTypeface* last_resort_base_ = nullptr;
   bool last_resort_made_ = false;
@@ -267,16 +276,22 @@ class FallbackIterator {
 
   bool HasNext() const { return stage_ != Stage::kOutOfLuck; }
   bool needs_system_source() const { return needs_system_source_; }
+  // Next stopped after the family entries, before the system fonts, for the
+  // caller to tell whether the lang's standard font has a character still to
+  // shape; the next call goes on to the system fonts.
+  bool at_locale_standard() const { return at_locale_standard_; }
 
   void Reset() {
     index_ = 0;
     stage_ = Stage::kFontGroupFonts;
+    locale_standard_asked_ = false;
     asked_.clear();
     returned_.clear();
     first_candidate_ = nullptr;
   }
 
   FontEntry* Next(const std::vector<uint32_t>& hints) {
+    at_locale_standard_ = false;
     switch (stage_) {
       case Stage::kOutOfLuck:
         return nullptr;
@@ -303,6 +318,16 @@ class FallbackIterator {
       if (!fonts_.system_source()) {
         needs_system_source_ = true;
         return nullptr;
+      }
+      // FontFallbackList::GetFontData: Chrome's last family is the standard
+      // font, unless a family entry already gave it.
+      if (SkTypeface* standard = fonts_.locale_standard();
+          standard && !locale_standard_asked_) {
+        locale_standard_asked_ = true;
+        if (!returned_.count(standard->uniqueID())) {
+          at_locale_standard_ = true;
+          return nullptr;
+        }
       }
       stage_ = IsNonTextFallbackPriority(priority_)
                    ? Stage::kFallbackPriorityFonts
@@ -368,6 +393,8 @@ class FallbackIterator {
   std::unordered_set<SkTypefaceID> returned_;
   FontEntry* first_candidate_ = nullptr;
   bool needs_system_source_ = false;
+  bool locale_standard_asked_ = false;
+  bool at_locale_standard_ = false;
 };
 
 enum class QueueAction { kNextFont, kRange, kReset };
@@ -406,7 +433,9 @@ class ItemShaper {
         result_(result) {}
 
   // HarfBuzzShaper::ShapeSegment. False when a character no family font
-  // has needs a system fallback font this host has no source for.
+  // has needs a system fallback font this host has no source for
+  // (ShaperReject::kFallback), or one the lang's standard font has, which
+  // the family list does not have yet (kLocaleFallback): reject_reason().
   bool ShapeSegment(const Segment& segment) {
     FallbackIterator iterator(fonts_, segment.priority);
     queue_.clear();
@@ -436,7 +465,15 @@ class ItemShaper {
         }
         font = iterator.Next(hints_);
         if (iterator.needs_system_source()) {
+          reject_reason_ = ShaperReject::kFallback;
           return false;
+        }
+        if (iterator.at_locale_standard()) {
+          if (QueuedRangesHaveGlyphs(fonts_.locale_standard())) {
+            reject_reason_ = ShaperReject::kLocaleFallback;
+            return false;
+          }
+          font = iterator.Next(hints_);
         }
         if (!font) {
           break;
@@ -468,6 +505,8 @@ class ItemShaper {
     }
     return true;
   }
+
+  ShaperReject reject_reason() const { return reject_reason_; }
 
  private:
   // HarfBuzzShaper::FallbackFontStage.
@@ -537,6 +576,28 @@ class ItemShaper {
       }
     }
     return !hints_.empty();
+  }
+
+  // Whether `face` has a glyph for a code point of the ranges queued for the
+  // next font.
+  bool QueuedRangesHaveGlyphs(SkTypeface* face) const {
+    for (const QueueItem& item : queue_) {
+      if (item.action != QueueAction::kRange) {
+        break;
+      }
+      const uint32_t end = std::min(length_, item.start + item.num_characters);
+      for (uint32_t i = item.start; i < end;) {
+        uint32_t c = text_[i++];
+        if (c >= 0xD800 && c <= 0xDBFF && i < end && text_[i] >= 0xDC00 &&
+            text_[i] <= 0xDFFF) {
+          c = 0x10000 + ((c - 0xD800) << 10) + (text_[i++] - 0xDC00);
+        }
+        if (face->unicharToGlyph(static_cast<SkUnichar>(c))) {
+          return true;
+        }
+      }
+    }
+    return false;
   }
 
   // RoundHarfBuzzBufferPositions.
@@ -839,6 +900,7 @@ class ItemShaper {
   std::deque<QueueItem> queue_;
   std::vector<uint32_t> hints_;
   FallbackStage stage_ = FallbackStage::kIntermediate;
+  ShaperReject reject_reason_ = ShaperReject::kFallback;
 };
 
 // The HarfBuzz language of ctx.lang: "und" for none ("" or "inherit"; the
@@ -935,9 +997,19 @@ bool LayOutLineBlink(skiac_font_collection* c_collection,
   bool system_source = false;
   sk_sp<SkTypeface> last_resort_face;
   sk_sp<SkTypeface> last_resort_base;
+  sk_sp<SkTypeface> locale_standard;
 #if defined(__APPLE__)
   system_source = SystemFontRenderer() && c_collection->font_mgr;
   if (system_source) {
+    if (const std::string name = LocaleStandardFamily(c_collection, request);
+        !name.empty()) {
+      const std::vector<sk_sp<SkTypeface>> standard =
+          font_collection->findTypefaces({SkString(name.c_str(), name.size())},
+                                         font_style);
+      if (!standard.empty()) {
+        locale_standard = standard.front();
+      }
+    }
     const std::string name = LastResortFamily(c_collection, request);
     if (!name.empty()) {
       const std::vector<SkString> last_resort = {
@@ -982,6 +1054,7 @@ bool LayOutLineBlink(skiac_font_collection* c_collection,
     }
   }
   fonts.set_system_source(system_source);
+  fonts.set_locale_standard(std::move(locale_standard));
   fonts.set_last_resort(last_resort_face, last_resort_base.get());
 
   const bool word_by_word = CanShapeWordByWord(
@@ -1007,7 +1080,7 @@ bool LayOutLineBlink(skiac_font_collection* c_collection,
          SegmentItem(text, item.length, prepared.is_8bit)) {
       if (!shaper.ShapeSegment(segment)) {
         hb_buffer_reset(buffer);
-        return Reject(ShaperReject::kFallback);
+        return Reject(shaper.reject_reason());
       }
     }
     shaped.push_back(std::move(result));

@@ -26,7 +26,16 @@ function stats(): Stats {
 }
 
 // skia-c/shaper.hpp ShaperReject.
-const REASONS = ['notImplemented', 'letterSpacing', 'wordSpacing', 'caps', 'faceSizes', 'fallback', 'variationSelector']
+const REASONS = [
+  'notImplemented',
+  'letterSpacing',
+  'wordSpacing',
+  'caps',
+  'faceSizes',
+  'fallback',
+  'variationSelector',
+  'localeFallback',
+]
 
 function rejected(s: Stats) {
   return Object.fromEntries(s.rejected.flatMap((n, i) => (n ? [[REASONS[i] ?? String(i), n]] : [])))
@@ -160,6 +169,53 @@ test.serial('variation selectors and system fallback are laid out by the shaper'
     t.true((rejected(s).fallback ?? 0) > 0)
   }
   t.is(s.cacheChanges, 0)
+})
+
+// Chrome's last family is the standard font of the lang's script
+// (-webkit-standard, GenericFontFamilySettings::Standard): on macOS Hiragino
+// Kaku Gothic ProN for Japanese, Apple SD Gothic Neo for Korean, PingFang
+// SC / TC for Han, Devanagari MT for Devanagari. The shaper's family list has
+// the common one (Times) until stage S8, so a character no family has goes
+// to the old path when that font has it, and to CoreText's fallback when it
+// does not (Hiragino has no 这们 and no Thai: Chrome 157 gives the no-lang
+// values there).
+test.serial('a character the standard font of the lang has goes to the old path', (t) => {
+  stats()
+  const cases: [string, string, boolean][] = [
+    ['直骨', 'ja', true],
+    ['ア', 'ja', true],
+    ['直骨', 'ko', true],
+    ['直骨', 'zh-CN', true],
+    ['这们', 'zh-Hant', true],
+    ['नम', 'hi', true],
+    ['直骨', 'en-Jpan', true],
+    ['直骨', 'ja-Cyrl', false],
+    ['这们', 'ja', false],
+    ['กข', 'ja', false],
+    ['直骨', 'th', false],
+    ['直骨', 'inherit', false],
+    ['Hello', 'ja', false],
+  ]
+  const apple = process.platform === 'darwin'
+  for (const [text, lang, old] of cases) {
+    measure('40px StatsLato', text, { lang })
+    const s = stats()
+    if (!BLINK) {
+      t.deepEqual(rejected(s), {}, `${text} ${lang}`)
+    } else if (apple) {
+      t.deepEqual(rejected(s), old ? { localeFallback: 1 } : {}, `${text} ${lang}`)
+      t.is(s.accepted, old ? 0 : 1, `${text} ${lang}`)
+    }
+  }
+  // With the portable renderer there is no system fallback source.
+  setTextRenderer('portable')
+  try {
+    measure('40px StatsLato', '直骨', { lang: 'ja' })
+    const s = stats()
+    t.deepEqual(rejected(s), BLINK ? { fallback: 1 } : {})
+  } finally {
+    setTextRenderer('system')
+  }
 })
 
 test.serial('text in two families is laid out by the shaper', (t) => {
