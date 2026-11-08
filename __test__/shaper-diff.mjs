@@ -444,6 +444,17 @@ function cases() {
       for (const text of SETTING_TEXTS) {
         const families = TEXTS.find(([t]) => t === text)[1]
         const tags = [...TEXTS.find(([t]) => t === text)[2], ...settingTags]
+        // Lato has no İ, ş or ğ: the standard font (the family list's last
+        // entry) draws them. On Windows that is Times New Roman 7, which has
+        // smcp (macOS's Times New Roman 5.01 and Times do not), so the new
+        // path shapes "şğ" with smcp at 40px where the old path synthesized
+        // them from Lato (uppercase at 28px): caps-per-font. Chrome 157 with
+        // a fallback font that has smcp (stages/S5/tr-chrome.json): 40px
+        // "BSLato, BSSerif" small-caps "İstanbul ılık şğü" 268.0798645019531,
+        // the new path's width (old path 257.4719).
+        if ('fontVariantCaps' in settings && text === 'İstanbul ılık şğü') {
+          tags.push('caps-per-font')
+        }
         out.push({ renderer, text, font: `40px ${families}`, ctx: settings, tags, draw: false })
       }
     }
