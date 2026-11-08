@@ -299,7 +299,20 @@ test.serial('a character the standard font of the lang has is laid out by the sh
     if (BLINK && apple) {
       t.deepEqual(rejected(s), {}, `${text} ${lang}`)
       t.is(s.accepted, 1, `${text} ${lang}`)
-    } else if (!BLINK) {
+    } else if (BLINK) {
+      // Off macOS the standard font is not per script and the shaper has no
+      // system fallback, so a character no family has turns the line down
+      // for `fallback`, never for the old localeFallback reason; the Latin
+      // line stays on the shaper.
+      const reasons = rejected(s)
+      t.true(
+        Object.keys(reasons).every((reason) => reason === 'fallback') && s.accepted + (reasons.fallback ?? 0) === 1,
+        `${text} ${lang}: ${JSON.stringify(reasons)}, ${s.accepted} accepted`,
+      )
+      if (text === 'Hello') {
+        t.is(s.accepted, 1, `${text} ${lang}`)
+      }
+    } else {
       t.deepEqual(rejected(s), {}, `${text} ${lang}`)
     }
   }

@@ -25,6 +25,12 @@
 
 #include <src/core/SkUTF.h>
 
+// Before text.hpp: CoreText's headers declare a global TextRange, which
+// skia_c.hpp's `using namespace skia::textlayout` would make ambiguous.
+#if defined(__APPLE__)
+#include <CoreText/CoreText.h>
+#endif
+
 #include "icu_api.h"
 #include "text.hpp"
 #include "text_raster.hpp"
@@ -174,6 +180,57 @@ void IndexFamilies(skiac_font_collection* c_collection) {
   c_collection->folded_families_generation = c_collection->families_generation;
 }
 
+#if defined(__APPLE__)
+// Whether an installed font has the family `name`, asked with CoreText's
+// auto-activation disallowed. Blink's font_matcher_mac.mm runs in the
+// sandboxed renderer, where CoreText cannot download a font, so a
+// downloadable font that is not installed is not available. CoreText's own
+// matching (SkFontMgr_Mac) would download it instead and wait for the font
+// registry's UI, which never answers without a login session (macOS CI:
+// the zh-TW host's font settings kept a process waiting for ever).
+bool HasInstalledFamily(std::string_view name) {
+  CFStringRef family = CFStringCreateWithBytes(
+      kCFAllocatorDefault, reinterpret_cast<const UInt8*>(name.data()),
+      static_cast<CFIndex>(name.size()), kCFStringEncodingUTF8, false);
+  if (!family) {
+    return false;
+  }
+  const void* keys[] = {kCTFontFamilyNameAttribute};
+  const void* values[] = {family};
+  CFDictionaryRef attributes = CFDictionaryCreate(
+      kCFAllocatorDefault, keys, values, 1, &kCFTypeDictionaryKeyCallBacks,
+      &kCFTypeDictionaryValueCallBacks);
+  CFRelease(family);
+  CTFontDescriptorRef descriptor =
+      CTFontDescriptorCreateWithAttributes(attributes);
+  CFRelease(attributes);
+  const void* descriptors[] = {descriptor};
+  CFArrayRef request = CFArrayCreate(kCFAllocatorDefault, descriptors, 1,
+                                     &kCFTypeArrayCallBacks);
+  CFRelease(descriptor);
+  const void* option_keys[] = {kCTFontCollectionDisallowAutoActivationOption};
+  const void* option_values[] = {kCFBooleanTrue};
+  CFDictionaryRef options = CFDictionaryCreate(
+      kCFAllocatorDefault, option_keys, option_values, 1,
+      &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+  CTFontCollectionRef collection =
+      CTFontCollectionCreateWithFontDescriptors(request, options);
+  CFRelease(request);
+  CFRelease(options);
+  CFArrayRef matches =
+      collection ? CTFontCollectionCreateMatchingFontDescriptors(collection)
+                 : nullptr;
+  if (collection) {
+    CFRelease(collection);
+  }
+  const bool found = matches && CFArrayGetCount(matches) > 0;
+  if (matches) {
+    CFRelease(matches);
+  }
+  return found;
+}
+#endif
+
 class FamilyResolver {
  public:
   explicit FamilyResolver(skiac_font_collection* c_collection)
@@ -292,7 +349,9 @@ class FamilyResolver {
     if (it == matches.end()) {
       std::string family;
       sk_sp<SkFontStyleSet> set =
-          manager->matchFamily(std::string(name).c_str());
+          HasInstalledFamily(name)
+              ? manager->matchFamily(std::string(name).c_str())
+              : nullptr;
       if (sk_sp<SkTypeface> face =
               set && set->count() > 0 ? set->createTypeface(0) : nullptr) {
         SkString face_family;
