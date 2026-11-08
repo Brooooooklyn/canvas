@@ -809,7 +809,10 @@ function graphemeClusters(text, dump) {
 // oblique font ('notdef-mark-synthetic'): the same runs, fonts and glyphs,
 // the clusters at their graphemes' starts (`grouped`, the old dump so
 // moved), every glyph that is not a mark where it was, and the same
-// metrics but the ink box. Only the marks' x and y may change.
+// metrics but the ink box. Only the marks' x and y may change, by less than
+// half the font size (losing the fallback moves an above or below mark by
+// more), and y only with the synthetic bold: an oblique font's skewX shears
+// x alone, so the glyph extents' y and the marks' y offsets stay.
 function notdefMarkSynthetic(text, oldRow, newRow, grouped) {
   if (!/\p{M}/u.test(text)) {
     return false
@@ -834,7 +837,11 @@ function notdefMarkSynthetic(text, oldRow, newRow, grouped) {
       (ra.embolden === true || ra.skew !== 0) &&
       ra.glyphs.every((glyph) => glyph === 0) &&
       JSON.stringify(g.runs[r].clusters) === JSON.stringify(bc) &&
-      ac.every((cluster, i) => mark(cluster) || (ax[i] === bx[i] && ay[i] === by[i]))
+      ac.every((cluster, i) => {
+        const dx = Math.abs(ax[i] - bx[i])
+        const dy = Math.abs(ay[i] - by[i])
+        return mark(cluster) ? Math.max(dx, dy) < ra.size / 2 && (ra.embolden || dy === 0) : dx === 0 && dy === 0
+      })
     )
   })
   return runs && oldRow.metrics.every((v, i) => (i >= 1 && i <= 4) || v === newRow.metrics[i])
