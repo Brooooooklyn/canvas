@@ -710,7 +710,9 @@ struct skiac_font_collection {
 
   // `registered`: the call registered a face. Such a call is always kept,
   // as a repeat can pick another face of the family than the first call.
-  void addSetAlias(const char* family,
+  // Returns whether the active entries changed (font_families.cpp IsWebFont
+  // reads them, so the resolved families cached before are stale).
+  bool addSetAlias(const char* family,
                    const char* alias,
                    bool registered,
                    bool installed) {
@@ -718,12 +720,14 @@ struct skiac_font_collection {
       for (auto& entry : set_aliases) {
         if (entry.family == family && entry.alias == alias) {
           // The provider lists the alias with the family's face.
+          const bool changed = !entry.active;
           entry.active = true;
-          return;
+          return changed;
         }
       }
     }
     set_aliases.push_back({family, alias, assets->nextOrder(), installed});
+    return true;
   }
   // Set when the dynamic provider gains a face or an alias. FontCollection
   // memoizes findTypefaces() per {family list, weight, slant}, including

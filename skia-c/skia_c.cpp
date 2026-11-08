@@ -4748,9 +4748,14 @@ bool skiac_font_collection_set_alias(skiac_font_collection* c_font_collection,
   if (existing_typeface &&
       existing_typeface->uniqueID() == typeface->uniqueID()) {
     // Alias already points to the same typeface - true idempotency, no need to
-    // re-register
-    c_font_collection->addSetAlias(family, alias, /*registered=*/false,
-                                   installed);
+    // re-register. A new or reactivated entry still makes the alias a web
+    // font (font_families.cpp IsWebFont): Chrome 157, FontFace "Arial" with
+    // local(Arial), lang ja "40px Arial, -webkit-body" draws Arial, 48.93,
+    // also after the same text was measured before.
+    if (c_font_collection->addSetAlias(family, alias, /*registered=*/false,
+                                       installed)) {
+      c_font_collection->markCachesDirty();
+    }
     return true;
   }
 

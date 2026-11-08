@@ -908,3 +908,41 @@ test.serial('a setAlias name keeps its family under -webkit-body', async (t) => 
   )
   t.true(near(helvetica, ARIAL), `Helvetica: ${helvetica}`)
 })
+
+// A setAlias call that adds no face (the alias already names the family's
+// face, as setAlias('Arial', 'Arial')) is still a FontFace(alias,
+// local(family)), so -webkit-body keeps it also when the same text was
+// measured before the call. Chrome 157, FontFace "Arial" with local(Arial),
+// lang ja "40px Arial, -webkit-body" "Ag": 55.64 (Hiragino Kaku Gothic ProN)
+// before, 48.92578 (Arial) after. The old path draws Arial both times.
+test.serial('a setAlias call that adds no face keeps its name under -webkit-body', async (t) => {
+  if (!CAPTURE_DARWIN) {
+    t.pass('the macOS system fonts of the capture')
+    return
+  }
+  t.timeout(2 * CHILD_TIMEOUT, 'one child process')
+  const script = `
+    const { createCanvas, GlobalFonts, setTextRenderer } = require(${INDEX_JS})
+    setTextRenderer('system')
+    const width = () => {
+      const ctx = createCanvas(10, 10).getContext('2d')
+      ctx.font = '40px Arial, -webkit-body'
+      ctx.lang = 'ja'
+      return ctx.measureText('Ag').width
+    }
+    const before = width()
+    const set = GlobalFonts.setAlias('Arial', 'Arial')
+    console.log(JSON.stringify({ before, set, after: width() }))`
+  const { before, set, after } = JSON.parse(
+    await runChild(t, script, hostEnv(BLINK ? 'blink' : '', { LANG: 'C' })),
+  ) as {
+    before: number
+    set: boolean
+    after: number
+  }
+  const ARIAL = 48.92578125
+  const near = (a: number, b: number) => Math.abs(a - b) <= 1e-3
+  t.true(set)
+  t.true(near(before, BLINK ? 55.63999938964844 : ARIAL), `before: ${before}`)
+  t.true(near(after, ARIAL), `after: ${after}`)
+})
