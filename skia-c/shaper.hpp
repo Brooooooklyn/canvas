@@ -5,10 +5,9 @@
 // they are.
 //
 // NAPI_RS_CANVAS_SHAPER picks the path, once per process: unset or
-// "skparagraph" lays every line out with skparagraph, "blink" asks
-// LayOutLineBlink first. While the shaper is being built, LayOutLineBlink
-// turns down each request it cannot lay out yet, and skparagraph lays that
-// one out; skiac_debug_shaper_stats counts both outcomes.
+// "skparagraph" lays every line out with skparagraph, "blink" with
+// LayOutLineBlink, which lays out every request (stage S9: none is turned
+// down to skparagraph any more); skiac_debug_shaper_stats counts them.
 
 #ifndef SKIA_C_SHAPER_H
 #define SKIA_C_SHAPER_H
@@ -37,8 +36,7 @@ const std::string& HostLanguage();
 
 // The inputs a canvas font request picks its fonts with, made in one place
 // (ResolveFontRequest) for every path that must pick the fonts the shaper
-// picks: the shaper, a line it turns down (text.cpp LayOutLine: skparagraph's
-// families, ComputeUsedSizes, locale and case map) and the ic unit
+// picks: the shaper and the ic unit
 // (skiac_font_collection_ideographic_advance: Blink's FontSizes::Ic reads the
 // primary font of the canvas font, the one its text uses). With the shaper
 // on: FontDescription::LocaleOrDefault (D19) and that locale's font settings
@@ -48,10 +46,6 @@ struct FontResolution {
   // LocaleOrDefault as a language tag: the host language for "inherit", "und"
   // for "", else the tag. With the shaper off, the request's lang.
   std::string lang;
-  // The lang skparagraph gives its locale and the case map: the host
-  // language for "inherit", else the request's lang ("" stays no locale).
-  // With the shaper off, the request's lang.
-  std::string paragraph_lang;
   // LocaleFontFamilies of `lang`; none with the shaper off.
   std::optional<LocaleFamilies> families;
   // For ResolveFontFamilies, CachedFontFamilies and ComputeUsedSizes.
@@ -62,49 +56,15 @@ struct FontResolution {
 FontResolution ResolveFontRequest(skiac_font_collection* c_collection,
                                   const skiac_text_request& request);
 
-// Lays out `request` with the Blink shaper into `line` and returns true, or
-// returns false and leaves `line` as it was: skparagraph then lays it out.
-// `resolution` is ResolveFontRequest's for `request` (the shaper is on).
-// Every font argument list is noted (noteFontArguments) before the shaper
-// takes a reference into the caches, and the caches are dropped only after
-// the layout (FindOrLayOutLine), so references stay valid for the whole
-// call.
-bool LayOutLineBlink(skiac_font_collection* c_collection,
+// Lays out `request` with the Blink shaper into `line`. `resolution` is
+// ResolveFontRequest's for `request` (the shaper is on). Every font argument
+// list is noted (noteFontArguments) before the shaper takes a reference into
+// the caches, and the caches are dropped only after the layout
+// (FindOrLayOutLine), so references stay valid for the whole call.
+void LayOutLineBlink(skiac_font_collection* c_collection,
                      const skiac_text_request& request,
                      const FontResolution& resolution,
                      TextCaches::Line* line);
-
-// Why LayOutLineBlink turned a request down: one value for each kind of
-// request the shaper cannot lay out yet. Each step of the work removes
-// values; when none is left, every request is laid out by the shaper.
-enum class ShaperReject : uint32_t {
-  // Kept so the slot numbers stay; no request is turned down for it now.
-  kNotImplemented = 0,
-  // Kept so the slot numbers stay: letterSpacing and wordSpacing are laid
-  // out since stage S4 (ShapeResultSpacing).
-  kLetterSpacing,
-  kWordSpacing,
-  // Kept so the slot numbers stay: fontVariantCaps is laid out since stage
-  // S5 (caps per font in the shaping loop).
-  kCaps,
-  // Kept so the slot numbers stay: a family with its own size or opsz
-  // (UsedSizes::faces) is laid out since stage S6 (each FontEntry has its
-  // size and opsz, in one shaping pass).
-  kFaceSizes,
-  // The line has no family font: the family matching found no face at all
-  // (no font manager has a typeface), or a face has no font data. A
-  // character no family draws is laid out since stage S3 with the Apple
-  // system renderer and since stage P2 everywhere else (no system fallback
-  // source: the first font's .notdef, as the old path draws it).
-  kFallback,
-  // Kept so the slot numbers stay: variation selectors are laid out since
-  // stage S3 (the second pass that ignores them).
-  kVariationSelector,
-  // Not used since stage S8 (the family list has the standard font of the
-  // locale's script); the slot is kept so the counters keep their indices.
-  kLocaleFallback,
-  kCount,
-};
 
 // ---- the shaper's types ----
 
@@ -539,11 +499,11 @@ sk_sp<SkTypeface> SystemFallbackInstance(skiac_font_collection* c_collection,
 extern "C" {
 
 constexpr size_t kShaperRejectSlots = 16;
-static_assert(static_cast<size_t>(ShaperReject::kCount) <= kShaperRejectSlots,
-              "skiac_shaper_stats::rejected has a slot for each reason");
 
-// LayOutLineBlink's outcomes in this process: the requests it laid out, and
-// the ones it turned down by ShaperReject value.
+// LayOutLineBlink's outcomes in this process: the requests it laid out.
+// Since stage S9 it lays out every request, so `rejected` (the counts of
+// requests it turned down, by reason, before S9) stays 0; the struct keeps
+// its layout until the old path and this entry point go (stage S10).
 struct skiac_shaper_stats {
   uint64_t accepted;
   uint64_t rejected[kShaperRejectSlots];

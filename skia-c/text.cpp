@@ -473,13 +473,12 @@ std::vector<SizeRun> PieceSizeRuns(const std::vector<SizeRun>& runs,
   return parts;
 }
 
-// Lays out `request` into `line` with skparagraph. `locale`: the font
-// settings of ResolveFontRequest (shaper.hpp FontResolution::locale) for a
-// line the shaper turns down, null with the shaper off.
+// Lays out `request` into `line` with skparagraph (the shaper is off: the
+// common font settings, no locale's).
 void LayOutLineParagraph(skiac_font_collection* c_collection,
                          const skiac_text_request& request,
-                         const LocaleFamilies* locale,
                          Line* line) {
+  const LocaleFamilies* const locale = nullptr;
   auto font_collection = c_collection->collection;
   auto font_style =
       SkFontStyle(static_cast<int>(roundf(request.weight)), request.stretch,
@@ -924,26 +923,17 @@ void LayOutLineParagraph(skiac_font_collection* c_collection,
   line->words = std::move(words);
 }
 
-// Lays out `request` into `line`: with the Blink shaper when it is on and
-// takes the request (shaper.cpp), else with skparagraph.
+// Lays out `request` into `line`: with the Blink shaper (shaper.cpp), or
+// with skparagraph when NAPI_RS_CANVAS_SHAPER is "skparagraph".
 void LayOutLine(skiac_font_collection* c_collection,
                 const skiac_text_request& request,
                 Line* line) {
   if (!BlinkShaperOn()) {
-    LayOutLineParagraph(c_collection, request, nullptr, line);
+    LayOutLineParagraph(c_collection, request, line);
     return;
   }
-  const FontResolution resolution = ResolveFontRequest(c_collection, request);
-  if (LayOutLineBlink(c_collection, request, resolution, line)) {
-    return;
-  }
-  // A line the shaper turns down picks its fonts as the shaper does: the
-  // same families and sizes (the locale's font settings), and the host
-  // language for "inherit" in skparagraph's locale and the case map.
-  skiac_text_request fallback = request;
-  fallback.lang = resolution.paragraph_lang.data();
-  fallback.lang_len = resolution.paragraph_lang.size();
-  LayOutLineParagraph(c_collection, fallback, resolution.locale(), line);
+  LayOutLineBlink(c_collection, request,
+                  ResolveFontRequest(c_collection, request), line);
 }
 
 // The cached layout of `request`, laid out now if there is none.

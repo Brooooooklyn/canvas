@@ -25,7 +25,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const require = createRequire(import.meta.url)
 
 // The stage this branch has landed, and the classes it may change.
-const STAGE = 'P2'
+const STAGE = 'S9'
 const ALLOWED = new Set([
   // PR-D10: no forced liga 0 (letter spacing is still turned down in S2).
   'd10',
@@ -775,17 +775,8 @@ function cases() {
   return out.map((c, i) => ({ id: i, ...c }))
 }
 
-// Whether the new path must lay a case out in this stage. Letter and word
-// spacing are laid out since S4, font-variant-caps since S5,
-// font-size-adjust (a size per family) since S6, a character no family has
-// since S3 with the system renderer on macOS and since P2 everywhere else
-// (no system fallback source: the first font's .notdef). Only a line with
-// no family font at all is turned down (ShaperReject::kFallback), which a
-// family list of NoSuchFamily could give on a host with no fonts.
-function mustAccept(c) {
-  return !c.font.includes('NoSuchFamily')
-}
-
+// Since stage S9 the new path lays out every case: a case it turns down (it
+// cannot any more, the reject code is gone) or does not count fails.
 // The classes of the Apple system fallback (S3), which only the system
 // renderer on macOS has; elsewhere such a case draws the first font's
 // .notdef, as the old path does.
@@ -1026,8 +1017,8 @@ function compare(oldFile, newFile, limit) {
     }
     if (b.accepted) {
       accepted++
-    } else if (b.accepted === false && mustAccept(c)) {
-      failures.push(`${label}: turned down (reasons ${b.rejected.join(',')})`)
+    } else if (b.accepted === false) {
+      failures.push(`${label}: not laid out by the Blink shaper (reasons ${b.rejected.join(',')})`)
     }
     const diffs = []
     if (JSON.stringify(a.metrics) !== JSON.stringify(b.metrics)) {
