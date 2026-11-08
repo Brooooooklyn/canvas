@@ -181,10 +181,13 @@ struct UsedSizes {
 };
 
 // `base_faces` are the request's families' faces before font arguments
-// (FontCollection::findTypefaces of `families`).
+// (FontCollection::findTypefaces of `families`); `standard_family`, when not
+// empty, is the standard font those families end with
+// (ResolveFontFamilies).
 UsedSizes ComputeUsedSizes(skiac_font_collection* c_collection,
                            const std::vector<sk_sp<SkTypeface>>& base_faces,
-                           const skiac_text_request& request);
+                           const skiac_text_request& request,
+                           std::string_view standard_family = {});
 
 // FontPlatformData's synthetic bold (SkFont embolden) and italic (skew).
 struct SyntheticStyle {

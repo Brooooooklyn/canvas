@@ -584,9 +584,14 @@ bool IsOtherScriptName(std::string_view name) {
   if (name.size() != 4) {
     return false;
   }
+  // Letters only, so that the search matches one whole name ("y qa" would
+  // match across "zyyy qaai").
   std::string lower(name);
   for (char& c : lower) {
     c = static_cast<char>(c >= 'A' && c <= 'Z' ? c + ('a' - 'A') : c);
+    if (c < 'a' || c > 'z') {
+      return false;
+    }
   }
   return kNames.find(lower) != std::string_view::npos;
 }

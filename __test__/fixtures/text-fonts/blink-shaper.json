@@ -15147,6 +15147,98 @@
       },
       "system": true,
       "chrome": [271.91986083984375, -1.7599999904632568, 268.9798889160156, 34.560001373291016, 9.560001373291016]
+    },
+    "lang: ja 40px BSLato font-size-adjust 0.5 あ": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "あ",
+      "ctx": {
+        "lang": "ja"
+      },
+      "css": {
+        "fontSizeAdjust": "0.5"
+      },
+      "system": true,
+      "chrome": [36.68998718261719, -3.9992096424102783, 32.544029235839844, 29.828969955444336, 1.5042915344238281],
+      "flip": "S8"
+    },
+    "lang: ja 40px BSLato font-size-adjust 0.5 a→": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "a→",
+      "ctx": {
+        "lang": "ja"
+      },
+      "css": {
+        "fontSizeAdjust": "0.5"
+      },
+      "system": true,
+      "chrome": [56.70634460449219, -1.8160799741744995, 55.312137603759766, 21.463647842407227, 0.3158416748046875],
+      "flip": "S8"
+    },
+    "lang: ko 40px BSLato font-size-adjust 0.5 한": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "한",
+      "ctx": {
+        "lang": "ko"
+      },
+      "css": {
+        "fontSizeAdjust": "0.5"
+      },
+      "system": true,
+      "chrome": [32.15203857421875, -1.2637799978256226, 31.334308624267578, 29.884679794311523, 1.5611419677734375],
+      "flip": "S8"
+    },
+    "lang: zh-CN 40px BSLato font-size-adjust 0.5 水": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "水",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "css": {
+        "fontSizeAdjust": "0.5"
+      },
+      "system": true,
+      "chrome": [38.67999267578125, -1.5085200071334839, 37.21015930175781, 31.75627899169922, 3.7132835388183594],
+      "flip": "S8"
+    },
+    "lang: hi 40px BSLato font-size-adjust 0.5 नम": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "नम",
+      "ctx": {
+        "lang": "hi"
+      },
+      "css": {
+        "fontSizeAdjust": "0.5"
+      },
+      "system": true,
+      "chrome": [48.7109375, 0.05859375, 49.21875, 24.3359375, 0.6640625],
+      "flip": "S8"
+    },
+    "lang: ja-y qa a→": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "a→",
+      "ctx": {
+        "lang": "ja-y qa"
+      },
+      "system": true,
+      "chrome": [60.279998779296875, -1.840000033378601, 58.7599983215332, 23.399999618530273, 0.32000160217285156],
+      "flip": "S8"
+    },
+    "lang: ja-y qa 水。、水": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "水。、水",
+      "ctx": {
+        "lang": "ja-y qa"
+      },
+      "system": true,
+      "chrome": [140, -1.6799999475479126, 138.44000244140625, 32.84000015258789, 2.640003204345703],
+      "flip": "S8"
     }
   }
 }

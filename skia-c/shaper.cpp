@@ -1229,7 +1229,11 @@ std::string CanonicalPosixLocale(std::string_view name) {
 
 // GetApplicationLocaleInternalNonMac with GLib (Linux): g_get_language_names
 // (LANGUAGE as a ':' list, else LC_ALL, else LC_MESSAGES, else LANG; "C"
-// last), each through CheckAndResolveLocale; else "en-US".
+// last), each through CheckAndResolveLocale; else "en-US". GLib lists each
+// name's variants, the one without the modifier after the one with it
+// (g_get_locale_variants: "de_DE@euro", "de_DE", "de@euro", "de"), and
+// CheckAndResolveLocale turns down every name with a modifier, so
+// "de_DE@euro" is "de".
 std::string PosixHostLanguage() {
   const char* value = nullptr;
   for (const char* name : {"LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG"}) {
@@ -1242,8 +1246,12 @@ std::string PosixHostLanguage() {
   std::string_view list = value ? value : "";
   while (!list.empty()) {
     const size_t colon = list.find(':');
-    const std::string resolved =
-        CheckAndResolveLocale(CanonicalPosixLocale(list.substr(0, colon)));
+    const std::string_view name = list.substr(0, colon);
+    std::string resolved = CheckAndResolveLocale(CanonicalPosixLocale(name));
+    if (resolved.empty() && name.find('@') != std::string_view::npos) {
+      resolved = CheckAndResolveLocale(
+          CanonicalPosixLocale(name.substr(0, name.find('@'))));
+    }
     if (!resolved.empty()) {
       return resolved;
     }
@@ -1389,12 +1397,16 @@ bool LayOutLineBlink(skiac_font_collection* c_collection,
   // into the caches is taken. The families are copied: the cache entry is
   // a reference into TextCaches. The last one is the standard font of the
   // locale's script (FontFallbackList::GetFontData's -webkit-standard).
-  const std::vector<SkString> families = CachedFontFamilies(
-      c_collection, request,
-      LocaleStandardFamily(c_collection, lang, HostLanguage()));
+  // ComputeUsedSizes sizes the same families (a generic family, the
+  // standard font too, at its own aspect under font-size-adjust).
+  const std::string standard_family =
+      LocaleStandardFamily(c_collection, lang, HostLanguage());
+  const std::vector<SkString> families =
+      CachedFontFamilies(c_collection, request, standard_family);
   const std::vector<sk_sp<SkTypeface>> base_faces =
       font_collection->findTypefaces(families, font_style);
-  const UsedSizes sizes = ComputeUsedSizes(c_collection, base_faces, request);
+  const UsedSizes sizes =
+      ComputeUsedSizes(c_collection, base_faces, request, standard_family);
   const std::vector<SkFontArguments::VariationPosition::Coordinate> coords =
       FontVariations(base_faces, request, sizes.opsz);
   std::optional<FontArguments> font_args;

@@ -435,6 +435,9 @@ test.serial('"inherit" follows the host language like Chrome', (t) => {
     [{ LANGUAGE: 'tr' }, [46.19999694824219, 140, 120, 140, 9.32421875, 17.920211791992188]],
     [{ LANG: 'ja_JP.UTF-8' }, [92, 140, 120, 140, 8.595993041992188, 17.191986083984375]],
     [{ LANG: 'zh_TW.UTF-8' }, [50.69999694824219, 160, 120, 140, 8.595993041992188, 17.191986083984375]],
+    // GLib also lists the name without its modifier, which Chrome takes ("de";
+    // Chrome 157 with -AppleLanguages (de): LoclProbe 76.6, DEU).
+    [{ LANG: 'de_DE@euro' }, [76.59999084472656, 140, 120, 140, 8.595993041992188, 17.191986083984375]],
   ]
   // The old path does not read the host language (dflt, no HanKerning).
   const OLD = [50.69999694824219, 160, 160, 160, 8.595993041992188, 17.191986083984375]
