@@ -499,6 +499,28 @@ test.serial('a private use hint makes its neighbours .notdef as in Chrome', (t) 
   )
 })
 
+// Blink keeps ctx.lang as given (BaseRenderingContext2D::setLang,
+// LayoutLocale::Get: no cap), so a long malformed tag is walked subtag by
+// subtag for the Han script (LayoutLocale::ComputeScriptForHan): that walk
+// must stay linear. "en-xx-...-xx", 500000 bytes, is laid out as "en" in
+// both paths (the shaper took about a minute for it before).
+test.serial('a 500 KB malformed lang is laid out fast, as "en"', (t) => {
+  const width = (lang: string) => {
+    const ctx = createCanvas(10, 10).getContext('2d')
+    ctx.font = '40px BSLato'
+    ctx.lang = lang
+    return ctx.measureText('Ag').width
+  }
+  const en = width('en')
+  const lang = `en-${'xx-'.repeat(166_665)}xx`
+  t.is(lang.length, 500_000)
+  const start = performance.now()
+  const long = width(lang)
+  const elapsed = performance.now() - start
+  t.is(long, en)
+  t.true(elapsed < 2000, `${elapsed} ms`)
+})
+
 // D19: with ctx.lang "inherit" the shaper takes the host's UI language
 // (LayoutLocale::GetDefault) for the HarfBuzz language, the case map locale
 // and HanKerning's locale. Each child process sets the language through the

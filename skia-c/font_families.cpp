@@ -780,6 +780,11 @@ StandardScript LocaleStandardScript(std::string_view lang,
       {"hans", StandardScript::kSimplifiedHan},
       {"hant", StandardScript::kTraditionalHan},
   };
+  // No list entry is longer than 6 bytes: a longer whole tag is none, without
+  // the copy (HanScriptForLocale asks once per subtag of the tag).
+  if (whole_tag && lang.size() > 6) {
+    return StandardScript::kCommon;
+  }
   // BCP 47's '-', also for ICU's '_'.
   std::string tag(lang);
   std::replace(tag.begin(), tag.end(), '_', '-');
