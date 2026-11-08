@@ -41,7 +41,7 @@ TextCaches& GetTextCaches(skiac_font_collection* c_collection) {
 const std::vector<SkString>& CachedFontFamilies(
     skiac_font_collection* c_collection,
     const skiac_text_request& request,
-    std::string_view standard_family) {
+    const LocaleFamilies* locale) {
   auto& cache = GetTextCaches(c_collection).families;
   if (cache.size() > 256) {
     NoteTextCachesChange();
@@ -55,19 +55,28 @@ const std::vector<SkString>& CachedFontFamilies(
     key.append(reinterpret_cast<const char*>(prefix), sizeof(prefix));
     key.append(family.name, family.name_len);
   }
-  if (!standard_family.empty()) {
-    // A family entry's prefix never has a negative generic value.
-    const int64_t prefix[2] = {-1,
-                               static_cast<int64_t>(standard_family.size())};
-    key.append(reinterpret_cast<const char*>(prefix), sizeof(prefix));
-    key.append(standard_family);
+  if (locale) {
+    // A family entry's prefix never has a negative generic value: -1 is the
+    // standard font, -2 - g the setting of generic family g.
+    auto append = [&key](int64_t tag, const std::string& name) {
+      if (name.empty()) {
+        return;
+      }
+      const int64_t prefix[2] = {tag, static_cast<int64_t>(name.size())};
+      key.append(reinterpret_cast<const char*>(prefix), sizeof(prefix));
+      key.append(name);
+    };
+    append(-1, locale->standard);
+    for (int64_t g = 0; g < 9; ++g) {
+      append(-2 - g, locale->generic[g]);
+    }
   }
   auto found = cache.find(key);
   if (found == cache.end()) {
     found = cache
-                .emplace(std::move(key),
-                         ResolveFontFamilies(c_collection, request, nullptr,
-                                             standard_family))
+                .emplace(
+                    std::move(key),
+                    ResolveFontFamilies(c_collection, request, nullptr, locale))
                 .first;
   }
   return found->second;

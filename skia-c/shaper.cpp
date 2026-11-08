@@ -1395,18 +1395,19 @@ bool LayOutLineBlink(skiac_font_collection* c_collection,
   const std::string lang = ResolvedLanguage(request);
   // The FontList, with every noteFontArguments call, before any reference
   // into the caches is taken. The families are copied: the cache entry is
-  // a reference into TextCaches. The last one is the standard font of the
-  // locale's script (FontFallbackList::GetFontData's -webkit-standard).
-  // ComputeUsedSizes sizes the same families (a generic family, the
-  // standard font too, at its own aspect under font-size-adjust).
-  const std::string standard_family =
-      LocaleStandardFamily(c_collection, lang, HostLanguage());
+  // a reference into TextCaches. A generic family takes the setting of the
+  // locale's script (FontSelector::FamilyNameFromSettings), and the last one
+  // is the standard font of that script (FontFallbackList::GetFontData's
+  // -webkit-standard). ComputeUsedSizes sizes the same families (a generic
+  // family, the standard font too, at its own aspect under font-size-adjust).
+  const LocaleFamilies locale_families =
+      LocaleFontFamilies(c_collection, lang, HostLanguage());
   const std::vector<SkString> families =
-      CachedFontFamilies(c_collection, request, standard_family);
+      CachedFontFamilies(c_collection, request, &locale_families);
   const std::vector<sk_sp<SkTypeface>> base_faces =
       font_collection->findTypefaces(families, font_style);
   const UsedSizes sizes =
-      ComputeUsedSizes(c_collection, base_faces, request, standard_family);
+      ComputeUsedSizes(c_collection, base_faces, request, &locale_families);
   const std::vector<SkFontArguments::VariationPosition::Coordinate> coords =
       FontVariations(base_faces, request, sizes.opsz);
   std::optional<FontArguments> font_args;

@@ -178,6 +178,18 @@ const ALLOWED = new Set([
   // BSLato ja 水。、水" 140 (old path 160), 40px BSLato lang ja "İstanbul
   // ılık şğü" 276.08 (old path 267.89).
   'locale-standard',
+  // S8, a generic family takes the setting of the locale's script
+  // (FontSelector::FamilyNameFromSettings, GenericFontFamilySettings by
+  // script), on macOS with the system renderer: serif Hiragino Mincho ProN /
+  // AppleMyungjo / Songti SC, TC / Devanagari MT, sans-serif Hiragino Kaku
+  // Gothic ProN / Apple SD Gothic Neo / PingFang SC, TC / Kohinoor
+  // Devanagari, cursive Kaiti SC, TC, -webkit-body the standard font. Chrome
+  // 157 (blink-shaper.json, stages/S8/generic/chrome-gen.json): "lang: ja
+  // 40px serif Ag" 50.84 (old path 48.89, Times), "lang: ja 40px serif 直骨"
+  // actualBoundingBoxLeft -2.32 (shaper before -3.16), "lang: zh-CN 40px
+  // cursive 水说" -4.68 (before -1.56), "lang: hi 40px sans-serif नम" 43.68
+  // (before 48.71).
+  'locale-generic',
 ])
 
 const FONTS = {
@@ -587,6 +599,26 @@ const LANGUAGE = [
     { lang, fontVariantCaps: 'small-caps' },
     lang === 'inherit' ? ['host-language', 'caps-clusters'] : ['caps-clusters'],
   ]),
+  // The generic families by the locale's script (installed fonts: macOS
+  // system renderer only).
+  ...[
+    ['ja', 'Agあ直'],
+    ['ko', 'Ag한直'],
+    ['zh-CN', 'Ag水说'],
+    ['zh-TW', 'Ag水說'],
+    ['hi', 'Agनम'],
+    ['ar', 'Agمرحبا'],
+    ['ru', 'AgПривет'],
+    ['inherit', 'Ag直'],
+    ['', 'Ag直'],
+  ].flatMap(([lang, text]) =>
+    ['serif', 'sans-serif', 'cursive', 'monospace', '-webkit-body', 'BSLato, serif'].map((families) => [
+      text,
+      `40px ${families}`,
+      { lang },
+      ['locale-generic', 'system-fallback', 'script'],
+    ]),
+  ),
 ]
 
 // One property changed at a time on a few texts.

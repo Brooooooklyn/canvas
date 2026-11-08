@@ -492,8 +492,12 @@ const char* SystemUiFamily(bool system) {
   return "sans";  // the desktop default, fontconfig's sans-serif
 }
 
+// `script_setting`, when not empty, is the setting of the locale's script
+// for this generic family (LocaleFamilies::generic), in place of the common
+// one.
 bool ResolveGeneric(const FamilyResolver& resolver,
                     int generic,
+                    std::string_view script_setting,
                     std::string* out) {
   // A family registered under the keyword itself is how a Node program sets
   // its generic families (decision: the registered alias wins).
@@ -504,11 +508,16 @@ bool ResolveGeneric(const FamilyResolver& resolver,
   if (generic == kSystemUi) {
     return resolver.FindSystem(SystemUiFamily(resolver.system()), out);
   }
-  // CSSFontSelector::GetFontData: the settings family, then
-  // FontFallbackList asks the font cache for the generic name itself
-  // (FontBuilder::GenericFontFamilyName: -webkit-body is -webkit-standard).
-  const char* settings = SettingsFamily(generic, resolver.system());
-  if (settings && resolver.FindSystem(settings, out)) {
+  // CSSFontSelector::GetFontData: the settings family
+  // (GenericFontFamilySettings::Serif(script) etc.: the script's own when it
+  // has one, else the common one), then FontFallbackList asks the font cache
+  // for the generic name itself (FontBuilder::GenericFontFamilyName:
+  // -webkit-body is -webkit-standard).
+  const char* common = SettingsFamily(generic, resolver.system());
+  const std::string_view settings = !script_setting.empty() ? script_setting
+                                    : common ? std::string_view(common)
+                                             : std::string_view();
+  if (!settings.empty() && resolver.FindSystem(settings, out)) {
     return true;
   }
   return resolver.FindSystem(
@@ -812,7 +821,7 @@ int HanScriptForLocale(std::string_view lang) {
 std::vector<SkString> ResolveFontFamilies(skiac_font_collection* c_collection,
                                           const skiac_text_request& request,
                                           std::vector<bool>* generic,
-                                          std::string_view standard_family) {
+                                          const LocaleFamilies* locale) {
   FamilyResolver resolver(c_collection);
   std::vector<SkString> resolved;
   auto add = [&resolved, generic](const std::string& name, bool is_generic) {
@@ -835,7 +844,12 @@ std::vector<SkString> ResolveFontFamilies(skiac_font_collection* c_collection,
     std::string name;
     bool found;
     if (family.generic) {
-      found = ResolveGeneric(resolver, family.generic, &name);
+      found =
+          ResolveGeneric(resolver, family.generic,
+                         locale && family.generic > 0 && family.generic < 9
+                             ? std::string_view(locale->generic[family.generic])
+                             : std::string_view(),
+                         &name);
       if (family.generic != kSystemUi && family.generic != kMath) {
         description_generic = family.generic;
       }
@@ -851,7 +865,7 @@ std::vector<SkString> ResolveFontFamilies(skiac_font_collection* c_collection,
   // The standard font comes through the font selector as a generic family
   // (-webkit-standard): the one of the locale's script when the caller has
   // it, else the common one.
-  std::string standard(standard_family);
+  std::string standard(locale ? locale->standard : std::string());
   if (!standard.empty() ||
       ResolveStandard(resolver, description_generic, &standard)) {
     add(standard, true);
@@ -928,6 +942,78 @@ std::string LocaleStandardFamily(skiac_font_collection* c_collection,
   (void)host_language;
 #endif
   return {};
+}
+
+LocaleFamilies LocaleFontFamilies(skiac_font_collection* c_collection,
+                                  std::string_view lang,
+                                  std::string_view host_language) {
+  LocaleFamilies families;
+  families.standard = LocaleStandardFamily(c_collection, lang, host_language);
+#if defined(__APPLE__)
+  FamilyResolver resolver(c_collection);
+  // The same scripts and host rule as the standard font: PrefsTabHelper::
+  // RegisterProfilePrefs registers the per-script defaults of every generic
+  // family in one loop (kFontDefaults) and skips them all for the script of
+  // the UI locale. Chrome 157 with -AppleLanguages (ja): lang "ja" "40px
+  // serif Ag" is Times, lang "zh-CN" and "ko" get Songti SC and AppleMyungjo.
+  if (!resolver.system() || lang.empty()) {
+    return families;
+  }
+  const StandardScript script = LocaleStandardScript(lang);
+  if (script == LocaleStandardScript(host_language)) {
+    return families;
+  }
+  // locale_settings_mac.grd IDS_{SERIF,SANS_SERIF,CURSIVE,FIXED}_FONT_FAMILY_*
+  // as kFontDefaults registers them on macOS. A list (a leading ',') is its
+  // first available family (gfx::FontList::FirstAvailableOrFirst), the same
+  // lists as the standard font's. Not modeled: the Japanese fixed font
+  // (",Osaka,BIZ UDGothic,Menlo", Osaka, which Fixed() turns into
+  // Osaka-Mono): Osaka-Mono is the "Regular-Mono" face of the family Osaka,
+  // which only the PostScript-name match of font_matcher_mac.mm
+  // MatchFontFamily finds; lang "ja" monospace keeps the common Menlo.
+  struct Settings {
+    std::vector<const char*> serif;
+    std::vector<const char*> sans_serif;
+    std::vector<const char*> cursive;
+    std::vector<const char*> monospace;
+  } settings;
+  switch (script) {
+    case StandardScript::kJapanese:
+      settings = {
+          {"Hiragino Mincho ProN"}, {"Hiragino Kaku Gothic ProN"}, {}, {}};
+      break;
+    case StandardScript::kKorean:
+      settings = {{"AppleMyungjo"}, {"Apple SD Gothic Neo"}, {}, {}};
+      break;
+    case StandardScript::kSimplifiedHan:
+      settings = {{"Songti SC"}, {"PingFang SC", "STHeiti"}, {"Kaiti SC"}, {}};
+      break;
+    case StandardScript::kTraditionalHan:
+      settings = {{"Songti TC"}, {"PingFang TC", "Heiti TC"}, {"Kaiti TC"}, {}};
+      break;
+    case StandardScript::kDevanagari:
+      settings = {{"Devanagari MT"}, {"Kohinoor Devanagari"}, {}, {"Menlo"}};
+      break;
+    case StandardScript::kCommon:
+      return families;
+  }
+  auto first_available = [&resolver](const std::vector<const char*>& names) {
+    std::string name;
+    for (const char* candidate : names) {
+      if (resolver.FindSystem(candidate, &name)) {
+        return std::string(candidate);
+      }
+    }
+    return names.empty() ? std::string() : std::string(names.front());
+  };
+  families.generic[kSerif] = first_available(settings.serif);
+  families.generic[kSansSerif] = first_available(settings.sans_serif);
+  families.generic[kCursive] = first_available(settings.cursive);
+  families.generic[kMonospace] = first_available(settings.monospace);
+  // FamilyNameFromSettings: -webkit-body is Standard(script).
+  families.generic[kWebkitBody] = families.standard;
+#endif
+  return families;
 }
 
 // The canvas parses `font` against a 10px `sans-serif` style made without a
