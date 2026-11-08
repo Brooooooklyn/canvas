@@ -196,11 +196,11 @@ hb_font_t* MakeParentFont(hb_face_t* face, SkTypeface* typeface) {
 }
 
 // A face without a `cmap` table (one HarfBuzz cannot read as SFNT: a Type 1
-// font FreeType loads) maps characters with Skia, as the old path does
+// font FreeType loads) maps characters with Skia, as skshaper does
 // (SkShaper_harfbuzz.cpp skhb_nominal_glyph): a sub font of the parent with
 // SkTypeface::unicharToGlyph as its nominal glyph and HarfBuzz's own funcs
-// for the rest, where no variation glyph (no cmap 14) is found, as on the
-// old path. Every user of the parent font (the shaper, HbNominalGlyph) then
+// for the rest, where no variation glyph (no cmap 14) is found, as in
+// skshaper. Every user of the parent font (the shaper, HbNominalGlyph) then
 // has the same mapping. An SFNT face keeps HarfBuzz's cmap. Takes over
 // `font`.
 hb_font_t* MapWithSkiaWithoutCmap(hb_font_t* font, SkTypeface* typeface) {

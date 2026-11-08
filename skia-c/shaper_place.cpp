@@ -104,9 +104,9 @@ PlacedLine PlaceItems(const std::vector<ShapedItem>& items,
   for (const ShapedItem& item : items) {
     placed.blink.item_widths.push_back(item.result.width);
   }
-  // The item whose left edge an inkless line's box sits at (text.cpp
-  // MeasureOrDraw): the logically last for an LTR base, the logically first
-  // for an RTL one, as the skparagraph path takes its words.
+  // The item whose left edge an inkless line's box sits at: the logically
+  // last for an LTR base, the logically first for an RTL one
+  // (skiac_debug_text_line's lastWordAdvance).
   const ShapedItem* edge = nullptr;
   for (const ShapedItem& item : items) {
     if (!edge || (rtl_base ? item.item.start < edge->item.start

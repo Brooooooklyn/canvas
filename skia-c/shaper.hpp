@@ -1,14 +1,8 @@
 // The Blink-style text shaper: canvas text shaped with HarfBuzz the way
 // Blink's PlainTextNode / HarfBuzzShaper do it, in place of skparagraph's
-// shaping and fallback. It lays out into the same TextCaches::Line as the
-// skparagraph path (text.cpp LayOutLine), so drawing and measuring stay as
-// they are.
-//
-// NAPI_RS_CANVAS_SHAPER picks the path, once per process: unset (the
-// default since stage S9) or any value but "skparagraph" lays every line out
-// with LayOutLineBlink; "skparagraph" keeps the old skparagraph path, for
-// the differential harness until the old path goes (stage S10).
-// skiac_debug_shaper_stats counts the lines the shaper laid out.
+// shaping and fallback (only skparagraph's FontCollection is kept). It lays
+// out every line into a TextCaches::Line (text.cpp FindOrLayOutLine), which
+// text.cpp draws and measures.
 
 #ifndef SKIA_C_SHAPER_H
 #define SKIA_C_SHAPER_H
@@ -25,11 +19,7 @@
 #include "text.hpp"
 #include "text_caches.hpp"
 
-// ---- the switch and the entry point ----
-
-// NAPI_RS_CANVAS_SHAPER != "skparagraph", read once per process (so it is
-// not part of the line key).
-bool BlinkShaperOn();
+// ---- the entry point ----
 
 // The host's UI language that ctx.lang "inherit" takes (LayoutLocale::
 // GetDefault, D19), read once per process (FontResolution).
@@ -39,15 +29,14 @@ const std::string& HostLanguage();
 // (ResolveFontRequest) for every path that must pick the fonts the shaper
 // picks: the shaper and the ic unit
 // (skiac_font_collection_ideographic_advance: Blink's FontSizes::Ic reads the
-// primary font of the canvas font, the one its text uses). With the shaper
-// on: FontDescription::LocaleOrDefault (D19) and that locale's font settings
-// (LocaleFontFamilies, D20). With it off: the request's lang as given and no
-// settings (the common ones), so those paths stay as they were.
+// primary font of the canvas font, the one its text uses):
+// FontDescription::LocaleOrDefault (D19) and that locale's font settings
+// (LocaleFontFamilies, D20).
 struct FontResolution {
   // LocaleOrDefault as a language tag: the host language for "inherit", "und"
-  // for "", else the tag. With the shaper off, the request's lang.
+  // for "", else the tag.
   std::string lang;
-  // LocaleFontFamilies of `lang`; none with the shaper off.
+  // LocaleFontFamilies of `lang`.
   std::optional<LocaleFamilies> families;
   // For ResolveFontFamilies, CachedFontFamilies and ComputeUsedSizes.
   const LocaleFamilies* locale() const {
@@ -58,7 +47,7 @@ FontResolution ResolveFontRequest(skiac_font_collection* c_collection,
                                   const skiac_text_request& request);
 
 // Lays out `request` with the Blink shaper into `line`. `resolution` is
-// ResolveFontRequest's for `request` (the shaper is on). Every font argument
+// ResolveFontRequest's for `request`. Every font argument
 // list is noted (noteFontArguments) before the shaper takes a reference into
 // the caches, and the caches are dropped only after the layout
 // (FindOrLayOutLine), so references stay valid for the whole call.
@@ -498,29 +487,6 @@ sk_sp<SkTypeface> SystemFallbackInstance(skiac_font_collection* c_collection,
 // ---- debug entry points (cargo tests and the harness) ----
 
 extern "C" {
-
-constexpr size_t kShaperRejectSlots = 16;
-
-// LayOutLineBlink's outcomes in this process: the requests it laid out.
-// Since stage S9 it lays out every request, so `rejected` (the counts of
-// requests it turned down, by reason, before S9) stays 0; the struct keeps
-// its layout until the old path and this entry point go (stage S10).
-struct skiac_shaper_stats {
-  uint64_t accepted;
-  uint64_t rejected[kShaperRejectSlots];
-  // Layouts during which the collection's TextCaches were dropped or one of
-  // their maps cleared (LayOutLineBlink holds references into them): must
-  // stay 0.
-  uint64_t cache_changes;
-};
-
-// Fills `stats`; then sets the counts to 0 when `reset`.
-void skiac_debug_shaper_stats(skiac_shaper_stats* stats, bool reset);
-
-// BlinkShaperOn, for the Rust side: whether the font-metric units of
-// ctx.filter (ex, ch, cap, ic) read the canvas font with its ctx.lang, as
-// the text does with the shaper on (ResolveFontRequest).
-bool skiac_blink_shaper_on();
 
 // HarfBuzz's own Unicode data against ICU's, as Chromium's hb-icu.cc reads
 // ICU (shaper_ucd.cpp): the code points (or pairs) where they differ.
