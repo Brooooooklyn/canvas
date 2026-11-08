@@ -859,7 +859,10 @@ int HanScriptForLocale(std::string_view lang) {
     // A listed tag ends the walk (the list's other entries are bare
     // languages, which end it too).
     const StandardScript standard = LocaleStandardScript(view, true);
-    if (standard != StandardScript::kCommon || view.find('-') == view.npos) {
+    // From the end: a forward search would scan a long first subtag once per
+    // step of the walk.
+    const size_t pos = view.rfind('-');
+    if (standard != StandardScript::kCommon || pos == view.npos) {
       switch (standard) {
         case StandardScript::kJapanese:
           return USCRIPT_KATAKANA_OR_HIRAGANA;
@@ -874,7 +877,6 @@ int HanScriptForLocale(std::string_view lang) {
       }
       break;
     }
-    const size_t pos = view.rfind('-');
     if (view.size() - (pos + 1) == 4) {
       const int script = script_name(view.substr(pos + 1));
       if (script > 0) {

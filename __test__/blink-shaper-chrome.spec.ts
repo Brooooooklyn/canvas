@@ -521,6 +521,25 @@ test.serial('a 500 KB malformed lang is laid out fast, as "en"', (t) => {
   t.true(elapsed < 2000, `${elapsed} ms`)
 })
 
+// The same walk with a 500000-byte first subtag and 166666 short ones after
+// it: a search from the start of the tag at each step made it quadratic
+// (about 1.3 s; now a few ms).
+test.serial('a malformed lang with a long first subtag is laid out fast', (t) => {
+  const width = (lang: string) => {
+    const ctx = createCanvas(10, 10).getContext('2d')
+    ctx.font = '40px BSLato'
+    ctx.lang = lang
+    return ctx.measureText('Ag').width
+  }
+  const en = width('en')
+  const lang = `${'x'.repeat(500_000)}${'-xx'.repeat(166_666)}`
+  const start = performance.now()
+  const long = width(lang)
+  const elapsed = performance.now() - start
+  t.is(long, en)
+  t.true(elapsed < 500, `${elapsed} ms`)
+})
+
 // D19: with ctx.lang "inherit" the shaper takes the host's UI language
 // (LayoutLocale::GetDefault) for the HarfBuzz language, the case map locale
 // and HanKerning's locale. Each child process sets the language through the
