@@ -324,6 +324,11 @@ hb_bool_t hb_ot_layout_has_substitution(hb_face_t* face);
 hb_bool_t hb_ot_layout_has_positioning(hb_face_t* face);
 unsigned int hb_ot_layout_table_get_lookup_count(hb_face_t* face,
                                                  hb_tag_t table_tag);
+unsigned int hb_ot_layout_table_get_feature_tags(hb_face_t* face,
+                                                 hb_tag_t table_tag,
+                                                 unsigned int start_offset,
+                                                 unsigned int* feature_count,
+                                                 hb_tag_t* feature_tags);
 void hb_ot_layout_lookup_collect_glyphs(hb_face_t* face,
                                         hb_tag_t table_tag,
                                         unsigned int lookup_index,

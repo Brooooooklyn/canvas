@@ -302,7 +302,6 @@ constexpr bool IsSorted() {
 static_assert(IsSorted(), "binary search needs a sorted table");
 
 constexpr int UCHAR_IDEOGRAPHIC = 17;
-constexpr int UCHAR_BLOCK = 0x1001;
 constexpr int UCHAR_DECOMPOSITION_TYPE = 0x1003;
 constexpr int U_DT_CANONICAL = 1;
 constexpr int U_DT_COMPAT = 2;

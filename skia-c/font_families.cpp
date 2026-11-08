@@ -25,6 +25,7 @@
 
 #include <src/core/SkUTF.h>
 
+#include "icu_api.h"
 #include "text.hpp"
 #include "text_raster.hpp"
 
@@ -567,10 +568,10 @@ bool ResolveStandard(const FamilyResolver& resolver,
          ResolveLastResort(resolver, description_generic, out);
 }
 
-#if defined(__APPLE__)
 // The scripts macOS Chrome has a standard font of their own for
 // (locale_settings_mac.grd IDS_STANDARD_FONT_FAMILY_*); the others use the
-// common one, Times.
+// common one, Times. (On every OS also the Han script of a locale,
+// HanScriptForLocale.)
 enum class StandardScript {
   kCommon,
   kJapanese,
@@ -583,7 +584,10 @@ enum class StandardScript {
 // locale_to_script_mapping.cc LocaleToScriptCodeForFontSelection, telling
 // only the scripts above apart. Its list's other entries are all a bare
 // language, so they end the search where the tag has no subtag left anyway.
-StandardScript LocaleStandardScript(std::string_view lang) {
+// With `whole_tag`, the list entry `lang` is, without the walk (kCommon
+// when it is none: no entry is kCommon).
+StandardScript LocaleStandardScript(std::string_view lang,
+                                    bool whole_tag = false) {
   struct Subtag {
     const char* subtag;
     StandardScript script;
@@ -690,6 +694,9 @@ StandardScript LocaleStandardScript(std::string_view lang) {
         return entry.script;
       }
     }
+    if (whole_tag) {
+      break;
+    }
     const size_t pos = view.rfind('-');
     if (pos == std::string_view::npos) {
       break;
@@ -705,9 +712,116 @@ StandardScript LocaleStandardScript(std::string_view lang) {
   }
   return StandardScript::kCommon;
 }
-#endif
 
 }  // namespace
+
+int HanScriptForLocale(std::string_view lang) {
+  // ScriptNameToCode's names (locale_to_script_mapping.cc; "zzzz", Unknown,
+  // is not one): 0 for a script that is not an unambiguous Han script.
+  auto script_name = [](std::string_view name) -> int {
+    struct Name {
+      const char* name;
+      int script;
+    };
+    static constexpr Name kHan[] = {
+        {"hang", USCRIPT_HANGUL},
+        {"hira", USCRIPT_KATAKANA_OR_HIRAGANA},
+        {"kana", USCRIPT_KATAKANA_OR_HIRAGANA},
+        {"hrkt", USCRIPT_KATAKANA_OR_HIRAGANA},
+        {"hans", USCRIPT_SIMPLIFIED_HAN},
+        {"hant", USCRIPT_TRADITIONAL_HAN},
+        {"jpan", USCRIPT_KATAKANA_OR_HIRAGANA},
+        {"kore", USCRIPT_HANGUL},
+    };
+    // Every other name, 4 letters each.
+    static constexpr std::string_view kNames =
+        "zyyy qaai arab armn beng bopo cher copt cyrl dsrt deva ethi geor goth "
+        "grek gujr guru hani hebr knda khmr laoo latn mlym mong mymr ogam ital "
+        "orya runr sinh syrc taml telu thaa thai tibt cans yiii tglg hano buhd "
+        "tagb brai cprt limb linb osma shaw tale ugar bugi glag khar sylo talu "
+        "tfng xpeo bali batk blis brah cham cirt cyrs egyd egyh egyp geok hmng "
+        "hung inds java kali latf latg lepc lina mand maya mero nkoo orkh perm "
+        "phag phnx plrd roro sara syre syrj syrn teng vaii visp xsux zxxx";
+    for (const Name& entry : kHan) {
+      if (EqualsIgnoringAsciiCase(name, entry.name)) {
+        return entry.script;
+      }
+    }
+    std::string lower(name);
+    for (char& c : lower) {
+      c = static_cast<char>(c >= 'A' && c <= 'Z' ? c + ('a' - 'A') : c);
+    }
+    return kNames.find(lower) != std::string_view::npos ? 0 : -1;
+  };
+  // LayoutLocale::ComputeScriptForHan: the locale's script
+  // (LocaleToScriptCodeForFontSelection) when it is an unambiguous Han
+  // script, ...
+  std::string tag(lang);
+  std::replace(tag.begin(), tag.end(), '_', '-');
+  std::string_view view(tag);
+  while (!view.empty()) {
+    // A listed tag ends the walk (the list's other entries are bare
+    // languages, which end it too).
+    const StandardScript standard = LocaleStandardScript(view, true);
+    if (standard != StandardScript::kCommon || view.find('-') == view.npos) {
+      switch (standard) {
+        case StandardScript::kJapanese:
+          return USCRIPT_KATAKANA_OR_HIRAGANA;
+        case StandardScript::kKorean:
+          return USCRIPT_HANGUL;
+        case StandardScript::kSimplifiedHan:
+          return USCRIPT_SIMPLIFIED_HAN;
+        case StandardScript::kTraditionalHan:
+          return USCRIPT_TRADITIONAL_HAN;
+        default:
+          break;
+      }
+      break;
+    }
+    const size_t pos = view.rfind('-');
+    if (view.size() - (pos + 1) == 4) {
+      const int script = script_name(view.substr(pos + 1));
+      if (script > 0) {
+        return script;
+      }
+      if (script == 0) {
+        break;
+      }
+    }
+    view = view.substr(0, pos);
+  }
+  // ... else the first region or script subtag naming one
+  // (ScriptCodeForHanFromSubtags, on the locale as given), else Simplified
+  // Han.
+  struct Region {
+    const char* region;
+    int script;
+  };
+  static constexpr Region kRegions[] = {
+      {"hk", USCRIPT_TRADITIONAL_HAN}, {"jp", USCRIPT_KATAKANA_OR_HIRAGANA},
+      {"kr", USCRIPT_HANGUL},          {"mo", USCRIPT_TRADITIONAL_HAN},
+      {"tw", USCRIPT_TRADITIONAL_HAN},
+  };
+  size_t end = lang.find('-');
+  while (end != std::string_view::npos) {
+    const size_t begin = end + 1;
+    end = lang.find('-', begin);
+    const std::string_view subtag = lang.substr(
+        begin, (end == std::string_view::npos ? lang.size() : end) - begin);
+    if (subtag.size() == 2) {
+      for (const Region& entry : kRegions) {
+        if (EqualsIgnoringAsciiCase(subtag, entry.region)) {
+          return entry.script;
+        }
+      }
+    } else if (subtag.size() == 4) {
+      if (const int script = script_name(subtag); script > 0) {
+        return script;
+      }
+    }
+  }
+  return USCRIPT_SIMPLIFIED_HAN;
+}
 
 std::vector<SkString> ResolveFontFamilies(skiac_font_collection* c_collection,
                                           const skiac_text_request& request,

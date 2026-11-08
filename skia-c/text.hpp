@@ -41,6 +41,10 @@ std::string LastResortFamily(skiac_font_collection* c_collection,
 std::string LocaleStandardFamily(skiac_font_collection* c_collection,
                                  const skiac_text_request& request);
 
+// LayoutLocale::GetScriptForHan of `lang` (a UScriptCode: Katakana or
+// Hiragana, Hangul, Simplified or Traditional Han), on every OS.
+int HanScriptForLocale(std::string_view lang);
+
 // The primary font's metrics TextMetrics reads, in px, y up
 // (text_metrics.cpp).
 struct PrimaryFontMetrics {
@@ -276,8 +280,11 @@ void AddCapsFeatures(TextStyle* style, int caps);
 void AddBlinkFeatures(TextStyle* style, const skiac_text_request& request);
 
 // The same features as HarfBuzz features over the whole buffer, in the same
-// order (the Blink shaper's).
-std::vector<hb_feature_t> BlinkFeatures(const skiac_text_request& request);
+// order (the Blink shaper's). With `default_chws` (the Blink shaper), Blink's
+// default `chws 1` after font-feature-settings unless they set `chws` or a
+// non-zero `halt` / `palt` (text-spacing-trim normal, font_features.cc).
+std::vector<hb_feature_t> BlinkFeatures(const skiac_text_request& request,
+                                        bool default_chws = false);
 
 // The synthesized small caps font size for a font of `size` px.
 float SmallCapsSize(float size);
