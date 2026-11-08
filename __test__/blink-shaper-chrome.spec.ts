@@ -11,6 +11,7 @@
 // switch on, until S9 makes it the default.
 import './use-system-text-renderer'
 
+import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { release } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -51,8 +52,7 @@ interface Row {
   flipPortable?: string
   // The old path matches Chrome here by another route than Chrome's, and the
   // shaper reaches Chrome only from this stage: with the switch on the row is
-  // not checked before it. ("fallback: han-ja", Chrome's standard font for
-  // Japanese, is now turned down to the old path: reason localeFallback.)
+  // not checked before it.
   blinkFrom?: string
   // The row differs from Chrome for a reason outside the shaper that is
   // handed off (DESIGN-SHAPER.md 1.2: q5 S1 system-ui CJK font choice, q5 S3
@@ -71,7 +71,7 @@ const UNREGISTERED = Object.entries(FIXTURE.fonts).flatMap(([family, file]) =>
 )
 
 // The last shaper stage on this branch.
-const LANDED = 'S7'
+const LANDED = 'S8'
 const STAGES = ['S0', 'S0a', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9', 'S10']
 const BLINK = process.env.NAPI_RS_CANVAS_SHAPER === 'blink'
 
@@ -274,6 +274,7 @@ test.serial('the fixture covers every group of the shaper stages', (t) => {
     'pua',
     'symcmap',
     'rtl-yoffset',
+    'lang',
   ]) {
     t.true(groups.has(group), group)
   }
@@ -417,4 +418,77 @@ test.serial('a private use hint makes its neighbours .notdef as in Chrome', (t) 
       [21.259994506835938, 20.380001068115234],
     ],
   )
+})
+
+// D19: with ctx.lang "inherit" the shaper takes the host's UI language
+// (LayoutLocale::GetDefault) for the HarfBuzz language, the case map locale
+// and HanKerning's locale. Each child process sets the language through the
+// Linux rule (l10n_util.cc: LANGUAGE, LC_ALL, LC_MESSAGES, LANG; C and POSIX
+// are en-US); NAPI_RS_CANVAS_TEST_POSIX_LANGUAGE=1 makes the resolver use
+// that rule on every OS (test only; macOS and Windows read the OS settings).
+// Chrome 157 with -AppleLanguages (en-US / tr / ja / zh-Hant-TW), widths of
+// [100px LoclProbe "a", 40px BSHalt "水。、水", 40px BSChws "水。、水",
+// 40px BSHalt "（水）。", 40px BSLato small-caps "i", all-small-caps "iI"].
+test.serial('"inherit" follows the host language like Chrome', (t) => {
+  const HOSTS: [Record<string, string>, number[]][] = [
+    [{ LANG: 'C' }, [82.09999084472656, 140, 120, 140, 8.595993041992188, 17.191986083984375]],
+    [{ LANGUAGE: 'tr' }, [46.19999694824219, 140, 120, 140, 9.32421875, 17.920211791992188]],
+    [{ LANG: 'ja_JP.UTF-8' }, [92, 140, 120, 140, 8.595993041992188, 17.191986083984375]],
+    [{ LANG: 'zh_TW.UTF-8' }, [50.69999694824219, 160, 120, 140, 8.595993041992188, 17.191986083984375]],
+  ]
+  // The old path does not read the host language (dflt, no HanKerning).
+  const OLD = [50.69999694824219, 160, 160, 160, 8.595993041992188, 17.191986083984375]
+  const fonts = Object.fromEntries(
+    Object.entries(FIXTURE.fonts).map(([family, file]) => [family, join(__dirname, 'fonts', file)]),
+  )
+  const script = `
+    const { createCanvas, GlobalFonts, setTextRenderer } = require(${JSON.stringify(join(__dirname, '..', 'index.js'))})
+    for (const [family, file] of Object.entries(${JSON.stringify(fonts)})) GlobalFonts.registerFromPath(file, family)
+    const out = {}
+    for (const renderer of ['system', 'portable']) {
+      setTextRenderer(renderer)
+      out[renderer] = [
+        ['100px BSLocl', 'a', {}],
+        ['40px BSHalt', '水。、水', {}],
+        ['40px BSChws', '水。、水', {}],
+        ['40px BSHalt', '（水）。', {}],
+        ['40px BSLato', 'i', { fontVariantCaps: 'small-caps' }],
+        ['40px BSLato', 'iI', { fontVariantCaps: 'all-small-caps' }],
+      ].map(([font, text, props]) => {
+        const ctx = createCanvas(10, 10).getContext('2d')
+        ctx.font = font
+        Object.assign(ctx, props)
+        return ctx.measureText(text).width
+      })
+    }
+    console.log(JSON.stringify(out))`
+  const run = (shaper: string, host: Record<string, string>) => {
+    const child = spawnSync(process.execPath, ['-e', script], {
+      env: {
+        ...process.env,
+        LANGUAGE: '',
+        LC_ALL: '',
+        LC_MESSAGES: '',
+        LANG: '',
+        ...host,
+        NAPI_RS_CANVAS_SHAPER: shaper,
+        NAPI_RS_CANVAS_TEST_POSIX_LANGUAGE: '1',
+      },
+      encoding: 'utf8',
+    })
+    t.is(child.status, 0, child.stderr)
+    return JSON.parse(child.stdout) as Record<string, number[]>
+  }
+  const close = (a: number[], b: number[]) => a.length === b.length && a.every((v, i) => Math.abs(v - b[i]) <= 1e-3)
+  for (const [host, chrome] of HOSTS) {
+    const blink = run('blink', host)
+    for (const renderer of ['system', 'portable']) {
+      t.true(
+        close(blink[renderer], chrome),
+        `${JSON.stringify(host)} ${renderer}: ${blink[renderer]} (Chrome ${chrome})`,
+      )
+    }
+  }
+  const old = run('skparagraph', { LANGUAGE: 'tr' })
+  t.true(close(old.system, OLD), `old path: ${old.system}`)
 })

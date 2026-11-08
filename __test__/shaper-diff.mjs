@@ -25,7 +25,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const require = createRequire(import.meta.url)
 
 // The stage this branch has landed, and the classes it may change.
-const STAGE = 'S7'
+const STAGE = 'S8'
 const ALLOWED = new Set([
   // PR-D10: no forced liga 0 (letter spacing is still turned down in S2).
   'd10',
@@ -161,6 +161,23 @@ const ALLOWED = new Set([
   // BSHan zh-TW 水。、水" 140 at 40px (160), "han-kerning: BSHalt, BSHan
   // （漢）（水）" 220 (240).
   'han-kerning',
+  // S8, ctx.lang "inherit" is the host's UI language (D19), not "und": the
+  // HarfBuzz language, the case map locale and HanKerning's locale follow
+  // it. Chrome 157 on an en-GB host (blink-shaper.json): "q1: lang
+  // \"inherit\"" 100px LoclProbe "a" 82.1 (ENG; old path 50.7, dflt); with
+  // -AppleLanguages (tr) 46.2 (TRK) and small-caps "i" 9.32421875 (old path
+  // 8.595993), with (zh-Hant-TW) 40px BSHalt "水。、水" 160 (old path 140 for
+  // none), stages/S8/chrome-*.json.
+  'host-language',
+  // S8, the family list's last entry is the standard font of the locale's
+  // script (FontFallbackList::GetFontData's -webkit-standard), on macOS with
+  // the system renderer: Hiragino Kaku Gothic ProN for Japanese, Apple SD
+  // Gothic Neo for Korean, PingFang SC / TC, Devanagari MT; Times before.
+  // Chrome 157 (blink-shaper.json): "lang: en-Hang →" 28.2 (old path 40),
+  // "lang: hi 40px BSLato, Times →直" -4.57 left, "cjk-punct: fallback
+  // BSLato ja 水。、水" 140 (old path 160), 40px BSLato lang ja "İstanbul
+  // ılık şğü" 276.08 (old path 267.89).
+  'locale-standard',
 ])
 
 const FONTS = {
@@ -185,6 +202,7 @@ const FONTS = {
   BSChws: 'ChwsProbe.otf',
   BSHalt: 'NotoSansCJKjp-Regular-subset-halt.otf',
   BSKai: 'HYXiXingKaiW.ttf',
+  BSLocl: 'LoclProbe.ttf',
 }
 
 // One letter of each of these scripts, most of which no font in the
@@ -536,6 +554,41 @@ const CJK = [
   ),
 ]
 
+// S8: the language. "inherit" (the default) is the host's UI language;
+// LoclProbe's locl maps "a" to a glyph per OpenType language system. The
+// standard font of the locale's script draws what no family has (macOS
+// system renderer; elsewhere the line is turned down: no fallback source).
+const LANGUAGE = [
+  ...['inherit', '', 'en', 'en-US', 'und', 'tr', 'ja', 'zh', 'zh-TW', 'nl', 'xx'].map((lang) => [
+    'a',
+    '100px BSLocl',
+    { lang },
+    lang === 'inherit' ? ['host-language'] : [],
+  ]),
+  ...['ja', 'ko', 'zh-CN', 'zh-TW', 'hi', 'en-Hang', 'de-Hira', 'zh-Latn-TW', 'ja-Zzzz', 'th', 'inherit', ''].flatMap(
+    (lang) =>
+      ['→', '直骨', 'नम', 'İstanbul ılık şğü', '水。、水'].map((text) => [
+        text,
+        '40px BSLato',
+        { lang },
+        ['locale-standard', 'system-fallback', 'script', 'han-kerning'],
+      ]),
+  ),
+  ...['ja', 'ko', 'zh-TW'].flatMap((lang) =>
+    [
+      ['Ag直', 'NoSuchFamily'],
+      ['直骨', 'Times'],
+      ['→直', 'BSLato, Times'],
+    ].map(([text, families]) => [text, `40px ${families}`, { lang }, ['locale-standard', 'system-fallback', 'script']]),
+  ),
+  ...['inherit', 'tr', 'az', 'en'].map((lang) => [
+    'iI İı',
+    '40px BSLato',
+    { lang, fontVariantCaps: 'small-caps' },
+    lang === 'inherit' ? ['host-language', 'caps-clusters'] : ['caps-clusters'],
+  ]),
+]
+
 // One property changed at a time on a few texts.
 const SETTINGS = [
   [{ fontKerning: 'none' }, []],
@@ -543,7 +596,7 @@ const SETTINGS = [
   [{ textRendering: 'optimizeLegibility' }, []],
   [{ textRendering: 'geometricPrecision' }, []],
   [{ lang: 'tr' }, []],
-  [{ lang: 'ja' }, []],
+  [{ lang: 'ja' }, ['locale-standard']],
   [{ fontVariantLigatures: 'none' }, []],
   [{ fontVariantLigatures: 'discretionary-ligatures' }, []],
   [{ fontVariantNumeric: 'tabular-nums' }, []],
@@ -619,6 +672,10 @@ function cases() {
       for (const direction of ['ltr', 'rtl']) {
         out.push({ renderer, text, font, ctx: { ...settings, direction }, tags, draw: false })
       }
+      out.push({ renderer, text, font, ctx: settings, tags, draw: true })
+    }
+    for (const [text, font, settings, tags] of LANGUAGE) {
+      out.push({ renderer, text, font, ctx: settings, tags, draw: false })
       out.push({ renderer, text, font, ctx: settings, tags, draw: true })
     }
     for (const [text, font, settings, tags] of CJK) {
