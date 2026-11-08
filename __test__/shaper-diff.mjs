@@ -25,7 +25,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const require = createRequire(import.meta.url)
 
 // The stage this branch has landed, and the classes it may change.
-const STAGE = 'S8'
+const STAGE = 'P2'
 const ALLOWED = new Set([
   // PR-D10: no forced liga 0 (letter spacing is still turned down in S2).
   'd10',
@@ -80,6 +80,16 @@ const ALLOWED = new Set([
   // font's .notdef. Chrome 157: "pua: 16px \"g_d0_f1\", sans-serif" rows
   // (10.140625 for U+E000, U+F8FF, U+100000, U+FFFE).
   'pua',
+  // P2 (detected, not tagged): with HarfBuzz's default cluster level (Blink
+  // sets none, harfbuzz_shaper.cc; D8) a character that does not start a
+  // grapheme (a variation selector, a Thai vowel sign, a ZWJ sequence's
+  // parts) is in the cluster of its grapheme's first character; skshaper
+  // (MONOTONE_CHARACTERS) gives it its own. The same glyphs at the same
+  // places, the same metrics and pixels: only the clusters move, each to
+  // its grapheme's start. Seen where a line without a system fallback
+  // source draws the first font's .notdef (portable renderer, P2), e.g.
+  // 40px BSLato "\u231A\uFE0E", "a\u263A\uFE0Fb", "\u2205\uFE00".
+  'grapheme-cluster',
   // S4, letter spacing once per cluster, on its last glyph in HarfBuzz order
   // (ShapeResult::ApplySpacingOrExpansion), none between the letters of a
   // cursive script or after a zero width character. Chrome 157
@@ -748,21 +758,33 @@ function cases() {
   return out.map((c, i) => ({ id: i, ...c }))
 }
 
-// Whether the new path must lay a case out in this stage: plain text in the
-// registered fonts and every character in a family (no fallback tag).
-// Letter and word spacing are laid out since S4, font-variant-caps since
-// S5, font-size-adjust (a size per family) since S6.
+// Whether the new path must lay a case out in this stage. Letter and word
+// spacing are laid out since S4, font-variant-caps since S5,
+// font-size-adjust (a size per family) since S6, a character no family has
+// since S3 with the system renderer on macOS and since P2 everywhere else
+// (no system fallback source: the first font's .notdef). Only a line with
+// no family font at all is turned down (ShaperReject::kFallback), which a
+// family list of NoSuchFamily could give on a host with no fonts.
 function mustAccept(c) {
-  // S3: with the system renderer on macOS, a character no family has (and
-  // a private use one) is laid out by the shaper.
-  const fallback = ['system-fallback', 'vs16', 'vs15', 'pua']
-  if (process.platform === 'darwin' && c.renderer === 'system' && c.tags.some((t) => fallback.includes(t))) {
-    return !c.font.includes('NoSuchFamily')
+  return !c.font.includes('NoSuchFamily')
+}
+
+// The classes of the Apple system fallback (S3), which only the system
+// renderer on macOS has; elsewhere such a case draws the first font's
+// .notdef, as the old path does.
+const APPLE_FALLBACK = ['system-fallback', 'vs16', 'vs15', 'pua']
+
+// `dump` with each cluster moved to the start of its grapheme in `text`.
+function graphemeClusters(text, dump) {
+  const starts = [...new Intl.Segmenter('und', { granularity: 'grapheme' }).segment(text)].map((g) =>
+    Buffer.byteLength(text.slice(0, g.index), 'utf8'),
+  )
+  const start = (cluster) => starts.findLast((s) => s <= cluster) ?? cluster
+  const parsed = JSON.parse(dump)
+  for (const run of parsed.runs) {
+    run.clusters = run.clusters.map(start)
   }
-  if (c.tags.some((t) => ['emoji', 'family-fallback'].includes(t))) {
-    return false
-  }
-  return /^[ -~]*$/.test(c.text) && !c.font.includes('NoSuchFamily')
+  return JSON.stringify(parsed)
 }
 
 const FIELDS = [
@@ -980,13 +1002,21 @@ function compare(oldFile, newFile, limit) {
     // (drawn as Chrome draws them), and for a long line (past 256 px
     // skparagraph's float sums lose bits that 16.16 keeps) the same runs
     // with rounding-sized moves of the metrics and of every glyph.
-    const tags = c.tags.filter((t) => t !== 'long')
+    const apple = process.platform === 'darwin' && c.renderer === 'system'
+    const tags = c.tags.filter((t) => t !== 'long' && (apple || !APPLE_FALLBACK.includes(t)))
     const width = Math.abs(a.metrics[0])
     const shift = Math.max(...a.metrics.map((v, i) => Math.abs(v - b.metrics[i])))
     if (/\s$/.test(c.text) && sameInk(c.text, a.dump, b.dump) && !shift && a.pixels === b.pixels) {
       tags.push('trailing-space')
     }
-    if (width > 256 && Math.max(shift, moved(c.text, a.dump, b.dump)) <= 1e-5 * width) {
+    // The old path's clusters at their graphemes' starts, for the classes
+    // below that compare clusters.
+    const grouped = graphemeClusters(c.text, a.dump)
+    if (grouped !== a.dump && dump({ dump: grouped }) === dump(b) && !shift && a.pixels === b.pixels) {
+      tags.push('grapheme-cluster')
+    }
+    const move = Math.min(moved(c.text, a.dump, b.dump), moved(c.text, grouped, b.dump))
+    if (width > 256 && Math.max(shift, move) <= 1e-5 * width) {
       tags.push('long')
     }
     // The runs but their clusters, and how far their glyphs moved.
