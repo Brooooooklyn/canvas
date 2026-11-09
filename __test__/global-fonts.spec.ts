@@ -1,10 +1,20 @@
-import { readFileSync } from 'node:fs'
+import { copyFileSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import test from 'ava'
 
-import { GlobalFonts, FontKey } from '../index'
+import {
+  convertSVGTextToPath,
+  createCanvas,
+  FontKey,
+  getTextRenderer,
+  GlobalFonts,
+  Image,
+  setTextRenderer,
+  SvgExportFlag,
+} from '../index'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const fontPath = join(__dirname, 'fonts', 'SourceSerifPro-Regular.ttf')
@@ -65,14 +75,20 @@ test.serial('registerFromPath should return FontKey that can be used for removal
   t.is(typeof fontKey!.typefaceId, 'number', 'FontKey should have a numeric typefaceId')
 
   // Verify font exists
-  t.true(GlobalFonts.families.some(({ family }) => family === fontAliasName), 'Font should exist after registration')
+  t.true(
+    GlobalFonts.families.some(({ family }) => family === fontAliasName),
+    'Font should exist after registration',
+  )
 
   // Remove using the returned FontKey
   const removeResult = GlobalFonts.remove(fontKey!)
   t.true(removeResult, 'remove() should succeed with FontKey from registerFromPath')
 
   // Verify font is gone
-  t.false(GlobalFonts.families.some(({ family }) => family === fontAliasName), 'Font should be removed')
+  t.false(
+    GlobalFonts.families.some(({ family }) => family === fontAliasName),
+    'Font should be removed',
+  )
 })
 
 test.serial('registerFromPath should return null for non-existent path', (t) => {
@@ -114,14 +130,20 @@ test.serial('remove() should actually remove font from families list', (t) => {
   t.true(fontKey instanceof FontKey)
 
   // Verify font exists after registration
-  t.true(GlobalFonts.families.some(({ family }) => family === fontAliasName), 'Font should exist after registration')
+  t.true(
+    GlobalFonts.families.some(({ family }) => family === fontAliasName),
+    'Font should exist after registration',
+  )
 
   // Remove font
   const removeResult = GlobalFonts.remove(fontKey!)
   t.true(removeResult, 'remove() should return true')
 
   // Verify font is no longer in families list
-  t.false(GlobalFonts.families.some(({ family }) => family === fontAliasName), 'Font should NOT exist after removal')
+  t.false(
+    GlobalFonts.families.some(({ family }) => family === fontAliasName),
+    'Font should NOT exist after removal',
+  )
 })
 
 test.serial('re-registering font after removal should make it visible again', (t) => {
@@ -132,16 +154,25 @@ test.serial('re-registering font after removal should make it visible again', (t
   // Register font
   const fontKey1 = GlobalFonts.register(fontData2, fontAliasName)
   t.true(fontKey1 instanceof FontKey)
-  t.true(GlobalFonts.families.some(({ family }) => family === fontAliasName), 'Font should exist after first registration')
+  t.true(
+    GlobalFonts.families.some(({ family }) => family === fontAliasName),
+    'Font should exist after first registration',
+  )
 
   // Remove font
   t.true(GlobalFonts.remove(fontKey1!))
-  t.false(GlobalFonts.families.some(({ family }) => family === fontAliasName), 'Font should NOT exist after removal')
+  t.false(
+    GlobalFonts.families.some(({ family }) => family === fontAliasName),
+    'Font should NOT exist after removal',
+  )
 
   // Re-register font with same alias
   const fontKey2 = GlobalFonts.register(fontData2, fontAliasName)
   t.true(fontKey2 instanceof FontKey)
-  t.true(GlobalFonts.families.some(({ family }) => family === fontAliasName), 'Font should exist after re-registration')
+  t.true(
+    GlobalFonts.families.some(({ family }) => family === fontAliasName),
+    'Font should exist after re-registration',
+  )
 
   // Clean up
   GlobalFonts.remove(fontKey2!)
@@ -161,10 +192,16 @@ test.serial('font registered with alias should be accessible under both original
   t.true(fontKey instanceof FontKey)
 
   // Verify font is accessible under alias
-  t.true(GlobalFonts.families.some(({ family }) => family === fontAliasName), 'Font should exist under alias')
+  t.true(
+    GlobalFonts.families.some(({ family }) => family === fontAliasName),
+    'Font should exist under alias',
+  )
 
   // Verify font is also accessible under original family name
-  t.true(GlobalFonts.families.some(({ family }) => family === originalFamilyName), 'Font should exist under original family name')
+  t.true(
+    GlobalFonts.families.some(({ family }) => family === originalFamilyName),
+    'Font should exist under original family name',
+  )
 
   // Count styles after registration (should have increased)
   const originalStylesAfterReg = GlobalFonts.families.find((f) => f.family === originalFamilyName)?.styles.length ?? 0
@@ -174,63 +211,74 @@ test.serial('font registered with alias should be accessible under both original
   GlobalFonts.remove(fontKey!)
 
   // Verify alias is gone
-  t.false(GlobalFonts.families.some(({ family }) => family === fontAliasName), 'Alias should be removed')
+  t.false(
+    GlobalFonts.families.some(({ family }) => family === fontAliasName),
+    'Alias should be removed',
+  )
 
   // Verify style count returned to original (our registration's style was removed)
-  const originalStylesAfterRemove = GlobalFonts.families.find((f) => f.family === originalFamilyName)?.styles.length ?? 0
-  t.is(originalStylesAfterRemove, originalStylesBefore, 'Original family style count should return to pre-registration level')
+  const originalStylesAfterRemove =
+    GlobalFonts.families.find((f) => f.family === originalFamilyName)?.styles.length ?? 0
+  t.is(
+    originalStylesAfterRemove,
+    originalStylesBefore,
+    'Original family style count should return to pre-registration level',
+  )
 })
 
-test.serial('re-registering font after removing colliding font should return same ID (collision dedupe bypass fix)', (t) => {
-  // This tests the collision bypass fix where removing a font at the base hash slot
-  // would break the probe chain and cause a displaced font to get a new ID on re-registration
-  //
-  // Scenario being tested:
-  // 1. Font A registers with hash H -> gets ID H
-  // 2. Font B registers with same hash H -> collision -> gets ID H+1
-  // 3. Font A is removed (erase(H) - full deletion, no tombstone)
-  // 4. Font B re-registers -> should find existing entry via secondary index, not create duplicate
+test.serial(
+  're-registering font after removing colliding font should return same ID (collision dedupe bypass fix)',
+  (t) => {
+    // This tests the collision bypass fix where removing a font at the base hash slot
+    // would break the probe chain and cause a displaced font to get a new ID on re-registration
+    //
+    // Scenario being tested:
+    // 1. Font A registers with hash H -> gets ID H
+    // 2. Font B registers with same hash H -> collision -> gets ID H+1
+    // 3. Font A is removed (erase(H) - full deletion, no tombstone)
+    // 4. Font B re-registers -> should find existing entry via secondary index, not create duplicate
 
-  const fontAAlias = 'CollisionTest-FontA'
-  const fontBAlias = 'CollisionTest-FontB'
+    const fontAAlias = 'CollisionTest-FontA'
+    const fontBAlias = 'CollisionTest-FontB'
 
-  // Use two different fonts so they have different content hashes
-  // (In a real collision scenario, they'd have the same hash but different content)
-  const fontAPath = join(__dirname, 'fonts', 'SourceSerifPro-Regular.ttf')
-  const fontBPath = join(__dirname, 'fonts', 'Cascadia.woff2')
-  const fontAData = readFileSync(fontAPath)
-  const fontBData = readFileSync(fontBPath)
+    // Use two different fonts so they have different content hashes
+    // (In a real collision scenario, they'd have the same hash but different content)
+    const fontAPath = join(__dirname, 'fonts', 'SourceSerifPro-Regular.ttf')
+    const fontBPath = join(__dirname, 'fonts', 'Cascadia.woff2')
+    const fontAData = readFileSync(fontAPath)
+    const fontBData = readFileSync(fontBPath)
 
-  // Register font A
-  const fontKeyA = GlobalFonts.register(fontAData, fontAAlias)
-  t.true(fontKeyA instanceof FontKey, 'Font A should register successfully')
+    // Register font A
+    const fontKeyA = GlobalFonts.register(fontAData, fontAAlias)
+    t.true(fontKeyA instanceof FontKey, 'Font A should register successfully')
 
-  // Register font B
-  const fontKeyB1 = GlobalFonts.register(fontBData, fontBAlias)
-  t.true(fontKeyB1 instanceof FontKey, 'Font B should register successfully')
+    // Register font B
+    const fontKeyB1 = GlobalFonts.register(fontBData, fontBAlias)
+    t.true(fontKeyB1 instanceof FontKey, 'Font B should register successfully')
 
-  // Store the internal ID of font B for comparison
-  const fontBId1 = fontKeyB1!.typefaceId
-  t.is(typeof fontBId1, 'number', 'typefaceId should be a number')
+    // Store the internal ID of font B for comparison
+    const fontBId1 = fontKeyB1!.typefaceId
+    t.is(typeof fontBId1, 'number', 'typefaceId should be a number')
 
-  // Remove font A (this would break probe chain in the old implementation)
-  t.true(GlobalFonts.remove(fontKeyA!), 'Font A removal should succeed')
+    // Remove font A (this would break probe chain in the old implementation)
+    t.true(GlobalFonts.remove(fontKeyA!), 'Font A removal should succeed')
 
-  // Re-register font B - should find existing entry and return same ID
-  const fontKeyB2 = GlobalFonts.register(fontBData, fontBAlias)
-  t.true(fontKeyB2 instanceof FontKey, 'Font B re-registration should succeed')
+    // Re-register font B - should find existing entry and return same ID
+    const fontKeyB2 = GlobalFonts.register(fontBData, fontBAlias)
+    t.true(fontKeyB2 instanceof FontKey, 'Font B re-registration should succeed')
 
-  // The key insight: the ID should be the same, not a new one
-  const fontBId2 = fontKeyB2!.typefaceId
-  t.is(fontBId2, fontBId1, 'Font B should get the same ID after re-registration')
+    // The key insight: the ID should be the same, not a new one
+    const fontBId2 = fontKeyB2!.typefaceId
+    t.is(fontBId2, fontBId1, 'Font B should get the same ID after re-registration')
 
-  // Verify only one instance of font B exists in families
-  const fontBFamilies = GlobalFonts.families.filter(({ family }) => family === fontBAlias)
-  t.is(fontBFamilies.length, 1, 'Font B should appear exactly once in families list')
+    // Verify only one instance of font B exists in families
+    const fontBFamilies = GlobalFonts.families.filter(({ family }) => family === fontBAlias)
+    t.is(fontBFamilies.length, 1, 'Font B should appear exactly once in families list')
 
-  // Clean up
-  GlobalFonts.remove(fontKeyB2!)
-})
+    // Clean up
+    GlobalFonts.remove(fontKeyB2!)
+  },
+)
 
 test.serial('removeBatch() should remove multiple fonts with single rebuild', (t) => {
   // Use different font files to ensure they get different typeface IDs
@@ -345,13 +393,19 @@ test.serial('stale aliases should not transfer to newly registered fonts with sa
   t.true(aliasSet, 'setAlias should succeed')
 
   // Verify alias exists
-  t.true(GlobalFonts.families.some((f) => f.family === 'StaleAliasX'), 'Alias should exist')
+  t.true(
+    GlobalFonts.families.some((f) => f.family === 'StaleAliasX'),
+    'Alias should exist',
+  )
 
   // Step 3: Remove Font A
   t.true(GlobalFonts.remove(fontKeyA!), 'Font A removal should succeed')
 
   // Verify alias is gone (font was removed)
-  t.false(GlobalFonts.families.some((f) => f.family === 'StaleAliasX'), 'Alias should be gone after font removal')
+  t.false(
+    GlobalFonts.families.some((f) => f.family === 'StaleAliasX'),
+    'Alias should be gone after font removal',
+  )
 
   // Step 4: Register Font B with the SAME alias name "StaleAliasTest"
   const fontKeyB = GlobalFonts.register(fontBData, 'StaleAliasTest')
@@ -375,4 +429,136 @@ test.serial('stale aliases should not transfer to newly registered fonts with sa
 
   // Clean up
   GlobalFonts.remove(fontKeyB!)
+})
+
+// A removed font is freed: neither the old font provider nor Skia's glyph
+// cache keeps it. Each cycle copies the 4.7 MB font; before, every removed
+// copy stayed (about 5 MB per cycle).
+test.serial('register / draw / remove of a buffer font keeps memory flat', (t) => {
+  const data = readFileSync(join(__dirname, 'fonts', 'iosevka-slab-regular.ttf'))
+  const canvas = createCanvas(200, 40)
+  const ctx = canvas.getContext('2d')
+  let rssAt10 = 0
+  for (let i = 1; i <= 40; i++) {
+    const key = GlobalFonts.register(data, 'RssCycleFont')
+    t.true(key instanceof FontKey)
+    ctx.font = `${12 + (i % 5)}px RssCycleFont`
+    t.true(ctx.measureText('cycle ' + i).width > 0)
+    ctx.fillText('cycle ' + i, 2, 30)
+    // Draws the pending recording, which holds the fonts it drew with.
+    ctx.getImageData(0, 0, 1, 1)
+    t.true(GlobalFonts.remove(key!))
+    if (i === 10) {
+      rssAt10 = process.memoryUsage().rss
+    }
+  }
+  const growth = (process.memoryUsage().rss - rssAt10) / 1048576
+  t.true(growth < 20, `RSS grew ${growth.toFixed(1)} MB from cycle 10 to 40`)
+})
+
+// A font registered from a path maps its file; the mapping goes with the
+// removed font.
+const linuxTest = process.platform === 'linux' ? test.serial : test.serial.skip
+linuxTest('a removed path font leaves no mapping of its file', (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'canvas-free-fonts-'))
+  t.teardown(() => rmSync(dir, { recursive: true, force: true }))
+  const file = join(dir, 'FreedLato.ttf')
+  copyFileSync(join(__dirname, 'fonts', 'Lato-Regular.ttf'), file)
+  const ctx = createCanvas(10, 10).getContext('2d')
+  for (let i = 0; i < 50; i++) {
+    const key = GlobalFonts.registerFromPath(file, 'FreedLato')
+    t.true(key instanceof FontKey)
+    ctx.font = '16px FreedLato'
+    t.true(ctx.measureText('mapped ' + i).width > 0)
+    t.true(GlobalFonts.remove(key!))
+  }
+  const mapped = readFileSync('/proc/self/maps', 'utf8')
+    .split('\n')
+    .filter((line) => line.includes(file))
+  t.is(mapped.length, 0)
+})
+
+// Objects made while a font is registered stay usable once it is removed
+// and its provider is freed (the case the old providers were kept for):
+// an SVG image with text, an SVG canvas, and a raster canvas drawn later as
+// a source.
+test.serial('objects made with a removed font draw after more rebuilds and a renderer switch', async (t) => {
+  const renderer = getTextRenderer()
+  t.teardown(() => setTextRenderer(renderer))
+  const key = GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'Lato-Regular.ttf'), 'FreedFontX')
+  t.true(key instanceof FontKey)
+  const svg = Buffer.from(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="40">' +
+      '<text x="2" y="30" font-family="FreedFontX" font-size="24">Freed text</text></svg>',
+  )
+  const image = new Image()
+  await new Promise<void>((resolve, reject) => {
+    image.onload = () => resolve()
+    image.onerror = (err) => reject(err)
+    image.src = svg
+  })
+  const svgCanvas = createCanvas(200, 40, SvgExportFlag.ConvertTextToPaths)
+  const svgCtx = svgCanvas.getContext('2d')
+  svgCtx.font = '24px FreedFontX'
+  svgCtx.fillText('Freed svg', 2, 30)
+  const raster = createCanvas(200, 40)
+  const rasterCtx = raster.getContext('2d')
+  rasterCtx.font = '24px FreedFontX'
+  rasterCtx.fillText('Freed raster', 2, 30)
+  const expected = createCanvas(200, 40)
+  expected.getContext('2d').drawImage(raster, 0, 0)
+  const expectedPixels = expected.getContext('2d').getImageData(0, 0, 200, 40).data
+
+  t.true(GlobalFonts.remove(key!))
+  // Three more rebuilds and a renderer switch free every provider that
+  // listed the font.
+  const other = readFileSync(join(__dirname, 'fonts', 'Virgil.woff2'))
+  for (let i = 0; i < 3; i++) {
+    t.true(GlobalFonts.remove(GlobalFonts.register(other, 'FreedFontOther')!))
+  }
+  setTextRenderer(renderer === 'portable' ? 'system' : 'portable')
+
+  // The raster source draws what it drew before.
+  const again = createCanvas(200, 40)
+  again.getContext('2d').drawImage(raster, 0, 0)
+  t.deepEqual(again.getContext('2d').getImageData(0, 0, 200, 40).data, expectedPixels)
+
+  const out = createCanvas(200, 40)
+  const outCtx = out.getContext('2d')
+  outCtx.drawImage(image, 0, 0)
+  outCtx.drawImage(raster, 0, 0)
+  svgCtx.fillText('after', 2, 10)
+  t.true(svgCanvas.getContent().length > 0)
+  t.true(convertSVGTextToPath(svg).length > 0)
+  rasterCtx.fillText('after', 2, 10)
+  t.true(rasterCtx.measureText('after').width > 0)
+  t.true(out.toBuffer('image/png').length > 0)
+})
+
+// Removing one font drops every cached glyph; a kept font draws the same
+// pixels after it.
+test.serial('a kept font draws the same pixels after another font is removed', (t) => {
+  const keep = GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'EBGaramond-Regular.ttf'), 'FreedKeepA')
+  const drop = GlobalFonts.register(readFileSync(join(__dirname, 'fonts', 'Oswald.ttf')), 'FreedDropB')
+  t.true(keep instanceof FontKey)
+  t.true(drop instanceof FontKey)
+  t.teardown(() => {
+    GlobalFonts.remove(keep!)
+  })
+  const draw = () => {
+    const canvas = createCanvas(240, 50)
+    const ctx = canvas.getContext('2d')
+    ctx.font = '28px FreedKeepA'
+    ctx.fillText('Kept glyphs 123', 4, 36)
+    ctx.font = '28px FreedDropB'
+    ctx.measureText('Dropped')
+    return ctx.getImageData(0, 0, 240, 50).data
+  }
+  const before = draw()
+  t.true(GlobalFonts.remove(drop!))
+  const after = createCanvas(240, 50)
+  const ctx = after.getContext('2d')
+  ctx.font = '28px FreedKeepA'
+  ctx.fillText('Kept glyphs 123', 4, 36)
+  t.deepEqual(ctx.getImageData(0, 0, 240, 50).data, before)
 })
