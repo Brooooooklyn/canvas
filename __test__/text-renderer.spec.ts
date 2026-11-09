@@ -897,6 +897,72 @@ macTest('spellings of Helvetica keep registration order, and SVG paths use the d
   }
 })
 
+const PRELOADED_NAMES_PROBE = `
+const { copyFileSync, mkdtempSync } = require('fs')
+const { tmpdir } = require('os')
+const { join } = require('path')
+const { GlobalFonts, createCanvas, setTextRenderer } = require('./index.js')
+const { RENDERER } = process.env
+setTextRenderer(RENDERER)
+const width = ([font, lang]) => {
+  const ctx = createCanvas(10, 10).getContext('2d')
+  if (lang) ctx.lang = lang
+  ctx.font = font
+  return ctx.measureText('Ag').width
+}
+const fonts = [
+  ['40px Brand'],
+  ['40px Brand, -webkit-body', 'ja'],
+  ['bold 40px Brand, -webkit-body', 'ja'],
+  ['40px Helvetica'],
+  ['40px Helvetica, -webkit-body', 'ja'],
+  ['40px sans-serif'],
+  ['40px Lato, -webkit-body', 'ja'],
+  ['40px NoSuchFamily, -webkit-body', 'ja'],
+]
+const out = { before: fonts.map(width), states: [] }
+const dir = mkdtempSync(join(tmpdir(), 'canvas-preloaded-'))
+const file = join(dir, 'Lato-Regular.ttf')
+copyFileSync(join('__test__', 'fonts', 'Lato-Regular.ttf'), file)
+out.loaded = GlobalFonts.loadFontsFromDir(dir)
+GlobalFonts.registerFromPath(file, 'Brand')
+GlobalFonts.registerFromPath(file, 'Helvetica')
+out.states.push(fonts.map(width))
+GlobalFonts.remove(GlobalFonts.registerFromPath(join('__test__', 'fonts', 'Oswald.ttf'), 'Unrelated'))
+out.states.push(fonts.map(width))
+setTextRenderer(RENDERER === 'system' ? 'portable' : 'system')
+setTextRenderer(RENDERER)
+out.states.push(fonts.map(width))
+console.log(JSON.stringify(out))
+`
+
+// Lato loaded by loadFontsFromDir, then registered again as Brand and as
+// Helvetica: both names are FontFace names (lang ja "40px Brand,
+// -webkit-body" draws Lato, not Hiragino), "40px sans-serif" is still the
+// installed Helvetica, and the file's own family Lato stays installed (the
+// standard font under -webkit-body). Right after the calls, after a rebuild
+// and after a renderer switch.
+macTest('names registered for a file loadFontsFromDir loaded are FontFace names on macOS', (t) => {
+  const LATO = 47.63996887207031
+  const near = (a: number, b: number) => Math.abs(a - b) <= 1e-3
+  for (const renderer of ['portable', 'system']) {
+    const out = macProbe(PRELOADED_NAMES_PROBE, { RENDERER: renderer })
+    t.is(out.loaded, 1)
+    t.false(near(out.before[5], LATO), `${renderer}: sans-serif ${out.before[5]}`)
+    t.false(near(out.before[7], LATO), `${renderer}: standard ${out.before[7]}`)
+    t.is(out.states.length, 3)
+    for (const [i, row] of out.states.entries()) {
+      const at = `${renderer} state ${i}`
+      for (const j of [0, 1, 2, 3, 4]) {
+        t.true(near(row[j], LATO), `${at}: ${j} ${row[j]}`)
+      }
+      t.true(near(row[5], out.before[5]), `${at}: sans-serif ${row[5]}, before ${out.before[5]}`)
+      t.true(near(row[6], out.before[7]), `${at}: Lato, -webkit-body ${row[6]}, standard ${out.before[7]}`)
+      t.true(near(row[7], out.before[7]), `${at}: standard ${row[7]}, before ${out.before[7]}`)
+    }
+  }
+})
+
 const REMOVE_ALL_PROBE = `
 const { GlobalFonts, createCanvas, setTextRenderer } = require('./index.js')
 const width = () => {

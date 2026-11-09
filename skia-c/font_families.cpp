@@ -299,7 +299,8 @@ class FamilyResolver {
           c_collection_->assets->matchFamily(spelling.c_str());
       for (int i = 0; faces && i < faces->count(); ++i) {
         const sk_sp<SkTypeface> face = faces->createTypeface(i);
-        if (face && !IsSystemTypeface(c_collection_, face.get())) {
+        if (face && (!IsSystemTypeface(c_collection_, face.get()) ||
+                     AliasArg(spelling, folded, face.get()))) {
           return true;
         }
       }
@@ -416,7 +417,12 @@ class FamilyResolver {
           // an alias) is that family again, not a FontFace over it: it is
           // neither kind, and the family keeps its installed faces first
           // (a deviation: a FontFace of its own name would win in Chrome).
-          const bool keep = web ? alias || (!system && !own) : system && own;
+          // An installed face is a web face of a name a registration gave
+          // it (AliasArg).
+          const bool keep =
+              web ? alias || (!own && (!system ||
+                                       AliasArg(spelling, folded, face.get())))
+                  : system && own;
           if (keep) {
             const uint64_t order =
                 merge ? Order(spelling, face->uniqueID()) : 0;
@@ -479,6 +485,22 @@ class FamilyResolver {
     }
     c_collection_->family_kinds.emplace(std::move(key), kinds);
     return kinds;
+  }
+
+  // Whether `spelling` (of the family `folded`) is the alias argument of a
+  // register / registerFromPath call for `face` and not the face's own
+  // family name: a FontFace name, also when the call registered a file
+  // loadFontsFromDir loaded before (one face, so removing the font drops
+  // the name and its aliases; the face's own family stays installed).
+  // In Chrome a FontFace is a font of its own, whichever installed file
+  // it loads, so "40px Brand, -webkit-body" keeps it (IsWebFont).
+  bool AliasArg(const std::string& spelling,
+                const std::string& folded,
+                SkTypeface* face) const {
+    SkString family;
+    face->getFamilyName(&family);
+    return Fold({family.c_str(), family.size()}) != folded &&
+           c_collection_->assets->isAliasArg(spelling, face->uniqueID());
   }
 
   // When the provider listed the face `id` under `spelling`: the earliest

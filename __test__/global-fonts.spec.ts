@@ -1141,3 +1141,78 @@ for (const renderer of ['portable', 'system'] as const) {
     },
   )
 }
+
+const PRELOADED_ALIAS_PROBE = `
+  const { createCanvas, GlobalFonts, setTextRenderer } = require(process.env.PROBE_INDEX)
+  const { RENDERER, PROBE_DIR, PROBE_FONTS } = process.env
+  setTextRenderer(RENDERER)
+  const width = (font) => {
+    const ctx = createCanvas(10, 10).getContext('2d')
+    ctx.font = font
+    return ctx.measureText('Ag').width
+  }
+  const out = { states: [] }
+  const state = () =>
+    out.states.push({
+      brand: width('40px PreBrand'),
+      brandBody: width('40px PreBrand, -webkit-body'),
+      aliasBody: width('40px PreAlias, -webkit-body'),
+      lato: width('40px Lato'),
+      latoBody: width('40px Lato, -webkit-body'),
+      standard: width('40px NoSuchFamily, -webkit-body'),
+      has: [GlobalFonts.has('PreBrand'), GlobalFonts.has('PreAlias'), GlobalFonts.has('Lato')],
+    })
+  // The standard font where no font is installed (Linux CI): one that does
+  // not draw like Lato.
+  GlobalFonts.registerFromPath(PROBE_FONTS + '/Oswald.ttf', 'Times New Roman')
+  out.loaded = GlobalFonts.loadFontsFromDir(PROBE_DIR)
+  out.registered = GlobalFonts.registerFromPath(PROBE_DIR + '/Lato-Regular.ttf', 'PreBrand') !== null
+  out.alias = GlobalFonts.setAlias('PreBrand', 'PreAlias')
+  state()
+  GlobalFonts.remove(GlobalFonts.registerFromPath(PROBE_FONTS + '/EBGaramond-Regular.ttf', 'Unrelated'))
+  state()
+  setTextRenderer(RENDERER === 'system' ? 'portable' : 'system')
+  setTextRenderer(RENDERER)
+  state()
+  console.log(JSON.stringify(out))`
+
+// A name given by registerFromPath (and a setAlias of it) is a FontFace name
+// also when loadFontsFromDir loaded the same file first: -webkit-body as the
+// generic family keeps it, as it keeps any registered font. The file's own
+// family name stays installed and gets the standard font. Right after the
+// call, after a rebuild and after a renderer switch.
+for (const renderer of ['portable', 'system'] as const) {
+  test.serial(`a name registered for a file loadFontsFromDir loaded is a FontFace name (${renderer})`, (t) => {
+    const dir = mkdtempSync(join(tmpdir(), 'canvas-preloaded-'))
+    t.teardown(() => rmSync(dir, { recursive: true, force: true }))
+    copyFileSync(join(__dirname, 'fonts', 'Lato-Regular.ttf'), join(dir, 'Lato-Regular.ttf'))
+    const near = (a: number, b: number) => Math.abs(a - b) <= 1e-3
+    const child = spawnSync(process.execPath, ['-e', PRELOADED_ALIAS_PROBE], {
+      encoding: 'utf8',
+      timeout: 30_000,
+      env: {
+        ...process.env,
+        RENDERER: renderer,
+        PROBE_DIR: dir,
+        PROBE_FONTS: join(__dirname, 'fonts'),
+        PROBE_INDEX: join(__dirname, '..', 'index.js'),
+      },
+    })
+    t.is(child.status, 0, child.stderr)
+    const out = JSON.parse(child.stdout)
+    t.is(out.loaded, 1)
+    t.true(out.registered)
+    t.true(out.alias)
+    t.is(out.states.length, 3)
+    for (const [i, s] of out.states.entries()) {
+      const at = `state ${i}`
+      t.deepEqual(s.has, [true, true, true], at)
+      // The standard font is not Lato, so the widths tell them apart.
+      t.false(near(s.standard, s.lato), `${at}: standard ${s.standard}, Lato ${s.lato}`)
+      t.true(near(s.brand, s.lato), `${at}: PreBrand ${s.brand}, Lato ${s.lato}`)
+      t.true(near(s.brandBody, s.lato), `${at}: PreBrand, -webkit-body ${s.brandBody}, Lato ${s.lato}`)
+      t.true(near(s.aliasBody, s.lato), `${at}: PreAlias, -webkit-body ${s.aliasBody}, Lato ${s.lato}`)
+      t.true(near(s.latoBody, s.standard), `${at}: Lato, -webkit-body ${s.latoBody}, standard ${s.standard}`)
+    }
+  })
+}
