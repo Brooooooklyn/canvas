@@ -640,6 +640,65 @@ macTest('installed fonts stay before registered fonts across a switch on macOS',
   t.deepEqual(helvetica(['register', 'switch:system', 'state', 'switch:portable', 'state']), [system, portable])
 })
 
+// The same with another spelling of the name (Chrome 157: FontFace
+// "helvetica" draws for "40px Helvetica", 47.64) and with setAlias:
+// setAlias(a, b) aliases the face text naming a uses now (Lato), and
+// setAlias(a, a) changes nothing. Helvetica is CoreText's, outside the
+// registered fonts. Kept after a rebuild and a renderer switch.
+const HELVETICA_ALIAS_PROBE = `
+const { join } = require('path')
+const { GlobalFonts, createCanvas, setTextRenderer } = require('./index.js')
+const { RENDERER, PROBE_STEPS } = process.env
+setTextRenderer(RENDERER)
+const width = (font) => {
+  const ctx = createCanvas(10, 10).getContext('2d')
+  ctx.font = font
+  return ctx.measureText('Ag').width
+}
+const out = []
+for (const step of PROBE_STEPS.split(',')) {
+  const [kind, a, b] = step.split(':')
+  if (kind === 'register') GlobalFonts.registerFromPath(join('__test__', 'fonts', 'Lato-Regular.ttf'), a)
+  else if (kind === 'alias') out.push(GlobalFonts.setAlias(a, b))
+  else if (kind === 'rebuild') GlobalFonts.remove(GlobalFonts.registerFromPath(join('__test__', 'fonts', 'Oswald.ttf'), 'Unrelated'))
+  else if (kind === 'switch') {
+    setTextRenderer(RENDERER === 'system' ? 'portable' : 'system')
+    setTextRenderer(RENDERER)
+  } else out.push(['40px Helvetica', '40px HELVETICA', 'bold 40px Helvetica', '40px Brand', '40px Brand2'].map(width))
+}
+console.log(JSON.stringify(out))
+`
+
+macTest('a name registered over Helvetica, other spellings and setAlias on macOS', (t) => {
+  const LATO = 47.63996887207031
+  const near = (a: number, b: number) => Math.abs(a - b) <= 1e-3
+  for (const renderer of ['portable', 'system']) {
+    const check = (steps: string[], expected: (boolean | null)[]) => {
+      const out = macProbe(HELVETICA_ALIAS_PROBE, {
+        RENDERER: renderer,
+        PROBE_STEPS: [...steps, 'state', 'rebuild', 'state', 'switch', 'state'].join(','),
+      })
+      for (const [i, row] of out.entries()) {
+        if (!Array.isArray(row)) {
+          t.true(row, `${renderer} ${steps}: setAlias`)
+          continue
+        }
+        for (const [j, lato] of expected.entries()) {
+          if (lato !== null) {
+            t.is(near(row[j], LATO), lato, `${renderer} ${steps} row ${i}: ${row[j]}`)
+          }
+        }
+      }
+    }
+    check(['register:helvetica'], [true, true, true, null, null])
+    check(['register:HELVETICA'], [true, true, true, null, null])
+    check(['register:Helvetica', 'alias:Helvetica:Brand', 'alias:Brand:Brand2'], [true, true, true, true, true])
+    check(['register:helvetica', 'alias:Helvetica:Brand'], [true, true, true, true, null])
+    check(['register:Helvetica', 'alias:Helvetica:Helvetica'], [true, true, true, null, null])
+    check(['register:Helvetica', 'state', 'alias:Helvetica:HELVETICA'], [true, true, true, null, null])
+  }
+})
+
 const REMOVE_ALL_PROBE = `
 const { GlobalFonts, createCanvas, setTextRenderer } = require('./index.js')
 const width = () => {

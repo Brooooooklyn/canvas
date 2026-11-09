@@ -75,6 +75,7 @@
 #include <tuple>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include <stdint.h>
@@ -235,6 +236,12 @@ struct skiac_font_collection;
 // registered ones), null for no face.
 sk_sp<SkFontStyleSet> MakeSplitFamily(skiac_font_collection* c_collection,
                                       std::string_view tagged);
+// font_families.cpp: the face of `family` that text naming it in a font
+// list uses (the named family path: a name registered over an installed
+// family gives its registered faces), from `assets`.
+sk_sp<SkTypeface> MatchNamedFamily(skiac_font_collection* c_collection,
+                                   const char* family,
+                                   const SkFontStyle& style);
 
 class TypefaceFontProviderCustom : public TypefaceFontProvider {
  public:
@@ -1083,6 +1090,12 @@ struct skiac_font_collection {
       names.emplace_back(set_aliases[i].order, true, 0, i);
     }
     std::sort(names.begin(), names.end());
+    // Each alias is made again in its turn (MatchNamedFamily sees only
+    // the ones before it).
+    for (auto& entry : set_aliases) {
+      entry.active = false;
+      entry.face_id = 0;
+    }
     std::set<uint32_t> kept_system_font_ids;
     system_typeface_ids.clear();
     // Each font made again, by ID; null when it is not kept.
@@ -1104,9 +1117,17 @@ struct skiac_font_collection {
         // which the default mode lists. A registered family that is gone
         // is not, so its aliases do not move to an installed font of the
         // same name.
+        // The face text naming the family uses (MatchNamedFamily), as at
+        // the setAlias call: in the new provider as far as it is made, with
+        // the aliases replayed so far.
         SetAlias& entry = set_aliases[index];
+        sk_sp<TypefaceFontProviderCustom> old_assets =
+            std::exchange(assets, new_assets);
+        ++families_generation;
         sk_sp<SkTypeface> typeface =
-            new_assets->matchFamilyStyle(entry.family.c_str(), SkFontStyle());
+            MatchNamedFamily(this, entry.family.c_str(), SkFontStyle());
+        ++families_generation;
+        assets = std::move(old_assets);
         if (!typeface && entry.installed && font_mgr) {
           typeface =
               font_mgr->matchFamilyStyle(entry.family.c_str(), SkFontStyle());

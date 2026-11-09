@@ -4735,7 +4735,11 @@ bool skiac_font_collection_set_alias(skiac_font_collection* c_font_collection,
   }
   c_font_collection->prepareLookup();
   auto style = SkFontStyle();
-  auto typeface = c_font_collection->assets->matchFamilyStyle(family, style);
+  // The face text naming `family` uses now: a name registered over an
+  // installed family gives its registered face (font_families.cpp
+  // MatchNamedFamily), so setAlias('Helvetica', 'Helvetica') changes
+  // nothing.
+  auto typeface = MatchNamedFamily(c_font_collection, family, style);
 
   // Only proceed if the family exists
   if (!typeface) {
@@ -4747,8 +4751,7 @@ bool skiac_font_collection_set_alias(skiac_font_collection* c_font_collection,
   // Check if this alias already points to the SAME typeface (true idempotency)
   // We compare by uniqueID rather than just checking if the alias exists,
   // because the alias might exist as a system font that we want to shadow.
-  auto existing_typeface =
-      c_font_collection->assets->matchFamilyStyle(alias, style);
+  auto existing_typeface = MatchNamedFamily(c_font_collection, alias, style);
   if (existing_typeface &&
       existing_typeface->uniqueID() == typeface->uniqueID()) {
     // Alias already points to the same typeface - true idempotency, no need to

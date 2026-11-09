@@ -629,3 +629,92 @@ test.serial('a name registered over an installed family is used only where it is
     t.true(near(out.serifNamed, LATO), `"${out.serifName}": ${out.serifNamed}`)
   }
 })
+
+// The same over an installed family with another spelling of the name (Chrome
+// 157: FontFace "helvetica" draws for "40px Helvetica" and "40px HELVETICA",
+// Blink's FontFaceCache folds case), and setAlias over it: setAlias(a, b)
+// aliases the face text naming a uses now (the registered one), so an alias
+// chain draws it and setAlias(a, a) changes nothing. Kept after a rebuild (an
+// unrelated font removed) and a renderer switch, with each renderer.
+const OVER_INSTALLED_PROBE = `
+  const { createCanvas, GlobalFonts, setTextRenderer } = require(process.env.PROBE_INDEX)
+  const { RENDERER, PROBE_STEPS, PROBE_DIR, PROBE_FONTS } = process.env
+  setTextRenderer(RENDERER)
+  const width = (font) => {
+    const ctx = createCanvas(10, 10).getContext('2d')
+    ctx.font = font
+    return ctx.measureText('Ag').width
+  }
+  const FONTS = ['40px "Source Serif Pro"', '40px "SOURCE SERIF PRO"', 'bold 40px "source serif pro"', '40px Brand', '40px Brand2']
+  const out = { loaded: GlobalFonts.loadFontsFromDir(PROBE_DIR), aliases: [], states: [] }
+  const state = () => out.states.push(FONTS.map(width))
+  for (const step of PROBE_STEPS.split(',')) {
+    const [kind, a, b] = step.split(':')
+    if (kind === 'register') GlobalFonts.registerFromPath(PROBE_FONTS + '/Lato-Regular.ttf', a)
+    else if (kind === 'alias') out.aliases.push(GlobalFonts.setAlias(a, b))
+    else if (kind === 'rebuild') GlobalFonts.remove(GlobalFonts.registerFromPath(PROBE_FONTS + '/Oswald.ttf', 'Unrelated'))
+    else if (kind === 'switch') {
+      setTextRenderer(RENDERER === 'system' ? 'portable' : 'system')
+      setTextRenderer(RENDERER)
+    } else state()
+  }
+  console.log(JSON.stringify(out))`
+
+for (const renderer of ['portable', 'system'] as const) {
+  test.serial(`a name registered over an installed family, other spellings and setAlias (${renderer})`, (t) => {
+    const dir = mkdtempSync(join(tmpdir(), 'canvas-installed-family-'))
+    t.teardown(() => rmSync(dir, { recursive: true, force: true }))
+    copyFileSync(fontPath, join(dir, 'SourceSerifPro-Regular.ttf'))
+    const probe = (steps: string[]) => {
+      const child = spawnSync(process.execPath, ['-e', OVER_INSTALLED_PROBE], {
+        encoding: 'utf8',
+        timeout: 30_000,
+        env: {
+          ...process.env,
+          RENDERER: renderer,
+          PROBE_STEPS: [...steps, 'state', 'rebuild', 'state', 'switch', 'state'].join(','),
+          PROBE_DIR: dir,
+          PROBE_FONTS: join(__dirname, 'fonts'),
+          PROBE_INDEX: join(__dirname, '..', 'index.js'),
+        },
+      })
+      t.is(child.status, 0, child.stderr)
+      const out = JSON.parse(child.stdout)
+      t.is(out.loaded, 1)
+      return out
+    }
+    const LATO = 47.63996887207031
+    const near = (a: number, b: number) => Math.abs(a - b) <= 1e-3
+    const installed = probe([]).states[0][0]
+    t.false(near(installed, LATO), `installed: ${installed}`)
+    const check = (steps: string[], expected: (boolean | null)[]) => {
+      const out = probe(steps)
+      t.true(
+        out.aliases.every((ok: boolean) => ok),
+        `${steps}: setAlias ${out.aliases}`,
+      )
+      for (const [i, widths] of out.states.entries()) {
+        for (const [j, lato] of expected.entries()) {
+          if (lato !== null) {
+            t.is(near(widths[j], LATO), lato, `${steps} state ${i}: ${widths[j]}`)
+          }
+        }
+      }
+    }
+    // Every spelling draws Lato, for every style.
+    check(['register:source serif pro'], [true, true, true, null, null])
+    check(['register:SOURCE SERIF PRO'], [true, true, true, null, null])
+    // An alias and an alias chain of a name over an installed family.
+    check(
+      ['register:Source Serif Pro', 'alias:Source Serif Pro:Brand', 'alias:Brand:Brand2'],
+      [true, true, true, true, true],
+    )
+    check(['register:source serif pro', 'alias:Source Serif Pro:Brand'], [true, true, true, true, null])
+    // setAlias(a, a) changes nothing.
+    check(['register:Source Serif Pro', 'alias:Source Serif Pro:Source Serif Pro'], [true, true, true, null, null])
+    check(
+      ['register:Source Serif Pro', 'state', 'alias:Source Serif Pro:SOURCE SERIF PRO'],
+      [true, true, true, null, null],
+    )
+  })
+}

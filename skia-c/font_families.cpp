@@ -277,23 +277,31 @@ class FamilyResolver {
   // -webkit-body" draws Arial, 48.93). removeFont and removeAll drop the
   // aliases of the families they remove, and an alias whose family a
   // rebuild does not find is not listed again (not active).
+  // Every spelling of the name counts (FontFaceCache folds case: Chrome
+  // 157, FontFace "helvetica": "40px Helvetica" and "40px HELVETICA" draw
+  // the FontFace, 47.64).
   bool IsWebFont(std::string_view name) const {
-    std::string spelling;
-    if (!IsRegistered(name) || !Find(name, &spelling)) {
+    if (!IsRegistered(name)) {
       return false;
     }
     const std::string folded = Fold(name);
+    auto it = c_collection_->folded_families.find(folded);
+    if (it == c_collection_->folded_families.end()) {
+      return false;
+    }
     for (const auto& entry : c_collection_->set_aliases) {
       if (entry.active && Fold(entry.alias) == folded) {
         return true;
       }
     }
-    const sk_sp<SkFontStyleSet> faces =
-        c_collection_->assets->matchFamily(spelling.c_str());
-    for (int i = 0; faces && i < faces->count(); ++i) {
-      const sk_sp<SkTypeface> face = faces->createTypeface(i);
-      if (face && !IsSystemTypeface(c_collection_, face.get())) {
-        return true;
+    for (const auto& spelling : it->second) {
+      const sk_sp<SkFontStyleSet> faces =
+          c_collection_->assets->matchFamily(spelling.c_str());
+      for (int i = 0; faces && i < faces->count(); ++i) {
+        const sk_sp<SkTypeface> face = faces->createTypeface(i);
+        if (face && !IsSystemTypeface(c_collection_, face.get())) {
+          return true;
+        }
       }
     }
     return false;
@@ -344,6 +352,19 @@ class FamilyResolver {
     }
     if (Kinds(*out) & kInstalledFaces) {
       *out = std::string(kWebTag) + *out;
+      return true;
+    }
+    // `assets` matches a name case-sensitively: the spelling it has when
+    // `name` is the spelling of an installed family outside it (Lato
+    // registered as "helvetica", "40px Helvetica").
+    if (!HasAssetsFamily(*out)) {
+      for (const auto& spelling :
+           c_collection_->folded_families.at(Fold(name))) {
+        if (HasAssetsFamily(spelling)) {
+          *out = spelling;
+          break;
+        }
+      }
     }
     return true;
   }
@@ -440,6 +461,14 @@ class FamilyResolver {
     }
     c_collection_->family_kinds.emplace(std::move(key), kinds);
     return kinds;
+  }
+
+  // Whether `assets` itself has the family spelled `spelling`.
+  bool HasAssetsFamily(const std::string& spelling) const {
+    const sk_sp<SkFontStyleSet> set =
+        c_collection_->assets->TypefaceFontProvider::onMatchFamily(
+            spelling.c_str());
+    return set && set->count() > 0;
   }
 
   // The installed family `name` outside `assets`, null for none.
@@ -1451,6 +1480,24 @@ sk_sp<SkFontStyleSet> MakeSplitFamily(skiac_font_collection* c_collection,
     set->appendTypeface(std::move(face));
   }
   return set;
+}
+
+sk_sp<SkTypeface> MatchNamedFamily(skiac_font_collection* c_collection,
+                                   const char* family,
+                                   const SkFontStyle& style) {
+  // The named branch of ResolveFontFamilies: a web font by FindWebFont's
+  // name, a tagged one from its split set.
+  FamilyResolver resolver(c_collection);
+  std::string name;
+  if (family[0] && resolver.IsWebFont(family) &&
+      resolver.FindWebFont(family, &name)) {
+    const sk_sp<SkFontStyleSet> set =
+        name.front() == '\x01'
+            ? MakeSplitFamily(c_collection, name)
+            : c_collection->assets->matchFamily(name.c_str());
+    return set ? set->matchStyle(style) : nullptr;
+  }
+  return c_collection->assets->matchFamilyStyle(family, style);
 }
 
 uint32_t skiac_font_collection_register_system_font(
