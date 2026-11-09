@@ -12,6 +12,7 @@
 
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -538,6 +539,70 @@ SystemFallbackFont InstalledFallback(skiac_font_collection* c_collection,
                                      bool monospace);
 // ColorTableLookup::TypefaceHasAnySupportedColorTable.
 bool TypefaceHasColorTable(SkTypeface* typeface);
+
+// ---- the system fallback stage, shared by canvas and SVG text ----
+
+// FontFallbackPriority::IsNonTextFallbackPriority: the priority stage asks
+// the system for the segment's priority before the system stage.
+bool IsNonTextFallbackPriority(Priority priority);
+
+// Whether CoreText's fallback is asked: on Apple with the system renderer
+// once the installed fonts are on (the manager FontCollection::
+// defaultFallback asks). The installed fonts (InstalledFallback) are asked
+// everywhere CoreText is not or finds none.
+bool HasCoreTextFallbackSource(skiac_font_collection* c_collection);
+
+// What FontCache::FallbackFontForCharacter reads of one font request.
+struct SystemFallbackRequest {
+  // Weight, slope, style keyword, stretch, specified size and
+  // font-optical-sizing.
+  const skiac_text_request* request = nullptr;
+  // The font list's first font (FontFallbackList::
+  // PrimarySimpleFontDataWithSpace): its face, the family face before font
+  // arguments (null for none) and its synthetic styles.
+  SkTypeface* primary_face = nullptr;
+  SkTypeface* primary_base = nullptr;
+  SyntheticStyle primary_synthetic = {false, false};
+  // HasCoreTextFallbackSource.
+  bool coretext = false;
+  // InstalledFallback's Han script (HanScriptForLocale of the content
+  // language, else of the host language; 0 for none) and whether the
+  // description's generic family is monospace.
+  int han_script = 0;
+  bool monospace = false;
+};
+
+// FontCache::FallbackFontForCharacter: none for a private use or
+// non-character; on Apple with CoreText, Apple Color Emoji for emoji
+// presentation, else the CoreText helper from the primary font; where
+// CoreText is not asked or gives none, the installed fonts
+// (InstalledFallback). The face is the instance at the specified size's opsz
+// with no request axes (FontPlatformDataFromCTFont) unless optical sizing is
+// off. Results are cached (FindSystemFallback).
+SystemFallbackFont SystemFallbackFor(skiac_font_collection* c_collection,
+                                     const SystemFallbackRequest& query,
+                                     uint32_t hint,
+                                     Priority priority);
+
+// The inputs of SystemFallbackRequest a request gives: HanScriptForLocale of
+// `lang` (else of the host language), and whether the last generic family
+// of the list is monospace (LastResortFamily's rule).
+int FallbackHanScript(std::string_view lang);
+bool FallbackMonospace(const skiac_text_request& request);
+
+// FontCache::GetLastResortFallbackFont through the family matching (`base`,
+// and `face`: the instance at `font_args`), or none. With CoreText any face;
+// else only an installed one (the font cache has no FontFace).
+struct LastResortFont {
+  sk_sp<SkTypeface> face;
+  sk_sp<SkTypeface> base;
+};
+LastResortFont LastResortFace(
+    skiac_font_collection* c_collection,
+    const skiac_text_request& request,
+    const SkFontStyle& style,
+    bool coretext,
+    const std::optional<skia::textlayout::FontArguments>& font_args);
 
 // A system fallback face at an opsz (FontPlatformDataFromCTFont), cached by
 // typeface and opsz.
