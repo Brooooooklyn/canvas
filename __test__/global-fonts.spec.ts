@@ -1351,9 +1351,13 @@ const PRELOADED_TWIN_PROBE = `
   if (PROBE_CASE === 'replaced') {
     // The file is replaced on disk after loadFontsFromDir. The same path is
     // not read again (path dedup), so the name keeps the bytes the font was
-    // loaded from in every state and in both renderer modes.
+    // loaded from in every state and in both renderer modes. The new file
+    // is written next to it and renamed over it, as a font file is
+    // replaced: written in place, the file the font maps changes under it
+    // on Linux, so its own bytes would change too.
     const file = join(PROBE_DIR, 'Oswald.ttf')
-    require('fs').copyFileSync(PROBE_FONTS + '/Lato-Regular.ttf', file)
+    require('fs').copyFileSync(PROBE_FONTS + '/Lato-Regular.ttf', file + '.new')
+    require('fs').renameSync(file + '.new', file)
     state = () => out.states.push({ ag: ag('Replaced'), tiny: tiny('Replaced') })
     out.steps = [GlobalFonts.registerFromPath(file, 'Replaced') !== null]
     state()
@@ -1556,7 +1560,7 @@ const REJECTED_PICK = `
 // font descent] of the name and of the file's own family.
 const REJECTED_PROBE = `
   const { dirname, join } = require('path')
-  const { copyFileSync, readFileSync } = require('fs')
+  const { copyFileSync, readFileSync, renameSync } = require('fs')
   const { createCanvas, GlobalFonts, setTextRenderer } = require(process.env.PROBE_INDEX)
   const { RENDERER, PROBE_FILE, PROBE_OWN, PROBE_FONTS } = process.env
   const round = (v) => Math.round(v * 1000) / 1000
@@ -1574,7 +1578,9 @@ const REJECTED_PROBE = `
   if (RENDERER === 'system') setTextRenderer('portable')
   out.loaded = GlobalFonts.loadFontsFromDir(dirname(PROBE_FILE))
   setTextRenderer('system')
-  copyFileSync(join(PROBE_FONTS, 'Oswald.ttf'), PROBE_FILE)
+  // Renamed over the file, not written in place (the replaced-file test).
+  copyFileSync(join(PROBE_FONTS, 'Oswald.ttf'), PROBE_FILE + '.new')
+  renameSync(PROBE_FILE + '.new', PROBE_FILE)
   out.registered = GlobalFonts.registerFromPath(PROBE_FILE, 'Rejected') !== null
   state('system, after the call')
   GlobalFonts.remove(GlobalFonts.registerFromPath(join(PROBE_FONTS, 'EBGaramond-Regular.ttf'), 'UnrelatedEBG'))
