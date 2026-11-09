@@ -1576,6 +1576,14 @@ bool skiac_font_collection_primary_font_units(
     const skiac_text_request* request,
     skiac_primary_font_units* units) {
   c_collection->flushCachesIfDirty();
+  // As FindOrLayOutLine: the font argument lists of this read only, and the
+  // drop of the caches its noteFontArguments asks for, on every return,
+  // after `line` (declared later, so gone first) lets go of them.
+  c_collection->layout_font_arguments.clear();
+  struct DropCachesIfOverBudget {
+    skiac_font_collection* c_collection;
+    ~DropCachesIfOverBudget() { c_collection->dropCachesIfOverBudget(); }
+  } drop_caches{c_collection};
   const FontResolution resolution = ResolveFontRequest(c_collection, *request);
   const LineFaces line = ResolveLineFaces(c_collection, *request, resolution);
   if (line.family_faces.empty()) {

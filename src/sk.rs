@@ -7375,6 +7375,31 @@ mod text_line_tests {
     }
   }
 
+  /// The ex, ch and cap read (primary_font_units, for letterSpacing,
+  /// wordSpacing and filter lengths) notes its font argument list as a
+  /// layout does and runs the drop it asks for itself: 300 lists read with
+  /// no text layout drop the caches, here the line laid out before them.
+  #[test]
+  fn primary_font_units_drop_the_caches_past_the_budget() {
+    let mut settings = settings();
+    settings.font.size = 16.0;
+    settings.font.families = vec![FamilyName::Named("DropMono".to_owned())];
+    let collection = variable_and_fallback_fonts();
+    settings.font.weight = 500.5;
+    assert!(measure(&collection, &settings, "a") > 0.0);
+    assert!(kept(&collection, &settings, "a"));
+    for i in 0..300 {
+      settings.font.weight = 100.0 + i as f32;
+      let units = collection.primary_font_units(&settings);
+      assert!(
+        units.is_some_and(|units| units.zero_width > 0.0),
+        "read {i}"
+      );
+    }
+    settings.font.weight = 500.5;
+    assert!(!kept(&collection, &settings, "a"));
+  }
+
   /// HarfBuzz's own Unicode data (what the shaper's HarfBuzz uses) gives
   /// what ICU gives (what Chromium's HarfBuzz uses) for every code point. A
   /// Skia bump that breaks this needs ICU-backed unicode funcs in the shaper.
