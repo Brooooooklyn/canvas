@@ -42,6 +42,9 @@ interface Row {
   draws?: Draw[]
   // Needs macOS system fonts: pinned on the capture's Darwin major only.
   system?: true
+  // Captured in Chrome's low-end mode (no FrameShapeCache). A row whose text
+  // starts with a space and has word spacing is captured in desktop mode,
+  // which the shaper follows within one call (DESIGN-SHAPER D26).
   lowEnd?: true
   // false: the portable renderer's own glyph metrics differ from the macOS
   // Chrome capture (not a shaping difference; also when a row with `flip`
