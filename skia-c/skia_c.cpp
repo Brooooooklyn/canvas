@@ -4701,6 +4701,17 @@ size_t skiac_font_collection_unregister_all(
   return removed_count;
 }
 
+// The set lists the face (the exact family spelling, no case folding).
+static bool ListsFace(const sk_sp<SkFontStyleSet>& set, SkTypefaceID id) {
+  for (int i = 0; set && i < set->count(); ++i) {
+    auto face = set->createTypeface(i);
+    if (face && face->uniqueID() == id) {
+      return true;
+    }
+  }
+  return false;
+}
+
 bool skiac_font_collection_set_alias(skiac_font_collection* c_font_collection,
                                      const char* family,
                                      const char* alias) {
@@ -4727,8 +4738,14 @@ bool skiac_font_collection_set_alias(skiac_font_collection* c_font_collection,
   // We compare by uniqueID rather than just checking if the alias exists,
   // because the alias might exist as a system font that we want to shadow.
   auto existing_typeface = MatchNamedFamily(c_font_collection, alias, style);
+  // MatchNamedFamily folds case: only the exact spelling listed with this
+  // face makes the call a no-op. Otherwise the spelling is listed now, as
+  // the rebuild replay does, so a font registered under it later goes after
+  // the alias (setAlias('Lato', 'lato'), then a font as 'lato').
   if (existing_typeface &&
-      existing_typeface->uniqueID() == typeface->uniqueID()) {
+      existing_typeface->uniqueID() == typeface->uniqueID() &&
+      ListsFace(c_font_collection->assets->matchFamily(alias),
+                typeface->uniqueID())) {
     // Alias already points to the same typeface - true idempotency, no need to
     // re-register. A new or reactivated entry still makes the alias a web
     // font (font_families.cpp IsWebFont): Chrome 157, FontFace "Arial" with

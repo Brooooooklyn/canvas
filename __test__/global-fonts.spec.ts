@@ -970,3 +970,66 @@ for (const renderer of ['portable', 'system'] as const) {
     }
   })
 }
+
+const CASE_ALIAS_PROBE = `
+  const { createCanvas, GlobalFonts, setTextRenderer } = require(process.env.PROBE_INDEX)
+  const { RENDERER, PROBE_FONTS } = process.env
+  setTextRenderer(RENDERER)
+  const width = (family) => {
+    const ctx = createCanvas(10, 10).getContext('2d')
+    ctx.font = '40px "' + family + '"'
+    return ctx.measureText('Ag').width
+  }
+  const out = { states: [] }
+  const state = () =>
+    out.states.push({
+      lato: width('lato'),
+      latoVariations: GlobalFonts.hasVariations('lato', 400, 5, 0),
+      Lato: width('Lato'),
+      robotoMono: width('Roboto Mono'),
+      BRAND: width('BRAND'),
+      hasBRAND: GlobalFonts.has('BRAND'),
+    })
+  GlobalFonts.registerFromPath(PROBE_FONTS + '/Lato-Regular.ttf')
+  GlobalFonts.registerFromPath(PROBE_FONTS + '/Lato-Regular.ttf', 'Brand')
+  out.aliases = [GlobalFonts.setAlias('Lato', 'lato'), GlobalFonts.setAlias('Brand', 'BRAND')]
+  out.robotoMono = GlobalFonts.registerFromPath(PROBE_FONTS + '/RobotoMono-VariableFont_wght.ttf', 'lato') !== null
+  state()
+  GlobalFonts.remove(GlobalFonts.registerFromPath(PROBE_FONTS + '/Oswald.ttf', 'Unrelated'))
+  state()
+  setTextRenderer(RENDERER === 'system' ? 'portable' : 'system')
+  setTextRenderer(RENDERER)
+  state()
+  console.log(JSON.stringify(out))`
+
+for (const renderer of ['portable', 'system'] as const) {
+  test.serial(`a case-only alias is listed at once, before a font later registered under it (${renderer})`, (t) => {
+    const near = (a: number, b: number) => Math.abs(a - b) <= 1e-3
+    const child = spawnSync(process.execPath, ['-e', CASE_ALIAS_PROBE], {
+      encoding: 'utf8',
+      timeout: 30_000,
+      env: {
+        ...process.env,
+        RENDERER: renderer,
+        PROBE_FONTS: join(__dirname, 'fonts'),
+        PROBE_INDEX: join(__dirname, '..', 'index.js'),
+      },
+    })
+    t.is(child.status, 0, child.stderr)
+    const out = JSON.parse(child.stdout)
+    t.deepEqual(out.aliases, [true, true])
+    t.true(out.robotoMono)
+    // Right after the calls, after an unrelated removal (a rebuild) and
+    // after a renderer switch: 'lato' lists the alias (Lato) before Roboto
+    // Mono, registered under 'lato' after it, and 'BRAND' is listed.
+    for (const [i, s] of out.states.entries()) {
+      const at = `state ${i}`
+      t.false(near(s.Lato, s.robotoMono), `${at}: Lato ${s.Lato}, Roboto Mono ${s.robotoMono}`)
+      t.true(near(s.lato, s.Lato), `${at}: lato ${s.lato}, Lato ${s.Lato}`)
+      // Roboto Mono has a wght axis, Lato none (no width match needed).
+      t.false(s.latoVariations, at)
+      t.true(near(s.BRAND, s.Lato), `${at}: BRAND ${s.BRAND}, Lato ${s.Lato}`)
+      t.true(s.hasBRAND, at)
+    }
+  })
+}
