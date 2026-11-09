@@ -1251,7 +1251,12 @@ for (const renderer of ['portable', 'system'] as const) {
 // dropped (OTS). The file's own family name stays an installed font.
 const PRELOADED_TWIN_CHROME = {
   oswaldTiny: [2, 1],
-  iosevkaTiny: [2, 0],
+  // Iosevka Slab sets USE_TYPO_METRICS: its typo descender is 273, its hhea
+  // descender 205 (of 1000). CoreText (macOS system) reads hhea, 0.41 at
+  // 2px, which rounds to 0 (Chrome macOS). FreeType, Fontations (Chrome
+  // Linux web fonts) and DirectWrite read 273, 0.546, which rounds to 1.
+  iosevkaTiny: process.platform === 'darwin' ? [2, 0] : [2, 1],
+  iosevkaTinyTypo: [2, 1],
   trak: 108.79998779296875,
   // canvas CSS font-size-adjust 0.5, "40px Lato, OswaldWeb" "Ж"
   fsa: 23.38958740234375,
@@ -1422,12 +1427,14 @@ for (const renderer of ['portable', 'system'] as const) {
       t.deepEqual(s.tiny.OswaldAlias, PRELOADED_TWIN_CHROME.oswaldTiny, at)
       t.deepEqual(s.tiny.OswaldBuf, PRELOADED_TWIN_CHROME.oswaldTiny, at)
       t.deepEqual(s.tiny.Oswald, [2.386, 0.578], at)
-      // Iosevka Slab's 2px descent is 1 in portable mode (its raw descent
-      // differs there), so Chrome's [2, 0] is pinned for system only.
+      // Portable mode reads the font with FreeType on every platform, so
+      // its 2px descent is the typo one there.
       t.deepEqual(s.tiny.IosevkaWeb, s.tiny.IosevkaBuf, at)
-      if (renderer === 'system') {
-        t.deepEqual(s.tiny.IosevkaWeb, PRELOADED_TWIN_CHROME.iosevkaTiny, at)
-      }
+      t.deepEqual(
+        s.tiny.IosevkaWeb,
+        renderer === 'system' ? PRELOADED_TWIN_CHROME.iosevkaTiny : PRELOADED_TWIN_CHROME.iosevkaTinyTypo,
+        at,
+      )
       // Web synthesis: oblique 20deg = italic, 600 = 700, both != normal.
       for (const family of ['IosevkaWeb', 'OswaldWeb', 'TrakWeb']) {
         const [normal, italic, oblique, w600, w700] = s.box[family]
