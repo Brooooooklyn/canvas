@@ -645,14 +645,15 @@ const OVER_INSTALLED_PROBE = `
     ctx.font = font
     return ctx.measureText('Ag').width
   }
-  const FONTS = ['40px "Source Serif Pro"', '40px "SOURCE SERIF PRO"', 'bold 40px "source serif pro"', '40px Brand', '40px Brand2', '40px NoSuchFamily']
+  const FONTS = ['40px "Source Serif Pro"', '40px "SOURCE SERIF PRO"', 'bold 40px "source serif pro"', '40px Brand', '40px Brand2', '40px NoSuchFamily', '40px "EB Garamond"']
   const out = { loaded: GlobalFonts.loadFontsFromDir(PROBE_DIR), aliases: [], states: [] }
   const state = () => out.states.push(FONTS.map(width))
-  let lato = null
+  // register:name[:file] (Lato by default), remove[:file]
+  const keys = {}
   for (const step of PROBE_STEPS.split(',')) {
     const [kind, a, b] = step.split(':')
-    if (kind === 'register') lato = GlobalFonts.registerFromPath(PROBE_FONTS + '/Lato-Regular.ttf', a)
-    else if (kind === 'remove') GlobalFonts.remove(lato)
+    if (kind === 'register') keys[b ?? 'Lato-Regular.ttf'] = GlobalFonts.registerFromPath(PROBE_FONTS + '/' + (b ?? 'Lato-Regular.ttf'), a)
+    else if (kind === 'remove') GlobalFonts.remove(keys[a ?? 'Lato-Regular.ttf'])
     else if (kind === 'alias') out.aliases.push(GlobalFonts.setAlias(a, b))
     else if (kind === 'rebuild') GlobalFonts.remove(GlobalFonts.registerFromPath(PROBE_FONTS + '/Oswald.ttf', 'Unrelated'))
     else if (kind === 'switch') {
@@ -661,6 +662,16 @@ const OVER_INSTALLED_PROBE = `
     } else state()
   }
   console.log(JSON.stringify(out))`
+
+const FONTS_NAMES = [
+  '"Source Serif Pro"',
+  '"SOURCE SERIF PRO"',
+  'bold "source serif pro"',
+  'Brand',
+  'Brand2',
+  'NoSuchFamily',
+  '"EB Garamond"',
+]
 
 for (const renderer of ['portable', 'system'] as const) {
   test.serial(`a name registered over an installed family, other spellings and setAlias (${renderer})`, (t) => {
@@ -731,6 +742,124 @@ for (const renderer of ['portable', 'system'] as const) {
         t.true(near(widths[0], installed), `${register} state ${i}: ${widths[0]}`)
         t.true(near(widths[3], widths[5]), `${register} state ${i}: Brand ${widths[3]}, fallback ${widths[5]}`)
         t.true(near(widths[4], widths[5]), `${register} state ${i}: Brand2 ${widths[4]}, fallback ${widths[5]}`)
+      }
+    }
+    // An alias remembers the registration its face came from, through the
+    // chain, whatever spelling each name has. Removing that font drops the
+    // aliases: they do not move to another font registered under the same
+    // name (EB Garamond here). Removing another font keeps them, and so
+    // does removing a font registered after an alias of the installed
+    // family.
+    const ALIASES = ['alias:Source Serif Pro:Brand', 'alias:Brand:Brand2']
+    const FILES = ['Lato-Regular.ttf', 'EBGaramond-Regular.ttf']
+    for (const [lato, garamond] of [
+      ['Source Serif Pro', 'Source Serif Pro'],
+      ['source serif pro', 'source serif pro'],
+      ['Source Serif Pro', 'SOURCE SERIF PRO'],
+      ['SOURCE SERIF PRO', 'Source Serif Pro'],
+    ]) {
+      const registers = [`register:${lato}`, `register:${garamond}:EBGaramond-Regular.ttf`]
+      // The alias copies what text naming "Source Serif Pro" draws: one of
+      // the two registered fonts.
+      const [before] = probe([...registers, ...ALIASES]).states
+      t.true(near(before[3], before[0]), `${lato}, ${garamond}: Brand ${before[3]}, named ${before[0]}`)
+      t.true(near(before[4], before[0]), `${lato}, ${garamond}: Brand2 ${before[4]}, named ${before[0]}`)
+      const source = near(before[3], LATO) ? 0 : 1
+      t.true(source === 0 || near(before[3], before[6]), `${lato}, ${garamond}: Brand ${before[3]}`)
+      for (const [file, removed] of FILES.entries()) {
+        const out = probe([...registers, ...ALIASES, `remove:${removed}`])
+        t.true(
+          out.aliases.every((ok: boolean) => ok),
+          `${lato}, ${garamond}: setAlias ${out.aliases}`,
+        )
+        for (const [i, widths] of out.states.entries()) {
+          const at = `${lato}, ${garamond}, ${removed} removed, state ${i}`
+          // The other font is what the name draws now.
+          t.true(near(widths[0], file === 0 ? widths[6] : LATO), `${at}: named ${widths[0]}`)
+          for (const j of [3, 4]) {
+            const expected = file === source ? widths[5] : before[3]
+            t.true(near(widths[j], expected), `${at}: ${FONTS_NAMES[j]} ${widths[j]}, expected ${expected}`)
+          }
+        }
+      }
+    }
+    for (const register of ['register:Source Serif Pro', 'register:source serif pro']) {
+      for (const [i, widths] of probe([...ALIASES, register, 'remove']).states.entries()) {
+        for (const j of [0, 3, 4]) {
+          t.true(
+            near(widths[j], installed),
+            `installed alias, ${register} removed, state ${i}: ${FONTS_NAMES[j]} ${widths[j]}`,
+          )
+        }
+      }
+    }
+  })
+}
+
+// hasVariations and getVariationAxes report the face that text naming the
+// family draws: a variable font registered over an installed family (any
+// spelling) is that face, for every style. Kept after a rebuild (an
+// unrelated font removed) and a renderer switch, with each renderer.
+const VARIATIONS_PROBE = `
+  const { createCanvas, GlobalFonts, setTextRenderer } = require(process.env.PROBE_INDEX)
+  const { RENDERER, PROBE_DIR, PROBE_FONTS } = process.env
+  setTextRenderer(RENDERER)
+  const width = (font) => {
+    const ctx = createCanvas(10, 10).getContext('2d')
+    ctx.font = font
+    return ctx.measureText('Ag').width
+  }
+  const QUERIES = [['Source Serif Pro', 400], ['SOURCE SERIF PRO', 400], ['source serif pro', 700]]
+  const state = () =>
+    QUERIES.map(([name, weight]) => ({
+      has: GlobalFonts.hasVariations(name, weight, 5, 0),
+      axes: GlobalFonts.getVariationAxes(name, weight, 5, 0).map((axis) => axis.tag),
+      width: width(weight + ' 40px "' + name + '"'),
+    }))
+  const out = { loaded: GlobalFonts.loadFontsFromDir(PROBE_DIR), states: [] }
+  out.states.push(state())
+  GlobalFonts.registerFromPath(PROBE_FONTS + '/RobotoMono-VariableFont_wght.ttf', 'source serif pro')
+  out.robotoMono = [400, 700].map((weight) => width(weight + ' 40px "Roboto Mono"'))
+  out.states.push(state())
+  GlobalFonts.remove(GlobalFonts.registerFromPath(PROBE_FONTS + '/Oswald.ttf', 'Unrelated'))
+  out.states.push(state())
+  setTextRenderer(RENDERER === 'system' ? 'portable' : 'system')
+  setTextRenderer(RENDERER)
+  out.states.push(state())
+  console.log(JSON.stringify(out))`
+
+for (const renderer of ['portable', 'system'] as const) {
+  test.serial(`variation queries over an installed family use the face text draws (${renderer})`, (t) => {
+    const dir = mkdtempSync(join(tmpdir(), 'canvas-installed-family-'))
+    t.teardown(() => rmSync(dir, { recursive: true, force: true }))
+    copyFileSync(fontPath, join(dir, 'SourceSerifPro-Regular.ttf'))
+    const child = spawnSync(process.execPath, ['-e', VARIATIONS_PROBE], {
+      encoding: 'utf8',
+      timeout: 30_000,
+      env: {
+        ...process.env,
+        RENDERER: renderer,
+        PROBE_DIR: dir,
+        PROBE_FONTS: join(__dirname, 'fonts'),
+        PROBE_INDEX: join(__dirname, '..', 'index.js'),
+      },
+    })
+    t.is(child.status, 0, child.stderr)
+    const out = JSON.parse(child.stdout)
+    t.is(out.loaded, 1)
+    const WGHT = 0x77676874
+    const near = (a: number, b: number) => Math.abs(a - b) <= 1e-3
+    // The installed Source Serif Pro has no axes.
+    for (const query of out.states[0]) {
+      t.false(query.has)
+      t.deepEqual(query.axes, [])
+    }
+    for (const [i, queries] of out.states.slice(1).entries()) {
+      for (const [j, query] of queries.entries()) {
+        const at = `state ${i + 1}, query ${j}`
+        t.true(near(query.width, out.robotoMono[j === 2 ? 1 : 0]), `${at}: draws ${query.width}`)
+        t.true(query.has, `${at}: hasVariations`)
+        t.deepEqual(query.axes, [WGHT], `${at}: axes`)
       }
     }
   })

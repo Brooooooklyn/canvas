@@ -445,6 +445,20 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
     return id;
   }
 
+  // The registration (FontKey) whose face is `typeface_id`, 0 when it is an
+  // installed font (macOS loadSystemFonts) or no registered one. An alias
+  // face is the face of the font it names, so this also finds the font an
+  // alias of an alias came from.
+  uint32_t registrationOf(SkTypefaceID typeface_id) const {
+    for (const auto& [id, font_info] : registered_fonts) {
+      if (!font_info.installed && font_info.typeface &&
+          font_info.typeface->uniqueID() == typeface_id) {
+        return id;
+      }
+    }
+    return 0;
+  }
+
   // A rebuild: the font `id` of the old provider, made again as `typeface`
   // (its FontKey stays), with no name yet. addRebuiltAlias registers it
   // under each of its names.
@@ -629,18 +643,12 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
   }
 
   // Remove typeface from tracking
-  // Note: caller must also clean up set_aliases in skiac_font_collection
-  // to prevent stale alias persistence bug
-  bool removeTypeface(uint32_t typeface_id,
-                      std::vector<std::string>* removed_aliases = nullptr) {
+  // Note: caller must also drop the set_aliases made from it
+  // (skiac_font_collection::dropAliasesOf)
+  bool removeTypeface(uint32_t typeface_id) {
     auto it = registered_fonts.find(typeface_id);
     if (it == registered_fonts.end()) {
       return false;
-    }
-
-    // Return the aliases so caller can clean up set_aliases
-    if (removed_aliases) {
-      *removed_aliases = it->second.aliases;
     }
 
     // Get the content hash to update the secondary index
@@ -749,8 +757,26 @@ struct skiac_font_collection {
     // the alias family, also when it is an installed one
     // (font_families.cpp FamilyResolver::Faces).
     SkTypefaceID face_id = 0;
+    // The registration (FontKey) that face came from, through alias chains
+    // (TypefaceFontProviderCustom::registrationOf); 0 for an installed
+    // font. Removing that font drops the alias (dropAliasesOf), whatever
+    // names either was registered under; removing another font keeps it.
+    uint32_t font_key = 0;
   };
   std::vector<SetAlias> set_aliases;
+
+  // removeFont: the aliases made from the removed fonts `ids` go with them,
+  // so none moves to another face of the same name (another registration
+  // of it, or the installed family). The aliases of an installed font or
+  // of a kept registration stay.
+  void dropAliasesOf(const std::set<uint32_t>& ids) {
+    set_aliases.erase(std::remove_if(set_aliases.begin(), set_aliases.end(),
+                                     [&](const SetAlias& entry) {
+                                       return entry.font_key &&
+                                              ids.count(entry.font_key);
+                                     }),
+                      set_aliases.end());
+  }
 
   // `registered`: the call registered a face. Such a call is always kept,
   // as a repeat can pick another face of the family than the first call.
@@ -761,6 +787,7 @@ struct skiac_font_collection {
                    bool registered,
                    bool installed,
                    SkTypefaceID face_id) {
+    const uint32_t font_key = assets->registrationOf(face_id);
     if (!registered) {
       for (auto& entry : set_aliases) {
         if (entry.family == family && entry.alias == alias) {
@@ -768,12 +795,13 @@ struct skiac_font_collection {
           const bool changed = !entry.active || entry.face_id != face_id;
           entry.active = true;
           entry.face_id = face_id;
+          entry.font_key = font_key;
           return changed;
         }
       }
     }
-    set_aliases.push_back(
-        {family, alias, assets->nextOrder(), installed, true, face_id});
+    set_aliases.push_back({family, alias, assets->nextOrder(), installed, true,
+                           face_id, font_key});
     return true;
   }
   // Set when the dynamic provider gains a face or an alias. FontCollection
@@ -1124,17 +1152,25 @@ struct skiac_font_collection {
         // the setAlias call: in the new provider as far as it is made, with
         // the aliases replayed so far.
         SetAlias& entry = set_aliases[index];
-        sk_sp<TypefaceFontProviderCustom> old_assets =
-            std::exchange(assets, new_assets);
-        ++families_generation;
-        sk_sp<SkTypeface> typeface =
-            MatchNamedFamily(this, entry.family.c_str(), SkFontStyle());
-        ++families_generation;
-        assets = std::move(old_assets);
+        sk_sp<SkTypeface> typeface;
+        // An alias of a registered font keeps that font's face (made again
+        // above: the font was registered before the call), never another
+        // face of the family name.
+        auto from = entry.font_key ? made.find(entry.font_key) : made.end();
+        if (from != made.end()) {
+          typeface = from->second;
+        } else {
+          sk_sp<TypefaceFontProviderCustom> old_assets =
+              std::exchange(assets, new_assets);
+          ++families_generation;
+          typeface =
+              MatchNamedFamily(this, entry.family.c_str(), SkFontStyle());
+          ++families_generation;
+          assets = std::move(old_assets);
+        }
         // An alias made from a registered face never moves to an installed
-        // one: its font was removed (removeFont drops only the aliases of
-        // the exact spelling: Lato registered as 'helvetica',
-        // setAlias('Helvetica', 'Brand'), then the font removed).
+        // one (removeFont drops the aliases of the removed font:
+        // dropAliasesOf).
         if (typeface && !entry.installed &&
             IsSystemTypeface(this, typeface.get())) {
           typeface = nullptr;

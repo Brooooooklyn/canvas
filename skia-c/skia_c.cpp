@@ -4651,23 +4651,12 @@ uint32_t skiac_font_collection_register_from_path(
 size_t skiac_font_collection_unregister(
     skiac_font_collection* c_font_collection,
     uint32_t typeface_id) {
-  // Get aliases before removal so we can clean up set_aliases
-  std::vector<std::string> removed_aliases;
-  bool removed =
-      c_font_collection->assets->removeTypeface(typeface_id, &removed_aliases);
+  bool removed = c_font_collection->assets->removeTypeface(typeface_id);
   if (removed) {
-    // Clean up set_aliases entries for this font's family names
-    // This prevents stale aliases from transferring to newly registered fonts
-    for (const auto& alias : removed_aliases) {
-      auto it = c_font_collection->set_aliases.begin();
-      while (it != c_font_collection->set_aliases.end()) {
-        if (it->family == alias) {
-          it = c_font_collection->set_aliases.erase(it);
-        } else {
-          ++it;
-        }
-      }
-    }
+    // The setAlias entries made from this font go with it, so they do not
+    // move to another font of the same name (one registered before or
+    // after, or the installed family).
+    c_font_collection->dropAliasesOf({typeface_id});
     // Rebuild provider with remaining fonts (the old provider is freed)
     c_font_collection->rebuildAssets();
     return 1;
@@ -4680,30 +4669,16 @@ size_t skiac_font_collection_unregister_batch(
     const uint32_t* typeface_ids,
     size_t count) {
   size_t removed_count = 0;
-  std::vector<std::string> all_removed_aliases;
+  std::set<uint32_t> removed_ids;
   for (size_t i = 0; i < count; i++) {
-    std::vector<std::string> removed_aliases;
-    if (c_font_collection->assets->removeTypeface(typeface_ids[i],
-                                                  &removed_aliases)) {
+    if (c_font_collection->assets->removeTypeface(typeface_ids[i])) {
       removed_count++;
-      // Collect all removed aliases for cleanup
-      all_removed_aliases.insert(all_removed_aliases.end(),
-                                 removed_aliases.begin(),
-                                 removed_aliases.end());
+      removed_ids.insert(typeface_ids[i]);
     }
   }
   if (removed_count > 0) {
-    // Clean up set_aliases entries for all removed fonts' family names
-    for (const auto& alias : all_removed_aliases) {
-      auto it = c_font_collection->set_aliases.begin();
-      while (it != c_font_collection->set_aliases.end()) {
-        if (it->family == alias) {
-          it = c_font_collection->set_aliases.erase(it);
-        } else {
-          ++it;
-        }
-      }
-    }
+    // The setAlias entries made from the removed fonts go with them.
+    c_font_collection->dropAliasesOf(removed_ids);
     // Single rebuild for all removals
     c_font_collection->rebuildAssets();
   }
@@ -4834,8 +4809,9 @@ int skiac_typeface_get_variation_design_position(
 
   c_font_collection->prepareLookup();
   auto font_style = SkFontStyle(weight, width, (SkFontStyle::Slant)slant);
-  auto typeface =
-      c_font_collection->assets->matchFamilyStyle(family_name, font_style);
+  // The face text naming the family draws (a name registered over an
+  // installed family gives its registered faces).
+  auto typeface = MatchNamedFamily(c_font_collection, family_name, font_style);
   if (!typeface) {
     return 0;
   }
@@ -4891,8 +4867,8 @@ bool skiac_font_has_variations(skiac_font_collection* c_font_collection,
 
   c_font_collection->prepareLookup();
   auto font_style = SkFontStyle(weight, width, (SkFontStyle::Slant)slant);
-  auto typeface =
-      c_font_collection->assets->matchFamilyStyle(family_name, font_style);
+  // The face text naming the family draws (MatchNamedFamily).
+  auto typeface = MatchNamedFamily(c_font_collection, family_name, font_style);
   if (!typeface) {
     return false;
   }

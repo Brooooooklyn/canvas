@@ -1486,7 +1486,11 @@ sk_sp<SkTypeface> MatchNamedFamily(skiac_font_collection* c_collection,
                                    const char* family,
                                    const SkFontStyle& style) {
   // The named branch of ResolveFontFamilies: a web font by FindWebFont's
-  // name, a tagged one from its split set.
+  // name, a tagged one from its split set. A name that starts with \x01 is
+  // no family (the tags), as for a font list.
+  if (family[0] == '\x01') {
+    return nullptr;
+  }
   FamilyResolver resolver(c_collection);
   std::string name;
   if (family[0] && resolver.IsWebFont(family) &&
