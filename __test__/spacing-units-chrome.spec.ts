@@ -158,3 +158,37 @@ test.serial("after save() the getters are '' like Chrome, and restore() gives th
   t.is(ctx.letterSpacing, '0px')
   t.is(ctx.wordSpacing, '0px')
 })
+
+// Chrome 157 reads ch and ex off the font, not off shaped text: the advance
+// of the nominal "0" glyph and (on macOS) the top of the nominal "x"
+// (SimpleFontData::PlatformInit / PlatformGlyphInit). NominalProbe.ttf is
+// Lato whose default ccmp maps "0" to "W" and "x" to "X", so shaping "0"
+// would give 40.76px and "x" 28.66px at 40px instead of 23.2px and 20.26px.
+// Fixture: fixtures/text-fonts/spacing-units-nominal.json (FontFace
+// SpNominal).
+const NOMINAL: { spacing: Row[] } = JSON.parse(
+  readFileSync(join(__dirname, 'fixtures', 'text-fonts', 'spacing-units-nominal.json'), 'utf8'),
+)
+
+GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'NominalProbe.ttf'), 'SpNominal')
+
+const nominalRow = (id: string) => {
+  const found = NOMINAL.spacing.find((r) => r.id === id)
+  if (!found) throw new Error(`no row ${id}`)
+  return found
+}
+
+test.serial('ch and ex spacing read the nominal "0" and "x", not the ccmp glyphs', (t) => {
+  t.is(NOMINAL.spacing.length, 28)
+  t.true(Math.abs(nominalRow('nominal ls 1ch @40').chrome.lsPx - 23.2) < 1e-3)
+  t.true(Math.abs(nominalRow('nominal ws 1ex @40').chrome.wsPx - 20.26) < 1e-3)
+  withBothRenderers((renderer) => {
+    // The ex of a synthetic bold font is the top of the emboldened "x" in
+    // Chrome on macOS; elsewhere, and with our portable renderer on macOS,
+    // it is the font's x-height (an outside difference).
+    const rows = NOMINAL.spacing.filter(
+      (r) => !r.id.includes('ex @40 bold') || (process.platform === 'darwin' && renderer === 'system'),
+    )
+    t.deepEqual(mismatches(rows), [], renderer)
+  })
+})

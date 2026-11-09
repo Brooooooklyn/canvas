@@ -1359,6 +1359,63 @@ hb_language_t ShapingLanguage(const std::string& lang) {
   return language == HB_LANGUAGE_INVALID ? und : language;
 }
 
+// The FontList of a request: its families, their faces before and after
+// font arguments, the used sizes and the family entries' faces, with every
+// noteFontArguments call, before any reference into the caches is taken.
+// The families are copied: the cache entry is a reference into TextCaches.
+// The families and ComputeUsedSizes take the locale's font settings (a
+// generic family, the standard font too, at its own aspect under
+// font-size-adjust).
+struct LineFaces {
+  SkFontStyle font_style;
+  std::vector<SkString> families;
+  std::vector<sk_sp<SkTypeface>> base_faces;
+  UsedSizes sizes;
+  std::optional<FontArguments> font_args;
+  std::vector<sk_sp<SkTypeface>> faces;
+  std::vector<FamilyFace> family_faces;
+};
+
+LineFaces ResolveLineFaces(skiac_font_collection* c_collection,
+                           const skiac_text_request& request,
+                           const FontResolution& resolution) {
+  auto font_collection = c_collection->collection;
+  LineFaces out;
+  out.font_style =
+      SkFontStyle(static_cast<int>(roundf(request.weight)), request.stretch,
+                  static_cast<SkFontStyle::Slant>(request.style));
+  out.families = CachedFontFamilies(c_collection, request, resolution.locale());
+  out.base_faces = font_collection->findTypefaces(out.families, out.font_style);
+  out.sizes = ComputeUsedSizes(c_collection, out.base_faces, request,
+                               resolution.locale());
+  const std::vector<SkFontArguments::VariationPosition::Coordinate> coords =
+      FontVariations(out.base_faces, request, out.sizes.opsz);
+  if (!coords.empty()) {
+    SkFontArguments args;
+    args.setVariationDesignPosition(
+        {coords.data(), static_cast<int>(coords.size())});
+    out.font_args.emplace(args);
+    c_collection->noteFontArguments(std::hash<FontArguments>()(*out.font_args));
+  }
+  out.faces = coords.empty() ? out.base_faces
+                             : font_collection->findTypefaces(
+                                   out.families, out.font_style, out.font_args);
+  out.family_faces = FamilyFaces(c_collection, out.families, out.font_style,
+                                 out.base_faces, out.faces, out.sizes, request);
+  return out;
+}
+
+// The primary font's metrics (Blink's PrimaryFont()): the first face, at the
+// primary size.
+PrimaryFontMetrics PrimaryMetrics(skiac_font_collection* c_collection,
+                                  const LineFaces& line) {
+  SkTypeface* primary = line.faces.empty() ? nullptr : line.faces.front().get();
+  SkTypeface* primary_base =
+      line.base_faces.empty() ? nullptr : line.base_faces.front().get();
+  return CachedPrimaryFont(c_collection, primary, primary_base,
+                           line.sizes.effective);
+}
+
 }  // namespace
 
 FontResolution ResolveFontRequest(skiac_font_collection* c_collection,
@@ -1378,46 +1435,19 @@ void LayOutLineBlink(skiac_font_collection* c_collection,
                      const FontResolution& resolution,
                      TextCaches::Line* line) {
   auto font_collection = c_collection->collection;
-  const SkFontStyle font_style(static_cast<int>(roundf(request.weight)),
-                               request.stretch,
-                               static_cast<SkFontStyle::Slant>(request.style));
   // FontDescription::LocaleOrDefault: the HarfBuzz language, the case map
   // locale, HanKerning's locale and the standard font's script.
   const std::string& lang = resolution.lang;
-  // The FontList, with every noteFontArguments call, before any reference
-  // into the caches is taken. The families are copied: the cache entry is
-  // a reference into TextCaches. The families and ComputeUsedSizes take the
-  // locale's font settings (a generic family, the standard font too, at its
-  // own aspect under font-size-adjust).
-  const std::vector<SkString> families =
-      CachedFontFamilies(c_collection, request, resolution.locale());
-  const std::vector<sk_sp<SkTypeface>> base_faces =
-      font_collection->findTypefaces(families, font_style);
-  const UsedSizes sizes =
-      ComputeUsedSizes(c_collection, base_faces, request, resolution.locale());
-  const std::vector<SkFontArguments::VariationPosition::Coordinate> coords =
-      FontVariations(base_faces, request, sizes.opsz);
-  std::optional<FontArguments> font_args;
-  if (!coords.empty()) {
-    SkFontArguments args;
-    args.setVariationDesignPosition(
-        {coords.data(), static_cast<int>(coords.size())});
-    font_args.emplace(args);
-    c_collection->noteFontArguments(std::hash<FontArguments>()(*font_args));
-  }
-  const std::vector<sk_sp<SkTypeface>> faces =
-      coords.empty()
-          ? base_faces
-          : font_collection->findTypefaces(families, font_style, font_args);
-  const std::vector<FamilyFace> family_faces = FamilyFaces(
-      c_collection, families, font_style, base_faces, faces, sizes, request);
+  const LineFaces line_faces =
+      ResolveLineFaces(c_collection, request, resolution);
+  const SkFontStyle& font_style = line_faces.font_style;
+  const UsedSizes& sizes = line_faces.sizes;
+  const std::optional<FontArguments>& font_args = line_faces.font_args;
+  const std::vector<sk_sp<SkTypeface>>& faces = line_faces.faces;
+  const std::vector<FamilyFace>& family_faces = line_faces.family_faces;
 
   TextCaches::Line scratch;
-  SkTypeface* primary = faces.empty() ? nullptr : faces.front().get();
-  SkTypeface* primary_base =
-      base_faces.empty() ? nullptr : base_faces.front().get();
-  scratch.primary =
-      CachedPrimaryFont(c_collection, primary, primary_base, sizes.effective);
+  scratch.primary = PrimaryMetrics(c_collection, line_faces);
   if (request.text_len == 0 ||
       (request.size_adjust_metric >= 0 && !(sizes.effective > 0))) {
     scratch.empty = true;
@@ -1524,4 +1554,59 @@ void LayOutLineBlink(skiac_font_collection* c_collection,
   scratch.last_word_advance = placed.last_item_width;
   scratch.blink = std::move(placed.blink);
   *line = std::move(scratch);
+}
+
+// The x-height, "0" advance and cap height of the primary font of `request`
+// for the ex, ch and cap units: Blink's FontSizes::Ex, Ch and Cap
+// (css_to_length_conversion_data.cc:101-195) read the SimpleFontData of
+// Font::PrimaryFont() and PrimaryFontWithDigitZero(), the first family font
+// whether or not it has the glyph (font_fallback_list.cc:88-148), whose
+// metrics come from the font itself, not from shaping
+// (simple_font_data.cc:137-161 and :234-244): the cap height and x-height
+// are SkFontMetrics', on Apple the x-height is the top of the nominal "x"
+// glyph's outline, and the "0" advance is the nominal glyph's
+// (WidthForGlyph, :549-557), 0.5em when the font has none (:559-596). So a
+// ccmp that substitutes "0" or "x" changes nothing. The glyph reads use the
+// primary family entry's font, as LineFonts::Finish makes it (Blink's
+// SimpleFontData::font_, synthetic bold and italic too). False when the
+// request has no family font with glyphs: then ex is 0.5em and ch and cap
+// are 0, as the shaped empty typeface gave.
+bool skiac_font_collection_primary_font_units(
+    skiac_font_collection* c_collection,
+    const skiac_text_request* request,
+    skiac_primary_font_units* units) {
+  c_collection->flushCachesIfDirty();
+  const FontResolution resolution = ResolveFontRequest(c_collection, *request);
+  const LineFaces line = ResolveLineFaces(c_collection, *request, resolution);
+  if (line.family_faces.empty()) {
+    return false;
+  }
+  const FamilyFace& family = line.family_faces.front();
+  if (!family.face || family.face->countGlyphs() == 0) {
+    return false;
+  }
+  const PrimaryFontMetrics metrics = PrimaryMetrics(c_collection, line);
+  units->x_height = metrics.x_height;
+  units->cap_height = metrics.cap_height;
+  SkFont font(family.face, family.size);
+  TextRasterPolicy(*request).ApplyShapingFlags(&font);
+  const SyntheticStyle synthetic =
+      SynthesizeStyle(c_collection, family.face.get(), family.base, *request);
+  font.setEmbolden(synthetic.bold);
+  font.setSkewX(synthetic.italic ? -SK_Scalar1 / 4 : 0);
+  // SimpleFontData::GlyphForCharacter: HarfBuzz's cmap.
+  const SkGlyphID zero = HbNominalGlyph(c_collection, family.face.get(), '0');
+  units->zero_width = zero ? font.getWidth(zero) : family.size / 2;
+#if defined(__APPLE__)
+  if (SystemFontRenderer() && units->x_height != 0) {
+    if (const SkGlyphID x =
+            HbNominalGlyph(c_collection, family.face.get(), 'x')) {
+      // GetPathBoundsForGlyph (skia_text_metrics.cc:125-139).
+      const std::optional<SkPath> path = font.getPath(x);
+      units->x_height =
+          -(path ? path->getBounds() : font.getBounds(x, nullptr)).fTop;
+    }
+  }
+#endif
+  return true;
 }

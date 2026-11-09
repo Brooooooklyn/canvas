@@ -338,6 +338,15 @@ pub mod ffi {
     pub lh: f32,
   }
 
+  /// text.hpp skiac_primary_font_units.
+  #[repr(C)]
+  #[derive(Debug, Clone, Copy, Default)]
+  pub struct skiac_primary_font_units {
+    pub x_height: f32,
+    pub zero_width: f32,
+    pub cap_height: f32,
+  }
+
   /// skia_c.hpp skiac_text_request: the text (not NUL-terminated) and the
   /// canvas text settings.
   #[repr(C)]
@@ -1562,6 +1571,12 @@ pub mod ffi {
       c_collection: *mut skiac_font_collection,
       request: *const skiac_text_request,
       advance: *mut f32,
+    ) -> bool;
+
+    pub fn skiac_font_collection_primary_font_units(
+      c_collection: *mut skiac_font_collection,
+      request: *const skiac_text_request,
+      units: *mut skiac_primary_font_units,
     ) -> bool;
 
     pub fn skiac_font_collection_enable_installed_fonts(
@@ -6618,6 +6633,22 @@ impl FontCollection {
         ffi::skiac_font_collection_ideographic_advance(self.0, request, &mut advance)
       })
       .then_some(advance)
+  }
+
+  /// The x-height (0 when the font has none), "0" advance and cap height of
+  /// the primary font of the `settings` font, read off the font without
+  /// shaping (Blink's SimpleFontData metrics for ex, ch and cap); None when
+  /// no family font with glyphs exists.
+  pub fn primary_font_units(
+    &self,
+    settings: &TextSettings,
+  ) -> Option<ffi::skiac_primary_font_units> {
+    let mut units = ffi::skiac_primary_font_units::default();
+    settings
+      .with_request("", |request| unsafe {
+        ffi::skiac_font_collection_primary_font_units(self.0, request, &mut units)
+      })
+      .then_some(units)
   }
 
   pub fn get_variation_axes(

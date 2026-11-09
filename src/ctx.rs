@@ -2512,11 +2512,13 @@ impl Context {
   }
 
   /// The canvas font's x-height, "0" advance, cap height and U+6C34 advance
-  /// for the font-metric units of a filter (Blink's FontSizes::Ex, Ch, Cap
-  /// and Ic, css_to_length_conversion_data.cc:101-195), each measured only
-  /// when `reads` asks for it. On Apple platforms Blink takes the x-height
-  /// from the top of the "x" glyph, elsewhere from the font's own value; a
-  /// font without one gives None.
+  /// for the font-metric units of a filter or a spacing (Blink's
+  /// FontSizes::Ex, Ch, Cap and Ic, css_to_length_conversion_data.cc:101-195,
+  /// which both read), each read only when `reads` asks for it. They are the
+  /// primary font's own metrics and nominal glyphs, never shaped text
+  /// (simple_font_data.cc:137-161, :234-244, :437-474): on Apple platforms
+  /// with the system renderer the x-height is the top of the "x" glyph,
+  /// elsewhere the font's own value; a font without one gives None.
   fn filter_font_units(&mut self, reads: FontReads) -> FontUnits {
     // The canvas font (family, size, weight, slope, stretch, variations)
     // with no text styling, and its ctx.lang: the filter's font is the
@@ -2535,49 +2537,29 @@ impl Context {
       variant_caps: FontVariantCaps::Normal,
       lang,
       text_rendering: crate::sk::TextRendering::Auto,
-      // Blink's ch is the unshaped "0" and ex/cap/ic come from the primary
-      // font: no OpenType features. Size-adjust and optical sizing stay, as
-      // they pick the font's size and instance.
+      // Size-adjust and optical sizing stay, as they pick the font's size
+      // and instance. No OpenType feature is read.
       feature_settings: Default::default(),
       variant_ligatures: Default::default(),
       variant_numeric: Default::default(),
       variant_position: crate::font_props::FontVariantPosition::Normal,
       ..self.text_settings()
     };
-    let paint = Paint::default();
-    // The metrics, and setTextRenderer('system') read under the same font
-    // lock, so a switch on another thread cannot pair one mode's glyphs with
-    // the other mode's rule.
-    let measure = |ctx: &Self, text: &str| {
-      let font = get_font().ok()?;
-      Some((
-        ctx
-          .surface
-          .canvas
-          .get_line_metrics(text, &settings, &font, &paint),
-        crate::global_fonts::system_font_renderer(),
-      ))
-    };
     let mut units = FontUnits::default();
-    if reads.glyphs {
-      let (x, system) = measure(self, "x").unwrap_or_default();
-      let (zero, _) = measure(self, "0").unwrap_or_default();
-      units.x_height = if x.x_height == 0.0 {
-        None
-      } else if cfg!(target_vendor = "apple") && system {
-        // `ascent` is actualBoundingBoxAscent at the alphabetic baseline.
-        Some(x.ascent as f64)
-      } else {
-        Some(x.x_height as f64)
-      };
-      units.zero_width = zero.width as f64;
-      units.cap_height = x.cap_height as f64;
+    // The metrics read under the font lock, so a setTextRenderer('system')
+    // on another thread cannot pair one mode's font with the other's rule.
+    let Ok(font) = get_font() else {
+      return units;
+    };
+    if reads.glyphs
+      && let Some(primary) = font.primary_font_units(&settings)
+    {
+      units.x_height = (primary.x_height != 0.0).then_some(primary.x_height as f64);
+      units.zero_width = primary.zero_width as f64;
+      units.cap_height = primary.cap_height as f64;
     }
     if reads.ideographic {
-      units.ideographic_advance = get_font()
-        .ok()
-        .and_then(|font| font.ideographic_advance(&settings))
-        .map(f64::from);
+      units.ideographic_advance = font.ideographic_advance(&settings).map(f64::from);
     }
     units
   }

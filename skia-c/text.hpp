@@ -277,7 +277,21 @@ struct skiac_font_units {
   float lh;
 };
 
+// The primary font's x-height (0 when the font has none), "0" advance and
+// cap height, in px (skiac_font_collection_primary_font_units).
+struct skiac_primary_font_units {
+  float x_height;
+  float zero_width;
+  float cap_height;
+};
+
 extern "C" {
+// The ex, ch and cap metrics of the primary font of `request`, read off the
+// font without shaping; false when it has no family font (shaper.cpp).
+bool skiac_font_collection_primary_font_units(
+    skiac_font_collection* c_collection,
+    const skiac_text_request* request,
+    skiac_primary_font_units* units);
 // The font-relative units of the font the canvas resolves `font` against,
 // at `size` px; false when the collection has no such font.
 bool skiac_font_collection_default_font_units(
