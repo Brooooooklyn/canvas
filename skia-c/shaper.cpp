@@ -320,6 +320,7 @@ class LineFonts {
                              0};
     key.source = SystemFallbackSource::kInstalled;
     key.stretch = request_.stretch;
+    key.slant = request_.style;
     key.han_script = han_script_;
     key.monospace = monospace_;
     // Text that is an emoji character is asked for as text presentation

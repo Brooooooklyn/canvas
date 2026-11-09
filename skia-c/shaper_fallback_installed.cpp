@@ -22,8 +22,9 @@
 
 namespace {
 
-// FontDescription's kBoldThreshold and kItalicSlopeValue.
+// FontDescription's kBoldThreshold, kBoldWeightValue and kItalicSlopeValue.
 constexpr float kBoldThreshold = 600;
+constexpr float kBoldWeight = 700;
 constexpr float kItalicSlope = 14;
 
 // A sorted list of [first, last] code point ranges.
@@ -58,11 +59,35 @@ hb_blob_t* ReferenceCmapTable(hb_face_t*, hb_tag_t tag, void* user_data) {
 
 // The characters a face maps, as HarfBuzz's nominal glyph lookup (the one
 // the shaper draws with) maps them. Only the range list is kept: the face's
-// own tables are freed here.
+// own tables are freed here. A face whose data is a file or a buffer is read
+// from that data (a file is mapped, and only the pages of the table
+// directory, `cmap` and `maxp` are touched, then unmapped): asking the
+// typeface for its tables opens a FreeType face it keeps for its life, which
+// for every installed face of a host is hundreds of MB.
 Coverage ReadCoverage(SkTypeface* face) {
   Coverage coverage;
-  hb_face_t* hb_face = hb_face_create_for_tables(ReferenceCmapTable, face,
-                                                 /*destroy=*/nullptr);
+  int ttc_index = 0;
+  std::unique_ptr<SkStreamAsset> stream = face->openExistingStream(&ttc_index);
+  hb_face_t* hb_face = nullptr;
+  if (stream && stream->getMemoryBase() && stream->getLength() > 0 &&
+      stream->getLength() <= UINT32_MAX && ttc_index >= 0) {
+    hb_blob_t* blob = hb_blob_create(
+        static_cast<const char*>(stream->getMemoryBase()),
+        static_cast<unsigned int>(stream->getLength()), HB_MEMORY_MODE_READONLY,
+        /*user_data=*/nullptr, /*destroy=*/nullptr);
+    hb_face = hb_face_create(blob, static_cast<unsigned int>(ttc_index));
+    hb_blob_destroy(blob);
+    // Not an sfnt HarfBuzz reads (a WOFF or WOFF2 file, a Type 1 font):
+    // the typeface's own tables.
+    if (!hb_face_get_glyph_count(hb_face)) {
+      hb_face_destroy(hb_face);
+      hb_face = nullptr;
+    }
+  }
+  if (!hb_face) {
+    hb_face = hb_face_create_for_tables(ReferenceCmapTable, face,
+                                        /*destroy=*/nullptr);
+  }
   hb_set_t* set = hb_set_create();
   hb_face_collect_unicodes(hb_face, set);
   hb_codepoint_t first = HB_SET_VALUE_INVALID;
@@ -522,10 +547,13 @@ SystemFallbackFont InstalledFallback(skiac_font_collection* c_collection,
     result.face = std::move(face);
     return result;
   };
-  // 0. FallbackOnStandardFontStyle (font_cache_skia.cc): for bold or
-  // italic text, the first family at the normal style, made bold or italic,
-  // when it has the character. Not for emoji presentation.
-  if (first_family && !emoji_presentation && (bold || italic)) {
+  // 0. FallbackOnStandardFontStyle (font_cache_skia.cc): for italic text or
+  // a weight of 700 or more (font_cache_skia_win.cc asks at kBoldWeightValue;
+  // the face is then made bold from kBoldThreshold), the first family at the
+  // normal style, made bold or italic, when it has the character. Not for
+  // emoji presentation.
+  if (first_family && !emoji_presentation &&
+      (italic || request.weight >= kBoldWeight)) {
     SkString family;
     first_family->getFamilyName(&family);
     if (sk_sp<SkTypeface> normal =
@@ -561,8 +589,15 @@ SystemFallbackFont InstalledFallback(skiac_font_collection* c_collection,
     name = first_installed({"Segoe UI Emoji", "Segoe UI Symbol"});
   } else if (text_emoji) {
     name = first_installed({"Segoe UI Symbol", "Segoe UI Emoji"});
+  } else if (const std::vector<const char*> block =
+                 WindowsBlockFamilies(character);
+             block.size() == 1) {
+    // GetFontBasedOnUnicodeBlock's symbol blocks name Segoe UI Symbol
+    // whether it is installed or not: when it is not, the pan-Unicode lists
+    // come next, not the script's fonts.
+    name = block.front();
   } else {
-    name = first_installed(WindowsBlockFamilies(character));
+    name = first_installed(block);
   }
   std::string script = ScriptOf(character);
   bool han = false;
@@ -584,11 +619,13 @@ SystemFallbackFont InstalledFallback(skiac_font_collection* c_collection,
         script = "Hans";
       }
     }
-    // FindMonospaceFontForScript.
-    if (monospace && (script == "Arab" || script == "Hebr")) {
-      name = "courier new";
-    } else if (character <= 0xFFFF) {
-      if (const auto* families = FamiliesOf(WindowsScriptFamilies(), script)) {
+    // GetFontFamilyForScript, for the BMP only: FindMonospaceFontForScript,
+    // then the script's list.
+    if (character <= 0xFFFF) {
+      if (monospace && (script == "Arab" || script == "Hebr")) {
+        name = "courier new";
+      } else if (const auto* families =
+                     FamiliesOf(WindowsScriptFamilies(), script)) {
         name = first_installed(*families);
       }
     }

@@ -95,6 +95,17 @@ switch (process.env.CASE) {
     fs.rmSync(dir, { recursive: true, force: true })
     break
   }
+  case 'W': {
+    // A WOFF2 file: its characters are read through the typeface's tables
+    // (HarfBuzz reads no WOFF2 data).
+    out.wBefore = m('400 32px MyLatoOnly', '\u2500')
+    const dir = dirOf(['Cascadia.woff2'])
+    GlobalFonts.loadFontsFromDir(dir)
+    out.w = m('400 32px MyLatoOnly', '\u2500')
+    out.cascadia = m('400 32px "Cascadia Code"', '\u2500')
+    fs.rmSync(dir, { recursive: true, force: true })
+    break
+  }
   case 'mac': {
     const ctx = createCanvas(10, 10).getContext('2d')
     ctx.font = '700 32px MyLatoOnly'
@@ -177,6 +188,16 @@ for (const renderer of ['portable', 'system']) {
     // lang ja: Windows' Japanese list names Noto Sans CJK JP.
     t.deepEqual(out.ja, out.noto)
     t.notDeepEqual(out.e, out.noto)
+  })
+
+  test(`${renderer}: a WOFF2 file loadFontsFromDir loaded is a fallback font`, (t) => {
+    const out = run(renderer, 'W')
+    t.notDeepEqual(out.w, out.notdef)
+    if (JSON.stringify(out.wBefore) !== JSON.stringify(out.notdef)) {
+      t.pass('the host has a font with U+2500')
+      return
+    }
+    t.deepEqual(out.w, out.cascadia)
   })
 }
 
