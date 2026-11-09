@@ -99,7 +99,9 @@ test.serial('a character no family has draws the first font .notdef without a fa
 // FontFallbackList always ends in one. The empty typeface has no glyph and
 // no ink: a line without ink is 0 wide (the old path left FLT_MIN,
 // 1.1754943508222875e-38, for a line it found no glyph for). The rows are
-// the old path's on macOS 27.2 but for that FLT_MIN.
+// the old path's on macOS 27.2 but for that FLT_MIN. The portable "水" rows
+// take it from an installed font (S19): the asset font manager reads
+// /System/Library/Fonts on macOS even with DISABLE_SYSTEM_FONTS_LOAD.
 test.serial('a host without fonts draws nothing with the empty typeface', (t) => {
   const script = `
     const { createCanvas, setTextRenderer } = require(${JSON.stringify(join(__dirname, '..', 'index.js'))})
@@ -144,13 +146,13 @@ test.serial('a host without fonts draws nothing with the empty typeface', (t) =>
   if (process.platform === 'darwin' && release().split('.')[0] === '27') {
     t.deepEqual(rows, [
       ['portable', '40px NoSuchFamily', 'Hello', 88.8671875, 87.8671875, 36, 1020],
-      ['portable', '40px NoSuchFamily', 'a水', 48.8671875, 43.75390625, 36, 307],
+      ['portable', '40px NoSuchFamily', 'a水', 57.753875732421875, 56.75390625, 36, 631],
       ['portable', '40px NoSuchFamily', '\uE000 x', 61.11328125, 61.11328125, 36, 276],
       ['portable', '13px sans-serif', 'Hello', 29.62451171875, 29.39453125, 12, 163],
-      ['portable', '13px sans-serif', 'a水', 16.97998046875, 16.22998046875, 12, 80],
+      ['portable', '13px sans-serif', 'a水', 20.229995727539062, 20.22998046875, 12, 123],
       ['portable', '13px sans-serif', '\uE000 x', 19.86181640625, 20.36181640625, 12, 63],
       ['portable', 'bold 20px serif', 'Hello', 45.546875, 45.546875, 18, 375],
-      ['portable', 'bold 20px serif', 'a水', 25.556640625, 23, 18, 119],
+      ['portable', 'bold 20px serif', 'a水', 29.999984741210938, 30, 18, 288],
       ['portable', 'bold 20px serif', '\uE000 x', 30.556640625, 30.556640625, 18, 110],
       ...['40px NoSuchFamily', '13px sans-serif', 'bold 20px serif'].flatMap((font) =>
         ['Hello', 'a水', '\uE000 x'].map((text) => ['system', font, text, 0, 0, 0, 0]),
