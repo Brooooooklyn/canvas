@@ -1166,7 +1166,9 @@ const PRELOADED_ALIAS_PROBE = `
   // not draw like Lato.
   GlobalFonts.registerFromPath(PROBE_FONTS + '/Oswald.ttf', 'Times New Roman')
   out.loaded = GlobalFonts.loadFontsFromDir(PROBE_DIR)
-  out.registered = GlobalFonts.registerFromPath(PROBE_DIR + '/Lato-Regular.ttf', 'PreBrand') !== null
+  // The path as loadFontsFromDir spells it (the platform separator; on
+  // Windows '/' would make it another path, so another font).
+  out.registered = GlobalFonts.registerFromPath(require('path').join(PROBE_DIR, 'Lato-Regular.ttf'), 'PreBrand') !== null
   out.alias = GlobalFonts.setAlias('PreBrand', 'PreAlias')
   state()
   GlobalFonts.remove(GlobalFonts.registerFromPath(PROBE_FONTS + '/EBGaramond-Regular.ttf', 'Unrelated'))
