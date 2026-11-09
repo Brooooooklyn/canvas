@@ -129,3 +129,79 @@ test('a weight that is not a multiple of 100 is a weight, not the size', (t) => 
   t.true(width < 200, String(width))
   t.true(width >= ctx.measureText('Hamburg').width, String(width))
 })
+
+// Blink's setLang re-sets a realized font from its own serialization,
+// setFont(font()) (base_rendering_context_2d.cc:1161-1175). font() writes
+// only `small-caps`, so a lang change sends every other fontVariantCaps and
+// fontStretch back to normal; the same lang again is a no-op, and caps set
+// after lang is kept. Chrome 157 rows, element canvas = OffscreenCanvas.
+interface LangRow {
+  id: string
+  ops: [string, string][]
+  text: string
+  chrome: Record<string, string | number>
+}
+
+const LANG_RESET: { rows: LangRow[] } = JSON.parse(
+  readFileSync(join(__dirname, 'fixtures', 'text-fonts', 'lang-font-reset.json'), 'utf8'),
+)
+
+GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'Lato-Regular.ttf'), 'BSLato')
+GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'NotoSansNKo-Regular.ttf'), 'BSNKo')
+GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'SourceSerifPro-Regular.ttf'), 'BSSerif')
+
+function runLangRow(row: LangRow) {
+  const ctx = createCanvas(300, 100).getContext('2d') as unknown as Record<string, unknown> & {
+    save(): void
+    restore(): void
+    measureText(text: string): TextMetrics
+  }
+  for (const [key, value] of row.ops) {
+    if (key === 'save') ctx.save()
+    else if (key === 'restore') ctx.restore()
+    else ctx[key] = value
+  }
+  return {
+    w: ctx.measureText(row.text).width,
+    caps: ctx.fontVariantCaps,
+    stretch: ctx.fontStretch,
+    kern: ctx.fontKerning,
+    ls: ctx.letterSpacing,
+    ws: ctx.wordSpacing,
+    tr: ctx.textRendering,
+    font: ctx.font,
+    lang: ctx.lang,
+  }
+}
+
+test(`a lang change re-sets the font like Blink (${LANG_RESET.rows.length} Chrome rows)`, (t) => {
+  const getters = ({ w: _w, ...rest }: Record<string, unknown>) => rest
+  t.deepEqual(
+    LANG_RESET.rows.map((row) => [row.id, getters(runLangRow(row))]),
+    LANG_RESET.rows.map((row) => [row.id, getters(row.chrome)]),
+  )
+})
+
+test('widths after a lang change match Chrome', (t) => {
+  // Left out: 40px BSLato alone (no U+0130, so tr caps falls back to a
+  // system font), the default 10px sans-serif of a fresh context, and the
+  // unfloored 14.999999px row with no lang (the portable renderer is off by
+  // 0.04 there before any lang change).
+  const portable = (row: LangRow) =>
+    !row.id.startsWith('40px BSLato |') && !row.id.startsWith('fresh ctx') && row.id !== '14.999999px BSLato only'
+  const rows = LANG_RESET.rows.filter(portable)
+  const close = (a: number, b: number) => Math.abs(a - b) <= 1e-3
+  t.deepEqual(
+    rows.filter((row) => !close(runLangRow(row).w, row.chrome.w as number)).map((row) => [row.id, runLangRow(row).w]),
+    [],
+  )
+  const width = (id: string) => LANG_RESET.rows.find((row) => row.id === id)!.chrome.w as number
+  // The plan's rows: caps then lang is plain iI; lang then caps keeps caps.
+  t.true(close(width('40px BSLato, BSNKo | caps=all-small-caps then lang=tr'), 22.52))
+  t.true(close(width('40px BSLato, BSNKo | caps=all-small-caps then lang=en'), 22.52))
+  t.true(close(width('40px BSLato, BSNKo | lang=tr then caps=all-small-caps'), 18.088))
+  t.true(close(width('40px BSLato, BSNKo | lang=en then caps=all-small-caps'), 17.192))
+  t.true(close(width('40px BSSerif | caps=all-small-caps then lang=en'), 26.76))
+  t.true(close(width('40px BSSerif | lang=en then caps=all-small-caps'), 29.04))
+  t.is(rows.length, 102)
+})

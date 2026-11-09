@@ -2729,8 +2729,21 @@ impl Context {
     Ok(())
   }
 
+  /// Blink's setLang (base_rendering_context_2d.cc:1161-1175): the same
+  /// value is a no-op; a new one re-sets the font from its own
+  /// serialization, setFont(font()). font() writes only `small-caps`, so any
+  /// other fontVariantCaps and fontStretch go back to the font's (normal).
+  /// Blink does this only for a realized font, but its caps and stretch
+  /// setters realize the font first (:1253-1255, :1268-1270), so re-setting
+  /// an unrealized default font here changes nothing.
   pub fn set_lang(&mut self, lang: String) {
+    if self.state.lang == lang {
+      return;
+    }
     self.state.lang = lang;
+    let font = self.get_font();
+    // A font that does not parse keeps the state, as ResolveFont failing does.
+    let _ = self.set_font(&font);
   }
 
   pub fn get_image_data(
