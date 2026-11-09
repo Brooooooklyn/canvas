@@ -69,7 +69,7 @@ pub(crate) enum ViewportUnit {
 
 impl Unit {
   /// CSSPrimitiveValue::StringToUnitType: ASCII case-insensitive.
-  fn from_name(name: &str) -> Option<Self> {
+  pub(crate) fn from_name(name: &str) -> Option<Self> {
     use ViewportUnit::*;
     let lower = name.to_ascii_lowercase();
     Some(match lower.as_str() {
@@ -113,6 +113,11 @@ impl Unit {
       "fr" => Unit::Other,
       _ => return None,
     })
+  }
+
+  /// CSSPrimitiveValue::IsLength (css_primitive_value.h:307-310).
+  pub(crate) fn is_length(self) -> bool {
+    self.category() == Category::Length
   }
 
   /// UnitCategory (css_math_expression_node.cc:75-160).
@@ -637,7 +642,7 @@ pub(crate) struct Lengths {
 }
 
 impl Lengths {
-  fn px(&self, value: f64, unit: Unit) -> f64 {
+  pub(crate) fn px(&self, value: f64, unit: Unit) -> f64 {
     let size = match unit {
       Unit::Px => return value,
       Unit::Cm | Unit::Mm | Unit::Q | Unit::In | Unit::Pt | Unit::Pc => {

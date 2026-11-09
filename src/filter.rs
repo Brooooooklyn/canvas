@@ -112,7 +112,7 @@ pub(crate) struct FontReads {
 }
 
 impl FontReads {
-  fn of_unit(unit: Unit) -> Self {
+  pub(crate) fn of_unit(unit: Unit) -> Self {
     Self {
       glyphs: matches!(
         unit,
