@@ -531,7 +531,12 @@ test.serial('objects made with a removed font draw after more rebuilds and a ren
   t.true(svgCanvas.getContent().length > 0)
   t.true(convertSVGTextToPath(svg).length > 0)
   rasterCtx.fillText('after', 2, 10)
-  t.true(rasterCtx.measureText('after').width > 0)
+  // The removed family now falls back like any unknown family. A host with
+  // no system fonts (the node:slim CI images) has no fallback font, so the
+  // width is 0 there; compare with a new context instead of with 0.
+  const fresh = createCanvas(200, 40).getContext('2d')
+  fresh.font = '24px FreedFontX'
+  t.is(rasterCtx.measureText('after').width, fresh.measureText('after').width)
   t.true(out.toBuffer('image/png').length > 0)
 })
 
