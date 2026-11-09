@@ -333,6 +333,13 @@ UsedSizes ComputeUsedSizes(skiac_font_collection* c_collection,
   }
   bool differs = false;
   for (size_t i = 0; i < families.size(); ++i) {
+    // An older face of a web family's style ("\x01s\x01"; font_families.cpp
+    // SegmentStyleSet) that this style has none of is no family, as the
+    // font list's findTypefaces skips it; alone it would give the default.
+    if (families[i].startsWith("\x01s\x01") &&
+        !c_collection->assets->matchFamilyStyle(families[i].c_str(), style)) {
+      continue;
+    }
     const std::vector<sk_sp<SkTypeface>> found =
         c_collection->collection->findTypefaces({families[i]}, style);
     if (found.empty() || !found.front()) {

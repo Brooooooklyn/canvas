@@ -243,19 +243,21 @@ test.serial('a chain of setAlias names survives switching', (t) => {
   t.is(textWidth('20px BChainSecond'), before)
 })
 
-// A font registered under a setAlias name after the setAlias call goes after
-// the aliased font, also once the fonts are made again.
-test.serial('a font registered under a setAlias name stays behind the alias across switching', (t) => {
+// A font registered under a setAlias name after the setAlias call is the
+// newer face of that style, so it draws (Chrome 157: a FontFace added after
+// another of the same style wins), also once the fonts are made again.
+test.serial('a font registered under a setAlias name after the call wins across switching', (t) => {
   backToDefault(t)
   const base = GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'RobotoMono-VariableFont_wght.ttf'), 'UsAliasBase')
   t.true(GlobalFonts.setAlias('UsAliasBase', 'UsAliasShared'))
   const serif = GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'SourceSerifPro-Regular.ttf'), 'UsAliasShared')
   t.teardown(() => GlobalFonts.removeBatch([base!, serif!]))
   const before = textWidth('20px UsAliasShared')
-  t.is(before, textWidth('20px UsAliasBase'))
+  t.is(before, textWidth('20px "Source Serif Pro"'))
+  t.not(before, textWidth('20px UsAliasBase'))
   for (const mode of ['system', 'portable'] as const) {
     setTextRenderer(mode)
-    t.is(textWidth('20px UsAliasShared'), textWidth('20px UsAliasBase'))
+    t.is(textWidth('20px UsAliasShared'), textWidth('20px "Source Serif Pro"'))
   }
   t.is(textWidth('20px UsAliasShared'), before)
 })
@@ -297,9 +299,10 @@ macTest('installed collection files list every face on macOS', (t) => {
   }
 })
 
-// A name a font gains later goes after the fonts registered in between: the
-// first face of the family stays the first.
-test.serial('a shared family keeps its first face across switching', (t) => {
+// A name a font gains later makes it the newest face of that name: it draws
+// in place of the font registered under the name before (Chrome 157: the
+// FontFace added last wins), also across switching.
+test.serial('a name a font gains later draws its face across switching', (t) => {
   backToDefault(t)
   const oswald = readFileSync(join(__dirname, 'fonts', 'Oswald.ttf'))
   const first = GlobalFonts.register(oswald, 'UsOrderA')
@@ -310,10 +313,10 @@ test.serial('a shared family keeps its first face across switching', (t) => {
   t.is(GlobalFonts.register(oswald, 'UsOrderShared')?.typefaceId, first?.typefaceId)
   t.teardown(() => GlobalFonts.removeBatch([first!, serif!]))
   const before = textWidth('20px UsOrderShared')
-  t.is(before, textWidth('20px "Source Serif Pro"'))
-  t.not(before, textWidth('20px UsOrderA'))
+  t.is(before, textWidth('20px UsOrderA'))
+  t.not(before, textWidth('20px "Source Serif Pro"'))
   setTextRenderer('system')
-  t.is(textWidth('20px UsOrderShared'), textWidth('20px "Source Serif Pro"'))
+  t.is(textWidth('20px UsOrderShared'), textWidth('20px UsOrderA'))
   setTextRenderer('portable')
   t.is(textWidth('20px UsOrderShared'), before)
 })
@@ -824,7 +827,7 @@ const { join } = require('path')
 const { GlobalFonts, createCanvas, setTextRenderer, convertSVGTextToPath } = require('./index.js')
 const { RENDERER, PROBE_STEPS } = process.env
 setTextRenderer(RENDERER)
-const NAMES = ['Helvetica', 'helvetica', 'EB Garamond', 'Lato']
+const NAMES = ['Helvetica', 'helvetica', 'EB Garamond', 'Lato', 'Roboto Mono']
 const width = (family) => {
   const ctx = createCanvas(10, 10).getContext('2d')
   ctx.font = '40px "' + family + '"'
@@ -854,7 +857,7 @@ for (const step of PROBE_STEPS.split(',')) {
 console.log(JSON.stringify(out))
 `
 
-macTest('spellings of Helvetica keep registration order, and SVG paths use the drawn face on macOS', (t) => {
+macTest('spellings of Helvetica: the face added last wins, and SVG paths use the drawn face on macOS', (t) => {
   const near = (a: number, b: number) => Math.abs(a - b) <= 1e-3
   const ROBOTO = 'RobotoMono-VariableFont_wght.ttf'
   for (const renderer of ['portable', 'system']) {
@@ -877,11 +880,14 @@ macTest('spellings of Helvetica keep registration order, and SVG paths use the d
     ]) {
       for (const [i, s] of probe(steps).states.entries()) {
         const at = `${renderer} ${steps} state ${i}`
+        // Roboto Mono, added last (Chrome 157 lists the faces of one style
+        // newest first, over every spelling of the family).
+        t.false(near(s.widths[2], s.widths[4]), `${at}: EB Garamond ${s.widths[2]}, Roboto Mono ${s.widths[4]}`)
         for (const j of [0, 1]) {
-          t.true(near(s.widths[j], s.widths[2]), `${at}: ${s.widths[j]}, EB Garamond ${s.widths[2]}`)
+          t.true(near(s.widths[j], s.widths[4]), `${at}: ${s.widths[j]}, Roboto Mono ${s.widths[4]}`)
           // Roboto Mono has a wght axis, EB Garamond none.
-          t.false(s.variations[j], at)
-          t.is(s.paths[j], s.paths[2], at)
+          t.true(s.variations[j], at)
+          t.is(s.paths[j], s.paths[4], at)
         }
       }
     }
@@ -1002,4 +1008,119 @@ macTest('installed fonts removed by removeAll stay removed across a switch on ma
 test.serial("the spec's own fonts are still registered", (t) => {
   t.true(GlobalFonts.has('UsLato'))
   t.true(GlobalFonts.has('UsIosevka'))
+})
+
+const HELVETICA_FACE_ORDER_PROBE = `
+const { join } = require('path')
+const { GlobalFonts, createCanvas, setTextRenderer, convertSVGTextToPath } = require('./index.js')
+const { RENDERER, PROBE_STEPS } = process.env
+setTextRenderer(RENDERER)
+const FILES = { Lato: 'Lato-Regular.ttf', Oswald: 'Oswald.ttf' }
+const metrics = (font) => {
+  const ctx = createCanvas(10, 10).getContext('2d')
+  ctx.font = font
+  const m = ctx.measureText('Ag')
+  return [m.width, m.fontBoundingBoxAscent, m.fontBoundingBoxDescent]
+}
+const path = (family) =>
+  convertSVGTextToPath(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="60"><text x="5" y="45" font-size="40" font-family="' +
+      family + '">Ag</text></svg>',
+  ).toString('base64')
+const NAMES = ['Helvetica', 'helvetica', 'HELVETICA', 'Arial', 'HelvAlias', 'NoSuchFamily']
+const out = { steps: [], states: [] }
+for (const step of PROBE_STEPS.split(',')) {
+  const [kind, a, b] = step.split(':')
+  if (kind === 'reg') out.steps.push(GlobalFonts.registerFromPath(join('__test__', 'fonts', FILES[a]), b) !== null)
+  else if (kind === 'alias') out.steps.push(GlobalFonts.setAlias(a, b))
+  else if (kind === 'rebuild') GlobalFonts.remove(GlobalFonts.registerFromPath(join('__test__', 'fonts', 'EBGaramond-Regular.ttf'), 'Unrelated'))
+  else if (kind === 'switch') {
+    setTextRenderer(RENDERER === 'system' ? 'portable' : 'system')
+    setTextRenderer(RENDERER)
+  } else
+    out.states.push(
+      Object.fromEntries(
+        NAMES.map((name) => [name, { w: metrics('40px "' + name + '"'), wb: metrics('bold 40px "' + name + '"'), path: path(name) }]),
+      ),
+    )
+}
+console.log(JSON.stringify(out))
+`
+
+// Chrome 157 (fixtures/face-order.json, macOS rows): the face added last
+// under an installed family's name draws, a setAlias name too
+// (FontFace(alias, local(family))). The setAlias face is regular only, so
+// bold is its synthetic bold, not the installed Helvetica Bold.
+macTest('faces added under Helvetica: the one added last draws on macOS', (t) => {
+  const near = (a: number, b: number) => Math.abs(a - b) <= 1e-3
+  const FACE_ORDER = JSON.parse(readFileSync(join(__dirname, 'fixtures', 'face-order.json'), 'utf8'))
+  for (const renderer of ['portable', 'system']) {
+    for (const key of ['helv-alias', 'helv-two']) {
+      const row = FACE_ORDER.rows[key]
+      const steps = row.steps.map((step: string[]) => step.join(':'))
+      const out = macProbe(HELVETICA_FACE_ORDER_PROBE, {
+        RENDERER: renderer,
+        PROBE_STEPS: [...steps, 'state', 'rebuild', 'state', 'switch', 'state'].join(','),
+      })
+      t.true(
+        out.steps.every((ok: boolean) => ok),
+        `${renderer} ${key}: ${out.steps}`,
+      )
+      for (const [i, state] of out.states.entries()) {
+        for (const name of ['Helvetica', 'helvetica', 'HELVETICA']) {
+          const s = state[name]
+          const at = `${renderer} ${key} ${name} state ${i}`
+          for (const [j, value] of row.w.Ag.entries()) {
+            t.true(near(s.w[j], value), `${at}: ${s.w}, Chrome ${row.w.Ag}`)
+          }
+          // Oswald is variable: Chrome does not vary a FontFace with no
+          // weight descriptor for bold (a separate item).
+          if (key === 'helv-alias') {
+            for (const [j, value] of row.wb.Ag.entries()) {
+              t.true(near(s.wb[j], value), `${at}: bold ${s.wb}, Chrome ${row.wb.Ag}`)
+            }
+            t.is(s.path, state.Arial.path, at)
+          }
+        }
+      }
+    }
+  }
+})
+
+// A case-only spelling of installed Helvetica is Helvetica for SVG paths and
+// setAlias, as for canvas text (Chrome 157: "helvetica" and "HELVETICA" draw
+// Helvetica in canvas and SVG text, fixtures/text-fonts/family-spellings.json).
+// And setAlias('Arial', 'Helvetica') with nothing else added keeps what S14
+// made it (Chrome 157: Arial, made bold for bold: 48.92578125), now that the
+// face added last wins.
+macTest('case-only spellings of Helvetica are Helvetica for SVG paths and setAlias on macOS', (t) => {
+  const near = (a: number, b: number) => Math.abs(a - b) <= 1e-3
+  const SPELLINGS = JSON.parse(readFileSync(join(__dirname, 'fixtures', 'text-fonts', 'family-spellings.json'), 'utf8'))
+  for (const renderer of ['portable', 'system']) {
+    const run = (steps: string[]) =>
+      macProbe(HELVETICA_FACE_ORDER_PROBE, {
+        RENDERER: renderer,
+        PROBE_STEPS: [...steps, 'state', 'rebuild', 'state', 'switch', 'state'].join(','),
+      })
+    const spelled = run(['alias:helvetica:HelvAlias'])
+    t.deepEqual(spelled.steps, [true], renderer)
+    for (const [i, s] of spelled.states.entries()) {
+      const at = `${renderer} state ${i}`
+      for (const name of ['helvetica', 'HELVETICA']) {
+        t.is(s[name].path, s.Helvetica.path, `${at}: ${name}`)
+        t.true(near(s[name].w[0], SPELLINGS.installed[name].w), `${at}: ${name} ${s[name].w[0]}`)
+        t.true(near(s[name].wb[0], SPELLINGS.installed[name].wb), `${at}: bold ${name} ${s[name].wb[0]}`)
+      }
+      t.not(s.Helvetica.path, s.NoSuchFamily.path, at)
+      t.is(s.HelvAlias.path, s.Helvetica.path, `${at}: HelvAlias`)
+      t.true(near(s.HelvAlias.w[0], s.Helvetica.w[0]), `${at}: HelvAlias ${s.HelvAlias.w[0]}`)
+    }
+    const aliased = run(['alias:Arial:Helvetica'])
+    t.deepEqual(aliased.steps, [true], renderer)
+    for (const [i, s] of aliased.states.entries()) {
+      const at = `${renderer} setAlias('Arial', 'Helvetica') state ${i}`
+      t.true(near(s.Helvetica.w[0], 48.92578125), `${at}: ${s.Helvetica.w[0]}`)
+      t.true(near(s.Helvetica.wb[0], 48.92578125), `${at}: bold ${s.Helvetica.wb[0]}`)
+    }
+  }
 })
