@@ -173,6 +173,8 @@ It applies to the whole process. Call it once at startup, before you create canv
 
 > **Behavior change**: SVG text (SVG images, the SVG images nested in them, and `convertSVGTextToPath`) takes a character its first font lacks from the next family of its `font-family` list, then from the system's fonts, as canvas text does. Chrome does the same. Before, the whole text used the first font, and a character it lacks drew as a box. Text with no such character draws the same as before. `convertSVGTextToPath` now reads the document the way an SVG image does (`<style>` sheets, `var()`, `<use>` and the other CSS rules), so its output matches what the SVG image draws. A document that is not well-formed UTF-8 XML is read as before, with only the first family of each `font-family` list.
 
+> **Behavior change**: SVG text whose family lacks the bold or italic face it asks for draws a synthetic bold or italic, with the rules canvas text uses: a registered font is bolded at `font-weight` 600 and up and slanted for `italic` and `oblique` unless it has that face (or a `wght` axis above 400, or a `slnt` axis); an installed font follows its own faces. Chrome does the same. The advances do not change, so the text does not move; the glyphs are heavier or slanted, and `convertSVGTextToPath` outlines grow to match. Before, SVG text drew the regular face for every style.
+
 ## Emoji text
 
 ```js

@@ -51,18 +51,31 @@ macTest('SvgCanvas text export', (t) => {
 
 macTest('convertSVGTextToPath', (t) => {
   const result = convertSVGTextToPath(readFileSync(join(__dirname, 'text.svg'), 'utf8'))
-  const output = readFileSync(join(__dirname, 'text-to-path.svg'), 'utf8')
-  // CoreText's outline points are within 0.05px of FreeType's, which
-  // text-to-path.svg holds.
+  // text.svg asks Iosevka Slab Regular for bold: a synthetic bold, so Skia
+  // strokes the outline. CoreText's points are within 0.05px of FreeType's
+  // (text-to-path.svg); the stroke grows that to 0.09px, so
+  // fixtures/text-to-path-coretext.svg holds CoreText's output. A CoreText
+  // contour can end a few 1e-6 px from its start; the stroke then adds a
+  // closing line that short, which draws nothing and is dropped here.
+  const output = readFileSync(join(__dirname, 'fixtures', 'text-to-path-coretext.svg'), 'utf8')
   const trimmed = (svg: string) =>
     svg
       .split('\n')
-      .map((line) => line.trim())
+      .map((line) => dropEmptyLines(line.trim()))
       .join('\n')
   t.true(numberDistance(trimmed(result.toString('utf8')), trimmed(output)) <= 0.05)
 })
 
 const NUMBER = /-?\d+(?:\.\d+)?(?:e-?\d+)?/g
+
+// Path data without the line segments shorter than 1e-3 px ("x yLx' y'"
+// with the point where the segment before ends).
+function dropEmptyLines(text: string) {
+  const POINT = String.raw`(-?\d+(?:\.\d+)?(?:e-?\d+)?) (-?\d+(?:\.\d+)?(?:e-?\d+)?)`
+  return text.replace(new RegExp(`${POINT}L${POINT}(?=[A-Z"])`, 'g'), (all, x0, y0, x1, y1) =>
+    Math.abs(x0 - x1) < 1e-3 && Math.abs(y0 - y1) < 1e-3 ? `${x0} ${y0}` : all,
+  )
+}
 
 // How far apart the numbers of two texts are, or Infinity when the texts
 // differ in more than their numbers.
