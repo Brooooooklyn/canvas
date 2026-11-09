@@ -2554,7 +2554,9 @@ impl Context {
     if reads.glyphs
       && let Some(primary) = font.primary_font_units(&settings)
     {
-      units.x_height = (primary.x_height != 0.0).then_some(primary.x_height as f64);
+      // FontMetrics::HasXHeight: an x-height of 0 or less (an "x" glyph
+      // all below the baseline on Apple) is no x-height.
+      units.x_height = (primary.x_height > 0.0).then_some(primary.x_height as f64);
       units.zero_width = primary.zero_width as f64;
       units.cap_height = primary.cap_height as f64;
     }

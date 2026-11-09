@@ -4,7 +4,8 @@
 #   uv run --with fonttools --with brotli python __test__/fonts/build-probe-fonts.py \
 #     <NotoSansDevanagari-Regular source (.ttf/.woff2)> <Noto CJK subset-halt .otf>
 #
-# `build-probe-fonts.py nominal` builds only NominalProbe.ttf.
+# `build-probe-fonts.py nominal` builds only NominalProbe.ttf, and
+# `build-probe-fonts.py lowx` only LowXProbe.ttf.
 #
 # Sources:
 # - Lato-Regular.ttf, Harmattan-Regular.ttf: in this folder.
@@ -110,6 +111,19 @@ feature ccmp {{
     save(f, 'NominalProbe.ttf')
 
 
+def low_x_probe():
+    # cmap maps 'x' to the underscore glyph, which is all below the
+    # baseline, so on macOS the top of the "x" glyph gives a negative
+    # x-height, which the ex unit does not use (FontMetrics::HasXHeight).
+    f = TTFont(LATO)
+    underscore = f.getBestCmap()[ord('_')]
+    for table in f['cmap'].tables:
+        if table.isUnicode():
+            table.cmap[ord('x')] = underscore
+    rename(f, 'LowXProbe')
+    save(f, 'LowXProbe.ttf')
+
+
 def chws_probe(halt_src):
     # The Noto CJK halt subset plus a `chws` feature that reuses the `halt`
     # lookups, so chws on == halt everywhere.
@@ -209,10 +223,15 @@ def main():
         # Only NominalProbe.ttf, which needs no outside source.
         nominal_probe()
         return
+    if sys.argv[1:] == ['lowx']:
+        # Only LowXProbe.ttf, which needs no outside source.
+        low_x_probe()
+        return
     deva_src, halt_src = sys.argv[1], sys.argv[2]
     locl_probe()
     script_probe()
     nominal_probe()
+    low_x_probe()
     chws_probe(halt_src)
     arabic_split()
     sym_cmap_probe()

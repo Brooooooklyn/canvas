@@ -192,3 +192,43 @@ test.serial('ch and ex spacing read the nominal "0" and "x", not the ccmp glyphs
     t.deepEqual(mismatches(rows), [], renderer)
   })
 })
+
+// LowXProbe.ttf is Lato whose cmap maps "x" to the underscore glyph, which is
+// all below the baseline. On Apple, Blink's x-height is the top of the "x"
+// glyph, here negative, and FontMetrics::HasXHeight takes an x-height of 0
+// or less as none, so ex is 0.5em. Chrome 157 on macOS: 1ex is 20 at 40px
+// (letterSpacing and wordSpacing, bold and italic too) and 10 at 20px. Off
+// Apple, and with our portable renderer on macOS, ex is the font's x-height,
+// the same as Lato's (outside finding 3).
+GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'LowXProbe.ttf'), 'SpLowX')
+
+test.serial('ex is 0.5em when the "x" glyph is all below the baseline', (t) => {
+  const spacing = (font: string, prop: 'letterSpacing' | 'wordSpacing', unit: string) => {
+    const values = run({
+      id: '',
+      ops: [
+        ['font', font],
+        [prop, unit],
+      ],
+      chrome: {} as Values,
+    })
+    return prop === 'letterSpacing' ? values.lsPx : values.wsPx
+  }
+  withBothRenderers((renderer) => {
+    const apple = process.platform === 'darwin' && renderer === 'system'
+    for (const [font, size] of [
+      ['40px SpLowX', 40],
+      ['20px SpLowX', 20],
+      ['bold 40px SpLowX', 40],
+      ['italic 40px SpLowX', 40],
+    ] as const) {
+      for (const prop of ['letterSpacing', 'wordSpacing'] as const) {
+        for (const unit of ['1ex', '1rex']) {
+          const ours = spacing(font, prop, unit)
+          const expected = apple ? size / 2 : spacing(font.replace('SpLowX', 'SpLato'), prop, unit)
+          t.true(ours > 0 && Math.abs(ours - expected) < 1e-3, `${renderer} ${font} ${prop} ${unit}: ${ours}`)
+        }
+      }
+    }
+  })
+})

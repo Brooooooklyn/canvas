@@ -863,3 +863,48 @@ test('ch and ex in ctx.filter read the nominal "0" and "x", not the ccmp glyphs'
     setTextRenderer(before)
   }
 })
+
+// Chrome 157 OffscreenCanvas on macOS: LowXProbe.ttf (Lato whose "x" is the
+// underscore glyph, all below the baseline) has no x-height there
+// (FontMetrics::HasXHeight), so ex in ctx.filter is 0.5 x the offscreen em
+// of 16px: drop-shadow(calc(2 * 1ex + 50px)) of a 1px column has its center
+// at 66.5, for 40px and bold 20px. Off Apple, and with our portable renderer
+// on macOS, ex is the font's x-height, the same as Lato's.
+test('ex in ctx.filter is 0.5em when the "x" glyph is all below the baseline', (t) => {
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'LowXProbe.ttf'), 'SpLowX')
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'Lato-Regular.ttf'), 'LatoLowXRef')
+  const shadowCenter = (font: string, filter: string) => {
+    const ctx = createCanvas(400, 4).getContext('2d')
+    ctx.font = font
+    ctx.filter = filter
+    ctx.fillStyle = 'blue'
+    ctx.fillRect(0, 0, 1, 4)
+    const data = ctx.getImageData(0, 1, 400, 1).data
+    let sum = 0
+    let weight = 0
+    for (let x = 2; x < 400; x++) {
+      if (data[x * 4] > 0) {
+        sum += (x + 0.5) * data[x * 4 + 3]
+        weight += data[x * 4 + 3]
+      }
+    }
+    return sum / weight
+  }
+  const before = getTextRenderer()
+  try {
+    for (const renderer of ['portable', 'system'] as const) {
+      setTextRenderer(renderer)
+      const apple = process.platform === 'darwin' && renderer === 'system'
+      for (const font of ['40px SpLowX', 'bold 20px SpLowX']) {
+        for (const unit of ['ex', 'rex']) {
+          const filter = `drop-shadow(calc(2 * 1${unit} + 50px) 0 0 red)`
+          const ours = shadowCenter(font, filter)
+          const expected = apple ? 66.5 : shadowCenter(font.replace('SpLowX', 'LatoLowXRef'), filter)
+          t.true(Math.abs(ours - expected) < 0.02, `${renderer} ${font} ${unit}: ${ours}`)
+        }
+      }
+    }
+  } finally {
+    setTextRenderer(before)
+  }
+})
